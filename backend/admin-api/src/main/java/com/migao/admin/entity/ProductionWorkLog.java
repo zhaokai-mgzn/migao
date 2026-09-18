@@ -46,6 +46,21 @@ public class ProductionWorkLog {
     /** 合格数量（计件按合格数量） */
     private BigDecimal qualifiedQty;
 
+    /**
+     * 计件单价快照（元/单位，issue #4351，V61）——**报工那一刻**从工序实例
+     * {@code processing_position_operations.unit_price} 写入。
+     *
+     * <p>为什么必须固化：计件聚合原先回查工序实例算金额，而重新实例化
+     * （{@code POST /production/orders/{orderId}/instantiate}，工艺变更 / 存量单补工序）
+     * 会**软删旧实例并重插** ⇒ 旧报工指向已软删实例 ⇒ 被跳过 ⇒ **工人已做的活的钱从合计里
+     * 消失且不报错**。真值源 §4「单价版本化，历史报工按当时价，逐笔可追溯」要的正是本列。
+     * {@code NULL} = 本列引入之前的存量报工（聚合按实例回查兜底，见 {@code ProductionService.aggregate}）。</p>
+     */
+    private BigDecimal unitPrice;
+
+    /** 计件系数快照（issue #4351，V61）——与 {@link #unitPrice} 同一次报工写入、同一口径。 */
+    private BigDecimal factor;
+
     /** 报工三态：normal 正常 / rework 返工 / scrap 报废 */
     private String workType;
 
