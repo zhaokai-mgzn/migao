@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, UI-030
+// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, UI-030
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -41,6 +41,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doThrow;
 
 /**
  * 加工单服务单元测试（issue #3340）
@@ -86,6 +87,10 @@ class ProcessingOrderServiceTest {
     /** 工序来源（issue #4116 切库）：生成加工单必须能读到工序库，故每个生成用例都要打桩 */
     @Mock
     private ProductionOperationQueryService productionOperationQueryService;
+
+    /** 应做数量来源（issue #4208 接线）：算料引擎在 ai-agent，Java 只问不猜 */
+    @Mock
+    private ProductionOperationQtyClient productionOperationQtyClient;
 
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
@@ -172,6 +177,66 @@ class ProcessingOrderServiceTest {
         when(productionOperationQueryService.routingKeys(TENANT)).thenReturn(List.of());
     }
 
+    // ── 算料数量桩（issue #4208 接线）────────────────────────────────
+    //
+    // 应做数量的真值源在 ai-agent（routing.py::_qty_for），Java 侧只问不猜。本桩按**工序单位**
+    // 给出与端点同口径的取值（数量来自算料键 + 来源三态 + 缺键兜底 1）：
+    //   米 ⇒ 12.3 / fabric_meters ｜ 折 ⇒ 24 / pleat_count ｜ 孔 ⇒ 73.8 / fabric_meters_x6
+    //   幅・套・个 ⇒ 1 / fallback（引擎暂未产出 panels/set_count，见 routing.py 的待补键注释）
+    // 于是「实例 qty = 客户端输出」是真比对，而不是拿一份平行真值自证。
+
+    private static final String CALC_FABRIC_METERS = "12.3";
+    private static final String CALC_PLEAT_COUNT = "24.0";
+    private static final String CALC_HOLES_ESTIMATE = "73.8";
+
+    private void stubQty() {
+        // lenient：并非每个用例都会走到算料问数（如空库 fail-closed 在它之前中止），
+        // 而 Mockito 严格桩会把「备而不用」判为失败 —— 那是噪音，不是缺陷。
+        lenient().when(productionOperationQtyClient.resolve(any())).thenAnswer(inv -> {
+            List<Map<String, Object>> request = inv.getArgument(0);
+            List<ProductionOperationQtyClient.PositionQty> resolved = new ArrayList<>();
+            for (Map<String, Object> position : request) {
+                Map<String, BigDecimal> qty = new LinkedHashMap<>();
+                Map<String, String> source = new LinkedHashMap<>();
+                for (Object raw : (List<?>) position.get("operations")) {
+                    String operation = String.valueOf(raw);
+                    String unit = unitOfOperation(operation);
+                    if ("米".equals(unit)) {
+                        qty.put(operation, new BigDecimal(CALC_FABRIC_METERS));
+                        source.put(operation, "fabric_meters");
+                    } else if ("折".equals(unit)) {
+                        qty.put(operation, new BigDecimal(CALC_PLEAT_COUNT));
+                        source.put(operation, "pleat_count");
+                    } else if ("孔".equals(unit)) {
+                        qty.put(operation, new BigDecimal(CALC_HOLES_ESTIMATE));
+                        source.put(operation, "fabric_meters_x6");
+                    } else {
+                        qty.put(operation, BigDecimal.ONE);
+                        source.put(operation, "fallback");
+                    }
+                }
+                resolved.add(new ProductionOperationQtyClient.PositionQty(
+                        (String) position.get("position_name"), qty, source));
+            }
+            return resolved;
+        });
+    }
+
+    /** 工序 → 单位（查 V54 两条路线表；未知工序返回 null ⇒ 走兜底档）。 */
+    private static String unitOfOperation(String operation) {
+        for (String[][] table : List.of(V54_BULIAN_HANZHE, V54_BULIAN_DAKONG)) {
+            for (String[] row : table) {
+                if (row[0].equals(operation)) {
+                    return row[2];
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 捕获「实例 qty 来自算料引擎而非订单数量」的夹具：订单数量 = 2（≠ 算料输出）。 */
+    private static final String ORDER_QUANTITY = "2";
+
     /** 「生成加工单 → 真链路实例化」的装配：真实 ProductionService + 真实 ProcessingOrderService。 */
     private ProcessingOrderService realChainService() {
         return new ProcessingOrderService(
@@ -179,7 +244,7 @@ class ProcessingOrderServiceTest {
                 orderService, objectMapper,
                 new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper,
                         clientRequestIdService),
-                productionOperationQueryService);
+                productionOperationQueryService, productionOperationQtyClient);
     }
 
     /** 生成前置桩（订单 + 明细 + 无既有加工单 + 插入回填主键），三条 #4116 链路用例共用。 */
@@ -202,6 +267,8 @@ class ProcessingOrderServiceTest {
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(TENANT);
+        // 应做数量（issue #4208）：所有生成路径都要问算料引擎 ⇒ 默认打桩（lenient，见 stubQty）
+        stubQty();
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, Order.class);
@@ -461,8 +528,24 @@ class ProcessingOrderServiceTest {
         assertThat(instances.get(10).getIsMustFinish())
                 .as("末道工序不得被无条件标必完（is_must_finish 读库 = false）").isFalse();
 
-        // ② 应做数量：库路线不给数量 ⇒ 退化为该部位订单数量（2）；缺值兜底 1，绝不落 0
-        assertThat(instances).allSatisfy(instance -> assertThat(instance.getQty()).isEqualByComparingTo("2"));
+        // ② 应做数量 = **算料引擎输出**（issue #4208 接线）：米类 12.3、折类 24、套类兜底 1
+        //    —— 此前取该部位订单数量（2）⇒ 11 道工序全 2.00，正是走查实测「韩褶-布 显示 3 折」的形态。
+        //    本断言的红证：把 buildPositionPayload 改回 positionQty(entry) ⇒ 逐条必红（12.3 ≠ 2）。
+        assertThat(instances).allSatisfy(instance -> {
+            String unit = instance.getUnit();
+            String expected = "折".equals(unit) ? CALC_PLEAT_COUNT : ("米".equals(unit) ? CALC_FABRIC_METERS : "1");
+            assertThat(instance.getQty()).as("应做数量（%s 类）", unit).isEqualByComparingTo(expected);
+        });
+        assertThat(instances).allSatisfy(instance ->
+                assertThat(instance.getQty()).as("绝不落 0（应做 0 ⇒ done_qty ≥ qty 恒真 ⇒ 假完工）")
+                        .isNotEqualByComparingTo(BigDecimal.ZERO));
+        assertThat(instances).filteredOn(instance -> "折".equals(instance.getUnit()))
+                .singleElement()
+                .satisfies(instance -> assertThat(instance.getQtySource()).isEqualTo("pleat_count"));
+        assertThat(instances).filteredOn(instance -> "套".equals(instance.getUnit()))
+                .allSatisfy(instance -> assertThat(instance.getQtySource()).isEqualTo("fallback"));
+        assertThat(instances).filteredOn(instance -> "米".equals(instance.getUnit()))
+                .allSatisfy(instance -> assertThat(instance.getQtySource()).isEqualTo("fabric_meters"));
 
         // ③ qr_token 必须真落到加工单（任务卡二维码取值来源 = qr_token，非空才不走占位分支）
         ArgumentCaptor<ProcessingOrder> tokenCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
@@ -491,6 +574,102 @@ class ProcessingOrderServiceTest {
         assertThat(opCaptor.getAllValues()).extracting(ProcessingPositionOperation::getOperationName)
                 .containsExactlyElementsOf(java.util.Arrays.stream(V54_BULIAN_HANZHE).map(r -> r[0]).toList())
                 .doesNotContain("加工项目录自定义项");
+    }
+
+    @Test
+    @DisplayName("#4208 端到端：实例 qty = 算料引擎输出（**≠** 订单数量）—— 走查红证「韩褶-布 3 折」的反面")
+    void generateTakesQtyFromCalcEngineNotFromOrderQuantity() {
+        stubLibrary();
+        OrderItem item = orderItemHanzhe("米白");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) item.getProcessingInfo();
+        info.put("sellingMethod", "per_meter");   // 订单行 quantity 的计价方式口径：per_meter ⇒ 米数
+        stubGenerate(List.of(item));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(captor.capture());
+        List<ProcessingPositionOperation> instances = captor.getAllValues();
+
+        // 判据 5（issue #4208）：qty ≠ 订单数量，且逐值 = 算料输出
+        assertThat(instances).allSatisfy(instance ->
+                assertThat(instance.getQty()).as("应做数量不得等于订单数量 %s", ORDER_QUANTITY)
+                        .isNotEqualByComparingTo(ORDER_QUANTITY));
+        assertThat(instances.get(2).getOperationName()).isEqualTo("韩褶-布");
+        assertThat(instances.get(2).getQty()).isEqualByComparingTo(CALC_PLEAT_COUNT);
+        assertThat(instances.get(0).getOperationName()).isEqualTo("精裁-布");
+        assertThat(instances.get(0).getQty()).isEqualByComparingTo(CALC_FABRIC_METERS);
+
+        // 请求体里带的 calc_info 必须来自订单的计价方式口径（per_meter ⇒ quantity 即米数），
+        // 且**不含**订单侧拿不到的待补键（panels/set_count/holes）—— 不许 Java 凭空造数
+        ArgumentCaptor<List<Map<String, Object>>> reqCaptor = ArgumentCaptor.forClass(List.class);
+        verify(productionOperationQtyClient).resolve(reqCaptor.capture());
+        Map<String, Object> sent = reqCaptor.getValue().get(0);
+        assertThat(sent.get("position_name")).isEqualTo("布艺遮光帘A 米白");
+        assertThat((List<?>) sent.get("operations")).hasSize(V54_BULIAN_HANZHE.length);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> calcInfo = (Map<String, Object>) sent.get("calc_info");
+        assertThat(new BigDecimal(String.valueOf(calcInfo.get("fabric_meters"))))
+                .as("per_meter 的订单数量即米数（OrderItem.quantity javadoc 的计价方式口径）")
+                .isEqualByComparingTo(ORDER_QUANTITY);
+        assertThat(calcInfo).as("订单侧拿不到的待补键不许 Java 凭空造数")
+                .doesNotContainKeys("panels", "set_count", "holes", "pleat_count");
+    }
+
+    @Test
+    @DisplayName("#4208 calc_info 口径：非 per_meter 计价**不**把订单数量冒充成米数（不发明数字）")
+    void calcInfoDoesNotInventFabricMetersForNonPerMeter() {
+        stubLibrary();
+        OrderItem item = orderItemHanzhe("米白");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) item.getProcessingInfo();
+        info.put("sellingMethod", "per_set");
+        stubGenerate(List.of(item));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        ArgumentCaptor<List<Map<String, Object>>> reqCaptor = ArgumentCaptor.forClass(List.class);
+        verify(productionOperationQtyClient).resolve(reqCaptor.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> calcInfo = (Map<String, Object>) reqCaptor.getValue().get(0).get("calc_info");
+        assertThat(calcInfo).as("per_set 的 quantity 是樘数、不是米数 ⇒ 不得映射成 fabric_meters")
+                .doesNotContainKey("fabric_meters");
+    }
+
+    @Test
+    @DisplayName("#4208 fail-closed：算料服务不可用 ⇒ 逐单失败（422 语义 + 可行动建议）且**不落加工单行**")
+    void generateFailsClosedWhenQtyServiceUnavailable() {
+        stubLibrary();
+        // doThrow（而非 when(...).thenThrow）：setUp 里已有 lenient 桩，用 when(...) 形式会先触发旧答案
+        doThrow(new BusinessException(
+                ProductionOperationQtyClient.ERR_OPERATION_QTY_UNAVAILABLE,
+                "算料服务（ai-agent）不可用，无法解析工序应做数量，已中止生成加工单（不回退订单数量）",
+                422,
+                "请确认 ai-agent-service 已启动后重新生成加工单")).when(productionOperationQtyClient).resolve(any());
+        // 不调 stubGenerate：fail-closed 发生在落库之前，给它打 insert 桩会被严格桩判为多余
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemHanzhe("米白")));
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).isSuccess()).isFalse();
+        assertThat(results.get(0).getCode()).isEqualTo(ProductionOperationQtyClient.ERR_OPERATION_QTY_UNAVAILABLE);
+        assertThat(results.get(0).getSuggestion()).as("失败必须可行动").contains("ai-agent-service");
+        assertThat(results.get(0).getMessage()).contains("不回退订单数量");
+
+        // fail-closed 的完整语义：**不落半成品**（加工单行、工序实例、订单状态三者都不动）
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
+        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
     }
 
     @Test
@@ -1028,7 +1207,15 @@ class ProcessingOrderServiceTest {
                 .containsEntry("is_start_marker", true);
         assertThat((BigDecimal) operations.get(0).get("unit_price")).isEqualByComparingTo("0.4");
         assertThat((BigDecimal) operations.get(0).get("qty"))
-                .as("应做数量 = 该部位订单数量（缺值兜底 1，绝不落 0）").isEqualByComparingTo("2");
+                .as("应做数量 = 算料引擎输出（issue #4208：米类 12.3，**不是**订单数量 2）")
+                .isEqualByComparingTo(CALC_FABRIC_METERS);
+        assertThat(operations.get(0).get("qty_source")).isEqualTo("fabric_meters");
+        assertThat((BigDecimal) operations.get(2).get("qty"))
+                .as("折类 = 折数（走查实测的红证形态：韩褶-布 曾显示 3 折）")
+                .isEqualByComparingTo(CALC_PLEAT_COUNT);
+        assertThat(operations.get(2).get("qty_source")).isEqualTo("pleat_count");
+        assertThat(operations.get(9).get("qty_source"))
+                .as("套类 = 引擎待补键 ⇒ 显式标注 fallback（不静默）").isEqualTo("fallback");
         assertThat(operations.get(9)).containsEntry("operation", "外帘装袋")
                 .containsEntry("is_must_finish", true);
     }

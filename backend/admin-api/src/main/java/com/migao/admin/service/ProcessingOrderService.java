@@ -69,6 +69,8 @@ public class ProcessingOrderService {
     private final ProductionService productionService;
     /** 工序来源（issue #4116 切库）：工序实例的工序/单位/单价/必完标记全部读它。 */
     private final ProductionOperationQueryService productionOperationQueryService;
+    /** 应做数量来源（issue #4208 接线）：算料引擎在 ai-agent，Java 侧只问不猜。 */
+    private final ProductionOperationQtyClient productionOperationQtyClient;
 
     /**
      * 工序库查不到「部位×工艺」路线时的错误码（fail-closed）。
@@ -109,8 +111,21 @@ public class ProcessingOrderService {
             {"韩褶", "韩褶"}, {"打孔", "打孔"}, {"四爪钩", "四爪钩"}, {"四叉钩", "四爪钩"},
             {"穿杆", "穿杆"}, {"平幔", "平幔"}, {"帘头", "平幔"}};
 
-    /** 加工单状态机（与 OrderService.STATUS_TRANSITIONS 同模式） */
-    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
+    /**
+     * 算料输入的透传白名单（键名与 ai-agent {@code routing.py} 的
+     * {@code METER_KEYS/FOLD_KEYS/HOLE_KEYS/PANEL_KEYS/SET_KEYS} 同口径）：
+     * 订单侧若已存算料输出就原样送过去，Java 侧**不发明数字**（见 {@link #calcInfo}）。
+     */
+    private static final List<String> CALC_INFO_KEYS = List.of(
+            "fabric_meters", "meters", "pleat_count", "holes", "panels", "set_count", "source");
+
+    /**
+     * 「订单行数量 = 面料米数」的计价方式（{@code OrderItem.quantity} javadoc：per_meter=米数）。
+     * 兼容前端展示标签「按米」（部分历史数据把标签写进了 processing_info）。
+     */
+    private static final Set<String> PER_METER_METHODS = Set.of("per_meter", "按米");
+
+    /** 加工单状态机（与 OrderService.STATUS_TRANSITIONS 同模式） */    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
             "generated", Set.of("issued", "cancelled"),
             "issued", Set.of("in_processing", "cancelled"),
             "in_processing", Set.of("completed", "cancelled"),
@@ -259,20 +274,30 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 实例化 payload：快照行 → 部位 → **工序库**里的基准工序序列。
+     * 实例化 payload：快照行 → 部位 → **工序库**里的基准工序序列 → **算料引擎**给出的应做数量。
      *
      * <p>部位名 = 加工产物名[+色号]（同行多套据此区分）—— 见类注释「部位语义」节：
      * 订单侧尚无部位/帘种字段 ⇒ 部位**只能**落到产品名，**待订单侧补字段后再对齐**（本包不假装已对齐）。</p>
      *
-     * <p>应做数量（qty）：库路线只给单位/单价，不给数量；Java 侧没有算料引擎
-     * （`app/production/routing.py` 的 `_qty_for` 才是米/折/孔/幅/套的精确口径 ⇒ 待接线）。
-     * 当前退化为**该部位的订单数量**，且缺值/非正数一律兜底 1 —— 绝不落 0：
-     * qty=0 会让报工的 `done_qty ≥ qty` 恒真 ⇒ 工序一开始就算完成（假完工，同族缺陷，
-     * 见 routing.py `_qty_for` 的同一红线）。</p>
+     * <p><b>应做数量（qty，issue #4208）</b>：库路线只给单位/单价，不给数量；数量的唯一真值源是
+     * 算料引擎（{@code routing.py::_qty_for}），由 {@link ProductionOperationQtyClient} 逐部位问取。
+     * 此前退化为**该部位的订单数量**（走查实测：一张数量=3 的加工单，11 道工序全显示 3.00 ⇒
+     * 「韩褶-布」显示 **3 折**）—— 那是本单要治的缺陷，**已删除该回退**：算料服务不可用 ⇒
+     * {@link ProductionOperationQtyClient#ERR_OPERATION_QTY_UNAVAILABLE} fail-closed 中止生成，
+     * 绝不静默用订单数量顶替。</p>
+     *
+     * <p><b>不落 0</b>：缺键兜底 1 由端点负责（应做 0 ⇒ 报工的 {@code done_qty ≥ qty} 恒真 ⇒ 假完工）。</p>
+     *
+     * <p><b>{@code qty_source}</b>（实例表新增列）：逐工序记录口径来源（键名 = 算料输出 /
+     * {@code <键名>_x6} = 有依据的估算 / {@code fallback} = 真兜底），供页面与排查区分
+     * 「算料输出」与「兜底」—— 兜底不再静默。</p>
      */
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> buildPositionPayload(List<Map<String, Object>> snapshot, Long tenantId) {
         List<Map<String, Object>> positions = new ArrayList<>();
+        // 与 positions **同序**：回填 qty/qty_source 时按位取，不靠部位名（同商品同色号的两行会重名）
+        List<List<Map<String, Object>>> operationRows = new ArrayList<>();
+        List<Map<String, Object>> request = new ArrayList<>();
         for (Map<String, Object> entry : snapshot) {
             if (!(entry.get("processingItems") instanceof List<?>)) {
                 continue;
@@ -290,18 +315,107 @@ public class ProcessingOrderService {
                 operation.put("unit_price", step.get("unit_price"));
                 operation.put("is_must_finish", step.get("is_must_finish"));
                 operation.put("is_start_marker", step.get("is_start_marker"));
-                operation.put("qty", positionQty(entry));
                 operations.add(operation);
             }
             String productName = str(entry.get("productName"));
             String colorName = str(entry.get("colorName"));
+            String positionName = productName == null ? "未命名部位"
+                    : (colorName == null ? productName : productName + " " + colorName);
             Map<String, Object> position = new LinkedHashMap<>();
-            position.put("position_name", productName == null ? "未命名部位"
-                    : (colorName == null ? productName : productName + " " + colorName));
+            position.put("position_name", positionName);
             position.put("operations", operations);
             positions.add(position);
+            operationRows.add(operations);
+            request.add(qtyRequest(entry, positionName, operations));
         }
+        if (positions.isEmpty()) {
+            return positions;
+        }
+        fillQty(positions, operationRows, request);
         return positions;
+    }
+
+    /** 算料请求体里的单个部位（与 ai-agent 端点冻结契约同构）。 */
+    private Map<String, Object> qtyRequest(Map<String, Object> entry, String positionName,
+                                           List<Map<String, Object>> operations) {
+        List<String> names = new ArrayList<>(operations.size());
+        for (Map<String, Object> operation : operations) {
+            names.add(String.valueOf(operation.get("operation")));
+        }
+        Map<String, Object> position = new LinkedHashMap<>();
+        position.put("position_name", positionName);
+        position.put("operations", names);
+        position.put("calc_info", calcInfo(entry));
+        return position;
+    }
+
+    /**
+     * 算料输入（issue #4208 Java 接线）。
+     *
+     * <p><b>口径依据</b>：订单行 {@code quantity} 的语义由**计价方式**决定
+     * （{@code OrderItem.quantity} javadoc：「per_meter=米数、per_set=1、per_area=宽×高」；
+     * 前端 {@code deriveProcessingQty} 同口径）⇒ {@code per_meter} 时它**就是**面料米数，
+     * 映射到算料引擎的 {@code fabric_meters} 键（**键名映射，不是第二份算料逻辑**）。</p>
+     *
+     * <p><b>已知缺口（#4118，不是本方法缺陷）</b>：订单侧**从不落库算料输出** ⇒
+     * {@code pleat_count}（折数）/ {@code panels}（幅）/ {@code set_count}（套）/ {@code holes}（孔）
+     * 一律取不到 ⇒ 端点在缺键时兜底 1 并在 {@code qty_source} 标 {@code fallback}。
+     * 真正修法是**下单时把算料输出落库**（#4118「实际褶倍算了就丢」），届时本方法只需把透传白名单
+     * 扩到那几个键即可 —— 请勿把它当 bug 反复排查。</p>
+     */
+    private Map<String, Object> calcInfo(Map<String, Object> entry) {
+        Map<String, Object> calc = new LinkedHashMap<>();
+        // ① 订单侧若已存算料输出（键名与 routing.py 的 METER_KEYS/FOLD_KEYS/… 同口径）⇒ 原样透传
+        for (String key : CALC_INFO_KEYS) {
+            Object value = entry.get(key);
+            if (value != null) {
+                calc.put(key, value);
+            }
+        }
+        // ② per_meter 计价：订单行数量即米数（键名映射；其它计价方式**不**冒充米数）
+        String sellingMethod = str(entry.get("sellingMethod"));
+        if (!calc.containsKey("fabric_meters") && sellingMethod != null
+                && PER_METER_METHODS.contains(sellingMethod)) {
+            Object quantity = entry.get("quantity");
+            if (quantity != null) {
+                calc.put("fabric_meters", quantity);
+            }
+        }
+        return calc;
+    }
+
+    /**
+     * 用算料引擎的返回回填 {@code qty} 与 {@code qty_source}。
+     *
+     * <p>fail-closed 的两个细节：① 端点返回条数与请求不符 ⇒ 客户端已抛错（不在此处补位）；
+     * ② 端点漏答某道工序（契约外形态）⇒ 同样抛错，**不**替它兜底 1 ——
+     * 静默补值会让「算料服务没答」与「算料服务答了兜底 1」长得一模一样。</p>
+     */
+    private void fillQty(List<Map<String, Object>> positions,
+                         List<List<Map<String, Object>>> operationRows,
+                         List<Map<String, Object>> request) {
+        List<ProductionOperationQtyClient.PositionQty> resolved = productionOperationQtyClient.resolve(request);
+        if (resolved.size() != positions.size()) {
+            throw new BusinessException(ProductionOperationQtyClient.ERR_OPERATION_QTY_UNAVAILABLE,
+                    "算料服务返回的部位数（" + resolved.size() + "）与请求（" + positions.size() + "）不符，已中止生成加工单",
+                    422,
+                    "请确认 ai-agent-service 版本与 admin-api 契约一致后重新生成加工单");
+        }
+        for (int i = 0; i < positions.size(); i++) {
+            ProductionOperationQtyClient.PositionQty answered = resolved.get(i);
+            for (Map<String, Object> operation : operationRows.get(i)) {
+                String name = String.valueOf(operation.get("operation"));
+                BigDecimal qty = answered.qtyByOperation().get(name);
+                if (qty == null) {
+                    throw new BusinessException(ProductionOperationQtyClient.ERR_OPERATION_QTY_UNAVAILABLE,
+                            "算料服务未返回工序「" + name + "」的应做数量，已中止生成加工单（不静默兜底）",
+                            422,
+                            "请确认 ai-agent-service 的算料端点已登记该工序的单位后重新生成加工单");
+                }
+                operation.put("qty", qty);
+                operation.put("qty_source", answered.qtySourceByOperation().get(name));
+            }
+        }
     }
 
     /**
@@ -409,20 +523,6 @@ public class ProcessingOrderService {
             }
         }
         return null;
-    }
-
-    /** 应做数量：该部位的订单数量；缺值/非正数兜底 1（绝不落 0 —— 见 buildPositionPayload 注释）。 */
-    private static BigDecimal positionQty(Map<String, Object> entry) {
-        Object raw = entry.get("quantity");
-        if (raw == null) {
-            return BigDecimal.ONE;
-        }
-        try {
-            BigDecimal qty = new BigDecimal(String.valueOf(raw));
-            return qty.signum() > 0 ? qty : BigDecimal.ONE;
-        } catch (NumberFormatException e) {
-            return BigDecimal.ONE;
-        }
     }
 
     /** 派生出的路线键 + 来源（"derived" 命中信号 / "default" 全不命中）。 */

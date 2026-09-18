@@ -132,8 +132,29 @@ cases:
     data_checks:
       - "success=true"
       - "确认卡先于写操作（GB/T 47746-2026 确认闸，与 OR-010/PR-010 模式一致）"
+    # ── 自清理 + 前置自断言（issue #4208 的 burn-down 缴费；修 CASE-TRUST-NO-SELF-CLEAN +
+    #    CASE-TRUST-NO-PRECONDITION-ASSERTION）──
+    # 病根（`assertion_taxonomy` 规则 b / #3800「重试前置与首跑不等价」+ 规则 f「多轮/写类用例
+    # 必须对自己的前置给出可判定断言」）：本用例是**多轮写用例**（轮1 interact(confirm) → 轮2 add），
+    # 却既不声明自清理、也不声明前置 —— 前置悄悄不成立时红的表现是 `unmatched expectation`，
+    # 看起来像「agent 不干活」，于是归因全错、反复修反复测。
+    # 修法 = **运行期**判据（该用例 `skip_reason: ""` ⇒ 真会跑，两条都由 runner 在跑前/跑后判定）：
+    #   ① `pre_clean[product_dedupe]`：把同名重复商品清掉 ⇒ 重试前置与首跑等价；
+    #   ② `precondition[product_count_for_keyword]`：断「遮光窗帘」在库中**恰好 1 件**
+    #      —— 名称解析要唯一才谈得上「传名称自动解析 UUID」；不成立时走 runner 已有的
+    #      `PRECONDITION_NOT_APPLIED` fail-closed 路径，而不是伪装成 agent 不干活。
+    # 断言只增不减：未改 expectations / data_checks / user_inputs 任何一条。
+    # 确定性证据（口径与 PP-001 同一份实现，不复制第二份「怎么数商品」）：runner 侧
+    #   `local_runner._PRECONDITION_TYPES['product_count_for_keyword']` + `_list_products_matching`。
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     skip_reason: ""
-    merge_log: "eval P005 独有（名称 ID 解析）；2026-09-05 #2854 适配 #2785 确认闸：改多轮确认流（轮1 interact(confirm)，轮2 确认后 add）"
+    merge_log: "eval P005 独有（名称 ID 解析）；2026-09-05 #2854 适配 #2785 确认闸：改多轮确认流（轮1 interact(confirm)，轮2 确认后 add）；2026-09-18 burn-down 缴费（issue #4208）：补 `pre_clean[product_dedupe(遮光窗帘)]` + `precondition[product_count_for_keyword(遮光窗帘)=1]`，修 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION；**这是行为层修复、不是纸面修复**（该用例 `skip_reason: \"\"` ⇒ 真会跑，pre_clean 与前置漂移检查都由 runner 在运行期执行，前置不成立时走 PRECONDITION_NOT_APPLIED fail-closed 而不是伪装成「agent 不干活」）；断言只增不减：未改 expectations / data_checks / user_inputs 任何一条"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
@@ -205,8 +226,28 @@ cases:
       - "success=true"
       - "确认卡先于写操作（GB/T 47746-2026 确认闸，与 OR-010/PR-010 模式一致）"
       - "item_ids 解析自序号 1/3/5 对应加工项（LLM 可传名称或序号，resolver 兜底；序号解析单测见 test_id_resolver.py）"
+    # ── 自清理 + 前置自断言（issue #4208 的 burn-down 缴费；修 CASE-TRUST-NO-SELF-CLEAN +
+    #    CASE-TRUST-NO-PRECONDITION-ASSERTION）──
+    # 与 PP-003 同形（同一件商品、同一条「名称解析要唯一」的前提），故用**同一份**口径，
+    # 不另立第二套「怎么数商品」（runner 侧唯一实现 = `_list_products_matching`）：
+    #   ① `pre_clean[product_dedupe]`：把同名重复商品清掉 ⇒ 重试前置与首跑等价（#3800）；
+    #   ② `precondition[product_count_for_keyword]`：断「遮光窗帘」在库中**恰好 1 件**
+    #      —— 「给遮光窗帘添加第 1、3、5 个加工项」的第一步就是把**名称**解析成唯一商品；
+    #      不成立时走 runner 已有的 `PRECONDITION_NOT_APPLIED` fail-closed 路径，
+    #      而不是伪装成「agent 不干活」（#3832/#3794 的同族归因错位）。
+    # 声明范围如实限定：本前置覆盖**名称解析**这一段前提，**不**声称覆盖「加工项列表顺序稳定」
+    # （那是序号解析的另一段前提，现行 `_PRECONDITION_TYPES` 无对应类型 —— 不写不存在的类型，
+    # 否则就是「基于错误真相模型写出的护栏」= 永远红/空判据）。
+    # 断言只增不减：未改 expectations / data_checks / user_inputs 任何一条。
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     skip_reason: ""
-    merge_log: "eval P006 独有（序号 ID 解析）；2026-09-05 #2854 适配 #2785 确认闸：改多轮确认流（轮1 interact(confirm)，轮2 确认后 add）；action 强校验 + success=true 落评分（#2854 P0-3），item_ids 不写死数字——实测 LLM 会把序号翻译为名称传参（业务等价），序号→UUID 解析真值由 test_id_resolver.py 单测覆盖"
+    merge_log: "eval P006 独有（序号 ID 解析）；2026-09-05 #2854 适配 #2785 确认闸：改多轮确认流（轮1 interact(confirm)，轮2 确认后 add）；action 强校验 + success=true 落评分（#2854 P0-3），item_ids 不写死数字——实测 LLM 会把序号翻译为名称传参（业务等价），序号→UUID 解析真值由 test_id_resolver.py 单测覆盖；2026-09-18 burn-down 缴费（issue #4208）：补 `pre_clean[product_dedupe(遮光窗帘)]` + `precondition[product_count_for_keyword(遮光窗帘)=1]`，修 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION；**这是行为层修复、不是纸面修复**（该用例 `skip_reason: \"\"` ⇒ 真会跑，pre_clean 与前置漂移检查都由 runner 在运行期执行）；声明范围如实限定为「名称解析唯一」这一段前提，不声称覆盖序号解析的顺序稳定性；断言只增不减"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"

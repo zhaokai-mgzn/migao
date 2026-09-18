@@ -4299,6 +4299,24 @@ _CASE_PG_021 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-022 [NORMAL] 应做数量接算料引擎（Java 接线）——ProductionOperationQtyClient + buildPositionPayload + qty_source 列（源: cases/processing-order.yml）──
+_CASE_PG_022 = EvalCase(
+    id='PG-022',
+    legacy_id='',
+    title='应做数量接算料引擎（Java 接线）——ProductionOperationQtyClient + buildPositionPayload + qty_source 列',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '端到端判据（issue #4208 验收判据 5，**红证形态**）：新生成加工单的工序实例 `qty` = 算料引擎输出且 **≠ 订单数量** —— 走查实测的红证就是「韩褶-布 显示 3 折」（11 道工序全等于订单数量 3）。逐值断言：米类 12.3（`fabric_meters`）、折类 24（`pleat_count`）、套/幅类兜底 1（`fallback`）。证据：ProcessingOrderServiceTest「generateTakesQtyFromCalcEngineNotFromOrderQuantity」（订单数量=2，断言 qty 逐条 ≠ 2 且 12.3/24）+「generateInstantiatesOperationsVerbatimFromOperationLibrary」（11 道逐条）+「derivePositionPayloadUsesOperationLibrary」（存量单补工序的派生路径同一份）', '客户端冻结契约（issue #4208 §② 冻结契约逐字）：全路径 `POST /api/internal/production/operation-qty`、鉴权头 `X-Service-Token`（复用**已有**配置键 `ai-agent.base-url` / `ai-agent.service-token`，**未新增配置键**）、请求体 `{positions:[{position_name, operations[], calc_info}]}`、响应外壳 `{success, data, requestId, timestamp}` 且 `data.positions[].{position_name, qty_by_operation, qty_source_by_operation}`。证据：ProductionOperationQtyClientTest「sendsFrozenContractAndParsesQtyVerbatim」（逐字段断言 URL / 头 / 请求体 / 解析值）', '**降级 = fail-closed**（本单要治的缺陷的反面）：算料服务不可达 / 未配置 service-token / 外壳 `success != true` / 响应条数与请求不符 / 端点漏答某道工序 ⇒ 一律 `BusinessException(code=PRODUCTION_OPERATION_QTY_UNAVAILABLE, httpStatus=422, suggestion=可行动)`，且**不落半成品**（加工单行、工序实例、订单状态三者都不动）。**绝不静默回退订单数量** —— 那正是 issue #4208 的病根。证据：ProductionOperationQtyClientTest 3 项（未配置 token 且不发请求 / 不可达 / success=false）+「responseShapeMismatchFailsClosed」+ ProcessingOrderServiceTest「generateFailsClosedWhenQtyServiceUnavailable」（断言 code/suggestion 且 insert/updateOrderStatus 零调用）', "`qty_source` 真落库（口径来源可观测，「兜底不静默」的唯一凭据）：实例表新增列 `processing_position_operations.qty_source`（V57 迁移，`ADD COLUMN IF NOT EXISTS`、**可空** —— 存量行 NULL = 本列引入前的旧实例，与 `fallback` 可区分），三源收敛 = 迁移列 ↔ Java 实体 `ProcessingPositionOperation.qtySource` ↔ 落库语句 `ProductionService.instantiate`（并进幂等签名，防配置漂移检测不到）。判据「米类 `qty_source != 'fallback'`、套类 `== 'fallback'`」由 ProcessingOrderServiceTest 的两条实例断言覆盖。证据：ProductionPositionOperationQtySourceMigrationTest 3 项 + ProductionControllerTest 的派生落库路径", '不落 0（真值源同族红线）：应做 0 ⇒ 报工的 `done_qty ≥ qty` 恒真 ⇒ 假完工。缺键兜底 1 由**端点**负责（客户端不自行补值 —— 防第二份兜底口径）。证据：ProductionOperationQtyClientTest「clientDoesNotInventFallbackValues」+ ProcessingOrderServiceTest 的 `isNotEqualByComparingTo(ZERO)` 断言', '`calc_info` 组装口径（**有仓内依据，不是第二份算料逻辑**）：订单行 `quantity` 的语义由计价方式决定（`OrderItem.quantity` javadoc「per_meter=米数、per_set=1、per_area=宽×高」；前端 `deriveProcessingQty` 同口径）⇒ `per_meter` 时映射为 `fabric_meters`；其它计价方式**不**冒充米数；订单侧已存的算料键原样透传。证据：ProcessingOrderServiceTest「calcInfoDoesNotInventFabricMetersForNonPerMeter」+ 上面端到端用例里的请求体断言', '**已知缺口（如实登记，非本条缺陷）**：订单侧**从不落库算料输出**（全仓零处写 `fabric_meters`/`pleat_count`）⇒「折 / 幅 / 套」类只能落**显式标注的兜底 1**（`qty_source=fallback`）；「孔」类因传了米数而行使命中端点的「每米 6 孔」估算分支（`fabric_meters_x6`）。因此 issue #4208 原始判据「韩褶-布 要变成真实折数」**本单达不到**，本单修对的是**米/孔**两列。真正的修法是**下单时把算料输出落库**，跟随项 = #4118（其标题原文即「实际褶倍算了就丢」）'],
+    skip_reason='[backend-contract] 后端契约用例（生成加工单是服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionOperationQtyClientTest（客户端冻结契约 + fail-closed 四态）/ ProcessingOrderServiceTest（端到端 qty + calc_info 口径 + fail-closed 不落半成品）/ ProductionPositionOperationQtySourceMigrationTest（V57 迁移 ↔ 实体 ↔ 落库语句三源收敛）/ ProductionControllerTest（存量单补工序的派生路径）',
+    tags=['processing-order', 'production-reporting', 'operation-qty', 'calc-engine'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -4354,6 +4372,8 @@ _CASE_PP_003 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PP-005 [NORMAL] 加工项查询 - 按适用商品分类筛选并透传关联数据（源: cases/processing.yml）──
@@ -4391,6 +4411,8 @@ _CASE_PP_004 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PP-006 [NORMAL] 加工项计价方式 - 按米/按套/一口价/按面积，无 per_piece 与每米数量（源: cases/processing.yml）──
@@ -6385,6 +6407,7 @@ ALL_CASES = (
     _CASE_PG_019,
     _CASE_PG_020,
     _CASE_PG_021,
+    _CASE_PG_022,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,

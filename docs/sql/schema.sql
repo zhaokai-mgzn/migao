@@ -829,6 +829,7 @@ CREATE TABLE IF NOT EXISTS processing_position_operations (
     group_name VARCHAR(16),
     unit VARCHAR(16),
     qty NUMERIC(12,2) NOT NULL DEFAULT 0,            -- 应做数量（算料引擎输出）
+    qty_source VARCHAR(32),                          -- 应做数量的口径来源（V57，issue #4208）：键名=算料输出 / <键名>_x6=每米6孔估算 / fallback=真兜底1
     unit_price NUMERIC(10,2) NOT NULL DEFAULT 0,     -- 实例快照单价
     factor NUMERIC(6,2) NOT NULL DEFAULT 1,          -- 特殊选项计件系数（一分二 ×1.7）
     is_must_finish BOOLEAN NOT NULL DEFAULT FALSE,

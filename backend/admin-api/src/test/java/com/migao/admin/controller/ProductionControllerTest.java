@@ -27,6 +27,7 @@ import com.migao.admin.service.OrderService;
 import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
 import com.migao.admin.service.ProductionOperationQueryService;
+import com.migao.admin.service.ProductionOperationQtyClient;
 import com.migao.admin.service.ProductionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -107,6 +108,9 @@ class ProductionControllerTest {
     private ProcessingItemMapper processingItemMapper;
     @Mock
     private OrderService orderService;
+    /** 应做数量来源（issue #4208 接线）：存量单补工序的派生路径与 generate 路径同一份，故也要打桩。 */
+    @Mock
+    private ProductionOperationQtyClient operationQtyClient;
 
     @BeforeEach
     void setUp() {
@@ -122,7 +126,7 @@ class ProductionControllerTest {
         // 与 generate 路径**同一份**路线解析（不复制第二份）。
         ProcessingOrderService processingOrderService = new ProcessingOrderService(
                 processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper,
-                orderService, objectMapper, service, queryService);
+                orderService, objectMapper, service, queryService, operationQtyClient);
         ProductionOperationCommandService commandService = new ProductionOperationCommandService(
                 productionOperationMapper, priceVersionMapper, queryService);
         mockMvc = MockMvcBuilders.standaloneSetup(
@@ -134,6 +138,24 @@ class ProductionControllerTest {
         // §5-1 原子有序推进：真实 DB 首执影响 1 行；CAS 失败由专测打桩为 0
         when(positionOperationMapper.advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
+        // 应做数量（issue #4208）：派生/生成路径都要问算料引擎；本类不测算料口径，
+        // 故统一返回**与订单数量一致**的 2（既有断言「qty=2」的语义由「退化」变成「引擎输出」，
+        // 算料口径本身的判据在 ProcessingOrderServiceTest / ProductionOperationQtyClientTest）。
+        when(operationQtyClient.resolve(any())).thenAnswer(inv -> {
+            List<Map<String, Object>> request = inv.getArgument(0);
+            List<ProductionOperationQtyClient.PositionQty> resolved = new ArrayList<>();
+            for (Map<String, Object> position : request) {
+                Map<String, BigDecimal> qty = new LinkedHashMap<>();
+                Map<String, String> source = new LinkedHashMap<>();
+                for (Object raw : (List<?>) position.get("operations")) {
+                    qty.put(String.valueOf(raw), new BigDecimal("2"));
+                    source.put(String.valueOf(raw), "fallback");
+                }
+                resolved.add(new ProductionOperationQtyClient.PositionQty(
+                        (String) position.get("position_name"), qty, source));
+            }
+            return resolved;
+        });
     }
 
     @AfterEach
@@ -748,7 +770,7 @@ class ProductionControllerTest {
                     .operationName((String) step.get("operation"))
                     .groupName((String) step.get("group")).unit((String) step.get("unit"))
                     .qty(new BigDecimal("2")).unitPrice((BigDecimal) step.get("unit_price"))
-                    .factor(BigDecimal.ONE)
+                    .factor(BigDecimal.ONE).qtySource("fallback")
                     .isMustFinish((Boolean) step.get("is_must_finish"))
                     .isStartMarker((Boolean) step.get("is_start_marker"))
                     .status("pending").doneQty(BigDecimal.ZERO).deleted(0).build());
