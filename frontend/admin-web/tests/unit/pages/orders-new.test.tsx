@@ -700,14 +700,13 @@ describe('NewOrderPage', () => {
               id,
               name: id === 'p2' ? '配套纱帘' : '遮光窗帘',
               skus: [],
-              supportsProcessing: false,
               price: id === 'p2' ? 60 : 100,
             },
           },
         })
       )
-      mockGetProductProcessingItems.mockResolvedValue({ data: { data: [] } })
-
+      // ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：商品 payload 已无 `supportsProcessing`/`processingItems`，
+      // 加工项改由**店铺级目录**端点提供（本组樘窗判据不需要加工项 ⇒ 用 beforeEach 的空目录默认桩）。
       render(<NewOrderPage />)
 
       // 第一行：布帘商品
