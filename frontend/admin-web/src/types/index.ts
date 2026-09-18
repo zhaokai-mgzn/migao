@@ -617,6 +617,16 @@ export interface ProcessingOrder {
   cancelledAt?: string
   cancelledReason?: string
   printCount?: number
+  /** 本单工序来源的路线键（**实际使用**），形如 `布帘×韩褶`（issue #4308 新增列） */
+  routeKey?: string
+  /** 派生出的路线键（可能工序库里没有；两维全不命中时为 null）—— 只有 missing_route 提示要用它 */
+  routeRequestedKey?: string
+  /**
+   * 路线来源（四态，见 #4308 冻结清单 + 末尾「冻结补遗」）：
+   * derived 正常派生 / partial 只命中一维 / missing_route 两维命中但库里没这条路线 /
+   * default 两维全不命中取默认（静默回落的可观测面）。
+   */
+  routeSource?: 'derived' | 'partial' | 'missing_route' | 'default' | string
 }
 
 export interface ProcessingOrderGenerateResult {
@@ -753,6 +763,92 @@ export interface Routing {
 export interface RoutingsResponse {
   total?: number
   routings?: Routing[]
+}
+
+// ── 工艺路线商家可配（issue #4307 前端半边；契约所有者 = 后端 4308）──
+// 端点与字段名以 issue #4308 的冻结清单为准，前端不得自行发明（新增字段一律登记在这里）。
+
+/** 信号映射一行：加工项名/商品名里的信号 → 部位/工艺（库数据，不再读硬编码常量表） */
+export interface RouteSignal {
+  id: number
+  signal: string
+  curtain_type: string
+  craft: string
+  priority?: number
+  status?: string
+}
+
+/** GET /api/admin/production/route-signals（列表包裹在 signals 键下） */
+export interface RouteSignalsResponse {
+  total?: number
+  signals?: RouteSignal[]
+}
+
+/** 信号映射写参数（POST 新增 / PUT 修改同一形态） */
+export interface RouteSignalParams {
+  signal: string
+  curtain_type: string
+  craft: string
+  priority?: number
+}
+
+/** PUT /api/admin/production/routings/{id} body —— 有序工序名列表（seq 由服务端归一为 1..N） */
+export interface RoutingSequenceParams {
+  operations: string[]
+}
+
+/** POST /api/admin/production/routings body（新建路线；initial 序列可空，随后在编辑区排序） */
+export interface RoutingCreateParams {
+  curtain_type: string
+  craft: string
+  operations?: string[]
+}
+
+/**
+ * 路线写端点失败时的响应体（护栏理由）—— 后端**真实**信封（issue #4308「冻结补遗 ②」）：
+ * `{success:false, error:{code, message, details:[{field, message}]}, suggestion}`。
+ * - `error.details[].message`：**逐条**护栏理由（空序列 / 工序不存在 / 重复 / 缺必完工序）—— **主口径**；
+ * - `error.message`：一句话摘要 —— 仅在 `details` 缺失时退化使用；
+ * - `field`：违规维度（如 `operations[2]` / `must_finish`），**只用于定位，不展示给商家**。
+ *
+ * 前端**不得**把这些理由吞成一句「保存失败」（issue #4307 交付物 1）。
+ * ⚠️ 不存在顶层 `error_messages` 字段，`error` 也不是字符串 —— 按那个形状读会让失败路径静默退化。
+ */
+export interface RoutingGuardErrorBody {
+  error?: {
+    code?: string
+    message?: string
+    details?: { field?: string; message?: string }[]
+  }
+}
+
+/** POST /api/admin/production/operations（新增工序：建新路线时必须有工序可选） */
+export interface RouteOperationCreateParams {
+  name: string
+  group_name?: string
+  unit?: string
+  unit_price: number
+  position?: string
+}
+
+/** 缺口语义（GET /api/admin/production/routing-gaps）：两类缺口都是**可行动项** */
+export interface RoutingGapOperation {
+  name: string
+  group_name?: string | null
+  unit?: string | null
+  unit_price?: number | null
+}
+
+/** 库里没有任何（活跃）路线的信号组合 —— 这些组合目前会静默回落到默认路线 */
+export interface RoutingGapSignalKey {
+  curtain_type: string
+  craft: string
+}
+
+/** GET /api/admin/production/routing-gaps */
+export interface RoutingGaps {
+  unrouted_operations?: RoutingGapOperation[]
+  signal_keys_without_route?: RoutingGapSignalKey[]
 }
 
 export interface PieceworkWorkerAmount {

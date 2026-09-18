@@ -33,6 +33,7 @@ import {
   Factory,
   ClipboardCheck,
   ListChecks,
+  Route,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
@@ -69,6 +70,7 @@ const iconMap: Record<string, LucideIcon> = {
   Factory,
   ClipboardCheck,
   ListChecks,
+  Route,
 }
 
 interface SidebarProps {

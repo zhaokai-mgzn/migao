@@ -1,4 +1,4 @@
-// case_ids: PP-011, PG-019
+// case_ids: PP-011, PG-019, PP-014
 // PP-011（issue #4000，M4-H 按需单据渲染）：加工单生产明细页 /processing-orders/{id}/production
 // —— 头部（加工单号/订单号/状态/进度/交期）+ 工序进度表 + 计件汇总 + 打印任务卡入口，
 // 接口失败要有友好错误提示与重试（不白屏）。
@@ -8,6 +8,9 @@
 // PG-019（issue #4240，前端半边）：真值源 §1「二维码 token 化、可撤销」的 UI 发射点 ——
 // 生产明细页「撤销二维码」入口（二次确认后才发 POST .../qr-token/revoke，按 processing:manage 显隐）
 // → 撤销后刷新回占位态 + 可见「已撤销」反馈。
+// PP-014（issue #4307 交付物 2，契约所有者 = 后端 4308）：`route_source` **四态**的用户侧可观测面
+// —— derived 不提示 / partial 提示另一半取默认 / missing_route 提示「识别的是 X（route_requested_key）
+// 但库里没这条路线」/ default 高亮提示核对工序与计件单价；字段缺失 = 未知 ⇒ 不得显示成「已派生」。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -379,5 +382,75 @@ describe('加工单生产明细页', () => {
     expect(screen.queryByTestId('production-revoke-success')).not.toBeInTheDocument()
     expect(screen.getByTestId('task-card-qr')).toBeInTheDocument()
     expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument()
+  })
+})
+
+// ── 路线来源提示（issue #4307 交付物 2 / #4308 P1「静默回落」的用户侧可观测面）──
+// 四态：derived 不提示；partial 提示「另一半取默认值」；missing_route 提示「识别的是 X，
+// 但库里没有这条路线」；default 高亮提示「未识别工艺信号，请核对工序与计件单价」。
+// 红证（实现前）：三态全部静默 ⇒ 罗马帘订单拿到布帘 11 道工序而用户面零提示。
+describe('加工单生产明细页 — 路线来源提示（PP-014）', () => {
+  const withRoute = (routeSource: string, routeKey: string, routeRequestedKey?: string) => ({
+    ...PROCESSING_ORDER,
+    routeSource,
+    routeKey,
+    ...(routeRequestedKey ? { routeRequestedKey } : {}),
+  })
+
+  beforeEach(() => {
+    mockUseAuthStore.mockReset().mockReturnValue({
+      user: { id: 'u-1', name: '运营', roles: ['operator'], permissions: ['processing:manage'] },
+    })
+    mockGetOrderOperations.mockReset().mockResolvedValue(ok(OPERATIONS))
+    mockGetPiecework.mockReset().mockResolvedValue(ok(PIECEWORK))
+    mockRecordPrint.mockReset().mockResolvedValue(ok({ print_count: 1 }))
+  })
+
+  it('default（两维全不命中）：高亮提示 + 报出实际使用的路线键', async () => {
+    mockDetail.mockReset().mockResolvedValue(ok(withRoute('default', '布帘×韩褶')))
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('production-route-default')).toBeInTheDocument())
+    expect(screen.getByTestId('production-route-default')).toHaveTextContent('未识别工艺信号')
+    expect(screen.getByTestId('production-route-default')).toHaveTextContent('请核对工序与计件单价')
+    expect(screen.getByTestId('production-route-default-detail')).toHaveTextContent('布帘×韩褶')
+    expect(screen.queryByTestId('production-route-partial')).not.toBeInTheDocument()
+  })
+
+  it('partial（只命中一维）：提示另一半取默认值，且不显示成 default', async () => {
+    mockDetail.mockReset().mockResolvedValue(ok(withRoute('partial', '纱帘×韩褶')))
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('production-route-partial')).toBeInTheDocument())
+    expect(screen.getByTestId('production-route-partial')).toHaveTextContent('只识别出一半')
+    expect(screen.queryByTestId('production-route-default')).not.toBeInTheDocument()
+  })
+
+  it('missing_route（两维都命中但库里没这条路线）：报出识别到的键 route_requested_key', async () => {
+    mockDetail.mockReset().mockResolvedValue(ok(withRoute('missing_route', '布帘×韩褶', '罗马帘×韩褶')))
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('production-route-missing_route')).toBeInTheDocument())
+    expect(screen.getByTestId('production-route-missing_route')).toHaveTextContent('工序库里没有这条路线')
+    expect(screen.getByTestId('production-route-missing_route-detail')).toHaveTextContent('本单识别的是 罗马帘×韩褶')
+    expect(screen.getByTestId('production-route-missing_route-detail')).toHaveTextContent('本单实际使用：布帘×韩褶')
+  })
+
+  it('derived（正常派生）/ 字段缺失：不提示，且不得把「未知」显示成「已派生」', async () => {
+    mockDetail.mockReset().mockResolvedValue(ok(withRoute('derived', '布帘×韩褶')))
+    const { unmount } = render(<ProductionDetailPage />)
+    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
+    expect(screen.queryByTestId('production-route-default')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('production-route-partial')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('production-route-missing_route')).not.toBeInTheDocument()
+    unmount()
+
+    // 存量实例（字段缺失）⇒ 静默 = 未知，不提示任何来源
+    mockDetail.mockReset().mockResolvedValue(ok(PROCESSING_ORDER))
+    render(<ProductionDetailPage />)
+    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
+    expect(screen.queryByTestId('production-route-default')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('production-route-partial')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('production-route-missing_route')).not.toBeInTheDocument()
   })
 })
