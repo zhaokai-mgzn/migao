@@ -5063,6 +5063,7 @@ _CASE_PR_011 = EvalCase(
     must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
     pre_clean=[{'type': 'product_remove', 'product_keyword': 'E2E引导建品样品帘'}],
     namespaces=['product_name:E2E引导建品样品帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': 'E2E引导建品样品帘', 'expect': 0, 'max_growth': 1}],
 )
 
 # ── PR-012 [NORMAL] 商品创建中途修改 - 用户纠偏（源: cases/product.yml）──

@@ -3619,7 +3619,7 @@
 必须成功: product_manage(create)
 ```
 真值: product-sku-stock.create-flow, product-sku-stock.create-confirm, ai-chat.validate-input
-溯源: eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）；2026-09-15（issue #3835）改名去种子撞名（同 PR-016 口径）：`名称叫夏日清风窗帘` → `名称叫E2E引导建品样品帘`（种子 `prod_eval_summer` 就叫「夏日清风窗帘」⇒ 运行期造同名副本；且它是**单一声明者** ⇒ 争用组不成立、隔离为零）；`pre_clean: product_remove{测试窗帘}` → 自有名（顺带消除对 PR-008「测试窗帘A」的子串误删）；expectations/data_checks 原样未动。2026-09-19（#4371 商品↔加工项解耦）：删除「需要打孔和韩式折边这两个加工项」一轮 + `expectations[processing_item_query]` + `data_checks[创建的加工项数量 = 2]`（改为 = 0，与解耦后的真值一致）—— 建品不再询问/关联加工项；引导流程断言（interact choice / validate_input / product_manage create）原样未动。 ｜ tags: multi_turn, guided_flow, full_create, processing_item
+溯源: eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）；2026-09-15（issue #3835）改名去种子撞名（同 PR-016 口径）：`名称叫夏日清风窗帘` → `名称叫E2E引导建品样品帘`（种子 `prod_eval_summer` 就叫「夏日清风窗帘」⇒ 运行期造同名副本；且它是**单一声明者** ⇒ 争用组不成立、隔离为零）；`pre_clean: product_remove{测试窗帘}` → 自有名（顺带消除对 PR-008「测试窗帘A」的子串误删）；expectations/data_checks 原样未动。2026-09-19（#4371 商品↔加工项解耦）：删除「需要打孔和韩式折边这两个加工项」一轮 + `expectations[processing_item_query]` + `data_checks[创建的加工项数量 = 2]`（改为 = 0，与解耦后的真值一致）—— 建品不再询问/关联加工项；引导流程断言（interact choice / validate_input / product_manage create）原样未动。2026-09-19（issue #4412 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规）：补 `precondition[product_count_for_keyword: E2E引导建品样品帘, expect: 0, max_growth: 1]` —— 创建前提 = 该名字下无既有商品（残留 ⇒ 建出同名副本，红的表现像「agent 不会建品」，归因全错）；`expect: 0` 判基线、`max_growth: 1` 容忍本用例自己造的那一个（自建目标先例：chat.yml #4099 / hr.yml HR-002）。断言（user_inputs / expectations / must_succeed / pre_clean / namespaces）原样未动、无放宽。 ｜ tags: multi_turn, guided_flow, full_create, processing_item
 
 ### PR-012. 商品创建中途修改 - 用户纠偏 🔵
 ```
