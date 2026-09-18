@@ -343,7 +343,7 @@ test.describe('生产看板 /production（加工单唯一入口）', () => {
   })
 
   test('状态筛选：选「已发加工」只显示 issued 行（结果可见）', async ({ page }) => {
-    await page.locator('select').selectOption('issued')
+    await page.getByLabel('状态筛选').selectOption('issued')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(300)
 
@@ -352,7 +352,7 @@ test.describe('生产看板 /production（加工单唯一入口）', () => {
     await expect(page.getByText('JG-20260603-0003')).not.toBeVisible()
 
     // 再筛「已生成」→ 只显示 generated 行
-    await page.locator('select').selectOption('generated')
+    await page.getByLabel('状态筛选').selectOption('generated')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(300)
     await expect(page.getByText('JG-20260601-0001')).toBeVisible()
@@ -392,7 +392,7 @@ test.describe('生产看板 /production（加工单唯一入口）', () => {
     await page.getByRole('button', { name: '重置' }).click()
     await page.waitForTimeout(300)
     await expect(page.getByPlaceholder('请输入加工单号或订单号')).toHaveValue('')
-    await expect(page.locator('select')).toHaveValue('')
+    await expect(page.getByLabel('状态筛选')).toHaveValue('')
     await expect(page.getByText('JG-20260601-0001')).toBeVisible()
   })
 
