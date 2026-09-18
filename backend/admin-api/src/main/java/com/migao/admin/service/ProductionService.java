@@ -311,7 +311,7 @@ public class ProductionService {
      * 无加工单/无实例时为「未开始」态而不是错误态（current_operation 为空串，交期为 null）。
      *
      * 订单解析与报工链路同口径（issue #4007）：复用 {@link #resolveOrder} 的
-     * order_id → order_no → qr_token 三形态，**不得只认 order_no** —— agent 侧拿到的是
+     * order_id → order_no → qr_token → processing_order_no 四形态，**不得只认 order_no** —— agent 侧拿到的是
      * 内部 order_id（CH-039/CH-040 的 `no_success(production_progress_query)` 病灶）。
      */
     public Map<String, Object> progress(String orderNo, Long tenantId) {
@@ -846,9 +846,11 @@ public class ProductionService {
     /**
      * 订单解析（租户隔离：跨租户/软删视同不存在）。
      *
-     * 支持三形态（issue #4005——打印的加工单二维码内容是 {@code qr_token}，
+     * 支持四形态（issue #4005 + #4222——打印的加工单二维码内容是 {@code qr_token}，
      * 若只按内部 order_id 解析，工人扫真码会得到「订单不存在」）：
-     * ① 内部 order_id；② 订单号 order_no（手输纸质单号）；③ 加工单 qr_token（打印二维码内容）。
+     * ① 内部 order_id；② 订单号 order_no（手输纸质单号）；③ 加工单 qr_token（打印二维码内容）；
+     * ④ 加工单号 processing_order_no（工人端「手输加工单号」兜底路径 + 任务卡上唯一可抄的号，
+     * issue #4222）。四级都不中才 404。
      * 用字符串列名而非 Lambda 列名：Standalone MockMvc 单测环境没有 MyBatis-Plus TableInfo 缓存
      * （同本类既有的 UpdateWrapper 做法）。
      */
@@ -866,6 +868,19 @@ public class ProductionService {
             // ③ qr_token 兜底（加工单二维码内容 → 加工单 → 订单）
             ProcessingOrder po = processingOrderMapper.selectOne(new QueryWrapper<ProcessingOrder>()
                     .eq("qr_token", key)
+                    .eq("tenant_id", tenantId)
+                    .eq("deleted", 0)
+                    .last("LIMIT 1"));
+            order = po == null ? null : orderMapper.selectById(po.getOrderId());
+        }
+        if (!isResolvable(order, tenantId)) {
+            // ④ processing_order_no 兜底（加工单号 JG-YYYYMMDD-XXXX → 加工单 → 订单，issue #4222）
+            //    工人端「或手输加工单号」兜底路径、以及任务卡上唯一可抄的号（text-2xl 加工单号；
+            //    qr_token 只以二维码图形呈现、无可读文本）都是**加工单号**，而 ③ 只认 qr_token
+            //    ⇒ 只认 ①②③ 时这条 UI 自己要求的输入必然「未找到该加工单」。
+            //    与 ③ 同构（同租户 + deleted=0 + LIMIT 1），插在 ③ **之后**：既有三形态优先级不变。
+            ProcessingOrder po = processingOrderMapper.selectOne(new QueryWrapper<ProcessingOrder>()
+                    .eq("processing_order_no", key)
                     .eq("tenant_id", tenantId)
                     .eq("deleted", 0)
                     .last("LIMIT 1"));
