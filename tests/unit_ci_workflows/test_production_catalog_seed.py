@@ -198,6 +198,43 @@ def key_of(operation_row: dict) -> str:
     return normalize_value(operation_row["name"])
 
 
+def ident(raw) -> str:
+    """**标识符**归一：只去引号/空白，**不做大小写折叠**。
+
+    ⚠️ 为什么不复用 `normalize_value`：它的兜底 `return value.upper()` 是给 **SQL 字面量**
+    （`TRUE` / `FALSE` / 未加引号的枚举）准备的；而**标识符大小写敏感** —— 用在工序名/路线 id 上
+    会把 `logo条-布` 变成 `LOGO条-布`。实测本文件初版即在此处**假红**
+    （`test_template_matches_python_catalog`：`At index 31 diff: 'LOGO条-布' != 'logo条-布'`，
+    而四个源里的真值**全是小写** `logo条-布`）。
+    另：SQL 侧的值带外层单引号（`'rt-v54-01'`），模板 JSON 侧不带 ⇒ 必须走**同一个**归一函数，
+    否则两侧口径不同（苹果比橘子）。
+    """
+    s = str(raw).strip()
+    if len(s) >= 2 and s.startswith("'") and s.endswith("'"):
+        return s[1:-1]
+    return s
+
+
+def routing_row_of(row: dict) -> dict:
+    """路线行的**两侧同构**归一（模板 JSON 行 与 迁移 SQL 行 都走这里）。
+
+    只取两侧共有的业务列（`tenant_id` 是迁移侧的种子列，模板里没有、也不该有）；
+    `operations` 统一成**有序 tuple**（路线是有序序列，顺序敏感）。
+    """
+    ops = row.get("operations")
+    if isinstance(ops, (list, tuple)):
+        ops_norm = tuple(str(o) for o in ops)
+    else:
+        ops_norm = normalize_routing_operations(str(ops))
+    return {
+        "id": ident(row.get("id")),
+        "curtain_type": ident(row.get("curtain_type")),
+        "craft": ident(row.get("craft")),
+        "operations": ops_norm,
+        "status": ident(row.get("status")),
+    }
+
+
 def op_values(operation_row: dict) -> dict:
     """工序行的**逐值**口径（不含 id/sort_order：id 是各迁移自有的确定性命名、sort_order 是排序位）。
 
@@ -211,6 +248,34 @@ def op_values(operation_row: dict) -> dict:
 def by_name(rows):
     """[{列: 值}] → {工序名: 逐值 dict}（多源聚合的比对口径，不依赖跨文件行序）。"""
     return {key_of(r): op_values(r) for r in rows}
+
+
+#: `op_values` 的**标识符安全**版要覆盖的列（与 `op_values` 同一组，口径只差归一函数）
+_OP_COLUMNS = ("group_name", "position", "unit", "unit_price",
+               "is_must_finish", "is_start_marker", "status")
+
+
+def op_values_ident(operation_row: dict) -> dict:
+    """`op_values` 的**标识符安全**版：全部列走 `ident`（**不折叠大小写**）。
+
+    为什么需要它（实测 issue #4361 的模板守卫初版即在此处假红）：模板 JSON 侧的值**不带引号**
+    ⇒ 走 `normalize_value` 会落到 `.upper()` 兜底（`active` → `ACTIVE`）；而 SQL 侧的值**带引号**
+    ⇒ `normalize_value` 在引号分支就原样返回（`'active'` → `active`）⇒ 两侧同为 `active` 却比出
+    `ACTIVE != active`。**不动 `op_values`**：它同时服务四源守卫（SQL↔Python），那两侧都是 SQL
+    字面量口径，改动无收益且会牵动已在绿的判据。
+    """
+    # 文本列走 `ident`（不折叠大小写）；**数值列走 `normalize_value`** —— 模板 JSON 里写的
+    # 可能是 `1` / `2`（整数），而迁移 SQL 里是 `1.0` / `2.0` ⇒ 只有数字归一分支能对齐
+    # （实测：全用 `ident` 时恰有 7 条数值列不同的工序假红：外帘发货/外帘打卷/外帘装袋/
+    # 帘头制作/抱枕/接高-布/腰靠垫）。
+    return {col: (normalize_value(operation_row[col]) if col == "unit_price"
+                  else ident(operation_row[col]))
+            for col in _OP_COLUMNS}
+
+
+def by_name_ident(rows):
+    """同 `by_name`，但走 `op_values_ident`（跨**格式**比对专用：模板 JSON ↔ 迁移 SQL）。"""
+    return {ident(r["name"]): op_values_ident(r) for r in rows}
 
 
 # ── 夹具：Python 真值源 ──
@@ -428,10 +493,15 @@ def test_template_matches_python_catalog(template_json, catalog_rows, python_cat
     rows = template_operations(template_json)
     assert rows, "模板未解析到任何工序"
 
-    assert [key_of(r) for r in rows] == list(catalog.keys()), (
+    # 两侧都走 `ident`（**不折叠大小写**）：模板 JSON 侧的值不带引号、SQL 侧带引号，
+    # 只有同一个归一函数才能可比（`key_of` 走 `normalize_value`，其 `.upper()` 兜底会把
+    # `logo条-布` 变成 `LOGO条-布` ⇒ 假红，实测本文件初版即踩）。
+    assert [ident(r["name"]) for r in rows] == [ident(k) for k in catalog.keys()], (
         "模板工序名集合/顺序与 OPERATION_CATALOG 不一致（改名或加减工序必须同步模板）")
-    assert by_name(rows) == by_name(catalog_rows), (
-        f"模板工序与迁移种子漂移：{_diff_keys(by_name(rows), by_name(catalog_rows))}")
+    # 跨**格式**比对（模板 JSON ↔ 迁移 SQL）走标识符安全口径 —— 两侧引号形态不同，
+    # 只有同一个不折叠大小写的归一函数才可比（见 `op_values_ident` 的实测说明）。
+    assert by_name_ident(rows) == by_name_ident(catalog_rows), (
+        f"模板工序与迁移种子漂移：{_diff_keys(by_name_ident(rows), by_name_ident(catalog_rows))}")
     assert [int(normalize_value(r["sort_order"])) for r in rows] == list(range(1, len(rows) + 1)), \
         "模板的 sort_order 不是 1..N 连续序列"
 
@@ -444,8 +514,13 @@ def test_template_matches_python_routings(template_json, routing_rows, python_ca
               normalize_routing_operations(r["operations"]) for r in rows}
     expected = {key: tuple(ops) for key, ops in routings.items()}
     assert parsed == expected, "模板路线内容漂移（逐条比对 部位×工艺 → 工序序列）"
-    assert rows == routing_rows, (
-        f"模板路线与迁移种子漂移（逐行，含 id/status）：{_diff_keys(parsed, expected)}")
+    # 两侧**同构**归一后逐行比对（模板 JSON 行 vs 迁移 SQL 行）：SQL 侧的值带外层引号且多
+    # `tenant_id` 列 ⇒ 直接 `rows == routing_rows` 是苹果比橘子（实测初版即假红）。
+    template_rows_norm = [routing_row_of(r) for r in rows]
+    migration_rows_norm = [routing_row_of(r) for r in routing_rows]
+    assert template_rows_norm == migration_rows_norm, (
+        f"模板路线与迁移种子漂移（逐行，含 id/status）："
+        f"{_diff_keys({r['id']: r for r in template_rows_norm}, {r['id']: r for r in migration_rows_norm})}")
 
 
 def test_template_operations_and_routings_exist_in_catalog(template_json, catalog_rows):
