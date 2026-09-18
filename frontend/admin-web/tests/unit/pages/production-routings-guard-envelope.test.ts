@@ -9,7 +9,8 @@
 // 用**后端真实信封**（ApiResponse{success:false, error:{code,message,details:[{field,message}]}}）
 // 喂 routingGuardReasons()，断言「逐条护栏理由被读出」这一**性质**（不绑定具体措辞）。
 import { describe, expect, it } from 'vitest'
-import { routingGuardReasons } from '@/app/(dashboard)/production/routings/page'
+// 解析函数已从 route 文件迁到 `lib/`（route 文件不得导出非框架字段，issue #4412）
+import { routingGuardReasons } from '@/lib/production-guard-reasons'
 
 const realEnvelope = (details: { field: string; message: string }[]) => ({
   response: {

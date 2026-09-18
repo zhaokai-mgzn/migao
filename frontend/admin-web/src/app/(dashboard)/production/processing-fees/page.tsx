@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertCircle, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Button, Modal } from '@/components/ui'
 import { processingItemApi, productionApi } from '@/lib/api'
+import { feeGuardReasons } from '@/lib/production-guard-reasons'
 import { cn } from '@/lib/utils'
 import type { FeeCombination, FeeGaps, FeeCombinationsResponse, ProcessingItem } from '@/types'
 
@@ -39,35 +40,9 @@ const inputCls =
   'h-9 w-full rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400'
 
 /**
- * 从失败的请求里取**逐条**护栏理由（口径 = 后端**真实**信封，issue #4386 判据 3）：
- * `{success:false, error:{code, message, details:[{field, message}]}, suggestion}` ——
- * 主口径 = `error.details[].message`（逐条），退化 = `error.message`（一句话摘要），
- * 最后才用 `Error.message`。
- *
- * ⚠️ **不读 `error_messages`**：该顶层字段后端不存在，`error` 是**对象**不是字符串。
- * #4308 的假绿教训：按那个形状读 ⇒ 真实失败路径静默退化成
- * 「Request failed with status code 422」，商家一条护栏理由都看不到。
- *
- * 与路线页的 `routingGuardReasons` 同口径，但**不套**那里的路线专属文案前缀
- * （工序重复/缺必完工序…）—— 本页的字段是加工项与单价，套错标签会误导商家。
+ * 护栏理由解析（`feeGuardReasons`）**已迁到 `@/lib/production-guard-reasons`** ——
+ * route 文件不得导出非框架字段（issue #4412）。
  */
-export function feeGuardReasons(error: unknown): string[] {
-  const e = error as
-    | { response?: { data?: { error?: { message?: unknown; details?: unknown } } }; message?: string }
-    | null
-    | undefined
-  const err = e?.response?.data?.error
-  const details = err?.details
-  if (Array.isArray(details) && details.length > 0) {
-    const reasons = details
-      .map((d) => (typeof d === 'string' ? d : (d as { message?: unknown } | null)?.message))
-      .filter((m): m is string => typeof m === 'string' && m.trim().length > 0)
-    if (reasons.length > 0) return reasons
-  }
-  if (typeof err?.message === 'string' && err.message.trim()) return [err.message]
-  if (typeof e?.message === 'string' && e.message) return [e.message]
-  return ['保存失败，请稍后重试']
-}
 
 export default function ProcessingFeesPage() {
   const [combinations, setCombinations] = useState<FeeCombinationsResponse | null>(null)

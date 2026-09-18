@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Button, Modal } from '@/components/ui'
 import { isErrorToastShown } from '@/lib/api-error'
 import { productionApi } from '@/lib/api'
+import { routingGuardReasons } from '@/lib/production-guard-reasons'
 import { cn } from '@/lib/utils'
 import type {
   CatalogOperation,
@@ -53,52 +54,9 @@ const inputCls =
   'h-9 w-full rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400'
 
 /**
- * 护栏理由 → 逐条可读文案（issue #4308 的护栏清单：空序列 / 工序不存在 / 重复 / 缺必完工序 /
- * 权限）。识别不了的原样透出 —— **绝不吞掉后端理由**（吞掉就等于回到「只弹保存失败」）。
+ * 护栏理由解析（`describeRoutingGuard` / `routingGuardReasons`）**已迁到
+ * `@/lib/production-guard-reasons`** —— route 文件不得导出非框架字段（issue #4412）。
  */
-export function describeRoutingGuard(raw: string): string {
-  const s = (raw || '').trim()
-  if (!s) return '保存失败'
-  const dup = s.match(/重复|duplicate/i)
-  if (dup) return `工序重复：${s}`
-  if (/不存在/.test(s) || /不在/.test(s) || /not[_ ]?found/i.test(s)) return `工序不存在：${s}`
-  if (/必完/.test(s)) return `缺少必完工序：${s}`
-  if (/空|empty/i.test(s)) return `序列不能为空：${s}`
-  if (/权限|forbidden|denied/i.test(s)) return `没有工艺路线管理权限：${s}`
-  return s
-}
-
-/**
- * 从失败的请求里取**逐条**护栏理由。
- *
- * 口径 = 后端**真实**信封（issue #4308「冻结补遗 ②」）：
- * `{success:false, error:{code, message, details:[{field, message}]}, suggestion}` ——
- * 主口径 = `error.details[].message`（逐条），退化 = `error.message`（一句话摘要），
- * 最后才用 `Error.message`。
- *
- * ⚠️ **不读 `error_messages`**：该顶层字段后端不存在（全仓零命中），且 `error` 是**对象**不是字符串。
- * 曾按那个形状读 ⇒ 真实失败路径静默落到 `Error.message`，商家只看到
- * 「Request failed with status code 422」而看不到任何护栏理由（集成方探针实证 2/2 红）。
- */
-export function routingGuardReasons(error: unknown): string[] {
-  const e = error as
-    | { response?: { data?: { error?: { message?: unknown; details?: unknown } } }; message?: string }
-    | null
-    | undefined
-  const err = e?.response?.data?.error
-  const details = err?.details
-  if (Array.isArray(details) && details.length > 0) {
-    const reasons = details
-      .map((d) => (typeof d === 'string' ? d : (d as { message?: unknown } | null)?.message))
-      .filter((m): m is string => typeof m === 'string' && m.trim().length > 0)
-    if (reasons.length > 0) return reasons.map((r) => describeRoutingGuard(r))
-  }
-  if (typeof err?.message === 'string' && err.message.trim()) {
-    return [describeRoutingGuard(err.message)]
-  }
-  if (typeof e?.message === 'string' && e.message) return [describeRoutingGuard(e.message)]
-  return ['保存失败，请稍后重试']
-}
 
 /** 序列里一道工序的展示口径：库中查得到就用库字段，否则用路线既有行，最后才留空 */
 interface DraftStep {
