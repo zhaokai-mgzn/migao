@@ -1963,6 +1963,279 @@ class ProcessingOrderServiceTest {
         assertThat(window).as("两种形态的套级计件必须相同（不翻倍）").isEqualByComparingTo(single);
     }
 
+    // ── 工序实例定位键（issue #4388 / #4373 裁定）───────────────────────────────
+    //
+    // 缺陷形态：`processing_position_operations` 只有 `position_name`（展示名 = 加工产物名[+色号]）
+    // ⇒ **同商品同色号的两个窗同名** ⇒
+    //   ① 读面 `ProductionService.buildPositions` 按名字分组 ⇒ **两个部位并成一个**（工人扫码/详情
+    //      看到「一个部位 22 道工序」，而不是「两个部位各 11 道」）；
+    //   ② 算料 `qty` 回填靠**数组位次**对齐（`fillQty` 的 `resolved.get(i) ↔ operationRows.get(i)`），
+    //      响应一旦重排就是**静默错配**（只有条数校验，没有身份校验）。
+    // 本单：主定位键 = `(order_item_id, position_kind)`（V69）；qty 对齐带**身份校验**（fail-closed）；
+    // 读面按 `order_item_id` 分组，**存量行（NULL）按 `position_name` 兜底** ⇒ 行为逐字不变。
+
+    /** 韩褶-布加工项（与既有夹具同款；只影响 qty 的米数来源，不影响路线）。 */
+    private static List<Map<String, Object>> hanzheProc() {
+        return List.of(Map.of("id", "p1", "name", "韩褶-布", "unitPrice", 3.0,
+                "quantity", 2, "unit", "折"));
+    }
+
+    /**
+     * 两条**同名部位**（同商品同色号的两个窗），各自带**自己的**算料输出（米数 12.3 / 8.0）。
+     *
+     * <p>这就是 `buildPositionPayload` 自述的「同商品同色号的两行会重名」形态 ——
+     * 只靠 `position_name` 无法区分它们。</p>
+     */
+    private List<OrderItem> sameNamedWindows() {
+        return List.of(
+                processedItemWithSpec("item-1", "布艺遮光帘A", "米白", hanzheProc(),
+                        spec("curtainType", "布帘", "craft", "韩褶",
+                                "fabric_meters", new BigDecimal("12.3"))),
+                processedItemWithSpec("item-2", "布艺遮光帘A", "米白", hanzheProc(),
+                        spec("curtainType", "布帘", "craft", "韩褶",
+                                "fabric_meters", new BigDecimal("8.0"))));
+    }
+
+    /**
+     * 算料桩：米类工序按**该部位自己的** `calc_info.fabric_meters` 供数（其余 = 1/fallback）。
+     * ⇒ 「qty 取自自己那条明细行」与「按订单行取值 / 位次错配」在断言上可区分。
+     */
+    private void stubQtyFromOwnCalcInfo() {
+        // ⚠️ 必须用 `doAnswer().when(...)`：`when(mock.method(any()))` 在**注册时**会真的调一次 mock
+        // ⇒ 落到 setUp 的旧桩上（`any()` 传 null）⇒ NPE。既有 `stubQty` 已占位，这里是**改写**它。
+        doAnswer(inv -> {
+            List<Map<String, Object>> request = inv.getArgument(0);
+            List<ProductionOperationQtyClient.PositionQty> resolved = new ArrayList<>();
+            for (Map<String, Object> position : request) {
+                Map<?, ?> calc = position.get("calc_info") instanceof Map<?, ?> m ? m : Map.of();
+                Object meters = calc.get("fabric_meters");
+                Map<String, BigDecimal> qty = new LinkedHashMap<>();
+                Map<String, String> source = new LinkedHashMap<>();
+                for (Object raw : (List<?>) position.get("operations")) {
+                    String operation = String.valueOf(raw);
+                    if ("米".equals(unitOfOperation(operation)) && meters != null) {
+                        qty.put(operation, new BigDecimal(String.valueOf(meters)));
+                        source.put(operation, "fabric_meters");
+                    } else {
+                        qty.put(operation, BigDecimal.ONE);
+                        source.put(operation, "fallback");
+                    }
+                }
+                resolved.add(new ProductionOperationQtyClient.PositionQty(
+                        (String) position.get("position_name"), qty, source));
+            }
+            return resolved;
+        }).when(productionOperationQtyClient).resolve(any());
+    }
+
+    /** 生成加工单 + **回填实例 id** + 让读面/报工能取到实例（返回落库实例）。 */
+    private List<ProcessingPositionOperation> generateAndStore(List<OrderItem> items) {
+        stubLibrary();
+        stubGenerate(items);
+        List<ProcessingPositionOperation> stored = new ArrayList<>();
+        when(positionOperationMapper.insert(any(ProcessingPositionOperation.class))).thenAnswer(inv -> {
+            ProcessingPositionOperation row = inv.getArgument(0);
+            row.setId("op-" + (stored.size() + 1));
+            stored.add(row);
+            return 1;
+        });
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).as("生成加工单必须成功（否则后续判据无意义）").isTrue();
+        // lenient：只给「还要读面/报工」的用例备着 —— 严格桩会把「备而不用」判为失败（噪音）
+        lenient().when(positionOperationMapper.selectList(any())).thenReturn(stored);
+        return stored;
+    }
+
+    /** 读面（扫工页/加工单详情）：`ProductionService.getOperations` 的部位树。 */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> readPositions() {
+        ProductionService real = new ProductionService(processingOrderMapper, positionOperationMapper,
+                workLogMapper, orderMapper, clientRequestIdService);
+        return (List<Map<String, Object>>) real.getOperations("order-001", TENANT).get("positions");
+    }
+
+    /**
+     * 部位树里**某一行**（按 `order_item_id`）某道工序的 `qty`。
+     *
+     * <p>⚠️ 按行标识取而不是按下标取：读面的部位顺序由 `buildPositions` 的 `HashSet` 迭代序决定
+     * （**既有行为**，本单未改）⇒ 下标断言会假红。</p>
+     */
+    @SuppressWarnings("unchecked")
+    private static BigDecimal qtyOfRow(List<Map<String, Object>> positions, String orderItemId,
+                                       String operation) {
+        Map<String, Object> position = positions.stream()
+                .filter(p -> orderItemId.equals(p.get("order_item_id")))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("部位树里没有 order_item_id=" + orderItemId + " 的部位"));
+        List<Map<String, Object>> operations = (List<Map<String, Object>>) position.get("operations");
+        return operations.stream()
+                .filter(row -> operation.equals(row.get("operation")))
+                .map(row -> (BigDecimal) row.get("qty"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "部位 " + orderItemId + " 里没有工序「" + operation + "」"));
+    }
+
+    @Test
+    @DisplayName("#4388 判据 1：两条**同名部位**（两个布帘窗）⇒ 实例各带自己的 order_item_id、读面 **2 个部位**（旧行为并成 1 个）")
+    void sameNamedWindowsStayIndependent() {
+        stubQtyFromOwnCalcInfo();
+        List<ProcessingPositionOperation> stored = generateAndStore(sameNamedWindows());
+
+        assertThat(stored).extracting(ProcessingPositionOperation::getOrderItemId)
+                .as("同名部位必须靠 order_item_id 区分（旧行为：该列不存在 ⇒ 无从区分）")
+                .containsOnly("item-1", "item-2");
+        assertThat(stored).extracting(ProcessingPositionOperation::getPositionKind)
+                .as("position_kind = 可读定位（哪一件帘）= 快照 curtainType")
+                .containsOnly("布帘");
+        assertThat(stored).allSatisfy(row -> assertThat(row.getPositionName())
+                .as("两行的展示名**故意相同**（这正是缺陷形态）").isEqualTo("布艺遮光帘A 米白"));
+
+        List<Map<String, Object>> positions = readPositions();
+        assertThat(positions).as("两个窗同名也必须**各成一个部位**（旧行为：按名字分组并成 1 个）")
+                .hasSize(2);
+        assertThat(positions).extracting(p -> p.get("order_item_id"))
+                .as("读面必须透出行标识，否则前端无从区分两个同名部位")
+                .containsExactlyInAnyOrder("item-1", "item-2");
+        assertThat(positions).extracting(p -> p.get("position_kind")).containsOnly("布帘");
+        // 每个部位的米类 qty = **自己那条明细行**的算料输出（12.3 / 8.0）
+        assertThat(qtyOfRow(positions, "item-1", "精裁-布")).isEqualByComparingTo("12.3");
+        assertThat(qtyOfRow(positions, "item-2", "精裁-布")).isEqualByComparingTo("8.0");
+    }
+
+    @Test
+    @DisplayName("#4388 判据 2：算料输入/应做数量**按行取**（两樘尺寸不同 ⇒ 12.3 vs 8.0，不是同一值复制），请求行带 order_item_id")
+    void qtyIsTakenPerRowNotPerOrder() {
+        stubQtyFromOwnCalcInfo();
+        List<ProcessingPositionOperation> stored = generateAndStore(sameNamedWindows());
+
+        ArgumentCaptor<List<Map<String, Object>>> request = ArgumentCaptor.forClass(List.class);
+        verify(productionOperationQtyClient).resolve(request.capture());
+        assertThat(request.getValue()).extracting(p -> p.get("order_item_id"))
+                .as("请求行带行标识（自描述；引擎侧回显见 PR 的「未做」项）")
+                .containsExactly("item-1", "item-2");
+        assertThat(request.getValue())
+                .extracting(p -> String.valueOf(((Map<?, ?>) p.get("calc_info")).get("fabric_meters")))
+                .as("算料输入按行取（每行尺寸可不同）").containsExactly("12.3", "8.0");
+
+        // 实例侧：米类 qty 各取自己那行 —— 「按订单行取值」会让两侧同值（那正是本判据要排除的形态）
+        assertThat(stored).filteredOn(r -> "item-1".equals(r.getOrderItemId()) && "米".equals(r.getUnit()))
+                .isNotEmpty().allSatisfy(r -> assertThat(r.getQty()).isEqualByComparingTo("12.3"));
+        assertThat(stored).filteredOn(r -> "item-2".equals(r.getOrderItemId()) && "米".equals(r.getUnit()))
+                .isNotEmpty().allSatisfy(r -> assertThat(r.getQty()).isEqualByComparingTo("8.0"));
+    }
+
+    @Test
+    @DisplayName("#4388 判据 3（回归）：套级去重不被破坏 —— 布+纱 仍 **14 道**、套级仍 **1 行**（挂主布行 item-1），且两行各带自己的 order_item_id")
+    void setLevelDedupSurvivesPositionIdentity() {
+        List<ProcessingPositionOperation> stored = generateAndStore(clothPlusSheerWindow());
+
+        assertThat(stored).as("#4384 A2 的结论不得被定位键改动破坏").hasSize(14);
+        assertThat(stored).filteredOn(r -> "外帘装袋".equals(r.getOperationName()))
+                .as("套级工序每樘窗一次（A2）").hasSize(1);
+        assertThat(stored).extracting(ProcessingPositionOperation::getOrderItemId)
+                .contains("item-1", "item-2");
+        assertThat(stored).filteredOn(r -> "外帘装袋".equals(r.getOperationName()))
+                .extracting(ProcessingPositionOperation::getOrderItemId)
+                .as("套级工序挂樘窗**主布行**（item-1 = 布帘行，A2 裁定）").containsExactly("item-1");
+        assertThat(stored).filteredOn(r -> "item-2".equals(r.getOrderItemId()))
+                .extracting(ProcessingPositionOperation::getPositionKind).containsOnly("纱帘");
+    }
+
+    @Test
+    @DisplayName("#4388 判据 4（回归）：**存量单**（无 order_item_id 的老行）⇒ 读面仍按 position_name 分组，行为逐字不变")
+    void legacyRowsWithoutIdentityKeepNameGrouping() {
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(po("po-1", "generated"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                legacyInstance("op-1", "布艺遮光帘A 米白", "精裁-布"),
+                legacyInstance("op-2", "遮光成品Y 米白", "工序甲")));
+
+        List<Map<String, Object>> positions = readPositions();
+
+        assertThat(positions).as("存量行没有行标识 ⇒ 仍按名字分组（两个不同名部位 = 2 个）").hasSize(2);
+        assertThat(positions).extracting(p -> p.get("position_name"))
+                .containsExactlyInAnyOrder("布艺遮光帘A 米白", "遮光成品Y 米白");
+        assertThat(positions).extracting(p -> p.get("order_item_id"))
+                .as("存量行如实透出 null（不编值）").containsOnlyNulls();
+    }
+
+    /** 存量行（V69 之前生成的实例：没有 order_item_id / position_kind）。 */
+    private static ProcessingPositionOperation legacyInstance(String id, String positionName, String operation) {
+        return ProcessingPositionOperation.builder()
+                .id(id).tenantId(TENANT).processingOrderId("po-1")
+                .positionName(positionName).seq(1).operationName(operation).groupName("裁剪").unit("米")
+                .qty(BigDecimal.ONE).qtySource("fallback").unitPrice(BigDecimal.ONE).factor(BigDecimal.ONE)
+                .isMustFinish(false).isStartMarker(true).status("pending").doneQty(BigDecimal.ZERO)
+                .deleted(0).build();
+    }
+
+    @Test
+    @DisplayName("#4388 判据（身份校验）：算料响应与请求的 position_name 不符 ⇒ **fail-closed**（旧行为按位次静默错配）")
+    void qtyResponseIdentityMismatchFailsClosed() {
+        stubLibrary();
+        // 算料桩：条数相同但**身份不同**（模拟引擎重排/串位）—— 旧实现只校验条数 ⇒ 静默错配
+        doAnswer(inv -> {
+            List<Map<String, Object>> request = inv.getArgument(0);
+            List<ProductionOperationQtyClient.PositionQty> resolved = new ArrayList<>();
+            for (Map<String, Object> position : request) {
+                Map<String, BigDecimal> qty = new LinkedHashMap<>();
+                Map<String, String> source = new LinkedHashMap<>();
+                for (Object raw : (List<?>) position.get("operations")) {
+                    qty.put(String.valueOf(raw), BigDecimal.ONE);
+                    source.put(String.valueOf(raw), "fallback");
+                }
+                resolved.add(new ProductionOperationQtyClient.PositionQty("另一个部位", qty, source));
+            }
+            return resolved;
+        }).when(productionOperationQtyClient).resolve(any());
+        // ⚠️ **不调 `stubGenerate`**：本用例在 `buildPositionPayload` 阶段就 fail-closed
+        //（工序 payload 在任何写库之前解析，issue #4116）⇒ 插入桩会「备而不用」被严格桩判为多余。
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(sameNamedWindows());
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).as("身份不符必须显式失败（静默错配是本仓最大失败模式）").isFalse();
+        assertThat(results.get(0).getCode())
+                .isEqualTo(ProductionOperationQtyClient.ERR_OPERATION_QTY_UNAVAILABLE);
+        verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
+    }
+
+    @Test
+    @DisplayName("#4388 判据（报工归属）：两樘**同名**窗 ⇒ 报工只归属被扫码那一行（operation_id → 实例 → order_item_id，不串行）")
+    void reportOnOneSameNamedWindowOnlyTouchesThatRow() {
+        stubQtyFromOwnCalcInfo();
+        List<ProcessingPositionOperation> stored = generateAndStore(sameNamedWindows());
+        when(clientRequestIdService.claim(any(), any(), any())).thenReturn(true);
+        when(positionOperationMapper.advanceDoneQtyIfUnchanged(
+                any(), any(), any(), any(), any(), any())).thenReturn(1);
+
+        ProcessingPositionOperation target = stored.stream()
+                .filter(r -> "item-2".equals(r.getOrderItemId()) && "精裁-布".equals(r.getOperationName()))
+                .findFirst().orElseThrow();
+        when(positionOperationMapper.selectById(target.getId())).thenReturn(target);
+
+        ProductionService real = new ProductionService(processingOrderMapper, positionOperationMapper,
+                workLogMapper, orderMapper, clientRequestIdService);
+        real.report("order-001", target.getId(),
+                Map.of("worker_name", "走查工人", "qty", BigDecimal.ONE,
+                        "qualified_qty", BigDecimal.ONE, "work_type", "normal"),
+                TENANT, "req-4388");
+
+        // 归属推导（不新增冗余列，parent 批准的判定）：work log 的 operation_id → 实例 → order_item_id
+        ArgumentCaptor<ProductionWorkLog> logCaptor = ArgumentCaptor.forClass(ProductionWorkLog.class);
+        verify(workLogMapper).insert(logCaptor.capture());
+        assertThat(logCaptor.getValue().getOperationId()).isEqualTo(target.getId());
+        assertThat(stored).filteredOn(r -> target.getId().equals(r.getId()))
+                .extracting(ProcessingPositionOperation::getOrderItemId).containsExactly("item-2");
+        // **同名**的另一行（item-1）没有被报工：只有一笔 work log，且没有推进它的 CAS
+        verify(workLogMapper, times(1)).insert(any(ProductionWorkLog.class));
+        verify(positionOperationMapper, never()).advanceDoneQtyIfUnchanged(
+                argThat(id -> !target.getId().equals(id)), any(), any(), any(), any(), any());
+    }
+
     @Test
     @DisplayName("#4387 判据 3（注入式红证）：配布边行**去掉** componentRole ⇒ 部位数 1 → 2（角色键是判别物）")
     void edgeRowRoleIsWhatSuppressesTheExtraPosition() {

@@ -143,6 +143,9 @@ public class ProductionService {
                     .tenantId(tenantId)
                     .processingOrderId(po.getId())
                     .positionName(spec.positionName())
+                    // 主定位键（V69，issue #4388）：来自 payload；派生路径（无快照行）缺键 ⇒ null
+                    .orderItemId(spec.orderItemId())
+                    .positionKind(spec.positionKind())
                     .seq(spec.seq())
                     .operationName(spec.operationName())
                     .groupName(spec.groupName())
@@ -234,6 +237,9 @@ public class ProductionService {
                     throw BusinessException.validationError("工序名（operation）不能为空");
                 }
                 specs.add(new OpSpec(positionName,
+                        // 主定位键（issue #4388）：缺键 ⇒ null（存量/派生 payload 不编值）
+                        str(position.get("order_item_id")),
+                        str(position.get("position_kind")),
                         op.get("seq") == null ? seq : bd(op.get("seq"), BigDecimal.valueOf(seq)).intValue(),
                         operationName,
                         str(op.get("group")),
@@ -254,7 +260,9 @@ public class ProductionService {
     private List<OpSpec> specsOf(List<ProcessingPositionOperation> operations) {
         List<OpSpec> specs = new ArrayList<>();
         for (ProcessingPositionOperation op : operations) {
-            specs.add(new OpSpec(op.getPositionName(), op.getSeq() == null ? 0 : op.getSeq(),
+            specs.add(new OpSpec(op.getPositionName(),
+                    op.getOrderItemId(), op.getPositionKind(),
+                    op.getSeq() == null ? 0 : op.getSeq(),
                     op.getOperationName(), op.getGroupName(), op.getUnit(),
                     op.getQty(), op.getUnitPrice(), op.getFactor(), op.getQtySource(),
                     Boolean.TRUE.equals(op.getIsMustFinish()), Boolean.TRUE.equals(op.getIsStartMarker())));
@@ -272,8 +280,20 @@ public class ProductionService {
         return signatures;
     }
 
-    /** 工序实例归一化形态：字段集 = 落库字段集（比较用的最小充分集）。 */
-    private record OpSpec(String positionName, int seq, String operationName, String groupName, String unit,
+    /**
+     * 工序实例归一化形态：字段集 = 落库字段集（比较用的最小充分集）。
+     *
+     * <p>🔴 <b>{@code orderItemId} / {@code positionKind}（V69，issue #4388）刻意<u>不进</u> {@link #signature()}</b>
+     * —— 实测依据：把它们算进签名后，`ProductionControllerTest#instantiateDerivedIsIdempotentWhenInstancesAlreadyExist`
+     * 立刻变红（`NeverWantedButInvoked`：对**存量实例集**（`order_item_id` 为 NULL）重新实例化时，
+     * 新 payload 带行标识 ⇒ 签名不等 ⇒ 判为「工序配置变更」⇒ **软删重插、报工进度清零**）。</p>
+     *
+     * <p>语义上也应如此：签名比较的是**工序配置**（部位名/序号/工序/单位/数量/单价/系数/标记），
+     * 而 {@code order_item_id} 是**定位元数据**（这条实例属于哪一行）—— 存量行补不补行标识
+     * 不该让「同一套工序」被当成另一套（#4116 的幂等保证：重复实例化不重插、进度不清零）。</p>
+     */
+    private record OpSpec(String positionName, String orderItemId, String positionKind,
+                          int seq, String operationName, String groupName, String unit,
                           BigDecimal qty, BigDecimal unitPrice, BigDecimal factor, String qtySource,
                           boolean mustFinish, boolean startMarker) {
 
@@ -965,22 +985,40 @@ public class ProductionService {
         return logs == null ? List.of() : logs;
     }
 
-    /** 按部位分组的工序树（顺序 = 部位名 / seq，来自 listOperations）。 */
+    /**
+     * 按部位分组的工序树（顺序 = 部位名 / seq，来自 listOperations）。
+     *
+     * <p><b>分组键 = 工序实例的<u>主定位键</u>（issue #4388 / #4373 裁定）</b>：
+     * `order_item_id` 优先 —— {@code position_name} 是**展示名**（加工产物名[+色号]），
+     * **同商品同色号的两个窗会同名** ⇒ 只按名字分组会把两个部位**并成一个**
+     * （工人扫码/加工单详情看到「一个部位 22 道工序」，而实际是「两个部位各 11 道」）。</p>
+     *
+     * <p>⚠️ <b>存量单兼容</b>：V69 之前生成的实例行没有 {@code order_item_id}
+     * ⇒ 回落 {@code position_name} 分组 ⇒ **读面行为逐字不变**（不猜、不编值）。</p>
+     */
     private List<Map<String, Object>> buildPositions(List<ProcessingPositionOperation> operations,
                                                      Map<String, List<String>> workersByOperation) {
         Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
+        Map<String, ProcessingPositionOperation> headByKey = new LinkedHashMap<>();
         Set<String> seen = new HashSet<>();
         for (ProcessingPositionOperation op : operations) {
-            String positionName = op.getPositionName() == null ? "" : op.getPositionName();
-            seen.add(positionName);
-            grouped.computeIfAbsent(positionName, k -> new ArrayList<>())
+            String key = StringUtils.hasText(op.getOrderItemId())
+                    ? op.getOrderItemId()
+                    : (op.getPositionName() == null ? "" : op.getPositionName());
+            seen.add(key);
+            headByKey.putIfAbsent(key, op);
+            grouped.computeIfAbsent(key, k -> new ArrayList<>())
                     .add(operationView(op, workersByOperation.getOrDefault(op.getId(), List.of())));
         }
         List<Map<String, Object>> positions = new ArrayList<>();
-        for (String positionName : seen) {
+        for (String key : seen) {
+            ProcessingPositionOperation head = headByKey.get(key);
             Map<String, Object> position = new LinkedHashMap<>();
-            position.put("position_name", positionName);
-            position.put("operations", grouped.get(positionName));
+            position.put("position_name", head.getPositionName() == null ? "" : head.getPositionName());
+            // 行标识（issue #4388）：前端据此区分**同名**部位；存量行如实 null（不编值）
+            position.put("order_item_id", head.getOrderItemId());
+            position.put("position_kind", head.getPositionKind());
+            position.put("operations", grouped.get(key));
             positions.add(position);
         }
         return positions;

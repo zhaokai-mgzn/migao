@@ -33,6 +33,26 @@ public class ProcessingPositionOperation {
     /** 部位：布帘/纱帘/帘头/外帘 */
     private String positionName;
 
+    /**
+     * **工序实例的主定位键**（issue #4388 / #4373 裁定）：指向 {@code order_items.id}（= 一樘窗的一行）。
+     *
+     * <p>为什么必须有它：{@code position_name} 是**展示名**（加工产物名[+色号]）——
+     * 同商品同色号的两个窗**同名** ⇒ 只靠名字无法区分（今天读面会把它们并成一个部位）。
+     * {@code (order_item_id, seq)} 才是实例的唯一归属。</p>
+     *
+     * <p>⚠️ **可空**：本列（V69）引入**之前**生成的存量行没有该值（无法可靠回填 ——
+     * `position_name` 是可读名，回填只能靠猜）⇒ 读面按 {@code position_name} 兜底分组（行为逐字不变）。</p>
+     */
+    private String orderItemId;
+
+    /**
+     * 部位**种类**（可读定位，issue #4388）：`布帘` / `纱帘` / `帘头`（= 快照 {@code curtainType}）。
+     *
+     * <p>与 {@link #orderItemId} 的分工：前者解决「哪一樘窗的哪一行」，本列解决「哪一件帘」
+     * （可读定位 + 冗余校验）。可空（同 {@link #orderItemId}：存量行没有）。</p>
+     */
+    private String positionKind;
+
     /** 部位内工序顺序 */
     private Integer seq;
 

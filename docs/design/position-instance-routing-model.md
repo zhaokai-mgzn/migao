@@ -123,6 +123,21 @@ V54 种子里 `外帘打卷` / `外帘装袋` / `外帘发货` 的 `position = '
 > 判据（红证）：一樘「布 + 纱」⇒ 套级 3 道各 1 行、总工序 **14 道**（旧 17）、
 > 套级计件 **¥3.00**（旧 ¥6.00，双付）。
 
+> ✅ **落地口径（工序实例主定位键，issue #4388，2026-09-19）**：`processing_position_operations` 增
+> `order_item_id`（V69，指向 `order_items.id`）+ `position_kind`（可读定位 = 快照 `curtainType`）
+> ⇒ 主定位键 = **`(order_item_id, position_kind)`**；`position_name` 只是**展示名**。
+> · **读面**（`ProductionService.buildPositions`）按 `order_item_id` 分组 —— 修掉「**同商品同色号的两个窗
+> 同名 ⇒ 被并成一个部位**」（工人扫码/详情看到「一个部位 22 道工序」）；存量行（`order_item_id IS NULL`，
+> **无法可靠回填**：`position_name` 是可读名，按它反查只能靠猜，猜错比留空更糟）回落 `position_name`
+> ⇒ **存量单读面逐字不变**。
+> · **算料 qty**：请求行带 `order_item_id`（自描述），并把「按数组位次对齐」升级为**带身份校验的对齐**
+> （响应 `position_name` 与请求不符 ⇒ fail-closed；今天只校验条数 = 静默错配）。
+> ⚠️ 引擎侧按键回显（`internal.py` 响应加 `order_item_id`）属 **Agent 侧改动** ⇒ 跟随单。
+> · **报工/计件归属**靠推导（`production_work_logs.operation_id` → 实例 → `order_item_id`），
+> **不新增冗余列**（第二份真相源会漂移；work log 只快照「钱」相关字段，#4351）。
+> · ⚠️ **打印粒度「外帘」不在本单** ⇒ 归 **#4405**（hook = `position_kind` + A2 的承载裁定；
+> **不得**回退成新增 `position_name='外帘'` 的**承载**行 —— 那会让每个存量单也多一行）。
+
 **后果 C · 纱行没有自己的工艺规格 ⇒ 纱的路线只能靠猜**
 
 `order-craft-spec-design.md` §4.8 冻结「工艺规格只挂主布行」；而代码把 纱 当**独立部位**
