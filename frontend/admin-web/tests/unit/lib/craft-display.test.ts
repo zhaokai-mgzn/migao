@@ -92,14 +92,15 @@ describe('craftSpecRows — 订单/快照层（camelCase）', () => {
     expect(rowValue(rows, '加工类型')).toBe('定高买宽')
   })
 
-  it('打开方式：1/2/4 → 单开/双开/四开（§4.2 字段表 A）', () => {
+  it('打开方式：1/2/3/4 → 单开/双开/三开/四开（§4.2 字段表 A；三开 = issue #4387 判据 1）', () => {
     expect(rowValue(craftSpecRows({ openCount: 1 }), '打开方式')).toBe('单开')
     expect(rowValue(craftSpecRows({ openCount: 2 }), '打开方式')).toBe('双开')
+    expect(rowValue(craftSpecRows({ openCount: 3 }), '打开方式')).toBe('三开')
     expect(rowValue(craftSpecRows({ openCount: 4 }), '打开方式')).toBe('四开')
   })
 
   it('打开方式：未知开数如实标 N 开（不猜、不落默认值）', () => {
-    expect(rowValue(craftSpecRows({ openCount: 3 }), '打开方式')).toBe('3 开')
+    expect(rowValue(craftSpecRows({ openCount: 6 }), '打开方式')).toBe('6 开')
   })
 })
 

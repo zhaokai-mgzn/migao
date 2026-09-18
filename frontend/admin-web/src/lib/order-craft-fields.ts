@@ -24,12 +24,15 @@ export const CRAFT_OPTIONS = ['韩褶', '打孔', '四爪钩', '穿杆', '平幔
 export const CUTTING_MODE_OPTIONS = ['定高买宽', '定宽买高'] as const
 
 /**
- * 打开方式（§4.2 `openCount`：1 单开 / 2 双开 / 4 四开）。
+ * 打开方式（§4.2 `openCount`）——**开数（正整数）**，不是固定枚举（issue #4387 判据 1）：
+ * 用户口径明确含**三开**（「定高买宽，定宽买高，单开，双开，三开这些信息也要在订单上体现」）。
+ * 下拉列出行业常见的 1/2/3/4；更大的开数（如 5 开）由 API / Agent 直写，
+ * 展示侧照 `craft-display.ts` 的兜底如实标「N 开」。
  *
- * ⚠️ **文案不在这里定义**：`单开/双开/四开` 是展示映射，单一真值是 `lib/craft-display.ts`
+ * ⚠️ **文案不在这里定义**：`单开/双开/三开/四开` 是展示映射，单一真值是 `lib/craft-display.ts`
  * （§4.9「一份 spec，三处渲染」）—— 本文件从它取文案，避免同一真值出现第二份推导。
  */
-export const OPEN_COUNT_OPTIONS: ReadonlyArray<{ value: number; label: string }> = [1, 2, 4].map(
+export const OPEN_COUNT_OPTIONS: ReadonlyArray<{ value: number; label: string }> = [1, 2, 3, 4].map(
   (value) => ({
     value,
     label: craftSpecRows({ openCount: value })[0]?.value ?? String(value),
@@ -74,7 +77,7 @@ export interface CraftSpecInput {
   curtainType?: string
   craft?: string
   cuttingMode?: string
-  /** 1 / 2 / 4 */
+  /** 开数（正整数；下拉列 1/2/3/4，更大开数由 API/Agent 直写）—— issue #4387 */
   openCount?: number
   /** 是否定型：`true` 是 / `false` 否 / `undefined` 未指定 */
   isShaped?: boolean
@@ -149,8 +152,11 @@ export function buildCraftSpec(input: CraftSpecInput): Record<string, unknown> {
 }
 
 /**
- * 主布行的**拼色绑组键**（§4.8）：`componentRole=主布` + `craftLineId`（自指，§4.8 表注
- * 「`craftLineId` 自指亦可」）。
+ * 主布行的**樘窗绑组键**（§4.8；樘窗语义 = issue #4387）：`componentRole=主布` +
+ * `craftLineId`（自指，§4.8 表注「`craftLineId` 自指亦可」）。
+ *
+ * **`craftLineId` 标识同一樘窗（一个窗户）**，不是「同组只出一个部位」：部位 = 一行明细 = 一件帘，
+ * 布行与纱行同组时**各成一个部位**；只有配布边行不独立成部位。
  *
  * 只在拼色时写 —— 单色单缺省即主布（§4.8 存量单兼容），少写两个键就少一份下游兼容面。
  * `craftLineId` 用**客户端行标识**：服务端生成 `order_item.id` 之前两行只能靠同一个共享 token

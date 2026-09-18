@@ -704,7 +704,7 @@ CREATE TABLE order_items (
     -- （bootstrap 路径**不跑迁移链**的部署形态下，缺列 ⇒ 加工单查询/落库 500，形态见 #3270）。
     curtain_type VARCHAR(16),                       -- 部位/帘种（布帘/纱帘/帘头）；工序库路线按它索引
     craft VARCHAR(16),                              -- 安装工艺＝打褶/悬挂方式（韩褶/打孔/穿杆/平幔）；**单值**；四爪钩是加工项不是工艺
-    open_count INTEGER,                             -- 打开方式（开数：1 单开 / 2 对开 / 4 四开）
+    open_count INTEGER,                             -- 打开方式（**开数**，正整数：1 单开 / 2 对开 / 3 三开 / 4 四开 …，不是固定枚举；V64 / issue #4387）
     cutting_mode VARCHAR(16),                       -- 加工类型（定高买宽 / 定宽买高）
     is_shaped BOOLEAN,                              -- 是否定型（部位级开关）
     fullness DECIMAL(6,2),                          -- 理论褶倍（与 fullness_actual 分开存 —— 实证 1.86 ≠ 2.00，不是冗余）

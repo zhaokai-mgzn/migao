@@ -61,6 +61,7 @@
     "V60__create_routing_customization_tables.sql": "sha256:5c4def3d47e78dd2d58e4a61b59f846a6a7baf34afa6299cd1a41cf7ade0bf5d",
     "V61__add_piecework_snapshot_to_work_logs.sql": "sha256:1c15afd906d1f1c181cca0b761351e78668cf2e9a7ed131f613eb740c6361f67",
     "V62__add_source_to_production_operations_and_routings.sql": "sha256:c3e8097565525a67a17eb9021bc52077eb16a078ac64d35111bfce0a6f08aa34",
-    "V63__structure_order_line_craft_spec.sql": "sha256:540349bbaae5ee168781b66a2a532887d86a61c56beb2f68e08fcae05413bb6c"
+    "V63__structure_order_line_craft_spec.sql": "sha256:540349bbaae5ee168781b66a2a532887d86a61c56beb2f68e08fcae05413bb6c",
+    "V64__open_count_is_a_positive_integer.sql": "sha256:07a68981893c73394c9e011e5365f802c7b67bfcf22f94287617c0511cba2771"
   }
 }

@@ -98,6 +98,18 @@ describe('OrderCraftFields', () => {
     expect(spy).toHaveBeenCalledWith({ openCount: 2 })
   })
 
+  // issue #4387 判据 1（三开可录入）：用户口径含三开，而此前候选只有 1/2/4
+  // ⇒ 商家**选不出**三开（只能靠 API/Agent 直写）。候选必须含 '3' 且标签是「三开」。
+  it('#4387 打开方式候选含三开（3）⇒ 选中后 openCount 是数字 3', () => {
+    const spy = vi.fn()
+    render(<Harness onChangeSpy={spy} />)
+    const options = Array.from(selectByName('打开方式').options)
+    expect(options.map((o) => o.value)).toEqual(['', '1', '2', '3', '4'])
+    expect(options.find((o) => o.value === '3')?.textContent).toBe('三开')
+    fireEvent.change(selectByName('打开方式'), { target: { value: '3' } })
+    expect(spy).toHaveBeenCalledWith({ openCount: 3 })
+  })
+
   it('是否定型选「否」⇒ isShaped=false（显式否是真值，不得当成未填）', () => {
     const spy = vi.fn()
     render(<Harness onChangeSpy={spy} />)
