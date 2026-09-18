@@ -45,6 +45,16 @@
 **不区分语义** ⇒ 引用式样例（证据表里贴一条 `Closes` + `#NNNN`）、否定句（「不关闭」）**照样命中** ——
 所以它**列出命中清单让人逐个确认**，而不是静默放行；想表达「不关某 issue」必须把关键词与号**拆开**写。
 命中数 ≠ `--expect` ⇒ exit 1；`--expect` 缺省时「命中 > 0 ⇒ 1」。
+另：body 文件本身落在**共享临时根**下、或 body 为空 ⇒ 也是命中（前者正是本单的缺陷形态）。
+
+## 共享根清单**不写平台常量**，且可注入（否则判据会随平台时红时绿）
+
+`default_shared_temp_roots()` = `/tmp` + `/var/tmp` + **本机 `$TMPDIR`**（由 `tempfile.gettempdir()` 推导：
+macOS 是 `/var/folders/…/T`、Linux 常是 `/tmp`）—— 不硬编码 `/private/tmp` 这类**平台特有**形态。
+整份清单可用 `$PR_BODY_GUARD_SHARED_ROOTS`（`:` 分隔）**整体替换**，`shared_temp_root(path, roots=…)` 也可显式传入：
+测试因此能把清单钉成**确定集合**，不再依赖「pytest 的 `tmp_path` 落在哪」
+（本包首版就踩了这个坑：本机 `tmp_path` 在 `/var/folders/…`、CI 在 `/tmp/pytest-of-runner/…`
+⇒ 同一断言本地绿 / CI 红）。设成空串 = 判据关闭（自担风险）。
 
 ## `verify` 只读
 
@@ -85,7 +95,11 @@ from pathlib import Path
 EXIT_OK, EXIT_FOUND, EXIT_UNKNOWN = 0, 1, 3
 
 # 共享临时根（跨会话共享写路径）。macOS 的 `/tmp` 会 realpath 成 `/private/tmp`，两者都算。
-SHARED_TEMP_ROOTS = ("/tmp", "/var/tmp")
+# 注：**不写平台常量** —— `$TMPDIR` 由 `tempfile.gettempdir()` 推导（macOS 是 `/var/folders/…/T`，
+# Linux 常是 `/tmp`），且整份清单可用 `$PR_BODY_GUARD_SHARED_ROOTS`（`:` 分隔）**注入**，
+# 使判据在测试里可被钉成确定集合（否则「pytest 的 tmp_path 落在哪」会让同一断言时红时绿）。
+DEFAULT_SHARED_TEMP_ROOTS = ("/tmp", "/var/tmp")
+SHARED_ROOTS_ENV = "PR_BODY_GUARD_SHARED_ROOTS"
 
 # §2.2 的朴素正则（**同一口径**，不另立一份）：不区分语义 ⇒ 引用式/否定式照样命中。
 CLOSE_KEYWORD_RE = re.compile(
@@ -105,25 +119,40 @@ DEFAULT_DIR_CANDIDATES = (".dsh-tmp", "tests/tmp")
 
 # ── 路径/作用域判定（纯函数，单测直调）────────────────────────────────────────
 
-def shared_temp_root(path) -> "str | None":
-    """返回 `path` 落在的**共享临时根**（原样返回 `SHARED_TEMP_ROOTS` 里的那个串），否则 None。"""
+def default_shared_temp_roots() -> tuple:
+    """默认共享根清单：世界共享的 `/tmp`、`/var/tmp` + 本机 `$TMPDIR`（同用户多会话共享）。"""
+    roots = list(DEFAULT_SHARED_TEMP_ROOTS)
+    try:
+        t = tempfile.gettempdir()
+    except (OSError, RuntimeError):
+        t = None
+    if t and t not in roots:
+        roots.append(t)
+    return tuple(roots)
+
+
+def shared_temp_roots() -> tuple:
+    """生效的共享根清单。`$PR_BODY_GUARD_SHARED_ROOTS`（`:` 分隔）**注入**时整体替换默认值。
+
+    注入是给测试/特殊环境的**确定性**入口（"pytest 的 tmp_path 落在哪"不该决定断言红绿）；
+    设成空串即"没有共享根"（自担风险，判据随之关闭）。
+    """
+    raw = os.environ.get(SHARED_ROOTS_ENV)
+    if raw is None:
+        return default_shared_temp_roots()
+    return tuple(p for p in raw.split(os.pathsep) if p)
+
+
+def shared_temp_root(path, roots=None) -> "str | None":
+    """返回 `path` 落在的**共享临时根**（原样返回清单里的那个串），否则 None。
+
+    `roots` 显式给定时用它（含空元组 ⇒ 判据关闭）；默认 = `shared_temp_roots()`。
+    """
     p = Path(os.path.realpath(str(path)))
-    for root in SHARED_TEMP_ROOTS:
+    for root in (shared_temp_roots() if roots is None else roots):
         r = Path(os.path.realpath(root))
         if p == r or r in p.parents:
             return root
-    return None
-
-
-def user_temp_root(path) -> "str | None":
-    """返回 `path` 落在的**用户级临时根**（`$TMPDIR`，同用户多会话共享）—— 只提示，不判红。"""
-    p = Path(os.path.realpath(str(path)))
-    try:
-        r = Path(os.path.realpath(tempfile.gettempdir()))
-    except OSError:
-        return None
-    if r in p.parents:
-        return str(r)
     return None
 
 
@@ -287,11 +316,6 @@ def cmd_check(args) -> int:
     if shared is not None:
         findings.append(f"🔴 该文件位于**共享临时根** {shared} —— 另一会话可覆盖它（§2.3 / 本单缺陷形态）；"
                         f"改用 `python3 scripts/pr_body_guard.py new` 分配的工作区内路径。")
-    else:
-        utmp = user_temp_root(path)
-        if utmp is not None:
-            print(f"⚠️ 该文件位于用户级临时根 {utmp}（同用户多会话共享）——建议改用工作区内忽略目录。",
-                  file=sys.stderr)
     if not text.strip():
         findings.append("🔴 body 为空 —— 空 body 既拿不到 `Closes` 关联，也说明写错了文件。")
 

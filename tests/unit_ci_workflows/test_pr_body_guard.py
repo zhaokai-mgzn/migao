@@ -27,11 +27,15 @@
    的形态（`gh pr create|edit --body-file /tmp/<固定名>`、`/tmp/<pr-body 名>` 字面量）；
    变量式 `--body-file "$BODY"`、非 PR body 的普通临时文件**不误报**（边界照实登记，见脚本 docstring）。
 
-## 夹具纪律
+## 夹具纪律（含「不依赖平台」这一条 —— 首版在这里翻过车）
 
 - `gh` 用**替身可执行文件**注入（`--gh-bin`）—— CLI 边界即注入点，**不打真实 GitHub API**、零写操作；
-- 测试自身**不写任何共享 `/tmp` 固定名**：唯一一处 `/tmp` 用法是「被测行为就是检出共享根」，
-  用 `mkdtemp(prefix=…pid…)` 唯一名 + 自清理（结构上不可能覆盖别的会话 —— 本包治的正是固定名被覆盖）；
+- **共享根清单一律由测试注入**（`$PR_BODY_GUARD_SHARED_ROOTS` / `shared_temp_root(roots=…)`），
+  **不把「pytest 的 `tmp_path` 落在哪」当稳定前提**：本机在 `/var/folders/…`、Linux CI 在
+  `/tmp/pytest-of-runner/…`（**就是**共享根）⇒ 首版同一断言本地绿 / CI 红 5 条。判据本体没错，
+  错的是测试依赖了环境量；
+- 测试自身**不写任何共享 `/tmp` 固定名**（本文件现在**完全不写** `/tmp`）：需要「共享根」场景时
+  用 `tmp_path` 下的目录 + 注入清单；
 - 「关键词 + `#号`」「`/tmp/…` 路径」样例一律**拆开拼**（本文件自身不得出现这些字面组合，见 §2.2 / 任务铁律）。
 """
 from __future__ import annotations
@@ -39,7 +43,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -88,6 +91,17 @@ def _out(proc) -> str:
     return (proc.stdout or "") + (proc.stderr or "")
 
 
+def _roots_env(*dirs) -> dict:
+    """把**共享根清单**钉成测试自己的确定集合（`$PR_BODY_GUARD_SHARED_ROOTS` 注入）。
+
+    为什么必须注入：默认清单含 `/tmp` + 本机 `$TMPDIR`，而 **pytest 的 `tmp_path` 落在哪随平台变**
+    —— 本机在 `/var/folders/…`（非共享根）、Linux CI 在 `/tmp/pytest-of-runner/…`（**就是**共享根）
+    ⇒ 同一断言本地绿 / CI 红（首版实测 CI 5 条红）。判据本体没错，错的是"把平台相关的 tmp 位置
+    当稳定前提"。注入后每个场景的清单都由测试说了算，跨平台一致。
+    """
+    return {"PR_BODY_GUARD_SHARED_ROOTS": os.pathsep.join(str(d) for d in dirs)}
+
+
 def _make_gh_stub(dirpath: Path, payload: str, *, name="gh-stub.py", exit_code=0) -> Path:
     """替身 `gh`：只打印 payload（JSON 文本）并按 exit_code 退出；可选把 argv 记进 GH_STUB_RECORD。"""
     stub = dirpath / name
@@ -117,17 +131,15 @@ def _init_git_repo(path: Path, files: dict) -> None:
 
 
 @pytest.fixture
-def unique_shared_tmp():
-    """共享根下的**唯一名**目录（pid + 随机），用完即删。
+def shared_root(tmp_path):
+    """**测试自己说了算**的共享根（注入给被测脚本）+ 落进它的一个 body 文件。
 
-    这是本文件唯一一处写共享根的地方 —— 被测行为就是「检出 body 落在共享根」，
-    必须有一个**真的**在那儿的文件；唯一名 + 自清理 ⇒ 结构上不可能覆盖别的会话。
+    不再往真 `/tmp` 写东西：判据的输入（共享根清单）由 `$PR_BODY_GUARD_SHARED_ROOTS` 注入
+    ⇒ 跨平台确定，也不再需要"唯一名 + 自清理"来躲别的会话。
     """
-    d = Path(tempfile.mkdtemp(prefix=f"pr-body-guard-test-{os.getpid()}-", dir=TMP_TOKEN))
-    try:
-        yield d
-    finally:
-        shutil.rmtree(d, ignore_errors=True)
+    root = tmp_path / "shared-root"
+    root.mkdir()
+    return root
 
 
 # ── ① new：作用域 + 唯一性 ────────────────────────────────────────────────────
@@ -185,7 +197,8 @@ def test_new_refuses_shared_tmp_root():
 
 
 def test_new_refuses_dir_outside_worktree(tmp_path):
-    r = run_cli("new", "--dir", str(tmp_path))
+    # 注入确定清单（**不含** tmp_path）⇒ 命中「工作区」分支，不受平台 tmp 位置影响
+    r = run_cli("new", "--dir", str(tmp_path), env=_roots_env(tmp_path / "elsewhere"))
     assert r.returncode == 1, _out(r)
     assert "不在本工作区" in _out(r)
 
@@ -218,7 +231,7 @@ def test_check_prints_first_line_and_flags_close_keywords(tmp_path):
 
 def test_check_clean_body_exits_zero(tmp_path):
     body = write_body(tmp_path / "b.md", "改用会话作用域临时文件承载 PR body\n\n无关闭关键词\n")
-    r = run_cli("check", str(body))
+    r = run_cli("check", str(body), env=_roots_env(tmp_path / "shared-root"))
     assert r.returncode == 0, _out(r)
     assert "改用会话作用域临时文件承载 PR body" in r.stdout
     assert "命中 0 条" in r.stdout
@@ -226,30 +239,32 @@ def test_check_clean_body_exits_zero(tmp_path):
 
 def test_check_expect_only_allows_intended_hit_count(tmp_path):
     body = write_body(tmp_path / "b.md", _kw("Closes", 4232) + "\n")
-    assert run_cli("check", str(body)).returncode == 1
-    ok = run_cli("check", "--expect", "1", str(body))
+    env = _roots_env(tmp_path / "shared-root")
+    assert run_cli("check", str(body), env=env).returncode == 1
+    ok = run_cli("check", "--expect", "1", str(body), env=env)
     assert ok.returncode == 0, _out(ok)
     assert "命中 1 条" in ok.stdout
-    over = run_cli("check", "--expect", "0", str(body))
+    over = run_cli("check", "--expect", "0", str(body), env=env)
     assert over.returncode == 1, "本意 0 条却命中 1 条 ⇒ 必须红"
 
 
 def test_check_reference_style_sample_is_not_silently_passed(tmp_path):
+    env = _roots_env(tmp_path / "shared-root")
     naive_ref = write_body(tmp_path / "ref.md", "证据表：`" + _kw("Closes", 3559) + "`（引用式样例）\n")
-    r = run_cli("check", str(naive_ref))
+    r = run_cli("check", str(naive_ref), env=env)
     assert r.returncode == 1, "引用式样例按 §2.2 口径照样命中，不得静默放行"
     assert "#3559" in r.stdout and "确认" in r.stdout
 
     split_ref = write_body(tmp_path / "split.md", "本 PR 不关闭 `Closes` + `#3559`（拆开写，安全）\n")
-    r2 = run_cli("check", str(split_ref))
+    r2 = run_cli("check", str(split_ref), env=env)
     assert r2.returncode == 0, _out(r2)
 
 
-def test_check_flags_body_file_living_in_shared_tmp(unique_shared_tmp):
-    body = write_body(unique_shared_tmp / "b.md", _kw("Closes", 4232) + "\n")
-    r = run_cli("check", str(body))
+def test_check_flags_body_file_living_in_shared_root(shared_root):
+    body = write_body(shared_root / "b.md", _kw("Closes", 4232) + "\n")
+    r = run_cli("check", str(body), env=_roots_env(shared_root))
     assert r.returncode == 1, _out(r)
-    assert "共享临时根" in r.stdout and TMP_TOKEN in r.stdout
+    assert "共享临时根" in r.stdout and str(shared_root) in r.stdout
 
 
 def test_check_unreadable_file_is_tri_state(tmp_path):
@@ -375,10 +390,27 @@ def test_close_keyword_regex_covers_section_2_2_forms():
     assert not mod.CLOSE_KEYWORD_RE.search("`Closes` + `#7`"), "拆开写不得命中"
 
 
-def test_shared_temp_root_classification():
+def test_shared_temp_root_classification(tmp_path, monkeypatch):
+    """共享根判定**不得写平台常量**（首版硬编码 macOS 特有的 `/private/tmp` ⇒ Linux CI 红）。"""
     mod = _load_module()
+    # ① 世界共享根：两个平台都成立（返回的是**清单里的那个串**，不依赖 realpath 结果）
     assert mod.shared_temp_root(TMP_TOKEN + "/x.md") == TMP_TOKEN
     assert mod.shared_temp_root("/var" + TMP_TOKEN + "/x.md") == "/var" + TMP_TOKEN
-    assert mod.shared_temp_root("/private" + TMP_TOKEN + "/x.md") == TMP_TOKEN
-    inside = REPO_ROOT / "tests" / "tmp" / "x.md"
-    assert mod.shared_temp_root(str(inside)) is None, "工作区内目录不是共享根"
+    # ② 默认清单含本机 `$TMPDIR`（由 tempfile.gettempdir() 推导；macOS=/var/folders/…、Linux=/tmp）
+    tmpdir = tempfile.gettempdir()
+    assert any(Path(r) == Path(tmpdir) for r in mod.default_shared_temp_roots()), \
+        f"默认共享根清单未含本机 TMPDIR：{mod.default_shared_temp_roots()}"
+    assert mod.shared_temp_root(str(Path(tmpdir) / "x.md")) is not None, "本机 TMPDIR 下的路径必须判为共享根"
+    # ③ 工作区内目录不是共享根（两种平台都不在共享根下）
+    assert mod.shared_temp_root(str(REPO_ROOT / "tests" / "tmp" / "x.md")) is None
+    # ④ 显式传入清单 ⇒ 判据完全由调用方决定（跨平台确定）；空元组 ⇒ 判据关闭
+    fake = str(tmp_path / "shared")
+    assert mod.shared_temp_root(str(tmp_path / "shared" / "x.md"), roots=(fake,)) == fake
+    assert mod.shared_temp_root(str(tmp_path / "shared" / "x.md"), roots=()) is None
+    # ⑤ 环境变量注入整体替换默认清单（测试钉死场景的入口）
+    monkeypatch.setenv(mod.SHARED_ROOTS_ENV, os.pathsep.join([fake, str(tmp_path / "other")]))
+    assert mod.shared_temp_roots() == (fake, str(tmp_path / "other"))
+    assert mod.shared_temp_root(str(tmp_path / "other" / "y.md")) == str(tmp_path / "other")
+    assert mod.shared_temp_root(TMP_TOKEN + "/x.md") is None, "注入后默认清单被整体替换"
+    monkeypatch.setenv(mod.SHARED_ROOTS_ENV, "")
+    assert mod.shared_temp_roots() == () and mod.shared_temp_root(TMP_TOKEN + "/x.md") is None
