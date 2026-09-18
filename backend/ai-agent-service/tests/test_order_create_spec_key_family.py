@@ -205,3 +205,73 @@ def test_negative_unobtainable_declared_key_is_red():
 
     red = unobtainable_declarations(mutated, _obtainable_spec_keys())
     assert red == ["colorId"], f"拿不到又未标注的声明键没有被判红: {red}"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# craft spec 枚举闸门（issue #4346 包 1 · Python 生产端）
+# ══════════════════════════════════════════════════════════════════════════════
+# `processing_info` 是**整体透传**的（`order_create` 不重拼字段）⇒ 新键不会丢；
+# 但**错值**会一路写到服务端 —— 部位/工艺错了会取到**错误工序路线**
+# （实证 V58：纱帘订单拿到布帘的 11 道工序，**工序与工资全错**）。
+# 故在工具侧 fail-fast：**拒绝 + 点名合法值**，让 LLM 下一轮自愈
+# （沿用 `_reject_invalid_enum` 既有口径：刻意**不**做别名归一化）。
+import pytest  # noqa: E402  （本段自带导入，便于与上方键族测试分段阅读）
+
+
+class TestCraftSpecEnumGate:
+    """craft spec 枚举闸门：拒绝别名/错值，不静默接受。"""
+
+    @pytest.mark.parametrize(
+        "pinfo, label",
+        [
+            ({"curtainType": "窗帘"}, "部位/帘种"),
+            ({"craft": "韩式褶"}, "安装工艺"),
+            ({"componentRole": "配布"}, "明细行角色"),
+            ({"style": "拼色款"}, "款式"),
+            ({"metersSource": "自动"}, "配布边米数来源"),
+        ],
+    )
+    def test_invalid_craft_spec_enum_is_rejected(self, pinfo, label):
+        """错值/别名必须被拒（`韩式褶` 不是库枚举 `韩褶`；归一化 = 静默给错工序）。"""
+        result = OrderCreateTool._validate_processing_info(0, pinfo)
+        assert result is not None, f"{label} 错值未被拦下 ⇒ 会一路写到订单"
+        assert result.success is False
+        assert label in (result.message or ""), "报错必须点名是哪个字段"
+        assert "错误工序路线" in (result.message or ""), (
+            "必须说明**该字段的真实后果**（取错工序路线）—— 默认文案只对 SKU 规格族成立"
+        )
+        assert result.suggestion and "请改用" in result.suggestion, "必须给可行动的 suggestion"
+        assert "per_piece" not in result.suggestion, (
+            "不得串味：部位/工艺的建议里不该出现计价方式的说明（会误导 LLM 自愈方向）"
+        )
+
+    def test_valid_craft_spec_passes(self):
+        """合法值（与工序库枚举逐字一致）⇒ 放行。"""
+        assert OrderCreateTool._validate_processing_info(0, {
+            "curtainType": "纱帘",
+            "craft": "打孔",
+            "componentRole": "配布边",
+            "style": "拼色",
+            "isShaped": False,
+            "metersSource": "跟随主布",
+            "specialOptions": ["拼2次", "加铅块"],
+        }) is None
+
+    def test_absent_craft_spec_keys_pass(self):
+        """**键缺席必须放行** —— 工艺规格是可选透传，缺省不得变成硬门槛（存量单/普通商品）。"""
+        assert OrderCreateTool._validate_processing_info(0, {"sellingMethod": "bulk_cut"}) is None
+
+    def test_schema_declares_craft_spec_keys_and_description_teaches_them(self):
+        """**声明与教学必须同时存在**（issue #4346）：
+        只声明不教 ⇒ LLM 不会填（等于没实现）；只教不声明 ⇒ 参数传不进来。
+        """
+        pi_props = OrderCreateTool.parameters["properties"]["items"]["items"][
+            "properties"]["processing_info"]["properties"]
+        for key in ("curtainType", "craft", "isShaped", "style", "specialOptions",
+                    "componentRole", "craftLineId", "metersSource", "processingMeters"):
+            assert key in pi_props, f"processing_info schema 未声明 {key} ⇒ LLM 传不进来"
+        assert pi_props["craft"]["enum"] == ["韩褶", "打孔", "四爪钩", "穿杆", "平幔"], (
+            "craft 枚举必须与工序库 production_routings.craft 逐字一致"
+        )
+        desc = OrderCreateTool.description
+        for token in ("工艺规格", "componentRole", "craftLineId", "主布米数"):
+            assert token in desc, f"工具描述未教「{token}」⇒ LLM 不会填这些键"
