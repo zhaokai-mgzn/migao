@@ -18,6 +18,14 @@
 ## 红证形态
 改前：`order_create`/`aftersale_create`/`human_handoff` 的 POST 调用**没有任何**
 `X-Client-Request-Id` 头，且失败话术含「重试」二字（下节逐条断言）。
+
+## 作用域（issue #4195 后续）
+键 = (重试窗, **会话作用域**)（`session_id`，缺省回退 `user_id`）⇒ 本文件钉的是**F19 语义**
+（同一会话/同一窗 ⇒ 同一键、跨窗轮换）；**跨会话必须不同键**的判据与接线锁在
+`tests/test_idempotency_key_session_scope.py`（含"改前必红"的实测证据）。
+本文件另按 #4212 补了**操作维度**的调用形式（`op=ORDER_CREATE_OP`）：键里必须标识"哪一次
+逻辑写请求"（服务端唯一键不含 endpoint ⇒ 同会话跨端点会撞键）；op 维度的判据同样在
+`tests/test_idempotency_key_session_scope.py`。
 """
 import re
 from unittest.mock import AsyncMock, patch
@@ -29,7 +37,9 @@ from app.tools.base import ToolContext
 from app.tools.human_handoff import HumanHandoffTool
 from app.tools.order_create import (
     _IDEMPOTENCY_WINDOW_SECONDS,
+    ORDER_CREATE_OP,
     OrderCreateTool,
+    _idempotency_scope,
     _request_window_id,
     _window_id,
 )
@@ -70,15 +80,22 @@ def _with_library(client, price=168):
 
 
 class TestRequestWindowId:
-    """幂等键本体：**同一重试窗内必须是同一个值**（否则服务端去重根本无从谈起）。"""
+    """幂等键本体：**同一（会话, 重试窗）内必须是同一个值**（否则服务端去重根本无从谈起）。
 
-    def test_same_window_same_key(self):
-        assert _request_window_id() == _request_window_id(), (
-            "同一重试窗内两次取键得到不同的值 ⇒ 服务端无法去重（重试照样重复下单）")
+    ⚠️ 作用域 = 会话（issue #4195）后键不再"无参可算"：本类的断言一律显式给一个
+    `ToolContext`；"无身份"走的是另一条**登记过**的回退分支（不去重），判据与红证在
+    `tests/test_idempotency_key_session_scope.py`。
+    """
 
-    def test_key_is_url_safe(self):
+    def test_same_window_same_key(self, agent_ctx):
+        assert (_request_window_id(agent_ctx, op=ORDER_CREATE_OP)
+                == _request_window_id(agent_ctx, op=ORDER_CREATE_OP)), (
+            "同一会话同一重试窗内两次取键得到不同的值 ⇒ 服务端无法去重（重试照样重复下单）")
+
+    def test_key_is_url_safe(self, agent_ctx):
         """幂等键要进 HTTP 头/日志，必须是安全的可打印 ASCII。"""
-        assert re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", _request_window_id())
+        assert re.fullmatch(r"[A-Za-z0-9._:-]{8,128}",
+                            _request_window_id(agent_ctx, op=ORDER_CREATE_OP))
 
     def test_key_rotates_after_window(self):
         """跨窗必须换新键：**顾客真的想再打一单**时不能被当成重试吞掉（R2）。
@@ -86,23 +103,27 @@ class TestRequestWindowId:
         ⚠️ 这条断言钉住的是一个**真实踩过的实现缺陷**：把窗口号缓存在
         `@lru_cache` 无参函数里（lru_cache 的键是"调用参数"、不是返回值）⇒ 首次算出的
         窗口号被**永久冻结** ⇒ 幂等键进程生命周期内永不轮换 ⇒ 合法复购全被当成重试吞掉。
-        故这里直接断言"两个不同窗口号 ⇒ 两个不同键"，不依赖缓存内部实现。
+        故这里直接断言"**同一会话**、两个不同窗口号 ⇒ 两个不同键"，不依赖缓存内部实现。
         """
         now = 1_700_000_000.0
         w1 = int(now // _IDEMPOTENCY_WINDOW_SECONDS)
         w2 = int((now + _IDEMPOTENCY_WINDOW_SECONDS * 2) // _IDEMPOTENCY_WINDOW_SECONDS)
         assert w1 != w2, "自检：构造的两个窗口号必须不同（否则本断言为空断言）"
-        assert _window_id(w1) != _window_id(w2), (
+        assert _window_id(w1, "sess_1", op=ORDER_CREATE_OP) != _window_id(
+            w2, "sess_1", op=ORDER_CREATE_OP), (
             "跨窗仍复用同一幂等键 ⇒ 正常复购会被误判为重复提交")
 
-    def test_current_window_follows_clock(self):
-        """`_request_window_id()` 必须**跟着时钟走**（不是启动时定格的那个窗）。"""
+    def test_current_window_follows_clock(self, agent_ctx):
+        """`_request_window_id(context, op=...)` 必须**跟着时钟走**（不是启动时定格的那个窗）。"""
+        scope = _idempotency_scope(agent_ctx)
         with patch("app.tools.order_create.time.time", return_value=1_700_000_000.0):
-            assert _request_window_id() == _window_id(1_700_000_000 // 600)
+            assert _request_window_id(agent_ctx, op=ORDER_CREATE_OP) == _window_id(
+                1_700_000_000 // 600, scope, op=ORDER_CREATE_OP)
         with patch("app.tools.order_create.time.time",
                    return_value=1_700_000_000.0 + _IDEMPOTENCY_WINDOW_SECONDS * 3):
-            assert _request_window_id() == _window_id(
-                int((1_700_000_000.0 + _IDEMPOTENCY_WINDOW_SECONDS * 3) // 600))
+            assert _request_window_id(agent_ctx, op=ORDER_CREATE_OP) == _window_id(
+                int((1_700_000_000.0 + _IDEMPOTENCY_WINDOW_SECONDS * 3) // 600), scope,
+                op=ORDER_CREATE_OP)
 
 
 class TestOrderCreateSendsIdempotencyKey:

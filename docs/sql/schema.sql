@@ -872,6 +872,21 @@ COMMENT ON TABLE production_routings IS '工艺路线模板：部位×工艺 →
 COMMENT ON TABLE processing_position_operations IS '工序实例：加工单×部位×工序（应做数量/单价/系数/必完标记/报工进度），扫码报工的推进单元';
 COMMENT ON TABLE production_work_logs IS '报工记录（明细不可变）：报工三态 normal/rework/scrap；计件 = Σ(合格数量×单价×系数)，排除返工/报废；单工序一人制';
 
+-- 工序计件单价版本（V55，issue #4204）：当前价 = 最新版本行；实例单价仍是生成时快照。
+-- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V55__create_production_operation_price_versions.sql
+CREATE TABLE IF NOT EXISTS production_operation_price_versions (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    operation_id VARCHAR(64) NOT NULL REFERENCES production_operations(id),
+    unit_price NUMERIC(10,2) NOT NULL,               -- 该次变更后的单价（元/单位）
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_op_price_versions_operation
+    ON production_operation_price_versions (operation_id, created_at DESC)
+    WHERE deleted = 0;
+COMMENT ON TABLE production_operation_price_versions IS '工序计件单价版本（V55，issue #4204）：当前价 = 最新版本行；实例单价仍是生成时快照，改价不影响既有实例与历史报工';
+
 -- ================================================
 -- 9.6 智能每日经营简报（issue #3468，V44 迁移）
 -- ================================================
@@ -1527,6 +1542,18 @@ VALUES
   ('rt-v54-06', 1, '帘头', '平幔',
    '["精裁-布","布三边","帘头制作","定型-布","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active')
 ON CONFLICT (tenant_id, curtain_type, craft) WHERE deleted = 0 DO NOTHING;
+
+-- 单价版本回填（V55，issue #4204）：每条活跃工序一行初始版本 ⇒ 「当前价 = 最新版本行」对存量数据成立。
+-- 必须放在工序库种子**之后**；幂等（已有版本行的工序跳过 + ON CONFLICT 兜底）。
+INSERT INTO production_operation_price_versions (id, tenant_id, operation_id, unit_price, created_at)
+SELECT 'pv-' || o.id, o.tenant_id, o.id, o.unit_price, NOW()
+FROM production_operations o
+WHERE o.deleted = 0
+  AND NOT EXISTS (
+      SELECT 1 FROM production_operation_price_versions v
+      WHERE v.operation_id = o.id AND v.deleted = 0
+  )
+ON CONFLICT (id) DO NOTHING;
 
 -- ================================================
 -- 11. bootstrap 对齐：迁移链/java 实体已要求、本文件此前缺失的列与表（issue #3270）

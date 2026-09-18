@@ -37,10 +37,8 @@ class ProcessingOrderQueryTool(BaseTool):
     # 旧白名单里的 knowledge_editor 在目录里只有 dashboard:view + product:list ⇒ 不再放行（收窄）。
     required_permissions = ["processing:view"]
     read_only = True
-    # 已从注册表移除（产品决策 2026-09-15，issue #3917）：agent 暂不接入加工单工具，
-    # 须区分「加工项/加工单」概念并引导后台。类文件保留（tests/test_tools_processing_order_*.
-    # py 直测类），未来恢复接入时：移除 deprecated + 恢复 registry 注册 + 恢复 order skill 工具绑定。
-    deprecated = True
+    # 已恢复接入（issue #4196：反转 #3917 的下线决策）：registry 注册 + order skill 工具绑定
+    # + prompts/order.md 操作指引三处齐备；概念区分口径仍在（防混淆守则）。
     destructive = False
     idempotent = True
 

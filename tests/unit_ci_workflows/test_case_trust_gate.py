@@ -525,6 +525,55 @@ class TestReferenceFreshness:
             "规则 G 未做「只扫新增行」过滤 —— 会把存量过期引用算到无关 PR 头上（假红）"
         )
 
+    def test_binary_file_in_diff_does_not_crash_the_gate(self, tmp_path, monkeypatch):
+        """红证（issue #4210）：改动集含**二进制文件** ⇒ 规则 G 不得崩溃，且必须**显式登记跳过**。
+
+        病根：`check_reference_freshness_in_diff` 对每个改动文件无条件 `read_text(encoding="utf-8")`。
+        本仓的视觉回归基线就是 PNG（**UI 一改就必须更新**）⇒ `UnicodeDecodeError`
+        ⇒ 整个 Case Trust Gate 以 **crash** 报红：规则 G **事实上没跑**，却把合法 PR 拦下
+        （既是**假红**，又让判据在「改动集含二进制」这一整类 PR 上失效）。
+        实证载体：PR #4209（小布主页改版只更新了截图基线，业务断言全绿，本 gate 9s 内崩溃）。
+
+        判据三条（缺任一条都不算修好）：
+          ① 不抛异常；
+          ② 二进制文件进 `skipped_binary`（**登记**，不是静默跳过 —— 「没跑」必须长得像「没跑」）；
+          ③ 跳过**只作用于不可解码的文件**：同一次调用里的**文本**文件仍照旧进入判定管线
+             （`ref_count ≥ 1` 且该文本文件不在 `skipped_binary` 里 ⇒ 跳过没有把真判据一起吞掉）。
+
+        夹具用**真实存在**的路径、并带 `@<sha>` 限定（`scripts/drift_audit.py:5@d5bca241`）：
+        本用例要证的是「文本文件的引用**进入了判定管线**」，不是「这条引用悬空」；写悬空或
+        未限定的 `path:NNN` 字面量会凭空给 drift_audit 的 ref-freshness 添一条新漂移
+        （那是**另一条**判据，不该被本红证污染）。`@<sha>` 是 dev-flow §16.7『引用纪律』
+        给「活跃文件里的行号」规定的合法形态。
+        隔离 `REPO_ROOT` 后路径解析必然失败 ⇒ 该引用必然落入 blocking 集，故**判别性断言**
+        是「它进来了」（`ref_count`），blocking 只作辅证。
+        """
+        gate = _gate_module()
+        # 隔离到 tmp_path：不写仓库树、不依赖任何真实二进制资产（并发安全、可复跑）
+        monkeypatch.setattr(gate, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(gate, "_ORIGIN_LINES_CACHE", {})
+
+        bin_rel = "assets/probe_binary_4210.png"
+        bin_path = tmp_path / bin_rel
+        bin_path.parent.mkdir(parents=True, exist_ok=True)
+        bin_path.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01")
+
+        text_rel = "notes/probe_4210.md"
+        text_path = tmp_path / text_rel
+        text_path.parent.mkdir(parents=True, exist_ok=True)
+        text_path.write_text("见 `scripts/drift_audit.py:5@d5bca241` 的实现\n", encoding="utf-8")
+
+        res = gate.check_reference_freshness_in_diff([bin_rel, text_rel], base="origin/main")
+
+        assert res.get("skipped_binary") == [bin_rel], (
+            f"二进制文件未被登记为跳过（要么崩溃、要么静默跳过）：{res.get('skipped_binary')}")
+        assert text_rel not in res["skipped_binary"], (
+            f"文本文件被误判为二进制而跳过 —— 跳过面过宽，会连真判据一起吞：{res}")
+        assert res["ref_count"] >= 1, (
+            f"文本文件的 `path:NNN` 引用没进入判定管线 ⇒ 跳过把真判据一起吞掉了（假绿）：{res}")
+        assert res["blocking"], (
+            f"进入管线的引用未被判定（隔离 root 下解析必然失败 ⇒ 应落入 blocking）：{res}")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 二、判据不得宽到误伤（假红侧）
@@ -733,7 +782,10 @@ class TestDegenerateGuardRails:
         病根：`WRITE_TOOLS` 是**手写枚举**（本模块 header 解释过为什么必须显式枚举、
         不能用宽正则），但它与「工具是否还在」是两个各自维护的清单 ⇒ 工具下线后
         分类表照旧保留 ⇒ 出现**幽灵写工具**。实证：`processing_order_generate` /
-        `processing_order_update` 已于 #3917 从注册表与 skill 绑定移除，本表仍列着。
+        `processing_order_update` 曾在 #3917 下线期滞留本表（#4010 / A13 的立单理由）；
+        ⚠️ 两者已按 **#4196** 恢复接入 ⇒ **不再是幽灵**（现为本表的正当成员），
+        当前该形态的活例是 `human_handoff`（用户裁定 2026-09-19 退场、注册行已注释、
+        类文件仍在）。
 
         为什么是静默失效：`WRITE_TOOLS` 只被 `judge_case` 用来判「该用例是不是写用例」——
         多一个永不出现的工具名，既不会报错也不会让任何用例变红，只是把判据从

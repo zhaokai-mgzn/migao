@@ -77,6 +77,14 @@ WRITE_TOOLS: frozenset[str] = frozenset({
     "product_processing_item_manage",  # WRITE|IDEMPOTENT
     "product_update",              # WRITE|IDEMPOTENT
     "sku_update",                  # WRITE|IDEMPOTENT
+    # 加工单写工具（issue #4196 恢复接入 ⇒ 重新落回「当前可达」面，必须在此表态；
+    # #3917 下线期它们**不在**本表 —— 正是「已注册写工具必须显式表态」这条摩擦的实例）。
+    # 两者**整工具即写**：`processing_order_generate` 只有 `generate`（批量建单 + 订单
+    # confirmed→producing）；`processing_order_update` 的 `VALID_ACTIONS` 四个
+    # （issue/start/complete/cancel）**全是状态迁移**，类里没有 `read_only_actions`
+    # ⇒ 不存在只读 action ⇒ 进 `WRITE_TOOLS` 而非 `WRITE_TOOL_ACTIONS`。
+    "processing_order_generate",   # WRITE|NON_IDEMPOTENT
+    "processing_order_update",     # WRITE|DESTRUCTIVE|NON_IDEMPOTENT
 })
 
 # `WRITE_TOOL_ACTIONS`：工具级 read_only=False，但**只有部分 action 是写**

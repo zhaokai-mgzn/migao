@@ -48,6 +48,14 @@
      且三个违规分支各自可被触发 —— 否则本文件就是一堆「不会红的断言」；
   ⑤ 反向守卫：用 **runner 自己的** `check_must_succeed` × **用例自己声明的**
      `must_succeed`（`ALL_CASES` 的 PG-016）跑合成轨迹 —— 「真的没调 complete」仍必须红。
+
+## 判据翻转沿革（本文件是「口径一致性」的守卫，不是下线态的快照）
+
+  · 2026-09-15（issue #3917）：加工单工具下线 ⇒ ① 翻成「order.md 不得出现发加工操作行」；
+  · 2026-09-18（**issue #4196 恢复接入**）：registry + order_skill + prompts 三处一起恢复
+    ⇒ ① 翻回 `optional_contract_violations(text) == []`，并加一条「工具确实已回注册表」的
+    配套锁（防只改 prompt 没恢复绑定）。②③④⑤ 与 `PRE_FIX_ISSUE_LINE` 快照**一直未动**
+    —— 它们不依赖下线/上线状态，是本文件判别力的来源。
 """
 import os
 import re
@@ -137,23 +145,29 @@ def _runner():
 def test_order_prompt_issue_line_declares_optional_contract():
     """`order.md` 发加工行必须声明 processor/交期可选 + 含「不得死循环索要」的出路。
 
-    ⚠️ 2026-09-15（issue #3917）起，**期望翻转**：加工单工具对 agent 关闭，
-    order.md 的「加工单操作」章节（含发加工行）已整体替换为「加工项 vs 加工单
-    概念区分 + 不接入声明」⇒ 当前正确状态 = **不存在** `processing_order_update`
-    操作行（锚点缺失不再是违规）。恢复接入加工单工具时（registry + order_skill +
-    prompt 三处一起恢复），把本断言改回 `violations == []`（本文件 docstring 与
-    PRE_FIX_ISSUE_LINE 保留旧口径与病灶快照，作为恢复时的检查器凭据）。
+    ⚠️ 判据**两次翻转**（都按「改的是真值不是断言」处理，各自的凭据都留在本文件）：
+      · 2026-09-15（issue #3917）：加工单工具对 agent 关闭，order.md 的「加工单操作」
+        章节整体替换为「加工项 vs 加工单概念区分 + 不接入声明」⇒ 期望**翻转成**
+        「不存在发加工操作行（锚点缺失不再是违规）」；
+      · 2026-09-18（**issue #4196 恢复接入**）：三处（registry 注册 + order_skill 工具绑定
+        + prompts/order.md 操作指引）一起恢复 ⇒ 期望**翻回** `violations == []`
+        —— 即 #3917 的 docstring 里写明的那句「恢复接入时把本断言改回」。
+    `PRE_FIX_ISSUE_LINE`（改前原文快照）与其上的检查器**一直保留**，正是本次翻回所需的
+    检查器凭据（`test_checker_flags_pre_fix_prompt_verbatim` 仍会证明它会红）。
     """
     text = read_prompt()
-    line = issue_line(text)
-    assert line == "", (
-        "order.md 又出现了发加工操作行（processing_order_update(action=issue）——"
-        "加工单工具对 agent 未开放（issue #3917），概念区分口径下不应存在操作指引；"
-        "若确要恢复接入，请同步恢复 registry 注册 + order_skill 工具绑定，"
-        "并把本断言改回 optional_contract_violations(text) == []"
+    assert optional_contract_violations(text) == [], (
+        "order.md 的发加工行不满足「可选性口径」—— processor/交期在工具 schema"
+        "（required=['id','action']）、validate_input（issue.required=['id']）、服务端 DTO/Service"
+        "四处均为可选，prompt 必须同口径标注「可选」并给出「缺字段也可推进」的出路；"
+        "否则模型会自造必填、反复索要（PG-016 首跑 run 34908262839 的病灶形态）"
     )
-    assert "processing_order_update" not in text, (
-        "order.md 不应再引用 processing_order_update 工具（agent 暂不接入，issue #3917）"
+    # 配套锁：恢复接入后该工具**确实**回到 agent 可达面 —— 防「只改 prompt 没恢复绑定」
+    from app.tools.registry import get_tool_registry
+
+    assert get_tool_registry().get_tool("processing_order_update") is not None, (
+        "order.md 已有 processing_order_update 操作指引，但该工具未在注册表里"
+        "（issue #4196 要求 registry + order_skill + prompt 三处一起恢复）"
     )
 
 
@@ -161,12 +175,11 @@ def test_order_prompt_issue_line_declares_optional_contract():
 def test_optionality_is_consistent_across_enforced_layers():
     """工具 schema 对 processor 与交期的可选性口径自洽（可强制层的残留契约）。
 
-    ⚠️ 2026-09-15（issue #3917）：加工单工具对 agent 关闭 —— 工具类保留但未注册，
-    `validate_input` 的加工单闸门规则已随注册表移除（死键不变式，见
-    `tests/test_tools_validate_input.py::TestValidationRuleKeysAreLive`）⇒ 本测试只钉
-    **工具类自身 schema**（恢复接入时 validate_input 规则需按 git 历史版本补回并
-    与本 schema 对齐）；prompt 侧由
-    `test_order_prompt_issue_line_declares_optional_contract` 按新口径守护。
+    ⚠️ 2026-09-15（issue #3917）曾注明「工具未注册 ⇒ 只钉工具类自身 schema」；
+    **#4196 恢复接入后**工具已回注册表、`validate_input` 的加工单闸门规则也已恢复
+    （见 `app/tools/validate_input.py` 的 `processing_order_update.issue.required == ["id"]`）
+    ⇒ 工具 schema 与闸门规则**两处**都必须与 prompt 同口径。prompt 侧由
+    `test_order_prompt_issue_line_declares_optional_contract` 守护。
     """
     schema = ProcessingOrderUpdateTool.parameters
     assert schema["required"] == ["id", "action"], (

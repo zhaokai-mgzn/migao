@@ -1,4 +1,4 @@
-// case_ids: API-010, CU-006
+// case_ids: API-010, CU-006, PG-021
 package com.migao.admin.service;
 
 import com.migao.admin.dto.LoginRequest;
@@ -445,5 +445,72 @@ class AuthServiceTest {
 
         // then：既有用户同样触发建档（刷新 last_active_at 语义）
         verify(customerService).createFromSession(eq(1L), eq("openid_existing"), any(), eq("wechat_mini"));
+    }
+
+    // ======================== 生产管理菜单（issue #4203/#4205 后端半边） ========================
+
+    /**
+     * 商户管理员菜单里的「生产管理」组（真值源 §2/§4 的商家入口）。
+     *
+     * <p>为什么必须在**后端**锁：侧边栏由 {@code AuthService.buildMenusByPermissions} 生成，
+     * 而「岗位权限」页读的是 {@code MenuController} 的静态树 —— 两边不同构就会出现
+     * 「勾了权限却看不到菜单」/「菜单点不进」。schema 见 issue #4203 交付面表格。</p>
+     */
+    @Test
+    @DisplayName("生产管理组：三节点路由 + 权限码 processing:manage（与 MenuController/menu.ts 同构）")
+    void currentUserMenusExposeProductionGroup() {
+        authenticateAs("user-001", 1L);
+        when(userService.getUserById("user-001")).thenReturn(testUser);
+        when(roleService.getUserPermissions("user-001")).thenReturn(List.of("processing:manage"));
+
+        com.migao.admin.dto.UserInfoResponse info = authService.getCurrentUser();
+
+        com.migao.admin.dto.UserInfoResponse.MenuItem production = info.getMenus().stream()
+                .filter(menu -> "生产管理".equals(menu.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("菜单缺少「生产管理」组："
+                        + info.getMenus().stream().map(com.migao.admin.dto.UserInfoResponse.MenuItem::getName).toList()));
+        // 组 key 沿用既有侧边栏约定（product-center / trade-center / customer-center 同族），
+        // 与前端 config/menu.ts 的 MenuGroup.key 对齐
+        assertThat(production.getKey()).isEqualTo("production-center");
+        assertThat(production.getChildren())
+                .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getName)
+                .containsExactly("生产看板", "工序库", "计件工资");
+        assertThat(production.getChildren())
+                .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getPath)
+                .containsExactly("/production", "/production/operations", "/production/piecework");
+
+        clearAuthentication();
+    }
+
+    @Test
+    @DisplayName("无 processing:manage 权限 ⇒ 生产管理组整组不出现（权限门控不得漏）")
+    void currentUserMenusHideProductionGroupWithoutPermission() {
+        authenticateAs("user-001", 1L);
+        when(userService.getUserById("user-001")).thenReturn(testUser);
+        when(roleService.getUserPermissions("user-001")).thenReturn(List.of("order:list"));
+
+        com.migao.admin.dto.UserInfoResponse info = authService.getCurrentUser();
+
+        assertThat(info.getMenus())
+                .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getName)
+                .doesNotContain("生产管理");
+
+        clearAuthentication();
+    }
+
+    private void authenticateAs(String userId, Long tenantId) {
+        com.migao.admin.security.SecurityUser securityUser = new com.migao.admin.security.SecurityUser(
+                userId, tenantId, "13800138000", List.of("admin"),
+                List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_admin")));
+        org.springframework.security.core.Authentication authentication =
+                mock(org.springframework.security.core.Authentication.class);
+        when(authentication.isAuthenticated()).thenReturn(true);
+        when(authentication.getPrincipal()).thenReturn(securityUser);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(authentication);
+    }
+
+    private void clearAuthentication() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
     }
 }

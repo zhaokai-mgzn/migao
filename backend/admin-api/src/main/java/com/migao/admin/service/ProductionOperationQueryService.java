@@ -24,8 +24,9 @@ import java.util.Objects;
  * 本类补上「可查询/可展示」这一半：读 V54 种子（`app/production/routing.py` 的 30 道工序
  * + 6 条 部位×工艺 路线）并按展示口径整形。</p>
  *
- * <p><b>只读边界（本类明确不做）</b>：不提供工序库的增删改端点 —— 商家自定义工序/调价/停用
- * 属配置面。本类**只有** SELECT，端点也只有 GET。</p>
+ * <p><b>只读边界（本类明确不做）</b>：本类**只有** SELECT，端点也只有 GET。工序库的写面
+ * （改单价/停用/排序）在 {@link ProductionOperationCommandService}（PUT /production/operations/{id}，
+ * issue #4204）—— 读写分开，写面不在本类里开口子。</p>
  *
  * <p><b>{@link #findRouting} 是「生成加工单即实例化」的工序来源</b>（issue #4116 用户裁定「现在就切」，
  * 2026-09-18）：工序实例的 seq/工序名/分组/单位/单价/必完标记**全部**来自本类读到的库行，
@@ -64,7 +65,7 @@ public class ProductionOperationQueryService {
         Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
         for (ProductionOperation op : rows) {
             String group = op.getGroupName() == null ? "其他" : op.getGroupName();
-            grouped.computeIfAbsent(group, key -> new ArrayList<>()).add(catalogView(op));
+            grouped.computeIfAbsent(group, key -> new ArrayList<>()).add(operationView(op));
         }
         List<Map<String, Object>> groups = new ArrayList<>();
         grouped.forEach((group, items) -> {
@@ -213,7 +214,11 @@ public class ProductionOperationQueryService {
         return names;
     }
 
-    private Map<String, Object> catalogView(ProductionOperation op) {
+    /**
+     * 工序项展示形态（目录项 / 写面 PUT 的响应**共用同一份**——两处各自拼一份必然漂移，
+     * 而前端拿同一个 TS 类型渲染两者）。
+     */
+    public Map<String, Object> operationView(ProductionOperation op) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("id", op.getId());
         view.put("name", op.getName());

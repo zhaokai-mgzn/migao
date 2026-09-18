@@ -35,6 +35,7 @@ jest.mock('../src/services/productionService', () => ({
   ...jest.requireActual('../src/services/productionService'),
   getOrderOperations: jest.fn(),
   reportOperation: jest.fn(),
+  getOrderPiecework: jest.fn(),
   // 锁用**真身**（不 mock）：本文件的判据就是「锁真的挡住了第二笔」
 }))
 
@@ -99,6 +100,15 @@ async function openPage() {
   await screen.findByText('韩褶')
 }
 
+/**
+ * 可点的「完成报工」按钮：取第 2 个（韩褶，应做 11 / 已报 0）。
+ * 为什么不取第 1 个（精裁，已报满）：issue #4206 起前端会先拦「已报满 / 超上限」的报工，
+ * 已报满的工序点下去**不发请求**（旧行为是发一个必然被服务端拒的请求）⇒ 取第 1 个会让
+ * 本文件的三条锁断言（发几次 / 在飞 disabled / 失败后可再点）全部落空。
+ * 本文件判的是**锁**，与工序状态无关，故按钮落在「有待报数量」的工序上即可。
+ */
+const reportButton = () => screen.getAllByText('完成报工')[1]
+
 describe('ProductionPage 报工防连点（issue #4116 §5-1）', () => {
   beforeEach(() => {
     jest.clearAllMocks()
@@ -117,7 +127,7 @@ describe('ProductionPage 报工防连点（issue #4116 §5-1）', () => {
     mockReport.mockReturnValue(pending.promise)
     await openPage()
 
-    const button = screen.getAllByText('完成报工')[0]
+    const button = reportButton()
     // 为什么用**原生 dispatchEvent 连续同步派发**（而不是 3 次 fireEvent.click）：
     //   ① `fireEvent` 内部包 act() ⇒ 第一次点击后 React 已把按钮刷成 disabled，
     //      而 jsdom/浏览器都会跳过 disabled 元素上的点击 ⇒ 后续点击根本到不了
@@ -145,7 +155,7 @@ describe('ProductionPage 报工防连点（issue #4116 §5-1）', () => {
     mockReport.mockReturnValue(pending.promise)
     await openPage()
 
-    fireEvent.click(screen.getAllByText('完成报工')[0])
+    fireEvent.click(reportButton())
 
     const inFlight = await screen.findByText('报工中…')
     expect(inFlight.closest('button')?.hasAttribute('disabled')).toBe(true)
@@ -162,7 +172,7 @@ describe('ProductionPage 报工防连点（issue #4116 §5-1）', () => {
     mockReport.mockResolvedValueOnce({ success: false, message: '前道工序「精裁」尚未完成' })
     await openPage()
 
-    fireEvent.click(screen.getAllByText('完成报工')[0])
+    fireEvent.click(reportButton())
     expect(await screen.findByText('前道工序「精裁」尚未完成')).toBeTruthy()
 
     // 失败后再点 ⇒ 真的会再发一次（锁只在 in-flight 期间生效）
@@ -170,7 +180,7 @@ describe('ProductionPage 报工防连点（issue #4116 §5-1）', () => {
       success: true,
       data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false },
     })
-    fireEvent.click(screen.getAllByText('完成报工')[0])
+    fireEvent.click(reportButton())
     await waitFor(() => expect(mockReport).toHaveBeenCalledTimes(2))
   })
 })

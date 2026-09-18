@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, UI-030
+// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, UI-030
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -1005,5 +1005,85 @@ class ProcessingOrderServiceTest {
         assertThatThrownBy(() -> processingOrderService.generate(List.of("order-001"), TENANT, "u1"))
                 .isInstanceOf(RuntimeException.class);
         verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+    }
+
+    // ══════════════════ 存量单补工序的派生 + 打印计数（issue #4202）══════════════════
+
+    @Test
+    @DisplayName("#4202 派生 payload：复用生成路径的工序库路线（部位=加工产物名+色号，工序逐字取库）")
+    @SuppressWarnings("unchecked")
+    void derivePositionPayloadUsesOperationLibrary() {
+        stubLibrary();
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemHanzhe("米白")));
+
+        List<Map<String, Object>> positions = processingOrderService.derivePositionPayload("order-001", TENANT);
+
+        assertThat(positions).hasSize(1);
+        assertThat(positions.get(0).get("position_name")).isEqualTo("布艺遮光帘A 米白");
+        List<Map<String, Object>> operations = (List<Map<String, Object>>) positions.get(0).get("operations");
+        assertThat(operations).hasSize(11);
+        assertThat(operations.get(0)).containsEntry("operation", "精裁-布")
+                .containsEntry("group", "裁剪").containsEntry("unit", "米")
+                .containsEntry("is_start_marker", true);
+        assertThat((BigDecimal) operations.get(0).get("unit_price")).isEqualByComparingTo("0.4");
+        assertThat((BigDecimal) operations.get(0).get("qty"))
+                .as("应做数量 = 该部位订单数量（缺值兜底 1，绝不落 0）").isEqualByComparingTo("2");
+        assertThat(operations.get(9)).containsEntry("operation", "外帘装袋")
+                .containsEntry("is_must_finish", true);
+    }
+
+    @Test
+    @DisplayName("#4202 派生 fail-closed：工序库无路线 ⇒ 中止（绝不返回空 payload 落个空壳）")
+    void derivePositionPayloadFailsClosedOnEmptyLibrary() {
+        stubEmptyLibrary();
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemHanzhe("米白")));
+
+        assertThatThrownBy(() -> processingOrderService.derivePositionPayload("order-001", TENANT))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("工序库");
+    }
+
+    @Test
+    @DisplayName("#4202 派生：订单不存在（含跨租户）⇒ 404，不静默返回空")
+    void derivePositionPayloadUnknownOrderNotFound() {
+        when(orderMapper.selectById("order-x")).thenReturn(null);
+        when(orderMapper.selectOne(any())).thenReturn(null);
+
+        assertThatThrownBy(() -> processingOrderService.derivePositionPayload("order-x", TENANT))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    @DisplayName("#4202 打印计数：SQL 内原子自增并返回新计数（此前 print_count 零写方）")
+    void recordPrintIncrementsCounter() {
+        when(processingOrderMapper.selectOne(any())).thenReturn(ProcessingOrder.builder()
+                .id("po-001").tenantId(TENANT).orderId("order-001")
+                .processingOrderNo("JG-20260918-0001").status("generated").printCount(2).deleted(0)
+                .build());
+        when(processingOrderMapper.incrementPrintCount(eq("po-001"), eq(TENANT), any())).thenReturn(1);
+        when(processingOrderMapper.selectById("po-001")).thenReturn(ProcessingOrder.builder()
+                .id("po-001").tenantId(TENANT).orderId("order-001")
+                .processingOrderNo("JG-20260918-0001").status("generated").printCount(3).deleted(0)
+                .build());
+
+        Map<String, Object> result = processingOrderService.recordPrint("order-001", TENANT);
+
+        assertThat(result.get("order_id")).isEqualTo("order-001");
+        assertThat(result.get("processing_order_no")).isEqualTo("JG-20260918-0001");
+        assertThat(result.get("print_count")).isEqualTo(3);
+        verify(processingOrderMapper).incrementPrintCount(eq("po-001"), eq(TENANT), any());
+    }
+
+    @Test
+    @DisplayName("#4202 打印计数：无加工单 ⇒ 404（不静默返回 0 或凭空造计数）")
+    void recordPrintWithoutProcessingOrderNotFound() {
+        when(processingOrderMapper.selectOne(any())).thenReturn(null);
+
+        assertThatThrownBy(() -> processingOrderService.recordPrint("order-001", TENANT))
+                .isInstanceOf(BusinessException.class);
+
+        verify(processingOrderMapper, never()).incrementPrintCount(any(), any(), any());
     }
 }

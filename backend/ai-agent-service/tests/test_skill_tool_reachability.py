@@ -209,14 +209,39 @@ def cross_skill_gap_matrix(skills, tools, validation_targets) -> dict[str, froze
 # ──────────────────────────────────────────────────────────────────────────────
 #
 # ⚠️ 这不是「永久豁免」，是**已被登记的存量事实**：
-#   · 锚定：`origin/main` @ **c0be8e35**（本账本落地时的实测真值，逐条可复算）；
-#   · 合计：**126** 条 / **8** 个绑了 `validate_input` 的 skill；
+#   · 锚定：`origin/main` @ **d5bca241**（2026-09-18 由 issue #4196 **重新锚定**：
+#     126 条 → **140** 条，逐条可复算；原锚 c0be8e35 的 126 条为 #4012 落地时的真值）；
+#   · 合计：**140** 条 / **8** 个绑了 `validate_input` 的 skill
+#     （126 存量 + **14 条由 #4196 恢复加工单工具引入**，见下方「#4196 重新锚定」）；
 #   · **语义（issue #4079 调整后）**：账本 = 「这些 skill 还没绑那些写工具」的**事实登记**，
 #     **不是放行许可** —— 机制修复后每一处死角都由 `validate_input` 的域闸门在**运行时拦下**
 #     （`test_every_registered_gap_is_rejected_at_runtime` 逐条断言）；
 #   · 账本只许缩短 —— 条目在真值中不再命中时，守卫会打印 `SHOULD SHRINK` 要求移除；
 #   · 新 skill / 新写工具引入的死角**不在账本里 ⇒ 直接红**（`test_no_skill_validates_…` 的 fail 分支）；
 #   · 销账跟踪：**#4017**（机制修复 —— 已由 #4079 落地：域比对 + 越界拦截）。
+#
+# ⚠️ **#4196 重新锚定（126 → 140）——为什么这不是「新增债务靠登记销声」**：
+#   · 事实链（每一环都有别的门禁兜着，不是自选动作）：
+#     ① 产品裁定恢复加工单三工具（#4196）⇒ `registry` 重新注册 `processing_order_generate`
+#        / `processing_order_update`（写工具）；
+#     ② F6（`test_validation_rules_invariants::test_every_write_action_is_deterministically_gated`）
+#        要求「已登记可写 ⇒ `_VALIDATION_RULES` 必须有规则」⇒ 两块规则恢复；
+#     ③ 那张表是**域无关**的（A5 的前提，未变）⇒ 校验目标多了 2 个，而只有 `order` skill
+#        绑了这两个工具 ⇒ 其余 7 个绑 `validate_input` 的 skill 各 +2 处死角。
+#   · 判据面**没有放宽**：新增的 14 条与存量同族（「工具只被 1~2 个 skill 绑定」的架构事实），
+#     且**逐条被运行时域闸门拦下** —— `test_every_registered_gap_is_rejected_at_runtime`
+#     对**活真值**全量比对（skill × `_VALIDATION_RULES` 目标），不读账本、不因登记而跳过；
+#   · 反向选择更坏：不注册工具 = 违背 #4196 的产品裁定；不恢复规则 = F6 红（fail-closed
+#     会拦死合法调用）；把规则藏到 AST 读不到的位置 = 对守卫做**静默规避**（最坏形态）。
+#   · **窄例外**（本账本**只许缩短**不因本次重新锚定而改变）：锚点前移**仅**允许在
+#     「产品决策把既有工具恢复进某 skill」这一形态下发生，且必须同时满足 ——
+#     ① 新增条目**逐条逐名**写进 `A5_REANCHOR_ADDITIONS`；
+#     ② 逐条过 `test_reanchored_additions_trace_to_a_real_product_change`（目标**已注册** +
+#        **写工具** + **至少被一个 skill 绑定** ⇒ 增量可追溯到真实产品变更）；
+#     ③ 计数对账（账本总数 − 增量 == 旧锚条数）。其余一切「新增死角」仍**直接红**。
+#   · 销账方向（这 14 条落在 **#4017** 的结构性修复范围内）：加工单写工具若被更多 skill
+#     绑定、或 `validate_input` 的域闸门改为**前置**（目标不再进全局限定表），这 14 条随真值
+#     消失 ⇒ 守卫打印 `SHOULD SHRINK` 要求移除。
 #
 # 复算命令（把下面的集合与真值 diff 出来）：
 #   backend/ai-agent-service/.venv/bin/python -m pytest \
@@ -226,14 +251,18 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
     "aftersales": frozenset({
         "aftersale_create", "category_manage", "customer_manage", "employee_manage",
         "finance_api", "inventory_manage", "notification_manage", "order_create",
-        "processing_item_manage", "product_manage", "product_processing_item_manage",
+        "processing_item_manage",
+        "processing_order_generate", "processing_order_update",  # #4196 恢复接入
+        "product_manage", "product_processing_item_manage",
         "product_update", "role_manage", "session_manage", "settings_manage", "sku_update",
     }),
     # customer：自己工具集 5 个 → 死角 17 个
     "customer": frozenset({
         "aftersale_create", "after_sales_manage", "category_manage", "employee_manage",
         "finance_api", "inventory_manage", "notification_manage", "order_create",
-        "order_manage", "processing_item_manage", "product_manage",
+        "order_manage", "processing_item_manage",
+        "processing_order_generate", "processing_order_update",  # #4196 恢复接入
+        "product_manage",
         "product_processing_item_manage", "product_update", "role_manage",
         "session_manage", "settings_manage", "sku_update",
     }),
@@ -241,7 +270,9 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
     "customer_aftersales": frozenset({
         "after_sales_manage", "category_manage", "customer_manage", "employee_manage",
         "finance_api", "inventory_manage", "notification_manage", "order_create",
-        "order_manage", "processing_item_manage", "product_manage",
+        "order_manage", "processing_item_manage",
+        "processing_order_generate", "processing_order_update",  # #4196 恢复接入
+        "product_manage",
         "product_processing_item_manage", "product_update", "role_manage",
         "session_manage", "settings_manage", "sku_update",
     }),
@@ -249,7 +280,9 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
     "customer_order": frozenset({
         "aftersale_create", "after_sales_manage", "category_manage", "customer_manage",
         "employee_manage", "finance_api", "inventory_manage", "notification_manage",
-        "order_manage", "processing_item_manage", "product_manage",
+        "order_manage", "processing_item_manage",
+        "processing_order_generate", "processing_order_update",  # #4196 恢复接入
+        "product_manage",
         "product_processing_item_manage", "product_update", "role_manage",
         "session_manage", "settings_manage", "sku_update",
     }),
@@ -264,13 +297,16 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
     "product": frozenset({
         "aftersale_create", "after_sales_manage", "customer_manage", "employee_manage",
         "finance_api", "notification_manage", "order_create", "order_manage",
+        "processing_order_generate", "processing_order_update",  # #4196 恢复接入
         "role_manage", "session_manage", "settings_manage",
     }),
     # settings：自己工具集 4 个 → 死角 16 个
     "settings": frozenset({
         "aftersale_create", "after_sales_manage", "category_manage", "customer_manage",
         "employee_manage", "finance_api", "inventory_manage", "order_create",
-        "order_manage", "processing_item_manage", "product_manage",
+        "order_manage", "processing_item_manage",
+        "processing_order_generate", "processing_order_update",  # #4196 恢复接入
+        "product_manage",
         "product_processing_item_manage", "product_update", "role_manage",
         "session_manage", "sku_update",
     }),
@@ -278,11 +314,58 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
     "staff": frozenset({
         "aftersale_create", "after_sales_manage", "category_manage", "customer_manage",
         "finance_api", "inventory_manage", "notification_manage", "order_create",
-        "order_manage", "processing_item_manage", "product_manage",
+        "order_manage", "processing_item_manage",
+        "processing_order_generate", "processing_order_update",  # #4196 恢复接入
+        "product_manage",
         "product_processing_item_manage", "product_update", "settings_manage",
         "session_manage", "sku_update",
     }),
 }
+
+# ── #4196 锚点前移的**增量登记**（窄例外；逐条逐名，须过机器核验）───────────────
+# 唯一允许锚点前移的形态：**产品决策把既有工具恢复进某 skill**（工具回到注册表 ⇒ F6 要求
+# 恢复其 `_VALIDATION_RULES` ⇒ **域无关**的校验目标表新增目标 ⇒ 未绑该工具的 skill 各 +2）。
+# 逐条逐名登记「skill → 新增的目标写工具」，并由
+# `test_reanchored_additions_trace_to_a_real_product_change` 逐条核三条正当性
+# （已注册 / 是写工具 / 至少被一个 skill 绑定）——**防这次成为以后「顺手 re-anchor」的口子**。
+A5_REANCHOR_ADDITIONS: dict[str, frozenset[str]] = {
+    "aftersales": frozenset({"processing_order_generate", "processing_order_update"}),
+    "customer": frozenset({"processing_order_generate", "processing_order_update"}),
+    "customer_aftersales": frozenset({"processing_order_generate", "processing_order_update"}),
+    "customer_order": frozenset({"processing_order_generate", "processing_order_update"}),
+    "product": frozenset({"processing_order_generate", "processing_order_update"}),
+    "settings": frozenset({"processing_order_generate", "processing_order_update"}),
+    "staff": frozenset({"processing_order_generate", "processing_order_update"}),
+}
+
+# 旧锚（#4012 落地时）的条数 —— 只作**计数对账**用（增量 = 总数 − 旧锚数），不复制整份旧集合
+A5_BASELINE_COUNT_PRE_4196 = 126
+
+
+def unjustified_reanchor_additions(additions, tools, skills) -> list[str]:
+    """**判据内核**（纯函数）：锚点前移的每个新增条目必须可追溯到**真实产品变更**。
+
+    三条（缺一即报出，逐条给理由）：
+      ① `target` **已注册**（`tools.get_tool(target)` 非 None）——「既有工具」；
+      ② `target` 是**写工具**（`read_only=False`）——只读目标不进 A5 矩阵，登记它没有意义；
+      ③ `target` **至少被一个 skill 绑定**（`cfg.tool_names`）——「恢复**进**某个 skill」的判据；
+         若一个工具谁都没绑，那就是真的新死角，**不许**靠登记销声。
+    """
+    bound = {t for cfg in skills for t in (cfg.tool_names or [])}
+    bad: list[str] = []
+    for skill, targets in sorted(additions.items()):
+        for target in sorted(targets):
+            tool = tools.get_tool(target)
+            if tool is None:
+                bad.append(f"{skill} → {target}：**未注册**（不是「既有工具」恢复，是凭空死角）")
+            elif tool.read_only:
+                bad.append(f"{skill} → {target}：**只读工具**（不进 A5 矩阵，登记无效）")
+            elif target not in bound:
+                bad.append(
+                    f"{skill} → {target}：**没有任何 skill 绑定它**（不是「恢复进某 skill」"
+                    f"⇒ 真新增死角，不许靠登记销声）"
+                )
+    return bad
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -293,9 +376,12 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
 def test_validate_targets_are_registered_tools():
     """`_VALIDATION_RULES` 的每个 key 必须是**已注册**工具（防陈旧表指向已下线工具）。
 
-    反例输入（红证 ⑤）：把已下线的 `processing_order_generate` 写回 `_VALIDATION_RULES` ⇒ 红。
-    该工具类**仍在** `app/tools/processing_order_generate.py`，只是**不再注册**
-    （issue #3917 产品决策）—— 所以「文件存在」不能当判据，必须比注册表。
+    反例输入（红证 ⑤）：把**未注册**的工具名（如已退场的 `human_handoff`）写回
+    `_VALIDATION_RULES` ⇒ 红 —— 工具类文件仍在 `app/tools/`，但**不在注册表**里；
+    所以「文件存在」不能当判据，必须比注册表。
+    ⚠️ 本条与 #4196 的反转配套：`processing_order_generate` 曾是该红证的实例（#3917 下线期
+    间「文件在、未注册」），#4196 恢复接入后它**已回到注册表** ⇒ 不再是红证实例，
+    换成「类在但未注册」的通用形态（`human_handoff` 是当前实例）。
     """
     from app.tools.registry import get_tool_registry
 
@@ -365,7 +451,12 @@ def test_no_skill_validates_a_write_tool_it_cannot_execute():
             regressions.append(
                 f"{skill} 新增了 {len(extra)} 处死角（不在账本里）：{extra}\n"
                 f"      → 修法：要么让这些工具在该 skill 内可达，要么走 #4017 的机制修复 —— "
-                f"**不得**把它们加进账本（账本只许缩短）"
+                f"**不得**把它们加进账本（账本只许缩短）。"
+                f"\n      唯一例外（窄例外）：**产品决策把既有工具恢复进某个 skill**（工具回到注册表 ⇒ "
+                f"F6 要求恢复其规则 ⇒ 全局限定表新增目标）——那是真值变化，须在同一 PR 里"
+                f"重新锚定账本（新 SHA + 新计数 + 逐条被运行时拦下的证据），且逐条登记进 "
+                f"`A5_REANCHOR_ADDITIONS` 并过 `test_reanchored_additions_trace_to_a_real_"
+                f"product_change`（已注册 + 写工具 + 至少被一个 skill 绑定）。"
             )
 
     shrunk = {
@@ -389,6 +480,91 @@ def test_no_skill_validates_a_write_tool_it_cannot_execute():
           "「已校验待执行」→ 模型调那个写工具 → `Tool not found` → 空头承诺、订单永不落库。\n"
           "修法必须**机制级**（见 #4017），不得靠单点补工具。"
     )
+
+
+def test_reanchored_additions_trace_to_a_real_product_change():
+    """**锚点前移的窄例外必须可机器核**（#4196 立范式，防以后「顺手 re-anchor」）。
+
+    三条硬条件（逐条对**活真值**算，见 `unjustified_reanchor_additions`）：新增条目的目标
+    必须 ① 已注册 ② 写工具 ③ 至少被一个 skill 绑定 —— 即增量可追溯到**真实产品变更**
+    （本次 = #4196 恢复加工单三工具进 order skill），不是凭空长出来的死角。
+
+    另核两条一致性：
+      · **逐条逐名**：增量登记里的每条都必须**确实在 `A5_GAP_BASELINE` 里**（登记与账本不得分叉）；
+      · **计数对账**：增量条数 == 账本总数 − 旧锚条数（126）——只改数字不改逐条登记会被这条拦住。
+    """
+    from app.graph.skills.skill_registry import get_skill_registry
+    from app.tools.registry import get_tool_registry
+
+    tools = get_tool_registry()
+    skills = list(get_skill_registry().get_all())
+    assert skills, "skill registry 为空 —— 判据会空转（fail-closed）"
+
+    bad = unjustified_reanchor_additions(A5_REANCHOR_ADDITIONS, tools, skills)
+    assert bad == [], (
+        "锚点前移的增量里有条目**追溯不到真实产品变更**（① 已注册 ② 写工具 ③ 至少一个 skill 绑定）：\n  "
+        + "\n  ".join(bad)
+        + "\n→ 账本只许缩短；锚点前移是**窄例外**（仅「产品决策把既有工具恢复进某 skill」），"
+          "不得当成「新增死角可以顺手登记」的口子。"
+    )
+
+    not_in_ledger = sorted(
+        f"{skill} → {target}"
+        for skill, targets in A5_REANCHOR_ADDITIONS.items()
+        for target in targets
+        if target not in A5_GAP_BASELINE.get(skill, frozenset())
+    )
+    assert not_in_ledger == [], (
+        "增量登记与账本分叉（这些条目登记了却不在 `A5_GAP_BASELINE` 里）：\n  "
+        + "\n  ".join(not_in_ledger)
+    )
+
+    added = sum(len(v) for v in A5_REANCHOR_ADDITIONS.values())
+    total = sum(len(v) for v in A5_GAP_BASELINE.values())
+    assert total - added == A5_BASELINE_COUNT_PRE_4196, (
+        f"计数对账失败：账本共 {total} 条 − 增量 {added} 条 = {total - added}，"
+        f"而旧锚（#4012）记录为 {A5_BASELINE_COUNT_PRE_4196} 条 —— 说明账本被改动的部分"
+        f"不止「逐条登记的增量」（只改数字/顺手加条目都会被这条拦住）"
+    )
+
+
+class TestReanchorJustificationIsNotVacuous:
+    """**:red_circle: 红证 + 负例**：正当性判据必须能报，也必须能不误报。"""
+
+    def _tools(self):
+        from app.tools.registry import get_tool_registry
+
+        return get_tool_registry()
+
+    def _skills(self):
+        from app.graph.skills.skill_registry import get_skill_registry
+
+        return list(get_skill_registry().get_all())
+
+    def test_negative_real_additions_are_not_reported(self):
+        """负例：本次真实的 14 条 ⇒ **必须不报**（防恒红，同 R2）。"""
+        assert unjustified_reanchor_additions(
+            A5_REANCHOR_ADDITIONS, self._tools(), self._skills()
+        ) == []
+
+    def test_detector_reports_an_unbound_tool(self):
+        """红证 ①：塞一个**没有任何 skill 绑定**的工具（真新增死角的形态）⇒ 必报。"""
+        injected = {"order": frozenset({"human_handoff"})}
+        bad = unjustified_reanchor_additions(injected, self._tools(), self._skills())
+        assert bad, "「谁都没绑」的工具被当增量放行 ⇒ 窄例外变成任意口子"
+        assert any("没有任何 skill 绑定" in b or "未注册" in b for b in bad), bad
+
+    def test_detector_reports_a_read_only_and_a_nonexistent_tool(self):
+        """红证 ②③：只读目标（登记无效）与不存在的工具名（凭空死角）⇒ 各必报。"""
+        read_only = unjustified_reanchor_additions(
+            {"order": frozenset({"processing_order_query"})}, self._tools(), self._skills()
+        )
+        assert any("只读工具" in b for b in read_only), read_only
+
+        ghost = unjustified_reanchor_additions(
+            {"order": frozenset({"ghost_tool_never_registered"})}, self._tools(), self._skills()
+        )
+        assert any("未注册" in b for b in ghost), ghost
 
 
 def test_cross_skill_baseline_detects_growth_and_new_skills():
