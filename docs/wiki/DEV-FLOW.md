@@ -1,9 +1,19 @@
-# MIGAO 开发提效流程（固化版）
+# MIGAO 开发提效流程（历史节选，非权威）
 
-> 本文档是 DSH 技能 `migao-dev-flow`（**权威源：`.agent-presets/migao/skills/migao-dev-flow/SKILL.md`**，随代码评审/入库）的仓库同步副本，供团队共享阅读。
-> **流程口径以技能为准**：改流程规范**先改技能**，再同步本页；两份不一致时按技能执行（历史路径 `migao/.agents/skills/...` 已废弃）。
-> 当前版本：v1.3（2026-09-04）——新增多会话并发规范（一会话一 worktree + 会话锁 + 端口隔离 + 分支卫生）、CI 队列治理（concurrency/paths 门控/agent-eval 按变更触发省真实 LLM token）、验证分级降本。（§2.1 另经 2026-09-14 v1.19 修正，见该节。）
-> 内容源自历史全链路复盘（RETROSPECTIVE，未入库）的 P0/P1 改进，经实战固化。
+> ⚠️ **本页不是 `migao-dev-flow` 技能的同步副本 —— 已停止同步**（issue #4315）。
+> 它是**人工节选的历史快照**（停在某个历史时点）：**不会随技能更新而更新**，也**未逐节核对过现状**。
+> **流程口径一律以技能为准**：`migao-dev-flow`（权威源：`.agent-presets/migao/skills/migao-dev-flow/SKILL.md`）。
+> 本页与技能冲突时**按技能执行**；改流程规范**先改技能** —— 本页**不要再同步**（历史路径 `migao/.agents/skills/...` 已废弃）。
+> 本页落后多少**不写死**（版本戳与计数是**现值**，会腐烂且没人会因此变红 —— 技能 §19.2 ③），用命令自证：
+>
+> ```bash
+> # 章节级差异（判据本体：scripts/drift_audit.py 的 `sync-copy`；版本戳不写进本页）
+> python3 scripts/drift_audit.py --check --only sync-copy
+> # 权威源当前版本（**现取**，不要抄进本页）
+> git show origin/main:.agent-presets/migao/skills/migao-dev-flow/SKILL.md | sed -n 's/^version: *//p'
+> ```
+>
+> 内容源自历史全链路复盘（RETROSPECTIVE，**未入库**）的 P0/P1 改进，经实战固化。
 
 ## 1. 三把工具（开发自查用）
 
@@ -80,10 +90,10 @@
 **把研发模式回退若干版本**的 PR。而现有门禁（Case Contract / Coverage / QA Growth / Case Trust）**都不看
 `.agent-presets/**` 的版本 ⇒ 不红**。
 
-**实测**（锚定 `origin/main` = `10059c53`，2026-09-15 现取；条数是**时点值**、会漂，命令自证）
-：`migao-wt/` 下含该预设文件的 **38 个**工作区里，**31** 个的 `migao-dev-flow` 版本 ≠ main（1.18.0 ~ 1.28.0），仅 **7** 个同步。
-**本单开工时我自己的 worktree 也在其中**：建完仍是 v1.28.0 + acceptance v1.9.0，而开工期间 main 已推进到
-v1.29.0 + v1.10.0 —— 一个刚建几分钟的 worktree 就落后了整整一版，只能靠人工 `git checkout origin/main -- .agent-presets/` 补上：
+**实测（只写「形状」，不写条数 —— 条数是**时点值**，会腐烂且没人会因此变红，命令自证）**：
+`migao-wt/` 下**确实会**出现「含该预设文件、但 `migao-dev-flow` 版本 ≠ main」的工作区，**数量与落后区间用下面的命令现取**。
+**本单开工时就踩到了这个形状**：一个刚建几分钟的 worktree，其预设版本已经不是 main 的版本，
+只能靠人工 `git checkout origin/main -- .agent-presets/` 补上：
 
 ```bash
 # 自取现状（不写死条数；macOS 自带 uniq 无 -w，故用 sed+sort 计数）
@@ -278,8 +288,9 @@ python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q # L0 守
 > 已由 **#4045** 同步（全量对账 + 反向对账 + burn-down 预算，判据 **import 复用**
 > `case_trust_gate.reconcile_baseline` / `burn_down_verdict`）。两条都从
 > `.github/case-trust-unimplemented.json` 撤了登记 —— 留着就是与实现相反的假真值。
-> ⚠️ 本文件是 `migao-dev-flow` 技能的**同步副本**（版本戳已落后：副本 v1.3 / 权威源 1.31.0，
-> 章节差异由 `drift_audit` 的 `sync-copy` 判据持续报告）—— 完整同步待技能侧一并重渲染。
+> ⚠️ 本节（及全页）**不是** `migao-dev-flow` 技能的同步副本：**已停止同步**（issue #4315），
+> 本节口径**可能已过期**，一律**以技能为准**。章节差异由 `drift_audit` 的 `sync-copy` 判据持续报告
+> （版本**不写死** —— 用页头那条命令现取，别再往本页抄版本号）。
 
 ## 4. 部署
 - 合并到 main 自动触发 3 个部署（admin-api/ai-agent/frontend）+ post-deploy 冒烟。
@@ -293,8 +304,9 @@ python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q # L0 守
 - 生产登录：13800138000 / 万能码 123456（短信网关仍 bypass，上线前需接入）。
 
 ## 5. 相关文档
+- `migao-dev-flow` 技能（**权威源**，本页只是它的历史节选）— `.agent-presets/migao/skills/migao-dev-flow/SKILL.md`
 - `docs/wiki/CONTRACT-LEDGER.md` — 并行开发契约清单
-- `walkthrough/RETROSPECTIVE.md` — 全链路复盘（本技能来源）
+- 全链路复盘 RETROSPECTIVE（**未入库**、仓内无此路径）— 本页与技能的改进来源
 - `verify-all.sh` / `contract-check.sh` / `check-ui-regression.sh` — 三把工具
 
 ## 6. 提交前体检一键命令（2026-08-28 固化）
