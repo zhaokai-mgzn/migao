@@ -9,7 +9,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / ".github"))
 
-from danger_scan import analyze, _truly_new_secret_lines
+from danger_scan import (
+    analyze,
+    _truly_new_secret_lines,
+    parse_delete_acks,
+    ack_env_lines,
+)
 
 
 class TestWorkflowChanges:
@@ -436,3 +441,191 @@ class TestForensicsFailClosed:
             migration_changes=[], schema_changes=[],
         )
         assert any("新增 workflow" in b for b in blockers)
+
+
+class TestDeleteWorkflowAck:
+    """删除 workflow 的**人工确认通道**（#4295）：`DANGER_ACK_DELETE` → 该条降 WARN。
+
+    病根（#4288 实测）：原判据对 `status == "D"` 是**无条件 blocker**，文案写「需人工确认」，
+    但**全文没有任何记录确认的地方**（`DANGER_TRUSTED_ACTOR` 只对"新增"降级）⇒ 在
+    `enforce_admins=true` 的仓库里「删除任何 workflow」在机制上都不可能合并
+    （`gh pr merge --admin` 被 GraphQL 拒、UI 也不提供绕过入口）—— 护栏要求的东西
+    **无法被满足** = 恒红护栏（`migao-acceptance` 的同族形态）。
+
+    本类把"确认"落成可执行 + 可留痕的判据，并**钉死无确认时的行为逐字不变**。
+    """
+
+    def _analyze(self, changes, acked=()):
+        return analyze(
+            workflow_changes=changes,
+            wf_new_secrets={}, deleted_files=[], deploy_files=[],
+            migration_changes=[], schema_changes=[],
+            delete_acked=frozenset(acked),
+        )
+
+    PATH = ".github/workflows/pr-check.yml"
+
+    def test_no_ack_still_blocks(self):
+        """**负控（防放宽）**：不传 ack ⇒ 与补通道前逐字同形（仍 BLOCK）。"""
+        blockers, warnings = self._analyze([("D", self.PATH)])
+        assert any("删除 workflow" in b for b in blockers), (
+            "无确认时删除 workflow 不再 BLOCK —— 那等于把这条安全护栏整条砍掉"
+        )
+        assert not warnings
+
+    def test_owner_ack_downgrades_to_warning(self):
+        """确认命中该路径 ⇒ 降为 WARN（不再 blocker），且文案点明"已显式确认"。"""
+        blockers, warnings = self._analyze([("D", self.PATH)], acked=[self.PATH])
+        assert not blockers, f"已确认的删除仍被 BLOCK：{blockers}"
+        assert any("已由维护者显式确认" in w for w in warnings), warnings
+
+    def test_ack_all_covers_every_path(self):
+        """`*` = 一次确认全部删除（批量清理场景）。"""
+        blockers, warnings = self._analyze(
+            [("D", self.PATH), ("D", ".github/workflows/other.yml")], acked=["*"]
+        )
+        assert not blockers, f"`*` 未覆盖全部删除：{blockers}"
+        assert len(warnings) == 2
+
+    def test_ack_for_other_path_does_not_leak(self):
+        """**越权隔离**：确认了 A 文件不等于确认了 B 文件（不得整仓库放行）。"""
+        blockers, _ = self._analyze(
+            [("D", self.PATH)], acked=[".github/workflows/some-other.yml"]
+        )
+        assert any("删除 workflow" in b for b in blockers), (
+            "确认被当成了全局开关 —— 确认一个文件等于放行所有删除"
+        )
+
+    def test_ack_does_not_downgrade_new_workflow(self):
+        """**作用域锁**：ack 只对"删除"生效，**不得**顺带放宽"新增"（新增风险更高）。"""
+        blockers, warnings = self._analyze([("A", self.PATH)], acked=[self.PATH])
+        assert any("新增 workflow" in b for b in blockers), (
+            "ack 顺带放行了「新增 workflow」—— 那是把确认通道变成万能钥匙"
+        )
+        assert not warnings
+
+
+
+class TestParseDeleteAcks:
+    """确认解析 = **行为级**纯函数测试（#4295）。
+
+    ⚠️ 上一版把这些判据写成「pr-check.yml 的脚本文本里有没有某几个词」——**红证实测不红**：
+    把 owner 过滤整条删掉，断言照样绿（同一脚本里取 ACK_URL 的另一条查询也含那些词）。
+    这是空断言（`migao-acceptance`：断言的东西不是"决定放行的那个表达式"）。
+    故判据改挂到 `parse_delete_acks()` 上 —— 它才是真正决定放不放行的逻辑。
+    """
+
+    OWNER = "zhaokai-mgzn"
+    A = ".github/workflows/agent-behavior-eval.yml"
+    B = ".github/workflows/other.yml"
+
+    @staticmethod
+    def _c(login, body, url="https://example.invalid/c/1"):
+        return {"user": {"login": login}, "body": body, "html_url": url}
+
+    def test_no_comments_acks_nothing(self):
+        acked, via = parse_delete_acks([], self.OWNER, [self.A])
+        assert acked == set() and via == ""
+
+    def test_owner_marker_for_exact_path(self):
+        comments = [self._c(self.OWNER, f"同意删除\n/danger-ack delete-workflow {self.A}")]
+        acked, via = parse_delete_acks(comments, self.OWNER, [self.A, self.B])
+        assert acked == {self.A}, f"只确认了 A，却放行了 {acked}"
+        assert via, "留痕缺确认评论链接"
+
+    def test_marker_all_covers_every_path(self):
+        comments = [self._c(self.OWNER, "/danger-ack delete-workflow all")]
+        acked, _ = parse_delete_acks(comments, self.OWNER, [self.A, self.B])
+        assert acked == {self.A, self.B}
+
+    def test_non_owner_comment_is_ignored(self):
+        """**核心安全判据**：非 owner 评论一律不采信（否则任何人一句话就能删 workflow）。"""
+        comments = [self._c("random-contributor", f"/danger-ack delete-workflow {self.A}")]
+        acked, via = parse_delete_acks(comments, self.OWNER, [self.A])
+        assert acked == set(), f"非 owner 的确认被采信：{acked}"
+        assert via == ""
+
+    def test_empty_owner_never_acks(self):
+        """owner 未配置（env 缺失）⇒ 一律不放行（fail-closed，不得退化成"谁都可以"）。"""
+        comments = [self._c("", "/danger-ack delete-workflow all")]
+        acked, _ = parse_delete_acks(comments, "", [self.A])
+        assert acked == set()
+
+    def test_ack_for_other_path_does_not_leak(self):
+        comments = [self._c(self.OWNER, f"/danger-ack delete-workflow {self.B}")]
+        acked, _ = parse_delete_acks(comments, self.OWNER, [self.A])
+        assert acked == set(), "确认被当成全局开关（确认 B 等于放行 A）"
+
+    def test_marker_without_path_is_not_a_wildcard(self):
+        """裸 marker（没跟路径、也没跟 all）**不得**匹配任何路径。"""
+        comments = [self._c(self.OWNER, "/danger-ack delete-workflow")]
+        acked, _ = parse_delete_acks(comments, self.OWNER, [self.A])
+        assert acked == set()
+
+    def test_paginated_slurp_shape_is_flattened(self):
+        """`gh api --paginate --slurp` 产出「页数组的数组」（两页）—— 展平后照常解析。"""
+        page1 = [self._c(self.OWNER, "第一页：无 marker")]
+        page2 = [self._c(self.OWNER, f"第二页：/danger-ack delete-workflow {self.A}")]
+        raw = [page1, page2]
+        flat = [c for page in raw for c in page]   # workflow 里就是靠 danger_scan 内部展平
+        acked, _ = parse_delete_acks(flat, self.OWNER, [self.A, self.B])
+        assert acked == {self.A}, acked
+
+    def test_junk_entries_do_not_crash_or_ack(self):
+        """非法元素（字符串 / None / 数字）不得崩、不得误放行。"""
+        acked, _ = parse_delete_acks(
+            ["junk", None, 42, self._c(self.OWNER, "没有 marker")], self.OWNER, [self.A]
+        )
+        assert acked == set()
+
+    def test_env_lines_are_empty_when_nothing_acked(self):
+        lines = ack_env_lines(set(), self.OWNER, "")
+        assert lines[0] == "DANGER_ACK_DELETE=", lines
+        assert all("danger-ack" not in ln for ln in lines)
+
+    def test_env_lines_carry_audit_identity(self):
+        lines = ack_env_lines({self.A}, self.OWNER, "https://example.invalid/c/9")
+        joined = "\n".join(lines)
+        assert f"DANGER_ACK_DELETE={self.A}" in joined
+        assert f"DANGER_ACK_BY={self.OWNER}" in joined
+        assert "https://example.invalid/c/9" in joined
+
+
+class TestAckStepWiringIsThin:
+    """接线锁（L0 静态）：ack 步骤只做「取评论 → 交给纯函数 → 写 GITHUB_ENV」。
+
+    判据**刻意只锁结构与 fail-closed 出口**，不锁判定逻辑的词句（词句判据已被证明会空跑）——
+    逻辑正确性由上面的 `TestParseDeleteAcks` 行为级覆盖。
+    """
+
+    WF = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "pr-check.yml"
+
+    def _job(self) -> dict:
+        import yaml
+        wf = yaml.safe_load(self.WF.read_text(encoding="utf-8")) or {}
+        return (wf.get("jobs") or {})["danger-scan"]
+
+    def _ack_step(self) -> dict:
+        for s in self._job().get("steps") or []:
+            if "acks" in str(s.get("name") or ""):
+                return s
+        raise AssertionError("pr-check 的 danger-scan job 里找不到 ack 步骤")
+
+    def test_ack_step_runs_before_scan(self):
+        names = [str(s.get("name") or "") for s in self._job().get("steps") or []]
+        i_ack = next(i for i, n in enumerate(names) if "acks" in n)
+        i_scan = next(i for i, n in enumerate(names) if n == "Run danger scan")
+        assert i_ack < i_scan, "ack 步骤必须在 danger scan 之前（否则 env 还没注入）"
+
+    def test_ack_step_delegates_to_pure_function(self):
+        script = self._ack_step()["run"]
+        assert "--resolve-acks" in script, (
+            "ack 步骤没有调用 danger_scan.py --resolve-acks —— 判定逻辑又回到 YAML 字符串里了"
+        )
+
+    def test_ack_step_has_fail_closed_exits(self):
+        script = self._ack_step()["run"]
+        assert script.count("exit 0") >= 2, (
+            "ack 步骤缺少「无删除 / API 失败」的提前返回 ⇒ API 失败时会继续往下跑"
+        )
+        assert "fail-closed" in script, "缺少 fail-closed 的显式说明（防后人当可删注释）"
