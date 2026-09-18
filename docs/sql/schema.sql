@@ -820,6 +820,20 @@ CREATE TABLE IF NOT EXISTS production_operations (
 CREATE UNIQUE INDEX IF NOT EXISTS uk_production_operations_tenant_name
     ON production_operations (tenant_id, name)
     WHERE deleted = 0;
+-- provenance 口径来源（V62，issue #4361）：实证 / 推算 / 占位待确认；NULL = 来源未知。
+-- 存在的理由：单价是占位值/行业推算值这件事必须**在数据与界面上可见**（用户裁定 2026-09-19
+-- 「照铺，但 provenance 必须可见，不许静默」）；#4343 已证明 布帘×韩褶 与客户真实加工单不符。
+-- 本段是 bootstrap 终态（本文件由 docker-entrypoint-initdb.d 执行，**迁移链不在该栈运行**
+-- ⇒ 只写迁移 = 新建库无该列 ⇒ 读面 500，同 #3270 形态）。
+ALTER TABLE production_operations ADD COLUMN IF NOT EXISTS source VARCHAR(16);
+ALTER TABLE production_operations DROP CONSTRAINT IF EXISTS production_operations_source_check;
+ALTER TABLE production_operations
+    ADD CONSTRAINT production_operations_source_check
+    CHECK (source IS NULL OR source IN ('占位待确认', '推算', '实证'));
+COMMENT ON COLUMN production_operations.source IS
+    'provenance 口径来源（V62，issue #4361）：实证 / 推算 / 占位待确认。'
+    '占位待确认 = 单价是占位值（V54 的 30 道）；推算 = 单价为行业推算（V56 的 5 道）；'
+    '实证 = 当前空集（客户确认 #4261/#4343 后才会有）。NULL = 来源未知（商家自建/历史行）。';
 
 CREATE TABLE IF NOT EXISTS production_routings (
     id VARCHAR(64) PRIMARY KEY,
@@ -835,6 +849,17 @@ CREATE TABLE IF NOT EXISTS production_routings (
 CREATE UNIQUE INDEX IF NOT EXISTS uk_production_routings_tenant_type_craft
     ON production_routings (tenant_id, curtain_type, craft)
     WHERE deleted = 0;
+-- provenance 口径来源（V62，issue #4361）：rt-v54-* = 占位待确认（含 布帘×韩褶 —— #4343 已证明
+-- 与客户真实加工单 CSO260915-02615 不符）/ rt-v58-* = 推算（3 条纱帘，镜像布帘同工艺推导）/
+-- 实证 = 当前空集；NULL = 来源未知。回填见本文件种子段之后的 UPDATE。
+ALTER TABLE production_routings ADD COLUMN IF NOT EXISTS source VARCHAR(16);
+ALTER TABLE production_routings DROP CONSTRAINT IF EXISTS production_routings_source_check;
+ALTER TABLE production_routings
+    ADD CONSTRAINT production_routings_source_check
+    CHECK (source IS NULL OR source IN ('占位待确认', '推算', '实证'));
+COMMENT ON COLUMN production_routings.source IS
+    'provenance 口径来源（V62，issue #4361）：实证 / 推算 / 占位待确认。'
+    '占位待确认 = V54 的 6 条（含 布帘×韩褶）；推算 = V58 的 3 条纱帘；实证 = 当前空集。';
 
 CREATE TABLE IF NOT EXISTS processing_position_operations (
     id VARCHAR(64) PRIMARY KEY,
@@ -1614,9 +1639,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_role_permissions ON role_permissions(role_i
 -- schema_full.sql 一直有这段种子，schema.sql 却缺失（两份 schema 漂移）。
 
 -- 默认租户（id=1）
+-- industry 用**受控 code**（issue #4361 词表 v1：curtain / other）——「开租按行业套用生产模板」
+-- 要求它当模板键，自由文本取不到模板（静默落空库）。迁移 V62 会把存量自由文本按同口径归一。
 INSERT INTO tenants (id, name, code, industry, status)
   OVERRIDING SYSTEM VALUE
-  VALUES (1, '米高智能', 'migao', '布艺窗帘', 'active')
+  VALUES (1, '米高智能', 'migao', 'curtain', 'active')
   ON CONFLICT (id) DO NOTHING;
 
 -- 默认角色（五岗：管理员/运营/客服 + 超管；角色码与 HR 用例对齐）
@@ -1707,6 +1734,26 @@ VALUES
   ('rt-v58-03', 1, '纱帘', '穿杆',
    '["精裁-纱","纱三边","外帘打卷","外帘装袋","外帘发货"]'::jsonb, 'active')
 ON CONFLICT (tenant_id, curtain_type, craft) WHERE deleted = 0 DO NOTHING;
+
+-- provenance 回填（V62，issue #4361）：与迁移 V62 逐条同口径 —— 按 **id 前缀**认领
+-- （不是按名字列表，名字列表会随改名漂移），只动 `source IS NULL` 的行（幂等），
+-- 其余行保持 NULL（未知来源 = 未知，不许冒充「占位待确认」）。
+-- bootstrap 的种子 INSERT 不带 source 列 ⇒ 必须在此显式回填，否则新建库的 provenance 全为 NULL。
+UPDATE production_operations
+SET source = CASE
+        WHEN id LIKE 'op-v54-%' THEN '占位待确认'
+        WHEN id LIKE 'op-v56-%' THEN '推算'
+    END
+WHERE source IS NULL
+  AND (id LIKE 'op-v54-%' OR id LIKE 'op-v56-%');
+
+UPDATE production_routings
+SET source = CASE
+        WHEN id LIKE 'rt-v54-%' THEN '占位待确认'
+        WHEN id LIKE 'rt-v58-%' THEN '推算'
+    END
+WHERE source IS NULL
+  AND (id LIKE 'rt-v54-%' OR id LIKE 'rt-v58-%');
 
 -- 单价版本回填（V55，issue #4204）：每条活跃工序一行初始版本 ⇒ 「当前价 = 最新版本行」对存量数据成立。
 -- 必须放在工序库种子**之后**；幂等（已有版本行的工序跳过 + ON CONFLICT 兜底）。

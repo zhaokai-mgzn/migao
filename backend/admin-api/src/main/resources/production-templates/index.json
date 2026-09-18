@@ -1,0 +1,12 @@
+{
+  "templates": [
+    {
+      "templateId": "curtain",
+      "industry": "curtain",
+      "name": "布艺窗帘行业模板",
+      "version": 1,
+      "description": "布艺窗帘行业预置生产种子：35 道工序（名称/分组/部位/单位/单价/必完/开始标记）+ 9 条工艺路线（部位×工艺 → 有序工序序列）+ 16 项特殊选项 → 条件工序 + 计件系数。逐字对齐 backend/ai-agent-service/app/production/routing.py（唯一真值源）。⚠️ 单价多为占位值（source=占位待确认）/ 行业推算值（source=推算），source=实证 当前为空集 —— 客户确认 #4261/#4343 前不要当成实证值。",
+      "file": "curtain/seed.json"
+    }
+  ]
+}

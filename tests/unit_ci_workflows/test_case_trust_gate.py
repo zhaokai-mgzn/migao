@@ -1836,7 +1836,25 @@ class TestGateScriptEndToEnd:
         真要判 `origin/main` 的那个 job（`case-trust-gate`）自己带 `fetch-depth: 0`。
         """
         data = json.loads(BASELINE.read_text(encoding="utf-8"))
-        entry = data["violations"]["PG-013"]
+        # ⚠️ **动态选条目，不写死 ID**：原实现写死 `data["violations"]["PG-013"]` —— 而 PG-013
+        # 被**整条销账**后（实测 issue #4361：给它补 `precondition[order_count_for_phone]` ⇒
+        # 门禁按 `burn_down._how_to` 跑 `--prune-baseline` 移除该条）本用例即 `KeyError: 'PG-013'`
+        # ⇒ `ci workflow helper unit tests` 红 ⇒ 一个**合法的销账动作**把 CI 打红。
+        # 属 `migao-dev-flow` §19.2③ 的同族形态：**夹具里写死的标识符会腐烂**。
+        # 选 `[backend-contract]` 用例：其计分通道 = `traces.tests` ⇒ `CASE-TRUST-NO-EFFECT-ASSERTION`
+        # 对它**恒不适用**（门禁的计分通道分流，issue #4244）⇒ 注入该码必然造出
+        # 「已记录却不再命中」的陈旧条目 —— 正是本用例要证的形态（与基准是谁、条目是哪个无关）。
+        from render_cases import load_case_dicts  # noqa: PLC0415（本文件已把 .github 加进 sys.path）
+        contract_ids = {
+            c["id"] for c in load_case_dicts(str(REPO_ROOT / ".github" / "cases"))
+            if str(c.get("skip_reason") or "").startswith("[backend-contract]")
+        }
+        candidates = sorted(set(data["violations"]) & contract_ids)
+        assert candidates, (
+            "基线里应至少有一条 `[backend-contract]` 用例条目 —— 否则本用例的前提不成立"
+            "（不得静默跳过：那会变成一条不会红的判据）"
+        )
+        entry = data["violations"][candidates[0]]
         entry["codes"] = sorted(set(entry["codes"]) | {"CASE-TRUST-NO-EFFECT-ASSERTION"})
         tmp = tmp_path / "baseline.json"
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")

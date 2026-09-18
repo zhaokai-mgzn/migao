@@ -184,7 +184,7 @@ class SettingsControllerTest {
         }
 
         @Test
-        @DisplayName("更新行业 -> 200")
+        @DisplayName("更新行业 -> 200 且归一为受控 code（词表外的值 ⇒ other）")
         void updateIndustry_returnsUpdated() throws Exception {
             Tenant tenant = new Tenant();
             tenant.setId(1L);
@@ -201,7 +201,35 @@ class SettingsControllerTest {
                             .content(objectMapper.writeValueAsString(body)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
-                    .andExpect(jsonPath("$.data.industry").value("皮革"));
+                    // issue #4361：`tenants.industry` 是**行业模板键**（开租按它套用生产种子），
+                    // 故写面归一为受控 code（`IndustryCodes.normalize`）。词表 v1 = curtain / other，
+                    // 「皮革」不在词表内 ⇒ 落 `other`，**不原样存自由文本**
+                    // （原样存 ⇒ 模板取不到且失败静默，正是本单要治的形态）。
+                    // 本断言是**契约变更**（写面输出从「原样回显」变成「归一后的 code」），
+                    // 不是放宽：下面另补一条词表内别名 ⇒ curtain 的正向用例。
+                    .andExpect(jsonPath("$.data.industry").value("other"));
+        }
+
+        @Test
+        @DisplayName("更新行业 -> 归一：词表内别名落 curtain（issue #4361 判据 2）")
+        void updateIndustry_normalizesAliasToCurtain() throws Exception {
+            Tenant tenant = new Tenant();
+            tenant.setId(1L);
+            tenant.setName("测试租户");
+            tenant.setCode("test");
+            tenant.setIndustry("旧行业");
+            when(tenantMapper.selectById(1L)).thenReturn(tenant);
+            when(tenantMapper.update(any(), any())).thenReturn(1);
+
+            Map<String, Object> body = Map.of("industry", "布艺纺织");
+
+            mockMvc.perform(put("/api/admin/settings")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    // 只在注册路径归一 = 受控词表可被绕过（本写面此前接受任意字符串）
+                    // ⇒ 两个写面都调同一个 `IndustryCodes.normalize`，此处钉住本写面。
+                    .andExpect(jsonPath("$.data.industry").value("curtain"));
         }
 
         // ============ 品牌与通知设置落库（此前刷新即丢，现持久化） ============
