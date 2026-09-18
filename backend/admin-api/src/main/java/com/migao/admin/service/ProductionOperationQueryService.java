@@ -25,8 +25,10 @@ import java.util.Objects;
  *
  * <p>背景（取证事实）：{@code production_operations} / {@code production_routings} 自 V49 建表起
  * **零消费者、零种子** ⇒ 商家无配置入口、库里无数据、§3 工艺路线在 DB 层不可查不可展示。
- * 本类补上「可查询/可展示」这一半：读 V54 种子（`app/production/routing.py` 的 30 道工序
- * + 6 条 部位×工艺 路线）并按展示口径整形。</p>
+ * 本类补上「可查询/可展示」这一半：读**工序库目录 + 工艺路线模板**（种子源 = V54 ∪ V56 的工序、
+ * V54 ∪ V58 的路线；真值源是 {@code app/production/routing.py} 的目录/路线常量）并按展示口径整形。
+ * 工序数与路线数**不在此写死**：它们随迁移漂移（V56 加过工序、V58 加过路线），
+ * 写死即制造「注释与实际不符且不会变红」的假声明（issue #4259 ②）。</p>
  *
  * <p><b>只读边界（本类明确不做）</b>：本类**只有** SELECT，端点也只有 GET。工序库的写面
  * （改单价/停用/排序）在 {@link ProductionOperationCommandService}（PUT /production/operations/{id}，

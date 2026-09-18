@@ -259,7 +259,7 @@ END $$;
 --   （order_id 上存在 pending/processing 的 return 工单即拒建），而 AS-003 会
 --   对「最近订单」挂退货工单。若复用 0001，AS-003 先跑时可能正好选中
 --   0001 收货单 → 撞上本 fixture 的 pending return 工单 → 假失败。
---   故用独立订单 EVAL-MB-ORD-0003（同客户张三）承载本次工单，与 Phase 2 互不干扰。
+--   故用独立订单 EVAL-MB-ORD-0005（同客户张三）承载本次工单，与 Phase 2 互不干扰（#4259 改用唯一 id/order_no，缘由见本段末「#4259 修正说明」）。
 -- 同理 created_at 必须**早于** Phase 2 两单：订单列表按 created_at DESC 排序
 --   （OrderService:214，order_query list 默认取第 1 页），AS-003 的「最近的订单」会命中
 --   最新一笔 —— 若本 fixture 订单成了最新，AS-003 又会跑到挂单撞防重护栏。故钉在 09-01。
@@ -273,9 +273,9 @@ INSERT INTO orders
    total_amount, status, payment_status, stock_deducted, follow_status, remark,
    created_at, updated_at, deleted)
 VALUES
-  ('b1c2d3e4-f5a6-4b7c-8d9e-000000000003', 1, 'EVAL-MB-ORD-0003', NULL, '张三', '13800138000',
+  ('b1c2d3e4-f5a6-4b7c-8d9e-000000000005', 1, 'EVAL-MB-ORD-0005', NULL, '张三', '13800138000',
    '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 528.00, 'completed', 'paid', TRUE,
-   'completed', 'B 端评测 fixture：承载 AS-004 未处理工单的已完成订单（#3519，须早于 Phase 2 两单）',
+   'completed', 'B 端评测 fixture：承载 AS-004 未处理工单的已完成订单（#3519，须早于 Phase 2 两单；独立 id/order_no 见 #4259）',
    TIMESTAMPTZ '2026-09-01 09:00:00+08', TIMESTAMPTZ '2026-09-01 09:00:00+08', 0)
 ON CONFLICT (id) DO NOTHING;
 
@@ -299,7 +299,7 @@ INSERT INTO after_sales_tickets
   (id, tenant_id, ticket_no, order_id, customer_id, ticket_type, status, source, priority,
    description, images, refund_amount, evidence_images, created_at, updated_at, deleted)
 VALUES
-  ('tkt_eval_as_9001', 1, 'AS-20260914-9001', 'b1c2d3e4-f5a6-4b7c-8d9e-000000000003',
+  ('tkt_eval_as_9001', 1, 'AS-20260914-9001', 'b1c2d3e4-f5a6-4b7c-8d9e-000000000005',
    'cust_eval_zhangsan', 'return', 'pending', 'customer', 'normal',
    'B 端评测 fixture：遮光窗帘尺寸不符申请退货，待处理（AS-004 关闭未处理工单用例，issue #3519）',
    '[]'::jsonb, 528.00, '[]'::jsonb,
@@ -333,8 +333,19 @@ DECLARE
   v_pending  INTEGER;
   v_timeline INTEGER;
 BEGIN
-  SELECT count(*) INTO v_ord FROM orders
-   WHERE tenant_id = 1 AND order_no = 'EVAL-MB-ORD-0003' AND deleted = 0;
+  -- 承载订单：**必须三合一**（issue #4259）—— ① 按 order_no 找得到；② 它正是工单挂的那张；
+  --   ③ 它的客户 = 工单的客户。旧口径只核 ①，而本段原先与 Phase 2 撞 id 时 ① 仍然 = 1
+  --   （数到的是 Phase 2 的李四单）⇒ 「静默少插一行」对这条核对**结构性不可见**。
+  SELECT count(*) INTO v_ord FROM orders o
+   WHERE o.tenant_id = 1 AND o.order_no = 'EVAL-MB-ORD-0005' AND o.deleted = 0
+     AND o.id = (SELECT t.order_id FROM after_sales_tickets t
+                  WHERE t.tenant_id = 1 AND t.ticket_no = 'AS-20260914-9001'
+                    AND t.deleted = 0)
+     AND o.customer_phone = (SELECT c.phone FROM customer_profiles c
+                              WHERE c.id = (SELECT t.customer_id FROM after_sales_tickets t
+                                             WHERE t.tenant_id = 1
+                                               AND t.ticket_no = 'AS-20260914-9001'
+                                               AND t.deleted = 0));
   -- 判据沿用工具真实查询口径（status='pending' + deleted=0；多租户过滤由
   -- TenantLineInnerInterceptor 按下发身份注入，此处按 tenant_id=1 核对）
   SELECT count(*) INTO v_pending FROM after_sales_tickets
@@ -342,13 +353,25 @@ BEGIN
      AND status = 'pending' AND deleted = 0;
   SELECT count(*) INTO v_timeline FROM ticket_timeline
    WHERE tenant_id = 1 AND ticket_id = 'tkt_eval_as_9001' AND action = 'created';
-  RAISE NOTICE 'B 端 Phase 3 核对: 承载订单=% 未处理工单=% 建单时间线=%',
+  RAISE NOTICE 'B 端 Phase 3 核对: 承载订单(存在∧是工单挂的∧客户同族)=% 未处理工单=% 建单时间线=%',
     v_ord, v_pending, v_timeline;
-  IF v_pending < 1 THEN
-    RAISE EXCEPTION 'B 端 Phase 3 注入失败：AS-004 需要的 pending 工单缺失（订单=% 工单=%）',
-      v_ord, v_pending;
+  IF v_ord < 1 OR v_pending < 1 THEN
+    RAISE EXCEPTION 'B 端 Phase 3 注入失败：AS-004 需要的 pending 工单或其承载订单不成立
+（承载订单=% 工单=%）', v_ord, v_pending;
   END IF;
 END $$;
+
+-- #4259 修正说明（本段原先的缺陷，留档防复发）：
+--   · 旧形态：本段复用 Phase 2 的 id `…-000000000003` 与 order_no `EVAL-MB-ORD-0003`
+--     （注释却写「同客户张三」）⇒ `ON CONFLICT (id) DO NOTHING` 按 **id** 去重、**先到者胜**：
+--     真正生效的是 Phase 2 那行（李四 / 13900139000），本段整行被**静默丢弃**
+--     （不报错、不警告）⇒ 注释描述的是一个**从未被插入的状态**，而库里也真的少插了一行。
+--   · 现形态：唯一 id `…-000000000005` + order_no `EVAL-MB-ORD-0005`，客户 = 张三 /
+--     13800138000（与工单的 `customer_id = cust_eval_zhangsan` 同族）。
+--   · 判据（静态）：tests/unit_ci_workflows/test_declaration_truth_guards.py
+--     （逐条核「每个 EVAL-MB-ORD-* 的声明行真的会生效」+「注释客户 = 实际生效行」+ 工单同族）；
+--     判据（运行期）：上方 Phase 3 DO 块的「承载订单三合一」计数 —— 回注该缺陷时它会
+--     RAISE EXCEPTION（实测 `psql -v ON_ERROR_STOP=1` exit=3，种子步骤 fail-fast）。
 
 -- ============================================================================
 -- 遗留 TODO（#3496 / #3519 剩余失败）：
