@@ -510,7 +510,7 @@ class TestEmployeeRemoveReportsDeleteFailure:
 
         monkeypatch.setattr(lr, "_eval_remove_users", _fake_remove)
         monkeypatch.setattr(lr.httpx, "AsyncClient", lambda *a, **k: _DummyClient())
-        msg = asyncio.run(lr._run_pre_clean_action(
+        msg = asyncio.run(lr._run_clean_action(
             "tok", {"type": "employee_remove", "employee_name": "李四",
                     "employee_phone": "13800009999"}))
         assert "删除" in msg and "幂等" not in msg, (

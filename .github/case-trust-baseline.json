@@ -21,7 +21,7 @@
   },
   "anchor_sha": "44615b6c9be18d23709a92c0c7e027da259f0836",
   "case_total": 317,
-  "violation_case_count": 124,
+  "violation_case_count": 123,
   "rule_counts": {
     "CASE-TRUST-EMPTY-ASSERTION": 25,
     "CASE-TRUST-NO-EFFECT-ASSERTION": 24,
