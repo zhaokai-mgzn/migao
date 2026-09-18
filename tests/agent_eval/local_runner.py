@@ -402,26 +402,56 @@ async def _reset_processing_order(order_no: str) -> str:
             f"（清掉 {len(cleared or [])} 张在途加工单）")
 
 
-# ── pre_clean 支持的类型（**单一事实源**，issue #3781）─────────────────────────
-# 为什么必须有一个显式登记表：`_run_pre_clean` 对未知 type 的旧行为是
+# ── 夹具层动作的类型登记表（`pre_clean` / `post_clean` **共用**，issue #3781 / #4075）──
+# 为什么必须有一个显式登记表：`_run_clean_action` 对未知 type 的旧行为是
 # `return f"未知 pre_clean 类型: {_type}（跳过）"` —— 调用侧只把它当消息打印
 # （`🧹 pre_clean: …`），**不进该用例的结论** ⇒ **拼错/未实现的 type = 静默跳过**：
 # 数据没准备、用例照跑。这是标准的假绿温床（`migao-acceptance`「空跑：绿了但没跑」），
 # 而且恰恰在"新增一个 type"时最危险 —— 新类型没被 runner 认出来就退回成"什么都没做"。
-# 现在：① 本集合是唯一真值；② 未登记的 type 走 **config_error**（进用例结论）；
+# 现在：① 本表是唯一真值（`_PRECLEAN_TYPES` / `_POSTCLEAN_TYPES` 由它**派生**）；
+# ② 未登记的 type 走 **config_error**（进用例结论，前缀按阶段区分）；
 # ③ L0 静态不变式（`tests/unit_ci_workflows/test_eval_preclean_registry.py`）锁
-# 「用例库里出现的每个 type 都必须在此登记」——拼错在 CI 直接红。
-_PRECLEAN_TYPES = frozenset({
-    "product_remove",          # 建品残留清理（下架→删除）
-    "product_dedupe",          # 同名商品去重（保留最早创建 = 种子）
-    "customer_tag_remove",     # 客户标签清理（写类 case 自我污染防线）
-    "user_memories_clear",     # 用户级长期记忆清理（post_session 断言前）
-    "aftersales_ticket_prepare",   # 工单复位回 seed 初始态
-    "employee_reactivate",     # 员工恢复 active（支持 employee_phone 精确定位）
-    "employee_remove",         # 员工删除（HR-002 产物清理；#3781 新增）
-    "processing_order_reset",  # 加工单用例自清理：订单复位 confirmed + 清掉本用例生成的加工单
-                               # （issue #3833，PG-013；#3800 扫描判据漏掉的新实例）
-})
+# 「用例库里出现的每个 type 都必须在**对应阶段**登记 + 有实现分支」——拼错在 CI 直接红。
+#
+# 字段：
+#   `phases` —— 允许执行该动作的阶段（`pre` = 一次尝试**开始前** / `post` = 用例**结束后**）。
+#               **显式声明**而不是默认两边都能跑：`post_clean` 的语义是"把写方对共享夹具的
+#               改动复位"（issue #4075），把准备型动作也放进 post 只会让人误用。
+#   `attr`   —— 该动作复位的是哪个**共享夹具属性**（`""` = 不针对商品属性）。
+#               它是"写方必须声明复位手段"这条 L0 判据的**单一真值来源**：属性 ↔ 复位类型的
+#               对应关系只写在这张表里，守卫
+#               （`tests/unit_ci_workflows/test_shared_fixture_write_restore.py`）
+#               从 runner 现读 —— 避免"runner 改了、守卫还在按旧地图判"（#4075 的一半价值）。
+_CLEAN_TYPES: dict[str, dict] = {
+    "product_remove":            {"phases": ("pre",), "attr": ""},   # 建品残留清理（下架→删除）
+    "product_dedupe":            {"phases": ("pre",), "attr": ""},   # 同名商品去重（保留最早创建 = 种子）
+    "customer_tag_remove":       {"phases": ("pre",), "attr": ""},   # 客户标签清理（写类 case 自我污染防线）
+    "user_memories_clear":       {"phases": ("pre",), "attr": ""},   # 用户级长期记忆清理（post_session 断言前）
+    "aftersales_ticket_prepare": {"phases": ("pre",), "attr": ""},   # 工单复位回 seed 初始态
+    "employee_reactivate":       {"phases": ("pre",), "attr": ""},   # 员工恢复 active（支持 employee_phone 精确定位）
+    "employee_remove":           {"phases": ("pre",), "attr": ""},   # 员工删除（HR-002 产物清理；#3781 新增）
+    "processing_order_reset":    {"phases": ("pre",), "attr": ""},   # 加工单用例自清理：订单复位 confirmed +
+                                                                     # 清掉本用例生成的加工单（#3833，PG-013）
+    # ── 复位族（issue #4075 的机制半边）：把**写方对共享夹具的改动**复位 ──
+    # 为什么需要：PR-021 把 `prod_eval_blackout` 的米白/散剪 SKU 价改成 150、PR-025 把它下架，
+    # 两者跑完后**没有任何动作**把夹具改回去 ⇒ 同一栈里所有读该商品的用例看到被改过的世界
+    # （run 35243351675 的 OR-014 mibao 腿假红即此）。复位族与清理族/准备族并列：
+    #   · 清理族：目标不存在 = 前置已满足（良性 no-op）；
+    #   · 准备族：目标不在位 = 用例带着**假前置**跑（`_PRECONDITION_NOT_APPLIED`，进结论）；
+    #   · 复位族：**目标不在位 / 写失败 / 回读不符 = 夹具仍是脏的**（fail-closed，进结论）
+    #     —— 唯一例外是"目标当前值已等于复位值"（幂等成功，不是 no-op 空转）。
+    "product_status_restore":    {"phases": ("pre", "post"), "attr": "status"},
+    "sku_price_restore":         {"phases": ("pre", "post"), "attr": "sku_price"},
+}
+
+# 派生视图（**不要**再各写一份字面量：类型清单只在上面那张表里）
+_PRECLEAN_TYPES = frozenset(t for t, _m in _CLEAN_TYPES.items() if "pre" in _m["phases"])
+_POSTCLEAN_TYPES = frozenset(t for t, _m in _CLEAN_TYPES.items() if "post" in _m["phases"])
+
+# 「哪个属性有复位类型」的**单一真值**（守卫侧现读；`attr` 为空的动作不参与）
+RESTORE_TYPES_BY_ATTR: dict[str, str] = {
+    m["attr"]: t for t, m in _CLEAN_TYPES.items() if m["attr"]
+}
 
 # ── pre_clean 的**两族语义**（issue #3791；判定跑 34865780382 的 CU-003 假红）──────
 # 为什么必须分族：`_PRECONDITION_NOT_APPLIED`（#3781）的语义是「用例**依赖**的前置不在位」
@@ -449,10 +479,15 @@ _PRECLEAN_CLEANUP_TYPES = frozenset({
 # 它要求的是**肯定式**前置（"用例点名的那张种子订单**在**、且是 confirmed 且无加工单"），
 # 与 `aftersales_ticket_prepare` 同族。清单不存在（栈缺 seed）⇒ `_PRECONDITION_NOT_APPLIED`
 # ⇒ 折进用例结论，**不得**静默放过（那正是 #3781 要堵的"带着假前置跑完"）。
+# 复位族（`product_status_restore` / `sku_price_restore`，#4075）与**准备型同侧**：
+# 目标不在位 / 写失败 / 回读不符 ⇒ 夹具仍是脏的 ⇒ 必须进结论（fail-closed）。
 
-# 配置错误的**稳定前缀**：`_pre_clean_for_case` 据此把它们折进用例结论
+# 配置错误的**稳定前缀**：`_run_clean_specs` 据此把它们折进用例结论
 # （形态对齐 `db_verify: 不支持的 fetch 配置` → 签名折叠成 `config_error(db_verify)`）。
+# **按阶段分别给前缀**（#4075）：`post_clean` 的配置错误若沿用 `pre_clean:` 前缀，
+# 读的人会在"准备阶段"里找一个根本不在那里的缺陷（归因错层）。
 _PRECLEAN_CONFIG_ERR = "pre_clean: 不支持的 type"
+_POSTCLEAN_CONFIG_ERR = "post_clean: 不支持的 type"
 
 # 「**前置未应用**」的稳定标记（issue #3781，**只对准备型有意义**）。两类：
 #   · `_PRECLEAN_CONFIG_ERR`      —— 夹具层配置错误（type 未知/未实现）⇒ 数据压根没准备；
@@ -466,6 +501,34 @@ _PRECLEAN_CONFIG_ERR = "pre_clean: 不支持的 type"
 # `_PRECLEAN_NOOP`（可见但不进结论）。判据由 `_classify_preclean_message` **单点**保证。
 _PRECONDITION_NOT_APPLIED = "pre_clean: 前置未应用"
 _PRECLEAN_BAD_MARKERS = (_PRECLEAN_CONFIG_ERR, _PRECONDITION_NOT_APPLIED)
+
+# ── `post_clean` 的坏标记（issue #4075）───────────────────────────────────────
+# 为什么复用 `PRECONDITION_NOT_RESTORED`（#3751/#3807 的既有标记）而不是新造一个：
+# 语义**完全相同** —— "共享状态没被复位 ⇒ 本用例与后续用例的结论不可信"，
+# 而这条通道已经全链打通（`r["restore"]` → `completion_verdict.restore_failures` →
+# 阻塞 + summary 原文）。新造标记只会得到一条**没人消费的声明**（`migao-dev-flow` §20 R5
+# 的第 1 条形态：声明无消费）。
+# 前缀里带 `post_clean:` 是为了**归因分族**（`_failure_atom` 折成
+# `precondition_not_restored(post_clean)`），与 #3807 的价格复位区分开。
+_POSTCLEAN_NOT_APPLIED = "PRECONDITION_NOT_RESTORED: post_clean"
+_POSTCLEAN_BAD_MARKERS = (_POSTCLEAN_CONFIG_ERR, _POSTCLEAN_NOT_APPLIED)
+
+
+def _clean_not_applied(phase: str, detail: str) -> str:
+    """「夹具动作没生效」的**阶段化**文案（单一事实源，纯函数；issue #4075）。
+
+    · `pre`  —— 走 #3781 的 `_PRECONDITION_NOT_APPLIED`（用例带着假前置跑）；
+    · `post` —— 走 #3751/#3807 的 `PRECONDITION_NOT_RESTORED`（共享夹具未复位，
+      本用例与后续读它的用例结论不可信）。
+
+    ⚠️ 措辞红线（#3751）：**成功路径**的消息不得含「未复位」/「失败」——`_reset_for_retry`
+    据此判"重试前置与首次不等价"。本函数只产出失败路径文案，故含这两个词是**必要**的
+    （`post` 分支的原文里带「未复位」⇒ 重试边界同样会判"不等价"）。
+    """
+    if phase == "post":
+        return (f"{_POSTCLEAN_NOT_APPLIED}: {detail}"
+                f" —— 共享夹具**未复位**，本用例与后续读它的用例结论不可信")
+    return f"{_PRECONDITION_NOT_APPLIED}: {detail}"
 
 # 清理型「目标本就不存在」的**良性 no-op** 稳定标记（issue #3791）。它**不是**坏标记：
 #   · 不进结论（不在 `_PRECLEAN_BAD_MARKERS` 里）⇒ 良性清理不会被判成失败；
@@ -489,18 +552,29 @@ def _cleanup_noop_message(spec: dict, detail: str) -> str:
             f"说明该用例的清理防线在空转，需登记到 issue（issue #3794）")
 
 
-def _classify_preclean_message(spec: dict, msg: str) -> str:
-    """按**族**归类 `_run_pre_clean_action` 的原始消息（纯函数，单点保证 #3791）。
+def _classify_clean_message(spec: dict, msg: str, phase: str = "pre") -> str:
+    """按**族**归类夹具层动作的原始消息（纯函数，单点保证 #3791 / #4075）。
 
     · 清理型（`_PRECLEAN_CLEANUP_TYPES`）：目标不存在 = **前置已满足** ⇒ 把误标的
       `_PRECONDITION_NOT_APPLIED` **降级**成 `_PRECLEAN_NOOP`（不进结论）。放在这里而不是
       只改调用点，是为了让**将来新增的清理型**不可能重新引入同一种假红。
-    · 其余（准备型 + 配置错误）：**原样返回** ⇒ #3781 的成果不退化（未应用照旧进结论）。
+    · 其余（准备型 + 复位族 + 配置错误）：**原样返回** ⇒ #3781 的成果不退化（未应用照旧进结论）。
+      ⚠️ 复位族**有意不参与降级**（#4075）：清理族的"目标不存在 = 没什么可清"在复位族上
+      **语义相反** —— 复位动作找不到目标商品 ⇒ 夹具状态**未证实**归零 ⇒ 必须进结论
+      （把它当良性 no-op 就是把 #4075 的静默又装回去）。
+    · 降级**只对 `pre` 阶段**有意义（`_PRECLEAN_CLEANUP_TYPES` 全是 `pre` 专属动作，
+      见 `_CLEAN_TYPES` 的 `phases`）。
     """
     t = str((spec or {}).get("type") or "")
-    if t in _PRECLEAN_CLEANUP_TYPES and str(msg).startswith(_PRECONDITION_NOT_APPLIED):
+    if phase == "pre" and t in _PRECLEAN_CLEANUP_TYPES \
+            and str(msg).startswith(_PRECONDITION_NOT_APPLIED):
         return _cleanup_noop_message(spec, str(msg).split(":", 2)[-1].strip())
     return msg
+
+
+def _classify_preclean_message(spec: dict, msg: str) -> str:
+    """`_classify_clean_message` 的 `pre` 阶段入口（保留旧名：既有守卫/单测按此名检索）。"""
+    return _classify_clean_message(spec, msg, "pre")
 
 
 def preclean_specs_for_retry(case) -> list:
@@ -694,14 +768,28 @@ async def _eval_remove_users(client, headers, name: str = "", phone: str = "") -
 
 
 async def _run_pre_clean(token: str, spec: dict) -> str:
-    """评测前数据清理（写类 case 自我污染防线，§14.2/CU-003）——**唯一对外入口**。
+    """评测前数据清理（写类 case 自我污染防线，§14.2/CU-003）——`pre` 阶段的**唯一对外入口**。
 
     issue #3791：本入口只做一件事 —— 把动作层的结果按**族**归类
-    （`_classify_preclean_message`）。清理型的"目标不存在"是良性 no-op（不进结论），
-    准备型的"前置未应用"照旧进结论（#3781 不退化）。判据在**一处**，动作实现在
-    `_run_pre_clean_action`（调用方/测试只需要本函数）。
+    （`_classify_clean_message`）。清理型的"目标不存在"是良性 no-op（不进结论），
+    准备型/复位族的"未应用"照旧进结论（#3781 不退化）。判据在**一处**，动作实现在
+    `_run_clean_action`（调用方/测试只需要本函数）。
     """
-    return _classify_preclean_message(spec, await _run_pre_clean_action(token, spec))
+    return _classify_clean_message(spec, await _run_clean_action(token, spec, "pre"), "pre")
+
+
+async def _run_post_clean(token: str, spec: dict) -> str:
+    """用例**结束后**的夹具复位（issue #4075 的机制半边）——`post` 阶段的唯一对外入口。
+
+    与 `_run_pre_clean` **共用**同一批动作实现（`_run_clean_action`）与同一张类型登记表
+    （`_CLEAN_TYPES` 的 `phases`）——不复制第二套：两套实现必然漂移，而漂移的后果是
+    "声明了却没生效"（本仓库反复踩的静默形态）。
+
+    ⚠️ 与 `pre_clean` 的**语义差别只有一处**（`_clean_not_applied`）：未应用/失败在 `post`
+    阶段走 `PRECONDITION_NOT_RESTORED`（共享夹具没归零 ⇒ 本用例与**后续**用例结论不可信），
+    在 `pre` 阶段走 `PRECONDITION_NOT_APPLIED`（本用例带着假前置跑）。
+    """
+    return _classify_clean_message(spec, await _run_clean_action(token, spec, "post"), "post")
 
 
 async def _list_products_matching(client, token: str, keyword: str, size: int = 20) -> list:
@@ -721,10 +809,171 @@ async def _list_products_matching(client, token: str, keyword: str, size: int = 
     return [p for p in items if keyword in str(p.get("name", ""))]
 
 
-async def _run_pre_clean_action(token: str, spec: dict) -> str:
-    """一次 pre_clean 动作的**实现体**（原始消息；族归类见 `_run_pre_clean`）。
+# ── 复位族（issue #4075）：把**写方对共享夹具的改动**复位 ─────────────────────────
+# 共同口径三条（缺一即回到"静默空转"）：
+#   ① **幂等**：目标当前值已等于复位值 ⇒ 成功（"本就等于种子值"），不是失败。
+#      ⇒ 用例首跑失败（压根没写成）时也不会制造假红。
+#   ② **失败可见**：目标不在 / 不唯一 / 写失败 / 回读不符 ⇒ 走 `_clean_not_applied(phase, …)`
+#      的稳定标记，由 `_run_clean_specs` 折进用例结论（`pre` → score=0；
+#      `post` → `restore` → `completion_verdict.restore_failures`）。
+#   ③ **回读校验**：2xx ≠ 值已落地（#3807 的实证：请求体发错字段名 ⇒ 复位静默空转）。
+# 定位口径与 §18.3「不可变引用」一致：按**商品名**（种子唯一名），命中不唯一即如实报错，
+# 不做 `next(...)` 取第一条（那是 HR-003 恒红的形态）。
 
-    支持类型：
+
+async def _find_restore_target(client, token: str, keyword: str) -> tuple:
+    """定位复位目标商品 → `(item, 错误文案)`（二者必有一个为空；纯逻辑，可单测）。
+
+    优先级：**精确同名** > 唯一子串命中；0 件或多件 ⇒ 返回错误文案（fail-closed）。
+    为什么不做模糊兜底：复位动作改的是**共享夹具**，改错对象比不复位更糟
+    （§18.3：定位被测对象必须用不可变标识）。
+    """
+    kw = str(keyword or "").strip()
+    if not kw:
+        return None, "复位动作缺 `product_keyword`（无法定位目标商品）"
+    items = await _list_products_matching(client, token, kw)
+    exact = [p for p in items if str(p.get("name") or "").strip() == kw]
+    if len(exact) == 1:
+        return exact[0], ""
+    if not items:
+        return None, f"商品「{kw}」不在库里（复位目标不存在）"
+    if len(items) == 1:
+        return items[0], ""
+    return None, (f"商品「{kw}」命中 {len(items)} 件（复位目标不唯一）"
+                  f"—— 先 `product_dedupe` 或改用唯一名，不要对共享夹具瞎改")
+
+
+async def _readback_product(client, headers, product_id: str) -> dict:
+    """回读商品详情（`GET /api/admin/products/{id}`；#3807 的回读口径，复位族共用）。"""
+    r = await client.get(f"{ADMIN_API}/api/admin/products/{product_id}",
+                         headers=headers, timeout=15)
+    if getattr(r, "status_code", 0) >= 300:
+        return {}
+    return (_safe_json(r, {}) or {}).get("data") or {}
+
+
+async def _restore_product_status(token: str, spec: dict, phase: str) -> str:
+    """`product_status_restore`：按商品名把**在售状态**复位（issue #4075）。
+
+    为什么需要：`PR-025`（把遮光窗帘下架）在**用例侧**已补「重新上架」轮（#4091），但那是
+    **有条件复位**（流程走完才复位）—— agent 中途失败/只说不做时，残留 `off_sale` 就留给
+    同栈按名检索的用例（C 端 `product_search` 强制 `status=on_sale`，issue #3932）⇒ 假红。
+    本动作是**无条件复位**：只问结果（当前状态是否 = 种子状态），不问流程。
+    """
+    kw = str(spec.get("product_keyword") or "")
+    want = str(spec.get("status") or "on_sale")
+    async with httpx.AsyncClient() as c:
+        h = _admin_headers(token)
+        prod, err = await _find_restore_target(c, token, kw)
+        if not prod:
+            return _clean_not_applied(phase, err)
+        pid = str(prod.get("id") or "")
+        cur = str(prod.get("status") or "")
+        if cur == want:
+            return f"商品「{kw}」在售状态本就是 {want}，无需复位（幂等）"
+        r = await c.put(f"{ADMIN_API}/api/admin/products/{pid}/status",
+                        headers=h, json={"status": want}, timeout=15)
+        if getattr(r, "status_code", 0) >= 300:
+            return _clean_not_applied(
+                phase, f"商品「{kw}」在售状态复位为 {want} 失败（HTTP {r.status_code}）")
+        got = str((await _readback_product(c, h, pid)).get("status") or "")
+        if got != want:
+            return _clean_not_applied(
+                phase, f"商品「{kw}」在售状态复位**未生效** —— 回读 {got or '(空)'}，应为 {want}")
+    return f"已复位商品「{kw}」在售状态 → {want}（回读一致）"
+
+
+async def _restore_sku_price(token: str, spec: dict, phase: str) -> str:
+    """`sku_price_restore`：按商品名 + 色名/规格把 **SKU 价**复位到给定值（issue #4075）。
+
+    为什么需要（本单的病灶之一）：`PR-021` 把种子商品 `prod_eval_blackout` 的「米白/散剪」
+    SKU 价改成 150 且**无复位** ⇒ 同一栈里所有读该商品价格的用例看到 150
+    （run 35243351675 的 OR-014 mibao 腿假红：接地真值仍是商品级 168）。用例侧的断言口径
+    已在 #4078 对齐工具层闸门，但**世界**没被复位 —— 本动作补上那一半。
+
+    `price` 必填（缺 = 配置错误，交由调用侧 `_run_clean_specs` 折进结论）；`color_name` /
+    `selling_method` / `door_width` 空 = 该维度不限定（与 `sku_update` 的端点语义一致）。
+    ⚠️ 字段名 `color_name` 对齐**种子列**（`product_skus.color_name` = 「米白」），
+    发请求时映射成端点的 `color`（`AgentProductController.updateSkuPrice`）。
+    """
+    kw = str(spec.get("product_keyword") or "")
+    want = spec.get("price")
+    if want is None:
+        return _clean_not_applied(phase, f"`sku_price_restore` 缺 `price`（无法确定复位目标值）")
+    color = str(spec.get("color_name") or spec.get("color") or "")
+    method = str(spec.get("selling_method") or "")
+    width = str(spec.get("door_width") or "")
+    body: dict = {"price": want}
+    if color:
+        body["color"] = color
+    if method:
+        body["selling_method"] = method
+    if width:
+        body["door_width"] = width
+    _who = f"商品「{kw}」" + "".join(
+        f"/{x}" for x in (color, method, (f"门幅{width}" if width else "")) if x)
+    async with httpx.AsyncClient() as c:
+        h = _admin_headers(token)
+        prod, err = await _find_restore_target(c, token, kw)
+        if not prod:
+            return _clean_not_applied(phase, err)
+        pid = str(prod.get("id") or "")
+        cur = _match_sku_price((await _readback_product(c, h, pid)).get("skus") or [],
+                               color, method, width)
+        if cur is not None and _same_price(cur, want):
+            return f"{_who} 的 SKU 价本就是 {want}，无需复位（幂等）"
+        r = await c.patch(f"{ADMIN_API}/api/admin/agent/products/{pid}/skus/price",
+                          headers=h, json=body, timeout=15)
+        if getattr(r, "status_code", 0) >= 300:
+            return _clean_not_applied(
+                phase, f"{_who} 的 SKU 价复位为 {want} 失败（HTTP {r.status_code}）")
+        got = _match_sku_price((await _readback_product(c, h, pid)).get("skus") or [],
+                               color, method, width)
+        if got is None:
+            return _clean_not_applied(
+                phase, f"{_who} 的 SKU 价复位**未证实** —— 回读里找不到该规格的 SKU")
+        if not _same_price(got, want):
+            return _clean_not_applied(
+                phase, f"{_who} 的 SKU 价复位**未生效** —— 回读 {got}，应为 {want}")
+    return f"已复位 {_who} 的 SKU 价 → {want}（回读一致）"
+
+
+def _match_sku_price(skus, color: str, method: str, width: str):
+    """按色名/售卖方式/门幅在回读的 `skus[]` 里取值（纯函数；缺项 = 不限定）。
+
+    与 `sku_update` 的匹配维度**同一口径**（`color_name`/`selling_method`/`door_width`），
+    只用于**回读校验**；匹配不到返回 None（调用方按"未证实"处理，不静默当成功）。
+    """
+    for s in skus or []:
+        if not isinstance(s, dict):
+            continue
+        if color and str(s.get("colorName") or s.get("color_name") or "") != color:
+            continue
+        if method and str(s.get("sellingMethod") or s.get("selling_method") or "") != method:
+            continue
+        if width and str(s.get("doorWidth") or s.get("door_width") or "") != width:
+            continue
+        return s.get("price")
+    return None
+
+
+def _same_price(a, b) -> bool:
+    """价格比较（字符串/数字混用，`0.010000000000000009` 类的浮点噪声按两位小数抹平）。"""
+    try:
+        return abs(float(a) - float(b)) < 0.005
+    except (TypeError, ValueError):
+        return False
+
+
+async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
+    """一次夹具层动作的**实现体**（原始消息；族/阶段归类见 `_run_pre_clean` / `_run_post_clean`）。
+
+    **`pre_clean` 与 `post_clean` 共用这一份实现**（issue #4075）：只有 `phase` 影响
+    ① 合法类型集合（`_CLEAN_TYPES[t]["phases"]`）与 ② 失败标记的措辞
+    （`_clean_not_applied`）。复制第二套实现必然漂移，而漂移的后果正是本仓库反复踩的
+    "声明了却没生效"。
+
+    支持类型（完整清单见 `_CLEAN_TYPES`）：
     - customer_tag_remove: 移除「customer_keyword 匹配的第 customer_index 位客户」
       上的 tag_name 标签（case 每次成功 add_tag 即污染生产数据 → 下一跑幂等拒绝，
       在 run_case 前把目标客户标签清干净，保证写流程从干净状态开始）。
@@ -732,15 +981,30 @@ async def _run_pre_clean_action(token: str, spec: dict) -> str:
       **幂等**：不存在即返回 0 条（不是错误），符合"清理成功"语义。
     - employee_reactivate: 恢复被评测禁用的测试员工；**支持 employee_phone 精确定位**
       （#3781：只用姓名会命中同名残留 → 目标不确定 → 用例恒红）。
+    - product_status_restore / sku_price_restore: **复位族**（#4075）——把写方对共享夹具
+      （种子商品）的改动复位；幂等 + 回读校验 + 失败可见（见各自 docstring）。
 
-    ⚠️ 调用时机（issue #3751）：本函数是**前置**动作，只允许在**一次尝试开始之前**执行；
-    `run_suite` 在首次尝试前与**每次重试前**都会调用它（attempt 边界），但绝不在
-    `run_case`/`db_verify` 之后调用 —— 否则会把该次尝试的真实产物抹掉（红线）。
+    ⚠️ 调用时机（issue #3751 / #4075）：`pre` 阶段只允许在**一次尝试开始之前**执行
+    （`run_suite` 在首次尝试前与每次重试前调用；绝不在 `run_case`/`db_verify` 之后 ——
+    否则会把该次尝试的真实产物抹掉，红线）。`post` 阶段相反：只在**该用例的全部断言
+    跑完之后**执行（`_run_one_case` 的 `finally`），提前执行同样会洗掉证据。
 
     ⚠️ 消息措辞红线（#3751）：`_run_one_case._reset_for_retry` 靠子串
     「未复位」/「失败」判"复位没成功" ⇒ **成功路径的消息不得含这两个词**。
     """
-    _type = spec.get("type", "")
+    _type = str(spec.get("type", "") or "")
+    _legal = _POSTCLEAN_TYPES if phase == "post" else _PRECLEAN_TYPES
+    _label = _POSTCLEAN_CONFIG_ERR if phase == "post" else _PRECLEAN_CONFIG_ERR
+    _meta = _CLEAN_TYPES.get(_type)
+    # ── 阶段与登记校验**必须在分发之前**（fail-closed）────────────────────────────
+    # 放在最后（旧形态）会让"只允许在 pre 声明"的类型在 post 里**照跑**
+    # （每个类型分支都是无条件 `if _type == …`）⇒ 声明跨阶段 = 静默越阶段执行。
+    if _meta is None:
+        return (f"{_label}: {_type!r}（该用例的夹具动作**未执行**，结论不可归因于 agent）"
+                f"—— 合法类型见 local_runner._CLEAN_TYPES（本阶段 {sorted(_legal)}）")
+    if phase not in tuple(_meta.get("phases") or ()):
+        return (f"{_label}: {_type!r} 只允许在 {list(_meta['phases'])} 阶段声明，本处是 {phase!r}"
+                f"（该用例的夹具动作**未执行**，结论不可归因于 agent）")
     if _type == "product_remove":
         # 清理建品测试残留（下架→删除，on_sale 不能直接删）：多次建品「测试窗帘」
         # 等残留 → 全量评测重名冲突（agent 发现已存在 → 澄清 → create 未达）。
@@ -880,18 +1144,22 @@ async def _run_pre_clean_action(token: str, spec: dict) -> str:
         # （seed 注释：「EVAL-MB-ORD-0002 = PG-013 加工单生成用」）。
         return await _reset_processing_order(
             str(spec.get("order_no") or _SEED_PROCESSING_ORDER_NO))
-    if _type not in _PRECLEAN_TYPES:
-        # 配置错误，**不是**静默跳过（issue #3781）：旧行为 `（跳过）` 只被打印一行，
-        # 用例照跑 ⇒ "数据压根没准备"在报告里读不出来。现在走稳定前缀，由
-        # `_pre_clean_for_case` 折进用例结论（score=0 + 进 summary 的 failures）。
-        return (f"{_PRECLEAN_CONFIG_ERR}: {_type!r}（该用例的数据准备**未执行**，"
-                f"结论不可归因于 agent）—— 合法类型见 local_runner._PRECLEAN_TYPES: "
-                f"{sorted(_PRECLEAN_TYPES)}")
+    if _type == "product_status_restore":
+        # 复位族（#4075）：把商品**在售状态**复位（实现体在独立函数里 —— 见
+        # `test_eval_write_site_dispositions` 的写点清点表：每个写点都要被显式处置）。
+        return await _restore_product_status(token, spec, phase)
+    if _type == "sku_price_restore":
+        # 复位族（#4075）：把 **SKU 价**复位（PR-021 的病灶面）。
+        return await _restore_sku_price(token, spec, phase)
     # ── customer_tag_remove（登记表里的最后一个 ⇒ 落到这里即它；其余情况是
     #    "登记了但漏写实现体"，同样走配置错误，不许退回静默）──
+    # 配置错误**不是**静默跳过（issue #3781）：旧行为 `（跳过）` 只被打印一行，
+    # 用例照跑 ⇒ "数据压根没准备"在报告里读不出来。走稳定前缀（按阶段分），由
+    # `_run_clean_specs` 折进用例结论（pre → score=0 进 failures；
+    # post → restore_failures）。
     if _type != "customer_tag_remove":
-        return (f"{_PRECLEAN_CONFIG_ERR}: {_type!r} 已登记但未实现（数据准备**未执行**）"
-                f"—— 请补实现或从 _PRECLEAN_TYPES 移除")
+        return (f"{_label}: {_type!r} 已登记但未实现（夹具动作**未执行**）"
+                f"—— 请补实现或从 _CLEAN_TYPES 移除")
     async with httpx.AsyncClient() as c:
         h = _admin_headers(token)
         kw = str(spec.get("customer_keyword", ""))
@@ -923,6 +1191,43 @@ async def _run_pre_clean_action(token: str, spec: dict) -> str:
             who = customer.get("name") or customer.get("phone") or cid
             return f"已清理 {who} 的「{spec.get('tag_name')}」标签"
         return f"客户无「{spec.get('tag_name')}」标签，无需清理"
+
+
+async def _run_clean_specs(token: str, specs, phase: str = "pre") -> list:
+    """执行一批夹具层动作（`pre_clean` / `post_clean` **共用这一份循环**）；返回消息列表。
+
+    为什么返回消息而不是只打印（issue #3511 归因）：夹具动作的结果此前只 print，于是
+    "数据没准备 / 夹具没复位"与"能力缺陷"在报告里同形 —— 必须随用例结果落盘。
+    为什么挂模块级而不是 `run_suite` 内部闭包（issue #4075）：`post` 阶段要由
+    `_run_one_case` 的收尾路径调用，且必须能被单测**直接**驱动
+    —— "复位真的生效"那条红证要连续跑两遍（见
+    `tests/unit_ci_workflows/test_shared_fixture_write_restore.py`）。
+
+    坏消息的判据是**稳定前缀**（按阶段取 `_PRECLEAN_BAD_MARKERS` / `_POSTCLEAN_BAD_MARKERS`），
+    与折叠侧同一处口径：`pre` 的坏消息由 `check_preclean_not_applied` 折进 `failures`，
+    `post` 的由 `_run_one_case` 的 `restore` 通道折进结论。
+    """
+    run = _run_post_clean if phase == "post" else _run_pre_clean
+    bad_markers = _POSTCLEAN_BAD_MARKERS if phase == "post" else _PRECLEAN_BAD_MARKERS
+    msgs: list = []
+    for spec in (specs or []):
+        try:
+            _msg = await run(token, spec)
+        except Exception as e:
+            # 失败同样入结果（此前只有 print → 归因时看不见"夹具动作失败"）。
+            # ⚠️ 文案固定为 `⚠️ <phase>_clean 失败: …`：`_reset_for_retry` 靠「失败」
+            # 子串判"重试前置不等价"。
+            print(f"     ⚠️ {phase}_clean 失败（非致命）: {e}")
+            msgs.append(f"⚠️ {phase}_clean 失败: {e}")
+            continue
+        if not _msg:
+            continue
+        _bad = str(_msg).startswith(bad_markers)
+        # 前缀沿用既有语义：配置错误/未复位 = 预警（⚠️/⛔），其余（含良性 no-op）= 🧹
+        _icon = ("⛔" if phase == "post" else "⚠️") if _bad else "🧹"
+        print(f"     {_icon} {phase}_clean: {_msg}")
+        msgs.append(str(_msg))
+    return msgs
 
 
 # ── Auth ──
@@ -2780,6 +3085,13 @@ _CASE_ATOM_RULES = (
     # "同一件事"洗成"两次不同违反点"（→ 误判 unstable）。类型名保留（不同 type 不同根因）。
     (re.compile(r"^pre_clean: 不支持的 type: '?([A-Za-z0-9_, ]+)'?"),
      "config_error(pre_clean)"),
+    # `post_clean` 的配置错误（#4075）：与 `pre_clean` 同构但**分属不同原子** ——
+    # 两者是不同阶段的不同缺陷（"开跑前没准备" vs "跑完没复位"）。
+    (re.compile(r"^post_clean: 不支持的 type"), "config_error(post_clean)"),
+    # 复位族未生效（#4075）：**必须排在通用 `^PRECONDITION_NOT_RESTORED` 之前**
+    # （先匹配者胜），否则 post 的复位失败会被折成 #3807 的价格复位标签（归因错层）。
+    (re.compile(r"^PRECONDITION_NOT_RESTORED: post_clean"),
+     "precondition_not_restored(post_clean)"),
     (re.compile(r"^pre_clean: 前置未应用"), "precondition_not_applied(pre_clean)"),
     (re.compile(r"^PRECONDITION_NOT_APPLIED"), "precondition_not_applied(pre_clean)"),
     (re.compile(r"^PRECONDITION_NOT_RESTORED"), "precondition_not_restored(pre_clean)"),
@@ -4835,6 +5147,19 @@ def check_preclean_not_applied(msgs: list) -> list:
             if str(m).startswith(_PRECLEAN_BAD_MARKERS)]
 
 
+def check_postclean_not_applied(msgs: list) -> list:
+    """把 `post_clean` 的**未复位/配置错误**折进用例结论（issue #4075）；返回原文列表。
+
+    与 `check_preclean_not_applied` **同构**（稳定前缀判据，不是宽松的"含『跳过』"），
+    差别只在标记集合 —— `post` 阶段的坏消息是 `_POSTCLEAN_BAD_MARKERS`
+    （配置错误前缀 + `PRECONDITION_NOT_RESTORED: post_clean`）。
+    调用点见 `_run_one_case` 的收尾块：命中者随 `restore` 落盘 ⇒
+    `completion_verdict.restore_failures` 阻塞（与 #3807 的价格复位同一条通道）。
+    """
+    return [str(m) for m in (msgs or [])
+            if str(m).startswith(_POSTCLEAN_BAD_MARKERS)]
+
+
 _SMS_CODE_RE = re.compile(r"^\s*(?:短信验证码|验证码)?\s*[:：]?\s*(\d{4,6})\s*$")
 
 
@@ -6622,22 +6947,20 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         看着像 agent 不会关单，实为该用例 `pre_clean: aftersales_ticket_prepare` 未生效
         （库里 0 条工单）。返回后随用例结果落盘，归因可区分数据层与能力层
         （acceptance-protocol 五层归因：基础设施/数据层优先）。
+
+        #4075：循环体收敛到模块级 `_run_clean_specs` —— `post_clean` 共用同一份实现
+        （含动作实现与类型登记表），本闭包只负责"阶段 = pre"。
         """
-        msgs = []
-        for spec in (getattr(case, "pre_clean", None) or []):
-            try:
-                _msg = await _run_pre_clean(token, spec)
-                if _msg:
-                    # 配置错误（未知/未实现的 type）走 ⚠️ 前缀 + **原样保留稳定前缀**，
-                    # 由 `_run_one_case` 折进用例结论（issue #3781）——不再只是一行 🧹。
-                    _is_cfg = str(_msg).startswith(_PRECLEAN_CONFIG_ERR)
-                    print(f"     {'⚠️' if _is_cfg else '🧹'} pre_clean: {_msg}")
-                    msgs.append(str(_msg))
-            except Exception as e:
-                # 失败同样入结果（此前只有 print → 归因时看不见"准备失败"）
-                print(f"     ⚠️ pre_clean 失败（非致命）: {e}")
-                msgs.append(f"⚠️ pre_clean 失败: {e}")
-        return msgs
+        return await _run_clean_specs(token, getattr(case, "pre_clean", None) or [], "pre")
+
+    async def _post_clean_for_case(case) -> list:
+        """执行用例声明的 post_clean（**用例结束后**复位共享夹具）；返回消息列表。
+
+        #4075：与 `_pre_clean_for_case` 共用 `_run_clean_specs` 与 `_run_clean_action`，
+        差别只有阶段：`post` 的坏消息走 `PRECONDITION_NOT_RESTORED`（共享夹具没归零 ⇒
+        本用例与后续用例结论不可信），由 `_run_one_case` 的收尾块折进 `restore` 通道。
+        """
+        return await _run_clean_specs(token, getattr(case, "post_clean", None) or [], "post")
 
     _retry_lock = asyncio.Lock()
 
@@ -6660,7 +6983,7 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             return True
 
     async def _run_one_case(i: int, case, pre_clean_msgs=None, attempt_scope=None,
-                            reset_before_retry=None):
+                            reset_before_retry=None, post_clean_after_attempt=None):
         """跑单个用例（会话/重试分类/打印/结果记录）。
 
         前置的 pre_clean 由调度器在**独占窗口**里先跑（见 `_pre_clean_for_case`），
@@ -6682,6 +7005,13 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
         前置没复位成功时（DB 不可达/asyncpg 缺失/工单不在），结果里会带
         `PRECONDITION_NOT_RESTORED` 标记（随 summary 落盘）：那种情况下第二次尝试与首次
         前置**不等价**，其红/绿**不可归因于 agent**（见 issue #3751）。
+
+        post_clean_after_attempt（issue #4075）：**该用例的全部尝试与断言都跑完之后**执行的
+        复位回调（`post_clean` 声明 → 调度器注入；不传 = 该用例没声明，不 opt-in）。
+        调用点是 `finally`（与 #3807 的商品价复位同一处、同一条 `restore` 通道）——
+        ⚠️ 红线与 `reset_before_retry` 对称：**绝不在断言/`db_verify` 之前**执行，
+        否则它会把本次尝试的真实产物抹掉（那是洗证据）。回调由调度器负责独占窗口
+        （写共享夹具的短动作，见 `_post_clean_for`）。
         """
         nonlocal budget_exhausted
         if case.skip_reason:
@@ -7008,15 +7338,37 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                     print(f"     ⛔ 前置未复位（进结论）: {_restore_msg[:200]}")
                 else:
                     print(f"     🧹 {_restore_msg[:160]}")
+            # ── 用例结束后复位**共享夹具**（issue #4075 的机制半边）──────────────
+            # 位置：全部断言/`db_verify`/会话后置断言**之后**（终于此，finally 里），
+            # 与 #3807 的价格复位**同一条通道**（`restore_msgs` → `r["restore"]` →
+            # `completion_verdict.restore_failures`）。为什么复用而不是新造通道：
+            # 语义完全相同（"共享状态没归零 ⇒ 本用例与后续用例结论不可信"），
+            # 新造只会得到一条没人消费的声明（§20 R5 第 1 条形态）。
+            # 为什么在 finally 而不是"尝试成功时才做"：**失败用例同样会改脏夹具**
+            # （下架成功但随后某轮断言失败）—— 只在成功路径复位等于把脏数据留给下一条用例。
+            if post_clean_after_attempt is not None:
+                try:
+                    _pc_msgs = await post_clean_after_attempt()
+                except Exception as _pe:      # 复位崩了同样不许静默（同 #3807 口径）
+                    _pc_msgs = [f"{_POSTCLEAN_NOT_APPLIED}: 复位动作异常 "
+                                f"{type(_pe).__name__}: {_pe}"]
+                for _m in (_pc_msgs or []):
+                    restore_msgs.append(str(_m))
+                    if str(_m).startswith(_POSTCLEAN_BAD_MARKERS):
+                        print(f"     ⛔ 共享夹具未复位（进结论）: {str(_m)[:200]}")
+                    else:
+                        print(f"     🧹 {str(_m)[:160]}")
         if isinstance(r, dict) and restore_msgs:
             r["restore"] = restore_msgs
             _not_restored = [m for m in restore_msgs
                             if str(m).startswith("PRECONDITION_NOT_RESTORED")]
             if _not_restored and not r.get("precondition"):
-                # 该用例结束后**共享商品价格处于未知状态** ⇒ 它自己与后续读价用例的
+                # 该用例结束后**共享夹具处于未知状态** ⇒ 它自己与后续读它的用例的
                 # 结论都不可靠；用既有 `precondition` 通道（#3751）把这件事写进证据。
-                r["precondition"] = ("PRECONDITION_NOT_RESTORED: 商品价格复位未生效 "
-                                     f"（{_not_restored[0][:160]}）—— 本用例与后续读价用例结果不可信")
+                # #4075：本通道现在同时承载两条来源（#3807 的价格快照复位 + `post_clean`
+                # 的声明式复位），故措辞由"商品价格"收敛为"共享状态"（两条都是它）。
+                r["precondition"] = ("PRECONDITION_NOT_RESTORED: 共享状态复位未生效 "
+                                     f"（{_not_restored[0][:160]}）—— 本用例与后续读它的用例结果不可信")
 
         if CASE_SLEEP:
             await asyncio.sleep(CASE_SLEEP)  # rate limit（可配：EVAL_CASE_SLEEP）
@@ -7112,6 +7464,26 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
 
         return _again
 
+    def _post_clean_for(c, g, in_writer: bool):
+        """该用例**结束后**的复位回调（按用例 opt-in：没声明 `post_clean` 就返回 None）。
+
+        issue #4075：与 `_reset_for` **同构**（独占窗口的获取方式、`in_writer` 的防死锁
+        口径），差别只在时机（用例全部尝试跑完后的 `finally`）与阶段（`post`）。
+        为什么也要独占窗口：复位动的是**共享夹具**（种子商品的状态/价格），
+        而并行用例可能正在读它 —— 不独占就会出现"读到复位中间态"的假红，
+        与 `pre_clean` 需要独占是同一条理由。
+        """
+        if not (getattr(c, "post_clean", None) or []):
+            return None
+
+        async def _after():
+            if in_writer or g is None:
+                return await _post_clean_for_case(c)
+            async with g.writer():
+                return await _post_clean_for_case(c)
+
+        return _after
+
     gate = None
     if concurrency > 1 and parallel and serial:
         # 读写门：并行用例持读位、串行用例持写位 —— 串行用例**不必等整批跑完**
@@ -7130,14 +7502,16 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             #    "未持读位"时拿写位（issue #3751；整条用例持读位时取写位会死锁）
             results_by_idx[i] = await _run_one_case(
                 i, c, _pc, attempt_scope=gate.reader,
-                reset_before_retry=_reset_for(c, gate, in_writer=False))
+                reset_before_retry=_reset_for(c, gate, in_writer=False),
+                post_clean_after_attempt=_post_clean_for(c, gate, in_writer=False))
 
         async def _serial_task(i, c):
             # 独占用例：pre_clean 与主体在**同一个**独占窗口内（不再嵌套获取）
             async with gate.writer():
                 _pc = await _pre_clean_for_case(c, gate)
                 results_by_idx[i] = await _run_one_case(
-                    i, c, _pc, reset_before_retry=_reset_for(c, gate, in_writer=True))
+                    i, c, _pc, reset_before_retry=_reset_for(c, gate, in_writer=True),
+                    post_clean_after_attempt=_post_clean_for(c, gate, in_writer=True))
 
         await asyncio.gather(*[_parallel_task(i, c) for i, c in parallel],
                              *[_serial_task(i, c) for i, c in serial])
@@ -7157,7 +7531,8 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             async with sem:
                 results_by_idx[i] = await _run_one_case(
                     i, c, _pc, attempt_scope=gate.reader,
-                    reset_before_retry=_reset_for(c, gate, in_writer=False))
+                    reset_before_retry=_reset_for(c, gate, in_writer=False),
+                    post_clean_after_attempt=_post_clean_for(c, gate, in_writer=False))
 
         await asyncio.gather(*[_bounded(i, c) for i, c in parallel])
     else:
@@ -7173,7 +7548,8 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
             if getattr(c, "pre_clean", None):
                 _pc = await _pre_clean_for_case(c, None)
             results_by_idx[i] = await _run_one_case(
-                i, c, _pc, reset_before_retry=_reset_for(c, None, in_writer=True))
+                i, c, _pc, reset_before_retry=_reset_for(c, None, in_writer=True),
+                post_clean_after_attempt=_post_clean_for(c, None, in_writer=True))
 
 
     # 按**原始用例顺序**回填（并发不改变报告顺序，便于与历史 run 逐条对比）
@@ -8040,6 +8416,11 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             form_prefill=c.get("form_prefill") or [],
             forbidden_card_text=c.get("forbidden_card_text") or [],
             pre_clean=c.get("pre_clean") or [],
+            # 写方复位（issue #4075）：**必须在这里映射** —— CI 走的是本 YAML 装载路径
+            # （`--cases .github/cases`），不是生成物 `eval_cases.py`；漏映射 = 用例声明的
+            # `post_clean` 恒为空 ⇒ 写方改掉共享夹具后没人复位（#4075 机制半边白做），
+            # 由 `tests/test_acceptance_case_checks.py` 的 PROBES 逐字段守住。
+            post_clean=c.get("post_clean") or [],
             post_session=c.get("post_session") or [],
             # 并行污染隔离 + 运行期前置断言（issue #3781）。**必须在这里映射**：
             # CI 走的是本装载路径（`--cases .github/cases`），不是生成物 `eval_cases.py`

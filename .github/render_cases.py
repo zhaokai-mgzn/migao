@@ -172,6 +172,7 @@ def to_eval_py(cases):
             '    db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）',
             '    output_verify: List[dict] = field(default_factory=list) # 产出侧断言（工具计算结果 payload，如算料用布量/spec公式，issue #3367）',
             '    pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）',
+            '    post_clean: List[dict] = field(default_factory=list) # 用例结束后复位共享夹具（写方复位，issue #4075）',
             '    post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）',
            '    debug_user: str = ""   # 多身份评测：以哪个 DEBUG 顾客身份跑（如 debug_customer_new，issue #3391）',
            '    debug_permissions: str = ""   # 评测可控权限（B 端）：逗号分隔权限码，非空才下发 X-Debug-Permissions（issue #4108）',
@@ -233,6 +234,10 @@ def to_eval_py(cases):
             out.append(f"    output_verify={c.get('output_verify')!r},")
         if c.get("pre_clean"):
             out.append(f"    pre_clean={c.get('pre_clean')!r},")
+        # `post_clean`（issue #4075）：与 `pre_clean` 同口径 —— 只在声明时落字面量，
+        # 未声明的用例走 dataclass 默认（缺省 = 不复位，行为与旧版逐字一致）。
+        if c.get("post_clean"):
+            out.append(f"    post_clean={c.get('post_clean')!r},")
         if c.get("post_session"):
             out.append(f"    post_session={c.get('post_session')!r},")
         # 全局命名空间声明 + 运行期前置断言（issue #3781）：只在声明时落字面量，
@@ -350,6 +355,17 @@ def to_md(cases):
                     lines.append(f"清理: {_pc_type}({_pc_args})" if _pc_args else f"清理: {_pc_type}")
                 else:
                     lines.append(f"清理: {pc}")
+            # `post_clean`（issue #4075）与上同因同形：账本上看不出"写方有没有声明复位"
+            # ⇒ 那一格又成盲区（#3836 的 `pre_clean` 就是这么补的）。前缀用「复位:」
+            # 而不是「清理:」—— 两者语义不同（清理是"扫干净"，复位是"改回种子值"），
+            # 用同一个词会让账本读者分不清用例声明的是哪一侧。
+            for pc in (c.get("post_clean") or []):
+                if isinstance(pc, dict):
+                    _pc_type = str(pc.get("type") or "")
+                    _pc_args = "、".join(f"{k}={v}" for k, v in pc.items() if k != "type")
+                    lines.append(f"复位: {_pc_type}({_pc_args})" if _pc_args else f"复位: {_pc_type}")
+                else:
+                    lines.append(f"复位: {pc}")
             for ob in (c.get("order_before") or []):
                 lines.append(f"时序: {ob}")
             for ft in (c.get("forbidden_text") or []):

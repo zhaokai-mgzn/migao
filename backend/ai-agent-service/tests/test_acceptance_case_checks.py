@@ -4993,6 +4993,11 @@ class TestAssertionVocabularyIsMappedByLoader:
         "db_verify": ('    db_verify:\n      - fetch: order_items\n        source: order_create\n', None),
         "output_verify": ('    output_verify:\n      - tool: t\n        field: payload\n', None),
         "pre_clean": ('    pre_clean:\n      - action: reset\n', None),
+        # 写方复位（issue #4075）：与 pre_clean 同族（共用同一份实现，仅阶段前缀不同），
+        # 漏映射 = 用例结束后共享夹具不复位（#4075 机制半边静默失效）。
+        "post_clean": ('    post_clean:\n'
+                       '      - type: product_status_restore\n'
+                       '        product_keyword: "遮光窗帘"\n', None),
         "post_session": ('    post_session:\n      - fetch: user_memories\n', None),
         "debug_user": ('    debug_user: "debug_customer_new"\n', "debug_customer_new"),
         # 评测可控权限（issue #4108）：漏映射 = 越权用例仍以通配权限跑 ⇒ 声明形同虚设、

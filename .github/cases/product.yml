@@ -340,8 +340,17 @@ cases:
       # 去重只按关键词（#3518）：用例已不再点名价格（独立栈种子 ¥168），`price: 100` 恒不匹配。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
+    # ── 复位共享夹具（issue #4075 的**机制半边**：`post_clean`）──
+    # 本用例改的是**共享夹具** `prod_eval_blackout` 的**在售状态**，且复位是**有条件**的：
+    # 只有「上架」段真的走完（agent 答完卡）才回到 on_sale —— 中途失败/只说没做时
+    # 商品会留在 off_sale，而 C 端 `product_search` 强制下发 `status=on_sale`
+    # （issue #3932）⇒ 同栈按名检索它的用例直接搜不到，红得还像"agent 不会搜"。
+    # `post_clean` 是**无条件复位**：只问结果（当前状态是否 = 种子状态），不问流程。
+    post_clean:
+      - type: product_status_restore
+        product_keyword: "遮光窗帘"
     skip_reason: ""
-    merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤。2026-09-14 校准（#3557）：假绿升级——升 must_succeed(toggle_status) + required_args(product_id/status)；根因修复见 app/graph/nodes.py 的答卡轮豁免（答卡轮不再被卡值里的跨域词路由到 order skill）"
+    merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤。2026-09-14 校准（#3557）：假绿升级——升 must_succeed(toggle_status) + required_args(product_id/status)；根因修复见 app/graph/nodes.py 的答卡轮豁免（答卡轮不再被卡值里的跨域词路由到 order skill）。2026-09-18 补 `post_clean[product_status_restore]`（issue #4075 机制半边）：下架→上架是**有条件复位**，本类型补无条件那半；断言（expectations/must_succeed/required_args/data_checks）**原样未动**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_product_search.py"
@@ -1253,8 +1262,46 @@ cases:
           new_price: 150
     data_checks:
       - "sku_update 真成功且价格为 150 元（= 用户确认价）：机器断言见 must_succeed（写成功）+ output_verify（new_price==150）；裸断言「调用过」不算覆盖（#3544 假绿升级）"
+    # ── 前置自断言（§18.4；同 PR-007/PR-025 的先例）──────────────────────────────
+    # 本用例**按名**定位共享夹具（"遮光窗帘"），且 `post_clean` 的复位也按名定位 ⇒
+    # 「该名字唯一」是它依赖的前置：有 2 件同名时 agent 会（正确地）要求澄清、
+    # `sku_update` 从不执行，判红成 `no_success(sku_update)`，读起来像「agent 不改价」。
+    # 前置不成立时折成 `precondition_not_applied(declared:product_count_for_keyword)`，
+    # 与行为失败分属不同根因原子（不再伪装成能力缺陷）。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
+    # ── 自清理（写类用例的前置等价性；同 PR-005/PR-007/PR-017 口径）──────────────
+    # 本用例是**共享夹具写方**：跑一次就把种子价改掉，而它自己靠**名字**定位
+    # （`precondition` 与 `post_clean` 都按名）。缺 `pre_clean` 时「重试前置 ≠ 首跑前置」
+    # （#3751/#3800 家族）；同名**副本**只能靠 `product_dedupe` 归并（保留最早创建 = 种子），
+    # 无副本时是良性 no-op（`_PRECLEAN_CLEANUP_TYPES` 口径）。
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
     skip_reason: ""
-    merge_log: "Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。2026-09-14 校准（#3544，REPORT §2.2）：假绿升级——`data_checks` 的自然语义「sku_update 成功（价格落库）」不计分（同 run 两次 sku_update 全失败仍判 ✅）→ 补 must_succeed（canonical 写成功断言）+ output_verify（new_price==150），缺陷未修前本用例由假绿转真红（#3539 修复后转绿）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`——根因已由 #3539 定位为**中文标签 vs 枚举字面匹配**（非种子缺口），非本 PR 的用例层问题"
+    # ── 复位共享夹具（issue #4075 的**机制半边**：`post_clean`）──
+    # 本用例改的是**共享夹具** `prod_eval_blackout`（种子「遮光窗帘」）的
+    # 「米白/散剪/门幅 2.8」SKU 价：168 → 150，且此前**没有任何复位动作**。
+    # 后果（run 35243351675 @67db87ae 实证）：同栈的 OR-014 首跑 R1 规格卡就写着
+    # 「米白｜散剪｜门幅 2.8米｜¥150/米」，按 150 落单，而它的接地真值取商品级价（168）
+    # ⇒ mibao 腿判红、xiaobu 腿（不跑本用例）判绿 —— **差异在夹具不在 agent**。
+    # 读方止血（#4078：断言真值改成 SKU 感知）只治了"读到什么算对"；写方把世界改掉
+    # 那一半必须由声明式复位补齐，否则下一条读该商品的用例照样看到 150。
+    # 幂等 + 失败可见（`post_clean` 失败走 `PRECONDITION_NOT_RESTORED` → 结论阻塞）：
+    # 目标值 = 种子原值 168（`tests/agent_eval/fixtures/xiaobu_eval_seed.sql`：
+    # `product_skus.price = p.base_price`，base_price = 168.00；色名取种子列
+    # `product_colors.color_name` 的「米白」——**不是**输入话术里的「米白色」，
+    # 复位按种子真值写、不按话术写）。
+    post_clean:
+      - type: sku_price_restore
+        product_keyword: "遮光窗帘"
+        color_name: "米白"
+        selling_method: "bulk_cut"
+        door_width: "2.8"
+        price: 168
+    merge_log: "Round 72 评测覆盖审计：sku_update（SKU 级调价）注册于 product_skill 但无 case 覆盖（盲区）→ 补 SKU 调价场景。2026-09-14 校准（#3518）：输入去「100元的那件」价格点名（独立栈种子 ¥168）。2026-09-14 校准（#3544，REPORT §2.2）：假绿升级——`data_checks` 的自然语义「sku_update 成功（价格落库）」不计分（同 run 两次 sku_update 全失败仍判 ✅）→ 补 must_succeed（canonical 写成功断言）+ output_verify（new_price==150），缺陷未修前本用例由假绿转真红（#3539 修复后转绿）。⚠️ 遗留：本 run 该例真实失败点是 `sku_update!SKU不存在`——根因已由 #3539 定位为**中文标签 vs 枚举字面匹配**（非种子缺口），非本 PR 的用例层问题。2026-09-18 补 `post_clean[sku_price_restore]`（issue #4075 机制半边：runner 新增 post_clean 支持）：写共享夹具必须声明复位，断言（expectations/must_succeed/output_verify/data_checks）**原样未动**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_sku_update.py"
@@ -1374,8 +1421,15 @@ cases:
       - type: product_count_for_keyword
         source: "遮光窗帘"
         expect: 1
+    # ── 复位共享夹具（issue #4075 的**机制半边**：`post_clean`）──
+    # 上面那两轮「重新上架」是**用例侧**（有条件复位：流程走完才回到 on_sale，agent 中途
+    # 失败/只说不做时就留在 off_sale）。本声明是**机制侧**：无条件检查并把状态写回种子值，
+    # 与 PR-007 同形 —— 两侧都要有（用例侧治"正常情况下"，机制侧治"异常路径下"）。
+    post_clean:
+      - type: product_status_restore
+        product_keyword: "遮光窗帘"
     skip_reason: ""
-    merge_log: "2026-09-15 新增（#3882 复盘，#3886）：sess_f26fda5046f34992 复盘——B 端写操作（下架/删加工项）被确认门禁拦截后 agent 只在文本声称「确认卡已发出」而未调 interact，客户无卡可点；行为修复已合并（#3882：base_skill.py 兜底补发确认卡 + tests/test_b_end_confirm_card_fallback.py），本条为行为评测用例（LLM 真跑验证），核心断言 order_before[interact[confirm] before product_manage]：缺卡/写先于卡即红。以 PR-007 为模板（答卡轮 auto_respond fallback=确认 + pre_clean product_dedupe 遮光窗帘 + truths_ref product-sku-stock.status-flow + 命名空间互斥）。2026-09-18 补复位轮 + 前置自断言（issue #4075 用例侧 / #4046）：下架后新增「重新上架」答卡轮（同 PR-007），让共享夹具在用例结束时归零（此前残留 off_sale 会污染同栈按名检索的用例）；并补 precondition[product_count_for_keyword expect=1]。**断言（expectations / order_before / data_checks）原样未动**"
+    merge_log: "2026-09-15 新增（#3882 复盘，#3886）：sess_f26fda5046f34992 复盘——B 端写操作（下架/删加工项）被确认门禁拦截后 agent 只在文本声称「确认卡已发出」而未调 interact，客户无卡可点；行为修复已合并（#3882：base_skill.py 兜底补发确认卡 + tests/test_b_end_confirm_card_fallback.py），本条为行为评测用例（LLM 真跑验证），核心断言 order_before[interact[confirm] before product_manage]：缺卡/写先于卡即红。以 PR-007 为模板（答卡轮 auto_respond fallback=确认 + pre_clean product_dedupe 遮光窗帘 + truths_ref product-sku-stock.status-flow + 命名空间互斥）。2026-09-18 补复位轮 + 前置自断言（issue #4075 用例侧 / #4046）：下架后新增「重新上架」答卡轮（同 PR-007），让共享夹具在用例结束时归零（此前残留 off_sale 会污染同栈按名检索的用例）；并补 precondition[product_count_for_keyword expect=1]。2026-09-18 补 `post_clean[product_status_restore]`（issue #4075 机制半边）：用例侧复位是**有条件**的（流程走完才复位），本声明补无条件那半。**断言（expectations / order_before / data_checks）原样未动**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_b_end_confirm_card_fallback.py"
