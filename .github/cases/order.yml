@@ -1993,8 +1993,13 @@ cases:
     #     ⚠️ **有意不声明 `order_count_for_phone: 13800138000`**：本用例自己就会给该号码建单
     #     ⇒ `after - before = +1 > max_growth(缺省 0)` 会**恒判运行期漂移**（硬写一条注定红的守卫；
     #     同 chat.yml #4099 / cross.yml 的先例与理由）。
+    #     ⚠️ 值**必须加引号**：仓库用例读取走自研精简解析器 `yaml_light`（render_cases._yaml），
+    #     未加引号的 `customer_phone:13800138000` 会被它解析成 **dict** `{'customer_phone': 13800138000}`
+    #     而不是字符串 —— 触发 `tests/unit_ci_workflows/test_case_seed_truth.py` 的
+    #     「未分类 namespaces 前缀」守卫（CI `ci workflow helper unit tests` 实测判红）。
+    #     全仓既有用例（OR-009/OR-011/OR-014 等）一律写成 `- "customer_phone:13800138000"`。
     namespaces:
-      - customer_phone:13800138000
+      - "customer_phone:13800138000"
     precondition:
       - type: product_count_for_keyword
         source: 遮光窗帘

@@ -3813,7 +3813,7 @@ _CASE_OR_026 = EvalCase(
     required_args=[{'tool': 'validate_input', 'fields': ['target_tool', 'target_action', 'params']}, {'tool': 'order_create', 'fields': ['items', 'customer_phone']}],
     must_succeed=[{'tool': 'order_create'}],
     db_verify=[{'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000', 'expect_customer_name': '张三', 'expect_address_contains': '文三路'}],
-    namespaces=[{'customer_phone': 13800138000}],
+    namespaces=['customer_phone:13800138000'],
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
