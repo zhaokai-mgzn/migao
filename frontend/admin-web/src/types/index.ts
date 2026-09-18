@@ -122,7 +122,6 @@ export interface Product {
   images: string[]
   detailImages?: string[]
   specifications?: Record<string, string>
-  processingItems?: string[]
   // 在售颜色数量
   colorCount?: number
   // 累计销量
@@ -151,8 +150,6 @@ export interface Product {
   sellingMethods?: SellingMethod[]
   // 门幅列表
   doorWidths?: string[]
-  // 加工项配置（详情接口返回，编辑表单回填使用）
-  processingItemConfigs?: ProductProcessingItemConfig[]
   createdAt?: string
   updatedAt?: string
 }
@@ -199,20 +196,6 @@ export interface BatchOperationResponse {
 // 库存扣减模式
 export type StockDeductionMode = 'on_place' | 'on_pay'
 
-// 商品加工项配置
-export interface ProductProcessingItemConfig {
-  // 加工项 ID（与后端一致为字符串/UUID，例如 "proc_item_punch_nano"）
-  processingItemId: string | null
-  processingItemName?: string
-  customPrice: number
-  /** 加工项默认单价（customPrice 为空时回退展示） */
-  unitPrice?: number | null
-  /** 最终价格：customPrice ?? unitPrice */
-  finalPrice?: number | null
-  /** 计价单位（米/平方米/件等） */
-  unit?: string
-}
-
 export interface ProductFormData {
   name: string
   sku?: string
@@ -225,19 +208,16 @@ export interface ProductFormData {
   costPrice?: number
   unit: string
   stockDeductionMode?: StockDeductionMode
-  supportsProcessing?: boolean
   // 是否允许退货回补库存（issue #2991：窗帘行业定制退货不可再售，默认 false）
   allowReturnRestock?: boolean
   status: ProductStatus
   images: string[]
   detailImages?: string[]
   specifications?: Record<string, string>
-  processingItems?: string[]
   colors?: ProductColor[]
   sellingMethods?: SellingMethod[]
   doorWidths?: string[]
   skus?: ProductSku[]
-  processingItemConfigs?: ProductProcessingItemConfig[]
 }
 
 // 分类类型
@@ -273,7 +253,6 @@ export interface ProcessingItem {
   status: ProcessingItemStatus
   pricingRules?: Record<string, unknown>
   options?: Record<string, unknown>[]
-  applicableProductCategories?: string[]
   description?: string
   minQuantity?: number
   maxQuantity?: number
@@ -299,7 +278,6 @@ export interface ProcessingItemFormData {
   status?: ProcessingItemStatus
   description?: string
   options?: Record<string, unknown>[]
-  applicableProductCategories?: string[]
   minQuantity?: number
   maxQuantity?: number
   processingDays?: number

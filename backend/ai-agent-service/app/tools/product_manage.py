@@ -1,16 +1,17 @@
 """
 AI 智能客服系统 - 商品管理 Tool
 
-创建、更新、上下架商品（加工项增删已拆分为 product_processing_item_manage）。
+创建、更新、上下架商品。
 Agent BFF: create/update 走 /api/admin/agent/products, toggle_status 走原端点。
 ID 解析、默认值填充、字段规范化由 Java Agent 端点负责。
 
 ⚠️ 后端契约：create 的 payload 键必须 ∈ `dto/agent/AgentProductCreateRequest` 字段
 （name/categoryId/basePrice/skuCode/description/brand/unit/pricingType/stock/status/
-images/detailImages/colors/sellingMethods/doorWidths/processingItemIds/
-processingItemConfigs/specifications/stockDeductionMode/allowReturnRestock）——
-Spring 静默忽略未知字段，下发 DTO 没有的键 = 无声丢数据 + 工具报成功（工具审计 A4：
-`skus` 因此被删）。
+images/detailImages/colors/sellingMethods/doorWidths/specifications/stockDeductionMode/
+allowReturnRestock）—— Spring 静默忽略未知字段，下发 DTO 没有的键 = 无声丢数据 +
+工具报成功（工具审计 A4：`skus` 因此被删）。
+⚠️ issue #4371：`processingItemIds`/`processingItemConfigs` 已随「商品↔加工项解耦」从
+DTO 与本工具一并移除 —— 加工项是**店铺级目录**（`processing_item_query`），不再挂在商品上。
 """
 
 from typing import Any, Dict, Optional
@@ -20,7 +21,7 @@ from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
-VALID_ACTIONS = {"create", "update", "toggle_status"}  # manage_processing_items 已拆分为独立 tool: product_processing_item_manage
+VALID_ACTIONS = {"create", "update", "toggle_status"}
 VALID_PRODUCT_STATUSES = {"on_sale", "off_sale"}
 
 
@@ -32,16 +33,14 @@ class ProductManageTool(BaseTool):
         "【触发】创建/修改/上下架商品。create 必填 name+price，收集→确认→执行。"
         "update 需 product_id（支持名称/序号/UUID，服务端自动解析），只传要改的字段。"
         "toggle_status 需 product_id+status(on_sale/off_sale)。"
-        "【反例】增删商品加工项用 product_processing_item_manage，不要用本工具。"
         "【标注】WRITE|DESTRUCTIVE"
         "【铁律】用户明确要求写操作（禁用/调整/删除/上下架/重置等**单步写**）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
         "【铁律】写工具返回 success 后复查若显示旧值：优先按写结果向用户如实说明「已写入，查询显示旧值可能为读取延迟」，禁止断言「未落库」、禁止建议用户去后台手动操作（#3899）。"
         "【铁律】状态变更（上/下架）必须用 action=toggle_status 单独调用：update 不处理 status（状态走状态机端点，Java updateProduct 刻意恢复原状态），把 status 放进 update 会被显式拒绝（#3899）。"
-        "【create 例外（多步引导，禁止抢跑）】action=create 不是单步写，而是**多步引导流程**："
-        "分类确认 → **必须先发加工项多选卡**（processing_item_query(applicable_category_id=已确认商品分类ID) → "
-        "interact(component=choice, multiSelect=true)，按适用分类过滤/推荐）→ 货号 → 汇总确认卡 → 用户确认后才执行 create。"
-        "**禁止跳过加工项询问直接发汇总确认卡**（PR-014 实拍：跳过 ⇒ 加工项多选卡未下发 ⇒ 判失败）。"
-        "仅当用户本轮明确说「不需要加工项」才可跳过该步。"
+        "【create 流程】action=create 是**多步引导流程**（收集 → 分类确认 → 货号 → 汇总确认卡 → 用户确认后才执行 create），"
+        "**禁止抢跑**：基本信息未收齐或未发确认卡就执行 create 属禁止行为。"
+        "**加工项与商品无关**（issue #4371）：加工项是店铺级目录，建品**不需要**询问/关联加工项，"
+        "也不要把加工项写进本工具的 create 参数（本工具没有该参数）。"
     )
 
     # 权限码（admin-api 目录）：商品写（create/update/toggle_status）取写码 `product:create`
@@ -56,8 +55,8 @@ class ProductManageTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                # enum 必须 ⊆ VALID_ACTIONS（:16）：manage_processing_items 已拆分为独立工具，
-                # 留在 enum 里会让 LLM 选到运行时必拒的死分支（工具审计 B1）
+                # enum 必须 ⊆ VALID_ACTIONS：留在 enum 里的值必须是运行时真能跑的分支
+                # （工具审计 B1）
                 "enum": ["create", "update", "toggle_status"],
                 "description": "操作类型：create（创建商品，必填 name+price）/ update（修改已有商品字段，必传 product_id 且只传要改的字段）/ toggle_status（上架或下架，必传 product_id+status(on_sale/off_sale)）",
             },
@@ -103,21 +102,6 @@ class ProductManageTool(BaseTool):
             },
             "images": {"type": "array", "items": {"type": "string"}, "description": "商品主图URL数组"},
             "detail_images": {"type": "array", "items": {"type": "string"}, "description": "商品详情图URL数组"},
-            "processing_item_ids": {
-                "type": "array", "items": {"type": "string"},
-                "description": "加工项ID数组。支持 UUID / 加工项名称 / 序号，服务端自动解析",
-            },
-            "processing_item_configs": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "processingItemId": {"type": "string", "description": "加工项ID（支持名称/序号）"},
-                        "customPrice": {"type": "number", "description": "自定义价格"},
-                    },
-                },
-                "description": "加工项配置数组（含自定义价格）",
-            },
             "specifications": {
                 "type": "object",
                 "description": "规格对象。可含 weight(克重) material(材质) craft(工艺) style(风格) pattern(图案) function(功能)",
@@ -126,7 +110,6 @@ class ProductManageTool(BaseTool):
                 "type": "boolean",
                 "description": "退货后是否回补库存（可选，create 时使用，issue #2991）：true=退货回补/可再售，false=定制商品退货不回补。缺省 false",
             },
-            # manage_processing_items 专用参数已随该 action 移除（拆分为 product_processing_item_manage）
         },
         "required": ["action"],
     }
@@ -141,7 +124,6 @@ class ProductManageTool(BaseTool):
         price: Optional[float] = None,
         description: Optional[str] = None,
         stock_quantity: Optional[int] = None,
-        processing_item_ids: Optional[list] = None,
         status: Optional[str] = None,
         brand: Optional[str] = None,
         images: Optional[list] = None,
@@ -152,7 +134,6 @@ class ProductManageTool(BaseTool):
         selling_methods: Optional[list] = None,
         door_widths: Optional[list] = None,
         sku_code: Optional[str] = None,
-        processing_item_configs: Optional[list] = None,
         pricing_type: Optional[str] = None,
         allow_return_restock: Optional[bool] = None,
     ) -> ToolResult:
@@ -173,9 +154,9 @@ class ProductManageTool(BaseTool):
         try:
             if action == "create":
                 return await self._create_product(context, name, category_id, price,
-                    description, stock_quantity, processing_item_ids, brand, images,
+                    description, stock_quantity, brand, images,
                     detail_images, specifications, unit, colors, selling_methods,
-                    door_widths, sku_code, processing_item_configs, pricing_type,
+                    door_widths, sku_code, pricing_type,
                     status, allow_return_restock)
             elif action == "update":
                 return await self._update_product(context, product_id, name, category_id,
@@ -184,7 +165,6 @@ class ProductManageTool(BaseTool):
                     door_widths, sku_code, status)
             elif action == "toggle_status":
                 return await self._toggle_status(context, product_id, status)
-            # manage_processing_items 已拆分为独立 tool: product_processing_item_manage
             else:
                 return ToolResult(success=False,
                     error=f"未知操作: {action}",
@@ -202,10 +182,10 @@ class ProductManageTool(BaseTool):
     # ── Agent BFF: CREATE ──
 
     async def _create_product(self, context, name, category_id, price, description,
-                               stock_quantity, processing_item_ids, brand, images,
+                               stock_quantity, brand, images,
                                detail_images, specifications, unit, colors,
                                selling_methods, door_widths, sku_code,
-                               processing_item_configs, pricing_type, status,
+                               pricing_type, status,
                                allow_return_restock=None) -> ToolResult:
         if not name:
             return ToolResult(
@@ -220,8 +200,6 @@ class ProductManageTool(BaseTool):
         if price is not None: json_data["basePrice"] = price
         if description: json_data["description"] = description
         if stock_quantity is not None: json_data["stock"] = int(stock_quantity)
-        if processing_item_ids: json_data["processingItemIds"] = processing_item_ids
-        if processing_item_configs: json_data["processingItemConfigs"] = processing_item_configs
         if brand: json_data["brand"] = brand
         if images: json_data["images"] = images
         if detail_images: json_data["detailImages"] = detail_images

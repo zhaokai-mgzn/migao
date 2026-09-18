@@ -1,7 +1,9 @@
-// case_ids: UI-026, PP-006
-// UI-026（issue #2964）：加工项列表展示「适用商品分类」列——applicableProductCategories ID→名称映射，空=「适用所有分类」
+// case_ids: PP-006
 // PP-006（issue #3005 回滚 #2986）：加工项无「每米数量」——计价方式仅 per_meter/per_set/fixed/per_area，
 // 表单与列表均无每米数量输入/列，保存 payload 不带 perMeterQuantity
+// ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：原 `UI-026`（加工项列表展示「适用商品分类」列）
+// 断言**已删除** —— `applicable_product_categories` 列与过滤链路随解耦整体退场（V61 迁移 DROP），
+// 该列不再渲染，用例对象已不存在（用例 UI-026 亦同步从 .github/cases/ui.yml 删除）。
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -52,24 +54,12 @@ vi.mock('@/components/ui', () => ({
 import ProcessingPage from '@/app/(dashboard)/processing/page'
 
 const mockItems = [
-  {
-    id: '1',
-    name: '打孔加工',
-    unitPrice: 5,
-    pricingMethod: 'per_meter',
-    applicableProductCategories: ['pc1'],
-  },
-  { id: '2', name: '挂钩加工', unitPrice: 3, pricingMethod: 'per_set', applicableProductCategories: [] },
-  { id: '3', name: '韩式定型', unitPrice: 8, pricingMethod: 'per_meter', applicableProductCategories: ['pc2'] },
+  { id: '1', name: '打孔加工', unitPrice: 5, pricingMethod: 'per_meter' },
+  { id: '2', name: '挂钩加工', unitPrice: 3, pricingMethod: 'per_set' },
+  { id: '3', name: '韩式定型', unitPrice: 8, pricingMethod: 'per_meter' },
 ]
 
 const mockCategories = [{ id: 'cat1', name: '通用加工' }]
-
-// 商品分类树（适用商品分类列的 ID→名称 映射来源）
-const mockProductCategories = [
-  { id: 'pc1', name: '窗帘', children: [] },
-  { id: 'pc2', name: '纱帘', children: [] },
-]
 
 describe('ProcessingPage', () => {
   beforeEach(() => {
@@ -79,9 +69,6 @@ describe('ProcessingPage', () => {
     })
     mockGetProcessingCategories.mockResolvedValue({
       data: { data: mockCategories },
-    })
-    mockGetCategories.mockResolvedValue({
-      data: { data: mockProductCategories },
     })
   })
 
@@ -147,18 +134,15 @@ describe('ProcessingPage', () => {
     })
   })
 
-  it('should show applicable product categories column (UI-026)', async () => {
+  it('should not show applicable product categories column (UI-026 已随 #4371 解耦退场)', async () => {
     render(<ProcessingPage />)
     await waitFor(() => {
-      // 表头新增「适用商品分类」列
-      expect(screen.getByText('适用商品分类')).toBeInTheDocument()
+      expect(screen.getByText('加工项名称')).toBeInTheDocument()
     })
-    await waitFor(() => {
-      // ID→名称 映射：打孔加工 适用分类「窗帘」
-      expect(screen.getByText('窗帘')).toBeInTheDocument()
-      // 未配置适用分类（空数组）= 适用所有分类
-      expect(screen.getByText('适用所有分类')).toBeInTheDocument()
-    })
+    // 解耦后该列不再渲染（applicable_product_categories 已从 schema/接口/表单退场）——
+    // 反向断言：列标题与「适用所有分类」占位都不应出现，防止旧列被静默加回。
+    expect(screen.queryByText('适用商品分类')).not.toBeInTheDocument()
+    expect(screen.queryByText('适用所有分类')).not.toBeInTheDocument()
   })
 
   it('should not show per meter quantity input for any pricing method (PP-006 回滚)', async () => {

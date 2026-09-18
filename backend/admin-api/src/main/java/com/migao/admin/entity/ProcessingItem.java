@@ -45,9 +45,6 @@ public class ProcessingItem {
     @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
     private Object options;
 
-    @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
-    private java.util.List<String> applicableProductCategories;
-
     private Integer processingDays;
 
     private Boolean aiRecommended;

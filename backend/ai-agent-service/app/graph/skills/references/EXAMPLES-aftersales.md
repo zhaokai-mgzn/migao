@@ -34,9 +34,9 @@
 ```
 → order_query(order_no=...) → 确认订单存在 + 涉及商品
 → product_search(keyword="2699") → 命中目标
-→ product_detail(目标商品) → 档案含 processing_items（若有加工项）
-→ **加工项环节（confirm 前必做）**：interact(choice, multiSelect=true) 展示目标商品加工项
-   （透传 pageMeta；processing_items 为空则告知"该商品无可用加工项"继续）
+→ product_detail(目标商品) → 商品档案（SKU/规格；**不含**加工项）
+→ **加工项环节（confirm 前必做）**：processing_item_query() 拿**店铺加工项目录**（与商品无关，#4371）
+   → interact(choice, multiSelect=true) 展示（透传 pageMeta；目录为空才告知"暂无可用加工项"继续）
 → 用户: "波浪定型 + 双折边" / "不需要加工项"
 → 汇总换货方案（含加工项名称+计价，写入 description）
 → confirm: "确认创建换货工单？…换货目标 2699面料 加工项：波浪定型 ¥8/米"

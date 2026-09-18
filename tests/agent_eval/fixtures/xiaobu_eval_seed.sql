@@ -47,20 +47,20 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO products
   (id, tenant_id, name, category_id, base_price, description, images, detail_images,
    stock, stock_warning_threshold, status, unit, pricing_type, sku_code,
-   stock_deduction_mode, sales_count, sales_amount, has_processing, recommended)
+   stock_deduction_mode, sales_count, sales_amount, recommended)
 VALUES
   ('prod_eval_blackout', 1, '遮光窗帘', 'cat_eval_curtain', 168.00,
    '高遮光面料，适合卧室与客厅，遮光率 95%，支持散剪与加工定制',
    '[]'::jsonb, '[]'::jsonb, 1000, 10, 'on_sale', '米', 'per_meter', 'EVAL-BLK-28',
-   'on_order', 0, 0, TRUE, TRUE),
+   'on_order', 0, 0, TRUE),
   ('prod_eval_dark_green', 1, '北欧风窗帘', 'cat_eval_curtain', 128.00,
    '北欧简约风格，棉麻质感，适合客厅与书房',
    '[]'::jsonb, '[]'::jsonb, 800, 10, 'on_sale', '米', 'per_meter', 'EVAL-NRD-28',
-   'on_order', 0, 0, TRUE, FALSE),
+   'on_order', 0, 0, FALSE),
   ('prod_eval_summer', 1, '夏日清风窗帘', 'cat_eval_curtain', 158.00,
    '轻薄透气夏日清风系列，支持散剪 2.8 米门幅与打孔/折边加工',
    '[]'::jsonb, '[]'::jsonb, 600, 10, 'on_sale', '米', 'per_meter', 'EVAL-SMB-28',
-   'on_order', 0, 0, TRUE, FALSE)
+   'on_order', 0, 0, FALSE)
 ON CONFLICT (id) DO NOTHING;
 
 -- ── 4. 颜色 / SKU（选品规格收集所需：colorId + sellingMethod + doorWidth）──
@@ -95,21 +95,11 @@ WHERE pc.product_id IN ('prod_eval_blackout', 'prod_eval_dark_green', 'prod_eval
       AND s.selling_method = 'bulk_cut' AND s.door_width = '2.8'
   );
 
--- ── 5. 商品 ↔ 加工项关联（下单加工项环节的 processing_items 来源）──
-INSERT INTO product_processing_items (tenant_id, product_id, processing_item_id, custom_price, sort_order)
-SELECT 1, v.pid, v.piid, NULL, v.ord
-FROM (VALUES
-  ('prod_eval_blackout', 'pi_eval_punch', 1),
-  ('prod_eval_blackout', 'pi_eval_hem', 2),
-  ('prod_eval_blackout', 'pi_eval_iron', 3),
-  ('prod_eval_dark_green', 'pi_eval_punch', 1),
-  ('prod_eval_summer', 'pi_eval_punch', 1),
-  ('prod_eval_summer', 'pi_eval_hem', 2)
-) AS v(pid, piid, ord)
-WHERE NOT EXISTS (
-  SELECT 1 FROM product_processing_items x
-  WHERE x.product_id = v.pid AND x.processing_item_id = v.piid
-);
+-- ── 5. 商品 ↔ 加工项关联：**已随 #4371 解耦删除** ──
+-- 旧写法往 `product_processing_items` 把「遮光窗帘/北欧风窗帘/夏日清风窗帘」各自挂上
+-- 加工项（作为下单加工项环节 `processing_items` 的来源）。解耦后加工项是**店铺级目录**
+-- （第 2 节 `processing_items` 种子即全部可选项），该表已由 V61 迁移 DROP ——
+-- 下单/建品的加工项一律从目录整体取，不再经商品过滤。
 
 -- ============================================================================
 -- 6. C 端顾客本人 + 历史订单（issue #3270 —— 数据层缺口，非能力缺陷）

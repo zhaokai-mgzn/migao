@@ -199,7 +199,6 @@ class ProductDetailTool(BaseTool):
             ),
             "skus": skus,
             "specifications": data.get("specifications", {}),
-            "processing_items": data.get("processingItems", []),
             "sales_count": data.get("salesCount", 0),
             "created_at": data.get("createdAt"),
         }

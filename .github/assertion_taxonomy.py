@@ -78,7 +78,11 @@ WRITE_TOOLS: frozenset[str] = frozenset({
     "order_create",                # WRITE
     "order_manage",                # WRITE|DESTRUCTIVE
     "product_manage",              # WRITE|DESTRUCTIVE
-    "product_processing_item_manage",  # WRITE|IDEMPOTENT
+    # ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：`product_processing_item_manage`
+    # （给**商品**增删加工项，WRITE|IDEMPOTENT）**已随解耦退场** —— 商品不再持有加工项
+    # （加工项是店铺级目录），工具文件与注册行都删 ⇒ 从本表移除（同 `human_handoff` 退场处置）。
+    # 留在表里会让「写工具集」出现不可达成员 ⇒ 门禁把不存在的工具的用例判成「写用例」
+    # （`test_write_tool_sets_only_name_reachable_tools` 正是这条摩擦的守卫）。
     "product_update",              # WRITE|IDEMPOTENT
     "sku_update",                  # WRITE|IDEMPOTENT
     # 加工单写工具（issue #4196 恢复接入 ⇒ 重新落回「当前可达」面，必须在此表态；

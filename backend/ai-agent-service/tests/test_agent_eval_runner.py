@@ -5,7 +5,7 @@
 发图轮报错时，前面轮次可能已命中 success=true / tool 等 expectation，
 旧逻辑把用例计为通过（假验收 —— 线上 sess_806703a2dcca4059 图片崩溃正是此类）。
 """
-# case_ids: CH-021, CH-024, CH-026, OR-001, PR-001, DA-002, PP-003, PP-004, AS-001, AS-002, CU-003, PR-016
+# case_ids: CH-021, CH-024, CH-026, OR-001, PR-001, DA-002, AS-001, AS-002, CU-003
 #
 # 2026-09-15 新增（评测归因：run 34856561459 B 端 5 条失败）：
 #   · TestRequiredArgsAnyCallSatisfies —— PR-016 的 required_args 是**假红**（只看首次调用）；

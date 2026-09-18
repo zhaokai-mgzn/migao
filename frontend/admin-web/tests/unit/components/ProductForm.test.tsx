@@ -1,6 +1,7 @@
 /**
  * ProductForm 组件测试
  * 覆盖：#646 移除 in_warehouse — 按钮数量、labelMap 无仓库中
+ * #4371：加工项与商品解耦 —— 表单不再有「是否支持加工」与加工项配置编辑区
  * case_ids: PR-008, PR-017
  */
 import { render, screen } from '@testing-library/react'
@@ -46,16 +47,14 @@ vi.mock('@/lib/api', () => ({
 describe('ProductForm (#1284 — 表单行对齐)', () => {
   const mockOnSubmit = vi.fn().mockResolvedValue(undefined)
 
-  it('「总库存」「拍下减库存」「是否支持加工」三行 label 均含 * 必填标记', () => {
+  it('「总库存」「拍下减库存」两行 label 均含 * 必填标记', () => {
     render(<ProductForm onSubmit={mockOnSubmit} />)
 
     const stockLabels = screen.getAllByText(/总库存/)
     const deductionLabels = screen.getAllByText(/拍下减库存/)
-    const processingLabels = screen.getAllByText(/是否支持加工/)
 
     expect(stockLabels.length).toBeGreaterThanOrEqual(1)
     expect(deductionLabels.length).toBeGreaterThanOrEqual(1)
-    expect(processingLabels.length).toBeGreaterThanOrEqual(1)
   })
 
   it('「拍下减库存」渲染 RadioGroup（是/付款减库存）', () => {
@@ -65,27 +64,12 @@ describe('ProductForm (#1284 — 表单行对齐)', () => {
     expect(screen.getByText(/付款减库存/)).toBeTruthy()
   })
 
-  it('「是否支持加工」渲染 RadioGroup（是/否）', () => {
-    render(<ProductForm onSubmit={mockOnSubmit} />)
-
-    const yesElements = screen.getAllByText('是')
-    const noElements = screen.getAllByText('否')
-
-    expect(yesElements.length).toBeGreaterThanOrEqual(2)
-    expect(noElements.length).toBeGreaterThanOrEqual(1)
-  })
-
   it('RadioGroup 有 pt-2 补偿，使文字 baseline 与 h-9 input 对齐', () => {
     render(<ProductForm onSubmit={mockOnSubmit} />)
 
     const deductionRadio = screen.getByText(/付款减库存/)
     const deductionRadioGroup = deductionRadio.parentElement!.parentElement!
     expect(deductionRadioGroup.className).toContain('pt-2')
-
-    const yesRadios = screen.getAllByText('是')
-    const processingYes = yesRadios[1]
-    const processingRadioGroup = processingYes.parentElement!.parentElement!
-    expect(processingRadioGroup.className).toContain('pt-2')
   })
 
   it('「退货回补库存」开关渲染（允许/不允许，issue #2991）', () => {

@@ -1,4 +1,4 @@
-# case_ids: PR-014, PR-017
+# case_ids: PR-017
 """文本声称有确认卡但未发卡时，改写为纯文本确认指引（issue #3929）。
 
 生产实证（B 端米宝 agent，主模型 deepseek-flash，会话 sess_2efa2071bb1747d8，

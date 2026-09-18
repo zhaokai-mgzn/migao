@@ -18,7 +18,7 @@ class ProductUpdateTool(BaseTool):
         "【注意】改的是商品统一定价，影响所有 SKU。单独调某个 SKU 价格请引导去商品管理页。"
         "支持设置「退货是否回补库存」（allow_return_restock：true=退货后回补库存/可再售，"
         "false=定制商品退货不回补）。"
-        "【反例】增删加工项用 product_processing_item_manage，单独 SKU 调价本工具不支持。"
+        "【反例】单独 SKU 调价本工具不支持（用 sku_update）；加工项与商品无关，不在本工具范围。"
         "【反例】设置/修改商品主图、详情图/图片必须用 product_manage(action=update, images=…/detail_images=…)，本工具不支持图片字段。"
         "【标注】WRITE|IDEMPOTENT"
     )

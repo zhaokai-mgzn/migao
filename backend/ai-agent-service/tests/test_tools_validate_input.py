@@ -225,12 +225,15 @@ class TestValidateInputPermission:
 
 
 class TestProductCreateDeterministicAttrs:
-    """#3052：建品 create 参数确定性兜底——缺 specifications / 加工项价格即拦截。
+    """#3052：建品 create 参数确定性兜底——缺 specifications 即拦截。
 
     背景（2026-09-08 扩大验收 Round 2 实拍）：#3028 上线后仍非确定性——旅程 S3
-    「验收常青0908」create 缺 specifications、processing_item_configs 只传名称不带
-    customPrice/unit → DB specs={}、加工项价格 NULL。prompt 指令会被 LLM 方差漏掉，
-    validate_input 必须成为确定性闸门（#3030 order_create 同款思路）。
+    「验收常青0908」create 缺 specifications → DB specs={}。prompt 指令会被 LLM 方差
+    漏掉，validate_input 必须成为确定性闸门（#3030 order_create 同款思路）。
+
+    issue #4371（商品↔加工项解耦）：原「选了加工项 ⇒ processing_item_configs 必须含
+    customPrice」那道闸门已随 create 的加工项参数一并删除（product_manage 不再有
+    processing_item_ids/processing_item_configs），对应用例同步移除。
     """
 
     async def test_missing_specifications_fails(self, tool, admin_tool_context):
@@ -261,66 +264,6 @@ class TestProductCreateDeterministicAttrs:
             target_action="create",
             params={"name": "x", "price": 1, "category_id": "cat-1",
                     "specifications": {"材质": "涤纶", "克重": "200-300g"}},
-        )
-        assert result.success is True
-
-    async def test_processing_items_without_configs_fails(self, tool, admin_tool_context):
-        """选了加工项但未传 processing_item_configs → 拦截（价格无法落库）。"""
-        result = await tool.execute(
-            context=admin_tool_context,
-            target_tool="product_manage",
-            target_action="create",
-            params={"name": "x", "price": 1, "category_id": "cat-1",
-                    "specifications": {"材质": "涤纶"},
-                    "processing_item_ids": ["pi_aaa"]},
-        )
-        assert result.success is False
-        assert "processing_item_configs" in result.message
-
-    async def test_processing_configs_without_price_fails(self, tool, admin_tool_context):
-        """#3028 假成功原型：configs 只传名称不带 customPrice/unit。"""
-        result = await tool.execute(
-            context=admin_tool_context,
-            target_tool="product_manage",
-            target_action="create",
-            params={"name": "x", "price": 1, "category_id": "cat-1",
-                    "specifications": {"材质": "涤纶"},
-                    "processing_item_ids": ["pi_a", "pi_b"],
-                    "processing_item_configs": [{"processingItemId": "pi_a"}, {"processingItemId": "pi_b"}]},
-        )
-        assert result.success is False
-        assert "customPrice" in result.message or "unit" in result.message
-
-    async def test_processing_configs_without_unit_passes(self, tool, admin_tool_context):
-        """过严修复（issue #3566 核查）：`unit` 不是加工项配置的契约字段。
-
-        契约（agent 路径）：`AgentProductCreateRequest.AgentProcessingItemConfig` 只有
-        `processingItemId` + `customPrice`（`AgentProductCreateRequest.java:88-93`）；
-        表单路径 `ProcessingItemConfigInput.java:12-22` 同样无 `unit`。
-        旧闸门强制每项含 `unit` → 逼 LLM 编一个接收侧根本不读的键（Jackson 静默丢弃），
-        属「下发字段接收侧不读」同型缺陷。`customPrice` 仍在契约里，继续必填。
-        """
-        result = await tool.execute(
-            context=admin_tool_context,
-            target_tool="product_manage",
-            target_action="create",
-            params={"name": "x", "price": 1, "category_id": "cat-1",
-                    "specifications": {"材质": "涤纶"},
-                    "processing_item_ids": ["pi_a"],
-                    "processing_item_configs": [{"processingItemId": "pi_a", "customPrice": 30.0}]},
-        )
-        assert result.success is True, result.message
-        assert "unit" not in result.message
-
-    async def test_processing_configs_with_price_passes(self, tool, admin_tool_context):
-        result = await tool.execute(
-            context=admin_tool_context,
-            target_tool="product_manage",
-            target_action="create",
-            params={"name": "x", "price": 1, "category_id": "cat-1",
-                    "specifications": {"材质": "涤纶"},
-                    "processing_item_ids": ["pi_a"],
-                    "processing_item_configs": [{"processingItemId": "pi_a", "customPrice": 30.0, "unit": "平方米"}]},
         )
         assert result.success is True
 

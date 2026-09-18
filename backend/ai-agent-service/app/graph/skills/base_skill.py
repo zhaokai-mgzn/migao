@@ -844,11 +844,14 @@ def _ensure_processing_items_multiselect(tool_name: str, args: dict) -> dict:
 
 
 # ── 模式 C 代码兜底：加工项漏问（OR-017 抖动根因）──
-# 业务铁律「商品有加工项 → confirm 前必须先问」目前只写在 prompt/工具描述里，
+# 业务铁律「店铺有加工项 → confirm 前必须先问」目前只写在 prompt/工具描述里，
 # 约 1/3 轮次 LLM 会漏掉（CI 实证 run 34622425044 ✅ / 34626024229 ❌ / 34662285260 ❌，
 # 同代码同用例）。按项目「改 3 次 prompt 修不好 → 代码管」惯例，做确定性兜底：
 # 当 LLM 跳过加工项直接发 confirm 卡时，把该 confirm 卡**改写**为加工项 choice 卡。
 # 这与 _ensure_processing_items_multiselect（漏传 multiSelect 自动补）同族。
+# issue #4371（商品↔加工项解耦）：加工项不再挂在商品上 ⇒ 两端（C 端下单/售后、B 端建品）
+# 的**唯一事实源统一为 `processing_item_query` 的店铺级目录**，不再读 product_detail 的
+# processing_items（该字段已随解耦删除）。
 
 # 加工项 choice 卡的 option value 前缀（与 _is_processing_items_card 及
 # tests/agent_eval/local_runner.py 的断言语义一致）
@@ -861,30 +864,6 @@ _PROC_DECLINE_MARKERS = (
     "不需要加工", "不要加工", "不加工", "不加加工",
     "不需要了", "不用", "算了", "不加了",
 )
-
-
-def _find_last_product_processing_items(messages) -> List[dict]:
-    """从会话历史里找**最近一次** product_detail 的加工项列表。
-
-    OR-017 实测：product_detail 与 confirm 卡经常**跨轮**（R1 查详情、R2 发卡），
-    本轮 tool_results 里看不到详情，必须回看会话里的 ToolMessage。
-    """
-    if not messages:
-        return []
-    for msg in reversed(messages):
-        if not isinstance(msg, ToolMessage):
-            continue
-        if getattr(msg, "name", None) != "product_detail":
-            continue
-        try:
-            payload = json.loads(msg.content or "{}")
-            data = payload.get("data") if isinstance(payload, dict) else None
-            items = (data or {}).get("processing_items") or []
-            if items:
-                return items
-        except (ValueError, TypeError, AttributeError):
-            continue
-    return []
 
 
 def _last_user_declined_processing(messages) -> bool:
@@ -916,7 +895,7 @@ def _proc_answer_tokens(items: List[dict]) -> set:
     return toks
 
 
-def _user_already_answered_processing(messages, source_tool: str = "product_detail") -> bool:
+def _user_already_answered_processing(messages, source_tool: str = "processing_item_query") -> bool:
     """顾客**是否已经就加工项作答**（文本形态：说了加工项名 / 明确不要）。
 
     实证（C-A1 重放 9，run 34788143133 的 transcript）：
@@ -933,9 +912,10 @@ def _user_already_answered_processing(messages, source_tool: str = "product_deta
     为什么限定"结果之后"：R1 就说了「要打孔加工」属**需求前置** ——
     那时还没看过可选项与单价，confirm 前仍应摆出来（OR-017 依赖这条）。
 
-    `source_tool`（issue #3320）：C 端加工项事实源是 `product_detail`（商品已存在）；
-    B 端**建品**时商品还没建出来，事实源是本会话的 `processing_item_query` 返回。
-    默认值保持 `product_detail` ⇒ C 端行为逐字不变。
+    `source_tool`（issue #3320 引入区分；issue #4371 起两端合一）：加工项是**店铺级目录**，
+    C 端（下单/售后）与 B 端（建品）的事实源都是本会话真实调用过的
+    `processing_item_query` 返回 —— 商品上已不再持有加工项，故默认值改为
+    `processing_item_query`（旧默认 `product_detail` 随该字段删除而失效）。
     """
     if not messages:
         return False
@@ -945,10 +925,7 @@ def _user_already_answered_processing(messages, source_tool: str = "product_deta
             last_detail = i
     if last_detail < 0:
         return False
-    if source_tool == "processing_item_query":
-        items = _find_last_query_processing_items(messages)
-    else:
-        items = _find_last_product_processing_items(messages)
+    items = _find_last_query_processing_items(messages)
     tokens = _proc_answer_tokens(items)
     for msg in list(messages)[last_detail + 1:]:
         if not isinstance(msg, HumanMessage):
@@ -1036,7 +1013,10 @@ async def _mark_processing_items_asked(session_id: str, product_id: str) -> None
 
 
 def _plan_processing_items_rewrite(tool_results, messages) -> Optional[tuple]:
-    """检测「有加工项却漏问、直接发 confirm 卡」并返回改写方案。
+    """检测「店铺有加工项却漏问、直接发 confirm 卡」并返回改写方案。
+
+    事实源 = 本会话真实调用过的 `processing_item_query`（店铺级目录，issue #4371：
+    加工项不再挂在商品上，`product_detail` 也不再返回它）。
 
     Returns:
         (确认卡在 tool_results 中的下标, 新的 choice 卡 data) 或 None
@@ -1060,22 +1040,24 @@ def _plan_processing_items_rewrite(tool_results, messages) -> Optional[tuple]:
         # 顾客已经答过（文本形态：点名加工项 / 更早一轮拒绝过）→ 不得用卡重问一遍
         # （C-A1 重放 9 实证：同一件事问第二遍，顾客要多答一次才轮到确认下单）。
         return None
-    items = _find_last_product_processing_items(messages)
+    items = _find_last_query_processing_items(messages)
     if not items:
-        return None  # 没拿到加工项数据，无从改写
+        return None  # 没拿到加工项目录，无从改写（**绝不伪造卡**）
     options = []
     for it in items[:_MAX_PROC_OPTIONS]:
         oid = str(it.get("id") or "")
         if not oid:
             continue
         name = str(it.get("name") or "加工项")
-        price = it.get("unitPrice")
+        price = it.get("unit_price")
+        if price is None:
+            price = it.get("unitPrice")
         unit = it.get("unit") or ""
         options.append({
             "label": f"{name} ¥{price}/{unit}" if price is not None else name,
             "value": f"{_PROC_ITEM_VALUE_PREFIX}{oid}",
             "unitPrice": price,
-            "pricingMethod": it.get("pricingMethod"),
+            "pricingMethod": it.get("pricing_method") or it.get("pricingMethod"),
         })
     if not options:
         return None
@@ -1091,20 +1073,16 @@ def _plan_processing_items_rewrite(tool_results, messages) -> Optional[tuple]:
 _MAX_PROC_OPTIONS = 6
 
 
-# ── 模式 C 代码兜底：B 端**建品**漏问加工项（issue #3320，与上面 C 端那条同构）──
-# 为什么另写一条而不是放宽上面那条的 skill 白名单：**数据源不同**。
-#   · C 端（customer_order / customer_aftersales）：商品**已存在**，加工项取自
-#     `product_detail` 返回的 `processing_items`（见 `_find_last_product_processing_items`）；
-#   · B 端建品：商品**还没建出来**，`product_detail` 无从查 —— 唯一的事实源是
-#     本会话真实调用过的 `processing_item_query` 返回（`data.items`）。
-# 触发判据全部是**状态事实**，不看话术关键词、不看 skill 名字白名单：
-#   ① 会话状态 `pending_validated_input`（base_skill 自己在 validate_input 通过时落的账）
-#      → target_tool == "product_manage" 且 target_action == "create"（= 建品在办）；
-#   ② 会话消息里有**成功的** `processing_item_query` 结果且条目非空（真实事实源）；
-#   ③ 本会话该商品尚未问过加工项（`PROC_ITEMS_ASKED_KEY`；防"卡循环"——OR-017 踩过）；
-#   ④ 本轮正要发 confirm 卡（= 跳过加工项询问的形态）；
-#   ⑤ 顾客没拒绝过、也没答过（复用 C 端那两个纯函数，语义一致）。
-# ②不成立（从没查过 / 查回来是空）⇒ **绝不伪造卡**：无事实可依，宁可原样走原流程。
+# ── issue #4371（商品↔加工项解耦）：B 端**建品**的加工项漏问兜底已**整体删除** ──
+# 原兜底（issue #3320）的适用面是「建品在办 + 有加工项目录 + 未问过 + 正要发 confirm 卡
+# ⇒ 把 confirm 卡改写成加工项多选卡」。解耦后**建品不再需要询问/关联加工项**
+# （product_manage 已无加工项参数；用户裁定「用户选择完商品以及安装方式后，加工工序已经固定，
+# 额外的加工项可以单独从加工项中选择」）⇒ 该改写从"补漏"变成"**过度询问**"：它会把一张
+# 本来正确的建品确认卡改成没有下游出口的加工项卡（选了也无处可写）。
+# 故整条删除（判据函数 `_plan_b_create_processing_items_rewrite` 与
+# `_b_create_processing_items_not_asked` 一并移除，不留死代码）。
+# C 端（下单/售后）那条 `_plan_processing_items_rewrite` **保留**：顾客下单时确实要选加工项，
+# 事实源改为店铺级目录 `processing_item_query`。
 B_CREATE_PENDING_TOOL = "product_manage"
 B_CREATE_PENDING_ACTION = "create"
 
@@ -1168,10 +1146,11 @@ def _b_create_flow_confirm_eligible(pending: dict | None, confirmed: bool) -> bo
 
 
 def _find_last_query_processing_items(messages) -> List[dict]:
-    """会话历史里**最近一次**成功的 `processing_item_query` 返回的加工项列表（B 端事实源）。
+    """会话历史里**最近一次**成功的 `processing_item_query` 返回的加工项列表。
 
-    与 `_find_last_product_processing_items` 同族：跨轮（R2 查询、R4 才发卡）
-    时本轮 tool_results 里看不到查询结果，必须回看会话里的 ToolMessage。
+    加工项的**唯一事实源**（issue #4371：加工项是店铺级目录，商品不再持有它；
+    C 端下单/售后与 B 端建品都走这里）。跨轮（R2 查询、R4 才发卡）时本轮
+    tool_results 里看不到查询结果，必须回看会话里的 ToolMessage。
     """
     if not messages:
         return []
@@ -1191,81 +1170,6 @@ def _find_last_query_processing_items(messages) -> List[dict]:
             continue
     return []
 
-
-def _plan_b_create_processing_items_rewrite(tool_results, messages) -> Optional[tuple]:
-    """B 端建品「有真实加工项目录却漏问、直接发 confirm 卡」→ 改写方案（纯函数，可单测）。
-
-    Returns:
-        (confirm 卡在 tool_results 中的下标, 新的 choice 卡 data) 或 None。
-    """
-    confirm_idx = -1
-    for i, (tc, _rs, rd) in enumerate(tool_results):
-        if not rd or not rd.get("success"):
-            continue
-        if tc.get("name") != "interact":
-            continue
-        data = rd.get("data") or {}
-        if data.get("component") == "confirm" and confirm_idx == -1:
-            confirm_idx = i
-        elif data.get("component") == "choice" and _is_processing_items_card(data):
-            return None  # 本轮已经问过加工项
-    if confirm_idx == -1:
-        return None
-    if _last_user_declined_processing(messages):
-        return None  # 用户明确拒绝过，不硬弹
-    if _user_already_answered_processing(messages, source_tool="processing_item_query"):
-        return None  # 已经答过 → 不得重问一遍（B 端事实源是 processing_item_query）
-    items = _find_last_query_processing_items(messages)
-    if not items:
-        return None  # 没有真实加工项事实 ⇒ 绝不伪造卡
-    options = []
-    for it in items[:_MAX_PROC_OPTIONS]:
-        oid = str((it or {}).get("id") or "")
-        if not oid:
-            continue
-        name = str((it or {}).get("name") or "加工项")
-        price = (it or {}).get("unit_price")
-        if price is None:
-            price = (it or {}).get("unitPrice")
-        unit = (it or {}).get("unit") or ""
-        options.append({
-            "label": f"{name} ¥{price}/{unit}" if price is not None else name,
-            "value": f"{_PROC_ITEM_VALUE_PREFIX}{oid}",
-            "unitPrice": price,
-            "pricingMethod": (it or {}).get("pricing_method") or (it or {}).get("pricingMethod"),
-        })
-    if not options:
-        return None
-    return confirm_idx, {
-        "component": "choice",
-        "multiSelect": True,
-        "title": "这款商品支持以下加工项，需要哪些呢？（可多选）",
-        "options": options,
-    }
-
-
-async def _b_create_processing_items_not_asked(session_id: str) -> bool:
-    """建品流程**在办**（状态事实）且本会话尚未问过加工项。异常一律返回 False（不改写）。
-
-    「在办」的判据是 base_skill 自己在 validate_input 通过时落的账
-    （`pending_validated_input`），不是话术、不是 skill 名。
-    建品时商品还没建出来 ⇒ 没有 product_id ⇒ 「已问过」按 `*` 兜底键记账。
-    """
-    if not session_id:
-        return False
-    try:
-        from app.graph.pending_validated import PENDING_KEY
-        from app.memory.session_state_store import SessionStateStore
-        full = await SessionStateStore().load(session_id) or {}
-        pending = full.get(PENDING_KEY) or {}
-        if str(pending.get("target_tool") or "") != B_CREATE_PENDING_TOOL:
-            return False
-        if str(pending.get("target_action") or "") != B_CREATE_PENDING_ACTION:
-            return False
-    except Exception as e:
-        logger.warning(f"[b-create] processing-items 兜底状态读取失败（非致命）: {e}")
-        return False
-    return not await _processing_items_already_asked(session_id, "")
 
 
 def _pending_card_before_last_user(messages) -> bool:

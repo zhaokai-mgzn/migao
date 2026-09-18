@@ -3,7 +3,7 @@
 ## 为什么要 diff 驱动
 
 `migao-dev-flow` §13.2 早就规定了「改动类型 → 必跑用例」的映射表（改下单引导/加工项 →
-OR-016、改售后 → AS-007、改建品 → PR-019/PR-020、改交互卡 → CH-010/CH-019…），
+OR-016、改售后 → AS-007、改建品 → PR-019、改交互卡 → CH-010/CH-019…），
 但落地方式一直是**人工**：靠人（或 agent）记得读完 diff 再手敲
 `local_runner.py case <ID>`。两个事实让它不可靠：
 
@@ -72,16 +72,18 @@ MAPPING_RULES = [
      ["OR-016", "OR-028"]),
     # 换货 / 售后工单引导 → AS-007
     (r"aftersales|after_sales", ["AS-007"]),
-    # 建品（属性 / 加工项价格 / 参数完整性）→ PR-019、PR-020
+    # 建品（属性 / 参数完整性）→ PR-019
     # ⚠️ 关键词收窄（#3624）：原为 `processing_item`（裸词），把**加工项目录**的
     # `app/tools/processing_item_manage.py` / `processing_item_query.py` 一并吞进商品域
-    # → 改加工项写路径推出的却是 PR-019/PR-020（断言 `product_manage(action=create)`，
+    # → 改加工项写路径推出的却是建品用例（断言 `product_manage(action=create)`，
     # 与目录 CRUD 无因果），而加工项目录自己的 PP-* 用例一条没跑（#3591 收口实测）。
-    # 现在只锚「商品侧」加工项载体：product_processing_item_manage（商品挂载/摘除加工项）。
-    # （另一载体 `app/tools/processing_items.py` 已在 #3588 随 schema 对齐清理删除，
-    #   规则不再保留指向已删文件的死锚点。）
-    (r"product_skill|product_manage|product_processing_item_manage",
-     ["PR-019", "PR-020"]),
+    # ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：正则去掉 `product_processing_item_manage`
+    # （该工具**已删除**——商品不再持有加工项，留着就是死锚点），锚定用例由
+    # `["PR-019","PR-020"]` 收为 `["PR-019"]`（`PR-020`「建品加工项价格落库盯防」整条用例
+    # 已随解耦删除：其断言对象 `processingItemConfigs.finalPrice` 不存在了）。
+    # 规则桶**未放宽**：改 product_skill / product_manage 仍必跑 PR-019（建品规格落库）。
+    (r"product_skill|product_manage",
+     ["PR-019"]),
     # 交互卡渲染 / 前端 → CH-010、CH-019
     (r"interact\.py|interactive|card", ["CH-010", "CH-019"]),
     # 图片 / 视觉链路 → CH-021、CH-026
@@ -124,7 +126,7 @@ MAPPING_RULES = [
     # 加工项目录（PP-*）→ PP-002（分类/目录查询，期望 `processing_item_query or
     # processing_item_manage`）、PP-006（计价方式 + 新增加工项，期望
     # `processing_item_query(keyword=打孔)` + `processing_item_manage(action=create_processing_item)`
-    # + 确认轮）—— #3624 补齐。这是**目录 CRUD** 与商品侧挂载（PR-019/PR-020）的分界。
+    # + 确认轮）—— #3624 补齐。这是**目录 CRUD** 与商品建品（PR-019）的分界。
     # 台账提示 PP-002/PP-006 历史上 `reproducible` 红（多为 #3555/#3591 旧契约缺陷余波），
     # 已按 §14.2 记入归因队列；本门禁现为「报告制」，不会阻塞合并。
     (r"app/tools/processing_item_manage\.py|app/tools/processing_item_query\.py",
@@ -152,12 +154,12 @@ MAPPING_RULES = [
     # 确定性回归由 L0 单测承担（test_rule_matcher.py TestProcessingOrderRouting +
     # test_graph_nodes.py test_processing_order_signal_escapes_product_lock，#3921），
     # 概念区分的评测守护经 prompts 规则（本 PR 必改 prompt ⇒ 必触发 PG-017）间接生效。
-    # 商品侧加工项挂载 Tool（product_processing_item_manage）→ PP-001/PP-003 —— #3658 补充。
-    # 覆盖核查结论：PP-001（normal，期望 `product_processing_item_manage(action=add)` +
-    # `processing_item_query`）、PP-003（adversarial，confirm 卡 + action=add）**直接行使本工具**；
-    # 此前只经商品规则（下方）锚到 PR-019/PR-020（`product_manage(action=create)` 建品价格，
-    # 与本文件无因果）→ 并集：商品域保留，另补本工具的直测用例（改挂载路径必须真跑它们）。
-    (r"app/tools/product_processing_item_manage\.py", ["PP-001", "PP-003"]),
+    # ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：原「商品侧加工项挂载 Tool」规则
+    # `(r"app/tools/product_processing_item_manage\.py", ["PP-001", "PP-003"])` **整条删除** ——
+    # 该工具（给**商品**增删加工项）随「商品不再持有加工项」退场，文件已删；
+    # 其锚定的 PP-001/PP-003 两条用例也整条删除（它们的期望就是该工具的 `action=add`）。
+    # 删除不是放宽门禁：规则指向的**承载文件与用例都已不存在**，留着只会是死锚点。
+    # 加工项目录侧的行为锚点仍由下方 `processing_item_manage/query` 规则承担（PP-002/PP-006）。
     # 守卫代码的共享载体 `base_skill.py` → 转人工族 CH-013/CH-014/CH-015 —— #3624 追加。
     # 为什么：base_skill 的守卫判据（不满情绪→建议 interact 卡→用户确认后转人工；
     # 用户拒绝后本会话不再自动建议；显式「转人工」不经建议卡直接转）正是这三条用例的

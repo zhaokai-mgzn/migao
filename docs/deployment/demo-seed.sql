@@ -25,22 +25,22 @@ WHERE NOT EXISTS (SELECT 1 FROM categories WHERE id = 'cat-fabric' AND tenant_id
 -- ──────────────────────────────────────────────
 -- 2. 商品（3 个窗帘商品）
 -- ──────────────────────────────────────────────
-INSERT INTO products (id, tenant_id, name, category_id, base_price, description, unit, pricing_type, sku_code, has_processing, status)
+INSERT INTO products (id, tenant_id, name, category_id, base_price, description, unit, pricing_type, sku_code, status)
 SELECT 'p-zg-001', :tenant_id, '星空全遮光窗帘', 'cat-curtain', 98.00,
        '高精密涤纶三层织造，遮光率99%以上，物理遮光无甲醛，双面同色，垂感优良',
-       '米', 'per_meter', 'MG-ZG-001', TRUE, 'active'
+       '米', 'per_meter', 'MG-ZG-001', 'active'
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE id = 'p-zg-001' AND tenant_id = :tenant_id);
 
-INSERT INTO products (id, tenant_id, name, category_id, base_price, description, unit, pricing_type, sku_code, has_processing, status)
+INSERT INTO products (id, tenant_id, name, category_id, base_price, description, unit, pricing_type, sku_code, status)
 SELECT 'p-zg-002', :tenant_id, '云朵半遮光窗帘', 'cat-curtain', 68.00,
        '涤纶高密度编织，遮光率75%-85%，莫兰迪色系，柔软细腻，适合客厅书房',
-       '米', 'per_meter', 'MG-ZG-002', TRUE, 'active'
+       '米', 'per_meter', 'MG-ZG-002', 'active'
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE id = 'p-zg-002' AND tenant_id = :tenant_id);
 
-INSERT INTO products (id, tenant_id, name, category_id, base_price, description, unit, pricing_type, sku_code, has_processing, status)
+INSERT INTO products (id, tenant_id, name, category_id, base_price, description, unit, pricing_type, sku_code, status)
 SELECT 'p-sl-001', :tenant_id, '雾霭柔光纱帘', 'cat-sheer', 35.00,
        '涤纶雪纺纱，透光不透人，2.8米超宽幅减少拼接，轻盈飘逸',
-       '米', 'per_meter', 'MG-SL-001', FALSE, 'active'
+       '米', 'per_meter', 'MG-SL-001', 'active'
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE id = 'p-sl-001' AND tenant_id = :tenant_id);
 
 -- ──────────────────────────────────────────────

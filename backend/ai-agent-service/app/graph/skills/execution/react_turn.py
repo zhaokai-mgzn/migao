@@ -21,7 +21,7 @@ from app.graph.skills.base_skill import (
     HumanMessage, KNOWN_ADDRESS_KEY, LLM_CALL_TIMEOUT_S, ORDER_WRITE_TOOL,
     RECOGNIZABLE_INPUT_PARAMS, SystemMessage, ToolMessage, WRITE_INPUT_ERROR_KEY,
     _MULTI_TURN_THINKING_INTENTS, _STALL_CORRECTIVE, _TEXT_DENIAL_CORRECTIVE, _TEXT_DENIAL_CORRECTIVE_BIZ,
-    _TEXT_DENIAL_CORRECTIVE_MIDORDER, _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE, _b_create_processing_items_not_asked, _capability_denial_reason,
+    _TEXT_DENIAL_CORRECTIVE_MIDORDER, _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE, _capability_denial_reason,
     _card_loop_block, _clear_write_input_error, _confirm_card_fields_hint, _confirm_card_seen,
     _current_request_id, _curtain_calc_dimension_block, _ensure_processing_items_multiselect, _err_inc,
     _extract_content, _flow_state_in_progress, _form_prefill_fidelity_block, _handoff_guard_applies,
@@ -29,7 +29,7 @@ from app.graph.skills.base_skill import (
     _is_customer_role, _is_explicit_confirmation, _is_processing_items_card, _is_retryable,
     _last_product_id, _logistics_chain_corrective, _logistics_chain_incomplete, _mark_processing_items_asked,
     _masked_phone_write_block, _order_capability_available, _order_flow_in_progress, _order_flow_started,
-    _order_write_tool_here, _pending_card_before_last_user, _plan_b_create_processing_items_rewrite, _plan_processing_items_rewrite,
+    _order_write_tool_here, _pending_card_before_last_user, _plan_processing_items_rewrite,
     _processing_items_already_asked, _product_image_capability_available, _product_image_denial_hit, _quantity_choice_block,
     _relock_order_skill, _remember_known_value, _remember_raw_phones, _remember_sms_code,
     _registry_has_confirm_write_tool, _registry_has_tool,
@@ -1193,44 +1193,11 @@ async def react_turn(
                     except Exception as e:
                         logger.warning(f"[{skill_name}] processing-items fallback failed (non-fatal): {e}")
 
-                # ── 模式 C 代码兜底（B 端**建品**同构，issue #3320）──
-                # 上面那条只覆盖 C 端（数据源是 product_detail）；B 端建品时商品还没建出来，
-                # 事实源只有本会话真实调用过的 `processing_item_query` 返回。
-                # 仅当「建品在办 + 有真实加工项 + 未问过」才把 confirm 卡改写为多选卡；
-                # 其余形态（其它 action / 没查过 / 已问过 / 已答过 / 用户拒绝）一律**原样不动**。
-                #
-                # 适用性判据（issue #4079 S4）：旧实现 `skill_name == "product"` 是字面量
-                # 白名单 ⇒ 换成**事实**：本 skill 工具子集里有没有建品写工具
-                #（`product_manage`，与下面 `_plan_b_create_processing_items_rewrite` 读的
-                # confirm 卡同为建品动作）。等价性（实测 @2f55a8b3）：全 15 个 skill 里
-                # 绑了 `product_manage` 的只有 `product` —— 与旧白名单同一集合。
-                if _registry_has_tool(skill_registry, "product_manage"):
-                    try:
-                        _bp_msgs = new_messages + state.get("messages", [])
-                        if await _b_create_processing_items_not_asked(session_id):
-                            _bp_plan = _plan_b_create_processing_items_rewrite(tool_results, _bp_msgs)
-                            if _bp_plan is not None:
-                                _bp_idx, _bp_choice = _bp_plan
-                                _bp_tc, _bp_rs, _bp_rd = tool_results[_bp_idx]
-                                _bp_rd = dict(_bp_rd)
-                                _bp_rd["data"] = _bp_choice
-                                _bp_rd["message"] = (
-                                    f"已展示{_bp_choice['title']}"
-                                    "（代码兜底：建品漏问加工项，confirm 卡改写为多选 choice 卡）")
-                                tool_results[_bp_idx] = (
-                                    _bp_tc, json.dumps(_bp_rd, ensure_ascii=False, default=str), _bp_rd)
-                                logger.info(
-                                    f"[{skill_name}] 建品加工项漏问兜底：confirm 卡改写为 choice 卡 "
-                                    f"(options={len(_bp_choice['options'])}) | session={session_id}")
-                            # 记账：本轮任何一张加工项卡发出去过（改写来的或模型自己发的）→ 记「已问过」。
-                            # 必须与改写分支**并列**（原先嵌在 `if _bp_plan is not None` 内）：
-                            # 模型**自己**发卡时 `_bp_plan` 为 None ⇒ 原先不记账 ⇒ 本会话后续轮次的
-                            # confirm 卡会被兜底重问一遍，正是 PR-014 data_check「未再次询问加工项」要防的形态
-                            # （与 C 端 OR-017 的"同一件事问第二遍"同族）。判据未变，只调记账时机。
-                            if _has_processing_choice_in_turn(tool_results):
-                                await _mark_processing_items_asked(session_id, "")
-                    except Exception as e:
-                        logger.warning(f"[{skill_name}] b-create processing-items fallback failed (non-fatal): {e}")
+                # ── issue #4371（商品↔加工项解耦）：B 端**建品**的加工项漏问兜底已**整体删除** ──
+                # 原兜底（issue #3320）会把「建品在办 + 有加工项目录 + 未问过」时的 confirm 卡
+                # 改写成加工项多选卡。解耦后**建品不再需要询问/关联加工项**（product_manage 已无
+                # 加工项参数）⇒ 该改写变成过度询问（选了也无处可写），故整条移除；
+                # 判据函数与单测同步删除。C 端（下单/售后）那条保留（见上方）。
 
                 for tool_call, result_str, result_dict in tool_results:
                     tool_name = tool_call["name"]

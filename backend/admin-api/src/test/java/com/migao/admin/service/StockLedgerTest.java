@@ -29,8 +29,6 @@ import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProductAttributeMapper;
 import com.migao.admin.mapper.ProductColorMapper;
 import com.migao.admin.mapper.ProductMapper;
-import com.migao.admin.mapper.ProductProcessingItemMapper;
-import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockLedgerMapper;
 import com.migao.admin.mapper.TicketTimelineMapper;
@@ -86,8 +84,6 @@ class StockLedgerTest {
     @Mock private CategoryMapper categoryMapper;
     @Mock private ProductColorMapper productColorMapper;
     @Mock private ProductSkuMapper productSkuMapper;
-    @Mock private ProductProcessingItemMapper productProcessingItemMapper;
-    @Mock private ProcessingItemMapper processingItemMapper;
     @Mock private ProductAttributeMapper productAttributeMapper;
     @Mock private StockLedgerMapper stockLedgerMapper;
 
@@ -129,8 +125,7 @@ class StockLedgerTest {
 
         stockLedgerService = new StockLedgerService(stockLedgerMapper, productSkuMapper);
         productService = new ProductService(productMapper, categoryMapper, productColorMapper,
-                productSkuMapper, productProcessingItemMapper, processingItemMapper,
-                productAttributeMapper, stockLedgerService);
+                productSkuMapper, productAttributeMapper, stockLedgerService);
         orderService = new OrderService(orderMapper, orderItemMapper, orderLogisticsMapper,
                 customerService, productMapper, productSkuMapper, financeTransactionMapper,
                 new ObjectMapper(), notificationService, processingOrderMapper, userService,
@@ -183,7 +178,6 @@ class StockLedgerTest {
         when(productMapper.selectById(PRODUCT_ID)).thenReturn(product());
         when(productMapper.updateById(any(Product.class))).thenReturn(1);
         when(productColorMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
-        when(productProcessingItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
         when(productAttributeMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
         // ── 订单腿最小桩：订单可读、状态流转命中 1 行（详情/结转侧同口径）──

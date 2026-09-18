@@ -16,7 +16,7 @@
 与 C 端测试的关系：本文件只覆盖 B 端跑的一面（mibao 专属 + 双端）；C 端跑的一面
 由 test_xiaobu_case_set.py 覆盖（选中用例不得含 B 端专属工具等）。
 """
-# case_ids: OR-016, PR-019, PR-020, AS-003, AS-005, CH-011, FN-004, HR-003, DA-002, CU-003, PP-006, PR-021, PG-015, PG-016, DF-011
+# case_ids: OR-016, PR-019, AS-003, AS-005, CH-011, FN-004, HR-003, DA-002, CU-003, PP-006, PR-021, PG-015, PG-016, DF-011
 import re
 import sys
 from pathlib import Path

@@ -1,4 +1,4 @@
-# case_ids: OR-029, OR-014, OR-017, PR-014, AS-007, CH-010
+# case_ids: OR-029, OR-014, OR-017, AS-007, CH-010
 """issue #4013（P4 包）红证：死契约 / 文档-代码契约 / 常量单点（4 条）。
 
 A2 `ToolResult.terminal` **死契约**：字段在 `app/tools/base.py` 声明、4 处赋值
@@ -274,13 +274,13 @@ class TestProcessingDeclineVocabulary:
 
         msgs = [HumanMessage(content="不用")]
         assert _last_user_declined_processing(msgs) is True, "裸「不用」未判为拒绝"
-        msgs_with_detail = [
-            ToolMessage(content='{"success": true, "data": {"processing_items": '
-                                '[{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]}}',
-                        tool_call_id="d1", name="product_detail"),
+        msgs_with_catalog = [
+            ToolMessage(content='{"success": true, "data": {"items": '
+                                '[{"id": "pi1", "name": "打孔", "unit_price": 8.0}]}}',
+                        tool_call_id="d1", name="processing_item_query"),
             HumanMessage(content="不用"),
         ]
-        assert _user_already_answered_processing(msgs_with_detail) is True
+        assert _user_already_answered_processing(msgs_with_catalog) is True
 
     def test_prompt_promised_decline_words_all_accepted(self):
         """机制判据：prompt 承诺的拒绝词 ⊆ 代码拒绝词表（防同类漂移再犯）。"""
@@ -302,12 +302,12 @@ class TestProcessingDeclineVocabulary:
         confirm = ({"name": "interact", "args": {}, "id": "x"},
                    '{"success": true, "data": {"component": "confirm", "fields": []}}',
                    {"success": True, "data": {"component": "confirm", "fields": []}})
-        detail = ToolMessage(
-            content='{"success": true, "data": {"processing_items": '
-                    '[{"id": "pi1", "name": "打孔", "unitPrice": 8.0, "unit": "米"}]}}',
-            tool_call_id="d1", name="product_detail")
+        catalog = ToolMessage(
+            content='{"success": true, "data": {"items": '
+                    '[{"id": "pi1", "name": "打孔", "unit_price": 8.0, "unit": "米"}]}}',
+            tool_call_id="d1", name="processing_item_query")
         assert _plan_processing_items_rewrite(
-            [confirm], [HumanMessage(content="帮我下单"), detail, HumanMessage(content="不用")]
+            [confirm], [HumanMessage(content="帮我下单"), catalog, HumanMessage(content="不用")]
         ) is None, "顾客说了「不用」仍被改写成加工项卡 = 同一件事问第二遍"
 
     def test_r2_negative_non_decline_still_rewrites(self):
@@ -317,12 +317,12 @@ class TestProcessingDeclineVocabulary:
         confirm = ({"name": "interact", "args": {}, "id": "x"},
                    '{"success": true, "data": {"component": "confirm", "fields": []}}',
                    {"success": True, "data": {"component": "confirm", "fields": []}})
-        detail = ToolMessage(
-            content='{"success": true, "data": {"processing_items": '
-                    '[{"id": "pi1", "name": "打孔", "unitPrice": 8.0, "unit": "米"}]}}',
-            tool_call_id="d1", name="product_detail")
+        catalog = ToolMessage(
+            content='{"success": true, "data": {"items": '
+                    '[{"id": "pi1", "name": "打孔", "unit_price": 8.0, "unit": "米"}]}}',
+            tool_call_id="d1", name="processing_item_query")
         assert _plan_processing_items_rewrite(
-            [confirm], [detail, HumanMessage(content="确认下单")]
+            [confirm], [catalog, HumanMessage(content="确认下单")]
         ) is not None, "未拒绝的顾客被跳过询问加工项（扩词吞掉了正常流程）"
 
     def test_r2_negative_cancel_semantics_kept(self):

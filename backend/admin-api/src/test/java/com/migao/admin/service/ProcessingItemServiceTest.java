@@ -1,7 +1,10 @@
 package com.migao.admin.service;
 
-// case_ids: PP-005, PP-006, OR-014
-// PP-005：加工项按「适用商品分类」筛选（issue #2964）。
+// case_ids: PP-006, OR-014
+// 加工项解耦（issue #4371）：`applicable_product_categories` 与 `applicableProductCategoryId`
+// 过滤随「按商品分类过滤加工项」一并删除 ⇒「按适用商品分类筛选」「带适用商品分类的建/改」
+// 三条用例随之删除（原声明的 PP-005 即该筛选用例，用例库中已同步移除）；
+// 解耦本身的回归防线见 ProductProcessingDecouplingTest。
 // PP-006/OR-014（issue #3005，回滚 #2986）：行业加工费按米计价且辅料含在加工费中，
 // 加工项计价方式仅 per_meter/per_set/fixed/per_area——per_piece 与「每米数量」密度被移除，
 // calculatePrice 不再有 fabricMeters 密度推导，数量由请求方直接给出。
@@ -18,7 +21,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -159,40 +161,6 @@ class ProcessingItemServiceTest {
         assertThat(result.getItems()).isEmpty();
     }
 
-    @Test
-    @DisplayName("分页查询加工项 - 按适用商品分类筛选（空列表=适用所有，JSONB 包含目标分类）")
-    void getProcessingItems_FilterByApplicableProductCategory() {
-        // given
-        ProcessingItemQueryRequest query = new ProcessingItemQueryRequest();
-        query.setApplicableProductCategoryId("cat-curtain");
-
-        Page<ProcessingItem> mockPage = new Page<>(1, 20);
-        mockPage.setRecords(List.of(testItem));
-        mockPage.setTotal(1);
-
-        when(processingItemMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
-                .thenReturn(mockPage);
-        when(processingCategoryMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(List.of(testCategory));
-
-        // when
-        PageResponse<ProcessingItemResponse> result = processingItemService.getProcessingItems(query, 1L);
-
-        // then
-        assertThat(result).isNotNull();
-        assertThat(result.getItems()).hasSize(1);
-
-        // 筛选 SQL 必须同时包含：空列表（=适用所有）+ JSONB 包含目标分类（目标分类 ID 走参数化占位，值在 paramNameValuePairs）
-        ArgumentCaptor<LambdaQueryWrapper<ProcessingItem>> wrapperCaptor =
-                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
-        verify(processingItemMapper).selectPage(any(Page.class), wrapperCaptor.capture());
-        String sql = wrapperCaptor.getValue().getCustomSqlSegment();
-        assertThat(sql).contains("applicable_product_categories");
-        assertThat(sql).contains("'[]'");
-        assertThat(wrapperCaptor.getValue().getParamNameValuePairs().values())
-                .anyMatch(v -> v.toString().contains("cat-curtain"));
-    }
-
     // ======================== 创建加工项测试 ========================
 
     @Test
@@ -230,46 +198,6 @@ class ProcessingItemServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.getName()).isEqualTo("新加工项");
         verify(processingItemMapper).insert(any(ProcessingItem.class));
-    }
-
-    @Test
-    @DisplayName("创建加工项成功 - 带适用商品分类")
-    void createProcessingItem_WithApplicableProductCategories() {
-        // given
-        ProcessingItemCreateRequest request = new ProcessingItemCreateRequest();
-        request.setName("打孔加工");
-        request.setCategoryId("pcat-001");
-        request.setPricingMethod("per_meter");
-        request.setUnitPrice(new BigDecimal("15.00"));
-        request.setApplicableProductCategories(List.of("cat-001", "cat-002"));
-
-        when(processingCategoryMapper.selectById("pcat-001")).thenReturn(testCategory);
-        when(processingItemMapper.insert(any(ProcessingItem.class))).thenAnswer(invocation -> {
-            ProcessingItem item = invocation.getArgument(0);
-            item.setId("pi-new");
-            return 1;
-        });
-
-        ProcessingItem savedItem = ProcessingItem.builder()
-                .id("pi-new")
-                .name("打孔加工")
-                .categoryId("pcat-001")
-                .pricingMethod("per_meter")
-                .unitPrice(new BigDecimal("15.00"))
-                .applicableProductCategories(List.of("cat-001", "cat-002"))
-                .status("active")
-                .build();
-        when(processingItemMapper.selectById("pi-new")).thenReturn(savedItem);
-
-        // when
-        ProcessingItemResponse result = processingItemService.createProcessingItem(request, 1L);
-
-        // then
-        assertThat(result).isNotNull();
-        assertThat(result.getApplicableProductCategories()).containsExactly("cat-001", "cat-002");
-        verify(processingItemMapper).insert((ProcessingItem) argThat((ProcessingItem item) ->
-                item.getApplicableProductCategories() != null
-                        && item.getApplicableProductCategories().containsAll(List.of("cat-001", "cat-002"))));
     }
 
     @Test
@@ -341,40 +269,6 @@ class ProcessingItemServiceTest {
         // then
         assertThat(result).isNotNull();
         verify(processingItemMapper).updateById(any(ProcessingItem.class));
-    }
-
-    @Test
-    @DisplayName("更新加工项成功 - 带适用商品分类")
-    void updateProcessingItem_WithApplicableProductCategories() {
-        // given
-        ProcessingItemUpdateRequest request = new ProcessingItemUpdateRequest();
-        request.setName("更新后的加工项");
-        request.setCategoryId("pcat-001");
-        request.setPricingMethod("per_meter");
-        request.setUnitPrice(new BigDecimal("25.00"));
-        request.setApplicableProductCategories(List.of("cat-003", "cat-004"));
-
-        when(processingItemMapper.selectById("pi-001")).thenReturn(testItem);
-        when(processingCategoryMapper.selectById("pcat-001")).thenReturn(testCategory);
-        when(processingItemMapper.updateById(any(ProcessingItem.class))).thenReturn(1);
-
-        ProcessingItem updatedItem = ProcessingItem.builder()
-                .id("pi-001")
-                .name("更新后的加工项")
-                .categoryId("pcat-001")
-                .pricingMethod("per_meter")
-                .unitPrice(new BigDecimal("25.00"))
-                .applicableProductCategories(List.of("cat-003", "cat-004"))
-                .status("active")
-                .build();
-        when(processingItemMapper.selectById("pi-001")).thenReturn(testItem).thenReturn(updatedItem);
-
-        // when
-        ProcessingItemResponse result = processingItemService.updateProcessingItem("pi-001", request, 1L);
-
-        // then
-        assertThat(result).isNotNull();
-        assertThat(result.getApplicableProductCategories()).containsExactly("cat-003", "cat-004");
     }
 
     @Test

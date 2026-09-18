@@ -1,5 +1,5 @@
 """ProcessingItemManageTool 单元测试 — 加工项/加工分类 CRUD + 价格计算。"""
-# case_ids: PP-002, PP-003, PP-004, PP-006, PP-009, PR-017
+# case_ids: PP-002, PP-006, PP-009, PR-017
 import ast
 import inspect
 import re
@@ -44,7 +44,6 @@ ITEM_DETAIL = {
     "maxQuantity": 100,
     "description": "旧描述",
     "options": [{"name": "孔径", "values": ["10mm"]}],
-    "applicableProductCategories": ["cat-1"],
     "processingDays": 2,
     "aiRecommended": False,
     "status": "active",
@@ -313,7 +312,9 @@ class TestProcessingItemUpdate:
         assert body["maxQuantity"] == ITEM_DETAIL["maxQuantity"]
         assert body["description"] == ITEM_DETAIL["description"]
         assert body["options"] == ITEM_DETAIL["options"]
-        assert body["applicableProductCategories"] == ITEM_DETAIL["applicableProductCategories"]
+        # issue #4371：`applicableProductCategories` 已随「商品↔加工项解耦」整体退场
+        # （V66 DROP COLUMN）⇒ 全量 PUT **不得**再回带它（服务端静默忽略 = 无声丢数据）。
+        assert "applicableProductCategories" not in body
         assert body["processingDays"] == ITEM_DETAIL["processingDays"]
         assert body["aiRecommended"] is False
         assert body["status"] == ITEM_DETAIL["status"]

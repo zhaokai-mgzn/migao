@@ -41,9 +41,15 @@ ITEM_REQUIRED_FIELD_LABELS = {
     "pricingMethod": "pricingMethod（计价方式，工具参数 pricing_method）",
     "unitPrice": "unitPrice（单价，工具参数 price）",
 }
+# ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：`applicableProductCategories`
+# （加工项的「适用商品分类」）**已从 admin-api 的 DTO/实体/schema 整体退场**
+# （V66 迁移 `DROP COLUMN`），故从本「全量 PUT 时回带字段」白名单移除。
+# 留在白名单里的后果不是报错而是**静默**：Java 侧 `ProcessingItemUpdateRequest`
+# 已无该字段 ⇒ Spring 静默忽略 ⇒ 每次「GET 详情 → 覆盖 → PUT 全量」都会把它丢掉，
+# 而工具照样返回成功（工具审计 A4「下发 DTO 没有的键 = 无声丢数据」同型）。
 ITEM_CARRY_OVER_FIELDS = ITEM_REQUIRED_FIELDS + (
     "unit", "minQuantity", "maxQuantity", "description", "options",
-    "applicableProductCategories", "processingDays", "aiRecommended", "status",
+    "processingDays", "aiRecommended", "status",
 )
 UNIT_PRICE_MIN = 0.10
 UNIT_PRICE_MAX = 999.99

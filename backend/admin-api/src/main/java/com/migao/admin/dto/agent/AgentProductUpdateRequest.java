@@ -9,7 +9,9 @@ import java.util.Map;
 /**
  * Agent 专用商品更新请求。
  * 全部字段 Optional —— null = "不修改此字段"。
- * 加工项走独立的 PATCH /{id}/processing-items 端点。
+ *
+ * <p>加工项解耦（issue #4371）：商品不再持有加工项，故本请求**没有**加工项字段，
+ * 也没有「加工项走独立 PATCH /{id}/processing-items 端点」这条路径（该端点已删除）。</p>
  */
 @Data
 public class AgentProductUpdateRequest {

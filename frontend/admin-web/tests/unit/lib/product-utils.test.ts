@@ -236,42 +236,6 @@ describe('validateProductForm', () => {
     expect(Object.keys(errs)).toEqual([])
   })
 
-  // ─── 加工项校验 ───
-
-  it('requires processing config when supportsProcessing is true', () => {
-    const errs = validateProductForm(
-      baseForm({ supportsProcessing: true, processingItemConfigs: [] }),
-      'on_sale',
-    )
-    expect(errs.processingItemConfigs).toBe('请至少配置 1 项加工项并填写价格')
-  })
-
-  it('rejects processing config with negative price', () => {
-    const errs = validateProductForm(
-      baseForm({
-        supportsProcessing: true,
-        processingItemConfigs: [
-          { processingItemId: 'proc-1', customPrice: -1 },
-        ],
-      }),
-      'on_sale',
-    )
-    expect(errs.processingItemConfigs).toBe('请至少配置 1 项加工项并填写价格')
-  })
-
-  it('accepts valid processing config', () => {
-    const errs = validateProductForm(
-      baseForm({
-        supportsProcessing: true,
-        processingItemConfigs: [
-          { processingItemId: 'proc-1', customPrice: 10 },
-        ],
-      }),
-      'on_sale',
-    )
-    expect(errs.processingItemConfigs).toBeUndefined()
-  })
-
   // ─── 综合：全部合法 → 无错误 ───
 
   it('returns no errors for fully valid form (on_sale)', () => {

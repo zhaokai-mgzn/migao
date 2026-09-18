@@ -66,9 +66,6 @@ export default function EditProductPage() {
     // （weight/material/...），此处 中文→英文 保证 agent 建的商品编辑时属性正常回显
     // （issue #3044）
     specifications: toEnglishSpecKeys(product.specifications || {}),
-    processingItems: product.processingItems,
-    processingItemConfigs: product.processingItemConfigs || [],
-    supportsProcessing: (product.processingItemConfigs && product.processingItemConfigs.length > 0) || false,
     stockDeductionMode: (product.stockDeductionMode === 'on_order' ? 'on_place' : product.stockDeductionMode === 'on_payment' ? 'on_pay' : 'on_place') as ProductFormData['stockDeductionMode'],
     colors: product.colors || [],
     sellingMethods: product.sellingMethods || [],

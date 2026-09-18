@@ -1,5 +1,5 @@
 """_execute_tool_safe 异常路径健壮性 — 回归测试
-# case_ids: PP-001, PR-010
+# case_ids: PR-010
 
 生产事故（sess_fba38395ed094a9d，2026-09-05）：
 - 用户在创建商品流程选了分类后，agent 下一轮展示加工项选择器时崩溃无回复；

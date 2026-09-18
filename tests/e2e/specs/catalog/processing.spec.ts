@@ -1,4 +1,9 @@
-// case_ids: PP-001, PP-003, PP-004
+// case_ids: PP-002, PP-006
+// ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：原声明 `PP-001, PP-003, PP-004` 三条用例
+// **已整条删除** —— 它们驱动的是「给**商品**增删加工项」（`product_processing_item_manage`），
+// 该能力随「商品不再持有加工项」退场（工具文件与注册行都删）。
+// 本 spec 行使的是**加工项目录 CRUD**（列表/新增/编辑/删除），对应仍在线且仍有用例的
+// `PP-002`（分类/目录查询）与 `PP-006`（计价方式 + 新增加工项），故声明改锚这两条。
 import { test, expect } from '../../fixtures'
 
 /**
@@ -67,9 +72,11 @@ test.describe('加工项配置', () => {
       })
     })
 
-    // 拦截商品分类 API（页面 loadData 的第三个并行请求：categoryApi.getCategories()）
-    // ⚠️ 不 mock 它会真连后端；`Promise.all` 一旦 reject ⇒ setItems 永不执行 ⇒ 表格恒「暂无加工项」，
-    //    于是「应显示所有加工项数据 / 价格 / 计价方式 / 编辑回填」等用例即使标题断言修好也仍然红。
+    // 拦截商品分类 API（防御性保留；**#4371 解耦后页面已不再请求它**）
+    // 沿革：加工项列表原有一列「适用商品分类」，页面为此在 loadData 的 `Promise.all` 里并发拉
+    // `categoryApi.getCategories()`；解耦后该列与过滤链路整体退场，页面不再请求商品分类
+    // ⇒ 本 mock 现在**命中不到任何请求**（不是失败，只是空转）。保留它是为了让本 spec
+    // 对「页面将来又去拉商品分类」这一形态不产生真连后端的抖动；不影响任何断言。
     await page.route('**/api/admin/categories*', async (route) => {
       await route.fulfill({
         status: 200,

@@ -92,17 +92,6 @@ export function validateProductForm(
         errs.skus = '请完整填写所有 SKU 的价格与库存'
       }
     }
-
-    // ─── 加工项 ───
-    if (form.supportsProcessing) {
-      const cfg = form.processingItemConfigs || []
-      if (
-        cfg.length === 0 ||
-        cfg.some((c) => !c.processingItemId || c.customPrice < 0)
-      ) {
-        errs.processingItemConfigs = '请至少配置 1 项加工项并填写价格'
-      }
-    }
   }
 
   return errs

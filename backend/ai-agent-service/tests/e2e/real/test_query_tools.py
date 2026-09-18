@@ -3,7 +3,7 @@
 
 每个测试: 对话 → LLM → tool → 双端验证 (SSE 内容 + admin-api 数据一致)
 """
-# case_ids: PR-001, PR-003, OR-001, CU-001, HR-001, HR-004, AS-001, CR-001, PP-001
+# case_ids: PR-001, PR-003, OR-001, CU-001, HR-001, HR-004, AS-001, CR-001
 import pytest
 from tests.e2e.real.conftest import (
     Session, admin_get, admin_search_products, sse_text, sse_tools, sse_results

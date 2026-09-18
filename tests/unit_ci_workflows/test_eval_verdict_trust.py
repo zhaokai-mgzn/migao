@@ -1,4 +1,4 @@
-# case_ids: OR-016, PR-016, PP-001, OR-010, OR-015, PG-013
+# case_ids: OR-016, OR-010, OR-015, PG-013
 """结论层可信度修复 —— GLM-5.3-Flash 盲审 4 处缺陷（run 34916256903 @1eea267a）的红证。
 
 盲审结论（权威）：`gh issue view <本单>`；判定跑 `34916256903` 的 artifact

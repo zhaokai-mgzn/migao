@@ -1,5 +1,5 @@
 {
-  "_comment": "断言可信度门禁的**存量**违规清单（burn-down）。锚定 SHA 见 anchor_sha —— 计数是「该 SHA 上按 taxonomy 判出的存量违规」，**不是**『这些用例永远豁免』。`violations` 是**活账本**：每次门禁运行都对**全库**重算并逐条对账（#4031 全量对账）—— 记了却不再违规 ⇒ 阻塞要求移除；仍在违规却被删掉 ⇒ 阻塞（新增豁免）。",
+  "_comment": "断言可信度门禁的**存量**违规清单（burn-down）。锚定 SHA 见 anchor_sha —— 计数是「该 SHA 上按 taxonomy 判出的存量违规」，**不是**『这些用例永远豁免』。`violations` 是**活账本**：每次门禁运行都对**全库**重算并逐条对账（#4031 全量对账）—— 记了却不再违规 ⇒ 阻塞要求移除；仍在违规却被删掉 ⇒ 阻塞（新增豁免）。\n\n⚠️ 2026-09-19（#4371 商品↔加工项解耦，本次，**相对 rebase 后的 origin/main**）：清单条目 **72→72（净 +0）**、违规码 **124→124（净 +0）**。\n  · 销账：`PR-014`/`PR-015`/`PR-020` 随解耦删除（整条清零）；`PR-011` 收窄；`OR-017`/`OR-018`/`OR-021`/`OR-022`/`OR-023`/`OR-024`/`OR-026`/`OR-028` 补 `namespaces[customer_phone:…]` 与 `precondition`（可判定前置，同 OR-016 先例）。\n  · ⚠️ 复盘：开发中一度在**落后 13 个提交的基点**上把「persona 判据未收紧」记为本单新增豁免并开了 #4391；rebase 后确认该收紧已由 **#4366** 落地 ⇒ 那批条目已全部撤掉，#4391 已关闭（not planned）。教训 = §2.2 **开工先 rebase**。",
   "_generated_by": "python3 .github/case_trust_gate.py --regen-baseline",
   "regenerate_command": "python3 .github/case_trust_gate.py --regen-baseline",
   "prune_command": "python3 .github/case_trust_gate.py --prune-baseline",
@@ -20,19 +20,19 @@
     "deadline": "2026-12-31"
   },
   "anchor_sha": "44615b6c9be18d23709a92c0c7e027da259f0836",
-  "case_total": 341,
-  "violation_case_count": 75,
+  "case_total": 332,
+  "violation_case_count": 72,
   "rule_counts": {
     "CASE-TRUST-EMPTY-ASSERTION": 1,
-    "CASE-TRUST-NO-EFFECT-ASSERTION": 22,
-    "CASE-TRUST-NO-SELF-CLEAN": 28,
-    "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE": 0,
     "CASE-TRUST-FORBIDDEN-TEXT-SOLE": 6,
-    "CASE-TRUST-VOLATILE-LOCATOR": 1,
-    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 73,
+    "CASE-TRUST-NO-EFFECT-ASSERTION": 19,
+    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 70,
+    "CASE-TRUST-NO-SELF-CLEAN": 27,
+    "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE": 0,
     "CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH": 0,
+    "CASE-TRUST-SINGLE-LEG-NO-PERSONA": 0,
     "CASE-TRUST-STALE-LINE-REF": 0,
-    "CASE-TRUST-SINGLE-LEG-NO-PERSONA": 0
+    "CASE-TRUST-VOLATILE-LOCATOR": 1
   },
   "violations": {
     "API-010": {
@@ -421,7 +421,6 @@
     },
     "PR-011": {
       "codes": [
-        "CASE-TRUST-NO-EFFECT-ASSERTION",
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
     },
@@ -429,24 +428,6 @@
       "codes": [
         "CASE-TRUST-NO-EFFECT-ASSERTION",
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
-    "PR-014": {
-      "codes": [
-        "CASE-TRUST-NO-EFFECT-ASSERTION",
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
-    "PR-015": {
-      "codes": [
-        "CASE-TRUST-NO-EFFECT-ASSERTION",
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
-    "PR-020": {
-      "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION",
-        "CASE-TRUST-NO-SELF-CLEAN"
       ]
     },
     "ST-003": {

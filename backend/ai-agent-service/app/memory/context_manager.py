@@ -55,7 +55,7 @@ class AgentContextManager:
 
     # Tool hints: 每个 skill 最常用的工具，减少 LLM 试错
     SKILL_TOOL_HINTS = {
-        "product": "product_search(查) → product_detail(详情+SKU) → product_manage(创建/修改) → product_processing_item_manage(加工项关联)",
+        "product": "product_search(查) → product_detail(详情+SKU) → product_manage(创建/修改) → processing_item_query(加工项目录，与商品无关)",
         "order": "order_query(查) → order_create(新建,先调product_detail选SKU) → order_manage(改状态/发货/取消)",
         "aftersales": "aftersale_query(查) → aftersale_create(新建工单) → after_sales_manage(处理)",
         "customer": "customer_manage(list查→detail详情→update更新)",

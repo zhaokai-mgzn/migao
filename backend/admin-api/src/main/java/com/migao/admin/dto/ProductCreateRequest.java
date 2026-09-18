@@ -126,9 +126,4 @@ public class ProductCreateRequest {
      * 详情图列表
      */
     private List<String> detailImages;
-
-    /**
-     * 加工项配置列表
-     */
-    private List<ProcessingItemConfigInput> processingItemConfigs;
 }

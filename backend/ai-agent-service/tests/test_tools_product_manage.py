@@ -3,7 +3,7 @@
 对应 app/tools/product_manage.py 的 create/update/toggle_status 三条 action，
 覆盖正常路径、参数校验、camelCase 字段映射、异常泛化兜底。
 """
-# case_ids: PR-007, PR-008, PR-009, PR-016
+# case_ids: PR-007, PR-008, PR-009
 import pytest
 import httpx
 from unittest.mock import AsyncMock, patch
@@ -58,8 +58,6 @@ class TestProductCreate:
             category_id="cat-1",
             price=100.5,
             stock_quantity=99,
-            processing_item_ids=["pi-1"],
-            processing_item_configs=[{"processingItemId": "pi-1", "customPrice": 10}],
             selling_methods=["bulk_cut"],
             door_widths=["2.8米"],
             sku_code="SKU-1",
@@ -78,8 +76,9 @@ class TestProductCreate:
         assert json_data["basePrice"] == 100.5
         assert json_data["stock"] == 99
         assert isinstance(json_data["stock"], int)
-        assert json_data["processingItemIds"] == ["pi-1"]
-        assert json_data["processingItemConfigs"] == [{"processingItemId": "pi-1", "customPrice": 10}]
+        # issue #4371：加工项与商品解耦 ⇒ create payload 不再有这两个键
+        assert "processingItemIds" not in json_data
+        assert "processingItemConfigs" not in json_data
         assert json_data["sellingMethods"] == ["bulk_cut"]
         assert json_data["doorWidths"] == ["2.8米"]
         assert json_data["skuCode"] == "SKU-1"
@@ -458,15 +457,18 @@ class TestProductManageSchemaContract:
     """schema ↔ 后端真实契约对齐（工具审计 A4/B1）。
 
     背景：`AgentProductCreateRequest` 无 `skus` 字段（下发即丢弃），schema 却声明该参数
-    并诱导 LLM 传；`action` enum 含运行时必拒的死分支 `manage_processing_items`
-    （已拆分为 product_processing_item_manage），且描述只有「操作类型」三字。
+    并诱导 LLM 传；`action` enum 曾含运行时必拒的死分支 `manage_processing_items`，
+    且描述只有「操作类型」三字。
+
+    issue #4371（商品↔加工项解耦）：`processingItemIds` / `processingItemConfigs`
+    已从 Java DTO 与本工具一并移除（工具描述里的加工项铁律同删）。
     """
 
     # AgentProductCreateRequest 的全部字段（Java DTO 单一事实源），payload 键必须落在其中
     AGENT_CREATE_FIELDS = {
         "name", "categoryId", "basePrice", "skuCode", "description", "brand", "unit",
         "pricingType", "stock", "status", "images", "detailImages", "colors",
-        "sellingMethods", "doorWidths", "processingItemIds", "processingItemConfigs",
+        "sellingMethods", "doorWidths",
         "specifications", "stockDeductionMode", "allowReturnRestock",
     }
 
@@ -481,7 +483,7 @@ class TestProductManageSchemaContract:
     async def test_create_payload_keys_are_all_backend_fields(
         self, mock_get_client, tool, admin_tool_context, mock_client
     ):
-        """create payload 的每个键都必须是 AgentProductCreateRequest 的字段（无 skus）"""
+        """create payload 的每个键都必须是 AgentProductCreateRequest 的字段（无 skus / 无加工项）"""
         mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "p-1"}})
         mock_get_client.return_value = mock_client
 
@@ -491,11 +493,13 @@ class TestProductManageSchemaContract:
             name="窗帘",
             price=100.0,
             colors=["米白"],
-            processing_item_configs=[{"processingItemId": "pi-1", "customPrice": 10}],
         )
 
         body = mock_client.post.call_args[1]["json_data"]
         assert "skus" not in body
+        # issue #4371：Java DTO 已无这两个字段 ⇒ payload 也不得再有
+        assert "processingItemIds" not in body
+        assert "processingItemConfigs" not in body
         unknown = set(body) - self.AGENT_CREATE_FIELDS
         assert unknown == set(), f"create payload 含后端 DTO 不认的字段: {unknown}"
 

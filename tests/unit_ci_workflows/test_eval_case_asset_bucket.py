@@ -1,4 +1,4 @@
-# case_ids: MC-012, PR-016
+# case_ids: MC-012
 """`precondition_not_applied` 型失败单列 `case_asset_failures` 桶（issue #4245）—— 红证。
 
 ## 症状（值级证据，判定 run 35295494688 @d5bca241）

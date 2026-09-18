@@ -70,11 +70,6 @@ public class ProcessingItemResponse {
     private List<Map<String, Object>> options;
 
     /**
-     * 适用商品分类ID列表
-     */
-    private List<String> applicableProductCategories;
-
-    /**
      * 加工天数
      */
     private Integer processingDays;

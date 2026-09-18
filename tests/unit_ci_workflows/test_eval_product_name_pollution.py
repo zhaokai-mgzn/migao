@@ -1,4 +1,4 @@
-# case_ids: PR-016, PR-011, PR-019, PP-001, PR-017, OR-014
+# case_ids: PR-011, PR-019, PR-017, OR-014
 """跨用例「同名商品」污染：**写方不得写共享名** + 前置自断言（issue #3835）。
 
 ## 病灶（判定跑 `34908262839`，库级 + 逐轮双证据）
@@ -72,17 +72,24 @@ SEED_PRODUCT_NAMES = (
 REGISTERED_OWNERSHIP_GAPS = {
     "PR-008": "声明了自有名「测试窗帘A」但无 pre_clean ⇒ 重试前置（1 件）与首跑（0 件）不等价（#3800）",
     "PR-012": "声明了自有名「测试窗帘」但无 pre_clean ⇒ 同上（#3800）",
-    "PR-014": "未声明 namespaces，且与 PR-012 同写「测试窗帘」⇒ 与 PR-012 真并行、清理互相误删（#3800）",
-    "PR-015": "同 PR-014（未声明 + 同写「测试窗帘」）",
-    "PR-020": "未声明 namespaces、无 pre_clean（自有名「盯防加工项价格0908」不与任何人撞车）",
+    # PR-014 / PR-015 / PR-020 三条缺口**已随 #4371 商品↔加工项解耦注销**（清单只许缩短）：
+    # 它们整条用例都建立在「商品持有加工项」（建品时按适用分类过滤加工项 / 加工项自定义价落库）
+    # 之上，解耦后用例已从 cases/product.yml 删除 ⇒ 缺口对象不存在，登记随之移除。
+    # 留注释防被当成"漏登记"再塞回来。
     # CH-005 已于 2026-09-18 **真修**（补 namespaces[product_name:星夜] + pre_clean
     # [product_remove 自有名]）⇒ 按「清单只许缩短」从本清单移除（同一处修复顺带清掉
     # CASE-TRUST-NO-SELF-CLEAN 一条存量违规，见 .github/case-trust-baseline.json）。
     # 留注释防被当成"漏登记"再塞回来。
 }
 
-#: 「撞种子名」的三条 —— 本 PR 已修，且**必须**保持修好状态（红证锚点见下）。
-SEED_COLLISION_FIXED = ("PR-016", "PR-011", "PR-019")
+#: 「撞种子名」的实例 —— 已修，且**必须**保持修好状态（红证锚点见下）。
+#: ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：原三条中的 `PR-016`（「建品流程 - 分类确认后按
+#: 适用商品分类过滤/优先推荐加工项」）**整条用例已删除**（其全部语义建立在"商品持有加工项 +
+#: 按适用分类过滤"之上）⇒ 本元组收缩到两条。收缩**不降低判别力**：
+#: `test_red_proof_pr016_seed_collision_is_caught` 仍用**合成夹具**（不读真实用例库）证明
+#: 判据能认出「写种子名 + product_dedupe」这一形态，扫描面本身由
+#: `test_no_create_case_writes_a_seed_product_name` 扫**全库**建品用例。
+SEED_COLLISION_FIXED = ("PR-011", "PR-019")
 
 
 def _load_runner():
@@ -244,8 +251,8 @@ class TestWriterOwnsItsProductName:
             f"这些建品用例在写**种子商品名** ⇒ 运行期造出第二件同名商品，"
             f"按名读它的用例会岔路判红（#3835）：{bad}")
 
-    def test_the_three_known_polluters_are_covered_by_the_scan(self):
-        """扫描面自证：三条已知污染源必须**被判据覆盖到**（否则主判据是空跑）。
+    def test_the_known_polluters_are_covered_by_the_scan(self):
+        """扫描面自证：已知污染源必须**被判据覆盖到**（否则主判据是空跑）。
 
         `migao-acceptance`「绿了但没跑」：若 `_is_create_case` 认不出它们，
         主判据恒绿、判别力为 0。
@@ -271,7 +278,7 @@ class TestWriterOwnsItsProductName:
             f"（清单只许缩短，防债务僵化）：{stale}")
 
     def test_the_fixed_seed_collisions_have_no_ownership_gap(self):
-        """三条已修用例必须**完全干净**（新判据之外的缺口也要覆盖到它们）。"""
+        """已修用例必须**完全干净**（新判据之外的缺口也要覆盖到它们）。"""
         live = ownership_gaps(_all_cases())
         leftover = {cid: live[cid] for cid in SEED_COLLISION_FIXED if cid in live}
         assert leftover == {}, f"已修用例仍有所有权缺口：{leftover}"
@@ -470,7 +477,11 @@ class TestCleanupTargetResolvabilityScope:
 class TestReadCasesDeclarePrecondition:
     """按名定位写对象的读方必须声明**可判定的前置**（`migao-dev-flow` §18.4 / 门禁 F 条）。"""
 
-    READ_CASES = ("PP-001", "PR-017", "OR-014")
+    #: ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：原三条中的 `PP-001`（「加工项选择 - 分页翻页」，
+    #: 按名定位「遮光窗帘」再给商品挂加工项）**整条用例已删除**（商品不再持有加工项）
+    #: ⇒ 本元组收缩到两条。收缩不降低判别力：判据本身遍历 `READ_CASES` 逐条断前置声明，
+    #: 而"读方必须声明前置"这条口径对**其余**按名读的用例仍由门禁 F 条全库生效。
+    READ_CASES = ("PR-017", "OR-014")
 
     def test_read_cases_declare_the_product_count_precondition(self):
         by = {c["id"]: c for c in _all_cases()}

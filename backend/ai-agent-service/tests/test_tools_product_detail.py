@@ -52,7 +52,6 @@ def sample_product_data():
             },
         ],
         "specifications": {"fabric": "雪尼尔", "width": "2.8m"},
-        "processingItems": [{"name": "打孔", "price": 10.0}],
         "salesCount": 500,
         "createdAt": "2026-01-01T00:00:00Z",
     }
@@ -300,7 +299,8 @@ class TestProductDetailFormatProduct:
         assert product["original_price"] == 399.0
         assert product["category_name"] == "遮光窗帘"
         assert len(product["skus"]) == 2
-        assert product["processing_items"] == [{"name": "打孔", "price": 10.0}]
+        # issue #4371：商品不再持有加工项 ⇒ product_detail 输出无 processing_items 键
+        assert "processing_items" not in product
 
     def test_format_product_minimal_data(self, tool):
         """格式化最少字段的商品"""

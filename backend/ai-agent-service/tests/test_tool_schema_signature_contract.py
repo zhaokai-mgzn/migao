@@ -1,6 +1,6 @@
 """
 工具契约扫描 — parameters schema ↔ execute() 签名一致性 / description ↔ schema 参数一致性
-# case_ids: PP-001, PR-010, OR-001, PP-006
+# case_ids: PR-010, OR-001, PP-006
 
 防「schema 声明了参数但 execute 签名没有接收」导致的 TypeError 静默崩溃。
 生产事故（sess_fba38395ed094a9d 系列，issue #2892/#2894）：

@@ -1,4 +1,4 @@
-# case_ids: PR-016, OR-014, OR-022, CR-003
+# case_ids: OR-014, OR-022, CR-003
 """跨 run 波动指纹索引的**接线上锁**（issue #3806）—— 机制不许被静默拔掉。
 
 判据政策（`local_runner.completion_verdict` 的 `systemic_recurrence`）只有拿到**历史**

@@ -1,4 +1,4 @@
-# case_ids: OR-014, OR-022, OR-024, CR-003, PR-019, OR-023, PR-016
+# case_ids: OR-014, OR-022, OR-024, CR-003, PR-019, OR-023
 """表单载荷**窗口**不变式（issue #3804）：载荷不得绑死在固定轮次上。
 
 ## 为什么需要这条守卫（判定跑 34873715194 铁证，零 LLM 可复算）
@@ -147,9 +147,15 @@ def test_or023_repeat_until_window_is_wide():
     assert len(a["deliverable_rounds"]) >= 8, a
 
 
-@pytest.mark.parametrize("case_id", ["PR-016"])
+@pytest.mark.parametrize("case_id", ["PR-019"])
 def test_auto_fill_only_cases_are_covered(case_id):
-    """`auto_fill` 轮并集也构成 case 级窗口（PR-016 是这一形态的正例）。"""
+    """`auto_fill` 轮并集也构成 case 级窗口（PR-019 是这一形态的正例）。
+
+    变更沿革：原参数是 `PR-016`（「建品加工项价格落库盯防」）—— 该用例已随
+    issue #4371「商品↔加工项解耦」**整条删除**（其断言对象 `processingItemConfigs.finalPrice`
+    已不存在），故换成本形态的另一真实正例 PR-019（建品规格落库，同样在用例级声明
+    `auto_fill`：商品名/价格/颜色/售卖方式/门幅/货号）。判据（`applies` ∧ 无 `violation`）未变。
+    """
     case = _must_case(case_id)
     a = payload_window_audit(case)
     assert a["applies"] and not a["violation"], a

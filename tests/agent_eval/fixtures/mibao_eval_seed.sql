@@ -20,17 +20,18 @@
 
 -- ── 1. 商品：2699 系列雪尼尔窗帘面料（OR-016 点名）──
 -- 名称必须含「2699系列雪尼尔窗帘面料」（用例输入原文）；价格 23.80 取生产同款量级。
--- has_processing=TRUE：OR-016 断言「商品绑定加工项时，confirm 前必须主动询问加工项」——
---   不绑定加工项则该断言的**前提不成立**，用例会退化成"没事发生"（假绿）。
+-- has_processing 列已随 #4371 解耦删除（V61 迁移 DROP COLUMN）：加工项是店铺级目录，
+-- 「该商品是否绑了加工项」不再有语义 ⇒ OR-016 的询问前提改为「店铺加工项目录非空」
+-- （见下方 processing_items 种子），不再依赖商品侧的信号位。
 INSERT INTO products
   (id, tenant_id, name, category_id, base_price, description, images, detail_images,
    stock, stock_warning_threshold, status, unit, pricing_type, sku_code,
-   stock_deduction_mode, sales_count, sales_amount, has_processing, recommended)
+   stock_deduction_mode, sales_count, sales_amount, recommended)
 VALUES
   ('prod_eval_2699', 1, '2699系列雪尼尔窗帘面料', 'cat_eval_curtain', 23.80,
    '雪尼尔面料，手感厚实，适合窗帘定制（B 端评测 fixture）',
    '[]'::jsonb, '[]'::jsonb, 1000, 10, 'on_sale', '米', 'per_meter', 'EVAL-2699-28',
-   'on_order', 0, 0, TRUE, FALSE)
+   'on_order', 0, 0, FALSE)
 ON CONFLICT (id) DO NOTHING;
 
 -- 颜色：2699-03 暖米色（用例原文「2699-03暖米色」）
@@ -57,18 +58,12 @@ WHERE pc.product_id = 'prod_eval_2699'
       AND s.selling_method = 'bulk_cut' AND s.door_width = '2.8'
   );
 
--- 商品 ↔ 加工项关联（OR-016 的询问前提）
-INSERT INTO product_processing_items (tenant_id, product_id, processing_item_id, custom_price, sort_order)
-SELECT 1, v.pid, v.piid, NULL, v.ord
-FROM (VALUES
-  ('prod_eval_2699', 'pi_eval_punch', 1),
-  ('prod_eval_2699', 'pi_eval_hem', 2),
-  ('prod_eval_2699', 'pi_eval_iron', 3)
-) AS v(pid, piid, ord)
-WHERE NOT EXISTS (
-  SELECT 1 FROM product_processing_items x
-  WHERE x.product_id = v.pid AND x.processing_item_id = v.piid
-);
+-- ── 商品 ↔ 加工项关联：**已随 #4371 解耦删除** ──
+-- 旧写法往 `product_processing_items` 写「prod_eval_2699 ↔ pi_eval_punch/hem/iron」，
+-- 作为 OR-016「商品绑定加工项 ⇒ 必须主动询问加工项」的**前提**。
+-- 解耦后加工项是**店铺级目录**（与商品无关），该表已由 V61 迁移 DROP，
+-- OR-016 的前提改成「店铺目录里有加工项」（= 下面的 `processing_items` 种子）——
+-- 目录非空即会询问，与商品是否绑过加工项无关。
 
 -- ── 2. 加工项：刺绣工艺（PR-020 点名，自定义价 45 元/平方米）──
 -- pricing_method 取值集：per_meter / per_set / fixed / per_area（无 per_piece）。
@@ -82,17 +77,8 @@ VALUES
    '[]'::jsonb, TRUE, 'active', 0)
 ON CONFLICT (id) DO NOTHING;
 
--- 关联到 B 端常用商品（建品/下单时可选到）
-INSERT INTO product_processing_items (tenant_id, product_id, processing_item_id, custom_price, sort_order)
-SELECT 1, v.pid, 'pi_eval_embroidery', NULL, v.ord
-FROM (VALUES
-  ('prod_eval_2699', 4),
-  ('prod_eval_blackout', 4)
-) AS v(pid, ord)
-WHERE NOT EXISTS (
-  SELECT 1 FROM product_processing_items x
-  WHERE x.product_id = v.pid AND x.processing_item_id = 'pi_eval_embroidery'
-);
+-- 旧写法在此把刺绣工艺「关联到 B 端常用商品」（product_processing_items）——
+-- 已随 #4371 解耦删除：加工项目录是店铺级，无需（也无法）挂到商品上。
 
 -- ── 3. 客户：张三（CU-003 打标签 / CU-004 更新资料 点名）──
 INSERT INTO customer_profiles
@@ -127,22 +113,22 @@ DO $$
 DECLARE
   v_prod   INTEGER;
   v_colors INTEGER;
-  v_assoc  INTEGER;
   v_pi     INTEGER;
   v_cust   INTEGER;
   v_emp    INTEGER;
 BEGIN
   SELECT count(*) INTO v_prod   FROM products          WHERE id = 'prod_eval_2699' AND deleted = 0;
   SELECT count(*) INTO v_colors FROM product_colors    WHERE product_id = 'prod_eval_2699';
-  SELECT count(*) INTO v_assoc  FROM product_processing_items WHERE product_id = 'prod_eval_2699';
   SELECT count(*) INTO v_pi     FROM processing_items  WHERE id = 'pi_eval_embroidery' AND deleted = 0;
   SELECT count(*) INTO v_cust   FROM customer_profiles WHERE id = 'cust_eval_zhangsan';
   SELECT count(*) INTO v_emp    FROM agent_employees   WHERE id = 'emp_eval_wangwu' AND deleted = 0;
-  RAISE NOTICE 'B 端评测 fixture 核对: 2699商品=% 颜色=% 加工项关联=% 刺绣工艺=% 客户张三=% 员工王五=%',
-    v_prod, v_colors, v_assoc, v_pi, v_cust, v_emp;
-  IF v_prod < 1 OR v_colors < 1 OR v_assoc < 1 THEN
-    RAISE EXCEPTION 'B 端 fixture 注入失败：2699 商品/颜色/加工项关联 缺失（prod=% colors=% assoc=%）',
-      v_prod, v_colors, v_assoc;
+  -- 加工项关联计数（v_assoc）随 #4371 解耦删除：product_processing_items 已被 V61 DROP，
+  -- OR-016 的前提改为「店铺加工项目录非空」（v_pi 即该前提的读数）。
+  RAISE NOTICE 'B 端评测 fixture 核对: 2699商品=% 颜色=% 刺绣工艺=% 客户张三=% 员工王五=%',
+    v_prod, v_colors, v_pi, v_cust, v_emp;
+  IF v_prod < 1 OR v_colors < 1 OR v_pi < 1 THEN
+    RAISE EXCEPTION 'B 端 fixture 注入失败：2699 商品/颜色/加工项目录 缺失（prod=% colors=% pi=%）',
+      v_prod, v_colors, v_pi;
   END IF;
   IF v_cust < 1 OR v_emp < 1 THEN
     RAISE EXCEPTION 'B 端 fixture 注入失败：客户张三=% 员工王五=%', v_cust, v_emp;

@@ -20,6 +20,11 @@ ORDER_TOOLS = ["order_query", "order_manage", "order_create", "logistics_track",
     "production_progress_query",
     "validate_input",  # 写操作前置校验
     "interact",        # 交互卡片：多 SKU 规格 choice（prompts/order.md 强制要求）、下单前 confirm、表单 form
+    # 店铺加工项目录（issue #4371：加工项与商品**解耦**）—— prompts/order.md 的「加工项」
+    # 一节强制要求「confirm 前必须先调 processing_item_query 拿目录再发 choice 卡」，
+    # 而 product_detail 已不再返回 processing_items ⇒ 不绑定本工具就是
+    # 「提示词承诺了做不到的事」（模型撞 tool_not_found、加工费漏收；同型先例 #3365）。
+    "processing_item_query",
     "processing_order_generate",  # 生成加工单（批量，写操作 confirm）
     "processing_order_query",     # 加工单查询（只读）
     "processing_order_update",    # 加工单状态更新（issue/start/complete/cancel，写操作 confirm）

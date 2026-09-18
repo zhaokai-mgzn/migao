@@ -1,6 +1,9 @@
-// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PR-007, PR-008, PP-006, PR-017, PR-019, PR-020, PR-021, OR-014
-// PP-006（issue #3005，回滚 #2986）：商品-加工项关联只支持价格自定义（custom_price），
-// 「每米数量」密度（custom_per_meter_quantity）已回滚移除，响应无密度字段
+// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PR-007, PR-008, PR-017, PR-019, PR-021, OR-014
+// 加工项解耦（issue #4371）：商品不再持有加工项 ⇒ 本文件原有的「商品-加工项关联」测试
+// （PP-006 一族：getProductProcessingItems / fillProcessingItemConfigs / 商品级自定义价落库）
+// 随被删代码一并删除（原声明的 PR-020「建品加工项价格落库盯防」即该落库用例，
+// 用例库中已同步移除）；解耦本身的回归防线见 ProductProcessingDecouplingTest
+// （反射级判据：字段/访问器不得复活）。
 // PR-021（#3539/#3546 同族，#3616）：SKU 匹配口径归一化——调价路径（#3546）与本文件尾部新增的
 // 「建品/更新商品」路径（saveColorsAndSkus → matchExistingSku）必须走同一套归一化入口
 
@@ -11,15 +14,11 @@ import com.migao.admin.entity.Category;
 import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductColor;
 import com.migao.admin.entity.ProductSku;
-import com.migao.admin.entity.ProcessingItem;
-import com.migao.admin.entity.ProductProcessingItem;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.CategoryMapper;
-import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductAttributeMapper;
 import com.migao.admin.mapper.ProductColorMapper;
 import com.migao.admin.mapper.ProductMapper;
-import com.migao.admin.mapper.ProductProcessingItemMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -63,12 +62,6 @@ class ProductServiceTest {
 
     @Mock
     private ProductSkuMapper productSkuMapper;
-
-    @Mock
-    private ProductProcessingItemMapper productProcessingItemMapper;
-
-    @Mock
-    private ProcessingItemMapper processingItemMapper;
 
     @Mock
     private ProductAttributeMapper productAttributeMapper;
@@ -208,91 +201,6 @@ class ProductServiceTest {
         assertThat(result.getName()).isEqualTo("蜂巢帘");
         assertThat(result.getCategoryName()).isEqualTo("窗帘");
         assertThat(result.getBasePrice()).isEqualByComparingTo(new BigDecimal("299.00"));
-    }
-
-    @Test
-    @DisplayName("商品详情 - 加工项配置回填默认单价（customPrice 为空 → finalPrice=unitPrice）")
-    void getProductById_ProcessingItemConfigFallsBackUnitPrice() {
-        // Given：加工项默认 8 元/米，商品关联未覆盖自定义价
-        ProcessingItem punch = ProcessingItem.builder()
-                .id("pi-punch")
-                .name("打孔")
-                .pricingMethod("per_meter")
-                .unitPrice(new BigDecimal("8.00"))
-                .unit("米")
-                .status("active")
-                .build();
-        ProductProcessingItem relation = ProductProcessingItem.builder()
-                .id(1L)
-                .tenantId(1L)
-                .productId("prod-001")
-                .processingItemId("pi-punch")
-                .sortOrder(0)
-                .build();
-
-        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
-        when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
-        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
-        when(productColorMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
-        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(Collections.emptyList());
-        // getProductById 内部 getProductProcessingItems + fillProcessingItemConfigs 两处查询关联
-        when(productProcessingItemMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(List.of(relation));
-        when(processingItemMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(List.of(punch));
-
-        // When
-        ProductResponse result = productService.getProductById("prod-001", 1L);
-
-        // Then：商品详情 processingItemConfigs 必须回填默认单价与单位
-        assertThat(result.getProcessingItemConfigs()).hasSize(1);
-        ProcessingItemConfigResponse cfg = result.getProcessingItemConfigs().get(0);
-        assertThat(cfg.getProcessingItemName()).isEqualTo("打孔");
-        assertThat(cfg.getUnitPrice()).isEqualByComparingTo(new BigDecimal("8.00"));
-        assertThat(cfg.getCustomPrice()).isNull();
-        assertThat(cfg.getFinalPrice()).isEqualByComparingTo(new BigDecimal("8.00"));
-        assertThat(cfg.getUnit()).isEqualTo("米");
-    }
-
-    @Test
-    @DisplayName("商品详情 - 加工项配置自定义价格优先（customPrice 非空 → finalPrice=customPrice）")
-    void getProductById_ProcessingItemConfigCustomPriceWins() {
-        // Given：加工项默认 8 元/米，商品覆盖 10 元/米
-        ProcessingItem punch = ProcessingItem.builder()
-                .id("pi-punch")
-                .name("打孔")
-                .pricingMethod("per_meter")
-                .unitPrice(new BigDecimal("8.00"))
-                .unit("米")
-                .status("active")
-                .build();
-        ProductProcessingItem relation = ProductProcessingItem.builder()
-                .id(1L)
-                .tenantId(1L)
-                .productId("prod-001")
-                .processingItemId("pi-punch")
-                .customPrice(new BigDecimal("10.00"))
-                .sortOrder(0)
-                .build();
-
-        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
-        when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
-        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
-        when(productColorMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
-        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(Collections.emptyList());
-        when(productProcessingItemMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(List.of(relation));
-        when(processingItemMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(List.of(punch));
-
-        // When
-        ProductResponse result = productService.getProductById("prod-001", 1L);
-
-        // Then：商品自定义价 10 生效
-        ProcessingItemConfigResponse cfg = result.getProcessingItemConfigs().get(0);
-        assertThat(cfg.getUnitPrice()).isEqualByComparingTo(new BigDecimal("8.00"));
-        assertThat(cfg.getCustomPrice()).isEqualByComparingTo(new BigDecimal("10.00"));
-        assertThat(cfg.getFinalPrice()).isEqualByComparingTo(new BigDecimal("10.00"));
     }
 
     @Test
@@ -1658,103 +1566,6 @@ class ProductServiceTest {
         verify(productMapper, never()).updateById(any(Product.class));
     }
 
-    // ======================== 商品-加工项关联（PP-006，issue #3005 回滚密度） ========================
-
-    @Test
-    @DisplayName("商品关联加工项 - 合并加工项默认单价，无密度字段")
-    void getProductProcessingItems_MergesUnitPrice_NoDensity() {
-        // given
-        ProcessingItem punch = ProcessingItem.builder()
-                .id("pi-punch")
-                .name("打孔")
-                .pricingMethod("per_meter")
-                .unitPrice(new BigDecimal("8.00"))
-                .status("active")
-                .build();
-        ProductProcessingItem relation = ProductProcessingItem.builder()
-                .id(1L)
-                .tenantId(1L)
-                .productId("prod-001")
-                .processingItemId("pi-punch")
-                .sortOrder(0)
-                .build();
-
-        when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
-        when(productProcessingItemMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(List.of(relation));
-        when(processingItemMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(List.of(punch));
-
-        // when
-        List<ProductProcessingItemResponse> result = productService.getProductProcessingItems("prod-001", 1L);
-
-        // then：只有价格合并（customPrice 空 → finalPrice = 加工项单价），DTO 无密度字段
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).getFinalPrice()).isEqualByComparingTo(new BigDecimal("8.00"));
-    }
-
-    @Test
-    @DisplayName("商品关联加工项 - 商品级自定义价格优先")
-    void getProductProcessingItems_CustomPriceWins() {
-        // given：加工项默认 8 元/米，商品覆盖 10 元/米
-        ProcessingItem punch = ProcessingItem.builder()
-                .id("pi-punch")
-                .name("打孔")
-                .pricingMethod("per_meter")
-                .unitPrice(new BigDecimal("8.00"))
-                .status("active")
-                .build();
-        ProductProcessingItem relation = ProductProcessingItem.builder()
-                .id(1L)
-                .tenantId(1L)
-                .productId("prod-001")
-                .processingItemId("pi-punch")
-                .customPrice(new BigDecimal("10.00"))
-                .sortOrder(0)
-                .build();
-
-        when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
-        when(productProcessingItemMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(List.of(relation));
-        when(processingItemMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(List.of(punch));
-
-        // when
-        List<ProductProcessingItemResponse> result = productService.getProductProcessingItems("prod-001", 1L);
-
-        // then：商品覆盖 10 生效
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).getCustomPrice()).isEqualByComparingTo(new BigDecimal("10.00"));
-        assertThat(result.get(0).getFinalPrice()).isEqualByComparingTo(new BigDecimal("10.00"));
-    }
-
-    @Test
-    @DisplayName("保存商品加工项配置 - 不透传每米数量（密度已回滚）")
-    void updateProduct_PersistsOnlyCustomPrice() {
-        // given
-        ProductUpdateRequest request = new ProductUpdateRequest();
-        request.setName("更新后的商品");
-        request.setCategoryId("cat-001");
-        request.setBasePrice(new BigDecimal("399.00"));
-        ProcessingItemConfigInput cfg = new ProcessingItemConfigInput();
-        cfg.setProcessingItemId("pi-punch");
-        cfg.setCustomPrice(new BigDecimal("10.00"));
-        request.setProcessingItemConfigs(List.of(cfg));
-
-        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
-        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
-        when(productMapper.selectById("prod-001")).thenReturn(testProduct).thenReturn(testProduct);
-
-        // when
-        productService.updateProduct("prod-001", request, 1L);
-
-        // then：只透传 customPrice，DTO 无密度字段
-        ArgumentCaptor<ProductProcessingItem> captor = ArgumentCaptor.forClass(ProductProcessingItem.class);
-        verify(productProcessingItemMapper).insert(captor.capture());
-        assertThat(captor.getValue().getProcessingItemId()).isEqualTo("pi-punch");
-        assertThat(captor.getValue().getCustomPrice()).isEqualByComparingTo(new BigDecimal("10.00"));
-    }
 
     // ======================== Agent SKU 调价：中文标签/门幅写法归一化 ========================
     // issue #3539 / PR-021：agent 与前端按中文业务术语传参（「散剪」「2.8米」），

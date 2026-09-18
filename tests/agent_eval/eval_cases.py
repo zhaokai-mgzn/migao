@@ -184,7 +184,7 @@ _CASE_AS_007 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['面料有瑕疵，帮我换货', {'repeat_until': {'tool_called': 'order_query', 'max': 2}, 'fallback': '换成2699系列雪尼尔窗帘面料'}, '换成2699系列雪尼尔窗帘面料', {'repeat_until': {'tool_called': 'after_sales_manage', 'max': 5}, 'fallback': '好的'}],
     expectations=['order_query', 'product_detail', 'after_sales_manage(action=create, ticket_type=exchange)'],
-    data_checks=['换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）', '用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过', 'processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求', '换货工单 order_id 来自本轮 order_query 定位结果（不得编造订单号）'],
+    data_checks=['换货目标商品的**店铺加工项目录**（processing_item_query，与商品无关：#4371 解耦后 product_detail 不再返回 processing_items）非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）', '用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过', '店铺加工项目录为空时才如实告知『暂无可用加工项』后继续，不强求', '换货工单 order_id 来自本轮 order_query 定位结果（不得编造订单号）'],
     skip_reason='',
     tags=['exchange', 'processing_item', 'guided_flow'],
     persona='',
@@ -950,9 +950,9 @@ _CASE_CH_006 = EvalCase(
     title='对抗性 - 10 轮密集对话后精确操作',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.ADVERSARIAL,
-    user_inputs=['搜遮光窗帘', '看看遮光窗帘的详情，就第一款', '搜订单', '查最近一笔订单', '搜客户', '查张三', '再搜遮光窗帘', '商品管理：把第一款遮光窗帘的价格改成 199', {'auto_respond': {'fallback': '确认'}}, '商品管理：给这款商品添加加工项 纳米圈打孔', {'auto_respond': {'fallback': '确认'}}, '确认下刚才改的价格生效了（现在是 199 吗）'],
-    expectations=['product_manage(action=update)', 'product_processing_item_manage', 'product_detail'],
-    data_checks=['第8轮 product_id 来自第1-2轮上下文（同一商品，不重新问顾客）', '第9轮加工项按**名称**解析到真实目录项（纳米圈打孔，种子 fixture 内存在），不得编造', '全程无重复 product_search 查同一商品'],
+    user_inputs=['搜遮光窗帘', '看看遮光窗帘的详情，就第一款', '搜订单', '查最近一笔订单', '搜客户', '查张三', '再搜遮光窗帘', '商品管理：把第一款遮光窗帘的价格改成 199', {'auto_respond': {'fallback': '确认'}}, '确认下刚才改的价格生效了（现在是 199 吗）'],
+    expectations=['product_manage(action=update)', 'product_detail'],
+    data_checks=['第8轮 product_id 来自第1-2轮上下文（同一商品，不重新问顾客）', '全程无重复 product_search 查同一商品'],
     skip_reason='',
     tags=['multi_turn', 'long_context', 'memory', 'adversarial'],
     persona='',
@@ -3571,16 +3571,16 @@ _CASE_OR_015 = EvalCase(
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
-# ── OR-016 [NORMAL] 创建订单 confirm 前必须主动询问加工项（商品绑定加工项时）（源: cases/order.yml）──
+# ── OR-016 [NORMAL] 创建订单 confirm 前必须主动询问加工项（店铺加工项目录非空时）（源: cases/order.yml）──
 _CASE_OR_016 = EvalCase(
     id='OR-016',
     legacy_id='',
-    title='创建订单 confirm 前必须主动询问加工项（商品绑定加工项时）',
+    title='创建订单 confirm 前必须主动询问加工项（店铺加工项目录非空时）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
     user_inputs=['给赵凯创建一个订单，2699系列雪尼尔窗帘面料，10米，散剪2.8米门幅，2699-03暖米色，手机13800138000', '不需要加工项', '确认下单', '确认'],
     expectations=['product_detail', 'interact(component=choice, multiSelect=True)', 'order_create'],
-    data_checks=['product_detail 返回 processing_items 非空时，生成订单确认卡之前必须主动询问加工项（interact(choice, multiSelect=true) 展示，透传 pageMeta 支持翻页；空则如实告知后继续）', '用户选择加工项后，order_create 的 processing_info.processingItems 含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee 计入 subtotal（金额=面料小计+加工费）', '一次性提交『已选加工项：A、B』→ 解析全部名称，禁止只取第一个；用户说『不需要加工项』才跳过'],
+    data_checks=['店铺加工项目录（processing_item_query）非空时，生成订单确认卡之前必须主动询问加工项（interact(choice, multiSelect=true) 展示，透传 pageMeta 支持翻页；目录为空则如实告知后继续）', '用户选择加工项后，order_create 的 processing_info.processingItems 含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee 计入 subtotal（金额=面料小计+加工费）', '一次性提交『已选加工项：A、B』→ 解析全部名称，禁止只取第一个；用户说『不需要加工项』才跳过'],
     skip_reason='',
     tags=['order_create', 'processing_item', 'guided_flow'],
     persona='mibao',
@@ -3602,8 +3602,8 @@ _CASE_OR_017 = EvalCase(
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
     user_inputs=['我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪', {'auto_respond': {'fallback': '我是张三，手机13800138000，地址杭州市西湖区文三路1号'}}, {'auto_select': True}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
-    expectations=['product_search', 'product_detail', 'interact(component=choice, multiSelect=True)', 'order_create'],
-    data_checks=['product_search 列表数据不含 processing_items/colorId/skus，必须先调 product_detail 取详情；未调详情即断言「无加工项」属能力误宣', '加工项非空时 confirm 之前必须用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「纳米圈打孔 ¥8/米」）', '所选加工项写入 order_create 的 processing_info.processingItems（id/name/unitPrice/quantity/unit/pricingMethod/subtotal），合计写入 processingFee 且计入订单金额；按米计价项加工数量=面料米数', '顾客说「不需要加工项」可跳过；加工项确实为空时才告知无可用加工项', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
+    expectations=['product_search', 'product_detail', 'processing_item_query', 'interact(component=choice, multiSelect=True)', 'order_create'],
+    data_checks=['product_search 列表数据不含 colorId/skus，必须先调 product_detail 取详情', '加工项是**店铺级目录**（#4371 解耦：product_detail 不再返回 processing_items）⇒ 必须调 processing_item_query 拿目录，再在 confirm 之前用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「纳米圈打孔 ¥8/米」）', '所选加工项写入 order_create 的 processing_info.processingItems（id/name/unitPrice/quantity/unit/pricingMethod/subtotal），合计写入 processingFee 且计入订单金额；按米计价项加工数量=面料米数', '顾客说「不需要加工项」可跳过；加工项确实为空时才告知无可用加工项', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
     skip_reason='',
     tags=['order_create', 'processing_item', 'guided_flow', 'xiaobu'],
     persona='xiaobu',
@@ -4633,27 +4633,6 @@ _CASE_PG_039 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
-_CASE_PP_001 = EvalCase(
-    id='PP-001',
-    legacy_id='P004',
-    title='加工项选择 - 分页翻页',
-    skill=Skill.PRODUCT,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['给遮光窗帘添加加工项', '选打孔加工和韩式折边', '确认'],
-    expectations=['product_processing_item_manage(action=add)', 'processing_item_query'],
-    data_checks=['data.pageMeta != null'],
-    skip_reason='',
-    tags=['processing_item', 'pagination'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-    must_succeed=[{'tool': 'product_processing_item_manage', 'action': 'add'}],
-    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
-    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
-)
-
 # ── PP-002 [NORMAL] 加工项分类列表（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -4670,65 +4649,6 @@ _CASE_PP_002 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-)
-
-# ── PP-003 [ADVERSARIAL] 加工项 - 传名称自动解析 UUID（源: cases/processing.yml）──
-_CASE_PP_003 = EvalCase(
-    id='PP-003',
-    legacy_id='P005',
-    title='加工项 - 传名称自动解析 UUID',
-    skill=Skill.PRODUCT,
-    difficulty=Difficulty.ADVERSARIAL,
-    user_inputs=['给遮光窗帘添加打孔', '确认添加'],
-    expectations=['interact(component=confirm)', 'product_processing_item_manage(action=add, item_ids=[打孔])'],
-    data_checks=['success=true', '确认卡先于写操作（GB/T 47746-2026 确认闸，与 OR-010/PR-010 模式一致）'],
-    skip_reason='',
-    tags=['id_resolve', 'adversarial', 'confirm'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
-    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
-)
-
-# ── PP-005 [NORMAL] 加工项查询 - 按适用商品分类筛选并透传关联数据（源: cases/processing.yml）──
-_CASE_PP_005 = EvalCase(
-    id='PP-005',
-    legacy_id='',
-    title='加工项查询 - 按适用商品分类筛选并透传关联数据',
-    skill=Skill.PRODUCT,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['给窗帘分类筛选可用的加工项'],
-    expectations=['processing_item_query'],
-    data_checks=['processing_item_query 携带 applicable_category_id 时，admin-api 请求参数含 applicableProductCategoryId（按适用商品分类过滤加工项）', '响应条目透传 applicable_product_categories（加工项配置的适用商品分类 ID 列表），供 LLM 按分类推荐加工项', 'applicable_product_categories 为空 = 适用所有商品分类（兼容历史数据，不参与过滤变化）'],
-    skip_reason='',
-    tags=['processing_item', 'category', 'product_category'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-    required_args=[{'tool': 'processing_item_query', 'fields': ['applicable_category_id']}],
-)
-
-# ── PP-004 [ADVERSARIAL] 加工项 - 传序号自动解析 UUID（源: cases/processing.yml）──
-_CASE_PP_004 = EvalCase(
-    id='PP-004',
-    legacy_id='P006',
-    title='加工项 - 传序号自动解析 UUID',
-    skill=Skill.PRODUCT,
-    difficulty=Difficulty.ADVERSARIAL,
-    user_inputs=['给遮光窗帘添加第1、3、5个加工项', '确认添加'],
-    expectations=['interact(component=confirm)', 'product_processing_item_manage(action=add)'],
-    data_checks=['success=true', '确认卡先于写操作（GB/T 47746-2026 确认闸，与 OR-010/PR-010 模式一致）', 'item_ids 解析自序号 1/3/5 对应加工项（LLM 可传名称或序号，resolver 兜底；序号解析单测见 test_id_resolver.py）'],
-    skip_reason='',
-    tags=['id_resolve', 'adversarial', 'sequence', 'confirm'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
-    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PP-006 [NORMAL] 加工项计价方式 - 按米/按套/一口价/按面积，无 per_piece 与每米数量（源: cases/processing.yml）──
@@ -5085,15 +5005,15 @@ _CASE_PR_009 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PR-010 [NORMAL] 商品全生命周期 - 搜索→查看→修改→关联加工项→验证（源: cases/product.yml）──
+# ── PR-010 [NORMAL] 商品全生命周期 - 搜索→查看→修改→改价验证（源: cases/product.yml）──
 _CASE_PR_010 = EvalCase(
     id='PR-010',
     legacy_id='M001',
-    title='商品全生命周期 - 搜索→查看→修改→关联加工项→验证',
+    title='商品全生命周期 - 搜索→查看→修改→改价验证',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['搜索遮光窗帘', '看看遮光窗帘的详情', '把价格改成 198', '确认', '给它加上韩式波浪折边', '确认', '再看看这个商品的详情确认一下'],
-    expectations=['product_search', 'product_detail(product_id=复用上轮 UUID)', 'product_update(price=198)', 'product_processing_item_manage(action=add)', 'product_detail'],
+    user_inputs=['搜索遮光窗帘', '看看遮光窗帘的详情', '把价格改成 198', '确认', '再看看这个商品的详情确认一下'],
+    expectations=['product_search', 'product_detail(product_id=复用上轮 UUID)', 'product_update(price=198)', 'product_detail'],
     data_checks=['第3轮 product_id 来自第2轮结果', '第4轮 product_id 来自第2轮结果', '全程未重新 product_search 查同一个商品'],
     skip_reason='',
     tags=['multi_turn', 'single_skill', 'full_lifecycle', 'id_reuse', 'smoke'],
@@ -5111,15 +5031,16 @@ _CASE_PR_011 = EvalCase(
     title='创建商品完整引导流程 - AI 主导收集信息',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['我要创建一个新商品', '名称叫E2E引导建品样品帘，价格 168', '分类选窗帘', {'auto_select': True}, '颜色有米白和浅灰', '货号用 SUMMER-BREEZE', '需要打孔和韩式折边这两个加工项', '确认创建，没问题', '确认'],
-    expectations=['interact(component=choice)', 'processing_item_query', 'validate_input', 'product_manage(action=create)'],
-    data_checks=['最终创建成功，返回 product_id', '创建的加工项数量 = 2', '全程 AI 主动引导，不等待用户逐项输入'],
+    user_inputs=['我要创建一个新商品', '名称叫E2E引导建品样品帘，价格 168', '分类选窗帘', {'auto_select': True}, '颜色有米白和浅灰', '货号用 SUMMER-BREEZE', '确认创建，没问题', '确认'],
+    expectations=['interact(component=choice)', 'validate_input', 'product_manage(action=create)'],
+    data_checks=['创建的加工项数量 = 0（#4371 解耦：建品不再关联加工项）', '全程 AI 主动引导，不等待用户逐项输入'],
     skip_reason='',
     tags=['multi_turn', 'guided_flow', 'full_create', 'processing_item'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
     pre_clean=[{'type': 'product_remove', 'product_keyword': 'E2E引导建品样品帘'}],
     namespaces=['product_name:E2E引导建品样品帘'],
 )
@@ -5131,9 +5052,9 @@ _CASE_PR_012 = EvalCase(
     title='商品创建中途修改 - 用户纠偏',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['创建商品，名称测试窗帘，价格 100', '分类选窗帘', '窗帘布艺', '等等，价格改成 200', '颜色白色，货号 TEST-001', '不需要加工项', '确认创建'],
-    expectations=['product_manage(action=create, price=200)', 'processing_item_query', 'validate_input'],
-    data_checks=['最终 price=200（不是 100）', '无加工项关联'],
+    user_inputs=['创建商品，名称测试窗帘，价格 100', '分类选窗帘', '窗帘布艺', '等等，价格改成 200', '颜色白色，货号 TEST-001', '确认创建'],
+    expectations=['product_manage(action=create, price=200)', 'validate_input'],
+    data_checks=['最终 price=200（不是 100）'],
     skip_reason='',
     tags=['multi_turn', 'correction', 'mid_flow_change'],
     persona='',
@@ -5159,69 +5080,6 @@ _CASE_PR_013 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-)
-
-# ── PR-014 [NORMAL] 加工项多选一次性提交 - 展示选择器→用户点完成→解析全部名称→汇总确认（源: cases/product.yml）──
-_CASE_PR_014 = EvalCase(
-    id='PR-014',
-    legacy_id='',
-    title='加工项多选一次性提交 - 展示选择器→用户点完成→解析全部名称→汇总确认',
-    skill=Skill.PRODUCT,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['录入这个商品，名称测试窗帘，价格 100', '分类选窗帘', {'auto_select': True}, '已选加工项：打孔加工、韩式折边', '颜色米白色，货号 TEST-001', '确认'],
-    expectations=['interact(component=choice, multiSelect=True)', 'processing_item_query', 'validate_input', 'product_manage(action=create)'],
-    data_checks=['「已选加工项：打孔加工、韩式折边」被解析为 2 个加工项（不只取第一个）', '未在用户提交完整列表后再次询问加工项', '最终创建成功且关联加工项数量 = 2'],
-    skip_reason='',
-    tags=['multi_turn', 'guided_flow', 'processing_item', 'multi_select'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-    pre_clean=[{'type': 'product_remove', 'product_keyword': '测试窗帘'}],
-    namespaces=['product_name:测试窗帘'],
-)
-
-# ── PR-015 [NORMAL] 加工项多选翻页 - 翻页后继续选择并一次性提交（源: cases/product.yml）──
-_CASE_PR_015 = EvalCase(
-    id='PR-015',
-    legacy_id='',
-    title='加工项多选翻页 - 翻页后继续选择并一次性提交',
-    skill=Skill.PRODUCT,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['录入这个商品，名称测试窗帘，价格 100', '分类选窗帘', {'auto_select': True}, '翻页查看第2页加工项', '已选加工项：高温定型', '颜色米白色，货号 TEST-002', '确认'],
-    expectations=['interact(component=choice, multiSelect=True)', 'processing_item_query', 'validate_input', 'product_manage(action=create)'],
-    data_checks=['翻页（__PAGE__ 协议）后加工项选择仍可继续（multiSelect 不丢）', '翻页后勾选累积一次性提交被正确解析', '最终创建成功'],
-    skip_reason='',
-    tags=['multi_turn', 'processing_item', 'pagination', 'multi_select'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-    pre_clean=[{'type': 'product_remove', 'product_keyword': '测试窗帘'}],
-    namespaces=['product_name:测试窗帘'],
-)
-
-# ── PR-016 [NORMAL] 建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项（源: cases/product.yml）──
-_CASE_PR_016 = EvalCase(
-    id='PR-016',
-    legacy_id='',
-    title='建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项',
-    skill=Skill.PRODUCT,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['录入这个商品，名称E2E建品流程样品帘，价格 100', '分类选窗帘', {'auto_select': True}, {'auto_fill': {'colors': '米白色', 'selling_methods': '散剪', 'sku_code': 'TEST-002'}}, '已选加工项：高温定型', '颜色米白色，货号 TEST-002', {'auto_respond': {'fallback': '确认'}}],
-    expectations=['category_manage', 'processing_item_query', 'interact(component=choice, multiSelect=True)', 'validate_input', 'product_manage(action=create)'],
-    data_checks=['分类确认后加工项选择器按「适用商品分类」过滤展示（processing_item_query 携带 applicable_category_id，= 已选商品分类 ID）', '适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失', '当前分类无匹配加工项时以文字提示可跳过，不空转强制选择', '最终创建成功：机器断言见 must_succeed[product_manage(action=create)]（写成功）；「关联加工项数量正确」本轮**仍无机器判据**（db_verify 只支持 processingItemConfigs 谓词），已在 merge_log 登记为能力缺口'],
-    skip_reason='',
-    tags=['processing_item', 'product_category', 'guided_flow', 'recommendation'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-    required_args=[{'tool': 'processing_item_query', 'fields': ['applicable_category_id']}],
-    must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
-    pre_clean=[{'type': 'product_remove', 'product_keyword': 'E2E建品流程样品帘'}],
-    namespaces=['product_name:E2E建品流程样品帘'],
-    precondition=[{'type': 'product_count_for_keyword', 'source': 'E2E建品流程样品帘', 'expect': 0, 'max_growth': 1}],
 )
 
 # ── PR-017 [NORMAL] 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock）（源: cases/product.yml）──
@@ -5263,49 +5121,29 @@ _CASE_PR_018 = EvalCase(
     must_succeed=[{'tool': 'product_search'}],
 )
 
-# ── PR-019 [NORMAL] 建品规格与加工项价格落库 — 推理属性经 specifications 落库、加工项经 processing_item_configs 携带价格（源: cases/product.yml）──
+# ── PR-019 [NORMAL] 建品规格落库 — 推理属性经 specifications 落库（加工项部分已随 #4371 解耦删除）（源: cases/product.yml）──
 _CASE_PR_019 = EvalCase(
     id='PR-019',
     legacy_id='',
-    title='建品规格与加工项价格落库 — 推理属性经 specifications 落库、加工项经 processing_item_configs 携带价格',
+    title='建品规格落库 — 推理属性经 specifications 落库（加工项部分已随 #4371 解耦删除）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=[{'text': '根据这张图片录入商品（色卡图，可识别材质/克重）', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg']}, {'auto_respond': {'fallback': '商品名称: E2E色卡建品样品面料\\n单价(元/米): 23.8\\n颜色: 2699-01 米白\\n门幅: 2.8米\\n售卖方式: 散剪\\n货号: XNE2699', 'form_values': {'name': 'E2E色卡建品样品面料', 'price': '23.8', 'colors': '2699-01 米白', 'door_widths': '2.8米', 'selling_methods': '散剪', 'sku_code': 'XNE2699'}}}, {'auto_respond': {'fallback': '已选加工项：刺绣工艺 ¥30/平方米、韩式波浪折边 ¥12/米'}}, {'repeat_until': {'tool_called': 'product_manage', 'max': 3}, 'fallback': '商品名称: E2E色卡建品样品面料；单价(元/米): 23.8；颜色: 2699-01 米白；门幅: 2.8米；售卖方式: 散剪；货号: XNE2699；已选加工项：刺绣工艺 ¥30/平方米、韩式波浪折边 ¥12/米；确认创建'}],
+    user_inputs=[{'text': '根据这张图片录入商品（色卡图，可识别材质/克重）', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg']}, {'auto_respond': {'fallback': '商品名称: E2E色卡建品样品面料\\n单价(元/米): 23.8\\n颜色: 2699-01 米白\\n门幅: 2.8米\\n售卖方式: 散剪\\n货号: XNE2699', 'form_values': {'name': 'E2E色卡建品样品面料', 'price': '23.8', 'colors': '2699-01 米白', 'door_widths': '2.8米', 'selling_methods': '散剪', 'sku_code': 'XNE2699'}}}, {'repeat_until': {'tool_called': 'product_manage', 'max': 3}, 'fallback': '商品名称: E2E色卡建品样品面料；单价(元/米): 23.8；颜色: 2699-01 米白；门幅: 2.8米；售卖方式: 散剪；货号: XNE2699；确认创建'}],
     expectations=['product_manage(action=create)'],
-    data_checks=['create 参数含 specifications（材质/克重/工艺等推理属性，随 specs 落库到 product_attributes，非仅展示）', 'create 参数含 processing_item_configs（含 customPrice=加工项默认单价 unit_price、unit=真实单位），禁止只传 processing_item_ids 名称列表', '商品详情接口 processingItemConfigs 回填 unitPrice/finalPrice（customPrice 空时 finalPrice=unitPrice），前端展示非 ¥0.00 且单位正确'],
+    data_checks=['create 参数含 specifications（材质/克重/工艺等推理属性，随 specs 落库到 product_attributes，非仅展示）'],
     skip_reason='',
-    tags=['product_create', 'specifications', 'processing_item', 'regression'],
+    tags=['product_create', 'specifications', 'regression'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['尚未真正创建', '未创建成功'],
-    required_args=[{'tool': 'product_manage', 'action': 'create', 'fields': ['specifications', 'processing_item_configs.customPrice']}],
+    required_args=[{'tool': 'product_manage', 'action': 'create', 'fields': ['specifications']}],
     must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
     pre_clean=[{'type': 'product_remove', 'product_keyword': 'E2E色卡建品样品面料'}],
     namespaces=['product_name:E2E色卡建品样品面料'],
     precondition=[{'type': 'product_count_for_keyword', 'source': 'E2E色卡建品样品面料', 'expect': 0, 'max_growth': 1}],
     auto_fill={'name': 'E2E色卡建品样品面料', 'price': '23.8', 'colors': '2699-01 米白', 'door_widths': '2.8米', 'selling_methods': '散剪', 'sku_code': 'XNE2699'},
-)
-
-# ── PR-020 [NORMAL] 建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归）（源: cases/product.yml）──
-_CASE_PR_020 = EvalCase(
-    id='PR-020',
-    legacy_id='',
-    title='建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归）',
-    skill=Skill.PRODUCT,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['创建一个窗帘商品，名称：盯防加工项价格0908，单价：88元/米，分类：窗帘布艺，颜色：浅灰', '商品名称: 盯防加工项价格0908\\n单价(元/米): 88\\n分类: 窗帘布艺\\n颜色: 浅灰\\n售卖方式: 散剪\\n门幅: 2.8米\\n货号: DF-0908', '已选加工项：刺绣工艺（价格自定义为45元/平方米）、韩式波浪折边', {'repeat_until': {'tool_called': 'product_manage', 'max': 3}, 'fallback': '确认创建'}],
-    expectations=['product_manage(action=create)'],
-    data_checks=['create 参数 processing_item_configs 含 customPrice=用户确认价（刺绣工艺 45）', '创建后商品详情 processingItemConfigs 的 finalPrice = 用户确认价（非默认价回退）——issue #3056 回归防线'],
-    skip_reason='',
-    tags=['product_create', 'processing_item', 'price', 'regression'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-    must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
-    db_verify=[{'fetch': 'product_by_name', 'name': '盯防加工项价格0908', 'checks': ['processingItemConfigs.all.finalPrice>0', 'processingItemConfigs.刺绣工艺.finalPrice==45']}],
 )
 
 # ── PR-021 [NORMAL] 单独 SKU 调价 - 修改某规格价格（源: cases/product.yml）──
@@ -6159,24 +5997,6 @@ _CASE_UI_025 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── UI-026 [NORMAL] 加工项列表 - 展示「适用商品分类」列（ID→名称映射，空=适用所有）（源: cases/ui.yml）──
-_CASE_UI_026 = EvalCase(
-    id='UI-026',
-    legacy_id='',
-    title='加工项列表 - 展示「适用商品分类」列（ID→名称映射，空=适用所有）',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['加工项配置列表应能直接看到每个加工项的「适用商品分类」关联（此前仅在编辑弹窗内可见）'],
-    expectations=['direct_reply'],
-    data_checks=['列表表格新增「适用商品分类」列：展示已勾选分类的名称（分类树 ID→名称 映射，多选逗号分隔/多标签）；applicableProductCategories 为空展示「适用所有分类」', '列数据来自列表接口已返回的 applicableProductCategories 字段，无新增后端字段'],
-    skip_reason='[backend-contract] 纯前端列表列展示由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
-    tags=['ui', 'processing', 'admin-web', 'list'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-)
-
 # ── UI-028 [NORMAL] 岗位权限页（原角色权限）改名 + 侧边栏菜单七大组重构 + 员工选岗位自动带默认权限（#2969）（源: cases/ui.yml）──
 _CASE_UI_028 = EvalCase(
     id='UI-028',
@@ -6761,11 +6581,7 @@ ALL_CASES = (
     _CASE_PG_036,
     _CASE_PG_037,
     _CASE_PG_039,
-    _CASE_PP_001,
     _CASE_PP_002,
-    _CASE_PP_003,
-    _CASE_PP_005,
-    _CASE_PP_004,
     _CASE_PP_006,
     _CASE_PP_007,
     _CASE_PP_008,
@@ -6788,13 +6604,9 @@ ALL_CASES = (
     _CASE_PR_011,
     _CASE_PR_012,
     _CASE_PR_013,
-    _CASE_PR_014,
-    _CASE_PR_015,
-    _CASE_PR_016,
     _CASE_PR_017,
     _CASE_PR_018,
     _CASE_PR_019,
-    _CASE_PR_020,
     _CASE_PR_021,
     _CASE_PR_024,
     _CASE_PR_025,
@@ -6841,7 +6653,6 @@ ALL_CASES = (
     _CASE_UI_023,
     _CASE_UI_024,
     _CASE_UI_025,
-    _CASE_UI_026,
     _CASE_UI_028,
     _CASE_UI_029,
     _CASE_UI_030,

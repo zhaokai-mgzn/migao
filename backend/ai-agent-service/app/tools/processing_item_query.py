@@ -1,14 +1,13 @@
 """
 AI 智能客服系统 - 加工项查询 Tool
 
-独立查询加工项模块（与商品关联的加工项不同，此处为店铺所有加工项目录）。
+独立查询加工项模块（**店铺级目录，与具体商品无关**，issue #4371 解耦）。
 对应后端接口：
 - GET /api/admin/processing-items（分页 + keyword/categoryId/status）
 - GET /api/admin/processing-items/{id}
 
 注意（issue #3574）：曾有一个词序双胞胎 `query_processing_items`（查「某商品」关联的加工项），
-它**从未注册进默认 registry**（LLM 看不到）、零用例追溯，已删除；其能力由
-`product_detail`（返回 processing_items）覆盖。教训：schema 描述只取类属性
+它**从未注册进默认 registry**（LLM 看不到）、零用例追溯，已删除。教训：schema 描述只取类属性
 `description`（见 `base.get_schema()`），模块 docstring 里的消歧说明 LLM **看不见**——
 消歧/反例必须写进 `description`。
 """
@@ -34,14 +33,12 @@ class ProcessingItemQueryTool(BaseTool):
 
     name = "processing_item_query"
     description = (
-        "查询店铺加工项目录（店铺维度，与具体商品无关）。"
+        "查询店铺加工项目录（**店铺维度，与具体商品无关**，无商品/分类过滤）。"
         "【触发】用户问'有哪些加工项''加工项列表/分类/单价/计价方式'时；"
-        "或建品流程阶段2（用户已确认名称/价格等基本信息后）。"
-        "【参数】keyword/category_id/status/applicable_category_id 均可选。"
-        "applicable_category_id（适用商品分类 ID）：建品流程在用户确认商品分类后传入，"
-        "只返回适用于该商品分类的加工项（applicable_product_categories 包含该分类，"
-        "或无该配置=适用所有分类）。用户只需列表时传空参数。"
-        "【反例】查某个商品的详情及其关联加工项用 product_detail，不要用本工具；"
+        "或**向顾客提供加工项选择前**（建品与下单两条流程的唯一事实源，issue #4371："
+        "加工项不再挂在商品上，必须先用本工具拿目录，再发 interact(choice, multiSelect=true)）。"
+        "【参数】keyword/category_id/status 均可选；只取全部目录时传空参数。"
+        "【反例】查商品详情用 product_detail（不返回加工项）；"
         "创建/修改/删除加工项用 processing_item_manage。"
         "【标注】READONLY"
     )
@@ -60,12 +57,6 @@ class ProcessingItemQueryTool(BaseTool):
             "category_id": {
                 "type": "string",
                 "description": "加工项分类 ID（可选，加工分类）。",
-            },
-            "applicable_category_id": {
-                "type": "string",
-                "description": "适用商品分类 ID（可选，商品分类）："
-                "按「适用商品分类」过滤加工项（applicable_product_categories 包含该分类的加工项，"
-                "或未配置适用分类=适用所有分类的加工项）。建品流程在用户确认商品分类后传已选分类 ID。",
             },
             "status": {
                 "type": "string",
@@ -91,7 +82,6 @@ class ProcessingItemQueryTool(BaseTool):
         id: Optional[str] = None,
         keyword: Optional[str] = None,
         category_id: Optional[str] = None,
-        applicable_category_id: Optional[str] = None,
         status: Optional[str] = None,
         page: int = 1,
         size: int = 10,
@@ -103,7 +93,6 @@ class ProcessingItemQueryTool(BaseTool):
             id: 加工项 ID（提供时查询详情）
             keyword: 名称关键词
             category_id: 加工分类 ID
-            applicable_category_id: 适用商品分类 ID（按适用商品分类过滤，issue #2964）
             status: 状态过滤
             page: 页码
             size: 每页数量
@@ -158,14 +147,12 @@ class ProcessingItemQueryTool(BaseTool):
                 params["keyword"] = keyword
             if category_id:
                 params["categoryId"] = category_id
-            if applicable_category_id:
-                params["applicableProductCategoryId"] = applicable_category_id
             if status:
                 params["status"] = status
 
             logger.info(
                 f"[processing-item-query] List: keyword='{keyword or ''}' "
-                f"category_id={category_id} applicable_category_id={applicable_category_id} "
+                f"category_id={category_id} "
                 f"status={status} page={page} size={size} "
                 f"| tenant={context.tenant_id}"
             )
@@ -233,7 +220,6 @@ class ProcessingItemQueryTool(BaseTool):
                     "params": json.dumps(
                         {
                             "keyword": keyword or "",
-                            "applicable_category_id": applicable_category_id or "",
                             "page": page,
                             "size": size,
                         },
@@ -282,9 +268,6 @@ class ProcessingItemQueryTool(BaseTool):
             "max_quantity": record.get("maxQuantity") or record.get("max_quantity"),
             "description": record.get("description"),
             "options": record.get("options"),
-            "applicable_product_categories": record.get("applicableProductCategories")
-            or record.get("applicable_product_categories")
-            or [],
             "processing_days": record.get("processingDays") or record.get("processing_days"),
             "ai_recommended": record.get("aiRecommended") or record.get("ai_recommended"),
             "status": record.get("status"),

@@ -556,10 +556,20 @@ class TestXiaobuEvalFixture:
         )
 
     def test_fixture_links_processing_items(self):
-        """下单加工项用例（OR-016/OR-017）需要商品绑定加工项"""
+        """下单加工项用例（OR-016/OR-017）的数据前提
+
+        ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：前提由「商品**绑定**加工项」改为
+        「**店铺级加工项目录非空**」—— 加工项不再经商品取（`product_processing_items`
+        已由 V61 DROP，fixture 里的关联种子也已删除）。本断言的对象随之改写：
+        目录（`INSERT INTO processing_items`）必须存在且非空。
+        """
         sql = FIXTURE.read_text(encoding="utf-8")
-        assert "product_processing_items" in sql, (
-            "fixture 必须建立商品↔加工项关联 —— 否则加工项环节用例无数据可断言"
+        assert re.search(r"INSERT\s+INTO\s+processing_items", sql, re.I), (
+            "fixture 必须注入店铺级加工项目录 —— 否则加工项环节用例无数据可断言（#4371）"
+        )
+        assert "product_processing_items" not in _strip_sql_comments(sql), (
+            "fixture 仍在往 product_processing_items 写 —— 该表已随 #4371 解耦 DROP（V61），"
+            "注入会报 relation does not exist"
         )
 
     def test_workflow_seeds_before_eval(self):
@@ -1056,27 +1066,36 @@ class TestNamedProductsAreSeeded:
         assert "夏日清风窗帘" in sql
         assert "米白色" in sql
         assert "prod_eval_summer" in sql
-        # 加工项关联必须带上该商品（否则 product_detail 里没有加工项可问）
-        link = re.search(r"INSERT\s+INTO\s+product_processing_items[\s\S]*?;", sql, re.I)
-        assert link and "prod_eval_summer" in link.group(0), (
-            "product_processing_items 未关联夏日清风窗帘 → 加工项环节无数据"
+        # 加工项环节的数据前提：**店铺级加工项目录非空**（#4371 解耦后不再要求「商品绑加工项」）。
+        # 旧断言查的是 `INSERT INTO product_processing_items`（商品↔加工项关联）—— 该表已随解耦
+        # DROP（V61），关联也不再是前提；OR-017 的 `interact(choice, multiSelect)` 现在从
+        # **目录**出卡，故前提改为「目录里有 active 加工项」。
+        assert re.search(r"INSERT\s+INTO\s+processing_items", sql, re.I), (
+            "加工项目录未注入 → OR-017 的加工项询问环节无数据（product_detail 不再返回加工项，"
+            "加工项一律来自店铺级目录 processing_items，见 #4371）"
+        )
+        assert "纳米圈打孔" in sql, (
+            "加工项目录里没有可点选的项（OR-017 的 choice 卡需要真实选项）"
         )
 
     def test_only_one_recommended_product(self):
         """推荐位只能有一个商品：CH-010「推荐几款热销窗帘」→「第一款」依赖列表顺序，
         多个推荐商品会让"第一款"不确定 → 用例抖动。
 
-        解析方式：products 的最后一个字段是 `recommended`（紧跟 `has_processing`），
-        故取每条 VALUES 元组末尾的 `, <bool>, <bool>)`，后一个即 recommended。
+        解析方式：`recommended` 是 products 每行 VALUES 的**最后一个**布尔字段。
+        ⚠️ 2026-09-19（#4371）：`has_processing` 列已随解耦 DROP（V61）⇒ 尾形由
+        `, <has_processing>, <recommended>)` 变成 `, <recommended>)`，故正则同步收窄为
+        **末尾单个布尔**。这是解析口径的同步（列被删了），不是放宽判据 —— 下面仍有
+        `len(flags) >= 3` 的「解析没坏」自检兜底（否则本测试空转 = 假绿）。
         """
         sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
         block = re.search(r"INSERT\s+INTO\s+products[\s\S]*?;", sql, re.I)
         assert block, "未找到 products 种子语句"
-        flags = re.findall(r",\s*(TRUE|FALSE)\s*,\s*(TRUE|FALSE)\s*\)", block.group(0))
+        flags = re.findall(r",\s*(TRUE|FALSE)\s*\)", block.group(0))
         assert len(flags) >= 3, (
             f"仅解析出 {len(flags)} 条商品元组 —— 解析疑似失效（本测试会空转假绿）"
         )
-        recommended = [rec for _, rec in flags if rec == "TRUE"]
+        recommended = [rec for rec in flags if rec == "TRUE"]
         assert len(recommended) == 1, (
             f"fixture 中 recommended=TRUE 的商品有 {len(recommended)} 个（应恰好 1 个）—— "
             "多个会让 CH-010 的『第一款』不确定"
@@ -1204,9 +1223,18 @@ class TestSchemaCoversMigrationChainColumns:
 
     @classmethod
     def _migration_requirements(cls) -> tuple:
-        """从两条迁移链提取 (表 -> 列) 要求"""
+        """从两条迁移链提取 (表 -> 列) 要求
+
+        ⚠️ 必须与「表」同口径地处理 **`DROP COLUMN`**（issue #4371 实测踩到）：
+        原实现只认 `DROP TABLE`（`superseded` 表集合），**不认 `DROP COLUMN`** ——
+        于是「V41 加了列、V61 又把它删掉」这种**合法终态**会被算成
+        「schema.sql 缺该列」⇒ 假缺口（门禁要求把已删的列加回 bootstrap）。
+        病根与 `RENAME TO` 那一支同族：**只处理了建/改，没处理删** ⇒ 要求集合不是终态。
+        故此处对称地收集 `dropped_cols[(表, 列)]` 并在返回前剔除。
+        """
         need: dict = {}
         superseded: set = set()  # 被后续迁移改名/删除的表（非终态要求）
+        dropped_cols: set = set()  # 被后续迁移删除的列（非终态要求）
         for d in cls.MIGRATION_DIRS:
             if not d.is_dir():
                 continue
@@ -1227,6 +1255,10 @@ class TestSchemaCoversMigrationChainColumns:
                     for cm in re.finditer(
                             r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?", m.group(2), re.I):
                         need.setdefault(t, set()).add(cm.group(1).lower())
+                    # `DROP COLUMN`：删掉的列不是终态要求（否则会要求 schema.sql 把已删列加回）。
+                    for cm in re.finditer(
+                            r"DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?\"?(\w+)\"?", m.group(2), re.I):
+                        dropped_cols.add((t, cm.group(1).lower()))
                     # 重命名（如 V37 把 knowledge_entries 改名为 knowledge_cards）：
                     # 旧表名不是"终态要求"，必须剔除，否则产生假缺口。
                     if re.search(r"RENAME\s+TO\s+", m.group(2), re.I):
@@ -1235,6 +1267,8 @@ class TestSchemaCoversMigrationChainColumns:
                     superseded.add(m.group(1).lower())
         for t in superseded:
             need.pop(t, None)
+        for t, c in dropped_cols:
+            need.get(t, set()).discard(c)
         return need
 
     def test_requirements_are_non_trivial(self):

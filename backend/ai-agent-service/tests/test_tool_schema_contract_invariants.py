@@ -1,13 +1,12 @@
 """工具 schema 跨工具不变式 — action 枚举对账 + 工具注册闭环 + 描述点名有效性
 
-# case_ids: PR-001, PR-002, PR-019, PP-001, PP-005
+# case_ids: PR-001, PR-002, PR-019
 
 四条机器可判不变式，锁死工具接口审计（/tmp/migao-audit）暴露的结构性缺陷不再复发：
 
 1. **action 分发工具：`action.enum ⊆ 模块级 VALID_ACTIONS`**
-   防「枚举里留着运行时必拒的死分支」——product_manage 的 `manage_processing_items`
-   已拆分为独立工具 `product_processing_item_manage`，schema 却忘改
-   （审计 B1：LLM 选它 → 运行时被拒 → 白跑一轮对话）。
+   防「枚举里留着运行时必拒的死分支」——审计 B1：LLM 选它 → 运行时被拒 → 白跑一轮对话
+   （历史形态：product_manage 的 `manage_processing_items` 拆成独立工具后 schema 却忘改）。
 
 2. **action 分发工具：`action.description` 覆盖每个 enum 成员的语义**
    防「操作类型」三字占位（审计 J1：20 个 action 工具里唯一描述缺分支语义者）。
@@ -44,7 +43,6 @@ _NO_VALID_ACTIONS_ALLOWLIST = {
     "order_query",
     "customer_order_query",
     "aftersale_query",
-    "product_processing_item_manage",
 }
 
 # 描述里形如工具名的 token（xxx_query / xxx_manage / ...）中**非工具**的合法出现：

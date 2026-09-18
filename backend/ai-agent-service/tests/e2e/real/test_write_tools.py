@@ -6,7 +6,7 @@
   2. admin-api 直接查询确认数据变更已持久化
   3. 必要时恢复数据（cleanup）
 """
-# case_ids: PR-008, PR-009, PR-011, PR-012, OR-008, OR-010, PP-003
+# case_ids: PR-008, PR-009, PR-011, PR-012, OR-008, OR-010
 import time
 import pytest
 from tests.e2e.real.conftest import (

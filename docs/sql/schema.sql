@@ -151,8 +151,6 @@ CREATE TABLE products (
     sales_amount DECIMAL(12,2) DEFAULT 0,                  -- 累计销售额
     edited_by VARCHAR(50),                                  -- 最后编辑人
     edited_at TIMESTAMP WITH TIME ZONE,                     -- 最后编辑时间
-    -- 加工项关联（来自 009_processing_item_price.sql）
-    has_processing BOOLEAN DEFAULT FALSE,                   -- 是否含加工项
     -- 商家推荐标记（来自 V20260903__add_product_recommended.sql）
     recommended BOOLEAN DEFAULT FALSE,                       -- 是否商家推荐（C 端新品推荐位展示依据）
     -- 退货回补库存开关（来自 V33__add_allow_return_restock.sql）
@@ -168,7 +166,6 @@ COMMENT ON COLUMN products.sku_code IS '商品货号';
 COMMENT ON COLUMN products.stock_deduction_mode IS '库存扣减模式: on_order / on_payment';
 COMMENT ON COLUMN products.sales_count IS '累计销量';
 COMMENT ON COLUMN products.sales_amount IS '累计销售额';
-COMMENT ON COLUMN products.has_processing IS '是否含加工项';
 COMMENT ON COLUMN products.allow_return_restock IS '是否允许退货回补库存（窗帘行业定制退货不可再售，默认不回补）';
 COMMENT ON COLUMN products.detail_images IS '商品详情图URL列表（JSONB数组）';
 
@@ -253,7 +250,6 @@ CREATE TABLE processing_items (
     max_quantity INTEGER DEFAULT 999,
     description TEXT,
     options JSONB DEFAULT '[]',  -- 加工选项（如打孔：纳米圈/四爪钩/韩式S钩）
-    applicable_product_categories JSONB DEFAULT '[]',  -- 适用商品分类ID列表
     processing_days INTEGER DEFAULT 1,
     ai_recommended BOOLEAN DEFAULT true,
     status VARCHAR(32) DEFAULT 'active',
@@ -261,21 +257,6 @@ CREATE TABLE processing_items (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
 );
-
--- 商品-加工项关联表
-CREATE TABLE product_processing_items (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL,
-    product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    processing_item_id VARCHAR(64) NOT NULL REFERENCES processing_items(id) ON DELETE CASCADE,
-    custom_price DECIMAL(10,2),                           -- 商品专属加工价格（NULL 则用默认价）
-    sort_order INTEGER DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-CREATE INDEX idx_product_processing_items_tenant_product ON product_processing_items(tenant_id, product_id);
-ALTER TABLE product_processing_items ADD CONSTRAINT uq_product_processing_items_relation
-    UNIQUE (product_id, processing_item_id);
-COMMENT ON TABLE product_processing_items IS '商品-加工项关联表，支持自定义加工价格（issue #3005 回滚：无每米数量密度覆盖）';
 
 -- 加工组合规则表：定义加工项之间的互斥、必选等关系
 CREATE TABLE processing_rules (
@@ -1871,7 +1852,6 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ;
 
 -- 加工项每米数量密度（V33）
 ALTER TABLE processing_items ADD COLUMN IF NOT EXISTS per_meter_quantity DECIMAL(6,2);
-ALTER TABLE product_processing_items ADD COLUMN IF NOT EXISTS custom_per_meter_quantity DECIMAL(6,2);
 
 -- 租户品牌/通知设置（V15）
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS logo VARCHAR(512);

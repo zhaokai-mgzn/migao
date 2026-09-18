@@ -1,6 +1,6 @@
 /**
  * 交互组件契约 — 后端 SSE interactive payload 经前端 store 透传字段不丢
- * case_ids: PP-001, PR-010, OR-001, UI-031
+ * case_ids: PR-010, OR-001, UI-031
  *
  * 背景（sess_fba38395ed094a9d 系列，issue #2892/#2894/#2896）：
  * - 后端 interact 工具 → SSE interactive payload 字段由

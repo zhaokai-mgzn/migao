@@ -1,4 +1,5 @@
 // case_ids: PR-010
+// #4371：加工项与商品解耦 —— 编辑页不再由 processingItemConfigs 派生 supportsProcessing
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -59,7 +60,6 @@ vi.mock('@/components/products/ProductForm', () => ({
             <span data-testid="product-sku">{props.initialData.sku}</span>
             <span data-testid="product-price">{props.initialData.price}</span>
             <span data-testid="product-stock-deduction">{props.initialData.stockDeductionMode}</span>
-            <span data-testid="product-supports-processing">{String(props.initialData.supportsProcessing)}</span>
             <span data-testid="product-specs">{JSON.stringify(props.initialData.specifications || {})}</span>
           </div>
         )}
@@ -101,8 +101,6 @@ const mockProduct = {
   images: ['https://example.com/img1.jpg'],
   detailImages: [],
   specifications: { color: '灰色' },
-  processingItems: ['item-1'],
-  processingItemConfigs: [{ itemId: 'item-1', price: 50 }],
   stockDeductionMode: 'on_order' as const,
   colors: [],
   sellingMethods: [],
@@ -221,29 +219,6 @@ describe('EditProductPage', () => {
     })
   })
 
-  it('should default empty processingItemConfigs to empty array', async () => {
-    mockGetProduct.mockResolvedValue({
-      data: {
-        data: { ...mockProduct, processingItemConfigs: undefined },
-      },
-    })
-    render(<EditProductPage />)
-    await waitFor(() => {
-      expect(screen.getByTestId('product-form')).toBeInTheDocument()
-    })
-    // Verify the initialData passed to ProductForm has empty arrays
-    const calls = mockProductFormProps.mock.calls
-    const lastCall = calls[calls.length - 1]?.[0]
-    expect(lastCall?.initialData?.processingItemConfigs).toEqual([])
-  })
-
-  it('should set supportsProcessing true when processingItemConfigs has items', async () => {
-    render(<EditProductPage />)
-    await waitFor(() => {
-      expect(screen.getByTestId('product-supports-processing')).toHaveTextContent('true')
-    })
-  })
-
   it('should convert Chinese spec keys to English in initialData (issue #3044)', async () => {
     // agent 建品以中文 key（克重/材质/...）落库 product_attributes，
     // 编辑页反显时必须映射为编辑表单内部的英文 key（weight/material/...），
@@ -276,18 +251,6 @@ describe('EditProductPage', () => {
         style: '现代简约',
         pattern: '纯色',
       })
-    })
-  })
-
-  it('should set supportsProcessing false when processingItemConfigs is empty', async () => {
-    mockGetProduct.mockResolvedValue({
-      data: {
-        data: { ...mockProduct, processingItemConfigs: [] },
-      },
-    })
-    render(<EditProductPage />)
-    await waitFor(() => {
-      expect(screen.getByTestId('product-supports-processing')).toHaveTextContent('false')
     })
   })
 

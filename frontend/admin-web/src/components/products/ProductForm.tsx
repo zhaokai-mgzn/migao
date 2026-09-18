@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, RotateCcw, Settings2, AlertTriangle } from 'lucide-react'
+import { Plus, RotateCcw, Settings2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, Input, Select, Modal, Loading } from '@/components/ui'
 import ImageUploader from './ImageUploader'
@@ -11,19 +11,17 @@ import ProductAttributes from './ProductAttributes'
 import RichTextEditor from './RichTextEditor'
 import CategoryTree from './CategoryTree'
 import CategoryDialog from './CategoryDialog'
-import { categoryApi, processingItemApi } from '@/lib/api'
+import { categoryApi } from '@/lib/api'
 import { validateProductForm, derivePrice } from '@/lib/product-utils'
 import { toChineseSpecKeys } from '@/lib/attribute-keys'
 import type {
   ProductFormData,
   ProductStatus,
   Category,
-  ProcessingItem,
   ProductColor,
   ProductSku,
   SellingMethod,
   StockDeductionMode,
-  ProductProcessingItemConfig,
   CategoryFormData,
 } from '@/types'
 
@@ -49,7 +47,6 @@ const ANCHORS = {
   // #2908: skus 错误锚点指向 SkuMatrix 内警示横幅本身（否则滚到矩阵顶部，
   // 表格下方的小字提示仍可能不可见）
   skus: 'pf-skus-error',
-  processingItemConfigs: 'pf-processing',
 } as const
 
 // 扁平化分类树为下拉选项
@@ -84,18 +81,15 @@ const DEFAULT_FORM: ProductFormData = {
   costPrice: undefined,
   unit: '',
   stockDeductionMode: 'on_place',
-  supportsProcessing: false,
   allowReturnRestock: false,
   status: 'draft',
   images: [],
   detailImages: [],
   specifications: {},
-  processingItems: [],
   colors: [],
   sellingMethods: [],
   doorWidths: [],
   skus: [],
-  processingItemConfigs: [],
 }
 
 export default function ProductForm({
@@ -106,7 +100,6 @@ export default function ProductForm({
   const router = useRouter()
   const [submitting, setSubmitting] = useState<ProductStatus | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
-  const [processingItems, setProcessingItems] = useState<ProcessingItem[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const formRef = useRef<HTMLDivElement>(null)
   const isEdit = !!initialData
@@ -137,16 +130,12 @@ export default function ProductForm({
     ...initialData,
   })
 
-  // 加载分类与加工项
+  // 加载分类
   useEffect(() => {
     const load = async () => {
       try {
-        const [catRes, procRes] = await Promise.all([
-          categoryApi.getCategories(),
-          processingItemApi.getProcessingItems({ page: 1, size: 100 }),
-        ])
+        const catRes = await categoryApi.getCategories()
         setCategories(catRes.data.data || [])
-        setProcessingItems(procRes.data.data?.items || [])
       } catch (e) {
         // Errors handled by API layer
       }
@@ -197,52 +186,6 @@ export default function ProductForm({
     [categories]
   )
 
-  // ========== 加工项配置 ==========
-
-  const handleAddProcessingConfig = () => {
-    const next = [
-      ...(form.processingItemConfigs || []),
-      { processingItemId: null, customPrice: 0 } as ProductProcessingItemConfig,
-    ]
-    updateField('processingItemConfigs', next)
-  }
-
-  const handleUpdateProcessingConfig = (
-    idx: number,
-    patch: Partial<ProductProcessingItemConfig>
-  ) => {
-    const list = [...(form.processingItemConfigs || [])]
-    const current = list[idx]
-    if (!current) return
-    let merged: ProductProcessingItemConfig = { ...current, ...patch }
-    if (patch.processingItemId !== undefined && patch.processingItemId !== null) {
-      // 加工项 ID 为字符串 UUID（如 "proc_item_punch_nano"），不能用 Number 转换
-      const targetId = String(patch.processingItemId)
-      const ref = processingItems.find((p) => String(p.id) === targetId)
-      if (ref) {
-        // 优先采用加工项基础价；仅当用户已显式输入大于 0 的自定义价时保留
-        const hasCustomPrice =
-          current.customPrice !== undefined &&
-          current.customPrice !== null &&
-          Number(current.customPrice) > 0
-        const refPrice = Number(ref.unitPrice ?? ref.basePrice ?? 0) || 0
-        merged = {
-          ...merged,
-          processingItemName: ref.name,
-          customPrice: hasCustomPrice ? Number(current.customPrice) : refPrice,
-        }
-      }
-    }
-    list[idx] = merged
-    updateField('processingItemConfigs', list)
-  }
-
-  const handleRemoveProcessingConfig = (idx: number) => {
-    const list = [...(form.processingItemConfigs || [])]
-    list.splice(idx, 1)
-    updateField('processingItemConfigs', list)
-  }
-
   // ========== 表单校验 ==========
 
   const scrollToFirstError = (errorKeys: string[]) => {
@@ -280,7 +223,6 @@ export default function ProductForm({
         doorWidths: (form.doorWidths || []).filter(Boolean),
         price: derivePrice(form.skus || [], form.price),
         status: targetStatus,
-        processingItemConfigs: form.processingItemConfigs,
         // 提交归一化：表单内部英文 key（weight/...）→ 落库中文 key（克重/...），
         // 与 ai-agent 建品风格统一，详情页天然中文展示（issue #3044）
         specifications: toChineseSpecKeys(form.specifications || {}),
@@ -677,145 +619,6 @@ export default function ProductForm({
                 窗帘行业定制商品退货后无法再次出售，默认不允许回补库存；
                 标准件/配件等可再售商品可开启，售后工单退款/退货完成时自动恢复库存
               </p>
-            </div>
-          </FieldRow>
-
-          {/* 是否支持加工 */}
-          <FieldRow label="是否支持加工" required alignTop>
-            <div className="space-y-3">
-              <RadioGroup<boolean>
-                value={!!form.supportsProcessing}
-                onChange={(v) => {
-                  updateField('supportsProcessing', v)
-                  if (!v) updateField('processingItemConfigs', [])
-                }}
-                options={[
-                  { value: true, label: '是' },
-                  { value: false, label: '否' },
-                ]}
-              />
-              {form.supportsProcessing && (
-                <div id={ANCHORS.processingItemConfigs} className="space-y-2">
-                  {(form.processingItemConfigs || []).map((cfg, idx) => {
-                    return (
-                      <div key={idx} className="flex items-center gap-2">
-                        <div className="w-56">
-                          <Select
-                            placeholder="请选择加工项"
-                            options={processingItems.map((p) => ({
-                              value: String(p.id),
-                              label: `${p.name}（基础价 ¥${p.unitPrice ?? p.basePrice}/${p.unit}）`,
-                            }))}
-                            value={
-                              cfg.processingItemId != null && cfg.processingItemId !== ''
-                                ? String(cfg.processingItemId)
-                                : ''
-                            }
-                            onChange={(e) =>
-                              handleUpdateProcessingConfig(idx, {
-                                processingItemId: e.target.value || null,
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="w-44">
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder="请输入加工项价格"
-                            value={
-                              cfg.customPrice != null && Number(cfg.customPrice) > 0
-                                ? String(cfg.customPrice)
-                                : ''
-                            }
-                            onChange={(e) =>
-                              handleUpdateProcessingConfig(idx, {
-                                customPrice: parseFloat(e.target.value) || 0,
-                              })
-                            }
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveProcessingConfig(idx)}
-                          className="w-9 h-9 inline-flex items-center justify-center rounded text-neutral-400 hover:text-red-500 hover:bg-red-50"
-                          title="删除"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                        {idx === (form.processingItemConfigs || []).length - 1 && (
-                          <button
-                            type="button"
-                            onClick={handleAddProcessingConfig}
-                            className="w-9 h-9 inline-flex items-center justify-center rounded border border-dashed border-neutral-300 text-neutral-500 hover:border-primary-400 hover:text-primary-600"
-                            title="添加"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })}
-                  {(form.processingItemConfigs || []).length === 0 && (
-                    <div className="flex items-center gap-2">
-                      <div className="w-56">
-                        <Select
-                          placeholder="请选择加工项"
-                          options={processingItems.map((p) => ({
-                            value: String(p.id),
-                            label: `${p.name}（基础价 ¥${p.unitPrice ?? p.basePrice}/${p.unit}）`,
-                          }))}
-                          value=""
-                          onChange={(e) => {
-                            if (!e.target.value) return
-                            const targetId = String(e.target.value)
-                            const ref = processingItems.find(
-                              (p) => String(p.id) === targetId
-                            )
-                            updateField('processingItemConfigs', [
-                              {
-                                processingItemId: targetId,
-                                processingItemName: ref?.name,
-                                customPrice:
-                                  Number(ref?.unitPrice ?? ref?.basePrice ?? 0) || 0,
-                              },
-                            ])
-                          }}
-                        />
-                      </div>
-                      <div className="w-44">
-                        <Input
-                          disabled
-                          placeholder="请输入加工项价格"
-                          value=""
-                          onChange={() => {}}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        disabled
-                        className="w-9 h-9 inline-flex items-center justify-center rounded text-neutral-300 cursor-not-allowed"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleAddProcessingConfig}
-                        className="w-9 h-9 inline-flex items-center justify-center rounded border border-dashed border-neutral-300 text-neutral-500 hover:border-primary-400 hover:text-primary-600"
-                        title="添加"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-                  {errors.processingItemConfigs && (
-                    <p className="text-sm text-red-600">
-                      {errors.processingItemConfigs}
-                    </p>
-                  )}
-                </div>
-              )}
             </div>
           </FieldRow>
 

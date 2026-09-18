@@ -2,20 +2,16 @@ package com.migao.admin.service;
 
 import com.migao.admin.dto.*;
 import com.migao.admin.entity.Category;
-import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductAttribute;
 import com.migao.admin.entity.ProductColor;
-import com.migao.admin.entity.ProductProcessingItem;
 import com.migao.admin.entity.ProductSku;
 import com.migao.admin.entity.StockLedger;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.CategoryMapper;
-import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductAttributeMapper;
 import com.migao.admin.mapper.ProductColorMapper;
 import com.migao.admin.mapper.ProductMapper;
-import com.migao.admin.mapper.ProductProcessingItemMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -64,8 +60,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     private final CategoryMapper categoryMapper;
     private final ProductColorMapper productColorMapper;
     private final ProductSkuMapper productSkuMapper;
-    private final ProductProcessingItemMapper productProcessingItemMapper;
-    private final ProcessingItemMapper processingItemMapper;
     private final ProductAttributeMapper productAttributeMapper;
     /** 库存台账（issue #4055）：本类只负责在库存变更点写一行流水，查询/落账语义在该服务内 */
     private final StockLedgerService stockLedgerService;
@@ -229,14 +223,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         response.setTotalStock(totalStock);
         response.setStock(totalStock);
 
-        // 加载加工项列表（非关键，失败不阻塞详情查询）
-        try {
-            response.setProcessingItems(getProductProcessingItems(id, tenantId));
-        } catch (Exception e) {
-            log.warn("加载加工项列表失败: productId={}, error={}", id, e.getMessage());
-            response.setProcessingItems(new ArrayList<>());
-        }
-
         // 查询关联颜色列表
         List<ProductColor> colorEntities = productColorMapper.selectList(
                 new LambdaQueryWrapper<ProductColor>()
@@ -307,9 +293,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 回填商品属性：brand + specifications
         fillProductAttributes(response, id);
 
-        // 回填加工项配置列表
-        fillProcessingItemConfigs(response, id, tenantId);
-
         return response;
     }
 
@@ -371,11 +354,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         // 保存商品属性（brand + specifications，存入 product_attributes 表）
         saveProductAttributes(product.getId(), tenantId, request.getBrand(), request.getSpecifications());
-
-        // 保存加工项配置到关联表
-        if (request.getProcessingItemConfigs() != null) {
-            saveProcessingItemConfigs(product.getId(), tenantId, request.getProcessingItemConfigs());
-        }
 
         log.info("创建商品成功: id={}, name={}", product.getId(), product.getName());
 
@@ -474,15 +452,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 更新商品属性：仅当请求中明确提交 brand 或 specifications 时才重写，避免误清空
         if (request.getBrand() != null || request.getSpecifications() != null) {
             saveProductAttributes(id, tenantId, request.getBrand(), request.getSpecifications());
-        }
-
-        // 更新加工项配置：先删后插，仅当请求中包含 processingItemConfigs 字段时才更新
-        if (request.getProcessingItemConfigs() != null) {
-            productProcessingItemMapper.delete(
-                    new LambdaQueryWrapper<ProductProcessingItem>()
-                            .eq(ProductProcessingItem::getProductId, id)
-            );
-            saveProcessingItemConfigs(id, tenantId, request.getProcessingItemConfigs());
         }
 
         log.info("更新商品成功: id={}, name={}", id, product.getName());
@@ -863,86 +832,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     }
 
     /**
-     * 保存商品的加工项配置到 product_processing_items 关联表
-     * 调用方负责控制是否先删后插。
-     */
-    private void saveProcessingItemConfigs(String productId, Long tenantId,
-                                           List<ProcessingItemConfigInput> configs) {
-        if (configs == null || configs.isEmpty()) {
-            return;
-        }
-        int idx = 0;
-        for (ProcessingItemConfigInput input : configs) {
-            if (input == null || !StringUtils.hasText(input.getProcessingItemId())) {
-                continue;
-            }
-            ProductProcessingItem entity = new ProductProcessingItem();
-            entity.setTenantId(tenantId);
-            entity.setProductId(productId);
-            entity.setProcessingItemId(input.getProcessingItemId());
-            entity.setCustomPrice(input.getCustomPrice());
-            entity.setSortOrder(idx++);
-            productProcessingItemMapper.insert(entity);
-        }
-    }
-
-    /**
-     * 查询商品加工项配置并填充到 ProductResponse
-     *
-     * 价格回退（2026-09-08 sess_c1fce183dae24f22 复盘固化）：
-     * AI 建品可能只传加工项 ID 未带自定义价（custom_price=null），
-     * 必须回填加工项默认单价 unitPrice 并计算 finalPrice=customPrice?:unitPrice，
-     * 与 getProductProcessingItems 一致，避免前端展示 ¥0.00。
-     */
-    private void fillProcessingItemConfigs(ProductResponse response, String productId, Long tenantId) {
-        List<ProductProcessingItem> relations = productProcessingItemMapper.selectList(
-                new LambdaQueryWrapper<ProductProcessingItem>()
-                        .eq(ProductProcessingItem::getProductId, productId)
-                        .eq(ProductProcessingItem::getTenantId, tenantId)
-                        .orderByAsc(ProductProcessingItem::getSortOrder)
-        );
-        if (relations == null || relations.isEmpty()) {
-            response.setProcessingItemConfigs(java.util.Collections.emptyList());
-            return;
-        }
-
-        // 批量查询加工项信息（名称 + 默认单价 + 单位）
-        List<String> processingItemIds = relations.stream()
-                .map(ProductProcessingItem::getProcessingItemId)
-                .filter(StringUtils::hasText)
-                .distinct()
-                .collect(Collectors.toList());
-        Map<String, ProcessingItem> itemMap = new HashMap<>();
-        if (!processingItemIds.isEmpty()) {
-            List<ProcessingItem> items = processingItemMapper.selectList(
-                    new LambdaQueryWrapper<ProcessingItem>()
-                            .in(ProcessingItem::getId, processingItemIds)
-            );
-            if (items != null) {
-                for (ProcessingItem item : items) {
-                    itemMap.put(item.getId(), item);
-                }
-            }
-        }
-
-        List<ProcessingItemConfigResponse> configs = new ArrayList<>();
-        for (ProductProcessingItem rel : relations) {
-            ProcessingItem item = itemMap.get(rel.getProcessingItemId());
-            ProcessingItemConfigResponse cfg = new ProcessingItemConfigResponse();
-            cfg.setProcessingItemId(rel.getProcessingItemId());
-            cfg.setProcessingItemName(item != null ? item.getName() : null);
-            BigDecimal customPrice = rel.getCustomPrice();
-            BigDecimal unitPrice = item != null ? item.getUnitPrice() : null;
-            cfg.setCustomPrice(customPrice);
-            cfg.setUnitPrice(unitPrice);
-            cfg.setFinalPrice(customPrice != null ? customPrice : unitPrice);
-            cfg.setUnit(item != null ? item.getUnit() : null);
-            configs.add(cfg);
-        }
-        response.setProcessingItemConfigs(configs);
-    }
-
-    /**
      * 删除商品（逻辑删除）
      * 状态约束与 batchDelete 一致：仅 draft/off_sale 可删，on_sale/under_review 拒绝。
      */
@@ -1309,77 +1198,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         }
     }
 
-    /**
-     * 查询商品关联的加工项列表
-     * 1. 查询 product_processing_items 表中该商品的所有关联记录
-     * 2. 根据 processing_item_id 批量查询 processing_items 表获取完整信息
-     * 3. 仅返回 status='active' 的加工项
-     * 4. 合并自定义价格（custom_price 不为空则 finalPrice = customPrice，否则 finalPrice = unitPrice）
-     * 5. 按 sort_order 升序排序
-     */
-    public List<ProductProcessingItemResponse> getProductProcessingItems(String productId, Long tenantId) {
-        // 校验商品存在且属于当前租户（租户隔离）
-        Product product = productMapper.selectOne(
-                new LambdaQueryWrapper<Product>()
-                        .eq(Product::getId, productId)
-                        .eq(Product::getTenantId, tenantId));
-        if (product == null) {
-            throw BusinessException.notFound("商品");
-        }
-
-        // 查询关联记录（按 sort_order 升序）
-        List<ProductProcessingItem> relations = productProcessingItemMapper.selectList(
-                new LambdaQueryWrapper<ProductProcessingItem>()
-                        .eq(ProductProcessingItem::getProductId, productId)
-                        .eq(ProductProcessingItem::getTenantId, tenantId)
-                        .orderByAsc(ProductProcessingItem::getSortOrder)
-        );
-        if (relations == null || relations.isEmpty()) {
-            return java.util.Collections.emptyList();
-        }
-
-        // 批量查询加工项详情（仅 active）
-        List<String> processingItemIds = relations.stream()
-                .map(ProductProcessingItem::getProcessingItemId)
-                .filter(StringUtils::hasText)
-                .distinct()
-                .collect(Collectors.toList());
-        if (processingItemIds.isEmpty()) {
-            return java.util.Collections.emptyList();
-        }
-
-        List<ProcessingItem> processingItems = processingItemMapper.selectList(
-                new LambdaQueryWrapper<ProcessingItem>()
-                        .in(ProcessingItem::getId, processingItemIds)
-                        .eq(ProcessingItem::getStatus, "active")
-        );
-        Map<String, ProcessingItem> itemMap = processingItems.stream()
-                .collect(Collectors.toMap(ProcessingItem::getId, item -> item));
-
-        // 按关联表顺序组装响应，过滤已被禁用/不存在的加工项
-        List<ProductProcessingItemResponse> result = new java.util.ArrayList<>();
-        for (ProductProcessingItem relation : relations) {
-            ProcessingItem item = itemMap.get(relation.getProcessingItemId());
-            if (item == null) {
-                continue;
-            }
-            BigDecimal customPrice = relation.getCustomPrice();
-            BigDecimal unitPrice = item.getUnitPrice();
-            BigDecimal finalPrice = customPrice != null ? customPrice : unitPrice;
-
-            result.add(ProductProcessingItemResponse.builder()
-                    .id(item.getId())
-                    .name(item.getName())
-                    .pricingMethod(item.getPricingMethod())
-                    .unitPrice(unitPrice)
-                    .customPrice(customPrice)
-                    .finalPrice(finalPrice)
-                    .unit(item.getUnit())
-                    .build());
-        }
-        return result;
-    }
-
     // ========== 私有辅助方法 ==========
 
     /**
@@ -1692,38 +1510,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 规格
         if (request.getSpecifications() != null) createReq.setSpecifications(request.getSpecifications());
 
-        // 加工项: 解析 ID → ProcessingItemConfigInput（issue #3056 价格合并）
-        // 回归背景：LLM 按 product.md 同时传 processingItemIds + processingItemConfigs(customPrice)，
-        // 旧 if/else-if 走 ids 分支 → configs 的 customPrice 被静默丢弃（live 实证 45→30）。
-        // 合并语义：configs 的 customPrice 按 resolved ID 合并进全量关联；ids 仅作补充关联。
-        boolean hasIds = request.getProcessingItemIds() != null && !request.getProcessingItemIds().isEmpty();
-        boolean hasConfigs = request.getProcessingItemConfigs() != null && !request.getProcessingItemConfigs().isEmpty();
-        if (hasIds || hasConfigs) {
-            Map<String, BigDecimal> priceById = new java.util.LinkedHashMap<>();
-            Set<String> idSet = new java.util.LinkedHashSet<>();
-            if (hasConfigs) {
-                for (var cfg : request.getProcessingItemConfigs()) {
-                    if (!StringUtils.hasText(cfg.getProcessingItemId())) continue;
-                    String resolved = resolveProcessingItemId(cfg.getProcessingItemId(), tenantId);
-                    if (resolved != null) {
-                        idSet.add(resolved);
-                        if (cfg.getCustomPrice() != null) priceById.put(resolved, cfg.getCustomPrice());
-                    }
-                }
-            }
-            if (hasIds) {
-                idSet.addAll(resolveProcessingItemIds(request.getProcessingItemIds(), tenantId));
-            }
-            if (!idSet.isEmpty()) {
-                createReq.setProcessingItemConfigs(idSet.stream().map(id -> {
-                    ProcessingItemConfigInput cfg = new ProcessingItemConfigInput();
-                    cfg.setProcessingItemId(id);
-                    cfg.setCustomPrice(priceById.get(id));
-                    return cfg;
-                }).collect(Collectors.toList()));
-            }
-        }
-
         return createProduct(createReq, tenantId);
     }
 
@@ -1800,9 +1586,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             validateStatusTransition(product.getStatus(), request.getStatus());
             hasUpdate = true;
         }
-
-        // 不传 processingItemConfigs，保留现有关联
-        updateReq.setProcessingItemConfigs(null);
 
         if (!hasUpdate) {
             return getProductById(id, tenantId);
@@ -1930,76 +1713,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         log.info("[Agent] 库存调整: product={}, adjustment={}, reason={}, total={}->{}, tenant={}",
                 productId, adjustment, reason, total, newTotal, tenantId);
         return getProductById(productId, tenantId);
-    }
-
-    /**
-     * Agent 专用加工项增删。
-     * add: 仅插入不存在的；remove: 仅删除存在的（幂等）。
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public java.util.List<ProductProcessingItemResponse> updateProductProcessingItems(
-            String productId, com.migao.admin.dto.agent.AgentProcessingItemActionRequest request, Long tenantId) {
-
-        Product product = productMapper.selectOne(
-                new LambdaQueryWrapper<Product>()
-                        .eq(Product::getId, productId)
-                        .eq(Product::getTenantId, tenantId));
-        if (product == null) {
-            throw BusinessException.notFound("商品");
-        }
-
-        String action = request.getAction();
-        if (!"add".equals(action) && !"remove".equals(action)) {
-            throw BusinessException.validationError("action 必须为 add 或 remove");
-        }
-
-        List<String> resolvedIds = resolveProcessingItemIds(request.getItemIds(), tenantId);
-        List<String> warnings = new ArrayList<>();
-
-        if ("add".equals(action)) {
-            // 查询已有加工项，去重
-            List<ProductProcessingItem> existing = productProcessingItemMapper.selectList(
-                    new LambdaQueryWrapper<ProductProcessingItem>()
-                            .eq(ProductProcessingItem::getProductId, productId)
-                            .eq(ProductProcessingItem::getTenantId, tenantId));
-            java.util.Set<String> existingIds = existing.stream()
-                    .map(ProductProcessingItem::getProcessingItemId)
-                    .collect(Collectors.toSet());
-
-            int sortOrder = existing.size();
-            for (String resolvedId : resolvedIds) {
-                if (existingIds.contains(resolvedId)) {
-                    // 通过加工项名称生成更友好的警告
-                    ProcessingItem item = processingItemMapper.selectById(resolvedId);
-                    String name = item != null ? item.getName() : resolvedId;
-                    warnings.add("加工项'" + name + "'已存在，已跳过");
-                    continue;
-                }
-                ProductProcessingItem entity = new ProductProcessingItem();
-                entity.setTenantId(tenantId);
-                entity.setProductId(productId);
-                entity.setProcessingItemId(resolvedId);
-                entity.setSortOrder(sortOrder++);
-                productProcessingItemMapper.insert(entity);
-            }
-        } else {
-            // remove
-            for (String resolvedId : resolvedIds) {
-                int deleted = productProcessingItemMapper.delete(
-                        new LambdaQueryWrapper<ProductProcessingItem>()
-                                .eq(ProductProcessingItem::getProductId, productId)
-                                .eq(ProductProcessingItem::getProcessingItemId, resolvedId)
-                                .eq(ProductProcessingItem::getTenantId, tenantId));
-                if (deleted == 0) {
-                    warnings.add("加工项'" + resolvedId + "'不存在或已删除，已跳过");
-                }
-            }
-        }
-
-        log.info("Agent 加工项 {} 完成: productId={}, action={}, count={}, warnings={}",
-                action, productId, resolvedIds.size(), warnings.size());
-
-        return getProductProcessingItems(productId, tenantId);
     }
 
     // ======================== ID 解析辅助方法 ========================
@@ -2224,75 +1937,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         }
 
         return null;
-    }
-
-    /**
-     * 解析单个加工项 ID：支持 UUID / 名称 / 序号 / UUID 前缀。
-     */
-    String resolveProcessingItemId(String raw, Long tenantId) {
-        List<String> resolved = resolveProcessingItemIds(java.util.Collections.singletonList(raw), tenantId);
-        return resolved.isEmpty() ? null : resolved.get(0);
-    }
-
-    /**
-     * 批量解析加工项 ID：支持 UUID / 名称 / 序号（1-based）/ UUID 前缀。
-     */
-    List<String> resolveProcessingItemIds(List<String> rawIds, Long tenantId) {
-        if (rawIds == null || rawIds.isEmpty()) return java.util.Collections.emptyList();
-
-        java.util.List<ProcessingItem> allItems = processingItemMapper.selectList(
-                new LambdaQueryWrapper<ProcessingItem>()
-                        .eq(ProcessingItem::getTenantId, tenantId)
-                        .eq(ProcessingItem::getStatus, "active")
-                        .orderByAsc(ProcessingItem::getCreatedAt));
-
-        List<String> resolved = new ArrayList<>();
-        for (String raw : rawIds) {
-            if (!StringUtils.hasText(raw)) continue;
-            String s = raw.trim();
-
-            // 兼容 "pi_xxx|加工项名" 格式
-            if (s.contains("|")) s = s.substring(0, s.indexOf("|")).trim();
-
-            String found = null;
-
-            // 1. 纯数字 → 按列表位置匹配（1-based 序号）
-            if (s.matches("\\d+")) {
-                int idx = Integer.parseInt(s) - 1;
-                if (idx >= 0 && idx < allItems.size()) {
-                    found = allItems.get(idx).getId();
-                }
-            }
-
-            // 2. 精确 UUID / 名称 / 前缀 匹配
-            if (found == null) {
-                for (ProcessingItem item : allItems) {
-                    if (s.equals(item.getId()) || s.equals(item.getName())) {
-                        found = item.getId();
-                        break;
-                    }
-                }
-            }
-
-            // 3. UUID 前缀匹配
-            if (found == null && s.length() >= 8) {
-                String prefix = s.substring(0, Math.min(16, s.length()));
-                for (ProcessingItem item : allItems) {
-                    if (item.getId() != null && item.getId().startsWith(prefix)) {
-                        found = item.getId();
-                        break;
-                    }
-                }
-            }
-
-            if (found != null) {
-                resolved.add(found);
-            } else {
-                log.warn("[Agent] 无法解析加工项ID: {}", raw);
-            }
-        }
-
-        return resolved;
     }
 
     /**

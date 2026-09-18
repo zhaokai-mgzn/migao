@@ -1,4 +1,5 @@
 // case_ids: PR-011, PR-019
+// #4371：加工项与商品解耦 —— 商品详情页不再展示商品维度的「加工项」块
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -104,9 +105,6 @@ const mockProduct = {
     { id: 1, colorId: 1, colorName: '米白', doorWidth: '2.8米', sellingMethod: 'bulk_cut', skuCode: 'SKU-MB', stock: 200, price: 99.5 },
     { id: 2, colorId: 2, colorName: '深灰', doorWidth: '2.8米', sellingMethod: 'bulk_cut', skuCode: 'SKU-SG', stock: 300, price: 99.5 },
   ],
-  processingItemConfigs: [
-    { processingItemName: '打孔加工', customPrice: 5 },
-  ],
   description: '高品质窗帘布',
   createdAt: '2026-01-15 10:00',
   updatedAt: '2026-06-20 15:00',
@@ -206,37 +204,6 @@ describe('ProductDetailPage', () => {
       const d = screen.getByText('商品描述')
       const i = screen.getByText('商品图片')
       expect(d.compareDocumentPosition(i) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    })
-  })
-
-  it('should render processing items section', async () => {
-    render(<ProductDetailPage />)
-    await waitFor(() => {
-      expect(screen.getByText('加工项')).toBeInTheDocument()
-      expect(screen.getByText('打孔加工')).toBeInTheDocument()
-    })
-  })
-
-  it('should render processing item price with fallback to unitPrice when customPrice absent', async () => {
-    // 复盘场景（sess_c1fce183dae24f22）：AI 建品加工项 customPrice 为空，
-    // 前端必须回退 finalPrice/unitPrice（此前渲染 ¥0.00/米 且单位硬编码）
-    mockGetProduct.mockResolvedValue({
-      data: {
-        data: {
-          ...mockProduct,
-          processingItemConfigs: [
-            { processingItemName: '刺绣工艺', customPrice: null, unitPrice: 30, finalPrice: 30, unit: '平方米' },
-            { processingItemName: '打孔加工', customPrice: 5, unitPrice: 8, finalPrice: 5, unit: '米' },
-          ],
-        },
-      },
-    })
-    render(<ProductDetailPage />)
-    await waitFor(() => {
-      // customPrice 为空 → 回退 unitPrice（30），单位用真实加工项单位（平方米）
-      expect(screen.getByText('¥30.00/平方米')).toBeInTheDocument()
-      // customPrice 存在 → 优先 customPrice（5）
-      expect(screen.getByText('¥5.00/米')).toBeInTheDocument()
     })
   })
 

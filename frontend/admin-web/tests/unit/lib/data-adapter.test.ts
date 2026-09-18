@@ -169,7 +169,7 @@ describe('buildProductPayload', () => {
       description: '高品质遮光布料',
       categoryId: 'cat-5',
       unit: '米',
-      supportsProcessing: true,
+      brand: '米高',
     })
     const payload = buildProductPayload(form)
     expect(payload.name).toBe('遮光窗帘')
@@ -177,7 +177,7 @@ describe('buildProductPayload', () => {
     expect(payload.description).toBe('高品质遮光布料')
     expect(payload.categoryId).toBe('cat-5')
     expect(payload.unit).toBe('米')
-    expect(payload.supportsProcessing).toBe(true)
+    expect(payload.brand).toBe('米高')
   })
 
   it('handles colors and SKUs in payload', () => {

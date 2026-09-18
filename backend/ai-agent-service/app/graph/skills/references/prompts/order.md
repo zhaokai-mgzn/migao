@@ -81,14 +81,14 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
   查不到 / 多规格价未指定所选 SKU → 拒绝。**拦截后不要重试同一错价**，直接把该行
   `unit_price`（与 `subtotal`）改成回填的库价再下单。
 - 「规格维度」（颜色/售卖方式/门幅）与「单价」是两回事：规格决定选哪个 SKU，单价来自该 SKU 的
-  `skus[].price`（无分色差价时即商品 `price`）；加工费来自加工项（`processing_items`），不在此铁律范围。
+  `skus[].price`（无分色差价时即商品 `price`）；加工费来自加工项（店铺级目录，见下节），不在此铁律范围。
 - 【铁律】规格卡的 option value 是规格/SKU ID，**不是商品 ID**：用户点选规格后，用商品 ID（product_id，来自 product_detail 调用参数）与所选规格字段填入订单；**禁止用规格 ID 调 product_detail/product_search**（规格 ID 查不到商品，CR-001 实拍：auto_select 回规格 ID 后 agent 误当商品 ID 查询致流程空转）。
 
 ## 加工项（🔴 新建订单 confirm 前必须主动询问，禁止跳过）
 
-- **数据来源**：product_detail 的 `processing_items`（containing id/name/unitPrice/pricingMethod），加工费按 `finalPrice`（无则 `unitPrice`）计算。
-- **必须主动询问**：SKU/规格确认后、**生成订单确认卡之前**，必须主动询问是否需要加工项——用 interact(component=choice, multiSelect=true) 展示加工项选择器（透传 pageMeta 支持翻页；processing_items 为空时如实告知"该商品无可用加工项"后继续，不强求）。**禁止不询问就直接弹订单确认卡**（sess_7f27137647e14b1e 实证：用户质问"为什么没引导我选择加工项"）。
-- **一次性提交格式**：用户点「完成选择」后收到「已选加工项：A、B」（名称列表）→ 解析全部名称，按名称从 product_detail 的 processing_items 匹配 id/unitPrice/pricingMethod 填入 order_create `processing_info.processingItems` = `[{id, name, unitPrice, quantity, unit, pricingMethod, subtotal}]`，`processing_info.processingFee` = 各项 `unitPrice × quantity` 之和。**禁止只认第一个名称**；用户说"不需要加工项"才跳过。
+- **数据来源**：**店铺级加工项目录** `processing_item_query`（#4371：加工项与商品解耦，product_detail **不再返回** processing_items），可带 keyword、**不带**商品分类参数。
+- **必须主动询问**：SKU/规格确认后、**生成订单确认卡之前**，先调 `processing_item_query` 拿目录，再用 interact(component=choice, multiSelect=true) 展示选择器（透传 pageMeta 支持翻页；**目录为空**才如实告知"暂无可用加工项"后继续）。**禁止不询问就直接弹订单确认卡**（sess_7f27137647e14b1e 实证）。
+- **一次性提交格式**：收到「已选加工项：A、B」→ 解析**全部**名称（禁止只认第一个），从目录匹配 id/unit_price/pricing_method 填入 order_create `processing_info.processingItems` = `[{id, name, unitPrice, quantity, unit, pricingMethod, subtotal}]`，`processingFee` = Σ(`unitPrice × quantity`)。用户说"不需要加工项"才跳过。
 - **金额**：`subtotal` = 面料小计 + 加工费；漏算加工费 = 订单金额错误 = 严重缺陷。
 - **数量规则**：per_meter → 面料米数（如打孔 8 元/米 × 3 米 = 24 元）；per_set/fixed → 1；per_area → 宽×高。**禁止虚构「每米几个」的密度推导**（行业加工费按米计价、辅料含在加工费中，issue #3005）。
 
