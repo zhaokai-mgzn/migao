@@ -41,6 +41,11 @@ import type {
   ProcessingOrderUpdateParams,
   ProductionOperations,
   PieceworkSummary,
+  OperationsCatalog,
+  RoutingsResponse,
+  PieceworkReport,
+  CatalogOperation,
+  ProductionOperationUpdateParams,
   ProductStatus,
   AfterSalesTicket,
   AfterSalesListParams,
@@ -354,6 +359,7 @@ export const processingOrderApi = {
 }
 
 // 生产报工 API（issue #4000，M4-H；后端 ProductionController，权限 order:list）
+// + 工序库/工艺路线只读消费者、计件工资报表、补生成工序、打印计数（issue #4202~#4205）
 export const productionApi = {
   // 加工单工序树 + 进度（含加工单二维码 token）
   getOrderOperations: (orderId: string) =>
@@ -362,6 +368,34 @@ export const productionApi = {
   // 加工单计件汇总（内部计件：合计 + 分人 + 分工序）
   getPiecework: (orderId: string) =>
     request.get<ApiResponse<PieceworkSummary>>(`/api/admin/production/orders/${orderId}/piecework`),
+
+  // 工艺库 + 工艺路线（只读；工序库页数据源）
+  getOperationsCatalog: () =>
+    request.get<ApiResponse<OperationsCatalog>>('/api/admin/production/operations-catalog'),
+
+  getRoutings: () =>
+    request.get<ApiResponse<RoutingsResponse>>('/api/admin/production/routings'),
+
+  // 工序库写：改单价 / 必完开关等（权限 processing:manage）
+  updateOperation: (id: string | number, data: ProductionOperationUpdateParams) =>
+    request.put<ApiResponse<CatalogOperation>>(`/api/admin/production/operations/${id}`, data),
+
+  // 计件工资报表（按期间 YYYY-MM 聚合，可按工人筛选）
+  getPieceworkSummary: (params: { period: string; worker_name?: string }) =>
+    request.get<ApiResponse<PieceworkReport>>('/api/admin/production/piecework/summary', { params }),
+
+  // 补生成工序（存量加工单：positions 可选，空 body ⇒ 服务端按订单派生）
+  instantiate: (orderId: string) =>
+    request.post<ApiResponse<{ qr_token?: string; operation_count?: number }>>(
+      `/api/admin/production/orders/${orderId}/instantiate`,
+      {},
+    ),
+
+  // 打印次数上报（fire-and-forget，失败不得阻断打印）
+  recordPrint: (orderId: string) =>
+    request.post<ApiResponse<{ order_id?: string; processing_order_no?: string; print_count?: number }>>(
+      `/api/admin/production/orders/${orderId}/print`,
+    ),
 }
 
 // Dashboard API

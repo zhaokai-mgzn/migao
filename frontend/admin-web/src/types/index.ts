@@ -692,6 +692,94 @@ export interface PieceworkSummary {
   per_operation?: PieceworkOperationAmount[]
 }
 
+// ── 工序库 / 工艺路线 / 计件报表（issue #4203/#4204/#4205；后端 ProductionOperationQueryService）──
+
+/** 工序库一道工序（库口径，非加工单实例） */
+export interface CatalogOperation {
+  /** 库主键（V54 种子为 `op-v54-01` 形态的字符串，勿假定为数字） */
+  id: string | number
+  name: string
+  /** 工序分组：裁剪 / 车位 / 后道 / 其他 */
+  group?: string | null
+  /** 部位：布帘 / 纱帘 / 帘头 / 外帘 */
+  position?: string | null
+  /** 单位：米/套/件/个/折 */
+  unit?: string | null
+  unit_price: number
+  /** 此工序必须完成才可打包（完工门槛） */
+  is_must_finish: boolean
+  /** 标记生产开始的首工序 */
+  is_start_marker: boolean
+}
+
+export interface CatalogGroup {
+  group: string
+  operations: CatalogOperation[]
+}
+
+/** GET /api/admin/production/operations-catalog */
+export interface OperationsCatalog {
+  total?: number
+  groups?: CatalogGroup[]
+}
+
+/** 工艺路线内一道工序（展示口径：库中缺该工序时 unit/unit_price 为 null，不猜默认值） */
+export interface RoutingStep {
+  seq: number
+  operation: string
+  group?: string | null
+  unit?: string | null
+  unit_price?: number | null
+  is_must_finish?: boolean
+  is_start_marker?: boolean
+}
+
+/** 工艺路线模板（部位 × 工艺 → 工序序列；布帘·韩褶 = 11 道） */
+export interface Routing {
+  id?: number
+  curtain_type: string
+  craft: string
+  operation_count: number
+  operations?: RoutingStep[]
+}
+
+/** GET /api/admin/production/routings */
+export interface RoutingsResponse {
+  total?: number
+  routings?: Routing[]
+}
+
+export interface PieceworkWorkerAmount {
+  worker_name: string
+  amount: number
+  qty: number
+}
+
+export interface PieceworkReportOperationAmount {
+  operation: string
+  amount: number
+  qty: number
+}
+
+/** GET /api/admin/production/piecework/summary?period=YYYY-MM[&worker_name=]（issue #4205） */
+export interface PieceworkReport {
+  period: string
+  total: number
+  per_worker: PieceworkWorkerAmount[]
+  per_operation: PieceworkReportOperationAmount[]
+}
+
+/** 工序可写字段（PUT /api/admin/production/operations/{id}，issue #4204） */
+export interface ProductionOperationUpdateParams {
+  unit_price?: number
+  is_must_finish?: boolean
+  is_start_marker?: boolean
+  status?: string
+  unit?: string
+  group_name?: string
+  sort_order?: number
+}
+
 // 物流信息
 export interface LogisticsInfo {  logisticsCompany?: string
   trackingNo?: string

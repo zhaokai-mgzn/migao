@@ -255,4 +255,7 @@ vi.mock('lucide-react', () => ({
   Newspaper: iconStub('newspaper'),
   Lightbulb: iconStub('lightbulb'),
   ListTodo: iconStub('list-todo'),
+  // issue #4203/#4202: 生产管理菜单组 + 补生成工序按钮新增图标（ClipboardCheck 已在上面登记）
+  Factory: iconStub('factory'),
+  Wrench: iconStub('wrench'),
 }))
