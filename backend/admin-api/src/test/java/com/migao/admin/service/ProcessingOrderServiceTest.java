@@ -488,7 +488,7 @@ class ProcessingOrderServiceTest {
     // ── PG-001 生成成功 ────────────────────────────────────────────
 
     @Test
-    @DisplayName("PG-001 已确认含加工项订单 → 生成加工单 + 订单联动 producing")
+    @DisplayName("PG-001 已确认含加工项订单 → 生成加工单（**不**联动订单，订单仍 confirmed；#4305）")
     void generateSuccess() {
         stubLibrary();
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
@@ -529,8 +529,11 @@ class ProcessingOrderServiceTest {
         assertThat(procs).hasSize(1);
         assertThat(procs.get(0).get("options")).isEqualTo(List.of("四爪钩"));
 
-        // 联动：订单 confirmed → producing
-        verify(orderService).updateOrderStatus("order-001", "producing");
+        // 订单联动（issue #4305，用户裁定「发加工 = 订单进入生产中」）：**生成不再推进订单** ——
+        // 时点已挪到发加工（见 updateStatusMainChain 的 issue 分支断言）。
+        // 红证：修复前这里调用 orderService.updateOrderStatus(orderId, "producing") ⇒ 本断言必红。
+        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
     }
 
     // ── issue #4116（P0 断链第一环）：生成加工单即实例化工序 → qr_token 非空 ──
@@ -1208,7 +1211,8 @@ class ProcessingOrderServiceTest {
         var results = processingOrderService.generate(List.of("ORD-20260912-0001"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isTrue();
-        verify(orderService).updateOrderStatus("order-001", "producing");
+        // #4305：生成不联动订单（时点在发加工）
+        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
     }
 
     // ── PG-005/006 状态机 ──────────────────────────────────────────
@@ -1233,6 +1237,10 @@ class ProcessingOrderServiceTest {
         assertThat(captor.getValue().getExpectedDeliveryDate()).isEqualTo(LocalDate.of(2026, 9, 20));
         assertThat(captor.getValue().getIssuedAt()).isNotNull();
 
+        // 订单联动（issue #4305，用户裁定「发加工 = 订单进入生产中」）：**发加工**才推进
+        // 订单 confirmed→producing（生成加工单已不再推进，见 generateSuccess 的 never 断言）
+        verify(orderService).updateOrderStatus("order-001", "producing");
+
         // start
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "issued"));
         ProcessingOrderUpdateRequest start = new ProcessingOrderUpdateRequest();
@@ -1250,6 +1258,8 @@ class ProcessingOrderServiceTest {
         verify(processingOrderMapper, times(3)).updateById(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo("completed");
         verify(orderService, never()).updateOrderStatus(eq("order-001"), eq("shipped"));
+        // start/complete **不**再联动订单（订单联动只发生在 issue 这一次）
+        verify(orderService, times(1)).updateOrderStatus("order-001", "producing");
     }
 
     @Test
@@ -1317,9 +1327,30 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("PG-007 取消（generated）→ 加工单 cancelled + 订单 producing→confirmed 回退")
-    void cancelGeneratedRevertsOrder() {
+    @DisplayName("PG-007 取消（generated）→ 加工单 cancelled；订单仍 confirmed ⇒ **不触发**回退（#4305 新时点）")
+    void cancelGeneratedDoesNotRevertOrder() {
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
+        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        // #4305 后：generated 态加工单对应的订单**从未**进入 producing（生成不推进、发加工才推进）
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+
+        ProcessingOrderUpdateRequest cancel = new ProcessingOrderUpdateRequest();
+        cancel.setAction("cancel");
+        cancel.setReason("加工方排期冲突");
+        processingOrderService.updateStatus("po-1", cancel, TENANT, "u1");
+
+        ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo("cancelled");
+        assertThat(captor.getValue().getCancelledReason()).isEqualTo("加工方排期冲突");
+        // 订单本就 confirmed ⇒ 回退是空动作（revert 会因「非 producing」抛 409）
+        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("PG-007 取消（issued，已发加工 ⇒ 订单 producing）→ 订单 producing→confirmed 回退")
+    void cancelIssuedRevertsOrder() {
+        when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "issued"));
         when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
         Order producing = Order.builder().id("order-001").tenantId(TENANT).status("producing").build();
         when(orderMapper.selectById("order-001")).thenReturn(producing);
@@ -1332,8 +1363,44 @@ class ProcessingOrderServiceTest {
         ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
         verify(processingOrderMapper).updateById(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo("cancelled");
-        assertThat(captor.getValue().getCancelledReason()).isEqualTo("加工方排期冲突");
         verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+    }
+
+    // ── issue #4305：发加工联动的 fail-closed 负例（形态同 generate 的落库失败回退）──
+
+    @Test
+    @DisplayName("#4305 发加工落库失败 → 订单联动先行已推进 ⇒ 回退 confirmed + 异常传播（无孤儿态）")
+    void issueLinkageRollsBackOrderWhenPersistFails() {
+        when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(processingOrderMapper.updateById(any(ProcessingOrder.class)))
+                .thenThrow(new RuntimeException("db down"));
+
+        ProcessingOrderUpdateRequest issue = new ProcessingOrderUpdateRequest();
+        issue.setAction("issue");
+
+        assertThatThrownBy(() -> processingOrderService.updateStatus("po-1", issue, TENANT, "u1"))
+                .isInstanceOf(RuntimeException.class);
+        // 联动先行：订单先 confirmed→producing；加工单落库失败 ⇒ 回退订单，杜绝
+        // 「订单生产中、加工单未发出」的孤儿态（与 #3345 P2② 给 generate 的同款 fail-closed）
+        verify(orderService).updateOrderStatus("order-001", "producing");
+        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+    }
+
+    @Test
+    @DisplayName("#4305 发加工：订单已是 producing（旧语义存量数据）⇒ 不重复推进、也不回退")
+    void issueSkipsLinkageWhenOrderAlreadyProducing() {
+        when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
+        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        Order producing = Order.builder().id("order-001").tenantId(TENANT).status("producing").build();
+        when(orderMapper.selectById("order-001")).thenReturn(producing);
+
+        ProcessingOrderUpdateRequest issue = new ProcessingOrderUpdateRequest();
+        issue.setAction("issue");
+        processingOrderService.updateStatus("po-1", issue, TENANT, "u1");
+
+        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
     }
 
     @Test
@@ -1448,8 +1515,8 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("复核修复 P2①：并发重复生成（DuplicateKeyException）→ 订单状态回退 + 幂等失败结果")
-    void generateConcurrentDuplicateRollsBackOrder() {
+    @DisplayName("并发重复生成（DuplicateKeyException）→ 幂等失败结果；**不**联动订单（#4305）")
+    void generateConcurrentDuplicateRejectedIdempotently() {
         stubLibrary();
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
         when(orderItemMapper.selectList(any()))
@@ -1462,14 +1529,14 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getMessage()).contains("已生成");
-        // 联动先发生、落库失败 → 订单回退 confirmed（无孤儿态）
-        verify(orderService).updateOrderStatus("order-001", "producing");
-        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+        // #4305：生成既不推进订单、也无「先推进后回退」可言（时点在发加工）⇒ 订单状态全程不动
+        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
     }
 
     @Test
-    @DisplayName("复核修复 P2②：落库失败（非重复）→ 状态回退 + 异常传播（整批回滚）")
-    void generateInsertFailureRollsBackAndPropagates() {
+    @DisplayName("生成落库失败（非重复）→ 异常传播（整批回滚）；订单状态不动（#4305）")
+    void generateInsertFailurePropagates() {
         stubLibrary();
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
         when(orderItemMapper.selectList(any()))
@@ -1480,7 +1547,8 @@ class ProcessingOrderServiceTest {
 
         assertThatThrownBy(() -> processingOrderService.generate(List.of("order-001"), TENANT, "u1"))
                 .isInstanceOf(RuntimeException.class);
-        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
+        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
     }
 
     // ══════════════════ 存量单补工序的派生 + 打印计数（issue #4202）══════════════════
