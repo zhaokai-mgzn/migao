@@ -619,6 +619,49 @@ class ProcessingOrderServiceTest {
         return java.util.Arrays.stream(table).map(row -> row[0]).toList();
     }
 
+    // ── 「樘窗」跨行分组（issue #4387 判据 2/3）────────────────────────────────
+    //
+    // 用户裁定（2026-09-19，issue #4387）：**一行 order_items = 一个部位（帘件）**；
+    // **樘窗（craftLineId 组）= 一个窗户**，是套级工序（#4384）与加工费（#4386）的归属层级。
+    // ⇒ 一樘「布 + 纱」= **两条明细行、各成部位、同 craftLineId**；
+    //   配布边仍**不独立成部位**（#4354 回归不变）。
+
+    /**
+     * 一樘窗 = 布行 + 纱行（**各自成部位**，同 `craftLineId` = `win-1`）。
+     *
+     * <p>两行的帘种/工艺**不同**（布帘×韩褶 11 道 vs 纱帘×打孔 6 道）—— 这是「各成部位」的判别物：
+     * 若把一樘窗算成一个部位（或错按「一扇」吸收纱行），工序数就既不是 17 也不是两条路线的并集。</p>
+     */
+    private List<OrderItem> clothPlusSheerWindow() {
+        OrderItem cloth = processedItemWithSpec("item-1", "布艺遮光帘A", "米白",
+                List.of(Map.of("id", "p1", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("curtainType", "布帘", "craft", "韩褶",
+                        "componentRole", "主布", "craftLineId", "win-1"));
+        OrderItem sheer = processedItemWithSpec("item-2", "纱帘A", "米白",
+                List.of(Map.of("id", "p2", "name", "打孔-纱", "unitPrice", 3.0, "quantity", 2, "unit", "孔")),
+                spec("curtainType", "纱帘", "craft", "打孔",
+                        "componentRole", "纱", "craftLineId", "win-1"));
+        return List.of(cloth, sheer);
+    }
+
+    /**
+     * **注入式对照**（issue #4387 判据 3 的红证形态）：与 {@link #colorBlockWindow()} 逐字相同，
+     * 只把配布边行的 `componentRole` **去掉**（= 角色缺省视为主布，见 {@code isEdgeRow}）。
+     *
+     * <p>去掉后该行不再被吸收 ⇒ 部位数 1 → 2。**同一份夹具的两个变体分别断言 1 / 2**
+     * 才是「部位数会随该键变化」的证明；只断言其中一边是空断言。</p>
+     */
+    private List<OrderItem> colorBlockWindowWithoutEdgeRole() {
+        OrderItem main = processedItemWithSpec("item-1", "布艺遮光帘A", "米白",
+                List.of(Map.of("id", "p1", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("curtainType", "布帘", "craft", "韩褶", "style", "拼色",
+                        "componentRole", "主布", "craftLineId", "item-1"));
+        OrderItem edgeWithoutRole = processedItemWithSpec("item-2", "配布边", "米白",
+                List.of(Map.of("id", "p2", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("style", "拼色", "craftLineId", "item-1"));
+        return List.of(main, edgeWithoutRole);
+    }
+
     /** 快照条目（craft spec 全键 + 算料输出），供详情响应用例直接喂 `items_snapshot`。 */
     private static Map<String, Object> craftSpecSnapshotEntry() {
         Map<String, Object> entry = new LinkedHashMap<>();
@@ -1668,6 +1711,70 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
+    @DisplayName("#4387 判据 2：一樘「布 + 纱」= 两条明细行、各成部位、同 craftLineId ⇒ 加工单两个部位（17 道工序）")
+    void clothPlusSheerWindowProducesTwoPositions() {
+        stubLibrary();
+        stubGenerate(clothPlusSheerWindow());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        // 两个部位 ⇒ 算料被问两个部位（纱帘是**独立部位**，不得被并进布行）
+        ArgumentCaptor<List<Map<String, Object>>> reqCaptor = ArgumentCaptor.forClass(List.class);
+        verify(productionOperationQtyClient).resolve(reqCaptor.capture());
+        assertThat(reqCaptor.getValue())
+                .as("一行 order_items = 一个部位 ⇒ 布 + 纱 = 两个部位（不是一扇，也不是三扇）")
+                .hasSize(2);
+        assertThat(reqCaptor.getValue()).extracting(p -> p.get("position_name"))
+                .containsExactly("布艺遮光帘A 米白", "纱帘A 米白");
+        // 工序 = 布帘×韩褶 11 道 + 纱帘×打孔 6 道（两条路线各自成部位，不互相吞并）
+        ArgumentCaptor<ProcessingPositionOperation> opCaptor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length + V58_SHALU_DAKONG.length))
+                .insert(opCaptor.capture());
+        List<String> expected = new ArrayList<>(operationNames(V54_BULIAN_HANZHE));
+        expected.addAll(operationNames(V58_SHALU_DAKONG));
+        assertThat(opCaptor.getAllValues()).extracting(ProcessingPositionOperation::getOperationName)
+                .containsExactlyElementsOf(expected);
+
+        // 固化真相：快照两条，**同 craftLineId**（樘窗 = 分组层级，事后可归属套级工序/加工费）
+        ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(poCaptor.capture());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> snapshot = (List<Map<String, Object>>) poCaptor.getValue().getItemsSnapshot();
+        assertThat(snapshot).hasSize(2);
+        assertThat(snapshot).extracting(entry -> entry.get("craftLineId"))
+                .as("布行与纱行必须带**同一个** craftLineId（否则两行归不到同一樘窗）")
+                .containsExactly("win-1", "win-1");
+        assertThat(snapshot).extracting(entry -> entry.get("curtainType"))
+                .containsExactly("布帘", "纱帘");
+    }
+
+    @Test
+    @DisplayName("#4387 判据 3（注入式红证）：配布边行**去掉** componentRole ⇒ 部位数 1 → 2（角色键是判别物）")
+    void edgeRowRoleIsWhatSuppressesTheExtraPosition() {
+        // ① 带 componentRole=配布边 ⇒ 吸收，一个部位（#4354 回归不变）
+        stubLibrary();
+        stubGenerate(colorBlockWindow());
+        realChainService().generate(List.of("order-001"), TENANT, "u1");
+        ArgumentCaptor<List<Map<String, Object>>> withRole = ArgumentCaptor.forClass(List.class);
+        verify(productionOperationQtyClient).resolve(withRole.capture());
+        assertThat(withRole.getValue()).as("配布边行不独立成部位").hasSize(1);
+
+        // ② 同夹具去掉该键（注入）⇒ 两个部位。同一夹具两变体对照，才是「部位数会随该键变化」的证明。
+        reset(productionOperationQtyClient, positionOperationMapper, processingOrderMapper);
+        stubQty();
+        stubLibrary();
+        stubGenerate(colorBlockWindowWithoutEdgeRole());
+        realChainService().generate(List.of("order-001"), TENANT, "u1");
+        ArgumentCaptor<List<Map<String, Object>>> withoutRole = ArgumentCaptor.forClass(List.class);
+        verify(productionOperationQtyClient).resolve(withoutRole.capture());
+        assertThat(withoutRole.getValue())
+                .as("注入生效：去掉 componentRole=配布边 ⇒ 该行不再被吸收 ⇒ 部位数变化（判据 3 的红证形态）")
+                .hasSize(2);
+    }
+
+    @Test
     @DisplayName("#4354 判据 B（消费端半边）：订单带 fabric_meters/pleat_count ⇒ 米类应做数量取自算料输出，不是 fallback 1")
     void orderCalcOutputReachesQtyEngineInsteadOfFallback() {
         Map<String, Object> calcInfo = generateAndCaptureCalcInfo(orderItemHanzheWithCalcOutput("米白"), true);
@@ -2095,6 +2202,24 @@ class ProcessingOrderServiceTest {
         assertThat(resp.getItems().get(0).getProductName()).isEqualTo("布艺遮光帘A");
         assertThat(resp.getItems().get(0).getColorName()).isEqualTo("米白");
         assertThat(resp.getItems().get(0).getProcessingItems()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("#4387 判据 1（回显）：快照 openCount=3（三开）⇒ 加工单详情响应原样透出 3")
+    void detailExposesThreePanelOpenCount() {
+        Map<String, Object> entry = craftSpecSnapshotEntry();
+        entry.put("openCount", 3);
+        ProcessingOrder po = po("po-1", "issued");
+        po.setItemsSnapshot(List.of(entry));
+        when(processingOrderMapper.selectOne(any())).thenReturn(po);
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+
+        ProcessingOrderResponse resp = processingOrderService.getDetail("po-1", TENANT);
+
+        assertThat(resp.getItems()).hasSize(1);
+        assertThat(resp.getItems().get(0).getOpenCount())
+                .as("三开是可回显的真值（1/2/4 白名单式过滤会把它丢掉 —— 那是静默丢值）")
+                .isEqualTo(3);
     }
 
     @Test

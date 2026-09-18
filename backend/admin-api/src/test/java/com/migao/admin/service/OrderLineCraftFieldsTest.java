@@ -144,6 +144,34 @@ class OrderLineCraftFieldsTest {
         assertThat(OrderLineCraftFields.toSnapshotKeys(partial)).containsOnlyKeys("curtainType");
     }
 
+    // issue #4387 判据 1：`open_count` 是**开数（正整数）**，不是固定枚举 ——
+    // 用户口径明确含三开。落库/回显两侧都必须原样搬运 3（不得按 1/2/4 白名单过滤）。
+    @Test
+    @DisplayName("#4387 判据 1：openCount=3（三开）可落库、可回显 —— 不被当成非法枚举丢掉")
+    void threePanelOpenCountMaterializesAndRoundTrips() {
+        OrderItem item = OrderItem.builder().orderId("o1").productName("布艺遮光帘A").build();
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("openCount", 3);
+
+        OrderLineCraftFields.materialize(info, item);
+        assertThat(item.getOpenCount()).as("三开可落库").isEqualTo(3);
+        assertThat(OrderLineCraftFields.toSnapshotKeys(item))
+                .as("三开可回显（快照键原样透传，不落默认值）")
+                .containsEntry("openCount", 3);
+    }
+
+    @Test
+    @DisplayName("#4387 判据 1：开数是正整数 —— 5 开这类超出 1/2/4 的开数同样原样搬运（不是固定枚举）")
+    void openCountIsPositiveIntegerNotAFixedEnum() {
+        OrderItem item = OrderItem.builder().orderId("o1").productName("布艺遮光帘A").build();
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("openCount", 5);
+
+        OrderLineCraftFields.materialize(info, item);
+        assertThat(item.getOpenCount()).isEqualTo(5);
+        assertThat(OrderLineCraftFields.toSnapshotKeys(item)).containsEntry("openCount", 5);
+    }
+
     @Test
     @DisplayName("判据 4：取不出值 ⇒ 该列 null（不静默丢值由实现打 WARN，值层面不猜）")
     void unparseableValuesBecomeNull() {

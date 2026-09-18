@@ -30,8 +30,16 @@ export interface CraftSpecRow {
 
 type Formatter = (value: unknown) => string | null
 
-/** 打开方式（§4.2 字段表 A：`openCount` = 1 单开 / 2 双开 / 4 四开） */
-const OPEN_COUNT_LABELS: Record<string, string> = { '1': '单开', '2': '双开', '4': '四开' }
+/**
+ * 打开方式（§4.2 字段表 A：`openCount` = 1 单开 / 2 双开 / 3 三开 / 4 四开）。
+ * 开数是**正整数**不是固定枚举（issue #4387 判据 1）⇒ 表外的开数由 `openCount()` 如实标「N 开」。
+ */
+const OPEN_COUNT_LABELS: Record<string, string> = {
+  '1': '单开',
+  '2': '双开',
+  '3': '三开',
+  '4': '四开',
+}
 
 /** 标量直出（数字/布尔/字符串）；数组、对象、空值 ⇒ `null`（不渲染） */
 function plainText(value: unknown): string | null {

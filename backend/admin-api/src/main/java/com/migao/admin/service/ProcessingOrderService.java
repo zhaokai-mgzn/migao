@@ -61,6 +61,9 @@ import java.util.concurrent.ThreadLocalRandom;
  * <h2>部位语义（issue #4354 起：显式字段优先，派生是**长期兜底**）</h2>
  * {@code processing_position_operations.position_name} 取「加工产物名[+色号]」（如「布艺遮光帘A 米白」），
  * 而工序库的路线是**按部位**索引的（布帘/纱帘/帘头）⇒ 部位必须单独取。
+ * <p><b>一行 {@code order_items} = 一个部位（帘件）</b>（用户裁定 2026-09-19，issue #4387）：
+ * 布 + 纱 = **两条明细行**，各成一个部位，靠 {@code craftLineId} 绑成**同一樘窗**（一个窗户）——
+ * 樘窗是套级工序（#4384）与加工费樘窗级（#4386）的归属层级；配布边仍不独立成部位。</p>
  * 取法 = {@link #deriveRouteKey} 的三层链：
  * <b>显式字段</b>（issue #4362 起 = {@code order_items} 的 craft spec **列**；issue #4354 起
  * {@code processing_info} 顶层同键是旧载体）&gt; <b>加工项推导</b> &gt; <b>信号派生兜底</b>
@@ -345,9 +348,12 @@ public class ProcessingOrderService {
      * <p>部位名 = 加工产物名[+色号]（同行多套据此区分）—— 见类注释「部位语义」节：
      * 部位名落到产品名，而路线键由 {@link #deriveRouteKey} **直读**订单工艺规格（存量单才派生）。</p>
      *
-     * <p><b>拼色绑组（issue #4354，设计文档 §4.8）</b>：同一扇窗的主布行 + 配布边行用
-     * {@code craftLineId} 绑成一组 ⇒ 配布边行**不独立成部位**（否则一扇窗被算成两扇：
-     * 折数/开数/幅数/工序/计件全部翻倍）。组内只有配布边行时它仍自成部位（不静默丢窗）。</p>
+     * <p><b>樘窗绑组（issue #4354 引入，issue #4387 语义扩展）</b>：{@code craftLineId} 标识
+     * **同一樘窗（一个窗户）** —— 它是套级工序（#4384）与加工费樘窗级（#4386）的**归属层级**。
+     * 部位 = {@code order_items} 行 = 一件帘（布帘 / 纱帘 / 帘头）⇒
+     * **布行与纱行各自成部位**（同组不合并），只有 {@code componentRole=配布边} 的行
+     * **不独立成部位**（否则一扇窗被算成两扇：折数/开数/幅数/工序/计件全部翻倍）。
+     * 组内只有配布边行时它仍自成部位（不静默丢窗）。</p>
      *
      * <p><b>定型开关（issue #4354，设计文档 §4.7）</b>：{@code isShaped=false} ⇒ 从基准序列里
      * 剔除 {@link #UNSHAPED_REMOVED_OPERATIONS}（真值源 §10 登记的「唯一尚未接线」项），
@@ -378,7 +384,7 @@ public class ProcessingOrderService {
         // 逐部位在内存里按本单的 specialOptions 过滤 —— 避免「每个选项一次查询」的 N+1。
         List<ProductionOptionRouting> optionRoutings = productionOperationQueryService.optionRoutings(tenantId);
         List<ProductionOptionFactor> optionFactors = productionOperationQueryService.optionFactors(tenantId);
-        // 拼色绑组（issue #4354，设计文档 §4.8）：组键 = `craftLineId`（缺省 ⇒ 本行 itemId ⇒ 各自成组）
+        // 樘窗绑组（issue #4354 引入，issue #4387 语义扩展）：组键 = `craftLineId`（缺省 ⇒ 本行 itemId ⇒ 各自成组）
         Set<String> groupsWithMainRow = groupsWithMainRow(snapshot);
         for (Map<String, Object> entry : snapshot) {
             if (!(entry.get("processingItems") instanceof List<?>)) {
@@ -443,8 +449,10 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 拼色绑组（issue #4354，设计文档 §4.8）：同一扇窗的多行用 {@code craftLineId} 绑成一组，
-     * 组内**只保留一个部位**（主布行）。
+     * 樘窗绑组（issue #4354 引入，issue #4387 语义扩展）：同一樘窗（一个窗户）的多行用
+     * {@code craftLineId} 绑成一组；组键只用于判定**配布边行**是否可被吸收 ——
+     * **不是**「组内只保留一个部位」（布行 + 纱行同组时各成一个部位，见
+     * {@link #buildPositionPayload} 的「樘窗绑组」节）。
      *
      * <p><b>组键</b> = 本行 {@code craftLineId}；缺省 ⇒ 本行 {@code itemId}。
      * 后者让「配布边行填**主布行的行标识**」（order_create 工具描述教的形态）也能对齐 ——

@@ -61,9 +61,9 @@ public class ProcessingOrderResponse {
     @Data
     public static class ProcessingOrderItemBrief {
         /**
-         * 订单明细行 id（issue #4354）：拼色绑组用 —— `craftLineId` 按设计文档 §4.8 取「主布行的
-         * {@code order_item.id}」，配布边行填的就是它。进快照是为了让「一扇窗 = 一组」这件事
-         * 在**固化真相**里自解释（缺 `craftLineId` 时它就是本行自己的组键）。
+         * 订单明细行 id（issue #4354；issue #4387 语义扩展）：**樘窗绑组**用 —— `craftLineId`
+         * 按设计文档 §4.8 取「主布行的 {@code order_item.id}」，配布边行填的就是它。进快照是为了让
+         * 「一樘窗 = 一组」这件事在**固化真相**里自解释（缺 `craftLineId` 时它就是本行自己的组键）。
          */
         private String itemId;
         private String productName;
@@ -104,7 +104,7 @@ public class ProcessingOrderResponse {
         private Object craft;
         /** 加工类型（`定高买宽` / `定宽买高`）。 */
         private Object cuttingMode;
-        /** 打开方式（`1` / `2` / `4`）。 */
+        /** 打开方式（**开数**，正整数：`1` / `2` / `3` / `4` …，不是固定枚举；issue #4387 判据 1）。 */
         private Object openCount;
         /** 是否定型：`false` ⇒ 实例化时已剔除 `定型-布` / `复烫-布`（本包接线）。 */
         private Object isShaped;
@@ -122,7 +122,15 @@ public class ProcessingOrderResponse {
         private Object batchNo;
         /** 明细行角色（`主布` / `配布边` / `纱`；缺省视为 `主布`）。 */
         private Object componentRole;
-        /** 同一扇窗的绑组标识（配布边行填主布行的行标识；同组只生成一个部位）。 */
+        /**
+         * **樘窗**（一个窗户）的绑组标识（issue #4354 引入；issue #4387 语义扩展为「樘窗分组」）：
+         * 同组 = 同一樘窗，是套级工序（#4384）与加工费（#4386）的归属层级。
+         *
+         * <p>⚠️ **不是「同组只生成一个部位」**（那是 #4354 只用于配布边吸收时的旧口径）：
+         * 部位 = `order_items` 行 = 一件帘（布帘 / 纱帘 / 帘头）⇒ **布行与纱行同组时各成一个部位**，
+         * 只有 `componentRole=配布边` 的行不独立成部位。判据见
+         * {@code ProcessingOrderServiceTest#clothPlusSheerWindowProducesTwoPositions}。</p>
+         */
         private Object craftLineId;
         /** 配布边米数来源（`跟随主布` / `人工指定`）。 */
         private Object metersSource;
