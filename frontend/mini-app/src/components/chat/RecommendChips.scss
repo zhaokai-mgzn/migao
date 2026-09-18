@@ -1,21 +1,17 @@
-// RecommendChips — 主页顶部横滑推荐胶囊（瑞幸 Agent 主页同款）
+// RecommendChips — 主页顶部推荐胶囊（3 条 × 3 行，水平居中，与六格同宽对齐）
 @use '../../styles/variables.scss' as *;
 
 .recommend-chips {
+  // 左右 24px = `.quick-actions` 的 padding ⇒ 胶囊块与六格**同宽对齐**；
+  // 居中由 align-items 给（每条胶囊保持自然宽度，不做通栏）
   width: 100%;
-  margin-top: 28px;
-
-  // 横滑容器：通栏（左右留白由 row 的 padding 给，滚动时不裁切）
-  &__scroll {
-    width: 100%;
-    white-space: nowrap;
-  }
-
-  &__row {
-    display: inline-flex;
-    gap: 14px;
-    padding: 4px 40px;
-  }
+  box-sizing: border-box;
+  padding: 0 24px;
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 
   &__chip {
     display: inline-flex;
@@ -26,7 +22,6 @@
     border: 1px solid $border-color;
     border-radius: $radius-full;
     box-shadow: $shadow-card;
-    white-space: nowrap;
 
     &--hover {
       opacity: 0.85;

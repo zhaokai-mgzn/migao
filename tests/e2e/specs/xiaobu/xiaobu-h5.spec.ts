@@ -12,7 +12,7 @@
  *
  * UI-014: 快捷入口六入口全保留，**六格等权**（2 列 × 3 行，算料报价不跨整行）
  * UI-016: 导航副标题企业名取自企业设置 tenantName（mock='米高窗帘'）
- * UI-044: 空态顶部横滑推荐胶囊（纯前端静态策划文案；文案方向 = 能力钩子 + 场景痛点）
+ * UI-044: 空态顶部推荐胶囊（**3 条 × 3 行居中**，纯前端静态策划文案；文案 = 专业服务句）
  *
  * 2026-09-17 同步 M1-A（UI-044）：空态**不再展示商品推荐卡**（NewArrivals 组件与
  * 「新品推荐」区块已删除，推荐改由「推荐热门商品」快捷对话入口承载）
@@ -24,10 +24,13 @@
  *   + 组头配色 + 右箭头），用户判为「反而改得更丑」并明确要回「上个 2 列 × 3 行的设计」
  *   ⇒ **回退为六格等权** + 原标题「您可以试试以下问题」；本 spec 对两栏分组结构做**负向断言**
  *   （防半回退 / 死代码）。
- * · **保留** RecommendChips（用户在原截图上圈出该区并明确「保留」），但**文案重定**为
- *   「能力钩子 + 场景痛点」5 条（每条指向不同能力：算料/知识/商品/性价比/物流）。
+ * · **保留** RecommendChips（用户在原截图上圈出该区并明确「保留」），随后**两轮定稿**：
+ *   ① 文案改「能力钩子 + 场景痛点」（每条指向不同能力）→ ② 用户要求「不要太口语化，我们得专业」
+ *   ⇒ 定稿为**专业服务句**（行业术语 + 服务项）；
+ *   ③ 用户要求「布局得居中，和六格一样」⇒ **3 条 × 3 行、水平居中、与六格同宽对齐**，
+ *   横滑实现撤下（横滑必然左对齐 + 右端截断，与「居中」相斥；且 3 条也挤不进一行）。
  * · **同一批**更新 `xiaobu-empty-welcome.png` 截图基线（空态画面再次改变 ⇒ darwin + linux 双平台）。
- * · ⚠️ 商品卡的负向判据保持**结构性**（`.new-arrivals*` 容器 + `¥` 价格），不用「遮光窗帘」子串代理
+ * · ⚠️ 商品卡的负向判据保持**结构性**（`.new-arrivals*` 容器 + `¥` 价格），不用商品名子串代理
  *   —— 胶囊文案可能合法含商品词，子串代理会假红。
  *
  * 2026-09-18 同步卡型口径（#4016 P14 的「两个零发射点卡型」现**统一为「补发射点」**）：
@@ -174,11 +177,14 @@ test.describe('小布 H5 视觉回归', () => {
     // UI-016：副标题企业名来自企业设置（mock tenantName='米高窗帘'），非硬编码默认值
     await expect(page.getByText('米高窗帘 · 智能购物助手')).toBeVisible()
 
-    // UI-044（issue #4236 定稿文案）：顶部横滑推荐胶囊 —— 纯前端静态策划文案
-    // 文案方向 = 能力钩子 + 场景痛点（每条指向不同能力）
-    await expect(page.locator('.recommend-chips__chip')).toHaveCount(5)
-    await expect(page.getByText('报个尺寸，我算你要几米布')).toBeVisible()
-    await expect(page.getByText('客厅西晒？先看遮光率')).toBeVisible()
+    // UI-044（issue #4236 定稿）：顶部推荐胶囊 —— 3 条专业服务句、**居中竖排**
+    await expect(page.locator('.recommend-chips__chip')).toHaveCount(3)
+    await expect(page.getByText('按窗尺寸测算用布量与报价')).toBeVisible()
+    await expect(page.getByText('遮光率等级与适用场景')).toBeVisible()
+    await expect(page.getByText('查询订单物流轨迹')).toBeVisible()
+    // 横滑实现已撤下（横滑必然左对齐 + 右端截断，与「居中」相斥）—— 负向断言防半回退
+    await expect(page.locator('.recommend-chips__scroll')).toHaveCount(0)
+    await expect(page.locator('.recommend-chips__row')).toHaveCount(0)
 
     // UI-014（issue #4236 回退）：六格等权（2 列 × 3 行），原标题「您可以试试以下问题」
     await expect(page.getByText('您可以试试以下问题')).toBeVisible()
@@ -209,12 +215,12 @@ test.describe('小布 H5 视觉回归', () => {
     })
   })
 
-  test('推荐胶囊点击唤起对话（横滑入口，纯前端文案）', async ({ page }) => {
+  test('推荐胶囊点击唤起对话（居中胶囊，纯前端文案）', async ({ page }) => {
     await setupMocks(page)
     await page.goto('/#/pages/chat/index/index')
 
     // UI-044：点胶囊 = 发送对应 prompt 进对话（与快捷入口同语义）
-    const chip = page.getByText('报个尺寸，我算你要几米布')
+    const chip = page.getByText('按窗尺寸测算用布量与报价')
     await expect(chip).toBeVisible()
     await chip.click()
     await expect(page.getByText('帮我算一下窗帘用料和价格')).toBeVisible()
