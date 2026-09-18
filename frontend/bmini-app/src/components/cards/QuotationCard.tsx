@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { View, Text } from '@tarojs/components'
+import { craftSpecRows } from '../../utils/craft-spec'
 import './QuotationCard.scss'
 
 export interface QuoteBreakdown {
@@ -19,6 +20,23 @@ export interface QuoteData {
   formula_used?: string
   fullness?: number
   warning?: string
+  /**
+   * 工艺规格（设计文档 §4.9 ①）：**原样**来自 `curtain_calc` 输出对象，报价卡不做推导。
+   * 键名 = 算料输出口径（snake_case，§4.5）；缺键/`null` ⇒ 该行不渲染。
+   */
+  curtain_type?: string | null
+  craft?: string | null
+  open_count?: number | null
+  is_shaped?: boolean | null
+  style?: string | null
+  special_options?: string[] | null
+  pleat_count?: number | null
+  per_panel_pleats?: number | null
+  pleat_spacing?: number | null
+  panels?: number | null
+  has_pattern?: boolean | null
+  pattern_repeat?: number | null
+  processing_meters?: number | null
 }
 
 interface QuotationCardProps {
@@ -26,10 +44,18 @@ interface QuotationCardProps {
   onConfirm?: () => void
 }
 
+/**
+ * 头部已展示的字段：规格块不重复渲染同一真值。
+ * 「理论褶倍 / 实际褶倍 / 面料米数」已在 header-sub 一行里给出。
+ */
+const HEADER_LABELS = new Set(['理论褶倍', '实际褶倍', '面料米数'])
+
 export default function QuotationCard({ data, onConfirm }: QuotationCardProps) {
   const breakdown = data.breakdown || []
   // 确认下单防连点锁：点击后锁卡（issue #3040 收尾 #3038，防重复下单）
   const [confirmed, setConfirmed] = useState(false)
+  // 工艺规格（issue #4355 / 设计文档 §4.9 ①）：同一份定义（utils/craft-spec）渲染，缺值行已丢弃
+  const specRows = craftSpecRows(data).filter((row) => !HEADER_LABELS.has(row.label))
 
   return (
     <View className='quotation-card'>
@@ -52,6 +78,19 @@ export default function QuotationCard({ data, onConfirm }: QuotationCardProps) {
           </View>
         ))}
       </View>
+
+      {/* 工艺规格（设计文档 §4.9 ①）：无任何工艺键时整块不出现 */}
+      {specRows.length > 0 && (
+        <View className='quotation-card__spec'>
+          <Text className='quotation-card__spec-title'>工艺规格</Text>
+          {specRows.map((row) => (
+            <View key={row.label} className='quotation-card__spec-row'>
+              <Text className='quotation-card__spec-label'>{row.label}</Text>
+              <Text className='quotation-card__spec-value'>{row.value}</Text>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* 告警（窗高超定高上限等） */}
       {data.warning && (

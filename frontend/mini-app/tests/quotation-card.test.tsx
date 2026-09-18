@@ -1,9 +1,12 @@
-// case_ids: OR-010, CH-010, CH-030
+// case_ids: OR-010, CH-010, CH-030, CH-038
 /**
  * QuotationCard 交互测试 — 报价单确认下单（interact 报价 → 防连点锁）
  *
  * 覆盖：报价单明细/合计渲染、确认下单按钮点击触发 onConfirm 一次后锁卡
  * （防重复下单，issue #3040 收尾 #3038）。
+ *
+ * issue #4355（设计文档 §4.9 ① 报价单）：工艺规格展示 —— 报价卡直接渲染 `curtain_calc`
+ * 输出对象（同一份 spec 三处渲染；**缺值不渲染**，绝不出现 undefined/null/NaN）。
  */
 import React from 'react'
 import '@testing-library/jest-dom'
@@ -65,5 +68,87 @@ describe('QuotationCard — 报价单确认下单', () => {
     render(<QuotationCard data={{ ...baseQuote, fullness: 2 }} />)
     expect(screen.getByText(/2 倍褶皱/)).toBeTruthy()
     expect(screen.queryByText(/实际/)).toBeNull()
+  })
+
+  // ── issue #4355：工艺规格展示（设计文档 §4.9 ①）─────────────────────
+
+  /** 与 `curtain_calc.build_quote` 返回同形的工艺规格键（snake_case，§4.5） */
+  const craftSpec = {
+    curtain_type: '布帘',
+    craft: '韩褶',
+    formula_used: 'fixed_height_pleats',
+    open_count: 2,
+    is_shaped: true,
+    style: '拼色',
+    special_options: ['加铅线', '双褶'],
+    pleat_count: 52,
+    per_panel_pleats: 26,
+    pleat_spacing: 0.1,
+    has_pattern: true,
+    pattern_repeat: 0.32,
+    processing_meters: 13.3,
+  }
+
+  it('渲染工艺规格：部位/工艺/加工类型/打开方式/是否定型/款式/特殊选项', () => {
+    render(<QuotationCard data={{ ...baseQuote, ...craftSpec }} />)
+    expect(screen.getByText('工艺规格')).toBeTruthy()
+    expect(screen.getByText('部位')).toBeTruthy()
+    expect(screen.getByText('布帘')).toBeTruthy()
+    expect(screen.getByText('韩褶')).toBeTruthy()
+    // 加工类型由 `formula_used` 映射（§4.2 的真值来源），不另写推导
+    expect(screen.getByText('定高买宽')).toBeTruthy()
+    expect(screen.getByText('双开')).toBeTruthy()
+    // 「是否定型」「是否对花」都是「是」⇒ 按行断言，避免命中歧义
+    expect(screen.getByText('是否定型').parentElement?.textContent).toContain('是')
+    expect(screen.getByText('拼色')).toBeTruthy()
+    expect(screen.getByText('加铅线、双褶')).toBeTruthy()
+  })
+
+  it('渲染算料口径：总褶数/折数（每片）/褶距/加工费米数/是否对花/花距', () => {
+    render(<QuotationCard data={{ ...baseQuote, ...craftSpec }} />)
+    expect(screen.getByText('52')).toBeTruthy()
+    expect(screen.getByText('26')).toBeTruthy()
+    expect(screen.getByText('0.1米')).toBeTruthy()
+    expect(screen.getByText('13.3米')).toBeTruthy()
+    expect(screen.getByText('0.32米')).toBeTruthy()
+    expect(screen.getByText('是否对花')).toBeTruthy()
+  })
+
+  it('定宽买高：`fixed_width*` / `roman_panel` 都映射为「定宽买高」（§4.2）', () => {
+    const { unmount } = render(
+      <QuotationCard data={{ ...baseQuote, formula_used: 'fixed_width_pleats' }} />
+    )
+    expect(screen.getByText('定宽买高')).toBeTruthy()
+    unmount()
+    render(<QuotationCard data={{ ...baseQuote, formula_used: 'roman_panel' }} />)
+    expect(screen.getByText('定宽买高')).toBeTruthy()
+  })
+
+  it('缺值不渲染：键缺席 / null / 空串 ⇒ 该行不出现，且不出现 undefined/null/NaN', () => {
+    const { container } = render(
+      <QuotationCard
+        data={{
+          ...baseQuote,
+          craft: null,
+          curtain_type: undefined,
+          open_count: null,
+          style: '',
+          special_options: [],
+          is_shaped: null,
+          formula_used: undefined,
+        }}
+      />
+    )
+    expect(screen.queryByText('工艺规格')).toBeNull()
+    for (const label of ['部位', '工艺', '加工类型', '打开方式', '是否定型', '款式', '特殊选项']) {
+      expect(screen.queryByText(label)).toBeNull()
+    }
+    expect(container.textContent).not.toMatch(/undefined|null|NaN/)
+  })
+
+  it('旧载荷（无工艺键）时报价卡渲染与改动前一致（向后兼容）', () => {
+    const { container } = render(<QuotationCard data={baseQuote} />)
+    expect(screen.queryByText('工艺规格')).toBeNull()
+    expect(container.textContent).not.toMatch(/undefined|null|NaN/)
   })
 })
