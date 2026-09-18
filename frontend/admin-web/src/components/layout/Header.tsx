@@ -39,8 +39,18 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   { match: (p) => p.startsWith('/products'), crumbs: [{ label: '商品管理' }, { label: '商品列表' }] },
   { match: (p) => p.startsWith('/categories'), crumbs: [{ label: '商品管理' }, { label: '商品分类管理' }] },
   // 顺序敏感：/processing-orders 必须先于 /processing（find 按数组序取首个命中）
-  { match: (p) => p.startsWith('/processing-orders'), crumbs: [{ label: '订单管理' }, { label: '加工单' }] },
+  // issue #4357：加工单并入生产管理组 ⇒ 本目录下只剩「生产明细」子路由（列表页已重定向）
+  { match: (p) => p.startsWith('/processing-orders'), crumbs: [{ label: '生产管理' }, { label: '生产明细' }] },
   { match: (p) => p.startsWith('/processing'), crumbs: [{ label: '商品管理' }, { label: '加工项管理' }] },
+
+  // 生产管理组（与侧边栏"生产管理"分组对齐，issue #4357 补 —— 此前本组**无任何面包屑条目**
+  // ⇒ 落进兜底分支显示「工作台 > 经营看板」，§15.2「面包屑与侧边栏菜单名一致」不成立）
+  // 顺序敏感：更具体的子路径必须先于 /production
+  { match: (p) => p.startsWith('/production/operations'), crumbs: [{ label: '生产管理' }, { label: '工序库' }] },
+  { match: (p) => p.startsWith('/production/routings'), crumbs: [{ label: '生产管理' }, { label: '工艺路线' }] },
+  { match: (p) => p.startsWith('/production/piecework'), crumbs: [{ label: '生产管理' }, { label: '计件工资' }] },
+  // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
+  { match: (p) => p.startsWith('/production'), crumbs: [{ label: '生产管理' }, { label: '生产看板' }] },
 
   // 订单管理（与侧边栏"订单管理"分组对齐）
   { match: (p) => p.startsWith('/orders'), crumbs: [{ label: '订单管理' }, { label: '订单列表' }] },

@@ -1,4 +1,4 @@
-// case_ids: UI-005, UI-033, UI-037
+// case_ids: UI-005, UI-033, UI-037, PG-036
 /**
  * Header 组件测试
  *
@@ -420,6 +420,48 @@ describe('Header', () => {
     })
     expect(screen.getByText('商品管理')).toBeInTheDocument()
     expect(screen.getByText('加工项管理')).toBeInTheDocument()
+  })
+
+  // 生产管理组面包屑（issue #4357）：加工单并入生产管理组。此前 /production **没有任何面包屑条目**
+  // ⇒ 落进兜底分支显示「工作台 > 经营看板」，§15.2「面包屑与侧边栏菜单名一致」不成立（本单补）。
+  it('/production 路径面包屑（生产管理 > 生产看板，issue #4357 补）', async () => {
+    mockPathname = '/production'
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByText('生产管理')).toBeInTheDocument()
+    expect(screen.getByText('生产看板')).toBeInTheDocument()
+    // 不得回落成兜底面包屑
+    expect(screen.queryByText('工作台')).not.toBeInTheDocument()
+  })
+
+  it('/production/operations 路径面包屑（更具体子路径优先于 /production）', async () => {
+    mockPathname = '/production/operations'
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByText('生产管理')).toBeInTheDocument()
+    expect(screen.getByText('工序库')).toBeInTheDocument()
+  })
+
+  it('/production/piecework 路径面包屑（生产管理 > 计件工资）', async () => {
+    mockPathname = '/production/piecework'
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByText('生产管理')).toBeInTheDocument()
+    expect(screen.getByText('计件工资')).toBeInTheDocument()
+  })
+
+  it('/processing-orders/{id}/production 面包屑改判到生产管理组（issue #4357；原「订单管理 > 加工单」）', async () => {
+    mockPathname = '/processing-orders/JG-20260917-0001/production'
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByText('生产管理')).toBeInTheDocument()
+    expect(screen.getByText('生产明细')).toBeInTheDocument()
+    // 加工单已不在订单管理组（旧面包屑不得残留）
+    expect(screen.queryByText('加工单')).not.toBeInTheDocument()
   })
 
   it('/knowledge 路径面包屑（#2969 知识库归入智能客服组）', async () => {
