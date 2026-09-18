@@ -135,10 +135,18 @@ async function mockProcessingOrderApis(page: import('@playwright/test').Page) {
     }
 
     if (method === 'GET') {
-      // 列表：/api/admin/processing-orders（keyword/status）；详情等子路径本 spec 不 mock
+      // 列表：/api/admin/processing-orders（keyword/status）
       const rest = url.pathname.replace('/api/admin/processing-orders', '')
       if (rest) {
-        await json(404, { code: 404, data: null })
+        // 加工单详情（issue #4345）：加工单块按 **orderId** 取详情 —— 与后端
+        // `resolveProcessingOrder` 的三形态同口径（内部 id / 加工单号 / 订单号）。
+        // 旧实现对该子路径一律 404 ⇒ 订单详情页永远看不到加工单块，
+        // 「状态流转唯一入口 = 订单详情页」这条旅程在 e2e 里**不可达**。
+        const key = decodeURIComponent(rest.replace(/^\//, ''))
+        const hit = state.find(
+          (p) => p.id === key || p.processingOrderNo === key || p.orderId === key,
+        )
+        await json(hit ? 200 : 404, { code: hit ? 200 : 404, data: hit ?? null })
         return
       }
       let filtered = [...state]
@@ -178,6 +186,61 @@ async function mockProcessingOrderApis(page: import('@playwright/test').Page) {
   })
 
   return { patchBodies }
+}
+
+/**
+ * 订单详情页 mock（issue #4345）：加工单块的**父页面**（唯一入口所在页）。
+ * 块本身经 orderId 取加工单详情，由上面的 `mockProcessingOrderApis` 一并覆盖。
+ */
+async function mockOrderDetailApi(page: import('@playwright/test').Page, orderId: string) {
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': 'http://localhost:3001',
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Methods': 'GET,POST,PATCH,PUT,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  }
+  await page.route(`**/api/admin/orders/${orderId}`, async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback()
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: corsHeaders,
+      body: JSON.stringify({
+        code: 200,
+        data: {
+          id: orderId,
+          orderNo: 'YK20260601001',
+          customerName: '张三',
+          customerPhone: '13800138001',
+          customerAddress: '浙江省杭州市西湖区文三路1号1幢101室',
+          totalAmount: 536.0,
+          actualAmount: 536.0,
+          status: 'producing',
+          hasProcessing: true,
+          items: [
+            {
+              id: 'item_001',
+              productId: 'prod_001',
+              productName: '北欧简约遮光窗帘',
+              color: '灰色',
+              specification: '门幅2.8米',
+              quantity: 5,
+              unitPrice: 23.8,
+              amount: 119.0,
+            },
+          ],
+          processingItems: [
+            { id: 'pi_001', name: '韩式打褶定型', unitPrice: 25.0, quantity: 2, amount: 50.0 },
+          ],
+          logistics: null,
+          createdAt: '2026-06-01T10:30:00Z',
+        },
+      }),
+    })
+  })
 }
 
 /** 按加工单号定位表格行（行内断言用，避免跨行歧义） */
@@ -308,116 +371,25 @@ test.describe('加工单列表页面', () => {
     await expect(page.getByText('JG-20260601-0001')).toBeVisible()
   })
 
-  test('状态机按钮随状态渲染（非法动作不出现 = 等效禁用）', async ({ page }) => {
-    // generated：发加工 + 取消加工单，无开始加工/加工完成
-    const genRow = rowBy(page, 'JG-20260601-0001')
-    await expect(genRow.getByRole('button', { name: '发加工' })).toBeVisible()
-    await expect(genRow.getByRole('button', { name: '取消加工单' })).toBeVisible()
-    await expect(genRow.getByRole('button', { name: '开始加工' })).not.toBeVisible()
-    await expect(genRow.getByRole('button', { name: '加工完成' })).not.toBeVisible()
-
-    // issued：开始加工 + 取消加工单，无发加工
-    const issuedRow = rowBy(page, 'JG-20260602-0002')
-    await expect(issuedRow.getByRole('button', { name: '开始加工' })).toBeVisible()
-    await expect(issuedRow.getByRole('button', { name: '取消加工单' })).toBeVisible()
-    await expect(issuedRow.getByRole('button', { name: '发加工' })).not.toBeVisible()
-
-    // in_processing：加工完成 + 取消加工单
-    const procRow = rowBy(page, 'JG-20260603-0003')
-    await expect(procRow.getByRole('button', { name: '加工完成' })).toBeVisible()
-    await expect(procRow.getByRole('button', { name: '开始加工' })).not.toBeVisible()
-
-    // completed / cancelled：终态，无任何状态机按钮，只有「查看」
-    for (const no of ['JG-20260604-0004', 'JG-20260605-0005']) {
+  test('列表页不再提供状态流转入口（唯一入口 = 订单详情页，issue #4305）', async ({ page }) => {
+    // #4305 用户裁定：状态流转入口**收敛到订单详情页加工单块**，列表页四个动作按钮全部移除。
+    // 本条改判自原「状态机按钮随状态渲染」——五种状态逐一负向断言（含终态），
+    // 并断言跳转类入口与引导文案仍在（避免「移除了动作」被误读成「移除了操作区」）。
+    for (const no of [
+      'JG-20260601-0001',
+      'JG-20260602-0002',
+      'JG-20260603-0003',
+      'JG-20260604-0004',
+      'JG-20260605-0005',
+    ]) {
       const row = rowBy(page, no)
       await expect(row.getByRole('button', { name: '查看' })).toBeVisible()
-      await expect(row.getByRole('button', { name: '发加工' })).not.toBeVisible()
-      await expect(row.getByRole('button', { name: '开始加工' })).not.toBeVisible()
-      await expect(row.getByRole('button', { name: '加工完成' })).not.toBeVisible()
-      await expect(row.getByRole('button', { name: '取消加工单' })).not.toBeVisible()
+      await expect(row.getByRole('button', { name: '生产明细' })).toBeVisible()
+      for (const label of ['发加工', '开始加工', '加工完成', '取消加工单']) {
+        await expect(row.getByRole('button', { name: label })).not.toBeVisible()
+      }
+      await expect(row.getByText('状态流转请在订单详情操作')).toBeVisible()
     }
-  })
-
-  test('开始加工：confirm → PATCH(start) → 刷新后徽章「加工中」+「加工完成」按钮出现', async ({ page }) => {
-    // 注意：beforeEach 已 mock 一次，这里再调会重复注册 —— 直接通过已有路由断言
-    // 用 dialog 接受确认
-    page.on('dialog', async (dialog) => {
-      await dialog.accept()
-    })
-    await rowBy(page, 'JG-20260602-0002').getByRole('button', { name: '开始加工' }).click()
-    await page.waitForTimeout(500)
-
-    // PATCH 已发出且参数正确
-    const patch = api.patchBodies.find((b) => b.action === 'start' && b.id === 'po-002')
-    expect(patch).toBeTruthy()
-    // 结果可见：toast + 列表刷新后状态徽章与按钮变化
-    await expect(page.getByText('已开始加工')).toBeVisible({ timeout: 5_000 })
-    const issuedRow = rowBy(page, 'JG-20260602-0002')
-    await expect(issuedRow.getByText('加工中', { exact: true })).toBeVisible({ timeout: 5_000 })
-    await expect(issuedRow.getByRole('button', { name: '加工完成' })).toBeVisible()
-    await expect(issuedRow.getByRole('button', { name: '开始加工' })).not.toBeVisible()
-  })
-
-  test('加工完成：confirm → PATCH(complete) → 徽章「加工完成」', async ({ page }) => {
-    page.on('dialog', async (dialog) => {
-      await dialog.accept()
-    })
-    await rowBy(page, 'JG-20260603-0003').getByRole('button', { name: '加工完成' }).click()
-    await page.waitForTimeout(500)
-
-    const patch = api.patchBodies.find((b) => b.action === 'complete' && b.id === 'po-003')
-    expect(patch).toBeTruthy()
-    // 结果可见：toast + 刷新后徽章「加工完成」+ 状态机按钮消失
-    await expect(page.getByText('加工已完成').first()).toBeVisible({ timeout: 5_000 })
-    const procRow = rowBy(page, 'JG-20260603-0003')
-    await expect(procRow.getByText('加工完成', { exact: true })).toBeVisible({ timeout: 5_000 })
-    await expect(procRow.getByRole('button', { name: '加工完成' })).not.toBeVisible()
-  })
-
-  test('发加工：弹窗填写 → PATCH(issue, processor) → 徽章「已发加工」', async ({ page }) => {
-    await rowBy(page, 'JG-20260601-0001').getByRole('button', { name: '发加工' }).click()
-
-    const modal = page.locator('.fixed.inset-0')
-    await expect(modal.getByRole('heading', { name: '发加工' })).toBeVisible()
-    await modal.getByPlaceholder('如：朝阳加工厂').fill('城东印染厂')
-    await modal.locator('input[type="date"]').fill('2026-06-10')
-    await modal.getByRole('button', { name: '确认发加工' }).click()
-    await page.waitForTimeout(500)
-
-    const patch = api.patchBodies.find((b) => b.action === 'issue' && b.id === 'po-001')
-    expect(patch).toBeTruthy()
-    expect(patch?.processor).toBe('城东印染厂')
-    expect(patch?.expectedDeliveryDate).toBe('2026-06-10')
-    // 结果可见：刷新后徽章「已发加工」+ 按钮切换为「开始加工」（toast 断言省略：
-    // 状态下拉 <option> 同文且靠前，全局文本断言会命中 hidden 元素）
-    const genRow = rowBy(page, 'JG-20260601-0001')
-    await expect(genRow.getByText('已发加工', { exact: true })).toBeVisible({ timeout: 5_000 })
-    await expect(genRow.getByRole('button', { name: '开始加工' })).toBeVisible()
-    await expect(genRow.getByRole('button', { name: '发加工' })).not.toBeVisible()
-  })
-
-  test('取消加工单：原因必填 → PATCH(cancel, reason) → 徽章「已取消」', async ({ page }) => {
-    await rowBy(page, 'JG-20260601-0001').getByRole('button', { name: '取消加工单' }).click()
-
-    const modal = page.locator('.fixed.inset-0')
-    await expect(modal.getByRole('heading', { name: '取消加工单' })).toBeVisible()
-    // 原因为空时确认按钮禁用（后端同样要求取消必填原因）
-    const confirmBtn = modal.getByRole('button', { name: '确认取消' })
-    await expect(confirmBtn).toBeDisabled()
-    await modal.getByPlaceholder('请输入取消原因').fill('客户不要了')
-    await expect(confirmBtn).toBeEnabled()
-    await confirmBtn.click()
-    await page.waitForTimeout(500)
-
-    const patch = api.patchBodies.find((b) => b.action === 'cancel' && b.id === 'po-001')
-    expect(patch).toBeTruthy()
-    expect(patch?.reason).toBe('客户不要了')
-    // 结果可见：toast + 刷新后徽章「已取消」+ 状态机按钮消失
-    await expect(page.getByText('加工单已取消')).toBeVisible({ timeout: 5_000 })
-    const genRow = rowBy(page, 'JG-20260601-0001')
-    await expect(genRow.getByText('已取消', { exact: true })).toBeVisible({ timeout: 5_000 })
-    await expect(genRow.getByRole('button', { name: '发加工' })).not.toBeVisible()
-    await expect(genRow.getByRole('button', { name: '取消加工单' })).not.toBeVisible()
   })
 
   test('查看按钮跳转对应订单详情（订单详情已含加工单块）', async ({ page }) => {
@@ -448,5 +420,106 @@ test.describe('加工单列表页面', () => {
     await page.waitForTimeout(500)
     expect(listRequests).toBeGreaterThan(before)
     await expect(page.getByText('JG-20260601-0001')).toBeVisible()
+  })
+})
+
+// ────────────────────────── 订单详情页加工单块（状态流转唯一入口） ──────────────────────────
+//
+// issue #4305 用户裁定「从订单作为发加工的唯一入口」⇒ 原列表页弹窗/按钮驱动的四条流转旅程
+// **改判到订单详情页的加工单块**（issue #4345：本 spec 是 #4305 的漏改点，main 曾因此 5 failed）。
+// 断言只增不减：PATCH body 逐字段、状态徽标、按钮切换三件效果层判据全部保留。
+test.describe('订单详情页加工单块（唯一入口）', () => {
+  let api: { patchBodies: PatchCall[] }
+
+  test.describe.configure({ timeout: 240_000 })
+
+  test.beforeEach(async ({ page }) => {
+    api = await mockProcessingOrderApis(page)
+    await mockOrderDetailApi(page, 'o001')
+    await page.goto('/orders/o001')
+    // 正信号等待：加工单块（唯一入口）与加工单号出现
+    const block = page.locator('.po-print-area')
+    await expect(block).toBeVisible({ timeout: 60_000 })
+    await expect(block.getByText('JG-20260601-0001')).toBeVisible({ timeout: 60_000 })
+  })
+
+  test('发加工：内联表单填加工方/交期 → PATCH(issue) → 徽标「已发加工」+ 按钮切换', async ({ page }) => {
+    const block = page.locator('.po-print-area')
+    await block.getByRole('button', { name: '发加工' }).click()
+    await page.locator('input[placeholder*="加工方"]').first().fill('城东印染厂')
+    // 交期必须 ≥ 今天（加工单块 date 控件 min=今天，且 handleAction 有同一口径的防御校验）
+    const future = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().slice(0, 10)
+    await block.locator('input[type="date"]').first().fill(future)
+    await block.getByRole('button', { name: '确认发加工' }).click()
+    await page.waitForTimeout(500)
+
+    const patch = api.patchBodies.find((b) => b.action === 'issue' && b.id === 'po-001')
+    expect(patch).toBeTruthy()
+    expect(patch?.processor).toBe('城东印染厂')
+    expect(patch?.expectedDeliveryDate).toBe(future)
+    // 效果层：状态徽标逐字（块内唯一的 span.bg-primary-50）+ 按钮切换
+    // （块的状态时间线**恒含**四个步骤文案 ⇒ 全页文本断言是空判据，不用）
+    await expect(block.locator('span.bg-primary-50').first()).toHaveText('已发加工', { timeout: 5_000 })
+    await expect(block.getByRole('button', { name: '开始加工' })).toBeVisible()
+    await expect(block.getByRole('button', { name: '发加工' })).not.toBeVisible()
+  })
+
+  test('开始加工：confirm → PATCH(start) → 徽标「加工中」+「加工完成」按钮出现', async ({ page }) => {
+    const block = page.locator('.po-print-area')
+    // 先发加工（块上 generated 态只有「发加工/取消加工单」）
+    page.on('dialog', async (dialog) => {
+      await dialog.accept()
+    })
+    await block.getByRole('button', { name: '发加工' }).click()
+    await block.getByRole('button', { name: '确认发加工' }).click()
+    await expect(block.locator('span.bg-primary-50').first()).toHaveText('已发加工', { timeout: 5_000 })
+
+    await block.getByRole('button', { name: '开始加工' }).click()
+    await page.waitForTimeout(500)
+
+    const patch = api.patchBodies.find((b) => b.action === 'start' && b.id === 'po-001')
+    expect(patch).toBeTruthy()
+    await expect(block.locator('span.bg-primary-50').first()).toHaveText('加工中', { timeout: 5_000 })
+    await expect(block.getByRole('button', { name: '加工完成' })).toBeVisible()
+    await expect(block.getByRole('button', { name: '开始加工' })).not.toBeVisible()
+  })
+
+  test('加工完成：confirm → PATCH(complete) → 徽标「加工完成」+ 发货提示', async ({ page }) => {
+    const block = page.locator('.po-print-area')
+    page.on('dialog', async (dialog) => {
+      await dialog.accept()
+    })
+    // generated → issued → in_processing → completed（状态机主链逐级走，非法迁移会被后端拒绝）
+    await block.getByRole('button', { name: '发加工' }).click()
+    await block.getByRole('button', { name: '确认发加工' }).click()
+    await expect(block.locator('span.bg-primary-50').first()).toHaveText('已发加工', { timeout: 5_000 })
+    await block.getByRole('button', { name: '开始加工' }).click()
+    await expect(block.locator('span.bg-primary-50').first()).toHaveText('加工中', { timeout: 5_000 })
+
+    await block.getByRole('button', { name: '加工完成' }).click()
+    await page.waitForTimeout(500)
+
+    const patch = api.patchBodies.find((b) => b.action === 'complete' && b.id === 'po-001')
+    expect(patch).toBeTruthy()
+    await expect(block.locator('span.bg-primary-50').first()).toHaveText('加工完成', { timeout: 5_000 })
+    await expect(block.getByText('加工已完成，可发货')).toBeVisible()
+  })
+
+  test('取消加工单：原因必填 → PATCH(cancel, reason) → 徽标「已取消」+ 原因可见', async ({ page }) => {
+    const block = page.locator('.po-print-area')
+    await block.getByRole('button', { name: '取消加工单' }).click()
+    // 原因为空时确认按钮禁用（后端同样要求取消必填原因）
+    const confirmBtn = block.getByRole('button', { name: '确认取消' })
+    await expect(confirmBtn).toBeDisabled()
+    await block.getByPlaceholder('取消原因（必填，涉及订单状态联动）').fill('客户不要了')
+    await expect(confirmBtn).toBeEnabled()
+    await confirmBtn.click()
+    await page.waitForTimeout(500)
+
+    const patch = api.patchBodies.find((b) => b.action === 'cancel' && b.id === 'po-001')
+    expect(patch).toBeTruthy()
+    expect(patch?.reason).toBe('客户不要了')
+    await expect(block.locator('span.bg-primary-50').first()).toHaveText('已取消', { timeout: 5_000 })
+    await expect(block.getByText('取消原因：客户不要了')).toBeVisible()
   })
 })
