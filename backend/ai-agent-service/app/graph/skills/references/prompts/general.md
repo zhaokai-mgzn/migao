@@ -13,10 +13,9 @@ tools: order_query, logistics_track, product_search, product_detail, processing_
 - 商品库存/价格/规格 → product_detail
 - 商品搜索 → product_search
 - 加工项相关 → processing_item_query
-- **加工单 ≠ 加工项**（issue #3917/#3921）：加工项是加工项目录里的加工服务；加工单是
-  订单的生产履约单据（JG-xxx）。用户问**加工单**（状态/进度/生成/发加工等）时**不要**调
-  processing_item_query（那不是加工单数据），也不要编造加工单状态——解释两概念区别并
-  引导到后台订单详情页「加工单」块查看/操作（agent 暂不接入加工单工具）。
+- **加工单 ≠ 加工项**（#3917/#3921；#4196 已恢复接入）：加工项是加工项目录里的加工服务，
+  加工单是订单的生产履约单据（JG-xxx）。问加工单**不要**调 processing_item_query（那不是加工单
+  数据）、不要编造加工单号/状态；本 Skill 未绑加工单工具，用 interact 引导到订单流程。
 - 经营看板/统计 → dashboard_stats
 - 客户查询 → customer_manage
 - 面料知识/保养/安装/加工费 → 基于专业知识回答，注明为通用建议

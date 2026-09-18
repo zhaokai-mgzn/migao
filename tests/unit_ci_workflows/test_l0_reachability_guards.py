@@ -8,8 +8,9 @@
 `WRITE_TOOLS` / `WRITE_TOOL_ACTIONS` 是**判据的单一源**：`case_trust_gate.py` 用它决定
 「这条用例是不是写用例 ⇒ 必须有效果层断言」。它与**后端工具注册表**是两份可以各自漂移的清单：
 
-- 工具**下线**（例如 `processing_order_*` 三件套按 issue #3917 产品决策**不再注册**，
-  工具类文件仍留在 `app/tools/`）→ 名字**留在** `WRITE_TOOLS` 里 = **陈旧判据**；
+- 工具**下线**（例如 `human_handoff` 按用户裁定 2026-09-19 **退场**：不在
+  `create_default_registry()`、不在任何 skill 工具集，工具类文件仍留在 `app/tools/`）
+  → 名字**留在** `WRITE_TOOLS` 里 = **陈旧判据**；
 - 工具**新增**却没人往写集合里加 → 新写工具的用例**不受效果层断言约束** = 门禁静默变空壳。
 
 两种漂移都**不会自己变红**（`WRITE_TOOLS` 非空这条自检照样通过 —— 见该文件末尾的
@@ -26,14 +27,15 @@
 2. 取 `create_default_registry` 里每个 `from app.tools.<mod> import <ToolClass>` ⇒ 模块；
 3. 读该模块的同名 `class`，取其 `name = "<tool_name>"` ⇒ 工具名。
 
-⚠️ **注释掉的注册不算**（`# registry.register(ProcessingOrderGenerateTool())`）——
-AST 天然只看**活的代码**，这正是要的语义（`processing_order_*` 三件套即活例）。
+⚠️ **注释掉的注册不算**（`# registry.register(HumanHandoffTool())`）——
+AST 天然只看**活的代码**，这正是要的语义（`human_handoff` 即活例；`processing_order_*`
+三件套曾在 #3917 下线期充当同一活例，已按 **#4196** 恢复注册 ⇒ 不再是该形态的实例）。
 
 ## 每条的**反例输入**（红证）
 
 | 用例 | 反例输入（改这一处即红） |
 |---|---|
-| `test_write_tools_are_registered_tools` | 把已下线的 `processing_order_generate` 加回 `WRITE_TOOLS` |
+| `test_write_tools_are_registered_tools` | 把已退场的 `human_handoff` 加回 `WRITE_TOOLS` |
 | `test_write_tool_actions_are_registered_tools` | 把 `WRITE_TOOL_ACTIONS` 的 key 改成不存在的工具名 |
 | `test_every_registered_write_tool_is_declared` | 新增一个 `read_only=False` 的工具却不动 taxonomy ⇒ 必红 |
 | `test_registry_parser_matches_the_known_tool_set` | 把某个 `registry.register(...)` 注释掉 ⇒ 解析集合变化 ⇒ 与名单不符即红 |
@@ -72,7 +74,11 @@ KNOWN_REGISTERED_TOOLS: frozenset[str] = frozenset({
     "customer_order_query", "dashboard_stats", "employee_manage", "finance_api",
     "interact", "inventory_manage", "knowledge_search", "logistics_track",
     "notification_manage", "order_create", "order_manage", "order_query", "piecework_query",
-    "processing_item_manage", "processing_item_query", "product_detail", "product_manage",
+    "processing_item_manage", "processing_item_query",
+    # 加工单三工具（issue #4196 恢复接入；#3917 下线期间本名单**没有**它们 ——
+    # 正是「注册行被注释掉 ⇒ 解析集合少一个」这条摩擦的实例）
+    "processing_order_generate", "processing_order_query", "processing_order_update",
+    "product_detail", "product_manage",
     "product_processing_item_manage", "product_search", "product_update",
     "production_progress_query", "role_manage", "session_manage", "settings_manage",
     "sku_update", "validate_input",
@@ -196,9 +202,10 @@ def _unregistered(members: set[str], registered: set[str]) -> list[str]:
 def test_write_tools_are_registered_tools():
     """**A13 核心不变式**：`WRITE_TOOLS` ⊆ 已注册工具名。
 
-    反例输入（红证 ⑤）：把已下线的 `processing_order_generate` 加回 `WRITE_TOOLS` ⇒ 必红。
-    （该工具类文件仍在 `app/tools/processing_order_generate.py`，只是不再注册 ——
-    所以「文件存在」不能当判据，必须比注册表。）
+    反例输入（红证 ⑤）：把**已退场**的 `human_handoff` 加回 `WRITE_TOOLS` ⇒ 必红。
+    （该工具类文件仍在 `app/tools/human_handoff.py`，只是不再注册 ——
+    所以「文件存在」不能当判据，必须比注册表。`processing_order_generate` 曾是本红证的
+    实例，#4196 恢复注册后已回表内，故换 `human_handoff`。）
     """
     registered = set(registered_tools())
     assert len(registered) >= 30, f"只反解出 {len(registered)} 个工具 —— 解析疑似失效（守卫会空转）"
@@ -208,7 +215,7 @@ def test_write_tools_are_registered_tools():
         f"`WRITE_TOOLS` 里有 {len(stale)} 个**未注册/已下线**的工具名：{stale}\n"
         f"→ 判据会把这些工具的用例判成「写用例」（要求效果层断言），"
         f"而它们根本执行不了 ⇒ 假红；同时掩盖真正在线的写工具缺口。\n"
-        f"→ 修法：从 `WRITE_TOOLS` 移除（同 issue #3917 下线 `processing_order_*` 的处置）。"
+        f"→ 修法：从 `WRITE_TOOLS` 移除（同 `human_handoff` 退场时的处置）。"
     )
 
 
@@ -251,7 +258,7 @@ def test_every_registered_write_tool_is_declared():
     "fabricated",
     [
         {"order_create", "ghost_tool_zzz"},                       # 不存在的名字
-        {"order_create", "processing_order_generate"},            # **真实存在但已下线**（#3917）
+        {"order_create", "human_handoff"},                        # **真实存在但已退场**（用户裁定 2026-09-19）
         {"aftersale_create", "knowledge_manage"},                 # RAG 禁用、未注册
     ],
 )
