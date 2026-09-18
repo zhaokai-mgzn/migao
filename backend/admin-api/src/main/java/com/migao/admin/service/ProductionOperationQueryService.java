@@ -263,7 +263,7 @@ public class ProductionOperationQueryService {
      * <p>{@code operation_name} 为空 = 该部位全部工序（平摊档）；非空 = 逐工序例外档。
      * 取用口径（在 {@code ProcessingOrderService} 里）：同一选项内**例外档盖住平摊档**，
      * 多个选项之间**相乘** —— 与真值源 {@code routing.py::factor_for} 逐字同口径
-     * （相乘而非覆盖：两个独立倍率的合成；覆盖会把「一分二 ×1.7 + 另一选项 ×2」算成 ×2）。</p>
+     * （相乘而非覆盖：两个独立倍率的合成；覆盖会把「一分为二 ×1.7 + 另一选项 ×2」算成 ×2）。</p>
      */
     public List<ProductionOptionFactor> optionFactors(Long tenantId) {
         List<ProductionOptionFactor> rows = productionOptionFactorMapper.selectList(

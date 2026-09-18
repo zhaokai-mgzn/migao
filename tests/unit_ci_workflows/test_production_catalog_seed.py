@@ -710,6 +710,203 @@ def test_price_version_backfill_is_idempotent(seed_sqls):
         "V56 的版本回填没有 NOT EXISTS 守卫 ⇒ 重复执行会插出第二行（最新版本歧义）")
 
 
+# ── ⑥ 特殊选项名（join key）三源收敛（issue #4389）──
+#
+# 为什么单列一段：`SPECIAL_OPTION_ROUTINGS` / `OPTION_FACTOR_SCOPES` / `NON_PIECEWORK_OPTIONS`
+# 的**键**是「订单选配 → 车间工序 / 计件系数」的 **join key** —— 错一个字 ⇒
+# `.get(opt) → None` ⇒ 条件工序不加、计件系数静默退回 1.0 ⇒ **少发工人钱**（无任何东西变红）。
+# 用户裁定 R-e「以 ERP 为准改」⇒ 三张表的键、V59 种子、`schema.sql` 终态必须**逐字**一致。
+#
+# ⚠️ **V59 是已发布迁移，一个字都不许改**（`MigrationRunner` 按文件名整份 skip ⇒ 改它只对全新库
+# 生效，存量环境永远拿不到 —— 「CI 全绿、功能静默缺失」）。改名只能走**新迁移**
+# （本单 = `V65__align_special_option_names_with_erp.sql`，`UPDATE ... SET option_name = '新'
+# WHERE option_name = '旧'`）。故「迁移侧」= **V59 的 INSERT ∪ 改名迁移的 UPDATE**，
+# 而改名迁移按**内容**发现（含 `UPDATE production_option_* SET option_name` 的 `V*.sql`）
+# ⇒ 将来的改名迁移无需改本文件。
+
+OPTION_FACTOR_COLUMNS = ("id", "tenant_id", "option_name", "operation_name", "factor", "source")
+OPTION_ROUTING_COLUMNS = ("id", "tenant_id", "option_name", "operation_name",
+                          "after_operation", "sort_order", "status")
+
+_RENAME_STMT_RE = re.compile(
+    r"UPDATE\s+(production_option_\w+)\s+SET\s+option_name\s*=\s*'([^']*)'"
+    r".*?WHERE\s+option_name\s*=\s*'([^']*)'", re.I | re.S)
+_RENAME_FILE_RE = re.compile(r"UPDATE\s+production_option_\w+\s+SET\s+option_name", re.I)
+
+
+def option_rename_sources(migration_dir: Path = MIGRATION_DIR) -> tuple:
+    """按**内容**发现「选项改名」迁移（版本号数值序）；空集由下方自证拦下（fail-closed）。"""
+    directory = Path(migration_dir)
+    return tuple(p for p in sorted(directory.glob(MIGRATION_GLOB),
+                                   key=lambda p: version_key(p.name))
+                 if _RENAME_FILE_RE.search(p.read_text(encoding="utf-8")))
+
+
+def option_renames(migration_dir: Path = MIGRATION_DIR) -> dict:
+    """{表: {旧名: 新名}} —— 聚合全部改名迁移（版本号序，后写覆盖先写）。"""
+    renames: dict = {}
+    for path in option_rename_sources(migration_dir):
+        for table, new_name, old_name in _RENAME_STMT_RE.findall(path.read_text(encoding="utf-8")):
+            renames.setdefault(table.lower(), {})[old_name] = new_name
+    return renames
+
+
+def effective_option_rows(table: str, columns, migration_dir: Path = MIGRATION_DIR) -> list:
+    """**有效**选项行（`V59 的 INSERT` ∪ `改名迁移的 UPDATE` 已应用）→ [{列: 归一化字面量}]。
+
+    归一化口径与 `by_name` 同源（`normalize_value`）⇒ 可与 `schema.sql` 侧直接比 dict。
+    """
+    rows = []
+    for path in seed_sources_for(table, migration_dir):
+        rows += parse_seed(path.read_text(encoding="utf-8"), table, columns)
+    renames = option_renames(migration_dir).get(table, {})
+    out = []
+    for row in rows:
+        normalized = {col: normalize_value(row[col]) for col in columns}
+        name = normalized["option_name"]
+        normalized["option_name"] = renames.get(name, name)
+        out.append(normalized)
+    return out
+
+
+def _routing_py_option_registries():
+    """routing.py 的三张特殊选项表 + 待确认集合（**真值源**，单一 import 点）。"""
+    sys.path.insert(0, str(ROUTING_PY_DIR))
+    try:
+        from app.production.routing import (
+            NON_PIECEWORK_OPTIONS, OPTION_FACTOR_SCOPES,
+            PENDING_CUSTOMER_CONFIRMATION_OPTIONS, SPECIAL_OPTION_ROUTINGS,
+        )
+        return (SPECIAL_OPTION_ROUTINGS, OPTION_FACTOR_SCOPES,
+                NON_PIECEWORK_OPTIONS, PENDING_CUSTOMER_CONFIRMATION_OPTIONS)
+    finally:
+        sys.path.pop(0)
+
+
+def _normalized(rows, columns) -> list:
+    """`parse_seed` 的**原始字面量**行 → 归一化行（与 `effective_option_rows` 同口径，可比 dict）。"""
+    return [{col: normalize_value(row[col]) for col in columns} for row in rows]
+
+
+def _factor_map(rows) -> dict:
+    """选项行（已归一化）→ {(选项, 工序限定): 系数}（工序限定 `NULL` ⇒ None = 平摊档）。"""
+    return {(r["option_name"], None if r["operation_name"] == "NULL" else r["operation_name"]):
+            float(r["factor"]) for r in rows}
+
+
+def _routing_map(rows) -> dict:
+    """选项行（已归一化）→ {选项: (条件工序, 锚点)}。"""
+    return {r["option_name"]: (r["operation_name"], r["after_operation"]) for r in rows}
+
+
+def test_option_rename_sources_are_discovered_and_nonempty():
+    """自证：改名迁移必须**被读到**（空集 ⇒ 迁移侧退化成直读 V59 ⇒ 三源比对假绿）。"""
+    sources = option_rename_sources()
+    assert sources, (
+        "未发现任何「选项改名」迁移（含 `UPDATE production_option_* SET option_name` 的 V*.sql）"
+        "⇒ 迁移侧退化成直读 V59（= 修复前形态），本段判据全部空转")
+    renames = option_renames()
+    assert renames, "改名迁移存在但解析不出任何改名语句（解析器与迁移写法脱节）"
+
+
+def test_option_factor_names_converge_across_three_sources(schema_sql):
+    """判据 3（红证）：系数表三源**逐行逐字**一致 —— V59 ∪ 改名迁移 ↔ routing.py ↔ schema.sql。
+
+    改一处不改另两处即红：① 只改 `routing.py` 的键 ⇒ 迁移/bootstrap 两侧名字对不上；
+    ② 只改 `schema.sql` ⇒ 与迁移侧对不上；③ 只改迁移（含漏掉改名）⇒ 与真值源对不上。
+    """
+    _, factor_scopes, _, _ = _routing_py_option_registries()
+    truth = {(opt, sc["operation_name"]): float(sc["factor"])
+             for opt, scopes in factor_scopes.items() for sc in scopes}
+    migration = _factor_map(effective_option_rows("production_option_factors", OPTION_FACTOR_COLUMNS))
+    bootstrap = _factor_map(_normalized(
+        parse_seed(schema_sql, "production_option_factors", OPTION_FACTOR_COLUMNS),
+        OPTION_FACTOR_COLUMNS))
+    assert migration == truth, f"系数表：迁移侧（V59 ∪ 改名）≠ routing.py OPTION_FACTOR_SCOPES：{_diff_keys(migration, truth)}"
+    assert bootstrap == truth, f"系数表：schema.sql 终态 ≠ routing.py：{_diff_keys(bootstrap, truth)}"
+
+
+def test_option_routing_names_converge_across_three_sources(schema_sql):
+    """判据 3（红证）：条件工序表三源**逐行逐字**一致（16 项 × 工序/锚点）。"""
+    routings, _, _, _ = _routing_py_option_registries()
+    truth = {opt: (spec["operation"], spec["after"]) for opt, spec in routings.items()}
+    migration = _routing_map(effective_option_rows("production_option_routings",
+                                                   OPTION_ROUTING_COLUMNS))
+    bootstrap = _routing_map(_normalized(
+        parse_seed(schema_sql, "production_option_routings", OPTION_ROUTING_COLUMNS),
+        OPTION_ROUTING_COLUMNS))
+    assert migration == truth, f"条件工序表：迁移侧 ≠ routing.py SPECIAL_OPTION_ROUTINGS：{_diff_keys(migration, truth)}"
+    assert bootstrap == truth, f"条件工序表：schema.sql 终态 ≠ routing.py：{_diff_keys(bootstrap, truth)}"
+
+
+def test_option_names_carry_no_stale_spelling_anywhere():
+    """判据 1/2（红证）：三源里**都不得**残留 ERP 名对齐之前的写法。
+
+    旧写法（`一分二` / `余料带回(布)` / `余料带回(纱)`）一旦残留在任一源里，那条链就是
+    「按 ERP 说法选 ⇒ 查不到 ⇒ 静默失效」—— 故三个源逐个点名比对。
+    """
+    stale = {"一分二", "余料带回(布)", "余料带回(纱)"}
+    routings, factor_scopes, non_piecework, _ = _routing_py_option_registries()
+    registries = set(routings) | set(factor_scopes) | set(non_piecework)
+    assert registries & stale == set(), f"routing.py 注册表键残留旧写法: {sorted(registries & stale)}"
+    for table, columns in (("production_option_factors", OPTION_FACTOR_COLUMNS),
+                           ("production_option_routings", OPTION_ROUTING_COLUMNS)):
+        names = {r["option_name"] for r in effective_option_rows(table, columns)}
+        assert names & stale == set(), f"{table}（迁移侧有效状态）残留旧写法: {sorted(names & stale)}"
+    assert not (stale & {r["option_name"] for r in _normalized(
+        parse_seed(SCHEMA.read_text(encoding="utf-8"), "production_option_factors",
+                   OPTION_FACTOR_COLUMNS), OPTION_FACTOR_COLUMNS)}), \
+        "schema.sql 的系数种子残留旧写法"
+
+
+def test_erp_leftover_return_forms_are_all_explicitly_registered():
+    """判据 2（红证）：ERP 的**三种**「余料带回」形态都被显式登记（既不漏、也不落静默黑洞）。
+
+    `余料带回-布` / `余料带回-纱` = 显式登记的**不计件**；`余料带回`（无后缀）不在真值源 §1 的
+    19 项清单里 ⇒ 登记为**待客户确认**（`PENDING_CUSTOMER_CONFIRMATION_OPTIONS`），
+    不猜它归哪一类、也不让它变成「忘了映射」。
+    """
+    _, _, non_piecework, pending = _routing_py_option_registries()
+    assert {"余料带回-布", "余料带回-纱"} <= non_piecework, \
+        f"ERP 名的不计件项未登记: {sorted({'余料带回-布', '余料带回-纱'} - non_piecework)}"
+    assert "余料带回" in pending, "ERP 第三种形态（无后缀 `余料带回`）零登记 = 静默黑洞"
+    # 三形态都不得落表（「不计件」与「待确认」都**不是**「有映射」）
+    for table, columns in (("production_option_factors", OPTION_FACTOR_COLUMNS),
+                           ("production_option_routings", OPTION_ROUTING_COLUMNS)):
+        names = {r["option_name"] for r in effective_option_rows(table, columns)}
+        assert names & {"余料带回-布", "余料带回-纱", "余料带回"} == set(), \
+            f"{table} 里落了不计件/待确认选项（会把「不计件」变成「有映射但系数 1」）"
+
+
+def test_option_rename_application_is_load_bearing(tmp_path):
+    """注入式自证（判据 3 的「能红」）：改名**真被应用**，撤掉即回旧名（否则比对是空断言）。
+
+    反例（本测试要挡的形态）：`effective_option_rows` 只读 V59、把改名当装饰 ⇒
+    「改了 V65 但守卫照绿」（= issue #4235 的「CI 全绿、功能静默缺失」）。
+    """
+    (tmp_path / "V59__create_production_option_tables.sql").write_text(
+        "INSERT INTO production_option_factors (id, tenant_id, option_name, operation_name, factor, source) "
+        "VALUES ('opt-fa-01', 1, '旧名', NULL, 1.7, '实证') ON CONFLICT (id) DO NOTHING;",
+        encoding="utf-8")
+    rename = tmp_path / "V65__align.sql"
+    rename.write_text(
+        "UPDATE production_option_factors SET option_name = '新名', updated_at = NOW() "
+        "WHERE option_name = '旧名';", encoding="utf-8")
+
+    assert [p.name for p in option_rename_sources(tmp_path)] == ["V65__align.sql"], \
+        "改名迁移发现不是「按内容 + 版本号数值序」"
+    assert option_renames(tmp_path) == {"production_option_factors": {"旧名": "新名"}}
+    assert effective_option_rows("production_option_factors", OPTION_FACTOR_COLUMNS,
+                                 tmp_path)[0]["option_name"] == "新名", \
+        "改名没有被应用到有效状态 ⇒ 三源比对读的还是旧名（空判据）"
+
+    # 撤掉改名源 ⇒ 必须回到旧名（证明「新名」确实来自那条 UPDATE，而不是别处恰好写着新名）
+    rename.unlink()
+    assert effective_option_rows("production_option_factors", OPTION_FACTOR_COLUMNS,
+                                 tmp_path)[0]["option_name"] == "旧名", \
+        "撤掉改名迁移后仍读出「新名」⇒ 该断言与改名迁移无关（假绿）"
+
+
 # ── ④ 判据 1 自证：种子源发现**按内容**（新增迁移无需改本文件）──
 
 def test_seed_source_discovery_is_by_content(tmp_path):

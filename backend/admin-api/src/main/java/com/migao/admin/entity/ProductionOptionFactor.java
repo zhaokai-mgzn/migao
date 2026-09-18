@@ -21,7 +21,7 @@ import java.time.OffsetDateTime;
  *
  * <p>{@code operationName} 为空 = 该部位**全部**工序（平摊档）；非空 = 逐工序例外档
  * （例外档盖住平摊档，与真值源 {@code routing.py::factor_for} 的「后档覆盖前档」同口径）。
- * v1 只种平摊档（「一分二 ⇒ ×1.7」，唯一的**实证**值）—— 逐工序细算档是纯推算，
+ * v1 只种平摊档（「一分为二 ⇒ ×1.7」，唯一的**实证**值）—— 逐工序细算档是纯推算，
  * 不拿推算值覆盖实证值（issue #4230 §2.4）。</p>
  */
 @Data
@@ -36,7 +36,7 @@ public class ProductionOptionFactor {
 
     private Long tenantId;
 
-    /** 特殊选项名（如「一分二」） */
+    /** 特殊选项名（如「一分为二」；ERP 名 = join key，issue #4389） */
     private String optionName;
 
     /** 限定工序名；NULL = 该部位全部工序（平摊档） */
