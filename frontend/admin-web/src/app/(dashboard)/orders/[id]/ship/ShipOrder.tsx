@@ -5,22 +5,14 @@ import { useRouter } from 'next/navigation'
 import { ChevronRight, Printer, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import { orderApi, processingOrderApi } from '@/lib/api'
+import { orderApi, processingOrderApi, customerApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading } from '@/components/ui'
 import { ShipmentDoc } from '@/components/orders'
 import { useAuthStore } from '@/store/auth'
 import type { Order, OrderItem } from '@/types'
 import { cn } from '@/lib/utils'
-
-const LOGISTICS_COMPANIES = [
-  '德邦快递',
-  '顺丰速运',
-  '中通快递',
-  '圆通速递',
-  '韵达快递',
-  '申通快递',
-]
+import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
 
 // 可发货订单状态（后端枚举：pending/confirmed/producing/shipped/completed/cancelled；
 // producing = 加工单流转后订单进入「生产中」，仍属待发货；'processing' 是历史误写，从不产生）
@@ -83,7 +75,9 @@ export default function ShipOrder() {
 
   // 物流表单
   const [shippingMethod, setShippingMethod] = useState<'logistics' | 'none'>('logistics')
-  const [logisticsCompany, setLogisticsCompany] = useState(LOGISTICS_COMPANIES[0])
+  const [logisticsType, setLogisticsType] = useState<string>('express')
+  const [logisticsCompany, setLogisticsCompany] = useState<string>(LOGISTICS_COMPANIES[0])
+  const [logisticsTouched, setLogisticsTouched] = useState(false)
   const [trackingNo, setTrackingNo] = useState('')
   const [shipperName, setShipperName] = useState(defaultShipperName)
   const [shipperTouched, setShipperTouched] = useState(false)
@@ -149,6 +143,38 @@ export default function ShipOrder() {
     }
   }, [order, shippable])
 
+  // 客户常用物流档案（issue #4419）：按订单收货手机号反查客户档案，带出常用物流方式/公司。
+  // 「带出」是增强而非门禁：查不到客户 / 请求失败一律静默保持默认值，绝不阻断发货。
+  // 用户已手动改过物流字段（logisticsTouched）则不再覆盖 —— 与发货人预填同一口径。
+  useEffect(() => {
+    const phone = order?.customerPhone
+    if (!phone || logisticsTouched) return
+    let cancelled = false
+    customerApi
+      .getCustomers({ keyword: phone, page: 1, size: 5 })
+      .then((res) => {
+        if (cancelled) return
+        // 关键词是模糊匹配 ⇒ 必须按手机号**精确**命中，否则会把别的客户的常用物流带出来
+        const hit = (res.data?.data?.items || []).find((c) => c.phone === phone)
+        if (!hit) return
+        if (hit.defaultLogisticsType) setLogisticsType(hit.defaultLogisticsType)
+        if (hit.defaultLogisticsCompany) setLogisticsCompany(hit.defaultLogisticsCompany)
+      })
+      .catch(() => {
+        /* 带出失败不影响发货（默认值仍在） */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [order?.customerPhone, logisticsTouched])
+
+  // 常用公司可能是预置列表之外的自定义承运商 ⇒ 补进下拉，否则 select 显示不出已存值
+  const logisticsCompanyOptions = useMemo(() => {
+    const list: string[] = [...LOGISTICS_COMPANIES]
+    if (logisticsCompany && !list.includes(logisticsCompany)) list.unshift(logisticsCompany)
+    return list
+  }, [logisticsCompany])
+
   const productGroups = useMemo(() => groupItems(order?.items), [order?.items])
   const processingTotal = useMemo(
     () => (order?.processingItems || []).reduce((sum, p) => sum + (p.amount || 0), 0),
@@ -171,6 +197,8 @@ export default function ShipOrder() {
         company: shippingMethod === 'logistics' ? logisticsCompany : '',
         trackingNo: shippingMethod === 'logistics' ? trackingNo.trim() : '',
         shippingMethod,
+        // 物流类型（issue #4419）：express 快递 / logistics 物流专线；无需物流时不写
+        logisticsType: shippingMethod === 'logistics' ? logisticsType : undefined,
         shipperName: shipperName.trim(),
       })
       await orderApi.updateOrderStatus(order.id, { status: 'shipped' })
@@ -362,13 +390,36 @@ export default function ShipOrder() {
           {/* 物流公司 */}
           {shippingMethod === 'logistics' && (
             <>
+              {/* 物流类型（issue #4419）：客户常用物流类型带出，可改；此前 admin-web 从不设置
+                  order_logistics.logistics_type ⇒ 一律落库默认 express。
+                  与上面「发货方式（物流发货/无需物流）」是两个维度，故命名为「物流类型」。 */}
+              <div className="flex items-center gap-4 text-sm">
+                <span className="text-neutral-700 w-20 shrink-0">物流类型：</span>
+                <div className="flex items-center gap-6">
+                  {LOGISTICS_TYPES.map((t) => (
+                    <RadioOption
+                      key={t.value}
+                      checked={logisticsType === t.value}
+                      onChange={() => {
+                        setLogisticsType(t.value)
+                        setLogisticsTouched(true)
+                      }}
+                      label={t.label}
+                    />
+                  ))}
+                </div>
+              </div>
+
               <div className="flex items-center gap-4 text-sm">
                 <span className="text-neutral-700 w-20 shrink-0">
                   <span className="text-red-500 mr-1">*</span>物流公司：
                 </span>
                 <select
                   value={logisticsCompany}
-                  onChange={(e) => setLogisticsCompany(e.target.value)}
+                  onChange={(e) => {
+                    setLogisticsCompany(e.target.value)
+                    setLogisticsTouched(true)
+                  }}
                   className={cn(
                     'h-9 px-3 pr-9 rounded border border-neutral-300 bg-white text-sm appearance-none min-w-[220px]',
                     'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
@@ -379,7 +430,7 @@ export default function ShipOrder() {
                       "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")",
                   }}
                 >
-                  {LOGISTICS_COMPANIES.map((c) => (
+                  {logisticsCompanyOptions.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>

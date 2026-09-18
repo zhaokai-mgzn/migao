@@ -1,6 +1,6 @@
 """
 工具下发字段名 ↔ admin-api 请求类型字段契约（跨服务写请求边界）
-# case_ids: AS-004, CU-004, CU-008
+# case_ids: AS-004, CU-004, CU-008, CU-009
 
 ① 契约层（docs/testing/interaction-verification.md「① 契约层」）：确定性、零 LLM、
 mock 客户端 + 静态解析 Java 源码 —— 拦「工具下发的字段名与 API 接收类型字段不一致」
@@ -403,6 +403,27 @@ REGISTRY: tuple[WriteContract, ...] = (
         endpoint="/api/admin/customers/c1",
         receiver_type="CustomerProfile",
         content_value="economy",
+        persist_source="java-service-null-copy",
+        persist_target="CustomerService#updateCustomer",
+    ),
+    # 客户默认收货信息（issue #4419，V70）：defaultReceiverName/Phone/Address 为 CustomerProfile 新列。
+    # 与 #4115 同形的护栏：工具可写 + 实体有列，但服务层非空拷贝白名单漏了 ⇒ 下发即静默丢弃 +
+    # 工具谎报「已更新收货地址」。本契约的服务层判据（java-service-null-copy）把它钉死。
+    WriteContract(
+        tool_module="app.tools.customer_manage",
+        tool_kwargs={
+            "action": "update",
+            "customer_id": "c1",
+            "data": {
+                "defaultReceiverName": "李四",
+                "defaultReceiverPhone": "13900139000",
+                "defaultReceiverAddress": "浙江省杭州市西湖区文三路1号1幢101室",
+            },
+        },
+        client_method="put",
+        endpoint="/api/admin/customers/c1",
+        receiver_type="CustomerProfile",
+        content_value="浙江省杭州市西湖区文三路1号1幢101室",
         persist_source="java-service-null-copy",
         persist_target="CustomerService#updateCustomer",
     ),

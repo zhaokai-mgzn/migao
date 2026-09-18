@@ -1,4 +1,4 @@
-// case_ids: OR-009, OR-014, UI-038
+// case_ids: OR-009, OR-014, UI-038, CU-009
 // OR-014（issue #3005 回滚 #2986）：下单加工项数量规则——per_meter→面料米数；per_set/fixed/per_area→1，
 // 商品数量变化联动重算；加工项行显示「名称+数量+金额」供对账，无数量输入框（数量由计价方式派生）
 // ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：加工项改为**店铺级目录**（processingItemApi.getProcessingItems
@@ -422,6 +422,51 @@ describe('NewOrderPage', () => {
         expect(screen.getByPlaceholderText('请输入 11 位手机号')).toHaveValue('13800138001')
         expect(screen.getByPlaceholderText('请输入详细收货地址')).toHaveValue('浙江省 杭州市 西湖区')
       })
+    })
+
+    // issue #4419：客户档案录了默认收货地址/常用物流时，**优先**用档案值（逐字带出，
+    // 不拼接省市区、不用昵称顶替收货人姓名），并提示常用物流。
+    it('客户档案有默认收货信息时优先带出（逐字），并提示常用物流（#4419）', async () => {
+      mockGetCustomers.mockResolvedValue({
+        data: {
+          data: {
+            items: [
+              {
+                id: 'c3',
+                wechatNickname: '王老板',
+                phone: '13700137000',
+                sourceChannel: 'wechat_mini',
+                regionProvince: '浙江省', regionCity: '杭州市', regionDistrict: '西湖区',
+                defaultReceiverName: '王老板（仓库）',
+                defaultReceiverPhone: '13600136000',
+                defaultReceiverAddress: '浙江省杭州市余杭区文一西路969号3号仓',
+                defaultLogisticsType: 'logistics',
+                defaultLogisticsCompany: '四季安物流',
+              },
+            ],
+            total: 1,
+          },
+        },
+      })
+      render(<NewOrderPage />)
+      fireEvent.click(await screen.findByRole('button', { name: /选择客户/ }))
+      fireEvent.click(await screen.findByText('王老板'))
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('请输入收货人姓名')).toHaveValue('王老板（仓库）')
+        expect(screen.getByPlaceholderText('请输入 11 位手机号')).toHaveValue('13600136000')
+        expect(screen.getByPlaceholderText('请输入详细收货地址')).toHaveValue('浙江省杭州市余杭区文一西路969号3号仓')
+      })
+      expect(screen.getByTestId('picked-logistics-hint')).toHaveTextContent('常用物流：物流/专线 · 四季安物流')
+    })
+
+    it('客户档案没录常用物流时不显示提示（不得编造「快递」默认值，#4419）', async () => {
+      render(<NewOrderPage />)
+      fireEvent.click(await screen.findByRole('button', { name: /选择客户/ }))
+      fireEvent.click(await screen.findByText('张老板'))
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('请输入收货人姓名')).toHaveValue('张老板')
+      })
+      expect(screen.queryByTestId('picked-logistics-hint')).not.toBeInTheDocument()
     })
 
     it('搜索关键词触发 getCustomers 携带 keyword', async () => {

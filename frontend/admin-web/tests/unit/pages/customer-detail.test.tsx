@@ -1,4 +1,4 @@
-// case_ids: CU-001, CU-002
+// case_ids: CU-001, CU-002, CU-009
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
@@ -67,6 +67,12 @@ vi.mock('@/lib/api', () => {
       agentNotes: '老客户，偏好遮光窗帘',
       lastActiveAt: '2026-04-20T14:30:00',
       registeredAt: '2026-01-15T10:00:00',
+      // 默认收货信息与常用物流（issue #4419，V70/V47 列）
+      defaultReceiverName: '张三',
+      defaultReceiverPhone: '13800138000',
+      defaultReceiverAddress: '浙江省杭州市西湖区文三路1号1幢101室',
+      defaultLogisticsType: 'logistics',
+      defaultLogisticsCompany: '四季安物流',
     },
     tags: [
       { id: 't1', name: 'VIP客户', color: '#EF4444' },
@@ -202,9 +208,68 @@ describe('CustomerDetailPage', () => {
     })
     const textarea = screen.getByPlaceholderText('添加客户备注...')
     fireEvent.change(textarea, { target: { value: '测试备注内容' } })
-    fireEvent.click(screen.getByText('保存'))
+    fireEvent.click(screen.getByTestId('save-remark'))
     await waitFor(() => {
       expect(customerApi.updateCustomer).toHaveBeenCalledWith('cus-001', { remark: '测试备注内容' })
+    })
+  })
+
+  // ===== 收货信息 + 常用物流档案（issue #4419）=====
+
+  it('显示客户档案里的收货信息与常用物流（不是前端编造的默认值）', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('receiver-card')).toBeInTheDocument()
+    })
+    expect(screen.getByPlaceholderText('收货人姓名')).toHaveValue('张三')
+    expect(screen.getByPlaceholderText('收货人电话')).toHaveValue('13800138000')
+    expect(screen.getByPlaceholderText('省市区 + 详细地址')).toHaveValue('浙江省杭州市西湖区文三路1号1幢101室')
+    expect(screen.getByDisplayValue('物流/专线')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('选择或输入承运商')).toHaveValue('四季安物流')
+  })
+
+  it('保存收货信息时把默认收货地址与常用物流一并下发（缺一不可）', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('receiver-card')).toBeInTheDocument()
+    })
+    fireEvent.change(screen.getByPlaceholderText('省市区 + 详细地址'), {
+      target: { value: '江苏省苏州市吴中区越溪街道1号' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('选择或输入承运商'), {
+      target: { value: '跨越速运' },
+    })
+    fireEvent.change(screen.getByDisplayValue('物流/专线'), {
+      target: { value: 'express' },
+    })
+    fireEvent.click(screen.getByTestId('save-receiver'))
+
+    await waitFor(() => {
+      expect(customerApi.updateCustomer).toHaveBeenCalledWith('cus-001', {
+        defaultReceiverName: '张三',
+        defaultReceiverPhone: '13800138000',
+        defaultReceiverAddress: '江苏省苏州市吴中区越溪街道1号',
+        defaultLogisticsType: 'express',
+        defaultLogisticsCompany: '跨越速运',
+      })
+    })
+  })
+
+  it('承运商支持自定义填写（预置下拉之外的承运商也能记录）', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('receiver-card')).toBeInTheDocument()
+    })
+    // 预置候选以 datalist 提供（原生「下拉 + 可输入」），且不构成白名单
+    const companyInput = screen.getByPlaceholderText('选择或输入承运商')
+    expect(companyInput).toHaveAttribute('list', 'receiver-logistics-companies')
+    fireEvent.change(companyInput, { target: { value: '本地专线·老王' } })
+    fireEvent.click(screen.getByTestId('save-receiver'))
+    await waitFor(() => {
+      expect(customerApi.updateCustomer).toHaveBeenCalledWith(
+        'cus-001',
+        expect.objectContaining({ defaultLogisticsCompany: '本地专线·老王' }),
+      )
     })
   })
 })

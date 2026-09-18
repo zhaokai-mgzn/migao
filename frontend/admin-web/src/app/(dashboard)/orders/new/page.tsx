@@ -22,6 +22,7 @@ import {
   resolveWindowCraftLineIds,
   type CraftSpecInput,
 } from '@/lib/order-craft-fields'
+import { describeLogisticsProfile } from '@/lib/logistics'
 // #4371：加工项类型改为**店铺级目录**的 `ProcessingItem`（旧 `ProductProcessingItem` 已随解耦删除）
 import type { Product, ProcessingItem, OrderItemFormData, Customer } from '@/types'
 
@@ -151,6 +152,8 @@ export default function NewOrderPage() {
   const [customerKeyword, setCustomerKeyword] = useState('')
   const [customerResults, setCustomerResults] = useState<Customer[]>([])
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false)
+  /** 选中客户的常用物流档案（只读提示，issue #4419；发货页按同一档案带出方式/公司） */
+  const [pickedLogisticsHint, setPickedLogisticsHint] = useState('')
 
   // 表单错误
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -259,13 +262,19 @@ export default function NewOrderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerModalOpen])
 
-  // 选中客户 → 自动回填收货信息（姓名=昵称、手机号、地址=省市区前缀，仍可手动修改）
+  // 选中客户 → 自动回填收货信息（仍可手动修改）
+  // 取值优先级（issue #4419）：客户档案的**默认收货地址**优先（客户管理「收货信息」卡片维护的
+  // defaultReceiverName/Phone/Address）；档案没录收货信息时才回退到 #3102 的旧口径
+  // （姓名=昵称 / 手机号=phone / 地址=省市区前缀）。
   const handlePickCustomer = (c: Customer) => {
-    const name = c.wechatNickname || c.name || c.nickname || ''
+    const name = c.defaultReceiverName || c.wechatNickname || c.name || c.nickname || ''
+    const phone = c.defaultReceiverPhone || c.phone || ''
     const region = [c.regionProvince, c.regionCity, c.regionDistrict].filter(Boolean).join(' ')
+    const address = c.defaultReceiverAddress || region
     if (name) setCustomerName(name)
-    if (c.phone) setCustomerPhone(c.phone)
-    if (region) setCustomerAddress(region)
+    if (phone) setCustomerPhone(phone)
+    if (address) setCustomerAddress(address)
+    setPickedLogisticsHint(describeLogisticsProfile(c.defaultLogisticsType, c.defaultLogisticsCompany))
     setCustomerModalOpen(false)
     setCustomerKeyword('')
     setCustomerResults([])
@@ -710,6 +719,12 @@ export default function NewOrderPage() {
                   required
                 />
               </div>
+              {/* 选中客户的常用物流档案（只读提示，issue #4419）：发货时按同一档案带出方式/公司 */}
+              {pickedLogisticsHint && (
+                <p className="mt-2 text-xs text-neutral-400" data-testid="picked-logistics-hint">
+                  常用物流：{pickedLogisticsHint}
+                </p>
+              )}
               <div className="mt-4">
                 <label className="block text-sm font-medium text-neutral-700 mb-1.5">备注</label>
                 <textarea

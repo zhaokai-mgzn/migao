@@ -1129,6 +1129,8 @@ export interface LogisticsFormData {
   shippingMethod: 'logistics' | 'none'
   /** 发货人（发货单「经手人」，issue #3768）：默认预填当前登录人姓名，可改成实际发货人 */
   shipperName?: string
+  /** 物流类型：express 快递 / logistics 物流专线（issue #4419；后端 order_logistics.logistics_type，V47） */
+  logisticsType?: string
 }
 
 // 关闭订单参数
@@ -1193,6 +1195,14 @@ export interface Customer {
   regionProvince?: string
   regionCity?: string
   regionDistrict?: string
+  // —— 默认收货信息与常用物流（issue #4419 / #3984，后端 CustomerProfile 原始列名）——
+  // 收货地址优先于上面的 region* 回填（region* 是客户所在地区，不是收货地址）
+  defaultReceiverName?: string
+  defaultReceiverPhone?: string
+  defaultReceiverAddress?: string
+  /** express 快递 / logistics 物流专线（customer_profiles.default_logistics_type） */
+  defaultLogisticsType?: string
+  defaultLogisticsCompany?: string
 }
 
 // 客户列表查询参数
@@ -1225,6 +1235,13 @@ export interface CustomerProfile {
   agentNotes?: string
   lastActiveAt?: string
   registeredAt?: string
+  // —— 默认收货信息与常用物流（issue #4419，V70 / #3984，V47）——
+  defaultReceiverName?: string
+  defaultReceiverPhone?: string
+  defaultReceiverAddress?: string
+  /** express 快递 / logistics 物流专线 */
+  defaultLogisticsType?: string
+  defaultLogisticsCompany?: string
 }
 
 // 客户详情页响应（后端契约：{ id, profile, tags, orders, sessions }）

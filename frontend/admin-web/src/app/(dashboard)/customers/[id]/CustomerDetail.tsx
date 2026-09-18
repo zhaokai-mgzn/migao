@@ -9,6 +9,7 @@ import { useRouteId } from '@/lib/use-route-id'
 import { customerApi } from '@/lib/api'
 import type { CustomerDetail, CustomerTag, CustomerOrder, CustomerSession, CustomerChannel, CustomerDetailResponse } from '@/types'
 import { CustomerChannelLabels } from '@/types'
+import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
 import dayjs from 'dayjs'
 
 const TAG_COLORS = [
@@ -19,6 +20,7 @@ const TAG_COLORS = [
 // —— 后端详情响应 → 前端平铺 CustomerDetail 字段映射 ——
 // 后端 GET /api/admin/customers/{id} 返回 { id, profile, tags, orders, sessions }，
 // profile 使用 wechatNickname / sourceChannel / agentNotes / registeredAt 等原始字段。
+// 默认收货信息与常用物流（issue #4419 / #3984）原样透传，供「收货信息」卡片读写。
 function mapCustomerDetail(detail: CustomerDetailResponse): CustomerDetail {
   const profile = detail.profile ?? {}
   return {
@@ -33,7 +35,21 @@ function mapCustomerDetail(detail: CustomerDetailResponse): CustomerDetail {
     tags: detail.tags ?? [],
     orders: detail.orders ?? [],
     sessions: detail.sessions ?? [],
+    defaultReceiverName: profile.defaultReceiverName,
+    defaultReceiverPhone: profile.defaultReceiverPhone,
+    defaultReceiverAddress: profile.defaultReceiverAddress,
+    defaultLogisticsType: profile.defaultLogisticsType,
+    defaultLogisticsCompany: profile.defaultLogisticsCompany,
   }
+}
+
+/** 「收货信息」卡片的表单状态（客户默认收货地址 + 常用物流档案，issue #4419） */
+interface ReceiverForm {
+  name: string
+  phone: string
+  address: string
+  logisticsType: string
+  logisticsCompany: string
 }
 
 export default function CustomerDetailPage() {
@@ -45,6 +61,12 @@ export default function CustomerDetailPage() {
   const [activeTab, setActiveTab] = useState<'orders' | 'sessions' | 'notes'>('orders')
   const [remark, setRemark] = useState('')
   const [savingRemark, setSavingRemark] = useState(false)
+
+  // 收货信息（客户默认收货地址 + 常用物流档案，issue #4419）
+  const [receiver, setReceiver] = useState<ReceiverForm>({
+    name: '', phone: '', address: '', logisticsType: 'express', logisticsCompany: '',
+  })
+  const [savingReceiver, setSavingReceiver] = useState(false)
 
   // 标签管理
   const [allTags, setAllTags] = useState<CustomerTag[]>([])
@@ -64,6 +86,14 @@ export default function CustomerDetailPage() {
       const mapped = mapCustomerDetail(detail)
       setCustomer(mapped)
       setRemark(mapped.remark || '')
+      setReceiver({
+        name: mapped.defaultReceiverName || '',
+        phone: mapped.defaultReceiverPhone || '',
+        address: mapped.defaultReceiverAddress || '',
+        // 缺省 express 与 customer_profiles.default_logistics_type 的列默认值一致（V47）
+        logisticsType: mapped.defaultLogisticsType || 'express',
+        logisticsCompany: mapped.defaultLogisticsCompany || '',
+      })
     } catch (error) {
       toast.error('加载客户信息失败')
       console.error('加载客户信息失败:', error)
@@ -88,6 +118,30 @@ export default function CustomerDetailPage() {
       console.error('保存备注失败:', error)
     } finally {
       setSavingRemark(false)
+    }
+  }
+
+  // 保存收货信息 + 常用物流档案（issue #4419）。
+  // 只提交**非空**字段：后端 updateCustomer 是「非空拷贝」语义，空串会被忽略（不会误清空既有值）。
+  const handleSaveReceiver = async () => {
+    if (!customer) return
+    setSavingReceiver(true)
+    try {
+      const payload = {
+        defaultReceiverName: receiver.name.trim(),
+        defaultReceiverPhone: receiver.phone.trim(),
+        defaultReceiverAddress: receiver.address.trim(),
+        defaultLogisticsType: receiver.logisticsType,
+        defaultLogisticsCompany: receiver.logisticsCompany.trim(),
+      }
+      await customerApi.updateCustomer(id, payload)
+      setCustomer({ ...customer, ...payload })
+      toast.success('收货信息已保存')
+    } catch (error) {
+      toast.error('保存失败')
+      console.error('保存收货信息失败:', error)
+    } finally {
+      setSavingReceiver(false)
     }
   }
 
@@ -216,6 +270,82 @@ export default function CustomerDetailPage() {
             </div>
           </div>
 
+          {/* 收货信息 + 常用物流档案（issue #4419）：客户默认收货地址与常用承运商，
+              新增订单选客户时逐字带出（defaultReceiverAddress 优先），发货页带出常用物流方式/公司。 */}
+          <div className="bg-white border border-neutral-200 rounded-lg p-6" data-testid="receiver-card">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-neutral-900">收货信息</h3>
+              <Button
+                size="sm"
+                variant="ghost"
+                data-testid="save-receiver"
+                onClick={handleSaveReceiver}
+                loading={savingReceiver}
+              >
+                <Save className="w-3.5 h-3.5 mr-1" />
+                保存
+              </Button>
+            </div>
+            <div className="space-y-3">
+              <label className="block">
+                <span className="text-xs text-neutral-500">收货人姓名</span>
+                <input
+                  className="mt-1 w-full px-3 py-2 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  placeholder="收货人姓名"
+                  value={receiver.name}
+                  onChange={(e) => setReceiver({ ...receiver, name: e.target.value })}
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-neutral-500">收货人电话</span>
+                <input
+                  className="mt-1 w-full px-3 py-2 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  placeholder="收货人电话"
+                  value={receiver.phone}
+                  onChange={(e) => setReceiver({ ...receiver, phone: e.target.value })}
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-neutral-500">收货地址</span>
+                <textarea
+                  rows={2}
+                  className="mt-1 w-full px-3 py-2 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
+                  placeholder="省市区 + 详细地址"
+                  value={receiver.address}
+                  onChange={(e) => setReceiver({ ...receiver, address: e.target.value })}
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-neutral-500">常用物流方式</span>
+                <select
+                  className="mt-1 w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  value={receiver.logisticsType}
+                  onChange={(e) => setReceiver({ ...receiver, logisticsType: e.target.value })}
+                >
+                  {LOGISTICS_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-xs text-neutral-500">常用物流公司</span>
+                {/* datalist = 预置承运商下拉 + 允许自定义（承运商列是自由文本，不做白名单校验） */}
+                <input
+                  list="receiver-logistics-companies"
+                  className="mt-1 w-full px-3 py-2 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  placeholder="选择或输入承运商"
+                  value={receiver.logisticsCompany}
+                  onChange={(e) => setReceiver({ ...receiver, logisticsCompany: e.target.value })}
+                />
+                <datalist id="receiver-logistics-companies">
+                  {LOGISTICS_COMPANIES.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+              </label>
+            </div>
+          </div>
+
           {/* 标签管理 */}
           <div className="bg-white border border-neutral-200 rounded-lg p-6">
             <div className="flex items-center justify-between mb-3">
@@ -271,7 +401,7 @@ export default function CustomerDetailPage() {
           <div className="bg-white border border-neutral-200 rounded-lg p-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-neutral-900">备注</h3>
-              <Button size="sm" variant="ghost" onClick={handleSaveRemark} loading={savingRemark}>
+              <Button size="sm" variant="ghost" data-testid="save-remark" onClick={handleSaveRemark} loading={savingRemark}>
                 <Save className="w-3.5 h-3.5 mr-1" />
                 保存
               </Button>
