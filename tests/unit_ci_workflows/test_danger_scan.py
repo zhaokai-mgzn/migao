@@ -623,9 +623,27 @@ class TestAckStepWiringIsThin:
             "ack 步骤没有调用 danger_scan.py --resolve-acks —— 判定逻辑又回到 YAML 字符串里了"
         )
 
-    def test_ack_step_has_fail_closed_exits(self):
+    def test_ack_step_fails_closed_on_api_error(self):
+        """评论 API 失败 ⇒ 提前 exit 0（不写任何 ack ⇒ danger_scan 仍 BLOCK）。"""
         script = self._ack_step()["run"]
-        assert script.count("exit 0") >= 2, (
-            "ack 步骤缺少「无删除 / API 失败」的提前返回 ⇒ API 失败时会继续往下跑"
-        )
+        assert "exit 0" in script, "评论 API 失败时没有提前返回 ⇒ 会带着空文件继续往下跑"
         assert "fail-closed" in script, "缺少 fail-closed 的显式说明（防后人当可删注释）"
+
+    def test_marker_lives_in_python_not_in_yaml(self):
+        """**结构锁**：确认 marker 只许出现在 `danger_scan.py`（有行为级单测的地方）。
+
+        反向变异：把 `/danger-ack delete-workflow` 的匹配写回 YAML ⇒ 本断言红 ——
+        那正是首版"空断言"的形态（判据落在脚本文本上，删掉真逻辑照样绿）。
+        """
+        script = self._ack_step()["run"]
+        assert "/danger-ack delete-workflow" not in script, (
+            "确认 marker 出现在 workflow YAML 里 —— 判定逻辑又被搬回字符串匹配了"
+        )
+        assert "DANGER_ACK_OWNER" not in script or "parse_delete_acks" in script
+
+    def test_ack_step_writes_env_via_pure_function(self):
+        """ack 经 `--resolve-acks` 的 stdout 写 GITHUB_ENV（唯一写入口）。"""
+        script = self._ack_step()["run"]
+        assert '--resolve-acks >> "$GITHUB_ENV"' in script, (
+            "ack 不是由纯函数输出写入 GITHUB_ENV —— 出现了第二套写入口"
+        )

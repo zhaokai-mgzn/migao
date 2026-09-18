@@ -126,10 +126,21 @@ def resolve_acks_main():
     except Exception as exc:  # noqa: BLE001 —— 任何异常都必须 fail-closed
         print(f"⚠️ 评论 JSON 读取失败（{exc}）⇒ fail-closed", file=sys.stderr)
         comments = []
+    owner_n = sum(
+        1 for c in comments
+        if isinstance(c, dict) and ((c.get("user") or {}).get("login") or "") == owner and owner
+    )
     acked, via = parse_delete_acks(comments, owner, deleted)
     for line in ack_env_lines(acked, owner, via):
         print(line)
-    print(f"── 解析结果：{sorted(acked) or '（无确认）'}（owner={owner or '(未设置)'}）──", file=sys.stderr)
+    # **心跳**（§18.6「环境静默即缺陷」）：本通道的静默失效形态是「读不到评论 ⇒ 永远不放行」，
+    # 命令行恒打「评论总数 / owner 评论数」——owner 评论数长期为 0 就能立刻看出通道没用上，
+    # 而不是等到有人要删 workflow 才发现（fail-closed 的反面是红得无声无息）。
+    print(
+        f"── 评论总数={len(comments)} / owner({owner or '未设置'}) 评论数={owner_n}"
+        f" / 待确认={len(deleted)} / 已确认={sorted(acked) or '（无）'} ──",
+        file=sys.stderr,
+    )
 
 
 def _truly_new_secret_lines(added_lines, removed_lines):

@@ -580,19 +580,20 @@ jobs:
         run: |
           set -uo pipefail
           git fetch origin main --quiet || true
-          DELETED=$(git diff --diff-filter=D --name-only origin/main...HEAD -- .github/workflows \
-            | grep -E '\.(yml|yaml)$' | paste -sd, - || true)
-          if [ -z "$DELETED" ]; then
-            echo "── 本 PR 无 workflow 删除 ⇒ 无需确认 ──"
-            exit 0
-          fi
-          echo "── 待确认删除：${DELETED} ──"
-          # 取不到评论（含 API 失败）⇒ 不写任何 ack ⇒ 仍 BLOCK（fail-closed）
+          # ① 取评论（**每个 PR 都跑**，即使本次没有删除）：本通道的静默失效形态是
+          #    「token 读不到评论 ⇒ 永远不放行」—— fail-closed 的反面是红得无声无息，
+          #    直到有人要删 workflow 才发现。故心跳必须恒可见（§18.6「环境静默即缺陷」）：
+          #    下面的 --resolve-acks 每次都会打一行「owner 评论数=N」。
           if ! gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
                  --paginate --slurp > /tmp/pr-comments.json 2>/dev/null; then
-            echo "⛔ 评论 API 失败 ⇒ fail-closed，本次不放行任何删除"
+            echo "⛔ 评论 API 读取失败 ⇒ fail-closed（本次不放行任何删除）——"
+            echo "   若这是 token 权限问题，本确认通道将**永久失效**（需给本 job 补 issues: read）"
             exit 0
           fi
+          DELETED=$(git diff --diff-filter=D --name-only origin/main...HEAD -- .github/workflows \
+            | grep -E '\.(yml|yaml)$' | paste -sd, - || true)
+          echo "── 待确认删除：${DELETED:-（无）} ──"
+          # ② 解析 owner 的确认 —— 过滤/解析全在 danger_scan.py 的纯函数里（有行为级单测）
           DANGER_COMMENTS_JSON=/tmp/pr-comments.json \
           DANGER_DELETED_WORKFLOWS="$DELETED" \
             python3 .github/danger_scan.py --resolve-acks >> "$GITHUB_ENV"
