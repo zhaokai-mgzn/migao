@@ -267,4 +267,42 @@ describe('生产看板页 /production 分页 + 懒加载（issue #4360）', () =
     expect(rowCount()).toBe(50)
     expect(screen.getByRole('combobox')).toHaveValue('50')
   })
+
+  // ── issue #4372：失败行的缓存语义（把"真实"行为钉住，防被"照注释修正"成死循环）──
+  //
+  // 为什么必须钉：`page.tsx` 里 `if (d.status === 'fulfilled')` 只是 **TS 类型收窄**，
+  // 内层 `allSettled` 让 mapper 永不 reject ⇒ **失败行同样进缓存、本会话不重试**。
+  // 若有人把它读成「失败不写缓存」并照此改实现，`pending` 会**永不收敛** ⇒
+  // 每次 `setRows(prev.map(...))` 产生新数组 ⇒ effect（依赖 `[rows,…]`）反复触发
+  // ⇒ **无限请求循环**。本条断言即该陷阱的红线：改坏即红。
+  it('详情永久失败的行：仍进缓存 ⇒ 切页来回不重发（防"失败不写缓存"改成死循环）', async () => {
+    const user = userEvent.setup()
+    // 仅 order-uuid-1 的**两个**详情接口都永久失败，其余正常
+    mockGetOrderOperations.mockImplementation((orderId: string) =>
+      orderId === 'order-uuid-1'
+        ? Promise.reject(new Error('boom'))
+        : Promise.resolve(ok({ positions: [], progress: { total: 10, done: 3, percent: 30 } })),
+    )
+    mockGetPiecework.mockImplementation((orderId: string) =>
+      orderId === 'order-uuid-1' ? Promise.reject(new Error('boom')) : Promise.resolve(ok({ total: 17 })),
+    )
+    render(<ProductionBoardPage />)
+    await waitPageLoaded(PAGE_SIZE)
+
+    // 该行保持「—」形态（计件 ¥0.00、进度 0%），且不拖垮其它行
+    expect(screen.getByTestId('production-row-piecework-po-1')).toHaveTextContent('¥0.00')
+    expect(screen.getByTestId('production-row-progress-po-1')).toHaveTextContent('0%')
+    expect(screen.getByTestId('production-row-piecework-po-2')).toHaveTextContent('¥17.00')
+    const failedCalls = () => mockGetOrderOperations.mock.calls.filter((c) => c[0] === 'order-uuid-1').length
+    expect(failedCalls()).toBe(1)
+
+    await user.click(screen.getByRole('button', { name: '2' }))
+    await waitPageLoaded(PAGE_SIZE * 2)
+    await user.click(screen.getByRole('button', { name: '1' }))
+    await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
+
+    // 关键判据：失败行**没有**被重发（= 已进缓存）。改成"失败不写缓存" ⇒ 这里变 2 ⇒ 红。
+    expect(failedCalls()).toBe(1)
+    expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument()
+  })
 })
