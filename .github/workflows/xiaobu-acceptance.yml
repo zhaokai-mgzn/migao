@@ -81,8 +81,14 @@ on:
   # 2026-09-13 新增**每周**对抗档（issue #3367）：与 B 端 agent-eval-adversarial.yml 同节拍
   # （周六 03:00 CST = 周五 19:00 UTC）。只跑 adversarial 档，失败按去重守卫开 issue
   # （每周至多 1 条）。
-  schedule:
-    - cron: '0 19 * * 5'
+  # ── 每周对抗档定时**已删除**（#4262，用户裁定 2026-09-18）────────────────────
+  # 用户：「不要自动进行验证，都是重复的验证，白白消耗成本」+「手动集中跑一次即可；
+  #   兜底定时改成每周自动跑一次」⇒ 全仓自动真实 LLM 触发由 3 条收敛为 **1 条**
+  #   （只留 `post-deploy-eval.yml` 每周一 normal 全量）。本 workflow 改为**仅手动**：
+  #   对抗档需要时用 `workflow_dispatch` 派发（`tier=adversarial`），覆盖未消失、只是
+  #   不再由 cron 自动付费。
+  # ⚠️ 不得把 `schedule` 加回来、也不得新增任何自动触发（含 PR/push）——
+  #   机械锁：`tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`（白名单只留 1 条）。
   # ── PR 触发档已移除（issue #3653，2026-09-15：与行为映射档**合并去重**）──
   # 曾于 2026-09-14（#3504）加 pull_request 触发跑 C 端 smoke；按 AD §6.3 结论
   # （PR 层只保留定向映射用例，完整覆盖交部署后/批次轮）移除：
@@ -90,7 +96,7 @@ on:
   #     （fast 迭代档）—— 覆盖并严格强于 smoke 的 C 端抽样（smoke 只剩 KN-001 一条
   #     C 端专属），PR 层不再另起一套栈 = 少一次栈构建 + 少一轮真实 LLM；
   #   · 纯 C 端行为改动（无规则命中）由 behavior-eval 的兜底网（含 CH-010）兜底；
-  #   · C 端 smoke/normal/adversarial 保留 **workflow_dispatch + schedule**（按需/每周）。
+  #   · C 端 smoke/normal/adversarial 一律 **workflow_dispatch**（按需手动）。
 
 # ── 评测并发槽位：两层语义（issue #3563；job 级共享槽位与 AD 的 #3587 同一落地方式）──
 # 修前：`group` 按 PR 号/run_id 分组 → **跨 PR 无任何约束**。实测（2026-09-14 05:28Z）
@@ -391,11 +397,14 @@ jobs:
           # 小布 C 端用例（数据隔离/下单/售后），expectation 自动映射 customer_order_query
           # tier 由 workflow_dispatch 输入控制：smoke=门禁级 5 条；normal=C 端全量 ~35 条
           # （用于取「C 端能力缺陷分布」，issue #3270 第 2 步）
-          # 档位来源三分支（issue #3367）：
+          # 档位来源三分支（issue #3367；#4262 起第二支**当前不可达**，故意保留）：
           #   · workflow_dispatch 显式传 → 用它
           #   · **schedule（每周对抗）→ adversarial** —— 定时触发没有 inputs，
           #     若不特判就会落到默认 smoke：每周白跑一遍门禁档、对抗档永远不跑
           #     （这正是"加了定时任务却什么都没测到"的典型陷阱）
+          #     ⚠️ #4262（2026-09-18）已删除本 workflow 的 `schedule` ⇒ 本支**当前不可达**。
+          #     保留它（而不是顺手删掉）是因为：**将来若恢复自动触发，必须同时保留本特判**，
+          #     否则会原样重踩 #3367。守卫 `test_xiaobu_adversarial.py` 继续钉住这一点。
           #   · 其他（含本地/reusable 调用）→ smoke
           TIER="${{ github.event.inputs.tier || (github.event_name == 'schedule' && 'adversarial') || 'smoke' }}"
           echo "── 评测档位: $TIER ──"

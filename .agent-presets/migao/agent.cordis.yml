@@ -29,7 +29,7 @@
 
       每次改动 migao 代码前：先读仓库根 AGENTS.md（DSH 入口：铁律/三把工具/case_ids/文档索引），加载 `migao-dev-flow` 技能（三把工具 + 提交流程），铁律全文见 CLAUDE.md（AI-TDD CP-1~CP-7 与 GitHub 操作规范）。开发前先查 docs/wiki/INDEX.md 定位相关规范页，按需 Read 节省上下文。提交前必跑 `./verify-all.sh gate` 与 `./check-ui-regression.sh`，跨模块改动加跑 `./contract-check.sh`。所有新增/修改测试文件头部必须声明 `# case_ids:`（对应 .github/cases/ 用例），否则 CI 的 QA Growth Gate 会 block 合并。
 
-      改动 ai-agent 行为/交互（prompt、Tool、引导流程、交互卡）后：**自动**按 `migao-dev-flow` §13 跑相关评测用例体检（映射表选用例：下单→OR-016、换货→AS-007、建品→PR-019/PR-020 等），不等用户要求。修复新 bug 后按 §13.3 补可执行 case（order_before/forbidden_text/required_args/db_verify）+ 旧会话重放有效性验证，否则不算闭环。**新功能/行为变更合入时按 §14 主动补/改评测用例**（用例库是被迭代喂养的活资产，缺触发时机就会与现实脱节）。下任何「验收通过/评测 OK/交付完成」结论前：加载 `migao-acceptance` 技能按验收协议执行（L1/L2/UA + 证据链 + 双 AI 交叉验证，零人工执行步骤）。
+      改动 ai-agent 行为/交互（prompt、Tool、引导流程、交互卡）后：**默认不跑真实 LLM 评测、不派发评测 workflow**（#4262 用户裁定：「不要自动进行验证，都是重复的验证，白白消耗成本」「手动集中跑一次即可」）。先按 `migao-dev-flow` §13.2 映射表算出**该跑哪几条用例**并把清单写进 PR/结论（这是零成本的确定性动作），**只有用户显式要求时才派发**，且一次集中跑、勿逐条/逐轮重复派发。修复新 bug 后按 §13.3 补可执行 case（order_before/forbidden_text/required_args/db_verify）+ 旧会话重放有效性验证，否则不算闭环。**新功能/行为变更合入时按 §14 主动补/改评测用例**（用例库是被迭代喂养的活资产，缺触发时机就会与现实脱节）。下任何「验收通过/评测 OK/交付完成」结论前：加载 `migao-acceptance` 技能按验收协议执行（L1/L2/UA + 证据链 + 双 AI 交叉验证，零人工执行步骤）。
 
       写码遵循「最少代码」阶梯（YAGNI → 复用 → 标准库 → 原生特性 → 已装依赖 → 一行 → 最小实现；先理解再爬梯）：只简化实现代码、不降测试门禁，安全护栏与既有架构契约永不砍。全文见仓库 docs/wiki/Code-Minimalism.md。
     prefix: >-
@@ -37,7 +37,7 @@
 
       每次改动 migao 代码前：先读仓库根 AGENTS.md（DSH 入口：铁律/三把工具/case_ids/文档索引），加载 `migao-dev-flow` 技能（三把工具 + 提交流程），铁律全文见 CLAUDE.md（AI-TDD CP-1~CP-7 与 GitHub 操作规范）。开发前先查 docs/wiki/INDEX.md 定位相关规范页，按需 Read 节省上下文。提交前必跑 `./verify-all.sh gate` 与 `./check-ui-regression.sh`，跨模块改动加跑 `./contract-check.sh`。所有新增/修改测试文件头部必须声明 `# case_ids:`（对应 .github/cases/ 用例），否则 CI 的 QA Growth Gate 会 block 合并。
 
-      改动 ai-agent 行为/交互（prompt、Tool、引导流程、交互卡）后：**自动**按 `migao-dev-flow` §13 跑相关评测用例体检（映射表选用例：下单→OR-016、换货→AS-007、建品→PR-019/PR-020 等），不等用户要求。修复新 bug 后按 §13.3 补可执行 case（order_before/forbidden_text/required_args/db_verify）+ 旧会话重放有效性验证，否则不算闭环。**新功能/行为变更合入时按 §14 主动补/改评测用例**（用例库是被迭代喂养的活资产，缺触发时机就会与现实脱节）。下任何「验收通过/评测 OK/交付完成」结论前：加载 `migao-acceptance` 技能按验收协议执行（L1/L2/UA + 证据链 + 双 AI 交叉验证，零人工执行步骤）。
+      改动 ai-agent 行为/交互（prompt、Tool、引导流程、交互卡）后：**默认不跑真实 LLM 评测、不派发评测 workflow**（#4262 用户裁定：「不要自动进行验证，都是重复的验证，白白消耗成本」「手动集中跑一次即可」）。先按 `migao-dev-flow` §13.2 映射表算出**该跑哪几条用例**并把清单写进 PR/结论（这是零成本的确定性动作），**只有用户显式要求时才派发**，且一次集中跑、勿逐条/逐轮重复派发。修复新 bug 后按 §13.3 补可执行 case（order_before/forbidden_text/required_args/db_verify）+ 旧会话重放有效性验证，否则不算闭环。**新功能/行为变更合入时按 §14 主动补/改评测用例**（用例库是被迭代喂养的活资产，缺触发时机就会与现实脱节）。下任何「验收通过/评测 OK/交付完成」结论前：加载 `migao-acceptance` 技能按验收协议执行（L1/L2/UA + 证据链 + 双 AI 交叉验证，零人工执行步骤）。
 
       写码遵循「最少代码」阶梯（YAGNI → 复用 → 标准库 → 原生特性 → 已装依赖 → 一行 → 最小实现；先理解再爬梯）：只简化实现代码、不降测试门禁，安全护栏与既有架构契约永不砍。全文见仓库 docs/wiki/Code-Minimalism.md。
     suffix: Your working directory is {{cwd}}.

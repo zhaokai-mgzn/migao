@@ -95,11 +95,16 @@ class TestXiaobuAdversarialSurface:
 
 
 class TestAdversarialScheduleWiring:
-    """每周对抗节拍必须真的跑到对抗档（issue #3367）。
+    """对抗节拍与档位特判的守卫（issue #3367；**#4262 改判为「仅手动」**）。
 
-    首版把 schedule 加上了，但 `TIER` 的默认值是 smoke —— 定时触发**没有 inputs**，
-    于是每周白跑一遍门禁档、对抗档永远不跑。这类"加了定时任务却什么都没测到"的坑
-    不会让任何 CI 变红，只能靠守卫。
+    #4262（2026-09-18 用户裁定）删除了本 workflow 的每周 `schedule` ——
+    「不要自动进行验证，都是重复的验证，白白消耗成本」：全仓自动真实 LLM 触发
+    由 **3 条收敛为 1 条**（只留 `post-deploy-eval` 每周一 normal 全量）。
+
+    但 #3367 的教训**不随之作废**：定时触发没有 inputs，若不把 `schedule` 特判成
+    adversarial，就会落到默认 smoke ——「加了定时任务却什么都没测到」。故本类守两件事：
+      ① 本 workflow **不得**有自动触发（防静默把定时加回来 = 把成本加回来）；
+      ② 若将来恢复自动触发，**档位特判必须同时在场**（恢复时漏掉 = 原样重踩 #3367）。
     """
 
     def _wf(self) -> dict:
@@ -109,15 +114,25 @@ class TestAdversarialScheduleWiring:
         steps = self._wf()["jobs"]["xiaobu-acceptance"]["steps"]
         return next((s.get("run") or "" for s in steps if "local_runner" in (s.get("run") or "")), "")
 
-    def test_workflow_has_weekly_schedule(self):
+    def test_workflow_is_manual_only(self):
         on = self._wf().get(True) or self._wf().get("on") or {}
-        assert on.get("schedule"), "缺少每周对抗节拍（B 端有 agent-eval-adversarial.yml，C 端也应有）"
+        auto = set(on.keys()) - {"workflow_dispatch"}
+        assert not auto, (
+            f"xiaobu-acceptance 仍有自动触发 {sorted(auto)} —— #4262 用户裁定"
+            "「不要自动进行验证，都是重复的验证，白白消耗成本」⇒ 本 workflow 改为**仅手动**"
+            "（对抗档需要时用 workflow_dispatch 传 tier=adversarial）。"
+            "要恢复定时必须先拿用户裁定，并同步改 "
+            "tests/unit_ci_workflows/test_behavior_eval_pr_thin.py 的白名单锁。"
+        )
 
-    def test_schedule_event_selects_adversarial_tier(self):
+    def test_schedule_tier_special_case_survives_for_reenable(self):
+        """#3367 的档位特判**必须留在原地**（#4262 删了定时，但它是恢复定时的前置条件）。"""
         body = self._eval_run_body()
-        assert "github.event_name == 'schedule'" in body, \
-            "定时触发未特判档位 → 会落到默认 smoke，每周白跑"
-        assert "'adversarial'" in body, "定时触发的档位不是 adversarial"
+        assert "github.event_name == 'schedule'" in body, (
+            "`schedule` 档位特判被删了 —— 当前无定时所以不红，但**将来恢复自动触发时**"
+            "会落到默认 smoke（每周白跑门禁档、对抗档永远不跑，issue #3367 原样复发）"
+        )
+        assert "'adversarial'" in body, "`schedule` 特判的档位必须仍是 adversarial"
 
     def test_manual_tier_still_wins(self):
         """手工派发时输入优先（否则没法手动跑 normal/smoke）。"""

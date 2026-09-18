@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.32.0
+version: 1.33.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -330,13 +330,23 @@ aliyun rds ModifySecurityIps --DBInstanceId pgm-bp1p7w92k81ob5to \
 - **背景**：2026-09-08 人工重点验收 3 个 agent 会话（sess_7f27137647e14b1e / sess_50ff3e3c824c4a70 / sess_c1fce183dae24f22）发现的问题，此前评测与验收全部判过 OK。根因：评测断言"工具被调用"而非"用户看到的会话"、关键行为写在不计分的自然语义 data_checks、无时序/金额/卡片内容断言、验收视角与开发者同源、前端渲染与生命周期是结构性盲区。
 - **一句话**：三把工具保证"不崩、契约对"；本协议保证"用户看着好"。
 
-## 13. 行为改动自动体检（agent-eval 用例回归，v1.9 新增，2026-09-08 固化）
+## 13. 行为改动评测体检（agent-eval 用例回归，v1.9 新增；**v1.33 改判为「仅用户显式要求时跑」**）
 
-**铁律**：改动 ai-agent 的**行为/交互**（prompt、Tool、引导流程、交互卡逻辑）后，
-**提交前自动跑相关评测用例**——不等用户要求、不靠用户记脚本。这是「米高研发」模式的
-自动动作，不是可选项。
+**铁律（v1.33 改判，2026-09-18 #4262 用户裁定）**：改动 ai-agent 的**行为/交互**
+（prompt、Tool、引导流程、交互卡逻辑）后，**默认不跑真实 LLM 评测、不派发任何评测 workflow**。
 
-### 13.1 必跑命令
+> 用户原话：「**不要自动进行验证，都是重复的验证，白白消耗成本**」「**手动集中跑一次即可**」。
+
+- **必做的零成本动作**：按 §13.2 映射表算出**该跑哪几条用例**，把清单（用例 ID + 理由）
+  写进 PR body / 结论里 —— 这是确定性动作，不花钱，且让"该跑什么"可复核。
+- **跑真实 LLM 只有一个触发条件**：用户显式要求。届时**一次集中跑**（按 §16.7 选档），
+  **禁止**逐条 / 逐轮 / 每个会话各派发一次（#4262 的实测病灶：两天被 agent 自动派发
+  10 次全量，9/17 CST 2 次 + 9/18 CST 8 次 = 1205 场真实多轮 LLM 会话）。
+- **本技能旧版口径（v1.9「提交前自动跑、不等用户要求」）已作废** —— 照抄它 = 把用户
+  明确买下的账又花一遍。防回退机械锁见 §16.5 门禁矩阵 + `test_behavior_eval_pr_thin.py`
+  （白名单：自动真实 LLM 触发**只允许 1 条**，即 `post-deploy-eval` 每周一）。
+
+### 13.1 命令（**仅用户显式要求时执行**；命令本身不变）
 
 ```bash
 cd /Users/guangzhen.zk/ai native/migao
@@ -348,6 +358,8 @@ cd /Users/guangzhen.zk/ai native/migao
 # normal 档全量（较大改动/涉及多域时）
 ... local_runner.py normal --cases .github/cases
 ```
+
+⚠️ 派发前先查槽位（§16.6 ⑥）；**不要**在无用户要求时把上面的命令包进"自动收口"流程。
 
 ### 13.2 改动类型 → 必跑用例映射（新增用例时同步更新本表）
 
@@ -554,6 +566,11 @@ python3 scripts/xiaobu_coverage.py && python3 scripts/mibao_coverage.py
 **触发（自动，不等用户要求）**：真实浏览器旅程（§15.2）产出截图后需视觉判定；
 或 read_image 报「does not declare image input」时——直接用视觉模型开子代理重试。
 
+> ⚠️ **本条不受 #4262 约束，也勿类推**（v1.33 划界）：这里"自动"指的是**本地视觉判定子代理**，
+> 走的是 `scnet-token-plan`（预付费 token plan，**不打 DeepSeek 官网 key**），且**不派发任何
+> workflow** ⇒ 不产生 §13 那种"重复的真实 LLM 评测费用"。**不得**拿本条当"自动跑评测"的依据
+> —— 真实 LLM 评测（`local_runner.py` / `gh workflow run`）一律按 §13 的"仅用户显式要求"执行。
+
 **动作**：workflow 脚本内用视觉模型代理读图（一次可读多张，复用 §7~§9 剧本的 UA 判定项）：
 
 ```js
@@ -659,7 +676,7 @@ completion_verdict ✅ + 双裁判无未裁定分歧；运行期只 smoke/抽样
 （`.env`/三模块单测/QA Gate/ci-helper/gitleaks/Danger Scan）——**LLM 行为层不进 required
 是有意设计**（真实 LLM 方差会卡死合并流水线；job 名还随 persona 参数化）。
 ⇒ **映射信号红 ≠ 不能合并**（PR 上只剩零 LLM 的映射，没有"红"可言）；
-硬拦截由确定性层（required）+ 定期/手动全量（`post-deploy-eval`，每 3 天档 + 手动档）承担。
+硬拦截由确定性层（required）+ 定期/手动全量（`post-deploy-eval`，**每周一档 + 手动档**）承担。
 禁止把 LLM 档改成 required（历史决策，勿翻案）。
 
 **📌 决策记录（2026-09-14 用户确认 → 2026-09-17 裁定 2′/4′ 覆盖）**：**行为映射门禁
@@ -682,8 +699,10 @@ completion_verdict ✅ + 双裁判无未裁定分歧；运行期只 smoke/抽样
 1. **手动派发的现状真值（v1.20 修正，#3709 修复后）**：`workflow_dispatch` **默认免抑制**。
    `eval_supersede.sh` 按 `EVENT_NAME=workflow_dispatch` ⇒ `FORCE_EVAL=true`（语义 = 人显式要求
    "我就要这一条"，回滚复验/补跑）；**要恢复「被取代即抑制」必须显式传 `-f force_eval=false`**
-   （逃生口保留，省成本路径不消失）。**自动门禁**（`workflow_run` 部署后 / `schedule` 每 3 天全量）
-   语义**不变** —— 它们没有 inputs，不受该默认值影响。
+   （逃生口保留，省成本路径不消失）。**自动门禁**（`schedule` = `post-deploy-eval` **每周一**全量；
+   `workflow_run` 部署后触发已在 #3925 移除、**不存在**）语义**不变** —— 它们没有 inputs，不受该默认值影响。
+   ⚠️ #4262（2026-09-18）后**全仓自动真实 LLM 触发只剩这一条**（原 3 条：每 3 天 normal +
+   两条每周 adversarial，后两条已改仅手动）。
    - ⚠️ **被抑制时要看得见**：run 上会打 `::warning::` 标注（两条 persona 腿 + report job 共三条），
      step summary 抬头是「本 run 未评测（不构成结论）」。**据此不得再把「绿」读成「评测通过」**
      （抑制**依旧不是 failure**：不刷红、不建 issue —— 要的是可见，不是变红）。
@@ -1570,11 +1589,42 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
   ④ **§13.3 新增 LLM 红例红线**：LLM 红例必须下沉为 ≥1 条确定性断言（`must_succeed`/`db_verify`/
      `amount_verify`/`output_verify`/L0 不变式），否则不算闭环；台账 = `.github/llm-finding-ledger.json`，
      机械检查 = `python3 .github/llm_sink_check.py --issue N`（0/1/3 三态），未下沉必须显式登记
-     （`unsunk` + reason + follow_up）。**定时档全部保留**（3 天 normal / 每周 adversarial ×2）——
+     （`unsunk` + reason + follow_up）。~~**定时档全部保留**（3 天 normal / 每周 adversarial ×2）~~——
      裁定要砍的是 **PR / 合并 / 迭代**触发，不是定时档；防回退锁 =
      `tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`（PR 零 LLM + 自动 LLM 触发白名单）。
+     ⚠️ **上面这句「定时档全部保留」已被 v1.33 / #4262 改判**（见版本沿革末条）：自动 LLM
+     触发由 3 条收敛为 **1 条**（只留 `post-deploy-eval` 每周一），两条每周 adversarial 定时删除。
+     防回退锁同步收紧为「白名单 = 1 条 + 反向断言其余为空 + 周级 cron」。**勿照抄本 v1.31 条**。
   详版：`docs/testing/llm-finding-sinking.md` + `docs/testing/eval-environments.md` §3.7。
 - v1.32（2026-09-17 **issue #4065 落码入册**，本次）：§17.3「交付物搁浅」由**仅纪律**改为**已落码** ——
   `scripts/stranding-check.sh`（内容级：以 PR 在 main 上的**合并点**为锚 + 从**远端分支 ref** 看「合并后是否还有 push」；
   三态 `0/1/3`），接入 `scripts/batch-integrate-check.sh <branch> <pr>`；§19 表「交付物搁浅」那一行的「现状」列同步照实登记
   （**未接 CI 门禁**，人工/集成环节调用）。
+- v1.33（2026-09-18 **issue #4262 用户裁定：评测自动触发 3 条 → 1 条**，本次）：用户实测
+  「没在用官网 key 编码，9/17 约 ¥30+、9/18 约 ¥65 仍在花」⇒ 排查确认**费用主体是 CI 真实 LLM 评测**，
+  且实际消耗**不是定时档而是 agent 自动派发**（9/17 CST 2 次 + 9/18 CST 8 次 `post-deploy-eval`
+  全量，全是 `workflow_dispatch`，来源 = DSH 会话里反复执行的派发命令；两天累计 **1205 场**真实多轮
+  LLM 会话，单次 ≈ mibao 84-90 + xiaobu 36-39，按 artifact `run_key.executed_count` 实测）。
+  裁定：「**不要自动进行验证，都是重复的验证，白白消耗成本**」「**手动集中跑一次即可**」
+  「兜底定时**改成每周自动跑一次**」。本次落码：
+  ① **§13 改判**（本条是核心）：行为改动的评测体检由「提交前自动跑、不等用户要求」改为
+     **「默认不跑、不派发 workflow；只做零成本的映射清单；仅用户显式要求时一次集中跑」**
+     —— 旧口径 v1.9 已作废，照抄 = 把用户买下的账又花一遍；配套改 `.agent-presets/migao/agent.cordis.yml`
+     （系统提示词，两处）与仓库 `AGENTS.md` 同族表述。
+  ② **自动 LLM 触发 3 条 → 1 条**：`post-deploy-eval` 由 `0 3 */3 * *`（每 3 天）收紧为
+     `0 3 * * 1`（**每周一** 11:00 CST）；`xiaobu-acceptance` / `agent-eval-adversarial` 的每周
+     `schedule` **删除**（改仅手动，对抗覆盖未消失、只是不再由 cron 付费）。
+  ③ **`verify-trigger` 自动验收停用**：删 `schedule: */30` + `pull_request_target` +
+     `pull_request`，仅留 `workflow_dispatch`（手动对账）。代价已知并接受：合并 PR 不再自动入
+     `ai-verify/*` 队列；#3608 的「恢复自动触发必须用免疫 GITHUB_TOKEN 抑制的触发源」教训**保留**在
+     文件注释与守卫测试里（不是作废，是恢复时的前置条件）。
+  ④ **守卫同步**（三处，均带红证）：`test_behavior_eval_pr_thin.py` 白名单收紧为 **1 条** +
+     新增「其余 LLM workflow 自动触发必须为空」+「数量恰好 1」+「cron 必须周级」；
+     `test_verify_trigger_chain.py` 改判为「仅手动」；`test_xiaobu_adversarial.py` 的
+     `test_workflow_has_weekly_schedule` 改判为「仅手动」，并**保留** #3367 的档位特判守卫
+     （删了它 → 将来恢复定时会落到默认 smoke，原样复发）。
+  ⑤ **未实装 / 边界（照实登记，§19.1）**：`verify-trigger` 的手动对账**不烧 LLM**（它只贴标记/
+     打标签），故本次停用它是为「去重复验证」而非省 token；**agent 侧"不再自动派发"目前只靠
+     指令（提示词/技能）约束，没有机械锁** —— 机械锁只能拦 workflow 触发面，拦不住 agent 主动
+     `gh workflow run`。防这条的唯一现实手段是用户裁定 + 本技能口径；若再观察到自动派发，
+     按「新增自动 LLM 花费」开单处理。

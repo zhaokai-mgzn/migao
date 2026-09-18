@@ -55,12 +55,18 @@ name: verify-trigger
 #     旧值 50 会静默漏掉 85/135。
 
 on:
-  pull_request_target:
-    types: [opened, reopened]
-  pull_request:
-    types: [closed]
-  schedule:
-    - cron: '*/30 * * * *'
+  # ── 自动验收**已停用**（#4262，用户裁定 2026-09-18）────────────────────────────
+  # 用户：「不要自动进行验证，都是重复的验证，白白消耗成本」+「手动集中跑一次即可」。
+  # ⇒ 本 workflow 由「自动验收链路唯一入口」改为**手动对账工具**：
+  #   删除 `schedule: */30`（无人触发也每 30 分钟重扫已合并 PR = 重复验证）、
+  #   删除 `pull_request_target: [opened, reopened]` 与 `pull_request: [closed]`
+  #   （合并/开 PR 即自动入验收队列）。验收改为人工显式发起（`workflow_dispatch`）。
+  # ⚠️ 代价（已知并接受）：合并 PR 不再自动入 `ai-verify/*` 队列 —— 需要验收时由人
+  #   手动派发（单 PR 传 `pr_number`；批量对账传 `hours`）。
+  # ⚠️ 历史教训保留：**若将来要恢复自动触发**，必须用 `pull_request_target: [opened, reopened]`
+  #   这类对 `GITHUB_TOKEN` 抑制免疫的触发源 —— bot 合并（本仓库 87% 的合并方式）下
+  #   `pull_request: [closed]` 100% 不触发（issue #3608 实测）。守卫见
+  #   `tests/unit_ci_workflows/test_verify_trigger_chain.py`（现按"手动专用"改判）。
   workflow_dispatch:
     inputs:
       pr_number:
