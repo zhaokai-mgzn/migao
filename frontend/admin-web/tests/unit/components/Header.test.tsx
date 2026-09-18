@@ -1,4 +1,4 @@
-// case_ids: UI-005, UI-033, UI-037, PG-036
+// case_ids: UI-005, UI-033, UI-037, PG-038
 /**
  * Header 组件测试
  *
