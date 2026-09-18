@@ -18,6 +18,12 @@ export interface QuoteData {
   breakdown?: QuoteBreakdown[]
   formula_used?: string
   fullness?: number
+  /**
+   * 实际褶倍（= 折数法实际用料 ÷ 窗宽），与 `fullness`（档位/款式**理论**倍数）语义不同：
+   * 顾客自报 48 折时理论 2 倍、实际 1.86 倍 ⇒ 展示必须取实际值（issue #4118 ④）。
+   * 倍数法报价不含本字段（无「实际反算」这一项）。
+   */
+  fullness_actual?: number
   warning?: string
 }
 
@@ -30,6 +36,9 @@ export default function QuotationCard({ data, onConfirm }: QuotationCardProps) {
   const breakdown = data.breakdown || []
   // 确认下单防连点锁：点击后锁卡（issue #3040 收尾 #3038，防重复下单）
   const [confirmed, setConfirmed] = useState(false)
+  // 实际褶倍与理论值不同（客户自报折数 / 经济档）⇒ 一并标注实际值：
+  // 只显示理论值会让顾客以为「2 倍褶皱」就是实际用料比，而实际可能只有 1.86 倍（issue #4118 ④）
+  const showActualFullness = data.fullness_actual != null && data.fullness_actual !== data.fullness
 
   return (
     <View className='quotation-card'>
@@ -37,7 +46,8 @@ export default function QuotationCard({ data, onConfirm }: QuotationCardProps) {
         <Text className='quotation-card__header-title'>📐 窗帘报价单</Text>
         {data.fullness != null && (
           <Text className='quotation-card__header-sub'>
-            {data.fullness} 倍褶皱 · {data.fabric_meters} 米面料
+            {data.fullness} 倍褶皱
+            {showActualFullness ? `（实际 ${data.fullness_actual} 倍）` : ''} · {data.fabric_meters} 米面料
           </Text>
         )}
       </View>

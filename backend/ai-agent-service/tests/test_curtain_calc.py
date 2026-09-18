@@ -293,7 +293,11 @@ class TestCurtainCalcPriceGuard:
         assert standard.data["craft_tier"] == "standard"
 
     async def test_tool_execute_pleat_customer_quoted(self, sample_tool_context):
-        """客户自报折数经工具生效：48 折双开 → 12.3 米且来源标记 customer_quoted（issue #3990）"""
+        """客户自报折数经工具生效：48 折双开 → 12.3 米且来源标记 customer_quoted（issue #3990）
+
+        同时守 ④：工具响应里必须**能读到实际褶倍**（卡片载荷 = 本响应原样，见 chat.py 的
+        `curtain_calc → quotation` 映射）—— 否则前端只能拿理论值渲染（issue #4118 ④）。
+        """
         from app.tools.curtain_calc import CurtainCalcTool
         tool = CurtainCalcTool()
         result = await tool.execute(
@@ -307,6 +311,9 @@ class TestCurtainCalcPriceGuard:
         assert result.data["fabric_meters"] == 12.3
         assert result.data["source"] == "customer_quoted"
         assert result.data["per_panel_pleats"] == 24
+        assert result.data["fullness_actual"] == 1.86, (
+            f"工具响应缺实际褶倍 ⇒ 报价卡只能显示理论值 2 倍，实际 {result.data.get('fullness_actual')!r}"
+        )
 
     async def test_tool_execute_open_count_default_single(self, sample_tool_context):
         """open_count 默认单开（余量 0.2）"""
@@ -454,6 +461,77 @@ def test_multi_position_quote():
     assert res["positions"][1]["pleat_count"] == 34
     assert res["by_fabric"]["2698-11"] > 0
     assert res["by_fabric"]["25118-C31"] > 0
+
+
+# ══════════════════════════════════════════════
+# 实际褶倍透传（issue #4118 ④）：算了就丢 → 透传进响应，且与理论值语义分开
+#
+# 病根：`calculate_fabric_by_pleats` 第 184 行算出 `info["fullness_actual"]`，
+# 但 `build_quote` 的 `pleat_fields` 不含它 ⇒ 响应里只有档位**理论**倍数 `fullness`，
+# 前端卡片照它渲染 ⇒ 客户自报 48 折（实际用料 12.3÷6.6 = 1.86 倍）时显示「2 倍褶皱」。
+# 治法：`fullness_actual` 随折数法一起透传；`fullness` 的既有语义（档位/款式理论倍数）**不改**。
+# ══════════════════════════════════════════════
+
+class TestFullnessActualPassthrough:
+    """折数法必须同时给出理论倍数与实际倍数，二者不得互相顶替。"""
+
+    @staticmethod
+    def _customer_quoted_48_folds():
+        """行业实证场景：6.6m 窗、韩褶双开、客户自报 48 折（issue 正文红证用例）。"""
+        return build_quote(
+            window_width=6.6, window_height=2.6, mounting="s_hook",
+            fabric_width=3.2, fabric_price=23.8,
+            pleat_count=48, open_count=2, source="customer_quoted",
+        )
+
+    def test_customer_quoted_48_folds_exposes_actual_fullness(self):
+        """客户自报 48 折：响应里必须**能读到实际褶倍 1.86**（≠ 档位理论值 2.0）。"""
+        q = self._customer_quoted_48_folds()
+        assert q["fabric_meters"] == 12.3
+        assert q["fullness"] == 2.0, "fullness 仍是档位/款式理论倍数（既有契约不得改义）"
+        assert q["fullness_actual"] == 1.86, (
+            f"实际褶倍（12.3÷6.6=1.86）必须透传进响应，实际拿到 {q.get('fullness_actual')!r}"
+            " —— 算了就丢 ⇒ 卡片只能拿理论值骗顾客"
+        )
+        assert q["fullness_actual"] != q["fullness"], "理论值≠实际值时两者必须可分辨"
+
+    def test_theory_value_tracks_tier_while_actual_tracks_meters(self):
+        """档位理论值随档位走、实际值随用料走 —— 两个数不是一回事。"""
+        kwargs = dict(
+            window_width=6.6, window_height=2.6, mounting="s_hook",
+            fabric_width=3.2, fabric_price=23.8, open_count=2,
+        )
+        std = build_quote(**kwargs, craft_tier="standard")
+        eco = build_quote(**kwargs, craft_tier="economy")
+        assert (std["fullness"], eco["fullness"]) == (2.0, 1.8), (
+            "理论倍数 = 档位名义值（standard 2.0 / economy 1.8），语义不变"
+        )
+        # standard 52 折 → 13.3m → 2.02 倍；economy 46 折 → 11.8m → 1.79 倍
+        assert std["fullness_actual"] == 2.02
+        assert eco["fullness_actual"] == 1.79
+        assert std["fullness_actual"] != std["fullness"], "标准档实际值也非名义值（13.3÷6.6=2.02）"
+
+    def test_multiple_method_quote_has_no_actual_fullness(self):
+        """倍数法没有「折数法反算」这一项 ⇒ 不得编造 `fullness_actual`（fail-closed）。"""
+        q = build_quote(
+            window_width=3.0, window_height=2.7, mounting="eyelet",
+            fabric_width=3.0, fabric_price=30.0,
+        )
+        assert q["fullness"] == 2.0
+        assert "fullness_actual" not in q, (
+            "倍数法响应里出现 fullness_actual = 给顾客一个没人算过的数（编造）"
+        )
+
+    def test_card_consumes_the_same_field_name(self):
+        """字段名单点：响应键必须被报价卡消费 —— 否则「后端透传了」与「卡片渲染了」各自绿，
+        合起来仍是「算了就丢」（跨模块契约，issue #4118 ④ 的前端半边）。"""
+        card = (
+            REPO_ROOT / "frontend" / "mini-app" / "src" / "components" / "cards" / "QuotationCard.tsx"
+        )
+        assert card.is_file(), f"报价卡路径不存在：{card}（路径变更须同步本锚点）"
+        assert "fullness_actual" in card.read_text(encoding="utf-8"), (
+            f"{card} 未消费响应键 `fullness_actual` ⇒ 卡片只能拿理论值 `fullness` 渲染"
+        )
 
 
 # ══════════════════════════════════════════════

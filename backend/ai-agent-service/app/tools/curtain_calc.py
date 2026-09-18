@@ -284,7 +284,13 @@ def build_quote(
     Returns:
         报价字典：fabric_meters / fabric_cost / processing_cost / accessory_cost /
         install_cost / total / breakdown / formula_used / warning / fullness
-        （折数法时另含 pleat_count / per_panel_pleats / open_count / margin / source / craft_tier）
+        （折数法时另含 pleat_count / per_panel_pleats / open_count / margin / source / craft_tier
+        以及 fullness_actual）
+
+    语义分工（issue #4118 ④）：
+        `fullness` = **理论**倍数（档位名义值 / 款式默认值），随档位走；
+        `fullness_actual` = **实际**倍数（折数法用料 ÷ 窗宽，仅折数法给出），随用料走。
+        顾客自报折数时二者不等（如 48 折 → 理论 2.0 / 实际 1.86）⇒ 展示必须取实际值。
     """
     # 褶皱倍数默认值
     N = fullness if fullness is not None else DEFAULT_FULLNESS.get(mounting, 2.0)
@@ -320,6 +326,12 @@ def build_quote(
             "source": source,
             "craft_tier": craft_tier,
         }
+        if "fullness_actual" in info:
+            # 实际褶倍（= 实际用料 ÷ 窗宽）与上面的 `fullness`（档位/款式**理论**倍数）**语义不同**：
+            # 理论值随档位走（standard 2.0 / economy 1.8），实际值随用料走（48 折 → 12.3÷6.6 = 1.86）。
+            # 顾客自报折数时二者必然不等，卡片必须两个都能读到（issue #4118 ④：算了就丢 = 只能拿理论值骗顾客）。
+            # ⚠️ 只透传，**不改** `fullness` 的既有含义（那会动既有契约）。
+            pleat_fields["fullness_actual"] = info["fullness_actual"]
     else:
         meters, formula_used, warning = calculate_fabric_meters(
             window_width=window_width,

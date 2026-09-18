@@ -43,4 +43,27 @@ describe('QuotationCard — 报价单确认下单', () => {
     fireEvent.click(screen.getByText('确认下单'))
     expect(onConfirm).toHaveBeenCalledTimes(1)
   })
+
+  it('实际褶倍 ≠ 理论褶倍时同时展示实际值（issue #4118 ④）', () => {
+    // 客户自报 48 折场景：`fullness`=档位理论值 2，`fullness_actual`=12.3÷6.6=1.86
+    render(
+      <QuotationCard
+        data={{ ...baseQuote, fullness: 2, fullness_actual: 1.86, fabric_meters: 12.3 }}
+      />
+    )
+    expect(screen.getByText(/2 倍褶皱/)).toBeTruthy()
+    expect(screen.getByText(/实际 1\.86 倍/)).toBeTruthy()
+    expect(screen.getByText(/12\.3 米面料/)).toBeTruthy()
+  })
+
+  it('实际褶倍 = 理论褶倍时不重复标注「实际」', () => {
+    render(<QuotationCard data={{ ...baseQuote, fullness: 2, fullness_actual: 2 }} />)
+    expect(screen.queryByText(/实际/)).toBeNull()
+  })
+
+  it('无 fullness_actual 字段（旧载荷）时保持原渲染（向后兼容）', () => {
+    render(<QuotationCard data={{ ...baseQuote, fullness: 2 }} />)
+    expect(screen.getByText(/2 倍褶皱/)).toBeTruthy()
+    expect(screen.queryByText(/实际/)).toBeNull()
+  })
 })
