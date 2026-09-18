@@ -131,6 +131,30 @@ describe('加工费管理页（issue #4386）', () => {
     await waitFor(() => expect(mockGetFeeCombinations).toHaveBeenCalledTimes(2))
   })
 
+  it('新建弹窗只有一组底栏按钮：按钮走 Modal 的 footer（不叠加内置默认底栏「确定」）+ 文案不留字面 markdown 星号', async () => {
+    render(<ProcessingFeesPage />)
+    await waitFor(() => expect(screen.getByTestId('fee-combinations-total')).toHaveTextContent('2'))
+
+    await userEvent.click(screen.getByTestId('fee-combination-new'))
+
+    // ① 只有一组「取消」。形态判据：Modal 在 `footer === undefined` 时会渲染**内置默认底栏**
+    //    （「取消」/「确定」，两个都只调 onClose）⇒ 消费者若把自绘按钮写进 children 且不传 footer，
+    //    就会叠出两组按钮（issue #4415 的实测截图形态）。
+    expect(screen.getAllByRole('button', { name: '取消' })).toHaveLength(1)
+    // ② 内置默认底栏的「确定」只关窗、**不提交** ⇒ 它存在就等于「商家以为保存了，其实什么都没发生」。
+    expect(screen.queryByRole('button', { name: '确定' })).toBeNull()
+    // ③ 提示文案不得把 markdown 星号原样丢给商家（JSX 文本里的 `**一个价**` 会字面显示）。
+    expect(screen.getByRole('dialog').textContent ?? '').not.toContain('**')
+
+    // ④ 能力不退化：挪进 footer 的保存按钮仍然真的提交（不是只换了个位置就哑了）。
+    await userEvent.click(screen.getByTestId('fee-item-pick-打孔'))
+    await userEvent.type(screen.getByTestId('fee-combination-price-input'), '15')
+    await userEvent.click(screen.getByTestId('fee-combination-submit'))
+    await waitFor(() =>
+      expect(mockCreateFeeCombination).toHaveBeenCalledWith({ items: ['打孔'], unit_price: 15 }),
+    )
+  })
+
   it('护栏理由逐条展示：读**真实信封** error.details[].message（三条 ⇒ 页面三条独立条目）', async () => {
     mockCreateFeeCombination.mockRejectedValueOnce({
       response: {
