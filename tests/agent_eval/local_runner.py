@@ -7936,6 +7936,58 @@ KEY_JOURNEYS_XIAOBU = (
 # （run 34849029334 xiaobu `completion.ok` true→false，来自 OR-026）。
 _COMPLETION_RELEASED_CLASSES = frozenset({"llm-noise"})
 
+# ── 阻塞条目的**两类分组**（issue #4207：结论档不再少算条数）──────────────────────
+# 病灶（判定 run 35295494688 @d5bca241）：`score=1.0` 的跨 run 复发条目（mibao `AS-007`、
+# xiaobu `OR-021`/`OR-023`）**在 `passed` 计数里、也不在失败清单里**，却阻塞 `completion.ok`
+# ⇒ 读者按「未通过清单」数条数会**系统性少算**（xiaobu 腿实测列 3 条、实为 5 条阻塞）。
+# 判定口径**一字不动**（`_is_recurring` 先于分类/旅程守卫是 #3806 的有意 fail-closed），
+# 这里只把「读法」分成两组：
+#   ① `must_fix_failures`    —— 真失败（`score<1`）且**不属** `case_asset_failures`；
+#   ② `blocked_but_passed`   —— **通过但被 fail-closed 阻塞**（`score==1.0`，跨 run 复发）。
+# `case_asset_failures`（#4245）**不**折进 ①：它已有自己的组，且其红/绿本就无判别力
+# （文案契约见 `test_eval_case_asset_bucket.py`）。三组互斥且并为「各阻塞桶 ID 的去重并集」。
+MUST_FIX_LABEL = "必须处理的失败（score<1）"
+BLOCKED_BUT_PASSED_LABEL = "通过但被 fail-closed 阻塞（跨 run 复发，score=1）"
+
+# 阻塞桶（`completion_verdict` 输出里**除放行/元信息外**的一切）；与
+# `scripts/eval_closeout.py::blocking_buckets()` 动态枚举的口径**同源**：
+# 那边 = `set(completion) - NON_BLOCKING_VERDICT_KEYS`，这边是同一集合的显式枚举。
+_BLOCKING_VERDICT_KEYS = (
+    "deterministic_failures", "journey_failures", "systemic_recurrence",
+    "restore_failures", "harness_incompatible_failures", "case_asset_failures",
+)
+
+
+def blocking_groups(results: list, verdict: dict) -> dict:
+    """把 `completion_verdict` 的**阻塞条目**按「真失败」/「通过但被 fail-closed 阻塞」分组。
+
+    唯一判据（`completion_verdict` 的 `reason` 与 summary 的结构化字段都从这里取，
+    **不造第二套**）：阻塞集合 = 各阻塞桶 ID 的**去重并集**，再按用例 `score` 切一刀。
+
+    为什么按 `score` 切而不是按桶切：同一个桶（`systemic_recurrence`）里两类都可能有 ——
+    实测 run 35295494688 的 systemic 6 条里 5 条 `score<1`、1 条（`AS-007`）`score==1.0`；
+    按桶切会把"通过但被阻塞"这一条整个藏起来（= 本单要治的少算）。
+
+    Returns:
+        {"must_fix_failures": [id...], "blocked_but_passed": [id...], "blocking_ids": [id...]}
+        （`blocking_ids` 是去重并集，仅供不变量核对，**不**写进 summary —— 它是 int/列表
+        混合语义的中间量，落盘会被 `blocking_buckets()` 当成新桶。）
+    """
+    score_of = {str(r.get("case_id") or "?"): r.get("score", 0) for r in (results or [])}
+    case_asset = {str(c) for c in (verdict.get("case_asset_failures") or [])}
+    blocking_ids: list = []
+    for key in _BLOCKING_VERDICT_KEYS:
+        for cid in (verdict.get(key) or []):
+            cid = str(cid)
+            if cid not in blocking_ids:
+                blocking_ids.append(cid)
+    return {
+        "must_fix_failures": [c for c in blocking_ids
+                              if score_of.get(c, 0) < 1.0 and c not in case_asset],
+        "blocked_but_passed": [c for c in blocking_ids if score_of.get(c, 0) >= 1.0],
+        "blocking_ids": blocking_ids,
+    }
+
 
 def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
     """评测完成判定（机器可读）——「完成定义前置」，取代「全量 100% 绿才算完」。
@@ -7984,10 +8036,20 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
 
     判定不改 _ci_verdict：PR 门禁（smoke/normal 全绿）与结论档（本判定）各司其职。
 
+    ⚠️ **`reason` 的读法（issue #4207）**：判红时 `reason` 先给**两组**
+    （`必须处理的失败（score<1）` / `通过但被 fail-closed 阻塞（跨 run 复发，score=1）`），
+    再给「桶分解：…」。两组由 `blocking_groups` 从**同一批阻塞桶**按 `score` 切出
+    （不是第二套判据）—— 因为同一个桶里两类都可能存在（实测 run 35295494688：
+    systemic 6 条里 1 条 `score==1.0`）。**阻塞语义一字未动**：两组都在 `ok` 表达式里。
+    为什么必须显式分组：`score==1.0` 的阻塞条目**在 `passed` 计数里、也不在 `failed` 清单里**
+    ⇒ 读者按"未通过清单"数条数会系统性少算（xiaobu 腿实测列 3 条、实为 5 条阻塞）。
+
     Returns:
         {"ok", "reason", "deterministic_failures", "journey_failures",
          "flake_released", "systemic_recurrence", "restore_failures",
          "harness_incompatible_failures", "case_asset_failures", "total", "passed"}
+        （`must_fix_failures` / `blocked_but_passed` **不在**这里 —— 它们是**序列化层**的
+        附加字段，由 `write_summary_json` 经 `blocking_groups` 落盘，见该函数 docstring）
     """
     if not results:
         return {"ok": False, "reason": "0 个用例执行（环境/登录失败，禁止假绿）",
@@ -8055,30 +8117,60 @@ def completion_verdict(results: list, key_journey_ids: tuple = ()) -> dict:
           and not restore_fail and not harness_bad and not case_asset)
     total = len(results)
     passed = sum(1 for r in results if r.get("score", 0) >= 1.0)
+    # #4207：两类分组（同一判据供 summary 的结构化字段复用 —— 见 `blocking_groups`）
+    _groups = blocking_groups(results, {
+        "deterministic_failures": deterministic, "journey_failures": journey_fail,
+        "systemic_recurrence": systemic, "restore_failures": restore_fail,
+        "harness_incompatible_failures": harness_bad, "case_asset_failures": case_asset,
+    })
+    _must_fix, _blocked_passed = _groups["must_fix_failures"], _groups["blocked_but_passed"]
     if ok:
         parts = ["必须处理的失败=0，关键旅程全过"]
         if flake_released:
             parts.append(f"放行波动 {len(flake_released)} 条（台账，仅随机波动）")
         reason = "，".join(parts) + f"（{total} 条，{passed} 通过）"
     else:
+        # 两**组**先行（#4207）：读者要的"哪些必须修、哪些只是被 fail-closed 拦住"。
+        # 旧文案只有一串按桶拼的 ID，`score=1.0` 的阻塞条目既不在 `failed` 清单里、
+        # 也不在任何"失败"字样旁边 ⇒ 数条数必然少算。
         parts = []
+        if _must_fix:
+            parts.append(f"{MUST_FIX_LABEL}{len(_must_fix)} 条: {', '.join(_must_fix)}")
+        if _blocked_passed:
+            parts.append(f"{BLOCKED_BUT_PASSED_LABEL}{len(_blocked_passed)} 条: "
+                         f"{', '.join(_blocked_passed)}")
+            # 计数关系（#4207 第 2 条）：`passed + failed ≠ 阻塞数` 是**预期**，不是 bug
+            # —— 被阻塞的通过条目同时在 `passed` 里、又占一个阻塞位。
+            parts.append(
+                f"阻塞条目共 {len(_groups['blocking_ids'])} 条"
+                f"（failed={total - passed} score<1 + 通过但被阻塞={len(_blocked_passed)}"
+                f" + 用例资产={len(case_asset)}；passed={passed} 已含被阻塞条目，"
+                f"故 passed + failed ≠ 阻塞数）")
+        bucket_parts = []
         if deterministic:
-            parts.append(f"必须处理的失败 {len(deterministic)} 条: {', '.join(deterministic)}")
+            bucket_parts.append(f"必须处理的失败 {len(deterministic)} 条: "
+                                f"{', '.join(deterministic)}")
         if journey_fail:
-            parts.append(f"关键旅程失败 {len(journey_fail)} 条: {', '.join(journey_fail)}")
+            bucket_parts.append(f"关键旅程失败 {len(journey_fail)} 条: "
+                                f"{', '.join(journey_fail)}")
         if systemic:
-            parts.append(f"跨 run 复发的系统性缺口 {len(systemic)} 条"
-                         f"（同一首跑指纹在历史 run 反复出现，不按波动放行）: {', '.join(systemic)}")
+            bucket_parts.append(f"跨 run 复发的系统性缺口 {len(systemic)} 条"
+                                f"（同一首跑指纹在历史 run 反复出现，不按波动放行）: "
+                                f"{', '.join(systemic)}")
         if case_asset:
-            parts.append(f"用例资产缺陷 {len(case_asset)} 条"
-                         f"（前置未成立/期间漂移 ⇒ 该用例本次红/绿无判别力，"
-                         f"**不可归因于 agent**，须先修前置或用例资产）: {', '.join(case_asset)}")
+            bucket_parts.append(f"用例资产缺陷 {len(case_asset)} 条"
+                                f"（前置未成立/期间漂移 ⇒ 该用例本次红/绿无判别力，"
+                                f"**不可归因于 agent**，须先修前置或用例资产）: "
+                                f"{', '.join(case_asset)}")
         if restore_fail:
-            parts.append(f"前置未复位 {len(restore_fail)} 条"
-                         f"（共享状态未回滚，结论不可信）: {', '.join(restore_fail)}")
+            bucket_parts.append(f"前置未复位 {len(restore_fail)} 条"
+                                f"（共享状态未回滚，结论不可信）: {', '.join(restore_fail)}")
         if harness_bad:
-            parts.append(f"harness/用例形状不兼容 {len(harness_bad)} 条"
-                         f"（**不是** agent 行为失败，需改用例/harness）: {', '.join(harness_bad)}")
+            bucket_parts.append(f"harness/用例形状不兼容 {len(harness_bad)} 条"
+                                f"（**不是** agent 行为失败，需改用例/harness）: "
+                                f"{', '.join(harness_bad)}")
+        if bucket_parts:
+            parts.append("桶分解：" + "；".join(bucket_parts))
         reason = "；".join(parts)
     return {
         "ok": ok, "reason": reason,
@@ -8416,6 +8508,9 @@ def write_summary_json(path: str, label: str, shard: str, results: list,
       cases：[{id, score, classification, pre_clean}]（+ 失败用例的 `failures`：断言级原因数组）
               （+ 重试前置未复位时的 `precondition`：#3751）
       completion：completion_verdict 的判定结果 + failure_reasons（ID → 首要原因）
+                + **两类分组的结构化字段**（#4207）：`must_fix_failures`（阻塞条目里
+                `score<1` 的真失败）/ `blocked_but_passed`（阻塞条目里 `score==1.0` 的
+                「通过但被 fail-closed 阻塞」）—— 下游渲染器按这两键分组，不必再推导
       cost：本轮**成本可读信号**（#3761，见 `_cost_block`：wall_clock_s / cases / avg_case_s /
             slowest_cases / retried_cases / tokens=null+原因）—— **只加不改**既有字段
       run_key：verdict ledger 的键（#3769，见 `_run_key`：sha/tier/case_ids/cases_fingerprint/
@@ -8457,6 +8552,17 @@ def write_summary_json(path: str, label: str, shard: str, results: list,
         for cid in (_verdict["deterministic_failures"] + _verdict["journey_failures"]
                     + _verdict["case_asset_failures"] + _verdict["flake_released"])
     }
+    # #4207：阻塞条目的**两类分组**落成结构化字段 —— 下游（issue body 渲染器 /
+    # `.github/workflows/post-deploy-eval.yml` 的"未通过"清单）据此分组，**不必再推导**。
+    # 为什么必须结构化而不是只改文案：workflow 侧的渲染器当前按 `score<1` 取"未通过"
+    # （`cases.filter(score<1)`），**结构上看不到** `score==1.0` 的阻塞条目 ⇒ 改文案对
+    # 它无效；给出字段后那次改动只需取这两键（本包不动 workflow：改它需 `workflow` scope，
+    # 见 `migao-dev-flow` §7.1 保留类）。
+    # 只加字段：`ok` 表达式、`_COMPLETION_RELEASED_CLASSES`、各桶语义与 `reason` 的两组
+    # 之外的一切一字未动（锚点见 `test_eval_summary_attribution.py`）。
+    _groups = blocking_groups(results, _verdict)
+    _verdict["must_fix_failures"] = _groups["must_fix_failures"]
+    _verdict["blocked_but_passed"] = _groups["blocked_but_passed"]
     # 成本块（#3761）：**只加**顶层键（既有字段/键顺序一字未动 —— 消费者
     # `report` job 的 jq 与 `TestLegacyBytesUnchanged` 都依赖这一点）。
     payload["cost"] = _cost_block(results, elapsed_s)
