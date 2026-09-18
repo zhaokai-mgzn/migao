@@ -280,7 +280,7 @@ gh run view <id> --log | grep "Start local stack" | ...
 > ⚠️ **下游已落地，本节表格是 2026-09-14 的快照（别再当现状读）**：
 > 下面「事实 1」的四层 PR 真实 LLM，经 #3653（2026-09-15，降到一层）之后，
 > 已由 **2026-09-17 用户裁定 2′/4′（承载 issue #4034）** 进一步**归零** ——
-> PR 层真实 LLM **停跑**，`agent-behavior-eval.yml` 只留**零 LLM 的映射信号**；
+> PR 层真实 LLM **停跑**（#4034）；#4275 起 `agent-behavior-eval.yml` **整个文件已删除**，PR 上无任何自动行为信号；
 > 判定用途收敛到单一入口 `post-deploy-eval.yml`（每 3 天 normal 全量 + 手动 dispatch），
 > 既有定时档全部保留。现状口径见 `docs/testing/eval-environments.md` §3.1/§3.7。
 

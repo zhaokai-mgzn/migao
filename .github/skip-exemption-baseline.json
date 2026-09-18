@@ -177,7 +177,7 @@
     },
     "CH-021": {
       "category": "",
-      "missing": "理由与实现**矛盾**：称『由手动 agent-eval normal/图片用例专用 CI 触发』，而 `.github/workflows/agent-behavior-eval.yml` 注释明说本条任何 persona 都跑不了（exit 1）；且断言的是**真实 vision 行为**，不被单测覆盖 ⇒ 不属 `[backend-contract]`，判不准",
+      "missing": "理由与实现**矛盾**：称『由手动 agent-eval normal/图片用例专用 CI 触发』，而本条**任何 persona 都选不中**（原证据 = 已随 #4275 删除的 `agent-behavior-eval.yml` 注释『exit 1』）；且断言的是**真实 vision 行为**，不被单测覆盖 ⇒ 不属 `[backend-contract]`，判不准。⚠️ #4275（2026-09-18）：原引用的 workflow 已删除 ⇒ **该条论据失去现场**，重新裁定前须用存续证据（`select_cases_for_persona` 对该条的实跑结果）重新取证；不得据『文件已删』默认它可跑。",
       "undecided": true
     },
     "CU-006": {

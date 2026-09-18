@@ -4,6 +4,9 @@
 # ============================================================================
 # 为什么要有这个文件（根因，勿删注释）：
 #   此前三个评测 workflow **各写一份**种子规则，且互不相等：
+#   （⚠️ #4275/2026-09-18：第三个 workflow `agent-behavior-eval.yml` 已**整体删除**；
+#     下面这段是**历史根因**，保留它是为了说明「为什么必须有单一源」——
+#     现仍在用的消费者 = xiaobu-acceptance.yml + post-deploy-eval.yml 两个。）
 #     · xiaobu-acceptance.yml   只当 persona=mibao 时叠 B 端种子
 #     · post-deploy-eval.yml    只当 matrix.persona=mibao 时叠 B 端种子
 #     · agent-behavior-eval.yml **无条件**叠 B 端种子（一个 job 里跑双端分桶）

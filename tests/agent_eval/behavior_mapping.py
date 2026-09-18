@@ -13,8 +13,10 @@ OR-016、改售后 → AS-007、改建品 → PR-019/PR-020、改交互卡 → C
    改一行 `order_skill.py` 时可能一条订单用例都没跑到 → 行为回归要到合并之后才发现。
 
 所以把那张表写成**纯函数**：输入 PR 的变更文件列表，输出该跑的用例 ID。
-`.github/workflows/agent-behavior-eval.yml` 用它自动选用例（改哪测哪），
 口径仍来自 §13.2，不新造标准。
+⚠️ #4275（2026-09-18）：原消费方 `agent-behavior-eval.yml` **已删除** ⇒ 现在没有 workflow
+自动消费它；它作为**本地纯函数**供 agent / 人工按 §13.2 算「这次改动该跑哪几条用例」
+（`map_changed_files_with_source(<改动文件列表>)`），以及被 L0 静态锁复用。
 
 ## 契约
 

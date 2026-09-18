@@ -23,10 +23,19 @@ workflow 的 map job **不是**把映射结果直接当 `case_ids` 传下去，�
 
 1. 在 `DEFAULT_BEHAVIOR_CASES` ∪ 规则命中内（**必要不充分**）；
 2. `select_cases_for_persona` 在**至少一个** persona 下选得中它（真能被调度）；
-3. `skip_reason` 为空（否则按 workflow 语义该进 `unrunnable`，不算可达）。
+3. `skip_reason` 为空（非空 = 该用例被显式跳过，任何消费方都调度不了它，不算可达）。
 
-再加一层**真实入口见证**：用代表性 diff 走 `map_changed_files_with_source` → 按 workflow
-的分桶规则（`owners[0]`）算出它会进哪个桶 —— 证明"真的会被调度"，而不是集合代数上成立。
+再加一层**调度见证**：用代表性 diff 走 `map_changed_files_with_source` → 按「用例库自己的
+选择函数」算出它会进哪个 persona 桶 —— 证明"真的会被调度"，而不是集合代数上成立。
+
+> ⚠️ **#4275（2026-09-18 用户裁定）**：消费方 `agent-behavior-eval.yml` **已删除**
+> （PR 层零 LLM 映射信号：零成本，但每个触及 `app/**` 的 PR 都会自动跑并刷评论，9/18 实测
+> 13 次/天）。故本文件**不再有「workflow 分桶口径漂移守卫」**——原
+> `TestWorkflowBucketingIsMirrored` 与 `TestLayeringUnchanged::test_workflow_mode_derivation_is_verbatim`
+> 随被测 workflow 一并移除（**被测对象已不存在，不是放宽门槛**）。
+> **保留下来的是关于「用例库自身」的判据**：一条关键用例若**没有任何 persona 能调度它**，
+> 它就是结构性不可达 —— 该缺陷与有没有 workflow 消费无关（将来重新引入消费方，它照样是缺陷）。
+> 镜像函数因而改名 `_schedulable_buckets`（不再声称"镜像某个 workflow"）。
 
 ## 关键用例集合的定义（可解释，不是三个魔数）
 
@@ -51,7 +60,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / ".github"))
@@ -66,7 +74,6 @@ from eval_case_filter import case_skip_reason, select_cases_for_persona  # noqa:
 from render_cases import load_case_dicts  # noqa: E402
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
-BEHAVIOR_EVAL_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "agent-behavior-eval.yml"
 PERSONAS = ("mibao", "xiaobu")
 
 # ── 代表性 diff（真实仓内路径，均有 is_file 见证断言）──
@@ -184,12 +191,15 @@ def _mapped_case_ids():
     return _rule_case_ids() | set(DEFAULT_BEHAVIOR_CASES)
 
 
-def _workflow_plan(paths, case_dicts):
-    """workflow map job 的**分桶镜像** → `(buckets, source)`，`buckets = {persona: [case_id]}`。
+def _schedulable_buckets(paths, case_dicts):
+    """**调度可达性**分桶 → `(buckets, source)`，`buckets = {persona: [case_id]}`。
 
-    同源复用 `map_changed_files_with_source` + `select_cases_for_persona`；唯一复述的是
-    workflow 那 4 行分桶规则（`owners = [p for p in ("mibao","xiaobu") if cid in runnable[p]]`
-    → `owners[0]`）。**漂移守卫**见 `TestWorkflowBucketingIsMirrored`。
+    同源复用 `map_changed_files_with_source` + `select_cases_for_persona`；按
+    `owners = [p for p in ("mibao","xiaobu") if cid in runnable[p]]` → `owners[0]` 分桶
+    （双端用例归默认 persona）。
+
+    ⚠️ #4275 起这**不再是任何 workflow 的镜像**（消费方 `agent-behavior-eval.yml` 已删）：
+    它现在表达的是**用例库自身的可调度性**——没有 persona 选得中的用例 = 结构性不可达。
     """
     ids, source = map_changed_files_with_source(paths)
     runnable = _runnable_by_persona(case_dicts)
@@ -202,14 +212,7 @@ def _workflow_plan(paths, case_dicts):
     return buckets, source
 
 
-def _map_step_script():
-    """取 `agent-behavior-eval.yml`「计算执行计划」步骤的内联脚本正文。"""
-    wf = yaml.safe_load(BEHAVIOR_EVAL_WORKFLOW.read_text(encoding="utf-8")) or {}
-    for job in (wf.get("jobs") or {}).values():
-        for step in job.get("steps") or []:
-            if step.get("id") == "map":
-                return step.get("run") or ""
-    return ""
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -263,9 +266,9 @@ class TestKeyCasesAreReachable:
 
     @pytest.mark.parametrize("case_id", sorted(KEY_BEHAVIOR_CASES))
     def test_key_case_enters_a_real_bucket_through_the_entrypoint(self, case_id):
-        """真实入口见证：代表性 diff → 映射 → 分桶，该用例确实进了一个 (persona) 桶。"""
+        """调度见证：代表性 diff → 映射 → 分桶，该用例确实进了一个 (persona) 桶。"""
         case_dicts = _case_dicts()
-        buckets, source = _workflow_plan([UNMAPPED_AI_SOURCE], case_dicts)
+        buckets, source = _schedulable_buckets([UNMAPPED_AI_SOURCE], case_dicts)
         assert source == "default_net", (
             f"{UNMAPPED_AI_SOURCE} 不再落兜底网（source={source}）—— "
             "本见证的前提失效，请换一个「映射表盲区」的代表性文件。"
@@ -273,10 +276,10 @@ class TestKeyCasesAreReachable:
         runnable = _runnable_by_persona(case_dicts)
         owners = [p for p in PERSONAS if case_id in runnable[p]]
         assert owners, (
-            f"{case_id} 没有任何 persona 能调度它（会进 workflow 的 unrunnable 名单）—— "
+            f"{case_id} 没有任何 persona 能调度它（任何消费方都选不中它）—— "
             "它就算在兜底网里也永远不会执行 = 空断言。"
         )
-        # workflow 的分桶规则：双端用例归 owners[0]（仓库默认 persona）
+        # 分桶规则：双端用例归 owners[0]（仓库默认 persona）
         assert case_id in buckets.get(owners[0], []), (
             f"{case_id} 未进入 persona={owners[0]} 的执行桶（桶内容：{buckets}）—— "
             "门禁不会真的跑它。"
@@ -323,33 +326,17 @@ class TestReachabilityCheckerActuallyFires:
         assert [c["id"] for c in select_cases_for_persona(rows, "xiaobu")] == ["XX-999"]
 
 
-class TestWorkflowBucketingIsMirrored:
-    """分桶镜像的漂移守卫：workflow 改了分桶口径 → 本文件必须同步（否则守卫会撒谎）。"""
-
-    def test_map_step_uses_the_same_selection_functions(self):
-        script = _map_step_script()
-        assert script, "找不到 agent-behavior-eval.yml 的 map 步骤内联脚本（守卫前提失效）"
-        for anchor in ("select_cases_for_persona", "case_skip_reason", "owners[0]"):
-            assert anchor in script, (
-                f"map job 的分桶实现里找不到 {anchor!r} —— 分桶口径变了，"
-                "请同步本文件的 `_workflow_plan` 镜像后再更新本断言。"
-            )
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # C. 门禁分层锁（红线：本 PR **不**扩大阻塞面）
 # ══════════════════════════════════════════════════════════════════════════════
 class TestLayeringUnchanged:
-    """红线（issue #3725）：只补兜底网（只报告），"规则命中仍阻塞 / 兜底网仍只报告"逐字不变。"""
+    """红线（issue #3725）：分层语义 —— "规则命中仍阻塞 / 兜底网仍只报告"。
 
-    def test_workflow_mode_derivation_is_verbatim(self):
-        """workflow 的 `source → mode` 判定逐字锁定（改了就等于改门禁分层语义）。"""
-        script = _map_step_script()
-        assert 'mode = "blocking" if source == "rules" else "report-only"' in script, (
-            "agent-behavior-eval.yml 的 mode 判定已变 —— 本 PR 的前提是分层语义**逐字不变**"
-            "（规则命中 = blocking / 兜底网 = report-only）；"
-            "若确要改门禁强度，请与 issue #3725 的校准结论一起改并更新本断言。"
-        )
+    ⚠️ #4275：原「workflow 的 `source → mode` 判定逐字锁定」那条断言随被测 workflow 删除
+    （**对象已不存在，不是放宽**）。**保留下来的是分层语义本体**（`source` 判定仍由
+    `behavior_mapping` 纯函数产出：规则命中 = `rules` / 兜底网 = `default_net`），
+    即下面这几条基于纯函数的断言。
+    """
 
     def test_rule_hit_still_reports_rules_source(self):
         """规则命中仍走 rules（阻塞档）——不因本 PR 的补充而改变。

@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.33.0
+version: 1.34.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -667,7 +667,7 @@ completion_verdict ✅ + 双裁判无未裁定分歧；运行期只 smoke/抽样
 |---|---|---|---|
 | PR（任意改动） | 三模块单测 / QA Growth Gate / ci workflow helper / 静态不变式 | ★ **required（硬门禁）** | pr-check |
 | PR 改 AI 行为文件 | ~~C 端 smoke（persona=xiaobu）+ B 端 smoke（pr-check，打云测试环境）~~ **该层已移除**（issue #3653，2026-09-15；`pr-check.yml` 内有登记）—— PR 层只保留下一行的定向映射用例 | —（已移除） | #3504 → #3653 |
-| PR 改 AI 行为文件 | **零 LLM 的映射信号**（diff → §13.2 用例集 + 打印"要跑就派发单一入口"的命令）——⚠️ **PR 层真实 LLM 已停跑**（2026-09-17 用户裁定 2′/4′，承载 issue #4034）：原「映射用例迭代档」（独立栈跑 + PR 评论 + 规则命中失败自动开 issue）的**评测 job 已整体删除**，不是加 `if` 关掉 | **不产生任何评测结论**（连评测都不跑）；代价（PR 阶段无 LLM 行为信号）用户已知并接受 | #3502 / #3653 → #4034 |
+| PR 改 AI 行为文件 | **无任何自动信号**（#4275：`agent-behavior-eval.yml` **整个文件已删除** —— #4034 后它只剩零 LLM 的 `map` job「diff → §13.2 用例集 + 派发命令」，而该 job 的唯一产物是 PR 评论且每个 `app/**` PR 都自动跑；用户裁定「不要自动进行验证」） | **不产生任何评测结论**（PR 上连映射都不跑）；代价用户已知并接受 | #3502 / #3653 → #4034 → **#4275** |
 | 合并 → 部署到 SWAS 成功 | **部署后全量回归**（独立栈 mibao+xiaobu，matrix 并行）→ 失败去重建 issue | 部署后拦截 | #3503 |
 | 每周六 | adversarial 档（只追踪不阻塞） | 信息性 | #3367 |
 | 里程碑/下结论 | 结论档（全量 + 验收剧本 + 双裁判 + completion_verdict） | **结论前置（必过）** | §16.4 |
@@ -675,20 +675,20 @@ completion_verdict ✅ + 双裁判无未裁定分歧；运行期只 smoke/抽样
 **⚠️ 最容易误读的一条**：分支保护的 required_status_checks 只有确定性层那 9 项
 （`.env`/三模块单测/QA Gate/ci-helper/gitleaks/Danger Scan）——**LLM 行为层不进 required
 是有意设计**（真实 LLM 方差会卡死合并流水线；job 名还随 persona 参数化）。
-⇒ **映射信号红 ≠ 不能合并**（PR 上只剩零 LLM 的映射，没有"红"可言）；
+⇒ **PR 上没有任何自动行为信号可读**（#4275：映射 job 也已删除）；硬拦截全靠确定性层。
 硬拦截由确定性层（required）+ 定期/手动全量（`post-deploy-eval`，**每周一档 + 手动档**）承担。
 禁止把 LLM 档改成 required（历史决策，勿翻案）。
 
 **📌 决策记录（2026-09-14 用户确认 → 2026-09-17 裁定 2′/4′ 覆盖）**：**行为映射门禁
-（agent-behavior-eval）不纳入 required**（理由：方差 + persona 参数化 check 名）。
-⚠️ 该门禁的**评测部分已停跑**（issue #4034）：PR 上只剩零 LLM 的映射信号；拦截交给确定性层。
+（原 `agent-behavior-eval`，该 workflow **已随 #4275 整体删除**）不纳入 required**（理由：方差 + persona 参数化 check 名）。
+⚠️ 该门禁**已整体退役**（#4034 删评测 job → **#4275 删整个 workflow**）：PR 上无映射信号；拦截交给确定性层，「该跑哪几条用例」由本机按 §13.2 + `behavior_mapping.py` 算（零成本、不派发）。
 ⇒ 阅后动作变了：**PR 上不再有"规则命中强信号"可看**；取而代之的是裁定 4′ 要求的
 **「LLM 发现 → 确定性下沉」**（红例必须落成 ≥1 条确定性断言，台账 + 机械检查见
 `docs/testing/llm-finding-sinking.md`；`python3 .github/llm_sink_check.py --issue N`）。
 **未下沉的红例必须显式登记**（`status: unsunk` + reason + follow_up），不得静默放行。
 
 **队友约定**：这些门禁是**自动**的，不要重复人工跑同一档；PR 红了先看门禁产物
-（映射信号评论 / summary json / flake 台账 artifact），再决定重跑或修复。
+（summary json / flake 台账 artifact；#4275 起 PR 上已无映射评论），再决定重跑或修复。
 波动台账现上传 artifact（`agent-eval-flake-ledger*`，30 天）——高波动用例治理
 （§14.3 双周回顾）从这里取数，不再翻 run 日志。
 
@@ -785,7 +785,7 @@ completion_verdict ✅ + 双裁判无未裁定分歧；运行期只 smoke/抽样
 
 | 要回答的问题 | 用什么 | **不要**用什么 |
 |---|---|---|
-| 这条改动**影响行为吗**？（PR 阶段） | **PR 上的映射信号**（`agent-behavior-eval.yml` 的 `map` job：diff → §13.2 用例集 + 打印派发命令）——⚠️ **零 LLM**：它只告诉你"波及哪些用例"，**不产生评测结论**。要真结论 ⇒ 手动派发 `post-deploy-eval`（`case_ids` + `purpose=debug`，**非判定用途**） | 不为单条改动派**全量**（全量属部署后 / 批次轮）；**不要在 PR 上期待 LLM 结论**（裁定 2′/4′：PR 层真实 LLM 已停跑，#4034） |
+| 这条改动**影响行为吗**？（PR 阶段） | **PR 上已无任何行为信号**（#4275：`agent-behavior-eval.yml` **整个文件已删除** —— 原零 LLM 的 `map` job「diff → §13.2 用例集 + 派发命令」随之一并移除）⇒ **本机按 §13.2 映射表 + `behavior_mapping.map_changed_files_with_source(<改动文件>)` 自己算**该跑哪几条（零成本、不派发）。要真结论 ⇒ 手动派发 `post-deploy-eval`（`case_ids` + `purpose=debug`，**非判定用途**） | 不为单条改动派**全量**（全量属部署后 / 批次轮）；**不要在 PR 上期待 LLM 结论**（裁定 2′/4′：PR 层真实 LLM 已停跑，#4034；#4275 连映射信号也停了） |
 | **这几条 case 修好了吗**？ | **合并后的一次全量档**（`tier=normal`，不带 `case_ids`，跑全库 ⇒ 天然覆盖「缺陷由另一条用例制造」的前置条件，§17.4 ③） | 不用窄重放当结论（除非全量覆盖不到该用例）；用窄重放**必须回答**「本次运行复现了缺陷的前置条件吗」（`migao-acceptance` v1.7） |
 | **能不能放行**（里程碑）？ | **全量档 + `completion_verdict` + 独立盲审**（§16.4 结论档） | 不拿单次窄重放的绿当结论；不拿**被抑制 / cancelled / 空跑**的 run 当结论 |
 
@@ -1628,3 +1628,31 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
      指令（提示词/技能）约束，没有机械锁** —— 机械锁只能拦 workflow 触发面，拦不住 agent 主动
      `gh workflow run`。防这条的唯一现实手段是用户裁定 + 本技能口径；若再观察到自动派发，
      按「新增自动 LLM 花费」开单处理。
+
+- v1.34（2026-09-18 **issue #4275 用户裁定：删除 `agent-behavior-eval.yml`**，本次）：
+  承接 #4262 的「不要自动进行验证 + CI 运行次数太多」。该 workflow 是 #4034 之后 **PR 层唯一的
+  零 LLM 映射信号**入口（`map` job：diff → §13.2 用例集 + 在 PR 上贴「要跑就派发单一入口」的
+  可复制命令），**不烧 LLM**，但每个触及 `backend/ai-agent-service/app/**` 的 PR 都会自动跑并刷评论
+  （9/18 实测 **13 次/天**，每次 ~27s）。其唯一产物是 **PR 评论**（`createComment` 打在 PR 上）
+  ⇒ 无 PR 上下文可依附，改手动档 = 仓库明令禁止的「永不执行的死 job」⇒ 用户裁定**整个文件删除**。
+  本次落码：
+  ① **删文件** + **同步守卫**（逐条改判，**不做静默削弱**）：
+     `test_behavior_eval_pr_thin.py`（删 ①PR paths 前置门 / ④映射信号不丢 / `TestZeroLlmWorkflowShape`；
+     保留 ②自动 LLM 触发白名单、③手动可达性、⑤判据非空跑；「锁五件事」→「锁三件事」）；
+     `test_behavior_gate_reachability.py`（删「解析 workflow」的见证层 + `gate_mode` 逐字锁；
+     **保留**映射可达性本体 —— 它现在表达的是**用例库自身**的结构性不可达，与有无消费方无关）；
+     `test_behavior_mapping_tool_coverage.py`（删 `TestWorkflowPersonaBucketingPremise`，persona
+     相容性本体仍由 `select_cases_for_persona` 纯函数断言）；
+     `test_eval_stack_seed_parity.py`（删两个以它为被测对象的类 + 收敛 parametrize）；
+     `test_post_deploy_eval_supersede.py`（文档必须提到的 workflow 列表收敛为一个）。
+  ② **功能性引用同步**：`.github/scripts/eval_slot_status.sh` 的 `SLOT_WORKFLOWS`、
+     `.github/scripts/eval_dispatch_guard.sh` 的 `EVAL_RELEVANT_RE`、
+     `.github/skip-exemption-baseline.json` 的 CH-021 论据（原引用该文件注释，**已失效 ⇒ 显式登记
+     需重新取证**，不默认它可跑）。
+  ③ **能力去向（不是白丢）**：映射能力仍在 `tests/agent_eval/behavior_mapping.py`（零依赖纯函数，
+     本地可调 `map_changed_files_with_source(<改动文件>)`）；§13 的「该跑哪几条用例」改由
+     **本机按 §13.2 映射表 + 该纯函数**算（零成本、不派发）——这正是 #4262 保留的"零成本动作"。
+  ④ **未实装 / 边界（照实登记，§19.1）**：删除后 **PR 上没有任何自动行为信号**（既有代价
+     "PR 阶段无 LLM 行为信号" 由此扩大为"连映射提示都没有"）；**没有机械锁阻止"再建一个 PR 自动
+     workflow"** —— 唯一的替代判据是 `test_behavior_eval_pr_thin.py` 的自动 LLM 触发白名单（它只拦
+     带 `local_runner.py` 的 workflow，拦不住"零 LLM 但每 PR 自动跑"的新入口）。

@@ -360,10 +360,16 @@ class TestGlobalEvalSlot:
             assert kw in src, f"workflow 注释缺少 {kw!r} —— 决策上下文丢失后会被当遗漏删掉"
 
     def test_doc_teaches_other_workflows_to_join_the_slot(self):
-        """② 的可执行落地说明：另两个评测 workflow 怎么加入同一 group（本包不改它们）。"""
+        """② 的可执行落地说明：另一个评测 workflow 怎么加入同一 group（本包不改它）。
+
+        ⚠️ #4275（2026-09-18）：原列表里的 `agent-behavior-eval.yml` **已整体删除**
+        ⇒ 仍在同一槽位的只剩 `xiaobu-acceptance.yml`（白名单只许缩短，不许成为藏身处：
+        将来新造起栈的 workflow 必须登记进 `test_eval_stack_seed_parity.py` 的
+        `EVAL_WORKFLOWS` 与本断言）。
+        """
         doc = (REPO_ROOT / "docs" / "testing" / "eval-environments.md").read_text(encoding="utf-8")
         assert "eval-stack-global" in doc, "文档未写明共享 group 名"
-        for wf in ("agent-behavior-eval.yml", "xiaobu-acceptance.yml"):
+        for wf in ("xiaobu-acceptance.yml",):
             assert wf in doc, f"文档未给出 {wf} 的落地改法（改哪一行 + 预期效果 + 注意事项）"
 
 

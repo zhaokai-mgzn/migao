@@ -166,7 +166,7 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
 | E2E Real | 每日 00:00 定时 | 135+ integration 真实 LLM | 频率已合理（低峰回归），保持 |
 
 - ⚠️ **PR 层的真实 LLM = 0 次**（2026-09-17 用户裁定 2′/4′，承载 issue #4034）：
-  `agent-behavior-eval.yml` 的评测 job 已**整体删除**，PR 上只留**零 LLM 的映射信号**
+  `agent-behavior-eval.yml` 已随 #4275 **整个删除**（#4034 时先删评测 job、只剩零 LLM 映射信号；#4275 连映射信号一并移除）
   （diff → §13.2 用例集 + 可复制派发命令）。判定用途走**单一入口** `post-deploy-eval.yml`
   （每 3 天 normal 全量 + 手动 `workflow_dispatch`）；定时档（3 天 normal / 每周 adversarial ×2）**全部保留**。
 - 其余环节不烧真实 token：`nightly-verification` 是 fixture e2e + smoke p1（HTTP 层）；

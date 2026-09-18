@@ -92,9 +92,8 @@ on:
   # ── PR 触发档已移除（issue #3653，2026-09-15：与行为映射档**合并去重**）──
   # 曾于 2026-09-14（#3504）加 pull_request 触发跑 C 端 smoke；按 AD §6.3 结论
   # （PR 层只保留定向映射用例，完整覆盖交部署后/批次轮）移除：
-  #   · C 端规则命中的 PR 已由 agent-behavior-eval 以 xiaobu persona 跑**映射用例**
-  #     （fast 迭代档）—— 覆盖并严格强于 smoke 的 C 端抽样（smoke 只剩 KN-001 一条
-  #     C 端专属），PR 层不再另起一套栈 = 少一次栈构建 + 少一轮真实 LLM；
+  #   · ~~C 端规则命中的 PR 已由 agent-behavior-eval 以 xiaobu persona 跑**映射用例**~~
+  #     （⚠️ #4275：`agent-behavior-eval.yml` **已整体删除**，PR 层不再有任何映射信号）；
   #   · 纯 C 端行为改动（无规则命中）由 behavior-eval 的兜底网（含 CH-010）兜底；
   #   · C 端 smoke/normal/adversarial 一律 **workflow_dispatch**（按需手动）。
 
@@ -108,8 +107,8 @@ on:
 #     前两次的栈构建与 token 立刻作废（PR 迭代的必需品，别丢）；
 #   · **job 级**（见 `xiaobu-acceptance:` job 的 concurrency）加共享槽位
 #     `eval-stack-global` —— 真正会起栈的 job 全局串行，同一时刻仓库内只有一套评测栈在构建。
-#   单一说明见 docs/testing/eval-environments.md §3.3（三处一致：本 workflow +
-#   agent-behavior-eval + post-deploy-eval #3587）。
+#   单一说明见 docs/testing/eval-environments.md §3.3（#4275 前为三处一致：本 workflow +
+#   agent-behavior-eval + post-deploy-eval #3587；agent-behavior-eval 已删 ⇒ 现为两处）。
 #
 # ⚠️ 为什么不把文件级 group 直接换成共享槽位：那样"新 push"必须**排在**旧 run 后面，
 #   既丢 PR 迭代性，又让被取代的旧 run 跑完整套栈 —— 最坏组合。
@@ -168,7 +167,7 @@ jobs:
           {
             echo "## 🧵 评测并发槽位"
             echo ""
-            echo "- 本 workflow 与 \`agent-behavior-eval\` / \`post-deploy-eval\` **共用** group：\`eval-stack-global\`"
+            echo "- 本 workflow 与 \`post-deploy-eval\` **共用** group：\`eval-stack-global\`（#4275 前还有 agent-behavior-eval，已删）"
             echo "- 语义：一个 group 同时 **1 running + 1 pending**；新 run 进入已有 pending 的 group 时，"
             echo "  **旧的 pending 会被取消**（GitHub 固有语义，\`cancel-in-progress: false\` 不阻止这一条）"
             echo "- 因此："
@@ -340,8 +339,9 @@ jobs:
         #
         # ★ 口径**单一实现**（issue #3563）：本步骤只调用 scripts/eval_stack_seed.sh，
         #   规则（xiaobu=仅 C 端种子 / mibao=C 端+B 端）在脚本里，与
-        #   agent-behavior-eval.yml、post-deploy-eval.yml **共用同一份** —— 禁止在此内联
-        #   fixture 路径。历史根因：三处各写一份且互不相等（本 workflow 条件叠加、
+        #   post-deploy-eval.yml **共用同一份**（#4275 前还有 agent-behavior-eval.yml，已删）
+        #   —— 禁止在此内联
+        #   fixture 路径。历史根因：各写一份且互不相等（本 workflow 条件叠加、
         #   behavior-eval 无条件叠加）→ 同一个 persona 在两处拿到不同栈 →
         #   CH-010 在 behavior-eval 上 0%、在本 workflow 上 100%
         #   （实测 run 34805981549 vs 34807824585）。

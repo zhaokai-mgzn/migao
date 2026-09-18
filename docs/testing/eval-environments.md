@@ -51,7 +51,7 @@ B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「�
 
 | 触发 | 环境 | 档位 | 说明 |
 |---|---|---|---|
-| PR（AI 行为文件改动，**仅 app/** 源文件） | **不起栈、零真实 LLM** | **只做映射**（diff → §13.2 用例集；**不产生任何评测结论**） | ★ 2026-09-17 用户裁定 2′/4′（承载 issue #4034）：**PR 层真实 LLM 停跑**（原 #3653 的「映射用例 fast 迭代档」**已删除**，不是加 `if` 关掉）。`agent-behavior-eval.yml` 只留零 LLM 的 map job：给出「改动波及哪些用例 + 各自 persona/档位」并打印**可复制**的派发命令；要跑这些用例 ⇒ 手动派发单一入口（`post-deploy-eval`，`purpose=debug`，**不构成判定结论**）。**代价已知并接受**：PR 阶段不再有 LLM 行为信号 |
+| PR（AI 行为文件改动，**仅 app/** 源文件） | **不起栈、零真实 LLM** | **已无自动映射**（#4275） | ★ 2026-09-17 裁定 2′/4′（承载 #4034）：**PR 层真实 LLM 停跑**；★ **2026-09-18 #4275 用户裁定**：`agent-behavior-eval.yml` **整个文件已删除**（原零 LLM `map` job 是 PR 侧唯一自动信号，但每个 `app/**` PR 都自动跑+刷评论，9/18 实测 13 次/天）⇒ PR 上**不再有任何自动行为信号**；「该跑哪几条用例」改由 §13.2 映射表 + `behavior_mapping.py` 纯函数**本地算**；要跑 ⇒ 手动派发单一入口（`post-deploy-eval`，`purpose=debug`，**不构成判定结论**）。**代价已知并接受** |
 | 手动 `workflow_dispatch`（部署后复核/里程碑/回滚复验） | 独立栈 | **normal 全量**（mibao + xiaobu）或手动选档（smoke/adversarial/case_ids 定点） | #3925 起：部署后自动触发（workflow_run）**已移除**（真实 LLM 成本治理，用户裁定）；需要时手动派发，判定口径（completion_verdict）不变 |
 | 每周一（schedule cron `0 3 * * 1`） | 独立栈 | **normal 全量（mibao + xiaobu）** | ★ #4262（2026-09-18 用户裁定）：**全仓自动真实 LLM 触发收敛为这 1 条**（原 3 条：本档每 3 天 + 两条每周 adversarial）。#3654 起承担宽度覆盖（长期漂移兜底）；main 自上次全量未动 → 抑制不白跑 |
 | ~~每周六（adversarial）~~ | — | — | ★ **已改仅手动**（#4262）：`xiaobu-acceptance.yml` / `agent-eval-adversarial.yml` 的 `schedule` 已删除，需要对抗覆盖时 `workflow_dispatch` 手动派发 |
@@ -76,7 +76,7 @@ score<1，含 `unstable`）+ 关键旅程全过 + **仅 `llm-noise`** 台账放�
 | 触发 | 门禁 | 属性 | 实现 |
 |---|---|---|---|
 | PR（任意） | 三模块单测 / QA Growth Gate / ci-helper / gitleaks / Danger Scan | ★ **required（硬拦合并）** | pr-check 等 |
-| PR（AI 行为文件，**仅 app/**） | ~~映射用例 fast 迭代档~~ —— **已停跑**（裁定 2′/4′，issue #4034）：PR 路径**零真实 LLM**，只留**映射信号**（零 LLM，给出"波及哪些用例"+ 派发命令，**不产生结论**） | **非门禁**（连评测都不跑） | `agent-behavior-eval.yml`（map job 保留：#3502/#3523/#3563/#3653 的映射口径不变，评测 job 已删除） |
+| PR（AI 行为文件，**仅 app/**） | ~~映射用例 fast 迭代档~~ **已停跑**（#4034）；~~零 LLM 映射信号~~ **已删除**（#4275，2026-09-18：整个 `agent-behavior-eval.yml` 移除） | **非门禁**（PR 上连映射都不跑） | —（原 `agent-behavior-eval.yml` 已删；映射口径仍以 `tests/agent_eval/behavior_mapping.py` 为单一源，供本地/agent 复用） |
 | PR（AI 行为文件） | ~~C 端 smoke + B 端云冒烟~~ —— **已移除**（#3653）：C 端 smoke 降为按需 `workflow_dispatch`（xiaobu-acceptance 不再 pull_request 触发）；B 端云冒烟从 pr-check 移除（评的是已部署 main，与本 PR 无因果） | — | — |
 | 手动 `workflow_dispatch`（部署后复核/里程碑/回滚复验） | **双 persona 矩阵行为回归**（各自独立栈/全新库）→ 档位 = 手动选（normal 全量 / smoke / adversarial / case_ids 定点）→ completion_verdict 判定 → 失败去重建 issue | 按需手动 | `post-deploy-eval.yml`（#3503/#3515/#3654/#3925） |
 | **每周一**（本 workflow 的 schedule cron `0 3 * * 1`） | 双 persona 矩阵 **normal 全量**（各自独立栈/全新库）→ completion_verdict 判定 → 失败去重建 issue | 定期拦截（宽度覆盖）—— **全仓唯一自动 LLM 档** | `post-deploy-eval.yml`（#3654/#3925；#4262 由每 3 天收紧为每周） |
@@ -114,7 +114,7 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
 | workflow | 现状 | 落地改法（精确到行） | 预期效果 |
 |---|---|---|---|
 | `post-deploy-eval.yml` | ✅ **已改**（#3587） | 文件级新增 `concurrency: { group: eval-stack-global, cancel-in-progress: false }` | 部署后全量回归全局串行，不再与其它评测抢栈 |
-| `agent-behavior-eval.yml` | ✅ **已退出槽位**（#4034，2026-09-17） | 评测 job 已**整体删除** ⇒ 本 workflow 不再起栈、不再占用 `eval-stack-global`（文件级 group 仍按 PR，`cancel-in-progress: true`，只管那个秒级 map job） | 少一个占槽位者；槽位语义回到「谁真起栈谁进」 |
+| ~~`agent-behavior-eval.yml`~~ | ✅ **已删除**（#4275，2026-09-18） | 原为 #4034 后的「已退出槽位」态（只剩零 LLM `map` job）；#4275 用户裁定删除整个文件（唯一产物是 PR 评论 + 每 PR 自动跑） | 槽位持有者收敛为 `post-deploy-eval` + `xiaobu-acceptance` 两个；`.github/scripts/eval_slot_status.sh` 的 `SLOT_WORKFLOWS` 已同步 |
 | `xiaobu-acceptance.yml` | ⏳ 待改（另包） | 文件级（第 86-88 行）**保持不变**；在 `xiaobu-acceptance` job（第 125 行 `xiaobu-acceptance:` 下、`timeout-minutes` 之后）新增 job 级 `concurrency: { group: eval-stack-global, cancel-in-progress: false }` | PR 级取消语义**完全保留**（新 push 仍能立刻杀掉排队中的旧 run —— 它还没起栈，杀掉最省）；真正起栈的 job 进入全局槽位，**同一时刻仓库内只有一套评测栈在构建** |
 
 **为什么 xiaobu 的改法与其他两个不同（关键取舍，别抄错）**：
@@ -178,7 +178,7 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
 > ⚠️ **本节已部分失效（2026-09-17，裁定 2′/4′，承载 issue #4034）**：PR 层真实 LLM **停跑**
 > ⇒ 「评测步骤恒 `exit 0`」「规则命中失败自动开 issue」「结果评论」这些**落点本身都不再产生**
 > （评测 job 已整体删除）。本节保留为**沿革**：它解释了"为什么当初就不该把 PR 层 LLM 当门禁"，
-> 正是后来"干脆停跑"的依据。**现行口径**：PR 上只剩零 LLM 的**映射信号**（含派发命令）；
+> 正是后来"干脆停跑"的依据。**现行口径（#4275 起）**：PR 上**连映射信号也没有了**（整个 workflow 已删）；
 > 判定走单一入口 `post-deploy-eval`；LLM 红例的持久承接改为
 > **`.github/llm-finding-ledger.json` 台账 + `llm_sink_check.py` 机械检查**（见 §3.7）。
 
@@ -288,7 +288,7 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
   **用法、判据与"未机械化"的如实登记**见 `docs/testing/llm-finding-sinking.md`。
 - **守卫（机械判据，不是散文）**：
   `tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`（PR 路径零 LLM + 自动 LLM 触发白名单 +
-  映射信号必须存活 + 反假绿 + 判据自身红证）、
+  #4275 起 `agent-behavior-eval.yml` 已删 ⇒ 该白名单/零 LLM 判据随之收敛 + 反假绿 + 判据自身红证）、
   `tests/unit_ci_workflows/test_llm_finding_sink.py`（台账退化守卫 + 注入式变异红证）。
   ⚠️ 两者都跑在 PR 的静态 job 里（`ci workflow helper unit tests` / `LLM Sink Ledger`），
   **不是独立 required check** —— 别读成"有硬门禁"。

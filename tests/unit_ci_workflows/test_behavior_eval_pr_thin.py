@@ -25,7 +25,7 @@
 > 的自动触发集合必须**为空**。把任一条定时加回来（或把周级改回日级/3 天级）
 > 都会让本文件红。
 
-## 锁五件事（每条的**反向变异**都会让本文件红）
+## 锁三件事（每条的**反向变异**都会让本文件红）
 
 1. **PR 路径零 LLM**：任何带 `pull_request` / `pull_request_target` 触发的 workflow，
    其**步骤体**（`run` / `with.script`，剔除注释行）里**不得**出现 `local_runner.py`；
@@ -36,12 +36,26 @@
    「不要自动进行验证，都是重复的验证，白白消耗成本」——自动触发由 3 条收敛为 1 条）；
    **合并/部署触发（`push` / `workflow_run`）= 0 条**；
 3. **手动可达性**：每个带真实 LLM 步骤的 workflow 必须仍有 `workflow_dispatch`
-   （"只走定时 + 手动 dispatch"里的**手动**这一半，删掉就等于把评测变成不可执行）；
-4. **映射信号不丢**：`agent-behavior-eval.yml` 的**零 LLM** map job 必须在（PR 上回答
-   "这次 diff 波及哪些用例"），且 PR 评论必须给出**可复制**的派发命令（"要跑就派发单一入口"），
-   并**不得**让读者把它读成"评测通过"（反假绿）；
-5. **判据本身非空跑**：见 `TestDetectorActuallyFires`（注入样本 + 负控），
-   以及 `TestZeroLlmWorkflowShape`（对"被排除出栈锁"的 workflow 逐条验"确实没有 LLM 机器"）。
+   （"只走定时 + 手动 dispatch"里的**手动**这一半，删掉就等于把评测变成不可执行）。
+
+判据本身非空跑由 `TestDetectorActuallyFires` 保证（注入样本 + 负控）。
+
+## 已删除的断言组（#4275，如实登记，不是静默削弱）
+
+> **#4275（2026-09-18 用户裁定）删除了 `agent-behavior-eval.yml`**（PR 层零 LLM 映射信号）——
+> 它是 #4034 之后 PR 侧唯一的自动「diff → 该跑哪些用例」提示，零 LLM、零成本，
+> 但每个触及 `backend/ai-agent-service/app/**` 的 PR 都会自动跑并刷评论（9/18 实测 13 次/天）。
+> 用户裁定「不要自动进行验证」+「CI 运行次数太多」⇒ 删除。
+>
+> 随之**删掉的是"被测对象已不存在"的断言**（不是放宽门槛）：
+> - ①「PR `paths` 前置门」组（`TestPathsFrontGate`）—— 被测 workflow 已删；
+> - ④「映射信号不丢」组（`TestMappingSignalSurvives`）—— 被测 PR 评论已删；
+> - `TestZeroLlmWorkflowShape` —— 它是 `test_eval_stack_seed_parity.py` 把该 workflow
+>   移出 `EVAL_WORKFLOWS` 的**替代判据**，对象已删故一并移除。
+>
+> **能力去向**（不是白丢）：映射能力仍在 `tests/agent_eval/behavior_mapping.py`（零依赖纯函数，
+> 可本地调用）；「该跑哪几条用例」改由 `migao-dev-flow` §13.2 映射表 + 本地纯函数承担。
+> 真评测入口不变：`post-deploy-eval.yml`（每周一自动 + 手动）。
 
 ## case_ids 说明（不编造）
 
@@ -50,7 +64,6 @@
 AS-007（换货域）、PR-019（建品域）、CH-010（C 端交互卡，唯一 xiaobu 专属默认集成员）、
 DF-011/DF-012（防御域，唯一走 full 桶的非 normal 档映射用例）。
 """
-import re
 from pathlib import Path
 
 import pytest
@@ -59,7 +72,6 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 
-BEHAVIOR_EVAL = "agent-behavior-eval.yml"
 
 # 真实 LLM 步骤的判据锚点（与仓库既有口径一致：runner 入口文件）
 LLM_MARKER = "local_runner.py"
@@ -133,38 +145,6 @@ def _llm_workflows() -> list:
                   if LLM_MARKER in _step_bodies(p.name))
 
 
-class TestPathsFrontGate:
-    """paths 前置门：纯文档/cases/前端 PR 不触发映射计算（issue #3653，口径未变）。"""
-
-    def test_paths_contains_only_behavior_source(self):
-        paths = (_triggers(BEHAVIOR_EVAL).get("pull_request") or {}).get("paths") or []
-        assert paths, "agent-behavior-eval 缺 pull_request.paths（守卫前提失效）"
-        assert paths == ["backend/ai-agent-service/app/**"], (
-            f"paths 应只含行为源文件 {['backend/ai-agent-service/app/**']!r}，实为 {paths!r} —— "
-            "纯 cases/文档/前端/评测基建 PR 不应触发映射计算（issue #3653）"
-        )
-
-    def test_banned_prefixes_not_in_paths(self):
-        paths = (_triggers(BEHAVIOR_EVAL).get("pull_request") or {}).get("paths") or []
-        for banned in ("docs/", ".github/cases/", "frontend/", "tests/agent_eval/",
-                       "tests/e2e/", "backend/admin-api/", "backend/ai-agent-service/tests/"):
-            assert not any(banned in p for p in paths), (
-                f"paths 含 {banned!r} —— 该类改动不应触发映射计算（issue #3653）"
-            )
-
-    def test_only_trigger_is_pull_request(self):
-        """本 workflow **只**由 PR 触发（零 LLM）—— 不得顺手加回 dispatch/schedule。
-
-        「要跑就派发单一入口」：真评测入口是 `post-deploy-eval.yml`；
-        在本文件里加 `workflow_dispatch` = 新增第二个（人工）LLM 入口。
-        """
-        triggers = set(_triggers(BEHAVIOR_EVAL).keys())
-        assert triggers == {"pull_request"}, (
-            f"{BEHAVIOR_EVAL} 的触发是 {sorted(triggers)}，应只有 pull_request —— "
-            "PR 层零 LLM（裁定 2′/4′，issue #4034）"
-        )
-
-
 class TestPrPathHasZeroLlm:
     """① PR 路径零真实 LLM（裁定 2′：关闭 PR 时的真实 LLM 自动跑）。"""
 
@@ -176,30 +156,6 @@ class TestPrPathHasZeroLlm:
             "PR 层 LLM 信号不拦合并（§16.5）却要付真实 token（裁定 2′，issue #4034）；"
             "要跑请派发单一入口（post-deploy-eval），不要把 LLM 留在 PR 路径上"
         )
-
-    def test_behavior_eval_workflow_has_no_llm_step(self):
-        assert LLM_MARKER not in _step_bodies(BEHAVIOR_EVAL), (
-            f"{BEHAVIOR_EVAL} 的步骤体里仍有 {LLM_MARKER} —— "
-            "裁定 2′ 要求它的 PR 路径**不再执行 LLM 步骤**（issue #4034）"
-        )
-
-    def test_behavior_eval_keeps_zero_llm_map_job(self):
-        """⚠️ 零 LLM 的映射 job **必须保留**（成本 0，给 PR「改动波及哪些用例」的信号）。"""
-        jobs = _load(BEHAVIOR_EVAL).get("jobs") or {}
-        assert "map" in jobs, (
-            f"{BEHAVIOR_EVAL} 的 map job（diff→case_ids，零 LLM）被删了 —— "
-            "裁定 2′ 只关 LLM；映射信号是零成本的，删掉等于白丢 PR 上的可见性（issue #4034）"
-        )
-
-    def test_behavior_eval_has_no_stack_machinery(self):
-        """被删除的评测栈机器不得留半个（半个 = 死机制 / 静默失效形态）。"""
-        bodies = _step_bodies(BEHAVIOR_EVAL)
-        for anchor in ("eval_stack_seed.sh", "docker compose", "docker-compose"):
-            assert anchor not in bodies, (
-                f"{BEHAVIOR_EVAL} 仍含起栈/种子机器 {anchor!r} —— "
-                "评测 job 已整体删除，残留机器 = 声明无消费（§19.2）"
-            )
-
 
 class TestAutomaticLlmTriggerWhitelist:
     """② 自动 LLM 触发 = 白名单（「不新增自动 LLM 触发」落成机械判据）。"""
@@ -289,62 +245,6 @@ class TestAutomaticLlmTriggerWhitelist:
             f"这些 LLM workflow 没有 workflow_dispatch：{missing} —— "
             "裁定 4′ 允许的触发只有「定时 + 手动」；删掉手动入口 = 评测不可执行"
         )
-
-
-class TestMappingSignalSurvives:
-    """④ 映射信号（零 LLM）不得随 LLM 一起被删掉。"""
-
-    def _comment_script(self) -> str:
-        return "\n".join(str((s.get("with") or {}).get("script") or "")
-                         for s in _steps(BEHAVIOR_EVAL))
-
-    def test_pr_comment_prints_dispatch_command(self):
-        script = self._comment_script()
-        assert "gh workflow run post-deploy-eval.yml" in script, (
-            "PR 评论不再给出「要跑就派发单一入口」的可复制命令 —— "
-            "映射信号就变成「只告诉你哪些用例受影响、却不告诉你怎么办」= 半个信号"
-        )
-
-    def test_pr_comment_does_not_read_as_pass(self):
-        """反假绿：不得让读者把映射评论读成"评测通过"。"""
-        script = self._comment_script()
-        assert re.search(r"不跑任何真实 LLM|不跑 LLM", script), (
-            "PR 评论没有明确声明「本 workflow 不跑 LLM」—— "
-            "裁定 2′ 之后 PR 上不再有 LLM 结论，读者很容易把映射评论读成「通过」"
-        )
-        assert "评测进行中" not in script, (
-            "PR 评论仍写「评测进行中」—— 评测 job 已删除，这是**谎报**（比沉默更糟）"
-        )
-
-
-class TestZeroLlmWorkflowShape:
-    """⑤ 被排除出"栈/种子/槽位"锁的 workflow，必须逐条证明它确实没有那些机器。
-
-    为什么需要：`test_eval_stack_seed_parity.py` 把 `agent-behavior-eval.yml` 从
-    `EVAL_WORKFLOWS` 里移除了（它不再起栈）。**移除参数化 = 少一组锁** ⇒ 必须有替代判据，
-    否则「改回带 LLM 的形态」就从"会红"变成"没人管"。
-    """
-
-    def test_no_eval_step_id(self):
-        ids = [s.get("id") for s in _steps(BEHAVIOR_EVAL)]
-        assert "eval" not in ids, (
-            f"{BEHAVIOR_EVAL} 还有 id=eval 的评测步骤（{ids}）—— 评测 job 应已整体删除"
-        )
-
-    def test_no_flake_ledger_upload(self):
-        names = " ".join(str(s.get("name") or "") for s in _steps(BEHAVIOR_EVAL))
-        assert "flake" not in names.lower(), (
-            f"{BEHAVIOR_EVAL} 仍在上传波动台账（{names}）—— 不跑评测就没有台账可传"
-        )
-
-    def test_no_eval_concurrency_slot(self):
-        """不再起栈 ⇒ 不得占用仓库级评测槽位（否则槽位语义被无声改写）。"""
-        for job_name, job in (_load(BEHAVIOR_EVAL).get("jobs") or {}).items():
-            group = str((job.get("concurrency") or {}).get("group") or "")
-            assert "eval-stack-global" not in group, (
-                f"{BEHAVIOR_EVAL}/{job_name} 仍进共享评测槽位（group={group!r}）—— "
-                "本 workflow 不跑 LLM，占槽位只会让真评测排队"
-            )
 
 
 class TestDetectorActuallyFires:
