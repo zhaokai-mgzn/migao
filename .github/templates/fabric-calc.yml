@@ -11,6 +11,13 @@ business_truths:
   - [fabric-calc.quote-total] 报价总价 = 面料费 + 加工费 + 辅料费 + 安装费；打孔加工费默认8元/米（按面料米数打包，**已含罗马圈等辅料**，issue #3005）
   - [fabric-calc.accessory-explicit-only] 辅料（罗马圈等按个辅料）**只走显式入参** `accessories=[{name,quantity,unit_price}]`，数量由顾客明说；**禁止**由面料米数推导（无「每米 N 个」密度，罗马圈不随打孔帘默认单列，issue #3005/#4118）
   - [fabric-calc.doc-example] 真值源 docs/curtain-fabric-quote-rules.md §7 算例可被代码逐值复现：3m×2.7m、3.0m 定高布、2 倍褶、打孔、30 元/米 → 面料 6.6m/198 元、加工 52.8 元、辅料 152.8 元、安装 61.2 元、**总价 464.8 元**；显式单独买 40 个罗马圈（1.5 元/个）→ 524.8 元
+  - [fabric-calc.pleat-method] 韩褶折数法（`mounting=s_hook` 且显式传 `pleat_count` 或 `craft_tier`）：用料 = 0.25×折数 + 余量（单开 0.2 / 多开 0.3）；折数须被开数整除，否则取最近可行折数并告警（行业实证：6.6m 窗双开 48 折 → 12.3 米，issue #3982）
+  - [fabric-calc.craft-tier] 工艺档位 = 名义倍数（standard 2.0 / economy 1.8）→ 折数 → 用料；**仅** s_hook 且显式传 `craft_tier`/`pleat_count` 时走折数法，两者都缺 ⇒ 静默回落倍数法（无告警）——「报价默认展示标准档」的接线口径**待裁定**（issue #4118 ⑤）
+  - [fabric-calc.fullness-red-line] 褶皱倍数低于 1.5（行业美学下限）必须**拒绝**：工具 fail-closed 返回「参数不合法」，不得静默按 1.5 兜底（docs §1）
+  - [fabric-calc.fullness-actual] 折数法响应**同时**给理论倍数 `fullness`（档位/款式名义值）与**实际**倍数 `fullness_actual`（= 用料 ÷ 窗宽）；两者语义不同、不得互相替代（48 折双开 → 12.3÷6.6 = **1.86** 实际 vs 2.0 理论），报价卡必须展示实际值（issue #4118 ④）
+  - [fabric-calc.aggregate-by-fabric] 多部位报价按货号-色号汇总用料 = Σ 各部位米数（采购/套裁视图，`calculate_multi_position` 的 `by_fabric`）
+  # 未落码 ⇒ **不登记为真值**（登记 = 承诺代码能做到，属「文档承诺、代码不读」的静默失效）：
+  #   拼色（主布用料 / 按折加价 2.4 元/米）、定型报价加价 —— 见 docs/curtain-fabric-quote-rules.md §10 的【背·未落码】登记。
   - [fabric-calc.no-fabrication] 不编造报价数据，必须通过 curtain_calc 工具计算
 
 primary_specs:
@@ -23,3 +30,5 @@ reviewer_asserts:
     expect: 打孔帘 3m×2.7m×2倍×3.0m门幅×30元/米 → accessory_cost=152.8（明细无「罗马圈」）、total=464.8
     expect: 同上 + accessories=[{罗马圈,40,1.5}] → accessory_cost=212.8、total=524.8（数量原样、不推导）
     expect: 报价 total = fabric_cost + processing_cost + accessory_cost + install_cost
+  - 工具: curtain_calc
+    expect: 韩褶 6.6m×2.6m 双开 + 客户自报 48 折 → fabric_meters=12.3、fullness=2.0（档位理论值）、fullness_actual=1.86（实际值，二者不得互相替代）
