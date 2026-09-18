@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PG-031, PG-032
+// case_ids: PG-032, PG-033
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
@@ -120,7 +120,7 @@ class ProductionRoutingCommandServiceTest {
                 : e.getDetails().stream().map(ApiResponse.ErrorDetail::getField).toList();
     }
 
-    // ══════════════════ 判据：改序列五条护栏（PG-031）══════════════════
+    // ══════════════════ 判据：改序列五条护栏（PG-032）══════════════════
 
     @Test
     @DisplayName("护栏 1：空序列拒（422 + operations 逐条理由）")
@@ -228,7 +228,7 @@ class ProductionRoutingCommandServiceTest {
                 .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(404));
     }
 
-    // ══════════════════ 判据：新建路线（PG-031）══════════════════
+    // ══════════════════ 判据：新建路线（PG-032）══════════════════
 
     @Test
     @DisplayName("新建路线：operations 缺省 = 初版空序列；响应与 GET /routings 单项同构；落首行版本账")
@@ -262,7 +262,7 @@ class ProductionRoutingCommandServiceTest {
         verify(productionRoutingMapper, never()).insert(any(ProductionRouting.class));
     }
 
-    // ══════════════════ 判据：信号映射写面（PG-032）══════════════════
+    // ══════════════════ 判据：信号映射写面（PG-033）══════════════════
 
     @Test
     @DisplayName("新增信号：两维都不给 ⇒ 422 逐条理由（死数据不得落库）；给一维即可")

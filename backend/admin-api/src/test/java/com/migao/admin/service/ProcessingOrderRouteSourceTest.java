@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PG-025, PG-026, PG-027, PG-028, PG-029
+// case_ids: PG-026, PG-027, PG-028, PG-029, PG-030
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -273,7 +273,7 @@ class ProcessingOrderRouteSourceTest {
     // ── 判据 ────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("PG-025 T1：全无信号 ⇒ route_source=default + route_key=默认键 + requested=null + incident 日志")
+    @DisplayName("PG-026 T1：全无信号 ⇒ route_source=default + route_key=默认键 + requested=null + incident 日志")
     void noSignalFallsBackToDefaultAndIsObservable() {
         stubSignals();
         stubRoutings();
@@ -297,7 +297,7 @@ class ProcessingOrderRouteSourceTest {
     }
 
     @Test
-    @DisplayName("PG-026 半命中：只派生出一维 ⇒ route_source=partial + 键 = 命中维 + 默认维")
+    @DisplayName("PG-027 半命中：只派生出一维 ⇒ route_source=partial + 键 = 命中维 + 默认维")
     void singleDimensionHitIsPartial() {
         stubSignals();
         stubRoutings();
@@ -314,7 +314,7 @@ class ProcessingOrderRouteSourceTest {
     }
 
     @Test
-    @DisplayName("PG-027 T2：两维都命中但库中无该路线 ⇒ missing_route + requested 记下那个键（不是 partial）")
+    @DisplayName("PG-028 T2：两维都命中但库中无该路线 ⇒ missing_route + requested 记下那个键（不是 partial）")
     void derivedKeyMissingFromLibraryIsMissingRouteAndKeepsRequestedKey() {
         stubSignals();
         stubRoutings();
@@ -344,7 +344,7 @@ class ProcessingOrderRouteSourceTest {
     }
 
     @Test
-    @DisplayName("PG-028 正常派生：两维都由库中信号命中且路线存在 ⇒ derived（键 = 想要的键）")
+    @DisplayName("PG-029 正常派生：两维都由库中信号命中且路线存在 ⇒ derived（键 = 想要的键）")
     void fullyDerivedKeyIsDerived() {
         stubSignals();
         stubRoutings();
@@ -362,7 +362,7 @@ class ProcessingOrderRouteSourceTest {
     }
 
     @Test
-    @DisplayName("PG-029 多部位 roll-up：取最需关注的一条（default > missing_route > partial > derived）")
+    @DisplayName("PG-030 多部位 roll-up：取最需关注的一条（default > missing_route > partial > derived）")
     void multiPositionRollsUpToMostNeedingAttention() {
         stubSignals();
         stubRoutings();
@@ -383,7 +383,7 @@ class ProcessingOrderRouteSourceTest {
     }
 
     @Test
-    @DisplayName("PG-029 多部位 roll-up：default（零信息）排最前，且 requested 仍为 null")
+    @DisplayName("PG-030 多部位 roll-up：default（零信息）排最前，且 requested 仍为 null")
     void multiPositionDefaultOutranksMissingRoute() {
         stubSignals();
         stubRoutings();
@@ -402,7 +402,7 @@ class ProcessingOrderRouteSourceTest {
     }
 
     @Test
-    @DisplayName("PG-029 多部位 roll-up：missing_route 盖住 partial（两条都「有问题」，但补救动作不同）")
+    @DisplayName("PG-030 多部位 roll-up：missing_route 盖住 partial（两条都「有问题」，但补救动作不同）")
     void multiPositionMissingRouteOutranksPartial() {
         stubSignals();
         stubRoutings();

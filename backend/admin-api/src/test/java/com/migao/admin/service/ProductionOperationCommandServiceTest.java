@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PG-020, PG-033
+// case_ids: PG-020, PG-034
 
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
@@ -195,7 +195,7 @@ class ProductionOperationCommandServiceTest {
                 .isFalse();
     }
 
-    // ══════════════════ 新增工序（issue #4308 交付物 4，PG-033）══════════════════
+    // ══════════════════ 新增工序（issue #4308 交付物 4，PG-034）══════════════════
     //
     // 为什么必须有这个端点：production_operations 的**唯一写方曾是 V54/V56 种子 SQL**
     // （全仓对 productionOperationMapper 零写调用）⇒ 商家建不了自己的路线（没有工序可选），

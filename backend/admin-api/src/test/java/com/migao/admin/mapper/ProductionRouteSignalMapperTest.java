@@ -1,6 +1,6 @@
 package com.migao.admin.mapper;
 
-// case_ids: PG-030
+// case_ids: PG-031
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;

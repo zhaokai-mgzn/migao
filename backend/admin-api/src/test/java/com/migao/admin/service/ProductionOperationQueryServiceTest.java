@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-034
+// case_ids: PG-018, PG-035
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -315,7 +315,7 @@ class ProductionOperationQueryServiceTest {
         verify(productionRoutingMapper, org.mockito.Mockito.never()).updateById(any(ProductionRouting.class));
     }
 
-    // ══════════════════ 缺口可查（issue #4308 交付物 5 / P4，PG-034）══════════════════
+    // ══════════════════ 缺口可查（issue #4308 交付物 5 / P4，PG-035）══════════════════
     //
     // P4 的病根：4 道「有工序、有价、有意不消费（待客户确认）」的工序与罗马帘缺口**只活在代码注释里**
     // ⇒ 商家看不到、无法自行处置。本查询把缺口变成数据；且必须能表达「**待确认**」语义 ——

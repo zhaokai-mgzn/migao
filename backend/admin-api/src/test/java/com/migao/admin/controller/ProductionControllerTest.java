@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-019, PG-020, PG-021, PG-031, PG-032, PG-033, PG-034
+// case_ids: PG-018, PG-019, PG-020, PG-021, PG-032, PG-033, PG-034, PG-035
 package com.migao.admin.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -1030,7 +1030,7 @@ class ProductionControllerTest {
                 .as("打印计数沿用类级 order:list（不新增方法级注解）").isNull();
     }
 
-    // ══════════════════ 路线/信号/工序写面 + 缺口查询（issue #4308，PG-031~PG-034）══════════════════
+    // ══════════════════ 路线/信号/工序写面 + 缺口查询（issue #4308，PG-032~PG-035）══════════════════
 
     @Test
     @DisplayName("#4308 PUT /routings/{id} 护栏失败 ⇒ 422 + error.details 逐条理由（前端据此逐条展示）")
