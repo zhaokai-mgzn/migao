@@ -13,10 +13,17 @@
  * 2. **不动金额**：拼色/定型/特殊选项加价待 issue #4341 裁定，本组件不显示任何加价。
  * 3. **三态而非布尔**：「是否定型 / 是否对花」的「未指定」与「否」是两个真值 ——
  *    合并会让「没问过」被下游当成「不做定型」。
+ *
+ * ── 展示重构（issue #4420，用户 2026-09-19：「信息偏多，不能全部挤在一块区域」）──
+ *
+ * 录入项本身一个没减（8 个下拉 + 19 项特殊选项 + 拼色配布边），改的是**信息层次**：
+ * ① 8 个主工艺参数留在**首屏常显**（录单主路径，不该藏）；
+ * ② 19 项特殊选项收进**可展开区**（长尾选项，展开前只显示「已选 N 项」摘要）；
+ * ③ 每个区块有**标题 + 一句话说明**，不再是一个大 grid 平铺。
  */
 
-import { useId } from 'react'
-import { Settings2 } from 'lucide-react'
+import { useId, useState } from 'react'
+import { ChevronDown, ChevronRight, Settings2 } from 'lucide-react'
 import { Select } from '@/components/ui'
 import {
   CRAFT_OPTIONS,
@@ -97,6 +104,10 @@ export default function OrderCraftFields({
   const metersSource = edgeMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
   const effectiveEdgeMeters = edgeMeters ?? (Number(mainMeters) || 0)
 
+  /** 特殊选项默认收起（issue #4420）：19 项长尾选项是密度主因，展开前只报「已选 N 项」 */
+  const [specialOpen, setSpecialOpen] = useState(false)
+  const selectedSpecialCount = (value.specialOptions ?? []).length
+
   const toggleOption = (option: string) => {
     const current = value.specialOptions ?? []
     const next = current.includes(option)
@@ -106,11 +117,15 @@ export default function OrderCraftFields({
   }
 
   return (
-    <div className="pt-2 border-t border-neutral-100">
-      <div className="flex items-center gap-2 mb-3">
+    <div className="pt-3 mt-1 border-t border-neutral-100">
+      <div className="flex items-center gap-2 mb-1">
         <Settings2 className="w-4 h-4 text-neutral-500" />
-        <span className="text-sm font-medium text-neutral-700">工艺规格（可选）</span>
+        <span className="text-sm font-medium text-neutral-700">工艺规格</span>
+        <span className="text-xs text-neutral-400">（不填则按行业默认）</span>
       </div>
+      <p className="mb-3 text-xs text-neutral-400">
+        加工类型默认「定高买宽」、款式默认「单色」、褶距按标准档 2.0 倍自动算 —— 都可改
+      </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
@@ -236,30 +251,56 @@ export default function OrderCraftFields({
       </div>
 
       {/* 特殊选项：部位级多选（toggle 按钮，与页面既有的按钮组选择同款；不用 checkbox
-          以免与「加工选项」的勾选控件在选择器上争用） */}
-      <div className="mt-4">
-        <span className={labelClass}>特殊选项（部位级，可多选）</span>
-        <div className="flex flex-wrap gap-2">
-          {SPECIAL_OPTIONS.map((option) => {
-            const active = (value.specialOptions ?? []).includes(option)
-            return (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={active}
-                onClick={() => toggleOption(option)}
-                className={
-                  'h-8 px-2.5 rounded border text-xs transition-colors ' +
-                  (active
-                    ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
-                    : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
-                }
-              >
-                {option}
-              </button>
-            )
-          })}
-        </div>
+          以免与「加工选项」的勾选控件在选择器上争用）。
+          issue #4420：19 项长尾选项**默认收起**，展开前只报「已选 N 项」——
+          收起不改变可选项集合（展开后 19 项一个不少），改的只是首屏密度。 */}
+      <div className="mt-4 rounded-lg border border-neutral-200">
+        <button
+          type="button"
+          onClick={() => setSpecialOpen((v) => !v)}
+          aria-expanded={specialOpen}
+          className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left"
+        >
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-700">
+            {specialOpen ? (
+              <ChevronDown className="w-4 h-4 text-neutral-400" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-neutral-400" />
+            )}
+            特殊选项
+            <span className="text-xs font-normal text-neutral-400">（部位级，可多选）</span>
+          </span>
+          <span
+            className={
+              'text-xs ' + (selectedSpecialCount > 0 ? 'text-primary-600 font-medium' : 'text-neutral-400')
+            }
+          >
+            {selectedSpecialCount > 0 ? `已选 ${selectedSpecialCount} 项` : '未选'}
+          </span>
+        </button>
+        {specialOpen && (
+          <div className="flex flex-wrap gap-2 px-3 pb-3">
+            {SPECIAL_OPTIONS.map((option) => {
+              const active = (value.specialOptions ?? []).includes(option)
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => toggleOption(option)}
+                  className={
+                    'h-8 px-2.5 rounded border text-xs transition-colors ' +
+                    (active
+                      ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
+                      : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
+                  }
+                >
+                  {option}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* 双拼（拼色）：配布边是**一条独立面料明细行**（§4.8） */}

@@ -131,6 +131,7 @@ vi.mock('lucide-react', () => ({
   RefreshCw: iconStub('refresh-cw'),
   MoreHorizontal: iconStub('more-horizontal'),
   Package: iconStub('package'),
+  Ruler: iconStub('ruler'),
   Image: iconStub('image'),
   ArrowUpDown: iconStub('arrow-up-down'),
   ClipboardList: iconStub('clipboard-list'),

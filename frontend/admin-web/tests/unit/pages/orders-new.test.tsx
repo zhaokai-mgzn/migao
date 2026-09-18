@@ -158,6 +158,28 @@ describe('NewOrderPage', () => {
   const pickProduct = async (productName: string) => {
     fireEvent.click(await screen.findByText('点击搜索并选择商品'))
     fireEvent.click(await screen.findByText(productName))
+    // 宽 / 高必填（issue #4420）：选完商品即补齐，让各用例回到「只验它自己那条判据」的状态
+    await screen.findByText('宽 (米)')
+    fillSize()
+  }
+
+  /**
+   * 宽 / 高必填（issue #4420，用户 2026-09-19 裁定）。
+   * `Label` 无 `htmlFor` 关联 ⇒ 按 label 文本定位其所在容器里的 input。
+   */
+  const fillSize = (idx = 0, w = '6.6', h = '2.6') => {
+    const pick = (label: string) =>
+      screen
+        .getAllByText(label)
+        .map((el) => el.closest('div')!.querySelector('input') as HTMLInputElement)
+    fireEvent.change(pick('宽 (米)')[idx], { target: { value: w } })
+    fireEvent.change(pick('高 (米)')[idx], { target: { value: h } })
+  }
+
+  /** 展开工艺规格里的「特殊选项」区（issue #4420：默认收起） */
+  const expandSpecial = (idx = 0) => {
+    const toggles = screen.getAllByRole('button', { name: /特殊选项/ })
+    fireEvent.click(toggles[idx])
   }
 
   const fillCustomerAndSubmit = () => {
@@ -487,6 +509,7 @@ describe('NewOrderPage', () => {
       fireEvent.change(field('褶距'), { target: { value: '0.1' } })
       fireEvent.change(field('是否对花'), { target: { value: 'true' } })
       fireEvent.change(field('花距'), { target: { value: '0.6' } })
+      expandSpecial()
       fireEvent.click(screen.getByRole('button', { name: '加铅块' }))
       fireEvent.click(screen.getByRole('button', { name: '拼2次' }))
 
@@ -519,16 +542,23 @@ describe('NewOrderPage', () => {
 
       const payload = mockCreateOrder.mock.calls[0][0]
       const info = (payload.items[0].processingInfo ?? {}) as Record<string, unknown>
+
+      // issue #4420 口径变更（用户 2026-09-19 裁定）：三条**默认档**是真值 ⇒ **必须写**。
+      // 「缺值不写」管的是「既没填也没默认」的键 —— 不是把默认值也一起吞掉。
+      expect(info).toMatchObject({
+        cuttingMode: '定高买宽',
+        style: '单色',
+        pleatSpacing: 0.125,
+      })
+
+      // 其余键仍然「缺值不写」（不写空串 / 0 / false 占位）
       for (const key of [
         'curtainType',
         'craft',
-        'cuttingMode',
         'openCount',
         'isShaped',
-        'pleatSpacing',
         'hasPattern',
         'patternRepeat',
-        'style',
         'specialOptions',
         'componentRole',
         'craftLineId',
@@ -536,8 +566,6 @@ describe('NewOrderPage', () => {
       ]) {
         expect(info).not.toHaveProperty(key)
       }
-      // 无规格、无加工项 ⇒ 连 processingInfo 本身都不写（比「写一堆空键」更保守）
-      expect(payload.items[0].processingInfo).toBeUndefined()
     })
 
     it('单色单不写 componentRole / craftLineId（缺省即主布，存量语义不动）', async () => {
@@ -726,6 +754,11 @@ describe('NewOrderPage', () => {
       fireEvent.change(fields('工艺')[0], { target: { value: '韩褶' } })
       fireEvent.change(fields('部位')[1], { target: { value: '纱帘' } })
       fireEvent.change(fields('工艺')[1], { target: { value: '打孔' } })
+
+      // 宽 / 高必填（issue #4420）：一樘窗的两个部位**各填各的尺寸**
+      // （§5.9.2：布帘与纱帘高度常不同 —— 这正是宽高下沉到部位级的理由）
+      fillSize(0, '6.6', '2.6')
+      fillSize(1, '6.6', '1.6')
     }
 
     const infos = () => {
@@ -811,6 +844,122 @@ describe('NewOrderPage', () => {
       // 三条（布行 + 配布边行 + 纱行）必须**同组**：一樘窗 = 一个窗户
       expect(edgeInfo.craftLineId).toBe(clothInfo.craftLineId)
       expect(sheerInfo.craftLineId).toBe(clothInfo.craftLineId)
+    })
+  })
+
+  // ===== issue #4420：下单页录入补全（宽高必填 / 默认档 / 新增部位 / 展示折叠）=====
+  describe('#4420 尺寸必填 · 默认档 · 新增部位 · 展示折叠', () => {
+    const setupCurtain = async () => {
+      mockGetProducts.mockResolvedValue({
+        data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
+      })
+      mockGetProduct.mockResolvedValue({
+        data: { data: { id: 'p1', name: '遮光窗帘', skus: [], price: 100 } },
+      })
+      render(<NewOrderPage />)
+      await pickProduct('遮光窗帘')
+      await screen.findByLabelText('部位')
+    }
+
+    it('判据 1（红证）：宽/高不填 ⇒ 提交被拦且报出是第几行（修复前可提交）', async () => {
+      mockGetProducts.mockResolvedValue({
+        data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
+      })
+      mockGetProduct.mockResolvedValue({
+        data: { data: { id: 'p1', name: '遮光窗帘', skus: [], price: 100 } },
+      })
+      render(<NewOrderPage />)
+      fireEvent.click(await screen.findByText('点击搜索并选择商品'))
+      fireEvent.click(await screen.findByText('遮光窗帘'))
+      await screen.findByText('宽 (米)')
+      // 刻意**不走** pickProduct（它会补齐宽高）——这里要的就是「没填」的形态
+      fillCustomerAndSubmit()
+
+      await waitFor(() => {
+        expect(screen.getByText('第 1 个商品未填宽（米）')).toBeInTheDocument()
+      })
+      expect(screen.getByText('第 1 个商品未填高（米）')).toBeInTheDocument()
+      expect(mockCreateOrder).not.toHaveBeenCalled()
+    })
+
+    it('判据 2（红证）：填了宽/高 ⇒ payload 的 items[].width/height 是数值（修复前这两个键根本不出现）', async () => {
+      await setupCurtain()
+      fillSize(0, '6.6', '2.6')
+      fillCustomerAndSubmit()
+      await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+
+      const item = mockCreateOrder.mock.calls[0][0].items[0]
+      expect(item.width).toBe(6.6)
+      expect(item.height).toBe(2.6)
+    })
+
+    it('判据 3：三条默认档随单落库（加工类型定高买宽 / 款式单色 / 褶距 0.125）', async () => {
+      await setupCurtain()
+      fillCustomerAndSubmit()
+      await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+
+      expect(mockCreateOrder.mock.calls[0][0].items[0].processingInfo).toMatchObject({
+        cuttingMode: '定高买宽',
+        style: '单色',
+        pleatSpacing: 0.125,
+      })
+    })
+
+    it('判据 4：默认档在界面上**可见可改**（不是藏起来的隐式默认）', async () => {
+      await setupCurtain()
+      expect((screen.getByLabelText('加工类型') as HTMLSelectElement).value).toBe('定高买宽')
+      expect((screen.getByLabelText('款式') as HTMLSelectElement).value).toBe('单色')
+      expect((screen.getByLabelText('褶距') as HTMLInputElement).value).toBe('0.125')
+    })
+
+    it('判据 5：「新增部位」⇒ 行数 +1、窗号继承、部位清空（不得继承成同部位）', async () => {
+      await setupCurtain()
+      fireEvent.change(screen.getByLabelText('樘窗'), { target: { value: '客厅主窗' } })
+      fireEvent.click(screen.getByRole('button', { name: /新增部位/ }))
+
+      await waitFor(() => expect(screen.getAllByLabelText('部位')).toHaveLength(2))
+      const types = screen.getAllByLabelText('部位') as HTMLSelectElement[]
+      // 新行部位**必须清空**：继承会让商家以为已选好 ⇒ 两行同部位 ⇒ 加工单长出两套同部位工序
+      expect(types[1].value).toBe('')
+      // 同樘窗 ⇒ 新行继承窗号（一樘窗 = 一个窗户）
+      const windows = screen.getAllByLabelText('樘窗') as HTMLInputElement[]
+      expect(windows[1].value).toBe('客厅主窗')
+    })
+
+    it('判据 6：一樘窗两个部位（布 + 纱）⇒ 两条 order_items 各带**自己的**宽高', async () => {
+      await setupCurtain()
+      fireEvent.change(screen.getByLabelText('樘窗'), { target: { value: '客厅主窗' } })
+      fireEvent.click(screen.getByRole('button', { name: /新增部位/ }))
+      await waitFor(() => expect(screen.getAllByLabelText('部位')).toHaveLength(2))
+
+      const types = screen.getAllByLabelText('部位') as HTMLSelectElement[]
+      fireEvent.change(types[0], { target: { value: '布帘' } })
+      fireEvent.change(types[1], { target: { value: '纱帘' } })
+      fillSize(0, '6.6', '2.6')
+      fillSize(1, '6.6', '1.6')
+
+      fillCustomerAndSubmit()
+      await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+
+      const items = mockCreateOrder.mock.calls[0][0].items
+      expect(items).toHaveLength(2)
+      expect(items[0].height).toBe(2.6)
+      // 纱帘常做半帘 —— 宽高是**部位级**（§5.9.2），共用行级宽高必有一件算错用料
+      expect(items[1].height).toBe(1.6)
+    })
+
+    it('判据 7（展示）：卡片可收起为摘要行 —— 录入项收起、结论常显', async () => {
+      await setupCurtain()
+      fillSize(0, '6.6', '2.6')
+      expect(screen.getByLabelText('部位')).toBeInTheDocument()
+
+      // 卡片头是唯一 aria-expanded=true 的按钮（特殊选项默认收起 = false）
+      fireEvent.click(screen.getByRole('button', { expanded: true }))
+
+      expect(screen.queryByLabelText('部位')).not.toBeInTheDocument()
+      // 摘要仍报出尺寸与商品（收起 ≠ 信息消失）
+      expect(screen.getByText(/6\.6 × 2\.6 m/)).toBeInTheDocument()
+      expect(screen.getAllByText(/遮光窗帘/).length).toBeGreaterThan(0)
     })
   })
 })

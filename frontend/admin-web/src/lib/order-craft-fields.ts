@@ -45,6 +45,56 @@ export const STYLE_OPTIONS = ['单色', '拼色'] as const
 /** 款式「拼色」= 双拼（真值源 §8：拼2次 口语叫双拼色）—— 唯一会拆主布/配布边两行的取值 */
 export const STYLE_MIXED = '拼色'
 
+// ── 默认档（用户 2026-09-19 裁定；issue #4420）────────────────────────────────
+//
+// 三条默认值都是**真值**（商家在界面上看得见 ⇒ 必须落库），不是占位符：
+// 商家不选 ≠ 没这回事，而是「按行业默认走」—— 缺键会让下游（Java 快照 / Python 建路线）
+// 只能靠猜（#4362 的信号派生是为此存在的**兜底**，不是主路径）。
+
+/** 加工类型默认「定高买宽」—— 真值源 §2：层高 ≤2.8m 用定高布最省料，是绝大多数家用场景 */
+export const DEFAULT_CUTTING_MODE = '定高买宽'
+
+/** 款式默认「单色」—— 拼色会额外拆出配布边行，不能默认替顾客加钱 */
+export const DEFAULT_STYLE = '单色'
+
+/**
+ * 每折吃布（米）—— 真值源 `curtain-fabric-quote-rules.md` §8「每折吃布 0.25 米」。
+ *
+ * ⚠️ 与 `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `PLEAT_FABRIC_PER_FOLD`
+ * **同值**；同步守卫 = `tests/unit/lib/craft-calc-defaults.test.ts`（读 Python 源逐值比对，
+ * 漂移即红）—— 本仓「副本必须有同步守卫」纪律的落点（同族 #4393）。
+ */
+export const PLEAT_FABRIC_PER_FOLD = 0.25
+
+/** 标准档名义倍数 —— 同 `curtain_calc.py` 的 `DEFAULT_CRAFT_TIERS.standard.fullness` */
+export const STANDARD_FULLNESS = 2.0
+
+/**
+ * 默认褶距（米）= 每折吃布 ÷ 标准档倍数 = 0.25 ÷ 2.0 = **0.125**（12.5cm）。
+ *
+ * 用户 2026-09-19 裁定：「褶距**随倍数自动算**（可改）」。
+ * 公式来源：真值源 §8「每折吃布 0.25 米（折距 10cm ≈ 2.5 倍褶）」⇒ 褶距 = 0.25 ÷ 倍数。
+ *
+ * ⚠️ 已知真值冲突（照实登记，待裁定）：引导清单 `curtain_checklist.py` 给 `pleat_spacing`
+ * 的行业默认是 **0.1m（=2.5 倍）**，与本处 0.125（=2.0 倍）差 25%。两者不能同时是默认 ——
+ * 本处以**用户选定的标准档 2.0 倍**为准（自洽），清单那处待单独收口。
+ */
+export const DEFAULT_PLEAT_SPACING = PLEAT_FABRIC_PER_FOLD / STANDARD_FULLNESS
+
+/**
+ * 新明细行的**默认工艺规格**（三条默认值）。
+ *
+ * 与硬约束 1「缺值不写」的关系：默认值是**商家看得见的真值** ⇒ 必须写；
+ * 「缺值不写」管的是**既没填也没默认**的键。
+ */
+export function createDefaultCraftSpec(): CraftSpecInput {
+  return {
+    cuttingMode: DEFAULT_CUTTING_MODE,
+    style: DEFAULT_STYLE,
+    pleatSpacing: DEFAULT_PLEAT_SPACING,
+  }
+}
+
 /**
  * 特殊选项清单（19 项，**部位级**，真值源 `docs/curtain-production-rules.md` §1【默】）。
  *
