@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -509,6 +510,124 @@ class ProductionServiceTest {
         Map<String, Object> result = service.getOperations(processingOrderNo, TENANT);
 
         assertThat(result.get("order_id")).isEqualTo(ORDER_ID);
+    }
+
+    // ── 报工人列（issue #4309：跟进人 = 只加「报工人」，零新字段，读报工记录）──────────
+    //
+    // 口径：报工人 = 该工序实例下报过工的人，取自 production_work_logs.worker_name；
+    // **去重**、按**首次报工时间**升序（listWorkLogs 已按 created_at 升序 ⇒ 按遇到顺序去重即为
+    // 首次报工序，故这里刻意让「先报工的人」与「姓名排序在前的人」不同，防实现按姓名/哈希排序）；
+    // **只取 work_type='normal'**（与「已完成数量 / 计件」同源：返工/报废既不推进进度也不计件，
+    // 混进本列会让相邻两列不同口径）；worker_name 空/blank ⇒ 「未署名」；无 normal 报工 ⇒ 空数组。
+    // ⑤ 的红证：work logs 必须**一次取回**再内存分组 —— 按工序逐个查就是 N+1（#4304 同族病灶）。
+
+    /** 报工记录夹具（时间用固定偏移，保证「首次报工」可判定）。 */
+    private ProductionWorkLog workLog(String operationId, String workerName, String workType, String createdAt) {
+        return ProductionWorkLog.builder()
+                .id("log-" + operationId + "-" + workerName + "-" + workType + "-" + createdAt)
+                .tenantId(TENANT).processingOrderId(PO_ID).operationId(operationId)
+                .workerName(workerName).workType(workType)
+                .qty(new BigDecimal("1.00")).qualifiedQty(new BigDecimal("1.00"))
+                .createdAt(OffsetDateTime.parse(createdAt)).deleted(0)
+                .build();
+    }
+
+    /** 从 getOperations 响应里取某工序实例的 workers（positions → operations → workers）。 */
+    @SuppressWarnings("unchecked")
+    private List<String> workersOf(Map<String, Object> result, String operationId) {
+        for (Map<String, Object> position : (List<Map<String, Object>>) result.get("positions")) {
+            for (Map<String, Object> view : (List<Map<String, Object>>) position.get("operations")) {
+                if (operationId.equals(view.get("id"))) {
+                    return (List<String>) view.get("workers");
+                }
+            }
+        }
+        throw new AssertionError("工序实例未出现在响应里: " + operationId);
+    }
+
+    private void twoOperations() {
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-1", "精裁-布", "10.00", false, "pending", "0.00", "1.00", "1.00"),
+                op("op-2", "外帘装袋", "10.00", false, "pending", "0.00", "1.00", "1.00")));
+    }
+
+    @Test
+    @DisplayName("报工人：同一工序两人先后报工 → 两人且按**首次报工时间**升序（非姓名序）")
+    void workersOrderedByFirstReportTime() {
+        twoOperations();
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                // 首次报工 = 李四（09:00）；张三 09:30 补报 ⇒ 期望 [李四, 张三]（按姓名排会得到 [张三, 李四]）
+                workLog("op-1", "李四", "normal", "2026-09-18T09:00:00+08:00"),
+                workLog("op-2", "王五", "normal", "2026-09-18T09:10:00+08:00"),
+                workLog("op-1", "张三", "normal", "2026-09-18T09:30:00+08:00")));
+
+        Map<String, Object> result = service.getOperations(ORDER_ID, TENANT);
+
+        assertThat(workersOf(result, "op-1")).containsExactly("李四", "张三");
+        // 分组不串号：op-2 只有王五
+        assertThat(workersOf(result, "op-2")).containsExactly("王五");
+    }
+
+    @Test
+    @DisplayName("报工人：同一人报两次 → 只出现一次（去重）")
+    void workersDeduplicatedPerOperation() {
+        twoOperations();
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                workLog("op-1", "张三", "normal", "2026-09-18T09:00:00+08:00"),
+                workLog("op-1", "张三", "normal", "2026-09-18T09:05:00+08:00")));
+
+        Map<String, Object> result = service.getOperations(ORDER_ID, TENANT);
+
+        assertThat(workersOf(result, "op-1")).containsExactly("张三");
+    }
+
+    @Test
+    @DisplayName("报工人：只有返工/报废报工 → 空数组（与「已完成数量/计件」同源，只认 normal）")
+    void workersExcludeReworkAndScrap() {
+        twoOperations();
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                workLog("op-1", "张三", "rework", "2026-09-18T09:00:00+08:00"),
+                workLog("op-1", "李四", "scrap", "2026-09-18T09:10:00+08:00")));
+
+        Map<String, Object> result = service.getOperations(ORDER_ID, TENANT);
+
+        assertThat(workersOf(result, "op-1")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("报工人：无任何报工 → 空数组（前端渲染「—」，不是 null/缺键）")
+    void workersEmptyWhenNoWorkLog() {
+        twoOperations();
+        when(workLogMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> result = service.getOperations(ORDER_ID, TENANT);
+
+        assertThat(workersOf(result, "op-1")).isEmpty();
+        assertThat(workersOf(result, "op-2")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("报工人：worker_name 空/blank → 「未署名」（与工人端报工明细同文案）")
+    void workersBlankNameShowsUnsigned() {
+        twoOperations();
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                workLog("op-1", null, "normal", "2026-09-18T09:00:00+08:00"),
+                workLog("op-1", "   ", "normal", "2026-09-18T09:10:00+08:00")));
+
+        Map<String, Object> result = service.getOperations(ORDER_ID, TENANT);
+
+        assertThat(workersOf(result, "op-1")).containsExactly("未署名");
+    }
+
+    @Test
+    @DisplayName("报工人：work logs **只查一次**（按工序逐个查 = N+1，#4304 同族）")
+    void workLogsQueriedOnceForAllOperations() {
+        twoOperations();
+        when(workLogMapper.selectList(any())).thenReturn(List.of());
+
+        service.getOperations(ORDER_ID, TENANT);
+
+        verify(workLogMapper, times(1)).selectList(any());
     }
 
     // ══════════════════════════ §5 四项防呆（issue #4116 P0-3）══════════════════════════

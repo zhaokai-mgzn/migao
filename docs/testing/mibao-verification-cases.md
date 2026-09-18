@@ -2387,7 +2387,7 @@
 落库: order_phone → source=order_create; expect_phone=13800138000
 ```
 真值: order.flow
-溯源: POC 下单闭环集成测试新增；2026-09-02 补订单手机号完整性约束；2026-09-09 校准：原 user_inputs 为描述性文字「用户算料报价后确认下单…」非用户对话，agent 无法触发下单（tools=[]）；改为真实下单对话（选品→规格→跳过加工项→确认）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（至少一次成功）+ db_verify[order_items/order_phone]（B 端首条落库核对：明细商品/数量 + 落库手机号），此前 `order_phone` 被 7 条 C 端用例使用、B 端 0 条；user_inputs / expectations / required_args 原样未动（未放宽任何既有断言） ｜ tags: order_create, smoke
+溯源: POC 下单闭环集成测试新增；2026-09-02 补订单手机号完整性约束；2026-09-09 校准：原 user_inputs 为描述性文字「用户算料报价后确认下单…」非用户对话，agent 无法触发下单（tools=[]）；改为真实下单对话（选品→规格→跳过加工项→确认）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（至少一次成功）+ db_verify[order_items/order_phone]（B 端首条落库核对：明细商品/数量 + 落库手机号），此前 `order_phone` 被 7 条 C 端用例使用、B 端 0 条；user_inputs / expectations / required_args 原样未动（未放宽任何既有断言）。2026-09-18（burn-down 缴费，随 #4309 的用例面改动）：补 `namespaces[customer_phone:13800138000]` + `precondition[product_count_for_keyword: 遮光窗帘 expect=1]` —— 一次销掉该条存量违规的 `CASE-TRUST-NO-SELF-CLEAN`（写用例未声明自清理）与 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（按名字选品无可判定前置），整条销账、清单条目随之删除；形态与 OR-009 / PR-007 / OR-013 同一份。断言面（expectations / required_args / must_succeed / db_verify / data_checks）一字未动。 ｜ tags: order_create, smoke
 
 ### OR-012. C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查 🔵
 ```
@@ -2989,7 +2989,7 @@
 ```
 你: 打开加工单生产明细，看工序进度和计件汇总，打印任务卡给工人扫码
 期望: direct_reply
-数据: 工序进度表按部位分组渲染，行内给出「工序名 / 分组 / 应做数量+单位 / 单价 / 状态（待做|已完成）/ 已完成数量」
+数据: 工序进度表按部位分组渲染，行内给出「工序名 / 分组 / 应做数量+单位 / 单价 / 状态（待做|已完成）/ 已完成数量 / 报工人」
 数据: 必完工序（is_must_finish）加「必完」标记；非必完工序不得出现该标记
 数据: 进度条读 progress.percent 且与「已完成 done/total 道工序」文案一致（50% ⇒ 1/2）
 数据: 计件汇总渲染 total（¥ 两位小数）+ per_operation 明细；per_worker 非空时展示分人金额
@@ -2999,7 +2999,7 @@
 跳过: [backend-contract] 前端渲染行为（admin-web 组件/页面），由 vitest 单测全量覆盖（tests/unit/components/{ProductionProgressTable,PieceworkTable,TaskCardPrint}.test.tsx、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/lib/use-route-id.test.ts），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）
 ```
 真值: processing-manage.crud
-溯源: 2026-09-17 新增（issue #4000）：M4-H 按需单据渲染 —— 加工单生产明细页 + 可打印任务卡（含二维码）+ 计件汇总的前端覆盖登记；消费 main 已合并的生产端点（GET production/orders/{orderId}/operations、/piecework） ｜ tags: processing, production, admin_web, print_task_card, qrcode
+溯源: 2026-09-17 新增（issue #4000）：M4-H 按需单据渲染 —— 加工单生产明细页 + 可打印任务卡（含二维码）+ 计件汇总的前端覆盖登记；消费 main 已合并的生产端点（GET production/orders/{orderId}/operations、/piecework）。2026-09-18（issue #4309）：工序进度表表尾追加「报工人」列（后端 operations 响应追加 `workers` 键，读 production_work_logs 的 normal 报工、去重、按首次报工时间升序、空名折「未署名」、无报工 = 空数组 ⇒ 「—」）⇒ 行内字段枚举补「报工人」，否则用例与现实脱节（假真值）；expectations / 其余 data_checks 一字未动 ｜ tags: processing, production, admin_web, print_task_card, qrcode
 
 ### PP-012. 内部算料数量端点 - 应做数量=引擎输出/兜底 1/未知工序 fallback（单测覆盖） 🔵
 ```
