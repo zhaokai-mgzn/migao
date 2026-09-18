@@ -2370,7 +2370,7 @@
 必须成功: order_create
 ```
 真值: order.states, order.create-flow
-溯源: verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律；2026-09-04 修复 choice 卡片消费协议不匹配（审计 #2818 Agent Eval 失败根因）：原「选1」为自然语言序号，LLM 无法关联 interact(choice) 选项导致反复 product_detail 追问、永不进入 validate_input/order_create；改为显式售卖方式描述（与 OR-008/009 一致），且「2件」与商品按米计价（¥99/米）矛盾改为「2米」，实测全流程通过；2026-09-09 校准：R3「确认下单」改「不添加加工项，确认下单」+ 补第4轮「确认下单」——agent 把加工项询问当强制环节，用户说「确认下单」仍发加工项卡（probe 实证），需明确跳过加工项才推进（与 OR-009 校准一致）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（简化流程此前只断言 validate_input/order_create 出现过 ⇒「调用了 ≠ 成了」；真实 run 里本用例首跑红指纹含 `no_success(order_create)`，说明失败确实发生过而断言看不见）；user_inputs / expectations / required_args / want_text 原样未动。2026-09-18（burn-down 缴费，随 #4309 的用例面改动）：补 `namespaces[customer_phone:13812345678]` + `precondition[product_count_for_keyword: 遮光窗帘 expect=1]` —— 一次销掉该条存量违规的 `CASE-TRUST-NO-SELF-CLEAN`（写用例未声明自清理）与 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（按名字选品无可判定前置），整条销账、清单条目随之删除；形态与 OR-009 / PR-007 同一份（同关键词、同 `product_dedupe` 族、同 `expect=1`），断言面（expectations / required_args / must_succeed / data_checks / want_text）一字未动。 ｜ tags: create, confirm
+溯源: verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律；2026-09-04 修复 choice 卡片消费协议不匹配（审计 #2818 Agent Eval 失败根因）：原「选1」为自然语言序号，LLM 无法关联 interact(choice) 选项导致反复 product_detail 追问、永不进入 validate_input/order_create；改为显式售卖方式描述（与 OR-008/009 一致），且「2件」与商品按米计价（¥99/米）矛盾改为「2米」，实测全流程通过；2026-09-09 校准：R3「确认下单」改「不添加加工项，确认下单」+ 补第4轮「确认下单」——agent 把加工项询问当强制环节，用户说「确认下单」仍发加工项卡（probe 实证），需明确跳过加工项才推进（与 OR-009 校准一致）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（简化流程此前只断言 validate_input/order_create 出现过 ⇒「调用了 ≠ 成了」；真实 run 里本用例首跑红指纹含 `no_success(order_create)`，说明失败确实发生过而断言看不见）；user_inputs / expectations / required_args / want_text 原样未动 ｜ tags: create, confirm
 
 ### OR-011. AI 下单闭环 - 算料报价→确认→SMS→订单创建 🔵
 ```
@@ -2387,7 +2387,7 @@
 落库: order_phone → source=order_create; expect_phone=13800138000
 ```
 真值: order.flow
-溯源: POC 下单闭环集成测试新增；2026-09-02 补订单手机号完整性约束；2026-09-09 校准：原 user_inputs 为描述性文字「用户算料报价后确认下单…」非用户对话，agent 无法触发下单（tools=[]）；改为真实下单对话（选品→规格→跳过加工项→确认）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（至少一次成功）+ db_verify[order_items/order_phone]（B 端首条落库核对：明细商品/数量 + 落库手机号），此前 `order_phone` 被 7 条 C 端用例使用、B 端 0 条；user_inputs / expectations / required_args 原样未动（未放宽任何既有断言） ｜ tags: order_create, smoke
+溯源: POC 下单闭环集成测试新增；2026-09-02 补订单手机号完整性约束；2026-09-09 校准：原 user_inputs 为描述性文字「用户算料报价后确认下单…」非用户对话，agent 无法触发下单（tools=[]）；改为真实下单对话（选品→规格→跳过加工项→确认）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（至少一次成功）+ db_verify[order_items/order_phone]（B 端首条落库核对：明细商品/数量 + 落库手机号），此前 `order_phone` 被 7 条 C 端用例使用、B 端 0 条；user_inputs / expectations / required_args 原样未动（未放宽任何既有断言）。2026-09-18（burn-down 缴费，随 #4309 的用例面改动）：补 `namespaces[customer_phone:13800138000]` + `precondition[product_count_for_keyword: 遮光窗帘 expect=1]` —— 一次销掉该条存量违规的 `CASE-TRUST-NO-SELF-CLEAN`（写用例未声明自清理）与 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（按名字选品无可判定前置），整条销账、清单条目随之删除；形态与 OR-009 / PR-007 / OR-013 同一份。断言面（expectations / required_args / must_succeed / db_verify / data_checks）一字未动。 ｜ tags: order_create, smoke
 
 ### OR-012. C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查 🔵
 ```

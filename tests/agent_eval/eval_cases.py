@@ -3453,8 +3453,6 @@ _CASE_OR_010 = EvalCase(
     want_text=['订单号'],
     required_args=[{'tool': 'order_create', 'fields': ['customer_phone', 'items']}],
     must_succeed=[{'tool': 'order_create'}],
-    namespaces=['customer_phone:13812345678'],
-    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── OR-011 [NORMAL] AI 下单闭环 - 算料报价→确认→SMS→订单创建（源: cases/order.yml）──
@@ -3476,6 +3474,8 @@ _CASE_OR_011 = EvalCase(
     required_args=[{'tool': 'order_create', 'fields': ['customer_phone', 'items']}],
     must_succeed=[{'tool': 'order_create'}],
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 2}}, {'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000'}],
+    namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── OR-012 [NORMAL] C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查（源: cases/order.yml）──
