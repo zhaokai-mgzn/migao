@@ -805,14 +805,21 @@ export interface RoutingCreateParams {
 }
 
 /**
- * 路线写端点失败时的响应体（护栏理由）：
- * - `error_messages`：**逐条**护栏理由（空序列 / 工序不存在 / 重复 / 缺必完工序）—— 主口径；
- * - `error`：单条理由（旧形态）—— 前端仅在 `error_messages` 缺失时退化使用。
+ * 路线写端点失败时的响应体（护栏理由）—— 后端**真实**信封（issue #4308「冻结补遗 ②」）：
+ * `{success:false, error:{code, message, details:[{field, message}]}, suggestion}`。
+ * - `error.details[].message`：**逐条**护栏理由（空序列 / 工序不存在 / 重复 / 缺必完工序）—— **主口径**；
+ * - `error.message`：一句话摘要 —— 仅在 `details` 缺失时退化使用；
+ * - `field`：违规维度（如 `operations[2]` / `must_finish`），**只用于定位，不展示给商家**。
+ *
  * 前端**不得**把这些理由吞成一句「保存失败」（issue #4307 交付物 1）。
+ * ⚠️ 不存在顶层 `error_messages` 字段，`error` 也不是字符串 —— 按那个形状读会让失败路径静默退化。
  */
 export interface RoutingGuardErrorBody {
-  error_messages?: string[] | string
-  error?: string
+  error?: {
+    code?: string
+    message?: string
+    details?: { field?: string; message?: string }[]
+  }
 }
 
 /** POST /api/admin/production/operations（新增工序：建新路线时必须有工序可选） */

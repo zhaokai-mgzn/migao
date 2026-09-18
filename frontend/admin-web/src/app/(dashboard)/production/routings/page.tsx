@@ -69,22 +69,33 @@ export function describeRoutingGuard(raw: string): string {
 }
 
 /**
- * 从失败的请求里取**逐条**护栏理由：优先用后端新增的结构化清单 `error_messages`，
- * 退化到单条 `error` / Error.message。字段名口径见 issue #4308（本单不发明字段）。
+ * 从失败的请求里取**逐条**护栏理由。
+ *
+ * 口径 = 后端**真实**信封（issue #4308「冻结补遗 ②」）：
+ * `{success:false, error:{code, message, details:[{field, message}]}, suggestion}` ——
+ * 主口径 = `error.details[].message`（逐条），退化 = `error.message`（一句话摘要），
+ * 最后才用 `Error.message`。
+ *
+ * ⚠️ **不读 `error_messages`**：该顶层字段后端不存在（全仓零命中），且 `error` 是**对象**不是字符串。
+ * 曾按那个形状读 ⇒ 真实失败路径静默落到 `Error.message`，商家只看到
+ * 「Request failed with status code 422」而看不到任何护栏理由（集成方探针实证 2/2 红）。
  */
 export function routingGuardReasons(error: unknown): string[] {
   const e = error as
-    | { response?: { data?: { error_messages?: unknown; error?: unknown } }; message?: string }
+    | { response?: { data?: { error?: { message?: unknown; details?: unknown } } }; message?: string }
     | null
     | undefined
-  const body = e?.response?.data
-  if (Array.isArray(body?.error_messages) && body.error_messages.length > 0) {
-    return body.error_messages.map((r) => describeRoutingGuard(String(r)))
+  const err = e?.response?.data?.error
+  const details = err?.details
+  if (Array.isArray(details) && details.length > 0) {
+    const reasons = details
+      .map((d) => (typeof d === 'string' ? d : (d as { message?: unknown } | null)?.message))
+      .filter((m): m is string => typeof m === 'string' && m.trim().length > 0)
+    if (reasons.length > 0) return reasons.map((r) => describeRoutingGuard(r))
   }
-  if (typeof body?.error_messages === 'string' && body.error_messages) {
-    return [describeRoutingGuard(body.error_messages)]
+  if (typeof err?.message === 'string' && err.message.trim()) {
+    return [describeRoutingGuard(err.message)]
   }
-  if (typeof body?.error === 'string' && body.error) return [describeRoutingGuard(body.error)]
   if (typeof e?.message === 'string' && e.message) return [describeRoutingGuard(e.message)]
   return ['保存失败，请稍后重试']
 }

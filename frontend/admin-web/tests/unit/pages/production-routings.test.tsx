@@ -3,7 +3,7 @@
 // ① 路线列表渲染真实序列（部位 × 工艺 → 每道工序的分组/单位/单价/必完）；
 // ② 序列编辑：从**工序库**选工序 → 上移/下移/删除 → 保存（PUT /production/routings/{id}，
 //    body {operations:[...]} 且顺序等于屏幕顺序）；
-// ③ 保存被拒时**逐条**展示后端护栏理由（error_messages），不得只弹「保存失败」；空序列本地拦；
+// ③ 保存被拒时**逐条**展示后端护栏理由（`error.details[].message`），不得只弹「保存失败」；空序列本地拦；
 // ④ 缺口区两只清单（有工序没进路线 / 无路线的信号组合）——真值源下 4 道「待客户确认」工序；
 // ⑤ 新建路线 / 新增工序（POST /production/operations）/ 信号映射增删改（POST|PUT|DELETE）；
 // ⑥ 任一只读端点失败不得白屏，失败处给可读提示。
@@ -110,10 +110,21 @@ const SIGNALS = {
   ],
 }
 
-/** 后端护栏失败响应体（axios 形态：理由在 error.response.data） */
-const guardError = (errorMessages: string[]) => ({
-  response: { data: { success: false, error_messages: errorMessages } },
-  message: 'Request failed with status code 400',
+/** 后端护栏失败响应体（**真实**信封：`error.details[].message` 逐条理由 —— issue #4308「冻结补遗 ②」） */
+const guardError = (reasons: string[]) => ({
+  response: {
+    status: 422,
+    data: {
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: `工艺路线校验未通过：${reasons.length} 项`,
+        details: reasons.map((message, i) => ({ field: `operations[${i}]`, message })),
+      },
+      suggestion: '请修正后重试',
+    },
+  },
+  message: 'Request failed with status code 422',
 })
 
 describe('工艺路线页 /production/routings', () => {
@@ -253,9 +264,13 @@ describe('工艺路线页 /production/routings', () => {
     expect(mockGetRoutings).toHaveBeenCalledTimes(1)
   })
 
-  it('保存被拒（单条 error 形态兼容）：理由仍逐条可读', async () => {
+  it('保存被拒（无 details 时退化）：只有 error.message 也逐条可读，不得弹通用文案', async () => {
     mockUpdateRoutingSequence.mockRejectedValueOnce({
-      response: { data: { success: false, error: '路线至少要有一道必完工序' } },
+      response: {
+        status: 422,
+        data: { success: false, error: { code: 'VALIDATION_ERROR', message: '路线至少要有一道必完工序' } },
+      },
+      message: 'Request failed with status code 422',
     })
     render(<RoutingsPage />)
     await waitFor(() => expect(screen.getByTestId('routing-edit-布帘×韩褶')).toBeInTheDocument())
@@ -266,6 +281,8 @@ describe('工艺路线页 /production/routings', () => {
     await waitFor(() =>
       expect(screen.getByTestId('routing-error-item-0')).toHaveTextContent('缺少必完工序：路线至少要有一道必完工序'),
     )
+    // 不得退化成 axios 的通用文案（旧形状读不到理由时就是这个形态）
+    expect(screen.queryByText(/Request failed with status code/)).not.toBeInTheDocument()
   })
 
   it('新增工序：提交名称/分组/单位/单价（POST /production/operations）并刷新工序库', async () => {
