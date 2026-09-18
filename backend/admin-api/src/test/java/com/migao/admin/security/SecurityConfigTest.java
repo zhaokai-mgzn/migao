@@ -1,5 +1,5 @@
 package com.migao.admin.security;
-// case_ids: DF-007, DF-017
+// case_ids: DF-007, DF-017, PG-020
 
 import com.aliyun.oss.OSS;
 import com.migao.admin.config.GlobalExceptionHandler;
@@ -266,6 +266,10 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.ProcessingPositionOperationMapper processingPositionOperationMapper;
     @MockBean
     private com.migao.admin.mapper.ProductionWorkLogMapper productionWorkLogMapper;
+    // 单价版本表（issue #4204，V55）：同上——@MapperScan 会尝试创建它，没有 sqlSessionFactory
+    // 时上下文整体起不来（26 条安全用例连坐失败，实测）。
+    @MockBean
+    private com.migao.admin.mapper.ProductionOperationPriceVersionMapper productionOperationPriceVersionMapper;
     @MockBean
     private com.migao.admin.service.ProductionService productionService;
 
