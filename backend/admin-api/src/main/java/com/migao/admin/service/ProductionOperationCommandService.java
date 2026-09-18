@@ -41,6 +41,19 @@ public class ProductionOperationCommandService {
     /** 工序状态取值（V49 `status VARCHAR(16) DEFAULT 'active'`：active / disabled）。 */
     private static final Set<String> STATUSES = Set.of("active", "disabled");
 
+    /**
+     * 工序作用域取值（V67 `scope VARCHAR(16) NOT NULL DEFAULT 'position'`，issue #4384 A1）：
+     * {@code position} = 部位级（每部位一次）/ {@code set} = 套级（**每樘窗一次**）。
+     *
+     * <p>用户裁定（2026-09-19）「套级工序先按每樘窗一次实现，打卷是否每帘一次**留成可配**」
+     * ⇒ 本常量 + 下方校验就是「可配」的落码形态；闭词表与迁移 V67 的列注释同口径
+     * （自创第三值会让读面/实例化侧的口径分裂）。</p>
+     */
+    private static final Set<String> SCOPES = Set.of("position", "set");
+
+    /** 缺省作用域 = 部位级（与 V67 的列默认值同口径；默认 set 会把新建工序静默去重）。 */
+    private static final String DEFAULT_SCOPE = "position";
+
     private final ProductionOperationMapper productionOperationMapper;
     private final ProductionOperationPriceVersionMapper priceVersionMapper;
     private final ProductionOperationQueryService productionOperationQueryService;
@@ -49,7 +62,7 @@ public class ProductionOperationCommandService {
      * 更新工序（部分更新：只写 body 里出现的字段；未出现的字段保持原值）。
      *
      * @param body 可含 unit_price / is_must_finish / is_start_marker / status / unit /
-     *             group_name / sort_order
+     *             group_name / sort_order / scope（scope = 部位级 position / 套级 set，issue #4384 A1）
      * @return 更新后的工序（形态 = {@link ProductionOperationQueryService#operationView}，与目录项同构）
      */
     @Transactional(rollbackFor = Exception.class)
@@ -92,6 +105,13 @@ public class ProductionOperationCommandService {
                 }
                 partial.setStatus(status);
                 op.setStatus(status);
+            }
+            if (body.containsKey("scope")) {
+                // 作用域可配（issue #4384 A1）：用户裁定「套级先按每樘窗一次实现，打卷是否每帘一次
+                // 留成可配」⇒ 商家必须能改这一档。校验同 status 口径（闭词表 + 可读理由）。
+                String scope = scope(body.get("scope"));
+                partial.setScope(scope);
+                op.setScope(scope);
             }
             if (body.containsKey("sort_order")) {
                 int sortOrder = decimal(body.get("sort_order"), "sort_order").intValue();
@@ -171,6 +191,7 @@ public class ProductionOperationCommandService {
                 .groupName(body.containsKey("group_name")
                         ? requiredText(body.get("group_name"), "group_name") : "其他")
                 .position(optionalText(body.get("position")))
+                .scope(body.containsKey("scope") ? scope(body.get("scope")) : DEFAULT_SCOPE)
                 .unit(body.containsKey("unit") ? requiredText(body.get("unit"), "unit") : "米")
                 .unitPrice(unitPrice)
                 .isMustFinish(body.containsKey("is_must_finish")
@@ -213,6 +234,22 @@ public class ProductionOperationCommandService {
         String text = value == null ? null : String.valueOf(value).trim();
         if (!StringUtils.hasText(text)) {
             throw BusinessException.validationError(field + " 不能为空");
+        }
+        return text;
+    }
+
+    /**
+     * 作用域取值校验（issue #4384 A1）：只允许 {@code position}（部位级）/ {@code set}（套级，
+     * 每樘窗一次），非法值**拒绝并给可读理由**（与 {@code status} 同口径）。
+     *
+     * <p><b>为什么必须校验而不是「存什么算什么」</b>：{@code scope} 是**实例化侧的分支判据**
+     * （A2 按它决定「每樘窗一次」还是「每部位一次」）。一个错别字（如 {@code SET} / {@code 套级}）
+     * 会静默落库，读面照原样返回、前端下拉认不出、去重判据恒不命中 ⇒ **双付病根原地复活且无任何东西变红**。</p>
+     */
+    private static String scope(Object value) {
+        String text = requiredText(value, "scope");
+        if (!SCOPES.contains(text)) {
+            throw BusinessException.validationError("scope 仅支持 position/set（position=部位级，set=套级）");
         }
         return text;
     }

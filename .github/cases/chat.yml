@@ -492,6 +492,21 @@ cases:
     namespaces:
       - "customer_phone:13800138000"
 
+    # ── 前置自断言（issue #4384 A1 的 burn-down 缴费）────────────────────────────
+    # 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION
+    # （改用例文件的 PR 须净缩 ≥1 条存量违规 ⇒ 整条销账，metric=entries）。
+    # R2 按**商品名**「北欧风窗帘」定位下单目标 ⇒「该名字在栈里唯一」是它真正依赖、且**只读**的前置：
+    # 出现同名副本时 agent 会**合理地**要求澄清「哪一件」⇒ `order_create` 永不发生，而报告上只表现为
+    # `unmatched expectation`（**看起来像 agent 不干活**）—— 正是本规则要治的归因错位
+    # （实证形态：PG-013 重试前置不成立 / CU-003「客户数=2」）。
+    # 口径与 `pre_clean` 的商品定位**同一份**（`_list_products_matching`），先例 = OR-014 / CH-019 / CR-001。
+    # ⚠️ 有意**不**声明 `order_count_for_phone`：本用例自己就会建单 ⇒ 漂移判据（缺省 max_growth=0）
+    # 必然判红，那是「硬写一条注定红的守卫」。商品维只读 ⇒ 漂移恒为 0，无需 max_growth。
+    precondition:
+      - type: product_count_for_keyword
+        source: "北欧风窗帘"
+        expect: 1
+
     expectations:
       - tool: product_search
       - tool: product_detail
@@ -543,7 +558,7 @@ cases:
       - "会话记忆保原文：手机号不得在图谱层被脱敏后落库（否则模型下一轮把 `****` 填 0 建单 —— issue #3386）"
       - "C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。"
     skip_reason: ""
-    merge_log: "C 端表单化交互方案 S1（miniapp-multiturn-form-scenarios.md）"
+    merge_log: "C 端表单化交互方案 S1（miniapp-multiturn-form-scenarios.md）；2026-09-19（issue #4384 A1 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须整条销账）：补 `precondition[product_count_for_keyword: 北欧风窗帘, expect: 1]` —— R2 按**商品名**定位下单目标，「该名字唯一」是它真正依赖且**只读**的前置（同名副本会让 agent 合理地要求澄清 ⇒ `order_create` 永不发生，而报告上只表现为 `unmatched expectation` = 看起来像 agent 不干活，归因全错）。口径与 `pre_clean` 的商品定位同一份（`_list_products_matching`），先例 = OR-014 / CH-019 / CR-001。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红，那是「硬写一条注定红的守卫」；商品维只读 ⇒ 漂移恒为 0。断言（user_inputs / expectations / data_checks / namespaces / pre_clean）原样未动、无放宽。"
     traces:
       tests:
         - "frontend/mini-app/e2e/scenarios/multiturn-scenario.js"

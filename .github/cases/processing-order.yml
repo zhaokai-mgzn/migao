@@ -1558,3 +1558,49 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ==========================================================================
+  # PG-039（issue #4384 A1，P0）：工序库「作用域」scope 列 —— 主数据 + 读面 + 写面 + 前端。
+  # 病根：真值源 docs/curtain-production-rules.md §8 明写「**外帘**是加工单打印行部位，
+  # **不是**路线键」，但 V54/V58 种子里 外帘打卷/外帘装袋/外帘发货 的 position='外帘'
+  # 却**逐条出现在每一条部位路线**里（含纱帘路线）⇒ 一樘「布 + 纱」时这 3 道各实例化 **2 次**
+  # （unit='套'、qty=1）⇒ 打卷/装袋/发货 **各 ¥1.0 双付**。
+  # 用户裁定（2026-09-19）：**套级工序先按「每樘窗一次」实现**，打卷是否每帘一次**留成可配**。
+  # 本包 = **A1（工序库侧）**；A2（加工单侧去重，ProcessingOrderService.buildPositionPayload）
+  # **不在本包**（等包 D #4387 合入后单独做）⇒ **本包不交付「套级去重生效」**。
+  # ==========================================================================
+  - id: PG-039
+    legacy_id: ""
+    title: "工序作用域 scope（V67）：外帘打卷/装袋/发货 = 套级（每樘窗一次）+ 读面逐字 + 写面可配校验 + 工序库页可见可改"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    tags:
+      - processing-order
+      - production
+      - operations
+      - scope
+      - migration
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "success=true"
+      - "判据 1·主数据正确（V67）：`production_operations` 新增 `scope VARCHAR(16) NOT NULL DEFAULT 'position'`（`ADD COLUMN IF NOT EXISTS`，幂等）+ 列注释写明 `position` = 部位级 / `set` = 套级（**每樘窗一次**）语义与 issue 号；幂等 `UPDATE ... SET scope='set' WHERE name IN ('外帘打卷','外帘装袋','外帘发货')`。终态语义 = 三道 `scope='set'`，**其余全部 `scope='position'`**（默认值兜住），由 `V54 ∪ V56` 的真实种子行名集合推演断言。`docs/sql/schema.sql` 同步终态（bootstrap 路径**不跑迁移链** ⇒ 只写迁移 = 新建库无该列，同 #3270 形态）。证据：ProductionOperationScopeMigrationTest"
+      - "判据 2·读面逐字取库：`ProductionOperationQueryService.findRouting` 返回的每道工序带 `scope`，与 `group`/`unit`/`unit_price` 同级（`operationMetaView` 一处整形，路线步骤与条件工序共用）。**注入法**：把库行的 `scope` 值改一个 ⇒ 断言跟着变（写死常量/不读库即红）。证据：ProductionOperationQueryServiceTest「findRoutingCarriesScopeVerbatimFromLibrary」+「findRoutingScopeFollowsTheLibraryRow」"
+      - "判据 3·写面可配 + 取值校验：`ProductionOperationCommandService` 的 `update`（PUT /operations/{id}）与 `create`（POST /operations）都接受 `scope`，口径与 `unit`/`unit_price`/`position` 相同（部分更新：未出现的字段不碰）；只允许 `position` / `set`，非法值 ⇒ 422 可读理由（`scope 仅支持 position/set`，照 `status 仅支持 active/disabled` 既有错误形状）。**注入法**：去掉取值校验 ⇒ 非法值落库 ⇒ 断言红。证据：ProductionOperationCommandServiceTest「updateSetsScope」「updateRejectsInvalidScope」「createDefaultsScopeToPosition」「createRejectsInvalidScope」"
+      - "判据 4·前端可见可改：工序库页 `/production/operations` 渲染「作用域」列，逐行显示 部位级/套级，且可就地改为另一档（`PUT /operations/{id}` body 带 `scope`）。**注入法**：不渲染该列 ⇒ 断言红（找不到列头/找不到该行的 scope 控件）。证据：frontend/admin-web/tests/unit/components/OperationsScopeColumn.test.tsx"
+      - "**红证（实现前实测，本机）**：① `ProductionOperationScopeMigrationTest` 因 V67 文件不存在而红（判据 1 无列 ⇒ 红）；② `ProductionOperationQueryServiceTest` 的 scope 断言得 `expected \"set\" but was null`（读面不返回 scope）；③ `ProductionOperationCommandServiceTest` 的非法值用例得「没有异常抛出」（写面零校验）；④ `OperationsScopeColumn.test.tsx` 得找不到「作用域」列头。"
+      - "**未做（如实登记，避免把半截当完整交付）**：① **不做 A2** —— **不改** `ProcessingOrderService.buildPositionPayload`（套级工序按 `craftLineId` 组去重）；A2 依赖包 D（#4387 布行与纱行同组）先合，且与 D 同文件 ⇒ 本包不交付「套级去重生效」（A2 未落地时去重无从谈起，硬写 = 空断言）；② **不改** `backend/ai-agent-service/**`（用户裁定「Agent 层面先别碰」，缺口登记在 #4390）。"
+    skip_reason: "[backend-contract] 后端契约 + 前端页面结构用例（迁移/表结构/服务层/页面渲染，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionOperationScopeMigrationTest + ProductionOperationQueryServiceTest + ProductionOperationCommandServiceTest + frontend/admin-web/tests/unit/components/OperationsScopeColumn.test.tsx 执行"
+    merge_log: "2026-09-19 新增（issue #4384 A1，P0）。用户裁定：套级工序先按「每樘窗一次」实现，打卷是否每帘一次留成可配。实现：V67 迁移（scope 列 + 列注释 + 幂等回填 三道外帘工序 = set；bootstrap 终态同步；指纹登记 migration_fingerprints.json）+ ProductionOperation.scope + 读面 operationView/operationMetaView 带 scope + 写面 update/create 可配且取值校验 + 前端工序库页「作用域」列可就地改。**未做**：A2（ProcessingOrderService 套级去重，等包 D #4387）与 Agent 侧（#4390）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/migration/ProductionOperationScopeMigrationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationQueryServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationCommandServiceTest.java"
+        - "frontend/admin-web/tests/unit/components/OperationsScopeColumn.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-035
+// case_ids: PG-018, PG-035, PG-039
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -86,6 +86,19 @@ class ProductionOperationQueryServiceTest {
         return ProductionRouting.builder()
                 .id(id).tenantId(TENANT).curtainType(curtainType).craft(craft)
                 .operations(operations).status("active").deleted(0).build();
+    }
+
+    /**
+     * 带作用域的工序行（issue #4384 A1，V67）。
+     *
+     * <p>{@code scope} 的取值**只从库里来**：本 helper 允许逐行给不同值，正是为了用
+     * 「注入法」证明读面**逐字取库**（写死常量 / 不读库 ⇒ 断言不跟着变 ⇒ 红）。</p>
+     */
+    private ProductionOperation opScope(String id, String name, String position, String unit, String scope) {
+        return ProductionOperation.builder()
+                .id(id).tenantId(TENANT).name(name).groupName("后道").position(position).unit(unit)
+                .unitPrice(new BigDecimal("1.00")).isMustFinish(false).isStartMarker(false)
+                .sortOrder(24).status("active").deleted(0).scope(scope).build();
     }
 
     @Test
@@ -244,6 +257,85 @@ class ProductionOperationQueryServiceTest {
         assertThat((BigDecimal) steps.get(1).get("unit_price")).isEqualByComparingTo("0.40");
         assertThat(steps.get(2).get("is_must_finish")).isEqualTo(true);
         assertThat(steps.get(0).get("is_start_marker")).isEqualTo(true);
+    }
+
+    // ── scope：工序作用域（issue #4384 A1，V67）────────────────────────────────
+    // 真值源 docs/curtain-production-rules.md §8：**外帘**是加工单打印行部位，不是路线键；
+    // 套级工序（外帘打卷/装袋/发货）应「每樘窗一次」⇒ 实例化侧（A2）要能按 scope 去重，
+    // 故**读面必须把 scope 逐字带出来**（否则 A2 无从判、前端也无从展示）。
+
+    @Test
+    @DisplayName("findRouting 带 scope：与 group/unit/unit_price 同级，逐字取库（部位级/套级各一）")
+    void findRoutingCarriesScopeVerbatimFromLibrary() {
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布", "外帘装袋"))));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                ProductionOperation.builder()
+                        .id("op-v54-01").tenantId(TENANT).name("精裁-布").groupName("裁剪")
+                        .position("布帘").unit("米").unitPrice(new BigDecimal("0.40"))
+                        .isMustFinish(false).isStartMarker(true).sortOrder(1).status("active").deleted(0)
+                        .scope("position").build(),
+                opScope("op-v54-25", "外帘装袋", "外帘", "套", "set")));
+
+        Map<String, Object> route = service().findRouting(TENANT, "布帘", "韩褶");
+
+        assertThat(route).isNotNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> steps = (List<Map<String, Object>>) route.get("operations");
+        assertThat(steps).extracting(s -> s.get("operation")).containsExactly("精裁-布", "外帘装袋");
+        assertThat(steps)
+                .as("每道工序都必须带 scope（缺键 ⇒ A2 去重与前端展示都拿不到判据）")
+                .allSatisfy(s -> assertThat(s).containsKey("scope"));
+        assertThat(steps.get(0).get("scope")).isEqualTo("position");
+        assertThat(steps.get(1).get("scope"))
+                .as("套级工序（每樘窗一次）—— 值必须来自库行，不是读面自己判的")
+                .isEqualTo("set");
+    }
+
+    @Test
+    @DisplayName("findRouting 的 scope 跟着库行走（注入法：库值互换 ⇒ 断言跟着变，写死常量即红）")
+    void findRoutingScopeFollowsTheLibraryRow() {
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布", "外帘装袋"))));
+        // 注入：把两行的 scope **互换**（真实库里不会这样，但读面若写死常量/按工序名猜，这里就露馅）
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                ProductionOperation.builder()
+                        .id("op-v54-01").tenantId(TENANT).name("精裁-布").groupName("裁剪")
+                        .position("布帘").unit("米").unitPrice(new BigDecimal("0.40"))
+                        .isMustFinish(false).isStartMarker(true).sortOrder(1).status("active").deleted(0)
+                        .scope("set").build(),
+                opScope("op-v54-25", "外帘装袋", "外帘", "套", "position")));
+
+        Map<String, Object> route = service().findRouting(TENANT, "布帘", "韩褶");
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> steps = (List<Map<String, Object>>) route.get("operations");
+        assertThat(steps.get(0).get("scope"))
+                .as("库说 set 就必须回 set —— 按工序名/位置猜（「外帘⇒set」）会在这里红")
+                .isEqualTo("set");
+        assertThat(steps.get(1).get("scope")).isEqualTo("position");
+    }
+
+    @Test
+    @DisplayName("工序目录（前端列表的数据源）每项带 scope；库缺该工序时路线步骤里为 null，不猜默认值")
+    void catalogAndMissingOperationCarryScopeWithoutGuessing() {
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                opScope("op-v54-24", "外帘打卷", "外帘", "套", "set")));
+        Map<String, Object> catalog = service().catalog(TENANT);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> groups = (List<Map<String, Object>>) catalog.get("groups");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) groups.get(0).get("operations");
+        assertThat(items.get(0).get("scope")).isEqualTo("set");
+
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-x", "布帘", "韩褶", List.of("幽灵工序"))));
+        Map<String, Object> route = service().findRouting(TENANT, "布帘", "韩褶");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> steps = (List<Map<String, Object>>) route.get("operations");
+        assertThat(steps.get(0))
+                .as("库中缺该工序 ⇒ scope 为 null（不猜默认值 —— 猜出来的 scope 会让 A2 静默去重）")
+                .containsEntry("scope", null);
     }
 
     @Test

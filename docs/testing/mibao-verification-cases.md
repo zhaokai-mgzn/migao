@@ -670,7 +670,7 @@
 落库: order_phone → source=order_create; expect_phone=13800138000
 ```
 真值: ai-chat.confirm-required, order.flow
-溯源: C 端表单化交互方案 S1（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, form, interactive, order
+溯源: C 端表单化交互方案 S1（miniapp-multiturn-form-scenarios.md）；2026-09-19（issue #4384 A1 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须整条销账）：补 `precondition[product_count_for_keyword: 北欧风窗帘, expect: 1]` —— R2 按**商品名**定位下单目标，「该名字唯一」是它真正依赖且**只读**的前置（同名副本会让 agent 合理地要求澄清 ⇒ `order_create` 永不发生，而报告上只表现为 `unmatched expectation` = 看起来像 agent 不干活，归因全错）。口径与 `pre_clean` 的商品定位同一份（`_list_products_matching`），先例 = OR-014 / CH-019 / CR-001。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红，那是「硬写一条注定红的守卫」；商品维只读 ⇒ 漂移恒为 0。断言（user_inputs / expectations / data_checks / namespaces / pre_clean）原样未动、无放宽。 ｜ tags: multi_turn, form, interactive, order
 
 ### CH-011. 数据安全 - 跨用户订单查询拒绝 + 订单卡片手机号脱敏 🔴
 ```
@@ -3034,7 +3034,7 @@
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-09-19 新增（issue #4307 前端半边；契约所有者 = 后端 4308）：工艺路线配置页 /production/routings（列表 + 序列编辑 + 护栏理由逐条展示 + 缺口区 + 新建路线 + 信号映射增删改 + 新增工序）、加工单/生产明细页四态路线来源提示（default/partial/missing_route/derived）、生产管理菜单第 4 项入口。**红证**（实现前逐条红，见 data_checks 各条括号内注入法）：页面与端点消费者不存在 ⇒ 渲染断言全红；护栏理由映射未实现 ⇒ 只得到一句通用文案；菜单缺项 ⇒ 链接数 3→4 断言红；route-source 未实现 ⇒ import 即红。**未做（如实登记）**：E2E spec（需活后端与已合入的 4308 端点，登记为后续项，不在本单）；后端尚未合入 ⇒ 单测全部 mock `lib/api` 层，**不依赖真实后端**；不做拖拽编排（v1 = 从工序库选 + 上移/下移/删除，冻结口径）。关联后端 4308（本单不引用其用例文件 processing-order.yml）。 ｜ tags: processing, production, admin_web, routing, route_signals, gap_visibility, route_source
 
-## processing-order（38 case）
+## processing-order（39 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -3500,6 +3500,19 @@
 跳过: [backend-contract] 后端契约用例（迁移/表结构是服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionSourceProvenanceMigrationTest + IndustryCodesTest + tests/unit_ci_workflows/test_production_catalog_seed.py 执行
 ```
 溯源: 2026-09-19 新增（issue #4361，P1）。实现：V62 迁移（两表 source 列 + CHECK + 冻结回填 + industry 存量归一；bootstrap 终态同步；指纹登记 migration_fingerprints.json）+ 五源收敛守卫（routing.py ↔ V54∪V56∪V58 ↔ production-templates/curtain/seed.json ↔ docs/sql/schema.sql）。**未做**：不改已应用的 V54/V56/V58/V59/V60（迁移不可变，新增走 V62）；#4343 的数据修正等客户确认。 ｜ tags: processing-order, production-seed, migration, provenance
+
+### PG-039. 工序作用域 scope（V67）：外帘打卷/装袋/发货 = 套级（每樘窗一次）+ 读面逐字 + 写面可配校验 + 工序库页可见可改 🔵
+```
+数据: success=true
+数据: 判据 1·主数据正确（V67）：`production_operations` 新增 `scope VARCHAR(16) NOT NULL DEFAULT 'position'`（`ADD COLUMN IF NOT EXISTS`，幂等）+ 列注释写明 `position` = 部位级 / `set` = 套级（**每樘窗一次**）语义与 issue 号；幂等 `UPDATE ... SET scope='set' WHERE name IN ('外帘打卷','外帘装袋','外帘发货')`。终态语义 = 三道 `scope='set'`，**其余全部 `scope='position'`**（默认值兜住），由 `V54 ∪ V56` 的真实种子行名集合推演断言。`docs/sql/schema.sql` 同步终态（bootstrap 路径**不跑迁移链** ⇒ 只写迁移 = 新建库无该列，同 #3270 形态）。证据：ProductionOperationScopeMigrationTest
+数据: 判据 2·读面逐字取库：`ProductionOperationQueryService.findRouting` 返回的每道工序带 `scope`，与 `group`/`unit`/`unit_price` 同级（`operationMetaView` 一处整形，路线步骤与条件工序共用）。**注入法**：把库行的 `scope` 值改一个 ⇒ 断言跟着变（写死常量/不读库即红）。证据：ProductionOperationQueryServiceTest「findRoutingCarriesScopeVerbatimFromLibrary」+「findRoutingScopeFollowsTheLibraryRow」
+数据: 判据 3·写面可配 + 取值校验：`ProductionOperationCommandService` 的 `update`（PUT /operations/{id}）与 `create`（POST /operations）都接受 `scope`，口径与 `unit`/`unit_price`/`position` 相同（部分更新：未出现的字段不碰）；只允许 `position` / `set`，非法值 ⇒ 422 可读理由（`scope 仅支持 position/set`，照 `status 仅支持 active/disabled` 既有错误形状）。**注入法**：去掉取值校验 ⇒ 非法值落库 ⇒ 断言红。证据：ProductionOperationCommandServiceTest「updateSetsScope」「updateRejectsInvalidScope」「createDefaultsScopeToPosition」「createRejectsInvalidScope」
+数据: 判据 4·前端可见可改：工序库页 `/production/operations` 渲染「作用域」列，逐行显示 部位级/套级，且可就地改为另一档（`PUT /operations/{id}` body 带 `scope`）。**注入法**：不渲染该列 ⇒ 断言红（找不到列头/找不到该行的 scope 控件）。证据：frontend/admin-web/tests/unit/components/OperationsScopeColumn.test.tsx
+数据: **红证（实现前实测，本机）**：① `ProductionOperationScopeMigrationTest` 因 V67 文件不存在而红（判据 1 无列 ⇒ 红）；② `ProductionOperationQueryServiceTest` 的 scope 断言得 `expected \"set\" but was null`（读面不返回 scope）；③ `ProductionOperationCommandServiceTest` 的非法值用例得「没有异常抛出」（写面零校验）；④ `OperationsScopeColumn.test.tsx` 得找不到「作用域」列头。
+数据: **未做（如实登记，避免把半截当完整交付）**：① **不做 A2** —— **不改** `ProcessingOrderService.buildPositionPayload`（套级工序按 `craftLineId` 组去重）；A2 依赖包 D（#4387 布行与纱行同组）先合，且与 D 同文件 ⇒ 本包不交付「套级去重生效」（A2 未落地时去重无从谈起，硬写 = 空断言）；② **不改** `backend/ai-agent-service/**`（用户裁定「Agent 层面先别碰」，缺口登记在 #4390）。
+跳过: [backend-contract] 后端契约 + 前端页面结构用例（迁移/表结构/服务层/页面渲染，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionOperationScopeMigrationTest + ProductionOperationQueryServiceTest + ProductionOperationCommandServiceTest + frontend/admin-web/tests/unit/components/OperationsScopeColumn.test.tsx 执行
+```
+溯源: 2026-09-19 新增（issue #4384 A1，P0）。用户裁定：套级工序先按「每樘窗一次」实现，打卷是否每帘一次留成可配。实现：V67 迁移（scope 列 + 列注释 + 幂等回填 三道外帘工序 = set；bootstrap 终态同步；指纹登记 migration_fingerprints.json）+ ProductionOperation.scope + 读面 operationView/operationMetaView 带 scope + 写面 update/create 可配且取值校验 + 前端工序库页「作用域」列可就地改。**未做**：A2（ProcessingOrderService 套级去重，等包 D #4387）与 Agent 侧（#4390）。 ｜ tags: processing-order, production, operations, scope, migration
 
 ## 商品域（25 case）
 
@@ -4669,8 +4682,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：340（活跃 162，跳过 178）
-- tier 分布：smoke 10 / normal 297 / adversarial 33
+- 用例总数：341（活跃 162，跳过 179）
+- tier 分布：smoke 10 / normal 298 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4689,7 +4702,7 @@
 - ontology：4
 - 订单域：30
 - 加工项域：14
-- processing-order：38
+- processing-order：39
 - 商品域：25
 - registry：1
 - 设置域：10
@@ -4762,6 +4775,7 @@
 - PG-038: 加工单并入生产管理组 —— 与生产看板合并为单一入口（消除重复入口 + 分组/权限口径对齐）
 - PG-036: 生产种子模板：受控行业 code 归一 + 模板目录 + 幂等套用 + 开租自动套用（other 不套用且显式说明）
 - PG-037: provenance 迁移（V62）：source 列 + 冻结回填映射（占位待确认 30 工序+6 路线 / 推算 5 工序+3 路线 / 实证空集）+ industry 存量归一
+- PG-039: 工序作用域 scope（V67）：外帘打卷/装袋/发货 = 套级（每樘窗一次）+ 读面逐字 + 写面可配校验 + 工序库页可见可改
 - PP-007: 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）
