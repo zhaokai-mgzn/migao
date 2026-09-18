@@ -288,8 +288,11 @@ describe('加工费管理页（issue #4386）', () => {
     const entry = production!.children.find((c) => c.path === '/production/processing-fees')
     expect(entry).toBeDefined()
     expect(entry!.permissionCode).toBe('processing:manage')
-    // #4383 的生产管理组归并结果必须仍在（本包只**追加**一项，不重排既有项）
+    // 生产管理组归并结果必须仍在（本包只**追加**一项，不重排既有项）
+    // ⚠️ issue #4416：原第 2 项「工序库」与第 3 项「工艺路线」已合并为「工艺配置」⇒
+    //    /production/operations **不再是**菜单项（页面改为重定向，旧深链仍可达）
     expect(production!.children.map((c) => c.path)).toContain('/production/routings')
-    expect(production!.children.map((c) => c.path)).toContain('/production/operations')
+    expect(production!.children.map((c) => c.name)).toContain('工艺配置')
+    expect(production!.children.map((c) => c.path)).not.toContain('/production/operations')
   })
 })

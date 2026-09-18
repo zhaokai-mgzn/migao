@@ -19,6 +19,9 @@ const mockGetRoutings = vi.fn()
 const mockUpdateOperation = vi.fn()
 const mockGetSeedTemplates = vi.fn()
 const mockApplySeedTemplate = vi.fn()
+// issue #4416：工序库并入「工艺配置」单页 ⇒ 该页还会拉缺口/信号两条只读端点
+const mockGetRoutingGaps = vi.fn()
+const mockGetRouteSignals = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   productionApi: {
@@ -27,11 +30,13 @@ vi.mock('@/lib/api', () => ({
     updateOperation: (...args: unknown[]) => mockUpdateOperation(...args),
     getSeedTemplates: (...args: unknown[]) => mockGetSeedTemplates(...args),
     applySeedTemplate: (...args: unknown[]) => mockApplySeedTemplate(...args),
+    getRoutingGaps: (...args: unknown[]) => mockGetRoutingGaps(...args),
+    getRouteSignals: (...args: unknown[]) => mockGetRouteSignals(...args),
   },
 }))
 
 import { toast } from 'sonner'
-import OperationsCatalogPage from '@/app/(dashboard)/production/operations/page'
+import ProcessConfigPage from '@/app/(dashboard)/production/routings/page'
 
 /** 库口径：后道那三道外帘工序是**套级**（每樘窗一次），裁剪/车位是部位级。 */
 const CATALOG = {
@@ -109,12 +114,14 @@ describe('工序库页「作用域」列（issue #4384 A1）', () => {
     mockUpdateOperation.mockReset().mockResolvedValue(ok({ id: 'op-v54-24', scope: 'position' }))
     mockGetSeedTemplates.mockReset().mockResolvedValue(ok([]))
     mockApplySeedTemplate.mockReset()
+    mockGetRoutingGaps.mockReset().mockResolvedValue(ok({ unrouted_operations: [], signal_keys_without_route: [] }))
+    mockGetRouteSignals.mockReset().mockResolvedValue(ok({ total: 0, signals: [] }))
     vi.mocked(toast.success).mockClear()
     vi.mocked(toast.error).mockClear()
   })
 
   it('判据 4a：工序目录渲染「作用域」列（列头存在）', async () => {
-    render(<OperationsCatalogPage />)
+    render(<ProcessConfigPage />)
 
     await waitFor(() => expect(screen.getByTestId('operation-row-op-v54-24')).toBeInTheDocument())
     // 红证（实现前实测）：列头不存在 ⇒ getByRole('columnheader', { name: '作用域' }) 抛
@@ -128,7 +135,7 @@ describe('工序库页「作用域」列（issue #4384 A1）', () => {
   })
 
   it('判据 4b：逐行渲染**库里的真实取值**（外帘三道 = 套级；精裁-布 = 部位级）', async () => {
-    render(<OperationsCatalogPage />)
+    render(<ProcessConfigPage />)
 
     await waitFor(() => expect(screen.getByTestId('operation-row-op-v54-24')).toBeInTheDocument())
 
@@ -143,7 +150,7 @@ describe('工序库页「作用域」列（issue #4384 A1）', () => {
   })
 
   it('判据 4c：可就地改档 —— 套级改回部位级 ⇒ PUT 只提交 { scope }（不带单价等无关字段）', async () => {
-    render(<OperationsCatalogPage />)
+    render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('operation-row-op-v54-24')).toBeInTheDocument())
 
     await userEvent.selectOptions(scopeControl('op-v54-24'), 'position')
@@ -157,7 +164,7 @@ describe('工序库页「作用域」列（issue #4384 A1）', () => {
   })
 
   it('判据 4d：可双向改 —— 部位级改成套级 ⇒ PUT { scope: "set" }', async () => {
-    render(<OperationsCatalogPage />)
+    render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('operation-row-op-v54-01')).toBeInTheDocument())
 
     await userEvent.selectOptions(scopeControl('op-v54-01'), 'set')
@@ -169,7 +176,7 @@ describe('工序库页「作用域」列（issue #4384 A1）', () => {
 
   it('判据 4e：写失败不假装成功（报错且不弹成功 toast）', async () => {
     mockUpdateOperation.mockRejectedValueOnce(new Error('boom'))
-    render(<OperationsCatalogPage />)
+    render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('operation-row-op-v54-24')).toBeInTheDocument())
 
     await userEvent.selectOptions(scopeControl('op-v54-24'), 'position')
