@@ -3,6 +3,7 @@ import { View, ScrollView, Text } from '@tarojs/components'
 import type { Message } from '../../types'
 import MessageBubble from './MessageBubble'
 import TypingIndicator from './TypingIndicator'
+import RecommendChips from './RecommendChips'
 import { useAuthStore } from '../../store/authStore'
 import { buildBotName } from '../../utils/brand'
 import './MessageList.scss'
@@ -58,6 +59,8 @@ export default function MessageList({ messages, isStreaming, onInteract }: Messa
           <Text className='message-list__empty-text'>
             你的专属智能购物助手{'\n'}查订单、找产品、了解窗帘知识，都可以问我
           </Text>
+          {/* 顶部横滑推荐胶囊（瑞幸式，纯前端策划文案）：点一下即以对话形式发起推荐/查询 */}
+          {onInteract && <RecommendChips onPick={onInteract} />}
         </View>
       </View>
     )
