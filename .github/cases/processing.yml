@@ -28,6 +28,18 @@ cases:
         args:
           action: add
       - tool: processing_item_query
+    # ── 效果层断言（issue #4230 的 burn-down 缴费；修 CASE-TRUST-NO-EFFECT-ASSERTION）──
+    # 病根（`assertion_taxonomy` 规则 a / #3778「调用了 ≠ 成了」）：本用例此前**只有工具名期望**
+    # + 散文 `data_checks`（"data.pageMeta != null"）⇒ `product_processing_item_manage` 返回
+    # `success=false`（如 `processing_item_not_found` / 权限拒绝）也照样判 ✅。
+    # 修法 = **行为层**（非纸面）：加 `must_succeed` 断「至少一次真的 add 成功」，
+    # 且按 `action: add` 过滤（同工具别的 action 成功不能顶替，见 `local_runner.check_must_succeed`
+    # 的 issue #3681 语义）。这是**运行期**判据 —— 该用例非 skip（`skip_reason: ""`）⇒ 真会跑。
+    # 确定性证据（覆盖该行为的测试方法）：`test_tools_product_processing_item_manage.py::TestExecute::test_add_items_success`
+    #   —— 断言 `result.success is True` 且 `client.patch.assert_awaited_once()`。
+    must_succeed:
+      - tool: product_processing_item_manage
+        action: add
     data_checks:
       - "data.pageMeta != null"
     pre_clean:
@@ -52,10 +64,11 @@ cases:
         source: "遮光窗帘"
         expect: 1
     skip_reason: ""
-    merge_log: "eval P004 + verification 2.13（查询部分同义）+ 2.14 的查询段；2026-09-14 校准（#3538）：① 输入去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 澄清查无此价 → 流程不前进），自包含化同 AS-003（#3511）/CR-001/PR-005/PR-007/PR-021（#3518）先例；② pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子 ¥168 的栈上恒不匹配）"
+    merge_log: "eval P004 + verification 2.13（查询部分同义）+ 2.14 的查询段；2026-09-14 校准（#3538）：① 输入去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 澄清查无此价 → 流程不前进），自包含化同 AS-003（#3511）/CR-001/PR-005/PR-007/PR-021（#3518）先例；② pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子 ¥168 的栈上恒不匹配）；2026-09-18 burn-down 缴费（issue #4230）：补 `must_succeed[product_processing_item_manage(action=add)]` 修 CASE-TRUST-NO-EFFECT-ASSERTION（此前只有工具名期望 + 散文 data_checks ⇒ 写工具返回 success=false 也判 ✅）；**这是行为层修复、不是纸面修复**（该用例 `skip_reason: \"\"` ⇒ 真会跑，断言由 runner 运行期判定）；确定性证据 = test_tools_product_processing_item_manage.py::TestExecute::test_add_items_success（断言 result.success is True + client.patch.assert_awaited_once）；断言只增不减：未改 expectations / data_checks / pre_clean / precondition 任何一条"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"
+        - "backend/ai-agent-service/tests/test_tools_product_processing_item_manage.py"
       ci:
         - agent-eval.yml
       verifies: []

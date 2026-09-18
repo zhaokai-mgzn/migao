@@ -2830,9 +2830,10 @@
 期望: processing_item_query
 数据: data.pageMeta != null
 清理: product_dedupe(product_keyword=遮光窗帘)
+必须成功: product_processing_item_manage(add)
 ```
 真值: processing-manage.crud, processing-manage.category-sort
-溯源: eval P004 + verification 2.13（查询部分同义）+ 2.14 的查询段；2026-09-14 校准（#3538）：① 输入去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 澄清查无此价 → 流程不前进），自包含化同 AS-003（#3511）/CR-001/PR-005/PR-007/PR-021（#3518）先例；② pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子 ¥168 的栈上恒不匹配） ｜ tags: processing_item, pagination
+溯源: eval P004 + verification 2.13（查询部分同义）+ 2.14 的查询段；2026-09-14 校准（#3538）：① 输入去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 澄清查无此价 → 流程不前进），自包含化同 AS-003（#3511）/CR-001/PR-005/PR-007/PR-021（#3518）先例；② pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子 ¥168 的栈上恒不匹配）；2026-09-18 burn-down 缴费（issue #4230）：补 `must_succeed[product_processing_item_manage(action=add)]` 修 CASE-TRUST-NO-EFFECT-ASSERTION（此前只有工具名期望 + 散文 data_checks ⇒ 写工具返回 success=false 也判 ✅）；**这是行为层修复、不是纸面修复**（该用例 `skip_reason: \"\"` ⇒ 真会跑，断言由 runner 运行期判定）；确定性证据 = test_tools_product_processing_item_manage.py::TestExecute::test_add_items_success（断言 result.success is True + client.patch.assert_awaited_once）；断言只增不减：未改 expectations / data_checks / pre_clean / precondition 任何一条 ｜ tags: processing_item, pagination
 
 ### PP-002. 加工项分类列表 🔵
 ```
