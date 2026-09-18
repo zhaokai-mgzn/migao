@@ -24,7 +24,7 @@
   且判据 3 的断言是**判别性**的：若实现只把 `_qty_for` 原样透传（引擎对未知工序/单位默认按「米」读
   `fabric_meters`）⇒ 未知工序会得到 12.3、「个」类会得到 12.3，本断言仍红；
 - 判据 4：未实现 ⇒ 404 ⇒ `resp.json()["data"]` KeyError/断言红；
-- 键漂移门禁（`TestSourceKeysDriftGate`）：`routing.QTY_SOURCE_KEYS`/`DIRECT_QTY_KEYS` 未定义 ⇒
+- 键漂移门禁（`TestSourceKeysDriftGate`）：`routing.KNOWN_QTY_UNITS`/`DIRECT_QTY_KEYS`/`_qty_keys_for_unit` 未定义 ⇒
   import 即红（Collection Error）；把「孔」分支②（按米估算）错标 fallback ⇒
   `test_hole_estimate_is_not_reported_as_placeholder_fallback` 红。
 """
@@ -41,16 +41,17 @@ from app.production.routing import (
     HOLE_KEYS,
     HOLE_PER_METER,
     METER_KEYS,
+    KNOWN_QTY_UNITS,
     OPERATION_CATALOG,
-    QTY_SOURCE_KEYS,
     _qty_for,
+    _qty_keys_for_unit,
     qty_and_source,
 )
 
 ENDPOINT = "/api/internal/production/operation-qty"
 
 # 引擎认识的单位（`_qty_for` 有分支的口径）；其余单位（如「个」）按铁律 3 走 fallback
-KNOWN_UNITS = set(QTY_SOURCE_KEYS)
+KNOWN_UNITS = set(KNOWN_QTY_UNITS)
 
 POSITION_NAME = "2699系列雪尼尔窗帘面料"
 OPERATIONS = ["精裁-布", "布三边", "韩褶-布", "外帘装袋"]
@@ -307,11 +308,18 @@ class TestSourceKeysDriftGate:
         for operation, meta in OPERATION_CATALOG.items():
             source = _source(operation, CALC_INFO)
             if meta["unit"] in KNOWN_UNITS:
-                assert source in set(DIRECT_QTY_KEYS) | {"fallback"} | {
-                    key + HOLE_ESTIMATE_SUFFIX for key in QTY_SOURCE_KEYS["孔"]
+                assert source in set(DIRECT_QTY_KEYS) | {"holes", "fallback"} | {
+                    key + HOLE_ESTIMATE_SUFFIX for key in _qty_keys_for_unit("孔")
                 }
             else:
                 assert source == "fallback", f"{operation}（{meta['unit']}）应走 fallback"
+
+    def test_declared_units_all_have_candidate_keys(self):
+        """声明过的单位必须真有候选键（删掉 `_qty_keys_for_unit` 的某个分支 ⇒ 红）。"""
+        for unit in KNOWN_QTY_UNITS:
+            assert _qty_keys_for_unit(unit) != (), (
+                f"已声明单位 {unit} 没有候选键 ⇒ qty_source 会静默错报 fallback"
+            )
 
     def test_direct_qty_keys_are_declared_qty_keys(self):
         """「直接供数」清单必须是 `_qty_for` 读键的子集（改名/删除即红）。"""
@@ -323,11 +331,11 @@ class TestSourceKeysDriftGate:
         unit = OPERATION_CATALOG[operation]["unit"]
         if unit not in KNOWN_UNITS:
             return  # 未知单位无候选键（铁律 3 ⇒ fallback），由 test_unknown_unit_ops_are_fallback 覆盖
-        for key in QTY_SOURCE_KEYS[unit]:
+        for key in _qty_keys_for_unit(unit):
             qty = _qty_for(operation, {key: 7.0})
             assert qty != 1.0, (
                 f"{operation}（{unit}）不再读 {key}（qty=1.0 兜底值）"
-                f" ⇒ QTY_SOURCE_KEYS 与 _qty_for 已漂移"
+                f" ⇒ `_qty_keys_for_unit` 与 `_qty_for` 已漂移"
             )
 
     @pytest.mark.parametrize("operation", sorted(OPERATION_CATALOG))
@@ -337,7 +345,7 @@ class TestSourceKeysDriftGate:
         unit = OPERATION_CATALOG[operation]["unit"]
         if unit not in KNOWN_UNITS:
             return
-        for key in QTY_SOURCE_KEYS[unit]:
+        for key in _qty_keys_for_unit(unit):
             if unit == "孔":                      # holes 直采；米数键 ⇒ 每米 6 孔估算
                 expected = key if key in HOLE_KEYS else key + HOLE_ESTIMATE_SUFFIX
             elif key in DIRECT_QTY_KEYS:          # fabric_meters / pleat_count 直采
