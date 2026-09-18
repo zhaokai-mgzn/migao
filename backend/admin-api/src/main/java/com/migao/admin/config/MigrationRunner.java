@@ -6,12 +6,17 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourcePatternResolver;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLTransientConnectionException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -38,6 +43,18 @@ import java.util.stream.Collectors;
  *      而让整条链停下会让 V28 之后的 V29–V41 与单数字的 V5–V9 **全部不执行**，
  *      于是 `orders.actual_amount` 之类的列永远缺失 → admin-api 查询 500 →
  *      ai-agent 工具「服务暂时不可用」→ 熔断 → 评测被污染。
+ *      **例外（issue #4241）**：**连接类**失败不算「单条迁移失败」，见下条 —— 它必须 fail-closed。
+ *
+ * ⚠️ **失败分两类（issue #4241 实测）**：判据是**失败的性质**，不是失败发生在哪一步。
+ *   - **连接类**（`CannotGetJdbcConnectionException` / `SQLTransientConnectionException` / 连接超时等，
+ *     见 {@link #isConnectionFailure}）：库抖动是**暂时**的 ⇒ 有限次退避重试；重试耗尽
+ *     **抛错让应用启动失败**（`MigrationConnectionFailureException`）。
+ *     旧行为是 fail-open：`ensureHistoryTable` 拿不到连接 ⇒ 整轮迁移被外层 catch 吞掉、
+ *     **一条都不跑**，而 `/actuator/health` 照报 UP ⇒ 新迁移没落库、业务端点随机 500
+ *     （实测改工序单价 500「relation "production_operation_price_versions" does not exist」，
+ *     DB 恢复后**重启一次即好**），且启动后永不重试 ⇒ 抖动窗口过去也不会自愈。
+ *   - **内容类**（SQL 语法/约束，即 `execute` 抛的 `DataAccessException` 子类）：维持既有语义
+ *     **逐字不变**（跳过该条 + 继续其余 + 记账 + ERROR，见下条），**不重试、不拒启动**。
  *
  * ⚠️ **失败分级（issue #3714）**：bootstrap-first 评测栈上，`KNOWN_BENIGN_LEGACY` 里那几条
  * 已诊断的**历史非幂等**迁移**每次起栈必失败**（目标态已由 `docs/sql/schema.sql` 建出，
@@ -60,6 +77,21 @@ public class MigrationRunner implements CommandLineRunner {
     @Value("${migao.migration.locations:classpath:db/migration/*.sql}")
     private String migrationPattern;
 
+    /**
+     * 连接类失败的重试上限（含首次尝试）。连接抖动是**暂时**的，重试能自愈；
+     * 上限则保证「持续连不上」不会把启动无限挂死。
+     * 默认 5 次 + 退避（2s/4s/8s/10s）⇒ 最坏 ~24s 后 fail-closed。
+     */
+    @Value("${migao.migration.connect-retry.max-attempts:5}")
+    private int maxConnectAttempts = 5;
+
+    /** 连接类失败首次重试前的退避毫秒数（逐次翻倍，封顶 {@link #MAX_BACKOFF_MS}）。 */
+    @Value("${migao.migration.connect-retry.backoff-ms:2000}")
+    private long connectRetryBackoffMs = 2000;
+
+    /** 退避封顶（防指数退避把启动拖长）。 */
+    private static final long MAX_BACKOFF_MS = 10_000L;
+
     public MigrationRunner(ObjectProvider<JdbcTemplate> jdbcProvider, ResourcePatternResolver resolver) {
         this.jdbcProvider = jdbcProvider;
         this.resolver = resolver;
@@ -73,46 +105,141 @@ public class MigrationRunner implements CommandLineRunner {
             return;
         }
 
-        try {
-            ensureHistoryTable(jdbc);
-            Resource[] resources = resolver.getResources(migrationPattern);
-            // 按文件名升序执行（V1 < V2 < ... < V30）：getResources 的返回顺序
-            // 取决于 classpath 扫描（JAR 内 zip 遍历序），曾实测返回逆序——
-            // 若依赖该顺序，V29 重建表会在 V30 种子之后执行，导致种子被 DROP 清空。
-            Arrays.sort(resources, Comparator.comparing(Resource::getFilename,
-                    Comparator.nullsLast(MIGRATION_ORDER)));
-            List<String> applied = getAppliedMigrations(jdbc);
-
-            List<String> failed = new ArrayList<>();
-            for (Resource r : resources) {
-                String filename = r.getFilename();
-                if (filename == null) continue;
-                if (applied.contains(filename)) continue;
-
-                log.info("🔄 执行迁移: {}", filename);
+        for (int attempt = 1; ; attempt++) {
+            try {
+                migrate(jdbc);
+                return;
+            } catch (Exception e) {
+                if (!isConnectionFailure(e)) {
+                    // 既有语义**逐字不变**（issue #3714/#3615 口径）：内容类失败不抛异常，允许应用继续启动
+                    log.error("❌ 迁移失败", e);
+                    return;
+                }
+                if (attempt >= maxConnectAttempts) {
+                    // fail-closed（issue #4241）：拿不到连接时**绝不能**让应用以 healthy 状态起来服务 ——
+                    // 那会让 /actuator/health 谎报 UP、把故障面后移到业务 500
+                    // （实测：一条迁移都没跑 ⇒ 改工序单价 500「relation ... does not exist」，重启即好），
+                    // 且启动后永不重试 ⇒ 抖动窗口过去也不会自愈。
+                    // 抛错 = 启动失败 = 编排/部署层能看见的信号（Spring 记 `Application run failed`
+                    // 并把异常抛给 main ⇒ 进程非 0 退出，`docker compose up --wait` 直接失败）。
+                    log.error("❌ 迁移失败（连接类）：已尝试 {} 次仍拿不到 DB 连接 —— 拒绝以「schema 未知」状态启动",
+                            attempt, e);
+                    throw new MigrationConnectionFailureException(
+                            "数据库迁移失败（连接类失败，重试 " + attempt + " 次耗尽）—— 拒绝启动", e);
+                }
+                long backoffMs = Math.min(connectRetryBackoffMs << (attempt - 1), MAX_BACKOFF_MS);
+                log.warn("⚠️ 迁移失败（连接类，第 {}/{} 次尝试）：{} —— {}ms 后退避重试",
+                        attempt, maxConnectAttempts, rootCause(e), backoffMs);
                 try {
-                    String sql = readResource(r);
-                    jdbc.execute(sql);
-                    recordMigration(jdbc, filename);
-                    log.info("✅ 迁移完成: {}", filename);
-                } catch (Exception e) {
-                    // 单条失败**只跳过这一条**，继续跑后面的 —— 一条坏迁移不得冻结整个 schema。
-                    // 实测（issue #3270）：V28 失败后整链中断，V29–V41 与 V5–V9 全未执行，
-                    // 于是 orders.actual_amount 等列永远缺失、admin-api 500、
-                    // 评测被熔断污染，而日志里只有一行 ERROR，没人发现。
-                    failed.add(filename);
-                    if (isKnownBenignLegacy(filename)) {
-                        log.info("ℹ️ 迁移失败（已知存量非幂等，目标态已达成，无需修复）: {} — {}",
-                                filename, KNOWN_BENIGN_LEGACY.get(filename));
-                    } else {
-                        log.error("❌ 迁移失败（已跳过，继续执行其余迁移）: {}", filename, e);
-                    }
+                    Thread.sleep(backoffMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new MigrationConnectionFailureException("迁移重试等待被中断 —— 拒绝启动", ie);
                 }
             }
-            reportFailures(failed);
-        } catch (Exception e) {
-            log.error("❌ 迁移失败", e);
-            // 不抛异常 — 允许应用继续启动（迁移可能已在 DB 执行过）
+        }
+    }
+
+    /**
+     * 跑**一轮**迁移。可安全重入（连接类失败重试即「从中断处续跑」）：
+     * 已记账的迁移在下一轮被 `applied.contains` 跳过，不会重复执行。
+     */
+    private void migrate(JdbcTemplate jdbc) throws Exception {
+        ensureHistoryTable(jdbc);
+        Resource[] resources = resolver.getResources(migrationPattern);
+        // 按文件名升序执行（V1 < V2 < ... < V30）：getResources 的返回顺序
+        // 取决于 classpath 扫描（JAR 内 zip 遍历序），曾实测返回逆序——
+        // 若依赖该顺序，V29 重建表会在 V30 种子之后执行，导致种子被 DROP 清空。
+        Arrays.sort(resources, Comparator.comparing(Resource::getFilename,
+                Comparator.nullsLast(MIGRATION_ORDER)));
+        List<String> applied = getAppliedMigrations(jdbc);
+
+        List<String> failed = new ArrayList<>();
+        for (Resource r : resources) {
+            String filename = r.getFilename();
+            if (filename == null) continue;
+            if (applied.contains(filename)) continue;
+
+            log.info("🔄 执行迁移: {}", filename);
+            try {
+                String sql = readResource(r);
+                jdbc.execute(sql);
+                recordMigration(jdbc, filename);
+                log.info("✅ 迁移完成: {}", filename);
+            } catch (Exception e) {
+                // 连接类失败**不是**「这条迁移坏」：此刻整条链都拿不到连接，逐条吞掉只会把
+                // 「一条都没跑」记成「N 条迁移失败」并让应用照常 UP（issue #4241 的同族形态）。
+                // ⇒ 交给外层有限退避重试；重试耗尽即 fail-closed 拒绝启动。
+                if (isConnectionFailure(e)) {
+                    throw e;
+                }
+                // 单条失败**只跳过这一条**，继续跑后面的 —— 一条坏迁移不得冻结整个 schema。
+                // 实测（issue #3270）：V28 失败后整链中断，V29–V41 与 V5–V9 全未执行，
+                // 于是 orders.actual_amount 等列永远缺失、admin-api 500、
+                // 评测被熔断污染，而日志里只有一行 ERROR，没人发现。
+                failed.add(filename);
+                if (isKnownBenignLegacy(filename)) {
+                    log.info("ℹ️ 迁移失败（已知存量非幂等，目标态已达成，无需修复）: {} — {}",
+                            filename, KNOWN_BENIGN_LEGACY.get(filename));
+                } else {
+                    log.error("❌ 迁移失败（已跳过，继续执行其余迁移）: {}", filename, e);
+                }
+            }
+        }
+        reportFailures(failed);
+    }
+
+    /**
+     * 是否**连接类**失败（而非迁移内容/SQL 有错）—— 决定走「重试 + fail-closed」还是维持 #3615 跳过语义。
+     *
+     * 判据取**整条 cause 链**（驱动层异常总被 Spring 包一层）：
+     *   - `DataAccessResourceFailureException` 家族（实测 `CannotGetJdbcConnectionException`：
+     *     「Failed to obtain JDBC Connection」，Spring 对驱动层连不上/认证失败的统一翻法）
+     *     与 `SQLTransientConnectionException`（连接池拿不到连接）；
+     *   - 网络层：`ConnectException`（连不上）、`SocketTimeoutException`（连接超时）、
+     *     `UnknownHostException`（域名解析失败）—— 实测形态
+     *     `PSQLException: 尝试连线已失败。` + `Caused by: java.net.ConnectException`。
+     *
+     * ⚠️ **不得**把 `DataAccessException` 一律算连接类：那会把 #3615 已裁定的内容类失败
+     * （SQL 语法/约束）也拿去重试、并最终拒绝启动 —— 一条坏迁移冻结整个 schema，
+     * 正是 #3270 的原始病灶。
+     */
+    static boolean isConnectionFailure(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof DataAccessResourceFailureException
+                    || t instanceof SQLTransientConnectionException
+                    || t instanceof ConnectException
+                    || t instanceof SocketTimeoutException
+                    || t instanceof UnknownHostException) {
+                return true;
+            }
+            if (t.getCause() == t) {
+                break;
+            }
+        }
+        return false;
+    }
+
+    /** 最内层原因 —— 重试日志用一行说清真因（如「PSQLException: 尝试连线已失败。」）。 */
+    private static Throwable rootCause(Throwable e) {
+        Throwable t = e;
+        while (t.getCause() != null && t.getCause() != t) {
+            t = t.getCause();
+        }
+        return t;
+    }
+
+    /**
+     * 连接类失败重试耗尽 —— **拒绝以「schema 未知」状态启动**（issue #4241）。
+     *
+     * 为什么选「抛异常让启动失败」而不是「照常启动 + health 报 DOWN」：编排/部署层只认
+     * **启动成功与否**，health 是应用自己报的（实测它谎报过 UP）；runner 抛出的异常由 Spring
+     * 记为 `Application run failed` 并原样抛给 main（实测 Spring Boot 3.3.9，**不**再包一层
+     * `Failed to execute CommandLineRunner`）⇒ 进程非 0 退出 ⇒ `docker compose up --wait` 直接失败。
+     */
+    static class MigrationConnectionFailureException extends IllegalStateException {
+        MigrationConnectionFailureException(String message, Throwable cause) {
+            super(message, cause);
         }
     }
 
