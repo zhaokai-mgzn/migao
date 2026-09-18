@@ -185,7 +185,7 @@ cases:
     # 将来若解除 skip，前置不成立会以「agent 不干活」的形态出现（PG-013/CU-003 的教训），
     # 这里先把前提钉住；**不改变用例语义、不解除 skip**。
     precondition: "租户 AI 配置就位：autoHandoffKeywords=[找老板,我要投诉]、afterHoursMode=auto_reply 且当前为非营业时间（TenantAiConfig；agent-eval 栈无法设置 ⇒ 本用例 skip，行为由 tests/test_tenant_config.py 的 is_auto_handoff_trigger / is_after_hours 纯函数单测 + tests/test_tools_human_handoff.py 的降级分支覆盖）"
-    skip_reason: "纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）；2026-09-19 追加：转人工工具退场 ⇒ 原 human_handoff 断言不再有意义，降级分支改由工具直测覆盖"
+    skip_reason: "[backend-contract] 纯配置函数行为由 pytest 单测（tests/test_tenant_config.py）验证：is_auto_handoff_trigger / is_after_hours 是纯函数，其入参 config（TenantAiConfig）无法经 agent-eval 设置，非 LLM 行为，不进入 C 端评测（issue #3270 断言层归因：原 user_inputs 是断言描述而非顾客对话）；2026-09-19 追加：转人工工具退场 ⇒ 原 human_handoff 断言不再有意义，降级分支改由工具直测覆盖"
     merge_log: "POC 机器人设置集成新增；2026-09-11 标 skip —— 原输入为配置描述、断言为纯函数级，agent-eval 无法设置 config（issue #3270）；2026-09-18（issue #4085）：补 `precondition` 声明层字段（原本前置只活在 skip_reason 散文里 ⇒ CASE-TRUST-NO-PRECONDITION-ASSERTION 存量违规），语义与 skip 状态未变；2026-09-19 **退场改造**（用户裁定）：移除 human_handoff 的 expectations/must_succeed（不可满足），保留 D2 路由命中 + 非营业时间降级两条事实并改指确定性层"
     traces:
       tests:
@@ -215,7 +215,7 @@ cases:
       - "tenants.notification_enabled=false 的租户：triggerByEvent（order_created / after_sales_created / order_status_changed / after_sales_status_changed）与 triggerForTenantAdmins 直接跳过，不再产生新的自动站内信；历史通知保留"
       - "开关字段为 null（存量租户）默认视为开启，行为不变；triggerByEvent 命中规则仍正常落库"
       - "前端企业基础设置「启用系统通知」描述与实际一致：控制订单、客服等重要事件站内通知的发送；关闭后不再产生新的站内通知（历史通知保留），不再写「当前为站内通知开关」含糊文案"
-    skip_reason: "开关接线为 Java 单测验证（NotificationServiceTest）+ 前端文案 vitest，非 LLM 工具行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 开关接线为 Java 单测验证（NotificationServiceTest）+ 前端文案 vitest，非 LLM 工具行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-07 新增：企业基础设置「启用系统通知」从死开关接线为租户级自动站内信总开关（issue #3003）"
     traces:
       tests:
@@ -245,7 +245,7 @@ cases:
     data_checks:
       - "企业基础信息页仅展示基本设置（品牌设置 + 通知设置），移除 tab 切换栏；「修改密码」「登录日志」tab 及区块不再渲染（登录日志无记录、修改密码未来由短信验证码登录取代；后端/Agent 接口保留，待短信码登录落地后再评估移除）"
       - "页面副标题不再提「账号安全与登录审计」"
-    skip_reason: "纯前端 UI 隐藏由 vitest 验证（settings.test.tsx ST-010），非 LLM 工具行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 纯前端 UI 隐藏由 vitest 验证（settings.test.tsx ST-010），非 LLM 工具行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-07 新增：企业基础信息隐藏登录日志/修改密码入口（issue #3006）"
     traces:
       tests:

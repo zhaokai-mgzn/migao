@@ -75,7 +75,10 @@ REGISTERED_OWNERSHIP_GAPS = {
     "PR-014": "未声明 namespaces，且与 PR-012 同写「测试窗帘」⇒ 与 PR-012 真并行、清理互相误删（#3800）",
     "PR-015": "同 PR-014（未声明 + 同写「测试窗帘」）",
     "PR-020": "未声明 namespaces、无 pre_clean（自有名「盯防加工项价格0908」不与任何人撞车）",
-    "CH-005": "未声明 namespaces、无 pre_clean（自有名「星夜」不与任何人撞车）",
+    # CH-005 已于 2026-09-18 **真修**（补 namespaces[product_name:星夜] + pre_clean
+    # [product_remove 自有名]）⇒ 按「清单只许缩短」从本清单移除（同一处修复顺带清掉
+    # CASE-TRUST-NO-SELF-CLEAN 一条存量违规，见 .github/case-trust-baseline.json）。
+    # 留注释防被当成"漏登记"再塞回来。
 }
 
 #: 「撞种子名」的三条 —— 本 PR 已修，且**必须**保持修好状态（红证锚点见下）。

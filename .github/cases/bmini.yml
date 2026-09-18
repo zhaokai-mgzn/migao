@@ -29,7 +29,7 @@ cases:
       - "首次登录成功返回 accessToken + user（identityType=bmini）"
       - "user_identities 新增记录：identityType=bmini_app + appId=B端appid + openid + userId=员工"
       - "签发的 JWT 含 roles + permissions（与 loginBySms 同源，工具级鉴权可用）"
-    skip_reason: "纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "issue #2977 B 端手机版登录设计新增"
     traces:
       tests:
@@ -58,7 +58,7 @@ cases:
     data_checks:
       - "已有绑定时不调用 getPhoneNumber（无需 phoneCode）"
       - "返回同一员工账号的 accessToken + user"
-    skip_reason: "纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "issue #2977 B 端手机版登录设计新增"
     traces:
       tests:
@@ -89,7 +89,7 @@ cases:
       - "业务错误：手机号未匹配员工账号（不得建号、不得返回 token）"
       - "不向 users / user_identities 写入任何新记录"
       - "仅匹配到 customer 角色账号时同样拒绝（员工专属门禁）"
-    skip_reason: "纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "issue #2977 B 端手机版登录设计新增"
     traces:
       tests:
@@ -117,7 +117,7 @@ cases:
       - "非 skipAuth 请求头含 Authorization: Bearer <token>"
       - "401 响应清除本地 Token 并跳转登录页"
       - "timeout/fail 类错误按指数退避重试（MAX_RETRIES 次）"
-    skip_reason: "纯前端单元测试（bmini-app tests/request.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 纯前端单元测试（bmini-app tests/request.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "issue #2977 B 端手机版基建（复制自 mini-app）"
     traces:
       tests:
@@ -147,7 +147,7 @@ cases:
       - "bminiLoginAction 成功 → isLoggedIn=true + token/user 落 storage"
       - "logout 清空 token/user/isLoggedIn（含 storage 持久化清理）"
       - "initialize 有效 token 恢复登录态；过期 token 自动 logout"
-    skip_reason: "纯前端单元测试（bmini-app tests/store-auth.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 纯前端单元测试（bmini-app tests/store-auth.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "issue #2977 B 端手机版基建（复制自 mini-app）"
     traces:
       tests:
@@ -179,7 +179,7 @@ cases:
       - "二维码容错解析 order_id：裸单号 / migao://production/<id> / 带 query 的 URL 三种形态可解析，非法输入返回 null 且不发请求"
       - "报工请求体逐字为冻结契约字段（worker_id/worker_name/qty/qualified_qty/work_type=normal），qty 默认=该工序应做数量"
       - "报工失败（success=false）展示后端 message 且不清空工序列表；order_completed=true → 页面显示「✅ 订单生产完成」"
-    skip_reason: "纯前端单元测试（bmini-app tests/production-page.test.tsx + production-qr.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 纯前端单元测试（bmini-app tests/production-page.test.tsx + production-qr.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-17 新增（issue #3997 M4-G-3）：消费 M4-G-2 冻结契约 GET/POST /api/admin/production/orders/{orderId}/operations[/{operationId}/report]；truths_ref 用 frontend-fix.no-api-change（本包不改后端 API；生产/扫码域暂无专属真值 key）"
     traces:
       tests:

@@ -28,7 +28,7 @@ cases:
       - "快照加工项含 options（生成时从加工项目录补齐，下单时未落库）"
       - "快照不含销售价（决策 2：加工单给加工方只看加工费）"
       - "联动：订单 confirmed → producing（orderService.updateOrderStatus 调用）"
-    skip_reason: "由 ProcessingOrderServiceTest 验证（generate 成功路径 + 快照 options/无价格断言）"
+    skip_reason: "[backend-contract] 由 ProcessingOrderServiceTest 验证（generate 成功路径 + 快照 options/无价格断言）"
     merge_log: "2026-09-12 新增（issue #3340）"
     traces:
       tests:
@@ -51,7 +51,7 @@ cases:
     expectations: []
     data_checks:
       - "已有非取消态加工单时重复生成 → 校验错误，拒绝（DB partial unique index 兜底）"
-    skip_reason: "由 ProcessingOrderServiceTest 验证"
+    skip_reason: "[backend-contract] 由 ProcessingOrderServiceTest 验证"
     merge_log: "2026-09-12 新增（issue #3340）"
     traces:
       tests:
@@ -76,7 +76,7 @@ cases:
     data_checks:
       - "订单无加工项（processing_info 空）→ 拒绝生成加工单"
       - "无加工项订单 confirmed→shipped 直跳仍合法（不被守卫拦截）"
-    skip_reason: "由 ProcessingOrderServiceTest + OrderServiceTest 验证"
+    skip_reason: "[backend-contract] 由 ProcessingOrderServiceTest + OrderServiceTest 验证"
     merge_log: "2026-09-12 新增（issue #3340）"
     traces:
       tests:
@@ -100,7 +100,7 @@ cases:
     expectations: []
     data_checks:
       - "pending（未付款）订单生成加工单 → 校验错误"
-    skip_reason: "由 ProcessingOrderServiceTest 验证"
+    skip_reason: "[backend-contract] 由 ProcessingOrderServiceTest 验证"
     merge_log: "2026-09-12 新增（issue #3340）"
     traces:
       tests:
@@ -124,7 +124,7 @@ cases:
     data_checks:
       - "issue（发加工，可填加工方/交期）→ issued；start → in_processing；complete → completed"
       - "complete 后订单保持 producing（不自动 shipped，发货需物流单号）"
-    skip_reason: "由 ProcessingOrderServiceTest 验证"
+    skip_reason: "[backend-contract] 由 ProcessingOrderServiceTest 验证"
     merge_log: "2026-09-12 新增（issue #3340）"
     traces:
       tests:
@@ -147,7 +147,7 @@ cases:
     expectations: []
     data_checks:
       - "非法流转（generated→completed / completed 上任何变更）→ 校验错误"
-    skip_reason: "由 ProcessingOrderServiceTest 验证"
+    skip_reason: "[backend-contract] 由 ProcessingOrderServiceTest 验证"
     merge_log: "2026-09-12 新增（issue #3340）"
     traces:
       tests:
@@ -172,7 +172,7 @@ cases:
     expectations: []
     data_checks:
       - "取消加工单（必填原因）→ cancelled + 订单 producing→confirmed 回退（重新可生成）"
-    skip_reason: "由 ProcessingOrderServiceTest 验证"
+    skip_reason: "[backend-contract] 由 ProcessingOrderServiceTest 验证"
     merge_log: "2026-09-12 新增（issue #3340）"
     traces:
       tests:
@@ -195,7 +195,7 @@ cases:
     expectations: []
     data_checks:
       - "cancel 不填原因 → 校验错误"
-    skip_reason: "由 ProcessingOrderServiceTest 验证"
+    skip_reason: "[backend-contract] 由 ProcessingOrderServiceTest 验证"
     merge_log: "2026-09-12 新增（issue #3340）"
     traces:
       tests:
@@ -227,7 +227,7 @@ cases:
       # （异常消息「须先完成加工单」+ verify(orderMapper, never()/once)）写成机器可判形态。
       # 与 #4117 的完工语义串联：completed 加工单由**生产完工**（report 必完全绿）置位。
       - "机器判据（未被调用）：countCompletedByOrderId=0 时 updateOrderStatus(shipped) 抛校验错误「须先完成加工单」且 orderMapper.update 未被调用（订单状态未被写）；countCompletedByOrderId=1 时放行、orderMapper.update 被调用（落 shipped）—— 由 OrderServiceTest 的 verify(never)/verify 与异常消息断言，非散文"
-    skip_reason: "由 OrderServiceTest + AgentOrderServiceTest 验证"
+    skip_reason: "[backend-contract] 由 OrderServiceTest + AgentOrderServiceTest 验证"
     merge_log: "2026-09-12 新增（issue #3340）；2026-09-18（#4117 关联）：补一条机器计分型 data_check —— 原三条均为纯散文，计分断言数 = 0（expectations 空 + 无机器计分型 data_check）⇒ 恒绿形态（CASE-TRUST-EMPTY-ASSERTION）；改写为机器可判形态，断言语义**未放宽**（仍是「无 completed 加工单 → 拦截；有 → 放行」两条）。"
     traces:
       tests:
@@ -253,7 +253,7 @@ cases:
     data_checks:
       - "取消订单时加工单为 generated → 加工单自动 cancelled（原因：订单取消自动作废）+ 订单正常取消"
       - "取消订单时加工单 issued 及以上 → 校验错误拦截（须先处理加工单）"
-    skip_reason: "由 OrderServiceTest 验证"
+    skip_reason: "[backend-contract] 由 OrderServiceTest 验证"
     merge_log: "2026-09-12 新增（issue #3340）"
     traces:
       tests:
@@ -276,7 +276,7 @@ cases:
     expectations: []
     data_checks:
       - "B 租户查询 A 租户加工单 → notFound（resolve 条件含 tenant_id）"
-    skip_reason: "由 ProcessingOrderServiceTest 验证"
+    skip_reason: "[backend-contract] 由 ProcessingOrderServiceTest 验证"
     merge_log: "2026-09-12 新增（issue #3340）"
     traces:
       tests:
@@ -303,7 +303,7 @@ cases:
       - "schema.yaml intent_ownership 登记 processing_order_generate/query/update（route_key=order，agents=[mibao]）"
       - "check_intent_ownership 双端视图对齐：mibao 映射含三 intent，xiaobu 不含"
       - "order skill prompt（references/prompts/order.md）含加工单工具使用规则（快照快照校验：快照长度上限）"
-    skip_reason: "由 test_ontology_contract.py + test_prompt_snapshots.py 验证（契约层，非 LLM 行为）"
+    skip_reason: "[backend-contract] 由 test_ontology_contract.py + test_prompt_snapshots.py 验证（契约层，非 LLM 行为）"
     merge_log: "2026-09-12 新增（issue #3340）"
     traces:
       tests:
@@ -413,7 +413,7 @@ cases:
       - "AgentOrderUpdateRequest 字段集固定为 {action,status,logisticsCompany,trackingNumber,cancelReason,refundAmount,refundReason}，不含 items 类字段"
       - "订单明细唯一写入点：创建时 insert；整单删除仅限 pending（此时不可能存在加工单）"
       - "约束失效即失败：若将来引入明细编辑入口，本用例失败 → 必须同步启用发货守卫覆盖校验（#3352 选项 B）"
-    skip_reason: "由 OrderItemImmutabilityTest（反射 tripwire，无 Spring 上下文）验证"
+    skip_reason: "[backend-contract] 由 OrderItemImmutabilityTest（反射 tripwire，无 Spring 上下文）验证"
     merge_log: "2026-09-12 新增（#3352 决策 C）：加工项创建后不可改 → 加工单快照不会与订单漂移"
     traces:
       tests:
@@ -703,7 +703,7 @@ cases:
       - "租户隔离与软删：订单/工序实例/报工记录均按 tenant_id + deleted=0 过滤；跨租户订单或不属于该订单加工单的工序 → 404，且不落报工明细"
       - "订单解析三形态（issue #4005）：GET/报工/计件的 {orderId} 路径参数支持 ① 内部 order_id ② 订单号 order_no（手输纸质单号）③ 加工单 qr_token（M4-H 打印任务卡二维码的取值来源）——三级都不中才 404；租户隔离/deleted 过滤逐级保持（证据：ProductionServiceTest 3 项 + ProductionControllerTest「路径参数=qr_token」1 项）"
       - "Agent 冻结契约（并行包消费）：GET /api/admin/agent/production/progress?order_no= 返回键集固定 {order_no,status,status_text,progress_percent,current_operation,pending_operations,total_operations,done_operations,expected_delivery_date}；GET /piecework?worker_name=&period=YYYY-MM 返回 {worker_name,period,total,details:[{operation,qty,amount}]}（缺键/改名即红）"
-    skip_reason: "后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionControllerTest / AgentProductionControllerTest（MockMvc，含返回键集冻结断言）/ ProductionServiceTest（服务层语义）/ Mapper 契约测试（实体 ↔ V49 迁移 ↔ docs/sql/schema.sql 三源收敛）/ ProductionReportingMigrationTest（迁移与 qr_token 索引）"
+    skip_reason: "[backend-contract] 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionControllerTest / AgentProductionControllerTest（MockMvc，含返回键集冻结断言）/ ProductionServiceTest（服务层语义）/ Mapper 契约测试（实体 ↔ V49 迁移 ↔ docs/sql/schema.sql 三源收敛）/ ProductionReportingMigrationTest（迁移与 qr_token 索引）"
     merge_log: "2026-09-17 新增（issue #3995，M4-G-2）：生产报工后端落地 —— V49 迁移（production_operations / production_routings / processing_position_operations / production_work_logs + processing_orders.qr_token）、ProductionService（实例化/扫码报工/必完自动完工/计件/进度）、ProductionController 与 AgentProductionController（冻结契约）。语义与 M4-G-1 确定性核心（app/production/{routing,piecework}.py，issue #3993）同口径：报工三态、必完工序全绿判定、计件排除返工/报废。2026-09-18（issue #4117，P0 修语义）：原第 3 条 data_check 把**缺陷**写成期望（「订单 status producing → completed」，而 OrderService.STATUS_TRANSITIONS 里该迁移非法、completed 是终态）⇒ 改为「完工 = 加工单置 completed（订单保持 producing）」+ 新增「完工→发货贯通」判据；修复 = ProductionService.report 走 ProcessingOrderMapper.markCompletedIfActive（活跃态原子更新），禁止生产侧直写订单状态。2026-09-18（issue #4116 剩余两半，P0-3 + P0-2）：新增「§5 四项防呆」（重复报工幂等/越站顺序门禁/数量上限拒绝/非本部位 fail-closed + CAS 原子推进 + 前端 in-flight 锁）与「工序库/工艺路线种子与只读消费者」（V54 种子 + operations-catalog/routings 端点 + 三源收敛守卫）两条 data_check；同包修掉 `_qty_for` 的契约漂移（读 `meters` 而引擎真产出是 `fabric_meters` ⇒ 米类工序应做数量恒 0），判据 = 用**引擎真产出**喂 instance_operations（tests/test_production/test_routing.py）。未做（如实登记）：生成加工单的工序来源切换、以及「每部位末道工序 is_must_finish=true」改读库 —— 待裁定。"
     traces:
       tests:

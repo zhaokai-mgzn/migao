@@ -25,7 +25,7 @@ cases:
     data_checks:
       - "refreshAccessToken() 被调用一次；原请求 headers.Authorization 更新为 Bearer <newToken>"
       - "原请求 _retry=true；通过注入的 axiosInstance 重放原请求并返回其结果"
-    skip_reason: "依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421）"
     traces:
       tests:
@@ -53,7 +53,7 @@ cases:
     data_checks:
       - "refreshAccessToken() 仅调用一次；刷新中后续请求入 failedQueue 挂起"
       - "刷新成功后队列请求以同一新 token resolve，且刷新结束后 isRefreshing=false、queueLength=0"
-    skip_reason: "依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421）"
     traces:
       tests:
@@ -81,7 +81,7 @@ cases:
     data_checks:
       - "refreshAccessToken 返回 null 或抛异常 → 全部挂起请求 reject、clearAuth() 被调用"
       - "window.location.href 置为 /login；原请求 Promise.reject（null 分支带 'Token refresh failed'，异常分支透传原错误）"
-    skip_reason: "依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421）"
     traces:
       tests:
@@ -109,7 +109,7 @@ cases:
     data_checks:
       - "URL 含 /api/auth/refresh 或 /api/auth/admin/login → reject('Authentication failed')"
       - "refreshAccessToken 不被调用；clearAuth() 被调用、window.location.href 置为 /login"
-    skip_reason: "依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    skip_reason: "[backend-contract] 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421）"
     traces:
       tests:
