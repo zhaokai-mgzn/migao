@@ -19,22 +19,22 @@
 
 - `test_declaration_only_first_hit_wins` / `test_false_positive_*` / `test_false_negative_*` /
   `test_own_file_declares_exactly_mc_012` 在**旧实现**下必红（红输出见 PR 报告）；
-- `test_repo_wide_snapshot_no_regression` 与 `test_declaration_syntax_forms` 是**防收窄过头**
-  的守门断言：其红证靠**注入收窄缺陷**（正则只留 `#`）取得 —— 不会红的断言等于空断言。
+- `test_declaration_syntax_forms` / `test_wide_declaration_forms_*` /
+  `test_no_ids_beyond_declared_lines` 是**防收窄过头 / 防凭空多出 ID** 的守门断言：
+  其红证靠**注入缺陷**（正则退回只认 `#`）取得 —— 不会红的断言等于空断言。
 
-## 快照来源（`_growth_gate_case_ids_snapshot.json`）
+## 全仓守门为什么**不用快照**（返工记录，CI run 35317165332）
 
-**改动实现之前**用旧实现对全仓 `git ls-files` 里的测试文件（`_is_test_file` 过滤）跑一遍落盘：
-
-    python3 -c "import sys,json,subprocess,os; sys.path.insert(0,'.github');
-    import growth_gate as g;
-    fs=[f for f in subprocess.run(['git','ls-files'],capture_output=True,text=True).stdout.split() if f and g._is_test_file(f) and os.path.exists(f)];
-    json.dump({f:v for f,v in ((f,g.extract_case_ids(f)) for f in sorted(fs)) if v},
-              open('tests/unit_ci_workflows/_growth_gate_case_ids_snapshot.json','w'),
-              ensure_ascii=False, separators=(',',':'), sort_keys=True)"
+首版用「改动前对全仓文件集的提取结果」落成 `_growth_gate_case_ids_snapshot.json` 做基准，
+**必然腐烂**：基准按**可变键**（某时刻的文件集 + 每行 ID 的值）定位被测对象 ——
+main 每新增/修改一条 `case_ids` 声明就误报（实证：`ProcessingOrderServiceTest.java` 的声明行
+被 #4263 加上 `PG-022/PG-023` ⇒ merge commit 上「值与快照不同」⇒ 判成"未登记的回归"）。
+这正是 `migao-dev-flow` §18「读的是快照，按可变键定位被测对象」与 §19.1「基于错误真相模型
+写出的护栏 = 永远红」。现改为**运行期自算、与文件集/ID 值增减无关**的不变式：
+逐行拿「宽口径声明形态全集」去要求新实现，反向再要求"不得多出声明行之外的 ID"。
 """
 import importlib.util
-import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -42,18 +42,21 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GATE_PY = REPO_ROOT / ".github" / "growth_gate.py"
-SNAPSHOT = Path(__file__).with_name("_growth_gate_case_ids_snapshot.json")
 
-# 允许与改动前快照**不同**的文件：两者都是本缺陷的**活实例**，期望值 = 修复后的确切结果。
-# 变化只允许是「收窄」（新 ⊆ 旧）且非空 —— 合法声明绝不允许退化成「未声明」。
-_INTENDED_NARROWING = {
-    # 第 10 行 docstring 里 `case_ids = AS-003, ...`（无注释标记的示例文本）被旧实现当声明累积。
-    "tests/unit_ci_workflows/test_behavior_mapping_tool_coverage.py": ["PR-006", "PR-018"],
-    # 曾**两处**声明（docstring 内 + 代码注释），旧实现取并集并留重复项；现合并为单一声明行，
-    # ID 集合**一个不少**（DF-008 / AS-007 都保留）。
-    "backend/ai-agent-service/tests/test_after_sales_manage.py":
-        ["AS-001", "AS-002", "AS-004", "AS-007", "DF-008"],
-}
+# 宽口径 = 「合法声明形态全集」（由全仓枚举得出，与被测正则**各自独立**）：
+# `# case_ids:` / `// case_ids=` / `// case_ids=[...]` / JSDoc 块注释续行 ` * case_ids:`。
+_WIDE_LINE_RE = re.compile(r"^\s*(?:#|//|\*)\s*case_ids\s*[:=]")
+_WIDE_MARKERS = ("#", "//", "*")
+
+# 已登记的**豁免**（impl 与宽口径参考的已知差异）：键 = 文件，值 = (期望 ID, 为什么那处不是合法声明)。
+# 当前**为空**：两条候选实例在**新判据**下都不需要豁免 ——
+#   · `test_behavior_mapping_tool_coverage.py` 的 docstring 示例行（`    case_ids = AS-003, …`）
+#     **不是**宽口径声明行（无注释标记）⇒ 参考实现也不认它；
+#   · `test_after_sales_manage.py` 的两处声明已合并为单行 ⇒ 首行即真声明。
+# §19.1「存量基线只许缩短」：要新增豁免必须**同时下调** `_NARROWING_CEILING`，
+# 使「放宽判据」成为一次显式、可评审的动作（而不是悄悄加一行让它变绿）。
+_NARROWING: dict = {}
+_NARROWING_CEILING = 0
 
 # ── 样本文件（正文拼接构造：本文件自身要被 CI 的 --check-weak 扫描，不得出现字面弱断言）──
 
@@ -143,40 +146,94 @@ def test_declaration_syntax_forms(tmp_path, line, expected):
     assert ids == expected, f"声明形态被漏掉：{line!r} → {ids}"
 
 
-# ── ⑤ 不回归（关键）：全仓逐值对比改动前快照 ──
+# ── ⑤ 全仓不变式（运行期自算，与文件集 / ID 值增减无关）──
 
-def test_repo_wide_snapshot_no_regression():
-    """全仓测试文件的提取结果与**改动前**快照逐值相同（防「收窄过头把合法声明也漏掉」）。
+def _wide_line_ids(line):
+    """从**宽口径声明行**取 ID —— **独立实现**（字符串切分，不复用被测正则）。"""
+    s = line.lstrip()
+    marker = next((m for m in _WIDE_MARKERS if s.startswith(m)), None)
+    if marker is None:
+        return None
+    rest = s[len(marker):].lstrip()
+    if not rest.startswith("case_ids"):
+        return None
+    rest = rest[len("case_ids"):].lstrip()
+    if rest[:1] not in (":", "="):
+        return None
+    rest = rest[1:].lstrip().split("]")[0].lstrip()
+    if rest.startswith("["):
+        rest = rest[1:]
+    return [t for t in (x.strip().strip("'\"") for x in rest.split(",")) if t]
 
-    快照 = 旧实现对 712 个测试文件的提取结果（生成命令见模块 docstring）。
-    只允许 `_INTENDED_NARROWING` 里的文件变化，且必须是**收窄且非空**：有声明绝不允许
-    退化成未声明（那正是本断言要拦的形态）。新增/删除的文件不在快照里，天然不影响本断言。
+
+def _declaration_lines(path):
+    """文件**前 50 行**里的宽口径声明行 → [(行号, 行文本)]（`_WIDE_LINE_RE` 独立于被测正则）。"""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return [(no, line) for no, line in enumerate(text.split("\n")[:50], 1) if _WIDE_LINE_RE.match(line)]
+
+
+def _repo_test_files(gate):
+    """全仓测试文件（判定复用单一事实源 `growth_gate._is_test_file`）。"""
+    out = subprocess.run(["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True).stdout
+    return [f for f in out.split("\n") if f and gate._is_test_file(f) and (REPO_ROOT / f).exists()]
+
+
+def test_wide_declaration_forms_all_recognized_and_never_lost(tmp_path):
+    """全仓每个**宽口径声明行**新实现都必须认，且含声明行的文件不得提取为空。
+
+    运行期自算 ⇒ 与「某时刻的文件集 / 每行 ID 的具体值」无关（不再按可变键做基准）。
     """
     gate = _gate()
-    snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
-    assert len(snapshot) > 500, f"快照可疑（仅 {len(snapshot)} 个文件）"
-    changed, unchanged, gone = [], 0, []
-    for rel, before in sorted(snapshot.items()):
-        path = REPO_ROOT / rel
-        if not path.exists():
-            gone.append(rel)
-            continue
-        after = gate.extract_case_ids(str(path))
-        if after == before:
-            unchanged += 1
-        else:
-            changed.append((rel, before, after))
+    files = _repo_test_files(gate)
+    assert len(files) > 400, f"扫描集异常（{len(files)} 个测试文件）—— 判据空跑"
+    assert len(_NARROWING) <= _NARROWING_CEILING, (
+        f"豁免从 {_NARROWING_CEILING} 涨到 {len(_NARROWING)} —— §19.1 基线只许缩短，"
+        "新增豁免必须同时下调 _NARROWING_CEILING")
 
-    unregistered = [rel for rel, _, _ in changed if rel not in _INTENDED_NARROWING]
-    assert unregistered == [], f"未登记的提取结果变化（回归）：{unregistered}"
-    assert len(changed) == len(_INTENDED_NARROWING), (
-        f"预期 {len(_INTENDED_NARROWING)} 个收窄，实得 {len(changed)}：{[c[0] for c in changed]}")
-    for rel, before, after in changed:
-        assert after == _INTENDED_NARROWING[rel], f"{rel}: 期望 {_INTENDED_NARROWING[rel]}，实得 {after}"
-        assert after, f"{rel}: 合法声明被漏掉（收窄过头）"
-        assert set(after) <= set(before), f"{rel}: 收窄不得新增 ID：{set(after) - set(before)}"
-    assert unchanged >= 600, f"逐值相同的文件数异常偏低（{unchanged}），疑似大范围误伤"
-    assert len(gone) < 50, f"快照里大量文件已不存在（{len(gone)}），快照需重生成"
+    lines, declared = {}, []
+    for rel in sorted(files):
+        found = _declaration_lines(REPO_ROOT / rel)
+        if found:
+            declared.append(rel)
+        for no, line in found:
+            lines.setdefault(line, f"{rel}:{no}")
+    assert len(declared) > 400, f"宽口径只找到 {len(declared)} 个已声明文件 —— 判据空跑"
+    assert len(lines) > 100, f"宽口径只收集到 {len(lines)} 种声明行 —— 判据空跑"
+
+    missed = []
+    for i, (line, origin) in enumerate(sorted(lines.items(), key=lambda kv: kv[1])):
+        probe = tmp_path / f"probe_{i}.py"
+        probe.write_text(line + "\ndef test_probe():\n    x = 1\n", encoding="utf-8")
+        actual, expected = gate.extract_case_ids(str(probe)), _wide_line_ids(line)
+        if actual != expected:
+            missed.append(f"{origin}  {line.strip()[:48]!r} → 期望 {expected}，实得 {actual}")
+    assert missed == [], (
+        f"宽口径声明行被漏掉（收窄过头）：{len(missed)}/{len(lines)} 种\n" + "\n".join(missed[:10]))
+
+    lost = [rel for rel in declared if not gate.extract_case_ids(str(REPO_ROOT / rel))]
+    assert lost == [], f"含声明行却提取为空（有声明 → 未声明）：{lost[:10]}"
+
+
+def test_no_ids_beyond_declared_lines():
+    """反向（假绿方向）：提取结果不得出现**任何声明行之外**的 ID。
+
+    旧实现用全局 `search` 累积 ⇒ docstring 里的示例文本被当声明（实证
+    `test_behavior_mapping_tool_coverage.py` 凭空多出 7 个 ID）。
+    """
+    gate = _gate()
+    files = _repo_test_files(gate)
+    assert len(files) > 400, f"扫描集异常（{len(files)} 个测试文件）—— 判据空跑"
+
+    extra = []
+    for rel in sorted(files):
+        if rel in _NARROWING:
+            continue
+        allowed = set()
+        for _no, line in _declaration_lines(REPO_ROOT / rel):
+            allowed |= set(_wide_line_ids(line))
+        extra += [f"{rel} → {cid}" for cid in gate.extract_case_ids(str(REPO_ROOT / rel))
+                  if cid not in allowed]
+    assert extra == [], "提取到声明行之外的 ID（提及被当成声明）：\n" + "\n".join(extra[:10])
 
 
 # ── ⑥ 门禁级端到端：真声明 → pass；仅提及 → 判「未声明」 ──
