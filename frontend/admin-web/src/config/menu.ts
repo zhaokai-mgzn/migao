@@ -60,10 +60,12 @@ export const menuGroups: MenuGroup[] = [
     icon: 'ShoppingCart',
     children: [
       { key: 'orders', name: '订单列表', icon: 'ClipboardList', path: '/orders', permissionCode: 'order:list' },
-      // 加工单列表（issue #3340 加工单状态机）：用户要求置于订单列表正下方；复用 processing:manage ——
-      // operator 已持有该码且同时具备 processing:view/update（API 权限），
-      // 而 processing:view 的其它角色（客服/销售/财务）无 update，会看到按钮但 403。
-      { key: 'processing-orders', name: '加工单', icon: 'FileText', path: '/processing-orders', permissionCode: 'processing:manage' },
+      // 「加工单」已迁出本组（issue #4357）：它是 producing 阶段的**生产**单据
+      // （docs/design/processing-order-design.md「不是平行单据」），权限码也一直是 processing:manage
+      // ⇒ 留在订单管理组会让「分组」与「权限边界」错位。现并入生产管理组，
+      // 且与「生产看板」**合并为单一入口**（原列表页 /processing-orders 改为重定向）。
+      // #3340 的「置于订单列表正下方」与 #4305 的「发加工唯一入口 = 订单详情页」约束的是**动作入口**，
+      // 不约束**台账归属** —— 从订单发起加工、到生产管理看进度与计件，本来就是两条动线。
       { key: 'after-sales', name: '售后工单', icon: 'ShieldCheck', path: '/after-sales', permissionCode: 'order:refund' },
     ],
   },
@@ -88,9 +90,13 @@ export const menuGroups: MenuGroup[] = [
       { key: 'settings', name: '企业基础信息', icon: 'Building2', path: '/settings', permissionCode: 'system:manage' },
     ],
   },
-  // issue #4203：生产管理组（生产看板 / 工序库 / 计件工资）。
-  // 权限码统一 processing:manage —— 与既有「加工项管理」「加工单」同一口径（operator 已持有该码，
-  // 且同时具备 processing:view/update 的 API 权限）；「加工单」**不搬家**，仍留订单管理组（不动既有 IA）。
+  // issue #4203：生产管理组（生产看板 / 工序库 / 工艺路线 / 计件工资）。
+  // 权限码统一 processing:manage —— 与既有「加工项管理」同一口径（operator 已持有该码，
+  // 且同时具备 processing:view/update 的 API 权限）。
+  // issue #4357：「加工单」并入本组 —— 但它**不新增菜单项**：加工单列表页与「生产看板」
+  // 是同一实体、同一端点（processingOrderApi.list）的两份渲染 ⇒ 合并为单一入口「生产看板」
+  // （列表页能力：关键词/状态筛选、重置、刷新、商品与数量快照摘要、查看跳订单详情 全部并入看板）。
+  // 旧路径 /processing-orders 保留为重定向；子路由 /processing-orders/{id}/production（生产明细）不变。
   {
     key: 'production',
     name: '生产管理',

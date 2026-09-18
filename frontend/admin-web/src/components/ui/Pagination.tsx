@@ -70,6 +70,7 @@ const Pagination = ({
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">每页</span>
             <select
+              aria-label="每页条数"
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
               className="h-8 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-primary-500"

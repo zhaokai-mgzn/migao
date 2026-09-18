@@ -185,6 +185,24 @@ async function mockProcessingOrderApis(page: import('@playwright/test').Page) {
     await route.fallback()
   })
 
+  // 生产看板每行的「工序进度 + 计件合计」（issue #4357：加工单唯一入口 = /production，
+  // 它逐行调这两个端点）。未 mock ⇒ 落到真实网络（fixture 模式无后端）⇒ 行内进度/计件显示「—」
+  // 且请求悬挂拖慢旅程。给确定性响应，让「合并后看板仍渲染真实数据行」可断言。
+  await page.route('**/api/admin/production/orders/**', async (route) => {
+    const json = (status: number, data: unknown) =>
+      route.fulfill({ status, contentType: 'application/json', headers: corsHeaders, body: JSON.stringify(data) })
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname.endsWith('/operations')) {
+      await json(200, { code: 200, data: { positions: [], progress: { total: 11, done: 4, percent: 36 } } })
+      return
+    }
+    if (pathname.endsWith('/piecework')) {
+      await json(200, { code: 200, data: { total: 17, per_worker: {}, per_operation: [] } })
+      return
+    }
+    await route.fallback()
+  })
+
   return { patchBodies }
 }
 
@@ -248,13 +266,13 @@ function rowBy(page: import('@playwright/test').Page, processingOrderNo: string)
   return page.locator('tbody tr', { hasText: processingOrderNo })
 }
 
-test.describe('加工单列表页面', () => {
+test.describe('生产看板 /production（加工单唯一入口）', () => {
   // 共享 mock 捕获（beforeEach 注册一次，测试内只读）
   let api: { patchBodies: PatchCall[] }
 
   test.describe.configure({ timeout: 240_000 })
 
-  // 预热 Next dev on-demand 编译：新路由（/processing-orders 及跳转目标 /orders/[id]）
+  // 预热 Next dev on-demand 编译：新路由（/production 及跳转目标 /orders/[id]）
   // 在冷启动/机器负载下首访可达数十秒。预热页自带 auth mock，避免未登录跳 /login
   // 导致页面未完整渲染（编译仍触发，但带 mock 更稳）。预热失败不阻断：beforeEach 兜底。
   test.beforeAll(async ({ browser }) => {
@@ -270,6 +288,7 @@ test.describe('加工单列表页面', () => {
       })
     })
     try {
+      await warm.goto('http://localhost:3001/production', { timeout: 120_000 })
       await warm.goto('http://localhost:3001/processing-orders', { timeout: 120_000 })
       await warm.goto('http://localhost:3001/orders/o001', { timeout: 120_000 })
     } catch {
@@ -281,18 +300,24 @@ test.describe('加工单列表页面', () => {
 
   test.beforeEach(async ({ page }) => {
     api = await mockProcessingOrderApis(page)
-    await page.goto('/processing-orders')
+    // issue #4357：原加工单列表页 /processing-orders 已并入本页并改为重定向 ⇒ 旅程入口 = /production
+    await page.goto('/production')
     // 正信号等待（防竞态：'加载中… not visible' 可能在首次渲染前就通过）：
     // 标题出现 = 页面挂载；首行加工单号可见 = 列表数据已渲染。
     // 60s 容忍 Next dev on-demand 编译（冷启动/负载下可达数十秒）
-    await expect(page.getByRole('heading', { name: '加工单列表' })).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByRole('heading', { name: '生产看板' })).toBeVisible({ timeout: 60_000 })
     await expect(page.getByText('JG-20260601-0001')).toBeVisible({ timeout: 60_000 })
   })
 
   test('列表渲染：加工单号/订单号/客户/商品摘要/状态徽章齐全', async ({ page }) => {
-    // 页面标题 + 面包屑（与侧边栏菜单一致）
-    await expect(page.getByRole('heading', { name: '加工单列表' })).toBeVisible()
-    await expect(page.getByText('加工单', { exact: true }).first()).toBeVisible()
+    // 页面标题 + 面包屑（§15.2「面包屑与侧边栏菜单名一致」）：
+    // #4357 前 /production 没有任何面包屑条目 ⇒ 曾回落成「工作台 > 经营看板」。
+    // 侧边栏 IA（加工单不再作为独立菜单项）由 vitest 单测断言 —— e2e 的 auth fixture
+    // 不带 permissions ⇒ 侧边栏里所有带权限码的项都被过滤掉，此处断言不了菜单项。
+    await expect(page.getByRole('heading', { name: '生产看板' })).toBeVisible()
+    const breadcrumb = page.getByRole('banner').getByRole('navigation')
+    await expect(breadcrumb).toContainText('生产管理')
+    await expect(breadcrumb).toContainText('生产看板')
 
     for (const po of MOCK_POS) {
       await expect(page.getByText(po.processingOrderNo)).toBeVisible()
@@ -318,7 +343,7 @@ test.describe('加工单列表页面', () => {
   })
 
   test('状态筛选：选「已发加工」只显示 issued 行（结果可见）', async ({ page }) => {
-    await page.locator('select').selectOption('issued')
+    await page.getByLabel('状态筛选').selectOption('issued')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(300)
 
@@ -327,7 +352,7 @@ test.describe('加工单列表页面', () => {
     await expect(page.getByText('JG-20260603-0003')).not.toBeVisible()
 
     // 再筛「已生成」→ 只显示 generated 行
-    await page.locator('select').selectOption('generated')
+    await page.getByLabel('状态筛选').selectOption('generated')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(300)
     await expect(page.getByText('JG-20260601-0001')).toBeVisible()
@@ -367,14 +392,15 @@ test.describe('加工单列表页面', () => {
     await page.getByRole('button', { name: '重置' }).click()
     await page.waitForTimeout(300)
     await expect(page.getByPlaceholder('请输入加工单号或订单号')).toHaveValue('')
-    await expect(page.locator('select')).toHaveValue('')
+    await expect(page.getByLabel('状态筛选')).toHaveValue('')
     await expect(page.getByText('JG-20260601-0001')).toBeVisible()
   })
 
-  test('列表页不再提供状态流转入口（唯一入口 = 订单详情页，issue #4305）', async ({ page }) => {
-    // #4305 用户裁定：状态流转入口**收敛到订单详情页加工单块**，列表页四个动作按钮全部移除。
+  test('唯一入口不再提供状态流转入口（唯一入口 = 订单详情页，issue #4305）', async ({ page }) => {
+    // #4305 用户裁定：状态流转入口**收敛到订单详情页加工单块**，加工单侧四个动作按钮全部移除。
     // 本条改判自原「状态机按钮随状态渲染」——五种状态逐一负向断言（含终态），
     // 并断言跳转类入口与引导文案仍在（避免「移除了动作」被误读成「移除了操作区」）。
+    // #4357 后本页（/production）承接原列表页，负向断言**一条不放宽**。
     for (const no of [
       'JG-20260601-0001',
       'JG-20260602-0002',
@@ -420,6 +446,14 @@ test.describe('加工单列表页面', () => {
     await page.waitForTimeout(500)
     expect(listRequests).toBeGreaterThan(before)
     await expect(page.getByText('JG-20260601-0001')).toBeVisible()
+  })
+
+  test('旧入口 /processing-orders 重定向到 /production（旧深链不 404，issue #4357）', async ({ page }) => {
+    await page.goto('/processing-orders')
+    // 重定向后落到唯一入口：URL 与页面标题都是 /production 的生产看板
+    await page.waitForURL(/\/production$/, { timeout: 30_000 })
+    await expect(page.getByRole('heading', { name: '生产看板' })).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByText('JG-20260601-0001')).toBeVisible({ timeout: 60_000 })
   })
 })
 
