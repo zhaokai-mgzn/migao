@@ -207,24 +207,30 @@ def summarize(results):
 
 # ── G5: 用例追溯链（测试文件 ↔ 行为用例 case-contract）──
 
-CASE_IDS_RE = re.compile(r"case_ids\s*[:=]\s*\[?([^\]\n]*)\]?")
+# 只认**注释起始的声明行**（issue #4239）：`# case_ids: OR-001, OR-002` /
+# `// case_ids=OR-001` / `// case_ids=[...]` / JSDoc 块注释续行 ` * case_ids: X`
+# （四种形态由全仓已声明测试文件枚举得出，不得误伤）。正文 / docstring 里「提及」
+# `case_ids:` **不算声明** —— 旧实现用 search 全文累积：提及会混入垃圾令牌
+# （假红：合规 PR 被判「声明了不存在的用例 ID」）或让未声明的文件被判「已声明」
+# （假绿：QA Growth Gate 根本失效）。
+CASE_IDS_RE = re.compile(r"^\s*(?:#|//|\*)\s*case_ids\s*[:=]\s*\[?([^\]\n]*)\]?")
 
 
 def extract_case_ids(test_file):
-    """测试文件头部声明的用例 ID（`# case_ids: OR-001, OR-002` / `// case_ids=[...]`）。"""
-    ids = []
+    """测试文件头部**首个声明行**的用例 ID（`# case_ids: OR-001, OR-002` / `// case_ids=[...]`）。
+
+    只认注释起始的声明行 + **取首个命中即停**（issue #4239）：docstring / 正文里的提及不是声明。
+    「只扫前 50 行」的位置约束不变（#3555 的既有裁定，与本缺陷正交）。
+    """
     try:
         text = Path(test_file).read_text(encoding="utf-8")
     except OSError:
-        return ids
+        return []
     for line in text.split("\n")[:50]:
-        m = CASE_IDS_RE.search(line)
+        m = CASE_IDS_RE.match(line)
         if m:
-            for tok in m.group(1).split(","):
-                tok = tok.strip().strip("'\"")
-                if tok:
-                    ids.append(tok)
-    return ids
+            return [tok for tok in (t.strip().strip("'\"") for t in m.group(1).split(",")) if tok]
+    return []
 
 
 def load_case_index(cases_dir):

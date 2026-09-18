@@ -1,11 +1,11 @@
 """AfterSalesManageTool 单元测试 — 售后工单查询/创建/状态流转。
 
-# case_ids: AS-001, AS-002, AS-004, AS-007
-
 覆盖 list/detail/create/update_status 的正常路径与参数校验，
 以及 destructive 工具只读 action 的确认豁免（DF-008）。
 """
-# case_ids: DF-008, AS-001, AS-002, AS-004
+# case_ids: AS-001, AS-002, AS-004, AS-007, DF-008
+# ⚠️ 声明**只能有一处**（issue #4239：`extract_case_ids()` 取首个声明行即停）——
+# 旧写法在 docstring 里另写了一份（AS-001/002/004/007），新口径下它会遮蔽本行、丢掉 DF-008。
 import pytest
 from unittest.mock import AsyncMock, patch
 

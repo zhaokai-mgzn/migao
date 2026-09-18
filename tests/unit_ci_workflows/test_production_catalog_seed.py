@@ -3,8 +3,8 @@
 
 ⚠️ 本文件的用例声明行**必须**在文件前 50 行内（`.github/growth_gate.py` 的
 `extract_case_ids()` 只扫前 50 行），故它放在本 docstring **之前**（本 docstring 较长）。
-⚠️ 正文里**不要**再出现「`case_ids` + 冒号」这种字面形态：`CASE_IDS_RE` 是全局 `search`，
-第二处命中会**覆盖**第一处（实测：本文件曾因此在 QA Growth Gate 报「声明了不存在的用例 ID」）。
+✅ 正文里出现「`case_ids` + 冒号」这种字面形态**已无害**（#4239 起 `extract_case_ids()` 只认
+注释起始的声明行、且取首个命中即停）。旧实现是全局 `search` 累积，本文件曾因此报「声明了不存在的用例 ID」。
 
 ## 背景（取证事实）
 
