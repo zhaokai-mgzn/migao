@@ -1038,6 +1038,7 @@ _CASE_CH_010 = EvalCase(
     amount_verify=[{'tool': 'order_create', 'product_name': '北欧风窗帘', 'checks': ['unit_price', 'subtotal', 'processing_fee', 'total']}],
     db_verify=[{'fetch': 'order_phone', 'source': 'order_create', 'expect_phone': '13800138000'}],
     namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '北欧风窗帘', 'expect': 1}],
 )
 
 # ── CH-011 [ADVERSARIAL] 数据安全 - 跨用户订单查询拒绝 + 订单卡片手机号脱敏（源: cases/chat.yml）──
@@ -4614,6 +4615,24 @@ _CASE_PG_037 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-039 [NORMAL] 工序作用域 scope（V67）：外帘打卷/装袋/发货 = 套级（每樘窗一次）+ 读面逐字 + 写面可配校验 + 工序库页可见可改（源: cases/processing-order.yml）──
+_CASE_PG_039 = EvalCase(
+    id='PG-039',
+    legacy_id='',
+    title='工序作用域 scope（V67）：外帘打卷/装袋/发货 = 套级（每樘窗一次）+ 读面逐字 + 写面可配校验 + 工序库页可见可改',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', "判据 1·主数据正确（V67）：`production_operations` 新增 `scope VARCHAR(16) NOT NULL DEFAULT 'position'`（`ADD COLUMN IF NOT EXISTS`，幂等）+ 列注释写明 `position` = 部位级 / `set` = 套级（**每樘窗一次**）语义与 issue 号；幂等 `UPDATE ... SET scope='set' WHERE name IN ('外帘打卷','外帘装袋','外帘发货')`。终态语义 = 三道 `scope='set'`，**其余全部 `scope='position'`**（默认值兜住），由 `V54 ∪ V56` 的真实种子行名集合推演断言。`docs/sql/schema.sql` 同步终态（bootstrap 路径**不跑迁移链** ⇒ 只写迁移 = 新建库无该列，同 #3270 形态）。证据：ProductionOperationScopeMigrationTest", '判据 2·读面逐字取库：`ProductionOperationQueryService.findRouting` 返回的每道工序带 `scope`，与 `group`/`unit`/`unit_price` 同级（`operationMetaView` 一处整形，路线步骤与条件工序共用）。**注入法**：把库行的 `scope` 值改一个 ⇒ 断言跟着变（写死常量/不读库即红）。证据：ProductionOperationQueryServiceTest「findRoutingCarriesScopeVerbatimFromLibrary」+「findRoutingScopeFollowsTheLibraryRow」', '判据 3·写面可配 + 取值校验：`ProductionOperationCommandService` 的 `update`（PUT /operations/{id}）与 `create`（POST /operations）都接受 `scope`，口径与 `unit`/`unit_price`/`position` 相同（部分更新：未出现的字段不碰）；只允许 `position` / `set`，非法值 ⇒ 422 可读理由（`scope 仅支持 position/set`，照 `status 仅支持 active/disabled` 既有错误形状）。**注入法**：去掉取值校验 ⇒ 非法值落库 ⇒ 断言红。证据：ProductionOperationCommandServiceTest「updateSetsScope」「updateRejectsInvalidScope」「createDefaultsScopeToPosition」「createRejectsInvalidScope」', '判据 4·前端可见可改：工序库页 `/production/operations` 渲染「作用域」列，逐行显示 部位级/套级，且可就地改为另一档（`PUT /operations/{id}` body 带 `scope`）。**注入法**：不渲染该列 ⇒ 断言红（找不到列头/找不到该行的 scope 控件）。证据：frontend/admin-web/tests/unit/components/OperationsScopeColumn.test.tsx', '**红证（实现前实测，本机）**：① `ProductionOperationScopeMigrationTest` 因 V67 文件不存在而红（判据 1 无列 ⇒ 红）；② `ProductionOperationQueryServiceTest` 的 scope 断言得 `expected \\"set\\" but was null`（读面不返回 scope）；③ `ProductionOperationCommandServiceTest` 的非法值用例得「没有异常抛出」（写面零校验）；④ `OperationsScopeColumn.test.tsx` 得找不到「作用域」列头。', '**未做（如实登记，避免把半截当完整交付）**：① **不做 A2** —— **不改** `ProcessingOrderService.buildPositionPayload`（套级工序按 `craftLineId` 组去重）；A2 依赖包 D（#4387 布行与纱行同组）先合，且与 D 同文件 ⇒ 本包不交付「套级去重生效」（A2 未落地时去重无从谈起，硬写 = 空断言）；② **不改** `backend/ai-agent-service/**`（用户裁定「Agent 层面先别碰」，缺口登记在 #4390）。'],
+    skip_reason='[backend-contract] 后端契约 + 前端页面结构用例（迁移/表结构/服务层/页面渲染，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionOperationScopeMigrationTest + ProductionOperationQueryServiceTest + ProductionOperationCommandServiceTest + frontend/admin-web/tests/unit/components/OperationsScopeColumn.test.tsx 执行',
+    tags=['processing-order', 'production', 'operations', 'scope', 'migration'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -6741,6 +6760,7 @@ ALL_CASES = (
     _CASE_PG_038,
     _CASE_PG_036,
     _CASE_PG_037,
+    _CASE_PG_039,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,
