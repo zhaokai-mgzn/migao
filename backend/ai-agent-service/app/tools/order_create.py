@@ -612,7 +612,11 @@ class OrderCreateTool(BaseTool):
                                 },
                                 "source": {
                                     "type": "string",
-                                    "enum": list(_SOURCES),
+                                    # ⚠️ 此处必须写字面量：`parameters` 会被 admin-api 的
+                                    # `OrderDtoContractTest.pythonSchema` 用 `ast.literal_eval` 源码级求值
+                                    # ⇒ 任何函数调用（如 `list(_SOURCES)`）都会让该契约测试判红。
+                                    # 值必须与 `_SOURCES` 逐字一致（那边是运行时闸门的真值源）。
+                                    "enum": ["公式计算", "人工指定", "客户自报"],
                                     "description": "折数/用料的取值来源（真值源 §8：必须带来源，防多渠道不一致）。`curtain_calc` 的 source 为 formula → 「公式计算」/ manual → 「人工指定」/ customer_quoted → 「客户自报」",
                                 },
                                 "skuCode": {"type": "string", "minLength": 1,

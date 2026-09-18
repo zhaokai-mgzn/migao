@@ -25,6 +25,7 @@ Java 解析口径复用既有跨端契约测试的 `_method_body`（不造第三
 """
 from __future__ import annotations
 
+import ast
 import copy
 import re
 from pathlib import Path
@@ -36,6 +37,7 @@ from tests.test_employee_field_consumption_contract import _method_body
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _ORDER_SERVICE = _REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java"
 _PRODUCT_DETAIL = _REPO_ROOT / "backend/ai-agent-service/app/tools/product_detail.py"
+_ORDER_CREATE_SRC = _REPO_ROOT / "backend/ai-agent-service/app/tools/order_create.py"
 
 # 规格键（`processing_info` 内的销售规格字段，不含加工项/加工费）
 _SPEC_KEYS = ("skuId", "skuCode", "colorId", "colorName", "sellingMethod", "doorWidth")
@@ -409,3 +411,30 @@ class TestCraftSpecKeyCompletion:
         assert OrderCreateTool._validate_processing_info(
             0, {"processingItems": [{"name": "打孔", "unitPrice": 8, "quantity": 3}]}
         ) is None
+
+    def test_parameters_stays_ast_literal(self):
+        """**跨语言契约护栏**：`parameters` 必须是 `ast.literal_eval` 可求值的**字面量**。
+
+        admin-api 的 `OrderDtoContractTest.pythonSchema` 用 CPython 的 `ast` 定位
+        `class ...: parameters = {...}` 再 `literal_eval`（与运行时**同一份源码**，不抄期望值）。
+        ⇒ schema 里出现任何**函数调用**（如 `enum: list(_SOURCES)`）都会让该 Java 契约测试判红，
+        而本地 ai-agent 单测**不会红**（真值一致，只是形态不是字面量）—— 这正是本次踩到的形态。
+
+        判据取**形态**（有无 `ast.Call`）而非「与 `_SOURCES` 等值」：前者是契约本身的要求，
+        后者会随常量演化而腐烂（§19.2）。
+        """
+        tree = ast.parse(_ORDER_CREATE_SRC.read_text(encoding="utf-8"))
+        assignment = next(
+            (stmt for node in tree.body if isinstance(node, ast.ClassDef)
+             for stmt in node.body
+             if isinstance(stmt, ast.Assign)
+             and any(isinstance(t, ast.Name) and t.id == "parameters" for t in stmt.targets)),
+            None,
+        )
+        assert assignment is not None, "order_create.py 里找不到 `parameters = {...}` 赋值"
+        calls = [n.lineno for n in ast.walk(assignment.value) if isinstance(n, ast.Call)]
+        assert calls == [], (
+            f"`parameters` 里出现函数调用（行 {calls}）⇒ admin-api 的 ast.literal_eval 契约测试会判红；"
+            "请改成字面量"
+        )
+        ast.literal_eval(assignment.value)          # 求值失败即判红（与 Java 侧同口径）
