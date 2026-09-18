@@ -171,3 +171,76 @@ pytest -q --durations=20   # 找最慢用例
    这类验证走真实浏览器几何探针（migao-dev-flow §15.2 / frontend-acceptance-checklist §8）。
 4. 范例（正向参照）：`frontend/admin-web/tests/unit/pages/knowledge.test.tsx`
    「套用后可见可编辑」「采纳后可见可编辑」——断言跳转 + 列表刷新 + 卡片可见 + 编辑弹窗回填。
+
+## 8. 红证卫生：注入前后清缓存 + 内容指纹自证（2026-09-18 固化，issue #4260）
+
+**这条管的是「取红证的动作」本身** —— 它出在**证据生成层**：这一层是用来抓其它所有问题的。
+`migao-acceptance` 要求「**每条断言都要有红证（不会红的断言 = 空断言）**」，而**红证的可信度
+此前没有任何东西保护**。
+
+### 8.1 病根：同秒同长度替换 ⇒ 复用旧 `.pyc`（实测）
+
+「注入缺陷 → 跑测试 → 应红 → 还原」里，改前/改后**同字节长度**的文件在**同一秒内**替换时，
+Python 的 `.pyc` 头只记 `(mtime 秒, size)` 两项 —— 两者**都没变** ⇒ 解释器**不重编译**、直接复用旧
+`.pyc` ⇒ **注入未生效**，而测试读到的是**旧行为**。两个后果都很难看：
+
+- **假绿证**：注入没生效 ⇒ 测试仍绿 ⇒ 误判「这条判据不会红」（结论是"空断言"，其实是注入失败）
+  ⇒ 可能把一个**本来有效**的护栏当废的删掉/放宽；
+- **假红证 / 错归因**：读到旧值下的红 ⇒ 把红归因给没生效的注入，写出错误的因果。
+
+**它是「依赖时间粒度做新鲜度判定」这一族的成员**（与 §19.2 ③「不写死易变数字」同族）：
+只要判据依赖 mtime/大小/序数这类**易变或粒度不足**的键，就有被静默掩盖的空间。
+
+### 8.2 正确动作（固化成脚本，不靠每个 agent 自觉）
+
+```bash
+# ① 记基线（内容指纹，非 mtime/size）
+python3 scripts/red_proof.py fingerprint --json <file>... > /tmp/red_proof.json
+# ② 注入缺陷（同秒同长度也没关系）
+# ③ 自证「注入真的生效了」+ **清缓存**（未生效 ⇒ 非零退出，绝不静默跑测试）
+python3 scripts/red_proof.py injected --manifest /tmp/red_proof.json
+# ④ 跑测试，取红证（此时读到的一定是注入后的真值）
+# ⑤ 还原
+# ⑥ 自证还原干净 + **再清一次缓存**（否则下一轮取的是本轮残留）
+python3 scripts/red_proof.py restored --manifest /tmp/red_proof.json
+```
+
+三条不可省的纪律：
+
+1. **判据只用内容指纹**（`content_fingerprint` = 文件内容的 sha256）：**禁止**用 mtime / 文件大小
+   判「注入生效了没」—— 那正是本缺陷的形态。还原校验同理（指纹必须回到基线）。
+2. **注入自证要 fail-closed**：注入后**先**断言内容确实变了（可与声明的预期指纹比对），**再**跑测试。
+   否则「注入没生效」与「这条判据是空的」不可区分 —— 这正是假绿证的来源。
+3. **清缓存是动作，不是自觉**：注入前清一次（去掉上一轮残留）、注入后清一次（去掉本轮注入前的产物）。
+   `--no-clear` 只用于**诊断**：它会报告「运行时会复用哪个旧产物」并**非零退出**，而不是继续跑。
+
+### 8.3 各载体的缓存目录（同族不止 Python）
+
+| 载体 | 缓存/产物 | 说明 |
+|---|---|---|
+| Python `.pyc` | `__pycache__/`、`*.pyc`、**`sys.pycache_prefix` 的真实落点** | 见 8.4：落点可能在仓库**外** |
+| Python 测试缓存 | `.pytest_cache/`、`.mypy_cache/`、`.ruff_cache/` | |
+| JS/TS（Next/Vite/Vitest/Jest） | `.next/cache/`、`node_modules/.cache/`、`node_modules/.vite/`、`.turbo/`、`.jest-cache/`、`.parcel-cache/`、`*.tsbuildinfo`、`.eslintcache` | 快速重复写同一文件时转换缓存同理 |
+| Java `.class` | `target/classes/`、`target/test-classes/`、`build/classes/` | 增量编译下定向跑单测 + 手工注入时可能跑到旧 class |
+| Shell / 生成物 | —— | 不依赖 mtime 精度：一律用**内容指纹**判新鲜度 |
+
+**能力边界（照实登记，别把「登记了」读成「治住了」）**：`scripts/red_proof.py` 按**目录/文件名白名单**
+清缓存（上表左列即白名单）；Java 侧**不覆盖**自定义 `outputDirectory` 与 Gradle 变体目录，
+JS/TS 侧不解析框架版本 —— 这些是**登记项**，遇到时按 8.2 的内容指纹 + 手工清对应目录处理。
+
+### 8.4 实测盲区：`rm -rf __pycache__` 可能是**空操作**
+
+`sys.pycache_prefix`（或 `PYTHONPYCACHEPREFIX`）非空时，`.pyc` **落在仓库外**。
+本机实测（macOS 系统 python3）：`sys.pycache_prefix` = `~/Library/Caches/com.apple.python`，
+`scripts/` 下**根本没有 `__pycache__` 目录** ⇒ 一条 `rm -rf __pycache__` 看起来"做了清缓存这件事"，
+实际什么都没删，而 `.pyc` 头仍与源文件一致 ⇒ 注入照样被掩盖。
+
+⇒ 清缓存必须按 `importlib.util.cache_from_source()` 的**真实落点**做（`scripts/red_proof.py` 已这么做）。
+同族形态：**「做了清缓存这个动作」不等于「缓存被清了」** —— 凡"清理/复位"类动作都要有**清完之后的断言**
+（`assert_caches_clear`：清完仍剩产物 ⇒ fail-closed），否则它只是一个**看起来像清理的空操作**。
+
+### 8.5 自证红证
+
+- 判别力红证（同秒同长度替换 ⇒ 旧值 / 清缓存后 ⇒ 真值 + 三处 fail-closed 的变异验证）：
+  `tests/unit_ci_workflows/test_red_proof_guard.py`。
+- 本节的判据**未接 CI required check**：现为取红证流程 / 人工调用（照实登记，勿读成"有硬门禁"）。
