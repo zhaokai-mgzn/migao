@@ -4,9 +4,10 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 docs/sql/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 21 张）：
+--   本文件缺失（schema.sql 已有，共 23 张）：
 --     client_request_keys, daily_briefings, finance_transactions, knowledge_candidates,
---     knowledge_cards, processing_orders, processing_position_operations,
+--     knowledge_cards, processing_fee_combination_versions, processing_fee_combinations,
+--     processing_orders, processing_position_operations,
 --     production_operation_price_versions, production_operations, production_option_factors,
 --     production_option_routings, production_route_signals, production_routing_versions,
 --     production_routings,
@@ -14,7 +15,9 @@
 --     session_states, stock_ledger_entries, tenant_payment_qrcodes, user_suggestion_prefs,
 --     user_memories
 --     （production_option_factors / production_option_routings = V59，issue #4230 Java 侧；
---       production_route_signals / production_routing_versions = V60，issue #4308 路线可配）
+--       production_route_signals / production_routing_versions = V60，issue #4308 路线可配；
+--       processing_fee_combinations / processing_fee_combination_versions = V66，issue #4386
+--       加工费组合定价）
 --   本文件仍会创建，但**早已被迁移 DROP**（共 4 张）：
 --     knowledge_documents, knowledge_sync_history, rag_chunks,   ← V36 迁移 DROP
 --     quick_reply_templates

@@ -496,19 +496,27 @@ cases:
       - "不添加加工项，确认下单"
       - "确认下单"
     # ── 命名空间 + 前置自断言（burn-down 缴费，随 #4386 的用例面改动）──
-    # 形态照抄 OR-009 / OR-011 / PR-007（同关键词、同 `expect=1`）与 OR-013 的 namespaces 先例：
-    # ① `namespaces[customer_phone:13812345678]`：本用例给该号码**建单**；该号码在本仓订单域
-    #    用例里唯一（OR-008/OR-009/OR-011/OR-016 等一律用 13800138000）⇒ 声明命名空间后
-    #    与同栈并行的建单用例自动互斥，消除「并行写同一客户订单集合」的非确定性（#3781）。
-    #    ⚠️ **不**改成 13800138000 去挤那条已被 22+ 处声明的公共号码 —— 那会让本用例排进
-    #    一条长队列（互斥=串行），白耗评测时长。
-    # ② `precondition[product_count_for_keyword: 遮光窗帘 expect=1]`：本用例按**名字**选品
-    #    （「米白色遮光窗帘」），「该名字在种子栈里唯一」是可判定的前置 —— 别人造出同名副本时
-    #    折成 precondition_not_applied，不再伪装成「agent 不会下单」。
-    #    ⚠️ 刻意**不用** `order_count_for_phone`：本用例自己就在该号码下建单，运行期订单数必增长
+    # 形态照抄 OR-009 / OR-011 / PR-007（同关键词、同 `expect=1`）与 OR-013 的 namespaces 先例。
+    #
+    # ⚠️ **`namespaces` 的语义 = 「该实体在 seed 里存在」，不是「本用例要写它」**
+    # （判据源 `tests/unit_ci_workflows/test_case_seed_truth.py` 的槽位表；我在本 PR 第一版
+    #  把它误读成「互斥锁键」，写成 `customer_phone:13812345678` ⇒ 该号码**不在 seed 的
+    #  customer_profiles**（seed 真值 = 13800138000 / 13900139000 / 张三 / 评测新客 / 评测顾客）
+    #  ⇒ `TestEveryDeclaredMentionResolves` 判红：**库层不可满足**（合格 agent 只能如实说
+    #  「对不上」并停在澄清），CI 实测 1 failed。**已改正为下面这行。**）
+    #
+    # ① `namespaces[product_name:遮光窗帘]`：本用例按**名字**选品（R1「米白色遮光窗帘」），
+    #    该名字确实在 seed 的 `products.name` 里（同 OR-009 / OR-011 口径）；它同时是
+    #    NO-SELF-CLEAN 的**弱证据**（并行互斥），本用例不改写它（只读选品）。
+    #    ⚠️ **不**声明 `customer_phone:*`：本用例的号码来自罐头输入（13812345678），
+    #    而 seed 的客户档案里没有它 —— 声明存在性 = 撒谎（就是上面那条红）。
+    # ② `precondition[product_count_for_keyword: 遮光窗帘 expect=1]`：「该名字在种子栈里唯一」
+    #    是可判定的前置 —— 别人造出同名副本时折成 precondition_not_applied，不再伪装成
+    #    「agent 不会下单」。
+    #    ⚠️ 刻意**不用** `order_count_for_phone`：本用例自己就会建单，运行期订单数必增长
     #    ⇒ 那条前置会被自己的写操作判红（假红）；前置必须选**不被本用例写入**的对象。
     namespaces:
-      - "customer_phone:13812345678"
+      - "product_name:遮光窗帘"
     precondition:
       - type: product_count_for_keyword
         source: "遮光窗帘"
@@ -530,7 +538,7 @@ cases:
     want_text:
       - "订单号"
     skip_reason: ""
-    merge_log: "verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律；2026-09-04 修复 choice 卡片消费协议不匹配（审计 #2818 Agent Eval 失败根因）：原「选1」为自然语言序号，LLM 无法关联 interact(choice) 选项导致反复 product_detail 追问、永不进入 validate_input/order_create；改为显式售卖方式描述（与 OR-008/009 一致），且「2件」与商品按米计价（¥99/米）矛盾改为「2米」，实测全流程通过；2026-09-09 校准：R3「确认下单」改「不添加加工项，确认下单」+ 补第4轮「确认下单」——agent 把加工项询问当强制环节，用户说「确认下单」仍发加工项卡（probe 实证），需明确跳过加工项才推进（与 OR-009 校准一致）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（简化流程此前只断言 validate_input/order_create 出现过 ⇒「调用了 ≠ 成了」；真实 run 里本用例首跑红指纹含 `no_success(order_create)`，说明失败确实发生过而断言看不见）；user_inputs / expectations / required_args / want_text 原样未动；2026-09-19（burn-down 缴费，随 #4386 的用例面改动）：补 `namespaces[customer_phone:13812345678]` + `precondition[product_count_for_keyword: 遮光窗帘 expect=1]` —— 一次销掉该条存量违规的 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（按名字选品无可判定前置）与 `CASE-TRUST-NO-SELF-CLEAN`（写用例未声明自清理），整条销账、清单条目随之删除；形态与 OR-009 / OR-011 / PR-007 同一份。断言面（expectations / required_args / must_succeed / data_checks / want_text）一字未动、无放宽。"
+    merge_log: "verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律；2026-09-04 修复 choice 卡片消费协议不匹配（审计 #2818 Agent Eval 失败根因）：原「选1」为自然语言序号，LLM 无法关联 interact(choice) 选项导致反复 product_detail 追问、永不进入 validate_input/order_create；改为显式售卖方式描述（与 OR-008/009 一致），且「2件」与商品按米计价（¥99/米）矛盾改为「2米」，实测全流程通过；2026-09-09 校准：R3「确认下单」改「不添加加工项，确认下单」+ 补第4轮「确认下单」——agent 把加工项询问当强制环节，用户说「确认下单」仍发加工项卡（probe 实证），需明确跳过加工项才推进（与 OR-009 校准一致）；2026-09-17 校准（issue #4014 B3）：补效果层断言 must_succeed[order_create]（简化流程此前只断言 validate_input/order_create 出现过 ⇒「调用了 ≠ 成了」；真实 run 里本用例首跑红指纹含 `no_success(order_create)`，说明失败确实发生过而断言看不见）；user_inputs / expectations / required_args / want_text 原样未动；2026-09-19（burn-down 缴费，随 #4386 的用例面改动）：补 `namespaces[product_name:遮光窗帘]` + `precondition[product_count_for_keyword: 遮光窗帘 expect=1]` —— 一次销掉该条存量违规的 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（按名字选品无可判定前置）与 `CASE-TRUST-NO-SELF-CLEAN`（写用例未声明自清理），整条销账、清单条目随之删除；形态与 OR-009 / OR-011 / PR-007 同一份。断言面（expectations / required_args / must_succeed / data_checks / want_text）一字未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_order_manage.py"
