@@ -3013,7 +3013,7 @@
 ```
 溯源: 2026-09-18 新增（issue #4208 ai-agent 半边，PR #4215）：应做数量内部端点 POST /api/internal/production/operation-qty（X-Service-Token）—— 让 routing._qty_for 从「零运行时消费者」变成算料数量的唯一真相源；兜底口径「绝不落 0」+ qty_source 三态（键名 / <键名>_x6 / fallback）。红证（实现前）：端点未实现 ⇒ 404（assert 404 == 200 红）、resp.json()['data'] KeyError；键漂移门禁在 KNOWN_QTY_UNITS/DIRECT_QTY_KEYS 未定义时 import 即红。同批把该测试文件补进 PP-010.traces.tests（同为生产确定性核心的证据面）。**未做（如实登记）**：Java 侧接线（生成加工单时逐工序调用本端点）不在本单，#4208 保持 OPEN。 ｜ tags: processing, production, qty-engine
 
-## processing-order（23 case）
+## processing-order（24 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing 🔵
 ```
@@ -3299,6 +3299,17 @@
 ```
 溯源: 2026-09-18 新增（issue #4230，P1，Java 侧 v1a；ai-agent 半边 = PR #4234）。红证（修复前实测）：把 `buildPositionPayload` 里「插条件工序 + 落系数」两段整体去掉（= 修复前「订单不携带 specialOptions、factor 恒 1」的形态）⇒ ProcessingOrderServiceTest **6 条红**（specialOptionInsertsConditionalOperationAfterAnchor / conditionalOperationAppendsWhenAnchorAbsent / specialOptionFactorAppliesToEveryOperationOfThePosition / specialOptionFactorReachesPieceworkAmount / nonPieceworkOptionIsExplicitNoop / specialOptionReferencingMissingOperationFailsClosed），还原后全绿（md5 复核还原一致）；实现前两张表/两个实体/两个 Mapper 不存在 ⇒ 新增测试文件编译失败（找不到符号）。实现：V59 迁移（两张表 + 16 行条件工序种子 + 1 行系数种子，**版本号从 V58 让位** —— main 的 #4257 已占用 V58）+ `ProductionOptionRouting`/`ProductionOptionFactor` 实体与 Mapper + `ProductionOperationQueryService` 三处只读方法（optionRoutings/optionFactors/operationsByName，与 findRouting 的 catalogByName 同一份读取口径）+ `ProcessingOrderService` 的 specialOptions 归一化 / insertConditionalOperations / renumberSeq / applyFactors + buildSnapshot 透传 + 详情响应补字段。**不做（如实登记）**：v1b 商家配置页、v1c 下单勾选 UI、§2.4 逐工序细算档（推算值，待客户确认）。 ｜ tags: processing-order, production-reporting, special-options, piecework
 
+### PG-024. 加工单列表请求时序保护——旧的在飞响应晚到不得覆盖更新的列表数据 🔵
+```
+你: 打开加工单列表，连续筛选/刷新（或发加工后刷新），列表始终显示最新一次请求的数据
+数据: 时序保护（**核心/长期判据，红证在这条**）：同一页面并发多个列表请求时，**只认最新一次请求的响应** —— 先发出的慢请求（旧数据快照）晚到 ⇒ 其响应被**丢弃**，列表**不得**回退成旧数据。红证（修复前实测，本机 vitest）：`processing-orders-list.test.tsx` 断言①得 `expected '…已生成…' to contain '加工中'`（旧响应把「加工中」覆盖回「已生成」，与 issue #4303 的实测形态同形）
+数据: 同一保护覆盖全部触发路径：搜索/筛选（查询）、重置、刷新、写操作后的收敛刷新 —— 共用**同一份**列表加载函数与同一套请求序号，不得各写一套（禁止复制第二份加载逻辑）；且 `loading` 态只由最新一次请求收尾（旧响应被丢弃时不得把 loading 错误地留在 true）
+数据: 写响应即时反映（**当前 main 有效**，随列表页写入口一并演进）：写操作成功后用写响应更新该行（`{...x, ...updated}`），**不等**下一次列表请求返回；且该次收敛刷新不切 loading 态（否则刚更新好的行会被「加载中…」盖掉）。红证（修复前实测）：断言②得 `expected '…加载中…' to contain '已发加工'`。⚠️ 后续 P3（移除加工单列表页写入口、唯一入口改订单详情页）落地时本条随实现一并移除，由该单更新本测试文件
+数据: 不回归：加载失败仍给「加载加工单失败，请稍后重试」+ 重试入口；首屏/筛选后的空态文案（「暂无加工单」/「暂无加工单（当前筛选条件下）」）与状态文案（已生成/已发加工/加工中/加工完成/已取消）不变
+跳过: [backend-contract] 前端行为（admin-web 页面/交互），由 vitest 单测覆盖（frontend/admin-web/tests/unit/pages/processing-orders-list.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-011 惯例）
+```
+溯源: 2026-09-18 新增（issue #4303）：加工单列表页写操作后行状态不刷新（用户看起来像「点了没反应」）。根因两条：① `loadList()` 无请求时序保护（任何历史请求的响应回来都 `setList`，后到的旧响应覆盖新数据）；② 写操作成功后只 `loadList()`、不用写响应即时更新该行。红证（修复前实测，本机 vitest 2 条红）：断言① `expected '…已生成…' to contain '加工中'`（旧响应覆盖新数据）+ 断言② `expected '…加载中…' to contain '已发加工'`（行未反映写响应）；修复后同两条全绿。实现：`listReqSeq` 请求序号 ref（旧响应一律丢弃、`loading` 只由最新请求收尾）+ 写成功后 `applyUpdated(res.data?.data)` 即时更新该行 + 写后收敛刷新走 `loadList({ silent: true })`。**判据长期形态**按后续 P3（移除列表页写入口、唯一入口改订单详情页）的裁定定为「加载竞态」；断言②属「当前 main 有效」，P3 落地时随实现一并移除并由该单更新测试文件。 ｜ tags: processing-order, admin_web, request_ordering, list_refresh
+
 ## 商品域（25 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
@@ -3378,7 +3389,7 @@
 必须成功: product_manage(toggle_status)
 ```
 真值: product-sku-stock.status-flow
-溯源: verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤。2026-09-14 校准（#3557）：假绿升级——升 must_succeed(toggle_status) + required_args(product_id/status)；根因修复见 app/graph/nodes.py 的答卡轮豁免（答卡轮不再被卡值里的跨域词路由到 order skill）。2026-09-18 补 `post_clean[product_status_restore]`（issue #4075 机制半边）：下架→上架是**有条件复位**，本类型补无条件那半；断言（expectations/must_succeed/required_args/data_checks）**原样未动** ｜ tags: status, write
+溯源: verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤。2026-09-14 校准（#3557）：假绿升级——升 must_succeed(toggle_status) + required_args(product_id/status)；根因修复见 app/graph/nodes.py 的答卡轮豁免（答卡轮不再被卡值里的跨域词路由到 order skill）。2026-09-18 补 `post_clean[product_status_restore]`（issue #4075 机制半边）：下架→上架是**有条件复位**，本类型补无条件那半；断言（expectations/must_succeed/required_args/data_checks）**原样未动**。2026-09-18（burn-down 缴费，随 #4303 的用例面改动）：补 `precondition[product_count_for_keyword: 遮光窗帘 expect=1]` —— 销掉存量违规 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账，清单条目随之删除）；判据是**真前置**（按名字选品 ⇒ 该名字唯一且存在），形态与 #3835 给 OR-014 的同一份（同关键词、同 `product_dedupe`、同 `expect=1`），断言面（expectations/must_succeed/required_args/data_checks/pre_clean/post_clean）一字未动。 ｜ tags: status, write
 
 ### PR-008. 创建商品 - 完整流程 🔵
 ```
@@ -4467,8 +4478,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：324（活跃 162，跳过 162）
-- tier 分布：smoke 10 / normal 281 / adversarial 33
+- 用例总数：325（活跃 162，跳过 163）
+- tier 分布：smoke 10 / normal 282 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4487,7 +4498,7 @@
 - ontology：4
 - 订单域：30
 - 加工项域：13
-- processing-order：23
+- processing-order：24
 - 商品域：25
 - registry：1
 - 设置域：10
@@ -4545,6 +4556,7 @@
 - PG-021: 计件工资报表——GET /production/piecework/summary（按人/按期）+ 生产管理菜单同构
 - PG-022: 应做数量接算料引擎（Java 接线）——ProductionOperationQtyClient + buildPositionPayload + qty_source 列
 - PG-023: 特殊选项 → 计件（Java 侧）——订单携带 specialOptions + 条件工序 + 计件系数 + 系数真的进钱
+- PG-024: 加工单列表请求时序保护——旧的在飞响应晚到不得覆盖更新的列表数据
 - PP-007: 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）

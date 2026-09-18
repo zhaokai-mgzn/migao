@@ -340,6 +340,16 @@ cases:
       # 去重只按关键词（#3518）：用例已不再点名价格（独立栈种子 ¥168），`price: 100` 恒不匹配。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
+    # ── 前置自断言（同 OR-014 的 #3835 先例；本 PR 为过 burn-down 硬门禁补齐）──
+    # 本用例按**名字**选品（「把遮光窗帘下架」），故「该名字在种子栈里唯一」是可判定的前置：
+    # `pre_clean[product_dedupe]` 保留最早创建的那件（= 种子商品），若库里 0 件（种子缺失）或
+    # 残留同名副本（去重未生效），前置即不成立 ⇒ 折成 `precondition_not_applied(declared)`，
+    # 不再伪装成「agent 不会上下架」（PG-013 / CU-003 同族，见 `migao-dev-flow` §18.4）。
+    # `max_growth` 缺省 0 = 运行期间不得新增同名商品（本用例只改状态、不建品）。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     # ── 复位共享夹具（issue #4075 的**机制半边**：`post_clean`）──
     # 本用例改的是**共享夹具** `prod_eval_blackout` 的**在售状态**，且复位是**有条件**的：
     # 只有「上架」段真的走完（agent 答完卡）才回到 on_sale —— 中途失败/只说没做时
@@ -350,7 +360,7 @@ cases:
       - type: product_status_restore
         product_keyword: "遮光窗帘"
     skip_reason: ""
-    merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤。2026-09-14 校准（#3557）：假绿升级——升 must_succeed(toggle_status) + required_args(product_id/status)；根因修复见 app/graph/nodes.py 的答卡轮豁免（答卡轮不再被卡值里的跨域词路由到 order skill）。2026-09-18 补 `post_clean[product_status_restore]`（issue #4075 机制半边）：下架→上架是**有条件复位**，本类型补无条件那半；断言（expectations/must_succeed/required_args/data_checks）**原样未动**"
+    merge_log: "verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤。2026-09-14 校准（#3557）：假绿升级——升 must_succeed(toggle_status) + required_args(product_id/status)；根因修复见 app/graph/nodes.py 的答卡轮豁免（答卡轮不再被卡值里的跨域词路由到 order skill）。2026-09-18 补 `post_clean[product_status_restore]`（issue #4075 机制半边）：下架→上架是**有条件复位**，本类型补无条件那半；断言（expectations/must_succeed/required_args/data_checks）**原样未动**。2026-09-18（burn-down 缴费，随 #4303 的用例面改动）：补 `precondition[product_count_for_keyword: 遮光窗帘 expect=1]` —— 销掉存量违规 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账，清单条目随之删除）；判据是**真前置**（按名字选品 ⇒ 该名字唯一且存在），形态与 #3835 给 OR-014 的同一份（同关键词、同 `product_dedupe`、同 `expect=1`），断言面（expectations/must_succeed/required_args/data_checks/pre_clean/post_clean）一字未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_product_search.py"
