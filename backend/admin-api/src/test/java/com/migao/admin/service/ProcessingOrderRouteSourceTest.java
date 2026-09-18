@@ -157,7 +157,12 @@ class ProcessingOrderRouteSourceTest {
     }
 
     /**
-     * 信号映射表（**库**，V60 种子逐行 + 一条商家自建行「罗马帘」）。
+     * 信号映射表（**库**，V60 种子逐行 + V63 修正 + 一条商家自建行「罗马帘」）。
+     *
+     * <p><b>V63 修正（issue #4362 阶段 1 ② / issue #4365 裁定）</b>：{@code 四爪钩 / 四叉钩} 是
+     * **加工项（配件）不是工艺**（工艺＝安装工艺＝打褶/悬挂方式，**单值**）⇒ 这两行指向**主线工艺**
+     * {@code 韩褶}，不再是独立路线键。桩必须与库的**终态**一致（V60 种子 + V63 UPDATE）——
+     * 否则「派生读库」的等价性证据是假的。</p>
      *
      * <p>「罗马帘」那两行是本文件的关键判别物：它在**迁移前的常量表里不存在** ⇒
      * 只要派生还在读常量，T2 用例的键就会退化成默认键（{@code default} 而不是
@@ -170,8 +175,8 @@ class ProcessingOrderRouteSourceTest {
                 signal("sig-v60-03", "布", "布帘", null, 3),
                 signal("sig-v60-04", "韩褶", null, "韩褶", 1),
                 signal("sig-v60-05", "打孔", null, "打孔", 2),
-                signal("sig-v60-06", "四爪钩", null, "四爪钩", 3),
-                signal("sig-v60-07", "四叉钩", null, "四爪钩", 4),
+                signal("sig-v60-06", "四爪钩", null, "韩褶", 3),
+                signal("sig-v60-07", "四叉钩", null, "韩褶", 4),
                 signal("sig-v60-08", "穿杆", null, "穿杆", 5),
                 signal("sig-v60-09", "平幔", null, "平幔", 6),
                 signal("sig-v60-10", "帘头", null, "平幔", 7),
@@ -270,7 +275,133 @@ class ProcessingOrderRouteSourceTest {
                 .build();
     }
 
+    /**
+     * 一条订单明细，可**分别**指定三种载体（V63 / issue #4362 的推导链判别物）：
+     * <ol>
+     *   <li>{@code columnCurtainType}/{@code columnCraft} = {@code order_items} 的**结构化列**
+     *       （显式字段，最高优先级）；</li>
+     *   <li>{@code jsonCurtainType}/{@code jsonCraft} = {@code processing_info} 顶层的同键
+     *       （issue #4354 的旧载体 —— 与列**同义**，列非空时覆盖它）；</li>
+     *   <li>{@code processingItemName} = 加工项名（推导链第 2 层「加工项推导」的信号源）。</li>
+     * </ol>
+     * 三者可同时给，正是为了把「谁压过谁」变成**可失败的断言**（只给一种载体时判不出优先级）。
+     */
+    private static OrderItem itemWithCarriers(String itemId, String productName, String processingItemName,
+                                              String columnCurtainType, String columnCraft,
+                                              String jsonCurtainType, String jsonCraft) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("colorName", "米白");
+        info.put("sellingMethod", "散剪");
+        if (jsonCurtainType != null) {
+            info.put("curtainType", jsonCurtainType);
+        }
+        if (jsonCraft != null) {
+            info.put("craft", jsonCraft);
+        }
+        info.put("processingItems", List.of(Map.of("id", "p-" + itemId, "name", processingItemName,
+                "unitPrice", 3.0, "quantity", 2, "unit", "米")));
+        return OrderItem.builder()
+                .id(itemId).tenantId(TENANT).orderId("order-001")
+                .productName(productName).quantity(BigDecimal.valueOf(2))
+                .width(new BigDecimal("2.5")).height(new BigDecimal("2.8"))
+                .curtainType(columnCurtainType).craft(columnCraft)
+                .processingInfo(info)
+                .build();
+    }
+
     // ── 判据 ────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("PG-029 推导链①：结构化**列**（显式字段）压过 processing_info 同键 ⇒ direct 用列值")
+    void explicitColumnBeatsProcessingInfoKey() {
+        // **不** stub 信号映射表：两维都由显式字段给出时，派生链（第 2/3 层）根本不该被触碰 ——
+        // 下面 verify(never) 把这一点也钉死（顺带避免 Mockito 严格桩把「备而不用」判成失败）。
+        stubRoutings();
+        // 列 = 纱帘×韩褶（库里**有**这条路线）；JSONB 同键 = 布帘×打孔（**也**是合法键）
+        // ⇒ 只要读取侧没有「列优先」，结果就会是 布帘×打孔 ⇒ 本用例红。
+        AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
+                itemWithCarriers("item-1", "遮光成品X", "工序甲",
+                        "纱帘", "韩褶", "布帘", "打孔")));
+
+        var results = service().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        assertThat(po.get().getRouteSource())
+                .as("显式字段（列）是推导链最高层 ⇒ 两维都取自列 ⇒ direct")
+                .isEqualTo("direct");
+        assertThat(po.get().getRouteKey())
+                .as("列非空必须覆盖 processing_info 同键（列 = 结构化真值，JSONB 键 = 旧载体）")
+                .isEqualTo("纱帘×韩褶");
+        assertThat(po.get().getRouteRequestedKey()).isEqualTo("纱帘×韩褶");
+        org.mockito.Mockito.verify(productionOperationQueryService, org.mockito.Mockito.never())
+                .routeSignals(TENANT);
+    }
+
+    @Test
+    @DisplayName("PG-027 推导链②：显式字段给一维 + 加工项推导给另一维 ⇒ partial（显式维不被覆盖）")
+    void explicitColumnBeatsProcessingItemDerivation() {
+        stubSignals();
+        stubRoutings();
+        // 列只给工艺 打孔（布帘×打孔 库里**没有**这条路线 —— 桩里只有 布帘×韩褶/纱帘×韩褶/帘头×平幔）
+        // ⇒ 用「加工项名 韩褶-布」推帘种：加工项名含「布」⇒ 布帘；加工项名也含「韩褶」，
+        //   但工艺维**已被显式字段占住**（打孔）⇒ 必须是 布帘×打孔 ⇒ missing_route（回落默认）。
+        // 若显式字段被推导覆盖 ⇒ 会得到 布帘×韩褶 + derived ⇒ 本用例红。
+        AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
+                itemWithCarriers("item-1", "遮光成品X", "韩褶-布", null, "打孔", null, null)));
+
+        var results = service().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        assertThat(po.get().getRouteSource())
+                .as("只直读一维 ⇒ partial 起；且该键库里没有 ⇒ 回落 ⇒ missing_route（补救动作 = 建路线）")
+                .isEqualTo("missing_route");
+        assertThat(po.get().getRouteRequestedKey())
+                .as("显式工艺（打孔）必须压过加工项名里的「韩褶」—— 否则就是「推导盖掉用户填的值」")
+                .isEqualTo("布帘×打孔");
+    }
+
+    @Test
+    @DisplayName("PG-029 推导链③：加工项推导（第 2 层）压过商品名信号（第 3 层）")
+    void processingItemDerivationBeatsProductNameSignal() {
+        stubSignals();
+        stubRoutings();
+        // 商品名含「纱」（第 3 层信号）；加工项名「打孔-布」含「布」+「打孔」（第 2 层）
+        // ⇒ 必须取加工项那一层：布帘×打孔（库里没有 ⇒ missing_route）。
+        // 若把商品名提到加工项名之前 ⇒ 得到 纱帘×打孔 / 纱帘×韩褶 ⇒ 本用例红。
+        AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
+                itemWithCarriers("item-1", "遮光纱A", "打孔-布", null, null, null, null)));
+
+        var results = service().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        assertThat(po.get().getRouteRequestedKey())
+                .as("加工项比商品名权威（V58 实证：商品名里一个「布/纱」字就会选错路线）")
+                .isEqualTo("布帘×打孔");
+    }
+
+    @Test
+    @DisplayName("PG-029 四爪钩/四叉钩是加工项不是工艺 ⇒ 信号指向主线，不再是独立路线键")
+    void hookAccessorySignalPointsAtMainLine() {
+        stubSignals();
+        stubRoutings();
+        // 加工项名就是「四爪钩」（配件本身），商品名含「布」⇒ 帘种 布帘。
+        // V63 前：信号 四爪钩 → craft=四爪钩 ⇒ 派生键 布帘×四爪钩（库里没有该路线 ⇒ missing_route，
+        //         requested=布帘×四爪钩）；V63 后：指向主线工艺 韩褶 ⇒ 布帘×韩褶 + **derived**。
+        // ⇒ 断言 routeSource=derived 且 requested=布帘×韩褶 就能区分两者（本用例即红证）。
+        AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
+                itemWithCarriers("item-1", "布艺遮光帘A", "四爪钩", null, null, null, null)));
+
+        var results = service().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        assertThat(po.get().getRouteSource())
+                .as("指向主线 ⇒ 是干净派生（derived），不是「识别的键库里没有」（missing_route）")
+                .isEqualTo("derived");
+        assertThat(po.get().getRouteKey()).as("走主线工艺 韩褶").isEqualTo("布帘×韩褶");
+        assertThat(po.get().getRouteRequestedKey())
+                .as("不得再派生/记录「布帘×四爪钩」—— 四爪钩是加工项（配件），不是并列工艺")
+                .isEqualTo("布帘×韩褶");
+    }
 
     @Test
     @DisplayName("PG-026 T1：全无信号 ⇒ route_source=default + route_key=默认键 + requested=null + incident 日志")

@@ -292,6 +292,9 @@ class TestCraftSpecEnumGate:
 #    设计文档 §4.5）；缺就不填，**禁止自己推算/补 0**（不发明数字）。
 _CRAFT_SPEC_EXTRA_KEYS = (
     "cuttingMode", "openCount", "pleatSpacing", "hasPattern", "patternRepeat",
+    # 转角（issue #4362，S1）：C 端澄清清单**已经问了**（window_type 的 note：「转角影响开数与片数」）
+    # 却零消费者 ⇒ 属算料输入，必须随单落库（列 `order_items.corner`）。
+    "corner",
 )
 _CALC_OUTPUT_KEYS = (
     "fabric_meters", "pleat_count", "per_panel_pleats", "panels",
@@ -438,3 +441,47 @@ class TestCraftSpecKeyCompletion:
             "请改成字面量"
         )
         ast.literal_eval(assignment.value)          # 求值失败即判红（与 Java 侧同口径）
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 工艺**单值** + 「四爪钩是加工项不是工艺」（issue #4362 阶段 1 / issue #4365 用户裁定）
+# ══════════════════════════════════════════════════════════════════════════════
+# 用户裁定：① 一条单的「工艺」**单值**；② 「四爪钩/穿钩」是**加工项（配件）**，不是并列工艺。
+# 信号映射层已把它指向主线（V63）；**描述层**负责不让模型把它当 `craft` 填
+# （显式值仍会生效 ⇒ 填错就取到那条独立路线）。
+ORDER_LINE_CRAFT_SPEC_KEYS = (
+    "curtainType", "craft", "openCount", "cuttingMode", "isShaped",
+    "pleatSpacing", "pleat_count", "fullness", "fullness_actual", "hasPattern", "corner",
+)
+
+
+class TestCraftIsSingleValuedAndHookIsAnItem:
+    """工艺单值 + 四爪钩归属（#4365 裁定）在**描述层**的落地。"""
+
+    def test_description_states_craft_is_single_valued_and_hook_is_an_item(self):
+        desc = OrderCreateTool.description
+        assert "工艺单值" in desc, "描述未说「工艺单值」⇒ 模型可能给多条工艺"
+        assert "只能一个值" in desc, "描述未钉住「craft 只能一个值」"
+        assert "四爪钩" in desc and "加工项" in desc, (
+            "描述未说清「四爪钩/四叉钩是加工项（配件）」⇒ 模型会把它当 craft 填"
+        )
+
+    def test_craft_enum_still_matches_routing_library(self):
+        """反向护栏：`四爪钩` **保留**在 craft 枚举里（阶段 3 才迁移路线数据）。
+
+        枚举必须与 `production_routings.craft` 逐字一致（上面 `test_schema_declares_craft_spec_keys…`
+        同口径）。有人为了「四爪钩不是工艺」把枚举删掉 ⇒ 枚举与库漂移 ⇒ 本断言红。
+        修法是改**描述**引导 + 信号层指向主线，**不是**悄悄改枚举。
+        """
+        assert _pi_props()["craft"]["enum"] == ["韩褶", "打孔", "四爪钩", "穿杆", "平幔"], (
+            "craft 枚举必须与工序库 production_routings.craft 逐字一致（阶段 3 才收敛）"
+        )
+
+    def test_every_order_line_element_is_declared_and_taught(self):
+        """真值源 §1 的下单行要素（11 项）必须**声明 + 教学**同时存在（#4362 S1）。"""
+        props = _pi_props()
+        desc = OrderCreateTool.description
+        for key in ORDER_LINE_CRAFT_SPEC_KEYS:
+            assert key in props, f"processing_info schema 未声明 {key} ⇒ LLM 传不进来（等于没实现）"
+            assert key in desc, f"工具描述未教「{key}」⇒ LLM 不会填它"
+

@@ -5,6 +5,8 @@
 - 矛盾拦截：4.6m 单开→建议双开、四开偏窄、折数整除、工艺互斥、打孔不按折数、倍数<1.5
 - 默认三层合成：行业【标】 < 商家【默】 < 客户记忆（craft_profile）
 - 轮次上限：每轮 ≤3 问，超上限转复尺/人工
+- **清单 → 下单行要素**（issue #4362，S1）：`to_craft_spec` 把已收集字段映射成
+  `processing_info` 顶层键（**「问到了却不落库」的修法**）
 
 真值源：docs/curtain-fabric-quote-rules.md §1/§8 + docs/curtain-production-rules.md §7
 """
@@ -12,10 +14,14 @@
 import pytest
 
 from app.clarification.curtain_checklist import (
+    CALC_OUTPUT_PASSTHROUGH_KEYS,
+    CHECKLIST,
+    CHECKLIST_TO_CRAFT_SPEC,
     ask_batch,
     conflicts,
     merged_defaults,
     missing_required,
+    to_craft_spec,
 )
 
 
@@ -126,3 +132,75 @@ def test_ask_batch_complete_when_all_collected():
     questions, cont = ask_batch(collector, rounds=0)
     assert questions == []
     assert cont is True
+
+
+# ── 5. 清单 → 下单行要素（issue #4362，S1）──
+# 判据：真值源 §1 的下单行要素此前「问到了却不落库」（只活在 collector 字典里，会话结束即丢）
+# ⇒ 加工单只能靠加工项名**猜**部位/工艺。`to_craft_spec` 是修法，且必须**只搬运**：
+# 不补默认值、不猜、不做业务推导（用户裁定「部位不是必填的」）。
+
+def test_craft_spec_maps_checklist_ids_to_processing_info_keys():
+    spec = to_craft_spec({
+        "curtain_type": "纱帘", "craft": "打孔", "open_count": 4,
+        "is_shaped": False, "pleat_spacing": 0.1, "has_pattern": True,
+        "window_type": "转角",
+    })
+    assert spec == {
+        "curtainType": "纱帘",
+        "craft": "打孔",
+        "openCount": 4,
+        "isShaped": False,
+        "pleatSpacing": 0.1,
+        "hasPattern": True,
+        "corner": "转角",          # 清单里「转角」就是窗型的一项（note：转角影响开数与片数）
+    }
+
+
+def test_craft_spec_omits_missing_fields_never_invents_defaults():
+    # 只收集了帘型 ⇒ 只有这一个键；**不得**补 craft/pleat_spacing 的行业默认值
+    # （默认值由 merged_defaults 管，落库只认真实采集到的值 —— 否则库里会出现「没人说过」的工艺）
+    spec = to_craft_spec({"curtain_type": "布帘"})
+    assert spec == {"curtainType": "布帘"}
+    assert "craft" not in spec
+    assert "pleatSpacing" not in spec
+    assert "openCount" not in spec
+
+
+def test_craft_spec_passes_calc_output_through_verbatim():
+    spec = to_craft_spec({"curtain_type": "布帘"}, calc={
+        "fullness": 2.0, "fullness_actual": 1.86, "pleat_count": 48, "fabric_meters": 12.3})
+    # 算料输出键名原样（= Java 侧 CALC_INFO_KEYS 口径），只透传白名单里的三个
+    assert spec["fullness"] == 2.0
+    assert spec["fullness_actual"] == 1.86
+    assert spec["pleat_count"] == 48
+    assert "fabric_meters" not in spec      # 米数走 processingMeters / 加工项口径，不经本映射
+
+
+def test_craft_spec_collected_value_wins_over_calc_output():
+    # 顾客/商家明确填过的值不得被算料输出覆盖（否则「人改的」被「算的」静默盖掉）
+    spec = to_craft_spec({"pleat_spacing": 0.12}, calc={"fullness": 2.0})
+    assert spec["pleatSpacing"] == 0.12
+    assert spec["fullness"] == 2.0
+
+
+def test_craft_spec_mapping_targets_are_all_declared_order_line_elements():
+    # 双向自证（防「映射表里写了、落库侧不认」）：目标键必须落在**已声明**的两组键里
+    declared = set(CHECKLIST_TO_CRAFT_SPEC.values()) | set(CALC_OUTPUT_PASSTHROUGH_KEYS)
+    assert declared == {
+        "curtainType", "craft", "openCount", "isShaped", "pleatSpacing",
+        "hasPattern", "corner", "fullness", "fullness_actual", "pleat_count",
+    }
+
+
+def test_craft_spec_mapping_sources_are_real_checklist_fields():
+    # 映射源必须是清单里**真实存在**的字段 id（写错一个 id ⇒ 该项永远映射不到 = 静默丢值）
+    ids = {item["id"] for item in CHECKLIST}
+    unknown = set(CHECKLIST_TO_CRAFT_SPEC) - ids
+    assert unknown == set()
+
+
+def test_checklist_asks_has_pattern():
+    # 是否对花（真值源 §1 下单行要素）：此前只在 fabric 的 note 里一笔带过 ⇒ 没人问、也没处落库
+    by_id = {item["id"]: item for item in CHECKLIST}
+    assert "has_pattern" in by_id
+    assert by_id["has_pattern"]["required"] is False   # 可空、不阻塞报价

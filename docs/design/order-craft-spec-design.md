@@ -62,12 +62,18 @@
 
 ### 2.2 两个「代码里自己登记」的硬缺口
 
-`ProcessingOrderService.java` 类注释「部位语义（如实登记，尚未对齐）」节原文：
+`ProcessingOrderService.java` 类注释「部位语义」节**原文（#4354 之前的历史快照，已作废）**：
 
-> **部位语义（如实登记，尚未对齐）**：`processing_position_operations.position_name` 取「加工产物名[+色号]」，
+> ~~**部位语义（如实登记，尚未对齐）**：`processing_position_operations.position_name` 取「加工产物名[+色号]」，
 > 因为**订单侧没有部位/帘种字段** —— 而工序库的路线是**按部位**索引的（布帘/纱帘/帘头）。
 > ⇒ 本包只能在实例化时**派生**部位（见 `deriveRouteKey`），派生不中就落默认路线 布帘×韩褶。
-> **待订单侧补「部位/帘种」字段后再对齐**（届时改为直读 + 删掉关键字派生表）。
+> **待订单侧补「部位/帘种」字段后再对齐**（届时改为直读 + 删掉关键字派生表）。~~
+
+> ⚠️ **上段已作废**（#4354 起直读；#4362 S1 起 `order_items` 有 `curtain_type`/`craft` **列**）：
+> 「待补字段后**删掉关键字派生表**」**不再成立** —— 用户裁定「部位不是必填的」⇒
+> 派生 + 信号映射表是**长期兜底**（现行口径见 §4.7 的三层链）。
+> 现行类注释见 `ProcessingOrderService.java` 的「部位语义（issue #4354 起：显式字段优先，
+> 派生是**长期兜底**）」节。
 
 `ProcessingOrderService.java` 的 `calcInfo` javadoc「已知缺口（#4118…）」节原文：
 
@@ -179,7 +185,23 @@
 
 ### 4.1 落位与理由
 
-**落位：`order_items.processing_info`（既有 JSONB）的顶层扁平键。不加新列、不加新表、不写迁移。**
+**落位：`order_items` 的**结构化列**（V63，issue #4362 S1）+ `processing_info`（既有 JSONB）顶层扁平键作为**写入口**。**
+
+> ⚠️ **本节口径已被 issue #4362（S1）更新**（2026-09-19）：原文写的是「**不加新列、不加新表、不写迁移**」
+> —— 那是 #4346/#4354 阶段（只要求「先落库」）的取法。S1 的判据升级为「把下单行要素**结构化**落到
+> `order_items`」（真值来源 = #4362 + `docs/design/domain-model-review-sales-production-finance.md` §S1）：
+> 埋在 JSONB 里的要素**不可查询、不可约束、下游只能按字符串键取**。故：
+> 1. **新增 11 个 nullable 列**（`curtain_type` / `craft` / `open_count` / `cutting_mode` / `is_shaped` /
+>    `fullness` / `fullness_actual` / `pleat_spacing` / `pleat_count` / `has_pattern` / `corner`，
+>    V63 迁移 + `docs/sql/schema.sql` 终态）；
+> 2. **写入口仍是 `processing_info` 顶层键**（不新增 DTO 字段 —— 避免第二份定义，
+>    `OrderDtoContractTest` 锁死 DTO 形态；两个采集端本来就写 JSONB）⇒
+>    `OrderService.createOrder`（三条路径的唯一共享入口）把它**物化**到列上
+>    （单一映射点 = `OrderLineCraftFields.materialize`）；
+> 3. **读面列优先**：`buildSnapshot` 在 JSONB 键之后叠加列值（`OrderLineCraftFields.toSnapshotKeys`）
+>    ⇒ 推导链最高层「显式字段」有了结构化载体。
+>
+> 下面 1./2./3. 三条理由对**写入口**仍然成立（扁平键 = 零改动即有通路），故保留原文。
 
 理由（按「最少代码阶梯」）：
 
@@ -265,12 +287,27 @@
 > ⚠️ 入口 2 与既有决策**不冲突**：`processing-order-design.md` 决策 6 锁的是「加工项**创建后**不可改」，
 > 本方案改的是**创建时**写入更多字段，不引入订单明细编辑入口 ⇒ PG-014 tripwire 不受影响。
 
-### 4.7 消费端（直读优先，派生降级为存量单兜底）
+### 4.7 消费端（显式字段优先，派生是**长期兜底**）
 
-> ⚠️ **与在飞工作调和（#4308 / PR #4323，draft）**：#4308 正在把「关键字派生部位」做成
+> ⚠️ **口径已被 issue #4362（S1）升级为三层链**（2026-09-19）。下表是 #4354 阶段的取法
+> （「直读 / 派生」二分），S1 把它细化为 **`显式字段 > 加工项推导 > 信号派生兜底`**：
+>
+> | 层 | 条件 | 取法 | `route_source` |
+> |---|---|---|---|
+> | 1 **显式字段** | 订单行带 `curtainType` **+** `craft`（V63 起 = `order_items` 的**列**；JSONB 同键是旧载体） | 直读 | `direct` |
+> | 2 **加工项推导** | 显式字段缺的那一维，由**加工项名 / 加工项 options** 经信号映射表推出 | 派生 | `partial`（只一维）/ `derived` |
+> | 3 **信号派生兜底** | 加工项也不给信号 ⇒ 退到**商品名 / 销售方式**（同一张映射表） | 派生 | 同上；两层都不中 ⇒ `default` |
+> | 4 | 键解析出来了但库里无该路线 | 回落默认路线（不 fail-closed；fail-closed 只在**连默认路线都没有**时） | `missing_route` |
+>
+> 🔴 **派生路径不退场**（用户裁定 2026-09-19「部位不是必填的」）：S1 的字段全部可空
+> ⇒「没填部位/工艺的单」永远存在 ⇒ 第 2/3 层与信号映射表是**长期**兜底，**不是**临时桥。
+> 原文（含类注释）里「待订单侧补字段后连同信号表一起退场」「届时删掉关键字派生表」的表述
+> **一律作废**，不得再按它写回。
+
+> ⚠️ **与在飞工作调和（#4308）**：#4308 把「关键字派生部位」做成
 > **商家可配的信号映射表**，并给 `processing_orders` 加 `route_key` / `route_requested_key` /
 > `route_source`（四态：`derived` / `partial` / `missing_route` / `default`）。
-> ⇒ 本方案**不主张删掉派生表**（那会与在飞实现直接冲突），改为**直读优先、派生兜底**：
+> ⇒ 本方案**不主张删掉派生表**（那会与在飞实现直接冲突），改为**显式字段优先、派生兜底**：
 
 | 优先级 | 条件 | 取法 | `route_source` |
 |---|---|---|---|

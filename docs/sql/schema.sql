@@ -699,6 +699,20 @@ CREATE TABLE order_items (
     height DECIMAL(8,2),                            -- 高度(米)
     processing_info JSONB,                          -- 加工项详情JSON
     subtotal DECIMAL(12,2),                         -- 小计
+    -- 下单行要素（V63，issue #4362，S1；用户裁定「部位不是必填的」）—— **全部 nullable、不设校验**。
+    -- 逐列语义见 V63__structure_order_line_craft_spec.sql；本处只落 bootstrap 终态
+    -- （bootstrap 路径**不跑迁移链**的部署形态下，缺列 ⇒ 加工单查询/落库 500，形态见 #3270）。
+    curtain_type VARCHAR(16),                       -- 部位/帘种（布帘/纱帘/帘头）；工序库路线按它索引
+    craft VARCHAR(16),                              -- 安装工艺＝打褶/悬挂方式（韩褶/打孔/穿杆/平幔）；**单值**；四爪钩是加工项不是工艺
+    open_count INTEGER,                             -- 打开方式（开数：1 单开 / 2 对开 / 4 四开）
+    cutting_mode VARCHAR(16),                       -- 加工类型（定高买宽 / 定宽买高）
+    is_shaped BOOLEAN,                              -- 是否定型（部位级开关）
+    fullness DECIMAL(6,2),                          -- 理论褶倍（与 fullness_actual 分开存 —— 实证 1.86 ≠ 2.00，不是冗余）
+    fullness_actual DECIMAL(6,2),                   -- 实际褶倍（由实际用料反算）
+    pleat_spacing DECIMAL(6,3),                     -- 褶距（米，韩褶默认 0.1）
+    pleat_count INTEGER,                            -- 总褶数（与工序应做数量口径对齐）
+    has_pattern BOOLEAN,                            -- 是否对花
+    corner VARCHAR(32),                             -- 转角（取自澄清清单窗型；影响开数与片数）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
@@ -1032,6 +1046,17 @@ VALUES
   ('sig-v60-09', 1, '平幔', NULL,   '平幔',  6, 'active'),
   ('sig-v60-10', 1, '帘头', NULL,   '平幔',  7, 'active')
 ON CONFLICT DO NOTHING;
+
+-- 信号映射层的终态修正（V63，issue #4362 阶段 1 ② / issue #4365 裁定）：
+-- 「四爪钩/四叉钩」是**加工项（配件）**，工艺（安装工艺＝打褶/悬挂方式）**单值** ⇒ 这两行指向
+-- **主线工艺**（韩褶），不再是独立路线键。上面那段 V60 种子**一字不动**（它是迁移前的常量表快照，
+-- 由 ProductionRouteSignalMigrationTest 判据 1 钉住）⇒ 终态 = 「V60 种子 + 本 UPDATE」，
+-- 与迁移链在存量库上的结果**逐行等价**（bootstrap 只写 schema.sql 的部署形态也拿到同一终态）。
+UPDATE production_route_signals
+   SET craft = '韩褶'
+ WHERE signal IN ('四爪钩', '四叉钩')
+   AND craft = '四爪钩'
+   AND deleted = 0;
 
 -- ================================================
 -- 9.6 智能每日经营简报（issue #3468，V44 迁移）

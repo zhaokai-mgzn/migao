@@ -356,6 +356,148 @@ class OrderServiceTest {
         verify(orderItemMapper).insert(any(OrderItem.class));
     }
 
+    // ============ 下单行要素结构化落库（V63，issue #4362，S1）============
+    // 判据：两个采集端（C 端小布澄清清单 / B 端米宝 order_create）写入的 processing_info 顶层
+    // 工艺规格键，必须**物化**到 order_items 的列上（此前它们埋在 JSONB 里，加工单只能靠猜）。
+    // 全部可空、不设必填校验（用户裁定「部位不是必填的」）⇒ 缺键不报错、就是缺。
+
+    /** 造一条明细请求：processing_info 原样带入（JSON 字符串与 Map 两种形态都覆盖）。 */
+    private OrderCreateRequest createOrderRequestWithCraftSpec(Object processingInfo) {
+        OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
+        itemReq.setProductId("prod-001");
+        itemReq.setProductName("布艺遮光帘A");
+        itemReq.setQuantity(BigDecimal.valueOf(2));
+        itemReq.setUnitPrice(new BigDecimal("299.50"));
+        itemReq.setSubtotal(new BigDecimal("599.00"));
+        itemReq.setProcessingInfo(processingInfo);
+
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setCustomerName("张三");
+        request.setCustomerPhone("13800138000");
+        request.setCustomerAddress("北京市朝阳区");
+        request.setItems(List.of(itemReq));
+
+        when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
+            Order o = invocation.getArgument(0);
+            o.setId("order-new");
+            return 1;
+        });
+        when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
+        Order savedOrder = Order.builder().id("order-new").tenantId(1L).orderNo("ORD-20260919-0001")
+                .customerName("张三").customerPhone("13800138000")
+                .totalAmount(new BigDecimal("599.00")).status("pending").build();
+        when(orderMapper.selectById("order-new")).thenReturn(savedOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(orderLogisticsMapper.selectByOrderId("order-new", 1L)).thenReturn(List.of());
+        return request;
+    }
+
+    @Test
+    @DisplayName("V63 下单行要素：processing_info 的 11 个工艺规格键逐列落到 order_items（Map 形态）")
+    void createOrder_materializesCraftSpecColumns() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("sellingMethod", "bulk_cut");
+        info.put("curtainType", "纱帘");
+        info.put("craft", "打孔");
+        info.put("openCount", 4);
+        info.put("cuttingMode", "定高买宽");
+        info.put("isShaped", false);
+        info.put("fullness", 2.0);
+        info.put("fullness_actual", 1.86);
+        info.put("pleatSpacing", 0.1);
+        info.put("pleat_count", 48);
+        info.put("hasPattern", false);
+        info.put("corner", "转角");
+        info.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔-纱",
+                "unitPrice", 3.0, "quantity", 2, "unit", "米")));
+
+        orderService.createOrder(createOrderRequestWithCraftSpec(info), 1L);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        OrderItem saved = captor.getValue();
+        assertThat(saved.getCurtainType()).isEqualTo("纱帘");
+        assertThat(saved.getCraft()).isEqualTo("打孔");
+        assertThat(saved.getOpenCount()).isEqualTo(4);
+        assertThat(saved.getCuttingMode()).isEqualTo("定高买宽");
+        assertThat(saved.getIsShaped()).isFalse();
+        assertThat(saved.getFullness()).isEqualByComparingTo("2.0");
+        assertThat(saved.getFullnessActual()).isEqualByComparingTo("1.86");
+        assertThat(saved.getPleatSpacing()).isEqualByComparingTo("0.1");
+        assertThat(saved.getPleatCount()).isEqualTo(48);
+        assertThat(saved.getHasPattern()).isFalse();
+        assertThat(saved.getCorner()).isEqualTo("转角");
+        // 原有列一字不动（本包只加列，不改既有落库语义）
+        assertThat(saved.getProcessingInfo()).isSameAs(info);
+        assertThat(saved.getSubtotal()).isEqualByComparingTo("599.00");
+    }
+
+    @Test
+    @DisplayName("V63 下单行要素：processing_info 是 JSON **字符串**时同样落列（自定义 @Select 路径形态）")
+    void createOrder_materializesCraftSpecFromJsonString() throws Exception {
+        String json = objectMapper.writeValueAsString(Map.of(
+                "curtainType", "布帘", "craft", "韩褶", "openCount", 2, "isShaped", true,
+                "processingItems", List.of(Map.of("id", "p1", "name", "韩褶-布",
+                        "unitPrice", 3.0, "quantity", 2, "unit", "米"))));
+
+        orderService.createOrder(createOrderRequestWithCraftSpec(json), 1L);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        OrderItem saved = captor.getValue();
+        assertThat(saved.getCurtainType()).isEqualTo("布帘");
+        assertThat(saved.getCraft()).isEqualTo("韩褶");
+        assertThat(saved.getOpenCount()).isEqualTo(2);
+        assertThat(saved.getIsShaped()).isTrue();
+        // 未携带的要素保持 null（**不造值**、不补默认）
+        assertThat(saved.getCuttingMode()).isNull();
+        assertThat(saved.getCorner()).isNull();
+        assertThat(saved.getPleatCount()).isNull();
+    }
+
+    @Test
+    @DisplayName("V63 下单行要素：完全不带工艺规格键也可下单（可空、不设必填校验）")
+    void createOrder_withoutCraftSpecStillSucceeds() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("sellingMethod", "bulk_cut");
+        info.put("processingItems", List.of(Map.of("id", "p1", "name", "韩褶-布",
+                "unitPrice", 3.0, "quantity", 2, "unit", "米")));
+
+        orderService.createOrder(createOrderRequestWithCraftSpec(info), 1L);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        OrderItem saved = captor.getValue();
+        assertThat(saved.getCurtainType()).isNull();
+        assertThat(saved.getCraft()).isNull();
+        assertThat(saved.getOpenCount()).isNull();
+        assertThat(saved.getCuttingMode()).isNull();
+        assertThat(saved.getIsShaped()).isNull();
+        assertThat(saved.getFullness()).isNull();
+        assertThat(saved.getFullnessActual()).isNull();
+        assertThat(saved.getPleatSpacing()).isNull();
+        assertThat(saved.getPleatCount()).isNull();
+        assertThat(saved.getHasPattern()).isNull();
+        assertThat(saved.getCorner()).isNull();
+    }
+
+    @Test
+    @DisplayName("V63 下单行要素：取不出值的键**不静默**（WARN 日志）但不拒绝整单")
+    void createOrder_warnsOnUnparseableCraftSpecValue() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("openCount", "四开");          // 非数字 ⇒ 不落列
+        info.put("isShaped", "是");             // 中文布尔 ⇒ 不落列（不凭字面猜）
+        info.put("processingItems", List.of(Map.of("id", "p1", "name", "韩褶-布",
+                "unitPrice", 3.0, "quantity", 2, "unit", "米")));
+
+        orderService.createOrder(createOrderRequestWithCraftSpec(info), 1L);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        assertThat(captor.getValue().getOpenCount()).isNull();
+        assertThat(captor.getValue().getIsShaped()).isNull();
+    }
+
     @Test
     @DisplayName("创建订单 - 多个订单明细")
     void createOrder_MultipleItems() {

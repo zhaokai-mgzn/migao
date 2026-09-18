@@ -37,6 +37,10 @@ CHECKLIST: List[Dict[str, Any]] = [
      "default_rule": "curtain_type", "note": "布帘默认是/纱帘默认否/帘头是（面料红线：真丝等不耐高温须不定型）"},
     {"id": "pleat_spacing", "label": "褶距", "ui": "form", "default_src": "industry",
      "default": 0.1, "note": "韩褶默认 10cm"},
+    # 是否对花（issue #4362，S1）：此前只作为 `fabric` 的 note 一笔带过 ⇒ **没人问、也没处落库**。
+    # 真值源 §1 把它列为下单行要素（实证 `是否对花: 不对花`）；定宽买高时每幅加一个花距。
+    {"id": "has_pattern", "label": "是否对花", "ui": "choice", "default_src": "none",
+     "required": False, "note": "对花/不对花——定宽买高时每幅加一个花距（真值源 §1 下单行要素）"},
     {"id": "fabric", "label": "面料", "ui": "choice", "default_src": "merchant",
      "required": False, "note": "品类/预算/拼色/对花"},
     {"id": "accessory", "label": "辅料安装", "ui": "choice", "default_src": "industry",
@@ -44,6 +48,30 @@ CHECKLIST: List[Dict[str, Any]] = [
     {"id": "trade", "label": "交易", "ui": "choice", "default_src": "none",
      "required": False, "note": "预算/交期/急单——可跳过"},
 ]
+
+# ── 清单字段 → 下单行要素（order_items 的 craft spec，issue #4362 S1）────────────────
+# **唯一映射点**：清单字段 id（snake_case，本模块的词汇）→ `processing_info` 顶层键
+# （camelCase，订单/加工单两侧既有词汇，见设计文档 order-craft-spec-design.md §4.5）。
+# 两个消费面（Java `OrderLineCraftFields` 的写/读面）都按这套键名走 ⇒ 映射只在这里写一次。
+#
+# 为什么必须有它：真值源 §1 的下单行要素此前「**问到了却不落库**」—— 清单把值收进 collector，
+# 会话结束就没了；加工单只能靠加工项名**猜**部位/工艺（实证 V58：纱帘订单拿到布帘的 11 道工序，
+# 工序与计件工资全错）。`window_type` 映射到 `corner` 是因为清单里「转角」就是窗型的一项
+# （note 原话：「转角影响开数与片数」），**不另开一个重复的问项**。
+CHECKLIST_TO_CRAFT_SPEC: Dict[str, str] = {
+    "curtain_type": "curtainType",
+    "craft": "craft",
+    "open_count": "openCount",
+    "is_shaped": "isShaped",
+    "pleat_spacing": "pleatSpacing",
+    "has_pattern": "hasPattern",
+    "window_type": "corner",
+}
+
+# 算料输出键：**引擎是真值源**，清单只做透传（键名已是 `CALC_INFO_KEYS` 口径，不改名）。
+# ⚠️ `cutting_mode`（加工类型）**不在**此表：它的取值由算料的 `formula_used` 决定，
+# 在清单层「反推」就是第二份口径 ⇒ 登记为缺口，由生产端（order_create）按算料输出携带。
+CALC_OUTPUT_PASSTHROUGH_KEYS = ("fullness", "fullness_actual", "pleat_count")
 
 # 行业红线（真值源 §1/§8）
 MIN_FULLNESS = 1.5          # 褶皱倍数下限
@@ -123,6 +151,39 @@ def merged_defaults(
             ct = collector.get("curtain_type") or "布帘"
             defaults[iid] = ct != "纱帘"            # 布帘/帘头定型，纱帘不定型
     return defaults
+
+
+def to_craft_spec(
+    collector: Dict[str, Any],
+    calc: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """清单已收集字段（+ 算料输出）→ **下单行要素**（`processing_info` 顶层键）。
+
+    这是「问到了却不落库」的**唯一修法**（issue #4362，S1）：清单字段此前只活在会话里
+    （collector 字典），会话结束即丢 ⇒ 加工单只能靠加工项名**猜**部位/工艺。
+
+    口径（**只做搬运，不做业务判断**）：
+    - 清单字段按 {@link CHECKLIST_TO_CRAFT_SPEC} 逐项改名（snake_case → camelCase）；
+    - 算料输出（`fullness` / `fullness_actual` / `pleat_count`）**原样透传**（引擎是真值源）；
+    - **缺项就不放这个键**（用户裁定「部位不是必填的」⇒ 本函数不补默认值、不猜、不推导）；
+    - 已在 collector 里的键**不被算料输出覆盖**（顾客/商家填的优先于算出来的）。
+
+    Args:
+        collector: 已收集字段（清单 id → 值）
+        calc: 算料引擎输出（可选；键名 = `CALC_INFO_KEYS` 口径）
+    Returns:
+        `processing_info` 顶层键的子集（camelCase 工艺规格键 + snake_case 算料输出键）
+    """
+    spec: Dict[str, Any] = {}
+    for field_id, key in CHECKLIST_TO_CRAFT_SPEC.items():
+        value = collector.get(field_id)
+        if value is not None:
+            spec[key] = value
+    for key in CALC_OUTPUT_PASSTHROUGH_KEYS:
+        value = (calc or {}).get(key)
+        if value is not None and key not in spec:
+            spec[key] = value
+    return spec
 
 
 def ask_batch(
