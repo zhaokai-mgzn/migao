@@ -4743,6 +4743,7 @@ _CASE_PR_007 = EvalCase(
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     post_clean=[{'type': 'product_status_restore', 'product_keyword': '遮光窗帘'}],
     namespaces=['product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PR-008 [NORMAL] 创建商品 - 完整流程（源: cases/product.yml）──
