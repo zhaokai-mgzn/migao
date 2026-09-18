@@ -328,7 +328,7 @@ class ProcessingOrderServiceTest {
 
     /**
      * 两张特殊选项表 + 条件工序元数据的桩（逐字对齐 V59 种子里本文件用到的那几行）。
-     * 只桩「拼1次 / 加花边 / 余料做帘头 / 一分二」四行 —— 断言不依赖未桩的行。
+     * 只桩「拼1次 / 加花边 / 余料做帘头 / 一分为二」四行 —— 断言不依赖未桩的行。
      */
     private void stubOptionTables() {
         // lenient：只有**带特殊选项**的用例才会走到 operationsByName（条件工序元数据），
@@ -338,7 +338,7 @@ class ProcessingOrderServiceTest {
                 optionRouting("加花边", "花边-布", "布三边", 4),
                 optionRouting("余料做帘头", "帘头制作", "布三边", 10)));
         lenient().when(productionOperationQueryService.optionFactors(TENANT)).thenReturn(List.of(
-                optionFactor("一分二", null, "1.7")));
+                optionFactor("一分为二", null, "1.7")));
         Map<String, Map<String, Object>> catalog = new LinkedHashMap<>();
         catalog.put("拼1次-布", operationMeta("车位", "幅", "0.8"));
         catalog.put("花边-布", operationMeta("车位", "米", "0.6"));
@@ -1204,7 +1204,8 @@ class ProcessingOrderServiceTest {
     // ══════════════════ 特殊选项 → 条件工序 + 计件系数（issue #4230 Java 侧 v1a）══════════════════
     //
     // 病根（取证事实）：`processing_position_operations.factor` 列自 V49 就存在（注释原文
-    // 「特殊选项计件系数（如 一分二 ×1.7）」）、计件公式也真的乘它，但 `buildPositionPayload`
+    // 「特殊选项计件系数（如 一分二 ×1.7）」—— 该原文是 V49（**已发布迁移不可改**）的逐字引用；
+    // 选项名已于 issue #4389 按 ERP 对齐为「一分为二」，本引用保留历史原文）、、计件公式也真的乘它，但 `buildPositionPayload`
     // **从不 put factor** ⇒ 落库恒 1.00（实测库里每行都是「系数=1.00」）；且订单侧**从不携带**
     // specialOptions ⇒ 整条链「设计过但从未接线」= 少发工人钱。下面五条即该链的判据。
 
@@ -1252,11 +1253,11 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("#4230 判据 2：带「一分二」⇒ 该部位**每道**工序 factor=1.7；不带 ⇒ 1.00")
+    @DisplayName("#4230 判据 2：带「一分为二」（ERP 名，issue #4389）⇒ 该部位**每道**工序 factor=1.7；不带 ⇒ 1.00")
     void specialOptionFactorAppliesToEveryOperationOfThePosition() {
         stubLibrary();
         stubOptionTables();
-        stubGenerate(List.of(orderItemHanzheWithOptions("米白", List.of("一分二"))));
+        stubGenerate(List.of(orderItemHanzheWithOptions("米白", List.of("一分为二"))));
         when(processingItemMapper.selectById("p1"))
                 .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
 
@@ -1266,7 +1267,7 @@ class ProcessingOrderServiceTest {
         ArgumentCaptor<ProcessingPositionOperation> captor =
                 ArgumentCaptor.forClass(ProcessingPositionOperation.class);
         verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(captor.capture());
-        // 「一分二」不加工序（只加系数）⇒ 工序数不变，但每道都乘 1.7
+        // 「一分为二」不加工序（只加系数）⇒ 工序数不变，但每道都乘 1.7
         assertThat(captor.getAllValues()).allSatisfy(instance ->
                 assertThat(instance.getFactor()).as("工序「%s」的系数", instance.getOperationName())
                         .isEqualByComparingTo("1.7"));
@@ -1283,11 +1284,11 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("#4230 判据 4：不计件选项（余料带回(布)）⇒ 工序数不变、factor 仍为 1，且不是「没映射到」")
+    @DisplayName("#4230 判据 4：不计件选项（余料带回-布，ERP 名）⇒ 工序数不变、factor 仍为 1，且不是「没映射到」")
     void nonPieceworkOptionIsExplicitNoop() {
         stubLibrary();
         stubOptionTables();
-        stubGenerate(List.of(orderItemHanzheWithOptions("米白", List.of("余料带回(布)"))));
+        stubGenerate(List.of(orderItemHanzheWithOptions("米白", List.of("余料带回-布"))));
         when(processingItemMapper.selectById("p1"))
                 .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
 
@@ -1314,16 +1315,16 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("#4230 判据 3：系数真的进了钱 —— 同一张单带/不带「一分二」的计件合计比值 ≈ 1.7")
+    @DisplayName("#4230 判据 3：系数真的进了钱 —— 同一张单带/不带「一分为二」的计件合计比值 ≈ 1.7")
     void specialOptionFactorReachesPieceworkAmount() {
-        BigDecimal withOption = pieceworkTotalFor(List.of("一分二"));
+        BigDecimal withOption = pieceworkTotalFor(List.of("一分为二"));
         BigDecimal without = pieceworkTotalFor(List.of());
 
         assertThat(without).as("不带特殊选项 ⇒ 合计 = Σ(1 × 库单价)").isGreaterThan(BigDecimal.ZERO);
         double ratio = withOption.divide(without, 6, RoundingMode.HALF_UP).doubleValue();
         // 逐笔四舍五入到分（ProductionService.aggregate 的既有口径）⇒ 合计比值与 1.7 有 0.01 级偏差，
         // 断言用容差而不是等号（等号会假红）；但「带系数 ≠ 不带」这一条是硬断言。
-        assertThat(ratio).as("计件合计比值（带 一分二 / 不带）= 1.7 ± 0.01").isCloseTo(1.7, org.assertj.core.data.Offset.offset(0.01));
+        assertThat(ratio).as("计件合计比值（带 一分为二 / 不带）= 1.7 ± 0.01").isCloseTo(1.7, org.assertj.core.data.Offset.offset(0.01));
         assertThat(withOption).as("系数必须让钱变多（方向）").isGreaterThan(without);
     }
 

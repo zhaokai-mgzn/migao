@@ -76,10 +76,10 @@ def test_instance_operations_qty_from_calc():
 
 
 def test_instance_operations_one_split_factor():
-    """一分二 特殊选项 → 计件系数 ×1.7（不插工序）"""
-    insts = instance_operations({**POSITION, "special_options": ["一分二"]}, CALC)
+    """一分为二（ERP 名，issue #4389）特殊选项 → 计件系数 ×1.7（不插工序）"""
+    insts = instance_operations({**POSITION, "special_options": ["一分为二"]}, CALC)
     assert all(i["factor"] == 1.7 for i in insts)
-    assert all(i["operation"] != "一分二" for i in insts)
+    assert all(i["operation"] != "一分为二" for i in insts)
 
 
 def test_operation_catalog_grouping():

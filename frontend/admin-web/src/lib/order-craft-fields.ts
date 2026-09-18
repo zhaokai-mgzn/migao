@@ -52,11 +52,17 @@ export const STYLE_MIXED = '拼色'
  * （`SPECIAL_OPTION_ROUTINGS` ∪ `OPTION_FACTOR_SCOPES` ∪ `NON_PIECEWORK_OPTIONS`，
  * 覆盖率门禁 = `tests/test_production/test_special_options.py`）。
  * 库侧增删选项而此处不跟 ⇒ `order-craft-fields.test.ts` 的清单判据会红（不是静默漂移）。
+ *
+ * ⚠️ **选项名 = ERP 名，且它是 join key**（issue #4389 裁定 R-e）：本清单是**写侧** ——
+ * 用户勾选的值经 `buildCraftSpec` 落进 `processingInfo.specialOptions`，服务端拿它去
+ * `production_option_routings` / `production_option_factors.option_name` **逐字**匹配。
+ * 与库侧差一个字 ⇒ 条件工序不加、计件系数静默退回 1.0（**少发工人钱**）。
+ * 故 `一分为二` / `余料带回-布` / `余料带回-纱` 必须与 `routing.py` 及迁移 V59 ∪ V65 逐字一致。
  */
 export const SPECIAL_OPTIONS = [
-  '余料带回(布)', '余料带回(纱)', '布绑带', '纱绑带', '加logo条', '加立边',
+  '余料带回-布', '余料带回-纱', '布绑带', '纱绑带', '加logo条', '加立边',
   '加花边', '拼1次', '拼2次', '拼3次', '加铅块', '接高', '双眼皮接高',
-  '扣环', '抱枕', '防翘扣', '一分二', '余料做绑带', '余料做帘头',
+  '扣环', '抱枕', '防翘扣', '一分为二', '余料做绑带', '余料做帘头',
 ] as const
 
 /** 明细行角色（§4.8）：主布 / 配布边 */

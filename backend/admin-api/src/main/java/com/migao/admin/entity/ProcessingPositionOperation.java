@@ -57,7 +57,7 @@ public class ProcessingPositionOperation {
     /** 实例快照单价（调价不影响历史报工） */
     private BigDecimal unitPrice;
 
-    /** 特殊选项计件系数（如 一分二 ×1.7） */
+    /** 特殊选项计件系数（如 一分为二 ×1.7；选项名 = ERP 名，issue #4389） */
     private BigDecimal factor;
 
     /** 必完工序：全绿 → 加工单置 completed（生产完工；订单状态不动，issue #4117） */

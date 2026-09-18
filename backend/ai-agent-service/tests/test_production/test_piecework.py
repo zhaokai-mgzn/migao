@@ -30,7 +30,7 @@ def test_compute_piecework_normal_only():
 
 
 def test_compute_piecework_factor():
-    """一分二 系数 ×1.7：韩褶 48 折 × 0.4 × 1.7"""
+    """一分为二（ERP 名，issue #4389）系数 ×1.7：韩褶 48 折 × 0.4 × 1.7"""
     insts = [{**i, "factor": 1.7} for i in INSTANCES]
     logs = [{"operation": "韩褶-布", "worker": "李红梅", "qty": 48, "qualified_qty": 48, "type": "normal"}]
     r = compute_piecework(insts, logs)

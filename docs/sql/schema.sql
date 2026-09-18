@@ -873,7 +873,7 @@ CREATE TABLE IF NOT EXISTS processing_position_operations (
     qty NUMERIC(12,2) NOT NULL DEFAULT 0,            -- 应做数量（算料引擎输出）
     qty_source VARCHAR(32),                          -- 应做数量的口径来源（V57，issue #4208）：键名=算料输出 / <键名>_x6=每米6孔估算 / fallback=真兜底1
     unit_price NUMERIC(10,2) NOT NULL DEFAULT 0,     -- 实例快照单价
-    factor NUMERIC(6,2) NOT NULL DEFAULT 1,          -- 特殊选项计件系数（一分二 ×1.7）
+    factor NUMERIC(6,2) NOT NULL DEFAULT 1,          -- 特殊选项计件系数（一分为二 ×1.7，ERP 名；issue #4389）
     is_must_finish BOOLEAN NOT NULL DEFAULT FALSE,
     is_start_marker BOOLEAN NOT NULL DEFAULT FALSE,
     status VARCHAR(16) NOT NULL DEFAULT 'pending',   -- pending 待做 / done 已报工
@@ -1769,11 +1769,14 @@ ON CONFLICT (id) DO NOTHING;
 
 -- 特殊选项 → 条件工序 / 计件系数种子（V59，issue #4230 Java 侧 v1a）
 -- 逐字抄自真值源 backend/ai-agent-service/app/production/routing.py 的 SPECIAL_OPTION_ROUTINGS
--- （16 项，sort_order 与真值源字典序一致）与 OPTION_FACTOR_SCOPES（v1 只种「一分二 ⇒ ×1.7」这个
+-- （16 项，sort_order 与真值源字典序一致）与 OPTION_FACTOR_SCOPES（v1 只种「一分为二 ⇒ ×1.7」这个
 -- **实证**档；§2.4 的逐工序细算档是纯推算，不拿推算值覆盖实证值 ⇒ 不种）。
--- NON_PIECEWORK_OPTIONS（余料带回(布)/(纱)）**不种**：它们是显式登记的「不计件」。
+-- NON_PIECEWORK_OPTIONS（余料带回-布/-纱）**不种**：它们是显式登记的「不计件」。
+-- ⚠️ 选项名 = **ERP 名**（issue #4389 裁定 R-e）：本文件是 bootstrap **终态**，直接写目标态
+-- （bootstrap 路径不跑迁移链 ⇒ 不经过 V65 的改名）；存量库由
+-- V65__align_special_option_names_with_erp.sql 改名对齐。
 -- 防漂移：backend/admin-api/src/test/java/com/migao/admin/migration/ProductionOptionRoutingMigrationTest.java
--- 逐行比对本文件 / V59 迁移 / routing.py 三源（改名/改值/加减选项即红）。
+-- 逐行比对本文件 / V59 ∪ V65 / routing.py 三源（改名/改值/加减选项即红）。
 INSERT INTO production_option_routings
     (id, tenant_id, option_name, operation_name, after_operation, sort_order, status)
 VALUES
@@ -1798,7 +1801,7 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO production_option_factors
     (id, tenant_id, option_name, operation_name, factor, source)
 VALUES
-  ('opt-fa-01', 1, '一分二', NULL, 1.7, '实证')
+  ('opt-fa-01', 1, '一分为二', NULL, 1.7, '实证')
 ON CONFLICT (id) DO NOTHING;
 
 -- ================================================

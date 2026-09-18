@@ -2,7 +2,7 @@
 """特殊选项 → 条件工序 / 计件系数（issue #4230，v1a-PY 半边）
 
 真值源 `docs/curtain-production-rules.md` §1【默】特殊选项清单（19 项，下单勾选，
-影响用料/工序/计件系数）+ §4「条件系数表：特殊选项 → 工序 → 系数（如 一分二 ×1.7）」。
+影响用料/工序/计件系数）+ §4「条件系数表：特殊选项 → 工序 → 系数（如 一分为二 ×1.7）」。
 
 本单治的病：19 项里只有 9 项在 `SPECIAL_OPTION_ROUTINGS` 里有映射 ⇒ 另外 10 项
 **既不加工序、也不加系数、也没有任何登记** —— 「忘了映射」与「本来就不计件」在数据上
@@ -11,7 +11,7 @@
 **不允许有第四类「未登记」**（`TestCriterion1CoverageGate`）。
 
 v1 边界（issue #4230 §2.4，**刻意不做**）：
-- 只种「一分二 ×1.7」一个系数档（唯一的**实证**值，行业 ERP）；按工序/分组细算出的
+- 只种「一分为二 ×1.7」一个系数档（唯一的**实证**值，行业 ERP）；按工序/分组细算出的
   系数（车位 ≈×2.0 / 后道 ×1.0 / 裁剪 ×1.2）是**推算**，v1 不启用 ⇒ 本文件不断言推算值；
 - 系数结构保留 `operation_name` 档位（`None` = 该部位全部工序）—— 用「以限定值构造」
   的用例证明该档位**可用**（`test_operation_scoped_factor_applies_to_that_operation_only`），
@@ -22,7 +22,7 @@ v1 边界（issue #4230 §2.4，**刻意不做**）：
 - 判据 2：5 道新工序不在 `OPERATION_CATALOG` ⇒ `test_new_operations_are_in_catalog` KeyError；
 - 判据 3：`布绑带`/`余料做帘头`/`抱枕` 无映射 ⇒ 路线里根本没有该工序 ⇒ 断言红；
 - 判据 4：`OPTION_FACTOR_SCOPES` 未定义 ⇒ import 即红（Collection Error）；
-- 判据 5：`余料带回(布)` 未登记为不计件 ⇒ 判据 1 红（同一条门禁覆盖）。
+- 判据 5：`余料带回-布` 未登记为不计件 ⇒ 判据 1 红（同一条门禁覆盖）。
 """
 
 import pytest
@@ -31,19 +31,26 @@ from app.production.routing import (
     NON_PIECEWORK_OPTIONS,
     OPERATION_CATALOG,
     OPTION_FACTOR_SCOPES,
+    PENDING_CUSTOMER_CONFIRMATION_OPTIONS,
     SPECIAL_OPTION_ROUTINGS,
     build_routing,
     instance_operations,
 )
 
-# 真值源 §1【默】特殊选项清单 —— **逐字**抄录（19 项）。
+# 真值源 §1【默】特殊选项清单 —— **逐字**抄录（19 项），选项名 = **ERP 名**（issue #4389 裁定 R-e）。
 # 单一源在 `docs/curtain-production-rules.md` §1；本清单是它的**测试侧快照**，
 # 真值源增删选项而此处不跟 ⇒ 判据 1 的红会点名差异（不是静默漂移）。
 TRUTH_SOURCE_OPTIONS = [
-    "余料带回(布)", "余料带回(纱)", "布绑带", "纱绑带", "加logo条", "加立边",
+    "余料带回-布", "余料带回-纱", "布绑带", "纱绑带", "加logo条", "加立边",
     "加花边", "拼1次", "拼2次", "拼3次", "加铅块", "接高", "双眼皮接高",
-    "扣环", "抱枕", "防翘扣", "一分二", "余料做绑带", "余料做帘头",
+    "扣环", "抱枕", "防翘扣", "一分为二", "余料做绑带", "余料做帘头",
 ]
+
+# ERP 截图实证、但**不在**真值源 §1 的 19 项清单里的选项（issue #4389 判据 2）。
+# `余料带回`（无后缀）是 ERP 的第三种形态；§1 只列了 `余料带回-布/-纱` ⇒ 它该归三类中的
+# 哪一类**无真值源依据**（只有截图）⇒ 登记在 `PENDING_CUSTOMER_CONFIRMATION_OPTIONS`
+# 等客户确认，**不猜**、也不让它落进静默黑洞。
+ERP_ONLY_OPTIONS = ["余料带回"]
 
 # 布帘·韩褶基准走线（真值源 §3，行业实证 11 道）
 BASE_ROUTE = [
@@ -109,6 +116,19 @@ class TestCriterion1CoverageGate:
             f"这些真值源选项既没加工序、也没加系数、也没登记为不计件（静默黑洞）: {unregistered}"
         )
 
+    def test_every_erp_only_option_is_explicitly_registered(self):
+        """§1 之外的 ERP 实证选项（`余料带回`）同样**不得零登记**（issue #4389 判据 2）。
+
+        第四类「**待客户确认**」（`PENDING_CUSTOMER_CONFIRMATION_OPTIONS`）不是「未登记」：
+        它是一份**显式**的登记，语义 = 「已知其存在、尚未定论归哪一类」——
+        与 `.get(opt) → None` 的静默黑洞在数据上**可区分**。
+        """
+        unregistered = [opt for opt in ERP_ONLY_OPTIONS
+                        if opt not in PENDING_CUSTOMER_CONFIRMATION_OPTIONS]
+        assert unregistered == [], (
+            f"ERP 实证但 §1 未列的选项既没登记进三类、也没进待确认集合（静默黑洞）: {unregistered}"
+        )
+
     def test_option_registered_in_exactly_one_category(self):
         """三类互斥：一个选项不得既加工序又加系数（v1 口径，避免双重计费）。"""
         both = [
@@ -119,15 +139,20 @@ class TestCriterion1CoverageGate:
         assert both == []
 
     def test_registry_has_no_option_outside_truth_source(self):
-        """反向门禁：登记表里不得有真值源之外的选项（拼错名字 ⇒ 静默失效）。"""
+        """反向门禁：登记表里不得有真值源之外的选项（拼错名字 ⇒ 静默失效）。
+
+        「真值源」= §1 的 19 项 ∪ ERP 实证但 §1 未列的 `ERP_ONLY_OPTIONS`（issue #4389）。
+        """
+        known = set(TRUTH_SOURCE_OPTIONS) | set(ERP_ONLY_OPTIONS)
         registered = (
-            set(SPECIAL_OPTION_ROUTINGS) | set(OPTION_FACTOR_SCOPES) | set(NON_PIECEWORK_OPTIONS)
+            set(SPECIAL_OPTION_ROUTINGS) | set(OPTION_FACTOR_SCOPES)
+            | set(NON_PIECEWORK_OPTIONS) | set(PENDING_CUSTOMER_CONFIRMATION_OPTIONS)
         )
-        assert registered - set(TRUTH_SOURCE_OPTIONS) == set()
+        assert registered - known == set()
 
     def test_non_piecework_options_are_exactly_the_leftover_returns(self):
-        """C 类显式登记：只是把余料还给客户，不增加车间工序 ⇒ 不计件。"""
-        assert NON_PIECEWORK_OPTIONS == {"余料带回(布)", "余料带回(纱)"}
+        """C 类显式登记：只是把余料还给客户，不增加车间工序 ⇒ 不计件（键 = ERP 名）。"""
+        assert NON_PIECEWORK_OPTIONS == {"余料带回-布", "余料带回-纱"}
 
     def test_every_mapped_operation_exists_in_catalog(self):
         """映射指向的工序必须在工序库里（否则 `instance_operations` 会 KeyError）。"""
@@ -225,24 +250,24 @@ class TestCriterion3ReusedOperations:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 判据 4：系数结构 —— v1 唯一档「一分二 ⇒ 全部工序 ×1.7」+ operation_name 档位可用
+# 判据 4：系数结构 —— v1 唯一档「一分为二 ⇒ 全部工序 ×1.7」+ operation_name 档位可用
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestCriterion4FactorScope:
 
     def test_v1_seeds_only_the_empirical_factor(self):
-        """v1 只种「一分二 ⇒ 1.7 / 该部位全部工序」（唯一实证值；推算值不启用）。"""
+        """v1 只种「一分为二 ⇒ 1.7 / 该部位全部工序」（唯一实证值；推算值不启用）。"""
         assert len(OPTION_FACTOR_SCOPES) == 1
-        (scope,) = OPTION_FACTOR_SCOPES["一分二"]
+        (scope,) = OPTION_FACTOR_SCOPES["一分为二"]
         assert scope["factor"] == 1.7
         assert scope["operation_name"] is None
         assert scope["curtain_type"] is None
 
     def test_one_split_applies_factor_to_every_operation(self):
-        """一分二 ⇒ 该部位每道工序实例 factor = 1.7，且不插工序。"""
-        insts = instance_operations({**POSITION, "special_options": ["一分二"]}, CALC)
+        """一分为二 ⇒ 该部位每道工序实例 factor = 1.7，且不插工序。"""
+        insts = instance_operations({**POSITION, "special_options": ["一分为二"]}, CALC)
         assert [i["factor"] for i in insts] == [1.7] * 11
-        assert all(i["operation"] != "一分二" for i in insts)
+        assert all(i["operation"] != "一分为二" for i in insts)
 
     def test_no_option_factor_is_one(self):
         """不带选项 ⇒ factor 恒 1.0（逐值）。"""
@@ -252,15 +277,15 @@ class TestCriterion4FactorScope:
     def test_operation_scoped_factor_applies_to_that_operation_only(self):
         """`operation_name` 限定档位**可用**：只作用于点名的工序（v1 种子不用它）。
 
-        构造方式 = 临时给「一分二」追加一个限定档（布三边 ×2.0），断言只有 `布三边` 生效、
+        构造方式 = 临时给「一分为二」追加一个限定档（布三边 ×2.0），断言只有 `布三边` 生效、
         其余工序仍为平摊档 1.7 ⇒ 证明结构支持「逐工序系数」，而不是只留一个无人消费的空壳字段。
         """
-        scope = OPTION_FACTOR_SCOPES["一分二"]
+        scope = OPTION_FACTOR_SCOPES["一分为二"]
         scoped = {"factor": 2.0, "operation_name": "布三边", "curtain_type": None,
                   "source": "推算"}
         scope.append(scoped)
         try:
-            by_op = _by_op(["一分二"])
+            by_op = _by_op(["一分为二"])
         finally:
             scope.remove(scoped)
         assert by_op["布三边"]["factor"] == 2.0          # 限定档覆盖平摊档（不是相乘）
@@ -269,15 +294,15 @@ class TestCriterion4FactorScope:
 
     def test_curtain_type_scoped_factor_applies_to_that_position_only(self):
         """`curtain_type` 限定档位可用：只在点名的部位生效（如只对布帘乘系数）。"""
-        scope = OPTION_FACTOR_SCOPES["一分二"]
+        scope = OPTION_FACTOR_SCOPES["一分为二"]
         scoped = {"factor": 1.5, "operation_name": None, "curtain_type": "布帘",
                   "source": "推算"}
         scope.append(scoped)
         try:
-            on_cloth = instance_operations({**POSITION, "special_options": ["一分二"]}, CALC)
+            on_cloth = instance_operations({**POSITION, "special_options": ["一分为二"]}, CALC)
             on_silk = instance_operations(
                 {**POSITION, "curtain_type": "纱帘", "craft": "韩褶",
-                 "special_options": ["一分二"]}, CALC)
+                 "special_options": ["一分为二"]}, CALC)
         finally:
             scope.remove(scoped)
         assert [i["factor"] for i in on_cloth] == [1.5] * 11          # 部位命中 ⇒ 限定档生效
@@ -292,7 +317,7 @@ class TestCriterion4FactorScope:
         OPTION_FACTOR_SCOPES[fake] = [
             {"factor": 2.0, "operation_name": None, "curtain_type": None, "source": "推算"}]
         try:
-            by_op = _by_op(["一分二", fake])
+            by_op = _by_op(["一分为二", fake])
         finally:
             OPTION_FACTOR_SCOPES.pop(fake, None)
         assert by_op["韩褶-布"]["factor"] == pytest.approx(3.4)
@@ -309,7 +334,7 @@ class TestCriterion4FactorScope:
 
 class TestCriterion5NonPiecework:
 
-    @pytest.mark.parametrize("option", ["余料带回(布)", "余料带回(纱)"])
+    @pytest.mark.parametrize("option", ["余料带回-布", "余料带回-纱"])
     def test_leftover_return_changes_nothing(self, option):
         """余料带回 ⇒ 路线逐值不变、factor 逐值仍 1.0（**不是因为查不到映射**）。"""
         route = _route([option])
@@ -319,10 +344,10 @@ class TestCriterion5NonPiecework:
 
     def test_leftover_return_is_registered_not_silent(self):
         """显式登记（而不是 `.get()` 返回 None 的静默黑洞）—— 这是判据 5 的判据本体。"""
-        assert "余料带回(布)" in NON_PIECEWORK_OPTIONS
-        assert "余料带回(纱)" in NON_PIECEWORK_OPTIONS
-        assert "余料带回(布)" not in SPECIAL_OPTION_ROUTINGS
-        assert "余料带回(布)" not in OPTION_FACTOR_SCOPES
+        assert "余料带回-布" in NON_PIECEWORK_OPTIONS
+        assert "余料带回-纱" in NON_PIECEWORK_OPTIONS
+        assert "余料带回-布" not in SPECIAL_OPTION_ROUTINGS
+        assert "余料带回-布" not in OPTION_FACTOR_SCOPES
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -354,3 +379,97 @@ class TestCriterion6NoRegression:
         assert SPECIAL_OPTION_ROUTINGS["双眼皮接高"] == {"operation": "接高-布", "after": "精裁-布"}
         assert SPECIAL_OPTION_ROUTINGS["余料做绑带"] == {"operation": "绑带-布", "after": "布帘车被"}
         assert SPECIAL_OPTION_ROUTINGS["布绑带"] == {"operation": "绑带-布", "after": "布帘车被"}
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 判据 7（issue #4389）：特殊选项名**逐字对齐行业 ERP**（join key，错一个字静默失效）
+#
+# 真值源 = 用户提供的行业 ERP 订单录入页截图（2026-09-19，与真值源 §1 同源系统）+ 用户裁定
+# R-e「以 ERP 为准改」。特殊选项名是「订单选配 → 车间工序 / 计件系数」的 join key，
+# 改的是**工人工资**，故每条都要有红证。
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestCriterion7ErpNameAlignment:
+    """判据 7：三张表的键 = ERP 名；第三种 `余料带回`（无后缀）显式登记。
+
+    红证（修复前逐条实测，见 PR body）：
+    - 判据 1：`OPTION_FACTOR_SCOPES` 的键是 `一分二`，而 ERP 名是 `一分为二` ⇒
+      `test_erp_name_one_split_into_two_applies_factor` 红（factor 静默退回 1.0 = 少发工人钱）；
+    - 判据 2：`NON_PIECEWORK_OPTIONS` 只有 `余料带回(布)/(纱)` 两种旧写法 ⇒
+      `test_leftover_return_erp_names_are_registered` 红；第三种 `余料带回`（无后缀）**零登记** ⇒
+      `test_third_leftover_return_is_explicitly_registered` 红（落进静默黑洞）。
+    """
+
+    def test_erp_name_one_split_into_two_applies_factor(self):
+        """判据 1：用 ERP 名 `一分为二` 走一遍 ⇒ 该部位每道工序 factor = 1.7（且不插工序）。
+
+        修复前 `OPTION_FACTOR_SCOPES` 的键是 `一分二` ⇒ ERP 名查不到 ⇒ 静默退回 1.0。
+        """
+        insts = instance_operations({**POSITION, "special_options": ["一分为二"]}, CALC)
+        assert [i["factor"] for i in insts] == [1.7] * 11
+        assert all(i["operation"] != "一分为二" for i in insts)
+
+    def test_erp_name_reaches_the_money(self):
+        """判据 1 的「进了钱」半边：ERP 名 `一分为二` 的计件合计 = 不带选项 × 1.7。
+
+        只断言 factor 会把「写进列」与「进了钱」混为一谈（本仓已诊断过的形态）——
+        此处走**真实** `compute_piecework`（Σ 合格数 × 单价 × 系数）。
+        """
+        from app.production.piecework import compute_piecework
+        plain = instance_operations(POSITION, CALC)
+        with_erp = instance_operations({**POSITION, "special_options": ["一分为二"]}, CALC)
+        logs = [{"operation": i["operation"], "worker": "李红梅", "qty": i["qty"],
+                 "qualified_qty": i["qty"], "type": "normal"} for i in plain]
+        base = compute_piecework(plain, logs)["total"]
+        boosted = compute_piecework(with_erp, logs)["total"]
+        assert boosted == pytest.approx(base * 1.7, abs=0.05)
+        assert boosted > base, "带 ERP 名「一分为二」的计件合计必须**高于**不带（方向判据）"
+
+    def test_registry_keys_are_exactly_the_erp_names(self):
+        """判据 1/2 的**注册表键**半边：三张表的键里不得残留旧写法。
+
+        只钉注册表键（不钉运行期行为）：若将来给存量订单加「旧名 → 新名」的兼容别名层，
+        本判据仍成立（别名在查表层，不在注册表键里）—— 逐字对齐的是**真值源键**。
+        """
+        registered = (set(SPECIAL_OPTION_ROUTINGS) | set(OPTION_FACTOR_SCOPES)
+                      | set(NON_PIECEWORK_OPTIONS))
+        stale = {"一分二", "余料带回(布)", "余料带回(纱)"} & registered
+        assert stale == set(), f"注册表键里残留旧写法（ERP 名才是 join key）: {sorted(stale)}"
+
+    @pytest.mark.parametrize("option", ["余料带回-布", "余料带回-纱"])
+    def test_leftover_return_erp_names_are_registered(self, option):
+        """判据 2：ERP 写法 `余料带回-布` / `余料带回-纱` 是**显式登记**的不计件项（不是查不到）。"""
+        assert option in NON_PIECEWORK_OPTIONS
+        assert option not in SPECIAL_OPTION_ROUTINGS
+        assert option not in OPTION_FACTOR_SCOPES
+
+    def test_third_leftover_return_is_explicitly_registered(self):
+        """判据 2：ERP 的**第三种**形态 `余料带回`（无后缀）必须显式登记（不落静默黑洞）。
+
+        登记在 `PENDING_CUSTOMER_CONFIRMATION_OPTIONS`（**待客户确认**集合）而非
+        `NON_PIECEWORK_OPTIONS`：真值源 §1 的 19 项清单里**没有**它（只有 `余料带回(布/纱)`），
+        我们手上只有截图这一个证据 ⇒ **不猜**它归哪一类，但**也不让它变成「忘了映射」**。
+        """
+        assert "余料带回" in PENDING_CUSTOMER_CONFIRMATION_OPTIONS
+        # 「不假装已定论」：它不得同时出现在任何一个已定论的三类登记里
+        assert "余料带回" not in SPECIAL_OPTION_ROUTINGS
+        assert "余料带回" not in OPTION_FACTOR_SCOPES
+        assert "余料带回" not in NON_PIECEWORK_OPTIONS
+
+    def test_pending_option_is_not_a_silent_black_hole(self):
+        """判据 2 的判别性半边：待确认选项**不加工序、不改系数**（行为同不计件），
+        但它在数据上**有名字**（本集合）⇒ 与「忘了映射」可区分。
+
+        判别性：换成**已定论**的不计件项（`余料带回-布`）行为一致、换成**未登记**的假名行为
+        也一致 —— 所以「行为一致」不是判据；判据是**登记表里有它**（上一条）+ 本条的行为可预期。
+        """
+        route = _route(["余料带回"])
+        assert route == BASE_ROUTE
+        assert [i["factor"] for i in instance_operations(
+            {**POSITION, "special_options": ["余料带回"]}, CALC)] == [1.0] * 11
+
+    def test_pending_set_is_disjoint_from_decided_categories(self):
+        """待确认集合与三类已定论登记**互斥**（否则「待确认」会被读成「已定论」）。"""
+        decided = (set(SPECIAL_OPTION_ROUTINGS) | set(OPTION_FACTOR_SCOPES)
+                   | set(NON_PIECEWORK_OPTIONS))
+        assert PENDING_CUSTOMER_CONFIRMATION_OPTIONS & decided == set()
