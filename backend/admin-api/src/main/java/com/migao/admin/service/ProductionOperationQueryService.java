@@ -4,10 +4,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOptionFactor;
 import com.migao.admin.entity.ProductionOptionRouting;
+import com.migao.admin.entity.ProductionRouteSignal;
 import com.migao.admin.entity.ProductionRouting;
 import com.migao.admin.mapper.ProductionOperationMapper;
 import com.migao.admin.mapper.ProductionOptionFactorMapper;
 import com.migao.admin.mapper.ProductionOptionRoutingMapper;
+import com.migao.admin.mapper.ProductionRouteSignalMapper;
 import com.migao.admin.mapper.ProductionRoutingMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,6 +57,8 @@ public class ProductionOperationQueryService {
     private final ProductionOptionRoutingMapper productionOptionRoutingMapper;
     /** 特殊选项 → 计件系数（issue #4230，V58）。 */
     private final ProductionOptionFactorMapper productionOptionFactorMapper;
+    /** 信号 → 路线键映射（issue #4308，V60；派生路线键的**唯一**数据源，不再是 Java 常量）。 */
+    private final ProductionRouteSignalMapper productionRouteSignalMapper;
 
     /**
      * 工序库目录：按分组 → 排序位的稳定顺序返回全部活跃工序。
@@ -220,6 +224,28 @@ public class ProductionOperationQueryService {
         Map<String, Map<String, Object>> views = new LinkedHashMap<>();
         catalogByName(tenantId).forEach((name, op) -> views.put(name, operationMetaView(op)));
         return views;
+    }
+
+    /**
+     * 信号 → 路线键映射（V60，issue #4308，**派生用**读面）。
+     *
+     * <p>与迁移前 {@code ProcessingOrderService} 里两个 {@code String[][]} 常量的分工完全相同，
+     * 只是数据源从「研发改的常量」换成「商家可配的库行」：命中方式仍是文本 {@code contains}，
+     * {@code priority} 仍是**用途内**扫描序（帘种行与工艺行各自排序，理由见 V60 迁移注释）。</p>
+     *
+     * <p>只返回**活跃**行（{@code status=active} + 未软删 + 同租户），按
+     * {@code (priority, id)} 稳定排序 —— 派生必须是确定性的，否则同一张单两次生成会得到不同的
+     * 路线键（进而不同的工序序列与计件工资）。</p>
+     */
+    public List<ProductionRouteSignal> routeSignals(Long tenantId) {
+        List<ProductionRouteSignal> rows = productionRouteSignalMapper.selectList(
+                new LambdaQueryWrapper<ProductionRouteSignal>()
+                        .eq(ProductionRouteSignal::getTenantId, tenantId)
+                        .eq(ProductionRouteSignal::getDeleted, 0)
+                        .eq(ProductionRouteSignal::getStatus, "active")
+                        .orderByAsc(ProductionRouteSignal::getPriority)
+                        .orderByAsc(ProductionRouteSignal::getId));
+        return rows == null ? List.of() : rows;
     }
 
     /**

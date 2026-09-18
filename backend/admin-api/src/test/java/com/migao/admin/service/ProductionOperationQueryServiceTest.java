@@ -50,10 +50,12 @@ class ProductionOperationQueryServiceTest {
     private com.migao.admin.mapper.ProductionOptionRoutingMapper productionOptionRoutingMapper;
     @Mock
     private com.migao.admin.mapper.ProductionOptionFactorMapper productionOptionFactorMapper;
+    @Mock
+    private com.migao.admin.mapper.ProductionRouteSignalMapper productionRouteSignalMapper;
 
     private ProductionOperationQueryService service() {
         return new ProductionOperationQueryService(productionOperationMapper, productionRoutingMapper,
-                productionOptionRoutingMapper, productionOptionFactorMapper);
+                productionOptionRoutingMapper, productionOptionFactorMapper, productionRouteSignalMapper);
     }
 
     /**

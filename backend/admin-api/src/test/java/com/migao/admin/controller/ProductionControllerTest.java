@@ -106,6 +106,8 @@ class ProductionControllerTest {
     @Mock
     private com.migao.admin.mapper.ProductionOptionFactorMapper productionOptionFactorMapper;
     @Mock
+    private com.migao.admin.mapper.ProductionRouteSignalMapper productionRouteSignalMapper;
+    @Mock
     private ProductionOperationPriceVersionMapper priceVersionMapper;
     @Mock
     private OrderItemMapper orderItemMapper;
@@ -127,7 +129,8 @@ class ProductionControllerTest {
         // operationView），用 mock 会让「返回更新后的工序」退化成断言桩。
         ProductionOperationQueryService queryService =
                 new ProductionOperationQueryService(productionOperationMapper, productionRoutingMapper,
-                        productionOptionRoutingMapper, productionOptionFactorMapper);
+                        productionOptionRoutingMapper, productionOptionFactorMapper,
+                       productionRouteSignalMapper);
         // 存量单补工序（#4202）的派生走 ProcessingOrderService（工序库路线），故装配真实对象：
         // 与 generate 路径**同一份**路线解析（不复制第二份）。
         ProcessingOrderService processingOrderService = new ProcessingOrderService(

@@ -55,6 +55,8 @@ class ProductionOperationCommandServiceTest {
     private com.migao.admin.mapper.ProductionOptionRoutingMapper productionOptionRoutingMapper;
     @Mock
     private com.migao.admin.mapper.ProductionOptionFactorMapper productionOptionFactorMapper;
+    @Mock
+    private com.migao.admin.mapper.ProductionRouteSignalMapper productionRouteSignalMapper;
 
     private ProductionOperationCommandService service() {
         // 读面用**真实对象**（只 mock Mapper）：响应形态 = 目录项形态（同一份 operationView），
@@ -62,7 +64,8 @@ class ProductionOperationCommandServiceTest {
         return new ProductionOperationCommandService(
                 productionOperationMapper, priceVersionMapper,
                 new ProductionOperationQueryService(productionOperationMapper, productionRoutingMapper,
-                        productionOptionRoutingMapper, productionOptionFactorMapper));
+                        productionOptionRoutingMapper, productionOptionFactorMapper,
+                        productionRouteSignalMapper));
     }
 
     private ProductionOperation operation(String unitPrice, String status) {

@@ -11,6 +11,7 @@ import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProductionOptionFactor;
 import com.migao.admin.entity.ProductionOptionRouting;
+import com.migao.admin.entity.ProductionRouteSignal;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
@@ -95,6 +96,21 @@ public class ProcessingOrderService {
     public static final String INCIDENT_ROUTING_UNRESOLVED = "INCIDENT_PRODUCTION_ROUTING_UNRESOLVED";
 
     /**
+     * **T1**（信号全不命中 ⇒ 直接取默认路线键）的 incident 日志标记（V60，issue #4308）。
+     * 这是最隐蔽的一层：迁移前**连 info 都没有** —— 罗马帘订单今天就走这条，且成功路径零痕迹。
+     * `grep INCIDENT_PRODUCTION_ROUTE_DEFAULTED` 即可捞出全部「没人派生过」的加工单。
+     */
+    public static final String INCIDENT_ROUTE_DEFAULTED = "INCIDENT_PRODUCTION_ROUTE_DEFAULTED";
+
+    /**
+     * **T2**（派生键命中但工序库无该路线 ⇒ 回落默认路线）的 incident 日志标记（V60，issue #4308）。
+     * 迁移前只 `log.info("…回落默认路线…")`，用户侧不可见；现在同时落
+     * {@code processing_orders.route_source='missing_route'}（+ {@code route_requested_key}
+     * = 派生出来却取不到路线的那个键），可从加工单详情 API 查出。
+     */
+    public static final String INCIDENT_ROUTE_FALLBACK = "INCIDENT_PRODUCTION_ROUTE_FALLBACK";
+
+    /**
      * 默认路线键（派生不出 部位/工艺 时的兜底，issue #4116 用户裁定）。
      * ⚠️ 这是**路线键**的兜底，不是**数据源**的兜底：默认路线同样必须来自工序库，
      * 库里连它都没有 ⇒ fail-closed 中止生成（绝不回退加工项目录）。
@@ -103,19 +119,19 @@ public class ProcessingOrderService {
     private static final String DEFAULT_CRAFT = "韩褶";
 
     /**
-     * 部位（帘种）派生表：`信号文本含关键字 → production_routings.curtain_type`。
-     * 顺序即优先级（"帘头"先于"纱"，避免「帘头纱」被判成纱帘）。
+     * 部位（帘种）与工艺的**派生来源**（V60，issue #4308）：租户级库表
+     * {@code production_route_signals}，读面 = {@link ProductionOperationQueryService#routeSignals}。
+     *
+     * <p><b>为什么不再留常量表</b>：迁移前这里是两个 {@code String[][]} 常量
+     * （{@code CURTAIN_TYPE_KEYWORDS} / {@code CRAFT_KEYWORDS}），而**加工项目录是商家可自定义的**
+     * （POC 已建过「POC-加工工艺」这类名字）⇒ 商家每加一个自定义加工项，派生就多一分静默错配，
+     * 改常量还要走研发发版。落库后商家可增删改（写面 =
+     * {@code POST/PUT/DELETE /api/admin/production/route-signals}）。</p>
+     *
+     * <p><b>常量与库**不得并存**</b>：两份口径必然漂移，且漂移的那一份不会变红。
+     * 种子（= 迁移前的常量表逐条）由 V60 迁移落库，逐条等价性由
+     * {@code ProductionRouteSignalMigrationTest} 钉住。</p>
      */
-    private static final String[][] CURTAIN_TYPE_KEYWORDS = {
-            {"帘头", "帘头"}, {"纱", "纱帘"}, {"布", "布帘"}};
-
-    /**
-     * 工艺派生表：`信号文本含关键字 → production_routings.craft`。
-     * 末项"帘头"映射到"平幔"：帘头部位在 V54 路线库里只有「帘头×平幔」一条（routing.py ROUTINGS 同口径）。
-     */
-    private static final String[][] CRAFT_KEYWORDS = {
-            {"韩褶", "韩褶"}, {"打孔", "打孔"}, {"四爪钩", "四爪钩"}, {"四叉钩", "四爪钩"},
-            {"穿杆", "穿杆"}, {"平幔", "平幔"}, {"帘头", "平幔"}};
 
     /**
      * 算料输入的透传白名单（键名与 ai-agent {@code routing.py} 的
@@ -204,7 +220,8 @@ public class ProcessingOrderService {
         // generate() 逐单 catch BusinessException 后继续处理其余订单（异常不逸出事务边界 ⇒
         // 不会回滚），若先插加工单再解析，库为空时就会留下「有加工单、无工序、无 qr_token」
         // 的孤儿态：工人扫不了码、加工单列表看着正常，没人会发现工序库是空的。
-        List<Map<String, Object>> positions = buildPositionPayload(snapshot, tenantId);
+        PositionPayload payload = buildPositionPayload(snapshot, tenantId);
+        List<Map<String, Object>> positions = payload.positions();
 
         ProcessingOrder po = ProcessingOrder.builder()
                 .tenantId(tenantId)
@@ -216,6 +233,12 @@ public class ProcessingOrderService {
                 .generatedBy(operator)
                 .generatedAt(OffsetDateTime.now())
                 .printCount(0)
+                // 路线可观测（V60，issue #4308 P1）：这张单**实际走了哪条路线**、**想走哪条**、
+                // **怎么来的**，三列一起落库 —— 此前 RouteKey.source 只在「路线缺失」的 error
+                // 日志里被读一次，成功路径零痕迹 ⇒ 错配无数据可查。
+                .routeKey(payload.routeKey())
+                .routeRequestedKey(payload.routeRequestedKey())
+                .routeSource(payload.routeSource())
                 .deleted(0)
                 .build();
 
@@ -299,11 +322,13 @@ public class ProcessingOrderService {
      * 「算料输出」与「兜底」—— 兜底不再静默。</p>
      */
     @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> buildPositionPayload(List<Map<String, Object>> snapshot, Long tenantId) {
+    private PositionPayload buildPositionPayload(List<Map<String, Object>> snapshot, Long tenantId) {
         List<Map<String, Object>> positions = new ArrayList<>();
         // 与 positions **同序**：回填 qty/qty_source 时按位取，不靠部位名（同商品同色号的两行会重名）
         List<List<Map<String, Object>>> operationRows = new ArrayList<>();
         List<Map<String, Object>> request = new ArrayList<>();
+        // 多部位 roll-up 用（V60）：逐部位记 (route_key, route_source)，最后取最需关注的一条
+        List<RouteResolution> resolutions = new ArrayList<>();
         // 特殊选项映射（issue #4230）：两张表都极小，**一次取回**本租户的全部活跃行，
         // 逐部位在内存里按本单的 specialOptions 过滤 —— 避免「每个选项一次查询」的 N+1。
         List<ProductionOptionRouting> optionRoutings = productionOperationQueryService.optionRoutings(tenantId);
@@ -312,8 +337,10 @@ public class ProcessingOrderService {
             if (!(entry.get("processingItems") instanceof List<?>)) {
                 continue;
             }
-            RouteKey key = deriveRouteKey(entry);
-            Map<String, Object> route = resolveRoute(key, tenantId, entry);
+            RouteKey key = deriveRouteKey(entry, tenantId);
+            RouteResolution resolution = resolveRoute(key, tenantId, entry);
+            resolutions.add(resolution);
+            Map<String, Object> route = resolution.route();
             List<Map<String, Object>> operations = new ArrayList<>();
             for (Map<String, Object> step : (List<Map<String, Object>>) route.get("operations")) {
                 Map<String, Object> operation = new LinkedHashMap<>();
@@ -345,10 +372,30 @@ public class ProcessingOrderService {
             request.add(qtyRequest(entry, positionName, operations));
         }
         if (positions.isEmpty()) {
-            return positions;
+            return new PositionPayload(positions, null, null, null);
         }
         fillQty(positions, operationRows, request);
-        return positions;
+        RouteResolution worst = worstResolution(resolutions);
+        return new PositionPayload(positions,
+                worst == null ? null : worst.routeKey(),
+                worst == null ? null : worst.routeRequestedKey(),
+                worst == null ? null : worst.routeSource());
+    }
+
+    /** 多部位 roll-up：取最需关注的一条（{@link #severity}），同档取先出现者。 */
+    private static RouteResolution worstResolution(List<RouteResolution> resolutions) {
+        RouteResolution worst = null;
+        for (RouteResolution resolution : resolutions) {
+            if (worst == null || severity(resolution.routeSource()) > severity(worst.routeSource())) {
+                worst = resolution;
+            }
+        }
+        return worst;
+    }
+
+    /** 部位派生 payload + 落库用的路线键/来源（V60，issue #4308）。 */
+    private record PositionPayload(List<Map<String, Object>> positions, String routeKey,
+                                   String routeRequestedKey, String routeSource) {
     }
 
     // ============================================================ 特殊选项（issue #4230）
@@ -591,19 +638,40 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 取路线（工序库）：派生键命中就取它；未命中 ⇒ 记日志并取默认路线 `布帘×韩褶`。
-     * **两次都没命中、或命中的路线引用了库里不存在的工序 ⇒ fail-closed 中止生成**
-     * （错误码 + 可行动 suggestion + incident 日志，绝不回退加工项目录）。
+     * 取路线（工序库）+ 记来源（V60，issue #4308 三层回落语义逐层可观测）：
+     *
+     * <ul>
+     *   <li><b>T1</b> 信号全不命中 ⇒ 默认键 {@code 布帘×韩褶}，来源 {@code default}，
+     *       记 {@link #INCIDENT_ROUTE_DEFAULTED}（warn 级 —— 迁移前这一层**连 info 都没有**）；</li>
+     *   <li><b>T2</b> 派生键命中但库中无该路线 ⇒ 回落默认路线，来源降级 {@code missing_route}
+     *       （**不并入 {@code partial}**：补救动作不同 —— T2 要「建路线」、只命中一维要「配信号」），
+     *       记 {@link #INCIDENT_ROUTE_FALLBACK}；</li>
+     *   <li><b>T3</b> 默认路线也没有 / 路线引用的工序缺行 ⇒ **fail-closed 中止生成**
+     *       （#4116 已落码，本单保持不动）。</li>
+     * </ul>
+     *
+     * <p>来源与「实际使用的路线键」必须**同源返回**：分两次算必然漂移（记下来的键与实际实例化的
+     * 工序对不上，等于白记）。</p>
      */
     @SuppressWarnings("unchecked")
-    private Map<String, Object> resolveRoute(RouteKey key, Long tenantId, Map<String, Object> entry) {
+    private RouteResolution resolveRoute(RouteKey key, Long tenantId, Map<String, Object> entry) {
+        String requestedKey = "default".equals(key.source()) ? null : key.curtainType() + "×" + key.craft();
+        String usedKey = key.curtainType() + "×" + key.craft();
+        String source = key.source();
+        if ("default".equals(source)) {
+            log.warn("{} 订单无任何信号命中（加工项名/options/商品名/销售方式），落默认路线 {}: "
+                            + "tenantId={}, productName={}, 信号={}",
+                    INCIDENT_ROUTE_DEFAULTED, usedKey, tenantId, entry.get("productName"), signals(entry));
+        }
         Map<String, Object> route = productionOperationQueryService.findRouting(
                 tenantId, key.curtainType(), key.craft());
-        String usedKey = key.curtainType() + "×" + key.craft();
         if (route == null) {
-            log.info("工序库无「{}」路线（派生来源={}），回落默认路线 {}×{}: productName={}",
-                    usedKey, key.source(), DEFAULT_CURTAIN_TYPE, DEFAULT_CRAFT, entry.get("productName"));
+            log.warn("{} 派生路线键「{}」在工序库无对应路线，回落默认路线 {}×{}（来源 {} ⇒ missing_route）: "
+                            + "tenantId={}, productName={}, 库中现有路线={}",
+                    INCIDENT_ROUTE_FALLBACK, usedKey, DEFAULT_CURTAIN_TYPE, DEFAULT_CRAFT, source,
+                    tenantId, entry.get("productName"), productionOperationQueryService.routingKeys(tenantId));
             usedKey = DEFAULT_CURTAIN_TYPE + "×" + DEFAULT_CRAFT;
+            source = "missing_route";
             route = productionOperationQueryService.findRouting(tenantId, DEFAULT_CURTAIN_TYPE, DEFAULT_CRAFT);
         }
         if (route == null) {
@@ -633,22 +701,48 @@ public class ProcessingOrderService {
                                     + "工序库目录查看入口 GET /api/admin/production/operations-catalog",
                             String.join("、", missing)));
         }
-        return route;
+        return new RouteResolution(route, usedKey, requestedKey, source);
     }
 
     /**
-     * 从订单侧**可派生信号**推出路线键（`curtain_type` + `craft`）。
+     * 从订单侧**可派生信号**推出路线键（`curtain_type` + `craft`）+ 来源三态。
      *
      * <p>信号优先级（命中即止，先信号后关键字 —— 更权威的信号先说话）：
      * ① 加工项名（加工项目录里工序名自带部位/工艺，如「韩褶-布」「打孔-纱」「帘头制作」）
      * ② 加工项 options（如「四爪钩」）③ 商品名 ④ 销售方式。两类信号各自独立扫描，
-     * 只会派生出一半时另一半取默认值。</p>
+     * 只会派生出一半时另一半取默认值（来源记 {@code partial}）。</p>
+     *
+     * <p><b>来源四态（V60，issue #4308 冻结口径；落 {@code processing_orders.route_source}）</b>：
+     * {@code derived} = 两维都由库中信号映射命中且路线在库中存在；{@code partial} = 只命中一维；
+     * {@code default} = 两维全不命中（T1）。**本方法只产出这三态**；第四态 {@code missing_route}
+     * （T2 = 派生键在库中无路线而回落默认路线）由 {@link #resolveRoute} 在回落时引入 ——
+     * 否则「回落过」与「本来就没派生」在数据上长得一模一样，而前者是错配高发形态。</p>
      *
      * <p>⚠️ 这是**当前的**取法：订单侧没有部位/帘种字段（见类注释「部位语义」节），
-     * 待订单侧补字段后应改为直读，届时本方法连同关键字表一起删除。</p>
+     * 待订单侧补字段后应改为直读，届时本方法连同信号表一起退场。</p>
      */
+    private RouteKey deriveRouteKey(Map<String, Object> entry, Long tenantId) {
+        List<String> signals = signals(entry);
+        // 映射表来自**库**（租户级、商家可配）；常量表已删除 —— 派生不再读常量（issue #4308 P2）。
+        List<ProductionRouteSignal> mappings = productionOperationQueryService.routeSignals(tenantId);
+        String curtainType = firstSignalMatch(signals, mappings, true);
+        String craft = firstSignalMatch(signals, mappings, false);
+        String source;
+        if (curtainType != null && craft != null) {
+            source = "derived";
+        } else if (curtainType != null || craft != null) {
+            source = "partial";
+        } else {
+            source = "default";
+        }
+        return new RouteKey(curtainType == null ? DEFAULT_CURTAIN_TYPE : curtainType,
+                craft == null ? DEFAULT_CRAFT : craft,
+                source);
+    }
+
+    /** 订单侧可派生信号（顺序即优先级：加工项名 &gt; 加工项 options &gt; 商品名 &gt; 销售方式）。 */
     @SuppressWarnings("unchecked")
-    private RouteKey deriveRouteKey(Map<String, Object> entry) {
+    private static List<String> signals(Map<String, Object> entry) {
         List<String> signals = new ArrayList<>();
         if (entry.get("processingItems") instanceof List<?> items) {
             for (Object raw : items) {
@@ -677,28 +771,69 @@ public class ProcessingOrderService {
         if (sellingMethod != null) {
             signals.add(sellingMethod);
         }
-
-        String curtainType = firstKeywordMatch(signals, CURTAIN_TYPE_KEYWORDS);
-        String craft = firstKeywordMatch(signals, CRAFT_KEYWORDS);
-        boolean derived = curtainType != null || craft != null;
-        return new RouteKey(curtainType == null ? DEFAULT_CURTAIN_TYPE : curtainType,
-                craft == null ? DEFAULT_CRAFT : craft,
-                derived ? "derived" : "default");
+        return signals;
     }
 
-    private static String firstKeywordMatch(List<String> signals, String[][] table) {
+    /**
+     * 第一个命中的映射值（信号**外层**、映射行**内层** —— 与迁移前的常量表扫描逐字同序：
+     * 更权威的信号先说话；同一信号内按 {@code priority} 取位次最靠前的那条）。
+     *
+     * @param curtain true = 只扫帘种行（{@code curtain_type} 非空），false = 只扫工艺行
+     */
+    private static String firstSignalMatch(List<String> signals, List<ProductionRouteSignal> mappings, boolean curtain) {
         for (String signal : signals) {
-            for (String[] pair : table) {
-                if (signal.contains(pair[0])) {
-                    return pair[1];
+            for (ProductionRouteSignal mapping : mappings) {
+                String target = curtain ? mapping.getCurtainType() : mapping.getCraft();
+                String keyword = mapping.getSignal();
+                if (target != null && keyword != null && signal.contains(keyword)) {
+                    return target;
                 }
             }
         }
         return null;
     }
 
-    /** 派生出的路线键 + 来源（"derived" 命中信号 / "default" 全不命中）。 */
+    /**
+     * 派生出的路线键 + 来源（{@code derived} 两维命中 / {@code partial} 只命中一维 /
+     * {@code default} 全不命中 —— **本 record 只产出这三态**，第四态 {@code missing_route}
+     * 由 {@link #resolveRoute} 在「派生键库中无路线而回落」时引入）。
+     */
     private record RouteKey(String curtainType, String craft, String source) {
+    }
+
+    /**
+     * 一次路线解析的结果：**实际使用**的路线 + **派生出来想用**的键 + 来源（V60，issue #4308）。
+     * 三者必须同源返回 —— 分两次算必然漂移（「用的路线」与「记下来的键」对不上就白记了）。
+     *
+     * @param routeKey          实际使用的路线键（T1/T2 时 = 默认 布帘×韩褶）
+     * @param routeRequestedKey 派生出来想用的路线键；两维全不命中（source=default）时 null
+     * @param routeSource       derived / partial / missing_route / default
+     */
+    private record RouteResolution(Map<String, Object> route, String routeKey,
+                                   String routeRequestedKey, String routeSource) {
+    }
+
+    /**
+     * 部位派生的**多部位 roll-up**（V60，issue #4308 冻结口径）：{@code processing_orders} 只有单值
+     * {@code route_key} / {@code route_requested_key} / {@code route_source} 列，而一张单可能有多个
+     * 部位（各自一条路线）⇒ 取**最需关注**的那一条，次序 {@code default} &gt; {@code missing_route}
+     * &gt; {@code partial} &gt; {@code derived}：
+     * <ol>
+     *   <li>{@code default}（3）—— 两维全不命中 = **零信息**下的默认路线：不知道该怎么走，
+     *       错配无从预判（罗马帘订单今天就落在这一层）；</li>
+     *   <li>{@code missing_route}（2）—— 知道该走哪条、库里却没有 ⇒ 走了默认路线，工序与计件工资**可能整体错**；</li>
+     *   <li>{@code partial}（1）—— 只命中一维 ⇒ 键可能错，补另一维即可；</li>
+     *   <li>{@code derived}（0）—— 无异常。</li>
+     * </ol>
+     * 同档取先出现者（稳定）。逐部位明细在工序实例里，这里只回答「这张单有没有需要人看的东西」。
+     */
+    private static int severity(String routeSource) {
+        return switch (routeSource == null ? "default" : routeSource) {
+            case "derived" -> 0;
+            case "partial" -> 1;
+            case "missing_route" -> 2;
+            default -> 3; // default 及其它未知取值：按最需关注处理（不静默降级）
+        };
     }
 
     // ============================================================ 存量单恢复 / 打印计数
@@ -723,7 +858,8 @@ public class ProcessingOrderService {
         if (order == null) {
             throw BusinessException.notFound("订单");
         }
-        return buildPositionPayload(buildSnapshot(loadOrderItems(order.getId(), tenantId), tenantId), tenantId);
+        return buildPositionPayload(buildSnapshot(loadOrderItems(order.getId(), tenantId), tenantId), tenantId)
+                .positions();
     }
 
     /**
@@ -1084,6 +1220,10 @@ public class ProcessingOrderService {
         resp.setCancelledAt(po.getCancelledAt());
         resp.setCancelledReason(po.getCancelledReason());
         resp.setPrintCount(po.getPrintCount());
+        // 路线可观测（V60，issue #4308）：详情 API 必须能查出「实际走哪条 / 想走哪条 / 怎么来的」
+        resp.setRouteKey(po.getRouteKey());
+        resp.setRouteRequestedKey(po.getRouteRequestedKey());
+        resp.setRouteSource(po.getRouteSource());
         // 订单信息（列表路径由调用方批量取回后传入，单条路径传入单查结果；null 时字段留空，同旧行为）
         if (order != null) {
             resp.setOrderNo(order.getOrderNo());

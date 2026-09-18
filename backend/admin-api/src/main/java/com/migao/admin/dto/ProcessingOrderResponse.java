@@ -36,6 +36,25 @@ public class ProcessingOrderResponse {
     private Integer printCount;
 
     /**
+     * 本单**实际使用**的路线键「帘种×工艺」（V60，issue #4308）。
+     * T1/T2 时 = 默认 {@code 布帘×韩褶}；多部位订单取最需关注的一条
+     * （{@code default} &gt; {@code missing_route} &gt; {@code partial} &gt; {@code derived}）。
+     */
+    private String routeKey;
+
+    /**
+     * 本单**派生出来想用**的路线键（V60，issue #4308）；两维全不命中时为 null。
+     * {@code missing_route} 的提示靠它说出「识别的 X 在库里没有路线」。
+     */
+    private String routeRequestedKey;
+
+    /**
+     * 路线键来源（V60，issue #4308）：{@code derived} / {@code partial}（补信号）/
+     * {@code missing_route}（建路线）/ {@code default}（补信号）。
+     */
+    private String routeSource;
+
+    /**
      * 快照明细项
      */
     @Data

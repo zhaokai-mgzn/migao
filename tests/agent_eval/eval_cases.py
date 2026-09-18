@@ -4335,6 +4335,96 @@ _CASE_PG_023 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-024 [NORMAL] 路线来源 T1：信号全不命中 ⇒ route_source=default + route_key=默认键 + requested=null + incident warn 日志（源: cases/processing-order.yml）──
+_CASE_PG_024 = EvalCase(
+    id='PG-024',
+    legacy_id='',
+    title='路线来源 T1：信号全不命中 ⇒ route_source=default + route_key=默认键 + requested=null + incident warn 日志',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', "T1（最隐蔽的一层）：订单侧可派生信号（加工项名 > 加工项 options > 商品名 > 销售方式）**全不命中** ⇒ 直接取默认路线键 `布帘×韩褶`，加工单落 `route_source='default'`、`route_key='布帘×韩褶'`、`route_requested_key=NULL`（两维都没派生出来 ⇒ 没有「想走的键」）。迁移前这条路径**连一行 info 日志都没有**，成功路径零痕迹 ⇒ 罗马帘订单今天就走这条且无从发现。证据：ProcessingOrderRouteSourceTest「noSignalFallsBackToDefaultAndIsObservable」（断言三列 + warn 级 incident 日志）", '**红证（注入式，实测）**：① 把 `deriveRouteKey` 的 `source` 恒置 `derived` ⇒ `noSignalFallsBackToDefaultAndIsObservable` 红（`[T1 必须是 default —— 不得伪装成「已派生」]`）；② 去掉 T1 的 `log.warn` ⇒ 同用例红（`[T1 必须留 warn 级 incident 痕迹（grep 标记可捞全量）]`）；③ 把三列从 `ProcessingOrder.builder()` 摘掉 ⇒ 6 条红。', 'T1 是**预期形态**而非错误（issue #4308「明确不做」：不做无条件 fail-closed，无信号订单仍走默认路线）—— 但必须**可观测**：日志级别 WARN + 结构化 incident 标记 `INCIDENT_PRODUCTION_ROUTE_DEFAULTED`（grep 可捞全量），且从加工单详情 API 可查。'],
+    skip_reason='[backend-contract] 后端契约用例（生成加工单是服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProcessingOrderRouteSourceTest（四态 + 多部位 roll-up，7 条）',
+    tags=['processing-order', 'production-routing', 'route-source', 'observability'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-025 [NORMAL] 路线来源 半命中：只派生出一维 ⇒ route_source=partial + 键 = 命中维 + 默认维（源: cases/processing-order.yml）──
+_CASE_PG_025 = EvalCase(
+    id='PG-025',
+    legacy_id='',
+    title='路线来源 半命中：只派生出一维 ⇒ route_source=partial + 键 = 命中维 + 默认维',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', "半命中（issue #4308 P1 判据原文的「半命中」）：信号含「纱」但无任何工艺信号 ⇒ 帘种 = 纱帘、工艺取默认 韩褶 ⇒ 路线键 `纱帘×韩褶`，`route_source='partial'`，`route_requested_key='纱帘×韩褶'`。补救动作 = 去「信号映射」补另一维。证据：ProcessingOrderRouteSourceTest「singleDimensionHitIsPartial」", '**红证（注入式，实测）**：把「只命中一维」分支的 `source` 改成 `derived` ⇒ `singleDimensionHitIsPartial` 红（`[只命中一维 ⇒ partial（补救动作 = 去信号映射补另一维）]`）；把 `route_requested_key` 恒置 null ⇒ 同用例红（`[partial 也要记下「想走的键」]`）。', '**partial 与 missing_route 不得合并**（冻结契约）：两者都「有问题」但**补救动作不同** —— partial 要**补信号**、missing_route 要**建路线**；并成一个值后前端给不出可行动的提示语。证据：本用例 + PG-026 + PG-028 的次序断言（「multiPositionMissingRouteOutranksPartial」）'],
+    skip_reason='[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest 执行',
+    tags=['processing-order', 'production-routing', 'route-source'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-026 [NORMAL] 路线来源 T2：两维都命中但库中无该路线 ⇒ route_source=missing_route + requested 记下「识别的键」（源: cases/processing-order.yml）──
+_CASE_PG_026 = EvalCase(
+    id='PG-026',
+    legacy_id='',
+    title='路线来源 T2：两维都命中但库中无该路线 ⇒ route_source=missing_route + requested 记下「识别的键」',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', "T2：派生键在库中**没有**对应路线 ⇒ 回落默认路线，加工单落 `route_source='missing_route'`、`route_key='布帘×韩褶'`（**实际使用**的键）、`route_requested_key='罗马帘×韩褶'`（**派生出来想用**的键）。没有 requested 这一列，提示说不出「识别的 X 在库里没有路线」⇒ 用户拿不到可行动的下一步。迁移前这一层只有一句 `log.info`，用户侧完全不可见。证据：ProcessingOrderRouteSourceTest「derivedKeyMissingFromLibraryIsMissingRouteAndKeepsRequestedKey」（含 incident 日志断言 + 实例工序 = 默认路线的回归断言）", '**红证（注入式，实测）**：① 把 T2 的 `source = \\"missing_route\\"` 改回 `partial`（= 并入旧三态口径）⇒ 2 条红（本用例 `[T2 不得并入 partial：补救动作不同（T2 要**建路线**，partial 要**补信号**）]` + PG-028 的次序断言）；② 去掉 T2 的 incident 日志（warn→debug）⇒ 本用例红（`[T2 必须有 incident 痕迹（迁移前只有一句 info，用户侧不可见）]`）；③ `route_requested_key` 恒 null ⇒ 本用例红（`[必须记下「识别的键」—— 没有它，提示说不出该建哪条路线]`）。', '**T2 是「库里缺数据」不是「订单有问题」**：库里没有任何「罗马帘」专属工序与单价（#4261 ①）⇒ 本单**不发明**罗马帘路线（凭空造的单价会直接算成工人工资）；正确解法 = 商家用本单交付的写面**自己建工序 + 建路线**，而 `missing_route` + `route_requested_key` 就是驱动这个动作的可行动信号。', '**T3 保持 fail-closed 不变**（#4116 已落码）：默认路线也没有 / 路线引用的工序缺行 ⇒ `PRODUCTION_ROUTING_NOT_FOUND` / `PRODUCTION_OPERATION_NOT_FOUND` + 可行动 suggestion + incident 日志，**不落半成品**。证据：ProcessingOrderServiceTest 的空库/缺工序两条负例（本单未改动该路径）'],
+    skip_reason='[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest + ProcessingOrderServiceTest 执行',
+    tags=['processing-order', 'production-routing', 'route-source', 'missing-route'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-027 [NORMAL] 路线来源 正常派生：两维都由库中信号命中且路线存在 ⇒ route_source=derived 且不打 incident（源: cases/processing-order.yml）──
+_CASE_PG_027 = EvalCase(
+    id='PG-027',
+    legacy_id='',
+    title='路线来源 正常派生：两维都由库中信号命中且路线存在 ⇒ route_source=derived 且不打 incident',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', "正常派生：加工项名「韩褶-布」同时命中帘种（布帘）与工艺（韩褶），且 `布帘×韩褶` 路线在库中存在 ⇒ `route_source='derived'`、`route_key` = `route_requested_key` = `布帘×韩褶`，且**不打任何 incident 日志**（干净路径打 incident ⇒ incident 变噪音，没人会看）。证据：ProcessingOrderRouteSourceTest「fullyDerivedKeyIsDerived」", '**红证（注入式，实测）**：把 `deriveRouteKey` 的库读取（`productionOperationQueryService.routeSignals(tenantId)`）换成空表（= 模拟「派生仍读常量、不看库」）⇒ 4 红 + 2 UnnecessaryStubbing 错（本用例 `[两维命中 + 路线存在 ⇒ derived]` 是其一）—— 这条同时证明「派生**读库**而非读常量」：判别物是**库里配了、迁移前常量表里没有**的信号行「罗马帘」。'],
+    skip_reason='[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest 执行',
+    tags=['processing-order', 'production-routing', 'route-source'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-028 [NORMAL] 多部位 roll-up：三列取最需关注的一条（default > missing_route > partial > derived），三列同源（源: cases/processing-order.yml）──
+_CASE_PG_028 = EvalCase(
+    id='PG-028',
+    legacy_id='',
+    title='多部位 roll-up：三列取最需关注的一条（default > missing_route > partial > derived），三列同源',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '多部位 roll-up（本单唯一「有损聚合」的字段）：`processing_orders` 只有**单值** `route_key` / `route_requested_key` / `route_source` 三列，而一张单可能有多个部位（各自一条路线）⇒ 取**最需关注**的那一条，次序 `default` > `missing_route` > `partial` > `derived`（零信息最不可信）。三条断言各覆盖一对相对次序：derived+missing_route ⇒ missing_route；missing_route+default ⇒ default；partial+missing_route ⇒ missing_route。证据：ProcessingOrderRouteSourceTest「multiPositionRollsUpToMostNeedingAttention」+「multiPositionDefaultOutranksMissingRoute」+「multiPositionMissingRouteOutranksPartial」', "**三列必须同源取自同一条部位**（拿 A 的 source 配 B 的键就是自相矛盾）：`multiPositionRollsUpToMostNeedingAttention` 断言 `route_source='missing_route'` 时 `route_requested_key` 必须是**同一部位**的 `罗马帘×韩褶`。", '**红证（注入式，实测）**：① 把 roll-up 从「取最需关注」改成「取第一条」（`worst == null` 短路）⇒ 2 条红（`[多部位取最需关注的一条 ⇒ missing_route 盖住 derived]` / `[冻结口径：default（零信息）> missing_route > partial > derived]`）；② 把 `severity` 里 `missing_route` 与 `partial` 的次序对调 ⇒ `multiPositionMissingRouteOutranksPartial` 红（`[missing_route 比 partial 更需关注（补救 = 建路线）]`）—— 这条是**先补的判别物**：首版三条 roll-up 用例都盖不住 partial↔missing_route 的相对次序，注入后仍全绿 ⇒ 属「不会红的断言」，已补该用例后注入即红。', '未知 / null 来源取值落**最需关注**档（`severity` 的 `default -> 3`）：不静默降级为「正常」（与仓库「未知形态必须 fail-loud」同口径）。'],
+    skip_reason='[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest 执行',
+    tags=['processing-order', 'production-routing', 'route-source', 'roll-up'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -6427,6 +6517,11 @@ ALL_CASES = (
     _CASE_PG_021,
     _CASE_PG_022,
     _CASE_PG_023,
+    _CASE_PG_024,
+    _CASE_PG_025,
+    _CASE_PG_026,
+    _CASE_PG_027,
+    _CASE_PG_028,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,

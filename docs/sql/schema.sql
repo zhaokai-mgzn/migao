@@ -765,6 +765,9 @@ CREATE TABLE IF NOT EXISTS processing_orders (
     cancelled_reason TEXT,
     print_count INT DEFAULT 0,
     qr_token VARCHAR(64),                             -- 加工单二维码 token（V49，扫码报工入口）
+    route_key VARCHAR(32),                            -- 实际使用的路线键「帘种×工艺」（V60，issue #4308）
+    route_requested_key VARCHAR(32),                  -- 派生出来想用的路线键（V60）；两维全不命中时 NULL
+    route_source VARCHAR(16),                         -- 路线键来源（V60）：derived / partial / missing_route / default
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INT DEFAULT 0
@@ -930,6 +933,73 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_production_option_factors_tenant_option_op
 
 COMMENT ON TABLE production_option_routings IS '特殊选项 → 条件工序（V59，issue #4230）：实例化时把 operation_name 插到 after_operation 之后';
 COMMENT ON TABLE production_option_factors IS '特殊选项 → 计件系数（V59，issue #4230）：operation_name NULL = 该部位全部工序（平摊档），非空 = 逐工序例外档（例外档盖住平摊档）';
+
+-- 信号 → 路线键 + 路线版本账（V60，issue #4308「工艺路线商家可配」）
+-- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V60__create_routing_customization_tables.sql
+-- （为什么两处都要：本文件是**全新库的一次性 bootstrap**，bootstrap 路径**不跑迁移链** ⇒
+--  只存在于迁移里的表在建库后并不存在，admin-api 查询 500，见 issue #3270 形态。）
+-- 唯一性**按用途拆**（帘种行 / 工艺行各一条唯一索引）：迁移前的常量表里「帘头」出现两次且
+-- 位次相反（帘种表最前、工艺表最后），单列 priority 无法同时表达 ⇒ 一行一个用途、各用途内唯一。
+CREATE TABLE IF NOT EXISTS production_route_signals (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    signal VARCHAR(64) NOT NULL,                     -- 信号关键字（命中方式 = 文本 contains）
+    curtain_type VARCHAR(16),                        -- 命中后给出的帘种（NULL = 本行不参与帘种扫描）
+    craft VARCHAR(16),                               -- 命中后给出的工艺（NULL = 本行不参与工艺扫描）
+    priority INT NOT NULL DEFAULT 0,                 -- **用途内**扫描序（越小越先）
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT ck_production_route_signals_has_target
+        CHECK (curtain_type IS NOT NULL OR craft IS NOT NULL)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_production_route_signals_tenant_signal_curtain
+    ON production_route_signals (tenant_id, signal)
+    WHERE deleted = 0 AND curtain_type IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_production_route_signals_tenant_signal_craft
+    ON production_route_signals (tenant_id, signal)
+    WHERE deleted = 0 AND craft IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_production_route_signals_tenant_priority
+    ON production_route_signals (tenant_id, priority)
+    WHERE deleted = 0;
+COMMENT ON TABLE production_route_signals IS
+    '信号 → 路线键映射（V60，issue #4308）：派生加工单路线时按 priority 扫描本表；种子 = 迁移前的常量关键字表；商家可增删改';
+
+CREATE TABLE IF NOT EXISTS production_routing_versions (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    routing_id VARCHAR(64) NOT NULL REFERENCES production_routings(id),
+    curtain_type VARCHAR(16) NOT NULL,
+    craft VARCHAR(16) NOT NULL,
+    operations JSONB NOT NULL DEFAULT '[]',          -- 本次变更后的工序名有序序列（seq = 下标+1）
+    operation_count INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_routing_versions_routing
+    ON production_routing_versions (routing_id, created_at DESC)
+    WHERE deleted = 0;
+COMMENT ON TABLE production_routing_versions IS
+    '工艺路线版本账（V60，issue #4308）：每次改序列追加一行；路线是计件工资与完工判定的唯一输入，改动必须留痕';
+
+-- 信号种子（tenant_id=1；**逐条**抄自迁移前的 ProcessingOrderService 两张常量关键字表：
+-- 3 帘种 + 7 工艺 = 10 行。顺序即语义：「帘头」在帘种表最前（防「帘头纱」被判纱帘）、
+-- 在工艺表最后（工艺侧兜底）⇒ 不得为好看重排。）
+INSERT INTO production_route_signals
+    (id, tenant_id, signal, curtain_type, craft, priority, status)
+VALUES
+  ('sig-v60-01', 1, '帘头', '帘头', NULL,   1, 'active'),
+  ('sig-v60-02', 1, '纱',   '纱帘', NULL,   2, 'active'),
+  ('sig-v60-03', 1, '布',   '布帘', NULL,   3, 'active'),
+  ('sig-v60-04', 1, '韩褶', NULL,   '韩褶',  1, 'active'),
+  ('sig-v60-05', 1, '打孔', NULL,   '打孔',  2, 'active'),
+  ('sig-v60-06', 1, '四爪钩', NULL, '四爪钩', 3, 'active'),
+  ('sig-v60-07', 1, '四叉钩', NULL, '四爪钩', 4, 'active'),
+  ('sig-v60-08', 1, '穿杆', NULL,   '穿杆',  5, 'active'),
+  ('sig-v60-09', 1, '平幔', NULL,   '平幔',  6, 'active'),
+  ('sig-v60-10', 1, '帘头', NULL,   '平幔',  7, 'active')
+ON CONFLICT DO NOTHING;
 
 -- ================================================
 -- 9.6 智能每日经营简报（issue #3468，V44 迁移）
