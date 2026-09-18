@@ -46,6 +46,9 @@ import type {
 
 const money = (v?: number | null) => `¥${Number(v ?? 0).toFixed(2)}`
 
+/** 路线的唯一键（服务端唯一键 `(tenant_id, curtain_type, craft)`）—— 展示 key 与编辑标识共用一处 */
+const routingKey = (r: Pick<Routing, 'curtain_type' | 'craft'>) => `${r.curtain_type}×${r.craft}`
+
 const inputCls =
   'h-9 w-full rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400'
 
@@ -105,8 +108,14 @@ export default function RoutingsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  /** 序列编辑：当前编辑的路线（null = 未进入编辑）；draft = 待保存的有序工序名 */
+  /**
+   * 序列编辑：当前编辑的路线（null = 未进入编辑）；draft = 待保存的有序工序名。
+   * ⚠️ 用 **部位×工艺 键**（而非对象引用）标识正在编辑哪条：保存成功后会重新拉取路线列表，
+   * 数组里的对象引用全换新 ⇒ 按引用比较会让编辑态在刷新后**静默丢失**（面板塌回只读）。
+   * 键 = 路线唯一键（服务端 `(tenant_id, curtain_type, craft)`）。
+   */
   const [editing, setEditing] = useState<Routing | null>(null)
+  const [editingKey, setEditingKey] = useState('')
   const [draft, setDraft] = useState<string[]>([])
   const [picked, setPicked] = useState('')
   const [saving, setSaving] = useState(false)
@@ -168,6 +177,7 @@ export default function RoutingsPage() {
 
   const openEditor = (routing: Routing) => {
     setEditing(routing)
+    setEditingKey(routingKey(routing))
     setDraft((routing.operations ?? []).map((s) => s.operation))
     setPicked('')
     setReasons([])
@@ -176,6 +186,7 @@ export default function RoutingsPage() {
 
   const closeEditor = () => {
     setEditing(null)
+    setEditingKey('')
     setDraft([])
     setReasons([])
     setLocalReason('')
@@ -472,8 +483,8 @@ export default function RoutingsPage() {
             ) : (
               <div className="space-y-4">
                 {(routings?.routings ?? []).map((routing) => {
-                  const key = `${routing.curtain_type}×${routing.craft}`
-                  const isEditing = editing === routing
+                  const key = routingKey(routing)
+                  const isEditing = !!editingKey && editingKey === key
                   return (
                     <div key={key} className="rounded-lg border border-neutral-200 p-4" data-testid={`routing-${key}`}>
                       <div className="flex flex-wrap items-center justify-between gap-2">
