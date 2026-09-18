@@ -419,6 +419,123 @@ class TestOrderCreatePayload:
         # 端点
         assert "/api/admin/agent/orders" in mock_client.post.call_args[0][0]
 
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_payload_carries_order_line_craft_spec_keys(self, mock_get_client, tool, agent_ctx):
+        """下单行要素必须**真的**发到服务端（issue #4362，S1）。
+
+        判据：真值源 §1 的 11 个要素里，此前只有 3 个有 schema 声明 ⇒ 加工类型/开数/褶距/对花/转角
+        **无处可写**；`processing_info` 是整体透传的 ⇒ 只要模型填了、schema 认了，就必须原样上行
+        （服务端 `OrderLineCraftSpec.materialize` 再把它落到 `order_items` 的列上）。
+        """
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "o1"}})
+        _with_library(mock_client, 50.0, name="窗帘", pid="pid-1")
+        mock_get_client.return_value = mock_client
+
+        items = [{
+            "product_name": "窗帘",
+            "quantity": 3,
+            "unit_price": 50,
+            "subtotal": 150,
+            "product_id": "pid-1",
+            "processing_info": {
+                "colorName": "米白", "sellingMethod": "bulk_cut",
+                "curtainType": "纱帘", "craft": "打孔", "openCount": 4,
+                "cuttingMode": "定高买宽", "isShaped": False, "pleatSpacing": 0.1,
+                "hasPattern": False, "corner": "转角",
+                "pleat_count": 48, "fullness": 2.0, "fullness_actual": 1.86,
+            },
+        }]
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000", items=items,
+        )
+
+        assert result.success is True
+        pi = mock_client.post.call_args.kwargs["json_data"]["items"][0]["processingInfo"]
+        assert pi["curtainType"] == "纱帘"
+        assert pi["craft"] == "打孔"
+        assert pi["openCount"] == 4
+        assert pi["cuttingMode"] == "定高买宽"
+        assert pi["isShaped"] is False
+        assert pi["pleatSpacing"] == 0.1
+        assert pi["hasPattern"] is False
+        assert pi["corner"] == "转角"
+        assert pi["pleat_count"] == 48
+        assert pi["fullness"] == 2.0
+        assert pi["fullness_actual"] == 1.86
+
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_checklist_field_ids_are_normalized_to_craft_spec_keys(
+            self, mock_get_client, tool, agent_ctx):
+        """C 端小布按**清单 id** 采集的字段，必须被归一成工艺规格键后上行（issue #4362，S1）。
+
+        病根：`curtain_checklist` 问到的字段只活在会话的 collector 字典里（**零消费者**）
+        ⇒ 会话结束即丢。归一实现只有一处（`curtain_checklist.to_craft_spec`）；
+        这里钉的是「order_create 真的调它」—— 断言落在**上行 payload** 上，不是「代码里有这行」。
+        """
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "o1"}})
+        _with_library(mock_client, 50.0, name="窗帘", pid="pid-1")
+        mock_get_client.return_value = mock_client
+
+        items = [{
+            "product_name": "窗帘",
+            "quantity": 3,
+            "unit_price": 50,
+            "subtotal": 150,
+            "product_id": "pid-1",
+            "processing_info": {
+                "sellingMethod": "bulk_cut",
+                # 清单 id（snake_case，C 端小布的词汇）
+                "curtain_type": "纱帘", "open_count": 4, "is_shaped": False,
+                "pleat_spacing": 0.1, "has_pattern": True, "window_type": "转角",
+            },
+        }]
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000", items=items,
+        )
+
+        assert result.success is True
+        pi = mock_client.post.call_args.kwargs["json_data"]["items"][0]["processingInfo"]
+        assert pi["curtainType"] == "纱帘"
+        assert pi["openCount"] == 4
+        assert pi["isShaped"] is False
+        assert pi["pleatSpacing"] == 0.1
+        assert pi["hasPattern"] is True
+        assert pi["corner"] == "转角"
+        # 归一**不覆盖**已给 canonical 键的值（只做键改名，不做业务推导）
+        assert pi["sellingMethod"] == "bulk_cut"
+
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_canonical_keys_win_over_checklist_aliases(self, mock_get_client, tool, agent_ctx):
+        """同一事实两种写法同时出现 ⇒ **canonical 键优先**（清单别名不得盖掉显式值）。"""
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "o1"}})
+        _with_library(mock_client, 50.0, name="窗帘", pid="pid-1")
+        mock_get_client.return_value = mock_client
+
+        items = [{
+            "product_name": "窗帘",
+            "quantity": 3,
+            "unit_price": 50,
+            "subtotal": 150,
+            "product_id": "pid-1",
+            "processing_info": {
+                "sellingMethod": "bulk_cut",
+                "curtainType": "布帘", "curtain_type": "纱帘",
+            },
+        }]
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000", items=items,
+        )
+
+        assert result.success is True
+        pi = mock_client.post.call_args.kwargs["json_data"]["items"][0]["processingInfo"]
+        assert pi["curtainType"] == "布帘"
+
 
 class TestOrderCreateFailure:
     """创建订单失败/异常路径"""

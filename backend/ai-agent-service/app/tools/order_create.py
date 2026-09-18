@@ -20,6 +20,7 @@ from functools import lru_cache
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
+from app.clarification.curtain_checklist import to_craft_spec
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 from app.utils.redis_client import RedisClient
@@ -61,6 +62,12 @@ _CRAFTS = ("韩褶", "打孔", "四爪钩", "穿杆", "平幔")
 _COMPONENT_ROLES = ("主布", "配布边", "纱")
 _STYLES = ("单色", "拼色")
 _METERS_SOURCES = ("跟随主布", "人工指定")
+# 加工类型（issue #4362，S1）：真值源 §8 术语表「定高买宽（买宽度米数）/ 定宽买高（按门幅幅数×高度）」。
+# ⚠️ `_CRAFTS` 里**保留** `四爪钩`：它是 `production_routings.craft` 的**既有数据键**（阶段 3 才迁移，
+# 见 #4365），本工具枚举必须与库逐字一致（`test_order_create_spec_key_family` 锁死）。
+# 但按用户裁定它**不是工艺**（是加工项/配件）⇒ 见 description 的「工艺单值·四爪钩是加工项」段，
+# 引导模型把它放进 processingItems 而不是 craft。
+_CUTTING_MODES = ("定高买宽", "定宽买高")
 
 # 万能验证码 bypass（POC/测试阶段，对齐 admin-api 的 sms.bypass-code 机制）。
 # 空字符串 = 禁用 bypass（生产安全默认）。POC 部署时设置 SMS_BYPASS_CODE=123456 与 admin-api 对齐。
@@ -331,10 +338,19 @@ class OrderCreateTool(BaseTool):
         # 但此前下单时全被丢弃 ⇒ 加工单只能靠加工项名**猜**部位（实证 V58：纱帘订单拿到布帘的
         # 11 道工序，工序与工资全错）。故要求随单落库。
         "【工艺规格·必带】引导清单/顾客已明确的工艺参数必须写进 items[i].processing_info（**顶层键**）："
-        "curtainType（部位：布帘/纱帘/帘头）、craft（安装工艺：韩褶/打孔/四爪钩/穿杆/平幔 —— "
-        "**与 mounting 是两层，不要互相推导**）、isShaped（是否定型）、style（单色/拼色）、"
-        "specialOptions（下单勾选的特殊选项，如 拼1次/加铅块/加花边/抱枕/布绑带）。"
+        "curtainType（部位：布帘/纱帘/帘头）、craft（安装工艺：韩褶/打孔/穿杆/平幔 —— "
+        "**与 mounting 是两层，不要互相推导**）、isShaped（是否定型）、openCount（打开方式/开数：1/2/4）、"
+        "cuttingMode（加工类型：定高买宽/定宽买高，由算料口径给出）、pleatSpacing（褶距，米）、"
+        "hasPattern（是否对花）、corner（转角形态，取自清单「窗型」）、style（单色/拼色）、"
+        "specialOptions（下单勾选的特殊选项，如 拼1次/加铅块/加花边/抱枕/布绑带）；"
+        "算料输出原样带上：pleat_count（总褶数）/fullness（理论褶倍）/fullness_actual（实际褶倍）。"
         "**枚举必须逐字一致**（「韩式褶」非法，应为「韩褶」）—— 错值会让加工单取到**错误工序路线**。"
+        # 工艺单值 + 四爪钩归属（issue #4362 阶段 1 / issue #4365 用户裁定）：四爪钩/四叉钩/穿钩是
+        # **加工项（配件）**，不是并列工艺；工艺（安装工艺＝打褶/悬挂方式）**单值**。
+        # 模型把它当 craft 填 ⇒ 会取到「四爪钩」这条独立路线（信号层已指向主线，显式值仍会生效）。
+        "【工艺单值·四爪钩是加工项】craft 只能填**安装工艺**（打褶/悬挂方式），且**只能一个值**；"
+        "「四爪钩/四叉钩/穿钩」属**加工项（配件）** ⇒ 放进 processingItems（它会驱动穿钩类加工），"
+        "**不要**填进 craft。"
         "**顾客没说就不填**：不要猜、不要补默认值。"
         "【双拼·主布/配布边】拼色（双拼）时一扇窗拆**两条明细行**：主布行带 componentRole=主布 "
         "与全部工艺规格；配布边行带 componentRole=配布边 + craftLineId=主布行的行标识"
@@ -482,6 +498,44 @@ class OrderCreateTool(BaseTool):
                                 "isShaped": {
                                     "type": "boolean",
                                     "description": "是否定型（引导清单已采集：布帘/帘头默认是、纱帘默认否）",
+                                },
+                                # ── 下单行要素（issue #4362，S1）：真值源 §1 逐项，全部**可空** ──
+                                # 此前只有前 3 个键有声明 ⇒ 加工类型/开数/褶距/对花/转角**无处可写**，
+                                # 而它们是算料与工序的输入（错值直接算错工资）。键名与 Java 侧
+                                # `OrderLineCraftSpec` 的读法逐字一致（DB 列名 = 这里的 snake_case 键）。
+                                "openCount": {
+                                    "type": "integer",
+                                    "enum": [1, 2, 4],
+                                    "description": "打开方式（开数）：1 单开 / 2 双开·对开 / 4 四开。对开总折数必须为偶数（真值源 §8）",
+                                },
+                                "cuttingMode": {
+                                    "type": "string",
+                                    "enum": ["定高买宽", "定宽买高"],
+                                    "description": "加工类型（真值源 §8）：定高买宽 = 买宽度米数 / 定宽买高 = 按门幅幅数×高度。取值来自算料口径，**不要自己反推**",
+                                },
+                                "pleatSpacing": {
+                                    "type": "number",
+                                    "description": "褶距（米，韩褶默认 0.1）—— 引导清单已采集",
+                                },
+                                "hasPattern": {
+                                    "type": "boolean",
+                                    "description": "是否对花（引导清单已采集）。对花时定宽买高每幅加一个花距；顾客没说 ⇒ 不填",
+                                },
+                                "corner": {
+                                    "type": "string",
+                                    "description": "转角形态（取自引导清单「窗型」：平开/落地/飘窗/转角/L窗）。它**影响开数与片数** ⇒ 属算料输入，不要只留在对话里",
+                                },
+                                "pleat_count": {
+                                    "type": "number",
+                                    "description": "总褶数（**算料输出**，由 curtain_calc 给出，不要自己推算）",
+                                },
+                                "fullness": {
+                                    "type": "number",
+                                    "description": "理论褶倍（**算料输出**，名义倍数如 2.00）",
+                                },
+                                "fullness_actual": {
+                                    "type": "number",
+                                    "description": "实际褶倍（**算料输出**，由实际用料反算如 1.86）—— 与理论褶倍**分开填**，不是冗余字段",
                                 },
                                 "style": {
                                     "type": "string",
@@ -826,6 +880,7 @@ class OrderCreateTool(BaseTool):
         for label, key, legal in (
             ("部位/帘种", "curtainType", _CURTAIN_TYPES),
             ("安装工艺", "craft", _CRAFTS),
+            ("加工类型", "cuttingMode", _CUTTING_MODES),
             ("明细行角色", "componentRole", _COMPONENT_ROLES),
             ("款式", "style", _STYLES),
             ("配布边米数来源", "metersSource", _METERS_SOURCES),
@@ -1319,6 +1374,21 @@ class OrderCreateTool(BaseTool):
                 suggestion="请提供至少一件商品的信息（名称、数量、单价）",
                 missing_params=["items"],
             )
+
+        # ── 引导清单字段归一（issue #4362，S1）：C 端小布按**清单 id**（snake_case：
+        # curtain_type / open_count / is_shaped / pleat_spacing / has_pattern / window_type）
+        # 采集的工艺参数，直接放进 processing_info 时在此**归一**为工艺规格键（camelCase）。
+        # 映射的**唯一实现**在 app/clarification/curtain_checklist.py::to_craft_spec
+        # （Java 侧 OrderLineCraftSpec 的写/读面按同一套键名走 ⇒ 不写第二份映射）。
+        # `setdefault`：已给 canonical 键的行**不被覆盖**（归一只是键改名，不做业务推导、
+        # 不补默认值、不猜）。位置在全部校验之前 ⇒ 归一后的 canonical 键照常过枚举闸门。
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            pinfo = item.get("processing_info")
+            if isinstance(pinfo, dict):
+                for _key, _value in to_craft_spec(pinfo, pinfo).items():
+                    pinfo.setdefault(_key, _value)
 
         # 校验每个商品项
         for i, item in enumerate(items):

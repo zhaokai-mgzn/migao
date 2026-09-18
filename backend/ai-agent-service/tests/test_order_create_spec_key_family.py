@@ -275,3 +275,75 @@ class TestCraftSpecEnumGate:
         desc = OrderCreateTool.description
         for token in ("工艺规格", "componentRole", "craftLineId", "主布米数"):
             assert token in desc, f"工具描述未教「{token}」⇒ LLM 不会填这些键"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 下单行要素全键声明 + 教学 + 加工类型闸门（issue #4362，S1）
+# ══════════════════════════════════════════════════════════════════════════════
+# 真值源 §1 的 11 个下单行要素里，此前只有 curtainType / craft / isShaped 三个有 schema 声明
+# ⇒ 加工类型 / 开数 / 褶距 / 总褶数 / 对花 / 转角 / 褶倍 **无处可写**（模型想填也传不进来），
+# 而它们是算料与工序的输入。声明（schema）与教学（description）必须同时存在：
+# 只声明不教 ⇒ LLM 不会填；只教不声明 ⇒ 参数传不进来（issue #4346 既有口径）。
+# 「四爪钩是加工项不是工艺」（issue #4365 用户裁定）：craft **单值**，四爪钩属 processingItems。
+ORDER_LINE_CRAFT_SPEC_KEYS = (
+    "curtainType", "craft", "openCount", "cuttingMode", "isShaped",
+    "pleatSpacing", "pleat_count", "fullness", "fullness_actual", "hasPattern", "corner",
+)
+
+
+class TestOrderLineCraftSpecKeys:
+    """下单行要素（11 项）的 schema 声明 + 描述教学 + 加工类型闸门。"""
+
+    def _props(self):
+        return OrderCreateTool.parameters["properties"]["items"]["items"][
+            "properties"]["processing_info"]["properties"]
+
+    def test_schema_declares_every_order_line_element(self):
+        props = self._props()
+        for key in ORDER_LINE_CRAFT_SPEC_KEYS:
+            assert key in props, f"processing_info schema 未声明 {key} ⇒ LLM 传不进来（等于没实现）"
+
+    def test_open_count_and_cutting_mode_carry_frozen_enums(self):
+        props = self._props()
+        # 真值源 §8 术语表：单开/双开·对开/四开；定高买宽|定宽买高
+        assert props["openCount"]["enum"] == [1, 2, 4]
+        assert props["cuttingMode"]["enum"] == ["定高买宽", "定宽买高"]
+
+    def test_description_teaches_every_order_line_element(self):
+        desc = OrderCreateTool.description
+        for key in ORDER_LINE_CRAFT_SPEC_KEYS:
+            assert key in desc, f"工具描述未教「{key}」⇒ LLM 不会填它"
+
+    def test_description_states_craft_is_single_valued_and_hook_is_an_item(self):
+        """「四爪钩/四叉钩/穿钩」是**加工项（配件）不是工艺**（#4365 用户裁定）。
+
+        信号映射层已把它指向主线（V62）；描述这一层负责**不让模型把它当 craft 填**
+        （显式值仍会生效 ⇒ 填错就取到那条独立路线）。
+        """
+        desc = OrderCreateTool.description
+        assert "工艺单值" in desc
+        assert "四爪钩" in desc and "加工项" in desc
+        assert "只能一个值" in desc
+
+    @pytest.mark.parametrize("bad", ["定高买宽米", "fixed_height", "定宽买高（按幅）"])
+    def test_invalid_cutting_mode_is_rejected(self, bad):
+        result = OrderCreateTool._validate_processing_info(0, {"cuttingMode": bad})
+        assert result is not None, "加工类型错值未被拦下 ⇒ 会一路写到订单"
+        assert result.success is False
+        assert "加工类型" in (result.message or "")
+
+    def test_valid_cutting_mode_passes(self):
+        assert OrderCreateTool._validate_processing_info(0, {"cuttingMode": "定宽买高"}) is None
+
+    def test_absent_cutting_mode_passes(self):
+        # 可空（用户裁定「部位不是必填的」⇒ S1 字段一律可空）：键缺席不得变成硬门槛
+        assert OrderCreateTool._validate_processing_info(0, {"sellingMethod": "bulk_cut"}) is None
+
+    def test_craft_enum_still_matches_routing_library(self):
+        """`四爪钩` **保留**在 craft 枚举里（阶段 3 才迁移路线数据）—— 枚举必须与库逐字一致。
+
+        本断言是**反向护栏**：有人为了「四爪钩不是工艺」把枚举删掉 ⇒ 枚举与
+        `production_routings.craft` 漂移 ⇒ 红（修法是改 description 引导 + 信号层指向主线，
+        不是悄悄改枚举）。
+        """
+        assert self._props()["craft"]["enum"] == ["韩褶", "打孔", "四爪钩", "穿杆", "平幔"]

@@ -513,6 +513,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             item.setWidth(itemRequest.getWidth());
             item.setHeight(itemRequest.getHeight());
             item.setProcessingInfo(itemRequest.getProcessingInfo());
+            // 下单行要素落列（V62，issue #4362，S1）：两个采集端（C 端小布澄清清单 / B 端米宝
+            // order_create）写入的 processing_info 顶层工艺规格键在此**物化**到 order_items 的列上。
+            // 判在本方法（表单 / Agent / 程序化三条路径的**唯一共享入口**）才无死角；
+            // 全部可空、不设必填校验（用户裁定「部位不是必填的」）⇒ 缺键就是缺。
+            OrderLineCraftSpec.materialize(
+                    OrderLineCraftSpec.normalize(itemRequest.getProcessingInfo(), objectMapper), item);
             item.setSubtotal(resolveItemSubtotal(itemRequest));
             orderItemMapper.insert(item);
         }

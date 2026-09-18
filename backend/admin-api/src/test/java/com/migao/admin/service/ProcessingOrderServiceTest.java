@@ -158,6 +158,9 @@ class ProcessingOrderServiceTest {
      *
      * <p>{@code priority} 是**用途内**序（帘种行 1..3 / 工艺行 1..7），故「帘头」两行位次相反 ——
      * 这正是不能压成 `(tenant_id, signal)` 单唯一键的原因（见 V60 迁移注释）。</p>
+     *
+     * <p><b>V62 修正（issue #4362 阶段 1 ②）</b>：{@code 四爪钩 / 四叉钩} 指向**主线工艺** {@code 韩褶}
+     * （它们是加工项不是工艺，见 V62 迁移注释）⇒ 桩 = 库的**终态**（V60 种子 + V62 UPDATE）。</p>
      */
     private static List<ProductionRouteSignal> v60Signals() {
         return List.of(
@@ -166,8 +169,8 @@ class ProcessingOrderServiceTest {
                 routeSignal("sig-v60-03", "布", "布帘", null, 3),
                 routeSignal("sig-v60-04", "韩褶", null, "韩褶", 1),
                 routeSignal("sig-v60-05", "打孔", null, "打孔", 2),
-                routeSignal("sig-v60-06", "四爪钩", null, "四爪钩", 3),
-                routeSignal("sig-v60-07", "四叉钩", null, "四爪钩", 4),
+                routeSignal("sig-v60-06", "四爪钩", null, "韩褶", 3),
+                routeSignal("sig-v60-07", "四叉钩", null, "韩褶", 4),
                 routeSignal("sig-v60-08", "穿杆", null, "穿杆", 5),
                 routeSignal("sig-v60-09", "平幔", null, "平幔", 6),
                 routeSignal("sig-v60-10", "帘头", null, "平幔", 7));

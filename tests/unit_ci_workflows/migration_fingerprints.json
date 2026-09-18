@@ -59,6 +59,7 @@
     "V58__seed_sheer_curtain_routings.sql": "sha256:8bf2da9b219edbfe31adcb2d097ffc036b78b8cc971df84fad8803950e85d38c",
     "V59__create_production_option_tables.sql": "sha256:9d0e78119e5d9bce831867d9f5c4549895044e570dec75ee5c6592b5fedb835c",
     "V60__create_routing_customization_tables.sql": "sha256:5c4def3d47e78dd2d58e4a61b59f846a6a7baf34afa6299cd1a41cf7ade0bf5d",
-    "V61__add_piecework_snapshot_to_work_logs.sql": "sha256:1c15afd906d1f1c181cca0b761351e78668cf2e9a7ed131f613eb740c6361f67"
+    "V61__add_piecework_snapshot_to_work_logs.sql": "sha256:1c15afd906d1f1c181cca0b761351e78668cf2e9a7ed131f613eb740c6361f67",
+    "V62__structure_order_line_craft_spec.sql": "sha256:63c8ebad4b8e64091ea118f50e09c6f75df24ca83f0d1d4bed1ff043914d11b7"
   }
 }
