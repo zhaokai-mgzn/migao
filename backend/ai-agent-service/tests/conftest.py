@@ -173,9 +173,7 @@ def test_client():
     with patch("app.utils.database.init_db", new_callable=AsyncMock), \
          patch("app.utils.database.close_db", new_callable=AsyncMock), \
          patch("app.utils.redis_client.init_redis", new_callable=AsyncMock), \
-         patch("app.utils.redis_client.close_redis", new_callable=AsyncMock), \
-         patch("app.main.get_rag_pipeline", new_callable=AsyncMock, side_effect=ImportError), \
-         patch("app.main.get_vector_store", new_callable=AsyncMock, side_effect=ImportError):
+         patch("app.utils.redis_client.close_redis", new_callable=AsyncMock):
         from app.main import create_app
         app = create_app()
         with TestClient(app) as client:
