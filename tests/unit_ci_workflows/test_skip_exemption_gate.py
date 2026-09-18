@@ -24,8 +24,14 @@
    （否则它就是"永远不跑的借口"）。引用的存在性/可收集性由 **#4120 的守卫**承担
    （`tests/unit_ci_workflows/test_eval_evidence_chain.py`），本文件**不重复实现**，
    只要求"有钉住它的测试"这一结构性事实。
-4. **总量只许缩**：`.github/skip-exemption-baseline.json` 记锚定 SHA + `skip_total`；
-   用例库非空 skip 数 **> 基线 ⇒ 红**（净增即红；**不设** per-PR 强制消减，留给后续裁定）。
+4. **增长判据按类分流**（#4233）：增长只治**债务类**（`wip` / `no-data-source` / `deprecated`
+   —— 它们才是"用来绕开评测的豁免"）⇒ 基线 `debt_skip_total` + `debt_skip_ids` 是锚点快照，
+   用例库里的债务类非空 skip **超出即红**（净增即红；**不设** per-PR 强制消减，留给后续裁定）。
+   `[backend-contract]` 类**设计上就不进 agent-eval**（它的 `skip_reason` 是 runner 侧
+   `eval_case_filter.case_skip_reason` 的**分隔符**，不是豁免；去掉它反而会让用例空跑/假绿），
+   故**单列** `backend_contract_ids` **合规清单**、**不计入**增长 ⇒ 新增该类**合规**用例
+   **无需**重锚定账本。`.github/skip-exemption-baseline.json` 仍记锚定 SHA + `skip_total`
+   （锚点快照，与 `legacy_skip_ids` 自洽）；`skip_total` 本身**不再作增长分母**。
 5. **存量按基线放行，新增一律 fail-closed**：只有 `pending_classification` 里的 ID
    可暂时不合规（时限 `pending_expires`，过期即红）；其余任何 ID（含**新增**用例）
    必须完全合规。基线里的 `legacy_skip_ids` 是锚点快照，`pending` 只许是其子集
@@ -42,11 +48,14 @@
   纯静态、无 git 历史的 job（`pr-check.yml` 的 `ci workflow helper unit tests` 是
   `fetch-depth: 1`）做不到与 `origin/main` 基线对账（`case_trust_gate` 那套靠
   `fetch-depth: 0` 的独立 job）。本文件用 `history` 账本（`skip_total` 只许非增）+
-  `pending ⊆ legacy` 增加摩擦力，**但那不是密码学封印** —— 改基线是**显式的、
-  会被 diff 看见的**动作，与仓里其它基线同一信任模型。**唯一例外**（集成裁定
-  2026-09-18）：`history` **末行带显式 `note`** 的锚点前移重锚定允许增长（账本
-  对齐 main 现实 —— #4192 对 CH-008/CH-017 的 unrunnable 登记，两条已机器钉住）；
-  无 `note` 的增长 / 非末行增长一律仍红（见 `_history_growth_allowed`）。
+  `pending ⊆ legacy` + 按类清单 `⊆ legacy` 增加摩擦力，**但那不是密码学封印** —— 改基线是
+  **显式的、会被 diff 看见的**动作，与仓里其它基线同一信任模型。
+- **锚点前移（重锚定）的唯一例外**：与基线 `_when_to_update` ⑤ **同一套判据**
+  （`_history_growth_allowed`，集成裁定 2026-09-18）—— **仅 `history` 末行带显式 `note`**
+  的增长可放行（账本对齐 main 现实 —— #4192 对 CH-008/CH-017 的 unrunnable 登记）；
+  无 `note` 的增长 / 非末行增长一律仍红。
+  ⚠️ 这条例外**不是**给 `[backend-contract]` 类准备的：那类新增**无需**动基线（见判据 4），
+  例外只服务"锚点前移时账本数字必须跟上 main 现实"这一情形。
 - **`eval_case_filter` 之外的其它剔除路径**：本文件只判"写法与账本"，不判 runner 是否
   真的用 `skip_reason` 过滤（那是 runner 的行为，由 runner 侧测试承担）。
 - **生成物账本里看不到 `skip_issue` / `skip_expires`**：`render_cases.py` 只渲染
@@ -89,6 +98,10 @@ SKIP_CATEGORIES: dict[str, dict] = {
     "wip": {"debt": True, "needs_pinned_test": False},
 }
 
+# 债务类（**派生**自 `SKIP_CATEGORIES` 的 `debt` 标志，不新造平行分类源）：
+# 增长判据只治这一类（#4233）。
+_DEBT_CATEGORIES = tuple(sorted(c for c, spec in SKIP_CATEGORIES.items() if spec["debt"]))
+
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 # `[<category>] <说明>`：类别前缀必须是**整条 reason 的开头**，且前缀后必须还有说明
@@ -105,6 +118,7 @@ NO_PINNED_TEST = "SKIP-BACKEND-CONTRACT-NO-PINNED-TEST"
 PENDING_EXPIRED = "SKIP-BASELINE-PENDING-EXPIRED"
 PENDING_UNKNOWN_ID = "SKIP-BASELINE-PENDING-UNKNOWN-ID"
 BASELINE_INCOHERENT = "SKIP-BASELINE-INCOHERENT"
+BACKEND_CONTRACT_ROSTER = "SKIP-BACKEND-CONTRACT-ROSTER"
 TOTAL_GROWTH = "SKIP-TOTAL-GROWTH"
 
 # 判据不得恒真的下限守卫（只在"装载/判据静默失效"时才触发；现值见基线 `skip_total`）
@@ -134,6 +148,24 @@ def load_baseline(path: Path = BASELINE_PATH) -> dict:
 def skipped(cases) -> list[dict]:
     """`skip_reason` 非空的用例（= **本次评测不会跑**的那些）。"""
     return [c for c in cases if str(c.get("skip_reason") or "").strip()]
+
+
+def category_of(case: dict) -> str | None:
+    """`skip_reason` 的类别（`[<cat>]` 前缀 **且** 类别在 `SKIP_CATEGORIES` 里）；否则 `None`。
+
+    分类真值**只有** `SKIP_CATEGORIES` 一个来源（#4233：复用既有 `debt` 标志，
+    不新造平行分类源）。
+    """
+    m = PREFIX_RE.match(str(case.get("skip_reason") or "").strip())
+    if not m or m.group(1) not in SKIP_CATEGORIES:
+        return None
+    return m.group(1)
+
+
+def is_debt_skip(case: dict) -> bool:
+    """是否**债务类**（`wip` / `no-data-source` / `deprecated`）非空 skip。"""
+    cat = category_of(case)
+    return bool(cat) and bool(SKIP_CATEGORIES[cat]["debt"])
 
 
 def _as_date(v) -> date | None:
@@ -226,7 +258,11 @@ def _history_growth_allowed(history: list, totals: list[int]) -> bool:
 
 
 def baseline_violations(cases, baseline: dict, today: date) -> list[dict]:
-    """**基线比对**违规：总量只许缩 + pending 只许缩且未过期 + 账本自洽。"""
+    """**基线比对**违规：按类分流的总量判据 + pending 只许缩且未过期 + 账本自洽。
+
+    增长判据**按类分流**（#4233）：只治**债务类**净增；`[backend-contract]` 类单列
+    `backend_contract_ids` 合规清单（允许增长 ⇒ 新增该类合规用例**无需**重锚定）。
+    """
     out: list[dict] = []
 
     def add(code: str, detail: str) -> None:
@@ -237,6 +273,9 @@ def baseline_violations(cases, baseline: dict, today: date) -> list[dict]:
     pending = baseline.get("pending_classification")
     total = baseline.get("skip_total")
     history = baseline.get("history")
+    debt_ids = baseline.get("debt_skip_ids")
+    debt_total = baseline.get("debt_skip_total")
+    bc_ids = baseline.get("backend_contract_ids")
     if not isinstance(legacy, list) or not isinstance(pending, dict) or not isinstance(total, int):
         add(BASELINE_INCOHERENT,
             "基线必须有 `legacy_skip_ids`(list) / `pending_classification`(dict) / `skip_total`(int)")
@@ -253,6 +292,38 @@ def baseline_violations(cases, baseline: dict, today: date) -> list[dict]:
         add(BASELINE_INCOHERENT,
             f"`pending_classification` 有 {len(extra)} 条不在锚点快照 `legacy_skip_ids` 里 "
             f"⇒ 偷偷给新 skip 挂豁免（只许缩短）：{extra[:8]}")
+    # 按类分解字段（#4233）：缺字段 ⇒ 增长判据无从判 ⇒ fail-closed（**不**静默退回"只判总量"）
+    class_fields_ok = (
+        isinstance(debt_ids, list) and isinstance(bc_ids, list)
+        and isinstance(debt_total, int) and not isinstance(debt_total, bool)
+    )
+    if not class_fields_ok:
+        add(BASELINE_INCOHERENT,
+            "基线必须有按类分解字段 `debt_skip_ids`(list) / `debt_skip_total`(int) / "
+            "`backend_contract_ids`(list)（#4233 起增长判据按类分流，缺字段即无法判）："
+            f"实测 debt_skip_ids={debt_ids!r} / debt_skip_total={debt_total!r} / "
+            f"backend_contract_ids={bc_ids!r}")
+    else:
+        for name, ids in (("debt_skip_ids", debt_ids), ("backend_contract_ids", bc_ids)):
+            if len({str(i) for i in ids}) != len(ids) or any(not str(i or "").strip() for i in ids):
+                add(BASELINE_INCOHERENT, f"`{name}` 必须是不重复的非空 ID 清单：{ids!r}")
+        if len(debt_ids) != debt_total:
+            add(BASELINE_INCOHERENT,
+                f"`debt_skip_ids` 条目数 {len(debt_ids)} ≠ `debt_skip_total` {debt_total} "
+                "⇒ 债务类快照与计数不自洽")
+        outside = sorted((set(debt_ids) | set(bc_ids)) - set(legacy))
+        if outside:
+            add(BASELINE_INCOHERENT,
+                f"按类清单里有 {len(outside)} 条不在锚点快照 `legacy_skip_ids` 里 ⇒ 不得凭空造 ID"
+                f"（分类只许在锚点快照内做）：{outside[:8]}")
+        overlap = sorted(set(debt_ids) & set(bc_ids))
+        if overlap:
+            add(BASELINE_INCOHERENT,
+                f"`debt_skip_ids` 与 `backend_contract_ids` 重叠（一条 skip 只能属一类）：{overlap[:8]}")
+        if debt_total + len(bc_ids) > total:
+            add(BASELINE_INCOHERENT,
+                f"`debt_skip_total` {debt_total} + `backend_contract_ids` {len(bc_ids)} "
+                f"> `skip_total` {total} ⇒ 锚点分类计数不自洽")
     if not isinstance(history, list) or not history:
         add(BASELINE_INCOHERENT, "基线必须有非空 `history`（`skip_total` 只许非增的账本）")
     else:
@@ -277,13 +348,28 @@ def baseline_violations(cases, baseline: dict, today: date) -> list[dict]:
                 f"基线 `pending` 记了 {cid}，但它现在**没有**非空 skip_reason "
                 "⇒ 陈旧豁免条目，必须从基线删除（只许缩短）")
 
-    # ── 总量只许缩（净增即红；不设 per-PR 强制消减）──
-    n = len(live)
-    if n > total:
-        add(TOTAL_GROWTH,
-            f"用例库非空 skip_reason 数 {n} > 基线 `skip_total` {total}（锚定 "
-            f"{baseline.get('anchor_sha')}）⇒ 豁免净增。"
-            "新 skip 只有两个出口：本次改到合规 / 不得新增豁免")
+    # ── 增长按类分流（#4233）：债务类净增即红；`[backend-contract]` **不计入**增长 ──
+    if class_fields_ok:
+        live_debt = sorted(cid for cid, c in live.items() if is_debt_skip(c))
+        if len(live_debt) > debt_total:
+            extra_debt = sorted(set(live_debt) - set(debt_ids))
+            add(TOTAL_GROWTH,
+                f"债务类（{'/'.join(_DEBT_CATEGORIES)}）非空 skip_reason 数 {len(live_debt)} 条 > "
+                f"基线 `debt_skip_total` {debt_total}（锚定 {baseline.get('anchor_sha')}）"
+                f"⇒ 债务净增即红（净增 {len(live_debt) - debt_total} 条；不在锚点快照 "
+                f"`debt_skip_ids` 里的：{extra_debt[:8]}）。"
+                "`[backend-contract]` 类**不计入**本判据（设计上不进 agent-eval，见 "
+                "`backend_contract_ids` 合规清单）；新 skip 只有两个出口：本次改到合规 / 不得新增豁免")
+        # 合规清单：**允许增长**（新增该类合规用例无需重锚定），但清单内仍存活的条目
+        # 不得**静默改判**成另一个已知类别（改判 ⇒ 它会真的进 agent-eval 冒烟 = 空跑/假绿）；
+        # 无类别前缀的条目（含 pending 存量）不在此判据内 —— 它们由 NO_CATEGORY / pending 口径管。
+        reclassed = sorted(cid for cid in bc_ids
+                           if cid in live
+                           and category_of(live[cid]) not in (None, "backend-contract"))
+        if reclassed:
+            add(BACKEND_CONTRACT_ROSTER,
+                f"`backend_contract_ids` 里 {len(reclassed)} 条**仍在用例库里**、类别却已不是 "
+                f"`[backend-contract]`（静默改判 ⇒ 它们会真的进 agent-eval 冒烟）：{reclassed[:8]}")
 
     # ── pending 到期（到期即红：存量也不是永久豁免）──
     exp = _as_date(baseline.get("pending_expires"))
@@ -390,7 +476,11 @@ TODAY = date(2026, 9, 18)
 
 
 def _baseline(**over) -> dict:
-    """最小合法基线夹具（红证在此基础上**只改一处**，保证红因单一）。"""
+    """最小合法基线夹具（红证在此基础上**只改一处**，保证红因单一）。
+
+    按类分解字段（`debt_skip_ids` / `debt_skip_total` / `backend_contract_ids`）默认**跟随**
+    `legacy_skip_ids` 推导 —— 红证只改锚点快照一处时不必同步改三处（否则红因不单一）。
+    """
     base = {
         "anchor_sha": "bd7fa9bca1b2c3d4e5f60718293a4b5c6d7e8f90",
         "anchored_at": "2026-09-18",
@@ -402,19 +492,36 @@ def _baseline(**over) -> dict:
                      "date": "2026-09-18", "skip_total": 2}],
     }
     base.update(over)
+    base.setdefault("debt_skip_ids", [])
+    base.setdefault("debt_skip_total", len(base["debt_skip_ids"]))
+    base.setdefault("backend_contract_ids",
+                    [i for i in base["legacy_skip_ids"] if i not in base["debt_skip_ids"]])
     return base
 
 
 def _ok_case(cid="X-001", **over) -> dict:
-    """完全合规的 `[backend-contract]` 夹具。"""
+    """完全合规的 `[backend-contract]` 夹具（`traces.tests` 指向**真实存在**的测试文件）。"""
     c = {"id": cid, "skip_reason": "[backend-contract] 由 pytest 单测验证",
-         "traces": {"tests": ["backend/ai-agent-service/tests/test_x.py"]}}
+         "traces": {"tests": ["tests/unit_ci_workflows/test_skip_exemption_gate.py"]}}
     c.update(over)
     return c
 
 
+def _debt_case(cid="X-003", **over) -> dict:
+    """完全合规的**债务类**夹具（`[wip]` + `skip_issue` + 未过期 `skip_expires`）。"""
+    c = {"id": cid, "skip_reason": "[wip] runner 发图能力未落",
+         "skip_issue": 4064, "skip_expires": "2026-11-30"}
+    c.update(over)
+    return c
+
+
+# 绝对禁令形态（"新增 skip ⇒ **不得**记进本文件"）：与门禁例外条款（`history` 末行 + 显式
+# `note` 的锚点前移重锚定允许增长）在同一 PR 评审面里互相矛盾 ⇒ 口径合一后该形态必须消失。
+ABSOLUTE_BAN_RE = re.compile(r"新增\s*skip\s*⇒\s*\*\*不得\*\*")
+
+
 class TestRedProofs:
-    """四条主红证（报告要求逐条给原文）。"""
+    """红证（报告要求逐条给原文）。A/B/C = issue #4233 判据 3/3/1 的三条。"""
 
     def test_red_proof_1_no_category(self):
         """红证①：`skip_reason` 未带类别前缀 ⇒ 红。"""
@@ -468,22 +575,47 @@ class TestRedProofs:
         # 有钉住它的测试 ⇒ 不报（负例，R2；存在性由 #4120 守卫承担）
         assert case_violations(_ok_case(), TODAY) == []
 
-    def test_red_proof_4_new_skip_increases_the_exemption(self):
-        """红证④：**新增 skip**（净增）⇒ 红。"""
+    def test_red_proof_4_new_debt_skip_increases_the_exemption(self):
+        """红证 B（#4233 判据 3）：**新增债务类 skip**（净增）⇒ **仍红** —— 防"按类分流"改过头，
+        把真护栏（`wip`/`no-data-source`/`deprecated` = 用来绕开评测的豁免）一起拆了。"""
         cases = [_ok_case("X-001"), _ok_case("X-002")]
-        base = _baseline()          # skip_total=2, legacy=[X-001, X-002]
+        base = _baseline()          # skip_total=2, legacy=[X-001, X-002], debt_skip_ids=[]
         assert audit(cases, base, TODAY) == []
 
-        # 新增第三条 skip（即便写得完全合规）⇒ 总量净增即红
-        cases.append(_ok_case("X-003"))
+        # 新增第三条 skip：写得**完全合规**的债务类（`[wip]` + skip_issue + 未过期 skip_expires）
+        # ⇒ 债务类净增即红（合规不等于可以新增）
+        cases.append(_debt_case("X-003"))
         got = audit(cases, base, TODAY)
         assert [v["code"] for v in got] == [TOTAL_GROWTH], _fmt(got)
 
-        # 同 PR 删掉同等数量（净增 ≤ 0）⇒ 不报
-        assert audit(cases[:1] + cases[2:], base, TODAY) == []
+        # 同 PR 删掉同等数量的**债务类**（净增 ≤ 0）⇒ 不报（净额口径：允许债务类内部替换）
+        swap = _baseline(legacy_skip_ids=["X-001", "X-004"], skip_total=2,
+                         debt_skip_ids=["X-004"], debt_skip_total=1,
+                         backend_contract_ids=["X-001"])
+        assert audit([_ok_case("X-001"), _debt_case("X-003")], swap, TODAY) == []
 
-    def test_red_proof_4b_new_noncompliant_skip_cannot_hide_behind_net_zero(self):
-        """红证④b：净增 0 也挡不住"新增一条不合规 skip"（= 偷偷挂豁免）。"""
+    def test_red_proof_4c_new_compliant_backend_contract_is_not_counted_as_growth(self):
+        """红证 A（#4233 判据 3）：新增一条**合规** `[backend-contract]` 用例 ⇒ 门禁**绿**
+        （无需重锚定账本）—— 本批 +4 条 `[backend-contract]` 撞上的正是"被计入增长"这条。
+
+        前置条件（该类的**合规**形态）：前缀合规 + `traces.tests` 非空（文件存在性由 #4120 守卫）。
+        """
+        base = _baseline()      # skip_total=2 / debt_skip_ids=[] / backend_contract_ids=[X-001,X-002]
+        cases = [_ok_case("X-001"), _ok_case("X-002"), _ok_case("X-003")]
+        got = audit(cases, base, TODAY)
+        assert got == [], _fmt(got)
+
+    def test_red_proof_4d_roster_entry_cannot_be_silently_reclassified(self):
+        """`backend_contract_ids` 里的条目若**仍存活**却已不是 `[backend-contract]`（静默改判
+        ⇒ 它会真的进 agent-eval 冒烟 = 空跑/假绿）⇒ 红。"""
+        base = _baseline()      # 合规清单 = [X-001, X-002]
+        cases = [_ok_case("X-001"),
+                 _debt_case("X-002", skip_reason="[wip] 悄悄改判成债务类")]
+        codes = {v["code"] for v in audit(cases, base, TODAY)}
+        assert BACKEND_CONTRACT_ROSTER in codes, _fmt(audit(cases, base, TODAY))
+
+    def test_red_proof_4e_new_noncompliant_skip_cannot_hide_behind_net_zero(self):
+        """红证 D：净增 0 也挡不住"新增一条不合规 skip"（= 偷偷挂豁免）。"""
         cases = [_ok_case("X-001"), _ok_case("X-003", skip_reason="欠着，回头再说")]
         got = audit(cases, _baseline(), TODAY)
         assert [v["code"] for v in got] == [NO_CATEGORY], _fmt(got)
@@ -506,11 +638,12 @@ class TestRedProofs:
                 {v["code"] for v in audit([_ok_case("X-002")] * 2, stale, TODAY)})
 
         # 把**新 ID** 塞进 pending（不在锚点快照 `legacy_skip_ids` 里）⇒ 阻塞（偷偷挂豁免）
+        # 该条写成**合规的债务类**（`[wip]`）⇒ 同时被债务类增长口径挡一次（双重 fail-closed）
         smuggle = _baseline(pending_classification={"X-003": {"category": "wip", "missing": "x"}})
-        viols = audit([_ok_case("X-001"), _ok_case("X-002"), _ok_case("X-003")], smuggle, TODAY)
+        viols = audit([_ok_case("X-001"), _ok_case("X-002"), _debt_case("X-003")], smuggle, TODAY)
         codes = {v["code"] for v in viols}
         assert BASELINE_INCOHERENT in codes, _fmt(viols)
-        assert TOTAL_GROWTH in codes, _fmt(viols)   # 同时被总量口径挡一次（双重 fail-closed）
+        assert TOTAL_GROWTH in codes, _fmt(viols)
 
     def test_red_proof_6_history_may_not_grow(self):
         """红证⑥：账本 `history` 里的 `skip_total` 只许非增（涨回去即红）。"""
@@ -521,6 +654,29 @@ class TestRedProofs:
                                     "date": "2026-10-01", "skip_total": 3}])
         assert BASELINE_INCOHERENT in {
             v["code"] for v in audit([_ok_case(f"X-00{i}") for i in (1, 2, 3)], grown, TODAY)}
+
+    def test_red_proof_7_when_to_update_and_the_gate_exception_are_one_rule_set(self):
+        """红证 C（#4233 判据 1，**口径合一**）：基线 `_when_to_update` 与门禁例外条款必须是
+        **同一套** —— 不得再写"新增 skip ⇒ **不得**记进本文件"的绝对禁令（它和
+        `_history_growth_allowed` 的"末行 + 显式 `note` 允许增长"在同一 PR 评审面里互相矛盾），
+        且必须显式指向同一例外 + 写明按类分流。
+
+        判据是**结构化可判**的（正则/子串），不是"读起来不矛盾"：本断言在改动前的文本下**红**。
+        """
+        text = str(load_baseline().get("_when_to_update") or "")
+        gate_exc = _history_growth_allowed.__doc__ or ""
+        # 门禁侧的例外仍在（否则"口径合一"被做成"两边都删"= 把重锚定口子彻底封死）
+        assert "末行" in gate_exc and "note" in gate_exc, gate_exc
+        # ① 绝对禁令形态必须消失（改动前命中 ⇒ 红）
+        ban = ABSOLUTE_BAN_RE.search(text)
+        assert ban is None, (
+            f"`_when_to_update` 仍写着与门禁例外条款矛盾的绝对禁令：{ban.group(0)!r}（原文：{text[:120]!r}）"
+        )
+        # ② 必须指向门禁例外条款的**同一判据**（末行 + 显式 note）
+        for kw in ("末行", "note"):
+            assert kw in text, f"`_when_to_update` 未指向门禁例外条款（缺 {kw!r}）：{text[:200]!r}"
+        # ③ 必须写明按类分流（`[backend-contract]` 不计入增长）
+        assert "backend-contract" in text, f"`_when_to_update` 未写明按类分流：{text[:200]!r}"
 
 
 class TestNegativeCases:

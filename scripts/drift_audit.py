@@ -1133,12 +1133,39 @@ def _codes_of(entries: dict[str, int]) -> dict[str, list[str]]:
     为什么要展开：计数是「豁免面」的真实大小，只写成 `{key}` 会让 `5 → 3` 的净缩
     变成「key 仍在 ⇒ 不陈旧」= **永久豁免**（#4031 治的正是这个）。展开后
     `5 - 3 = 2` 条码消失 ⇒ 全量对账如实判陈旧，与 case-trust 的码级差集**同构**。
+
+    ⚠️ **码里带 `{len(key)}:` 前缀**（#4247）：门禁侧只把码当**不透明字符串**做差集，
+    但本侧需要把回来的码**反解成原键**（`_collapse_code`）。没有前缀时
+    `k + " × 1"` 这类拼接**不可逆** —— 键形 `…|bare × 1` 与 `…|bare` 对不上，
+    于是 `cur_entries[码]` 抛 `KeyError`（traceback 代替结论）。带长度前缀后
+    「原键 = 去掉前缀与 `× N` 后缀」是**结构上**成立（不是猜最长后缀）。
     """
     out: dict[str, list[str]] = {}
     for k, n in (entries or {}).items():
         if n > 0:
-            out[k] = [k if n == 1 else f"{k} × {i}" for i in range(1, n + 1)]
+            out[k] = [f"{len(k)}:{k}" if n == 1 else f"{len(k)}:{k} × {i}"
+                      for i in range(1, n + 1)]
     return out
+
+
+def _collapse_code(code: str) -> str | None:
+    """`_codes_of` 的**逆映射**：码 → 原键（`…|bare × 1` ⇒ `…|bare`）。对不上返回 `None`。
+
+    这是本脚本与门禁侧唯一的键形交界（#4247）：门禁侧回的是**展开后的码**
+    （`recon["stale"][].removed_codes` / `recon["dropped"][].dropped_codes`），
+    而清单（`cur_entries` / `base_entries`）的键是**原键**。不做这一步映射，
+    两种键形就对不上 —— 实测崩溃点：
+    `KeyError: 'tests/…/test_case_trust_gate.py|local_runner.py#2000|bare × 1'`。
+    """
+    m = re.match(r"^(\d+):", code)
+    if not m:
+        return None
+    n = int(m.group(1))
+    key = code[m.end():m.end() + n]
+    rest = code[m.end() + n:]
+    if len(key) != n or (rest and not re.fullmatch(r" × \d+", rest)):
+        return None
+    return key or None
 
 
 def _as_violations(codes: dict[str, list[str]]) -> dict[str, list[dict]]:
@@ -1188,25 +1215,73 @@ def reconcile_baseline(check_id: str, now_entries: dict[str, int],
 
     `now_entries` = 本判据**全库**重算的 `{key: 计数}`；`cur_entries` = 当前清单里该判据的条目；
     `base_entries` = `--base`（`origin/main`）那一份。
+
+    ⚠️ **键形映射是显式的**（#4247，见 `_collapse` / `_collapse_code`）：门禁侧回的是
+    `_codes_of` **展开后的码**（`…|bare × 1`），而清单的键是**原键**（`…|bare`）——
+    不映射就 `KeyError`（实测：`refs-are-fixtures` 例外一旦用在「同文件有已入基线引用条目」
+    的文件上，崩溃就取代了结论）。本函数**只做形态搬运**，判据仍是门禁侧那一次调用。
     """
     now, cur, base = _codes_of(now_entries), _codes_of(cur_entries), _codes_of(base_entries)
     recon = _load_gate_module().reconcile_baseline(_as_baseline(cur_entries),
                                                   _as_violations(now),
                                                   _as_baseline(base_entries))
-    stale_keys = {c for s in recon["stale"] for c in s["removed_codes"]}
-    dropped_keys = {c for d in recon["dropped"] for c in d["dropped_codes"]}
+
+    def _collapse(raw_codes, owner: dict[str, int], side: str) -> tuple[list[str], list[str]]:
+        """门禁侧的**展开码** → 清单里的**原键**（#4247）；对不上 ⇒ fail-closed 并给指引。
+
+        ⚠️ 为什么必须有这一步：两个方向回来的都是 `_codes_of` 展开出来的码
+        （`…|bare × 1`），直接拿去查 `cur_entries` / `base_entries`（键形 `…|bare`）
+        会抛 `KeyError` —— **失败形态从判定退化成 traceback**，这正是 #4247。
+        `owner` 同时用来取计数（清单里的**真实豁免面**，不是展开码的个数）。
+
+        对不上（门禁侧换了码形 / 清单里确实没这条）⇒ **不放行、不静默**：仍报出该条
+        （阻塞口径不变），但提示里打印**键形差异** + 机械修法入口，让人能照着修。
+        """
+        keys: list[str] = []
+        unmapped: list[str] = []
+        for c in raw_codes:
+            k = _collapse_code(c)
+            if k is not None and k in owner:
+                if k not in keys:      # 去重：`× 1 … × N` 属**同一条**清单条目
+                    keys.append(k)
+            else:
+                unmapped.append(c)
+        return sorted(keys), unmapped
+
+    def _reported(keys: list[str], unmapped: list[str], owner: dict[str, int],
+                  side: str, where: str, tail: str) -> list[dict]:
+        """归位后的键 → 报告条目（`{key, count, check, hint}`）；未归位的码单列一条。"""
+        out = [{"key": k, "count": owner[k], "check": check_id,
+                "hint": f"{where} `{k}`{tail}"} for k in keys]
+        if unmapped:
+            shown = "、".join(f"`{c}`" for c in unmapped[:3])
+            more = f"（共 {len(unmapped)} 条）" if len(unmapped) > 3 else ""
+            out.append({
+                "key": f"<码形对不上·{side}>", "count": 0, "check": check_id,
+                "unmapped": True,
+                "hint": f"门禁侧判出{where}的**码形**（{shown}{more}）在 `{side}` 清单里"
+                        f"找不到对应条目 —— 键形差异：清单键**无** `× N` 后缀 / 无 `len:` 前缀，"
+                        f"门禁侧回的是**展开码**。这不是可以忽略的告警（阻塞口径不变）："
+                        f"请把该条从 {DEFAULT_BASELINE} 移除（或收窄），命令：{REGEN_COMMAND}；"
+                        f"若确认是码形变更导致的误判，请在 PR 里登记并修 `_codes_of` / "
+                        f"`_collapse_code` 的**同一处**口径。"})
+        return out
+
+    stale_keys, stale_unmapped = _collapse(
+        [c for s in recon["stale"] for c in s["removed_codes"]], cur_entries, "cur")
+    dropped_keys, dropped_unmapped = _collapse(
+        [c for d in recon["dropped"] for c in d["dropped_codes"]], base_entries, "base")
     # 判据来自上面那次调用；这里只把结果**归位**到 drift_audit 的形态（`{key: 计数}`）并
     # 加上本门的修法文案 —— 不重算一遍「是否陈旧」（那才是第二份判据）。
-    stale = [{"key": k, "count": cur_entries[k], "check": check_id,
-              "hint": f"基线条目 `{k}` 已不再漂移（**全量对账**，不再限于本次 diff 命中）"
-                      f"—— 请从 {DEFAULT_BASELINE} 移除或收窄，命令：{REGEN_COMMAND}"}
-             for k in sorted(stale_keys)]
-    dropped = [{"key": k, "count": base_entries[k], "check": check_id,
-                "hint": f"`origin/main` 的清单里记着 `{k}`（{base_entries[k]} 处），"
-                        f"且**现在仍然漂移**，却被本 PR 从清单删掉 ⇒ **新增豁免**（基线只许"
-                        f"缩短；R4：新违规只有两个出口 —— 本次修掉 / 开独立 issue 登记）。"
-                        f"请恢复该条，或在本次把漂移修掉。"}
-               for k in sorted(dropped_keys)]
+    stale = _reported(
+        stale_keys, stale_unmapped, cur_entries, "cur", "基线条目",
+        f"已不再漂移（**全量对账**，不再限于本次 diff 命中）"
+        f"—— 请从 {DEFAULT_BASELINE} 移除或收窄，命令：{REGEN_COMMAND}")
+    dropped = _reported(
+        dropped_keys, dropped_unmapped, base_entries, "base", "`origin/main` 的清单里记着",
+        f"，且**现在仍然漂移**，却被本 PR 从清单删掉 ⇒ **新增豁免**（基线只许"
+        f"缩短；R4：新违规只有两个出口 —— 本次修掉 / 开独立 issue 登记）。"
+        f"请恢复该条，或在本次把漂移修掉。")
     return {"stale": stale, "dropped": dropped,
             "blocking": bool(stale or dropped),
             "gate_blocking": bool(recon["blocking"])}

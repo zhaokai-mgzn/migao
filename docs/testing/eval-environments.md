@@ -53,8 +53,8 @@ B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「�
 |---|---|---|---|
 | PR（AI 行为文件改动，**仅 app/** 源文件） | **不起栈、零真实 LLM** | **只做映射**（diff → §13.2 用例集；**不产生任何评测结论**） | ★ 2026-09-17 用户裁定 2′/4′（承载 issue #4034）：**PR 层真实 LLM 停跑**（原 #3653 的「映射用例 fast 迭代档」**已删除**，不是加 `if` 关掉）。`agent-behavior-eval.yml` 只留零 LLM 的 map job：给出「改动波及哪些用例 + 各自 persona/档位」并打印**可复制**的派发命令；要跑这些用例 ⇒ 手动派发单一入口（`post-deploy-eval`，`purpose=debug`，**不构成判定结论**）。**代价已知并接受**：PR 阶段不再有 LLM 行为信号 |
 | 手动 `workflow_dispatch`（部署后复核/里程碑/回滚复验） | 独立栈 | **normal 全量**（mibao + xiaobu）或手动选档（smoke/adversarial/case_ids 定点） | #3925 起：部署后自动触发（workflow_run）**已移除**（真实 LLM 成本治理，用户裁定）；需要时手动派发，判定口径（completion_verdict）不变 |
-| 每 3 天（schedule cron `0 3 */3 * *`） | 独立栈 | **normal 全量（mibao + xiaobu）** | #3654 起承担宽度覆盖（长期漂移兜底）；main 自上次全量未动 → 抑制不白跑 |
-| 每周六 | 独立栈 | adversarial | 只追踪不阻塞 |
+| 每周一（schedule cron `0 3 * * 1`） | 独立栈 | **normal 全量（mibao + xiaobu）** | ★ #4262（2026-09-18 用户裁定）：**全仓自动真实 LLM 触发收敛为这 1 条**（原 3 条：本档每 3 天 + 两条每周 adversarial）。#3654 起承担宽度覆盖（长期漂移兜底）；main 自上次全量未动 → 抑制不白跑 |
+| ~~每周六（adversarial）~~ | — | — | ★ **已改仅手动**（#4262）：`xiaobu-acceptance.yml` / `agent-eval-adversarial.yml` 的 `schedule` 已删除，需要对抗覆盖时 `workflow_dispatch` 手动派发 |
 | 里程碑 / 下结论前 | 独立栈 | **结论档**：全量 + 验收剧本 + 双 AI 交叉验证（GLM-5.3-Flash 复核）+ `completion_verdict` | 见 acceptance-protocol v1.3 §1.6/§1.7 |
 
 **完成判定**（T2，#3487）：`completion_verdict` = 必须处理的失败 0（除 `llm-noise` 外的一切
@@ -79,8 +79,8 @@ score<1，含 `unstable`）+ 关键旅程全过 + **仅 `llm-noise`** 台账放�
 | PR（AI 行为文件，**仅 app/**） | ~~映射用例 fast 迭代档~~ —— **已停跑**（裁定 2′/4′，issue #4034）：PR 路径**零真实 LLM**，只留**映射信号**（零 LLM，给出"波及哪些用例"+ 派发命令，**不产生结论**） | **非门禁**（连评测都不跑） | `agent-behavior-eval.yml`（map job 保留：#3502/#3523/#3563/#3653 的映射口径不变，评测 job 已删除） |
 | PR（AI 行为文件） | ~~C 端 smoke + B 端云冒烟~~ —— **已移除**（#3653）：C 端 smoke 降为按需 `workflow_dispatch`（xiaobu-acceptance 不再 pull_request 触发）；B 端云冒烟从 pr-check 移除（评的是已部署 main，与本 PR 无因果） | — | — |
 | 手动 `workflow_dispatch`（部署后复核/里程碑/回滚复验） | **双 persona 矩阵行为回归**（各自独立栈/全新库）→ 档位 = 手动选（normal 全量 / smoke / adversarial / case_ids 定点）→ completion_verdict 判定 → 失败去重建 issue | 按需手动 | `post-deploy-eval.yml`（#3503/#3515/#3654/#3925） |
-| 每 3 天（本 workflow 的 schedule cron） | 双 persona 矩阵 **normal 全量**（各自独立栈/全新库）→ completion_verdict 判定 → 失败去重建 issue | 定期拦截（宽度覆盖） | `post-deploy-eval.yml`（#3654/#3925） |
-| 每周六 | adversarial 档 | 信息性 | `xiaobu-acceptance.yml`（schedule） |
+| **每周一**（本 workflow 的 schedule cron `0 3 * * 1`） | 双 persona 矩阵 **normal 全量**（各自独立栈/全新库）→ completion_verdict 判定 → 失败去重建 issue | 定期拦截（宽度覆盖）—— **全仓唯一自动 LLM 档** | `post-deploy-eval.yml`（#3654/#3925；#4262 由每 3 天收紧为每周） |
+| ~~每周六~~ | ~~adversarial 档~~ | — | ★ **已改仅手动**（#4262）：两条每周 adversarial 定时删除（`xiaobu-acceptance.yml` / `agent-eval-adversarial.yml`），需要时手动派发 |
 | 里程碑 / 下结论 | 结论档（全量 + 验收剧本 + 双裁判 + completion_verdict） | **结论前置（必过）** | 协议 v1.3 §1.6/§1.7 |
 
 > **⚠️ 最容易误读**：required 只有确定性层那 9 项——LLM 行为层**有意不进 required**
@@ -226,12 +226,15 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
 - **#3709 追加：未评测必须显眼**。被抑制时 workflow 打 `::warning::` annotation，并把
   step summary 抬头写成「本 run 未评测（不构成结论）」—— 让"绿"不再等于"评测通过"。
   ⚠️ 抑制**依旧不是 failure**（不刷红、不建 issue）：要的是**可见**，不是变红。
-- **#3654 追加**：`MODE=schedule`（每 3 天全量）走**方向相反**的判据 —— 本次 schedule 的
+- **#3654 追加**：`MODE=schedule`（定时全量；#4262 起为**每周一**档）走**方向相反**的判据 —— 本次 schedule 的
   SHA 与**上一次 schedule 全量**的 SHA 比对，相等 = main 未动 → 抑制（同一状态已有结论，
   重跑是纯浪费）；不等 → 跑。查询失败/取值为空一律 fail-open。两种模式共同点：只有
   `skip` 会抑制、一切异常照常跑、skip 不计 failure 且留链接链。
 
 ### 3.6 决策记录：部署后评测改**手动触发** + 每 3 天全量（#3925，2026-09-15 用户裁定）
+
+> ⚠️ **本节的「每 3 天」已被 #4262 收紧为「每周一」**（2026-09-18，见 §3.8）——
+> 下面的决策原文按当时口径保留（不要照抄"每 3 天"），现行 cron = `0 3 * * 1`。
 
 - **决策**（2026-09-15，用户裁定，方向已定）：`post-deploy-eval.yml` 的**部署后自动触发
   （workflow_run）移除**，全量回归改**手动 workflow_dispatch**；每 3 天 schedule 全量保留。
@@ -274,7 +277,9 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
   2. **真实 LLM 评测收敛到一个入口**：判定用途只走 `post-deploy-eval.yml`（#3769 已落码的
      `purpose`/`case_ids` 守卫）；其它 LLM workflow **只保留"定时 + 手动"**，
      **PR / 合并 / 迭代一律不触发**（合并/部署触发早由 #3925 移除，现由 L0 锁防加回）；
-     ★ **既有定时档全部保留**（3 天 normal / 每周 adversarial ×2）——「收敛」不是删定时档；
+     ★ ~~**既有定时档全部保留**（3 天 normal / 每周 adversarial ×2）——「收敛」不是删定时档；~~
+     ⚠️ **本句已被 #4262 改判**（2026-09-18，见 §3.8）：自动 LLM 触发由 **3 条 → 1 条** ——
+     「收敛」这次**确实包含删定时档**（两条每周 adversarial 定时删除，只留 `post-deploy-eval` 每周一）；
   3. **LLM 负责发现（低频、非自动），确定性层负责拦截（每 PR、免费）**。
 - **代价（用户已知并接受，别试图补回来）**：PR 阶段**不再有 LLM 行为信号**。
 - **下游机制**：LLM 红例必须**下沉**为 ≥1 条确定性断言，否则不算闭环；台账
@@ -287,6 +292,49 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
   `tests/unit_ci_workflows/test_llm_finding_sink.py`（台账退化守卫 + 注入式变异红证）。
   ⚠️ 两者都跑在 PR 的静态 job 里（`ci workflow helper unit tests` / `LLM Sink Ledger`），
   **不是独立 required check** —— 别读成"有硬门禁"。
+
+### 3.8 决策记录：评测自动触发 **3 条 → 1 条** + 禁 agent 自动派发（#4262，2026-09-18 用户裁定）
+
+- **触发背景（实测，非推断）**：用户反馈「没在用官网 key 编码，但 9/17 约 ¥30+、9/18 约 ¥65
+  仍在花」。排查确认**费用主体是 CI 真实 LLM 评测**，且消耗**不是定时档，而是 agent 自动派发**：
+  - 9/17 CST **2 次**、9/18 CST **8 次** `post-deploy-eval` 全量，**全是 `workflow_dispatch`**
+    （actor = 仓库账号），来源 = DSH 编码会话里反复执行的
+    `gh workflow run post-deploy-eval.yml -f tier=normal -f purpose=determination`；
+  - 单次全量 = mibao 84-90 条 + xiaobu 36-39 条 ≈ **122-126 场**真实多轮 LLM 会话
+    （run artifact `eval-key.executed_count` / `run_key.executed_count` 实测）；
+    两天累计 **9/17 = 244 场、9/18 = 961 场**；
+  - 打的是官网 key：`PRIMARY_API_KEY: secrets.DEEPSEEK_API_KEY` + `PRIMARY_MODEL: deepseek-flash`，
+    base_url 回落 `api.deepseek.com`（`VISION_BASE_URL` 默认值）。
+- **用户裁定**：「**不要自动进行验证，都是重复的验证，白白消耗成本**」「**手动集中跑一次即可**」
+  「兜底定时**改成每周自动跑一次**」；选项 = 全砍 3 条 LLM 定时 + `verify-trigger` 自动验收
+  + 禁 agent 自动派发。
+- **落地（before → after）**：
+
+  | 项 | before | after |
+  |---|---|---|
+  | `post-deploy-eval.yml` | `schedule: 0 3 */3 * *`（每 3 天） | `schedule: 0 3 * * 1`（**每周一** 11:00 CST） |
+  | `xiaobu-acceptance.yml` | `schedule: 0 19 * * 5`（每周六 adversarial） | **删除**（仅手动） |
+  | `agent-eval-adversarial.yml` | `schedule: 0 19 * * 5`（每周六 adversarial） | **删除**（仅手动） |
+  | `verify-trigger.yml` | `schedule: */30` + `pull_request_target` + `pull_request` | **全部删除**（仅手动对账） |
+  | 自动真实 LLM 触发总数 | **3** | **1** |
+  | agent 侧「改动后自动跑评测」 | 预设指令要求**自动跑、不等用户要求** | **默认不跑**；仅用户显式要求时一次集中跑 |
+
+- **代价（用户已知并接受）**：① 周期性宽度覆盖只剩每周 1 条；② 合并 PR 不再自动入
+  `ai-verify/*` 验收队列（验收改人工集中发起）；③ 对抗档不再自动跑（需要时手动派发）。
+- **不变量（没被砍）**：`workflow_dispatch` 手动入口全部保留（评测仍可执行）；
+  两条 adversarial workflow **没有被删**，只是不再由 cron 付费。
+- **守卫（机械判据，均有红证）**：
+  `tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`（白名单 = 1 条 +
+  「其余 LLM workflow 自动触发必须为空」+「数量恰好 1」+「cron 必须周级」）、
+  `test_verify_trigger_chain.py`（`test_is_manual_only_after_4262`）、
+  `test_xiaobu_adversarial.py`（`test_workflow_is_manual_only` + **保留** #3367 档位特判守卫）。
+- **未实装 / 边界（照实登记，§19.1）**：
+  ① 「agent 不再自动派发」**只有指令约束（提示词 + 技能口径），没有机械锁** ——
+     静态锁只能拦 workflow 的 `on:` 触发面，拦不住 agent 主动 `gh workflow run`；
+  ② `verify-trigger` 停用是为**去重复验证**（它只贴标记/打标签，本身不烧 LLM）；
+  ③ `#3608` 的教训**保留**：将来若要恢复自动验收，必须用对 `GITHUB_TOKEN` 抑制免疫的
+     触发源（`pull_request_target: [opened, reopened]`），否则 bot 合并 100% 不触发。
+
 
 ## 四、与米高研发模式的衔接
 
