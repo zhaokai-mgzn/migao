@@ -537,8 +537,16 @@ class TestReferenceFreshness:
         判据三条（缺任一条都不算修好）：
           ① 不抛异常；
           ② 二进制文件进 `skipped_binary`（**登记**，不是静默跳过 —— 「没跑」必须长得像「没跑」）；
-          ③ 跳过**只作用于不可解码的文件**：同一次调用里的**文本**文件仍照旧参与判定
-             （其过期 `path:NNN` 仍判阻塞 ⇒ 跳过没有把真判据一起吞掉）。
+          ③ 跳过**只作用于不可解码的文件**：同一次调用里的**文本**文件仍照旧进入判定管线
+             （`ref_count ≥ 1` 且该文本文件不在 `skipped_binary` 里 ⇒ 跳过没有把真判据一起吞掉）。
+
+        夹具用**真实存在**的路径、并带 `@<sha>` 限定（`scripts/drift_audit.py:5@d5bca241`）：
+        本用例要证的是「文本文件的引用**进入了判定管线**」，不是「这条引用悬空」；写悬空或
+        未限定的 `path:NNN` 字面量会凭空给 drift_audit 的 ref-freshness 添一条新漂移
+        （那是**另一条**判据，不该被本红证污染）。`@<sha>` 是 dev-flow §16.7『引用纪律』
+        给「活跃文件里的行号」规定的合法形态。
+        隔离 `REPO_ROOT` 后路径解析必然失败 ⇒ 该引用必然落入 blocking 集，故**判别性断言**
+        是「它进来了」（`ref_count`），blocking 只作辅证。
         """
         gate = _gate_module()
         # 隔离到 tmp_path：不写仓库树、不依赖任何真实二进制资产（并发安全、可复跑）
@@ -553,8 +561,7 @@ class TestReferenceFreshness:
         text_rel = "notes/probe_4210.md"
         text_path = tmp_path / text_rel
         text_path.parent.mkdir(parents=True, exist_ok=True)
-        # 过期引用：该文件在仓库里不存在、且不属占位符形态（`_PLACEHOLDER_PATH_RE`）⇒ 必须判阻塞
-        text_path.write_text("见 `docs/absent_probe_4210.py:10` 的实现\n", encoding="utf-8")
+        text_path.write_text("见 `scripts/drift_audit.py:5@d5bca241` 的实现\n", encoding="utf-8")
 
         res = gate.check_reference_freshness_in_diff([bin_rel, text_rel], base="origin/main")
 
@@ -562,8 +569,10 @@ class TestReferenceFreshness:
             f"二进制文件未被登记为跳过（要么崩溃、要么静默跳过）：{res.get('skipped_binary')}")
         assert text_rel not in res["skipped_binary"], (
             f"文本文件被误判为二进制而跳过 —— 跳过面过宽，会连真判据一起吞：{res}")
+        assert res["ref_count"] >= 1, (
+            f"文本文件的 `path:NNN` 引用没进入判定管线 ⇒ 跳过把真判据一起吞掉了（假绿）：{res}")
         assert res["blocking"], (
-            f"文本文件里的过期引用未判阻塞 ⇒ 跳过把真判据一起吞掉了（假绿）：{res}")
+            f"进入管线的引用未被判定（隔离 root 下解析必然失败 ⇒ 应落入 blocking）：{res}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
