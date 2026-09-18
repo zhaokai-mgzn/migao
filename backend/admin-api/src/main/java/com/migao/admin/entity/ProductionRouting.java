@@ -42,6 +42,19 @@ public class ProductionRouting {
     /** active / disabled */
     private String status;
 
+    /**
+     * provenance 口径来源（V62，issue #4361）：{@code 实证} / {@code 推算} / {@code 占位待确认}。
+     *
+     * <p>存量行由 V62 按 id 前缀回填：{@code rt-v54-*} → {@code 占位待确认}
+     * （**含 布帘×韩褶** —— #4343 已证明它与客户真实加工单 CSO260915-02615 不符：
+     * 缺 4 道 / 多 1 道 / {@code 定型→熨烫} 顺序相反 / 6 道工序名库里没有）、
+     * {@code rt-v58-*} → {@code 推算}（3 条纱帘，镜像布帘同工艺推导）。
+     * {@code 实证} = **当前空集**（客户确认 #4261/#4343 后才会有）。</p>
+     *
+     * <p>{@code NULL} = 来源未知（商家自建 / 历史行）：**不许**读成「占位待确认」。</p>
+     */
+    private String source;
+
     private OffsetDateTime createdAt;
 
     private OffsetDateTime updatedAt;

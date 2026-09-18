@@ -291,6 +291,8 @@ def build_quote(
         install_cost / total / breakdown / formula_used / warning / fullness
         （折数法时另含 pleat_count / per_panel_pleats / open_count / margin / source / craft_tier
         以及 fullness_actual）
+        （**仅定宽买高**时另含 `panels` 幅数：定高买宽按宽买米、幅数无定义 ⇒ **键缺席**，
+        不补 0/1 —— issue #4374 交付物 3）
 
     语义分工（issue #4118 ④）：
         `fullness` = **理论**倍数（档位名义值 / 款式默认值），随档位走；
@@ -308,6 +310,9 @@ def build_quote(
     # 韩褶折数法（工艺档位或客户自报折数触发）：用料 = 0.25 × 折数 + 余量
     pleat_mode = mounting == "s_hook" and (pleat_count is not None or craft_tier is not None)
     pleat_fields: Dict[str, Any] = {}
+    # 幅数（`panels`）：**只在真的算了幅数的分支**（定宽买高）才有值 —— 定高买宽按宽买米，
+    # 幅数无定义 ⇒ 键缺席（不发明数字：既不补 0，也不补 1 冒充「1 幅」）。
+    panels: Optional[int] = None
     if pleat_mode:
         if pleat_count is None:
             tier = DEFAULT_CRAFT_TIERS.get(craft_tier or "standard", DEFAULT_CRAFT_TIERS["standard"])
@@ -352,6 +357,12 @@ def build_quote(
             has_pattern=has_pattern,
             pattern_repeat=pattern_repeat,
         )
+        if formula_used == "fixed_width":
+            # 定宽买高：幅数在 `calculate_fabric_meters` 内算出（局部变量 `panels`）却没进返回值
+            # ⇒ 报价卡「幅数」行永不出现（issue #4374 交付物 3）。此处按**同一公式**
+            # （`ceil((W + SIDE_MARGIN) × N / G)`，与 `calculate_fabric_meters` 的定宽分支逐字同源）
+            # 复算暴露它 —— **入参一字未动 ⇒ 米数/金额逐值不变**（本单不改钱）。
+            panels = math.ceil((window_width + SIDE_MARGIN) * N / fabric_width)
         if mounting == "s_hook":
             # issue #4118 ⑤-B：韩褶（s_hook）的**标准档口径是折数法**，但折数法只在显式传
             # `craft_tier` / `pleat_count` 时触发（`pleat_mode` 判据）⇒ 两者都缺时这里**静默**
@@ -421,6 +432,9 @@ def build_quote(
         "fullness": N,
         "warning": warning,
         **pleat_fields,
+        # 幅数（`panels`，issue #4374 交付物 3）：**只在真的算了幅数时才有该键** ——
+        # 定高买宽按宽买米，幅数无定义 ⇒ 键缺席（不发明数字）。加工单快照的 `panels` 读的就是它。
+        **({"panels": panels} if panels is not None else {}),
         # ── 工艺规格回显（设计文档 §4.9：报价单与订单落库「同源」）──────────────────
         # **原样透传**，不推导、不补默认值：不传 ⇒ `None`（键恒在，便于前端判空与契约测试）。
         # 为什么不让本工具去猜：`craft` 必须与工序库枚举（韩褶/打孔/四爪钩/穿杆/平幔）**逐字一致**，

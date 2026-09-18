@@ -2,6 +2,7 @@ package com.migao.admin.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.migao.admin.config.IndustryCodes;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.RegistrationRequest;
@@ -71,6 +72,11 @@ public class RegistrationService {
     private final RolePermissionMapper rolePermissionMapper;
     private final RegistrationReviewClient reviewClient;
     private final StringRedisTemplate redisTemplate;
+    /**
+     * 行业生产种子模板（issue #4361 交付物 3）：开租建租户后按 {@code industry} 套用
+     * —— 修掉 #4316「非 1 号租户工序库/路线库为空 ⇒ 建单 fail-closed 422」。
+     */
+    private final ProductionSeedTemplateService productionSeedTemplateService;
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -384,11 +390,15 @@ public class RegistrationService {
         Tenant tenant = Tenant.builder()
                 .name(application.getCompanyName())
                 .code(tenantCode)
-                .industry(application.getIndustry())
+                // 行业**归一为受控 code**（issue #4361 交付物 1）：申请单里是自由文本
+                // （注册页 type="text"），而「开租按行业套用生产模板」要求它能当模板键
+                // ⇒ 不归一 = 同一行业四种写法里三种取不到模板（静默落空库）。
+                .industry(IndustryCodes.normalize(application.getIndustry()))
                 .status("active")
                 .build();
         tenantMapper.insert(tenant);
-        log.info("创建租户成功: tenantId={}, code={}", tenant.getId(), tenantCode);
+        log.info("创建租户成功: tenantId={}, code={}, industry={}",
+                tenant.getId(), tenantCode, tenant.getIndustry());
 
         // 2.5 为新租户初始化默认角色和权限
         initializeDefaultRolesAndPermissions(tenant.getId());
@@ -410,6 +420,11 @@ public class RegistrationService {
                     tenant.getId()
             );
             log.info("创建企业管理员成功: userId={}, phone={}", adminUser.getId(), application.getPhone());
+
+            // 3.5 按行业套用生产种子模板（issue #4361 交付物 3；收口 #4316）
+            // 不做这件事的后果（#4316 取证）：种子只种 tenant_id = 1 ⇒ 新租户工序库/路线库为空
+            // ⇒ resolveRoute 两次都不命中 ⇒ 抛 ERR_ROUTING_NOT_FOUND（422）⇒ **一张加工单也生成不了**。
+            applyProductionSeedTemplate(tenant);
         } finally {
             // 恢复之前的租户上下文
             if (previousTenantId != null) {
@@ -427,6 +442,43 @@ public class RegistrationService {
         applicationMapper.updateById(application);
 
         log.info("入驻申请审批通过: applicationId={}, tenantId={}", id, tenant.getId());
+    }
+
+    /**
+     * 按行业套用生产种子模板（issue #4361 交付物 3；收口 #4316）。
+     *
+     * <p><b>失败语义：捕获 + 记录 + 可补套 —— 不让开租整体回滚</b>（本单按最少代码选定的
+     * 显式语义，理由如下）：</p>
+     * <ul>
+     *   <li><b>为什么不让它回滚</b>：本方法跑在 {@code approveApplication} 的
+     *       {@code @Transactional} 里。种子套用失败若上抛，会把**已建好的租户、默认角色权限、
+     *       管理员用户**一起回滚 ⇒ 客户拿不到账号、申请单仍停在 pending ⇒ 比「工序库为空」严重得多
+     *       （后者只是建不了单，且有补救路径）。「开租可用」优先于「种子齐全」。</li>
+     *   <li><b>为什么不是静默吞掉</b>：捕获后打 {@code error} 日志（点名 tenantId + industry +
+     *       异常），且套用是**幂等**的 ⇒ 运营/商家可随时经
+     *       {@code POST /api/admin/production/seed-templates/curtain/apply} 补套，
+     *       重试不会产生第二份。</li>
+     *   <li><b>{@code other} 行业不是异常</b>：{@code applyTemplate} 会返回
+     *       {@code applied=false} + 原因并自己记 warn，本方法照常放行（这是正常业务分支）。</li>
+     * </ul>
+     */
+    private void applyProductionSeedTemplate(Tenant tenant) {
+        try {
+            Map<String, Object> applied = productionSeedTemplateService
+                    .applyTemplate(tenant.getId(), tenant.getIndustry());
+            log.info("开租套用生产种子模板: tenantId={}, industry={}, applied={}, operations={}, "
+                            + "routings={}, skipped={}, reason={}",
+                    tenant.getId(), tenant.getIndustry(), applied.get("applied"),
+                    applied.get("created_operations"), applied.get("created_routings"),
+                    applied.get("skipped"), applied.get("reason"));
+        } catch (RuntimeException e) {
+            // 显式降级：开租成功但种子未套用（可补套）。**不要**把异常吞掉不说 ——
+            // 这条 error 日志是「库里工序为空」与「有人知道为什么」之间的唯一联系。
+            log.error("开租套用生产种子模板失败（租户已建、可经 "
+                            + "POST /api/admin/production/seed-templates/curtain/apply 补套）: "
+                            + "tenantId={}, industry={}",
+                    tenant.getId(), tenant.getIndustry(), e);
+        }
     }
 
     /**

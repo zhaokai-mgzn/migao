@@ -59,6 +59,7 @@ V54 落**初始种子**（把 `app/production/routing.py` 的既有确定性常�
 
 ⚠️ **可红性是底线**：下列比对一律**逐行逐值**（不是「包含即可」），故「改名/改价」仍能红。
 """
+import json
 import re
 import sys
 from pathlib import Path
@@ -69,6 +70,10 @@ REPO = Path(__file__).resolve().parent.parent.parent
 MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
 MIGRATION_GLOB = "V*.sql"
 _VERSION_RE = re.compile(r"^V(\d+)__")
+# 第五源（issue #4361）：开租自动套用的生产模板目录（jar 内资产，Java 侧真会读它）
+TEMPLATES_ROOT = REPO / "backend/admin-api/src/main/resources/production-templates"
+TEMPLATE_INDEX = TEMPLATES_ROOT / "index.json"
+TEMPLATE_SEED = TEMPLATES_ROOT / "curtain/seed.json"
 
 
 def version_key(name: str):
@@ -193,6 +198,43 @@ def key_of(operation_row: dict) -> str:
     return normalize_value(operation_row["name"])
 
 
+def ident(raw) -> str:
+    """**标识符**归一：只去引号/空白，**不做大小写折叠**。
+
+    ⚠️ 为什么不复用 `normalize_value`：它的兜底 `return value.upper()` 是给 **SQL 字面量**
+    （`TRUE` / `FALSE` / 未加引号的枚举）准备的；而**标识符大小写敏感** —— 用在工序名/路线 id 上
+    会把 `logo条-布` 变成 `LOGO条-布`。实测本文件初版即在此处**假红**
+    （`test_template_matches_python_catalog`：`At index 31 diff: 'LOGO条-布' != 'logo条-布'`，
+    而四个源里的真值**全是小写** `logo条-布`）。
+    另：SQL 侧的值带外层单引号（`'rt-v54-01'`），模板 JSON 侧不带 ⇒ 必须走**同一个**归一函数，
+    否则两侧口径不同（苹果比橘子）。
+    """
+    s = str(raw).strip()
+    if len(s) >= 2 and s.startswith("'") and s.endswith("'"):
+        return s[1:-1]
+    return s
+
+
+def routing_row_of(row: dict) -> dict:
+    """路线行的**两侧同构**归一（模板 JSON 行 与 迁移 SQL 行 都走这里）。
+
+    只取两侧共有的业务列（`tenant_id` 是迁移侧的种子列，模板里没有、也不该有）；
+    `operations` 统一成**有序 tuple**（路线是有序序列，顺序敏感）。
+    """
+    ops = row.get("operations")
+    if isinstance(ops, (list, tuple)):
+        ops_norm = tuple(str(o) for o in ops)
+    else:
+        ops_norm = normalize_routing_operations(str(ops))
+    return {
+        "id": ident(row.get("id")),
+        "curtain_type": ident(row.get("curtain_type")),
+        "craft": ident(row.get("craft")),
+        "operations": ops_norm,
+        "status": ident(row.get("status")),
+    }
+
+
 def op_values(operation_row: dict) -> dict:
     """工序行的**逐值**口径（不含 id/sort_order：id 是各迁移自有的确定性命名、sort_order 是排序位）。
 
@@ -206,6 +248,34 @@ def op_values(operation_row: dict) -> dict:
 def by_name(rows):
     """[{列: 值}] → {工序名: 逐值 dict}（多源聚合的比对口径，不依赖跨文件行序）。"""
     return {key_of(r): op_values(r) for r in rows}
+
+
+#: `op_values` 的**标识符安全**版要覆盖的列（与 `op_values` 同一组，口径只差归一函数）
+_OP_COLUMNS = ("group_name", "position", "unit", "unit_price",
+               "is_must_finish", "is_start_marker", "status")
+
+
+def op_values_ident(operation_row: dict) -> dict:
+    """`op_values` 的**标识符安全**版：全部列走 `ident`（**不折叠大小写**）。
+
+    为什么需要它（实测 issue #4361 的模板守卫初版即在此处假红）：模板 JSON 侧的值**不带引号**
+    ⇒ 走 `normalize_value` 会落到 `.upper()` 兜底（`active` → `ACTIVE`）；而 SQL 侧的值**带引号**
+    ⇒ `normalize_value` 在引号分支就原样返回（`'active'` → `active`）⇒ 两侧同为 `active` 却比出
+    `ACTIVE != active`。**不动 `op_values`**：它同时服务四源守卫（SQL↔Python），那两侧都是 SQL
+    字面量口径，改动无收益且会牵动已在绿的判据。
+    """
+    # 文本列走 `ident`（不折叠大小写）；**数值列走 `normalize_value`** —— 模板 JSON 里写的
+    # 可能是 `1` / `2`（整数），而迁移 SQL 里是 `1.0` / `2.0` ⇒ 只有数字归一分支能对齐
+    # （实测：全用 `ident` 时恰有 7 条数值列不同的工序假红：外帘发货/外帘打卷/外帘装袋/
+    # 帘头制作/抱枕/接高-布/腰靠垫）。
+    return {col: (normalize_value(operation_row[col]) if col == "unit_price"
+                  else ident(operation_row[col]))
+            for col in _OP_COLUMNS}
+
+
+def by_name_ident(rows):
+    """同 `by_name`，但走 `op_values_ident`（跨**格式**比对专用：模板 JSON ↔ 迁移 SQL）。"""
+    return {ident(r["name"]): op_values_ident(r) for r in rows}
 
 
 # ── 夹具：Python 真值源 ──
@@ -249,6 +319,48 @@ def routing_sqls():
 @pytest.fixture(scope="module")
 def schema_sql():
     return SCHEMA.read_text(encoding="utf-8")
+
+
+# ── 第五源（issue #4361）：生产模板目录 ──
+
+@pytest.fixture(scope="module")
+def template_json():
+    """`production-templates/curtain/seed.json` 的解析结果；**文件/索引缺席即 fail-closed**。
+
+    自证（本单验收判据「守卫要自证每个源都真被读到」）：源文件不存在时**报红**，
+    不是静默跳过 —— 静默跳过会让「模板漂移」这个新面在守卫里等于不存在（正是 #4235 的形态）。
+    """
+    assert TEMPLATE_INDEX.exists(), f"生产模板索引缺失：{TEMPLATE_INDEX}"
+    assert TEMPLATE_SEED.exists(), (
+        f"生产种子模板缺失：{TEMPLATE_SEED}"
+        "⇒ 开租自动套用会静默空库；本守卫的第五源退化成空跑")
+    index = json.loads(TEMPLATE_INDEX.read_text(encoding="utf-8"))
+    entries = index.get("templates", [])
+    assert entries, "生产模板索引为空（`templates` 数组一个都没有）"
+    entry = next((t for t in entries if t.get("templateId") == "curtain"), None)
+    assert entry is not None, "生产模板索引缺少 curtain 条目"
+    # 索引里的 file 必须真的指向本夹具读的那个文件（防索引指东、守卫读西）
+    assert (TEMPLATES_ROOT / entry["file"]).resolve() == TEMPLATE_SEED.resolve(), (
+        f"索引指向 {entry['file']}，而守卫读的是 {TEMPLATE_SEED.name} ⇒ 两个源不是同一个")
+    return json.loads(TEMPLATE_SEED.read_text(encoding="utf-8"))
+
+
+def template_operations(template: dict) -> list:
+    """模板工序 → 种子行形态（列名与 `OP_COLUMNS` 对齐，供 `by_name` 直接复用）。"""
+    return [{"id": o["id"], "name": o["name"], "group_name": o["group"],
+             "position": "NULL" if o.get("position") is None else o["position"],
+             "unit": o["unit"], "unit_price": str(o["unit_price"]),
+             "is_must_finish": "TRUE" if o["is_must_finish"] else "FALSE",
+             "is_start_marker": "TRUE" if o["is_start_marker"] else "FALSE",
+             "sort_order": str(o["sort_order"]), "status": o["status"]}
+            for o in template["operations"]]
+
+
+def template_routings(template: dict) -> list:
+    """模板路线 → 种子行形态（列名与 `ROUTING_COLUMNS` 对齐，供逐行比对复用）。"""
+    return [{"id": r["id"], "curtain_type": r["curtain_type"], "craft": r["craft"],
+             "operations": json.dumps(r["operations"], ensure_ascii=False), "status": r["status"]}
+            for r in template["routings"]]
 
 
 @pytest.fixture(scope="module")
@@ -363,6 +475,169 @@ def _diff_keys(left: dict, right: dict) -> str:
     only_right = sorted(set(right) - set(left))
     changed = sorted(k for k in set(left) & set(right) if left[k] != right[k])
     return f"仅 bootstrap 有={only_left} 仅迁移源有={only_right} 值不同={changed}"
+
+
+# ── ⑤ 第五源（issue #4361）：生产模板目录 ↔ Python 真值源 / 迁移源 / bootstrap ──
+#
+# 为什么必须扩源：模板 JSON 是**开租自动套用**的唯一输入（新租户的工序库/路线库由它生成）
+# ⇒ 它一旦与真值源漂移，**每个新租户**都拿到错的工序与单价，而旧租户看不出来
+# ⇒ 新增一个静默漂移面（#4235 的形态）。四源变五源，逐行逐值比对。
+
+def test_template_matches_python_catalog(template_json, catalog_rows, python_catalog):
+    """模板工序 ↔ `OPERATION_CATALOG`（名称/分组/单位/单价/必完/开始标记）逐值相等。
+
+    行序也钉：模板的 `sort_order` 必须是 1..N 连续，且名称序 == 真值源字典序
+    （模板就是按真值源字典序写的，漂移即红）。
+    """
+    catalog, _ = python_catalog
+    rows = template_operations(template_json)
+    assert rows, "模板未解析到任何工序"
+
+    # 两侧都走 `ident`（**不折叠大小写**）：模板 JSON 侧的值不带引号、SQL 侧带引号，
+    # 只有同一个归一函数才能可比（`key_of` 走 `normalize_value`，其 `.upper()` 兜底会把
+    # `logo条-布` 变成 `LOGO条-布` ⇒ 假红，实测本文件初版即踩）。
+    assert [ident(r["name"]) for r in rows] == [ident(k) for k in catalog.keys()], (
+        "模板工序名集合/顺序与 OPERATION_CATALOG 不一致（改名或加减工序必须同步模板）")
+    # 跨**格式**比对（模板 JSON ↔ 迁移 SQL）走标识符安全口径 —— 两侧引号形态不同，
+    # 只有同一个不折叠大小写的归一函数才可比（见 `op_values_ident` 的实测说明）。
+    assert by_name_ident(rows) == by_name_ident(catalog_rows), (
+        f"模板工序与迁移种子漂移：{_diff_keys(by_name_ident(rows), by_name_ident(catalog_rows))}")
+    assert [int(normalize_value(r["sort_order"])) for r in rows] == list(range(1, len(rows) + 1)), \
+        "模板的 sort_order 不是 1..N 连续序列"
+
+
+def test_template_matches_python_routings(template_json, routing_rows, python_catalog):
+    """模板路线 ↔ `ROUTINGS`（部位×工艺 → 有序工序序列）逐条相等，且逐行等于迁移聚合。"""
+    _, routings = python_catalog
+    rows = template_routings(template_json)
+    parsed = {(normalize_value(r["curtain_type"]), normalize_value(r["craft"])):
+              normalize_routing_operations(r["operations"]) for r in rows}
+    expected = {key: tuple(ops) for key, ops in routings.items()}
+    assert parsed == expected, "模板路线内容漂移（逐条比对 部位×工艺 → 工序序列）"
+    # 两侧**同构**归一后逐行比对（模板 JSON 行 vs 迁移 SQL 行）：SQL 侧的值带外层引号且多
+    # `tenant_id` 列 ⇒ 直接 `rows == routing_rows` 是苹果比橘子（实测初版即假红）。
+    template_rows_norm = [routing_row_of(r) for r in rows]
+    migration_rows_norm = [routing_row_of(r) for r in routing_rows]
+    assert template_rows_norm == migration_rows_norm, (
+        f"模板路线与迁移种子漂移（逐行，含 id/status）："
+        f"{_diff_keys({r['id']: r for r in template_rows_norm}, {r['id']: r for r in migration_rows_norm})}")
+
+
+def test_template_operations_and_routings_exist_in_catalog(template_json, catalog_rows):
+    """模板路线引用的每道工序都必须在**聚合后的**工序库种子中（否则套用后实例化无单价可依）。"""
+    catalog_names = {key_of(r) for r in catalog_rows}
+    missing = [op for r in template_routings(template_json)
+               for op in normalize_routing_operations(r["operations"]) if op not in catalog_names]
+    assert not missing, f"模板路线引用了工序库中不存在的工序：{sorted(set(missing))}"
+
+
+def test_template_sources_are_the_frozen_provenance_mapping(template_json, catalog_rows, routing_rows):
+    """模板每行的 `source` 必须逐条等于**冻结映射**（issue #4361 交付物 4，双向断言）。
+
+    冻结映射：`op-v54-*`/`rt-v54-*` = `占位待确认`；`op-v56-*`/`rt-v58-*` = `推算`；
+    `实证` = **空集**（客户确认 #4261/#4343 后才会有 —— 这是诚实结论，不是遗漏）。
+
+    双向：漏标（某行 source 缺失/为空）与多标（出现 `实证`）**都红**。
+    与 V62 迁移的回填同口径由 `ProductionSourceProvenanceMigrationTest` 另行钉（Java 侧）。
+    """
+    for entry in template_json["operations"]:
+        expected = "占位待确认" if entry["id"].startswith("op-v54-") else "推算"
+        assert entry.get("source") == expected, (
+            f"工序 {entry['name']} 的 source={entry.get('source')!r}，冻结映射要求 {expected!r}")
+    for entry in template_json["routings"]:
+        expected = "占位待确认" if entry["id"].startswith("rt-v54-") else "推算"
+        assert entry.get("source") == expected, (
+            f"路线 {entry['curtain_type']}×{entry['craft']} 的 source={entry.get('source')!r}，"
+            f"冻结映射要求 {expected!r}")
+
+    sources = {e["source"] for e in template_json["operations"]} \
+        | {e["source"] for e in template_json["routings"]}
+    assert sources == {"占位待确认", "推算"}, (
+        f"模板 source 取值集合 = {sorted(sources)}，冻结映射要求恰好 {{占位待确认, 推算}}"
+        "（出现「实证」= 多标：今天没有任何工序/路线够得上实证，#4343 已证明 布帘×韩褶 与客户真实加工单不符）")
+    assert sum(1 for e in template_json["operations"] if e["source"] == "占位待确认") == 30
+    assert sum(1 for e in template_json["operations"] if e["source"] == "推算") == 5
+    assert sum(1 for e in template_json["routings"] if e["source"] == "占位待确认") == 6
+    assert sum(1 for e in template_json["routings"] if e["source"] == "推算") == 3
+
+
+def test_template_carries_special_option_mappings_and_factors(template_json):
+    """模板必须自带「特殊选项 → 条件工序」16 项 + 「选项 → 计件系数」——逐条等于真值源。
+
+    少了这两块，套用出来的租户**有工序没条件工序**（勾了「加花边」不加花边-布）⇒
+    计件工资少算，而界面看不出缺什么。
+    """
+    sys.path.insert(0, str(ROUTING_PY_DIR))
+    try:
+        from app.production.routing import OPTION_FACTOR_SCOPES, SPECIAL_OPTION_ROUTINGS
+    finally:
+        sys.path.pop(0)
+
+    got_routings = {e["option_name"]: (e["operation_name"], e["after_operation"])
+                    for e in template_json["option_routings"]}
+    want_routings = {opt: (spec["operation"], spec["after"])
+                     for opt, spec in SPECIAL_OPTION_ROUTINGS.items()}
+    assert got_routings == want_routings, (
+        f"模板的条件工序映射与 SPECIAL_OPTION_ROUTINGS 漂移：{_diff_keys(got_routings, want_routings)}")
+    assert len(template_json["option_routings"]) == 16
+
+    got_factors = {(e["option_name"], e["operation_name"]): float(e["factor"])
+                   for e in template_json["option_factors"]}
+    want_factors = {(opt, sc["operation_name"]): float(sc["factor"])
+                    for opt, scopes in OPTION_FACTOR_SCOPES.items() for sc in scopes}
+    assert got_factors == want_factors, (
+        f"模板的计件系数与 OPTION_FACTOR_SCOPES 漂移：{_diff_keys(got_factors, want_factors)}")
+
+
+def test_every_template_source_is_really_read(template_json):
+    """第五源自证（本单验收判据「守卫要自证每个源都真被读到」）：模板三块都非空且真被解析。
+
+    反例（本测试要挡的形态）：`template_json` 夹具静默返回 `{}`（文件缺失时 except 掉）
+    ⇒ 上面四条比对全部退化成空跑。**源缺席 ⇒ fail-closed** 由夹具的 assert 承担，
+    本条再钉一次「解析出来确实有东西」。
+    """
+    assert template_json.get("templateId") == "curtain"
+    assert len(template_json["operations"]) == 35, "模板工序数不是 35（漏读或漏写）"
+    assert len(template_json["routings"]) == 9, "模板路线数不是 9"
+    assert len(template_json["option_routings"]) == 16
+    assert len(template_json["option_factors"]) >= 1
+    # 每块都必须真带业务值（不是占位空壳）
+    assert all(o["name"] and o["unit"] for o in template_json["operations"])
+    assert all(r["operations"] for r in template_json["routings"])
+
+
+def test_template_source_absent_fails_closed(tmp_path, monkeypatch):
+    """注入式自证：**把模板文件挪走 ⇒ 守卫必须红**（不是静默跳过）。
+
+    这是本单「五源自证」的机械判据：源缺席时若守卫仍然绿，说明它读的根本不是这个文件。
+    """
+    monkeypatch.setattr(
+        sys.modules[__name__], "TEMPLATE_SEED", tmp_path / "curtain/seed.json")
+    monkeypatch.setattr(
+        sys.modules[__name__], "TEMPLATE_INDEX", tmp_path / "index.json")
+    with pytest.raises(AssertionError):
+        template_json.__wrapped__()
+
+
+def test_template_drift_is_detected(template_json):
+    """注入式自证：改模板里一个字（单价/工序名/source）⇒ 比对必须不等（否则五源守卫是空断言）。"""
+    import copy
+    drifted_price = copy.deepcopy(template_json)
+    drifted_price["operations"][0]["unit_price"] = 9.99
+    assert by_name(template_operations(drifted_price)) != by_name(template_operations(template_json)), \
+        "改模板单价读不出来 ⇒ 模板↔迁移的比对是空断言"
+
+    drifted_name = copy.deepcopy(template_json)
+    drifted_name["routings"][0]["operations"][0] = "不存在的工序"
+    assert normalize_routing_operations(
+        template_routings(drifted_name)[0]["operations"]) != \
+        normalize_routing_operations(template_routings(template_json)[0]["operations"]), \
+        "改模板路线序列读不出来 ⇒ 路线比对是空断言"
+
+    drifted_source = copy.deepcopy(template_json)
+    drifted_source["operations"][0]["source"] = "实证"
+    assert drifted_source["operations"][0]["source"] != template_json["operations"][0]["source"], \
+        "改模板 source 读不出来 ⇒ provenance 比对是空断言"
 
 
 def test_every_seed_source_contributes_to_the_aggregate(seed_sqls):

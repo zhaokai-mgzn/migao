@@ -4146,6 +4146,7 @@ _CASE_PG_013 = EvalCase(
     required_args=[{'tool': 'processing_order_generate', 'fields': ['order_ids']}],
     must_succeed=[{'tool': 'processing_order_generate'}],
     pre_clean=[{'type': 'processing_order_reset', 'order_no': 'EVAL-MB-ORD-0002'}],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
 # ── PG-014 [NORMAL] 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道（源: cases/processing-order.yml）──
@@ -4559,9 +4560,9 @@ _CASE_PG_035 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-036 [NORMAL] 加工单并入生产管理组 —— 与生产看板合并为单一入口（消除重复入口 + 分组/权限口径对齐）（源: cases/processing-order.yml）──
-_CASE_PG_036 = EvalCase(
-    id='PG-036',
+# ── PG-038 [NORMAL] 加工单并入生产管理组 —— 与生产看板合并为单一入口（消除重复入口 + 分组/权限口径对齐）（源: cases/processing-order.yml）──
+_CASE_PG_038 = EvalCase(
+    id='PG-038',
     legacy_id='',
     title='加工单并入生产管理组 —— 与生产看板合并为单一入口（消除重复入口 + 分组/权限口径对齐）',
     skill=Skill.GENERAL,
@@ -4571,6 +4572,42 @@ _CASE_PG_036 = EvalCase(
     data_checks=["侧边栏 IA（**核心/长期判据，红证在这条**）：① 订单管理组**不含**「加工单」（只剩 订单列表 / 售后工单 两项）；② 生产管理组仍为四项（生产看板 / 工序库 / 工艺路线 / 计件工资，权限码统一 processing:manage）；③ 全站不再存在指向 `/processing-orders` 的菜单项。红证（实现前实测，本机 vitest）：`production-board.test.tsx`「「加工单」不再是独立菜单项」得订单管理组仍渲染该项（`within(tradeGroup).queryByText('加工单')` 非 null）+ `expect(hrefs).not.toContain('/processing-orders')` 得 `expected [ … '/processing-orders' … ] not to contain '/processing-orders'`", "合并 ≠ 丢能力（**合并口径的判据**）：`/production` 必须吸收原列表页的**全部**既有能力 —— 关键词搜索（按加工单号/订单号）、状态筛选、重置、刷新、商品与数量快照摘要、「查看」跳订单详情；且断言必须落到**结果可见**（筛选后被筛掉的行从 DOM 消失、命中的行留下），不得只断言 API 被调用。红证（实现前实测，本机 vitest 6 条红）：合并能力①~⑥ 得 `getByPlaceholderText('请输入加工单号或订单号')` 找不到元素（看板当时无查询区）/ 行内无「查看」按钮 / 无商品摘要列", '旧入口收敛（**不 404**）：`/processing-orders` 不再渲染列表页，改为重定向到 `/production`（旧书签/外部深链可用）；子路由 `/processing-orders/{id}/production`（生产明细）**不随菜单移除**，仍由看板行内「生产明细」进入。红证（实现前实测，本机 vitest）：`processing-orders-list.test.tsx` 得 `expected \\"redirect\\" to be called with [ \\"/production\\" ]`（当时该页仍渲染列表、从不重定向）。证据：同文件 + `tests/e2e/specs/orders/processing-orders.spec.ts`「旧入口 /processing-orders 重定向到 /production」', '入口收敛不回归（issue #4305）：合并后的唯一入口**仍不渲染** 发加工/开始加工/加工完成/取消加工单 四个按钮，且仍显示「状态流转请在订单详情操作」。红证（实现前实测）：看板当时无该引导文案 ⇒ 该条红；#4305 的负向断言在本条**一条不放宽**。证据：`production-board.test.tsx`「入口收敛不回归」+ e2e「唯一入口不再提供状态流转入口」（五种状态逐行负向断言）', '时序保护随能力迁移（issue #4303 的长期判据 = 加载竞态）：搜索/筛选/刷新搬到看板后，**请求序号保护必须一起搬** —— 旧的在飞列表响应晚到不得把看板覆盖回旧数据，`loading` 只由最新一次请求收尾。红证（实现前实测）：`production-board.test.tsx`「PG-024 时序保护」得 `getByPlaceholderText(...)` 找不到元素（看板无搜索 ⇒ 竞态无从触发）；留在被合并掉的页面里 = 保护随页面一起消失。', '面包屑与侧边栏一致（§15.2）：`/production` 系列此前**没有任何面包屑条目** ⇒ 落进兜底分支显示「工作台 > 经营看板」；本单补 生产管理×{生产看板, 工序库, 工艺路线, 计件工资}，且 `/processing-orders/{id}/production` 由「订单管理 > 加工单」改判为「生产管理 > 生产明细」。红证（实现前实测，本机 vitest 4 条红）：Header 的 /production、/production/operations、/production/piecework 三条得找不到「生产管理」（当时走兜底面包屑），/processing-orders/{id}/production 得找不到「生产明细」', '权限护栏随入口走（**不得砍既有护栏**）：`/production` 此前**无**前端路由权限守卫，而它承接的原 `/processing-orders` 有 `processing:manage` ⇒ 合并后守卫必须跟着入口走（layout.tsx ROUTE_PERMISSION_MAP 新增 `/production`，前缀覆盖三个子页），否则等于砍掉既有第二道防线。证据：`frontend/admin-web/src/app/(dashboard)/layout.tsx` 的 ROUTE_PERMISSION_MAP（后端 @RequirePermission 仍是唯一硬拦面）'],
     skip_reason='[backend-contract] 前端 IA / 页面结构 / 交互流（admin-web），由 vitest 单测（production-board / processing-orders-list / Header）+ Playwright E2E 旅程（tests/e2e/specs/orders/processing-orders.spec.ts）覆盖，非 LLM 行为，不进入 agent-eval 冒烟（同 PG-024 惯例）',
     tags=['processing-order', 'production', 'menu', 'ia', 'admin_web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-036 [NORMAL] 生产种子模板：受控行业 code 归一 + 模板目录 + 幂等套用 + 开租自动套用（other 不套用且显式说明）（源: cases/processing-order.yml）──
+_CASE_PG_036 = EvalCase(
+    id='PG-036',
+    legacy_id='',
+    title='生产种子模板：受控行业 code 归一 + 模板目录 + 幂等套用 + 开租自动套用（other 不套用且显式说明）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '判据 1·受控行业取值（词表 v1 冻结 = curtain / other，不得自创第三值）：`IndustryCodes.normalize(raw)` 的**确切返回值**逐条可判 —— 「布艺」「窗帘」「布艺窗帘」「布艺纺织」「布艺/窗帘」「CURTAIN」→ `curtain`；「家居建材」「电子商务」「」/null/纯空白 → `other`。归一**幂等**（`normalize(normalize(x)) == normalize(x)`，回填/重复写入安全），且结果**恒属词表**（任何输入都不会漏出自由文本）。证据：IndustryCodesTest', '判据 2·归一必须落在**两个**写面（只在注册路径归一 = 受控词表可被绕过）：`RegistrationService.approveApplication`（注册审批建租户）与 `SettingsController.updateSettings`（`PUT /api/admin/settings` 此前接受任意字符串）都调同一个 `IndustryCodes.normalize`。MockMvc：`PUT /api/admin/settings` 传「布艺纺织」⇒ 落库/回读是 `curtain`（**不是原样存**）。无法识别 ⇒ `other` + **显式日志**（不许静默 —— 库里看到 other 时分不清「客户真是其他行业」与「词表没认出来」）。证据：SettingsControllerTest 的 industry 归一用例', '判据 3·模板目录（契约冻结，前端包 #4363 按此消费，不得改名）：`GET /api/admin/production/seed-templates` → `[{templateId, industry, name, version, description}]`；`POST /api/admin/production/seed-templates/{templateId}/apply` → `{created_operations, created_routings, skipped}`；权限统一 `processing:manage`。模板资产 = `resources/production-templates/index.json` + `curtain/seed.json`（**照 knowledge-templates 既有范式**，不另造抽象）。证据：ProductionSeedTemplateControllerTest 7 项（MockMvc **端点级**：目录逐键 = 契约冻结字段 / 套用返回 `created_operations`+`created_routings`+`skipped` / 幂等第二次全 0 + 全 skipped / 未知 templateId ⇒ 404 显式失败 / tenantId 取自 TenantContext 不信任请求体 / 类级声明 `processing:manage` 且方法级无更宽松覆盖）+ ProductionSeedTemplateServiceTest「listTemplates」2 项（服务层语义）。', '判据 4·套用幂等（连续套用两次，工序/路线行数不变）：第二次全 skipped、**零 insert**；部分存在时只补缺的那些。幂等键 = `(tenant_id, name)` / `(tenant_id, curtain_type, craft)`（对齐 V49 部分唯一索引 `... WHERE deleted = 0`），**不是 id**。证据：ProductionSeedTemplateServiceTest「apply_isIdempotentOnSecondCall」「apply_onlyInsertsMissing」', '判据 5·**落库 id 不得沿用模板 id**（模板 id `op-v54-01` 是全局主键、1 号租户已占用 ⇒ 原样插库会撞主键，「第二个租户」必崩）：落库 id 由 `ASSIGN_UUID` 生成（与既有写面 `POST /production/operations` 同款）。证据：ProductionSeedTemplateServiceTest「applyGeneratesFreshIdsForEveryTenant」——对**两个不同 tenantId** 各套用一次，断言两次都成功、各自 `(tenant_id, name)` 集合等于模板、且两租户的 id 集合**不相交**（复用模板 id ⇒ 撞主键 / 复用确定性 id ⇒ 不相交断言红）', '判据 6·`other` 行业或模板缺失 ⇒ **不套用 + 显式原因**（不静默空库）：返回 `applied=false` + `reason`（点名原值，可追查），且**零 mapper 交互**；按 templateId 套用未知模板 ⇒ 404 显式失败。证据：ProductionSeedTemplateServiceTest「otherIndustry_appliesNothingWithReason」「unknownIndustry_namesTheRawValueInReason」「applyById_unknownTemplateFailsLoudly」', '判据 7·开租自动套用：`approveApplication` 建租户后（`TenantContext.setTenantId` 生效期间）按 `industry` 套用模板；**失败不让开租整体回滚**（模板套用异常被捕获 + 记 error + 可经 `POST .../seed-templates/curtain/apply` 补套）。MockMvc：审批通过后该租户 `operations-catalog` / `routings` 非空且逐条等于模板。证据：RegistrationServiceTest 的自动套用用例 + ProductionControllerTest 的开租后读面用例', '**红证（实现前实测）**：① 模板文件缺失 ⇒ `template_json` 夹具 fail-closed 红；② 把模板单价改一个字 ⇒ 五源收敛比对红（注入式自证 `test_template_drift_is_detected`）；③ 把 `op-v54-*` 原样当落库 id ⇒ 第二租户撞主键红（`applyGeneratesFreshIdsForEveryTenant`）。'],
+    skip_reason='[backend-contract] 后端契约用例（服务端写路径 + 模板资产，无 LLM 环节，不进 agent-eval 冒烟）：断言由 IndustryCodesTest + ProductionSeedTemplateServiceTest + ProductionControllerTest + SettingsControllerTest 执行',
+    tags=['processing-order', 'production-seed', 'industry-template', 'tenant-onboarding'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-037 [NORMAL] provenance 迁移（V62）：source 列 + 冻结回填映射（占位待确认 30 工序+6 路线 / 推算 5 工序+3 路线 / 实证空集）+ industry 存量归一（源: cases/processing-order.yml）──
+_CASE_PG_037 = EvalCase(
+    id='PG-037',
+    legacy_id='',
+    title='provenance 迁移（V62）：source 列 + 冻结回填映射（占位待确认 30 工序+6 路线 / 推算 5 工序+3 路线 / 实证空集）+ industry 存量归一',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '判据 1·加列幂等：V62 给 `production_operations` 与 `production_routings` **各**加 `source VARCHAR(16)`（`ADD COLUMN IF NOT EXISTS`，`MigrationRunner` 要求所有 SQL 可重复执行）+ 列注释写明三个取值 + `CHECK` 枚举约束（防自由文本 source 悄悄进来）。`docs/sql/schema.sql` 同步镜像终态（bootstrap 路径**不跑迁移链** ⇒ 只写迁移 = 新建库无该列 ⇒ 读面 500，#3270 形态）。证据：ProductionSourceProvenanceMigrationTest「v62AddsSourceColumnsIdempotently」「v62ConstrainsSourceToTheFrozenVocabulary」「schemaSqlMirrorsMigrationFinalState」', '判据 2·**冻结映射双向钉死**（漏标/多标都红）：工序 `占位待确认` = V54 的 **30** 道（`op-v54-*`，单价是占位值）；`推算` = V56 的 **5** 道（`op-v56-*`，单价行业推算）。路线 `占位待确认` = V54 的 **6** 条（`rt-v54-*`，**含 布帘×韩褶** —— #4343 已证明它与客户真实加工单 CSO260915-02615 不符）；`推算` = V58 的 **3** 条纱帘（`rt-v58-*`，镜像布帘同工艺推导）。`实证` = **当前空集**（显式断言为空 + 注释说明「客户确认 #4261/#4343 后才会有」）—— 这是**诚实结论，不是遗漏**。证据：ProductionSourceProvenanceMigrationTest「frozenMappingSetsAreExactlyRight」「v62BackfillsOperationSources」「v62BackfillsRoutingSources」+ tests/unit_ci_workflows/test_production_catalog_seed.py「test_template_sources_are_the_frozen_provenance_mapping」', "判据 3·回填按 **id 前缀**认领（`'op-v54-%'` / `'op-v56-%'` / `'rt-v54-%'` / `'rt-v58-%'`），**不是按名字列表**（名字列表会随改名漂移）；只动 `source IS NULL` 的行（幂等 + 不覆盖商家/模板已写的 source）；**其余行保持 NULL**（不落 `ELSE`：未知来源 = 未知，不许冒充「占位待确认」）。证据：ProductionSourceProvenanceMigrationTest 的两条回填用例", '判据 4·存量 `tenants.industry` 自由文本一次性归一为受控 code：别名（布艺/窗帘/布艺窗帘/布艺纺织/布艺\\/窗帘）→ `curtain`，其余非空 → `other`，空值不动；幂等（`WHERE industry IS DISTINCT FROM <归一结果>`，只更新尚未归一的那些行）；与 Java `IndustryCodes.normalize` **同口径**（两侧一致性由 IndustryCodesTest「migrationBackfillMatchesJavaNormalization」双向钉）。证据：ProductionSourceProvenanceMigrationTest「v62NormalizesLegacyIndustry」+ IndustryCodesTest', '判据 5·读面返回 source：`ProductionOperationQueryService.catalog()` 的 `operationView` 与 routings 读面（`GET /production/routings`）每项都带 `source`（**响应键集 +1**，契约变更已在 PR 描述显式登记）。证据：ProductionControllerTest 的期望视图同步 + ProductionOperationQueryServiceTest', '**红证（注入式）**：① 从 V62 删掉任一回填段 ⇒ 对应集合断言红；② 把 `op-v56-*` 标成 `占位待确认` ⇒ 双向集合断言红；③ 把任一行标成 `实证` ⇒ 「实证 = 空集」断言红；④ 从 bootstrap 删掉 `source` 列 ⇒ 终态镜像断言红；⑤ 改模板 JSON 一个 source 字 ⇒ 五源收敛红。', '**已知缺口（如实登记）**：V54/V56/V58/V59/V60 六个种子迁移仍只种 `tenant_id = 1`（**不改已应用迁移** —— #4235 迁移不可变）；非 1 号租户由本单的**模板套用**补齐（开租自动 + 手动补套端点）。#4316 由本单收口。'],
+    skip_reason='[backend-contract] 后端契约用例（迁移/表结构是服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionSourceProvenanceMigrationTest + IndustryCodesTest + tests/unit_ci_workflows/test_production_catalog_seed.py 执行',
+    tags=['processing-order', 'production-seed', 'migration', 'provenance'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -6701,7 +6738,9 @@ ALL_CASES = (
     _CASE_PG_033,
     _CASE_PG_034,
     _CASE_PG_035,
+    _CASE_PG_038,
     _CASE_PG_036,
+    _CASE_PG_037,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,
