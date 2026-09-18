@@ -5,9 +5,26 @@
 > `docs/curtain-fabric-quote-rules.md`（§10 关键工艺参数）
 > 实证素材：2026-09-18 用户提供**行业 ERP 订单录入页截图**（堡达/壁达 5.40.0，即 §1 的原始出处）——
 > 本文 §2.3 / §4.2 的字段清单**逐列取自该截图**，不是推测。
-> 关联代码：`ProcessingOrderService` · `app/production/routing.py` · `app/tools/curtain_calc.py` ·
-> `app/clarification/curtain_checklist.py` · `admin-web/.../orders/new/page.tsx`
+> 关联代码：`ProcessingOrderService.java` · `routing.py` · `curtain_calc.py` ·
+> `curtain_checklist.py` · `orders/new/page.tsx`（路径对照见下表）
 >
+> **引用约定（§18.1 读源纪律）**：本文代码引用一律用**符号锚点**（类名 / 函数名 / 常量名），
+> **不写裸行号**（裸行号几分钟即失效，且被 `Case Trust Gate` 的 `CASE-TRUST-STALE-LINE-REF` 判红）。
+> 全文统一用下列简写，对照如下：
+>
+> | 简写 | 实际路径 |
+> |---|---|
+> | `ProcessingOrderService.java` | `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java` |
+> | `OrderItem.java` | `backend/admin-api/src/main/java/com/migao/admin/entity/OrderItem.java` |
+> | `routing.py` | `backend/ai-agent-service/app/production/routing.py` |
+> | `curtain_calc.py` | `backend/ai-agent-service/app/tools/curtain_calc.py` |
+> | `curtain_checklist.py` | `backend/ai-agent-service/app/clarification/curtain_checklist.py` |
+> | `orders/new/page.tsx` | `frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx` |
+> | `QuotationCard.tsx` | `frontend/mini-app/src/components/cards/QuotationCard.tsx`（+ `frontend/bmini-app` 同款） |
+> | `ProcessingOrderBlock.tsx` | `frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx` |
+> | `test_special_options.py` | `backend/ai-agent-service/tests/test_production/test_special_options.py` |
+> | `mibao-verification-cases.md` | `docs/testing/mibao-verification-cases.md` |
+
 > ⚠️ **本方案不动钱**：凡改对顾客报价口径的条目，一律只在 §六 登记「待裁定」，**不实施**。
 
 ## 一、缘起（用户实测反馈，2026-09-18）
@@ -20,12 +37,12 @@
 | 层 | 现状 | 证据 |
 |---|---|---|
 | **术语** | ✅ 已有术语表 10 条 + 19 项特殊选项清单 | `curtain-production-rules.md` §8 / §1 |
-| **引导清单** | ✅ 已向顾客问 6 个工艺字段（帘型/打开方式/安装工艺/定型/褶距/房间） | `curtain_checklist.py:26-38` |
+| **引导清单** | ✅ 已向顾客问 6 个工艺字段（帘型/打开方式/安装工艺/定型/褶距/房间） | `curtain_checklist.py` 的清单字段表（按字段 id 检索） |
 | **算料报价** | ✅ 定高买宽/定宽买高、开数、折数、幅数、对花、工艺档位、理论/实际褶倍 | `curtain_calc.py` |
 | **报价单（对顾客）** | ⚠️ 只有 面料 / 加工费 / 辅料 / 安装费 四类行；**拼色、定型、特殊选项不显示、不计价** | `curtain_calc.py` `breakdown` |
-| **订单落库** | ❌ `processing_info` 只写 6 个规格键 + 加工项 + 加工费 | `admin-web/.../orders/new/page.tsx:444-456` |
-| **加工单** | ⚠️ 消费端已接线；但**部位/工艺靠关键字猜**、**算料输出取不到** | `ProcessingOrderService:55-60`、`:530-534` |
-| **车间工序 / 计件** | ✅ 19 项特殊选项三类全登记（加条件工序 / 加系数 / 不计件） | `routing.py:115-161` |
+| **订单落库** | ❌ `processing_info` 只写 6 个规格键 + 加工项 + 加工费 | `orders/new/page.tsx` 构造 `processingInfo` 的返回块 |
+| **加工单** | ⚠️ 消费端已接线；但**部位/工艺靠关键字猜**、**算料输出取不到** | `ProcessingOrderService.java` 类注释「部位语义（如实登记，尚未对齐）」节、`calcInfo` javadoc「已知缺口（#4118…）」节 |
+| **车间工序 / 计件** | ✅ 19 项特殊选项三类全登记（加条件工序 / 加系数 / 不计件） | `routing.py` 的 `SPECIAL_OPTION_ROUTINGS` / `OPTION_FACTOR_SCOPES` / `NON_PIECEWORK_OPTIONS` 三常量 |
 
 **结论：术语与采集端都建好了，断的是「订单承载」与「报价加价」两段。**
 
@@ -35,29 +52,29 @@
 
 | 段 | 状态 | 证据 |
 |---|---|---|
-| ① **登记**（选项 → 条件工序 / 计件系数 / 不计件） | ✅ | `routing.py:116-135`（工序）、`:150-154`（系数）、`:161`（不计件）；三类全登记有结构门禁防「静默黑洞」 |
-| ② **消费**（订单 → 加工单快照 → 条件工序 + 系数） | ✅ | `ProcessingOrderService:328-333`（插条件工序 + 落系数）、`:786`（快照透传 `specialOptions`） |
-| ③ **生产**（下单时**写入** `specialOptions`） | ❌ | 前端 `specialOptions` **0 命中**；ai-agent `order_create` **0 命中**；唯一写入者是 Java 测试桩 `ProcessingOrderServiceTest:297` |
+| ① **登记**（选项 → 条件工序 / 计件系数 / 不计件） | ✅ | `routing.py` 的 `SPECIAL_OPTION_ROUTINGS`（工序）/ `OPTION_FACTOR_SCOPES`（系数）/ `NON_PIECEWORK_OPTIONS`（不计件）；三类全登记有结构门禁防「静默黑洞」 |
+| ② **消费**（订单 → 加工单快照 → 条件工序 + 系数） | ✅ | `ProcessingOrderService.java` 的 `buildPositionPayload`（插条件工序 + 落系数）、`buildSnapshot`（快照透传 `specialOptions`） |
+| ③ **生产**（下单时**写入** `specialOptions`） | ❌ | 前端 `specialOptions` **0 命中**；ai-agent `order_create` **0 命中**；唯一写入者是 `ProcessingOrderServiceTest.java` 的 `orderItemHanzheWithOptions` 测试桩 |
 
 ⇒ 用户说的「订单上都没体现」，是**结构性事实**，不是错觉：车间拿不到勾选，工人也拿不到那笔计件。
 
 ### 2.2 两个「代码里自己登记」的硬缺口
 
-`ProcessingOrderService` 类注释原文（`:55-60`）：
+`ProcessingOrderService.java` 类注释「部位语义（如实登记，尚未对齐）」节原文：
 
 > **部位语义（如实登记，尚未对齐）**：`processing_position_operations.position_name` 取「加工产物名[+色号]」，
 > 因为**订单侧没有部位/帘种字段** —— 而工序库的路线是**按部位**索引的（布帘/纱帘/帘头）。
 > ⇒ 本包只能在实例化时**派生**部位（见 `deriveRouteKey`），派生不中就落默认路线 布帘×韩褶。
 > **待订单侧补「部位/帘种」字段后再对齐**（届时改为直读 + 删掉关键字派生表）。
 
-`ProcessingOrderService.calcInfo` 注释原文（`:530-534`）：
+`ProcessingOrderService.java` 的 `calcInfo` javadoc「已知缺口（#4118…）」节原文：
 
 > **已知缺口（#4118，不是本方法缺陷）**：订单侧**从不落库算料输出** ⇒
 > `pleat_count`（折数）/ `panels`（幅）/ `set_count`（套）/ `holes`（孔）一律取不到
 > ⇒ 端点在缺键时兜底 1 并在 `qty_source` 标 `fallback`。
 > 真正修法是**下单时把算料输出落库**。
 
-已发生的实测后果（`mibao-verification-cases.md:3218`，V58 那次）：
+已发生的实测后果（`mibao-verification-cases.md` 的 V58 种子条目，按文本「纱帘订单拿到布帘的 11 道工序」检索）：
 **纱帘订单拿到布帘的 11 道工序 ⇒ 工序与工资全错**。
 
 > 🔗 **关联在飞缺陷**（#4299，OPEN P1）：已实证 `calcInfo` 的米数映射**永不命中** ——
@@ -67,7 +84,7 @@
 
 ### 2.3 ⭐ 引导清单已经问了 6 个工艺字段 —— 全部在订单落库时被丢弃
 
-`app/clarification/curtain_checklist.py:20-44` 的清单字段（C 端引导逐项问顾客）：
+`curtain_checklist.py` 的清单字段表（C 端引导逐项问顾客；按字段 id 检索）：
 
 | 清单字段 id | 中文 | 默认值来源 | 是否落到订单 |
 |---|---|---|---|
@@ -164,9 +181,9 @@
 理由（按「最少代码阶梯」）：
 
 1. **既有消费者全部读顶层** —— `buildSnapshot` 用 `copyIfPresent(pi, entry, key)` 从 `processing_info` 顶层逐键取
-   （`:777-786`），`calcInfo(entry)` 也从 `entry` 顶层按 `CALC_INFO_KEYS` 取（`:123-124, :539-544`）。
+   （`ProcessingOrderService.java` 的 `buildSnapshot`），`calcInfo(entry)` 也从 `entry` 顶层按 `CALC_INFO_KEYS` 取（`ProcessingOrderService.java` 的 `CALC_INFO_KEYS` / `calcInfo`）。
    扁平 = 零改动即有通路。
-2. `specialOptions` 已是顶层扁平键且已接线（`:786`），新字段与它同层最一致。
+2. `specialOptions` 已是顶层扁平键且已接线（`ProcessingOrderService.java` 的 `buildSnapshot`），新字段与它同层最一致。
 3. JSONB 加键**无需迁移**（#4230 v1a 已确立该模式），存量单不受影响（缺键 = 未携带，不是错值）。
 
 > **粒度对齐（ERP 实证）**：ERP 的「部位行」（布帘 / 纱帘 / 帘头 各一行）**就是**本系统的 `order_items` 一行。
@@ -196,12 +213,12 @@
 
 | key | 类型 | 真值来源 | 现状 | ERP 对应列 |
 |---|---|---|---|---|
-| `fabric_meters` | number | `curtain_calc.build_quote` | 白名单已认（`:123-124`），**生产为零** ⇒ 应做数量兜底 1 | 用料 |
+| `fabric_meters` | number | `curtain_calc.build_quote` | 白名单已认（`ProcessingOrderService.java` 的 `CALC_INFO_KEYS`），**生产为零** ⇒ 应做数量兜底 1 | 用料 |
 | `pleat_count` | number | 同上 | 同上 | 总褶数 |
 | `per_panel_pleats` | number | 同上（`calculate_fabric_by_pleats`） | ❌ **不在白名单** ⇒ 需扩 `CALC_INFO_KEYS` | 折数（每片） |
 | `panels` | number | 同上（定宽买高幅数） | 白名单已认，生产为零 | 幅数 |
 | `holes` | number | 同上（打孔孔数） | 白名单已认，生产为零 | （打孔孔数） |
-| `set_count` | number | 同上 | 白名单已认；`routing.py:182` 标注「引擎暂未产出」 | 套数 |
+| `set_count` | number | 同上 | 白名单已认；`routing.py` 的 `SET_KEYS` 注释标注「引擎暂未产出」 | 套数 |
 | `fullness` / `fullness_actual` | number | 同上（理论/实际褶倍） | ❌ 不在白名单；#4118 ④ 已落码到**报价卡** | 理论褶倍 / 实际褶倍 |
 | `source` | string | 调用方 | 白名单已认；口径 = `公式计算` / `人工指定` / `客户自报`（§8 韩折） | — |
 
@@ -239,7 +256,7 @@
 | # | 入口 | 写什么 | 说明 |
 |---|---|---|---|
 | 1 | **ai-agent `order_create`** | §4.2 全键 + `specialOptions` + §4.3 算料输出键 | 工具 description 需列出这些键（当前只提 `skuId/colorName/sellingMethod/doorWidth`）；来源 = 会话中 `curtain_calc` 输出 + **引导清单已采集的 6 个字段**（§2.3） |
-| 2 | **admin-web 下单页** | 同上（商家手工勾选） | `orders/new/page.tsx:444-456` 现只写 6 键，需补工艺选择区（照 ERP 部位行布局） |
+| 2 | **admin-web 下单页** | 同上（商家手工勾选） | `orders/new/page.tsx` 构造 `processingInfo` 的返回块 现只写 6 键，需补工艺选择区（照 ERP 部位行布局） |
 | 3 | **商家补录**（可选，P2） | 同上 | 存量单没有工艺规格，加工单只能继续靠派生；补录是唯一修复通道 |
 
 > ⚠️ 入口 2 与既有决策**不冲突**：`processing-order-design.md` 决策 6 锁的是「加工项**创建后**不可改」，
@@ -268,9 +285,9 @@
 
 | 其余改动 | 文件 | 说明 |
 |---|---|---|
-| 定型接线：`isShaped=false` → 实例化时剔除 `定型-布`/`复烫-布` | `ProcessingOrderService` 实例化段 | 真值源 §10 标注的「唯一尚未接线」项 |
-| `CALC_INFO_KEYS` 扩到 `per_panel_pleats` / `fullness` / `fullness_actual` | `:123-124` | 生产端补上后即生效 |
-| ⚠️ `calcInfo` 的 `sellingMethod` 比对词表另有**独立缺陷**（关联 #4299，OPEN P1） | `:546-553` | 真实数据 `sellingMethod=bulk_cut`/`full_roll` 不在 `PER_METER_METHODS`（`per_meter`/`按米`）里 ⇒ **永不命中** ⇒ 米类 qty 仍 `fallback 1`。本方案的「订单落库算料输出」是该缺陷的**真正修法**（代码注释原话），但**不替代** #4299 的词表修正 |
+| 定型接线：`isShaped=false` → 实例化时剔除 `定型-布`/`复烫-布` | `ProcessingOrderService.java` 的 `buildPositionPayload` 实例化段 | 真值源 §10 标注的「唯一尚未接线」项 |
+| `CALC_INFO_KEYS` 扩到 `per_panel_pleats` / `fullness` / `fullness_actual` | `ProcessingOrderService.java` 的 `CALC_INFO_KEYS` | 生产端补上后即生效 |
+| ⚠️ `calcInfo` 的 `sellingMethod` 比对词表另有**独立缺陷**（关联 #4299，OPEN P1） | `ProcessingOrderService.java` 的 `calcInfo` 中 `PER_METER_METHODS` 比对段 | 真实数据 `sellingMethod=bulk_cut`/`full_roll` 不在 `PER_METER_METHODS`（`per_meter`/`按米`）里 ⇒ **永不命中** ⇒ 米类 qty 仍 `fallback 1`。本方案的「订单落库算料输出」是该缺陷的**真正修法**（代码注释原话），但**不替代** #4299 的词表修正 |
 
 ### 4.8 ⚠️ 拼色的结构缺口：订单行装不下两种布（用户已裁定建模方向）
 
@@ -278,7 +295,7 @@
 
 | 事实 | 证据 |
 |---|---|
-| `order_items` 只有**一个** `productId` / `productName` | `OrderItem.java:30,32` |
+| `order_items` 只有**一个** `productId` / `productName` | `OrderItem.java` 的 `productId` / `productName` 字段 |
 | 「部件」层（主布/配布边/纱/加工费）**从未落码** | `部件` / `bom` 在 `backend/**` **零命中**；仅 §8 术语表有词条 |
 | `processing_info.processingItems` 是**加工项**（收费项：打孔/韩褶），**不是面料部件** | 二者语义不同，**不可混用** |
 
@@ -377,7 +394,7 @@ curtain_calc 输出 ────────────┤
 
 #### 加工单快照必须扩白名单（否则第 ③ 处永远拿不到）
 
-`ProcessingOrderService.buildSnapshot:777-786` 用 `copyIfPresent(pi, entry, key)` **逐键**取顶层键 ——
+`ProcessingOrderService.java` 的 `buildSnapshot`（`copyIfPresent` 段） 用 `copyIfPresent(pi, entry, key)` **逐键**取顶层键 ——
 **新键不加进这个列表就不会进快照**。需补：`curtainType` / `craft` / `cuttingMode` / `openCount` /
 `isShaped` / `pleatSpacing` / `style` / `room` / `hasPattern` / `patternRepeat` + §4.3 的全部算料输出键。
 （加工单快照是**加工单的固化真相**，生成时的条件工序与计件系数都从快照读 ⇒ 漏一个键 = 车间少一道活。）
@@ -410,7 +427,7 @@ curtain_calc 输出 ────────────┤
 | 4 | **接高 / 配布边 的用料** | 无口径；**接高补高那段布**未计入 `fabric_meters`（`curtain_calc` 对「接高」零消费）；`接高-布` 按**幅**计件 ¥1.0、`立边-布` 按**米**计件 ¥0.5 | 增加面料米数 = 改钱 |
 | 5 | **报价默认档位**（倍数法 13.8m vs 标准档折数法 13.3m） | #4118 ⑤-A 已转客户提问项，**未实施** | 方向是当前对顾客**多报** 0.5m |
 | 6 | **拼色主布余量口径与代码不符** | 真值源 §10：拼色主布用料 = 0.25×折数 + **0.15**（单开）；代码 `MARGIN_SINGLE = 0.2` | 改面料米数 = 改钱 |
-| 7 | **接高的工费（主布接高 / 配布边接高 是否同价）** | `routing.py:121-122` 把 ERP 的 `接高` 与 `双眼皮接高` 映射到**同一道** `接高-布`，且有测试锁死该相等（`test_special_options.py:353-354`）；**「双眼皮」含义待查明（客户亦不明）** | 若两者工费不同 ⇒ **计件工资算错** |
+| 7 | **接高的工费（主布接高 / 配布边接高 是否同价）** | `routing.py` 的 `SPECIAL_OPTION_ROUTINGS` 中 `接高` / `双眼皮接高` 两条 把 ERP 的 `接高` 与 `双眼皮接高` 映射到**同一道** `接高-布`，且有测试锁死该相等（`test_special_options.py` 中 `SPECIAL_OPTION_ROUTINGS` 的 `接高` / `双眼皮接高` 断言）；**「双眼皮」含义待查明（客户亦不明）** | 若两者工费不同 ⇒ **计件工资算错** |
 
 ### 6.1 ✅ 已裁定（用户 2026-09-18）—— 可实施，且**不改现有单金额**
 
@@ -446,5 +463,5 @@ curtain_calc 输出 ────────────┤
 - ❌ 任何改报价金额的实现（§六 全部留待裁定）
 - ❌ 新增订单明细编辑入口（会触发 PG-014，需同步启用「选项 B」发货守卫）
 - ❌ 「外帘」纳入路线键（工序库无 `外帘×*` 路线；它是打印行部位）
-- ❌ 抱枕/腰靠垫 建成「部位×工艺」路线（`routing.py:105` 已裁定：属**另一产品**，不是某部位的一种工艺）
+- ❌ 抱枕/腰靠垫 建成「部位×工艺」路线（`routing.py` 中关于 `腰靠垫` 的注释 已裁定：属**另一产品**，不是某部位的一种工艺）
 - ❌ §4.4 表 C 的字段（折扣率/尺码/套号/保证金/运费）—— 另立议题，不混进本方案
