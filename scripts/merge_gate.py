@@ -17,7 +17,7 @@
     # ① 元判据：required 集合 vs 「实际存在且会判红」的 job 集合 的差集
     python3 scripts/merge_gate.py --required-diff
     # ② 合并闸门：某 PR 的 checks 里是否有「红了也照合」的裸判据
-    python3 scripts/merge_gate.py --check <PR号> [--apply-label] [--disarm-auto]
+    python3 scripts/merge_gate.py --check <PR号> [--apply-label] [--no-disarm-auto]
 
     0 = 未命中（差集为空 / 无裸判据红 / 已被 required 拦 / 已有 block/merge）
     1 = **命中**（① 存在裸判据；② 裸判据红且 PR 处于可合并态，或已带红合入）
@@ -33,13 +33,18 @@
 ## 写操作边界（不得越级）
 
 - **默认 dry-run**：`--check` 只读，与 `scripts/delete_orders.py` / `resolve_stale_bot_threads.py` 同风格。
-- `--apply-label` 才给 PR 打 `block/merge`（**只在命中 + PR 仍 OPEN + 尚未带该标签**时），
-  且**绝不**把任何判据翻成 required、**绝不**改任何 workflow。
-- `--disarm-auto` 是**独立**开关（默认关）：因为实测 **`block/merge` 标签停不住已 arm 的 auto-merge**
-  —— 关联 #4271：`autoMergeRequest.enabledAt = 07:03:18Z`、标签 `07:03:19Z`（晚 1 秒）、**合并 `07:07:22Z`**；
-  关联 #4266：标签 `06:57:32Z`、合并 `07:00:30Z`。`automerge.yml` 的 `if:` 只在**arm 时**生效，
-  `labeled` 事件重跑时 `if` 为假 ⇒ **什么也不做**（不会 disarm）⇒ 闸门要真的拦住，必须
-  `gh pr merge <PR> --disable-auto`。默认不执行它，是为了不越出「先加差集元判据 + 判红打标签」的裁定范围。
+- `--apply-label` 才落闸（**只在命中 + PR 仍 OPEN** 时），且**绝不**把任何判据翻成 required、
+  **绝不**改任何 workflow。
+- **`--apply-label` 默认同时 disarm**（`gh pr merge <PR> --disable-auto`，仅在 auto-merge **已 arm** 时调用）
+  —— 语义上「打 `block/merge`」= 「拦住合并」，只打标签等于**没拦住**。实测（关联 #4334）：
+  关联 #4271 的 `autoMergeRequest.enabledAt = 07:03:18Z`、标签 `07:03:19Z`（晚 1 秒）、**合并 `07:07:22Z`**；
+  关联 #4266 标签 `06:57:32Z`、**合并 `07:00:30Z`**（两条至今仍带着该标签却已 MERGED）。
+  根因：`automerge.yml` 的 `if:`（含 `!contains(labels,'block/merge')`）**只在 arm 时**生效，
+  `labeled` 事件重跑时 `if` 为假 ⇒ **什么也不做**（不会 disarm）。⇒ 只有 `--disable-auto` 能停住它。
+- 未 arm 时**只打标签即可**（无需 disarm）：标签会让 `automerge.yml` 在后续事件上**永不 arm**。
+- **逃生口 `--no-disarm-auto`**：只打标签、跳过 disarm，并在输出里**明写**
+  「已 arm 的 auto-merge 不会被本标签拦住」（不做静默降级）。
+- `--disarm-auto` 已被并入默认行为，但**仍被接受**（关联 #4325 登记的接线命令里含它，不破既有命令行）。
 
 ## 保留类登记（issue #4248 裁定 C；**本 PR 不改任何 workflow**）
 
@@ -52,18 +57,20 @@ workflow 接线登记为**保留类**：
   - name: 裸判据合并闸门
     if: always()
     env: { GH_TOKEN: '${{ github.token }}' }
-    run: python3 scripts/merge_gate.py --check ${{ github.event.pull_request.number }} --apply-label --disarm-auto
+    run: python3 scripts/merge_gate.py --check ${{ github.event.pull_request.number }} --apply-label
   ```
-  （`--apply-label` 打 `block/merge`；`--disarm-auto` 是因为标签单独**不足**，见上；
+  （`--apply-label` 已含「打 `block/merge` + 解除已 arm 的 auto-merge」两步，无需再写 `--disarm-auto`；
   退出码 1 时该 job 判红、3 时判红 —— 判定本体 fail-closed，不靠 job 的 `continue-on-error`。）
 - **不依赖 workflow 的替代路径**（今天就能用，无需 scope）：合并前由人 / 主会话直接跑
   `python3 scripts/merge_gate.py --check <PR>`（只读三态），命中则
-  `--apply-label --disarm-auto`；或把它接进 `verify-all.sh` 同族的本地检查（本 PR 不改该脚本）。
+  `python3 scripts/merge_gate.py --check <PR> --apply-label`；或把它接进 `verify-all.sh` 同族的本地检查
+  （本 PR 不改该脚本）。
 
 ## 自测红证
 
-`tests/unit_ci_workflows/test_merge_gate.py`（case_ids: MC-012）：夹具层 ①~⑧ 共 26 条
-（裸判据红 ⇒ 1 / 全绿 ⇒ 0 / required 红 ⇒ 0 / 三态 ⇒ 3 / 元判据三态 / 不硬编码 / 写操作边界），
+`tests/unit_ci_workflows/test_merge_gate.py`（case_ids: MC-012）：夹具层 ①~⑧ 共 29 条
+（裸判据红 ⇒ 1 / 全绿 ⇒ 0 / required 红 ⇒ 0 / 三态 ⇒ 3 / 元判据三态 / 不硬编码 /
+写操作边界：默认 disarm + `--no-disarm-auto` 逃生口 + dry-run 零写），
 `gh` 用**替身可执行文件**注入（CLI 边界即注入点，`MG_GH_BIN`）。
 """
 from __future__ import annotations
@@ -389,7 +396,7 @@ def disarm_auto(pr, repo, gh_bin):
 
 # ── 输出（可行动：证据 + 一条能直接粘走的命令）───────────────────────────────
 
-def render_check(verdict, pr, repo, apply_label=False, disarm_auto_=False):
+def render_check(verdict, pr, repo, apply_label=False, no_disarm_auto=False):
     counts = verdict.counts
     labels = ", ".join(verdict.labels) if verdict.labels else "(无)"
     tag = {EXIT_OK: "✅ 未命中该形态", EXIT_HIT: "🎯 命中该形态",
@@ -421,20 +428,28 @@ def render_check(verdict, pr, repo, apply_label=False, disarm_auto_=False):
             lines.append(
                 "⚠️ 该 PR 的 auto-merge **已 arm**：实测标签**停不住**已 arm 的 auto-merge"
                 "（关联 #4271 标签 07:03:19Z 晚于 enabledAt 07:03:18Z、合并 07:07:22Z；"
-                "关联 #4266 标签 06:57:32Z、合并 07:00:30Z）⇒ 闸门要真拦住必须再 `--disable-auto`。")
+                "关联 #4266 标签 06:57:32Z、合并 07:00:30Z）⇒ 落闸必须 `--disable-auto`"
+                "（`--apply-label` **默认**会做；关联 #4334）。")
         if verdict.state != "OPEN":
             lines.append(f"PR 已 {verdict.state} ⇒ **无法再落闸**（闸门只对未合并的 PR 有效）。"
                          "既成事实的处置：① 跟随修复带上 main 的那条红；② 用 "
                          "`python3 scripts/merge_gate.py --required-diff` 逐条清裸判据。")
             return "\n".join(lines)
         has_label = BLOCKING_LABEL in (verdict.labels or [])
+        armed = bool(verdict.auto_merge_armed)
         lines.append("可行动（dry-run：只读，未做任何写操作）："
-                     if not (apply_label or disarm_auto_) else "已执行：")
+                     if not apply_label else "落闸动作（实际执行结果见下方 ✅/❌）：")
+        lines.append(f"  python3 scripts/merge_gate.py --check {pr} --apply-label"
+                     f"   # 一步落闸：打 {BLOCKING_LABEL} + 解除已 arm 的 auto-merge")
         lines.append(f"  gh pr edit {pr} --add-label {BLOCKING_LABEL}"
-                     f"      # 把报告型判据升级为人工闸"
-                     f"（{'已带该标签' if has_label else ('已打' if apply_label else '未打')}）")
+                     f"      # 手动等价（{'已带该标签' if has_label else '未打'}）")
         lines.append(f"  gh pr merge {pr} --disable-auto"
-                     f"        # 解除已 arm 的 auto-merge（{'已解除' if disarm_auto_ else '未解除'}）")
+                     f"        # 手动等价；`--no-disarm-auto` 可跳过（"
+                     f"{'auto-merge 未 arm ⇒ 只打标签即可' if not armed else ('已跳过' if no_disarm_auto else '默认执行')}）")
+        if no_disarm_auto and armed:
+            lines.append("⚠️ `--no-disarm-auto`：已 arm 的 auto-merge **不会被本标签拦住**"
+                         "（实测关联 #4271 / #4266：标签在了、PR 还是合了）"
+                         "⇒ 只有 `gh pr merge <PR> --disable-auto` 能停住它。")
         lines.append(f"  python3 scripts/merge_gate.py --required-diff   "
                      f"# 元判据：看还有哪些裸判据（repo={repo}）")
     return "\n".join(lines)
@@ -478,9 +493,12 @@ def main(argv=None):
                                                       / ".github" / "workflows"),
                         help="工作流目录（默认仓库 .github/workflows）")
     parser.add_argument("--apply-label", action="store_true",
-                        help=f"真正打 {BLOCKING_LABEL} 标签（默认只读）")
+                        help=f"落闸：打 {BLOCKING_LABEL} + **默认同时** `gh pr merge --disable-auto`"
+                             "（默认只读；关联 #4334）")
+    parser.add_argument("--no-disarm-auto", action="store_true",
+                        help="逃生口：只打标签、跳过 disarm（输出会明写它拦不住已 arm 的 auto-merge）")
     parser.add_argument("--disarm-auto", action="store_true",
-                        help="同时 `gh pr merge --disable-auto`（标签停不住已 arm 的 auto-merge）")
+                        help="（已是 `--apply-label` 的默认行为；保留仅为兼容既有命令行）")
     args = parser.parse_args(argv)
 
     gh_bin = os.environ.get("MG_GH_BIN", "gh")
@@ -509,20 +527,27 @@ def main(argv=None):
         repo = args.repo or "(未知)"
     verdict = decide_check(snapshot)
     print(render_check(verdict, args.check, repo, apply_label=args.apply_label,
-                       disarm_auto_=args.disarm_auto))
+                       no_disarm_auto=args.no_disarm_auto))
 
-    if verdict.code != EXIT_HIT or not (args.apply_label or args.disarm_auto):
+    # dry-run 语义：**不带 `--apply-label` 一律零写**（既不标签也不 disarm）。
+    if verdict.code != EXIT_HIT or not args.apply_label:
         return verdict.code
     if verdict.state != "OPEN":
         print(f"⚠️ PR 状态 = {verdict.state} ⇒ **不发任何写操作**（闸门改不了既成事实）")
         return verdict.code
 
     failed = []
-    if args.apply_label and BLOCKING_LABEL not in (verdict.labels or []):
+    if BLOCKING_LABEL not in (verdict.labels or []):
         ok, msg = add_label(args.check, args.repo, gh_bin)
         print(f"  {'✅' if ok else '❌'} 打 {BLOCKING_LABEL}：{msg}")
         failed += [] if ok else ["label"]
-    if args.disarm_auto:
+    # 「打 block/merge」= 「拦住合并」：已 arm 时必须 disarm，否则标签**拦不住**（关联 #4334）。
+    # 未 arm 时无需 disarm —— 标签会让 automerge.yml 的 `if:` 在后续事件上永不 arm。
+    if not verdict.auto_merge_armed:
+        print("  ℹ️ auto-merge 未 arm ⇒ 只打标签即可（automerge.yml 的 if: 会让它永不 arm）")
+    elif args.no_disarm_auto:
+        print("  ⚠️ --no-disarm-auto：跳过 disarm —— 已 arm 的 auto-merge **不会被本标签拦住**")
+    else:
         ok, msg = disarm_auto(args.check, args.repo, gh_bin)
         print(f"  {'✅' if ok else '❌'} --disable-auto：{msg}")
         failed += [] if ok else ["disable-auto"]

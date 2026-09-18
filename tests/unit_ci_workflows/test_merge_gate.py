@@ -23,10 +23,12 @@
 ⑥ **报告型清单可自证、不硬编码**：判定由「不在 required 里的红 check」**反推** ⇒ 夹具里出现一个
    仓库中**不存在**的新 job 名（红且不在 required）也必须被判成裸判据 —— 若有人写死成
    `("Drift Audit", "Case Trust Gate")` 两条，这条必红（防清单腐烂）；
-⑦ **写操作边界**：默认 **dry-run 零写操作**；`--apply-label` 只在**命中 + PR 仍 OPEN** 时打
-   `block/merge`；`--disarm-auto` 是**独立**开关（实测：已 arm 的 auto-merge 不因标签而停 ——
-   关联 #4266 标签 06:57:32 / 合并 07:00:30、#4271 标签 07:03:19 / 合并 07:07:22，标签**晚于**
-   `autoMergeRequest.enabledAt` 却照样合并）；已 MERGED 的 PR **绝不**写。
+⑦ **写操作边界**：默认 **dry-run 零写操作**；`--apply-label` 只在**命中 + PR 仍 OPEN** 时落闸，
+   且**默认同时 disarm**（`gh pr merge --disable-auto`，仅在 auto-merge **已 arm** 时调用）——
+   实测：已 arm 的 auto-merge **不因标签而停**（关联 #4271：标签 07:03:19Z 晚于
+   `autoMergeRequest.enabledAt` 07:03:18Z、**合并 07:07:22Z**；关联 #4266：标签 06:57:32Z、
+   **合并 07:00:30Z**）⇒ 只打标签等于**没拦住**（关联 #4334 的裁定）。
+   逃生口 `--no-disarm-auto` 只打标签且**必须明写**它拦不住；已 MERGED 的 PR **绝不**写。
 
 夹具：`gh` 用**替身可执行文件**（`MG_GH_BIN`，沿用 `resolve_stale_bot_threads.py` 的 `SBT_GH_BIN`
 先例）注入 —— 不 mock 网络，而是把 CLI 边界当注入点，故「gh 缺失 ⇒ 3」「API 报错 ⇒ 3」
@@ -361,14 +363,60 @@ def test_dry_run_is_default_and_writes_nothing(fake_gh):
 
 
 def test_apply_label_adds_label_only_on_hit(fake_gh):
+    """未 arm 的 PR：`--apply-label` 只打标签（**没有** auto-merge 需要解除）。
+
+    未 arm 时标签本身就足够 —— `automerge.yml` 的 `if:`（含 `!contains(labels,'block/merge')`）
+    会让它在 `labeled` / `synchronize` 等事件上**永不 arm**。
+    """
     proc = _run(fake_gh, "--check", "4248", "--apply-label", env=_env(fake_gh))
     assert proc.returncode == 1, proc.stdout + proc.stderr
     writes = fake_gh["writes"]()
     assert writes == [["pr", "edit", "4248", "--add-label", "block/merge"]], writes
-    assert "pr merge" not in json.dumps(writes)      # 默认**不**碰 auto-merge
+    assert "pr merge" not in json.dumps(writes)      # 未 arm ⇒ 无可解除
+
+
+def test_apply_label_disarms_auto_by_default(fake_gh):
+    """关联 #4334 的裁定：`--apply-label` **默认同时 disarm** —— 「打 block/merge」= 「拦住合并」。
+
+    实测依据（关联 #4271）：`autoMergeRequest.enabledAt` 07:03:18Z → 标签 07:03:19Z → **合并 07:07:22Z**；
+    关联 #4266：标签 06:57:32Z → **合并 07:00:30Z** ⇒ 只打标签**没拦住**。
+    """
+    proc = _run(fake_gh, "--check", "4248", "--apply-label",
+                env=_env(fake_gh, PR=_pr(auto_merge={"enabledAt": "2026-09-18T07:03:18Z"})))
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    writes = fake_gh["writes"]()
+    assert ["pr", "edit", "4248", "--add-label", "block/merge"] in writes, writes
+    assert ["pr", "merge", "4248", "--disable-auto"] in writes, writes
+
+
+def test_no_disarm_auto_escape_hatch_labels_only_and_warns(fake_gh):
+    """逃生口 `--no-disarm-auto`：只打标签、**不得**发 disarm 调用，且必须**明写**它拦不住。"""
+    proc = _run(fake_gh, "--check", "4248", "--apply-label", "--no-disarm-auto",
+                env=_env(fake_gh, PR=_pr(auto_merge={"enabledAt": "2026-09-18T07:03:18Z"})))
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    writes = fake_gh["writes"]()
+    assert writes == [["pr", "edit", "4248", "--add-label", "block/merge"]], writes
+    assert "不会被本标签拦住" in proc.stdout, proc.stdout
+
+
+def test_no_disarm_auto_without_apply_label_writes_nothing(fake_gh):
+    """`--no-disarm-auto` 不是写开关：不带 `--apply-label` ⇒ 仍是 dry-run 零写。"""
+    proc = _run(fake_gh, "--check", "4248", "--no-disarm-auto",
+                env=_env(fake_gh, PR=_pr(auto_merge={"enabledAt": "2026-09-18T07:03:18Z"})))
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert fake_gh["writes"]() == []
+
+
+def test_disarm_auto_flag_still_accepted_for_compat(fake_gh):
+    """`--disarm-auto` 已是默认行为，但**仍须被接受** —— 关联 #4325 登记的接线命令里有它。"""
+    proc = _run(fake_gh, "--check", "4248", "--apply-label", "--disarm-auto",
+                env=_env(fake_gh, PR=_pr(auto_merge={"enabledAt": "2026-09-18T07:03:18Z"})))
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert ["pr", "merge", "4248", "--disable-auto"] in fake_gh["writes"]()
 
 
 def test_apply_label_is_idempotent_when_label_present(fake_gh):
+    """已带标签 ⇒ 判 0（闸门已生效），**零写**（不再重复打标签，也不动 auto-merge）。"""
     proc = _run(fake_gh, "--check", "4248", "--apply-label",
                 env=_env(fake_gh, PR=_pr(labels=["block/merge"])))
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -379,40 +427,28 @@ def test_apply_label_never_writes_on_green_or_merged(fake_gh):
     green = _run(fake_gh, "--check", "4248", "--apply-label", env=_env(fake_gh, CHECKS=_checks()))
     assert green.returncode == 0, green.stdout + green.stderr
     merged = _run(fake_gh, "--check", "4214", "--apply-label",
-                  env=_env(fake_gh, PR=_pr(state="MERGED", mergeable="UNKNOWN", merge_state="UNKNOWN")))
+                  env=_env(fake_gh, PR=_pr(state="MERGED", mergeable="UNKNOWN", merge_state="UNKNOWN",
+                                           auto_merge={"enabledAt": "2026-09-18T07:03:18Z"})))
     assert merged.returncode == 1, merged.stdout + merged.stderr
     assert fake_gh["writes"]() == []
 
 
-def test_disarm_auto_is_a_separate_switch(fake_gh):
-    """实测：标签**不**能停住已 arm 的 auto-merge ⇒ 需要显式的 `--disable-auto`（独立开关）。"""
-    plain = _run(fake_gh, "--check", "4248", "--apply-label",
-                 env=_env(fake_gh, PR=_pr(auto_merge={"enabledAt": "2026-09-18T07:03:18Z"})))
-    assert plain.returncode == 1
-    assert ["pr", "merge", "4248", "--disable-auto"] not in plain.stdout.split()
-
-    proc = _run(fake_gh, "--check", "4248", "--apply-label", "--disarm-auto",
-                env=_env(fake_gh, PR=_pr(auto_merge={"enabledAt": "2026-09-18T07:03:18Z"})))
-    assert proc.returncode == 1, proc.stdout + proc.stderr
-    writes = fake_gh["writes"]()
-    assert ["pr", "merge", "4248", "--disable-auto"] in writes, writes
-    assert ["pr", "edit", "4248", "--add-label", "block/merge"] in writes, writes
-
-
-def test_disarm_auto_works_without_apply_label(fake_gh):
-    """`--disarm-auto` 是**独立**开关：单独给也能解除 auto-merge，且**不**动标签。"""
-    proc = _run(fake_gh, "--check", "4248", "--disarm-auto", env=_env(fake_gh))
-    assert proc.returncode == 1, proc.stdout + proc.stderr
-    assert fake_gh["writes"]() == [["pr", "merge", "4248", "--disable-auto"]]
-
-
 def test_auto_merge_armed_is_reported_in_output(fake_gh):
-    """已 arm 的 auto-merge 必须在输出里点명（否则「打了标签就安全了」是错的真相模型）。"""
+    """已 arm 的 auto-merge 必须在输出里点明（否则「打了标签就安全了」是错的真相模型）。"""
     proc = _run(fake_gh, "--check", "4248",
                 env=_env(fake_gh, PR=_pr(auto_merge={"enabledAt": "2026-09-18T07:03:18Z"})))
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert "auto-merge" in proc.stdout
     assert "--disable-auto" in proc.stdout
+
+
+def test_dry_run_hint_mentions_default_disarm(fake_gh):
+    """dry-run 的「可行动」必须给出**一步落闸**的命令（disarm 已是默认，不再要人记两个开关）。"""
+    proc = _run(fake_gh, "--check", "4248",
+                env=_env(fake_gh, PR=_pr(auto_merge={"enabledAt": "2026-09-18T07:03:18Z"})))
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "--check 4248 --apply-label" in proc.stdout, proc.stdout
+    assert "--no-disarm-auto" in proc.stdout, proc.stdout
 
 
 # ── ⑧ 参数与用法边界 ─────────────────────────────────────────────────────────
