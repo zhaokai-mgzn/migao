@@ -46,7 +46,45 @@ Flyway 已移除（与 PG 18 不兼容），替换为自定义 `MigrationRunner`
 - SQL 必须幂等 (IF NOT EXISTS / ADD COLUMN IF NOT EXISTS)
 - 迁移失败不阻塞启动（可能已在 DB 执行过）
 
-当前迁移: V1 ~ V9 + V20260604 ~ V20260614
+迁移文件清单以目录为单一源（**别在本页抄文件数/版本号 —— 会腐烂**）：
+`ls backend/admin-api/src/main/resources/db/migration/`
+
+### 🔴 迁移不可变（已发布迁移只增不改，issue #4235）
+
+`MigrationRunner` 的台账按**文件名**记（`applied.contains(filename)` ⇒ `continue`），
+**已应用的迁移整份跳过**。⇒ 往已发布的迁移（如 `V54__seed_production_operations.sql`）里加行，
+**存量环境永远拿不到**，而静态守卫反而会因此转绿 —— 本仓库最忌讳的「CI 全绿、功能静默缺失」。
+
+**机械护栏**（此前零护栏，改 V54 不会让任何东西变红）：
+
+| 判据 | 落点 |
+|---|---|
+| 已发布迁移的内容**逐字节冻结** | `tests/unit_ci_workflows/test_migration_immutability.py` |
+| 账本 = `{文件名: 内容 sha256}` | `tests/unit_ci_workflows/migration_fingerprints.json` |
+
+账本是**仓内文件**（不依赖 git 历史 / `origin/main` / DB）—— 判据跑在 CI job
+`ci workflow helper unit tests`，该 job 是 `fetch-depth: 1`（**没有历史**），
+"比对 `origin/main` 的 blob hash" 这类写法在那里只能 skip（= 没跑）。
+
+**给种子库/任何已发布迁移追加内容 = 新迁移 + 登记指纹**（唯一合法路径）：
+
+```bash
+# 1) 新建 V<下一个空闲号>__xxx.sql（不动任何已登记文件）
+# 2) 登记新文件的指纹（**只新增条目**；已登记文件被改 ⇒ 非零退出，不是"刷新一下就好"）
+python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger
+# 3) 新迁移 + 账本一起提交
+```
+
+⚠️ 确需变更一条**已发布**迁移（如版本号让号改名）时，必须**手工**改账本条目并在 PR 说明 ——
+手改会出现在 diff 里、可被评审看见（重生成命令**拒绝**覆盖已登记指纹）。
+
+### 种子源按集合聚合（守卫不再写死文件名）
+
+`production_operations` / `production_routings` 的种子事实有**多个载体**
+（`app/production/routing.py` 真值源 + `db/migration/V*__*.sql` 增量迁移 + `docs/sql/schema.sql`
+bootstrap 终态）。守卫 `tests/unit_ci_workflows/test_production_catalog_seed.py` 的种子源
+**按内容发现**（凡含 `INSERT INTO <table>` 的迁移即被纳入），
+⇒ 新增种子迁移**无需改守卫**即进入逐行逐值比对射程（issue #4235 判据 1）。
 
 ---
 详见: [schema.sql](../sql/schema.sql) · [架构](Architecture.md)

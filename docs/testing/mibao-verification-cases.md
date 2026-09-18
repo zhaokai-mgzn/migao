@@ -3013,7 +3013,7 @@
 ```
 溯源: 2026-09-18 新增（issue #4208 ai-agent 半边，PR #4215）：应做数量内部端点 POST /api/internal/production/operation-qty（X-Service-Token）—— 让 routing._qty_for 从「零运行时消费者」变成算料数量的唯一真相源；兜底口径「绝不落 0」+ qty_source 三态（键名 / <键名>_x6 / fallback）。红证（实现前）：端点未实现 ⇒ 404（assert 404 == 200 红）、resp.json()['data'] KeyError；键漂移门禁在 KNOWN_QTY_UNITS/DIRECT_QTY_KEYS 未定义时 import 即红。同批把该测试文件补进 PP-010.traces.tests（同为生产确定性核心的证据面）。**未做（如实登记）**：Java 侧接线（生成加工单时逐工序调用本端点）不在本单，#4208 保持 OPEN。 ｜ tags: processing, production, qty-engine
 
-## processing-order（28 case）
+## processing-order（30 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成 + 订单进入 producing 🔵
 ```
@@ -3299,7 +3299,18 @@
 ```
 溯源: 2026-09-18 新增（issue #4230，P1，Java 侧 v1a；ai-agent 半边 = PR #4234）。红证（修复前实测）：把 `buildPositionPayload` 里「插条件工序 + 落系数」两段整体去掉（= 修复前「订单不携带 specialOptions、factor 恒 1」的形态）⇒ ProcessingOrderServiceTest **6 条红**（specialOptionInsertsConditionalOperationAfterAnchor / conditionalOperationAppendsWhenAnchorAbsent / specialOptionFactorAppliesToEveryOperationOfThePosition / specialOptionFactorReachesPieceworkAmount / nonPieceworkOptionIsExplicitNoop / specialOptionReferencingMissingOperationFailsClosed），还原后全绿（md5 复核还原一致）；实现前两张表/两个实体/两个 Mapper 不存在 ⇒ 新增测试文件编译失败（找不到符号）。实现：V59 迁移（两张表 + 16 行条件工序种子 + 1 行系数种子，**版本号从 V58 让位** —— main 的 #4257 已占用 V58）+ `ProductionOptionRouting`/`ProductionOptionFactor` 实体与 Mapper + `ProductionOperationQueryService` 三处只读方法（optionRoutings/optionFactors/operationsByName，与 findRouting 的 catalogByName 同一份读取口径）+ `ProcessingOrderService` 的 specialOptions 归一化 / insertConditionalOperations / renumberSeq / applyFactors + buildSnapshot 透传 + 详情响应补字段。**不做（如实登记）**：v1b 商家配置页、v1c 下单勾选 UI、§2.4 逐工序细算档（推算值，待客户确认）。 ｜ tags: processing-order, production-reporting, special-options, piecework
 
-### PG-024. 路线来源 T1：信号全不命中 ⇒ route_source=default + route_key=默认键 + requested=null + incident warn 日志 🔵
+### PG-024. 加工单列表请求时序保护——旧的在飞响应晚到不得覆盖更新的列表数据 🔵
+```
+你: 打开加工单列表，连续筛选/刷新（或发加工后刷新），列表始终显示最新一次请求的数据
+数据: 时序保护（**核心/长期判据，红证在这条**）：同一页面并发多个列表请求时，**只认最新一次请求的响应** —— 先发出的慢请求（旧数据快照）晚到 ⇒ 其响应被**丢弃**，列表**不得**回退成旧数据。红证（修复前实测，本机 vitest）：`processing-orders-list.test.tsx` 断言①得 `expected '…已生成…' to contain '加工中'`（旧响应把「加工中」覆盖回「已生成」，与 issue #4303 的实测形态同形）
+数据: 同一保护覆盖全部触发路径：搜索/筛选（查询）、重置、刷新、写操作后的收敛刷新 —— 共用**同一份**列表加载函数与同一套请求序号，不得各写一套（禁止复制第二份加载逻辑）；且 `loading` 态只由最新一次请求收尾（旧响应被丢弃时不得把 loading 错误地留在 true）
+数据: 写响应即时反映（**当前 main 有效**，随列表页写入口一并演进）：写操作成功后用写响应更新该行（`{...x, ...updated}`），**不等**下一次列表请求返回；且该次收敛刷新不切 loading 态（否则刚更新好的行会被「加载中…」盖掉）。红证（修复前实测）：断言②得 `expected '…加载中…' to contain '已发加工'`。⚠️ 后续 P3（移除加工单列表页写入口、唯一入口改订单详情页）落地时本条随实现一并移除，由该单更新本测试文件
+数据: 不回归：加载失败仍给「加载加工单失败，请稍后重试」+ 重试入口；首屏/筛选后的空态文案（「暂无加工单」/「暂无加工单（当前筛选条件下）」）与状态文案（已生成/已发加工/加工中/加工完成/已取消）不变
+跳过: [backend-contract] 前端行为（admin-web 页面/交互），由 vitest 单测覆盖（frontend/admin-web/tests/unit/pages/processing-orders-list.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-011 惯例）
+```
+溯源: 2026-09-18 新增（issue #4303）：加工单列表页写操作后行状态不刷新（用户看起来像「点了没反应」）。根因两条：① `loadList()` 无请求时序保护（任何历史请求的响应回来都 `setList`，后到的旧响应覆盖新数据）；② 写操作成功后只 `loadList()`、不用写响应即时更新该行。红证（修复前实测，本机 vitest 2 条红）：断言① `expected '…已生成…' to contain '加工中'`（旧响应覆盖新数据）+ 断言② `expected '…加载中…' to contain '已发加工'`（行未反映写响应）；修复后同两条全绿。实现：`listReqSeq` 请求序号 ref（旧响应一律丢弃、`loading` 只由最新请求收尾）+ 写成功后 `applyUpdated(res.data?.data)` 即时更新该行 + 写后收敛刷新走 `loadList({ silent: true })`。**判据长期形态**按后续 P3（移除列表页写入口、唯一入口改订单详情页）的裁定定为「加载竞态」；断言②属「当前 main 有效」，P3 落地时随实现一并移除并由该单更新测试文件。 ｜ tags: processing-order, admin_web, request_ordering, list_refresh
+
+### PG-025. 路线来源 T1：信号全不命中 ⇒ route_source=default + route_key=默认键 + requested=null + incident warn 日志 🔵
 ```
 数据: success=true
 数据: T1（最隐蔽的一层）：订单侧可派生信号（加工项名 > 加工项 options > 商品名 > 销售方式）**全不命中** ⇒ 直接取默认路线键 `布帘×韩褶`，加工单落 `route_source='default'`、`route_key='布帘×韩褶'`、`route_requested_key=NULL`（两维都没派生出来 ⇒ 没有「想走的键」）。迁移前这条路径**连一行 info 日志都没有**，成功路径零痕迹 ⇒ 罗马帘订单今天就走这条且无从发现。证据：ProcessingOrderRouteSourceTest「noSignalFallsBackToDefaultAndIsObservable」（断言三列 + warn 级 incident 日志）
@@ -3307,39 +3318,39 @@
 数据: T1 是**预期形态**而非错误（issue #4308「明确不做」：不做无条件 fail-closed，无信号订单仍走默认路线）—— 但必须**可观测**：日志级别 WARN + 结构化 incident 标记 `INCIDENT_PRODUCTION_ROUTE_DEFAULTED`（grep 可捞全量），且从加工单详情 API 可查。
 跳过: [backend-contract] 后端契约用例（生成加工单是服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProcessingOrderRouteSourceTest（四态 + 多部位 roll-up，7 条）
 ```
-溯源: 2026-09-19 新增（issue #4308，P1）。红证（注入式实测，见 data_checks 与同批 PG-025~PG-028）：本批共 10 次注入，逐条命中不同断言。实现：V60 迁移（`processing_orders` 三列 + `production_route_signals` 信号映射表 + `production_routing_versions` 版本账）+ `ProcessingOrderService` 派生读库（常量表已删除）+ 四态来源 + 多部位 roll-up + 详情响应透出三列。**不做**：无条件 fail-closed（无信号订单仍走默认路线，只做可观测）。 ｜ tags: processing-order, production-routing, route-source, observability
+溯源: 2026-09-19 新增（issue #4308，P1）。红证（注入式实测，见 data_checks 与同批 PG-026~PG-029）：本批共 10 次注入，逐条命中不同断言。实现：V60 迁移（`processing_orders` 三列 + `production_route_signals` 信号映射表 + `production_routing_versions` 版本账）+ `ProcessingOrderService` 派生读库（常量表已删除）+ 四态来源 + 多部位 roll-up + 详情响应透出三列。**不做**：无条件 fail-closed（无信号订单仍走默认路线，只做可观测）。 ｜ tags: processing-order, production-routing, route-source, observability
 
-### PG-025. 路线来源 半命中：只派生出一维 ⇒ route_source=partial + 键 = 命中维 + 默认维 🔵
+### PG-026. 路线来源 半命中：只派生出一维 ⇒ route_source=partial + 键 = 命中维 + 默认维 🔵
 ```
 数据: success=true
 数据: 半命中（issue #4308 P1 判据原文的「半命中」）：信号含「纱」但无任何工艺信号 ⇒ 帘种 = 纱帘、工艺取默认 韩褶 ⇒ 路线键 `纱帘×韩褶`，`route_source='partial'`，`route_requested_key='纱帘×韩褶'`。补救动作 = 去「信号映射」补另一维。证据：ProcessingOrderRouteSourceTest「singleDimensionHitIsPartial」
 数据: **红证（注入式，实测）**：把「只命中一维」分支的 `source` 改成 `derived` ⇒ `singleDimensionHitIsPartial` 红（`[只命中一维 ⇒ partial（补救动作 = 去信号映射补另一维）]`）；把 `route_requested_key` 恒置 null ⇒ 同用例红（`[partial 也要记下「想走的键」]`）。
-数据: **partial 与 missing_route 不得合并**（冻结契约）：两者都「有问题」但**补救动作不同** —— partial 要**补信号**、missing_route 要**建路线**；并成一个值后前端给不出可行动的提示语。证据：本用例 + PG-026 + PG-028 的次序断言（「multiPositionMissingRouteOutranksPartial」）
+数据: **partial 与 missing_route 不得合并**（冻结契约）：两者都「有问题」但**补救动作不同** —— partial 要**补信号**、missing_route 要**建路线**；并成一个值后前端给不出可行动的提示语。证据：本用例 + PG-027 + PG-029 的次序断言（「multiPositionMissingRouteOutranksPartial」）
 跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest 执行
 ```
-溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-024。 ｜ tags: processing-order, production-routing, route-source
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-025。 ｜ tags: processing-order, production-routing, route-source
 
-### PG-026. 路线来源 T2：两维都命中但库中无该路线 ⇒ route_source=missing_route + requested 记下「识别的键」 🔵
+### PG-027. 路线来源 T2：两维都命中但库中无该路线 ⇒ route_source=missing_route + requested 记下「识别的键」 🔵
 ```
 数据: success=true
 数据: T2：派生键在库中**没有**对应路线 ⇒ 回落默认路线，加工单落 `route_source='missing_route'`、`route_key='布帘×韩褶'`（**实际使用**的键）、`route_requested_key='罗马帘×韩褶'`（**派生出来想用**的键）。没有 requested 这一列，提示说不出「识别的 X 在库里没有路线」⇒ 用户拿不到可行动的下一步。迁移前这一层只有一句 `log.info`，用户侧完全不可见。证据：ProcessingOrderRouteSourceTest「derivedKeyMissingFromLibraryIsMissingRouteAndKeepsRequestedKey」（含 incident 日志断言 + 实例工序 = 默认路线的回归断言）
-数据: **红证（注入式，实测）**：① 把 T2 的 `source = \"missing_route\"` 改回 `partial`（= 并入旧三态口径）⇒ 2 条红（本用例 `[T2 不得并入 partial：补救动作不同（T2 要**建路线**，partial 要**补信号**）]` + PG-028 的次序断言）；② 去掉 T2 的 incident 日志（warn→debug）⇒ 本用例红（`[T2 必须有 incident 痕迹（迁移前只有一句 info，用户侧不可见）]`）；③ `route_requested_key` 恒 null ⇒ 本用例红（`[必须记下「识别的键」—— 没有它，提示说不出该建哪条路线]`）。
+数据: **红证（注入式，实测）**：① 把 T2 的 `source = \"missing_route\"` 改回 `partial`（= 并入旧三态口径）⇒ 2 条红（本用例 `[T2 不得并入 partial：补救动作不同（T2 要**建路线**，partial 要**补信号**）]` + PG-029 的次序断言）；② 去掉 T2 的 incident 日志（warn→debug）⇒ 本用例红（`[T2 必须有 incident 痕迹（迁移前只有一句 info，用户侧不可见）]`）；③ `route_requested_key` 恒 null ⇒ 本用例红（`[必须记下「识别的键」—— 没有它，提示说不出该建哪条路线]`）。
 数据: **T2 是「库里缺数据」不是「订单有问题」**：库里没有任何「罗马帘」专属工序与单价（#4261 ①）⇒ 本单**不发明**罗马帘路线（凭空造的单价会直接算成工人工资）；正确解法 = 商家用本单交付的写面**自己建工序 + 建路线**，而 `missing_route` + `route_requested_key` 就是驱动这个动作的可行动信号。
 数据: **T3 保持 fail-closed 不变**（#4116 已落码）：默认路线也没有 / 路线引用的工序缺行 ⇒ `PRODUCTION_ROUTING_NOT_FOUND` / `PRODUCTION_OPERATION_NOT_FOUND` + 可行动 suggestion + incident 日志，**不落半成品**。证据：ProcessingOrderServiceTest 的空库/缺工序两条负例（本单未改动该路径）
 跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest + ProcessingOrderServiceTest 执行
 ```
-溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-024。 ｜ tags: processing-order, production-routing, route-source, missing-route
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-025。 ｜ tags: processing-order, production-routing, route-source, missing-route
 
-### PG-027. 路线来源 正常派生：两维都由库中信号命中且路线存在 ⇒ route_source=derived 且不打 incident 🔵
+### PG-028. 路线来源 正常派生：两维都由库中信号命中且路线存在 ⇒ route_source=derived 且不打 incident 🔵
 ```
 数据: success=true
 数据: 正常派生：加工项名「韩褶-布」同时命中帘种（布帘）与工艺（韩褶），且 `布帘×韩褶` 路线在库中存在 ⇒ `route_source='derived'`、`route_key` = `route_requested_key` = `布帘×韩褶`，且**不打任何 incident 日志**（干净路径打 incident ⇒ incident 变噪音，没人会看）。证据：ProcessingOrderRouteSourceTest「fullyDerivedKeyIsDerived」
 数据: **红证（注入式，实测）**：把 `deriveRouteKey` 的库读取（`productionOperationQueryService.routeSignals(tenantId)`）换成空表（= 模拟「派生仍读常量、不看库」）⇒ 4 红 + 2 UnnecessaryStubbing 错（本用例 `[两维命中 + 路线存在 ⇒ derived]` 是其一）—— 这条同时证明「派生**读库**而非读常量」：判别物是**库里配了、迁移前常量表里没有**的信号行「罗马帘」。
 跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest 执行
 ```
-溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-024。 ｜ tags: processing-order, production-routing, route-source
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-025。 ｜ tags: processing-order, production-routing, route-source
 
-### PG-028. 多部位 roll-up：三列取最需关注的一条（default > missing_route > partial > derived），三列同源 🔵
+### PG-029. 多部位 roll-up：三列取最需关注的一条（default > missing_route > partial > derived），三列同源 🔵
 ```
 数据: success=true
 数据: 多部位 roll-up（本单唯一「有损聚合」的字段）：`processing_orders` 只有**单值** `route_key` / `route_requested_key` / `route_source` 三列，而一张单可能有多个部位（各自一条路线）⇒ 取**最需关注**的那一条，次序 `default` > `missing_route` > `partial` > `derived`（零信息最不可信）。三条断言各覆盖一对相对次序：derived+missing_route ⇒ missing_route；missing_route+default ⇒ default；partial+missing_route ⇒ missing_route。证据：ProcessingOrderRouteSourceTest「multiPositionRollsUpToMostNeedingAttention」+「multiPositionDefaultOutranksMissingRoute」+「multiPositionMissingRouteOutranksPartial」
@@ -3348,7 +3359,21 @@
 数据: 未知 / null 来源取值落**最需关注**档（`severity` 的 `default -> 3`）：不静默降级为「正常」（与仓库「未知形态必须 fail-loud」同口径）。
 跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest 执行
 ```
-溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-024。**如实登记**：首版 roll-up 用例（2 条）在「partial↔missing_route 次序对调」注入下**仍全绿** ⇒ 当时是空断言，已补第三条判别用例。 ｜ tags: processing-order, production-routing, route-source, roll-up
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-025。**如实登记**：首版 roll-up 用例（2 条）在「partial↔missing_route 次序对调」注入下**仍全绿** ⇒ 当时是空断言，已补第三条判别用例。 ｜ tags: processing-order, production-routing, route-source, roll-up
+
+### PG-030. V60 迁移契约：信号种子 ↔ 迁移前常量表 ↔ bootstrap 三源逐行相等 + 用途拆分 + 派生不再读常量 🔵
+```
+数据: success=true
+数据: 判据 1·三源逐行相等：V60 的 `production_route_signals` 种子 ↔ `docs/sql/schema.sql` 的 bootstrap 终态 ↔ **迁移前的两张常量表**（`CURTAIN_TYPE_KEYWORDS` / `CRAFT_KEYWORDS` @9673df68，测试内逐条转录）逐行逐值相等（signal / curtain_type / craft / 用途内 priority，**顺序即语义**）。改名/改值/加减信号即红。证据：ProductionRouteSignalMigrationTest「seedMatchesLegacyKeywordTablesAndBootstrap」
+数据: 判据 2·用途拆分不可压成一行：「帘头」在两个用途里位次**相反**（帘种表最前 = 防「帘头纱」被判成纱帘；工艺表最后 = 它是工艺侧兜底）⇒ 必须两行 + 唯一性按用途拆（两条部分唯一索引 + `CHECK` 至少给出一维）。压成 `(tenant_id, signal)` 单唯一键会让「帘头」的工艺映射在同一信号文本里抢在韩褶/打孔之前生效 ⇒ **静默改路线 = 静默改工资**。证据：ProductionRouteSignalMigrationTest「perPurposeSplitKeepsOppositeRanksForLiTou」
+数据: 判据 3·派生**不再读常量**：`ProcessingOrderService` 里不得再出现那两张常量表（常量与库并存 = 第二份口径，且漂移的那一份不会变红），派生必须走 `routeSignals(tenantId)`。证据：ProductionRouteSignalMigrationTest「derivationNoLongerReadsJavaConstants」+ ProcessingOrderServiceTest 的派生用例（桩换成 V60 种子行后断言逐字未改仍绿 = 读库≡读常量的等价性证据）
+数据: 判据 4·加工单三列 + bootstrap 终态：`processing_orders` 的 `route_key` / `route_requested_key` / `route_source` 在迁移（幂等 `ADD COLUMN IF NOT EXISTS`）与 bootstrap **两处都在** —— bootstrap 路径**不跑迁移链**，只写迁移 ⇒ 新建库上该列不存在 ⇒ 加工单查询 500（#3270 形态）；四态口径写在列注释里。证据：ProductionRouteSignalMigrationTest「processingOrderColumnsAndVersionLedgerExistInBothSources」+ ProductionRouteSignalMapperTest / ProductionRoutingVersionMapperTest（实体字段 ↔ 迁移列 ↔ bootstrap 三源收敛）
+数据: **红证（注入式，实测）**：① 把种子第 4 行的 `craft` 改值 ⇒ 判据 1 红；② 把「帘头」两行合成一行（或删掉按用途拆的唯一索引）⇒ 判据 2 红；③ 把常量表加回 `ProcessingOrderService` ⇒ 判据 3 红；④ 从 bootstrap 的 `processing_orders` 删掉任一列 ⇒ 判据 4 红。
+数据: **已知缺口（如实登记）**：三个种子迁移（V54/V56/V58/V59/V60）都只种 `tenant_id = 1`（与四个先例逐字一致）⇒ **非 1 号租户的工序库/路线库为空**、建单 fail-closed（422）。#4316 接住该缺口，而**本单交付的写面正是它的补救路径**（此前非 1 号租户连工序都建不出来）。
+跳过: [backend-contract] 后端契约用例（迁移/表结构是服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionRouteSignalMigrationTest（三源防漂移 4 项）/ ProductionRouteSignalMapperTest / ProductionRoutingVersionMapperTest（实体↔迁移↔bootstrap 收敛）
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现：V60 迁移（`production_route_signals` + `production_routing_versions` + `processing_orders` 三列；bootstrap 终态同步）+ 两个实体/两个 Mapper。**已知缺口**：种子只种 tenant_id=1（与 V54/V56/V58/V59 先例一致），见 #4316。 ｜ tags: processing-order, production-routing, migration, drift-guard
 
 ## 商品域（25 case）
 
@@ -3429,7 +3454,7 @@
 必须成功: product_manage(toggle_status)
 ```
 真值: product-sku-stock.status-flow
-溯源: verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤。2026-09-14 校准（#3557）：假绿升级——升 must_succeed(toggle_status) + required_args(product_id/status)；根因修复见 app/graph/nodes.py 的答卡轮豁免（答卡轮不再被卡值里的跨域词路由到 order skill）。2026-09-18 补 `post_clean[product_status_restore]`（issue #4075 机制半边）：下架→上架是**有条件复位**，本类型补无条件那半；断言（expectations/must_succeed/required_args/data_checks）**原样未动** ｜ tags: status, write
+溯源: verification 2.7 独有；2026-09-10 校准：评测商品均已 on_sale，「上架」无操作对象 → 改自包含状态流转（下架→上架），验证完整流转且每次从 on_sale 起跑。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 两处裸文本「确认」改答卡轮（+1 余量轮）；③ pre_clean 去 price 过滤。2026-09-14 校准（#3557）：假绿升级——升 must_succeed(toggle_status) + required_args(product_id/status)；根因修复见 app/graph/nodes.py 的答卡轮豁免（答卡轮不再被卡值里的跨域词路由到 order skill）。2026-09-18 补 `post_clean[product_status_restore]`（issue #4075 机制半边）：下架→上架是**有条件复位**，本类型补无条件那半；断言（expectations/must_succeed/required_args/data_checks）**原样未动**。2026-09-18（burn-down 缴费，随 #4303 的用例面改动）：补 `precondition[product_count_for_keyword: 遮光窗帘 expect=1]` —— 销掉存量违规 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账，清单条目随之删除）；判据是**真前置**（按名字选品 ⇒ 该名字唯一且存在），形态与 #3835 给 OR-014 的同一份（同关键词、同 `product_dedupe`、同 `expect=1`），断言面（expectations/must_succeed/required_args/data_checks/pre_clean/post_clean）一字未动。 ｜ tags: status, write
 
 ### PR-008. 创建商品 - 完整流程 🔵
 ```
@@ -4518,8 +4543,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：329（活跃 162，跳过 167）
-- tier 分布：smoke 10 / normal 286 / adversarial 33
+- 用例总数：331（活跃 162，跳过 169）
+- tier 分布：smoke 10 / normal 288 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4538,7 +4563,7 @@
 - ontology：4
 - 订单域：30
 - 加工项域：13
-- processing-order：28
+- processing-order：30
 - 商品域：25
 - registry：1
 - 设置域：10
@@ -4596,11 +4621,13 @@
 - PG-021: 计件工资报表——GET /production/piecework/summary（按人/按期）+ 生产管理菜单同构
 - PG-022: 应做数量接算料引擎（Java 接线）——ProductionOperationQtyClient + buildPositionPayload + qty_source 列
 - PG-023: 特殊选项 → 计件（Java 侧）——订单携带 specialOptions + 条件工序 + 计件系数 + 系数真的进钱
-- PG-024: 路线来源 T1：信号全不命中 ⇒ route_source=default + route_key=默认键 + requested=null + incident warn 日志
-- PG-025: 路线来源 半命中：只派生出一维 ⇒ route_source=partial + 键 = 命中维 + 默认维
-- PG-026: 路线来源 T2：两维都命中但库中无该路线 ⇒ route_source=missing_route + requested 记下「识别的键」
-- PG-027: 路线来源 正常派生：两维都由库中信号命中且路线存在 ⇒ route_source=derived 且不打 incident
-- PG-028: 多部位 roll-up：三列取最需关注的一条（default > missing_route > partial > derived），三列同源
+- PG-024: 加工单列表请求时序保护——旧的在飞响应晚到不得覆盖更新的列表数据
+- PG-025: 路线来源 T1：信号全不命中 ⇒ route_source=default + route_key=默认键 + requested=null + incident warn 日志
+- PG-026: 路线来源 半命中：只派生出一维 ⇒ route_source=partial + 键 = 命中维 + 默认维
+- PG-027: 路线来源 T2：两维都命中但库中无该路线 ⇒ route_source=missing_route + requested 记下「识别的键」
+- PG-028: 路线来源 正常派生：两维都由库中信号命中且路线存在 ⇒ route_source=derived 且不打 incident
+- PG-029: 多部位 roll-up：三列取最需关注的一条（default > missing_route > partial > derived），三列同源
+- PG-030: V60 迁移契约：信号种子 ↔ 迁移前常量表 ↔ bootstrap 三源逐行相等 + 用途拆分 + 派生不再读常量
 - PP-007: 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）

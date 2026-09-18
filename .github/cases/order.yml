@@ -709,6 +709,11 @@ cases:
       - order
       - chat
     tier: normal
+    # 单端标注（burn-down 销账，随 #4308 的用例面改动一并缴费）：期望工具 order_create ⊆ 小布工具集
+    # ⇒ 本用例**只能跑小布腿**；缺 persona 时米宝腿必挂（实证「OR-014 mibao 腿假红」，
+    # 见 tests/agent_eval/local_runner.py 的接地真值注释：本用例是 C 端下单语义）。
+    # 断言面（expectations / data_checks / pre_clean / auto_fill）**一字未动**。
+    persona: xiaobu
     tags:
       - order_create
       - processing_item

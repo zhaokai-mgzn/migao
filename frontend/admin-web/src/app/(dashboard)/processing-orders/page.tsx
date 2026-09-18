@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
@@ -56,6 +56,8 @@ export default function ProcessingOrdersPage() {
   const [list, setList] = useState<ProcessingOrder[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
+  /** 列表请求序号（issue #4303）：只认最新一次请求的响应 */
+  const listReqSeq = useRef(0)
 
   // 写操作弹窗：发加工（issue）/ 取消加工单（cancel）
   const [actionTarget, setActionTarget] = useState<{
@@ -69,23 +71,41 @@ export default function ProcessingOrdersPage() {
   })
   const [busy, setBusy] = useState(false)
 
-  const loadList = useCallback(async () => {
-    setLoading(true)
-    setLoadError('')
-    try {
-      const res = await processingOrderApi.list({
-        keyword: search.keyword || undefined,
-        status: search.status || undefined,
-      })
-      setList(res.data?.data ?? [])
-    } catch (e) {
-      console.error(e)
-      setLoadError('加载加工单失败，请稍后重试')
-      toastRequestError(e, '加载加工单失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [search])
+  /**
+   * 加载列表。
+   * `silent`：写操作后的收敛刷新 —— 不切 loading 态，避免刚更新好的行被「加载中…」盖掉。
+   */
+  const loadList = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      // 请求时序保护（issue #4303）：只认最新一次请求的响应，旧的在飞响应一律丢弃
+      // （实测：4174ms 才返回的旧 GET 落在 PATCH 之后，把新数据覆盖回旧值）
+      const seq = ++listReqSeq.current
+      if (!opts?.silent) setLoading(true)
+      setLoadError('')
+      try {
+        const res = await processingOrderApi.list({
+          keyword: search.keyword || undefined,
+          status: search.status || undefined,
+        })
+        if (seq !== listReqSeq.current) return
+        setList(res.data?.data ?? [])
+      } catch (e) {
+        if (seq !== listReqSeq.current) return
+        console.error(e)
+        setLoadError('加载加工单失败，请稍后重试')
+        toastRequestError(e, '加载加工单失败')
+      } finally {
+        if (seq === listReqSeq.current) setLoading(false)
+      }
+    },
+    [search]
+  )
+
+  /** 写操作成功后用写响应**即时**更新该行（不等下一次列表请求返回） */
+  const applyUpdated = (updated?: ProcessingOrder) => {
+    if (!updated) return
+    setList((prev) => prev.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)))
+  }
 
   useEffect(() => {
     loadList()
@@ -112,9 +132,10 @@ export default function ProcessingOrdersPage() {
     if (!window.confirm(`确认将加工单 ${po.processingOrderNo} 标记为「${label}」？`)) return
     setBusy(true)
     try {
-      await processingOrderApi.update(po.id, { action })
+      const res = await processingOrderApi.update(po.id, { action })
+      applyUpdated(res.data?.data)
       toast.success(PROCESSING_ORDER_ACTION_DONE[action])
-      loadList()
+      loadList({ silent: true })
     } catch (e) {
       console.error(e)
       toastRequestError(e, `${label}失败`)
@@ -134,15 +155,16 @@ export default function ProcessingOrdersPage() {
     const { po, action } = actionTarget
     setBusy(true)
     try {
-      await processingOrderApi.update(po.id, {
+      const res = await processingOrderApi.update(po.id, {
         action,
         processor: action === 'issue' ? form.processor.trim() || undefined : undefined,
         expectedDeliveryDate: action === 'issue' ? form.date.trim() || undefined : undefined,
         reason: action === 'cancel' ? form.reason.trim() : undefined,
       } satisfies ProcessingOrderUpdateParams)
+      applyUpdated(res.data?.data)
       toast.success(PROCESSING_ORDER_ACTION_DONE[action])
       setActionTarget(null)
-      loadList()
+      loadList({ silent: true })
     } catch (e) {
       console.error(e)
       toastRequestError(e, `${PROCESSING_ORDER_ACTION_LABELS[action]}失败`)
@@ -211,7 +233,7 @@ export default function ProcessingOrdersPage() {
             </button>
             <button
               type="button"
-              onClick={loadList}
+              onClick={() => loadList()}
               disabled={loading}
               title="刷新加工单列表"
               aria-label="刷新"
@@ -251,7 +273,7 @@ export default function ProcessingOrdersPage() {
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center">
                   <p className="text-red-500 mb-2">{loadError}</p>
-                  <Button variant="secondary" size="sm" onClick={loadList}>
+                  <Button variant="secondary" size="sm" onClick={() => loadList()}>
                     重试
                   </Button>
                 </td>

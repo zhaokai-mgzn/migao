@@ -167,13 +167,21 @@ def mock_settings():
 @pytest.fixture
 def test_client():
     """FastAPI TestClient fixture
-    
-    使用 mock 跳过实际的数据库/Redis 初始化
+
+    使用 mock 跳过实际的数据库/Redis 初始化。
+
+    ⚠️ patch 目标必须是 **`app.main.*`**（issue #4310）：`app/main.py` 在导入期**按值绑定**
+    （`from app.utils.database import init_db, close_db` / `from app.utils.redis_client import
+    init_redis, close_redis`），lifespan 直接 `await init_db()` ⇒ 它读的是 `app.main` 的**模块本地名**。
+    只 patch 源模块（`app.utils.database.init_db` 等）**不会**改变 `app.main.init_db`（实测 patch
+    生效期内 `app.main.init_db is app.utils.database.init_db` 为 False）⇒ 真实 init 照跑、被
+    lifespan 的 try/except + DEBUG=true 兜住 ⇒ **静默失效**（看起来 mock 了、其实真连了）。
+    守卫见 `tests/test_conftest_fixtures.py::test_fixture_patches_lifespan_call_targets_on_app_main`。
     """
-    with patch("app.utils.database.init_db", new_callable=AsyncMock), \
-         patch("app.utils.database.close_db", new_callable=AsyncMock), \
-         patch("app.utils.redis_client.init_redis", new_callable=AsyncMock), \
-         patch("app.utils.redis_client.close_redis", new_callable=AsyncMock):
+    with patch("app.main.init_db", new_callable=AsyncMock), \
+         patch("app.main.close_db", new_callable=AsyncMock), \
+         patch("app.main.init_redis", new_callable=AsyncMock), \
+         patch("app.main.close_redis", new_callable=AsyncMock):
         from app.main import create_app
         app = create_app()
         with TestClient(app) as client:
