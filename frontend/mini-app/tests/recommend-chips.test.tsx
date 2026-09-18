@@ -5,6 +5,7 @@
  *       且**不出现任何商品图/商品名卡片**（与 UI-044「空态不铺商品」的裁定一致）
  *
  * UI-044: 空态顶部横滑推荐胶囊（纯前端静态文案，不恢复商品接口）
+ *         文案方向 = 能力钩子 + 场景痛点（2026-09-18 用户裁定，issue #4236）
  */
 // case_ids: UI-044
 import React from 'react'
@@ -30,11 +31,20 @@ describe('RecommendChips', () => {
     const chips = container.querySelectorAll('.recommend-chips__chip')
     expect(chips.length).toBe(5)
 
-    expect(screen.getByText('遮光窗帘，一拉就黑')).toBeTruthy()
-    expect(screen.getByText('算料报价，一分钟出')).toBeTruthy()
-    expect(screen.getByText('热门花色，大家都在买')).toBeTruthy()
-    expect(screen.getByText('货到哪了，一查便知')).toBeTruthy()
-    expect(screen.getByText('想换窗帘，先挑布料')).toBeTruthy()
+    expect(screen.getByText('报个尺寸，我算你要几米布')).toBeTruthy()
+    expect(screen.getByText('客厅西晒？先看遮光率')).toBeTruthy()
+    expect(screen.getByText('卧室要暗，这几款遮光好')).toBeTruthy()
+    expect(screen.getByText('预算有限？我帮你搭最省的')).toBeTruthy()
+    expect(screen.getByText('货到哪了，一问便知')).toBeTruthy()
+  })
+
+  it('5 条胶囊文案互不重复（旧版 5 条里 3 条都落在「推荐商品」上 ⇒ 信息量被浪费）', () => {
+    const { container } = render(<RecommendChips onPick={mockOnPick} />)
+    const texts = Array.from(container.querySelectorAll('.recommend-chips__text')).map((el) =>
+      (el.textContent || '').trim(),
+    )
+    expect(texts.length).toBe(5)
+    expect(new Set(texts).size).toBe(5)
   })
 
   it('不应渲染任何商品图/商品名卡片（不恢复 NewArrivals 形态）', () => {
@@ -48,33 +58,33 @@ describe('RecommendChips', () => {
     expect(screen.queryByText(/¥/)).toBeNull()
   })
 
-  it('点击「遮光窗帘」胶囊应发送遮光窗帘推荐 prompt', () => {
+  it('点击「报个尺寸」胶囊应发送算料 prompt（含 quote 路由关键词）', () => {
     render(<RecommendChips onPick={mockOnPick} />)
-    fireEvent.click(screen.getByText('遮光窗帘，一拉就黑'))
-    expect(mockOnPick).toHaveBeenCalledWith('推荐一下遮光窗帘')
-  })
-
-  it('点击「算料报价」胶囊应发送算料 prompt（含 quote 路由关键词）', () => {
-    render(<RecommendChips onPick={mockOnPick} />)
-    fireEvent.click(screen.getByText('算料报价，一分钟出'))
+    fireEvent.click(screen.getByText('报个尺寸，我算你要几米布'))
     expect(mockOnPick).toHaveBeenCalledWith('帮我算一下窗帘用料和价格')
   })
 
-  it('点击「热门花色」胶囊应发送热门商品推荐 prompt', () => {
+  it('点击「客厅西晒」胶囊应发送遮光率知识问题', () => {
     render(<RecommendChips onPick={mockOnPick} />)
-    fireEvent.click(screen.getByText('热门花色，大家都在买'))
-    expect(mockOnPick).toHaveBeenCalledWith('推荐一下热门商品')
+    fireEvent.click(screen.getByText('客厅西晒？先看遮光率'))
+    expect(mockOnPick).toHaveBeenCalledWith('遮光率怎么选？客厅西晒适合哪种窗帘')
+  })
+
+  it('点击「卧室要暗」胶囊应发送卧室遮光窗帘推荐 prompt', () => {
+    render(<RecommendChips onPick={mockOnPick} />)
+    fireEvent.click(screen.getByText('卧室要暗，这几款遮光好'))
+    expect(mockOnPick).toHaveBeenCalledWith('推荐几款卧室用的遮光窗帘')
+  })
+
+  it('点击「预算有限」胶囊应发送性价比推荐 prompt', () => {
+    render(<RecommendChips onPick={mockOnPick} />)
+    fireEvent.click(screen.getByText('预算有限？我帮你搭最省的'))
+    expect(mockOnPick).toHaveBeenCalledWith('预算有限，帮我推荐性价比高的窗帘')
   })
 
   it('点击「货到哪了」胶囊应发送物流查询 prompt', () => {
     render(<RecommendChips onPick={mockOnPick} />)
-    fireEvent.click(screen.getByText('货到哪了，一查便知'))
+    fireEvent.click(screen.getByText('货到哪了，一问便知'))
     expect(mockOnPick).toHaveBeenCalledWith('帮我查一下物流')
-  })
-
-  it('点击「想换窗帘」胶囊应发送找产品 prompt', () => {
-    render(<RecommendChips onPick={mockOnPick} />)
-    fireEvent.click(screen.getByText('想换窗帘，先挑布料'))
-    expect(mockOnPick).toHaveBeenCalledWith('推荐一下热门窗帘产品')
   })
 })

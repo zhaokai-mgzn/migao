@@ -1158,7 +1158,7 @@
 数据: success=true
 ```
 真值: ai-chat.context-memory, id-resolve.no-fabricate
-溯源: eval C003 独有 ｜ tags: cross_skill, multi_round, adversarial
+溯源: eval C003 独有；2026-09-18 补前置自断言 + namespaces（burn-down：改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-PRECONDITION-ASSERTION + CASE-TRUST-NO-SELF-CLEAN）：`precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（R3 按名下单 ⇒ 名字唯一是它真正依赖且只读的前置，先例 = OR-014/CH-019；**不选 order_count_for_phone**，因本用例自己会建单、漂移判据必然判红）+ `namespaces[product_name:遮光窗帘, customer_phone:13800138000]`（护住该前置两格 + 与同手机号建单用例互斥）。**断言（user_inputs / expectations / data_checks）原样未动，无放宽、无删减。** ｜ tags: cross_skill, multi_round, adversarial
 
 ### CR-003. 真实场景全旅程 - 咨询→查商品→下单→查物流 🔵
 ```
@@ -3994,33 +3994,35 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-02 新增：POC 演示修复 — 拍照找布场景顾客发纯图会被 chatStore 静默拦截（chatStore.ts `!content.trim()` 守卫），须文字同行才发得出 ｜ tags: mini-app, chat-input, image, vision
 
-### UI-014. 小布聊天主页快捷入口 - 六入口全保留，瑞幸式两栏分组排列（算料报价取消全宽） 🔵
+### UI-014. 小布聊天主页快捷入口六格化 - 算料报价与推荐热门商品并列（取消全宽） 🔵
 ```
-你: 顾客打开小布聊天主页，快捷入口区六个入口按两栏分组排列：左「下单小助手」算料报价/找产品/查订单，右「专属推荐师」推荐热门商品/售后咨询/查物流
+你: 顾客打开小布聊天主页，快捷入口区六个入口等权排列：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流
 期望: direct_reply
-数据: QuickActions 渲染 6 个入口（两栏各 3 行）：算料报价/找产品/查订单 + 推荐热门商品/售后咨询/查物流（无「退换货」「转人工」文案残留）
-数据: 「算料报价」不再带 wide 全宽样式（与其余入口等权；六格时代的 .quick-actions__item 类已随重排退场）
+数据: QuickActions 渲染 6 个入口：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）
+数据: 「算料报价」为首项但不带 wide 全宽样式（与其余入口等权，2 列网格 3 行）；标题为「您可以试试以下问题」
+数据: **不得**残留两栏分组结构（`.quick-actions__group` / `__group-head` / `__row` / `__row-arrow` 计数 0，无「下单小助手」「专属推荐师」「你可以这样对我说：」文案）—— issue #4236 回退后，`#4199` 的分组卡任何痕迹都不该留下（防半回退 / 死代码）
 数据: 点击「算料报价」发送算料 prompt（含 quote 路由关键词：用料/报价），直达 curtain_calc 算料报价链路
 数据: 点击「推荐热门商品」发送推荐 prompt，进入商品推荐问答
 数据: 其余入口行为不回归（查订单/找产品/售后咨询/查物流 prompt 不变）
 跳过: [backend-contract] 纯前端入口由 mini-app jest 单测验证（quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.xiaobu-quick-actions
-溯源: 2026-09-04 新增 POC 全宽主入口；2026-09-17 修订：产品决策六格化，算料报价取消全宽与推荐热门商品并列；2026-09-18 修订（issue #4199，用户裁定参考瑞幸 Agent 布局）：六格等权 → 两栏分组（能力面不收缩，仅重排 + 组头配色） ｜ tags: mini-app, quick-actions, quote
+溯源: 2026-09-04 新增 POC 全宽主入口；2026-09-17 修订：产品决策六格化，算料报价取消全宽与推荐热门商品并列；2026-09-18 修订（issue #4199）：六格等权 → 两栏分组；**同日再修订（issue #4236，用户裁定「上个 2 列 × 3 行的设计更好看」）**：两栏分组 → **回退为六格等权**（能力面与六条 prompt 零变化，仅撤销布局重排；并补「不得残留分组结构」的负向判据防半回退） ｜ tags: mini-app, quick-actions, quote
 
 ### UI-044. 小布聊天主页空态移除商品推荐卡（NewArrivals），推荐改由文字胶囊/快捷对话入口承载 🔵
 ```
-你: 顾客打开小布聊天主页空态：顶部一条可横滑的推荐胶囊（如「🪟 遮光窗帘，一拉就黑」），不再展示热销商品图片与名称
+你: 顾客打开小布聊天主页空态：顶部一条可横滑的推荐胶囊（如「📐 报个尺寸，我算你要几米布」），不再展示热销商品图片与名称
 期望: direct_reply
 数据: 空态（MessageList 无消息时）不再渲染 NewArrivals 商品卡片（无商品图/名横滑区；结构性判据 = `.new-arrivals*` 计数 0、无 img、无「¥」价格）
 数据: 空态渲染 RecommendChips 横滑区：5 条**纯前端静态策划文案**胶囊（图标+文案），点任一胶囊发送对应 prompt 进对话（与快捷入口同语义）
-数据: 胶囊**不请求商品接口**（不恢复 getNewArrivals）—— 与「空态不铺商品图/名」的裁定一致，推荐一律以对话形式承载
-数据: 空态保留品牌头 + 欢迎语 + 推荐胶囊 + 两栏分组快捷入口（UI-014）
+数据: 胶囊**不请求商品接口**（不恢复 getNewArrivals）—— 与「空态不铺商品图/名」的裁定一致，推荐一律以对话形式承载；也不放真实价格/热卖数据（用户 2026-09-18 复选「保持静态」）
+数据: 文案方向 = **能力钩子 + 场景痛点**（issue #4236 用户裁定）：5 条各指向**不同能力**且文案互不重复 —— 📐报个尺寸（curtain_calc 算料）｜🌞客厅西晒（遮光率知识）｜🛏️卧室要暗（卧室遮光商品）｜💰预算有限（性价比商品）｜🚚货到哪了（customer_logistics_track）；旧版 5 条里 3 条都落在「推荐商品」上 ⇒ 信息量被浪费
+数据: 空态保留品牌头 + 欢迎语 + 推荐胶囊 + 六格等权快捷入口（UI-014）
 数据: 推荐能力由「推荐热门商品」快捷入口与推荐胶囊以**对话形式**承载，商品推荐问答不回归
 跳过: [backend-contract] 纯前端空态由 mini-app jest 单测验证（recommend-chips.test.tsx / quick-actions.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.xiaobu-quick-actions
-溯源: 2026-09-17 新增：产品决策——空态不再铺商品图/名，推荐改为快捷对话入口；同日补 H5 视觉回归 spec 同步（issue #4003：spec 仍断言已删除的新品推荐 → 持续红，已改为六格+负向断言并更新截图基线）；2026-09-18 修订（issue #4199，用户裁定「完全参考瑞幸 Agent 样式布局」）：空态新增**顶部横滑推荐胶囊**（RecommendChips，5 条静态文案、零商品图/名/价格 ⇒ 本条的负向判据不变）；同时**不再单列 UI-046** —— 胶囊属空态构成，折进本条，避免新增 skip 使 `skip_total` 净增（判据条数不减） ｜ tags: mini-app, chat-entry, empty-state
+溯源: 2026-09-17 新增：产品决策——空态不再铺商品图/名，推荐改为快捷对话入口；同日补 H5 视觉回归 spec 同步（issue #4003：spec 仍断言已删除的新品推荐 → 持续红，已改为六格+负向断言并更新截图基线）；2026-09-18 修订（issue #4199）：空态新增**顶部横滑推荐胶囊**（RecommendChips，5 条静态文案、零商品图/名/价格 ⇒ 本条的负向判据不变）；同时**不再单列 UI-046** —— 胶囊属空态构成，折进本条，避免新增 skip 使 `skip_total` 净增（判据条数不减）；**同日再修订（issue #4236，用户圈定该区「保留」并裁定重定文案）**：胶囊保留、文案改为「能力钩子 + 场景痛点」5 条（每条指向不同能力），并新增「文案互不重复」判据 ｜ tags: mini-app, chat-entry, empty-state
 
 ### UI-015. 我的页移除「账号信息」占位入口（功能开发中占位不进 POC 演示） 🔵
 ```

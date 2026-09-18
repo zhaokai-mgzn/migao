@@ -81,12 +81,13 @@ async function run(mp) {
 
   // ── 5. 快捷操作发消息（真实链路：点卡片 → SSE 回复）──
   if (qa2) {
-    const items = await page.$$('.quick-actions__row')
+    const items = await page.$$('.quick-actions__item')
     const label = items && items.length > 0 ? await items[0].text() : ''
-    // UI-014（issue #4199）：六格 → 瑞幸式两栏分组（下单小助手 3 行 + 专属推荐师 3 行）= 6 行
-    rep.step('快捷入口行存在（下单小助手：算料报价/找产品/查订单；专属推荐师：推荐热门商品/售后咨询/查物流）',
+    // UI-014（issue #4236 回退）：六格等权（2 列 × 3 行）= 6 格；
+    // #4209 的两栏分组（.quick-actions__row）已按用户裁定撤下
+    rep.step('快捷入口格存在（算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流）',
       items && items.length >= 6,
-      `rows=${items ? items.length : 0} first=${label || ''}`)
+      `items=${items ? items.length : 0} first=${label || ''}`)
     await items[0].tap()
     const userBubble = await waitForBubble(page, 'user', 30000)
     rep.step('点击快捷操作后用户消息上屏', !!userBubble, userBubble ? userBubble.slice(0, 50) : '未出现')

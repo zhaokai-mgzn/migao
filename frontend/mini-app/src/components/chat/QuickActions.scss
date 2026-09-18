@@ -1,88 +1,51 @@
 @use '../../styles/variables.scss' as *;
 
+// 六格等权快捷入口（issue #4236 回退目标形态；#4209 的两栏分组卡已按用户裁定撤下）
 .quick-actions {
   padding: 16px 24px 24px;
 
   &__title {
     font-size: 26px;
     color: $text-tertiary;
+    text-align: center;
     margin-bottom: 20px;
   }
 
-  // 两栏分组（瑞幸 Agent 主页同款：左「下单小助手」蓝 / 右「专属推荐师」紫）
-  &__columns {
-    display: flex;
-    gap: 16px;
-    align-items: flex-start;
+  &__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
   }
 
-  &__group {
-    flex: 1;
-    min-width: 0;
+  &__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 22px 16px;
     background: $bg-primary;
-    border: 1px solid $border-color;
     border-radius: $radius-lg;
+    border: 1px solid $border-color;
     box-shadow: $shadow-card;
-    overflow: hidden;
-    padding-bottom: 8px;
+    transition: transform 0.1s ease;
 
-    &--blue .quick-actions__group-head {
-      background: $brand-blue;
-    }
-
-    &--purple .quick-actions__group-head {
-      background: $brand-purple;
+    &:active {
+      transform: scale(0.96);
+      background: $primary-light;
+      border-color: rgba(26, 115, 232, 0.3);
     }
   }
 
-  // 组头：卡片左上角色块标签（宽度自适应，右下圆角）
-  &__group-head {
-    display: inline-flex;
-    align-items: center;
-    padding: 10px 22px;
-    border-radius: 0 0 18px 0;
+  // 算料报价全宽主入口已移除（UI-014 修订：六格等权，不再跨整行）
+
+  &__icon {
+    font-size: 40px;
+    margin-bottom: 10px;
   }
 
-  &__group-title {
-    font-size: 22px;
-    font-weight: 600;
-    color: #FFFFFF;
-    line-height: 1;
-  }
-
-  &__rows {
-    padding: 6px 0 0;
-  }
-
-  &__row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 16px 16px;
-
-    &--hover {
-      background: $bg-secondary;
-    }
-  }
-
-  &__row-icon {
-    font-size: 28px;
-    line-height: 1;
-  }
-
-  &__row-label {
-    flex: 1;
-    min-width: 0;
-    font-size: 24px;
-    color: $text-primary;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-
-  &__row-arrow {
+  &__label {
     font-size: 26px;
-    color: $text-tertiary;
-    line-height: 1;
+    color: $text-primary;
+    font-weight: 500;
   }
 }
