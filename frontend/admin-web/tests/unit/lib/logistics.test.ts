@@ -1,4 +1,4 @@
-// case_ids: CU-009, UI-046
+// case_ids: CU-009, UI-047
 
 import { describe, it, expect } from 'vitest'
 import {

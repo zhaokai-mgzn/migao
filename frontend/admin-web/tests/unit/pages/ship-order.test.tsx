@@ -1,4 +1,4 @@
-// case_ids: UI-040, UI-046
+// case_ids: UI-040, UI-047
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -25,7 +25,7 @@ vi.mock('@/lib/api', () => ({
     updateLogistics: (...args: any[]) => mockUpdateLogistics(...args),
     updateOrderStatus: (...args: any[]) => mockUpdateOrderStatus(...args),
   },
-  // 客户常用物流档案带出（issue #4419 / UI-046）
+  // 客户常用物流档案带出（issue #4419 / UI-047）
   customerApi: {
     getCustomers: (...args: any[]) => mockGetCustomers(...args),
   },
@@ -254,7 +254,7 @@ describe('ShipOrder', () => {
     expect(doc!.textContent).toContain('王五')
   })
 
-  // ===== 客户常用物流档案带出（issue #4419 / UI-046）=====
+  // ===== 客户常用物流档案带出（issue #4419 / UI-047）=====
 
   it('按订单手机号精确查客户档案，带出常用物流方式与公司', async () => {
     mockGetCustomers.mockResolvedValue({
