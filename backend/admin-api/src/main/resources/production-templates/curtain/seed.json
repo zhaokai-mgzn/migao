@@ -1,0 +1,721 @@
+{
+  "templateId": "curtain",
+  "industry": "curtain",
+  "name": "布艺窗帘行业模板",
+  "version": 1,
+  "description": "布艺窗帘行业预置生产种子：35 道工序（名称/分组/部位/单位/单价/必完/开始标记）+ 9 条工艺路线（部位×工艺 → 有序工序序列）+ 16 项特殊选项 → 条件工序 + 计件系数。逐字对齐 backend/ai-agent-service/app/production/routing.py（唯一真值源）。⚠️ 单价多为占位值（source=占位待确认）/ 行业推算值（source=推算），source=实证 当前为空集 —— 客户确认 #4261/#4343 前不要当成实证值。",
+  "idNote": "`id` 是**模板内的稳定键**（供文件内交叉引用/守卫逐行比对/溯源），**不是落库 id**：`production_operations.id` 是全局主键（V49），模板 id 原样插库会撞主键（1 号租户已占用 op-v54-01）。套用时 id 由 MyBatis-Plus ASSIGN_UUID 生成，幂等键 = (tenant_id, name)。同理 `routings[].id` / 路线的 `operations` 按**工序名**引用，不需要 id 映射。",
+  "operations": [
+    {
+      "id": "op-v54-01",
+      "name": "精裁-布",
+      "group": "裁剪",
+      "position": "布帘",
+      "unit": "米",
+      "unit_price": 0.4,
+      "is_must_finish": false,
+      "is_start_marker": true,
+      "sort_order": 1,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-02",
+      "name": "精裁-纱",
+      "group": "裁剪",
+      "position": "纱帘",
+      "unit": "米",
+      "unit_price": 0.4,
+      "is_must_finish": false,
+      "is_start_marker": true,
+      "sort_order": 2,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-03",
+      "name": "裁剪-布",
+      "group": "裁剪",
+      "position": "布帘",
+      "unit": "米",
+      "unit_price": 0.4,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 3,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-04",
+      "name": "裁剪-纱",
+      "group": "裁剪",
+      "position": "纱帘",
+      "unit": "米",
+      "unit_price": 0.4,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 4,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-05",
+      "name": "布三边",
+      "group": "车位",
+      "position": null,
+      "unit": "米",
+      "unit_price": 0.4,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 5,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-06",
+      "name": "纱三边",
+      "group": "车位",
+      "position": null,
+      "unit": "米",
+      "unit_price": 0.4,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 6,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-07",
+      "name": "韩褶-布",
+      "group": "车位",
+      "position": "布帘",
+      "unit": "折",
+      "unit_price": 0.4,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 7,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-08",
+      "name": "韩褶-纱",
+      "group": "车位",
+      "position": "纱帘",
+      "unit": "折",
+      "unit_price": 0.4,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 8,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-09",
+      "name": "上车布-布",
+      "group": "车位",
+      "position": "布帘",
+      "unit": "米",
+      "unit_price": 0.5,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 9,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-10",
+      "name": "上车布-纱",
+      "group": "车位",
+      "position": "纱帘",
+      "unit": "米",
+      "unit_price": 0.5,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 10,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-11",
+      "name": "打孔-布",
+      "group": "车位",
+      "position": "布帘",
+      "unit": "孔",
+      "unit_price": 0.15,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 11,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-12",
+      "name": "打孔-纱",
+      "group": "车位",
+      "position": "纱帘",
+      "unit": "孔",
+      "unit_price": 0.15,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 12,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-13",
+      "name": "拼1次-布",
+      "group": "车位",
+      "position": "布帘",
+      "unit": "幅",
+      "unit_price": 0.8,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 13,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-14",
+      "name": "拼2次-布",
+      "group": "车位",
+      "position": "布帘",
+      "unit": "幅",
+      "unit_price": 1.2,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 14,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-15",
+      "name": "拼3次-布",
+      "group": "车位",
+      "position": "布帘",
+      "unit": "幅",
+      "unit_price": 1.6,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 15,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-16",
+      "name": "花边-布",
+      "group": "车位",
+      "position": "布帘",
+      "unit": "米",
+      "unit_price": 0.6,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 16,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-17",
+      "name": "铅坠-布",
+      "group": "车位",
+      "position": "布帘",
+      "unit": "米",
+      "unit_price": 0.3,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 17,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-18",
+      "name": "接高-布",
+      "group": "车位",
+      "position": "布帘",
+      "unit": "幅",
+      "unit_price": 1,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 18,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-19",
+      "name": "帘头制作",
+      "group": "车位",
+      "position": "帘头",
+      "unit": "个",
+      "unit_price": 2,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 19,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-20",
+      "name": "熨烫-布",
+      "group": "后道",
+      "position": "布帘",
+      "unit": "米",
+      "unit_price": 0.35,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 20,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-21",
+      "name": "定型-布",
+      "group": "后道",
+      "position": "布帘",
+      "unit": "米",
+      "unit_price": 0.4,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 21,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-22",
+      "name": "复烫-布",
+      "group": "后道",
+      "position": "布帘",
+      "unit": "米",
+      "unit_price": 0.35,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 22,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-23",
+      "name": "布帘车被",
+      "group": "后道",
+      "position": null,
+      "unit": "米",
+      "unit_price": 0.4,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 23,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-24",
+      "name": "外帘打卷",
+      "group": "后道",
+      "position": "外帘",
+      "unit": "套",
+      "unit_price": 1,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 24,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-25",
+      "name": "外帘装袋",
+      "group": "后道",
+      "position": "外帘",
+      "unit": "套",
+      "unit_price": 1,
+      "is_must_finish": true,
+      "is_start_marker": false,
+      "sort_order": 25,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-26",
+      "name": "质检",
+      "group": "后道",
+      "position": null,
+      "unit": "套",
+      "unit_price": 1.5,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 26,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-27",
+      "name": "外帘发货",
+      "group": "后道",
+      "position": "外帘",
+      "unit": "套",
+      "unit_price": 1,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 27,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-28",
+      "name": "绑带-布",
+      "group": "其他",
+      "position": "布帘",
+      "unit": "套",
+      "unit_price": 0.5,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 28,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-29",
+      "name": "抱枕",
+      "group": "其他",
+      "position": null,
+      "unit": "个",
+      "unit_price": 2,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 29,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v54-30",
+      "name": "腰靠垫",
+      "group": "其他",
+      "position": null,
+      "unit": "个",
+      "unit_price": 2,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 30,
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "op-v56-01",
+      "name": "绑带-纱",
+      "group": "其他",
+      "position": null,
+      "unit": "套",
+      "unit_price": 0.5,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 31,
+      "status": "active",
+      "source": "推算"
+    },
+    {
+      "id": "op-v56-02",
+      "name": "logo条-布",
+      "group": "车位",
+      "position": null,
+      "unit": "米",
+      "unit_price": 0.6,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 32,
+      "status": "active",
+      "source": "推算"
+    },
+    {
+      "id": "op-v56-03",
+      "name": "立边-布",
+      "group": "车位",
+      "position": null,
+      "unit": "米",
+      "unit_price": 0.5,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 33,
+      "status": "active",
+      "source": "推算"
+    },
+    {
+      "id": "op-v56-04",
+      "name": "扣环-布",
+      "group": "车位",
+      "position": null,
+      "unit": "个",
+      "unit_price": 0.3,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 34,
+      "status": "active",
+      "source": "推算"
+    },
+    {
+      "id": "op-v56-05",
+      "name": "防翘扣-布",
+      "group": "车位",
+      "position": null,
+      "unit": "个",
+      "unit_price": 0.2,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 35,
+      "status": "active",
+      "source": "推算"
+    }
+  ],
+  "routings": [
+    {
+      "id": "rt-v54-01",
+      "curtain_type": "布帘",
+      "craft": "韩褶",
+      "operations": [
+        "精裁-布",
+        "布三边",
+        "韩褶-布",
+        "上车布-布",
+        "熨烫-布",
+        "定型-布",
+        "复烫-布",
+        "布帘车被",
+        "外帘打卷",
+        "外帘装袋",
+        "外帘发货"
+      ],
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "rt-v54-02",
+      "curtain_type": "布帘",
+      "craft": "打孔",
+      "operations": [
+        "精裁-布",
+        "布三边",
+        "打孔-布",
+        "熨烫-布",
+        "定型-布",
+        "复烫-布",
+        "布帘车被",
+        "外帘打卷",
+        "外帘装袋",
+        "外帘发货"
+      ],
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "rt-v54-03",
+      "curtain_type": "布帘",
+      "craft": "四爪钩",
+      "operations": [
+        "精裁-布",
+        "布三边",
+        "上车布-布",
+        "熨烫-布",
+        "布帘车被",
+        "外帘打卷",
+        "外帘装袋",
+        "外帘发货"
+      ],
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "rt-v54-04",
+      "curtain_type": "布帘",
+      "craft": "穿杆",
+      "operations": [
+        "精裁-布",
+        "布三边",
+        "熨烫-布",
+        "布帘车被",
+        "外帘打卷",
+        "外帘装袋",
+        "外帘发货"
+      ],
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "rt-v54-05",
+      "curtain_type": "纱帘",
+      "craft": "韩褶",
+      "operations": [
+        "精裁-纱",
+        "纱三边",
+        "韩褶-纱",
+        "外帘打卷",
+        "外帘装袋",
+        "外帘发货"
+      ],
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "rt-v54-06",
+      "curtain_type": "帘头",
+      "craft": "平幔",
+      "operations": [
+        "精裁-布",
+        "布三边",
+        "帘头制作",
+        "定型-布",
+        "外帘打卷",
+        "外帘装袋",
+        "外帘发货"
+      ],
+      "status": "active",
+      "source": "占位待确认"
+    },
+    {
+      "id": "rt-v58-01",
+      "curtain_type": "纱帘",
+      "craft": "打孔",
+      "operations": [
+        "精裁-纱",
+        "纱三边",
+        "打孔-纱",
+        "外帘打卷",
+        "外帘装袋",
+        "外帘发货"
+      ],
+      "status": "active",
+      "source": "推算"
+    },
+    {
+      "id": "rt-v58-02",
+      "curtain_type": "纱帘",
+      "craft": "四爪钩",
+      "operations": [
+        "精裁-纱",
+        "纱三边",
+        "上车布-纱",
+        "外帘打卷",
+        "外帘装袋",
+        "外帘发货"
+      ],
+      "status": "active",
+      "source": "推算"
+    },
+    {
+      "id": "rt-v58-03",
+      "curtain_type": "纱帘",
+      "craft": "穿杆",
+      "operations": [
+        "精裁-纱",
+        "纱三边",
+        "外帘打卷",
+        "外帘装袋",
+        "外帘发货"
+      ],
+      "status": "active",
+      "source": "推算"
+    }
+  ],
+  "option_routings": [
+    {
+      "option_name": "拼1次",
+      "operation_name": "拼1次-布",
+      "after_operation": "布三边",
+      "sort_order": 1
+    },
+    {
+      "option_name": "拼2次",
+      "operation_name": "拼2次-布",
+      "after_operation": "布三边",
+      "sort_order": 2
+    },
+    {
+      "option_name": "拼3次",
+      "operation_name": "拼3次-布",
+      "after_operation": "布三边",
+      "sort_order": 3
+    },
+    {
+      "option_name": "加花边",
+      "operation_name": "花边-布",
+      "after_operation": "布三边",
+      "sort_order": 4
+    },
+    {
+      "option_name": "加铅块",
+      "operation_name": "铅坠-布",
+      "after_operation": "布三边",
+      "sort_order": 5
+    },
+    {
+      "option_name": "接高",
+      "operation_name": "接高-布",
+      "after_operation": "精裁-布",
+      "sort_order": 6
+    },
+    {
+      "option_name": "双眼皮接高",
+      "operation_name": "接高-布",
+      "after_operation": "精裁-布",
+      "sort_order": 7
+    },
+    {
+      "option_name": "余料做绑带",
+      "operation_name": "绑带-布",
+      "after_operation": "布帘车被",
+      "sort_order": 8
+    },
+    {
+      "option_name": "布绑带",
+      "operation_name": "绑带-布",
+      "after_operation": "布帘车被",
+      "sort_order": 9
+    },
+    {
+      "option_name": "余料做帘头",
+      "operation_name": "帘头制作",
+      "after_operation": "布三边",
+      "sort_order": 10
+    },
+    {
+      "option_name": "抱枕",
+      "operation_name": "抱枕",
+      "after_operation": "外帘打卷",
+      "sort_order": 11
+    },
+    {
+      "option_name": "纱绑带",
+      "operation_name": "绑带-纱",
+      "after_operation": "布帘车被",
+      "sort_order": 12
+    },
+    {
+      "option_name": "加logo条",
+      "operation_name": "logo条-布",
+      "after_operation": "布三边",
+      "sort_order": 13
+    },
+    {
+      "option_name": "加立边",
+      "operation_name": "立边-布",
+      "after_operation": "布三边",
+      "sort_order": 14
+    },
+    {
+      "option_name": "扣环",
+      "operation_name": "扣环-布",
+      "after_operation": "布三边",
+      "sort_order": 15
+    },
+    {
+      "option_name": "防翘扣",
+      "operation_name": "防翘扣-布",
+      "after_operation": "布三边",
+      "sort_order": 16
+    }
+  ],
+  "option_factors": [
+    {
+      "option_name": "一分二",
+      "operation_name": null,
+      "factor": 1.7,
+      "source": "实证",
+      "sort_order": 1
+    }
+  ]
+}

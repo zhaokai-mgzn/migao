@@ -4144,6 +4144,7 @@ _CASE_PG_013 = EvalCase(
     required_args=[{'tool': 'processing_order_generate', 'fields': ['order_ids']}],
     must_succeed=[{'tool': 'processing_order_generate'}],
     pre_clean=[{'type': 'processing_order_reset', 'order_no': 'EVAL-MB-ORD-0002'}],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
 # ── PG-014 [NORMAL] 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道（源: cases/processing-order.yml）──
@@ -4551,6 +4552,42 @@ _CASE_PG_035 = EvalCase(
     data_checks=['success=true', '缺口①「有活跃工序但未进任何活跃路线」：逐条列出（`{name, group_name, unit, unit_price, pending_confirmation, note}`）+ `unrouted_operation_total`。**双向可红**：少一道（漏报）或多一道（把已进路线的工序也报进来）都红。证据：ProductionOperationQueryServiceTest「routingGapsListsUnroutedOperationsWithPendingFlag」+「routingGapsExcludesOperationsConsumedByAnyActiveRouting」', '**待确认语义（issue #4261，本单补遗）**：那 4 道（裁剪-布 / 裁剪-纱 / 质检 / 腰靠垫）**不是缺陷**，而是**有意挂起、等客户输入** —— #4261 逐项登记了理由（裁剪vs精裁是否两道 / 质检是否每单必做 / 腰靠垫归属 / 罗马帘整套工序 / 纱帘熨烫定型）。故每条带 `pending_confirmation=true` + 人话 `note`（「有意挂起、等客户输入（issue #4261 提问清单），不是系统漏了」）+ 顶层 `pending_confirmation_total`，**不要让商家/前端把它们读成「系统漏了」**。证据：ProductionOperationQueryServiceTest 的 pending 断言 + ProductionControllerTest「routingGapsShape」', '**与 routing.py 同源（机器可判）**：`ProductionOperationQueryService.PENDING_CUSTOMER_CONFIRMATION_OPERATIONS` ↔ `backend/ai-agent-service/app/production/routing.py::PENDING_CUSTOMER_CONFIRMATION_OPERATIONS` **双向逐字比对**（少一道/多一道都红）。Java 无法 import Python ⇒ 用「逐字解析 frozenset + 双向集合相等」守（同 `ProductionOptionRoutingMigrationTest` 对 SPECIAL_OPTION_ROUTINGS 的既有范式）；**抄一份字面量而不守 = 第二份口径**。证据：ProductionRouteSignalMigrationTest「pendingConfirmationSetMatchesTruthSource」', '缺口②「库里没有路线的信号组合」：逐个活跃信号行算出「只命中它时会派生的键」（缺失维取**默认** `布帘`/`韩褶`，与派生同源 —— 直接引用 `ProcessingOrderService.DEFAULT_CURTAIN_TYPE/DEFAULT_CRAFT`，不复制第二份），报出库中无该路线的那些（`{curtain_type, craft, route_key, signal}`）。例：商家自建信号「罗马帘」⇒ `罗马帘×韩褶` 无路线（#4261 ①，本单**不发明**该路线）。证据：ProductionOperationQueryServiceTest「routingGapsListsSignalKeysWithoutRoute」', '**红证（注入式）**：① 把「已进路线的工序」过滤去掉 ⇒ 双向可红用例红；② 去掉 `pending_confirmation` 字段 ⇒ pending 断言红；③ 改 `PENDING_CUSTOMER_CONFIRMATION_OPERATIONS` 少一道/多一道 ⇒ routing.py 同源用例红；④ 把缺失维的默认值改成字面量「布帘」以外的值 ⇒ 缺口②用例红。', '**已知缺口（如实登记）**：三个种子迁移（V54/V56/V58/V59/V60）只种 `tenant_id = 1` ⇒ 非 1 号租户工序库/路线库为空、建单 fail-closed（422）。#4316 接住该缺口，而**本单交付的写面正是它的补救路径**（此前非 1 号租户连工序都建不出来）。'],
     skip_reason='[backend-contract] 后端契约用例（服务端只读查询 + 与 Python 真值源的静态收敛，无 LLM 环节）：断言由 ProductionOperationQueryServiceTest + ProductionRouteSignalMigrationTest + ProductionControllerTest 执行',
     tags=['processing-order', 'production-routing', 'gap-visibility', 'pending-confirmation'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-036 [NORMAL] 生产种子模板：受控行业 code 归一 + 模板目录 + 幂等套用 + 开租自动套用（other 不套用且显式说明）（源: cases/processing-order.yml）──
+_CASE_PG_036 = EvalCase(
+    id='PG-036',
+    legacy_id='',
+    title='生产种子模板：受控行业 code 归一 + 模板目录 + 幂等套用 + 开租自动套用（other 不套用且显式说明）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '判据 1·受控行业取值（词表 v1 冻结 = curtain / other，不得自创第三值）：`IndustryCodes.normalize(raw)` 的**确切返回值**逐条可判 —— 「布艺」「窗帘」「布艺窗帘」「布艺纺织」「布艺/窗帘」「CURTAIN」→ `curtain`；「家居建材」「电子商务」「」/null/纯空白 → `other`。归一**幂等**（`normalize(normalize(x)) == normalize(x)`，回填/重复写入安全），且结果**恒属词表**（任何输入都不会漏出自由文本）。证据：IndustryCodesTest', '判据 2·归一必须落在**两个**写面（只在注册路径归一 = 受控词表可被绕过）：`RegistrationService.approveApplication`（注册审批建租户）与 `SettingsController.updateSettings`（`PUT /api/admin/settings` 此前接受任意字符串）都调同一个 `IndustryCodes.normalize`。MockMvc：`PUT /api/admin/settings` 传「布艺纺织」⇒ 落库/回读是 `curtain`（**不是原样存**）。无法识别 ⇒ `other` + **显式日志**（不许静默 —— 库里看到 other 时分不清「客户真是其他行业」与「词表没认出来」）。证据：SettingsControllerTest 的 industry 归一用例', '判据 3·模板目录（契约冻结，前端包 #4363 按此消费，不得改名）：`GET /api/admin/production/seed-templates` → `[{templateId, industry, name, version, description}]`；`POST /api/admin/production/seed-templates/{templateId}/apply` → `{created_operations, created_routings, skipped}`；权限统一 `processing:manage`。模板资产 = `resources/production-templates/index.json` + `curtain/seed.json`（**照 knowledge-templates 既有范式**，不另造抽象）。证据：ProductionSeedTemplateControllerTest 7 项（MockMvc **端点级**：目录逐键 = 契约冻结字段 / 套用返回 `created_operations`+`created_routings`+`skipped` / 幂等第二次全 0 + 全 skipped / 未知 templateId ⇒ 404 显式失败 / tenantId 取自 TenantContext 不信任请求体 / 类级声明 `processing:manage` 且方法级无更宽松覆盖）+ ProductionSeedTemplateServiceTest「listTemplates」2 项（服务层语义）。', '判据 4·套用幂等（连续套用两次，工序/路线行数不变）：第二次全 skipped、**零 insert**；部分存在时只补缺的那些。幂等键 = `(tenant_id, name)` / `(tenant_id, curtain_type, craft)`（对齐 V49 部分唯一索引 `... WHERE deleted = 0`），**不是 id**。证据：ProductionSeedTemplateServiceTest「apply_isIdempotentOnSecondCall」「apply_onlyInsertsMissing」', '判据 5·**落库 id 不得沿用模板 id**（模板 id `op-v54-01` 是全局主键、1 号租户已占用 ⇒ 原样插库会撞主键，「第二个租户」必崩）：落库 id 由 `ASSIGN_UUID` 生成（与既有写面 `POST /production/operations` 同款）。证据：ProductionSeedTemplateServiceTest「applyGeneratesFreshIdsForEveryTenant」——对**两个不同 tenantId** 各套用一次，断言两次都成功、各自 `(tenant_id, name)` 集合等于模板、且两租户的 id 集合**不相交**（复用模板 id ⇒ 撞主键 / 复用确定性 id ⇒ 不相交断言红）', '判据 6·`other` 行业或模板缺失 ⇒ **不套用 + 显式原因**（不静默空库）：返回 `applied=false` + `reason`（点名原值，可追查），且**零 mapper 交互**；按 templateId 套用未知模板 ⇒ 404 显式失败。证据：ProductionSeedTemplateServiceTest「otherIndustry_appliesNothingWithReason」「unknownIndustry_namesTheRawValueInReason」「applyById_unknownTemplateFailsLoudly」', '判据 7·开租自动套用：`approveApplication` 建租户后（`TenantContext.setTenantId` 生效期间）按 `industry` 套用模板；**失败不让开租整体回滚**（模板套用异常被捕获 + 记 error + 可经 `POST .../seed-templates/curtain/apply` 补套）。MockMvc：审批通过后该租户 `operations-catalog` / `routings` 非空且逐条等于模板。证据：RegistrationServiceTest 的自动套用用例 + ProductionControllerTest 的开租后读面用例', '**红证（实现前实测）**：① 模板文件缺失 ⇒ `template_json` 夹具 fail-closed 红；② 把模板单价改一个字 ⇒ 五源收敛比对红（注入式自证 `test_template_drift_is_detected`）；③ 把 `op-v54-*` 原样当落库 id ⇒ 第二租户撞主键红（`applyGeneratesFreshIdsForEveryTenant`）。'],
+    skip_reason='[backend-contract] 后端契约用例（服务端写路径 + 模板资产，无 LLM 环节，不进 agent-eval 冒烟）：断言由 IndustryCodesTest + ProductionSeedTemplateServiceTest + ProductionControllerTest + SettingsControllerTest 执行',
+    tags=['processing-order', 'production-seed', 'industry-template', 'tenant-onboarding'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-037 [NORMAL] provenance 迁移（V62）：source 列 + 冻结回填映射（占位待确认 30 工序+6 路线 / 推算 5 工序+3 路线 / 实证空集）+ industry 存量归一（源: cases/processing-order.yml）──
+_CASE_PG_037 = EvalCase(
+    id='PG-037',
+    legacy_id='',
+    title='provenance 迁移（V62）：source 列 + 冻结回填映射（占位待确认 30 工序+6 路线 / 推算 5 工序+3 路线 / 实证空集）+ industry 存量归一',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '判据 1·加列幂等：V62 给 `production_operations` 与 `production_routings` **各**加 `source VARCHAR(16)`（`ADD COLUMN IF NOT EXISTS`，`MigrationRunner` 要求所有 SQL 可重复执行）+ 列注释写明三个取值 + `CHECK` 枚举约束（防自由文本 source 悄悄进来）。`docs/sql/schema.sql` 同步镜像终态（bootstrap 路径**不跑迁移链** ⇒ 只写迁移 = 新建库无该列 ⇒ 读面 500，#3270 形态）。证据：ProductionSourceProvenanceMigrationTest「v62AddsSourceColumnsIdempotently」「v62ConstrainsSourceToTheFrozenVocabulary」「schemaSqlMirrorsMigrationFinalState」', '判据 2·**冻结映射双向钉死**（漏标/多标都红）：工序 `占位待确认` = V54 的 **30** 道（`op-v54-*`，单价是占位值）；`推算` = V56 的 **5** 道（`op-v56-*`，单价行业推算）。路线 `占位待确认` = V54 的 **6** 条（`rt-v54-*`，**含 布帘×韩褶** —— #4343 已证明它与客户真实加工单 CSO260915-02615 不符）；`推算` = V58 的 **3** 条纱帘（`rt-v58-*`，镜像布帘同工艺推导）。`实证` = **当前空集**（显式断言为空 + 注释说明「客户确认 #4261/#4343 后才会有」）—— 这是**诚实结论，不是遗漏**。证据：ProductionSourceProvenanceMigrationTest「frozenMappingSetsAreExactlyRight」「v62BackfillsOperationSources」「v62BackfillsRoutingSources」+ tests/unit_ci_workflows/test_production_catalog_seed.py「test_template_sources_are_the_frozen_provenance_mapping」', "判据 3·回填按 **id 前缀**认领（`'op-v54-%'` / `'op-v56-%'` / `'rt-v54-%'` / `'rt-v58-%'`），**不是按名字列表**（名字列表会随改名漂移）；只动 `source IS NULL` 的行（幂等 + 不覆盖商家/模板已写的 source）；**其余行保持 NULL**（不落 `ELSE`：未知来源 = 未知，不许冒充「占位待确认」）。证据：ProductionSourceProvenanceMigrationTest 的两条回填用例", '判据 4·存量 `tenants.industry` 自由文本一次性归一为受控 code：别名（布艺/窗帘/布艺窗帘/布艺纺织/布艺\\/窗帘）→ `curtain`，其余非空 → `other`，空值不动；幂等（`WHERE industry IS DISTINCT FROM <归一结果>`，只更新尚未归一的那些行）；与 Java `IndustryCodes.normalize` **同口径**（两侧一致性由 IndustryCodesTest「migrationBackfillMatchesJavaNormalization」双向钉）。证据：ProductionSourceProvenanceMigrationTest「v62NormalizesLegacyIndustry」+ IndustryCodesTest', '判据 5·读面返回 source：`ProductionOperationQueryService.catalog()` 的 `operationView` 与 routings 读面（`GET /production/routings`）每项都带 `source`（**响应键集 +1**，契约变更已在 PR 描述显式登记）。证据：ProductionControllerTest 的期望视图同步 + ProductionOperationQueryServiceTest', '**红证（注入式）**：① 从 V62 删掉任一回填段 ⇒ 对应集合断言红；② 把 `op-v56-*` 标成 `占位待确认` ⇒ 双向集合断言红；③ 把任一行标成 `实证` ⇒ 「实证 = 空集」断言红；④ 从 bootstrap 删掉 `source` 列 ⇒ 终态镜像断言红；⑤ 改模板 JSON 一个 source 字 ⇒ 五源收敛红。', '**已知缺口（如实登记）**：V54/V56/V58/V59/V60 六个种子迁移仍只种 `tenant_id = 1`（**不改已应用迁移** —— #4235 迁移不可变）；非 1 号租户由本单的**模板套用**补齐（开租自动 + 手动补套端点）。#4316 由本单收口。'],
+    skip_reason='[backend-contract] 后端契约用例（迁移/表结构是服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionSourceProvenanceMigrationTest + IndustryCodesTest + tests/unit_ci_workflows/test_production_catalog_seed.py 执行',
+    tags=['processing-order', 'production-seed', 'migration', 'provenance'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -6681,6 +6718,8 @@ ALL_CASES = (
     _CASE_PG_033,
     _CASE_PG_034,
     _CASE_PG_035,
+    _CASE_PG_036,
+    _CASE_PG_037,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,
