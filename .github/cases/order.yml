@@ -1126,6 +1126,25 @@ cases:
       - xiaobu
     truths_ref:
       - order.create-flow
+    # ── 前置自断言 + 自清理（issue #4416 的 burn-down 缴费；metric=entries ⇒ 必须整条销账）──
+    # 本用例命中的两条存量违规是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION。
+    # `precondition[product_count_for_keyword]`：R1 按**商品名**定位下单目标，「该名字唯一」是它
+    # 真正依赖且**只读**的前置（同名副本会让 agent 合理地要求澄清 ⇒ order_create 永不发生，
+    # 而报告上只表现为 `unmatched expectation` = 看起来像 agent 不干活，归因全错 ——
+    # PG-013 / CU-003 的形态）。口径与 `pre_clean` 的商品定位同一份（`_list_products_matching`），
+    # 先例 = OR-014 / CH-019 / CR-001。
+    # ⚠️ 有意**不**声明 `order_count_for_phone`：本用例自己就会建单 ⇒ 漂移判据（缺省
+    # `max_growth: 0`）必然判红，那是「硬写一条注定红的守卫」。商品维只读 ⇒ 漂移恒为 0。
+    # `namespaces`：护住该前置的基线/漂移两格，并与同手机号建单用例互斥。
+    # 断言（user_inputs / expectations / must_succeed / amount_verify / order_before /
+    # data_checks / forbidden_text）**原样未动、无放宽**。
+    namespaces:
+      - "product_name:夏日清风窗帘"
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "夏日清风窗帘"
+        expect: 1
     # ── 交互轮用协议轮（合作型用户：有什么卡就答什么卡）──
     # issue #3361 实证（run 34691137050 分片跑，OR-017）：静态脚本在第 3 轮发「确认」，
     # 而 agent 此时下发的是一张**加工项 choice 卡**（等顾客选加工项）——静态文本答不了卡
@@ -1202,7 +1221,7 @@ cases:
       - "无可用加工项"
       - "该商品无加工项"
     skip_reason: ""
-    merge_log: "2026-09-12（issue #3361）交互轮改协议轮（auto_select 答加工项多选卡 + auto_respond 答表单/确认/验证码）：原静态「确认」喂不进加工项 choice 卡 → agent 重发同卡、轮数耗尽、order_create 未发生。2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式。2026-09-19（#4371 商品↔加工项解耦）：加工项来源由 `product_detail.processing_items` 改为**店铺级目录** `processing_item_query`（商品不再持有加工项）⇒ `expectations` 补 `processing_item_query`（显式期望；同时满足 C 端工具覆盖门禁）、`data_checks` 第 1/2 条同步改判（去掉 processing_items 的引用）；`user_inputs` / `order_before` / `must_succeed` / `amount_verify` / `forbidden_text` 原样未动（卡仍要发，只是来源从商品改成目录）。"
+    merge_log: "2026-09-12（issue #3361）交互轮改协议轮（auto_select 答加工项多选卡 + auto_respond 答表单/确认/验证码）：原静态「确认」喂不进加工项 choice 卡 → agent 重发同卡、轮数耗尽、order_create 未发生。2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式。2026-09-19（#4371 商品↔加工项解耦）：加工项来源由 `product_detail.processing_items` 改为**店铺级目录** `processing_item_query`（商品不再持有加工项）⇒ `expectations` 补 `processing_item_query`（显式期望；同时满足 C 端工具覆盖门禁）、`data_checks` 第 1/2 条同步改判（去掉 processing_items 的引用）；`user_inputs` / `order_before` / `must_succeed` / `amount_verify` / `forbidden_text` 原样未动（卡仍要发，只是来源从商品改成目录）。2026-09-19（issue #4416 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:夏日清风窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword: 夏日清风窗帘, expect: 1]` —— R1 按商品名定位下单目标，「该名字唯一」是它真正依赖且**只读**的前置（先例 = OR-014 / CH-019 / CR-001）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红，那是「硬写一条注定红的守卫」。断言（user_inputs / expectations / must_succeed / amount_verify / order_before / data_checks / forbidden_text）原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_customer_order_processing_item.py"

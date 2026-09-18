@@ -3616,6 +3616,8 @@ _CASE_OR_017 = EvalCase(
     forbidden_text=['暂未查询到可选加工项', '无可用加工项', '该商品无加工项'],
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '夏日清风窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
+    namespaces=['product_name:夏日清风窗帘', 'customer_phone:13800138000'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '夏日清风窗帘', 'expect': 1}],
 )
 
 # ── OR-018 [NORMAL] C 端多商品一次下单 - 两个商品两套加工项，明细与金额逐行都对（能力上限）（源: cases/order.yml）──
