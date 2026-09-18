@@ -634,7 +634,7 @@
 数据: （确定性层）getSessionByAiSessionId 返回含客服消息的会话；getSessionDetail(admin) 返回 aiContext，跨租户读取拒绝
 数据: （确定性层）createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）
 数据: （确定性层）转人工站内信真的投递到 B 端账号（output_verify.adminNotified 的机器判定改由工具单测覆盖）
-跳过: 转人工工具已按用户裁定退场（模型不可达）：agent 不会（也不能）再触发人工会话创建，端到端写断言永久不可满足。能力未删除 ⇒ 由 backend/ai-agent-service/tests/test_tools_human_handoff.py（会话/工单/通知/上下文载荷）与 admin-api AgentSession* 单测（落库/可见性/跨租户拒绝）覆盖；退场后的对话行为（如实告知 + 禁止假承诺）由 CH-015 承载，不在 agent-eval 层重复
+跳过: [backend-contract] 转人工工具已按用户裁定退场（模型不可达）：agent 不会（也不能）再触发人工会话创建，端到端写断言永久不可满足。能力未删除 ⇒ 由 backend/ai-agent-service/tests/test_tools_human_handoff.py（会话/工单/通知/上下文载荷）与 admin-api AgentSession* 单测（落库/可见性/跨租户拒绝）覆盖；退场后的对话行为（如实告知 + 禁止假承诺）由 CH-015 承载，不在 agent-eval 层重复
 ```
 真值: ai-chat.intent-tool-map, settings-manage.ai-config
 溯源: POC 人工客服工作台新增；2026 扩展：AI 上下文同步断言（GB/T 47746-2026）；2026-09-11 修正 user_inputs —— 原为断言描述文字（非顾客对话），agent 无法响应导致必然 0 分（issue #3270 断言层归因）；2026-09-19 **退场登记**（用户裁定「不应该存在 human_handoff 这种东西，以后全是 AI 来判断」）：端到端工具断言整体移除（不可满足）、标 unrunnable、断言口径改指确定性层单测；对话侧改由 CH-015 承载 ｜ tags: handoff, agent_session
@@ -775,7 +775,7 @@
 数据: （确定性层）getSessionDetail(admin) 返回 aiContext；跨租户访问拒绝
 数据: （确定性层）getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息
 数据: （确定性层）AI 会话关闭/清理后人工会话快照仍可见（快照语义）
-跳过: 转人工工具已按用户裁定退场（模型不可达）：agent 不会（也不能）再触发人工会话创建，端到端断言永久不可满足。能力本身未删除 ⇒ 由 backend/ai-agent-service/tests/test_tools_human_handoff.py（上下文构造/截断/POST 载荷）与 admin-api AgentSession* 单测（落库/可见性/跨租户拒绝）覆盖，不在 agent-eval 层重复
+跳过: [backend-contract] 转人工工具已按用户裁定退场（模型不可达）：agent 不会（也不能）再触发人工会话创建，端到端断言永久不可满足。能力本身未删除 ⇒ 由 backend/ai-agent-service/tests/test_tools_human_handoff.py（上下文构造/截断/POST 载荷）与 admin-api AgentSession* 单测（落库/可见性/跨租户拒绝）覆盖，不在 agent-eval 层重复
 ```
 真值: ai-chat.intent-tool-map, ai-chat.handoff-offer
 溯源: 2026 新增：GB/T 47746-2026 转人工 AI 上下文同步（issue #2776）；2026-09-19 **退场登记**（用户裁定）：expectations/must_succeed 移除（不可满足）、标 unrunnable、断言口径改指确定性层单测（能力未删除，无覆盖真空） ｜ tags: handoff, agent_session, ai_context

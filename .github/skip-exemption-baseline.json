@@ -3,9 +3,9 @@
   "_scope": "`skip_total` / `legacy_skip_ids` 是**锚定 SHA 上的快照**；`pending_classification` 只许是其子集且**只许缩短**（到期即红）。非 pending 的任何非空 skip_reason（含新增用例）必须完全合规 ⇒ 新增一律 fail-closed。总量只许缩（净增即红）。",
   "_when_to_update": "① 有人把某条存量改到合规 ⇒ 从 pending_classification 删掉该条（不要改 skip_total）；② 新增 skip ⇒ **不得**记进本文件（先改到合规；确属豁免的走'改判据'流程）；③ 某条 skip 被真正解掉（用例恢复可跑）⇒ 同步下调 skip_total + 追加 history 一行（只许非增）；④ 到期日到点 ⇒ 必须清零 pending，不得顺手推后。",
   "_how_to": "本文件是**数据**，人工维护；判据在 test_skip_exemption_gate.py。改了用例库后跑 `python3 -m pytest tests/unit_ci_workflows/test_skip_exemption_gate.py -q` 复核。",
-  "anchor_sha": "8a97c025a9f59f95558c51fd29480524b7f240e9",
+  "anchor_sha": "f74909b79381b66dbbdfac995ac860fa39a37d69",
   "anchored_at": "2026-09-18",
-  "skip_total": 156,
+  "skip_total": 158,
   "legacy_skip_ids": [
     "AG-001",
     "AG-002",
@@ -38,6 +38,8 @@
     "BM-004",
     "BM-005",
     "BM-006",
+    "CH-008",
+    "CH-017",
     "CH-018",
     "CH-020",
     "CH-021",
@@ -233,6 +235,12 @@
       "date": "2026-09-18",
       "skip_total": 156,
       "note": "rebase 到最新 main（原锚点 51e40495）：`.github/cases/**` 与被测用例库相对原锚点**无差异**（`git diff --stat <old>..<new> -- .github/cases/` 为空）⇒ 锚点快照与 pending 判定仍然成立"
+    },
+    {
+      "sha": "f74909b79381b66dbbdfac995ac860fa39a37d69",
+      "date": "2026-09-18",
+      "skip_total": 158,
+      "note": "重锚定：纳入 #4192（转人工退场）对 CH-008/CH-017 的 unrunnable 登记，两条已机器钉住（test_tools_human_handoff.py + admin-api AgentSession* 单测）"
     }
   ]
 }

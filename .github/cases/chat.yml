@@ -370,7 +370,7 @@ cases:
     #     tests/unit_ci_workflows/test_human_handoff_retired.py（回退绑定/回退 prompt 均红）。
     # ⚠️ 阶段二彻底删除工具与后端端点时，本条连同确定性层单测一起下线（见汇报）。
     precondition: "转人工工具（human_handoff）与后端人工会话端点仍在（阶段一保留），但**模型不可达**（不在默认注册表/任何 skill 工具集）⇒ 本用例无法经 agent 链路复现；会话/工单/上下文/投递语义由 traces 里的工具单测 + admin-api 单测覆盖"
-    skip_reason: "转人工工具已按用户裁定退场（模型不可达）：agent 不会（也不能）再触发人工会话创建，端到端写断言永久不可满足。能力未删除 ⇒ 由 backend/ai-agent-service/tests/test_tools_human_handoff.py（会话/工单/通知/上下文载荷）与 admin-api AgentSession* 单测（落库/可见性/跨租户拒绝）覆盖；退场后的对话行为（如实告知 + 禁止假承诺）由 CH-015 承载，不在 agent-eval 层重复"
+    skip_reason: "[backend-contract] 转人工工具已按用户裁定退场（模型不可达）：agent 不会（也不能）再触发人工会话创建，端到端写断言永久不可满足。能力未删除 ⇒ 由 backend/ai-agent-service/tests/test_tools_human_handoff.py（会话/工单/通知/上下文载荷）与 admin-api AgentSession* 单测（落库/可见性/跨租户拒绝）覆盖；退场后的对话行为（如实告知 + 禁止假承诺）由 CH-015 承载，不在 agent-eval 层重复"
     data_checks:
       - "（确定性层）createSessionForHandoff 创建 waiting 会话 + system 消息；sendMessage(agent) 后状态变 active"
       - "（确定性层）getSessionByAiSessionId 返回含客服消息的会话；getSessionDetail(admin) 返回 aiContext，跨租户读取拒绝"
@@ -856,7 +856,7 @@ cases:
     #   · 后台能力与数据**未删除**（阶段一范围），故这些单测仍全绿、覆盖没有真空。
     # ⚠️ 阶段二若彻底删除工具与后端端点，本条应随之下线（见汇报的阶段二清单）。
     precondition: "转人工工具（human_handoff）与后端人工会话端点仍在（阶段一保留），但**模型不可达**（不在默认注册表/任何 skill 工具集）⇒ 本用例无法经 agent 链路复现；快照语义由 traces 里的工具单测 + admin-api 单测覆盖"
-    skip_reason: "转人工工具已按用户裁定退场（模型不可达）：agent 不会（也不能）再触发人工会话创建，端到端断言永久不可满足。能力本身未删除 ⇒ 由 backend/ai-agent-service/tests/test_tools_human_handoff.py（上下文构造/截断/POST 载荷）与 admin-api AgentSession* 单测（落库/可见性/跨租户拒绝）覆盖，不在 agent-eval 层重复"
+    skip_reason: "[backend-contract] 转人工工具已按用户裁定退场（模型不可达）：agent 不会（也不能）再触发人工会话创建，端到端断言永久不可满足。能力本身未删除 ⇒ 由 backend/ai-agent-service/tests/test_tools_human_handoff.py（上下文构造/截断/POST 载荷）与 admin-api AgentSession* 单测（落库/可见性/跨租户拒绝）覆盖，不在 agent-eval 层重复"
     data_checks:
       - "（确定性层）human_handoff POST 携带 aiContextSummary 与 aiContextMessages（仅 role=user/assistant，剥 think/图片占位，逐条与总量截断）"
       - "（确定性层）createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（JSONB）"

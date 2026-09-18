@@ -43,7 +43,10 @@
   `fetch-depth: 1`）做不到与 `origin/main` 基线对账（`case_trust_gate` 那套靠
   `fetch-depth: 0` 的独立 job）。本文件用 `history` 账本（`skip_total` 只许非增）+
   `pending ⊆ legacy` 增加摩擦力，**但那不是密码学封印** —— 改基线是**显式的、
-  会被 diff 看见的**动作，与仓里其它基线同一信任模型。
+  会被 diff 看见的**动作，与仓里其它基线同一信任模型。**唯一例外**（集成裁定
+  2026-09-18）：`history` **末行带显式 `note`** 的锚点前移重锚定允许增长（账本
+  对齐 main 现实 —— #4192 对 CH-008/CH-017 的 unrunnable 登记，两条已机器钉住）；
+  无 `note` 的增长 / 非末行增长一律仍红（见 `_history_growth_allowed`）。
 - **`eval_case_filter` 之外的其它剔除路径**：本文件只判"写法与账本"，不判 runner 是否
   真的用 `skip_reason` 过滤（那是 runner 的行为，由 runner 侧测试承担）。
 - **生成物账本里看不到 `skip_issue` / `skip_expires`**：`render_cases.py` 只渲染
@@ -208,6 +211,20 @@ def case_violations(case: dict, today: date) -> list[dict]:
     return out
 
 
+def _history_growth_allowed(history: list, totals: list[int]) -> bool:
+    """history 增长例外（集成裁定 2026-09-18，方案 A）：仅「末行增长 + 该行带显式 `note`」
+    的锚点前移重锚定可放行（账本对齐 main 现实 —— #4192 给 CH-008/CH-017 的 unrunnable
+    登记，两条已机器钉住）；无 note 的增长、非末行增长 ⇒ False（fail-closed，其余判据一字不松）。"""
+    for i in range(1, len(totals)):
+        if totals[i] > totals[i - 1]:
+            row = history[i] if isinstance(history[i], dict) else {}
+            if i != len(totals) - 1:
+                return False
+            if not str(row.get("note") or "").strip():
+                return False
+    return True
+
+
 def baseline_violations(cases, baseline: dict, today: date) -> list[dict]:
     """**基线比对**违规：总量只许缩 + pending 只许缩且未过期 + 账本自洽。"""
     out: list[dict] = []
@@ -244,9 +261,10 @@ def baseline_violations(cases, baseline: dict, today: date) -> list[dict]:
         except (TypeError, KeyError, ValueError):
             add(BASELINE_INCOHERENT, f"`history` 形态非法（每项需含整数 `skip_total`）：{history!r}")
             totals = []
-        if totals and totals != sorted(totals, reverse=True):
+        if totals and not _history_growth_allowed(history, totals):
             add(BASELINE_INCOHERENT,
-                f"`history` 里 `skip_total` 出现增长（只许非增 = 豁免只许缩）：{totals}")
+                f"`history` 里 `skip_total` 出现增长（只许非增 = 豁免只许缩；"
+                f"唯一例外 = **末行**带显式 `note` 的锚点前移重锚定）：{totals}")
         if totals and totals[-1] != total:
             add(BASELINE_INCOHERENT,
                 f"`history` 末项 {totals[-1]} ≠ `skip_total` {total}")
