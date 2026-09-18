@@ -3753,7 +3753,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（44 case）
+## ui（45 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -3928,31 +3928,31 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-02 新增：POC 演示修复 — 拍照找布场景顾客发纯图会被 chatStore 静默拦截（chatStore.ts `!content.trim()` 守卫），须文字同行才发得出 ｜ tags: mini-app, chat-input, image, vision
 
-### UI-014. 小布聊天主页快捷入口六格化 - 算料报价与推荐热门商品并列（取消全宽） 🔵
+### UI-014. 小布聊天主页快捷入口 - 六入口全保留，瑞幸式两栏分组排列（算料报价取消全宽） 🔵
 ```
-你: 顾客打开小布聊天主页，快捷入口区六个入口等权排列：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流
+你: 顾客打开小布聊天主页，快捷入口区六个入口按两栏分组排列：左「下单小助手」算料报价/找产品/查订单，右「专属推荐师」推荐热门商品/售后咨询/查物流
 期望: direct_reply
-数据: QuickActions 渲染 6 个入口：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）
-数据: 「算料报价」为首项但不再带 wide 全宽样式（与其余入口等权，2 列网格 3 行）
+数据: QuickActions 渲染 6 个入口（两栏各 3 行）：算料报价/找产品/查订单 + 推荐热门商品/售后咨询/查物流（无「退换货」「转人工」文案残留）
+数据: 「算料报价」不再带 wide 全宽样式（与其余入口等权；六格时代的 .quick-actions__item 类已随重排退场）
 数据: 点击「算料报价」发送算料 prompt（含 quote 路由关键词：用料/报价），直达 curtain_calc 算料报价链路
 数据: 点击「推荐热门商品」发送推荐 prompt，进入商品推荐问答
 数据: 其余入口行为不回归（查订单/找产品/售后咨询/查物流 prompt 不变）
 跳过: [backend-contract] 纯前端入口由 mini-app jest 单测验证（quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.xiaobu-quick-actions
-溯源: 2026-09-04 新增 POC 全宽主入口；2026-09-17 修订：产品决策六格化，算料报价取消全宽与推荐热门商品并列 ｜ tags: mini-app, quick-actions, quote
+溯源: 2026-09-04 新增 POC 全宽主入口；2026-09-17 修订：产品决策六格化，算料报价取消全宽与推荐热门商品并列；2026-09-18 修订（issue #4199，用户裁定参考瑞幸 Agent 布局）：六格等权 → 两栏分组（能力面不收缩，仅重排 + 组头配色） ｜ tags: mini-app, quick-actions, quote
 
-### UI-044. 小布聊天主页空态移除商品推荐卡（NewArrivals），推荐改由快捷对话入口承载 🔵
+### UI-044. 小布聊天主页空态移除商品推荐卡（NewArrivals），推荐改由文字胶囊/快捷对话入口承载 🔵
 ```
-你: 顾客打开小布聊天主页空态：不再展示热销商品图片与名称，仅保留品牌欢迎语与快捷对话入口
+你: 顾客打开小布聊天主页空态：不再展示热销商品图片与名称，仅保留品牌欢迎语与文字形态的推荐/快捷对话入口
 期望: direct_reply
 数据: 空态（MessageList 无消息时）不再渲染 NewArrivals 商品卡片（无商品图/名横滑区）
-数据: 空态保留品牌头+欢迎语+快捷入口（QuickActions 6 格）
-数据: 推荐能力由「推荐热门商品」快捷入口以对话形式承载，商品推荐问答不回归
-跳过: [backend-contract] 纯前端空态由 mini-app jest 单测验证（quick-actions.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
+数据: 空态保留品牌头+欢迎语+推荐胶囊（UI-046）+两栏分组快捷入口（UI-014）
+数据: 推荐能力由「推荐热门商品」快捷入口与推荐胶囊以**对话形式**承载，商品推荐问答不回归
+跳过: [backend-contract] 纯前端空态由 mini-app jest 单测验证（quick-actions.test.tsx / recommend-chips.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.xiaobu-quick-actions
-溯源: 2026-09-17 新增：产品决策——空态不再铺商品图/名，推荐改为快捷对话入口；同日补 H5 视觉回归 spec 同步（issue #4003：spec 仍断言已删除的新品推荐 → 持续红，已改为六格+负向断言并更新截图基线） ｜ tags: mini-app, chat-entry, empty-state
+溯源: 2026-09-17 新增：产品决策——空态不再铺商品图/名，推荐改为快捷对话入口；同日补 H5 视觉回归 spec 同步（issue #4003：spec 仍断言已删除的新品推荐 → 持续红，已改为六格+负向断言并更新截图基线）；2026-09-18 修订（issue #4199）：新增的推荐胶囊同为**纯文字**形态（零商品图/名/价格），本条的负向判据不变 ｜ tags: mini-app, chat-entry, empty-state
 
 ### UI-015. 我的页移除「账号信息」占位入口（功能开发中占位不进 POC 演示） 🔵
 ```
@@ -4334,6 +4334,20 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-17 新增（issue #3997 M4-G-3）：顾客端生产进度可视化 —— 消费生产报工契约的读侧；persona: xiaobu（C 端专属卡片） ｜ tags: ui, mini-app, production-progress, card
 
+### UI-046. 小布主页按瑞幸 Agent 布局重做 —— 顶部横滑推荐胶囊 + 「你可以这样对我说：」两栏分组卡 🔵
+```
+你: 顾客打开小布聊天主页空态：顶部一条可横滑的推荐胶囊（如「🪟 遮光窗帘，一拉就黑」），下面「你可以这样对我说：」左右两栏分组入口
+期望: direct_reply
+数据: 空态渲染 RecommendChips 横滑区：5 条静态策划胶囊（图标+文案），点任一胶囊发送对应 prompt 进对话
+数据: 胶囊是**纯前端静态文案**、**不请求商品接口**（不恢复 getNewArrivals）：空态零商品图/商品名/价格（无 img 元素、无「¥」）
+数据: QuickActions 标题为「你可以这样对我说：」；两栏分组：左「下单小助手」（蓝组头）算料报价/找产品/查订单，右「专属推荐师」（紫组头）推荐热门商品/售后咨询/查物流
+数据: 六个入口行均带图标 + 文案 + 右箭头「›」；六入口 prompt 与六格时代逐字一致（不回归）
+数据: 输入框（MessageInput）本单不改：保持「按住 说话」语音优先原设计
+跳过: [backend-contract] 纯前端布局由 mini-app jest 单测验证（recommend-chips.test.tsx / quick-actions.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.xiaobu-quick-actions
+溯源: 2026-09-18 新增（issue #4199，用户裁定）：主页完全参考瑞幸 Agent 样式布局 —— 顶部横滑推荐胶囊 + 两栏分组入口；输入框保留原设计。前置澄清：用户截图中的商品推荐卡来自本地陈旧 dist（2026-09-15 构建，早于 #3979），#3978 早已在主干 ｜ tags: mini-app, chat-entry, empty-state, quick-actions
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -4363,8 +4377,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：317（活跃 159，跳过 158）
-- tier 分布：smoke 10 / normal 274 / adversarial 33
+- 用例总数：318（活跃 159，跳过 159）
+- tier 分布：smoke 10 / normal 275 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4388,7 +4402,7 @@
 - registry：1
 - 设置域：10
 - token-refresh：4
-- ui：44
+- ui：45
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

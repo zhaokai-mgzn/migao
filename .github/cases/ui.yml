@@ -455,7 +455,7 @@ cases:
 
   - id: UI-014
     legacy_id: ""
-    title: "小布聊天主页快捷入口六格化 - 算料报价与推荐热门商品并列（取消全宽）"
+    title: "小布聊天主页快捷入口 - 六入口全保留，瑞幸式两栏分组排列（算料报价取消全宽）"
     domains:
       - ui
       - frontend
@@ -468,17 +468,17 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-quick-actions
     user_inputs:
-      - "顾客打开小布聊天主页，快捷入口区六个入口等权排列：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流"
+      - "顾客打开小布聊天主页，快捷入口区六个入口按两栏分组排列：左「下单小助手」算料报价/找产品/查订单，右「专属推荐师」推荐热门商品/售后咨询/查物流"
     expectations:
       - tool: direct_reply
     data_checks:
-      - "QuickActions 渲染 6 个入口：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）"
-      - "「算料报价」为首项但不再带 wide 全宽样式（与其余入口等权，2 列网格 3 行）"
+      - "QuickActions 渲染 6 个入口（两栏各 3 行）：算料报价/找产品/查订单 + 推荐热门商品/售后咨询/查物流（无「退换货」「转人工」文案残留）"
+      - "「算料报价」不再带 wide 全宽样式（与其余入口等权；六格时代的 .quick-actions__item 类已随重排退场）"
       - "点击「算料报价」发送算料 prompt（含 quote 路由关键词：用料/报价），直达 curtain_calc 算料报价链路"
       - "点击「推荐热门商品」发送推荐 prompt，进入商品推荐问答"
       - "其余入口行为不回归（查订单/找产品/售后咨询/查物流 prompt 不变）"
     skip_reason: "[backend-contract] 纯前端入口由 mini-app jest 单测验证（quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-04 新增 POC 全宽主入口；2026-09-17 修订：产品决策六格化，算料报价取消全宽与推荐热门商品并列"
+    merge_log: "2026-09-04 新增 POC 全宽主入口；2026-09-17 修订：产品决策六格化，算料报价取消全宽与推荐热门商品并列；2026-09-18 修订（issue #4199，用户裁定参考瑞幸 Agent 布局）：六格等权 → 两栏分组（能力面不收缩，仅重排 + 组头配色）"
     traces:
       tests:
         - "frontend/mini-app/tests/quick-actions.test.tsx"
@@ -488,7 +488,7 @@ cases:
 
   - id: UI-044
     legacy_id: ""
-    title: "小布聊天主页空态移除商品推荐卡（NewArrivals），推荐改由快捷对话入口承载"
+    title: "小布聊天主页空态移除商品推荐卡（NewArrivals），推荐改由文字胶囊/快捷对话入口承载"
     domains:
       - ui
       - frontend
@@ -501,18 +501,19 @@ cases:
     truths_ref:
       - frontend-fix.xiaobu-quick-actions
     user_inputs:
-      - "顾客打开小布聊天主页空态：不再展示热销商品图片与名称，仅保留品牌欢迎语与快捷对话入口"
+      - "顾客打开小布聊天主页空态：不再展示热销商品图片与名称，仅保留品牌欢迎语与文字形态的推荐/快捷对话入口"
     expectations:
       - tool: direct_reply
     data_checks:
       - "空态（MessageList 无消息时）不再渲染 NewArrivals 商品卡片（无商品图/名横滑区）"
-      - "空态保留品牌头+欢迎语+快捷入口（QuickActions 6 格）"
-      - "推荐能力由「推荐热门商品」快捷入口以对话形式承载，商品推荐问答不回归"
-    skip_reason: "[backend-contract] 纯前端空态由 mini-app jest 单测验证（quick-actions.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-17 新增：产品决策——空态不再铺商品图/名，推荐改为快捷对话入口；同日补 H5 视觉回归 spec 同步（issue #4003：spec 仍断言已删除的新品推荐 → 持续红，已改为六格+负向断言并更新截图基线）"
+      - "空态保留品牌头+欢迎语+推荐胶囊（UI-046）+两栏分组快捷入口（UI-014）"
+      - "推荐能力由「推荐热门商品」快捷入口与推荐胶囊以**对话形式**承载，商品推荐问答不回归"
+    skip_reason: "[backend-contract] 纯前端空态由 mini-app jest 单测验证（quick-actions.test.tsx / recommend-chips.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-17 新增：产品决策——空态不再铺商品图/名，推荐改为快捷对话入口；同日补 H5 视觉回归 spec 同步（issue #4003：spec 仍断言已删除的新品推荐 → 持续红，已改为六格+负向断言并更新截图基线）；2026-09-18 修订（issue #4199）：新增的推荐胶囊同为**纯文字**形态（零商品图/名/价格），本条的负向判据不变"
     traces:
       tests:
         - "frontend/mini-app/tests/quick-actions.test.tsx"
+        - "frontend/mini-app/tests/recommend-chips.test.tsx"
         - "tests/e2e/specs/xiaobu/xiaobu-h5.spec.ts"
       ci:
         - mini-app.yml
@@ -1520,6 +1521,43 @@ cases:
     traces:
       tests:
         - "frontend/mini-app/tests/production-progress-card.test.tsx"
+      ci:
+        - mini-app.yml
+      verifies: []
+
+  - id: UI-046
+    legacy_id: ""
+    title: "小布主页按瑞幸 Agent 布局重做 —— 顶部横滑推荐胶囊 + 「你可以这样对我说：」两栏分组卡"
+    domains:
+      - ui
+      - frontend
+      - mini-app
+    persona: xiaobu
+    tier: normal
+    tags:
+      - mini-app
+      - chat-entry
+      - empty-state
+      - quick-actions
+    truths_ref:
+      - frontend-fix.xiaobu-quick-actions
+    user_inputs:
+      - "顾客打开小布聊天主页空态：顶部一条可横滑的推荐胶囊（如「🪟 遮光窗帘，一拉就黑」），下面「你可以这样对我说：」左右两栏分组入口"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "空态渲染 RecommendChips 横滑区：5 条静态策划胶囊（图标+文案），点任一胶囊发送对应 prompt 进对话"
+      - "胶囊是**纯前端静态文案**、**不请求商品接口**（不恢复 getNewArrivals）：空态零商品图/商品名/价格（无 img 元素、无「¥」）"
+      - "QuickActions 标题为「你可以这样对我说：」；两栏分组：左「下单小助手」（蓝组头）算料报价/找产品/查订单，右「专属推荐师」（紫组头）推荐热门商品/售后咨询/查物流"
+      - "六个入口行均带图标 + 文案 + 右箭头「›」；六入口 prompt 与六格时代逐字一致（不回归）"
+      - "输入框（MessageInput）本单不改：保持「按住 说话」语音优先原设计"
+    skip_reason: "[backend-contract] 纯前端布局由 mini-app jest 单测验证（recommend-chips.test.tsx / quick-actions.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-18 新增（issue #4199，用户裁定）：主页完全参考瑞幸 Agent 样式布局 —— 顶部横滑推荐胶囊 + 两栏分组入口；输入框保留原设计。前置澄清：用户截图中的商品推荐卡来自本地陈旧 dist（2026-09-15 构建，早于 #3979），#3978 早已在主干"
+    traces:
+      tests:
+        - "frontend/mini-app/tests/recommend-chips.test.tsx"
+        - "frontend/mini-app/tests/quick-actions.test.tsx"
+        - "tests/e2e/specs/xiaobu/xiaobu-h5.spec.ts"
       ci:
         - mini-app.yml
       verifies: []

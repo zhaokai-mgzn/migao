@@ -1,6 +1,6 @@
-// case_ids: OR-001, DF-002, UI-014, UI-016, ST-011
+// case_ids: OR-001, DF-002, UI-014, UI-016, UI-044, UI-046, ST-011
 /**
- * 小布 H5 视觉回归 — 无会话 UX + 快捷入口六格 + 订单卡片
+ * 小布 H5 视觉回归 — 无会话 UX + 瑞幸式主页（推荐胶囊 + 两栏分组）+ 订单卡片
  *
  * 目的：验证 C 端 mini-app 渲染效果（用户直接看到的 UI），
  * 弥补 API 层验收覆盖不到的视觉/布局回归。
@@ -10,13 +10,22 @@
  *
  * Mock 策略：拦截 API 返回固定数据，保证视觉断言确定性（不依赖真实 LLM/后端）。
  *
- * UI-014: 快捷入口（M1-A/issue #3978 起为六格等权：算料报价/推荐热门商品/查订单/找产品/售后咨询/查物流）
+ * UI-014: 快捷入口六入口全保留（M1-A/issue #3978 起为六格等权；issue #4199 起重排为两栏分组）
  * UI-016: 导航副标题企业名取自企业设置 tenantName（mock='米高窗帘'）
+ * UI-046: 主页按瑞幸 Agent 布局重做 —— 顶部横滑推荐胶囊 + 「你可以这样对我说：」两栏分组
  *
  * 2026-09-17 同步 M1-A（UI-044）：空态**不再展示商品推荐卡**（NewArrivals 组件与
  * 「新品推荐」区块已删除，推荐改由「推荐热门商品」快捷对话入口承载）
  * ⇒ 移除本 spec 对「新品推荐/遮光窗帘」的断言与 /chat/products/new-arrivals mock，
- *    并新增「快捷入口六格可见 + 商品推荐卡不得出现」的负向断言。
+ *    并新增「商品推荐卡不得出现」的负向断言。
+ *
+ * 2026-09-18 同步 issue #4199（用户裁定「完全参考瑞幸 Agent 样式布局」）：
+ * · 新增 RecommendChips 横滑推荐胶囊（5 条**纯前端静态策划文案**，不恢复商品接口）
+ * · QuickActions 六格 → 「你可以这样对我说：」两栏分组（下单小助手 / 专属推荐师）
+ * · **同一批**更新 `xiaobu-empty-welcome.png` 截图基线（空态画面改变 ⇒ darwin + linux 双平台，
+ *   见 migao-dev-flow §8 坑表的平台基线纪律）
+ * · ⚠️ 旧负向断言 `getByText('遮光窗帘')` 是**子串**匹配，而新胶囊文案「遮光窗帘，一拉就黑」
+ *   合法含该词 ⇒ 代理失效，改判 `.new-arrivals*` 容器 + `¥` 价格的结构性断言
  *
  * 2026-09-18 同步卡型口径（#4016 P14 的「两个零发射点卡型」现**统一为「补发射点」**）：
  * · `payment` —— #4016 P14 当时工具层确实无数据源 ⇒ 缺触发机制 ⇒ 维持裁剪；**issue #4085 第 1 项**
@@ -30,8 +39,6 @@
  * · 3 对别名 + `knowledge(_result)` **仍维持裁剪**（后端至今无发射点）。
  * （issue #4003 的教训：**砍/加卡片必须同批同步视觉 spec**，否则 spec 与实现分叉持续红 ——
  *   #4085 正是被这条红项抓出来的：旧断言写「payment 维持裁剪」，与「已放行」的实现相反。）
- *   ⚠️ 刻意**不新增截图基线**：新基线需 darwin + linux 双平台产物（见 migao-dev-flow §8 坑表），
- *   而本改动不触碰既有基线的画面（空态/订单卡），故用 DOM 断言锁行为、复用既有基线。
  */
 
 import { test, expect } from '../../fixtures'
@@ -155,7 +162,7 @@ async function setupMocks(page: import('@playwright/test').Page) {
 // ═══════════════════════════════════════════════════════════════
 
 test.describe('小布 H5 视觉回归', () => {
-  test('空态欢迎屏：无会话概念 + 快捷入口六格（无商品推荐卡）', async ({ page }) => {
+  test('空态欢迎屏：横滑推荐胶囊 + 两栏分组入口（无商品推荐卡）', async ({ page }) => {
     await setupMocks(page)
     await page.goto('/#/pages/chat/index/index')
 
@@ -163,19 +170,49 @@ test.describe('小布 H5 视觉回归', () => {
     await expect(page.locator('.chat-page__navbar-name')).toBeVisible()
     // UI-016：副标题企业名来自企业设置（mock tenantName='米高窗帘'），非硬编码默认值
     await expect(page.getByText('米高窗帘 · 智能购物助手')).toBeVisible()
-    // UI-014（M1-A/issue #3978 修订）：六格等权快捷入口全部可见（算料报价为其中之一，不再全宽）
+
+    // UI-046（issue #4199，瑞幸 Agent 布局）：顶部横滑推荐胶囊 —— 纯前端静态策划文案
+    await expect(page.locator('.recommend-chips__chip')).toHaveCount(5)
+    await expect(page.getByText('遮光窗帘，一拉就黑')).toBeVisible()
+    await expect(page.getByText('算料报价，一分钟出')).toBeVisible()
+
+    // UI-046：瑞幸式「你可以这样对我说：」两栏分组（组头 + 六行入口 + 右箭头）
+    await expect(page.getByText('你可以这样对我说：')).toBeVisible()
+    await expect(page.getByText('下单小助手')).toBeVisible()
+    await expect(page.getByText('专属推荐师')).toBeVisible()
+    await expect(page.locator('.quick-actions__group')).toHaveCount(2)
+    await expect(page.locator('.quick-actions__row')).toHaveCount(6)
+    await expect(page.locator('.quick-actions__row-arrow')).toHaveCount(6)
+    // UI-014：六入口能力面不收缩（两栏重排后逐个仍在）
     for (const label of ['算料报价', '推荐热门商品', '查订单', '找产品', '售后咨询', '查物流']) {
       await expect(page.getByText(label, { exact: true })).toBeVisible()
     }
     // 无「会话」tab（2 tab：对话/我的）
     await expect(page.getByText('会话', { exact: true })).toHaveCount(0)
-    // UI-044（M1-A）：空态**不得**再出现商品推荐卡/商品名（推荐改由快捷对话入口承载）
+
+    // UI-044：空态**不得**出现商品推荐卡。判据改成**结构性**的 ——
+    // 旧断言用「遮光窗帘」子串做代理，而新推荐胶囊的合法文案含该词（「遮光窗帘，一拉就黑」），
+    // 子串代理已失效；这里直接断言商品卡容器 / 商品图 / 价格三者都不存在。
+    await expect(page.locator('.new-arrivals')).toHaveCount(0)
+    await expect(page.locator('.new-arrivals__card')).toHaveCount(0)
     await expect(page.getByText(/新品推荐/)).toHaveCount(0)
-    await expect(page.getByText('遮光窗帘')).toHaveCount(0)
+    await expect(page.getByText('¥')).toHaveCount(0)
+
     // 视觉基线
     await expect(page).toHaveScreenshot('xiaobu-empty-welcome.png', {
       maxDiffPixelRatio: 0.02,
     })
+  })
+
+  test('推荐胶囊点击唤起对话（瑞幸式横滑入口，纯前端文案）', async ({ page }) => {
+    await setupMocks(page)
+    await page.goto('/#/pages/chat/index/index')
+
+    // UI-046：点胶囊 = 发送对应 prompt 进对话（与快捷入口同语义）
+    const chip = page.getByText('遮光窗帘，一拉就黑')
+    await expect(chip).toBeVisible()
+    await chip.click()
+    await expect(page.getByText('推荐一下遮光窗帘')).toBeVisible()
   })
 
   test('快捷入口「推荐热门商品」点击唤起对话（替代已移除的商品卡入口）', async ({ page }) => {
