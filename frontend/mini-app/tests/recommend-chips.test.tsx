@@ -4,9 +4,9 @@
  * 覆盖：渲染静态策划胶囊（图标+文案）、点胶囊发送对应 prompt、
  *       且**不出现任何商品图/商品名卡片**（与 UI-044「空态不铺商品」的裁定一致）
  *
- * UI-046: 小布主页按瑞幸 Agent 布局重做 —— 顶部横滑推荐胶囊（纯前端静态文案，不恢复商品接口）
+ * UI-044: 空态顶部横滑推荐胶囊（纯前端静态文案，不恢复商品接口）
  */
-// case_ids: UI-046
+// case_ids: UI-044
 import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
 import RecommendChips from '../src/components/chat/RecommendChips'

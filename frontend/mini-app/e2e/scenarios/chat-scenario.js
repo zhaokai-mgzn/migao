@@ -83,7 +83,7 @@ async function run(mp) {
   if (qa2) {
     const items = await page.$$('.quick-actions__row')
     const label = items && items.length > 0 ? await items[0].text() : ''
-    // UI-046（issue #4199）：六格 → 瑞幸式两栏分组（下单小助手 3 行 + 专属推荐师 3 行）= 6 行
+    // UI-014（issue #4199）：六格 → 瑞幸式两栏分组（下单小助手 3 行 + 专属推荐师 3 行）= 6 行
     rep.step('快捷入口行存在（下单小助手：算料报价/找产品/查订单；专属推荐师：推荐热门商品/售后咨询/查物流）',
       items && items.length >= 6,
       `rows=${items ? items.length : 0} first=${label || ''}`)

@@ -6,9 +6,9 @@
  * UI-010: 小布聊天主页快捷入口改版 - 转人工→查物流、退换货→售后咨询
  * UI-014: 小布聊天主页快捷入口六格化 - 算料报价与推荐热门商品并列（取消全宽）
  * UI-044: 空态移除商品推荐卡，推荐改由「推荐热门商品」快捷对话入口承载
- * UI-046: 主页按瑞幸 Agent 布局重做 —— 「你可以这样对我说：」两栏分组卡（下单小助手/专属推荐师）
+ * UI-014: 「你可以这样对我说：」两栏分组卡（下单小助手/专属推荐师，瑞幸 Agent 同款布局）
  */
-// case_ids: UI-010, UI-014, UI-044, UI-046
+// case_ids: UI-010, UI-014, UI-044
 import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
 import QuickActions from '../src/components/chat/QuickActions'

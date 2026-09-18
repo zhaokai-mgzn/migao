@@ -2416,7 +2416,7 @@
 必填: logistics_track() 字段 order_id
 ```
 真值: order.logistics
-溯源: 2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）；2026-09-14 自包含化（issue #3599）：第 2 轮去掉栈上不存在的硬编码订单号，改自然指代 + required_args[order_id]；2026-09-15 协作轮（issue #3792）：判定跑 run 34865780382 里本用例被判 reproducible（R1 正确拒绝快递单号、R2 只到 order_query ⇒ logistics_track 未调用），暴露**用例对轮次结构敏感**（两步意图压在一轮、无兜底；同 run 另有用例 rounds=1 完成同一链）⇒ 追加 repeat_until(tool_called=logistics_track, max=2) 协作轮（范式同 #3568/#3430），fallback 中性（不替 agent 报订单号）；`max` 由 3 收到 **2**（用户裁定：fallback 是「有意义的重问」⇒ 一轮追加即公平的第二次机会，`max=3` 会把「对首次请求不交付」多掩盖一轮；真实行为缺口另立 #3799，本改法**不掩盖**它）；expectations/required_args/data_checks 原样**未放宽**（协作轮用尽仍不调 logistics_track ⇒ 照旧判红） ｜ tags: query, logistics, data_safety
+溯源: 2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）；2026-09-14 自包含化（issue #3599）：第 2 轮去掉栈上不存在的硬编码订单号，改自然指代 + required_args[order_id]；2026-09-15 协作轮（issue #3792）：判定跑 run 34865780382 里本用例被判 reproducible（R1 正确拒绝快递单号、R2 只到 order_query ⇒ logistics_track 未调用），暴露**用例对轮次结构敏感**（两步意图压在一轮、无兜底；同 run 另有用例 rounds=1 完成同一链）⇒ 追加 repeat_until(tool_called=logistics_track, max=2) 协作轮（范式同 #3568/#3430），fallback 中性（不替 agent 报订单号）；`max` 由 3 收到 **2**（用户裁定：fallback 是「有意义的重问」⇒ 一轮追加即公平的第二次机会，`max=3` 会把「对首次请求不交付」多掩盖一轮；真实行为缺口另立 #3799，本改法**不掩盖**它）；expectations/required_args/data_checks 原样**未放宽**（协作轮用尽仍不调 logistics_track ⇒ 照旧判红）；2026-09-18 补前置自断言 + namespaces（burn-down：改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的唯一一条是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：`namespaces[customer_phone:13800138000]` + `precondition[order_count_for_phone:13800138000]`（不写 expect —— 该基线随栈组成变化，写死会制造假红；**先例 = 紧邻的 OR-012**，同款依赖、同款治法，不另立口径）。**断言（user_inputs / expectations / required_args / data_checks / repeat_until）原样未动，无放宽、无删减。** ｜ tags: query, logistics, data_safety
 
 ### OR-014. 下单加工项数量规则 - 按计价方式，无每米数量密度推导 🔵
 ```
@@ -2443,7 +2443,7 @@
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
 ```
 真值: order.states, order.create-flow, processing-manage.crud
-溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）；2026-09-15（issue #3835）补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`：本用例按名定位下单对象、`amount_verify` 也按名取接地真值，故「该名字唯一」是可判定的前置 —— 判定跑 run 34908262839 首跑 R1 `product_search(products=2)` + R2 把 PR-016 造的 ¥100 副本选成目标，6 轮被岔路吃掉。声明前置后这类污染折成 `precondition_not_applied(declared:product_count_for_keyword)`，不再伪装成「agent 不下单」；断言（expectations/must_succeed/amount_verify/data_checks）原样未动；2026-09-15（B 端免验证码产品变更，窄跑 34930597539）：四个「123456」轮去掉 `prefer_text: true` —— 该开关会让 harness 无视待答 confirm 卡、把「点确认」轮硬发成验证码文本，而 B 端代客下单已免短信验证码、落单前必须点击确认卡（order_create 在确认卡未被点击时返回 confirmation_required_card_not_clicked，窄跑 R9~R11 逐字复现）。去掉后按 runner 既有 `resolve_auto_respond` 语义：有待答卡就答卡（confirm→点击 confirmValue / form→回填客户信息），无卡且 C 端 customer 角色被索码时才发 123456 兜底（C 端仍需验证码，见 order_create `_needs_sms_verification` role==customer 分支）；断言（expectations/must_succeed/amount_verify/data_checks/precondition）原样未动；2026-09-18 **假红归因**（issue #4042，LLM 红例 run 35243351675 @67db87ae）：本例在 mibao 腿判红（`amount_verify: 单价 150 ≠ 商品库 168`）而 **xiaobu 腿同一条断言判绿**，差异不在 agent —— 同栈的 PR-021（输入「把遮光窗帘的米白色散剪规格改成 150 元」）把**共享夹具** `prod_eval_blackout` 的米白/散剪 SKU 价改成 150 且**无复位**，而本例 `amount_verify` 的接地真值取的是**商品级价**（168，`_fetch_product_price`）⇒ 按所选规格下单（150 = 该 SKU 库价，工具层接地闸门同样放行）反被判成「凭记忆报价」。两层修法：① 断言语义对齐工具闸门（真值按所选规格取 SKU 价，见本 PR 对 `local_runner.check_amount_verify` 的改动）；② 写方无复位属独立缺陷，另开单跟踪（本 PR 不改夹具写入方）；2026-09-18 补 `persona: xiaobu`（单端标注，burn-down 销账条：expectations 工具集 {order_create} ⊆ XIAOBU_TOOLS ⇒ 静态可判定为**小布专属**用例，消除存量违规 CASE-TRUST-SINGLE-LEG-NO-PERSONA；**断言与前置原样未动**，仅补标注以免跨腿窄跑误选） ｜ tags: order_create, processing_item, pricing
+溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）；2026-09-15（issue #3835）补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`：本用例按名定位下单对象、`amount_verify` 也按名取接地真值，故「该名字唯一」是可判定的前置 —— 判定跑 run 34908262839 首跑 R1 `product_search(products=2)` + R2 把 PR-016 造的 ¥100 副本选成目标，6 轮被岔路吃掉。声明前置后这类污染折成 `precondition_not_applied(declared:product_count_for_keyword)`，不再伪装成「agent 不下单」；断言（expectations/must_succeed/amount_verify/data_checks）原样未动；2026-09-15（B 端免验证码产品变更，窄跑 34930597539）：四个「123456」轮去掉 `prefer_text: true` —— 该开关会让 harness 无视待答 confirm 卡、把「点确认」轮硬发成验证码文本，而 B 端代客下单已免短信验证码、落单前必须点击确认卡（order_create 在确认卡未被点击时返回 confirmation_required_card_not_clicked，窄跑 R9~R11 逐字复现）。去掉后按 runner 既有 `resolve_auto_respond` 语义：有待答卡就答卡（confirm→点击 confirmValue / form→回填客户信息），无卡且 C 端 customer 角色被索码时才发 123456 兜底（C 端仍需验证码，见 order_create `_needs_sms_verification` role==customer 分支）；断言（expectations/must_succeed/amount_verify/data_checks/precondition）原样未动；2026-09-18 **假红归因**（issue #4042，LLM 红例 run 35243351675 @67db87ae）：本例在 mibao 腿判红（`amount_verify: 单价 150 ≠ 商品库 168`）而 **xiaobu 腿同一条断言判绿**，差异不在 agent —— 同栈的 PR-021（输入「把遮光窗帘的米白色散剪规格改成 150 元」）把**共享夹具** `prod_eval_blackout` 的米白/散剪 SKU 价改成 150 且**无复位**，而本例 `amount_verify` 的接地真值取的是**商品级价**（168，`_fetch_product_price`）⇒ 按所选规格下单（150 = 该 SKU 库价，工具层接地闸门同样放行）反被判成「凭记忆报价」。两层修法：① 断言语义对齐工具闸门（真值按所选规格取 SKU 价，见本 PR 对 `local_runner.check_amount_verify` 的改动）；② 写方无复位属独立缺陷，另开单跟踪（本 PR 不改夹具写入方） ｜ tags: order_create, processing_item, pricing
 
 ### OR-015. order_create 写操作前置校验必须真正执行（validate_input 规则分层修复，issue #3029 复盘） 🔵
 ```
@@ -3753,7 +3753,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（45 case）
+## ui（44 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -3944,15 +3944,17 @@
 
 ### UI-044. 小布聊天主页空态移除商品推荐卡（NewArrivals），推荐改由文字胶囊/快捷对话入口承载 🔵
 ```
-你: 顾客打开小布聊天主页空态：不再展示热销商品图片与名称，仅保留品牌欢迎语与文字形态的推荐/快捷对话入口
+你: 顾客打开小布聊天主页空态：顶部一条可横滑的推荐胶囊（如「🪟 遮光窗帘，一拉就黑」），不再展示热销商品图片与名称
 期望: direct_reply
-数据: 空态（MessageList 无消息时）不再渲染 NewArrivals 商品卡片（无商品图/名横滑区）
-数据: 空态保留品牌头+欢迎语+推荐胶囊（UI-046）+两栏分组快捷入口（UI-014）
+数据: 空态（MessageList 无消息时）不再渲染 NewArrivals 商品卡片（无商品图/名横滑区；结构性判据 = `.new-arrivals*` 计数 0、无 img、无「¥」价格）
+数据: 空态渲染 RecommendChips 横滑区：5 条**纯前端静态策划文案**胶囊（图标+文案），点任一胶囊发送对应 prompt 进对话（与快捷入口同语义）
+数据: 胶囊**不请求商品接口**（不恢复 getNewArrivals）—— 与「空态不铺商品图/名」的裁定一致，推荐一律以对话形式承载
+数据: 空态保留品牌头 + 欢迎语 + 推荐胶囊 + 两栏分组快捷入口（UI-014）
 数据: 推荐能力由「推荐热门商品」快捷入口与推荐胶囊以**对话形式**承载，商品推荐问答不回归
-跳过: [backend-contract] 纯前端空态由 mini-app jest 单测验证（quick-actions.test.tsx / recommend-chips.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
+跳过: [backend-contract] 纯前端空态由 mini-app jest 单测验证（recommend-chips.test.tsx / quick-actions.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.xiaobu-quick-actions
-溯源: 2026-09-17 新增：产品决策——空态不再铺商品图/名，推荐改为快捷对话入口；同日补 H5 视觉回归 spec 同步（issue #4003：spec 仍断言已删除的新品推荐 → 持续红，已改为六格+负向断言并更新截图基线）；2026-09-18 修订（issue #4199）：新增的推荐胶囊同为**纯文字**形态（零商品图/名/价格），本条的负向判据不变 ｜ tags: mini-app, chat-entry, empty-state
+溯源: 2026-09-17 新增：产品决策——空态不再铺商品图/名，推荐改为快捷对话入口；同日补 H5 视觉回归 spec 同步（issue #4003：spec 仍断言已删除的新品推荐 → 持续红，已改为六格+负向断言并更新截图基线）；2026-09-18 修订（issue #4199，用户裁定「完全参考瑞幸 Agent 样式布局」）：空态新增**顶部横滑推荐胶囊**（RecommendChips，5 条静态文案、零商品图/名/价格 ⇒ 本条的负向判据不变）；同时**不再单列 UI-046** —— 胶囊属空态构成，折进本条，避免新增 skip 使 `skip_total` 净增（判据条数不减） ｜ tags: mini-app, chat-entry, empty-state
 
 ### UI-015. 我的页移除「账号信息」占位入口（功能开发中占位不进 POC 演示） 🔵
 ```
@@ -4334,20 +4336,6 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-17 新增（issue #3997 M4-G-3）：顾客端生产进度可视化 —— 消费生产报工契约的读侧；persona: xiaobu（C 端专属卡片） ｜ tags: ui, mini-app, production-progress, card
 
-### UI-046. 小布主页按瑞幸 Agent 布局重做 —— 顶部横滑推荐胶囊 + 「你可以这样对我说：」两栏分组卡 🔵
-```
-你: 顾客打开小布聊天主页空态：顶部一条可横滑的推荐胶囊（如「🪟 遮光窗帘，一拉就黑」），下面「你可以这样对我说：」左右两栏分组入口
-期望: direct_reply
-数据: 空态渲染 RecommendChips 横滑区：5 条静态策划胶囊（图标+文案），点任一胶囊发送对应 prompt 进对话
-数据: 胶囊是**纯前端静态文案**、**不请求商品接口**（不恢复 getNewArrivals）：空态零商品图/商品名/价格（无 img 元素、无「¥」）
-数据: QuickActions 标题为「你可以这样对我说：」；两栏分组：左「下单小助手」（蓝组头）算料报价/找产品/查订单，右「专属推荐师」（紫组头）推荐热门商品/售后咨询/查物流
-数据: 六个入口行均带图标 + 文案 + 右箭头「›」；六入口 prompt 与六格时代逐字一致（不回归）
-数据: 输入框（MessageInput）本单不改：保持「按住 说话」语音优先原设计
-跳过: [backend-contract] 纯前端布局由 mini-app jest 单测验证（recommend-chips.test.tsx / quick-actions.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
-```
-真值: frontend-fix.xiaobu-quick-actions
-溯源: 2026-09-18 新增（issue #4199，用户裁定）：主页完全参考瑞幸 Agent 样式布局 —— 顶部横滑推荐胶囊 + 两栏分组入口；输入框保留原设计。前置澄清：用户截图中的商品推荐卡来自本地陈旧 dist（2026-09-15 构建，早于 #3979），#3978 早已在主干 ｜ tags: mini-app, chat-entry, empty-state, quick-actions
-
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -4377,8 +4365,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：318（活跃 159，跳过 159）
-- tier 分布：smoke 10 / normal 275 / adversarial 33
+- 用例总数：317（活跃 159，跳过 158）
+- tier 分布：smoke 10 / normal 274 / adversarial 33
 - 售后域：9
 - agents：6
 - api：19
@@ -4402,7 +4390,7 @@
 - registry：1
 - 设置域：10
 - token-refresh：4
-- ui：45
+- ui：44
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

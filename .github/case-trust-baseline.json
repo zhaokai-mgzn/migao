@@ -20,7 +20,7 @@
     "deadline": "2026-12-31"
   },
   "anchor_sha": "44615b6c9be18d23709a92c0c7e027da259f0836",
-  "case_total": 318,
+  "case_total": 317,
   "violation_case_count": 122,
   "rule_counts": {
     "CASE-TRUST-EMPTY-ASSERTION": 25,
@@ -29,9 +29,9 @@
     "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE": 0,
     "CASE-TRUST-FORBIDDEN-TEXT-SOLE": 6,
     "CASE-TRUST-VOLATILE-LOCATOR": 1,
-    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 88,
+    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 87,
     "CASE-TRUST-STALE-LINE-REF": 0,
-    "CASE-TRUST-SINGLE-LEG-NO-PERSONA": 14
+    "CASE-TRUST-SINGLE-LEG-NO-PERSONA": 15
   },
   "violations": {
     "API-010": {
@@ -451,9 +451,9 @@
         "CASE-TRUST-NO-SELF-CLEAN"
       ]
     },
-    "OR-013": {
+    "OR-014": {
       "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
+        "CASE-TRUST-SINGLE-LEG-NO-PERSONA"
       ]
     },
     "OR-017": {

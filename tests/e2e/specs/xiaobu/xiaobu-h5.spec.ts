@@ -1,4 +1,4 @@
-// case_ids: OR-001, DF-002, UI-014, UI-016, UI-044, UI-046, ST-011
+// case_ids: OR-001, DF-002, UI-014, UI-016, UI-044, ST-011
 /**
  * 小布 H5 视觉回归 — 无会话 UX + 瑞幸式主页（推荐胶囊 + 两栏分组）+ 订单卡片
  *
@@ -12,7 +12,7 @@
  *
  * UI-014: 快捷入口六入口全保留（M1-A/issue #3978 起为六格等权；issue #4199 起重排为两栏分组）
  * UI-016: 导航副标题企业名取自企业设置 tenantName（mock='米高窗帘'）
- * UI-046: 主页按瑞幸 Agent 布局重做 —— 顶部横滑推荐胶囊 + 「你可以这样对我说：」两栏分组
+ * UI-044/UI-014: 瑞幸 Agent 布局 —— 顶部横滑推荐胶囊（空态构成）+「你可以这样对我说：」两栏分组
  *
  * 2026-09-17 同步 M1-A（UI-044）：空态**不再展示商品推荐卡**（NewArrivals 组件与
  * 「新品推荐」区块已删除，推荐改由「推荐热门商品」快捷对话入口承载）
@@ -171,12 +171,12 @@ test.describe('小布 H5 视觉回归', () => {
     // UI-016：副标题企业名来自企业设置（mock tenantName='米高窗帘'），非硬编码默认值
     await expect(page.getByText('米高窗帘 · 智能购物助手')).toBeVisible()
 
-    // UI-046（issue #4199，瑞幸 Agent 布局）：顶部横滑推荐胶囊 —— 纯前端静态策划文案
+    // UI-044（issue #4199，瑞幸 Agent 布局）：顶部横滑推荐胶囊 —— 纯前端静态策划文案
     await expect(page.locator('.recommend-chips__chip')).toHaveCount(5)
     await expect(page.getByText('遮光窗帘，一拉就黑')).toBeVisible()
     await expect(page.getByText('算料报价，一分钟出')).toBeVisible()
 
-    // UI-046：瑞幸式「你可以这样对我说：」两栏分组（组头 + 六行入口 + 右箭头）
+    // UI-014：瑞幸式「你可以这样对我说：」两栏分组（组头 + 六行入口 + 右箭头）
     await expect(page.getByText('你可以这样对我说：')).toBeVisible()
     await expect(page.getByText('下单小助手')).toBeVisible()
     await expect(page.getByText('专属推荐师')).toBeVisible()
@@ -208,7 +208,7 @@ test.describe('小布 H5 视觉回归', () => {
     await setupMocks(page)
     await page.goto('/#/pages/chat/index/index')
 
-    // UI-046：点胶囊 = 发送对应 prompt 进对话（与快捷入口同语义）
+    // UI-044：点胶囊 = 发送对应 prompt 进对话（与快捷入口同语义）
     const chip = page.getByText('遮光窗帘，一拉就黑')
     await expect(chip).toBeVisible()
     await chip.click()

@@ -3510,6 +3510,8 @@ _CASE_OR_013 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'logistics_track', 'fields': ['order_id']}],
+    namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
 # ── OR-014 [NORMAL] 下单加工项数量规则 - 按计价方式，无每米数量密度推导（源: cases/order.yml）──
@@ -3524,7 +3526,7 @@ _CASE_OR_014 = EvalCase(
     data_checks=['加工项数量按计价方式确定（**仅 order_create 路径**；`calculate_price` 端点的 per_area 面积由 `dimensions.width/height` 承载、`quantity` 为计件数，见 #3672）：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高', 'processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和', '订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导', '加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
     skip_reason='',
     tags=['order_create', 'processing_item', 'pricing'],
-    persona='xiaobu',
+    persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
@@ -5491,10 +5493,10 @@ _CASE_UI_044 = EvalCase(
     title='小布聊天主页空态移除商品推荐卡（NewArrivals），推荐改由文字胶囊/快捷对话入口承载',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['顾客打开小布聊天主页空态：不再展示热销商品图片与名称，仅保留品牌欢迎语与文字形态的推荐/快捷对话入口'],
+    user_inputs=['顾客打开小布聊天主页空态：顶部一条可横滑的推荐胶囊（如「🪟 遮光窗帘，一拉就黑」），不再展示热销商品图片与名称'],
     expectations=['direct_reply'],
-    data_checks=['空态（MessageList 无消息时）不再渲染 NewArrivals 商品卡片（无商品图/名横滑区）', '空态保留品牌头+欢迎语+推荐胶囊（UI-046）+两栏分组快捷入口（UI-014）', '推荐能力由「推荐热门商品」快捷入口与推荐胶囊以**对话形式**承载，商品推荐问答不回归'],
-    skip_reason='[backend-contract] 纯前端空态由 mini-app jest 单测验证（quick-actions.test.tsx / recommend-chips.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟',
+    data_checks=['空态（MessageList 无消息时）不再渲染 NewArrivals 商品卡片（无商品图/名横滑区；结构性判据 = `.new-arrivals*` 计数 0、无 img、无「¥」价格）', '空态渲染 RecommendChips 横滑区：5 条**纯前端静态策划文案**胶囊（图标+文案），点任一胶囊发送对应 prompt 进对话（与快捷入口同语义）', '胶囊**不请求商品接口**（不恢复 getNewArrivals）—— 与「空态不铺商品图/名」的裁定一致，推荐一律以对话形式承载', '空态保留品牌头 + 欢迎语 + 推荐胶囊 + 两栏分组快捷入口（UI-014）', '推荐能力由「推荐热门商品」快捷入口与推荐胶囊以**对话形式**承载，商品推荐问答不回归'],
+    skip_reason='[backend-contract] 纯前端空态由 mini-app jest 单测验证（recommend-chips.test.tsx / quick-actions.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['mini-app', 'chat-entry', 'empty-state'],
     persona='',
     debug_user='',
@@ -6024,24 +6026,6 @@ _CASE_UI_045 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── UI-046 [NORMAL] 小布主页按瑞幸 Agent 布局重做 —— 顶部横滑推荐胶囊 + 「你可以这样对我说：」两栏分组卡（源: cases/ui.yml）──
-_CASE_UI_046 = EvalCase(
-    id='UI-046',
-    legacy_id='',
-    title='小布主页按瑞幸 Agent 布局重做 —— 顶部横滑推荐胶囊 + 「你可以这样对我说：」两栏分组卡',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['顾客打开小布聊天主页空态：顶部一条可横滑的推荐胶囊（如「🪟 遮光窗帘，一拉就黑」），下面「你可以这样对我说：」左右两栏分组入口'],
-    expectations=['direct_reply'],
-    data_checks=['空态渲染 RecommendChips 横滑区：5 条静态策划胶囊（图标+文案），点任一胶囊发送对应 prompt 进对话', '胶囊是**纯前端静态文案**、**不请求商品接口**（不恢复 getNewArrivals）：空态零商品图/商品名/价格（无 img 元素、无「¥」）', 'QuickActions 标题为「你可以这样对我说：」；两栏分组：左「下单小助手」（蓝组头）算料报价/找产品/查订单，右「专属推荐师」（紫组头）推荐热门商品/售后咨询/查物流', '六个入口行均带图标 + 文案 + 右箭头「›」；六入口 prompt 与六格时代逐字一致（不回归）', '输入框（MessageInput）本单不改：保持「按住 说话」语音优先原设计'],
-    skip_reason='[backend-contract] 纯前端布局由 mini-app jest 单测验证（recommend-chips.test.tsx / quick-actions.test.tsx）+ H5 视觉回归（xiaobu-h5.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟',
-    tags=['mini-app', 'chat-entry', 'empty-state', 'quick-actions'],
-    persona='xiaobu',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-)
-
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -6394,7 +6378,6 @@ ALL_CASES = (
     _CASE_UI_043,
     _CASE_UI_042,
     _CASE_UI_045,
-    _CASE_UI_046,
     _CASE_UT_001,
     _CASE_UT_002,
 )

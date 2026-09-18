@@ -44,7 +44,7 @@ async function run(mp) {
 
   // ── 3. 定位「售后咨询」行并点击 ──
   if (qa) {
-    // UI-046（issue #4199）：入口由 .quick-actions__item（六格）改为 .quick-actions__row（两栏分组行）
+    // UI-014（issue #4199）：入口由 .quick-actions__item（六格）改为 .quick-actions__row（两栏分组行）
     const items = await page.$$('.quick-actions__row')
     let target = null
     let label = ''
