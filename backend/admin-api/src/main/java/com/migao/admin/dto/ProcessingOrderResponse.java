@@ -51,6 +51,15 @@ public class ProcessingOrderResponse {
         private String unit;
         /** 加工项：含 id/name/unitPrice/quantity/unit/options（options 生成时从加工项目录补齐） */
         private List<ProcessingItemSnapshot> processingItems;
+        /**
+         * 下单勾选的**特殊选项**（issue #4230 v1a：订单侧新携带 {@code specialOptions: string[]}，
+         * 落在既有 processingInfo JSONB 内，无需迁移）。
+         *
+         * <p>用 {@code Object} 而非 {@code List<String>}：脏数据（非数组形态）不得让整份快照解析
+         * 失败 —— 快照里出现本字段而 DTO 没声明时，Jackson 的未知属性会让 {@code items} 整段
+         * 变成 null（响应静默退化）；用 Object 同时解决「字段缺失」与「形态不干净」两种形态。</p>
+         */
+        private Object specialOptions;
         private String remark;
     }
 

@@ -146,6 +146,7 @@ public class ProductionService {
                     .qty(spec.qty())
                     .unitPrice(spec.unitPrice())
                     .factor(spec.factor())
+                    .qtySource(spec.qtySource())
                     .isMustFinish(spec.mustFinish())
                     .isStartMarker(spec.startMarker())
                     .status("pending")
@@ -236,6 +237,7 @@ public class ProductionService {
                         bd(op.get("qty"), BigDecimal.ZERO),
                         bd(op.get("unit_price"), BigDecimal.ZERO),
                         bd(op.get("factor"), BigDecimal.ONE),
+                        str(op.get("qty_source")),
                         flag(op.get("is_must_finish")),
                         flag(op.get("is_start_marker"))));
                 seq++;
@@ -250,7 +252,7 @@ public class ProductionService {
         for (ProcessingPositionOperation op : operations) {
             specs.add(new OpSpec(op.getPositionName(), op.getSeq() == null ? 0 : op.getSeq(),
                     op.getOperationName(), op.getGroupName(), op.getUnit(),
-                    op.getQty(), op.getUnitPrice(), op.getFactor(),
+                    op.getQty(), op.getUnitPrice(), op.getFactor(), op.getQtySource(),
                     Boolean.TRUE.equals(op.getIsMustFinish()), Boolean.TRUE.equals(op.getIsStartMarker())));
         }
         return specs;
@@ -268,13 +270,13 @@ public class ProductionService {
 
     /** 工序实例归一化形态：字段集 = 落库字段集（比较用的最小充分集）。 */
     private record OpSpec(String positionName, int seq, String operationName, String groupName, String unit,
-                          BigDecimal qty, BigDecimal unitPrice, BigDecimal factor,
+                          BigDecimal qty, BigDecimal unitPrice, BigDecimal factor, String qtySource,
                           boolean mustFinish, boolean startMarker) {
 
         String signature() {
             return String.join("\u0001",
                     orDash(positionName), String.valueOf(seq), orDash(operationName), orDash(groupName),
-                    orDash(unit), num(qty), num(unitPrice), num(factor),
+                    orDash(unit), num(qty), num(unitPrice), num(factor), orDash(qtySource),
                     String.valueOf(mustFinish), String.valueOf(startMarker));
         }
 
@@ -950,6 +952,7 @@ public class ProductionService {
         view.put("group", op.getGroupName());
         view.put("unit", op.getUnit());
         view.put("qty", nz(op.getQty()));
+        view.put("qty_source", op.getQtySource());
         view.put("unit_price", nz(op.getUnitPrice()));
         view.put("factor", op.getFactor() == null ? BigDecimal.ONE : op.getFactor());
         view.put("is_must_finish", Boolean.TRUE.equals(op.getIsMustFinish()));

@@ -2,8 +2,12 @@ package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.migao.admin.entity.ProductionOperation;
+import com.migao.admin.entity.ProductionOptionFactor;
+import com.migao.admin.entity.ProductionOptionRouting;
 import com.migao.admin.entity.ProductionRouting;
 import com.migao.admin.mapper.ProductionOperationMapper;
+import com.migao.admin.mapper.ProductionOptionFactorMapper;
+import com.migao.admin.mapper.ProductionOptionRoutingMapper;
 import com.migao.admin.mapper.ProductionRoutingMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +49,10 @@ public class ProductionOperationQueryService {
 
     private final ProductionOperationMapper productionOperationMapper;
     private final ProductionRoutingMapper productionRoutingMapper;
+    /** 特殊选项 → 条件工序（issue #4230，V58）。 */
+    private final ProductionOptionRoutingMapper productionOptionRoutingMapper;
+    /** 特殊选项 → 计件系数（issue #4230，V58）。 */
+    private final ProductionOptionFactorMapper productionOptionFactorMapper;
 
     /**
      * 工序库目录：按分组 → 排序位的稳定顺序返回全部活跃工序。
@@ -159,6 +167,60 @@ public class ProductionOperationQueryService {
     }
 
     /**
+     * 特殊选项 → 条件工序（issue #4230，**实例化用**读面）。
+     *
+     * <p>与 {@link #findRouting} 的分工：路线给**基准**工序序列，本表给「勾了某个特殊选项才加」的
+     * **条件**工序；插在哪由 {@code after_operation} 决定（锚点不在路线中 ⇒ 追加到末尾，
+     * 与真值源 {@code routing.py::_insert_after} 同款）。</p>
+     *
+     * <p>只返回**活跃**行（{@code status=active} + 未软删 + 同租户），按 {@code sort_order}
+     * 稳定排序 —— 多选项共用同一锚点时的先后必须确定，否则同一张单两次生成会得到不同 seq。</p>
+     *
+     * @return 全部活跃条件工序行（调用方按本单的 specialOptions 过滤；表极小，一次取回比逐选项查省事且无 N+1）
+     */
+    public List<ProductionOptionRouting> optionRoutings(Long tenantId) {
+        List<ProductionOptionRouting> rows = productionOptionRoutingMapper.selectList(
+                new LambdaQueryWrapper<ProductionOptionRouting>()
+                        .eq(ProductionOptionRouting::getTenantId, tenantId)
+                        .eq(ProductionOptionRouting::getDeleted, 0)
+                        .eq(ProductionOptionRouting::getStatus, "active")
+                        .orderByAsc(ProductionOptionRouting::getSortOrder)
+                        .orderByAsc(ProductionOptionRouting::getOptionName));
+        return rows == null ? List.of() : rows;
+    }
+
+    /**
+     * 特殊选项 → 计件系数（issue #4230，**实例化用**读面）。
+     *
+     * <p>{@code operation_name} 为空 = 该部位全部工序（平摊档）；非空 = 逐工序例外档。
+     * 取用口径（在 {@code ProcessingOrderService} 里）：同一选项内**例外档盖住平摊档**，
+     * 多个选项之间**相乘** —— 与真值源 {@code routing.py::factor_for} 逐字同口径
+     * （相乘而非覆盖：两个独立倍率的合成；覆盖会把「一分二 ×1.7 + 另一选项 ×2」算成 ×2）。</p>
+     */
+    public List<ProductionOptionFactor> optionFactors(Long tenantId) {
+        List<ProductionOptionFactor> rows = productionOptionFactorMapper.selectList(
+                new LambdaQueryWrapper<ProductionOptionFactor>()
+                        .eq(ProductionOptionFactor::getTenantId, tenantId)
+                        .eq(ProductionOptionFactor::getDeleted, 0)
+                        .orderByAsc(ProductionOptionFactor::getOptionName)
+                        .orderByAsc(ProductionOptionFactor::getOperationName));
+        return rows == null ? List.of() : rows;
+    }
+
+    /**
+     * 工序元数据按名索引（issue #4230：**条件工序**要拿分组/单位/单价/必完标记）。
+     *
+     * <p>与 {@link #findRouting} 的 {@code catalogByName} **同一份**读取口径
+     * （不复制第二份「怎么读工序库」）。返回值里**没有 seq**：条件工序的位置由锚点决定，
+     * 不是库里的固定序号 —— 调用方插完后统一重排。</p>
+     */
+    public Map<String, Map<String, Object>> operationsByName(Long tenantId) {
+        Map<String, Map<String, Object>> views = new LinkedHashMap<>();
+        catalogByName(tenantId).forEach((name, op) -> views.put(name, operationMetaView(op)));
+        return views;
+    }
+
+    /**
      * 库中现有的路线键（`部位×工艺`，展示顺序 = 部位→工艺）。
      * 失败提示要**可行动**就必须能说出"库里有的是什么"，而不是只说"没找到"。
      */
@@ -236,6 +298,16 @@ public class ProductionOperationQueryService {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("seq", seq);
         view.put("operation", operationName);
+        view.putAll(operationMetaView(op));
+        return view;
+    }
+
+    /**
+     * 工序的库口径元数据（路线内工序与**条件工序**共用同一份整形 —— 两处各拼一份必然漂移，
+     * 而它们最终落在同一张实例表的同名列上）。
+     */
+    private Map<String, Object> operationMetaView(ProductionOperation op) {
+        Map<String, Object> view = new LinkedHashMap<>();
         view.put("group", op == null ? null : op.getGroupName());
         view.put("unit", op == null ? null : op.getUnit());
         view.put("unit_price", op == null ? null : nz(op.getUnitPrice()));

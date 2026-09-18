@@ -5,7 +5,7 @@
   "_how_to": "本文件是**数据**，人工维护；判据在 test_skip_exemption_gate.py。改了用例库后跑 `python3 -m pytest tests/unit_ci_workflows/test_skip_exemption_gate.py -q` 复核。",
   "anchor_sha": "14922a81df0d699d849bd0244f85f095a72d3a83",
   "anchored_at": "2026-09-18",
-  "skip_total": 160,
+  "skip_total": 162,
   "legacy_skip_ids": [
     "AG-001",
     "AG-002",
@@ -109,6 +109,8 @@
     "PG-019",
     "PG-020",
     "PG-021",
+    "PG-022",
+    "PG-023",
     "PP-010",
     "PP-011",
     "PP-012",
@@ -229,8 +231,8 @@
     {
       "sha": "14922a81df0d699d849bd0244f85f095a72d3a83",
       "date": "2026-09-18",
-      "skip_total": 160,
-      "note": "重锚定（集成裁定 方案 A：末行增长 + 显式 note）：本行合并记录两批增量，**仅增这两批、未放行任何存量**。\n① PKG-BE 批（#4237）：PG-019/PG-020/PG-021（#4202 存量单恢复 / #4204 工序库写面+单价版本化 / #4205 计件报表）与 PP-012（#4208 内部算料数量端点）；\n② 本包批（#4230，PR #4234）：**PP-013** —— 特殊选项 19 项全登记门禁，`traces.tests` 已钉住 `backend/ai-agent-service/tests/test_production/test_special_options.py`。该用例是纯函数确定性判据、非 LLM 行为 ⇒ 用非空 skip_reason 使其不进 agent-eval 冒烟（runner 按 skip_reason 过滤），不是可删的豁免。\n实测三个数：用例库 322（= origin/main 321 + PP-013）／账本旧值 159（origin/main @14922a81 实测非空 skip 亦为 159）／账本新值 160。\n⚠️ 本批是**同日第二次**重锚定（PKG-BE 156→159，本包 159→160），佐证 issue #4233：`[backend-contract]` 类用例设计上就不进 agent-eval，却计入 skip_total 增长 ⇒ 每新增一条此类用例都要重锚 ⇒「总量只许缩」被例行化、摩擦力归零。本包不修该门禁（不属本 PR 范围）。\n（历史说明：锚点 da935b6a 处本行原记 159；按本文件「history 只许非增」的既有处置，重锚定值就地合并写入末行，不另起一行。另实测各锚点真值 51e40495=156 / 8a97c025=156 / da935b6a=158 / 14922a81=159 —— PKG-BE 当年记的 159 系其**分支本地**计数，锚点前移到 main 后以 main 真值为准。）",
+      "skip_total": 162,
+      "note": "重锚定（集成裁定 方案 A：末行增长 + 显式 note）：本行合并记录两批增量，**仅增这两批、未放行任何存量**。\n① PKG-BE 批（#4237）：PG-019/PG-020/PG-021（#4202 存量单恢复 / #4204 工序库写面+单价版本化 / #4205 计件报表）与 PP-012（#4208 内部算料数量端点）；\n② 本包批（#4230，PR #4234）：**PP-013** —— 特殊选项 19 项全登记门禁，`traces.tests` 已钉住 `backend/ai-agent-service/tests/test_production/test_special_options.py`。该用例是纯函数确定性判据、非 LLM 行为 ⇒ 用非空 skip_reason 使其不进 agent-eval 冒烟（runner 按 skip_reason 过滤），不是可删的豁免。\n实测三个数：用例库 322（= origin/main 321 + PP-013）／账本旧值 159（origin/main @14922a81 实测非空 skip 亦为 159）／账本新值 160。\n⚠️ 本批是**同日第二次**重锚定（PKG-BE 156→159，本包 159→160），佐证 issue #4233：`[backend-contract]` 类用例设计上就不进 agent-eval，却计入 skip_total 增长 ⇒ 每新增一条此类用例都要重锚 ⇒「总量只许缩」被例行化、摩擦力归零。本包不修该门禁（不属本 PR 范围）。\n（历史说明：锚点 da935b6a 处本行原记 159；按本文件「history 只许非增」的既有处置，重锚定值就地合并写入末行，不另起一行。另实测各锚点真值 51e40495=156 / 8a97c025=156 / da935b6a=158 / 14922a81=159 —— PKG-BE 当年记的 159 系其**分支本地**计数，锚点前移到 main 后以 main 真值为准。）\n【本 PR（#4208/#4230 Java 半边）就地合并 +2，仍写入**本行** —— 不另起一行：`_history_growth_allowed` 只放行**末行**增长，追加一行会让本行的 156→160 变成非末行增长 ⇒ 必红。】本批 = **PG-022**（issue #4208 Java 接线：算料端点客户端 + 应做数量接线 + `qty_source` 列），`traces.tests` 已钉住 `backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationQtyClientTest.java`、`ProcessingOrderServiceTest.java`、`backend/admin-api/src/test/java/com/migao/admin/migration/ProductionPositionOperationQtySourceMigrationTest.java`。该用例是 Java 服务层确定性判据、非 LLM 行为 ⇒ 用非空 skip_reason 使其不进 agent-eval 冒烟（runner 按 skip_reason 过滤），不是可删的豁免。实测两个数：用例库非空 skip 162（= origin/main 160 + PG-022 + PG-023）／账本旧值 160／账本新值 162。两个 commit 的增量**都写在本行**（PG-022 = #4208 Java 接线；PG-023 = #4230 特殊选项 Java 侧，`traces.tests` 钉住 `ProcessingOrderServiceTest.java` 与 `backend/admin-api/src/test/java/com/migao/admin/migration/ProductionOptionRoutingMigrationTest.java`）。（为什么不各写一行：`_history_growth_allowed` 只放行**末行**增长，追加第二行会让本行的 156→160 变成非末行增长 ⇒ 必红。）⚠️ 本行是**同日第三次**重锚定（PKG-BE 156→159、#4234 159→160、本包 160→161），再次佐证 issue #4233：`[backend-contract]` 类用例设计上就不进 agent-eval，却计入 skip_total 增长 ⇒ 每新增一条此类用例都要重锚 ⇒「总量只许缩」被例行化、摩擦力归零。本包不修该门禁（不属本 PR 范围）。",
       "previous_anchor": {
         "sha": "da935b6a0fa931b17d3b9c50fe1273e171fa28b4",
         "skip_total": 159

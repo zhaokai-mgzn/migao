@@ -47,6 +47,13 @@ public class ProcessingPositionOperation {
     /** 应做数量（算料引擎输出） */
     private BigDecimal qty;
 
+    /**
+     * 应做数量的口径来源（issue #4208）：键名（{@code fabric_meters}/{@code pleat_count}/{@code holes}）
+     * = 算料输出直接供数；{@code <键名>_x6} = 按每米 6 孔的有依据估算；{@code fallback} = 真兜底 1。
+     * 存在的唯一理由：让「算料输出」与「兜底」在数据上可区分（兜底不静默）。
+     */
+    private String qtySource;
+
     /** 实例快照单价（调价不影响历史报工） */
     private BigDecimal unitPrice;
 

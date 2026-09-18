@@ -70,6 +70,10 @@ class ProcessingOrderDetailNoProcOrderTest extends BaseControllerTest {
     @Mock
     private com.migao.admin.service.ProductionOperationQueryService productionOperationQueryService;
 
+    // issue #4208 接线：应做数量改问算料引擎（ProductionOperationQtyClient）；本测试不生成加工单，mock 掉
+    @Mock
+    private com.migao.admin.service.ProductionOperationQtyClient productionOperationQtyClient;
+
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -87,7 +91,7 @@ class ProcessingOrderDetailNoProcOrderTest extends BaseControllerTest {
 
         processingOrderService = new ProcessingOrderService(
                 processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper, orderService, objectMapper,
-                productionService, productionOperationQueryService);
+                productionService, productionOperationQueryService, productionOperationQtyClient);
         controller = new ProcessingOrderController(processingOrderService);
         mockMvc = buildMockMvc(controller);
     }
