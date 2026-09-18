@@ -689,4 +689,145 @@ describe('NewOrderPage', () => {
       expect(payload.actualAmount).toBe(140)
     })
   })
+
+  // ===== 樘窗绑组写侧（issue #4395 判据 1）=====
+  //
+  // 病根：下单页**只在拼色时**写 `craftLineId` ⇒ 顾客下「布 + 纱」（两条明细行、都不带该键）
+  // ⇒ 消费端 `ProcessingOrderService.craftGroupKey` 回落到各自 `itemId` ⇒ **两行各成一樘窗**
+  // ⇒ 套级工序（外帘打卷/装袋/发货）在加工单上出现 **2 次**（#4384 A2 的红证因此不会转绿）。
+  describe('樘窗绑组写侧（#4395）', () => {
+    /** 一樘「布 + 纱」：两行各选一个商品、各自填部位，同樘窗号 */
+    const setupClothPlusSheer = async () => {
+      mockGetProducts.mockResolvedValue({
+        data: {
+          data: {
+            items: [
+              { id: 'p1', name: '遮光窗帘', price: 100 },
+              { id: 'p2', name: '配套纱帘', price: 60 },
+            ],
+            total: 2,
+          },
+        },
+      })
+      mockGetProduct.mockImplementation((id: string) =>
+        Promise.resolve({
+          data: {
+            data: {
+              id,
+              name: id === 'p2' ? '配套纱帘' : '遮光窗帘',
+              skus: [],
+              supportsProcessing: false,
+              price: id === 'p2' ? 60 : 100,
+            },
+          },
+        })
+      )
+      mockGetProductProcessingItems.mockResolvedValue({ data: { data: [] } })
+
+      render(<NewOrderPage />)
+
+      // 第一行：布帘商品
+      fireEvent.click(await screen.findByText('点击搜索并选择商品'))
+      fireEvent.click(await screen.findByText('遮光窗帘'))
+      await screen.findAllByLabelText('部位')
+
+      // 第二行：纱帘商品
+      fireEvent.click(screen.getByText('添加商品'))
+      const pickButtons = screen.getAllByText('点击搜索并选择商品')
+      fireEvent.click(pickButtons[pickButtons.length - 1])
+      fireEvent.click(await screen.findByText('配套纱帘'))
+      await waitFor(() => expect(screen.getAllByLabelText('部位')).toHaveLength(2))
+
+      const fields = (name: string) => screen.getAllByLabelText(name)
+      fireEvent.change(fields('部位')[0], { target: { value: '布帘' } })
+      fireEvent.change(fields('工艺')[0], { target: { value: '韩褶' } })
+      fireEvent.change(fields('部位')[1], { target: { value: '纱帘' } })
+      fireEvent.change(fields('工艺')[1], { target: { value: '打孔' } })
+    }
+
+    const infos = () => {
+      const payload = mockCreateOrder.mock.calls[0][0]
+      return payload.items.map((i: any) => (i.processingInfo ?? {}) as Record<string, unknown>)
+    }
+
+    // 判据 1（写侧）：两条部位行同樘窗 ⇒ craftLineId **相等且非空**
+    it('#4395 判据 1：一樘「布 + 纱」两行同樘窗 ⇒ 两条 order_items 的 craftLineId 相等且非空', async () => {
+      await setupClothPlusSheer()
+      const windows = screen.getAllByLabelText('樘窗')
+      fireEvent.change(windows[0], { target: { value: '客厅主窗' } })
+      fireEvent.change(windows[1], { target: { value: '客厅主窗' } })
+
+      fillCustomerAndSubmit()
+      await waitFor(() => {
+        expect(mockCreateOrder).toHaveBeenCalled()
+      })
+
+      const payload = mockCreateOrder.mock.calls[0][0]
+      expect(payload.items).toHaveLength(2)
+      const [clothInfo, sheerInfo] = infos()
+      expect(clothInfo.craftLineId).toBeTruthy()
+      expect(sheerInfo.craftLineId).toBeTruthy()
+      expect(sheerInfo.craftLineId).toBe(clothInfo.craftLineId)
+      // 代表行 = 主布行（部位=布帘）：§4.8 的 craftLineId 口径就是「主布行的行标识」
+      expect(clothInfo.curtainType).toBe('布帘')
+      expect(sheerInfo.curtainType).toBe('纱帘')
+    })
+
+    it('#4395 不同樘窗（窗号不同）⇒ 两条 craftLineId **不相等**（不是把所有行并成一樘）', async () => {
+      await setupClothPlusSheer()
+      const windows = screen.getAllByLabelText('樘窗')
+      fireEvent.change(windows[0], { target: { value: '客厅主窗' } })
+      fireEvent.change(windows[1], { target: { value: '次卧窗' } })
+
+      fillCustomerAndSubmit()
+      await waitFor(() => {
+        expect(mockCreateOrder).toHaveBeenCalled()
+      })
+
+      const [clothInfo, sheerInfo] = infos()
+      // 两樘窗各只有一行 ⇒ 不写该键（单行樘窗的组键本来就 = 本行 itemId）
+      expect(clothInfo).not.toHaveProperty('craftLineId')
+      expect(sheerInfo).not.toHaveProperty('craftLineId')
+    })
+
+    it('#4395 未填樘窗 ⇒ 两行都不写 craftLineId（**存量语义不变**：各自成组）', async () => {
+      await setupClothPlusSheer()
+
+      fillCustomerAndSubmit()
+      await waitFor(() => {
+        expect(mockCreateOrder).toHaveBeenCalled()
+      })
+
+      const [clothInfo, sheerInfo] = infos()
+      expect(clothInfo).not.toHaveProperty('craftLineId')
+      expect(sheerInfo).not.toHaveProperty('craftLineId')
+      expect(clothInfo.curtainType).toBe('布帘')
+      expect(sheerInfo.curtainType).toBe('纱帘')
+    })
+
+    it('#4395 同樘窗 + 拼色 ⇒ 配布边行的 craftLineId 与樘窗组键**同一个**（不是该行自指）', async () => {
+      await setupClothPlusSheer()
+      const fields = (name: string) => screen.getAllByLabelText(name)
+      const windows = fields('樘窗')
+      fireEvent.change(windows[0], { target: { value: '客厅主窗' } })
+      fireEvent.change(windows[1], { target: { value: '客厅主窗' } })
+      // 布行拼色 + 填配布边单价 ⇒ 该行再生成一条配布边行
+      fireEvent.change(fields('款式')[0], { target: { value: '拼色' } })
+      fireEvent.change(fields('配布边单价')[0], { target: { value: '40' } })
+
+      fillCustomerAndSubmit()
+      await waitFor(() => {
+        expect(mockCreateOrder).toHaveBeenCalled()
+      })
+
+      const payload = mockCreateOrder.mock.calls[0][0]
+      expect(payload.items).toHaveLength(3)
+      const [clothInfo, edgeInfo, sheerInfo] = infos()
+      expect(clothInfo.componentRole).toBe('主布')
+      expect(edgeInfo.componentRole).toBe('配布边')
+      // 三条（布行 + 配布边行 + 纱行）必须**同组**：一樘窗 = 一个窗户
+      expect(edgeInfo.craftLineId).toBe(clothInfo.craftLineId)
+      expect(sheerInfo.craftLineId).toBe(clothInfo.craftLineId)
+    })
+  })
 })

@@ -19,6 +19,8 @@ import {
   buildCraftSpec,
   buildEdgeLineCraftSpec,
   buildMainLineGroupKeys,
+  buildWindowGroupKey,
+  resolveWindowCraftLineIds,
   type CraftSpecInput,
 } from '@/lib/order-craft-fields'
 import type { Product, OrderItemFormData, Customer } from '@/types'
@@ -55,6 +57,11 @@ interface OrderLineItem {
   selectedProcessing: Record<string, { selected: boolean; qty: number }>
   /** 工艺规格录入（issue #4375 §4.2/§4.5）—— 未填的键不落库 */
   craft: CraftSpecInput
+  /**
+   * 樘窗名称 / 窗号（issue #4395）：同一樘窗的多条部位行（布行 + 纱行）填**同一个**窗号
+   * ⇒ 提交时写同一个 `craftLineId`（樘窗分组）。留空 ⇒ 本行自成一樘窗（存量语义不变）。
+   */
+  windowLabel: string
   /** 配布边米数（§4.8）；`null` = 未改过 ⇒ 跟随主布米数 */
   edgeMeters: number | null
   /** 配布边单价；`null` = 未填 ⇒ 不生成配布边明细行（后端单价必须 > 0，不凭空造价） */
@@ -100,6 +107,7 @@ function createEmptyLineItem(): OrderLineItem {
     processingLoading: false,
     selectedProcessing: {},
     craft: {},
+    windowLabel: '',
     edgeMeters: null,
     edgeUnitPrice: null,
   }
@@ -448,6 +456,16 @@ export default function NewOrderPage() {
       return
     }
 
+    // 樘窗绑组（issue #4395）：同一樘窗的多条**部位行**（布行 + 纱行 + 将来的帘头行）
+    // 写**同一个** `craftLineId`。解析规则（未填 / 只有一行 / 代表行取谁）在纯函数里，判据也在那里。
+    const windowCraftLineIds = resolveWindowCraftLineIds(
+      lineItems.map((l) => ({
+        id: l.id,
+        windowLabel: l.windowLabel,
+        curtainType: l.craft.curtainType,
+      }))
+    )
+
     const items: OrderItemFormData[] = lineItems
       .filter((l) => l.product)
       .flatMap((line) => {
@@ -482,12 +500,19 @@ export default function NewOrderPage() {
         const productSub = (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)
 
         // 工艺规格落库（issue #4375 §4.2/§4.5）：只落用户真填了的键（缺值不写）。
-        // 拼色（双拼）时主布行额外绑组（§4.8）：componentRole=主布 + craftLineId 自指。
+        // 拼色（双拼）时主布行额外绑组（§4.8）：componentRole=主布 + craftLineId。
+        // 樘窗绑组（issue #4395）：同樘窗的多条部位行共用**同一个** `craftLineId`
+        //   —— 拼色行沿用「自指」兜底（§4.8 表注「craftLineId 自指亦可」），但同樘窗有组键时**以组键为准**。
         const edgePrice = edgeUnitPriceOf(line)
         const isPaired = edgePrice !== null
+        const windowKey = windowCraftLineIds[line.id]
+        const pairKey = windowKey ?? line.id
         const mainSpec = isPaired
-          ? { ...buildCraftSpec(line.craft), ...buildMainLineGroupKeys(line.id) }
-          : buildCraftSpec(line.craft)
+          ? { ...buildCraftSpec(line.craft), ...buildMainLineGroupKeys(pairKey) }
+          : {
+              ...buildCraftSpec(line.craft),
+              ...(windowKey ? buildWindowGroupKey(windowKey) : {}),
+            }
 
         const rows: OrderItemFormData[] = [
           {
@@ -513,10 +538,12 @@ export default function NewOrderPage() {
           } as OrderItemFormData,
         ]
 
-        // 配布边行（§4.8 一扇窗 = 主布行 + 配布边行）：
-        // - **不携带工艺规格**（折数/开数/幅数是一扇窗的属性 ⇒ 两行都带会让工序与计件翻倍）
+        // 配布边行（§4.8 一樘窗 = 主布行 + 配布边行）：
+        // - **不携带工艺规格**（折数/开数/幅数是一樘窗的属性 ⇒ 两行都带会让工序与计件翻倍）
         // - **不挂加工项**（硬约束：加工费只挂主布行）
         // - **不关联主布商品**（后端按 productId 聚合库存/销量 ⇒ 复用会双扣库存、双计销量）
+        // - **绑组键与所在樘窗同一个**（issue #4395）：配布边行与主布行同属一樘窗 ⇒ 用 `pairKey`
+        //   而不是本行自指（主布行被并进别的樘窗时，自指会把配布边行丢在组外）
         if (edgePrice !== null) {
           const edgeMeters = edgeMetersOf(line)
           rows.push({
@@ -529,7 +556,7 @@ export default function NewOrderPage() {
               skuCode: sku?.skuCode,
               doorWidth: sku?.doorWidth,
               ...buildEdgeLineCraftSpec(
-                line.id,
+                pairKey,
                 line.edgeMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
               ),
             },
@@ -618,6 +645,7 @@ export default function NewOrderPage() {
                     onChangeCraft={(patch) =>
                       updateLineItem(line.id, { craft: { ...line.craft, ...patch } })
                     }
+                    onChangeWindowLabel={(label) => updateLineItem(line.id, { windowLabel: label })}
                     onEdgeMetersChange={(m) => updateLineItem(line.id, { edgeMeters: m })}
                     onEdgeUnitPriceChange={(p) => updateLineItem(line.id, { edgeUnitPrice: p })}
                   />
@@ -991,6 +1019,8 @@ interface LineItemBlockProps {
   onChangePrice: (p: number) => void
   onToggleProcessing: (pi: ProductProcessingItem, selected: boolean) => void
   onChangeCraft: (patch: Partial<CraftSpecInput>) => void
+  /** 樘窗窗号（issue #4395）：同樘窗的多条部位行填同一个值 */
+  onChangeWindowLabel: (label: string) => void
   onEdgeMetersChange: (meters: number | null) => void
   onEdgeUnitPriceChange: (price: number | null) => void
 }
@@ -1008,6 +1038,7 @@ function LineItemBlock({
   onChangePrice,
   onToggleProcessing,
   onChangeCraft,
+  onChangeWindowLabel,
   onEdgeMetersChange,
   onEdgeUnitPriceChange,
 }: LineItemBlockProps) {
@@ -1270,6 +1301,29 @@ function LineItemBlock({
                 )}
               </div>
             )}
+
+            {/* 樘窗绑组（issue #4395）：同一樘窗的多条部位行（布行 + 纱行）填**同一个窗号**
+                ⇒ 提交时写同一个 craftLineId（樘窗 = 套级工序与加工费的归属层级） */}
+            <div className="pt-3 border-t border-neutral-100">
+              <label
+                htmlFor={`window-${line.id}`}
+                className="block text-sm font-medium text-neutral-700 mb-1.5"
+              >
+                樘窗
+              </label>
+              <input
+                id={`window-${line.id}`}
+                type="text"
+                placeholder="同窗填同一名称，如 客厅主窗"
+                value={line.windowLabel}
+                onChange={(e) => onChangeWindowLabel(e.target.value)}
+                className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              />
+              <p className="mt-1.5 text-xs text-neutral-400">
+                一樘窗 = 一个窗户。同一扇窗的布行 / 纱行填同一个窗号才会绑成一樘窗
+                （套级工序与加工费按樘窗归属）；留空 = 本行自成一樘窗。
+              </p>
+            </div>
 
             {/* 工艺规格（§4.2 字段表 A + §4.8 双拼）：下单页此前一个工艺字段都不写 */}
             <OrderCraftFields

@@ -19,6 +19,8 @@ import {
   buildCraftSpec,
   buildEdgeLineCraftSpec,
   buildMainLineGroupKeys,
+  buildWindowGroupKey,
+  resolveWindowCraftLineIds,
 } from '@/lib/order-craft-fields'
 
 describe('枚举清单（与库侧逐字一致）', () => {
@@ -181,5 +183,84 @@ describe('双拼（§4.8）：主布行 / 配布边行的绑组键', () => {
   it('metersSource 取值逐字 = 跟随主布 / 人工指定', () => {
     expect(METERS_SOURCE_FOLLOW).toBe('跟随主布')
     expect(METERS_SOURCE_MANUAL).toBe('人工指定')
+  })
+})
+
+// ── 樘窗绑组（issue #4395 判据 1 的纯函数半边）──────────────────────────────
+//
+// 病根（#4387 的「未做」项）：下单页**只在拼色时**写 `craftLineId` ⇒ 顾客下「布 + 纱」
+// （两条明细行、都不带该键）⇒ 消费端 `craftGroupKey` 回落到各自 `itemId` ⇒ **两行各成一樘窗**。
+// 本组判据把「同一樘窗的多条部位行 ⇒ 同一个 craftLineId」钉在**纯函数**层面。
+describe('樘窗绑组（#4395）：同一樘窗的多条部位行 ⇒ 同一个 craftLineId', () => {
+  it('布行 + 纱行同樘窗 ⇒ 两行同一个 craftLineId，且 = **主布行**（部位=布帘）的行标识', () => {
+    const map = resolveWindowCraftLineIds([
+      { id: 'line-cloth', windowLabel: '客厅主窗', curtainType: '布帘' },
+      { id: 'line-sheer', windowLabel: '客厅主窗', curtainType: '纱帘' },
+    ])
+    expect(map).toEqual({ 'line-cloth': 'line-cloth', 'line-sheer': 'line-cloth' })
+  })
+
+  it('纱行写在前面也取**主布行**（部位=布帘）作代表行，不取页面顺序首行', () => {
+    const map = resolveWindowCraftLineIds([
+      { id: 'line-sheer', windowLabel: '主卧窗', curtainType: '纱帘' },
+      { id: 'line-cloth', windowLabel: '主卧窗', curtainType: '布帘' },
+    ])
+    expect(map).toEqual({ 'line-sheer': 'line-cloth', 'line-cloth': 'line-cloth' })
+  })
+
+  it('组内没有布帘（纱 + 帘头）⇒ 取组内**首行**作代表行（不猜、不丢组）', () => {
+    const map = resolveWindowCraftLineIds([
+      { id: 'line-sheer', windowLabel: '书房窗', curtainType: '纱帘' },
+      { id: 'line-valance', windowLabel: '书房窗', curtainType: '帘头' },
+    ])
+    expect(map).toEqual({ 'line-sheer': 'line-sheer', 'line-valance': 'line-sheer' })
+  })
+
+  it('两樘窗各自成组（不同窗号 ⇒ 不同 craftLineId）', () => {
+    const map = resolveWindowCraftLineIds([
+      { id: 'a-cloth', windowLabel: '客厅主窗', curtainType: '布帘' },
+      { id: 'a-sheer', windowLabel: '客厅主窗', curtainType: '纱帘' },
+      { id: 'b-cloth', windowLabel: '次卧窗', curtainType: '布帘' },
+      { id: 'b-sheer', windowLabel: '次卧窗', curtainType: '纱帘' },
+    ])
+    expect(map).toEqual({
+      'a-cloth': 'a-cloth',
+      'a-sheer': 'a-cloth',
+      'b-cloth': 'b-cloth',
+      'b-sheer': 'b-cloth',
+    })
+  })
+
+  it('未填樘窗 ⇒ 一个键都不写（**存量语义不变**：缺省回落本行 itemId ⇒ 各自成组）', () => {
+    expect(
+      resolveWindowCraftLineIds([
+        { id: 'line-1', curtainType: '布帘' },
+        { id: 'line-2', curtainType: '纱帘' },
+      ])
+    ).toEqual({})
+    expect(
+      resolveWindowCraftLineIds([
+        { id: 'line-1', windowLabel: '   ', curtainType: '布帘' },
+        { id: 'line-2', windowLabel: '', curtainType: '纱帘' },
+      ])
+    ).toEqual({})
+  })
+
+  it('窗号只有一行 ⇒ 不写（单行樘窗的组键本来就 = 本行 itemId，写它没有信息量）', () => {
+    expect(
+      resolveWindowCraftLineIds([{ id: 'line-1', windowLabel: '客厅主窗', curtainType: '布帘' }])
+    ).toEqual({})
+  })
+
+  it('窗号两侧空白不影响归组（去空白后比较）', () => {
+    const map = resolveWindowCraftLineIds([
+      { id: 'line-cloth', windowLabel: ' 客厅主窗 ', curtainType: '布帘' },
+      { id: 'line-sheer', windowLabel: '客厅主窗', curtainType: '纱帘' },
+    ])
+    expect(map).toEqual({ 'line-cloth': 'line-cloth', 'line-sheer': 'line-cloth' })
+  })
+
+  it('绑组键只写 craftLineId —— **不写 componentRole**（缺省即主布；纱行不是主布也不冒充配布边）', () => {
+    expect(buildWindowGroupKey('line-cloth')).toEqual({ craftLineId: 'line-cloth' })
   })
 })
