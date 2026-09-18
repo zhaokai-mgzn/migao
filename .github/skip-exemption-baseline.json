@@ -244,7 +244,7 @@
       "sha": "da935b6a0fa931b17d3b9c50fe1273e171fa28b4",
       "date": "2026-09-18",
       "skip_total": 162,
-      "note": "重锚定：纳入 #4192（转人工退场）对 CH-008/CH-017 的 unrunnable 登记，两条已机器钉住（test_tools_human_handoff.py + admin-api AgentSession* 单测） ｜ 重锚定（集成裁定 方案 A：末行增长 + 显式 note）：纳入本批新增的 4 条 backend-contract 登记 —— PG-019/PG-020/PG-021（#4202 存量单恢复 / #4204 工序库写面+单价版本化 / #4205 计件报表；前端包 PR #4219 的 case_ids 依赖其存在）与 PP-012（#4208 内部算料数量端点，ai-agent 半边 PR #4215 已合并）。四条均带 traces.tests 钉住测试；非空 skip_reason 的目的是**不进 agent-eval 冒烟**（runner 按 skip_reason 过滤）⇒ 不是可删的豁免。仅增这一批，未放行任何存量。 ｜ 重锚定（集成裁定 方案 A：末行增长 + 显式 note）：纳入本批新增的 4 条 backend-contract 登记 —— PG-019/PG-020/PG-021（#4202 存量单恢复 / #4204 工序库写面+单价版本化 / #4205 计件报表；前端包 PR #4219 的 case_ids 依赖其存在）与 PP-012（#4208 内部算料数量端点，ai-agent 半边 PR #4215 已合并）。四条均带 traces.tests 钉住测试；非空 skip_reason 的目的是**不进 agent-eval 冒烟**（runner 按 skip_reason 过滤）⇒ 不是可删的豁免。仅增这一批，未放行任何存量。",
+      "note": "重锚定：纳入 #4192（转人工退场）对 CH-008/CH-017 的 unrunnable 登记，两条已机器钉住（test_tools_human_handoff.py + admin-api AgentSession* 单测） ｜ 重锚定（集成裁定 方案 A：末行增长 + 显式 note）：纳入本批新增的 4 条 backend-contract 登记 —— PG-019/PG-020/PG-021（#4202 存量单恢复 / #4204 工序库写面+单价版本化 / #4205 计件报表；前端包 PR #4219 的 case_ids 依赖其存在）与 PP-012（#4208 内部算料数量端点，ai-agent 半边 PR #4215 已合并）。四条均带 traces.tests 钉住测试；非空 skip_reason 的目的是**不进 agent-eval 冒烟**（runner 按 skip_reason 过滤）⇒ 不是可删的豁免。仅增这一批，未放行任何存量。",
       "previous_anchor": {
         "sha": "f74909b79381b66dbbdfac995ac860fa39a37d69",
         "skip_total": 158
