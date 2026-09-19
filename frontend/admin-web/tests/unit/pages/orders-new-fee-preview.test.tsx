@@ -103,7 +103,7 @@ const inputOf = (label: string, idx = 0) =>
     .getAllByText(label)
     .map((el) => el.closest('div')!.querySelector('input') as HTMLInputElement)[idx]
 
-/** 选商品 → 填宽高（触发算料试算 → 预填数量）→ 勾一个 per_meter 加工项 */
+/** 选商品 → 填宽高（触发算料试算 → 预填「用料米数」）→ 勾一个 per_meter 加工项 */
 async function setupLine() {
   render(<NewOrderPage />)
   fireEvent.click(await screen.findByText('点击搜索并选择商品'))
@@ -111,7 +111,8 @@ async function setupLine() {
   await screen.findByText('宽 (米)')
   fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
   fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
-  await waitFor(() => expect(inputOf('数量')).toHaveValue(13.3))
+  // 帘行米数输入框（issue #4598 起 label = 「用料米数」，旧文案「数量」）—— 它就是加工费米数
+  await waitFor(() => expect(inputOf('用料米数')).toHaveValue(13.3))
   expandProcessing()
   fireEvent.click(screen.getByRole('checkbox'))
 }
