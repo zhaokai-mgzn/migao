@@ -45,6 +45,10 @@ import {
   type CurtainBody,
 } from '@/lib/order-craft-fields'
 import { describeLogisticsProfile } from '@/lib/logistics'
+// D6 自动识别（issue #4526 · 设计 §5.1/§5.2）：超高/超宽 = 宽高 vs 门幅；倒幅/正幅 = cuttingMode 推导
+import { detectAutoFeatures, type AutoFeature } from '@/lib/craft-display'
+// 费用明细的「加工 + 特殊选项」两半拆分（issue #4526 · 设计 §4.3 / 判据 5）——唯一实现
+import { buildFeeDetailDisplay } from '@/lib/order-fee-display'
 // #4371：加工项类型改为**店铺级目录**的 `ProcessingItem`（旧 `ProductProcessingItem` 已随解耦删除）
 import type { Product, ProcessingItem, OrderItemFormData, Customer } from '@/types'
 
@@ -202,9 +206,29 @@ const SALE_FORM_FABRIC = '布料'
 const SALE_FORM_FINISHED = '成品帘'
 type SaleForm = typeof SALE_FORM_FABRIC | typeof SALE_FORM_FINISHED
 
+/**
+ * 该行的**自动识别特征**（issue #4526 · 设计 §5.1/§5.2）—— 纯推导，**不是可勾选项**。
+ *
+ * 用户 2026-09-19：「超高 / 超宽是和门幅标准比较的……**这个要求做到自动识别**」。
+ * 门幅取 SKU 的 `doorWidth`（缺省 2.8）；倒幅/正幅由 `cuttingMode` 唯一推导。
+ *
+ * ⚠️ 这些特征**进组合键**（R9：`打孔+超高+定型` 与 ERP 逐字同构）⇒ 与手选加工项一起落
+ * `processingInfo.processingItems`（服务端的特征名唯一来源就是它），但**不计入手选计数**、
+ * 也不在手选列表里出 checkbox（判据 8：手选项 ⇒ 红）。
+ */
+function autoFeaturesOf(line: OrderLineItem): AutoFeature[] {
+  return detectAutoFeatures({
+    width: line.width,
+    height: line.height,
+    doorWidth: line.selectedSku?.doorWidth,
+    cuttingMode: line.craft.cuttingMode,
+    isShaped: line.craft.isShaped,
+  })
+}
+
 /** 该行已勾选的加工项明细（提交 payload 与加工费预览**共用**这一份构造） */
 function processingDetailsOf(line: OrderLineItem): Array<Record<string, unknown>> {
-  return Object.entries(line.selectedProcessing)
+  const handPicked = Object.entries(line.selectedProcessing)
     .filter(([, v]) => v.selected)
     .map(([piId, v]) => {
       const pi = line.processingItems.find((p) => p.id === piId)
@@ -222,6 +246,19 @@ function processingDetailsOf(line: OrderLineItem): Array<Record<string, unknown>
       }
     })
     .filter(Boolean) as Array<Record<string, unknown>>
+
+  // 自动识别特征（R9/D6）：与手选加工项**同一数组** —— 服务端 `featureNames` 只读
+  // `processingItems[].name`（`ProcessingFeeQueryService.featureNames`），不在这里带上
+  // ⇒ 组合键里永远没有超高/超宽/倒幅 ⇒ 组合价目匹配不到（设计 §5.3 特征集合）。
+  // 它们**没有单价**（不在加工项目录里）：单价恒 0，钱由**组合价目**决定（R10 的前提）。
+  const derived = autoFeaturesOf(line).map((feature) => ({
+    name: feature.name,
+    unitPrice: 0,
+    quantity: 1,
+    subtotal: 0,
+  }))
+
+  return [...handPicked, ...derived]
 }
 
 /**
@@ -1494,6 +1531,12 @@ export default function NewOrderPage() {
                                   Number.isFinite(unit) && Number.isFinite(meters)
                                     ? `${meters} 米 × ${formatAmount(unit)}/米`
                                     : null
+                                // 判据 5（issue #4526）：加工行只显示**组合那半** —— 整个
+                                // `processingFee` 含特殊选项那半，直接显示再单列特殊选项行 = 双算。
+                                const feeDisplay = buildFeeDetailDisplay({
+                                  processingFee: feeRow?.processingFee,
+                                  processingFeeDetail: feeRow?.processingFeeDetail ?? null,
+                                })
                                 return (
                                   <CostRow
                                     key={`p_${line.id}`}
@@ -1507,9 +1550,29 @@ export default function NewOrderPage() {
                                         ? '未定价（按 0 计）'
                                         : (expr ?? '—')
                                     }
-                                    amount={Number(feeRow?.processingFee) || 0}
+                                    amount={feeDisplay.baseAmount}
                                   />
                                 )
+                              })}
+                            {/* 特殊选项逐项（issue #4526 · 设计 §4.3 / 判据 5）：按**套**收费，
+                                与加工费是**两半** —— 逐行 `名称 单价/套 × 套数`，合计进订单金额。
+                                未定价的选项显式标「未定价（按 0 计）」，不静默。 */}
+                            {!isFabric &&
+                              group.lines.flatMap((line) => {
+                                const i = feeIndexByLineId.get(line.id)
+                                const feeRow = i === undefined ? undefined : feePreview?.items[i]
+                                const display = buildFeeDetailDisplay({
+                                  processingFee: feeRow?.processingFee,
+                                  processingFeeDetail: feeRow?.processingFeeDetail ?? null,
+                                })
+                                return display.specialOptionRows.map((option) => (
+                                  <CostRow
+                                    key={`o_${line.id}_${option.key}`}
+                                    label={option.label}
+                                    expr={option.expr}
+                                    amount={option.amount}
+                                  />
+                                ))
                               })}
                             {/* 配布边逐行（§4.8 一樘窗 = 主布行 + 配布边行） */}
                             {group.lines.map((line) => {
@@ -2330,6 +2393,10 @@ function LineItemBlock({
   const selectedProcessingCount = Object.values(line.selectedProcessing).filter(
     (c) => c.selected
   ).length
+  /** 自动识别特征（D6）—— 只读展示，**不计入** `selectedProcessingCount`（不是手选项） */
+  const autoFeatures = autoFeaturesOf(line)
+  /** 布料组整组无加工（issue #4493）⇒ 自动识别块也不渲染 */
+  const isFabricLine = line.saleForm === SALE_FORM_FABRIC
 
   const errQty = errors[`line_${line.id}_quantity`]
   const errPrice = errors[`line_${line.id}_unitPrice`]
@@ -2509,7 +2576,6 @@ function LineItemBlock({
                 <div className="space-y-2">
                   {line.processingItems.map((pi) => {
                     const cfg = line.selectedProcessing[pi.id] || { selected: false, qty: 1 }
-                    const finalPrice = Number(pi.unitPrice) || 0
                     return (
                       <div
                         key={pi.id}
@@ -2528,20 +2594,49 @@ function LineItemBlock({
                         />
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-neutral-900">{pi.name}</div>
-                          <div className="text-xs text-neutral-500 mt-0.5">
-                            ¥{finalPrice.toFixed(2)} / {pi.unit || '项'}
-                          </div>
                         </div>
-                        {/* 加工项行显示「名称 + 数量 + 金额」，数量=面料米数（按米）或 1（按套/一口价/面积）（issue #3005 回滚 #2986） */}
+                        {/* **不展示加工项单价**（issue #4526 · R10，用户 2026-09-19「订单上的
+                            加工项选择控件不要展示加工项单价」）：ERP 的加工项是**组合价目**
+                            （特征集合 → 元/米），**价格只在组合上存在** ⇒ 逐项显示单价必然误导
+                            （同一真值两个数：逐项之和对不上组合价，商家会照错的数对账）。
+                            只保留「数量 + 单位」供核对勾了什么 —— 摘的是**钱**，不是数量。
+                            行金额同样不显示（它与组合价不是同一口径；金额一律见「费用明细」）。 */}
                         {cfg.selected && (
                           <span className="text-sm font-semibold text-primary-600 shrink-0">
-                            {Math.max(1, Number(cfg.qty) || 1)}{pi.unit || '项'} ·{' '}
-                            {formatAmount(finalPrice * (Math.max(1, Number(cfg.qty) || 1)))}
+                            {Math.max(1, Number(cfg.qty) || 1)}
+                            {pi.unit || '项'}
                           </span>
                         )}
                       </div>
                     )
                   })}
+
+                  {/* 自动识别（issue #4526 · D6）：超高/超宽 = 宽高 vs 门幅，倒幅/正幅 = cuttingMode
+                      推导 —— **只读**（不是可勾选项：手选项 = 与 cuttingMode 冲突的第二份口径）。
+                      标来源「推算」：本条判据是**推理非实证**（设计 §5.2），不假装定论。
+                      ⚠️ 布料组整组无加工（#4493）⇒ 这块也整块不渲染（与「加工项」「费用明细」同闸门）。 */}
+                  {!isFabricLine && autoFeatures.length > 0 && (
+                    <div
+                      data-testid="auto-detected-features"
+                      className="rounded border border-dashed border-neutral-300 bg-neutral-50/60 px-3 py-2"
+                    >
+                      <div className="text-xs font-medium text-neutral-600">
+                        自动识别（按宽高与门幅推算，不可手选）
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {autoFeatures.map((feature) => (
+                          <span
+                            key={feature.name}
+                            title={feature.reason}
+                            className="inline-flex items-center gap-1 rounded border border-neutral-300 bg-white px-2 py-0.5 text-xs text-neutral-700"
+                          >
+                            {feature.name}
+                            <span className="text-neutral-400">（{feature.source}）</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </WizardStep>
