@@ -687,11 +687,17 @@ public class ProductionRoutingCommandService {
             // 保证「同一道工序的两种写法」永远不会同时进主线（否则实例化出两道 ⇒ 工人按两遍单价拿钱）。
             String logicalName = productionOperationQueryService.normalizeOperationName(name);
             if (!seen.add(logicalName)) {
+                // ⚠️ 文案**不回显原始输入**，也不得拼变体名（`name + "-布"` / `"-纱"`）—— issue #4647 / D3(a)：
+                // 本页护栏理由区**直接渲染** `details[].message`（`routings/page.tsx` 的
+                // `routingGuardReasons(e)` → `reasons.map(...)`，而 `describeRoutingGuard` 只加前缀、**不删内容**）
+                // ⇒ 拼进去的变体名会**原样上屏**（复验实测产出「精裁-布」/「精裁-纱」）。
+                // 改说**根因**（两条指向同一道逻辑工序）+ 处置，商家据此能自己认出来是哪两条。
                 details.add(BusinessException.detail(field,
                         String.format("工序「%s」重复出现：同一道工序在一条路线里只能出现一次"
-                                        + "（否则工人按两遍单价拿钱）。⚠️ 注意「%s」与它的另一种写法"
-                                        + "（如「%s」/「%s」）是**同一道工序**，归一名都是「%s」",
-                                name, name, name + "-布", name + "-纱", logicalName)));
+                                        + "（否则工人按两遍单价拿钱）。⚠️ 这两条指向**同一道逻辑工序**"
+                                        + "（读时归一后同名「%s」）—— 去掉一条即可；"
+                                        + "部位不用写进工序名，它在下面勾选",
+                                name, logicalName)));
                 continue;
             }
             // 存在性判据按**逻辑名**（issue #4609）：工序库存的是**变体名**（`精裁-布`），

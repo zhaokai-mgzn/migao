@@ -822,9 +822,12 @@ public class ProcessingOrderService {
             String operationName = productionOperationQueryService.variantNameOf(logicalName, position, catalog);
             Map<String, Object> meta = operationName == null ? null : catalog.get(operationName);
             if (meta == null) {
-                // 报**逻辑名 + 期望的库内变体名**：商家在「工序库」看到的是变体名（拼1次-布），
-                // 只报逻辑名会让提示在库里搜不到（可行动性）。
-                missing.add(logicalName + "（库中缺变体 " + expectedVariantLabel(logicalName, position) + "）");
+                // ⚠️ 只报**逻辑名**，**不得**拼期望的库内变体名（issue #4647 / D3(b)）：该 hint 经
+                // `message` / `suggestion` 进 422 响应体（接口响应可见），而变体名（`拼1次-布`）是
+                // 工人端快照名 —— 拼进去就是同一处泄漏换了个出口（改前实测日志：
+                // `缺工序=[拼1次（库中缺变体 拼1次-布 / 布拼1次 / 布帘拼1次 / 拼1次）]`）。
+                // 可行动性靠**说清缺什么 + 去哪儿补**（部位在 `position` 里，已由外层日志/提示给出）。
+                missing.add(logicalName + "（该工序在「" + position + "」部位缺库行 / 未建矩阵行）");
                 continue;
             }
             Map<String, Object> operation = new LinkedHashMap<>();
@@ -856,29 +859,6 @@ public class ProcessingOrderService {
                                     + "工序库目录查看入口 GET /api/admin/production/operations-catalog",
                             String.join("、", missing)));
         }
-    }
-
-    /**
-     * 期望的库内变体名（仅用于**错误提示的可行动性**）：`<逻辑名><部位后缀>` / 前缀不规则名 / 裸逻辑名。
-     *
-     * <p>与 {@code variantNameOf} 的三步规则**同源**（这里只做「说出应该叫什么」，不参与解析）。</p>
-     */
-    private static String expectedVariantLabel(String logicalName, String position) {
-        String suffix = "布帘".equals(position) ? "-布" : "纱帘".equals(position) ? "-纱"
-                : "帘头".equals(position) ? "-帘" : null;
-        String prefix = "布帘".equals(position) ? "布" : "纱帘".equals(position) ? "纱" : null;
-        List<String> candidates = new ArrayList<>();
-        if (suffix != null) {
-            candidates.add(logicalName + suffix);
-            if (prefix != null) {
-                candidates.add(prefix + logicalName);
-            }
-            if ("布帘".equals(position)) {
-                candidates.add("布帘" + logicalName);
-            }
-        }
-        candidates.add(logicalName);
-        return String.join(" / ", candidates);
     }
 
     /**

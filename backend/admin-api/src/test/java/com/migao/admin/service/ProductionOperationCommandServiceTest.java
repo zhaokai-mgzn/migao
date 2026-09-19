@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -251,6 +252,82 @@ class ProductionOperationCommandServiceTest {
                 .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(409));
         verify(productionOperationMapper, never()).insert(any(ProductionOperation.class));
         verify(priceVersionMapper, never()).insert(any(ProductionOperationPriceVersion.class));
+    }
+
+    // ══════════════════ 部位后缀边界（issue #4647 / D2）══════════════════
+    //
+    // 复验实测：`定制-布` / `工艺-布` **被拒**，文案却说「**是旧形态**」—— 但 `定制`/`工艺`
+    // **不在** 35 条归一表里 ⇒ 它们**不是旧形态**，只是恰好以 `-布` 结尾（文案事实错误）；
+    // 而 `xx-帘` 拒、`罗马帘-穿杆`（非部位后缀）放行 ⇒ 两条边界**都没有测试钉住**，
+    // 过宽 / 不对称两态都不会变红。本组把边界落成判据（该拒的拒 / 该放的放）+ 钉住文案口径。
+
+    /** 422 文案（逐条 `error.details[].message`）。 */
+    private static List<String> detailMessages(BusinessException e) {
+        return e.getDetails() == null ? List.of()
+                : e.getDetails().stream().map(com.migao.admin.dto.ApiResponse.ErrorDetail::getMessage).toList();
+    }
+
+    @Test
+    @DisplayName("#4647 / D2：部位后缀边界 —— `-布` / `-纱` / `-帘` 一律拒（含**不在**归一表里的 `定制-布`）")
+    void createRejectsPositionSuffixNamesEvenWhenNotRegisteredAsLegacy() {
+        // 该拒的：`定制` / `工艺` 不在归一表里 ⇒ 归一后等于自身 ⇒ 走**判据 2**（后缀形态）。
+        // 没有这条，判据 2 被删掉也不会变红（过宽/过窄都不可归因）。
+        for (String name : List.of("定制-布", "工艺-布", "定制-纱", "工艺-纱", "罗马帘-帘")) {
+            assertThatThrownBy(() -> service().create(Map.of("name", name, "unit_price", 0.4), TENANT))
+                    .as("`%s` 把部位编进了名字 ⇒ 必须 422", name)
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(422));
+        }
+        verify(productionOperationMapper, never()).insert(any(ProductionOperation.class));
+    }
+
+    @Test
+    @DisplayName("#4647 / D2：文案**不得**说「是旧形态」（`定制-布` 不在归一表里 ⇒ 那不是事实）")
+    void positionSuffixRejectionMessageDoesNotClaimLegacyForm() {
+        assertThatThrownBy(() -> service().create(Map.of("name", "定制-布", "unit_price", 0.4), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException be = (BusinessException) e;
+                    assertThat(detailMessages(be)).as("逐条理由（既有形状不变）").isNotEmpty();
+                    for (String message : detailMessages(be)) {
+                        assertThat(message)
+                                .as("准确表述 = 「不要带部位后缀」；**不得**说「是旧形态」（事实错误）")
+                                .doesNotContain("旧形态");
+                        assertThat(message)
+                                .as("说清部位后缀是哪三个（商家据此自己改）")
+                                .contains("-布");
+                    }
+                    assertThat(be.getMessage()).as("摘要同样不得说「是旧形态」").doesNotContain("旧形态");
+                });
+        verify(productionOperationMapper, never()).insert(any(ProductionOperation.class));
+    }
+
+    @Test
+    @DisplayName("#4647 / D2：判据 1（已登记旧名）文案可照实说「已登记为旧名」—— 两条判据文案不同源")
+    void registeredLegacyNameMessageSaysSo() {
+        // `布三边` 走**判据 1**（归一后 = `三边` ≠ 自身）⇒ 它**确实是**旧形态 ⇒ 照实说。
+        assertThatThrownBy(() -> service().create(Map.of("name", "布三边", "unit_price", 0.4), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getMessage())
+                        .as("判据 1 命中 ⇒ 「已登记为旧名」是事实，可以照实说")
+                        .contains("已登记为旧名"));
+    }
+
+    @Test
+    @DisplayName("#4647 / D2：合法名仍可建 —— `测试22` / `罗马帘穿杆` / `外帘打卷` 一个都不许被误伤")
+    void legitimateCustomNamesAreStillAccepted() {
+        // ⚠️ `罗马帘-穿杆` 的取舍（issue #4647 明示要**写明为何放**）：它**放行** —— 后缀是 `-穿杆`，
+        // 不是部位后缀（布 / 纱 / 帘）。判据是**形态**判据（不以归一表为条件）⇒ 对已登记与未登记的
+        // 名字一视同仁。代价如实登记：商家仍能建出与既有工序**同逻辑名**的第二行
+        // （`罗马帘-穿杆` 与 `罗马帘穿杆` 归一后都是自身）—— 那需要**查库比逻辑名**，属另一个判据的
+        // 范围，本单**不扩大**判据（见 `rejectVariantOperationName` 的 javadoc）。
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+        for (String name : List.of("测试22", "罗马帘穿杆", "外帘打卷")) {
+            assertThatCode(() -> service().create(Map.of("name", name, "unit_price", 0.4), TENANT))
+                    .as("`%s` 是合法自定义名 ⇒ 不得被部位后缀判据误伤", name)
+                    .doesNotThrowAnyException();
+        }
+        verify(productionOperationMapper, times(3)).insert(any(ProductionOperation.class));
     }
 
     @Test

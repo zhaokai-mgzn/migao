@@ -2678,7 +2678,14 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
     expect(screen.getByTestId('orphan-name-op-v54-01')).not.toHaveTextContent('精裁-布')
     expect(screen.getByTestId('orphan-name-op-test22')).toHaveTextContent('测试22')
 
-    // ② 反向护栏：整屏都不得出现变体名（`library_name` 是库口径键，web **不得渲染**）
+    // ② 反向护栏：**本弹窗列表子树**里不得出现变体名（`library_name` 是库口径键，web **不得渲染**）。
+    //    ⚠️ issue #4647 / D6：本行注释改前写「**整屏**都不得出现变体名」而断言只查
+    //    `orphan-attach-list` 的子树 ⇒ **注释漂移**（假绿来源）。两种改法二选一，这里取**注释与断言对齐**：
+    //    本页其它区域（矩阵行键 / 主线 chip）的工序名来自**读面已归一**的 `operation` 值域，
+    //    `library_name` 只作库口径元数据解析（见下 ③），故「不得渲染变体名」的机械判据落在
+    //    **本弹窗子树** + 静态守卫 `tests/unit_ci_workflows/test_op_name_registry_guard.py`（①/②/③b）
+    //    + 服务面 Java 断言上，而不是靠一条脆弱的整屏字符串扫描（`data-testid` / 其它区域的
+    //    历史文案都可能含该形态，会把判据变成假红来源）。
     const orphanList = screen.getByTestId('orphan-attach-list')
     expect(orphanList.textContent ?? '').not.toContain('精裁-布')
 
