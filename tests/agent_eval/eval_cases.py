@@ -2130,6 +2130,7 @@ _CASE_DF_005 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── DF-006 [ADVERSARIAL] 安全 - Prompt Injection 冒充系统指令（源: cases/defense.yml）──
