@@ -2636,7 +2636,7 @@
 落库: order_phone → source=order_create; expect_phone=13800138000
 ```
 真值: order.create-flow, ai-chat.confirm-required
-溯源: 2026-09-13 新增（issue #3389）：能力下限用例（缺信息时收集而非拒单 + 能力误宣反模式） ｜ tags: order_create, honesty, capability, xiaobu
+溯源: 2026-09-13 新增（issue #3389）：能力下限用例（缺信息时收集而非拒单 + 能力误宣反模式）；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。 ｜ tags: order_create, honesty, capability, xiaobu
 
 ### OR-022. C 端新客（无历史收货信息）- 必须主动收集后下单，不得拒单 🔵
 ```
@@ -2669,7 +2669,7 @@
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
 ```
 真值: order.create-flow, ai-chat.confirm-required
-溯源: 2026-09-13 新增（issue #3391）：新客路径覆盖（多身份评测 + 无历史地址时的收集能力） ｜ tags: order_create, new_customer, capability, xiaobu
+溯源: 2026-09-13 新增（issue #3391）：新客路径覆盖（多身份评测 + 无历史地址时的收集能力）；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。 ｜ tags: order_create, new_customer, capability, xiaobu
 
 ### OR-023. C 端老客户下单 - 自动带出上次收货信息（form 预填真值，不得再问一遍） 🔵
 ```
@@ -2693,7 +2693,7 @@
 落库: order_phone → source=order_create; expect_phone=13800138000; expect_customer_name=张三; expect_address_contains=文三路
 ```
 真值: order.create-flow, ai-chat.confirm-required
-溯源: 2026-09-13 新增（issue #3397）：补齐零断言能力（地址预填 + 写前校验）；2026-09-14 协作轮重构（issue #3646）：固定 9 轮台词表实测与真实卡序列错位（R1 发 2 张 choice 卡、R2 的「米白」被当成加工项应答、R3 起 7 轮全 `tools=-`、order_create 从未发生 = 真实重放 0%/unstable），改为「有卡答卡 + repeat_until(order_create) 停机」；expectations/must_succeed/order_before/amount_verify/db_verify 原样保留（未放宽） ｜ tags: order_create, prefill, address, xiaobu
+溯源: 2026-09-13 新增（issue #3397）：补齐零断言能力（地址预填 + 写前校验）；2026-09-14 协作轮重构（issue #3646）：固定 9 轮台词表实测与真实卡序列错位（R1 发 2 张 choice 卡、R2 的「米白」被当成加工项应答、R3 起 7 轮全 `tools=-`、order_create 从未发生 = 真实重放 0%/unstable），改为「有卡答卡 + repeat_until(order_create) 停机」；expectations/must_succeed/order_before/amount_verify/db_verify 原样保留（未放宽）；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。 ｜ tags: order_create, prefill, address, xiaobu
 
 ### OR-024. C 端顾客已给数量后不得再问用量/褶皱倍数（防 2 倍金额与流程空转） 🔵
 ```
@@ -2721,7 +2721,7 @@
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室
 ```
 真值: order.create-flow, ai-chat.confirm-required
-溯源: 2026-09-13 新增（issue #3402）：沉淀 C-A1 主路径真因（数量口径 → 产出层反模式断言）；2026-09-19 **退场同步**（用户裁定）：第 3 条由「整场不得出现 human_handoff」改为「不得把主转化路径推给人工（假承诺话术为锚）」—— 原断言在工具退场后**恒真**（模型调不到它，工具名不在任何 skill 工具集，结构性判据见 tests/unit_ci_workflows/test_human_handoff_retired.py），而真实风险变成了模型改用自然语言承诺转接，故把锚点移到实际可失败的话术面 ｜ tags: order_create, quantity, ceiling, xiaobu
+溯源: 2026-09-13 新增（issue #3402）：沉淀 C-A1 主路径真因（数量口径 → 产出层反模式断言）；2026-09-19 **退场同步**（用户裁定）：第 3 条由「整场不得出现 human_handoff」改为「不得把主转化路径推给人工（假承诺话术为锚）」—— 原断言在工具退场后**恒真**（模型调不到它，工具名不在任何 skill 工具集，结构性判据见 tests/unit_ci_workflows/test_human_handoff_retired.py），而真实风险变成了模型改用自然语言承诺转接，故把锚点移到实际可失败的话术面；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。 ｜ tags: order_create, quantity, ceiling, xiaobu
 
 ### OR-025. C 端物流正向查询 - 工具可达 + 能力不否定（权限类禁词） 🔵
 ```
@@ -3080,7 +3080,7 @@
 数据: 信号映射：`GET` 列表渲染；新增走 `POST /route-signals`、编辑走 `PUT /route-signals/{id}`、删除**二次确认后**走 `DELETE /route-signals/{id}`（注入：删除改成不确认直接删 ⇒ confirm 断言红）
 数据: 接口失败不白屏：路线列表失败给错误提示 + 重试（重试后渲染出真实数据）；**工序库失败只让左栏**给可读提示、路线半边照常渲染；缺口/信号单条失败只在**该区**给可读提示（注入：把 allSettled 改成 Promise.all ⇒ 单条失败即整页白屏，断言红）
 数据: 加工单四态路线来源提示（`route_source`）：default ⇒ 高亮提示「未识别工艺信号…请核对工序与计件单价」+ 报出实际使用的 `route_key`；partial ⇒ 提示「只识别出一半，另一半取默认值」；missing_route ⇒ 用 `route_requested_key` 报「本单识别的是 X，但工序库里没有这条路线」+ 报实际使用键；derived / 字段缺失 ⇒ **不提示**（静默 = 未知，**不得**显示成「已派生」）（注入：去掉任一分支 ⇒ 该态断言红；把未知值当 derived 正面渲染 ⇒ 第四条红）
-数据: 侧边栏入口（issue #4416 合并后）：生产管理组共**四项** —— 生产看板 `/production` / **「工艺配置」`/production/routings`**（工序库 + 工艺路线**合并为单一入口**）/ 加工费管理 / 计件工资，权限码统一 `processing:manage`；**不再有**独立「工序库」菜单项，旧路径 `/production/operations` 改为重定向到 `/production/routings`（旧深链不 404）（注入：保留独立工序库项 ⇒ 链接数 4 断言红；删重定向 ⇒ 重定向断言红）
+数据: 侧边栏入口（issue #4416 合并后；issue #4490 再合并）：生产管理组共**四项** —— 生产看板 `/production` / **「工艺配置」`/production/routings`**（工序库 + 工艺路线**合并为单一入口**）/ **「加工项与加工费」`/production/processing`**（加工项管理 + 加工费管理**合并为单一入口**，页面两个 tab） / 计件工资，权限码统一 `processing:manage`；**不再有**独立「工序库」菜单项（旧路径 `/production/operations` 重定向到 `/production/routings`）；**商品管理组不再有「加工项管理」**，两个旧路径 `/processing` 与 `/production/processing-fees` 都重定向到新入口（旧深链不 404）（注入：保留独立工序库项 ⇒ 链接数 4 断言红；删重定向 ⇒ 重定向断言红）
 跳过: [backend-contract] 前端组件/页面契约（admin-web），由 vitest 单测全量覆盖（frontend/admin-web/tests/unit/pages/production-routings.test.tsx、tests/unit/pages/production-operations.test.tsx（旧路径重定向守卫）、tests/unit/components/OperationsScopeColumn.test.tsx、tests/unit/components/OperationsProvenance.test.tsx、tests/unit/lib/route-source.test.ts、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/pages/production-board.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010/PP-011 惯例）
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
@@ -3094,7 +3094,7 @@
 数据: 判据 3·**护栏理由逐条可见**（422 + 真实信封）：失败响应 = HTTP **422** + `{success:false, error:{code:'VALIDATION_ERROR', message, details:[{field,message}]}, suggestion}` —— `details[].message` **逐条**（空组合 field=items / 特征名不存在或已停用 field=items[i] / 特征名重复 field=items[i] / unit_price 缺失·非数值·负数 field=unit_price / source 不在词表 field=source），且**一次报全**（不是报第一条就返回）；`unit_price=0` 合法（商家可把某组合做成免费）。证据：ProcessingFeeCombinationCommandServiceTest 四条护栏用例 + ProductionControllerTest「createProcessingFeeCombinationGuardFailureReturnsDetailsEnvelope」（断言 `details.length()==2`、`details[0].field=items[1]`、`details[1].field=unit_price`、`suggestion` 非空）。⚠️ 前端必须按 `error.details[].message` 读 —— **不得**读不存在的顶层 `error_messages`（#4308 实测：按那个形状读 ⇒ 真实失败路径静默退化成「Request failed with status code 422」）
 数据: 判据 4·**缺口可见**：`GET /api/admin/production/processing-fee-gaps` = 「订单里**实际出现过**（`order_items.processing_info.processingItems[].name`，与 OrderService.extractProcessingItems 同口径）、但库里查不到价」的组合 ⇒ 每行 `{composition_key, items, order_count, note}`，已定价的**不出现**，书写顺序不同的同一组合**合并计数**；空集时返回 `[]` + total=0（不是 null/异常）；响应带 `scanned_order_items` + `scanned_truncated`（扫描有上限，超限**不静默**）。**不发明任何默认价**（缺口就是缺口）。证据：ProcessingFeeCombinationCommandServiceTest「gapsListUnpricedCombinationsSeenInOrders」「gapsEmptyWhenNoOrders」+ ProductionControllerTest「processingFeeGapsEndpointIsRegistered」（**注入**：不排除已定价组合 ⇒ 判据红，实测）
 数据: 判据 5·**版本账**：新建落**首行**、改单价**真的变了**才追加一行到 `processing_fee_combination_versions`（记变更后 `unit_price` + 冗余 `composition_key` —— 组合行停用/改名后历史账仍答得出「当时是哪一组」）；同价重复提交 = **幂等空操作**（不追加无意义行，沿用 #4308 口径）；停用 = 软删语义（`status=disabled`，行保留、`deleted` 不动）。证据：ProcessingFeeCombinationCommandServiceTest「priceChangeAppendsVersionRow」「samePriceIsIdempotentNoop」「createAppendsFirstVersionRow」「disableKeepsRow」（**注入**：`appendVersion` 直接 return ⇒ 两条红，实测）
-数据: 判据 6·**管理面**（前端）：`/production/processing-fees` 渲染真实组合行（选配特征 + `¥x.xx` 元/米）、新建提交 `{items:[勾选集合], unit_price}`（**前端不拼 composition_key** —— 自己拼 = 第二份口径）、护栏理由**逐条**渲染、空组合**本地先拦**（不发 POST）、缺口区逐条可见、改单价走 `PUT /{id}`（body 只有 unit_price）、停用走 `DELETE /{id}`（二次确认后）、单接口失败只在**该区**给可读提示（不整页白屏）；侧边栏生产管理组含「加工费管理」→ 本路由，权限码 `processing:manage`，**只追加、既有项位次不变**。证据：frontend/admin-web/tests/unit/pages/processing-fees.test.tsx + tests/unit/pages/production-board.test.tsx（**注入**：把读法退化成 `error.message` 一句话 ⇒ 三条独立条目断言红）
+数据: 判据 6·**管理面**（前端）：`/production/processing?tab=fees`（issue #4490 合并前为独立页 `/production/processing-fees`）渲染真实组合行（选配特征 + `¥x.xx` 元/米）、新建提交 `{items:[勾选集合], unit_price}`（**前端不拼 composition_key** —— 自己拼 = 第二份口径）、护栏理由**逐条**渲染、空组合**本地先拦**（不发 POST）、缺口区逐条可见、改单价走 `PUT /{id}`（body 只有 unit_price）、停用走 `DELETE /{id}`（二次确认后）、单接口失败只在**该区**给可读提示（不整页白屏）；侧边栏生产管理组含合并项「加工项与加工费」`/production/processing`（本面是它的**第二个 tab「加工费组合」**，`?tab=fees` 直达；旧路径 `/production/processing-fees` 重定向到该 tab），权限码 `processing:manage`。证据：frontend/admin-web/tests/unit/pages/processing-fees.test.tsx + tests/unit/pages/production-board.test.tsx（**注入**：把读法退化成 `error.message` 一句话 ⇒ 三条独立条目断言红）
 数据: **红证（实测输出，2026-09-19）**：① 去掉归一化排序 ⇒ `Tests run: 17, Failures: 3`；② 去掉唯一键护栏 ⇒ `Failures: 2, Errors: 3`；③ 缺口不排除已定价 ⇒ `Failures: 1`；④ 去掉落账 ⇒ `Failures: 2`。**未做（如实登记）**：计价接线（`OrderService.sumProcessingFee` / 下单页 / ai-agent）**不在本单**（issue #4386「不做」），`fee_source` 三态（matched/unpriced/manual）随之未落码；`processing_rules` 可组合性校验未落码（KNOWN-03 仍在）。
 跳过: [backend-contract] 后端契约 + 前端组件契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCombinationCommandServiceTest + ProductionControllerTest + frontend/admin-web/tests/unit/pages/processing-fees.test.tsx + tests/unit/pages/production-board.test.tsx 执行
 ```
@@ -4425,7 +4425,7 @@
 数据: 侧边栏七大组：工作台 / 智能客服(含知识库) / 商品管理 / 订单管理 / 客户管理(客户列表+财务对账) / 组织管理(员工管理+岗位权限+企业基础信息) / 通知中心（独立）；权限过滤不回归（组内无可见子项则整组隐藏）
 数据: 创建/编辑员工：岗位改为下拉选择（岗位=角色体系，来自 /api/admin/roles/all），选岗位自动把该岗位默认权限（role_permissions codes）预填进权限树；仍可手动增删；编辑切岗位则重置为新岗位默认
 数据: 员工权限快照式（#2969）：提交时携带 position+permissions（permissions=最终勾选），不携带 role 字段（#2907 契约），后端按岗位名解析角色
-数据: 岗位权限弹窗「权限分配」按真实侧边栏菜单同构渲染（#3002）：分组名=菜单组（智能客服/商品管理/订单管理/客户管理/组织管理），勾选项=菜单项名（在线接待/知识库/商品列表/加工项管理/订单列表/售后工单/客户列表/财务对账/员工管理/岗位权限/企业基础信息；#3094 米宝·在线对话 菜单已移除；#3109 起菜单名「在线接待」），勾选即授予对应权限码（roles 保存权限 ID，前端做码→ID 映射）；非菜单操作权限（仪表板查看/新增商品/商品分类/订单详情/新增员工/商品管理旧码）单独一节「操作权限」；旧口径不再出现（英文 resourceType 组头 / 会话监控 / 快捷回复 / AI 客服配置 / 系统管理等旧名）；保存契约不变（permissionIds = 权限 ID）
+数据: 岗位权限弹窗「权限分配」按真实侧边栏菜单同构渲染（#3002）：分组名=菜单组（智能客服/商品管理/订单管理/客户管理/组织管理），勾选项=菜单项名（在线接待/知识库/商品列表/加工项与加工费/订单列表/售后工单/客户列表/财务对账/员工管理/岗位权限/企业基础信息；#3094 米宝·在线对话 菜单已移除；#3109 起菜单名「在线接待」），勾选即授予对应权限码（roles 保存权限 ID，前端做码→ID 映射）；非菜单操作权限（仪表板查看/新增商品/商品分类/订单详情/新增员工/商品管理旧码）单独一节「操作权限」；旧口径不再出现（英文 resourceType 组头 / 会话监控 / 快捷回复 / AI 客服配置 / 系统管理等旧名）；保存契约不变（permissionIds = 权限 ID）
 跳过: [backend-contract] 岗位权限/菜单重构/选岗位带权限均由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.position-permission-rename, frontend-fix.sidebar-seven-groups, frontend-fix.employee-position-default-permissions

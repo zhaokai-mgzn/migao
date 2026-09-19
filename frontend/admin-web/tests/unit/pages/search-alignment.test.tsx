@@ -246,14 +246,20 @@ describe('搜索区域左对齐 — 无居中 CSS 类', () => {
         },
         processingCategoryApi: { getProcessingCategories: vi.fn().mockResolvedValue({ data: { data: [] } }) },
         categoryApi: { getCategories: vi.fn().mockResolvedValue({ data: { data: [] } }) },
+        // issue #4490：合并页同一组件里还有加工费组合半边（挂载时拉数据）
+        productionApi: {
+          getFeeCombinations: vi.fn().mockResolvedValue({ data: { data: { combinations: [] } } }),
+          getFeeGaps: vi.fn().mockResolvedValue({ data: { data: { unpriced_combinations: [] } } }),
+        },
       }))
     })
 
     it('页面不含 search-area 元素（无搜索区域，不受影响）', async () => {
-      const { default: ProcessingPage } = await import('@/app/(dashboard)/processing/page')
+      // issue #4490：合并后唯一入口（默认 tab「加工项」）
+      const { default: ProcessingPage } = await import('@/app/(dashboard)/production/processing/page')
       render(<ProcessingPage />)
       await waitFor(() => {
-        expect(screen.getByText('加工项管理')).toBeInTheDocument()
+        expect(screen.getByText('加工项与加工费')).toBeInTheDocument()
       })
       expect(screen.queryByTestId('search-area')).toBeNull()
     })

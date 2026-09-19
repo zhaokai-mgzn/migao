@@ -51,7 +51,9 @@ export const menuGroups: MenuGroup[] = [
     icon: 'Store',
     children: [
       { key: 'products', name: '商品列表', icon: 'Package', path: '/products', permissionCode: 'product:list' },
-      { key: 'processing', name: '加工项管理', icon: 'Scissors', path: '/processing', permissionCode: 'processing:manage' },
+      // issue #4490：原「加工项管理」(/processing) 已**移出本组** —— 它与「加工费管理」合并为
+      // 「加工项与加工费」并归入**生产管理**组（同一权限码 processing:manage、同一业务域：
+      // 加工费组合的 items[] 必须取自加工项目录的活跃加工项）。
     ],
   },
   {
@@ -90,8 +92,8 @@ export const menuGroups: MenuGroup[] = [
       { key: 'settings', name: '企业基础信息', icon: 'Building2', path: '/settings', permissionCode: 'system:manage' },
     ],
   },
-  // issue #4203：生产管理组（生产看板 / 工序库 / 工艺路线 / 计件工资）。
-  // 权限码统一 processing:manage —— 与既有「加工项管理」同一口径（operator 已持有该码，
+  // issue #4203：生产管理组（生产看板 / 工艺配置 / 加工项与加工费 / 计件工资）。
+  // 权限码统一 processing:manage —— 本组四项同码（operator 已持有该码，
   // 且同时具备 processing:view/update 的 API 权限）。
   // issue #4357：「加工单」并入本组 —— 但它**不新增菜单项**：加工单列表页与「生产看板」
   // 是同一实体、同一端点（processingOrderApi.list）的两份渲染 ⇒ 合并为单一入口「生产看板」
@@ -108,8 +110,13 @@ export const menuGroups: MenuGroup[] = [
       // 工序库活跃行），拆成两个菜单时建路线发现缺工序要跳到另一个菜单去建。
       // 工序库半边 = 该页**左栏**；旧路径 /production/operations 保留为重定向（旧深链不 404）。
       { key: 'production-process', name: '工艺配置', icon: 'Route', path: '/production/routings', permissionCode: 'processing:manage' },
-      // issue #4386：加工费**组合**定价（不是每个加工项一个价）—— 商家配置面，下单时由系统按选配匹配
-      { key: 'production-processing-fees', name: '加工费管理', icon: 'Receipt', path: '/production/processing-fees', permissionCode: 'processing:manage' },
+      // issue #4490（用户裁定 2026-09-19：「加工项和加工项费用这两个我建议合并成一个菜单，
+      // 也放到生产管理菜单下」）：「加工项管理」(/processing，原**商品管理**组) 与「加工费管理」
+      // (/production/processing-fees) **合并为单一入口**「加工项与加工费」并归入本组。
+      // 页面形态 = **两个 tab**（加工项 / 加工费组合，沿用 #4482 在工艺配置确立的范式，不平铺）；
+      // 两个旧路径都保留为重定向（/processing、/production/processing-fees → 本路径），旧深链不 404。
+      // 图标沿用原「加工项管理」的 Scissors（本项默认 tab 就是「加工项」）。
+      { key: 'production-processing', name: '加工项与加工费', icon: 'Scissors', path: '/production/processing', permissionCode: 'processing:manage' },
       { key: 'production-piecework', name: '计件工资', icon: 'Calculator', path: '/production/piecework', permissionCode: 'processing:manage' },
     ],
   },

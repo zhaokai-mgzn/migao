@@ -13,7 +13,8 @@
 // 喂解析函数，断言「逐条护栏理由被读出」这一**性质**（不绑定具体措辞）。
 //
 // ⚠️ 覆盖口径如实登记：`routingGuardReasons` 对应 PP-014（工艺路线用户面）；
-// `feeGuardReasons`（加工费管理页，issue #4386）**目前没有对应用例条目** ——
+// `feeGuardReasons`（加工费**组合**定价面，issue #4386；#4490 合并后是 `/production/processing`
+// 的第二个 tab「加工费组合」）**目前没有对应用例条目** ——
 // 属已登记的用例库缺口（见台账 #4411 的 B7），本文件只保证其**行为**不退化，不冒充用例覆盖。
 import { describe, expect, it } from 'vitest'
 import { describeRoutingGuard, feeGuardReasons, routingGuardReasons } from '@/lib/production-guard-reasons'

@@ -413,13 +413,39 @@ describe('Header', () => {
     expect(screen.getByText('商品分类管理')).toBeInTheDocument()
   })
 
-  it('/processing 路径面包屑', async () => {
+  // issue #4490：「加工项管理」(/processing) 并入「加工项与加工费」/production/processing 并**归入生产管理组**
+  // ⇒ 面包屑跟着入口走（§15.2）：旧路径现为重定向，兜底面包屑也写新名，不再出现「商品管理 > 加工项管理」。
+  it('/processing 路径面包屑（旧路径 → 生产管理 > 加工项与加工费，issue #4490）', async () => {
     mockPathname = '/processing'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('商品管理')).toBeInTheDocument()
-    expect(screen.getByText('加工项管理')).toBeInTheDocument()
+    expect(screen.getByText('生产管理')).toBeInTheDocument()
+    expect(screen.getByText('加工项与加工费')).toBeInTheDocument()
+    expect(screen.queryByText('商品管理')).not.toBeInTheDocument()
+    expect(screen.queryByText('加工项管理')).not.toBeInTheDocument()
+  })
+
+  // issue #4490：合并后的唯一入口（两个 tab：加工项 / 加工费组合）—— 面包屑必须与新菜单名一致
+  it('/production/processing 路径面包屑（生产管理 > 加工项与加工费，更具体子路径优先于 /production）', async () => {
+    mockPathname = '/production/processing'
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByText('生产管理')).toBeInTheDocument()
+    expect(screen.getByText('加工项与加工费')).toBeInTheDocument()
+    // 不得回落到 /production 的「生产看板」
+    expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
+  })
+
+  it('/production/processing-fees 旧路径面包屑也写新名（重定向到 ?tab=fees，issue #4490）', async () => {
+    mockPathname = '/production/processing-fees'
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByText('生产管理')).toBeInTheDocument()
+    expect(screen.getByText('加工项与加工费')).toBeInTheDocument()
+    expect(screen.queryByText('加工费管理')).not.toBeInTheDocument()
   })
 
   // 生产管理组面包屑（issue #4357）：加工单并入生产管理组。此前 /production **没有任何面包屑条目**
