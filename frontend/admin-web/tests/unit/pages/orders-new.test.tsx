@@ -159,8 +159,10 @@ describe('NewOrderPage', () => {
     // 走「点击搜索并选择商品」→ 弹窗选择「测试窗帘」→ 展开数量/单价区域
     fireEvent.click(await screen.findByText('点击搜索并选择商品'))
     fireEvent.click(await screen.findByText('测试窗帘'))
+    await screen.findByText('部位 1')   // #4508：等商品落地（空态没有部位行/步骤）
 
     // Label 无 htmlFor 关联，按「数量」label 所在容器定位输入框
+    openWizardStep('尺寸与数量')
     const qtyLabel = await screen.findByText('数量')
     const qtyInput = qtyLabel.closest('div')!.querySelector('input') as HTMLInputElement
     expect(qtyInput).toHaveValue(1)
@@ -193,6 +195,8 @@ describe('NewOrderPage', () => {
    * `Label` 无 `htmlFor` 关联 ⇒ 按 label 文本定位其所在容器里的 input。
    */
   const fillSize = (idx = 0, w = '6.6', h = '2.6') => {
+    // issue #4511：手风琴 ⇒ 展开②会收起①，取用①的输入前必须先把它展开
+    openWizardStep('尺寸与数量', idx)
     const pick = (label: string) =>
       screen
         .getAllByText(label)
@@ -202,31 +206,29 @@ describe('NewOrderPage', () => {
   }
 
   /** 展开工艺规格里的「特殊选项」区（issue #4420：默认收起） */
-  /** 展开某一行（第 idx 个部位行）的「工艺规格」折叠区（issue #4493 三层体验②：默认收起） */
-  const expandCraft = (_idx = 0) => {
-    // issue #4508：**工艺规格不再收起**（撤销 #4493 的第二层折叠 —— 它把「特殊选项」
-    // 藏进了两层折叠里，用户实测「特殊选项怎么看不到了」）⇒ 本函数成为 no-op。
-    // 保留函数名是为了不逐个改 30+ 处调用点（零风险、零语义）。
-  }
-
-  /** 展开某一行（第 idx 个部位行）的「加工选项」折叠区（issue #4489 判据 3：默认折叠） */
-  const expandProcessing = (idx = 0) => {
-    const btn = screen.getAllByRole('button', { name: /加工选项/ })[idx]
+  /**
+   * 展开向导某一步（issue #4511 手风琴：展开一步自动收起同级其它）。
+   * 步骤标题：① 尺寸与数量 ② 工艺规格 ③ 加工项 ④ 特殊选项。
+   */
+  const openWizardStep = (title: string, idx = 0) => {
+    const btns = screen.getAllByRole('button', { name: new RegExp(`^\\d+ ${title}`) })
+    const btn = btns[idx]
     if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
   }
+  const expandCraft = (idx = 0) => openWizardStep('工艺规格', idx)
+  const expandProcessing = (idx = 0) => openWizardStep('加工项', idx)
+  const expandSpecial = (idx = 0) => openWizardStep('特殊选项', idx)
 
   /**
    * chips 字段一击即中（issue #4489 判据 1）：按 `radiogroup` 名 + 选项名点击。
    * 旧写法 `getByLabelText(name)` + `fireEvent.change(<select>)` 在 chips 下已不成立。
    */
   const pickChip = (group: string, option: string, idx = 0) => {
+    // issue #4511 手风琴：先展开**该行**的②工艺规格 —— 展开它会收起别行的②
+    // ⇒ 此时 DOM 里只剩这一个 radiogroup（所以下面取 [0] 而不是 [idx]）。
+    expandCraft(idx)
     const groups = screen.getAllByRole('radiogroup', { name: group })
-    fireEvent.click(within(groups[idx]).getByRole('radio', { name: option }))
-  }
-
-  const expandSpecial = (idx = 0) => {
-    const toggles = screen.getAllByRole('button', { name: /特殊选项/ })
-    fireEvent.click(toggles[idx])
+    fireEvent.click(within(groups[0]).getByRole('radio', { name: option }))
   }
 
   const fillCustomerAndSubmit = async () => {
@@ -274,6 +276,7 @@ describe('NewOrderPage', () => {
     expect(procRow.querySelectorAll('input')).toHaveLength(1)
 
     // 面料米数 3 → 数量 3 → 加工费 5×3 = 15（数量联动重算）
+    openWizardStep('尺寸与数量')
     const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
     fireEvent.change(qtyInput, { target: { value: '3' } })
     await waitFor(() => {
@@ -320,6 +323,7 @@ describe('NewOrderPage', () => {
     })
 
     // 面料 2.5 米 → 数量 2.5 → 加工费 3×2.5 = 7.5
+    openWizardStep('尺寸与数量')
     const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
     fireEvent.change(qtyInput, { target: { value: '2.5' } })
     await waitFor(() => {
@@ -362,6 +366,7 @@ describe('NewOrderPage', () => {
       expect(feeRowText()).toContain('¥50.00')
     })
 
+    openWizardStep('尺寸与数量')
     const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
     fireEvent.change(qtyInput, { target: { value: '10' } })
     await waitFor(() => {
@@ -391,6 +396,7 @@ describe('NewOrderPage', () => {
     render(<NewOrderPage />)
     await pickProduct('测试9999')
 
+    openWizardStep('尺寸与数量')
     const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
     fireEvent.change(qtyInput, { target: { value: '20' } })
 
@@ -724,7 +730,8 @@ describe('NewOrderPage', () => {
 
     it('双拼：配布边米数默认 = 主布米数；改过 ⇒ metersSource=人工指定', async () => {
       await setupCurtain()
-      const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
+      openWizardStep('尺寸与数量')
+    const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
       fireEvent.change(qtyInput, { target: { value: '3' } })
       expandCraft()
       pickChip('款式', '拼色')
@@ -1007,7 +1014,8 @@ describe('NewOrderPage', () => {
       fireEvent.click(header)
 
       // 收起 = **CSS 隐藏而非卸载**（issue #4489 的组件包发现：卸载会丢「手改留痕」标志）
-      expect(screen.getByText('尺寸与数量').closest('.hidden')).not.toBeNull()
+      // 行体收起 = CSS 隐藏（`hidden` 类）；步骤内容另见向导手风琴
+      expect(screen.getByText('尺寸与数量', { exact: false }).closest('.hidden')).not.toBeNull()
       // 摘要仍报出尺寸（收起 ≠ 信息消失）
       expect(screen.getByText(/6\.6 × 2\.6 m/)).toBeInTheDocument()
     })

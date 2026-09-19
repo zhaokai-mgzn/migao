@@ -5,7 +5,10 @@
  *
  * 商家手工录单是布艺商家的主路径（行业 ERP 的订单录入页就是这一页）——
  * 本组件把这页此前**一个都不写**的工艺参数变成可录入项（部位/工艺/加工类型/打开方式/
- * 是否定型/款式/褶距/是否对花 + 19 项部位级特殊选项）。
+ * 是否定型/款式/褶距/是否对花）。
+ *
+ * ⚠️ **19 项部位级特殊选项已迁出**（issue #4511）：用户口径「加工项 - 工艺规格 - 特殊选项
+ * 都放到**平级**」⇒ 它现在由 `OrderExtraOptions` 渲染、由页面侧的**向导步骤**包壳。
  *
  * 三条边界：
  * 1. **本组件只录入，不落库**：值的裁剪（缺值不写 / camelCase 键名）在
@@ -18,7 +21,7 @@
  *
  * 录入项本身一个没减（8 个下拉 + 19 项特殊选项 + 拼色配布边），改的是**信息层次**：
  * ① 8 个主工艺参数留在**首屏常显**（录单主路径，不该藏）；
- * ② 19 项特殊选项收进**可展开区**（长尾选项，展开前只显示「已选 N 项」摘要）；
+ * ② （19 项特殊选项已迁出，见 `OrderExtraOptions`）；
  * ③ 每个区块有**标题 + 一句话说明**，不再是一个大 grid 平铺。
  *
  * ── 交互改造（issue #4489，用户 2026-09-19：「现在要一个个点过去」）──────────────
@@ -34,7 +37,7 @@
  */
 
 import { useId, useState } from 'react'
-import { ChevronDown, ChevronRight, Settings2 } from 'lucide-react'
+import { Settings2 } from 'lucide-react'
 import {
   CRAFT_OPTIONS,
   CURTAIN_TYPE_OPTIONS,
@@ -42,7 +45,6 @@ import {
   METERS_SOURCE_FOLLOW,
   METERS_SOURCE_MANUAL,
   OPEN_COUNT_OPTIONS,
-  SPECIAL_OPTIONS,
   STYLE_MIXED,
   STYLE_OPTIONS,
   type CraftSpecInput,
@@ -182,10 +184,6 @@ export default function OrderCraftFields({
   const metersSource = edgeMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
   const effectiveEdgeMeters = edgeMeters ?? (Number(mainMeters) || 0)
 
-  /** 特殊选项默认收起（issue #4420）：19 项长尾选项是密度主因，展开前只报「已选 N 项」 */
-  const [specialOpen, setSpecialOpen] = useState(false)
-  const selectedSpecialCount = (value.specialOptions ?? []).length
-
   /**
    * 「是否定型」是否已被**用户/上游**定过（手改留痕，同 #4434）——
    * 定过 ⇒ 改部位**不得**覆盖它（手改过的值只能由用户显式改回）。
@@ -208,21 +206,11 @@ export default function OrderCraftFields({
     onChange({ isShaped: next })
   }
 
-  const toggleOption = (option: string) => {
-    const current = value.specialOptions ?? []
-    const next = current.includes(option)
-      ? current.filter((o) => o !== option)
-      : [...current, option]
-    onChange({ specialOptions: next })
-  }
-
   return (
-    <div className="pt-3 mt-1 border-t border-neutral-100">
-      <div className="flex items-center gap-2 mb-1">
-        <Settings2 className="w-4 h-4 text-neutral-500" />
-        <span className="text-sm font-medium text-neutral-700">工艺规格</span>
-        <span className="text-xs text-neutral-400">（不填则按行业默认）</span>
-      </div>
+    <div>
+      {/* ⚠️ **本组件不再自带标题**（issue #4511）：用户截图里「工艺规格」出现了两次
+          （页面侧的折叠头 + 这里的标题）。标题与序号由页面侧的**向导步骤**统一提供，
+          本组件只负责 8 个字段本体。 */}
       <p className="mb-3 text-xs text-neutral-400">
         加工类型默认「定高买宽」、款式默认「单色」、褶距按标准档 2.0 倍自动算 —— 都可改
       </p>
@@ -310,59 +298,6 @@ export default function OrderCraftFields({
               onChange={(e) => onChange({ patternRepeat: numberOrNull(e.target.value) ?? undefined })}
               className={inputClass}
             />
-          </div>
-        )}
-      </div>
-
-      {/* 特殊选项：部位级多选（toggle 按钮，与页面既有的按钮组选择同款；不用 checkbox
-          以免与「加工选项」的勾选控件在选择器上争用）。
-          issue #4420：19 项长尾选项**默认收起**，展开前只报「已选 N 项」——
-          收起不改变可选项集合（展开后 19 项一个不少），改的只是首屏密度。 */}
-      <div className="mt-4 rounded-lg border border-neutral-200">
-        <button
-          type="button"
-          onClick={() => setSpecialOpen((v) => !v)}
-          aria-expanded={specialOpen}
-          className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left"
-        >
-          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-700">
-            {specialOpen ? (
-              <ChevronDown className="w-4 h-4 text-neutral-400" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-neutral-400" />
-            )}
-            特殊选项
-            <span className="text-xs font-normal text-neutral-400">（部位级，可多选）</span>
-          </span>
-          <span
-            className={
-              'text-xs ' + (selectedSpecialCount > 0 ? 'text-primary-600 font-medium' : 'text-neutral-400')
-            }
-          >
-            {selectedSpecialCount > 0 ? `已选 ${selectedSpecialCount} 项` : '未选'}
-          </span>
-        </button>
-        {specialOpen && (
-          <div className="flex flex-wrap gap-2 px-3 pb-3">
-            {SPECIAL_OPTIONS.map((option) => {
-              const active = (value.specialOptions ?? []).includes(option)
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => toggleOption(option)}
-                  className={
-                    'h-8 px-2.5 rounded border text-xs transition-colors ' +
-                    (active
-                      ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
-                      : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
-                  }
-                >
-                  {option}
-                </button>
-              )
-            })}
           </div>
         )}
       </div>
