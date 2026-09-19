@@ -3,7 +3,7 @@ description: 客户列表/详情类需求（含客户标签管理）
 red_flags: []
 
 business_truths:
-  - [customer-list.search-fields] 客户列表 GET /api/admin/customers 支持 keyword 搜索，仅对微信昵称(wechatNickname)或手机号(phone)做 LIKE 子串匹配，不存在"姓名/name"字段
+  - [customer-list.search-fields] 客户列表 GET /api/admin/customers 支持 keyword 搜索，对**三列**做 LIKE 子串匹配：微信昵称(wechatNickname)、账户手机号(phone)、**默认收货电话**(default_receiver_phone，issue #4436 —— 发货页按订单收货电话反查客户档案时，收货电话可以≠账户手机号)；不存在"姓名/name"字段
   - [customer-list.filters] 客户列表支持 sourceChannel、vipLevel 精确(=)筛选，多条件为 AND 关系
   - [customer-list.sort-page] 客户列表按 createdAt 倒序排序；分页 page 默认1、size 默认10，单页上限500
   - [customer-list.detail-shape] 客户详情 GET /api/admin/customers/{id} 返回 data={id, profile, tags, orders, sessions} 四部分；profile 含 totalOrders/totalConsumption 统计字段与 RFM 分(rScore/fScore/mScore/rfmTotalScore)
@@ -30,6 +30,8 @@ primary_specs:
 reviewer_asserts:
   - API: GET /api/admin/customers?keyword=<已存在手机号>
     expect: success=true 且 items 中每条 phone 或 wechatNickname 包含该关键词(子串匹配)
+  - API: GET /api/admin/customers?keyword=<某客户档案的 default_receiver_phone>
+    expect: success=true 且 items 含该客户（默认收货电话可被搜到 —— 发货页按订单收货电话反查的前提；issue #4436）
   - API: GET /api/admin/customers?sourceChannel=wechat_mini
     expect: success=true 且 items 每条 sourceChannel == "wechat_mini"
   - API: GET /api/admin/customers?vipLevel=vip1

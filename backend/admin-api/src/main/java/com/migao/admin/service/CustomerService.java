@@ -70,10 +70,15 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         }
 
         // 关键词搜索
+        // 第三列 = 默认收货电话（issue #4436，跟随 #4419）：发货页按**订单收货电话**反查客户档案，
+        // 而收货电话可以≠账户手机号（送到工地/仓库、联系人是另一人 —— 正是收货信息要支持的场景）。
+        // 不把这一列纳入搜索 ⇒ 那类订单在发货页查不到客户 ⇒ 常用物流方式/公司静默带不出。
         if (StringUtils.hasText(keyword)) {
             wrapper.and(w -> w.like(CustomerProfile::getWechatNickname, keyword)
                     .or()
-                    .like(CustomerProfile::getPhone, keyword));
+                    .like(CustomerProfile::getPhone, keyword)
+                    .or()
+                    .like(CustomerProfile::getDefaultReceiverPhone, keyword));
         }
 
         wrapper.orderByDesc(CustomerProfile::getCreatedAt);
