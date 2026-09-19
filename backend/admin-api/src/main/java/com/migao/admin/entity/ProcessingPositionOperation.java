@@ -30,7 +30,20 @@ public class ProcessingPositionOperation {
 
     private String processingOrderId;
 
-    /** 部位：布帘/纱帘/帘头/外帘 */
+    /**
+     * 部位**展示名** = 加工产物名[+色号]（如 {@code 布艺遮光帘A 米白}）—— **不是帘种**。
+     *
+     * <p>⚠️ 本条注释此前写「部位：布帘/纱帘/帘头/外帘」，**与实现相反**（issue #4621 改判）。
+     * 取值来自 {@code ProcessingOrderService#buildPositionPayload} 的
+     * {@code positionName = productName (+ " " + colorName)}；设计文档
+     * {@code docs/design/position-instance-routing-model.md} 逐字写
+     * {@code position_name = productName[+colorName]}、「主定位键 = {@code (order_item_id, position_kind)}；
+     * {@code position_name} 只是**展示名**」。照旧注释取「帘种」会拼出
+     * 「三边 · 布艺遮光帘A 米白」这种名字（且与进度表分组标题、任务卡的「部位」列重复）。</p>
+     *
+     * <p><b>要帘种请取 {@link #positionKind}</b>（= 快照 {@code curtainType}：布帘/纱帘/帘头）。
+     * 可空（存量/派生 payload 缺键 ⇒ null）。</p>
+     */
     private String positionName;
 
     /**
@@ -50,6 +63,9 @@ public class ProcessingPositionOperation {
      *
      * <p>与 {@link #orderItemId} 的分工：前者解决「哪一樘窗的哪一行」，本列解决「哪一件帘」
      * （可读定位 + 冗余校验）。可空（同 {@link #orderItemId}：存量行没有）。</p>
+     *
+     * <p><b>web 面「工序显示名」取本列</b>（issue #4621）：显示名 = {@code 逻辑名 · 本列}
+     * （如 {@code 三边 · 布帘}）；**不要**用 {@link #positionName}（那是展示名，见其 javadoc）。</p>
      */
     private String positionKind;
 

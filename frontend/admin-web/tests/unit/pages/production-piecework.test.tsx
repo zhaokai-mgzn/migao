@@ -25,8 +25,9 @@ const REPORT = {
     { worker_name: '李红梅', amount: 43.45, qty: 111 },
   ],
   per_operation: [
-    { operation: '韩褶-布', amount: 40, qty: 100 },
-    { operation: '定型-布', amount: 83.45, qty: 211 },
+    // issue #4621：后端补的显示名派生键（`operation` = 工人端快照名 = 变体名，界面不得渲染）
+    { operation: '韩褶-布', logical_name: '韩褶', position: '布帘', amount: 40, qty: 100 },
+    { operation: '定型-布', logical_name: '定型', position: '布帘', amount: 83.45, qty: 211 },
   ],
   // 下钻两维（issue #4347 §3.2）：后端**同一份聚合**产出 ⇒ 各维合计 = total = 123.45
   per_position: [
@@ -73,9 +74,28 @@ describe('计件工资报表页 /production/piecework', () => {
     await userEvent.click(screen.getByTestId('piecework-tab-operation'))
 
     const operations = screen.getByTestId('piecework-by-operation')
-    expect(within(operations).getByTestId('operation-row-韩褶-布')).toHaveTextContent('¥40.00')
-    expect(within(operations).getByTestId('operation-row-定型-布')).toHaveTextContent('¥83.45')
+    // issue #4621：只显示「逻辑名 · 部位」——变体名（`韩褶-布`）不进界面，也不进 testid
+    expect(within(operations).getByTestId('operation-row-韩褶 · 布帘')).toHaveTextContent('¥40.00')
+    expect(within(operations).getByTestId('operation-row-定型 · 布帘')).toHaveTextContent('¥83.45')
+    expect(within(operations).queryByTestId('operation-row-韩褶-布')).toBeNull()
+    expect(within(operations).queryByText('韩褶-布')).toBeNull()
     expect(screen.queryByTestId('piecework-by-worker')).not.toBeInTheDocument()
+  })
+
+  it('老数据缺 logical_name ⇒ 退回 operation 原文（不显示空白）', async () => {
+    mockGetPieceworkSummary.mockResolvedValue(
+      ok({
+        ...REPORT,
+        per_operation: [{ operation: '定型-布', amount: 83.45, qty: 211 }],
+      }),
+    )
+    render(<PieceworkReportPage />)
+    await waitFor(() => expect(screen.getByTestId('piecework-by-worker')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('piecework-tab-operation'))
+
+    const operations = screen.getByTestId('piecework-by-operation')
+    expect(within(operations).getByTestId('operation-row-定型-布')).toHaveTextContent('¥83.45')
   })
 
   it('切「按工人」档可回到工人视图', async () => {

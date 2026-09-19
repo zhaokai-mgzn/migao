@@ -666,7 +666,16 @@ export interface ProcessingOrderUpdateParams {
 export interface ProductionOperation {
   id: string
   seq?: number
+  /**
+   * ⚠️ **工人端快照名**（变体名，如 `精裁-布`）：其它消费者仍要读它 ⇒ 保留；
+   * **web 界面不得直接渲染该键**（issue #4621）—— 界面用 `operationDisplayName()`
+   * 渲染 `logical_name` + `position`。
+   */
   operation: string
+  /** 逻辑工序名（后端读时派生，如 `精裁`）；老数据 / 自建工序可能缺 ⇒ helper 退回 `operation` 原文 */
+  logical_name?: string | null
+  /** 部位（如 `布帘`）；部位无关工序 / 老数据为空 ⇒ 只显示逻辑名 */
+  position?: string | null
   /** 工序分组：裁剪 / 车位 / 后道 / 其他 */
   group?: string | null
   /** 单位：米/套/件/个/折 */
@@ -713,7 +722,15 @@ export interface ProductionOperations {
 }
 
 export interface PieceworkOperationAmount {
+  /**
+   * ⚠️ **工人端快照名**（变体名，如 `精裁-布`）：其它消费者仍要读它 ⇒ 保留；
+   * **web 界面不得直接渲染该键**（issue #4621/#4630）—— 计件表用 `operationDisplayName()` 渲染。
+   */
   operation: string
+  /** 逻辑工序名（后端读时派生，如 `精裁`）；老数据 / 商家自建工序可能缺 ⇒ helper 退回 `operation` 原文 */
+  logical_name?: string | null
+  /** 部位（如 `布帘`）；部位无关工序 / 老数据为空 ⇒ 只显示逻辑名 */
+  position?: string | null
   amount: number
 }
 
@@ -880,12 +897,15 @@ export interface RoutingCreateParams {
  * （那边仍是旧名 `精裁-布` / `布三边`）—— 取错会让矩阵退化成「一行一道旧工序」。
  * `applicable=false` ⇒ `unit_price=null`（**明确不做**与「没定价」可区分）。
  *
- * `id` + 后 6 键是 issue #4588（契约 #4587 ①）新增的**写面寻址 + 逻辑名↔变体名映射**：
+ * `id` + 后 5 键是 issue #4588（契约 #4587 ①）新增的**写面寻址 + 逻辑名↔变体工序映射**：
  * - `id` = 本矩阵行（`production_operation_positions.id`）—— 格内改价 / 改做不做用它寻址
  *   （`PUT /operation-positions/{id}`）；
- * - 后 6 键 = 该格**实际落到工人端**的那道工序的元数据，由后端
+ * - 后 5 键 = 该格**实际落到工人端**的那道工序的元数据，由后端
  *   `ProductionOperationQueryService.variantNameOf` 推导（**前端不得另写一份推导**）；
- *   查不到 ⇒ 6 键**全 `null`**（静默 = 未知，不发明元数据）。
+ *   查不到 ⇒ 5 键**全 `null`**（静默 = 未知，不发明元数据）。
+ * ⚠️ **没有 `variant_name`**（issue #4622）：变体名（`布三边` / `精裁-布`）是**当前**工序库的旧名，
+ *   web 面只用**一套工序名** = 逻辑工序名（`operation`）+ 部位（`position`）⇒ 后端响应里已去掉该键
+ *   （键在响应里就仍是 web 可见的旧口径）；逻辑名 ↔ 变体的**寻址**用 `variant_operation_id`。
  */
 export interface OperationPosition {
   /** 矩阵行标识（`PUT /operation-positions/{id}` 的 `{id}`） */
@@ -894,10 +914,8 @@ export interface OperationPosition {
   position: string
   unit_price?: number | null
   applicable?: boolean | null
-  /** 该格对应的 `production_operations.id`（工人扫码端那道工序） */
+  /** 该格对应的 `production_operations.id`（工人扫码端那道工序；抽屉的 `PUT/DELETE` 按它寻址） */
   variant_operation_id?: string | null
-  /** 例：`三边 × 布帘` → `布三边`；`外帘打卷 × 布帘` → `外帘打卷`；`logo条 × 纱帘` → `null` */
-  variant_name?: string | null
   /** 变体的单位（米/折/件/套） */
   unit?: string | null
   /** 变体的分组（裁剪/车位/后道/其他） */
@@ -1002,16 +1020,41 @@ export interface RouteRuleCustomerPriceParams {
  * ⇒ 本 body **不带** `name` / `group_name` / `unit` / `unit_price` 那套工序字段。
  */
 export interface RouteRuleCreateParams {
-  /** 选项名（`trigger_value`）—— 对客可见，**与 ERP 名逐字一致**（#4389 join key 纪律） */
+  /**
+   * 触发维（**闭词表**，issue #4616）：`craft` 工艺 / `option` 特殊选项 / `processing_item` 加工项。
+   *
+   * 省略 = `option`（**反向护栏**：老调用方/老 bundle 行为一字不变）。`shaped` 是表结构预留、
+   * 无种子行 ⇒ 后端收到即 422（前端也不提供该档）。
+   */
+  trigger_kind?: RouteRuleTriggerKind
+  /** 触发值 —— `craft`/`processing_item` 必须**存在于对应词表**；`option` 可新建（#4389 join key 纪律） */
   trigger_value: string
+  /** 动作：`insert` 插入 / `remove` 移除；省略 = `insert`（老调用方行为不变） */
+  action?: 'insert' | 'remove'
   /** 目标工序（**逻辑工序名**，与 `production_route_rules.operation` 逐字一致，如 `精裁`） */
   operation: string
-  /** 插入锚点（逻辑工序名）；省略 / `null` = 追加末尾 */
+  /** 插入锚点（逻辑工序名）；省略 / `null` = 追加末尾（`remove` 不接受锚点） */
   after_operation?: string | null
   /** 规则应用顺序（越小越先）；省略 / `null` = 后端默认顺序 */
   priority?: number | null
-  /** 对客单价（**元/套**）；`null` = 未定价 */
+  /** 对客单价（**元/套**）；`null` = 未定价。**只允许 `trigger_kind='option'`**（两套账不互读） */
   customer_unit_price?: number | string | null
+}
+
+/** 条件工序规则的触发维（issue #4616；与后端闭词表 `TRIGGER_KINDS` 同口径）。 */
+export type RouteRuleTriggerKind = 'craft' | 'option' | 'processing_item'
+
+/**
+ * 规则创建弹窗的**触发值取值域**（issue #4616；`GET /api/admin/production/route-rule-options`）。
+ *
+ * 手输一个词表里没有的名字 = 建一条**永远不命中**的规则（商家以为配了、加工单上却没有）
+ * ⇒ 触发值必须从对应词表取。特殊选项名**不在此列**（可新建，没有第二份词表）。
+ */
+export interface RouteRuleTriggerOptions {
+  /** 活跃工艺词表（`production_crafts`） */
+  crafts: string[]
+  /** 活跃加工项目录（触发键 = 订单行的加工项名，**精确相等**） */
+  processing_items: string[]
 }
 
 
@@ -1183,7 +1226,15 @@ export interface PieceworkWorkerAmount {
 }
 
 export interface PieceworkReportOperationAmount {
+  /**
+   * ⚠️ **工人端快照名**（变体名，如 `精裁-布`）：其它消费者仍要读它 ⇒ 保留；
+   * **web 界面不得直接渲染该键**（issue #4621）—— 计件页用 `operationDisplayName()` 渲染。
+   */
   operation: string
+  /** 逻辑工序名（后端读时派生）；老数据可能缺 ⇒ helper 退回 `operation` 原文 */
+  logical_name?: string | null
+  /** 部位（如 `布帘`）；部位无关工序 / 老数据为空 ⇒ 只显示逻辑名 */
+  position?: string | null
   amount: number
   qty: number
 }

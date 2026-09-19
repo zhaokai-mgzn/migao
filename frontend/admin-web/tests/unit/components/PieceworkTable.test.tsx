@@ -3,10 +3,18 @@
 // + per_worker 分人（有则展示）+ 空态。
 // 真值源：docs/curtain-production-rules.md §4 计件（计件工资 = Σ 报工数量 × 工序单价；
 // 单工序一人制；与对外加工费两套账分离）。
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import PieceworkTable from '@/components/production/PieceworkTable'
 import type { PieceworkSummary } from '@/types'
+
+/** 被测组件源码：`key` 不进 DOM（React 内部用）⇒ 只能读源码判「key 里不得出现变体名」 */
+const COMPONENT_SRC = readFileSync(
+  join(process.cwd(), 'src/components/production/PieceworkTable.tsx'),
+  'utf-8',
+)
 
 /** GET /api/admin/production/orders/{orderId}/piecework 的响应（后端 Map → snake_case 键） */
 const summary: PieceworkSummary = {
@@ -15,6 +23,19 @@ const summary: PieceworkSummary = {
   per_operation: [
     { operation: '定型-布', amount: 96 },
     { operation: '韩褶-布', amount: 88.5 },
+  ],
+}
+
+/**
+ * issue #4630（同一份 `per_operation` 数据的**第 4 个消费面**：加工单「生产」页计件表）：
+ * 后端**已经**同时给 `logical_name` + `position`（#4621 读时派生、不写库）⇒ 界面渲染 `逻辑名 · 部位`。
+ */
+const summaryWithLogicalName: PieceworkSummary = {
+  total: 184.5,
+  per_worker: { 蒋雪云: 96 },
+  per_operation: [
+    { operation: '精裁-布', logical_name: '精裁', position: '布帘', amount: 96 },
+    { operation: '韩褶-布', logical_name: '韩褶', position: '布帘', amount: 88.5 },
   ],
 }
 
@@ -52,5 +73,67 @@ describe('PieceworkTable', () => {
     render(<PieceworkTable summary={null} />)
 
     expect(screen.getByText('暂无计件数据')).toBeInTheDocument()
+  })
+
+  // ── issue #4630：加工单生产页计件表改渲染「逻辑名 · 部位」（红证：改前必红）────────────
+
+  it('per_operation 有 logical_name + position ⇒ 渲染「逻辑名 · 部位」，不出现变体名', () => {
+    const { container } = render(<PieceworkTable summary={summaryWithLogicalName} />)
+
+    const first = screen.getByTestId('piecework-operation-0')
+    expect(within(first).getByText('精裁 · 布帘')).toBeInTheDocument()
+    const second = screen.getByTestId('piecework-operation-1')
+    expect(within(second).getByText('韩褶 · 布帘')).toBeInTheDocument()
+
+    // 变体名（工人端快照名）不得出现在界面**任何**位置（含属性 / data-testid）
+    expect(screen.queryByText('精裁-布')).not.toBeInTheDocument()
+    expect(screen.queryByText('韩褶-布')).not.toBeInTheDocument()
+    expect(container.innerHTML).not.toContain('精裁-布')
+    expect(container.innerHTML).not.toContain('韩褶-布')
+
+    // 金额明细不受影响（既有契约不变）
+    expect(within(first).getByTestId('piecework-operation-amount')).toHaveTextContent('¥96.00')
+  })
+
+  it('老数据缺 logical_name ⇒ 退回 operation 原文（不空白）；position 为空 ⇒ 只显示逻辑名', () => {
+    render(
+      <PieceworkTable
+        summary={{
+          total: 96,
+          per_worker: {},
+          per_operation: [
+            // 老数据 / 商家自建工序：无 logical_name ⇒ 退回 operation 原文
+            { operation: '定型-布', amount: 60 },
+            // 部位无关工序（外帘装袋）：position 空 ⇒ 只显示逻辑名，不拼「· 」
+            { operation: '外帘装袋', logical_name: '外帘装袋', position: null, amount: 36 },
+          ],
+        }}
+      />,
+    )
+
+    expect(within(screen.getByTestId('piecework-operation-0')).getByText('定型-布')).toBeInTheDocument()
+    const fallback = screen.getByTestId('piecework-operation-1')
+    expect(within(fallback).getByText('外帘装袋')).toBeInTheDocument()
+    expect(fallback.textContent).not.toContain('·')
+  })
+
+  it('data-testid 与 key 里不得出现变体名（key 不进 DOM ⇒ 读源码判）', () => {
+    const { container } = render(<PieceworkTable summary={summaryWithLogicalName} />)
+
+    const testids = Array.from(container.querySelectorAll('[data-testid]')).map(
+      (el) => el.getAttribute('data-testid') ?? '',
+    )
+    expect(testids.length).toBeGreaterThan(0)
+    for (const id of testids) {
+      expect(id).not.toContain('精裁-布')
+      expect(id).not.toContain('韩褶-布')
+    }
+
+    // key 只出现在源码里（不进 DOM）：不得用工人端快照名 `item.operation`
+    const code = COMPONENT_SRC.split('\n')
+      .filter((line) => !line.trimStart().startsWith('//'))
+      .join('\n')
+    expect(COMPONENT_SRC).toContain("from '@/lib/operation-display'")
+    expect(code).not.toMatch(/item\.operation/)
   })
 })

@@ -182,16 +182,44 @@ public class ProductionOperationQueryService {
         return result;
     }
 
-    /** 路线单项展示形态（{@code GET /routings} 列表项 / 写面响应**共用同一份**，两处各拼一份必然漂移）。 */
+    /**
+     * 路线单项展示形态（{@code GET /routings} 列表项 / 写面响应**共用同一份**，两处各拼一份必然漂移）。
+     *
+     * <p><b>{@code mainline} 读时归一（issue #4632）</b>：逐项走**既有**
+     * {@link #normalizeOperationName}，把**存量**变体名（旧前端时代存进去的 {@code 精裁-布}）
+     * 归一为逻辑工序名 —— 否则「工艺路线」tab 的主线 chip 直接渲染这个数组，界面上就还是旧名
+     * （写面 #4618 只管住新写入的，管不住库里已有的）。三条边界：</p>
+     * <ul>
+     *   <li><b>只归一能归一的</b>：未登记的自定义工序名（{@code 测试22}）归一后等于自身 ⇒ 原样返回；</li>
+     *   <li><b>不写库</b>：纯读时派生（与 S1「读时派生、不写回填」同一范式）—— 库里仍是原值，
+     *       可回溯「当时存的是什么」；本类只有 SELECT（见 {@code queryServiceIsReadOnly}）；</li>
+     *   <li><b>顺序与重复不变</b>：逐项 map、不去重、不排序（主线序列是计件/完工判定的输入，
+     *       判重是**写面**护栏的事）。</li>
+     * </ul>
+     */
     public Map<String, Object> templateView(ProductionRouteTemplate template) {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("id", template.getId());
         entry.put("name", template.getName());
         entry.put("is_default", Boolean.TRUE.equals(template.getIsDefault()));
         entry.put("positions", stringList(template.getPositions()));
-        entry.put("mainline", stringList(template.getMainline()));
+        entry.put("mainline", normalizedMainline(template.getMainline()));
         entry.put("status", template.getStatus());
         return entry;
+    }
+
+    /**
+     * 主线序列的**读时归一**（issue #4632）：逐项走 {@link #normalizeOperationName}，**顺序与重复一字不变**。
+     *
+     * <p>实现**只有这一处**（写面 {@code ProductionRoutingCommandService} 落库前调的是同一个
+     * {@link #normalizeOperationName}）—— 另抄一份表就是第二份口径，漂移的那一份不会变红。</p>
+     */
+    private List<String> normalizedMainline(Object raw) {
+        List<String> out = new ArrayList<>();
+        for (String name : stringList(raw)) {
+            out.add(normalizeOperationName(name));
+        }
+        return out;
     }
 
     /**
@@ -343,7 +371,47 @@ public class ProductionOperationQueryService {
      * 自建工序不在 35 条表里是正常态；把它当错误会让「商家加一道自定义工序」变成 500。</p>
      */
     public String normalizeOperationName(String name) {
+        return logicalOperationName(name);
+    }
+
+    /**
+     * 同上，**静态入口**（issue #4621）：读面派生「工序显示名」时，**未注入本服务**的读面
+     * （{@code ProductionService} 的工序实例 / 报工流水读面）也要用**同一份表** ——
+     * 在那里另抄一份映射、或另写一处推导，就是第二份口径（漂移的那一份不会变红）。
+     *
+     * <p>语义与 {@link #normalizeOperationName} **逐字相同**（同一个 {@link #OPERATION_LOGICAL_NAMES}）：
+     * 未登记的工序名**原样返回**（商家自建工序不在 35 条表里是正常态）。</p>
+     */
+    public static String logicalOperationName(String name) {
         return name == null ? null : OPERATION_LOGICAL_NAMES.getOrDefault(name, name);
+    }
+
+    /**
+     * 工序实例的**显示用部位**（issue #4621，读时派生、**不写库**）。
+     *
+     * <p>web 界面的工序显示名口径 = 逻辑名（{@link #logicalOperationName}），该实例**带部位**时
+     * 拼成 {@code 逻辑名 · 部位}（如 {@code 三边 · 布帘}）。本方法回答「要不要拼、拼哪个部位」：</p>
+     * <ul>
+     *   <li>变体名与逻辑名**不同**（{@code 精裁-布} ≠ {@code 精裁}）⇒ 名字里**编了部位**
+     *       ⇒ 返回 {@code position}（{@code 布帘}）；</li>
+     *   <li>两者**相同**（{@code 外帘装袋} == {@code 外帘装袋}）⇒ 该工序**与部位无关**
+     *       （真值源里 7 道裸名工序：帘头制作 / 外帘打卷 / 外帘装袋 / 外帘发货 / 质检 / 抱枕 /
+     *       腰靠垫）⇒ 返回 {@code null}（界面只显示逻辑名，不拼部位）。</li>
+     * </ul>
+     *
+     * <p>判据直接用**既有映射**（{@link #logicalOperationName}）判定，**不新增第二份表**；
+     * 也不能拿 {@code production_operations.position} 列当判据 —— 那列对 {@code 外帘装袋} 是
+     * {@code 外帘}（套级/通用工序的部位列），拿它会拼出「外帘装袋 · 外帘」这种自相矛盾的名字。</p>
+     *
+     * @param operationName 实例上的工序名（变体名 / 报工快照名）
+     * @param position      该实例所属部位（路线部位 / 实例的 {@code position_kind}）
+     * @return 显示用部位；部位无关 / 任一侧缺失 ⇒ {@code null}
+     */
+    public static String displayPosition(String operationName, String position) {
+        if (operationName == null || position == null || position.isBlank()) {
+            return null;
+        }
+        return operationName.equals(logicalOperationName(operationName)) ? null : position;
     }
 
     /**
@@ -531,6 +599,26 @@ public class ProductionOperationQueryService {
                         .orderByDesc(ProductionRouteTemplate::getIsDefault)
                         .orderByAsc(ProductionRouteTemplate::getId));
         return rows == null ? List.of() : rows;
+    }
+
+    /**
+     * 活跃**工艺词表**的名字（去重保序）—— 条件工序规则 {@code trigger_kind='craft'} 的
+     * **受控取值域**（issue #4616）。
+     *
+     * <p>为什么必须由后端给：{@code production_crafts} 此前**没有任何读端点**，而规则写面要校验
+     * 「触发值存在于对应词表」、前端要「按类型从对应词表取、不手输」⇒ 两侧都需要这一份。
+     * 前端自己从规则表现存 trigger_value 反推 = 第二份会漂的词表（新建的工艺永远进不了下拉）。</p>
+     *
+     * @return 活跃工艺名（该租户零活跃工艺 ⇒ 空列表，**不发明**默认值）
+     */
+    public List<String> activeCraftNames(Long tenantId) {
+        List<String> names = new ArrayList<>();
+        for (ProductionCraft craft : activeCrafts(tenantId)) {
+            if (craft.getName() != null && !names.contains(craft.getName())) {
+                names.add(craft.getName());
+            }
+        }
+        return names;
     }
 
     /** 活跃工艺词表行（tenant + deleted=0 + status=active；默认优先、其余按名稳定）。 */

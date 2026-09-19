@@ -30,6 +30,8 @@ const mockGetRouteSignals = vi.fn()
 // issue #4433（P3）：该页新增两条只读面 —— 部位价目矩阵 / 条件工序规则
 const mockGetOperationPositions = vi.fn()
 const mockGetRouteRules = vi.fn()
+// issue #4616：规则创建弹窗的触发值取值域（工艺词表 + 加工项目录）
+const mockGetRouteRuleOptions = vi.fn()
 // issue #4588：矩阵格写面 + 工序/规则软删（本文件只用到 updateOperation，其余备齐 mock 形态）
 const mockUpdateOperationPosition = vi.fn()
 const mockDeleteOperation = vi.fn()
@@ -46,6 +48,7 @@ vi.mock('@/lib/api', () => ({
     getRouteSignals: (...args: unknown[]) => mockGetRouteSignals(...args),
     getOperationPositions: (...args: unknown[]) => mockGetOperationPositions(...args),
     getRouteRules: (...args: unknown[]) => mockGetRouteRules(...args),
+    getRouteRuleOptions: (...args: unknown[]) => mockGetRouteRuleOptions(...args),
     updateOperationPosition: (...args: unknown[]) => mockUpdateOperationPosition(...args),
     deleteOperation: (...args: unknown[]) => mockDeleteOperation(...args),
     deleteRouteRule: (...args: unknown[]) => mockDeleteRouteRule(...args),
@@ -79,8 +82,8 @@ const CATALOG = {
  * 两档齐备且**不同**：外帘打卷 = 套级（每樘窗一次）；精裁-布 = 部位级。
  */
 const POSITIONS = [
-  { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 0.4, applicable: true, variant_operation_id: 'op-v54-01', variant_name: '精裁-布', unit: '米', group: '裁剪', scope: 'position', is_must_finish: false },
-  { id: 'pos-外帘打卷-布帘', operation: '外帘打卷', position: '布帘', unit_price: 1, applicable: true, variant_operation_id: 'op-v54-24', variant_name: '外帘打卷', unit: '套', group: '后道', scope: 'set', is_must_finish: false },
+  { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 0.4, applicable: true, variant_operation_id: 'op-v54-01', unit: '米', group: '裁剪', scope: 'position', is_must_finish: false },
+  { id: 'pos-外帘打卷-布帘', operation: '外帘打卷', position: '布帘', unit_price: 1, applicable: true, variant_operation_id: 'op-v54-24', unit: '套', group: '后道', scope: 'set', is_must_finish: false },
 ]
 
 const ROUTINGS = { total: 0, routings: [] }
@@ -114,6 +117,7 @@ describe('工序「作用域」档位（issue #4384 A1；#4588 收进行抽屉�
     mockGetRouteSignals.mockReset().mockResolvedValue(ok({ total: 0, signals: [] }))
     mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS))
     mockGetRouteRules.mockReset().mockResolvedValue(ok([]))
+    mockGetRouteRuleOptions.mockReset().mockResolvedValue(ok({ crafts: [], processing_items: [] }))
     mockUpdateOperationPosition.mockReset().mockResolvedValue(ok({ id: 'pos-精裁-布帘' }))
     mockDeleteOperation.mockReset().mockResolvedValue(ok({ id: 'op-v54-24', deleted: true }))
     mockDeleteRouteRule.mockReset().mockResolvedValue(ok({ id: 1, deleted: true }))

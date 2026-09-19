@@ -54,6 +54,7 @@ import type {
   RouteRule,
   RouteRuleCustomerPriceParams,
   RouteRuleCreateParams,
+  RouteRuleTriggerOptions,
   CraftCalcConfig,
   CraftCalcConfigResponse,
   RoutingGaps,
@@ -528,6 +529,12 @@ export const productionApi = {
   // ② 统一规则区：26 条（工艺 10 + 选项 16）—— 只含路线编排档（insert/remove），不含计件系数档
   getRouteRules: () =>
     request.get<ApiResponse<RouteRule[]>>('/api/admin/production/route-rules'),
+  // ②-a 规则创建弹窗的**触发值取值域**（issue #4616；权限 processing:manage）：
+  // `{crafts:[…], processing_items:[…]}` —— 活跃工艺词表 + 活跃加工项目录。
+  // 触发值必须从对应词表取（手输一个词表里没有的名字 = 建一条永远不命中的规则）。
+  // 特殊选项名不在此列（可新建，没有第二份词表）。
+  getRouteRuleOptions: () =>
+    request.get<ApiResponse<RouteRuleTriggerOptions>>('/api/admin/production/route-rule-options'),
   // ②-b 条件工序规则**软删**（issue #4588；契约 #4587 ④；权限 processing:manage）：
   // 无硬护栏（规则只影响「插/删一道工序」，删错了重加即可）；不存在/跨租户/已软删 ⇒ 404。
   deleteRouteRule: (id: string | number) =>

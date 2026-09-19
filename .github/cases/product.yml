@@ -564,6 +564,14 @@ cases:
       # agent 发「哪一件」选择卡，且改价会落到不确定的那一件上）。保留最早创建的（= 种子）。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
+    # 前置自断言（issue #4621 的 case-trust burn-down 缴费，形态与 PR-005/#4590 逐字同款）：
+    # 本用例按**名字**点名被测对象（「搜索遮光窗帘」…「把价格改成 198」）⇒「该名字唯一」
+    # 是它真正依赖、且**只读**的前置（种子 + 上面 `pre_clean[product_dedupe]` 后恰为 1 件）。
+    # 前置不成立时红的表现是 `unmatched expectation`（看起来像「agent 不会改价」，归因全错）。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     expectations:
       - tool: product_search
       - tool: product_detail
@@ -573,12 +581,16 @@ cases:
         args:
           price: "198"
       - tool: product_detail
+    # 效果层断言（issue #4621 的 case-trust burn-down 缴费）：「调用了 ≠ 调成了」——
+    # 改价真的成功（`success=true`）才算过；只有 expectation 时工具失败也照样满分。
+    must_succeed:
+      - tool: product_update
     data_checks:
       - "第3轮 product_id 来自第2轮结果"
       - "第4轮 product_id 来自第2轮结果"
       - "全程未重新 product_search 查同一个商品"
     skip_reason: ""
-    merge_log: "eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩折」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径）。2026-09-19（#4371 商品↔加工项解耦）：删除 R5/R6「给它加上韩折」+「确认」两轮与 `expectations[product_processing_item_manage(action=add)]` —— 商品不再持有加工项，该工具退场；标题由「…→关联加工项→验证」改为「…→改价→验证」；用例意图（多轮 UUID 复用/不重查/写操作确认闸）由改价链路完整保留，其余断言原样未动。"
+    merge_log: "eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩折」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径）。2026-09-19（#4371 商品↔加工项解耦）：删除 R5/R6「给它加上韩折」+「确认」两轮与 `expectations[product_processing_item_manage(action=add)]` —— 商品不再持有加工项，该工具退场；标题由「…→关联加工项→验证」改为「…→改价→验证」；用例意图（多轮 UUID 复用/不重查/写操作确认闸）由改价链路完整保留，其余断言原样未动。2026-09-20（issue #4621 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（CASE-TRUST-NO-PRECONDITION-ASSERTION）+ `must_succeed[product_update]`（CASE-TRUST-NO-EFFECT-ASSERTION）—— **断言只增不减**（expectations / data_checks / pre_clean / user_inputs 一字未动）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
@@ -698,6 +710,21 @@ cases:
     namespaces:
       - "product_name:测试窗帘"
 
+    # ── 前置自断言（issue #4630 的 case-trust burn-down 缴费，形态与 PR-008 逐字同款）──
+    # 本用例**自建**「测试窗帘」⇒ 该名字必须空闲（`expect: 0`）；`max_growth: 1` 只容忍
+    # 本用例自己造的那一个（并行用例再造同名 ⇒ 仍判漂移，见 assertion_taxonomy 的 #4200 规则）。
+    # 前置不成立时的表现是 agent 发同名选择卡、`product_manage(create)` 永不执行 ⇒
+    # 红的样子像「agent 不会建品」，归因全错。
+    precondition:
+      - type: product_count_for_keyword
+        source: "测试窗帘"
+        expect: 0
+        max_growth: 1
+    # 效果层断言：「调用了 ≠ 创建成功了」（#3778）—— 工具返回 success=false 时本用例必须红。
+    must_succeed:
+      - tool: product_manage
+        action: create
+
     expectations:
       - tool: product_manage
         args:
@@ -707,7 +734,7 @@ cases:
     data_checks:
       - "最终 price=200（不是 100）"
     skip_reason: ""
-    merge_log: "eval M003 独有（中途纠偏）；2026-09-09 校准：补「窗帘布艺」点分类卡轮（「分类选窗帘」后 agent 查分类树发现无「窗帘」精确分类发 choice 卡，原脚本后续轮跳过点卡导致分类卡反复发、6 轮走不到 create——与 PR-008 同类）。2026-09-19（#4371 商品↔加工项解耦）：删除「不需要加工项」一轮 + `expectations[processing_item_query]` + `data_checks[无加工项关联]` —— 建品不再经加工项（商品不持有加工项），该断言的对象已不存在；改价纠偏意图与其余断言原样未动。"
+    merge_log: "eval M003 独有（中途纠偏）；2026-09-09 校准：补「窗帘布艺」点分类卡轮（「分类选窗帘」后 agent 查分类树发现无「窗帘」精确分类发 choice 卡，原脚本后续轮跳过点卡导致分类卡反复发、6 轮走不到 create——与 PR-008 同类）。2026-09-19（#4371 商品↔加工项解耦）：删除「不需要加工项」一轮 + `expectations[processing_item_query]` + `data_checks[无加工项关联]` —— 建品不再经加工项（商品不持有加工项），该断言的对象已不存在；改价纠偏意图与其余断言原样未动。2026-09-20（issue #4630 的 case-trust burn-down 缴费）：真修本条的存量两码而非收窄 —— 补 `precondition[product_count_for_keyword: 测试窗帘, expect: 0, max_growth: 1]`（清 CASE-TRUST-NO-PRECONDITION-ASSERTION；本用例自建该名字，「名字空闲」是它真正依赖且只读的前置）与 `must_succeed[product_manage(create)]`（清 CASE-TRUST-NO-EFFECT-ASSERTION）；断言只增不减，`expectations` / `data_checks` / `user_inputs` 一字未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_product.py"

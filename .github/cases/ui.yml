@@ -704,7 +704,15 @@ cases:
       - "接下来可以问 = collectSuggestions 取最近 assistant 消息的 suggestions，点击即发送"
       - "删除：处理进度工具时间线、业务域 ×N 计数、裸编号便签；会话标识弱化保留（调试用）"
     skip_reason: "[backend-contract] 纯前端重构由 vitest 单测（session-insight.test.ts + SessionInsight.test.tsx）+ e2e 抽屉链路验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-05 新增：米宝「洞察」重构为「会话简报」— 工具语言转业务信息（issue #2897）；2026-09-xx 更新：/chat 工作台 docked 默认右侧展开可缩回、FAB 保持 overlay 现状（issue #3018）"
+    # 前置自断言（CASE-TRUST-NO-PRECONDITION-ASSERTION burn-down，口径同 chat.yml 既有两条
+    # `[backend-contract]` 形态 / #4614 的 CH-027 / #4629 的 UI-030）：本用例是**纯前端渲染**用例 ——
+    # 前置（会话消息流、`suggestions`、订单/售后台账行）由单测**自建**
+    # （`session-insight.test.ts` / `SessionInsight.test.tsx` / `ChatArea.test.tsx` 直接构造
+    # message / 会话对象；e2e 走 fixture 模式），不依赖任何共享评测夹具 ⇒ 前置不成立时单测**直接红**
+    # （找不到区块 / 断言不符），不会与「agent 不干活」同形。agent-eval 栈不跑本用例
+    # （skip_reason 已登记）⇒ 没有可挂的运行期 precondition 类型（`_PRECONDITION_TYPES` 全是后端共享夹具计数）。
+    precondition: "本用例是 [backend-contract] 纯前端渲染用例：前置（会话消息流 + suggestions + 订单/售后台账行 + docked/overlay 两种布局入口）由单测自建（frontend/admin-web/tests/unit/lib/session-insight.test.ts、tests/unit/components/SessionInsight.test.tsx、tests/unit/components/ChatArea.test.tsx 直接构造 message/会话对象；e2e tests/e2e/specs/chat/chat.spec.ts 走 fixture 模式），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它"
+    merge_log: "2026-09-05 新增：米宝「洞察」重构为「会话简报」— 工具语言转业务信息（issue #2897）；2026-09-xx 更新：/chat 工作台 docked 默认右侧展开可缩回、FAB 保持 overlay 现状（issue #3018） ｜ 2026-09-20（issue #4622 的 case-trust burn-down 缴费，**整条销账**）：补 `precondition` 声明 —— 原条目只命中 CASE-TRUST-NO-PRECONDITION-ASSERTION，而本用例是 `[backend-contract]` 纯前端渲染用例、**没有**可挂的运行期 precondition 类型 ⇒ 按 chat.yml 既有两条 `[backend-contract]` 形态（#4614 的 CH-027 同款）用**声明式**字符串写清前置是什么、由谁满足、不成立时怎么红。user_inputs / expectations / data_checks / traces **一字未动**（无放宽）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/session-insight.test.ts"
@@ -983,13 +991,23 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
+      # ── 前置自断言（issue #4616/#4617 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是
+      #    CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）──
+      # 本用例是 `[backend-contract]` 用例（不进 agent-eval），判据全在下面 traces 的两个 vitest
+      # 文件里；它们**全部以「纯函数 resolveInteractiveState 存在 + MessageList 已接线」为前提**。
+      # 前置不成立（纯函数没落地 / 接线被绕过）时，单测只能报「找不到导出 / 行为不符」——
+      # 判红会伪装成「渲染决策写错了」，归因错人（与 PP-006 / PP-007 同一形态、同一修法）。
+      # 口径：`assertion_taxonomy.declares_precondition` ② 认「`data_checks` 里含前置关键词
+      # **且**是机器计分型」，故本条带 `success=true`（= 计分标记，不新增断言强度）。
+      # **断言面（user_inputs / expectations）与其余 data_checks 一字未动、无放宽。**
+      - "前置（precondition）：`frontend/admin-web/src/lib/interactive-render.ts` 导出纯函数 `resolveInteractiveState`，且 `MessageList.tsx` 的交互组件渲染确实经它决策（不是各调用点各判一次 `message.isStreaming`）—— 这是下面全部判据与 traces 里两个 vitest 文件的接地对象（success=true）；前置不成立时单测只能报「找不到该导出 / 行为不符」，判红会伪装成「渲染决策写错」"
       - "frontend/admin-web/src/lib/interactive-render.ts（或等价位置）导出纯函数 resolveInteractiveState(msg) → 'interactive' | 'readonly' | 'hidden'：有 interactive 且非流式且未答 → interactive；有 interactive 且 interactiveAnswered → readonly；流式中或无 interactive → hidden"
       - "MessageList.tsx 渲染交互组件时经 resolveInteractiveState 决策，不再直接用 message.isStreaming 作为 disabled：流式中隐藏（hidden），已答（interactiveAnswered=true）渲染同构只读变体（disabled=true，按钮置灰不可点），未答复渲染可交互（disabled=false）"
       - "InteractiveMessage ChoiceCard/ConfirmCard/FormCard 在 disabled=true 时不可点击且视觉置灰（opacity/disabled 属性），点击不触发 sendMessage"
       - "锁的单一事实源为消息级 interactiveAnswered（来自 store 透传/历史回放），非组件本地 useState：FAB 关闭重开（ChatArea 卸载重挂载）后已答卡片仍保持只读不可点"
       - "FAB 浮窗（FloatingAssistant）与 /chat 工作台共用 MessageList/InteractiveMessage 链路，两入口渲染决策一致"
     skip_reason: "[backend-contract] 纯前端渲染决策由 vitest 单测（components-chat.test.tsx + interactive-render 单测）验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-08 新增：米宝交互组件渲染三态固化（issue #3036）"
+    merge_log: "2026-09-08 新增：米宝交互组件渲染三态固化（issue #3036）。2026-09-19（#4616/#4617 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须整条销账）：补**机器计分型**前置自断言（纯函数 `resolveInteractiveState` 存在 + `MessageList.tsx` 经它决策），把「前置不成立 ⇒ 找不到导出，判红却伪装成渲染决策写错」挡在门口；user_inputs / expectations 与其余 data_checks 原样未动、无放宽。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/components-chat.test.tsx"
@@ -1568,6 +1586,53 @@ cases:
         - "frontend/admin-web/tests/unit/pages/ship-order.test.tsx"
         - "frontend/admin-web/tests/unit/lib/data-adapter.test.ts"
         - "frontend/admin-web/tests/unit/lib/logistics.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # UI-048（issue #4617，P2·交互）：规则 / 工序删除的二次确认改成弹框（与「删除工艺路线」统一）
+  #
+  # 用户裁定（2026-09-19，删除已生效后）：「这个功能 ok 了，但是**确认删除的交互为什么不是弹框选择，
+  #   交互需要优化**」
+  #
+  # 病根（同页两套形态并存）：**路线**删除用 `Modal` 弹框（`confirmAction`）；**规则**删除与**工序**删除
+  #   是**就地展开**的「确认删除 / 取消」（`confirmDeleteRuleId` / `confirmDeleteOpId`），
+  #   挤在长表格的「操作」列里 ⇒ 易误点、也看不清到底删的是哪一行。
+  #
+  # 红证（实测）：改前 `route-rule-delete-modal` / `variant-delete-modal` 两个 testid **都不存在**
+  #   ⇒ `Unable to find an element by: [data-testid=\"route-rule-delete-modal\"]`（两条红）。
+  # ==========================================================================
+  - id: UI-048
+    legacy_id: ""
+    title: "工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）"
+    domains:
+      - ui
+      - frontend
+      - production
+    tier: normal
+    tags:
+      - ui
+      - production-routing
+      - route-rules
+      - confirm-modal
+      - admin-web
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**规则删除 = 弹框**（不再就地展开）：点行的「删除」⇒ 弹框出现（`route-rule-delete-modal`），弹框**写清这条规则是什么**（触发类型 + 触发值 + 动作 + 目标工序，如「工艺 韩褶 → 在『三边』之后插入『韩褶』」）+ 影响（删除后不再增删这道工序；软删、历史加工单一字不变）；危险按钮用既有 danger 形态、取消为 secondary。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx「⑲-①」（**红证**：改前无弹框 ⇒ `Unable to find an element by: [data-testid=\"route-rule-delete-modal\"]`，实测）"
+      - "判据 2·**取消 ⇒ 不发请求**，弹框关闭。证据：production-routings.test.tsx「⑲-②」"
+      - "判据 3·**删除中按钮禁用**（防重复提交）：确认按钮 loading 态禁用、取消按钮同时禁用；重复点击不会再发第二次请求。证据：production-routings.test.tsx「⑲-③」（`toBeDisabled()` + 二次点击后调用次数仍为 1）"
+      - "判据 4·**失败理由逐条在弹框里就地展示**（**不许**吞成一句「删除失败」）：后端 422 的 `error.details[].message` 逐条渲染（`route-rule-delete-reasons`），失败后弹框仍在（理由要看得见）。证据：production-routings.test.tsx「⑲-④」"
+      - "判据 5·**工序删除（抽屉那处）同一套弹框**（同一页面不留两套形态）：点抽屉里的「删除」⇒ `variant-delete-modal`，写清删的是哪一道变体（名字 + 覆盖部位）；取消不发请求。证据：production-routings.test.tsx「⑲-⑤」（**红证**：改前无弹框 ⇒ `Unable to find an element by: [data-testid=\"variant-delete-modal\"]`，实测）"
+      - "判据 6·**不动删除的后端语义与护栏**（#4608 刚修好：显式写列 + `updated_at` 推进 + 护栏一字不动）：`DELETE /route-rules/{id}` 与 `DELETE /operations/{id}` 的端点、请求体、响应形态、护栏判据**逐字未动**（本单只改二次确认的**形态**）。既有删除断言（`variant-delete-reasons` / `route-rule-delete-reasons` 的逐条理由）一条未放宽。证据：ProductionRoutingReadControllerTest「DELETE /route-rules/{id} ⇒ 200 软删 {id,deleted:true}；不存在/已软删 ⇒ 404」未改 + production-routings.test.tsx 的既有 ⑰-⑯/⑰-⑰ 用例保留"
+      - "**边界（如实登记）**：本单**不动** `routings/page.tsx` 里 #4613（条件工序规则常驻展开）/ #4615（页头「新增工序」入口）涉及的外壳与按钮 —— 那两处由已合入的 #4618 落地，本单只在其之上改删除确认形态。"
+    skip_reason: "[backend-contract] 纯前端交互（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行"
+    merge_log: "2026-09-19 新增（issue #4617，P2·交互）。交付：规则删除与工序删除的二次确认由**就地展开**改为**弹框**（与「删除工艺路线」同一形态），弹框写清删的是哪一条 + 影响、删除中禁用按钮、失败理由逐条就地展示；后端删除语义与护栏一字未动。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/production-routings.test.tsx"
       ci:
         - pr-check.yml
       verifies: []

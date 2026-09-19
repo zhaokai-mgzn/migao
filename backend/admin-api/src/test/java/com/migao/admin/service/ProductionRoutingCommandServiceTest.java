@@ -14,6 +14,7 @@ import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionRouting;
 import com.migao.admin.entity.ProductionRoutingVersion;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductionCraftMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
 import com.migao.admin.mapper.ProductionOperationPositionMapper;
@@ -76,6 +77,8 @@ class ProductionRoutingCommandServiceTest {
     @Mock
     private ProductionCraftMapper productionCraftMapper;
     @Mock
+    private ProcessingItemMapper processingItemMapper;
+    @Mock
     private ProductionRoutingVersionMapper productionRoutingVersionMapper;
     @Mock
     private ProductionOperationMapper productionOperationMapper;
@@ -109,7 +112,7 @@ class ProductionRoutingCommandServiceTest {
                 new ProductionOperationQueryService(productionOperationMapper, productionRouteTemplateMapper,
                         productionRouteRuleMapper, productionOperationPositionMapper,
                         productionCraftMapper, productionRouteSignalMapper),
-                productionRouteRuleMapper);
+                productionRouteRuleMapper, processingItemMapper);
     }
 
     @AfterEach
@@ -444,15 +447,20 @@ class ProductionRoutingCommandServiceTest {
     @Test
     @DisplayName("改名**只改 name**：不给 mainline 就不动序列（改一个名字不该顺带重写计件工资的输入）")
     void renameOnlyChangesName() {
-        when(productionRouteTemplateMapper.selectById("rt-1"))
-                .thenReturn(routing("rt-1", "旧名", false, List.of("布三边", "外帘装袋")));
+        ProductionRouteTemplate stored = routing("rt-1", "旧名", false, List.of("布三边", "外帘装袋"));
+        when(productionRouteTemplateMapper.selectById("rt-1")).thenReturn(stored);
         when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
                 routing("rt-1", "旧名", false, List.of("布三边", "外帘装袋"))));
 
         Map<String, Object> result = service.updateRouting("rt-1", body("name", "新名"), TENANT);
 
         assertThat(result.get("name")).isEqualTo("新名");
-        assertThat(result.get("mainline")).as("序列必须一字不动").asString().isEqualTo(List.of("布三边", "外帘装袋").toString());
+        // ⚠️ 判据钉在**落库实体**上（issue #4632）：读面起改为**读时归一**（`布三边` ⇒ `三边`），
+        // 拿响应体当「库里存的序列」会误判 —— 而本条要证明的恰恰是「库里那一列一字未动」。
+        assertThat(stored.getMainline()).as("库里的序列必须一字不动")
+                .isEqualTo(List.of("布三边", "外帘装袋"));
+        assertThat(result.get("mainline")).as("响应 = 读面归一后的形态（读写面共用同一份 templateView）")
+                .asString().isEqualTo(List.of("三边", "外帘装袋").toString());
         verify(productionRoutingVersionMapper, never()).insert(any(ProductionRoutingVersion.class));
     }
 

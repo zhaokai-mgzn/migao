@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPosition;
 import com.migao.admin.entity.ProductionRouteRule;
+import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductionCraftMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
 import com.migao.admin.mapper.ProductionOperationPositionMapper;
@@ -70,6 +71,8 @@ class ProductionRoutingReadServiceTest {
     @Mock
     private ProductionCraftMapper productionCraftMapper;
     @Mock
+    private ProcessingItemMapper processingItemMapper;
+    @Mock
     private ProductionRouteSignalMapper productionRouteSignalMapper;
 
     private ProductionRoutingReadService service() {
@@ -77,7 +80,7 @@ class ProductionRoutingReadServiceTest {
                 productionOperationMapper, productionRouteTemplateMapper, productionRouteRuleMapper,
                 productionOperationPositionMapper, productionCraftMapper, productionRouteSignalMapper);
         return new ProductionRoutingReadService(productionOperationPositionMapper,
-                productionRouteRuleMapper, queryService);
+                productionRouteRuleMapper, queryService, processingItemMapper);
     }
 
     /**
@@ -192,16 +195,18 @@ class ProductionRoutingReadServiceTest {
 
         assertThat(rows.get(0).get("operation")).isEqualTo("精裁");
         assertThat(rows.get(0)).doesNotContainKey("logical_name");
+        // issue #4622：**10 键**（原 11 键去掉 `variant_name` —— 变体名不再进 web 可见的响应）
+        assertThat(rows.get(0)).doesNotContainKey("variant_name");
         assertThat(rows.get(0).keySet())
                 .containsExactly("id", "operation", "position", "unit_price", "applicable",
-                        "variant_operation_id", "variant_name", "unit", "group", "scope",
+                        "variant_operation_id", "unit", "group", "scope",
                         "is_must_finish");
     }
 
-    // ── 判据 2b：逻辑名 ↔ 变体名映射（issue #4587 ①，母单 #4586 的「中间那座桥」）──
+    // ── 判据 2b：逻辑名 ↔ 变体工序映射（issue #4587 ①，母单 #4586 的「中间那座桥」）──
 
     @Test
-    @DisplayName("部位价目：6 新键 = 该格实际落到工人端那道工序的元数据（复用 variantNameOf，不另写推导）")
+    @DisplayName("部位价目：5 新键 = 该格实际落到工人端那道工序的元数据（复用 variantNameOf，不另写推导）")
     void operationPositionsCarriesVariantMetadata() {
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
                 position("三边", "布帘", "0.40", true)));
@@ -211,7 +216,8 @@ class ProductionRoutingReadServiceTest {
         Map<String, Object> row = service().operationPositions(TENANT).get(0);
 
         assertThat(row.get("variant_operation_id")).isEqualTo("op-busandbian");
-        assertThat(row.get("variant_name")).isEqualTo("布三边");
+        // issue #4622：变体名**不进响应**（红证：改前此处 `row.get("variant_name")` == "布三边"）
+        assertThat(row).doesNotContainKey("variant_name");
         assertThat(row.get("unit")).isEqualTo("米");
         assertThat(row.get("group")).isEqualTo("车位");
         assertThat(row.get("scope")).isEqualTo("position");
@@ -219,7 +225,7 @@ class ProductionRoutingReadServiceTest {
     }
 
     @Test
-    @DisplayName("部位价目：帘头回落布帘变体（三边 × 帘头 ⇒ 布三边，与实例化同一口径）")
+    @DisplayName("部位价目：帘头回落布帘变体（三边 × 帘头 ⇒ 布帘那道变体，与实例化同一口径）")
     void operationPositionsFallsBackToClothVariantForCurtainHead() {
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
                 position("三边", "帘头", "0.40", true)));
@@ -228,13 +234,13 @@ class ProductionRoutingReadServiceTest {
 
         Map<String, Object> row = service().operationPositions(TENANT).get(0);
 
-        assertThat(row.get("variant_name")).as("帘头历史上复用布帘变体（V54 帘头×平幔 逐字引用 布三边）")
-                .isEqualTo("布三边");
-        assertThat(row.get("variant_operation_id")).isEqualTo("op-busandbian");
+        // 「帘头历史上复用布帘变体（V54 帘头×平幔 逐字引用 布三边）」这层映射由**寻址键**证明
+        assertThat(row.get("variant_operation_id")).as("帘头回落复用布帘那道变体").isEqualTo("op-busandbian");
+        assertThat(row).doesNotContainKey("variant_name");
     }
 
     @Test
-    @DisplayName("部位价目：库里没有该变体 ⇒ 6 键全 null（logo条 × 纱帘 —— 不猜、不拼名字）")
+    @DisplayName("部位价目：库里没有该变体 ⇒ 5 键全 null（logo条 × 纱帘 —— 不猜、不拼名字）")
     void operationPositionsLeavesVariantKeysNullWhenNoVariant() {
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
                 position("logo条", "纱帘", null, false)));
@@ -243,10 +249,10 @@ class ProductionRoutingReadServiceTest {
 
         Map<String, Object> row = service().operationPositions(TENANT).get(0);
 
-        assertThat(row).containsKeys("variant_operation_id", "variant_name", "unit", "group",
+        assertThat(row).containsKeys("variant_operation_id", "unit", "group",
                 "scope", "is_must_finish");
+        assertThat(row).doesNotContainKey("variant_name");
         assertThat(row.get("variant_operation_id")).isNull();
-        assertThat(row.get("variant_name")).isNull();
         assertThat(row.get("unit")).isNull();
         assertThat(row.get("group")).isNull();
         assertThat(row.get("scope")).isNull();
@@ -263,8 +269,9 @@ class ProductionRoutingReadServiceTest {
 
         Map<String, Object> row = service().operationPositions(TENANT).get(0);
 
-        assertThat(row.get("variant_name")).isEqualTo("外帘打卷");
+        // 部位无关工序的变体名 == 逻辑名；issue #4622 起**名字不进响应**，映射由寻址键证明
         assertThat(row.get("variant_operation_id")).isEqualTo("op-dajuan");
+        assertThat(row).doesNotContainKey("variant_name");
         assertThat(row.get("scope")).isEqualTo("set");
     }
 

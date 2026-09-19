@@ -164,7 +164,7 @@ class ProductionControllerTest {
         // 路线/信号写面（issue #4308）：真实对象（只 mock Mapper），响应形态 = 路线展示形态（同一份）
         ProductionRoutingCommandService routingCommandService = new ProductionRoutingCommandService(
                 productionRouteTemplateMapper, routingVersionMapper, productionOperationMapper,
-                queryService, productionRouteRuleMapper);
+                queryService, productionRouteRuleMapper, processingItemMapper);
         // 加工费组合定价（issue #4386）：真实服务（只 mock Mapper），写面响应形态 = 列表项形态
         // （同一份 combinationView）。控制器里这两个依赖是**字段注入**（不动既有 6 参构造），
         // 故这里用 ReflectionTestUtils 装配 —— 目的只是让新端点可达，不改既有端点的装配。
@@ -669,6 +669,22 @@ class ProductionControllerTest {
                 .andExpect(jsonPath("$.data.routings[0].is_default").value(true))
                 .andExpect(jsonPath("$.data.routings[0].mainline[0]").value("精裁"))
                 .andExpect(jsonPath("$.data.routings[0].positions[0]").value("布帘"));
+    }
+
+    @Test
+    @DisplayName("#4632 存量主线读时归一：库里存的是变体名（精裁-布）⇒ GET /routings 返回逻辑名（精裁）")
+    void routingsNormalizeLegacyVariantNamesOnRead() throws Exception {
+        // 存量形态：旧前端时代存进库的**变体名**（写面 #4618 只管住新写入的，管不住已有的）
+        ProductionRouteTemplate legacy = RoutingModelFixture.defaultTemplate(TENANT);
+        legacy.setMainline(List.of("精裁-布", "布三边", "测试22"));
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(legacy));
+
+        mockMvc.perform(get("/api/admin/production/routings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.routings[0].mainline[0]").value("精裁"))
+                .andExpect(jsonPath("$.data.routings[0].mainline[1]").value("三边"))
+                // 自定义工序名归一后等于自身 ⇒ 原样返回（不得被抹成空或别的工序）
+                .andExpect(jsonPath("$.data.routings[0].mainline[2]").value("测试22"));
     }
 
     // ══════════════════════════ 计件 ══════════════════════════
