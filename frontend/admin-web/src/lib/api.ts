@@ -50,6 +50,7 @@ import type {
   RoutingCreateParams,
   RoutingUpdateParams,
   OperationPosition,
+  OperationPositionUpdateParams,
   RouteRule,
   RouteRuleCustomerPriceParams,
   RouteRuleCreateParams,
@@ -499,14 +500,31 @@ export const productionApi = {
   updateOperation: (id: string | number, data: ProductionOperationUpdateParams) =>
     request.put<ApiResponse<CatalogOperation>>(`/api/admin/production/operations/${id}`, data),
 
+  // 工序**软删**（issue #4588；契约 #4587 ③）：`deleted=1`（不物理删 —— 历史报工仍引用它）。
+  // 三条护栏**一次报全**（422 + `error.details[].message`：被活跃主线 / 活跃规则 / 矩阵格引用）；
+  // 已软删 ⇒ 200 幂等 no-op。权限 processing:manage。
+  deleteOperation: (id: string | number) =>
+    request.delete<ApiResponse<{ id: string; deleted: boolean }>>(`/api/admin/production/operations/${id}`),
+
   // ── 新路线模型只读面（issue #4500 = 母单 #4423 的 P2c；消费方 = P3 #4433）──
   // 两个端点**只读**（写面留 v1b）；顺序由服务端定（Java 侧显式比较器，环境无关）⇒ 前端不得重排。
   // ① 部位价目矩阵：84 格 = 28 逻辑工序 × 3 部位，`applicable=false` 的格 unit_price=null
+  // issue #4588（契约 #4587 ①）：每行多出 `id`（写面寻址）+ 6 个变体元数据键（逻辑名↔变体名映射）。
   getOperationPositions: () =>
     request.get<ApiResponse<OperationPosition[]>>('/api/admin/production/operation-positions'),
+  // ①-b 矩阵格**写面**（issue #4588；契约 #4587 ②；权限 processing:manage）：
+  // **部分更新** ⇒ body 只带变了的键（`{unit_price}` 或 `{applicable}`）；
+  // `applicable=false` ⇒ 后端把价强制落 NULL；`unit_price=null` = 改回**未定价**（≠ 0 元）；
+  // 校验失败 ⇒ 422 + `error.details[].message`（一次报全）。响应与 ① 的单行同构。
+  updateOperationPosition: (id: string, data: OperationPositionUpdateParams) =>
+    request.put<ApiResponse<OperationPosition>>(`/api/admin/production/operation-positions/${id}`, data),
   // ② 统一规则区：26 条（工艺 10 + 选项 16）—— 只含路线编排档（insert/remove），不含计件系数档
   getRouteRules: () =>
     request.get<ApiResponse<RouteRule[]>>('/api/admin/production/route-rules'),
+  // ②-b 条件工序规则**软删**（issue #4588；契约 #4587 ④；权限 processing:manage）：
+  // 无硬护栏（规则只影响「插/删一道工序」，删错了重加即可）；不存在/跨租户/已软删 ⇒ 404。
+  deleteRouteRule: (id: string | number) =>
+    request.delete<ApiResponse<{ id: number; deleted: boolean }>>(`/api/admin/production/route-rules/${id}`),
   // ③ 特殊选项**对客单价**写面（issue #4567；权限 processing:manage）：
   // 只写 `production_route_rules.customer_unit_price`（元/套）—— 与工序库的**计件**单价两套账不互读。
   // `null` = 显式改回**未定价**（≠ 0 元）；非 option 行 / 负数 / 三位小数 ⇒ 422 逐条理由。

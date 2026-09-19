@@ -879,12 +879,46 @@ export interface RoutingCreateParams {
  * ⚠️ `operation` 是**逻辑工序名**（`精裁` / `三边`），**不是** `production_operations.name`
  * （那边仍是旧名 `精裁-布` / `布三边`）—— 取错会让矩阵退化成「一行一道旧工序」。
  * `applicable=false` ⇒ `unit_price=null`（**明确不做**与「没定价」可区分）。
+ *
+ * `id` + 后 6 键是 issue #4588（契约 #4587 ①）新增的**写面寻址 + 逻辑名↔变体名映射**：
+ * - `id` = 本矩阵行（`production_operation_positions.id`）—— 格内改价 / 改做不做用它寻址
+ *   （`PUT /operation-positions/{id}`）；
+ * - 后 6 键 = 该格**实际落到工人端**的那道工序的元数据，由后端
+ *   `ProductionOperationQueryService.variantNameOf` 推导（**前端不得另写一份推导**）；
+ *   查不到 ⇒ 6 键**全 `null`**（静默 = 未知，不发明元数据）。
  */
 export interface OperationPosition {
+  /** 矩阵行标识（`PUT /operation-positions/{id}` 的 `{id}`） */
+  id?: string | null
   operation: string
   position: string
   unit_price?: number | null
   applicable?: boolean | null
+  /** 该格对应的 `production_operations.id`（工人扫码端那道工序） */
+  variant_operation_id?: string | null
+  /** 例：`三边 × 布帘` → `布三边`；`外帘打卷 × 布帘` → `外帘打卷`；`logo条 × 纱帘` → `null` */
+  variant_name?: string | null
+  /** 变体的单位（米/折/件/套） */
+  unit?: string | null
+  /** 变体的分组（裁剪/车位/后道/其他） */
+  group?: string | null
+  /** 变体的作用域（V67 闭词表） */
+  scope?: ProductionScope | null
+  /** 变体是否必完（缺这道工序不能打包） */
+  is_must_finish?: boolean | null
+}
+
+/**
+ * `PUT /api/admin/production/operation-positions/{id}` 的 body（issue #4588；契约 #4587 ②）。
+ *
+ * **部分更新** —— 只写 body 里出现的键（前端因此必须「只带变了的那个键」）：
+ * - `applicable=false` ⇒ 后端把 `unit_price` **强制落 NULL**（明确不做 ⇒ 不报价）；
+ * - `applicable=true` + `unit_price=null` ⇒ **「适用但未定价」**（合法状态，商家待办）；
+ * - `unit_price: null` ⇒ 改回**未定价**（**≠ 0 元**；0 是「定价为 0」这个真值）。
+ */
+export interface OperationPositionUpdateParams {
+  unit_price?: number | null
+  applicable?: boolean
 }
 
 /**
