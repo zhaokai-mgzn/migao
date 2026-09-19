@@ -3,12 +3,14 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.migao.admin.dto.ApiResponse;
+import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionRouteRule;
 import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionRoutingVersion;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.ProductionOperationMapper;
+import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductionRouteRuleMapper;
 import com.migao.admin.mapper.ProductionRouteTemplateMapper;
 import com.migao.admin.mapper.ProductionRoutingVersionMapper;
@@ -59,6 +61,19 @@ public class ProductionRoutingCommandService {
     private static final Set<String> STATUSES = Set.of("active", "disabled");
 
     /**
+     * 条件工序规则的**触发维闭词表**（与 V71 的 {@code CHECK (trigger_kind IN (...))} 同口径，
+     * issue #4616）。{@code shaped} 是表结构预留、**无种子行** ⇒ **不在**本集合（收到即 422）。
+     */
+    private static final Set<String> TRIGGER_KINDS = Set.of("craft", "option", "processing_item");
+
+    /** 规则动作（路线编排档）：插入 / 移除（与读面 {@code ROUTE_ACTIONS} 同口径）。 */
+    private static final Set<String> ACTIONS = Set.of("insert", "remove");
+
+    private static final String TRIGGER_KIND_OPTION = "option";
+    private static final String TRIGGER_KIND_CRAFT = "craft";
+    private static final String TRIGGER_KIND_PROCESSING_ITEM = "processing_item";
+
+    /**
      * 新路线的默认适用帘种集合（取值域同 {@code production_operation_positions.position}）。
      *
      * <p>为什么给默认而不是要求必填：V71/V72 种子路线就是「一条主线适用全部三种帘种」，
@@ -76,6 +91,11 @@ public class ProductionRoutingCommandService {
     private final ProductionOperationQueryService productionOperationQueryService;
     /** 规则表（issue #4567 起本类也写它：特殊选项对客单价 —— 只写一列，见该 mapper 的 default 方法）。 */
     private final ProductionRouteRuleMapper productionRouteRuleMapper;
+    /**
+     * 加工项目录（issue #4616）：{@code trigger_kind='processing_item'} 的触发值必须**存在于目录**
+     * （触发键 = 订单行 {@code processingInfo.processingItems[].name}，精确相等 ⇒ 目录里没有就永不命中）。
+     */
+    private final ProcessingItemMapper processingItemMapper;
 
     // ══════════════════════════ 路线模板：新建 / 改 / 删（P2b，issue #4459）══════════════════════════
     //
@@ -344,29 +364,75 @@ public class ProductionRoutingCommandService {
     }
 
     /**
-     * 新建**特殊选项**（`trigger_kind='option'` + `action='insert'`，issue #4570）。
+     * 新建**条件工序规则**（issue #4616 起端点**通用化**：`trigger_kind` ∈ 闭词表
+     * `craft` / `option` / `processing_item`；缺省 = `option`，老调用方行为一字不变）。
      *
-     * <p>用户裁定 2026-09-19：「你只要能**新增工序项**就行了，并可以**设置为特殊选项或者工序**，
-     * 也**支持设置单价**」——「工序」那半走既有 {@code POST /production/operations}（计件单价），
-     * 本方法是「特殊选项」那半（**对客单价，元/套**）。</p>
+     * <p><b>为什么必须通用化（用户裁定 2026-09-19）</b>：「现在的问题是**没有入口往条件工序规则中
+     * 添加新的工艺和加工项**」—— 端点此前把 {@code triggerKind("option")} **写死** ⇒ 商家新增一个
+     * 工艺（如「罗马帘」）或加工项（如「拼接」）之后**没有办法**让它在订单里插/删工序 ⇒ 该订单
+     * **静默少工序**（加工单与商家配置不一致，且不报错）。</p>
      *
-     * <p><b>护栏（逐条 {@code error.details}，不静默）</b>：</p>
+     * <p><b>护栏（逐条 {@code error.details}，一次报全，不静默）</b>：</p>
      * <ul>
-     *   <li>名称 / 目标工序缺失或空白 ⇒ <b>422</b>；</li>
-     *   <li>目标工序**必须在该租户工序库里存在**（归一后的逻辑名口径）—— 否则规则命中后插不进来，
-     *       这条规则就是**黑洞**（V72 种子同款护栏）；锚点工序同理；</li>
-     *   <li>同名同 kind（同 {@code position}/{@code action}/{@code operation}）已存在 ⇒ <b>409</b>
+     *   <li>{@code trigger_kind} 不在闭词表 ⇒ <b>422</b>（{@code shaped} 是 V71 的表结构预留、
+     *       **无种子行** ⇒ 收到即拒，不静默落一行没人消费的规则）；</li>
+     *   <li>{@code trigger_value} **必须存在于对应词表**：{@code craft} ⇒ 活跃**工艺词表**
+     *       （{@code production_crafts}）；{@code processing_item} ⇒ **加工项目录**
+     *       （{@code processing_items}）；{@code option} ⇒ 特殊选项名（**可新建**，无词表）——
+     *       不存在/已停用 ⇒ <b>422</b>（触发键查不到 ⇒ 规则永远不命中 = 商家以为配了、加工单上没有）；</li>
+     *   <li>{@code customer_unit_price} **只允许 {@code trigger_kind='option'}**（craft/加工项行必须
+     *       为空，否则 422）—— 「两套账不互读」的既有边界（工艺变体按工序单价**计件**、特殊选项按
+     *       **套**对客收费），**不许放宽**；</li>
+     *   <li>{@code action} ∈ {@code insert} / {@code remove}；{@code operation} / {@code after_operation}
+     *       用**逻辑工序名**（复用既有校验）；{@code remove} 不接受锚点；</li>
+     *   <li>目标工序 / 锚点不在工序库 ⇒ <b>422</b>（规则命中后插不进来 = 黑洞，V72 种子同款护栏）；</li>
+     *   <li>同一条「kind + 触发值 + 动作 + 目标工序」已存在 ⇒ <b>409</b>
      *       （对齐 DB 唯一索引 {@code uk_production_route_rules_tenant_trigger_operation}）；</li>
      *   <li>单价：可空（= 未定价 ≠ 0）；非数值 / 负数 / 超两位小数 ⇒ <b>422</b>（同
      *       {@link #updateRuleCustomerUnitPrice} 的口径）。</li>
      * </ul>
+     *
+     * <p><b>反向护栏（本单冻结）</b>：缺 {@code trigger_kind} ⇒ **默认 {@code option}** ——
+     * 老调用方 / 老 bundle 的 body（只有 {@code trigger_value} 等）行为**一字不变**。</p>
      */
     @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> createOptionRule(Map<String, Object> body, Long tenantId) {
+    public Map<String, Object> createRouteRule(Map<String, Object> body, Long tenantId) {
+        String triggerKind = optionalText(body == null ? null : body.get("trigger_kind"));
+        if (triggerKind == null) {
+            triggerKind = TRIGGER_KIND_OPTION;   // 反向护栏：老调用方一字不变
+        }
         String triggerValue = requiredText(body == null ? null : body.get("trigger_value"), "trigger_value");
         String operation = requiredText(body == null ? null : body.get("operation"), "operation");
         String afterOperation = optionalText(body == null ? null : body.get("after_operation"));
+        String action = optionalText(body == null ? null : body.get("action"));
+        if (action == null) {
+            action = "insert";   // 反向护栏：老调用方只有 insert（端点此前写死 insert）
+        }
         List<ApiResponse.ErrorDetail> details = new ArrayList<>();
+        if (!TRIGGER_KINDS.contains(triggerKind)) {
+            details.add(BusinessException.detail("trigger_kind", String.format(
+                    "触发类型「%s」不在取值域内（只能是 工艺 craft / 特殊选项 option / 加工项 processing_item）"
+                            + "—— `shaped` 是表结构预留、没有规则行可落，故不收", triggerKind)));
+        }
+        if (!ACTIONS.contains(action)) {
+            details.add(BusinessException.detail("action", String.format(
+                    "动作「%s」不在取值域内（只能是 insert 插入 / remove 移除）", action)));
+        }
+        if (TRIGGER_KINDS.contains(triggerKind) && !triggerValueExists(triggerKind, triggerValue, tenantId)) {
+            details.add(BusinessException.detail("trigger_value", triggerValueMissingReason(triggerKind, triggerValue)));
+        }
+        // 两套账不互读：对客单价只属于特殊选项（craft / 加工项行必须为空）
+        boolean hasPrice = optionalText(body == null ? null : body.get("customer_unit_price")) != null;
+        if (hasPrice && !TRIGGER_KIND_OPTION.equals(triggerKind)) {
+            details.add(BusinessException.detail("customer_unit_price", String.format(
+                    "对客单价（元/套）只属于**特殊选项**（trigger_kind='option'）—— 「%s」触发的规则按工序单价"
+                            + "**计件**（给工人），两套账不互读，这条规则不能带对客单价",
+                    TRIGGER_KINDS.contains(triggerKind) ? triggerKind : "该类型")));
+        }
+        if ("remove".equals(action) && afterOperation != null) {
+            details.add(BusinessException.detail("after_operation",
+                    "「移除」动作没有锚点（锚点只对「插入」有意义）—— 请清掉 after_operation，或把动作改成 insert"));
+        }
         if (!logicalOperationExists(operation, tenantId)) {
             details.add(BusinessException.detail("operation", String.format(
                     "工序库里没有「%s」—— 规则指向一道不存在的工序 ⇒ 命中后插不进来，这条规则等于黑洞",
@@ -377,30 +443,31 @@ public class ProductionRoutingCommandService {
                     "锚点工序「%s」不在工序库里 ⇒ 插不到它后面（会落到末尾，与商家预期不符）", afterOperation)));
         }
         if (!details.isEmpty()) {
-            throw BusinessException.validationError("目标工序不在工序库里", details,
-                    "先在「工艺项 → 工序库」建这道工序，或从下拉里选一道已存在的工序");
+            throw BusinessException.validationError("条件工序规则校验未通过", details,
+                    "按上面每一条改：触发类型 / 触发值 / 动作 / 目标工序 / 锚点 / 对客单价 —— 全部合规后重试");
         }
         BigDecimal price = optionalCustomerPrice(body == null ? null : body.get("customer_unit_price"));
 
         for (ProductionRouteRule existing : productionOperationQueryService.routeRules(tenantId)) {
-            if ("option".equals(existing.getTriggerKind())
+            if (Objects.equals(existing.getTriggerKind(), triggerKind)
                     && Objects.equals(existing.getTriggerValue(), triggerValue)
-                    && "insert".equals(existing.getAction())
+                    && Objects.equals(existing.getAction(), action)
                     && Objects.equals(existing.getOperation(), operation)) {
                 throw BusinessException.conflict(
-                        String.format("特殊选项「%s」已存在（同一条「插 %s」的规则）", triggerValue, operation),
-                        "改它的单价请用 PUT /api/admin/production/route-rules/{id}/customer-unit-price；"
-                                + "要换目标工序请先停用旧规则（查看入口 GET /api/admin/production/route-rules）");
+                        String.format("「%s」触发的规则已存在（同一条「%s %s」的规则）",
+                                triggerValue, actionText(action), operation),
+                        "要换目标工序 / 锚点请先停用旧规则（查看入口 GET /api/admin/production/route-rules）；"
+                                + "特殊选项改单价请用 PUT /api/admin/production/route-rules/{id}/customer-unit-price");
             }
         }
 
         Integer priority = optionalInt(body == null ? null : body.get("priority"));
         ProductionRouteRule row = ProductionRouteRule.builder()
                 .tenantId(tenantId)
-                .triggerKind("option")
+                .triggerKind(triggerKind)
                 .triggerValue(triggerValue)
                 .position(optionalText(body == null ? null : body.get("position")))
-                .action("insert")
+                .action(action)
                 .operation(operation)
                 .afterOperation(afterOperation)
                 .priority(priority != null ? priority : nextRulePriority(tenantId))
@@ -411,18 +478,64 @@ public class ProductionRoutingCommandService {
                 .deleted(0)
                 .build();
         productionRouteRuleMapper.insert(row);
-        log.info("新建特殊选项: tenantId={}, name={}, operation={}, price={}",
-                tenantId, triggerValue, operation, price);
+        log.info("新建条件工序规则: tenantId={}, kind={}, value={}, action={}, operation={}, price={}",
+                tenantId, triggerKind, triggerValue, action, operation, price);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", row.getId());
         result.put("trigger_kind", row.getTriggerKind());
         result.put("trigger_value", row.getTriggerValue());
+        result.put("action", row.getAction());
         result.put("operation", row.getOperation());
         result.put("after_operation", row.getAfterOperation());
         result.put("priority", row.getPriority());
         result.put("customer_unit_price", price);
         return result;
+    }
+
+    /**
+     * 新建**特殊选项**（{@code trigger_kind='option'} + {@code action='insert'}，issue #4570）——
+     * 保留为 {@link #createRouteRule} 的**薄壳**：对外行为（含缺省 {@code trigger_kind} ⇒ option）
+     * 一字不变，实现只有一份（issue #4616 通用化后不再有第二条创建路径）。
+     */
+    public Map<String, Object> createOptionRule(Map<String, Object> body, Long tenantId) {
+        return createRouteRule(body, tenantId);
+    }
+
+    /** 触发值是否存在于对应词表（craft ⇒ 活跃工艺词表；processing_item ⇒ 加工项目录；option ⇒ 无词表，恒真）。 */
+    private boolean triggerValueExists(String triggerKind, String triggerValue, Long tenantId) {
+        if (TRIGGER_KIND_OPTION.equals(triggerKind)) {
+            return true;   // 特殊选项名**可新建**（现状即如此）：没有第二份词表可查
+        }
+        if (TRIGGER_KIND_CRAFT.equals(triggerKind)) {
+            return productionOperationQueryService.activeCraftNames(tenantId).contains(triggerValue);
+        }
+        List<ProcessingItem> items = processingItemMapper.selectList(
+                new LambdaQueryWrapper<ProcessingItem>()
+                        .eq(ProcessingItem::getTenantId, tenantId)
+                        .eq(ProcessingItem::getDeleted, 0)
+                        .eq(ProcessingItem::getStatus, "active"));
+        if (items == null) {
+            return false;
+        }
+        return items.stream().anyMatch(item -> Objects.equals(item.getName(), triggerValue));
+    }
+
+    /** 触发值不在词表时的**可行动**理由（逐 kind 说清去哪儿建）。 */
+    private static String triggerValueMissingReason(String triggerKind, String triggerValue) {
+        if (TRIGGER_KIND_CRAFT.equals(triggerKind)) {
+            return String.format("工艺词表里没有活跃的「%s」—— 触发键查不到 ⇒ 这条规则永远不命中"
+                    + "（商家以为配了、加工单上却没有），请先在「工艺词表」建这个工艺", triggerValue);
+        }
+        if (TRIGGER_KIND_PROCESSING_ITEM.equals(triggerKind)) {
+            return String.format("加工项目录里没有活跃的「%s」—— 触发键 = 订单里的加工项名（**精确相等**），"
+                    + "目录里没有就永远不命中，请先在「加工项管理」建这个加工项", triggerValue);
+        }
+        return String.format("触发值「%s」不可用", triggerValue);
+    }
+
+    private static String actionText(String action) {
+        return "remove".equals(action) ? "移除" : "插入";
     }
 
     /** 新规则的默认优先级 = 本租户现有**最大优先级 + 10**（保证排在最后生效，顺序确定）。 */

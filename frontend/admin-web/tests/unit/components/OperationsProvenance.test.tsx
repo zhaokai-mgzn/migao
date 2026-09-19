@@ -27,6 +27,8 @@ const mockGetRouteSignals = vi.fn()
 // issue #4433（P3）：该页新增两条只读面 —— 部位价目矩阵 / 条件工序规则
 const mockGetOperationPositions = vi.fn()
 const mockGetRouteRules = vi.fn()
+// issue #4616：规则创建弹窗的触发值取值域（工艺词表 + 加工项目录）
+const mockGetRouteRuleOptions = vi.fn()
 // issue #4588：矩阵格写面 + 工序/规则软删（本文件只用到矩阵格入口，其余备齐 mock 形态）
 const mockUpdateOperationPosition = vi.fn()
 const mockDeleteOperation = vi.fn()
@@ -43,6 +45,7 @@ vi.mock('@/lib/api', () => ({
     getRouteSignals: (...args: unknown[]) => mockGetRouteSignals(...args),
     getOperationPositions: (...args: unknown[]) => mockGetOperationPositions(...args),
     getRouteRules: (...args: unknown[]) => mockGetRouteRules(...args),
+    getRouteRuleOptions: (...args: unknown[]) => mockGetRouteRuleOptions(...args),
     updateOperationPosition: (...args: unknown[]) => mockUpdateOperationPosition(...args),
     deleteOperation: (...args: unknown[]) => mockDeleteOperation(...args),
     deleteRouteRule: (...args: unknown[]) => mockDeleteRouteRule(...args),
@@ -114,6 +117,7 @@ describe('工序 provenance 徽标 + 一键套用行业模板（issue #4363；#4
     mockGetRouteSignals.mockReset().mockResolvedValue(ok({ total: 0, signals: [] }))
     mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS))
     mockGetRouteRules.mockReset().mockResolvedValue(ok([]))
+    mockGetRouteRuleOptions.mockReset().mockResolvedValue(ok({ crafts: [], processing_items: [] }))
     mockUpdateOperationPosition.mockReset().mockResolvedValue(ok({ id: 'pos-罗马帘-帘头' }))
     mockDeleteOperation.mockReset().mockResolvedValue(ok({ id: '103', deleted: true }))
     mockDeleteRouteRule.mockReset().mockResolvedValue(ok({ id: 1, deleted: true }))

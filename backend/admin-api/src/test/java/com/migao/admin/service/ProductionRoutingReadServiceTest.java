@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPosition;
 import com.migao.admin.entity.ProductionRouteRule;
+import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductionCraftMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
 import com.migao.admin.mapper.ProductionOperationPositionMapper;
@@ -70,6 +71,8 @@ class ProductionRoutingReadServiceTest {
     @Mock
     private ProductionCraftMapper productionCraftMapper;
     @Mock
+    private ProcessingItemMapper processingItemMapper;
+    @Mock
     private ProductionRouteSignalMapper productionRouteSignalMapper;
 
     private ProductionRoutingReadService service() {
@@ -77,7 +80,7 @@ class ProductionRoutingReadServiceTest {
                 productionOperationMapper, productionRouteTemplateMapper, productionRouteRuleMapper,
                 productionOperationPositionMapper, productionCraftMapper, productionRouteSignalMapper);
         return new ProductionRoutingReadService(productionOperationPositionMapper,
-                productionRouteRuleMapper, queryService);
+                productionRouteRuleMapper, queryService, processingItemMapper);
     }
 
     /**

@@ -573,6 +573,26 @@ public class ProductionOperationQueryService {
         return rows == null ? List.of() : rows;
     }
 
+    /**
+     * 活跃**工艺词表**的名字（去重保序）—— 条件工序规则 {@code trigger_kind='craft'} 的
+     * **受控取值域**（issue #4616）。
+     *
+     * <p>为什么必须由后端给：{@code production_crafts} 此前**没有任何读端点**，而规则写面要校验
+     * 「触发值存在于对应词表」、前端要「按类型从对应词表取、不手输」⇒ 两侧都需要这一份。
+     * 前端自己从规则表现存 trigger_value 反推 = 第二份会漂的词表（新建的工艺永远进不了下拉）。</p>
+     *
+     * @return 活跃工艺名（该租户零活跃工艺 ⇒ 空列表，**不发明**默认值）
+     */
+    public List<String> activeCraftNames(Long tenantId) {
+        List<String> names = new ArrayList<>();
+        for (ProductionCraft craft : activeCrafts(tenantId)) {
+            if (craft.getName() != null && !names.contains(craft.getName())) {
+                names.add(craft.getName());
+            }
+        }
+        return names;
+    }
+
     /** 活跃工艺词表行（tenant + deleted=0 + status=active；默认优先、其余按名稳定）。 */
     private List<ProductionCraft> activeCrafts(Long tenantId) {
         List<ProductionCraft> rows = productionCraftMapper.selectList(

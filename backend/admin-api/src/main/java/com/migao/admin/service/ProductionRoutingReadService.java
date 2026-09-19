@@ -1,8 +1,10 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProductionOperationPosition;
 import com.migao.admin.entity.ProductionRouteRule;
+import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductionOperationPositionMapper;
 import com.migao.admin.mapper.ProductionRouteRuleMapper;
 import lombok.RequiredArgsConstructor;
@@ -75,6 +77,46 @@ public class ProductionRoutingReadService {
      * （显示的单位/单价/必完全错，且没有任何东西会变红）。</p>
      */
     private final ProductionOperationQueryService productionOperationQueryService;
+    /**
+     * 加工项目录（issue #4616）：{@code trigger_kind='processing_item'} 的触发值取值域 ——
+     * 规则创建弹窗要「按类型从对应词表取、不手输」，而加工项名**只有**目录这一份来源。
+     */
+    private final ProcessingItemMapper processingItemMapper;
+
+    /**
+     * 条件工序规则创建弹窗的**触发值取值域**（issue #4616）。
+     *
+     * <p>用户裁定：「现在的问题是**没有入口往条件工序规则中添加新的工艺和加工项**」。入口一开，
+     * 弹窗的「触发值」就必须**按类型从对应词表取**（不手输）—— 手输一个词表里没有的名字 =
+     * 建一条永远不命中的规则（商家以为配了、加工单上却没有）。</p>
+     *
+     * <p>{@code crafts} = 活跃工艺词表（{@code production_crafts}，此前**没有任何读端点**）；
+     * {@code processing_items} = 活跃加工项目录（触发键 = 订单行的加工项名，精确相等）。
+     * {@code options}（特殊选项）**不在此列** —— 选项名按现状**可新建**（没有第二份词表），
+     * 前端给的是既有规则里出现过的选项名 + 允许手输。</p>
+     *
+     * @return {@code {crafts:[…], processing_items:[…]}}（零行 ⇒ 空数组，**不发明**默认值）
+     */
+    public Map<String, Object> triggerOptions(Long tenantId) {
+        List<ProcessingItem> items = processingItemMapper.selectList(
+                new LambdaQueryWrapper<ProcessingItem>()
+                        .eq(ProcessingItem::getTenantId, tenantId)
+                        .eq(ProcessingItem::getDeleted, 0)
+                        .eq(ProcessingItem::getStatus, "active")
+                        .orderByAsc(ProcessingItem::getName));
+        List<String> processingItems = new ArrayList<>();
+        if (items != null) {
+            for (ProcessingItem item : items) {
+                if (item.getName() != null && !processingItems.contains(item.getName())) {
+                    processingItems.add(item.getName());
+                }
+            }
+        }
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("crafts", productionOperationQueryService.activeCraftNames(tenantId));
+        view.put("processing_items", processingItems);
+        return view;
+    }
 
     /**
      * 部位价目矩阵：一道**逻辑工序** × 一个**部位** = 一格（28 × 3 = 84 格）。

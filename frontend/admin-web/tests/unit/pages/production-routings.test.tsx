@@ -1,4 +1,4 @@
-// case_ids: PG-020, PG-034, PP-014, OR-041
+// case_ids: PG-020, PG-034, PG-053, PP-014, OR-041, UI-048
 // PG-020（issue #4203 / #4204）+ PP-014（issue #4307）**合并后**的单页用户面（issue #4416），
 // 本单（issue #4433 = 母单 #4423 的 P3）把它适配到**新路线模型**（P1 #4427 / P2 #4432 / P2b #4459 / P2c #4500）。
 //
@@ -120,6 +120,8 @@ const mockUpdateOperation = vi.fn()
 const mockGetSeedTemplates = vi.fn()
 const mockGetOperationPositions = vi.fn()
 const mockGetRouteRules = vi.fn()
+// issue #4616：规则创建弹窗的触发值取值域（工艺词表 + 加工项目录）
+const mockGetRouteRuleOptions = vi.fn()
 // issue #4588：矩阵格写面（改价 / 改做不做）+ 工序与规则的软删（契约 #4587 ②③④）
 const mockUpdateOperationPosition = vi.fn()
 const mockDeleteOperation = vi.fn()
@@ -146,6 +148,7 @@ vi.mock('@/lib/api', () => ({
     getSeedTemplates: (...a: unknown[]) => mockGetSeedTemplates(...a),
     getOperationPositions: (...a: unknown[]) => mockGetOperationPositions(...a),
     getRouteRules: (...a: unknown[]) => mockGetRouteRules(...a),
+    getRouteRuleOptions: (...a: unknown[]) => mockGetRouteRuleOptions(...a),
     updateOperationPosition: (...a: unknown[]) => mockUpdateOperationPosition(...a),
     deleteOperation: (...a: unknown[]) => mockDeleteOperation(...a),
     deleteRouteRule: (...a: unknown[]) => mockDeleteRouteRule(...a),
@@ -251,6 +254,15 @@ const RULES_WITH_PRICE = [
  * `外帘装袋` 两侧同名（旧名不带部位后缀）⇒ 它是「库口径可见」的那一道。
  * 旧形态（`curtain_type` × `craft` 展开快照）已随 P2b 退场 ⇒ 前端不得再按那个键渲染。
  */
+/**
+ * 规则创建弹窗的**触发值取值域**（issue #4616）：活跃工艺词表 + 活跃加工项目录。
+ * ⚠️ 判据是「**从词表取、不手输**」⇒ 弹窗里必须是**下拉**，且选项逐字来自这里。
+ */
+const RULE_TRIGGER_OPTIONS = {
+  crafts: ['韩褶', '打孔', '罗马帘'],
+  processing_items: ['花边', '扣环', '拼接'],
+}
+
 const ROUTINGS = {
   total: 2,
   routings: [
@@ -353,6 +365,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     mockGetSeedTemplates.mockReset().mockResolvedValue(ok(TEMPLATES))
     mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS))
     mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES))
+    mockGetRouteRuleOptions.mockReset().mockResolvedValue(ok(RULE_TRIGGER_OPTIONS))
     mockUpdateRuleCustomerUnitPrice.mockReset().mockResolvedValue(ok({ id: 21, customer_unit_price: 6 }))
     mockGetRouteSignals.mockReset()
     mockApplySeedTemplate.mockReset().mockResolvedValue(ok({ created_operations: 35, created_routings: 9, skipped: 0 }))
@@ -645,7 +658,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('route-rule-trigger-1')).toHaveTextContent('韩褶')
     // 标题与 hint 仍在（只是不再可折叠）
     expect(screen.getByTestId('route-rules')).toHaveTextContent('条件工序规则')
-    expect(screen.getByTestId('route-rules')).toHaveTextContent('工艺 / 特殊选项触发时，往主线里插一道或删一道')
+    // hint 文案随 #4616 扩到「工艺 / 特殊选项 / 加工项」（触发维闭词表新增加工项）
+    expect(screen.getByTestId('route-rules')).toHaveTextContent('工艺 / 特殊选项 / 加工项触发时，往主线里插一道或删一道')
     // 反向断言：折叠开关**不存在**（移除的是折叠**能力**，不只是「默认打开」）
     expect(screen.queryByTestId('route-rules-toggle')).toBeNull()
   })
@@ -1192,6 +1206,193 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     const reasons = await screen.findByTestId('route-rule-delete-reasons')
     expect(reasons).toHaveTextContent('规则已被订单引用')
     expect(reasons).toHaveTextContent('请先停用该选项')
+  })
+
+  // ══════════════════ ⑱ 规则创建入口（issue #4616）══════════════════
+  //
+  // 用户裁定：「现在的问题是**没有入口往条件工序规则中添加新的工艺和加工项**」——
+  // 缺了入口 ⇒ 商家新增工艺/加工项后**无法**让它在订单里插/删工序 ⇒ 该订单**静默少工序**。
+
+  it('⑱-① 规则区有「新增规则」入口 ⇒ 建**工艺**触发规则，body 带 trigger_kind/action', async () => {
+    await renderRules()
+
+    await userEvent.click(screen.getByTestId('route-rules-new'))
+    await waitFor(() => expect(screen.getByTestId('route-rule-create-modal')).toBeInTheDocument())
+    // 默认触发类型 = 工艺；触发值**从工艺词表取**（下拉，不是手输）
+    expect(screen.getByTestId('rule-kind-craft')).toHaveAttribute('aria-checked', 'true')
+    await userEvent.selectOptions(screen.getByTestId('rule-trigger-value'), '罗马帘')
+    await userEvent.selectOptions(screen.getByTestId('rule-operation'), '三边')
+    await userEvent.selectOptions(screen.getByTestId('rule-after-operation'), '精裁')
+    await userEvent.click(screen.getByTestId('rule-create-submit'))
+
+    await waitFor(() =>
+      expect(mockCreateOptionRule).toHaveBeenCalledWith({
+        trigger_kind: 'craft',
+        trigger_value: '罗马帘',
+        action: 'insert',
+        operation: '三边',
+        after_operation: '精裁',
+      }),
+    )
+    // 建完 load() 刷新 ⇒ 新规则立刻出现在表里
+    await waitFor(() => expect(mockGetRouteRules).toHaveBeenCalledTimes(2))
+  })
+
+  it('⑱-② 建**加工项**触发规则：触发值取自加工项目录（下拉）', async () => {
+    await renderRules()
+
+    await userEvent.click(screen.getByTestId('route-rules-new'))
+    await userEvent.click(screen.getByTestId('rule-kind-processing_item'))
+    await userEvent.selectOptions(screen.getByTestId('rule-trigger-value'), '拼接')
+    await userEvent.selectOptions(screen.getByTestId('rule-operation'), '三边')
+    await userEvent.click(screen.getByTestId('rule-create-submit'))
+
+    await waitFor(() =>
+      expect(mockCreateOptionRule).toHaveBeenCalledWith({
+        trigger_kind: 'processing_item',
+        trigger_value: '拼接',
+        action: 'insert',
+        operation: '三边',
+      }),
+    )
+  })
+
+  it('⑱-③ 触发类型切换 ⇒ 字段随之变：**只有特殊选项**出现「对客单价」', async () => {
+    await renderRules()
+    await userEvent.click(screen.getByTestId('route-rules-new'))
+
+    // 默认「工艺」⇒ 无对客单价（craft 按工序单价**计件**，两套账不互读）
+    expect(screen.queryByTestId('rule-customer-unit-price')).toBeNull()
+    expect(screen.getByTestId('rule-trigger-value').tagName).toBe('SELECT')
+
+    await userEvent.click(screen.getByTestId('rule-kind-option'))
+    expect(screen.getByTestId('rule-customer-unit-price')).toBeInTheDocument()
+    // 特殊选项名**可新建** ⇒ 这一档是输入框（带既有选项名候选），不是封闭下拉
+    expect(screen.getByTestId('rule-trigger-value').tagName).toBe('INPUT')
+
+    await userEvent.click(screen.getByTestId('rule-kind-processing_item'))
+    expect(screen.queryByTestId('rule-customer-unit-price')).toBeNull()
+    expect(screen.getByTestId('rule-trigger-value').tagName).toBe('SELECT')
+  })
+
+  it('⑱-④ 特殊选项：动作切到「移除」⇒ 锚点字段消失（锚点只对插入有意义）', async () => {
+    await renderRules()
+    await userEvent.click(screen.getByTestId('route-rules-new'))
+    await userEvent.click(screen.getByTestId('rule-kind-option'))
+
+    expect(screen.getByTestId('rule-after-operation')).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByTestId('rule-action'), 'remove')
+    expect(screen.queryByTestId('rule-after-operation')).toBeNull()
+  })
+
+  it('⑱-⑤ 本地预检：未选触发值 / 未选目标工序 ⇒ 逐条就地理由 + **不发请求**', async () => {
+    await renderRules()
+    await userEvent.click(screen.getByTestId('route-rules-new'))
+    await userEvent.click(screen.getByTestId('rule-create-submit'))
+
+    const reasons = await screen.findByTestId('rule-create-reasons')
+    expect(reasons).toHaveTextContent('请选择工艺')
+    expect(reasons).toHaveTextContent('请选择目标工序')
+    expect(mockCreateOptionRule).not.toHaveBeenCalled()
+  })
+
+  it('⑱-⑥ 后端 422 ⇒ 理由**逐条**就地展示，且**不刷新**、不改页面数据', async () => {
+    mockCreateOptionRule
+      .mockReset()
+      .mockRejectedValueOnce(guardError(['工艺词表里没有活跃的「罗马帘」', '对客单价只属于特殊选项']))
+    await renderRules()
+    await userEvent.click(screen.getByTestId('route-rules-new'))
+    await userEvent.selectOptions(screen.getByTestId('rule-trigger-value'), '罗马帘')
+    await userEvent.selectOptions(screen.getByTestId('rule-operation'), '三边')
+    await userEvent.click(screen.getByTestId('rule-create-submit'))
+
+    const reasons = await screen.findByTestId('rule-create-reasons')
+    expect(reasons).toHaveTextContent('工艺词表里没有活跃的「罗马帘」')
+    expect(reasons).toHaveTextContent('对客单价只属于特殊选项')
+    // 失败 ⇒ **不**刷新（静默写回 = 商家以为建好了、订单侧其实没生效）
+    expect(mockGetRouteRules).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('route-rule-create-modal')).toBeInTheDocument()
+  })
+
+  // ══════════════════ ⑲ 删除改弹框（issue #4617）══════════════════
+  //
+  // 用户裁定：「确认删除的交互为什么不是弹框选择，交互需要优化」——
+  // 同页此前两套形态并存：路线删除用弹框，规则/工序删除是**就地展开**的确认按钮。
+
+  it('⑲-① 点规则「删除」⇒ **出现弹框**（不再就地展开），弹框里能读出删的是哪条规则', async () => {
+    await renderRules()
+
+    await userEvent.click(screen.getByTestId('route-rule-delete-1'))
+
+    const modal = await screen.findByTestId('route-rule-delete-modal', {}, { timeout: 1500 })
+    // 弹框写清「这条规则是什么」：触发类型 + 触发值 + 动作 + 目标工序
+    expect(modal).toHaveTextContent('工艺')
+    expect(modal).toHaveTextContent('韩褶')
+    expect(modal).toHaveTextContent('在「三边」之后插入「韩褶」')
+    expect(modal).toHaveAttribute('data-rule', '1')
+    // 红证：改前这一格是**就地展开**的「确认删除 / 取消」两个按钮，`route-rule-delete-modal` 不存在
+    expect(mockDeleteRouteRule).not.toHaveBeenCalled()
+  })
+
+  it('⑲-② 弹框「取消」⇒ **不发请求**，弹框消失', async () => {
+    await renderRules()
+    await userEvent.click(screen.getByTestId('route-rule-delete-2'))
+    await userEvent.click(await screen.findByTestId('route-rule-delete-cancel-2', {}, { timeout: 1500 }))
+
+    expect(mockDeleteRouteRule).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByTestId('route-rule-delete-modal')).toBeNull())
+  })
+
+  it('⑲-③ 删除中按钮禁用（重复点击不会发两次）', async () => {
+    let resolveDelete: (v: unknown) => void = () => {}
+    mockDeleteRouteRule.mockReset().mockImplementation(
+      () => new Promise((resolve) => {
+        resolveDelete = resolve
+      }),
+    )
+    await renderRules()
+    await userEvent.click(screen.getByTestId('route-rule-delete-1'))
+    const confirm = await screen.findByTestId('route-rule-delete-confirm-1', {}, { timeout: 1500 })
+    await userEvent.click(confirm)
+
+    await waitFor(() => expect(mockDeleteRouteRule).toHaveBeenCalledTimes(1))
+    // 删除中：确认按钮禁用（loading 态）+ 取消也禁用（不能把在飞的请求丢在半路）
+    expect(screen.getByTestId('route-rule-delete-confirm-1')).toBeDisabled()
+    expect(screen.getByTestId('route-rule-delete-cancel-1')).toBeDisabled()
+    // 再点一次不会发第二次请求（按钮已禁用 ⇒ userEvent 点不动）
+    await userEvent.click(screen.getByTestId('route-rule-delete-confirm-1'))
+    expect(mockDeleteRouteRule).toHaveBeenCalledTimes(1)
+
+    resolveDelete(ok({ id: 1, deleted: true }))
+  })
+
+  it('⑲-④ 删除被拒 ⇒ 理由**逐条**在弹框里就地展示（不吞成一句「删除失败」）', async () => {
+    mockDeleteRouteRule.mockReset().mockRejectedValueOnce(guardError(['规则已被订单引用', '请先停用该选项']))
+    await renderRules()
+    await userEvent.click(screen.getByTestId('route-rule-delete-2'))
+    await userEvent.click(await screen.findByTestId('route-rule-delete-confirm-2', {}, { timeout: 1500 }))
+
+    const reasons = await screen.findByTestId('route-rule-delete-reasons')
+    expect(reasons).toHaveTextContent('规则已被订单引用')
+    expect(reasons).toHaveTextContent('请先停用该选项')
+    // 失败后弹框仍在（理由要看得见）
+    expect(screen.getByTestId('route-rule-delete-modal')).toBeInTheDocument()
+  })
+
+  it('⑲-⑤ 工序删除（抽屉那处）**同一套弹框**：弹框写清删的是哪一道', async () => {
+    await openManage('精裁')
+
+    await userEvent.click(screen.getByTestId('variant-delete-op-精裁-布'))
+
+    const modal = await screen.findByTestId('variant-delete-modal', {}, { timeout: 1500 })
+    expect(modal).toHaveTextContent('精裁-布')
+    expect(modal).toHaveAttribute('data-variant', 'op-精裁-布')
+    expect(mockDeleteOperation).not.toHaveBeenCalled()
+
+    // 取消 ⇒ 不发请求
+    await userEvent.click(screen.getByTestId('variant-delete-cancel-op-精裁-布'))
+    expect(mockDeleteOperation).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByTestId('variant-delete-modal')).toBeNull())
   })
 
   it('⑰-⑱ 文案：这一屏的价叫「计件单价（给工人）」+ 两本账一句话；不出现「加工费」「对客价」', async () => {
