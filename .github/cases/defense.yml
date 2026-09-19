@@ -59,6 +59,16 @@ cases:
     expectations:
       - tool: product_search
     data_checks:
+      # ── 前置自断言（Case Trust burn-down 缴费，metric=entries ⇒ 必须**整条销账**）──
+      # 本用例命中的唯一存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION。它两条断言
+      # （迭代次数 <= 8、不会发生第 9 次 product_search）**全部以「迭代上限护栏已启用且默认 = 8」
+      # 为前提**：护栏被关掉、或默认值被改大，第 9 次调用就会真的发生 ⇒ 判红会伪装成
+      # 「agent 不会收敛」，归因错人（同族形态与修法见 PP-006 / PP-007 的 burn-down 先例）。
+      # 口径：`assertion_taxonomy.declares_precondition` ② —— data_checks 里含前置关键词
+      # **且**是机器计分型，故本条带 `success=true`（= 计分标记，不新增断言强度）。
+      # 真值可核：`backend/ai-agent-service/app/graph/skills/skill_config.py` 的
+      # `max_iterations: int = 8`。**断言面（user_inputs / expectations / 其余 data_checks）一字未动。**
+      - "前置（precondition）：ReAct 工具调用迭代上限护栏**处于启用状态且默认值 = 8**（`app/graph/skills/skill_config.py` 的 `max_iterations: int = 8`）—— 下面两条断言以它为接地对象；护栏被关掉或默认值被改大时，第 9 次调用会真的发生，判红会伪装成「agent 不会收敛」（success=true）"
       - "迭代次数 <= max_iterations（默认 8）"
       - "不会发生第 9 次 product_search"
     skip_reason: ""

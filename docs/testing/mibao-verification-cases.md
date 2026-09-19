@@ -1423,6 +1423,7 @@
 你: 再下一页
 你: 继续下一页
 期望: product_search
+数据: 前置（precondition）：ReAct 工具调用迭代上限护栏**处于启用状态且默认值 = 8**（`app/graph/skills/skill_config.py` 的 `max_iterations: int = 8`）—— 下面两条断言以它为接地对象；护栏被关掉或默认值被改大时，第 9 次调用会真的发生，判红会伪装成「agent 不会收敛」（success=true）
 数据: 迭代次数 <= max_iterations（默认 8）
 数据: 不会发生第 9 次 product_search
 ```
