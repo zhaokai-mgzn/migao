@@ -164,7 +164,7 @@ def _is_card_confirm_round(state: dict) -> bool:
 # 成功分支）。**choice / form 卡的答卡轮因此完全不在豁免射程内** —— 实测代价
 # （run 34841029062，OR-015 R4）：
 #   R3 order skill 发 `interact(choice, multiSelect, prefix=已选加工项：)` 加工项卡
-#   R4 顾客答卡「已选加工项：纳米圈打孔 · ¥9.5/米」→ 含 L1 商品域关键词「加工项」
+#   R4 顾客答卡「已选加工项：打孔 · ¥9.5/米」→ 含 L1 商品域关键词「加工项」
 #      （rule_matcher.py:41）→ intent=product_inquiry(source=rule)
 #      → 下方 L1 高置信域逃逸（#3625 G3/T2）判 product ≠ order → **清掉 order 会话锁**
 #      → 落到 product skill（PRODUCT_TOOLS 无 order_create）→ 零工具 + 「我承接的是
@@ -939,7 +939,7 @@ def route_by_intent(state: AgentState) -> str:
         # ── 答卡轮豁免（#3557 G1）：点本 skill 自己那张卡 → 留在本 skill ──
         # 卡值由系统按"必须含上下文"的协议生成，可能含**其他域**的词（PR-007 的
         # 「（改为停售，买家不可下单）」含「下单」；OR-015 R4 的加工项多选卡答卡
-        # 「已选加工项：纳米圈打孔 · ¥9.5/米」含「加工项」）→ 下面的 escape hatch 会把它
+        # 「已选加工项：打孔 · ¥9.5/米」含「加工项」）→ 下面的 escape hatch 会把它
         # 当成**话题切换**、清掉会话锁 → intent 兜底成 order/product → 进一个**没有该流程
         # 所需工具**的 skill（PRODUCT_TOOLS 无 order_create / ORDER_TOOLS 无 product_manage）
         # → 零工具调用 + 「模块越界」口径拒绝。同源判据也用在 `intent_router_node`

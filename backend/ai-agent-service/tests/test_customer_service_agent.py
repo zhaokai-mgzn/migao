@@ -347,7 +347,7 @@ class TestBuildInitialState:
         `last_confirm_value` / `last_confirm_skill` —— confirm 卡答卡轮判据（#3557）；
         `last_card` / `last_card_skill` —— **任意卡型**答卡轮判据（choice / form）。
         后者是 run 34841029062 OR-015 R4 的根因缺口：加工项多选卡的答卡值
-        「已选加工项：纳米圈打孔 · ¥9.5/米」含 L1 商品域关键词「加工项」→ 无通用卡记录时
+        「已选加工项：打孔 · ¥9.5/米」含 L1 商品域关键词「加工项」→ 无通用卡记录时
         答卡轮不被识别 → L1 域逃逸清锁 → 落到 product skill（无 order_create）零工具拒答。
         `pending_validated_input` —— 已校验待执行写（validate_input 落库），路由层答卡轮
         据此把确认轮迁移到写工具的归属 skill（#3976，B 端实证 sess_202d55d49a254a10）。
@@ -419,12 +419,12 @@ class TestBuildInitialState:
         card = {
             "component": "choice",
             "title": "是否需要加工项？（可多选，不需要请点「不需要加工项」）",
-            "options": [{"label": "纳米圈打孔 · ¥9.5/米", "value": "proc_item_pi_eval_punch"}],
+            "options": [{"label": "打孔 · ¥9.5/米", "value": "proc_item_pi_eval_punch"}],
             "multiSelect": True,
             "multiSelectSubmitPrefix": "已选加工项：",
             "multiSelectSkipLabel": "不需要加工项",
         }
-        answer = "已选加工项：纳米圈打孔 · ¥9.5/米"
+        answer = "已选加工项：打孔 · ¥9.5/米"
         agent = _bare_agent()
         with patch("app.memory.session_memory.SessionMemory") as mock_sm, \
                 patch("app.memory.session_state_store.SessionStateStore") as mock_store:

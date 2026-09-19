@@ -53,7 +53,7 @@ cases:
       - "新增加工项，计价方式选按个"
       # 分类名归一（#3544 / REPORT §2.3 建议 3）：独立栈种子里加工分类只有
       # pcat_eval_curtain「窗帘加工」（xiaobu_eval_seed.sql:24），原输入「分类选打孔加工」
-      # 是**加工项名（纳米圈打孔）/ 分类名混淆** —— 实测 run 34807151893 R3：agent 如实回
+      # 是**加工项名（打孔）/ 分类名混淆** —— 实测 run 34807151893 R3：agent 如实回
       # 「加工分类里没有『打孔加工』，目前只有一个…」并降级到「窗帘加工」，白耗一轮。
       # 本用例的真值内核是**计价方式枚举**（per_meter/per_set/fixed/per_area，无 per_piece），
       # 不是分类名，故改用种子里真实存在的分类名。
@@ -101,7 +101,7 @@ cases:
     data_checks:
       # ── 前置自断言（issue #4537 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是
       #    CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）──
-      # 本用例按**关键词**点名种子里的加工项 `pi_eval_punch`「纳米圈打孔」
+      # 本用例按**关键词**点名种子里的加工项 `pi_eval_punch`「打孔」
       # （per_meter / 8.00 元/米 / active，`xiaobu_eval_seed.sql` 的 processing_items），
       # 并让 agent 在**种子分类** `pcat_eval_curtain`「窗帘加工」下新建「测试加工」：
       # R1 的加工项查询、下面「无 per_meter_quantity」的读法、以及 `output_verify`
@@ -112,12 +112,12 @@ cases:
       # 口径：`assertion_taxonomy` 的 `declares_precondition` 认「`data_checks` 里含前置关键词
       # **且**是机器计分型」，故本条带 `success=true`（= 计分标记，不新增断言强度）。
       # **断言面（user_inputs / expectations / must_succeed / output_verify）一字未动、无放宽。**
-      - "前置（precondition）：评测栈种子里加工项「纳米圈打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`（8.00 元/米、status=active）、加工分类「窗帘加工」（`pcat_eval_curtain`）存在 —— 它们是 R1 的加工项查询与下面 `output_verify` 的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项或分类」，判红会伪装成「agent 不会建加工项」"
+      - "前置（precondition）：评测栈种子里加工项「打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`（8.00 元/米、status=active）、加工分类「窗帘加工」（`pcat_eval_curtain`）存在 —— 它们是 R1 的加工项查询与下面 `output_verify` 的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项或分类」，判红会伪装成「agent 不会建加工项」"
       - "processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）"
       - "加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）"
       - "商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）"
     skip_reason: ""
-    merge_log: "2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮）。2026-09-14 收口（#3544，run 34809483940 实测）：`output_verify` 补 `action: create_processing_item` —— 原实现按**工具名**取首个成功 payload，而本工具是多 action（R2 的 list_categories 也成功）→ 核对到 `{'categories': [...]}` 造成**假红**（R5 建成功的 payload 从未被核对）；同时给 runner 加 action 过滤 + L0 不变式「多 action 工具的 output_verify 必须声明 action」。2026-09-14 再校准（#3658，run 34820346966 首次真重放）：实测 agent 首轮把分类名当 category_id 传（create 被拒「加工分类不存在」）后**同轮** list_categories 恢复重试成功（must_succeed 过），但 action 过滤按「该轮含 create 调用」取**首个成功 payload** → 又取到同轮 list_categories 的 `{'categories': [...]}` → 假红。runner 侧修复属禁改区，改为输入直接给分类 ID（pcat_eval_curtain，种子里确定存在），create 首轮成功、不再触发恢复轮（见 user_inputs 注释；计价方式枚举仍是本用例唯一行为面）。2026-09-19（issue #4537 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）：补**机器计分型**前置自断言（种子加工项 `pi_eval_punch`「纳米圈打孔」存在且 per_meter / 8.00 元/米 / active、加工分类 `pcat_eval_curtain`「窗帘加工」存在 —— 它们是 R1 加工项查询与 `output_verify` 的接地对象），把「前置不成立 ⇒ 找不到加工项/分类，判红却伪装成 agent 不会建加工项」这条形态挡在门口；user_inputs / expectations / must_succeed / output_verify 原样未动、无放宽。2026-09-19（issue #4542 菜单改名）：侧边栏菜单名 =「加工项管理」（与服务端 `MenuController`/`AuthService` 同名；**页面仍是两个 tab，功能一条没减**）—— 本用例的判据/断言面不受影响（它测的是加工项计价方式枚举），仅登记口径变更。"
+    merge_log: "2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮）。2026-09-14 收口（#3544，run 34809483940 实测）：`output_verify` 补 `action: create_processing_item` —— 原实现按**工具名**取首个成功 payload，而本工具是多 action（R2 的 list_categories 也成功）→ 核对到 `{'categories': [...]}` 造成**假红**（R5 建成功的 payload 从未被核对）；同时给 runner 加 action 过滤 + L0 不变式「多 action 工具的 output_verify 必须声明 action」。2026-09-14 再校准（#3658，run 34820346966 首次真重放）：实测 agent 首轮把分类名当 category_id 传（create 被拒「加工分类不存在」）后**同轮** list_categories 恢复重试成功（must_succeed 过），但 action 过滤按「该轮含 create 调用」取**首个成功 payload** → 又取到同轮 list_categories 的 `{'categories': [...]}` → 假红。runner 侧修复属禁改区，改为输入直接给分类 ID（pcat_eval_curtain，种子里确定存在），create 首轮成功、不再触发恢复轮（见 user_inputs 注释；计价方式枚举仍是本用例唯一行为面）。2026-09-19（issue #4537 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）：补**机器计分型**前置自断言（种子加工项 `pi_eval_punch`「打孔」存在且 per_meter / 8.00 元/米 / active、加工分类 `pcat_eval_curtain`「窗帘加工」存在 —— 它们是 R1 加工项查询与 `output_verify` 的接地对象），把「前置不成立 ⇒ 找不到加工项/分类，判红却伪装成 agent 不会建加工项」这条形态挡在门口；user_inputs / expectations / must_succeed / output_verify 原样未动、无放宽。2026-09-19（issue #4542 菜单改名）：侧边栏菜单名 =「加工项管理」（与服务端 `MenuController`/`AuthService` 同名；**页面仍是两个 tab，功能一条没减**）—— 本用例的判据/断言面不受影响（它测的是加工项计价方式枚举），仅登记口径变更。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"
@@ -151,9 +151,9 @@ cases:
     truths_ref: []
     user_inputs:
       # 自包含/残留免疫（照 PG-015/PG-016 先例）：**点名种子/目录里真实存在的加工项**。
-      # `纳米圈打孔` 是 xiaobu_eval_seed.sql 的种子加工项（pi_eval_punch，¥8.00/米，
+      # `打孔` 是 xiaobu_eval_seed.sql 的种子加工项（pi_eval_punch，¥8.00/米，
       # pricing_method=per_meter），不是假设存在的对象。
-      - "把加工项纳米圈打孔的单价改成 9.5 元一米"
+      - "把加工项打孔的单价改成 9.5 元一米"
       - repeat_until:
           tool_called: processing_item_manage
           max: 3
@@ -165,7 +165,7 @@ cases:
       # ⚠️ 原文写「返回只含本次下发的字段」= 与实现相反，正是它把「不清空其它字段」这条
       # 题眼**误判为工具层无从自证**、只留了 prose（不计分）—— 2026-09-15 更正并
       # 把该语义**机器可判化**到 output_verify（见下）。回读轮仍保留（二次证据面）。
-      - "再看下加工项纳米圈打孔的单价和计价方式"
+      - "再看下加工项打孔的单价和计价方式"
       - repeat_until:
           tool_called: processing_item_query
           max: 3
@@ -203,7 +203,7 @@ cases:
           # 故「没被清空」能且必须在这份 payload 上机器核到（字段被清 → 键缺失/为空 → 红）。
           # 其中 status / pricingMethod 是**非 @NotBlank 的可选字段**（真正会被
           # 「只发改动字段」写法清掉的那一类，issue #3584/#3591 的回归面）。
-          name: 纳米圈打孔
+          name: 打孔
           pricingMethod: per_meter
           status: active      # 种子 pi_eval_punch status='active'（xiaobu_eval_seed.sql:32）
     forbidden_text:
@@ -216,7 +216,7 @@ cases:
     data_checks:
       # ── 前置自断言（issue #4525 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是
       #    CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）──
-      # 本用例按**名字**点名种子里的加工项 `纳米圈打孔`（`pi_eval_punch`，per_meter / 8.00 元/米，
+      # 本用例按**名字**点名种子里的加工项 `打孔`（`pi_eval_punch`，per_meter / 8.00 元/米，
       # `mibao_eval_seed.sql`）：`must_succeed(update_item)` 与 `output_verify`
       # （unitPrice=9.5 且 name/pricingMethod/status 未被清空）**全部以「该名字在评测栈里
       # 存在且形态为 per_meter」为前提**。前置不成立（种子改名 / 换成别的计价方式）时，
@@ -227,13 +227,13 @@ cases:
       # 故本条带 `success=true`（= 计分标记，不新增断言强度）。
       # **断言面（user_inputs / expectations / must_succeed / required_args / output_verify /
       # forbidden_text）一字未动、无放宽。**
-      - "前置（precondition）：评测栈种子里「纳米圈打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`（8.00 元/米）—— 它是下面 `update_item` 回读断言的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项」，判红会伪装成「agent 不会改价」"
+      - "前置（precondition）：评测栈种子里「打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`（8.00 元/米）—— 它是下面 `update_item` 回读断言的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项」，判红会伪装成「agent 不会改价」"
       # 本类用例的**核心断言**（对照 #3591 修的「GET→merge→PUT 全量」语义）：
       # 只改单价不得把 name / pricingMethod / status 清空。2026-09-15 起该语义已**机器可判**
       # （output_verify 的 name/pricingMethod/status 三个键，见上）；本 prose 仅留作判读说明。
-      - "回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter、status 仍为 active（未被清空）——只改 price 不得清空其它字段"
+      - "回读结果中 name 仍为「打孔」、pricingMethod 仍为 per_meter、status 仍为 active（未被清空）——只改 price 不得清空其它字段"
     skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3568）：`processing_item_manage(action=update_item)` 此前**零用例覆盖**（#3591 收口时如实标注的覆盖边界：只有 create 路径被重放）。断言机器可判：must_succeed(action=update_item) + required_args[item_id,price] + output_verify(unitPrice=9.5 + name/pricingMethod/status 未被清空，显式 action) + forbidden_text。2026-09-15 校准（结论档 run 34841029062 实证）：原 output_verify 写 `price: 9.5` = 用**入参名**核**回显字段名**（回显是 unitPrice）→ 恒红假红；同时更正「update_item 返回只含下发字段」的错误注释（PUT 回显是合并后全量对象，故「不清空」可从 payload 机器核到）。2026-09-19（issue #4525 的 burn-down 缴费）：补**机器计分型**前置自断言（种子 `pi_eval_punch`「纳米圈打孔」存在 + per_meter，= 本用例回读断言的接地对象），把「前置不成立 ⇒ 找不到加工项却归因到 agent 不会改价」这条形态挡在门口；expectations / must_succeed / required_args / output_verify / forbidden_text / user_inputs 原样未动、无放宽。"
+    merge_log: "2026-09-14 新增（issue #3568）：`processing_item_manage(action=update_item)` 此前**零用例覆盖**（#3591 收口时如实标注的覆盖边界：只有 create 路径被重放）。断言机器可判：must_succeed(action=update_item) + required_args[item_id,price] + output_verify(unitPrice=9.5 + name/pricingMethod/status 未被清空，显式 action) + forbidden_text。2026-09-15 校准（结论档 run 34841029062 实证）：原 output_verify 写 `price: 9.5` = 用**入参名**核**回显字段名**（回显是 unitPrice）→ 恒红假红；同时更正「update_item 返回只含下发字段」的错误注释（PUT 回显是合并后全量对象，故「不清空」可从 payload 机器核到）。2026-09-19（issue #4525 的 burn-down 缴费）：补**机器计分型**前置自断言（种子 `pi_eval_punch`「打孔」存在 + per_meter，= 本用例回读断言的接地对象），把「前置不成立 ⇒ 找不到加工项却归因到 agent 不会改价」这条形态挡在门口；expectations / must_succeed / required_args / output_verify / forbidden_text / user_inputs 原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
@@ -256,7 +256,7 @@ cases:
       - toggle
     truths_ref: []
     user_inputs:
-      - "把加工项纳米圈打孔停用"
+      - "把加工项打孔停用"
       - repeat_until:
           tool_called: processing_item_manage
           max: 3
@@ -288,7 +288,7 @@ cases:
     data_checks:
       # ── 前置自断言（issue #4542 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是
       #    CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）──
-      # 本用例按**名字**点名种子里的加工项 `pi_eval_punch`「纳米圈打孔」：R1 的停用指令
+      # 本用例按**名字**点名种子里的加工项 `pi_eval_punch`「打孔」：R1 的停用指令
       # 与下面的 `must_succeed` / `output_verify`（status=inactive）**全部以「该名字在评测栈里
       # 存在且形态为 active」为前提**。前置不成立（种子改名 / 已停用 / 删项）时，agent 只能
       # 如实回「找不到该加工项」⇒ 判红会伪装成「agent 不会停用加工项」，归因错人
@@ -298,11 +298,11 @@ cases:
       # 故本条带 `success=true`（= 计分标记，不新增断言强度）。
       # **断言面（user_inputs / expectations / must_succeed / required_args / output_verify /
       # forbidden_text）一字未动、无放宽。**
-      - "前置（precondition）：评测栈种子里加工项「纳米圈打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`、`status=active`（8.00 元/米，`xiaobu_eval_seed.sql`）—— 它是 R1 停用指令与 `output_verify`（status=inactive）的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项」，判红会伪装成「agent 不会停用加工项」"
+      - "前置（precondition）：评测栈种子里加工项「打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`、`status=active`（8.00 元/米，`xiaobu_eval_seed.sql`）—— 它是 R1 停用指令与 `output_verify`（status=inactive）的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项」，判红会伪装成「agent 不会停用加工项」"
       - "status 目标值为 inactive（工具返回 `{item_id, status}` 可直接核对）；重复执行幂等（再停用一次仍是 inactive）"
     # ── 前置自断言（issue #4527 的 burn-down 缴费）────────────────────────────────
     # 本用例命中的唯一一条存量违规是 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（metric=entries
-    # ⇒ 必须**整条销账**）。它的**真前置**是「种子加工项 `pi_eval_punch`（名字「纳米圈打孔」）
+    # ⇒ 必须**整条销账**）。它的**真前置**是「种子加工项 `pi_eval_punch`（名字「打孔」）
     # 存在且只有一件」—— 不在 ⇒ 红的表现是 `unmatched expectation`（看起来像「agent 不会停用
     # 加工项」，归因全错，同 PG-013 / CU-003 的形态）；有同名副本 ⇒ 停用的可能不是种子那一件。
     # 口径：`expect: 1`（种子唯一名，真值确实恒为 1，同 OR-014/OR-025 的「按名唯一」）；
@@ -313,10 +313,10 @@ cases:
     # forbidden_text / data_checks）一字未动、无放宽。**
     precondition:
       - type: processing_item_count_for_keyword
-        source: "纳米圈打孔"
+        source: "打孔"
         expect: 1
     skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。2026-09-19（issue #4527 的 burn-down 缴费）：补 `precondition[processing_item_count_for_keyword: 纳米圈打孔, expect: 1]` —— 把「种子夹具存在且唯一」这条**真正依赖且只读**的前置写成可判定自断言；类型由本 PR 加到 runner 的 `_PRECONDITION_TYPES`（计数口径与 `product_count_for_keyword` 同构，不复制第二份「怎么数加工项」的定义）。断言面原样未动、无放宽。"
+    merge_log: "2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。2026-09-19（issue #4527 的 burn-down 缴费）：补 `precondition[processing_item_count_for_keyword: 打孔, expect: 1]` —— 把「种子夹具存在且唯一」这条**真正依赖且只读**的前置写成可判定自断言；类型由本 PR 加到 runner 的 `_PRECONDITION_TYPES`（计数口径与 `product_count_for_keyword` 同构，不复制第二份「怎么数加工项」的定义）。断言面原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
@@ -339,7 +339,7 @@ cases:
 
   - id: PP-009
     legacy_id: ""
-    title: "米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）"
+    title: "米宝加工项 LLM 行为：per_meter 按米算价（calculate_price 透传 quantity，不双计）"
     domains:
       - processing
       - chat
@@ -349,76 +349,66 @@ cases:
       - llm_behavior
       - tool_call
       - calculate_price
-      - per_area
+      - per_meter
     truths_ref: []
     user_inputs:
-      # 自包含（§13.5）：点名**种子里真实存在**的 per_area 加工项 ——
-      # `刺绣工艺` = `pi_eval_embroidery`（tests/agent_eval/fixtures/mibao_eval_seed.sql:76-83，
-      # per_area / 30.00 元/平方米 / 单位平方米），不是假设存在的对象。
-      # 尺寸由用户明确给出（不给的话模型只能猜，金额不可复现）。
-      - "刺绣工艺按面积算多少钱？宽 3.2 米、高 2.5 米"
+      # 自包含（§13.5）：点名**种子里真实存在**的 per_meter 加工项 ——
+      # `打孔` = `pi_eval_punch`（tests/agent_eval/fixtures/{xiaobu,mibao}_eval_seed.sql，
+      # per_meter / 8.00 元/米 / 单位米），不是假设存在的对象。
+      # 数量由用户明确给出（不给的话模型只能猜，金额不可复现）。
+      - "打孔按米算多少钱？3 米"
       # 协作轮（§13.5 先例 OR-021/CH-033）：agent 若先澄清/先查目录，本轮回一句同样明确的
       # 诉求把流程推完；目标工具**成功**后余下重复轮自动跳过（repeat_stop_met）。
       - repeat_until:
           tool_called: processing_item_manage
           max: 2
-        fallback: "用刺绣工艺算，宽 3.2 米、高 2.5 米，帮我报个价"
+        fallback: "用打孔算，3 米，帮我报个价"
     expectations:
       - tool: processing_item_manage
         args:
           action: calculate_price
     must_succeed:
-      # 「调了 ≠ 成了」：修复前本调用**每次**都失败（dimensions=null → 后端 400），
-      # 只断言 expectations 会假绿。
+      # 「调了 ≠ 成了」：只断言 expectations 会假绿（调用失败也算"调过"）。
       - tool: processing_item_manage
         action: calculate_price
     required_args:
-      # 尺寸必须真的传进来 —— 这正是本缺口的核心（模型此前**没有**合法参数可传）。
+      # 计价数量必须真的传进来（per_meter 口径 = 面料米数，由请求方直接给出，issue #3005）。
       - tool: processing_item_manage
         fields:
           - processing_item_id
-          - width
-          - height
+          - quantity
     output_verify:
       # ⚠️ 多 action 工具必须声明 action（#3544 实测：不限定会核到 R* list_categories 的 payload）
       - tool: processing_item_manage
         action: calculate_price
         expect:
-          # 后端口径：totalPrice = unitPrice × area × quantity = 30 × (3.2×2.5) × 1 = 240.00
-          # 双计形态是 30 × 8 × 8 = 1920.00（把宽×高也写进 quantity），本断言直接排除。
-          # 真值来源：mibao_eval_seed.sql:80（unit_price=30.00，per_area）。
-          totalPrice: 240.00
+          # 后端口径：per_meter ⇒ totalPrice = unitPrice × quantity = 8.00 × 3 = 24.00
+          # （ProcessingItemService 的 per_meter 分支；quantity 由请求方直接给出）。
+          # 真值来源：评测种子的 `pi_eval_punch`（name=打孔，unit_price=8.00，per_meter）。
+          totalPrice: 24.00
     forbidden_text:
       - "无法计算"
       - "暂不支持"
       - "功能不存在"
       - "计算失败"
     data_checks:
-      - "per_area 的 quantity 是**计件数**（同一尺寸做几件，缺省 1）；面积由 dimensions(宽×高) 承载——把宽×高写进 quantity 会双计（30×8×8=¥1920，应为 ¥240）"
-      - "本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（`docs/testing/acceptance-protocol.md:288` @df3623466344 与 `.github/cases/order.yml:905` @df3623466344 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积（真值源 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java`）"
-      - "回复需给出金额 ¥240（30 元/㎡ × 8㎡）并对得上用户给的尺寸"
-      # ── 前置自断言（issue #4525 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是
-      #    CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）──
-      # 本用例按**名字**点名种子里的 per_area 加工项，`output_verify.totalPrice: 240.00` 是
-      # 「该名字存在 **且** 单价恰好 30.00 元/㎡ **且** 计价方式 per_area」的**直接函数**
-      # （`mibao_eval_seed.sql` 的 `pi_eval_embroidery`）。前置一旦不成立（种子改名 / 改价 /
-      # 改成别的计价方式），`totalPrice` 必然对不上 ⇒ 红的表现会伪装成「agent 算错面积」，
-      # 归因错人（与 DF-011 / CH-007 / CH-012 同一形态、同一修法）。
-      # ⇒ 把这条**真正依赖且只读**的前置写成**可判定**自断言。口径：`assertion_taxonomy` 的
-      # `declares_precondition` 认「`data_checks` 里含前置关键词**且**是机器计分型」，
-      # 故本条带 `success=true`（= 计分标记，不新增断言强度）。
-      # **断言面（user_inputs / expectations / must_succeed / required_args / output_verify /
-      # forbidden_text）一字未动、无放宽。**
-      - "前置（precondition）：评测栈种子里「刺绣工艺」（`pi_eval_embroidery`）存在、`pricingMethod=per_area`、`unitPrice=30.00` 元/㎡ —— 它是 `output_verify.totalPrice=240.00` 的接地真值（success=true）；前置不成立时金额必然对不上，判红会伪装成「agent 算错面积」"
+      - "per_meter 的 quantity 是**面料米数**（由请求方直接给出，issue #3005 回滚了「每米数量」密度推导）——写成 1 会少收（8.00 而非 24.00）"
+      - "本端点的契约与 order_create 不同：order_create 由 agent 自己算好数量放进 processing_info，后端只做 `unitPrice × quantity`；calculate_price 由后端按计价方式算（真值源 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java`）"
+      - "回复需给出金额 ¥24（8 元/米 × 3 米）并对得上用户给的数量"
+      # ── 前置自断言（issue #4525 的 burn-down 缴费；#4572 随夹具改判重写）──
+      # 本用例按**名字**点名种子里的加工项，`output_verify.totalPrice: 24.00` 是
+      # 「该名字存在 **且** 单价恰好 8.00 元/米 **且** 计价方式 per_meter」的**直接函数**
+      # （种子的 `pi_eval_punch`）。前置一旦不成立，`totalPrice` 必然对不上 ⇒ 红的表现会
+      # 伪装成「agent 算错米数」，归因错人。⇒ 写成**可判定**自断言（带 `success=true`）。
+      - "前置（precondition）：评测栈种子里「打孔」（`pi_eval_punch`）存在、`pricingMethod=per_meter`、`unitPrice=8.00` 元/米 —— 它是 `output_verify.totalPrice=24.00` 的接地真值（success=true）；前置不成立时金额必然对不上，判红会伪装成「agent 算错米数」"
     skip_reason: ""
-    merge_log: "2026-09-15 新增（issue #3672 / 归因报告 G4）：`processing_item_manage(action=calculate_price)` 此前在用例库**零覆盖**——§14.5 覆盖矩阵只到工具级（本工具已有 4 条正向用例 → 恒绿），per_area 分支 100% 不可达这条缺口在矩阵里永远看不见。断言全部机器可判：must_succeed(action=calculate_price) + required_args[processing_item_id,width,height] + output_verify(totalPrice=240.00，显式 action) + forbidden_text。2026-09-19（issue #4525 的 burn-down 缴费）：补**机器计分型**前置自断言（种子 `pi_eval_embroidery` 存在 + per_area + 30.00 元/㎡ = `totalPrice: 240.00` 的接地真值），把「前置不成立 ⇒ 金额对不上却归因到 agent 算错」这条形态挡在门口；expectations / must_succeed / required_args / output_verify / forbidden_text / user_inputs 原样未动、无放宽。"
+    merge_log: "2026-09-15 新增（issue #3672 / 归因报告 G4）：`processing_item_manage(action=calculate_price)` 此前在用例库**零覆盖**——§14.5 覆盖矩阵只到工具级（本工具已有 4 条正向用例 → 恒绿），per_area 分支 100% 不可达这条缺口在矩阵里永远看不见。断言全部机器可判：must_succeed(action=calculate_price) + required_args + output_verify(totalPrice，显式 action) + forbidden_text。2026-09-19（issue #4525 的 burn-down 缴费）：补**机器计分型**前置自断言，把「前置不成立 ⇒ 金额对不上却归因到 agent 算错」这条形态挡在门口。**2026-09-19（issue #4572）改判：per_area 计价路径的评测覆盖随 `刺绣工艺`（`pi_eval_embroidery`）夹具按用户裁定**真删**而移除** —— 本用例由 per_area 改判到 **per_meter**（接地对象换成种子里的 `打孔`/`pi_eval_punch`，8.00 元/米），金额按新口径**逐值重算**（`totalPrice` 240.00 → 24.00），`required_args` 的 `width`/`height` → `quantity`（per_meter 不需要尺寸）。**损失如实登记**：`calculate_price` 的「尺寸通路 / dimensions 不双计」这一断言面**不再被本用例覆盖**；若要恢复，需新增一个**显式标注为评测夹具**的 per_area 项。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
       ci:
         - agent-eval.yml
       verifies: []
-
   - id: PP-010
     legacy_id: ""
     title: "生产模块确定性核心 - 工艺路线实例化/计件/必完工序自动完工（单测覆盖）"

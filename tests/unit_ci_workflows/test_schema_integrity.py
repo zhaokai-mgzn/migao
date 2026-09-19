@@ -1074,7 +1074,7 @@ class TestNamedProductsAreSeeded:
             "加工项目录未注入 → OR-017 的加工项询问环节无数据（product_detail 不再返回加工项，"
             "加工项一律来自店铺级目录 processing_items，见 #4371）"
         )
-        assert "纳米圈打孔" in sql, (
+        assert "打孔" in sql, (
             "加工项目录里没有可点选的项（OR-017 的 choice 卡需要真实选项）"
         )
 

@@ -244,7 +244,7 @@ class TestExtractEntities:
         mgr = AgentContextManager()
         cache = OrderedDict()
         mgr._extract_entities(cache, "processing_item_manage", {
-            "data": {"items": [{"id": "pi_9", "name": "高温定型"}]}
+            "data": {"items": [{"id": "pi_9", "name": "定型"}]}
         })
         assert cache["entities"]["processing_item_ids"][0]["id"] == "pi_9"
 

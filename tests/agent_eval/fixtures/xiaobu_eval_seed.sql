@@ -25,17 +25,50 @@ INSERT INTO processing_categories (id, tenant_id, name, sort_order, status)
 VALUES ('pcat_eval_curtain', 1, '窗帘加工', 1, 'active')
 ON CONFLICT (id) DO NOTHING;
 
+-- ── 2. 加工项：**只保留 3 条带价评测夹具**（ERP 目录 16 项一律由 V83 提供）──
+-- 背景（issue #4571/#4572）：用户提问「加工项的测试数据为嘛还未重建完」⇒ 真库实测发现
+--   **重名冲突**：ERP 加工项目录**已由 V83 迁移**为每个活跃租户种过 16 项（含 tenant 1）
+--   ⇒ 评测种子**不得再插一遍** —— 真库实测「种子插 16 行」会让每个名字**两行**
+--   （`打孔` = `pi_eval_punch` ¥8 与 `pi-v83-1-01` ¥0）⇒
+--     ① `processing_item_query(打孔)` 返 2 条、金额断言不确定；
+--     ② `processing_item_count_for_keyword: 打孔, expect: 1`（PP-008 前置）**运行期必红**。
+--
+-- 裁定口径（2026-09-19）：
+--   · **ERP 目录 16 项一律由 V83 提供**（产品口径不动：目录无价，R10）；
+--     其余 13 项（`韩定+S钩`/`穿杆`/`平幔`/`花边`/`扣环`/`接高`/`拼接`/`双眼皮`/`缎带`/
+--     `换货`/`超高`/`超宽`/`倒幅`）**不在本文件重复插入**。
+--   · 评测种子**只保留 3 条带价夹具**（`打孔` ¥8/米 · `韩折` ¥12/米 · `定型` ¥10/米，
+--     id 仍是 `pi_eval_punch`/`pi_eval_hem`/`pi_eval_iron`）—— 评测夹具的职责是给 eval 断言
+--     提供**金额接地**（订单总额 / 加工费 / `calculate_price`），产品侧「目录无价」不适用于夹具；
+--     **id 保留** ⇒ 引用面最小（金额断言逐值不变：OR-014 的 528 = 168×3 + 8×3 等）。
+--   · 插入**之前**先删掉 V83 为这 3 个名字种的行 ⇒ **同名只有一行**。
+--     ⚠️ **两种执行顺序都安全**（双保险，不是只靠 DELETE）：
+--       ① 先注种子后跑 V83 ⇒ V83 的 `NOT EXISTS (tenant_id, name)` 业务键去重会**跳过**这 3 项；
+--       ② 先跑 V83 后注种子 ⇒ 本 DELETE 把 V83 那 3 行删掉再插带价行。
+--     V83 没跑过时 DELETE 影响 0 行（安全）；`processing_items` **没有任何外键引用它**
+--     （已核 `docs/sql/schema.sql` 的 `REFERENCES processing_items` = 0 命中）。
+--   · `刺绣工艺`（`pi_eval_embroidery`，per_area）**已按用户裁定真删** —— 它原是 PR-020 /
+--     PP-009 / OR-028 的 per_area 接地对象，那 3 处已按 **per_meter** 重算改判；
+--     **per_area 计价路径的评测覆盖随之移除**（逐处登记在各 case 的 `merge_log`）。
+--
+-- 守卫 = `tests/unit_ci_workflows/test_eval_seed_catalog.py`：判「种子**不**插入 V83 已种的
+--   名字」+「3 条带价夹具在」+「`DELETE … pi-v83-%` 那行在且在 INSERT 之前」+「真库无重名」。
+-- 幂等：`ON CONFLICT (id) DO NOTHING`（与本节既有写法一致）。
+DELETE FROM processing_items
+ WHERE tenant_id = 1 AND name IN ('打孔', '韩折', '定型') AND id LIKE 'pi-v83-%';
+
 INSERT INTO processing_items
   (id, tenant_id, name, category_id, pricing_method, unit_price, unit,
-   min_quantity, max_quantity, description, options, ai_recommended, status, deleted)
+   min_quantity, max_quantity, description, craft_hint, options, ai_recommended, status, deleted)
 VALUES
-  ('pi_eval_punch', 1, '纳米圈打孔', 'pcat_eval_curtain', 'per_meter', 8.00, '米',
-   1, 999, '顶部打纳米圈，含罗马圈辅料', '[]'::jsonb, TRUE, 'active', 0),
-  ('pi_eval_hem', 1, '韩式波浪折边', 'pcat_eval_curtain', 'per_meter', 12.00, '米',
-   1, 999, '韩式褶皱加工，含布带辅料', '[]'::jsonb, TRUE, 'active', 0),
-  ('pi_eval_iron', 1, '高温定型', 'pcat_eval_curtain', 'per_meter', 10.00, '米',
-   1, 999, '高温定型，褶皱持久', '[]'::jsonb, TRUE, 'active', 0)
+  ('pi_eval_punch', 1, '打孔', 'pcat_eval_curtain', 'per_meter', 8.00, '米',
+   1, 999, '顶部打孔（#4572 由「纳米圈打孔」改名到 ERP 逐字名；价格保留，同名 V83 行已删）', '打孔', '[]'::jsonb, TRUE, 'active', 0),
+  ('pi_eval_hem', 1, '韩折', 'pcat_eval_curtain', 'per_meter', 12.00, '米',
+   1, 999, '韩式褶皱（#4572 由「韩式波浪折边」改名到 ERP 逐字名；价格保留，同名 V83 行已删）', '韩褶', '[]'::jsonb, TRUE, 'active', 0),
+  ('pi_eval_iron', 1, '定型', 'pcat_eval_curtain', 'per_meter', 10.00, '米',
+   1, 999, '高温定型加工（#4572 由「高温定型」改名到 ERP 逐字名；价格保留，同名 V83 行已删）', NULL, '[]'::jsonb, TRUE, 'active', 0)
 ON CONFLICT (id) DO NOTHING;
+
 
 -- ── 3. 商品（PR-003 名称查询 / PR-001 关键词搜索 / OR-017 指名商品下单）──
 -- ⚠️ 商品名必须覆盖用例**点名**的商品：OR-017 的输入是「我想买夏日清风窗帘…」，
@@ -229,4 +262,35 @@ BEGIN
     RAISE EXCEPTION 'C 端 fixture 缺少 B 端管理员账号（role=admin, status=active）：% —— '
       'CH-008 转人工通知投递分支将不可达（adminNotified 恒 false）', v_admins;
   END IF;
+END $$;
+
+-- ⚠️ 本块**必须留在文件末尾**（不能紧跟上面那段 INSERT）：`test_schema_integrity.py` 的
+-- `test_orders_self_check_uses_same_customer_id` 取的是本文件**第一个** `DO $$` 块
+-- （= 下面的订单自检块）。把它插到前面会让那条守卫核到错的块（本单实测踩过）。
+-- ── 目录去冲突自检（**真库口径**，fail-fast；判据 a/b）──
+-- 真库实测（#4572）：重复插 V83 已种的名字会让每个名字**两行** ⇒
+-- `processing_item_count_for_keyword: 打孔, expect: 1`（PP-008 前置）**运行期必红**。
+-- 本块把「无重名」+「3 项各恰好 1 行且带价」钉成**运行期**断言 —— 静态守卫看不见 SQL 执行结果
+-- （#4514 同族：静态全绿而真库必红）。
+DO $$
+DECLARE
+  v_dup INTEGER;
+  v_n   INTEGER;
+BEGIN
+  SELECT count(*) INTO v_dup FROM (
+    SELECT name FROM processing_items
+     WHERE tenant_id = 1 AND deleted = 0
+     GROUP BY name HAVING count(*) > 1) d;
+  IF v_dup > 0 THEN
+    RAISE EXCEPTION '目录去冲突失败：tenant 1 有 % 个重名加工项（V83 与评测夹具同名未去重）', v_dup;
+  END IF;
+  SELECT count(*) INTO v_n FROM processing_items
+   WHERE tenant_id = 1 AND deleted = 0
+     AND ((id = 'pi_eval_punch' AND name = '打孔' AND unit_price = 8.00)
+       OR (id = 'pi_eval_hem'   AND name = '韩折' AND unit_price = 12.00)
+       OR (id = 'pi_eval_iron'  AND name = '定型' AND unit_price = 10.00));
+  IF v_n <> 3 THEN
+    RAISE EXCEPTION '带价评测夹具不成立：应恰好 3 条（打孔 ¥8 / 韩折 ¥12 / 定型 ¥10），实为 %', v_n;
+  END IF;
+  RAISE NOTICE '加工项目录去冲突核对: tenant1 重名=0 带价夹具=3/3';
 END $$;

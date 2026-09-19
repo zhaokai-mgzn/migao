@@ -79,7 +79,7 @@
       },
       {
         "id": "proc_item_shape_high",
-        "name": "高温定型",
+        "name": "定型",
         "categoryId": "proc_cat_shape",
         "categoryName": "定型加工",
         "pricingMethod": "per_meter",
@@ -87,7 +87,7 @@
         "unit": "米",
         "minQuantity": 1,
         "maxQuantity": 999,
-        "description": "高温定型处理，效果持久不变形",
+        "description": "定型处理，效果持久不变形",
         "options": [],
         "processingDays": 5,
         "aiRecommended": true,
@@ -169,7 +169,7 @@
       },
       {
         "id": "proc_item_hem_korean",
-        "name": "韩式波浪折边",
+        "name": "韩折",
         "categoryId": "proc_cat_hem",
         "categoryName": "折边加工",
         "pricingMethod": "per_meter",
@@ -379,7 +379,7 @@
       },
       {
         "id": "proc_item_punch_nano",
-        "name": "纳米圈打孔",
+        "name": "打孔",
         "categoryId": "proc_cat_punch",
         "categoryName": "打孔加工",
         "pricingMethod": "per_meter",
@@ -387,7 +387,7 @@
         "unit": "米",
         "minQuantity": 1,
         "maxQuantity": 999,
-        "description": "窗帘顶部纳米圈打孔加工，适用于罗马杆安装",
+        "description": "窗帘顶部打孔加工，适用于罗马杆安装",
         "options": [
           {
             "name": "圈色",

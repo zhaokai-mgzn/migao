@@ -1413,7 +1413,7 @@ async def react_turn(
                         # 判定答卡轮（否则卡值里的跨域词会把会话甩到别的 skill）。
                         # 并**同时**记下最近一张卡整体（任意 component，含 choice / form）
                         # —— 路由层的答卡轮豁免此前只覆盖 confirm 卡，于是
-                        # 「已选加工项：纳米圈打孔 · ¥9.5/米」这类系统自产的 choice 卡答卡值
+                        # 「已选加工项：打孔 · ¥9.5/米」这类系统自产的 choice 卡答卡值
                         # 被 L1 规则表（关键词「加工项」→ product_inquiry）当成话题切换，
                         # 清掉会话锁 → 落到 product skill（无 order_create）→ 零工具拒答
                         # （run 34841029062 OR-015 R4/R5、OR-016 R2 实证）。

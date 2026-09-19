@@ -291,7 +291,7 @@ class TestLegitimateDomainSwitchStillWorks:
 
     def _state(self, msg, **over):
         card = {"component": "choice", "title": "是否需要加工项？",
-                "options": [{"label": "纳米圈打孔 · ¥9.5/米"}],
+                "options": [{"label": "打孔 · ¥9.5/米"}],
                 "multiSelect": True, "multiSelectSkipLabel": "不需要加工项"}
         state = {
             "messages": [HumanMessage(content=msg)],

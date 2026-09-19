@@ -143,7 +143,7 @@ describe('OrderTable', () => {
             ...mockOrder.items![0],
             processingInfo: {
               processingItems: [
-                { id: 'pi-1', name: '高温定型', unitPrice: 8, quantity: 4, subtotal: 32 },
+                { id: 'pi-1', name: '定型', unitPrice: 8, quantity: 4, subtotal: 32 },
               ],
             },
           },

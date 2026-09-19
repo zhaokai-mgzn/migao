@@ -30,7 +30,7 @@ B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「�
 | persona | 栈内种子 | 为什么 |
 |---|---|---|
 | `xiaobu` | **仅** C 端 `xiaobu_eval_seed.sql` | 叠加 B 端会改 `created_at` 排序 → 商品列表（`ORDER BY created_at DESC`）首条漂到 B 端 → C 端选品/「第一款」链路假失败 |
-| `mibao` | C 端 `xiaobu_eval_seed.sql` + B 端 `mibao_eval_seed.sql` | B 端点名数据缺失（2699 商品/刺绣工艺/客户张三/员工王五）会被误判成能力回归（#3496/#3511） |
+| `mibao` | C 端 `xiaobu_eval_seed.sql` + B 端 `mibao_eval_seed.sql` | B 端点名数据缺失（2699 商品/ERP 加工项目录 16 项/客户张三/员工王五）会被误判成能力回归（#3496/#3511） |
 
 两条纪律：
 1. **一个栈只服务一个 persona**：`agent-behavior-eval` 已改 persona matrix

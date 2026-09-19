@@ -38,7 +38,7 @@ def _load_runner():
 lr = _load_runner()
 
 PRICE = 168.0          # 遮光窗帘商品库单价
-FEE = 24.0             # 纳米圈打孔 8 元/米 × 3 米
+FEE = 24.0             # 打孔 8 元/米 × 3 米
 QTY = 3.0
 
 

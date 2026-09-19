@@ -585,7 +585,8 @@ class TestPremises:
         inv = inventory_of([FIXTURES_DIR / "xiaobu_eval_seed.sql",
                             FIXTURES_DIR / "mibao_eval_seed.sql"])
         assert {"遮光窗帘", "北欧风窗帘", "夏日清风窗帘", "2699系列雪尼尔窗帘面料"} <= inv["product"], inv["product"]
-        assert {"纳米圈打孔", "韩式波浪折边", "高温定型", "刺绣工艺"} <= inv["processing_item"], inv["processing_item"]
+        # #4572：`刺绣工艺`(pi_eval_embroidery) 已按用户裁定真删 ⇒ 前提集只留 3 项改名夹具
+        assert {"打孔", "韩折", "定型"} <= inv["processing_item"], inv["processing_item"]
         # 行注释穿插在 VALUES 之间 ⇒ 不剥注释会漏掉后两条（本断言正是那条解析回归的红证）
         assert {"米白", "浅灰", "雾霾蓝", "白色", "米白色", "2699-03暖米色", "2699-01本白"} <= inv["color"], inv["color"]
         assert {"13800138000", "张三"} <= inv["customer"], inv["customer"]
@@ -642,7 +643,7 @@ class TestInjectionRedProofs:
             "id": "OR-029", "persona": "mibao",
             "user_inputs": [
                 "录订单 赵凯（13456000919）｜ 2699系列雪尼尔窗帘面料 · 2699-06 蓝灰色 · 散剪 · "
-                "2.8米 · 10 米 ｜ 加工项：韩式波浪折边、穿杆孔加工、包边处理",
+                "2.8米 · 10 米 ｜ 加工项：韩折、穿杆孔加工、包边处理",
                 "1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 9599",
                 "已有客户",
             ],
@@ -669,10 +670,14 @@ class TestInjectionRedProofs:
               "user_inputs": ["给张三下单，幻影窗帘 3 米"],
               "namespaces": ["product_name:幻影窗帘"],
               "pre_clean": [{"type": "product_dedupe", "product_keyword": "幻影窗帘"}]}, "product"),
+            # ⚠️ #4572：本样本原名「穿杆孔加工」—— ERP 加工项目录落地后目录里有「穿杆」，
+            #    而 lookup 模式是**双向包含** ⇒ 它变成**可解析**的部分指代，注入样本不再是
+            #    「不存在的实体」（红证失效）。改用目录里确实没有的「包边处理」（同 #4015 归因
+            #    报告点名的、当时 seed 里 0 命中的那个名字）。**判据本体一字未改**。
             ({"id": "INJ-PROC", "persona": "mibao",
-              "user_inputs": ["要穿杆孔加工"],
+              "user_inputs": ["要包边处理"],
               "expectations": [{"tool": "processing_item_query",
-                                "args": {"keyword": "穿杆孔加工"}}]}, "processing_item"),
+                                "args": {"keyword": "包边处理"}}]}, "processing_item"),
             ({"id": "INJ-COLOR", "persona": "mibao",
               "user_inputs": ["颜色要 2699-06 蓝灰色",
                               {"form_values": {"colorName": "2699-06 蓝灰色"}}],
@@ -892,7 +897,7 @@ class TestNegativeExamples:
         assert unbacked_mentions([runtime]) == []
 
     def test_partial_lookup_names_still_resolve(self):
-        """搜索关键字类槽位允许**部分指代**：`打孔`→`纳米圈打孔`、`窗帘`→`遮光窗帘`。"""
+        """搜索关键字类槽位允许**部分指代**：`打孔`→`打孔`、`窗帘`→`遮光窗帘`。"""
         case = {
             "id": "OK-LOOKUP", "persona": "xiaobu",
             "user_inputs": ["搜窗帘", "要打孔加工"],

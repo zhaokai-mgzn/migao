@@ -128,10 +128,10 @@ class ProcessingRouteSourceDeclarationTest {
         stubRoutings();
         stubSignals();
         when(processingItemMapper.selectById("p-sheer")).thenReturn(
-                processingItem("纳米圈打孔", "打孔"));
+                processingItem("打孔", "打孔"));
 
         AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
-                orderItem("item-1", "打孔帘", "主布行", "p-sheer", "纳米圈打孔", "纱", null, null)));
+                orderItem("item-1", "打孔帘", "主布行", "p-sheer", "打孔", "纱", null, null)));
 
         var results = service().generate(List.of("order-001"), TENANT, "u1");
 
@@ -171,10 +171,10 @@ class ProcessingRouteSourceDeclarationTest {
     // ══════════════════════════════ 判据 3 / 4：工艺走加工项显式声明 ══════════════════════════════
 
     /**
-     * 判据 3（issue #4452 验收判据 3 前半）：加工项「纳米圈打孔」声明 {@code craft_hint=打孔}
+     * 判据 3（issue #4452 验收判据 3 前半）：加工项「打孔」声明 {@code craft_hint=打孔}
      * ⇒ 工艺 = 打孔；**改声明**（→ 韩褶）⇒ 结果随之变。
      *
-     * <p><b>红证</b>：读侧仍 {@code contains} 加工项**名**（「纳米圈打孔」含「打孔」）⇒ 改声明后结果
+     * <p><b>红证</b>：读侧仍 {@code contains} 加工项**名**（「打孔」含「打孔」）⇒ 改声明后结果
      * 不变（仍 打孔）⇒ 本用例红。</p>
      */
     @Test
@@ -184,10 +184,10 @@ class ProcessingRouteSourceDeclarationTest {
         stubSignals();
         // 加工项**名**里含「打孔」，但声明是「韩褶」⇒ 结果必须听声明
         when(processingItemMapper.selectById("p-hole")).thenReturn(
-                processingItem("纳米圈打孔", "韩褶"));
+                processingItem("打孔", "韩褶"));
 
         AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
-                orderItem("item-1", "遮光成品X", "主布行", "p-hole", "纳米圈打孔", "主布", null, null)));
+                orderItem("item-1", "遮光成品X", "主布行", "p-hole", "打孔", "主布", null, null)));
 
         var results = service().generate(List.of("order-001"), TENANT, "u1");
 

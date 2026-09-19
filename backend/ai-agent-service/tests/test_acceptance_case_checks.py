@@ -199,7 +199,7 @@ class TestRunCaseCaseLevelChecks:
         sent, _ = asyncio.run(self._run_with_cards(case, [
             {"tools": ["interact"], "text": "请选择加工项",
              "cards": [{"type": "choice", "title": "加工项",
-                        "options": [{"label": "纳米圈打孔", "value": "pi1"}]}]},
+                        "options": [{"label": "打孔", "value": "pi1"}]}]},
             {"tools": [], "text": "创建订单前需要验证手机号。请输入短信验证码"},
             {"tools": ["order_create"], "text": "订单已创建"},
             {"tools": [], "text": "（不该再发）"},
@@ -207,7 +207,7 @@ class TestRunCaseCaseLevelChecks:
         assert len(sent) == 3, f"重复轮次数不对（成功即停失效）：{sent}"
         assert sent[0] == "我想买遮光窗帘"
         # choice 卡的作答 = 该 option 的可读值（label/value 由卡片协议决定），关键是**答的是卡**
-        assert "纳米圈打孔" in sent[1] or sent[1] == "pi1", (
+        assert "打孔" in sent[1] or sent[1] == "pi1", (
             f"有 choice 卡却没答卡（把验证码喂给卡就是 #3430 的病）：{sent[1]!r}")
         assert sent[2] == "123456", f"被问验证码却没供码：{sent[2]!r}"
 
@@ -3359,8 +3359,8 @@ class TestUnbackedStateClaim:
 
     证据（验收剧本 C-A1 R3）：
       ```
-      用户: 纳米圈打孔
-      AI:  好嘞，**纳米圈打孔** 已为您加上 ✅
+      用户: 打孔
+      AI:  好嘞，**打孔** 已为您加上 ✅
       ```
       该轮 `tools=[]`（零工具调用）—— 加工项此刻只是**对话草稿**，却用了完成态措辞。
       一旦流程中断（C-A1 首跑就是这样），顾客会以为加工项已经写到订单上。
@@ -4040,7 +4040,7 @@ class TestRoundTraceCarriesAssistantText:
 
     def _trace(self, text):
         return lr.build_round_trace([
-            {"__round": 4, "user_message": "已选加工项：纳米圈打孔（¥8/米，共 ¥24）",
+            {"__round": 4, "user_message": "已选加工项：打孔（¥8/米，共 ¥24）",
              "tool_calls": [], "tool_results": [], "interactive": [],
              "final_text": text, "error": None},
         ])
@@ -4075,7 +4075,7 @@ class TestAutoRespondPreferText:
     两轮吃掉了 → 「顾客从未输入过验证码」→ R7 `order_create!缺少短信验证码` → 订单不落库。
     逐轮轨迹：
       R5 you=__FORM__|{...}        （表单被答）
-      R6 you=已选加工项：纳米圈打孔   ← 本该发 123456
+      R6 you=已选加工项：打孔   ← 本该发 123456
       R7 you=确认下单              ← 本该发 123456
       R7 order_create!缺少短信验证码
 
@@ -4084,7 +4084,7 @@ class TestAutoRespondPreferText:
     """
 
     _CARD = [{"type": "choice", "title": "选加工项",
-              "options": [{"label": "纳米圈打孔", "value": "pi1"}]}]
+              "options": [{"label": "打孔", "value": "pi1"}]}]
 
     def _results(self, *users, card=True):
         """构造轨迹：**最后一轮带待答卡片**（否则 auto_respond 本就该走 fallback）。"""
@@ -4127,7 +4127,7 @@ class TestAutoSelectAnswersAnyPendingCard:
               "formFields": [{"key": "customer_name", "label": "收货人"},
                              {"key": "customer_phone", "label": "手机号"}]}]
     _CHOICE = [{"type": "choice", "title": "选加工项",
-                "options": [{"label": "纳米圈打孔", "value": "proc_item_pi1"}]}]
+                "options": [{"label": "打孔", "value": "proc_item_pi1"}]}]
 
     def _results(self, interactive):
         return [{"user_message": "我要买两款窗帘", "interactive": interactive}]
@@ -4143,7 +4143,7 @@ class TestAutoSelectAnswersAnyPendingCard:
     def test_choice_card_still_clicks_first_option(self):
         """choice 卡行为**不得改变**：按前端点击协议回**首项 label**（不是内部 id）。"""
         text = lr.resolve_auto_select_turn(self._results(self._CHOICE), {})
-        assert text == "纳米圈打孔", f"choice 卡行为不得改变：{text!r}"
+        assert text == "打孔", f"choice 卡行为不得改变：{text!r}"
 
     def test_no_card_keeps_first_placeholder(self):
         """没有卡片时保留「第一个」—— 那是**答 agent 的文本提问**（重名澄清等场景）。"""
@@ -4201,7 +4201,7 @@ class TestPreferTextNoiseIsFailureOnly:
     """
 
     _CARD = [{"type": "choice", "title": "选加工项",
-              "options": [{"label": "纳米圈打孔", "value": "pi1"}]}]
+              "options": [{"label": "打孔", "value": "pi1"}]}]
 
     def _results(self):
         return [{"user_message": "你好", "interactive": list(self._CARD)}]
@@ -4311,13 +4311,13 @@ class TestAutoRespondNoRepeatCardClick:
         """
         card = self._card("choice", multiSelect=True,
                           multiSelectSubmitPrefix="已选加工项：",
-                          options=[{"value": "proc_item_x", "label": "纳米圈打孔"}])
-        assert lr.resolve_auto_respond([card], "确认", {}) == "已选加工项：纳米圈打孔"
+                          options=[{"value": "proc_item_x", "label": "打孔"}])
+        assert lr.resolve_auto_respond([card], "确认", {}) == "已选加工项：打孔"
 
     def test_multi_select_default_prefix(self):
         card = self._card("choice", multiSelect=True,
-                          options=[{"value": "proc_item_x", "label": "纳米圈打孔"}])
-        assert lr.resolve_auto_respond([card], "确认", {}) == "已选加工项：纳米圈打孔"
+                          options=[{"value": "proc_item_x", "label": "打孔"}])
+        assert lr.resolve_auto_respond([card], "确认", {}) == "已选加工项：打孔"
 
     def test_repeated_same_choice_answer_falls_back_after_two(self):
         card = self._card("choice", options=[{"value": "opt1", "label": "第一项"}])
@@ -5086,7 +5086,7 @@ class TestPreferTextPendingCardDiagnostic:
     被标成 `llm-noise` —— **用例配置缺陷伪装成模型波动**，无人发现。
     """
 
-    _CARD = [{"type": "choice", "title": "要哪些加工项", "options": [{"label": "纳米圈打孔", "value": "pi1"}]}]
+    _CARD = [{"type": "choice", "title": "要哪些加工项", "options": [{"label": "打孔", "value": "pi1"}]}]
 
     def _results(self, *users, card=True):
         out = [{"user_message": u} for u in users]
@@ -5620,7 +5620,7 @@ class TestRepeatedCardAsk:
     """「同一张卡问两遍（顾客已答过再问）」→ 判红（issue #3477 复盘 / 断言矩阵补行）。
 
     背景（C-A1 R5，run 34788143133 transcript）：R2 小布**文本**问「需要一起加工吗？」→
-    R3 顾客答「纳米圈打孔」→ R5 又发加工项 choice 卡 —— 同一件事问第二遍，顾客要多答一次
+    R3 顾客答「打孔」→ R5 又发加工项 choice 卡 —— 同一件事问第二遍，顾客要多答一次
     才能继续（UA 判定因此记"有条件通过"）。加工项侧已由 agent 守卫修（#3473），
     但**地址/数量/颜色**等其它重复问没有判据 —— 本检查补"同卡重问"这一面。
 
@@ -5641,7 +5641,7 @@ class TestRepeatedCardAsk:
                                              "confirmValue": cv,
                                              "fields": [{"label": "商品", "value": "遮光窗帘"}]}}
 
-    def _choice(self, title="选加工项", label="纳米圈打孔"):
+    def _choice(self, title="选加工项", label="打孔"):
         return {"name": "interact", "args": {"component": "choice", "title": title,
                                              "options": [{"label": label, "value": "pi1"}]}}
 
@@ -5656,7 +5656,7 @@ class TestRepeatedCardAsk:
     def test_choice_card_reasked_after_answer_flagged(self):
         """choice 卡顾客已答（回 option label）后又被重发 → 判红。"""
         results = [self._round(1, "选加工项", [self._choice()]),
-                   self._round(2, "纳米圈打孔"),
+                   self._round(2, "打孔"),
                    self._round(3, "还要", [self._choice()])]
         assert lr.check_repeated_card_ask(results), "已答过的 choice 卡重问必须判红"
 

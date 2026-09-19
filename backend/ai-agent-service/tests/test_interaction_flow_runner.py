@@ -107,7 +107,7 @@ async def test_flow_show_processing_items_choice(
                 "title": "请选择加工项（可多选）",
                 "options": [
                     {"label": "1. 罗马杆环安装 ¥3/个", "value": "proc_item_hook_roman"},
-                    {"label": "2. 高温定型 ¥10/米", "value": "proc_item_shape_high"},
+                    {"label": "2. 定型 ¥10/米", "value": "proc_item_shape_high"},
                 ],
                 "pageMeta": {
                     "current": 1, "total": 4, "totalCount": 32,
@@ -179,7 +179,7 @@ async def test_flow_page_payload_keeps_multiselect(monkeypatch):
 async def test_flow_submit_selections_resolves_all_names(
     mock_set_ctx, mock_create_reg, mock_get_llm, mock_llm_factory, mock_get_breaker
 ):
-    """用户提交「已选加工项：罗马杆环安装、高温定型」→ LLM 应调用
+    """用户提交「已选加工项：罗马杆环安装、定型」→ LLM 应调用
     processing_item_query 解析全部名称（不只第一个），最终走向汇总文本。
 
     回归（issue #2896）：此前 LLM 收到单个选项即汇总，多选被截断。
@@ -195,7 +195,7 @@ async def test_flow_submit_selections_resolves_all_names(
     mock_get_breaker.return_value = mock_breaker
 
     # LLM 直接给最终汇总文本（工具由产品 prompt 决定是否查询，聚焦流程收敛）
-    final_call = AIMessage(content="已为您汇总：关联加工项 罗马杆环安装、高温定型，请确认后我将创建商品。", tool_calls=[])
+    final_call = AIMessage(content="已为您汇总：关联加工项 罗马杆环安装、定型，请确认后我将创建商品。", tool_calls=[])
     mock_llm = MagicMock()
     mock_llm.bind_tools.return_value = mock_llm
     mock_llm.ainvoke = AsyncMock(return_value=final_call)
@@ -208,7 +208,7 @@ async def test_flow_submit_selections_resolves_all_names(
     # 覆盖用户消息为「已选加工项：...」一次性提交
     from langchain_core.messages import HumanMessage
     state = _make_state()
-    state["messages"] = [HumanMessage(content="已选加工项：罗马杆环安装、高温定型")]
+    state["messages"] = [HumanMessage(content="已选加工项：罗马杆环安装、定型")]
 
     result = await execute_skill(
         state=state,
@@ -221,7 +221,7 @@ async def test_flow_submit_selections_resolves_all_names(
     collector = _FlowCollector()
     collector.feed(result)
     text = " ".join(collector.text_parts)
-    assert "罗马杆环安装" in text and "高温定型" in text, (
+    assert "罗马杆环安装" in text and "定型" in text, (
         f"汇总应包含全部已选加工项，实际: {text[:120]!r}"
     )
     assert result.get("pending_interact_skill") != "product" or "请确认" in text

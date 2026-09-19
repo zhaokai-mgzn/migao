@@ -65,17 +65,91 @@ WHERE pc.product_id = 'prod_eval_2699'
 -- OR-016 的前提改成「店铺目录里有加工项」（= 下面的 `processing_items` 种子）——
 -- 目录非空即会询问，与商品是否绑过加工项无关。
 
--- ── 2. 加工项：刺绣工艺（PR-020 点名，自定义价 45 元/平方米）──
--- pricing_method 取值集：per_meter / per_set / fixed / per_area（无 per_piece）。
--- 平方米 = per_area；unit_price 给目录基价 30，PR-020 测的是**自定义价 45** 的落库。
+-- ── 2. 加工项 `pi_eval_embroidery`（刺绣工艺，per_area）**已按用户裁定真删** ──
+-- 用户裁定（2026-09-19，二次裁定「**真删**」）：该行**删除**（不是注释掉）⇒ 评测栈的加工项
+--   目录**只保留 ERP 附件那 16 项**（全 `per_meter`）。
+-- ⚠️ **覆盖损失（如实登记，不许粉饰）**：**`per_area` 计价路径的评测覆盖随本夹具删除而移除**
+--   （原接地对象 = PP-009 `calculate_price` 的 `totalPrice=240.00`、OR-028 的 per_area
+--   8.4㎡=252.00、`local_runner` 的 `processingItemConfigs.<项>.finalPrice` 夹具）。
+--   这 3 处断言已按 **per_meter** 重算改判（逐处见各 case 的 `merge_log`）。
+--   **若要恢复 per_area 覆盖**：需**新增一个显式标注为评测夹具**的 per_area 项 ——
+--   本单**不**自行新造（用户要的是删）。
+-- 历史（删除前的口径，留档）：`pricing_method` 取值集 per_meter / per_set / fixed / per_area
+--   （无 per_piece）；本项曾是「自定义价」与 `calculate_price` 的唯一 per_area 接地对象
+--   （`per_area` / 30.00 元/平方米）。
+
+-- ── 2. 加工项：**只保留 3 条带价评测夹具**（ERP 目录 16 项一律由 V83 提供）──
+-- 背景（issue #4571/#4572）：用户提问「加工项的测试数据为嘛还未重建完」⇒ 真库实测发现
+--   **重名冲突**：ERP 加工项目录**已由 V83 迁移**为每个活跃租户种过 16 项（含 tenant 1）
+--   ⇒ 评测种子**不得再插一遍** —— 真库实测「种子插 16 行」会让每个名字**两行**
+--   （`打孔` = `pi_eval_punch` ¥8 与 `pi-v83-1-01` ¥0）⇒
+--     ① `processing_item_query(打孔)` 返 2 条、金额断言不确定；
+--     ② `processing_item_count_for_keyword: 打孔, expect: 1`（PP-008 前置）**运行期必红**。
+--
+-- 裁定口径（2026-09-19）：
+--   · **ERP 目录 16 项一律由 V83 提供**（产品口径不动：目录无价，R10）；
+--     其余 13 项（`韩定+S钩`/`穿杆`/`平幔`/`花边`/`扣环`/`接高`/`拼接`/`双眼皮`/`缎带`/
+--     `换货`/`超高`/`超宽`/`倒幅`）**不在本文件重复插入**。
+--   · 评测种子**只保留 3 条带价夹具**（`打孔` ¥8/米 · `韩折` ¥12/米 · `定型` ¥10/米，
+--     id 仍是 `pi_eval_punch`/`pi_eval_hem`/`pi_eval_iron`）—— 评测夹具的职责是给 eval 断言
+--     提供**金额接地**（订单总额 / 加工费 / `calculate_price`），产品侧「目录无价」不适用于夹具；
+--     **id 保留** ⇒ 引用面最小（金额断言逐值不变：OR-014 的 528 = 168×3 + 8×3 等）。
+--   · 插入**之前**先删掉 V83 为这 3 个名字种的行 ⇒ **同名只有一行**。
+--     ⚠️ **两种执行顺序都安全**（双保险，不是只靠 DELETE）：
+--       ① 先注种子后跑 V83 ⇒ V83 的 `NOT EXISTS (tenant_id, name)` 业务键去重会**跳过**这 3 项；
+--       ② 先跑 V83 后注种子 ⇒ 本 DELETE 把 V83 那 3 行删掉再插带价行。
+--     V83 没跑过时 DELETE 影响 0 行（安全）；`processing_items` **没有任何外键引用它**
+--     （已核 `docs/sql/schema.sql` 的 `REFERENCES processing_items` = 0 命中）。
+--   · `刺绣工艺`（`pi_eval_embroidery`，per_area）**已按用户裁定真删** —— 它原是 PR-020 /
+--     PP-009 / OR-028 的 per_area 接地对象，那 3 处已按 **per_meter** 重算改判；
+--     **per_area 计价路径的评测覆盖随之移除**（逐处登记在各 case 的 `merge_log`）。
+--
+-- 守卫 = `tests/unit_ci_workflows/test_eval_seed_catalog.py`：判「种子**不**插入 V83 已种的
+--   名字」+「3 条带价夹具在」+「`DELETE … pi-v83-%` 那行在且在 INSERT 之前」+「真库无重名」。
+-- 幂等：`ON CONFLICT (id) DO NOTHING`（与本节既有写法一致）。
+DELETE FROM processing_items
+ WHERE tenant_id = 1 AND name IN ('打孔', '韩折', '定型') AND id LIKE 'pi-v83-%';
+
 INSERT INTO processing_items
   (id, tenant_id, name, category_id, pricing_method, unit_price, unit,
-   min_quantity, max_quantity, description, options, ai_recommended, status, deleted)
+   min_quantity, max_quantity, description, craft_hint, options, ai_recommended, status, deleted)
 VALUES
-  ('pi_eval_embroidery', 1, '刺绣工艺', 'pcat_eval_curtain', 'per_area', 30.00, '平方米',
-   1, 999, '刺绣工艺加工，按面积计价（B 端评测 fixture，PR-020 自定义价用例）',
-   '[]'::jsonb, TRUE, 'active', 0)
+  ('pi_eval_punch', 1, '打孔', 'pcat_eval_curtain', 'per_meter', 8.00, '米',
+   1, 999, '顶部打孔（#4572 由「纳米圈打孔」改名到 ERP 逐字名；价格保留，同名 V83 行已删）', '打孔', '[]'::jsonb, TRUE, 'active', 0),
+  ('pi_eval_hem', 1, '韩折', 'pcat_eval_curtain', 'per_meter', 12.00, '米',
+   1, 999, '韩式褶皱（#4572 由「韩式波浪折边」改名到 ERP 逐字名；价格保留，同名 V83 行已删）', '韩褶', '[]'::jsonb, TRUE, 'active', 0),
+  ('pi_eval_iron', 1, '定型', 'pcat_eval_curtain', 'per_meter', 10.00, '米',
+   1, 999, '高温定型加工（#4572 由「高温定型」改名到 ERP 逐字名；价格保留，同名 V83 行已删）', NULL, '[]'::jsonb, TRUE, 'active', 0)
 ON CONFLICT (id) DO NOTHING;
+
+-- ── 目录去冲突自检（**真库口径**，fail-fast；判据 a/b）──
+-- 真库实测（#4572）：重复插 V83 已种的名字会让每个名字**两行** ⇒
+-- `processing_item_count_for_keyword: 打孔, expect: 1`（PP-008 前置）**运行期必红**。
+-- 本块把「无重名」+「3 项各恰好 1 行且带价」钉成**运行期**断言 —— 静态守卫看不见 SQL 执行结果
+-- （#4514 同族：静态全绿而真库必红）。
+DO $$
+DECLARE
+  v_dup INTEGER;
+  v_n   INTEGER;
+BEGIN
+  SELECT count(*) INTO v_dup FROM (
+    SELECT name FROM processing_items
+     WHERE tenant_id = 1 AND deleted = 0
+     GROUP BY name HAVING count(*) > 1) d;
+  IF v_dup > 0 THEN
+    RAISE EXCEPTION '目录去冲突失败：tenant 1 有 % 个重名加工项（V83 与评测夹具同名未去重）', v_dup;
+  END IF;
+  SELECT count(*) INTO v_n FROM processing_items
+   WHERE tenant_id = 1 AND deleted = 0
+     AND ((id = 'pi_eval_punch' AND name = '打孔' AND unit_price = 8.00)
+       OR (id = 'pi_eval_hem'   AND name = '韩折' AND unit_price = 12.00)
+       OR (id = 'pi_eval_iron'  AND name = '定型' AND unit_price = 10.00));
+  IF v_n <> 3 THEN
+    RAISE EXCEPTION '带价评测夹具不成立：应恰好 3 条（打孔 ¥8 / 韩折 ¥12 / 定型 ¥10），实为 %', v_n;
+  END IF;
+  RAISE NOTICE '加工项目录去冲突核对: tenant1 重名=0 带价夹具=3/3';
+END $$;
+
 
 -- 旧写法在此把刺绣工艺「关联到 B 端常用商品」（product_processing_items）——
 -- 已随 #4371 解耦删除：加工项目录是店铺级，无需（也无法）挂到商品上。
@@ -119,14 +193,19 @@ DECLARE
 BEGIN
   SELECT count(*) INTO v_prod   FROM products          WHERE id = 'prod_eval_2699' AND deleted = 0;
   SELECT count(*) INTO v_colors FROM product_colors    WHERE product_id = 'prod_eval_2699';
-  SELECT count(*) INTO v_pi     FROM processing_items  WHERE id = 'pi_eval_embroidery' AND deleted = 0;
+  -- 读数改为**ERP 加工项目录**（issue #4572：编造夹具 `pi_eval_embroidery` 已按用户裁定删除
+  -- ⇒ 不能再拿它当「目录非空」的读数）。前提口径不变：目录非空即会询问加工项（#4371 解耦后
+  -- 加工项是店铺级目录，与商品是否绑过无关）。
+  -- 目录 = **16 项**（#4572 裁定后：**V83 提供全部 16 项**，其中 `打孔`/`韩折`/`定型`
+  -- 三行被本种子的**带价夹具**替换 —— 故整表仍是 16 行）。
+  SELECT count(*) INTO v_pi     FROM processing_items  WHERE tenant_id = 1 AND deleted = 0;
   SELECT count(*) INTO v_cust   FROM customer_profiles WHERE id = 'cust_eval_zhangsan';
   SELECT count(*) INTO v_emp    FROM agent_employees   WHERE id = 'emp_eval_wangwu' AND deleted = 0;
   -- 加工项关联计数（v_assoc）随 #4371 解耦删除：product_processing_items 已被 V66 DROP，
   -- OR-016 的前提改为「店铺加工项目录非空」（v_pi 即该前提的读数）。
-  RAISE NOTICE 'B 端评测 fixture 核对: 2699商品=% 颜色=% 刺绣工艺=% 客户张三=% 员工王五=%',
+  RAISE NOTICE 'B 端评测 fixture 核对: 2699商品=% 颜色=% 加工项目录=% 客户张三=% 员工王五=%',
     v_prod, v_colors, v_pi, v_cust, v_emp;
-  IF v_prod < 1 OR v_colors < 1 OR v_pi < 1 THEN
+  IF v_prod < 1 OR v_colors < 1 OR v_pi < 16 THEN   -- 16 = ERP 目录项数（见上）
     RAISE EXCEPTION 'B 端 fixture 注入失败：2699 商品/颜色/加工项目录 缺失（prod=% colors=% pi=%）',
       v_prod, v_colors, v_pi;
   END IF;
@@ -172,9 +251,9 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- 订单明细：第二笔带 processing_info（PG-013「需要加工的订单」的判定依据）；
--- 加工项与 pi_eval_punch（纳米圈打孔 ¥8/米）一致，quantity=3 米 → subtotal=24。
--- 0003/0004 的 processing_info 分别用种子里真实存在的 pi_eval_hem（韩式波浪折边 ¥12/米，
--- quantity=3 → 36）与 pi_eval_iron（高温定型 ¥10/米，quantity=2 → 20），金额与 total 对齐。
+-- 加工项与 pi_eval_punch（打孔 ¥8/米）一致，quantity=3 米 → subtotal=24。
+-- 0003/0004 的 processing_info 分别用种子里真实存在的 pi_eval_hem（韩折 ¥12/米，
+-- quantity=3 → 36）与 pi_eval_iron（定型 ¥10/米，quantity=2 → 20），金额与 total 对齐。
 INSERT INTO order_items
   (id, tenant_id, order_id, product_id, product_name, quantity, unit_price,
    width, height, processing_info, subtotal, deleted)
@@ -183,15 +262,15 @@ VALUES
    3, 168.00, 3.00, 2.80, NULL, 504.00, 0),
   ('oit_mb_0002', 1, 'b1c2d3e4-f5a6-4b7c-8d9e-000000000002', 'prod_eval_blackout', '遮光窗帘',
    3, 168.00, 3.00, 2.80,
-   '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_punch","name":"纳米圈打孔","unitPrice":8.0,"quantity":3,"unit":"米","pricingMethod":"per_meter","subtotal":24.0}],"processingFee":24.0}'::jsonb,
+   '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_punch","name":"打孔","unitPrice":8.0,"quantity":3,"unit":"米","pricingMethod":"per_meter","subtotal":24.0}],"processingFee":24.0}'::jsonb,
    504.00, 0),
   ('oit_mb_0003', 1, 'b1c2d3e4-f5a6-4b7c-8d9e-000000000003', 'prod_eval_blackout', '遮光窗帘',
    3, 168.00, 3.00, 2.80,
-   '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_hem","name":"韩式波浪折边","unitPrice":12.0,"quantity":3,"unit":"米","pricingMethod":"per_meter","subtotal":36.0}],"processingFee":36.0}'::jsonb,
+   '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_hem","name":"韩折","unitPrice":12.0,"quantity":3,"unit":"米","pricingMethod":"per_meter","subtotal":36.0}],"processingFee":36.0}'::jsonb,
    504.00, 0),
   ('oit_mb_0004', 1, 'b1c2d3e4-f5a6-4b7c-8d9e-000000000004', 'prod_eval_blackout', '遮光窗帘',
    3, 168.00, 3.00, 2.80,
-   '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_iron","name":"高温定型","unitPrice":10.0,"quantity":2,"unit":"米","pricingMethod":"per_meter","subtotal":20.0}],"processingFee":20.0}'::jsonb,
+   '{"colorName":"米白","sellingMethod":"bulk_cut","doorWidth":"2.8","processingItems":[{"id":"pi_eval_iron","name":"定型","unitPrice":10.0,"quantity":2,"unit":"米","pricingMethod":"per_meter","subtotal":20.0}],"processingFee":20.0}'::jsonb,
    504.00, 0)
 ON CONFLICT (id) DO NOTHING;
 

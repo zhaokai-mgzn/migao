@@ -7,7 +7,7 @@ C 端小布下单「加工项」环节契约（issue #3270 / #3266 实测缺口�
 - 但 C 端 `customer_order_skill.py` 的 `CUSTOMER_ORDER_SYSTEM_PROMPT`
   **`grep 加工项` 零命中** → 小布下单链路没有「询问加工项 / 计加工费」环节。
 
-用户可见后果：顾客买需要加工的商品（打孔/高温定型等）时，
+用户可见后果：顾客买需要加工的商品（打孔/定型等）时，
 - 加工项从不被询问（顾客不知道能选，也不知道要加钱）；
 - 若顾客主动提「要打孔加工」，加工费不进订单金额 → 报价与实际应付款不符。
 
@@ -50,7 +50,7 @@ class TestCustomerOrderProcessingItemRule:
         assert "interact" in p, "未要求用 interact 组件询问加工项"
         assert "choice" in p, "加工项询问未指定 choice 组件"
         assert "multiSelect" in p or "multi" in p.lower(), (
-            "未要求多选（加工项可多选，如打孔+高温定型）"
+            "未要求多选（加工项可多选，如打孔+定型）"
         )
 
     def test_rule_carries_processing_items_and_fee_to_order_create(self):
@@ -212,7 +212,7 @@ class TestProductDetailIronRule:
     → 直接问颜色 → 下一步就发 confirm 卡，**全程没调 product_detail**。
     product_search 的列表数据**不含** processing_items / colorId / skus，
     于是 agent 向顾客断言「这款商品暂未查询到可选加工项」（该商品实际有 2 个加工项：
-    纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项，加工费也进不了单。
+    打孔 ¥8/米、韩折 ¥12/米）→ 顾客永远选不到加工项，加工费也进不了单。
 
     单独加「要问加工项」不够 —— 必须先强制拿到详情，否则规则没有数据可依据。
     """

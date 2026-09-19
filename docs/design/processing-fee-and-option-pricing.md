@@ -217,7 +217,7 @@ fee(行) = comboUnitPrice(元/米) × processingMeters        // 既有 #4406 �
 
 ## 7. 测试数据重建（R12）
 
-**现状**：`tests/e2e/fixtures/processing-list.json` 13 条（`魔术贴安装` / `铅坠安装` / `高温定型` /
+**现状**：`tests/e2e/fixtures/processing-list.json` 13 条（`魔术贴安装` / `铅坠安装` / `定型` /
 `普通定型` / `罗马杆环安装`…，分类 `打孔加工`/`辅料加工`/`定型加工`）—— **全是编造数据，与 ERP 零对应**。
 
 **重建目标**：
