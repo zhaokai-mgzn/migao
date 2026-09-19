@@ -68,7 +68,7 @@
 数据: 售后工单包含正确的退款原因
 ```
 真值: aftersales-flow.status-enums, aftersales-flow.timeline, aftersales-flow.create-order-required
-溯源: eval M008 独有（售后全旅程）。2026-09-14 自包含化（issue #3568）：第 2 轮硬编码单号 ORD-20260701-0001（评测环境不存在，OR-006/OR-010 已实测 found:0）→ 换手机号唯一指代，同 AS-003（#3511）先例 ｜ tags: multi_turn, cross_skill, real_scenario
+溯源: eval M008 独有（售后全旅程）。2026-09-14 自包含化（issue #3568）：第 2 轮硬编码单号 ORD-20260701-0001（评测环境不存在，OR-006/OR-010 已实测 found:0）→ 换手机号唯一指代，同 AS-003（#3511）先例。2026-09-19（issue #4521 的 burn-down 缴费，metric=entries ⇒ 必须整条销账）：本用例命中的唯一存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION ⇒ 补 `precondition[order_count_for_phone: 13800138000]`（有意不给 `expect`，同 AS-003/OR-012 口径；本用例不建单 ⇒ 漂移判据不会被自己踩红）。user_inputs / expectations / data_checks / namespaces 原样未动、无放宽。 ｜ tags: multi_turn, cross_skill, real_scenario
 
 ### AS-006. 售后工单退款/退货完结 - 按商品「退货回补库存」开关决定是否回补库存 🔵
 ```

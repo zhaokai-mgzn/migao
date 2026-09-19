@@ -155,6 +155,7 @@ _CASE_AS_005 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
 # ── AS-006 [NORMAL] 售后工单退款/退货完结 - 按商品「退货回补库存」开关决定是否回补库存（源: cases/aftersales.yml）──
