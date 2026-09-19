@@ -12,6 +12,7 @@ import com.migao.admin.entity.ProcessingFeeCombination;
 import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
+import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionRouting;
 import com.migao.admin.entity.ProductionWorkLog;
 import com.migao.admin.mapper.OrderItemMapper;
@@ -34,6 +35,7 @@ import com.migao.admin.service.ProcessingFeeQueryService;
 import com.migao.admin.service.ProductionOperationQueryService;
 import com.migao.admin.service.ProductionOperationQtyClient;
 import com.migao.admin.service.ProductionService;
+import com.migao.admin.service.RoutingModelFixture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -651,20 +653,21 @@ class ProductionControllerTest {
     @Test
     @DisplayName("工艺路线只读接口：GET /routings 返回路线 + 每道工序的库口径单价")
     void routingsReturnsTemplates() throws Exception {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                ProductionRouting.builder().id("rt-v54-01").tenantId(TENANT).curtainType("布帘").craft("韩褶")
-                        .operations(List.of("精裁-布", "韩褶-布")).status("active").deleted(0).build()));
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                RoutingModelFixture.defaultTemplate(TENANT)));
         when(productionOperationMapper.selectList(any())).thenReturn(List.of(
                 operationRow("op-v54-01", "精裁-布", "裁剪", "米", "0.40", 1),
                 operationRow("op-v54-07", "韩褶-布", "车位", "折", "0.40", 7)));
 
+        // P2b：路线形态 = 具名主线 + 适用帘种 + 默认标记（工艺不再参与选路）
         mockMvc.perform(get("/api/admin/production/routings"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
-                .andExpect(jsonPath("$.data.routings[0].curtain_type").value("布帘"))
-                .andExpect(jsonPath("$.data.routings[0].operation_count").value(2))
-                .andExpect(jsonPath("$.data.routings[0].operations[1].operation").value("韩褶-布"))
-                .andExpect(jsonPath("$.data.routings[0].operations[1].unit_price").value(0.40));
+                .andExpect(jsonPath("$.data.routings[0].name")
+                        .value(RoutingModelFixture.TEMPLATE_NAME))
+                .andExpect(jsonPath("$.data.routings[0].is_default").value(true))
+                .andExpect(jsonPath("$.data.routings[0].mainline[0]").value("精裁"))
+                .andExpect(jsonPath("$.data.routings[0].positions[0]").value("布帘"));
     }
 
     // ══════════════════════════ 计件 ══════════════════════════
@@ -773,10 +776,16 @@ class ProductionControllerTest {
                     .sortOrder(sort).status("active").deleted(0).build());
             sort++;
         }
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                ProductionRouting.builder().id("rt-v54-01").tenantId(TENANT)
-                        .curtainType("布帘").craft("韩褶").operations(names).status("active").deleted(0)
-                        .build()));
+        // P2b（issue #4459）：消费路径读**新结构** ⇒ 桩也要装新结构
+        // （模板 + 规则 26 行 + 部位价目 + 工序库），展开由生产代码做。
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                RoutingModelFixture.defaultTemplate(TENANT)));
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(
+                RoutingModelFixture.rulesWithFactors(TENANT));
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(
+                RoutingModelFixture.canonicalPositions(TENANT));
+        when(productionCraftMapper.selectList(any())).thenReturn(List.of(
+                RoutingModelFixture.defaultCraft(TENANT, "韩褶")));
         when(productionOperationMapper.selectList(any())).thenReturn(rows);
     }
 
@@ -1065,39 +1074,40 @@ class ProductionControllerTest {
     @Test
     @DisplayName("#4308 PUT /routings/{id} 护栏失败 ⇒ 422 + error.details 逐条理由（前端据此逐条展示）")
     void updateRoutingGuardFailureReturnsDetailsEnvelope() throws Exception {
-        when(productionRoutingMapper.selectById("rt-1")).thenReturn(ProductionRouting.builder()
-                .id("rt-1").tenantId(TENANT).curtainType("布帘").craft("韩褶")
-                .operations(List.of("布三边")).status("active").deleted(0).build());
+        when(productionRouteTemplateMapper.selectById("rt-1")).thenReturn(
+                ProductionRouteTemplate.builder().id("rt-1").tenantId(TENANT).name("路线甲")
+                        .isDefault(false).positions(List.of("布帘")).mainline(List.of("布三边"))
+                        .status("active").deleted(0).build());
         when(productionOperationMapper.selectList(any())).thenReturn(List.of(
                 operationRow("op-1", "布三边", "车位", "米", "0.40", 2)));
 
         mockMvc.perform(put("/api/admin/production/routings/rt-1")
                         .contentType("application/json")
-                        .content("{\"operations\":[\"布三边\",\"库里没有的工序\"]}"))
+                        .content("{\"mainline\":[\"布三边\",\"库里没有的工序\"]}"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
                 .andExpect(jsonPath("$.error.details").isArray())
-                .andExpect(jsonPath("$.error.details[0].field").value("operations[1]"))
+                .andExpect(jsonPath("$.error.details[0].field").value("mainline[1]"))
                 .andExpect(jsonPath("$.suggestion").isNotEmpty());
 
-        verify(productionRoutingMapper, never()).updateById(any(ProductionRouting.class));
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
     }
 
     @Test
     @DisplayName("#4308 POST /routings 新建路线 ⇒ 200 且响应与 GET /routings 单项同构")
     void createRoutingReturnsRoutingView() throws Exception {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of());
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
         when(productionOperationMapper.selectList(any())).thenReturn(List.of());
 
         mockMvc.perform(post("/api/admin/production/routings")
                         .contentType("application/json")
-                        .content("{\"curtain_type\":\"罗马帘\",\"craft\":\"韩褶\"}"))
+                        .content("{\"name\":\"罗马帘专用路线\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.curtain_type").value("罗马帘"))
-                .andExpect(jsonPath("$.data.craft").value("韩褶"))
-                .andExpect(jsonPath("$.data.operation_count").value(0))
-                .andExpect(jsonPath("$.data.operations").isArray());
+                .andExpect(jsonPath("$.data.name").value("罗马帘专用路线"))
+                .andExpect(jsonPath("$.data.is_default").value(false))
+                .andExpect(jsonPath("$.data.mainline").isArray())
+                .andExpect(jsonPath("$.data.positions[0]").value("布帘"));
     }
 
     @Test

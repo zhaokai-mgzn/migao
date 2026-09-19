@@ -466,16 +466,24 @@ public class ProcessingOrderService {
             // 新结构里序列元素就是逻辑名。新模型给 `shaped` 预留了规则触发类型但**不种行**，
             // 故本开关仍是代码侧接线（与 routing.py::build_route_v2 的现状一致）。
             if (Boolean.FALSE.equals(entry.get("isShaped"))) {
-                operations.removeIf(operation ->
-                        UNSHAPED_REMOVED_OPERATIONS.contains(String.valueOf(operation.get("operation"))));
+                // 判据用**逻辑名**比较：实例里的工序名是库里的**变体名**（定型-布/复烫-布），
+                // 而新结构的序列元素是逻辑名（定型/复烫）⇒ 比较前先归一。
+                operations.removeIf(operation -> UNSHAPED_REMOVED_OPERATIONS.contains(
+                        productionOperationQueryService.normalizeOperationName(
+                                String.valueOf(operation.get("operation")))));
             }
             // 特殊选项（issue #4230）：插条件工序 → 重排 seq → 落计件系数
             List<String> options = specialOptions(entry);
+            // ⚠️ 部位取**实际使用路线**的部位（`route.curtain_type`），不是 `entry.curtainType`：
+            // 派生路径下 entry 可能没有该键（存量单），而 T2 回落时实际部位是默认模板的部位
+            // ⇒ 拿 entry 的值会让「逻辑名 → 变体名」解析不到（部位为 null）⇒ 条件工序误判为缺工序。
+            String routePositionOfEntry = str(route.get("curtain_type"));
             if (!options.isEmpty()) {
-                insertConditionalOperations(operations, options, rules, tenantId, entry, catalog);
+                insertConditionalOperations(operations, options, rules, tenantId, entry,
+                        catalog, routePositionOfEntry);
             }
             renumberSeq(operations);
-            applyFactors(operations, options, rules, str(entry.get("curtainType")));
+            applyFactors(operations, options, rules, routePositionOfEntry);
             String productName = str(entry.get("productName"));
             String colorName = str(entry.get("colorName"));
             String positionName = productName == null ? "未命名部位"
@@ -664,8 +672,8 @@ public class ProcessingOrderService {
     private void insertConditionalOperations(List<Map<String, Object>> operations, List<String> options,
                                              List<ProductionRouteRule> rules,
                                              Long tenantId, Map<String, Object> entry,
-                                             Map<String, Map<String, Object>> catalog) {
-        String position = str(entry.get("curtainType"));
+                                             Map<String, Map<String, Object>> catalog,
+                                             String position) {
         List<ProductionRouteRule> applicable = new ArrayList<>();
         for (ProductionRouteRule rule : rules) {
             if (!"insert".equals(rule.getAction()) || !"option".equals(rule.getTriggerKind())) {
@@ -692,7 +700,9 @@ public class ProcessingOrderService {
             String operationName = productionOperationQueryService.variantNameOf(logicalName, position, catalog);
             Map<String, Object> meta = operationName == null ? null : catalog.get(operationName);
             if (meta == null) {
-                missing.add(logicalName);
+                // 报**逻辑名 + 期望的库内变体名**：商家在「工序库」看到的是变体名（拼1次-布），
+                // 只报逻辑名会让提示在库里搜不到（可行动性）。
+                missing.add(logicalName + "（库中缺变体 " + expectedVariantLabel(logicalName, position) + "）");
                 continue;
             }
             Map<String, Object> operation = new LinkedHashMap<>();
@@ -717,6 +727,29 @@ public class ProcessingOrderService {
                                     + "工序库目录查看入口 GET /api/admin/production/operations-catalog",
                             String.join("、", missing)));
         }
+    }
+
+    /**
+     * 期望的库内变体名（仅用于**错误提示的可行动性**）：`<逻辑名><部位后缀>` / 前缀不规则名 / 裸逻辑名。
+     *
+     * <p>与 {@code variantNameOf} 的三步规则**同源**（这里只做「说出应该叫什么」，不参与解析）。</p>
+     */
+    private static String expectedVariantLabel(String logicalName, String position) {
+        String suffix = "布帘".equals(position) ? "-布" : "纱帘".equals(position) ? "-纱"
+                : "帘头".equals(position) ? "-帘" : null;
+        String prefix = "布帘".equals(position) ? "布" : "纱帘".equals(position) ? "纱" : null;
+        List<String> candidates = new ArrayList<>();
+        if (suffix != null) {
+            candidates.add(logicalName + suffix);
+            if (prefix != null) {
+                candidates.add(prefix + logicalName);
+            }
+            if ("布帘".equals(position)) {
+                candidates.add("布帘" + logicalName);
+            }
+        }
+        candidates.add(logicalName);
+        return String.join(" / ", candidates);
     }
 
     /**
@@ -992,20 +1025,32 @@ public class ProcessingOrderService {
         }
         // T1：全无派生信号 ⇒ 直接取默认路线模板（**该租户的**默认，不是常量）
         if ("default".equals(source)) {
-            log.warn("{} 订单无任何信号命中（加工项名/options/商品名/销售方式），落默认路线: "
+            log.warn("{} 订单无任何信号命中（加工项名/options/商品名/销售方式），落默认路线 {}: "
                             + "tenantId={}, productName={}, 信号={}",
-                    INCIDENT_ROUTE_DEFAULTED, tenantId, entry.get("productName"), signals(entry));
+                    INCIDENT_ROUTE_DEFAULTED, usedKey, tenantId, entry.get("productName"), signals(entry));
         }
         // T2：派生出部位/工艺但该部位没有路线模板 ⇒ 回落默认路线模板
         ProductionRouteTemplate template =
                 productionOperationQueryService.routeTemplateFor(tenantId, key.curtainType());
+        // 实例化用的**部位**：命中部位自己的模板 ⇒ 用它；回落默认模板 ⇒ 用模板**自己适用**的部位
+        // （否则「罗马帘」这类库里没有价目/工序的部位会让整条路线被适用性矩阵滤空 ⇒ 零工序）。
+        String routePosition = key.curtainType();
+        String routeCraft = key.craft();
         if (template == null) {
             log.warn("{} 部位「{}」没有可用的工艺路线模板，回落默认路线模板（来源 {} ⇒ missing_route）: "
-                            + "tenantId={}, productName={}, 库中现有路线模板={}",
+                            + "tenantId={}, 想走的键={}, productName={}, 库中现有路线模板={}",
                     INCIDENT_ROUTE_FALLBACK, key.curtainType(), source,
-                    tenantId, entry.get("productName"), productionOperationQueryService.routingKeys(tenantId));
+                    tenantId, usedKey, entry.get("productName"),
+                    productionOperationQueryService.routingKeys(tenantId));
             source = "missing_route";
             template = productionOperationQueryService.defaultRouteTemplate(tenantId);
+            if (template != null) {
+                routePosition = defaultPositionOf(template);
+            }
+            // 工艺维**一起回落**：派生出的工艺（如 平幔）属于「该部位没有的那条路线」，
+            // 换到默认模板的部位上会插进该部位不做的工序（旧结构 T2 也是整键回落默认）。
+            String fallbackCraft = productionOperationQueryService.defaultCraft(tenantId);
+            routeCraft = fallbackCraft == null ? routeCraft : fallbackCraft;
         }
         if (template == null) {
             List<String> available = productionOperationQueryService.routingKeys(tenantId);
@@ -1021,7 +1066,7 @@ public class ProcessingOrderService {
                                     + "查看入口 GET /api/admin/production/routings",
                             available.isEmpty() ? "**为空**" : "有：" + String.join("、", available)));
         }
-        Map<String, Object> route = buildRoute(template, key.curtainType(), key.craft(), entry,
+        Map<String, Object> route = buildRoute(template, routePosition, routeCraft, entry,
                 rules, priceRows, catalog, tenantId);
         List<String> missing = (List<String>) route.get("missing_operations");
         if (missing != null && !missing.isEmpty()) {
@@ -1036,7 +1081,10 @@ public class ProcessingOrderService {
                                     + "工序库目录查看入口 GET /api/admin/production/operations-catalog",
                             String.join("、", missing)));
         }
-        return new RouteResolution(route, usedKey, requestedKey, source);
+        // `route_key` = **实际使用的那条路线的身份**。新结构里路线 = 具名模板（工艺已降为规则触发键）
+        // ⇒ 用模板名而不是「部位×工艺」：后者在 T2 时描述的不是实际用的路线
+        // （验收判据 6：「默认路线改为另一条 ⇒ 无信号订单实际使用键随之变」）。
+        return new RouteResolution(route, template.getName(), requestedKey, source);
     }
 
     /**
@@ -1154,6 +1202,21 @@ public class ProcessingOrderService {
         return route;
     }
 
+    /**
+     * 回落默认模板时用来实例化的**部位**：优先 {@link #DEFAULT_CURTAIN_TYPE}（V54 起的事实默认、
+     * 也是旧结构回落目标的部位维），否则取模板声明的第一个部位。
+     *
+     * <p>为什么不直接用订单派生的部位：库里可能根本没有那个部位的价目/工序行（如商家自建信号
+     * 「罗马帘」）⇒ 适用性矩阵会把整条主线滤空 ⇒ **零工序的加工单**（工人扫不了码、也不报错）。</p>
+     */
+    private static String defaultPositionOf(ProductionRouteTemplate template) {
+        List<String> positions = stringList(template.getPositions());
+        if (positions.contains(DEFAULT_CURTAIN_TYPE)) {
+            return DEFAULT_CURTAIN_TYPE;
+        }
+        return positions.isEmpty() ? DEFAULT_CURTAIN_TYPE : positions.get(0);
+    }
+
     /** 把 {@code operation} 插到 {@code after} 之后（锚点不在序列中 ⇒ 追加末尾，同 {@code _insert_after}）。 */
     private static List<String> insertAfterLogical(List<String> route, String operation, String after) {
         int idx = after == null ? -1 : route.indexOf(after);
@@ -1236,13 +1299,10 @@ public class ProcessingOrderService {
         List<ProductionRouteSignal> mappings = productionOperationQueryService.routeSignals(tenantId);
         String curtainType = directCurtainType != null
                 ? directCurtainType : firstSignalMatch(signals, mappings, true);
-        // 缺 `craft` 的兜底 = **该租户的默认工艺**（商家可配，issue #4459）。查不到 ⇒ null（T3 fail-closed）。
-        String defaultCraft = productionOperationQueryService.defaultCraft(tenantId);
         String craft = directCraft != null
                 ? directCraft : firstSignalMatch(signals, mappings, false);
-        if (craft == null) {
-            craft = defaultCraft;
-        }
+        // ⚠️ 来源必须在**默认值补齐之前**算：补齐后 `craft != null` 恒真 ⇒ T1 会被误判成 partial
+        // （「没人派生过」与「只派生出一维」是两种不同的补救动作）。
         String source;
         if (curtainType != null && craft != null) {
             // 有一维是直读的 ⇒ 补救动作 = 去信号映射补另一维（与「两维都派生」的 derived 区分开）
@@ -1251,6 +1311,11 @@ public class ProcessingOrderService {
             source = "partial";
         } else {
             source = "default";
+        }
+        // 缺 `craft` 的兜底 = **该租户的默认工艺**（商家可配，issue #4459 §1②）。
+        // 该租户没有默认工艺 ⇒ 保持 null，由 resolveRoute 走 T3 fail-closed（**不写死常量 韩褶**）。
+        if (craft == null) {
+            craft = productionOperationQueryService.defaultCraft(tenantId);
         }
         return new RouteKey(curtainType == null ? DEFAULT_CURTAIN_TYPE : curtainType, craft, source);
     }

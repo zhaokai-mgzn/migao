@@ -40,22 +40,22 @@ import java.util.Set;
  * {@code ProcessingOrderService.buildRoute}（与 {@code routing.py::build_route_v2} 逐字一致）。
  * 夹具只提供**输入**。</p>
  */
-final class RoutingModelFixture {
+public final class RoutingModelFixture {
 
     private RoutingModelFixture() {
     }
 
     /** 规范主线（9 道，不含工艺槽位）—— 与 {@code routing.py::ROUTE_MAINLINE_STEPS} 逐字同源。 */
-    static List<String> mainline() {
+    public static List<String> mainline() {
         return List.of("精裁", "三边", "熨烫", "定型", "复烫", "车被",
                 "外帘打卷", "外帘装袋", "外帘发货");
     }
 
     /** 默认路线模板名（与 V71/V72 种子逐字一致）。 */
-    static final String TEMPLATE_NAME = "窗帘工序路线（默认）";
+    public static final String TEMPLATE_NAME = "窗帘工序路线（默认）";
 
     /** 套级工序（{@code scope='set'}，V67 / issue #4384 A1）—— 逐字抄自 V67 的 UPDATE 名单。 */
-    static final Set<String> SET_SCOPE_OPERATIONS = Set.of("外帘打卷", "外帘装袋", "外帘发货");
+    public static final Set<String> SET_SCOPE_OPERATIONS = Set.of("外帘打卷", "外帘装袋", "外帘发货");
 
     /**
      * 全部 35 条旧变体（{@code {旧工序名, 分组, 单位, 单价, 必完, 开始标记}}）：与 V54/V56/V58 种子逐字同源。
@@ -138,7 +138,7 @@ final class RoutingModelFixture {
     }
 
     /** 一条路线序列：{@code {工序名, 分组, 单位, 单价, is_must_finish, is_start_marker}}。 */
-    static final String[][] V54_BULIAN_HANZHE = {
+    public static final String[][] V54_BULIAN_HANZHE = {
             {"精裁-布", "裁剪", "米", "0.4", "false", "true"},
             {"布三边", "车位", "米", "0.4", "false", "false"},
             {"韩褶-布", "车位", "折", "0.4", "false", "false"},
@@ -151,7 +151,7 @@ final class RoutingModelFixture {
             {"外帘装袋", "后道", "套", "1.0", "true", "false"},
             {"外帘发货", "后道", "套", "1.0", "false", "false"}};
 
-    static final String[][] V54_BULIAN_DAKONG = {
+    public static final String[][] V54_BULIAN_DAKONG = {
             {"精裁-布", "裁剪", "米", "0.4", "false", "true"},
             {"布三边", "车位", "米", "0.4", "false", "false"},
             {"打孔-布", "车位", "孔", "0.15", "false", "false"},
@@ -163,7 +163,7 @@ final class RoutingModelFixture {
             {"外帘装袋", "后道", "套", "1.0", "true", "false"},
             {"外帘发货", "后道", "套", "1.0", "false", "false"}};
 
-    static final String[][] V58_SHALU_DAKONG = {
+    public static final String[][] V58_SHALU_DAKONG = {
             {"精裁-纱", "裁剪", "米", "0.4", "false", "true"},
             {"纱三边", "车位", "米", "0.4", "false", "false"},
             {"打孔-纱", "车位", "孔", "0.15", "false", "false"},
@@ -191,23 +191,23 @@ final class RoutingModelFixture {
     // ══════════════════════════ 工序库 ══════════════════════════
 
     /** 该租户工序库按名索引（{@code operationsByName} 的返回形态）。 */
-    static Map<String, Map<String, Object>> catalog() {
+    public static Map<String, Map<String, Object>> catalog() {
         Map<String, Map<String, Object>> views = new LinkedHashMap<>();
         for (String[] row : LEGACY_VARIANTS) {
-            views.put(row[0], meta(row[1], row[2], row[3], row[4], row[5]));
+            views.put(row[0], meta(row[0], row[1], row[2], row[3], row[4], row[5]));
         }
         // 三条路线的逐字元数据覆盖（必完/开始标记/单价以 V54/V58 种子为准）
         for (String[][] table : List.of(V54_BULIAN_HANZHE, V54_BULIAN_DAKONG, V58_SHALU_DAKONG,
                 EXTRA_OPERATIONS)) {
             for (String[] row : table) {
-                views.put(row[0], meta(row[1], row[2], row[3], row[4], row[5]));
+                views.put(row[0], meta(row[0], row[1], row[2], row[3], row[4], row[5]));
             }
         }
         return views;
     }
 
     /** 该租户工序库的实体行（{@code ProductionOperationQueryServiceTest} 的 mapper 桩用）。 */
-    static List<ProductionOperation> operationEntities(Long tenantId) {
+    public static List<ProductionOperation> operationEntities(Long tenantId) {
         List<ProductionOperation> rows = new ArrayList<>();
         int sort = 1;
         for (String[][] table : List.of(LEGACY_VARIANTS, V54_BULIAN_HANZHE, V54_BULIAN_DAKONG,
@@ -226,7 +226,7 @@ final class RoutingModelFixture {
         return rows;
     }
 
-    private static Map<String, Object> meta(String group, String unit, String unitPrice,
+    private static Map<String, Object> meta(String name, String group, String unit, String unitPrice,
                                             String mustFinish, String startMarker) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("group", group);
@@ -234,7 +234,8 @@ final class RoutingModelFixture {
         view.put("unit_price", new BigDecimal(unitPrice));
         view.put("is_must_finish", Boolean.parseBoolean(mustFinish));
         view.put("is_start_marker", Boolean.parseBoolean(startMarker));
-        view.put("scope", "position");
+        // 作用域 = V67 终态（三道外帘 = set，其余 = position）—— 实例化侧据此判「每樘窗一次」
+        view.put("scope", SET_SCOPE_OPERATIONS.contains(name) ? "set" : "position");
         return view;
     }
 
@@ -244,7 +245,7 @@ final class RoutingModelFixture {
      * 部位价目 + 适用性（**从路线序列派生**）：某部位的路线里出现的逻辑工序 ⇒
      * {@code applicable=true} + 该道工序的单价；其余逻辑工序 ⇒ {@code applicable=false}。
      */
-    static List<ProductionOperationPosition> canonicalPositions(Long tenantId) {
+    public static List<ProductionOperationPosition> canonicalPositions(Long tenantId) {
         Map<String, String[][]> routes = new LinkedHashMap<>();
         routes.put("布帘", V54_BULIAN_HANZHE);
         routes.put("纱帘", V58_SHALU_DAKONG);
@@ -314,7 +315,7 @@ final class RoutingModelFixture {
             {"option", "防翘扣", "NULL", "insert", "防翘扣", "三边", "260"}};
 
     /** 规则表（26 行；{@code id} 用 {@code rr-<priority>} 的确定性命名，保证 {@code (priority, id)} 稳定）。 */
-    static List<ProductionRouteRule> rules(Long tenantId) {
+    public static List<ProductionRouteRule> rules(Long tenantId) {
         List<ProductionRouteRule> rows = new ArrayList<>();
         for (String[] row : RULES) {
             rows.add(ProductionRouteRule.builder()
@@ -331,7 +332,7 @@ final class RoutingModelFixture {
     }
 
     /** 计件系数档（{@code action='factor'}；一分为二 → ×1.7 平摊档，V59/V72 种子）。 */
-    static List<ProductionRouteRule> factorRules(Long tenantId) {
+    public static List<ProductionRouteRule> factorRules(Long tenantId) {
         return List.of(ProductionRouteRule.builder()
                 .id("rr-factor-1").tenantId(tenantId)
                 .triggerKind("option").triggerValue("一分为二").position(null)
@@ -342,7 +343,7 @@ final class RoutingModelFixture {
     }
 
     /** 规则表 + 系数档（调用方多数场景要的就是这一份）。 */
-    static List<ProductionRouteRule> rulesWithFactors(Long tenantId) {
+    public static List<ProductionRouteRule> rulesWithFactors(Long tenantId) {
         List<ProductionRouteRule> rows = new ArrayList<>(rules(tenantId));
         rows.addAll(factorRules(tenantId));
         return rows;
@@ -350,11 +351,16 @@ final class RoutingModelFixture {
 
     // ══════════════════════════ 路线模板 ══════════════════════════
 
-    /** 默认路线模板（主线 9 道，适用三部位，{@code is_default=TRUE}）。 */
-    static ProductionRouteTemplate defaultTemplate(Long tenantId) {
+    /**
+     * 默认路线模板（主线 9 道，适用 **布帘/纱帘**，{@code is_default=TRUE}）。
+     *
+     * <p>适用帘种刻意**不含帘头**：镜像旧桩的形态（旧桩只有 布帘×韩褶 / 布帘×打孔 / 纱帘×打孔
+     * 三条路线 ⇒ 帘头订单走 T2 回落）。「该部位没有模板 ⇒ 回落默认模板」这条链由此可判。</p>
+     */
+    public static ProductionRouteTemplate defaultTemplate(Long tenantId) {
         return ProductionRouteTemplate.builder()
                 .id("rt-default").tenantId(tenantId).name(TEMPLATE_NAME).isDefault(true)
-                .positions(List.of("布帘", "纱帘", "帘头"))
+                .positions(List.of("布帘", "纱帘"))
                 .mainline(mainline())
                 .status("active").deleted(0)
                 .build();
@@ -365,11 +371,11 @@ final class RoutingModelFixture {
     /** 旧工序名 → 逻辑工序名（35 条；与 {@code routing.py::OPERATION_LOGICAL_NAMES} 逐字同源）。 */
     private static final Map<String, String> LOGICAL = logicalNames();
 
-    static String logicalName(String operationName) {
+    public static String logicalName(String operationName) {
         return LOGICAL.getOrDefault(operationName, operationName);
     }
 
-    static Map<String, String> logicalNames() {
+    public static Map<String, String> logicalNames() {
         Map<String, String> names = new LinkedHashMap<>();
         names.put("精裁-布", "精裁");
         names.put("精裁-纱", "精裁");
@@ -417,7 +423,7 @@ final class RoutingModelFixture {
      * （夹具换名 ⇒ 生产解析不到 ⇒ missing_operations ⇒ 假红）。规则本身的判据在
      * {@code ProductionOperationQueryServiceTest}（含 35 条旧名的往返判据）。</p>
      */
-    static String variantNameOf(String logicalName, String position,
+    public static String variantNameOf(String logicalName, String position,
                                 Map<String, Map<String, Object>> catalogByName) {
         if (logicalName == null || catalogByName == null) {
             return null;
@@ -443,7 +449,7 @@ final class RoutingModelFixture {
     }
 
     /** 工艺词表行（默认工艺桩用）。 */
-    static ProductionCraft defaultCraft(Long tenantId, String name) {
+    public static ProductionCraft defaultCraft(Long tenantId, String name) {
         return ProductionCraft.builder()
                 .id("pc-default").tenantId(tenantId).name(name).isDefault(true)
                 .status("active").deleted(0)

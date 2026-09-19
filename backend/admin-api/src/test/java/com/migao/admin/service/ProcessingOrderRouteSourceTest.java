@@ -320,8 +320,7 @@ class ProcessingOrderRouteSourceTest {
                 .as("显式字段（列）是推导链最高层 ⇒ 两维都取自列 ⇒ direct")
                 .isEqualTo("direct");
         assertThat(po.get().getRouteKey())
-                .as("列非空必须覆盖 processing_info 同键（列 = 结构化真值，JSONB 键 = 旧载体）")
-                .isEqualTo("纱帘×韩褶");
+                .as("P2b：route_key = 实际使用的路线（= 该部位命中的模板）").isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
         assertThat(po.get().getRouteRequestedKey()).isEqualTo("纱帘×韩褶");
         org.mockito.Mockito.verify(productionOperationQueryService, org.mockito.Mockito.never())
                 .routeSignals(TENANT);
@@ -343,8 +342,9 @@ class ProcessingOrderRouteSourceTest {
 
         assertThat(results.get(0).isSuccess()).isTrue();
         assertThat(po.get().getRouteSource())
-                .as("只直读一维 ⇒ partial 起；且该键库里没有 ⇒ 回落 ⇒ missing_route（补救动作 = 建路线）")
-                .isEqualTo("missing_route");
+                .as("只直读一维 ⇒ partial（新结构里「该部位有模板」= 有路线 ⇒ 不回落；"
+                        + "补救动作 = 去信号映射补另一维）")
+                .isEqualTo("partial");
         assertThat(po.get().getRouteRequestedKey())
                 .as("显式工艺（打孔）必须压过加工项名里的「韩褶」—— 否则就是「推导盖掉用户填的值」")
                 .isEqualTo("布帘×打孔");
@@ -387,7 +387,7 @@ class ProcessingOrderRouteSourceTest {
         assertThat(po.get().getRouteSource())
                 .as("指向主线 ⇒ 是干净派生（derived），不是「识别的键库里没有」（missing_route）")
                 .isEqualTo("derived");
-        assertThat(po.get().getRouteKey()).as("走主线工艺 韩褶").isEqualTo("布帘×韩褶");
+        assertThat(po.get().getRouteKey()).as("P2b：route_key = 实际使用的路线").isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
         assertThat(po.get().getRouteRequestedKey())
                 .as("不得再派生/记录「布帘×四爪钩」—— 四爪钩是加工项（配件），不是并列工艺")
                 .isEqualTo("布帘×韩褶");
@@ -406,7 +406,8 @@ class ProcessingOrderRouteSourceTest {
         assertThat(results.get(0).isSuccess()).isTrue();
         // ① 三列真落库（判据原话：全不命中 ⇒ 落 route_source='default' + 计 incident 日志）
         assertThat(po.get().getRouteSource()).as("T1 必须是 default —— 不得伪装成「已派生」").isEqualTo("default");
-        assertThat(po.get().getRouteKey()).as("实际使用的键 = 默认 布帘×韩褶").isEqualTo("布帘×韩褶");
+        assertThat(po.get().getRouteKey())
+                .as("P2b：route_key = 实际使用的路线（= 该租户的默认模板名）").isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
         assertThat(po.get().getRouteRequestedKey()).as("两维全不命中 ⇒ 没有「想走的键」").isNull();
         // ② incident 日志（迁移前这一层连 info 都没有 —— 这是最隐蔽的一层）
         assertThat(logText())
@@ -430,7 +431,7 @@ class ProcessingOrderRouteSourceTest {
         assertThat(results.get(0).isSuccess()).isTrue();
         assertThat(po.get().getRouteSource()).as("只命中一维 ⇒ partial（补救动作 = 去信号映射补另一维）")
                 .isEqualTo("partial");
-        assertThat(po.get().getRouteKey()).as("键 = 命中的帘种 + 默认工艺").isEqualTo("纱帘×韩褶");
+        assertThat(po.get().getRouteKey()).as("P2b：route_key = 实际使用的路线").isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
         assertThat(po.get().getRouteRequestedKey()).as("partial 也要记下「想走的键」").isEqualTo("纱帘×韩褶");
     }
 
@@ -448,7 +449,8 @@ class ProcessingOrderRouteSourceTest {
         assertThat(po.get().getRouteSource())
                 .as("T2 不得并入 partial：补救动作不同（T2 要**建路线**，partial 要**补信号**）")
                 .isEqualTo("missing_route");
-        assertThat(po.get().getRouteKey()).as("实际使用 = 回落后的默认键").isEqualTo("布帘×韩褶");
+        assertThat(po.get().getRouteKey())
+                .as("P2b：route_key = 实际使用的路线（回落用的默认模板名）").isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
         assertThat(po.get().getRouteRequestedKey())
                 .as("必须记下「识别的键」—— 没有它，提示说不出该建哪条路线")
                 .isEqualTo("罗马帘×韩褶");
@@ -475,8 +477,10 @@ class ProcessingOrderRouteSourceTest {
 
         assertThat(results.get(0).isSuccess()).isTrue();
         assertThat(po.get().getRouteSource()).as("两维命中 + 路线存在 ⇒ derived").isEqualTo("derived");
-        assertThat(po.get().getRouteKey()).isEqualTo("布帘×韩褶");
-        assertThat(po.get().getRouteRequestedKey()).as("derived 时「想走的」= 「实际用的」").isEqualTo("布帘×韩褶");
+        assertThat(po.get().getRouteKey()).as("P2b：route_key = **实际使用的那条路线**（新结构里 = 具名模板）")
+                .isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
+        assertThat(po.get().getRouteRequestedKey()).as("derived 时「想走的」= 派生出来的那个键")
+                .isEqualTo("布帘×韩褶");
         assertThat(logText()).as("干净派生不得打 incident（否则 incident 就是噪音，没人会看）")
                 .doesNotContain(ProcessingOrderService.INCIDENT_ROUTE_DEFAULTED)
                 .doesNotContain(ProcessingOrderService.INCIDENT_ROUTE_FALLBACK);
@@ -500,7 +504,8 @@ class ProcessingOrderRouteSourceTest {
         assertThat(po.get().getRouteRequestedKey())
                 .as("三列必须同源取自**同一条**部位 —— 拿 A 的 source 配 B 的键就是自相矛盾")
                 .isEqualTo("罗马帘×韩褶");
-        assertThat(po.get().getRouteKey()).isEqualTo("布帘×韩褶");
+        assertThat(po.get().getRouteKey())
+                .as("P2b：route_key = 实际使用的路线（这里 = 回落用的默认模板）").isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
     }
 
     @Test
@@ -519,7 +524,7 @@ class ProcessingOrderRouteSourceTest {
                 .as("冻结口径：default（零信息）> missing_route > partial > derived")
                 .isEqualTo("default");
         assertThat(po.get().getRouteRequestedKey()).as("default 没有「想走的键」").isNull();
-        assertThat(po.get().getRouteKey()).isEqualTo("布帘×韩褶");
+        assertThat(po.get().getRouteKey()).as("P2b：route_key = 实际使用的路线").isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
     }
 
     @Test

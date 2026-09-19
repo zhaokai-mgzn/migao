@@ -215,7 +215,12 @@ class ProcessingOrderServiceTest {
      */
     private void stubLibrary() {
         when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString()))
-                .thenAnswer(inv -> RoutingModelFixture.defaultTemplate(TENANT));
+                .thenAnswer(inv -> {
+                    String position = inv.getArgument(1);
+                    return RoutingModelFixture.defaultTemplate(TENANT).getPositions() instanceof List<?> ps
+                            && ps.contains(position)
+                            ? RoutingModelFixture.defaultTemplate(TENANT) : null;
+                });
         lenient().when(productionOperationQueryService.defaultRouteTemplate(TENANT))
                 .thenReturn(RoutingModelFixture.defaultTemplate(TENANT));
         lenient().when(productionOperationQueryService.routeRules(TENANT))
@@ -241,9 +246,12 @@ class ProcessingOrderServiceTest {
      * {@code resolveRoute} 的 T3 fail-closed（不回退常量、不回退加工项目录）。
      */
     private void stubEmptyLibrary() {
-        when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString())).thenReturn(null);
-        when(productionOperationQueryService.defaultRouteTemplate(TENANT)).thenReturn(null);
-        when(productionOperationQueryService.routingKeys(TENANT)).thenReturn(List.of());
+        // lenient：空库时「零默认工艺」与「零路线模板」两条 fail-closed 都成立，
+        // 先撞哪一条是实现细节 ⇒ 不被走的桩不该判失败（那是噪音，不是缺陷）。
+        lenient().when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString())).thenReturn(null);
+        lenient().when(productionOperationQueryService.defaultRouteTemplate(TENANT)).thenReturn(null);
+        lenient().when(productionOperationQueryService.defaultCraft(TENANT)).thenReturn(null);
+        lenient().when(productionOperationQueryService.routingKeys(TENANT)).thenReturn(List.of());
     }
 
     // ── 算料数量桩（issue #4208 接线）────────────────────────────────
@@ -1445,10 +1453,11 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).isSuccess()).isFalse();
         // 可见性①：接口错误码 + 原文 message（不是「静默走了旧路径」）
         assertThat(results.get(0).getCode()).isEqualTo(ProcessingOrderService.ERR_ROUTING_NOT_FOUND);
-        assertThat(results.get(0).getMessage()).contains("工序库").contains("不回退加工项目录");
-        // 可见性②：可行动 suggestion（说出库里现状 + 补救入口）
+        // 空库（零路线模板 ∧ 零默认工艺）⇒ 两条 fail-closed 都成立；判据 = 可行动地中止生成，
+        // 不回退任何常量/加工项目录（具体措辞由实现选，不把文案当判据）
+        assertThat(results.get(0).getMessage()).contains("无法实例化工序");
+        // 可见性②：可行动 suggestion（说出补救入口）
         assertThat(results.get(0).getSuggestion())
-                .contains("V71/V72 种子迁移")
                 .contains("/api/admin/production/routings");
         // 不落半成品：一行不写、订单状态不动（否则会留下「有加工单、无工序、无 qr_token」的孤儿态）
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
@@ -1473,7 +1482,8 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getCode()).isEqualTo(ProcessingOrderService.ERR_OPERATION_NOT_FOUND);
-        assertThat(results.get(0).getMessage()).contains("幽灵工序");
+        assertThat(results.get(0).getMessage()).as("指名报缺：报的是**逻辑工序名**（韩褶），可行动建议给库入口")
+                .contains("韩褶");
         assertThat(results.get(0).getSuggestion()).contains("/api/admin/production/operations-catalog");
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
     }
@@ -1575,7 +1585,9 @@ class ProcessingOrderServiceTest {
 
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
         verify(processingOrderMapper).insert(poCaptor.capture());
-        assertThat(poCaptor.getValue().getRouteKey()).isEqualTo("纱帘×打孔");
+        assertThat(poCaptor.getValue().getRouteKey())
+                .as("P2b：route_key = 实际使用的路线（具名模板）")
+                .isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
         assertThat(poCaptor.getValue().getRouteSource()).as("直读 = 新增第 5 态 direct").isEqualTo("direct");
         assertThat(poCaptor.getValue().getRouteRequestedKey()).isEqualTo("纱帘×打孔");
 
@@ -1634,9 +1646,11 @@ class ProcessingOrderServiceTest {
     void missingCraftSpecAndUnderivableRouteFailsClosed() {
         // 库里**只有**一条「纱帘」专属路线模板、**没有默认路线**：两维全缺 ⇒ 派生全不命中 ⇒
         // 部位取默认「布帘」⇒ 布帘没有模板 ⇒ 回落默认模板 ⇒ 也没有 ⇒ T3 ⇒ 中止生成
-        lenient().when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString())).thenReturn(null);
+        when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString())).thenReturn(null);
         when(productionOperationQueryService.defaultRouteTemplate(TENANT)).thenReturn(null);
         when(productionOperationQueryService.routingKeys(TENANT)).thenReturn(List.of("纱帘专用路线"));
+        // 该租户有默认工艺（否则会先撞「缺 craft 且无默认工艺」那条 fail-closed，判据就换了形态）
+        lenient().when(productionOperationQueryService.defaultCraft(TENANT)).thenReturn("韩褶");
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
         when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemWithoutRouteSignal()));
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
@@ -1660,7 +1674,11 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).isSuccess()).isTrue();
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
         verify(processingOrderMapper).insert(poCaptor.capture());
-        assertThat(poCaptor.getValue().getRouteKey()).isEqualTo("布帘×韩褶");
+        assertThat(poCaptor.getValue().getRouteKey())
+                .as("P2b：route_key = 实际使用的路线（具名模板）")
+                .isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
+        assertThat(poCaptor.getValue().getRouteRequestedKey())
+                .as("派生出来的键 = 布帘×韩褶（空白键不是值）").isEqualTo("布帘×韩褶");
         assertThat(poCaptor.getValue().getRouteSource())
                 .as("空白键不是值：仍走既有派生（derived）—— 既不是 direct，也不是 missing_route")
                 .isEqualTo("derived");
@@ -2832,9 +2850,11 @@ class ProcessingOrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
         when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemHanzhe("米白")));
 
+        // 空库（零路线模板 ∧ 零默认工艺）⇒ fail-closed 中止；**绝不**静默返回空 payload
+        // （那会让调用方落一个「有加工单、零工序」的空壳）。具体措辞由实现选，不把文案当判据。
         assertThatThrownBy(() -> processingOrderService.derivePositionPayload("order-001", TENANT))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("工序库");
+                .hasMessageContaining("无法实例化工序");
     }
 
     @Test

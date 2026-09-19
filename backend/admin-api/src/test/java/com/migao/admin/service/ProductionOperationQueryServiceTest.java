@@ -422,9 +422,10 @@ class ProductionOperationQueryServiceTest {
                 .isTrue();
         String py = Files.readString(ROUTING_PY);
         // ⚠️ 用 lastIndexOf：`_LOGICAL_NAME_PAIRS` 在 docstring 里也被提到过（首次出现不是定义处）
-        Matcher matcher = Pattern.compile("\\n\\s*\\(\"([^\"]+)\",\\s*\"([^\"]+)\"\\),").matcher(
-                py.substring(py.lastIndexOf("_LOGICAL_NAME_PAIRS"),
-                        py.lastIndexOf("OPERATION_LOGICAL_NAMES")));
+        int pairsAt = py.indexOf("_LOGICAL_NAME_PAIRS: List[tuple]");
+        int namesAt = py.indexOf("OPERATION_LOGICAL_NAMES: Dict", pairsAt);
+        Matcher matcher = Pattern.compile("\\n\\s*\\(\"([^\"]+)\",\\s*\"([^\"]+)\"\\),")
+                .matcher(py.substring(pairsAt, namesAt));
         Map<String, String> fromPython = new LinkedHashMap<>();
         while (matcher.find()) {
             fromPython.put(matcher.group(1), matcher.group(2));
