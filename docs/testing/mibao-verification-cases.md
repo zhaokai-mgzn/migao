@@ -2999,6 +2999,7 @@
 你: [🔁 按目标工具重复直至成功：processing_item_query，最多 3 次]
 期望: processing_item_manage(action=update_item)
 期望: processing_item_query
+数据: 前置（precondition）：评测栈种子里「纳米圈打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`（8.00 元/米）—— 它是下面 `update_item` 回读断言的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项」，判红会伪装成「agent 不会改价」
 数据: 回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter、status 仍为 active（未被清空）——只改 price 不得清空其它字段
 禁词: 暂不支持
 禁词: 功能不存在
@@ -3010,7 +3011,7 @@
 必须成功: processing_item_manage(update_item)
 产出: processing_item_manage(update_item) → unitPrice==9.5; name==纳米圈打孔; pricingMethod==per_meter; status==active
 ```
-溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=update_item)` 此前**零用例覆盖**（#3591 收口时如实标注的覆盖边界：只有 create 路径被重放）。断言机器可判：must_succeed(action=update_item) + required_args[item_id,price] + output_verify(unitPrice=9.5 + name/pricingMethod/status 未被清空，显式 action) + forbidden_text。2026-09-15 校准（结论档 run 34841029062 实证）：原 output_verify 写 `price: 9.5` = 用**入参名**核**回显字段名**（回显是 unitPrice）→ 恒红假红；同时更正「update_item 返回只含下发字段」的错误注释（PUT 回显是合并后全量对象，故「不清空」可从 payload 机器核到）。 ｜ tags: processing_item, llm_behavior, tool_call, update
+溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=update_item)` 此前**零用例覆盖**（#3591 收口时如实标注的覆盖边界：只有 create 路径被重放）。断言机器可判：must_succeed(action=update_item) + required_args[item_id,price] + output_verify(unitPrice=9.5 + name/pricingMethod/status 未被清空，显式 action) + forbidden_text。2026-09-15 校准（结论档 run 34841029062 实证）：原 output_verify 写 `price: 9.5` = 用**入参名**核**回显字段名**（回显是 unitPrice）→ 恒红假红；同时更正「update_item 返回只含下发字段」的错误注释（PUT 回显是合并后全量对象，故「不清空」可从 payload 机器核到）。2026-09-19（issue #4525 的 burn-down 缴费）：补**机器计分型**前置自断言（种子 `pi_eval_punch`「纳米圈打孔」存在 + per_meter，= 本用例回读断言的接地对象），把「前置不成立 ⇒ 找不到加工项却归因到 agent 不会改价」这条形态挡在门口；expectations / must_succeed / required_args / output_verify / forbidden_text / user_inputs 原样未动、无放宽。 ｜ tags: processing_item, llm_behavior, tool_call, update
 
 ### PP-008. 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive） 🔵
 ```
@@ -3035,7 +3036,7 @@
 你: [🔁 按目标工具重复直至成功：processing_item_manage，最多 2 次]
 期望: processing_item_manage(action=calculate_price)
 数据: per_area 的 quantity 是**计件数**（同一尺寸做几件，缺省 1）；面积由 dimensions(宽×高) 承载——把宽×高写进 quantity 会双计（30×8×8=¥1920，应为 ¥240）
-数据: 本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（`docs/testing/acceptance-protocol.md:288` 与 `.github/cases/order.yml:905` 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积（真值源 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java`）
+数据: 本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（`docs/testing/acceptance-protocol.md:288` @df3623466344 与 `.github/cases/order.yml:905` @df3623466344 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积（真值源 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java`）
 数据: 回复需给出金额 ¥240（30 元/㎡ × 8㎡）并对得上用户给的尺寸
 数据: 前置（precondition）：评测栈种子里「刺绣工艺」（`pi_eval_embroidery`）存在、`pricingMethod=per_area`、`unitPrice=30.00` 元/㎡ —— 它是 `output_verify.totalPrice=240.00` 的接地真值（success=true）；前置不成立时金额必然对不上，判红会伪装成「agent 算错面积」
 禁词: 无法计算
