@@ -2246,7 +2246,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（30 case）
+## 订单域（31 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2556,7 +2556,7 @@
 落库: order_items → source=order_create; expect_products=['夏日清风窗帘', '遮光窗帘']; expect_quantities={'夏日清风窗帘': 3, '遮光窗帘': 2}
 ```
 真值: order.create-flow
-溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额） ｜ tags: order_create, multi_item, processing_item, ceiling, xiaobu
+溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额）。2026-09-19（issue #4421 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:夏日清风窗帘, product_name:遮光窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword × 2, expect: 1]` —— 多商品下单按商品名定位两行明细，「每个名字唯一」是它真正依赖且只读的前置（先例 = OR-014 / OR-017 / CH-019）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红。断言（user_inputs / expectations / must_succeed / amount_verify / db_verify / order_before / data_checks）原样未动、无放宽。 ｜ tags: order_create, multi_item, processing_item, ceiling, xiaobu
 
 ### OR-019. C 端下单中途改数量 - 以最新数量为准，落库数量与金额都得跟着改（能力上限） 🔵
 ```
@@ -2580,7 +2580,7 @@
 落库: order_items → source=order_create; expect_products=['遮光窗帘']; expect_quantities={'遮光窗帘': 4}
 ```
 真值: order.create-flow, ai-chat.confirm-required
-溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新） ｜ tags: order_create, correction, multi_turn, ceiling, xiaobu
+溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新）。2026-09-19（issue #4421 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:遮光窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（先例 = OR-014 / OR-017 / CH-019）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红。断言原样未动、无放宽。 ｜ tags: order_create, correction, multi_turn, ceiling, xiaobu
 
 ### OR-020. C 端下单中途打岔后回到原流程 - 草稿不丢（数量/加工项必须延续） 🔵
 ```
@@ -2831,6 +2831,19 @@
 ```
 真值: order.create-flow, order.states
 溯源: 2026-09-18 新增（用户裁定 2 / F17 / issue #4095）：冒烟档补下单用例 —— 此前冒烟档 9 条全只读、订单域唯一 OR-001 是列表查询 ⇒ 主链路零覆盖。persona=mibao（代客下单免验证码，链路最短）；一句话给全 + repeat_until 协作轮（有卡答卡，成功即停）；断言 = must_succeed[order_create] + db_verify[order_items/order_phone] + order_before[interact[confirm] before order_create] + required_args；自清理 product_dedupe + precondition[product_count_for_keyword expect=1] + namespaces（商品名/手机号）。未新增任何自动触发（裁定 2′/4′）。 ｜ tags: order_create, smoke, write
+
+### OR-032. 算料试算端点 - 折数法（标准档）单一真值 + 后端产出的可读公式串 🔵
+```
+你: 商家手工下单页按宽 6.6m / 双开 / 标准档试算用料
+期望: direct_reply
+数据: （散文、**不计分**）折数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）
+数据: （散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）
+数据: （散文、**不计分**）拼色用料系数（用户 2026-09-19 裁定）：拼1次 0.65 / 拼2次 1.2 米每折；52 折双开 ⇒ 34.1 / 62.7 米；拼3次未登记 ⇒ fail-closed 显式报缺口
+数据: （散文、**不计分**）响应算料键 = **snake_case**（设计文档 §4.5 / CALC_INFO_KEYS 同口径）：fabric_meters / pleat_count / per_panel_pleats / per_fold / fullness / fullness_actual / formula_used / formula_text / source / craft_tier / warning —— 前端可原样塞进 processingInfo，零映射
+跳过: [backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: fabric-calc.pleat-method, fabric-calc.craft-tier, fabric-calc.fullness-actual, fabric-calc.mixed-color-per-fold, fabric-calc.craft-calc-endpoint
+溯源: 2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 折数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。同日追加用户裁定：拼色每折吃布系数（拼1次 0.65 / 拼2次 1.2 米每折，纸表表头原文，是**用料**而非计价）—— 与真值源 §10 旧措辞冲突，已按裁定改正 docs §10；`拼3次` 纸表未登记 ⇒ 显式缺口 fail-closed，不插值。 ｜ tags: order, craft_calc, fabric, single_source_of_truth
 
 ## 加工项域（11 case）
 
@@ -4583,8 +4596,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：336（活跃 154，跳过 182）
-- tier 分布：smoke 10 / normal 295 / adversarial 31
+- 用例总数：337（活跃 154，跳过 183）
+- tier 分布：smoke 10 / normal 296 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4601,7 +4614,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：30
+- 订单域：31
 - 加工项域：11
 - processing-order：39
 - 商品域：21

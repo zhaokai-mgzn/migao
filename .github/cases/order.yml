@@ -1302,12 +1302,33 @@ cases:
         expect_quantities:
           夏日清风窗帘: 3
           遮光窗帘: 2
+    # ── 前置自断言 + 自清理（issue #4421 的 burn-down 缴费；metric=entries ⇒ 必须整条销账）──
+    # 本用例命中的两条存量违规是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION。
+    # `precondition[product_count_for_keyword]`：多商品下单按**商品名**定位两行明细，「每个名字唯一」
+    # 是它真正依赖且**只读**的前置（同名副本会让 agent 合理地要求澄清 ⇒ order_create 永不发生，
+    # 报告上只表现为 `unmatched expectation` = 看起来像 agent 不干活，归因全错 —— PG-013 / CU-003 的形态）。
+    # 口径与 `pre_clean` 的商品定位同一份（`_list_products_matching`），先例 = OR-014 / OR-017 / CH-019。
+    # ⚠️ 有意**不**声明 `order_count_for_phone`：本用例自己就会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）
+    # 必然判红，那是「硬写一条注定红的守卫」。商品维只读 ⇒ 漂移恒为 0。
+    # 断言（user_inputs / expectations / must_succeed / amount_verify / db_verify / order_before /
+    # data_checks）**原样未动、无放宽**。
+    namespaces:
+      - "product_name:夏日清风窗帘"
+      - "product_name:遮光窗帘"
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "夏日清风窗帘"
+        expect: 1
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     data_checks:
       - "多商品下单必须一次 order_create 带多行 items（每行自己的数量/单价/加工项），不得只落一款"
       - "加工费按各自米数分别计算（3 米→24、2 米→16），总额 = Σ小计 810 + Σ加工费 40 = 850"
       - "两款商品的单价都必须来自商品库（158/168），不得凭记忆报价"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额）"
+    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额）。2026-09-19（issue #4421 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:夏日清风窗帘, product_name:遮光窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword × 2, expect: 1]` —— 多商品下单按商品名定位两行明细，「每个名字唯一」是它真正依赖且只读的前置（先例 = OR-014 / OR-017 / CH-019）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红。断言（user_inputs / expectations / must_succeed / amount_verify / db_verify / order_before / data_checks）原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
@@ -1382,11 +1403,25 @@ cases:
         expect_products: ["遮光窗帘"]
         expect_quantities:
           遮光窗帘: 4
+    # ── 前置自断言 + 自清理（issue #4421 的 burn-down 缴费；metric=entries ⇒ 必须整条销账）──
+    # 同 OR-018 口径：`precondition[product_count_for_keyword]` 是本用例真正依赖且**只读**的前置
+    # （「遮光窗帘」该名字唯一 —— 同名副本会让 agent 合理地要求澄清 ⇒ order_create 永不发生，
+    # 报告上只表现为 `unmatched expectation` = 看起来像 agent 不干活）。先例 = OR-014 / OR-017 / CH-019。
+    # ⚠️ 有意**不**声明 `order_count_for_phone`：本用例自己就会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）
+    # 必然判红。断言（user_inputs / expectations / must_succeed / amount_verify / db_verify /
+    # order_before / data_checks）**原样未动、无放宽**。
+    namespaces:
+      - "product_name:遮光窗帘"
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     data_checks:
       - "顾客中途改数量后，确认卡与订单明细都必须反映**最新**数量（4 米），不得沿用旧值 3 米"
       - "金额按最新数量重算：168×4 + 打孔 8×4 = 704"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新）"
+    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新）。2026-09-19（issue #4421 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:遮光窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（先例 = OR-014 / OR-017 / CH-019）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红。断言原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
@@ -2466,4 +2501,59 @@ cases:
         - "backend/ai-agent-service/tests/test_order_create_processing_quantity.py"
       ci:
         - xiaobu-acceptance.yml
+      verifies: []
+
+  # ── 算料（折数法）──
+  - id: OR-032
+    legacy_id: ""
+    title: "算料试算端点 - 折数法（标准档）单一真值 + 后端产出的可读公式串"
+    domains:
+      - order
+      - processing
+    tier: normal
+    persona: ""
+    tags:
+      - order
+      - craft_calc
+      - fabric
+      - single_source_of_truth
+    truths_ref:
+      - fabric-calc.pleat-method
+      - fabric-calc.craft-tier
+      - fabric-calc.fullness-actual
+      - fabric-calc.mixed-color-per-fold
+      - fabric-calc.craft-calc-endpoint
+    # ── 覆盖说明（issue #4421，后端半边）──
+    # 商家手工下单页此前**零算料通路**（数量/米数靠商家手填）。本端点 =
+    # `POST /api/internal/production/craft-calc`（ai-agent，Service Token）+ admin-api
+    # `CraftCalcClient` / `POST /api/admin/orders/craft-calc`（试算，不落库）。
+    # 口径 = 用户 2026-09-19 裁定：折数法（标准档 2.0）——`折数 = round((W×N − margin)/0.25)`
+    # 再按开数取整；`用料 = 每折吃布 × 折数 + margin`（单开 0.2 / 多开 0.3）。
+    # **每折吃布随款式/拼次变化**（同一次裁定，纸质速查表表头原文「拼色下料 1个折 0.65 / 2个折 1.2」，
+    # 是**用料**口径）：单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2 米每折；余量不随拼色变化。
+    # 纸表逐值复现（本单的锚）：单开 0.25n+0.2、对开 0.25n+0.3；
+    # 抽验 4折=1.2 / 8折=2.3 / 48折=12.3 / 52折=13.3 / 56折=14.3；6.6m 双开标准档 ⇒ 52 折 / 13.3 米；
+    # 拼色 52 折双开 ⇒ 拼1次 34.1 米 / 拼2次 62.7 米。
+    # ⚠️ 缺口（不猜不插值）：纸表未登记 `拼3次` 的用料系数 ⇒ 端点 fail-closed `MIXED_PER_FOLD_NOT_REGISTERED`。
+    # 架构口径：**不新增第二份算料逻辑** —— 端点只调 `curtain_calc.build_quote`，
+    # `formula_text` 由后端按同一份数字产出（前端/Java 侧自拼 = 第二份算料逻辑）。
+    user_inputs:
+      - "商家手工下单页按宽 6.6m / 双开 / 标准档试算用料"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "（散文、**不计分**）折数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）"
+      - "（散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）"
+      - "（散文、**不计分**）拼色用料系数（用户 2026-09-19 裁定）：拼1次 0.65 / 拼2次 1.2 米每折；52 折双开 ⇒ 34.1 / 62.7 米；拼3次未登记 ⇒ fail-closed 显式报缺口"
+      - "（散文、**不计分**）响应算料键 = **snake_case**（设计文档 §4.5 / CALC_INFO_KEYS 同口径）：fabric_meters / pleat_count / per_panel_pleats / per_fold / fullness / fullness_actual / formula_used / formula_text / source / craft_tier / warning —— 前端可原样塞进 processingInfo，零映射"
+    skip_reason: "[backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 折数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。同日追加用户裁定：拼色每折吃布系数（拼1次 0.65 / 拼2次 1.2 米每折，纸表表头原文，是**用料**而非计价）—— 与真值源 §10 旧措辞冲突，已按裁定改正 docs §10；`拼3次` 纸表未登记 ⇒ 显式缺口 fail-closed，不插值。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_production/test_craft_calc.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/CraftCalcClientTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/CraftCalcControllerTest.java"
+      ci:
+        - ai-agent-tests.yml
+        - pr-check.yml
       verifies: []

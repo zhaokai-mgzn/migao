@@ -3659,6 +3659,8 @@ _CASE_OR_018 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '夏日清风窗帘', 'checks': ['unit_price', 'subtotal', 'total']}, {'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price']}],
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['夏日清风窗帘', '遮光窗帘'], 'expect_quantities': {'夏日清风窗帘': 3, '遮光窗帘': 2}}],
+    namespaces=['product_name:夏日清风窗帘', 'product_name:遮光窗帘', 'customer_phone:13800138000'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '夏日清风窗帘', 'expect': 1}, {'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── OR-019 [NORMAL] C 端下单中途改数量 - 以最新数量为准，落库数量与金额都得跟着改（能力上限）（源: cases/order.yml）──
@@ -3681,6 +3683,8 @@ _CASE_OR_019 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 4}}],
+    namespaces=['product_name:遮光窗帘', 'customer_phone:13800138000'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── OR-020 [NORMAL] C 端下单中途打岔后回到原流程 - 草稿不丢（数量/加工项必须延续）（源: cases/order.yml）──
@@ -3931,6 +3935,24 @@ _CASE_OR_031 = EvalCase(
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['product_name:遮光窗帘', 'customer_phone:13800138000'],
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
+)
+
+# ── OR-032 [NORMAL] 算料试算端点 - 折数法（标准档）单一真值 + 后端产出的可读公式串（源: cases/order.yml）──
+_CASE_OR_032 = EvalCase(
+    id='OR-032',
+    legacy_id='',
+    title='算料试算端点 - 折数法（标准档）单一真值 + 后端产出的可读公式串',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家手工下单页按宽 6.6m / 双开 / 标准档试算用料'],
+    expectations=['direct_reply'],
+    data_checks=['（散文、**不计分**）折数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）', '（散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）', '（散文、**不计分**）拼色用料系数（用户 2026-09-19 裁定）：拼1次 0.65 / 拼2次 1.2 米每折；52 折双开 ⇒ 34.1 / 62.7 米；拼3次未登记 ⇒ fail-closed 显式报缺口', '（散文、**不计分**）响应算料键 = **snake_case**（设计文档 §4.5 / CALC_INFO_KEYS 同口径）：fabric_meters / pleat_count / per_panel_pleats / per_fold / fullness / fullness_actual / formula_used / formula_text / source / craft_tier / warning —— 前端可原样塞进 processingInfo，零映射'],
+    skip_reason='[backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['order', 'craft_calc', 'fabric', 'single_source_of_truth'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
 )
 
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
@@ -6621,6 +6643,7 @@ ALL_CASES = (
     _CASE_OR_029,
     _CASE_OR_030,
     _CASE_OR_031,
+    _CASE_OR_032,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
