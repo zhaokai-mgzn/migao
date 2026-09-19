@@ -14,6 +14,7 @@ import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProductionOptionFactor;
 import com.migao.admin.entity.ProductionOptionRouting;
+import com.migao.admin.entity.ProductionRouteRule;
 import com.migao.admin.entity.ProductionRouteSignal;
 import com.migao.admin.entity.ProductionWorkLog;
 import com.migao.admin.exception.BusinessException;
@@ -154,7 +155,7 @@ class ProcessingOrderServiceTest {
      * 其余工序 = 部位级 `position`（V67 的列默认值）。
      *
      * <p>⚠️ 本常量只用来把**库桩**造成 V67 终态 —— 生产代码**不得**用名字判套级（那是「常量散在代码里、
-     * 商家改了库不生效」的形态）：判据必须是 `findRouting` 带出的 `scope`。判别力由
+     * 商家改了库不生效」的形态）：判据必须是工序库行带出的 `scope`。判别力由
      * {@link #setLevelDedupFollowsLibraryScopeNotOperationNames()} 的注入法保证。</p>
      */
     private static final Set<String> SET_SCOPE_OPERATIONS =
@@ -197,60 +198,60 @@ class ProcessingOrderServiceTest {
     }
 
     /**
-     * 工序库桩：把 V54 的两条路线装进 findRouting；未登记的键返回 null
-     * （= 库里没有该路线 ⇒ 走默认路线兜底，仍没有才 fail-closed）。
+     * 工序库桩（**新结构**，P2b / issue #4459）：把「默认路线模板 + 规则表 26 行 + 部位价目
+     * + 工序库元数据」装进新读面。
+     *
+     * <p>与旧桩的差别：旧桩直接把 9 条「{@code (部位×工艺)} 展开快照」塞给 {@code findRouting}；
+     * 新桩只给**输入**（模板/规则/价目/工序库），**展开由生产代码做**（
+     * {@code ProcessingOrderService.buildRoute}，与 {@code routing.py::build_route_v2} 逐字一致）
+     * ⇒ 「实例 = 库」的断言仍是真比对，而不是拿一份平行真值自证。</p>
+     *
+     * <p>夹具覆盖三条路线（布帘×韩褶 11 / 布帘×打孔 10 / 纱帘×打孔 6 道）用到的全部工序 ——
+     * 它们是 V54/V58 种子的逐字快照。默认模板 = 布帘/纱帘/帘头三部位共用（与 V71 种子同形），
+     * 故「帘头×平幔」取到的是默认模板（与旧桩的回落语义一致）。</p>
      *
      * <p>同时装信号映射表（V60，issue #4308）：派生**读库而非读常量** ⇒
      * 「库中映射命中的优先级高于默认」这条判据依赖本桩，缺了它所有派生用例都退化成 T1。</p>
      */
     private void stubLibrary() {
-        when(productionOperationQueryService.findRouting(eq(TENANT), anyString(), anyString()))
-                .thenAnswer(inv -> v54Route(inv.getArgument(1), inv.getArgument(2)));
+        when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString()))
+                .thenAnswer(inv -> {
+                    String position = inv.getArgument(1);
+                    return RoutingModelFixture.defaultTemplate(TENANT).getPositions() instanceof List<?> ps
+                            && ps.contains(position)
+                            ? RoutingModelFixture.defaultTemplate(TENANT) : null;
+                });
+        lenient().when(productionOperationQueryService.defaultRouteTemplate(TENANT))
+                .thenReturn(RoutingModelFixture.defaultTemplate(TENANT));
+        lenient().when(productionOperationQueryService.routeRules(TENANT))
+                .thenReturn(RoutingModelFixture.rulesWithFactors(TENANT));
+        lenient().when(productionOperationQueryService.operationPositions(TENANT))
+                .thenReturn(RoutingModelFixture.canonicalPositions(TENANT));
+        lenient().when(productionOperationQueryService.operationsByName(TENANT))
+                .thenReturn(RoutingModelFixture.catalog());
+        // 缺 `craft` 的兜底 = **该租户的默认工艺**（商家可配；issue #4459 起不再写死常量）
+        lenient().when(productionOperationQueryService.defaultCraft(TENANT)).thenReturn("韩褶");
+        lenient().when(productionOperationQueryService.normalizeOperationName(anyString()))
+                .thenAnswer(inv -> RoutingModelFixture.logicalName(inv.getArgument(0)));
+        lenient().when(productionOperationQueryService.variantNameOf(anyString(), any(), any()))
+                .thenAnswer(inv -> RoutingModelFixture.variantNameOf(
+                        inv.getArgument(0), inv.getArgument(1), inv.getArgument(2)));
         // lenient：**直读**路径（订单带 curtainType + craft，issue #4354）根本不查信号映射表
         // ⇒ 该桩备而不用；Mockito 严格桩会把「备而不用」判为失败 —— 那是噪音，不是缺陷。
         lenient().when(productionOperationQueryService.routeSignals(TENANT)).thenReturn(v60Signals());
     }
 
-    /** V54 库路线的形态（与 ProductionOperationQueryService.findRouting 的返回同构）。 */
-    private static Map<String, Object> v54Route(String curtainType, String craft) {
-        String[][] steps = switch (curtainType + "×" + craft) {
-            case "布帘×韩褶" -> V54_BULIAN_HANZHE;
-            case "布帘×打孔" -> V54_BULIAN_DAKONG;
-            case "纱帘×打孔" -> V58_SHALU_DAKONG;
-            default -> null;
-        };
-        if (steps == null) {
-            return null;
-        }
-        List<Map<String, Object>> operations = new ArrayList<>();
-        int seq = 1;
-        for (String[] step : steps) {
-            Map<String, Object> view = new LinkedHashMap<>();
-            view.put("seq", seq++);
-            view.put("operation", step[0]);
-            view.put("group", step[1]);
-            view.put("unit", step[2]);
-            view.put("unit_price", new BigDecimal(step[3]));
-            view.put("is_must_finish", Boolean.valueOf(step[4]));
-            view.put("is_start_marker", Boolean.valueOf(step[5]));
-            // 作用域（V67 / issue #4384 A1）：库桩 = V67 终态（三道外帘 = set，其余 = position）。
-            // 实例化侧（A2）据此判「每樘窗一次」——**逐字取库**，不硬编码工序名。
-            view.put("scope", SET_SCOPE_OPERATIONS.contains(step[0]) ? "set" : "position");
-            operations.add(view);
-        }
-        Map<String, Object> route = new LinkedHashMap<>();
-        route.put("curtain_type", curtainType);
-        route.put("craft", craft);
-        route.put("operation_count", operations.size());
-        route.put("missing_operations", List.of());
-        route.put("operations", operations);
-        return route;
-    }
-
-    /** 空库桩（V54 种子未执行 / 全软删）：findRouting 恒 null，routingKeys 为空。 */
+    /**
+     * 空库桩（V71/V72 种子未执行 / 全软删）：该租户**没有默认路线模板** ⇒
+     * {@code resolveRoute} 的 T3 fail-closed（不回退常量、不回退加工项目录）。
+     */
     private void stubEmptyLibrary() {
-        when(productionOperationQueryService.findRouting(eq(TENANT), anyString(), anyString())).thenReturn(null);
-        when(productionOperationQueryService.routingKeys(TENANT)).thenReturn(List.of());
+        // lenient：空库时「零默认工艺」与「零路线模板」两条 fail-closed 都成立，
+        // 先撞哪一条是实现细节 ⇒ 不被走的桩不该判失败（那是噪音，不是缺陷）。
+        lenient().when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString())).thenReturn(null);
+        lenient().when(productionOperationQueryService.defaultRouteTemplate(TENANT)).thenReturn(null);
+        lenient().when(productionOperationQueryService.defaultCraft(TENANT)).thenReturn(null);
+        lenient().when(productionOperationQueryService.routingKeys(TENANT)).thenReturn(List.of());
     }
 
     // ── 算料数量桩（issue #4208 接线）────────────────────────────────
@@ -330,36 +331,17 @@ class ProcessingOrderServiceTest {
         return meta;
     }
 
-    private static ProductionOptionRouting optionRouting(String option, String operation, String after, int sort) {
-        return ProductionOptionRouting.builder().id("opt-rt-" + sort).tenantId(TENANT)
-                .optionName(option).operationName(operation).afterOperation(after)
-                .sortOrder(sort).status("active").deleted(0).build();
-    }
-
-    private static ProductionOptionFactor optionFactor(String option, String operation, String factor) {
-        return ProductionOptionFactor.builder().id("opt-fa-1").tenantId(TENANT)
-                .optionName(option).operationName(operation).factor(new BigDecimal(factor))
-                .source("实证").deleted(0).build();
-    }
-
     /**
-     * 两张特殊选项表 + 条件工序元数据的桩（逐字对齐 V59 种子里本文件用到的那几行）。
-     * 只桩「拼1次 / 加花边 / 余料做帘头 / 一分为二」四行 —— 断言不依赖未桩的行。
+     * 特殊选项读面的桩（P2b：规则表 + 计件系数档 + 工序库元数据，逐字对齐 V71/V72 种子）。
+     *
+     * <p>与 {@link #stubLibrary} 的关系：那个已装「模板 + 规则 26 行 + 系数档 + 工序库」；
+     * 本方法**只**为「带特殊选项」的用例再显式声明一遍（可读性：这些用例的判据依赖哪几行一目了然）。</p>
      */
     private void stubOptionTables() {
-        // lenient：只有**带特殊选项**的用例才会走到 operationsByName（条件工序元数据），
-        // 严格桩会把「备而不用」判为失败 —— 那是噪音，不是缺陷。
-        lenient().when(productionOperationQueryService.optionRoutings(TENANT)).thenReturn(List.of(
-                optionRouting("拼1次", "拼1次-布", "布三边", 1),
-                optionRouting("加花边", "花边-布", "布三边", 4),
-                optionRouting("余料做帘头", "帘头制作", "布三边", 10)));
-        lenient().when(productionOperationQueryService.optionFactors(TENANT)).thenReturn(List.of(
-                optionFactor("一分为二", null, "1.7")));
-        Map<String, Map<String, Object>> catalog = new LinkedHashMap<>();
-        catalog.put("拼1次-布", operationMeta("车位", "幅", "0.8"));
-        catalog.put("花边-布", operationMeta("车位", "米", "0.6"));
-        catalog.put("帘头制作", operationMeta("车位", "个", "2.0"));
-        lenient().when(productionOperationQueryService.operationsByName(TENANT)).thenReturn(catalog);
+        lenient().when(productionOperationQueryService.routeRules(TENANT))
+                .thenReturn(RoutingModelFixture.rulesWithFactors(TENANT));
+        lenient().when(productionOperationQueryService.operationsByName(TENANT))
+                .thenReturn(RoutingModelFixture.catalog());
     }
 
     /** 带特殊选项的订单明细（布帘×韩褶路线，与 orderItemHanzhe 同源，只多 specialOptions）。 */
@@ -1385,11 +1367,11 @@ class ProcessingOrderServiceTest {
     @DisplayName("#4230 fail-closed：特殊选项引用的条件工序在工序库无活跃行 ⇒ 中止生成、不落半成品")
     void specialOptionReferencingMissingOperationFailsClosed() {
         stubLibrary();
-        // 只桩「拼1次」的映射，但**不**给「拼1次-布」的工序库元数据（= 库里缺这道工序）
-        when(productionOperationQueryService.optionRoutings(TENANT)).thenReturn(List.of(
-                optionRouting("拼1次", "拼1次-布", "布三边", 1)));
-        when(productionOperationQueryService.optionFactors(TENANT)).thenReturn(List.of());
-        when(productionOperationQueryService.operationsByName(TENANT)).thenReturn(Map.of());
+        // 规则表里「拼1次」的映射在，但工序库元数据里**没有**「拼1次-布」（= 库里缺这道工序）
+        // ⇒ variantNameOf 解析不到变体 ⇒ 条件工序 fail-closed（不静默跳过）
+        Map<String, Map<String, Object>> broken = RoutingModelFixture.catalog();
+        broken.remove("拼1次-布");
+        when(productionOperationQueryService.operationsByName(TENANT)).thenReturn(broken);
         // 不调 stubGenerate：fail-closed 发生在落库之前，给它打 insert 桩会被严格桩判为多余
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
         when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemHanzheWithOptions("米白", List.of("拼1次"))));
@@ -1409,11 +1391,15 @@ class ProcessingOrderServiceTest {
     @DisplayName("#4230 锚点不在该部位路线中 ⇒ 条件工序追加到末尾（routing.py _insert_after 同款）")
     void conditionalOperationAppendsWhenAnchorAbsent() {
         stubLibrary();
-        when(productionOperationQueryService.optionRoutings(TENANT)).thenReturn(List.of(
-                optionRouting("余料做绑带", "绑带-布", "不存在的工序", 8)));
-        when(productionOperationQueryService.optionFactors(TENANT)).thenReturn(List.of());
-        when(productionOperationQueryService.operationsByName(TENANT)).thenReturn(Map.of(
-                "绑带-布", operationMeta("其他", "套", "0.5")));
+        // 把「余料做绑带」的锚点改成一道**不在任何路线里**的工序 ⇒ 条件工序必须追加到末尾
+        List<ProductionRouteRule> withBadAnchor = new ArrayList<>();
+        for (ProductionRouteRule rule : RoutingModelFixture.rulesWithFactors(TENANT)) {
+            if ("余料做绑带".equals(rule.getTriggerValue())) {
+                rule.setAfterOperation("不存在的工序");
+            }
+            withBadAnchor.add(rule);
+        }
+        when(productionOperationQueryService.routeRules(TENANT)).thenReturn(withBadAnchor);
         stubGenerate(List.of(orderItemHanzheWithOptions("米白", List.of("余料做绑带"))));
         when(processingItemMapper.selectById("p1"))
                 .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
@@ -1467,10 +1453,11 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).isSuccess()).isFalse();
         // 可见性①：接口错误码 + 原文 message（不是「静默走了旧路径」）
         assertThat(results.get(0).getCode()).isEqualTo(ProcessingOrderService.ERR_ROUTING_NOT_FOUND);
-        assertThat(results.get(0).getMessage()).contains("工序库").contains("不回退加工项目录");
-        // 可见性②：可行动 suggestion（说出库里现状 + 补救入口）
+        // 空库（零路线模板 ∧ 零默认工艺）⇒ 两条 fail-closed 都成立；判据 = 可行动地中止生成，
+        // 不回退任何常量/加工项目录（具体措辞由实现选，不把文案当判据）
+        assertThat(results.get(0).getMessage()).contains("无法实例化工序");
+        // 可见性②：可行动 suggestion（说出补救入口）
         assertThat(results.get(0).getSuggestion())
-                .contains("V54__seed_production_operations.sql")
                 .contains("/api/admin/production/routings");
         // 不落半成品：一行不写、订单状态不动（否则会留下「有加工单、无工序、无 qr_token」的孤儿态）
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
@@ -1481,13 +1468,12 @@ class ProcessingOrderServiceTest {
     @Test
     @DisplayName("#4116 切库负例②b：路线引用的工序在库中无活跃行 ⇒ 同样 fail-closed（指名报缺）")
     void generateFailsClosedWhenRouteCitesMissingOperation() {
-        // 库里这条路线存在，但「幽灵工序」在 production_operations 里没有行
-        Map<String, Object> broken = v54Route("布帘", "韩褶");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> steps = (List<Map<String, Object>>) broken.get("operations");
-        steps.add(new LinkedHashMap<>(Map.of("seq", 12, "operation", "幽灵工序")));
-        broken.put("missing_operations", List.of("幽灵工序"));
-        when(productionOperationQueryService.findRouting(eq(TENANT), anyString(), anyString())).thenReturn(broken);
+        // 库里这条路线存在，但主线引用的一道工序在该租户工序库里**没有行**（P2b：注入法 =
+        // 从工序库元数据里挖掉「韩褶-布」⇒ 变体名解析不到 ⇒ 登记进 missing_operations）
+        stubLibrary();
+        Map<String, Map<String, Object>> broken = RoutingModelFixture.catalog();
+        broken.remove("韩褶-布");
+        when(productionOperationQueryService.operationsByName(TENANT)).thenReturn(broken);
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
         when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemHanzhe("米白")));
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
@@ -1496,7 +1482,8 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getCode()).isEqualTo(ProcessingOrderService.ERR_OPERATION_NOT_FOUND);
-        assertThat(results.get(0).getMessage()).contains("幽灵工序");
+        assertThat(results.get(0).getMessage()).as("指名报缺：报的是**逻辑工序名**（韩褶），可行动建议给库入口")
+                .contains("韩褶");
         assertThat(results.get(0).getSuggestion()).contains("/api/admin/production/operations-catalog");
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
     }
@@ -1512,9 +1499,9 @@ class ProcessingOrderServiceTest {
         var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isTrue();
-        verify(productionOperationQueryService).findRouting(TENANT, "帘头", "平幔");
-        verify(productionOperationQueryService).findRouting(TENANT, "布帘", "韩褶");
-        // 实例 = 默认路线 rt-v54-01（11 道），不是空实例、也不是别的路线
+        // P2b：判别物 = 实际实例化的工序序列（新结构里「部位×工艺」不再选路线模板 ⇒
+        // 旧 findRouting 那两条 verify 已不适用；序列本身就是「用了哪条路线」的证据）
+        // 实例 = 默认路线（布帘×韩褶 11 道），不是空实例、也不是别的路线
         ArgumentCaptor<ProcessingPositionOperation> opCaptor =
                 ArgumentCaptor.forClass(ProcessingPositionOperation.class);
         verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(opCaptor.capture());
@@ -1533,7 +1520,8 @@ class ProcessingOrderServiceTest {
         var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isTrue();
-        verify(productionOperationQueryService).findRouting(TENANT, "布帘", "韩褶");
+        // P2b：判别物 = 默认路线（11 道）与其中「韩褶-布」这道（新结构里工艺触发的是**规则**，
+        // 不再是「选哪条路线」）
         ArgumentCaptor<ProcessingPositionOperation> opCaptor =
                 ArgumentCaptor.forClass(ProcessingPositionOperation.class);
         verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(opCaptor.capture());
@@ -1552,9 +1540,8 @@ class ProcessingOrderServiceTest {
         var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isTrue();
-        // 派生键命中 布帘×打孔 ⇒ 取 rt-v54-02（10 道），**不**回落到默认路线（11 道）
-        verify(productionOperationQueryService).findRouting(TENANT, "布帘", "打孔");
-        verify(productionOperationQueryService, never()).findRouting(TENANT, "布帘", "韩褶");
+        // 派生键命中 工艺=打孔 ⇒ 规则插入「打孔」（10 道），**不**回落到韩褶的 11 道。
+        // P2b 判别物 = 序列里是「打孔-布」而不是「韩褶-布」+ 道数（10 ≠ 11）。
         ArgumentCaptor<ProcessingPositionOperation> opCaptor =
                 ArgumentCaptor.forClass(ProcessingPositionOperation.class);
         verify(positionOperationMapper, times(V54_BULIAN_DAKONG.length)).insert(opCaptor.capture());
@@ -1592,14 +1579,15 @@ class ProcessingOrderServiceTest {
         var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isTrue();
-        // 直读 ⇒ 取订单写下的键，且**不查**信号映射表（派生只是存量单兜底）
-        verify(productionOperationQueryService).findRouting(TENANT, "纱帘", "打孔");
-        verify(productionOperationQueryService, never()).findRouting(TENANT, "布帘", "韩褶");
+        // 直读 ⇒ 取订单写下的键，且**不查**信号映射表（派生只是存量单兜底）。
+        // P2b 判别物 = 实例序列 = 纱帘×打孔（6 道）而非布帘的 11 道（下方 containsExactlyElementsOf）。
         verify(productionOperationQueryService, never()).routeSignals(TENANT);
 
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
         verify(processingOrderMapper).insert(poCaptor.capture());
-        assertThat(poCaptor.getValue().getRouteKey()).isEqualTo("纱帘×打孔");
+        assertThat(poCaptor.getValue().getRouteKey())
+                .as("P2b：route_key = 实际使用的路线（具名模板）")
+                .isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
         assertThat(poCaptor.getValue().getRouteSource()).as("直读 = 新增第 5 态 direct").isEqualTo("direct");
         assertThat(poCaptor.getValue().getRouteRequestedKey()).isEqualTo("纱帘×打孔");
 
@@ -1656,10 +1644,13 @@ class ProcessingOrderServiceTest {
     @Test
     @DisplayName("#4354 判据 E：两维全缺且派生也拿不到路线 ⇒ fail-closed（不静默落别的路线、不落半成品）")
     void missingCraftSpecAndUnderivableRouteFailsClosed() {
-        // 库里**只有** 纱帘×打孔（没有默认路线 布帘×韩褶）：两维全缺 ⇒ 派生全不命中 ⇒ T3 ⇒ 中止生成
-        when(productionOperationQueryService.findRouting(eq(TENANT), anyString(), anyString()))
-                .thenAnswer(inv -> "纱帘".equals(inv.getArgument(1)) ? v54Route("纱帘", "打孔") : null);
-        when(productionOperationQueryService.routingKeys(TENANT)).thenReturn(List.of("纱帘×打孔"));
+        // 库里**只有**一条「纱帘」专属路线模板、**没有默认路线**：两维全缺 ⇒ 派生全不命中 ⇒
+        // 部位取默认「布帘」⇒ 布帘没有模板 ⇒ 回落默认模板 ⇒ 也没有 ⇒ T3 ⇒ 中止生成
+        when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString())).thenReturn(null);
+        when(productionOperationQueryService.defaultRouteTemplate(TENANT)).thenReturn(null);
+        when(productionOperationQueryService.routingKeys(TENANT)).thenReturn(List.of("纱帘专用路线"));
+        // 该租户有默认工艺（否则会先撞「缺 craft 且无默认工艺」那条 fail-closed，判据就换了形态）
+        lenient().when(productionOperationQueryService.defaultCraft(TENANT)).thenReturn("韩褶");
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
         when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemWithoutRouteSignal()));
         when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
@@ -1683,7 +1674,11 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).isSuccess()).isTrue();
         ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
         verify(processingOrderMapper).insert(poCaptor.capture());
-        assertThat(poCaptor.getValue().getRouteKey()).isEqualTo("布帘×韩褶");
+        assertThat(poCaptor.getValue().getRouteKey())
+                .as("P2b：route_key = 实际使用的路线（具名模板）")
+                .isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
+        assertThat(poCaptor.getValue().getRouteRequestedKey())
+                .as("派生出来的键 = 布帘×韩褶（空白键不是值）").isEqualTo("布帘×韩褶");
         assertThat(poCaptor.getValue().getRouteSource())
                 .as("空白键不是值：仍走既有派生（derived）—— 既不是 direct，也不是 missing_route")
                 .isEqualTo("derived");
@@ -1773,7 +1768,7 @@ class ProcessingOrderServiceTest {
 
     // ── 套级工序去重（issue #4384 **A2**）─────────────────────────────────────
     //
-    // A1（#4397 / V67）把 `scope ∈ {position, set}` 落进工序库，`findRouting` 逐字带出；
+    // A1（#4397 / V67）把 `scope ∈ {position, set}` 落进工序库，读面逐字带出；
     // A2（本单）在实例化侧让**套级工序每樘窗（`craftGroupKey` 组）只出现一次**。
     // 判据**必须**是库里的 `scope` —— 硬编码 `外帘打卷/装袋/发货` 即「常量散在代码里、商家改了库不生效」。
 
@@ -1865,10 +1860,13 @@ class ProcessingOrderServiceTest {
     @DisplayName("#4384 A2 注入法：库把「外帘装袋」的 scope 改回 position ⇒ **不去重**（判据是库里的 scope，不是硬编码工序名）")
     void setLevelDedupFollowsLibraryScopeNotOperationNames() {
         // 库桩 = V67 终态，但**商家把「外帘装袋」改回部位级**（工序库可配，A1 已接线）
-        when(productionOperationQueryService.findRouting(eq(TENANT), anyString(), anyString()))
-                .thenAnswer(inv -> withScopeOverridden(
-                        v54Route(inv.getArgument(1), inv.getArgument(2)), "外帘装袋", "position"));
-        lenient().when(productionOperationQueryService.routeSignals(TENANT)).thenReturn(v60Signals());
+        // P2b：scope 由工序库元数据逐字带出（`operationsByName`）⇒ 注入点在这里
+        stubLibrary();
+        Map<String, Map<String, Object>> overridden = RoutingModelFixture.catalog();
+        Map<String, Object> packing = new LinkedHashMap<>(overridden.get("外帘装袋"));
+        packing.put("scope", "position");
+        overridden.put("外帘装袋", packing);
+        when(productionOperationQueryService.operationsByName(TENANT)).thenReturn(overridden);
         stubGenerate(clothPlusSheerWindow());
 
         realChainService().generate(List.of("order-001"), TENANT, "u1");
@@ -1878,26 +1876,6 @@ class ProcessingOrderServiceTest {
                 .as("库里说 position ⇒ 按部位各出一次（2）—— 硬编码工序名的实现会在这里假绿")
                 .isEqualTo(2);
         assertThat(instanceCountOf(instances, "外帘打卷")).as("其余仍是 set ⇒ 仍去重").isEqualTo(1);
-    }
-
-    /** 把路线桩里某道工序的 `scope` 改成 `scope`（深拷贝，不改共享常量）。 */
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> withScopeOverridden(Map<String, Object> route, String operation,
-                                                           String scope) {
-        if (route == null) {
-            return null;
-        }
-        Map<String, Object> copy = new LinkedHashMap<>(route);
-        List<Map<String, Object>> steps = new ArrayList<>();
-        for (Map<String, Object> step : (List<Map<String, Object>>) route.get("operations")) {
-            Map<String, Object> stepCopy = new LinkedHashMap<>(step);
-            if (operation.equals(stepCopy.get("operation"))) {
-                stepCopy.put("scope", scope);
-            }
-            steps.add(stepCopy);
-        }
-        copy.put("operations", steps);
-        return copy;
     }
 
     /**
@@ -2872,9 +2850,11 @@ class ProcessingOrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
         when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemHanzhe("米白")));
 
+        // 空库（零路线模板 ∧ 零默认工艺）⇒ fail-closed 中止；**绝不**静默返回空 payload
+        // （那会让调用方落一个「有加工单、零工序」的空壳）。具体措辞由实现选，不把文案当判据。
         assertThatThrownBy(() -> processingOrderService.derivePositionPayload("order-001", TENANT))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("工序库");
+                .hasMessageContaining("无法实例化工序");
     }
 
     @Test

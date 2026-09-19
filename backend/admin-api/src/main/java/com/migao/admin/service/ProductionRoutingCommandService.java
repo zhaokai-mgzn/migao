@@ -4,12 +4,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionRouteSignal;
-import com.migao.admin.entity.ProductionRouting;
+import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionRoutingVersion;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.ProductionOperationMapper;
 import com.migao.admin.mapper.ProductionRouteSignalMapper;
-import com.migao.admin.mapper.ProductionRoutingMapper;
+import com.migao.admin.mapper.ProductionRouteTemplateMapper;
 import com.migao.admin.mapper.ProductionRoutingVersionMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,103 +55,217 @@ public class ProductionRoutingCommandService {
     /** 路线/信号状态取值（V49/V60 `status VARCHAR(16) DEFAULT 'active'`：active / disabled）。 */
     private static final Set<String> STATUSES = Set.of("active", "disabled");
 
-    private final ProductionRoutingMapper productionRoutingMapper;
+    /**
+     * 新路线的默认适用帘种集合（取值域同 {@code production_operation_positions.position}）。
+     *
+     * <p>为什么给默认而不是要求必填：V71/V72 种子路线就是「一条主线适用全部三种帘种」，
+     * 前端「新建路线」也只需要先给个名字 ⇒ 强制填三元素数组只是摩擦。
+     * 要收窄适用范围的商家可显式给 {@code positions}。</p>
+     */
+    private static final List<String> DEFAULT_POSITIONS = List.of("布帘", "纱帘", "帘头");
+
+    private final ProductionRouteTemplateMapper productionRouteTemplateMapper;
     private final ProductionRoutingVersionMapper productionRoutingVersionMapper;
     private final ProductionOperationMapper productionOperationMapper;
     private final ProductionRouteSignalMapper productionRouteSignalMapper;
     private final ProductionOperationQueryService productionOperationQueryService;
 
-    // ══════════════════════════════ 路线：新建 / 改序列 ══════════════════════════════
+    // ══════════════════════════ 路线模板：新建 / 改 / 删（P2b，issue #4459）══════════════════════════
+    //
+    // 写面自 P2b 起落在 **production_route_templates**（新结构）：路线 = **一条具名主线**
+    // （逻辑工序名）+ 适用帘种集合 + 默认标记。旧 `production_routings`（部位×工艺 展开快照）
+    // 的活跃行已由 V73 软删 ⇒ 再往它写就是往**死表**写（写进去没人读，商家改了不生效且不报错）。
+    //
+    // 工艺不再参与「选哪条路线」（它只触发 production_route_rules）⇒ 本类的 body 从
+    // `{curtain_type, craft, operations}` 改为 `{name, positions, mainline, is_default, status}`。
 
     /**
-     * 新建路线（issue #4308 交付物 2 的补遗端点 {@code POST /routings}）。
+     * 新建路线模板（{@code POST /routings}）。
      *
-     * <p>{@code operations} 可缺省 = **初版空序列**（前端流程 = 先建「部位×工艺」再逐道选工序）；
-     * 给了序列就按 {@link #validateSequence} 全量校验（与改序列同一份护栏，不复制第二份）。</p>
+     * <p>{@code mainline} 可缺省 = **初版空主线**（前端流程 = 先建路线再逐道选工序）；
+     * 给了主线就按 {@link #validateMainline} 全量校验（与改主线同一份护栏，不复制第二份）。</p>
+     *
+     * <p><b>护栏（issue #4432 正文 §三，逐条 {@code error.details}）</b>：同租户活跃路线不得重名（409）/
+     * 主线引用工序库中不存在的工序拒 / 重复工序拒 / 至少一道必完工序 / {@code is_default=true} ⇒
+     * 把既有默认降级（**恰一条默认**：DB 部分唯一索引
+     * {@code uk_production_route_templates_tenant_default} 保证 ≤1，不降级会撞索引变 500）。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> createRouting(Map<String, Object> body, Long tenantId) {
-        String curtainType = requiredText(body == null ? null : body.get("curtain_type"), "curtain_type");
-        String craft = requiredText(body == null ? null : body.get("craft"), "craft");
-        List<String> operations = operations(body);
-        if (operations != null) {
-            validateSequence(operations, tenantId);
+        String name = requiredText(body == null ? null : body.get("name"), "name");
+        List<String> mainline = stringList(body == null ? null : body.get("mainline"));
+        List<String> positions = stringList(body == null ? null : body.get("positions"));
+        if (!mainline.isEmpty()) {
+            validateMainline(mainline, tenantId);
         }
-        List<String> sequence = operations == null ? List.of() : operations;
-
-        for (ProductionRouting existing : allRoutings(tenantId)) {
-            if (Objects.equals(existing.getCurtainType(), curtainType)
-                    && Objects.equals(existing.getCraft(), craft)) {
+        for (ProductionRouteTemplate existing : allRoutings(tenantId)) {
+            if (Objects.equals(existing.getName(), name)) {
                 throw BusinessException.conflict(
-                        String.format("工艺路线「%s×%s」已存在", curtainType, craft),
-                        "请直接编辑既有路线，或换一个「部位×工艺」组合（查看入口 GET /api/admin/production/routings）");
+                        String.format("工艺路线「%s」已存在", name),
+                        "请直接编辑既有路线，或换一个路线名（查看入口 GET /api/admin/production/routings）");
             }
         }
+        boolean isDefault = Boolean.TRUE.equals(body == null ? null : body.get("is_default"));
+        if (isDefault) {
+            demoteCurrentDefault(tenantId, null);
+        }
 
-        ProductionRouting routing = ProductionRouting.builder()
+        ProductionRouteTemplate template = ProductionRouteTemplate.builder()
                 .tenantId(tenantId)
-                .curtainType(curtainType)
-                .craft(craft)
-                .operations(sequence)
+                .name(name)
+                .isDefault(isDefault)
+                .positions(positions.isEmpty() ? DEFAULT_POSITIONS : positions)
+                .mainline(mainline)
                 .status(body != null && body.containsKey("status")
                         ? requiredStatus(body.get("status")) : "active")
                 .createdAt(OffsetDateTime.now())
                 .updatedAt(OffsetDateTime.now())
                 .deleted(0)
                 .build();
-        productionRoutingMapper.insert(routing);
-        appendVersion(routing, tenantId, sequence);
-        log.info("新建工艺路线: tenantId={}, key={}×{}, 工序数={}", tenantId, curtainType, craft, sequence.size());
-        return productionOperationQueryService.routingView(routing);
+        productionRouteTemplateMapper.insert(template);
+        appendVersion(template, tenantId, mainline);
+        log.info("新建工艺路线: tenantId={}, name={}, 主线={} 道, isDefault={}",
+                tenantId, name, mainline.size(), isDefault);
+        return productionOperationQueryService.templateView(template);
     }
 
     /**
-     * 改路线序列（issue #4308 交付物 2 的主端点 {@code PUT /routings/{id}}）。
+     * 改路线（{@code PUT /routings/{id}}，部分更新：只写 body 里出现的字段）。
      *
-     * <p>五条护栏（issue 冻结清单，逐条 {@code error.details}）：空序列拒 / 引用工序库中不存在的工序拒 /
-     * 重复工序拒 / 至少一道必完工序 / seq 归一化为 1..N（存的就是有序数组，响应由
-     * {@code routingView} 归一化）。**全部违规一次报全**（不是报第一条就返回）——
-     * 逐条展示的前提是别让用户改一条提交一次。</p>
+     * <p><b>body 扩展（issue #4459 §1③）</b>：{@code {name?, is_default?, mainline?, positions?, status?}}。
+     * 护栏逐条（全部 422 + {@code error.details}）：</p>
+     * <ul>
+     *   <li><b>改名只改 {@code name}</b> —— 不给 {@code mainline} 就**不动序列**（改一个名字不该顺带
+     *       重写计件工资的输入）；</li>
+     *   <li><b>{@code is_default} 恰一条</b> —— 设为 true 时把既有默认降级（同事务，避开部分唯一索引）；</li>
+     *   <li><b>{@code is_default:false} ⇒ 422</b> —— 「取消默认」会让该租户**零默认** ⇒ 建单全 fail-closed
+     *       （改默认请对另一条置 true）；</li>
+     *   <li><b>停用默认路线 ⇒ 422</b> —— 同上，停用它等于把租户变成零默认；</li>
+     *   <li>主线护栏与新建共用一份（{@link #validateMainline}）。</li>
+     * </ul>
      */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> updateRouting(String id, Map<String, Object> body, Long tenantId) {
-        ProductionRouting routing = findRouting(id, tenantId);
-        List<String> operations = operations(body);
-        if (operations == null) {
-            throw BusinessException.validationError("operations 不能为空（改序列必须给出完整的有序工序名列表）");
+        ProductionRouteTemplate template = findRouting(id, tenantId);
+        List<String> mainline = stringList(body.get("mainline"));
+        if (body.containsKey("mainline")) {
+            validateMainline(mainline, tenantId);
         }
-        validateSequence(operations, tenantId);
+        List<String> previous = stringList(template.getMainline());
 
-        List<String> previous = operationNames(routing.getOperations());
-        routing.setOperations(operations);
-        routing.setUpdatedAt(OffsetDateTime.now());
+        if (body.containsKey("name")) {
+            String name = requiredText(body.get("name"), "name");
+            for (ProductionRouteTemplate other : allRoutings(tenantId)) {
+                if (!Objects.equals(other.getId(), template.getId()) && Objects.equals(other.getName(), name)) {
+                    throw BusinessException.conflict(
+                            String.format("工艺路线「%s」已存在", name),
+                            "换一个路线名（查看入口 GET /api/admin/production/routings）");
+                }
+            }
+            template.setName(name);
+        }
+        if (body.containsKey("positions")) {
+            List<String> positions = stringList(body.get("positions"));
+            if (positions.isEmpty()) {
+                throw BusinessException.validationError("positions 不能为空（一条路线至少要说明它适用哪些帘种）");
+            }
+            template.setPositions(positions);
+        }
+        if (body.containsKey("is_default")) {
+            if (!Boolean.TRUE.equals(body.get("is_default"))) {
+                throw BusinessException.validationError("is_default 不能置为 false",
+                        List.of(BusinessException.detail("is_default",
+                                "取消默认会让该租户没有默认路线 ⇒ 缺信号订单建单全部 fail-closed；"
+                                        + "改默认请对另一条路线置 is_default=true（它会自动把当前默认降级）")),
+                        "把要作为默认的那条路线 PUT is_default=true");
+            }
+            demoteCurrentDefault(tenantId, template.getId());
+            template.setIsDefault(true);
+        }
         if (body.containsKey("status")) {
-            routing.setStatus(requiredStatus(body.get("status")));
+            String status = requiredStatus(body.get("status"));
+            if ("disabled".equals(status) && Boolean.TRUE.equals(template.getIsDefault())) {
+                throw BusinessException.validationError("默认路线不能停用",
+                        List.of(BusinessException.detail("status",
+                                "停用默认路线 ⇒ 该租户零默认 ⇒ 缺信号订单建单全部 fail-closed；"
+                                        + "请先把另一条设为默认，再停用这条")),
+                        "先把另一条路线 PUT is_default=true，再停用这条");
+            }
+            template.setStatus(status);
         }
-        productionRoutingMapper.updateById(routing);
-        if (!previous.equals(operations)) {
-            appendVersion(routing, tenantId, operations);
-            log.info("改工艺路线序列: tenantId={}, routingId={}, {} 道 -> {} 道",
-                    tenantId, routing.getId(), previous.size(), operations.size());
+        if (body.containsKey("mainline")) {
+            template.setMainline(mainline);
         }
-        return productionOperationQueryService.routingView(routing);
+        template.setUpdatedAt(OffsetDateTime.now());
+        productionRouteTemplateMapper.updateById(template);
+
+        List<String> after = stringList(template.getMainline());
+        if (!previous.equals(after)) {
+            appendVersion(template, tenantId, after);
+            log.info("改工艺路线主线: tenantId={}, routingId={}, {} 道 -> {} 道",
+                    tenantId, template.getId(), previous.size(), after.size());
+        }
+        return productionOperationQueryService.templateView(template);
     }
 
     /**
-     * 序列护栏（**唯一一份**：新建与改序列共用）。违规**一次报全**，每条带
-     * {@code field}（{@code operations} / {@code operations[i]} / {@code must_finish}）。
+     * 删路线（{@code DELETE /routings/{id}}，**软删** {@code deleted=1}）。
+     *
+     * <p>护栏（issue #4432 正文 §三）：<b>删默认 ⇒ 422</b>（删了就是零默认 ⇒ 建单全 fail-closed）；
+     * <b>删最后一条 ⇒ 422</b>（同因）。</p>
+     *
+     * <p>为什么不物理删：派生读的是 {@code deleted=0 AND status=active}，软删后这条立刻不参与选路；
+     * 而「谁在什么时候删掉了哪条路线」在排查工序错配时是唯一的证据（与信号映射同口径）。</p>
      */
-    private void validateSequence(List<String> operations, Long tenantId) {
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> deleteRouting(String id, Long tenantId) {
+        ProductionRouteTemplate template = findRouting(id, tenantId);
         List<ApiResponse.ErrorDetail> details = new ArrayList<>();
-        if (operations.isEmpty()) {
-            details.add(BusinessException.detail("operations", "序列不能为空：一条路线至少要有 1 道工序"));
+        if (Boolean.TRUE.equals(template.getIsDefault())) {
+            details.add(BusinessException.detail("is_default",
+                    "默认路线不能删：删了该租户就没有默认路线 ⇒ 缺信号订单建单全部 fail-closed。"
+                            + "请先把另一条设为默认，再删这条"));
+        }
+        List<ProductionRouteTemplate> all = allRoutings(tenantId);
+        if (all.size() <= 1) {
+            details.add(BusinessException.detail("id",
+                    "这是该租户最后一条工艺路线：删了就没有任何路线可用 ⇒ 一张加工单也生成不了。"
+                            + "请先新建另一条路线"));
+        }
+        if (!details.isEmpty()) {
+            throw BusinessException.validationError("删除工艺路线未通过校验（" + details.size() + " 条问题）",
+                    details, "先把另一条路线设为默认（PUT is_default=true），或先新建一条路线");
+        }
+        template.setDeleted(1);
+        template.setUpdatedAt(OffsetDateTime.now());
+        productionRouteTemplateMapper.updateById(template);
+        log.info("删除工艺路线: tenantId={}, routingId={}, name={}", tenantId, template.getId(), template.getName());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", template.getId());
+        result.put("deleted", true);
+        return result;
+    }
+
+    /**
+     * 主线护栏（**唯一一份**：新建与改主线共用）。违规**一次报全**，每条带
+     * {@code field}（{@code mainline} / {@code mainline[i]} / {@code must_finish}）。
+     *
+     * <p>主线存的是**逻辑工序名**（与 {@code OPERATION_LOGICAL_NAMES} 值域一致），
+     * 但商家在界面上看到的是工序库里的**变体名**（{@code 精裁-布}）⇒ 校验时两态都接受：
+     * 先按原样查库，查不到再按 {@code variantNameOf} 反查（避免「界面上选得出、后端说不存在」）。</p>
+     */
+    private void validateMainline(List<String> mainline, Long tenantId) {
+        List<ApiResponse.ErrorDetail> details = new ArrayList<>();
+        if (mainline.isEmpty()) {
+            details.add(BusinessException.detail("mainline", "主线不能为空：一条路线至少要有 1 道工序"));
         }
         Map<String, ProductionOperation> library = activeOperationsByName(tenantId);
+        Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
         Set<String> seen = new LinkedHashSet<>();
         boolean anyMustFinish = false;
-        for (int i = 0; i < operations.size(); i++) {
-            String name = operations.get(i);
-            String field = "operations[" + i + "]";
+        for (int i = 0; i < mainline.size(); i++) {
+            String name = mainline.get(i);
+            String field = "mainline[" + i + "]";
             if (!StringUtils.hasText(name)) {
                 details.add(BusinessException.detail(field, "工序名不能为空"));
                 continue;
@@ -163,6 +277,12 @@ public class ProductionRoutingCommandService {
             }
             ProductionOperation op = library.get(name);
             if (op == null) {
+                // 逻辑名（新结构的书写形态）⇒ 反查该租户库里的变体名
+                String variant = productionOperationQueryService.variantNameOf(
+                        productionOperationQueryService.normalizeOperationName(name), null, catalog);
+                op = variant == null ? null : library.get(variant);
+            }
+            if (op == null) {
                 details.add(BusinessException.detail(field,
                         String.format("工序「%s」在工序库中不存在或已停用：请先在「工序库」新增该工序，或从库里已有的工序里选", name)));
                 continue;
@@ -171,17 +291,37 @@ public class ProductionRoutingCommandService {
                 anyMustFinish = true;
             }
         }
-        if (!operations.isEmpty() && !anyMustFinish && details.isEmpty()) {
-            // 只有当序列本身合法时才单独报这条（否则用户会同时看到「工序不存在」与「缺少必完工序」，
+        if (!mainline.isEmpty() && !anyMustFinish && details.isEmpty()) {
+            // 只有当主线本身合法时才单独报这条（否则用户会同时看到「工序不存在」与「缺少必完工序」，
             // 而后者在前者修好前根本无从判断 —— 那才是噪音）
             details.add(BusinessException.detail("must_finish",
-                    "序列中至少要有 1 道必完工序：必完工序全绿是加工单完工判定的唯一依据，一道都没有 ⇒ 这张单永远完不了工"));
+                    "主线中至少要有 1 道必完工序：必完工序全绿是加工单完工判定的唯一依据，一道都没有 ⇒ 这张单永远完不了工"));
         }
         if (!details.isEmpty()) {
             throw BusinessException.validationError(
-                    String.format("工艺路线序列未通过校验（%d 条问题）", details.size()),
+                    String.format("工艺路线主线未通过校验（%d 条问题）", details.size()),
                     details,
                     "逐条修好后重新提交；工序库目录查看入口 GET /api/admin/production/operations-catalog");
+        }
+    }
+
+    /**
+     * 把该租户当前的默认路线降级（**恰一条默认**的不变式）。
+     *
+     * <p>必须在**同事务**里先降级再提升：DB 的部分唯一索引
+     * {@code uk_production_route_templates_tenant_default} 只允许一行 {@code is_default AND deleted=0}
+     * ⇒ 先提升会当场撞索引（500），先降级才是原子切换。</p>
+     *
+     * @param keepId 例外（不改动它自己）
+     */
+    private void demoteCurrentDefault(Long tenantId, String keepId) {
+        for (ProductionRouteTemplate other : allRoutings(tenantId)) {
+            if (Objects.equals(other.getId(), keepId) || !Boolean.TRUE.equals(other.getIsDefault())) {
+                continue;
+            }
+            other.setIsDefault(false);
+            other.setUpdatedAt(OffsetDateTime.now());
+            productionRouteTemplateMapper.updateById(other);
         }
     }
 
@@ -339,13 +479,13 @@ public class ProductionRoutingCommandService {
 
     // ══════════════════════════════ 读取 / 版本账 ══════════════════════════════
 
-    private ProductionRouting findRouting(String id, Long tenantId) {
-        ProductionRouting routing = id == null ? null : productionRoutingMapper.selectById(id);
-        if (routing == null || !tenantId.equals(routing.getTenantId())
-                || !Integer.valueOf(0).equals(routing.getDeleted())) {
+    private ProductionRouteTemplate findRouting(String id, Long tenantId) {
+        ProductionRouteTemplate template = id == null ? null : productionRouteTemplateMapper.selectById(id);
+        if (template == null || !tenantId.equals(template.getTenantId())
+                || !Integer.valueOf(0).equals(template.getDeleted())) {
             throw BusinessException.notFound("工艺路线");
         }
-        return routing;
+        return template;
     }
 
     private ProductionRouteSignal findSignal(String id, Long tenantId) {
@@ -357,12 +497,12 @@ public class ProductionRoutingCommandService {
         return row;
     }
 
-    /** 全部未软删路线（含 disabled：新建时的重名判据要覆盖停用行，否则会撞 DB 唯一索引）。 */
-    private List<ProductionRouting> allRoutings(Long tenantId) {
-        List<ProductionRouting> rows = productionRoutingMapper.selectList(
-                new LambdaQueryWrapper<ProductionRouting>()
-                        .eq(ProductionRouting::getTenantId, tenantId)
-                        .eq(ProductionRouting::getDeleted, 0));
+    /** 全部未软删路线模板（含 disabled：重名判据要覆盖停用行，否则会撞 DB 唯一索引）。 */
+    private List<ProductionRouteTemplate> allRoutings(Long tenantId) {
+        List<ProductionRouteTemplate> rows = productionRouteTemplateMapper.selectList(
+                new LambdaQueryWrapper<ProductionRouteTemplate>()
+                        .eq(ProductionRouteTemplate::getTenantId, tenantId)
+                        .eq(ProductionRouteTemplate::getDeleted, 0));
         return rows == null ? List.of() : rows;
     }
 
@@ -390,15 +530,21 @@ public class ProductionRoutingCommandService {
         return byName;
     }
 
-    /** 追加一行版本账（路线变更留痕：路线是计件工资与完工判定的唯一输入）。 */
-    private void appendVersion(ProductionRouting routing, Long tenantId, List<String> operations) {
+    /**
+     * 追加一行版本账（路线变更留痕：路线是计件工资与完工判定的唯一输入）。
+     *
+     * <p>V71 的版本表沿用旧路线的 {@code curtain_type} / {@code craft} 两列（历史形态）；
+     * 新结构里路线**没有部位×工艺维**（工艺已降为规则触发键）⇒ 两列留 {@code null}
+     * （列本身可空；改列需新迁移，不在本单）。</p>
+     */
+    private void appendVersion(ProductionRouteTemplate template, Long tenantId, List<String> mainline) {
         productionRoutingVersionMapper.insert(ProductionRoutingVersion.builder()
                 .tenantId(tenantId)
-                .routingId(routing.getId())
-                .curtainType(routing.getCurtainType())
-                .craft(routing.getCraft())
-                .operations(operations)
-                .operationCount(operations.size())
+                .routingId(template.getId())
+                .curtainType(null)
+                .craft(null)
+                .operations(mainline)
+                .operationCount(mainline.size())
                 .createdAt(OffsetDateTime.now())
                 .deleted(0)
                 .build());
@@ -406,29 +552,19 @@ public class ProductionRoutingCommandService {
 
     // ══════════════════════════════ 解析工具 ══════════════════════════════
 
-    /** 有序工序名列表；{@code null} = body 里没给这个字段（与「给了空数组」是两回事）。 */
-    @SuppressWarnings("unchecked")
-    private static List<String> operations(Map<String, Object> body) {
-        if (body == null || !body.containsKey("operations")) {
-            return null;
-        }
-        Object raw = body.get("operations");
-        if (!(raw instanceof List<?> list)) {
-            throw BusinessException.validationError("operations 必须是工序名数组");
-        }
-        List<String> names = new ArrayList<>(list.size());
-        for (Object item : list) {
-            names.add(item == null ? null : String.valueOf(item).trim());
-        }
-        return names;
-    }
-
-    private static List<String> operationNames(Object raw) {
+    /**
+     * JSON 数组 → 有序字符串列表（{@code null} / 非数组 ⇒ **空列表**）。
+     *
+     * <p>与旧 {@code operations(body)} 的差别：那个用 {@code null} 区分「没给这个字段」与
+     * 「给了空数组」（改序列必须给全量）；本类改用 {@code body.containsKey(...)} 做这个区分
+     * （部分更新语义：{@code {name?, is_default?, mainline?}} 只写出现的字段）⇒ 本方法只管**取值**。</p>
+     */
+    private static List<String> stringList(Object raw) {
         List<String> names = new ArrayList<>();
         if (raw instanceof List<?> list) {
             for (Object item : list) {
                 if (item != null) {
-                    names.add(String.valueOf(item));
+                    names.add(String.valueOf(item).trim());
                 }
             }
         }

@@ -6,7 +6,9 @@ import com.migao.admin.config.IndustryCodes;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ProductionSeedTemplateInfo;
 import com.migao.admin.entity.ProductionOperation;
+import com.migao.admin.entity.ProductionCraft;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
+import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionOptionFactor;
 import com.migao.admin.entity.ProductionOptionRouting;
 import com.migao.admin.entity.ProductionRouting;
@@ -73,12 +75,62 @@ class ProductionSeedTemplateServiceTest {
     private ProductionOptionFactorMapper productionOptionFactorMapper;
     @Mock
     private ProductionOperationPriceVersionMapper priceVersionMapper;
+    // ── 新结构（P2b，issue #4459 §1④）：开租必须种「默认路线 + 默认工艺」 ──
+    @Mock
+    private com.migao.admin.mapper.ProductionRouteTemplateMapper productionRouteTemplateMapper;
+    @Mock
+    private com.migao.admin.mapper.ProductionOperationPositionMapper productionOperationPositionMapper;
+    @Mock
+    private com.migao.admin.mapper.ProductionRouteRuleMapper productionRouteRuleMapper;
+    @Mock
+    private com.migao.admin.mapper.ProductionCraftMapper productionCraftMapper;
 
     private static final Long TENANT = 42L;
 
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(TENANT);
+        stubEmptyNewStructure();
+    }
+
+    /**
+     * 新结构三表 + 工艺词表「空库」桩（各用例按需覆盖）。
+     *
+     * <p>lenient：负向用例（行业不匹配 ⇒ 不套用）根本不会走到它们 ⇒ 不被走的桩不该判失败。</p>
+     */
+    /**
+     * 让工序库「insert 后可见」（Mockito 桩不会自动回读）：真实路径里 planPositions/planRouteTemplates
+     * 读的是**刚插入**的工序库 ⇒ 桩必须把 insert 累积起来给 selectList 回读，否则
+     * 「逻辑工序名集合」恒为空 ⇒ 主线/价目/规则全被过滤 ⇒ 假红。
+     */
+    private List<ProductionOperation> wireOperationLibrary() {
+        List<ProductionOperation> store = new ArrayList<>();
+        when(productionOperationMapper.selectList(any())).thenAnswer(inv -> store);
+        when(productionOperationMapper.insert(any(ProductionOperation.class))).thenAnswer(inv -> {
+            ProductionOperation op = inv.getArgument(0);
+            if (op.getId() == null) {
+                op.setId("op-" + store.size());
+            }
+            store.add(op);
+            return 1;
+        });
+        return store;
+    }
+
+    private void stubEmptyNewStructure() {
+        lenient().when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
+        lenient().when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
+        lenient().when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of());
+        lenient().when(productionCraftMapper.selectList(any())).thenReturn(List.of());
+        lenient().when(productionRouteTemplateMapper.insert(
+                org.mockito.ArgumentMatchers.<ProductionRouteTemplate>any())).thenReturn(1);
+        lenient().when(productionOperationPositionMapper.insert(
+                org.mockito.ArgumentMatchers.<com.migao.admin.entity.ProductionOperationPosition>any()))
+                .thenReturn(1);
+        lenient().when(productionRouteRuleMapper.insert(
+                org.mockito.ArgumentMatchers.<com.migao.admin.entity.ProductionRouteRule>any())).thenReturn(1);
+        lenient().when(productionCraftMapper.insert(
+                org.mockito.ArgumentMatchers.<ProductionCraft>any())).thenReturn(1);
     }
 
     @AfterEach
@@ -137,23 +189,22 @@ class ProductionSeedTemplateServiceTest {
         @BeforeEach
         void resetMappers() {
             reset(productionOperationMapper, productionRoutingMapper,
-                    productionOptionRoutingMapper, productionOptionFactorMapper, priceVersionMapper);
+                    productionOptionRoutingMapper, productionOptionFactorMapper, priceVersionMapper,
+                    productionRouteTemplateMapper, productionOperationPositionMapper,
+                    productionRouteRuleMapper, productionCraftMapper);
+            stubEmptyNewStructure();
         }
 
         @Test
         @DisplayName("套用成功：35 工序 + 9 路线 + 16 选项映射 + 1 系数，逐条带 source")
         void apply_createsAllSeedRows() {
-            when(productionOperationMapper.selectList(any())).thenReturn(List.of());
-            when(productionRoutingMapper.selectList(any())).thenReturn(List.of());
-            when(productionOptionRoutingMapper.selectList(any())).thenReturn(List.of());
-            when(productionOptionFactorMapper.selectList(any())).thenReturn(List.of());
+            wireOperationLibrary();
 
             Map<String, Object> result = service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
 
             assertThat(result.get("templateId")).isEqualTo("curtain");
             assertThat(result.get("applied")).isEqualTo(true);
             assertThat(result.get("created_operations")).isEqualTo(35);
-            assertThat(result.get("created_routings")).isEqualTo(9);
             assertThat(result.get("skipped")).isEqualTo(0);
 
             ArgumentCaptor<ProductionOperation> opCaptor = ArgumentCaptor.forClass(ProductionOperation.class);
@@ -171,16 +222,35 @@ class ProductionSeedTemplateServiceTest {
             assertThat(first.getStatus()).isEqualTo("active");
             assertThat(first.getDeleted()).isZero();
 
-            ArgumentCaptor<ProductionRouting> rtCaptor = ArgumentCaptor.forClass(ProductionRouting.class);
-            verify(productionRoutingMapper, times(9)).insert(rtCaptor.capture());
-            assertThat(rtCaptor.getAllValues())
-                    .allSatisfy(rt -> assertThat(rt.getSource())
-                            .isIn(ProductionSeedTemplateService.ROUTING_SOURCES));
-            assertThat(rtCaptor.getAllValues().get(0).getOperations())
-                    .isEqualTo(List.of("精裁-布", "布三边", "韩褶-布", "上车布-布", "熨烫-布",
-                            "定型-布", "复烫-布", "布帘车被", "外帘打卷", "外帘装袋", "外帘发货"));
-            verify(productionOptionRoutingMapper, times(16)).insert(any(ProductionOptionRouting.class));
-            verify(productionOptionFactorMapper, times(1)).insert(any(ProductionOptionFactor.class));
+            // 🔴 P0（issue #4459 §1④）：消费路径已切新结构 ⇒ 开租必须同时种
+            // 「默认路线模板 + 默认工艺 + 部位价目 + 规则表」，否则该租户零默认 ⇒ 建单全 fail-closed
+            ArgumentCaptor<ProductionRouteTemplate> rtCaptor =
+                    ArgumentCaptor.forClass(ProductionRouteTemplate.class);
+            verify(productionRouteTemplateMapper, times(1)).insert(rtCaptor.capture());
+            ProductionRouteTemplate template = rtCaptor.getValue();
+            assertThat(template.getIsDefault()).as("恰一条默认路线（缺它 ⇒ 建单 fail-closed）").isTrue();
+            assertThat(template.getTenantId()).isEqualTo(TENANT);
+            assertThat(template.getName()).isNotBlank();
+            assertThat((List<?>) template.getMainline())
+                    .as("主线必须非空（空主线 ⇒ 实例化零工序）").isNotEmpty();
+            assertThat((List<?>) template.getPositions()).asString()
+                    .isEqualTo(List.of("布帘", "纱帘", "帘头").toString());
+
+            ArgumentCaptor<ProductionCraft> craftCaptor = ArgumentCaptor.forClass(ProductionCraft.class);
+            verify(productionCraftMapper, times(1)).insert(craftCaptor.capture());
+            assertThat(craftCaptor.getValue().getIsDefault())
+                    .as("恰一条默认工艺（缺 craft 的订单取它；不得写死常量）").isTrue();
+
+            // 部位价目：规范矩阵 ∩ 该租户工序库（28 逻辑工序 × 3 部位 = 84 行）
+            verify(productionOperationPositionMapper, times(84))
+                    .insert(org.mockito.ArgumentMatchers.any(com.migao.admin.entity.ProductionOperationPosition.class));
+            // 规则表：工艺变体 10 + 特殊选项 16 + 计件系数档 1 = 27（逐条按该租户工序库过滤）
+            verify(productionRouteRuleMapper, times(27))
+                    .insert(org.mockito.ArgumentMatchers.<com.migao.admin.entity.ProductionRouteRule>any());
+            // 旧两表**不再写入**（P2b 起它们已退场：活跃行由 V73 软删）
+            verify(productionRoutingMapper, never()).insert(org.mockito.ArgumentMatchers.<ProductionRouting>any());
+            verify(productionOptionRoutingMapper, never()).insert(org.mockito.ArgumentMatchers.<ProductionOptionRouting>any());
+            verify(productionOptionFactorMapper, never()).insert(org.mockito.ArgumentMatchers.<ProductionOptionFactor>any());
         }
 
         @Test
@@ -191,50 +261,82 @@ class ProductionSeedTemplateServiceTest {
             // 空库 ⇒ 重插 9 条路线 + 16 条选项映射，而真实库里会撞
             // uk_production_routings_tenant_type_craft 等部分唯一索引）。计数桩让「第二次看到的
             // 库状态」由测试自己确定，判据不依赖 Mockito 的重桩行为。
+            // 新结构：insert 后可见（否则第二次仍读到空库 ⇒ 重插默认路线/工艺/价目/规则）
+            List<ProductionRouteTemplate> templateStore = new ArrayList<>();
+            List<ProductionCraft> craftStore = new ArrayList<>();
+            List<com.migao.admin.entity.ProductionOperationPosition> positionStore = new ArrayList<>();
+            List<com.migao.admin.entity.ProductionRouteRule> ruleStore = new ArrayList<>();
+            lenient().when(productionRouteTemplateMapper.selectList(any())).thenAnswer(inv -> templateStore);
+            lenient().when(productionRouteTemplateMapper.insert(
+                    org.mockito.ArgumentMatchers.<ProductionRouteTemplate>any())).thenAnswer(inv -> {
+                templateStore.add(inv.getArgument(0));
+                return 1;
+            });
+            lenient().when(productionCraftMapper.selectList(any())).thenAnswer(inv -> craftStore);
+            lenient().when(productionCraftMapper.insert(
+                    org.mockito.ArgumentMatchers.<ProductionCraft>any())).thenAnswer(inv -> {
+                craftStore.add(inv.getArgument(0));
+                return 1;
+            });
+            lenient().when(productionOperationPositionMapper.selectList(any())).thenAnswer(inv -> positionStore);
+            lenient().when(productionOperationPositionMapper.insert(
+                    org.mockito.ArgumentMatchers.<com.migao.admin.entity.ProductionOperationPosition>any()))
+                    .thenAnswer(inv -> {
+                        positionStore.add(inv.getArgument(0));
+                        return 1;
+                    });
+            lenient().when(productionRouteRuleMapper.selectList(any())).thenAnswer(inv -> ruleStore);
+            lenient().when(productionRouteRuleMapper.insert(
+                    org.mockito.ArgumentMatchers.<com.migao.admin.entity.ProductionRouteRule>any()))
+                    .thenAnswer(inv -> {
+                        ruleStore.add(inv.getArgument(0));
+                        return 1;
+                    });
             AtomicInteger opCalls = new AtomicInteger();
-            AtomicInteger rtCalls = new AtomicInteger();
-            AtomicInteger optCalls = new AtomicInteger();
-            AtomicInteger faCalls = new AtomicInteger();
             when(productionOperationMapper.selectList(any())).thenAnswer(inv ->
                     opCalls.getAndIncrement() == 0 ? List.of() : existingOperations());
-            when(productionRoutingMapper.selectList(any())).thenAnswer(inv ->
-                    rtCalls.getAndIncrement() == 0 ? List.of() : existingRoutings());
-            when(productionOptionRoutingMapper.selectList(any())).thenAnswer(inv ->
-                    optCalls.getAndIncrement() == 0 ? List.of() : existingOptionRoutings());
-            when(productionOptionFactorMapper.selectList(any())).thenAnswer(inv ->
-                    faCalls.getAndIncrement() == 0 ? List.of() : existingOptionFactors());
 
             Map<String, Object> first = service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
             assertThat(first.get("created_operations")).isEqualTo(35);
-            assertThat(first.get("created_routings")).isEqualTo(9);
+            assertThat(first.get("created_routings")).as("恰一条默认路线模板").isEqualTo(1);
+            assertThat(first.get("created_crafts")).as("恰一条默认工艺").isEqualTo(1);
+            assertThat((int) first.get("created_positions")).isGreaterThan(0);
 
             Map<String, Object> second = service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
 
             assertThat(second.get("created_operations")).as("第二次不得再插工序（幂等）").isEqualTo(0);
-            assertThat(second.get("created_routings")).as("第二次不得再插路线（幂等）").isEqualTo(0);
-            assertThat(second.get("created_options")).isEqualTo(0);
-            assertThat(second.get("created_option_factors")).isEqualTo(0);
+            assertThat(second.get("created_routings")).as("第二次不得再插路线模板（幂等）").isEqualTo(0);
+            assertThat(second.get("created_crafts")).as("第二次不得再插默认工艺（幂等）").isEqualTo(0);
+            assertThat(second.get("created_positions")).as("第二次不得再插部位价目（幂等）").isEqualTo(0);
+            assertThat(second.get("created_route_rules")).as("第二次不得再插规则（幂等）").isEqualTo(0);
             assertThat(second.get("skipped"))
-                    .as("第二次全部跳过：35 工序 + 9 路线 + 16 选项映射 + 1 系数")
-                    .isEqualTo(35 + 9 + 16 + 1);
+                    .as("第二次全部跳过：35 工序 + 1 路线模板（新结构里 9 条旧路线收敛成 1 条）"
+                            + " + 16 选项映射 + 1 系数档")
+                    .isEqualTo(35 + 1 + 16 + 1);
             verify(productionOperationMapper, times(35)).insert(any(ProductionOperation.class));
-            verify(productionRoutingMapper, times(9)).insert(any(ProductionRouting.class));
-            verify(productionOptionRoutingMapper, times(16)).insert(any(ProductionOptionRouting.class));
-            verify(productionOptionFactorMapper, times(1)).insert(any(ProductionOptionFactor.class));
+            verify(productionRouteTemplateMapper, times(1)).insert(
+                    org.mockito.ArgumentMatchers.<ProductionRouteTemplate>any());
+            verify(productionCraftMapper, times(1)).insert(
+                    org.mockito.ArgumentMatchers.<ProductionCraft>any());
+            // 旧两表**不再写入**（P2b 起已退场）
+            verify(productionRoutingMapper, never()).insert(
+                    org.mockito.ArgumentMatchers.<ProductionRouting>any());
+            verify(productionOptionRoutingMapper, never()).insert(
+                    org.mockito.ArgumentMatchers.<ProductionOptionRouting>any());
+            verify(productionOptionFactorMapper, never()).insert(
+                    org.mockito.ArgumentMatchers.<ProductionOptionFactor>any());
         }
 
         @Test
         @DisplayName("部分存在：只补缺的那些（不重复插入已存在的工序/路线）")
         void apply_onlyInsertsMissing() {
             when(productionOperationMapper.selectList(any())).thenReturn(existingOperations());
-            when(productionRoutingMapper.selectList(any())).thenReturn(List.of());
-            when(productionOptionRoutingMapper.selectList(any())).thenReturn(List.of());
-            when(productionOptionFactorMapper.selectList(any())).thenReturn(List.of());
 
             Map<String, Object> result = service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
 
             assertThat(result.get("created_operations")).isEqualTo(0);
-            assertThat(result.get("created_routings")).isEqualTo(9);
+            assertThat(result.get("created_routings"))
+                    .as("P2b：新结构里「路线」= 一条默认模板").isEqualTo(1);
             assertThat(result.get("skipped")).isEqualTo(35);
         }
 
@@ -257,7 +359,9 @@ class ProductionSeedTemplateServiceTest {
             // ② 复用跨租户的确定性 id（如 op-t42-1）⇒ 第二个租户的 id 与第一个相交（红）。
             GlobalKeyFakeStore store = new GlobalKeyFakeStore();
             store.wire(productionOperationMapper, productionRoutingMapper,
-                    productionOptionRoutingMapper, productionOptionFactorMapper, priceVersionMapper);
+                    productionOptionRoutingMapper, productionOptionFactorMapper, priceVersionMapper,
+                    productionRouteTemplateMapper, productionOperationPositionMapper,
+                    productionRouteRuleMapper, productionCraftMapper);
 
             store.asTenant(42L);
             Map<String, Object> first = service.applyTemplate(42L, IndustryCodes.CURTAIN);
@@ -276,9 +380,12 @@ class ProductionSeedTemplateServiceTest {
             assertThat(store.operationIdsOf(42L))
                     .as("两租户的 id 集合必须**不相交**（复用模板 id / 跨租户确定性 id 都会相交或撞主键）")
                     .doesNotContainAnyElementsOf(store.operationIdsOf(77L));
-            assertThat(store.routingIdsOf(42L)).hasSize(9);
-            assertThat(store.routingIdsOf(77L)).hasSize(9);
-            assertThat(store.routingIdsOf(42L)).doesNotContainAnyElementsOf(store.routingIdsOf(77L));
+            // P2b：路线 = 一条具名模板（不再是 9 条展开快照）⇒ 断言「每租户恰一条默认模板」
+            assertThat(store.templateIdsOf(42L)).as("42 号租户恰一条默认路线模板").hasSize(1);
+            assertThat(store.templateIdsOf(77L)).hasSize(1);
+            assertThat(store.templateIdsOf(42L))
+                    .as("两租户的模板 id 必须**不相交**（复用模板 id 会撞主键）")
+                    .doesNotContainAnyElementsOf(store.templateIdsOf(77L));
             // 幂等：对已套用过的租户再套一次 ⇒ 零新增（行数不变）
             int before = store.operationIdsOf(42L).size();
             store.asTenant(42L);
@@ -316,9 +423,6 @@ class ProductionSeedTemplateServiceTest {
         @DisplayName("自由文本行业（未归一）⇒ 先归一为受控 code 再决定：布艺纺织 仍套用 curtain")
         void freeTextIndustry_isNormalizedFirst() {
             when(productionOperationMapper.selectList(any())).thenReturn(List.of());
-            when(productionRoutingMapper.selectList(any())).thenReturn(List.of());
-            when(productionOptionRoutingMapper.selectList(any())).thenReturn(List.of());
-            when(productionOptionFactorMapper.selectList(any())).thenReturn(List.of());
 
             Map<String, Object> result = service.applyTemplate(TENANT, "布艺纺织");
 
@@ -365,6 +469,7 @@ class ProductionSeedTemplateServiceTest {
 
         private final Map<String, ProductionOperation> operations = new LinkedHashMap<>();
         private final Map<String, ProductionRouting> routings = new LinkedHashMap<>();
+        private final Map<String, ProductionRouteTemplate> templates = new LinkedHashMap<>();
         /** 1 号租户已占用的种子 id（V54/V56 的真实值）—— 模拟「主键已被占用」。 */
         private final Set<String> takenIds = new LinkedHashSet<>(
                 List.of("op-v54-01", "op-v54-30", "op-v56-05", "rt-v54-01", "rt-v58-03"));
@@ -372,18 +477,40 @@ class ProductionSeedTemplateServiceTest {
         @SuppressWarnings("unchecked")
         void wire(ProductionOperationMapper opMapper, ProductionRoutingMapper rtMapper,
                   ProductionOptionRoutingMapper optionMapper, ProductionOptionFactorMapper factorMapper,
-                  ProductionOperationPriceVersionMapper priceMapper) {
+                  ProductionOperationPriceVersionMapper priceMapper,
+                  com.migao.admin.mapper.ProductionRouteTemplateMapper templateMapper,
+                  com.migao.admin.mapper.ProductionOperationPositionMapper positionMapper,
+                  com.migao.admin.mapper.ProductionRouteRuleMapper ruleMapper,
+                  com.migao.admin.mapper.ProductionCraftMapper craftMapper) {
+            when(templateMapper.selectList(any())).thenAnswer(inv ->
+                    templates.values().stream()
+                            .filter(t -> currentTenant.equals(t.getTenantId()))
+                            .toList());
+            when(templateMapper.insert(
+                    org.mockito.ArgumentMatchers.<ProductionRouteTemplate>any())).thenAnswer(inv -> {
+                ProductionRouteTemplate t = inv.getArgument(0);
+                if (t.getId() == null) {
+                    t.setId(java.util.UUID.randomUUID().toString());
+                }
+                templates.put(t.getId(), t);
+                return 1;
+            });
+            when(positionMapper.selectList(any())).thenReturn(List.of());
+            when(ruleMapper.selectList(any())).thenReturn(List.of());
+            when(craftMapper.selectList(any())).thenReturn(List.of());
+            when(positionMapper.insert(
+                    org.mockito.ArgumentMatchers.<com.migao.admin.entity.ProductionOperationPosition>any()))
+                    .thenReturn(1);
+            when(ruleMapper.insert(
+                    org.mockito.ArgumentMatchers.<com.migao.admin.entity.ProductionRouteRule>any()))
+                    .thenReturn(1);
+            when(craftMapper.insert(
+                    org.mockito.ArgumentMatchers.<ProductionCraft>any())).thenReturn(1);
             when(opMapper.selectList(any())).thenAnswer(inv ->
                     operations.values().stream()
                             .filter(o -> o.getDeleted() != null && o.getDeleted() == 0)
                             .filter(o -> currentTenant.equals(o.getTenantId()))
                             .toList());
-            when(rtMapper.selectList(any())).thenAnswer(inv ->
-                    routings.values().stream()
-                            .filter(r -> currentTenant.equals(r.getTenantId()))
-                            .toList());
-            when(optionMapper.selectList(any())).thenReturn(List.of());
-            when(factorMapper.selectList(any())).thenReturn(List.of());
 
             when(opMapper.insert(any(ProductionOperation.class))).thenAnswer(inv -> {
                 ProductionOperation op = inv.getArgument(0);
@@ -410,7 +537,8 @@ class ProductionSeedTemplateServiceTest {
                 operations.put(op.getId(), op);
                 return 1;
             });
-            when(rtMapper.insert(any(ProductionRouting.class))).thenAnswer(inv -> {
+            // lenient：P2b 起旧两表**不再写入**（活跃行由 V73 软删）⇒ 这三个桩备而不用
+            lenient().when(rtMapper.insert(any(ProductionRouting.class))).thenAnswer(inv -> {
                 ProductionRouting rt = inv.getArgument(0);
                 if (rt.getId() == null) {
                     rt.setId(java.util.UUID.randomUUID().toString());
@@ -422,8 +550,8 @@ class ProductionSeedTemplateServiceTest {
                 routings.put(rt.getId(), rt);
                 return 1;
             });
-            when(optionMapper.insert(any(ProductionOptionRouting.class))).thenReturn(1);
-            when(factorMapper.insert(any(ProductionOptionFactor.class))).thenReturn(1);
+            lenient().when(optionMapper.insert(any(ProductionOptionRouting.class))).thenReturn(1);
+            lenient().when(factorMapper.insert(any(ProductionOptionFactor.class))).thenReturn(1);
             when(priceMapper.insert(any(ProductionOperationPriceVersion.class))).thenReturn(1);
         }
 
@@ -438,6 +566,13 @@ class ProductionSeedTemplateServiceTest {
             return operations.values().stream()
                     .filter(o -> tenantId.equals(o.getTenantId()))
                     .map(ProductionOperation::getName)
+                    .toList();
+        }
+
+        List<String> templateIdsOf(Long tenantId) {
+            return templates.values().stream()
+                    .filter(t -> tenantId.equals(t.getTenantId()))
+                    .map(ProductionRouteTemplate::getId)
                     .toList();
         }
 

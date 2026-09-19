@@ -35,9 +35,12 @@ MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
 JAVA_SERVICE_DIR = REPO / "backend/admin-api/src/main/java/com/migao/admin/service"
 SCHEMA = REPO / "docs/sql/schema.sql"
 
-#: 本单的迁移号（V71 已被 P1 / #4427 占用；已发布迁移不可改）。
+#: P2a 的迁移（V71 已被 P1 / #4427 占用；已发布迁移不可改）。
 V72_NAME = "V72__switch_routing_model_consumers.sql"
 V72 = MIGRATION_DIR / V72_NAME
+#: P2b 的迁移（**软删必须与消费切换同 PR 原子发布**；V72 已发布 ⇒ 不可改，只能新增 V73）。
+V73_NAME = "V73__retire_legacy_option_rule_tables.sql"
+V73 = MIGRATION_DIR / V73_NAME
 
 #: 新三表（P1 / #4427 建，本单开始有消费者）。
 NEW_TABLES = ("production_operation_positions", "production_route_templates", "production_route_rules")
@@ -72,6 +75,11 @@ def _insert_statements(body: str, table: str) -> list:
 def _v72_body(sql: str | None = None) -> str:
     """V72 的**可执行** SQL（去注释）；可注入（红证用临时内容，不落盘）。"""
     return _strip_comments(sql if sql is not None else _read(V72))
+
+
+def _v73_body(sql: str | None = None) -> str:
+    """V73（P2b）的**可执行** SQL（去注释）；可注入（红证用临时内容，不落盘）。"""
+    return _strip_comments(sql if sql is not None else _read(V73))
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
@@ -236,8 +244,6 @@ def test_default_craft_seeded_per_tenant(sql: str | None = None):
     )
 
 
-@pytest.mark.xfail(reason="消费路径切换（ProcessingOrderService 缺 craft 改取商户级默认工艺）"
-                         "不在本 PR 范围（见 PR 说明）；本判据是下一 PR 的红证前置", strict=False)
 def test_no_hardcoded_default_craft_constant_in_derive_route_key():
     """判据 B-3：`deriveRouteKey` 缺 `craft` 时**不得**回落到常量 `DEFAULT_CRAFT`。
 
@@ -259,30 +265,35 @@ def test_no_hardcoded_default_craft_constant_in_derive_route_key():
 #        **C-7 属 P2a**（V72 不得提前软删）；C-2/C-3/C-4 属 P2a（搬迁是纯增量）
 # ══════════════════════════════════════════════════════════════════════════════════
 
-@pytest.mark.xfail(reason="软删旧规则表**已从 V72 移出**（主会话复核 2026-09-19）："
-                         "Java 此刻仍读旧表，提前软删 = 条件工序不插 / 系数退回 1.0 = 少发工人钱；"
-                         "软删改与「三个消费服务改读规则表」同 PR 原子发布（P2b）", strict=False)
 def test_old_rule_tables_soft_deleted(sql: str | None = None):
     """判据 C-1（**P2b**）：旧两表的活跃行软删为 0（判据 12）。
 
-    ⚠️ 本判据**不属于 P2a** —— 见 `test_v72_must_not_retire_legacy_rule_tables` 的理由：
-    软删必须与消费路径切换同 PR 原子发布，否则中间态**少发工人钱**。
+    ⚠️ 软删**不在 V72**（P2a 已移出，见 `test_v72_must_not_retire_legacy_rule_tables`）：
+    它必须与消费路径切换**同一 PR** 原子发布，否则中间态**少发工人钱**。
+    ⇒ 本判据读 **V73**（P2b 的迁移；V72 已发布不可改，只能新增）。
     """
-    body = _v72_body(sql)
+    body = _v73_body(sql)
     for table in RETIRED_TABLES:
         stmt = re.search(r"UPDATE\s+" + table + r"\b[\s\S]*?;", body, re.I)
         assert stmt, (
-            f"V72 没有软删 {table} 的行 —— 不收口就是「同一份规则有两个真值源」，"
+            f"V73 没有软删 {table} 的行 —— 不收口就是「同一份规则有两个真值源」，"
             f"而漏的那一处正好是条件工序与计件系数（= 工人工资）"
         )
         assert re.search(r"SET[\s\S]{0,120}?deleted\s*=\s*1", stmt.group(0), re.I), (
-            f"V72 对 {table} 的处置不是软删（`SET deleted = 1`）"
+            f"V73 对 {table} 的处置不是软删（`SET deleted = 1`）"
         )
+
+
+def test_v73_migration_exists():
+    """P2b 的软删迁移必须存在（软删与消费切换同一 PR）。"""
+    assert V73.exists(), (
+        f"缺少 {V73_NAME} —— P2b 的「旧规则表退场」必须与消费路径切换同一 PR 原子发布"
+    )
 
 
 def test_old_rule_tables_not_dropped(sql: str | None = None):
     """判据 C-2：**表先不 DROP**（可回滚）；DROP 留待后续独立迁移。"""
-    body = _v72_body(sql)
+    body = _v72_body(sql) + _v73_body()
     for table in RETIRED_TABLES:
         assert not re.search(r"DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?" + table + r"\b", body, re.I), (
             f"V72 直接 DROP 了 {table} —— 规格明文「表本身先不 DROP」（可回滚），"
@@ -323,8 +334,6 @@ def test_option_factor_rules_migrated_into_rule_table(sql: str | None = None):
     )
 
 
-@pytest.mark.xfail(reason="旧规则表读取点收口（三个消费服务）不在本 PR 范围；"
-                         "本判据是下一 PR 的红证前置", strict=False)
 def test_no_reader_of_retired_rule_tables_in_consumer_services():
     """判据 C-5：三个消费服务的 Java 源码里**零**读取点（旧表已退场，判据 12）。
 
@@ -345,8 +354,6 @@ def test_no_reader_of_retired_rule_tables_in_consumer_services():
     )
 
 
-@pytest.mark.xfail(reason="消费服务改读 production_route_rules 不在本 PR 范围；"
-                         "本判据是下一 PR 的红证前置", strict=False)
 def test_consumers_read_the_rule_table():
     """判据 C-6：收口后三个服务确实读**新**规则表（不是把旧读取点删掉了事）。"""
     missing = [name for name in RETIRED_READER_SERVICES
@@ -354,6 +361,126 @@ def test_consumers_read_the_rule_table():
     assert not missing, (
         f"这些服务没有出现 `{RULE_TABLE}`：{missing} —— "
         f"退场不等于删掉读取点（那会静默丢掉条件工序与计件系数）"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 E：开租播种（Java）的规范矩阵/主线/规则与真值源同源（P2b 新增）
+#
+# 为什么必须守：P2b 的开租播种路径**不跑迁移链**（新租户不走 V71/V72）⇒ 它必须自带一份
+# 规范矩阵（84 行）/ 主线（9 道）/ 工艺变体规则（10 条）。那是**第四份投影**
+# （routing.py / V71 迁移 / schema.sql / Java 播种）⇒ 不守就是「改了真值源而新租户拿到旧价」
+# 这类静默失效（判据 17 同族：错价直接算成工人工资）。
+# ══════════════════════════════════════════════════════════════════════════════════
+
+#: 开租播种服务（Java）—— 规范矩阵 / 主线 / 工艺变体规则的第四份投影。
+SEED_SERVICE = JAVA_SERVICE_DIR / "ProductionSeedTemplateService.java"
+#: 真值源（Python）。
+ROUTING_PY = REPO / "backend/ai-agent-service/app/production/routing.py"
+
+
+def _java_array_rows(src: str, name: str) -> list:
+    """取 Java 里 `String[][] <name> = { ... };` 的逐行字符串元组（**逐字**，不去重不排序）。"""
+    start = src.index(f"String[][] {name} = {{")
+    end = src.index("};", start)
+    rows = []
+    for line in src[start:end].split("\n"):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        # ⚠️ 裸 `null` 必须归一为字符串 "null"（否则与真值源的 None 对不上）
+        cells = re.findall(r'"([^"]*)"|(null)', line)
+        rows.append(tuple(text if text else (bare or "") for text, bare in cells))
+    return rows
+
+
+def _python_pairs(src: str, marker: str, stop: str) -> list:
+    """取 Python 里形如 `("a", "b"),` 的有序对（限定在 marker..stop 之间）。"""
+    start = src.rindex(marker)
+    end = src.index(stop, start)
+    return re.findall(r'\("([^"]+)",\s*"([^"]+)"\),', src[start:end])
+
+
+def _python_position_rows(src: str) -> list:
+    """取 `_POSITION_PRICE_ROWS` 的逐行 `(逻辑名, 部位, 单价|None, applicable)`。"""
+    import ast as _ast
+
+    start = src.rindex("_POSITION_PRICE_ROWS: List[tuple] = [")
+    end = src.index("\n]", start)
+    rows = []
+    for line in src[start:end].split("\n"):
+        line = line.strip()
+        if not line.startswith("("):
+            continue
+        rows.append(_ast.literal_eval(line.rstrip(",")))
+    return rows
+
+
+def test_seed_service_canonical_matrix_matches_truth_source():
+    """判据 E-1：Java 开租播种的 84 行规范矩阵与 `routing.py::OPERATION_POSITION_PRICES` 逐行同值。"""
+    src = _read(SEED_SERVICE)
+    rows = _java_array_rows(src, "CANONICAL_POSITION_PRICES")
+    assert len(rows) == 84, f"规范矩阵必须是 84 行（28 逻辑工序 × 3 部位），实测 {len(rows)}"
+
+    py_src = _read(ROUTING_PY)
+    py_rows = _python_position_rows(py_src)
+    assert len(py_rows) == 84, f"真值源应有 84 行，实测 {len(py_rows)}"
+    expected = [(logical, position,
+                 "null" if price is None else str(price),
+                 "true" if applicable else "false")
+                for logical, position, price, applicable in py_rows]
+    assert rows == expected, (
+        "Java 开租播种的规范矩阵与真值源漂移了 —— 新租户会拿到旧价/旧适用性（**错发工资**）。"
+        "改真值源时必须同步 SEED_SERVICE 的 CANONICAL_POSITION_PRICES。"
+    )
+
+
+def test_seed_service_mainline_matches_truth_source():
+    """判据 E-2：Java 开租播种的 9 道主线与 `routing.py::ROUTE_MAINLINE_STEPS` 逐字同值。"""
+    src = _read(SEED_SERVICE)
+    start = src.index("List<String> ROUTE_MAINLINE_STEPS = List.of(")
+    end = src.index(");", start)
+    java_steps = re.findall(r'"([^"]+)"', src[start:end])
+
+    py_src = _read(ROUTING_PY)
+    # ⚠️ rindex：该标识符在 docstring 里也被提到（首次出现不是定义处）
+    pstart = py_src.rindex("ROUTE_MAINLINE_STEPS: List[str] = [")
+    pend = py_src.index('"]', pstart) + 1
+    py_steps = re.findall(r'"([^"]+)"', py_src[pstart:pend])
+
+    assert java_steps == py_steps, (
+        f"主线漂移：Java 播种={java_steps} vs 真值源={py_steps} —— "
+        f"新租户的主线与车间实际走线不一致（顺序错 = 按错顺序干）"
+    )
+
+
+def test_seed_service_craft_rules_match_truth_source():
+    """判据 E-3：Java 开租播种的 10 条工艺变体规则与 `routing.py::ROUTE_RULES` 的 craft 部分逐条同值。"""
+    import ast
+
+    src = _read(SEED_SERVICE)
+    rows = _java_array_rows(src, "CRAFT_RULES")
+    assert len(rows) == 10, f"工艺变体规则应为 10 条，实测 {len(rows)}"
+
+    py_src = _read(ROUTING_PY)
+    pstart = py_src.index("ROUTE_RULES: List[Dict[str, Any]] = [")
+    pend = py_src.index("\n]", pstart)
+    craft_rules = []
+    for entry in re.findall(r"\{[^{}]*\}", py_src[pstart:pend]):
+        rule = ast.literal_eval(entry)
+        if rule["trigger_kind"] != "craft":
+            continue
+        craft_rules.append((
+            rule["trigger_value"],
+            "NULL" if rule["position"] is None else rule["position"],
+            rule["action"],
+            rule["operation"],
+            "NULL" if rule["after_operation"] is None else rule["after_operation"],
+        ))
+
+    assert [tuple(r) for r in rows] == craft_rules, (
+        "工艺变体规则漂移（触发值/部位限定/动作/工序/锚点）—— "
+        "新租户会插错工序或锚点落空 ⇒ 条件工序静默追加末尾（顺序错）"
     )
 
 

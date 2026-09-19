@@ -2,10 +2,17 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.migao.admin.entity.ProductionCraft;
 import com.migao.admin.entity.ProductionOperation;
-import com.migao.admin.entity.ProductionRouting;
+import com.migao.admin.entity.ProductionOperationPosition;
+import com.migao.admin.entity.ProductionRouteRule;
+import com.migao.admin.entity.ProductionRouteTemplate;
+import com.migao.admin.mapper.ProductionCraftMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
-import com.migao.admin.mapper.ProductionRoutingMapper;
+import com.migao.admin.mapper.ProductionOperationPositionMapper;
+import com.migao.admin.mapper.ProductionRouteRuleMapper;
+import com.migao.admin.mapper.ProductionRouteSignalMapper;
+import com.migao.admin.mapper.ProductionRouteTemplateMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,9 +22,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -25,15 +38,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 工序库 / 工艺路线只读消费者测试（issue #4116 P0-2）。
+ * 工序库 / 工艺路线只读消费者测试（issue #4116 P0-2；P2b / issue #4459 切新结构）。
  *
- * <p>背景（取证事实）：`production_operations` / `production_routings` 自 V49 建表起
- * **零消费者、零种子** ⇒ 商家无配置入口、库里无数据、§3 工艺路线在 DB 层不可查不可展示。
- * 本包补 V54 种子 + 本只读消费者，让工艺路线可被查询/展示。</p>
- *
- * <p>锁三条：① 读的是**库**（按 tenant_id + deleted=0 + status=active 过滤，租户隔离/停用不可漏）；
- * ② 展示形态按**分组→排序位**稳定（工序目录）与**部位×工艺→有序工序序列**（路线）；
- * ③ 无消费者问不到的别名：路线里每道工序带上库口径单位/单价（缺则该工序在库中不存在 ⇒ null，不猜）。</p>
+ * <p>锁四条：① 读的是**库**（按 tenant_id + deleted=0 + status=active 过滤，租户隔离/停用不可漏）；
+ * ② 展示形态按**分组→排序位**稳定（工序目录）与**具名主线 + 适用帘种**（路线模板）；
+ * ③ 新读面（{@code routeTemplateFor} / {@code defaultRouteTemplate} / {@code defaultCraft} /
+ * {@code operationPositions} / {@code routeRules}）的**稳定排序**与**不猜**口径；
+ * ④ 旧工序名 ↔ 逻辑工序名的**往返判据**（35 条逐条，issue #4459 §2① 的锁死方式）。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -42,20 +53,26 @@ class ProductionOperationQueryServiceTest {
 
     private static final Long TENANT = 1L;
 
+    /** 真值源 {@code routing.py}（**逐字解析**，Java 无法 import Python ⇒ 只能按文本比对）。 */
+    private static final Path ROUTING_PY = Path.of("..", "ai-agent-service", "app", "production", "routing.py");
+
     @Mock
     private ProductionOperationMapper productionOperationMapper;
     @Mock
-    private ProductionRoutingMapper productionRoutingMapper;
+    private ProductionRouteTemplateMapper productionRouteTemplateMapper;
     @Mock
-    private com.migao.admin.mapper.ProductionOptionRoutingMapper productionOptionRoutingMapper;
+    private ProductionRouteRuleMapper productionRouteRuleMapper;
     @Mock
-    private com.migao.admin.mapper.ProductionOptionFactorMapper productionOptionFactorMapper;
+    private ProductionOperationPositionMapper productionOperationPositionMapper;
     @Mock
-    private com.migao.admin.mapper.ProductionRouteSignalMapper productionRouteSignalMapper;
+    private ProductionCraftMapper productionCraftMapper;
+    @Mock
+    private ProductionRouteSignalMapper productionRouteSignalMapper;
 
     private ProductionOperationQueryService service() {
-        return new ProductionOperationQueryService(productionOperationMapper, productionRoutingMapper,
-                productionOptionRoutingMapper, productionOptionFactorMapper, productionRouteSignalMapper);
+        return new ProductionOperationQueryService(productionOperationMapper, productionRouteTemplateMapper,
+                productionRouteRuleMapper, productionOperationPositionMapper, productionCraftMapper,
+                productionRouteSignalMapper);
     }
 
     /**
@@ -70,7 +87,11 @@ class ProductionOperationQueryServiceTest {
         org.apache.ibatis.builder.MapperBuilderAssistant assistant =
                 new org.apache.ibatis.builder.MapperBuilderAssistant(conf, "");
         com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant, ProductionOperation.class);
-        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant, ProductionRouting.class);
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant, ProductionRouteTemplate.class);
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant,
+                ProductionOperationPosition.class);
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant,
+                ProductionRouteRule.class);
     }
 
     private ProductionOperation op(String id, String name, String group, String position,
@@ -82,10 +103,11 @@ class ProductionOperationQueryServiceTest {
                 .sortOrder(sortOrder).status("active").deleted(0).build();
     }
 
-    private ProductionRouting routing(String id, String curtainType, String craft, List<String> operations) {
-        return ProductionRouting.builder()
-                .id(id).tenantId(TENANT).curtainType(curtainType).craft(craft)
-                .operations(operations).status("active").deleted(0).build();
+    private ProductionRouteTemplate template(String id, String name, boolean isDefault,
+                                             List<String> positions, List<String> mainline) {
+        return ProductionRouteTemplate.builder()
+                .id(id).tenantId(TENANT).name(name).isDefault(isDefault)
+                .positions(positions).mainline(mainline).status("active").deleted(0).build();
     }
 
     /**
@@ -100,6 +122,8 @@ class ProductionOperationQueryServiceTest {
                 .unitPrice(new BigDecimal("1.00")).isMustFinish(false).isStartMarker(false)
                 .sortOrder(24).status("active").deleted(0).scope(scope).build();
     }
+
+    // ══════════════════ 工序目录（issue #4116，本单不改口径）══════════════════
 
     @Test
     @DisplayName("工序目录：按分组聚合，组内保留库给的排序（sort_order 升序）")
@@ -145,342 +169,305 @@ class ProductionOperationQueryServiceTest {
         assertThat((List<?>) result.get("groups")).isEmpty();
     }
 
+    // ══════════════════ 路线模板（P2b：具名主线 + 适用帘种）══════════════════
+
     @Test
-    @DisplayName("工艺路线：部位×工艺 → 有序工序序列，序号从 1 起且与 JSONB 顺序一致")
-    void routingsKeepOrderedSequence() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布", "布三边", "韩褶-布")),
-                routing("rt-v54-05", "纱帘", "韩褶", List.of("精裁-纱", "纱三边", "韩褶-纱"))));
-        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
-                op("op-v54-01", "精裁-布", "裁剪", "布帘", "米", "0.40", false, true, 1),
-                op("op-v54-05", "布三边", "车位", null, "米", "0.40", false, false, 5),
-                op("op-v54-07", "韩褶-布", "车位", "布帘", "折", "0.40", false, false, 7),
-                op("op-v54-02", "精裁-纱", "裁剪", "纱帘", "米", "0.40", false, true, 2),
-                op("op-v54-06", "纱三边", "车位", null, "米", "0.40", false, false, 6),
-                op("op-v54-08", "韩褶-纱", "车位", "纱帘", "折", "0.40", false, false, 8)));
+    @DisplayName("路线模板列表：主线**有序**（排序不是展示细节而是语义）+ 适用帘种 + 默认标记")
+    void routingsExposeOrderedMainline() {
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                template("rt-v70-01", "窗帘工序路线（默认）", true,
+                        List.of("布帘", "纱帘", "帘头"), List.of("精裁", "三边", "熨烫"))));
 
         Map<String, Object> result = service().routings(TENANT);
 
-        assertThat(result.get("total")).isEqualTo(2);
+        assertThat(result.get("total")).isEqualTo(1);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> items = (List<Map<String, Object>>) result.get("routings");
-        assertThat(items.get(0).get("curtain_type")).isEqualTo("布帘");
-        assertThat(items.get(0).get("craft")).isEqualTo("韩褶");
-        assertThat(items.get(0).get("operation_count")).isEqualTo(3);
+        assertThat(items.get(0).get("name")).isEqualTo("窗帘工序路线（默认）");
+        assertThat(items.get(0).get("is_default")).isEqualTo(true);
+        assertThat(items.get(0).get("positions")).asString().isEqualTo(List.of("布帘", "纱帘", "帘头").toString());
+        // 顺序 = 主线数组顺序（路线是**有序**序列）
+        assertThat(items.get(0).get("mainline")).asString().isEqualTo(List.of("精裁", "三边", "熨烫").toString());
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> steps = (List<Map<String, Object>>) items.get(0).get("operations");
-        // 顺序 = 路线数组顺序（路线是**有序**序列，排序不是展示细节而是语义）
-        assertThat(steps).extracting(s -> s.get("operation")).containsExactly("精裁-布", "布三边", "韩褶-布");
-        assertThat(steps).extracting(s -> s.get("seq")).containsExactly(1, 2, 3);
-        // 每道工序带库口径单位/单价（展示 + 校验用）
-        assertThat(steps.get(2).get("unit")).isEqualTo("折");
-        assertThat((BigDecimal) steps.get(2).get("unit_price")).isEqualByComparingTo("0.40");
-        assertThat(steps.get(0).get("is_start_marker")).isEqualTo(true);
+        ArgumentCaptor<LambdaQueryWrapper<ProductionRouteTemplate>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(productionRouteTemplateMapper).selectList(captor.capture());
+        assertThat(captor.getValue().getSqlSegment())
+                .as("只读消费者必须按 tenant_id + deleted=0 + status=active 过滤")
+                .contains("tenant_id").contains("deleted").contains("status");
     }
 
     @Test
-    @DisplayName("路线引用库里不存在的工序 ⇒ 该步的库口径字段为 null（不猜、不用默认值顶替）")
-    void routingStepWithoutCatalogEntryIsNull() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                routing("rt-x", "布帘", "韩褶", List.of("精裁-布", "幽灵工序"))));
-        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
-                op("op-v54-01", "精裁-布", "裁剪", "布帘", "米", "0.40", false, true, 1)));
+    @DisplayName("JSONB 反序列化非 List 形态（脏数据）⇒ 主线为空而不是抛错（展示层不得被单条脏数据打挂）")
+    void malformedMainlineDoesNotThrow() {
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                template("rt-bad", "坏路线", false, null, null)));
 
         Map<String, Object> result = service().routings(TENANT);
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> items = (List<Map<String, Object>>) result.get("routings");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> steps = (List<Map<String, Object>>) items.get(0).get("operations");
-        assertThat(steps.get(1).get("operation")).isEqualTo("幽灵工序");
-        assertThat(steps.get(1).get("unit")).isNull();
-        assertThat(steps.get(1).get("unit_price")).isNull();
-        assertThat(steps.get(1).get("is_must_finish")).isEqualTo(false);
+        assertThat((List<?>) items.get(0).get("mainline")).isEmpty();
+        assertThat((List<?>) items.get(0).get("positions")).isEmpty();
     }
 
     @Test
-    @DisplayName("JSONB 反序列化非 List 形态（脏数据）⇒ 序列为空而不是抛错（展示层不得被单条脏数据打挂）")
-    void routingWithMalformedOperationsDoesNotThrow() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                routing("rt-bad", "布帘", "韩褶", null)));
-        when(productionOperationMapper.selectList(any())).thenReturn(List.of());
+    @DisplayName("routeTemplateFor：按**适用帘种**命中；没有该部位的模板 ⇒ null（不猜、不回落）")
+    void routeTemplateForMatchesPositions() {
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                template("rt-v70-01", "窗帘工序路线（默认）", true,
+                        List.of("布帘", "纱帘"), List.of("精裁", "三边"))));
 
-        Map<String, Object> result = service().routings(TENANT);
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> items = (List<Map<String, Object>>) result.get("routings");
-        assertThat(items.get(0).get("operation_count")).isEqualTo(0);
-        assertThat((List<?>) items.get(0).get("operations")).isEmpty();
+        assertThat(service().routeTemplateFor(TENANT, "布帘")).isNotNull();
+        assertThat(service().routeTemplateFor(TENANT, "纱帘")).isNotNull();
+        assertThat(service().routeTemplateFor(TENANT, "帘头"))
+                .as("帘头不在 positions 里 ⇒ null（「兜底到默认模板」是调用方的策略，不是库的语义）")
+                .isNull();
+        assertThat(service().routeTemplateFor(TENANT, null)).isNull();
     }
 
     @Test
-    @DisplayName("只读边界：两个方法都只走 SELECT（无 insert/update/delete 调用）")
+    @DisplayName("defaultRouteTemplate：按 is_default 命中；没有默认 ⇒ null（调用方 T3 fail-closed）")
+    void defaultRouteTemplatePicksTheDefaultFlag() {
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                template("rt-a", "路线甲", false, List.of("布帘"), List.of("精裁")),
+                template("rt-b", "路线乙", true, List.of("纱帘"), List.of("三边"))));
+
+        ProductionRouteTemplate hit = service().defaultRouteTemplate(TENANT);
+
+        assertThat(hit).isNotNull();
+        assertThat(hit.getName()).as("判据是 is_default，不是「第一条」").isEqualTo("路线乙");
+    }
+
+    @Test
+    @DisplayName("defaultRouteTemplate：库里一条路线都没有 ⇒ null（不静默取常量 布帘×韩褶）")
+    void defaultRouteTemplateIsNullOnEmptyLibrary() {
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
+        assertThat(service().defaultRouteTemplate(TENANT)).isNull();
+    }
+
+    @Test
+    @DisplayName("defaultCraft：按 is_default 命中；没有默认工艺 ⇒ null（**不写死常量 韩褶**，issue #4459）")
+    void defaultCraftPicksTheDefaultFlag() {
+        when(productionCraftMapper.selectList(any())).thenReturn(List.of(
+                ProductionCraft.builder().id("pc-1").tenantId(TENANT).name("打孔")
+                        .isDefault(false).status("active").deleted(0).build(),
+                ProductionCraft.builder().id("pc-2").tenantId(TENANT).name("四爪钩")
+                        .isDefault(true).status("active").deleted(0).build()));
+
+        assertThat(service().defaultCraft(TENANT))
+                .as("判据是 is_default（商家可配），不是常量 韩褶").isEqualTo("四爪钩");
+    }
+
+    @Test
+    @DisplayName("defaultCraft：没有默认工艺 ⇒ null（调用方 T3 fail-closed，不静默取常量）")
+    void defaultCraftIsNullWhenAbsent() {
+        when(productionCraftMapper.selectList(any())).thenReturn(List.of());
+        assertThat(service().defaultCraft(TENANT)).isNull();
+    }
+
+    // ══════════════════ 新读面：规则表 / 部位价目 / 稳定排序 ══════════════════
+
+    @Test
+    @DisplayName("routeRules：只取活跃行，**按 (priority, id) 稳定排序**（规则顺序敏感 ⇒ 派生必须确定）")
+    void routeRulesAreOrderedByPriorityThenId() {
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of());
+
+        service().routeRules(TENANT);
+
+        ArgumentCaptor<LambdaQueryWrapper<ProductionRouteRule>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(productionRouteRuleMapper).selectList(captor.capture());
+        String sql = captor.getValue().getSqlSegment();
+        assertThat(sql).contains("tenant_id").contains("deleted").contains("status");
+        assertThat(sql).as("排序必须确定（priority 升序、同序按 id）—— 否则同一张单两次生成得到不同工序序列")
+                .contains("priority").contains("id");
+    }
+
+    @Test
+    @DisplayName("operationPositions：只取活跃行，按 (logical_name, position) 稳定排序")
+    void operationPositionsAreOrderedStably() {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
+
+        service().operationPositions(TENANT);
+
+        ArgumentCaptor<LambdaQueryWrapper<ProductionOperationPosition>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(productionOperationPositionMapper).selectList(captor.capture());
+        String sql = captor.getValue().getSqlSegment();
+        assertThat(sql).contains("tenant_id").contains("deleted").contains("status");
+        assertThat(sql).contains("logical_name").contains("position");
+    }
+
+    @Test
+    @DisplayName("只读边界：本类的每个读面都只走 SELECT（无 insert/update/delete 调用）")
     void queryServiceIsReadOnly() {
         when(productionOperationMapper.selectList(any())).thenReturn(List.of());
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of());
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of());
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
+        when(productionCraftMapper.selectList(any())).thenReturn(List.of());
 
         service().catalog(TENANT);
         service().routings(TENANT);
+        service().routeTemplateFor(TENANT, "布帘");
+        service().defaultRouteTemplate(TENANT);
+        service().defaultCraft(TENANT);
+        service().operationPositions(TENANT);
+        service().routeRules(TENANT);
+        service().operationsByName(TENANT);
 
         verify(productionOperationMapper, org.mockito.Mockito.never()).insert(any(ProductionOperation.class));
         verify(productionOperationMapper, org.mockito.Mockito.never()).deleteById(any(String.class));
-        verify(productionRoutingMapper, org.mockito.Mockito.never()).insert(any(ProductionRouting.class));
-        verify(productionRoutingMapper, org.mockito.Mockito.never()).deleteById(any(String.class));
+        verify(productionRouteTemplateMapper, org.mockito.Mockito.never())
+                .insert(any(ProductionRouteTemplate.class));
+        verify(productionRouteTemplateMapper, org.mockito.Mockito.never()).deleteById(any(String.class));
     }
 
-    // ── findRouting / routingKeys：实例化的工序来源（issue #4116 切库）────────
+    // ══════════════════ variantNameOf：35 条旧名的**往返判据**（issue #4459 §2①）══════════════════
 
+    /**
+     * 判据（**锁死方式**，issue #4459 §2①）：对 35 条旧名逐条
+     * {@code variantNameOf(normalizeOperationName(name), position(name)) == name}。
+     *
+     * <p>这条往返判据是「新结构的逻辑名 ↔ 工序库的旧变体名」映射的**唯一**可失败判据：
+     * 少一条、多一条、后缀规则改了（`-布`/`-纱`/`-帘`）都会红。</p>
+     *
+     * <p>部位的推导是**测试侧**的事（生产侧只从库/订单取部位）：名字带 {@code -布}/{@code -纱}
+     * 后缀的直接读后缀；不规则名（{@code 布三边}/{@code 纱三边}/{@code 布帘车被}/{@code 帘头制作}）
+     * 按真值源的表逐条给出。</p>
+     */
     @Test
-    @DisplayName("findRouting 命中：seq 从 1 起、顺序 = 路线数组顺序，单位/单价/必完标记逐字取库")
-    void findRoutingResolvesStepsVerbatimFromLibrary() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布", "韩褶-布", "外帘装袋"))));
-        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
-                op("op-v54-01", "精裁-布", "裁剪", "布帘", "米", "0.40", false, true, 1),
-                op("op-v54-07", "韩褶-布", "车位", "布帘", "折", "0.40", false, false, 7),
-                op("op-v54-25", "外帘装袋", "后道", "外帘", "套", "1.00", true, false, 25)));
+    @DisplayName("variantNameOf 往返判据：35 条旧名逐条可逆（改后缀规则/加减一条即红）")
+    void variantNameOfRoundTripsAllLegacyNames() {
+        Map<String, String> logicalNames = logicalNamePairs();
+        assertThat(logicalNames).as("真值源有 35 条旧名").hasSize(35);
 
-        Map<String, Object> route = service().findRouting(TENANT, "布帘", "韩褶");
+        Map<String, Map<String, Object>> catalog = new LinkedHashMap<>();
+        logicalNames.keySet().forEach(name -> catalog.put(name, Map.of()));
 
-        assertThat(route).isNotNull();
-        assertThat(route.get("curtain_type")).isEqualTo("布帘");
-        assertThat(route.get("craft")).isEqualTo("韩褶");
-        assertThat(route.get("operation_count")).isEqualTo(3);
-        assertThat((List<?>) route.get("missing_operations")).isEmpty();
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> steps = (List<Map<String, Object>>) route.get("operations");
-        assertThat(steps).extracting(s -> s.get("operation")).containsExactly("精裁-布", "韩褶-布", "外帘装袋");
-        assertThat(steps).extracting(s -> s.get("seq")).containsExactly(1, 2, 3);
-        assertThat(steps.get(1).get("unit")).isEqualTo("折");
-        assertThat((BigDecimal) steps.get(1).get("unit_price")).isEqualByComparingTo("0.40");
-        assertThat(steps.get(2).get("is_must_finish")).isEqualTo(true);
-        assertThat(steps.get(0).get("is_start_marker")).isEqualTo(true);
-    }
-
-    // ── scope：工序作用域（issue #4384 A1，V67）────────────────────────────────
-    // 真值源 docs/curtain-production-rules.md §8：**外帘**是加工单打印行部位，不是路线键；
-    // 套级工序（外帘打卷/装袋/发货）应「每樘窗一次」⇒ 实例化侧（A2）要能按 scope 去重，
-    // 故**读面必须把 scope 逐字带出来**（否则 A2 无从判、前端也无从展示）。
-
-    @Test
-    @DisplayName("findRouting 带 scope：与 group/unit/unit_price 同级，逐字取库（部位级/套级各一）")
-    void findRoutingCarriesScopeVerbatimFromLibrary() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布", "外帘装袋"))));
-        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
-                ProductionOperation.builder()
-                        .id("op-v54-01").tenantId(TENANT).name("精裁-布").groupName("裁剪")
-                        .position("布帘").unit("米").unitPrice(new BigDecimal("0.40"))
-                        .isMustFinish(false).isStartMarker(true).sortOrder(1).status("active").deleted(0)
-                        .scope("position").build(),
-                opScope("op-v54-25", "外帘装袋", "外帘", "套", "set")));
-
-        Map<String, Object> route = service().findRouting(TENANT, "布帘", "韩褶");
-
-        assertThat(route).isNotNull();
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> steps = (List<Map<String, Object>>) route.get("operations");
-        assertThat(steps).extracting(s -> s.get("operation")).containsExactly("精裁-布", "外帘装袋");
-        assertThat(steps)
-                .as("每道工序都必须带 scope（缺键 ⇒ A2 去重与前端展示都拿不到判据）")
-                .allSatisfy(s -> assertThat(s).containsKey("scope"));
-        assertThat(steps.get(0).get("scope")).isEqualTo("position");
-        assertThat(steps.get(1).get("scope"))
-                .as("套级工序（每樘窗一次）—— 值必须来自库行，不是读面自己判的")
-                .isEqualTo("set");
+        ProductionOperationQueryService service = service();
+        List<String> failures = new java.util.ArrayList<>();
+        for (Map.Entry<String, String> entry : logicalNames.entrySet()) {
+            String legacy = entry.getKey();
+            String logical = entry.getValue();
+            String position = positionOfLegacyName(legacy);
+            if (position == null) {
+                continue;
+            }
+            String back = service.variantNameOf(logical, position, catalog);
+            if (!legacy.equals(back)) {
+                failures.add(legacy + "(" + position + ") ⇒ " + back);
+            }
+        }
+        assertThat(failures)
+                .as("逆映射必须逐条复现旧名：<逻辑名><部位后缀>（布帘→-布/纱帘→-纱/帘头→-帘）"
+                        + " → 帘头回落 -布 → 裸逻辑名")
+                .isEmpty();
     }
 
     @Test
-    @DisplayName("findRouting 的 scope 跟着库行走（注入法：库值互换 ⇒ 断言跟着变，写死常量即红）")
-    void findRoutingScopeFollowsTheLibraryRow() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布", "外帘装袋"))));
-        // 注入：把两行的 scope **互换**（真实库里不会这样，但读面若写死常量/按工序名猜，这里就露馅）
-        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
-                ProductionOperation.builder()
-                        .id("op-v54-01").tenantId(TENANT).name("精裁-布").groupName("裁剪")
-                        .position("布帘").unit("米").unitPrice(new BigDecimal("0.40"))
-                        .isMustFinish(false).isStartMarker(true).sortOrder(1).status("active").deleted(0)
-                        .scope("set").build(),
-                opScope("op-v54-25", "外帘装袋", "外帘", "套", "position")));
-
-        Map<String, Object> route = service().findRouting(TENANT, "布帘", "韩褶");
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> steps = (List<Map<String, Object>>) route.get("operations");
-        assertThat(steps.get(0).get("scope"))
-                .as("库说 set 就必须回 set —— 按工序名/位置猜（「外帘⇒set」）会在这里红")
-                .isEqualTo("set");
-        assertThat(steps.get(1).get("scope")).isEqualTo("position");
+    @DisplayName("variantNameOf：库里没有该变体 ⇒ null（**不猜**，由调用方 fail-closed 指名报缺）")
+    void variantNameOfReturnsNullWhenVariantAbsent() {
+        assertThat(service().variantNameOf("精裁", "布帘", Map.of("韩褶-布", Map.of())))
+                .as("库里没有 精裁-布 ⇒ null（不回落裸逻辑名、不猜别的部位）")
+                .isNull();
     }
 
     @Test
-    @DisplayName("工序目录（前端列表的数据源）每项带 scope；库缺该工序时路线步骤里为 null，不猜默认值")
-    void catalogAndMissingOperationCarryScopeWithoutGuessing() {
-        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
-                opScope("op-v54-24", "外帘打卷", "外帘", "套", "set")));
-        Map<String, Object> catalog = service().catalog(TENANT);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> groups = (List<Map<String, Object>>) catalog.get("groups");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> items = (List<Map<String, Object>>) groups.get(0).get("operations");
-        assertThat(items.get(0).get("scope")).isEqualTo("set");
+    @DisplayName("variantNameOf：帘头回落布帘变体（V54 的 帘头×平幔 路线逐字引用 精裁-布/布三边）")
+    void variantNameOfFallsBackToClothVariantForCurtainHead() {
+        Map<String, Map<String, Object>> catalog = Map.of("精裁-布", Map.of(), "布三边", Map.of());
 
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                routing("rt-x", "布帘", "韩褶", List.of("幽灵工序"))));
-        Map<String, Object> route = service().findRouting(TENANT, "布帘", "韩褶");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> steps = (List<Map<String, Object>>) route.get("operations");
-        assertThat(steps.get(0))
-                .as("库中缺该工序 ⇒ scope 为 null（不猜默认值 —— 猜出来的 scope 会让 A2 静默去重）")
-                .containsEntry("scope", null);
+        assertThat(service().variantNameOf("精裁", "帘头", catalog))
+                .as("帘头没有 -帘 变体 ⇒ 回落 -布（否则帘头路线在真库里一道工序都解析不出来）")
+                .isEqualTo("精裁-布");
+        assertThat(service().variantNameOf("三边", "帘头", catalog)).isEqualTo("布三边");
     }
 
     @Test
-    @DisplayName("findRouting 未命中：返回 null（兜底到默认路线是调用方的策略，不是库的语义）")
-    void findRoutingReturnsNullWhenAbsent() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                routing("rt-v54-05", "纱帘", "韩褶", List.of("精裁-纱"))));
+    @DisplayName("variantNameOf：部位无关的工序回落裸逻辑名（帘头制作/外帘打卷…）")
+    void variantNameOfFallsBackToBareLogicalName() {
+        Map<String, Map<String, Object>> catalog = Map.of("帘头制作", Map.of(), "外帘打卷", Map.of());
 
-        assertThat(service().findRouting(TENANT, "帘头", "平幔")).isNull();
+        assertThat(service().variantNameOf("帘头制作", "帘头", catalog)).isEqualTo("帘头制作");
+        assertThat(service().variantNameOf("外帘打卷", "布帘", catalog)).isEqualTo("外帘打卷");
     }
 
     @Test
-    @DisplayName("findRouting 缺工序：不静默补默认值，而是指名登记进 missing_operations（由调用方 fail-closed）")
-    void findRoutingReportsMissingOperationsInsteadOfGuessing() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                routing("rt-x", "布帘", "韩褶", List.of("精裁-布", "幽灵工序", "外帘发货"))));
-        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
-                op("op-v54-01", "精裁-布", "裁剪", "布帘", "米", "0.40", false, true, 1),
-                op("op-v54-27", "外帘发货", "后道", "外帘", "套", "1.00", false, false, 27)));
-
-        Map<String, Object> route = service().findRouting(TENANT, "布帘", "韩褶");
-
-        assertThat(route).isNotNull();
-        assertThat(String.valueOf(route.get("missing_operations"))).isEqualTo("[幽灵工序]");
-        // 序号仍按路线位次（缺工序不跳号 —— 跳号会让实例与路线错位）
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> steps = (List<Map<String, Object>>) route.get("operations");
-        assertThat(steps).extracting(s -> s.get("seq")).containsExactly(1, 2, 3);
-        assertThat(steps.get(1).get("unit")).isNull();
-        assertThat(steps.get(2).get("unit")).isEqualTo("套");
+    @DisplayName("normalizeOperationName：35 条已登记；未登记的名字**原样返回**（商家自建工序不得 500）")
+    void normalizeOperationNameIsIdentityForUnknownNames() {
+        assertThat(service().normalizeOperationName("精裁-布")).isEqualTo("精裁");
+        assertThat(service().normalizeOperationName("布三边")).isEqualTo("三边");
+        assertThat(service().normalizeOperationName("布帘车被")).isEqualTo("车被");
+        assertThat(service().normalizeOperationName("商家自建工序")).as("未登记 ⇒ 原样返回").isEqualTo("商家自建工序");
+        assertThat(service().normalizeOperationName(null)).isNull();
     }
 
+    // ══════════════════ 与真值源（routing.py）的同源判据 ══════════════════
+
+    /**
+     * 判据：Java 侧的「旧名 → 逻辑名」表与真值源 {@code routing.py::_LOGICAL_NAME_PAIRS}
+     * **逐条双向一致**（少一条/多一条/映射不同都红）。
+     *
+     * <p>为什么按文本解析而不是抄一份断言常量：抄一份常量只能证明「我抄的和我想的一样」，
+     * 不能证明「我和真值源一样」—— 而 Java 无法 import Python，文本解析是唯一可失败的同源判据
+     * （既有先例：{@code ProductionRouteSignalMigrationTest} 逐字解析 {@code routing.py} 的 frozenset）。</p>
+     */
     @Test
-    @DisplayName("findRouting 空路线（脏数据 / 运营清空）：operations 为空且不抛（由调用方 fail-closed）")
-    void findRoutingWithEmptyRouteIsNotAnError() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                routing("rt-empty", "布帘", "韩褶", List.of())));
-
-        Map<String, Object> route = service().findRouting(TENANT, "布帘", "韩褶");
-
-        assertThat(route).isNotNull();
-        assertThat(route.get("operation_count")).isEqualTo(0);
-        assertThat((List<?>) route.get("missing_operations")).isEmpty();
+    @DisplayName("同源判据：旧名→逻辑名表与 routing.py::_LOGICAL_NAME_PAIRS 逐条双向一致")
+    void logicalNameTableMatchesTruthSource() throws IOException {
+        assertThat(Files.exists(ROUTING_PY))
+                .as("找不到真值源 %s —— 锚点变了，请同步本判据", ROUTING_PY.toAbsolutePath())
+                .isTrue();
+        String py = Files.readString(ROUTING_PY);
+        // ⚠️ 用 lastIndexOf：`_LOGICAL_NAME_PAIRS` 在 docstring 里也被提到过（首次出现不是定义处）
+        int pairsAt = py.indexOf("_LOGICAL_NAME_PAIRS: List[tuple]");
+        int namesAt = py.indexOf("OPERATION_LOGICAL_NAMES: Dict", pairsAt);
+        Matcher matcher = Pattern.compile("\\n\\s*\\(\"([^\"]+)\",\\s*\"([^\"]+)\"\\),")
+                .matcher(py.substring(pairsAt, namesAt));
+        Map<String, String> fromPython = new LinkedHashMap<>();
+        while (matcher.find()) {
+            fromPython.put(matcher.group(1), matcher.group(2));
+        }
+        assertThat(fromPython).as("真值源里应解析出 35 条有序对").hasSize(35);
+        assertThat(logicalNamePairs())
+                .as("Java 侧的表必须与真值源逐条一致（改一处不改另一处 ⇒ 本判据红）")
+                .isEqualTo(fromPython);
     }
 
-    @Test
-    @DisplayName("routingKeys：列出库中现有路线键（部位→工艺序），失败提示据此做到可行动")
-    void routingKeysListAvailableRoutes() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布")),
-                routing("rt-v54-02", "布帘", "打孔", List.of("精裁-布")),
-                routing("rt-v54-05", "纱帘", "韩褶", List.of("精裁-纱"))));
-
-        assertThat(service().routingKeys(TENANT)).containsExactly("布帘×韩褶", "布帘×打孔", "纱帘×韩褶");
+    /** 旧工序名 → 逻辑工序名（从**生产代码**读：{@code normalizeOperationName} 的行为即本表的投影）。 */
+    private Map<String, String> logicalNamePairs() {
+        Map<String, String> names = new LinkedHashMap<>();
+        for (String legacy : LEGACY_NAMES) {
+            names.put(legacy, service().normalizeOperationName(legacy));
+        }
+        return names;
     }
 
-    @Test
-    @DisplayName("只读边界：findRouting / routingKeys 同样只走 SELECT")
-    void findRoutingIsReadOnly() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of());
-        when(productionOperationMapper.selectList(any())).thenReturn(List.of());
+    /** 35 条旧工序名（真值源 {@code OPERATION_LOGICAL_NAMES} 的键集，逐条写出）。 */
+    private static final List<String> LEGACY_NAMES = List.of(
+            "精裁-布", "精裁-纱", "裁剪-布", "裁剪-纱", "布三边", "纱三边", "韩褶-布", "韩褶-纱",
+            "上车布-布", "上车布-纱", "打孔-布", "打孔-纱", "拼1次-布", "拼2次-布", "拼3次-布",
+            "花边-布", "铅坠-布", "接高-布", "帘头制作", "熨烫-布", "定型-布", "复烫-布",
+            "布帘车被", "外帘打卷", "外帘装袋", "质检", "外帘发货", "绑带-布", "抱枕", "腰靠垫",
+            "绑带-纱", "logo条-布", "立边-布", "扣环-布", "防翘扣-布");
 
-        service().findRouting(TENANT, "布帘", "韩褶");
-        service().routingKeys(TENANT);
-
-        verify(productionOperationMapper, org.mockito.Mockito.never()).insert(any(ProductionOperation.class));
-        verify(productionOperationMapper, org.mockito.Mockito.never()).updateById(any(ProductionOperation.class));
-        verify(productionRoutingMapper, org.mockito.Mockito.never()).insert(any(ProductionRouting.class));
-        verify(productionRoutingMapper, org.mockito.Mockito.never()).updateById(any(ProductionRouting.class));
-    }
-
-    // ══════════════════ 缺口可查（issue #4308 交付物 5 / P4，PG-035）══════════════════
-    //
-    // P4 的病根：4 道「有工序、有价、有意不消费（待客户确认）」的工序与罗马帘缺口**只活在代码注释里**
-    // ⇒ 商家看不到、无法自行处置。本查询把缺口变成数据；且必须能表达「**待确认**」语义 ——
-    // 它们是 issue #4261 逐项登记的「等客户输入」，不是「系统漏了」。
-
-    private static com.migao.admin.entity.ProductionRouteSignal signal(
-            String id, String keyword, String curtainType, String craft, int priority) {
-        return com.migao.admin.entity.ProductionRouteSignal.builder()
-                .id(id).tenantId(TENANT).signal(keyword).curtainType(curtainType).craft(craft)
-                .priority(priority).status("active").deleted(0).build();
-    }
-
-    @Test
-    @DisplayName("缺口①：有活跃工序但未进任何活跃路线 ⇒ 逐条列出，且**待客户确认**的带 pending_confirmation")
-    void routingGapsListsUnroutedOperationsWithPendingFlag() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布", "布三边", "外帘装袋"))));
-        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
-                op("op-1", "精裁-布", "裁剪", "布帘", "米", "0.40", false, true, 1),
-                op("op-2", "布三边", "车位", "布帘", "米", "0.40", false, false, 2),
-                op("op-3", "外帘装袋", "后道", "外帘", "套", "1.00", true, false, 3),
-                // 未进任何路线：其中「裁剪-纱」在 routing.py 的待确认登记里
-                op("op-4", "裁剪-纱", "裁剪", "纱帘", "米", "0.40", false, true, 4),
-                op("op-5", "质检", "后道", null, "套", "1.50", false, false, 5),
-                op("op-6", "腰靠垫", "其他", null, "个", "2.00", false, false, 6)));
-        when(productionRouteSignalMapper.selectList(any())).thenReturn(List.of());
-
-        Map<String, Object> gaps = service().routingGaps(TENANT);
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> unrouted = (List<Map<String, Object>>) gaps.get("unrouted_operations");
-        assertThat(unrouted).extracting(m -> m.get("name")).containsExactly("裁剪-纱", "质检", "腰靠垫");
-        assertThat(unrouted).as("每条都带库口径的分组/单位/单价（商家据此判断该怎么处置）")
-                .allSatisfy(m -> assertThat(m).containsKeys("group_name", "unit", "unit_price"));
-        assertThat(unrouted).allSatisfy(m -> assertThat(m.get("pending_confirmation")).isEqualTo(true));
-        assertThat(gaps.get("pending_confirmation_total")).isEqualTo(3);
-        assertThat(gaps.get("unrouted_operation_total")).isEqualTo(3);
-    }
-
-    @Test
-    @DisplayName("缺口①（双向可红）：进了路线的工序**不得**出现在缺口里")
-    void routingGapsExcludesOperationsConsumedByAnyActiveRouting() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布", "外帘装袋"))));
-        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
-                op("op-1", "精裁-布", "裁剪", "布帘", "米", "0.40", false, true, 1),
-                op("op-3", "外帘装袋", "后道", "外帘", "套", "1.00", true, false, 3)));
-        when(productionRouteSignalMapper.selectList(any())).thenReturn(List.of());
-
-        Map<String, Object> gaps = service().routingGaps(TENANT);
-
-        assertThat((List<?>) gaps.get("unrouted_operations")).as("少一道/多一道都红").isEmpty();
-        assertThat(gaps.get("pending_confirmation_total")).isEqualTo(0);
-    }
-
-    @Test
-    @DisplayName("缺口②：库里没有路线的信号组合 ⇒ 报出「信号单独命中时会派生的键」（另一维取默认）")
-    void routingGapsListsSignalKeysWithoutRoute() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of(
-                routing("rt-v54-01", "布帘", "韩褶", List.of("精裁-布"))));
-        when(productionOperationMapper.selectList(any())).thenReturn(List.of());
-        when(productionRouteSignalMapper.selectList(any())).thenReturn(List.of(
-                signal("s1", "布", "布帘", null, 3),          // 布帘×韩褶 有路线 ⇒ 不报
-                signal("s2", "罗马帘", "罗马帘", null, 4),      // 罗马帘×韩褶 无路线 ⇒ 报（#4261 ①）
-                signal("s3", "罗马帘", null, "韩褶", 8)));      // 同上（工艺行），去重后仍一条
-
-        Map<String, Object> gaps = service().routingGaps(TENANT);
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> missing = (List<Map<String, Object>>) gaps.get("signal_keys_without_route");
-        assertThat(missing).hasSize(1);
-        assertThat(missing.get(0).get("curtain_type")).isEqualTo("罗马帘");
-        assertThat(missing.get(0).get("craft")).as("缺失维取默认（与派生同源，不复制第二份默认值）").isEqualTo("韩褶");
-        assertThat(missing.get(0).get("route_key")).isEqualTo("罗马帘×韩褶");
+    /** 旧名的**部位**（测试侧推导：带后缀的直接读后缀；不规则名按真值源的表逐条给出）。 */
+    private static String positionOfLegacyName(String legacy) {
+        if (legacy.endsWith("-布")) {
+            return "布帘";
+        }
+        if (legacy.endsWith("-纱")) {
+            return "纱帘";
+        }
+        return switch (legacy) {
+            case "布三边", "布帘车被" -> "布帘";
+            case "纱三边" -> "纱帘";
+            case "帘头制作" -> "帘头";
+            // 部位无关的工序（外帘打卷/装袋/发货、质检、抱枕、腰靠垫）：往返判据对任意部位都成立
+            // （它们走「裸逻辑名」那一档）⇒ 取一个代表部位即可。
+            default -> "布帘";
+        };
     }
 }
