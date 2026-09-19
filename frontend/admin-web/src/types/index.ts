@@ -1001,12 +1001,29 @@ export interface PieceworkReportOperationAmount {
   qty: number
 }
 
+/**
+ * 下钻维度行（issue #4347 §3.2 / 真值源 §4 的下钻链：部位 → 套）。
+ *
+ * <p>后端由**同一份聚合**产出（与按人/按工序同源）⇒ 各维合计恒等于 total。
+ * 键名两维不同：部位用 `position_name`，套用 `order_item_id`。</p>
+ */
+export interface PieceworkDrillDownRow {
+  position_name?: string
+  order_item_id?: string
+  amount: number
+  qty: number
+}
+
 /** GET /api/admin/production/piecework/summary?period=YYYY-MM[&worker_name=]（issue #4205） */
 export interface PieceworkReport {
   period: string
   total: number
   per_worker: PieceworkWorkerAmount[]
   per_operation: PieceworkReportOperationAmount[]
+  /** 按部位下钻（真值源 §4 下钻链） */
+  per_position?: PieceworkDrillDownRow[]
+  /** 按套下钻（`order_item_id` = 樘窗/套的订单行） */
+  per_set?: PieceworkDrillDownRow[]
 }
 
 /** 工序可写字段（PUT /api/admin/production/operations/{id}，issue #4204；scope 见 #4384 A1） */

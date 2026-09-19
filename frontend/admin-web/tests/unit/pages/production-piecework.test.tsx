@@ -28,6 +28,15 @@ const REPORT = {
     { operation: '韩褶-布', amount: 40, qty: 100 },
     { operation: '定型-布', amount: 83.45, qty: 211 },
   ],
+  // 下钻两维（issue #4347 §3.2）：后端**同一份聚合**产出 ⇒ 各维合计 = total = 123.45
+  per_position: [
+    { position_name: '布艺遮光帘A 米白', amount: 83.45, qty: 211 },
+    { position_name: '纱帘B 本白', amount: 40, qty: 100 },
+  ],
+  per_set: [
+    { order_item_id: 'item-A', amount: 83.45, qty: 211 },
+    { order_item_id: 'item-B', amount: 40, qty: 100 },
+  ],
 }
 
 const ok = (data: unknown) => ({ data: { success: true, data } })
@@ -117,4 +126,49 @@ describe('计件工资报表页 /production/piecework', () => {
     await waitFor(() => expect(screen.getByTestId('piecework-error')).toBeInTheDocument())
     expect(screen.getByTestId('piecework-retry')).toBeInTheDocument()
   })
+  it('按部位下钻：渲染部位行 + 金额/数量（真值源 §4 下钻链）', async () => {
+    render(<PieceworkReportPage />)
+    await waitFor(() => expect(mockGetPieceworkSummary).toHaveBeenCalled())
+
+    await userEvent.click(screen.getByTestId('piecework-tab-position'))
+
+    const panel = screen.getByTestId('piecework-by-position')
+    expect(within(panel).getByText('布艺遮光帘A 米白')).toBeInTheDocument()
+    expect(within(panel).getByText('¥83.45')).toBeInTheDocument()
+    expect(within(panel).getByText('纱帘B 本白')).toBeInTheDocument()
+    expect(within(panel).getByText('¥40.00')).toBeInTheDocument()
+  })
+
+  it('按套下钻：渲染订单行（order_item_id）行 + 金额/数量', async () => {
+    render(<PieceworkReportPage />)
+    await waitFor(() => expect(mockGetPieceworkSummary).toHaveBeenCalled())
+
+    await userEvent.click(screen.getByTestId('piecework-tab-set'))
+
+    const panel = screen.getByTestId('piecework-by-set')
+    expect(within(panel).getByText('item-A')).toBeInTheDocument()
+    expect(within(panel).getByText('item-B')).toBeInTheDocument()
+  })
+
+  it('下钻红证：缺 per_position / per_set ⇒ 该档显式「无数据」，不崩不静默', async () => {
+    // 老后端（未带下钻维度）：人/工序两档**有数据**（否则整页走空态、根本没有 tab），
+    // 但 per_position / per_set 缺席 ⇒ 下钻两档应为空态而不是抛错。
+    mockGetPieceworkSummary.mockResolvedValue(
+      ok({
+        period: '2026-09',
+        total: 80,
+        per_worker: [{ worker_name: '张三', amount: 80, qty: 200 }],
+        per_operation: [{ operation: '韩褶-布', amount: 80, qty: 200 }],
+      }),
+    )
+    render(<PieceworkReportPage />)
+    await waitFor(() => expect(mockGetPieceworkSummary).toHaveBeenCalled())
+
+    await userEvent.click(screen.getByTestId('piecework-tab-position'))
+    expect(within(screen.getByTestId('piecework-by-position')).getByText('无数据')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId('piecework-tab-set'))
+    expect(within(screen.getByTestId('piecework-by-set')).getByText('无数据')).toBeInTheDocument()
+  })
+
 })

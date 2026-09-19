@@ -11,7 +11,7 @@ import type { PieceworkReport } from '@/types'
  * 计件工资 /production/piecework（issue #4205 前端半边）
  *
  * 数据源：GET /api/admin/production/piecework/summary?period=YYYY-MM[&worker_name=]
- * —— 报工事件聚合（按人 / 按工序两档；按单下钻的多级联动 UI 不在本单范围）。
+ * —— 报工事件聚合（按人 / 按工序 / **按部位** / **按套** 四档；下钻维度由后端同一份聚合产出）。
  * 口径与生产明细页的 per-order 汇总**同一份逻辑**（后端同一聚合，前端不重算）。
  * 真值源：docs/curtain-production-rules.md §4「工资报表 = 报工事件聚合（按人/按期/按单下钻）」。
  * 返工/报废不计件由后端聚合时排除，本页只做展示。
@@ -31,7 +31,7 @@ function formatQty(value?: number): string {
 export default function PieceworkReportPage() {
   const [period, setPeriod] = useState(currentPeriod)
   const [workerName, setWorkerName] = useState('')
-  const [tab, setTab] = useState<'worker' | 'operation'>('worker')
+  const [tab, setTab] = useState<'worker' | 'operation' | 'position' | 'set'>('worker')
 
   const [report, setReport] = useState<PieceworkReport | null>(null)
   const [loading, setLoading] = useState(true)
@@ -61,6 +61,9 @@ export default function PieceworkReportPage() {
 
   const perWorker = report?.per_worker ?? []
   const perOperation = report?.per_operation ?? []
+  // 下钻两维（issue #4347 §3.2）：与按人/按工序**同一份后端聚合** ⇒ 各维合计 = total
+  const perPosition = report?.per_position ?? []
+  const perSet = report?.per_set ?? []
   const isEmpty = !loading && !error && (report?.total ?? 0) === 0 && perWorker.length === 0 && perOperation.length === 0
 
   return (
@@ -182,9 +185,72 @@ export default function PieceworkReportPage() {
               >
                 按工序
               </button>
+              <button
+                type="button"
+                data-testid="piecework-tab-position"
+                onClick={() => setTab('position')}
+                className={cn(
+                  'rounded-t px-4 py-2 text-sm transition-colors',
+                  tab === 'position'
+                    ? 'border-b-2 border-primary-600 font-medium text-primary-700'
+                    : 'text-neutral-500 hover:text-neutral-800',
+                )}
+              >
+                按部位
+              </button>
+              <button
+                type="button"
+                data-testid="piecework-tab-set"
+                onClick={() => setTab('set')}
+                className={cn(
+                  'rounded-t px-4 py-2 text-sm transition-colors',
+                  tab === 'set'
+                    ? 'border-b-2 border-primary-600 font-medium text-primary-700'
+                    : 'text-neutral-500 hover:text-neutral-800',
+                )}
+              >
+                按套
+              </button>
             </div>
 
-            {tab === 'worker' ? (
+            {tab === 'position' || tab === 'set' ? (
+              <div
+                className="overflow-x-auto"
+                data-testid={tab === 'position' ? 'piecework-by-position' : 'piecework-by-set'}
+              >
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
+                      <th className="pl-5 pr-4 py-3 font-medium">{tab === 'position' ? '部位' : '套（订单行）'}</th>
+                      <th className="px-4 py-3 font-medium">计件数量</th>
+                      <th className="px-4 py-3 font-medium">金额</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(tab === 'position' ? perPosition : perSet).map((row) => {
+                      // 键名两维不同：部位用 position_name，套用 order_item_id
+                      const key = tab === 'position'
+                        ? (row.position_name ?? '')
+                        : (row.order_item_id ?? '')
+                      return (
+                        <tr
+                          key={key}
+                          className="border-b border-neutral-100 last:border-0"
+                          data-testid={`${tab}-row-${key}`}
+                        >
+                          <td className="pl-5 pr-4 py-3.5 text-neutral-900">{key}</td>
+                          <td className="px-4 py-3.5 text-neutral-600">{formatQty(row.qty)}</td>
+                          <td className="px-4 py-3.5 font-medium text-neutral-900">{formatMoney(row.amount)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                {(tab === 'position' ? perPosition : perSet).length === 0 && (
+                  <p className="py-8 text-center text-sm text-neutral-400">无数据</p>
+                )}
+              </div>
+            ) : tab === 'worker' ? (
               <div className="overflow-x-auto" data-testid="piecework-by-worker">
                 <table className="w-full text-sm">
                   <thead>
