@@ -863,6 +863,70 @@ COMMENT ON COLUMN production_routings.source IS
     'provenance 口径来源（V62，issue #4361）：实证 / 推算 / 占位待确认。'
     '占位待确认 = V54 的 6 条（含 布帘×韩褶）；推算 = V58 的 3 条纱帘；实证 = 当前空集。';
 
+-- ── 工序路线模型重构 P1 的三张新表（V71，issue #4427 = 母单 #4423 P1/3）──
+-- 角色：9 条「(部位 × 工艺) 展开路线」收敛为「1 条具名主线 + 规则表 + 部位价目」。
+-- ⚠️ **纯增量**：旧表 production_operations / production_routings 的列、行、索引**一字不动**
+--    （新路线不能写进 production_routings：它的 curtain_type/craft 是 NOT NULL，且唯一索引
+--    uk_production_routings_tenant_type_craft 会与既有 布帘×韩褶 行直接冲突）。
+-- 本段是 bootstrap 终态（本文件由 docker-entrypoint-initdb.d 执行，**迁移链不在该栈运行**
+-- ⇒ 只写迁移 = 新建库无这三张表 ⇒ P2 切换后读面直接 500，同 #3270 形态）。
+-- 逐列与 V71__normalize_routing_model_structure.sql 一致；种子见本文件末尾的种子段。
+CREATE TABLE IF NOT EXISTS production_operation_positions (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    logical_name VARCHAR(64) NOT NULL,                -- 逻辑工序名（去部位后缀：精裁/三边/韩褶…）
+    position VARCHAR(16) NOT NULL,                    -- 部位：布帘/纱帘/帘头
+    unit_price NUMERIC(10,2),                         -- 计件单价（元/单位）；NULL = 该部位明确不做（不报价）
+    applicable BOOLEAN NOT NULL DEFAULT TRUE,         -- 该部位是否做这道工序；false = 明确不做（≠「没定价」）
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_production_operation_positions_tenant_name_position
+    ON production_operation_positions (tenant_id, logical_name, position)
+    WHERE deleted = 0;
+
+CREATE TABLE IF NOT EXISTS production_route_templates (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    name VARCHAR(128) NOT NULL,                       -- 路线总名（用户可命名；M3：只改总名，工序名不能改）
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,        -- 回落链终点；每租户活跃路线中恰好一条
+    positions JSONB NOT NULL DEFAULT '[]'::jsonb,     -- 适用帘种集合，如 ["布帘","纱帘","帘头"]
+    mainline JSONB NOT NULL DEFAULT '[]'::jsonb,      -- 主线有序工序名（逻辑名，不展开工艺变体）
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_production_route_templates_tenant_name
+    ON production_route_templates (tenant_id, name)
+    WHERE deleted = 0;
+-- 不变式 I2：每租户活跃路线中恰好一条 is_default（部分唯一索引 ⇒ 第二条默认插不进来）。
+CREATE UNIQUE INDEX IF NOT EXISTS uk_production_route_templates_tenant_default
+    ON production_route_templates (tenant_id)
+    WHERE is_default AND deleted = 0;
+
+CREATE TABLE IF NOT EXISTS production_route_rules (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    trigger_kind VARCHAR(24) NOT NULL CHECK (trigger_kind IN ('craft', 'option', 'shaped', 'processing_item')),
+    trigger_value VARCHAR(64) NOT NULL,               -- 工艺名 / 特殊选项名（逐字 = ERP 写法；它是 join key）
+    position VARCHAR(16),                             -- 部位限定；NULL = 不限
+    action VARCHAR(16) NOT NULL CHECK (action IN ('insert', 'remove')),
+    operation VARCHAR(64) NOT NULL,                   -- 逻辑工序名（增/删的那一道）
+    after_operation VARCHAR(64),                      -- insert 锚点（逻辑工序名）；NULL = 追加末尾
+    priority INTEGER NOT NULL DEFAULT 100,            -- 升序生效（同序按声明顺序）
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_production_route_rules_tenant_trigger_operation
+    ON production_route_rules (tenant_id, trigger_kind, trigger_value,
+                              COALESCE(position, ''), action, operation)
+    WHERE deleted = 0;
+
 CREATE TABLE IF NOT EXISTS processing_position_operations (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
@@ -1834,6 +1898,143 @@ WHERE o.deleted = 0
       SELECT 1 FROM production_operation_price_versions v
       WHERE v.operation_id = o.id AND v.deleted = 0
   )
+ON CONFLICT (id) DO NOTHING;
+
+-- ── 工序路线模型重构 P1 的三张新表种子（V71，issue #4427 = 母单 #4423 P1/3）──
+-- 与 V71__normalize_routing_model_structure.sql **逐行逐值**同口径（三源收敛守卫：
+-- tests/unit_ci_workflows/test_production_catalog_seed.py 按内容发现 V71 并与本文件比对）。
+-- 内容 = 84 行部位价目（28 道逻辑工序 × 3 部位，逐行显式 applicable）+ 1 行具名默认路线
+-- + 26 行规则（工艺变体 10 + 特殊选项 16）。幂等：ON CONFLICT (id) DO NOTHING。
+-- ⚠️ 与旧种子段的关系：**纯增量** —— production_operations / production_routings 的种子一字不动。
+
+INSERT INTO production_operation_positions
+    (id, tenant_id, logical_name, position, unit_price, applicable, status)
+VALUES
+  ('opp-v70-01', 1, '精裁', '布帘', 0.4, TRUE, 'active'),
+  ('opp-v70-02', 1, '精裁', '纱帘', 0.4, TRUE, 'active'),
+  ('opp-v70-03', 1, '精裁', '帘头', 0.4, TRUE, 'active'),
+  ('opp-v70-04', 1, '裁剪', '布帘', 0.4, TRUE, 'active'),
+  ('opp-v70-05', 1, '裁剪', '纱帘', 0.4, TRUE, 'active'),
+  ('opp-v70-06', 1, '裁剪', '帘头', 0.4, TRUE, 'active'),
+  ('opp-v70-07', 1, '三边', '布帘', 0.4, TRUE, 'active'),
+  ('opp-v70-08', 1, '三边', '纱帘', 0.4, TRUE, 'active'),
+  ('opp-v70-09', 1, '三边', '帘头', 0.4, TRUE, 'active'),
+  ('opp-v70-10', 1, '韩褶', '布帘', 0.4, TRUE, 'active'),
+  ('opp-v70-11', 1, '韩褶', '纱帘', 0.4, TRUE, 'active'),
+  ('opp-v70-12', 1, '韩褶', '帘头', 0.4, TRUE, 'active'),
+  ('opp-v70-13', 1, '上车布', '布帘', 0.5, TRUE, 'active'),
+  ('opp-v70-14', 1, '上车布', '纱帘', 0.5, TRUE, 'active'),
+  ('opp-v70-15', 1, '上车布', '帘头', NULL, FALSE, 'active'),
+  ('opp-v70-16', 1, '打孔', '布帘', 0.15, TRUE, 'active'),
+  ('opp-v70-17', 1, '打孔', '纱帘', 0.15, TRUE, 'active'),
+  ('opp-v70-18', 1, '打孔', '帘头', 0.15, TRUE, 'active'),
+  ('opp-v70-19', 1, '拼1次', '布帘', 0.8, TRUE, 'active'),
+  ('opp-v70-20', 1, '拼1次', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-21', 1, '拼1次', '帘头', NULL, FALSE, 'active'),
+  ('opp-v70-22', 1, '拼2次', '布帘', 1.2, TRUE, 'active'),
+  ('opp-v70-23', 1, '拼2次', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-24', 1, '拼2次', '帘头', NULL, FALSE, 'active'),
+  ('opp-v70-25', 1, '拼3次', '布帘', 1.6, TRUE, 'active'),
+  ('opp-v70-26', 1, '拼3次', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-27', 1, '拼3次', '帘头', NULL, FALSE, 'active'),
+  ('opp-v70-28', 1, '花边', '布帘', 0.6, TRUE, 'active'),
+  ('opp-v70-29', 1, '花边', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-30', 1, '花边', '帘头', NULL, FALSE, 'active'),
+  ('opp-v70-31', 1, '铅坠', '布帘', 0.3, TRUE, 'active'),
+  ('opp-v70-32', 1, '铅坠', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-33', 1, '铅坠', '帘头', NULL, FALSE, 'active'),
+  ('opp-v70-34', 1, '接高', '布帘', 1.0, TRUE, 'active'),
+  ('opp-v70-35', 1, '接高', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-36', 1, '接高', '帘头', NULL, FALSE, 'active'),
+  ('opp-v70-37', 1, '帘头制作', '布帘', NULL, FALSE, 'active'),
+  ('opp-v70-38', 1, '帘头制作', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-39', 1, '帘头制作', '帘头', 2.0, TRUE, 'active'),
+  ('opp-v70-40', 1, '熨烫', '布帘', 0.35, TRUE, 'active'),
+  ('opp-v70-41', 1, '熨烫', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-42', 1, '熨烫', '帘头', NULL, FALSE, 'active'),
+  ('opp-v70-43', 1, '定型', '布帘', 0.4, TRUE, 'active'),
+  ('opp-v70-44', 1, '定型', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-45', 1, '定型', '帘头', 0.4, TRUE, 'active'),
+  ('opp-v70-46', 1, '复烫', '布帘', 0.35, TRUE, 'active'),
+  ('opp-v70-47', 1, '复烫', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-48', 1, '复烫', '帘头', NULL, FALSE, 'active'),
+  ('opp-v70-49', 1, '车被', '布帘', 0.4, TRUE, 'active'),
+  ('opp-v70-50', 1, '车被', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-51', 1, '车被', '帘头', NULL, FALSE, 'active'),
+  ('opp-v70-52', 1, '外帘打卷', '布帘', 1.0, TRUE, 'active'),
+  ('opp-v70-53', 1, '外帘打卷', '纱帘', 1.0, TRUE, 'active'),
+  ('opp-v70-54', 1, '外帘打卷', '帘头', 1.0, TRUE, 'active'),
+  ('opp-v70-55', 1, '外帘装袋', '布帘', 1.0, TRUE, 'active'),
+  ('opp-v70-56', 1, '外帘装袋', '纱帘', 1.0, TRUE, 'active'),
+  ('opp-v70-57', 1, '外帘装袋', '帘头', 1.0, TRUE, 'active'),
+  ('opp-v70-58', 1, '质检', '布帘', 1.5, TRUE, 'active'),
+  ('opp-v70-59', 1, '质检', '纱帘', 1.5, TRUE, 'active'),
+  ('opp-v70-60', 1, '质检', '帘头', 1.5, TRUE, 'active'),
+  ('opp-v70-61', 1, '外帘发货', '布帘', 1.0, TRUE, 'active'),
+  ('opp-v70-62', 1, '外帘发货', '纱帘', 1.0, TRUE, 'active'),
+  ('opp-v70-63', 1, '外帘发货', '帘头', 1.0, TRUE, 'active'),
+  ('opp-v70-64', 1, '绑带', '布帘', 0.5, TRUE, 'active'),
+  ('opp-v70-65', 1, '绑带', '纱帘', 0.5, TRUE, 'active'),
+  ('opp-v70-66', 1, '绑带', '帘头', NULL, FALSE, 'active'),
+  ('opp-v70-67', 1, '抱枕', '布帘', 2.0, TRUE, 'active'),
+  ('opp-v70-68', 1, '抱枕', '纱帘', 2.0, TRUE, 'active'),
+  ('opp-v70-69', 1, '抱枕', '帘头', 2.0, TRUE, 'active'),
+  ('opp-v70-70', 1, '腰靠垫', '布帘', 2.0, TRUE, 'active'),
+  ('opp-v70-71', 1, '腰靠垫', '纱帘', 2.0, TRUE, 'active'),
+  ('opp-v70-72', 1, '腰靠垫', '帘头', 2.0, TRUE, 'active'),
+  ('opp-v70-73', 1, 'logo条', '布帘', 0.6, TRUE, 'active'),
+  ('opp-v70-74', 1, 'logo条', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-75', 1, 'logo条', '帘头', NULL, FALSE, 'active'),
+  ('opp-v70-76', 1, '立边', '布帘', 0.5, TRUE, 'active'),
+  ('opp-v70-77', 1, '立边', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-78', 1, '立边', '帘头', NULL, FALSE, 'active'),
+  ('opp-v70-79', 1, '扣环', '布帘', 0.3, TRUE, 'active'),
+  ('opp-v70-80', 1, '扣环', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-81', 1, '扣环', '帘头', NULL, FALSE, 'active'),
+  ('opp-v70-82', 1, '防翘扣', '布帘', 0.2, TRUE, 'active'),
+  ('opp-v70-83', 1, '防翘扣', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v70-84', 1, '防翘扣', '帘头', NULL, FALSE, 'active')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO production_route_templates
+    (id, tenant_id, name, is_default, positions, mainline, status)
+VALUES
+  ('rt-v70-01', 1, '窗帘工序路线（默认）', TRUE,
+   '["布帘", "纱帘", "帘头"]'::jsonb,
+   '["精裁", "三边", "熨烫", "定型", "复烫", "车被", "外帘打卷", "外帘装袋", "外帘发货"]'::jsonb,
+   'active')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO production_route_rules
+    (id, tenant_id, trigger_kind, trigger_value, position, action,
+     operation, after_operation, priority, status)
+VALUES
+  ('rr-v70-01', 1, 'craft', '韩褶', NULL, 'insert', '韩褶', '三边', 10, 'active'),
+  ('rr-v70-02', 1, 'craft', '韩褶', '布帘', 'insert', '上车布', '韩褶', 20, 'active'),
+  ('rr-v70-03', 1, 'craft', '打孔', NULL, 'insert', '打孔', '三边', 30, 'active'),
+  ('rr-v70-04', 1, 'craft', '四爪钩', NULL, 'insert', '上车布', '三边', 40, 'active'),
+  ('rr-v70-05', 1, 'craft', '四爪钩', NULL, 'remove', '定型', NULL, 50, 'active'),
+  ('rr-v70-06', 1, 'craft', '四爪钩', NULL, 'remove', '复烫', NULL, 60, 'active'),
+  ('rr-v70-07', 1, 'craft', '穿杆', NULL, 'remove', '定型', NULL, 70, 'active'),
+  ('rr-v70-08', 1, 'craft', '穿杆', NULL, 'remove', '复烫', NULL, 80, 'active'),
+  ('rr-v70-09', 1, 'craft', '平幔', NULL, 'insert', '帘头制作', '三边', 90, 'active'),
+  ('rr-v70-10', 1, 'craft', '平幔', NULL, 'remove', '复烫', NULL, 100, 'active'),
+  ('rr-v70-11', 1, 'option', '拼1次', NULL, 'insert', '拼1次', '三边', 110, 'active'),
+  ('rr-v70-12', 1, 'option', '拼2次', NULL, 'insert', '拼2次', '三边', 120, 'active'),
+  ('rr-v70-13', 1, 'option', '拼3次', NULL, 'insert', '拼3次', '三边', 130, 'active'),
+  ('rr-v70-14', 1, 'option', '加花边', NULL, 'insert', '花边', '三边', 140, 'active'),
+  ('rr-v70-15', 1, 'option', '加铅块', NULL, 'insert', '铅坠', '三边', 150, 'active'),
+  ('rr-v70-16', 1, 'option', '接高', NULL, 'insert', '接高', '精裁', 160, 'active'),
+  ('rr-v70-17', 1, 'option', '双眼皮接高', NULL, 'insert', '接高', '精裁', 170, 'active'),
+  ('rr-v70-18', 1, 'option', '余料做绑带', NULL, 'insert', '绑带', '车被', 180, 'active'),
+  ('rr-v70-19', 1, 'option', '布绑带', NULL, 'insert', '绑带', '车被', 190, 'active'),
+  ('rr-v70-20', 1, 'option', '余料做帘头', NULL, 'insert', '帘头制作', '三边', 200, 'active'),
+  ('rr-v70-21', 1, 'option', '抱枕', NULL, 'insert', '抱枕', '外帘打卷', 210, 'active'),
+  ('rr-v70-22', 1, 'option', '纱绑带', NULL, 'insert', '绑带', '车被', 220, 'active'),
+  ('rr-v70-23', 1, 'option', '加logo条', NULL, 'insert', 'logo条', '三边', 230, 'active'),
+  ('rr-v70-24', 1, 'option', '加立边', NULL, 'insert', '立边', '三边', 240, 'active'),
+  ('rr-v70-25', 1, 'option', '扣环', NULL, 'insert', '扣环', '三边', 250, 'active'),
+  ('rr-v70-26', 1, 'option', '防翘扣', NULL, 'insert', '防翘扣', '三边', 260, 'active')
 ON CONFLICT (id) DO NOTHING;
 
 -- 特殊选项 → 条件工序 / 计件系数种子（V59，issue #4230 Java 侧 v1a）
