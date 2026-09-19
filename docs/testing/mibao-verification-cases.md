@@ -2246,7 +2246,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（34 case）
+## 订单域（35 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2556,7 +2556,7 @@
 落库: order_items → source=order_create; expect_products=['夏日清风窗帘', '遮光窗帘']; expect_quantities={'夏日清风窗帘': 3, '遮光窗帘': 2}
 ```
 真值: order.create-flow
-溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额） ｜ tags: order_create, multi_item, processing_item, ceiling, xiaobu
+溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额）。2026-09-19（issue #4421 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:夏日清风窗帘, product_name:遮光窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword × 2, expect: 1]` —— 多商品下单按商品名定位两行明细，「每个名字唯一」是它真正依赖且只读的前置（先例 = OR-014 / OR-017 / CH-019）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红。断言（user_inputs / expectations / must_succeed / amount_verify / db_verify / order_before / data_checks）原样未动、无放宽。 ｜ tags: order_create, multi_item, processing_item, ceiling, xiaobu
 
 ### OR-019. C 端下单中途改数量 - 以最新数量为准，落库数量与金额都得跟着改（能力上限） 🔵
 ```
@@ -2580,7 +2580,7 @@
 落库: order_items → source=order_create; expect_products=['遮光窗帘']; expect_quantities={'遮光窗帘': 4}
 ```
 真值: order.create-flow, ai-chat.confirm-required
-溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新）。2026-09-19（issue #4431 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规，metric=entries ⇒ 整条销账，取优先档 OR-*）：本条命中的**两个码一起清零** —— 补 `namespaces[customer_phone:13800138000]`（自清理/并行互斥，CASE-TRUST-NO-SELF-CLEAN）+ 补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（可判定前置，CASE-TRUST-NO-PRECONDITION-ASSERTION）⇒ 整条从豁免清单销账。**断言面（user_inputs / expectations / must_succeed / order_before / amount_verify / db_verify / data_checks）一字未动、无放宽。** ｜ tags: order_create, correction, multi_turn, ceiling, xiaobu
+溯源: 2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新）。2026-09-19（issue #4421 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:遮光窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（先例 = OR-014 / OR-017 / CH-019）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红。断言原样未动、无放宽。 ｜ tags: order_create, correction, multi_turn, ceiling, xiaobu
 
 ### OR-020. C 端下单中途打岔后回到原流程 - 草稿不丢（数量/加工项必须延续） 🔵
 ```
@@ -2775,7 +2775,7 @@
 落库: order_items → source=order_create; expect_products=['2699系列雪尼尔窗帘面料']; expect_quantities={'2699系列雪尼尔窗帘面料': 3}
 ```
 真值: order.create-flow
-溯源: 2026-09-14 首跑校准（issue #3666）：固定 2 轮轮次表在 B 端多步下单流程上必然跑不完（agent 只到 product_detail/interact，order_create 未发生 → 假失败），改为 repeat_until(tool_called=order_create, max=8) 协作轮（同 OR-026/OR-021 先例）；2026-09-14 新增（issue #3666）：订单数量语义放宽为 DECIMAL(10,2) 的端到端金额回归网——此前 per_area 小数面积（8.4 ㎡）会被 Integer 截断成 8 ㎡ 少收 12.00 元，且 OrderService 的 toInteger() 会让列表/详情加工费与外层金额自相矛盾 ｜ tags: order_create, processing_item, per_area, decimal_quantity
+溯源: 2026-09-14 首跑校准（issue #3666）：固定 2 轮轮次表在 B 端多步下单流程上必然跑不完（agent 只到 product_detail/interact，order_create 未发生 → 假失败），改为 repeat_until(tool_called=order_create, max=8) 协作轮（同 OR-026/OR-021 先例）；2026-09-14 新增（issue #3666）：订单数量语义放宽为 DECIMAL(10,2) 的端到端金额回归网——此前 per_area 小数面积（8.4 ㎡）会被 Integer 截断成 8 ㎡ 少收 12.00 元，且 OrderService 的 toInteger() 会让列表/详情加工费与外层金额自相矛盾。2026-09-19（issue #4431 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规，metric=entries ⇒ 整条销账，取优先档 OR-*）：本条命中的**两个码一起清零** —— 补 `namespaces[customer_phone:13800138000, product_name:2699系列雪尼尔窗帘面料]`（自清理/并行互斥，CASE-TRUST-NO-SELF-CLEAN）+ 补 `precondition[product_count_for_keyword: 2699系列雪尼尔窗帘面料, expect: 1]`（可判定前置，CASE-TRUST-NO-PRECONDITION-ASSERTION）⇒ 整条从豁免清单销账。形状与 OR-016 逐字一致（同商品、同号码）。**断言面（user_inputs / expectations / must_succeed / amount_verify / db_verify / data_checks）一字未动、无放宽。** ｜ tags: order_create, processing_item, per_area, decimal_quantity
 
 ### OR-029. B 端「先查商品再录订单」链路 - 确认卡点击后 order_create 必须真实执行（不得 Tool not found / 空头承诺） 🔵
 ```
@@ -2832,7 +2832,20 @@
 真值: order.create-flow, order.states
 溯源: 2026-09-18 新增（用户裁定 2 / F17 / issue #4095）：冒烟档补下单用例 —— 此前冒烟档 9 条全只读、订单域唯一 OR-001 是列表查询 ⇒ 主链路零覆盖。persona=mibao（代客下单免验证码，链路最短）；一句话给全 + repeat_until 协作轮（有卡答卡，成功即停）；断言 = must_succeed[order_create] + db_verify[order_items/order_phone] + order_before[interact[confirm] before order_create] + required_args；自清理 product_dedupe + precondition[product_count_for_keyword expect=1] + namespaces（商品名/手机号）。未新增任何自动触发（裁定 2′/4′）。 ｜ tags: order_create, smoke, write
 
-### OR-032. 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离 🔵
+### OR-032. 算料试算端点 - 折数法（标准档）单一真值 + 后端产出的可读公式串 🔵
+```
+你: 商家手工下单页按宽 6.6m / 双开 / 标准档试算用料
+期望: direct_reply
+数据: （散文、**不计分**）折数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）
+数据: （散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）
+数据: （散文、**不计分**）拼色用料系数（用户 2026-09-19 裁定）：拼1次 0.65 / 拼2次 1.2 米每折；52 折双开 ⇒ 34.1 / 62.7 米；拼3次未登记 ⇒ fail-closed 显式报缺口
+数据: （散文、**不计分**）响应算料键 = **snake_case**（设计文档 §4.5 / CALC_INFO_KEYS 同口径）：fabric_meters / pleat_count / per_panel_pleats / per_fold / fullness / fullness_actual / formula_used / formula_text / source / craft_tier / warning —— 前端可原样塞进 processingInfo，零映射
+跳过: [backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: fabric-calc.pleat-method, fabric-calc.craft-tier, fabric-calc.fullness-actual, fabric-calc.mixed-color-per-fold, fabric-calc.craft-calc-endpoint
+溯源: 2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 折数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。同日追加用户裁定：拼色每折吃布系数（拼1次 0.65 / 拼2次 1.2 米每折，纸表表头原文，是**用料**而非计价）—— 与真值源 §10 旧措辞冲突，已按裁定改正 docs §10；`拼3次` 纸表未登记 ⇒ 显式缺口 fail-closed，不插值。 ｜ tags: order, craft_calc, fabric, single_source_of_truth
+
+### OR-033. 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离 🔵
 ```
 你: （无 LLM 环节：本用例的判据由 Java 单测直接执行，见 traces.tests）
 数据: **判据 1·11 个键逐键落列**（`OrderLineCraftFields.materialize` → `order_items` 的 V63 列）：工艺规格 8 键（`curtainType` / `craft` / `openCount` / `cuttingMode` / `isShaped` / `pleatSpacing` / `hasPattern` / `corner`）与算料输出 3 键（`fullness` / `fullness_actual` / `pleat_count`）都要落列；**Map 形态与 JSON 字符串形态都覆盖**（自定义 `@Select` 路径不经过 `JacksonTypeHandler`，`processing_info` 会是 JSON 字符串 ⇒ 只测一种形态 = 漏一半）。**注入法**：删掉 `materialize` 里 `isShaped` 那一行 ⇒ 判据 1 红。
@@ -2845,7 +2858,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4362（S1 下单行要素结构化落库，V63）的行为此前**零评测用例**，新增测试借 `OR-008`（创建订单先查商品 SKU）与 `PG-031`（V60 信号种子迁移契约）过门禁 —— 两条都**不覆盖**被测行为（PG-031 更是完全不相干的域）。本用例把判据挂到真实行为上：键名映射的**单一实现点**（写面 `materialize` → DB 列；读面 `toSnapshotKeys` → 加工单快照键，两面键名口径不同 ⇒ 各写一遍就是第二份口径）。**不改运行时行为、不改断言强度**。 ｜ tags: order, craft_spec, order_item, backend_contract
 
-### OR-033. 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染 🔵
+### OR-034. 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染 🔵
 ```
 你: （无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）
 数据: **一份定义吃两种键名口径**（设计文档 §4.9「一份 spec，三处渲染」）：`craft-display` 的 `craftSpecRows` 同时吃**订单/快照层 camelCase**（`order_items.processing_info` / `items_snapshot`）与**报价单 snake_case**（`curtain_calc` 输出）—— 两处各写一套定义 = 第二份口径，漂移的那一份不会变红。
@@ -2858,7 +2871,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4355（三处展示工艺规格）的行为此前**零评测用例**，新增测试借 `OR-001`（订单列表查询）与 `UI-020`（订单列表采购明细的**加工费**展示）过门禁 —— 后者虽在订单页但测的是加工费行，**不覆盖**工艺规格字段的渲染/格式化/缺值口径。本用例把判据挂到真实行为上：展示映射是**三处共用的同一份定义**，故它的判据必须覆盖两种键名口径 + 缺值硬约束。**不改运行时行为、不改断言强度**。 ｜ tags: order, craft_spec, display, backend_contract
 
-### OR-034. 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫 🔵
+### OR-035. 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫 🔵
 ```
 你: （无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）
 数据: **缺值不写（硬约束 1）**：用户没填 ⇒ 该键**不出现**，不写空串 / `0` / `false` 占位（下游会把它们当成真值）；空串 / 纯空白字符串 / `0` / `NaN` / 非数值一律不写。
@@ -2872,7 +2885,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4375（下单页录入工艺规格）/ #4395（樘窗分组写侧）/ #4420（默认档 + 算料常量同步守卫）的行为此前**零评测用例**，新增测试借 `OR-009`（下单全流程选品→选SKU→确认数量→下单）与 `UI-038`（新增订单表单**选择已有客户**回填收货信息）过门禁 —— UI-038 与被测行为完全无关。本用例把判据挂到真实行为上：写侧两条硬约束（缺值不写 / 键名 camelCase）+ 枚举与库侧逐字 + 默认档常量的**有守卫副本**。**不改运行时行为、不改断言强度**。 ｜ tags: order, craft_spec, write_side, backend_contract
 
-### OR-035. 下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回） 🔵
+### OR-036. 下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回） 🔵
 ```
 你: （无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）
 数据: **判据 1·宽高齐全 ⇒ 试算并预填数量 + 展示后端产出的公式串**（用户裁定「用料米数按折数法自动算 + 把计算公式体现出来」）。红证（实现前）：数量恒为手填 1（算料试算未接线）。
@@ -2883,6 +2896,7 @@
 数据: **判据 7·入参不变就不重发**：`craftCalcSignature` 对同一入参恒定（写回 `quantity` 不会再次触发试算）；改宽 / 改开数 / 改拼次 ⇒ 签名变化（该重算的必须重算）；`null` 入参 ⇒ 空签名（不触发请求）。
 数据: **判据 8·失败给可行动提示、不给估算值**：`craftCalcErrorText` 优先取后端 `error.message`（如「拼3次纸表未登记」），无任何 message 时给兜底文案（不得空串，也不得悄悄算一个数）。
 数据: **判据 9·用料来源两态是真值**（真值源 §8「用料必须带来源」）：「公式计算」与「人工指定」是两个不同真值 —— 手改后不得被静默改回。
+数据: **与 OR-032 的分工**（main 的后端半边用例，issue #4421）：`OR-032` 锚**端点契约**（折数法纸表逐值、单一真值、snake_case 响应键）；本条锚**下单页前端接线**（何时发/不发请求、预填与人工指定的两态、失败不退回估算值）。两条互补，不重复。
 数据: **红证（实现前）**：`@/lib/craft-calc-request` 不存在 ⇒ import 即红；接线侧数量恒为手填 1。
 跳过: [backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx 执行
 ```
@@ -4653,8 +4667,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：341（活跃 154，跳过 187）
-- tier 分布：smoke 10 / normal 300 / adversarial 31
+- 用例总数：342（活跃 154，跳过 188）
+- tier 分布：smoke 10 / normal 301 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4671,7 +4685,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：34
+- 订单域：35
 - 加工项域：11
 - processing-order：40
 - 商品域：21
@@ -4708,10 +4722,10 @@
 - KN-004: 米宝知识问答 - 加工计价规则走 processing_item_query 工具（加工项派生卡片已移除）
 - KN-008: 知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
-- OR-032: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
-- OR-033: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
-- OR-034: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
-- OR-035: 下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）
+- OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
+- OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
+- OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
+- OR-036: 下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

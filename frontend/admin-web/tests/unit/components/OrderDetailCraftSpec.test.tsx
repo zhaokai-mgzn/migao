@@ -1,7 +1,7 @@
-// case_ids: OR-033
+// case_ids: OR-034
 // 原声明 `OR-001, UI-020` 是**借用式**（issue #4431 B7 核实并替换）：OR-001 是订单列表查询、
 // UI-020 是订单列表「采购明细」的**加工费**展示 —— 两条都不覆盖本文件被测行为（工艺规格展示）。
-// 改用 **OR-033**（本 PR 新增，判据即本文件 + craft-display.test.ts）。
+// 改用 **OR-034**（本 PR 新增，判据即本文件 + craft-display.test.ts）。
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'

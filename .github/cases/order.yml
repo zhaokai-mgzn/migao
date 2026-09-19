@@ -1302,12 +1302,33 @@ cases:
         expect_quantities:
           夏日清风窗帘: 3
           遮光窗帘: 2
+    # ── 前置自断言 + 自清理（issue #4421 的 burn-down 缴费；metric=entries ⇒ 必须整条销账）──
+    # 本用例命中的两条存量违规是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION。
+    # `precondition[product_count_for_keyword]`：多商品下单按**商品名**定位两行明细，「每个名字唯一」
+    # 是它真正依赖且**只读**的前置（同名副本会让 agent 合理地要求澄清 ⇒ order_create 永不发生，
+    # 报告上只表现为 `unmatched expectation` = 看起来像 agent 不干活，归因全错 —— PG-013 / CU-003 的形态）。
+    # 口径与 `pre_clean` 的商品定位同一份（`_list_products_matching`），先例 = OR-014 / OR-017 / CH-019。
+    # ⚠️ 有意**不**声明 `order_count_for_phone`：本用例自己就会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）
+    # 必然判红，那是「硬写一条注定红的守卫」。商品维只读 ⇒ 漂移恒为 0。
+    # 断言（user_inputs / expectations / must_succeed / amount_verify / db_verify / order_before /
+    # data_checks）**原样未动、无放宽**。
+    namespaces:
+      - "product_name:夏日清风窗帘"
+      - "product_name:遮光窗帘"
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "夏日清风窗帘"
+        expect: 1
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     data_checks:
       - "多商品下单必须一次 order_create 带多行 items（每行自己的数量/单价/加工项），不得只落一款"
       - "加工费按各自米数分别计算（3 米→24、2 米→16），总额 = Σ小计 810 + Σ加工费 40 = 850"
       - "两款商品的单价都必须来自商品库（158/168），不得凭记忆报价"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额）"
+    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多商品/多加工项/逐行金额）。2026-09-19（issue #4421 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:夏日清风窗帘, product_name:遮光窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword × 2, expect: 1]` —— 多商品下单按商品名定位两行明细，「每个名字唯一」是它真正依赖且只读的前置（先例 = OR-014 / OR-017 / CH-019）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红。断言（user_inputs / expectations / must_succeed / amount_verify / db_verify / order_before / data_checks）原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
@@ -1361,26 +1382,6 @@ cases:
           fallback: "确认"
       - auto_respond:
           fallback: "确认"
-    # 自清理 / 前置自断言（2026-09-19 issue #4431 的 burn-down 缴费）：
-    #   · namespaces：本用例**自己就会给 13800138000 建单** ⇒ 与同号码的建单/查询用例并行互斥
-    #     （同 OR-026 / AS-003 / CH-010 先例）。
-    #   · precondition 选**只读**靶子 `product_count_for_keyword: 遮光窗帘` —— 本用例按**名字**
-    #     选品（R1「遮光窗帘 3 米」），「该名字在种子栈里唯一」是它真正依赖且**不自己改写**的前置
-    #     （种子 xiaobu_eval_seed.sql 里恰 1 件；口径与 OR-014 / OR-026 同一份实现
-    #     `_list_products_matching`）。同名副本会让 agent **合理地**要求澄清「哪一件」
-    #     ⇒ `order_create` 永不发生，而报告上只表现为 `unmatched expectation`
-    #     （**看起来像 agent 不干活**）—— 正是本规则要治的归因错位。
-    #     ⚠️ **有意不声明 `order_count_for_phone: 13800138000`**：本用例自己就会给该号码建单
-    #     ⇒ `after - before = +1 > max_growth(缺省 0)` 会**恒判运行期漂移**（硬写一条注定红的守卫；
-    #     同 OR-026 / chat.yml #4099 的先例与理由）。
-    #     ⚠️ 值**必须加引号**（同 OR-026）：`yaml_light` 会把未加引号的 `customer_phone:13800138000`
-    #     解析成 dict，触发 `test_case_seed_truth.py` 的「未分类 namespaces 前缀」守卫。
-    namespaces:
-      - "customer_phone:13800138000"
-    precondition:
-      - type: product_count_for_keyword
-        source: 遮光窗帘
-        expect: 1
     expectations:
       - tool: product_search
       - tool: product_detail
@@ -1402,11 +1403,25 @@ cases:
         expect_products: ["遮光窗帘"]
         expect_quantities:
           遮光窗帘: 4
+    # ── 前置自断言 + 自清理（issue #4421 的 burn-down 缴费；metric=entries ⇒ 必须整条销账）──
+    # 同 OR-018 口径：`precondition[product_count_for_keyword]` 是本用例真正依赖且**只读**的前置
+    # （「遮光窗帘」该名字唯一 —— 同名副本会让 agent 合理地要求澄清 ⇒ order_create 永不发生，
+    # 报告上只表现为 `unmatched expectation` = 看起来像 agent 不干活）。先例 = OR-014 / OR-017 / CH-019。
+    # ⚠️ 有意**不**声明 `order_count_for_phone`：本用例自己就会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）
+    # 必然判红。断言（user_inputs / expectations / must_succeed / amount_verify / db_verify /
+    # order_before / data_checks）**原样未动、无放宽**。
+    namespaces:
+      - "product_name:遮光窗帘"
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     data_checks:
       - "顾客中途改数量后，确认卡与订单明细都必须反映**最新**数量（4 米），不得沿用旧值 3 米"
       - "金额按最新数量重算：168×4 + 打孔 8×4 = 704"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新）。2026-09-19（issue #4431 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规，metric=entries ⇒ 整条销账，取优先档 OR-*）：本条命中的**两个码一起清零** —— 补 `namespaces[customer_phone:13800138000]`（自清理/并行互斥，CASE-TRUST-NO-SELF-CLEAN）+ 补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（可判定前置，CASE-TRUST-NO-PRECONDITION-ASSERTION）⇒ 整条从豁免清单销账。**断言面（user_inputs / expectations / must_succeed / order_before / amount_verify / db_verify / data_checks）一字未动、无放宽。**"
+    merge_log: "2026-09-13 新增（issue #3367）：C 端能力上限用例（多轮纠错/状态更新）。2026-09-19（issue #4421 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:遮光窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（先例 = OR-014 / OR-017 / CH-019）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红。断言原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
@@ -2195,8 +2210,27 @@ cases:
       - "刺绣工艺 per_area 数量 = 8.4 ㎡，加工费 = 30 × 8.4 = 252.00 元（截断成 8 会变 240.00，少收 12.00）"
       - "订单总额 = 面料小计 23.80×3=71.40 + 加工费 252.00 = 323.40 元"
       - "订单明细数量落库为 3（面料米数），DECIMAL(10,2) 列不得改变整数数量的落库语义"
+    # 自清理 / 前置自断言（2026-09-19 issue #4431 的 burn-down 缴费）：
+    #   · namespaces：本用例**自己就会给 13800138000 建单**、且按**商品名**定位下单对象 ⇒
+    #     与同号码/同商品的建单用例并行互斥（形状与 OR-016 逐字一致 —— 同一商品、同一号码）。
+    #   · precondition 选**只读**靶子 `product_count_for_keyword: 2699系列雪尼尔窗帘面料` ——
+    #     R1 按**名字**选品，「该名字在种子栈里唯一」是它真正依赖且**不自己改写**的前置
+    #     （mibao_eval_seed.sql 恰 1 件 prod_eval_2699；口径与 OR-016 / OR-014 / OR-026 同一份
+    #     实现 `_list_products_matching`）。同名副本会让 agent **合理地**要求澄清「哪一件」
+    #     ⇒ `order_create` 永不发生，而报告上只表现为 `unmatched expectation`
+    #     （**看起来像 agent 不干活**）—— 正是本规则要治的归因错位。
+    #     ⚠️ **有意不声明 `order_count_for_phone: 13800138000`**：本用例自己就会给该号码建单
+    #     ⇒ `after - before = +1 > max_growth(缺省 0)` 会**恒判运行期漂移**（硬写一条注定红的守卫；
+    #     同 OR-026 / OR-019 的先例与理由）。商品维只读 ⇒ 漂移恒为 0，无需 `max_growth`。
+    namespaces:
+      - "customer_phone:13800138000"
+      - "product_name:2699系列雪尼尔窗帘面料"
+    precondition:
+      - type: product_count_for_keyword
+        source: "2699系列雪尼尔窗帘面料"
+        expect: 1
     skip_reason: ""
-    merge_log: "2026-09-14 首跑校准（issue #3666）：固定 2 轮轮次表在 B 端多步下单流程上必然跑不完（agent 只到 product_detail/interact，order_create 未发生 → 假失败），改为 repeat_until(tool_called=order_create, max=8) 协作轮（同 OR-026/OR-021 先例）；2026-09-14 新增（issue #3666）：订单数量语义放宽为 DECIMAL(10,2) 的端到端金额回归网——此前 per_area 小数面积（8.4 ㎡）会被 Integer 截断成 8 ㎡ 少收 12.00 元，且 OrderService 的 toInteger() 会让列表/详情加工费与外层金额自相矛盾"
+    merge_log: "2026-09-14 首跑校准（issue #3666）：固定 2 轮轮次表在 B 端多步下单流程上必然跑不完（agent 只到 product_detail/interact，order_create 未发生 → 假失败），改为 repeat_until(tool_called=order_create, max=8) 协作轮（同 OR-026/OR-021 先例）；2026-09-14 新增（issue #3666）：订单数量语义放宽为 DECIMAL(10,2) 的端到端金额回归网——此前 per_area 小数面积（8.4 ㎡）会被 Integer 截断成 8 ㎡ 少收 12.00 元，且 OrderService 的 toInteger() 会让列表/详情加工费与外层金额自相矛盾。2026-09-19（issue #4431 的 burn-down 缴费 —— 本 PR 改了 cases/*.yml ⇒ 每 PR 至少净缩 1 条存量违规，metric=entries ⇒ 整条销账，取优先档 OR-*）：本条命中的**两个码一起清零** —— 补 `namespaces[customer_phone:13800138000, product_name:2699系列雪尼尔窗帘面料]`（自清理/并行互斥，CASE-TRUST-NO-SELF-CLEAN）+ 补 `precondition[product_count_for_keyword: 2699系列雪尼尔窗帘面料, expect: 1]`（可判定前置，CASE-TRUST-NO-PRECONDITION-ASSERTION）⇒ 整条从豁免清单销账。形状与 OR-016 逐字一致（同商品、同号码）。**断言面（user_inputs / expectations / must_succeed / amount_verify / db_verify / data_checks）一字未动、无放宽。**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_order_create_processing_quantity.py"
@@ -2488,22 +2522,81 @@ cases:
         - xiaobu-acceptance.yml
       verifies: []
 
+  # ── 算料（折数法）──
+  - id: OR-032
+    legacy_id: ""
+    title: "算料试算端点 - 折数法（标准档）单一真值 + 后端产出的可读公式串"
+    domains:
+      - order
+      - processing
+    tier: normal
+    persona: ""
+    tags:
+      - order
+      - craft_calc
+      - fabric
+      - single_source_of_truth
+    truths_ref:
+      - fabric-calc.pleat-method
+      - fabric-calc.craft-tier
+      - fabric-calc.fullness-actual
+      - fabric-calc.mixed-color-per-fold
+      - fabric-calc.craft-calc-endpoint
+    # ── 覆盖说明（issue #4421，后端半边）──
+    # 商家手工下单页此前**零算料通路**（数量/米数靠商家手填）。本端点 =
+    # `POST /api/internal/production/craft-calc`（ai-agent，Service Token）+ admin-api
+    # `CraftCalcClient` / `POST /api/admin/orders/craft-calc`（试算，不落库）。
+    # 口径 = 用户 2026-09-19 裁定：折数法（标准档 2.0）——`折数 = round((W×N − margin)/0.25)`
+    # 再按开数取整；`用料 = 每折吃布 × 折数 + margin`（单开 0.2 / 多开 0.3）。
+    # **每折吃布随款式/拼次变化**（同一次裁定，纸质速查表表头原文「拼色下料 1个折 0.65 / 2个折 1.2」，
+    # 是**用料**口径）：单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2 米每折；余量不随拼色变化。
+    # 纸表逐值复现（本单的锚）：单开 0.25n+0.2、对开 0.25n+0.3；
+    # 抽验 4折=1.2 / 8折=2.3 / 48折=12.3 / 52折=13.3 / 56折=14.3；6.6m 双开标准档 ⇒ 52 折 / 13.3 米；
+    # 拼色 52 折双开 ⇒ 拼1次 34.1 米 / 拼2次 62.7 米。
+    # ⚠️ 缺口（不猜不插值）：纸表未登记 `拼3次` 的用料系数 ⇒ 端点 fail-closed `MIXED_PER_FOLD_NOT_REGISTERED`。
+    # 架构口径：**不新增第二份算料逻辑** —— 端点只调 `curtain_calc.build_quote`，
+    # `formula_text` 由后端按同一份数字产出（前端/Java 侧自拼 = 第二份算料逻辑）。
+    user_inputs:
+      - "商家手工下单页按宽 6.6m / 双开 / 标准档试算用料"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "（散文、**不计分**）折数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）"
+      - "（散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）"
+      - "（散文、**不计分**）拼色用料系数（用户 2026-09-19 裁定）：拼1次 0.65 / 拼2次 1.2 米每折；52 折双开 ⇒ 34.1 / 62.7 米；拼3次未登记 ⇒ fail-closed 显式报缺口"
+      - "（散文、**不计分**）响应算料键 = **snake_case**（设计文档 §4.5 / CALC_INFO_KEYS 同口径）：fabric_meters / pleat_count / per_panel_pleats / per_fold / fullness / fullness_actual / formula_used / formula_text / source / craft_tier / warning —— 前端可原样塞进 processingInfo，零映射"
+    skip_reason: "[backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 折数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。同日追加用户裁定：拼色每折吃布系数（拼1次 0.65 / 拼2次 1.2 米每折，纸表表头原文，是**用料**而非计价）—— 与真值源 §10 旧措辞冲突，已按裁定改正 docs §10；`拼3次` 纸表未登记 ⇒ 显式缺口 fail-closed，不插值。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_production/test_craft_calc.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/CraftCalcClientTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/CraftCalcControllerTest.java"
+      ci:
+        - ai-agent-tests.yml
+        - pr-check.yml
+      verifies: []
+
   # ==========================================================================
-  # OR-032 ~ OR-034（issue #4431 B7）：**布艺工艺规格**的用例追溯补正。
+  # OR-033 ~ OR-036（issue #4431 B7）：**布艺工艺规格**的用例追溯补正。
   #
-  # 病根（issue #4431 B7）：#4342 一族（#4355 / #4362 / #4375 / #4387 / #4395 / #4420）
-  # 六个 PR 对 `.github/cases/**` **零改动** —— 行为已实装、断言已写，但**用例库零覆盖**，
+  # 病根（issue #4431 B7）：#4342 一族（#4355 / #4362 / #4375 / #4387 / #4395 / #4420 / #4421 / #4434）
+  # 对 `.github/cases/**` **零改动** —— 行为已实装、断言已写，但**用例库零覆盖**，
   # 新增测试只能借不相干的用例 ID 过 QA Growth Gate（实测借用对：
   # `OR-008/PG-031`、`OR-001/UI-020`、`OR-009/UI-038` —— 例如 `PG-031` 是 V60 信号种子
   # 迁移契约、`UI-038` 是「选择已有客户」表单，与被测行为**毫无关系**）。
   #
-  # 修法（§14.1「新功能/新行为合入 ⇒ 按域补覆盖用例」）：按**被测行为的三个不同关切**
-  # 拆三条 `[backend-contract]` 用例（计分通道 = `traces.tests`，见 `.github/assertion_taxonomy`
-  # 的计分通道分流 #4244），并把各测试文件头部的借用式 `case_ids` 换成这三条。
+  # 修法（§14.1「新功能/新行为合入 ⇒ 按域补覆盖用例」）：按**被测行为的四个不同关切**
+  # 拆四条 `[backend-contract]` 用例（计分通道 = `traces.tests`，见 `.github/assertion_taxonomy`
+  # 的计分通道分流 #4244），并把各测试文件头部的借用式 `case_ids` 换成这四条。
   # **不改运行时行为、不放宽任何断言** —— 只是把追溯链接上。
+  #
+  # ⚠️ 编号说明：本 PR 起草时用的是 OR-032 起，合并 main 时发现 **main 已占用 OR-032**
+  #    （`算料试算端点 - 折数法` 后端半边，issue #4421）⇒ 本批顺延为 OR-033~OR-036，
+  #    与 main 的 OR-032 互补（它锚后端端点契约，本批 OR-036 锚下单页前端接线）。
   # ==========================================================================
 
-  - id: OR-032
+  - id: OR-033
     legacy_id: ""
     title: "订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离"
     domains:
@@ -2536,7 +2629,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: OR-033
+  - id: OR-034
     legacy_id: ""
     title: "工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染"
     domains:
@@ -2570,7 +2663,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: OR-034
+  - id: OR-035
     legacy_id: ""
     title: "下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫"
     domains:
@@ -2606,7 +2699,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: OR-035
+  - id: OR-036
     legacy_id: ""
     title: "下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）"
     domains:
@@ -2632,6 +2725,7 @@ cases:
       - "**判据 7·入参不变就不重发**：`craftCalcSignature` 对同一入参恒定（写回 `quantity` 不会再次触发试算）；改宽 / 改开数 / 改拼次 ⇒ 签名变化（该重算的必须重算）；`null` 入参 ⇒ 空签名（不触发请求）。"
       - "**判据 8·失败给可行动提示、不给估算值**：`craftCalcErrorText` 优先取后端 `error.message`（如「拼3次纸表未登记」），无任何 message 时给兜底文案（不得空串，也不得悄悄算一个数）。"
       - "**判据 9·用料来源两态是真值**（真值源 §8「用料必须带来源」）：「公式计算」与「人工指定」是两个不同真值 —— 手改后不得被静默改回。"
+      - "**与 OR-032 的分工**（main 的后端半边用例，issue #4421）：`OR-032` 锚**端点契约**（折数法纸表逐值、单一真值、snake_case 响应键）；本条锚**下单页前端接线**（何时发/不发请求、预填与人工指定的两态、失败不退回估算值）。两条互补，不重复。"
       - "**红证（实现前）**：`@/lib/craft-calc-request` 不存在 ⇒ import 即红；接线侧数量恒为手填 1。"
     skip_reason: "[backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx 执行"
     merge_log: "2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4421 / #4434（下单页算料试算接线 —— 布艺工艺规格链路的「算料」半边）的行为此前**零评测用例**，新增测试借 `OR-009`（下单全流程）/ `OR-014`（下单加工项数量规则）/ `UI-038`（新增订单表单**选择已有客户**）过门禁 —— 三条都**不覆盖**算料试算（`UI-038` 与被测行为完全无关）。本用例把判据挂到真实行为上：算料试算的三条 fail-closed + 用料来源两态 + 签名去重。**不改运行时行为、不改断言强度**。"

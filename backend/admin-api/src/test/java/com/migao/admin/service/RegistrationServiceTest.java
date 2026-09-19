@@ -60,6 +60,13 @@ class RegistrationServiceTest extends BaseServiceTest {
     @Mock private RegistrationReviewClient reviewClient;
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private ValueOperations<String, String> valueOperations;
+    /**
+     * 开租播种（issue #4430 / B2）：`approveApplication` 里**唯一**把「新租户工序库/路线库为空」
+     * 这件事堵住的调用点。此前本测试对该服务**零引用** ⇒ 删掉那一行调用 **CI 全绿**
+     * （实测：不 mock 时 `applyProductionSeedTemplate` 内部 NPE 被 catch 吞掉，
+     * 既有断言照样通过），而线上后果是建单 fail-closed 422（#4316 回归）。
+     */
+    @Mock private ProductionSeedTemplateService productionSeedTemplateService;
 
     @InjectMocks private RegistrationService registrationService;
 
@@ -358,6 +365,66 @@ class RegistrationServiceTest extends BaseServiceTest {
             doAnswer(inv -> { ((Permission) inv.getArgument(0)).setId("perm-demo"); return 1; })
                     .when(permissionMapper).insert(any(Permission.class));
             when(rolePermissionMapper.insert(any(RolePermission.class))).thenReturn(1);
+        }
+
+        /**
+         * 审批通过的「开租播种」副作用（issue #4430 / B2）：必须**真的**调
+         * {@code ProductionSeedTemplateService.applyTemplate}，且入参是**新建租户**的
+         * id 与**归一后的**行业 code。
+         *
+         * <p>为什么必须有：这一行调用是「新租户工序库/路线库非空」的唯一来源，
+         * 删掉它没有任何测试会红（本类此前对 `ProductionSeedTemplateService` 零引用），
+         * 而线上后果是建单 fail-closed 422（#4316 回归）。</p>
+         *
+         * <p>入参口径：申请单里 industry 是**自由文本**（「布艺」），
+         * `IndustryCodes.normalize` 归一为受控 code `curtain` 才能当模板键 ——
+         * 断言用归一后的值，正是为了钉住「不归一 ⇒ 取不到模板 ⇒ 静默落空库」这条链。</p>
+         */
+        @Test
+        @DisplayName("开租播种（#4430）：审批通过 → 按行业套用生产种子模板（入参 = 新租户 id + 归一行业码）")
+        void successAppliesProductionSeedTemplate() {
+            pendingApp.setIndustry("布艺");
+            when(applicationMapper.selectById(1L)).thenReturn(pendingApp);
+            doAnswer(inv -> { ((com.migao.admin.entity.Tenant) inv.getArgument(0)).setId(100L); return 1; })
+                    .when(tenantMapper).insert(any(com.migao.admin.entity.Tenant.class));
+            mockRoleInsertIds();
+            when(userService.createUser(anyString(), anyString(), anyString(), eq("admin"), anyString(), isNull(), eq(100L)))
+                    .thenReturn(new User());
+
+            registrationService.approveApplication(1L, "reviewer-001");
+
+            verify(productionSeedTemplateService).applyTemplate(100L, "curtain");
+        }
+
+        /**
+         * 开租播种的**失败降级**语义（issue #4430 / B2）：种子套用抛异常时
+         * **开租仍成功、异常不外抛**（{@code RegistrationService.applyProductionSeedTemplate}
+         * 的 javadoc 明写：「开租可用」优先于「种子齐全」，可经 seed-templates/curtain/apply 补套）。
+         *
+         * <p>反向红线：若把 {@code catch} 去掉（改成上抛），本断言必红 —— 那会把已建好的租户、
+         * 默认角色权限、管理员用户一起回滚，客户拿不到账号、申请单仍停在 pending。</p>
+         */
+        @Test
+        @DisplayName("开租播种失败降级（#4430）：applyTemplate 抛异常 → 开租仍成功、异常不外抛")
+        void successWhenSeedTemplateFails() {
+            pendingApp.setIndustry("布艺");
+            when(applicationMapper.selectById(1L)).thenReturn(pendingApp);
+            doAnswer(inv -> { ((com.migao.admin.entity.Tenant) inv.getArgument(0)).setId(100L); return 1; })
+                    .when(tenantMapper).insert(any(com.migao.admin.entity.Tenant.class));
+            mockRoleInsertIds();
+            when(userService.createUser(anyString(), anyString(), anyString(), eq("admin"), anyString(), isNull(), eq(100L)))
+                    .thenReturn(new User());
+            when(productionSeedTemplateService.applyTemplate(anyLong(), anyString()))
+                    .thenThrow(new IllegalStateException("种子套用失败（模拟：工序库写入异常）"));
+
+            registrationService.approveApplication(1L, "reviewer-001");
+
+            // 调用点**确实存在**（删掉 `applyProductionSeedTemplate(tenant)` 那一行本断言即红）
+            verify(productionSeedTemplateService).applyTemplate(100L, "curtain");
+            // 开租成功：租户 + 管理员用户照常建出来，申请单落到 approved
+            verify(tenantMapper).insert(any(com.migao.admin.entity.Tenant.class));
+            verify(userService).createUser(anyString(), anyString(), anyString(), eq("admin"), anyString(), isNull(), eq(100L));
+            assertThat(pendingApp.getStatus()).isEqualTo("approved");
         }
 
         @Test

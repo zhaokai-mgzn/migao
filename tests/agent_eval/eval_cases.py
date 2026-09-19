@@ -3659,6 +3659,8 @@ _CASE_OR_018 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '夏日清风窗帘', 'checks': ['unit_price', 'subtotal', 'total']}, {'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price']}],
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['夏日清风窗帘', '遮光窗帘'], 'expect_quantities': {'夏日清风窗帘': 3, '遮光窗帘': 2}}],
+    namespaces=['product_name:夏日清风窗帘', 'product_name:遮光窗帘', 'customer_phone:13800138000'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '夏日清风窗帘', 'expect': 1}, {'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── OR-019 [NORMAL] C 端下单中途改数量 - 以最新数量为准，落库数量与金额都得跟着改（能力上限）（源: cases/order.yml）──
@@ -3681,7 +3683,7 @@ _CASE_OR_019 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 4}}],
-    namespaces=['customer_phone:13800138000'],
+    namespaces=['product_name:遮光窗帘', 'customer_phone:13800138000'],
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
@@ -3862,6 +3864,8 @@ _CASE_OR_028 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '2699系列雪尼尔窗帘面料', 'checks': ['unit_price', 'subtotal', 'processing_fee', 'total']}],
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['2699系列雪尼尔窗帘面料'], 'expect_quantities': {'2699系列雪尼尔窗帘面料': 3}}],
+    namespaces=['customer_phone:13800138000', 'product_name:2699系列雪尼尔窗帘面料'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '2699系列雪尼尔窗帘面料', 'expect': 1}],
 )
 
 # ── OR-029 [NORMAL] B 端「先查商品再录订单」链路 - 确认卡点击后 order_create 必须真实执行（不得 Tool not found / 空头承诺）（源: cases/order.yml）──
@@ -3935,9 +3939,27 @@ _CASE_OR_031 = EvalCase(
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
-# ── OR-032 [NORMAL] 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离（源: cases/order.yml）──
+# ── OR-032 [NORMAL] 算料试算端点 - 折数法（标准档）单一真值 + 后端产出的可读公式串（源: cases/order.yml）──
 _CASE_OR_032 = EvalCase(
     id='OR-032',
+    legacy_id='',
+    title='算料试算端点 - 折数法（标准档）单一真值 + 后端产出的可读公式串',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家手工下单页按宽 6.6m / 双开 / 标准档试算用料'],
+    expectations=['direct_reply'],
+    data_checks=['（散文、**不计分**）折数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）', '（散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）', '（散文、**不计分**）拼色用料系数（用户 2026-09-19 裁定）：拼1次 0.65 / 拼2次 1.2 米每折；52 折双开 ⇒ 34.1 / 62.7 米；拼3次未登记 ⇒ fail-closed 显式报缺口', '（散文、**不计分**）响应算料键 = **snake_case**（设计文档 §4.5 / CALC_INFO_KEYS 同口径）：fabric_meters / pleat_count / per_panel_pleats / per_fold / fullness / fullness_actual / formula_used / formula_text / source / craft_tier / warning —— 前端可原样塞进 processingInfo，零映射'],
+    skip_reason='[backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['order', 'craft_calc', 'fabric', 'single_source_of_truth'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OR-033 [NORMAL] 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离（源: cases/order.yml）──
+_CASE_OR_033 = EvalCase(
+    id='OR-033',
     legacy_id='',
     title='订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离',
     skill=Skill.ORDER,
@@ -3953,9 +3975,9 @@ _CASE_OR_032 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── OR-033 [NORMAL] 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染（源: cases/order.yml）──
-_CASE_OR_033 = EvalCase(
-    id='OR-033',
+# ── OR-034 [NORMAL] 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染（源: cases/order.yml）──
+_CASE_OR_034 = EvalCase(
+    id='OR-034',
     legacy_id='',
     title='工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染',
     skill=Skill.ORDER,
@@ -3971,9 +3993,9 @@ _CASE_OR_033 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── OR-034 [NORMAL] 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫（源: cases/order.yml）──
-_CASE_OR_034 = EvalCase(
-    id='OR-034',
+# ── OR-035 [NORMAL] 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫（源: cases/order.yml）──
+_CASE_OR_035 = EvalCase(
+    id='OR-035',
     legacy_id='',
     title='下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫',
     skill=Skill.ORDER,
@@ -3989,16 +4011,16 @@ _CASE_OR_034 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── OR-035 [NORMAL] 下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）（源: cases/order.yml）──
-_CASE_OR_035 = EvalCase(
-    id='OR-035',
+# ── OR-036 [NORMAL] 下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）（源: cases/order.yml）──
+_CASE_OR_036 = EvalCase(
+    id='OR-036',
     legacy_id='',
     title='下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
     user_inputs=['（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）'],
     expectations=[],
-    data_checks=['**判据 1·宽高齐全 ⇒ 试算并预填数量 + 展示后端产出的公式串**（用户裁定「用料米数按折数法自动算 + 把计算公式体现出来」）。红证（实现前）：数量恒为手填 1（算料试算未接线）。', '**判据 2·改宽 ⇒ 重新试算并更新数量**（防抖后）；**判据 3·手改数量 ⇒ 标记「人工指定」，且不被试算静默改回**（唯一回切通道 = 显式点「恢复按公式计算」）。红证（实现前）：手改后被试算静默覆盖回公式值。', '**判据 4·试算失败 ⇒ 行内显式提示，数量保持原样（不退回任何估算值）**。红证（实现前）：失败时给了一个估算米数（静默算错钱，`#4308`「静默回落」同族）。', '**判据 5·参数不全 ⇒ 不发请求**：只有宽没有高 ⇒ `craftCalcParamsOf` 返回 `null`（**不得**用默认窗宽猜一个米数）；宽/高非正数（0 与负数）同样 `null`。', '**判据 6·非韩褶工艺（打孔/四爪钩/穿杆/平幔）⇒ 不发请求**（折数法不适用，后端会 400）；韩褶 / 未指定工艺 ⇒ 可试算（未指定按默认韩褶档）。', '**判据 7·入参不变就不重发**：`craftCalcSignature` 对同一入参恒定（写回 `quantity` 不会再次触发试算）；改宽 / 改开数 / 改拼次 ⇒ 签名变化（该重算的必须重算）；`null` 入参 ⇒ 空签名（不触发请求）。', '**判据 8·失败给可行动提示、不给估算值**：`craftCalcErrorText` 优先取后端 `error.message`（如「拼3次纸表未登记」），无任何 message 时给兜底文案（不得空串，也不得悄悄算一个数）。', '**判据 9·用料来源两态是真值**（真值源 §8「用料必须带来源」）：「公式计算」与「人工指定」是两个不同真值 —— 手改后不得被静默改回。', '**红证（实现前）**：`@/lib/craft-calc-request` 不存在 ⇒ import 即红；接线侧数量恒为手填 1。'],
+    data_checks=['**判据 1·宽高齐全 ⇒ 试算并预填数量 + 展示后端产出的公式串**（用户裁定「用料米数按折数法自动算 + 把计算公式体现出来」）。红证（实现前）：数量恒为手填 1（算料试算未接线）。', '**判据 2·改宽 ⇒ 重新试算并更新数量**（防抖后）；**判据 3·手改数量 ⇒ 标记「人工指定」，且不被试算静默改回**（唯一回切通道 = 显式点「恢复按公式计算」）。红证（实现前）：手改后被试算静默覆盖回公式值。', '**判据 4·试算失败 ⇒ 行内显式提示，数量保持原样（不退回任何估算值）**。红证（实现前）：失败时给了一个估算米数（静默算错钱，`#4308`「静默回落」同族）。', '**判据 5·参数不全 ⇒ 不发请求**：只有宽没有高 ⇒ `craftCalcParamsOf` 返回 `null`（**不得**用默认窗宽猜一个米数）；宽/高非正数（0 与负数）同样 `null`。', '**判据 6·非韩褶工艺（打孔/四爪钩/穿杆/平幔）⇒ 不发请求**（折数法不适用，后端会 400）；韩褶 / 未指定工艺 ⇒ 可试算（未指定按默认韩褶档）。', '**判据 7·入参不变就不重发**：`craftCalcSignature` 对同一入参恒定（写回 `quantity` 不会再次触发试算）；改宽 / 改开数 / 改拼次 ⇒ 签名变化（该重算的必须重算）；`null` 入参 ⇒ 空签名（不触发请求）。', '**判据 8·失败给可行动提示、不给估算值**：`craftCalcErrorText` 优先取后端 `error.message`（如「拼3次纸表未登记」），无任何 message 时给兜底文案（不得空串，也不得悄悄算一个数）。', '**判据 9·用料来源两态是真值**（真值源 §8「用料必须带来源」）：「公式计算」与「人工指定」是两个不同真值 —— 手改后不得被静默改回。', '**与 OR-032 的分工**（main 的后端半边用例，issue #4421）：`OR-032` 锚**端点契约**（折数法纸表逐值、单一真值、snake_case 响应键）；本条锚**下单页前端接线**（何时发/不发请求、预填与人工指定的两态、失败不退回估算值）。两条互补，不重复。', '**红证（实现前）**：`@/lib/craft-calc-request` 不存在 ⇒ import 即红；接线侧数量恒为手填 1。'],
     skip_reason='[backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx 执行',
     tags=['order', 'craft_spec', 'craft_calc', 'backend_contract'],
     persona='',
@@ -6717,6 +6739,7 @@ ALL_CASES = (
     _CASE_OR_033,
     _CASE_OR_034,
     _CASE_OR_035,
+    _CASE_OR_036,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

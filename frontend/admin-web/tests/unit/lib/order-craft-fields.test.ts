@@ -1,7 +1,7 @@
-// case_ids: OR-034
+// case_ids: OR-035
 // 原声明 `OR-009, UI-038` 是**借用式**（issue #4431 B7 核实并替换）：OR-009 是下单全流程、
 // UI-038 是「新增订单表单选择已有客户回填收货信息」—— 两条都不覆盖本文件被测行为（写侧录入）。
-// 改用 **OR-034**（本 PR 新增，判据即本文件 + OrderCraftFields.test.tsx + craft-calc-defaults.test.ts）。
+// 改用 **OR-035**（本 PR 新增，判据即本文件 + OrderCraftFields.test.tsx + craft-calc-defaults.test.ts）。
 /**
  * 下单页工艺规格**写侧**（issue #4375 包 4b · 设计文档 §4.2/§4.5/§4.8）。
  *
