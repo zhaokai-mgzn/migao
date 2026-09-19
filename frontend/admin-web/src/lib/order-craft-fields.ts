@@ -14,8 +14,69 @@
 
 import { craftSpecRows } from './craft-display'
 
-/** 部位（§4.2 `curtainType`）—— 工序路线的索引键之一，错值会让加工单取到错误路线 */
+/**
+ * 部位（§4.2 `curtainType`）—— 工序路线的索引键之一，错值会让加工单取到错误路线。
+ *
+ * ⚠️ **下单页不再让商家选部位**（issue #4521，用户 2026-09-19 裁定「**移除部位功能，其实完全不需要**」）：
+ * 一个商品组 = 一樘帘，主帘**缺省即布帘**（与下游 `ProcessingOrderService.DEFAULT_CURTAIN_TYPE` 同值），
+ * 只有**纱帘行**显式写 `curtainType=纱帘` —— 它是**另一个部位**，不写就会被当成布帘取错路线。
+ * 本清单仍是枚举真值（API / Agent 直写与三端展示侧照它走）。
+ */
 export const CURTAIN_TYPE_OPTIONS = ['布帘', '纱帘', '帘头'] as const
+
+/** 部位「布帘」= 主帘的**缺省值**（写侧刻意**不写**该键，下游缺省即此值） */
+export const CURTAIN_TYPE_CLOTH = '布帘'
+
+/** 部位「纱帘」= 下单页唯一**显式写**的部位（帘体含纱帘时的那条纱帘行） */
+export const CURTAIN_TYPE_SHEER = '纱帘'
+
+/**
+ * **帘体**（issue #4521）—— 用户口径的四类购买情况里的前三类：
+ *
+ * | 帘体 | 落库形态 | 用料 |
+ * |---|---|---|
+ * | `布帘` | 一条明细行（部位缺省 = 布帘） | **按韩折公式算**（算料引擎试算预填，可改） |
+ * | `纱帘` | 一条明细行（`curtainType=纱帘`） | **商家手填**（「买多少就是多少」，不算料） |
+ * | `布帘+纱帘` | **两条**明细行：主布行 + 纱帘行（同 `craftLineId`） | 主布算料；纱帘手填 |
+ *
+ * 第四类「布料」不在本枚举里 —— 它是 `SaleForm`（售卖形态）的另一档，整组无加工。
+ */
+export const CURTAIN_BODY_OPTIONS = ['布帘', '纱帘', '布帘+纱帘'] as const
+
+export type CurtainBody = (typeof CURTAIN_BODY_OPTIONS)[number]
+
+export const CURTAIN_BODY_CLOTH = '布帘'
+export const CURTAIN_BODY_SHEER = '纱帘'
+export const CURTAIN_BODY_BOTH = '布帘+纱帘'
+
+/**
+ * 该帘体是否**组合**（布帘 + 纱帘）—— 唯一会额外生成一条**纱帘明细行**的帘体。
+ *
+ * ⚠️ 与「含纱帘」区分：`只买纱帘` 也含纱帘，但那一行**本身就是**纱帘（单价 = 该行单价），
+ * 不再出「纱帘米数 / 纱帘单价」子块、也不额外生成行 —— 否则会凭空多出第三条明细行。
+ */
+export function bodyHasSheerLine(body: CurtainBody): boolean {
+  return body === CURTAIN_BODY_BOTH
+}
+
+/**
+ * 该帘体在主帘行上的**部位**（写侧）：只有「只买纱帘」显式写；
+ * 布帘 / 布帘+纱帘 的主帘行**不写**（缺省即布帘，少写一个键就少一份下游兼容面）。
+ */
+export function curtainTypeOfBody(body: CurtainBody): string | undefined {
+  return body === CURTAIN_BODY_SHEER ? CURTAIN_TYPE_SHEER : undefined
+}
+
+/**
+ * 该帘体的「是否定型」默认档 —— 真值源 §10「**布帘默认是 / 纱帘默认否**」
+ * （`curtain_checklist.py` 的 `is_shaped.default_rule = curtain_type`）。
+ *
+ * ⚠️ issue #4521：这条默认原先是**选部位联动**出来的（#4489）；部位选择移除后改由
+ * **帘体结构**决定 —— 同一份真值源，只是触发方式从「交互」变成「结构」。
+ */
+export function defaultIsShapedForBody(body: CurtainBody): boolean {
+  return body !== CURTAIN_BODY_SHEER
+}
 
 /** 工艺（§4.2 `craft`）—— 须与库侧 `production_routings.craft` **逐字一致**（「韩式褶」非法） */
 export const CRAFT_OPTIONS = ['韩褶', '打孔', '四爪钩', '穿杆', '平幔'] as const
@@ -87,8 +148,13 @@ export const DEFAULT_PLEAT_SPACING = PLEAT_FABRIC_PER_FOLD / STANDARD_FULLNESS
  * 与硬约束 1「缺值不写」的关系：默认值是**商家看得见的真值** ⇒ 必须写；
  * 「缺值不写」管的是**既没填也没默认**的键。
  */
-/** 部位默认「布帘」—— 引导清单 `curtain_type`：`default_src=industry, default=布帘` */
-export const DEFAULT_CURTAIN_TYPE = '布帘'
+/**
+ * 是否定型默认「**是**」—— 真值源 §10「布帘默认是 / 纱帘默认否」。
+ *
+ * 主帘的默认部位就是布帘（`CURTAIN_TYPE_CLOTH`）⇒ 默认档取「是」；
+ * 帘体 = 纱帘时由 `defaultIsShapedForBody` 覆盖成「否」（issue #4521）。
+ */
+export const DEFAULT_IS_SHAPED = true
 
 /** 工艺默认「韩褶」—— 引导清单 `craft`：`default_src=industry, default=韩褶` */
 export const DEFAULT_CRAFT = '韩褶'
@@ -111,12 +177,12 @@ export const DEFAULT_HAS_PATTERN = false
  */
 export function createDefaultCraftSpec(): CraftSpecInput {
   return {
-    curtainType: DEFAULT_CURTAIN_TYPE,
     craft: DEFAULT_CRAFT,
     cuttingMode: DEFAULT_CUTTING_MODE,
     style: DEFAULT_STYLE,
     pleatSpacing: DEFAULT_PLEAT_SPACING,
     hasPattern: DEFAULT_HAS_PATTERN,
+    isShaped: DEFAULT_IS_SHAPED,
   }
 }
 
@@ -155,7 +221,8 @@ export const METERS_SOURCE_MANUAL = '人工指定'
  * 「未指定」与「否」是两个不同的真值，合并会让「没问过」被下游当成「不做定型」。
  */
 export interface CraftSpecInput {
-  curtainType?: string
+  // ⚠️ **没有 `curtainType`**（issue #4521）：部位已从录入面移除 —— 主帘缺省即布帘（不写），
+  //    纱帘行的部位由 `buildSheerLineCraftSpec` 显式写死。留一个可录键 = 留一条能写错路线的口子。
   craft?: string
   cuttingMode?: string
   /** 开数（正整数；下拉列 1/2/3/4，更大开数由 API/Agent 直写）—— issue #4387 */
@@ -195,9 +262,8 @@ function positive(value: unknown): number | null {
 export function buildCraftSpec(input: CraftSpecInput): Record<string, unknown> {
   const spec: Record<string, unknown> = {}
 
-  const curtainType = text(input.curtainType)
-  if (curtainType !== null) spec.curtainType = curtainType
-
+  // 部位**不在本函数里**（issue #4521）：主帘缺省即布帘 ⇒ 不写；纱帘行由
+  // `buildSheerLineCraftSpec` 显式写 `curtainType=纱帘`。
   const craft = text(input.craft)
   if (craft !== null) spec.craft = craft
 
@@ -264,6 +330,31 @@ export function buildEdgeLineCraftSpec(
   }
 }
 
+/**
+ * **纱帘行**的工艺键（issue #4521）：`curtainType=纱帘` + 与主布行**同一份工艺规格** +
+ * 同 `craftLineId`（同一樘帘）+ 用料来源。
+ *
+ * 与配布边行的**关键区别**（刻意不同，别照抄 `buildEdgeLineCraftSpec`）：
+ * - 纱帘**是另一个部位**（自己的工序路线：纱帘×韩褶）⇒ **必须携带工艺规格**；
+ *   配布边不是部位（同一扇窗的一块布）⇒ 刻意不带，否则工序与计件翻倍。
+ * - 纱帘行的用料由商家给定（「买多少就是多少」）⇒ 走 `metersSource` 留痕，不写算料输出。
+ *
+ * `saleForm` 也显式写：纱帘行**不挂加工项**（加工费只挂主布行），而读侧对存量单的兜底是
+ * 「无加工项 ⇒ 布料」（#4493）⇒ 不写会被读成布料单。
+ */
+export function buildSheerLineCraftSpec(
+  mainLineId: string,
+  spec: Record<string, unknown>,
+  metersSource: string
+): Record<string, unknown> {
+  return {
+    ...spec,
+    curtainType: CURTAIN_TYPE_SHEER,
+    craftLineId: mainLineId,
+    metersSource,
+  }
+}
+
 // ── 樘窗绑组（issue #4395）：一樘窗的多条**部位行**写同一个 `craftLineId` ──────────
 //
 // 病根（#4387 的「未做」项）：下单页**只在拼色时**写 `craftLineId` ⇒ 顾客下「布 + 纱」
@@ -274,9 +365,6 @@ export function buildEdgeLineCraftSpec(
 // ⚠️ **语义边界**：`craftLineId` 标识**樘窗**（一个窗户），**不是**「面料行组」——
 // 部位 = 一行明细 = 一件帘 ⇒ 布行与纱行**各成部位**（读侧不合并），只有配布边行不独立成部位。
 // 不得改成「组内只留一个部位」（那会与 #4387 钉死的语义冲突）。
-
-/** 「主布行」的部位取值（§4.2 `curtainType`）—— 樘窗代表行优先取它 */
-const CURTAIN_TYPE_CLOTH = '布帘'
 
 /** 樘窗绑组的入参行（纯函数：只取判组需要的三个字段） */
 export interface WindowLineRef {

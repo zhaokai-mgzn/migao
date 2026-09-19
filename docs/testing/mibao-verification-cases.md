@@ -2246,7 +2246,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（36 case）
+## 订单域（37 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2901,6 +2901,22 @@
 跳过: [backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx 执行
 ```
 溯源: 2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4421 / #4434（下单页算料试算接线 —— 布艺工艺规格链路的「算料」半边）的行为此前**零评测用例**，新增测试借 `OR-009`（下单全流程）/ `OR-014`（下单加工项数量规则）/ `UI-038`（新增订单表单**选择已有客户**）过门禁 —— 三条都**不覆盖**算料试算（`UI-038` 与被测行为完全无关）。本用例把判据挂到真实行为上：算料试算的三条 fail-closed + 用料来源两态 + 签名去重。**不改运行时行为、不改断言强度**。 ｜ tags: order, craft_spec, craft_calc, backend_contract
+
+### OR-038. 下单页移除「部位」—— 四类购买情况（布帘 / 布帘+纱帘 / 只买纱帘 / 布料）+ 纱帘不算料 🔵
+```
+你: （无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）
+数据: **判据 A1·「部位」字段整体移除**：工艺规格里**没有**部位 chips（红证：修复前 `radiogroup name=部位` 存在）；`buildCraftSpec` 产出的对象**不含 `curtainType`** —— 主帘缺省即布帘（与下游 `ProcessingOrderService.DEFAULT_CURTAIN_TYPE` 同值），写侧再写它 = 留一条把主帘标成纱帘、取错工序路线的口子。
+数据: **判据 A2·「新增部位」入口与部位行壳移除**：下单页**没有**「新增部位」按钮，一个商品组只渲染**一份** ①尺寸与数量 ②工艺规格 ③加工项 ④特殊选项（红证：修复前点「新增部位」会让四步各翻倍），也没有「部位 N」行头与「N 个部位」计数。
+数据: **判据 A3·四类购买情况可达**：售卖形态=布料（无加工）；成品帘 + 帘体 ∈ {布帘, 纱帘, 布帘+纱帘}。帘体是**商品组级** chips，默认「布帘」。
+数据: **判据 A4·布帘+纱帘 ⇒ 两条明细行**：主布行（`curtainType` 缺省、带 `craftLineId` 绑组键）+ 纱帘行（`curtainType=纱帘`、**携带同一份工艺规格** —— 纱帘是另一个部位，不带会被当成布帘；与配布边行「刻意不带规格」互为红证）；纱帘行**不挂加工项**、**不关联主布商品**（不双扣库存/不双计销量）、宽高与主布行同一份（尺寸数量是商品组级属性）。
+数据: **判据 A5·纱帘不算料**：`craftCalcParamsOf` 对部位=纱帘返回 `null`（**不发试算请求** —— 用户口径「纱帘不需要算用料米数，买多少就是多少」，发了请求会把商家手填的米数静默改回公式值）；页面只报「纱帘按实际买多少填」，**不给**「恢复按公式计算」（没有公式可恢复）；`isAutoCalcUnavailable` 对纱帘恒为 true。
+数据: **判据 A6·纱帘金额与闸门**：纱帘行金额计入订单总额（否则后端「应收 - 优惠 ≈ 实收」校验会拒单）；**带纱帘但没填纱帘单价 ⇒ 提交被拦且提示常显**（红证：静默丢一条商家显式选中的纱帘行 = 交付一张与所见不符的错单）。
+数据: **判据 A7·部位默认 = 主布，定型默认改由帘体结构给**：只买纱帘时该行显式写 `curtainType=纱帘` 且「是否定型」默认「否」；布帘 / 布帘+纱帘 默认「是」（真值源 §10「布帘默认是 / 纱帘否」—— 原 #4489 的**选部位联动**改成**帘体结构默认**，同一份真值源）。
+数据: **判据 A8·布料单不受影响**：售卖形态=布料 ⇒ 不出现帘体、不出现 ①~④（沿用 #4493 口径）。
+数据: **红证（实现前）**：`CURTAIN_BODY_OPTIONS` / `buildSheerLineCraftSpec` / `bodyHasSheerLine` 不存在 ⇒ import 即红；页面仍有 `radiogroup name=部位` 与「新增部位」按钮。
+跳过: [backend-contract] 前端写侧契约（admin-web 页面 + 组件 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/order-craft-fields.test.ts、frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts、frontend/admin-web/tests/unit/lib/craft-calc-defaults.test.ts、frontend/admin-web/tests/unit/components/OrderCraftFields.test.tsx 与 frontend/admin-web/tests/unit/pages/orders-new.test.tsx 执行
+```
+溯源: 2026-09-19 新增（issue #4521）：用户实测反馈「新增订单页面还是有问题……部位只决定商品实际用料米数……移除部位功能，其实完全不需要」+「四种情况……纱帘不需要算用料米数，买多少就是多少」。本用例把判据挂在**四类购买情况的可达性与落库形态**上（A1~A8）。与 OR-035 的分工：OR-035 锚工艺规格**写侧两条硬约束与枚举逐字**（部位曾是其一部分，本次从它里面移除）；OR-036 锚**算料试算**接线（本次加「纱帘不算料」这条 fail-closed）。**不改运行时金额口径、不降任何既有断言**。 ｜ tags: order, craft_spec, write_side, backend_contract
 
 ### OR-037. 行话下单落内部值 - 顾客说「韩式褶」「纳米圈」⇒ craft 落「韩褶」「打孔」（不是原话） 🔵
 ```
@@ -4701,8 +4717,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：344（活跃 155，跳过 189）
-- tier 分布：smoke 10 / normal 303 / adversarial 31
+- 用例总数：345（活跃 155，跳过 190）
+- tier 分布：smoke 10 / normal 304 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4719,7 +4735,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：36
+- 订单域：37
 - 加工项域：12
 - processing-order：40
 - 商品域：21
@@ -4760,6 +4776,7 @@
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
 - OR-036: 下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）
+- OR-038: 下单页移除「部位」—— 四类购买情况（布帘 / 布帘+纱帘 / 只买纱帘 / 布料）+ 纱帘不算料
 - OR-037: 行话下单落内部值 - 顾客说「韩式褶」「纳米圈」⇒ craft 落「韩褶」「打孔」（不是原话）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成

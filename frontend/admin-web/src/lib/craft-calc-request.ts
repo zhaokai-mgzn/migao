@@ -10,7 +10,7 @@
  */
 
 import type { CraftCalcParams } from './api'
-import type { CraftSpecInput } from './order-craft-fields'
+import { CURTAIN_TYPE_SHEER, type CraftSpecInput } from './order-craft-fields'
 
 /** 用料来源（真值源 §8：折数/用料**必须带来源**，防止多渠道不一致） */
 export const METERS_SOURCE_FORMULA = '公式计算'
@@ -35,21 +35,30 @@ export interface CalcLineInput {
   /** 成品高（米）—— 必填 */
   height: number | null
   craft: CraftSpecInput
+  /**
+   * 该行的**部位**（issue #4521）：`纱帘` ⇒ **不算料** —— 用户裁定「纱帘不需要算用料米数，
+   * 买多少就是多少」。主帘（布帘）不写该键。
+   */
+  curtainType?: string
 }
 
 /**
  * 把一行明细凑成试算入参；**凑不齐 ⇒ `null`（调用方不得发请求）**。
  *
- * 三条 fail-closed（都用 `null` 表达，**绝不**用默认窗宽/默认开数猜一个米数）：
+ * 四条 fail-closed（都用 `null` 表达，**绝不**用默认窗宽/默认开数猜一个米数）：
  * 1. 缺宽或高（宽高是必填的「不可推导的原始输入」，§5.9.3）；
- * 2. 工艺明确是**非韩褶**（打孔/四爪钩/穿杆/平幔）—— 折数法不适用，试算没有意义；
- * 3. 宽/高非正数。
+ * 2. **纱帘**（issue #4521）—— 用料由商家给定，发请求会把商家填的米数静默改回公式值；
+ * 3. 工艺明确是**非韩褶**（打孔/四爪钩/穿杆/平幔）—— 折数法不适用，试算没有意义；
+ * 4. 宽/高非正数。
  */
 export function craftCalcParamsOf(line: CalcLineInput): CraftCalcParams | null {
   const width = Number(line.width)
   const height = Number(line.height)
   if (!Number.isFinite(width) || width <= 0) return null
   if (!Number.isFinite(height) || height <= 0) return null
+
+  // 纱帘不算料（issue #4521）：买多少就是多少
+  if (line.curtainType === CURTAIN_TYPE_SHEER) return null
 
   const craft = line.craft.craft
   if (craft !== undefined && !PLEAT_CRAFTS.has(craft)) return null
@@ -114,6 +123,8 @@ export function craftCalcErrorText(error: unknown): string {
  * 否则数量会**静默停在默认 1 米**（实测截图为 `商品 1 米 × ¥23.80/米 = ¥23.80`，金额错）。
  */
 export function isAutoCalcUnavailable(line: CalcLineInput): boolean {
+  // 纱帘永远不算料（issue #4521）：不是「参数没填齐」，而是**口径**（买多少就是多少）
+  if (line.curtainType === CURTAIN_TYPE_SHEER) return true
   const craft = line.craft.craft
   return craft !== undefined && !PLEAT_CRAFTS.has(craft)
 }
