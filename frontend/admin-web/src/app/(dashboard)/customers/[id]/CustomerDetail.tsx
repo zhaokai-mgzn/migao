@@ -52,6 +52,15 @@ interface ReceiverForm {
   logisticsCompany: string
 }
 
+/** 字段中文名（仅用于「暂不支持清空」的提示文案，issue #4443） */
+const RECEIVER_LABELS: Record<keyof ReceiverForm, string> = {
+  name: '收货人姓名',
+  phone: '收货人电话',
+  address: '收货地址',
+  logisticsType: '常用物流方式',
+  logisticsCompany: '常用物流公司',
+}
+
 export default function CustomerDetailPage() {
   const router = useRouter()
   const id = useRouteId('id')
@@ -64,6 +73,10 @@ export default function CustomerDetailPage() {
 
   // 收货信息（客户默认收货地址 + 常用物流档案，issue #4419）
   const [receiver, setReceiver] = useState<ReceiverForm>({
+    name: '', phone: '', address: '', logisticsType: 'express', logisticsCompany: '',
+  })
+  // 服务端真值快照：判断「用户改了什么 / 清空了什么」的基准（issue #4443）
+  const [receiverBaseline, setReceiverBaseline] = useState<ReceiverForm>({
     name: '', phone: '', address: '', logisticsType: 'express', logisticsCompany: '',
   })
   const [savingReceiver, setSavingReceiver] = useState(false)
@@ -86,14 +99,16 @@ export default function CustomerDetailPage() {
       const mapped = mapCustomerDetail(detail)
       setCustomer(mapped)
       setRemark(mapped.remark || '')
-      setReceiver({
+      const loadedReceiver: ReceiverForm = {
         name: mapped.defaultReceiverName || '',
         phone: mapped.defaultReceiverPhone || '',
         address: mapped.defaultReceiverAddress || '',
         // 缺省 express 与 customer_profiles.default_logistics_type 的列默认值一致（V47）
         logisticsType: mapped.defaultLogisticsType || 'express',
         logisticsCompany: mapped.defaultLogisticsCompany || '',
-      })
+      }
+      setReceiver(loadedReceiver)
+      setReceiverBaseline(loadedReceiver)
     } catch (error) {
       toast.error('加载客户信息失败')
       console.error('加载客户信息失败:', error)
@@ -121,22 +136,59 @@ export default function CustomerDetailPage() {
     }
   }
 
-  // 保存收货信息 + 常用物流档案（issue #4419）。
-  // 只提交**非空**字段：后端 updateCustomer 是「非空拷贝」语义，空串会被忽略（不会误清空既有值）。
+  // 保存收货信息 + 常用物流档案（issue #4419；**反馈口径**见 #4443）。
+  // 后端 updateCustomer 是「非空拷贝」语义：空白**一律不覆盖**（#4419 有意为之，由
+  // CustomerReceiverAddressPersistTest.updateCustomer_BlankReceiverFieldsDoNotWipeExisting 钉住）。
+  // ⇒ 前端不得把「清空」报成成功：① 空白键不下发；② 清空了原本非空的字段时**明确告知不支持**，
+  //    并把输入框恢复成服务端真值（否则界面显示空白 = 又一次谎报）；③ 完全没改动时不报「已保存」。
   const handleSaveReceiver = async () => {
     if (!customer) return
+
+    const changedKeys = (Object.keys(receiver) as (keyof ReceiverForm)[])
+      .filter((k) => receiver[k] !== receiverBaseline[k])
+    if (changedKeys.length === 0) {
+      toast.info('收货信息没有改动')
+      return
+    }
+    // 清空 = 后端不会执行 ⇒ 这些字段要恢复显示服务端真值，并如实告知
+    const clearedKeys = changedKeys.filter((k) => receiver[k].trim() === '')
+    const clearedLabel = clearedKeys.map((k) => RECEIVER_LABELS[k]).join('、')
+    const commitReceiverState = () => {
+      const next: ReceiverForm = { ...receiver }
+      for (const k of clearedKeys) next[k] = receiverBaseline[k]
+      setReceiver(next)
+      setReceiverBaseline(next)
+    }
+
+    // 只有清空、没有可落库的改动 ⇒ 一个请求都不该发，更不能报成功
+    if (clearedKeys.length === changedKeys.length) {
+      toast.warning(`暂不支持清空：${clearedLabel}`)
+      commitReceiverState()
+      return
+    }
+
+    const payload = {
+      defaultReceiverName: receiver.name.trim(),
+      defaultReceiverPhone: receiver.phone.trim(),
+      defaultReceiverAddress: receiver.address.trim(),
+      defaultLogisticsType: receiver.logisticsType,
+      defaultLogisticsCompany: receiver.logisticsCompany.trim(),
+    }
+    // 空白键不下发（下发也无效，只会让人以为已清空）
+    const sendable: Partial<typeof payload> = Object.fromEntries(
+      Object.entries(payload).filter(([, v]) => v !== ''),
+    )
+
     setSavingReceiver(true)
     try {
-      const payload = {
-        defaultReceiverName: receiver.name.trim(),
-        defaultReceiverPhone: receiver.phone.trim(),
-        defaultReceiverAddress: receiver.address.trim(),
-        defaultLogisticsType: receiver.logisticsType,
-        defaultLogisticsCompany: receiver.logisticsCompany.trim(),
+      await customerApi.updateCustomer(id, sendable)
+      setCustomer({ ...customer, ...sendable })
+      commitReceiverState()
+      if (clearedKeys.length > 0) {
+        toast.warning(`已保存其余改动；暂不支持清空：${clearedLabel}`)
+      } else {
+        toast.success('收货信息已保存')
       }
-      await customerApi.updateCustomer(id, payload)
-      setCustomer({ ...customer, ...payload })
-      toast.success('收货信息已保存')
     } catch (error) {
       toast.error('保存失败')
       console.error('保存收货信息失败:', error)
