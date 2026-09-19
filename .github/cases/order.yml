@@ -1283,6 +1283,33 @@ cases:
       - tool: order_create
     must_succeed:
       - tool: order_create
+    # ── 断言可信度门禁 burn-down（issue #4406 顺带销账）──
+    # OR-018 原记 `NO-SELF-CLEAN` + `NO-PRECONDITION-ASSERTION` 两个码：它是写类多轮用例，
+    # 却没声明自清理（重试前置与首跑不等价）也没有可判定前置（前置不成立时红的表现像
+    # 「agent 不干活」，归因全错）。两条都按既有先例补齐，**口径不新造**：
+    #   · `namespaces` = 本用例依赖的**不可变键**（手机号 / 商品名）—— 并行互斥；
+    #   · `precondition` = 基线计数（`order_count_for_phone` 先例 = OR-016；
+    #     `product_count_for_keyword` 先例 = OR-016 / OR-017）。
+    # `max_growth: 1` 是**必须**的（门禁规则 h）：本用例自己会写一单 ⇒ 不给容忍度的话
+    # `0 → 1 > 0` 恒判漂移、score 归零（实证判定跑 35295494688 的 PR-008/PR-016 形态）。
+    # ⚠️ 值必须**带引号**：不带引号会被 YAML 读成 `{'customer_phone': None}`（字典），
+    # 前缀分类守卫（`test_case_seed_truth.py::test_every_namespace_prefix_is_classified`）
+    # 会把它判成「未分类前缀」而报红 —— 本文件其余用例一律是 `"键:值"` 字符串形态。
+    namespaces:
+      - "customer_phone:13800138000"
+      - "product_name:夏日清风窗帘"
+      - "product_name:遮光窗帘"
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
+        expect: 0
+        max_growth: 1
+      - type: product_count_for_keyword
+        source: "夏日清风窗帘"
+        expect: 1
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     # 确认卡先行（issue #3414）：C 端下单**必须先发 confirm 卡展示明细**、顾客确认后才写单
     # （prompt 第 4 步：validate_input → interact(confirm)）。此前只有 CH-010 断言了这条，
     # 其余下单用例不守 → 评测看不见"文本确认就直接写单"这条路径（验收 C-A1 抓到）。
