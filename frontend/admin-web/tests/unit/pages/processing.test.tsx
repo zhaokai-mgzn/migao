@@ -2,7 +2,7 @@
 // PP-006（issue #3005 回滚 #2986）：加工项无「每米数量」——计价方式仅 per_meter/per_set/fixed/per_area，
 // 表单与列表均无每米数量输入/列，保存 payload 不带 perMeterQuantity
 // ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：原 `UI-026`（加工项列表展示「适用商品分类」列）
-// 断言**已删除** —— `applicable_product_categories` 列与过滤链路随解耦整体退场（V61 迁移 DROP），
+// 断言**已删除** —— `applicable_product_categories` 列与过滤链路随解耦整体退场（V66 迁移 DROP），
 // 该列不再渲染，用例对象已不存在（用例 UI-026 亦同步从 .github/cases/ui.yml 删除）。
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'

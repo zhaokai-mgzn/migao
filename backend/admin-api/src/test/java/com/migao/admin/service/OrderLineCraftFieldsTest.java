@@ -1,6 +1,9 @@
 package com.migao.admin.service;
 
-// case_ids: OR-008, PG-031
+// case_ids: OR-032
+// 原声明 `OR-008, PG-031` 是**借用式**（issue #4431 B7 核实并替换）：OR-008 是「创建订单先查商品
+// SKU」的 LLM 行为用例、PG-031 是 V60 信号种子迁移契约 —— 两条都**不覆盖**本文件被测行为
+// （下单行要素映射：键名逐键落列 + 两面键名口径分离）。改用 **OR-032**（本 PR 新增，判据即本文件）。
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.entity.OrderItem;

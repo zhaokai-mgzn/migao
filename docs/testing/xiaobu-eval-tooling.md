@@ -225,7 +225,7 @@ B 端评测跑**生产**（有真实数据），C 端跑**全新 bootstrap 空�
 | `order_logistics` | 顺丰在途轨迹 | OR-012 物流查询 |
 
 > ⚠️ 2026-09-19（issue #4371 商品↔加工项解耦）：原表里还有一行
-> `product_processing_items`（商品↔加工项关联 4 条）—— 该表已随解耦由 **V61 迁移 DROP**，
+> `product_processing_items`（商品↔加工项关联 4 条）—— 该表已随解耦由 **V66 迁移 DROP**，
 > fixture 里的关联种子同步删除。加工项是**店铺级目录**（上表 `processing_items`），
 > 下单/建品一律从目录取，不再经商品过滤 ⇒ **不要再往 fixture 里加关联种子**
 > （会报 `relation "product_processing_items" does not exist`）。

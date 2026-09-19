@@ -20,7 +20,7 @@
 
 -- ── 1. 商品：2699 系列雪尼尔窗帘面料（OR-016 点名）──
 -- 名称必须含「2699系列雪尼尔窗帘面料」（用例输入原文）；价格 23.80 取生产同款量级。
--- has_processing 列已随 #4371 解耦删除（V61 迁移 DROP COLUMN）：加工项是店铺级目录，
+-- has_processing 列已随 #4371 解耦删除（V66 迁移 DROP COLUMN）：加工项是店铺级目录，
 -- 「该商品是否绑了加工项」不再有语义 ⇒ OR-016 的询问前提改为「店铺加工项目录非空」
 -- （见下方 processing_items 种子），不再依赖商品侧的信号位。
 INSERT INTO products
@@ -61,7 +61,7 @@ WHERE pc.product_id = 'prod_eval_2699'
 -- ── 商品 ↔ 加工项关联：**已随 #4371 解耦删除** ──
 -- 旧写法往 `product_processing_items` 写「prod_eval_2699 ↔ pi_eval_punch/hem/iron」，
 -- 作为 OR-016「商品绑定加工项 ⇒ 必须主动询问加工项」的**前提**。
--- 解耦后加工项是**店铺级目录**（与商品无关），该表已由 V61 迁移 DROP，
+-- 解耦后加工项是**店铺级目录**（与商品无关），该表已由 V66 迁移 DROP，
 -- OR-016 的前提改成「店铺目录里有加工项」（= 下面的 `processing_items` 种子）——
 -- 目录非空即会询问，与商品是否绑过加工项无关。
 
@@ -122,7 +122,7 @@ BEGIN
   SELECT count(*) INTO v_pi     FROM processing_items  WHERE id = 'pi_eval_embroidery' AND deleted = 0;
   SELECT count(*) INTO v_cust   FROM customer_profiles WHERE id = 'cust_eval_zhangsan';
   SELECT count(*) INTO v_emp    FROM agent_employees   WHERE id = 'emp_eval_wangwu' AND deleted = 0;
-  -- 加工项关联计数（v_assoc）随 #4371 解耦删除：product_processing_items 已被 V61 DROP，
+  -- 加工项关联计数（v_assoc）随 #4371 解耦删除：product_processing_items 已被 V66 DROP，
   -- OR-016 的前提改为「店铺加工项目录非空」（v_pi 即该前提的读数）。
   RAISE NOTICE 'B 端评测 fixture 核对: 2699商品=% 颜色=% 刺绣工艺=% 客户张三=% 员工王五=%',
     v_prod, v_colors, v_pi, v_cust, v_emp;

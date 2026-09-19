@@ -1604,3 +1604,47 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ==========================================================================
+  # PG-041（issue #4360，P1）：生产看板加载慢 —— 前端 1+2N 请求扇出 ⇒ 分页 + 懒加载。
+  # 病根（结构性，代码可证）：/production 对**全部**加工单（后端 LIMIT 100）一次性
+  # `Promise.allSettled(orders.map(...))` 扇出 getOrderOperations + getPiecework
+  # ⇒ 100 单 = 201 个并发请求、约 800 条 SQL；且列表响应逐行 convertValue items 快照，
+  # 而看板根本不渲染 items。
+  # 用户裁定（2026-09-19）：**只做前端分页 + 懒加载（最小改动）**，不新增聚合端点。
+  # 判据是 **HTTP 调用次数**，不是渲染结果（渲染结果看不出请求扇出）。
+  # 前端页面行为用例（写路径无 LLM 环节，不进 agent-eval 冒烟）。
+  # ==========================================================================
+  - id: PG-041
+    legacy_id: ""
+    title: "生产看板分页 + 懒加载 —— 只对当前页扇出详情请求（消除 1+2N 请求扇出，issue #4360）"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - processing-order
+      - production
+      - performance
+      - admin_web
+    truths_ref: []
+    user_inputs:
+      - "打开生产看板：100 张在产单只加载第一页，翻页才加载新页的工序进度与计件"
+    expectations: []
+    data_checks:
+      - "首屏只为**当前页**发详情请求（**核心/长期判据，红证在这条**）：给定 100 张加工单、页大小 20，`getOrderOperations` / `getPiecework` 各被调用 **≤ 页大小** 次，渲染出的数据行数 == 页大小，且**绝不**对第 21 单发起（`order-uuid-21` 零调用）。红证（实现前实测，本机 vitest）：原实现 `Promise.allSettled(orders.map(...))` 对全部 100 单扇出 ⇒ 该断言得 **100** 次（缺陷形态 = 每单 1 次）；断言先写 `toBeLessThanOrEqual(PAGE_SIZE)` 再写 `toBe(PAGE_SIZE)`（前者给缺陷形态留出可读的失败读数）。"
+      - "切页只为**新页**发：切到第 2 页后**累计**调用次数 == 2 × 页大小（第 1 页已加载的请求不重发）。"
+      - "切回已加载页**不重复请求**：第 2 页 → 第 1 页，`getOrderOperations` 调用次数**不增加**（按 processing order id 缓存）。"
+      - "「刷新」显式**清缓存**并重取当前页（刷新不是无操作，也不退化成整表扇出）。"
+      - "页大小可见可切：页脚「每页条数」下拉（`aria-label=\"每页条数\"` —— 查询区也有一个 combobox，裸 `getByRole` 会命中两个）20 → 50 只为新页补发详情，且控件回显 `50`。"
+      - "单行失败**不拖垮**其它行，且**失败也进缓存**：详情永久失败的行显示「—」，切页来回**不重发**（防把「失败不写缓存」改成每次重试的死循环）。"
+      - "**不做（如实登记，issue #4360 边界，避免把半截当完整交付）**：① 不新增聚合端点；② 不改后端批量（`ProductionService.piecework` 已用内存 `byId::get` 查表、`ProcessingOrderService.list` 已 `loadOrders` 批量 + LIMIT 100 —— 问题纯粹在前端扇出）；③ 列表响应仍逐行解析 `items` 快照属**响应体体积**问题（与请求数**不同因**），本单不动。"
+    skip_reason: "[backend-contract] 前端页面行为（admin-web 分页 / 懒加载 / 请求次数），由 vitest 单测覆盖（frontend/admin-web/tests/unit/pages/production-board.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟（同 PG-024 / PG-038 惯例）"
+    merge_log: "2026-09-19 新增（issue #4431 B6 的用例追溯补正）：issue #4360（分页 + 懒加载）的行为**已实装且有 vitest 断言**，但 `.github/cases/**` 对该行为**零命中** —— 断言无处挂载（当时声明的 `PG-019` 是**后端**用例的误引用，已由 #4357 移除；文件头注释里如实登记了「没有对应用例 ID」）。本用例把该断言挂到**真实用例 ID** 上，判据 = **HTTP 调用次数**（渲染结果看不出请求扇出）。traces 指向实际执行断言的 production-board.test.tsx。**不改运行时行为、不改断言强度** —— 只是补上追溯链。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/production-board.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

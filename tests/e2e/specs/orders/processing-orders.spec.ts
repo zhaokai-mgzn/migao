@@ -1,4 +1,8 @@
-// case_ids: PG-005, PG-008, UI-012
+// case_ids: PG-005, PG-008, PG-038, UI-012
+// PG-038（issue #4357 / 本文件头部补声明 issue #4431 B8）：本 spec 的「生产看板 /production」
+// describe 块**确实覆盖** PG-038 的判据 —— 「旧入口 /processing-orders 重定向到 /production（旧深链
+// 不 404）」（对应 PG-038 第 3 条 data_check）与「唯一入口不再提供状态流转入口」（第 4 条，五种状态
+// 逐行负向断言）两条断言都在此执行；PG-038 的 traces.tests 早已引用本文件，缺的只是文件头声明。
 import { test, expect } from '../../fixtures'
 // auth 由全局 auth-setup 项目提供（fixture 模式 mock /api/auth/me）
 

@@ -98,7 +98,7 @@ WHERE pc.product_id IN ('prod_eval_blackout', 'prod_eval_dark_green', 'prod_eval
 -- ── 5. 商品 ↔ 加工项关联：**已随 #4371 解耦删除** ──
 -- 旧写法往 `product_processing_items` 把「遮光窗帘/北欧风窗帘/夏日清风窗帘」各自挂上
 -- 加工项（作为下单加工项环节 `processing_items` 的来源）。解耦后加工项是**店铺级目录**
--- （第 2 节 `processing_items` 种子即全部可选项），该表已由 V61 迁移 DROP ——
+-- （第 2 节 `processing_items` 种子即全部可选项），该表已由 V66 迁移 DROP ——
 -- 下单/建品的加工项一律从目录整体取，不再经商品过滤。
 
 -- ============================================================================
