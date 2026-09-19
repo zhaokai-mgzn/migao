@@ -770,7 +770,14 @@ describe('NewOrderPage', () => {
       const payload = mockCreateOrder.mock.calls[0][0]
       const mainInfo = payload.items[0].processingInfo as Record<string, unknown>
       const edgeInfo = payload.items[1].processingInfo as Record<string, unknown>
-      expect((mainInfo.processingItems as unknown[]).length).toBe(1)
+      // ⚠️ 2026-09-19（issue #4526 R9/D6）：`processingItems` 里除**手选**加工项外还有
+      // **自动识别特征**（超高/超宽/倒幅·正幅/定型 —— 它们进组合键，与 ERP `打孔+超高+定型`
+      // 同构）。本条判据守的是「配布边行**不重复**挂加工项」⇒ 按**手选项**断言，不数长度
+      // （长度会被自动特征数撑大，与判据无关）。
+      const handPicked = (mainInfo.processingItems as Array<{ name: string }>).filter(
+        (item) => item.name === '打孔加工'
+      )
+      expect(handPicked).toHaveLength(1)
       expect(Number(mainInfo.processingFee)).toBeGreaterThan(0)
       expect(edgeInfo).not.toHaveProperty('processingItems')
       expect(edgeInfo).not.toHaveProperty('processingFee')
