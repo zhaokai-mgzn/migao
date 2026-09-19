@@ -41,3 +41,13 @@
 -- 机械守卫 = `tests/unit_ci_workflows/test_schema_integrity.py`
 -- （`TestSchemaCoversMigrationChainColumns` + `TestSchemaCoversEntityColumns`）—— 本列**两处都要**：
 -- 迁移链是结构变更的事实源，schema.sql 只负责终态对齐（漂移即 CI block）。
+
+-- ── 加列（可空；留空 = 商家没声明，见上「语义」）──
+ALTER TABLE processing_items ADD COLUMN IF NOT EXISTS craft_hint VARCHAR(16);
+
+COMMENT ON COLUMN processing_items.craft_hint IS
+    '加工项显式声明的工艺（V78，issue #4452）：路线键「工艺」维的受控来源（韩褶/打孔/穿杆/平幔…）。'
+    'NULL = 商家没声明（不是「工艺=空」）⇒ 该维按缺维处理、route_source 显式标注，不猜。'
+    '读侧 = ProcessingOrderService.craftHintOf；写侧 = POST/PUT /api/admin/processing-items。'
+    '本列不做存量回填（按名字回填本身就是猜）—— 存量单由 production_route_signals 兜底。';
+
