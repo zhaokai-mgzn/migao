@@ -46,7 +46,8 @@ import {
 } from '@/lib/order-craft-fields'
 import { describeLogisticsProfile } from '@/lib/logistics'
 // D6 自动识别（issue #4526 · 设计 §5.1/§5.2）：超高/超宽 = 宽高 vs 门幅；倒幅/正幅 = cuttingMode 推导
-import { detectAutoFeatures, type AutoFeature } from '@/lib/craft-display'
+// ⚠️ 取自 **admin-web 专属**模块（不是三端同源的 `craft-display`，见该文件头）
+import { detectAutoFeatures, type AutoFeature } from '@/lib/craft-auto-features'
 // 费用明细的「加工 + 特殊选项」两半拆分（issue #4526 · 设计 §4.3 / 判据 5）——唯一实现
 import { buildFeeDetailDisplay } from '@/lib/order-fee-display'
 // #4371：加工项类型改为**店铺级目录**的 `ProcessingItem`（旧 `ProductProcessingItem` 已随解耦删除）
