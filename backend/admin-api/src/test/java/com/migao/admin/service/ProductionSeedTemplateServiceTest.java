@@ -157,7 +157,7 @@ class ProductionSeedTemplateServiceTest {
             assertThat(curtain.getIndustry()).isEqualTo(IndustryCodes.CURTAIN);
             assertThat(curtain.getName()).contains("布艺");
             assertThat(curtain.getVersion()).isEqualTo(1);
-            assertThat(curtain.getOperationCount()).isEqualTo(35);
+            assertThat(curtain.getOperationCount()).isEqualTo(37);
             assertThat(curtain.getRoutingCount()).isEqualTo(9);
             assertThat(curtain.getOptionCount()).isEqualTo(16);
         }
@@ -204,11 +204,11 @@ class ProductionSeedTemplateServiceTest {
 
             assertThat(result.get("templateId")).isEqualTo("curtain");
             assertThat(result.get("applied")).isEqualTo(true);
-            assertThat(result.get("created_operations")).isEqualTo(35);
+            assertThat(result.get("created_operations")).isEqualTo(37);
             assertThat(result.get("skipped")).isEqualTo(0);
 
             ArgumentCaptor<ProductionOperation> opCaptor = ArgumentCaptor.forClass(ProductionOperation.class);
-            verify(productionOperationMapper, times(35)).insert(opCaptor.capture());
+            verify(productionOperationMapper, times(37)).insert(opCaptor.capture());
             // 每道工序都必须带 source（provenance 可见 = 本单的诚实性核心）
             assertThat(opCaptor.getAllValues())
                     .allSatisfy(op -> assertThat(op.getSource())
@@ -226,8 +226,10 @@ class ProductionSeedTemplateServiceTest {
             // 「默认路线模板 + 默认工艺 + 部位价目 + 规则表」，否则该租户零默认 ⇒ 建单全 fail-closed
             ArgumentCaptor<ProductionRouteTemplate> rtCaptor =
                     ArgumentCaptor.forClass(ProductionRouteTemplate.class);
-            verify(productionRouteTemplateMapper, times(1)).insert(rtCaptor.capture());
-            ProductionRouteTemplate template = rtCaptor.getValue();
+            // issue #4529：开租种**两条**基础路线（窗帘默认 + 布料）⇒ 恰一条 is_default
+            verify(productionRouteTemplateMapper, times(2)).insert(rtCaptor.capture());
+            ProductionRouteTemplate template = rtCaptor.getAllValues().stream()
+                    .filter(t -> Boolean.TRUE.equals(t.getIsDefault())).findFirst().orElseThrow();
             assertThat(template.getIsDefault()).as("恰一条默认路线（缺它 ⇒ 建单 fail-closed）").isTrue();
             assertThat(template.getTenantId()).isEqualTo(TENANT);
             assertThat(template.getName()).isNotBlank();
@@ -241,8 +243,8 @@ class ProductionSeedTemplateServiceTest {
             assertThat(craftCaptor.getValue().getIsDefault())
                     .as("恰一条默认工艺（缺 craft 的订单取它；不得写死常量）").isTrue();
 
-            // 部位价目：规范矩阵 ∩ 该租户工序库（28 逻辑工序 × 3 部位 = 84 行）
-            verify(productionOperationPositionMapper, times(84))
+            // 部位价目：规范矩阵 ∩ 该租户工序库（30 逻辑工序 × 4 部位 = 120 行，issue #4529）
+            verify(productionOperationPositionMapper, times(120))
                     .insert(org.mockito.ArgumentMatchers.any(com.migao.admin.entity.ProductionOperationPosition.class));
             // 规则表：工艺变体 10 + 特殊选项 16 + 计件系数档 1 = 27（逐条按该租户工序库过滤）
             verify(productionRouteRuleMapper, times(27))
@@ -297,8 +299,9 @@ class ProductionSeedTemplateServiceTest {
                     opCalls.getAndIncrement() == 0 ? List.of() : existingOperations());
 
             Map<String, Object> first = service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
-            assertThat(first.get("created_operations")).isEqualTo(35);
-            assertThat(first.get("created_routings")).as("恰一条默认路线模板").isEqualTo(1);
+            assertThat(first.get("created_operations")).isEqualTo(37);
+            assertThat(first.get("created_routings")).as("恰两条基础路线（窗帘默认 + 布料，issue #4529）")
+                    .isEqualTo(2);
             assertThat(first.get("created_crafts")).as("恰一条默认工艺").isEqualTo(1);
             assertThat((int) first.get("created_positions")).isGreaterThan(0);
 
@@ -310,11 +313,11 @@ class ProductionSeedTemplateServiceTest {
             assertThat(second.get("created_positions")).as("第二次不得再插部位价目（幂等）").isEqualTo(0);
             assertThat(second.get("created_route_rules")).as("第二次不得再插规则（幂等）").isEqualTo(0);
             assertThat(second.get("skipped"))
-                    .as("第二次全部跳过：35 工序 + 1 路线模板（新结构里 9 条旧路线收敛成 1 条）"
+                    .as("第二次全部跳过：37 工序 + 2 路线模板（窗帘默认 + 布料，issue #4529）"
                             + " + 16 选项映射 + 1 系数档")
-                    .isEqualTo(35 + 1 + 16 + 1);
-            verify(productionOperationMapper, times(35)).insert(any(ProductionOperation.class));
-            verify(productionRouteTemplateMapper, times(1)).insert(
+                    .isEqualTo(37 + 2 + 16 + 1);
+            verify(productionOperationMapper, times(37)).insert(any(ProductionOperation.class));
+            verify(productionRouteTemplateMapper, times(2)).insert(
                     org.mockito.ArgumentMatchers.<ProductionRouteTemplate>any());
             verify(productionCraftMapper, times(1)).insert(
                     org.mockito.ArgumentMatchers.<ProductionCraft>any());
@@ -336,8 +339,8 @@ class ProductionSeedTemplateServiceTest {
 
             assertThat(result.get("created_operations")).isEqualTo(0);
             assertThat(result.get("created_routings"))
-                    .as("P2b：新结构里「路线」= 一条默认模板").isEqualTo(1);
-            assertThat(result.get("skipped")).isEqualTo(35);
+                    .as("P2b：新结构里「路线」= 两条基础模板（窗帘默认 + 布料，issue #4529）").isEqualTo(2);
+            assertThat(result.get("skipped")).isEqualTo(37);
         }
 
         @Test
@@ -373,16 +376,17 @@ class ProductionSeedTemplateServiceTest {
                     .as("第二个租户套用必须同样成功 —— 撞主键的形态在这里变红")
                     .isEqualTo(true);
             assertThat(store.operationIdsOf(42L)).as("42 号租户落库工序数 = 模板工序数")
-                    .hasSize(35);
-            assertThat(store.operationIdsOf(77L)).hasSize(35);
+                    .hasSize(37);
+            assertThat(store.operationIdsOf(77L)).hasSize(37);
             assertThat(store.operationNamesOf(42L)).isEqualTo(templateOperationNames());
             assertThat(store.operationNamesOf(77L)).isEqualTo(templateOperationNames());
             assertThat(store.operationIdsOf(42L))
                     .as("两租户的 id 集合必须**不相交**（复用模板 id / 跨租户确定性 id 都会相交或撞主键）")
                     .doesNotContainAnyElementsOf(store.operationIdsOf(77L));
             // P2b：路线 = 一条具名模板（不再是 9 条展开快照）⇒ 断言「每租户恰一条默认模板」
-            assertThat(store.templateIdsOf(42L)).as("42 号租户恰一条默认路线模板").hasSize(1);
-            assertThat(store.templateIdsOf(77L)).hasSize(1);
+            assertThat(store.templateIdsOf(42L)).as("42 号租户恰两条基础路线模板（窗帘默认 + 布料）")
+                    .hasSize(2);
+            assertThat(store.templateIdsOf(77L)).hasSize(2);
             assertThat(store.templateIdsOf(42L))
                     .as("两租户的模板 id 必须**不相交**（复用模板 id 会撞主键）")
                     .doesNotContainAnyElementsOf(store.templateIdsOf(77L));
@@ -427,7 +431,7 @@ class ProductionSeedTemplateServiceTest {
             Map<String, Object> result = service.applyTemplate(TENANT, "布艺纺织");
 
             assertThat(result.get("applied")).isEqualTo(true);
-            assertThat(result.get("created_operations")).isEqualTo(35);
+            assertThat(result.get("created_operations")).isEqualTo(37);
         }
 
         @Test

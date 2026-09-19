@@ -51,6 +51,17 @@ OPERATION_CATALOG: Dict[str, Dict[str, Any]] = {
     "立边-布": {"group": "车位", "unit": "米", "unit_price": 0.5},
     "扣环-布": {"group": "车位", "unit": "个", "unit_price": 0.3},
     "防翘扣-布": {"group": "车位", "unit": "个", "unit_price": 0.2},
+    # ── issue #4529（包 F）：布料基础路线的两道工序（用户裁定 2026-09-19）──
+    # · `配料`：**布料单**（`saleForm = 布料`）的前道工序，单位 = **米**（按部位算料）；
+    # · `打包`：**跨产品形态**的工序 —— 追加裁定「如果是布料也可以有打包工序」⇒ 它**不等于**
+    #   `外帘装袋`（后者是外帘/成品帘专属）；单位 = **套**，`scope = 'set'`（一单一套一次，
+    #   不按部位展开 —— 见 V79 的 `SET scope='set'` 回填与 Java 侧 `keepsSetLevel` 去重）。
+    # ⚠️ **单价 0 是 DDL 约束的产物，不是「定价 0」**：`production_operations.unit_price` 是
+    #   `NOT NULL DEFAULT 0`（V49）⇒ 工序库行只能落 0。「未定价」的真载体是**部位价目行**
+    #   （`OPERATION_POSITION_PRICES[工序][部位]["unit_price"] is None` 且 `applicable=True`，
+    #   见 `_POSITION_PRICE_ROWS`）+ `production_operations.source = '占位待确认'`（商家自配）。
+    "配料": {"group": "后道", "unit": "米", "unit_price": 0.0},
+    "打包": {"group": "后道", "unit": "套", "unit_price": 0.0},
 }
 
 # ── 工艺路线模板（部位×工艺 → 基准工序序列）──
@@ -106,6 +117,12 @@ ROUTINGS: Dict[str, List[str]] = {
 # 登记在此的唯一理由：让「有意不消费（待客户确认）」与「忘了建路线」在数据上**可区分** ——
 # 前者在这里有名字，后者会撞 `tests/test_production/test_routing.py` 的孤儿集合断言（双向可红）。
 PENDING_CUSTOMER_CONFIRMATION_OPERATIONS = frozenset({"裁剪-布", "裁剪-纱", "质检", "腰靠垫"})
+
+# ── **新模型**消费、旧 `ROUTINGS` 不消费的工序（issue #4529）──
+# 登记在这里的唯一理由与上面那个集合相同：让「旧模型孤儿」与「忘了建路线」在数据上**可区分**。
+# `配料` 只出现在 `FABRIC_MAINLINE_STEPS`；`打包` 出现在 `ROUTE_MAINLINE_STEPS`（新模型主线）
+# —— 旧 `ROUTINGS`（9 条展开快照）一字未动（消费路径未切换），故它们对旧模型**确实是孤儿**。
+NEW_MODEL_ONLY_OPERATIONS = frozenset({"配料", "打包"})
 
 # ── 特殊选项 → 条件工序（插在目标工序后；`after` = **锚点在它之前**，见 `_insert_after`）──
 # 真值源 §1【默】19 项特殊选项，按处置分三类（**每一类都要显式登记**，见下方
@@ -185,7 +202,10 @@ NON_PIECEWORK_OPTIONS = frozenset({"余料带回-布", "余料带回-纱"})
 PENDING_CUSTOMER_CONFIRMATION_OPTIONS = frozenset({"余料带回"})
 
 # 必完工序 / 生产开始标记（默认；商家可配「此工序必须完成才可打包」）
-MUST_FINISH_OPS = {"外帘装袋"}   # 打包前置（截图「此工序必须完成才可打包」）
+# ⚠️ 去同词两义（issue #4529）：本行的「打包」指**后道打包环节**（状态机口径：
+# 必完工序全绿 ⇒ 才能报工打包 ⇒ 打包完成 ⇒ 生产完成），**不是** V79 新增的**工序名** `打包`。
+# 两者恰好同词：`打包` 是工序名后，本集合的语义必须按「该工序的**前置门槛**」读。
+MUST_FINISH_OPS = {"外帘装袋"}   # 门槛工序（截图「此工序必须完成才可打包」的「打包」= 后道环节）
 START_MARKER_OPS = {"精裁-布", "精裁-纱"}  # 首工序触发订单进入生产中
 
 
@@ -425,7 +445,7 @@ def instance_operations(
 # |---|---|
 # | 每道工序名把**部位编码进名字**（`精裁-布`/`精裁-纱`、`布三边`/`纱三边`） | 逻辑工序名（`精裁`/`三边`）+ **部位适用性矩阵** |
 # | `(部位, 工艺)` 笛卡尔积 ⇒ 9 条路线，改一道工序要改 8 遍 | **1 条主线** + `ROUTE_RULES`（工艺/选项触发 insert/remove） |
-# | 单价绑在「工序名」上（35 行） | 单价绑在 `(逻辑工序, 部位)` 上（28 × 3 = 84 行） |
+# | 单价绑在「工序名」上（35 行） | 单价绑在 `(逻辑工序, 部位)` 上（30 × 4 = 120 行，issue #4529 起） |
 #
 # ⇒ **不发明任何工序、不改任何单价**：`OPERATION_LOGICAL_NAMES` 的 35 个旧名与
 # `OPERATION_POSITION_PRICES` 的单价逐条可溯源到 `OPERATION_CATALOG`（旧真值源）。
@@ -449,14 +469,33 @@ def instance_operations(
 #: 默认路线模板名（用户可命名；M3：**只改路线总名，工序名不能改**）
 ROUTE_TEMPLATE_NAME_DEFAULT = "窗帘工序路线（默认）"
 
+# ── 布料基础路线（issue #4529，包 F；用户裁定 2026-09-19）──────────────────────────────
+# 用户裁定（逐字）：「如果是布料，只有一个工序叫配料……每个租户默认**两条**基础工序路线，
+# 一个是窗帘的，一条是布料的」；追加裁定：「打包 = 报工 外帘装袋 不一定，如果是布料也可以
+# 有打包工序」⇒ `打包` 是**独立工序且跨产品形态**（不能等于 `外帘装袋`）。
+#
+#: 第 4 个部位（既有三部位 = 布帘/纱帘/帘头）。
+FABRIC_POSITION = "布料"
+#: 选中布料路线的键：`processing_info.saleForm`（前端 `SALE_FORM_FABRIC` 逐字一致 —— join key）。
+SALE_FORM_FABRIC = "布料"
+#: 布料主线（**2 道**）：`配料` → `打包`（不含任何窗帘工艺/部位工序）。
+FABRIC_MAINLINE_STEPS: List[str] = ["配料", "打包"]
+#: 布料路线模板名（种子名；商家可改名 —— 幂等键是 `(tenant_id, name)`，不是这个名字）。
+FABRIC_ROUTE_TEMPLATE_NAME_DEFAULT = "布料工序路线"
+
 #: 主线**全貌**（含「工艺槽位」占位）—— 仅文档用途，**不落库**
 #: （槽位 = 打褶那一道：韩褶 / 打孔 / 穿杆 / 四爪钩由 `ROUTE_RULES` 按工艺插入）
 ROUTE_MAINLINE: List[str] = ["精裁", "三边", "⟪工艺槽位⟫", "熨烫", "定型", "复烫",
-                             "车被", "外帘打卷", "外帘装袋", "外帘发货"]
+                             "车被", "外帘打卷", "打包", "外帘装袋", "外帘发货"]
 
-#: **实际落库的 9 道**主线（部位无关；工艺槽位不落库）
+#: **实际落库的 10 道**主线（部位无关；工艺槽位不落库）
+#:
+#: `打包` 插在 `外帘打卷` 与 `外帘装袋` **之间**（issue #4529）：位置依据 = ERP 加工单实证
+#: `外帘打包 › 外帘装箱 › 外帘发货`（`外帘装袋` ≈ ERP 的 `外帘装箱` ⇒ 打包在装袋之前）。
+#: ⚠️ **照实登记**：#4343 登记过这两道的对应关系**未能确定** ⇒ 本顺序是**按 ERP 顺序推断**、
+#: **待客户确认**（不假装定论；确认后若顺序不同，改这里 + V79 + `schema.sql` 三处即可）。
 ROUTE_MAINLINE_STEPS: List[str] = ["精裁", "三边", "熨烫", "定型", "复烫", "车被",
-                                   "外帘打卷", "外帘装袋", "外帘发货"]
+                                   "外帘打卷", "打包", "外帘装袋", "外帘发货"]
 
 #: 旧工序名 → 逻辑工序名（35 条**有序对**；模块加载时 `dict(...)` 成表）
 #:
@@ -510,13 +549,16 @@ _LOGICAL_NAME_PAIRS: List[tuple] = [
 #: 旧工序名 → 逻辑工序名（35 → 28；7 组部位变体 + 去 `-布`/`-纱` 后缀）
 OPERATION_LOGICAL_NAMES: Dict[str, str] = dict(_LOGICAL_NAME_PAIRS)
 
-#: 部位价目 + 适用性矩阵的**书写形态**：`(逻辑工序, 部位, 单价|None, applicable)` × **84 行**
-#: （28 道逻辑工序 × 3 部位）。同上：用有序行而不是嵌套 dict 字面量（避免触发 L0 守卫）。
+#: 部位价目 + 适用性矩阵的**书写形态**：`(逻辑工序, 部位, 单价|None, applicable)` × **120 行**
+#: （**30 道逻辑工序 × 4 部位**）。同上：用有序行而不是嵌套 dict 字面量（避免触发 L0 守卫）。
 #:
-#: 语义（母单 #4423 冻结）：
+#: 语义（母单 #4423 冻结 + issue #4529 扩到第 4 部位）：
 #: · `applicable=True`  = 该部位**做**这道工序（`build_route_v2` 保留它）；
 #: · `applicable=False` = 该部位**明确不做**（`build_route_v2` 滤掉它）—— 与「没定价」可区分；
 #: · `unit_price=None`  = **不落价**：明确不做的部位不报价（有价 = 有业务含义的价目行）；
+#:   ⚠️ issue #4529 起出现**新状态**「`applicable=True` 且 `unit_price=None`」= **适用但未定价**
+#:   （`配料 × 布料` / `打包 × 4 部位`）⇒ 该状态必须**可判**（读面 `GET …/operation-positions`
+#:   返回 `{unit_price: null, applicable: true}`），**不得与「不适用」混淆**，也不得静默按 0 收；
 #: · 单价逐条溯源到 `OPERATION_CATALOG`（**不发明单价**）：本单实证「同一逻辑工序的各部位变体
 #:   单价**逐字相同**」（7 组变体 14 道工序两两相等）⇒ 今天单价是**逻辑工序**的函数，按适用部位
 #:   展开；本表存在的理由是给真值源 §2【标】「同一道工序在布/纱/帘头上单价各自不同」**留出载体**，
@@ -606,6 +648,50 @@ _POSITION_PRICE_ROWS: List[tuple] = [
     ("防翘扣", "布帘", 0.2, True),
     ("防翘扣", "纱帘", None, False),
     ("防翘扣", "帘头", None, False),
+    # ── issue #4529（包 F）：第 4 个部位「布料」的 28 行（既有 28 道**逐行显式 FALSE**）──
+    # 逐行显式纪律不变：布料部位上**只有** `配料`/`打包` 适用，其余 28 道是「明确不做」
+    # （不是缺行 —— 缺行会让 `build_route_v2` 的 `prices[op][position]` KeyError）。
+    ("精裁", "布料", None, False),
+    ("裁剪", "布料", None, False),
+    ("三边", "布料", None, False),
+    ("韩褶", "布料", None, False),
+    ("上车布", "布料", None, False),
+    ("打孔", "布料", None, False),
+    ("拼1次", "布料", None, False),
+    ("拼2次", "布料", None, False),
+    ("拼3次", "布料", None, False),
+    ("花边", "布料", None, False),
+    ("铅坠", "布料", None, False),
+    ("接高", "布料", None, False),
+    ("帘头制作", "布料", None, False),
+    ("熨烫", "布料", None, False),
+    ("定型", "布料", None, False),
+    ("复烫", "布料", None, False),
+    ("车被", "布料", None, False),
+    ("外帘打卷", "布料", None, False),
+    ("外帘装袋", "布料", None, False),
+    ("质检", "布料", None, False),
+    ("外帘发货", "布料", None, False),
+    ("绑带", "布料", None, False),
+    ("抱枕", "布料", None, False),
+    ("腰靠垫", "布料", None, False),
+    ("logo条", "布料", None, False),
+    ("立边", "布料", None, False),
+    ("扣环", "布料", None, False),
+    ("防翘扣", "布料", None, False),
+    # ── 新增两道工序（issue #4529）──────────────────────────────────────────────────
+    # `配料`：**布料专属**（`配料 × 布料` 适用；三个窗帘部位逐行显式 FALSE）。
+    # `打包`：**所有产品形态都要做**（4 个部位全适用）—— 套级语义由 `scope='set'` 承担，
+    # **不靠**「只对一个部位 applicable」表达（那会让窗帘单少一道活）。
+    # 两者的 `unit_price` 都是 None = **适用但未定价**（商家在工序库自配，见 `OPERATION_CATALOG` 注释）。
+    ("配料", "布料", None, True),
+    ("配料", "布帘", None, False),
+    ("配料", "纱帘", None, False),
+    ("配料", "帘头", None, False),
+    ("打包", "布帘", None, True),
+    ("打包", "纱帘", None, True),
+    ("打包", "帘头", None, True),
+    ("打包", "布料", None, True),
 ]
 
 
@@ -618,7 +704,7 @@ def _build_position_prices(rows: List[tuple]) -> Dict[str, Dict[str, Any]]:
     return prices
 
 
-#: 部位价目 + 适用性矩阵（28 道逻辑工序 × 3 部位 = **84 行**，逐行显式，不留隐式缺省）
+#: 部位价目 + 适用性矩阵（**30 道逻辑工序 × 4 部位 = 120 行**，逐行显式，不留隐式缺省）
 OPERATION_POSITION_PRICES: Dict[str, Dict[str, Any]] = _build_position_prices(_POSITION_PRICE_ROWS)
 
 #: 规则表 26 条（工艺变体 10 + 特殊选项 16）—— 「主线 + 规则」取代「9 条展开路线」
@@ -707,7 +793,9 @@ def build_route_v2(position: Dict[str, Any]) -> List[str]:
 
     纯函数（不改入参、不碰 DB、零 LLM）。语义（**顺序敏感**）：
 
-    1. 取主线 9 道（`ROUTE_MAINLINE_STEPS`）；
+    1. 取主线：部位 = `布料`（第 4 部位，issue #4529）⇒ `FABRIC_MAINLINE_STEPS`（`配料 → 打包`）；
+       否则 `ROUTE_MAINLINE_STEPS`（窗帘 10 道）。**两条主线由部位选定**（与 DB 侧「每租户两条
+       路线模板」一一对应：`routeTemplateFor(tenantId, 部位)` 按 `positions` 选模板）；
     2. 按 `ROUTE_RULES` 应用规则 —— **按 `priority` 升序**（同 priority 按声明顺序）；
        `insert` 用 `after_operation` 定位（锚点不在序列中 ⇒ **追加末尾**，与既有
        `_insert_after` 同款），`remove` 直接删除该工序名；
@@ -722,7 +810,7 @@ def build_route_v2(position: Dict[str, Any]) -> List[str]:
     Returns: 逻辑工序名序列（如 `["精裁","三边","韩褶","上车布",...]`）
     """
     curtain_type = position.get("curtain_type", "布帘")
-    route = list(ROUTE_MAINLINE_STEPS)
+    route = list(FABRIC_MAINLINE_STEPS if curtain_type == FABRIC_POSITION else ROUTE_MAINLINE_STEPS)
     for rule in sorted(ROUTE_RULES, key=lambda r: r["priority"]):
         if not _rule_triggers(rule, position):
             continue

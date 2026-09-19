@@ -573,17 +573,23 @@ def test_template_sources_are_the_frozen_provenance_mapping(template_json, catal
     """模板每行的 `source` 必须逐条等于**冻结映射**（issue #4361 交付物 4，双向断言）。
 
     冻结映射：`op-v54-*`/`rt-v54-*` = `占位待确认`；`op-v56-*`/`rt-v58-*` = `推算`；
+    `op-v79-*`（issue #4529 的 `配料`/`打包`）= `占位待确认`（单价留空待商家配）；
     `实证` = **空集**（客户确认 #4261/#4343 后才会有 —— 这是诚实结论，不是遗漏）。
 
     双向：漏标（某行 source 缺失/为空）与多标（出现 `实证`）**都红**。
-    与 V62 迁移的回填同口径由 `ProductionSourceProvenanceMigrationTest` 另行钉（Java 侧）。
+    与 V62/V79 迁移的回填同口径由 `ProductionSourceProvenanceMigrationTest` 另行钉（Java 侧）。
     """
+    def expected_source(op_id: str) -> str:
+        if op_id.startswith("op-v54-") or op_id.startswith("op-v79-") or op_id.startswith("rt-v54-"):
+            return "占位待确认"
+        return "推算"
+
     for entry in template_json["operations"]:
-        expected = "占位待确认" if entry["id"].startswith("op-v54-") else "推算"
+        expected = expected_source(entry["id"])
         assert entry.get("source") == expected, (
             f"工序 {entry['name']} 的 source={entry.get('source')!r}，冻结映射要求 {expected!r}")
     for entry in template_json["routings"]:
-        expected = "占位待确认" if entry["id"].startswith("rt-v54-") else "推算"
+        expected = expected_source(entry["id"])
         assert entry.get("source") == expected, (
             f"路线 {entry['curtain_type']}×{entry['craft']} 的 source={entry.get('source')!r}，"
             f"冻结映射要求 {expected!r}")
@@ -593,7 +599,7 @@ def test_template_sources_are_the_frozen_provenance_mapping(template_json, catal
     assert sources == {"占位待确认", "推算"}, (
         f"模板 source 取值集合 = {sorted(sources)}，冻结映射要求恰好 {{占位待确认, 推算}}"
         "（出现「实证」= 多标：今天没有任何工序/路线够得上实证，#4343 已证明 布帘×韩褶 与客户真实加工单不符）")
-    assert sum(1 for e in template_json["operations"] if e["source"] == "占位待确认") == 30
+    assert sum(1 for e in template_json["operations"] if e["source"] == "占位待确认") == 32
     assert sum(1 for e in template_json["operations"] if e["source"] == "推算") == 5
     assert sum(1 for e in template_json["routings"] if e["source"] == "占位待确认") == 6
     assert sum(1 for e in template_json["routings"] if e["source"] == "推算") == 3
@@ -635,7 +641,7 @@ def test_every_template_source_is_really_read(template_json):
     本条再钉一次「解析出来确实有东西」。
     """
     assert template_json.get("templateId") == "curtain"
-    assert len(template_json["operations"]) == 35, "模板工序数不是 35（漏读或漏写）"
+    assert len(template_json["operations"]) == 37, "模板工序数不是 37（35 + #4529 的 配料/打包）"
     assert len(template_json["routings"]) == 9, "模板路线数不是 9"
     assert len(template_json["option_routings"]) == 16
     assert len(template_json["option_factors"]) >= 1
@@ -1087,36 +1093,79 @@ def _text_or_none(raw):
     return None if value == "NULL" else value
 
 
-def position_price_rows(sql: str) -> dict:
-    """部位价目行 → `{(逻辑工序, 部位): (单价|None, applicable, status)}`（**逐值**口径）。"""
+def _price_rows(rows) -> dict:
+    """部位价目行（已解析）→ `{(逻辑工序, 部位): (单价|None, applicable, status)}`（**逐值**口径）。"""
     return {(normalize_value(r["logical_name"]), normalize_value(r["position"])):
             (_num_or_none(r["unit_price"]), normalize_value(r["applicable"]) == "TRUE",
              normalize_value(r["status"]))
-            for r in parse_seed(sql, "production_operation_positions", POSITION_PRICE_COLUMNS)}
+            for r in rows}
 
 
-def route_template_rows(sql: str) -> list:
-    """具名路线行 → `[{name, is_default, positions, mainline, status}]`（有序序列 = tuple）。"""
+def position_price_rows(sql: str) -> dict:
+    """部位价目行 → `{(逻辑工序, 部位): (单价|None, applicable, status)}`（**逐值**口径）。"""
+    return _price_rows(parse_seed(sql, "production_operation_positions", POSITION_PRICE_COLUMNS))
+
+
+def _template_rows(rows) -> list:
+    """具名路线行（已解析）→ `[{name, is_default, positions, mainline, status}]`。"""
     return [{"name": normalize_value(r["name"]),
              "is_default": normalize_value(r["is_default"]) == "TRUE",
              "positions": normalize_routing_operations(r["positions"]),
              "mainline": normalize_routing_operations(r["mainline"]),
              "status": normalize_value(r["status"])}
-            for r in parse_seed(sql, "production_route_templates", ROUTE_TEMPLATE_COLUMNS)]
+            for r in rows]
 
 
-def route_rule_rows(sql: str) -> dict:
-    """规则行 → `{(触发类型, 触发值, 部位, 动作, 工序, 锚点): priority}`（`NULL` → `None`）。"""
+def route_template_rows(sql: str) -> list:
+    """具名路线行 → `[{name, is_default, positions, mainline, status}]`（有序序列 = tuple）。"""
+    return _template_rows(parse_seed(sql, "production_route_templates", ROUTE_TEMPLATE_COLUMNS))
+
+
+def _rule_rows(rows) -> dict:
+    """规则行（已解析）→ `{(触发类型, 触发值, 部位, 动作, 工序, 锚点): priority}`。"""
     return {(normalize_value(r["trigger_kind"]), normalize_value(r["trigger_value"]),
              _text_or_none(r["position"]), normalize_value(r["action"]),
              normalize_value(r["operation"]), _text_or_none(r["after_operation"])):
             int(normalize_value(r["priority"]))
-            for r in parse_seed(sql, "production_route_rules", ROUTE_RULE_COLUMNS)}
+            for r in rows}
+
+
+def route_rule_rows(sql: str) -> dict:
+    """规则行 → `{(触发类型, 触发值, 部位, 动作, 工序, 锚点): priority}`（`NULL` → `None`）。"""
+    return _rule_rows(parse_seed(sql, "production_route_rules", ROUTE_RULE_COLUMNS))
 
 
 def _aggregate_text(seed_paths) -> str:
     """把按内容发现的一组种子迁移**拼成一份文本**（多源聚合，版本号序）。"""
     return "\n".join(path.read_text(encoding="utf-8") for path in seed_paths)
+
+
+def _parse_each(seed_paths, table: str, columns) -> list:
+    """**逐源**解析后合并（多源聚合的唯一正确形态，issue #4529）。
+
+    ⚠️ 不能先 `_aggregate_text` 再 `parse_seed`：`parse_seed` 只认**第一条**
+    `INSERT INTO <table> … VALUES`（按 `;` 截断）⇒ 拼接后的文本只解析出**第一个源**的行
+    （V79 的 36 格价目 / 布料路线会被**静默漏掉** ⇒ 「绿了但没跑」，同族形态见 #4235）。
+    自证 = `test_new_route_seed_sources_are_discovered_and_nonempty`（逐源断言非空）。
+    """
+    rows = []
+    for path in seed_paths:
+        rows += parse_seed(path.read_text(encoding="utf-8"), table, columns)
+    return rows
+
+
+def position_price_rows_multi(seed_paths) -> dict:
+    return _price_rows(_parse_each(seed_paths, "production_operation_positions",
+                                   POSITION_PRICE_COLUMNS))
+
+
+def route_template_rows_multi(seed_paths) -> list:
+    return _template_rows(_parse_each(seed_paths, "production_route_templates",
+                                      ROUTE_TEMPLATE_COLUMNS))
+
+
+def route_rule_rows_multi(seed_paths) -> dict:
+    return _rule_rows(_parse_each(seed_paths, "production_route_rules", ROUTE_RULE_COLUMNS))
 
 
 def _route_v2_truth() -> tuple:
@@ -1129,6 +1178,18 @@ def _route_v2_truth() -> tuple:
         )
         return (OPERATION_POSITION_PRICES, ROUTE_MAINLINE_STEPS, ROUTE_RULES,
                 ROUTE_TEMPLATE_NAME_DEFAULT)
+    finally:
+        sys.path.pop(0)
+
+
+def _fabric_truth() -> tuple:
+    """布料路线的真值源（issue #4529）→ `(部位, 主线, 模板名)`。"""
+    sys.path.insert(0, str(ROUTING_PY_DIR))
+    try:
+        from app.production.routing import (
+            FABRIC_MAINLINE_STEPS, FABRIC_POSITION, FABRIC_ROUTE_TEMPLATE_NAME_DEFAULT,
+        )
+        return FABRIC_POSITION, FABRIC_MAINLINE_STEPS, FABRIC_ROUTE_TEMPLATE_NAME_DEFAULT
     finally:
         sys.path.pop(0)
 
@@ -1169,36 +1230,74 @@ def test_new_route_seed_sources_are_discovered_and_nonempty():
 
 
 def test_position_prices_converge_across_three_sources(schema_sql):
-    """部位价目三源**逐行逐值**一致：`routing.py` ↔ V71 ↔ `schema.sql`（28 × 3 = 84 行）。
+    """部位价目三源**逐行逐值**一致：`routing.py` ↔ V71 ∪ V79 ↔ `schema.sql`（30 × 4 = 120 行）。
 
     改一处不改另两处即红：① 只改 Python（改价/翻 applicable）⇒ 迁移与 bootstrap 对不上；
-    ② 只改 V71 ⇒ 与真值源对不上；③ 只改 schema.sql ⇒ 与迁移侧对不上。
+    ② 只改迁移 ⇒ 与真值源对不上；③ 只改 schema.sql ⇒ 与迁移侧对不上。
+    ⚠️ 多源必须**逐源解析**（`position_price_rows_multi`）：先拼接再解析只会读到第一个源
+    ⇒ V79 的 36 格被静默漏掉（「绿了但没跑」）。
     """
     truth = _truth_price_rows()
-    migration = position_price_rows(_aggregate_text(POSITION_SEED_SQLS))
+    migration = position_price_rows_multi(POSITION_SEED_SQLS)
     bootstrap = position_price_rows(schema_sql)
-    assert len(truth) == 84, f"真值源的部位价目不是 84 行（28 × 3）：{len(truth)}"
-    assert len(migration) == 84, f"迁移侧的部位价目不是 84 行：{len(migration)}"
+    assert len(truth) == 120, f"真值源的部位价目不是 120 行（30 × 4）：{len(truth)}"
+    assert len(migration) == 120, f"迁移侧的部位价目不是 120 行：{len(migration)}"
     assert migration == truth, f"部位价目：迁移侧 ≠ routing.py：{_diff_keys(migration, truth)}"
     assert bootstrap == truth, f"部位价目：schema.sql 终态 ≠ routing.py：{_diff_keys(bootstrap, truth)}"
 
 
 def test_route_template_converges_across_three_sources(schema_sql):
-    """具名路线三源逐值一致（**1 行**：名字 / 默认标记 / 适用帘种 / 主线序列 / 状态）。"""
+    """具名路线三源逐值一致（**2 行**：窗帘默认 + 布料，issue #4529）。"""
     _, mainline, _, name = _route_v2_truth()
-    truth = {"name": name, "is_default": True,
-             "positions": ("布帘", "纱帘", "帘头"), "mainline": tuple(mainline), "status": "active"}
-    migration = route_template_rows(_aggregate_text(TEMPLATE_SEED_SQLS))
-    assert len(migration) == 1, f"迁移侧的具名路线不是 1 行：{len(migration)}"
-    assert migration[0] == truth, f"具名路线：迁移侧 ≠ routing.py：{migration[0]} ≠ {truth}"
-    assert route_template_rows(schema_sql) == migration, \
-        "具名路线：schema.sql 终态 ≠ 迁移侧（bootstrap 库与迁移库路线不同）"
+    fabric_position, fabric_mainline, fabric_name = _fabric_truth()
+    truth = [
+        {"name": name, "is_default": True,
+         "positions": ("布帘", "纱帘", "帘头"), "mainline": tuple(mainline), "status": "active"},
+        {"name": fabric_name, "is_default": False,
+         "positions": (fabric_position,), "mainline": tuple(fabric_mainline), "status": "active"},
+    ]
+    migration = route_template_rows_multi(TEMPLATE_SEED_SQLS)
+    assert len(migration) == 2, (
+        f"迁移侧的具名路线不是 2 行（窗帘默认 + 布料）：{len(migration)} —— "
+        f"每租户恰好两条基础路线（issue #4529）"
+    )
+    # ⚠️ 迁移链的**终态** = 字面量种子 + V79 的手术式 `打包` 插入（V71 已发布 ⇒ 不可改，
+    #    窗帘路线的 10 道只能由新迁移补）。这里按 V79 的语义把字面量升到终态再比对真值源。
+    assert [r for r in migration if r["is_default"]][0]["mainline"] == \
+        tuple(s for s in mainline if s != "打包"), (
+        "窗帘路线的**字面量**种子漂移（V71 的 9 道）—— 第 10 道 `打包` 由 V79 的 UPDATE 追加，"
+        "两处都要与真值源一致"
+    )
+    assert _with_packing_on_default_route(migration) == truth, (
+        f"具名路线（迁移链终态 = 字面量 + V79 的打包插入）≠ routing.py："
+        f"{_with_packing_on_default_route(migration)} ≠ {truth}"
+    )
+    assert route_template_rows(schema_sql) == truth, \
+        "具名路线：schema.sql 终态 ≠ routing.py（bootstrap 库与迁移库路线不同）"
+
+
+def _with_packing_on_default_route(rows: list) -> list:
+    """把真值源升到**迁移链终态**：默认路线的 9 道 + V79 插入的 `打包`（插在 `外帘装袋` 之前）。
+
+    V71 已发布（不可改）⇒ 窗帘路线的第 10 道只能由 V79 的 UPDATE 补；本函数复刻那一行的语义，
+    使「迁移链终态」可与字面量种子逐值比对（V79 侧的实际写法由
+    `test_fabric_route_seed.py::test_curtain_mainline_carries_packing_in_every_source` 另钉）。
+    """
+    out = []
+    for row in rows:
+        if not row["is_default"] or "打包" in row["mainline"]:
+            out.append(row)
+            continue
+        steps = list(row["mainline"])
+        idx = steps.index("外帘装袋")
+        out.append({**row, "mainline": tuple(steps[:idx] + ["打包"] + steps[idx:])})
+    return out
 
 
 def test_route_rules_converge_across_three_sources(schema_sql):
     """规则表三源**逐行逐值**一致（26 行：工艺 10 + 特殊选项 16，含 priority）。"""
     truth = _truth_rule_rows()
-    migration = route_rule_rows(_aggregate_text(RULE_SEED_SQLS))
+    migration = route_rule_rows_multi(RULE_SEED_SQLS)
     bootstrap = route_rule_rows(schema_sql)
     assert len(truth) == 26, f"真值源的规则不是 26 条：{len(truth)}"
     assert len(migration) == 26, f"迁移侧的规则不是 26 条：{len(migration)}"
@@ -1213,17 +1312,21 @@ def test_new_route_operations_all_have_a_price_row(schema_sql):
     不是只给一句 assert）。
     """
     _, mainline, rules, _ = _route_v2_truth()
-    seeded = {key[0] for key in position_price_rows(_aggregate_text(POSITION_SEED_SQLS))}
-    assert set(mainline) <= seeded, \
-        f"主线引用了没有价目行的工序：{sorted(set(mainline) - seeded)}"
+    _, fabric_mainline, _ = _fabric_truth()
+    seeded = {key[0] for key in position_price_rows_multi(POSITION_SEED_SQLS)}
+    for label, steps in (("窗帘主线", mainline), ("布料主线", fabric_mainline)):
+        assert set(steps) <= seeded, \
+            f"{label}引用了没有价目行的工序：{sorted(set(steps) - seeded)}"
     for rule in rules:
         assert rule["operation"] in seeded, \
             f"规则 {rule['trigger_value']} 引用了没有价目行的工序：{rule['operation']}"
         if rule["after_operation"] is not None:
             assert rule["after_operation"] in seeded, \
                 f"规则 {rule['trigger_value']} 的锚点没有价目行：{rule['after_operation']}"
-    # schema.sql 侧同样钉（bootstrap 库的价目行集合必须覆盖主线）
-    assert set(mainline) <= {key[0] for key in position_price_rows(schema_sql)}
+    # schema.sql 侧同样钉（bootstrap 库的价目行集合必须覆盖两条主线）
+    bootstrap_seeded = {key[0] for key in position_price_rows(schema_sql)}
+    assert set(mainline) <= bootstrap_seeded
+    assert set(fabric_mainline) <= bootstrap_seeded
 
 
 def test_position_variant_groups_share_group_unit_and_scope(catalog_rows):

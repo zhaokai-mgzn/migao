@@ -48,14 +48,23 @@ public final class RoutingModelFixture {
     /** 规范主线（9 道，不含工艺槽位）—— 与 {@code routing.py::ROUTE_MAINLINE_STEPS} 逐字同源。 */
     public static List<String> mainline() {
         return List.of("精裁", "三边", "熨烫", "定型", "复烫", "车被",
-                "外帘打卷", "外帘装袋", "外帘发货");
+                "外帘打卷", "打包", "外帘装袋", "外帘发货");
     }
 
     /** 默认路线模板名（与 V71/V72 种子逐字一致）。 */
     public static final String TEMPLATE_NAME = "窗帘工序路线（默认）";
 
-    /** 套级工序（{@code scope='set'}，V67 / issue #4384 A1）—— 逐字抄自 V67 的 UPDATE 名单。 */
-    public static final Set<String> SET_SCOPE_OPERATIONS = Set.of("外帘打卷", "外帘装袋", "外帘发货");
+    // ── 布料基础路线（issue #4529，包 F）──
+    /** 第 4 个部位（布料单专用）。 */
+    public static final String FABRIC_POSITION = "布料";
+    /** 布料路线模板名（与 V79 / schema.sql 种子逐字一致）。 */
+    public static final String FABRIC_TEMPLATE_NAME = "布料工序路线";
+    /** 布料主线（2 道）：`配料` → `打包`。 */
+    public static final List<String> FABRIC_MAINLINE = List.of("配料", "打包");
+
+    /** 套级工序（{@code scope='set'}，V67 / issue #4384 A1 + V79 / #4529 的 `打包`）。 */
+    public static final Set<String> SET_SCOPE_OPERATIONS =
+            Set.of("外帘打卷", "外帘装袋", "外帘发货", "打包");
 
     /**
      * 全部 35 条旧变体（{@code {旧工序名, 分组, 单位, 单价, 必完, 开始标记}}）：与 V54/V56/V58 种子逐字同源。
@@ -172,8 +181,7 @@ public final class RoutingModelFixture {
             {"外帘发货", "后道", "套", "1.0", "false", "false"}};
 
     /** 条件工序/规则会用到的额外工序库行（V56 / V58 种子里的那几道）。 */
-    private static final String[][] EXTRA_OPERATIONS = {
-            {"拼1次-布", "车位", "幅", "0.8", "false", "false"},
+    private static final String[][] EXTRA_OPERATIONS = {            {"拼1次-布", "车位", "幅", "0.8", "false", "false"},
             {"花边-布", "车位", "米", "0.6", "false", "false"},
             {"帘头制作", "车位", "个", "2.0", "false", "false"},
             {"绑带-布", "其他", "套", "0.5", "false", "false"},
@@ -188,6 +196,15 @@ public final class RoutingModelFixture {
             {"拼3次-布", "车位", "幅", "1.6", "false", "false"},
             {"绑带-纱", "其他", "套", "0.5", "false", "false"}};
 
+    /**
+     * 布料路线的两道工序（issue #4529）：{@code {工序名, 分组, 单位, 单价, 必完, 开始标记}}。
+     * 与 V79 / schema.sql / {@code routing.py::OPERATION_CATALOG} 逐字同源（单位 = 米 / 套）。
+     */
+    private static final String[][] FABRIC_OPERATIONS = {
+            {"配料", "后道", "米", "0.0", "false", "false"},
+            {"打包", "后道", "套", "0.0", "false", "false"},
+    };
+
     // ══════════════════════════ 工序库 ══════════════════════════
 
     /** 该租户工序库按名索引（{@code operationsByName} 的返回形态）。 */
@@ -198,7 +215,7 @@ public final class RoutingModelFixture {
         }
         // 三条路线的逐字元数据覆盖（必完/开始标记/单价以 V54/V58 种子为准）
         for (String[][] table : List.of(V54_BULIAN_HANZHE, V54_BULIAN_DAKONG, V58_SHALU_DAKONG,
-                EXTRA_OPERATIONS)) {
+                EXTRA_OPERATIONS, FABRIC_OPERATIONS)) {
             for (String[] row : table) {
                 views.put(row[0], meta(row[0], row[1], row[2], row[3], row[4], row[5]));
             }
@@ -211,7 +228,7 @@ public final class RoutingModelFixture {
         List<ProductionOperation> rows = new ArrayList<>();
         int sort = 1;
         for (String[][] table : List.of(LEGACY_VARIANTS, V54_BULIAN_HANZHE, V54_BULIAN_DAKONG,
-                V58_SHALU_DAKONG, EXTRA_OPERATIONS)) {
+                V58_SHALU_DAKONG, EXTRA_OPERATIONS, FABRIC_OPERATIONS)) {
             for (String[] row : table) {
                 rows.add(ProductionOperation.builder()
                         .id("op-" + row[0]).tenantId(tenantId).name(row[0]).groupName(row[1])
@@ -276,6 +293,16 @@ public final class RoutingModelFixture {
                         .status("active").deleted(0)
                         .build());
             }
+        }
+        // 第 4 个部位（布料，issue #4529）：只有 `配料`/`打包` 适用，且**未定价**（unit_price = null
+        // = 「适用但未定价」）—— 与 `applicable=false` 的「不适用」在数据上可区分。
+        for (String logical : List.of("配料", "打包")) {
+            rows.add(ProductionOperationPosition.builder()
+                    .id("opp-" + logical + "-" + FABRIC_POSITION).tenantId(tenantId)
+                    .logicalName(logical).position(FABRIC_POSITION)
+                    .unitPrice(null).applicable(true)
+                    .status("active").deleted(0)
+                    .build());
         }
         return rows;
     }
@@ -485,6 +512,16 @@ public final class RoutingModelFixture {
                 .id("rt-default").tenantId(tenantId).name(TEMPLATE_NAME).isDefault(true)
                 .positions(List.of("布帘", "纱帘", "帘头"))
                 .mainline(mainline())
+                .status("active").deleted(0)
+                .build();
+    }
+
+    /** 布料路线模板（issue #4529）：`positions=["布料"]` / `mainline=["配料","打包"]` / 非默认。 */
+    public static ProductionRouteTemplate fabricTemplate(Long tenantId) {
+        return ProductionRouteTemplate.builder()
+                .id("rt-fabric").tenantId(tenantId).name(FABRIC_TEMPLATE_NAME).isDefault(false)
+                .positions(List.of(FABRIC_POSITION))
+                .mainline(FABRIC_MAINLINE)
                 .status("active").deleted(0)
                 .build();
     }

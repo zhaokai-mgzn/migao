@@ -325,18 +325,18 @@ def test_rule_query_has_no_row_dropping_filter():
 # ══════════════════════════════════════════════════════════════════════════════════
 
 def test_position_seed_is_visible_and_matches_truth_source():
-    """判据 5a：V71 的 84 行**逐值**等于 `OPERATION_POSITION_PRICES`，且每行对端点可见。
+    """判据 5a：V71 ∪ V79 的 **120 行**逐值等于 `OPERATION_POSITION_PRICES`，且每行对端点可见。
 
     两个半边合起来才是「端点输出 = 真值源」：① 值不漂移（改一格价目即红）；
     ② 没有任何一行被可见性过滤挡在端点之外（种成 `status='disabled'` 即红）。
     """
     seed = _position_seed_rows()
-    assert len(seed) == 84, (
-        f"部位价目种子行数 = {len(seed)}，期望 84（28 逻辑工序 × 3 部位）—— "
+    assert len(seed) == 120, (
+        f"部位价目种子行数 = {len(seed)}，期望 120（30 逻辑工序 × 4 部位，issue #4529）—— "
         f"行数不对时下面的逐值比对会退化成「比较两个残缺集合」"
     )
     truth = _truth_positions()
-    assert len(truth) == 84, f"真值源 OPERATION_POSITION_PRICES 的格数 = {len(truth)}，期望 84"
+    assert len(truth) == 120, f"真值源 OPERATION_POSITION_PRICES 的格数 = {len(truth)}，期望 120"
     drifted = {key: (seed.get(key), truth.get(key)) for key in set(seed) | set(truth)
                if seed.get(key, (None, None, None))[:2] != truth.get(key)}
     assert not drifted, (

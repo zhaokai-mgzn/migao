@@ -417,14 +417,14 @@ def _python_position_rows(src: str) -> list:
 
 
 def test_seed_service_canonical_matrix_matches_truth_source():
-    """判据 E-1：Java 开租播种的 84 行规范矩阵与 `routing.py::OPERATION_POSITION_PRICES` 逐行同值。"""
+    """判据 E-1：Java 开租播种的 **120 行**规范矩阵与 `routing.py::OPERATION_POSITION_PRICES` 逐行同值。"""
     src = _read(SEED_SERVICE)
     rows = _java_array_rows(src, "CANONICAL_POSITION_PRICES")
-    assert len(rows) == 84, f"规范矩阵必须是 84 行（28 逻辑工序 × 3 部位），实测 {len(rows)}"
+    assert len(rows) == 120, f"规范矩阵必须是 120 行（30 逻辑工序 × 4 部位，issue #4529），实测 {len(rows)}"
 
     py_src = _read(ROUTING_PY)
     py_rows = _python_position_rows(py_src)
-    assert len(py_rows) == 84, f"真值源应有 84 行，实测 {len(py_rows)}"
+    assert len(py_rows) == 120, f"真值源应有 120 行，实测 {len(py_rows)}"
     expected = [(logical, position,
                  "null" if price is None else str(price),
                  "true" if applicable else "false")
