@@ -141,11 +141,10 @@ const CRAFT_SPEC_FIELDS: CraftSpecField[] = [
   { label: '实际褶倍', keys: ['fullnessActual', 'fullness_actual'], format: times },
   { label: '面料米数', keys: ['fabricMeters', 'fabric_meters'], format: meters },
   { label: '加工费米数', keys: ['processingMeters', 'processing_meters'], format: meters },
-  // 算料公式（issue #4546）：**只登记订单层 camelCase** —— 串由后端算料引擎产出，订单侧落
-  // `formulaText`。**刻意不登记 snake_case `formula_text`**：本文件三端逐字同源，而 C 端报价卡
-  // 吃 `curtain_calc` 原始输出（含 `formula_text`）⇒ 登记它会让公式串直接出现在**顾客**报价卡上
-  // （超出 #4546 裁定范围，属另一条产品面）。该边界由 `craft-display.test.ts` 钉住。
-  { label: '算料公式', keys: ['formulaText'], format: plainText },
+  // 算料公式（issue #4546）：**两个别名都登记** —— 订单侧落 camelCase `formulaText`，
+  // 报价单/算料输出口径是 snake_case `formula_text`。用户 2026-09-19 追加裁定「**C端也要能看到**」
+  // ⇒ C 端报价卡（吃 `curtain_calc` 原始输出）与订单详情**都**渲染该行。
+  { label: '算料公式', keys: ['formulaText', 'formula_text'], format: plainText },
   { label: '是否对花', keys: ['hasPattern', 'has_pattern'], format: yesNo },
   { label: '花距', keys: ['patternRepeat', 'pattern_repeat'], format: meters },
 ]
