@@ -349,17 +349,23 @@ SELECT 'rr-v72-' || t.id || '-f-' || f.id, t.id, 'option', f.option_name, NULL, 
 ON CONFLICT (id) DO NOTHING;
 
 -- ══════════════════════════════════════════════════════════════════════════════════════
--- ⑥ 旧规则表退场（软删；**表先不 DROP**，可回滚）
+-- ⑥ 旧规则表退场 —— ⚠️ **已移出本迁移**（主会话复核，2026-09-19）
 -- ══════════════════════════════════════════════════════════════════════════════════════
--- 已被 `production_route_rules` 取代（issue #4423 P2 / #4432）。软删而非 DELETE：
--- 保留审计与回滚能力；DROP 留待后续独立迁移（届时须确认零消费者）。
-UPDATE production_option_routings
-   SET deleted = 1, updated_at = NOW()
- WHERE deleted = 0;
-
-UPDATE production_option_factors
-   SET deleted = 1, updated_at = NOW()
- WHERE deleted = 0;
+-- 本段原为「把 `production_option_routings` / `production_option_factors` 的活跃行软删」。
+-- **它不能与「新结构建表 + 回填」同批发布** —— 理由（已实测）：
+--
+--   Java 侧此刻**仍在读**这两张旧表（`ProductionOperationQueryService.optionRoutings` /
+--   `optionFactors` → `ProcessingOrderService` 插条件工序 + 算计件系数）。
+--   而**消费路径切换**（改读 `production_route_rules`）在另一批改动里（P2b）。
+--   ⇒ 若本迁移先把旧行软删、而 Java 还没切过去，**条件工序不会插入、计件系数退回 1.0**
+--      ⇒ **少发工人钱**（正是 #4230「静默黑洞」同族形态）。
+--
+-- ⇒ 本段迁至 **P2b** 的迁移（与「三个消费服务改读 `production_route_rules`」**同一 PR 原子发布**）：
+--     UPDATE production_option_routings SET deleted = 1, updated_at = NOW() WHERE deleted = 0;
+--     UPDATE production_option_factors   SET deleted = 1, updated_at = NOW() WHERE deleted = 0;
+--   （表本身仍**不 DROP**；DROP 留待确认零消费者后的独立迁移。）
+--
+-- 口径不变：旧两表最终仍要退场（同一份规则不留两个真值源），只是**不能提前于消费切换**。
 
 -- ══════════════════════════════════════════════════════════════════════════════════════
 -- ⑦ 兜底 CHECK：insert / remove 的 `operation` 仍必填（只有 factor 档可空）

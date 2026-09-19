@@ -255,11 +255,19 @@ def test_no_hardcoded_default_craft_constant_in_derive_route_key():
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 判据 C：旧规则表退场（软删 + 零读取点；表先不 DROP）
+# 判据 C：旧规则表退场 —— **C-1/C-5/C-6 属 P2b**（软删必须与消费切换同 PR）；
+#        **C-7 属 P2a**（V72 不得提前软删）；C-2/C-3/C-4 属 P2a（搬迁是纯增量）
 # ══════════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.xfail(reason="软删旧规则表**已从 V72 移出**（主会话复核 2026-09-19）："
+                         "Java 此刻仍读旧表，提前软删 = 条件工序不插 / 系数退回 1.0 = 少发工人钱；"
+                         "软删改与「三个消费服务改读规则表」同 PR 原子发布（P2b）", strict=False)
 def test_old_rule_tables_soft_deleted(sql: str | None = None):
-    """判据 C-1：旧两表的活跃行软删为 0（判据 12）。"""
+    """判据 C-1（**P2b**）：旧两表的活跃行软删为 0（判据 12）。
+
+    ⚠️ 本判据**不属于 P2a** —— 见 `test_v72_must_not_retire_legacy_rule_tables` 的理由：
+    软删必须与消费路径切换同 PR 原子发布，否则中间态**少发工人钱**。
+    """
     body = _v72_body(sql)
     for table in RETIRED_TABLES:
         stmt = re.search(r"UPDATE\s+" + table + r"\b[\s\S]*?;", body, re.I)
@@ -363,3 +371,25 @@ def test_schema_sql_carries_p2_terminal_state():
     assert re.search(r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?factor\b", schema, re.I), (
         f"schema.sql 缺 {RULE_TABLE}.factor 列（同 #3270 形态）"
     )
+
+
+def test_v72_must_not_retire_legacy_rule_tables(sql: str | None = None):
+    """判据 C-7（**P2a 的「行为零变化」守卫**）：V72 **不得**软删旧规则表。
+
+    理由（已实测，主会话 2026-09-19 复核）：Java 侧此刻**仍读**这两张旧表
+    （`ProductionOperationQueryService.optionRoutings` / `optionFactors` →
+    `ProcessingOrderService` 插条件工序 + 算计件系数），而**消费路径切换在 P2b**。
+    ⇒ 若本迁移先把旧行软删、Java 还没切过去 ⇒ **条件工序不会插入、计件系数退回 1.0**
+    ⇒ **少发工人钱**（#4230「静默黑洞」同族形态）。
+
+    ⇒ 软删必须与「三个消费服务改读 `production_route_rules`」**同一 PR 原子发布**。
+
+    **红证**：把两条 `UPDATE production_option_*  SET deleted = 1` 加回 V72 ⇒ 本判据红。
+    """
+    body = _v72_body(sql)
+    for table in ("production_option_routings", "production_option_factors"):
+        assert not re.search(rf"UPDATE\s+{table}\b", body, re.I), (
+            f"V72 软删了旧规则表 `{table}` —— 但 Java **仍在读它**（消费切换在 P2b）⇒ "
+            f"条件工序不插、计件系数退回 1.0 = **少发工人钱**。"
+            f"软删必须与消费切换同一 PR 原子发布（本判据是「P2a 行为零变化」的承重断言）。"
+        )
