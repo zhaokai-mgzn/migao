@@ -111,6 +111,17 @@ class CraftCalcRequest(BaseModel):
             "韩褶 ⇒ 韩折公式、打孔 ⇒ 褶倍数公式（默认 2 倍）；本端点只透传，不复制推导表。"
         ),
     )
+    config: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "算料公式参数（issue #4528 = 包 E）：**租户级**配置，键集 = 算料引擎 "
+            "`curtain_calc.DEFAULT_CRAFT_CALC_CONFIG`（per_fold_single / per_fold_mixed_times / "
+            "margin_single / margin_multi / min_fullness / tiers / default_formula / side_margin / "
+            "meters_rounding_step）。**缺省/None ⇒ 引擎默认值**（未配置租户的既有口径一字不变）。"
+            "非法值 ⇒ 400（**不静默回退默认值** —— 静默 = 算错钱且无人知道）。"
+            "⚠️ 本端点只做**键类型归一**（JSON 对象键恒为字符串 ⇒ 拼次键转回 int），不复制校验规则。"
+        ),
+    )
 
 
 @router.post("/tools/execute")
@@ -321,6 +332,53 @@ def _formula_text(
     )
 
 
+def _normalize_craft_calc_config(config: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """线上配置（JSON）→ 算料引擎入参：**只做键类型归一**，不复制任何校验/默认值。
+
+    ⚠️ 为什么必须归一：JSON 对象键**恒为字符串**（`{"1": 0.65}`），而引擎的
+    `per_fold_mixed_times` 键是**正整数拼次**（`{1: 0.65}`；`resolve_craft_calc_config` 逐键
+    校验 `isinstance(int)`）⇒ 不转就整份配置被拒（400），商家改了系数却算不出料。
+
+    **不静默丢档**：键转不成 int ⇒ 显式 `ValueError`（丢一档 = 拼色退回单色系数 = 少算用料）。
+    其余键**原样透传** —— 校验与默认值都在引擎（`resolve_craft_calc_config`），
+    这里再抄一份就是第二份口径。
+    """
+    if not config:
+        return None
+    out = dict(config)
+    mixed = out.get("per_fold_mixed_times")
+    if mixed is not None:
+        if not isinstance(mixed, dict):
+            raise ValueError(f"算料配置 per_fold_mixed_times 必须是映射（收到 {mixed!r}）")
+        normalized: Dict[int, Any] = {}
+        for times, per_fold in mixed.items():
+            try:
+                normalized[int(times)] = per_fold
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"算料配置 per_fold_mixed_times 的拼次必须是正整数（收到 {times!r}）"
+                ) from None
+        out["per_fold_mixed_times"] = normalized
+    return out
+
+
+@router.get("/production/craft-calc-config")
+async def craft_calc_config_defaults(
+    authorized: bool = Depends(verify_service_token),
+):
+    """算料公式配置的**引擎默认值**（issue #4528 = 包 E，内部端点）。
+
+    为什么有这个端点（而不是 Java 侧写一份默认常量）：默认值**就是**算料口径的一部分，
+    唯一实现在 `curtain_calc.DEFAULT_CRAFT_CALC_CONFIG`。admin-api 的
+    `GET /api/admin/production/craft-calc-config` 在**本租户没有配置行**时要回默认值 +
+    `source='default'`，若在 Java 侧再抄一份常量 = **第二份会漂的默认值**
+    （issue #4528 明确「不做开租播种」的同一理由）⇒ 默认值的来源只能是引擎。
+
+    返回 `data.config`：键集 == `DEFAULT_CRAFT_CALC_CONFIG`（**恰好**，不多不少）。
+    """
+    return make_response(True, data={"config": dict(curtain_calc.DEFAULT_CRAFT_CALC_CONFIG)})
+
+
 @router.post("/production/craft-calc")
 async def craft_calc(
     request: CraftCalcRequest,
@@ -344,10 +402,23 @@ async def craft_calc(
     ② 档位低于行业下限 ⇒ 400；
     ③ **拼色命中纸表未登记的拼次**（如 `拼3次`）⇒ 400 `MIXED_PER_FOLD_NOT_REGISTERED`
     —— 不插值、不退回单色系数（那是发明口径）。
+
+    `config`（issue #4528 = 包 E）：**租户级**算料公式参数，由 admin-api 从
+    `craft_calc_configs` 读出后随请求传来；缺省 ⇒ 引擎默认值（未配置租户口径一字不变）。
+    ⚠️ 缺口判定与算料**读同一份配置** —— 只给算料不给缺口判定，会让「商家自定义了 `拼3次`
+    系数」的租户被误报「纸表未登记」（配置不生效的一种静默形态）。
     """
+    try:
+        config = _normalize_craft_calc_config(request.config)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"success": False, "error": {"code": "CRAFT_CALC_INVALID_INPUT", "message": str(e)}},
+        ) from e
     # 拼色缺口判定**先于**算料：纸表只有「1个折 0.65 / 2个折 1.2」两行，
     # `拼3次` 是表外项 ⇒ 不猜、不插值，显式报缺口（issue #4421 边界）。
-    gap = curtain_calc.mixed_per_fold_gap(request.special_options)
+    # ⚠️ 传 `config`（issue #4528）：已登记档位由**该租户的配置**决定，不是模块常量。
+    gap = curtain_calc.mixed_per_fold_gap(request.special_options, config)
     if gap:
         raise HTTPException(
             status_code=400,
@@ -375,6 +446,7 @@ async def craft_calc(
             special_options=request.special_options,
             formula=request.formula,
             craft=request.craft,
+            config=config,
         )
     except ValueError as e:  # 倍数低于行业下限（MIN_FULLNESS）/ 未知公式名等入参非法
         raise HTTPException(

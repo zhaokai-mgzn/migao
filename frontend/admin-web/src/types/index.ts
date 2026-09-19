@@ -874,6 +874,45 @@ export interface OperationPosition {
   applicable?: boolean | null
 }
 
+/**
+ * 算料公式**租户级配置**（issue #4528 = 包 E）—— 键与算料引擎
+ * `curtain_calc.DEFAULT_CRAFT_CALC_CONFIG` **逐字同名**
+ * （`GET|PUT /api/admin/production/craft-calc-config` 的 `data.config`）。
+ *
+ * ⚠️ 前端**不持有任何默认值**：本租户没有配置行时，后端返回的就是**引擎默认值**
+ * （`source='default'`）⇒ 页面直接渲染它。在 TS 侧再抄一份默认值 = 第二份会漂的默认值
+ * （引擎改默认、页面还显示旧值 ⇒ 商家按错的口径改配置）。
+ */
+export interface CraftCalcConfig {
+  /** 单色每折吃布（米）—— 折数法：用料 = 每折吃布 × 折数 + 余量 */
+  per_fold_single: number
+  /** 拼色「拼次 → 每折吃布（米）」；键是拼次的字符串形态（JSON 对象键恒为字符串） */
+  per_fold_mixed_times: Record<string, number>
+  /** 单开余量（米） */
+  margin_single: number
+  /** 多开余量（米） */
+  margin_multi: number
+  /** 褶倍下限（行业红线，可配但不可关） */
+  min_fullness: number
+  /** 工艺档位 `{档位名: {fullness, label}}` */
+  tiers: Record<string, { fullness: number; label?: string }>
+  /** 兜底用料公式：`pleat` 韩折公式（折数法）/ `fullness` 褶倍数公式（倍数法） */
+  default_formula: string
+  /** 定宽买高上下卷边（米） */
+  side_margin: number
+  /** 用料**向上进位**步长（米） */
+  meters_rounding_step: number
+}
+
+/**
+ * 算料配置读面响应：`source='default'` = 本租户**没有**配置行（值 = 算料引擎默认值）；
+ * `'stored'` = 已保存的商家配置。页面据此区分「系统默认值」与「我的配置」。
+ */
+export interface CraftCalcConfigResponse {
+  source: string
+  config: CraftCalcConfig
+}
+
 /** 统一规则区一条：工艺变体 ∪ 特殊选项的**路线编排**规则（`action` = insert / remove） */
 export interface RouteRule {
   id: number

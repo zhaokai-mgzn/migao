@@ -999,6 +999,56 @@ COMMENT ON COLUMN production_crafts.is_default IS
     '不变式：每租户活跃工艺中**恰好一条**（部分唯一索引 uk_production_crafts_tenant_default 保证 ≤1）。'
     '⚠️ 缺默认工艺时**不得静默取常量**：要么 fail-closed，要么取种子默认值 + 在 route_source 上显式标记。';
 
+-- ── 算料公式**租户级配置**（V80，issue #4528 = 包 E；设计 docs/design/craft-calc-and-fabric-routing.md §4.2）──
+-- bootstrap 终态：本文件由 docker-entrypoint-initdb.d 执行，**迁移链不在该栈运行**
+-- ⇒ 只写迁移 = 新建库无该表 ⇒ 配置读写端点 500（同 #3270 形态，不是账面问题）。
+-- ⚠️ **不插种子行**：缺行 = 用引擎默认值（`source='default'`）—— 默认值唯一来源是算料引擎
+-- `curtain_calc.DEFAULT_CRAFT_CALC_CONFIG`，库里再种一份 = 第二份会漂的默认值。
+-- ⚠️ 列名与引擎配置键**逐字同名**（读写零映射）；**没有** `default_fabric_width`
+-- （设计文档 §4.2 的提案键，包 D 实现里不存在 ⇒ 以实现为准，见迁移 V80 头注释）。
+CREATE TABLE IF NOT EXISTS craft_calc_configs (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    per_fold_single NUMERIC(6,3) NOT NULL DEFAULT 0.25,
+    per_fold_mixed_times JSONB NOT NULL DEFAULT '{"1": 0.65, "2": 1.2}'::jsonb,
+    margin_single NUMERIC(6,3) NOT NULL DEFAULT 0.2,
+    margin_multi NUMERIC(6,3) NOT NULL DEFAULT 0.3,
+    min_fullness NUMERIC(6,3) NOT NULL DEFAULT 1.5,
+    tiers JSONB NOT NULL DEFAULT
+        '{"standard": {"fullness": 2.0, "label": "标准工艺"}, "economy": {"fullness": 1.8, "label": "经济工艺"}}'::jsonb,
+    default_formula VARCHAR(16) NOT NULL DEFAULT 'pleat',
+    side_margin NUMERIC(6,3) NOT NULL DEFAULT 0.3,
+    meters_rounding_step NUMERIC(6,3) NOT NULL DEFAULT 0.1,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+-- 租户级**单行**（部分唯一索引：软删行不占位）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_craft_calc_configs_tenant
+    ON craft_calc_configs (tenant_id)
+    WHERE deleted = 0;
+COMMENT ON TABLE craft_calc_configs IS
+    '算料公式**租户级配置**（V80，issue #4528 = 包 E）。单行/租户，**缺行 = 用引擎默认值**'
+    '（source=''default''）—— 不做开租播种：默认值唯一来源是算料引擎 '
+    'curtain_calc.DEFAULT_CRAFT_CALC_CONFIG（GET /api/internal/production/craft-calc-config）。';
+COMMENT ON COLUMN craft_calc_configs.per_fold_single IS
+    '单色每折吃布（米）。引擎默认 0.25。护栏：必须 > 0（0/负 ⇒ 写面 422，不静默回退默认值）。';
+COMMENT ON COLUMN craft_calc_configs.per_fold_mixed_times IS
+    '拼色「拼次 → 每折吃布（米）」映射（JSONB，键 = 正整数拼次的**字符串形态**）。'
+    '护栏：非空、键为正整数、值 > 0；未登记拼次不得静默退回单色系数（少算用料）。';
+COMMENT ON COLUMN craft_calc_configs.min_fullness IS
+    '褶倍下限（护栏，行业美学红线）。引擎默认 1.5。**可配但不可关**：写面护栏要求 >= 引擎默认值。';
+COMMENT ON COLUMN craft_calc_configs.tiers IS
+    '工艺档位（JSONB：{档位名: {fullness, label}}）。护栏：非空、每档 fullness > 0 且 >= min_fullness。';
+COMMENT ON COLUMN craft_calc_configs.default_formula IS
+    '兜底用料公式：pleat（韩折公式＝折数法，默认）/ fullness（褶倍数公式＝倍数法）。'
+    '⚠️ 只是**工艺推导表缺失时的兜底**（韩褶/打孔由 craft 推导），不是恒定生效的默认值。';
+COMMENT ON COLUMN craft_calc_configs.meters_rounding_step IS
+    '用料米数**向上进位**步长（米），引擎默认 0.1。护栏：必须 > 0（截断/四舍五入 = 抹零）。';
+COMMENT ON COLUMN craft_calc_configs.status IS
+    '配置行状态（范式同 production_crafts，V72）。读面按 deleted = 0 取行，不按 status 过滤。';
+
 CREATE TABLE IF NOT EXISTS processing_position_operations (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),

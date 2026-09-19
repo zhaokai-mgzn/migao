@@ -76,6 +76,7 @@
     "V75__backfill_legacy_special_option_names_fix.sql": "sha256:6dfe340516c108f11dc2347b07872a2b68a7ae6ecd206cdf5aaeb3aec4f15b78",
     "V76__redo_v72_with_sort_order_fix.sql": "sha256:c6fdcb0ebefead9d510ea43bf8d2af2f3d7a2c3b0e10e76e9724787346e93cd9",
     "V77__customer_option_unit_price.sql": "sha256:24d7c15bf5b768a38887ab8382dffa129d9ca6aac4122b687c7f35693dec5f64",
-    "V78__add_craft_hint_to_processing_items.sql": "sha256:3cd00c596e50de3e8b37d040c03af4993fb0058f8698de79c7354101c2da6aa1"
+    "V78__add_craft_hint_to_processing_items.sql": "sha256:3cd00c596e50de3e8b37d040c03af4993fb0058f8698de79c7354101c2da6aa1",
+    "V80__create_craft_calc_configs.sql": "sha256:d4d7476319d230b20aaa8a6f8596434e073df8d884a6a800442a93413e116941"
   }
 }
