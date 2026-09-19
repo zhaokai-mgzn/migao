@@ -1479,6 +1479,23 @@ cases:
           fallback: "确认"
       - auto_respond:
           fallback: "确认"
+    # ── 前置自断言 + 自清理（issue #4406 的 burn-down 缴费；metric=entries ⇒ 必须**整条**销账）──
+    # 本用例命中的两条存量违规 = CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION。
+    # 口径与 OR-018 / OR-019（#4421/#4435 已落地）**逐字同源**，未新造：
+    # 多轮下单用例按**商品名**定位明细行，「该名字在种子栈里唯一」是它真正依赖且**只读**的前置；
+    # 同名副本会让 agent 合理地要求澄清 ⇒ order_create 永不发生，报告上只表现为
+    # `unmatched expectation` = 看起来像 agent 不干活（PG-013 / CU-003 的形态）。
+    # ⚠️ 有意**不**声明 `order_count_for_phone`：本用例自己就会建单 ⇒ 漂移判据（缺省
+    # `max_growth: 0`）必然判红（硬写一条注定红的守卫）。商品维只读 ⇒ 漂移恒为 0。
+    # 断言（user_inputs / expectations / must_succeed / amount_verify / db_verify / order_before）
+    # **原样未动、无放宽**。
+    namespaces:
+      - "product_name:遮光窗帘"
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     expectations:
       - tool: product_search
       - tool: product_detail

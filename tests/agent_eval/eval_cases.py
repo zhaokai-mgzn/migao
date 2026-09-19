@@ -3707,6 +3707,8 @@ _CASE_OR_020 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['遮光窗帘'], 'expect_quantities': {'遮光窗帘': 3}}],
+    namespaces=['product_name:遮光窗帘', 'customer_phone:13800138000'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── OR-021 [NORMAL] C 端缺收货信息时不得自我否定能力 - 必须查/问后继续下单（能力下限）（源: cases/order.yml）──
