@@ -408,7 +408,7 @@ class ProductionServiceTest {
     }
 
     @Test
-    @DisplayName("#4589 报工快照只固化单价（unit_price），**不再**写系数快照")
+    @DisplayName("#4589/#4604 报工快照只固化单价（factor 仍不写）；读时按快照的系数算 —— 新报工恒 1")
     void reportSnapshotsUnitPriceWithoutFactor() {
         when(positionOperationMapper.selectById("op-1"))
                 .thenReturn(op("op-1", "韩褶-布", "10.00", false, "pending", "0.00", "0.40", "1.70"));
@@ -426,6 +426,12 @@ class ProductionServiceTest {
         assertThat(inserted.getValue().getFactor())
                 .as("系数快照已退场（#4589）：报工不再写 factor")
                 .isNull();
+        // #4604 读面同口径：新报工快照 factor = NULL ⇒ 系数取 1 ⇒ 2 × 0.40 = 0.80
+        // （反向护栏：不得因为实例上仍是 1.70 就把系数加回新单）
+        when(workLogMapper.selectList(any())).thenReturn(List.of(inserted.getValue()));
+        assertThat((BigDecimal) service.piecework(ORDER_ID, TENANT).get("total"))
+                .as("新报工 factor 快照为 NULL ⇒ 读时取 1，不乘（issue #4604）")
+                .isEqualByComparingTo("0.80");
     }
 
     @Test
