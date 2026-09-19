@@ -92,12 +92,23 @@ class OrderServiceTest {
     @Mock
     private ClientRequestIdService clientRequestIdService;
 
+    /** 加工费取价点（issue #4406）：用**真实**取价对象（价目表 Mapper 给空表 ⇒ 未定价 = 0）——
+     * 取价算法本身的判据见 {@link ProcessingFeeCalculatorTest}；本类只断言「接线与落库」。 */
+    @Mock
+    private com.migao.admin.mapper.ProcessingFeeCombinationMapper processingFeeCombinationMapper;
+
+    private ProcessingFeeCalculator processingFeeCalculator;
+
     private Order testOrder;
     private OrderItem testOrderItem;
 
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(1L);
+        // 加工费取价点（issue #4406）：真实对象 + 空价目表 Mapper ⇒ 无组合价 ⇒ 未定价 0
+        // （存量用例都不配组合价，故金额口径与接线前一致；接线判据见本类末尾的 #4406 段）
+        processingFeeCalculator = new ProcessingFeeCalculator(processingFeeCombinationMapper);
+        ReflectionTestUtils.setField(orderService, "processingFeeCalculator", processingFeeCalculator);
 
         // 初始化 MyBatis-Plus 实体 lambda 缓存，使 LambdaUpdateWrapper 的 Order::getId 等方法引用可解析
         MybatisConfiguration conf = new MybatisConfiguration();
@@ -427,8 +438,14 @@ class OrderServiceTest {
         assertThat(saved.getPleatCount()).isEqualTo(48);
         assertThat(saved.getHasPattern()).isFalse();
         assertThat(saved.getCorner()).isEqualTo("转角");
-        // 原有列一字不动（本包只加列，不改既有落库语义）
-        assertThat(saved.getProcessingInfo()).isSameAs(info);
+        // 原有键一字不动（本包只加列，不改既有落库语义）。
+        // issue #4406 起落库的是 processing_info 的**可变副本 + processingFeeDetail**
+        // （不就地改调用方传进来的对象；`Map.of` 一类不可变容器 put 会抛 ⇒ 下单 500）。
+        Map<String, Object> expectedStored = new LinkedHashMap<>(info);
+        expectedStored.put("processingFeeDetail", feeDetailOf(saved.getProcessingInfo()));
+        assertThat(saved.getProcessingInfo()).isEqualTo(expectedStored);
+        assertThat(feeDetailOf(saved.getProcessingInfo())).containsKey("fee_source");
+        assertThat(info).doesNotContainKey("processingFeeDetail");
         assertThat(saved.getSubtotal()).isEqualByComparingTo("599.00");
     }
 
@@ -1793,6 +1810,208 @@ class OrderServiceTest {
 
         // then
         verify(notificationService).triggerByEvent(eq(1L), eq("order_status_changed"), any());
+    }
+
+    // ================================================================
+    // 加工费消费面接线（issue #4406，case_ids: PG-041）
+    //   取价算法本身的判据（命中/未定价/米数/R15/R9）见 ProcessingFeeCalculatorTest；
+    //   本段断言的是**接线与落库**：谁发射（OrderService 调取价点）、落库形态（processingFeeDetail）、
+    //   快照优先（R13 改价后历史订单一字不变）、读面读存量（不重算）。
+    // ================================================================
+
+    /**
+     * 价目表打桩：本类的取价点是**真实对象**（{@code OrderServiceTest.setUp} 构造），
+     * 故这里只桩「商家配了哪些组合价」—— 金额算法仍走生产代码（不把被测对象 mock 掉）。
+     */
+    private void givenPricedCombinations(String compositionKey, String unitPrice) {
+        when(processingFeeCombinationMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(com.migao.admin.entity.ProcessingFeeCombination.builder()
+                        .id("combo-" + compositionKey).tenantId(1L).compositionKey(compositionKey)
+                        .unitPrice(new BigDecimal(unitPrice)).status("active").source("实证").deleted(0)
+                        .build()));
+    }
+
+    /** 从落库的 {@code processing_info} 里取可审计构成（{@code Map<?,?>} 的键被擦除 ⇒ 断言用取值式）。 */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> feeDetailOf(Object processingInfo) {
+        Object detail = ((Map<String, Object>) processingInfo).get("processingFeeDetail");
+        assertThat(detail).isInstanceOf(Map.class);
+        return (Map<String, Object>) detail;
+    }
+
+    private OrderCreateRequest createOrderRequestWithFee(Object processingInfo) {
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setCustomerName("张三");
+        request.setCustomerPhone("13800138000");
+        request.setCustomerAddress("北京市朝阳区");
+
+        OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();
+        item.setProductId("prod-001");
+        item.setProductName("蜂巢帘");
+        item.setQuantity(BigDecimal.valueOf(2));
+        item.setUnitPrice(new BigDecimal("299.50"));
+        item.setSubtotal(new BigDecimal("599.00"));
+        item.setProcessingInfo(processingInfo);
+        request.setItems(List.of(item));
+
+        when(orderMapper.insert(any(Order.class))).thenAnswer(inv -> {
+            inv.<Order>getArgument(0).setId("order-new");
+            return 1;
+        });
+        when(orderMapper.selectById("order-new")).thenReturn(Order.builder()
+                .id("order-new").tenantId(1L).orderNo("ORD-4406-0001").status("pending").build());
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(orderLogisticsMapper.selectByOrderId("order-new", 1L)).thenReturn(List.of());
+        return request;
+    }
+
+    @Test
+    @DisplayName("PG-041 判据 1·选配组合命中 ⇒ 落库加工费 = 组合单价 × 加工费米数（不再 Σ 加工项）")
+    void createOrder_processingFeeComesFromMatchedCombination() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("curtainType", "布帘");
+        info.put("craft", "韩褶");
+        info.put("processingMeters", new BigDecimal("12.30"));
+        info.put("processingItems", List.of(
+                Map.of("id", "p1", "name", "韩褶", "unitPrice", new BigDecimal("9.50"),
+                        "quantity", new BigDecimal("2")),
+                Map.of("id", "p2", "name", "打孔", "unitPrice", new BigDecimal("9.50"),
+                        "quantity", new BigDecimal("2"))));
+
+        givenPricedCombinations("打孔+韩褶", "8.00");
+
+        OrderCreateRequest request = createOrderRequestWithFee(info);
+        orderService.createOrder(request, 1L);
+
+        // 总金额 = 商品 599.00 + 加工费（8.00 × 12.30 = 98.40）；**不是** Σ 加工项（9.50×2×2 = 38.00）
+        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).insert(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getTotalAmount()).isEqualByComparingTo("697.40");
+        assertThat(orderCaptor.getValue().getTotalAmount()).isNotEqualByComparingTo("637.00");
+
+        // 可审计构成随行落库（processing_info.processingFeeDetail）—— 读面与快照都读这一份
+        ArgumentCaptor<OrderItem> itemCaptor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(itemCaptor.capture());
+        Object stored = itemCaptor.getValue().getProcessingInfo();
+        assertThat(stored).isInstanceOf(Map.class);
+        assertThat(feeDetailOf(stored))
+                .containsEntry("composition", "打孔+韩褶")
+                .containsEntry("fee_source", "matched")
+                .containsEntry("unit_price", new BigDecimal("8.00"))
+                .containsEntry("price_source", "实证")
+                .containsEntry("meters", new BigDecimal("12.30"))
+                .containsEntry("meters_source", "processingMeters")
+                .containsEntry("amount", new BigDecimal("98.40"));
+    }
+
+    @Test
+    @DisplayName("PG-041 判据 2·未定价组合 ⇒ 落库加工费 0 + fee_source=unpriced + 提示（不回落 Σ 加工项）")
+    void createOrder_unpricedCombinationStoresZeroAndHint() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("curtainType", "布帘");
+        info.put("processingMeters", new BigDecimal("12.30"));
+        // Σ 加工项口径会算出 9.50 × 2 = 19.00 —— 注入法：若还回落它，金额断言即红
+        info.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔",
+                "unitPrice", new BigDecimal("9.50"), "quantity", new BigDecimal("2"))));
+
+        // 库里只有「定型+打孔+韩褶」的价，本行选配是「打孔」⇒ 无命中
+        givenPricedCombinations("定型+打孔+韩褶", "8.00");
+
+        OrderCreateRequest request = createOrderRequestWithFee(info);
+        orderService.createOrder(request, 1L);
+
+        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).insert(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getTotalAmount()).isEqualByComparingTo("599.00");
+        assertThat(orderCaptor.getValue().getTotalAmount()).isNotEqualByComparingTo("618.00");
+
+        ArgumentCaptor<OrderItem> itemCaptor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(itemCaptor.capture());
+        Map<String, Object> detail = feeDetailOf(itemCaptor.getValue().getProcessingInfo());
+        assertThat(detail).containsEntry("fee_source", "unpriced").containsEntry("amount", BigDecimal.ZERO);
+        assertThat(String.valueOf(detail.get("hint"))).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("PG-041 判据 3（R13）·改组合价 ⇒ 新单按新价；已生成订单的落库构成一字不变")
+    void changingCombinationPriceLeavesExistingOrderUntouched() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("processingMeters", new BigDecimal("10.00"));
+        info.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔",
+                "unitPrice", new BigDecimal("9.50"), "quantity", new BigDecimal("2"))));
+
+        // 第一次下单：组合价 ¥8.00/m ⇒ 80.00，落库构成记下当时那一份
+        givenPricedCombinations("打孔", "8.00");
+        OrderCreateRequest request = createOrderRequestWithFee(info);
+        orderService.createOrder(request, 1L);
+        ArgumentCaptor<OrderItem> first = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(first.capture());
+        Map<String, Object> firstDetail = feeDetailOf(first.getValue().getProcessingInfo());
+        assertThat(firstDetail).containsEntry("unit_price", new BigDecimal("8.00"))
+                .containsEntry("amount", new BigDecimal("80.00"));
+
+        // 商家改价（¥9.50/m）后：新单按新价 ⇒ 95.00
+        givenPricedCombinations("打孔", "9.50");
+        OrderCreateRequest requestAfterPriceChange = createOrderRequestWithFee(info);
+        orderService.createOrder(requestAfterPriceChange, 1L);
+        ArgumentCaptor<OrderItem> second = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper, times(2)).insert(second.capture());
+        Map<String, Object> secondDetail = feeDetailOf(second.getAllValues().get(1).getProcessingInfo());
+        assertThat(secondDetail).containsEntry("unit_price", new BigDecimal("9.50"))
+                .containsEntry("amount", new BigDecimal("95.00"));
+
+        // 快照优先：第一单落库的那一份**一字不变**（读面也不重算 ⇒ 见下条用例）
+        assertThat(firstDetail).containsEntry("unit_price", new BigDecimal("8.00"))
+                .containsEntry("amount", new BigDecimal("80.00"));
+    }
+
+    @Test
+    @DisplayName("PG-041 判据 3（R13）·读面读**落库**加工费：改价后历史订单金额不随价目表漂移")
+    void readPathsReturnStoredFeeNotRecomputed() {
+        testOrderItem.setProcessingInfo(Map.of(
+                "processingItems", List.of(Map.of("id", "p1", "name", "打孔",
+                        "unitPrice", new BigDecimal("9.50"), "quantity", new BigDecimal("2"))),
+                "processingFeeDetail", Map.of(
+                        "composition", "打孔", "fee_source", "matched",
+                        "unit_price", new BigDecimal("8.00"), "meters", new BigDecimal("12.30"),
+                        "amount", new BigDecimal("98.40"))));
+
+        // 详情：订单级 = 落库值 98.40（Σ 加工项会得 19.00），行级同时透出可审计构成
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        OrderDetailResponse detail = orderService.getOrderById("order-001");
+        assertThat(detail.getProcessingFee()).isEqualByComparingTo("98.40");
+        assertThat(detail.getItems().get(0).getProcessingFee()).isEqualByComparingTo("98.40");
+        assertThat(detail.getItems().get(0).getProcessingFeeDetail()).isInstanceOf(Map.class);
+        assertThat(feeDetailOf(Map.of("processingFeeDetail",
+                detail.getItems().get(0).getProcessingFeeDetail())))
+                .containsEntry("fee_source", "matched")
+                .containsEntry("unit_price", new BigDecimal("8.00"));
+
+        // 列表：同一份落库值（与详情逐值一致 —— 单一真值源）
+        Page<Order> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testOrder));
+        mockPage.setTotal(1);
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(mockPage);
+        PageResponse<OrderListResponse> page = orderService.getOrderPage(
+                1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null);
+        assertThat(page.getItems().get(0).getProcessingFee()).isEqualByComparingTo("98.40");
+    }
+
+    @Test
+    @DisplayName("PG-041 存量单（无 processingFeeDetail）⇒ 读面 0 且不拿 Σ 加工项冒充历史加工费")
+    void legacyOrderWithoutStoredDetailReadsZero() {
+        testOrderItem.setProcessingInfo(Map.of(
+                "processingItems", List.of(Map.of("id", "p1", "name", "打孔",
+                        "unitPrice", new BigDecimal("9.50"), "quantity", new BigDecimal("2")))));
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+
+        OrderDetailResponse detail = orderService.getOrderById("order-001");
+
+        assertThat(detail.getProcessingFee()).isEqualByComparingTo("0");
+        assertThat(detail.getProcessingFee()).isNotEqualByComparingTo("19.00");
+        assertThat(detail.getItems().get(0).getProcessingFeeDetail()).isNull();
     }
 
     // ================================================================
