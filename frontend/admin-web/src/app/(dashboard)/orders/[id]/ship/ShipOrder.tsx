@@ -154,8 +154,13 @@ export default function ShipOrder() {
       .getCustomers({ keyword: phone, page: 1, size: 5 })
       .then((res) => {
         if (cancelled) return
-        // 关键词是模糊匹配 ⇒ 必须按手机号**精确**命中，否则会把别的客户的常用物流带出来
-        const hit = (res.data?.data?.items || []).find((c) => c.phone === phone)
+        // 关键词是模糊匹配 ⇒ 必须按手机号**精确**命中，否则会把别的客户的常用物流带出来。
+        // 两个号码都算命中（issue #4436）：订单带的是**收货电话**，而客户档案里
+        // 「默认收货电话」可以≠「账户手机号」（送到工地/仓库、联系人是另一人）——
+        // 只认账户手机号会让那类订单静默带不出。
+        const hit = (res.data?.data?.items || []).find(
+          (c) => c.phone === phone || c.defaultReceiverPhone === phone
+        )
         if (!hit) return
         if (hit.defaultLogisticsType) setLogisticsType(hit.defaultLogisticsType)
         if (hit.defaultLogisticsCompany) setLogisticsCompany(hit.defaultLogisticsCompany)

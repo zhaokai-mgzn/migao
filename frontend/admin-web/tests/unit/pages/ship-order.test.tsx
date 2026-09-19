@@ -256,6 +256,37 @@ describe('ShipOrder', () => {
 
   // ===== 客户常用物流档案带出（issue #4419 / UI-047）=====
 
+  it('订单收货电话 = 客户档案「默认收货电话」（≠ 账户手机号）时同样带出（issue #4436）', async () => {
+    mockGetCustomers.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            {
+              id: 'c-recv',
+              // 账户手机号与订单收货电话**不同** —— 送到工地/仓库、联系人是另一人的常态
+              phone: '13900139001',
+              defaultReceiverPhone: '13900139000',
+              defaultLogisticsType: 'logistics',
+              defaultLogisticsCompany: '四季安物流',
+            },
+          ],
+          total: 1,
+        },
+      },
+    })
+    render(<ShipOrder />)
+
+    await waitFor(() => {
+      expect(mockGetCustomers).toHaveBeenCalledWith(
+        expect.objectContaining({ keyword: '13900139000' })
+      )
+    })
+    await waitFor(() => {
+      expect(screen.getAllByRole('combobox')[0]).toHaveValue('四季安物流')
+    })
+    expect(screen.getByRole('radio', { name: '物流/专线' })).toBeChecked()
+  })
+
   it('按订单手机号精确查客户档案，带出常用物流方式与公司', async () => {
     mockGetCustomers.mockResolvedValue({
       data: {
