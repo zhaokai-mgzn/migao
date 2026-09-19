@@ -5,6 +5,7 @@ import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.PieceworkSettlementService;
+import com.migao.admin.service.OrderService;
 import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
 import com.migao.admin.service.ProductionOperationQueryService;
@@ -56,6 +57,7 @@ public class ProductionController {
     private final ProductionRoutingCommandService productionRoutingCommandService;
     private final ProcessingOrderService processingOrderService;
     private final PieceworkSettlementService pieceworkSettlementService;
+    private final OrderService orderService;
 
     /**
      * 加工费组合定价（V68，issue #4386）：读面（列表 / 缺口）+ 写面（新建 / 改价 / 停用）。
@@ -137,6 +139,34 @@ public class ProductionController {
     public ApiResponse<Map<String, Object>> pieceworkSettlementDetail(@PathVariable String id) {
         return ApiResponse.success(pieceworkSettlementService.detail(
                 id, TenantContext.getTenantId()));
+    }
+
+    /**
+     * **发货**（issue #4347 §二.2，用户裁定「发货下放到工人扫码端」）。
+     * POST /api/admin/production/orders/{orderId}/ship
+     * body: {@code {trackingNo, logisticsCompany?}}
+     *
+     * <p><b>为什么是一个原子端点而不是复用两个管理端点</b>：
+     * {@code PUT /orders/{id}/logistics} 只记物流**不流转状态**，{@code PUT /orders/{id}/status}
+     * 只流转**不记单号** ⇒ 工人发一次货要调两次，中间失败就是「有单号但没发货」或
+     * 「发货了没单号」的静默不一致。发货是**一个动作**，就该是一个入口。</p>
+     *
+     * <p><b>权限 = 类级 {@code order:list}</b>（与扫码/报工同一权限）：工人身份不需要
+     * {@code processing:update} 或新增「仓管」角色即可发货 —— 能扫码报工的人本来就有
+     * {@code order:list}（实测：{@code ProductionController} 类级 + 既有
+     * {@code PUT /orders/{id}/status} / {@code /logistics} 也都是 {@code order:list}）。</p>
+     *
+     * <p><b>守卫不复制</b>：含加工项订单必须有 completed 加工单这条判定在
+     * {@link OrderService#shipWithLogistics} 内部（与 {@code updateOrderStatus} 路径**同一份**），
+     * 本端点只做转发。</p>
+     */
+    @PostMapping("/orders/{orderId}/ship")
+    public ApiResponse<Map<String, Object>> ship(@PathVariable String orderId,
+                                                 @RequestBody Map<String, String> body) {
+        orderService.shipWithLogistics(orderId,
+                body == null ? null : body.get("trackingNo"),
+                body == null ? null : body.get("logisticsCompany"));
+        return ApiResponse.success(Map.of("order_id", orderId, "status", "shipped"));
     }
 
     /**

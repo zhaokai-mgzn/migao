@@ -71,6 +71,7 @@
     "V70__customer_default_receiver_address.sql": "sha256:5b35b86d150f91cdeb62a78d5680c6a117f9aede03db7a15281bee8b1305b072",
     "V71__normalize_routing_model_structure.sql": "sha256:f5f104a144743e9d627bd0e84e2da1d2fe418e49945e49782878f8ac38bcc14b",
     "V72__switch_routing_model_consumers.sql": "sha256:646dff43d4edabd7df374e277498cb1cb2e21517bdef2a3b54a6a0eadc6dc29b",
+    "V74__backfill_legacy_special_option_names.sql": "sha256:cca4684bd3d294bd9b88ff7b650b80fbc7c308ab965322879efd4a2f15e4143f",
     "V75__create_piecework_settlements.sql": "sha256:7110066ee50e04ea5aeb72d373afaf2c14525b345c8634e601d7fa45164fc6e2"
   }
 }

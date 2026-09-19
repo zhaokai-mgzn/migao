@@ -26,7 +26,6 @@ import type {
   ProductionSeedTemplate,
   ProductionSource,
   Routing,
-  RoutingGaps,
   RoutingsResponse,
 } from '@/types'
 
@@ -40,10 +39,12 @@ import type {
  * 工序目录却在工序库页），且两页都在拉 `GET /routings` ⇒ 同一份数据两处渲染。
  *
  * 页面形态（**不做强制向导** —— 商家是回头改配置的，不是一次过）：
- * - **顶部就绪度检查器**：① 工序库就绪 → ② 路线就绪（至少一条且**序列非空**）→ ③ 缺口可见。
+ * - **顶部就绪度检查器（两步）**：① 工序库就绪 → ② 路线就绪（至少一条且**序列非空**）。
+ *   （原第 ③ 步「缺口可见」已按用户 2026-09-19 裁定移除 —— 「缺口功能完全不需要」。）
  *   把隐性依赖变成看得见的步骤；每步给「下一步」提示。
- * - **左栏 = 工序库**（搜索 + 分组 + 行内改单价/必完/作用域），**右栏 = 工艺路线**（缺口 + 列表 + 序列编辑）。
- *   编辑序列时点左栏「加入」即可把工序排进去 —— 同一页，不再跨菜单。
+ * - **两个 tab（用户裁定 2026-09-19）**：`工艺项`（工序库：搜索 + 分组 + 行内改单价/必完/作用域）与
+ *   `工艺路线`（列表 + 序列编辑）。合并仍是**一个菜单入口、一个页面**，只是内部组织从「左右双栏」改为 tab。
+ *   编辑序列时在**路线 tab 内的「添加工序」选择器**里选（工序库在另一个 tab ⇒ 不能靠点左栏加入）。
  * - **空壳路线显性化**：`POST /routings` 允许 `operations` 缺省（「空序列拒」护栏只拦 PUT），
  *   而 `ProductionOperationQueryService.findRouting` 对空序列路线**会正常命中**并返回
  *   `operation_count=0`、`missing_operations=[]` ⇒ `resolveRoute` 既不 fail-closed 也不报错
@@ -59,7 +60,6 @@ import type {
  *   POST   /api/admin/production/routings            body {curtain_type, craft, operations?}
  *   GET    /api/admin/production/operations-catalog  POST /production/operations
  *   PUT    /api/admin/production/operations/{id}     （改单价 / 必完 / 作用域）
- *   GET    /api/admin/production/routing-gaps
  *   GET|POST /api/admin/production/seed-templates[/{id}/apply]
  *   —— 写端点权限 processing:manage（以拦截器/后端为准，本页不做显隐分叉）。
  *
@@ -131,7 +131,7 @@ function SourceBadge({
   return <span data-testid={testId} className={className}>{meta.label}</span>
 }
 
-/** 就绪度一步（把「工序 → 路线 → 缺口」的先后关系变成看得见的步骤） */
+/** 就绪度一步（把「工序 → 路线」的先后关系变成看得见的步骤） */
 function ReadinessStep({
   testId,
   index,
@@ -185,9 +185,13 @@ export default function ProcessConfigPage() {
   const [catalog, setCatalog] = useState<OperationsCatalog | null>(null)
   const [catalogError, setCatalogError] = useState('')
   const [routings, setRoutings] = useState<RoutingsResponse | null>(null)
-  const [gaps, setGaps] = useState<RoutingGaps | null>(null)
   const [templates, setTemplates] = useState<ProductionSeedTemplate[]>([])
   const [loading, setLoading] = useState(true)
+  /** 两个 tab（用户裁定 2026-09-19）：`operations` 工艺项 / `routes` 工艺路线。
+   * 默认落在「工艺项」—— 依赖顺序上它在前（先有工序，才能排路线）。 */
+  const [tab, setTab] = useState<'operations' | 'routes'>('operations')
+  /** 「添加工序」选择器（路线 tab 内）—— 工序库在另一个 tab，编辑器必须自带入口 */
+  const [picked, setPicked] = useState('')
   const [error, setError] = useState('')
   /** 工序库搜索（左栏是调色板：工序多起来必须能筛） */
   const [search, setSearch] = useState('')
@@ -219,10 +223,9 @@ export default function ProcessConfigPage() {
     setLoading(true)
     setError('')
     // 四条只读端点互不依赖：任一条失败不得把整页吞掉（页面不白屏，失败处给可读提示）
-    const [routingsRes, catalogRes, gapsRes, templateRes] = await Promise.allSettled([
+    const [routingsRes, catalogRes, templateRes] = await Promise.allSettled([
       productionApi.getRoutings(),
       productionApi.getOperationsCatalog(),
-      productionApi.getRoutingGaps(),
       productionApi.getSeedTemplates(),
     ])
     if (routingsRes.status === 'fulfilled') {
@@ -238,7 +241,6 @@ export default function ProcessConfigPage() {
       setCatalog(null)
       setCatalogError('工序库加载失败，请稍后重试')
     }
-    setGaps(gapsRes.status === 'fulfilled' ? gapsRes.value.data?.data ?? null : null)
     setTemplates(templateRes.status === 'fulfilled' ? templateRes.value.data?.data ?? [] : [])
     setLoading(false)
   }, [])
@@ -268,9 +270,6 @@ export default function ProcessConfigPage() {
   const routeList = useMemo(() => routings?.routings ?? [], [routings])
   const emptyShells = useMemo(() => routeList.filter((r) => (r.operation_count ?? 0) === 0), [routeList])
   const routingsReady = routeList.length > 0 && emptyShells.length === 0
-  const pendingOps = useMemo(() => (gaps?.unrouted_operations ?? []).filter((o) => o.pending_confirmation), [gaps])
-  const realUnrouted = useMemo(() => (gaps?.unrouted_operations ?? []).filter((o) => !o.pending_confirmation), [gaps])
-  const gapsState: 'done' | 'todo' | 'unknown' = gaps == null ? 'unknown' : realUnrouted.length === 0 ? 'done' : 'todo'
 
   const routingsHint =
     routeList.length === 0
@@ -278,10 +277,6 @@ export default function ProcessConfigPage() {
       : emptyShells.length > 0
         ? `有 ${emptyShells.length} 条「空壳」路线（序列为空）：该部位会静默拿到 0 道工序，请点「编辑序列」把工序排进去。`
         : ''
-  const gapsHint =
-    `有 ${realUnrouted.length} 道工序未进任何路线。` +
-    (pendingOps.length > 0 ? `（另有 ${pendingOps.length} 道「有意挂起」等客户确认，不计入待处理）` : '')
-
   // ────────────────────────── 序列编辑 ──────────────────────────
 
   const openEditor = (routing: Routing) => {
@@ -533,7 +528,7 @@ export default function ProcessConfigPage() {
 
       {!loading && !error && (
         <>
-          {/* ── 就绪度：① 工序库 → ② 工艺路线 → ③ 缺口（先后依赖显性化） ── */}
+          {/* ── 就绪度（两步）：① 工序库 → ② 工艺路线 ── */}
           <div className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="process-readiness">
             <div className="mb-3 flex flex-wrap items-baseline gap-2">
               <h2 className="text-base font-medium text-neutral-900">配置就绪度</h2>
@@ -541,7 +536,7 @@ export default function ProcessConfigPage() {
                 按顺序配：先有工序，才能排路线；路线是加工单能不能生成的唯一输入
               </span>
             </div>
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2">
               <ReadinessStep
                 testId="readiness-step-operations"
                 index={1}
@@ -555,13 +550,6 @@ export default function ProcessConfigPage() {
                 label={`工艺路线 ${routeList.length} 条`}
                 state={routingsReady ? 'done' : 'todo'}
                 hint={routingsHint}
-              />
-              <ReadinessStep
-                testId="readiness-step-gaps"
-                index={3}
-                label="缺口"
-                state={gapsState}
-                hint={gapsState === 'unknown' ? '缺口数据加载失败，请刷新重试。' : gapsHint}
               />
             </div>
           </div>
@@ -612,8 +600,38 @@ export default function ProcessConfigPage() {
             </div>
           )}
 
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
-            {/* ══════════════ 左栏：工序库（词汇表 / 调色板） ══════════════ */}
+          {/* ── 两个 tab（用户裁定 2026-09-19）：工艺项 / 工艺路线 ──
+              合并仍是**一个菜单入口、一个页面**；这里只改**内部组织**（左右双栏 → 两个 tab）。
+              tab 切换**不丢状态**：两栏都用条件渲染挂在同一个组件上，编辑中的 draft 保留在 state 里。 */}
+          <div className="flex items-center gap-1 border-b border-neutral-200" role="tablist" data-testid="process-config-tabs">
+            {([
+              { key: 'operations', label: '工艺项' },
+              { key: 'routes', label: '工艺路线' },
+            ] as const).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.key}
+                data-testid={`process-config-tab-${t.key}`}
+                data-state={tab === t.key ? 'active' : 'inactive'}
+                onClick={() => setTab(t.key)}
+                className={cn(
+                  '-mb-px border-b-2 px-4 py-2 text-sm transition-colors',
+                  tab === t.key
+                    ? 'border-primary-600 font-medium text-primary-700'
+                    : 'border-transparent text-neutral-500 hover:text-neutral-800',
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div>
+            {tab === 'operations' && (
+              <>
+            {/* ══════════════ tab「工艺项」：工序库（词汇表 / 调色板） ══════════════ */}
             <section className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="operations-catalog">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-baseline gap-2">
@@ -633,11 +651,6 @@ export default function ProcessConfigPage() {
               </div>
               <p className="mb-3 text-xs text-neutral-500">
                 工序分组 · 作用域（部位级/套级） · 计件单价 · 必完开关；调价只影响新报工（历史报工按当时价）。
-                {editingKey ? (
-                  <span className="text-primary-700"> 正在编辑「{editingKey}」—— 点行末「加入」把工序排进去。</span>
-                ) : (
-                  <span> 先在右侧点「编辑序列」，再从这里把工序加进去。</span>
-                )}
               </p>
 
               {catalogError ? (
@@ -671,7 +684,6 @@ export default function ProcessConfigPage() {
                               <th className="py-2 pr-4 font-medium">单位</th>
                               <th className="py-2 pr-4 font-medium">计件单价</th>
                               <th className="py-2 pr-4 font-medium">必完</th>
-                              <th className="py-2 font-medium">加入路线</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -769,20 +781,6 @@ export default function ProcessConfigPage() {
                                     className="h-4 w-4 accent-primary-600"
                                   />
                                 </td>
-                                <td className="py-2.5">
-                                  <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    data-testid={`operation-add-${op.id}`}
-                                    disabled={!editingKey}
-                                    onClick={() => addFromPalette(op.name)}
-                                    title={
-                                      editingKey ? `加入「${editingKey}」的序列` : '先在右侧点「编辑序列」，再从这里加入'
-                                    }
-                                  >
-                                    <Plus className="w-3.5 h-3.5" />
-                                  </Button>
-                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -793,75 +791,13 @@ export default function ProcessConfigPage() {
                 </div>
               )}
             </section>
+              </>
+            )}
 
-            {/* ══════════════ 右栏：工艺路线（缺口 + 列表 + 序列编辑） ══════════════ */}
+            {tab === 'routes' && (
+              <>
+            {/* ══════════════ tab「工艺路线」：列表 + 序列编辑 ══════════════ */}
             <div className="space-y-4">
-              {/* ── 缺口区：**有意挂起**（等客户确认）与**真缺口**分开渲染 ── */}
-              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-5" data-testid="routings-gaps">
-                <div className="mb-3 flex flex-wrap items-baseline gap-2">
-                  <h2 className="text-base font-medium text-neutral-900">缺口</h2>
-                  <span className="text-sm text-neutral-600">
-                    有 <span data-testid="routings-gap-unrouted-count">{realUnrouted.length}</span> 道工序还没有进任何路线
-                  </span>
-                </div>
-
-                {gaps == null ? (
-                  <p className="text-sm text-neutral-500" data-testid="routings-gaps-unavailable">
-                    缺口数据加载失败，请刷新重试（有工序没进路线时，该工序不会出现在任何加工单里）
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {realUnrouted.length === 0 ? (
-                      <p className="text-sm text-neutral-500" data-testid="routings-gaps-empty">
-                        所有活跃工序都已进入路线
-                      </p>
-                    ) : (
-                      <ul className="space-y-1" data-testid="routings-gap-unrouted-list">
-                        {realUnrouted.map((op) => (
-                          <li
-                            key={op.name}
-                            className="flex flex-wrap items-baseline gap-2 text-sm text-neutral-700"
-                            data-testid={`routings-gap-unrouted-${op.name}`}
-                          >
-                            <span className="font-medium text-neutral-900">{op.name}</span>
-                            <span className="text-neutral-500">
-                              {op.group_name ?? '—'} · {op.unit ?? '—'} · {money(op.unit_price)}
-                            </span>
-                            <span className="text-xs text-amber-700">未进任何路线，加工单不会出现该工序</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-
-                    {/* 有意挂起：后端明写「不要让商家/前端把它们读成「系统漏了」」⇒ 单列一块 */}
-                    {pendingOps.length > 0 && (
-                      <div className="border-t border-amber-200 pt-3" data-testid="routings-gap-pending">
-                        <p className="text-sm text-neutral-600">
-                          有意挂起 · 等客户确认（
-                          <span data-testid="routings-gap-pending-count">{pendingOps.length}</span>
-                          道）：不是系统漏了 —— 猜出来的工序与单价会直接算成工人工资，故不猜
-                        </p>
-                        <ul className="mt-1 space-y-0.5">
-                          {pendingOps.map((op) => (
-                            <li
-                              key={op.name}
-                              className="flex flex-wrap items-baseline gap-2 text-sm text-neutral-600"
-                              data-testid={`routings-gap-pending-${op.name}`}
-                            >
-                              <span className="font-medium text-neutral-800">{op.name}</span>
-                              <span className="text-neutral-500">
-                                {op.group_name ?? '—'} · {op.unit ?? '—'} · {money(op.unit_price)}
-                              </span>
-                              <span className="text-xs text-neutral-500">等客户确认（#4261 提问清单）</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
               {/* ── 路线列表 ── */}
               <div className="rounded-lg border border-neutral-200 bg-white p-5">
                 <div className="mb-3 flex items-baseline gap-2">
@@ -971,6 +907,38 @@ export default function ProcessConfigPage() {
                                 </p>
                               )}
 
+                              {/* 添加工序：工序库在**另一个 tab** ⇒ 编辑器自带入口（issue #4482） */}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <select
+                                  aria-label="从工序库添加工序"
+                                  data-testid={`routing-add-select-${key}`}
+                                  value={picked}
+                                  onChange={(e) => setPicked(e.target.value)}
+                                  className="h-9 min-w-56 flex-1 rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500"
+                                >
+                                  <option value="">从工序库选择要添加的工序…</option>
+                                  {libraryOps.map((op) => (
+                                    <option key={op.id} value={op.name}>
+                                      {op.name}
+                                      {op.group ? `（${op.group}）` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  data-testid={`routing-add-${key}`}
+                                  disabled={!picked}
+                                  onClick={() => {
+                                    if (picked) addFromPalette(picked)
+                                    setPicked('')
+                                  }}
+                                >
+                                  <Plus className="w-3.5 h-3.5 mr-1.5" />
+                                  加入
+                                </Button>
+                              </div>
+
                               {draftSteps.length === 0 ? (
                                 <p className="text-sm text-neutral-400" data-testid={`routing-draft-empty-${key}`}>
                                   序列为空：从左侧工序库点「加入」把工序排进来（必完工序是完工门槛，缺了会阻止打包）
@@ -1042,7 +1010,7 @@ export default function ProcessConfigPage() {
                               )}
 
                               <p className="text-xs text-neutral-500">
-                                从左栏工序库点「加入」添加工序（v1 不做拖拽编排，用上移/下移调顺序）。
+                                从上方「添加工序」选择器里选（v1 不做拖拽编排，用上移/下移调顺序）。
                               </p>
                             </div>
                           ) : (
@@ -1071,6 +1039,8 @@ export default function ProcessConfigPage() {
               </div>
 
             </div>
+              </>
+            )}
           </div>
         </>
       )}

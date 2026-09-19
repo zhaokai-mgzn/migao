@@ -171,7 +171,7 @@ class ProductionControllerTest {
         PieceworkSettlementService pieceworkSettlementService = new PieceworkSettlementService(
                 settlementMapper, settlementLineMapper, workLogMapper, service);
         ProductionController controller = new ProductionController(service, queryService, commandService,
-                routingCommandService, processingOrderService, pieceworkSettlementService);
+                routingCommandService, processingOrderService, pieceworkSettlementService, orderService);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
                 "processingFeeQueryService", feeQueryService);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
