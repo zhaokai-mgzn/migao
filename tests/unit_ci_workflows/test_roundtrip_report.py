@@ -275,3 +275,86 @@ def test_persona_carries_the_roundtrip_budget_rule():
 def test_the_section_the_persona_points_at_really_exists():
     """悬空指针 = 读的人找不到判据 ⇒ persona 说「全文见 §21」时技能里必须有 §21。"""
     assert "## 21. " in SKILL.read_text(encoding="utf-8")
+
+
+# ── 9. 等待型调用（`sleep N` 轮询）判据（issue #4455）──────────────────────
+# 实测（会话 session-cf73f497，即 #4443 那一单）：7 次 `sleep N` = 684s = 11.4 min，
+# 占 bash 执行 **42%**。P1~P4 把「逐点小步编辑」治住之后，瓶颈转移到了「等 CI」
+# —— 故单列一条可判据（`migao-dev-flow` §21 的 P7）。
+
+
+def _bash_call(ts: int, call_id: str, command: str) -> str:
+    return json.dumps(
+        {
+            "type": "tool/call",
+            "time": ts,
+            "data": {"callId": call_id, "name": "bash", "arguments": json.dumps({"command": command})},
+        }
+    )
+
+
+def test_sleep_polling_calls_are_reported(tmp_path):
+    lines = _session_lines() + [
+        _bash_call(5000, "b1", "gh pr checks 1 --json state; sleep 120; gh pr checks 1"),
+        _bash_call(6000, "b2", "sleep 60 && gh pr checks 1"),
+        _result(100000, "b1"),  # 95s
+        _result(106000, "b2"),  # 100s
+    ]
+    report = mod.analyze("\n".join(lines) + "\n")
+    assert report["wait_calls"] == 2
+    assert report["wait_s"] == pytest.approx(195.0)
+
+
+def test_non_sleep_bash_is_not_counted_as_waiting(tmp_path):
+    """防误伤：真实工作（vitest / mvnw / pytest）不得被算成「等待」。"""
+    lines = _session_lines() + [
+        _bash_call(5000, "b1", "npx vitest run tests/unit/pages/customer-detail.test.tsx"),
+        _bash_call(6000, "b2", "./mvnw -q -o test -Dtest=Foo"),
+    ] + [_result(40000, "b1"), _result(90000, "b2")]
+    report = mod.analyze("\n".join(lines) + "\n")
+    assert report["wait_calls"] == 0
+    assert report["wait_s"] == 0.0
+
+
+def test_sleep_like_text_is_not_a_wait_call(tmp_path):
+    """判据的边界：`sleepy 5` / `xsleep 5` 不是 sleep 调用。"""
+    lines = _session_lines() + [
+        _bash_call(5000, "b1", 'echo "sleepy 5"; echo xsleep 5'),
+    ] + [_result(9000, "b1")]
+    assert mod.analyze("\n".join(lines) + "\n")["wait_calls"] == 0
+
+
+def test_non_bash_tool_with_sleep_in_arguments_is_not_a_wait_call(tmp_path):
+    """判据只看 bash 的 `command` —— 别的工具参数里出现 sleep 不算。"""
+    lines = _session_lines() + [
+        json.dumps(
+            {
+                "type": "tool/call",
+                "time": 5000,
+                "data": {"callId": "e1", "name": "edit", "arguments": json.dumps({"new_string": "sleep 300"})},
+            }
+        ),
+    ] + [_result(9000, "e1")]
+    assert mod.analyze("\n".join(lines) + "\n")["wait_calls"] == 0
+
+
+def test_report_surfaces_the_waiting_section_with_actionable_fix(tmp_path, capsys):
+    """报告必须给出**处置**（改 `--watch`），否则会被读成「仅供参考的统计」。"""
+    lines = _session_lines() + [_bash_call(5000, "b1", "sleep 90; gh pr checks 1")] + [_result(95000, "b1")]
+    target = _write(tmp_path, lines)
+    assert mod.main([str(target)]) == mod.EXIT_OK
+    out = capsys.readouterr().out
+    assert "等待型调用" in out
+    assert "--watch" in out
+
+
+def test_section_11_no_longer_offers_the_polling_escape_hatch():
+    """§11.1 的「`--watch` 或轮询」是实测踩过的逃生口（#4455）⇒ 必须消失，否则规则形同虚设。
+
+    ⚠️ 判据盯的是**那个许可式措辞**（`--watch` 与轮询**并列可选**），不是「或轮询」这四个字 ——
+    本节现在**引述**被删掉的措辞来解释为什么删它，**引述 ≠ 许可**（判据若只看字面会误伤这条引述）。
+    """
+    section = SKILL.read_text(encoding="utf-8").split("## 11. ")[1].split("## 12. ")[0]
+    assert "或轮询 `gh pr checks" not in section  # 旧的许可式措辞：--watch 与轮询并列
+    assert "禁止 `sleep N` 轮询" in section  # 替代它的禁令必须在场
+    assert "--watch" in section
