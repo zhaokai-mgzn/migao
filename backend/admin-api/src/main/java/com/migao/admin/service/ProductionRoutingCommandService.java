@@ -1,6 +1,7 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionRouteRule;
@@ -239,9 +240,15 @@ public class ProductionRoutingCommandService {
             throw BusinessException.validationError("删除工艺路线未通过校验（" + details.size() + " 条问题）",
                     details, "先把另一条路线设为默认（PUT is_default=true），或先新建一条路线");
         }
-        template.setDeleted(1);
-        template.setUpdatedAt(OffsetDateTime.now());
-        productionRouteTemplateMapper.updateById(template);
+        // ⚠️ 必须**显式写列**（issue #4608），不得写成 `setDeleted(1); updateById(template);`：
+        // MP 全局逻辑删除（application.yml 的 mybatis-plus.global-config.db-config.logic-delete-field=deleted）
+        // 会把逻辑删除字段从 updateById 的 SET 子句里**剔除** ⇒ deleted 永不落库，而调用仍返回成功
+        // = 删除静默 no-op（用户实测「提示成功但数据还在」）。显式 .set(...) 绕过字段剔除，
+        // 同时保住审计字段 updated_at（「谁在什么时候删的」是排查工序错配的唯一证据）。
+        productionRouteTemplateMapper.update(null, new LambdaUpdateWrapper<ProductionRouteTemplate>()
+                .eq(ProductionRouteTemplate::getId, id)
+                .set(ProductionRouteTemplate::getDeleted, 1)
+                .set(ProductionRouteTemplate::getUpdatedAt, OffsetDateTime.now()));
         log.info("删除工艺路线: tenantId={}, routingId={}, name={}", tenantId, template.getId(), template.getName());
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", template.getId());
@@ -267,9 +274,11 @@ public class ProductionRoutingCommandService {
                 || !Integer.valueOf(0).equals(rule.getDeleted())) {
             throw BusinessException.notFound("条件工序规则");
         }
-        rule.setDeleted(1);
-        rule.setUpdatedAt(OffsetDateTime.now());
-        productionRouteRuleMapper.updateById(rule);
+        // 同 deleteRouting：显式写列（issue #4608）—— updateById 会把 deleted 从 SET 里剔除 ⇒ 静默 no-op。
+        productionRouteRuleMapper.update(null, new LambdaUpdateWrapper<ProductionRouteRule>()
+                .eq(ProductionRouteRule::getId, id)
+                .set(ProductionRouteRule::getDeleted, 1)
+                .set(ProductionRouteRule::getUpdatedAt, OffsetDateTime.now()));
         log.info("软删条件工序规则: tenantId={}, ruleId={}, trigger={}",
                 tenantId, rule.getId(), rule.getTriggerValue());
         Map<String, Object> result = new LinkedHashMap<>();

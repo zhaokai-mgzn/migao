@@ -1,6 +1,7 @@
 // case_ids: PG-018, PG-035
 package com.migao.admin.controller;
 
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.config.TenantContext;
@@ -56,6 +57,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -457,9 +459,13 @@ class ProductionRoutingReadControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value("rr-opt-1"))
                 .andExpect(jsonPath("$.data.deleted").value(true));
-        ArgumentCaptor<ProductionRouteRule> captor = ArgumentCaptor.forClass(ProductionRouteRule.class);
-        verify(productionRouteRuleMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getDeleted()).as("软删（不物理删）：deleted=1").isEqualTo(1);
+        ArgumentCaptor<LambdaUpdateWrapper> wrapper = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(productionRouteRuleMapper).update(isNull(), wrapper.capture());
+        verify(productionRouteRuleMapper, never()).updateById(any(ProductionRouteRule.class));
+        assertThat(wrapper.getValue().getSqlSet())
+                .as("显式 SET 必须含 deleted 与 updated_at（issue #4608：updateById 会把 deleted 从 SET 剔除）")
+                .contains("deleted")
+                .contains("updated_at");
 
         mockMvc.perform(delete("/api/admin/production/route-rules/nope"))
                 .andExpect(status().isNotFound());
@@ -505,9 +511,13 @@ class ProductionRoutingReadControllerTest {
         mockMvc.perform(delete("/api/admin/production/operations/op-busandbian"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.deleted").value(true));
-        ArgumentCaptor<ProductionOperation> deleted = ArgumentCaptor.forClass(ProductionOperation.class);
-        verify(productionOperationMapper).updateById(deleted.capture());
-        assertThat(deleted.getValue().getDeleted()).isEqualTo(1);
+        ArgumentCaptor<LambdaUpdateWrapper> deleted = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(productionOperationMapper).update(isNull(), deleted.capture());
+        verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
+        assertThat(deleted.getValue().getSqlSet())
+                .as("显式 SET 必须含 deleted 与 updated_at（issue #4608：updateById 会把 deleted 从 SET 剔除）")
+                .contains("deleted")
+                .contains("updated_at");
     }
 
     @Test
@@ -521,6 +531,7 @@ class ProductionRoutingReadControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.deleted").value(true));
         verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
+        verify(productionOperationMapper, never()).update(isNull(), any());
     }
 
     @Test

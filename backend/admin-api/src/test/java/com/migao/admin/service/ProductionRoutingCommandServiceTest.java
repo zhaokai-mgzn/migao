@@ -2,6 +2,9 @@ package com.migao.admin.service;
 
 // case_ids: PG-032, PG-033
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.ProductionOperation;
@@ -20,6 +23,7 @@ import com.migao.admin.mapper.ProductionRouteSignalMapper;
 import com.migao.admin.mapper.ProductionRouteTemplateMapper;
 import com.migao.admin.mapper.ProductionRoutingVersionMapper;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,6 +31,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
@@ -37,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -80,6 +86,18 @@ class ProductionRoutingCommandServiceTest {
     private ProductionOperationPriceVersionMapper priceVersionMapper;
 
     private ProductionRoutingCommandService service;
+
+    @BeforeAll
+    static void primeMybatisPlusLambdaCache() {
+        // `LambdaUpdateWrapper.set(...)` 会**立即**求值列名（不像 LambdaQueryWrapper 的 eq 那样延迟到渲染 SQL）
+        // ⇒ Standalone / Mockito 单测没有 MapperScan 建立的 TableInfo 缓存时会抛
+        // 「can not find lambda cache for this entity」。软删写形态（issue #4608）走 LambdaUpdateWrapper，
+        // 故在此初始化缓存（同 ProductionRoutingReadControllerTest / ProductionOperationQueryServiceTest 的既有做法）。
+        MybatisConfiguration configuration = new MybatisConfiguration();
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "");
+        TableInfoHelper.initTableInfo(assistant, ProductionRouteTemplate.class);
+        TableInfoHelper.initTableInfo(assistant, ProductionRouteRule.class);
+    }
 
     @BeforeEach
     void setUp() {
@@ -481,10 +499,17 @@ class ProductionRoutingCommandServiceTest {
         Map<String, Object> result = service.deleteRouting("rt-2", TENANT);
 
         assertThat(result.get("deleted")).isEqualTo(true);
-        ArgumentCaptor<ProductionRouteTemplate> updated =
-                ArgumentCaptor.forClass(ProductionRouteTemplate.class);
-        verify(productionRouteTemplateMapper).updateById(updated.capture());
-        assertThat(updated.getValue().getDeleted()).isEqualTo(1);
+        // ⚠️ 断言**调用形态**（不是「塞进实体的值」，issue #4608）：MP 全局逻辑删除会把 deleted
+        // 从 updateById 的 SET 子句里剔除 ⇒ 只有显式写列（update(null, LambdaUpdateWrapper)）
+        // 才真落库。改回 `setDeleted(1); updateById(...)` ⇒ 本用例红（旧写法断言的是实体里的值，
+        // 所以「服务端报成功、数据还在」也能绿 —— 那正是本单要消灭的假绿）。
+        ArgumentCaptor<LambdaUpdateWrapper> wrapper = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(productionRouteTemplateMapper).update(isNull(), wrapper.capture());
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
+        assertThat(wrapper.getValue().getSqlSet())
+                .as("显式 SET 必须含 deleted 与 updated_at（updated_at = 「什么时候删的」唯一证据）")
+                .contains("deleted")
+                .contains("updated_at");
     }
 
     @Test
@@ -592,18 +617,24 @@ class ProductionRoutingCommandServiceTest {
      * 软删（{@code deleted=1}，**不物理删**）：规则只影响「插/删一道工序」，删错了重加即可 ⇒
      * **无硬护栏**；但仍留痕 —— 「谁在什么时候删掉了哪条规则」是排查工序顺序错的唯一线索。
      *
-     * <p><b>红证</b>：改成物理删（{@code deleteById}）⇒ 本用例红。</p>
+     * <p><b>断言的是调用形态，不是实体里的值</b>（issue #4608）：MP 全局逻辑删除会把
+     * {@code deleted} 从 {@code updateById} 的 SET 子句里剔除 ⇒ 「实体里塞了 1」与「DB 写了 1」
+     * 是两件事。改回 {@code setDeleted(1); updateById(...)}（或改成 {@code deleteById}）⇒ 本用例红。</p>
      */
     @Test
-    @DisplayName("软删规则 ⇒ 200 {id,deleted:true} 且落 deleted=1（不物理删）")
+    @DisplayName("软删规则 ⇒ 200 {id,deleted:true} 且**显式写列** deleted=1 + updated_at（不走 updateById）")
     void deleteRouteRuleSoftDeletes() {
         when(productionRouteRuleMapper.selectById("rr-1")).thenReturn(rule("rr-1", 0));
 
         Map<String, Object> result = service.deleteRouteRule("rr-1", TENANT);
 
-        ArgumentCaptor<ProductionRouteRule> captor = ArgumentCaptor.forClass(ProductionRouteRule.class);
-        verify(productionRouteRuleMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getDeleted()).isEqualTo(1);
+        ArgumentCaptor<LambdaUpdateWrapper> wrapper = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(productionRouteRuleMapper).update(isNull(), wrapper.capture());
+        verify(productionRouteRuleMapper, never()).updateById(any(ProductionRouteRule.class));
+        assertThat(wrapper.getValue().getSqlSet())
+                .as("显式 SET 必须含 deleted 与 updated_at（不是只「调了 update」）")
+                .contains("deleted")
+                .contains("updated_at");
         verify(productionRouteRuleMapper, never()).deleteById(any(String.class));
         assertThat(result.get("id")).isEqualTo("rr-1");
         assertThat(result.get("deleted")).isEqualTo(true);
@@ -637,5 +668,6 @@ class ProductionRoutingCommandServiceTest {
                 .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(404));
 
         verify(productionRouteRuleMapper, never()).updateById(any(ProductionRouteRule.class));
+        verify(productionRouteRuleMapper, never()).update(isNull(), any());
     }
 }

@@ -1,6 +1,9 @@
 // case_ids: PG-020, PG-035
 package com.migao.admin.service;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPosition;
@@ -14,6 +17,8 @@ import com.migao.admin.mapper.ProductionOperationPriceVersionMapper;
 import com.migao.admin.mapper.ProductionRouteRuleMapper;
 import com.migao.admin.mapper.ProductionRouteSignalMapper;
 import com.migao.admin.mapper.ProductionRouteTemplateMapper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +35,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -75,6 +81,17 @@ class ProductionOperationDeleteGuardTest {
     private ProductionCraftMapper productionCraftMapper;
     @Mock
     private ProductionRouteSignalMapper productionRouteSignalMapper;
+
+    @BeforeAll
+    static void primeMybatisPlusLambdaCache() {
+        // `LambdaUpdateWrapper.set(...)` 会**立即**求值列名（不像 LambdaQueryWrapper 的 eq 那样延迟到渲染 SQL）
+        // ⇒ Standalone / Mockito 单测没有 MapperScan 建立的 TableInfo 缓存时会抛
+        // 「can not find lambda cache for this entity」。软删写形态（issue #4608）走 LambdaUpdateWrapper，
+        // 故在此初始化缓存（同 ProductionRoutingReadControllerTest / ProductionOperationQueryServiceTest 的既有做法）。
+        MybatisConfiguration configuration = new MybatisConfiguration();
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "");
+        TableInfoHelper.initTableInfo(assistant, ProductionOperation.class);
+    }
 
     private ProductionOperationCommandService service() {
         return new ProductionOperationCommandService(productionOperationMapper, priceVersionMapper,
@@ -258,7 +275,7 @@ class ProductionOperationDeleteGuardTest {
         stubNothingReferencing();
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
                 position("三边", "布帘", false)));
-        when(productionOperationMapper.updateById(any(ProductionOperation.class))).thenReturn(1);
+        when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
 
         Map<String, Object> result = service().delete(OP_ID, TENANT);
 
@@ -285,19 +302,29 @@ class ProductionOperationDeleteGuardTest {
                         .containsExactlyInAnyOrder("routing", "route_rule", "operation_position"));
     }
 
+    /**
+     * ⚠️ 断言**调用形态**（不是「塞进实体的值」，issue #4608）：MP 全局逻辑删除会把 {@code deleted}
+     * 从 {@code updateById} 的 SET 子句里剔除 ⇒ 只有显式写列（{@code update(null, LambdaUpdateWrapper)}）
+     * 才真落库；旧写法（{@code op.setDeleted(1); updateById(op);}）断言的是实体里的值，
+     * 所以「服务端报成功、数据还在」也能绿。改回旧写法 ⇒ 本用例红。
+     */
     @Test
-    @DisplayName("无引用 ⇒ 软删 deleted=1（**不物理删**：历史报工/工序实例仍引用它）")
+    @DisplayName("无引用 ⇒ 软删**显式写列** deleted=1 + updated_at（不走 updateById）")
     void softDeletesWhenNoReference() {
         when(productionOperationMapper.selectById(OP_ID)).thenReturn(operation(0));
         stubCatalog();
         stubNothingReferencing();
-        when(productionOperationMapper.updateById(any(ProductionOperation.class))).thenReturn(1);
+        when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
 
         Map<String, Object> result = service().delete(OP_ID, TENANT);
 
-        ArgumentCaptor<ProductionOperation> captor = ArgumentCaptor.forClass(ProductionOperation.class);
-        verify(productionOperationMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getDeleted()).isEqualTo(1);
+        ArgumentCaptor<LambdaUpdateWrapper> wrapper = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(productionOperationMapper).update(isNull(), wrapper.capture());
+        verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
+        assertThat(wrapper.getValue().getSqlSet())
+                .as("显式 SET 必须含 deleted 与 updated_at（不是只「调了 update」）")
+                .contains("deleted")
+                .contains("updated_at");
         verify(productionOperationMapper, never()).deleteById(any(String.class));
         assertThat(result.get("id")).isEqualTo(OP_ID);
         assertThat(result.get("deleted")).isEqualTo(true);
@@ -312,6 +339,7 @@ class ProductionOperationDeleteGuardTest {
 
         assertThat(result.get("deleted")).isEqualTo(true);
         verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
+        verify(productionOperationMapper, never()).update(isNull(), any());
     }
 
     @Test
@@ -330,5 +358,6 @@ class ProductionOperationDeleteGuardTest {
                 .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(404));
 
         verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
+        verify(productionOperationMapper, never()).update(isNull(), any());
     }
 }
