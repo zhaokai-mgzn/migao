@@ -32,20 +32,12 @@
 -- ## 幂等（MigrationRunner 要求所有 SQL 可重复执行）
 -- `ADD COLUMN IF NOT EXISTS` / `COMMENT ON` 均幂等。
 --
--- ## ⚠️ 照实登记：本迁移**未**同步 `docs/sql/schema.sql`
--- 该文件是**包 A（#4521/#4523 系列）独占**（见 `docs/design/processing-fee-and-option-pricing.md` §8）
--- ⇒ 本包不碰它。代价（如实登记，不粉饰）：**bootstrap-first** 路径（docker 初始化走
--- `docs/sql/schema.sql` 建终态）建出的库没有该列，要靠随后的迁移链补上；
--- 若某条**新增**迁移引用 `processing_items.craft_hint` 而 bootstrap 没跑迁移链 ⇒ 那条会失败
--- （`MigrationRunner` 对非连接类失败是「跳过并继续」⇒ 部署 success 但数据没改）。
--- 本迁移自身不引用该列（只 ADD COLUMN），故不受影响；`docs/sql/schema.sql` 的同步
--- 由包 A 或后续独立迁移补齐（**未完成项，已登记**）。
-
--- ── 加列（可空；留空 = 商家没声明，见上「语义」）──
-ALTER TABLE processing_items ADD COLUMN IF NOT EXISTS craft_hint VARCHAR(16);
-
-COMMENT ON COLUMN processing_items.craft_hint IS
-    '加工项显式声明的工艺（V78，issue #4452）：路线键「工艺」维的受控来源（韩褶/打孔/穿杆/平幔…）。'
-    'NULL = 商家没声明（不是「工艺=空」）⇒ 该维按缺维处理、route_source 显式标注，不猜。'
-    '读侧 = ProcessingOrderService.craftHintOf；写侧 = POST/PUT /api/admin/processing-items。'
-    '本列不做存量回填（按名字回填本身就是猜）—— 存量单由 production_route_signals 兜底。';
+-- ## bootstrap 终态同步（**已做**）
+-- `docs/sql/schema.sql` 的「11. bootstrap 对齐」段已同步本列
+-- （`ALTER TABLE processing_items ADD COLUMN IF NOT EXISTS craft_hint VARCHAR(16)`）。
+-- **为什么必须同步**（不是可选项）：bootstrap 路径（docker `docker-entrypoint-initdb.d` 执行
+-- `schema.sql`）**不跑迁移链** ⇒ 缺列 ⇒ 加工单查询/落库 500 → ai-agent 工具拿到
+-- 「服务暂时不可用」→ 熔断 → 整轮评测被污染（#3270 实证形态）。
+-- 机械守卫 = `tests/unit_ci_workflows/test_schema_integrity.py`
+-- （`TestSchemaCoversMigrationChainColumns` + `TestSchemaCoversEntityColumns`）—— 本列**两处都要**：
+-- 迁移链是结构变更的事实源，schema.sql 只负责终态对齐（漂移即 CI block）。
