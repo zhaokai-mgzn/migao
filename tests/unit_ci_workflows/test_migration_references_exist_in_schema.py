@@ -187,6 +187,13 @@ def test_migration_referenced_columns_exist():
 # workflow 删除开放 ⇒ 这类文件只能靠**新增补偿迁移**修，静态守卫对它们**必须**放行，
 # 否则守卫会永久红（= 被人直接关掉）。
 KNOWN_BROKEN_PUBLISHED = {
+    "V72__switch_routing_model_consumers.sql": (
+        "第 349 行 `COALESCE(f.sort_order, 100)`，而 `production_option_factors` **没有 sort_order 列** "
+        "⇒ SQL 失败 ⇒ **整份回滚**（jdbc.execute 是一个隐式事务）⇒ V72 的全部改动都没落地："
+        "`factor` 列、`production_crafts` 表、按租户回填 —— 线上表现为 "
+        "`GET /production/route-rules` 500 与 `POST /orders/{id}/instantiate` 500（issue #4514）。"
+        "**补偿迁移 = V76**（= V72 逐字 + 该行修正）；V72 保持原样（不可变），代价是每次启动一条 ERROR。"
+    ),
     "V74__backfill_legacy_special_option_names.sql": (
         "载体①写成 `UPDATE orders SET processing_info = …`，而 `orders` 无该列 ⇒ SQL 失败、"
         "被 MigrationRunner 跳过、部署仍 success（issue #4501 实证）。"
@@ -216,4 +223,65 @@ def test_update_set_columns_exist_on_their_table():
         "这些迁移 `UPDATE 表 SET 列` 的列**不属于该表**：\n  " + "\n  ".join(sorted(set(missing)))
         + "\n⇒ SQL 会失败，而 `MigrationRunner` 对非连接类失败是「跳过并继续」（`MigrationRunner:185`）"
           "⇒ **部署 success、服务 UP、探活 200，但数据一个字没改**（issue #4402 实证）。"
+    )
+
+def _aliases(sql: str) -> dict:
+    """表别名 → 真表名（`FROM t a` / `JOIN t AS a`）。
+
+    ⚠️ **这正是让 V72 溜过去的那一层**：它写的是 `COALESCE(f.sort_order, 100)`，
+    而 `f` 是 `production_option_factors` 的**别名** ⇒ 只查「真表名.列」的版本**看不到**这一条。
+    （issue #4514 实测：本守卫首版**全绿**，而 V72 在真库上直接报 `字段 f.sort_order 不存在`。）
+    """
+    sql = _strip_comments(sql)
+    out = {}
+    for m in re.finditer(
+        r"\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*)\s+(?:AS\s+)?([a-z_][a-z0-9_]*)\b",
+        sql, re.I):
+        table, alias = m.group(1).lower(), m.group(2).lower()
+        if alias in ("on", "where", "set", "using", "inner", "left", "right", "full",
+                     "cross", "join", "group", "order", "limit", "union", "select"):
+            continue
+        out[alias] = table
+    return out
+
+
+def _statements(sql: str) -> list:
+    """按 `;` 粗切语句（够用：本仓迁移没有存储过程/函数体）。"""
+    return [x for x in _strip_comments(sql).split(";") if x.strip()]
+
+
+def test_alias_qualified_columns_exist():
+    """判据 4（**承重**）：`别名.列` 的列必须存在于**该语句内**别名指向的那张表。
+
+    ⚠️ 这条是 **issue #4514 的直接产物**：V72 的 `f.sort_order` 让整份迁移回滚，
+    而当时本守卫（只覆盖「真表名.列」与「`UPDATE … SET` 的裸列」）**全绿放行**。
+    ⇒ 不补这一条，同一个坑会来第三次。
+
+    ⚠️ **别名必须按语句作用域解析**：同一文件里 `e` 可能在 A 语句指 `production_route_rules`、
+    在 B 语句指 `production_operation_positions` ⇒ 整文件一张映射表会产出**假阳性**
+    （本判据首版就栽在这里，实测报出 `e.logical_name` / `e.name` 两条假红）。
+    假红比没有守卫更糟 —— 会被人直接关掉。
+    """
+    schema = _schema_text()
+    tables = _tables_in_schema(schema)
+    missing = []
+    for p in sorted(MIGRATION_DIR.glob("V*.sql")):
+        if p.name in KNOWN_BROKEN_PUBLISHED:
+            continue          # 已知损坏且不可修（见常量里的理由与补偿迁移）
+        for stmt in _statements(p.read_text(encoding="utf-8")):
+            aliases = _aliases(stmt)          # ← 逐语句
+            if not aliases:
+                continue
+            for alias, col in _referenced_columns(stmt):
+                table = aliases.get(alias)
+                if table is None or table in ALLOWLIST_TABLES or table not in tables:
+                    continue      # 不是别名（可能是真表名，由判据 2 负责）
+                if col not in _columns_of(schema, table):
+                    missing.append(
+                        f"{p.name}: `{alias}.{col}` —— 别名 `{alias}` = `{table}`，而该表没有列 `{col}`")
+    assert not missing, (
+        "这些迁移引用了**别名限定但不存在的列**：\n  " + "\n  ".join(sorted(set(missing)))
+        + "\n⇒ 与 V72 同款（`f.sort_order`）：SQL 失败 → **整份迁移回滚**"
+          "（`jdbc.execute(整个文件)` 是一个隐式事务）→ 部署 success 但**该迁移的全部改动都没落地**"
+          "（issue #4514 实证）。"
     )
