@@ -77,6 +77,18 @@ const poWithCraft = {
   ],
 }
 
+/**
+ * issue #4555：快照补「算料公式」。
+ * 键名口径（读码实测）：快照键族 = **snake_case** `formula_text`
+ * （订单层 `processing_info` 落的是 camelCase `formulaText`，展示映射 `lib/craft-display.ts` 两别名同登记）。
+ */
+const FORMULA_TEXT = '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
+
+const poWithFormula = {
+  ...poIssued,
+  items: [{ ...poIssued.items[0], craft: '韩褶', formula_text: FORMULA_TEXT }],
+}
+
 /** 本地时区今天（yyyy-MM-dd），与组件 min/防御校验同口径（issue #3901） */
 function todayLocal(): string {
   const d = new Date()
@@ -206,6 +218,45 @@ describe('ProcessingOrderBlock', () => {
     const text = writeText.mock.calls[0][0] as string
     expect(text).not.toMatch(/undefined|null|NaN/)
     expect(text).not.toContain('工艺：')
+  })
+
+  // ── issue #4555：车间/任务卡纸面看到「用料是怎么算出来的」─────────────────
+
+  it('#4555 判据 3（红证）：快照带 formula_text ⇒ 加工单区块渲染「算料公式」行（逐字）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poWithFormula } })
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+
+    const spec = await screen.findByTestId('po-item-craft-spec')
+    expect(within(spec).getByText('算料公式')).toBeInTheDocument()
+    expect(within(spec).getByText(FORMULA_TEXT)).toBeInTheDocument()
+  })
+
+  it('#4555 判据 3：「复制全部」文本含「算料公式：…」（发给加工方/贴 Excel 也不丢）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poWithFormula } })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    await userEvent.click(await screen.findByText('复制全部'))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    const text = writeText.mock.calls[0][0] as string
+    expect(text).toContain(`算料公式：${FORMULA_TEXT}`)
+  })
+
+  it('#4555 判据 2（回归）：存量加工单无 formula_text 键 ⇒ 无「算料公式」行、复制文本不出现该行', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poWithCraft } })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    await userEvent.click(await screen.findByText('复制全部'))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    expect(screen.queryByText('算料公式')).toBeNull()
+    const text = writeText.mock.calls[0][0] as string
+    expect(text).not.toContain('算料公式')
+    expect(text).not.toMatch(/undefined|null|NaN/)
   })
 
   // issue #3889：onStatusChange 上报加工单状态（详情页据此守卫发货入口）；查询失败上报 null

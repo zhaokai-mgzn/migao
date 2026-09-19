@@ -597,6 +597,12 @@ export interface ProcessingOrderItem {
   panels?: number
   fullness?: number
   fullness_actual?: number
+  /**
+   * 可读**算料公式串**（issue #4555）：车间/任务卡纸面据此告知「用料是怎么算出来的」。
+   * 快照层是 snake_case 载体（订单层 `processing_info` 落的是 camelCase `formulaText`，
+   * 展示映射 `lib/craft-display.ts` 两个别名同登记）。存量加工单无该键 ⇒ 该行不出现。
+   */
+  formula_text?: string
   remark?: string
 }
 

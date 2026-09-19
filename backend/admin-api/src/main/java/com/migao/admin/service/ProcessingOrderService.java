@@ -197,10 +197,30 @@ public class ProcessingOrderService {
      * 加工单快照要固化的**算料输出**键（issue #4354，设计文档 §4.9）：订单侧下单时已落库的算料输出
      * 原样进快照 —— 加工单的固化真相里没有它，车间就少一个数（§4.3 的「生产为零」根因）。
      * 逐键 {@code copyIfPresent}：**缺键就缺**，Java 不造值。
+     *
+     * <p>{@code formula_text} = 可读**算料公式串**（issue #4555，用户 2026-09-19 裁定
+     * 「算料公式要展示出来可以明确告知用料是如何计算出来的」+「C 端也要能看到」）：
+     * 订单详情与 C 端报价卡已渲染（#4546），车间/任务卡纸面
+     * （{@code ProcessingOrderBlock} / {@code TaskCardPrint}）此前**看不到** —— 缺的就是本键。
+     * 串由 ai-agent 算料引擎产出、下单时原样落 {@code processing_info}，Java **只透传**、不自拼。</p>
      */
     private static final List<String> CALC_OUTPUT_SNAPSHOT_KEYS = List.of(
             "fabric_meters", "pleat_count", "per_panel_pleats", "panels", "holes",
-            "fullness", "fullness_actual");
+            "fullness", "fullness_actual", "formula_text");
+
+    /**
+     * 算料输出的**取值键名**别名（快照键族 = snake_case，订单层 {@code processing_info} 里个别键 = camelCase）：
+     * 只在这里登记一次，**不另立第二份口径**。
+     *
+     * <p>issue #4555 读码实测（**以代码事实为准**）：{@code copyIfPresent(from, to, key)} 的**取值键与落键键同名**，
+     * 而算料公式串下单时落的是 camelCase {@code processing_info.formulaText}
+     * （{@code orders/new/page.tsx} 把试算响应的 {@code formula_text} 原样搬进该键）；
+     * 快照键族 / 响应 DTO（{@code @JsonProperty("formula_text")}）/ 三端展示映射
+     * （{@code craft-display.ts} 同登记两个别名）都按 snake_case 读 ⇒ 两者**不同名**。
+     * 若直接用键族名取值，会**恒取不到**（静默缺行，且没有任何东西会变红）。</p>
+     */
+    private static final Map<String, String> CALC_OUTPUT_SOURCE_KEY_ALIASES = Map.of(
+            "formula_text", "formulaText");
 
     /**
      * 加工单快照要固化的**工艺规格**键（issue #4354，设计文档 §4.2 / §4.8）：
@@ -1690,7 +1710,8 @@ public class ProcessingOrderService {
                 copyIfPresent(pi, entry, key);
             }
             for (String key : CALC_OUTPUT_SNAPSHOT_KEYS) {
-                copyIfPresent(pi, entry, key);
+                // 取值键名可能与落键键名不同（formula_text ← processing_info.formulaText，issue #4555）
+                copyIfPresent(pi, entry, CALC_OUTPUT_SOURCE_KEY_ALIASES.getOrDefault(key, key), key);
             }
             // 显式字段覆盖（V63，issue #4362，S1）：order_items 的 craft spec **列**最后叠加 ——
             // 推导链的**最高优先级**是「显式字段」，JSONB 键是存量单的旧载体（同一事实的两种落法）。
