@@ -59,7 +59,7 @@ git show origin/main:backend/ai-agent-service/app/production/routing.py | sed -n
 **② 而实际落库的**主线**不含它**（同一文件紧邻的下一段）：
 
 ```bash
-git show origin/main:backend/ai-agent-service/app/production/routing.py | sed -n '474,481p'
+git show origin/main:backend/ai-agent-service/app/production/routing.py | sed -n '474,481p'   # ROUTE_MAINLINE_STEPS 在 :480
 # → #: **实际落库的 10 道**主线（部位无关；工艺槽位不落库）
 # → ROUTE_MAINLINE_STEPS: List[str] = ["精裁", "三边", "熨烫", "定型", "复烫", "车被",
 # →                                    "外帘打卷", "打包", "外帘装袋", "外帘发货"]
@@ -89,7 +89,7 @@ git show origin/main:backend/admin-api/src/main/resources/db/migration/V71__norm
 
 | 转述 | 实测 | 差异 |
 |---|---|---|
-| 「`routing.py:470` 附近的 `ROUTE_MAINLINE`，**第 3 位是字面量 `⟪工艺槽位⟫`**」 | ✅ **逐字一致** —— `ROUTE_MAINLINE` 在 **`:471`**，第 3 位（下标 2）正是 `⟪工艺槽位⟫`；「槽位 = 打褶那一道」在 **`:470`** | 无 |
+| 「`backend/ai-agent-service/app/production/routing.py:470` 附近的 `ROUTE_MAINLINE`，**第 3 位是字面量 `⟪工艺槽位⟫`**」 | ✅ **逐字一致** —— `ROUTE_MAINLINE` 在 `backend/ai-agent-service/app/production/routing.py:471`，第 3 位（下标 2）正是 `⟪工艺槽位⟫`；「槽位 = 打褶那一道」在 `backend/ai-agent-service/app/production/routing.py:470` | 无 |
 | 「**实际落库的** `ROUTE_MAINLINE_STEPS`（10 道）**不含槽位**」 | ✅ 一致（`:480`） | 无 |
 | — | ⚠️ **补充一处**：`ROUTE_MAINLINE`（含槽位的那份）**全仓只有 1 处引用**（就是它自己的定义）—— 实测 `git grep -n "ROUTE_MAINLINE\b" origin/main` 只返回 `:471` 一行 ⇒ 它**没有消费方**（"仅文档用途"是**事实**，不是谦辞） | 转述未提；**这是"槽位语义只活在注释里"的加强证据** |
 | — | ⚠️ **补充一处**：`backend/admin-api/src/test/java/com/migao/admin/service/RoutingModelFixture.java:48` 的注释写「规范主线（**9 道**，不含工艺槽位）」，而它返回的 `mainline()` 实际是 **10 道**（含 `打包`） | 同族数字腐烂（§8 F1）；**不在本单修**（测试文件，docs-only 单） |
@@ -105,7 +105,7 @@ git grep -n "工艺槽位" origin/main | wc -l    # → 12
 | 1 | `backend/ai-agent-service/app/production/routing.py:469` `ROUTE_MAINLINE` | 「仅文档用途」的**全貌示意**（含占位） | **升级为一等公民**：`SLOTS` 常量（§3.2）取代这条示意；`⟪工艺槽位⟫` 这个**单一占位**拆成 9 个具名槽 |
 | 2 | `backend/ai-agent-service/app/production/routing.py:470` `ROUTE_MAINLINE` | 定义「槽位 = 打褶那一道」（**语义冻结处**） | **成为设计依据**：`CRAFT_SLOT` 的取值域（`韩褶`/`打孔`/`穿杆` 占打褶槽）；注释里的「四爪钩」按 §5.3 P1 改判为 legacy |
 | 3 | `backend/ai-agent-service/app/production/routing.py:471` `ROUTE_MAINLINE` | **字面量** `⟪工艺槽位⟫`（第 3 位） | **消失** —— 由 `SLOTS` 的槽序取代（不再是"序列里的一个假工序名"） |
-| 4 | `backend/ai-agent-service/app/production/routing.py:474` `ROUTE_MAINLINE_STEPS` | 「落库的 10 道**不含**槽位」 | **改口径**：「槽位由 `SLOTS` 承载；`mainline` 不再是唯一的顺序载体」 |
+| 4 | `backend/ai-agent-service/app/production/routing.py:480` `ROUTE_MAINLINE_STEPS` | 「落库的 10 道**不含**槽位」 | **改口径**：「槽位由 `SLOTS` 承载；`mainline` 不再是唯一的顺序载体」 |
 | 5 | `backend/admin-api/src/main/java/com/migao/admin/entity/ProductionRouteTemplate.java:26` `mainline` | 实体字段注释：「『工艺槽位』不落库」 | **改口径**：加一句「槽位由 `production_operation_slots` 承载（阶段 4）」；**保留**"不落库进 mainline"这一条 |
 | 6 | `backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java:89` `ROUTE_MAINLINE_STEPS` | 模板套用的**主线常量**（10 道，**不含**槽位） | **保留**（种子仍需主线）；但「不含槽位」的理由从"不落库"变成"槽位另有载体" |
 | 7 | `backend/admin-api/src/main/resources/db/migration/V71__normalize_routing_model_structure.sql:34` `mainline` | 迁移头注释：落库 9 道不含槽位 | **一字不改**（已发布迁移**不可变** —— `MigrationRunner` 按**文件名**记账，改它 = 存量环境静默缺失；issue #4235） |
@@ -113,7 +113,7 @@ git grep -n "工艺槽位" origin/main | wc -l    # → 12
 | 9 | `backend/admin-api/src/main/resources/db/migration/V72__switch_routing_model_consumers.sql:208` `ROUTE_MAINLINE_STEPS` | 回填口径：9 道不含槽位 | **一字不改**（同 #7） |
 | 10 | `backend/admin-api/src/main/resources/db/migration/V76__redo_v72_with_sort_order_fix.sql:179` `ROUTE_MAINLINE_STEPS` | 同上（V72 重做版） | **一字不改**（同 #7） |
 | 11 | `backend/admin-api/src/test/java/com/migao/admin/service/RoutingModelFixture.java:48` `mainline` | 测试夹具：「9 道，不含工艺槽位」 | **改判**：注释的「9 道」改「10 道」（数字腐烂）；断言**新增**「槽位表与 `SLOTS` 逐条一致」（阶段 4） |
-| 12 | `backend/ai-agent-service/tests/test_production/test_route_model_v2.py:62` `ROUTE_MAINLINE` | 测试分组注释：「『工艺槽位』不落库，只在文档里」 | **改判**：阶段 4 新增「槽序偏序 + 槽内次序」的 L0 断言（§3.6 S1~S10 落码） |
+| 12 | `backend/ai-agent-service/tests/test_production/test_route_model_v2.py:64` `MAINLINE` | 测试分组注释：「『工艺槽位』不落库，只在文档里」 | **改判**：阶段 4 新增「槽序偏序 + 槽内次序」的 L0 断言（§3.6 S1~S10 落码） |
 
 **判定汇总（12 处）**：
 
@@ -216,7 +216,7 @@ git show origin/main:backend/ai-agent-service/tests/test_production/test_route_m
 V71 的注释把这个后果写成了迁移纪律（逐字）：
 
 > 「不归一 ⇒ 锚点在逻辑名序列里找不到 ⇒ 条件工序会**静默追加到末尾**，工序顺序错」
-> —— `backend/admin-api/src/main/resources/db/migration/V71__normalize_routing_model_structure.sql:38` `ROUTE_RULES`
+> —— `backend/admin-api/src/main/resources/db/migration/V71__normalize_routing_model_structure.sql:37` 的 **ROUTE_RULES** 段（该常量本身在 `backend/ai-agent-service/app/production/routing.py:708`）
 
 **代价的形态**：车间按错顺序干（例：`上车布` 排到 `外帘发货` 之后）⇒ 工人要么返工、要么跳过，
 而**系统不报错、无告警、无数据可查**。这与 #4609「静默丢工序」同族（都是「工序清单静默偏离模型」）。
@@ -230,7 +230,7 @@ V71 的注释把这个后果写成了迁移纪律（逐字）：
 | 每道工序名把**部位编码进名字**（`精裁-布`/`精裁-纱`、`布三边`/`纱三边`） | 逻辑工序名（`精裁`/`三边`）+ **部位适用性矩阵** |
 | `(部位, 工艺)` 笛卡尔积 ⇒ 9 条路线，**改一道工序要改 8 遍** | **1 条主线** + `ROUTE_RULES`（工艺/选项触发 insert/remove） |
 
-实测 9 条路线（`backend/admin-api/src/main/resources/db/migration/V54__seed_production_operations.sql:73` `production_routings` 6 行 + `V58__seed_sheer_curtain_routings.sql:38` 3 行）：
+实测 9 条路线（`backend/admin-api/src/main/resources/db/migration/V54__seed_production_operations.sql:73` `production_routings` 6 行 + `backend/admin-api/src/main/resources/db/migration/V58__seed_sheer_curtain_routings.sql:38` 3 行）：
 
 ```bash
 git show origin/main:backend/admin-api/src/main/resources/db/migration/V54__seed_production_operations.sql | grep -cE "^\s*\('rt-v54-"
@@ -378,7 +378,7 @@ git show origin/main:backend/admin-api/src/main/resources/db/migration/V58__seed
 
 ### 2.6 部位适用性（沿用今天的矩阵，不改口径）
 
-今天已有的矩阵：`backend/ai-agent-service/app/production/routing.py:481` 起 `_POSITION_PRICE_ROWS`
+今天已有的矩阵：`backend/ai-agent-service/app/production/routing.py:549` `_POSITION_PRICE_ROWS`
 （**30 道逻辑工序 × 4 部位 = 120 行**，逐行显式，`applicable` 与 `unit_price` 分离）。
 **槽位模型不改这一层** —— 它是**已经正确的目标形态**（`docs/design/operation-name-unification.md` §6 N5 同款判断）。
 
@@ -658,10 +658,10 @@ Java 靠 `id`）。**这是今天的一处双源裂缝**（同 priority 时两�
 
 | 问题 | 结论 |
 |---|---|
-| 记什么 | 加工单上记 **①知识版本号 + ②路线模板 id**（`route_template_id` 今天只在**返回体**里，**没落库**：`ProcessingOrderService.java:1290` `route.put("route_template_id", template.getId())`，而 `processing_orders` 表只有 `route_key`/`route_requested_key`/`route_source` 三列，`V60__create_routing_customization_tables.sql:118` 起 —— **实测无 `route_template_id` 列**） |
+| 记什么 | 加工单上记 **①知识版本号 + ②路线模板 id**（`route_template_id` 今天只在**返回体**里，**没落库**：`backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:1290` `route_template_id` 只在返回体里（`route.put("route_template_id", …)`）；而 `processing_orders` 表只有 `route_key`/`route_requested_key`/`route_source` 三列 —— 见 `backend/admin-api/src/main/resources/db/migration/V60__create_routing_customization_tables.sql:118` `route_key`（**实测无 `route_template_id` 列**）） |
 | 为什么记 | ① **诊断**：商家问「这张单为什么没有定型」时，必须知道**当时**的出厂知识（否则今天改了知识就解释不了昨天）；② **#4650 阶段 3** 的"解释"要引真值源（**不许编造**）—— 没有版本号就只能用今天的知识解释昨天的单（**错**）；③ **审计**：加工单是工资凭证 |
 | 与快照的关系 | **互补，不是替代**。快照（实例行）= **结果**（当时排了什么、什么价、多少量）；版本号 = **依据**（当时的知识长什么样）。**只有快照没有版本号** ⇒ 知道"排了 A 没排 B"但说不出"为什么"；**只有版本号没有快照** ⇒ 要重放才能知道结果（**危险**：重放可能因例外/数据变化而与当时不同） |
-| **不做什么** | **不**用版本号做"重放/重算"（历史单**不重放**）；**不**给历史单回填版本号（回填 = 猜测，`NULL` 是诚实值）；**不**把版本号写进 `production_work_logs`（报工明细不可变，见 `backend/admin-api/src/main/resources/db/migration/V49__create_production_operations_and_work_logs.sql:91` `production_work_logs` 的表注释「报工记录（明细不可变）」） |
+| **不做什么** | **不**用版本号做"重放/重算"（历史单**不重放**）；**不**给历史单回填版本号（回填 = 猜测，`NULL` 是诚实值）；**不**把版本号写进 `production_work_logs`（报工明细不可变，见 `backend/admin-api/src/main/resources/db/migration/V49__create_production_operations_and_work_logs.sql:100` `production_work_logs` 的表注释「报工记录（明细不可变）」） |
 
 ⇒ **实现口径**：`processing_orders` 加 `knowledge_version INT`（**可空**，历史行为 `NULL`）
 + `route_template_id VARCHAR(64)`（**可空**，历史行为 `NULL`）。**两列都是"新单才有值"**，
@@ -956,7 +956,7 @@ Q1/Q2/Q3 发现偏差
 | **F9** | — | ⚠️ `production_route_rules` 里还有 **`action='factor'`** 档（V72/V76 从 `production_option_factors` 搬入），#4589 起已软删、零消费者 | **不在 29 条内**（29 条 = `insert`/`remove`）；阶段 4 删表时要**一并确认**它已零消费者 |
 | **F10** | — | ⚠️ `质检` 是 `ROUTE_MAINLINE`（**仅文档用途、不落库**）的占位，**无规则行、无矩阵价**以外的载体 | §2.1 ★ / A5 |
 | **F11** | — | ⚠️ 真值源里**已有**槽位语义（`ROUTE_MAINLINE` 第 3 位字面量 `⟪工艺槽位⟫` + `V71:228` 的列注释定义），但它**没有消费方**（`git grep "ROUTE_MAINLINE\b"` 只命中定义行）⇒ **槽位语义只活在注释里**，落库时被扁平化掉 | **§1.0**：本设计的定性 = **恢复**而非引入；引用面 **12 处**、可枚举 |
-| **F12** | — | ⚠️ `RoutingModelFixture.java:48` 注释写「9 道」，其 `mainline()` 实际返回 **10 道** | 同族数字腐烂；**不在本单修**（测试文件） |
+| **F12** | — | ⚠️ `backend/admin-api/src/test/java/com/migao/admin/service/RoutingModelFixture.java:48` `mainline` 注释写「9 道」，其 `mainline()` 实际返回 **10 道** | 同族数字腐烂；**不在本单修**（测试文件） |
 
 ---
 
@@ -994,7 +994,7 @@ git show origin/main:backend/ai-agent-service/app/production/routing.py | sed -n
 # →                              "车被", "外帘打卷", "打包", "外帘装袋", "外帘发货"]
 
 # ② 落库的主线不含槽位（紧邻下一段）
-git show origin/main:backend/ai-agent-service/app/production/routing.py | sed -n '474,481p'
+git show origin/main:backend/ai-agent-service/app/production/routing.py | sed -n '474,481p'   # ROUTE_MAINLINE_STEPS 在 :480
 
 # ③ 落库侧的列注释把槽位定义写成了明文
 git show origin/main:backend/admin-api/src/main/resources/db/migration/V71__normalize_routing_model_structure.sql | sed -n '228p'
@@ -1002,7 +1002,7 @@ git show origin/main:backend/admin-api/src/main/resources/db/migration/V71__norm
 
 # ④ ROUTE_MAINLINE（含槽位的那份）**无消费方** —— 只命中它自己的定义行
 git grep -n "ROUTE_MAINLINE\b" origin/main
-# → 1 行（routing.py:471）
+# → 1 行（backend/ai-agent-service/app/production/routing.py:471）
 
 # ⑤ 「工艺槽位」字面量全仓 12 处（§1.0 的表逐条判定）
 git grep -n "工艺槽位" origin/main | wc -l
@@ -1044,7 +1044,7 @@ git show origin/main:backend/ai-agent-service/app/production/routing.py | grep -
 # ② 「锚点找不到 ⇒ 追加末尾」四处（Python ×2 / Java ×2）
 git show origin/main:backend/ai-agent-service/app/production/routing.py | grep -n "追加末尾"
 git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java | grep -n "追加末尾"
-# → routing.py:355,792 / ProcessingOrderService.java:1155,1315
+# → backend/ai-agent-service/app/production/routing.py:355,792 / backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:1155,1315
 
 # ③ 顺序敏感的判据（测试）
 git show origin/main:backend/ai-agent-service/tests/test_production/test_route_model_v2.py | sed -n '439,442p'
@@ -1087,7 +1087,7 @@ git show origin/main:backend/admin-api/src/main/resources/db/migration/V49__crea
 # ② 加工单表无 route_template_id（只有 route_key/route_requested_key/route_source）
 git show origin/main:backend/admin-api/src/main/resources/db/migration/V60__create_routing_customization_tables.sql | sed -n '118,126p'
 git grep -n "route_template_id" origin/main -- 'backend/admin-api/src/main/resources/db/migration/' 'docs/sql/schema.sql'
-# → 无输出（只在返回体里：ProcessingOrderService.java:1290）
+# → 无输出（只在返回体里：backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:1290）
 
 # ③ 路线变更账（V85 起挂到新模板表）
 git show origin/main:backend/admin-api/src/main/resources/db/migration/V85__fix_routing_version_ledger_shape.sql | sed -n '1,12p'
