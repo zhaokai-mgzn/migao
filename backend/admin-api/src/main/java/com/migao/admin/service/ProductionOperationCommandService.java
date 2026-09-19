@@ -1,6 +1,7 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPosition;
@@ -303,9 +304,14 @@ public class ProductionOperationCommandService {
                     "删除工序未通过校验（" + details.size() + " 条问题）", details,
                     "按每条理由处理：先改主线 / 先删改那条规则 / 先在对应部位设为不做");
         }
-        op.setDeleted(1);
-        op.setUpdatedAt(OffsetDateTime.now());
-        productionOperationMapper.updateById(op);
+        // ⚠️ 必须**显式写列**（issue #4608），不得写成 `op.setDeleted(1); updateById(op);`：
+        // MP 全局逻辑删除会把逻辑删除字段从 updateById 的 SET 子句里**剔除** ⇒ deleted 永不落库，
+        // 而调用仍返回成功 = 删除静默 no-op（用户实测「提示成功但数据还在」）。
+        // 显式 .set(...) 绕过字段剔除，同时保住审计字段 updated_at（「谁在什么时候删的」的唯一证据）。
+        productionOperationMapper.update(null, new LambdaUpdateWrapper<ProductionOperation>()
+                .eq(ProductionOperation::getId, id)
+                .set(ProductionOperation::getDeleted, 1)
+                .set(ProductionOperation::getUpdatedAt, OffsetDateTime.now()));
         log.info("软删工序: tenantId={}, operationId={}, name={}", tenantId, op.getId(), op.getName());
         return result;
     }
