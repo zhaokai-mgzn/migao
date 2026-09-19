@@ -255,11 +255,11 @@ describe('搜索区域左对齐 — 无居中 CSS 类', () => {
     })
 
     it('页面不含 search-area 元素（无搜索区域，不受影响）', async () => {
-      // issue #4490：合并后唯一入口（默认 tab「加工项」）
+      // issue #4490：合并后唯一入口（默认 tab「加工项」）；#4542 起页面标题/菜单名 =「加工项管理」
       const { default: ProcessingPage } = await import('@/app/(dashboard)/production/processing/page')
       render(<ProcessingPage />)
       await waitFor(() => {
-        expect(screen.getByText('加工项与加工费')).toBeInTheDocument()
+        expect(screen.getByText('加工项管理')).toBeInTheDocument()
       })
       expect(screen.queryByTestId('search-area')).toBeNull()
     })

@@ -17,7 +17,7 @@ import type {
 } from '@/types'
 
 /**
- * 加工项与加工费 /production/processing（issue #4490）
+ * 加工项管理 /production/processing（issue #4490）
  *
  * **用户裁定（2026-09-19）**：「**加工项**和**加工项费用**这两个我建议**合并成一个菜单**，
  * 也**放到生产管理菜单下**」。
@@ -457,7 +457,7 @@ function ProcessingContent() {
       {/* ── 页头：一件事（这个页面管「加工项」和它的「加工费组合」）── */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-neutral-900">加工项与加工费</h1>
+          <h1 className="text-xl font-semibold text-neutral-900">加工项管理</h1>
           <p className="mt-1 text-sm text-neutral-500">
             加工项是下单时客户可选的加工服务（如 韩褶、打孔）；加工费按<strong>选配组合</strong>定价（元/米），
             下单时由系统按选配结果自动匹配取价，顾客只选配、不报价。

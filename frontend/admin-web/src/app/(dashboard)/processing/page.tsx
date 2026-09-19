@@ -1,10 +1,11 @@
 import { redirect } from 'next/navigation'
 
 /**
- * 旧「加工项管理」入口 → 加工项与加工费（issue #4490）。
+ * 旧「加工项管理」入口 → /production/processing（issue #4490；#4542 改名后旧名重新成为菜单名）。
  *
  * 「加工项管理」(/processing，商品管理组) 与「加工费管理」(/production/processing-fees，生产管理组)
- * **合并为单一菜单入口** `/production/processing`（菜单名「加工项与加工费」，归**生产管理**组）：
+ * **合并为单一菜单入口** `/production/processing`（菜单名「加工项管理」—— issue #4542 用户裁定
+ * 把菜单名从 #4490 的合并名改回「加工项管理」，与服务端 `MenuController`/`AuthService` 同名）：
  * 两者是同一权限码（`processing:manage`）、同一业务域（加工项及其定价）——
  * 加工费组合的 `items[]` 必须取自加工项目录的活跃加工项，拆在两个菜单组里意味着
  * 「建组合发现缺加工项要跳到另一个菜单组去建」。
@@ -14,8 +15,8 @@ import { redirect } from 'next/navigation'
  * `/production/routings` 先例。
  *
  * 加工项原有能力（列表 / 新增 / 编辑 / 删除二次确认 / 加工分类 / 计价方式 / 优惠设置）
- * 已全部并入 `/production/processing` 的**第一个 tab「加工项」**，
- * 见 `production/processing/page.tsx`。
+ * 已全部并入 `/production/processing` 的**第一个 tab「加工项」**；加工费组合那一半在**第二个 tab**
+ * （菜单名不再提「加工费」，但功能一个没减），见 `production/processing/page.tsx`。
  */
 export default function ProcessingRedirectPage() {
   redirect('/production/processing')
