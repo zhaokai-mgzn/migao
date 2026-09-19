@@ -437,11 +437,49 @@ def java_main_sources() -> list:
     return sorted(JAVA_MAIN.rglob("*.java"))
 
 
+#: Java 的**字面量 ∪ 注释**词法扫描（顺序敏感：字面量必须排在注释之前）。
+#: 为什么不能按 `//` 粗暴切行：Java 字符串里可能含 `//`（如 `"http://x"`），
+#: 那样会把**同一行后面的真实读取**一起删掉 ⇒ 制造假绿（issue #4595 的取舍点）。
+_JAVA_LEX_RE = re.compile(
+    r'"""(?:\\.|[^\\])*?"""'      # 文本块（Java 15+；本仓 MigrationRunner 在用）
+    r'|"(?:\\.|[^"\\])*"'         # 字符串字面量
+    r"|'(?:\\.|[^'\\])*'"         # 字符字面量
+    r'|//[^\n]*'                  # 行注释
+    r'|/\*.*?\*/',                # 块注释
+    re.S)
+
+
+def java_code_only(text: str) -> str:
+    """去掉 Java **注释**、**保留字面量** —— 本判据只认「代码里的读取」，不认「注释里的提及」。
+
+    ## 为什么必须去注释（issue #4595，实证）
+
+    旧实现是**裸子串扫描**（`if "customer_unit_price" in text`）：任何文件只要**提到**这个列名
+    ——包括**把账本边界写清楚的 javadoc**（本仓鼓励的做法）—— 就被判成「计件路径越界读取」。
+    实证：#4587 的两个新文件（矩阵写面 service + 版本账 entity）**一行读取都没有**，
+    命中全部来自 javadoc 里那句「对客定价在别处：… `production_route_rules.customer_unit_price`」。
+
+    ⚠️ 按仓库纪律，**不许靠改措辞绕过判据**（那等于把判据变成「谁不写注释谁通过」）⇒
+    修**判据**：语义（docstring 自述）本来就是「读了这一列」，实现必须与之对齐。
+
+    ⚠️ **判别力不降**（本单红线，见 `test_piecework_read_guard_still_catches_code_reads`）：
+    字符串字面量**原样保留**（SQL 里的列名仍是真实读取），只有注释被换成空格。
+    """
+    def keep(match: "re.Match") -> str:
+        token = match.group(0)
+        return token if token[0] in '"\'' else " "
+
+    return _JAVA_LEX_RE.sub(keep, text)
+
+
 def customer_price_reads(sources) -> list:
-    """读 `customer_unit_price` / `getCustomerUnitPrice` 的**文件相对路径**（allowlist 之外）。"""
+    """读 `customer_unit_price` / `getCustomerUnitPrice` 的**文件相对路径**（allowlist 之外）。
+
+    ⚠️ 只看**代码**（注释已剔除，见 {@link java_code_only}）：注释里提及列名不算读取。
+    """
     hits = []
     for path in sources:
-        text = path.read_text(encoding="utf-8")
+        text = java_code_only(path.read_text(encoding="utf-8"))
         if "customer_unit_price" in text or "CustomerUnitPrice" in text:
             try:
                 rel = str(path.relative_to(REPO))
@@ -463,7 +501,13 @@ def test_piecework_paths_never_read_customer_unit_price():
     ⚠️ **这不是放宽计件纪律**：配置面只做「原样透出 / 原样写入」，不参与任何计件计算；
     两套账的实质边界（`factor` 与 `customer_unit_price` 不互读）由
     `ProcessingFeeCalculatorTest::customerFeeNeverReadsPieceworkFactor` 独立钉住。
-    新增**任何其它**文件出现该标识符 ⇒ 仍判红。
+    新增**任何其它**文件**在代码里读取**该标识符 ⇒ 仍判红。
+
+    ⚠️ **只看代码、不看注释**（issue #4595 改判）：旧实现是裸子串扫描 ⇒ 把 javadoc 里
+    「解释账本边界」的**提及**当成越界读取（实证：#4587 的两个新文件零读取却被判红）。
+    按仓库纪律不许靠改措辞绕门禁 ⇒ 判据改为**剔除注释后**再扫（字面量保留，SQL 里的列名仍算读取）。
+    两条反向/正向自证见 `test_piecework_read_guard_ignores_comment_mentions` 与
+    `test_piecework_read_guard_still_catches_code_reads`。
     """
     sources = java_main_sources()
     assert sources, "没扫到任何 Java 源码 ⇒ 本判据是空跑"
@@ -482,6 +526,44 @@ def test_piecework_read_guard_detects_injected_read(tmp_path):
     # 反向：allowlist 里的文件不算命中
     allowed = REPO / next(iter(CUSTOMER_PRICE_READ_ALLOWLIST))
     assert customer_price_reads([allowed]) == []
+
+
+def test_piecework_read_guard_ignores_comment_mentions(tmp_path):
+    """注释里**提及**列名不算读取（issue #4595 的改判点；改前此断言必红）。
+
+    病灶实证：#4587 的两个新文件（矩阵写面 service + 版本账 entity）**一行读取都没有**，
+    只因 javadoc 里写了「对客定价在别处：… `customer_route_rules.customer_unit_price`」
+    就被旧实现判成越界读取 ⇒ CI 红。
+    """
+    # ① 行注释 + ② javadoc 块注释：两种形态都不得算命中
+    (tmp_path / "LineComment.java").write_text(
+        "class A {\n  // 对客价在 production_route_rules.customer_unit_price（元/套）\n  int x = 1;\n}\n",
+        encoding="utf-8")
+    (tmp_path / "BlockComment.java").write_text(
+        "/**\n * 对客价 = {@code customer_unit_price}（元/套）\n * getCustomerUnitPrice 也不在本类读\n */\nclass B { int y = 2; }\n",
+        encoding="utf-8")
+    assert customer_price_reads([tmp_path / "LineComment.java"]) == [], "行注释里的提及被误判成读取"
+    assert customer_price_reads([tmp_path / "BlockComment.java"]) == [], "块注释里的提及被误判成读取"
+
+
+def test_piecework_read_guard_still_catches_code_reads(tmp_path):
+    """判别力不许降（本单红线）：**代码里**的读取/字面量仍必须被照出来。
+
+    三条形态各一：① 方法调用；② 字符串字面量（SQL 列名是真实读取）；
+    ③ **字符串里含 `//`**（`"http://x"`）时，**同一行后面的读取**仍要被抓到
+    —— 这条专治「按 `//` 粗暴切行」的假绿修法。
+    """
+    (tmp_path / "Call.java").write_text(
+        "class C { void z() { rule.getCustomerUnitPrice(); } }", encoding="utf-8")
+    (tmp_path / "Sql.java").write_text(
+        'class D { String q = "SELECT customer_unit_price FROM production_route_rules"; }',
+        encoding="utf-8")
+    (tmp_path / "Tricky.java").write_text(
+        'class E { String u = "http://x"; BigDecimal p = rule.getCustomerUnitPrice(); }',
+        encoding="utf-8")
+    for name in ("Call.java", "Sql.java", "Tricky.java"):
+        assert customer_price_reads([tmp_path / name]) == [str(tmp_path / name)], \
+            f"{name} 里的代码读取被漏判（判别力下降 = 本单红线）"
 
 
 # ══════════════════════════ ⑤ R13 快照冻结（判据 11）══════════════════════════
