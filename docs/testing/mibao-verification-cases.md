@@ -1556,7 +1556,7 @@
 全程禁用: order_create
 ```
 真值: defense.breaker-threshold, defense.breaker-no-retry
-溯源: eval D011 独有；熔断阈值按代码校准 5→3。2026-09-14 归因（#3679，CI run 34838080233）：`expectations` 由 product_detail 改为 product_search（真实链路工具）；两条自然语义 data_checks（不计分、且以「连续 3 次失败」这一**不存在的前提**为基础——404 不计入熔断）下沉为 test_circuit_breaker.py 的机器断言；端到端保留真实可观测的「查不到不得写」护栏（forbidden_tools） ｜ tags: defense, circuit_breaker, failure_rate
+溯源: eval D011 独有；熔断阈值按代码校准 5→3。2026-09-14 归因（#3679，CI run 34838080233）：`expectations` 由 product_detail 改为 product_search（真实链路工具）；两条自然语义 data_checks（不计分、且以「连续 3 次失败」这一**不存在的前提**为基础——404 不计入熔断）下沉为 test_circuit_breaker.py 的机器断言；端到端保留真实可观测的「查不到不得写」护栏（forbidden_tools）；2026-09-19（issue #4526 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]` —— 把「正向对照那一轮的名字存在且唯一」这条**真正依赖且只读**的前置写成可判定自断言（同 CH-007 / CH-012 的修法）；有意不声明 `namespaces`（只读用例声明它 = 账面新增 NO-SELF-CLEAN，与「只许缩短」冲突）。expectations / forbidden_tools / data_checks / user_inputs 原样未动、无放宽。 ｜ tags: defense, circuit_breaker, failure_rate
 
 ### DF-012. 熔断 - Redis 不可用时优雅降级 🔴
 ```

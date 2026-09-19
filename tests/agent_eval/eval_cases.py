@@ -2239,6 +2239,7 @@ _CASE_DF_011 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_tools=['product_manage', 'product_update', 'sku_update', 'inventory_manage', 'order_create'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── DF-012 [ADVERSARIAL] 熔断 - Redis 不可用时优雅降级（源: cases/defense.yml）──
