@@ -13,13 +13,12 @@
  * 倒幅 = (cuttingMode == 定宽买高)  正幅 = (cuttingMode == 定高买宽)  ← 唯一推导，不设手选项
  * ```
  *
- * 红证（实现前）：`@/lib/craft-display` 无 `HEM_MARGIN` / `resolveDoorWidth` /
- * `detectAutoFeatures` ⇒ import 即红（本文件不 mock，直接红在 import 上）。
+ * 红证（实现前）：`@/lib/craft-auto-features` 不存在 ⇒ import 即红（本文件不 mock，直接红在 import 上）。
  */
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { HEM_MARGIN, detectAutoFeatures, resolveDoorWidth } from '@/lib/craft-display'
+import { HEM_MARGIN, detectAutoFeatures, resolveDoorWidth } from '@/lib/craft-auto-features'
 
 /** 算料引擎源（真值源）：`backend/ai-agent-service/app/tools/curtain_calc.py` */
 const CALC_SRC = resolve(
