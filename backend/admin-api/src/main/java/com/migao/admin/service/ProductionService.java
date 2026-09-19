@@ -453,11 +453,21 @@ public class ProductionService {
 
         List<String> pending = new ArrayList<>();
         String current = "";
+        // 工序**显示名**（issue #4643）：`current_operation` 是工人端**快照名**（变体名 `精裁-布`）
+        // —— 历史数据与 agent 仍要读它，**一字不动**；web 界面渲染下面两个**读时派生**键
+        // （与 #4621 的工序实例 / 报工流水读面同口径：逻辑名走既有 `logicalOperationName`、
+        // 部位只在名字里编了部位时才给，**不写库**）。
+        String currentLogicalName = null;
+        String currentPosition = null;
         for (ProcessingPositionOperation op : operations) {
             if (!isDone(op)) {
                 pending.add(op.getOperationName());
                 if (current.isEmpty()) {
                     current = op.getOperationName();
+                    currentLogicalName =
+                            ProductionOperationQueryService.logicalOperationName(current);
+                    currentPosition = ProductionOperationQueryService.displayPosition(
+                            current, op.getPositionKind());
                 }
             }
         }
@@ -469,6 +479,9 @@ public class ProductionService {
         result.put("status_text", ORDER_STATUS_LABELS.getOrDefault(order.getStatus(), order.getStatus()));
         result.put("progress_percent", progress.get("percent"));
         result.put("current_operation", current);
+        // 追加键（issue #4643）：既有键名/含义**一字不改**，只加 web 界面要用的显示名两键。
+        result.put("logical_name", currentLogicalName);
+        result.put("position", currentPosition);
         result.put("pending_operations", pending);
         result.put("total_operations", progress.get("total"));
         result.put("done_operations", progress.get("done"));

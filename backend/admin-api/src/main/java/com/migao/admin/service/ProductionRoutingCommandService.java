@@ -402,8 +402,14 @@ public class ProductionRoutingCommandService {
             triggerKind = TRIGGER_KIND_OPTION;   // 反向护栏：老调用方一字不变
         }
         String triggerValue = requiredText(body == null ? null : body.get("trigger_value"), "trigger_value");
-        String operation = requiredText(body == null ? null : body.get("operation"), "operation");
-        String afterOperation = optionalText(body == null ? null : body.get("after_operation"));
+        // 落库前**归一**（issue #4643，与主线 #4609 同一范式）：规则表存的是**逻辑工序名**
+        // （矩阵行键 / 主线同口径），而 API / 脚本 / 老 bundle 可以传变体名（`精裁-布`）——
+        // 原样落库 ⇒ 读面回传变体名 ⇒ 规则表 / 删除确认文案上屏两套名。归一表只有
+        // `normalizeOperationName` 一份（**不在此另存映射**）；幂等：逻辑名再归一不变。
+        String operation = productionOperationQueryService.normalizeOperationName(
+                requiredText(body == null ? null : body.get("operation"), "operation"));
+        String afterOperation = productionOperationQueryService.normalizeOperationName(
+                optionalText(body == null ? null : body.get("after_operation")));
         String action = optionalText(body == null ? null : body.get("action"));
         if (action == null) {
             action = "insert";   // 反向护栏：老调用方只有 insert（端点此前写死 insert）
@@ -452,7 +458,11 @@ public class ProductionRoutingCommandService {
             if (Objects.equals(existing.getTriggerKind(), triggerKind)
                     && Objects.equals(existing.getTriggerValue(), triggerValue)
                     && Objects.equals(existing.getAction(), action)
-                    && Objects.equals(existing.getOperation(), operation)) {
+                    // 存量行可能是变体名（旧前端写进来的）⇒ 比对**归一后**的工序名：
+                    // 否则「精裁-布」与「精裁」被当成两条规则、落两条逻辑上重复的规则
+                    // （DB 唯一索引按原文比，拦不住）。只影响比较，不写库、不动其它字段。
+                    && Objects.equals(productionOperationQueryService.normalizeOperationName(
+                            existing.getOperation()), operation)) {
                 throw BusinessException.conflict(
                         String.format("「%s」触发的规则已存在（同一条「%s %s」的规则）",
                                 triggerValue, actionText(action), operation),

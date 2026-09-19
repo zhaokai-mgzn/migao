@@ -80,6 +80,39 @@ describe('ProductionProgressCard（B 端桌面会话卡）', () => {
     expect(screen.getByTestId('progress-percent')).toHaveTextContent('0%')
   })
 
+  it('#4643 变体名不进卡片：追加 logical_name/position ⇒ 渲染「逻辑名 · 部位」', () => {
+    render(
+      <ProductionProgressCard
+        data={{ ...SIMPLE, current_operation: '精裁-布', logical_name: '精裁', position: '布帘' }}
+      />,
+    )
+    expect(screen.getByText('当前工序：精裁 · 布帘')).toBeInTheDocument()
+    expect(screen.queryByText('当前工序：精裁-布')).not.toBeInTheDocument()
+  })
+
+  it('#4643 老数据（无 logical_name）⇒ 退回快照名原文；工序树载荷同样走统一显示名', () => {
+    const { unmount } = render(
+      <ProductionProgressCard data={{ ...SIMPLE, current_operation: '精裁-布' }} />,
+    )
+    // 红证：后端不追加 logical_name 时，卡片如实渲染快照名（修前形态）
+    expect(screen.getByText('当前工序：精裁-布')).toBeInTheDocument()
+    unmount()
+
+    const treeWithVariant = {
+      ...TREE,
+      positions: [
+        {
+          position_name: '帘身',
+          operations: [
+            { id: '1', operation: '精裁-布', status: 'pending', logical_name: '精裁', position: '布帘' },
+          ],
+        },
+      ],
+    }
+    render(<ProductionProgressCard data={treeWithVariant} />)
+    expect(screen.getByText('当前工序：精裁 · 布帘')).toBeInTheDocument()
+  })
+
   it('不泄漏内部信息：工人姓名 / 计件单价 / qr_token 不进卡片文案（两套账分离）', () => {
     const { container } = render(<ProductionProgressCard data={TREE} />)
     const text = container.textContent || ''
