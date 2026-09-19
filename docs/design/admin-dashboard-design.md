@@ -177,7 +177,7 @@
 > `ROUTINGS[(部位, 工艺)]`），**加工项是触发器/配件**（「选了不同加工项 ⇒ 表现为不同生产工艺」）
 > ⇒ 加工项是**店铺级目录**，与商品无关、也不按商品分类过滤。
 > 具体退场：`product_processing_items` 表、`products.has_processing`、
-> `processing_items.applicable_product_categories`（V61 迁移 `DROP`），
+> `processing_items.applicable_product_categories`（V66 迁移 `DROP`），
 > 以及「建品时必须发加工项多选卡」的引导步骤。
 > 下方「组合规则 / 价格计算器预览」仍然有效（加工项本身与订单侧加工费口径未变）。
 >

@@ -50,12 +50,17 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 #: zstd 帧魔数 —— 用它判「要不要解压」，而不是看扩展名（`.jsonl` 也可能是压缩的）。
 ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
+
+#: 「等待型调用」判据（issue #4455）：bash 命令里出现 `sleep <数字>` ⇒ 纯空等 + 一轮往返。
+#: ⚠️ 只匹配**独立词** `sleep`（`sleepy 5` / `xsleep 5` 不算），且只看 **bash** 的 `command` 字段。
+SLEEP_RE = re.compile(r"\bsleep\s+\d+")
 
 #: 退出码（三态，与 `pr_body_guard.py` / `merge_gate.py` 同族）：`3` = 无法判定，**不得当 `0` 读**。
 EXIT_OK = 0
@@ -66,8 +71,21 @@ EXIT_UNDECIDABLE = 3
 REQUIRED_ACTION = (
     "命中「往返占比高」时（判据：某工具的**调用数占比**显著高于其**执行耗时占比**）⇒ "
     "按 `migao-dev-flow` §21 的 P1~P4 处置：读要成批 / 改要成批（同一步多个 edit，>3 处用一次 write）/ "
-    "查要合并（多条 grep 合成一条 bash）/ 验证不来回（先窄跑再全量）。"
+    "查要合并（多条 grep 合成一条 bash）/ 验证不来回（先窄跑再全量）；"
+    "命中「等待型调用」时 ⇒ 按 **P7** 处置：用 `gh pr checks <PR> --watch`（一次阻塞调用）"
+    "或把它丢**后台 job**（完成时被通知）替代 `sleep N` 轮询。"
 )
+
+
+def bash_command_of(data: dict) -> str:
+    """取 bash 调用的命令行；非 bash / 解析失败 ⇒ 空串（判据只看 bash 的 `command`）。"""
+    if str(data.get("name") or "") != "bash":
+        return ""
+    try:
+        args = json.loads(data.get("arguments") or "{}")
+    except json.JSONDecodeError:
+        return ""
+    return str(args.get("command") or "") if isinstance(args, dict) else ""
 
 
 def read_session_text(path: Path) -> tuple[str | None, str | None]:
@@ -111,11 +129,13 @@ def resolve_input(path: Path) -> tuple[Path | None, str | None]:
 
 def analyze(text: str) -> dict:
     """把会话 JSONL 折成往返账。坏行**计数**上报，不静默丢弃。"""
-    calls: dict[str, tuple[int, str]] = {}  # callId -> (time_ms, tool name)
+    calls: dict[str, tuple[int, str, str]] = {}  # callId -> (time_ms, tool name, bash 命令行)
     tool_calls: collections.Counter = collections.Counter()
     tool_exec: collections.defaultdict = collections.defaultdict(float)
     unpaired = 0
     malformed = 0
+    wait_calls = 0
+    wait_s = 0.0
     steps: list[tuple[int, tuple]] = []  # (time_ms, (turn, step))
     first = last = None
 
@@ -142,13 +162,18 @@ def analyze(text: str) -> dict:
         elif kind == "tool/call":
             cid = data.get("callId")
             if isinstance(cid, str) and isinstance(ts, int):
-                calls[cid] = (ts, str(data.get("name") or "?"))
-                tool_calls[str(data.get("name") or "?")] += 1
+                name = str(data.get("name") or "?")
+                calls[cid] = (ts, name, bash_command_of(data))
+                tool_calls[name] += 1
         elif kind == "tool/result":
             cid = ((data.get("message") or {}).get("source") or {}).get("callId")
             if isinstance(cid, str) and cid in calls and isinstance(ts, int):
-                started, name = calls.pop(cid)
-                tool_exec[name] += max(0.0, (ts - started) / 1000.0)
+                started, name, command = calls.pop(cid)
+                elapsed = max(0.0, (ts - started) / 1000.0)
+                tool_exec[name] += elapsed
+                if command and SLEEP_RE.search(command):
+                    wait_calls += 1
+                    wait_s += elapsed
 
     unpaired = len(calls)
     span_s = ((last - first) / 1000.0) if (first is not None and last is not None) else 0.0
@@ -168,6 +193,8 @@ def analyze(text: str) -> dict:
         "model_upper_s": max(0.0, span_s - exec_total),
         "tools": {n: {"calls": tool_calls[n], "exec_s": tool_exec.get(n, 0.0)} for n in tool_calls},
         "gaps": gaps,
+        "wait_calls": wait_calls,
+        "wait_s": wait_s,
         "unpaired_calls": unpaired,
         "malformed_lines": malformed,
     }
@@ -210,6 +237,20 @@ def render(report: dict, path: Path, top: int) -> str:
             f"{name:<14}{stat['calls']:>6}{stat['calls'] / calls_total * 100:>9.1f}%"
             f"{stat['exec_s']:>12.1f}{stat['exec_s'] / exec_total * 100:>9.1f}%"
         )
+
+    out.append("")
+    out.append("── 等待型调用（`sleep N` 轮询；判据 = bash 的 `command` 匹配 `\\bsleep\\s+\\d+`）")
+    if report["wait_calls"]:
+        share = report["wait_s"] / exec_total * 100
+        out.append(
+            f"  {report['wait_calls']} 次 / {report['wait_s']:.0f}s —— 占工具执行 {share:.0f}%"
+            "（纯空等，且每次都是一轮模型往返）"
+        )
+        out.append(
+            "  处置：改 `gh pr checks <PR> --watch`（一次阻塞调用）；**首选丢后台 job**（完成时被通知，期间做别的）"
+        )
+    else:
+        out.append("  0 次（未发现 `sleep N` 轮询）")
 
     out.append("")
     out.append(f"── 空等榜 Top {top}（相邻两步间隔；「模型在想」与「在等后台 job」同形，不猜归属）")

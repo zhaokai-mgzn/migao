@@ -560,7 +560,7 @@ class TestXiaobuEvalFixture:
 
         ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：前提由「商品**绑定**加工项」改为
         「**店铺级加工项目录非空**」—— 加工项不再经商品取（`product_processing_items`
-        已由 V61 DROP，fixture 里的关联种子也已删除）。本断言的对象随之改写：
+        已由 V66 DROP，fixture 里的关联种子也已删除）。本断言的对象随之改写：
         目录（`INSERT INTO processing_items`）必须存在且非空。
         """
         sql = FIXTURE.read_text(encoding="utf-8")
@@ -568,7 +568,7 @@ class TestXiaobuEvalFixture:
             "fixture 必须注入店铺级加工项目录 —— 否则加工项环节用例无数据可断言（#4371）"
         )
         assert "product_processing_items" not in _strip_sql_comments(sql), (
-            "fixture 仍在往 product_processing_items 写 —— 该表已随 #4371 解耦 DROP（V61），"
+            "fixture 仍在往 product_processing_items 写 —— 该表已随 #4371 解耦 DROP（V66），"
             "注入会报 relation does not exist"
         )
 
@@ -1068,7 +1068,7 @@ class TestNamedProductsAreSeeded:
         assert "prod_eval_summer" in sql
         # 加工项环节的数据前提：**店铺级加工项目录非空**（#4371 解耦后不再要求「商品绑加工项」）。
         # 旧断言查的是 `INSERT INTO product_processing_items`（商品↔加工项关联）—— 该表已随解耦
-        # DROP（V61），关联也不再是前提；OR-017 的 `interact(choice, multiSelect)` 现在从
+        # DROP（V66），关联也不再是前提；OR-017 的 `interact(choice, multiSelect)` 现在从
         # **目录**出卡，故前提改为「目录里有 active 加工项」。
         assert re.search(r"INSERT\s+INTO\s+processing_items", sql, re.I), (
             "加工项目录未注入 → OR-017 的加工项询问环节无数据（product_detail 不再返回加工项，"
@@ -1083,7 +1083,7 @@ class TestNamedProductsAreSeeded:
         多个推荐商品会让"第一款"不确定 → 用例抖动。
 
         解析方式：`recommended` 是 products 每行 VALUES 的**最后一个**布尔字段。
-        ⚠️ 2026-09-19（#4371）：`has_processing` 列已随解耦 DROP（V61）⇒ 尾形由
+        ⚠️ 2026-09-19（#4371）：`has_processing` 列已随解耦 DROP（V66）⇒ 尾形由
         `, <has_processing>, <recommended>)` 变成 `, <recommended>)`，故正则同步收窄为
         **末尾单个布尔**。这是解析口径的同步（列被删了），不是放宽判据 —— 下面仍有
         `len(flags) >= 3` 的「解析没坏」自检兜底（否则本测试空转 = 假绿）。
@@ -1227,8 +1227,10 @@ class TestSchemaCoversMigrationChainColumns:
 
         ⚠️ 必须与「表」同口径地处理 **`DROP COLUMN`**（issue #4371 实测踩到）：
         原实现只认 `DROP TABLE`（`superseded` 表集合），**不认 `DROP COLUMN`** ——
-        于是「V41 加了列、V61 又把它删掉」这种**合法终态**会被算成
+        于是「先加的列被后续迁移删掉」这种**合法终态**会被算成
         「schema.sql 缺该列」⇒ 假缺口（门禁要求把已删的列加回 bootstrap）。
+        （实测形态：`applicable_product_categories` 由 `docs/sql/migrations/V20260604` 加、
+        V66 `DROP COLUMN` 删；旧注释把这个删除动作写成 V61 —— V61 实为报工计件快照迁移。）
         病根与 `RENAME TO` 那一支同族：**只处理了建/改，没处理删** ⇒ 要求集合不是终态。
         故此处对称地收集 `dropped_cols[(表, 列)]` 并在返回前剔除。
         """
