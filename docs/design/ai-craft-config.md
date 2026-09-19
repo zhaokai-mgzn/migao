@@ -66,7 +66,7 @@
 
 ### 2.1 `production_route_rules` 表（Java 侧）
 
-**建表**（`backend/admin-api/src/main/resources/db/migration/V71__normalize_routing_model_structure.sql:242`）：
+**建表**（`backend/admin-api/src/main/resources/db/migration/V71__normalize_routing_model_structure.sql:242` 的 `production_route_rules`）：
 
 ```sql
 trigger_kind VARCHAR(24) NOT NULL CHECK (trigger_kind IN ('craft','option','shaped','processing_item')),
@@ -82,8 +82,8 @@ priority      INTEGER NOT NULL DEFAULT 100,  -- 升序生效（同序按 id）
 
 | issue 原文假设 | 实测 | 处置 |
 |---|---|---|
-| `action ∈ {insert, remove, factor}` | CHECK 只有 **`insert` / `remove`** 两值（`V71__normalize_routing_model_structure.sql:248`）。`factor` 档存在过（V59/V72 种子），但 **V87 已把活跃行软删**（`V87__retire_factor_route_rules.sql`），Java `buildRoute` 的分支注释明确「`action='factor'` 不参与序列构造」 | 本文件按**两值**写 |
-| `trigger_kind ∈ {craft, option, processing_item, shaped}` 四种都有种子 | **只有三种有种子**。`shaped` 是**表结构预留**：零种子行、零消费路径，且**两侧都显式抛错**（`backend/ai-agent-service/app/production/routing.py:757` 的 `raise ValueError`；`ProcessingOrderService.java:1224` 的 `throw new BusinessException`）。写面也拒收（`craft`/`option`/`processing_item` 三值闭词表） | 本文件按**三种**写；`shaped` 单列为"预留未接线" |
+| `action ∈ {insert, remove, factor}` | CHECK 只有 **`insert` / `remove`** 两值（`backend/admin-api/src/main/resources/db/migration/V71__normalize_routing_model_structure.sql:242` 的建表语句里 `production_route_rules` 那一行；`factor` 不在 CHECK 里）。`factor` 档存在过（V59/V72 种子），但 **V87 已把活跃行软删**（`backend/admin-api/src/main/resources/db/migration/V87__retire_factor_route_rules.sql`），Java 实例化的分支注释明确「`action='factor'` 不参与序列构造」 | 本文件按**两值**写 |
+| `trigger_kind ∈ {craft, option, processing_item, shaped}` 四种都有种子 | **只有三种有种子**。`shaped` 是**表结构预留**：零种子行、零消费路径，且**两侧都显式抛错**（`backend/ai-agent-service/app/production/routing.py:780` 的 `_rule_triggers` 里 `raise ValueError`；`backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:1224` 的 `_rule_triggers` 同款显式失败）。写面也拒收（`craft`/`option`/`processing_item` 三值闭词表） | 本文件按**三种**写；`shaped` 单列为"预留未接线" |
 
 **实测活跃规则行数（种子三源）**：
 
@@ -108,7 +108,7 @@ git show origin/main:backend/admin-api/src/main/resources/db/migration/V84__seed
 - `operation` / `after_operation` 用逻辑工序名且**必须在该租户工序库里存在**（否则规则永远插不进来 = 黑洞）；
 - `remove` **不接受锚点**（`:470` 的 `after_operation` 校验）；
 - 同一条「kind + 触发值 + 动作 + 目标工序」已存在 ⇒ **409**（对齐 DB 唯一索引
-  `uk_production_route_rules_tenant_trigger_operation`，`V71__normalize_routing_model_structure.sql:258`）。
+  `uk_production_route_rules_tenant_trigger_operation`，`backend/admin-api/src/main/resources/db/migration/V71__normalize_routing_model_structure.sql:258` 的 `uk_production_route_rules_tenant_trigger_operation`）。
 
 ### 2.2 第三条路：`processing_item` 的种子在 V84，**不在** `routing.py::ROUTE_RULES`
 
@@ -135,19 +135,19 @@ git show origin/main:backend/ai-agent-service/app/production/routing.py | sed -n
 **实测（AST 解析，不靠正则）**：
 
 ```bash
-# ROUTE_RULES 在 routing.py:708；AST 取出字面量后统计
+# ROUTE_RULES 在 backend/ai-agent-service/app/production/routing.py:708；AST 取出字面量后统计
 # total = 26 ; by action = {insert: 21, remove: 5} ; by trigger_kind = {option: 16, craft: 10}
 # insert 目标工序 distinct = 16 ; remove 目标工序 = {定型, 复烫} ; insert ∩ remove = ∅
 ```
 
 - **21 条 insert 落在 16 道逻辑工序上**（`上车布` 2 条、`帘头制作` 2 条、`接高` 2 条、`绑带` 3 条，其余各 1 条）；
 - **5 条 remove 全部是工艺触发**，只涉及 **2 道**工序（`定型` / `复烫`）；
-- `_LOGICAL_NAME_PAIRS`（`backend/ai-agent-service/app/production/routing.py:494`）= **35 条有序对**
+- `_LOGICAL_NAME_PAIRS`（`backend/ai-agent-service/app/production/routing.py:494` 的 `ROUTE_RULES` / `_LOGICAL_NAME_PAIRS`）= **35 条有序对**
   （35 旧名 → 30 逻辑名）。
 
 **⚠️ 关键事实（issue 未提，但决定阶段 4 的难度）**：`ROUTE_RULES` 是**测试真值源镜像**，
 **不是运行时消费者**。`build_route_v2`（`backend/ai-agent-service/app/production/routing.py:783`）
-的注释自陈「今天是**零消费者**：Java 实例化仍读旧 `production_routings`（P2 才切）」；
+的 `build_route_v2` 注释自陈「今天是**零消费者**：Java 实例化仍读旧 `production_routings`（P2 才切）」；
 实测全仓无生产调用方：
 
 ```bash
@@ -245,7 +245,7 @@ PYEOF
 | 歧义形态 | 例子 | 处置 |
 |---|---|---|
 | **「不做复烫」指哪道工序？** | 词表里同时有 `复烫` 与（假设的）`复烫-纱`；或用户说的是模糊说法「那个烫的」 | 用 `operation_catalog` 做**精确/前缀匹配**：唯一命中 ⇒ 填入 `intent`；多命中 ⇒ `alternatives` 给候选、**不出确认卡**、改出 `interact(choice)` 让用户点；零命中 ⇒ `unresolved=["operation"]`，回落到**工序抽屉的手动编辑**（§3.6） |
-| **「我们家」指哪个租户？** | 多租户系统里"我们家"是口语 | **不由 AI 解析租户**。租户恒取 `ToolContext.tenant_id`（`backend/ai-agent-service/app/tools/base.py:242`），经 `X-Tenant-Id` 头下发给 admin-api（`backend/ai-agent-service/app/utils/http_client.py:95`）。**AI 输出的对象里没有租户字段** —— 没有字段就无从越权 |
+| **「我们家」指哪个租户？** | 多租户系统里"我们家"是口语 | **不由 AI 解析租户**。租户恒取 `ToolContext.tenant_id`（`backend/ai-agent-service/app/tools/base.py:242` 的 `tenant_id` 字段）；下发时由 `backend/ai-agent-service/app/utils/http_client.py:95` 的 `_get_headers` 拼 `X-Tenant-Id` 头。**AI 输出的对象里没有租户字段** —— 没有字段就无从越权 |
 | **「四爪钩」不在工艺词表里** | 商家说了个错别字 / 停用的工艺 | `trigger_value` 校验失败 ⇒ **不出确认卡**，直接回答「工艺库里没有『四爪钩』，当前活跃工艺是 …」，并给 `route-rule-options` 的真实读数 |
 
 **通用规则**：**`unresolved` 非空 ⇒ 一律不出确认卡**（宁可不做，不可做错）。
@@ -271,7 +271,7 @@ prompt 消费**。两个工具 + 一个复用 = 3 个工具面，够用且可测
 至少 1 条正向用例，工具越少越好养）。
 
 **权限口径**：三个只读工具都挂 `allowed_roles` 排除 C 端（顾客不该看商家工艺配置），
-与 `piecework_query` 同款（`backend/ai-agent-service/app/graph/skills/data_skill.py:14` 的注释口径）。
+与 `piecework_query` 同款（见 `backend/ai-agent-service/app/graph/skills/data_skill.py` 里 `piecework_query` 的绑定注释）。
 
 **接线的位置**：`craft_route_rule_query` / `craft_operation_query` 绑定到**订单/生产域**的 skill
 工具集（`backend/ai-agent-service/app/graph/skills/order_skill.py` 的 `ORDER_TOOLS`，
@@ -342,7 +342,7 @@ prompt 消费**。两个工具 + 一个复用 = 3 个工具面，够用且可测
 | # | 约束 | 判据形态（可测，见 §6.3） |
 |---|---|---|
 | 1 | **AI 只建议、绝不静默改** | AI 的工具集里**没有任何写工具**（`craft_route_rule_query` / `craft_operation_query` 是只读）。落库**只能**由确认卡点击触发 ⇒ 「模型幻觉出一个改动」在结构上不可能落库 |
-| 2 | **越权 / 跨租户一律拒** | 租户来自 `ToolContext.tenant_id`，**不在 AI 输出的对象里**；admin-api 侧既有 404（跨租户）/ 422（词表外）已覆盖（`ProductionRoutingCommandService.java:297` 的 delete 注释：不存在/跨租户/已软删 ⇒ 404） |
+| 2 | **越权 / 跨租户一律拒** | 租户来自 `ToolContext.tenant_id`，**不在 AI 输出的对象里**；admin-api 侧既有 404（跨租户）/ 422（词表外）已覆盖（`backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java:297` 的 `deleteRouteRule` 注释：不存在 / 跨租户 / 已软删 ⇒ 404） |
 | 3 | **词表外取值一律拒** | `trigger_value` 必须过 admin-api 的 `triggerValueExists`（`:427`）；`operation` / `after_operation` 必须过 `logicalOperationExists`（`:441`）。**AI 侧不重复实现校验**（两处各写一份必然漂移），AI 侧只做「**提前查一遍、提前说不**」以提升体验 |
 | 4 | **不依赖 AI 也能用** | 阶段 1 的工序抽屉里，条件**仍可手动增删**，走同一组既有端点。**AI 是加速器，不是唯一路径** |
 
@@ -438,7 +438,7 @@ result=mainline                                            → 「这是工艺�
 
 **历史数据的处置（零回填，如实告知）**：
 
-`processing_position_operations`（`docs/sql/schema.sql:1054`）**今天没有**任何 `reason*` 列 ⇒
+`processing_position_operations`（`docs/sql/schema.sql:1054` 的 `processing_position_operations` 建表）**今天没有**任何 `reason` 列 ⇒
 阶段 3 之前生成的加工单**没有**这个证据。三条可选路径：
 
 | # | 路径 | 代价 | 本文件推荐 |
@@ -556,9 +556,9 @@ git show origin/main:backend/admin-api/src/main/resources/db/migration/V84__seed
 
 | # | 实现 | 位置 | 语义 |
 |---|---|---|---|
-| 1 | `build_route_v2` | `backend/ai-agent-service/app/production/routing.py:783` | **零生产消费者**（只被 tests 调）；`insert` 用 `_insert_after`，**不去重** |
-| 2 | `buildRoute` | `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:1175` | 序列构造；`insert` 用 `insertAfterLogical`（`:1324`），**不去重** |
-| 3 | `insertConditionalOperations` | `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:799` | **运行时实际生效的那条**（`:549` 调用）；**唯一性 = 取代**（`:842` 的 `removeIf` 先移除旧位置再插） |
+| 1 | `build_route_v2` | `backend/ai-agent-service/app/production/routing.py:783` | `build_route_v2` **零生产消费者**（只被 tests 调）；`insert` 用 `_insert_after`，**不去重** |
+| 2 | `buildRoute` | `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:1175` | `buildRoute` 序列构造；`insert` 用 `insertAfterLogical`（`:1324`），**不去重** |
+| 3 | `insertConditionalOperations` | `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:796` | `insertConditionalOperations` **运行时实际生效的那条**（`:549` 调用）；**唯一性 = 取代**（`:842` 的 `removeIf` 先移除旧位置再插） |
 
 ⇒ **实现 2 与 3 的语义不同**（2 不去重、3 取代）。`buildRoute` 的 docstring 说「本方法是
 『怎么展开路线』的**唯一** Java 实现」—— **这句话与实测不符**（`:799` 还有一份，
@@ -712,7 +712,7 @@ python3 .github/llm_sink_check.py --issue <红例 issue 号>   # 0 = 已下沉 /
 | N1 | **不做「AI 自动改配置」** | 用户裁定「AI 只建议、不静默改」（issue 纪律段）。AI 的工具集里**没有任何写工具**（§3.5 约束 1） |
 | N2 | **不含 agent 的其它行为改造** | 本单只做「工艺配置」这一件事。prompt 的其它段落、其它工具、引导流程**一律不动** |
 | N3 | **不含与本次无关的重构** | 例：`buildRoute` 与 `insertConditionalOperations` 的语义收敛（§5.4）**是阶段 4 的前置**，属阶段 4，**不在阶段 1/2/3 里顺手做** |
-| N4 | **不改对客单价链路**（`PUT /route-rules/{id}/customer-unit-price`） | 「两套账不互读」是既有硬边界（`ProductionRoutingCommandService.java:438` 的 422）；本单只碰**工序编排**那一套账 |
+| N4 | **不改对客单价链路**（`PUT /route-rules/{id}/customer-unit-price`） | 「两套账不互读」是既有硬边界（`backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java:436` 的 `TRIGGER_KINDS` 校验：非 `option` 带价 ⇒ 422）；本单只碰**工序编排**那一套账 |
 | N5 | **不新造第二套写面** | issue 验收判据明令：「落库走**现有**规则写面（**不新增第二套写面**）」 |
 | N6 | **不新增 skill** | 两个只读工具绑进既有 `order_skill`（`ORDER_TOOLS`）；新建 skill = 多一个入口、多一份 prompt 维护面 |
 | N7 | **不给规则表补版本账之外的"配置历史"** | §5.5 的版本账是**回滚前置条件**，不是"配置历史"功能；不做 diff 查看器 / 不做回滚 UI |
@@ -728,17 +728,17 @@ python3 .github/llm_sink_check.py --issue <红例 issue 号>   # 0 = 已下沉 /
 
 | # | issue 原文 | 实测 | 处置 |
 |---|---|---|---|
-| F1 | `trigger_kind ∈ {craft, option, processing_item, shaped}`（读起来像四种都有种子） | **只有三种有种子**；`shaped` 零种子行、零消费路径，两侧**显式抛错**（`backend/ai-agent-service/app/production/routing.py:757` / `ProcessingOrderService.java:1224`），写面拒收 | §2.1 单列「预留未接线」 |
-| F2 | `action ∈ {insert, remove, factor}` | CHECK **只有两值**（`V71__normalize_routing_model_structure.sql:248`）；`factor` 活跃行已由 **V87 软删** | §2.1 按两值写 |
+| F1 | `trigger_kind ∈ {craft, option, processing_item, shaped}`（读起来像四种都有种子） | **只有三种有种子**；`shaped` 零种子行、零消费路径，两侧**显式抛错**（`backend/ai-agent-service/app/production/routing.py:780` 的 `_rule_triggers` / `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:1224` 的 `_rule_triggers`），写面拒收 | §2.1 单列「预留未接线」 |
+| F2 | `action ∈ {insert, remove, factor}` | CHECK **只有两值**（`backend/admin-api/src/main/resources/db/migration/V71__normalize_routing_model_structure.sql:242` 的 `production_route_rules` 建表段）；`factor` 活跃行已由 **V87 软删**（`backend/admin-api/src/main/resources/db/migration/V87__retire_factor_route_rules.sql`） | §2.1 按两值写 |
 | F3 | 「29 条内置条件」 | ✅ **一致**（V71 26 + V84 3）。但**分布不等于 ROUTE_RULES**：`routing.py::ROUTE_RULES` 只有 **26** 条，V84 的 **3** 条**不在**其中 | §2.2 / §2.3 分开写 |
 | F4 | （隐含）`routing.py::ROUTE_RULES` 是运行时真值源 | **它是测试真值源镜像，零生产消费者**（`build_route_v2` 只被 tests 调）。**运行时实际生效的是** `ProcessingOrderService.insertConditionalOperations`（`:799`，由 `:549` 调用） | §2.3 / §5.4；**这是阶段 4 的头号风险** |
 | F5 | （隐含）规则语义只有一份实现 | **三份**，且**语义不同**：`build_route_v2`（不去重）/ `buildRoute`（不去重）/ `insertConditionalOperations`（**唯一性 = 取代**，`:842` 的 `removeIf`）。而 `buildRoute` 的 docstring 自称「本方法是『怎么展开路线』的**唯一** Java 实现」—— **与实测不符** | §5.4：阶段 4 第一步 = 语义收敛（独立可合并） |
 | F6 | （隐含）规则表有变更留痕 | **没有**。既有版本账覆盖工序价（V55）/ 路线序列（V60/V85）/ 矩阵格价（V86）/ 对客单价（V77），**规则行的增删改本身零留痕** | §4.3 / §5.5：阶段 4 迁移**必须先补版本账**（回滚硬依赖） |
 | F7 | 「阶段 4 需迁移（含"两阶段改名避唯一键"之类的坑）」 | **本方案（新建表 + 搬行）不适用**该坑；`ALTER TABLE` 路线才有 | §5.4 明写推荐路线与规避方式 |
-| F8 | 「阶段 3 零迁移」 | ⚠️ **严格说不是零**：要让 `reason` **落库并冻结**（否则历史解释会随规则变），需要给 `processing_position_operations`（`docs/sql/schema.sql:1054`）**加列** ⇒ 是一次迁移。**若接受"历史单解释不可用"（路径 a），则确实零迁移** | §4.3 给出两条路径与推荐 |
+| F8 | 「阶段 3 零迁移」 | ⚠️ **严格说不是零**：要让 `reason` **落库并冻结**（否则历史解释会随规则变），需要给 `processing_position_operations`（`docs/sql/schema.sql:1054` 的 `processing_position_operations`）**加列** ⇒ 是一次迁移。**若接受"历史单解释不可用"（路径 a），则确实零迁移** | §4.3 给出两条路径与推荐 |
 | F9 | （隐含）「AI 侧已有工艺相关工具可复用」 | **没有**。ai-agent 侧今天**零** route-rules / operation-positions 工具（`git grep -ln "route-rules\|operation-positions" origin/main -- backend/ai-agent-service` ⇒ 只命中 `routing.py` 的注释） | §3.3.1 全部新建 |
 | F10 | （隐含）「默认做」是新增裁定 | **它 = 今天的实际语义**（`ROUTE_MAINLINE_STEPS` 全做 → 按规则 `remove` 过滤）⇒ 选黑名单是**行为零变化**，不是新行为 | §5.3 论证 |
-| F11 | issue 验收判据「条件仍可编辑（增/删），落库走现有规则写面」 | ✅ 可行，但**「增」有一个既有护栏要注意**：`remove` 不接受锚点（`ProductionRoutingCommandService.java:470`）⇒ AI 的意图对象在 `action=remove` 时 `after_operation` 必须为 `null`，否则 422 | §3.1 / §3.2 |
+| F11 | issue 验收判据「条件仍可编辑（增/删），落库走现有规则写面」 | ✅ 可行，但**「增」有一个既有护栏要注意**：`remove` 不接受锚点（`backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java:471` 的 `after_operation` 校验）⇒ AI 的意图对象在 `action=remove` 时 `after_operation` 必须为 `null`，否则 422 | §3.1 / §3.2 |
 | F12 | issue 说「29 条内置条件成为出厂知识，默认正确、商家零配置」 | ⚠️ 措辞要收窄：**「默认存在且默认正确」成立**（29 行已在种子/DB 里）；但「出厂知识」若被读成「AI 自动生成新条件」则**不成立**（§7 N1 不做） | §1 已加限定段 |
 
 ### 8.2 无法判定（**不猜**）
@@ -746,7 +746,7 @@ python3 .github/llm_sink_check.py --issue <红例 issue 号>   # 0 = 已下沉 /
 | # | 事项 | 为什么无法判定 | 谁/什么能判定 |
 |---|---|---|---|
 | U1 | **商家自建的规则行有多少** | 静态只能读**种子**（29 行）；真实库里商家可能已自建行（`POST /route-rules` 自 #4616 起可用）。本文件**未连真库** | 真库读数：`SELECT tenant_id, count(*) FROM production_route_rules WHERE deleted=0 AND status='active' GROUP BY tenant_id`（需真库访问） |
-| U2 | **`shaped` 是否该真正接线** | 今天 `isShaped=false` 由**代码侧硬接线**（`ProcessingOrderService.java:544` 的 `removeIf`）实现，**不走规则表**。是否该收归规则表 = **业务裁定**，不是技术事实 | 用户裁定 |
+| U2 | **`shaped` 是否该真正接线** | 今天 `isShaped=false` 由**代码侧硬接线**（`backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:541` 的 `removeIf`）实现，**不走规则表**。是否该收归规则表 = **业务裁定**，不是技术事实 | 用户裁定 |
 | U3 | **「影响面 N 个部位」的口径** | 「N 个部位」依赖「该工艺实际被哪些部位用到」，而这取决于**订单/商品数据**（不是配置）。本文件只给**形态**（数字必须来自工具读数），不给具体口径 | 实现时由 `craft_operation_query` 的返回定义 |
 | U4 | **撤销记录的落点**（会话 metadata vs 独立表） | 本文件推荐会话侧（§3.4），但**会话 metadata 的既有结构本单未逐字段核对** | 实现前读 `backend/ai-agent-service/app/memory/` 与会话模型 |
 | U5 | **阶段 2 落库走 `validate_input`+写工具 还是前端直调** | 两条路都可行，各有代价（§3.3.2）。**必须实现前裁定**，本文件给推荐但**不替业务/架构定** | 架构裁定（本文件的推荐 = 前者） |
