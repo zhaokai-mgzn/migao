@@ -86,9 +86,19 @@ import type {
 const money = (v?: number | null) => `¥${Number(v ?? 0).toFixed(2)}`
 
 /**
- * 部位（帘种）**闭词表** —— 与 V71 列注释的取值域同口径（`production_operation_positions.position`）。
- * 用途 = 矩阵列序 + 新建路线的适用帘种勾选（矩阵为空时仍要有列/选项）；矩阵里出现的**未知部位**
- * 追加在后面（不丢数据、不改服务端口径）。
+ * 部位（帘种）**列序基线 + 兜底** —— 它**不是**值域权威（issue #4556）。
+ *
+ * 取值域的真源 = `production_operation_positions.position`，而本页**已经在读**它
+ * （`GET /operation-positions` 的部位价目矩阵）⇒ 可选部位由 {@link positionOptions} 从矩阵带出：
+ * 矩阵里出现的部位**自动**进选项，**新增部位不需要改这一行**（改这一行就是「值域在页面里硬编码」
+ * 的又一次漂移 —— 同族 #4440，也正是本条缺陷的成因：包 F / #4529 落库的第 4 个部位 `布料`
+ * 读面看得见、写面却建不出来）。
+ *
+ * 它只剩两个用途：① 矩阵列 / 勾选项的**基线顺序**；② 矩阵**未加载或为空**时的兜底选项
+ * （页面不至于连路线都建不出来）。
+ * ⚠️ 后端**没有**部位枚举端点（#4556 实测）：`GET /operation-positions` 是**数据行**（按租户），
+ * 不是词表。后端自己那份同形常量 `ProductionRoutingCommandService.DEFAULT_POSITIONS` 的语义是
+ * **新路线的默认适用帘种**（见 `newRoute` 初值），**不是**可选范围。
  */
 const POSITION_DOMAIN = ['布帘', '纱帘', '帘头']
 
@@ -354,7 +364,13 @@ export default function ProcessConfigPage() {
 
   // ── 弹窗 ──
   const [newRouteOpen, setNewRouteOpen] = useState(false)
-  /** 新建路线：默认三种帘种全适用（收窄适用范围就取消勾选；至少留一个） */
+  /**
+   * 新建路线：默认**基线三部位**全适用（收窄适用范围就取消勾选；至少留一个）。
+   * ⚠️ 默认**不含** `布料`（与后端 `DEFAULT_POSITIONS` 同口径）：路线命中是
+   * `(is_default DESC, id)` **首个命中**，而新路线的 id 是 UUID（恒小于种子 `rt-v79-01`）
+   * ⇒ 勾上 `布料` 会**顶掉**种子自带的 `布料工序路线`，让布料单走窗帘主线（其工序对布料
+   * `applicable=false` ⇒ 被适用性矩阵滤空 = 零/少工序加工单）。`布料` 因此是**按需勾选**的第 4 项。
+   */
   const [newRoute, setNewRoute] = useState<{ name: string; positions: string[] }>({
     name: '',
     positions: POSITION_DOMAIN,
@@ -507,6 +523,17 @@ export default function ProcessConfigPage() {
       ...[...present].filter((p) => !POSITION_DOMAIN.includes(p)),
     ]
   }, [matrix])
+
+  /**
+   * 「新建路线」的**部位勾选项** = {@link positionColumns}（与部位价目矩阵**同源**）
+   * ⇒ `布料` 等新增部位**自动**可选（issue #4556：原来这里直接用 `POSITION_DOMAIN`，于是
+   * 矩阵读面看得见 `布料`、写面却建不出它）；矩阵读面失败时退回基线三部位（**不是**空列表 ——
+   * 否则读面一挂就连路线都建不出来）。
+   */
+  const positionOptions = useMemo(
+    () => (positionColumns.length > 0 ? positionColumns : POSITION_DOMAIN),
+    [positionColumns],
+  )
 
   /**
    * 行 = 逻辑工序（**保持服务端顺序**：`Map` 的插入顺序即首次出现顺序）。
@@ -1872,7 +1899,8 @@ export default function ProcessConfigPage() {
         </>
       )}
 
-      {/* 新建路线：名字 + 适用帘种（默认三种帘种全适用；收窄适用范围就取消勾选） */}
+      {/* 新建路线：名字 + 适用帘种（勾选项 = 部位价目矩阵里真有的部位，含第 4 个部位 `布料`；
+          默认只勾**基线三部位** —— 见 `newRoute` 初值的理由） */}
       <Modal
         open={newRouteOpen}
         onClose={() => !busy && setNewRouteOpen(false)}
@@ -1907,7 +1935,7 @@ export default function ProcessConfigPage() {
           <div>
             <span className="mb-1 block text-neutral-600">适用帘种（至少勾一个）</span>
             <div className="flex flex-wrap gap-3">
-              {POSITION_DOMAIN.map((p) => (
+              {positionOptions.map((p) => (
                 <label key={p} className="flex items-center gap-1.5 text-neutral-700">
                   <input
                     type="checkbox"
@@ -1917,7 +1945,7 @@ export default function ProcessConfigPage() {
                       setNewRoute((prev) => ({
                         ...prev,
                         positions: e.target.checked
-                          ? POSITION_DOMAIN.filter((x) => x === p || prev.positions.includes(x))
+                          ? positionOptions.filter((x) => x === p || prev.positions.includes(x))
                           : prev.positions.filter((x) => x !== p),
                       }))
                     }
