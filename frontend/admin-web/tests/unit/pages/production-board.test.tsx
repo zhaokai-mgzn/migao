@@ -218,10 +218,14 @@ describe('生产看板页 /production（加工单唯一入口，PG-038）', () =
   it('按加工单上的 orderId 拉工序进度与计件（复用既有端点）', async () => {
     render(<ProductionBoardPage />)
 
-    await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
-    expect(mockGetOrderOperations).toHaveBeenCalledWith('order-uuid-1')
-    expect(mockGetOrderOperations).toHaveBeenCalledWith('order-uuid-2')
-    expect(mockGetPiecework).toHaveBeenCalledWith('order-uuid-1')
+    // issue #4414：详情是**懒加载的第二个请求**，与「行出现」不是同一个 promise ⇒
+    // 不能在 waitFor(行) 之后**同步**断言调用（调度顺序一变就 0 次调用 = 间歇性红）。
+    // ⇒ 把三条调用断言**也放进 waitFor**（等的是「调用发生」这件事本身）。
+    await waitFor(() => {
+      expect(mockGetOrderOperations).toHaveBeenCalledWith('order-uuid-1')
+      expect(mockGetOrderOperations).toHaveBeenCalledWith('order-uuid-2')
+      expect(mockGetPiecework).toHaveBeenCalledWith('order-uuid-1')
+    })
   })
 
   it('无加工单：空态提示，不报错', async () => {

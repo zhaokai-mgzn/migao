@@ -204,9 +204,14 @@ describe('加工单生产明细页', () => {
     mockGetPiecework.mockResolvedValue(ok({ total: 0, per_worker: {}, per_operation: [] }))
     render(<ProductionDetailPage />)
 
-    await waitFor(() => expect(screen.getByText('暂无工序数据')).toBeInTheDocument())
-    expect(screen.getByText('暂无计件数据')).toBeInTheDocument()
-    expect(screen.getByTestId('task-card-qr-placeholder')).toBeInTheDocument()
+    // issue #4414：页面有**两个独立请求**（工序 + 计件）；waitFor 只等了其中一个，
+    // 后两条**同步断言**依赖另一个已 resolve ⇒ 间歇性红（部署关键路径）。
+    // ⇒ 一次 waitFor 同时断言三者。
+    await waitFor(() => {
+      expect(screen.getByText('暂无工序数据')).toBeInTheDocument()
+      expect(screen.getByText('暂无计件数据')).toBeInTheDocument()
+      expect(screen.getByTestId('task-card-qr-placeholder')).toBeInTheDocument()
+    })
   })
 
   // ── PG-019：存量加工单补生成工序（issue #4202 前端半边）──
