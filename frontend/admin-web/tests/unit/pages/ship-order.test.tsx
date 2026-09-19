@@ -1,6 +1,6 @@
 // case_ids: UI-040, UI-047
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -98,9 +98,6 @@ describe('ShipOrder', () => {
     window.print = printSpy as any
   })
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
 
   it('should show loading state initially', () => {
     render(<ShipOrder />)

@@ -1,5 +1,5 @@
 // case_ids: UI-003
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -41,9 +41,6 @@ describe('CorporateNav', () => {
     mockUsePathname.mockReturnValue('/')
   })
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
 
   // ── 基础结构 ──
 
