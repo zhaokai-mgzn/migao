@@ -280,6 +280,24 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.ProductionRouteSignalMapper productionRouteSignalMapper;
     @MockBean
     private com.migao.admin.mapper.ProductionRoutingVersionMapper productionRoutingVersionMapper;
+
+    // issue #4423 P2 / #4432（V72）新增的 4 个 mapper —— **必须一并 @MockBean**：
+    // 本上下文排除了 MybatisPlusAutoConfiguration（无 SqlSessionFactory），
+    // 任何**未被 mock** 的 mapper 都会在上下文启动时真去创建 ⇒
+    // `Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required` ⇒ 整类 26 条全红。
+    // （既有口径见上方 StockLedgerMapper 的注释；#4386 的 ProcessingFeeCombinationMapper 同款。）
+    @MockBean
+    private com.migao.admin.mapper.ProductionOperationPositionMapper productionOperationPositionMapper;
+
+    @MockBean
+    private com.migao.admin.mapper.ProductionRouteTemplateMapper productionRouteTemplateMapper;
+
+    @MockBean
+    private com.migao.admin.mapper.ProductionRouteRuleMapper productionRouteRuleMapper;
+
+    @MockBean
+    private com.migao.admin.mapper.ProductionCraftMapper productionCraftMapper;
+
     // 加工费组合定价（issue #4386，V68）：组合表 + 版本账 + 读面要用的订单行 Mapper。同族坑第 3 次
     // —— 漏任何一个 ⇒ ProcessingFeeQueryService / ProcessingFeeCombinationCommandService
     // 的构造依赖建不出来 ⇒ 本类全 error「Property 'sqlSessionTemplate' are required」。
