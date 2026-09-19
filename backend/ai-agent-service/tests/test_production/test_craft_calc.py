@@ -147,9 +147,16 @@ MIXED_PER_FOLD = {"拼1次": 0.65, "拼2次": 1.2}
 class TestMixedColorPerFold:
 
     def test_engine_coefficient_table(self):
-        """引擎的拼色系数表必须与纸表表头**逐值**一致（0.65 / 1.2）。"""
+        """引擎的拼色系数必须与纸表表头**逐值**一致（0.65 / 1.2），且**按入口**解析得到。
+
+        用 `resolve_per_fold`（取系数的**单一实现**）断言，而不是只核常量存在 ——
+        常量在、入口接错（如两个元组下标错位）时前者会红、后者不会。
+        """
         for option, per_fold in MIXED_PER_FOLD.items():
-            assert curtain_calc.MIXED_COLOR_PER_FOLD[option] == per_fold
+            assert option in curtain_calc.MIXED_COLOR_PER_FOLD_OPTIONS
+            assert curtain_calc.resolve_per_fold("拼色", [option]) == per_fold
+        assert curtain_calc.resolve_per_fold("拼色", ["拼3次"]) == 0.25   # 未登记 ⇒ 不静默取系数（缺口由 mixed_per_fold_gap 显式判）
+        assert curtain_calc.resolve_per_fold(None, ["拼1次"]) == 0.25     # 非拼色 ⇒ 单色口径
         assert curtain_calc.PLEAT_FABRIC_PER_FOLD == 0.25      # 单色不变
 
     @pytest.mark.parametrize("option,per_fold", sorted(MIXED_PER_FOLD.items()))

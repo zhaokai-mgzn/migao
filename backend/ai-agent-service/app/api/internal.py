@@ -338,7 +338,7 @@ async def craft_calc(
                     "code": "MIXED_PER_FOLD_NOT_REGISTERED",
                     "message": (
                         f"特殊选项「{gap}」的拼色用料系数纸表未登记（已登记："
-                        f"{'/'.join(sorted(curtain_calc.MIXED_COLOR_PER_FOLD))}）——"
+                        f"{'/'.join(curtain_calc.MIXED_COLOR_PER_FOLD_OPTIONS)}）——"
                         "不插值、不按单色系数估算，请先裁定该拼次的每折吃布（米/折）"
                     ),
                 },
