@@ -6351,6 +6351,7 @@ _CASE_UI_019 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端渲染用例：前置（会话消息流 + suggestions + 订单/售后台账行 + docked/overlay 两种布局入口）由单测自建（frontend/admin-web/tests/unit/lib/session-insight.test.ts、tests/unit/components/SessionInsight.test.tsx、tests/unit/components/ChatArea.test.tsx 直接构造 message/会话对象；e2e tests/e2e/specs/chat/chat.spec.ts 走 fixture 模式），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它',
 )
 
 # ── UI-021 [NORMAL] 米宝展开大面板缩放手柄加大 + 缩放上限放开到视口 100%（拖到最大不留白）（源: cases/ui.yml）──
@@ -6495,7 +6496,6 @@ _CASE_UI_030 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    precondition='本用例是 [backend-contract] 纯前端渲染决策用例：前置（消息带 interactive 载荷 + interactiveAnswered 状态 + 流式中标记）由单测自建（frontend/admin-web/tests/unit/components/components-chat.test.tsx、frontend/admin-web/tests/unit/lib/interactive-render.test.ts 直接构造 message 对象），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它',
 )
 
 # ── UI-031 [NORMAL] 米宝交互组件历史回放透传 —— interactive 载荷落库 + history 返回，刷新/切会话后已答卡片以只读变体呈现而非消失（源: cases/ui.yml）──

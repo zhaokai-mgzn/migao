@@ -704,7 +704,15 @@ cases:
       - "接下来可以问 = collectSuggestions 取最近 assistant 消息的 suggestions，点击即发送"
       - "删除：处理进度工具时间线、业务域 ×N 计数、裸编号便签；会话标识弱化保留（调试用）"
     skip_reason: "[backend-contract] 纯前端重构由 vitest 单测（session-insight.test.ts + SessionInsight.test.tsx）+ e2e 抽屉链路验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-05 新增：米宝「洞察」重构为「会话简报」— 工具语言转业务信息（issue #2897）；2026-09-xx 更新：/chat 工作台 docked 默认右侧展开可缩回、FAB 保持 overlay 现状（issue #3018）"
+    # 前置自断言（CASE-TRUST-NO-PRECONDITION-ASSERTION burn-down，口径同 chat.yml 既有两条
+    # `[backend-contract]` 形态 / #4614 的 CH-027 / #4629 的 UI-030）：本用例是**纯前端渲染**用例 ——
+    # 前置（会话消息流、`suggestions`、订单/售后台账行）由单测**自建**
+    # （`session-insight.test.ts` / `SessionInsight.test.tsx` / `ChatArea.test.tsx` 直接构造
+    # message / 会话对象；e2e 走 fixture 模式），不依赖任何共享评测夹具 ⇒ 前置不成立时单测**直接红**
+    # （找不到区块 / 断言不符），不会与「agent 不干活」同形。agent-eval 栈不跑本用例
+    # （skip_reason 已登记）⇒ 没有可挂的运行期 precondition 类型（`_PRECONDITION_TYPES` 全是后端共享夹具计数）。
+    precondition: "本用例是 [backend-contract] 纯前端渲染用例：前置（会话消息流 + suggestions + 订单/售后台账行 + docked/overlay 两种布局入口）由单测自建（frontend/admin-web/tests/unit/lib/session-insight.test.ts、tests/unit/components/SessionInsight.test.tsx、tests/unit/components/ChatArea.test.tsx 直接构造 message/会话对象；e2e tests/e2e/specs/chat/chat.spec.ts 走 fixture 模式），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它"
+    merge_log: "2026-09-05 新增：米宝「洞察」重构为「会话简报」— 工具语言转业务信息（issue #2897）；2026-09-xx 更新：/chat 工作台 docked 默认右侧展开可缩回、FAB 保持 overlay 现状（issue #3018） ｜ 2026-09-20（issue #4622 的 case-trust burn-down 缴费，**整条销账**）：补 `precondition` 声明 —— 原条目只命中 CASE-TRUST-NO-PRECONDITION-ASSERTION，而本用例是 `[backend-contract]` 纯前端渲染用例、**没有**可挂的运行期 precondition 类型 ⇒ 按 chat.yml 既有两条 `[backend-contract]` 形态（#4614 的 CH-027 同款）用**声明式**字符串写清前置是什么、由谁满足、不成立时怎么红。user_inputs / expectations / data_checks / traces **一字未动**（无放宽）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/session-insight.test.ts"
