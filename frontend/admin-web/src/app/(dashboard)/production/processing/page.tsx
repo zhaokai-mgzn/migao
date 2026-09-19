@@ -1057,7 +1057,11 @@ function ProcessingContent() {
             <div className="mb-2 text-sm font-medium text-neutral-700">选配组合（可多选）</div>
             {items.length === 0 ? (
               <div className="text-sm text-neutral-500" data-testid="fee-combination-catalog-empty">
-                加工项目录为空：请先到「加工项」tab 建加工项。
+                {/* 目录为空 vs 加载失败**必须分开说**：合并后勾选源与「加工项」tab 同一份数据，
+                    把加载失败说成「目录为空」会让商家去建一个其实已经存在的加工项 */}
+                {itemsError
+                  ? '加工项目录加载失败：请到「加工项」tab 点「重试」后再建组合。'
+                  : '加工项目录为空：请先到「加工项」tab 建加工项。'}
               </div>
             ) : (
               <div className="flex flex-wrap gap-2">

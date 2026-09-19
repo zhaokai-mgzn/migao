@@ -199,6 +199,28 @@ describe('合并页 /production/processing（两个 tab，不平铺）', () => {
     expect(screen.queryByTestId('processing-items')).not.toBeInTheDocument()
   })
 
+  it('加工项加载失败：只在「加工项」tab 给可读提示 + 重试，另一栏照常渲染（不整页白屏）', async () => {
+    mockGetProcessingItems.mockRejectedValueOnce(new Error('500'))
+    render(<ProcessingPage />)
+
+    await waitFor(() => expect(screen.getByTestId('processing-items-error')).toHaveTextContent('加工项加载失败'))
+    // 加工费半边不受影响（各拉各的，一条失败不吞整页）
+    await userEvent.click(screen.getByTestId('processing-tab-fees'))
+    await waitFor(() => expect(screen.getByTestId('fee-combinations-total')).toHaveTextContent('1'))
+    // 勾选源与「加工项」tab 是同一份数据 ⇒ 加载失败**不得**说成「目录为空」
+    // （说成空会让商家去建一个其实已存在的加工项 —— 合并后新引入的形态）
+    await userEvent.click(screen.getByTestId('fee-combination-new'))
+    expect(screen.getByTestId('fee-combination-catalog-empty')).toHaveTextContent('加工项目录加载失败')
+    await userEvent.click(screen.getByRole('button', { name: '取消' }))
+
+    // 重试后渲染出真实数据（错误态消失）
+    await userEvent.click(screen.getByTestId('processing-tab-items'))
+    await userEvent.click(screen.getByTestId('processing-items-retry'))
+    await waitFor(() => expect(screen.getByTestId('processing-items-total')).toHaveTextContent('2'))
+    expect(screen.queryByTestId('processing-items-error')).not.toBeInTheDocument()
+    expect(screen.getByTestId('processing-item-pi-2')).toHaveTextContent('打孔')
+  })
+
   it('两半能力**同页都在**：加工项 CRUD 入口 + 加工分类抽屉 + 加工费组合定价与缺口', async () => {
     render(<ProcessingPage />)
     await waitFor(() => expect(screen.getByTestId('processing-items-total')).toHaveTextContent('2'))
