@@ -83,6 +83,7 @@
     "V82__seed_option_customer_unit_price.sql": "sha256:c036980e17d7e4ec637e0c17e02c56a28d81249063f396fd32f8d10b4c839237",
     "V83__seed_processing_item_catalog.sql": "sha256:6dc4d5ad9260db5857ac7780013caafdc0afef540c0f2365b1ceda78ac08e730",
     "V84__seed_processing_item_route_rules.sql": "sha256:af3b5616016f44a73d10499fa93170c5e63d767deba9bc583631dbed098b6935",
-    "V85__fix_routing_version_ledger_shape.sql": "sha256:0bbcf9512e37e554389eb32db60128579a529827833d83a2e718b6385e578f89"
+    "V85__fix_routing_version_ledger_shape.sql": "sha256:0bbcf9512e37e554389eb32db60128579a529827833d83a2e718b6385e578f89",
+    "V86__create_operation_position_price_versions.sql": "sha256:4275b1ccc9439f8be4162320d46e53e3c036f76c946e01cf87334bd14d150173"
   }
 }

@@ -66,12 +66,22 @@ public class ProductionRoutingReadService {
 
     private final ProductionOperationPositionMapper productionOperationPositionMapper;
     private final ProductionRouteRuleMapper productionRouteRuleMapper;
+    /**
+     * 工序库读面 —— **逻辑名 ↔ 变体名映射的唯一来源**（issue #4587 ①）。
+     *
+     * <p>为什么不在此另写一份推导：{@code variantNameOf} 已封装「帘头回落布帘变体」
+     * （V54 的 {@code 帘头×平幔} 逐字引用 {@code 精裁-布}/{@code 布三边}）与「部位无关工序裸名兜底」
+     * 两套口径；另写一份 ⇒ 前端看到的变体名与实例化算的工序**可能不是同一道**
+     * （显示的单位/单价/必完全错，且没有任何东西会变红）。</p>
+     */
+    private final ProductionOperationQueryService productionOperationQueryService;
 
     /**
      * 部位价目矩阵：一道**逻辑工序** × 一个**部位** = 一格（28 × 3 = 84 格）。
      *
-     * @return `[{operation, position, unit_price, applicable}]`，按 `(operation, position)` 稳定排序；
-     *         `applicable=false` 的格 `unit_price=null`（**明确不做 ⇒ 不报价**，与「没定价」可区分）
+     * @return 11 键/行（issue #4500 冻结 4 键 + issue #4587 追加 {@code id} 与 6 键变体元数据），
+     *         按 `(operation, position)` 稳定排序；`applicable=false` 的格 `unit_price=null`
+     *         （**明确不做 ⇒ 不报价**，与「没定价」可区分）。变体查不到 ⇒ 6 键全 `null`（**不猜**）
      */
     public List<Map<String, Object>> operationPositions(Long tenantId) {
         List<ProductionOperationPosition> rows = productionOperationPositionMapper.selectList(
@@ -82,11 +92,31 @@ public class ProductionRoutingReadService {
         List<ProductionOperationPosition> ordered = rows == null ? new ArrayList<>() : new ArrayList<>(rows);
         ordered.sort(Comparator.comparing(ProductionOperationPosition::getLogicalName)
                 .thenComparing(ProductionOperationPosition::getPosition));
+        // 工序库一次取回、循环内复用（避免 N+1）：变体元数据的读取口径与实例化侧同一份
+        Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
         List<Map<String, Object>> items = new ArrayList<>();
         for (ProductionOperationPosition row : ordered) {
-            items.add(positionView(row));
+            items.add(positionView(row, variantName(row, catalog), catalog));
         }
         return items;
+    }
+
+    /**
+     * **单行**展示形态（写面 {@code PUT /operation-positions/{id}} 的响应与读面**共用同一份** ——
+     * 两处各拼一份必然漂移，而前端拿同一个 TS 类型渲染两者）。
+     *
+     * @param row 已带最新值的矩阵格（写面就地改过 {@code unitPrice}/{@code applicable}）
+     */
+    public Map<String, Object> positionRowView(Long tenantId, ProductionOperationPosition row) {
+        Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
+        return positionView(row, variantName(row, catalog), catalog);
+    }
+
+    /** 该格实际落到**工人端那道工序**的变体名（查不到 ⇒ {@code null}，**不猜**）。 */
+    private String variantName(ProductionOperationPosition row,
+                               Map<String, Map<String, Object>> catalog) {
+        return productionOperationQueryService.variantNameOf(
+                row.getLogicalName(), row.getPosition(), catalog);
     }
 
     /**
@@ -118,13 +148,33 @@ public class ProductionRoutingReadService {
      * <p>⚠️ {@code operation} 取 {@code logical_name}（**逻辑工序名**：精裁/三边/韩褶…），
      * **不是** {@code production_operations.name}（那边仍是旧名 精裁-布/布三边…）。矩阵的行键
      * 是逻辑名 —— 取错会让前端按 35 个旧名渲染出「一行一道工序」的旧形态。</p>
+     *
+     * <p><b>后 6 键 = 逻辑名 ↔ 变体名的映射（issue #4587 ①，母单 #4586 的「中间那座桥」）</b>：
+     * 每行回答「该逻辑工序 × 该部位**实际落到工人端的那道工序**是谁、单位/分组/作用域/必完是什么」。
+     * 前端此前拿不到这层映射 ⇒ 不敢显示单位/单价/必完（主线 chips 上只有名字两套恰好一致的
+     * {@code 外帘打卷} 才显示 {@code 套 · ¥1.00}，其余 6 道什么都不显示）。</p>
+     *
+     * <p>⚠️ 变体查不到（如 {@code logo条 × 纱帘} 在库里没有该变体）⇒ 6 键**全 null**，
+     * 且键**必须保留**（前端按固定键集读；省掉键 = 前端渲染 undefined）。
+     * {@code id}（issue #4587 追加）= 矩阵格自身的主键，是格内改价
+     * {@code PUT /operation-positions/{id}} 的**寻址键**（不返回 ⇒ 改价无法落地）。</p>
      */
-    private Map<String, Object> positionView(ProductionOperationPosition row) {
+    private Map<String, Object> positionView(ProductionOperationPosition row, String variantName,
+                                             Map<String, Map<String, Object>> catalog) {
+        // 该格对应的工人端工序元数据（查不到 ⇒ null：不猜单位/不猜必完）
+        Map<String, Object> variant = variantName == null ? null : catalog.get(variantName);
         Map<String, Object> view = new LinkedHashMap<>();
+        view.put("id", row.getId());
         view.put("operation", row.getLogicalName());
         view.put("position", row.getPosition());
         view.put("unit_price", row.getUnitPrice());
         view.put("applicable", row.getApplicable());
+        view.put("variant_operation_id", variant == null ? null : variant.get("id"));
+        view.put("variant_name", variantName);
+        view.put("unit", variant == null ? null : variant.get("unit"));
+        view.put("group", variant == null ? null : variant.get("group"));
+        view.put("scope", variant == null ? null : variant.get("scope"));
+        view.put("is_must_finish", variant == null ? null : variant.get("is_must_finish"));
         return view;
     }
 

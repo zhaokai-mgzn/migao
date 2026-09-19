@@ -249,6 +249,35 @@ public class ProductionRoutingCommandService {
         return result;
     }
 
+    /**
+     * 软删条件工序规则（{@code DELETE /route-rules/{id}}，issue #4587 ④）。
+     *
+     * <p><b>为什么无硬护栏</b>：规则只影响「插一道工序 / 删一道工序 / 覆盖计件系数」——
+     * 删错了重加即可（与路线的「删默认 ⇒ 建单全 fail-closed」不同，规则没有那种不可逆后果）。
+     * 但**仍不物理删**：{@code deleted=1} 让「谁在什么时候删掉了哪条规则」留得下证据
+     * （排查工序顺序错时它是唯一线索，与路线/信号同口径）。</p>
+     *
+     * <p>不存在 / 跨租户 / 已软删 ⇒ <b>404</b>（与 {@code PUT /route-rules/{id}/customer-unit-price}
+     * 同口径：已软删的行不该再被写面寻址）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> deleteRouteRule(String id, Long tenantId) {
+        ProductionRouteRule rule = id == null ? null : productionRouteRuleMapper.selectById(id);
+        if (rule == null || !tenantId.equals(rule.getTenantId())
+                || !Integer.valueOf(0).equals(rule.getDeleted())) {
+            throw BusinessException.notFound("条件工序规则");
+        }
+        rule.setDeleted(1);
+        rule.setUpdatedAt(OffsetDateTime.now());
+        productionRouteRuleMapper.updateById(rule);
+        log.info("软删条件工序规则: tenantId={}, ruleId={}, trigger={}",
+                tenantId, rule.getId(), rule.getTriggerValue());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", rule.getId());
+        result.put("deleted", true);
+        return result;
+    }
+
     // ══════════════════ 特殊选项对客单价（元/套，issue #4567）══════════════════
 
     /**
