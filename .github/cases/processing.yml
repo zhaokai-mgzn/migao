@@ -556,6 +556,7 @@ cases:
         - "frontend/admin-web/tests/unit/pages/processing-orders-production.test.tsx"
         - "frontend/admin-web/tests/unit/lib/use-route-id.test.ts"
         - "tests/unit_ci_workflows/test_operation_display_name_guard.py"
+        - "frontend/admin-web/tests/unit/lib/operation-display.test.ts"
       ci:
         - pr-check.yml
       verifies: []
