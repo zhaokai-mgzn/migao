@@ -104,6 +104,20 @@
 //    （判据 = 工序库 id **不在**任何矩阵格的 `variant_operation_id` 里）+ 接入弹窗（每道勾适用部位，
 //    值域与新增工序同一份）；确认 ⇒ `PUT /operations/{id}` 带 `positions`（后端**只补缺失行**，
 //    不删已有行、不覆盖已定价的格）；接入后立刻出现在「工艺项」表里、且下拉也能看到它。
+// ㉖ **web 面只用一套工序名：矩阵行首与抽屉都不再出现变体名**（issue #4622 = goal「web 面工序命名
+//    统一」阶段 3；**只换呈现，能力不减**）：
+//    - 矩阵**行首**只显示**逻辑工序名**（`精裁` / `三边`）—— 该行「哪个部位做 / 不做」由**列与格**
+//      表达 ⇒ 承载变体名的行首小字（`精裁-布 / 精裁-纱`、`布三边 / 纱三边`）**整块去掉**，
+//      连 `matrix-variants-*` 这个 testid 一起消失（**testid 也是界面契约的一部分**）；
+//      首列表头由「工序（工人看到的）」改回「工序」（这一列从来不是工人端展示名）；
+//    - 「管理▸」抽屉：标题/说明改**商家语言**（`「精裁」在各部位的设置`），条目**以「部位」为主标识**
+//      —— 一个变体可能服务多个部位（`帘头` 回落复用 `布帘` 的变体）⇒ 主标识 = **它服务的部位集合**
+//      （`布帘 / 帘头`），`variant_name` **不上界面**（含 `aria-label` 与删除 toast）；
+//    - **能力零变化（反向护栏）**：改分组 / 单位 / 作用域 / 必完 / 停用 / 删除**六项逐条断言仍可用**，
+//      接口与 body 口径一字未动（`PUT /operations/{id}` 部分更新、`DELETE /operations/{id}` 二次确认）；
+//    - 「新增工序」对话框的「工序名称」placeholder 不再示范部位后缀（`罗马帘-穿杆` ⇒ `罗马帘穿杆`）
+//      + 一句「工序名不要带部位 —— 部位在下面勾选」；**不加**阻断式校验（#4614 的预检不变）；
+//    - 红证（修复前实测，窄跑）：9 failed / 115 passed；实现后 124/124 绿。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -428,8 +442,9 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('matrix-cell-精裁-帘头')).toHaveTextContent('不做')
     expect(screen.getByTestId('matrix-cell-三边-布帘')).toHaveTextContent('¥1.20')
     // 列序 = 业务口径（布帘 / 纱帘 / 帘头），不是服务端格序；末列 = 行尾元数据 + 「管理▸」
+    // 首列表头 = 「工序」（issue #4622：这一列是**逻辑工序名**，不再是「工人看到的名字」）
     expect(within(screen.getByTestId('operation-price-matrix')).getAllByRole('columnheader').map((c) => c.textContent)).toEqual([
-      '工序（工人看到的）',
+      '工序',
       '布帘',
       '纱帘',
       '帘头',
@@ -1002,14 +1017,24 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('matrix-meta-韩褶')).not.toHaveTextContent('必完')
   })
 
-  it('⑰-③ 行：逻辑工序名 + 小字列出该行落到工人端的**变体名**（`variant_name` 去重）', async () => {
+  it('㉖-① 矩阵行首**不再显示变体名**（改判 ⑰-③）：该行「哪个部位做/不做」由列与格表达', async () => {
     await renderOperations()
-    const variants = screen.getByTestId('matrix-variants-精裁')
-    expect(variants).toHaveTextContent('精裁-布')
-    expect(variants).toHaveTextContent('精裁-纱')
+
+    // 行首小字整块去掉 —— 承载变体名的节点与 testid 都不再存在（testid 也是界面契约的一部分）
+    expect(screen.queryByTestId('matrix-variants-精裁')).toBeNull()
+    expect(screen.queryByTestId(/^matrix-variants-/)).toBeNull()
+
+    // 红证（改前必红）：改前这一屏的行首小字就是这些变体名（`精裁-布 / 精裁-纱`、`布三边 / 纱三边`）
+    const panel = screen.getByTestId('craft-operations-panel')
+    for (const variantName of ['精裁-布', '精裁-纱', '布三边', '纱三边', '车被-纱', '韩褶-布']) {
+      expect(panel).not.toHaveTextContent(variantName)
+    }
+
+    // 信息不丢：逻辑工序名照旧；部位维度仍由**列与格**表达（价 / 不做 / 未定价三态俱在）
     expect(screen.getByTestId('matrix-row-精裁')).toHaveTextContent('精裁')
-    // 查不到变体的行不编造名字
-    expect(screen.getByTestId('matrix-variants-韩褶')).not.toHaveTextContent('韩褶-布')
+    expect(screen.getByTestId('matrix-cell-精裁-布帘')).toHaveTextContent('¥8.50')
+    expect(screen.getByTestId('matrix-cell-精裁-帘头')).toHaveTextContent('不做')
+    expect(screen.getByTestId('matrix-cell-三边-纱帘')).toHaveTextContent('未定价')
   })
 
   it('⑰-④ 三态可区分：`¥0.00` 是真价（≠「未定价」）；未定价计数 = 待办数', async () => {
@@ -1106,10 +1131,12 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('matrix-row-精裁')).toBeInTheDocument()
   })
 
-  it('⑰-⑩ 「管理▸」抽屉：变体列表带 分组·单位·作用域·必完 + 商家话解释；改档各只带自己的字段', async () => {
+  it('⑰-⑩ 「管理▸」抽屉：条目带 分组·单位·作用域·必完 + 商家话解释；改档各只带自己的字段', async () => {
     await openManage('车被')
     const row = screen.getByTestId('variant-row-op-车被')
-    expect(row).toHaveTextContent('车被')
+    // issue #4622：条目主标识 = 部位（改前是变体名 `车被`）
+    expect(row).toHaveTextContent('布帘')
+    expect(row).not.toHaveTextContent('车被-布')
     expect(row).toHaveTextContent('后道')
     expect(row).toHaveTextContent('件')
 
@@ -1135,17 +1162,98 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-车被', { status: 'inactive' }))
   })
 
-  it('⑰-⑪ 抽屉：变体按 `variant_operation_id` **去重**（同一变体覆盖多部位只列一次）', async () => {
+  it('㉖-② 抽屉条目以**部位**为主标识（改判 ⑰-⑪）：按 `variant_operation_id` 去重，且不显示变体名', async () => {
     await openManage('三边')
     expect(screen.getAllByTestId(/^variant-row-/)).toHaveLength(2)
-    expect(screen.getByTestId('variant-row-op-三边-布')).toHaveTextContent('布三边')
-    expect(screen.getByTestId('variant-row-op-三边-纱')).toHaveTextContent('纱三边')
+
+    const cloth = screen.getByTestId('variant-row-op-三边-布')
+    expect(cloth).toHaveTextContent('布帘')
+    expect(cloth).not.toHaveTextContent('布三边')
+
+    const yarn = screen.getByTestId('variant-row-op-三边-纱')
+    expect(yarn).toHaveTextContent('纱帘')
+    expect(yarn).not.toHaveTextContent('纱三边')
+
+    // 抽屉整体（标题 / 说明 / 条目）都不得出现变体名（红证：改前条目主标识就是变体名）
+    const drawer = screen.getByTestId('operations-manage-drawer')
+    expect(drawer).not.toHaveTextContent('布三边')
+    expect(drawer).not.toHaveTextContent('纱三边')
   })
 
-  it('⑰-⑫ 抽屉：该逻辑工序查不到任何变体（6 键全 null）⇒ 可读提示，不空白、不发明数据', async () => {
+  it('㉖-③ 抽屉条目主标识 = 它**服务的部位集合**（`帘头` 回落复用 `布帘` 的变体 ⇒ 一条条目列两个部位）', async () => {
+    mockGetOperationPositions.mockReset().mockResolvedValue(
+      ok([
+        { id: 'p1', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', variant_name: '布三边', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+        { id: 'p2', operation: '三边', position: '帘头', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', variant_name: '布三边', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+      ]),
+    )
+    await openManage('三边')
+
+    // 一个变体服务多个部位 ⇒ 仍只列一条（按 id 去重），主标识是**部位集合**而不是变体名
+    expect(screen.getAllByTestId(/^variant-row-/)).toHaveLength(1)
+    const row = screen.getByTestId('variant-row-op-三边-布')
+    expect(row).toHaveTextContent('布帘')
+    expect(row).toHaveTextContent('帘头')
+    expect(row).not.toHaveTextContent('布三边')
+  })
+
+  it('㉖-④ 能力不减（反向护栏）：改分组 / 单位 / 作用域 / 必完 / 停用 / 删除 **六项逐条仍可用**', async () => {
+    await openManage('车被')
+    const id = 'op-车被'
+
+    // ① 改分组 + ② 改单位：铅笔 → 输入 → 保存 ⇒ body 恰为 `{group_name, unit}`（部分更新，不夹带别的字段）
+    await userEvent.click(screen.getByTestId(`variant-meta-edit-${id}`))
+    const groupInput = screen.getByTestId(`variant-group-input-${id}`)
+    await userEvent.clear(groupInput)
+    await userEvent.type(groupInput, '后道2')
+    const unitInput = screen.getByTestId(`variant-unit-input-${id}`)
+    await userEvent.clear(unitInput)
+    await userEvent.type(unitInput, '个')
+    await userEvent.click(screen.getByTestId(`variant-meta-save-${id}`))
+    await waitFor(() =>
+      expect(mockUpdateOperation).toHaveBeenCalledWith(id, { group_name: '后道2', unit: '个' }),
+    )
+    expect(Object.keys(mockUpdateOperation.mock.calls[0][1] as object)).toEqual(['group_name', 'unit'])
+
+    // ③ 改作用域 / ④ 改必完 / ⑤ 停用：各只带自己的字段（`PUT /operations/{id}`）
+    await userEvent.selectOptions(screen.getByTestId(`variant-scope-${id}`), 'position')
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith(id, { scope: 'position' }))
+    await userEvent.click(screen.getByTestId(`variant-must-finish-${id}`))
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith(id, { is_must_finish: false }))
+    await userEvent.click(screen.getByTestId(`variant-disable-${id}`))
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith(id, { status: 'inactive' }))
+
+    // ⑥ 删除：二次确认后才发 `DELETE /operations/{id}`（逐条护栏理由的就地展示见 ⑰-⑬）
+    await userEvent.click(screen.getByTestId(`variant-delete-${id}`))
+    expect(mockDeleteOperation).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByTestId(`variant-delete-confirm-${id}`))
+    await waitFor(() => expect(mockDeleteOperation).toHaveBeenCalledWith(id))
+  })
+
+  it('㉖-⑤ 抽屉标题/说明改成商家语言：以「部位」为主标识，不再出现「变体 / 工人扫码时看到的工序」', async () => {
+    await openManage('三边')
+
+    // 标题 = 商家语言（含这道工序的名字，但不说「变体」）
+    expect(screen.getByRole('dialog', { name: '「三边」在各部位的设置' })).toBeInTheDocument()
+
+    const drawer = screen.getByTestId('operations-manage-drawer')
+    expect(drawer).not.toHaveTextContent('变体')
+    expect(drawer).not.toHaveTextContent('工人扫码')
+    expect(drawer.textContent ?? '').not.toContain('布三边')
+
+    // #4610 的「必完」解释**保留**（一字不动）
+    expect(drawer).toHaveTextContent('必完：缺这道工序不能打包')
+    expect(drawer).toHaveTextContent('部位级工序要每个部位都做完')
+  })
+
+  it('⑰-⑫ 抽屉：该逻辑工序查不到任何设置（6 键全 null）⇒ 可读提示，不空白、不发明数据', async () => {
     await openManage('韩褶')
     expect(screen.queryByTestId(/^variant-row-/)).toBeNull()
-    expect(screen.getByTestId('operations-manage-empty')).toHaveTextContent('还没有落到工人端的工序')
+    const empty = screen.getByTestId('operations-manage-empty')
+    expect(empty).toHaveTextContent('还没有设置')
+    // issue #4622：提示也用商家语言（不得再写「变体 / 工人端」这类内部术语）
+    expect(empty).not.toHaveTextContent('变体')
+    expect(empty).not.toHaveTextContent('工人端')
   })
 
   it('⑰-⑬ 删除工序：**二次确认**后才发 `DELETE /operations/{id}`；护栏理由逐条就地展示', async () => {
@@ -1437,6 +1545,27 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
       }),
     )
     await waitFor(() => expect(mockGetOperationPositions).toHaveBeenCalledTimes(2))
+  })
+
+  it('㉖-⑥ 「新增工序」对话框不再示范「名字里带部位」的旧写法（issue #4622 范围补口）', async () => {
+    await renderOperations()
+    await userEvent.click(screen.getByTestId('routings-new-operation'))
+    await waitFor(() => expect(screen.getByTestId('create-kind-operation')).toBeInTheDocument())
+
+    // ① placeholder 不再示范部位后缀（改前是 `如 罗马帘-穿杆`）
+    const ph = screen.getByTestId('routings-create-op-name').getAttribute('placeholder') ?? ''
+    expect(ph).toBe('如 罗马帘穿杆')
+    expect(ph).not.toMatch(/-布|-纱|布帘|纱帘|帘头/)
+
+    // ② 工序名称旁有**商家语言的**提示：工序名不要带部位（部位在下面勾选）
+    const hint = screen.getByTestId('routings-create-op-name-hint')
+    expect(hint).toHaveTextContent('不要带部位')
+    expect(hint).toHaveTextContent('部位在下面勾选')
+    // 提示本身不得举变体名当例子（那会把变体名又带回这一屏）
+    expect(hint.textContent ?? '').not.toContain('布三边')
+
+    // ③ 只治文案误导：**不新增阻断式校验**（#4614 的「至少勾一个部位」预检与默认勾选不变）
+    expect(screen.getByTestId('routings-create-op-position-布帘')).toBeChecked()
   })
 
   it('⑳ 矩阵空态指向**右上**入口（issue #4615：入口换位置后不得留下死引用）', async () => {
@@ -1744,8 +1873,10 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
     await userEvent.click(screen.getByTestId('matrix-manage-精裁'))
     await waitFor(() => expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument())
-    // 变体列表来自矩阵（`variant_name`），不依赖工序库；provenance 查不到 ⇒ 不渲染徽标（静默 = 未知）
-    expect(screen.getByTestId('variant-row-op-精裁-布')).toHaveTextContent('精裁-布')
+    // 设置行来自矩阵（**部位**），不依赖工序库；provenance 查不到 ⇒ 不渲染徽标（静默 = 未知）
+    const row = screen.getByTestId('variant-row-op-精裁-布')
+    expect(row).toHaveTextContent('布帘')
+    expect(row).not.toHaveTextContent('精裁-布')
     expect(screen.queryByTestId('variant-source-op-精裁-布')).toBeNull()
   })
 
@@ -1972,7 +2103,7 @@ describe('新建路线的部位选项（issue #4556：包 F 的第 4 个部位�
       within(screen.getByTestId('operation-price-matrix'))
         .getAllByRole('columnheader')
         .map((th) => th.textContent),
-    ).toEqual(['工序（工人看到的）', '布帘', '纱帘', '帘头', '布料', '元数据 / 操作'])
+    ).toEqual(['工序', '布帘', '纱帘', '帘头', '布料', '元数据 / 操作'])
   })
 
   it('判据① 「新建路线」的部位勾选**含 `布料`**（不含 ⇒ 红）', async () => {
