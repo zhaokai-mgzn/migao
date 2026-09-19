@@ -2546,6 +2546,15 @@ function LineItemBlock({
 }: LineItemBlockProps) {
   /** 当前展开的**向导步骤**（issue #4511 手风琴）：1 尺寸与数量 / 2 工艺规格 / 3 加工项 / 4 特殊选项 */
   const [openStep, setOpenStep] = useState(1)
+  /**
+   * 加工项**一级分类导航 + 关键字搜索**（issue #4576）—— 纯**展示态**。
+   *
+   * ⚠️ 与勾选态（`line.selectedProcessing`）**严格分离**：过滤只影响**渲染**，
+   * 被过滤掉但仍勾选的项**照样**计入已选摘要与提交 payload（`processingDetailsOf` 只读勾选态）。
+   * 这里**没有**第二份勾选状态，也**没有**第二套落库路径。
+   */
+  const [activeCategoryId, setActiveCategoryId] = useState('')
+  const [processingQuery, setProcessingQuery] = useState('')
   const stepProps = (n: number) => ({
     open: openStep === n,
     onToggle: () => setOpenStep(openStep === n ? 0 : n),
@@ -2561,6 +2570,48 @@ function LineItemBlock({
    * （判据 8：自动识别特征出现手选项 ⇒ 红）。单一真值 = `AUTO_FEATURE_NAMES`。
    */
   const handPickableItems = handPickableProcessingItems(line.processingItems)
+
+  /**
+   * 加工项按**一级分类**分组（issue #4576）—— 主轴 = 分类导航（用户口径：
+   * 「加工项**有一级分类**，可以**先选一级分类再选具体加工项**，同时也加**关键字快速搜索**」）。
+   *
+   * 分类取目录响应**已有**的 `categoryId` / `categoryName`（`processing_categories`）。
+   * 边界：目录没配分类 / 只有一类 ⇒ **退回全部平铺**（不渲染选择器、不报错）；
+   * 缺分类的项归入「未分类」组，与有分类的项混排时照常可选。
+   */
+  const processingCategoryGroups: Array<{
+    id: string
+    name: string
+    items: ProcessingItem[]
+  }> = []
+  for (const pi of handPickableItems) {
+    const id = pi.categoryId ? String(pi.categoryId) : ''
+    let group = processingCategoryGroups.find((g) => g.id === id)
+    if (!group) {
+      group = { id, name: pi.categoryName || '未分类', items: [] }
+      processingCategoryGroups.push(group)
+    }
+    group.items.push(pi)
+  }
+  /** 分类只有 1 个 ⇒ 不渲染选择器（一个 tab 是噪音），直接显示该类下的项 */
+  const hasProcessingCategoryNav = processingCategoryGroups.length > 1
+  /** 选中的分类已不在目录里（换商品 / 目录变化）⇒ 落回第一类（不报错） */
+  const activeCategory =
+    processingCategoryGroups.find((g) => g.id === activeCategoryId) ?? processingCategoryGroups[0]
+  const trimmedQuery = processingQuery.trim().toLowerCase()
+  const searchingProcessing = trimmedQuery.length > 0
+  /**
+   * 可见加工项：搜索**跨分类**命中（命中即跨分类展示，并在结果里标出所属分类）；
+   * 未搜索 ⇒ 只显示**当前选中分类**的项（无分类导航时即全部平铺）。
+   */
+  const visibleProcessingItems = searchingProcessing
+    ? handPickableItems.filter((pi) => pi.name.toLowerCase().includes(trimmedQuery))
+    : activeCategory?.items ?? []
+  const categoryNameOf = (pi: ProcessingItem) =>
+    pi.categoryName || processingCategoryGroups.find((g) => g.items.includes(pi))?.name || ''
+  /** 该行**工艺**（#4566 派生值）—— ③ 已选摘要与 ② 工艺规格摘要**共用**同一个取值点 */
+  const lineCraft = craftFromItems(line)
+
   /** 布料组整组无加工（issue #4493）⇒ 自动识别块也不渲染 */
   const isFabricLine = line.saleForm === SALE_FORM_FABRIC
 
@@ -2573,7 +2624,7 @@ function LineItemBlock({
   const summarySpec = [
     line.curtainBody,
     // 工艺取**派生值**（#4566：来自加工项的 `craftHint`）—— 不读 `line.craft.craft`（那里已没有真值）
-    craftFromItems(line),
+    lineCraft,
     line.craft.cuttingMode,
     line.craft.openCount ? OPEN_COUNT_LABEL[line.craft.openCount] : undefined,
     line.craft.style,
@@ -2732,7 +2783,12 @@ function LineItemBlock({
             <WizardStep
               step={3}
               title="加工项"
-              summary={selectedProcessingCount > 0 ? `已选 ${selectedProcessingCount} 项` : '未选'}
+              summary={
+                // #4576：摘要里带上**工艺**（哪一项），不再让商家回头数；计数口径不变（仍只数**手选**项）
+                selectedProcessingCount > 0
+                  ? `已选 ${selectedProcessingCount} 项${lineCraft ? ` · 工艺：${lineCraft}` : ''}`
+                  : '未选'
+              }
               {...stepProps(3)}
             >
               {processingLoading ? (
@@ -2740,45 +2796,124 @@ function LineItemBlock({
               ) : handPickableItems.length === 0 ? (
                 <div className="text-sm text-neutral-400 py-2">暂无可用加工项</div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-3">
+                  {/* 关键字搜索（issue #4576）—— 项数 > 8 才出现（项少时搜索框本身是噪音）。
+                      跨分类命中；清空后回到当前选中的分类。过滤只影响渲染，不动勾选态。 */}
+                  {handPickableItems.length > 8 && (
+                    <input
+                      type="search"
+                      data-testid="processing-search"
+                      aria-label="搜索加工项"
+                      placeholder="搜索加工项…"
+                      value={processingQuery}
+                      onChange={(e) => setProcessingQuery(e.target.value)}
+                      className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                    />
+                  )}
+
+                  {/* 一级分类导航（issue #4576）—— **只有一类时不渲染**（一个 tab 是噪音），
+                      直接显示该类下的项；目录没配分类 ⇒ 全部平铺。两种边界都不报错。 */}
+                  {hasProcessingCategoryNav && (
+                    <div
+                      data-testid="processing-category-selector"
+                      className="flex flex-wrap gap-1.5"
+                    >
+                      {processingCategoryGroups.map((group) => {
+                        const active = !searchingProcessing && group.id === activeCategory?.id
+                        return (
+                          <button
+                            key={group.id || 'uncategorized'}
+                            type="button"
+                            data-testid={`processing-category-${group.id || 'uncategorized'}`}
+                            aria-pressed={active}
+                            onClick={() => {
+                              // 点分类 = 回到该分类的浏览态（清掉搜索，避免「选了分类却还在看全局结果」）
+                              setProcessingQuery('')
+                              setActiveCategoryId(group.id)
+                            }}
+                            className={
+                              'h-8 px-3 rounded-full border text-sm transition-colors ' +
+                              (active
+                                ? 'border-primary-600 bg-primary-50 text-primary-700'
+                                : 'border-neutral-300 bg-white text-neutral-600 hover:border-neutral-400')
+                            }
+                          >
+                            {group.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* 工艺项 = **单选**语义：单值护栏**只在带 `craftHint` 的项之间**生效
+                      ⇒ 这个区别不因改成分类导航而丢掉（#4576 用户口径）。 */}
+                  {visibleProcessingItems.some((pi) => Boolean(pi.craftHint)) && (
+                    <p className="text-xs text-neutral-400">
+                      带「单选」的工艺项只能选一个 —— 换选会自动取消前一个
+                    </p>
+                  )}
+
                   {/* #4566：手选列表 = 目录**滤掉自动推导特征**后的清单（超高/超宽/倒幅/正幅不出控件） */}
-                  {handPickableItems.map((pi) => {
-                    const cfg = line.selectedProcessing[pi.id] || { selected: false, qty: 1 }
-                    return (
-                      <div
-                        key={pi.id}
-                        className={
-                          'flex items-center gap-3 p-3 rounded border transition-colors ' +
-                          (cfg.selected
-                            ? 'border-primary-300 bg-primary-50/40'
-                            : 'border-neutral-200 bg-white')
-                        }
-                      >
-                        <input
-                          type="checkbox"
-                          checked={cfg.selected}
-                          onChange={(e) => onToggleProcessing(pi, e.target.checked)}
-                          aria-label={pi.name}
-                          className="w-4 h-4 accent-primary-600"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-neutral-900">{pi.name}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {visibleProcessingItems.map((pi) => {
+                      const cfg = line.selectedProcessing[pi.id] || { selected: false, qty: 1 }
+                      return (
+                        <div
+                          key={pi.id}
+                          className={
+                            'rounded border transition-colors ' +
+                            (cfg.selected
+                              ? 'border-primary-300 bg-primary-50/40'
+                              : 'border-neutral-200 bg-white')
+                          }
+                        >
+                          <label className="flex items-center gap-2 h-9 px-3 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={cfg.selected}
+                              onChange={(e) => onToggleProcessing(pi, e.target.checked)}
+                              aria-label={pi.name}
+                              className="w-4 h-4 accent-primary-600 shrink-0"
+                            />
+                            <span className="text-sm font-medium text-neutral-900">{pi.name}</span>
+                            {/* 「单选」标记：只挂在**工艺项**（`craftHint` 非空）上 */}
+                            {Boolean(pi.craftHint) && (
+                              <span
+                                data-testid={`processing-single-badge-${pi.id}`}
+                                title="工艺项：一张单只能选一个"
+                                className="rounded border border-amber-200 bg-amber-50 px-1 text-[10px] leading-4 text-amber-700"
+                              >
+                                单选
+                              </span>
+                            )}
+                            {/* 搜索跨分类命中时标出所属分类（未搜索时只显示当前分类，无需重复标） */}
+                            {searchingProcessing && (
+                              <span className="text-[10px] text-neutral-400">
+                                {categoryNameOf(pi)}
+                              </span>
+                            )}
+                            {/* **不展示加工项单价**（issue #4526 · R10，用户 2026-09-19「订单上的
+                                加工项选择控件不要展示加工项单价」）：ERP 的加工项是**组合价目**
+                                （特征集合 → 元/米），**价格只在组合上存在** ⇒ 逐项显示单价必然误导
+                                （同一真值两个数：逐项之和对不上组合价，商家会照错的数对账）。
+                                只保留「数量 + 单位」供核对勾了什么 —— 摘的是**钱**，不是数量。
+                                行金额同样不显示（它与组合价不是同一口径；金额一律见「费用明细」）。 */}
+                            {cfg.selected && (
+                              <span className="text-sm font-semibold text-primary-600 shrink-0">
+                                {Math.max(1, Number(cfg.qty) || 1)}
+                                {pi.unit || '项'}
+                              </span>
+                            )}
+                          </label>
                         </div>
-                        {/* **不展示加工项单价**（issue #4526 · R10，用户 2026-09-19「订单上的
-                            加工项选择控件不要展示加工项单价」）：ERP 的加工项是**组合价目**
-                            （特征集合 → 元/米），**价格只在组合上存在** ⇒ 逐项显示单价必然误导
-                            （同一真值两个数：逐项之和对不上组合价，商家会照错的数对账）。
-                            只保留「数量 + 单位」供核对勾了什么 —— 摘的是**钱**，不是数量。
-                            行金额同样不显示（它与组合价不是同一口径；金额一律见「费用明细」）。 */}
-                        {cfg.selected && (
-                          <span className="text-sm font-semibold text-primary-600 shrink-0">
-                            {Math.max(1, Number(cfg.qty) || 1)}
-                            {pi.unit || '项'}
-                          </span>
-                        )}
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+                  </div>
+
+                  {/* 搜索无命中 ⇒ 不静默留白 */}
+                  {visibleProcessingItems.length === 0 && (
+                    <div className="text-sm text-neutral-400 py-2">没有匹配的加工项</div>
+                  )}
 
                   {/* 自动识别（issue #4526 · D6）：超高/超宽 = 宽高 vs 门幅，倒幅/正幅 = cuttingMode
                       推导 —— **只读**（不是可勾选项：手选项 = 与 cuttingMode 冲突的第二份口径）。

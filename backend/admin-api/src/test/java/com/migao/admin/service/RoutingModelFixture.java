@@ -489,6 +489,38 @@ public final class RoutingModelFixture {
         return rows;
     }
 
+    /**
+     * **加工项触发**规则（3 条，issue #4577）：与
+     * {@code V84__seed_processing_item_route_rules.sql} / {@code docs/sql/schema.sql} 逐条同值。
+     *
+     * <p>刻意**不并进** {@link #rules()}：那张表被守卫钉为「V71 字面量种子的 26 行镜像」
+     * （{@code test_production_catalog_seed.py::test_route_rules_converge_across_three_sources}）
+     * —— 加工项规则的种子在 V84（按租户派生），不在 V71 的字面量里。</p>
+     */
+    public static List<ProductionRouteRule> processingItemRules(Long tenantId) {
+        String[][] rows = {
+                {"花边", "花边", "三边", "270"},
+                {"扣环", "扣环", "三边", "280"},
+                {"接高", "接高", "精裁", "290"}};
+        List<ProductionRouteRule> rules = new ArrayList<>();
+        for (String[] row : rows) {
+            rules.add(ProductionRouteRule.builder()
+                    .id("rr-v84-" + row[3]).tenantId(tenantId)
+                    .triggerKind("processing_item").triggerValue(row[0]).position(null)
+                    .action("insert").operation(row[1]).afterOperation(row[2])
+                    .priority(Integer.valueOf(row[3]))
+                    .status("active").deleted(0).build());
+        }
+        return rules;
+    }
+
+    /** 规则表 + 系数档 + 加工项触发规则（issue #4577 的用例要的那一份）。 */
+    public static List<ProductionRouteRule> rulesWithProcessingItems(Long tenantId) {
+        List<ProductionRouteRule> rows = new ArrayList<>(rulesWithFactors(tenantId));
+        rows.addAll(processingItemRules(tenantId));
+        return rows;
+    }
+
     // ══════════════════════════ 路线模板 ══════════════════════════
 
     /**

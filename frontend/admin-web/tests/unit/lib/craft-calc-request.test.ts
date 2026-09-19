@@ -192,3 +192,43 @@ describe('用料来源两态（真值源 §8：用料必须带来源）', () => 
     expect(METERS_SOURCE_FORMULA).not.toBe(METERS_SOURCE_MANUAL)
   })
 })
+
+describe('对花 / 花距进算料入参（issue #4572）', () => {
+  it('「对花 = 是」⇒ 带 has_pattern + pattern_repeat（定宽买高时每幅 +1 花距）', () => {
+    const params = craftCalcParamsOf(line({ craft: { hasPattern: true, patternRepeat: 0.45 } }))
+    expect(params?.has_pattern).toBe(true)
+    expect(params?.pattern_repeat).toBe(0.45)
+  })
+
+  it('「对花 = 否」/「未指定」⇒ 两个键都**不带**（对花为否时留着花距是自相矛盾的输入）', () => {
+    expect(
+      craftCalcParamsOf(line({ craft: { hasPattern: false, patternRepeat: 0.45 } }))?.has_pattern
+    ).toBeUndefined()
+    expect(craftCalcParamsOf(line({ craft: {} }))?.has_pattern).toBeUndefined()
+    expect(craftCalcParamsOf(line({ craft: {} }))?.pattern_repeat).toBeUndefined()
+  })
+
+  it('对花 = 是但花距缺失 / 非正数 ⇒ 只带 has_pattern（**不发明花距**）', () => {
+    const missing = craftCalcParamsOf(line({ craft: { hasPattern: true } }))
+    expect(missing?.has_pattern).toBe(true)
+    expect(missing?.pattern_repeat).toBeUndefined()
+    expect(
+      craftCalcParamsOf(line({ craft: { hasPattern: true, patternRepeat: 0 } }))?.pattern_repeat
+    ).toBeUndefined()
+    expect(
+      craftCalcParamsOf(line({ craft: { hasPattern: true, patternRepeat: -1 } }))?.pattern_repeat
+    ).toBeUndefined()
+  })
+
+  it('花距 / 对花开关进触发签名：改任一项 ⇒ 签名变化（否则页面留着旧口径的米数）', () => {
+    const base = craftCalcSignature(
+      craftCalcParamsOf(line({ craft: { hasPattern: true, patternRepeat: 0.3 } }))
+    )
+    const other = craftCalcSignature(
+      craftCalcParamsOf(line({ craft: { hasPattern: true, patternRepeat: 0.5 } }))
+    )
+    const off = craftCalcSignature(craftCalcParamsOf(line({ craft: {} })))
+    expect(base).not.toBe(other)
+    expect(base).not.toBe(off)
+  })
+})

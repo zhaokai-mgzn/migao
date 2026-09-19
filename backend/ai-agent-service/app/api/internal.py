@@ -95,6 +95,19 @@ class CraftCalcRequest(BaseModel):
         default_factory=list,
         description="部位级特殊选项（逐字名，见 routing.SPECIAL_OPTION_ROUTINGS）；拼色用料系数由 拼1次/拼2次 决定",
     )
+    has_pattern: bool = Field(
+        False,
+        description=(
+            "是否对花（issue #4571）。**只在定宽买高时影响用料**：每幅长 +1 个花距 "
+            "（`curtain_calc.calculate_fabric_meters` 的 `if has_pattern: panel_length += pattern_repeat`）。"
+            "定高买宽下它**不改变**用料。缺省 false = 不按对花算。"
+        ),
+    )
+    pattern_repeat: float = Field(
+        0.0,
+        ge=0,
+        description="花距（米），仅 `has_pattern=true` 时有意义；行业常见 0.3~0.6",
+    )
     formula: Optional[str] = Field(
         None,
         description=(
@@ -446,6 +459,8 @@ async def craft_calc(
             special_options=request.special_options,
             formula=request.formula,
             craft=request.craft,
+            has_pattern=request.has_pattern,
+            pattern_repeat=request.pattern_repeat,
             config=config,
         )
     except ValueError as e:  # 倍数低于行业下限（MIN_FULLNESS）/ 未知公式名等入参非法

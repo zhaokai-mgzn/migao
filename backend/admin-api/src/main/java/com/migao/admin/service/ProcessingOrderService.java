@@ -538,14 +538,15 @@ public class ProcessingOrderService {
                         productionOperationQueryService.normalizeOperationName(
                                 String.valueOf(operation.get("operation")))));
             }
-            // 特殊选项（issue #4230）：插条件工序 → 重排 seq → 落计件系数
+            // 特殊选项（issue #4230）/ 加工项（issue #4577）：插条件工序 → 重排 seq → 落计件系数
             List<String> options = specialOptions(entry);
+            List<String> processingItems = processingItemNames(entry);
             // ⚠️ 部位取**实际使用路线**的部位（`route.curtain_type`），不是 `entry.curtainType`：
             // 派生路径下 entry 可能没有该键（存量单），而 T2 回落时实际部位是默认模板的部位
             // ⇒ 拿 entry 的值会让「逻辑名 → 变体名」解析不到（部位为 null）⇒ 条件工序误判为缺工序。
             String routePositionOfEntry = str(route.get("curtain_type"));
-            if (!options.isEmpty()) {
-                insertConditionalOperations(operations, options, rules, tenantId, entry,
+            if (!options.isEmpty() || !processingItems.isEmpty()) {
+                insertConditionalOperations(operations, options, processingItems, rules, tenantId, entry,
                         catalog, routePositionOfEntry);
             }
             renumberSeq(operations);
@@ -722,10 +723,54 @@ public class ProcessingOrderService {
     }
 
     /**
+     * 本单该行携带的**加工项名**（{@code processingInfo.processingItems[].name}，去重保序）。
+     *
+     * <p>`processing_item` 规则的触发键（issue #4577，用户裁定「加工项也触发工序」）。
+     * 与 {@link #specialOptions} 同款归一：只认 Map 元素 + 非空名字，缺失/脏形态 ⇒ 不命中（不猜）。
+     * 与真值源 {@code routing.py::_rule_triggers} 的 {@code position["processing_items"]} 同口径。</p>
+     */
+    private static List<String> processingItemNames(Map<String, Object> entry) {
+        if (!(entry.get("processingItems") instanceof List<?> items)) {
+            return List.of();
+        }
+        List<String> names = new ArrayList<>(items.size());
+        for (Object raw : items) {
+            if (raw instanceof Map<?, ?> item) {
+                String name = str(item.get("name"));
+                if (name != null && !names.contains(name)) {
+                    names.add(name);
+                }
+            }
+        }
+        return names;
+    }
+
+    /**
+     * 条件工序规则的触发判定（issue #4577）：**精确相等**，与 {@code buildRoute} /
+     * {@code routing.py::_rule_triggers} 同口径。
+     *
+     * <p>{@code option} ⇒ 触发键 = 本单特殊选项名；{@code processing_item} ⇒ 触发键 = 该行
+     * {@code processingInfo.processingItems[].name}（**不得**用 {@code contains} —— 错一个字就静默失效；
+     * {@code contains} 只存在于存量信号兜底 {@code firstSignalMatch}，不在此处引入第二处）。</p>
+     */
+    private static boolean conditionalRuleTriggers(ProductionRouteRule rule, List<String> options,
+                                                   List<String> processingItems) {
+        String kind = rule.getTriggerKind();
+        if ("option".equals(kind)) {
+            return options.contains(rule.getTriggerValue());
+        }
+        if ("processing_item".equals(kind)) {
+            return processingItems.contains(rule.getTriggerValue());
+        }
+        return false;
+    }
+
+    /**
      * 插入条件工序（issue #4230 验收判据 1；P2b 改读 {@code production_route_rules}）。
      *
-     * <p>规则行的 {@code action='insert'} + {@code trigger_kind='option'} ⇒ 把
-     * {@code operation} 插到 {@code after_operation} 之后。与真值源
+     * <p>规则行的 {@code action='insert'} + {@code trigger_kind ∈ {option, processing_item}} ⇒ 把
+     * {@code operation} 插到 {@code after_operation} 之后（issue #4577 起加工项也是触发键）。
+     * 与真值源
      * {@code routing.py::build_route_v2} + {@code _insert_after} 同口径：
      * 锚点不在该部位路线中 ⇒ **追加到末尾**；同一锚点上的多个插入按 {@code (priority, id)}
      * 依次插在锚点之后 ⇒ 后插的在前（与 Python 的 {@code insert(idx+1, …)} 逐字同款）。</p>
@@ -734,18 +779,23 @@ public class ProcessingOrderService {
      * {@code variantNameOf} 把逻辑名换成该租户库里的变体名）；条件工序在工序库无活跃行 ⇒
      * fail-closed（{@link #ERR_OPERATION_NOT_FOUND}）—— 静默跳过会让「勾了却没加工序」
      * 在数据上消失，那正是本单要治的「设计过但从未接线」形态。</p>
+     *
+     * <p><b>唯一性 = 取代（issue #4577）</b>：目标逻辑工序**已在序列里** ⇒ <b>先移除旧位置、再按本条
+     * 规则的锚点插入</b>（<b>取代</b>，不是"跳过"—— 跳过会让位置停留在先应用那条规则，而商家选特殊
+     * 选项的意图是「按这个选项的工序来」；口径来源 = 用户 2026-09-19 原话「工序需要保证唯一…用特殊
+     * 选项中的余料做绑带替代绑带这个工序…需要有这个前提」，前提 = **目标工序名相同**）。
+     * 结果 = 该工序在序列里**恰好一行**（盲插会让工人按两遍/三遍单价拿钱，同族事故 #4523）。
+     * 规则应用顺序仍由 {@code priority} 决定（特殊选项 110~260 > 工艺 10~100 ⇒ 特殊选项自然覆盖工艺）。</p>
      */
     private void insertConditionalOperations(List<Map<String, Object>> operations, List<String> options,
-                                             List<ProductionRouteRule> rules,
+                                             List<String> processingItems, List<ProductionRouteRule> rules,
                                              Long tenantId, Map<String, Object> entry,
                                              Map<String, Map<String, Object>> catalog,
                                              String position) {
         List<ProductionRouteRule> applicable = new ArrayList<>();
         for (ProductionRouteRule rule : rules) {
-            if (!"insert".equals(rule.getAction()) || !"option".equals(rule.getTriggerKind())) {
-                continue;
-            }
-            if (!options.contains(rule.getTriggerValue())) {
+            if (!"insert".equals(rule.getAction())
+                    || !conditionalRuleTriggers(rule, options, processingItems)) {
                 continue;
             }
             if (rule.getPosition() != null && !Objects.equals(rule.getPosition(), position)) {
@@ -774,6 +824,8 @@ public class ProcessingOrderService {
             Map<String, Object> operation = new LinkedHashMap<>();
             operation.put("operation", operationName);
             operation.putAll(meta);
+            // 唯一性 = 取代（issue #4577）：目标工序已在序列里 ⇒ 先移除旧位置、再按本条规则的锚点插入
+            operations.removeIf(existing -> Objects.equals(str(existing.get("operation")), operationName));
             int anchor = indexOfLogicalOperation(operations, rule.getAfterOperation());
             if (anchor < 0) {
                 log.info("特殊选项「{}」的锚点工序「{}」不在该部位路线中，条件工序「{}」追加到末尾: productName={}",
@@ -1199,6 +1251,7 @@ public class ProcessingOrderService {
             sequence.add(step);
         }
         List<String> options = specialOptions(entry);
+        List<String> processingItems = processingItemNames(entry);
         // 顺序**必须**显式排一次（不依赖调用方）：与 routing.py::build_route_v2 的
         // `sorted(ROUTE_RULES, key=priority)` 逐字同口径 —— 规则应用顺序敏感
         // （`remove` 不先于 `insert`；锚点可用性由 priority 决定）。
@@ -1216,8 +1269,14 @@ public class ProcessingOrderService {
                 if (!options.contains(rule.getTriggerValue())) {
                     continue;
                 }
+            } else if ("processing_item".equals(kind)) {
+                // 加工项触发（issue #4577，用户裁定「加工项也触发工序」）：触发键 = 该行
+                // `processingInfo.processingItems[].name`，**精确相等**（与 craft/option 同款）。
+                if (!processingItems.contains(rule.getTriggerValue())) {
+                    continue;
+                }
             } else {
-                // `shaped` / `processing_item` 是表结构预留的触发类型（V71/V72 无种子行）。
+                // `shaped` 是表结构预留的触发类型（V71/V72 无种子行、无消费路径）。
                 // 静默跳过会让「规则已落库但永不生效」变成无人可见的黑洞 ⇒ 与真值源
                 // routing.py::_rule_triggers 同款**显式失败**。
                 throw new BusinessException(ERR_ROUTING_NOT_FOUND,
@@ -1290,8 +1349,17 @@ public class ProcessingOrderService {
         return positions.isEmpty() ? DEFAULT_CURTAIN_TYPE : positions.get(0);
     }
 
-    /** 把 {@code operation} 插到 {@code after} 之后（锚点不在序列中 ⇒ 追加末尾，同 {@code _insert_after}）。 */
+    /** 把 {@code operation} 插到 {@code after} 之后（锚点不在序列中 ⇒ 追加末尾，同 {@code _insert_after}）。
+     *
+     * <p><b>唯一性 = 取代（issue #4577）</b>：用户裁定 2026-09-19 原话「**工序需要保证唯一**，比如工艺
+     * 带了绑带，特殊选项又选择余料做绑带，得用**特殊选项中的余料做绑带替代绑带这个工序**，余料做绑带的
+     * 目标工序也是绑带就能替换，**需要有这个前提**」。⇒ 判据 = <b>目标工序名相同</b>（前提）；
+     * 语义 = <b>先移除序列里已有的该工序，再按本条规则的锚点插入</b>（<b>取代</b>，不是"跳过"）——
+     * 跳过会让位置停留在<b>先应用</b>那条规则（可能是工艺的锚点），而商家选特殊选项的意图是
+     * 「按这个选项的工序来」。结果 = 该工序在序列里<b>恰好出现一次</b>（盲插会让工人按两遍单价拿钱，
+     * 同族事故 #4523）。规则应用顺序仍由 {@code priority} 决定（顺序语义未动）。</p> */
     private static List<String> insertAfterLogical(List<String> route, String operation, String after) {
+        route.removeIf(op -> Objects.equals(op, operation));
         int idx = after == null ? -1 : route.indexOf(after);
         if (idx < 0) {
             route.add(operation);

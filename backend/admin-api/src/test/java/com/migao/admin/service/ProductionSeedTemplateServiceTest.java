@@ -246,9 +246,18 @@ class ProductionSeedTemplateServiceTest {
             // 部位价目：规范矩阵 ∩ 该租户工序库（30 逻辑工序 × 4 部位 = 120 行，issue #4529）
             verify(productionOperationPositionMapper, times(120))
                     .insert(org.mockito.ArgumentMatchers.any(com.migao.admin.entity.ProductionOperationPosition.class));
-            // 规则表：工艺变体 10 + 特殊选项 16 + 计件系数档 1 = 27（逐条按该租户工序库过滤）
-            verify(productionRouteRuleMapper, times(27))
-                    .insert(org.mockito.ArgumentMatchers.<com.migao.admin.entity.ProductionRouteRule>any());
+            // 规则表：工艺变体 10 + 特殊选项 16 + 加工项触发 3（issue #4577）+ 计件系数档 1 = 30
+            // （逐条按该租户工序库过滤）
+            ArgumentCaptor<com.migao.admin.entity.ProductionRouteRule> ruleCaptor =
+                    ArgumentCaptor.forClass(com.migao.admin.entity.ProductionRouteRule.class);
+            verify(productionRouteRuleMapper, times(30)).insert(ruleCaptor.capture());
+            // 加工项触发规则逐值（与 V84 迁移 / docs/sql/schema.sql 三源同值；`拼接`/`双眼皮` 不建行）
+            assertThat(ruleCaptor.getAllValues().stream()
+                    .filter(r -> "processing_item".equals(r.getTriggerKind()))
+                    .map(r -> r.getTriggerValue() + "→" + r.getOperation() + "@" + r.getAfterOperation())
+                    .toList())
+                    .as("恰 3 条 processing_item 规则（花边/扣环/接高），`拼接`/`双眼皮` 刻意不建行")
+                    .containsExactly("花边→花边@三边", "扣环→扣环@三边", "接高→接高@精裁");
             // 旧两表**不再写入**（P2b 起它们已退场：活跃行由 V73 软删）
             verify(productionRoutingMapper, never()).insert(org.mockito.ArgumentMatchers.<ProductionRouting>any());
             verify(productionOptionRoutingMapper, never()).insert(org.mockito.ArgumentMatchers.<ProductionOptionRouting>any());
