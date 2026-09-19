@@ -24,14 +24,13 @@ import java.time.OffsetDateTime;
  * {@code 0} 是第三种语义（定价为 0 元），三态不得混。</p>
  *
  * <p><b>两本账不混</b>：本表记的是<b>付工人</b>的计件单价（报工工资 = 数量 × 计件单价）；
- * <b>对客</b>定价不在工序项 —— 基础加工费 = 加工项组合费用（元/米），特殊选项 = 工序路线规则表上的
- * <b>元/套</b>对客单价列（V77）。</p>
+ * <b>对客</b>定价不在工序项 —— 基础加工费 = 加工项组合费用（元/米），特殊选项 =
+ * {@code production_route_rules.customer_unit_price}（元/套，V77）。</p>
  *
- * <p>⚠️ 上面刻意**不写出**那一列的字面列名 / getter 名：`test_option_fee_seed.py` 的
- * 「两套账不互读」判据按**字面量**扫全部 Java 主源，命中即要求文件进 allowlist。本类与
- * {@code ProductionOperationPositionCommandService} **从不读**那一列（只是文档里对照说明），
- * 写出来会让它们进 allowlist ⇒ 该判据对这两个文件**失去覆盖**（将来真去读也拦不住）。
- * 故此处保持「文字描述」，别把列名补回来。</p>
+ * <p>本类与 {@code ProductionOperationPositionCommandService} **从不读**那一列（上面只是文档里
+ * 对照说明）—— 该纪律由 {@code tests/unit_ci_workflows/test_option_fee_seed.py} 的「两套账不互读」
+ * 判据守着，它**只看代码**（扫描前做 Java 词法级去注释）⇒ 文档里写清列名是安全的
+ * （issue #4595 修准了该判据；此前是裸子串扫描，会误判注释里的提及）。</p>
  */
 @Data
 @Builder
