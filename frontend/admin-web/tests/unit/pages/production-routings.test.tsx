@@ -1419,6 +1419,28 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.queryByTestId('routing-draft-missing-11-1')).toBeNull()
   })
 
+  it('#4605 主线预检提示**不得**指向已取消的「工序库明细」，且要指向界面上真实存在的入口', async () => {
+    // 病灶（#4588 漏改的死引用）：预检文案曾写「请先到「工艺项 · 工序库明细」补上」，
+    // 而该折叠次区已随 #4588 取消 ⇒ 商家照着找**找不到入口**。
+    mockGetRoutings.mockReset().mockResolvedValue(
+      ok({
+        total: 1,
+        routings: [
+          { id: 11, name: '窗帘工序路线（默认）', is_default: true, positions: ['布帘'], mainline: ['韩褶-布', '罗马帘-打孔'], status: 'active' },
+        ],
+      }),
+    )
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-edit-11'))
+    const precheck = await screen.findByTestId('routing-precheck-missing-11')
+    // ① 不得再出现已取消的形态名（死引用）
+    expect(precheck).not.toHaveTextContent('工序库明细')
+    // ② 指向**真实存在**的入口：「工艺项」的「新增工序」按钮（同一页面另一 tab 的入口）
+    expect(precheck).toHaveTextContent('新增工序')
+  })
+
   it('新建路线：提交 `{name, positions, is_default}` 并自动进入主线编辑', async () => {
     mockGetRoutings
       .mockReset()
