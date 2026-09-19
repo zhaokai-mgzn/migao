@@ -248,8 +248,13 @@ public class ProductionRoutingReadService {
         view.put("trigger_value", row.getTriggerValue());
         view.put("position", row.getPosition());
         view.put("action", row.getAction());
-        view.put("operation", row.getOperation());
-        view.put("after_operation", row.getAfterOperation());
+        // 读时**归一**（issue #4643，与 #4632 的 `templateView` 同范式）：写面已归一新写入的值，
+        // 但**存量行**可能是变体名（旧前端 / 脚本写进来的 `精裁-布`）⇒ 读面也必须兜住，
+        // 否则界面照旧上屏变体名。只归一、**不写库**（库里仍可回溯当时存的是什么）、
+        // 顺序与其它字段一字不动；归一表只有 `normalizeOperationName` 一份。
+        view.put("operation", productionOperationQueryService.normalizeOperationName(row.getOperation()));
+        view.put("after_operation",
+                productionOperationQueryService.normalizeOperationName(row.getAfterOperation()));
         view.put("priority", row.getPriority());
         view.put("status", row.getStatus());
         view.put("customer_unit_price", row.getCustomerUnitPrice());

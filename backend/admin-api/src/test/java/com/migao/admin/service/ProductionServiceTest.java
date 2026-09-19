@@ -527,6 +527,27 @@ class ProductionServiceTest {
         assertThat(result.get("progress_percent")).isEqualTo(100);
         assertThat(result.get("current_operation")).isEqualTo("");
         assertThat((List<?>) result.get("pending_operations")).isEmpty();
+        // issue #4643：无当前工序 ⇒ 追加的两键都是 null（键在、值空 —— 不凭空造名）
+        assertThat(result).containsKey("logical_name");
+        assertThat(result.get("logical_name")).isNull();
+        assertThat(result).containsKey("position");
+        assertThat(result.get("position")).isNull();
+    }
+
+    @Test
+    @DisplayName("订单进度：追加 logical_name/position（读时派生；current_operation 快照名一字不动，issue #4643）")
+    void progressCarriesLogicalNameAndPositionForWebDisplay() {
+        when(orderMapper.selectOne(any())).thenReturn(order("producing"));
+        ProcessingPositionOperation variant =
+                op("op-1", "精裁-布", "10.00", false, "pending", "0.00", "0.40", "1.00");
+        variant.setPositionKind("布帘");
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(variant));
+
+        Map<String, Object> result = service.progress("ORD-20260917-001", TENANT);
+
+        assertThat(result.get("current_operation")).isEqualTo("精裁-布");
+        assertThat(result.get("logical_name")).isEqualTo("精裁");
+        assertThat(result.get("position")).isEqualTo("布帘");
     }
 
     // ── 生产进度查询的订单解析（issue #4007：progress 与 report 同口径，不得只认 order_no）──

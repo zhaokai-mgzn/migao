@@ -139,6 +139,8 @@ class AgentProductionControllerTest {
                 .andExpect(jsonPath("$.data.status_text").value("生产中"))
                 .andExpect(jsonPath("$.data.progress_percent").value(50))
                 .andExpect(jsonPath("$.data.current_operation").value("外帘装袋"))
+                // issue #4643：web 界面渲染的**显示名**两键（只加不改 —— `current_operation` 仍是快照名）
+                .andExpect(jsonPath("$.data.logical_name").value("外帘装袋"))
                 .andExpect(jsonPath("$.data.pending_operations[0]").value("外帘装袋"))
                 .andExpect(jsonPath("$.data.total_operations").value(2))
                 .andExpect(jsonPath("$.data.done_operations").value(1))
@@ -150,7 +152,36 @@ class AgentProductionControllerTest {
         data.fieldNames().forEachRemaining(keys::add);
         assertThat(keys).as("冻结契约：字段名/数量不可改（并行包消费）").containsExactlyInAnyOrder(
                 "order_no", "status", "status_text", "progress_percent", "current_operation",
+                "logical_name", "position",
                 "pending_operations", "total_operations", "done_operations", "expected_delivery_date");
+        assertThat(data.path("position").isNull())
+                .as("部位无关工序（外帘装袋）⇒ 不拼部位")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("GET /progress → 变体名工序：追加 logical_name/position，current_operation 快照名一字不动（issue #4643）")
+    void progressCarriesLogicalNameForVariantSnapshot() throws Exception {
+        when(orderMapper.selectOne(any())).thenReturn(order());
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder());
+        ProcessingPositionOperation variant =
+                op("op-1", 1, "精裁-布", "12.30", false, "pending", "0.00", "0.40", "1.00");
+        variant.setPositionKind("布帘");
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(variant));
+
+        String body = mockMvc.perform(get("/api/admin/agent/production/progress").param("order_no", ORDER_NO))
+                .andExpect(status().isOk())
+                // 既有快照键一字不动（agent 与其它消费者仍读它）
+                .andExpect(jsonPath("$.data.current_operation").value("精裁-布"))
+                .andExpect(jsonPath("$.data.pending_operations[0]").value("精裁-布"))
+                // 追加键（改前这两条 jsonPath 取不到值 ⇒ 红证）
+                .andExpect(jsonPath("$.data.logical_name").value("精裁"))
+                .andExpect(jsonPath("$.data.position").value("布帘"))
+                .andReturn().getResponse().getContentAsString();
+
+        // 键集里**必须**有这两键（键在、值可为 null；省键 ⇒ 前端渲染 undefined）
+        JsonNode data = objectMapper.readTree(body).path("data");
+        assertThat(data.has("logical_name") && data.has("position")).isTrue();
     }
 
     @Test

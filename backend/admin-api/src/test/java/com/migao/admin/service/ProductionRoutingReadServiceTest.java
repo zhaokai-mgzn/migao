@@ -301,6 +301,29 @@ class ProductionRoutingReadServiceTest {
     }
 
     @Test
+    @DisplayName("规则：存量**变体名**行（旧前端写进来的 精裁-布）⇒ 读面归一为逻辑名（issue #4643，读时不写库）")
+    void routeRulesNormalizesLegacyVariantNames() {
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of(
+                rule("rr-legacy-1", "craft", "韩褶", "布帘", "insert", "精裁-布", "精裁-布", 20),
+                rule("rr-legacy-2", "option", "防翘扣", null, "insert", "测试22", null, 210)));
+
+        List<Map<String, Object>> rows = service().routeRules(TENANT);
+
+        // ① 变体名 ⇒ 逻辑名（写面管不住存量行；读面兜住 ⇒ 规则表 / 删除确认文案不再上屏「精裁-布」）
+        Map<String, Object> legacy = rowOf(rows, "韩褶");
+        assertThat(legacy.get("operation")).isEqualTo("精裁");
+        assertThat(legacy.get("after_operation")).isEqualTo("精裁");
+        // ② 未登记的自定义名 / null 锚点：归一后等于自身 / 仍是 null（不凭空造名、不省略键）
+        Map<String, Object> custom = rowOf(rows, "防翘扣");
+        assertThat(custom.get("operation")).isEqualTo("测试22");
+        assertThat(custom).containsKey("after_operation");
+        assertThat(custom.get("after_operation")).isNull();
+        // ③ 键集一字不动（10 键：归一不新增也不删键）—— 前端口径不受影响
+        assertThat(legacy.keySet()).containsExactly("id", "trigger_kind", "trigger_value", "position",
+                "action", "operation", "after_operation", "priority", "status", "customer_unit_price");
+    }
+
+    @Test
     @DisplayName("单价：option 行原样透出（元/套）；未定价行是 null（**不填 0**）；工艺变体行不取价")
     void routeRulesCarriesCustomerUnitPriceVerbatim() {
         when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of(
