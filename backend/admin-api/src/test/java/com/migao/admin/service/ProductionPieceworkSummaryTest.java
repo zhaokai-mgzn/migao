@@ -168,9 +168,9 @@ class ProductionPieceworkSummaryTest {
         Map<String, Object> perOrder = service.piecework(ORDER_ID, TENANT);
         Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
 
-        // 10×0.40×1.00 + 5×0.40×1.70 = 4.00 + 3.40 = 7.40；返工 3 米不计件
-        assertThat((BigDecimal) perOrder.get("total")).isEqualByComparingTo("7.40");
-        assertThat((BigDecimal) report.get("total")).isEqualByComparingTo("7.40");
+        // 10×0.40 + 5×0.40 = 4.00 + 2.00 = 6.00（#4589：系数不再乘 —— 实例快照里的 1.70 已不进钱）；返工 3 米不计件
+        assertThat((BigDecimal) perOrder.get("total")).isEqualByComparingTo("6.00");
+        assertThat((BigDecimal) report.get("total")).isEqualByComparingTo("6.00");
         assertThat((BigDecimal) report.get("total"))
                 .as("两套端点必须共用同一份聚合（禁止复制第二套算法）")
                 .isEqualByComparingTo((BigDecimal) perOrder.get("total"));
@@ -309,9 +309,9 @@ class ProductionPieceworkSummaryTest {
 
         Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
 
-        // 10×0.40 + 5×0.40 + 4×0.40×1.70 = 4.00 + 2.00 + 2.72 = 8.72
+        // 10×0.40 + 5×0.40 + 4×0.40 = 4.00 + 2.00 + 1.60 = 7.60（#4589：快照里的 1.70 已不进钱）
         BigDecimal total = (BigDecimal) report.get("total");
-        assertThat(total).isEqualByComparingTo("8.72");
+        assertThat(total).isEqualByComparingTo("7.60");
 
         List<Map<String, Object>> perPosition = rowsOf(report, "per_position");
         List<Map<String, Object>> perSet = rowsOf(report, "per_set");
@@ -325,19 +325,19 @@ class ProductionPieceworkSummaryTest {
                 .as("下钻合计必须 === 总额（否则「可核对」不成立）")
                 .isEqualByComparingTo(total);
 
-        // 部位维逐值：布帘 = 4.00 + 2.72 = 6.72；纱帘 = 2.00
+        // 部位维逐值：布帘 = 4.00 + 1.60 = 5.60；纱帘 = 2.00
         assertThat(perPosition).extracting(row -> row.get("position_name"))
                 .containsExactlyInAnyOrder("布艺遮光帘A 米白", "纱帘B 本白");
         BigDecimal cloth = perPosition.stream()
                 .filter(row -> "布艺遮光帘A 米白".equals(row.get("position_name")))
                 .map(row -> (BigDecimal) row.get("amount")).findFirst().orElseThrow();
-        assertThat(cloth).isEqualByComparingTo("6.72");
+        assertThat(cloth).isEqualByComparingTo("5.60");
 
-        // 套维逐值：item-A = 6.72；item-B = 2.00
+        // 套维逐值：item-A = 5.60；item-B = 2.00
         BigDecimal setA = perSet.stream()
                 .filter(row -> "item-A".equals(row.get("order_item_id")))
                 .map(row -> (BigDecimal) row.get("amount")).findFirst().orElseThrow();
-        assertThat(setA).isEqualByComparingTo("6.72");
+        assertThat(setA).isEqualByComparingTo("5.60");
     }
 
     @Test

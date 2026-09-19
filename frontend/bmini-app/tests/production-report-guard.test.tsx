@@ -66,12 +66,12 @@ function makeDetail(): OrderOperations {
         operations: [
           {
             id: 'op1', seq: 1, operation: '精裁', group: '裁剪', unit: '米',
-            qty: 11, unit_price: 3.5, factor: 1, is_must_finish: false,
+            qty: 11, unit_price: 3.5, is_must_finish: false,
             is_start_marker: true, status: 'done', done_qty: 11,
           },
           {
             id: 'op2', seq: 2, operation: '韩褶', group: '车位', unit: '米',
-            qty: 11, unit_price: 5, factor: 1, is_must_finish: true,
+            qty: 11, unit_price: 5, is_must_finish: true,
             is_start_marker: false, status: 'pending', done_qty: 0,
           },
         ],

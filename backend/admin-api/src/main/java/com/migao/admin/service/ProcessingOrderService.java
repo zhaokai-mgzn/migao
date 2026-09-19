@@ -481,7 +481,8 @@ public class ProcessingOrderService {
         List<RouteResolution> resolutions = new ArrayList<>();
         // 新结构读面（P2b，issue #4459）：规则表 / 部位价目 / 工序库都极小，**一次取回**本租户的
         // 全部活跃行，逐部位在内存里过滤 —— 避免「每道工序一次查询」的 N+1。
-        // 计件系数档也在**同一份规则表**里（action='factor'），不另开读取面（第二份口径）。
+        // 规则表里历史遗留的 `action='factor'` 计件系数档**已无消费者**（issue #4589：系数退场），
+        // 新迁移已把它们软删；本方法只按 `insert`/`remove` 构造序列。
         List<ProductionRouteRule> rules = productionOperationQueryService.routeRules(tenantId);
         List<ProductionOperationPosition> priceRows =
                 productionOperationQueryService.operationPositions(tenantId);
@@ -550,7 +551,6 @@ public class ProcessingOrderService {
                         catalog, routePositionOfEntry);
             }
             renumberSeq(operations);
-            applyFactors(operations, options, rules, routePositionOfEntry);
             String productName = str(entry.get("productName"));
             String colorName = str(entry.get("colorName"));
             String positionName = productName == null ? "未命名部位"
@@ -908,59 +908,6 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 落计件系数（issue #4230 验收判据 2；P2b 改读 {@code production_route_rules} 的
-     * {@code action='factor'} 档）。
-     *
-     * <p>取用口径与真值源 {@code routing.py::factor_for} 逐字同口径：
-     * ① 单个选项内**例外档盖住平摊档**（{@code operation} 命中的档优先，否则取 {@code operation IS NULL}
-     * 的平摊档）—— 不是相乘（相乘会把「平摊 ×1.7 + 逐工序 ×2.0」算成 ×3.4，纯属重复计费）；
-     * ② 多个加系数选项之间**相乘**（独立倍率的合成口径）；
-     * ③ 未登记的选项**不得**悄悄改系数（查不到档 ⇒ 保持 1）。</p>
-     *
-     * <p><b>限定档的两维（P2b）</b>：{@code operation} 是**逻辑名**（与实例里的变体名不同名 ⇒
-     * 比较前归一）；{@code position} 是**部位限定**（{@code NULL} = 不限部位）。两者在 V72 的
-     * 搬迁里逐条对齐 {@code OPTION_FACTOR_SCOPES} 的 {@code operation_name} / {@code curtain_type}。</p>
-     *
-     * <p>落进 {@code factor} 后由计件公式（{@code Σ 合格数 × 单价 × 系数}）真的乘进钱 ——
-     * 该列自 V49 就存在、公式也真的读它，但**此前零写方** ⇒ 恒 1.00。</p>
-     */
-    private void applyFactors(List<Map<String, Object>> operations, List<String> options,
-                              List<ProductionRouteRule> rules, String position) {
-        for (Map<String, Object> operation : operations) {
-            BigDecimal factor = BigDecimal.ONE;
-            if (!options.isEmpty()) {
-                String operationName = String.valueOf(operation.get("operation"));
-                String logicalName = productionOperationQueryService.normalizeOperationName(operationName);
-                for (String option : options) {
-                    ProductionRouteRule scoped = null;
-                    ProductionRouteRule flat = null;
-                    for (ProductionRouteRule rule : rules) {
-                        if (!"factor".equals(rule.getAction()) || !"option".equals(rule.getTriggerKind())
-                                || !option.equals(rule.getTriggerValue())) {
-                            continue;
-                        }
-                        // 部位限定（NULL = 不限部位）—— 与 routing.py::_scope_applies 逐字同口径：
-                        // 限定档只在部位一致时参与；否则连平摊档都不算（它不是本部位的档）。
-                        if (rule.getPosition() != null && !Objects.equals(rule.getPosition(), position)) {
-                            continue;
-                        }
-                        if (rule.getOperation() != null && rule.getOperation().equals(logicalName)) {
-                            scoped = rule;                 // 例外档（逐工序）
-                        } else if (rule.getOperation() == null) {
-                            flat = rule;                   // 平摊档（该部位全部工序）
-                        }
-                    }
-                    ProductionRouteRule hit = scoped != null ? scoped : flat;
-                    if (hit != null && hit.getFactor() != null) {
-                        factor = factor.multiply(hit.getFactor());
-                    }
-                }
-            }
-            operation.put("factor", factor);
-        }
-    }
-
-    /**
      * 算料请求体里的单个部位（与 ai-agent 端点冻结契约同构）。
      *
      * <p>{@code order_item_id}（V69，issue #4388）是**额外**键：端点模型（pydantic 默认 `extra` 忽略）
@@ -1294,7 +1241,8 @@ public class ProcessingOrderService {
                 String removed = rule.getOperation();
                 sequence.removeIf(op -> Objects.equals(op, removed));
             }
-            // action='factor' 不参与序列构造（它只覆盖计件系数，见 applyFactors）
+            // action='factor' 不参与序列构造（#4589 起它也不再覆盖计件系数 —— 该档已无消费者，
+            // 新迁移已把活跃行软删；此处保留分支语义：非 insert/remove 的动作不改序列）
         }
 
         List<Map<String, Object>> steps = new ArrayList<>();

@@ -254,6 +254,9 @@ public class ProductionService {
                         str(op.get("unit")),
                         bd(op.get("qty"), BigDecimal.ZERO),
                         bd(op.get("unit_price"), BigDecimal.ZERO),
+                        // `factor` 列**保留**但自 #4589 起无人写它：实例化 payload 不再带该键
+                        // （ProcessingOrderService 已删 applyFactors）⇒ 恒取默认 1。历史实例的
+                        // 旧值原样留着（那是当时工资的证据），签名比较也照旧参与 ⇒ 不回溯。
                         bd(op.get("factor"), BigDecimal.ONE),
                         str(op.get("qty_source")),
                         flag(op.get("is_must_finish")),
@@ -595,11 +598,11 @@ public class ProductionService {
                 .workerName(str(body.get("worker_name")))
                 .qty(qty)
                 .qualifiedQty(qualifiedQty)
-                // 计件金额在**报工这一刻固化**（issue #4351，P0）：单价/系数从工序实例取一次
+                // 计件金额在**报工这一刻固化**（issue #4351，P0）：单价从工序实例取一次
                 // 写进报工自己的快照 ⇒ 聚合永不回查实例。重新实例化（工艺变更/存量单补工序）
                 // 会软删旧实例并重插，回查实例会让工人已做的活的钱静默消失。
+                // 系数快照**不再写**（issue #4589）：计件 = 数量 × 单价，系数已从算法退场。
                 .unitPrice(op.getUnitPrice())
-                .factor(op.getFactor())
                 .workType(workType)
                 .workDate(LocalDate.now())
                 .createdAt(OffsetDateTime.now())
@@ -817,15 +820,19 @@ public class ProductionService {
     /**
      * 计件聚合（**per-order 汇总 / 期间报表 / 工人计件共用的唯一算法**）。
      *
-     * <p>口径：Σ(合格数量 × **报工自己的单价快照** × **报工自己的系数快照**)，排除 rework/scrap。
+     * <p>口径：Σ(合格数量 × **报工自己的单价快照**)，排除 rework/scrap —— 系数**不参与**
+     * （issue #4589 用户裁定：计件工资 = 数量 × 计件单价）。
      * 金额逐笔四舍五入到分再累加（与既有实现逐字相同，避免合计出现 0.005 级漂移）。</p>
      *
      * <p><b>金额在报工那一刻固化（issue #4351，P0）</b>：金额只读 {@code production_work_logs}
-     * 的 {@code unit_price}/{@code factor} 快照，**永不依赖工序实例是否还在**。原实现回查实例
+     * 的 {@code unit_price} 快照，**永不依赖工序实例是否还在**。原实现回查实例
      * （{@code operationLookup}）算金额，而重新实例化（{@code POST /production/orders/{orderId}/
      * instantiate}，工艺变更 / 存量单补工序）会**软删旧实例并重插** ⇒ 旧报工指向已软删实例 ⇒
      * 被跳过 ⇒ 工人已做的活的钱从合计里消失**且不报错**。真值源 §4 要的是「逐笔可追溯」
      * （调价只影响新报工，历史报工按当时价）——回查实例做不到这一点，快照才做得到。</p>
+     *
+     * <p>⚠️ {@code production_work_logs.factor} 列**保留**（历史报工上它是当时工资的证据），
+     * 但自 #4589 起**不再参与计算**：历史报工快照有值也不乘（不回溯、不写回填脚本）。</p>
      *
      * <p>实例回查只剩两个**展示/兜底**用途：① 工序名（快照缺失时用报工自己的
      * {@code operation_name}）；② **存量报工**（{@code unit_price} 为 {@code NULL} = V61 之前的行）
@@ -861,12 +868,10 @@ public class ProductionService {
                 continue; // 既无快照、实例又真的不存在（脏数据）→ 该笔不可计价，跳过而不是抛错
             }
             BigDecimal unitPrice = hasSnapshot ? log.getUnitPrice() : op.getUnitPrice();
-            BigDecimal factor = hasSnapshot
-                    ? (log.getFactor() == null ? BigDecimal.ONE : log.getFactor())
-                    : (op.getFactor() == null ? BigDecimal.ONE : op.getFactor());
+            // 系数（log/op 的 factor 快照）**不参与计算**（issue #4589）：计件 = 数量 × 单价。
+            // 列与历史值都留着（那是当时工资的证据），但不再乘 —— 不回溯、不写回填脚本。
             BigDecimal amount = money(nz(log.getQualifiedQty())
-                    .multiply(nz(unitPrice))
-                    .multiply(factor));
+                    .multiply(nz(unitPrice)));
             String worker = StringUtils.hasText(log.getWorkerName()) ? log.getWorkerName() : "未分配";
             // 工序名 = 展示字段：优先报工自身的快照（报工时已落库），缺失时回查实例
             String operation = StringUtils.hasText(log.getOperationName())
@@ -1183,7 +1188,8 @@ public class ProductionService {
         view.put("qty", nz(op.getQty()));
         view.put("qty_source", op.getQtySource());
         view.put("unit_price", nz(op.getUnitPrice()));
-        view.put("factor", op.getFactor() == null ? BigDecimal.ONE : op.getFactor());
+        // 不再返回 `factor`（issue #4589）：系数已从算法退场，回传会让界面显示一个
+        // 「有值却不算钱」的数（新的静默不一致）。DB 列与历史快照保留，只是不上读面。
         view.put("is_must_finish", Boolean.TRUE.equals(op.getIsMustFinish()));
         view.put("is_start_marker", Boolean.TRUE.equals(op.getIsStartMarker()));
         view.put("status", op.getStatus() == null ? "pending" : op.getStatus());

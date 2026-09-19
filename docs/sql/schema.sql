@@ -952,10 +952,12 @@ ALTER TABLE production_route_rules
     ADD CONSTRAINT production_route_rules_factor_present_check
     CHECK (action <> 'factor' OR factor IS NOT NULL);
 COMMENT ON COLUMN production_route_rules.factor IS
-    '计件系数（V72，issue #4432 = 母单 #4423 P2）。仅 action = ''factor'' 时有值：该档把命中工序的'
-    '计件系数**覆盖**为它（同一触发内按 priority 升序、**后档覆盖前档**，与 routing.py::factor_for 的'
-    '「例外档盖住平摊档」逐字同口径）；多个加系数选项之间**相乘**。'
-    '⚠️ 只认规则表登记过的触发：未登记的触发**不得**悄悄改系数（查不到档 ⇒ 保持 1.0）。';
+    '计件系数档的系数值（V72，issue #4432 = 母单 #4423 P2 搬入）。'
+    '⚠️ 自 issue #4589（用户裁定 2026-09-19「计件工资 = 数量 × 计件单价，不需要考虑系数」）起'
+    '**已无消费者**：算法侧 factor_for / applyFactors 已删除，本表 action = ''factor'' 的活跃行'
+    '由 V87 软删（deleted = 1，留痕不物理删）。列**保留**：历史工序实例快照'
+    '（processing_position_operations.factor）与历史报工（production_work_logs.factor）上的值是'
+    '当时工资的证据 ⇒ 历史不回溯、不重算（本列**不**参与任何计算）。';
 COMMENT ON COLUMN production_route_rules.operation IS
     '要增/删/覆盖系数的**逻辑工序名**（与 OPERATION_LOGICAL_NAMES 值域一致）。'
     'V72 起**可空**：action = ''factor'' 且 operation IS NULL = **平摊档**（该触发对该部位全部工序生效）。'
@@ -2455,6 +2457,18 @@ SELECT 'rr-v72-' || t.id || '-f-' || f.id, t.id, 'option', f.option_name, NULL, 
                   WHEN f.operation_name = '上车布-纱' THEN '上车布'
                   ELSE f.operation_name END, ''))
 ON CONFLICT (id) DO NOTHING;
+
+-- 计件系数档**退场**（V87，issue #4589：用户裁定「计件工资 = 数量 × 计件单价，不考虑系数」）。
+-- bootstrap 终态与 `V87__retire_factor_route_rules.sql` **同源同值**：把上面那条 V72 搬进来的
+-- `action='factor'` 档**软删**（留痕，不物理删）。**必须写进本文件**：bootstrap 路径
+-- （docker-entrypoint-initdb.d）**不跑迁移链** ⇒ 只写迁移 = 新建库仍留着活跃系数档
+-- （形状同 #3270：迁移链不在该栈运行）。
+-- 列 `production_route_rules.factor` 与历史快照列**保留**（那是当时工资的证据）—— 只是不再参与计算。
+UPDATE production_route_rules
+   SET deleted = 1,
+       updated_at = NOW()
+ WHERE action = 'factor'
+   AND deleted = 0;
 
 -- 加工项 → 条件工序种子（V84，issue #4577：用户裁定「加工项也触发工序」）。
 -- 3 条 `trigger_kind='processing_item'` 规则：花边(270)/扣环(280)/接高(290) —— 触发键 = 订单行

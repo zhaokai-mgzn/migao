@@ -1,0 +1,51 @@
+-- 计件工资口径收敛：系数（factor）从数据里退场（issue #4589，用户裁定 2026-09-19）
+--
+-- ## 用户裁定（原话）
+-- 「工序项当前的计件单价就是满足的，包工工资在计件工资体现，算法是**数量 × 计件单价**，
+--   不需要考虑系数」⇒ 选 **B：把系数从工资算法里彻底去掉**。
+--
+-- ## 本迁移做什么（**只软删，不物理删**）
+-- 把 `production_route_rules` 里 `action = 'factor'` 的**活跃行**软删（`deleted = 1`），
+-- 留痕可查。这批行是 V59 种子（旧 `production_option_factors` 的「一分为二 ⇒ ×1.7」）
+-- 由 V72 搬进规则表的**计件系数档**，自本单起**零消费者**：
+--   · `routing.py::factor_for` 已删除、工序实例不再带 `factor` 键；
+--   · `ProcessingOrderService.applyFactors` 的调用与实现已删除（实例不再写 factor）；
+--   · `ProductionService` 的报工快照/聚合/读面都不再读写 factor。
+--
+-- ## 为什么不物理删（两条，都要留档）
+--   ① **留痕**：软删可回滚、可审计（「这条档曾经存在并被使用过」是事实，删掉就查不到了）；
+--   ② `factor` **列保留** —— 历史工序实例快照（`processing_position_operations.factor`）与
+--      历史报工（`production_work_logs.factor`）上的值是**当时工资的证据**（真值源 §4
+--      「逐笔可追溯」）⇒ 列与历史值都留着，只是**不再参与计算**（历史不回溯、不写回填脚本）。
+--      `CHECK (action <> 'factor' OR factor IS NOT NULL)` 等约束同样保留：它们约束的是
+--      「若将来还有 factor 档则必须有值」，不因本单而失真。
+--
+-- ## 为什么是**新增 V87** 而不是改 V59/V72
+-- `MigrationRunner` 的台账 `schema_migrations` 按**文件名**记账、已应用的文件**整份跳过**
+-- ⇒ 改已发布迁移只对**全新库**生效，存量环境永远拿不到 = 「CI 全绿、功能静默缺失」
+-- （issue #4235；V59/V72 另被 `tests/unit_ci_workflows/migration_fingerprints.json` 逐字节冻结）。
+-- ⇒ 一切增量都走新文件（本文件同时登记进该账本）。
+--
+-- ## 幂等（MigrationRunner 硬要求所有迁移可重复执行）
+-- `UPDATE … WHERE deleted = 0` ⇒ 第二次执行匹配 0 行，净效果相同（空操作）。
+-- ⚠️ **不加 `deleted = 0` 之外的过滤**：这条 UPDATE 只认 `action = 'factor'`，不认租户/状态
+--   （所有租户的系数档都要退场；漏掉停用行会让「停用后再启用」把它复活）。
+--
+-- ## 回滚 SQL（保留于注释；按需手工执行）
+-- ```sql
+-- UPDATE production_route_rules SET deleted = 0, updated_at = NOW()
+--  WHERE action = 'factor' AND deleted = 1;
+-- ```
+--
+-- ## 与测试的关系（红证）
+--   · `backend/ai-agent-service/tests/test_production/test_piecework.py`：
+--     `test_compute_piecework_ignores_factor`（改前实测 48×0.4×1.7 = 32.64，期望 19.20 ⇒ 红）；
+--   · `ProcessingOrderServiceTest`：`specialOptionFactorNoLongerReachesPieceworkAmount`
+--     （改前实测比值 1.701613，期望 1.000000 ⇒ 红）；
+--   · 本迁移的**软删形态**由 `tests/unit_ci_workflows/test_factor_retire_migration.py` 静态守
+--     （无 testcontainers ⇒ 表内容判据只能落成 L0 判据 + 真库核查记录）。
+UPDATE production_route_rules
+   SET deleted = 1,
+       updated_at = NOW()
+ WHERE action = 'factor'
+   AND deleted = 0;

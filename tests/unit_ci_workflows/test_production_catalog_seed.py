@@ -1526,3 +1526,140 @@ def test_d5_exemption_guard_detects_injected_regression(tmp_path):
                                                      key=lambda p: version_key(p.name))
         if "customer_unit_price" in p.read_text(encoding="utf-8"))
     assert "factor NUMERIC(6,3)" not in ddl2, "按内容发现的过滤条件失效（收了不含该列的文件）"
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 计件系数档**退场**（issue #4589，用户裁定 2026-09-19）
+#
+# 用户原话：「工序项当前的计件单价就是满足的，包工工资在计件工资体现，算法是
+# **数量 × 计件单价**，不需要考虑系数」⇒ 系数从算法与数据里退场。
+#
+# 数据侧 = 新迁移把 `production_route_rules` 里 `action='factor'` 的**活跃行软删**
+# （`deleted=1`，留痕不物理删）；列 `factor` 与历史快照列**保留**（当时工资的证据）。
+# ⚠️ 本判据是 **L0 静态**判据（admin-api 无 testcontainers ⇒ 表内容判据落不到真库上）；
+#    「真库里活跃行 = 0」由迁移语句本身保证（`WHERE action='factor' AND deleted=0`），
+#    本判据钉住该语句的**形态**（少任一条件就会误伤别的行 / 变成非幂等）。
+# ══════════════════════════════════════════════════════════════════════════════════
+
+_SQL_COMMENT_RE = re.compile(r"--[^\n]*")
+
+
+def sql_code(text: str) -> str:
+    """剥掉 `--` 行注释后的 SQL 正文。
+
+    🔴 **必须剥**：本仓迁移的**回滚 SQL 就写在注释里**（如 V72 的
+    `-- ALTER TABLE production_route_rules DROP COLUMN IF EXISTS factor;`）⇒ 不剥会把
+    回滚注释读成"真的删了列"（假红）。本函数自身由注入式用例自证（见文件末）。
+    """
+    return _SQL_COMMENT_RE.sub("", text)
+
+
+def factor_retire_statements(migration_dir: Path = MIGRATION_DIR) -> list:
+    """按**内容**发现「软删系数档」语句（新增迁移无需改本文件）→ [(路径, 语句正文)]。"""
+    directory = Path(migration_dir)
+    pattern = re.compile(
+        r"UPDATE\s+production_route_rules\b(?P<body>[\s\S]*?);", re.I)
+    out = []
+    for path in sorted(directory.glob(MIGRATION_GLOB), key=lambda p: version_key(p.name)):
+        for match in pattern.finditer(sql_code(path.read_text(encoding="utf-8"))):
+            body = match.group("body")
+            if re.search(r"\bdeleted\s*=\s*1", body, re.I) and \
+                    re.search(r"action\s*=\s*'factor'", body, re.I):
+                out.append((path, body))
+    return out
+
+
+def factor_retire_shape_errors(path_name: str, body: str) -> list:
+    """软删语句的**形态判据** → 违规原因列表（空 = 合规）。抽成函数是为了让注入式用例复用。"""
+    errors = []
+    if re.search(r"DELETE\s+FROM\s+production_route_rules", body, re.I):
+        errors.append("物理删了规则行 —— 本单要求**软删**（`SET deleted = 1`，留痕可回滚/可审计）")
+    if not re.search(r"\bdeleted\s*=\s*1", body, re.I):
+        errors.append("没有把 deleted 置 1")
+    if not re.search(r"action\s*=\s*'factor'", body, re.I):
+        errors.append("没有限定 `action = 'factor'` ⇒ 会把 insert/remove 的路线规则也软删（路线消失）")
+    if not re.search(r"\bdeleted\s*=\s*0", body, re.I):
+        errors.append("没有限定 `deleted = 0` ⇒ 非幂等（重复执行会刷新已软删行）")
+    if not re.search(r"updated_at\s*=\s*NOW\(\)", body, re.I):
+        errors.append("没有同步 `updated_at`（本仓迁移的既有口径）")
+    return [f"{path_name}: {e}" for e in errors]
+
+
+def test_factor_retire_migration_is_discovered_and_nonempty():
+    """自证（fail-closed）：软删语句必须**被读到**（空集 ⇒ 下面的形态判据全部空转）。"""
+    found = factor_retire_statements()
+    assert found, (
+        "未发现任何「软删 production_route_rules 里 action='factor' 活跃行」的迁移语句"
+        "（`UPDATE … SET deleted = 1 … WHERE action = 'factor'`）⇒ 本段判据退化成空跑")
+
+
+def test_factor_rules_are_soft_deleted_not_dropped():
+    """判据 1（#4589）：系数档**软删**（`deleted = 1`）—— 不物理删，且只碰活跃的 factor 行。
+
+    四个条件各挡一种误伤：① `DELETE FROM` ⇒ 丢留痕（不可回滚、不可审计）；
+    ② 少 `action='factor'` ⇒ 把 insert/remove 的路线规则也软删（**路线消失**，工序全没了）；
+    ③ 少 `deleted = 0` ⇒ 非幂等；④ 漏 `updated_at` ⇒ 与既有迁移口径不一致。
+    """
+    errors = []
+    for path, body in factor_retire_statements():
+        errors += factor_retire_shape_errors(path.name, body)
+    assert errors == [], "软删语句形态不合规：\n" + "\n".join(errors)
+
+
+def test_factor_retire_keeps_the_column_and_history():
+    """判据 2（#4589）：**列保留** —— 退场迁移里不得出现 `DROP COLUMN …factor` / `DROP TABLE`。
+
+    理由：`production_route_rules.factor`（历史系数档）与
+    `processing_position_operations.factor` / `production_work_logs.factor`（历史快照/报工）
+    上的值是**当时工资的证据**（真值源 §4「逐笔可追溯」）⇒ 历史不回溯、不重算、不写回填脚本。
+    ⚠️ 只看**退场迁移自己**（按内容发现）+ **剥掉行注释**：V72 的回滚 SQL 注释里就有
+    `DROP COLUMN IF EXISTS factor`，不剥注释会假红。
+    """
+    for path, _ in factor_retire_statements():
+        code = sql_code(path.read_text(encoding="utf-8"))
+        assert not re.search(r"DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?factor\b", code, re.I), (
+            f"{path.name} 删掉了 factor 列 —— 历史快照/报工上的值是当时工资的证据，列必须保留")
+        assert not re.search(r"DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?production_route_rules\b",
+                             code, re.I), f"{path.name} 删掉了规则表"
+
+
+def test_bootstrap_schema_also_retires_factor_rows(schema_sql):
+    """判据 3（#4589）：bootstrap（`docs/sql/schema.sql`）**同样**软删 —— 两条路径终态一致。
+
+    bootstrap 路径（docker-entrypoint-initdb.d）**不跑迁移链** ⇒ 只写迁移 = 新建库仍留着
+    活跃系数档（形状同 #3270：迁移链不在该栈运行）。本判据钉住该同步。
+    """
+    assert factor_retire_statements(), "迁移侧没有软删语句（本判据的前提不成立）"
+    code = sql_code(schema_sql)
+    assert re.search(r"UPDATE\s+production_route_rules[\s\S]{0,200}?\bdeleted\s*=\s*1", code, re.I), (
+        "docs/sql/schema.sql 没有同步「软删 action='factor' 活跃行」—— "
+        "bootstrap 路径不跑迁移链 ⇒ 新建库会留着活跃系数档")
+    assert re.search(r"action\s*=\s*'factor'", code, re.I), (
+        "schema.sql 的软删语句没有限定 action='factor'")
+
+
+def test_factor_retire_guard_detects_injected_regression(tmp_path):
+    """注入式自证（三段，各挡一种「守卫自己失效」的形态）。
+
+    ① 形态判据**会红**：把 `action='factor'` 换成 `action='insert'` / 改成 `DELETE FROM`
+       ⇒ `factor_retire_shape_errors` 必须点名（否则它是空断言）；
+    ② 发现逻辑**按内容**：合法的软删语句放进临时目录也能被读到（不是写死文件名）；
+    ③ `sql_code` **真的剥注释**：只写在注释里的 `DROP COLUMN factor` 不得命中。
+    """
+    bad_scope = "SET deleted = 1, updated_at = NOW() WHERE action = 'insert' AND deleted = 0"
+    errs = factor_retire_shape_errors("V99__bad.sql", bad_scope)
+    assert any("action = 'factor'" in e for e in errs), "漏 action 限定的形态没被照出来"
+
+    physical = "DELETE FROM production_route_rules WHERE action = 'factor' AND deleted = 0"
+    errs = factor_retire_shape_errors("V99__bad.sql", physical)
+    assert any("物理删" in e for e in errs), "物理删的形态没被照出来"
+
+    (tmp_path / "V99__good.sql").write_text(
+        "UPDATE production_route_rules\n   SET deleted = 1, updated_at = NOW()\n"
+        " WHERE action = 'factor' AND deleted = 0;\n", encoding="utf-8")
+    found = factor_retire_statements(tmp_path)
+    assert len(found) == 1, "合法的软删语句没被按内容发现（发现逻辑写死了文件名？）"
+    assert factor_retire_shape_errors(found[0][0].name, found[0][1]) == []
+
+    commented = "-- ALTER TABLE production_route_rules DROP COLUMN IF EXISTS factor;\nSELECT 1;\n"
+    assert "DROP COLUMN" not in sql_code(commented), "sql_code 没有剥掉行注释 ⇒ 回滚注释会被读成真删列"

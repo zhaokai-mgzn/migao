@@ -259,14 +259,21 @@ def non_option_pricing_violations(sql: str) -> list:
     ① 只按 `trigger_kind = 'option'` 写价（工艺变体 / 定型 / 计件项不得被定价）；
     ② 有 `customer_unit_price IS NULL` 幂等守卫（**不覆盖商家改过的价**）；
     ③ 按租户（`FROM tenants`）—— 只覆盖 1 号租户 ⇒ 其它租户**永远没价**。
+
+    ⚠️ **射程 = 写价语句**（issue #4589）：只认**触及 `customer_unit_price` 列**的
+    `UPDATE production_route_rules`。同表还有别的 UPDATE（V86 的 `SET deleted = 1`
+    软删计件系数档）—— 它不写价，三条不变量对它**不适用**；把它算进来会让本判据
+    对一条合规迁移假红（「不写价」与「写错价」是两回事）。
     """
     hits = []
     for kind in NON_OPTION_TRIGGER_KINDS:
         if re.search(rf"trigger_kind\s*=\s*'{kind}'", sql, re.I):
             hits.append(f"出现了非 option 触发的写价路径：trigger_kind = '{kind}'")
-    updates = re.findall(r"\bUPDATE\s+production_route_rules\b(.*?);", sql, re.S | re.I)
+    updates = [stmt for stmt in re.findall(r"\bUPDATE\s+production_route_rules\b(.*?);", sql, re.S | re.I)
+               if re.search(r"customer_unit_price", stmt, re.I)]
     if not updates:
-        hits.append("没有任何 `UPDATE production_route_rules …;` 语句（解析失效 ⇒ 本判据空跑）")
+        hits.append("没有任何「写 customer_unit_price 的 `UPDATE production_route_rules …;`」语句"
+                    "（解析失效 ⇒ 本判据空跑）")
     for stmt in updates:
         if not re.search(r"trigger_kind\s*=\s*'option'", stmt, re.I):
             hits.append("有一条 UPDATE 没有 `trigger_kind = 'option'` 门控")

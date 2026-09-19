@@ -10,12 +10,11 @@
 **会红的测试**：19 项中的每一项都必须落在「加工序 / 加系数 / 不计件」三类之一，
 **不允许有第四类「未登记」**（`TestCriterion1CoverageGate`）。
 
-v1 边界（issue #4230 §2.4，**刻意不做**）：
-- 只种「一分为二 ×1.7」一个系数档（唯一的**实证**值，行业 ERP）；按工序/分组细算出的
-  系数（车位 ≈×2.0 / 后道 ×1.0 / 裁剪 ×1.2）是**推算**，v1 不启用 ⇒ 本文件不断言推算值；
-- 系数结构保留 `operation_name` 档位（`None` = 该部位全部工序）—— 用「以限定值构造」
-  的用例证明该档位**可用**（`test_operation_scoped_factor_applies_to_that_operation_only`），
-  而不是只留一个空壳字段。
+#4589 改判（用户裁定 2026-09-19：「计件工资 = 数量 × 计件单价，不需要考虑系数」）：
+- `routing.py::factor_for` 已删除，工序实例**不再带 `factor` 键**；
+- `OPTION_FACTOR_SCOPES` **保留**（它是 V59/V72 **已发布**迁移种子与 `schema.sql` 终态的
+  真值源镜像，三源收敛守卫依赖它），但自本单起**零消费** —— 本文件用「注入限定档后
+  实例逐值不变」证明它对运行期**没有任何影响**（见 `TestCriterion4FactorScope`）。
 
 红证（实现前逐条红，红因已核）：
 - 判据 1：10 个未登记选项 ⇒ `test_every_truth_source_option_is_registered` 红（列名点名）；
@@ -250,35 +249,46 @@ class TestCriterion3ReusedOperations:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 判据 4：系数结构 —— v1 唯一档「一分为二 ⇒ 全部工序 ×1.7」+ operation_name 档位可用
+# 判据 4（#4589 改判）：系数已从算法退场 —— 真值源表保留、运行期**零消费**
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestCriterion4FactorScope:
 
-    def test_v1_seeds_only_the_empirical_factor(self):
-        """v1 只种「一分为二 ⇒ 1.7 / 该部位全部工序」（唯一实证值；推算值不启用）。"""
+    def test_historical_factor_truth_source_is_still_the_migration_seed(self):
+        """`OPTION_FACTOR_SCOPES` 是**历史真值源**（V59/V72 已发布迁移种子 + schema.sql 终态的镜像）。
+
+        #4589 之后它**零消费**（`factor_for` 已删），但**不能删**：三源收敛守卫
+        （`tests/unit_ci_workflows/test_production_catalog_seed.py`）按它比对**已发布**迁移的种子
+        —— 删了它 = 删守卫（守卫只能靠删断言才绿，那是停手信号，不是修法）。
+        """
         assert len(OPTION_FACTOR_SCOPES) == 1
         (scope,) = OPTION_FACTOR_SCOPES["一分为二"]
         assert scope["factor"] == 1.7
         assert scope["operation_name"] is None
         assert scope["curtain_type"] is None
 
-    def test_one_split_applies_factor_to_every_operation(self):
-        """一分为二 ⇒ 该部位每道工序实例 factor = 1.7，且不插工序。"""
-        insts = instance_operations({**POSITION, "special_options": ["一分为二"]}, CALC)
-        assert [i["factor"] for i in insts] == [1.7] * 11
-        assert all(i["operation"] != "一分为二" for i in insts)
+    def test_one_split_no_longer_changes_instances(self):
+        """「一分为二」命中真值源档位 ⇒ 工序实例**逐值不变**、且**没有 `factor` 键**。
 
-    def test_no_option_factor_is_one(self):
-        """不带选项 ⇒ factor 恒 1.0（逐值）。"""
+        红证（改前）：`instance_operations` 落 `"factor": factor_for(...)` = 1.7 ⇒
+        `"factor" not in i` 对 11 道工序**逐条红**。
+        """
+        with_option = instance_operations({**POSITION, "special_options": ["一分为二"]}, CALC)
+        without = instance_operations(POSITION, CALC)
+        assert [i["operation"] for i in with_option] == [i["operation"] for i in without]
+        assert all("factor" not in i for i in with_option)
+        assert [(i["qty"], i["unit_price"]) for i in with_option] == \
+               [(i["qty"], i["unit_price"]) for i in without]
+
+    def test_no_option_instances_carry_no_factor_key(self):
+        """不带选项 ⇒ 实例同样**没有 `factor` 键**（不是「恒 1.0」—— 这个概念不在实例里了）。"""
         insts = instance_operations(POSITION, CALC)
-        assert [i["factor"] for i in insts] == [1.0] * 11
+        assert all("factor" not in i for i in insts)
 
-    def test_operation_scoped_factor_applies_to_that_operation_only(self):
-        """`operation_name` 限定档位**可用**：只作用于点名的工序（v1 种子不用它）。
+    def test_factor_scopes_are_inert_even_when_extended(self):
+        """**零消费判据**：往真值源注入逐工序限定档（布三边 ×2.0）⇒ 实例**逐值不变**。
 
-        构造方式 = 临时给「一分为二」追加一个限定档（布三边 ×2.0），断言只有 `布三边` 生效、
-        其余工序仍为平摊档 1.7 ⇒ 证明结构支持「逐工序系数」，而不是只留一个无人消费的空壳字段。
+        改前：限定档生效 ⇒ `布三边` 的 factor = 2.0、其余 1.7。改后：没有任何读者。
         """
         scope = OPTION_FACTOR_SCOPES["一分为二"]
         scoped = {"factor": 2.0, "operation_name": "布三边", "curtain_type": None,
@@ -286,14 +296,15 @@ class TestCriterion4FactorScope:
         scope.append(scoped)
         try:
             by_op = _by_op(["一分为二"])
+            without = _by_op([])
         finally:
             scope.remove(scoped)
-        assert by_op["布三边"]["factor"] == 2.0          # 限定档覆盖平摊档（不是相乘）
-        assert by_op["韩褶-布"]["factor"] == 1.7
-        assert by_op["外帘装袋"]["factor"] == 1.7
+        assert all("factor" not in i for i in by_op.values())
+        assert {k: (v["qty"], v["unit_price"]) for k, v in by_op.items()} == \
+               {k: (v["qty"], v["unit_price"]) for k, v in without.items()}
 
-    def test_curtain_type_scoped_factor_applies_to_that_position_only(self):
-        """`curtain_type` 限定档位可用：只在点名的部位生效（如只对布帘乘系数）。"""
+    def test_curtain_type_scoped_factor_is_inert_too(self):
+        """部位限定档同样零消费（注入「布帘 ×1.5」⇒ 布帘/纱帘两侧实例都不变）。"""
         scope = OPTION_FACTOR_SCOPES["一分为二"]
         scoped = {"factor": 1.5, "operation_name": None, "curtain_type": "布帘",
                   "source": "推算"}
@@ -305,14 +316,14 @@ class TestCriterion4FactorScope:
                  "special_options": ["一分为二"]}, CALC)
         finally:
             scope.remove(scoped)
-        assert [i["factor"] for i in on_cloth] == [1.5] * 11          # 部位命中 ⇒ 限定档生效
+        assert all("factor" not in i for i in on_cloth)
         assert [i["operation"] for i in on_silk] == [
             "精裁-纱", "纱三边", "韩褶-纱", "外帘打卷", "外帘装袋", "外帘发货",
         ]
-        assert [i["factor"] for i in on_silk] == [1.7] * 6            # 部位不命中 ⇒ 回落平摊档
+        assert all("factor" not in i for i in on_silk)
 
-    def test_factor_multiplies_across_independent_options(self):
-        """**两个**加系数选项并存 ⇒ 系数相乘（独立倍率的合成口径；v1 只种一个档）。"""
+    def test_independent_options_no_longer_multiply(self):
+        """**两个**「加系数」选项并存 ⇒ 不再相乘（系数概念已退场；逐值不变）。"""
         fake = "_测试用选项"
         OPTION_FACTOR_SCOPES[fake] = [
             {"factor": 2.0, "operation_name": None, "curtain_type": None, "source": "推算"}]
@@ -320,27 +331,30 @@ class TestCriterion4FactorScope:
             by_op = _by_op(["一分为二", fake])
         finally:
             OPTION_FACTOR_SCOPES.pop(fake, None)
-        assert by_op["韩褶-布"]["factor"] == pytest.approx(3.4)
+        assert all("factor" not in i for i in by_op.values())
+        assert by_op["韩褶-布"]["unit_price"] == 0.4
 
-    def test_unknown_option_does_not_change_factor(self):
-        """未登记的选项名不得悄悄改系数（v1 口径：只认登记表）。"""
+    def test_unknown_option_does_not_change_instances(self):
+        """未登记的选项名同样不改实例（系数路径已不存在 ⇒ 逐值不变）。"""
         insts = instance_operations({**POSITION, "special_options": ["不存在选项"]}, CALC)
-        assert [i["factor"] for i in insts] == [1.0] * 11
+        assert all("factor" not in i for i in insts)
+        assert [i["operation"] for i in insts] == BASE_ROUTE
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 判据 5：C 类（不计件）显式 —— 路线不变、factor 仍 1.0
+# 判据 5：C 类（不计件）显式 —— 路线不变、实例无 factor 键
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestCriterion5NonPiecework:
 
     @pytest.mark.parametrize("option", ["余料带回-布", "余料带回-纱"])
     def test_leftover_return_changes_nothing(self, option):
-        """余料带回 ⇒ 路线逐值不变、factor 逐值仍 1.0（**不是因为查不到映射**）。"""
+        """余料带回 ⇒ 路线逐值不变、实例逐值不变（**不是因为查不到映射**）。"""
         route = _route([option])
         assert route == BASE_ROUTE
-        assert [i["factor"] for i in instance_operations(
-            {**POSITION, "special_options": [option]}, CALC)] == [1.0] * 11
+        insts = instance_operations({**POSITION, "special_options": [option]}, CALC)
+        assert [i["operation"] for i in insts] == BASE_ROUTE
+        assert all("factor" not in i for i in insts)
 
     def test_leftover_return_is_registered_not_silent(self):
         """显式登记（而不是 `.get()` 返回 None 的静默黑洞）—— 这是判据 5 的判据本体。"""
@@ -363,7 +377,7 @@ class TestCriterion6NoRegression:
         insts = instance_operations(POSITION, CALC)
         assert [i["operation"] for i in insts] == BASE_ROUTE
         assert [i["seq"] for i in insts] == list(range(1, 12))
-        assert [i["factor"] for i in insts] == [1.0] * 11
+        assert all("factor" not in i for i in insts)
         assert [i["qty"] for i in insts] == [
             12.3, 12.3, 48.0, 12.3, 12.3, 12.3, 12.3, 12.3, 1.0, 1.0, 1.0,
         ]
@@ -394,26 +408,30 @@ class TestCriterion7ErpNameAlignment:
 
     红证（修复前逐条实测，见 PR body）：
     - 判据 1：`OPTION_FACTOR_SCOPES` 的键是 `一分二`，而 ERP 名是 `一分为二` ⇒
-      `test_erp_name_one_split_into_two_applies_factor` 红（factor 静默退回 1.0 = 少发工人钱）；
+      `test_erp_name_no_longer_reaches_the_money` 的前身（当时断言「命中 ×1.7」）红
+      （factor 静默退回 1.0 = 少发工人钱）；
     - 判据 2：`NON_PIECEWORK_OPTIONS` 只有 `余料带回(布)/(纱)` 两种旧写法 ⇒
       `test_leftover_return_erp_names_are_registered` 红；第三种 `余料带回`（无后缀）**零登记** ⇒
       `test_third_leftover_return_is_explicitly_registered` 红（落进静默黑洞）。
+
+    #4589 起「进了钱」这条改判为**方向相反**的判据：ERP 名不再改变计件合计。
     """
 
-    def test_erp_name_one_split_into_two_applies_factor(self):
-        """判据 1：用 ERP 名 `一分为二` 走一遍 ⇒ 该部位每道工序 factor = 1.7（且不插工序）。
+    def test_erp_name_one_split_into_two_no_longer_applies_factor(self):
+        """判据 1（#4589 改判）：用 ERP 名 `一分为二` 走一遍 ⇒ 实例**逐值不变、无 `factor` 键**。
 
-        修复前 `OPTION_FACTOR_SCOPES` 的键是 `一分二` ⇒ ERP 名查不到 ⇒ 静默退回 1.0。
+        改前：ERP 名命中 `OPTION_FACTOR_SCOPES` ⇒ 每道工序 factor = 1.7。改后：系数已退场。
         """
-        insts = instance_operations({**POSITION, "special_options": ["一分为二"]}, CALC)
-        assert [i["factor"] for i in insts] == [1.7] * 11
-        assert all(i["operation"] != "一分为二" for i in insts)
+        with_option = instance_operations({**POSITION, "special_options": ["一分为二"]}, CALC)
+        assert all("factor" not in i for i in with_option)
+        assert all(i["operation"] != "一分为二" for i in with_option)
+        assert [i["operation"] for i in with_option] == BASE_ROUTE
 
-    def test_erp_name_reaches_the_money(self):
-        """判据 1 的「进了钱」半边：ERP 名 `一分为二` 的计件合计 = 不带选项 × 1.7。
+    def test_erp_name_no_longer_reaches_the_money(self):
+        """判据 1 的「进了钱」半边（#4589 改判）：ERP 名 `一分为二` 的计件合计 **= 不带选项**。
 
-        只断言 factor 会把「写进列」与「进了钱」混为一谈（本仓已诊断过的形态）——
-        此处走**真实** `compute_piecework`（Σ 合格数 × 单价 × 系数）。
+        红证（改前实测）：走**真实** `compute_piecework`（当时 = Σ 合格数 × 单价 × 系数）⇒
+        `boosted / base = 1.7`，而本断言要求比值 1.0 ⇒ 红（正好差 1.7 倍）。
         """
         from app.production.piecework import compute_piecework
         plain = instance_operations(POSITION, CALC)
@@ -422,8 +440,10 @@ class TestCriterion7ErpNameAlignment:
                  "qualified_qty": i["qty"], "type": "normal"} for i in plain]
         base = compute_piecework(plain, logs)["total"]
         boosted = compute_piecework(with_erp, logs)["total"]
-        assert boosted == pytest.approx(base * 1.7, abs=0.05)
-        assert boosted > base, "带 ERP 名「一分为二」的计件合计必须**高于**不带（方向判据）"
+        assert base > 0, "前置自断言：合计必须非 0（否则比值判据空跑）"
+        assert boosted == pytest.approx(base, abs=0.01), "「一分为二」不得再改变计件合计"
+        # 判别性：不得是 1.7 倍（防「把期望值改成 1.7 倍」式的假修复）
+        assert boosted != pytest.approx(base * 1.7, abs=0.05)
 
     def test_registry_keys_are_exactly_the_erp_names(self):
         """判据 1/2 的**注册表键**半边：三张表的键里不得残留旧写法。
@@ -465,8 +485,8 @@ class TestCriterion7ErpNameAlignment:
         """
         route = _route(["余料带回"])
         assert route == BASE_ROUTE
-        assert [i["factor"] for i in instance_operations(
-            {**POSITION, "special_options": ["余料带回"]}, CALC)] == [1.0] * 11
+        assert all("factor" not in i for i in instance_operations(
+            {**POSITION, "special_options": ["余料带回"]}, CALC))
 
     def test_pending_set_is_disjoint_from_decided_categories(self):
         """待确认集合与三类已定论登记**互斥**（否则「待确认」会被读成「已定论」）。"""
