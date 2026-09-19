@@ -2227,7 +2227,8 @@ export default function ProcessConfigPage() {
                                   >
                                     有 {missingSteps.length} 道工序在工序库中不存在或已停用（
                                     {missingSteps.map((s) => s.operation).join('、')}
-                                    ）—— 保存会被拒，请先到「工艺项 · 工序库明细」补上，或把它从主线里移除。
+                                    ）—— 保存会被拒，请先到「工艺项」点「新增工序」把它建出来，
+                                    或把它从主线里移除。
                                   </p>
                                 )}
 
