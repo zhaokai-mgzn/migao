@@ -339,7 +339,7 @@ cases:
       - "计算失败"
     data_checks:
       - "per_area 的 quantity 是**计件数**（同一尺寸做几件，缺省 1）；面积由 dimensions(宽×高) 承载——把宽×高写进 quantity 会双计（30×8×8=¥1920，应为 ¥240）"
-      - "本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（`docs/testing/acceptance-protocol.md:288` 与 `.github/cases/order.yml:905` 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积（真值源 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java`）"
+      - "本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（`docs/testing/acceptance-protocol.md:288` @df3623466344 与 `.github/cases/order.yml:905` @df3623466344 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积（真值源 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java`）"
       - "回复需给出金额 ¥240（30 元/㎡ × 8㎡）并对得上用户给的尺寸"
       # ── 前置自断言（issue #4525 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是
       #    CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）──

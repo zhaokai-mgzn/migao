@@ -3034,7 +3034,7 @@
 你: [🔁 按目标工具重复直至成功：processing_item_manage，最多 2 次]
 期望: processing_item_manage(action=calculate_price)
 数据: per_area 的 quantity 是**计件数**（同一尺寸做几件，缺省 1）；面积由 dimensions(宽×高) 承载——把宽×高写进 quantity 会双计（30×8×8=¥1920，应为 ¥240）
-数据: 本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（`docs/testing/acceptance-protocol.md:288` 与 `.github/cases/order.yml:905` 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积（真值源 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java`）
+数据: 本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（`docs/testing/acceptance-protocol.md:288` @df3623466344 与 `.github/cases/order.yml:905` @df3623466344 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积（真值源 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java`）
 数据: 回复需给出金额 ¥240（30 元/㎡ × 8㎡）并对得上用户给的尺寸
 数据: 前置（precondition）：评测栈种子里「刺绣工艺」（`pi_eval_embroidery`）存在、`pricingMethod=per_area`、`unitPrice=30.00` 元/㎡ —— 它是 `output_verify.totalPrice=240.00` 的接地真值（success=true）；前置不成立时金额必然对不上，判红会伪装成「agent 算错面积」
 禁词: 无法计算
