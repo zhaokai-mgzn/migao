@@ -32,6 +32,8 @@ import type {
   ProductionOperationUpdateParams,
   RouteRule,
   RouteRuleCreateParams,
+  RouteRuleTriggerKind,
+  RouteRuleTriggerOptions,
   Routing,
   RoutingsResponse,
 } from '@/types'
@@ -629,10 +631,38 @@ export default function ProcessConfigPage() {
   const [confirmDeleteOpId, setConfirmDeleteOpId] = useState<string | null>(null)
   const [variantReasons, setVariantReasons] = useState<{ id: string; items: string[] } | null>(null)
 
-  // ── 条件工序规则删除（issue #4588；契约 #4587 ④）──
+  // ── 条件工序规则删除（issue #4588；契约 #4587 ④；issue #4617 改弹框）──
   const [confirmDeleteRuleId, setConfirmDeleteRuleId] = useState<number | null>(null)
   const [ruleDeleteReasons, setRuleDeleteReasons] = useState<{ id: number; items: string[] } | null>(null)
   const [ruleBusy, setRuleBusy] = useState(false)
+
+  // ── 条件工序规则**创建**（issue #4616；用户裁定「没有入口往条件工序规则中添加新的工艺和加工项」）──
+  /** 规则区「新增规则」弹窗 */
+  const [newRuleOpen, setNewRuleOpen] = useState(false)
+  /**
+   * 触发值**取值域**（`GET /route-rule-options`）：工艺词表 + 加工项目录。
+   * 拿不到就退化成空列表 —— 下拉里没有可选项，**不静默给一份写死的词表**（那是第二份会漂的口径）。
+   */
+  const [ruleOptions, setRuleOptions] = useState<RouteRuleTriggerOptions>({ crafts: [], processing_items: [] })
+  const [newRule, setNewRule] = useState<{
+    trigger_kind: RouteRuleTriggerKind
+    trigger_value: string
+    action: 'insert' | 'remove'
+    operation: string
+    after_operation: string
+    priority: string
+    customer_unit_price: string
+  }>({
+    trigger_kind: 'craft',
+    trigger_value: '',
+    action: 'insert',
+    operation: '',
+    after_operation: '',
+    priority: '',
+    customer_unit_price: '',
+  })
+  /** 新建规则的**就地**理由（本地预检 ∪ 后端 `error.details[].message` 逐条） */
+  const [newRuleReasons, setNewRuleReasons] = useState<string[]>([])
 
   // ── 特殊选项对客单价行内编辑（元/套；issue #4567）──
   /** 正在编辑的行 id（null = 没有行在编辑态） */
@@ -721,13 +751,14 @@ export default function ProcessConfigPage() {
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
-    // 五条只读端点互不依赖：任一条失败不得把整页吞掉（页面不白屏，失败处给可读提示）
-    const [routingsRes, catalogRes, templateRes, matrixRes, rulesRes] = await Promise.allSettled([
+    // 六条只读端点互不依赖：任一条失败不得把整页吞掉（页面不白屏，失败处给可读提示）
+    const [routingsRes, catalogRes, templateRes, matrixRes, rulesRes, ruleOptionsRes] = await Promise.allSettled([
       productionApi.getRoutings(),
       productionApi.getOperationsCatalog(),
       productionApi.getSeedTemplates(),
       productionApi.getOperationPositions(),
       productionApi.getRouteRules(),
+      productionApi.getRouteRuleOptions(),
     ])
     if (routingsRes.status === 'fulfilled') {
       setRoutings(routingsRes.value.data?.data ?? null)
@@ -756,6 +787,14 @@ export default function ProcessConfigPage() {
     } else {
       setRules([])
       setRulesError('条件工序规则加载失败，请稍后重试')
+    }
+    // 触发值取值域（issue #4616）：**拿不到就空列表**（下拉无可选项），
+    // 不回落任何写死的词表 —— 回落 = 第二份会漂的口径（新建的工艺永远进不了下拉）。
+    if (ruleOptionsRes.status === 'fulfilled') {
+      const opts = ruleOptionsRes.value.data?.data
+      setRuleOptions({ crafts: opts?.crafts ?? [], processing_items: opts?.processing_items ?? [] })
+    } else {
+      setRuleOptions({ crafts: [], processing_items: [] })
     }
     setLoading(false)
   }, [])
@@ -936,6 +975,18 @@ export default function ProcessConfigPage() {
    */
   const logicalOps = useMemo(() => matrixRows.map((r) => r.operation), [matrixRows])
 
+  /**
+   * 既有规则里出现过的**特殊选项名**（issue #4616 弹窗的候选，不是白名单）。
+   *
+   * 特殊选项名按现状**可新建**（没有第二份词表，后端也不校验）⇒ 这里只把已用过的名字
+   * 做成候选（防拼写漂移），**不**把输入限制成「只能选这些」（那会让新建选项无路可走）。
+   */
+  const optionNames = useMemo(
+    () => [...new Set(rules.filter((r) => r.trigger_kind === 'option').map((r) => r.trigger_value ?? ''))]
+      .filter((n) => n !== ''),
+    [rules],
+  )
+
   const visibleMatrixRows = useMemo(
     () => matrixRows.filter((r) => !q || r.operation.toLowerCase().includes(q)),
     [matrixRows, q],
@@ -1048,6 +1099,19 @@ export default function ProcessConfigPage() {
     [matrixRows, manageOp],
   )
   const manageVariants = useMemo(() => (manageRow ? variantsOf(manageRow) : []), [manageRow, variantsOf])
+  /**
+   * 删除二次确认弹框的目标（issue #4617）—— 弹框必须写清**删的是哪一条**：
+   * 就地展开的确认在长表格里既易误点、又看不清删的是哪一行（用户裁定的病根）。
+   * 目标从当前渲染的那份列表里取（取不到 ⇒ 弹框不渲染，**不猜**）。
+   */
+  const deleteRuleTarget = useMemo(
+    () => rules.find((r) => r.id === confirmDeleteRuleId) ?? null,
+    [rules, confirmDeleteRuleId],
+  )
+  const deleteOpTarget = useMemo(
+    () => manageVariants.find((v) => v.id === confirmDeleteOpId) ?? null,
+    [manageVariants, confirmDeleteOpId],
+  )
 
   // ────────────────────────── 就绪度（先后依赖显性化） ──────────────────────────
 
@@ -1457,6 +1521,91 @@ export default function ProcessConfigPage() {
     } finally {
       setBusy(false)
     }
+  }
+
+  /**
+   * 新建**条件工序规则**（issue #4616：触发类型 = 工艺 / 特殊选项 / 加工项）。
+   *
+   * 用户裁定：「现在的问题是**没有入口往条件工序规则中添加新的工艺和加工项**」——
+   * 缺了入口 ⇒ 商家新增工艺/加工项后**无法**让它在订单里插/删工序 ⇒ 该订单**静默少工序**。
+   *
+   * 本地只做「拦得住就不打扰后端」的最小预检；**语义护栏**一律以后端为准
+   * （触发值是否在词表里、对客单价是否只属于 option、目标工序/锚点是否在工序库）
+   * ⇒ 失败时逐条理由**就地**展示，**不刷新、不改页面数据**（静默写回 = 商家以为建好了、
+   * 订单侧其实没生效）。
+   */
+  const createRule = async () => {
+    const reasons: string[] = []
+    const trigger = newRule.trigger_value.trim()
+    if (!trigger) {
+      reasons.push(
+        newRule.trigger_kind === 'option'
+          ? '请填写选项名称'
+          : newRule.trigger_kind === 'craft'
+            ? '请选择工艺：触发值必须来自工艺词表（手输一个词表里没有的名字 = 这条规则永远不命中）'
+            : '请选择加工项：触发值必须来自加工项目录（触发键 = 订单里的加工项名，精确相等）',
+      )
+    }
+    if (!newRule.operation) reasons.push('请选择目标工序：这条规则要在哪道工序上生效')
+    const rawPrice = newRule.customer_unit_price.trim()
+    if (newRule.trigger_kind === 'option' && rawPrice !== '' && !/^\d+(\.\d{1,2})?$/.test(rawPrice)) {
+      reasons.push('单价必须是 ≥ 0 且最多两位小数的数字（元/套）；留空 = 未定价')
+    }
+    const rawPriority = newRule.priority.trim()
+    if (rawPriority !== '' && !/^\d+$/.test(rawPriority)) {
+      reasons.push('优先级必须是不小于 0 的整数（留空 = 按后端默认顺序）')
+    }
+    if (reasons.length > 0) {
+      setNewRuleReasons(reasons)
+      return
+    }
+    // 可选键**留空就不发**（`after_operation?` / `priority?` / `customer_unit_price?`）——
+    // 不拿 `null` 冒充「没填」。对客单价**只对 option 发**（craft/加工项带了后端会 422）。
+    const payload: RouteRuleCreateParams = {
+      trigger_kind: newRule.trigger_kind,
+      trigger_value: trigger,
+      action: newRule.action,
+      operation: newRule.operation,
+    }
+    if (newRule.action === 'insert' && newRule.after_operation) payload.after_operation = newRule.after_operation
+    if (rawPriority !== '') payload.priority = Number(rawPriority)
+    if (newRule.trigger_kind === 'option' && rawPrice !== '') payload.customer_unit_price = Number(rawPrice)
+    setBusy(true)
+    setNewRuleReasons([])
+    try {
+      await productionApi.createOptionRule(payload)
+      toast.success('条件工序规则已新增')
+      setNewRuleOpen(false)
+      setNewRule({
+        trigger_kind: 'craft',
+        trigger_value: '',
+        action: 'insert',
+        operation: '',
+        after_operation: '',
+        priority: '',
+        customer_unit_price: '',
+      })
+      await load()
+    } catch (e) {
+      console.error(e)
+      setNewRuleReasons(optionPriceGuardReasons(e))
+      if (!isErrorToastShown(e)) toast.error('新增规则失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 打开「新增规则」弹窗：每次回到默认（工艺触发 / 插入），并清掉上一次的失败理由 */
+  const openCreateRule = () => {
+    setNewRule((r) => ({ ...r, trigger_value: '', operation: '', after_operation: '', priority: '', customer_unit_price: '' }))
+    setNewRuleReasons([])
+    setNewRuleOpen(true)
+  }
+
+  /** 规则弹窗里「触发类型」切换 ⇒ 触发值换来源（工艺/加工项从词表选，特殊选项可新建）+ 清空已选值 */
+  const switchRuleKind = (kind: RouteRuleTriggerKind) => {
+    setNewRule((r) => ({ ...r, trigger_kind: kind, trigger_value: '', customer_unit_price: '' }))
+    setNewRuleReasons([])
   }
 
   // ────────────────────────── 矩阵格写面（issue #4588；契约 #4587 ②） ──────────────────────────
@@ -2384,8 +2533,14 @@ export default function ProcessConfigPage() {
                     <span className="text-xs text-neutral-400" data-testid="route-rules-total">
                       共 {rules.length} 条
                     </span>
-                    <span className="ml-auto hidden text-xs text-neutral-400 sm:inline">
-                      工艺 / 特殊选项触发时，往主线里插一道或删一道
+                    {/* 规则区**唯一**的创建入口（issue #4616：此前只有「特殊选项」那一支能从
+                        「新增工序」对话框进，工艺 / 加工项触发的规则**界面加不了**） */}
+                    <Button size="sm" className="ml-auto" data-testid="route-rules-new" onClick={openCreateRule}>
+                      <Plus className="w-3.5 h-3.5 mr-1.5" />
+                      新增规则
+                    </Button>
+                    <span className="hidden text-xs text-neutral-400 sm:inline">
+                      工艺 / 特殊选项 / 加工项触发时，往主线里插一道或删一道
                     </span>
                   </div>
                   <div className="border-t border-neutral-100 p-5 pt-4" data-testid="route-rules-body">
@@ -2462,46 +2617,17 @@ export default function ProcessConfigPage() {
                               {/* 删除（issue #4588；契约 #4587 ④）：二次确认 → `DELETE /route-rules/{id}`；
                                   失败理由**逐条**就地展示（不吞成一句「删除失败」）。 */}
                               <td className="py-2.5 pr-4">
-                                {confirmDeleteRuleId === rule.id ? (
-                                  <span className="flex items-center gap-1.5">
-                                    <Button
-                                      size="sm"
-                                      variant="danger"
-                                      data-testid={`route-rule-delete-confirm-${rule.id}`}
-                                      disabled={ruleBusy}
-                                      onClick={() => void removeRule(rule)}
-                                    >
-                                      确认删除
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="secondary"
-                                      data-testid={`route-rule-delete-cancel-${rule.id}`}
-                                      onClick={() => setConfirmDeleteRuleId(null)}
-                                    >
-                                      取消
-                                    </Button>
-                                  </span>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    data-testid={`route-rule-delete-${rule.id}`}
-                                    onClick={() => {
-                                      setConfirmDeleteRuleId(rule.id)
-                                      setRuleDeleteReasons(null)
-                                    }}
-                                    className="rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-red-600"
-                                  >
-                                    删除
-                                  </button>
-                                )}
-                                {ruleDeleteReasons?.id === rule.id && (
-                                  <ul className="mt-1 space-y-0.5 text-xs text-red-600" data-testid="route-rule-delete-reasons">
-                                    {ruleDeleteReasons.items.map((r, i) => (
-                                      <li key={i}>{r}</li>
-                                    ))}
-                                  </ul>
-                                )}
+                                <button
+                                  type="button"
+                                  data-testid={`route-rule-delete-${rule.id}`}
+                                  onClick={() => {
+                                    setConfirmDeleteRuleId(rule.id)
+                                    setRuleDeleteReasons(null)
+                                  }}
+                                  className="rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-red-600"
+                                >
+                                  删除
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -3007,50 +3133,19 @@ export default function ProcessConfigPage() {
                     >
                       停用
                     </Button>
-                    {confirmDeleteOpId === v.id ? (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="danger"
-                          data-testid={`variant-delete-confirm-${v.id}`}
-                          disabled={variantBusy}
-                          onClick={() => void removeVariant(v)}
-                        >
-                          确认删除
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          data-testid={`variant-delete-cancel-${v.id}`}
-                          onClick={() => setConfirmDeleteOpId(null)}
-                        >
-                          取消
-                        </Button>
-                      </>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        data-testid={`variant-delete-${v.id}`}
-                        onClick={() => {
-                          setConfirmDeleteOpId(v.id)
-                          setVariantReasons(null)
-                        }}
-                      >
-                        删除
-                      </Button>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      data-testid={`variant-delete-${v.id}`}
+                      onClick={() => {
+                        setConfirmDeleteOpId(v.id)
+                        setVariantReasons(null)
+                      }}
+                    >
+                      删除
+                    </Button>
                     <span className="text-xs text-neutral-400">删除后历史报工不受影响</span>
                   </div>
-
-                  {/* 护栏理由**逐条**就地展示（后端一次报全：被活跃主线 / 活跃规则 / 矩阵格引用） */}
-                  {variantReasons?.id === v.id && (
-                    <ul className="mt-2 space-y-0.5 text-xs text-red-600" data-testid="variant-delete-reasons">
-                      {variantReasons.items.map((r, i) => (
-                        <li key={i}>{r}</li>
-                      ))}
-                    </ul>
-                  )}
                 </div>
               ))}
             </div>
@@ -3359,6 +3454,326 @@ export default function ProcessConfigPage() {
               ))}
             </ul>
           )}
+        </div>
+      </Modal>
+
+      {/* 删除**条件工序规则**的二次确认（issue #4617）：与「删除工艺路线」同形态的弹框 ——
+          就地展开的确认在长表格里既易误点、又看不清删的是哪一行（用户裁定的病根）。
+          内容写清「这条规则是什么」（触发类型 + 触发值 + 动作 + 目标工序）⇒ 一眼确认没删错。
+          删除中禁用按钮（防重复提交）；失败理由**逐条**就地展示（不吞成一句「删除失败」）。 */}
+      <Modal
+        open={deleteRuleTarget !== null}
+        onClose={() => !ruleBusy && setConfirmDeleteRuleId(null)}
+        title="删除条件工序规则"
+        footer={null}
+      >
+        {deleteRuleTarget && (
+          <div data-testid="route-rule-delete-modal" data-rule={deleteRuleTarget.id} className="space-y-3 text-sm">
+            <p className="text-neutral-600">
+              将删除这条规则：
+              <span className="ml-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] text-neutral-500">
+                {TRIGGER_KIND_LABEL[deleteRuleTarget.trigger_kind ?? ''] ??
+                  deleteRuleTarget.trigger_kind ??
+                  '—'}
+              </span>
+              <strong className="ml-1">{deleteRuleTarget.trigger_value ?? '—'}</strong>
+              <span className="ml-1">→ {ruleActionText(deleteRuleTarget)}</span>
+            </p>
+            <p className="text-neutral-500">
+              删除后，订单命中这个
+              {TRIGGER_KIND_LABEL[deleteRuleTarget.trigger_kind ?? ''] ?? '触发值'}
+              时<strong>不再</strong>增删这道工序（加工单按当前主线生成）。
+              规则是<strong>软删</strong>（保留排查工序顺序错的线索），历史加工单一字不变。
+            </p>
+            {ruleDeleteReasons && (
+              <ul className="space-y-0.5 text-xs text-red-600" data-testid="route-rule-delete-reasons">
+                {ruleDeleteReasons.items.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                disabled={ruleBusy}
+                data-testid={`route-rule-delete-cancel-${deleteRuleTarget.id}`}
+                onClick={() => setConfirmDeleteRuleId(null)}
+              >
+                取消
+              </Button>
+              <Button
+                variant="danger"
+                loading={ruleBusy}
+                data-testid={`route-rule-delete-confirm-${deleteRuleTarget.id}`}
+                onClick={() => void removeRule(deleteRuleTarget)}
+              >
+                确认删除
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* 删除**工序**（抽屉里那处）的二次确认（issue #4617）：与上一条同一套弹框形态 ——
+          同一页面留两套形态就是下一个「交互需要优化」。 */}
+      <Modal
+        open={deleteOpTarget !== null}
+        onClose={() => !variantBusy && setConfirmDeleteOpId(null)}
+        title="删除工序"
+        footer={null}
+      >
+        {deleteOpTarget && (
+          <div data-testid="variant-delete-modal" data-variant={deleteOpTarget.id} className="space-y-3 text-sm">
+            <p className="text-neutral-600">
+              将删除工序<strong className="ml-1">{deleteOpTarget.name ?? deleteOpTarget.id}</strong>
+              （覆盖 {deleteOpTarget.positions.join(' / ')}）。
+            </p>
+            <p className="text-neutral-500">
+              删除后它不再出现在工序库与部位价目里，新加工单不会再生成这道工序；
+              <strong>历史报工不受影响</strong>（报工按当时的工序快照）。
+            </p>
+            {variantReasons && (
+              <ul className="space-y-0.5 text-xs text-red-600" data-testid="variant-delete-reasons">
+                {variantReasons.items.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                disabled={variantBusy}
+                data-testid={`variant-delete-cancel-${deleteOpTarget.id}`}
+                onClick={() => setConfirmDeleteOpId(null)}
+              >
+                取消
+              </Button>
+              <Button
+                variant="danger"
+                loading={variantBusy}
+                data-testid={`variant-delete-confirm-${deleteOpTarget.id}`}
+                onClick={() => void removeVariant(deleteOpTarget)}
+              >
+                确认删除
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* 新增**条件工序规则**（issue #4616）：触发类型 = 工艺 / 特殊选项 / 加工项。
+          - **触发值按类型从对应词表取**（工艺 ⇒ 活跃工艺词表；加工项 ⇒ 加工项目录；
+            特殊选项 ⇒ 可新建，给既有选项名做候选 + 允许手输）—— 手输一个词表里没有的名字
+            = 建一条永远不命中的规则（商家以为配了、加工单上却没有）；
+          - **动作**（插入 / 移除）；**目标工序 / 插入锚点**复用主线同一份**逻辑工序名**取值域；
+          - 选**特殊选项**才显示「对客单价（元/套）」（可空 = 未定价）—— craft / 加工项按工序单价
+            **计件**，两套账不互读，后端也会拒。 */}
+      <Modal
+        open={newRuleOpen}
+        onClose={() => !busy && setNewRuleOpen(false)}
+        title="新增条件工序规则"
+        footer={null}
+      >
+        <div className="space-y-3 text-sm" data-testid="route-rule-create-modal">
+          <div>
+            <span className="mb-1 block text-neutral-600">触发类型</span>
+            <div className="flex gap-2" role="radiogroup" aria-label="触发类型">
+              {([
+                { key: 'craft', label: '工艺' },
+                { key: 'option', label: '特殊选项' },
+                { key: 'processing_item', label: '加工项' },
+              ] as const).map((k) => (
+                <button
+                  key={k.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={newRule.trigger_kind === k.key}
+                  data-testid={`rule-kind-${k.key}`}
+                  onClick={() => switchRuleKind(k.key)}
+                  className={cn(
+                    'rounded-full border px-3 py-1 text-sm transition-colors',
+                    newRule.trigger_kind === k.key
+                      ? 'border-primary-600 bg-neutral-50 font-medium text-primary-700'
+                      : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50',
+                  )}
+                >
+                  {k.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-neutral-600" htmlFor="rule-trigger-value">
+              触发值
+            </label>
+            {newRule.trigger_kind === 'option' ? (
+              <>
+                <input
+                  id="rule-trigger-value"
+                  data-testid="rule-trigger-value"
+                  className={inputCls}
+                  list="rule-option-names"
+                  placeholder="如 拼3次 / 免熨 / 防翘扣（可新建）"
+                  value={newRule.trigger_value}
+                  onChange={(e) => setNewRule({ ...newRule, trigger_value: e.target.value })}
+                />
+                {/* 候选 = 既有规则里出现过的选项名（**不发明**词表；特殊选项名本来就可新建） */}
+                <datalist id="rule-option-names">
+                  {optionNames.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
+              </>
+            ) : (
+              <select
+                id="rule-trigger-value"
+                data-testid="rule-trigger-value"
+                className={inputCls}
+                value={newRule.trigger_value}
+                onChange={(e) => setNewRule({ ...newRule, trigger_value: e.target.value })}
+              >
+                <option value="">
+                  {newRule.trigger_kind === 'craft'
+                    ? '从工艺词表里选…'
+                    : '从加工项目录里选…'}
+                </option>
+                {(newRule.trigger_kind === 'craft' ? ruleOptions.crafts : ruleOptions.processing_items).map(
+                  (name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ),
+                )}
+              </select>
+            )}
+            <p className="mt-1 text-xs text-neutral-400">
+              {newRule.trigger_kind === 'craft'
+                ? '触发键 = 订单里的工艺名（逐字相等）—— 词表里没有的工艺，请先建工艺。'
+                : newRule.trigger_kind === 'processing_item'
+                  ? '触发键 = 订单里的加工项名（逐字相等）—— 目录里没有的加工项，请先在「加工项管理」建。'
+                  : '选项名对客可见，**与 ERP 名逐字一致**（错一个字就查不到）。'}
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-neutral-600" htmlFor="rule-action">
+              动作
+            </label>
+            <select
+              id="rule-action"
+              data-testid="rule-action"
+              className={inputCls}
+              value={newRule.action}
+              onChange={(e) =>
+                setNewRule({ ...newRule, action: e.target.value as 'insert' | 'remove', after_operation: '' })
+              }
+            >
+              <option value="insert">插入（在锚点之后加一道工序）</option>
+              <option value="remove">移除（把这道工序从序列里去掉）</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-neutral-600" htmlFor="rule-operation">
+              目标工序
+            </label>
+            <select
+              id="rule-operation"
+              data-testid="rule-operation"
+              className={inputCls}
+              value={newRule.operation}
+              onChange={(e) => setNewRule({ ...newRule, operation: e.target.value })}
+            >
+              <option value="">选择这道规则落在哪道工序上…</option>
+              {logicalOps.map((op) => (
+                <option key={op} value={op}>
+                  {op}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 锚点**只对「插入」有意义**（移除没有锚点）—— 切到移除时整块不渲染 */}
+          {newRule.action === 'insert' && (
+            <div>
+              <label className="mb-1 block text-neutral-600" htmlFor="rule-after-operation">
+                插入锚点（可选）
+              </label>
+              <select
+                id="rule-after-operation"
+                data-testid="rule-after-operation"
+                className={inputCls}
+                value={newRule.after_operation}
+                onChange={(e) => setNewRule({ ...newRule, after_operation: e.target.value })}
+              >
+                <option value="">末尾追加</option>
+                {logicalOps.map((op) => (
+                  <option key={op} value={op}>
+                    {op}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="mb-1 block text-neutral-600" htmlFor="rule-priority">
+              优先级（可选）
+            </label>
+            <input
+              id="rule-priority"
+              inputMode="numeric"
+              data-testid="rule-priority"
+              className={inputCls}
+              placeholder="数字越小越先应用（留空 = 后端默认顺序）"
+              value={newRule.priority}
+              onChange={(e) => setNewRule({ ...newRule, priority: e.target.value })}
+            />
+          </div>
+
+          {/* 对客单价**只对特殊选项**有意义（craft / 加工项按工序单价计件，两套账不互读） */}
+          {newRule.trigger_kind === 'option' && (
+            <div>
+              <label className="mb-1 block text-neutral-600" htmlFor="rule-customer-unit-price">
+                对客单价（元/套，可空）
+              </label>
+              <input
+                id="rule-customer-unit-price"
+                inputMode="decimal"
+                data-testid="rule-customer-unit-price"
+                className={inputCls}
+                placeholder="如 12.5；留空 = 未定价（≠ 0 元）"
+                value={newRule.customer_unit_price}
+                onChange={(e) => setNewRule({ ...newRule, customer_unit_price: e.target.value })}
+              />
+              <p className="mt-1 text-xs text-neutral-400">
+                这是对顾客的按套价（元/套），不进工人的计件工资；留空 = 未定价（**不是 0 元**）。
+              </p>
+            </div>
+          )}
+
+          {newRuleReasons.length > 0 && (
+            <ul className="space-y-0.5 text-xs text-red-600" data-testid="rule-create-reasons">
+              {newRuleReasons.map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              disabled={busy}
+              data-testid="rule-create-cancel"
+              onClick={() => setNewRuleOpen(false)}
+            >
+              取消
+            </Button>
+            <Button loading={busy} data-testid="rule-create-submit" onClick={createRule}>
+              保存
+            </Button>
+          </div>
         </div>
       </Modal>
 

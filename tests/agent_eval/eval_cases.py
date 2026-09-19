@@ -4997,6 +4997,24 @@ _CASE_PG_052 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-053 [NORMAL] 条件工序规则创建通用化 - trigger_kind 闭词表（craft/option/processing_item）+ 触发值词表校验 + 对客单价只属 option + 缺省 option 反向护栏 + 订单实例化真的插该工序（源: cases/processing-order.yml）──
+_CASE_PG_053 = EvalCase(
+    id='PG-053',
+    legacy_id='',
+    title='条件工序规则创建通用化 - trigger_kind 闭词表（craft/option/processing_item）+ 触发值词表校验 + 对客单价只属 option + 缺省 option 反向护栏 + 订单实例化真的插该工序',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '判据 1·**端点通用化、不新增端点**：`POST /api/admin/production/route-rules` 的 body 增 `trigger_kind`（**闭词表** craft / option / processing_item，与 V71 的 CHECK 同口径）；`shaped` 是表结构预留、**无种子行** ⇒ 收到即 **422**（不静默落一行没人消费的规则）。证据：ProductionRoutingCommandServiceOptionCreateTest「craftRuleIsCreatedWithCraftTriggerKind」「processingItemRuleIsCreatedWithProcessingItemTriggerKind」「shapedTriggerKindIsRejected」（**注入**：`triggerKind` 写回常量 "option" ⇒ 前两条红，实测 `but was: "option"`）', '判据 2·**触发值必须存在于对应词表**：craft ⇒ 活跃**工艺词表**（`production_crafts`）；processing_item ⇒ **加工项目录**（`processing_items`，触发键 = 订单行 `processingInfo.processingItems[].name`，精确相等）；option ⇒ 特殊选项名（**可新建**，无词表）—— 不存在/已停用 ⇒ **422 + `error.details` 逐条**（一次报全）。理由必须**可行动**（craft 指向「先建工艺」/ processing_item 指向「先在加工项管理建」）。证据：ProductionRoutingCommandServiceOptionCreateTest「craftTriggerValueOutsideVocabularyIsRejected」「processingItemTriggerValueOutsideCatalogIsRejected」（**注入**：去掉该分支 ⇒ 两条红，实测 `Expecting code to raise a throwable.`）', "判据 3·**两套账不互读**：`customer_unit_price`（元/套）**只允许 `trigger_kind='option'`** —— craft / 加工项行必须为空，带了 ⇒ **422**（工艺变体按工序单价**计件**给工人，特殊选项按**套**对客收费；放宽 = 让两本账互读）。证据：ProductionRoutingCommandServiceOptionCreateTest「craftRuleWithCustomerPriceIsRejected」+ ProductionRoutingReadControllerTest「createRouteRuleRejectsCustomerPriceOnCraft」（HTTP 面 422 + `error.details[0].field=customer_unit_price`）", '判据 4·**反向护栏（缺 `trigger_kind` ⇒ 默认 option）**：老调用方 / 老 bundle 的 body（只有 `trigger_value` 等）行为**一字不变**；`action` 缺省 = `insert`（端点此前写死 insert）。证据：ProductionRoutingCommandServiceOptionCreateTest「missingTriggerKindStillDefaultsToOption」+ 既有 PG-032 的 9 条 option 用例逐条未改（只把「摘要措辞」断言改成「逐条理由含该句」—— 通用化后一句话摘要是「条件工序规则校验未通过」，**details 里的逐条理由一字未动**）', '判据 5·**`action` ∈ insert / remove**（缺省 insert）；`remove` **不接受锚点**（锚点只对插入有意义）⇒ 带 `after_operation` ⇒ 422。`operation` / `after_operation` 仍是**逻辑工序名**（复用既有 `logicalOperationExists` 校验，与主线同一份取值域）。证据：ProductionRoutingCommandServiceOptionCreateTest「removeActionIsAcceptedAndAnchorIsRejected」', '判据 6·**多条违规一次报全**：触发值不在词表 + craft 带对客单价 + 目标工序不存在 ⇒ 三条 `error.details` 同时给出（`field` 依次 trigger_value / customer_unit_price / operation）。证据：ProductionRoutingCommandServiceOptionCreateTest「allViolationsAreReportedAtOnce」', '判据 7·**重复判定按 kind + 触发值 + 动作 + 目标工序**（对齐 DB 唯一索引 `uk_production_route_rules_tenant_trigger_operation`）⇒ 同一条 craft 规则重复建 ⇒ **409**（不是撞索引变 500）。证据：ProductionRoutingCommandServiceOptionCreateTest「duplicateCraftRuleIsConflict」', '判据 8·**端到端：订单实例化真的插了那道工序**（建库成功 ≠ 规则生效 —— 触发键/动作/目标工序/锚点在实例化路径各有一处口径）。craft「罗马帘」+ 规则「插 定型 after 三边」⇒ 实例序列里 `定型-布` **紧跟 `布三边`** 且**恰好一次**（规则是**取代**语义：先移除序列里已有的该工序再按锚点插入）；craft 不匹配 ⇒ 序列逐字回到基线。证据：ProcessingOrderServiceTest「craftRuleInsertsConditionalOperationOnInstantiation」', '判据 9·**前端入口 + 取值域同源**（`GET /api/admin/production/route-rule-options` ⇒ `{crafts, processing_items}`）：规则区「新增规则」入口（`route-rules-new`）⇒ 弹窗；触发值**按类型从对应词表取**（craft / processing_item 是**下拉**，选项逐字来自后端；option 可新建 ⇒ 输入框 + 既有选项名候选）；**只有特殊选项**显示「对客单价（元/套）」（可空 = 未定价）；动作切「移除」⇒ 锚点字段消失；目标工序 / 插入锚点复用主线同一份**逻辑工序名**取值域（`GET /operation-positions` 的行键，**不拼变体名**）。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx「⑱-①~⑱-⑥」+ ProductionRoutingReadControllerTest「routeRuleOptionsReturnsTriggerVocabulary」（**红证**：改前 `route-rules-new` 不存在 ⇒ `Unable to find an element by: [data-testid="route-rules-new"]`，实测）', '判据 10·**本地预检 + 后端 422 逐条就地展示**：未选触发值 / 未选目标工序 ⇒ 就地理由 + **不发请求**；后端 422 ⇒ `error.details[].message` **逐条**就地展示，且**不刷新、不改页面数据**（静默写回 = 商家以为建好了、订单侧其实没生效）；建完 `load()` 刷新 ⇒ 新规则立刻出现在表里。证据：production-routings.test.tsx「⑱-⑤」「⑱-⑥」', '**边界（如实登记）**：① 本单**不新增创建端点**（只通用化既有 `POST /route-rules`）；② 新增一个**只读**端点 `GET /route-rule-options`（工艺词表此前**没有任何读端点**，而「触发值按类型从对应词表取、不手输」需要它）—— 这是对「不新增端点」的最小偏离，已在 PR 描述显式登记；③ **不动**规则表结构、**不动**主线选择器、**不动** `routings/page.tsx` 里 #4613（常驻展开）/ #4615（页头入口）涉及的按钮与外壳（#4618 已合入，本单只在其之上新增入口与弹框）。'],
+    skip_reason='[backend-contract] 后端契约 + 前端组件契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionRoutingCommandServiceOptionCreateTest / ProductionRoutingReadControllerTest / ProcessingOrderServiceTest / frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行',
+    tags=['processing-order', 'production-routing', 'route-rules', 'trigger-kind', 'guard', 'instantiation'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PP-002 [NORMAL] 加工项分类列表（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -6468,7 +6486,7 @@ _CASE_UI_030 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['米宝（admin-web）interact 交互组件（choice/confirm/form）渲染不确定：已回复的卡片锁是组件本地 useState(submitted)，FAB 关闭重开/会话切换后组件重挂载 → 锁重置 → 已经确认的卡片重新可点 → 可重复提交（重复建单/下单）', '企业级要求渲染逻辑与效果固定：同一消息任何时候渲染结果一致，不能一会渲染可交互控件、一会渲染只读/消失控件'],
     expectations=['direct_reply'],
-    data_checks=["frontend/admin-web/src/lib/interactive-render.ts（或等价位置）导出纯函数 resolveInteractiveState(msg) → 'interactive' | 'readonly' | 'hidden'：有 interactive 且非流式且未答 → interactive；有 interactive 且 interactiveAnswered → readonly；流式中或无 interactive → hidden", 'MessageList.tsx 渲染交互组件时经 resolveInteractiveState 决策，不再直接用 message.isStreaming 作为 disabled：流式中隐藏（hidden），已答（interactiveAnswered=true）渲染同构只读变体（disabled=true，按钮置灰不可点），未答复渲染可交互（disabled=false）', 'InteractiveMessage ChoiceCard/ConfirmCard/FormCard 在 disabled=true 时不可点击且视觉置灰（opacity/disabled 属性），点击不触发 sendMessage', '锁的单一事实源为消息级 interactiveAnswered（来自 store 透传/历史回放），非组件本地 useState：FAB 关闭重开（ChatArea 卸载重挂载）后已答卡片仍保持只读不可点', 'FAB 浮窗（FloatingAssistant）与 /chat 工作台共用 MessageList/InteractiveMessage 链路，两入口渲染决策一致'],
+    data_checks=['前置（precondition）：`frontend/admin-web/src/lib/interactive-render.ts` 导出纯函数 `resolveInteractiveState`，且 `MessageList.tsx` 的交互组件渲染确实经它决策（不是各调用点各判一次 `message.isStreaming`）—— 这是下面全部判据与 traces 里两个 vitest 文件的接地对象（success=true）；前置不成立时单测只能报「找不到该导出 / 行为不符」，判红会伪装成「渲染决策写错」', "frontend/admin-web/src/lib/interactive-render.ts（或等价位置）导出纯函数 resolveInteractiveState(msg) → 'interactive' | 'readonly' | 'hidden'：有 interactive 且非流式且未答 → interactive；有 interactive 且 interactiveAnswered → readonly；流式中或无 interactive → hidden", 'MessageList.tsx 渲染交互组件时经 resolveInteractiveState 决策，不再直接用 message.isStreaming 作为 disabled：流式中隐藏（hidden），已答（interactiveAnswered=true）渲染同构只读变体（disabled=true，按钮置灰不可点），未答复渲染可交互（disabled=false）', 'InteractiveMessage ChoiceCard/ConfirmCard/FormCard 在 disabled=true 时不可点击且视觉置灰（opacity/disabled 属性），点击不触发 sendMessage', '锁的单一事实源为消息级 interactiveAnswered（来自 store 透传/历史回放），非组件本地 useState：FAB 关闭重开（ChatArea 卸载重挂载）后已答卡片仍保持只读不可点', 'FAB 浮窗（FloatingAssistant）与 /chat 工作台共用 MessageList/InteractiveMessage 链路，两入口渲染决策一致'],
     skip_reason='[backend-contract] 纯前端渲染决策由 vitest 单测（components-chat.test.tsx + interactive-render 单测）验证，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'admin-web', 'chat', 'interactive', 'render-freeze'],
     persona='',
@@ -6759,6 +6777,24 @@ _CASE_UI_047 = EvalCase(
     data_checks=['打开发货页时按订单 customerPhone 调 customerApi.getCustomers(keyword=phone)，**精确匹配 phone** 后才带出 defaultLogisticsType/defaultLogisticsCompany（关键词是模糊匹配，命中的其他客户不得采用）', '带出的常用公司在预置候选之外时，下拉补出该选项（否则 select 显示不出已存值）；用户已手动改过物流字段则不再覆盖（与发货人预填同口径）；查询失败不阻断发货', '确认发货 payload 携带 logisticsType（express/logistics），经 buildLogisticsPayload 透传；未选时不写（由后端按列默认 express 兜底，不写假值）'],
     skip_reason='[backend-contract] 纯前端交互 + payload 透传，由 vitest 单测（ship-order.test.tsx / data-adapter.test.ts / logistics.test.ts）覆盖；agent 工具参数未变，不进入 agent-eval 冒烟',
     tags=['ui', 'order', 'logistics', 'admin-web', 'customer'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-048 [NORMAL] 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）（源: cases/ui.yml）──
+_CASE_UI_048 = EvalCase(
+    id='UI-048',
+    legacy_id='',
+    title='工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['判据 1·**规则删除 = 弹框**（不再就地展开）：点行的「删除」⇒ 弹框出现（`route-rule-delete-modal`），弹框**写清这条规则是什么**（触发类型 + 触发值 + 动作 + 目标工序，如「工艺 韩褶 → 在『三边』之后插入『韩褶』」）+ 影响（删除后不再增删这道工序；软删、历史加工单一字不变）；危险按钮用既有 danger 形态、取消为 secondary。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx「⑲-①」（**红证**：改前无弹框 ⇒ `Unable to find an element by: [data-testid="route-rule-delete-modal"]`，实测）', '判据 2·**取消 ⇒ 不发请求**，弹框关闭。证据：production-routings.test.tsx「⑲-②」', '判据 3·**删除中按钮禁用**（防重复提交）：确认按钮 loading 态禁用、取消按钮同时禁用；重复点击不会再发第二次请求。证据：production-routings.test.tsx「⑲-③」（`toBeDisabled()` + 二次点击后调用次数仍为 1）', '判据 4·**失败理由逐条在弹框里就地展示**（**不许**吞成一句「删除失败」）：后端 422 的 `error.details[].message` 逐条渲染（`route-rule-delete-reasons`），失败后弹框仍在（理由要看得见）。证据：production-routings.test.tsx「⑲-④」', '判据 5·**工序删除（抽屉那处）同一套弹框**（同一页面不留两套形态）：点抽屉里的「删除」⇒ `variant-delete-modal`，写清删的是哪一道变体（名字 + 覆盖部位）；取消不发请求。证据：production-routings.test.tsx「⑲-⑤」（**红证**：改前无弹框 ⇒ `Unable to find an element by: [data-testid="variant-delete-modal"]`，实测）', '判据 6·**不动删除的后端语义与护栏**（#4608 刚修好：显式写列 + `updated_at` 推进 + 护栏一字不动）：`DELETE /route-rules/{id}` 与 `DELETE /operations/{id}` 的端点、请求体、响应形态、护栏判据**逐字未动**（本单只改二次确认的**形态**）。既有删除断言（`variant-delete-reasons` / `route-rule-delete-reasons` 的逐条理由）一条未放宽。证据：ProductionRoutingReadControllerTest「DELETE /route-rules/{id} ⇒ 200 软删 {id,deleted:true}；不存在/已软删 ⇒ 404」未改 + production-routings.test.tsx 的既有 ⑰-⑯/⑰-⑰ 用例保留', '**边界（如实登记）**：本单**不动** `routings/page.tsx` 里 #4613（条件工序规则常驻展开）/ #4615（页头「新增工序」入口）涉及的外壳与按钮 —— 那两处由已合入的 #4618 落地，本单只在其之上改删除确认形态。'],
+    skip_reason='[backend-contract] 纯前端交互（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行',
+    tags=['ui', 'production-routing', 'route-rules', 'confirm-modal', 'admin-web'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -7061,6 +7097,7 @@ ALL_CASES = (
     _CASE_PG_050,
     _CASE_PG_051,
     _CASE_PG_052,
+    _CASE_PG_053,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,
@@ -7155,6 +7192,7 @@ ALL_CASES = (
     _CASE_UI_045,
     _CASE_UI_046,
     _CASE_UI_047,
+    _CASE_UI_048,
     _CASE_UT_001,
     _CASE_UT_002,
 )

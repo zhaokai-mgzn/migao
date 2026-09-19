@@ -7,6 +7,7 @@ import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPosition;
 import com.migao.admin.entity.ProductionOperationPositionPriceVersion;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductionCraftMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
 import com.migao.admin.mapper.ProductionOperationPositionMapper;
@@ -78,6 +79,8 @@ class ProductionOperationPositionCommandServiceTest {
     @Mock
     private ProductionCraftMapper productionCraftMapper;
     @Mock
+    private ProcessingItemMapper processingItemMapper;
+    @Mock
     private ProductionRouteSignalMapper productionRouteSignalMapper;
 
     /**
@@ -102,7 +105,7 @@ class ProductionOperationPositionCommandServiceTest {
         return new ProductionOperationPositionCommandService(productionOperationPositionMapper,
                 priceVersionMapper,
                 new ProductionRoutingReadService(productionOperationPositionMapper,
-                        productionRouteRuleMapper, queryService));
+                        productionRouteRuleMapper, queryService, processingItemMapper));
     }
 
     // ── 夹具 ──

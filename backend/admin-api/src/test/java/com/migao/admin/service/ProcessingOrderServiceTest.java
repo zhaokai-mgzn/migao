@@ -1591,6 +1591,63 @@ class ProcessingOrderServiceTest {
                 .doesNotContain("花边-布");
     }
 
+    /**
+     * issue #4616 **端到端判据**：界面新建的 **craft 触发**规则，订单实例化时**真的插了那道工序**。
+     *
+     * <p>为什么必须端到端：创建端点落库成功 ≠ 规则会生效 —— 触发键（{@code craft} 维）、
+     * {@code action}、目标工序逻辑名、锚点在**实例化路径**（{@code ProcessingOrderService.buildRoute}
+     * 的规则应用）里各自有一处口径。只断言「落库 trigger_kind='craft'」会漏掉
+     * 「规则建好了但订单里没插」这一形态（商家以为配了、加工单上却没有 = 本单要治的病）。</p>
+     *
+     * <p>规则是**取代**语义（{@link ProcessingOrderService} 的 {@code insertAfterLogical}：
+     * 先把序列里已有的该工序移除，再按锚点插入）⇒ 判据是「紧跟锚点 + 恰好一次」，
+     * 而不是「多了一道」（后者会把取代当成新增，且总道数会随锚点位置漂）。</p>
+     */
+    @Test
+    @DisplayName("#4616 craft 触发规则 ⇒ 订单实例化真的插该工序（在锚点之后，且恰好一次）")
+    void craftRuleInsertsConditionalOperationOnInstantiation() {
+        stubLibrary();
+        List<ProductionRouteRule> rows = new ArrayList<>(RoutingModelFixture.rulesWithFactors(TENANT));
+        rows.add(rule("rr-craft-roman", "craft", "罗马帘", "insert", "定型", "三边", 300));
+        when(productionOperationQueryService.routeRules(TENANT)).thenReturn(rows);
+        stubGenerate(List.of(processedItemWithSpec("item-1", "布艺遮光帘A", "米白",
+                List.of(Map.of("id", "p1", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("curtainType", "布帘", "craft", "罗马帘"))));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, atLeastOnce()).insert(captor.capture());
+        List<String> names = captor.getAllValues().stream()
+                .map(ProcessingPositionOperation::getOperationName).toList();
+        // 锚点「三边」之后插入逻辑工序「定型」（该部位落到工人端的变体 = 定型-布）
+        assertThat(names).as("自检：锚点必须真的在序列里（否则 indexOf=-1 会让断言退化）").contains("布三边");
+        assertThat(names.indexOf("定型-布")).as("craft 规则命中 ⇒ 定型-布 紧跟 布三边（锚点 三边）")
+                .isEqualTo(names.indexOf("布三边") + 1);
+        assertThat(names.stream().filter("定型-布"::equals).count())
+                .as("恰好一次（规则是**取代**：先把序列里已有的该工序移除再按锚点插入）").isEqualTo(1);
+
+        // 负例（同断言内，避免两条用例各自打桩漂移）：craft 不是「罗马帘」⇒ 该规则不命中，
+        // 序列逐字回到基线（定型-布 回到它原来的位置，不在 布三边 之后）
+        reset(positionOperationMapper);
+        stubGenerate(List.of(orderItemHanzhe("米白")));
+        var without = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(without.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingPositionOperation> captor2 =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(captor2.capture());
+        List<String> baseline = captor2.getAllValues().stream()
+                .map(ProcessingPositionOperation::getOperationName).toList();
+        assertThat(baseline).as("未命中 craft 规则 ⇒ 实例序列逐字等于基线")
+                .containsExactlyElementsOf(operationNames(V54_BULIAN_HANZHE));
+        assertThat(baseline.indexOf("定型-布")).as("定型-布 不在 布三边 之后（规则未生效）")
+                .isNotEqualTo(baseline.indexOf("布三边") + 1);
+    }
+
     @Test
     @DisplayName("#4577 任务B：processing_item 与 option 命中同一道工序 ⇒ 仍恰好一个（跨 kind 也取代）")
     void processingItemAndOptionHittingTheSameOperationInsertOnce() {
