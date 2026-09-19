@@ -536,6 +536,24 @@ export default function ProcessConfigPage() {
   )
 
   /**
+   * **跨形态勾选**（issue #4556 产品裁定 (a)；后端机制跟单 #4563）：既勾了基线帘种部位、
+   * 又勾了基线**之外**的部位（如 `布料`）。命中 ⇒ 就地提示。
+   *
+   * 为什么必须提示（读码实测的机制链）：路线命中是 `(is_default DESC, id ASC)` **首个命中**，
+   * 而新路线的 id 是 UUID（十六进制字符恒小于种子 `rt-v79-01`）⇒ 这条跨形态路线会**顶掉**
+   * 系统自带的布料专用路线 ⇒ 布料单改走窗帘主线，而窗帘各道工序对布料 `applicable=FALSE`
+   * ⇒ 被适用性矩阵滤掉 ⇒ **丢工序**（V79 只留 `配料`/`打包` 对布料适用）。
+   *
+   * 判据**不写死 `布料`**：以 `POSITION_DOMAIN`（基线帘种）为参照 ⇒ 将来新增第 5 个部位自动落入本提示。
+   */
+  const mixedFormPick = useMemo(() => {
+    const curtain = newRoute.positions.filter((p) => POSITION_DOMAIN.includes(p))
+    const others = newRoute.positions.filter((p) => !POSITION_DOMAIN.includes(p))
+    if (curtain.length === 0 || others.length === 0) return null
+    return { curtainText: curtain.join(' / '), othersText: others.join(' / ') }
+  }, [newRoute.positions])
+
+  /**
    * 行 = 逻辑工序（**保持服务端顺序**：`Map` 的插入顺序即首次出现顺序）。
    * ⚠️ **不过滤** `applicable=false` 的格 —— 「明确不做」与「没定价」必须在界面上可区分。
    */
@@ -1955,6 +1973,18 @@ export default function ProcessConfigPage() {
                 </label>
               ))}
             </div>
+            {/* 跨形态就地提示（#4556 裁定 (a)）：只提示、**不拦** —— 互斥/优先级是后端语义，跟单 #4563 */}
+            {mixedFormPick && (
+              <p
+                data-testid="routings-create-position-mixed-hint"
+                className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800"
+              >
+                ⚠️ 同时勾了帘种部位（{mixedFormPick.curtainText}）与「{mixedFormPick.othersText}」：
+                这条新路线会<strong>顶掉</strong>系统自带的「{mixedFormPick.othersText}」专用路线，
+                「{mixedFormPick.othersText}」单将按这条路线的工序出单 ⇒ 可能<strong>丢工序</strong>。
+                建议把「{mixedFormPick.othersText}」<strong>单独建一条路线</strong>（只勾它）。
+              </p>
+            )}
           </div>
         </div>
       </Modal>

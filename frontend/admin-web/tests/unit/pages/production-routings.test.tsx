@@ -20,6 +20,8 @@
 // ⑫ **新建路线的部位勾选与部位价目矩阵同源**（issue #4556）：包 F（#4529 / V79）落库的第 4 个部位
 //    `布料` 必须**可选**、能建出 `positions:['布料']` 的路线；矩阵读面 120 格**逐值不变**（回归）；
 //    不动勾选仍提交**基线三部位**（既有行为逐字不变）。
+// ⑬ **跨形态勾选就地提示**（#4556 产品裁定 (a)；后端机制跟单 #4563）：同勾「`布料` + 帘种部位」⇒
+//    提示「会顶掉布料专用路线 / 可能丢工序」；**只**勾 `布料`（布料专线）或只勾基线三部位 ⇒ **不**提示。
 // 反 placeholder：断言落**真实数据行**与**请求体**，不断言「页面存在」。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -1101,5 +1103,46 @@ describe('新建路线的部位选项（issue #4556：包 F 的第 4 个部位�
         positions: ['布帘', '纱帘', '帘头'],
       }),
     )
+  })
+
+  // ── 跨形态提示（issue #4556 产品裁定 (a)；后端机制跟单 #4563）──
+
+  it('裁定 (a) 文案**出现**形态：同勾「布料 + 帘种部位」⇒ 就地提示会顶掉布料专用路线 / 可能丢工序', async () => {
+    await renderOnRoutes()
+    await userEvent.click(screen.getByTestId('routings-new-route'))
+    // 默认已勾基线三部位 ⇒ 再勾第 4 部位 `布料` = 跨形态
+    await userEvent.click(screen.getByTestId('routings-create-position-布料'))
+
+    const hint = screen.getByTestId('routings-create-position-mixed-hint')
+    // 可行动：说清**机制**（顶掉）与**后果**（丢工序），并指名是哪两项
+    expect(hint).toHaveTextContent('顶掉')
+    expect(hint).toHaveTextContent('丢工序')
+    expect(hint).toHaveTextContent('布料')
+    expect(hint).toHaveTextContent('布帘')
+
+    // 取消勾选 `布料` ⇒ 提示随之消失（不是常驻噪音）
+    await userEvent.click(screen.getByTestId('routings-create-position-布料'))
+    expect(screen.queryByTestId('routings-create-position-mixed-hint')).toBeNull()
+  })
+
+  it('裁定 (a) **不出现**形态一：**只**勾「布料」（布料专线）⇒ 不提示 —— 这条正是本单要支持的建法', async () => {
+    await renderOnRoutes()
+    await userEvent.click(screen.getByTestId('routings-new-route'))
+    for (const p of ['布帘', '纱帘', '帘头']) {
+      await userEvent.click(screen.getByTestId(`routings-create-position-${p}`))
+    }
+    await userEvent.click(screen.getByTestId('routings-create-position-布料'))
+
+    expect(screen.getByTestId('routings-create-position-布料')).toBeChecked()
+    expect(screen.queryByTestId('routings-create-position-mixed-hint')).toBeNull()
+  })
+
+  it('裁定 (a) **不出现**形态二：只勾基线三部位（默认）⇒ 不提示（既有行为逐字不变）', async () => {
+    await renderOnRoutes()
+    await userEvent.click(screen.getByTestId('routings-new-route'))
+
+    expect(screen.getByTestId('routings-create-position-布帘')).toBeChecked()
+    expect(screen.getByTestId('routings-create-position-布料')).not.toBeChecked()
+    expect(screen.queryByTestId('routings-create-position-mixed-hint')).toBeNull()
   })
 })
