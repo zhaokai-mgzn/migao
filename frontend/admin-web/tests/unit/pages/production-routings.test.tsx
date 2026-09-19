@@ -1506,7 +1506,9 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await userEvent.click(screen.getByTestId('variant-delete-op-精裁-布'))
 
     const modal = await screen.findByTestId('variant-delete-modal', {}, { timeout: 1500 })
-    expect(modal).toHaveTextContent('精裁-布')
+    // 主标识 = **部位**（issue #4622：变体名不上界面 —— 改前这里断言的是 `精裁-布`）
+    expect(modal).toHaveTextContent('布帘')
+    expect(modal).not.toHaveTextContent('精裁-布')
     expect(modal).toHaveAttribute('data-variant', 'op-精裁-布')
     expect(mockDeleteOperation).not.toHaveBeenCalled()
 

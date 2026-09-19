@@ -3584,8 +3584,9 @@ export default function ProcessConfigPage() {
         {deleteOpTarget && (
           <div data-testid="variant-delete-modal" data-variant={deleteOpTarget.id} className="space-y-3 text-sm">
             <p className="text-neutral-600">
-              将删除工序<strong className="ml-1">{deleteOpTarget.name ?? deleteOpTarget.id}</strong>
-              （覆盖 {deleteOpTarget.positions.join(' / ')}）。
+              {/* 主标识 = **部位**（issue #4622：变体名不上界面；本弹框由 #4617 新增，
+                  合并时同步成同一口径 —— 与抽屉条目的主标识一致） */}
+              将删除这道工序在<strong className="mx-1">{deleteOpTarget.positions.join(' / ')}</strong>上的设置。
             </p>
             <p className="text-neutral-500">
               删除后它不再出现在工序库与部位价目里，新加工单不会再生成这道工序；
