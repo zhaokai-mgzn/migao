@@ -1,3 +1,7 @@
+// case_ids: OR-008, OR-009, OR-010
+// 声明理由（issue #4571）：本文件是 `tests/e2e/specs/orders/order-create.spec.ts` 的**静态测试数据**，
+// 与消费它的 spec 用**同一组用例**（该 spec 头部即 `// case_ids: OR-008, OR-009, OR-010`）。
+// 本次改动 = 加工项夹具名按 ERP 目录改名（`纳米圈打孔`→`打孔` 等）；**数据形状与断言强度一字未变**。
 /**
  * Test Data — Static constants for E2E tests.
  *
