@@ -677,7 +677,7 @@ cases:
       verifies: []
 
   # ==========================================================================
-  # PG-041：加工费**消费面**（issue #4406，P1；用户裁定 2026-09-19）
+  # PG-042：加工费**消费面**（issue #4406，P1；用户裁定 2026-09-19）
   #   「未定价组合 ⇒ 加工费 = 0（unpriced），直接切，不回落 Σ 加工项」
   #
   # 病根（本单修复前）：`processing_fee_combinations` 表**没有任何消费点** ——
@@ -694,7 +694,7 @@ cases:
   #   · 注入③「读面重算（不读落库值）」⇒ OrderServiceTest
   #     readPathsReturnStoredFeeNotRecomputed 红（98.40 vs Σ 加工项 19.00）。
   # ==========================================================================
-  - id: PG-041
+  - id: PG-042
     legacy_id: ""
     title: "加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项）"
     domains:

@@ -4984,9 +4984,9 @@ _CASE_PG_040 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-041 [NORMAL] 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项）（源: cases/processing.yml）──
-_CASE_PG_041 = EvalCase(
-    id='PG-041',
+# ── PG-042 [NORMAL] 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项）（源: cases/processing.yml）──
+_CASE_PG_042 = EvalCase(
+    id='PG-042',
     legacy_id='',
     title='加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项）',
     skill=Skill.PRODUCT,
@@ -6811,7 +6811,7 @@ ALL_CASES = (
     _CASE_PP_012,
     _CASE_PP_014,
     _CASE_PG_040,
-    _CASE_PG_041,
+    _CASE_PG_042,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

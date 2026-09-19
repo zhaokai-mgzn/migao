@@ -3083,7 +3083,7 @@
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-09-19 新增（issue #4386，P1；用户裁定「缺乏加工费的管理模块」+ 组合口径）。交付：V68 `processing_fee_combinations` + `processing_fee_combination_versions`（与 #4308 的 production_routing_versions 同构）+ 写面五条护栏（422 details 逐条 / 409 撞唯一键）+ `composition_key` 确定性归一化（与书写顺序无关）+ 缺口端点 + `/production/processing-fees` 管理页与侧边栏入口。**未做**：计价接线（不改 OrderService.sumProcessingFee / orders-new 页 / ai-agent）—— 本包交付的是**商家的配置面**（先例 #4308：先交付写面+护栏+缺口，消费面由 #4354 后续接）；`processing_rules` 落码不做。 ｜ tags: processing, processing_fee, fee_combination, composition_key, normalization, version_ledger, gap_visibility
 
-### PG-041. 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项） 🔵
+### PG-042. 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项） 🔵
 ```
 数据: success=true
 数据: 判据 1·**选配组合命中 ⇒ 落库加工费 = 该组合单价 × 加工费米数**（不再 Σ 加工项）：组合「定型+打孔+韩褶」定价 ¥8.00/米、加工费米数 12.30 米 ⇒ 行加工费 98.40（Σ 加工项口径会得 9.50×2×2 = 38.00），订单总额 = 商品 599.00 + 98.40 = 697.40。证据：ProcessingFeeCalculatorTest「matchedCombinationUsesCombinationPriceTimesProcessingMeters」+ OrderServiceTest「createOrder_processingFeeComesFromMatchedCombination」（**注入**：退回 Σ 加工项 ⇒ 总额断言红，实测 637.00 vs 697.40）
@@ -4788,5 +4788,5 @@
 - PP-012: 内部算料数量端点 - 应做数量=引擎输出/兜底 1/未知工序 fallback（单测覆盖）
 - PP-014: 工艺路线商家可配用户面 - 序列编辑护栏逐条可见 / 缺口区 / 信号映射 / 四态路线来源提示（前端单测覆盖）
 - PG-040: 加工费组合定价 - 组合→单价（元/米）写面五条护栏 + composition_key 归一化 + 版本账 + 未定价缺口可见
-- PG-041: 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项）
+- PG-042: 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项）
 
