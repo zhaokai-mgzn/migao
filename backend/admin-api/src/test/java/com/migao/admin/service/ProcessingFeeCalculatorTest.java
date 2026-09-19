@@ -1,10 +1,12 @@
 package com.migao.admin.service;
 
-// case_ids: PG-041
+// case_ids: PG-041, PG-042, PG-043
 
 import com.migao.admin.entity.ProcessingFeeCombination;
 import com.migao.admin.entity.ProcessingItem;
+import com.migao.admin.entity.ProductionRouteRule;
 import com.migao.admin.mapper.ProcessingFeeCombinationMapper;
+import com.migao.admin.mapper.ProductionRouteRuleMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -23,6 +25,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -63,16 +66,22 @@ class ProcessingFeeCalculatorTest {
     @Mock
     private ProcessingFeeCombinationMapper combinationMapper;
 
+    @Mock
+    private ProductionRouteRuleMapper routeRuleMapper;
+
     private ProcessingFeeCalculator calculator;
 
     @BeforeEach
     void setUp() {
-        // 取价查询用 `LambdaQueryWrapper<ProcessingFeeCombination>` ⇒ 断言查询条件需要 lambda 缓存
+        // 取价查询用 `LambdaQueryWrapper<…>` ⇒ 断言查询条件需要 lambda 缓存
         // （否则 `getSqlSegment()` 抛「can not find lambda cache」，断言退化成错误而不是结论）
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, ProcessingFeeCombination.class);
-        calculator = new ProcessingFeeCalculator(combinationMapper);
+        TableInfoHelper.initTableInfo(assistant, ProductionRouteRule.class);
+        // 默认：租户没有任何特殊选项价（既有用例的基线 —— 没选选项 ⇒ 金额与 #4406 逐分相同）
+        lenient().when(routeRuleMapper.selectList(any())).thenReturn(List.of());
+        calculator = new ProcessingFeeCalculator(combinationMapper, routeRuleMapper);
     }
 
     // ══════════════════════════ 夹具 ══════════════════════════
@@ -91,8 +100,27 @@ class ProcessingFeeCalculatorTest {
                 .build();
     }
 
+    /** 特殊选项规则行（V77 起带 `customer_unit_price`，元/套）。 */
+    private static ProductionRouteRule optionRule(String name, String customerUnitPrice) {
+        return ProductionRouteRule.builder()
+                .id("rr-option-" + name)
+                .tenantId(TENANT)
+                .triggerKind("option")
+                .triggerValue(name)
+                .action("insert")
+                .status("active")
+                .customerUnitPrice(customerUnitPrice == null ? null : new BigDecimal(customerUnitPrice))
+                .deleted(0)
+                .build();
+    }
+
     private void givenCombinations(ProcessingFeeCombination... rows) {
         when(combinationMapper.selectList(any())).thenReturn(List.of(rows));
+    }
+
+    /** 特殊选项价目（`customer_unit_price` 非空的行；NULL 行**不参与**取价 ⇒ `priced:false`）。 */
+    private void givenOptionRules(ProductionRouteRule... rows) {
+        when(routeRuleMapper.selectList(any())).thenReturn(List.of(rows));
     }
 
     /** 订单行选配（唯一生产者的形态：`processing_info` 顶层 + `processingItems[].name`）。 */
@@ -153,6 +181,14 @@ class ProcessingFeeCalculatorTest {
                 .containsEntry("meters_source", "processingMeters")
                 .containsEntry("fee_source", "matched");
         assertThat(fee.detail().get("items")).isEqualTo(List.of("定型", "打孔", "韩褶"));
+        // #4525 回归不变量：**没选特殊选项** ⇒ 空数组 + 合计 0 ⇒ 行金额与改前逐分相同
+        assertThat(fee.specialOptions()).isEmpty();
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("0");
+        assertThat(fee.lineAmount()).isEqualByComparingTo(fee.amount());
+        assertThat(fee.lineAmount()).isEqualByComparingTo("98.40");
+        assertThat(fee.detail())
+                .containsEntry("special_options", List.of());
+        assertThat((BigDecimal) fee.detail().get("special_options_total")).isEqualByComparingTo("0");
     }
 
     @Test
@@ -282,6 +318,182 @@ class ProcessingFeeCalculatorTest {
         assertThat(fee.feeSource()).isEqualTo("unpriced");
         assertThat(fee.unitPrice()).isEqualByComparingTo("8.00"); // 价命中了，缺的是米数
         assertThat(fee.hint()).isNotBlank().contains("米数");
+        // #4525：组合命中但缺米数 ⇒ 选项价**不参与**（金额仍是 0，不单独收选项价）
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("0");
+        assertThat(fee.lineAmount()).isEqualByComparingTo("0");
+    }
+
+    // ══════════════════════════ #4525 特殊选项按套计价（判据 1/2/3/10）══════════════════════════
+
+    @Test
+    @DisplayName("判据 1·加工费 = 组合价 × 米数 + Σ(选项价 × 套数)，逐分可核对（只算组合那半 ⇒ 红）")
+    void specialOptionsAddPerSetFeeOnTopOfCombinationHalf() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+        givenOptionRules(optionRule("加铅块", "6.00"), optionRule("接高", "2.50"));
+
+        Map<String, Object> info = processingInfo(new BigDecimal("12.30"), "韩褶", "打孔", "定型");
+        info.put("specialOptions", List.of("加铅块", "接高"));
+        ProcessingFeeCalculator.Fee fee = compute(info);
+
+        // 组合那半：8.00 × 12.30 = 98.40；选项那半：(6.00 + 2.50) × 1 = 8.50
+        assertThat(fee.amount()).isEqualByComparingTo("98.40");
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("8.50");
+        assertThat(fee.lineAmount()).isEqualByComparingTo("106.90");
+        // 逐项可核对（每项 = 单价 × 套数，套数恒 1 —— R8「1 套 = 1 个订单行」）
+        assertThat(fee.specialOptions()).hasSize(2);
+        for (ProcessingFeeCalculator.SpecialOption option : fee.specialOptions()) {
+            assertThat(option.sets()).isEqualTo(1);
+            assertThat(option.priced()).isTrue();
+            assertThat(option.amount()).isEqualByComparingTo(option.unitPrice());
+        }
+        // 只算组合那半 ⇒ 106.90 vs 98.40 必红
+        assertThat(fee.lineAmount()).isNotEqualByComparingTo(fee.amount());
+        // detail 契约（设计 §4.3：新增键只加不改）
+        assertThat(fee.detail()).containsKeys("special_options", "special_options_total");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) fee.detail().get("special_options");
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0)).containsEntry("name", "加铅块")
+                .containsEntry("sets", 1).containsEntry("priced", true);
+        assertThat(rows.get(0).get("unit_price")).isEqualTo(new BigDecimal("6.00"));
+        assertThat(rows.get(0).get("amount")).isEqualTo(new BigDecimal("6.00"));
+    }
+
+    @Test
+    @DisplayName("判据 1·选项名按 **Unicode 码点升序**（与书写顺序无关，两次生成逐值相同）")
+    void specialOptionsAreSortedByCodePoint() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+        givenOptionRules(optionRule("接高", "2.50"), optionRule("加铅块", "6.00"));
+
+        Map<String, Object> info = processingInfo(new BigDecimal("10.00"), "韩褶", "打孔", "定型");
+        info.put("specialOptions", List.of("接高", "加铅块"));   // 书写序：接(U+63A5) 在 加(U+52A0) 之前
+        ProcessingFeeCalculator.Fee fee = compute(info);
+
+        // 码点升序 ⇒ 「加」(U+52A0) 在前、「接」(U+63A5) 在后（**不是**书写顺序）
+        assertThat(fee.specialOptions()).extracting(ProcessingFeeCalculator.SpecialOption::name)
+                .containsExactly("加铅块", "接高");
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("8.50");
+
+        // 换一个书写顺序 ⇒ 明细**逐值相同**（顺序不确定 = 同一张单两次生成不同明细）
+        Map<String, Object> reordered = processingInfo(new BigDecimal("10.00"), "韩褶", "打孔", "定型");
+        reordered.put("specialOptions", List.of("加铅块", "接高"));
+        assertThat(compute(reordered).specialOptions()).isEqualTo(fee.specialOptions());
+    }
+
+    @Test
+    @DisplayName("判据 3·选项未定价（customer_unit_price IS NULL）⇒ priced:false + 计 0 + 可行动 hint")
+    void unpricedOptionIsExplicitlyVisibleAndNotSilentlyZero() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+        // 注入法：库里「接高」的 `customer_unit_price` 是 NULL ⇒ 取价侧命中不到 ⇒ priced:false。
+        // 若把它当 0 静默处理（不给 hint、priced 仍 true）⇒ 下面断言红。
+        givenOptionRules(optionRule("加铅块", "6.00"));
+
+        Map<String, Object> info = processingInfo(new BigDecimal("10.00"), "韩褶", "打孔", "定型");
+        info.put("specialOptions", List.of("加铅块", "接高"));
+        ProcessingFeeCalculator.Fee fee = compute(info);
+
+        // 组合那半有效 ⇒ fee_source 仍 matched（设计 §4.2）
+        assertThat(fee.feeSource()).isEqualTo("matched");
+        assertThat(fee.amount()).isEqualByComparingTo("80.00");
+        // 未定价项：单价 null + priced:false + 计 0
+        ProcessingFeeCalculator.SpecialOption unpriced = fee.specialOptions().stream()
+                .filter(o -> o.name().equals("接高")).findFirst().orElseThrow();
+        assertThat(unpriced.unitPrice()).isNull();
+        assertThat(unpriced.priced()).isFalse();
+        assertThat(unpriced.amount()).isEqualByComparingTo("0");
+        // 已定价项照收
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("6.00");
+        assertThat(fee.lineAmount()).isEqualByComparingTo("86.00");
+        // **可行动** hint（指向定价入口）—— 静默按 0 收 ⇒ hint 为 null ⇒ 红
+        assertThat(fee.hint()).isNotBlank().contains("接高").contains("未定价")
+                .contains("/production/processing-fees");
+        assertThat(fee.detail()).containsEntry("hint", fee.hint());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) fee.detail().get("special_options");
+        assertThat(rows.stream().filter(r -> "接高".equals(r.get("name"))).findFirst().orElseThrow())
+                .containsEntry("priced", false).containsEntry("unit_price", null);
+    }
+
+    @Test
+    @DisplayName("判据 2·组合未命中 ⇒ unpriced + 金额 0（选项价**不单独收**、不回落 Σ 加工项）")
+    void unmatchedCombinationDoesNotChargeSpecialOptionsAlone() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+        givenOptionRules(optionRule("加铅块", "6.00"));
+
+        // 本行选配「打孔+定型」（库里没这个组合）⇒ 组合那半未定价 ⇒ 整体 0。
+        // 注入法：若在未命中分支仍单独收选项价（6.00）或回落 Σ 加工项 ⇒ 下面两条断言红。
+        Map<String, Object> info = processingInfo(new BigDecimal("12.30"), "打孔", "定型");
+        info.put("specialOptions", List.of("加铅块"));
+        ProcessingFeeCalculator.Fee fee = compute(info);
+
+        assertThat(fee.feeSource()).isEqualTo("unpriced");
+        assertThat(fee.amount()).isEqualByComparingTo("0");
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("0");
+        assertThat(fee.lineAmount()).isEqualByComparingTo("0");
+        assertThat(fee.specialOptions()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("判据 10·两套账不互读：同表的计件系数档（factor）改了 ⇒ 对客加工费一字不变")
+    void customerFeeNeverReadsPieceworkFactor() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+        // 同一张表里塞一条**计件系数档**（车间成本账，`action='factor'`）——
+        // 注入法：若取价读 `factor`（或把 factor 行当选项价）⇒ 金额 ≠ 98.40 + 6.00 ⇒ 红。
+        givenOptionRules(optionRule("加铅块", "6.00"), ProductionRouteRule.builder()
+                .id("rr-factor-加铅块").tenantId(TENANT).triggerKind("option")
+                .triggerValue("加铅块").action("factor").operation(null)
+                .factor(new BigDecimal("1.700")).status("active").deleted(0).build());
+
+        Map<String, Object> info = processingInfo(new BigDecimal("12.30"), "韩褶", "打孔", "定型");
+        info.put("specialOptions", List.of("加铅块"));
+        ProcessingFeeCalculator.Fee fee = compute(info);
+
+        assertThat(fee.amount()).isEqualByComparingTo("98.40");
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("6.00");
+        assertThat(fee.lineAmount()).isEqualByComparingTo("104.40");
+    }
+
+    @Test
+    @DisplayName("特殊选项匹配**精确相等**（不得 contains）：名字差一个字 ⇒ 视为未定价，不误收")
+    void specialOptionMatchingIsExact() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+        givenOptionRules(optionRule("加铅块", "6.00"));
+
+        Map<String, Object> info = processingInfo(new BigDecimal("10.00"), "韩褶", "打孔", "定型");
+        info.put("specialOptions", List.of("铅块"));   // 缺「加」字 ⇒ 不是同一个选项
+        ProcessingFeeCalculator.Fee fee = compute(info);
+
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("0");
+        assertThat(fee.specialOptions().get(0).priced()).isFalse();
+        assertThat(fee.lineAmount()).isEqualByComparingTo("80.00");
+    }
+
+    @Test
+    @DisplayName("读面（storedFee）：落库明细里的选项价原样读出，**不重算**（R13 快照冻结）")
+    void storedFeeReadsPersistedSpecialOptions() {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("composition", "定型+打孔+韩褶");
+        detail.put("items", List.of("定型", "打孔", "韩褶"));
+        detail.put("unit_price", new BigDecimal("8.00"));
+        detail.put("meters", new BigDecimal("12.30"));
+        detail.put("fee_source", "matched");
+        detail.put("amount", new BigDecimal("98.40"));
+        detail.put("special_options", List.of(Map.of(
+                "name", "加铅块", "unit_price", new BigDecimal("6.00"), "sets", 1,
+                "amount", new BigDecimal("6.00"), "priced", true)));
+        detail.put("special_options_total", new BigDecimal("6.00"));
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("processingFeeDetail", detail);
+
+        ProcessingFeeCalculator.Fee fee = ProcessingFeeCalculator.storedFee(info);
+
+        assertThat(fee).isNotNull();
+        assertThat(fee.amount()).isEqualByComparingTo("98.40");
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("6.00");
+        assertThat(fee.lineAmount()).isEqualByComparingTo("104.40");
+        assertThat(fee.specialOptions()).hasSize(1);
+        assertThat(fee.specialOptions().get(0).name()).isEqualTo("加铅块");
+        assertThat(fee.specialOptions().get(0).priced()).isTrue();
     }
 
     @Test

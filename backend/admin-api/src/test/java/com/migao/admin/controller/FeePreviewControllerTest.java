@@ -59,8 +59,14 @@ class FeePreviewControllerTest extends BaseControllerTest {
         mockMvc = buildMockMvc(new FeePreviewController(calculator));
     }
 
-    /** 命中组合：¥10.00/米 × 13.3 米 = ¥133.00（与 #4406 的取价口径同形） */
+    /** 命中组合：¥10.00/米 × 13.3 米 = ¥133.00（与 #4406 的取价口径同形；#4525 起另加 Σ 选项价） */
     private static ProcessingFeeCalculator.Fee matched() {
+        return matchedWithOptions(List.of(), BigDecimal.ZERO);
+    }
+
+    /** 命中组合 + 逐项选项价（#4525 设计 §4.3：`special_options` / `special_options_total`）。 */
+    private static ProcessingFeeCalculator.Fee matchedWithOptions(
+            List<ProcessingFeeCalculator.SpecialOption> options, BigDecimal optionsTotal) {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("composition", "韩式褶");
         detail.put("items", List.of("韩式褶"));
@@ -71,11 +77,13 @@ class FeePreviewControllerTest extends BaseControllerTest {
         detail.put("meters_source", "processingMeters");
         detail.put("fee_source", "matched");
         detail.put("amount", new BigDecimal("133.00"));
+        detail.put("special_options", List.of());
+        detail.put("special_options_total", optionsTotal);
         detail.put("hint", null);
         return new ProcessingFeeCalculator.Fee(
                 new BigDecimal("133.00"), "matched", "韩式褶", List.of("韩式褶"), "rule-1",
                 new BigDecimal("10.00"), "manual", new BigDecimal("13.3"), "processingMeters",
-                detail, null);
+                options, optionsTotal, detail, null);
     }
 
     private static ProcessingFeeCalculator.Fee unpriced() {
@@ -85,10 +93,13 @@ class FeePreviewControllerTest extends BaseControllerTest {
         detail.put("meters", new BigDecimal("13.3"));
         detail.put("fee_source", "unpriced");
         detail.put("amount", BigDecimal.ZERO);
+        detail.put("special_options", List.of());
+        detail.put("special_options_total", BigDecimal.ZERO);
         detail.put("hint", "该组合未定价，请到加工费组合里配置");
         return new ProcessingFeeCalculator.Fee(
                 BigDecimal.ZERO, "unpriced", "韩式褶", List.of("韩式褶"), null,
-                null, null, new BigDecimal("13.3"), "processingMeters", detail,
+                null, null, new BigDecimal("13.3"), "processingMeters",
+                List.of(), BigDecimal.ZERO, detail,
                 "该组合未定价，请到加工费组合里配置");
     }
 
@@ -107,6 +118,30 @@ class FeePreviewControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.items[0].processingFeeDetail.unit_price").value(10.00))
                 .andExpect(jsonPath("$.data.items[0].processingFeeDetail.meters").value(13.3))
                 .andExpect(jsonPath("$.data.processingFeeTotal").value(133.00));
+    }
+
+    @Test
+    @DisplayName("#4525：行 processingFee = 组合那半 + Σ 选项价，选项明细逐项透出（含未定价项）")
+    void passesSpecialOptionsThroughWithLineAmount() throws Exception {
+        List<ProcessingFeeCalculator.SpecialOption> options = List.of(
+                new ProcessingFeeCalculator.SpecialOption("加铅块", new BigDecimal("6.00"), 1,
+                        new BigDecimal("6.00"), true),
+                new ProcessingFeeCalculator.SpecialOption("接高", null, 1, BigDecimal.ZERO, false));
+        when(calculator.feesFor(any(), any()))
+                .thenReturn(List.of(matchedWithOptions(options, new BigDecimal("6.00"))));
+
+        mockMvc.perform(post(URL).contentType(APPLICATION_JSON).content("""
+                        {"items":[{"processingInfo":{"processingItems":[{"name":"韩式褶"}]}}]}
+                        """))
+                .andExpect(status().isOk())
+                // 行金额 = 133.00 + 6.00（只算组合那半 ⇒ 133.00 ⇒ 红）
+                .andExpect(jsonPath("$.data.items[0].processingFee").value(139.00))
+                .andExpect(jsonPath("$.data.items[0].specialOptionsTotal").value(6.00))
+                .andExpect(jsonPath("$.data.items[0].specialOptions.length()").value(2))
+                .andExpect(jsonPath("$.data.items[0].specialOptions[1].name").value("接高"))
+                .andExpect(jsonPath("$.data.items[0].specialOptions[1].priced").value(false))
+                .andExpect(jsonPath("$.data.items[0].processingFeeDetail.special_options_total").value(6.00))
+                .andExpect(jsonPath("$.data.processingFeeTotal").value(139.00));
     }
 
     @Test

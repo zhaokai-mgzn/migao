@@ -2936,7 +2936,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4454）：用户裁定「如果担心 AI 不理解一些略语，可以在知识卡片中内置行业知识」—— 「AI 听不懂行话」是**知识问题**（理解层），不是后端路线派生问题。本用例把判据挂在**落库值**上：行话 → 内部值（`韩式褶`→`韩褶`、`纳米圈`→`打孔`族）。配套改动：`prompts/order.md`（B 端）+ C 端 `customer_order` 内联 prompt 补「术语映射」段（部位 + 工艺两维度）、真值源 §8 补录工艺词汇两行、知识模板内置行业术语条目、`local_runner` 的 `db_verify[order_items]` 加 `expect_craft`/`forbid_craft` 能力。**不改运行时业务逻辑、不降任何既有断言。** ｜ tags: order_create, craft_spec, glossary, industry_terms
 
-## 加工项域（12 case）
+## 加工项域（13 case）
 
 ### PP-002. 加工项分类列表 🔵
 ```
@@ -3132,6 +3132,20 @@
 跳过: [backend-contract] 后端契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCalculatorTest + OrderServiceTest 执行
 ```
 溯源: 2026-09-19 新增（issue #4406，P1；用户裁定「未定价组合 ⇒ 加工费 = 0（unpriced），直接切，不回落 Σ 加工项」）。交付：ProcessingFeeCalculator（选配 → 归一化组合键 → 匹配 processing_fee_combinations → 单价 × 加工费米数）+ OrderService 接线（创建/列表/详情三条读面）+ processingFeeDetail 可审计构成随行落库 + fee_source 三态。**未做**：前端下单页改调服务端计价、C 端 DEFAULT_PROCESSING_PRICE 降级为种子（双算 R10 未闭合）、manual 改价通道、ai-agent 侧推广。 ｜ tags: processing_fee, fee_combination, consumption_face, fee_source, unpriced, snapshot_priority
+
+### PG-043. 特殊选项按套计价（包 A）- route_rules 加对客单价列 + 加工费 = 组合价×米数 + Σ(选项价×套数) + 92 行合成价目 🔵
+```
+数据: 判据 1·**行加工费 = 组合价(元/米) × 加工费米数 + Σ 选中特殊选项(单价(元/套) × 套数)**，套数恒 1（R8「1 套 = 1 个订单行」），逐分可核对：组合 ¥8.00/米 × 12.30 米 = 98.40，选项「加铅块」¥6.00/套 +「接高」¥2.50/套 = 8.50 ⇒ 行金额 106.90（**只算组合那半 ⇒ 98.40 ⇒ 红**）。证据：ProcessingFeeCalculatorTest「specialOptionsAddPerSetFeeOnTopOfCombinationHalf」（+ FeePreviewControllerTest「passesSpecialOptionsThroughWithLineAmount」钉 HTTP 面 139.00）。**回归不变量**：没选任何特殊选项 ⇒ `special_options` 为空数组且 `special_options_total = 0`，行金额与 #4406 口径逐分相同（`matchedCombinationUsesCombinationPriceTimesProcessingMeters`）。
+数据: 判据 3·**选项未定价（`customer_unit_price IS NULL`）⇒ `special_options[].priced=false` + 单价 null + 计 0 + 可行动 hint**（指向 `/production/processing-fees`），且 `fee_source` 仍 `matched`（组合那半有效）；**静默按 0 收（priced=true / hint=null）⇒ 红**。证据：ProcessingFeeCalculatorTest「unpricedOptionIsExplicitlyVisibleAndNotSilentlyZero」。匹配必须**精确相等**（名字差一个字 ⇒ 视为未定价，不误收）：「specialOptionMatchingIsExact」。
+数据: 判据 2·**组合未命中 ⇒ 整体 `unpriced` + 金额 0，且选项价不单独收、不回落 Σ 加工项**（既有纪律不变）。证据：ProcessingFeeCalculatorTest「unmatchedCombinationDoesNotChargeSpecialOptionsAlone」（注入：未命中分支仍收 6.00 或回落 Σ 加工项 ⇒ 红）。
+数据: 判据 9·**测试数据带 `source='synthetic'` 且两次生成逐值相同**：V77 的组合价目（92 行 = 91 组合 + 缎带）与选项价（16 条）逐值等于固定种子生成器 `tests/unit_ci_workflows/synthetic_processing_fee_data.py` 的重算结果；e2e fixture 重建为 L2 特征词典（旧的 13 条编造数据一条不剩）。证据：tests/unit_ci_workflows/test_option_fee_seed.py「test_seed_rows_match_the_deterministic_generator」「test_seed_is_deterministic_across_two_runs」「test_seed_carries_synthetic_provenance」「test_e2e_fixture_is_the_rebuilt_feature_dictionary」。
+数据: 判据 10·**计件路径零读取 `customer_unit_price`**（两套账不互读）：全 `main` 源码里该标识符只允许出现在取价层（ProcessingFeeCalculator）与实体字段声明；同表 `factor`（计件系数）改了 ⇒ 对客加工费一字不变。证据：test_option_fee_seed.py「test_piecework_paths_never_read_customer_unit_price」（含注入式自证 test_piecework_read_guard_detects_injected_read）+ ProcessingFeeCalculatorTest「customerFeeNeverReadsPieceworkFactor」。
+数据: 判据 11·**历史订单一字不变**（R13 快照冻结）：读面仍读落库的 `processingFeeDetail`（`storedFee`），**不重算**；落库明细里的选项价原样读出。证据：test_option_fee_seed.py「test_read_paths_still_read_the_persisted_detail」+ ProcessingFeeCalculatorTest「storedFeeReadsPersistedSpecialOptions」。
+数据: 迁移面·V77 **幂等**且带 `COMMENT ON COLUMN`（写明「对客售价账」+「计件路径绝不读本列」+「NULL = 未定价」）；bootstrap `docs/sql/schema.sql` 同步终态（该路径不跑迁移链）。证据：test_option_fee_seed.py「test_v77_adds_customer_unit_price_column」「test_v77_migration_is_idempotent」「test_schema_sql_carries_the_new_column」。
+数据: **与设计文档的冲突（以代码事实为准，已显式登记）**：设计 §7 写「19 项特殊选项价」，但 §4.1 冻结「非 `option` 行一律 `NULL`」；19 项里只有 **16 项**在 `production_route_rules` 里是 `trigger_kind='option'` 行（`余料带回-布`/`余料带回-纱` 不计件、`一分为二` 只有计件系数档）⇒ 只给这 16 条定价，另 3 项**不造规则行**（造了就违反 §4.1 与 R11 边界）。逐条点名判据：test_priced_option_rows_are_exactly_the_option_rules。**D5 豁免**：`routing.py::ROUTE_RULES` 不带本列（agent 侧豁免）⇒ test_production_catalog_seed.py 显式登记为**债务类**豁免，待 agent 统一重构时销账。
+跳过: [backend-contract] 后端契约 + 迁移/种子守卫（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCalculatorTest / FeePreviewControllerTest / tests/unit_ci_workflows/test_option_fee_seed.py 执行
+```
+溯源: 2026-09-19 新增（issue #4525，设计 docs/design/processing-fee-and-option-pricing.md 包 A）。交付：V77 迁移（`production_route_rules.customer_unit_price NUMERIC(12,2)` + 92 行组合价 + 16 条选项价，均 `source='synthetic'`）+ ProductionRouteRule 实体字段 + ProcessingFeeCalculator 两层取价（组合 × 米数 + Σ 选项 × 1，新增 `special_options` / `special_options_total` 键，行金额 = 两者之和）+ schema.sql 终态 + e2e fixture 重建 + 合成数据生成器与守卫。**未做（如实登记）**：① 设计 §7 的「19 项」按代码事实落为 16 项（3 项无 option 规则行，见 data_checks 末条）；② 前端展示面（包 B）与 #4452 信号映射（包 C）不在本单；③ `fee_source=manual` 通道仍未落码。 ｜ tags: processing_fee, special_options, per_set, customer_unit_price, migration_v77, synthetic_seed
 
 ## processing-order（40 case）
 
@@ -4717,8 +4731,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：345（活跃 155，跳过 190）
-- tier 分布：smoke 10 / normal 304 / adversarial 31
+- 用例总数：346（活跃 155，跳过 191）
+- tier 分布：smoke 10 / normal 305 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4736,7 +4750,7 @@
 - onboarding：5
 - ontology：4
 - 订单域：37
-- 加工项域：12
+- 加工项域：13
 - processing-order：40
 - 商品域：21
 - registry：1
@@ -4825,4 +4839,5 @@
 - PP-014: 工艺路线商家可配用户面 - 序列编辑护栏逐条可见 / 缺口区 / 信号映射 / 四态路线来源提示（前端单测覆盖）
 - PG-040: 加工费组合定价 - 组合→单价（元/米）写面五条护栏 + composition_key 归一化 + 版本账 + 未定价缺口可见
 - PG-042: 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项）
+- PG-043: 特殊选项按套计价（包 A）- route_rules 加对客单价列 + 加工费 = 组合价×米数 + Σ(选项价×套数) + 92 行合成价目
 

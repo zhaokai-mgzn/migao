@@ -39,6 +39,9 @@ class AgentOrderServiceTest {
     /** 加工费组合价目表（issue #4406 的取价依赖；本类不涉及加工费口径 ⇒ 空表 ⇒ 未定价 0） */
     @Mock(lenient = true)
     private com.migao.admin.mapper.ProcessingFeeCombinationMapper processingFeeCombinationMapper;
+    /** 特殊选项对客单价（issue #4525 的取价依赖；本类不涉及 ⇒ 空表 ⇒ 选项计 0） */
+    @Mock(lenient = true)
+    private com.migao.admin.mapper.ProductionRouteRuleMapper routeRuleMapper;
 
     @Mock private OrderMapper orderMapper;
     @Mock private OrderItemMapper orderItemMapper;
@@ -60,7 +63,7 @@ class AgentOrderServiceTest {
         // 为什么不用 @Mock：@InjectMocks 的构造注入发生在本方法之前 ⇒ 直接塞 mock 会把
         // 「谁发射加工费」这条接线本身也 mock 掉（接线判据就失去意义）。
         ReflectionTestUtils.setField(orderService, "processingFeeCalculator",
-                new ProcessingFeeCalculator(processingFeeCombinationMapper));
+                new ProcessingFeeCalculator(processingFeeCombinationMapper, routeRuleMapper));
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, Order.class);
