@@ -1,9 +1,9 @@
 # case_ids: OR-026
 """`must_fail` 的**参数值级作用域** + 配置 fail-closed（issue #3689，确定性层 / 零 LLM）。
 
-**为什么需要**：OR-026（`.github/cases/order.yml:1573`）要的不变式是
+**为什么需要**：OR-026（`.github/cases/order.yml` 里 `must_fail` 参数值级作用域那条用例）要的不变式是
 「**任何一次以非法号码 `05718886666` 为 `customer_phone` 的 `order_create` 都不得成功**」。
-`must_fail` 原有粒度只有 **工具×action**（`local_runner.py:1567`），三种写法逐一验过都不成立：
+`must_fail` 原有粒度只有 **工具×action**（`local_runner.py` 的 `check_expectation` / `_round_call_success` 一族），三种写法逐一验过都不成立：
 
 | 写法 | 结果 |
 |---|---|

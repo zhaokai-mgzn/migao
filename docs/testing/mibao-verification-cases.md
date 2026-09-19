@@ -619,7 +619,7 @@
 数据: product_detail 正确使用 product_search 返回的 ID（按商品名解析到同一件，不重新问顾客）
 ```
 真值: ai-chat.intent-domains, ai-chat.context-memory
-溯源: eval M012 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实商品 ｜ tags: multi_turn, casual_chat, context_isolation
+溯源: eval M012 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实商品；2026-09-19（issue #4454 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（**有意不声明 `namespaces`**：只读用例声明它会被判 CASE-TRUST-NO-SELF-CLEAN = 账面新增违规，与「只许缩短」冲突） —— R5 按**商品名**定位商品，「该名字唯一」是它真正依赖且**只读**的前置（同名副本 >1 时 agent 会正确地反问要哪一件，固定轮次表会把合理行为判成「没调 product_detail」= 归因全错）；口径与 `pre_clean` 的商品定位同一份（`_list_products_matching`），先例 = OR-014 / CH-019 / CR-001 / OR-009。断言（user_inputs / expectations / data_checks）原样未动、无放宽。 ｜ tags: multi_turn, casual_chat, context_isolation
 
 ### CH-008. 顾客要求转人工 → 系统无人工转接通道，AI 如实告知并自行受理（不得假承诺转接） 🔵
 ```
@@ -2246,7 +2246,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（35 case）
+## 订单域（36 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2901,6 +2901,24 @@
 跳过: [backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx 执行
 ```
 溯源: 2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4421 / #4434（下单页算料试算接线 —— 布艺工艺规格链路的「算料」半边）的行为此前**零评测用例**，新增测试借 `OR-009`（下单全流程）/ `OR-014`（下单加工项数量规则）/ `UI-038`（新增订单表单**选择已有客户**）过门禁 —— 三条都**不覆盖**算料试算（`UI-038` 与被测行为完全无关）。本用例把判据挂到真实行为上：算料试算的三条 fail-closed + 用料来源两态 + 签名去重。**不改运行时行为、不改断言强度**。 ｜ tags: order, craft_spec, craft_calc, backend_contract
+
+### OR-037. 行话下单落内部值 - 顾客说「韩式褶」「纳米圈」⇒ craft 落「韩褶」「打孔」（不是原话） 🔵
+```
+你: 我想买遮光窗帘，米白 3 米，要韩式褶的，加工项要纳米圈
+你: [🔁 按目标工具重复直至成功：order_create，最多 8 次]
+期望: order_create
+数据: 顾客说「韩式褶」⇒ `processing_info.craft` 落内部值 `韩褶`（真值源 §8 工艺行的内部值），**不是**原话「韩式褶」——原话不是合法工艺值，工序路线按 部位×工艺 索引 ⇒ 取不到就只能靠加工项名猜（V58 实证工序与计件工资全错）。
+数据: 顾客说「纳米圈」⇒ 加工项侧照常按店铺目录匹配（`processing_item_query`），工艺侧仍落内部值；「纳米圈」属**打孔**一族的顾客说法，**不得**被当成 `craft` 的取值写库。
+数据: **红证（实现前）**：`prompts/order.md` 与 C 端 `customer_order` 内联 prompt 均**无**「术语映射」段（实测 术语映射段=0 / craft 提及=0）⇒ AI 无依据把口语译成内部值；且 `db_verify[order_items]` 当时**没有** craft 断言能力（只核对 productName/quantity）⇒ 落了原话也不会有任何东西变红。
+数据: **单一真值源**：术语表权威源 = `docs/curtain-production-rules.md` §8「术语表（AI 词汇底座，跨模块统一）」；两条 prompt 的术语映射段与知识卡片条目逐条由它派生，漂移由 `backend/ai-agent-service/tests/test_issue_4454_craft_glossary.py` 拦（双向包含：prompt 不得自创、真值源不得漏抄）。
+清理: product_dedupe(product_keyword=遮光窗帘)
+时序: interact[confirm] before order_create
+必须成功: order_create
+金额: order_create 「遮光窗帘」 → unit_price; subtotal; total
+落库: order_items → source=order_create; expect_craft=['韩褶']; forbid_craft=['韩式褶', '纳米圈', '罗马圈', 'S钩', '调节钩', '眼环']
+载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
+```
+溯源: 2026-09-19 新增（issue #4454）：用户裁定「如果担心 AI 不理解一些略语，可以在知识卡片中内置行业知识」—— 「AI 听不懂行话」是**知识问题**（理解层），不是后端路线派生问题。本用例把判据挂在**落库值**上：行话 → 内部值（`韩式褶`→`韩褶`、`纳米圈`→`打孔`族）。配套改动：`prompts/order.md`（B 端）+ C 端 `customer_order` 内联 prompt 补「术语映射」段（部位 + 工艺两维度）、真值源 §8 补录工艺词汇两行、知识模板内置行业术语条目、`local_runner` 的 `db_verify[order_items]` 加 `expect_craft`/`forbid_craft` 能力。**不改运行时业务逻辑、不降任何既有断言。** ｜ tags: order_create, craft_spec, glossary, industry_terms
 
 ## 加工项域（11 case）
 
@@ -4667,8 +4685,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：342（活跃 154，跳过 188）
-- tier 分布：smoke 10 / normal 301 / adversarial 31
+- 用例总数：343（活跃 155，跳过 188）
+- tier 分布：smoke 10 / normal 302 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4685,7 +4703,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：35
+- 订单域：36
 - 加工项域：11
 - processing-order：40
 - 商品域：21
@@ -4726,6 +4744,7 @@
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
 - OR-036: 下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）
+- OR-037: 行话下单落内部值 - 顾客说「韩式褶」「纳米圈」⇒ craft 落「韩褶」「打孔」（不是原话）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

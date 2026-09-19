@@ -103,6 +103,15 @@ MAPPING_RULES = [
     # 承载文件 = 客户档案 Tool 本体 + 客户域 Skill/prompt/示例（相对 app/ 的路径）。
     (r"customer_(manage|skill|general_skill)|prompts/customer\.md|SKILL-customer|EXAMPLES-customer",
      ["CU-003", "CU-004"]),
+    # C 端下单采集 Skill 本体（`customer_order_skill.py` 的**内联 L4 prompt**）→ OR-037 —— #4454 补齐。
+    # 为什么必须补：C 端 6 个域的领域规则**大量写在内联 prompt**（不是 `prompts/{skill}.md`）——
+    # 实测 `prompts/customer_order.md` **不存在** ⇒ 上方 `prompt` 关键词规则与
+    # `prompts/order.md` 规则**都命不中**它 ⇒ 改 C 端下单采集口径（本单补的「术语映射」段就在
+    # 这里）此前**一条 OR 用例都不跑**（§19.1「改了 X 门禁一条 X 的用例都没跑」同族）。
+    # ⚠️ 本规则与上方 customer 规则是**并集**：`customer_order_skill.py` 也命中
+    # `customer_(manage|skill|...)` ⇒ 会一并选中 CU-003/CU-004（那是**有意**的：该文件里
+    # 内联 prompt 的下单流程与客户域共用 `customer_address_query` 预填口径）。
+    (r"app/graph/skills/customer_order_skill\.py", ["OR-037"]),
     # 人事（员工 / 角色）Skill 本体 → HR-001（员工列表 → employee_manage(list)）、
     # HR-005（建角色 + 分配权限 → role_manage(create) + **确认卡轮**）—— #3624 补齐。
     # 为什么现在必须补：#3577（产品裁定「交互形态统一」）刚给 staff 绑上 `interact`

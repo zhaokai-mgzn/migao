@@ -2736,3 +2736,103 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # OR-037（issue #4454，2026-09-19）：**行业术语理解归位「理解层」**
+  # ══════════════════════════════════════════════════════════════════════════
+  # 为什么必须补（本单新增的正是**行为断言**，属 `migao-dev-flow` §14 的必补项）：
+  # 顾客/商家说行话时，AI 必须把它译成**内部值**再落库 —— 落顾客原话会让工序路线
+  # （按 `部位 × 工艺` 索引）取不到、加工单与计件工资全错（V58 实证：纱帘订单拿到
+  # 布帘的 11 道工序）。此前**零用例**覆盖「行话 → 内部值」这条链。
+  - id: OR-037
+    legacy_id: ""
+    title: "行话下单落内部值 - 顾客说「韩式褶」「纳米圈」⇒ craft 落「韩褶」「打孔」（不是原话）"
+    domains:
+      - order
+      - chat
+    tier: normal
+    # 单端标注：期望工具 order_create ⊆ 小布工具集 ⇒ 只能跑小布腿（同 OR-014 口径）。
+    persona: xiaobu
+    tags:
+      - order_create
+      - craft_spec
+      - glossary
+      - industry_terms
+    truths_ref: []
+    # ── 顾客**只说行话**，全程不出现任何内部值 ──────────────────────────────
+    # 「韩式褶」= 内部值 `韩褶`、「纳米圈」= 内部值 `打孔`（真值源 §8「工艺 / 安装工艺」行）。
+    # 若 AI 直接把原话写进 `craft`，回复里可能完全看不出问题（话术对、字段错）⇒
+    # 判据必须落在**落库值**上（见 db_verify 的 expect_craft / forbid_craft）。
+    auto_fill:
+      customer_name: "张三"
+      customer_phone: "13800138000"
+      customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+      color: "米白"
+      colorName: "米白"
+    user_inputs:
+      - "我想买遮光窗帘，米白 3 米，要韩式褶的，加工项要纳米圈"
+      # 协作轮（范式同 OR-014 / #3646）：有卡答卡（confirm→点确认卡 / choice→首项 /
+      # form→回填 auto_fill）→ 被问验证码就供码 → 否则说确认，直到 order_create 成功。
+      - repeat_until:
+          tool_called: order_create
+          max: 8
+        code: "123456"
+        fallback: "确认下单"
+        form_values:
+          customer_name: "张三"
+          customer_phone: "13800138000"
+          customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
+          color: "米白"
+          colorName: "米白"
+    expectations:
+      - tool: order_create
+    must_succeed:
+      - tool: order_create
+    # 金额正确性断言（issue #3365）：单价接地（= 商品库价）+ 小计/总额自洽 ——
+    # 本用例的「听懂了」不得以牺牲金额正确性为代价（同 OR-014 口径）。
+    amount_verify:
+      - tool: order_create
+        product_name: "遮光窗帘"
+        checks: [unit_price, subtotal, total]
+    # C 端写用例必须断言「顾客先看到明细卡、之后才落库」（守卫 = tests/unit_ci_workflows/
+    # test_xiaobu_coverage.py::test_every_xiaobu_write_case_asserts_confirm_card_first）。
+    order_before:
+      - "interact[confirm] before order_create"
+    # ── 落库值断言（本单的核心判据，能力由本 PR 加到 local_runner 的 db_verify[order_items]）──
+    # 读**订单明细的 `processing_info.craft`**（落库回读，不是工具传参）：
+    #   · expect_craft  → 必须含内部值（证明「听懂了」并真的译了）
+    #   · forbid_craft  → 不得含顾客原话（证明「没有直接落原话」）
+    # 为什么读落库而不是只看传参：`OrderLineCraftFields` 只搬运、不做枚举校验 ⇒ 传参面
+    # 与落库面同形，但**落库才是加工单侧真正消费的那份**（加工单快照读列）。
+    # 为什么不查 `curtainType`：本用例的顾客原话没有部位口语说法（不编造前置）。
+    db_verify:
+      - fetch: order_items
+        source: order_create
+        expect_craft: ["韩褶"]
+        forbid_craft: ["韩式褶", "纳米圈", "罗马圈", "S钩", "调节钩", "眼环"]
+    data_checks:
+      - "顾客说「韩式褶」⇒ `processing_info.craft` 落内部值 `韩褶`（真值源 §8 工艺行的内部值），**不是**原话「韩式褶」——原话不是合法工艺值，工序路线按 部位×工艺 索引 ⇒ 取不到就只能靠加工项名猜（V58 实证工序与计件工资全错）。"
+      - "顾客说「纳米圈」⇒ 加工项侧照常按店铺目录匹配（`processing_item_query`），工艺侧仍落内部值；「纳米圈」属**打孔**一族的顾客说法，**不得**被当成 `craft` 的取值写库。"
+      - "**红证（实现前）**：`prompts/order.md` 与 C 端 `customer_order` 内联 prompt 均**无**「术语映射」段（实测 术语映射段=0 / craft 提及=0）⇒ AI 无依据把口语译成内部值；且 `db_verify[order_items]` 当时**没有** craft 断言能力（只核对 productName/quantity）⇒ 落了原话也不会有任何东西变红。"
+      - "**单一真值源**：术语表权威源 = `docs/curtain-production-rules.md` §8「术语表（AI 词汇底座，跨模块统一）」；两条 prompt 的术语映射段与知识卡片条目逐条由它派生，漂移由 `backend/ai-agent-service/tests/test_issue_4454_craft_glossary.py` 拦（双向包含：prompt 不得自创、真值源不得漏抄）。"
+    pre_clean:
+      - type: product_dedupe
+        product_keyword: "遮光窗帘"
+    # 命名空间（CASE-TRUST-NO-SELF-CLEAN 的整条销账形态，先例 = OR-014 / CH-010 / CH-019）：
+    # 本用例**会建单**（写用例）⇒ 必须声明它与谁争用共享夹具；否则并行用例互相污染时，
+    # 红的表现是 `unmatched expectation`（看起来像 agent 不干活，归因全错）。
+    namespaces:
+      - "product_name:遮光窗帘"
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
+    skip_reason: ""
+    merge_log: "2026-09-19 新增（issue #4454）：用户裁定「如果担心 AI 不理解一些略语，可以在知识卡片中内置行业知识」—— 「AI 听不懂行话」是**知识问题**（理解层），不是后端路线派生问题。本用例把判据挂在**落库值**上：行话 → 内部值（`韩式褶`→`韩褶`、`纳米圈`→`打孔`族）。配套改动：`prompts/order.md`（B 端）+ C 端 `customer_order` 内联 prompt 补「术语映射」段（部位 + 工艺两维度）、真值源 §8 补录工艺词汇两行、知识模板内置行业术语条目、`local_runner` 的 `db_verify[order_items]` 加 `expect_craft`/`forbid_craft` 能力。**不改运行时业务逻辑、不降任何既有断言。**"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_issue_4454_craft_glossary.py"
+      ci:
+        - xiaobu-acceptance.yml
+      verifies: []

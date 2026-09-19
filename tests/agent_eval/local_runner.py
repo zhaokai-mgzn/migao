@@ -3135,6 +3135,9 @@ _CASE_ATOM_RULES = (
      "db_missing(order_items,{0})"),
     (re.compile(r"^db_verify\[order_items\]: 「([^」]+)」数量"),
      "db_mismatch(order_items,quantity:{0})"),
+    # 下单行要素（部位/工艺）落库值（issue #4454）：字段身份 = `craft`（缺值/原话/错值三种
+    # 形态**不**分开 —— 归因原子是「该字段落库值不对」，细分会让同一根因碎成多个原子）。
+    (re.compile(r"^db_verify\[order_items\]: .*craft"), "db_mismatch(order_items,craft)"),
     (re.compile(r"^db_verify\[processing_order\]: 查不到加工单"), "db_missing(processing_order)"),
     (re.compile(r"^db_verify\[processing_order\]: "), "db_mismatch(processing_order)"),
     (re.compile(r"^db_verify\[employee\]: 查不到员工"), "db_missing(employee)"),
@@ -5719,6 +5722,46 @@ async def check_db_verify(token: str, db_verify: list, results: list | None = No
                         f"db_verify[order_items]: 「{hit}」数量 {by_name[hit]} ≠ 期望 {want_q}"
                         f"（订单明细共 {_line_count} 行: {_lines}）"
                         f"—— 行数与逐行数量能区分「数量值算错」与「重复行累加」")
+            # ── 下单行要素（部位/工艺）**落库值**断言（issue #4454）────────────────────
+            # 为什么必须读落库值而不是只看工具传参：`processing_info` 是 AI 采集的**自由文本**
+            # 入口（`OrderLineCraftFields` 只搬运、不做枚举校验）⇒ 顾客说「韩式褶」「纳米圈」
+            # 时，AI 完全可能把**顾客原话**写进 `craft` 而回复里说得很对（"说对话术"≠"落对字段"）。
+            # 落原话的后果不是少个展示字段：工序路线按 `部位 × 工艺` 索引，取不到就只能靠加工项名猜
+            # （V58 实证：纱帘订单拿到布帘的 11 道工序 ⇒ 工序与计件工资全错）。
+            # 值域（内部值）单一真值源 = `docs/curtain-production-rules.md` §8「工艺 / 安装工艺」。
+            _craft_expect = [str(x) for x in (spec.get("expect_craft") or []) if str(x).strip()]
+            _craft_forbid = [str(x) for x in (spec.get("forbid_craft") or []) if str(x).strip()]
+            if _craft_expect or _craft_forbid:
+                _crafts = []
+                for it in items:
+                    pinfo = (it or {}).get("processingInfo")
+                    if isinstance(pinfo, str):
+                        # 序列化形态取决于 Java 侧 `Object processingInfo` 的落库/回读路径
+                        # （Map ⇒ dict；JSON 字符串 ⇒ 需解析）—— 两种都接，避免"读不到 ⇒ 静默不判"。
+                        try:
+                            pinfo = json.loads(pinfo)
+                        except (TypeError, ValueError):
+                            pinfo = None
+                    if not isinstance(pinfo, dict):
+                        continue
+                    _v = str(pinfo.get("craft") or "").strip()
+                    if _v:
+                        _crafts.append(_v)
+                if not _crafts:
+                    issues.append(
+                        f"db_verify[order_items]: 订单 {ref} 明细的 processing_info 里**没有 craft**"
+                        f"（读不到落库值 ⇒ 判失败而非跳过；行数 {_line_count}，明细: {_lines}）")
+                for _want in _craft_expect:
+                    if _want not in _crafts:
+                        issues.append(
+                            f"db_verify[order_items]: 落库 craft={_crafts or '（空）'} 不含内部值"
+                            f"「{_want}」（订单 {ref}，明细: {_lines}）—— 顾客说法必须译成内部值再落库"
+                            f"（真值源 docs/curtain-production-rules.md §8）")
+                for _bad in _craft_forbid:
+                    if _bad in _crafts:
+                        issues.append(
+                            f"db_verify[order_items]: 落库 craft 含**顾客原话**「{_bad}」"
+                            f"（实际 {_crafts}，订单 {ref}）—— 原话不是合法工艺值，工序路线会取不到")
             continue
 
         if fetch == "processing_order":
