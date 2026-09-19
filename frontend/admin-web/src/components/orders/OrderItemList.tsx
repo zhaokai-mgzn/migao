@@ -59,6 +59,68 @@ const CALC_OUTPUT_LABELS = new Set([
   '加工费米数',
 ])
 
+/**
+ * 加工费构成（后端 #4406 落库 → 本组件**只展示**，不重算）。
+ *
+ * 键名是 **snake_case**（设计文档 §4.5：算料/计价输出键与 `CALC_INFO_KEYS` 同口径）。
+ * `fee_source` 三态：`matched` 命中组合 / `unpriced` 未定价 / `manual` 人工改价。
+ */
+export interface ProcessingFeeDetail {
+  /** 参与计价的选配特征集合（组合键） */
+  composition?: string
+  unit_price?: number
+  meters?: number
+  meters_source?: string
+  fee_source?: string
+  amount?: number
+  /** 未定价时的可行动提示（后端给） */
+  hint?: string
+}
+
+/** 取有限数值（容忍 JSON 里以字符串承载的数字）；其余 ⇒ `null` */
+function numericOrNull(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+/** 从 `processingInfo` 取加工费构成；缺席 / 形态不对 ⇒ `null`（存量单：接线前生成，无该键） */
+export function readFeeDetail(info: unknown): ProcessingFeeDetail | null {
+  if (info === null || typeof info !== 'object' || Array.isArray(info)) return null
+  const raw = (info as Record<string, unknown>).processingFeeDetail
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  return raw as ProcessingFeeDetail
+}
+
+/**
+ * 加工费算式（用户口径：「**窗帘米数 × 组合加工费 = 具体费用**」）。
+ *
+ * **缺单价或米数 ⇒ 不编算式**（返回 `null`）：宁可只显示金额，
+ * 也不给商家一个对不上的算式（那比不显示更糟 —— 商家会照着它去核账）。
+ */
+export function feeFormula(detail: ProcessingFeeDetail | null): string | null {
+  if (!detail) return null
+  const meters = numericOrNull(detail.meters)
+  const unit = numericOrNull(detail.unit_price)
+  if (meters === null || unit === null) return null
+  const amount = numericOrNull(detail.amount)
+  const left = `${meters} 米 × ${formatAmount(unit)}/米`
+  return amount === null ? left : `${left} = ${formatAmount(amount)}`
+}
+
+/**
+ * 未定价（`fee_source=unpriced`）。
+ *
+ * 为什么单独判它：未定价时后端按用户裁定给 **0 元**，而 `¥0.00` 与「这一行本来就不收加工费」
+ * **长得一模一样** ⇒ 必须显式标「未定价」，否则就是静默改钱的外观。
+ */
+export function isUnpriced(detail: ProcessingFeeDetail | null): boolean {
+  return detail?.fee_source === 'unpriced'
+}
+
 /** 一组 label/value 网格（缺值行已由 `craftSpecRows` 丢弃 ⇒ 空组不渲染） */
 function SpecGroup({ title, rows }: { title: string; rows: CraftSpecRow[] }) {
   if (rows.length === 0) return null
@@ -81,6 +143,8 @@ export default function OrderItemList({ items, className }: OrderItemListProps) 
   const subtotalSum = items.reduce((sum, item) => sum + item.subtotal, 0)
   const processingFeeSum = items.reduce((sum, item) => sum + (item.processingFee || 0), 0)
   const totalAmount = subtotalSum + processingFeeSum
+  // 未定价行数（#4406：未定价按用户裁定计 0）—— 合计区必须显式提示，不能让它藏在 0 里
+  const unpricedCount = items.filter((it) => isUnpriced(readFeeDetail(it.processingInfo))).length
 
   return (
     <div className={className}>
@@ -110,6 +174,12 @@ export default function OrderItemList({ items, className }: OrderItemListProps) 
           <div className="flex justify-between text-sm">
             <span className="text-neutral-500">加工费合计</span>
             <span className="text-amber-600">{formatAmount(processingFeeSum)}</span>
+          </div>
+        )}
+        {unpricedCount > 0 && (
+          <div className="rounded bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
+            有 {unpricedCount} 行加工费未定价 —— 这些行按 0 计入订单金额，
+            请到「加工费组合」定价后再核对
           </div>
         )}
         <div className="flex justify-between text-base font-semibold pt-2 border-t border-neutral-100">
@@ -142,6 +212,10 @@ function ItemRow({ item }: { item: OrderItem }) {
   const doorWidth = typeof info.doorWidth === 'string' ? info.doorWidth : undefined
 
   const processingFee = item.processingFee || 0
+  // 加工费构成（#4406）：只展示服务端已算好的数，**不重算**
+  const feeDetail = readFeeDetail(item.processingInfo)
+  const feeExpr = feeFormula(feeDetail)
+  const unpriced = isUnpriced(feeDetail)
 
   return (
     <div className="grid grid-cols-12 gap-2 px-4 py-3 items-start">
@@ -214,8 +288,31 @@ function ItemRow({ item }: { item: OrderItem }) {
       <div className="col-span-2 text-right text-sm text-neutral-700">
         {formatAmount(item.unitPrice)}
       </div>
-      <div className="col-span-2 text-right text-sm text-neutral-500">
-        {processingFee ? formatAmount(processingFee) : '-'}
+      <div className="col-span-2 text-right">
+        {unpriced ? (
+          <>
+            {/* 未定价必须显式：`¥0.00` 与「本来就不收加工费」长得一样 ⇒ 不标就是静默改钱的外观 */}
+            <div className="text-sm font-medium text-amber-600">未定价</div>
+            {feeDetail?.hint && (
+              <div className="mt-0.5 text-xs text-amber-600 break-words">{feeDetail.hint}</div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="text-sm text-neutral-500">
+              {processingFee ? formatAmount(processingFee) : '-'}
+            </div>
+            {/* 算式（issue #4444，用户口径「米数 × 组合加工费 = 具体费用」）—— 缺值不编 */}
+            {feeExpr && (
+              <div className="mt-0.5 text-xs text-neutral-400 tabular-nums break-words">
+                {feeExpr}
+              </div>
+            )}
+            {feeDetail?.fee_source === 'manual' && (
+              <div className="mt-0.5 text-xs text-amber-600">人工改价</div>
+            )}
+          </>
+        )}
       </div>
       <div className="col-span-2 text-right">
         <div className="text-sm font-medium text-neutral-900">

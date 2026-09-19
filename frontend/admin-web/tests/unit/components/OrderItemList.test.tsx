@@ -383,4 +383,97 @@ describe('OrderItemList', () => {
       expect(container.querySelectorAll('[contenteditable="true"]')).toHaveLength(0)
     })
   })
+
+  // ===== issue #4444：加工费算式「米数 × 组合加工费 = 费用」+ 未定价显式可见（依赖 #4406）=====
+  describe('#4444 加工费构成展示', () => {
+    const withFee = (detail: Record<string, unknown>, processingFee = 133) =>
+      makeItem({
+        processingFee,
+        processingInfo: { processingFeeDetail: detail },
+      })
+
+    it('判据 1（红证）：matched ⇒ 算式「13.3 米 × ¥10.00/米 = ¥133.00」（修复前只有金额）', () => {
+      render(
+        <OrderItemList
+          items={[
+            withFee({
+              composition: '韩褶,打孔,定型',
+              unit_price: 10,
+              meters: 13.3,
+              meters_source: '公式计算',
+              fee_source: 'matched',
+              amount: 133,
+            }),
+          ]}
+        />
+      )
+      expect(screen.getByText('13.3 米 × ¥10.00/米 = ¥133.00')).toBeInTheDocument()
+    })
+
+    it('判据 2（红证）：unpriced ⇒ 显式「未定价」+ hint，**不**把它当 0 元正常展示', () => {
+      render(
+        <OrderItemList
+          items={[
+            withFee(
+              { fee_source: 'unpriced', amount: 0, hint: '该组合未定价，请到加工费组合里配置' },
+              0
+            ),
+          ]}
+        />
+      )
+      expect(screen.getByText('未定价')).toBeInTheDocument()
+      expect(screen.getByText('该组合未定价，请到加工费组合里配置')).toBeInTheDocument()
+      // 不得出现「0 元 = 正常」的外观（`-` 是「本来就不收」，未定价是另一回事）
+      expect(screen.queryByText('¥0.00')).toBeNull()
+    })
+
+    it('判据 3：manual ⇒ 标「人工改价」（留痕可见）', () => {
+      render(
+        <OrderItemList
+          items={[
+            withFee({ unit_price: 12, meters: 13.3, fee_source: 'manual', amount: 159.6 }, 159.6),
+          ]}
+        />
+      )
+      expect(screen.getByText('人工改价')).toBeInTheDocument()
+      expect(screen.getByText('13.3 米 × ¥12.00/米 = ¥159.60')).toBeInTheDocument()
+    })
+
+    it('判据 4：键缺席（存量单）⇒ **不编算式**，只显示金额', () => {
+      render(<OrderItemList items={[makeItem({ processingFee: 50 })]} />)
+      expect(screen.queryByText(/米 × /)).toBeNull()
+      expect(screen.getAllByText('¥50.00').length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('判据 5：缺单价或米数 ⇒ 不编半截算式（宁可只给金额）', () => {
+      render(
+        <OrderItemList
+          items={[withFee({ fee_source: 'matched', amount: 133, meters: 13.3 }, 133)]}
+        />
+      )
+      expect(screen.queryByText(/米 × /)).toBeNull()
+    })
+
+    it('判据 6：合计区在存在 unpriced 行时显式提示（不让 0 藏在合计里）', () => {
+      render(
+        <OrderItemList
+          items={[
+            makeItem({ id: 'a', subtotal: 200, processingFee: 30 }),
+            makeItem({
+              id: 'b',
+              subtotal: 300,
+              processingFee: 0,
+              processingInfo: { processingFeeDetail: { fee_source: 'unpriced', amount: 0 } },
+            }),
+          ]}
+        />
+      )
+      expect(screen.getByText(/有 1 行加工费未定价/)).toBeInTheDocument()
+    })
+
+    it('判据 7：无 unpriced 行 ⇒ 不出现未定价提示（不制造噪音）', () => {
+      render(<OrderItemList items={[makeItem({ processingFee: 30 })]} />)
+      expect(screen.queryByText(/未定价/)).toBeNull()
+    })
+  })
 })
