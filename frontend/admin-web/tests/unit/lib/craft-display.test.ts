@@ -83,12 +83,13 @@ describe('craftSpecRows — 订单/快照层（camelCase）', () => {
     ])
   })
 
-  it('#4546 边界：算料公式只登记**订单层 camelCase**（不放开 snake_case ⇒ C 端报价卡不加这一行）', () => {
-    // 三端同源的展示映射被 C 端报价卡共用，而 C 端 `curtain_calc` 输出里**有** `formula_text`
-    // ⇒ 登记 snake_case 别名会让公式串直接出现在**顾客**报价卡上 —— 那是超出 #4546 裁定的
-    // 产品面变更。本断言把这个边界钉住：要放开，先有裁定。
-    expect(rowValue(craftSpecRows({ formula_text: '韩折公式：…' }), '算料公式')).toBeUndefined()
-    expect(rowValue(craftSpecRows({ formulaText: '韩折公式：…' }), '算料公式')).toBe('韩折公式：…')
+  it('#4546 判据：算料公式**两个别名都登记** ⇒ C 端（snake_case 数据）也渲染该行', () => {
+    // 用户 2026-09-19 追加裁定「**C端也要能看到**」⇒ C 端报价卡吃 `curtain_calc` 原始输出
+    // （snake_case `formula_text`）必须能取到值；订单侧吃 camelCase `formulaText`。
+    // 🔴 红证：删掉 snake_case 别名 ⇒ C 端取不到值 ⇒ 本断言红。
+    const formula = '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
+    expect(rowValue(craftSpecRows({ formula_text: formula }), '算料公式')).toBe(formula)
+    expect(rowValue(craftSpecRows({ formulaText: formula }), '算料公式')).toBe(formula)
   })
 
   it('格式化：布尔 → 是/否、米数带单位、倍数带单位、选项数组顿号连接', () => {
