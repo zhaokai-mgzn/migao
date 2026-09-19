@@ -12,7 +12,6 @@
 // ⑥ 就绪度检查器把「工序 → 路线」的先后依赖显性化；空序列路线标为「空壳 · 不可用」；
 // ⑦ 新建路线后**自动进入序列编辑**（消灭「建壳了但没排序」的静默态）；
 // ⑧ 行业模板卡**仅工序库为空时**出现（开租已自动套用，见 RegistrationService），补套能力不退化；
-// ⑨ 信号映射**降级为存量单兜底**（折叠区）且文案按 R-f 改写（#4385）；
 // ⑩ 任一只读端点失败不得白屏，失败处给可读提示。
 // 反 placeholder：断言落**真实数据行**与**请求体**，不断言「页面存在」。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
@@ -26,11 +25,9 @@ const mockGetOperationsCatalog = vi.fn()
 const mockCreateOperation = vi.fn()
 const mockUpdateOperation = vi.fn()
 const mockGetRoutingGaps = vi.fn()
-const mockGetRouteSignals = vi.fn()
-const mockCreateRouteSignal = vi.fn()
-const mockUpdateRouteSignal = vi.fn()
-const mockDeleteRouteSignal = vi.fn()
 const mockGetSeedTemplates = vi.fn()
+// issue #4453 探针：信号映射是**研发内部机制**，商家页**不得**消费 ⇒ 它必须恒不被调用
+const mockGetRouteSignals = vi.fn()
 const mockApplySeedTemplate = vi.fn()
 
 vi.mock('@/lib/api', () => ({
@@ -42,11 +39,8 @@ vi.mock('@/lib/api', () => ({
     createOperation: (...a: unknown[]) => mockCreateOperation(...a),
     updateOperation: (...a: unknown[]) => mockUpdateOperation(...a),
     getRoutingGaps: (...a: unknown[]) => mockGetRoutingGaps(...a),
-    getRouteSignals: (...a: unknown[]) => mockGetRouteSignals(...a),
-    createRouteSignal: (...a: unknown[]) => mockCreateRouteSignal(...a),
-    updateRouteSignal: (...a: unknown[]) => mockUpdateRouteSignal(...a),
-    deleteRouteSignal: (...a: unknown[]) => mockDeleteRouteSignal(...a),
     getSeedTemplates: (...a: unknown[]) => mockGetSeedTemplates(...a),
+    getRouteSignals: (...a: unknown[]) => mockGetRouteSignals(...a),
     applySeedTemplate: (...a: unknown[]) => mockApplySeedTemplate(...a),
   },
 }))
@@ -118,17 +112,7 @@ const GAPS = {
     { name: '打孔-布', group_name: '车位', unit: '个', unit_price: 0.6, pending_confirmation: false, note: '该工序有价但没有任何活跃路线消费它' },
   ],
   unrouted_operation_total: 5,
-  pending_confirmation_total: 4,
-  signal_keys_without_route: [{ curtain_type: '罗马帘', craft: '韩褶', route_key: '罗马帘×韩褶', signal: '罗马帘' }],
-}
-
-const SIGNALS = {
-  total: 2,
-  signals: [
-    { id: 31, signal: '帘头', curtain_type: '帘头', craft: '韩褶' },
-    { id: 32, signal: '纱', curtain_type: '纱帘', craft: '韩褶' },
-  ],
-}
+  pending_confirmation_total: 4,}
 
 const TEMPLATES = [
   { templateId: 'curtain', industry: 'curtain', name: '布艺窗帘行业模板', version: 1, description: '35 道工序 + 9 条路线' },
@@ -151,29 +135,19 @@ const guardError = (reasons: string[]) => ({
   message: 'Request failed with status code 422',
 })
 
-/** 展开折叠的「存量单兜底 · 信号映射」区（默认收起：它是兜底层，不是主配置步骤） */
-const openSignalSection = async () => {
-  // 先等页面加载完（收起态下 toggle 才在 DOM 里）
-  await waitFor(() => expect(screen.getByTestId('route-signals-toggle')).toBeInTheDocument())
-  await userEvent.click(screen.getByTestId('route-signals-toggle'))
-  await waitFor(() => expect(screen.getByTestId('route-signals-body')).toBeInTheDocument())
-}
 
 describe('工艺配置页 /production/routings（工序库 + 工艺路线合并，issue #4416）', () => {
   beforeEach(() => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG))
     mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS))
     mockGetRoutingGaps.mockReset().mockResolvedValue(ok(GAPS))
-    mockGetRouteSignals.mockReset().mockResolvedValue(ok(SIGNALS))
     mockGetSeedTemplates.mockReset().mockResolvedValue(ok(TEMPLATES))
+    mockGetRouteSignals.mockReset()
     mockApplySeedTemplate.mockReset().mockResolvedValue(ok({ created_operations: 35, created_routings: 9, skipped: 0 }))
     mockUpdateOperation.mockReset().mockResolvedValue(ok({ id: 'op-v54-03', name: '韩褶-布', unit_price: 2.5 }))
     mockUpdateRoutingSequence.mockReset().mockResolvedValue(ok({ id: 11 }))
     mockCreateRouting.mockReset().mockResolvedValue(ok({ id: 13, curtain_type: '罗马帘', craft: '韩褶', operation_count: 0, operations: [] }))
     mockCreateOperation.mockReset().mockResolvedValue(ok({ id: 'op-new' }))
-    mockCreateRouteSignal.mockReset().mockResolvedValue(ok({ id: 33 }))
-    mockUpdateRouteSignal.mockReset().mockResolvedValue(ok({ id: 31 }))
-    mockDeleteRouteSignal.mockReset().mockResolvedValue(ok(undefined))
     vi.mocked(toast.success).mockClear()
     vi.mocked(toast.error).mockClear()
   })
@@ -488,10 +462,7 @@ describe('工艺配置页 /production/routings（工序库 + 工艺路线合并�
       expect(screen.getByTestId(`routings-gap-pending-${name}`)).toBeInTheDocument()
       expect(screen.queryByTestId(`routings-gap-unrouted-${name}`)).not.toBeInTheDocument()
     }
-    expect(screen.getByTestId('routings-gap-pending-裁剪-布')).toHaveTextContent('等客户确认')
-    // 无路线的信号组合：罗马帘目前会回落到默认路线，必须可见
-    expect(screen.getByTestId('routings-gap-signal-罗马帘-韩褶')).toHaveTextContent('罗马帘 × 韩褶')
-  })
+    expect(screen.getByTestId('routings-gap-pending-裁剪-布')).toHaveTextContent('等客户确认')  })
 
   // ────────────────────────── ⑧ 行业模板：仅空态补救 ──────────────────────────
 
@@ -513,59 +484,6 @@ describe('工艺配置页 /production/routings（工序库 + 工艺路线合并�
     await waitFor(() =>
       expect(vi.mocked(toast.success)).toHaveBeenCalledWith(expect.stringContaining('新增 35 道工序')),
     )
-  })
-
-  // ────────────────────────── ⑤⑨ 信号映射：降级为存量单兜底 ──────────────────────────
-
-  it('信号映射区：默认收起，展开后文案说明它只在**订单没填部位/工艺**时兜底', async () => {
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('route-signals-section')).toBeInTheDocument())
-
-    // 默认收起（它是兜底层，不是主配置步骤）
-    expect(screen.queryByTestId('route-signals-body')).not.toBeInTheDocument()
-    expect(screen.getByTestId('route-signals-section')).toHaveTextContent('存量单兜底')
-
-    await openSignalSection()
-    // R-f（#4385）口径：不再是「命中优先于默认路线」的主路径
-    expect(screen.getByTestId('route-signals-section')).toHaveTextContent('订单没有填')
-    expect(screen.getByTestId('route-signals-section')).not.toHaveTextContent('命中优先于默认路线')
-  })
-
-  it('信号映射：列表渲染 + 新增走 POST /production/route-signals', async () => {
-    render(<ProcessConfigPage />)
-    await openSignalSection()
-    await waitFor(() => expect(screen.getByTestId('route-signal-31')).toHaveTextContent('帘头'))
-
-    await userEvent.click(screen.getByTestId('route-signal-new'))
-    await userEvent.type(screen.getByTestId('route-signal-signal'), '罗马帘')
-    await userEvent.type(screen.getByTestId('route-signal-curtain_type'), '罗马帘')
-    await userEvent.type(screen.getByTestId('route-signal-craft'), '韩褶')
-    await userEvent.click(screen.getByTestId('route-signal-submit'))
-
-    await waitFor(() =>
-      expect(mockCreateRouteSignal).toHaveBeenCalledWith({ signal: '罗马帘', curtain_type: '罗马帘', craft: '韩褶' }),
-    )
-  })
-
-  it('信号映射：编辑走 PUT /{id}、删除走 DELETE /{id}（二次确认后）', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<ProcessConfigPage />)
-    await openSignalSection()
-    await waitFor(() => expect(screen.getByTestId('route-signal-32')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('route-signal-edit-32'))
-    const curtainInput = screen.getByTestId('route-signal-curtain_type')
-    await userEvent.clear(curtainInput)
-    await userEvent.type(curtainInput, '纱帘(改)')
-    await userEvent.click(screen.getByTestId('route-signal-submit'))
-    await waitFor(() =>
-      expect(mockUpdateRouteSignal).toHaveBeenCalledWith(32, { signal: '纱', curtain_type: '纱帘(改)', craft: '韩褶' }),
-    )
-
-    await userEvent.click(screen.getByTestId('route-signal-delete-31'))
-    await waitFor(() => expect(mockDeleteRouteSignal).toHaveBeenCalledWith(31))
-    expect(confirmSpy).toHaveBeenCalled()
-    confirmSpy.mockRestore()
   })
 
   // ────────────────────────── ⑩ 失败不白屏 ──────────────────────────
@@ -638,15 +556,40 @@ describe('工艺配置页 /production/routings（工序库 + 工艺路线合并�
     expect(screen.queryByTestId('routing-draft-missing-布帘×韩褶-1')).not.toBeInTheDocument()
   })
 
-  it('缺口/信号接口失败：页面不白屏，失败处给可读提示（路线列表照常渲染）', async () => {
+  it('缺口接口失败：页面不白屏，失败处给可读提示（路线列表照常渲染）', async () => {
     mockGetRoutingGaps.mockReset().mockRejectedValueOnce(new Error('500'))
-    mockGetRouteSignals.mockReset().mockRejectedValueOnce(new Error('500'))
     render(<ProcessConfigPage />)
 
     await waitFor(() => expect(screen.getByTestId('routings-total')).toHaveTextContent('2'))
     expect(screen.getByTestId('routings-gaps-unavailable')).toHaveTextContent('缺口数据加载失败')
     expect(screen.getByTestId('routing-布帘×韩褶')).toBeInTheDocument()
-    await openSignalSection()
-    expect(screen.getByTestId('route-signals-error')).toHaveTextContent('信号映射加载失败')
   })
+
+  // ────────────────────────── ⑪ 信号映射不得出现在产品界面（issue #4453） ──────────────────────────
+
+  it('工艺配置页不得出现「信号映射」这个概念：不渲染该区、不发起 /route-signals 请求、页面文本无「信号」', async () => {
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operations-catalog-total')).toHaveTextContent('4'))
+
+    // ① 不再渲染任何信号映射 UI（红证：修复前 route-signals-section / toggle / body / route-signal-* 全在）
+    for (const id of [
+      'route-signals-section',
+      'route-signals-toggle',
+      'route-signals-body',
+      'route-signals-error',
+      'route-signals-empty',
+      'route-signal-31',
+      'route-signal-new',
+      'routings-gap-signals',
+    ]) {
+      expect(screen.queryByTestId(id)).toBeNull()
+    }
+
+    // ② 页面不再发起任何 /route-signals 请求（红证：修复前 load() 会调 getRouteSignals）
+    expect(mockGetRouteSignals).not.toHaveBeenCalled()
+
+    // ③ 连「信号」这两个字都不该露（用户裁定：客户完全不理解）
+    expect(document.body.textContent ?? '').not.toContain('信号')
+  })
+
 })
