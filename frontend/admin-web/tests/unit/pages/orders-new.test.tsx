@@ -1,10 +1,14 @@
-// case_ids: OR-009, OR-014, UI-038, CU-009, OR-038
+// case_ids: OR-009, OR-014, UI-038, CU-009, OR-038, OR-035
 // OR-014（issue #3005 回滚 #2986）：下单加工项数量规则——per_meter→面料米数；per_set/fixed/per_area→1，
 // 商品数量变化联动重算；加工项行显示「名称+数量+金额」供对账，无数量输入框（数量由计价方式派生）
+// OR-035（工艺规格写侧录入）：#4566 起 `craft` / `isShaped` 的写侧真值来源搬到**加工项**
+// （工艺 = 勾选的工艺项的 `craftHint`；定型 = 「定型」加工项的勾选态）⇒ 本文件的 #4566 组
+// 即该用例「写侧录入」判据的新承载（原「工艺 / 是否定型 chips」判据随控件退场改判）。
 // ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：加工项改为**店铺级目录**（processingItemApi.getProcessingItems
 // 只加载一次），不再按商品过滤；解耦钉死断言见 orders-new-decoupled.test.tsx
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
+import { toast } from 'sonner'
 
 // Mock API
 const mockCreateOrder = vi.fn()
@@ -63,8 +67,9 @@ vi.mock('next/link', () => ({
 }))
 
 // Mock sonner (re-mock for file-level)
+// `info` 为 #4566 的**工艺单值护栏**提示所需（「一张单只能有一个工艺：已把「X」换成「Y」」）
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }))
 
 import NewOrderPage from '@/app/(dashboard)/orders/new/page'
@@ -580,11 +585,21 @@ describe('NewOrderPage', () => {
       // `supportsProcessing`/`processingItems`），改由**店铺级目录**提供 ⇒ 这里桩目录端点
       // （「双拼：加工项只挂主布行」那条判据需要一个可勾选的加工项）。
       // 目录条目形状 = `ProcessingItem`（`unitPrice`/`unit`，无 `customPrice`/`finalPrice`）。
+      // ⚠️ #4566：目录按 V83 种子形状给 —— 工艺项带 `craftHint`（`打孔`→打孔），
+      // 以及手选特征「定型」（勾选态 = `isShaped`）。名字/工艺逐字 = V83 迁移。
       mockGetProcessingItems.mockResolvedValue({
         data: {
           data: {
             items: [
-              { id: 'pi1', name: '打孔加工', pricingMethod: 'per_meter', unitPrice: 5, unit: '米' },
+              {
+                id: 'pi1',
+                name: '打孔',
+                craftHint: '打孔',
+                pricingMethod: 'per_meter',
+                unitPrice: 5,
+                unit: '米',
+              },
+              { id: 'pi2', name: '定型', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
             ],
           },
         },
@@ -597,6 +612,15 @@ describe('NewOrderPage', () => {
 
     const field = (name: string) => screen.getByLabelText(name)
 
+    /**
+     * 勾选 / 取消「加工项」步骤里名为 `name` 的项（issue #4566 起，工艺与定型都从这里录入）。
+     * 加工项行 = checkbox（`aria-label` = 项名）+ 名称 + 已选时的数量。
+     */
+    const toggleProcessingItem = (name: string) => {
+      expandProcessing()
+      fireEvent.click(screen.getByRole('checkbox', { name }))
+    }
+
     const craftInfo = () => {
       const payload = mockCreateOrder.mock.calls[0][0]
       return payload.items[0].processingInfo as Record<string, unknown>
@@ -607,19 +631,19 @@ describe('NewOrderPage', () => {
 
       expandCraft()
 
-      pickChip('工艺', '打孔')
-      expandCraft()
       pickChip('加工类型', '定高买宽')
       expandCraft()
       pickChip('打开方式', '双开')
-      expandCraft()
-      pickChip('是否定型', '否')
       expandCraft()
       pickChip('款式', '单色')
       fireEvent.change(field('褶距'), { target: { value: '0.1' } })
       expandCraft()
       pickChip('是否对花', '是')
       fireEvent.change(field('花距'), { target: { value: '0.6' } })
+      // #4566：工艺 / 定型从**加工项**录入 —— 勾「打孔」⇒ craft='打孔'（craftHint 派生）；
+      // 取消默认勾选的「定型」⇒ isShaped=false（显式否是真值）
+      toggleProcessingItem('打孔')
+      toggleProcessingItem('定型')
       expandSpecial()
       fireEvent.click(screen.getByRole('button', { name: '加铅块' }))
       fireEvent.click(screen.getByRole('button', { name: '拼2次' }))
@@ -631,6 +655,7 @@ describe('NewOrderPage', () => {
 
       expect(craftInfo()).toMatchObject({
         // ⚠️ issue #4521：**部位不再由下单页写**（主帘缺省即布帘；只有纱帘行显式写）
+        // ⚠️ issue #4566：`craft` = **加工项 `craftHint` 派生值**（页面里没有工艺选择器）
         craft: '打孔',
         cuttingMode: '定高买宽',
         openCount: 2,
@@ -655,18 +680,17 @@ describe('NewOrderPage', () => {
       const payload = mockCreateOrder.mock.calls[0][0]
       const info = (payload.items[0].processingInfo ?? {}) as Record<string, unknown>
 
-      // issue #4420 口径变更（用户 2026-09-19 裁定）：三条**默认档**是真值 ⇒ **必须写**。
+      // issue #4420 口径变更（用户 2026-09-19 裁定）：**默认档**是真值 ⇒ **必须写**。
       // 「缺值不写」管的是「既没填也没默认」的键 —— 不是把默认值也一起吞掉。
-      // issue #4493：默认档扩到 8 项全覆盖 ⇒ 这几项**必须写**（商家看得见的真值）
       expect(info).toMatchObject({
         saleForm: '成品帘',
         // issue #4521：部位默认 = 布帘 ⇒ **不写**（下游 `DEFAULT_CURTAIN_TYPE` 缺省即此值）
-        craft: '韩褶',
         cuttingMode: '定高买宽',
         style: '单色',
         pleatSpacing: 0.125,
         hasPattern: false,
-        // issue #4521：定型默认改由**帘体结构**决定（布帘 ⇒ 是）—— 仍是商家看得见的真值
+        // issue #4521 + #4566：定型默认（布帘 ⇒ 是）现在体现在「定型」**加工项的勾选态**上
+        // ⇒ 仍是商家看得见的真值，照旧落库
         isShaped: true,
         // **宽 → 打开方式**联动（真值源 §10 的启发式）：6.6m > 5m ⇒ 四开
         openCount: 4,
@@ -674,6 +698,8 @@ describe('NewOrderPage', () => {
 
       // 其余键仍然「缺值不写」（不写空串 / 0 / false 占位）
       for (const key of [
+        // #4566：一个工艺项都没勾 ⇒ **不猜、不填默认韩褶**（后端走 craft_hint → 信号表 → 租户默认的降级链）
+        'craft',
         'curtainType',
         'patternRepeat',
         'specialOptions',
@@ -756,8 +782,9 @@ describe('NewOrderPage', () => {
 
     it('双拼：加工项只挂主布行，配布边行不重复计加工费（硬约束）', async () => {
       await setupCurtain()
-      expandProcessing()
-    fireEvent.click(await screen.findByRole('checkbox'))
+      // #4566：目录里有「打孔」（工艺项）与「定型」（手选特征，布帘默认已勾）
+      // ⇒ 按名字勾选，不数 checkbox（按名字勾 = 与商家所见一致）
+      toggleProcessingItem('打孔')
       expandCraft()
       pickChip('款式', '拼色')
       fireEvent.change(field('配布边单价'), { target: { value: '40' } })
@@ -771,11 +798,11 @@ describe('NewOrderPage', () => {
       const mainInfo = payload.items[0].processingInfo as Record<string, unknown>
       const edgeInfo = payload.items[1].processingInfo as Record<string, unknown>
       // ⚠️ 2026-09-19（issue #4526 R9/D6）：`processingItems` 里除**手选**加工项外还有
-      // **自动识别特征**（超高/超宽/倒幅·正幅/定型 —— 它们进组合键，与 ERP `打孔+超高+定型`
+      // **自动识别特征**（超高/超宽/倒幅·正幅 —— 它们进组合键，与 ERP `打孔+超高+定型`
       // 同构）。本条判据守的是「配布边行**不重复**挂加工项」⇒ 按**手选项**断言，不数长度
       // （长度会被自动特征数撑大，与判据无关）。
       const handPicked = (mainInfo.processingItems as Array<{ name: string }>).filter(
-        (item) => item.name === '打孔加工'
+        (item) => item.name === '打孔'
       )
       expect(handPicked).toHaveLength(1)
       expect(Number(mainInfo.processingFee)).toBeGreaterThan(0)
@@ -907,6 +934,26 @@ describe('NewOrderPage', () => {
       mockGetProduct.mockResolvedValue({
         data: { data: { id: 'p1', name: '遮光窗帘', skus: [], price: 100 } },
       })
+      // #4566：目录按 V83 种子形状给 —— 工艺项「韩折」（名字按 ERP 写「韩折」、`craftHint` 用
+      // MIGAO 工艺枚举「韩褶」）+ 手选特征「定型」（勾选态 = `isShaped`）。
+      // ⚠️ 不给「超高/超宽/倒幅」以外的自动项：手选列表过滤判据在 `orders-new-auto-features.test.tsx`。
+      mockGetProcessingItems.mockResolvedValue({
+        data: {
+          data: {
+            items: [
+              {
+                id: 'pi1',
+                name: '韩折',
+                craftHint: '韩褶',
+                pricingMethod: 'per_meter',
+                unitPrice: 0,
+                unit: '米',
+              },
+              { id: 'pi2', name: '定型', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+            ],
+          },
+        },
+      })
       render(<NewOrderPage />)
       await pickProduct('遮光窗帘')
       await screen.findByText('宽 (米)')
@@ -968,13 +1015,20 @@ describe('NewOrderPage', () => {
       expect(checked('加工类型')).toEqual(['定高买宽'])
       expect(checked('款式')).toEqual(['单色'])
       expect((screen.getByLabelText('褶距') as HTMLInputElement).value).toBe('0.125')
-      // issue #4493 三层体验①：默认档全覆盖（用户「太多点选了」）
-      expect(checked('工艺')).toEqual(['韩褶'])
       expect(checked('是否对花')).toEqual(['否'])
-      // issue #4521：部位换成**帘体**（组级 chips），默认「布帘」；
-      // 定型默认 = 是（布帘默认，真值源 §10）—— 原来靠「选部位联动」，现由帘体结构给
+      // issue #4521：部位换成**帘体**（组级 chips），默认「布帘」
       expect(checked('帘体')).toEqual(['布帘'])
-      expect(checked('是否定型')).toEqual(['是'])
+      // ⚠️ issue #4566：工艺 / 定型**不在工艺规格里**（红证：修复前这两个 radiogroup 存在）
+      expect(screen.queryByRole('radiogroup', { name: '工艺' })).toBeNull()
+      expect(screen.queryByRole('radiogroup', { name: '是否定型' })).toBeNull()
+      // 它们的默认档改在**加工项**上「可见可改」：布帘 ⇒ 「定型」默认勾上（真值源 §10）
+      openWizardStep('加工项')
+      expect((screen.getByRole('checkbox', { name: '定型' }) as HTMLInputElement).checked).toBe(
+        true
+      )
+      expect((screen.getByRole('checkbox', { name: '韩折' }) as HTMLInputElement).checked).toBe(
+        false
+      )
     })
 
     // ── issue #4521：四类购买情况（布帘 / 布帘+纱帘 / 只买纱帘 / 布料）──────────────
@@ -989,6 +1043,12 @@ describe('NewOrderPage', () => {
     }
     /** 按 label 文本取输入框（纱帘米数 / 纱帘单价在工艺规格步骤里，标签与 input 有 htmlFor 关联） */
     const field = (name: string) => screen.getByLabelText(name)
+
+    /** 勾选「加工项」步骤里名为 `name` 的项（#4566：工艺 / 定型都从这里录入） */
+    const toggleProcessingItem = (name: string) => {
+      openWizardStep('加工项')
+      fireEvent.click(screen.getByRole('checkbox', { name }))
+    }
 
     it('判据 5（#4521 红证）：**没有**「新增部位」入口；一个商品组只渲染**一份** ①~④', async () => {
       await setupCurtain()
@@ -1006,6 +1066,8 @@ describe('NewOrderPage', () => {
       await setupCurtain()
       fillSize(0, '6.6', '2.6')
       pickBody('布帘+纱帘')
+      // #4566：工艺从加工项派生 ⇒ 勾「韩折」（ERP 名）⇒ 两行都落 `craft='韩褶'`（craftHint）
+      toggleProcessingItem('韩折')
       expandCraft()
       // 米数默认 = 主布米数（1 米），可改
       expect((field('纱帘米数') as HTMLInputElement).value).toBe('1')
@@ -1097,6 +1159,162 @@ describe('NewOrderPage', () => {
       expect(screen.queryByRole('radiogroup', { name: '帘体' })).toBeNull()
       expect(screen.queryByRole('button', { name: /^1 尺寸与数量/ })).toBeNull()
       expect(screen.queryByRole('button', { name: /^2 工艺规格/ })).toBeNull()
+    })
+  })
+
+  // ===== #4566：工艺 / 定型改由「加工项」勾选（用户 2026-09-19 裁定）====================
+  //
+  // 用户逐字：「工艺规格中的**工艺，定型**，对花我觉得**直接通过加工项来勾选**，其他保留，
+  // 这样的区分和交互是否更合理？」（已确认采纳：工艺 + 定型 搬进加工项；对花保留）。
+  //
+  // 硬证据（为什么必须这么改）：加工费组合键的**唯一来源**是
+  // `processingInfo.processingItems[].name`（服务端 `ProcessingFeeQueryService.featureNames()`
+  // 只读这个数组，**不补工艺**），而 ERP 的 91 项加工费名字全是「工艺+特征」形态
+  // （`韩折+超高+定型`）⇒ 只要工艺还留在「工艺规格」里，ERP 的名字一行都匹配不上。
+  describe('#4566 工艺 / 定型从加工项派生', () => {
+    /** 加工项目录（逐字 = `V83__seed_processing_item_catalog.sql` 的名字 / craftHint） */
+    const V83_CATALOG = [
+      { id: 'pi-01', name: '打孔', craftHint: '打孔', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+      { id: 'pi-02', name: '韩折', craftHint: '韩褶', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+      { id: 'pi-06', name: '定型', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+      // 自动推导特征：**必须存在于目录**（商家配「加工费组合」要能选到），但不得出手选控件
+      { id: 'pi-14', name: '超高', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+      { id: 'pi-15', name: '超宽', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+      { id: 'pi-16', name: '倒幅', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+    ]
+
+    const setup = async (items: unknown[] = V83_CATALOG) => {
+      mockGetProducts.mockResolvedValue({
+        data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
+      })
+      mockGetProduct.mockResolvedValue({
+        data: { data: { id: 'p1', name: '遮光窗帘', skus: [], price: 100 } },
+      })
+      mockGetProcessingItems.mockResolvedValue({ data: { data: { items } } })
+      render(<NewOrderPage />)
+      await pickProduct('遮光窗帘')
+      await screen.findByText('宽 (米)')
+    }
+
+    /** 勾选 / 取消加工项（按**商家所见的名字**定位，不数 checkbox） */
+    const toggle = (name: string) => {
+      expandProcessing()
+      fireEvent.click(screen.getByRole('checkbox', { name }))
+    }
+    /** 当前**已勾选**的加工项名（目录顺序） */
+    const checkedNames = () =>
+      screen
+        .getAllByRole('checkbox')
+        .filter((b) => (b as HTMLInputElement).checked)
+        .map((b) => b.getAttribute('aria-label'))
+    const pickBody = (body: string) =>
+      fireEvent.click(
+        within(screen.getByRole('radiogroup', { name: '帘体' })).getByRole('radio', { name: body })
+      )
+    const submitAndGetInfo = async () => {
+      await fillCustomerAndSubmit()
+      await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+      return mockCreateOrder.mock.calls[0][0].items[0].processingInfo as Record<string, unknown>
+    }
+
+    it('判据 1：手选列表**不含**自动推导特征（超高/超宽/倒幅）—— 它们仍在只读的自动识别块里', async () => {
+      await setup()
+      expandProcessing()
+      expect(screen.getAllByRole('checkbox').map((b) => b.getAttribute('aria-label'))).toEqual([
+        '打孔',
+        '韩折',
+        '定型',
+      ])
+      for (const auto of ['超高', '超宽', '倒幅']) {
+        expect(screen.queryByRole('checkbox', { name: auto })).toBeNull()
+      }
+      // 推导结果照旧**只读可见**（来源「推算」），且块内没有任何输入控件
+      const block = screen.getByTestId('auto-detected-features')
+      expect(within(block).getByText('超宽')).toBeInTheDocument()
+      expect(within(block).getByText('超高')).toBeInTheDocument()
+      expect(block.querySelectorAll('input')).toHaveLength(0)
+    })
+
+    it('判据 2：勾「韩折」⇒ 落库 `processingItems[].name` 含「韩折」且 `craft=「韩褶」`（**派生**，不是页面选的）', async () => {
+      await setup()
+      toggle('韩折')
+      const info = await submitAndGetInfo()
+
+      const names = (info.processingItems as Array<{ name: string }>).map((i) => i.name)
+      expect(names).toContain('韩折')
+      // 名字按 **ERP 逐字**（组合键必须与 ERP 91 项一致）；craft 用 **MIGAO 工艺枚举**（路线键）
+      expect(info.craft).toBe('韩褶')
+      expect(info.craft).not.toBe('韩折')
+    })
+
+    it('判据 3：先勾「打孔」再勾「韩折」⇒ 只剩一个带工艺的项（旧的被自动取消 + toast 说明）', async () => {
+      await setup()
+      toggle('打孔')
+      expect(checkedNames()).toEqual(['打孔', '定型'])
+
+      toggle('韩折')
+      // 单值护栏：新的工艺声明生效，旧的**自动取消**（工艺维是单值，两张声明 = 两套工序）
+      expect(checkedNames()).toEqual(['韩折', '定型'])
+      // **不静默**：必须让商家看见换了哪一个
+      expect(toast.info).toHaveBeenCalledWith('一张单只能有一个工艺：已把「打孔」换成「韩折」')
+
+      const info = await submitAndGetInfo()
+      const names = (info.processingItems as Array<{ name: string }>).map((i) => i.name)
+      expect(names).toContain('韩折')
+      expect(names).not.toContain('打孔')
+      expect(info.craft).toBe('韩褶')
+    })
+
+    it('判据 4：布帘 ⇒ 「定型」默认勾上、`isShaped=true`；纱帘 ⇒ 默认不勾、`isShaped=false`', async () => {
+      await setup()
+      expandProcessing()
+      expect((screen.getByRole('checkbox', { name: '定型' }) as HTMLInputElement).checked).toBe(
+        true
+      )
+      expect((await submitAndGetInfo()).isShaped).toBe(true)
+    })
+
+    it('判据 4b：纱帘 ⇒ 「定型」默认不勾、`isShaped=false`（真值源 §10 布帘是 / 纱帘否）', async () => {
+      await setup()
+      pickBody('纱帘')
+      expandProcessing()
+      expect((screen.getByRole('checkbox', { name: '定型' }) as HTMLInputElement).checked).toBe(
+        false
+      )
+      expect((await submitAndGetInfo()).isShaped).toBe(false)
+    })
+
+    it('判据 4c：商家**手动取消**「定型」后，改帘体不得覆盖（手改留痕）', async () => {
+      await setup()
+      toggle('定型') // 取消默认勾选（布帘默认是勾上的）⇒ 记下「手动改过」
+      pickBody('纱帘')
+      pickBody('布帘')
+      expandProcessing()
+      expect((screen.getByRole('checkbox', { name: '定型' }) as HTMLInputElement).checked).toBe(
+        false
+      )
+      expect((await submitAndGetInfo()).isShaped).toBe(false)
+    })
+
+    it('判据 5：工艺规格里**不再渲染**「工艺」「是否定型」控件（红证：修复前两个 radiogroup 存在）', async () => {
+      await setup()
+      expandCraft()
+      expect(screen.queryByRole('radiogroup', { name: '工艺' })).toBeNull()
+      expect(screen.queryByRole('radiogroup', { name: '是否定型' })).toBeNull()
+      // 「对花」保留（它是**算料输入**：定宽买高时每幅加 1 个花距；ERP 91 项加工费里 0 行含对花）
+      expect(screen.getByRole('radiogroup', { name: '是否对花' })).toBeInTheDocument()
+    })
+
+    it('判据 6：目录里**没有**「定型」项（老租户未重建目录）⇒ 不报错，且 `isShaped` **不写**', async () => {
+      await setup(V83_CATALOG.filter((i) => i.name !== '定型'))
+      expandProcessing()
+      expect(screen.queryByRole('checkbox', { name: '定型' })).toBeNull()
+
+      const info = await submitAndGetInfo()
+      // 三态语义留在「键的缺席」上：后端按缺值处理（与今天「未指定」档同语义），页面**不报错**
+      expect(Object.keys(info)).not.toContain('isShaped')
+      // 其余链路照常
+      expect(info.cuttingMode).toBe('定高买宽')
     })
   })
 })

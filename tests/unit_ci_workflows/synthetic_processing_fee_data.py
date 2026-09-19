@@ -17,6 +17,17 @@
 固定种子生成，只为让「组合价 × 米数 + Σ 选项价 × 套数」这条算式**逐分可核对**。
 真实价目以商家在「加工费管理」里配的为准。
 
+## 本模块现在有**两类**产物（别混读；issue #4566，用户裁定 2026-09-19）
+
+| 产物 | 真值源 | 状态 |
+|---|---|---|
+| `PROCESSING_CATALOG` → `fixture_items()`（L2 加工项目录，**16 项**） | **ERP 附件**：壁达 ERP「窗帘货号资料」页的加工费 91 项列表（设计 §1 逐条实证） | ✅ **已重建**，与迁移 `V83__seed_processing_item_catalog.sql` 逐条同源 |
+| `combination_names()` / `combination_rows()`（组合价目 91 + `缎带` = 92 行） | **确定性枚举的合成集**（`31+31+29`） | ⛔ **仍未重建**（用户裁定：组合价目等 ERP 导出后再做）⇒ 名字**不等于** ERP 真名，是**已知边界** |
+
+⚠️ 读的人请注意：`fixture_items()` 的名字 / `craftHint` 是**照抄 ERP 附件的真实数据**；
+而 `combination_names()` 的名字是**合成枚举**（形态像、但那份 91 项清单不是 ERP 的 91 项）
+—— 两者**不要互相当真值**。
+
 ## 设计文档与代码事实的两处冲突（**以代码事实为准，显式登记**）
 
 1. **特殊选项价 = 16 项，不是 19 项**。设计 §7 写「19 项」，但 §4.1 同时冻结
@@ -91,6 +102,34 @@ OPTION_RULE_IDS = {
 #: 19 项特殊选项里**没有** `trigger_kind='option'` 规则行的 3 项（见模块 docstring 冲突 1）。
 UNPRICED_BY_DESIGN = ("余料带回-布", "余料带回-纱", "一分为二")
 
+#: **加工项目录**（L2 特征词典）—— **按 ERP 附件重建**（issue #4566，用户裁定 2026-09-19
+#: 「加工项以及加工项费用的数据没有根据这个附件重建，现在立刻重建」）。
+#: 真值源 = 壁达 ERP「窗帘货号资料」页加工费 91 项列表的**加工项部分**（设计 §1 逐条实证）。
+#: 逐条 `(name, craftHint)`：
+#:   * `name` = ERP 逐字写法（**错一个字 ⇒ 与库/迁移对不上**，同族纪律：不得用 `contains`）；
+#:   * `craftHint` = **工艺声明**（V78 的 `processing_items.craft_hint`，路线键「工艺」维的受控来源）；
+#:     `None` = **商家没声明**（与 V78 的 `NULL` 同语义，**不是**「工艺 = 空」）。
+#: ⚠️ `四爪钩` **不在**目录里：它是配件、不是打褶方式（归属 issue #4365 阶段 2）。
+#: 唯一真值 = 本常量；`fixture_items()` 与守卫测试都从它派生（守卫另**独立重写**一份对照表）。
+PROCESSING_CATALOG = (
+    ("打孔", "打孔"),
+    ("韩折", "韩褶"),          # 名字是「韩折」、工艺声明是「韩褶」—— **不同字**，别顺手"修"成一致
+    ("韩定+S钩", "韩褶"),
+    ("穿杆", "穿杆"),
+    ("平幔", "平幔"),
+    ("定型", None),
+    ("花边", None),
+    ("扣环", None),
+    ("接高", None),
+    ("拼接", None),
+    ("双眼皮", None),
+    ("缎带", None),
+    ("换货", None),
+    ("超高", None),
+    ("超宽", None),
+    ("倒幅", None),
+)
+
 
 def money(cents: int) -> str:
     """分 → `'3.00'` 形态的金额字面量（**字符串**，避免浮点尾数进 SQL/JSON）。"""
@@ -121,6 +160,11 @@ def combination_names() -> list:
 
     ⇒ 31 + 31 + 29 = **91**，再加 `STANDALONE` 的 `缎带` = **92 行**（设计 §7 冻结的行数）。
     逐值以 `test_combination_names_are_exactly_91` 的判据为准（本函数是唯一实现）。
+
+    ## ⚠️ 已知边界（issue #4566，**别把本清单当 ERP 真名**）
+    本函数是**合成枚举**，**不重建** ERP 附件里的 91 个组合真名（用户裁定：组合价目等 ERP
+    导出后再做 ⇒ 本函数**一字不动**）。ERP 真名里有的、本枚举没有的例：`打孔+拼接+倒幅+定型`、
+    `韩折+超高+接高+定型`。⇒ 组合价目这一层仍是**测试资产**，不是真实价目。
     """
     names = []
     for index, base in enumerate(BASE_FEATURES):
@@ -144,6 +188,9 @@ def combination_rows() -> list:
     并让归一化键与 `ProcessingFeeCombinationCommandService.compositionKey` 的口径分叉）。
     本方案的组合名都是「特征名以 `+` 连接」的**规范形态**（trim 无空项、无重复）⇒ 归一化是恒等变换。
     价格 = 固定种子随机**一次**（`random.Random(SEED)`），结果由调用方**写死**进迁移。
+
+    ⚠️ 已知边界（同 `combination_names`）：`name` 是**合成枚举**名，**不等于** ERP 附件的 91 项
+    真名 —— 本方案只换数据、不动结构，真名单待客户导出（issue #4566）。
     """
     rng = random.Random(SEED)
     names = combination_names() + list(STANDALONE)
@@ -183,26 +230,38 @@ def option_rows() -> list:
 
 
 def fixture_items() -> list:
-    """`tests/e2e/fixtures/processing-list.json` 的 `data.items`（**L2 特征词典**，设计 §7）。
+    """`tests/e2e/fixtures/processing-list.json` 的 `data.items` = **按 ERP 附件重建的加工项目录**
+    （**16 项，含工艺声明**），与迁移 `V83__seed_processing_item_catalog.sql` **逐条同源**；
+    **组合价目仍未重建**（等 ERP 导出，见 `combination_names`）。
 
-    设计 §7 的现状段：现 fixture 的 13 条（`魔术贴安装` / `铅坠安装` / `高温定型`…）**全是编造数据、
-    与 ERP 零对应** ⇒ 换成本方案的**真实特征名**：组合价目用到的 12 个特征（§1.5）
-    + `缎带` / `换货`（§7 的 L2 行）。
+    ## 改判记录（issue #4566，用户裁定 2026-09-19「现在立刻重建」）
+    本函数**曾经**生成的是「**合成特征名**」（`BASE_FEATURES + MODIFIERS + DICTIONARY_EXTRA`
+    的并集 = 14 条、逐条**无工艺声明**）—— 那是 #4525 的形态，**不是** ERP 的加工项目录。
+    现在改为照抄 ERP 附件（真值源 = 设计 §1 的 91 项列表里的加工项部分）：16 项 + 每项 `craftHint`。
+
+    ## `craftHint` 缺失口径（**显式 `None`**，不是省略键）—— 二选一已选定
+    每一条**都带** `craftHint` 键，无声明者落 `None`（JSON 里是 `null`）。为什么不省略键：
+    ① 与 V78 的 `NULL = 商家没声明`（**不是**「工艺 = 空」）同语义 —— 键**存在**才能把「没声明」
+    与「键缺失」分开；② 键集恒定 ⇒ e2e 断言 / 前端消费侧不必写「缺键兜底」，也不会某条有、
+    某条没有而漂移。守卫 = `test_processing_catalog_seed.py`（缺键即红）。
+
+    ## 为什么 `source` 仍是 `synthetic`
+    名字 / `craftHint` 是**真实 ERP 数据**，但本**文档**（`id` / `unitPrice` / 时间戳）仍是
+    生成的测试资产 ⇒ 沿用 #4525 的 provenance 纪律（设计 §7 硬约束 ②）。
+
     ⚠️ 单价**不进** fixture（R10：下单页不展示加工项单价；L2 特征词典无价）—— 但 e2e 的
     `cross-page-consistency` 判据读 `unitPrice` 键存在性，故保留键并置 `0`（= 无价，不是价 0 元）。
     """
-    features = []
-    for name in BASE_FEATURES + MODIFIERS + DICTIONARY_EXTRA + STANDALONE + ("换货",):
-        if name not in features:
-            features.append(name)
     items = []
-    for index, name in enumerate(sorted(features), start=1):
+    for index, (name, craft_hint) in enumerate(sorted(PROCESSING_CATALOG), start=1):
         items.append({
             "id": f"pi-feature-{index:02d}",
             "name": name,
             "categoryId": "pc-feature-dict",
             "categoryName": "特征词典",
             "pricingMethod": "per_meter",
+            # 工艺声明（V78）：`None` = 商家没声明（**显式键**，口径见上「craftHint 缺失口径」）
+            "craftHint": craft_hint,
             # R10：特征词典**无价**（价格只在组合上存在）⇒ 0 + 下方 source 标 synthetic
             "unitPrice": 0,
             "unit": "米",
@@ -247,7 +306,7 @@ def main(argv=None) -> int:
         return 0
     target.write_text(
         json.dumps(fixture_document(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"✅ 已写入 {target}（{len(fixture_items())} 条特征词典行）")
+    print(f"✅ 已写入 {target}（{len(fixture_items())} 条加工项目录行）")
     return 0
 
 

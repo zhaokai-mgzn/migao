@@ -4,6 +4,10 @@
  * 用户 2026-09-19：「**超高 / 超宽是和门幅标准比较的**，客户报的数据和门幅对比后能
  * **自动区分**出来是超高还是超宽，**这个要求做到自动识别**」。
  *
+ * ⚠️ **`定型` 不在自动识别里**（issue #4566，用户 2026-09-19 裁定「工艺、定型…直接通过加工项
+ * 来勾选」）：它是**手选**加工项，勾选态即 `isShaped`。本模块只推导
+ * 与门幅比较的超高/超宽 + 由加工类型推导的倒幅/正幅。
+ *
  * ⚠️ **本文件是 admin-web 专属**，刻意**不放进** `lib/craft-display.ts`：那个文件在
  * admin-web / mini-app / bmini-app **三端逐字同源**（设计 §4.9「一份 spec，三处渲染」，
  * 当前三份 sha 全等、**尚无同步守卫** = 既有 issue #4393）。把下单页的**取价推导**塞进去
@@ -22,8 +26,21 @@ export const HEM_MARGIN = 0.3
 /** 门幅缺省值（米）—— SKU 未携带 `doorWidth` 时的行业常态 */
 export const DEFAULT_DOOR_WIDTH = 2.8
 
-/** 自动识别特征名（**推导产生**，不是商家勾选项 —— 判据 8：出现手选项 ⇒ 红） */
-export type AutoFeatureName = '超高' | '超宽' | '倒幅' | '正幅' | '定型'
+/**
+ * **自动推导**特征名清单（**推导产生**，不是商家勾选项 —— 判据 8：出现手选项 ⇒ 红）。
+ *
+ * ⚠️ 单一真值：下单页用**本清单**把加工项目录里这几项**滤出**手选列表
+ * （它们在目录里**必须存在** —— 商家配「加工费组合」时要能选到 `韩折+超高+定型` 这种名字，
+ * 但下单页的手选控件必须没有它们）。**别在下单页再抄一份名字数组**。
+ *
+ * ⚠️ `定型` **不在**本清单里（issue #4566，用户 2026-09-19 裁定）：它是**手选**加工项
+ * （ERP 91 项加工费名单里的特征词），其勾选态就是 `isShaped` 的真值来源 —— 与
+ * 「按宽高 vs 门幅推导」的超高/超宽不是一类东西。
+ */
+export const AUTO_FEATURE_NAMES = ['超高', '超宽', '倒幅', '正幅'] as const
+
+/** 自动推导特征名（类型 = 上面清单的成员，**不另写一份联合类型**） */
+export type AutoFeatureName = (typeof AUTO_FEATURE_NAMES)[number]
 
 /** 一条自动识别特征（`source` 一律「推算」：推理非实证，照实标注） */
 export interface AutoFeature {
@@ -66,15 +83,17 @@ export interface AutoFeatureInput {
   doorWidth?: unknown
   /** 加工类型（定高买宽 / 定宽买高）；未指定 / 表外取值 ⇒ 不推导朝向 */
   cuttingMode?: string
-  /** 是否定型（工艺规格 `isShaped`，R9 并入特征）；`true` 才出特征 */
-  isShaped?: boolean
 }
 
 /**
  * 自动识别（设计 §5.2 冻结规则）—— 纯函数，**不读任何全局状态**。
  *
- * 顺序 = `超宽 → 超高 → 倒幅/正幅 → 定型`（与 ERP 组合名 `韩折+超宽+超高+定型` 同族；
+ * 顺序 = `超宽 → 超高 → 倒幅/正幅`（与 ERP 组合名 `韩折+超宽+超高+定型` 同族；
  * 组合键归一化另有唯一实现，此处顺序只为展示稳定）。
+ *
+ * ⚠️ **`定型` 已移出**（issue #4566，用户 2026-09-19 裁定「工艺、定型…直接通过加工项来勾选」）：
+ * 它现在是**手选**加工项（勾选态 = `isShaped`），不再由本函数推导 —— 自动推导的只有
+ * 与门幅比较出来的超高/超宽，以及由 `cuttingMode` 推导的倒幅/正幅。
  */
 export function detectAutoFeatures(input: AutoFeatureInput): AutoFeature[] {
   const features: AutoFeature[] = []
@@ -103,11 +122,6 @@ export function detectAutoFeatures(input: AutoFeatureInput): AutoFeature[] {
     features.push({ name: '倒幅', source: '推算', reason: '加工类型 = 定宽买高' })
   } else if (input.cuttingMode === '定高买宽') {
     features.push({ name: '正幅', source: '推算', reason: '加工类型 = 定高买宽' })
-  }
-
-  // R9：是否定型从「工艺规格字段」并入加工项特征（组合键的构成要素）
-  if (input.isShaped === true) {
-    features.push({ name: '定型', source: '推算', reason: '工艺规格：是否定型 = 是' })
   }
 
   return features

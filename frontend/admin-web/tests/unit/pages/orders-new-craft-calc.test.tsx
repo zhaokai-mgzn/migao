@@ -14,7 +14,7 @@
  * ④ 参数不全 ⇒ **不发请求**（不得用默认窗宽猜一个米数）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 const mockCreateOrder = vi.fn()
 const mockGetProducts = vi.fn()
@@ -225,6 +225,24 @@ describe('下单页算料试算接线（#4434）', () => {
   })
 
   it('#4527 打孔 ⇒ **照常发请求**且走倍数法（eyelet + fullness）——「打孔按倍数法算布料」必须在页面上真的发生', async () => {
+    // ⚠️ #4566（用户 2026-09-19 裁定「工艺…直接通过加工项来勾选」）：工艺不再是「工艺规格」里的
+    // 选择器 ⇒ 从**加工项**勾选（目录形状 = V83 种子：名字「打孔」+ `craftHint='打孔'`）。
+    mockGetProcessingItems.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            {
+              id: 'pi-punch',
+              name: '打孔',
+              craftHint: '打孔',
+              pricingMethod: 'per_meter',
+              unitPrice: 0,
+              unit: '米',
+            },
+          ],
+        },
+      },
+    })
     render(<NewOrderPage />)
     await pickProduct()
     fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
@@ -232,14 +250,10 @@ describe('下单页算料试算接线（#4434）', () => {
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
 
     mockCraftCalcPreview.mockClear()
-    // issue #4511 手风琴：工艺规格是向导② ⇒ 先展开该步，再一击即中
-    const craftStep = screen.getAllByRole('button', { name: /^\d+ 工艺规格/ })[0]
-    if (craftStep.getAttribute('aria-expanded') === 'false') fireEvent.click(craftStep)
-    fireEvent.click(
-      within(screen.getAllByRole('radiogroup', { name: '工艺' })[0]).getByRole('radio', {
-        name: '打孔',
-      })
-    )
+    // issue #4511 手风琴：加工项是向导③ ⇒ 先展开该步，再勾选（勾选即改入参签名 ⇒ 重发试算）
+    const processingStep = screen.getAllByRole('button', { name: /^\d+ 加工项/ })[0]
+    if (processingStep.getAttribute('aria-expanded') === 'false') fireEvent.click(processingStep)
+    fireEvent.click(await screen.findByRole('checkbox', { name: '打孔' }))
     // 旧口径下打孔返回 null ⇒ 永不发请求 ⇒ 本断言红（这正是本条要防的形态）
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
     expect(mockCraftCalcPreview.mock.calls[0][0]).toMatchObject({
@@ -249,7 +263,28 @@ describe('下单页算料试算接线（#4434）', () => {
     })
   })
 
-  it('判据 7：无自动算料口径的工艺（四爪钩）⇒ 不发请求（后端答不出）', async () => {
+  it('判据 7：无自动算料口径的工艺（穿杆）⇒ 不发请求（后端答不出）', async () => {
+    // ⚠️ #4566：工艺从加工项派生 ⇒ 本判据改用 V83 目录里的「穿杆」（`craftHint='穿杆'`，
+    // `curtain_calc` 无该工艺的自动算料口径）。
+    // 原判据用「四爪钩」——它**不在** V83 加工项目录里（是配件，不是打褶方式；归属 #4365 阶段 2）
+    // ⇒ 下单页已不可达（已知取舍）。`isAutoCalcUnavailable('四爪钩')` 的**纯函数**判据仍保留在
+    // `craft-calc-request.test.ts`（口径本身没丢，只是页面入口随裁定退场）。
+    mockGetProcessingItems.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            {
+              id: 'pi-rod',
+              name: '穿杆',
+              craftHint: '穿杆',
+              pricingMethod: 'per_meter',
+              unitPrice: 0,
+              unit: '米',
+            },
+          ],
+        },
+      },
+    })
     render(<NewOrderPage />)
     await pickProduct()
     fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
@@ -257,13 +292,9 @@ describe('下单页算料试算接线（#4434）', () => {
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
 
     mockCraftCalcPreview.mockClear()
-    const craftStep = screen.getAllByRole('button', { name: /^\d+ 工艺规格/ })[0]
-    if (craftStep.getAttribute('aria-expanded') === 'false') fireEvent.click(craftStep)
-    fireEvent.click(
-      within(screen.getAllByRole('radiogroup', { name: '工艺' })[0]).getByRole('radio', {
-        name: '四爪钩',
-      })
-    )
+    const processingStep = screen.getAllByRole('button', { name: /^\d+ 加工项/ })[0]
+    if (processingStep.getAttribute('aria-expanded') === 'false') fireEvent.click(processingStep)
+    fireEvent.click(await screen.findByRole('checkbox', { name: '穿杆' }))
     await new Promise((r) => setTimeout(r, 600))
     expect(mockCraftCalcPreview).not.toHaveBeenCalled()
   })

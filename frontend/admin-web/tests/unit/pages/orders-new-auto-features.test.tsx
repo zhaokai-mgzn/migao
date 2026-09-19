@@ -174,4 +174,39 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
     // 一个手选加工项都没勾 ⇒ 摘要必须是「未选」（自动特征不算手选）
     expect(screen.getByText('未选')).toBeInTheDocument()
   })
+
+  // issue #4566（用户 2026-09-19 裁定「工艺规格中的**工艺，定型**……直接通过加工项来勾选」）：
+  // 加工项目录里的**自动推导特征**（超高/超宽/倒幅）**必须存在**（商家配「加工费组合」时要能选到
+  // `韩折+超高+定型` 这种名字），但**下单页的手选控件必须没有它们**（判据 8：手选项 ⇒ 红）。
+  // 单一真值 = `lib/craft-auto-features.ts` 的 `AUTO_FEATURE_NAMES`（页面不抄第二份名字数组）。
+  it('#4566 目录里的「超高/超宽/倒幅」**不出手选控件**（只出现在只读的自动识别块里）', async () => {
+    mockGetProcessingItems.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            { id: 'pi-02', name: '韩折', craftHint: '韩褶', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+            { id: 'pi-06', name: '定型', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+            { id: 'pi-14', name: '超高', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+            { id: 'pi-15', name: '超宽', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+            { id: 'pi-16', name: '倒幅', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+          ],
+        },
+      },
+    })
+    await setupLine()
+
+    // 手选列表 = 目录 − 自动推导特征（红证：修复前这里会出现 5 个 checkbox）
+    expect(screen.getAllByRole('checkbox').map((b) => b.getAttribute('aria-label'))).toEqual([
+      '韩折',
+      '定型',
+    ])
+    for (const auto of ['超高', '超宽', '倒幅']) {
+      expect(screen.queryByRole('checkbox', { name: auto })).toBeNull()
+    }
+    // 推导结果照旧**只读可见**（6.6×2.6 对缺省门幅 2.8 ⇒ 超宽 + 超高），块内无任何输入控件
+    const block = await screen.findByTestId('auto-detected-features')
+    expect(within(block).getByText('超宽')).toBeInTheDocument()
+    expect(within(block).getByText('超高')).toBeInTheDocument()
+    expect(block.querySelectorAll('input')).toHaveLength(0)
+  })
 })

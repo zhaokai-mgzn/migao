@@ -17,10 +17,16 @@
  *
  * ── issue #4521：**移除「部位」** + 纱帘子块 ──────────────────────────────────
  * ① 「部位」chips 整体消失（红证：修复前 `getByRole('radiogroup', {name:'部位'})` 存在）；
- * ② 「是否定型」的行业默认改由**帘体**结构决定（页面侧写回）⇒ 本组不再有部位联动判据，
- *    改为判「改定型只 patch isShaped 一个键」；
+ * ② 「是否定型」的行业默认改由**帘体**结构决定（页面侧写回）；
  * ③ 新增**纱帘子块**判据：`sheer=false` 不出现；`sheer=true` 出「纱帘米数 / 纱帘单价」，
  *    米数默认 = 主布米数、可改、带来源留痕 —— 与「配布边」逐字同构。
+ *
+ * ── issue #4566：**「工艺」与「是否定型」搬出本组件**（用户 2026-09-19 裁定）──────────
+ * 「工艺规格中的**工艺，定型**，对花我觉得**直接通过加工项来勾选**，其他保留」⇒
+ * ① 两个 radiogroup 消失（红证：修复前 `name='工艺'` / `name='是否定型'` 存在），
+ *    本文件原有 6 条判据随之改判/搬迁（**不是删断言**：真值源与判据在 `orders-new.test.tsx`
+ *    的 #4566 组里以**加工项**为承载重新断言 —— 派生、单值护栏、默认勾选、无该项不报错）；
+ * ② 三态只剩「是否对花」（三段语义一字不动）。
  */
 import { useState } from 'react'
 import { describe, it, expect, vi } from 'vitest'
@@ -87,13 +93,25 @@ const chipLabels = (group: string) =>
     .map((el) => el.textContent)
 
 describe('OrderCraftFields', () => {
-  it('渲染 §4.2 的七个工艺控件（工艺/加工类型/打开方式/是否定型/款式/褶距/是否对花）', () => {
+  it('渲染 §4.2 保留的工艺控件（加工类型/打开方式/款式/褶距/是否对花）', () => {
     render(<Harness />)
-    // 六个枚举字段 = chips 组（一击即中）；褶距仍是数值输入
-    for (const name of ['工艺', '加工类型', '打开方式', '是否定型', '款式', '是否对花']) {
+    // 枚举字段 = chips 组（一击即中）；褶距仍是数值输入
+    for (const name of ['加工类型', '打开方式', '款式', '是否对花']) {
       expect(chipGroup(name)).toBeInTheDocument()
     }
     expect(screen.getByLabelText('褶距')).toBeInTheDocument()
+  })
+
+  // issue #4566 红证（用户 2026-09-19 裁定「工艺规格中的**工艺，定型**，对花我觉得**直接通过
+  // 加工项来勾选**，其他保留」）：修复前这两个 radiogroup 存在（`name="工艺"` / `name="是否定型"`）
+  // ⇒ 本判据必红。搬走后它们由**加工项**承载（页面侧 `craftFromItems` / 加工项「定型」勾选态）
+  // ⇒ 本组件再渲染它们 = 与加工项派生出的第二份口径打架。
+  it('#4566 **不再有**「工艺」与「是否定型」控件（红证：修复前两个 radiogroup 存在）', () => {
+    render(<Harness />)
+    expect(screen.queryByRole('radiogroup', { name: '工艺' })).toBeNull()
+    expect(screen.queryByRole('radiogroup', { name: '是否定型' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: '韩褶' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: '四爪钩' })).toBeNull()
   })
 
   // issue #4521 红证：修复前这里有 `radiogroup name="部位"`（布帘/纱帘/帘头 chips）。
@@ -109,29 +127,24 @@ describe('OrderCraftFields', () => {
   // 且「一击」是实质断言：**一次点击**即 `aria-checked=true`，不需要先「展开」。
   it('#4489 枚举字段一击即中：点一下 chip 就选中（无需先展开下拉）', () => {
     render(<Harness />)
-    expect(chip('工艺', '打孔')).toHaveAttribute('aria-checked', 'false')
-    fireEvent.click(chip('工艺', '打孔'))
-    expect(chip('工艺', '打孔')).toHaveAttribute('aria-checked', 'true')
-    expect(chip('工艺', '未指定')).toHaveAttribute('aria-checked', 'false')
+    expect(chip('加工类型', '定高买宽')).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(chip('加工类型', '定高买宽'))
+    expect(chip('加工类型', '定高买宽')).toHaveAttribute('aria-checked', 'true')
+    expect(chip('加工类型', '未指定')).toHaveAttribute('aria-checked', 'false')
   })
 
   // 19 项特殊选项的判据已迁到 `OrderSpecialOptions.test.tsx`（issue #4511 组件抽离）。
-  it('工艺 chips 的候选逐字 = 韩褶/打孔/四爪钩/穿杆/平幔', () => {
-    render(<Harness />)
-    expect(chipLabels('工艺')).toEqual(['未指定', '韩褶', '打孔', '四爪钩', '穿杆', '平幔'])
-  })
-
   it('加工类型 / 款式 chips 的候选逐字 = 定高买宽·定宽买高 / 单色·拼色', () => {
     render(<Harness />)
     expect(chipLabels('加工类型')).toEqual(['未指定', '定高买宽', '定宽买高'])
     expect(chipLabels('款式')).toEqual(['未指定', '单色', '拼色'])
   })
 
-  it('选工艺 ⇒ onChange 收到 camelCase patch', () => {
+  it('选款式 ⇒ onChange 收到 camelCase patch', () => {
     const spy = vi.fn()
     render(<Harness onChangeSpy={spy} />)
-    fireEvent.click(chip('工艺', '打孔'))
-    expect(spy).toHaveBeenCalledWith({ craft: '打孔' })
+    fireEvent.click(chip('款式', '拼色'))
+    expect(spy).toHaveBeenCalledWith({ style: '拼色' })
   })
 
   it('打开方式选中「双开」⇒ openCount 是数字 2（不是字符串）', () => {
@@ -159,33 +172,19 @@ describe('OrderCraftFields', () => {
     }
   })
 
-  it('是否定型选「否」⇒ isShaped=false（显式否是真值，不得当成未填）', () => {
-    const spy = vi.fn()
-    render(<Harness onChangeSpy={spy} />)
-    fireEvent.click(chip('是否定型', '否'))
-    expect(spy).toHaveBeenCalledWith({ isShaped: false })
-  })
-
-  it('是否定型回到「未指定」⇒ isShaped=undefined（键不落库）', () => {
-    const spy = vi.fn()
-    render(<Harness initial={{ isShaped: true }} onChangeSpy={spy} />)
-    fireEvent.click(chip('是否定型', '未指定'))
-    expect(spy).toHaveBeenCalledWith({ isShaped: undefined })
-  })
-
   // issue #4489 硬约束：「未指定」与「否」是两个真值 ⇒ 三态必须是**三段**分段按钮。
   // 红证：若把三态做成两段（是/否）或布尔开关，本判据必红（「未指定」档消失）。
+  // ⚠️ #4566 后本组件**只剩「是否对花」**用三态（「是否定型」已搬到加工项）。
   it('#4489 三态字段是三段分段按钮，「未指定」档保留（没问过 ≠ 否）', () => {
     render(<Harness />)
-    expect(chipLabels('是否定型')).toEqual(['未指定', '是', '否'])
     expect(chipLabels('是否对花')).toEqual(['未指定', '是', '否'])
     // 未指定 ⇒ 两档都不是选中态（不是被当成「否」）
-    expect(chip('是否定型', '未指定')).toHaveAttribute('aria-checked', 'true')
-    expect(chip('是否定型', '否')).toHaveAttribute('aria-checked', 'false')
+    expect(chip('是否对花', '未指定')).toHaveAttribute('aria-checked', 'true')
+    expect(chip('是否对花', '否')).toHaveAttribute('aria-checked', 'false')
     // 显式「否」⇒ 只有「否」是选中态（未指定与否在 UI 上可区分）
-    fireEvent.click(chip('是否定型', '否'))
-    expect(chip('是否定型', '否')).toHaveAttribute('aria-checked', 'true')
-    expect(chip('是否定型', '未指定')).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(chip('是否对花', '否'))
+    expect(chip('是否对花', '否')).toHaveAttribute('aria-checked', 'true')
+    expect(chip('是否对花', '未指定')).toHaveAttribute('aria-checked', 'false')
   })
 
   it('褶距输入 ⇒ pleatSpacing 数字；清空 ⇒ undefined', () => {
@@ -247,18 +246,12 @@ describe('OrderCraftFields', () => {
     expect(inputByName('配布边米数')).toHaveValue(3)
   })
 
-  // ── issue #4521：部位联动**已移除**，定型默认改由帘体结构决定 ────────────────────
+  // ── issue #4566：「工艺」/「是否定型」已搬出本组件 ──────────────────────────────
   //
-  // 原 #4489 的「选部位 ⇒ 是否定型联动」判据整体作废（部位字段已不存在）。同一份真值源
-  // （布帘默认是 / 纱帘否）现在由**帘体**驱动，落点在页面侧（`defaultIsShapedForBody`）
-  // 与 `order-craft-fields.test.ts` 的纯函数判据 ⇒ 本组件只剩一条：改定型只 patch 一个键。
-  it('#4521 改「是否定型」只 patch isShaped 一个键（不再带出部位联动）', () => {
-    const spy = vi.fn()
-    render(<Harness onChangeSpy={spy} />)
-    fireEvent.click(chip('是否定型', '否'))
-    expect(spy).toHaveBeenCalledTimes(1)
-    expect(spy.mock.calls[0][0]).toEqual({ isShaped: false })
-  })
+  // 原 #4489 的「选部位 ⇒ 是否定型联动」与 #4521 的「改定型只 patch isShaped 一个键」判据
+  // 均随裁定作废（控件已不在本组件里）——真值源与判据一字未丢，只是**换了承载控件**：
+  // 工艺 = 加工项的 `craftHint`（`orders-new.test.tsx` 的 #4566 组 + `craft-auto-features`），
+  // 定型 = 加工项「定型」的勾选态（同处），纯函数半边在 `order-craft-fields.test.ts`。
 
   // ── issue #4521：纱帘子块（用户口径「带纱帘就像配布边一样，让用户输入米数和单价」）────
   it('#4521 帘体不含纱帘 ⇒ 不出现纱帘录入', () => {

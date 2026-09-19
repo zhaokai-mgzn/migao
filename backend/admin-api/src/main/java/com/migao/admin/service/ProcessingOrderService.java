@@ -1391,7 +1391,11 @@ public class ProcessingOrderService {
         }
         // ② 受控来源补齐缺的那一维（issue #4452）：部位 ← componentRole 枚举；工艺 ← 加工项声明列。
         String curtainType = directCurtainType != null ? directCurtainType : positionOfComponentRole(entry);
-        String craft = directCraft != null ? directCraft : craftHintOf(entry);
+        // 加工项的工艺声明**无条件校验**（用户裁定 2026-09-19「工艺单值护栏」）：不能等
+        // 「显式 craft 为空」才读它 —— 下单页会把派生出的 craft 显式写回（route_source=direct），
+        // 那时本行会短路 ⇒ 护栏失效、两个不同声明被静默取第一个。
+        String declaredCraft = craftHintOf(entry);
+        String craft = directCraft != null ? directCraft : declaredCraft;
         // ③ 两维都缺 ⇒ **存量单**（老数据没有 V63 列 / componentRole / craft_hint）才读信号表兜底。
         //    信号源只剩加工项名/options（商品名与销售方式已摘掉，见 signals()）。
         //    ⚠️ 本分支的**条件**就是「不读信号表」的判据：新单只要给出一维，本行不执行。
@@ -1440,21 +1444,41 @@ public class ProcessingOrderService {
      * 工艺维的**显式声明**（issue #4452）：取本行加工项在 {@code processing_items.craft_hint}
      * 里声明的工艺（{@link #buildSnapshot} 从加工项目录带进快照的 {@code craftHint} 键）。
      *
-     * <p>逐加工项取**第一个有声明**的（加工项列表有序）；都不声明 ⇒ 返回 null（该维按缺维处理）。</p>
+     * <p>都不声明 ⇒ 返回 null（该维按缺维处理）。</p>
+     *
+     * <p><b>声明了 ≥2 个**不同**工艺 ⇒ fail-closed（422）</b>（用户裁定 2026-09-19：「工艺单值护栏：
+     * 每个部位最多一个声明工艺的加工项，两个 ⇒ fail-closed」，否则同一单会派生出**两套工序**
+     * —— 工人按两遍单价拿钱）。本方法**只认「不同」**：同一工艺被多个加工项声明（如「韩折」与
+     * 「韩定+S钩」都声明韩褶）是**合法**的，不算冲突。</p>
+     *
+     * <p>为什么护栏落在这里而不是下单接口：路线键的工艺维**只在派生时**被消费（危害发生点），
+     * 而下单接口不读加工项目录（读它要给 {@code OrderService} 引入目录依赖）。前端另有**同口径**
+     * 的预防（勾第二个带工艺的加工项时自动取消前一个并提示）。</p>
      */
     @SuppressWarnings("unchecked")
-    private static String craftHintOf(Map<String, Object> entry) {
-        if (entry.get("processingItems") instanceof List<?> items) {
-            for (Object raw : items) {
-                if (raw instanceof Map<?, ?> item) {
-                    String hint = str(((Map<String, Object>) item).get("craftHint"));
-                    if (hint != null) {
-                        return hint;
-                    }
+    static String craftHintOf(Map<String, Object> entry) {
+        if (!(entry.get("processingItems") instanceof List<?> items)) {
+            return null;
+        }
+        List<String> hints = new ArrayList<>();
+        for (Object raw : items) {
+            if (raw instanceof Map<?, ?> item) {
+                String hint = str(((Map<String, Object>) item).get("craftHint"));
+                if (hint != null && !hints.contains(hint)) {
+                    hints.add(hint);
                 }
             }
         }
-        return null;
+        if (hints.size() > 1) {
+            // 错误码复用 ERR_ROUTING_NOT_FOUND：失败语义就是「这张单的工艺维定不下来 ⇒ 路线取不到」，
+            // 不新增契约面（前端已按该码提示；见 docs/wiki/CONTRACT-LEDGER.md）。
+            throw new BusinessException(ERR_ROUTING_NOT_FOUND,
+                    String.format("本行加工项声明了多个工艺（%s）—— 一张单只能有一个工艺，"
+                            + "否则同一单会派生出两套工序", String.join(" / ", hints)),
+                    422,
+                    "请在订单里只保留一个带工艺的加工项（如「韩折」或「打孔」），其余取消勾选");
+        }
+        return hints.isEmpty() ? null : hints.get(0);
     }
 
     /**

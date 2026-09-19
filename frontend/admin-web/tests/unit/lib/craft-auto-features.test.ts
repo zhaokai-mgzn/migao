@@ -18,7 +18,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { HEM_MARGIN, detectAutoFeatures, resolveDoorWidth } from '@/lib/craft-auto-features'
+import { AUTO_FEATURE_NAMES, HEM_MARGIN, detectAutoFeatures, resolveDoorWidth } from '@/lib/craft-auto-features'
 
 /** 算料引擎源（真值源）：`backend/ai-agent-service/app/tools/curtain_calc.py` */
 const CALC_SRC = resolve(
@@ -146,5 +146,27 @@ describe('自动特征不是可手选项（判据 8：手选项 ⇒ 红）', () 
   it('自动识别的特征名只可能是 超高 / 超宽 / 倒幅 / 正幅 这四个（推导产生，非商家勾选）', () => {
     const all = detectAutoFeatures({ width: 6.6, height: 2.6, doorWidth: 1.4, cuttingMode: '定宽买高' })
     expect(all.map((f) => f.name)).toEqual(['超宽', '超高', '倒幅'])
+  })
+
+  // issue #4566（用户 2026-09-19 裁定「工艺规格中的**工艺，定型**……直接通过加工项来勾选」）：
+  // `定型` 是**手选**加工项，不再是自动推导特征 —— 其勾选态单独派生 `isShaped`。
+  // 本清单同时是下单页滤出「手选列表」的**单一真值**（目录里必须存在这些项，
+  // 但下单页的手选控件必须没有它们）。
+  it('#4566 自动推导特征清单 = 超高/超宽/倒幅/正幅（**不含定型**）', () => {
+    expect(AUTO_FEATURE_NAMES).toEqual(['超高', '超宽', '倒幅', '正幅'])
+    expect(AUTO_FEATURE_NAMES).not.toContain('定型')
+  })
+
+  it('#4566 `定型` 不再由本模块推导：多传 `isShaped` 也不产出 `定型` 特征', () => {
+    // 红证（实现前）：`detectAutoFeatures({ isShaped: true, ... })` 会产出 `定型`（R9 旧口径）。
+    const names = detectAutoFeatures({
+      width: 6.6,
+      height: 2.6,
+      doorWidth: 2.8,
+      cuttingMode: '定高买宽',
+      // @ts-expect-error 入参类型已删掉 `isShaped`（#4566）；刻意多传，验证它不再影响结果
+      isShaped: true,
+    }).map((f) => f.name)
+    expect(names).toEqual(['超宽', '超高', '正幅'])
   })
 })
