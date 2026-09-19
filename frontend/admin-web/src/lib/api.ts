@@ -59,9 +59,7 @@ import type {
   FeeCombinationUpdateParams,
   FeeGaps,
   RouteOperationCreateParams,
-  RouteSignal,
   RouteSignalsResponse,
-  RouteSignalParams,
   ProductionSeedTemplate,
   ProductionSeedApplyResult,
   ProductStatus,
@@ -503,15 +501,10 @@ export const productionApi = {
   createOperation: (data: RouteOperationCreateParams) =>
     request.post<ApiResponse<CatalogOperation>>('/api/admin/production/operations', data),
 
-  // 信号映射（库数据：派生读库而非读硬编码常量表）
+  // 信号映射**只读**（库数据：派生读库而非读硬编码常量表）——写面已随 #4452 退役，
+  // 存量单仍需读面兜底 ⇒ 只留 `getRouteSignals`（#4534 已删三个死写方法）。
   getRouteSignals: () =>
     request.get<ApiResponse<RouteSignalsResponse>>('/api/admin/production/route-signals'),
-  createRouteSignal: (data: RouteSignalParams) =>
-    request.post<ApiResponse<RouteSignal>>('/api/admin/production/route-signals', data),
-  updateRouteSignal: (id: number, data: RouteSignalParams) =>
-    request.put<ApiResponse<RouteSignal>>(`/api/admin/production/route-signals/${id}`, data),
-  deleteRouteSignal: (id: number) =>
-    request.delete<ApiResponse<void>>(`/api/admin/production/route-signals/${id}`),
 
   // 缺口：①有活跃工序但未进任何活跃路线 ②库中无路线的信号组合
   getRoutingGaps: () =>

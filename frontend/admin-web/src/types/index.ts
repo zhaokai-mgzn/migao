@@ -834,14 +834,6 @@ export interface RouteSignalsResponse {
   signals?: RouteSignal[]
 }
 
-/** 信号映射写参数（POST 新增 / PUT 修改同一形态） */
-export interface RouteSignalParams {
-  signal: string
-  curtain_type: string
-  craft: string
-  priority?: number
-}
-
 /** PUT /api/admin/production/routings/{id} body —— **部分更新**：只写出现的字段（issue #4459 §1③） */
 export interface RoutingUpdateParams {
   /** 改名**只改它**（不给 `mainline` 就不动序列） */
