@@ -78,6 +78,13 @@ public class ProcessingItemUpdateRequest {
     private Boolean aiRecommended;
 
     /**
+     * **显式声明的工艺**（V78，issue #4452）：该加工项代表哪个工艺（韩褶/打孔/穿杆/平幔…）。
+     * 改声明 ⇒ 后续订单的路线随之变；改加工项**名** ⇒ 路线**不变**。可空 = 没声明（不猜）。
+     */
+    @Size(max = 16, message = "工艺名不能超过16个字符")
+    private String craftHint;
+
+    /**
      * 状态：active（启用）、inactive（禁用）
      */
     private String status;

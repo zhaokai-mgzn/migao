@@ -78,6 +78,16 @@ public class ProcessingItemCreateRequest {
     private Boolean aiRecommended = true;
 
     /**
+     * **显式声明的工艺**（V78，issue #4452）：该加工项代表哪个工艺（韩褶/打孔/穿杆/平幔…）。
+     *
+     * <p>它是路线键「工艺」维的**受控来源** —— 加工项目录是商家可自定义的业务数据，
+     * 让判据去猜**名字**就是「名词解释」（商家每加一个自定义名就多一分静默错配）。
+     * 可空：留空 = 没声明（该维按缺维处理，`route_source` 显式标注，不猜）。</p>
+     */
+    @Size(max = 16, message = "工艺名不能超过16个字符")
+    private String craftHint;
+
+    /**
      * 状态：active（启用）、inactive（禁用）
      */
     private String status = "active";

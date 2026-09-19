@@ -166,21 +166,88 @@ def test_migration_referenced_tables_exist():
     )
 
 
+def _columns_added_by(sql: str) -> set:
+    """**本条迁移自己 `ADD COLUMN` 出来的列**（`(表, 列)`）。
+
+    ⚠️ **为什么必须排除它们**（否则守卫会永久假红、被人直接关掉）：新增列的正确写法是
+    「同一文件里 `ALTER TABLE t ADD COLUMN IF NOT EXISTS c` + `COMMENT ON COLUMN t.c`」
+    —— 而 `COMMENT ON COLUMN t.c` 是**合法的自引用**（该列由本文件刚建出来），
+    终态 `docs/sql/schema.sql` 里当然还没有它。不排除就会把「按规范写注释」判成缺陷。
+    （实证：V78 `craft_hint` 首版即命中此假红；而**真正的**缺陷形态 —— 引用**别人**的、
+    或**根本不存在**的列 —— 仍会被抓住。）
+    """
+    sql = _strip_comments(sql)
+    out = set()
+    for m in re.finditer(r"\bALTER\s+TABLE\s+([a-z_][a-z0-9_]*)([\s\S]*?);", sql, re.I):
+        table = m.group(1).lower()
+        for cm in re.finditer(r"ADD\s+COLUMN(?:\s+IF\s+NOT\s+EXISTS)?\s+([a-z_][a-z0-9_]*)", m.group(2), re.I):
+            out.add((table, cm.group(1).lower()))
+    return out
+
+
 def test_migration_referenced_columns_exist():
-    """判据 2：迁移里 `表.列` 的列必须在该表里存在（**这条正是 V74 首版漏掉的检查**）。"""
+    """判据 2：迁移里 `表.列` 的列必须在该表里存在（**这条正是 V74 首版漏掉的检查**）。
+
+    ⚠️ 排除**本迁移自己 ADD COLUMN 出来的列**（见 {@link _columns_added_by}）——
+    那是合法的自引用（典型形态 = `ADD COLUMN` + `COMMENT ON COLUMN` 同一文件）。
+    """
     schema = _schema_text()
     tables = _tables_in_schema(schema)
     missing = []
     for p in sorted(MIGRATION_DIR.glob("V*.sql")):
-        for t, c in _referenced_columns(p.read_text(encoding="utf-8")):
+        sql = p.read_text(encoding="utf-8")
+        self_added = _columns_added_by(sql)
+        for t, c in _referenced_columns(sql):
             if t in ALLOWLIST_TABLES or t not in tables:
                 continue          # 表不存在由判据 1 负责报
+            if (t, c) in self_added:
+                continue          # 本迁移自己建的列（ADD COLUMN + COMMENT ON 同文件）
             if c not in _columns_of(schema, t):
                 missing.append(f"{p.name}: `{t}.{c}` —— `{t}` 表没有列 `{c}`")
     assert not missing, (
         "这些迁移引用了**不存在的列**：\n  " + "\n  ".join(sorted(set(missing)))
         + "\n⇒ 与 V74 首版同款：SQL 失败 → 被跳过 → 部署 success 但数据没改（issue #4402）。"
     )
+
+
+# ── 判据 2 的自证（**防「把守卫写弱成永远绿」**）───────────────────────────────
+# 实证（issue #4452）：V78 `craft_hint` 首版把守卫判红 —— 命中的是 `COMMENT ON COLUMN
+# processing_items.craft_hint`（**合法的自引用**：该列由同一文件刚 ADD COLUMN 出来，
+# 终态 schema.sql 里当然还没有）。修法 = 排除「本迁移自己 ADD COLUMN 出来的列」。
+# ⇒ 必须同时钉住两件事：① 自引用放行；② **真缺陷仍被抓住**（否则守卫就成了摆设）。
+
+def test_self_added_columns_are_excluded():
+    """① 自引用放行：`ADD COLUMN c` + `COMMENT ON COLUMN t.c` 同一文件 ⇒ 不算「引用了不存在的列」。"""
+    sql = ("ALTER TABLE processing_items ADD COLUMN IF NOT EXISTS craft_hint VARCHAR(16);\n"
+           "COMMENT ON COLUMN processing_items.craft_hint IS '显式声明的工艺';\n")
+    assert ("processing_items", "craft_hint") in _columns_added_by(sql)
+    assert ("processing_items", "craft_hint") in _referenced_columns(sql)
+    # 逐条走一遍判据 2 的过滤逻辑（不改磁盘文件，直接验过滤条件）
+    schema = _schema_text()
+    tables = _tables_in_schema(schema)
+    self_added = _columns_added_by(sql)
+    missing = [
+        f"{t}.{c}" for t, c in _referenced_columns(sql)
+        if t in tables and (t, c) not in self_added and c not in _columns_of(schema, t)
+    ]
+    assert missing == [], "自引用（ADD COLUMN + COMMENT ON 同文件）不得被判成缺陷"
+
+
+def test_genuinely_missing_column_is_still_caught():
+    """② **真缺陷仍被抓住**（守卫没被写弱）：`COMMENT ON COLUMN` 一个**没被本文件 ADD** 的列 ⇒ 命中。"""
+    sql = "COMMENT ON COLUMN processing_items.craft_hint_not_added IS '凭空引用';\n"
+    schema = _schema_text()
+    tables = _tables_in_schema(schema)
+    self_added = _columns_added_by(sql)
+    missing = [
+        f"{t}.{c}" for t, c in _referenced_columns(sql)
+        if t in tables and (t, c) not in self_added and c not in _columns_of(schema, t)
+    ]
+    assert missing == ["processing_items.craft_hint_not_added"], (
+        "引用了既不在终态 schema、也不是本文件 ADD 出来的列 ⇒ 必须判红"
+        "（否则这条守卫就是摆设 —— V74 首版那个缺陷会静默通过）"
+    )
+
 
 # 「已知损坏、但**不可修**」的已发布迁移（逐条给理由 + 补偿迁移）。
 # ⚠️ 不是「网开一面」：`.github/danger_scan.py` **机械阻塞**改已发布迁移，且确认通道只对
