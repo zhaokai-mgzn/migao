@@ -1345,3 +1345,81 @@ def test_new_route_parsers_detect_injected_drift():
         "改 priority 读不出来 ⇒ 规则顺序比对是空断言"
     assert route_rule_rows(good_rules.replace("'三边', 10", "NULL, 10")) != base_rules, \
         "改锚点读不出来 ⇒ 规则比对是空断言"
+
+
+# ── ⑧ D5 豁免（issue #4525）：`customer_unit_price` 不进 `routing.py::ROUTE_RULES` ──
+#
+# 用户裁定 2026-09-19：「Agent 的暂时都先豁免，等后面统一来重构 agent」（设计 §2 的 D5）
+# ⇒ 本方案的**对客按套单价**（V77 的 `production_route_rules.customer_unit_price`）**不**进
+# `app/production/routing.py` 的 `ROUTE_RULES`（agent 侧真值源）。
+#
+# ⚠️ **这是债务，不是终态**（`migao-dev-flow` §19.1：豁免登记为**债务类**，只许缩短）。
+# 代价：三源收敛守卫（`routing.py` ↔ 迁移 ↔ `schema.sql`）对本列**无覆盖** —— 本列的值
+# 目前只有 V77 一个来源，`routing.py` 若将来也要用对客价，必须走「改 `ROUTE_RULES` + 新迁移」
+# 的正常路径，而不是在这里追加豁免。销账时机 = agent 侧统一重构（#4525 的 D5 边界）。
+
+#: D5 豁免登记（**列名 → 销账条件**）。新增条目必须同时给出销账条件，否则豁免会变成永久黑洞。
+D5_DEBT_EXEMPTIONS = {
+    "customer_unit_price": "待 agent 侧统一重构时把对客单价并入 routing.py::ROUTE_RULES 并销账（#4525 D5）",
+}
+
+
+def test_customer_unit_price_is_an_explicit_debt_exemption():
+    """V77 的对客单价列必须在**这里显式登记豁免**，且 `routing.py` 侧确实还没有它。
+
+    双向：
+    ① 若 `routing.py` 的 `ROUTE_RULES` 已带上 `customer_unit_price`（agent 重构落地）⇒
+       **豁免必须销账**（本断言红，提示删掉 `D5_DEBT_EXEMPTIONS` 里的条目）——
+       否则豁免会静默变成「永久无视收敛漂移」；
+    ② 若迁移侧压根没有该列（V77 丢了）⇒ 豁免成了无对象的空登记（红）。
+    """
+    rule_columns = set(ROUTE_RULE_COLUMNS)
+    assert "customer_unit_price" in D5_DEBT_EXEMPTIONS, "D5 豁免未登记"
+    assert all(reason.strip() for reason in D5_DEBT_EXEMPTIONS.values()), \
+        "D5 豁免必须写清**销账条件**（按 §19.1 记为债务类，不是永久豁免）"
+
+    # ② 迁移侧真有该列（否则豁免无对象）
+    migration_sql = _aggregate_text(RULE_SEED_SQLS)
+    ddl = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted(MIGRATION_DIR.glob(MIGRATION_GLOB),
+                                                     key=lambda p: version_key(p.name))
+        if "customer_unit_price" in p.read_text(encoding="utf-8"))
+    assert re.search(r"customer_unit_price\s+NUMERIC\(12,\s*2\)", ddl, re.I), \
+        "迁移侧没有 customer_unit_price 列 ⇒ D5 豁免是无对象的空登记（V77 丢了？）"
+    assert "customer_unit_price" not in rule_columns, (
+        "ROUTE_RULE_COLUMNS 里出现了 customer_unit_price —— 若这是 agent 重构落地，"
+        "请**销账** D5_DEBT_EXEMPTIONS 条目并同步 routing.py 真值源（不要留着豁免）")
+
+    # ① `routing.py::ROUTE_RULES` 侧确实还没有该键（豁免成立的前提）
+    _, _, rules, _ = _route_v2_truth()
+    assert rules, "routing.py 的 ROUTE_RULES 读不到（豁免判据是空跑）"
+    assert all("customer_unit_price" not in rule for rule in rules), (
+        "routing.py::ROUTE_RULES 已带上 customer_unit_price ⇒ D5 豁免必须销账"
+        "（删掉 D5_DEBT_EXEMPTIONS 的条目，让三源收敛守卫接管本列）")
+    # 自证：本判据读的确实是迁移文本（注入法 —— 换一段不含该列的文本 ⇒ 上面的正则断言会红）
+    assert "customer_unit_price" in ddl and migration_sql  # 非空自证（避免空跑）
+
+
+def test_d5_exemption_guard_detects_injected_regression(tmp_path):
+    """注入式自证：给一个**假的**迁移目录（含该列）⇒ ① 的判据仍然成立且能读出来。
+
+    本测试要挡的形态：`ddl` 的发现逻辑退化成「扫不到任何文件 ⇒ 空串 ⇒ 断言恒真」。
+    """
+    (tmp_path / "V99__x.sql").write_text(
+        "ALTER TABLE production_route_rules ADD COLUMN IF NOT EXISTS "
+        "customer_unit_price NUMERIC(12,2);", encoding="utf-8")
+    ddl = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted(tmp_path.glob(MIGRATION_GLOB),
+                                                     key=lambda p: version_key(p.name))
+        if "customer_unit_price" in p.read_text(encoding="utf-8"))
+    assert re.search(r"customer_unit_price\s+NUMERIC\(12,\s*2\)", ddl, re.I), \
+        "按内容发现迁移的判据读不出注入的列 ⇒ 它是空断言"
+    # 反向：不含该列的迁移**不得**被收进来（否则「发现逻辑」会把所有迁移都算成 DDL 来源）
+    (tmp_path / "V98__y.sql").write_text(
+        "ALTER TABLE production_route_rules ADD COLUMN IF NOT EXISTS factor NUMERIC(6,3);",
+        encoding="utf-8")
+    ddl2 = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted(tmp_path.glob(MIGRATION_GLOB),
+                                                     key=lambda p: version_key(p.name))
+        if "customer_unit_price" in p.read_text(encoding="utf-8"))
+    assert "factor NUMERIC(6,3)" not in ddl2, "按内容发现的过滤条件失效（收了不含该列的文件）"

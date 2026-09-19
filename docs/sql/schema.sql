@@ -961,6 +961,18 @@ COMMENT ON COLUMN production_route_rules.operation IS
     'V72 起**可空**：action = ''factor'' 且 operation IS NULL = **平摊档**（该触发对该部位全部工序生效）。'
     'action = ''insert''/''remove'' 时仍必填（由 production_route_rules_operation_required_check 保证）。';
 
+-- ── 特殊选项**对客按套单价**（V77，issue #4525；设计 docs/design/processing-fee-and-option-pricing.md §4.1）──
+-- bootstrap 终态：本文件由 docker-entrypoint-initdb.d 执行，**迁移链不在该栈运行**
+-- ⇒ 只写迁移 = 新建库无该列 ⇒ 取价读不到 ⇒ 所有特殊选项静默按 0 收（同 #3270 形态）。
+ALTER TABLE production_route_rules ADD COLUMN IF NOT EXISTS customer_unit_price NUMERIC(12,2);
+COMMENT ON COLUMN production_route_rules.customer_unit_price IS
+    '特殊选项（trigger_kind=''option'' 行）对**顾客**的**元/套**单价 —— **对客售价账**（L3②）。'
+    'NULL = **未定价**（≠ 0）：取价侧必须显式可见（special_options[].priced=false + 可行动 hint），'
+    '不得静默按 0 收。非 option 行一律 NULL（工艺变体不按套收费）。'
+    '⚠️ **计件路径绝不读本列**：ProductionService / piecework 与 production_operations.unit_price '
+    '是给工人付的成本账，与本列（对客售价）两套账不互读；列名的 customer_ 前缀即为让该纪律在 grep 层可判。'
+    'issue #4525（设计 docs/design/processing-fee-and-option-pricing.md §4.1）。';
+
 CREATE TABLE IF NOT EXISTS production_crafts (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),

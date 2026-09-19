@@ -2239,6 +2239,7 @@ _CASE_DF_011 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_tools=['product_manage', 'product_update', 'sku_update', 'inventory_manage', 'order_create'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── DF-012 [ADVERSARIAL] 熔断 - Redis 不可用时优雅降级（源: cases/defense.yml）──
@@ -4085,17 +4086,53 @@ _CASE_OR_037 = EvalCase(
     auto_fill={'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'},
 )
 
-# ── OR-039 [NORMAL] 算料公式可选 - 韩折公式（默认）/ 褶倍数公式 + 逐片口径（每片×开数）+ 用料向上进位到 0.1（源: cases/order.yml）──
+# ── OR-039 [NORMAL] 下单页费用明细 —— 加工项控件无单价文本（价格只在组合上）+ 特殊选项按套逐项行且合计 === 订单金额（源: cases/order.yml）──
 _CASE_OR_039 = EvalCase(
     id='OR-039',
     legacy_id='',
-    title='算料公式可选 - 韩折公式（默认）/ 褶倍数公式 + 逐片口径（每片×开数）+ 用料向上进位到 0.1',
+    title='下单页费用明细 —— 加工项控件无单价文本（价格只在组合上）+ 特殊选项按套逐项行且合计 === 订单金额',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['商家手工下单页按宽 5.5m / 双开 / 标准档，用褶倍数公式试算用料（预期 11.0 米）'],
+    user_inputs=['（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）'],
+    expectations=[],
+    data_checks=['**R10·加工项选择控件不出现任何单价文本**：用户 2026-09-19「订单上的加工项选择控件不要展示加工项单价」—— ERP 的加工项是**组合价目**（特征集合 → 元/米），价格只在**组合**上存在 ⇒ 逐项显示单价必然误导（同一真值两个数）。判据 = 该控件渲染出的文本里不出现 `¥` 金额 / `/ 米` / `/ 套` 形态（红证：修复前渲染 `¥5.00 / 米` 与选中后的 `3米 · ¥15.00`）。', '**R10·选中态仍可对账**：摘掉的是**钱**，不是数量 —— 选中后仍显示「数量 + 单位」（如 `3米`），否则商家无从核对勾了什么。', '**R2·费用明细出现特殊选项行**：逐项 `名称 单价/套 × 套数`（数据来自服务端 `processingFeeDetail.special_options[]`，契约见设计 §4.3，已冻结）。空数组 = 没选 ⇒ **不出现该块**（缺值不渲染）。', '**同一真值（判据 5）**：特殊选项行的金额之和 = `special_options_total`；且「加工」行金额 = `processingFeeDetail.amount`（**组合那半**）+ 特殊选项行 = 行金额 `processingFee` ⇒ 费用明细逐行之和 === 订单金额里的那个数（不出现第二份口径、不双算）。', '**未定价显式可见（判据 3 的展示面）**：`priced:false` 的选项必须显式标「未定价（按 0 计）」，不许静默按 0 收。', '**回退面（新增键只加不改）**：服务端尚未返回 `special_options`（键缺席）时，特殊选项块不出现且「加工」行金额回落为整个 `processingFee` —— 显示口径逐字等于改造前，不引入第三个口径。'],
+    skip_reason='[backend-contract] 前端展示契约（admin-web 组件 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/orders-new-fee-detail.test.tsx 与 frontend/admin-web/tests/unit/lib/order-fee-display.test.ts 执行',
+    tags=['order', 'fee_detail', 'processing_fee', 'special_options', 'display', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OR-040 [NORMAL] 下单页自动识别 —— 超高/超宽由 成品宽高 + 卷边 vs 门幅 判定（两者独立可同时为真）+ 倒幅/正幅由 cuttingMode 唯一推导（无手选项）（源: cases/order.yml）──
+_CASE_OR_040 = EvalCase(
+    id='OR-040',
+    legacy_id='',
+    title='下单页自动识别 —— 超高/超宽由 成品宽高 + 卷边 vs 门幅 判定（两者独立可同时为真）+ 倒幅/正幅由 cuttingMode 唯一推导（无手选项）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）'],
+    expectations=[],
+    data_checks=['**D6·自动识别（用户 2026-09-19「超高 / 超宽是和门幅标准比较的……这个要求做到自动识别」）**：`超高 = (成品高 + 卷边) > 门幅`、`超宽 = (成品宽 + 卷边) > 门幅`；门幅缺省 2.8 米（窄幅布 1.4），卷边常量 **0.3 米复用算料引擎既有常量**（`curtain_calc.py` 的 `HEM_MARGIN`，同步守卫逐值比对，不新造第二个数）。红证：实现前无此纯函数 ⇒ import 即红；把阈值改成「固定 3 米」或让两者互斥 ⇒ 判据必红。', '**两者独立、可同时为真**：ERP 组合名 `韩折+超宽+超高+定型` 同时存在（设计 §5.2 证据链 ③）⇒ 判定不得互斥；同时为假（如 1.5×1.5 对 2.8 门幅）⇒ 两者都不出现。', '**倒幅/正幅由 `cuttingMode` 唯一推导**：`定宽买高` → 倒幅、`定高买宽` → 正幅；**不设手选项**（手选项 = 与 `cuttingMode` 冲突的第二份口径）。红证：删掉推导（或改成可手选）⇒ 判据必红。', "**`source='推算'` 照实标注**（设计 §5.2 边界：本条是推理非实证，未从 ERP 供应商取得判据）—— 判定结果带可读依据（哪两个数比出来的），且来源标「推算」+ 可配，不假装定论。", '**下单页展示自动识别结果，且不计入手选计数**：自动特征出现在③加工项步骤的**只读**区（`自动识别` 块，带 `推算` 来源标注），**不是**可勾选项 —— 不出现「自动识别」的 checkbox，`已选 N 项` 只数商家手选的加工项。红证：删掉该只读块 ⇒ 判据必红。'],
+    skip_reason='[backend-contract] 前端展示契约（admin-web 纯函数 + 页面只读区，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-auto-features.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-auto-features.test.tsx 执行',
+    tags=['order', 'craft_spec', 'auto_detect', 'dimension', 'display', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OR-041 [NORMAL] 算料公式按工艺推导 - 韩褶⇒韩折公式（折数法）/ 打孔⇒倍数法（默认 2 倍）+ 逐片口径（每片×开数）+ 用料向上进位到 0.1（源: cases/order.yml）──
+_CASE_OR_041 = EvalCase(
+    id='OR-041',
+    legacy_id='',
+    title='算料公式按工艺推导 - 韩褶⇒韩折公式（折数法）/ 打孔⇒倍数法（默认 2 倍）+ 逐片口径（每片×开数）+ 用料向上进位到 0.1',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家手工下单页按宽 5.5m / 双开 / 标准档，工艺选打孔 ⇒ 按倍数法试算用料（预期 11.0 米）'],
     expectations=['direct_reply'],
-    data_checks=["（散文、**不计分**）两种用料计算方法可选（issue #4527）：`formula='pleat'` 韩折公式（折数法，**默认**）/ `formula='fullness'` 褶倍数公式（倍数法）；未知取值 ⇒ 显式报错，不静默回退默认", '（散文、**不计分**）ERP 实证锚点（#4343 取证的加工单 CSO260915-02615）：宽 5.5m / 双开 / 理论褶倍 2.00 ⇒ **11.00 米**（= 5.5×2.00）—— 双开不得把总宽再乘 2（甲口径 22.00 米已被用户否决）', '（散文、**不计分**）逐片口径：每片宽 = 成品宽 ÷ 开数；总用料 = 每片用料 × 开数（每片余量 = 总余量 ÷ 开数 ⇒ 与既有 `0.25×总折数+总余量` 逐值一致，不改钱）', '（散文、**不计分**）用料米数一律**向上进位到 0.1**（`ceil(x*10)/10`）：截断 / 四舍五入即违约；进位只在总用料上做一次；金额/单价相关量不跟着改口径', '（散文、**不计分**）配置可注入（用户追加裁定「可能得支持每个商家自定义配置」）：默认值 = 既有常量逐值不变；护栏（褶倍下限 / 正数校验 / tiers 非空）不因可配而消失，非法配置显式报错；配置沿调用链显式传递', '（散文、**不计分**）公式串由**后端**（算料引擎）产出并写明所用公式（`韩折公式：` / `褶倍数公式：`）；Java / TS 侧只搬运、不自拼（自拼 = 第二份算料逻辑）'],
-    skip_reason='[backend-contract] 算料公式属确定性纯计算（无 LLM 行为）：判据在 pytest（tests/test_craft_calc_formula.py / tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）+ vitest（craft-calc-request.test.ts），不进 agent-eval 冒烟',
+    data_checks=['（散文、**不计分**）公式**由工艺推导**（用户 2026-09-19 追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」）：韩褶 ⇒ 韩折公式（折数法）/ 打孔 ⇒ 褶倍数公式（倍数法，默认 2 倍）；未登记工艺/未指定 ⇒ 兜底默认（韩折公式）；`formula` 入参为**显式覆盖**（显式 > 推导表 > `default_formula` 兜底）', '（散文、**不计分**）ERP 实证锚点（#4343 取证的加工单 CSO260915-02615）：宽 5.5m / 双开 / 理论褶倍 2.00 ⇒ **11.00 米**（= 5.5×2.00）—— 双开不得把总宽再乘 2（甲口径 22.00 米已被用户否决）', '（散文、**不计分**）逐片口径：每片宽 = 成品宽 ÷ 开数；总用料 = 每片用料 × 开数（每片余量 = 总余量 ÷ 开数 ⇒ 与既有 `0.25×总折数+总余量` 逐值一致，不改钱）', '（散文、**不计分**）用料米数一律**向上进位到 0.1**（`ceil(x*10)/10`）：截断 / 四舍五入即违约；进位只在总用料上做一次；金额/单价相关量不跟着改口径', '（散文、**不计分**）配置可注入（用户追加裁定「可能得支持每个商家自定义配置」）：默认值 = 既有常量逐值不变；护栏（褶倍下限 / 正数校验 / tiers 非空）不因可配而消失，非法配置显式报错；配置沿调用链显式传递', '（散文、**不计分**）公式串由**后端**（算料引擎）产出并写明所用公式（`韩折公式：` / `褶倍数公式：`）；Java / TS 侧只搬运、不自拼（自拼 = 第二份算料逻辑）；前端 `PLEAT_CRAFTS` 门必须放行打孔（否则「打孔按倍数法算布料」在页面上永不发生）'],
+    skip_reason='[backend-contract] 算料公式属确定性纯计算（无 LLM 行为）：判据在 pytest（tests/test_craft_calc_formula.py / tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）+ vitest（craft-calc-request.test.ts / craft-calc-formula-sync.test.ts / orders-new-craft-calc.test.tsx），不进 agent-eval 冒烟',
     tags=['order', 'craft_calc', 'fabric', 'formula_selection', 'per_panel', 'meters_rounding'],
     persona='',
     debug_user='',
@@ -4935,7 +4972,7 @@ _CASE_PP_009 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['刺绣工艺按面积算多少钱？宽 3.2 米、高 2.5 米', {'repeat_until': {'tool_called': 'processing_item_manage', 'max': 2}, 'fallback': '用刺绣工艺算，宽 3.2 米、高 2.5 米，帮我报个价'}],
     expectations=['processing_item_manage(action=calculate_price)'],
-    data_checks=['per_area 的 quantity 是**计件数**（同一尺寸做几件，缺省 1）；面积由 dimensions(宽×高) 承载——把宽×高写进 quantity 会双计（30×8×8=¥1920，应为 ¥240）', '本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（acceptance-protocol.md:225 / order.yml:639 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积', '回复需给出金额 ¥240（30 元/㎡ × 8㎡）并对得上用户给的尺寸'],
+    data_checks=['per_area 的 quantity 是**计件数**（同一尺寸做几件，缺省 1）；面积由 dimensions(宽×高) 承载——把宽×高写进 quantity 会双计（30×8×8=¥1920，应为 ¥240）', '本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（`docs/testing/acceptance-protocol.md:288` 与 `.github/cases/order.yml:905` 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积（真值源 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java`）', '回复需给出金额 ¥240（30 元/㎡ × 8㎡）并对得上用户给的尺寸', '前置（precondition）：评测栈种子里「刺绣工艺」（`pi_eval_embroidery`）存在、`pricingMethod=per_area`、`unitPrice=30.00` 元/㎡ —— 它是 `output_verify.totalPrice=240.00` 的接地真值（success=true）；前置不成立时金额必然对不上，判红会伪装成「agent 算错面积」'],
     skip_reason='',
     tags=['processing_item', 'llm_behavior', 'tool_call', 'calculate_price', 'per_area'],
     persona='',
@@ -5068,6 +5105,24 @@ _CASE_PG_042 = EvalCase(
     data_checks=['success=true', '判据 1·**选配组合命中 ⇒ 落库加工费 = 该组合单价 × 加工费米数**（不再 Σ 加工项）：组合「定型+打孔+韩褶」定价 ¥8.00/米、加工费米数 12.30 米 ⇒ 行加工费 98.40（Σ 加工项口径会得 9.50×2×2 = 38.00），订单总额 = 商品 599.00 + 98.40 = 697.40。证据：ProcessingFeeCalculatorTest「matchedCombinationUsesCombinationPriceTimesProcessingMeters」+ OrderServiceTest「createOrder_processingFeeComesFromMatchedCombination」（**注入**：退回 Σ 加工项 ⇒ 总额断言红，实测 637.00 vs 697.40）', '判据 2·**未定价组合 ⇒ 金额 0 + fee_source=unpriced + 可行动提示，绝不回落任何默认价**（用户裁定：「直接切，不回落 Σ 加工项」；#4308「静默回落」同族纪律）。空价目表、停用组合、组合键不匹配三种形态都归 unpriced；提示指向「加工费管理」定价入口。证据：ProcessingFeeCalculatorTest「unpricedCombinationYieldsZeroWithActionableHint」「emptyCombinationTableYieldsZeroNotDefaultPrice」「disabledCombinationIsNotUsedForPricing」+ OrderServiceTest「createOrder_unpricedCombinationStoresZeroAndHint」（**注入**：让未命中分支回落 Σ 加工项或套默认档价 ⇒ 4 条红，实测 599.00 vs 618.00）', '判据 3·**可审计 processingFeeDetail**：组合 composition / 命中哪条规则 matched_rule_id / 单价 unit_price / 单价来源 price_source / 加工费米数 meters / 米数来源 meters_source / fee_source 三态（matched·unpriced·manual） / 金额 amount / 未定价时的可行动 hint —— 随行落库到 `processing_info.processingFeeDetail`（读面与加工单快照读同一份），金额字段 `processingFee` 仍是 number（不改既有字段类型）。证据：ProcessingFeeCalculatorTest 全部用例的 detail 断言 + OrderServiceTest「createOrder_processingFeeComesFromMatchedCombination」', '判据 4·**组合键归一化复用写面同一份实现**（不许第二份）：`ProcessingFeeCombinationCommandService.compositionKey`（trim → 丢空 → 去重 → Unicode 码点升序 → `+` 连接）⇒ 「韩褶+打孔+定型」与「定型+打孔+韩褶」命中同一条规则、同一笔钱。证据：ProcessingFeeCalculatorTest「compositionKeyOrderIndependent」（**注入**：改回书写顺序敏感 ⇒ 红）', '判据 5·**加工费米数 = 该樘窗主布行米数**（裁定 R-b；纱含在组合价里，不另按米收）：取 `processing_info.processingMeters`，兼容键 `fabric_meters` 并记 `meters_source`；命中组合但**米数缺失 ⇒ 0 + unpriced**（不凭 quantity 猜米数）。证据：ProcessingFeeCalculatorTest「metersFallBackToFabricMetersAndRecordSource」「matchedCombinationWithoutMetersYieldsZero」', '判据 6·**改组合价 ⇒ 新单按新价；已生成订单一字不变**（R13 快照优先）：读面读 `processing_info.processingFeeDetail` 的落库值，**不重算** ⇒ 历史订单金额不随价目表漂移；存量单（接线前生成、无 detail）读 0 且不拿 Σ 加工项冒充。证据：OrderServiceTest「changingCombinationPriceLeavesExistingOrderUntouched」「readPathsReturnStoredFeeNotRecomputed」「legacyOrderWithoutStoredDetailReadsZero」（**注入**：读面改成重算 ⇒ 红，实测 98.40 vs 19.00）', '判据 7·**加工费不带商品维度**（R15）：同一选配在任意商品上取到同一个组合价（#4371 解耦后组合费用表是店铺级）。证据：ProcessingFeeCalculatorTest「sameCompositionSamePriceOnAnyProduct」', '判据 8·**两套账不互读**（R9）：对外加工费**不得**由 `production_operations.unit_price` / 加工项目录单价算出（那两处是给工人付的成本）。证据：ProcessingFeeCalculatorTest「processingFeeNeverDerivedFromOperationUnitPrice」（**注入**：让取价读工序/加工项单价 ⇒ 红）', '**未落地（如实登记）**：① 前端 `orders/new/page.tsx` 仍是本地自算（本单**只做后端**，PR #4424 正在改该文件）⇒ 页面显示 ≠ 落库（R10 未闭合）；② C 端 `curtain_calc.py` 的 `DEFAULT_PROCESSING_PRICE` 常量未降级为种子 ⇒ 报价单与订单的**双算**（R10 / 关联 #4118）未闭合；③ `fee_source=manual`（人工改价通道）只定义未落码；④ ai-agent 侧 `order_create` 不声明 processingFee 的推广登记在关联 #4390。'],
     skip_reason='[backend-contract] 后端契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCalculatorTest + OrderServiceTest 执行',
     tags=['processing_fee', 'fee_combination', 'consumption_face', 'fee_source', 'unpriced', 'snapshot_priority'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-043 [NORMAL] 特殊选项按套计价（包 A）- route_rules 加对客单价列 + 加工费 = 组合价×米数 + Σ(选项价×套数) + 92 行合成价目（源: cases/processing.yml）──
+_CASE_PG_043 = EvalCase(
+    id='PG-043',
+    legacy_id='',
+    title='特殊选项按套计价（包 A）- route_rules 加对客单价列 + 加工费 = 组合价×米数 + Σ(选项价×套数) + 92 行合成价目',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['判据 1·**行加工费 = 组合价(元/米) × 加工费米数 + Σ 选中特殊选项(单价(元/套) × 套数)**，套数恒 1（R8「1 套 = 1 个订单行」），逐分可核对：组合 ¥8.00/米 × 12.30 米 = 98.40，选项「加铅块」¥6.00/套 +「接高」¥2.50/套 = 8.50 ⇒ 行金额 106.90（**只算组合那半 ⇒ 98.40 ⇒ 红**）。证据：ProcessingFeeCalculatorTest「specialOptionsAddPerSetFeeOnTopOfCombinationHalf」（+ FeePreviewControllerTest「passesSpecialOptionsThroughWithLineAmount」钉 HTTP 面 139.00）。**回归不变量**：没选任何特殊选项 ⇒ `special_options` 为空数组且 `special_options_total = 0`，行金额与 #4406 口径逐分相同（`matchedCombinationUsesCombinationPriceTimesProcessingMeters`）。', '判据 3·**选项未定价（`customer_unit_price IS NULL`）⇒ `special_options[].priced=false` + 单价 null + 计 0 + 可行动 hint**（指向 `/production/processing-fees`），且 `fee_source` 仍 `matched`（组合那半有效）；**静默按 0 收（priced=true / hint=null）⇒ 红**。证据：ProcessingFeeCalculatorTest「unpricedOptionIsExplicitlyVisibleAndNotSilentlyZero」。匹配必须**精确相等**（名字差一个字 ⇒ 视为未定价，不误收）：「specialOptionMatchingIsExact」。', '判据 2·**组合未命中 ⇒ 整体 `unpriced` + 金额 0，且选项价不单独收、不回落 Σ 加工项**（既有纪律不变）。证据：ProcessingFeeCalculatorTest「unmatchedCombinationDoesNotChargeSpecialOptionsAlone」（注入：未命中分支仍收 6.00 或回落 Σ 加工项 ⇒ 红）。', "🔴 **合成价一律不得参与取价**（issue #4525 复核的 P1 钱风险）：`MigrationRunner` 在 **admin-api 启动时**执行迁移 ⇒ **生产一样会跑**，而取价侧只过滤 `status='active'`（**不按 `source` 过滤**）⇒ ① 92 行组合价**全部** `status='disabled'`（有任一行 active ⇒ 生产 tenant 1 的真实订单按随机价收费）；② 迁移**不得**给 `customer_unit_price` 落任何价（该列**无 status 可门控** ⇒ 恒 `NULL` = 未定价 ⇒ `priced:false` + 可行动 hint，显式可见、不静默按 0 收）；合成选项价只作**测试资产**（生成器可重算、注释块留存）。证据：test_option_fee_seed.py「test_synthetic_combination_rows_are_all_disabled」「test_migration_never_prices_customer_unit_price」（均带注入式自证）。", "判据 9·**测试数据带 `source='synthetic'` 且两次生成逐值相同**：V77 的组合价目（92 行 = 91 组合 + 缎带）与选项价（16 条）逐值等于固定种子生成器 `tests/unit_ci_workflows/synthetic_processing_fee_data.py` 的重算结果；e2e fixture 重建为 L2 特征词典（旧的 13 条编造数据一条不剩）。证据：tests/unit_ci_workflows/test_option_fee_seed.py「test_seed_rows_match_the_deterministic_generator」「test_seed_is_deterministic_across_two_runs」「test_seed_carries_synthetic_provenance」「test_e2e_fixture_is_the_rebuilt_feature_dictionary」。", '判据 10·**计件路径零读取 `customer_unit_price`**（两套账不互读）：全 `main` 源码里该标识符只允许出现在取价层（ProcessingFeeCalculator）与实体字段声明；同表 `factor`（计件系数）改了 ⇒ 对客加工费一字不变。证据：test_option_fee_seed.py「test_piecework_paths_never_read_customer_unit_price」（含注入式自证 test_piecework_read_guard_detects_injected_read）+ ProcessingFeeCalculatorTest「customerFeeNeverReadsPieceworkFactor」。', '判据 11·**历史订单一字不变**（R13 快照冻结）：读面仍读落库的 `processingFeeDetail`（`storedFee`），**不重算**；落库明细里的选项价原样读出。证据：test_option_fee_seed.py「test_read_paths_still_read_the_persisted_detail」+ ProcessingFeeCalculatorTest「storedFeeReadsPersistedSpecialOptions」。', '迁移面·V77 **幂等**且带 `COMMENT ON COLUMN`（写明「对客售价账」+「计件路径绝不读本列」+「NULL = 未定价」）；bootstrap `docs/sql/schema.sql` 同步终态（该路径不跑迁移链）。证据：test_option_fee_seed.py「test_v77_adds_customer_unit_price_column」「test_v77_migration_is_idempotent」「test_schema_sql_carries_the_new_column」。', '**边界登记**：① 91 个组合名是按 12 个特征**确定性枚举的合成集**（`31 + 31 + 29`），**不等于 ERP 图里那 91 项真实名字**（ERP 点名而本枚举没有的例：`打孔+拼接+倒幅+定型`、`韩折+超高+接高+定型`、`韩折+超高+超宽+定型`）⇒ 真实名单待客户导出后**只换数据、不动结构**；② 合成选项价**不落库**（复核裁定 (i)：列无 status 可门控）。', "**与设计文档的冲突（以代码事实为准，已显式登记）**：设计 §7 写「19 项特殊选项价」，但 §4.1 冻结「非 `option` 行一律 `NULL`」；19 项里只有 **16 项**在 `production_route_rules` 里是 `trigger_kind='option'` 行（`余料带回-布`/`余料带回-纱` 不计件、`一分为二` 只有计件系数档）⇒ 只给这 16 条定价，另 3 项**不造规则行**（造了就违反 §4.1 与 R11 边界）。逐条点名判据：test_priced_option_rows_are_exactly_the_option_rules。**D5 豁免**：`routing.py::ROUTE_RULES` 不带本列（agent 侧豁免）⇒ test_production_catalog_seed.py 显式登记为**债务类**豁免，待 agent 统一重构时销账。"],
+    skip_reason='[backend-contract] 后端契约 + 迁移/种子守卫（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCalculatorTest / FeePreviewControllerTest / tests/unit_ci_workflows/test_option_fee_seed.py 执行',
+    tags=['processing_fee', 'special_options', 'per_set', 'customer_unit_price', 'migration_v77', 'synthetic_seed'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -6837,6 +6892,8 @@ ALL_CASES = (
     _CASE_OR_038,
     _CASE_OR_037,
     _CASE_OR_039,
+    _CASE_OR_040,
+    _CASE_OR_041,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
@@ -6889,6 +6946,7 @@ ALL_CASES = (
     _CASE_PP_014,
     _CASE_PG_040,
     _CASE_PG_042,
+    _CASE_PG_043,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

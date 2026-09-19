@@ -101,6 +101,9 @@ class StockLedgerTest {
     @Mock private NotificationService notificationService;
     /** 加工费组合价目表（issue #4406 的取价依赖；本类不涉及加工费口径 ⇒ 空表） */
     @Mock private com.migao.admin.mapper.ProcessingFeeCombinationMapper processingFeeCombinationMapper;
+    /** 特殊选项对客单价（issue #4525 的取价依赖；本类不涉及 ⇒ 空表 ⇒ 选项计 0） */
+    @Mock
+    private com.migao.admin.mapper.ProductionRouteRuleMapper routeRuleMapper;
 
     /** 内存「库」：skuId → SKU（updateById / deductStock / restoreStock 直接改这里的值） */
     private final Map<Long, ProductSku> skuStore = new LinkedHashMap<>();
@@ -133,7 +136,7 @@ class StockLedgerTest {
                 new ObjectMapper(), notificationService, processingOrderMapper, userService,
                 clientRequestIdService, stockLedgerService,
                 // issue #4406：加工费取价点（本类不涉及加工费口径 ⇒ 空价目表 ⇒ 未定价 0）
-                new ProcessingFeeCalculator(processingFeeCombinationMapper));
+                new ProcessingFeeCalculator(processingFeeCombinationMapper, routeRuleMapper));
         afterSalesTicketService = new AfterSalesTicketService(afterSalesTicketMapper, orderMapper,
                 orderItemMapper, productMapper, ticketTimelineMapper, financeService, orderService,
                 new ObjectMapper(), notificationService, stockLedgerService);

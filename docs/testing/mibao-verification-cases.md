@@ -1556,7 +1556,7 @@
 全程禁用: order_create
 ```
 真值: defense.breaker-threshold, defense.breaker-no-retry
-溯源: eval D011 独有；熔断阈值按代码校准 5→3。2026-09-14 归因（#3679，CI run 34838080233）：`expectations` 由 product_detail 改为 product_search（真实链路工具）；两条自然语义 data_checks（不计分、且以「连续 3 次失败」这一**不存在的前提**为基础——404 不计入熔断）下沉为 test_circuit_breaker.py 的机器断言；端到端保留真实可观测的「查不到不得写」护栏（forbidden_tools） ｜ tags: defense, circuit_breaker, failure_rate
+溯源: eval D011 独有；熔断阈值按代码校准 5→3。2026-09-14 归因（#3679，CI run 34838080233）：`expectations` 由 product_detail 改为 product_search（真实链路工具）；两条自然语义 data_checks（不计分、且以「连续 3 次失败」这一**不存在的前提**为基础——404 不计入熔断）下沉为 test_circuit_breaker.py 的机器断言；端到端保留真实可观测的「查不到不得写」护栏（forbidden_tools）；2026-09-19（issue #4526 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]` —— 把「正向对照那一轮的名字存在且唯一」这条**真正依赖且只读**的前置写成可判定自断言（同 CH-007 / CH-012 的修法）；有意不声明 `namespaces`（只读用例声明它 = 账面新增 NO-SELF-CLEAN，与「只许缩短」冲突）。expectations / forbidden_tools / data_checks / user_inputs 原样未动、无放宽。 ｜ tags: defense, circuit_breaker, failure_rate
 
 ### DF-012. 熔断 - Redis 不可用时优雅降级 🔴
 ```
@@ -2246,7 +2246,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（38 case）
+## 订单域（40 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2936,22 +2936,47 @@
 ```
 溯源: 2026-09-19 新增（issue #4454）：用户裁定「如果担心 AI 不理解一些略语，可以在知识卡片中内置行业知识」—— 「AI 听不懂行话」是**知识问题**（理解层），不是后端路线派生问题。本用例把判据挂在**落库值**上：行话 → 内部值（`韩式褶`→`韩褶`、`纳米圈`→`打孔`族）。配套改动：`prompts/order.md`（B 端）+ C 端 `customer_order` 内联 prompt 补「术语映射」段（部位 + 工艺两维度）、真值源 §8 补录工艺词汇两行、知识模板内置行业术语条目、`local_runner` 的 `db_verify[order_items]` 加 `expect_craft`/`forbid_craft` 能力。**不改运行时业务逻辑、不降任何既有断言。** ｜ tags: order_create, craft_spec, glossary, industry_terms
 
-### OR-039. 算料公式可选 - 韩折公式（默认）/ 褶倍数公式 + 逐片口径（每片×开数）+ 用料向上进位到 0.1 🔵
+### OR-039. 下单页费用明细 —— 加工项控件无单价文本（价格只在组合上）+ 特殊选项按套逐项行且合计 === 订单金额 🔵
 ```
-你: 商家手工下单页按宽 5.5m / 双开 / 标准档，用褶倍数公式试算用料（预期 11.0 米）
+你: （无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）
+数据: **R10·加工项选择控件不出现任何单价文本**：用户 2026-09-19「订单上的加工项选择控件不要展示加工项单价」—— ERP 的加工项是**组合价目**（特征集合 → 元/米），价格只在**组合**上存在 ⇒ 逐项显示单价必然误导（同一真值两个数）。判据 = 该控件渲染出的文本里不出现 `¥` 金额 / `/ 米` / `/ 套` 形态（红证：修复前渲染 `¥5.00 / 米` 与选中后的 `3米 · ¥15.00`）。
+数据: **R10·选中态仍可对账**：摘掉的是**钱**，不是数量 —— 选中后仍显示「数量 + 单位」（如 `3米`），否则商家无从核对勾了什么。
+数据: **R2·费用明细出现特殊选项行**：逐项 `名称 单价/套 × 套数`（数据来自服务端 `processingFeeDetail.special_options[]`，契约见设计 §4.3，已冻结）。空数组 = 没选 ⇒ **不出现该块**（缺值不渲染）。
+数据: **同一真值（判据 5）**：特殊选项行的金额之和 = `special_options_total`；且「加工」行金额 = `processingFeeDetail.amount`（**组合那半**）+ 特殊选项行 = 行金额 `processingFee` ⇒ 费用明细逐行之和 === 订单金额里的那个数（不出现第二份口径、不双算）。
+数据: **未定价显式可见（判据 3 的展示面）**：`priced:false` 的选项必须显式标「未定价（按 0 计）」，不许静默按 0 收。
+数据: **回退面（新增键只加不改）**：服务端尚未返回 `special_options`（键缺席）时，特殊选项块不出现且「加工」行金额回落为整个 `processingFee` —— 显示口径逐字等于改造前，不引入第三个口径。
+跳过: [backend-contract] 前端展示契约（admin-web 组件 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/orders-new-fee-detail.test.tsx 与 frontend/admin-web/tests/unit/lib/order-fee-display.test.ts 执行
+```
+溯源: 2026-09-19 新增（issue #4526 包 B，设计文档 §4.3 / §8 包 B 行 / §9 判据 4·5）：#4450 的加工费计价预览把**服务端组合取价**接进了下单页，但页面只显示一个「加工费」总数 —— 用户 2026-09-19 口径「选择了特殊选项后，也要算入费用明细」与「加工项选择控件不要展示加工项单价」两条都没有落点。本用例把判据挂到真实展示行为上：控件去单价 + 特殊选项按套逐项行 + 合计 === 订单金额。**不改运行时行为、不改断言强度**。 ｜ tags: order, fee_detail, processing_fee, special_options, display, backend_contract
+
+### OR-040. 下单页自动识别 —— 超高/超宽由 成品宽高 + 卷边 vs 门幅 判定（两者独立可同时为真）+ 倒幅/正幅由 cuttingMode 唯一推导（无手选项） 🔵
+```
+你: （无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）
+数据: **D6·自动识别（用户 2026-09-19「超高 / 超宽是和门幅标准比较的……这个要求做到自动识别」）**：`超高 = (成品高 + 卷边) > 门幅`、`超宽 = (成品宽 + 卷边) > 门幅`；门幅缺省 2.8 米（窄幅布 1.4），卷边常量 **0.3 米复用算料引擎既有常量**（`curtain_calc.py` 的 `HEM_MARGIN`，同步守卫逐值比对，不新造第二个数）。红证：实现前无此纯函数 ⇒ import 即红；把阈值改成「固定 3 米」或让两者互斥 ⇒ 判据必红。
+数据: **两者独立、可同时为真**：ERP 组合名 `韩折+超宽+超高+定型` 同时存在（设计 §5.2 证据链 ③）⇒ 判定不得互斥；同时为假（如 1.5×1.5 对 2.8 门幅）⇒ 两者都不出现。
+数据: **倒幅/正幅由 `cuttingMode` 唯一推导**：`定宽买高` → 倒幅、`定高买宽` → 正幅；**不设手选项**（手选项 = 与 `cuttingMode` 冲突的第二份口径）。红证：删掉推导（或改成可手选）⇒ 判据必红。
+数据: **`source='推算'` 照实标注**（设计 §5.2 边界：本条是推理非实证，未从 ERP 供应商取得判据）—— 判定结果带可读依据（哪两个数比出来的），且来源标「推算」+ 可配，不假装定论。
+数据: **下单页展示自动识别结果，且不计入手选计数**：自动特征出现在③加工项步骤的**只读**区（`自动识别` 块，带 `推算` 来源标注），**不是**可勾选项 —— 不出现「自动识别」的 checkbox，`已选 N 项` 只数商家手选的加工项。红证：删掉该只读块 ⇒ 判据必红。
+跳过: [backend-contract] 前端展示契约（admin-web 纯函数 + 页面只读区，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-auto-features.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-auto-features.test.tsx 执行
+```
+溯源: 2026-09-19 新增（issue #4526 包 B，设计文档 §5.1/§5.2 / §9 判据 8）：用户 2026-09-19 口径「超高 / 超宽是和门幅标准比较的，客户报的数据和门幅对比后能自动区分出来是超高还是超宽，这个要求做到自动识别」。此前前端**零落点**（`grep 超高` 只命中 Modal 注释）。本用例把判据挂到真实推导行为上：两条独立阈值 + cuttingMode 唯一推导 + 只读展示。**不改运行时行为、不改断言强度**。 ｜ tags: order, craft_spec, auto_detect, dimension, display, backend_contract
+
+### OR-041. 算料公式按工艺推导 - 韩褶⇒韩折公式（折数法）/ 打孔⇒倍数法（默认 2 倍）+ 逐片口径（每片×开数）+ 用料向上进位到 0.1 🔵
+```
+你: 商家手工下单页按宽 5.5m / 双开 / 标准档，工艺选打孔 ⇒ 按倍数法试算用料（预期 11.0 米）
 期望: direct_reply
-数据: （散文、**不计分**）两种用料计算方法可选（issue #4527）：`formula='pleat'` 韩折公式（折数法，**默认**）/ `formula='fullness'` 褶倍数公式（倍数法）；未知取值 ⇒ 显式报错，不静默回退默认
+数据: （散文、**不计分**）公式**由工艺推导**（用户 2026-09-19 追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」）：韩褶 ⇒ 韩折公式（折数法）/ 打孔 ⇒ 褶倍数公式（倍数法，默认 2 倍）；未登记工艺/未指定 ⇒ 兜底默认（韩折公式）；`formula` 入参为**显式覆盖**（显式 > 推导表 > `default_formula` 兜底）
 数据: （散文、**不计分**）ERP 实证锚点（#4343 取证的加工单 CSO260915-02615）：宽 5.5m / 双开 / 理论褶倍 2.00 ⇒ **11.00 米**（= 5.5×2.00）—— 双开不得把总宽再乘 2（甲口径 22.00 米已被用户否决）
 数据: （散文、**不计分**）逐片口径：每片宽 = 成品宽 ÷ 开数；总用料 = 每片用料 × 开数（每片余量 = 总余量 ÷ 开数 ⇒ 与既有 `0.25×总折数+总余量` 逐值一致，不改钱）
 数据: （散文、**不计分**）用料米数一律**向上进位到 0.1**（`ceil(x*10)/10`）：截断 / 四舍五入即违约；进位只在总用料上做一次；金额/单价相关量不跟着改口径
 数据: （散文、**不计分**）配置可注入（用户追加裁定「可能得支持每个商家自定义配置」）：默认值 = 既有常量逐值不变；护栏（褶倍下限 / 正数校验 / tiers 非空）不因可配而消失，非法配置显式报错；配置沿调用链显式传递
-数据: （散文、**不计分**）公式串由**后端**（算料引擎）产出并写明所用公式（`韩折公式：` / `褶倍数公式：`）；Java / TS 侧只搬运、不自拼（自拼 = 第二份算料逻辑）
-跳过: [backend-contract] 算料公式属确定性纯计算（无 LLM 行为）：判据在 pytest（tests/test_craft_calc_formula.py / tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）+ vitest（craft-calc-request.test.ts），不进 agent-eval 冒烟
+数据: （散文、**不计分**）公式串由**后端**（算料引擎）产出并写明所用公式（`韩折公式：` / `褶倍数公式：`）；Java / TS 侧只搬运、不自拼（自拼 = 第二份算料逻辑）；前端 `PLEAT_CRAFTS` 门必须放行打孔（否则「打孔按倍数法算布料」在页面上永不发生）
+跳过: [backend-contract] 算料公式属确定性纯计算（无 LLM 行为）：判据在 pytest（tests/test_craft_calc_formula.py / tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）+ vitest（craft-calc-request.test.ts / craft-calc-formula-sync.test.ts / orders-new-craft-calc.test.tsx），不进 agent-eval 冒烟
 ```
 真值: fabric-calc.formula-selection, fabric-calc.meters-ceiling, fabric-calc.craft-calc-config, fabric-calc.craft-calc-endpoint
-溯源: 2026-09-19 新增（issue #4527，包 D 算料口径）：用户裁定「两种用料计算方法可选、默认韩折 + 用料米数保留一位小数（向上进位）+ 按打开方式系数（逐片口径）」，追加裁定「公式参数支持每个商家自定义配置」。落码 = `curtain_calc.py`（`formula` 入参 + `DEFAULT_CRAFT_CALC_CONFIG` + `ceil_to_step` + 逐片口径 + 引擎产出 `formula_text`）、`internal.py` 端点透传 `formula`、Java 代理透传（不复制算料逻辑）、`craft-calc-request.ts` 默认 `formula='pleat'`。**不改运行时金额口径**（金额仍 = 用料 × 单价，只用料米数按裁定向上进位到 0.1）。与 OR-032 的分工：OR-032 锚**折数法端点契约与纸表逐值**（issue #4421），本条锚**公式选择 / 逐片口径 / 进位 / 配置注入**（issue #4527）。 ｜ tags: order, craft_calc, fabric, formula_selection, per_panel, meters_rounding
+溯源: 2026-09-19 新增（issue #4527，包 D 算料口径）：用户裁定「两种用料计算方法可选、默认韩折 + 用料米数保留一位小数（向上进位）+ 按打开方式系数（逐片口径）」，追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」与「公式参数支持每个商家自定义配置」。落码 = `curtain_calc.py`（`formula` 入参 + `CRAFT_FORMULA`/`CRAFT_MOUNTING` 推导表 + `DEFAULT_CRAFT_CALC_CONFIG` + `ceil_to_step` + 逐片口径 + 引擎产出 `formula_text`）、`internal.py` 端点透传 `formula`/`craft`、Java 代理透传（不复制算料逻辑）、`craft-calc-request.ts`（放行打孔 + mounting/formula 随 craft 走 + 有守卫的映射副本）。**不改运行时金额口径**（金额仍 = 用料 × 单价，只用料米数按裁定向上进位到 0.1）。编号：起草用 OR-039，合并 main 时 main 已占用 OR-039/OR-040（包 B #4526）⇒ 顺延 OR-041。 ｜ tags: order, craft_calc, fabric, formula_selection, per_panel, meters_rounding
 
-## 加工项域（12 case）
+## 加工项域（13 case）
 
 ### PP-002. 加工项分类列表 🔵
 ```
@@ -3024,8 +3049,9 @@
 你: [🔁 按目标工具重复直至成功：processing_item_manage，最多 2 次]
 期望: processing_item_manage(action=calculate_price)
 数据: per_area 的 quantity 是**计件数**（同一尺寸做几件，缺省 1）；面积由 dimensions(宽×高) 承载——把宽×高写进 quantity 会双计（30×8×8=¥1920，应为 ¥240）
-数据: 本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（acceptance-protocol.md:225 / order.yml:639 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积
+数据: 本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（`docs/testing/acceptance-protocol.md:288` 与 `.github/cases/order.yml:905` 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积（真值源 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java`）
 数据: 回复需给出金额 ¥240（30 元/㎡ × 8㎡）并对得上用户给的尺寸
+数据: 前置（precondition）：评测栈种子里「刺绣工艺」（`pi_eval_embroidery`）存在、`pricingMethod=per_area`、`unitPrice=30.00` 元/㎡ —— 它是 `output_verify.totalPrice=240.00` 的接地真值（success=true）；前置不成立时金额必然对不上，判红会伪装成「agent 算错面积」
 禁词: 无法计算
 禁词: 暂不支持
 禁词: 功能不存在
@@ -3035,7 +3061,7 @@
 产出: processing_item_manage(calculate_price) → totalPrice==240.0
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-09-15 新增（issue #3672 / 归因报告 G4）：`processing_item_manage(action=calculate_price)` 此前在用例库**零覆盖**——§14.5 覆盖矩阵只到工具级（本工具已有 4 条正向用例 → 恒绿），per_area 分支 100% 不可达这条缺口在矩阵里永远看不见。断言全部机器可判：must_succeed(action=calculate_price) + required_args[processing_item_id,width,height] + output_verify(totalPrice=240.00，显式 action) + forbidden_text。 ｜ tags: processing_item, llm_behavior, tool_call, calculate_price, per_area
+溯源: 2026-09-15 新增（issue #3672 / 归因报告 G4）：`processing_item_manage(action=calculate_price)` 此前在用例库**零覆盖**——§14.5 覆盖矩阵只到工具级（本工具已有 4 条正向用例 → 恒绿），per_area 分支 100% 不可达这条缺口在矩阵里永远看不见。断言全部机器可判：must_succeed(action=calculate_price) + required_args[processing_item_id,width,height] + output_verify(totalPrice=240.00，显式 action) + forbidden_text。2026-09-19（issue #4525 的 burn-down 缴费）：补**机器计分型**前置自断言（种子 `pi_eval_embroidery` 存在 + per_area + 30.00 元/㎡ = `totalPrice: 240.00` 的接地真值），把「前置不成立 ⇒ 金额对不上却归因到 agent 算错」这条形态挡在门口；expectations / must_succeed / required_args / output_verify / forbidden_text / user_inputs 原样未动、无放宽。 ｜ tags: processing_item, llm_behavior, tool_call, calculate_price, per_area
 
 ### PP-010. 生产模块确定性核心 - 工艺路线实例化/计件/必完工序自动完工（单测覆盖） 🔵
 ```
@@ -3147,6 +3173,22 @@
 跳过: [backend-contract] 后端契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCalculatorTest + OrderServiceTest 执行
 ```
 溯源: 2026-09-19 新增（issue #4406，P1；用户裁定「未定价组合 ⇒ 加工费 = 0（unpriced），直接切，不回落 Σ 加工项」）。交付：ProcessingFeeCalculator（选配 → 归一化组合键 → 匹配 processing_fee_combinations → 单价 × 加工费米数）+ OrderService 接线（创建/列表/详情三条读面）+ processingFeeDetail 可审计构成随行落库 + fee_source 三态。**未做**：前端下单页改调服务端计价、C 端 DEFAULT_PROCESSING_PRICE 降级为种子（双算 R10 未闭合）、manual 改价通道、ai-agent 侧推广。 ｜ tags: processing_fee, fee_combination, consumption_face, fee_source, unpriced, snapshot_priority
+
+### PG-043. 特殊选项按套计价（包 A）- route_rules 加对客单价列 + 加工费 = 组合价×米数 + Σ(选项价×套数) + 92 行合成价目 🔵
+```
+数据: 判据 1·**行加工费 = 组合价(元/米) × 加工费米数 + Σ 选中特殊选项(单价(元/套) × 套数)**，套数恒 1（R8「1 套 = 1 个订单行」），逐分可核对：组合 ¥8.00/米 × 12.30 米 = 98.40，选项「加铅块」¥6.00/套 +「接高」¥2.50/套 = 8.50 ⇒ 行金额 106.90（**只算组合那半 ⇒ 98.40 ⇒ 红**）。证据：ProcessingFeeCalculatorTest「specialOptionsAddPerSetFeeOnTopOfCombinationHalf」（+ FeePreviewControllerTest「passesSpecialOptionsThroughWithLineAmount」钉 HTTP 面 139.00）。**回归不变量**：没选任何特殊选项 ⇒ `special_options` 为空数组且 `special_options_total = 0`，行金额与 #4406 口径逐分相同（`matchedCombinationUsesCombinationPriceTimesProcessingMeters`）。
+数据: 判据 3·**选项未定价（`customer_unit_price IS NULL`）⇒ `special_options[].priced=false` + 单价 null + 计 0 + 可行动 hint**（指向 `/production/processing-fees`），且 `fee_source` 仍 `matched`（组合那半有效）；**静默按 0 收（priced=true / hint=null）⇒ 红**。证据：ProcessingFeeCalculatorTest「unpricedOptionIsExplicitlyVisibleAndNotSilentlyZero」。匹配必须**精确相等**（名字差一个字 ⇒ 视为未定价，不误收）：「specialOptionMatchingIsExact」。
+数据: 判据 2·**组合未命中 ⇒ 整体 `unpriced` + 金额 0，且选项价不单独收、不回落 Σ 加工项**（既有纪律不变）。证据：ProcessingFeeCalculatorTest「unmatchedCombinationDoesNotChargeSpecialOptionsAlone」（注入：未命中分支仍收 6.00 或回落 Σ 加工项 ⇒ 红）。
+数据: 🔴 **合成价一律不得参与取价**（issue #4525 复核的 P1 钱风险）：`MigrationRunner` 在 **admin-api 启动时**执行迁移 ⇒ **生产一样会跑**，而取价侧只过滤 `status='active'`（**不按 `source` 过滤**）⇒ ① 92 行组合价**全部** `status='disabled'`（有任一行 active ⇒ 生产 tenant 1 的真实订单按随机价收费）；② 迁移**不得**给 `customer_unit_price` 落任何价（该列**无 status 可门控** ⇒ 恒 `NULL` = 未定价 ⇒ `priced:false` + 可行动 hint，显式可见、不静默按 0 收）；合成选项价只作**测试资产**（生成器可重算、注释块留存）。证据：test_option_fee_seed.py「test_synthetic_combination_rows_are_all_disabled」「test_migration_never_prices_customer_unit_price」（均带注入式自证）。
+数据: 判据 9·**测试数据带 `source='synthetic'` 且两次生成逐值相同**：V77 的组合价目（92 行 = 91 组合 + 缎带）与选项价（16 条）逐值等于固定种子生成器 `tests/unit_ci_workflows/synthetic_processing_fee_data.py` 的重算结果；e2e fixture 重建为 L2 特征词典（旧的 13 条编造数据一条不剩）。证据：tests/unit_ci_workflows/test_option_fee_seed.py「test_seed_rows_match_the_deterministic_generator」「test_seed_is_deterministic_across_two_runs」「test_seed_carries_synthetic_provenance」「test_e2e_fixture_is_the_rebuilt_feature_dictionary」。
+数据: 判据 10·**计件路径零读取 `customer_unit_price`**（两套账不互读）：全 `main` 源码里该标识符只允许出现在取价层（ProcessingFeeCalculator）与实体字段声明；同表 `factor`（计件系数）改了 ⇒ 对客加工费一字不变。证据：test_option_fee_seed.py「test_piecework_paths_never_read_customer_unit_price」（含注入式自证 test_piecework_read_guard_detects_injected_read）+ ProcessingFeeCalculatorTest「customerFeeNeverReadsPieceworkFactor」。
+数据: 判据 11·**历史订单一字不变**（R13 快照冻结）：读面仍读落库的 `processingFeeDetail`（`storedFee`），**不重算**；落库明细里的选项价原样读出。证据：test_option_fee_seed.py「test_read_paths_still_read_the_persisted_detail」+ ProcessingFeeCalculatorTest「storedFeeReadsPersistedSpecialOptions」。
+数据: 迁移面·V77 **幂等**且带 `COMMENT ON COLUMN`（写明「对客售价账」+「计件路径绝不读本列」+「NULL = 未定价」）；bootstrap `docs/sql/schema.sql` 同步终态（该路径不跑迁移链）。证据：test_option_fee_seed.py「test_v77_adds_customer_unit_price_column」「test_v77_migration_is_idempotent」「test_schema_sql_carries_the_new_column」。
+数据: **边界登记**：① 91 个组合名是按 12 个特征**确定性枚举的合成集**（`31 + 31 + 29`），**不等于 ERP 图里那 91 项真实名字**（ERP 点名而本枚举没有的例：`打孔+拼接+倒幅+定型`、`韩折+超高+接高+定型`、`韩折+超高+超宽+定型`）⇒ 真实名单待客户导出后**只换数据、不动结构**；② 合成选项价**不落库**（复核裁定 (i)：列无 status 可门控）。
+数据: **与设计文档的冲突（以代码事实为准，已显式登记）**：设计 §7 写「19 项特殊选项价」，但 §4.1 冻结「非 `option` 行一律 `NULL`」；19 项里只有 **16 项**在 `production_route_rules` 里是 `trigger_kind='option'` 行（`余料带回-布`/`余料带回-纱` 不计件、`一分为二` 只有计件系数档）⇒ 只给这 16 条定价，另 3 项**不造规则行**（造了就违反 §4.1 与 R11 边界）。逐条点名判据：test_priced_option_rows_are_exactly_the_option_rules。**D5 豁免**：`routing.py::ROUTE_RULES` 不带本列（agent 侧豁免）⇒ test_production_catalog_seed.py 显式登记为**债务类**豁免，待 agent 统一重构时销账。
+跳过: [backend-contract] 后端契约 + 迁移/种子守卫（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCalculatorTest / FeePreviewControllerTest / tests/unit_ci_workflows/test_option_fee_seed.py 执行
+```
+溯源: 2026-09-19 新增（issue #4525，设计 docs/design/processing-fee-and-option-pricing.md 包 A）。交付：V77 迁移（`production_route_rules.customer_unit_price NUMERIC(12,2)` + 92 行组合价 + 16 条选项价，均 `source='synthetic'`）+ ProductionRouteRule 实体字段 + ProcessingFeeCalculator 两层取价（组合 × 米数 + Σ 选项 × 1，新增 `special_options` / `special_options_total` 键，行金额 = 两者之和）+ schema.sql 终态 + e2e fixture 重建 + 合成数据生成器与守卫。**未做（如实登记）**：① 设计 §7 的「19 项」按代码事实落为 16 项（3 项无 option 规则行，见 data_checks 末条）；② 前端展示面（包 B）与 #4452 信号映射（包 C）不在本单；③ `fee_source=manual` 通道仍未落码。 ｜ tags: processing_fee, special_options, per_set, customer_unit_price, migration_v77, synthetic_seed
 
 ## processing-order（40 case）
 
@@ -4732,8 +4774,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：346（活跃 155，跳过 191）
-- tier 分布：smoke 10 / normal 305 / adversarial 31
+- 用例总数：349（活跃 155，跳过 194）
+- tier 分布：smoke 10 / normal 308 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4750,8 +4792,8 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：38
-- 加工项域：12
+- 订单域：40
+- 加工项域：13
 - processing-order：40
 - 商品域：21
 - registry：1
@@ -4793,6 +4835,8 @@
 - OR-036: 下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）
 - OR-038: 下单页移除「部位」—— 四类购买情况（布帘 / 布帘+纱帘 / 只买纱帘 / 布料）+ 纱帘不算料
 - OR-037: 行话下单落内部值 - 顾客说「韩式褶」「纳米圈」⇒ craft 落「韩褶」「打孔」（不是原话）
+- OR-039: 下单页费用明细 —— 加工项控件无单价文本（价格只在组合上）+ 特殊选项按套逐项行且合计 === 订单金额
+- OR-040: 下单页自动识别 —— 超高/超宽由 成品宽高 + 卷边 vs 门幅 判定（两者独立可同时为真）+ 倒幅/正幅由 cuttingMode 唯一推导（无手选项）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）
@@ -4840,4 +4884,5 @@
 - PP-014: 工艺路线商家可配用户面 - 序列编辑护栏逐条可见 / 缺口区 / 信号映射 / 四态路线来源提示（前端单测覆盖）
 - PG-040: 加工费组合定价 - 组合→单价（元/米）写面五条护栏 + composition_key 归一化 + 版本账 + 未定价缺口可见
 - PG-042: 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项）
+- PG-043: 特殊选项按套计价（包 A）- route_rules 加对客单价列 + 加工费 = 组合价×米数 + Σ(选项价×套数) + 92 行合成价目
 

@@ -3026,20 +3026,94 @@ cases:
         - xiaobu-acceptance.yml
       verifies: []
 
+  - id: OR-039
+    legacy_id: ""
+    title: "下单页费用明细 —— 加工项控件无单价文本（价格只在组合上）+ 特殊选项按套逐项行且合计 === 订单金额"
+    domains:
+      - order
+    tier: normal
+    persona: ""
+    tags:
+      - order
+      - fee_detail
+      - processing_fee
+      - special_options
+      - display
+      - backend_contract
+    truths_ref: []
+    user_inputs:
+      - "（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）"
+    expectations: []
+    data_checks:
+      - "**R10·加工项选择控件不出现任何单价文本**：用户 2026-09-19「订单上的加工项选择控件不要展示加工项单价」—— ERP 的加工项是**组合价目**（特征集合 → 元/米），价格只在**组合**上存在 ⇒ 逐项显示单价必然误导（同一真值两个数）。判据 = 该控件渲染出的文本里不出现 `¥` 金额 / `/ 米` / `/ 套` 形态（红证：修复前渲染 `¥5.00 / 米` 与选中后的 `3米 · ¥15.00`）。"
+      - "**R10·选中态仍可对账**：摘掉的是**钱**，不是数量 —— 选中后仍显示「数量 + 单位」（如 `3米`），否则商家无从核对勾了什么。"
+      - "**R2·费用明细出现特殊选项行**：逐项 `名称 单价/套 × 套数`（数据来自服务端 `processingFeeDetail.special_options[]`，契约见设计 §4.3，已冻结）。空数组 = 没选 ⇒ **不出现该块**（缺值不渲染）。"
+      - "**同一真值（判据 5）**：特殊选项行的金额之和 = `special_options_total`；且「加工」行金额 = `processingFeeDetail.amount`（**组合那半**）+ 特殊选项行 = 行金额 `processingFee` ⇒ 费用明细逐行之和 === 订单金额里的那个数（不出现第二份口径、不双算）。"
+      - "**未定价显式可见（判据 3 的展示面）**：`priced:false` 的选项必须显式标「未定价（按 0 计）」，不许静默按 0 收。"
+      - "**回退面（新增键只加不改）**：服务端尚未返回 `special_options`（键缺席）时，特殊选项块不出现且「加工」行金额回落为整个 `processingFee` —— 显示口径逐字等于改造前，不引入第三个口径。"
+    skip_reason: "[backend-contract] 前端展示契约（admin-web 组件 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/orders-new-fee-detail.test.tsx 与 frontend/admin-web/tests/unit/lib/order-fee-display.test.ts 执行"
+    merge_log: "2026-09-19 新增（issue #4526 包 B，设计文档 §4.3 / §8 包 B 行 / §9 判据 4·5）：#4450 的加工费计价预览把**服务端组合取价**接进了下单页，但页面只显示一个「加工费」总数 —— 用户 2026-09-19 口径「选择了特殊选项后，也要算入费用明细」与「加工项选择控件不要展示加工项单价」两条都没有落点。本用例把判据挂到真实展示行为上：控件去单价 + 特殊选项按套逐项行 + 合计 === 订单金额。**不改运行时行为、不改断言强度**。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/orders-new-fee-detail.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/order-fee-display.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: OR-040
+    legacy_id: ""
+    title: "下单页自动识别 —— 超高/超宽由 成品宽高 + 卷边 vs 门幅 判定（两者独立可同时为真）+ 倒幅/正幅由 cuttingMode 唯一推导（无手选项）"
+    domains:
+      - order
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - order
+      - craft_spec
+      - auto_detect
+      - dimension
+      - display
+      - backend_contract
+    truths_ref: []
+    user_inputs:
+      - "（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）"
+    expectations: []
+    data_checks:
+      - "**D6·自动识别（用户 2026-09-19「超高 / 超宽是和门幅标准比较的……这个要求做到自动识别」）**：`超高 = (成品高 + 卷边) > 门幅`、`超宽 = (成品宽 + 卷边) > 门幅`；门幅缺省 2.8 米（窄幅布 1.4），卷边常量 **0.3 米复用算料引擎既有常量**（`curtain_calc.py` 的 `HEM_MARGIN`，同步守卫逐值比对，不新造第二个数）。红证：实现前无此纯函数 ⇒ import 即红；把阈值改成「固定 3 米」或让两者互斥 ⇒ 判据必红。"
+      - "**两者独立、可同时为真**：ERP 组合名 `韩折+超宽+超高+定型` 同时存在（设计 §5.2 证据链 ③）⇒ 判定不得互斥；同时为假（如 1.5×1.5 对 2.8 门幅）⇒ 两者都不出现。"
+      - "**倒幅/正幅由 `cuttingMode` 唯一推导**：`定宽买高` → 倒幅、`定高买宽` → 正幅；**不设手选项**（手选项 = 与 `cuttingMode` 冲突的第二份口径）。红证：删掉推导（或改成可手选）⇒ 判据必红。"
+      - "**`source='推算'` 照实标注**（设计 §5.2 边界：本条是推理非实证，未从 ERP 供应商取得判据）—— 判定结果带可读依据（哪两个数比出来的），且来源标「推算」+ 可配，不假装定论。"
+      - "**下单页展示自动识别结果，且不计入手选计数**：自动特征出现在③加工项步骤的**只读**区（`自动识别` 块，带 `推算` 来源标注），**不是**可勾选项 —— 不出现「自动识别」的 checkbox，`已选 N 项` 只数商家手选的加工项。红证：删掉该只读块 ⇒ 判据必红。"
+    skip_reason: "[backend-contract] 前端展示契约（admin-web 纯函数 + 页面只读区，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-auto-features.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-auto-features.test.tsx 执行"
+    merge_log: "2026-09-19 新增（issue #4526 包 B，设计文档 §5.1/§5.2 / §9 判据 8）：用户 2026-09-19 口径「超高 / 超宽是和门幅标准比较的，客户报的数据和门幅对比后能自动区分出来是超高还是超宽，这个要求做到自动识别」。此前前端**零落点**（`grep 超高` 只命中 Modal 注释）。本用例把判据挂到真实推导行为上：两条独立阈值 + cuttingMode 唯一推导 + 只读展示。**不改运行时行为、不改断言强度**。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/craft-auto-features.test.ts"
+        - "frontend/admin-web/tests/unit/pages/orders-new-auto-features.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
   # ══════════════════════════════════════════════════════════════════════════
-  # OR-039（issue #4527，2026-09-19）：**两种用料计算方法可选 + 逐片口径 + 向上进位到 0.1**
+  # OR-041（issue #4527，2026-09-19）：**用料公式按工艺推导 + 逐片口径 + 向上进位到 0.1**
   # ══════════════════════════════════════════════════════════════════════════
   # 用户 2026-09-19 裁定（逐字）：「算出来的用料还要根据打开方式*系数，单开系数1，双开系数2，
   # 以此类推，最后用料米数保留一位小数，除了使用韩折公式还有一种褶倍数计算公式，这都是用料
-  # 计算方法，你得根据用户要求选择不同的计算公式，默认用韩折的」；追加裁定「可能得支持每个
-  # 商家自定义配置」；澄清三问 → **乙**（公式吃每片宽，总用料 = 每片用料 × 开数）+ 向上进位。
+  # 计算方法，你得根据用户要求选择不同的计算公式，默认用韩折的」；追加裁定「**韩折用韩折公式
+  # 算布料，打孔按倍数法算布料，默认选择 2 倍**」+「可能得支持每个商家自定义配置」；
+  # 澄清三问 → **乙**（公式吃每片宽，总用料 = 每片用料 × 开数）+ 向上进位。
   #
   # **ERP 实证锚点（防口径漂移，本用例的锚）**：加工单 `CSO260915-02615`（#4343 已取证）
   # 宽 5.5m / 双开 / 理论褶倍 2.00 ⇒ 操作记录每道工序 **11.00 米**（= 5.5×2.00）
   # ⇒ **双开不得把总宽再乘 2**（「甲」口径算成 22.00 米，与实证差一倍、直接进订单金额，已被否决）。
-  - id: OR-039
+  #
+  # ⚠️ 编号说明：本 PR 起草时用 OR-039，合并 main 时发现 **main 已占用 OR-039 / OR-040**
+  #    （包 B 的 #4526 费用明细 / 自动识别）⇒ 顺延为 **OR-041**，与 main 的两条互补、不重叠。
+  - id: OR-041
     legacy_id: ""
-    title: "算料公式可选 - 韩折公式（默认）/ 褶倍数公式 + 逐片口径（每片×开数）+ 用料向上进位到 0.1"
+    title: "算料公式按工艺推导 - 韩褶⇒韩折公式（折数法）/ 打孔⇒倍数法（默认 2 倍）+ 逐片口径（每片×开数）+ 用料向上进位到 0.1"
     domains:
       - order
       - processing
@@ -3058,30 +3132,32 @@ cases:
       - fabric-calc.craft-calc-config
       - fabric-calc.craft-calc-endpoint
     # ── 判据（每条都能红；期望值全部**写死**，不得从实现推导）──────────────────
-    # ① ERP 锚点：5.5 / 双开 / 2.0 / formula=fullness ⇒ 11.0 米（≠11.0 ⇒ 红；22.0 = 甲口径）；
-    # ② 逐片口径：6.6 / 双开 / 2.0 / formula=pleat ⇒ 总用料 = 每片用料 × 开数（每片 6.65 × 2 = 13.3）；
-    # ③ 向上进位：`ceil(x*10)/10`（截断 / 四舍五入 ⇒ 红；`0.25×23+0.2 = 5.95` ⇒ 6.0）；
-    # ④ 默认公式：不传 formula ⇒ 韩折公式，且 `formula_text` 串首写明所用公式（静默走另一支 ⇒ 红）；
-    # ⑤ 开数系数不得翻倍：同一成品宽下 单开与双开的 fullness 结果**相等**（总宽再×开数 ⇒ 22.0 ⇒ 红）；
-    # ⑥ 既有 fail-closed 不变：缺宽/缺高/非韩褶/纱帘 ⇒ 不发请求（前端三条 fail-closed 回归）；
-    # ⑦ 其余算料输出（折数/幅数/金额）逐值回归：与改前一致（52 折 / 13.3 米 / 34.1 / 62.7 / 11.8）。
+    # ① 工艺推导：韩褶 ⇒ 折数法（走倍数法 ⇒ 红）；打孔 ⇒ 倍数法 + 默认 2 倍（走折数法 ⇒ 红）；
+    # ② ERP 锚点：5.5 / 双开 / 2.0 / formula=fullness ⇒ 11.0 米（≠11.0 ⇒ 红；22.0 = 甲口径）；
+    # ③ 逐片口径：6.6 / 双开 / 2.0 / formula=pleat ⇒ 总用料 = 每片用料 × 开数（每片 6.65 × 2 = 13.3）；
+    # ④ 向上进位：`ceil(x*10)/10`（截断 / 四舍五入 ⇒ 红；`0.25×23+0.2 = 5.95` ⇒ 6.0）；
+    # ⑤ 默认公式：不传 formula / 未指定工艺 ⇒ 韩折公式，且 `formula_text` 串首写明所用公式（静默走另一支 ⇒ 红）；
+    # ⑥ 开数系数不得翻倍：同一成品宽下 单开与双开的 fullness 结果**相等**（总宽再×开数 ⇒ 22.0 ⇒ 红）；
+    # ⑦ 既有 fail-closed 不变：缺宽/缺高/无自动算料口径工艺/纱帘 ⇒ 不发请求（前端 fail-closed 回归）；
+    # ⑧ 其余算料输出（折数/幅数/金额）逐值回归：与改前一致（52 折 / 13.3 米 / 34.1 / 62.7 / 11.8）。
     # 配置可注入：`build_quote(..., config=None)` ⇒ 默认值 = 既有常量逐值不变（显式传默认配置 == 不传）；
     # 非法配置显式报错（**不静默回退默认值**）；配置**沿调用链传递**，不读进模块级可变全局。
-    # ⚠️ 架构口径：**不新增第二份算料逻辑** —— `formula_text` 由算料引擎产出，Java / TS 只搬运；
-    # 公式名透传（Java 不校验、不改写、不补默认值）。
+    # ⚠️ 架构口径：**不新增第二份算料逻辑** —— 推导表唯一口径在算料引擎（`CRAFT_FORMULA`），
+    # 前端那张是**有守卫的副本**（`craft-calc-formula-sync.test.ts` 逐值读 Python 源比对）；
+    # `formula_text` 由引擎产出，Java / TS 只搬运；Java 侧 `formula` / `craft` 原样透传（不校验、不改写）。
     user_inputs:
-      - "商家手工下单页按宽 5.5m / 双开 / 标准档，用褶倍数公式试算用料（预期 11.0 米）"
+      - "商家手工下单页按宽 5.5m / 双开 / 标准档，工艺选打孔 ⇒ 按倍数法试算用料（预期 11.0 米）"
     expectations:
       - tool: direct_reply
     data_checks:
-      - "（散文、**不计分**）两种用料计算方法可选（issue #4527）：`formula='pleat'` 韩折公式（折数法，**默认**）/ `formula='fullness'` 褶倍数公式（倍数法）；未知取值 ⇒ 显式报错，不静默回退默认"
+      - "（散文、**不计分**）公式**由工艺推导**（用户 2026-09-19 追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」）：韩褶 ⇒ 韩折公式（折数法）/ 打孔 ⇒ 褶倍数公式（倍数法，默认 2 倍）；未登记工艺/未指定 ⇒ 兜底默认（韩折公式）；`formula` 入参为**显式覆盖**（显式 > 推导表 > `default_formula` 兜底）"
       - "（散文、**不计分**）ERP 实证锚点（#4343 取证的加工单 CSO260915-02615）：宽 5.5m / 双开 / 理论褶倍 2.00 ⇒ **11.00 米**（= 5.5×2.00）—— 双开不得把总宽再乘 2（甲口径 22.00 米已被用户否决）"
       - "（散文、**不计分**）逐片口径：每片宽 = 成品宽 ÷ 开数；总用料 = 每片用料 × 开数（每片余量 = 总余量 ÷ 开数 ⇒ 与既有 `0.25×总折数+总余量` 逐值一致，不改钱）"
       - "（散文、**不计分**）用料米数一律**向上进位到 0.1**（`ceil(x*10)/10`）：截断 / 四舍五入即违约；进位只在总用料上做一次；金额/单价相关量不跟着改口径"
       - "（散文、**不计分**）配置可注入（用户追加裁定「可能得支持每个商家自定义配置」）：默认值 = 既有常量逐值不变；护栏（褶倍下限 / 正数校验 / tiers 非空）不因可配而消失，非法配置显式报错；配置沿调用链显式传递"
-      - "（散文、**不计分**）公式串由**后端**（算料引擎）产出并写明所用公式（`韩折公式：` / `褶倍数公式：`）；Java / TS 侧只搬运、不自拼（自拼 = 第二份算料逻辑）"
-    skip_reason: "[backend-contract] 算料公式属确定性纯计算（无 LLM 行为）：判据在 pytest（tests/test_craft_calc_formula.py / tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）+ vitest（craft-calc-request.test.ts），不进 agent-eval 冒烟"
-    merge_log: "2026-09-19 新增（issue #4527，包 D 算料口径）：用户裁定「两种用料计算方法可选、默认韩折 + 用料米数保留一位小数（向上进位）+ 按打开方式系数（逐片口径）」，追加裁定「公式参数支持每个商家自定义配置」。落码 = `curtain_calc.py`（`formula` 入参 + `DEFAULT_CRAFT_CALC_CONFIG` + `ceil_to_step` + 逐片口径 + 引擎产出 `formula_text`）、`internal.py` 端点透传 `formula`、Java 代理透传（不复制算料逻辑）、`craft-calc-request.ts` 默认 `formula='pleat'`。**不改运行时金额口径**（金额仍 = 用料 × 单价，只用料米数按裁定向上进位到 0.1）。与 OR-032 的分工：OR-032 锚**折数法端点契约与纸表逐值**（issue #4421），本条锚**公式选择 / 逐片口径 / 进位 / 配置注入**（issue #4527）。"
+      - "（散文、**不计分**）公式串由**后端**（算料引擎）产出并写明所用公式（`韩折公式：` / `褶倍数公式：`）；Java / TS 侧只搬运、不自拼（自拼 = 第二份算料逻辑）；前端 `PLEAT_CRAFTS` 门必须放行打孔（否则「打孔按倍数法算布料」在页面上永不发生）"
+    skip_reason: "[backend-contract] 算料公式属确定性纯计算（无 LLM 行为）：判据在 pytest（tests/test_craft_calc_formula.py / tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）+ vitest（craft-calc-request.test.ts / craft-calc-formula-sync.test.ts / orders-new-craft-calc.test.tsx），不进 agent-eval 冒烟"
+    merge_log: "2026-09-19 新增（issue #4527，包 D 算料口径）：用户裁定「两种用料计算方法可选、默认韩折 + 用料米数保留一位小数（向上进位）+ 按打开方式系数（逐片口径）」，追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」与「公式参数支持每个商家自定义配置」。落码 = `curtain_calc.py`（`formula` 入参 + `CRAFT_FORMULA`/`CRAFT_MOUNTING` 推导表 + `DEFAULT_CRAFT_CALC_CONFIG` + `ceil_to_step` + 逐片口径 + 引擎产出 `formula_text`）、`internal.py` 端点透传 `formula`/`craft`、Java 代理透传（不复制算料逻辑）、`craft-calc-request.ts`（放行打孔 + mounting/formula 随 craft 走 + 有守卫的映射副本）。**不改运行时金额口径**（金额仍 = 用料 × 单价，只用料米数按裁定向上进位到 0.1）。编号：起草用 OR-039，合并 main 时 main 已占用 OR-039/OR-040（包 B #4526）⇒ 顺延 OR-041。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_craft_calc_formula.py"
@@ -3089,6 +3165,8 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/service/CraftCalcClientTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/CraftCalcControllerTest.java"
         - "frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts"
+        - "frontend/admin-web/tests/unit/lib/craft-calc-formula-sync.test.ts"
+        - "frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx"
       ci:
         - ai-agent-tests.yml
         - pr-check.yml

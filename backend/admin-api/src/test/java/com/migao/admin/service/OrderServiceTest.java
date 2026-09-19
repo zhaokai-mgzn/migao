@@ -98,6 +98,9 @@ class OrderServiceTest {
      * 取价算法本身的判据见 {@link ProcessingFeeCalculatorTest}；本类只断言「接线与落库」。 */
     @Mock
     private com.migao.admin.mapper.ProcessingFeeCombinationMapper processingFeeCombinationMapper;
+    /** 特殊选项对客单价（issue #4525 的取价依赖；本类不涉及 ⇒ 空表 ⇒ 选项计 0） */
+    @Mock
+    private com.migao.admin.mapper.ProductionRouteRuleMapper routeRuleMapper;
 
     private ProcessingFeeCalculator processingFeeCalculator;
 
@@ -109,7 +112,7 @@ class OrderServiceTest {
         TenantContext.setTenantId(1L);
         // 加工费取价点（issue #4406）：真实对象 + 空价目表 Mapper ⇒ 无组合价 ⇒ 未定价 0
         // （存量用例都不配组合价，故金额口径与接线前一致；接线判据见本类末尾的 #4406 段）
-        processingFeeCalculator = new ProcessingFeeCalculator(processingFeeCombinationMapper);
+        processingFeeCalculator = new ProcessingFeeCalculator(processingFeeCombinationMapper, routeRuleMapper);
         ReflectionTestUtils.setField(orderService, "processingFeeCalculator", processingFeeCalculator);
 
         // 初始化 MyBatis-Plus 实体 lambda 缓存，使 LambdaUpdateWrapper 的 Order::getId 等方法引用可解析
