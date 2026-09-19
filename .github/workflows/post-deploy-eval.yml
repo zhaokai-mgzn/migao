@@ -883,7 +883,7 @@ jobs:
       - name: Download 两 persona 汇总（issue 要点来源）
         # 取不到 artifact 不能挡住建 issue（否则又回到"静默"）→ continue-on-error
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
