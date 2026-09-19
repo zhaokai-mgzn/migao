@@ -105,6 +105,36 @@ def seed_sources_for(table: str, migration_dir: Path = MIGRATION_DIR) -> tuple:
     return tuple(found)
 
 
+def values_sources_for(table: str, migration_dir: Path = MIGRATION_DIR) -> tuple:
+    """`seed_sources_for` 的**只认 `VALUES` 形态**变体（issue #4432 = 母单 #4423 P2）。
+
+    ## 为什么必须分流（否则守卫自己会假红）
+
+    P2（V72）的**存量租户回填**是 `INSERT INTO <table> SELECT … FROM tenants t JOIN …`
+    —— 它是**派生**语句（按租户循环从该租户的 `production_operations` 归一后生成），
+    **不是** `VALUES` 字面量种子。本文件的解析器 `parse_seed` 只吃 `VALUES (...)` 形态
+    ⇒ 若把 V72 纳入「种子源」，`test_new_route_seed_sources_are_discovered_and_nonempty`
+    会判「V72 未解析到任何行 ⇒ 该源等于没被读」（**假红**：V72 的贡献不在字面量里，
+    而在「按租户循环」这个形态里，由 `test_routing_model_p2_consumers.py` 的 A 组判据守）。
+
+    ⇒ 判据分流：**字面量种子源**（三源收敛比对射程）= 含 `VALUES` 的那些；
+    **派生回填源** = 只有 `SELECT` 的那些（另守）。
+    """
+    directory = Path(migration_dir)
+    # ⚠️ 只认 `INSERT INTO <table> … VALUES`（`VALUES` 必须出现在该语句的 **FROM 之前**）。
+    # 不能只看「语句里有没有 VALUES 这个词」：V72 的规则回填是
+    # `INSERT INTO production_route_rules … SELECT … JOIN (VALUES …) AS r(...)` ——
+    # 那个 `VALUES` 在 JOIN 里、**不是**种子行（列数 8 ≠ 表列数 10），
+    # 误判会让 `parse_seed` 解析错位并假红。
+    literal_pattern = re.compile(
+        r"INSERT\s+INTO\s+" + table + r"\b(?:(?!\bFROM\b)[\s\S])*?\bVALUES\b", re.I)
+    found = []
+    for p in sorted(directory.glob(MIGRATION_GLOB), key=lambda p: version_key(p.name)):
+        if literal_pattern.search(p.read_text(encoding="utf-8")):
+            found.append(p)
+    return tuple(found)
+
+
 # 工序库 / 路线种子源：**按集合聚合**（判据 1）——新增种子迁移无需在此追加任何东西。
 SEED_OPERATION_SQLS = seed_sources_for("production_operations")
 ROUTING_SEED_SQLS = seed_sources_for("production_routings")
@@ -1025,10 +1055,13 @@ ROUTE_TEMPLATE_COLUMNS = ("id", "tenant_id", "name", "is_default", "positions", 
 ROUTE_RULE_COLUMNS = ("id", "tenant_id", "trigger_kind", "trigger_value", "position", "action",
                       "operation", "after_operation", "priority", "status")
 
-# 新表种子源：**按集合聚合**（判据 1）—— 新增种子迁移无需在此追加任何东西。
-POSITION_SEED_SQLS = seed_sources_for("production_operation_positions")
-TEMPLATE_SEED_SQLS = seed_sources_for("production_route_templates")
-RULE_SEED_SQLS = seed_sources_for("production_route_rules")
+# 新表种子源：**按集合聚合**（判据 1）—— 新增**字面量**种子迁移无需在此追加任何东西。
+# ⚠️ 用 `values_sources_for` 而不是 `seed_sources_for`：P2（V72）的存量租户回填是
+# `INSERT INTO <table> SELECT … FROM tenants t JOIN …`（**派生**语句、无 VALUES），
+# 不属「字面量种子源」的比对射程 —— 把它算进来会让本段判据对 V72 假红（见函数 docstring）。
+POSITION_SEED_SQLS = values_sources_for("production_operation_positions")
+TEMPLATE_SEED_SQLS = values_sources_for("production_route_templates")
+RULE_SEED_SQLS = values_sources_for("production_route_rules")
 
 #: 7 组「部位变体」（旧工序名 → 同一道逻辑工序）—— 同组内 group_name / unit / scope 必须一致
 VARIANT_GROUPS = {
