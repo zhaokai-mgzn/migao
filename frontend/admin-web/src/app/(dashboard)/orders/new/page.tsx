@@ -5,11 +5,20 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import { orderApi, productApi, customerApi, processingItemApi } from '@/lib/api'
+import { orderApi, productApi, customerApi, processingItemApi, craftCalcApi, type CraftCalcResult, type CraftCalcParams } from '@/lib/api'
 import { resolveImageUrl } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
 import { Button, Card, Input, Modal } from '@/components/ui'
 import OrderCraftFields from '@/components/orders/OrderCraftFields'
+import {
+  METERS_SOURCE_FORMULA,
+  // 与配布边米数来源的 `METERS_SOURCE_MANUAL` 同值（都是「人工指定」）但**是另一个字段**
+  // ⇒ 别名进来，避免两个来源的常量在同一文件里撞名（tsc 会直接报 duplicate identifier）。
+  METERS_SOURCE_MANUAL as LINE_METERS_SOURCE_MANUAL,
+  craftCalcErrorText,
+  craftCalcParamsOf,
+  craftCalcSignature,
+} from '@/lib/craft-calc-request'
 import {
   COMPONENT_ROLE_EDGE,
   METERS_SOURCE_FOLLOW,
@@ -77,6 +86,16 @@ interface OrderLineItem {
   edgeUnitPrice: number | null
   /** 卡片是否收起（issue #4420 展示重构）—— 收起只影响渲染，不影响任何录入值 */
   collapsed: boolean
+  /**
+   * 用料米数来源（真值源 §8：折数/用料**必须带来源**，防多渠道不一致）—— issue #4434。
+   * `公式计算` = 由算料引擎试算预填（宽/高/开数/拼次变化时自动重算）；
+   * `人工指定` = 商家手改过 ⇒ **试算不得静默改回**（只有显式「恢复按公式计算」才切回）。
+   */
+  metersSource: string
+  /** 最近一次算料试算结果（含**后端产出**的公式串）—— `null` = 还没算过 */
+  calc: CraftCalcResult | null
+  /** 试算失败原因（行内显式提示；**不退回任何估算值**） */
+  calcError: string | null
 }
 
 const sellingMethodLabel: Record<string, string> = {
@@ -117,6 +136,29 @@ function deriveProcessingQty(pi: ProcessingItem, fabricMeters: number): number {
   return 1
 }
 
+/** 试算防抖（issue #4434）：连打宽高时只在停手后发一次请求 */
+const CRAFT_CALC_DEBOUNCE_MS = 400
+
+/**
+ * 面料米数变化 ⇒ 已选中加工项的 `per_meter` 数量联动（issue #3005 回滚 #2986）。
+ *
+ * 抽成纯函数：手工改数量（`handleLineQtyChange`）与算料试算写回（issue #4434）**必须走同一条**，
+ * 否则两条路径对「加工项数量」的口径会分叉。
+ */
+function requantifyProcessing(
+  line: OrderLineItem,
+  meters: number
+): Record<string, { selected: boolean; qty: number }> {
+  const next: Record<string, { selected: boolean; qty: number }> = { ...line.selectedProcessing }
+  Object.entries(next).forEach(([piId, cfg]) => {
+    if (!cfg.selected) return
+    const pi = line.processingItems.find((p) => p.id === piId)
+    if (!pi) return
+    next[piId] = { ...cfg, qty: deriveProcessingQty(pi, meters) }
+  })
+  return next
+}
+
 function createEmptyLineItem(): OrderLineItem {
   return {
     id: genId(),
@@ -136,6 +178,9 @@ function createEmptyLineItem(): OrderLineItem {
     edgeMeters: null,
     edgeUnitPrice: null,
     collapsed: false,
+    metersSource: METERS_SOURCE_FORMULA,
+    calc: null,
+    calcError: null,
   }
 }
 
@@ -419,19 +464,89 @@ export default function NewOrderPage() {
     })
   }
 
-  // 行商品数量（面料米数）变化 → 已选中加工项数量联动重算（per_meter=面料米数，其余=1）（issue #3005 回滚 #2986）
+  // 行商品数量（面料米数）**手工改**（issue #4434）：
+  // ① 标记来源「人工指定」⇒ 后续算料试算**不得静默改回**（真值源 §8：折数/用料必须带来源）；
+  // ② 已选中加工项数量联动重算（per_meter=面料米数，其余=1）（issue #3005 回滚 #2986）。
   const handleLineQtyChange = (line: OrderLineItem, qty: number) => {
-    const selectedProcessing: Record<string, { selected: boolean; qty: number }> = {
-      ...line.selectedProcessing,
-    }
-    Object.entries(selectedProcessing).forEach(([piId, cfg]) => {
-      if (!cfg.selected) return
-      const pi = line.processingItems.find((p) => p.id === piId)
-      if (!pi) return
-      selectedProcessing[piId] = { ...cfg, qty: deriveProcessingQty(pi, qty) }
+    updateLineItem(line.id, {
+      quantity: qty,
+      metersSource: LINE_METERS_SOURCE_MANUAL,
+      selectedProcessing: requantifyProcessing(line, qty),
     })
-    updateLineItem(line.id, { quantity: qty, selectedProcessing })
   }
+
+  /** 「恢复按公式计算」（issue #4434）：显式切回 ⇒ 下一次试算重新预填数量 */
+  const restoreFormulaMeters = (line: OrderLineItem) => {
+    updateLineItem(line.id, { metersSource: METERS_SOURCE_FORMULA, calcError: null })
+  }
+
+  // ===== 算料试算（issue #4434 · 前置 #4421）=====
+  //
+  // 三条口径：
+  // ① **单一真值**：用料米数由算料引擎（后端端点）算，前端**不复制任何公式**；公式串也由后端产出；
+  // ② **只预填「公式计算」的行**：商家手改过数量的行（`人工指定`）不得被静默改回（真值源 §8）；
+  // ③ **失败不静默**：400（拼次纸表未登记 / 非韩褶）在行内显式提示，数量保持原样，**不退回估算值**。
+  const calcSignature = useMemo(
+    () =>
+      lineItems
+        .map((l) => `${l.id}:${l.metersSource}:${craftCalcSignature(craftCalcParamsOf(l))}`)
+        .join(';'),
+    [lineItems]
+  )
+
+  useEffect(() => {
+    const targets: Array<{ id: string; params: CraftCalcParams }> = []
+    for (const line of lineItems) {
+      if (line.metersSource !== METERS_SOURCE_FORMULA) continue
+      const params = craftCalcParamsOf(line)
+      if (params) targets.push({ id: line.id, params })
+    }
+    if (targets.length === 0) return
+
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      const results: Array<{ id: string; calc: CraftCalcResult | null; error: string | null }> =
+        await Promise.all(
+          targets.map(async ({ id, params }) => {
+            try {
+              const res = await craftCalcApi.preview(params)
+              return { id, calc: (res.data?.data ?? null) as CraftCalcResult | null, error: null }
+            } catch (e) {
+              return { id, calc: null, error: craftCalcErrorText(e) }
+            }
+          })
+        )
+      if (cancelled) return
+      setLineItems((prev) =>
+        prev.map((it) => {
+          const hit = results.find((r) => r.id === it.id)
+          if (!hit) return it
+          if (hit.error) return { ...it, calcError: hit.error }
+          const meters = Number(hit.calc?.fabric_meters)
+          if (!Number.isFinite(meters) || meters <= 0) {
+            return {
+              ...it,
+              calcError: '算料未返回有效用料米数（数量保持原样，请核对宽高与工艺）',
+            }
+          }
+          return {
+            ...it,
+            calc: hit.calc,
+            calcError: null,
+            quantity: meters,
+            selectedProcessing: requantifyProcessing(it, meters),
+          }
+        })
+      )
+    }, CRAFT_CALC_DEBOUNCE_MS)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+    // 依赖**只含入参签名**：试算会写回 quantity，若用行数组当依赖会自激成请求风暴
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calcSignature])
 
   // ===== 费用汇总 =====
   const totals = useMemo(() => {
@@ -735,6 +850,7 @@ export default function NewOrderPage() {
                     onSelectColor={(colorId) => handleSelectColor(line, colorId)}
                     onSelectSku={(sku) => handleSelectSku(line, sku)}
                     onChangeQty={(q) => handleLineQtyChange(line, q)}
+                    onRestoreFormula={() => restoreFormulaMeters(line)}
                     onChangePrice={(p) => updateLineItem(line.id, { unitPrice: p })}
                     onChangeWidth={(w) => updateLineItem(line.id, { width: w })}
                     onChangeHeight={(h) => updateLineItem(line.id, { height: h })}
@@ -1147,6 +1263,8 @@ interface LineItemBlockProps {
   onSelectColor: (colorId: string) => void
   onSelectSku: (sku: OrderProductSku) => void
   onChangeQty: (q: number) => void
+  /** 「恢复按公式计算」（issue #4434）：切回算料预填（手改后不会被静默改回，只能显式恢复） */
+  onRestoreFormula: () => void
   onChangePrice: (p: number) => void
   /** 成品宽 / 高（米，部位级；issue #4420 必填） */
   onChangeWidth: (w: number | null) => void
@@ -1174,6 +1292,7 @@ function LineItemBlock({
   onSelectColor,
   onSelectSku,
   onChangeQty,
+  onRestoreFormula,
   onChangePrice,
   onChangeWidth,
   onChangeHeight,
@@ -1454,6 +1573,24 @@ function LineItemBlock({
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
+                  {/* 算料来源与公式（issue #4434）—— 公式串**原样渲染后端产出**，前端不自拼 */}
+                  {line.metersSource === LINE_METERS_SOURCE_MANUAL ? (
+                    <p className="mt-1 text-xs text-amber-600">
+                      人工指定
+                      <button
+                        type="button"
+                        onClick={onRestoreFormula}
+                        className="ml-1.5 underline hover:text-amber-700"
+                      >
+                        恢复按公式计算
+                      </button>
+                    </p>
+                  ) : line.calc?.formula_text ? (
+                    <p className="mt-1 text-xs text-neutral-400 break-words">
+                      {line.calc.formula_text}
+                    </p>
+                  ) : null}
+                  {line.calcError && <p className="mt-1 text-xs text-red-600">{line.calcError}</p>}
                 </div>
                 <div>
                   <Label required>单价 (¥/米)</Label>

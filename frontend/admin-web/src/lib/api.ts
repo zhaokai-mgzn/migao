@@ -217,6 +217,60 @@ export const processingItemApi = {
     request.post<ApiResponse<ProcessingCalculateResult>>('/api/admin/processing-items/calculate', data),
 }
 
+// 算料试算 API（issue #4434 · 前置 #4421）
+//
+// **薄封装**：不补默认值、不重算、不拼公式串。
+// 缺省值由 ai-agent 端点给（在 Java/TS 侧补默认值 = **第二份口径**）；
+// `formula_text` 由**后端**按同一次算料的数字产出（前端自拼 = **第二份算料逻辑**）。
+//
+// 键名口径（设计文档 §4.5）：**算料输出键 = snake_case**，与 `CALC_INFO_KEYS` /
+// `craft-display.ts` 逐字一致 ⇒ 商家接受试算结果后，这些值可**原样**落进 `processingInfo`。
+export interface CraftCalcParams {
+  /** 窗宽（米，> 0）—— **必填**；系统不猜窗宽（缺 width ⇒ 后端 400，前端不该发这种请求） */
+  width: number
+  /** 窗高（米）；不传由 ai-agent 按常见层高处理 */
+  height?: number
+  /** 打开方式开数（1 单开 / 2 双开 / 3 三开 / 4 四开） */
+  open_count?: number
+  /** 悬挂方式（仅 `s_hook` 韩褶走折数法） */
+  mounting?: string
+  /** 工艺档位（standard 2.0 / economy 1.8） */
+  craft_tier?: string
+  /** 款式（单色 / 拼色）；拼色需同时给拼次特殊选项才有拼色用料系数 */
+  style?: string
+  /** 部位级特殊选项（逐字名）；拼色用料系数由 `拼1次` / `拼2次` 决定 */
+  special_options?: string[]
+}
+
+/** 试算结果 —— 算料输出子集（§4.5 snake_case） */
+export interface CraftCalcResult {
+  /** 面料米数（= 下单页「数量」的预填值） */
+  fabric_meters: number
+  /** 总褶数 */
+  pleat_count: number
+  /** 每片折数 */
+  per_panel_pleats?: number
+  /** 每折吃布（米）：单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2 */
+  per_fold: number
+  /** **理论**褶倍（随档位） */
+  fullness: number
+  /** **实际**褶倍（= 用料 ÷ 窗宽） */
+  fullness_actual?: number
+  formula_used?: string
+  /** 可读公式串（如 `(6.6+0.3)×2.0 → 52折 → 0.25×52+0.3 = 13.3米`）—— **后端产出，前端只渲染** */
+  formula_text: string
+  /** 取值来源：`公式计算` / `人工指定` / `客户自报`（真值源 §8：用料必须带来源） */
+  source?: string
+  craft_tier?: string
+  warning?: string
+}
+
+export const craftCalcApi = {
+  /** 算料试算（**不落库**）—— 供下单页预填「数量」并展示公式串 */
+  preview: (params: CraftCalcParams) =>
+    request.post<ApiResponse<CraftCalcResult>>('/api/admin/orders/craft-calc', params),
+}
+
 // 加工分类 API
 export const processingCategoryApi = {
   getProcessingCategories: () => 
@@ -990,6 +1044,7 @@ const api = {
   knowledge: knowledgeApi,
   afterSales: afterSalesApi,
   order: orderApi,
+  craftCalc: craftCalcApi,
   processingOrder: processingOrderApi,
   production: productionApi,
   dashboard: dashboardApi,

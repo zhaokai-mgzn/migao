@@ -27,6 +27,10 @@ vi.mock('@/lib/api', () => ({
   customerApi: {
     getCustomers: (...args: any[]) => mockGetCustomers(...args),
   },
+  // 算料试算（issue #4434）：本文件验的是樘窗绑组 / 配布边 / 加工项数量，与试算**正交**
+  // ⇒ 让试算停在「进行中」（永不 resolve），避免它改写「数量」污染这些判据。
+  // 试算自身的判据在 `orders-new-craft-calc.test.tsx`。
+  craftCalcApi: { preview: () => new Promise(() => {}) },
 }))
 
 // useOrderAmounts 使用真实实现（纯状态 hook，无外部依赖）：
