@@ -35,12 +35,17 @@ public class ProductionRoutingVersion {
 
     private Long tenantId;
 
-    /** 路线行 id（production_routings.id） */
+    /** 路线行 id = {@code production_route_templates.id}（新结构「一条具名主线」）。
+     *  <p>V60 时外键指向**已退役**的 {@code production_routings}；V85（issue #4581）起改指新表
+     *  （带 {@code NOT VALID}：存量行可能引用旧表 id，新写入照旧强制）。</p> */
     private String routingId;
 
-    /** 冗余存的路线键（路线行被软删/改名后，历史账仍答得出「当时是哪条」） */
+    /** 旧模型遗留的路线键一维（部位）：**只为历史行保留**，新模型没有这一维（工艺已降为
+     *  {@code production_route_rules} 的触发键）⇒ 写面不传本列，新行恒为 NULL。
+     *  <p>V60 时是 {@code NOT NULL}；V85（issue #4581）起放开 —— 旧形状下每行 INSERT 都被 PG 拒。</p> */
     private String curtainType;
 
+    /** 旧模型遗留的路线键另一维（工艺）：同 {@link #curtainType}，只为历史行保留、新行恒为 NULL。 */
     private String craft;
 
     /** 本次变更后的工序名有序序列（JSONB 数组） */

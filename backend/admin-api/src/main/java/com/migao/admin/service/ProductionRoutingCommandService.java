@@ -610,16 +610,19 @@ public class ProductionRoutingCommandService {
     /**
      * 追加一行版本账（路线变更留痕：路线是计件工资与完工判定的唯一输入）。
      *
-     * <p>V71 的版本表沿用旧路线的 {@code curtain_type} / {@code craft} 两列（历史形态）；
-     * 新结构里路线**没有部位×工艺维**（工艺已降为规则触发键）⇒ 两列留 {@code null}
-     * （列本身可空；改列需新迁移，不在本单）。</p>
+     * <p><b>只写新模型的三列</b>：{@code routing_id} = {@code production_route_templates.id}
+     * （V85 / #4581 起该列的外键就指向新表）、{@code operations} = 变更后的有序主线、
+     * {@code operation_count} = 主线道数。</p>
+     *
+     * <p><b>为什么不再传 {@code curtainType} / {@code craft}</b>：新结构里路线**没有部位×工艺维**
+     * （工艺已降为 {@code production_route_rules} 的触发键）⇒ 这两列**只承载历史行**。
+     * 旧实现无条件传 {@code null}，而 V60 的两列是 {@code NOT NULL} ⇒ 每行 INSERT 都被 PG 拒
+     * ⇒ 新建路线 / 改主线**恒 500**（P0，issue #4581；V85 已把两列放开为可空）。</p>
      */
     private void appendVersion(ProductionRouteTemplate template, Long tenantId, List<String> mainline) {
         productionRoutingVersionMapper.insert(ProductionRoutingVersion.builder()
                 .tenantId(tenantId)
                 .routingId(template.getId())
-                .curtainType(null)
-                .craft(null)
                 .operations(mainline)
                 .operationCount(mainline.size())
                 .createdAt(OffsetDateTime.now())

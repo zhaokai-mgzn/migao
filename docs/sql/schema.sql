@@ -1205,12 +1205,20 @@ CREATE INDEX IF NOT EXISTS idx_production_route_signals_tenant_priority
 COMMENT ON TABLE production_route_signals IS
     '信号 → 路线键映射（V60，issue #4308）：派生加工单路线时按 priority 扫描本表；种子 = 迁移前的常量关键字表；商家可增删改';
 
+-- ⚠️ 形状修订（issue #4581，P0）：本表 V60 时是**旧模型**形状（routing_id → production_routings、
+--    curtain_type/craft NOT NULL），而写面自 P2b（#4459）起落在 production_route_templates ⇒
+--    新建路线 / 改主线**恒 500**（not-null violation + FK 指向已退役的旧表）。
+--    修法 = 迁移 V85__fix_routing_version_ledger_shape.sql；**两处必须同口径**（本文件是
+--    bootstrap 路径，它**不跑迁移链**，只存在于迁移里的修法在新库上等于没修，形态见 #3270）。
+--    curtain_type / craft **保留但可空**：只为历史行（新模型没有「部位 × 工艺」这一维）；
+--    routing_id 保持 NOT NULL，新模型下它恒有值（= production_route_templates.id）。
+--    外键的 NOT VALID 语义：存量行可能引用旧表 id ⇒ 不做全量校验，**新写入照旧强制**。
 CREATE TABLE IF NOT EXISTS production_routing_versions (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    routing_id VARCHAR(64) NOT NULL REFERENCES production_routings(id),
-    curtain_type VARCHAR(16) NOT NULL,
-    craft VARCHAR(16) NOT NULL,
+    routing_id VARCHAR(64) NOT NULL REFERENCES production_route_templates(id),
+    curtain_type VARCHAR(16),                        -- 旧模型遗留（历史行）；新行恒 NULL
+    craft VARCHAR(16),                               -- 旧模型遗留（历史行）；新行恒 NULL
     operations JSONB NOT NULL DEFAULT '[]',          -- 本次变更后的工序名有序序列（seq = 下标+1）
     operation_count INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

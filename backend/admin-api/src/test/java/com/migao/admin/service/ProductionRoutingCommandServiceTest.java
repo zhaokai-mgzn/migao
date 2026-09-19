@@ -331,10 +331,20 @@ class ProductionRoutingCommandServiceTest {
         assertThat(result.get("mainline")).asString().isEqualTo(List.of("布三边", "韩褶-布", "外帘装袋").toString());
         ArgumentCaptor<ProductionRoutingVersion> version = ArgumentCaptor.forClass(ProductionRoutingVersion.class);
         verify(productionRoutingVersionMapper).insert(version.capture());
-        assertThat(version.getValue().getRoutingId()).isEqualTo("rt-1");
+        assertThat(version.getValue().getRoutingId())
+                .as("版本账挂的是**新结构**路线行 id（production_route_templates.id）").isEqualTo("rt-1");
         assertThat(version.getValue().getOperationCount()).as("版本账记工序道数").isEqualTo(3);
         assertThat(version.getValue().getOperations())
                 .as("版本账存的是**变更后**的有序序列").isEqualTo(List.of("布三边", "韩褶-布", "外帘装袋"));
+        // ⚠️ 旧模型两列（部位/工艺）**必须为 null**：新模型没有这一维（工艺已降为规则触发键），
+        //    而 V60 的两列是 NOT NULL ⇒ 传了非 null 反而会掩盖「写面还在按旧形状写」。
+        // ⚠️ 但**本 mock 单测看不见 DB 约束拒绝**（admin-api 无 testcontainers/H2）——
+        //    「表形状必须允许这两列为 null 且 FK 指向新表」由 L0 静态判据守：
+        //    tests/unit_ci_workflows/test_routing_version_ledger_shape.py（issue #4581）。
+        assertThat(version.getValue().getCurtainType())
+                .as("旧模型遗留列：新行不写（列只为历史行保留）").isNull();
+        assertThat(version.getValue().getCraft())
+                .as("旧模型遗留列：新行不写（列只为历史行保留）").isNull();
     }
 
     @Test
@@ -505,7 +515,22 @@ class ProductionRoutingCommandServiceTest {
         verify(productionRouteTemplateMapper).insert(inserted.capture());
         assertThat(inserted.getValue().getStatus()).isEqualTo("active");
         assertThat(inserted.getValue().getDeleted()).isEqualTo(0);
-        verify(productionRoutingVersionMapper).insert(any(ProductionRoutingVersion.class));
+        // 落首行版本账：**钉住 payload**（不是只 verify「调了 insert」——那正是本单「空跑绿」的形态）。
+        // ⚠️ 本 mock 单测看不见 DB 约束拒绝（admin-api 无 testcontainers/H2）⇒ 表形状由 L0 静态判据守：
+        //    tests/unit_ci_workflows/test_routing_version_ledger_shape.py（issue #4581）。
+        ArgumentCaptor<ProductionRoutingVersion> firstVersion =
+                ArgumentCaptor.forClass(ProductionRoutingVersion.class);
+        verify(productionRoutingVersionMapper).insert(firstVersion.capture());
+        assertThat(firstVersion.getValue().getRoutingId())
+                .as("版本账挂的是新建的路线模板 id（= production_route_templates.id，不是旧表 id）")
+                .isEqualTo(inserted.getValue().getId());
+        assertThat(firstVersion.getValue().getOperations())
+                .as("初版空主线 ⇒ 版本账存空序列").isEqualTo(List.of());
+        assertThat(firstVersion.getValue().getOperationCount()).as("空主线 ⇒ 0 道").isEqualTo(0);
+        assertThat(firstVersion.getValue().getCurtainType())
+                .as("旧模型遗留列：新行不写").isNull();
+        assertThat(firstVersion.getValue().getCraft())
+                .as("旧模型遗留列：新行不写").isNull();
     }
 
     @Test
