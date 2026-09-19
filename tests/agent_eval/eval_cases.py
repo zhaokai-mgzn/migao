@@ -3659,6 +3659,8 @@ _CASE_OR_018 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '夏日清风窗帘', 'checks': ['unit_price', 'subtotal', 'total']}, {'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price']}],
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['夏日清风窗帘', '遮光窗帘'], 'expect_quantities': {'夏日清风窗帘': 3, '遮光窗帘': 2}}],
+    namespaces=[{'customer_phone': 13800138000}, {'product_name': '夏日清风窗帘'}, {'product_name': '遮光窗帘'}],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000', 'expect': 0, 'max_growth': 1}, {'type': 'product_count_for_keyword', 'source': '夏日清风窗帘', 'expect': 1}, {'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── OR-019 [NORMAL] C 端下单中途改数量 - 以最新数量为准，落库数量与金额都得跟着改（能力上限）（源: cases/order.yml）──
