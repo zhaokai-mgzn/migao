@@ -1046,6 +1046,56 @@ CREATE INDEX IF NOT EXISTS idx_work_logs_worker_date
     ON production_work_logs (tenant_id, worker_name, work_date)
     WHERE deleted = 0;
 
+-- ── 计件工资结算（V75，issue #4483 = 母单 #4347 §二.4；真值源 §4）─────────────────────
+-- 一层「把报表金额冻结成应付工资」的对象：报表回答「挣了多少」，本层回答「结了没有」。
+-- settled 后该期该人的报工不得再改（补报走调整单）—— 与「快照冻结、不回算历史工资」（V61）同源。
+-- 不加审批环节（用户裁定：先做到可核对）：draft → settled 一步确认。
+CREATE TABLE IF NOT EXISTS production_piecework_settlements (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    period VARCHAR(7) NOT NULL,                      -- 结算期 YYYY-MM（自然月）
+    worker_id VARCHAR(64),
+    worker_key VARCHAR(128) NOT NULL,                -- worker_id 非空取它，否则取姓名
+    worker_name VARCHAR(128),
+    amount NUMERIC(12,2) NOT NULL DEFAULT 0,         -- 金额**快照**（此后报工再变也不回改本行）
+    qty NUMERIC(12,2) NOT NULL DEFAULT 0,
+    line_count INTEGER NOT NULL DEFAULT 0,
+    status VARCHAR(16) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'settled')),
+    settled_at TIMESTAMP WITH TIME ZONE,
+    settled_by VARCHAR(64),
+    remark VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_piecework_settlements_tenant_period_worker
+    ON production_piecework_settlements (tenant_id, period, worker_key)
+    WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_piecework_settlements_tenant_period
+    ON production_piecework_settlements (tenant_id, period)
+    WHERE deleted = 0;
+
+-- 逐笔明细：满足真值源 §4「逐笔可追溯」—— 结算金额必须能拆回每一笔报工。
+CREATE TABLE IF NOT EXISTS production_piecework_settlement_lines (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    settlement_id VARCHAR(64) NOT NULL REFERENCES production_piecework_settlements(id),
+    work_log_id VARCHAR(64) NOT NULL,                -- 指回 production_work_logs.id
+    processing_order_id VARCHAR(64),
+    operation_name VARCHAR(128),
+    work_date DATE,
+    amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    qty NUMERIC(12,2) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_piecework_settlement_lines_settlement_worklog
+    ON production_piecework_settlement_lines (settlement_id, work_log_id)
+    WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_piecework_settlement_lines_settlement
+    ON production_piecework_settlement_lines (settlement_id)
+    WHERE deleted = 0;
+
 COMMENT ON TABLE production_operations IS '生产工序库：分组（裁剪/车位/后道/其他）+ 按部位分设 + 计件单价（V49，issue #3995）';
 COMMENT ON TABLE production_routings IS '工艺路线模板：部位×工艺 → 基准工序序列（V49，issue #3995）';
 COMMENT ON TABLE processing_position_operations IS '工序实例：加工单×部位×工序（应做数量/单价/系数/必完标记/报工进度），扫码报工的推进单元';

@@ -93,6 +93,8 @@ class ProcessingOrderRouteSourceTest {
     @Mock
     private ClientRequestIdService clientRequestIdService;
     @Mock
+    private com.migao.admin.mapper.ProductionPieceworkSettlementMapper settlementMapper;
+    @Mock
     private ProductionOperationQueryService productionOperationQueryService;
     @Mock
     private ProductionOperationQtyClient productionOperationQtyClient;
@@ -133,7 +135,7 @@ class ProcessingOrderRouteSourceTest {
                 processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper,
                 orderService, objectMapper,
                 new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper,
-                        orderItemMapper, clientRequestIdService),
+                        orderItemMapper, settlementMapper, clientRequestIdService),
                 productionOperationQueryService, productionOperationQtyClient);
     }
 

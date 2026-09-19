@@ -71,13 +71,15 @@ class AgentProductionControllerTest {
     private com.migao.admin.mapper.OrderItemMapper orderItemMapper;
     @Mock
     private ClientRequestIdService clientRequestIdService;
+    @Mock
+    private com.migao.admin.mapper.ProductionPieceworkSettlementMapper settlementMapper;
 
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(TENANT);
         ProductionService service = new ProductionService(
                 processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper,
-                orderItemMapper, clientRequestIdService);
+                orderItemMapper, settlementMapper, clientRequestIdService);
         mockMvc = MockMvcBuilders.standaloneSetup(new AgentProductionController(service))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();

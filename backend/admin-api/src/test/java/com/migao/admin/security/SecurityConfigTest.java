@@ -269,6 +269,12 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.ProcessingPositionOperationMapper processingPositionOperationMapper;
     @MockBean
     private com.migao.admin.mapper.ProductionWorkLogMapper productionWorkLogMapper;
+    // 计件结算两张表（issue #4483，V75）：同族坑 —— @MapperScan 会尝试创建它们，
+    // 没有 sqlSessionFactory 时上下文整体起不来（26 条安全用例连坐失败）。
+    @MockBean
+    private com.migao.admin.mapper.ProductionPieceworkSettlementMapper productionPieceworkSettlementMapper;
+    @MockBean
+    private com.migao.admin.mapper.ProductionPieceworkSettlementLineMapper productionPieceworkSettlementLineMapper;
     // 单价版本表（issue #4204，V55）：同上——@MapperScan 会尝试创建它，没有 sqlSessionFactory
     // 时上下文整体起不来（26 条安全用例连坐失败，实测）。
     @MockBean

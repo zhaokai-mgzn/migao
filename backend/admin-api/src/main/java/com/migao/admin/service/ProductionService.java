@@ -11,6 +11,7 @@ import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProductionWorkLog;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
+import com.migao.admin.mapper.ProductionPieceworkSettlementMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
@@ -97,6 +98,12 @@ public class ProductionService {
      * **只读**（本类不写订单行）。
      */
     private final OrderItemMapper orderItemMapper;
+    /**
+     * 结算单 Mapper（issue #4483 §二.4 的**锁定守卫**用）。
+     * 注入 Mapper 而不是 {@code PieceworkSettlementService} —— 后者依赖本类，
+     * 反向注入会形成循环依赖（Spring 启动即失败）。
+     */
+    private final ProductionPieceworkSettlementMapper settlementMapper;
     private final ClientRequestIdService clientRequestIdService;
 
     // ============================================================ 实例化
@@ -553,6 +560,13 @@ public class ProductionService {
             throw BusinessException.validationError(
                     "订单 " + order.getOrderNo() + " 尚无加工单，无法报工");
         }
+        // 防呆⑤ 已结算期锁定（issue #4483 §二.4）：settled 之后该期该人的报工不得再改。
+        // 补报走调整单，不回改历史 —— 与「快照冻结、不回算历史工资」（V61 / #4351）同源纪律。
+        // 报工的 work_date 恒为「落库当天」（见下方 .workDate(LocalDate.now())）⇒ 守卫用同一口径
+        PieceworkSettlementService.assertPeriodNotLocked(settlementMapper, tenantId,
+                LocalDate.now(), str(body == null ? null : body.get("worker_id"), null),
+                str(body == null ? null : body.get("worker_name"), null));
+
         // 防呆④ 非本部位：活跃性判据用 `deleted=0` 的**正向**相等（fail-closed）——
         // 旧写法 `Integer.valueOf(1).equals(deleted)` 在 deleted 为 NULL 时判为「未软删」而放行，
         // 而软删实例（工艺变更后重新实例化，V49 `deleted INTEGER DEFAULT 0` 可空）
@@ -815,6 +829,28 @@ public class ProductionService {
     }
 
     /**
+     * **单笔报工的计件金额**（计件口径的**唯一**实现）。
+     *
+     * <p>公式：{@code 合格数量 × 单价 × 系数}，逐笔四舍五入到分再累加（避免合计出现 0.005 级漂移）。
+     * 单价/系数**优先读报工自己的快照**（V61 / #4351：金额在报工那一刻固化）；
+     * 存量报工（{@code unit_price} 为 NULL）才回查工序实例。</p>
+     *
+     * <p><b>为什么单独抽出来</b>：工资结算（{@link PieceworkSettlementService}）要按**逐笔**算金额，
+     * 而「同一个公式写两遍必然漂移，漂移的那一份不会变红」是本仓库反复复发的失败模式 ⇒
+     * 结算复用本方法，不复制第二份公式。</p>
+     *
+     * @param op 工序实例；{@code null} = 报工无快照且实例已不存在（脏数据）⇒ 由调用方决定跳过
+     */
+    static BigDecimal logAmount(ProductionWorkLog log, ProcessingPositionOperation op) {
+        boolean hasSnapshot = log.getUnitPrice() != null;
+        BigDecimal unitPrice = hasSnapshot ? log.getUnitPrice() : op.getUnitPrice();
+        BigDecimal factor = hasSnapshot
+                ? (log.getFactor() == null ? BigDecimal.ONE : log.getFactor())
+                : (op.getFactor() == null ? BigDecimal.ONE : op.getFactor());
+        return money(nz(log.getQualifiedQty()).multiply(nz(unitPrice)).multiply(factor));
+    }
+
+    /**
      * 计件聚合（**per-order 汇总 / 期间报表 / 工人计件共用的唯一算法**）。
      *
      * <p>口径：Σ(合格数量 × **报工自己的单价快照** × **报工自己的系数快照**)，排除 rework/scrap。
@@ -860,13 +896,7 @@ public class ProductionService {
             if (!hasSnapshot && op == null) {
                 continue; // 既无快照、实例又真的不存在（脏数据）→ 该笔不可计价，跳过而不是抛错
             }
-            BigDecimal unitPrice = hasSnapshot ? log.getUnitPrice() : op.getUnitPrice();
-            BigDecimal factor = hasSnapshot
-                    ? (log.getFactor() == null ? BigDecimal.ONE : log.getFactor())
-                    : (op.getFactor() == null ? BigDecimal.ONE : op.getFactor());
-            BigDecimal amount = money(nz(log.getQualifiedQty())
-                    .multiply(nz(unitPrice))
-                    .multiply(factor));
+            BigDecimal amount = logAmount(log, op);
             String worker = StringUtils.hasText(log.getWorkerName()) ? log.getWorkerName() : "未分配";
             // 工序名 = 展示字段：优先报工自身的快照（报工时已落库），缺失时回查实例
             String operation = StringUtils.hasText(log.getOperationName())
@@ -929,6 +959,15 @@ public class ProductionService {
      * 若改用 {@code selectById} 逐条查，已软删实例会被算进来 ⇒ 同一笔报工在报表里计价、
      * 在 per-order 里不计价（两套端点数值不等，正是 #4205 验收判据要防的漂移）。</p>
      */
+    /**
+     * 全租户**活跃**工序实例（结算复用；与报表同一判据 tenant + deleted=0）。
+     * 抽成包内可见是为了让 {@link PieceworkSettlementService} 复用**同一份**读取口径，
+     * 而不是各写一份（漂移的那一份不会变红）。
+     */
+    List<ProcessingPositionOperation> listActiveOperations(Long tenantId) {
+        return new ArrayList<>(activeOperationsById(tenantId).values());
+    }
+
     private Map<String, ProcessingPositionOperation> activeOperationsById(Long tenantId) {
         List<ProcessingPositionOperation> rows = positionOperationMapper.selectList(
                 new LambdaQueryWrapper<ProcessingPositionOperation>()
@@ -1213,7 +1252,7 @@ public class ProductionService {
         return nz(op.getDoneQty()).compareTo(nz(op.getQty())) >= 0;
     }
 
-    private static BigDecimal nz(BigDecimal value) {
+    static BigDecimal nz(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
     }
 

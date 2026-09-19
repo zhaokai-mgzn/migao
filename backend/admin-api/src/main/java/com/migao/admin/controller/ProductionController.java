@@ -4,6 +4,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.ClientRequestIdService;
+import com.migao.admin.service.PieceworkSettlementService;
 import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
 import com.migao.admin.service.ProductionOperationQueryService;
@@ -54,6 +55,7 @@ public class ProductionController {
     private final ProductionOperationCommandService productionOperationCommandService;
     private final ProductionRoutingCommandService productionRoutingCommandService;
     private final ProcessingOrderService processingOrderService;
+    private final PieceworkSettlementService pieceworkSettlementService;
 
     /**
      * 加工费组合定价（V68，issue #4386）：读面（列表 / 缺口）+ 写面（新建 / 改价 / 停用）。
@@ -97,6 +99,44 @@ public class ProductionController {
         }
         return Map.of("positions",
                 processingOrderService.derivePositionPayload(orderId, TenantContext.getTenantId()));
+    }
+
+    /**
+     * **生成计件结算单**（issue #4483 §二.4；真值源 §4）。
+     * POST /api/admin/production/piecework/settlements/generate?period=YYYY-MM
+     *
+     * <p>把该期报工聚合成**按人**的结算单（金额**快照**）+ **逐笔明细**（逐笔可追溯）。
+     * 已存在同人同期的活跃结算单 ⇒ 跳过（幂等，不重复生成、不覆盖已结算的）。</p>
+     */
+    @RequirePermission("processing:manage")
+    @PostMapping("/piecework/settlements/generate")
+    public ApiResponse<Map<String, Object>> generateSettlements(
+            @RequestParam String period) {
+        return ApiResponse.success(pieceworkSettlementService.generate(
+                period, TenantContext.getTenantId()));
+    }
+
+    /**
+     * **确认结算**（draft → settled，一步，**不加审批环节** —— 用户裁定「先做到可核对」）。
+     * POST /api/admin/production/piecework/settlements/{id}/settle
+     *
+     * <p>锁定之后该期该人的报工不可再改（补报走调整单）；重复确认 ⇒ 422。</p>
+     */
+    @RequirePermission("processing:manage")
+    @PostMapping("/piecework/settlements/{id}/settle")
+    public ApiResponse<Map<String, Object>> settlePiecework(@PathVariable String id) {
+        return ApiResponse.success(pieceworkSettlementService.settle(
+                id, null, TenantContext.getTenantId()));
+    }
+
+    /**
+     * 结算单详情（含**逐笔明细**，真值源 §4「逐笔可追溯」）。
+     * GET /api/admin/production/piecework/settlements/{id}
+     */
+    @GetMapping("/piecework/settlements/{id}")
+    public ApiResponse<Map<String, Object>> pieceworkSettlementDetail(@PathVariable String id) {
+        return ApiResponse.success(pieceworkSettlementService.detail(
+                id, TenantContext.getTenantId()));
     }
 
     /**

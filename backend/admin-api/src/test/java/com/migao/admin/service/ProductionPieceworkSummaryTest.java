@@ -71,6 +71,8 @@ class ProductionPieceworkSummaryTest {
     private com.migao.admin.mapper.OrderItemMapper orderItemMapper;
     @Mock
     private ClientRequestIdService clientRequestIdService;
+    @Mock
+    private com.migao.admin.mapper.ProductionPieceworkSettlementMapper settlementMapper;
 
     private ProductionService service;
 
@@ -78,7 +80,7 @@ class ProductionPieceworkSummaryTest {
     void setUp() {
         TenantContext.setTenantId(TENANT);
         service = new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper,
-                orderMapper, orderItemMapper, clientRequestIdService);
+                orderMapper, orderItemMapper, settlementMapper, clientRequestIdService);
         Order order = new Order();
         order.setId(ORDER_ID);
         order.setTenantId(TENANT);

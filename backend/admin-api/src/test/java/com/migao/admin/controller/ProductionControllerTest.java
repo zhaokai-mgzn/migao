@@ -26,6 +26,7 @@ import com.migao.admin.mapper.ProductionWorkLogMapper;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.OrderService;
+import com.migao.admin.service.PieceworkSettlementService;
 import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
 import com.migao.admin.service.ProductionRoutingCommandService;
@@ -102,6 +103,10 @@ class ProductionControllerTest {
     @Mock
     private ClientRequestIdService clientRequestIdService;
     @Mock
+    private com.migao.admin.mapper.ProductionPieceworkSettlementMapper settlementMapper;
+    @Mock
+    private com.migao.admin.mapper.ProductionPieceworkSettlementLineMapper settlementLineMapper;
+    @Mock
     private ProductionOperationMapper productionOperationMapper;
     @Mock
     private ProductionRoutingMapper productionRoutingMapper;
@@ -136,7 +141,7 @@ class ProductionControllerTest {
         TenantContext.setTenantId(TENANT);
         ProductionService service = new ProductionService(
                 processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper,
-                orderItemMapper, clientRequestIdService);
+                orderItemMapper, settlementMapper, clientRequestIdService);
         // 工序库读面用**真实对象**（只 mock Mapper）：PUT 的响应形态 = 目录项形态（同一份
         // operationView），用 mock 会让「返回更新后的工序」退化成断言桩。
         ProductionOperationQueryService queryService =
@@ -163,8 +168,10 @@ class ProductionControllerTest {
                 new ProcessingFeeCombinationCommandService(
                         processingFeeCombinationMapper, processingFeeCombinationVersionMapper,
                         processingItemMapper, feeQueryService);
+        PieceworkSettlementService pieceworkSettlementService = new PieceworkSettlementService(
+                settlementMapper, settlementLineMapper, workLogMapper, service);
         ProductionController controller = new ProductionController(service, queryService, commandService,
-                routingCommandService, processingOrderService);
+                routingCommandService, processingOrderService, pieceworkSettlementService);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
                 "processingFeeQueryService", feeQueryService);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,

@@ -70,6 +70,8 @@ class ProductionServiceTest {
     private com.migao.admin.mapper.OrderItemMapper orderItemMapper;
     @Mock
     private ClientRequestIdService clientRequestIdService;
+    @Mock
+    private com.migao.admin.mapper.ProductionPieceworkSettlementMapper settlementMapper;
 
     private ProductionService service;
 
@@ -77,7 +79,7 @@ class ProductionServiceTest {
     void setUp() {
         TenantContext.setTenantId(TENANT);
         service = new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper,
-                orderMapper, orderItemMapper, clientRequestIdService);
+                orderMapper, orderItemMapper, settlementMapper, clientRequestIdService);
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
         when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder());
         // 无幂等键 ⇒ 既有用例全部走原路径（claim 返回 true = 首执），故此处只打桩「首执」分支；
