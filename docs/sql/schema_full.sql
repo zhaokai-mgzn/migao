@@ -4,7 +4,7 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 docs/sql/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 27 张）：
+--   本文件缺失（schema.sql 已有，共 29 张）：
 --     client_request_keys, daily_briefings, finance_transactions, knowledge_candidates,
 --     knowledge_cards, processing_fee_combination_versions, processing_fee_combinations,
 --     processing_orders, processing_position_operations,
@@ -14,7 +14,8 @@
 --     production_option_routings, production_route_rules, production_route_signals,
 --     production_route_templates, production_routing_versions,
 --     production_routings,
---     production_work_logs, role_permissions,
+--     production_piecework_settlement_lines, production_piecework_settlements,
+     production_work_logs, role_permissions,
 --     session_states, stock_ledger_entries, tenant_payment_qrcodes, user_suggestion_prefs,
 --     user_memories
 --     （production_option_factors / production_option_routings = V59，issue #4230 Java 侧；
@@ -24,7 +25,9 @@
 --       production_operation_positions / production_route_templates / production_route_rules
 --       = V71，issue #4427 = 母单 #4423 P1/3 工序路线模型重构 —— **纯增量**三张新表；
 --       production_crafts = V72，issue #4432 = 母单 #4423 P2/3 —— 商户级默认工艺
---       （重构后路线模板没有工艺维 ⇒ 缺 craft 不能从默认路线取））
+--       （重构后路线模板没有工艺维 ⇒ 缺 craft 不能从默认路线取）；
+--       production_piecework_settlements / production_piecework_settlement_lines = V75，
+--       issue #4483 = 母单 #4347 §二.4 —— 计件工资结算层（金额快照 + 逐笔可追溯 + 确认即锁定））
 --   本文件仍会创建，但**早已被迁移 DROP**（共 4 张）：
 --     knowledge_documents, knowledge_sync_history, rag_chunks,   ← V36 迁移 DROP
 --     quick_reply_templates
