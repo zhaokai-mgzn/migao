@@ -1,4 +1,4 @@
-// case_ids: OR-001, UI-020
+// case_ids: OR-001, UI-020, OR-034
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
 import { render, screen, within, fireEvent } from '@testing-library/react'
@@ -474,6 +474,62 @@ describe('OrderItemList', () => {
     it('判据 7：无 unpriced 行 ⇒ 不出现未定价提示（不制造噪音）', () => {
       render(<OrderItemList items={[makeItem({ processingFee: 30 })]} />)
       expect(screen.queryByText(/未定价/)).toBeNull()
+    })
+  })
+
+  // issue #4546：算料公式串归入**算料**组（它是算料输出的说明，不是工艺输入）
+  describe('#4546 算料公式行', () => {
+    const formulaText = '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
+
+    it('判据 2（红证）：有 formulaText ⇒ 在「算料口径」组渲染「算料公式」行（逐字）', () => {
+      render(
+        <OrderItemList
+          items={[
+            makeItem({
+              processingInfo: { craft: '韩褶', fabric_meters: 13.3, formulaText },
+            }),
+          ]}
+        />
+      )
+      const calcGroup = screen.getByText('算料口径').parentElement!
+      expect(within(calcGroup).getByText('算料公式')).toBeInTheDocument()
+      expect(within(calcGroup).getByText(formulaText)).toBeInTheDocument()
+      // 公式是算料**输出**的说明 ⇒ 不得出现在「工艺规格」（原始输入）组
+      const craftGroup = screen.getByText('工艺规格').parentElement!
+      expect(within(craftGroup).queryByText('算料公式')).toBeNull()
+    })
+
+    it('判据 4（回归）：存量单无该键 ⇒ 不渲染该行，也不落进「其它字段」兜底行', () => {
+      render(
+        <OrderItemList
+          items={[
+            makeItem({
+              // 带一个**非工艺键** ⇒ 兜底行（「其它字段」）才会出现，才能验「公式键不落进去」
+              processingInfo: { craft: '韩褶', fabric_meters: 13.3, edgeType: '卷边' },
+            }),
+          ]}
+        />
+      )
+      expect(screen.queryByText('算料公式')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: /其它字段/ }))
+      expect(screen.queryByText(/formulaText/)).toBeNull()
+    })
+
+    it('判据 5：空串 / null ⇒ 不渲染该行（不把空值渲染成一行）', () => {
+      const { unmount } = render(
+        <OrderItemList
+          items={[makeItem({ processingInfo: { craft: '韩褶', formulaText: '' } })]}
+        />
+      )
+      expect(screen.queryByText('算料公式')).toBeNull()
+      unmount()
+
+      render(
+        <OrderItemList
+          items={[makeItem({ processingInfo: { craft: '韩褶', formulaText: null } })]}
+        />
+      )
+      expect(screen.queryByText('算料公式')).toBeNull()
     })
   })
 })

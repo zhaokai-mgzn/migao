@@ -45,7 +45,7 @@ export const CRAFT_CALC_FORMULAS = [
  * 工艺 → 用料公式 / 悬挂方式（用户 2026-09-19 追加裁定逐字：
  * 「**韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍**」）。
  *
- * ⚠️ **这是「有守卫的副本」**：权威表 = 算料引擎 `curtain_calc.CRAFT_FORMULA` / `CRAFT_MOUNTING`；
+ * ⚠️ **这是「有守卫的副本」**：权威表 = 算料引擎 `curtain_calc.resolve_craft_rule`（工艺契约枚举值 → 公式/悬挂方式）；
  * 本表由 `tests/unit/lib/craft-calc-formula-sync.test.ts` **逐值读 Python 源文件比对**，漂移即红
  * （同族先例 = `craft-calc-defaults.test.ts` 对 `PLEAT_FABRIC_PER_FOLD` 的守卫）。
  * 为什么前端还要有一份：试算是**纯函数半边**（`craftCalcParamsOf`）—— 不查表就凑不出入参；
@@ -96,7 +96,7 @@ export interface CalcLineInput {
  *
  * 公式与悬挂方式**由工艺推导**（用户 2026-09-19 追加裁定）：韩褶 ⇒ 折数法 + `s_hook`；
  * 打孔 ⇒ 倍数法 + `eyelet`（默认 2 倍）；未指定工艺 ⇒ 韩褶默认档。
- * 推导表是**有守卫的副本**（权威表在 `curtain_calc.CRAFT_FORMULA`，见文件头说明）。
+ * 推导表是**有守卫的副本**（权威表在 `curtain_calc.resolve_craft_rule`，见文件头说明）。
  */
 export function craftCalcParamsOf(line: CalcLineInput): CraftCalcParams | null {
   const width = Number(line.width)

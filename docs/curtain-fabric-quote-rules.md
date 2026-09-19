@@ -92,7 +92,7 @@
 - 【标·已落码】**公式由工艺推导**（用户 2026-09-19 追加裁定逐字「**韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍**」）：
   `craft=韩褶` ⇒ **韩折公式**（折数法，`formula='pleat'`）；`craft=打孔` ⇒ **褶倍数公式**（倍数法，`formula='fullness'`，默认 **2 倍**，
   复用 `DEFAULT_CRAFT_TIERS['standard'].fullness`，不新造第二个 `2.0` 字面量）；未登记工艺/未指定 ⇒ 兜底默认（韩折公式）。
-  推导表**唯一口径** = `curtain_calc.CRAFT_FORMULA` / `CRAFT_MOUNTING`；前端 `craft-calc-request.ts` 的表是**有守卫的副本**
+  推导**唯一口径** = `curtain_calc.resolve_craft_rule`（`CRAFT_S_HOOK`/`CRAFT_EYELET` 枚举常量 → `(公式, 悬挂方式)`）；前端 `craft-calc-request.ts` 的表是**有守卫的副本**
   （`tests/unit/lib/craft-calc-formula-sync.test.ts` 逐值读 Python 源比对，漂移即红）。
 - 【标·已落码】**褶倍数公式（倍数法）**：`总用料 = 每片宽 × 褶倍 × 开数`（**数值恒等于「成品宽 × 褶倍」**，线性、与开数无关）。
   ⚠️ **ERP 实证锚点（不得违反）**：加工单 `CSO260915-02615`（#4343 已取证）宽 **5.5m** / **双开** / 理论褶倍 **2.00**

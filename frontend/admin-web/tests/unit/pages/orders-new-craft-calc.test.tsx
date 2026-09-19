@@ -90,6 +90,19 @@ const pickProduct = async () => {
   await screen.findByText('宽 (米)')
 }
 
+/** 填收货信息 → 等计价就绪 → 提交（落库 payload 的判据用；与 fee-preview 测试同一套流程） */
+const submitOrder = async () => {
+  fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
+  fireEvent.change(screen.getByPlaceholderText('请输入 11 位手机号'), {
+    target: { value: '13800138000' },
+  })
+  fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), {
+    target: { value: '杭州市' },
+  })
+  await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
+  fireEvent.click(screen.getByText('提交订单'))
+}
+
 describe('下单页算料试算接线（#4434）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -253,5 +266,47 @@ describe('下单页算料试算接线（#4434）', () => {
     )
     await new Promise((r) => setTimeout(r, 600))
     expect(mockCraftCalcPreview).not.toHaveBeenCalled()
+  })
+
+  // issue #4546：算料公式串**落库**（详情页要能告知商家「用料是怎么算出来的」）。
+  // 真值源仍是算料试算响应 —— 前端只**透传**，不拼串（拼串 = 第二份算料逻辑）。
+  describe('算料公式串落库（#4546）', () => {
+    it('判据 1/3（红证）：提交 payload 的 formulaText **逐字** = 试算响应的 formula_text（前端不得自拼）', async () => {
+      // 注入法：刻意让后端串里的数值与 `fabric_meters`（13.3）**不一致**（这里写 7.7米）——
+      // 前端若按数字自拼，产出必然 ≠ 本串 ⇒ 本断言红。正解 = 只从试算响应取。
+      const backendFormula = '韩折公式（商家自定义档）：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 7.7米'
+      mockCraftCalcPreview.mockResolvedValue({
+        data: { data: { ...CALC_OK.data.data, formula_text: backendFormula } },
+      })
+
+      render(<NewOrderPage />)
+      await pickProduct()
+      fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
+      fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+      await waitFor(() => expect(qtyInput()).toHaveValue(13.3))
+      await submitOrder()
+      await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+
+      const info = mockCreateOrder.mock.calls[0][0].items[0].processingInfo
+      expect(info.formulaText).toBe(backendFormula)
+    })
+
+    it('判据 5（红证）：无试算结果 ⇒ **不写该键**（写空串 / 写 undefined 都算红）', async () => {
+      mockCraftCalcPreview.mockRejectedValue({
+        response: { data: { error: { message: '算料服务不可用' } } },
+      })
+
+      render(<NewOrderPage />)
+      await pickProduct()
+      fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
+      fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+      await waitFor(() => expect(screen.getByText(/算料试算失败/)).toBeInTheDocument())
+      await submitOrder()
+      await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+
+      const info = mockCreateOrder.mock.calls[0][0].items[0].processingInfo
+      // 键**整个缺席**（不是空串、也不是值为 undefined 的键）⇒ 详情页不会多出一行空值
+      expect(Object.keys(info)).not.toContain('formulaText')
+    })
   })
 })

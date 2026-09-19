@@ -39,8 +39,9 @@ import {
 const SIDEBAR_MENU: Record<string, string> = {
   '/dashboard': '经营看板',
   '/products': '商品管理',
-  // issue #4490：「加工项管理」+「加工费管理」合并为「加工项与加工费」/production/processing（生产管理组）
-  '/production/processing': '加工项与加工费',
+  // issue #4490：「加工项管理」+「加工费管理」合并为单一入口 /production/processing（商品管理组）；
+  // issue #4542：菜单名 =「加工项管理」（与服务端同名，页面仍是两个 tab）
+  '/production/processing': '加工项管理',
   '/orders': '订单管理',
   '/after-sales': '售后管理',
   '/customers': '客户管理',

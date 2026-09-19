@@ -141,6 +141,10 @@ const CRAFT_SPEC_FIELDS: CraftSpecField[] = [
   { label: '实际褶倍', keys: ['fullnessActual', 'fullness_actual'], format: times },
   { label: '面料米数', keys: ['fabricMeters', 'fabric_meters'], format: meters },
   { label: '加工费米数', keys: ['processingMeters', 'processing_meters'], format: meters },
+  // 算料公式（issue #4546）：**两个别名都登记** —— 订单侧落 camelCase `formulaText`，
+  // 报价单/算料输出口径是 snake_case `formula_text`。用户 2026-09-19 追加裁定「**C端也要能看到**」
+  // ⇒ C 端报价卡（吃 `curtain_calc` 原始输出）与订单详情**都**渲染该行。
+  { label: '算料公式', keys: ['formulaText', 'formula_text'], format: plainText },
   { label: '是否对花', keys: ['hasPattern', 'has_pattern'], format: yesNo },
   { label: '花距', keys: ['patternRepeat', 'pattern_repeat'], format: meters },
 ]

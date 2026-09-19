@@ -33,7 +33,7 @@ const PAGES = [
   { name: '售后列表', path: '/after-sales', rowSelector: 'tbody tr', columns: { '工单信息': 'td:nth-child(2)' }, fixture: afterSalesFixture, api: '**/api/admin/after-sales*' },
   { name: '员工列表', path: '/employees', rowSelector: 'tbody tr, [data-testid="data-table"] > div', columns: { '员工名称': 'td:nth-child(2)' }, fixture: employeesFixture, api: '**/api/admin/users*' },
   { name: '分类列表', path: '/categories', rowSelector: 'tbody tr', columns: { '分类名称': 'td:nth-child(2)' }, fixture: categoriesFixture, api: '**/api/admin/categories*' },
-  // issue #4490：加工项管理并入「加工项与加工费」/production/processing（默认 tab「加工项」）；旧 /processing 已重定向
+  // issue #4490：加工项管理并入 /production/processing（默认 tab「加工项」）；旧 /processing 已重定向（#4542 菜单名「加工项管理」）
   { name: '加工项列表', path: '/production/processing', rowSelector: 'tbody tr', columns: { '加工项名称': 'td:nth-child(2)' }, fixture: processingFixture, api: '**/api/admin/processing-items*' },
   { name: '知识库列表', path: '/knowledge', rowSelector: 'tbody tr', columns: { '文档名称': 'td:nth-child(2)' }, fixture: knowledgeFixture, api: '**/api/admin/knowledge/documents*' },
 ]

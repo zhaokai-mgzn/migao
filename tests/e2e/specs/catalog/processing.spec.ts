@@ -85,18 +85,19 @@ test.describe('加工项配置', () => {
       })
     })
 
-    // issue #4490：加工项管理并入「加工项与加工费」/production/processing（默认 tab 就是「加工项」）；
+    // issue #4490：加工项管理并入 /production/processing（默认 tab 就是「加工项」）；
     // 旧 /processing 改为重定向，这里直接走唯一入口。
     await page.goto('/production/processing')
-    // ⚠️ 标题契约：页面 H1 是**新菜单名**「加工项与加工费」（§15.2 面包屑/标题与侧边栏菜单名一致；
-    //    历史：#3079「命名统一」曾把「加工项配置」改成「加工项管理」，#4490 合并后改成现名）。
+    // ⚠️ 标题契约：页面 H1 是**菜单名**「加工项管理」（§15.2 面包屑/标题与侧边栏菜单名一致；
+    //    历史：#3079「命名统一」曾把「加工项配置」改成「加工项管理」，#4490 合并后改名，
+    //    #4542 又改回「加工项管理」并与服务端同名；页面**仍是两个 tab**，功能一条没减）。
     //    断言旧名会让本文件全红在 beforeEach —— 与加工项功能无关。
-    await expect(page.getByRole('heading', { name: '加工项与加工费' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '加工项管理' })).toBeVisible()
   })
 
   test.describe('页面加载', () => {
     test('应显示页面标题', async ({ page }) => {
-      await expect(page.getByRole('heading', { name: '加工项与加工费' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: '加工项管理' })).toBeVisible()
     })
 
     test('应渲染加工项列表表格', async ({ page }) => {
