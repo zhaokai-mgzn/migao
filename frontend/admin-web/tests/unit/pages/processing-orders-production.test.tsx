@@ -387,7 +387,7 @@ describe('加工单生产明细页', () => {
 
 // ── 路线来源提示（issue #4307 交付物 2 / #4308 P1「静默回落」的用户侧可观测面）──
 // 四态：derived 不提示；partial 提示「另一半取默认值」；missing_route 提示「识别的是 X，
-// 但库里没有这条路线」；default 高亮提示「未识别工艺信号，请核对工序与计件单价」。
+// 但库里没有这条路线」；default 高亮提示「本单没有填部位/做法，请核对工序与计件单价」。
 // 红证（实现前）：三态全部静默 ⇒ 罗马帘订单拿到布帘 11 道工序而用户面零提示。
 describe('加工单生产明细页 — 路线来源提示（PP-014）', () => {
   const withRoute = (routeSource: string, routeKey: string, routeRequestedKey?: string) => ({
@@ -411,7 +411,7 @@ describe('加工单生产明细页 — 路线来源提示（PP-014）', () => {
     render(<ProductionDetailPage />)
 
     await waitFor(() => expect(screen.getByTestId('production-route-default')).toBeInTheDocument())
-    expect(screen.getByTestId('production-route-default')).toHaveTextContent('未识别工艺信号')
+    expect(screen.getByTestId('production-route-default')).toHaveTextContent('没有填部位/做法')
     expect(screen.getByTestId('production-route-default')).toHaveTextContent('请核对工序与计件单价')
     expect(screen.getByTestId('production-route-default-detail')).toHaveTextContent('布帘×韩褶')
     expect(screen.queryByTestId('production-route-partial')).not.toBeInTheDocument()
@@ -422,7 +422,7 @@ describe('加工单生产明细页 — 路线来源提示（PP-014）', () => {
     render(<ProductionDetailPage />)
 
     await waitFor(() => expect(screen.getByTestId('production-route-partial')).toBeInTheDocument())
-    expect(screen.getByTestId('production-route-partial')).toHaveTextContent('只识别出一半')
+    expect(screen.getByTestId('production-route-partial')).toHaveTextContent('只填了一半')
     expect(screen.queryByTestId('production-route-default')).not.toBeInTheDocument()
   })
 
