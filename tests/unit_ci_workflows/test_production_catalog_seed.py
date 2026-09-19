@@ -52,7 +52,7 @@ V54 落**初始种子**（把 `app/production/routing.py` 的既有确定性常�
 
 ## 第六源（issue #4427 = 母单 #4423 的 P1/3）：新路线模型的三张表（V71）
 
-`production_operation_positions`（部位价目 84 行）/ `production_route_templates`（1 条具名默认路线）/
+`production_operation_positions`（部位价目 120 行）/ `production_route_templates`（2 条基础路线）/
 `production_route_rules`（26 条规则）—— 由 `V71__normalize_routing_model_structure.sql` 落库，
 与 `app/production/routing.py` 的**新真值源**（`ROUTE_MAINLINE_STEPS` / `OPERATION_POSITION_PRICES` /
 `ROUTE_RULES`）逐行逐值收敛（三源：`routing.py` ↔ V71 ↔ 本文件）。源同样**按内容发现**

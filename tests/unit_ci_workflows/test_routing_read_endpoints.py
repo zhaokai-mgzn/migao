@@ -8,7 +8,7 @@
 
 | 端点 | 形状 | 顺序口径 |
 |---|---|---|
-| `GET /api/admin/production/operation-positions` | `[{operation, position, unit_price, applicable}]`（28 逻辑工序 × 3 部位 = **84 格**） | `(operation, position)` |
+| `GET /api/admin/production/operation-positions` | `[{operation, position, unit_price, applicable}]`（30 逻辑工序 × 4 部位 = **120 格**，issue #4529 起） | `(operation, position)` |
 | `GET /api/admin/production/route-rules` | `[{id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, status}]`（**26 条**） | `(priority, id)` |
 
 ## 为什么需要本文件（三条**结构性**失效形态，各自不会自己变红）
@@ -30,7 +30,7 @@
 | 1 | 两个端点存在 + `processing:manage` + `TenantContext.getTenantId()` 隔离 + 信封形状/键集逐字 | 今天端点不存在 ⇒ 红；改键名/加键 ⇒ 红 |
 | 2 | 数据源**只**是新两表（旧表 entity/mapper 零命中） | 把服务改成 `ProductionOptionRoutingMapper` ⇒ 红 |
 | 3 | 顺序口径落码：`(logical_name, position)` / `(priority, id)` | 去掉 `thenComparing` ⇒ 红 |
-| 4 | **无行丢弃过滤**：`eq` 目标集恰为 `{TenantId, Deleted, Status}`（规则表另加 `action IN (insert, remove)`） | 加 `.eq(...getApplicable, true)` ⇒ 红（84 格变少） |
+| 4 | **无行丢弃过滤**：`eq` 目标集恰为 `{TenantId, Deleted, Status}`（规则表另加 `action IN (insert, remove)`） | 加 `.eq(...getApplicable, true)` ⇒ 红（120 格变少） |
 | 5 | 端点可见性 = 真值源**全集**：V71 的 84/26 行逐值等于 `routing.py` 且每行对端点可见 | 改一格价目（0.4 → 0.45）⇒ 红；把一行种成 `status='disabled'` ⇒ 红 |
 
 红证原文（本文件对当前树的运行结果）见 PR body —— 本单按 TDD 先落本文件、确认**红**，再实现。
@@ -122,7 +122,7 @@ def _rows(table: str, row_re: re.Pattern) -> list:
 
 
 def _position_seed_rows() -> dict:
-    """`{(逻辑工序, 部位): (单价|None, applicable, status)}`（V71 的 84 行）。"""
+    """`{(逻辑工序, 部位): (单价|None, applicable, status)}`（V71 ∪ V79 的 120 行）。"""
     out = {}
     for m in _rows(POSITION_TABLE, _POSITION_ROW_RE):
         price = None if m.group("price").upper() == "NULL" else float(m.group("price"))
@@ -298,11 +298,11 @@ def test_position_query_has_no_row_dropping_filter():
 
     任何额外的值过滤（如 `.eq(getApplicable, true)` = 只返回「做」的部位、
     `.isNotNull(getUnitPrice)` = 只返回有价的）都会让矩阵**少格** —— 而「不做」与「没定价」
-    在界面上必须可区分（#4433 判据 2）⇒ 84 格必须整份呈现。
+    在界面上必须可区分（#4433 判据 2）⇒ 120 格必须整份呈现。
     """
     assert _eq_targets("ProductionOperationPosition") == {"TenantId", "Deleted", "Status"}, (
         f"部位价目的过滤条件漂移：{sorted(_eq_targets('ProductionOperationPosition'))} —— "
-        f"只允许租户隔离 + 软删 + 停用三个条件；额外的值过滤会让矩阵少格（84 格必须整份呈现）"
+        f"只允许租户隔离 + 软删 + 停用三个条件；额外的值过滤会让矩阵少格（120 格必须整份呈现）"
     )
 
 
@@ -321,7 +321,7 @@ def test_rule_query_has_no_row_dropping_filter():
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 判据 5：端点可见性 = 真值源全集（84 格 / 26 条，逐值）
+# 判据 5：端点可见性 = 真值源全集（120 格 / 26 条，逐值）
 # ══════════════════════════════════════════════════════════════════════════════════
 
 def test_position_seed_is_visible_and_matches_truth_source():
