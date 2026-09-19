@@ -684,6 +684,22 @@ export default function ProcessConfigPage() {
   const [newOpOpen, setNewOpOpen] = useState(false)
   const [newOp, setNewOp] = useState({ name: '', group_name: '', unit: '', unit_price: '' })
   /**
+   * 「新增」对话框里**工序**那一支的「适用部位」（issue #4614，形态裁定 A）。
+   *
+   * 默认 = **基线三部位**（与「新建路线」的适用帘种默认一致）；勾选项 = {@link positionOptions}
+   * （矩阵带出的部位 ∪ 基线，**不写死第二份**）。一个都不勾 ⇒ 本地预检拦下（不发请求）——
+   * 因为「没勾部位」= 建出来在「工艺项」表里看不到它、也没法定价（原病原地复发）。
+   */
+  const [newOpPositions, setNewOpPositions] = useState<string[]>(POSITION_DOMAIN)
+  /** 新增**工序**的**就地**理由（本地预检；照 {@link newOptionReasons} 那套形态逐条展示） */
+  const [newOpReasons, setNewOpReasons] = useState<string[]>([])
+  // ── 存量孤儿接入（issue #4614 范围补口）──
+  const [orphanOpen, setOrphanOpen] = useState(false)
+  /** 每道孤儿工序勾的**适用部位**（初值 = 基线三部位，与新增工序同一份值域口径） */
+  const [orphanPicks, setOrphanPicks] = useState<Record<string, string[]>>({})
+  const [orphanReasons, setOrphanReasons] = useState<string[]>([])
+  const [orphanBusy, setOrphanBusy] = useState(false)
+  /**
    * 「新增」对话框的**类型二选一**（issue #4570，用户裁定：「只要能新增工序项就行了，并可以设置为
    * 特殊选项或者工序，也支持设置单价」）。默认 `operation`（工序 —— 既有链路逐字不变）。
    */
@@ -832,6 +848,27 @@ export default function ProcessConfigPage() {
     () => new Set<string>([...libraryByName.keys(), ...matrixOps]),
     [libraryByName, matrixOps],
   )
+
+  /**
+   * **孤儿工序**（issue #4614 范围补口）：工序库里有、但**没有任何矩阵格指向它**。
+   *
+   * <p>用户实测原话：「我现在在**工艺项**中看不到 测试22，但是在**路线编辑的下拉列表**能看到，是 bug」
+   * —— 两边口径不一致（「工艺项」按矩阵渲染、「路线编辑」下拉按工序库渲染）。#4609 把下拉也改成读矩阵后
+   * 孤儿**两边都看不到**（彻底不可达）⇒ 必须给存量孤儿一条**接入路径**。</p>
+   *
+   * <p>判据用 **`variant_operation_id`**（读面按后端的 `variantNameOf` 反查出来的「该格落地变体」）
+   * 而**不是**名字 —— 变体名（`精裁-布`）与逻辑名（`精裁`）不是同一把尺，前端也没有归一表
+   * （归一只在后端一份，见 `normalizeOperationName`）。</p>
+   */
+  const orphanOps = useMemo(() => {
+    const referenced = new Set(
+      matrix
+        .map((c) => c.variant_operation_id)
+        .filter((v): v is string => v != null)
+        .map(String),
+    )
+    return libraryOps.filter((op) => !referenced.has(String(op.id)))
+  }, [matrix, libraryOps])
 
   const q = search.trim().toLowerCase()
 
@@ -1232,41 +1269,139 @@ export default function ProcessConfigPage() {
 
   // ────────────────────────── 工序库写面 ──────────────────────────
 
-  /** 打开「新增」对话框：每次都回到默认类型「工序」，并清掉上一次的失败理由（不留给下一次） */
+  /** 打开「新增」对话框：每次都回到默认类型「工序」+ 默认适用部位（基线三部位），并清掉上一次的失败理由 */
   const openCreateOperation = () => {
     setNewKind('operation')
     setNewOptionReasons([])
+    setNewOpReasons([])
+    setNewOpPositions(POSITION_DOMAIN)
     setNewOpOpen(true)
   }
 
+  /**
+   * 新增**工序**（issue #4614：**同时**为勾选的每个部位建一行矩阵行）。
+   *
+   * <p>为什么要带 `positions`：不带的话后端只写工序库，「工艺项」表（只按 `GET /operation-positions`
+   * 渲染）里**看不到它** —— 用户实测原话「这个新增按钮，无法新增工序」。</p>
+   *
+   * <p>本地预检只拦「拦得住就不打扰后端」的那几条（名称/单价/部位），**语义护栏一律以后端为准**
+   * （前端不发明第二份口径）⇒ 失败理由**就地**逐条展示，**不刷新、不改页面数据**。</p>
+   *
+   * <p>结果 toast 必须报**服务端返回的真实数字**（新建/跳过）—— 缺结果体时显式报错，
+   * 不假装成功（照 {@link applyTemplate} 既有纪律）。</p>
+   */
   const createOperation = async () => {
     const name = newOp.name.trim()
     const price = Number(newOp.unit_price)
-    if (!name) {
-      toast.error('请填写工序名称')
-      return
-    }
+    const reasons: string[] = []
+    if (!name) reasons.push('请填写工序名称')
     if (newOp.unit_price.trim() === '' || Number.isNaN(price)) {
-      toast.error('请输入有效单价')
+      reasons.push('请输入有效单价（元/件·米·折）')
+    }
+    if (newOpPositions.length === 0) {
+      reasons.push(
+        '请至少勾选一个适用部位：工序只在勾选的部位上出现 —— 一个都不勾，建出来在「工艺项」表里看不到它，也没法定价',
+      )
+    }
+    if (reasons.length > 0) {
+      setNewOpReasons(reasons)
       return
     }
+    setNewOpReasons([])
     setBusy(true)
     try {
-      await productionApi.createOperation({
+      const res = await productionApi.createOperation({
         name,
         group_name: newOp.group_name.trim() || undefined,
         unit: newOp.unit.trim() || undefined,
         unit_price: price,
+        positions: newOpPositions,
       })
-      toast.success('工序已新增')
+      const result = res.data?.data
+      if (!result || result.created_positions === undefined || result.skipped_positions === undefined) {
+        toast.error('新增结果缺失（服务端未返回部位写入数），请刷新页面核对「工艺项」表')
+      } else {
+        toast.success(
+          `已新增工序「${name}」：新建 ${result.created_positions} 个部位的价目格、` +
+            `跳过 ${result.skipped_positions} 个（已存在的部位保留原价）`,
+        )
+      }
       setNewOpOpen(false)
       setNewOp({ name: '', group_name: '', unit: '', unit_price: '' })
+      setNewOpPositions(POSITION_DOMAIN)
       await load()
     } catch (e) {
       console.error(e)
       if (!isErrorToastShown(e)) toast.error('新增工序失败')
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * 打开**存量孤儿接入**弹窗（issue #4614 范围补口）：每道孤儿默认勾**基线三部位**
+   * （与新增工序的默认一致；不想接的那道把部位全取消勾即可）。
+   */
+  const openOrphanAttach = () => {
+    const next: Record<string, string[]> = {}
+    orphanOps.forEach((op) => {
+      next[String(op.id)] = POSITION_DOMAIN
+    })
+    setOrphanPicks(next)
+    setOrphanReasons([])
+    setOrphanOpen(true)
+  }
+
+  /**
+   * 把勾了部位的孤儿工序**接进**矩阵（`PUT /operations/{id}` 带 `positions`）。
+   *
+   * <p>后端**只补缺失行**：已存在的活跃行跳过（不覆盖已定价的格）、不删任何已有行；
+   * 响应如实报数 ⇒ toast 报**服务端真实数字**（缺结果体时显式报错，不假装成功）。</p>
+   *
+   * <p>值域校验与新增路径**同一份**（后端一处实现）—— 前端不发明第二份口径，
+   * 失败理由照 `routingAdminGuardReasons` **逐条**就地展示。</p>
+   */
+  const attachOrphans = async () => {
+    const picks = orphanOps
+      .map((op) => ({ op, positions: orphanPicks[String(op.id)] ?? [] }))
+      .filter((x) => x.positions.length > 0)
+    if (picks.length === 0) {
+      setOrphanReasons([
+        '请至少给一道工序勾一个适用部位：一个部位都不勾的工序接不进来（在「工艺项」表里看不到它，也没法定价）',
+      ])
+      return
+    }
+    setOrphanReasons([])
+    setOrphanBusy(true)
+    let created = 0
+    let skipped = 0
+    let done = 0
+    try {
+      for (const { op, positions } of picks) {
+        const res = await productionApi.updateOperation(op.id, { positions })
+        const result = res.data?.data
+        if (!result || result.created_positions === undefined || result.skipped_positions === undefined) {
+          toast.error(`「${op.name}」的接入结果缺失（服务端未返回部位写入数），请刷新页面核对「工艺项」表`)
+          await load()
+          return
+        }
+        created += result.created_positions
+        skipped += result.skipped_positions
+        done++
+      }
+      toast.success(
+        `已接入 ${done} 道工序：新建 ${created} 个部位价目格、跳过 ${skipped} 个（已存在的格保留原价）`,
+      )
+      setOrphanOpen(false)
+      await load()
+    } catch (e) {
+      console.error(e)
+      setOrphanReasons(routingAdminGuardReasons(e))
+      // 不假装成功：如实报出已经接进去几道（失败前完成的那些**已经落库**了）
+      if (!isErrorToastShown(e)) toast.error(`接入失败（已接入 ${done} 道）`)
+      await load()
+    } finally {
+      setOrphanBusy(false)
     }
   }
 
@@ -1720,6 +1855,19 @@ export default function ProcessConfigPage() {
                       >
                         未定价 {unpricedCount} 项
                       </span>
+                      {/* 孤儿提示（issue #4614 范围补口）：工序库里有、但没有任何部位价目行 ⇒
+                          「工艺项」表里看不到它、也没法定价（存量工序没有接入路径 = 不可达）。 */}
+                      {orphanOps.length > 0 && (
+                        <button
+                          type="button"
+                          data-testid="matrix-orphan-hint"
+                          onClick={openOrphanAttach}
+                          className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700 underline decoration-dotted hover:bg-amber-100"
+                          title="这些工序在工序库里有、但没有任何部位价目行 —— 接进来才能定价"
+                        >
+                          有 {orphanOps.length} 道工序还没接部位 ⇒ 接进来才能定价
+                        </button>
+                      )}
                       <input
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
@@ -2999,6 +3147,42 @@ export default function ProcessConfigPage() {
                   onChange={(e) => setNewOp({ ...newOp, unit_price: e.target.value })}
                 />
               </div>
+              {/* 适用部位多选（issue #4614）：勾选项 = `positionOptions`（矩阵带出 ∪ 基线三部位，
+                  与「新建路线」的适用帘种**同一份口径**）；默认勾基线三部位。 */}
+              <div>
+                <span className="mb-1 block text-neutral-600">适用部位（至少勾一个）</span>
+                <div className="flex flex-wrap gap-3">
+                  {positionOptions.map((p) => (
+                    <label key={p} className="flex items-center gap-1.5 text-neutral-700">
+                      <input
+                        type="checkbox"
+                        data-testid={`routings-create-op-position-${p}`}
+                        checked={newOpPositions.includes(p)}
+                        onChange={(e) =>
+                          setNewOpPositions((prev) =>
+                            e.target.checked
+                              ? positionOptions.filter((x) => x === p || prev.includes(x))
+                              : prev.filter((x) => x !== p),
+                          )
+                        }
+                        className="h-4 w-4 accent-primary-600"
+                      />
+                      {p}
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-neutral-400">
+                  勾了哪些部位，这道工序就出现在「工艺项」表的哪些格上并可逐格定价；
+                  一个都不勾 ⇒ 建出来在表里看不到它。
+                </p>
+              </div>
+              {newOpReasons.length > 0 && (
+                <ul className="space-y-0.5 text-xs text-red-600" data-testid="routings-create-op-reasons">
+                  {newOpReasons.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              )}
             </>
           ) : (
             <>
@@ -3095,6 +3279,84 @@ export default function ProcessConfigPage() {
                 </ul>
               )}
             </>
+          )}
+        </div>
+      </Modal>
+
+      {/* 存量孤儿接入（issue #4614 范围补口）：工序库里有、但没有任何部位价目行的工序
+          ⇒ 勾适用部位后 `PUT /operations/{id}` 带 `positions` **只补缺失行**（不删、不覆盖）。 */}
+      <Modal
+        open={orphanOpen}
+        onClose={() => !orphanBusy && setOrphanOpen(false)}
+        title="接入部位价目"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" disabled={orphanBusy} onClick={() => setOrphanOpen(false)}>
+              取消
+            </Button>
+            <Button loading={orphanBusy} data-testid="orphan-attach-submit" onClick={attachOrphans}>
+              接入
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3 text-sm">
+          <p className="text-neutral-600">
+            这些工序在<strong>工序库</strong>里有，但<strong>没有任何部位价目行</strong> ⇒
+            「工艺项」表里看不到它们、也没法定价（路线编辑的下拉里能看到，是两边口径不一致）。
+            勾上要做的部位并接入后，它们会立刻出现在「工艺项」表里，可就地定价。
+          </p>
+          <p className="text-xs text-neutral-400">
+            已有部位价目行<strong>不会被改动</strong>（已定的价保留原价）；想跳过某道工序，把它的部位全部取消勾选即可。
+          </p>
+          <ul className="space-y-3" data-testid="orphan-attach-list">
+            {orphanOps.map((op) => (
+              <li
+                key={String(op.id)}
+                className="rounded border border-neutral-200 px-3 py-2"
+                data-testid={`orphan-row-${op.id}`}
+              >
+                <div className="mb-1.5 flex flex-wrap items-baseline gap-2">
+                  <span className="font-medium text-neutral-900" data-testid={`orphan-name-${op.id}`}>
+                    {op.name}
+                  </span>
+                  <span className="text-xs text-neutral-500">
+                    {op.group ?? '其他'} · {op.unit ?? '米'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {positionOptions.map((p) => (
+                    <label key={p} className="flex items-center gap-1.5 text-neutral-700">
+                      <input
+                        type="checkbox"
+                        data-testid={`orphan-position-${op.id}-${p}`}
+                        checked={(orphanPicks[String(op.id)] ?? []).includes(p)}
+                        onChange={(e) =>
+                          setOrphanPicks((prev) => {
+                            const cur = prev[String(op.id)] ?? []
+                            return {
+                              ...prev,
+                              [String(op.id)]: e.target.checked
+                                ? positionOptions.filter((x) => x === p || cur.includes(x))
+                                : cur.filter((x) => x !== p),
+                            }
+                          })
+                        }
+                        className="h-4 w-4 accent-primary-600"
+                      />
+                      {p}
+                    </label>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {orphanReasons.length > 0 && (
+            <ul className="space-y-0.5 text-xs text-red-600" data-testid="orphan-attach-reasons">
+              {orphanReasons.map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
           )}
         </div>
       </Modal>

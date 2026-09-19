@@ -11,6 +11,7 @@ import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProcessingFeeCombination;
 import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProductionOperation;
+import com.migao.admin.entity.ProductionOperationPosition;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
 import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionRouting;
@@ -159,7 +160,7 @@ class ProductionControllerTest {
                 processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper,
                 orderService, objectMapper, service, queryService, operationQtyClient);
         ProductionOperationCommandService commandService = new ProductionOperationCommandService(
-                productionOperationMapper, priceVersionMapper, queryService);
+                productionOperationMapper, priceVersionMapper, productionOperationPositionMapper, queryService);
         // 路线/信号写面（issue #4308）：真实对象（只 mock Mapper），响应形态 = 路线展示形态（同一份）
         ProductionRoutingCommandService routingCommandService = new ProductionRoutingCommandService(
                 productionRouteTemplateMapper, routingVersionMapper, productionOperationMapper,
@@ -1190,6 +1191,70 @@ class ProductionControllerTest {
                 .andExpect(jsonPath("$.data.unit_price").value(0.6));
 
         verify(priceVersionMapper).insert(any(ProductionOperationPriceVersion.class));
+    }
+
+    @Test
+    @DisplayName("#4614 POST /operations 带 positions ⇒ 同一事务建矩阵行 + 响应如实报数（建完必须可见）")
+    void createOperationWithPositionsBuildsMatrixRows() throws Exception {
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
+
+        mockMvc.perform(post("/api/admin/production/operations")
+                        .contentType("application/json")
+                        .content("{\"name\":\"布帘车被\",\"unit_price\":0.6,\"positions\":[\"布帘\",\"纱帘\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.name").value("布帘车被"))
+                .andExpect(jsonPath("$.data.created_positions").value(2))
+                .andExpect(jsonPath("$.data.skipped_positions").value(0));
+
+        ArgumentCaptor<ProductionOperationPosition> rows =
+                ArgumentCaptor.forClass(ProductionOperationPosition.class);
+        verify(productionOperationPositionMapper, times(2)).insert(rows.capture());
+        assertThat(rows.getAllValues()).extracting(ProductionOperationPosition::getLogicalName)
+                .as("矩阵行必须落在**逻辑名**上（前端「工艺项」表按它成行）")
+                .containsOnly("车被");
+    }
+
+    @Test
+    @DisplayName("#4614 POST /operations 未知部位 ⇒ 422 + error.details 逐条（前端据此逐条展示）")
+    void createOperationRejectsUnknownPosition() throws Exception {
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
+
+        mockMvc.perform(post("/api/admin/production/operations")
+                        .contentType("application/json")
+                        .content("{\"name\":\"罗马帘-穿杆\",\"unit_price\":0.6,\"positions\":[\"布帘\",\"布廉\"]}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.details").isArray())
+                .andExpect(jsonPath("$.error.details.length()").value(1))
+                .andExpect(jsonPath("$.error.details[0].field").value("positions"))
+                .andExpect(jsonPath("$.error.details[0].message").value(containsString("布廉")));
+
+        verify(productionOperationPositionMapper, never()).insert(any(ProductionOperationPosition.class));
+    }
+
+    @Test
+    @DisplayName("#4614 PUT /operations/{id} 带 positions ⇒ 存量孤儿接入（只补缺失行 + 如实报数）")
+    void updateOperationAttachesPositionsForOrphan() throws Exception {
+        when(productionOperationMapper.selectById("op-orphan")).thenReturn(
+                operationRow("op-orphan", "测试22", "其他", "米", "0.50", 22));
+        when(productionOperationMapper.updateById(any(ProductionOperation.class))).thenReturn(1);
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
+
+        mockMvc.perform(put("/api/admin/production/operations/op-orphan")
+                        .contentType("application/json")
+                        .content("{\"positions\":[\"布帘\",\"纱帘\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.name").value("测试22"))
+                .andExpect(jsonPath("$.data.created_positions").value(2))
+                .andExpect(jsonPath("$.data.skipped_positions").value(0));
+
+        ArgumentCaptor<ProductionOperationPosition> rows =
+                ArgumentCaptor.forClass(ProductionOperationPosition.class);
+        verify(productionOperationPositionMapper, times(2)).insert(rows.capture());
+        assertThat(rows.getAllValues()).extracting(ProductionOperationPosition::getLogicalName)
+                .as("矩阵行落在逻辑名上（「测试22」不在归一表里 ⇒ 原样返回，不猜）")
+                .containsOnly("测试22");
     }
 
     @Test

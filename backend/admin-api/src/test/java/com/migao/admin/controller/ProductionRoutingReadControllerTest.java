@@ -160,7 +160,7 @@ class ProductionRoutingReadControllerTest {
                 processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper,
                 orderService, objectMapper, service, queryService, operationQtyClient);
         ProductionOperationCommandService commandService = new ProductionOperationCommandService(
-                productionOperationMapper, priceVersionMapper, queryService);
+                productionOperationMapper, priceVersionMapper, productionOperationPositionMapper, queryService);
         ProductionRoutingCommandService routingCommandService = new ProductionRoutingCommandService(
                 productionRouteTemplateMapper, routingVersionMapper, productionOperationMapper,
                 queryService, productionRouteRuleMapper);

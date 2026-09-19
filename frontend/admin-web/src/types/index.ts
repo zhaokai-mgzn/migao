@@ -1040,7 +1040,37 @@ export interface RouteOperationCreateParams {
   unit?: string
   unit_price: number
   position?: string
+  /**
+   * **适用部位**（issue #4614，形态裁定 A）：给了就为每个部位建一行矩阵行
+   * （`production_operation_positions`）⇒ 新工序**立刻出现在「工艺项」表里**且可就地定价。
+   *
+   * ⚠️ 不给 = 今天的行为（只建工序库行）—— 但那样新工序**在界面上无处可见**
+   * （「工艺项」表只按矩阵行渲染，原「工序库明细」表已随 #4588 取消）⇒ 本页永远给。
+   * 值域 = 矩阵里出现的部位 ∪ 基线三部位（与「新建路线」的适用帘种同一份口径）。
+   */
+  positions?: string[]
 }
+
+/**
+ * 「按部位补建矩阵行」的**报数**（issue #4614）：新增路径（`POST /operations` 带 `positions`）与
+ * 存量接入路径（`PUT /operations/{id}` 带 `positions`）**同一形状** —— 前端 toast 报的是
+ * **服务端真实数字**，不得自行推算（缺结果体时显式报错，不假装成功）。
+ */
+export interface OperationPositionsAttachResult {
+  /** 本次**新建**的矩阵行数 */
+  created_positions?: number
+  /** 本次**跳过**（已存在，保留商家改过的价）的矩阵行数 */
+  skipped_positions?: number
+}
+
+/**
+ * POST /api/admin/production/operations 的响应（issue #4614）：带 `positions` 时**如实附上**
+ * 矩阵行写入结果 —— 前端 toast 报的是**服务端真实数字**，不得自行推算
+ * （照 `applySeedTemplate` 的「新增/跳过」报数纪律；缺结果体时显式报错，不假装成功）。
+ */
+export interface RouteOperationCreateResult
+  extends CatalogOperation,
+    OperationPositionsAttachResult {}
 
 /** 缺口语义（GET /api/admin/production/routing-gaps）：两类缺口**语义不同**，不得混渲 */
 export interface RoutingGapOperation {
@@ -1194,6 +1224,13 @@ export interface ProductionOperationUpdateParams {
   sort_order?: number
   /** 作用域（V67，issue #4384 A1）：position 部位级 / set 套级（每樘窗一次） */
   scope?: ProductionScope
+  /**
+   * **按部位补建矩阵行**（issue #4614 范围补口，**存量孤儿接入路径**）：只**补**缺失的
+   * `(逻辑名, 部位)` 行 —— 已存在的活跃行**跳过**（不覆盖已定价的格）、**不删**任何已有行；
+   * 响应附 `created_positions` / `skipped_positions` 如实报数。
+   * 停用工序不接部位（422）。值域与新增工序同一份（矩阵里出现的部位 ∪ 基线三部位）。
+   */
+  positions?: string[]
 }
 
 // 物流信息

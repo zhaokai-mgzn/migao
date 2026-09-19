@@ -1,4 +1,4 @@
-// case_ids: PG-020, PP-014, OR-041
+// case_ids: PG-020, PG-034, PP-014, OR-041
 // PG-020（issue #4203 / #4204）+ PP-014（issue #4307）**合并后**的单页用户面（issue #4416），
 // 本单（issue #4433 = 母单 #4423 的 P3）把它适配到**新路线模型**（P1 #4427 / P2 #4432 / P2b #4459 / P2c #4500）。
 //
@@ -86,6 +86,24 @@
 //    「新增」，但是要改成**新增工序**」）：入口**只在页头**（`routings-new-operation`，文案 = `新增工序`）；
 //    面板内重复的 `operations-new-operation` **不存在**；矩阵空态提示指向**右上**（入口换位置后
 //    不得留下「点上方…」这种死引用）。⚠️ **不动弹窗内部**（类型二选一与字段由 #4614 在飞）。
+// ㉔ **「新增」对话框加「适用部位」多选**（issue #4614，用户原话「这个新增按钮，无法新增工序」）：
+//    病根 = `createOperation` 只 POST `{name, group_name, unit, unit_price}`（**不带部位**），
+//    后端只写工序库 ⇒ 新工序没有矩阵行 ⇒「工艺项」表（只按 `GET /operation-positions` 渲染）
+//    里看不到它、也没法定价（原「工序库明细」表已随 #4588 取消）。形态裁定 = **A**：
+//    - 值域 = **矩阵里出现的部位 ∪ `POSITION_DOMAIN` 基线三部位** —— 复用「新建路线」的
+//      `positionOptions`（#4556 已做成「从矩阵带出」）⇒ **不写死第二份**（第 4 个部位 `布料` 自动可选）；
+//    - **默认勾基线三部位**（与「新建路线」默认一致）；
+//    - 一个部位都不勾 ⇒ **本地预检拦下、不发请求**，就地逐条理由（照 `newOptionReasons` 形态）；
+//    - 提交 body 带 `positions`；结果 toast 报**服务端返回的真实数字**（`created_positions` /
+//      `skipped_positions`），**缺结果体时显式报错，不假装成功**（照 `applyTemplate` 既有纪律）；
+//    - 新增成功后 `load()` 刷新 ⇒ 该工序**立刻出现在「工艺项」表里**。
+//    ⚠️ #4609 之后「主线下拉只列矩阵里的逻辑工序名」⇒ 没有矩阵行的新工序**两边都看不到**（孤儿），
+//    这正是本单要治的；存量孤儿见 ㉕。
+// ㉕ **存量孤儿接入**（issue #4614 范围补口）：用户实测「工艺项里看不到 `测试22`，但**路线编辑的
+//    下拉**能看到，是 bug」—— 用户此前建的工序只有工序库行、没有矩阵行 ⇒ 孤儿。顶部给孤儿提示
+//    （判据 = 工序库 id **不在**任何矩阵格的 `variant_operation_id` 里）+ 接入弹窗（每道勾适用部位，
+//    值域与新增工序同一份）；确认 ⇒ `PUT /operations/{id}` 带 `positions`（后端**只补缺失行**，
+//    不删已有行、不覆盖已定价的格）；接入后立刻出现在「工艺项」表里、且下拉也能看到它。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -346,7 +364,9 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     mockUpdateRouting.mockReset().mockResolvedValue(ok({ id: 12 }))
     mockCreateRouting.mockReset().mockResolvedValue(ok({ id: 13, name: '罗马帘专线', is_default: false, positions: ['布帘'], mainline: [], status: 'active' }))
     mockDeleteRouting.mockReset().mockResolvedValue(ok({ id: 12 }))
-    mockCreateOperation.mockReset().mockResolvedValue(ok({ id: 'op-new' }))
+    mockCreateOperation
+      .mockReset()
+      .mockResolvedValue(ok({ id: 'op-new', created_positions: 3, skipped_positions: 0 }))
     mockCreateOptionRule.mockReset().mockResolvedValue(ok({ id: 31 }))
     mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'default', config: ENGINE_DEFAULT_CALC_CONFIG }))
     mockUpdateCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'stored', config: ENGINE_DEFAULT_CALC_CONFIG }))
@@ -1211,6 +1231,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
         group_name: '车位',
         unit: '套',
         unit_price: 4.5,
+        // issue #4614：不带部位 = 新工序没有矩阵行 ⇒「工艺项」表里看不到它（无处可见的孤儿）
+        positions: ['布帘', '纱帘', '帘头'],
       }),
     )
     await waitFor(() => expect(mockGetOperationPositions).toHaveBeenCalledTimes(2))
@@ -1870,7 +1892,9 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG))
     mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS))
     mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES))
-    mockCreateOperation.mockReset().mockResolvedValue(ok({ id: 'op-new' }))
+    mockCreateOperation
+      .mockReset()
+      .mockResolvedValue(ok({ id: 'op-new', created_positions: 3, skipped_positions: 0 }))
     mockCreateOptionRule.mockReset().mockResolvedValue(ok({ id: 31 }))
   })
 
@@ -2014,9 +2038,265 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
         group_name: '车位',
         unit: '套',
         unit_price: 4.5,
+        positions: ['布帘', '纱帘', '帘头'],
       }),
     )
     expect(mockCreateOptionRule).not.toHaveBeenCalled()
     await waitFor(() => expect(mockGetOperationsCatalog).toHaveBeenCalledTimes(2))
+  })
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // ㉔ 「新增」对话框加「适用部位」多选（issue #4614）—— 见文件头 ㉔ 的口径
+  // ────────────────────────────────────────────────────────────────────────────
+
+  /** 打开「新增」对话框并填完「工序」那一支的必填项（工序名 + 计件单价） */
+  const fillOperationForm = async () => {
+    await userEvent.type(screen.getByTestId('routings-create-op-name'), '罗马帘-穿杆')
+    await userEvent.type(screen.getByTestId('routings-create-op-unit_price'), '4.5')
+  }
+
+  it('㉔-① 适用部位多选：默认勾**基线三部位**（与「新建路线」默认一致），提交 body 带 positions', async () => {
+    await openCreateDialog()
+
+    // 默认勾选 = 基线三部位（用户不必逐一点，但不勾就得被拦 —— 见 ⑳-②）
+    expect(screen.getByTestId('routings-create-op-position-布帘')).toBeChecked()
+    expect(screen.getByTestId('routings-create-op-position-纱帘')).toBeChecked()
+    expect(screen.getByTestId('routings-create-op-position-帘头')).toBeChecked()
+
+    await fillOperationForm()
+    await userEvent.click(screen.getByTestId('routings-create-operation-submit'))
+
+    await waitFor(() =>
+      expect(mockCreateOperation).toHaveBeenCalledWith(
+        expect.objectContaining({ positions: ['布帘', '纱帘', '帘头'] }),
+      ),
+    )
+  })
+
+  it('㉔-② 一个部位都不勾 ⇒ **不发请求** + 就地逐条理由（对话框不关、草稿不丢）', async () => {
+    await openCreateDialog()
+    await fillOperationForm()
+    for (const p of ['布帘', '纱帘', '帘头']) {
+      await userEvent.click(screen.getByTestId(`routings-create-op-position-${p}`))
+    }
+
+    await userEvent.click(screen.getByTestId('routings-create-operation-submit'))
+
+    const reasons = await screen.findByTestId('routings-create-op-reasons')
+    expect(reasons).toHaveTextContent('部位')
+    expect(mockCreateOperation).not.toHaveBeenCalled()
+    // 不刷新、不静默清空草稿（静默 = 商家以为建好了）
+    expect(mockGetOperationPositions).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('routings-create-op-name')).toHaveValue('罗马帘-穿杆')
+  })
+
+  it('㉔-③ 值域与「新建路线」同源（复用 positionOptions）：矩阵里的第 4 个部位 `布料` 也可勾', async () => {
+    mockGetOperationPositions.mockResolvedValue(
+      ok([
+        ...POSITIONS,
+        { id: 'pos-配料-布料', operation: '配料', position: '布料', unit_price: 0.2, applicable: true, ...NO_VARIANT },
+      ]),
+    )
+    await openCreateDialog()
+    await fillOperationForm()
+
+    const cloth = screen.getByTestId('routings-create-op-position-布料')
+    expect(cloth).not.toBeChecked() // 默认仍只勾基线三部位（不把新增部位默认打开）
+    await userEvent.click(cloth)
+    await userEvent.click(screen.getByTestId('routings-create-operation-submit'))
+
+    await waitFor(() =>
+      expect(mockCreateOperation).toHaveBeenCalledWith(
+        expect.objectContaining({ positions: ['布帘', '纱帘', '帘头', '布料'] }),
+      ),
+    )
+  })
+
+  it('㉔-④ 新增成功后**立刻出现在「工艺项」表里**（load() 刷新 ⇒ 可就地定价）', async () => {
+    // 第一次读矩阵 = 旧快照（不含新工序）；新增后的第二次 = 含新工序的两个部位格
+    mockGetOperationPositions
+      .mockResolvedValueOnce(ok(POSITIONS))
+      .mockResolvedValue(
+        ok([
+          ...POSITIONS,
+          { id: 'pos-罗马帘-穿杆-布帘', operation: '罗马帘-穿杆', position: '布帘', unit_price: 4.5, applicable: true, ...NO_VARIANT },
+          { id: 'pos-罗马帘-穿杆-纱帘', operation: '罗马帘-穿杆', position: '纱帘', unit_price: 4.5, applicable: true, ...NO_VARIANT },
+        ]),
+      )
+    await renderOperations()
+    // 基线：表里**没有**它（这正是用户实测「什么也没出现」的那一屏）
+    expect(screen.queryByTestId('matrix-row-罗马帘-穿杆')).toBeNull()
+
+    await userEvent.click(screen.getByTestId('routings-new-operation'))
+    await waitFor(() => expect(screen.getByTestId('create-kind-operation')).toBeInTheDocument())
+    await fillOperationForm()
+    await userEvent.click(screen.getByTestId('routings-create-operation-submit'))
+
+    await waitFor(() => expect(screen.getByTestId('matrix-row-罗马帘-穿杆')).toBeInTheDocument())
+    expect(screen.getByTestId('matrix-cell-罗马帘-穿杆-布帘')).toHaveTextContent('4.5')
+    expect(screen.getByTestId('matrix-cell-罗马帘-穿杆-纱帘')).toHaveTextContent('4.5')
+  })
+
+  it('㉔-⑤ 结果 toast 报**服务端返回的真实数字**（新增/跳过）；缺结果体 ⇒ 显式报错不假装成功', async () => {
+    // 本组 describe 的 beforeEach 不清 toast spy（上面的用例会留下历史调用）⇒ 本用例自己清
+    vi.mocked(toast.success).mockClear()
+    vi.mocked(toast.error).mockClear()
+    mockCreateOperation.mockResolvedValue(ok({ id: 'op-new', created_positions: 2, skipped_positions: 1 }))
+    await openCreateDialog()
+    await fillOperationForm()
+    await userEvent.click(screen.getByTestId('routings-create-operation-submit'))
+
+    await waitFor(() => expect(vi.mocked(toast.success)).toHaveBeenCalled())
+    const message = vi.mocked(toast.success).mock.calls.at(-1)?.[0] as string
+    expect(message).toContain('2')
+    expect(message).toContain('1')
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled()
+  })
+
+  it('㉔-⑥ 缺结果体（响应没有 data）⇒ 显式报错，**不**弹成功 toast（照 applyTemplate 既有纪律）', async () => {
+    vi.mocked(toast.success).mockClear()
+    vi.mocked(toast.error).mockClear()
+    mockCreateOperation.mockResolvedValue({ data: { success: true } })
+    await openCreateDialog()
+    await fillOperationForm()
+    await userEvent.click(screen.getByTestId('routings-create-operation-submit'))
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled())
+    expect(vi.mocked(toast.success)).not.toHaveBeenCalled()
+  })
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // ㉕ **存量孤儿接入**（issue #4614 范围补口）
+  // 用户实测：「我现在在**工艺项**中看不到 测试22，但是在**路线编辑的下拉列表**能看到，是 bug」
+  // —— 用户此前用「新增工序」建的工序只有 `production_operations` 行、没有矩阵行 ⇒ 孤儿：
+  // 「工艺项」表按矩阵渲染 ⇒ 看不到；「路线编辑」下拉按工序库渲染 ⇒ 看得到（两边口径不一致）。
+  // #4609 把下拉也改成读矩阵后孤儿**两边都看不到**（彻底不可达）⇒ 存量必须有接入路径。
+  // 后端只有**一处**「按部位补建矩阵行」实现（新增路径 POST 与接入路径 PUT 共用）。
+  // ────────────────────────────────────────────────────────────────────────────
+
+  /** 只有工序库行、没有任何矩阵行的孤儿工序（用户实测的 `测试22`） */
+  const ORPHAN_OP = {
+    id: 'op-test22', name: '测试22', group: '其他', unit: '米',
+    unit_price: 0.5, is_must_finish: false, is_start_marker: false,
+  }
+  const ORPHAN_CATALOG = { total: 1, groups: [{ group: '其他', operations: [ORPHAN_OP] }] }
+  /** 已定价的非孤儿（矩阵里 `variant_operation_id = op-精裁-布` 指向它） */
+  const PRICED_OP = {
+    id: 'op-精裁-布', name: '精裁-布', group: '裁剪', unit: '套',
+    unit_price: 8.5, is_must_finish: true, is_start_marker: true,
+  }
+  /** 接入后矩阵里多出来的那一格（`variant_operation_id` 指向孤儿 ⇒ 它不再是孤儿） */
+  const ATTACHED_CELL = {
+    id: 'pos-测试22-布帘', operation: '测试22', position: '布帘', unit_price: 0.5, applicable: true,
+    variant_operation_id: 'op-test22', variant_name: '测试22', unit: '米', group: '其他',
+    scope: 'position', is_must_finish: false,
+  }
+
+  it('㉕-① 存量孤儿提示：工序库里有、但没有任何部位价目行 ⇒ 顶部给出接入入口', async () => {
+    mockGetOperationsCatalog.mockResolvedValue(ok(ORPHAN_CATALOG))
+    await renderOperations()
+
+    const hint = screen.getByTestId('matrix-orphan-hint')
+    expect(hint).toHaveTextContent('1')
+    expect(hint).toHaveTextContent('部位')
+  })
+
+  it('㉕-② 反向护栏：已被矩阵格指向的工序**不算**孤儿（不提示）', async () => {
+    mockGetOperationsCatalog.mockResolvedValue(
+      ok({ total: 1, groups: [{ group: '裁剪', operations: [PRICED_OP] }] }),
+    )
+    await renderOperations()
+
+    expect(screen.queryByTestId('matrix-orphan-hint')).toBeNull()
+  })
+
+  it('㉕-③ 接入弹窗：列出孤儿（名/分组/单位）+ 默认勾基线三部位；**只**对孤儿发 PUT（已定价的格不被动）', async () => {
+    mockUpdateOperation.mockClear()
+    mockGetOperationsCatalog.mockResolvedValue(
+      ok({ total: 2, groups: [{ group: '其他', operations: [ORPHAN_OP] }, { group: '裁剪', operations: [PRICED_OP] }] }),
+    )
+    mockUpdateOperation.mockResolvedValue(ok({ id: 'op-test22', created_positions: 3, skipped_positions: 0 }))
+    await renderOperations()
+
+    await userEvent.click(screen.getByTestId('matrix-orphan-hint'))
+    await waitFor(() => expect(screen.getByTestId('orphan-attach-list')).toBeInTheDocument())
+    // 名 + 分组 + 单位（商家据此认出是哪道工序）
+    expect(screen.getByTestId('orphan-name-op-test22')).toHaveTextContent('测试22')
+    expect(screen.getByTestId('orphan-row-op-test22')).toHaveTextContent('其他')
+    expect(screen.getByTestId('orphan-row-op-test22')).toHaveTextContent('米')
+    // 默认勾基线三部位（与新增工序同一份默认）
+    expect(screen.getByTestId('orphan-position-op-test22-布帘')).toBeChecked()
+    expect(screen.getByTestId('orphan-position-op-test22-纱帘')).toBeChecked()
+    expect(screen.getByTestId('orphan-position-op-test22-帘头')).toBeChecked()
+    // 已定价的非孤儿不在弹窗里（不被动）
+    expect(screen.queryByTestId('orphan-row-op-精裁-布')).toBeNull()
+
+    await userEvent.click(screen.getByTestId('orphan-attach-submit'))
+
+    await waitFor(() =>
+      expect(mockUpdateOperation).toHaveBeenCalledWith('op-test22', { positions: ['布帘', '纱帘', '帘头'] }),
+    )
+    expect(mockUpdateOperation).toHaveBeenCalledTimes(1)
+  })
+
+  it('㉕-④ 接入后**立刻出现在「工艺项」表里**，且「路线编辑」下拉也能看到它（两边口径一致）', async () => {
+    mockGetOperationsCatalog.mockResolvedValue(ok(ORPHAN_CATALOG))
+    mockUpdateOperation.mockResolvedValue(ok({ id: 'op-test22', created_positions: 3, skipped_positions: 0 }))
+    mockGetOperationPositions
+      .mockResolvedValueOnce(ok(POSITIONS))
+      .mockResolvedValue(ok([...POSITIONS, ATTACHED_CELL]))
+    await renderOperations()
+    // 红证基线：改前「工艺项」表里没有它（用户实测的那一屏）
+    expect(screen.queryByTestId('matrix-row-测试22')).toBeNull()
+
+    await userEvent.click(screen.getByTestId('matrix-orphan-hint'))
+    await waitFor(() => expect(screen.getByTestId('orphan-attach-submit')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('orphan-attach-submit'))
+
+    await waitFor(() => expect(screen.getByTestId('matrix-row-测试22')).toBeInTheDocument())
+    expect(screen.getByTestId('matrix-cell-测试22-布帘')).toHaveTextContent('0.5')
+    // 接进来之后它不再是孤儿 ⇒ 提示消失
+    expect(screen.queryByTestId('matrix-orphan-hint')).toBeNull()
+
+    // 「路线编辑」下拉（读面与「工艺项」同一份矩阵行键）也能看到它
+    await userEvent.click(screen.getByTestId('process-config-tab-routes'))
+    await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('routing-edit-11'))
+    const options = within(screen.getByTestId('routing-add-select-11')).getAllByRole('option')
+    expect(options.map((o) => o.textContent).join('|')).toContain('测试22')
+  })
+
+  it('㉕-⑤ 接入结果 toast 报服务端真实数字（新建/跳过）；缺结果体 ⇒ 显式报错不假装成功', async () => {
+    vi.mocked(toast.success).mockClear()
+    vi.mocked(toast.error).mockClear()
+    mockGetOperationsCatalog.mockResolvedValue(ok(ORPHAN_CATALOG))
+    mockUpdateOperation.mockResolvedValue(ok({ id: 'op-test22', created_positions: 2, skipped_positions: 1 }))
+    await renderOperations()
+    await userEvent.click(screen.getByTestId('matrix-orphan-hint'))
+    await waitFor(() => expect(screen.getByTestId('orphan-attach-submit')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('orphan-attach-submit'))
+
+    await waitFor(() => expect(vi.mocked(toast.success)).toHaveBeenCalled())
+    const message = vi.mocked(toast.success).mock.calls.at(-1)?.[0] as string
+    expect(message).toContain('2')
+    expect(message).toContain('1')
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled()
+  })
+
+  it('㉕-⑥ 一个部位都不勾 ⇒ 本地拦下、**不发请求** + 就地理由（弹窗不关、草稿不丢）', async () => {
+    mockUpdateOperation.mockClear()
+    mockGetOperationsCatalog.mockResolvedValue(ok(ORPHAN_CATALOG))
+    await renderOperations()
+    await userEvent.click(screen.getByTestId('matrix-orphan-hint'))
+    await waitFor(() => expect(screen.getByTestId('orphan-attach-submit')).toBeInTheDocument())
+    for (const p of ['布帘', '纱帘', '帘头']) {
+      await userEvent.click(screen.getByTestId(`orphan-position-op-test22-${p}`))
+    }
+
+    await userEvent.click(screen.getByTestId('orphan-attach-submit'))
+
+    expect(await screen.findByTestId('orphan-attach-reasons')).toHaveTextContent('部位')
+    expect(mockUpdateOperation).not.toHaveBeenCalled()
+    expect(screen.getByTestId('orphan-attach-list')).toBeInTheDocument()
   })
 })
