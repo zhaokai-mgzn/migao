@@ -51,17 +51,41 @@
 //      **不刷新、不改页面数据**（成功才关框 + 重新拉取规则列表）。
 // ⑰ **工艺项合并成一屏一张表**（issue #4588 = 母单 #4586 包 B；契约 #4587）：
 //    - 一屏**只有一张表**：行 = 逻辑工序（`GET /operation-positions` 的 `operation`）、列 = 部位
-//      （`POSITION_DOMAIN` 基线序 + 矩阵里出现的部位自动补齐）、行尾 = `分组 · 单位` + 「管理▸」抽屉；
+//      （`POSITION_DOMAIN` 基线序 + 矩阵里出现的部位自动补齐）、行尾 = `分组 · 单位` + **必完标记**
+//      （issue #4610 改判，见 ㉑）+「管理▸」抽屉；
 //    - **原「工序库明细」折叠区取消**（`operations-catalog*` 一律不存在）⇒ 不再有两张平铺表；
 //    - 格内三态（有价 / 不做 / 未定价）**可区分**，`¥0.00` 是真价（≠「未定价」）；格内就地改价
 //      ⇒ `PUT /operation-positions/{id}` body **只带** `{unit_price}`；「不做 ⇄」⇒ 只带 `{applicable}`；
-//    - **「作用域」「必完」不得出现在主表**（用户 2026-09-19 追加裁定）—— 收进抽屉并用商家话解释；
+//    - **「作用域」不得出现在主表**（用户 2026-09-19 追加裁定）—— 收进抽屉并用商家话解释；
+//      ⚠️ **同日改判（issue #4610）**：「必完标记还是得在这里展示」（完工门槛要一眼看得见）⇒
+//      主表行尾加**只读**必完标记（三态见 ㉑），维护面与作用域仍在抽屉里；
 //    - 抽屉：变体列表（按 `variant_operation_id` 去重）+ 分组/单位/作用域/必完/停用/删除
 //      （`DELETE /operations/{id}`，二次确认，护栏理由**就地逐条**）；
 //    - 条件工序规则表加「操作」列 + 删除（`DELETE /route-rules/{id}`，二次确认）；
 //    - **文案口径**（用户裁定 A）：这一屏的价一律叫「计件单价（给工人）」（报工工资 = 数量 × 计件单价），
 //      **不得**出现「加工费」「对客价」—— 收顾客的那笔钱在「加工项组合费用」/「条件工序规则」。
+// ⑳ **「添加工序」下拉只列逻辑工序名**（issue #4609，P0 静默丢工序的前端半边）：
+//    取值域 = 部位价目矩阵的行键（`GET /operation-positions` 的 `operation`，天然逻辑名、天然去重），
+//    显示 = 逻辑名 + 该行分组的公共值；`加入` 写进草稿/请求体的值 = **逻辑名**。
+//    **不得**再出现 `精裁-布` / `布三边` 这类**变体名**项（它们是**库口径** 35 行，同一道逻辑工序
+//    按部位重复出现 ⇒ 商家看到「35 道」，且存进主线的变体名在实例化时按逻辑名查不到 ⇒ 静默丢工序）。
+//    红证：改前 `value` 是变体名（`精裁-布`）⇒ 下拉项断言红、`PUT` body 断言红。
 // 反 placeholder：断言落**真实数据行**与**请求体**，不断言「页面存在」。
+// ㉑ **必完标记回主表 + 必完含义提示**（issue #4610，用户裁定「必完标记还是得在这里展示」）：
+//    - 行尾在 `分组 · 单位` 之后加**必完标记**（数据 = 矩阵读面每行已有的 `is_must_finish`，
+//      **不新造字段 / 不另拉接口**）：① 有变体的格全部必完 ⇒ `必完`；② **只有部分部位**必完 ⇒
+//      `必完（部分部位）` + `title` 列出**具体哪些部位**（不静默取第一个）；③ 都没有 ⇒ **不显示**
+//      （不得发明「非必完」这类新词）；
+//    - 抽屉里**必完的解释**要能回答「多部位时判谁」：`必完 · 缺这道工序不能打包（部位级：每个部位
+//      都要做完）`（顶部说明与勾选框旁小字**口径一致**）；
+//    - **不加限制**（用户明确）：部位级的必完开关**仍可用**（不得 disabled / 隐藏），也不新增交互。
+// ㉒ **条件工序规则移除折叠、常驻展开**（issue #4613，用户原话「条件工序默认不要折叠，打开，
+//    移除可折叠功能」）：页面加载后**未点任何 toggle** 规则表与说明直接可见；标题 + `共 N 条` + hint
+//    保留；`route-rules-toggle` **不存在**（移除的是折叠能力，不只是「默认打开」）。
+// ㉓ **「新增工序」入口去重**（issue #4615，用户原话「这里还有个一样的按钮，可以移除掉，保留最上面的
+//    「新增」，但是要改成**新增工序**」）：入口**只在页头**（`routings-new-operation`，文案 = `新增工序`）；
+//    面板内重复的 `operations-new-operation` **不存在**；矩阵空态提示指向**右上**（入口换位置后
+//    不得留下「点上方…」这种死引用）。⚠️ **不动弹窗内部**（类型二选一与字段由 #4614 在飞）。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -298,11 +322,10 @@ const openManage = async (operation: string) => {
   await waitFor(() => expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument())
 }
 
-/** 渲染路线 tab 并展开「条件工序规则」折叠区（26 条规则的呈现面） */
+/** 渲染路线 tab（条件工序规则**常驻展开**，issue #4613 起没有折叠开关可点） */
 const renderRules = async () => {
   await renderOnRoutes()
-  await waitFor(() => expect(screen.getByTestId('route-rules-toggle')).toBeInTheDocument())
-  await userEvent.click(screen.getByTestId('route-rules-toggle'))
+  await waitFor(() => expect(screen.getByTestId('route-rules-body')).toBeInTheDocument())
 }
 
 describe('工艺配置页 /production/routings（新路线模型，issue #4433 = 母单 #4423 的 P3）', () => {
@@ -592,6 +615,21 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   // ══════════════════ ⑧ 统一规则区（26 条不截断，触发键逐字取自后端） ══════════════════
 
+  it('⑳ 条件工序规则**常驻展开**：页面加载后（未点任何 toggle）规则表直接可见（issue #4613）', async () => {
+    await renderOnRoutes()
+
+    // 规则表**直接可见** —— 改前默认收起（要再点一下才看得到，连带说明也被藏起来）⇒ 本断言红
+    await waitFor(() => expect(screen.getByTestId('route-rules-body')).toBeInTheDocument())
+    expect(screen.getByTestId('route-rules-total')).toHaveTextContent('共 3 条')
+    expect(screen.getAllByTestId(/^route-rule-\d+$/)).toHaveLength(3)
+    expect(screen.getByTestId('route-rule-trigger-1')).toHaveTextContent('韩褶')
+    // 标题与 hint 仍在（只是不再可折叠）
+    expect(screen.getByTestId('route-rules')).toHaveTextContent('条件工序规则')
+    expect(screen.getByTestId('route-rules')).toHaveTextContent('工艺 / 特殊选项触发时，往主线里插一道或删一道')
+    // 反向断言：折叠开关**不存在**（移除的是折叠**能力**，不只是「默认打开」）
+    expect(screen.queryByTestId('route-rules-toggle')).toBeNull()
+  })
+
   it('规则区：26 条**整份**渲染（不截断），触发键**逐字**取自后端', async () => {
     const big = Array.from({ length: 26 }, (_, i) => ({
       id: 100 + i,
@@ -869,12 +907,13 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(within(panel).queryByText('工序库明细')).toBeNull()
     // 一屏只有**一张**表（两张平铺表正是本次要治的形态）
     expect(within(panel).getAllByRole('table')).toHaveLength(1)
-    // 用户 2026-09-19 追加裁定：行尾只留「分组 · 单位」⇒ 这两个词不得出现在主表（收进抽屉）
+    // 用户 2026-09-19 追加裁定：**作用域**收进抽屉 ⇒ 这个词不得出现在主表；
+    // ⚠️ 同日**改判**（issue #4610）：「必完标记还是得在这里展示」⇒ 必完回到主表行尾，
+    //    但它只是**只读标记**（维护面仍在抽屉里）—— 见 ⑳ 的三态断言。
     expect(within(panel).queryByText('作用域')).toBeNull()
-    expect(within(panel).queryByText('必完')).toBeNull()
   })
 
-  it('⑰-② 行尾元数据只留 `分组 · 单位`（公共值；不一致时**全部列出**，不静默取第一个）', async () => {
+  it('⑰-② 行尾元数据 = `分组 · 单位`（公共值；不一致时**全部列出**，不静默取第一个）+ 必完标记', async () => {
     await renderOperations()
 
     // 三边：两格变体同为 车位 · 米 ⇒ 公共值
@@ -891,6 +930,42 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
     // 韩褶：矩阵里查不到变体（6 键全 null）⇒ 不发明元数据
     expect(screen.getByTestId('matrix-meta-韩褶')).toHaveTextContent('—')
+
+    // issue #4610：精裁两格变体都必完 ⇒ 行尾带 `必完`（三态见下一条用例）
+    expect(screen.getByTestId('matrix-must-finish-精裁')).toHaveTextContent('必完')
+  })
+
+  it('⑳ 行尾必完标记三态：全必完 ⇒ `必完`；部分部位 ⇒ `必完（部分部位）` + title 列部位；无 ⇒ 不显示（issue #4610）', async () => {
+    // 夹具刻意造出**部分部位**那一态（基座夹具里没有）：车被 布帘必完 / 纱帘**非**必完
+    mockGetOperationPositions.mockReset().mockResolvedValue(
+      ok([
+        { id: 'p1', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', variant_name: '布三边', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+        { id: 'p2', operation: '三边', position: '纱帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-纱', variant_name: '纱三边', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+        { id: 'p3', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: 'op-精裁-布', variant_name: '精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
+        { id: 'p4', operation: '精裁', position: '纱帘', unit_price: 6, applicable: true, variant_operation_id: 'op-精裁-纱', variant_name: '精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
+        { id: 'p5', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', variant_name: '车被', unit: '件', group: '后道', scope: 'set', is_must_finish: true },
+        { id: 'p6', operation: '车被', position: '纱帘', unit_price: null, applicable: true, variant_operation_id: 'op-车被-纱', variant_name: '车被-纱', unit: '件', group: '后道', scope: 'position', is_must_finish: false },
+        { id: 'p7', operation: '韩褶', position: '布帘', unit_price: 2, applicable: true, ...NO_VARIANT },
+      ]),
+    )
+    await renderOperations()
+
+    // ① 有变体的格**全部**必完 ⇒ `必完`（不带「部分部位」）
+    const all = screen.getByTestId('matrix-must-finish-精裁')
+    expect(all).toHaveTextContent('必完')
+    expect(all).not.toHaveTextContent('部分部位')
+
+    // ② **只有部分部位**必完 ⇒ 注明 + `title` **列出具体哪些部位**（注入：静默取第一个 ⇒ 部位列错，断言红）
+    const partial = screen.getByTestId('matrix-must-finish-车被')
+    expect(partial).toHaveTextContent('必完（部分部位）')
+    expect(partial.getAttribute('title')).toContain('布帘')
+    expect(partial.getAttribute('title')).not.toContain('纱帘')
+
+    // ③ 一道都不必完 / 读面没给该键 ⇒ **不显示**（不得发明「非必完」这类新词）
+    expect(screen.queryByTestId('matrix-must-finish-三边')).toBeNull()
+    expect(screen.queryByTestId('matrix-must-finish-韩褶')).toBeNull()
+    expect(screen.getByTestId('matrix-meta-三边')).not.toHaveTextContent('必完')
+    expect(screen.getByTestId('matrix-meta-韩褶')).not.toHaveTextContent('必完')
   })
 
   it('⑰-③ 行：逻辑工序名 + 小字列出该行落到工人端的**变体名**（`variant_name` 去重）', async () => {
@@ -1007,9 +1082,13 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     // 作用域：闭词表两档 + 一句商家看得懂的解释
     expect(screen.getByTestId('variant-scope-op-车被')).toHaveValue('set')
     expect(row).toHaveTextContent('每樘窗只做一次')
-    // 必完：勾选态 + 一句解释
+    // 必完：勾选态 + 一句解释（issue #4610 追加：解释要能回答「多部位时判谁」）
     expect(screen.getByTestId('variant-must-finish-op-车被')).toBeChecked()
-    expect(row).toHaveTextContent('缺这道工序不能打包')
+    expect(row).toHaveTextContent('必完 · 缺这道工序不能打包（部位级：每个部位都要做完）')
+    // 抽屉顶部说明与勾选框旁的小字**口径一致**（都含「每个部位」这一层）
+    expect(screen.getByTestId('operations-manage-drawer')).toHaveTextContent('部位级工序要每个部位都做完')
+    // 反向护栏（用户裁定「不加作用域限制」）：部位级的必完开关**仍可用**（不得 disabled/隐藏）
+    expect(screen.getByTestId('variant-must-finish-op-车被')).not.toBeDisabled()
 
     await userEvent.selectOptions(screen.getByTestId('variant-scope-op-车被'), 'position')
     await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-车被', { scope: 'position' }))
@@ -1109,11 +1188,16 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(text).not.toContain('对客价')
   })
 
-  it('⑰-⑲ 新增工序：这一屏自带入口（`POST /operations` 后刷新 —— 一屏一张表后的新增入口）', async () => {
+  it('⑰-⑲ 新增工序：入口**只在页头**（`POST /operations` 后刷新）—— 面板内重复入口已移除（issue #4615）', async () => {
     await renderOperations()
 
-    // 入口 = 这一屏表头那个（与页头「新增」同一个对话框；页头那个由 ⑯ 组覆盖）
-    await userEvent.click(screen.getByTestId('operations-new-operation'))
+    // 入口 = 页头那个（`routings-new-operation`）；文案已按用户裁定改成「新增工序」
+    const entry = screen.getByTestId('routings-new-operation')
+    expect(entry).toHaveTextContent('新增工序')
+    // 反向断言（issue #4615）：面板内那个**同功能的重复按钮已删除**（改前必红）
+    expect(screen.queryByTestId('operations-new-operation')).toBeNull()
+
+    await userEvent.click(entry)
     await waitFor(() => expect(screen.getByTestId('create-kind-operation')).toBeInTheDocument())
     await userEvent.type(screen.getByTestId('routings-create-op-name'), '罗马帘-穿杆')
     await userEvent.type(screen.getByTestId('routings-create-op-group_name'), '车位')
@@ -1130,6 +1214,15 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
       }),
     )
     await waitFor(() => expect(mockGetOperationPositions).toHaveBeenCalledTimes(2))
+  })
+
+  it('⑳ 矩阵空态指向**右上**入口（issue #4615：入口换位置后不得留下死引用）', async () => {
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok([]))
+    await renderOperations()
+
+    const empty = screen.getByTestId('operation-price-matrix-empty')
+    expect(empty).toHaveTextContent('点右上「新增工序」建一道')
+    expect(empty).not.toHaveTextContent('点上方')
   })
 
   it('路线半边：主线逐道渲染 —— 库里查得到的只多出「必完」，逻辑名**不发明**元数据', async () => {
@@ -1173,22 +1266,64 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('routing-draft-step-11-1')).not.toHaveTextContent('¥')
   })
 
-  it('序列编辑：添加工序 → 保存 ⇒ `PUT {mainline:[...]}` 顺序等于屏幕顺序', async () => {
+  it('序列编辑：添加工序 → 保存 ⇒ `PUT {mainline:[...]}` 顺序等于屏幕顺序（加进去的是**逻辑名**，#4609）', async () => {
     await renderOnRoutes()
     await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('routing-edit-11'))
     expect(screen.getByTestId('routing-draft-step-11-1')).toHaveTextContent('精裁')
 
-    await userEvent.selectOptions(screen.getByTestId('routing-add-select-11'), '裁剪-布')
+    await userEvent.selectOptions(screen.getByTestId('routing-add-select-11'), '车被')
     await userEvent.click(screen.getByTestId('routing-add-11'))
     await userEvent.click(screen.getByTestId('routing-save-11'))
 
     await waitFor(() =>
-      expect(mockUpdateRouting).toHaveBeenCalledWith(11, { mainline: ['精裁', '三边', '外帘装袋', '裁剪-布'] }),
+      expect(mockUpdateRouting).toHaveBeenCalledWith(11, { mainline: ['精裁', '三边', '外帘装袋', '车被'] }),
     )
     await waitFor(() => expect(mockGetRoutings).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByTestId('routing-save-11')).not.toBeInTheDocument())
+  })
+
+  it('⑳ 下拉只列**逻辑工序名**（去重）：不出现 `精裁-布`/`布三边` 这类变体名（issue #4609）', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-edit-11'))
+    const select = screen.getByTestId('routing-add-select-11') as HTMLSelectElement
+    const values = Array.from(select.options).map((o) => o.value)
+
+    // 取值域 = 矩阵行键（**逻辑名**，服务端顺序）；`slice(1)` 去掉占位项（value=''）
+    // 注入：数据源换回工序库 `catalog.groups[].operations`（35 条**变体名**）⇒ 本断言红
+    expect(values.slice(1)).toEqual(['三边', '精裁', '车被', '韩褶'])
+    // 同一逻辑工序**只出现一次**（`精裁` 在矩阵里有 3 格 ⇒ 选择器里仍只有 1 项）
+    expect(values.filter((v) => v === '精裁')).toHaveLength(1)
+    // 带部位后缀的变体名一律不出现
+    expect(values.some((v) => v.includes('精裁-') || v === '布三边' || v === '纱三边')).toBe(false)
+    // 显示形态 = 逻辑名 + 分组（分组取该行各格**公共值**，不一致时逐个列出 —— 不静默取第一个）
+    expect(select.options[1].textContent).toBe('三边（车位）')
+    expect(select.options[2].textContent).toBe('精裁（裁剪 / 车位）')
+    // 库里查不到变体元数据的那道（`韩褶`）⇒ 只有名字，不发明分组
+    expect(select.options[4].textContent).toBe('韩褶')
+  })
+
+  it('⑳ 选「精裁」加入 ⇒ 主线里存的是**逻辑名**（红证：改前下拉只有变体名，存的是 `精裁-布`）', async () => {
+    await renderOnRoutes()
+    // 空壳路线 12：加入一道即成为唯一一道 ⇒ 请求体一眼看出存的是哪把尺
+    await waitFor(() => expect(screen.getByTestId('routing-edit-12')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-edit-12'))
+    const select = screen.getByTestId('routing-add-select-12') as HTMLSelectElement
+    expect(
+      Array.from(select.options).some((o) => o.value === '精裁'),
+      '下拉里必须有逻辑工序名「精裁」这一项（改前只有变体名 精裁-布 / 精裁-纱）',
+    ).toBe(true)
+
+    await userEvent.selectOptions(select, '精裁')
+    await userEvent.click(screen.getByTestId('routing-add-12'))
+    expect(screen.getByTestId('routing-draft-step-12-1')).toHaveTextContent('精裁')
+    await userEvent.click(screen.getByTestId('routing-save-12'))
+
+    await waitFor(() => expect(mockUpdateRouting).toHaveBeenCalledWith(12, { mainline: ['精裁'] }))
   })
 
   it('序列编辑：下移/删除改变顺序后保存，请求体随之变化', async () => {
@@ -1333,15 +1468,15 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('routing-edit-11'))
-    await userEvent.selectOptions(screen.getByTestId('routing-add-select-11'), '裁剪-布')
+    await userEvent.selectOptions(screen.getByTestId('routing-add-select-11'), '车被')
     await userEvent.click(screen.getByTestId('routing-add-11'))
-    expect(screen.getByTestId('routing-draft-step-11-4')).toHaveTextContent('裁剪-布')
+    expect(screen.getByTestId('routing-draft-step-11-4')).toHaveTextContent('车被')
 
     await userEvent.click(screen.getByTestId('process-config-tab-operations'))
     await userEvent.click(screen.getByTestId('process-config-tab-routes'))
 
     // 注入：把 draft 改成随 tab 重置 ⇒ 红
-    expect(screen.getByTestId('routing-draft-step-11-4')).toHaveTextContent('裁剪-布')
+    expect(screen.getByTestId('routing-draft-step-11-4')).toHaveTextContent('车被')
     expect(screen.getByTestId('routing-save-11')).toBeInTheDocument()
   })
 

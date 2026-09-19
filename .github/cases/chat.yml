@@ -1276,6 +1276,20 @@ cases:
       - "我家里是奶油风的装修，我个人特别喜欢奶油风，以后都按这个风格来"
       - new_session: true
         text: "上次我说过我喜欢什么风格来着？按那个风格帮我推荐几款窗帘"
+    # ── 前置自断言（CASE-TRUST-NO-PRECONDITION-ASSERTION 的 burn-down 缴费）──
+    # 本用例的两条判据都**依赖商品库里有「窗帘」类商品**：`product_search` 必须成功且关键词非空，
+    # 回复里还必须真的出现「奶油」（风格词来自记忆注入）。库里一件都没有时，红的表现是
+    # `unmatched expectation` / `must_succeed` 失败 —— **看起来像「agent 不会做个性化推荐」**
+    # （归因全错），而真相是靶子不在。口径与 `pre_clean` 的商品定位同一份（`_list_products_matching`）。
+    # ⚠️ `source` 取 **`窗帘`**（lookup 双向包含 ⇒ 命中该栈 seed 的三件商品；**不写死某一款**）——
+    # 写死款名会把「推荐哪一件」变成依赖栈的判据；同理**有意不给 `expect`**（计数随栈而变）。
+    # 漂移判据（`after - before > max_growth`，缺省 0）仍生效，而本用例**只读**（不建商品）
+    # ⇒ 运行期真被并行用例改写时会显式红。先例 = CH-022 / CH-019 / OR-014 / CR-001。
+    # ⚠️ **有意不声明 `namespaces`**：只读用例声明自建名会被判 CASE-TRUST-NO-SELF-CLEAN
+    # = 账面新增违规，与「只许缩短」冲突。
+    precondition:
+      - type: product_count_for_keyword
+        source: "窗帘"
     expectations:
       - tool: product_search
     # ── 覆盖加厚（issue #3558 覆盖体检）：只断言「调了 product_search」会放过整条推荐链路全失败 ──

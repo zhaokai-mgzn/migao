@@ -6,8 +6,6 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
-  ChevronDown,
-  ChevronRight,
   Pencil,
   Plus,
   RefreshCw,
@@ -45,8 +43,8 @@ import type {
  *
  * | tab | 它回答的问题 | 主区 | 维护面 |
  * |---|---|---|---|
- * | **工艺项** | 「每道工序在**哪个部位**做、给**工人**多少钱？」 | **一张表**：行 = 逻辑工序、列 = 部位、格 = 价 / 不做 / 未定价（**格内就地可改**） | 行尾「管理▸」抽屉（变体：分组 / 单位 / 作用域 / 必完 / 停用 / 删除） |
- * | **工艺路线** | 「订单按哪条主线走、什么时候插/删工序？」 | 具名路线（默认徽标 + 适用帘种 + 主线 + 改名/设默认/删除） | 条件工序规则（26 条；折叠区） |
+ * | **工艺项** | 「每道工序在**哪个部位**做、给**工人**多少钱？」 | **一张表**：行 = 逻辑工序、列 = 部位、格 = 价 / 不做 / 未定价（**格内就地可改**） | 行尾 = `分组 · 单位` + **必完标记**（issue #4610：完工门槛要一眼看得见，部分部位必完时注明）+「管理▸」抽屉（变体：分组 / 单位 / 作用域 / 必完 / 停用 / 删除） |
+ * | **工艺路线** | 「订单按哪条主线走、什么时候插/删工序？」 | 具名路线（默认徽标 + 适用帘种 + 主线 + 改名/设默认/删除） | 条件工序规则（26 条；**常驻展开**，issue #4613 起不可折叠） |
  *
  * **工艺项为什么不再分「主区 / 折叠次区」**（issue #4588 = 母单 #4586 包 B；契约 #4587）：
  * 原形态是**两张平铺表** —— 主区 84 格**只读**矩阵 + 折叠次区 35 行「工序库明细」（能改计件单价
@@ -408,56 +406,6 @@ function ReadinessStep({
   )
 }
 
-/** 折叠次区（同一件事的明细面）—— 折叠 ≠ 删能力：入口常驻可见并带计数 */
-function CollapsibleSection({
-  testId,
-  title,
-  hint,
-  count,
-  open,
-  onToggle,
-  children,
-}: {
-  testId: string
-  title: string
-  hint: string
-  count?: string
-  open: boolean
-  onToggle: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <section className="rounded-lg border border-neutral-200 bg-white" data-testid={testId}>
-      <button
-        type="button"
-        aria-expanded={open}
-        data-testid={`${testId}-toggle`}
-        data-state={open ? 'open' : 'closed'}
-        onClick={onToggle}
-        className="flex w-full items-center gap-2 px-5 py-3 text-left hover:bg-neutral-50"
-      >
-        {open ? (
-          <ChevronDown className="w-4 h-4 text-neutral-400" />
-        ) : (
-          <ChevronRight className="w-4 h-4 text-neutral-400" />
-        )}
-        <span className="text-sm font-medium text-neutral-900">{title}</span>
-        {count && (
-          <span className="text-xs text-neutral-400" data-testid={`${testId}-total`}>
-            {count}
-          </span>
-        )}
-        <span className="ml-auto hidden text-xs text-neutral-400 sm:inline">{hint}</span>
-      </button>
-      {open && (
-        <div className="border-t border-neutral-100 p-5 pt-4" data-testid={`${testId}-body`}>
-          {children}
-        </div>
-      )}
-    </section>
-  )
-}
-
 /**
  * 主线上一步的展示口径（只读与草稿**共用一份** —— 两处各拼一份必然漂移）。
  *
@@ -663,8 +611,6 @@ export default function ProcessConfigPage() {
   const [error, setError] = useState('')
   /** 工序名搜索（**一个控件管整个「工艺项」tab**：这一屏唯一的表按行过滤） */
   const [search, setSearch] = useState('')
-  /** 条件工序规则折叠区（默认收起：主区是路线列表，规则是明细面） */
-  const [rulesOpen, setRulesOpen] = useState(false)
 
   // ── 矩阵格写面（issue #4588；契约 #4587 ②）──
   /** 正在编辑的格（键 = `工序-部位`）；`null` = 没有格在编辑态 */
@@ -992,6 +938,44 @@ export default function ProcessConfigPage() {
   const metaText = (values: string[]) => (values.length > 0 ? values.join(' / ') : '—')
 
   const metaInconsistent = (values: string[]) => values.length > 1
+
+  /**
+   * 行尾「必完」标记的三态（issue #4610，用户裁定「**必完标记还是得在这里展示**」——
+   * 它是完工门槛，要一眼看得见）。
+   *
+   * 数据来源 = 矩阵读面每行**已有**的 `is_must_finish`（契约 #4587 ① 的 6 键之一），
+   * **不新造字段、不另拉接口**；口径沿用该格的「各格不一致时逐个列出、**不静默取第一个**」纪律：
+   * ① 有变体元数据的格**全部**必完 ⇒ `必完`；
+   * ② **只有部分部位**必完 ⇒ `必完（部分部位）`，`title` 列出**具体哪些部位**；
+   * ③ 一道都没有（或读面没给该键）⇒ `null` ⇒ **不显示**（不得发明「非必完」这类新词）。
+   */
+  const mustFinishOf = (row: { cells: Map<string, OperationPosition> }) => {
+    const yes: string[] = []
+    const no: string[] = []
+    row.cells.forEach((cell, position) => {
+      if (cell.is_must_finish == null) return
+      if (cell.is_must_finish) yes.push(position)
+      else no.push(position)
+    })
+    return yes.length === 0 ? null : { partial: no.length > 0, positions: yes }
+  }
+
+  /**
+   * 「从工序库选择要添加的工序…」的取值域 = **逻辑工序名**（issue #4609）。
+   *
+   * ⚠️ 为什么不能再用 `catalog.groups[].operations`（{@link libraryOps}）：那是**库口径**，35 行里
+   * 同一道逻辑工序按部位**重复出现**（`精裁-布` / `精裁-纱`），且 `value` 是变体名 ⇒
+   * 加入主线的就是变体名（`精裁-布`），而实例化 `buildRoute` 的适用性矩阵按**逻辑名**建键
+   * ⇒ `get("精裁-布")` = null ⇒ **该道工序被静默丢掉**（商家加了工序，加工单里没有）。
+   * 取值域改由**矩阵读面的行键**给出（与 {@link logicalOps} 同源：天然是逻辑名、天然去重）；
+   * 分组取该行各格的**公共值**（各格不一致时逐个列出 —— 同 {@link metaText} 口径，不静默取第一个）。
+   *
+   * ⚠️ `libraryByName`（主线 chips 解析**变体**元数据）仍按变体名索引，**不要**一起改。
+   */
+  const paletteOps = useMemo(
+    () => matrixRows.map((row) => ({ name: row.operation, groups: distinctMeta(row, (c) => c.group) })),
+    [matrixRows],
+  )
 
   /** 该逻辑工序的变体（按 `variant_operation_id` 去重；矩阵列序 = 部位顺序） */
   const variantsOf = useCallback(
@@ -1548,7 +1532,7 @@ export default function ProcessConfigPage() {
             onClick={openCreateOperation}
           >
             <Plus className="w-4 h-4 mr-1.5" />
-            新增
+            新增工序
           </Button>
           <Button size="sm" data-testid="routings-new-route" onClick={() => setNewRouteOpen(true)}>
             <Plus className="w-4 h-4 mr-1.5" />
@@ -1707,7 +1691,9 @@ export default function ProcessConfigPage() {
             {/* ══════════ tab「工艺项」：**一屏一张表**（行 = 逻辑工序 / 列 = 部位 / 格可就地改） ══════════
                 issue #4588 = 母单 #4586 包 B（契约 #4587）。原「主区只读矩阵 + 折叠次区工序库明细」两张
                 平铺表已合并成这一张：明细面（分组 / 单位 / 作用域 / 必完 / 停用 / 删除）收进行尾
-                「管理▸」抽屉 —— 同一个概念**只有一个载体**，改价只有一个入口（矩阵格）。 */}
+                「管理▸」抽屉 —— 同一个概念**只有一个载体**，改价只有一个入口（矩阵格）。
+                例外（用户改判）：**必完** 是完工门槛，除抽屉里的维护面外，行尾还要有**只读标记**
+                （issue #4610）；**作用域**仍只在抽屉里。 */}
             {tab === 'operations' && (
               <div className="space-y-4" data-testid="craft-operations-panel">
                 <section className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="operation-price-matrix">
@@ -1742,15 +1728,6 @@ export default function ProcessConfigPage() {
                         data-testid="operations-search"
                         className="h-8 w-40 rounded border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:border-primary-500"
                       />
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        data-testid="operations-new-operation"
-                        onClick={openCreateOperation}
-                      >
-                        <Plus className="w-4 h-4 mr-1.5" />
-                        新增工序
-                      </Button>
                     </div>
                   </div>
                   <p className="mb-3 text-xs text-neutral-500">
@@ -1770,7 +1747,7 @@ export default function ProcessConfigPage() {
                   ) : visibleMatrixRows.length === 0 ? (
                     <p className="py-8 text-center text-sm text-neutral-400" data-testid="operation-price-matrix-empty">
                       {matrixRows.length === 0
-                        ? '暂无部位价目数据 —— 点上方「新增工序」建一道，再回这里给各部位定价'
+                        ? '暂无部位价目数据 —— 点右上「新增工序」建一道，再回这里给各部位定价'
                         : '没有匹配的工序，换个关键词试试'}
                     </p>
                   ) : (
@@ -1793,6 +1770,7 @@ export default function ProcessConfigPage() {
                             const units = distinctMeta(row, (c) => c.unit)
                             const names = distinctMeta(row, (c) => c.variant_name)
                             const inconsistent = metaInconsistent(groups) || metaInconsistent(units)
+                            const mustFinish = mustFinishOf(row)
                             return (
                               <tr
                                 key={row.operation}
@@ -1848,8 +1826,9 @@ export default function ProcessConfigPage() {
                                     />
                                   )
                                 })}
-                                {/* 行尾元数据**只留** `分组 · 单位`（用户 2026-09-19 追加裁定：作用域 / 必完
-                                    收进抽屉）+「管理▸」入口；各格不一致时逐个列出，**不静默取第一个** */}
+                                {/* 行尾元数据 = `分组 · 单位`（作用域收进抽屉）+ **必完标记**（issue #4610：
+                                    完工门槛要一眼看得见）+「管理▸」入口；各格不一致时逐个列出，
+                                    **不静默取第一个** */}
                                 <td
                                   className="py-2.5 pr-4 align-top"
                                   data-testid={`matrix-meta-${row.operation}`}
@@ -1862,6 +1841,19 @@ export default function ProcessConfigPage() {
                                         ? '—'
                                         : `${metaText(groups)} · ${metaText(units)}`}
                                     </span>
+                                    {mustFinish && (
+                                      <span
+                                        className="text-xs text-amber-600"
+                                        data-testid={`matrix-must-finish-${row.operation}`}
+                                        title={
+                                          mustFinish.partial
+                                            ? `必完的部位：${mustFinish.positions.join(' / ')}（其余部位不要求必完）`
+                                            : '必完：缺这道工序不能打包（部位级：每个部位都要做完）'
+                                        }
+                                      >
+                                        必完{mustFinish.partial ? '（部分部位）' : ''}
+                                      </span>
+                                    )}
                                     <button
                                       type="button"
                                       data-testid={`matrix-manage-${row.operation}`}
@@ -2101,10 +2093,10 @@ export default function ProcessConfigPage() {
                                     className="h-9 min-w-56 flex-1 rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500"
                                   >
                                     <option value="">从工序库选择要添加的工序…</option>
-                                    {libraryOps.map((op) => (
-                                      <option key={op.id} value={op.name}>
+                                    {paletteOps.map((op) => (
+                                      <option key={op.name} value={op.name}>
                                         {op.name}
-                                        {op.group ? `（${op.group}）` : ''}
+                                        {op.groups.length > 0 ? `（${op.groups.join(' / ')}）` : ''}
                                       </option>
                                     ))}
                                   </select>
@@ -2234,15 +2226,20 @@ export default function ProcessConfigPage() {
                   )}
                 </section>
 
-                {/* 次区（折叠）：统一规则区 —— 工艺变体 ∪ 特殊选项（26 条） */}
-                <CollapsibleSection
-                  testId="route-rules"
-                  title="条件工序规则"
-                  hint="工艺 / 特殊选项触发时，往主线里插一道或删一道"
-                  count={`共 ${rules.length} 条`}
-                  open={rulesOpen}
-                  onToggle={() => setRulesOpen((v) => !v)}
-                >
+                {/* 次区：统一规则区 —— 工艺变体 ∪ 特殊选项（26 条）。
+                    **常驻展开**（issue #4613 用户裁定：「条件工序默认不要折叠，打开，移除可折叠功能」）
+                    —— 折叠曾让商家要多点一下才看得到规则，连说明也被藏起来；现无展开/收起开关。 */}
+                <section className="rounded-lg border border-neutral-200 bg-white" data-testid="route-rules">
+                  <div className="flex flex-wrap items-center gap-2 px-5 py-3">
+                    <span className="text-sm font-medium text-neutral-900">条件工序规则</span>
+                    <span className="text-xs text-neutral-400" data-testid="route-rules-total">
+                      共 {rules.length} 条
+                    </span>
+                    <span className="ml-auto hidden text-xs text-neutral-400 sm:inline">
+                      工艺 / 特殊选项触发时，往主线里插一道或删一道
+                    </span>
+                  </div>
+                  <div className="border-t border-neutral-100 p-5 pt-4" data-testid="route-rules-body">
                   <p className="mb-3 text-xs text-neutral-500">
                     触发键<strong>逐字取自后端</strong>（与订单里的工艺 / 选项名是同一个键）：错一个字就会查不到 ⇒
                     条件工序不加、计件系数退回 1.0。规则按优先级<strong>升序</strong>生效，顺序决定工序序列。
@@ -2363,7 +2360,8 @@ export default function ProcessConfigPage() {
                       </table>
                     </div>
                   )}
-                </CollapsibleSection>
+                  </div>
+                </section>
               </div>
             )}
 
@@ -2717,8 +2715,10 @@ export default function ProcessConfigPage() {
       </Modal>
 
       {/* 「管理▸」抽屉（issue #4588）：该逻辑工序的**变体**维护面。
-          ⚠️ 作用域 / 必完 **只在这里**（用户 2026-09-19 追加裁定：「作用域 · 必完 完全不知道干嘛的，
-          也可以移除」⇒ 从主表移除的是**显示**，不是语义）—— 两处各配一句商家看得懂的解释。 */}
+          ⚠️ 作用域 / 必完的**维护面**在这里（用户 2026-09-19 追加裁定：「作用域 · 必完 完全不知道干嘛的，
+          也可以移除」⇒ 从主表移除的是**显示**，不是语义）；**必完**的只读标记按用户 2026-09-19 改判
+          回到主表行尾（issue #4610：它是完工门槛，要一眼看得见），作用域仍只在抽屉里。
+          两处各配一句商家看得懂的解释（口径一致，含「部位级要每个部位都做完」那一层）。 */}
       <Modal
         open={manageOp !== null}
         onClose={() => !variantBusy && setManageOp(null)}
@@ -2734,7 +2734,8 @@ export default function ProcessConfigPage() {
           <p className="text-neutral-600">
             这些是<strong>工人扫码时看到的工序</strong>（同一道逻辑工序在不同部位会落成不同变体）。
             分组与单位决定报工口径；<strong>作用域</strong>：套级 = 每樘窗只做一次；
-            <strong>必完</strong>：缺这道工序不能打包。
+            <strong>必完</strong>：缺这道工序不能打包；<strong>部位级工序要每个部位都做完</strong>才算完
+            （套级每樘窗一次）。
           </p>
           {manageVariants.length === 0 ? (
             <p className="py-6 text-center text-sm text-neutral-400" data-testid="operations-manage-empty">
@@ -2843,8 +2844,7 @@ export default function ProcessConfigPage() {
                       onChange={(e) => void submitVariant(v.id, { is_must_finish: e.target.checked })}
                       className="h-4 w-4 accent-primary-600"
                     />
-                    <span>必完</span>
-                    <span>缺这道工序不能打包</span>
+                    <span>必完 · 缺这道工序不能打包（部位级：每个部位都要做完）</span>
                   </label>
 
                   {/* 停用（`PUT /operations/{id}` 的 status）/ 删除（`DELETE /operations/{id}`，二次确认） */}
