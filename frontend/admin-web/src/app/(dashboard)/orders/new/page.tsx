@@ -10,6 +10,7 @@ import { resolveImageUrl } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
 import { Button, Card, Input, Modal } from '@/components/ui'
 import OrderCraftFields from '@/components/orders/OrderCraftFields'
+import OrderExtraOptions from '@/components/orders/OrderExtraOptions'
 import {
   METERS_SOURCE_FORMULA,
   // 与配布边米数来源的 `METERS_SOURCE_MANUAL` 同值（都是「人工指定」）但**是另一个字段**
@@ -1771,6 +1772,64 @@ interface ProductGroupBlockProps {
   onChangePrice: (lineId: string, price: number) => void
 }
 
+
+/**
+ * **向导步骤**（issue #4511，用户口径「加个由上到下的向导，参考苹果商店的购买商品选配」）。
+ *
+ * 三条形态约定：
+ * - **平级**：每步是兄弟，不嵌套（特殊选项不再挂在工艺规格下面）；
+ * - **编号 + 收起摘要**：收起时显示已选结果（一眼看到当前配置）；
+ * - **手风琴**：由调用方持有「当前展开的是第几步」⇒ 展开一步自动收起同级其它。
+ */
+function WizardStep({
+  step,
+  title,
+  summary,
+  open,
+  onToggle,
+  children,
+}: {
+  step: number
+  title: string
+  /** 收起时显示的已选摘要 */
+  summary?: string
+  open: boolean
+  onToggle: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <div className="border-t border-neutral-100 first:border-t-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full flex items-center gap-2 py-2.5 text-left"
+      >
+        <span
+          className={
+            'inline-flex items-center justify-center w-5 h-5 shrink-0 rounded-full text-[11px] font-semibold ' +
+            (open ? 'bg-primary-600 text-white' : 'bg-neutral-100 text-neutral-500')
+          }
+        >
+          {step}
+        </span>
+        <span className="text-sm font-medium text-neutral-700 shrink-0">{title}</span>
+        <span className="ml-auto flex items-center gap-1.5 min-w-0">
+          {!open && summary && (
+            <span className="text-xs text-neutral-500 truncate">{summary}</span>
+          )}
+          {open ? (
+            <ChevronDown className="w-4 h-4 text-neutral-400 shrink-0" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-neutral-400 shrink-0" />
+          )}
+        </span>
+      </button>
+      {open && <div className="pb-4">{children}</div>}
+    </div>
+  )
+}
+
 /**
  * **商品组**（issue #4485）：一块布（同商品 / 同色 / 同门幅）下挂**多个部位行**。
  *
@@ -2085,8 +2144,12 @@ function LineItemBlock({
   onEdgeUnitPriceChange,
 }: LineItemBlockProps) {
   const colorOptions = useMemo(() => uniqueColors(line.product?.skus), [line.product])
-  /** 加工选项默认折叠（issue #4489 判据 3）—— 只影响渲染 */
-  const [processingOpen, setProcessingOpen] = useState(false)
+  /** 当前展开的**向导步骤**（issue #4511 手风琴）：1 尺寸与数量 / 2 工艺规格 / 3 加工项 / 4 特殊选项 */
+  const [openStep, setOpenStep] = useState(1)
+  const stepProps = (n: number) => ({
+    open: openStep === n,
+    onToggle: () => setOpenStep(openStep === n ? 0 : n),
+  })
   const selectedProcessingCount = Object.values(line.selectedProcessing).filter(
     (c) => c.selected
   ).length
@@ -2171,12 +2234,15 @@ function LineItemBlock({
           与「从没点过」在 props 上不可区分 ⇒ 重挂后被联动重新覆盖。保持挂载即消除该窄路径。 */}
       <div className={line.collapsed ? 'hidden' : 'p-4'}>
 
+            {/* ① 尺寸与数量 */}
+            <WizardStep
+              step={1}
+              title="尺寸与数量"
+              summary={`${summarySize} · ${line.quantity} 米 · ${formatAmount(Number(line.unitPrice) || 0)}/米`}
+              {...stepProps(1)}
+            >
             {/* 尺寸与数量（issue #4420 分区①）：宽 / 高 必填 + 数量 / 单价 */}
             <div className="pt-3 border-t border-neutral-100">
-              <div className="flex items-center gap-2 mb-1">
-                <Ruler className="w-4 h-4 text-neutral-500" />
-                <span className="text-sm font-medium text-neutral-700">尺寸与数量</span>
-              </div>
               <p className="mb-3 text-xs text-neutral-400">
                 宽 / 高按成品尺寸填，单位米。同一樘窗的布帘与纱帘高度常不同 ⇒ 每个部位各填各的
               </p>
@@ -2274,39 +2340,33 @@ function LineItemBlock({
               </div>
             </div>
 
-            {/* 加工选项（店铺级目录，与商品解耦 —— issue #4371）。
-                issue #4489 判据 3：**默认折叠**（与「特殊选项」同款）—— 商家「太多点选了」，
-                未选时只报「未选」，展开才列目录。 */}
-            <div className="pt-2 border-t border-neutral-100">
-              <button
-                type="button"
-                onClick={() => setProcessingOpen((v) => !v)}
-                aria-expanded={processingOpen}
-                className="w-full flex items-center justify-between gap-2 mb-1"
-              >
-                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-700">
-                  {processingOpen ? (
-                    <ChevronDown className="w-4 h-4 text-neutral-400" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-neutral-400" />
-                  )}
-                  <Settings2 className="w-4 h-4 text-neutral-500" />
-                  加工选项
-                  <span className="text-xs font-normal text-neutral-400">（可选）</span>
-                </span>
-                <span
-                  className={
-                    'text-xs ' +
-                    (selectedProcessingCount > 0
-                      ? 'text-primary-600 font-medium'
-                      : 'text-neutral-400')
-                  }
-                >
-                  {selectedProcessingCount > 0 ? `已选 ${selectedProcessingCount} 项` : '未选'}
-                </span>
-              </button>
-              {processingOpen && (
-                <>
+            </WizardStep>
+
+            {/* ② 工艺规格（§4.2 字段表 A + §4.8 双拼） */}
+            <WizardStep
+              step={2}
+              title="工艺规格"
+              summary={summarySpec || '按行业默认'}
+              {...stepProps(2)}
+            >
+              <OrderCraftFields
+                value={line.craft}
+                onChange={onChangeCraft}
+                mainMeters={line.quantity}
+                edgeMeters={line.edgeMeters}
+                onEdgeMetersChange={onEdgeMetersChange}
+                edgeUnitPrice={line.edgeUnitPrice}
+                onEdgeUnitPriceChange={onEdgeUnitPriceChange}
+              />
+            </WizardStep>
+
+            {/* ③ 加工项 */}
+            <WizardStep
+              step={3}
+              title="加工项"
+              summary={selectedProcessingCount > 0 ? `已选 ${selectedProcessingCount} 项` : '未选'}
+              {...stepProps(3)}
+            >
               {processingLoading ? (
                 <div className="text-sm text-neutral-400 py-2">加工项加载中…</div>
               ) : line.processingItems.length === 0 ? (
@@ -2350,29 +2410,21 @@ function LineItemBlock({
                   })}
                 </div>
               )}
-                </>
-              )}
-            </div>
+            </WizardStep>
 
-            {/* 「樘窗」输入已移除（issue #4486，用户裁定「我感觉不需要」）；
-                「新增部位」按钮移到**商品组底部**（issue #4485：部位嵌在商品下，不是新开一张商品卡）。 */}
-
-            {/* 工艺规格（§4.2 字段表 A + §4.8 双拼）。
-                ⚠️ **不收起**（issue #4508 撤销了 #4493 的「默认收起为摘要」那一层）：
-                它把「特殊选项」藏进了**第二层折叠**（用户实测「特殊选项怎么看不到了」）。
-                「点选多」这个问题已由**默认档 8 项全覆盖**解决 ⇒ 商家常态本就不用点，
-                收起是多余的，还赔上了特殊选项的可见性。 */}
-            <div className="pt-3 border-t border-neutral-100">
-              <OrderCraftFields
-                value={line.craft}
-                onChange={onChangeCraft}
-                mainMeters={line.quantity}
-                edgeMeters={line.edgeMeters}
-                onEdgeMetersChange={onEdgeMetersChange}
-                edgeUnitPrice={line.edgeUnitPrice}
-                onEdgeUnitPriceChange={onEdgeUnitPriceChange}
+            {/* ④ 特殊选项（issue #4511：从工艺规格里**抽出来**，与 ②③ 平级） */}
+            <WizardStep
+              step={4}
+              title="特殊选项"
+              summary={(line.craft.specialOptions ?? []).length > 0 ? `已选 ${(line.craft.specialOptions ?? []).length} 项` : '未选'}
+              {...stepProps(4)}
+            >
+              <OrderExtraOptions
+                value={line.craft.specialOptions}
+                onChange={(next) => onChangeCraft({ specialOptions: next })}
               />
-            </div>
+            </WizardStep>
+
       </div>
     </div>
   )

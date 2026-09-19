@@ -219,7 +219,9 @@ describe('下单页算料试算接线（#4434）', () => {
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
 
     mockCraftCalcPreview.mockClear()
-    // 工艺改成 chips（issue #4489 判据 1）；#4508 起工艺规格**常显**（不再收起）
+    // issue #4511 手风琴：工艺规格是向导② ⇒ 先展开该步，再一击即中
+    const craftStep = screen.getAllByRole('button', { name: /^\d+ 工艺规格/ })[0]
+    if (craftStep.getAttribute('aria-expanded') === 'false') fireEvent.click(craftStep)
     fireEvent.click(
       within(screen.getAllByRole('radiogroup', { name: '工艺' })[0]).getByRole('radio', {
         name: '打孔',

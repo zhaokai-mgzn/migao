@@ -87,9 +87,9 @@ const feeMatched = (amount = 133) => ({
   },
 })
 
-/** 展开「加工选项」折叠区（issue #4489 判据 3：默认折叠） */
+/** 展开向导③「加工项」步骤（issue #4511 手风琴；#4489 判据 3：默认收起） */
 const expandProcessing = () => {
-  const btn = screen.getAllByRole('button', { name: /加工选项/ })[0]
+  const btn = screen.getAllByRole('button', { name: /^\d+ 加工项/ })[0]
   if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
 }
 
