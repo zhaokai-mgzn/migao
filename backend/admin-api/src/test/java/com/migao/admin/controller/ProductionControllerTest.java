@@ -163,7 +163,7 @@ class ProductionControllerTest {
         // 路线/信号写面（issue #4308）：真实对象（只 mock Mapper），响应形态 = 路线展示形态（同一份）
         ProductionRoutingCommandService routingCommandService = new ProductionRoutingCommandService(
                 productionRouteTemplateMapper, routingVersionMapper, productionOperationMapper,
-                queryService);
+                queryService, productionRouteRuleMapper);
         // 加工费组合定价（issue #4386）：真实服务（只 mock Mapper），写面响应形态 = 列表项形态
         // （同一份 combinationView）。控制器里这两个依赖是**字段注入**（不动既有 6 参构造），
         // 故这里用 ReflectionTestUtils 装配 —— 目的只是让新端点可达，不改既有端点的装配。

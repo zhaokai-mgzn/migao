@@ -10,7 +10,7 @@
 | 种子价与生成器漂移 | 「固定种子生成一次、写死」这条硬约束失效 ⇒ 定价不可复现 | `test_seed_rows_match_the_deterministic_generator` |
 | 种子缺 `source='synthetic'` | 测试价被当成真实价目（设计 §7 硬约束 ②） | 同上 + `test_seed_carries_synthetic_provenance` |
 | 合成价以 `active` 落库 | **生产 tenant 1 按随机价收费**（P1 钱风险） | `test_synthetic_combination_rows_are_all_disabled` |
-| 合成选项价落 `customer_unit_price` | 同上（该列无 status 可门控） | `test_migration_never_prices_customer_unit_price` |
+| V82 没给 `option` 行落价 / 落错值 / 落错行 / 覆盖商家改价 | 特殊选项全按 0 收（白送）或**按错价收费**（改钱） | `test_v82_prices_exactly_the_option_rows` |
 | 计件路径读了本列 | 对客售价泄漏成工人计件单价（两套账互读，判据 10） | `test_piecework_paths_never_read_customer_unit_price` |
 | 读面改成重算 | 改价回算历史订单（R13 快照冻结被破，判据 11） | `test_read_paths_still_read_the_persisted_detail` |
 
@@ -21,15 +21,22 @@
 把一处假读取注入到**临时副本**上必须被照出来。没有这两条，上面的逐值比对与 grep 守卫
 都可能「绿了但没跑」。
 
-## 🔴 合成价**一律不得参与取价**（issue #4525 复核的 P1 钱风险）
+## 🔴 两条红线：合成组合价**不得参与取价** + 选项初始价**必须被钉死**（2026-09-19 改判）
 
 `MigrationRunner` 在 **admin-api 启动时**执行迁移 ⇒ **生产一样会跑**；而取价侧只过滤
 `status='active'`（**不按 `source` 过滤**）⇒ 任何一行 active 的合成价 = 生产 tenant 1
 按随机价收费。故本文件钉两条红线：
 
-* `test_synthetic_combination_rows_are_all_disabled` —— 92 行组合价**全部** `status='disabled'`；
-* `test_migration_never_prices_customer_unit_price` —— 迁移**不得**给 `customer_unit_price`
-  落任何价（该列无 status 可门控 ⇒ 恒 `NULL` = 未定价 ⇒ `priced:false` 显式可见）。
+* `test_synthetic_combination_rows_are_all_disabled` —— 92 行组合价**全部** `status='disabled'`
+  （**口径不变**：组合价仍是「商家配了并启用才生效」）；
+* `test_v82_prices_exactly_the_option_rows` —— **本判据由用户裁定改判**：V77 的口径是
+  「迁移**不得**给 `customer_unit_price` 落任何价」（该列**无 status 可门控** ⇒ 落价即参与
+  真实取价），而用户 2026-09-19 裁定「**特殊选项缺乏单价，通常按套收费**」「**特殊选项要有
+  定价，随便初始化一份价格数据，单价是元/套**」⇒ 新判据 = **落价的范围与值都必须被钉死**：
+  恰好 **16 条 `option` 行**、值**逐值**等于冻结清单、只在 `customer_unit_price IS NULL` 时写
+  （**不覆盖商家改过的价**）、按租户（`FROM tenants`）、非 `option` 行保持 `NULL`。
+  **已知代价（不粉饰）**：这 16 个**占位初始值会真的参与对客取价** —— 商家改价之前，选中这些
+  特殊选项的订单就按这批价收费（用户已知并接受；改价即覆盖）。
 
 ## ⚠️ 设计文档与代码事实的冲突（以代码事实为准）
 
@@ -54,6 +61,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import synthetic_processing_fee_data as synthetic  # noqa: E402
 
 MIGRATION = REPO / "backend/admin-api/src/main/resources/db/migration/V77__customer_option_unit_price.sql"
+V82 = REPO / "backend/admin-api/src/main/resources/db/migration/V82__seed_option_customer_unit_price.sql"
 SCHEMA = REPO / "docs/sql/schema.sql"
 FIXTURE = REPO / "tests/e2e/fixtures/processing-list.json"
 JAVA_MAIN = REPO / "backend/admin-api/src/main/java"
@@ -64,6 +72,16 @@ CUSTOMER_PRICE_READ_ALLOWLIST = {
     "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCalculator.java",
     # 实体字段声明本身（不是"读取"，但字符串会命中 ⇒ 显式登记，避免守卫退化成"全部命中"）
     "backend/admin-api/src/main/java/com/migao/admin/entity/ProductionRouteRule.java",
+    # 配置读面（issue #4567，用户裁定「特殊选项要有定价」）：把该列**原样透出**给
+    # 「工艺配置 → 条件工序规则」页的「单价（元/套）」列。**不是**计件路径。
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingReadService.java",
+    # 配置写面（issue #4567）：把商家填的「单价（元/套）」**原样写入**该列（含 422 逐条理由）。
+    # 只写这一列，**不碰** `factor`（计件系数）—— 两套账不互读。
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
+    # 写面的单列更新语句（`updateCustomerUnitPrice`：set 该列 + 租户隔离条件）
+    "backend/admin-api/src/main/java/com/migao/admin/mapper/ProductionRouteRuleMapper.java",
+    # 端点 javadoc 说明该键语义（无任何逻辑读取）
+    "backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java",
 }
 
 _ROW_RE = re.compile(r"\(([^()]*)\)")
@@ -165,7 +183,7 @@ def test_v77_migration_is_idempotent():
     assert re.search(r"ON\s+CONFLICT\s*\(id\)\s+DO\s+NOTHING", sql, re.I), \
         "组合价目种子没有 `ON CONFLICT (id) DO NOTHING`（重复执行会主键冲突）"
     assert not re.search(r"^\s*UPDATE\s", sql, re.M | re.I), \
-        "V77 不该有任何 UPDATE（合成选项价不落库 —— 见文件头「合成价一律不得参与取价」）"
+        "V77 不该有任何 UPDATE（合成选项价不在 V77 落库 —— 落价走 V82，见文件头两条红线）"
 
 
 def test_synthetic_combination_rows_are_all_disabled():
@@ -192,27 +210,134 @@ def test_synthetic_combination_rows_are_all_disabled():
         f" —— 生产 tenant 1 会按随机价收费（#4525 P1 钱风险）")
 
 
-def test_migration_never_prices_customer_unit_price():
-    """🔴 V77 **不得**给 `customer_unit_price` 落任何价（复核裁定 (i)：列无 status 可门控）。
+# ── V82：16 条 `option` 行的**初始对客价**（用户裁定 2026-09-19，**推翻** V77 的「恒 NULL」）──
+#
+# 冻结清单 = 用户裁定的 16 个占位初始值（元/套）。⚠️ 它们**不是测试资产**：该列没有 status 可
+# 门控，落库即参与对客取价 ⇒ **改这里 = 改钱**（改动必须走新迁移 + 同步改本清单 + schema.sql）。
+FROZEN_OPTION_PRICES = {
+    "拼1次": "3.00", "拼2次": "5.00", "拼3次": "7.00", "加花边": "4.00",
+    "加铅块": "6.00", "接高": "2.50", "双眼皮接高": "5.00", "余料做绑带": "2.00",
+    "布绑带": "3.00", "余料做帘头": "8.00", "抱枕": "12.00", "纱绑带": "3.00",
+    "加logo条": "2.00", "加立边": "4.00", "扣环": "1.50", "防翘扣": "1.50",
+}
 
-    取价侧判据是 `customer_unit_price IS NOT NULL`（`optionPrices` 只收非空行）⇒ 列一旦被
-    合成值填充，**生产 tenant 1 的特殊选项就按随机价收费**，且没有任何 status 能挡住它。
-    ⇒ 合成选项价**只作测试资产**（注释块 + 生成器），库中该列恒 `NULL` = 未定价
-    （取价侧 `priced:false` + 可行动 hint，显式可见、不静默按 0 收）。
+NON_OPTION_TRIGGER_KINDS = ("craft", "shaped", "processing_item")
 
-    判据：出现任何把该列写成非空值的语句 ⇒ 红。**可红性自证**见下方注入断言。
+
+def _strip_sql_comments(sql: str) -> str:
+    """剥掉 SQL 注释 —— 守卫必须判**真语句**（注释里写一句 `IS NULL` 不算守卫）。"""
+    sql = re.sub(r"/\*[\s\S]*?\*/", " ", sql)
+    return re.sub(r"--[^\n]*", " ", sql)
+
+
+def v82_text() -> str:
+    assert V82.exists(), f"V82 迁移缺失：{V82}"
+    return V82.read_text(encoding="utf-8")
+
+
+def option_price_rows(sql: str) -> dict:
+    """V82 的 `(VALUES …) AS v(trigger_value, unit_price)` → `{trigger_value: '元/套'}`（**逐值**）。
+
+    ⚠️ 必须从 `AS v(trigger_value, unit_price)` 往**回**找**最近**的 `VALUES`
+    —— 非贪婪的 `VALUES(.*?)…` 在 `schema.sql`（几万行、前面还有别的 `VALUES` 种子）上会
+    从**文件里第一个** `VALUES` 开始吞，解析出错位的行（实测）。
     """
-    sql = migration_text()
-    assert not re.search(r"SET\s+customer_unit_price\s*=", sql, re.I), \
-        "V77 里出现了 `SET customer_unit_price = …` ⇒ 合成选项价会参与真实取价（#4525 P1）"
-    # 注入式自证：同形态的语句必须被本条判据照出来
-    injected = "UPDATE production_route_rules AS r SET customer_unit_price = 9.99 FROM (VALUES (1)) v;"
-    assert re.search(r"SET\s+customer_unit_price\s*=", injected, re.I), \
-        "本判据读不出注入的 `SET customer_unit_price =` ⇒ 它是空断言"
-    # 生成器仍保留 16 条合成价作为**测试资产**（可重算、逐值相同）
-    options = synthetic.option_rows()
-    assert len(options) == 16
-    assert {o["source"] for o in options} == {"synthetic"}
+    end = re.search(r"\)\s*AS\s+v\s*\(\s*trigger_value\s*,\s*unit_price\s*\)", sql, re.I)
+    assert end, "没有 `(VALUES …) AS v(trigger_value, unit_price)` 段"
+    starts = [m.end() for m in re.finditer(r"\bVALUES\b", sql[:end.start()], re.I)]
+    assert starts, "`AS v(trigger_value, unit_price)` 之前没有 `VALUES` 段"
+    rows = {}
+    for fields in _split_values(sql[starts[-1]:end.start()]):
+        assert len(fields) == 2, f"选项价行不是 2 列（列序漂移即解析错位）: {fields}"
+        rows[_unquote(fields[0])] = f"{float(fields[1]):.2f}"
+    return rows
+
+
+def non_option_pricing_violations(sql: str) -> list:
+    """**写价面**的三条不变量（逐条返回违规说明；空列表 = 合规）。
+
+    ① 只按 `trigger_kind = 'option'` 写价（工艺变体 / 定型 / 计件项不得被定价）；
+    ② 有 `customer_unit_price IS NULL` 幂等守卫（**不覆盖商家改过的价**）；
+    ③ 按租户（`FROM tenants`）—— 只覆盖 1 号租户 ⇒ 其它租户**永远没价**。
+    """
+    hits = []
+    for kind in NON_OPTION_TRIGGER_KINDS:
+        if re.search(rf"trigger_kind\s*=\s*'{kind}'", sql, re.I):
+            hits.append(f"出现了非 option 触发的写价路径：trigger_kind = '{kind}'")
+    updates = re.findall(r"\bUPDATE\s+production_route_rules\b(.*?);", sql, re.S | re.I)
+    if not updates:
+        hits.append("没有任何 `UPDATE production_route_rules …;` 语句（解析失效 ⇒ 本判据空跑）")
+    for stmt in updates:
+        if not re.search(r"trigger_kind\s*=\s*'option'", stmt, re.I):
+            hits.append("有一条 UPDATE 没有 `trigger_kind = 'option'` 门控")
+        if not re.search(r"customer_unit_price\s+IS\s+NULL", stmt, re.I):
+            hits.append("有一条 UPDATE 没有 `customer_unit_price IS NULL` 幂等守卫（会刷回商家改价）")
+        if not re.search(r"\bFROM\s+tenants\b", stmt, re.I):
+            hits.append("有一条 UPDATE 没有按租户（缺 `FROM tenants` ⇒ 其它租户永远没价）")
+    return hits
+
+
+def test_v82_prices_exactly_the_option_rows():
+    """🔴 V82 必须**恰好**给 16 条 `option` 规则行定价，值**逐值**等于冻结清单（用户裁定 2026-09-19）。
+
+    **改判沿革**：本判据前身是 `test_migration_never_prices_customer_unit_price`
+    （「迁移**不得**给 `customer_unit_price` 落任何价」）。V77 的顾虑 —— 该列**无 status 可门控**
+    ⇒ 落价即参与真实取价 —— **依然成立**；但用户 2026-09-19 裁定「特殊选项缺乏单价，通常按套收费」
+    「特殊选项要有定价，随便初始化一份价格数据，单价是元/套」⇒ 判据从「不许落价」改判为
+    **「落价的范围与值都必须被钉死」**。新判据**更强**：原判据只挡「有没有落价」，
+    新判据还挡「落错值 / 落错行 / 覆盖商家改价 / 只覆盖 1 号租户」。
+
+    **已知代价（不粉饰）**：这 16 个占位值**会真的参与对客取价**（取价侧只判 `IS NOT NULL`）。
+    """
+    sql = _strip_sql_comments(v82_text())
+    rows = option_price_rows(sql)
+    assert len(rows) == 16, f"V82 定价的 option 行不是 16 条：{len(rows)} —— {sorted(rows)}"
+    assert rows == FROZEN_OPTION_PRICES, (
+        f"V82 的价与冻结清单不一致（**改价 = 改钱**）：\n  迁移 = {rows}\n  清单 = {FROZEN_OPTION_PRICES}")
+    violations = non_option_pricing_violations(sql)
+    assert violations == [], "V82 写价面违反不变量：" + "; ".join(violations)
+    assert re.search(r"customer_unit_price\s+IS\s+NULL", sql, re.I), \
+        "V82 缺 `customer_unit_price IS NULL` 幂等守卫"
+    assert re.search(r"\bFROM\s+tenants\b", sql, re.I), \
+        "V82 缺 `FROM tenants` ⇒ 只覆盖 1 号租户，其它租户永远没价"
+
+
+def test_v82_guard_detects_injected_drift():
+    """**红证（注入式）**：改价 / 少一项 / 落错行 / 去掉守卫 / 去掉按租户 ⇒ 上面每条断言都会红。
+
+    没有这一条，「逐值比对」与「三条不变量」都可能是空断言（不会红的断言 = 空断言）。
+    """
+    sql = _strip_sql_comments(v82_text())
+    base = option_price_rows(sql)
+    assert base, "解析出的选项价为 0 条 ⇒ 后续比对是空断言"
+
+    # ① 改一个价 ⇒ 逐值比对必须读出差异
+    drifted = sql.replace("('拼1次', 3.00)", "('拼1次', 9.99)")
+    assert option_price_rows(drifted) != base, "改价读不出来 ⇒ 逐值比对是空断言"
+    # ② 少一项 ⇒ 条数比对必须读出差异
+    assert len(option_price_rows(sql.replace("('拼1次', 3.00),", "", 1))) == 15, "少一项读不出来"
+    # ③ 落错行（非 option 触发）⇒ 不变量 ① 必须报出
+    assert non_option_pricing_violations(
+        sql + "UPDATE production_route_rules SET customer_unit_price = 1.00 "
+              "WHERE trigger_kind = 'craft' AND customer_unit_price IS NULL;"), "落错行读不出来"
+    # ④ 去掉 `IS NULL` 守卫 ⇒ 不变量 ② 必须报出
+    assert non_option_pricing_violations(sql.replace("customer_unit_price IS NULL", "TRUE")), \
+        "去掉幂等守卫读不出来"
+    # ⑤ 去掉按租户 ⇒ 不变量 ③ 必须报出
+    assert non_option_pricing_violations(sql.replace("FROM tenants t,", "", 1)), \
+        "去掉按租户读不出来"
+
+
+def test_schema_sql_carries_the_same_option_prices():
+    """bootstrap 终态（`docs/sql/schema.sql`）必须带**同源同值**的写价语句。
+
+    该路径**不跑迁移链**（docker-entrypoint-initdb.d）⇒ 只改 V82 = 新建库（CI / 本地 docker 栈）
+    选项全无价（同 #3270 形态）。判据 = 与 V82 **同一解析器**、逐值相等。
+    """
+    sql = _strip_sql_comments(SCHEMA.read_text(encoding="utf-8"))
+    assert option_price_rows(sql) == FROZEN_OPTION_PRICES, \
+        "schema.sql 的选项初始价与 V82 不同源（bootstrap 库与迁移库分叉）"
+    assert non_option_pricing_violations(sql) == [], "schema.sql 的写价面违反不变量"
 
 
 # ══════════════════════════ ② 种子（设计 §7）══════════════════════════
@@ -259,8 +384,9 @@ def test_priced_option_rows_are_exactly_the_option_rules():
 
     逐条点名而不是只数条数：少一条 = 那个选项在测试资产里缺失（无从核对「未定价 vs 定价」两层）。
 
-    ⚠️ 这些价**不落库**（复核裁定 (i)）⇒ 判据落在**生成器**上，并由
-    `test_migration_never_prices_customer_unit_price` 保证迁移不把它们写进库。
+    ⚠️ 生成器里的 16 条合成价是**测试资产**（可重算）；**对客取价的真值源是 V82 的 16 条初始价**
+    （用户裁定 2026-09-19）⇒ 本判据只钉「选项清单恰好 16 项」，**落价的范围与值**由
+    `test_v82_prices_exactly_the_option_rows` 钉死。
     """
     options = synthetic.option_rows()
     expected_ids = {row["rule_id"] for row in options}
@@ -330,7 +456,14 @@ def test_piecework_paths_never_read_customer_unit_price():
     """计件路径**零读取** `customer_unit_price`（判据 10；设计 §4.1 的两套账不互读）。
 
     列名带 `customer_` 前缀的全部理由就是让这条纪律**在 grep 层可判**：本判据扫 `main` 源码，
-    只有取价层（`ProcessingFeeCalculator`）与实体字段声明可以出现该标识符。
+    只有**取价层**（`ProcessingFeeCalculator`）、**实体字段声明**、以及 **issue #4567 起新增的
+    配置面**（读面 `ProductionRoutingReadService` + 端点 `ProductionController`：用户裁定
+    「特殊选项要有定价」⇒ 商家必须能看见并改这个价）可以出现该标识符。
+
+    ⚠️ **这不是放宽计件纪律**：配置面只做「原样透出 / 原样写入」，不参与任何计件计算；
+    两套账的实质边界（`factor` 与 `customer_unit_price` 不互读）由
+    `ProcessingFeeCalculatorTest::customerFeeNeverReadsPieceworkFactor` 独立钉住。
+    新增**任何其它**文件出现该标识符 ⇒ 仍判红。
     """
     sources = java_main_sources()
     assert sources, "没扫到任何 Java 源码 ⇒ 本判据是空跑"

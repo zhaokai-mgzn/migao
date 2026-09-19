@@ -40,6 +40,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -54,6 +55,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -148,7 +150,7 @@ class ProductionRoutingReadControllerTest {
                 productionOperationMapper, priceVersionMapper, queryService);
         ProductionRoutingCommandService routingCommandService = new ProductionRoutingCommandService(
                 productionRouteTemplateMapper, routingVersionMapper, productionOperationMapper,
-                queryService);
+                queryService, productionRouteRuleMapper);
         ProductionController controller = new ProductionController(service, queryService, commandService,
                 routingCommandService, processingOrderService, orderService);
         // 新读面（issue #4500）：真实服务（只 mock 两张新表的 Mapper）
@@ -176,9 +178,15 @@ class ProductionRoutingReadControllerTest {
 
     private ProductionRouteRule rule(String id, String kind, String trigger, String pos, String action,
                                      String operation, String after, int priority) {
+        return rule(id, kind, trigger, pos, action, operation, after, priority, null);
+    }
+
+    private ProductionRouteRule rule(String id, String kind, String trigger, String pos, String action,
+                                     String operation, String after, int priority, String customerUnitPrice) {
         return ProductionRouteRule.builder()
                 .id(id).tenantId(TENANT).triggerKind(kind).triggerValue(trigger).position(pos)
                 .action(action).operation(operation).afterOperation(after).priority(priority)
+                .customerUnitPrice(customerUnitPrice == null ? null : new BigDecimal(customerUnitPrice))
                 .status("active").deleted(0).build();
     }
 
@@ -211,10 +219,10 @@ class ProductionRoutingReadControllerTest {
     }
 
     @Test
-    @DisplayName("GET /route-rules ⇒ 9 键逐字，乱序入库也按 (priority, id) 返回（同 priority 按 id）")
+    @DisplayName("GET /route-rules ⇒ 10 键逐字，乱序入库也按 (priority, id) 返回（同 priority 按 id）")
     void routeRulesReturnsRulesInPriorityThenIdOrder() throws Exception {
         when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of(
-                rule("rr-v70-26", "option", "防翘扣", null, "insert", "防翘扣", "三边", 260),
+                rule("rr-v70-26", "option", "防翘扣", null, "insert", "防翘扣", "三边", 260, "15.00"),
                 rule("rr-v70-03", "craft", "打孔", null, "insert", "打孔", "三边", 30),
                 rule("rr-v70-02", "craft", "韩褶", "布帘", "insert", "上车布", "韩褶", 20),
                 rule("rr-v70-01", "craft", "韩褶", null, "insert", "韩褶", "三边", 20)));
@@ -228,8 +236,8 @@ class ProductionRoutingReadControllerTest {
                 .andExpect(jsonPath("$.data[1].id").value("rr-v70-02"))
                 .andExpect(jsonPath("$.data[2].id").value("rr-v70-03"))
                 .andExpect(jsonPath("$.data[3].id").value("rr-v70-26"))
-                // 键集逐字（issue #4500 冻结）：不多不少（9 个）
-                .andExpect(jsonPath("$.data[0].length()").value(9))
+                // 键集逐字（issue #4500 冻结 + #4567 追加 customer_unit_price）：不多不少（10 个）
+                .andExpect(jsonPath("$.data[0].length()").value(10))
                 .andExpect(jsonPath("$.data[0].trigger_kind").value("craft"))
                 .andExpect(jsonPath("$.data[0].trigger_value").value("韩褶"))
                 .andExpect(jsonPath("$.data[0].position").isEmpty())
@@ -237,7 +245,11 @@ class ProductionRoutingReadControllerTest {
                 .andExpect(jsonPath("$.data[0].operation").value("韩褶"))
                 .andExpect(jsonPath("$.data[0].after_operation").value("三边"))
                 .andExpect(jsonPath("$.data[0].priority").value(20))
-                .andExpect(jsonPath("$.data[0].status").value("active"));
+                .andExpect(jsonPath("$.data[0].status").value("active"))
+                // 未定价的工艺行 ⇒ **null**（不是 0 —— 未定价 ≠ 0 元）
+                .andExpect(jsonPath("$.data[0].customer_unit_price").isEmpty())
+                // 有价的特殊选项行 ⇒ 原样透出（元/套）
+                .andExpect(jsonPath("$.data[3].customer_unit_price").value(15.00));
     }
 
     @Test
@@ -265,8 +277,46 @@ class ProductionRoutingReadControllerTest {
         assertThat(rows.get(1).get("unit_price")).isNull();
     }
 
-    // ── 判据 2：权限与租户隔离 ──
+    @Test
+    @DisplayName("PUT /route-rules/{id}/customer-unit-price ⇒ 200 + 逐条护栏（非 option 422 / 负数 422 / 三位小数 422）")
+    void customerUnitPriceEndpointWritesOnlyOptionRules() throws Exception {
+        when(productionRouteRuleMapper.selectById("rr-opt-1"))
+                .thenReturn(rule("rr-opt-1", "option", "拼2次", null, "insert", "拼缝", null, 210));
 
+        mockMvc.perform(put("/api/admin/production/route-rules/rr-opt-1/customer-unit-price")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"customer_unit_price\":\"6.00\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.trigger_kind").value("option"))
+                .andExpect(jsonPath("$.data.customer_unit_price").value(6.00));
+
+        // 非 option 行 ⇒ 422（只有特殊选项按套计价）
+        when(productionRouteRuleMapper.selectById("rr-craft-1"))
+                .thenReturn(rule("rr-craft-1", "craft", "韩褶", null, "insert", "韩褶", "三边", 20));
+        mockMvc.perform(put("/api/admin/production/route-rules/rr-craft-1/customer-unit-price")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"customer_unit_price\":\"6.00\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.details[0].field").value("trigger_kind"));
+
+        // 负数 / 三位小数 ⇒ 422 逐条理由（不静默四舍五入）
+        for (String bad : new String[]{"-1", "6.005"}) {
+            mockMvc.perform(put("/api/admin/production/route-rules/rr-opt-1/customer-unit-price")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"customer_unit_price\":\"" + bad + "\"}"))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.error.details[0].field").value("customer_unit_price"));
+        }
+
+        // 行不存在 ⇒ 404
+        mockMvc.perform(put("/api/admin/production/route-rules/nope/customer-unit-price")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"customer_unit_price\":\"6.00\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    // ── 判据 2：权限与租户隔离 ──
     @Test
     @DisplayName("两个端点都声明 processing:manage（类级 order:list 会被方法级覆盖）")
     void endpointsDeclareManagePermission() throws Exception {

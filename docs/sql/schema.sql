@@ -2345,6 +2345,45 @@ SELECT 'rr-v72-' || t.id || '-' || r.rid, t.id, r.trigger_kind, r.trigger_value,
           AND e.action = r.action AND e.operation = r.operation)
 ON CONFLICT (id) DO NOTHING;
 
+-- ── 特殊选项**对客按套单价**的初始价目（V82，issue #4567；用户裁定 2026-09-19）──
+-- 与 `V82__seed_option_customer_unit_price.sql` ① 段**同源同值**（16 项，逐字 trigger_value → 元/套）：
+--   · 用户裁定「特殊选项缺乏单价，通常按套收费」「随便初始化一份价格数据，单价是元/套」
+--     ⇒ 推翻 V77 的「该列恒 NULL」口径；
+--   · ⚠️ 这 16 个值是**占位初始值**且**会真的参与对客取价**（该列无 status 可门控）——**不是测试资产**；
+--   · 幂等 + 不覆盖商家改动：只在 `customer_unit_price IS NULL` 时写 ⇒ 重跑空转、商家改过的价不刷回；
+--   · 非 `option` 行（工艺变体 / 定型 / 计件系数档 `action='factor'`）一律保持 NULL；
+--   · 按租户循环（`FROM tenants`）：只覆盖 1 号租户 ⇒ 其它租户永远没价。
+-- bootstrap 路径（docker-entrypoint-initdb.d）**不跑迁移链** ⇒ 此处必须自带终态（否则新建库选项无价，#3270）。
+UPDATE production_route_rules
+   SET customer_unit_price = v.unit_price,
+       updated_at = NOW()
+  FROM tenants t,
+       (VALUES
+           ('拼1次', 3.00),
+           ('拼2次', 5.00),
+           ('拼3次', 7.00),
+           ('加花边', 4.00),
+           ('加铅块', 6.00),
+           ('接高', 2.50),
+           ('双眼皮接高', 5.00),
+           ('余料做绑带', 2.00),
+           ('布绑带', 3.00),
+           ('余料做帘头', 8.00),
+           ('抱枕', 12.00),
+           ('纱绑带', 3.00),
+           ('加logo条', 2.00),
+           ('加立边', 4.00),
+           ('扣环', 1.50),
+           ('防翘扣', 1.50)
+       ) AS v(trigger_value, unit_price)
+ WHERE t.deleted = 0
+   AND production_route_rules.tenant_id = t.id
+   AND production_route_rules.deleted = 0
+   AND production_route_rules.trigger_kind = 'option'
+   AND production_route_rules.action <> 'factor'
+   AND production_route_rules.trigger_value = v.trigger_value
+   AND production_route_rules.customer_unit_price IS NULL;
+
 -- 计件系数档搬进规则表（`action='factor'`）：旧 `production_option_factors` 的档位。
 -- ⚠️ 只软删旧表而不搬迁 = **静默丢掉计件系数**（一分为二 ×1.7 消失 ⇒ 工人少发钱）。
 INSERT INTO production_route_rules

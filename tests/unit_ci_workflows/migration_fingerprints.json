@@ -80,6 +80,7 @@
     "V79__seed_fabric_route_and_packing_operation.sql": "sha256:6961a88ab088e36ca7224e4b8d577de7a053d97003c50b5426d2cc8c0cb81a80",
     "V80__create_craft_calc_configs.sql": "sha256:d4d7476319d230b20aaa8a6f8596434e073df8d884a6a800442a93413e116941",
     "V81__compensate_lost_v3_v4_backfill.sql": "sha256:1d58460f359f3bc60376b6b2163d7bf4e4e684d9d13f3817efeae70623d8308b",
+    "V82__seed_option_customer_unit_price.sql": "sha256:c036980e17d7e4ec637e0c17e02c56a28d81249063f396fd32f8d10b4c839237",
     "V83__seed_processing_item_catalog.sql": "sha256:6dc4d5ad9260db5857ac7780013caafdc0afef540c0f2365b1ceda78ac08e730"
   }
 }

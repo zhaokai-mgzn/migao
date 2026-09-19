@@ -33,7 +33,7 @@ import java.time.OffsetDateTime;
  * （工序顺序错 = 车间按错顺序干）。</p>
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 @TableName(value = "production_route_rules", autoResultMap = true)

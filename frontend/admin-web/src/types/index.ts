@@ -943,6 +943,20 @@ export interface RouteRule {
   /** 规则应用顺序（`remove` 不先于 `insert` 完全由它决定）—— 顺序敏感 */
   priority?: number | null
   status?: string | null
+  /**
+   * 客户单价 —— **元/套**（V77；行业口径：特殊选项按**套**收费）。
+   * `null` = **未定价**（**≠ 0 元**，不得渲染成 `¥0.00`）；非 `option` 行恒 `null`（工艺变体不按套计价）。
+   */
+  customer_unit_price?: number | string | null
+}
+
+/** `PUT /api/admin/production/route-rules/{id}/customer-unit-price` 的 body（元/套，issue #4567） */
+export interface RouteRuleCustomerPriceParams {
+  /**
+   * 对客单价（**元/套**）。`null` = 显式改回**未定价**（语义是「还没定价」，**不是** 0 元）。
+   * 服务端护栏：非 `option` 行 / 负数 / 超过两位小数 / 非数值 ⇒ 422 逐条理由。
+   */
+  customer_unit_price: number | string | null
 }
 
 

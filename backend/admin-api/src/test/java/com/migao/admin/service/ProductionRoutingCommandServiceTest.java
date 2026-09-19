@@ -6,6 +6,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
+import com.migao.admin.entity.ProductionRouteRule;
 import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionRouting;
 import com.migao.admin.entity.ProductionRoutingVersion;
@@ -89,7 +90,8 @@ class ProductionRoutingCommandServiceTest {
                 productionRouteTemplateMapper, productionRoutingVersionMapper, productionOperationMapper,
                 new ProductionOperationQueryService(productionOperationMapper, productionRouteTemplateMapper,
                         productionRouteRuleMapper, productionOperationPositionMapper,
-                        productionCraftMapper, productionRouteSignalMapper));
+                        productionCraftMapper, productionRouteSignalMapper),
+                productionRouteRuleMapper);
     }
 
     @AfterEach
@@ -131,6 +133,96 @@ class ProductionRoutingCommandServiceTest {
     private static List<String> detailFields(BusinessException e) {
         return e.getDetails() == null ? List.of()
                 : e.getDetails().stream().map(ApiResponse.ErrorDetail::getField).toList();
+    }
+
+    // ══════════ 特殊选项对客单价（元/套，issue #4567）══════════
+
+    @Test
+    @DisplayName("特殊选项定价：合法写 ⇒ 只写对客价那一列（不碰 factor）")
+    void optionCustomerPriceIsWrittenOnItsOwnColumn() {
+        when(productionRouteRuleMapper.selectById("rr-opt-1")).thenReturn(optionRule("rr-opt-1"));
+
+        Map<String, Object> result =
+                service.updateRuleCustomerUnitPrice("rr-opt-1", body("customer_unit_price", "6.00"), TENANT);
+
+        assertThat(result.get("id")).isEqualTo("rr-opt-1");
+        assertThat(result.get("trigger_kind")).isEqualTo("option");
+        // 值按 NUMERIC(12,2) 规范化后回显
+        assertThat((BigDecimal) result.get("customer_unit_price")).isEqualByComparingTo("6.00");
+        // 注入：改成实体 updateById 整行回写 ⇒ 会顺带写 factor / trigger_value 等列，断言红
+        verify(productionRouteRuleMapper).updateCustomerUnitPrice("rr-opt-1", TENANT, new BigDecimal("6.00"));
+        verify(productionRouteRuleMapper, never()).updateById(any(ProductionRouteRule.class));
+    }
+
+    @Test
+    @DisplayName("特殊选项定价：null / 空串 ⇒ 显式改回**未定价**（写 null，不是 0）")
+    void blankCustomerPriceClearsToUnpriced() {
+        when(productionRouteRuleMapper.selectById("rr-opt-1")).thenReturn(optionRule("rr-opt-1"));
+
+        service.updateRuleCustomerUnitPrice("rr-opt-1", body("customer_unit_price", null), TENANT);
+        service.updateRuleCustomerUnitPrice("rr-opt-1", body("customer_unit_price", "  "), TENANT);
+
+        // 注入：把空串当 0 元写 ⇒ 断言红（未定价 ≠ 0 元）
+        verify(productionRouteRuleMapper, org.mockito.Mockito.times(2))
+                .updateCustomerUnitPrice("rr-opt-1", TENANT, null);
+    }
+
+    @Test
+    @DisplayName("特殊选项定价：非 option 行（工艺变体）⇒ 422，**一个字节都不写**")
+    void craftRuleCannotBePriced() {
+        when(productionRouteRuleMapper.selectById("rr-craft-1"))
+                .thenReturn(optionRule("rr-craft-1").toBuilder().triggerKind("craft").build());
+
+        assertThatThrownBy(() ->
+                service.updateRuleCustomerUnitPrice("rr-craft-1", body("customer_unit_price", "6.00"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException be = (BusinessException) e;
+                    assertThat(be.getHttpStatus()).as("工艺变体按套收费 ⇒ 422").isEqualTo(422);
+                    assertThat(detailFields(be)).contains("trigger_kind");
+                });
+        verify(productionRouteRuleMapper, never()).updateCustomerUnitPrice(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("特殊选项定价：负数 / 非数值 / 三位小数 ⇒ 422，且**不静默四舍五入**")
+    void invalidCustomerPriceIsRejected() {
+        when(productionRouteRuleMapper.selectById("rr-opt-1")).thenReturn(optionRule("rr-opt-1"));
+
+        for (Object bad : List.of("-1", "abc", "6.005")) {
+            assertThatThrownBy(() ->
+                    service.updateRuleCustomerUnitPrice("rr-opt-1", body("customer_unit_price", bad), TENANT))
+                    .as("非法单价 %s 必须 422", bad)
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(422));
+        }
+        verify(productionRouteRuleMapper, never()).updateCustomerUnitPrice(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("特殊选项定价：行不存在 / 非本租户 / 已软删 ⇒ 404")
+    void unknownRuleIsNotFound() {
+        when(productionRouteRuleMapper.selectById("nope")).thenReturn(null);
+        when(productionRouteRuleMapper.selectById("rr-other"))
+                .thenReturn(optionRule("rr-other").toBuilder().tenantId(999L).build());
+        when(productionRouteRuleMapper.selectById("rr-deleted"))
+                .thenReturn(optionRule("rr-deleted").toBuilder().deleted(1).build());
+
+        for (String id : List.of("nope", "rr-other", "rr-deleted")) {
+            assertThatThrownBy(() ->
+                    service.updateRuleCustomerUnitPrice(id, body("customer_unit_price", "6.00"), TENANT))
+                    .as("%s 必须 404", id)
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(404));
+        }
+        verify(productionRouteRuleMapper, never()).updateCustomerUnitPrice(any(), any(), any());
+    }
+
+    private static ProductionRouteRule optionRule(String id) {
+        return ProductionRouteRule.builder().id(id).tenantId(TENANT)
+                .triggerKind("option").triggerValue("拼2次").position(null)
+                .action("insert").operation("拼缝").afterOperation(null).priority(210)
+                .status("active").deleted(0).build();
     }
 
     // ══════════ 判据：路线写面护栏（PG-032；P2b / issue #4459 改模板表）══════════
