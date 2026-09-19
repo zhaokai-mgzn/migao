@@ -4747,6 +4747,16 @@ _PRECONDITION_TYPES: dict = {
     # ⚠️ 计数**按名字**（不按 status）：`toggle_item_status` 正是本用例要做的写动作，
     # 若把 status 计入口径，正常行为会被判成「前置漂移」（假红）。
     "processing_item_count_for_keyword": "名字含该关键词的加工项件数（写前置：共享夹具存在且唯一）",
+    # 售后工单存在性前置（issue #4527 的 burn-down 缴费，AS-004 使用）：
+    # `source` = 用例点名的工单号（不可变键，如 `AS-20260914-9001`）→ 基线 = 该工单号
+    # 在 `after_sales_tickets` 里的条数。AS-004 的 `pre_clean[aftersales_ticket_prepare]`
+    # 把**被点名的那张**复位回 pending，但「复位动作跑了」≠「工单真的在」
+    # （`_reset_aftersales_ticket` 明确会在"库里没有工单"时只回一条消息、**不中断**评测）
+    # ⇒ 工单缺失时红的表现是 `unmatched expectation`（看起来像「agent 不会关工单」，归因全错）。
+    # ⚠️ 口径 = 按**工单号**计数（不按 status）：本用例的写动作就是改 status，
+    # 把它计入口径会把正常行为判成漂移（同 `processing_item_count_for_keyword` 的理由）。
+    # 取数走 DB（与复位同一张表 / 同一个不可变键，§18 单一真相源；`db_verify` 仍走 HTTP 产出侧）。
+    "aftersales_ticket_count_for_ticket_no": "该工单号在 after_sales_tickets 里的条数（写前置：点名工单存在）",
     # 评测可控权限（issue #4108）：`source` = 用例声明的 `debug_permissions`（逗号分隔权限码）。
     # 判据**不是**"数一个共享字面量有没有漂移"，而是"**本用例的权限范围是否真的生效**"——
     # 见 `check_debug_permissions_effective`。`source` 语义与上两条一致 =「我依赖的那个
@@ -4886,6 +4896,34 @@ async def _probe_processing_item_count(token: str, keyword: str) -> int | None:
                 return None
             items = (body.get("data") or {}).get("items", [])
             return sum(1 for i in items if kw in str(i.get("name", "")))
+    except Exception:
+        return None
+
+
+async def _probe_aftersales_ticket_count(ticket_no: str) -> int | None:
+    """该**工单号**在 `after_sales_tickets` 里的条数；取不到返回 None（issue #4527）。
+
+    与 `_reset_aftersales_ticket` 用**同一张表 + 同一个不可变键**（工单号，§18 单一真相源），
+    但**只读**（本探针不改任何数据）。**不按 status 计**：AS-004 的写动作就是改 status，
+    把它计入口径会把正常行为判成「前置漂移」（假红）。
+    返回 None = asyncpg 不可用 / DB 不可达（**不**当成 0 —— 0 会被读成「工单没了」，
+    是另一种误判；前置断言取不到真值必须 fail-closed，同 `_probe_product_count`）。
+    """
+    if not str(ticket_no or "").strip():
+        return None
+    try:
+        import asyncpg  # 延迟导入：本模块的**模块级**第三方依赖仍只有 httpx
+    except ImportError:
+        return None
+    try:
+        conn = await asyncpg.connect(_eval_db_dsn(), timeout=8)
+        try:
+            row = await conn.fetchrow(
+                "SELECT COUNT(*) AS n FROM after_sales_tickets WHERE tenant_id = 1 AND ticket_no = $1",
+                str(ticket_no))
+            return int(row["n"]) if row is not None else None
+        finally:
+            await conn.close()
     except Exception:
         return None
 
@@ -7360,6 +7398,11 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                         _n = await _probe_processing_item_count(token, _src)
                         if _n is not None:
                             _precond_base[f"processing_item_count_for_keyword:{_src}"] = _n
+                    for _src in precondition_capture_shape(_precond_specs).get(
+                            "aftersales_ticket_count_for_ticket_no", []):
+                        _n = await _probe_aftersales_ticket_count(_src)
+                        if _n is not None:
+                            _precond_base[f"aftersales_ticket_count_for_ticket_no:{_src}"] = _n
                     if _precond_base:
                         _precond_base_label = ("capture" if _attempt_no == 1
                                                else f"capture(attempt{_attempt_no})")
@@ -7388,6 +7431,11 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                         _n = await _probe_processing_item_count(token, _src)
                         if _n is not None:
                             _after[f"processing_item_count_for_keyword:{_src}"] = _n
+                    for _src in precondition_capture_shape(_precond_specs).get(
+                            "aftersales_ticket_count_for_ticket_no", []):
+                        _n = await _probe_aftersales_ticket_count(_src)
+                        if _n is not None:
+                            _after[f"aftersales_ticket_count_for_ticket_no:{_src}"] = _n
                     _issues = check_precondition_drift(_precond_specs, _precond_base, _after)
                     if _issues:
                         # 前置不成立 ⇒ 本用例本次尝试的判定**不可归因于 agent**：

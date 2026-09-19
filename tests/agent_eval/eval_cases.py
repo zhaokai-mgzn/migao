@@ -136,6 +136,7 @@ _CASE_AS_004 = EvalCase(
     forbidden_card_text=[],
     db_verify=[{'fetch': 'after_sales_ticket', 'expect_status': 'closed', 'expect_fields_nonempty': ['closedAt', 'closeReason'], 'expect_close_reason_contains': '协商一致'}],
     pre_clean=[{'type': 'aftersales_ticket_prepare'}],
+    precondition=[{'type': 'aftersales_ticket_count_for_ticket_no', 'source': 'AS-20260914-9001', 'expect': 1}],
 )
 
 # ── AS-005 [NORMAL] 售后处理全流程 - 查单→确认问题→建工单→跟踪（源: cases/aftersales.yml）──

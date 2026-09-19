@@ -1,5 +1,5 @@
-# case_ids: PP-008
-"""加工项前置自断言类型（`processing_item_count_for_keyword`）的 L0 守卫（issue #4527）。
+# case_ids: PP-008, AS-004
+"""**计数型前置自断言**（`processing_item_count_for_keyword` / `aftersales_ticket_count_for_ticket_no`）的 L0 守卫（issue #4527）。
 
 ## 为什么必须有（同族病灶 = `PG-013` / `CU-003` 的归因污染）
 
@@ -172,3 +172,53 @@ class TestCaseDeclarationStillThere:
         assert case.get("expectations"), "PP-008 的 expectations 消失"
         assert case.get("must_succeed"), "PP-008 的 must_succeed 消失"
         assert case.get("output_verify"), "PP-008 的 output_verify 消失"
+
+
+class TestAftersalesTicketType:
+    """售后工单存在性前置（AS-004）：按**工单号**计数，**只读**，取不到 = fail-closed。"""
+
+    TYPE = "aftersales_ticket_count_for_ticket_no"
+
+    def test_type_is_registered(self):
+        assert self.TYPE in _runner()._PRECONDITION_TYPES, (
+            f"`{self.TYPE}` 不在 runner 的 `_PRECONDITION_TYPES` ⇒ 声明了没人实现的 type")
+
+    def test_declared_type_passes_static_check(self):
+        spec = [{"type": self.TYPE, "source": "AS-20260914-9001", "expect": 1}]
+        assert _runner().check_precondition_declared(spec) == []
+
+    def test_capture_shape_collects_the_source(self):
+        shape = _runner().precondition_capture_shape(
+            [{"type": self.TYPE, "source": "AS-20260914-9001"}])
+        assert shape.get(self.TYPE) == ["AS-20260914-9001"]
+
+    def test_empty_ticket_no_is_none(self):
+        """空工单号 ⇒ `None`（不取真值不得退化成 0）。"""
+        assert asyncio.run(_runner()._probe_aftersales_ticket_count("")) is None
+
+    def test_missing_asyncpg_is_none_not_zero(self, monkeypatch):
+        """`asyncpg` 不可用（CI 的 ci-workflow-tests job 就不装）⇒ `None`，**不得**当成 0。"""
+        import builtins
+        real_import = builtins.__import__
+
+        def _boom(name, *a, **kw):
+            if name == "asyncpg":
+                raise ImportError("no asyncpg in this job")
+            return real_import(name, *a, **kw)
+
+        monkeypatch.setattr(builtins, "__import__", _boom)
+        assert asyncio.run(_runner()._probe_aftersales_ticket_count("AS-20260914-9001")) is None
+
+    def test_as_004_declares_the_precondition(self):
+        cases = {c["id"]: c for c in load_case_dicts(REPO_ROOT / ".github" / "cases")}
+        case = cases["AS-004"]
+        specs = [s for s in (case.get("precondition") or []) if isinstance(s, dict)]
+        assert specs, "AS-004 的工单前置声明消失了（基线格被拆掉 = 判据放宽）"
+        spec = specs[0]
+        assert spec.get("type") == self.TYPE, f"AS-004 的前置类型被换掉：{spec}"
+        assert spec.get("source") == "AS-20260914-9001", f"AS-004 的定位键被改掉：{spec}"
+        assert int(spec.get("expect")) == 1, f"AS-004 的基线期望被改掉（放宽）：{spec}"
+        # 断言面不得被这次缴费动过（只增前置）
+        assert case.get("expectations"), "AS-004 的 expectations 消失"
+        assert case.get("db_verify"), "AS-004 的 db_verify 消失"
+        assert case.get("pre_clean"), "AS-004 的 pre_clean 消失"

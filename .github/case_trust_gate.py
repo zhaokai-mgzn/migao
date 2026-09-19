@@ -315,6 +315,24 @@ def collect_changed_ids(files: list[str], base: str,
     return changed, raw_by_id
 
 
+def all_case_blocks(cases_dir: Path = CASES_DIR) -> dict[str, str]:
+    """**全库**用例原文 `{case_id: 该用例块}`（issue #4527）。
+
+    为什么必须有：规则 c（`CASE-TRUST-FORBIDDEN-TEXT-SOLE`）的两条豁免都读原文
+    （`# forbidden-text-intent:` 声明 / 轮次作用域标注）。此前**只有「变更用例」那条路径**
+    把原文喂给判据（`collect_changed_ids`），而**全量对账 / `--regen-baseline` /
+    `--prune-baseline`** 走 `judge_all(all_cases, catalog)`（**不传 raw_text**）⇒
+    同一棵树两套判定：diff 路径判「已修好」、对账路径仍判「在违规」⇒
+    **按规则文档修好的用例永远销不了账**（burn-down 净变化恒为 +0；`--prune-baseline`
+    打印「无残留」而清单里那条还在 —— 实测 AS-009 的 `# forbidden-text-intent:` 声明）。
+    口径统一：三条路径共用**同一份原文**（`_case_blocks` 单一实现，不复制切块逻辑）。
+    """
+    out: dict[str, str] = {}
+    for p in sorted(Path(cases_dir).glob("*.yml")):
+        out.update(_case_blocks(p.read_text(encoding="utf-8")))
+    return out
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 裁决层
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1061,9 +1079,14 @@ def render_report(blocking: list[dict], passed: list[dict], stale: list[dict],
 
 
 def render_regen_report(catalog: dict, cases: list[dict], anchor_sha: str,
-                        previous: dict | None = None) -> dict:
-    """生成基线清单内容（`--regen-baseline`）。"""
-    results = judge_all(cases, catalog)
+                        previous: dict | None = None,
+                        raw_by_id: dict[str, str] | None = None) -> dict:
+    """生成基线清单内容（`--regen-baseline`）。
+
+    `raw_by_id` = 全库用例原文（`all_case_blocks()`）：规则 c 的豁免读原文，
+    不传 ⇒ 与主判定路径两套口径（issue #4527，见 `all_case_blocks` 文档）。
+    """
+    results = judge_all(cases, catalog, raw_by_id)
     violations: dict[str, dict] = {}
     rule_counts: dict[str, int] = {r["code"]: 0 for r in tax.RULES}
     for item in results:
@@ -1422,15 +1445,19 @@ def main(argv: list[str] | None = None) -> int:
 
     all_cases = load_cases_from_dir()
     # 全库判定（**全量对账**与 burn-down 预算共用；成本 ~0.2s，纯静态零 LLM）。
-    # 输入与 `--regen-baseline` 同源（不传 raw_text）——理由见 reconcile_baseline 文档。
-    all_judged = judge_all(all_cases, catalog)
+    # 输入与 `--regen-baseline` 同源（原文同喂）——理由见 `all_case_blocks` 文档
+    # （issue #4527：此前不传原文 ⇒ diff 路径与对账路径两套判定，按规则文档修好的用例
+    # 永远销不了账）。
+    all_raw_by_id = all_case_blocks()
+    all_judged = judge_all(all_cases, catalog, all_raw_by_id)
     violations_by_case = {j["case_id"]: j["violations"] for j in all_judged}
     baseline_path = Path(args.baseline)
     old_baseline = json.loads(baseline_path.read_text(encoding="utf-8")) \
         if baseline_path.exists() else None
 
     if args.regen_baseline:
-        data = render_regen_report(catalog, all_cases, _anchor_sha(), previous=old_baseline)
+        data = render_regen_report(catalog, all_cases, _anchor_sha(), previous=old_baseline,
+                                   raw_by_id=all_raw_by_id)
         added = []
         if old_baseline:
             old_codes = {(cid, c) for cid, e in (old_baseline.get("violations") or {}).items()
