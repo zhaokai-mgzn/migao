@@ -952,6 +952,27 @@ export interface RouteRuleCustomerPriceParams {
   customer_unit_price: number | string | null
 }
 
+/**
+ * `POST /api/admin/production/route-rules` 的 body（**新增特殊选项**，issue #4570）。
+ *
+ * 用户裁定：「只要能新增工序项就行了，并可以设置为特殊选项或者工序，也支持设置单价」。
+ * ⚠️ **两本账**：这里的 `customer_unit_price` 是**对客元/套**（`production_route_rules`），
+ * 与工序库 `POST /operations` 的 `unit_price`（**计件**，元/件·米·折，给工人）**互不换算**
+ * ⇒ 本 body **不带** `name` / `group_name` / `unit` / `unit_price` 那套工序字段。
+ */
+export interface RouteRuleCreateParams {
+  /** 选项名（`trigger_value`）—— 对客可见，**与 ERP 名逐字一致**（#4389 join key 纪律） */
+  trigger_value: string
+  /** 目标工序（**逻辑工序名**，与 `production_route_rules.operation` 逐字一致，如 `精裁`） */
+  operation: string
+  /** 插入锚点（逻辑工序名）；省略 / `null` = 追加末尾 */
+  after_operation?: string | null
+  /** 规则应用顺序（越小越先）；省略 / `null` = 后端默认顺序 */
+  priority?: number | null
+  /** 对客单价（**元/套**）；`null` = 未定价 */
+  customer_unit_price?: number | string | null
+}
+
 
 /**
  * 路线写端点失败时的响应体（护栏理由）—— 后端**真实**信封（issue #4308「冻结补遗 ②」）：

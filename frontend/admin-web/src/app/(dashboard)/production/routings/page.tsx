@@ -31,6 +31,7 @@ import type {
   ProductionSeedTemplate,
   ProductionSource,
   RouteRule,
+  RouteRuleCreateParams,
   Routing,
   RoutingsResponse,
 } from '@/types'
@@ -536,6 +537,21 @@ export default function ProcessConfigPage() {
   })
   const [newOpOpen, setNewOpOpen] = useState(false)
   const [newOp, setNewOp] = useState({ name: '', group_name: '', unit: '', unit_price: '' })
+  /**
+   * 「新增」对话框的**类型二选一**（issue #4570，用户裁定：「只要能新增工序项就行了，并可以设置为
+   * 特殊选项或者工序，也支持设置单价」）。默认 `operation`（工序 —— 既有链路逐字不变）。
+   */
+  const [newKind, setNewKind] = useState<'operation' | 'option'>('operation')
+  /** 特殊选项草稿（`trigger_value` = 选项名；`customer_unit_price` = **对客**元/套） */
+  const [newOption, setNewOption] = useState({
+    trigger_value: '',
+    customer_unit_price: '',
+    operation: '',
+    after_operation: '',
+    priority: '',
+  })
+  /** 新增特殊选项的**就地**理由（本地预检 ∪ 后端 `error.details[].message` 逐条） */
+  const [newOptionReasons, setNewOptionReasons] = useState<string[]>([])
   const [confirmTemplate, setConfirmTemplate] = useState<ProductionSeedTemplate | null>(null)
   const [applying, setApplying] = useState('')
   const [busy, setBusy] = useState(false)
@@ -724,6 +740,17 @@ export default function ProcessConfigPage() {
     })
     return [...byOp.entries()].map(([operation, cells]) => ({ operation, cells }))
   }, [matrix])
+
+  /**
+   * 「目标工序 / 插入锚点」下拉的取值域 = **逻辑工序名**（issue #4570）。
+   *
+   * ⚠️ 口径：`production_route_rules.operation` / `after_operation` 存的是**逻辑工序名**
+   * （`精裁` / `三边`），而 `production_operations.name` 是**库口径**（带部位后缀 `精裁-布`）
+   * —— 两者不是同一把尺（本页 `stepView` 的 `resolved` 判据早已按此区分）。
+   * ⇒ 本页唯一**已有**的逻辑名来源就是部位价目矩阵的行键（`GET /operation-positions`，
+   * 服务端顺序）⇒ 直接复用它，**不新造第二份工序名清单**、不重排、不拼写。
+   */
+  const logicalOps = useMemo(() => matrixRows.map((r) => r.operation), [matrixRows])
 
   const visibleMatrixRows = useMemo(
     () => matrixRows.filter((r) => !q || r.operation.toLowerCase().includes(q)),
@@ -989,6 +1016,60 @@ export default function ProcessConfigPage() {
     }
   }
 
+  /**
+   * 新增**特殊选项**（对客按套计价，issue #4570）。
+   *
+   * 两本账**互不换算**：这里写 `production_route_rules`（**元/套**，对顾客），
+   * 而 `createOperation` 写 `production_operations.unit_price`（**计件**，给工人）。
+   *
+   * 本地只做「拦得住就不打扰后端」的最小预检（照 `RulePriceCell` 行内编辑同口径）；
+   * **语义护栏**一律以后端为准（前端**不发明**第二份口径）⇒ 失败时逐条理由**就地**展示，
+   * **不刷新、不改页面数据**（静默写回 = 商家以为建好了、取价侧其实没建）。
+   */
+  const createOptionRule = async () => {
+    const reasons: string[] = []
+    const trigger = newOption.trigger_value.trim()
+    if (!trigger) reasons.push('请填写选项名称')
+    if (!newOption.operation) reasons.push('请选择目标工序：这条选项要在哪道工序上生效')
+    const rawPrice = newOption.customer_unit_price.trim()
+    if (rawPrice === '') {
+      reasons.push('请填写单价（元/套）：对客按套计价，空着等于没有报价')
+    } else if (!/^\d+(\.\d{1,2})?$/.test(rawPrice)) {
+      reasons.push('单价必须是 ≥ 0 且最多两位小数的数字（元/套）')
+    }
+    const rawPriority = newOption.priority.trim()
+    if (rawPriority !== '' && !/^\d+$/.test(rawPriority)) {
+      reasons.push('优先级必须是不小于 0 的整数（留空 = 按后端默认顺序）')
+    }
+    if (reasons.length > 0) {
+      setNewOptionReasons(reasons)
+      return
+    }
+    // 可选键**留空就不发**（`after_operation?` / `priority?`）—— 不拿 `null` 冒充「没填」
+    const payload: RouteRuleCreateParams = {
+      trigger_value: trigger,
+      operation: newOption.operation,
+      customer_unit_price: Number(rawPrice),
+    }
+    if (newOption.after_operation) payload.after_operation = newOption.after_operation
+    if (rawPriority !== '') payload.priority = Number(rawPriority)
+    setBusy(true)
+    setNewOptionReasons([])
+    try {
+      await productionApi.createOptionRule(payload)
+      toast.success('特殊选项已新增')
+      setNewOpOpen(false)
+      setNewOption({ trigger_value: '', customer_unit_price: '', operation: '', after_operation: '', priority: '' })
+      await load()
+    } catch (e) {
+      console.error(e)
+      setNewOptionReasons(optionPriceGuardReasons(e))
+      if (!isErrorToastShown(e)) toast.error('新增特殊选项失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   /** 工序库写路径统一出口：成功 toast + 重新拉取（结果可见），失败可读提示且不假装成功 */
   const submitOperation = async (id: string | number, payload: Parameters<typeof productionApi.updateOperation>[1]) => {
     setOpBusy(true)
@@ -1095,9 +1176,19 @@ export default function ProcessConfigPage() {
             <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
             刷新
           </Button>
-          <Button variant="secondary" size="sm" data-testid="routings-new-operation" onClick={() => setNewOpOpen(true)}>
+          <Button
+            variant="secondary"
+            size="sm"
+            data-testid="routings-new-operation"
+            onClick={() => {
+              // 每次打开都回到默认类型「工序」，并清掉上一次的失败理由（不留给下一次）
+              setNewKind('operation')
+              setNewOptionReasons([])
+              setNewOpOpen(true)
+            }}
+          >
             <Plus className="w-4 h-4 mr-1.5" />
-            新增工序
+            新增
           </Button>
           <Button size="sm" data-testid="routings-new-route" onClick={() => setNewRouteOpen(true)}>
             <Plus className="w-4 h-4 mr-1.5" />
@@ -1142,7 +1233,7 @@ export default function ProcessConfigPage() {
                 index={1}
                 label={`工序库 ${total} 道`}
                 state={operationsReady ? 'done' : 'todo'}
-                hint="下一步：用下方「行业模板」补套，或点右上「新增工序」逐道建。"
+                hint="下一步：用下方「行业模板」补套，或点右上「新增」逐道建（工序 / 特殊选项）。"
               />
               <ReadinessStep
                 testId="readiness-step-routings"
@@ -2294,58 +2385,193 @@ export default function ProcessConfigPage() {
         )}
       </Modal>
 
-      {/* 新增工序 */}
+      {/* 新增（**类型二选一**：工序 / 特殊选项；issue #4570） */}
       <Modal
         open={newOpOpen}
         onClose={() => !busy && setNewOpOpen(false)}
-        title="新增工序"
+        title="新增"
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="secondary" disabled={busy} onClick={() => setNewOpOpen(false)}>
               取消
             </Button>
-            <Button loading={busy} data-testid="routings-create-operation-submit" onClick={createOperation}>
+            <Button
+              loading={busy}
+              data-testid="routings-create-operation-submit"
+              onClick={newKind === 'option' ? createOptionRule : createOperation}
+            >
               保存
             </Button>
           </div>
         }
       >
         <div className="space-y-3 text-sm">
-          <p className="text-neutral-600">
-            单价直接决定工人计件工资，请与车间核对后再填（调价只影响新报工，历史报工按当时价）。
-          </p>
-          {[
-            { key: 'name', label: '工序名称', ph: '如 罗马帘-穿杆' },
-            { key: 'group_name', label: '分组', ph: '裁剪 / 车位 / 后道 / 其他' },
-            { key: 'unit', label: '单位', ph: '米 / 套 / 件 / 个 / 折' },
-          ].map((f) => (
-            <div key={f.key}>
-              <label className="mb-1 block text-neutral-600" htmlFor={`new-op-${f.key}`}>
-                {f.label}
-              </label>
-              <input
-                id={`new-op-${f.key}`}
-                data-testid={`routings-create-op-${f.key}`}
-                className={inputCls}
-                placeholder={f.ph}
-                value={(newOp as Record<string, string>)[f.key]}
-                onChange={(e) => setNewOp({ ...newOp, [f.key]: e.target.value })}
-              />
-            </div>
-          ))}
-          <div>
-            <label className="mb-1 block text-neutral-600" htmlFor="new-op-unit_price">
-              计件单价（元）
-            </label>
-            <input
-              id="new-op-unit_price"
-              inputMode="decimal"
-              data-testid="routings-create-op-unit_price"
-              className={inputCls}
-              value={newOp.unit_price}
-              onChange={(e) => setNewOp({ ...newOp, unit_price: e.target.value })}
-            />
+          <div className="flex gap-2" role="radiogroup" aria-label="新增类型">
+            {([
+              { key: 'operation', label: '工序' },
+              { key: 'option', label: '特殊选项' },
+            ] as const).map((k) => (
+              <button
+                key={k.key}
+                type="button"
+                role="radio"
+                aria-checked={newKind === k.key}
+                data-testid={`create-kind-${k.key}`}
+                onClick={() => {
+                  setNewKind(k.key)
+                  setNewOptionReasons([])
+                }}
+                className={cn(
+                  'rounded-full border px-3 py-1 text-sm transition-colors',
+                  newKind === k.key
+                    ? 'border-primary-600 bg-neutral-50 font-medium text-primary-700'
+                    : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50',
+                )}
+              >
+                {k.label}
+              </button>
+            ))}
           </div>
+          {/* 两本账一句话（issue #4570 用户走查的核心困惑：工序价 vs 特殊选项价） */}
+          <p className="text-neutral-600" data-testid="create-kind-two-ledgers">
+            工序的价是<strong>给工人的计件</strong>（元/件·米·折）；特殊选项的价是
+            <strong>对顾客的按套</strong>（元/套）。两者是两本账，互不换算。
+          </p>
+
+          {newKind === 'operation' ? (
+            <>
+              <p className="text-neutral-600">
+                单价直接决定工人计件工资，请与车间核对后再填（调价只影响新报工，历史报工按当时价）。
+              </p>
+              {[
+                { key: 'name', label: '工序名称', ph: '如 罗马帘-穿杆' },
+                { key: 'group_name', label: '分组', ph: '裁剪 / 车位 / 后道 / 其他' },
+                { key: 'unit', label: '单位', ph: '米 / 套 / 件 / 个 / 折' },
+              ].map((f) => (
+                <div key={f.key}>
+                  <label className="mb-1 block text-neutral-600" htmlFor={`new-op-${f.key}`}>
+                    {f.label}
+                  </label>
+                  <input
+                    id={`new-op-${f.key}`}
+                    data-testid={`routings-create-op-${f.key}`}
+                    className={inputCls}
+                    placeholder={f.ph}
+                    value={(newOp as Record<string, string>)[f.key]}
+                    onChange={(e) => setNewOp({ ...newOp, [f.key]: e.target.value })}
+                  />
+                </div>
+              ))}
+              <div>
+                <label className="mb-1 block text-neutral-600" htmlFor="new-op-unit_price">
+                  计件单价（元）
+                </label>
+                <input
+                  id="new-op-unit_price"
+                  inputMode="decimal"
+                  data-testid="routings-create-op-unit_price"
+                  className={inputCls}
+                  value={newOp.unit_price}
+                  onChange={(e) => setNewOp({ ...newOp, unit_price: e.target.value })}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="mb-1 block text-neutral-600" htmlFor="new-option-trigger_value">
+                  选项名称
+                </label>
+                <input
+                  id="new-option-trigger_value"
+                  data-testid="routings-create-option-trigger_value"
+                  className={inputCls}
+                  placeholder="如 拼3次 / 免熨 / 防翘扣"
+                  value={newOption.trigger_value}
+                  onChange={(e) => setNewOption({ ...newOption, trigger_value: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-neutral-600" htmlFor="new-option-customer_unit_price">
+                  单价（元/套）
+                </label>
+                <input
+                  id="new-option-customer_unit_price"
+                  inputMode="decimal"
+                  data-testid="routings-create-option-customer_unit_price"
+                  className={inputCls}
+                  placeholder="如 12.5"
+                  value={newOption.customer_unit_price}
+                  onChange={(e) => setNewOption({ ...newOption, customer_unit_price: e.target.value })}
+                />
+                <p className="mt-1 text-xs text-neutral-400">
+                  这是对顾客的按套价（元/套），不进工人的计件工资。
+                </p>
+              </div>
+              <div>
+                <label className="mb-1 block text-neutral-600" htmlFor="new-option-operation">
+                  目标工序
+                </label>
+                <select
+                  id="new-option-operation"
+                  data-testid="routings-create-option-operation"
+                  className={inputCls}
+                  value={newOption.operation}
+                  onChange={(e) => setNewOption({ ...newOption, operation: e.target.value })}
+                >
+                  <option value="">选择这条选项落在哪道工序上…</option>
+                  {logicalOps.map((op) => (
+                    <option key={op} value={op}>
+                      {op}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-neutral-600" htmlFor="new-option-after_operation">
+                  插入锚点（可选）
+                </label>
+                <select
+                  id="new-option-after_operation"
+                  data-testid="routings-create-option-after_operation"
+                  className={inputCls}
+                  value={newOption.after_operation}
+                  onChange={(e) => setNewOption({ ...newOption, after_operation: e.target.value })}
+                >
+                  <option value="">末尾追加</option>
+                  {logicalOps.map((op) => (
+                    <option key={op} value={op}>
+                      {op}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-neutral-600" htmlFor="new-option-priority">
+                  优先级（可选）
+                </label>
+                <input
+                  id="new-option-priority"
+                  inputMode="numeric"
+                  data-testid="routings-create-option-priority"
+                  className={inputCls}
+                  placeholder="数字越小越先应用（留空 = 后端默认顺序）"
+                  value={newOption.priority}
+                  onChange={(e) => setNewOption({ ...newOption, priority: e.target.value })}
+                />
+              </div>
+              {newOptionReasons.length > 0 && (
+                <ul
+                  className="space-y-0.5 text-xs text-red-600"
+                  data-testid="routings-create-option-reasons"
+                >
+                  {newOptionReasons.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
         </div>
       </Modal>
 
