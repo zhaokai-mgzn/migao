@@ -7,7 +7,7 @@
  *
  * 病根（同族 #4393 / #4420：`craft-display` / 默认档常量的多份副本无同步守卫）：
  * 前端 `craft-calc-request.ts` 必须知道「韩褶 → pleat / 打孔 → fullness」才能凑出入参，
- * 而**权威表在算料引擎** `curtain_calc.py` 的 `CRAFT_FORMULA` / `CRAFT_MOUNTING`。
+ * 而**权威表在算料引擎** `curtain_calc.py` 的 `resolve_craft_rule`（`CRAFT_S_HOOK`/`CRAFT_EYELET` 枚举常量 → 公式/悬挂方式）。
  * 两边各写一份、没有守卫 ⇒ 改一处忘一处 ⇒ **静默算错布料**（页面按韩褶口径发请求、后端按打孔口径算）。
  *
  * 本文件把「副本」变成「**有守卫的副本**」：逐值读 `curtain_calc.py` 源文件比对，漂移即红。
