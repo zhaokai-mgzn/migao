@@ -564,6 +564,14 @@ cases:
       # agent 发「哪一件」选择卡，且改价会落到不确定的那一件上）。保留最早创建的（= 种子）。
       - type: product_dedupe
         product_keyword: "遮光窗帘"
+    # 前置自断言（issue #4621 的 case-trust burn-down 缴费，形态与 PR-005/#4590 逐字同款）：
+    # 本用例按**名字**点名被测对象（「搜索遮光窗帘」…「把价格改成 198」）⇒「该名字唯一」
+    # 是它真正依赖、且**只读**的前置（种子 + 上面 `pre_clean[product_dedupe]` 后恰为 1 件）。
+    # 前置不成立时红的表现是 `unmatched expectation`（看起来像「agent 不会改价」，归因全错）。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     expectations:
       - tool: product_search
       - tool: product_detail
@@ -573,12 +581,16 @@ cases:
         args:
           price: "198"
       - tool: product_detail
+    # 效果层断言（issue #4621 的 case-trust burn-down 缴费）：「调用了 ≠ 调成了」——
+    # 改价真的成功（`success=true`）才算过；只有 expectation 时工具失败也照样满分。
+    must_succeed:
+      - tool: product_update
     data_checks:
       - "第3轮 product_id 来自第2轮结果"
       - "第4轮 product_id 来自第2轮结果"
       - "全程未重新 product_search 查同一个商品"
     skip_reason: ""
-    merge_log: "eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩折」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径）。2026-09-19（#4371 商品↔加工项解耦）：删除 R5/R6「给它加上韩折」+「确认」两轮与 `expectations[product_processing_item_manage(action=add)]` —— 商品不再持有加工项，该工具退场；标题由「…→关联加工项→验证」改为「…→改价→验证」；用例意图（多轮 UUID 复用/不重查/写操作确认闸）由改价链路完整保留，其余断言原样未动。"
+    merge_log: "eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩折」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径）。2026-09-19（#4371 商品↔加工项解耦）：删除 R5/R6「给它加上韩折」+「确认」两轮与 `expectations[product_processing_item_manage(action=add)]` —— 商品不再持有加工项，该工具退场；标题由「…→关联加工项→验证」改为「…→改价→验证」；用例意图（多轮 UUID 复用/不重查/写操作确认闸）由改价链路完整保留，其余断言原样未动。2026-09-20（issue #4621 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（CASE-TRUST-NO-PRECONDITION-ASSERTION）+ `must_succeed[product_update]`（CASE-TRUST-NO-EFFECT-ASSERTION）—— **断言只增不减**（expectations / data_checks / pre_clean / user_inputs 一字未动）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"

@@ -5444,7 +5444,9 @@ _CASE_PR_010 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'product_update'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── PR-011 [NORMAL] 创建商品完整引导流程 - AI 主导收集信息（源: cases/product.yml）──

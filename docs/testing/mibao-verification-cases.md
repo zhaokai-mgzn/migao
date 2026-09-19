@@ -3902,9 +3902,10 @@
 数据: 第4轮 product_id 来自第2轮结果
 数据: 全程未重新 product_search 查同一个商品
 清理: product_dedupe(product_keyword=遮光窗帘)
+必须成功: product_update
 ```
 真值: id-resolve.index, id-resolve.no-fabricate, product-sku-stock.status-flow
-溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩折」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径）。2026-09-19（#4371 商品↔加工项解耦）：删除 R5/R6「给它加上韩折」+「确认」两轮与 `expectations[product_processing_item_manage(action=add)]` —— 商品不再持有加工项，该工具退场；标题由「…→关联加工项→验证」改为「…→改价→验证」；用例意图（多轮 UUID 复用/不重查/写操作确认闸）由改价链路完整保留，其余断言原样未动。 ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
+溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）。2026-09-14 消除顺序依赖（issue #3568）：① 泛化「搜索窗帘」+「第一个」→ 点名「遮光窗帘」（返回顺序依赖，同 OR-024 #3408 先例）；②「S钩安装」目录不存在 → 换真实存在且已绑定的「韩折」；③ 补 pre_clean product_dedupe（同 PR-005 #3518 口径）。2026-09-19（#4371 商品↔加工项解耦）：删除 R5/R6「给它加上韩折」+「确认」两轮与 `expectations[product_processing_item_manage(action=add)]` —— 商品不再持有加工项，该工具退场；标题由「…→关联加工项→验证」改为「…→改价→验证」；用例意图（多轮 UUID 复用/不重查/写操作确认闸）由改价链路完整保留，其余断言原样未动。2026-09-20（issue #4621 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（CASE-TRUST-NO-PRECONDITION-ASSERTION）+ `must_succeed[product_update]`（CASE-TRUST-NO-EFFECT-ASSERTION）—— **断言只增不减**（expectations / data_checks / pre_clean / user_inputs 一字未动） ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
 
 ### PR-011. 创建商品完整引导流程 - AI 主导收集信息 🔵
 ```
