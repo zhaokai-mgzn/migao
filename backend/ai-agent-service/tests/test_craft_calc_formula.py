@@ -486,3 +486,57 @@ class TestLegacyOutputsRegression:
                         special_options=["拼1次"], **DOUBLE_6_6)
         assert q["per_fold"] == 0.65
         assert q["fabric_meters"] == 34.1
+
+
+class TestPatternRepeatReachesTheEngine:
+    """对花 / 花距进算料入参（issue #4572）。
+
+    真值源 §1：「对花：每幅加 ≤1 个花距」—— **只在定宽买高**时吃布（定高买宽下不改变用料）。
+    此前 `craft-calc-request.ts` **没把对花/花距传给引擎** ⇒ 试算比落库口径**少算「幅数 × 花距」**
+    （页面预填的米数偏小 ⇒ 少收面料钱），而页面上没有任何东西提示这件事。
+    """
+
+    def test_pattern_repeat_adds_one_repeat_per_panel_only_in_fixed_width(self):
+        import math
+
+        # 成品高 2.8 + 卷边 0.3 > 门幅 2.8 ⇒ 引擎自动转**定宽买高**
+        base, formula, _ = curtain_calc.calculate_fabric_meters(2.0, 2.8, 2.0, 2.8)
+        assert formula == "fixed_width"
+        with_pattern, _, _ = curtain_calc.calculate_fabric_meters(
+            2.0, 2.8, 2.0, 2.8, has_pattern=True, pattern_repeat=0.45)
+        panels = math.ceil((2.0 + 0.3) * 2.0 / 2.8)
+        assert round(with_pattern - base, 3) == round(panels * 0.45, 3), \
+            "定宽买高下每幅应 +1 个花距（幅数 × 花距）"
+
+    def test_pattern_repeat_does_not_change_fixed_height_meters(self):
+        base, formula, _ = curtain_calc.calculate_fabric_meters(2.0, 2.0, 2.0, 2.8)
+        assert formula == "fixed_height"
+        with_pattern, _, _ = curtain_calc.calculate_fabric_meters(
+            2.0, 2.0, 2.0, 2.8, has_pattern=True, pattern_repeat=0.45)
+        assert with_pattern == base, "定高买宽下对花**不改变**用料（花型沿宽度对齐）"
+
+    def test_endpoint_forwards_pattern_params_to_engine(self):
+        """端点必须把两个键**转给引擎**（否则前端传了也白传）—— 文本层契约守卫 + 注入式自证。"""
+        from pathlib import Path
+
+        internal = Path(__file__).resolve().parents[1] / "app/api/internal.py"
+        src = internal.read_text(encoding="utf-8")
+        assert _pattern_forward_defects(src) == [], _pattern_forward_defects(src)
+        for needle in ("has_pattern: bool = Field(", "pattern_repeat: float = Field(",
+                       "has_pattern=request.has_pattern", "pattern_repeat=request.pattern_repeat"):
+            assert _pattern_forward_defects(src.replace(needle, "")) != [], \
+                f"删掉 `{needle}` 读不出差异 ⇒ 本守卫对该形态是空断言"
+
+
+def _pattern_forward_defects(src: str) -> list:
+    """端点侧的「对花入参是否真的通到引擎」缺陷清单（空 = 通过）。"""
+    defects = []
+    for needle, why in (
+        ("has_pattern: bool = Field(", "端点模型缺 has_pattern 字段"),
+        ("pattern_repeat: float = Field(", "端点模型缺 pattern_repeat 字段"),
+        ("has_pattern=request.has_pattern", "端点没把 has_pattern 转给引擎"),
+        ("pattern_repeat=request.pattern_repeat", "端点没把 pattern_repeat 转给引擎"),
+    ):
+        if needle not in src:
+            defects.append(why)
+    return defects
