@@ -61,16 +61,27 @@ describe('下单页默认档与算料引擎常量同步（issue #4420）', () =>
   it('三条默认值 = 用户裁定的档（加工类型定高买宽 / 款式单色 / 褶距 0.125）', () => {
     expect(DEFAULT_CUTTING_MODE).toBe('定高买宽')
     expect(DEFAULT_STYLE).toBe('单色')
+    // issue #4493：默认档扩到 8 项全覆盖（用户「太多点选了」）
     expect(createDefaultCraftSpec()).toEqual({
+      curtainType: '布帘',
+      craft: '韩褶',
       cuttingMode: '定高买宽',
       style: '单色',
       pleatSpacing: 0.125,
+      hasPattern: false,
     })
   })
 
   it('默认值是**真值**：经 buildCraftSpec 后三个键都落库（不是被「缺值不写」吞掉）', () => {
     const spec = buildCraftSpec(createDefaultCraftSpec())
-    expect(spec).toEqual({ cuttingMode: '定高买宽', style: '单色', pleatSpacing: 0.125 })
+    expect(spec).toEqual({
+      curtainType: '布帘',
+      craft: '韩褶',
+      cuttingMode: '定高买宽',
+      style: '单色',
+      pleatSpacing: 0.125,
+      hasPattern: false,
+    })
   })
 
   it('默认档与库侧枚举逐字一致（错一个字下游取不到路线）', () => {

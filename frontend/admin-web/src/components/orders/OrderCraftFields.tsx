@@ -20,11 +20,21 @@
  * ① 8 个主工艺参数留在**首屏常显**（录单主路径，不该藏）；
  * ② 19 项特殊选项收进**可展开区**（长尾选项，展开前只显示「已选 N 项」摘要）；
  * ③ 每个区块有**标题 + 一句话说明**，不再是一个大 grid 平铺。
+ *
+ * ── 交互改造（issue #4489，用户 2026-09-19：「现在要一个个点过去」）──────────────
+ *
+ * 病根：8 个字段都是**下拉** ⇒ 每个都要「点开 → 点选项」两步（最多 16 次点击）。
+ * ① 枚举字段改 **chips**（一击即中，省掉「展开」那一步）；三态字段用**三段分段按钮**，
+ *    「未指定」档保留（三态硬约束不变）；
+ * ② 部位 → 是否定型 的**联动默认**（真值源见 `IS_SHAPED_DEFAULT_BY_CURTAIN_TYPE`）；
+ * ③ **手改留痕**：手改过的「是否定型」不再被部位联动覆盖（同 #4434 纪律）。
+ *
+ * ⚠️ **落库一字未动**：chips 与下拉写的是**同一份** `CraftSpecInput` 键，
+ * `lib/order-craft-fields.ts` 的 `buildCraftSpec` 不因本改造改一个字符。
  */
 
 import { useId, useState } from 'react'
 import { ChevronDown, ChevronRight, Settings2 } from 'lucide-react'
-import { Select } from '@/components/ui'
 import {
   CRAFT_OPTIONS,
   CURTAIN_TYPE_OPTIONS,
@@ -38,29 +48,98 @@ import {
   type CraftSpecInput,
 } from '@/lib/order-craft-fields'
 
-/** 下拉的「未指定」档（值 = 空串 ⇒ 该键不落库） */
-const UNSET = { value: '', label: '未指定' }
+const LABEL_CLASS = 'block text-sm font-medium text-neutral-700 mb-1.5'
 
-const toOptions = (values: readonly string[]) => [
-  UNSET,
+/** 一个 chip 档：`value === undefined` 即「未指定」档（该键不落库） */
+interface ChipOption<T> {
+  value: T
+  label: string
+}
+
+/** 枚举字段的 chips（含「未指定」档） */
+const toChipOptions = (values: readonly string[]): ChipOption<string | undefined>[] => [
+  { value: undefined, label: '未指定' },
   ...values.map((v) => ({ value: v, label: v })),
 ]
 
-/** 三态布尔下拉：`''` 未指定 / `'true'` 是 / `'false'` 否 */
-const TRI_STATE_OPTIONS = [UNSET, { value: 'true', label: '是' }, { value: 'false', label: '否' }]
-
-const OPEN_COUNT_SELECT_OPTIONS = [
-  UNSET,
-  ...OPEN_COUNT_OPTIONS.map((o) => ({ value: String(o.value), label: o.label })),
+/** 打开方式 chips：开数是数字（`openCount` 落库为 number），文案取自 `craft-display` 单一真值 */
+const OPEN_COUNT_CHIPS: ChipOption<number | undefined>[] = [
+  { value: undefined, label: '未指定' },
+  ...OPEN_COUNT_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
 ]
 
-/** 三态布尔 → 下拉值 */
-const triState = (value: boolean | undefined): string =>
-  value === undefined ? '' : String(value)
+/**
+ * 三态 chips（`undefined` 未指定 / `true` 是 / `false` 否）——**三段，不合并**。
+ *
+ * 「没问过」与「否」是两个真值：合并会让下游把「没问过」当成「不做定型」。
+ */
+const TRI_STATE_CHIPS: ChipOption<boolean | undefined>[] = [
+  { value: undefined, label: '未指定' },
+  { value: true, label: '是' },
+  { value: false, label: '否' },
+]
 
-/** 下拉值 → 三态布尔（`''` ⇒ `undefined`，键不落库） */
-const fromTriState = (raw: string): boolean | undefined =>
-  raw === '' ? undefined : raw === 'true'
+/**
+ * 单选 chips 组（issue #4489）——**一击即中**：一眼全见，点一下即选，省掉下拉「先展开再选」。
+ *
+ * 语义用 `radiogroup` / `radio`（单选 + 可聚焦），不用 listbox：
+ * `aria-checked` 让「未指定」与「否」在无障碍树上也是两个不同档（三态字段的硬约束）。
+ */
+function ChipGroup<T>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string
+  options: ReadonlyArray<ChipOption<T>>
+  value: T
+  onChange: (next: T) => void
+}) {
+  return (
+    <div>
+      <div className={LABEL_CLASS}>{label}</div>
+      <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
+        {options.map((option) => {
+          const active = option.value === value
+          return (
+            <button
+              key={option.label}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => onChange(option.value)}
+              className={
+                'h-9 px-3 rounded border text-sm transition-colors ' +
+                (active
+                  ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
+                  : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
+              }
+            >
+              {option.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 部位 → 是否定型 的**联动默认档**（issue #4489）。
+ *
+ * 真值源（不是我发明的）：`backend/ai-agent-service/app/clarification/curtain_checklist.py`
+ * 的 `is_shaped.default_rule = curtain_type`，note 原文
+ * 「布帘默认是/纱帘默认否/帘头是（面料红线：真丝等不耐高温须不定型）」；
+ * `docs/curtain-fabric-quote-rules.md` §10 同口径。
+ *
+ * 表外的部位取值（如将来新增）⇒ **不猜**：不给默认（`undefined`），商家自己选。
+ */
+const IS_SHAPED_DEFAULT_BY_CURTAIN_TYPE: Record<string, boolean> = {
+  布帘: true,
+  纱帘: false,
+  帘头: true,
+}
 
 export interface OrderCraftFieldsProps {
   /** 当前录入值（未填的键缺省 ⇒ 不落库） */
@@ -96,7 +175,6 @@ export default function OrderCraftFields({
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null
   }
 
-  const labelClass = 'block text-sm font-medium text-neutral-700 mb-1.5'
   const inputClass =
     'w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15'
 
@@ -107,6 +185,28 @@ export default function OrderCraftFields({
   /** 特殊选项默认收起（issue #4420）：19 项长尾选项是密度主因，展开前只报「已选 N 项」 */
   const [specialOpen, setSpecialOpen] = useState(false)
   const selectedSpecialCount = (value.specialOptions ?? []).length
+
+  /**
+   * 「是否定型」是否已被**用户/上游**定过（手改留痕，同 #4434）——
+   * 定过 ⇒ 改部位**不得**覆盖它（手改过的值只能由用户显式改回）。
+   *
+   * 初值取 `value.isShaped !== undefined`：编辑存量行时该值也是**已定的真值**，
+   * 不能因为「不是本次会话点的」就被部位联动冲掉。
+   */
+  const [isShapedTouched, setIsShapedTouched] = useState(value.isShaped !== undefined)
+
+  const changeCurtainType = (next: string | undefined) => {
+    const patch: Partial<CraftSpecInput> = { curtainType: next }
+    // 联动只在「没被定过」时生效；部位回到「未指定」⇒ 不动已联动的值（不删商家已见到的真值）
+    const linked = next === undefined ? undefined : IS_SHAPED_DEFAULT_BY_CURTAIN_TYPE[next]
+    if (!isShapedTouched && linked !== undefined) patch.isShaped = linked
+    onChange(patch)
+  }
+
+  const changeIsShaped = (next: boolean | undefined) => {
+    setIsShapedTouched(true)
+    onChange({ isShaped: next })
+  }
 
   const toggleOption = (option: string) => {
     const current = value.specialOptions ?? []
@@ -128,82 +228,51 @@ export default function OrderCraftFields({
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div>
-          <label htmlFor={fieldId('curtainType')} className={labelClass}>
-            部位
-          </label>
-          <Select
-            id={fieldId('curtainType')}
-            options={toOptions(CURTAIN_TYPE_OPTIONS)}
-            value={value.curtainType ?? ''}
-            onChange={(e) => onChange({ curtainType: e.target.value || undefined })}
-          />
-        </div>
+        {/* 选部位会带出「是否定型」的行业默认（布帘是 / 纱帘否），手改过就不再覆盖 */}
+        <ChipGroup
+          label="部位"
+          options={toChipOptions(CURTAIN_TYPE_OPTIONS)}
+          value={value.curtainType}
+          onChange={changeCurtainType}
+        />
+
+        <ChipGroup
+          label="工艺"
+          options={toChipOptions(CRAFT_OPTIONS)}
+          value={value.craft}
+          onChange={(next) => onChange({ craft: next })}
+        />
+
+        <ChipGroup
+          label="加工类型"
+          options={toChipOptions(CUTTING_MODE_OPTIONS)}
+          value={value.cuttingMode}
+          onChange={(next) => onChange({ cuttingMode: next })}
+        />
+
+        <ChipGroup
+          label="打开方式"
+          options={OPEN_COUNT_CHIPS}
+          value={value.openCount}
+          onChange={(next) => onChange({ openCount: next })}
+        />
+
+        <ChipGroup
+          label="是否定型"
+          options={TRI_STATE_CHIPS}
+          value={value.isShaped}
+          onChange={changeIsShaped}
+        />
+
+        <ChipGroup
+          label="款式"
+          options={toChipOptions(STYLE_OPTIONS)}
+          value={value.style}
+          onChange={(next) => onChange({ style: next })}
+        />
 
         <div>
-          <label htmlFor={fieldId('craft')} className={labelClass}>
-            工艺
-          </label>
-          <Select
-            id={fieldId('craft')}
-            options={toOptions(CRAFT_OPTIONS)}
-            value={value.craft ?? ''}
-            onChange={(e) => onChange({ craft: e.target.value || undefined })}
-          />
-        </div>
-
-        <div>
-          <label htmlFor={fieldId('cuttingMode')} className={labelClass}>
-            加工类型
-          </label>
-          <Select
-            id={fieldId('cuttingMode')}
-            options={toOptions(CUTTING_MODE_OPTIONS)}
-            value={value.cuttingMode ?? ''}
-            onChange={(e) => onChange({ cuttingMode: e.target.value || undefined })}
-          />
-        </div>
-
-        <div>
-          <label htmlFor={fieldId('openCount')} className={labelClass}>
-            打开方式
-          </label>
-          <Select
-            id={fieldId('openCount')}
-            options={OPEN_COUNT_SELECT_OPTIONS}
-            value={value.openCount ? String(value.openCount) : ''}
-            onChange={(e) =>
-              onChange({ openCount: e.target.value === '' ? undefined : Number(e.target.value) })
-            }
-          />
-        </div>
-
-        <div>
-          <label htmlFor={fieldId('isShaped')} className={labelClass}>
-            是否定型
-          </label>
-          <Select
-            id={fieldId('isShaped')}
-            options={TRI_STATE_OPTIONS}
-            value={triState(value.isShaped)}
-            onChange={(e) => onChange({ isShaped: fromTriState(e.target.value) })}
-          />
-        </div>
-
-        <div>
-          <label htmlFor={fieldId('style')} className={labelClass}>
-            款式
-          </label>
-          <Select
-            id={fieldId('style')}
-            options={toOptions(STYLE_OPTIONS)}
-            value={value.style ?? ''}
-            onChange={(e) => onChange({ style: e.target.value || undefined })}
-          />
-        </div>
-
-        <div>
-          <label htmlFor={fieldId('pleatSpacing')} className={labelClass}>
+          <label htmlFor={fieldId('pleatSpacing')} className={LABEL_CLASS}>
             褶距
           </label>
           <input
@@ -218,22 +287,17 @@ export default function OrderCraftFields({
           />
         </div>
 
-        <div>
-          <label htmlFor={fieldId('hasPattern')} className={labelClass}>
-            是否对花
-          </label>
-          <Select
-            id={fieldId('hasPattern')}
-            options={TRI_STATE_OPTIONS}
-            value={triState(value.hasPattern)}
-            onChange={(e) => onChange({ hasPattern: fromTriState(e.target.value) })}
-          />
-        </div>
+        <ChipGroup
+          label="是否对花"
+          options={TRI_STATE_CHIPS}
+          value={value.hasPattern}
+          onChange={(next) => onChange({ hasPattern: next })}
+        />
 
         {/* 花距只在「对花 = 是」时才有意义（对花为否时留着会让下游多算一个花距） */}
         {value.hasPattern === true && (
           <div>
-            <label htmlFor={fieldId('patternRepeat')} className={labelClass}>
+            <label htmlFor={fieldId('patternRepeat')} className={LABEL_CLASS}>
               花距
             </label>
             <input
@@ -311,7 +375,7 @@ export default function OrderCraftFields({
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label htmlFor={fieldId('edgeMeters')} className={labelClass}>
+              <label htmlFor={fieldId('edgeMeters')} className={LABEL_CLASS}>
                 配布边米数
               </label>
               <input
@@ -329,7 +393,7 @@ export default function OrderCraftFields({
               </p>
             </div>
             <div>
-              <label htmlFor={fieldId('edgeUnitPrice')} className={labelClass}>
+              <label htmlFor={fieldId('edgeUnitPrice')} className={LABEL_CLASS}>
                 配布边单价
               </label>
               <input
