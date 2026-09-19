@@ -112,6 +112,23 @@ function makeDetail(overrides: Partial<OrderOperations> = {}): OrderOperations {
       },
     ],
     progress: { total: 3, done: 1, percent: 33 },
+    // 操作记录（issue #4347 §3.2）：**服务端**全单流水，最近在前
+    work_logs: [
+      {
+        operation_name: '定型',
+        worker_name: '蒋雪云',
+        qualified_qty: 11,
+        work_type: 'normal',
+        created_at: '2026-09-19T02:00:00Z',
+      },
+      {
+        operation_name: '韩褶',
+        worker_name: '李红梅',
+        qualified_qty: 3,
+        work_type: 'rework',
+        created_at: '2026-09-19T01:00:00Z',
+      },
+    ],
     ...overrides,
   }
 }
@@ -157,6 +174,30 @@ describe('ProductionPage（工人扫码报工）', () => {
     expect(screen.getByText('应做 11米 · ¥3.50')).toBeTruthy()
     // 进度
     expect(screen.getByText('已完 1/3 道 · 33%')).toBeTruthy()
+  })
+
+  it('操作记录：渲染**服务端**全单流水（含别人报的工序），不是只显示本机', async () => {
+    render(<ProductionPage />)
+    fireEvent.click(screen.getByText('扫一扫'))
+
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(ORDER_ID))
+
+    // 标题口径 = 全单流水（服务端给了 work_logs）
+    expect(await screen.findByText('本单操作记录')).toBeTruthy()
+    // 蒋雪云 这条**不是本机报的**（本机 storage 是空的）⇒ 能出现就证明读的是服务端
+    expect(screen.getByText(/蒋雪云 · 定型 · 11/)).toBeTruthy()
+    expect(screen.getByText(/李红梅 · 韩褶 · 3/)).toBeTruthy()
+  })
+
+  it('操作记录红证：服务端**没给** work_logs ⇒ 不得标成「本单操作记录」（不冒充服务端真值）', async () => {
+    mockGet.mockResolvedValue({ success: true, data: makeDetail({ work_logs: [] }) })
+
+    render(<ProductionPage />)
+    fireEvent.click(screen.getByText('扫一扫'))
+
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(ORDER_ID))
+
+    expect(screen.queryByText('本单操作记录')).toBeNull()
   })
 
   it('规格可见面：部位带出 尺寸/工艺/开数/加工类型/定型/褶倍/用料（issue #4347 §3.1）', async () => {
@@ -436,14 +477,19 @@ describe('ProductionPage 计件累计与报工明细（issue #4206 判据 3）',
   })
 
   it('报工成功后出现本单报工明细（人 / 工序 / 数量 / 时间）', async () => {
+    // 本用例针对**本机兜底**路径（服务端没给 work_logs）⇒ 显式清空，
+    // 否则夹具的 work_logs 会让页面走「全单流水」分支（那是另一条用例的判据）。
+    mockGet.mockResolvedValue({ success: true, data: makeDetail({ work_logs: [] }) })
+
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
     await screen.findByText('韩褶')
-    expect(screen.queryByText('本单报工明细')).toBeNull()
+    expect(screen.queryByText('本单报工明细（本机）')).toBeNull()
 
     fireEvent.click(screen.getAllByText('完成报工')[1])
 
-    expect(await screen.findByText('本单报工明细')).toBeTruthy()
+    // 服务端没给 ⇒ 标题**显式标注**是本机明细（不冒充服务端真值）
+    expect(await screen.findByText('本单报工明细（本机）')).toBeTruthy()
     expect(screen.getByText(/张师傅 · 韩褶 · 11米 · \d{2}-\d{2} \d{2}:\d{2}/)).toBeTruthy()
   })
 })
