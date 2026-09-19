@@ -4904,17 +4904,17 @@ _CASE_PG_048 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-049 [NORMAL] 工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变（源: cases/processing-order.yml）──
+# ── PG-049 [NORMAL] 工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变 ＋ **工艺单值护栏**（源: cases/processing-order.yml）──
 _CASE_PG_049 = EvalCase(
     id='PG-049',
     legacy_id='',
-    title='工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变',
+    title='工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变 ＋ **工艺单值护栏**',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=[],
     expectations=[],
-    data_checks=['加工项「纳米圈打孔」声明 `craft_hint=打孔` ⇒ 工艺 = 打孔。红证：读侧仍 `contains` 加工项**名** ⇒ 该用例仍能通过（名字里恰好含「打孔」）⇒ 判据落在下一条（改声明）。', '**改声明 ⇒ 结果随之变**：加工项名仍是「纳米圈打孔」但声明改成 `韩褶` ⇒ 请求键 = 布帘×韩褶。红证：读侧仍 `contains` 加工项名 ⇒ 结果不变（仍 打孔）⇒ 红。', '**改名字 ⇒ 结果不变**：两条明细加工项名不同（「A 款加工」/「B 款加工」、名字里都**没有**「打孔」二字），声明都是 `打孔` ⇒ 两条请求键**逐字相同**（都是 布帘×打孔）。红证：读侧仍 `contains` 加工项名 ⇒ 名里没有「打孔」的那条派不出工艺 ⇒ 两条不等 ⇒ 红。', '证据：`ProcessingRouteSourceDeclarationTest`（craftComesFromDeclaredHintNotFromName / renamingProcessingItemDoesNotChangeRoute）'],
-    skip_reason='[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingRouteSourceDeclarationTest 执行',
+    data_checks=['加工项「纳米圈打孔」声明 `craft_hint=打孔` ⇒ 工艺 = 打孔。红证：读侧仍 `contains` 加工项**名** ⇒ 该用例仍能通过（名字里恰好含「打孔」）⇒ 判据落在下一条（改声明）。', '**改声明 ⇒ 结果随之变**：加工项名仍是「纳米圈打孔」但声明改成 `韩褶` ⇒ 请求键 = 布帘×韩褶。红证：读侧仍 `contains` 加工项名 ⇒ 结果不变（仍 打孔）⇒ 红。', '**改名字 ⇒ 结果不变**：两条明细加工项名不同（「A 款加工」/「B 款加工」、名字里都**没有**「打孔」二字），声明都是 `打孔` ⇒ 两条请求键**逐字相同**（都是 布帘×打孔）。红证：读侧仍 `contains` 加工项名 ⇒ 名里没有「打孔」的那条派不出工艺 ⇒ 两条不等 ⇒ 红。', '**工艺单值护栏**（用户裁定 2026-09-19「每个部位最多一个声明工艺的加工项，两个 ⇒ fail-closed」）：同一行加工项声明**两个不同**工艺（如「韩折」⇒韩褶 + 「打孔」⇒打孔）⇒ **422**（`PRODUCTION_ROUTING_NOT_FOUND`），消息**点名**是哪两个工艺、suggestion 给「取消勾选」的动作；**只认「不同」**——同一工艺被多个加工项声明（韩折 与 韩定+S钩 都是韩褶）**合法**，不算冲突。红证：把 `craftHintOf` 改回「遇到第一个声明就 return」⇒ 不再抛异常、返回「韩褶」⇒ 红。⚠️ 护栏**无条件执行**（不是只在「显式 craft 为空」时才查）：下单页会把派生出的 craft 显式写回（`route_source=direct`），只在缺维分支查 ⇒ 护栏失效。', '证据：`ProcessingRouteSourceDeclarationTest`（craftComesFromDeclaredHintNotFromName / renamingProcessingItemDoesNotChangeRoute）＋ `ProcessingOrderCraftGuardTest`（同工艺多声明不冲突 / 不同声明 422 且消息点名 / 无声明 ⇒ null）'],
+    skip_reason='[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingRouteSourceDeclarationTest + ProcessingOrderCraftGuardTest 执行',
     tags=['processing-order', 'production-routing', 'processing-item'],
     persona='',
     debug_user='',

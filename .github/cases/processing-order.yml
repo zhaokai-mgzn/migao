@@ -1694,7 +1694,7 @@ cases:
 
   - id: PG-049
     legacy_id: ""
-    title: "工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变"
+    title: "工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变 ＋ **工艺单值护栏**"
     domains:
       - processing-order
       - production
@@ -1710,12 +1710,14 @@ cases:
       - "加工项「纳米圈打孔」声明 `craft_hint=打孔` ⇒ 工艺 = 打孔。红证：读侧仍 `contains` 加工项**名** ⇒ 该用例仍能通过（名字里恰好含「打孔」）⇒ 判据落在下一条（改声明）。"
       - "**改声明 ⇒ 结果随之变**：加工项名仍是「纳米圈打孔」但声明改成 `韩褶` ⇒ 请求键 = 布帘×韩褶。红证：读侧仍 `contains` 加工项名 ⇒ 结果不变（仍 打孔）⇒ 红。"
       - "**改名字 ⇒ 结果不变**：两条明细加工项名不同（「A 款加工」/「B 款加工」、名字里都**没有**「打孔」二字），声明都是 `打孔` ⇒ 两条请求键**逐字相同**（都是 布帘×打孔）。红证：读侧仍 `contains` 加工项名 ⇒ 名里没有「打孔」的那条派不出工艺 ⇒ 两条不等 ⇒ 红。"
-      - "证据：`ProcessingRouteSourceDeclarationTest`（craftComesFromDeclaredHintNotFromName / renamingProcessingItemDoesNotChangeRoute）"
-    skip_reason: "[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingRouteSourceDeclarationTest 执行"
-    merge_log: "2026-09-19 新增（issue #4452，包 C）：`processing_items` 加 `craft_hint` 列（V78 迁移，**只加列不回填**）+ `buildSnapshot` 把声明带进快照 + `deriveRouteKey` 读它。写侧 = `POST/PUT /api/admin/processing-items` 的 `craftHint`（可空，留空 = 未声明，不猜）。"
+      - "**工艺单值护栏**（用户裁定 2026-09-19「每个部位最多一个声明工艺的加工项，两个 ⇒ fail-closed」）：同一行加工项声明**两个不同**工艺（如「韩折」⇒韩褶 + 「打孔」⇒打孔）⇒ **422**（`PRODUCTION_ROUTING_NOT_FOUND`），消息**点名**是哪两个工艺、suggestion 给「取消勾选」的动作；**只认「不同」**——同一工艺被多个加工项声明（韩折 与 韩定+S钩 都是韩褶）**合法**，不算冲突。红证：把 `craftHintOf` 改回「遇到第一个声明就 return」⇒ 不再抛异常、返回「韩褶」⇒ 红。⚠️ 护栏**无条件执行**（不是只在「显式 craft 为空」时才查）：下单页会把派生出的 craft 显式写回（`route_source=direct`），只在缺维分支查 ⇒ 护栏失效。"
+      - "证据：`ProcessingRouteSourceDeclarationTest`（craftComesFromDeclaredHintNotFromName / renamingProcessingItemDoesNotChangeRoute）＋ `ProcessingOrderCraftGuardTest`（同工艺多声明不冲突 / 不同声明 422 且消息点名 / 无声明 ⇒ null）"
+    skip_reason: "[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingRouteSourceDeclarationTest + ProcessingOrderCraftGuardTest 执行"
+    merge_log: "2026-09-19 新增（issue #4452，包 C）：`processing_items` 加 `craft_hint` 列（V78 迁移，**只加列不回填**）+ `buildSnapshot` 把声明带进快照 + `deriveRouteKey` 读它。写侧 = `POST/PUT /api/admin/processing-items` 的 `craftHint`（可空，留空 = 未声明，不猜）。｜2026-09-19（用户裁定「工艺单值护栏」）：`craftHintOf` 由「取第一个声明」改为**收集去重 + ≥2 个不同声明 ⇒ 422 fail-closed**，且**无条件执行**（不再只在缺维分支里查）—— 加工项目录落地后（V83：5 个工艺项）一张单同时勾「韩折」与「打孔」会让钱按一套、工序按另一套，必须拒收。证据 ProcessingOrderCraftGuardTest（含红证说明）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingRouteSourceDeclarationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderCraftGuardTest.java"
       ci:
         - pr-check.yml
       verifies: []

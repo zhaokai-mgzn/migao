@@ -3700,15 +3700,16 @@
 ```
 溯源: 2026-09-19 新增（issue #4452，包 C）：部位维从「商品名 `contains` 猜」换成 `componentRole` 受控枚举 + V63 `curtain_type` 列。**如实登记（与设计文档的偏差）**：issue 验收判据表第 1/2 条把「商品名含纱但 componentRole=主布 ⇒ 布帘」写成行为判据，而主工作区设计文档 `processing-fee-and-option-pricing.md` §8 只把包 C 列为「消灭信号映射」—— 本用例按 **issue 正文（更具体）** 实现，并在此登记口径来源。 ｜ tags: processing-order, production-routing, route-source
 
-### PG-049. 工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变 🔵
+### PG-049. 工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变 ＋ **工艺单值护栏** 🔵
 ```
 数据: 加工项「纳米圈打孔」声明 `craft_hint=打孔` ⇒ 工艺 = 打孔。红证：读侧仍 `contains` 加工项**名** ⇒ 该用例仍能通过（名字里恰好含「打孔」）⇒ 判据落在下一条（改声明）。
 数据: **改声明 ⇒ 结果随之变**：加工项名仍是「纳米圈打孔」但声明改成 `韩褶` ⇒ 请求键 = 布帘×韩褶。红证：读侧仍 `contains` 加工项名 ⇒ 结果不变（仍 打孔）⇒ 红。
 数据: **改名字 ⇒ 结果不变**：两条明细加工项名不同（「A 款加工」/「B 款加工」、名字里都**没有**「打孔」二字），声明都是 `打孔` ⇒ 两条请求键**逐字相同**（都是 布帘×打孔）。红证：读侧仍 `contains` 加工项名 ⇒ 名里没有「打孔」的那条派不出工艺 ⇒ 两条不等 ⇒ 红。
-数据: 证据：`ProcessingRouteSourceDeclarationTest`（craftComesFromDeclaredHintNotFromName / renamingProcessingItemDoesNotChangeRoute）
-跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingRouteSourceDeclarationTest 执行
+数据: **工艺单值护栏**（用户裁定 2026-09-19「每个部位最多一个声明工艺的加工项，两个 ⇒ fail-closed」）：同一行加工项声明**两个不同**工艺（如「韩折」⇒韩褶 + 「打孔」⇒打孔）⇒ **422**（`PRODUCTION_ROUTING_NOT_FOUND`），消息**点名**是哪两个工艺、suggestion 给「取消勾选」的动作；**只认「不同」**——同一工艺被多个加工项声明（韩折 与 韩定+S钩 都是韩褶）**合法**，不算冲突。红证：把 `craftHintOf` 改回「遇到第一个声明就 return」⇒ 不再抛异常、返回「韩褶」⇒ 红。⚠️ 护栏**无条件执行**（不是只在「显式 craft 为空」时才查）：下单页会把派生出的 craft 显式写回（`route_source=direct`），只在缺维分支查 ⇒ 护栏失效。
+数据: 证据：`ProcessingRouteSourceDeclarationTest`（craftComesFromDeclaredHintNotFromName / renamingProcessingItemDoesNotChangeRoute）＋ `ProcessingOrderCraftGuardTest`（同工艺多声明不冲突 / 不同声明 422 且消息点名 / 无声明 ⇒ null）
+跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingRouteSourceDeclarationTest + ProcessingOrderCraftGuardTest 执行
 ```
-溯源: 2026-09-19 新增（issue #4452，包 C）：`processing_items` 加 `craft_hint` 列（V78 迁移，**只加列不回填**）+ `buildSnapshot` 把声明带进快照 + `deriveRouteKey` 读它。写侧 = `POST/PUT /api/admin/processing-items` 的 `craftHint`（可空，留空 = 未声明，不猜）。 ｜ tags: processing-order, production-routing, processing-item
+溯源: 2026-09-19 新增（issue #4452，包 C）：`processing_items` 加 `craft_hint` 列（V78 迁移，**只加列不回填**）+ `buildSnapshot` 把声明带进快照 + `deriveRouteKey` 读它。写侧 = `POST/PUT /api/admin/processing-items` 的 `craftHint`（可空，留空 = 未声明，不猜）。｜2026-09-19（用户裁定「工艺单值护栏」）：`craftHintOf` 由「取第一个声明」改为**收集去重 + ≥2 个不同声明 ⇒ 422 fail-closed**，且**无条件执行**（不再只在缺维分支里查）—— 加工项目录落地后（V83：5 个工艺项）一张单同时勾「韩折」与「打孔」会让钱按一套、工序按另一套，必须拒收。证据 ProcessingOrderCraftGuardTest（含红证说明）。 ｜ tags: processing-order, production-routing, processing-item
 
 ### PG-050. 存量单兜底：无 V63 列值时仍能派生（信号表降级不删），且兜底信号源只剩加工项名/options 🔵
 ```
@@ -4935,7 +4936,7 @@
 - PG-039: 工序作用域 scope（V67）：外帘打卷/装袋/发货 = 套级（每樘窗一次）+ 读面逐字 + 写面可配校验 + 工序库页可见可改
 - PG-041: 生产看板分页 + 懒加载 —— 只对当前页扇出详情请求（消除 1+2N 请求扇出，issue #4360）
 - PG-048: 部位改走受控来源：componentRole 枚举（纱⇒纱帘 / 主布·配布边⇒布帘）+ curtain_type 列；商品名不再是判据
-- PG-049: 工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变
+- PG-049: 工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变 ＋ **工艺单值护栏**
 - PG-050: 存量单兜底：无 V63 列值时仍能派生（信号表降级不删），且兜底信号源只剩加工项名/options
 - PG-051: craft_hint 迁移只加列、不猜值（存量加工项一律留空）
 - PG-052: 信号映射写面退役（POST/PUT/DELETE /route-signals 不可达，读面暂留）+ 异常订单清单可查

@@ -2538,6 +2538,61 @@ CREATE TABLE IF NOT EXISTS client_request_keys (
 CREATE INDEX IF NOT EXISTS idx_client_request_keys_tenant_created
     ON client_request_keys (tenant_id, created_at DESC);
 
+-- ── 加工项目录按 ERP 附件重建的终态种子（V83，用户裁定 2026-09-19）──
+-- 与 `V83__seed_processing_item_catalog.sql` **同口径**：按租户循环种「加工费」分类 + 16 项目录
+-- （工艺项 5 / 手选特征·单项 8 / 自动推导特征 3），单价一律 0（价只在「加工费组合」上，R10）。
+-- 为什么必须同步（不是可选项）：本文件是**全新库的一次性 bootstrap**（该路径**不跑迁移链**）
+-- ⇒ 漏同步 ⇒ bootstrap 建库后下单页拿不到加工项目录（形态见 #3270）。
+-- 幂等：`NOT EXISTS` 按业务键去重（`processing_items` 无 `(tenant_id, name)` 唯一索引），
+-- 已存在同名项（含商家自建/改过的行）⇒ 整行跳过，不 UPDATE、不覆盖。
+INSERT INTO processing_categories (id, tenant_id, name, sort_order, status)
+SELECT 'pc-v83-' || t.id || '-fee', t.id, '加工费', 10, 'active'
+  FROM tenants t
+ WHERE t.deleted = 0
+   AND NOT EXISTS (
+       SELECT 1 FROM processing_categories e
+        WHERE e.tenant_id = t.id AND e.name = '加工费' AND e.deleted = 0)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO processing_items
+    (id, tenant_id, name, category_id, pricing_method, unit_price, unit,
+     description, craft_hint, status)
+SELECT 'pi-v83-' || t.id || '-' || v.seq,
+       t.id,
+       v.name,
+       'pc-v83-' || t.id || '-fee',
+       'per_meter',
+       0,
+       '米',
+       v.description,
+       v.craft_hint,
+       'active'
+  FROM tenants t
+  JOIN (VALUES
+      ('01'::text, '打孔'::text,      '打孔'::varchar(16), 'ERP 加工费项（工艺声明：打孔）'::text),
+      ('02'::text, '韩折'::text,      '韩褶'::varchar(16), 'ERP 加工费项（工艺声明：韩褶；名字按 ERP 写「韩折」）'::text),
+      ('03'::text, '韩定+S钩'::text,  '韩褶'::varchar(16), 'ERP 加工费项（工艺声明：韩褶）'::text),
+      ('04'::text, '穿杆'::text,      '穿杆'::varchar(16), 'ERP 加工费项（工艺声明：穿杆）'::text),
+      ('05'::text, '平幔'::text,      '平幔'::varchar(16), 'ERP 加工费项（工艺声明：平幔）'::text),
+      ('06'::text, '定型'::text,      NULL::varchar(16),   'ERP 加工费特征（手选；不再由「工艺规格」录入）'::text),
+      ('07'::text, '花边'::text,      NULL::varchar(16),   'ERP 加工费特征（手选）'::text),
+      ('08'::text, '扣环'::text,      NULL::varchar(16),   'ERP 加工费特征（手选）'::text),
+      ('09'::text, '接高'::text,      NULL::varchar(16),   'ERP 加工费特征（手选）'::text),
+      ('10'::text, '拼接'::text,      NULL::varchar(16),   'ERP 加工费特征（手选）'::text),
+      ('11'::text, '双眼皮'::text,    NULL::varchar(16),   'ERP 加工费特征（手选）'::text),
+      ('12'::text, '缎带'::text,      NULL::varchar(16),   'ERP 加工费单项（独立一行，不成组合）'::text),
+      ('13'::text, '换货'::text,      NULL::varchar(16),   'ERP 加工费单项'::text),
+      ('14'::text, '超高'::text,      NULL::varchar(16),   '自动推导特征（成品高+卷边 > 门幅）—— 不得手选'::text),
+      ('15'::text, '超宽'::text,      NULL::varchar(16),   '自动推导特征（成品宽+卷边 > 门幅）—— 不得手选'::text),
+      ('16'::text, '倒幅'::text,      NULL::varchar(16),   '自动推导特征（加工类型=定宽买高）—— 不得手选'::text)
+  ) AS v(seq, name, craft_hint, description)
+   ON TRUE
+ WHERE t.deleted = 0
+   AND NOT EXISTS (
+       SELECT 1 FROM processing_items e
+        WHERE e.tenant_id = t.id AND e.name = v.name AND e.deleted = 0)
+ON CONFLICT (id) DO NOTHING;
+
 -- ================================================
 -- END OF SCHEMA
 -- ================================================

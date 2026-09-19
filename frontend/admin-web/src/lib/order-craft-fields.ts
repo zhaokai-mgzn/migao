@@ -73,12 +73,25 @@ export function curtainTypeOfBody(body: CurtainBody): string | undefined {
  *
  * ⚠️ issue #4521：这条默认原先是**选部位联动**出来的（#4489）；部位选择移除后改由
  * **帘体结构**决定 —— 同一份真值源，只是触发方式从「交互」变成「结构」。
+ *
+ * ⚠️ issue #4566：它现在是「定型」**加工项**的默认**勾选态**（页面侧 `withShapedDefault`），
+ * 不再是 `craft.isShaped` 的默认值 —— 真值源不变，只是承载它的控件搬到了加工项。
  */
 export function defaultIsShapedForBody(body: CurtainBody): boolean {
   return body !== CURTAIN_BODY_SHEER
 }
 
-/** 工艺（§4.2 `craft`）—— 须与库侧 `production_routings.craft` **逐字一致**（「韩式褶」非法） */
+/**
+ * 工艺枚举真值（§4.2 `craft`）—— 须与库侧 `production_routings.craft` **逐字一致**（「韩式褶」非法）。
+ *
+ * ⚠️ issue #4566（用户 2026-09-19 裁定「工艺…直接通过加工项来勾选」）：下单页**不再让商家选工艺**
+ * ⇒ 本清单不再是下单选项目，而是**加工项 `craftHint` 的合法值域**（V78 的
+ * `processing_items.craft_hint`，目录里 5 个工艺项声明它）。工艺值的写侧来源 = 页面侧
+ * `craftFromItems`（勾选的工艺项的 `craftHint`），本文件**不再提供默认工艺**。
+ *
+ * ⚠️ `四爪钩` 仍是合法工艺枚举，但 **V83 加工项目录里没有对应项**（它是配件、不是打褶方式）
+ * ⇒ 下单页暂时不可达（已知取舍，归属 issue #4365 阶段 2）；存量单的 `craft='四爪钩'` 照旧派生。
+ */
 export const CRAFT_OPTIONS = ['韩褶', '打孔', '四爪钩', '穿杆', '平幔'] as const
 
 /** 加工类型（§4.2 `cuttingMode`） */
@@ -143,40 +156,32 @@ export const STANDARD_FULLNESS = 2.0
 export const DEFAULT_PLEAT_SPACING = PLEAT_FABRIC_PER_FOLD / STANDARD_FULLNESS
 
 /**
- * 是否定型默认「**是**」—— 真值源 §10「布帘默认是 / 纱帘默认否」。
- *
- * 主帘的默认部位就是布帘（`CURTAIN_TYPE_CLOTH`）⇒ 默认档取「是」；
- * 帘体 = 纱帘时由 `defaultIsShapedForBody` 覆盖成「否」（issue #4521）。
- */
-export const DEFAULT_IS_SHAPED = true
-
-/** 工艺默认「韩褶」—— 引导清单 `craft`：`default_src=industry, default=韩褶` */
-export const DEFAULT_CRAFT = '韩褶'
-
-/**
  * 是否对花默认「否」—— 真值源 §1 下单行要素实证（ERP 订单录入页：「是否对花: **不对花**」）。
  * 三态里的「未指定」仍是独立真值，只是**默认**给「否」（商家看得见、可改）。
  */
 export const DEFAULT_HAS_PATTERN = false
 
 /**
- * 新明细行的**默认工艺规格**（issue #4493 扩到 8 项全覆盖）。
+ * 新明细行的**默认工艺规格**。
  *
- * 为什么扩：用户 2026-09-19「**现在太多点选了**」—— 8 个字段每个都要点一次。
+ * 为什么扩到 4 项（issue #4493）：用户 2026-09-19「**现在太多点选了**」—— 8 个字段每个都要点一次。
  * 把**有行业默认**的字段全部预填 ⇒ 商家**常态 0 点击**，只在偏离默认时改。
  * 打开方式不在这里：它按**窗宽**联动（真值源 §10 的启发式，见页面侧 `deriveOpenCount`）。
+ *
+ * ⚠️ **`craft` / `isShaped` 不在这里**（issue #4566，用户 2026-09-19 裁定）：它们已搬到
+ * **加工项**（工艺 = 勾选的工艺项的 `craftHint`；定型 = 「定型」加工项的勾选态）⇒
+ * 前端**不得**再补一份默认工艺/默认定型（那正是让 ERP「工艺+特征」组合名匹配不上的那份口径）。
+ * 两者由页面侧的**唯一派生点** `derivedCraftSpec` 写进 `buildCraftSpec`。
  *
  * ⚠️ 与硬约束 1「缺值不写」的关系：默认值是**商家看得见的真值** ⇒ 必须写；
  * 「缺值不写」管的是**既没填也没默认**的键。
  */
 export function createDefaultCraftSpec(): CraftSpecInput {
   return {
-    craft: DEFAULT_CRAFT,
     cuttingMode: DEFAULT_CUTTING_MODE,
     style: DEFAULT_STYLE,
     pleatSpacing: DEFAULT_PLEAT_SPACING,
     hasPattern: DEFAULT_HAS_PATTERN,
-    isShaped: DEFAULT_IS_SHAPED,
   }
 }
 
@@ -211,21 +216,28 @@ export const METERS_SOURCE_MANUAL = '人工指定'
 /**
  * 一行明细的工艺规格录入值 —— **全部可缺省**（未填的键不落库）。
  *
- * 三态字段（`isShaped` / `hasPattern`）刻意用 `boolean | undefined` 而非 `boolean`：
- * 「未指定」与「否」是两个不同的真值，合并会让「没问过」被下游当成「不做定型」。
+ * 三态字段（`hasPattern`）刻意用 `boolean | undefined` 而非 `boolean`：
+ * 「未指定」与「否」是两个不同的真值，合并会让「没问过」被下游当成「不对花」。
+ *
+ * ⚠️ `craft` / `isShaped` **不是商家在本表单里选的**（issue #4566，用户 2026-09-19 裁定
+ * 「工艺、定型…直接通过加工项来勾选」）：它们的真值来源是**加工项**
+ * （工艺 = 勾选的工艺项的 `craftHint`；定型 = 「定型」加工项的勾选态），
+ * 由页面侧唯一派生点 `derivedCraftSpec` 填进来。本类型仍是**落库键的载体**（`buildCraftSpec` 照旧写它们）。
+ * `isShaped` 的 `undefined` 档现在表达「目录里没有『定型』项」（老租户未重建目录）⇒ 不写该键。
  */
 export interface CraftSpecInput {
   // ⚠️ **没有 `curtainType`**（issue #4521）：部位已从录入面移除 —— 主帘缺省即布帘（不写），
   //    纱帘行的部位由 `buildSheerLineCraftSpec` 显式写死。留一个可录键 = 留一条能写错路线的口子。
+  /** 工艺（#4566：由加工项 `craftHint` 派生，不猜默认） */
   craft?: string
   cuttingMode?: string
   /** 开数（正整数；下拉列 1/2/3/4，更大开数由 API/Agent 直写）—— issue #4387 */
   openCount?: number
-  /** 是否定型：`true` 是 / `false` 否 / `undefined` 未指定 */
+  /** 是否定型（#4566：由「定型」加工项的勾选态派生；目录无该项 ⇒ `undefined`） */
   isShaped?: boolean
   /** 褶距（米） */
   pleatSpacing?: number
-  /** 是否对花：三态同 `isShaped` */
+  /** 是否对花：`true` 是 / `false` 否 / `undefined` 未指定（**本表单唯一的三态字段**） */
   hasPattern?: boolean
   /** 花距（米）—— 仅「是否对花 = 是」时有意义 */
   patternRepeat?: number

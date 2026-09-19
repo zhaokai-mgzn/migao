@@ -4,8 +4,21 @@
  * 下单页「工艺规格」录入区（issue #4375 包 4b · 设计文档 §4.6 入口 2）。
  *
  * 商家手工录单是布艺商家的主路径（行业 ERP 的订单录入页就是这一页）——
- * 本组件把这页此前**一个都不写**的工艺参数变成可录入项（工艺/加工类型/打开方式/
- * 是否定型/款式/褶距/是否对花 + 纱帘 / 拼色配布边两个**选配子块**）。
+ * 本组件把这页此前**一个都不写**的工艺参数变成可录入项。
+ *
+ * ⚠️ **「工艺」与「是否定型」已搬到加工项**（issue #4566，用户 2026-09-19 裁定逐字：
+ * 「工艺规格中的 **工艺，定型**，对花我觉得**直接通过加工项来勾选**，其他保留，这样的区分和
+ * 交互是否更合理？」）⇒ **本组件不再录入这两项**：
+ * - **工艺**：加工项里 5 个工艺项**显式声明** `craftHint`（V78 的 `processing_items.craft_hint`）
+ *   ⇒ 页面侧由勾选项派生（`craftFromItems`）。**必须**这么改：加工费组合键的唯一来源是
+ *   `processingInfo.processingItems[].name`，而 ERP 91 项加工费名字全是「工艺+特征」形态
+ *   （`韩折+超高+定型`）—— 工艺留在本组件里 ⇒ ERP 的名字一行都匹配不上。
+ * - **是否定型**：加工项目录里的 `定型` 项勾选态即 `isShaped`（后端
+ *   `ProcessingOrderService` 读的就是这个键）。
+ *
+ * **对花保留**（它不在加工项里）：它是**算料输入** —— 定宽买高时每幅加 1 个花距
+ * （见 `curtain_calc.py`），且 ERP 91 项加工费名单里 **0 行**含对花。
+ * 保留的还有：加工类型 / 打开方式 / 款式 / 褶距 / 纱帘子块 / 拼色配布边子块。
  *
  * ⚠️ **19 项部位级特殊选项已迁出**（issue #4511）：用户口径「加工项 - 工艺规格 - 特殊选项
  * 都放到**平级**」⇒ 它现在由 `OrderExtraOptions` 渲染、由页面侧的**向导步骤**包壳。
@@ -14,19 +27,19 @@
  * 1. **本组件只录入，不落库**：值的裁剪（缺值不写 / camelCase 键名）在
  *    `lib/order-craft-fields.ts` 的 `buildCraftSpec`，两处不重复一套规则。
  * 2. **不动金额**：拼色/定型/特殊选项加价待 issue #4341 裁定，本组件不显示任何加价。
- * 3. **三态而非布尔**：「是否定型 / 是否对花」的「未指定」与「否」是两个真值 ——
- *    合并会让「没问过」被下游当成「不做定型」。
+ * 3. **三态而非布尔**：`是否对花` 的「未指定」与「否」是两个真值 —— 合并会让「没问过」
+ *    被下游当成「不对花」。（#4566 后本组件**只剩这一个三态字段**。）
  *
  * ── 展示重构（issue #4420，用户 2026-09-19：「信息偏多，不能全部挤在一块区域」）──
  *
  * 录入项本身一个没减（8 个下拉 + 19 项特殊选项 + 拼色配布边），改的是**信息层次**：
- * ① 8 个主工艺参数留在**首屏常显**（录单主路径，不该藏）；
+ * ① 主工艺参数留在**首屏常显**（录单主路径，不该藏）；
  * ② （19 项特殊选项已迁出，见 `OrderExtraOptions`）；
  * ③ 每个区块有**标题 + 一句话说明**，不再是一个大 grid 平铺。
  *
  * ── 交互改造（issue #4489，用户 2026-09-19：「现在要一个个点过去」）──────────────
  *
- * 病根：8 个字段都是**下拉** ⇒ 每个都要「点开 → 点选项」两步（最多 16 次点击）。
+ * 病根：字段都是**下拉** ⇒ 每个都要「点开 → 点选项」两步（最多 16 次点击）。
  * ① 枚举字段改 **chips**（一击即中，省掉「展开」那一步）；三态字段用**三段分段按钮**，
  *    「未指定」档保留（三态硬约束不变）。
  *
@@ -40,14 +53,12 @@
  * ① **部位字段整体移除** —— 主帘缺省即布帘；纱帘由页面侧的**帘体**选择 + 纱帘行承载；
  * ② **纱帘子块**（`sheer`）= 与「双拼·配布边」逐字同构：米数（默认 = 主布米数，可改，带来源）
  *    + 单价（不填不生成纱帘明细行 —— 后端单价必须 > 0，不凭空造价）；
- * ③ 「是否定型」的行业默认**改由帘体结构决定**（`defaultIsShapedForBody`，页面侧写回），
- *    不再是本组件里的部位联动 —— 同一份真值源（布帘是 / 纱帘否），触发方式从交互变结构。
+ * ③ 「是否定型」的行业默认**改由帘体结构决定**（`defaultIsShapedForBody`）—— 同一份真值源；
+ *    #4566 后它落到「定型」加工项的**默认勾选态**上（页面侧 `withShapedDefault`）。
  */
 
 import { useId } from 'react'
-import { Settings2 } from 'lucide-react'
 import {
-  CRAFT_OPTIONS,
   CUTTING_MODE_OPTIONS,
   METERS_SOURCE_FOLLOW,
   METERS_SOURCE_MANUAL,
@@ -80,7 +91,8 @@ const OPEN_COUNT_CHIPS: ChipOption<number | undefined>[] = [
 /**
  * 三态 chips（`undefined` 未指定 / `true` 是 / `false` 否）——**三段，不合并**。
  *
- * 「没问过」与「否」是两个真值：合并会让下游把「没问过」当成「不做定型」。
+ * 「没问过」与「否」是两个真值：合并会让下游把「没问过」当成「不对花」。
+ * ⚠️ #4566 后本组件**只剩「是否对花」**用三态（「是否定型」已搬到加工项）。
  */
 const TRI_STATE_CHIPS: ChipOption<boolean | undefined>[] = [
   { value: undefined, label: '未指定' },
@@ -196,20 +208,17 @@ export default function OrderCraftFields({
           （页面侧的折叠头 + 这里的标题）。标题与序号由页面侧的**向导步骤**统一提供，
           本组件只负责 8 个字段本体。 */}
       <p className="mb-3 text-xs text-neutral-400">
-        加工类型默认「定高买宽」、款式默认「单色」、褶距按标准档 2.0 倍自动算 —— 都可改
+        加工类型默认「定高买宽」、款式默认「单色」、褶距按标准档 2.0 倍自动算 —— 都可改；
+        <span className="text-neutral-500">工艺与定型请在「加工项」里勾选</span>
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* ⚠️ 「部位」字段已移除（issue #4521，用户裁定「移除部位功能，其实完全不需要」）：
             主帘缺省即布帘；纱帘由页面侧的**帘体**选择承载（`curtainBody`）——
-            这里再放一个部位下拉 = 让商家能选出一个与帘体矛盾的部位（两条真值打架）。 */}
-        <ChipGroup
-          label="工艺"
-          options={toChipOptions(CRAFT_OPTIONS)}
-          value={value.craft}
-          onChange={(next) => onChange({ craft: next })}
-        />
-
+            这里再放一个部位下拉 = 让商家能选出一个与帘体矛盾的部位（两条真值打架）。
+            ⚠️ 「工艺」chip 组已移除（issue #4566）：工艺改由**加工项**勾选派生（工艺项的 `craftHint`）
+            —— 留一个可录键 = 与加工项派生的第二份口径打架（且 ERP 的「工艺+特征」组合名匹配不上）。
+            ⚠️ 「是否定型」三段 chip 组已移除（同 #4566）：定型是加工项目录里的**手选特征**项。 */}
         <ChipGroup
           label="加工类型"
           options={toChipOptions(CUTTING_MODE_OPTIONS)}
@@ -222,13 +231,6 @@ export default function OrderCraftFields({
           options={OPEN_COUNT_CHIPS}
           value={value.openCount}
           onChange={(next) => onChange({ openCount: next })}
-        />
-
-        <ChipGroup
-          label="是否定型"
-          options={TRI_STATE_CHIPS}
-          value={value.isShaped}
-          onChange={(next) => onChange({ isShaped: next })}
         />
 
         <ChipGroup
