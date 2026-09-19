@@ -1,0 +1,236 @@
+// case_ids: PG-018, PG-035
+package com.migao.admin.service;
+
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.migao.admin.entity.ProductionOperationPosition;
+import com.migao.admin.entity.ProductionRouteRule;
+import com.migao.admin.mapper.ProductionOperationPositionMapper;
+import com.migao.admin.mapper.ProductionRouteRuleMapper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * {@link ProductionRoutingReadService} 的语义判据（issue #4500 = 母单 #4423 的 P2c）。
+ *
+ * <p>判据三条，各自**注入式可红**：</p>
+ * <ol>
+ *   <li><b>顺序确定性</b>：mocked mapper 返回**乱序**行 ⇒ 输出必须是 {@code (operation, position)} /
+ *       {@code (priority, id)} 序。去掉比较器 ⇒ 红（返回乱序）。</li>
+ *   <li><b>逐字取库（不写死、不换算）</b>：单价 / applicable / 锚点 / 触发键都跟着库行变
+ *       （写死常量或做换算 ⇒ 断言不跟着变 ⇒ 红）。</li>
+ *   <li><b>行过滤只有 租户/软删/停用（+ 规则表 action）</b>：断言落在 SQL 条件上
+ *       —— 加一条值过滤（如 {@code applicable=true}）会让矩阵少格。</li>
+ * </ol>
+ *
+ * <p>与 Python 侧守卫的分工：值层面的「84 格 / 26 条 ↔ {@code routing.py} 真值源」在
+ * {@code tests/unit_ci_workflows/test_routing_read_endpoints.py}（Java 无法 import Python）；
+ * 本类判的是**服务层行为**。</p>
+ */
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+@DisplayName("ProductionRoutingReadService 新模型只读面（部位价目矩阵 / 规则区）")
+class ProductionRoutingReadServiceTest {
+
+    private static final Long TENANT = 1L;
+
+    @Mock
+    private ProductionOperationPositionMapper productionOperationPositionMapper;
+    @Mock
+    private ProductionRouteRuleMapper productionRouteRuleMapper;
+
+    private ProductionRoutingReadService service() {
+        return new ProductionRoutingReadService(productionOperationPositionMapper, productionRouteRuleMapper);
+    }
+
+    /**
+     * 初始化 MyBatis-Plus 的 TableInfo 缓存（同 {@code ProductionOperationQueryServiceTest} 的既有做法）：
+     * 断言 {@code LambdaQueryWrapper.getSqlSegment()} 需要它，否则报
+     * 「MybatisPlus can not find lambda cache for this entity」。
+     */
+    @BeforeEach
+    void initTableInfoCache() {
+        MybatisConfiguration conf = new MybatisConfiguration();
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
+        TableInfoHelper.initTableInfo(assistant, ProductionOperationPosition.class);
+        TableInfoHelper.initTableInfo(assistant, ProductionRouteRule.class);
+    }
+
+    // ── 夹具 ──
+
+    private ProductionOperationPosition position(String logical, String pos, String price, boolean applicable) {
+        return ProductionOperationPosition.builder()
+                .id("opp-" + logical + "-" + pos).tenantId(TENANT).logicalName(logical).position(pos)
+                .unitPrice(price == null ? null : new BigDecimal(price))
+                .applicable(applicable).status("active").deleted(0).build();
+    }
+
+    private ProductionRouteRule rule(String id, String kind, String trigger, String pos, String action,
+                                     String operation, String after, int priority) {
+        return ProductionRouteRule.builder()
+                .id(id).tenantId(TENANT).triggerKind(kind).triggerValue(trigger).position(pos)
+                .action(action).operation(operation).afterOperation(after).priority(priority)
+                .status("active").deleted(0).build();
+    }
+
+    // ── 判据 1：顺序确定性（乱序入库 ⇒ 稳定输出）──
+
+    @Test
+    @DisplayName("部位价目：乱序入库 ⇒ 按 (operation, position) 输出（去掉比较器即红）")
+    void operationPositionsSortsByOperationThenPosition() {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("韩褶", "布帘", "0.40", true),
+                position("精裁", "纱帘", "0.40", true),
+                position("三边", "帘头", "0.40", true),
+                position("精裁", "布帘", "0.40", true)));
+
+        List<Map<String, Object>> rows = service().operationPositions(TENANT);
+
+        assertThat(rows).extracting(r -> r.get("operation") + "/" + r.get("position"))
+                .containsExactly("三边/帘头", "精裁/布帘", "精裁/纱帘", "韩褶/布帘");
+    }
+
+    @Test
+    @DisplayName("规则：乱序入库 ⇒ 按 (priority, id) 输出（同 priority 按 id —— priority 撞档时顺序必须可预测）")
+    void routeRulesSortsByPriorityThenId() {
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of(
+                rule("rr-v70-26", "option", "防翘扣", null, "insert", "防翘扣", "三边", 260),
+                rule("rr-v70-02", "craft", "韩褶", "布帘", "insert", "上车布", "韩褶", 20),
+                rule("rr-v70-01", "craft", "韩褶", null, "insert", "韩褶", "三边", 20),
+                rule("rr-v70-11", "option", "拼1次", null, "insert", "拼1次", "三边", 110)));
+
+        List<Map<String, Object>> rows = service().routeRules(TENANT);
+
+        assertThat(rows).extracting(r -> r.get("id"))
+                .containsExactly("rr-v70-01", "rr-v70-02", "rr-v70-11", "rr-v70-26");
+    }
+
+    // ── 判据 2：逐字取库（注入式）──
+
+    @Test
+    @DisplayName("部位价目：单价/applicable 逐字取库；applicable=false 的格 unit_price=null 且**不丢行**")
+    void operationPositionsCarriesPriceAndApplicabilityVerbatim() {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("熨烫", "布帘", "0.35", true),
+                position("熨烫", "纱帘", null, false),
+                position("熨烫", "帘头", "0.42", false)));
+
+        List<Map<String, Object>> rows = service().operationPositions(TENANT);
+
+        assertThat(rows).hasSize(3);
+        assertThat(rows).extracting(r -> r.get("position")).containsExactly("布帘", "帘头", "纱帘");
+        assertThat((BigDecimal) rows.get(0).get("unit_price")).isEqualByComparingTo("0.35");
+        assertThat(rows.get(0).get("applicable")).isEqualTo(true);
+        // 「明确不做」= applicable false：价可以是 null（不报价），也可以有价（历史价保留）
+        assertThat(rows.get(1).get("applicable")).isEqualTo(false);
+        assertThat((BigDecimal) rows.get(1).get("unit_price")).isEqualByComparingTo("0.42");
+        assertThat(rows.get(2).get("applicable")).isEqualTo(false);
+        assertThat(rows.get(2)).containsKey("unit_price");
+        assertThat(rows.get(2).get("unit_price")).isNull();
+    }
+
+    @Test
+    @DisplayName("部位价目：operation = logical_name（**逻辑名**，不是工序库里的旧名 精裁-布）")
+    void operationPositionsUsesLogicalNameAsOperationKey() {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("精裁", "布帘", "0.40", true)));
+
+        List<Map<String, Object>> rows = service().operationPositions(TENANT);
+
+        assertThat(rows.get(0).get("operation")).isEqualTo("精裁");
+        assertThat(rows.get(0)).doesNotContainKey("logical_name");
+        assertThat(rows.get(0).keySet())
+                .containsExactly("operation", "position", "unit_price", "applicable");
+    }
+
+    @Test
+    @DisplayName("规则：9 键逐字（含 null 的 position/after_operation 保留为 null，不省略键）")
+    void routeRulesCarriesNineKeysVerbatim() {
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of(
+                rule("rr-v70-02", "craft", "韩褶", "布帘", "insert", "上车布", "韩褶", 20),
+                rule("rr-v70-05", "craft", "四爪钩", null, "remove", "定型", null, 50)));
+
+        List<Map<String, Object>> rows = service().routeRules(TENANT);
+
+        assertThat(rows).hasSize(2);
+        Map<String, Object> insert = rows.get(0);
+        assertThat(insert.keySet()).containsExactly("id", "trigger_kind", "trigger_value", "position",
+                "action", "operation", "after_operation", "priority", "status");
+        assertThat(insert.get("trigger_value")).isEqualTo("韩褶");
+        assertThat(insert.get("position")).isEqualTo("布帘");
+        assertThat(insert.get("after_operation")).isEqualTo("韩褶");
+        assertThat(insert.get("priority")).isEqualTo(20);
+        Map<String, Object> remove = rows.get(1);
+        assertThat(remove.get("action")).isEqualTo("remove");
+        assertThat(remove).containsKey("position");
+        assertThat(remove.get("position")).isNull();
+        assertThat(remove).containsKey("after_operation");
+        assertThat(remove.get("after_operation")).isNull();
+    }
+
+    // ── 判据 3：行过滤只有 租户/软删/停用（+ 规则表 action）──
+
+    @Test
+    @DisplayName("部位价目：只按 租户 + 软删 + 停用 过滤（额外值过滤 ⇒ 矩阵少格）")
+    void operationPositionsFiltersOnlyTenantDeletedStatus() {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(new ArrayList<>());
+
+        service().operationPositions(TENANT);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<ProductionOperationPosition>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(productionOperationPositionMapper).selectList(captor.capture());
+        assertThat(captor.getValue().getSqlSegment())
+                .contains("tenant_id").contains("deleted").contains("status")
+                .doesNotContain("applicable").doesNotContain("unit_price");
+    }
+
+    @Test
+    @DisplayName("规则：租户 + 软删 + 停用 + action IN ('insert','remove')（系数档不在本端点）")
+    void routeRulesFiltersOnlyTenantDeletedStatusAndRouteActions() {
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(new ArrayList<>());
+
+        service().routeRules(TENANT);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<ProductionRouteRule>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(productionRouteRuleMapper).selectList(captor.capture());
+        assertThat(captor.getValue().getSqlSegment())
+                .contains("tenant_id").contains("deleted").contains("status")
+                .contains("action").contains("IN");
+        assertThat(captor.getValue().getParamNameValuePairs().values())
+                .as("action 过滤值 = insert/remove（不含 factor 计件系数档）")
+                .contains("insert", "remove").doesNotContain("factor");
+    }
+
+    @Test
+    @DisplayName("空库 ⇒ 空数组（不是错误态）：新租户未播种时前端渲染空态")
+    void emptyLibraryReturnsEmptyList() {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(null);
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(null);
+
+        assertThat(service().operationPositions(TENANT)).isEmpty();
+        assertThat(service().routeRules(TENANT)).isEmpty();
+    }
+}

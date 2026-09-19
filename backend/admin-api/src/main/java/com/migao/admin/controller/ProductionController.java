@@ -11,6 +11,7 @@ import com.migao.admin.service.ProductionOperationQueryService;
 import com.migao.admin.service.ProcessingFeeCombinationCommandService;
 import com.migao.admin.service.ProcessingFeeQueryService;
 import com.migao.admin.service.ProductionRoutingCommandService;
+import com.migao.admin.service.ProductionRoutingReadService;
 import com.migao.admin.service.ProductionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -69,6 +70,17 @@ public class ProductionController {
     private ProcessingFeeQueryService processingFeeQueryService;
     @org.springframework.beans.factory.annotation.Autowired
     private ProcessingFeeCombinationCommandService processingFeeCombinationCommandService;
+
+    /**
+     * 新模型只读面（issue #4500：部位价目矩阵 + 规则区）。
+     *
+     * <p>同上面两个字段的理由用字段注入：本类构造签名被 {@code ProductionControllerTest} /
+     * {@code ProductionRoutingReadControllerTest} 显式装配，加构造参数会把既有测试的装配全改一遍
+     * —— 而本单的改动面**不应**扩到既有测试（同 #4308 的「不复制第二份装配」口径）。
+     * Spring 生产装配下该依赖一定非 null（同包 {@code @Service}）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    private ProductionRoutingReadService productionRoutingReadService;
 
     /**
      * 实例化工序 + 生成加工单二维码 token
@@ -461,5 +473,40 @@ public class ProductionController {
     @GetMapping("/processing-fee-gaps")
     public ApiResponse<Map<String, Object>> processingFeeGaps() {
         return ApiResponse.success(processingFeeQueryService.feeGaps(TenantContext.getTenantId()));
+    }
+
+    // ══════════════════════════ 新模型读面（issue #4500 = 母单 #4423 的 P2c，P3 前置）══════════════════════════
+    //
+    // 两个**只读**端点：P3（#4433）的「部位价目矩阵」与「统一规则区」的数据面。写面（改价/增删规则）
+    // 留 v1b（与「商家配置面 v1b」同批）。语义与排序判据在 ProductionRoutingReadService。
+
+    /**
+     * 部位价目矩阵（28 逻辑工序 × 3 部位 = **84 格**）
+     * GET /api/admin/production/operation-positions
+     *
+     * <p>响应 {@code data} = {@code [{operation, position, unit_price, applicable}]}，按
+     * {@code (operation, position)} 稳定排序。{@code applicable=false} = 该部位**明确不做**
+     * （{@code unit_price=null}）—— 与「没定价」可区分（前端两态渲染）。</p>
+     */
+    @GetMapping("/operation-positions")
+    @RequirePermission("processing:manage")
+    public ApiResponse<List<Map<String, Object>>> operationPositions() {
+        return ApiResponse.success(
+                productionRoutingReadService.operationPositions(TenantContext.getTenantId()));
+    }
+
+    /**
+     * 规则区（工艺变体 ∪ 特殊选项 = **26 条**）
+     * GET /api/admin/production/route-rules
+     *
+     * <p>响应 {@code data} = 9 键（见 {@code ProductionRoutingReadService}），按 {@code (priority, id)}
+     * 稳定排序。只返回路线编排档（{@code insert}/{@code remove}）：计件系数档（{@code action='factor'}）
+     * 不在此端点（P3 统一规则区不呈现系数）。</p>
+     */
+    @GetMapping("/route-rules")
+    @RequirePermission("processing:manage")
+    public ApiResponse<List<Map<String, Object>>> routeRules() {
+        return ApiResponse.success(
+                productionRoutingReadService.routeRules(TenantContext.getTenantId()));
     }
 }
