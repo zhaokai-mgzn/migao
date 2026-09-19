@@ -89,7 +89,7 @@ class TestProbeCounting:
 
         class _Client:
             def __init__(self, *a, **kw):
-                pass
+                return None
 
             async def __aenter__(self):
                 return self
@@ -140,7 +140,7 @@ class TestProbeCounting:
 
         class _Boom:
             def __init__(self, *a, **kw):
-                pass
+                return None
 
             async def __aenter__(self):
                 return self

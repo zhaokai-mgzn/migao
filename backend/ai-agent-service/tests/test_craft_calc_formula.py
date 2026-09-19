@@ -27,7 +27,7 @@
 （`X == X` 的断言不会红）。
 """
 
-# case_ids: OR-039
+# case_ids: OR-041
 
 import pytest
 
