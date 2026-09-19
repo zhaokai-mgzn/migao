@@ -66,7 +66,16 @@ REGISTRY_SETUP=""
 if [ -n "$ACR_USERNAME" ] && [ -n "$ACR_PASSWORD" ]; then
   REGISTRY_SETUP="printf 'ACR_USERNAME=%s\nACR_PASSWORD=%s\n' \"$ACR_USERNAME\" \"$ACR_PASSWORD\" > /opt/migao-deploy/.env.registry && "
 fi
-BOOTSTRAP="${REGISTRY_SETUP}rm -rf /tmp/migao-src && mkdir -p /tmp/migao-src && curl -fsSL --retry 3 https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main -o /tmp/migao-src.tar.gz && tar xzf /tmp/migao-src.tar.gz -C /tmp/migao-src --strip-components=1 && cp /tmp/migao-src/deploy/swas/deploy.sh /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh ${IMAGE_TAG}"
+# ⚠️ 并发红线（issue #4625）：下面整段**不许出现任何跨 run 共享的固定路径**。
+# 实测：`/tmp` 下那个固定源码目录被三个 workflow（admin-api / ai-agent / frontend）共用 ⇒ 同一次 push 的
+# 并发 run 互相 `rm -rf`（run 35458389055 前端 `cp: cannot stat`；同刻 35458382449 服务端
+# `rm: cannot remove ... Directory not empty`）⇒ 随机一端部署失败、线上前端落后一个版本。
+# 注意：`deploy.sh` 内部的 flock **只覆盖 deploy.sh 自己**，覆盖不到 bootstrap 这一段 ——
+# 「flock 会串行化」不能当作 bootstrap 可以共享路径的理由。
+# 故 bootstrap 一律用 per-run 唯一路径（`mktemp -d`），装 deploy.sh 一律「先写临时名再 `mv -f`」（原子替换）。
+# 转义纪律：本变量在 CI 侧求值 ⇒ **远端**求值的要写成 `\$(…)` / `\"\$SRC\"`；
+# **本地**要展开的（`${REGISTRY_SETUP}` / `${IMAGE_TAG}`）保持原样。
+BOOTSTRAP="${REGISTRY_SETUP}SRC=\$(mktemp -d) && TAR=\$(mktemp) && curl -fsSL --retry 3 https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main -o \"\$TAR\" && tar xzf \"\$TAR\" -C \"\$SRC\" --strip-components=1 && mkdir -p /opt/migao-deploy && cp \"\$SRC\"/deploy/swas/deploy.sh /opt/migao-deploy/.deploy.sh.new && mv -f /opt/migao-deploy/.deploy.sh.new /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh ${IMAGE_TAG}; rc=\$?; rm -rf \"\$SRC\" \"\$TAR\"; exit \$rc"
 # RunCommand 可能被阿里云 API 限流（并发触发时 Throttling），重试 3 次
 INVOKE_ID=""
 for attempt in 1 2 3; do
