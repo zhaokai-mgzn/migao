@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
@@ -213,6 +214,42 @@ const FEE_PREVIEW_DEBOUNCE_MS = 300
 const SALE_FORM_FABRIC = '布料'
 const SALE_FORM_FINISHED = '成品帘'
 type SaleForm = typeof SALE_FORM_FABRIC | typeof SALE_FORM_FINISHED
+
+/**
+ * 「加工费组合」定价面的入口（issue #4590）—— **与后端同源同值**：后端
+ * `ProcessingFeeCalculator.PRICING_ENTRY` 给未定价组合拼的 hint 里就是这条路径。
+ *
+ * 它落点 = 合并页 `/production/processing?tab=fees` 的**第二个 tab「加工费组合」**
+ * （`production/processing-fees/page.tsx` 是这条旧路径的重定向入口，见该文件头）
+ * ⇒ 就是商家真正能定价的那一屏。⚠️ 前端**不另写**第三个路径：
+ * `orders-new-fee-preview.test.tsx` 直接读后端源码比对（同源判据，改一边必红）。
+ */
+const PRICING_ENTRY = '/production/processing-fees'
+
+/**
+ * 未定价行**没有可匹配的组合**时的展示名（issue #4590 的边界）：服务端 `composition` 为空 =
+ * 本行没选配任何加工项 ⇒ **缺选配信息**，与「组合未定价」是两回事，不许混同、也不许显示空组合名。
+ */
+const UNPRICED_NO_COMPOSITION = '没有可匹配的组合（缺选配信息）'
+
+/**
+ * 未定价行的**组合展示名**（issue #4590）：`items.join(' + ')` —— 与「加工费组合」页
+ * **同一写法**（`production/processing/page.tsx`：`(row.items ?? []).join(' + ') || row.composition_key`），
+ * 保证商家在告警里读到的名字与定价页上的组合名逐字一致（否则还是对不上号）。
+ *
+ * `items` 是服务端**展示用**的归一化加工项名（与 `composition` 同源，键名冻结）⇒ 不自己拆键。
+ */
+function unpricedCombinationLabel(
+  detail: { composition?: unknown; items?: unknown } | undefined
+): string {
+  const items = Array.isArray(detail?.items)
+    ? detail.items.filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+    : []
+  if (items.length > 0) return items.join(' + ')
+  // `items` 缺席（旧服务端）⇒ 回落到归一化组合键（与定价页的兜底同口径），再空才算「缺选配信息」
+  const composition = typeof detail?.composition === 'string' ? detail.composition.trim() : ''
+  return composition !== '' ? composition : UNPRICED_NO_COMPOSITION
+}
 
 /**
  * 「定型」加工项名（**V83 目录逐字**）—— 它的勾选态就是 `isShaped` 的真值来源（issue #4566）。
@@ -1170,13 +1207,56 @@ export default function NewOrderPage() {
   /** 未定价的行数（服务端按 0 计）—— 必须显式可见：`¥0.00` 与「本来就不收」分不清 */
   // ⚠️ **布料行不计入「未定价」**（issue #4493）：布料无加工 ⇒ 服务端按 0 计是**正常**的，
   // 把它算成「未定价」会让每一张布料单都挂一条假警报。
-  const unpricedCount = (feePreview?.items ?? []).filter((row, i) => {
-    const line = pricedLines[i]
-    if (!line || line.saleForm === SALE_FORM_FABRIC) return false
-    return (
-      (row.processingFeeDetail as { fee_source?: string } | undefined)?.fee_source === 'unpriced'
-    )
-  }).length
+  /**
+   * 未定价行**按组合归并**（issue #4590）：只报行数 = 商家不知道该给哪个组合定价
+   * （用户原话：「这里要把具体的加工项组合告知用户，不然用户不知道设置哪个组合」）。
+   *
+   * 组合名与**行名**（商品名 + 帘体）都取自既有真值：名字 = `items.join(' + ')`
+   * （与「加工费组合」页同一写法，见 {@link unpricedCombinationLabel}）；
+   * 行名 = 费用明细里已有的「商品名」（一个商品组 = 一樘帘 ⇒ 同组同名，去重后即「哪些行」）。
+   * 同一组合命中多行 ⇒ **合并计数**（「布帘 + 韩褶（2 行）」）；多个组合 ⇒ 逐条列。
+   */
+  const unpricedGroups = useMemo(() => {
+    const byComposition = new Map<
+      string,
+      {
+        composition: string
+        label: string
+        lineNames: string[]
+        count: number
+        optionTotal: number
+      }
+    >()
+    ;(feePreview?.items ?? []).forEach((row, i) => {
+      const line = pricedLines[i]
+      if (!line || line.saleForm === SALE_FORM_FABRIC) return
+      const detail = row.processingFeeDetail as
+        | { fee_source?: string; composition?: unknown; items?: unknown; special_options_total?: unknown }
+        | undefined
+      if (detail?.fee_source !== 'unpriced') return
+      const composition = typeof detail.composition === 'string' ? detail.composition : ''
+      const entry = byComposition.get(composition) ?? {
+        composition,
+        label: unpricedCombinationLabel(detail),
+        lineNames: [],
+        count: 0,
+        optionTotal: 0,
+      }
+      entry.count += 1
+      // 选项那半照常计入行金额（issue #4594）—— 告警要说清「哪半 0、哪半照计」
+      entry.optionTotal += Number(detail.special_options_total) || 0
+      const name = line.product?.name?.trim()
+      if (name && !entry.lineNames.includes(name)) entry.lineNames.push(name)
+      byComposition.set(composition, entry)
+    })
+    return [...byComposition.values()]
+  }, [feePreview, pricedLines])
+
+  /** 未定价行数（= 各组合命中行数之和；告警里的「N 行」就是它） */
+  const unpricedCount = unpricedGroups.reduce((n, g) => n + g.count, 0)
+
+  /** 未定价行里**已定价特殊选项**的合计（issue #4594）：这半**照常计入订单金额** */
+  const unpricedOptionTotal = unpricedGroups.reduce((sum, g) => sum + g.optionTotal, 0)
 
   // ===== 费用汇总 =====
   const totals = useMemo(() => {
@@ -1689,8 +1769,17 @@ export default function NewOrderPage() {
                                 const i = feeIndexByLineId.get(line.id)
                                 const feeRow = i === undefined ? undefined : feePreview?.items[i]
                                 const d = feeRow?.processingFeeDetail as
-                                  | { unit_price?: number; meters?: number; fee_source?: string }
+                                  | {
+                                      unit_price?: number
+                                      meters?: number
+                                      fee_source?: string
+                                      composition?: unknown
+                                      items?: unknown
+                                      special_options_total?: unknown
+                                    }
                                   | undefined
+                                /** 该行已定价特殊选项的合计（issue #4594：组合未定价时它**照常计入**） */
+                                const rowOptionTotal = Number(d?.special_options_total) || 0
                                 const unit = Number(d?.unit_price)
                                 const meters = Number(d?.meters)
                                 const expr =
@@ -1712,11 +1801,24 @@ export default function NewOrderPage() {
                                         : '加工'
                                     }
                                     expr={
+                                      // 未定价行**点名组合**（issue #4590）：只写「未定价（按 0 计）」
+                                      // 等于让商家自己回费用明细里猜是哪个组合没价。
+                                      // issue #4594：未定价只指**组合那半** —— 已定价特殊选项照常计入
+                                      // （它们另有逐项行），行内必须说清「哪半 0」，否则看起来像一分不收。
                                       d?.fee_source === 'unpriced'
-                                        ? '未定价（按 0 计）'
+                                        ? `组合未定价（组合那半按 0 计）· ${unpricedCombinationLabel(d)}${
+                                            rowOptionTotal > 0
+                                              ? `；特殊选项照计 ${formatAmount(rowOptionTotal)}`
+                                              : ''
+                                          }`
                                         : (expr ?? '—')
                                     }
                                     amount={feeDisplay.baseAmount}
+                                    // 未定价 ⇒ **不渲染 `¥0.00`**（仓库硬纪律）：那格写「未定价」，
+                                    // 组合名与「选项照计」在上面的算式里已经说清（issue #4590/#4594）
+                                    amountLabel={
+                                      d?.fee_source === 'unpriced' ? '未定价' : undefined
+                                    }
                                   />
                                 )
                               })}
@@ -1798,9 +1900,36 @@ export default function NewOrderPage() {
                   <div className="text-xs text-neutral-400">加工费计价中…</div>
                 )}
                 {!feePreviewError && unpricedCount > 0 && (
-                  <div className="rounded bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
-                    有 {unpricedCount} 行加工费未定价 —— 这些行按 0 计入订单金额，
-                    请到「加工费组合」定价后再下单
+                  <div
+                    data-testid="unpriced-fee-alert"
+                    className="rounded bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700"
+                  >
+                    <p>
+                      有 {unpricedCount} 行加工费未定价 ——{' '}
+                      <span className="font-medium">组合那半按 0 计</span>
+                      {unpricedOptionTotal > 0
+                        ? `；已定价的特殊选项照常计入（合计 ${formatAmount(unpricedOptionTotal)}）`
+                        : ''}
+                      。请为下列加工项组合定价后再下单：
+                    </p>
+                    {/* 逐条点名（issue #4590）：组合名与「加工费组合」页逐字一致；同一组合合并计数 */}
+                    <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                      {unpricedGroups.map((g) => (
+                        <li key={g.composition}>
+                          {g.label}（{g.count} 行
+                          {g.lineNames.length > 0 ? `：${g.lineNames.join('、')}` : ''}）
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1">
+                      定价入口：
+                      <Link
+                        href={PRICING_ENTRY}
+                        className="underline underline-offset-2 hover:text-amber-900"
+                      >
+                        「加工费组合」
+                      </Link>
+                    </p>
                   </div>
                 )}
                 {errors.feePreview && (
@@ -3021,10 +3150,13 @@ function CostRow({
   label,
   expr,
   amount,
+  amountLabel,
 }: {
   label: string
   expr: string
   amount: number
+  /** 覆盖金额那格（未定价 ⇒ 「未定价」，**不得**渲染成 `¥0.00` —— 仓库硬纪律） */
+  amountLabel?: string
 }) {
   return (
     <div className="flex items-baseline justify-between gap-2 text-xs">
@@ -3032,7 +3164,15 @@ function CostRow({
         <span className="text-neutral-400">{label}</span>
         <span className="ml-1.5 tabular-nums">{expr}</span>
       </span>
-      <span className="text-neutral-700 tabular-nums shrink-0">{formatAmount(amount)}</span>
+      <span
+        className={
+          amountLabel
+            ? 'text-amber-600 shrink-0'
+            : 'text-neutral-700 tabular-nums shrink-0'
+        }
+      >
+        {amountLabel ?? formatAmount(amount)}
+      </span>
     </div>
   )
 }

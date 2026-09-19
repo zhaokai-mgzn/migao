@@ -1836,6 +1836,15 @@ class OrderServiceTest {
                         .build()));
     }
 
+    /** 特殊选项对客价目（issue #4594）：`option` 规则行的 `customer_unit_price`（元/套）。 */
+    private void givenPricedOptions(String name, String customerUnitPrice) {
+        when(routeRuleMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(com.migao.admin.entity.ProductionRouteRule.builder()
+                        .id("rr-option-" + name).tenantId(1L).triggerKind("option")
+                        .triggerValue(name).action("insert").status("active")
+                        .customerUnitPrice(new BigDecimal(customerUnitPrice)).deleted(0).build()));
+    }
+
     /** 从落库的 {@code processing_info} 里取可审计构成（{@code Map<?,?>} 的键被擦除 ⇒ 断言用取值式）。 */
     @SuppressWarnings("unchecked")
     private static Map<String, Object> feeDetailOf(Object processingInfo) {
@@ -1910,7 +1919,7 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("PG-041 判据 2·未定价组合 ⇒ 落库加工费 0 + fee_source=unpriced + 提示（不回落 Σ 加工项）")
+    @DisplayName("PG-041 判据 2·未定价组合 ⇒ **组合那半** 0 + fee_source=unpriced + 提示（不回落 Σ 加工项）")
     void createOrder_unpricedCombinationStoresZeroAndHint() {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("curtainType", "布帘");
@@ -1935,6 +1944,71 @@ class OrderServiceTest {
         Map<String, Object> detail = feeDetailOf(itemCaptor.getValue().getProcessingInfo());
         assertThat(detail).containsEntry("fee_source", "unpriced").containsEntry("amount", BigDecimal.ZERO);
         assertThat(String.valueOf(detail.get("hint"))).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("PG-043/#4594·组合未定价 + **选项已定价** ⇒ 落库行加工费 = 选项价合计（选项不被吞）")
+    void createOrder_unpricedCombinationStillChargesPricedSpecialOptions() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("curtainType", "布帘");
+        info.put("processingMeters", new BigDecimal("12.30"));
+        info.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔",
+                "unitPrice", new BigDecimal("9.50"), "quantity", new BigDecimal("2"))));
+        // 已勾选并**已定价**的选项（元/套）—— 用户裁定 2026-09-19：组合没配价也照收
+        info.put("specialOptions", List.of("加铅块"));
+
+        // 库里只有「定型+打孔+韩褶」的组合价，本行选配「打孔」⇒ 组合那半未定价；
+        // 但选项「加铅块」有对客价 ¥6.00/套 ⇒ 行加工费 = 0 + 6.00 = 6.00。
+        // 注入法（改前）：未定价分支吞掉选项那半 ⇒ 落库加工费 0、总额 599.00 ⇒ 下面断言红。
+        givenPricedCombinations("定型+打孔+韩褶", "8.00");
+        givenPricedOptions("加铅块", "6.00");
+
+        OrderCreateRequest request = createOrderRequestWithFee(info);
+        orderService.createOrder(request, 1L);
+
+        // 影响面（issue #4594 显式登记）：组合没配价时订单金额**变大**（开始收已定价的选项价）
+        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).insert(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getTotalAmount()).isEqualByComparingTo("605.00");
+
+        ArgumentCaptor<OrderItem> itemCaptor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(itemCaptor.capture());
+        OrderItem stored = itemCaptor.getValue();
+        Map<String, Object> detail = feeDetailOf(stored.getProcessingInfo());
+        assertThat(detail).containsEntry("fee_source", "unpriced").containsEntry("amount", BigDecimal.ZERO);
+        assertThat((BigDecimal) detail.get("special_options_total")).isEqualByComparingTo("6.00");
+        assertThat((List<?>) detail.get("special_options")).hasSize(1);
+        // 读面口径（`storedFee().lineAmount()`）= 组合那半 0 + 选项 6.00 ⇒ 详情/列表拿到的行加工费 = 6.00
+        assertThat(ProcessingFeeCalculator.storedFee(stored.getProcessingInfo()).lineAmount())
+                .isEqualByComparingTo("6.00");
+    }
+
+    @Test
+    @DisplayName("PG-043/#4594·读面（详情/列表）按落库值返回 unpriced 行的**选项价**（不重算、不吞选项）")
+    void readPathsReturnStoredOptionFeeForUnpricedRow() {
+        testOrderItem.setProcessingInfo(Map.of(
+                "processingItems", List.of(Map.of("id", "p1", "name", "打孔",
+                        "unitPrice", new BigDecimal("9.50"), "quantity", new BigDecimal("2"))),
+                "processingFeeDetail", Map.of(
+                        "composition", "打孔", "fee_source", "unpriced",
+                        "amount", BigDecimal.ZERO,
+                        "special_options", List.of(Map.of(
+                                "name", "加铅块", "unit_price", new BigDecimal("6.00"),
+                                "sets", 1, "amount", new BigDecimal("6.00"), "priced", true)),
+                        "special_options_total", new BigDecimal("6.00"))));
+
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        OrderDetailResponse detail = orderService.getOrderById("order-001");
+
+        // 行加工费 = 落库的 lineAmount（组合那半 0 + 选项 6.00）；**不是** 0、也**不是** Σ 加工项 19.00
+        assertThat(detail.getItems().get(0).getProcessingFee()).isEqualByComparingTo("6.00");
+        assertThat(detail.getItems().get(0).getProcessingFee()).isNotEqualByComparingTo("19.00");
+        assertThat(detail.getProcessingFee()).isEqualByComparingTo("6.00");
+        assertThat(feeDetailOf(Map.of("processingFeeDetail",
+                detail.getItems().get(0).getProcessingFeeDetail())))
+                .containsEntry("fee_source", "unpriced")
+                .containsEntry("amount", BigDecimal.ZERO);
     }
 
     @Test

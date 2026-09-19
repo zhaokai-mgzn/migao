@@ -75,6 +75,8 @@ export interface ProcessingFeeDetail {
   meters_source?: string
   fee_source?: string
   amount?: number
+  /** 特殊选项合计（元/套 那半，issue #4525；未定价组合下也照常计入，issue #4594） */
+  special_options_total?: number
   /** 未定价时的可行动提示（后端给） */
   hint?: string
 }
@@ -116,8 +118,12 @@ export function feeFormula(detail: ProcessingFeeDetail | null): string | null {
 /**
  * 未定价（`fee_source=unpriced`）。
  *
- * 为什么单独判它：未定价时后端按用户裁定给 **0 元**，而 `¥0.00` 与「这一行本来就不收加工费」
- * **长得一模一样** ⇒ 必须显式标「未定价」，否则就是静默改钱的外观。
+ * 为什么单独判它：未定价时**组合那半**按 0 计（`amount` = 0），而 `¥0.00` 与
+ * 「这一行本来就不收加工费」**长得一模一样** ⇒ 必须显式标「未定价」，否则就是静默改钱的外观。
+ *
+ * ⚠️ 它只表示**组合那半**未定价（用户裁定 2026-09-19 / issue #4594）：已定价的特殊选项
+ * **照常计入行金额** ⇒ 本判据**不蕴含**「行金额 = 0」，行金额一律看 `item.processingFee`
+ * （后端 `lineAmount()` = 组合那半 + Σ 选项价）。
  */
 export function isUnpriced(detail: ProcessingFeeDetail | null): boolean {
   return detail?.fee_source === 'unpriced'
@@ -218,6 +224,8 @@ function ItemRow({ item }: { item: OrderItem }) {
   const feeDetail = readFeeDetail(item.processingInfo)
   const feeExpr = feeFormula(feeDetail)
   const unpriced = isUnpriced(feeDetail)
+  /** 选项那半（issue #4594）：组合未定价时它**照常计入**行金额 ⇒ 展示面必须报出来 */
+  const specialOptionsTotal = numericOrNull(feeDetail?.special_options_total) ?? 0
 
   return (
     <div className="grid grid-cols-12 gap-2 px-4 py-3 items-start">
@@ -293,8 +301,17 @@ function ItemRow({ item }: { item: OrderItem }) {
       <div className="col-span-2 text-right">
         {unpriced ? (
           <>
-            {/* 未定价必须显式：`¥0.00` 与「本来就不收加工费」长得一样 ⇒ 不标就是静默改钱的外观 */}
-            <div className="text-sm font-medium text-amber-600">未定价</div>
+            {/* 未定价必须显式：`¥0.00` 与「本来就不收加工费」长得一样 ⇒ 不标就是静默改钱的外观。
+                ⚠️ 只指**组合那半**（issue #4594）：已定价的特殊选项照常计入行金额 ⇒ 有选项价时
+                必须把那一半也报出来（否则商家以为这行一分钱都不收）。 */}
+            <div className="text-sm font-medium text-amber-600">
+              未定价{specialOptionsTotal > 0 ? ` + 选项 ${formatAmount(specialOptionsTotal)}` : ''}
+            </div>
+            {specialOptionsTotal > 0 && (
+              <div className="mt-0.5 text-xs text-neutral-500 tabular-nums">
+                组合那半按 0 计；特殊选项照计
+              </div>
+            )}
             {feeDetail?.hint && (
               <div className="mt-0.5 text-xs text-amber-600 break-words">{feeDetail.hint}</div>
             )}

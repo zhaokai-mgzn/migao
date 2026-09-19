@@ -318,7 +318,8 @@ class ProcessingFeeCalculatorTest {
         assertThat(fee.feeSource()).isEqualTo("unpriced");
         assertThat(fee.unitPrice()).isEqualByComparingTo("8.00"); // 价命中了，缺的是米数
         assertThat(fee.hint()).isNotBlank().contains("米数");
-        // #4525：组合命中但缺米数 ⇒ 选项价**不参与**（金额仍是 0，不单独收选项价）
+        // 本行**没选**任何特殊选项 ⇒ 选项那半为 0（issue #4594 后：选了且已定价的选项**会照计**，
+        // 与米数是否齐全无关 —— 那两条判据见 missingMetersStillChargesPricedSpecialOptions）
         assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("0");
         assertThat(fee.lineAmount()).isEqualByComparingTo("0");
     }
@@ -427,22 +428,85 @@ class ProcessingFeeCalculatorTest {
     }
 
     @Test
-    @DisplayName("判据 2·组合未命中 ⇒ unpriced + 金额 0（选项价**不单独收**、不回落 Σ 加工项）")
-    void unmatchedCombinationDoesNotChargeSpecialOptionsAlone() {
+    @DisplayName("判据 2·组合未命中 ⇒ **组合那半** 0 + unpriced；**已定价选项照计**（issue #4594 裁定）")
+    void unmatchedCombinationStillChargesPricedSpecialOptions() {
         givenCombinations(combination("定型+打孔+韩褶", "8.00"));
         givenOptionRules(optionRule("加铅块", "6.00"));
 
-        // 本行选配「打孔+定型」（库里没这个组合）⇒ 组合那半未定价 ⇒ 整体 0。
-        // 注入法：若在未命中分支仍单独收选项价（6.00）或回落 Σ 加工项 ⇒ 下面两条断言红。
+        // 本行选配「打孔+定型」（库里没这个组合）⇒ 组合那半 0；选项「加铅块」有价 ⇒ **照计 6.00**
+        // （用户裁定 2026-09-19：选项是按套的独立一笔账，与组合是否定价无关）。
+        // 注入法：① 未定价分支把选项那半丢掉（`specialOptionsTotal` = 0）⇒ 红；
+        //         ② 回落 Σ 加工项（9.50 × 2 = 19.00）⇒ 红。
         Map<String, Object> info = processingInfo(new BigDecimal("12.30"), "打孔", "定型");
         info.put("specialOptions", List.of("加铅块"));
         ProcessingFeeCalculator.Fee fee = compute(info);
 
         assertThat(fee.feeSource()).isEqualTo("unpriced");
+        // `amount` 仍是**组合那半**（键名与语义一字未动）—— 未定价 ⇒ 那半 0
         assertThat(fee.amount()).isEqualByComparingTo("0");
-        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("0");
+        assertThat(fee.lineAmount()).isEqualByComparingTo("6.00");
+        assertThat(fee.lineAmount()).isNotEqualByComparingTo("19.00");
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("6.00");
+        assertThat(fee.specialOptions()).hasSize(1);
+        assertThat(fee.specialOptions().get(0).name()).isEqualTo("加铅块");
+        assertThat(fee.specialOptions().get(0).priced()).isTrue();
+        // 可审计构成里两半都在：组合那半 0 + 选项那半 6.00（选项未因组合未定价而消失）
+        assertThat(fee.detail()).containsEntry("fee_source", "unpriced")
+                .containsEntry("amount", BigDecimal.ZERO);
+        assertThat((BigDecimal) fee.detail().get("special_options_total")).isEqualByComparingTo("6.00");
+        assertThat((List<?>) fee.detail().get("special_options")).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("判据 2·组合未命中 + 选项**也未定价** ⇒ 行金额 0，且两半都能看出「未定价」")
+    void unmatchedCombinationWithUnpricedOptionStaysZeroAndVisible() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+        givenOptionRules(optionRule("加铅块", null));
+
+        Map<String, Object> info = processingInfo(new BigDecimal("12.30"), "打孔", "定型");
+        info.put("specialOptions", List.of("加铅块"));
+        ProcessingFeeCalculator.Fee fee = compute(info);
+
+        assertThat(fee.feeSource()).isEqualTo("unpriced");
         assertThat(fee.lineAmount()).isEqualByComparingTo("0");
-        assertThat(fee.specialOptions()).isEmpty();
+        // 选项未定价 ⇒ `priced:false` 显式可见（不许静默按 0 收）
+        assertThat(fee.specialOptions()).hasSize(1);
+        assertThat(fee.specialOptions().get(0).priced()).isFalse();
+        assertThat(fee.specialOptions().get(0).unitPrice()).isNull();
+    }
+
+    @Test
+    @DisplayName("判据 2·**缺米数** + 已定价选项 ⇒ 组合那半 0，选项价照计（选项与米数无关）")
+    void missingMetersStillChargesPricedSpecialOptions() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+        givenOptionRules(optionRule("加铅块", "6.00"));
+
+        Map<String, Object> info = processingInfo(null, "韩褶", "打孔", "定型");
+        info.put("specialOptions", List.of("加铅块"));
+        ProcessingFeeCalculator.Fee fee = compute(info);
+
+        assertThat(fee.feeSource()).isEqualTo("unpriced");
+        assertThat(fee.amount()).isEqualByComparingTo("0");
+        assertThat(fee.unitPrice()).isEqualByComparingTo("8.00"); // 价命中了，缺的是米数
+        assertThat(fee.lineAmount()).isEqualByComparingTo("6.00");
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("6.00");
+    }
+
+    @Test
+    @DisplayName("判据 2·**无加工项（空组合）** + 已定价选项 ⇒ 选项价照计（选项是独立一笔账）")
+    void emptyCompositionStillChargesPricedSpecialOptions() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+        givenOptionRules(optionRule("加铅块", "6.00"));
+
+        Map<String, Object> info = processingInfo(new BigDecimal("12.30"));
+        info.put("specialOptions", List.of("加铅块"));
+        ProcessingFeeCalculator.Fee fee = compute(info);
+
+        assertThat(fee.compositionKey()).isEmpty();
+        assertThat(fee.feeSource()).isEqualTo("unpriced");
+        assertThat(fee.amount()).isEqualByComparingTo("0");
+        assertThat(fee.lineAmount()).isEqualByComparingTo("6.00");
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("6.00");
     }
 
     @Test
