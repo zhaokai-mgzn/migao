@@ -2223,6 +2223,23 @@ cases:
         expect_products: ["2699系列雪尼尔窗帘面料"]
         expect_quantities:
           2699系列雪尼尔窗帘面料: 3
+    # ── 前置自断言 + 自清理（issue #4450 的 burn-down 缴费；metric=entries ⇒ 必须整条销账）──
+    # 本用例命中的两条存量违规 = CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION。
+    # `precondition[product_count_for_keyword]`：本用例按**商品名**定位明细行（`amount_verify` /
+    # `db_verify` 都写死「2699系列雪尼尔窗帘面料」），「该名字唯一」是它真正依赖且**只读**的前置
+    # —— 同名副本会让 agent 合理地要求澄清 ⇒ order_create 永不发生，报告上只表现为
+    # `unmatched expectation`（看起来像 agent 不干活，归因全错）。形态与口径照 OR-018 先例。
+    # ⚠️ 有意**不**声明 `order_count_for_phone`：本用例自己就会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）
+    # 必然判红，那是「硬写一条注定红的守卫」。商品维只读 ⇒ 漂移恒为 0。
+    # 断言（user_inputs / expectations / must_succeed / amount_verify / db_verify / data_checks）
+    # **原样未动、无放宽**。
+    namespaces:
+      - "customer_phone:13800138000"
+      - "product_name:2699系列雪尼尔窗帘面料"
+    precondition:
+      - type: product_count_for_keyword
+        source: "2699系列雪尼尔窗帘面料"
+        expect: 1
     data_checks:
       - "刺绣工艺 per_area 数量 = 8.4 ㎡，加工费 = 30 × 8.4 = 252.00 元（截断成 8 会变 240.00，少收 12.00）"
       - "订单总额 = 面料小计 23.80×3=71.40 + 加工费 252.00 = 323.40 元"

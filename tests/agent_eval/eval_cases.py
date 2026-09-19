@@ -3866,6 +3866,8 @@ _CASE_OR_028 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '2699系列雪尼尔窗帘面料', 'checks': ['unit_price', 'subtotal', 'processing_fee', 'total']}],
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['2699系列雪尼尔窗帘面料'], 'expect_quantities': {'2699系列雪尼尔窗帘面料': 3}}],
+    namespaces=['customer_phone:13800138000', 'product_name:2699系列雪尼尔窗帘面料'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '2699系列雪尼尔窗帘面料', 'expect': 1}],
 )
 
 # ── OR-029 [NORMAL] B 端「先查商品再录订单」链路 - 确认卡点击后 order_create 必须真实执行（不得 Tool not found / 空头承诺）（源: cases/order.yml）──
