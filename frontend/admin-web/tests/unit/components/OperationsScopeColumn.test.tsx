@@ -82,8 +82,8 @@ const CATALOG = {
  * 两档齐备且**不同**：外帘打卷 = 套级（每樘窗一次）；精裁-布 = 部位级。
  */
 const POSITIONS = [
-  { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 0.4, applicable: true, variant_operation_id: 'op-v54-01', variant_name: '精裁-布', unit: '米', group: '裁剪', scope: 'position', is_must_finish: false },
-  { id: 'pos-外帘打卷-布帘', operation: '外帘打卷', position: '布帘', unit_price: 1, applicable: true, variant_operation_id: 'op-v54-24', variant_name: '外帘打卷', unit: '套', group: '后道', scope: 'set', is_must_finish: false },
+  { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 0.4, applicable: true, variant_operation_id: 'op-v54-01', unit: '米', group: '裁剪', scope: 'position', is_must_finish: false },
+  { id: 'pos-外帘打卷-布帘', operation: '外帘打卷', position: '布帘', unit_price: 1, applicable: true, variant_operation_id: 'op-v54-24', unit: '套', group: '后道', scope: 'set', is_must_finish: false },
 ]
 
 const ROUTINGS = { total: 0, routings: [] }

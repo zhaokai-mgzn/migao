@@ -45,7 +45,7 @@ import type {
  *
  * | tab | 它回答的问题 | 主区 | 维护面 |
  * |---|---|---|---|
- * | **工艺项** | 「每道工序在**哪个部位**做、给**工人**多少钱？」 | **一张表**：行 = 逻辑工序、列 = 部位、格 = 价 / 不做 / 未定价（**格内就地可改**） | 行尾 = `分组 · 单位` + **必完标记**（issue #4610：完工门槛要一眼看得见，部分部位必完时注明）+「管理▸」抽屉（变体：分组 / 单位 / 作用域 / 必完 / 停用 / 删除） |
+ * | **工艺项** | 「每道工序在**哪个部位**做、给**工人**多少钱？」 | **一张表**：行 = 逻辑工序、列 = 部位、格 = 价 / 不做 / 未定价（**格内就地可改**） | 行尾 = `分组 · 单位` + **必完标记**（issue #4610：完工门槛要一眼看得见，部分部位必完时注明）+「管理▸」抽屉（**这道工序在各部位的设置**：分组 / 单位 / 作用域 / 必完 / 停用 / 删除） |
  * | **工艺路线** | 「订单按哪条主线走、什么时候插/删工序？」 | 具名路线（默认徽标 + 适用帘种 + 主线 + 改名/设默认/删除） | 条件工序规则（26 条；**常驻展开**，issue #4613 起不可折叠） |
  *
  * **工艺项为什么不再分「主区 / 折叠次区」**（issue #4588 = 母单 #4586 包 B；契约 #4587）：
@@ -66,12 +66,18 @@ import type {
  *    「部位 × 工艺」展开快照 ⇒ 列表显示**总名**+默认徽标+适用帘种，**不再**出现 `部位 × 工艺` 标题；
  *    改名**只改 `name`**（不给 `mainline` 就不动序列 —— 改一个名字不该顺带重写计件工资的输入）。
  * 2. **部位价目矩阵的行键是逻辑工序名**（`精裁` / `三边`），**不是** `production_operations.name`
- *    （那边仍是旧名 `精裁-布` / `布三边`）。issue #4588（契约 #4587 ①）起矩阵每格**多带** 6 个
- *    变体元数据键（`variant_operation_id` / `variant_name` / `unit` / `group` / `scope` /
- *    `is_must_finish`）—— 由后端 `variantNameOf` 推导，前端**直接渲染、不另写一份推导**；
- *    6 键全 `null` = 查不到 ⇒ **不发明元数据**（静默 = 未知）。
- *    主线的「工序是否存在」判据**不变**：按「工序库 ∪ 矩阵」两侧并集判定
- *    （只按工序库判会让每条种子路线都误报「工序库中不存在」）。
+ *    （那边仍是旧名 `精裁-布` / `布三边`）。issue #4588（契约 #4587 ①）起矩阵每格**多带** 5 个
+ *    变体元数据键（`variant_operation_id` / `unit` / `group` / `scope` /
+ *    `is_must_finish`）—— 由后端 `variantNameOf` 推导，前端**直接取用、不另写一份推导**；
+ *    5 键全 `null` = 查不到 ⇒ **不发明元数据**（静默 = 未知）。
+ *    ⚠️ **web 面只用一套工序名**（issue #4622 = goal「web 面工序命名统一」阶段 3）：界面显示
+ *    **逻辑工序名 + 部位**；`variant_name`（`布三边` / `logo条-布` 这类**变体名**）**不出现在任何
+ *    界面位置**（含 `data-testid`）—— 它只是后端 `production_operations.name` 的旧口径，
+ *    **读面也已不再返回该键**（`ProductionRoutingReadService.positionView`）。
+ *    `variant_operation_id` 仍要用：它是**寻址键**（抽屉条目按它去重、写面按它发 `PUT/DELETE`）。
+ *    主线的「工序是否存在」判据 = **矩阵里的逻辑工序名**（issue #4622 补口①：原口径是
+ *    「工序库 ∪ 矩阵」并集 —— 工序库键是**变体名**，会把残留的变体名误判成「存在」，
+ *    而后端按逻辑名判 ⇒ 同一件事两边判得不一样；矩阵是主线取值域的唯一权威）。
  * 3. **顺序口径**：`operation-positions` 按 `(operation, position)`、`route-rules` 按 `(priority, id)`
  *    —— **服务端已排好**，前端**不重排**（重排会与服务端口径分叉，同一张单两次生成会得到不同序列）。
  *
@@ -81,7 +87,7 @@ import type {
  * - **删最后一条 ⇒ 拦**（同因）；两条同时成立时**两条理由都给**（后端也一次报全）；
  * - **设为默认**只对非默认行开放（`is_default:false` 后端 422 ⇒ 前端**永不**提交 false）；
  * - 危险操作（删除 / 设为默认）**二次确认**；护栏理由**就地逐条**展示（复用 `lib/production-guard-reasons.ts`）；
- *   工艺项 tab 的两处删除同口径：删**工序变体**（`DELETE /operations/{id}`，三条护栏一次报全）与
+ *   工艺项 tab 的两处删除同口径：删**工序**（`DELETE /operations/{id}`，三条护栏一次报全）与
  *   删**条件工序规则**（`DELETE /route-rules/{id}`，无硬护栏）—— 都先二次确认，被拒时逐条就地给理由。
  * - 商家面**不得**出现内部机制名（issue #4453：「信号映射」是研发内部机制）⇒ 后端理由过
  *   `merchantWording` 只换词、不删理由。
@@ -411,9 +417,16 @@ function ReadinessStep({
 /**
  * 主线上一步的展示口径（只读与草稿**共用一份** —— 两处各拼一份必然漂移）。
  *
- * ⚠️ `resolved` = 该工序能在**工序库**里查到（才有 分组/单位/必完 这些库口径元数据）。
+ * ⚠️ `resolved` = 该工序能在**工序库**里查到（才有 分组/单位 这些库口径元数据）。
  * 主线存的是**逻辑工序名**（`精裁`），而 `production_operations.name` 仍是旧名（`精裁-布`），
- * 两者之间**没有**暴露给前端的映射 ⇒ 前端**不猜**：查不到就只显示名字，不发明单位/必完。
+ * 两者之间**没有**暴露给前端的映射 ⇒ 前端**不猜**：查不到就只显示名字，不发明单位。
+ *
+ * ⚠️ **「必完」的判定来源是矩阵**（issue #4622 补口②）：`must_finish` 按矩阵**聚合**（复用主表那套
+ * 三态：全部必完 / 部分部位必完 / 无）。原口径读的是 `libraryByName.get(name)?.is_must_finish`
+ * —— 库按**变体名**索引，而主线存的是**逻辑名** ⇒ 查不到 ⇒ 那枚「必完」标记对逻辑名几乎永远
+ * 不显示（只有 `外帘装袋` 这类部位无关工序才显示）。
+ * `is_must_finish`（库口径）只剩一个用途：{@link ProcessConfigPage} 的「一道必完工序都没有」预检
+ * （它自带 `resolved` 门禁，口径未动）。
  *
  * ⚠️ **本口径不含单价**（issue #4583 用户裁定）：单价是**计件工资**口径，属「工序项 / 部位价目」
  * 那一屏的事；而这里能拿到的只有**工序库单价**，真正生效的价是**部位价目矩阵**的格价
@@ -426,10 +439,13 @@ interface StepView {
   operation: string
   group?: string | null
   unit?: string | null
+  /** 库口径必完（**只给「一道必完工序都没有」预检用**；chip 上的必完见 `must_finish`） */
   is_must_finish?: boolean
+  /** **矩阵**口径的必完三态（issue #4622 补口②）：`null` = 矩阵里查不到这道工序 ⇒ 不显示（未知） */
+  must_finish: { partial: boolean; positions: string[] } | null
   /** 工序库里有这条（有库口径元数据） */
   resolved: boolean
-  /** 工序库与部位价目表**都**没有它（停用/被删）⇒ 保存必被后端拒，但页面要先让人看见 */
+  /** 矩阵里没有它（停用/被删/名字是变体名）⇒ 保存必被后端拒，但页面要先让人看见 */
   missing: boolean
 }
 
@@ -579,21 +595,51 @@ function PositionCell({
 }
 
 /**
- * 抽屉里的一行 = 该逻辑工序落到工人端的一道**变体工序**（按 `variant_operation_id` 去重）。
- * 元数据**逐字取自**矩阵行的 6 个新键（契约 #4587 ①）—— 前端**不推导**、不补默认值。
+ * 抽屉里的一行 = 该逻辑工序在**若干部位**上的设置（按 `variant_operation_id` 去重）。
+ * ⚠️ **一个变体可能服务多个部位**（`帘头` 会回落复用 `布帘` 的变体）⇒ 条目主标识 = **它服务的
+ * 部位集合**，**不是**变体名（issue #4622：读面已不返回 `variant_name`，界面也不显示它）。
+ * 元数据**逐字取自**矩阵行的 5 个新键（契约 #4587 ①）—— 前端**不推导**、不补默认值。
  */
 interface VariantView {
   id: string
-  name: string | null
   group: string | null
   unit: string | null
   scope: ProductionScope
   is_must_finish: boolean
-  /** 该变体覆盖的部位（去重，矩阵列序） */
+  /** 它**服务的部位**（去重，矩阵列序）—— issue #4622 起这是条目主标识 */
   positions: string[]
   /** 工序库里的 provenance；查不到 ⇒ `null` ⇒ **不渲染徽标**（静默 = 未知） */
   source: ProductionSource | null
 }
+
+/**
+ * 必完标记的三态（issue #4610，用户裁定「**必完标记还是得在这里展示**」—— 它是完工门槛，
+ * 要一眼看得见；issue #4622 起**主表行尾与主线 chip 共用**这一份口径）。
+ *
+ * 数据来源 = 矩阵读面每行**已有**的 `is_must_finish`（契约 #4587 ① 的 5 键之一），
+ * **不新造字段、不另拉接口**；口径沿用该格的「各格不一致时逐个列出、**不静默取第一个**」纪律：
+ * ① 有变体元数据的格**全部**必完 ⇒ `必完`；
+ * ② **只有部分部位**必完 ⇒ `必完（部分部位）`，`title` 列出**具体哪些部位**；
+ * ③ 一道都没有（或读面没给该键）⇒ `null` ⇒ **不显示**（不得发明「非必完」这类新词）。
+ */
+const mustFinishOf = (row: { cells: Map<string, OperationPosition> }) => {
+  const yes: string[] = []
+  const no: string[] = []
+  row.cells.forEach((cell, position) => {
+    if (cell.is_must_finish == null) return
+    if (cell.is_must_finish) yes.push(position)
+    else no.push(position)
+  })
+  return yes.length === 0 ? null : { partial: no.length > 0, positions: yes }
+}
+
+/** 必完标记的展示文案（三态共用一份 —— 主表行尾与主线 chip 各拼一份必然漂移） */
+const mustFinishLabel = (mf: { partial: boolean }) => `必完${mf.partial ? '（部分部位）' : ''}`
+
+const mustFinishTitle = (mf: { partial: boolean; positions: string[] }) =>
+  mf.partial
+    ? `必完的部位：${mf.positions.join(' / ')}（其余部位不要求必完）`
+    : '必完：缺这道工序不能打包（部位级：每个部位都要做完）'
 
 export default function ProcessConfigPage() {
   // ── 只读面 ──
@@ -622,7 +668,7 @@ export default function ProcessConfigPage() {
   /** 保存被拒的**逐条**理由（按格就地展示，不吞成一句「保存失败」） */
   const [cellReasons, setCellReasons] = useState<{ key: string; items: string[] } | null>(null)
 
-  // ── 「管理▸」抽屉（变体维护面：分组 / 单位 / 作用域 / 必完 / 停用 / 删除）──
+  // ── 「管理▸」抽屉（该工序在**各部位**的设置维护面：分组 / 单位 / 作用域 / 必完 / 停用 / 删除）──
   const [manageOp, setManageOp] = useState<string | null>(null)
   const [editingVariantId, setEditingVariantId] = useState<string | null>(null)
   const [variantDraft, setVariantDraft] = useState({ group_name: '', unit: '' })
@@ -881,12 +927,13 @@ export default function ProcessConfigPage() {
     libraryOps.forEach((op) => m.set(String(op.id), op))
     return m
   }, [libraryOps])
-  /** 部位价目表里出现过的逻辑工序名（主线可能用它书写 ⇒ 判「工序是否存在」必须并上这一侧） */
+  /**
+   * 部位价目表里出现过的**逻辑工序名** —— 它同时是**主线取值域**与「工序是否存在」的**唯一权威**
+   * （issue #4622 补口①）。⚠️ 原口径是「工序库 ∪ 矩阵」并集，而工序库键是**变体名**
+   * （`精裁-布`）⇒ 主线里残留的变体名会被误判成「存在」而不报，后端（按逻辑名判）却会把它
+   * 当未知名 ⇒ **同一件事两边判得不一样**。
+   */
   const matrixOps = useMemo(() => new Set(matrix.map((c) => c.operation)), [matrix])
-  const knownOps = useMemo(
-    () => new Set<string>([...libraryByName.keys(), ...matrixOps]),
-    [libraryByName, matrixOps],
-  )
 
   /**
    * **孤儿工序**（issue #4614 范围补口）：工序库里有、但**没有任何矩阵格指向它**。
@@ -1021,32 +1068,24 @@ export default function ProcessConfigPage() {
   /**
    * 行尾元数据 = 该行各格变体元数据的**公共值**；各格不一致时**逐个列出**（用 ` / ` 分隔）——
    * **不许静默取第一个**（取第一个会让「这道工序在两个分组里」这种事静默消失）。
-   * 6 键全 `null`（查不到变体）⇒ 空数组 ⇒ 渲染 `—`（不发明元数据）。
+   * 5 键全 `null`（查不到变体）⇒ 空数组 ⇒ 渲染 `—`（不发明元数据）。
    */
   const metaText = (values: string[]) => (values.length > 0 ? values.join(' / ') : '—')
 
   const metaInconsistent = (values: string[]) => values.length > 1
 
   /**
-   * 行尾「必完」标记的三态（issue #4610，用户裁定「**必完标记还是得在这里展示**」——
-   * 它是完工门槛，要一眼看得见）。
-   *
-   * 数据来源 = 矩阵读面每行**已有**的 `is_must_finish`（契约 #4587 ① 的 6 键之一），
-   * **不新造字段、不另拉接口**；口径沿用该格的「各格不一致时逐个列出、**不静默取第一个**」纪律：
-   * ① 有变体元数据的格**全部**必完 ⇒ `必完`；
-   * ② **只有部分部位**必完 ⇒ `必完（部分部位）`，`title` 列出**具体哪些部位**；
-   * ③ 一道都没有（或读面没给该键）⇒ `null` ⇒ **不显示**（不得发明「非必完」这类新词）。
+   * **矩阵口径的必完聚合**（逻辑工序名 → 三态；issue #4622 补口②）：主表行尾与**主线 chip**
+   * 共用同一份口径（两处各写一份必然漂移）。
    */
-  const mustFinishOf = (row: { cells: Map<string, OperationPosition> }) => {
-    const yes: string[] = []
-    const no: string[] = []
-    row.cells.forEach((cell, position) => {
-      if (cell.is_must_finish == null) return
-      if (cell.is_must_finish) yes.push(position)
-      else no.push(position)
+  const matrixMustFinish = useMemo(() => {
+    const m = new Map<string, { partial: boolean; positions: string[] }>()
+    matrixRows.forEach((row) => {
+      const v = mustFinishOf(row)
+      if (v) m.set(row.operation, v)
     })
-    return yes.length === 0 ? null : { partial: no.length > 0, positions: yes }
-  }
+    return m
+  }, [matrixRows])
 
   /**
    * 「从工序库选择要添加的工序…」的取值域 = **逻辑工序名**（issue #4609）。
@@ -1065,7 +1104,7 @@ export default function ProcessConfigPage() {
     [matrixRows],
   )
 
-  /** 该逻辑工序的变体（按 `variant_operation_id` 去重；矩阵列序 = 部位顺序） */
+  /** 该逻辑工序在各部位的设置行（按 `variant_operation_id` 去重；矩阵列序 = 部位顺序） */
   const variantsOf = useCallback(
     (row: { cells: Map<string, OperationPosition> }): VariantView[] => {
       const byId = new Map<string, VariantView>()
@@ -1079,7 +1118,6 @@ export default function ProcessConfigPage() {
         }
         byId.set(id, {
           id,
-          name: c.variant_name ?? null,
           group: c.group ?? null,
           unit: c.unit ?? null,
           scope: c.scope === 'set' ? 'set' : 'position',
@@ -1093,7 +1131,7 @@ export default function ProcessConfigPage() {
     [libraryById],
   )
 
-  /** 抽屉当前展示的变体（按 `manageOp` 找到那一行） */
+  /** 抽屉当前展示的设置行（按 `manageOp` 找到那一行） */
   const manageRow = useMemo(
     () => matrixRows.find((r) => r.operation === manageOp) ?? null,
     [matrixRows, manageOp],
@@ -1147,11 +1185,14 @@ export default function ProcessConfigPage() {
         group: lib?.group ?? null,
         unit: lib?.unit ?? null,
         is_must_finish: lib?.is_must_finish,
+        // 必完 = **矩阵**口径（issue #4622 补口②；与主表行尾同一份聚合）
+        must_finish: matrixMustFinish.get(name) ?? null,
         resolved: !!lib,
-        missing: !knownOps.has(name),
+        // 存在性 = **矩阵里的逻辑工序名**（issue #4622 补口①；不再并上按变体名索引的工序库键）
+        missing: !matrixOps.has(name),
       }
     },
-    [libraryByName, knownOps],
+    [libraryByName, matrixMustFinish, matrixOps],
   )
 
   const openEditor = (routing: Routing) => {
@@ -1670,9 +1711,9 @@ export default function ProcessConfigPage() {
     setCellReasons(null)
   }
 
-  // ────────────────────────── 「管理▸」抽屉：变体维护面（issue #4588） ──────────────────────────
+  // ────────────────────────── 「管理▸」抽屉：各部位的工序设置维护面（issue #4588；#4622 换主标识） ──────────────────────────
 
-  /** 变体写面统一出口（既有 `PUT /operations/{id}`；部分更新 ⇒ 只带变了的字段） */
+  /** 抽屉写面统一出口（既有 `PUT /operations/{id}`；部分更新 ⇒ 只带变了的字段） */
   const submitVariant = async (id: string, payload: ProductionOperationUpdateParams) => {
     setVariantBusy(true)
     setVariantReasons(null)
@@ -1698,7 +1739,7 @@ export default function ProcessConfigPage() {
     setVariantReasons(null)
     try {
       await productionApi.deleteOperation(variant.id)
-      toast.success(`已删除工序「${variant.name ?? variant.id}」`)
+      toast.success(`已删除工序（${variant.positions.join(' / ')}）`)
       setConfirmDeleteOpId(null)
       await load()
     } catch (e) {
@@ -2052,7 +2093,7 @@ export default function ProcessConfigPage() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
-                            <th className="py-2 pr-4 font-medium">工序（工人看到的）</th>
+                            <th className="py-2 pr-4 font-medium">工序</th>
                             {positionColumns.map((p) => (
                               <th key={p} className="py-2 pr-4 font-medium">
                                 {p}
@@ -2065,7 +2106,6 @@ export default function ProcessConfigPage() {
                           {visibleMatrixRows.map((row) => {
                             const groups = distinctMeta(row, (c) => c.group)
                             const units = distinctMeta(row, (c) => c.unit)
-                            const names = distinctMeta(row, (c) => c.variant_name)
                             const inconsistent = metaInconsistent(groups) || metaInconsistent(units)
                             const mustFinish = mustFinishOf(row)
                             return (
@@ -2076,14 +2116,10 @@ export default function ProcessConfigPage() {
                                 data-operation={row.operation}
                               >
                                 <td className="py-2.5 pr-4 align-top">
+                                  {/* 行首只显示**逻辑工序名**（issue #4622）：该行「哪个部位做 / 不做」
+                                      已由**列与格**表达 ⇒ 不再重复一遍变体名（`布三边` / `logo条-布`
+                                      这类名字不出现在任何界面位置）。 */}
                                   <div className="text-neutral-900">{row.operation}</div>
-                                  {/* 该行落到工人端的**变体名**（`variant_name` 去重）—— 查不到就不编造 */}
-                                  <div
-                                    className="text-xs text-neutral-400"
-                                    data-testid={`matrix-variants-${row.operation}`}
-                                  >
-                                    {names.length > 0 ? names.join(' / ') : '—'}
-                                  </div>
                                 </td>
                                 {positionColumns.map((p) => {
                                   const cell = row.cells.get(p)
@@ -2130,7 +2166,7 @@ export default function ProcessConfigPage() {
                                   className="py-2.5 pr-4 align-top"
                                   data-testid={`matrix-meta-${row.operation}`}
                                   data-inconsistent={inconsistent ? 'true' : undefined}
-                                  title={inconsistent ? '各部位的变体元数据不一致，已逐个列出' : undefined}
+                                  title={inconsistent ? '各部位的分组 / 单位不一致，已逐个列出' : undefined}
                                 >
                                   <div className="flex flex-wrap items-center gap-2">
                                     <span className="text-xs text-neutral-500">
@@ -2142,13 +2178,9 @@ export default function ProcessConfigPage() {
                                       <span
                                         className="text-xs text-amber-600"
                                         data-testid={`matrix-must-finish-${row.operation}`}
-                                        title={
-                                          mustFinish.partial
-                                            ? `必完的部位：${mustFinish.positions.join(' / ')}（其余部位不要求必完）`
-                                            : '必完：缺这道工序不能打包（部位级：每个部位都要做完）'
-                                        }
+                                        title={mustFinishTitle(mustFinish)}
                                       >
-                                        必完{mustFinish.partial ? '（部分部位）' : ''}
+                                        {mustFinishLabel(mustFinish)}
                                       </span>
                                     )}
                                     <button
@@ -2160,7 +2192,7 @@ export default function ProcessConfigPage() {
                                         setConfirmDeleteOpId(null)
                                         setVariantReasons(null)
                                       }}
-                                      title="管理这道工序的变体：分组 / 单位 / 作用域 / 必完 / 停用 / 删除"
+                                      title="管理这道工序在各部位的设置：分组 / 单位 / 作用域 / 必完 / 停用 / 删除"
                                       className="rounded px-1.5 py-0.5 text-xs text-primary-700 hover:bg-neutral-100"
                                     >
                                       管理▸
@@ -2441,7 +2473,16 @@ export default function ProcessConfigPage() {
                                             {step.group ?? '—'} · {step.unit ?? '—'}
                                           </span>
                                         )}
-                                        {step.is_must_finish && <span className="text-xs text-amber-600">必完</span>}
+                                        {/* 必完：**矩阵**口径三态（issue #4622 补口② —— 原读工序库
+                                            的 `is_must_finish`，而库按变体名索引 ⇒ 逻辑名查不到） */}
+                                        {step.must_finish && (
+                                          <span
+                                            className="text-xs text-amber-600"
+                                            title={mustFinishTitle(step.must_finish)}
+                                          >
+                                            {mustFinishLabel(step.must_finish)}
+                                          </span>
+                                        )}
                                         {step.missing && (
                                           <span
                                             className="text-xs text-red-600"
@@ -2507,10 +2548,20 @@ export default function ProcessConfigPage() {
                                     >
                                       <span className="mr-1 text-neutral-400">{step.seq}.</span>
                                       {step.operation}
-                                      {/* 主线 chip 只留 序号 + 工序名 (+ 必完 / 工序库中不存在或已停用)：
+                                      {/* 主线 chip 只留 序号 + 工序名 (+ 必完 / 矩阵里查不到)：
                                           **不显示任何库口径元数据**（#4583）—— 否则「显示与否」取决于
-                                          逻辑名与变体名是否恰好一致，9 道 chip 两套口径（用户实测的现象）。 */}
-                                      {step.is_must_finish && <span className="ml-1.5 text-amber-600">必完</span>}
+                                          逻辑名与变体名是否恰好一致，9 道 chip 两套口径（用户实测的现象）。
+                                          ⚠️ 那枚「必完」本身**不是**库口径元数据：它按**矩阵聚合**
+                                          （issue #4622 补口②，与主表行尾同一份三态口径）。 */}
+                                      {step.must_finish && (
+                                        <span
+                                          className="ml-1.5 text-amber-600"
+                                          data-testid={`routing-step-must-finish-${id}-${step.seq}`}
+                                          title={mustFinishTitle(step.must_finish)}
+                                        >
+                                          {mustFinishLabel(step.must_finish)}
+                                        </span>
+                                      )}
                                       {step.missing && <span className="ml-1.5">工序库中不存在或已停用</span>}
                                     </li>
                                   )
@@ -2989,7 +3040,8 @@ export default function ProcessConfigPage() {
         )}
       </Modal>
 
-      {/* 「管理▸」抽屉（issue #4588）：该逻辑工序的**变体**维护面。
+      {/* 「管理▸」抽屉（issue #4588）：该逻辑工序在**各部位**的设置维护面（issue #4622：条目主标识
+          = **部位**，变体名不上界面）。
           ⚠️ 作用域 / 必完的**维护面**在这里（用户 2026-09-19 追加裁定：「作用域 · 必完 完全不知道干嘛的，
           也可以移除」⇒ 从主表移除的是**显示**，不是语义）；**必完**的只读标记按用户 2026-09-19 改判
           回到主表行尾（issue #4610：它是完工门槛，要一眼看得见），作用域仍只在抽屉里。
@@ -2997,7 +3049,7 @@ export default function ProcessConfigPage() {
       <Modal
         open={manageOp !== null}
         onClose={() => !variantBusy && setManageOp(null)}
-        title={manageOp ? `管理「${manageOp}」的工序变体` : ''}
+        title={manageOp ? `「${manageOp}」在各部位的设置` : ''}
         width={760}
         footer={
           <Button variant="secondary" data-testid="operations-manage-close" onClick={() => setManageOp(null)}>
@@ -3007,23 +3059,23 @@ export default function ProcessConfigPage() {
       >
         <div className="space-y-3 text-sm" data-testid="operations-manage-drawer">
           <p className="text-neutral-600">
-            这些是<strong>工人扫码时看到的工序</strong>（同一道逻辑工序在不同部位会落成不同变体）。
+            这道工序在<strong>各部位的设置</strong>（多个部位共用同一份设置时只列一条）。
             分组与单位决定报工口径；<strong>作用域</strong>：套级 = 每樘窗只做一次；
             <strong>必完</strong>：缺这道工序不能打包；<strong>部位级工序要每个部位都做完</strong>才算完
             （套级每樘窗一次）。
           </p>
           {manageVariants.length === 0 ? (
             <p className="py-6 text-center text-sm text-neutral-400" data-testid="operations-manage-empty">
-              这道工序还没有落到工人端的工序（矩阵里查不到它的变体）—— 请核对各部位的适用性配置。
+              这道工序在各部位还没有设置（矩阵里查不到它的格）—— 请核对各部位的适用性配置。
             </p>
           ) : (
             <div className="divide-y divide-neutral-100">
               {manageVariants.map((v) => (
                 <div key={v.id} className="py-3" data-testid={`variant-row-${v.id}`}>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium text-neutral-900">{v.name ?? '—'}</span>
+                    {/* 主标识 = **部位集合**（issue #4622）—— 一个变体可能服务多个部位，变体名不上界面 */}
+                    <span className="font-medium text-neutral-900">{v.positions.join(' / ')}</span>
                     {v.source && <SourceBadge source={v.source} testId={`variant-source-${v.id}`} />}
-                    <span className="text-xs text-neutral-400">覆盖 {v.positions.join(' / ')}</span>
                   </div>
 
                   {/* 分组 · 单位：就地改（`PUT /operations/{id}` 部分更新） */}
@@ -3073,7 +3125,7 @@ export default function ProcessConfigPage() {
                         </span>
                         <button
                           type="button"
-                          aria-label={`编辑 ${v.name ?? v.id} 的分组与单位`}
+                          aria-label={`编辑「${v.positions.join(' / ')}」的分组与单位`}
                           data-testid={`variant-meta-edit-${v.id}`}
                           onClick={() => {
                             setEditingVariantId(v.id)
@@ -3091,7 +3143,7 @@ export default function ProcessConfigPage() {
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
                     <span>作用域</span>
                     <select
-                      aria-label={`${v.name ?? v.id} 作用域`}
+                      aria-label={`「${v.positions.join(' / ')}」作用域`}
                       data-testid={`variant-scope-${v.id}`}
                       value={v.scope}
                       disabled={variantBusy}
@@ -3112,7 +3164,7 @@ export default function ProcessConfigPage() {
                   <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
                     <input
                       type="checkbox"
-                      aria-label={`${v.name ?? v.id} 必完`}
+                      aria-label={`「${v.positions.join(' / ')}」必完`}
                       data-testid={`variant-must-finish-${v.id}`}
                       checked={v.is_must_finish}
                       disabled={variantBusy}
@@ -3211,11 +3263,13 @@ export default function ProcessConfigPage() {
               <p className="text-neutral-600">
                 单价直接决定工人计件工资，请与车间核对后再填（调价只影响新报工，历史报工按当时价）。
               </p>
-              {[
-                { key: 'name', label: '工序名称', ph: '如 罗马帘-穿杆' },
+              {([
+                // ⚠️ issue #4622：placeholder 不得再示范「把部位编进名字」的旧写法（`罗马帘-穿杆`）；
+                // 工序名 = **逻辑工序名**，部位由下方「适用部位」勾选（#4614）。
+                { key: 'name', label: '工序名称', ph: '如 罗马帘穿杆', hint: '工序名不要带部位 —— 部位在下面勾选（同一道工序在各部位共用这个名字）' },
                 { key: 'group_name', label: '分组', ph: '裁剪 / 车位 / 后道 / 其他' },
                 { key: 'unit', label: '单位', ph: '米 / 套 / 件 / 个 / 折' },
-              ].map((f) => (
+              ] as { key: string; label: string; ph: string; hint?: string }[]).map((f) => (
                 <div key={f.key}>
                   <label className="mb-1 block text-neutral-600" htmlFor={`new-op-${f.key}`}>
                     {f.label}
@@ -3228,6 +3282,11 @@ export default function ProcessConfigPage() {
                     value={(newOp as Record<string, string>)[f.key]}
                     onChange={(e) => setNewOp({ ...newOp, [f.key]: e.target.value })}
                   />
+                  {f.hint && (
+                    <p className="mt-1 text-xs text-neutral-400" data-testid={`routings-create-op-${f.key}-hint`}>
+                      {f.hint}
+                    </p>
+                  )}
                 </div>
               ))}
               <div>
@@ -3525,8 +3584,9 @@ export default function ProcessConfigPage() {
         {deleteOpTarget && (
           <div data-testid="variant-delete-modal" data-variant={deleteOpTarget.id} className="space-y-3 text-sm">
             <p className="text-neutral-600">
-              将删除工序<strong className="ml-1">{deleteOpTarget.name ?? deleteOpTarget.id}</strong>
-              （覆盖 {deleteOpTarget.positions.join(' / ')}）。
+              {/* 主标识 = **部位**（issue #4622：变体名不上界面；本弹框由 #4617 新增，
+                  合并时同步成同一口径 —— 与抽屉条目的主标识一致） */}
+              将删除这道工序在<strong className="mx-1">{deleteOpTarget.positions.join(' / ')}</strong>上的设置。
             </p>
             <p className="text-neutral-500">
               删除后它不再出现在工序库与部位价目里，新加工单不会再生成这道工序；

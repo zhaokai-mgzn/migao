@@ -10,7 +10,7 @@
 // 工序的明细面（含 provenance 徽标）收进「工艺项」单表的行尾「管理▸」抽屉；而**改价入口统一到
 // 矩阵格**（一屏一张表 ⇒ 只有一个价载体）。徽标因此从「可点击的改价入口」变为**纯标注**：
 // 点它不再冒输入框，改价只能从矩阵格进（这条本身就是 #4588 的验收判据）。
-// 反 placeholder：断言落到**真实数据行**（矩阵真实价 + 抽屉里的变体名/元数据），且徽标**双向断言**
+// 反 placeholder：断言落到**真实数据行**（矩阵真实价 + 抽屉里的部位/元数据），且徽标**双向断言**
 // （占位行必须渲染「待确认」；实证行必须**不**渲染 —— 防「永远显示」的空断言）。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -75,9 +75,9 @@ const CATALOG = {
  * ⇒ 抽屉里每道变体都能查到自己的 provenance（按 `variant_operation_id` = 工序库 `id`）。
  */
 const POSITIONS = [
-  { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: '101', variant_name: '精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: false },
-  { id: 'pos-上车布-纱帘', operation: '上车布', position: '纱帘', unit_price: 0.5, applicable: true, variant_operation_id: '102', variant_name: '上车布-纱', unit: '米', group: '裁剪', scope: 'position', is_must_finish: false },
-  { id: 'pos-罗马帘-帘头', operation: '罗马帘', position: '帘头', unit_price: 3, applicable: true, variant_operation_id: '103', variant_name: '罗马帘-成型', unit: '件', group: '裁剪', scope: 'position', is_must_finish: false },
+  { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: '101', unit: '套', group: '裁剪', scope: 'position', is_must_finish: false },
+  { id: 'pos-上车布-纱帘', operation: '上车布', position: '纱帘', unit_price: 0.5, applicable: true, variant_operation_id: '102', unit: '米', group: '裁剪', scope: 'position', is_must_finish: false },
+  { id: 'pos-罗马帘-帘头', operation: '罗马帘', position: '帘头', unit_price: 3, applicable: true, variant_operation_id: '103', unit: '件', group: '裁剪', scope: 'position', is_must_finish: false },
 ]
 
 const ROUTINGS = {
@@ -125,19 +125,21 @@ describe('工序 provenance 徽标 + 一键套用行业模板（issue #4363；#4
     vi.mocked(toast.error).mockClear()
   })
 
-  it('渲染真实数据：这一屏的价来自**部位价目矩阵**，变体名/元数据在抽屉里（反 placeholder）', async () => {
+  it('渲染真实数据：这一屏的价来自**部位价目矩阵**，部位/元数据在抽屉里（反 placeholder）', async () => {
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix-total')).toHaveTextContent('3'))
 
     // 价：矩阵格（唯一价载体）
     expect(screen.getByTestId('matrix-cell-精裁-布帘')).toHaveTextContent('¥8.50')
     expect(screen.getByTestId('matrix-cell-罗马帘-帘头')).toHaveTextContent('¥3.00')
-    // 变体名 + 分组·单位：行尾与抽屉（不是发明出来的）
-    expect(screen.getByTestId('matrix-variants-罗马帘')).toHaveTextContent('罗马帘-成型')
+    // issue #4622：矩阵行首**不再**显示变体名（改前这里断言的是 `matrix-variants-罗马帘` = `罗马帘-成型`）
+    expect(screen.queryByTestId('matrix-variants-罗马帘')).toBeNull()
 
+    // 抽屉：条目主标识 = **部位**（不是变体名）+ 分组·单位（逐字来自矩阵，不是发明出来的）
     await userEvent.click(screen.getByTestId('matrix-manage-罗马帘'))
     const row = screen.getByTestId('variant-row-103')
-    expect(row).toHaveTextContent('罗马帘-成型')
+    expect(row).toHaveTextContent('帘头')
+    expect(row).not.toHaveTextContent('罗马帘-成型')
     expect(row).toHaveTextContent('裁剪')
     expect(row).toHaveTextContent('件')
   })

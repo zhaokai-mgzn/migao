@@ -121,9 +121,10 @@ public class ProductionRoutingReadService {
     /**
      * 部位价目矩阵：一道**逻辑工序** × 一个**部位** = 一格（28 × 3 = 84 格）。
      *
-     * @return 11 键/行（issue #4500 冻结 4 键 + issue #4587 追加 {@code id} 与 6 键变体元数据），
+     * @return 10 键/行（issue #4500 冻结 4 键 + issue #4587 追加 {@code id} 与 5 键变体元数据；
+     *         issue #4622 去掉 {@code variant_name}），
      *         按 `(operation, position)` 稳定排序；`applicable=false` 的格 `unit_price=null`
-     *         （**明确不做 ⇒ 不报价**，与「没定价」可区分）。变体查不到 ⇒ 6 键全 `null`（**不猜**）
+     *         （**明确不做 ⇒ 不报价**，与「没定价」可区分）。变体查不到 ⇒ 5 键全 `null`（**不猜**）
      */
     public List<Map<String, Object>> operationPositions(Long tenantId) {
         List<ProductionOperationPosition> rows = productionOperationPositionMapper.selectList(
@@ -191,12 +192,21 @@ public class ProductionRoutingReadService {
      * **不是** {@code production_operations.name}（那边仍是旧名 精裁-布/布三边…）。矩阵的行键
      * 是逻辑名 —— 取错会让前端按 35 个旧名渲染出「一行一道工序」的旧形态。</p>
      *
-     * <p><b>后 6 键 = 逻辑名 ↔ 变体名的映射（issue #4587 ①，母单 #4586 的「中间那座桥」）</b>：
+     * <p><b>后 5 键 = 逻辑名 ↔ 变体工序的映射（issue #4587 ①，母单 #4586 的「中间那座桥」）</b>：
      * 每行回答「该逻辑工序 × 该部位**实际落到工人端的那道工序**是谁、单位/分组/作用域/必完是什么」。
      * 前端此前拿不到这层映射 ⇒ 不敢显示单位/单价/必完（主线 chips 上只有名字两套恰好一致的
      * {@code 外帘打卷} 才显示 {@code 套 · ¥1.00}，其余 6 道什么都不显示）。</p>
      *
-     * <p>⚠️ 变体查不到（如 {@code logo条 × 纱帘} 在库里没有该变体）⇒ 6 键**全 null**，
+     * <p>⚠️ <b>不返回变体名</b>（{@code variant_name}，issue #4622 = goal「web 面工序命名统一」阶段 3）：
+     * 它是**当前**工序库的旧名（{@code production_operations.name}，如 {@code 布三边} / {@code 精裁-布}），
+     * 而 web 面只用**一套工序名** = 逻辑工序名（{@code operation}）+ 部位（{@code position}）
+     * ⇒ 该键**从响应里去掉**（不是「返回了但前端不渲染」—— 键在响应里就仍是 web 可见的旧口径）。
+     * 逻辑名 ↔ 变体的**寻址**能力不减：{@code variant_operation_id} 仍在（抽屉的 {@code PUT/DELETE}
+     * 与 provenance 按它定位），单位/分组/作用域/必完 4 键仍在。
+     * ⚠️ 与 #4621 的「只加不改」裁定不冲突：那条针对**历史快照键**（{@code operation} /
+     * {@code operation_name} = 工人端**当时**的快照名，历史读面必须保留），而本键是**当前**库口径。</p>
+     *
+     * <p>⚠️ 变体查不到（如 {@code logo条 × 纱帘} 在库里没有该变体）⇒ 5 键**全 null**，
      * 且键**必须保留**（前端按固定键集读；省掉键 = 前端渲染 undefined）。
      * {@code id}（issue #4587 追加）= 矩阵格自身的主键，是格内改价
      * {@code PUT /operation-positions/{id}} 的**寻址键**（不返回 ⇒ 改价无法落地）。</p>
@@ -212,7 +222,6 @@ public class ProductionRoutingReadService {
         view.put("unit_price", row.getUnitPrice());
         view.put("applicable", row.getApplicable());
         view.put("variant_operation_id", variant == null ? null : variant.get("id"));
-        view.put("variant_name", variantName);
         view.put("unit", variant == null ? null : variant.get("unit"));
         view.put("group", variant == null ? null : variant.get("group"));
         view.put("scope", variant == null ? null : variant.get("scope"));
