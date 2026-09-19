@@ -2975,7 +2975,7 @@
 跳过: [backend-contract] 算料公式属确定性纯计算（无 LLM 行为）：判据在 pytest（tests/test_craft_calc_formula.py / tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）+ vitest（craft-calc-request.test.ts / craft-calc-formula-sync.test.ts / orders-new-craft-calc.test.tsx），不进 agent-eval 冒烟
 ```
 真值: fabric-calc.formula-selection, fabric-calc.meters-ceiling, fabric-calc.craft-calc-config, fabric-calc.craft-calc-endpoint
-溯源: 2026-09-19 新增（issue #4527，包 D 算料口径）：用户裁定「两种用料计算方法可选、默认韩折 + 用料米数保留一位小数（向上进位）+ 按打开方式系数（逐片口径）」，追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」与「公式参数支持每个商家自定义配置」。落码 = `curtain_calc.py`（`formula` 入参 + `CRAFT_FORMULA`/`CRAFT_MOUNTING` 推导表 + `DEFAULT_CRAFT_CALC_CONFIG` + `ceil_to_step` + 逐片口径 + 引擎产出 `formula_text`）、`internal.py` 端点透传 `formula`/`craft`、Java 代理透传（不复制算料逻辑）、`craft-calc-request.ts`（放行打孔 + mounting/formula 随 craft 走 + 有守卫的映射副本）。**不改运行时金额口径**（金额仍 = 用料 × 单价，只用料米数按裁定向上进位到 0.1）。编号：起草用 OR-039，合并 main 时 main 已占用 OR-039/OR-040（包 B #4526）⇒ 顺延 OR-041。 ｜ tags: order, craft_calc, fabric, formula_selection, per_panel, meters_rounding
+溯源: 2026-09-19 新增（issue #4527，包 D 算料口径）：用户裁定「两种用料计算方法可选、默认韩折 + 用料米数保留一位小数（向上进位）+ 按打开方式系数（逐片口径）」，追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」与「公式参数支持每个商家自定义配置」。落码 = `curtain_calc.py`（`formula` 入参 + `resolve_craft_rule` 工艺推导入口（枚举常量 `CRAFT_S_HOOK`/`CRAFT_EYELET`） + `DEFAULT_CRAFT_CALC_CONFIG` + `ceil_to_step` + 逐片口径 + 引擎产出 `formula_text`）、`internal.py` 端点透传 `formula`/`craft`、Java 代理透传（不复制算料逻辑）、`craft-calc-request.ts`（放行打孔 + mounting/formula 随 craft 走 + 有守卫的映射副本）。**不改运行时金额口径**（金额仍 = 用料 × 单价，只用料米数按裁定向上进位到 0.1）。编号：起草用 OR-039，合并 main 时 main 已占用 OR-039/OR-040（包 B #4526）⇒ 顺延 OR-041。 ｜ tags: order, craft_calc, fabric, formula_selection, per_panel, meters_rounding
 
 ## 加工项域（13 case）
 

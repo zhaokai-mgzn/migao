@@ -248,7 +248,7 @@ export interface CraftCalcParams {
   formula?: string
   /**
    * 安装工艺（用户 2026-09-19 追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料」）：
-   * 韩褶/打孔/四爪钩/穿杆/平幔。**公式由工艺推导**，权威表在算料引擎（`curtain_calc.CRAFT_FORMULA`）。
+   * 韩褶/打孔/四爪钩/穿杆/平幔。**公式由工艺推导**，权威表在算料引擎（`curtain_calc.resolve_craft_rule`）。
    */
   craft?: string
 }

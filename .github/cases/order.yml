@@ -3143,7 +3143,7 @@ cases:
     # ⑧ 其余算料输出（折数/幅数/金额）逐值回归：与改前一致（52 折 / 13.3 米 / 34.1 / 62.7 / 11.8）。
     # 配置可注入：`build_quote(..., config=None)` ⇒ 默认值 = 既有常量逐值不变（显式传默认配置 == 不传）；
     # 非法配置显式报错（**不静默回退默认值**）；配置**沿调用链传递**，不读进模块级可变全局。
-    # ⚠️ 架构口径：**不新增第二份算料逻辑** —— 推导表唯一口径在算料引擎（`CRAFT_FORMULA`），
+    # ⚠️ 架构口径：**不新增第二份算料逻辑** —— 推导唯一口径在算料引擎（`resolve_craft_rule` + 枚举常量），
     # 前端那张是**有守卫的副本**（`craft-calc-formula-sync.test.ts` 逐值读 Python 源比对）；
     # `formula_text` 由引擎产出，Java / TS 只搬运；Java 侧 `formula` / `craft` 原样透传（不校验、不改写）。
     user_inputs:
@@ -3158,7 +3158,7 @@ cases:
       - "（散文、**不计分**）配置可注入（用户追加裁定「可能得支持每个商家自定义配置」）：默认值 = 既有常量逐值不变；护栏（褶倍下限 / 正数校验 / tiers 非空）不因可配而消失，非法配置显式报错；配置沿调用链显式传递"
       - "（散文、**不计分**）公式串由**后端**（算料引擎）产出并写明所用公式（`韩折公式：` / `褶倍数公式：`）；Java / TS 侧只搬运、不自拼（自拼 = 第二份算料逻辑）；前端 `PLEAT_CRAFTS` 门必须放行打孔（否则「打孔按倍数法算布料」在页面上永不发生）"
     skip_reason: "[backend-contract] 算料公式属确定性纯计算（无 LLM 行为）：判据在 pytest（tests/test_craft_calc_formula.py / tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）+ vitest（craft-calc-request.test.ts / craft-calc-formula-sync.test.ts / orders-new-craft-calc.test.tsx），不进 agent-eval 冒烟"
-    merge_log: "2026-09-19 新增（issue #4527，包 D 算料口径）：用户裁定「两种用料计算方法可选、默认韩折 + 用料米数保留一位小数（向上进位）+ 按打开方式系数（逐片口径）」，追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」与「公式参数支持每个商家自定义配置」。落码 = `curtain_calc.py`（`formula` 入参 + `CRAFT_FORMULA`/`CRAFT_MOUNTING` 推导表 + `DEFAULT_CRAFT_CALC_CONFIG` + `ceil_to_step` + 逐片口径 + 引擎产出 `formula_text`）、`internal.py` 端点透传 `formula`/`craft`、Java 代理透传（不复制算料逻辑）、`craft-calc-request.ts`（放行打孔 + mounting/formula 随 craft 走 + 有守卫的映射副本）。**不改运行时金额口径**（金额仍 = 用料 × 单价，只用料米数按裁定向上进位到 0.1）。编号：起草用 OR-039，合并 main 时 main 已占用 OR-039/OR-040（包 B #4526）⇒ 顺延 OR-041。"
+    merge_log: "2026-09-19 新增（issue #4527，包 D 算料口径）：用户裁定「两种用料计算方法可选、默认韩折 + 用料米数保留一位小数（向上进位）+ 按打开方式系数（逐片口径）」，追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」与「公式参数支持每个商家自定义配置」。落码 = `curtain_calc.py`（`formula` 入参 + `resolve_craft_rule` 工艺推导入口（枚举常量 `CRAFT_S_HOOK`/`CRAFT_EYELET`） + `DEFAULT_CRAFT_CALC_CONFIG` + `ceil_to_step` + 逐片口径 + 引擎产出 `formula_text`）、`internal.py` 端点透传 `formula`/`craft`、Java 代理透传（不复制算料逻辑）、`craft-calc-request.ts`（放行打孔 + mounting/formula 随 craft 走 + 有守卫的映射副本）。**不改运行时金额口径**（金额仍 = 用料 × 单价，只用料米数按裁定向上进位到 0.1）。编号：起草用 OR-039，合并 main 时 main 已占用 OR-039/OR-040（包 B #4526）⇒ 顺延 OR-041。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_craft_calc_formula.py"
