@@ -247,3 +247,40 @@ describe('合并页 /production/processing（两个 tab，不平铺）', () => {
     expect(screen.getByTestId('fee-gaps-total')).toBeInTheDocument()
   })
 })
+
+// ────────────────────────── 顶层分组顺序（issue #4510） ──────────────────────────
+
+describe('顶层分组顺序（issue #4510：用户裁定）', () => {
+  it('完整序列 = 工作台 → 智能客服 → 商品管理 → 订单管理 → 生产管理 → 客户管理 → 组织管理', () => {
+    // ⚠️ 断言**完整序列**，不是只断言相邻两项 —— 否则「把生产管理挪到别处」这类改动会漏网。
+    // （实测：本单只做重排时，全量 157 文件 2092 条**一条都没红** ⇒ 顺序此前**无人守**，
+    //   这条判据是本单新加的承重面。）
+    expect(menuGroups.map((g) => g.key)).toEqual([
+      'workspace',
+      'smart-customer-service',
+      'product-center',
+      'trade-center',
+      'production',      // ④ 移到「订单管理」之下、「客户管理」之上
+      'customer-center',
+      'org-center',      // ② 移到最后
+    ])
+  })
+
+  it('三条相对位置关系（②③④ 的显式钉子）', () => {
+    const keys = menuGroups.map((g) => g.key)
+    // ④ 在订单管理之下、客户管理之上
+    expect(keys.indexOf('production')).toBeGreaterThan(keys.indexOf('trade-center'))
+    expect(keys.indexOf('production')).toBeLessThan(keys.indexOf('customer-center'))
+    // ③ 生产管理在组织管理上面（② 把 org 挪回中间时这条会红）
+    expect(keys.indexOf('production')).toBeLessThan(keys.indexOf('org-center'))
+    // ② 组织管理是**最后一个分组**
+    expect(menuGroups[menuGroups.length - 1].key).toBe('org-center')
+  })
+
+  it('通知中心仍是 `standaloneItems`（渲染在分组之后）—— 「最下面」= 最后一个**分组**', () => {
+    // Sidebar 渲染顺序：menuGroups → standaloneItems ⇒ 通知中心作为一级独立项仍在组织管理下面
+    // （既有形态，本单不改）。显式钉住这个口径，避免将来被误读成「组织管理没放到底」。
+    expect(menuGroups[menuGroups.length - 1].key).toBe('org-center')
+    expect(menuGroups.map((g) => g.key)).not.toContain('notifications')
+  })
+})
