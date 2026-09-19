@@ -2816,8 +2816,11 @@ function LineItemBlock({
                   {errHeight && <p className="mt-1 text-sm text-red-600">{errHeight}</p>}
                 </div>
                 <div>
-                  {/* label 文案保持「数量」不变（既有判据按此定位输入框），单位进 placeholder */}
-                  <Label required>数量</Label>
+                  {/* label = 「用料米数」（issue #4598）：这个输入框的值**就是加工费米数**
+                      （`info.processingMeters = line.quantity`，加工费 = 组合单价 × 它），
+                      而它的值本身由算料写回（`fabric_meters`）—— 叫「数量」会被商家读成「买几樘」。
+                      ⚠️ 布料行（`FabricRow`）**不改**：布料按 `sellingMethod` 卖布，不是同一个业务。 */}
+                  <Label required>用料米数</Label>
                   <input
                     type="number"
                     min={1}
@@ -2837,6 +2840,8 @@ function LineItemBlock({
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
+                  {/* issue #4598：把口径写在旁边 —— 商家一眼对得上加工费是按哪个数算的 */}
+                  <p className="mt-1 text-xs text-neutral-400">= 加工费米数</p>
                   {/* 算料来源与公式（issue #4434）—— 公式串**原样渲染后端产出**，前端不自拼。
                       ⚠️ 纱帘（issue #4521）：**买多少就是多少**，没有公式可恢复 ⇒ 只报口径，
                       不给「恢复按公式计算」按钮（点了也没有公式可算）。 */}

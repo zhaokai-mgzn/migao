@@ -82,7 +82,9 @@ const inputOf = (label: string, idx = 0) =>
     .getAllByText(label)
     .map((el) => el.closest('div')!.querySelector('input') as HTMLInputElement)[idx]
 
-const qtyInput = (idx = 0) => inputOf('数量', idx)
+// 帘（成品）行的米数输入框（issue #4598 起 label = 「用料米数」，旧文案「数量」）——
+// 它就是**加工费米数**（`info.processingMeters = line.quantity`），也是试算写回的目标字段。
+const qtyInput = (idx = 0) => inputOf('用料米数', idx)
 
 const pickProduct = async () => {
   fireEvent.click(await screen.findByText('点击搜索并选择商品'))

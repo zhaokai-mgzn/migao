@@ -6,6 +6,9 @@
 // 即该用例「写侧录入」判据的新承载（原「工艺 / 是否定型 chips」判据随控件退场改判）。
 // ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：加工项改为**店铺级目录**（processingItemApi.getProcessingItems
 // 只加载一次），不再按商品过滤；解耦钉死断言见 orders-new-decoupled.test.tsx
+// ⚠️ 2026-09-19（issue #4598）：帘（成品）行的米数输入框 label「数量」→「用料米数」
+// （它就是**加工费米数**：`info.processingMeters = line.quantity`）⇒ 本文件的定位锚点同步改；
+// **布料行（`FabricRow`）仍是「数量」**（按米卖布，单位由 sellingMethod 决定）—— 反向断言见判据 11。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { toast } from 'sonner'
@@ -166,9 +169,9 @@ describe('NewOrderPage', () => {
     fireEvent.click(await screen.findByText('测试窗帘'))
     await screen.findByText('帘体')   // #4508：等商品落地（空态没有组壳）
 
-    // Label 无 htmlFor 关联，按「数量」label 所在容器定位输入框
+    // Label 无 htmlFor 关联，按「用料米数」label 所在容器定位输入框（#4598 改名前叫「数量」）
     openWizardStep('尺寸与数量')
-    const qtyLabel = await screen.findByText('数量')
+    const qtyLabel = await screen.findByText('用料米数')
     const qtyInput = qtyLabel.closest('div')!.querySelector('input') as HTMLInputElement
     expect(qtyInput).toHaveValue(1)
 
@@ -282,7 +285,7 @@ describe('NewOrderPage', () => {
 
     // 面料米数 3 → 数量 3 → 加工费 5×3 = 15（数量联动重算）
     openWizardStep('尺寸与数量')
-    const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
+    const qtyInput = (await screen.findByText('用料米数')).closest('div')!.querySelector('input') as HTMLInputElement
     fireEvent.change(qtyInput, { target: { value: '3' } })
     await waitFor(() => {
       expect(feeRowText()).toContain('¥15.00')
@@ -329,7 +332,7 @@ describe('NewOrderPage', () => {
 
     // 面料 2.5 米 → 数量 2.5 → 加工费 3×2.5 = 7.5
     openWizardStep('尺寸与数量')
-    const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
+    const qtyInput = (await screen.findByText('用料米数')).closest('div')!.querySelector('input') as HTMLInputElement
     fireEvent.change(qtyInput, { target: { value: '2.5' } })
     await waitFor(() => {
       expect(feeRowText()).toContain('¥7.50')
@@ -372,7 +375,7 @@ describe('NewOrderPage', () => {
     })
 
     openWizardStep('尺寸与数量')
-    const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
+    const qtyInput = (await screen.findByText('用料米数')).closest('div')!.querySelector('input') as HTMLInputElement
     fireEvent.change(qtyInput, { target: { value: '10' } })
     await waitFor(() => {
       expect(feeRowText()).toContain('¥50.00')
@@ -402,7 +405,7 @@ describe('NewOrderPage', () => {
     await pickProduct('测试9999')
 
     openWizardStep('尺寸与数量')
-    const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
+    const qtyInput = (await screen.findByText('用料米数')).closest('div')!.querySelector('input') as HTMLInputElement
     fireEvent.change(qtyInput, { target: { value: '20' } })
 
     const totalRow = await screen.findByText('订单金额')
@@ -758,7 +761,7 @@ describe('NewOrderPage', () => {
     it('双拼：配布边米数默认 = 主布米数；改过 ⇒ metersSource=人工指定', async () => {
       await setupCurtain()
       openWizardStep('尺寸与数量')
-    const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
+    const qtyInput = (await screen.findByText('用料米数')).closest('div')!.querySelector('input') as HTMLInputElement
       fireEvent.change(qtyInput, { target: { value: '3' } })
       expandCraft()
       pickChip('款式', '拼色')
@@ -1135,7 +1138,7 @@ describe('NewOrderPage', () => {
       expect(screen.getByText('纱帘按实际买多少填，不自动算料')).toBeInTheDocument()
       // 没有「恢复按公式计算」入口（纱帘根本没有公式可恢复）
       expect(screen.queryByText('恢复按公式计算')).toBeNull()
-      const qtyInput = (await screen.findByText('数量'))
+      const qtyInput = (await screen.findByText('用料米数'))
         .closest('div')!
         .querySelector('input') as HTMLInputElement
       fireEvent.change(qtyInput, { target: { value: '5' } })
@@ -1160,6 +1163,32 @@ describe('NewOrderPage', () => {
       expect(screen.queryByRole('radiogroup', { name: '帘体' })).toBeNull()
       expect(screen.queryByRole('button', { name: /^1 尺寸与数量/ })).toBeNull()
       expect(screen.queryByRole('button', { name: /^2 工艺规格/ })).toBeNull()
+    })
+
+    it('判据 11（#4598）：帘行米数输入框 label = 「用料米数」（它就是加工费米数）；布料行仍是「数量」', async () => {
+      await setupCurtain()
+      openWizardStep('尺寸与数量')
+
+      // 帘（成品）行：label = 「用料米数」—— 这个数就是**加工费米数**
+      // （`info.processingMeters = line.quantity`，加工费 = 组合单价 × 它），且由算料写回。
+      // 叫「数量」会被商家读成「买几樘 / 几件」，而这个数直接决定加工费。
+      const curtainLabel = screen.getByText('用料米数')
+      expect(curtainLabel.closest('div')!.querySelector('input')).toBeTruthy()
+      // 旁注把口径写出来（商家一眼对得上加工费按哪个数算）
+      expect(screen.getByText('= 加工费米数')).toBeInTheDocument()
+      // 反向断言：帘行**不得**再留着旧文案「数量」
+      expect(screen.queryByText('数量')).toBeNull()
+
+      // 布料行：**按米卖布**（单位由 `sellingMethod` 决定）⇒ 文案保持「数量」，
+      // 且**不得**出现「用料米数」—— 两个输入框不是同一个业务，禁止一起改。
+      fireEvent.click(
+        within(screen.getByRole('radiogroup', { name: '售卖形态' })).getByRole('radio', {
+          name: '布料',
+        })
+      )
+      expect(screen.getByText('数量')).toBeInTheDocument()
+      expect(screen.queryByText('用料米数')).toBeNull()
+      expect(screen.queryByText('= 加工费米数')).toBeNull()
     })
   })
 
