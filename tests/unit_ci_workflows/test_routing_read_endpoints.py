@@ -238,7 +238,11 @@ def test_position_view_keys_are_frozen_contract():
 
 
 def test_rule_view_keys_are_frozen_contract():
-    """判据 1d：规则项的键集/键序 = 10 个键（逐字；末键 = issue #4567 的 `customer_unit_price`）。"""
+    """判据 1d：规则项的键集/键序 = 10 个键（逐字；末键 = issue #4567 的 `customer_unit_price`）。
+
+    ⚠️ issue #4643 把 `operation` / `after_operation` 改成**读时归一后的逻辑名**（读面兜住存量变体名行），
+    但**键集一字不动**（归一不新增也不删键）—— 本常量仍是**冻结判据**，加/删/改名照旧红。
+    """
     assert _view_keys("ruleView") == RULE_KEYS, (
         f"规则项键集漂移（issue #4500 冻结 + #4567 追加 `customer_unit_price`：{RULE_KEYS}）"
         f"—— 前端 #4433 的统一规则区按这些键渲染"

@@ -647,8 +647,34 @@ class ProductionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(2))
                 .andExpect(jsonPath("$.data.groups[0].group").value("裁剪"))
-                .andExpect(jsonPath("$.data.groups[0].operations[0].name").value("精裁-布"))
+                // issue #4642 判据改钉新真值（**不是放宽**）：读时归一 ⇒ 存量旧名行（库列仍是 `精裁-布`）
+                // 的 `name` 返回**逻辑名**；库口径原名另走 `library_name`（web 不得渲染）。
+                .andExpect(jsonPath("$.data.groups[0].operations[0].name").value("精裁"))
+                .andExpect(jsonPath("$.data.groups[0].operations[0].library_name").value("精裁-布"))
                 .andExpect(jsonPath("$.data.groups[1].group").value("车位"));
+    }
+
+    @Test
+    @DisplayName("#4642 catalog 读时归一：存量旧名行（精裁-布）⇒ name 返回**逻辑名**（精裁）；"
+            + "合法自定义名（测试22）归一后等于自身；逻辑名再归一不变（幂等）")
+    void operationsCatalogNormalizesLegacyVariantNamesOnRead() throws Exception {
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operationRow("op-v54-01", "精裁-布", "裁剪", "米", "0.40", 1),
+                operationRow("op-v54-02", "精裁", "裁剪", "米", "0.40", 2),
+                operationRow("op-test22", "测试22", "其他", "米", "0.40", 3)));
+
+        mockMvc.perform(get("/api/admin/production/operations-catalog"))
+                .andExpect(status().isOk())
+                // 存量旧名行 ⇒ 逻辑名（**读时**归一；库里那一列一字未动）
+                .andExpect(jsonPath("$.data.groups[0].operations[0].name").value("精裁"))
+                // 幂等：已经是逻辑名的行再归一不变
+                .andExpect(jsonPath("$.data.groups[0].operations[1].name").value("精裁"))
+                // 反向护栏：未登记的自定义名不得被改坏（归一后等于自身）
+                .andExpect(jsonPath("$.data.groups[1].operations[0].name").value("测试22"))
+                // 归一**只**动 name：同一行的库口径元数据一字不变
+                .andExpect(jsonPath("$.data.groups[0].operations[0].unit_price").value(0.40))
+                .andExpect(jsonPath("$.data.groups[0].operations[0].unit").value("米"))
+                .andExpect(jsonPath("$.data.groups[0].operations[0].group").value("裁剪"));
     }
 
     @Test
@@ -996,7 +1022,10 @@ class ProductionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value("op-1"))
-                .andExpect(jsonPath("$.data.name").value("韩褶-布"))
+                // issue #4642 判据改钉新真值（**不是放宽**）：写面响应与 catalog 读面共用 `operationView`，
+                // `name` 已是**读时归一后的逻辑名**（库行 `韩褶-布` ⇒ `韩褶`）；库口径原名走 `library_name`。
+                .andExpect(jsonPath("$.data.name").value("韩褶"))
+                .andExpect(jsonPath("$.data.library_name").value("韩褶-布"))
                 .andExpect(jsonPath("$.data.unit").value("折"))
                 .andExpect(jsonPath("$.data.unit_price").value(0.55));
 
@@ -1200,13 +1229,46 @@ class ProductionControllerTest {
 
         mockMvc.perform(post("/api/admin/production/operations")
                         .contentType("application/json")
-                        .content("{\"name\":\"罗马帘-穿杆\",\"group_name\":\"车位\",\"unit\":\"米\",\"unit_price\":0.6}"))
+                        .content("{\"name\":\"罗马帘穿杆\",\"group_name\":\"车位\",\"unit\":\"米\",\"unit_price\":0.6}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.name").value("罗马帘-穿杆"))
+                .andExpect(jsonPath("$.data.name").value("罗马帘穿杆"))
                 .andExpect(jsonPath("$.data.group").value("车位"))
                 .andExpect(jsonPath("$.data.unit_price").value(0.6));
 
         verify(priceVersionMapper).insert(any(ProductionOperationPriceVersion.class));
+    }
+
+    @Test
+    @DisplayName("#4642 POST /operations 命中旧形态工序名（布三边）⇒ **422 + error.details 逐条**，不落库"
+            + "（红证：改前 200 且落库/回显 `布三边`，且矩阵行被归一成 `三边` ⇒ 同一道工序两名并存）")
+    void createOperationRejectsLegacyVariantName() throws Exception {
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
+
+        mockMvc.perform(post("/api/admin/production/operations")
+                        .contentType("application/json")
+                        .content("{\"name\":\"布三边\",\"unit_price\":0.6,\"positions\":[\"布帘\"]}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.details[0].field").value("name"))
+                .andExpect(jsonPath("$.error.details[0].message").value(containsString("部位")));
+
+        // 校验先于写入：工序库行与矩阵行都不许落
+        verify(productionOperationMapper, never()).insert(any(ProductionOperation.class));
+        verify(productionOperationPositionMapper, never()).insert(any(ProductionOperationPosition.class));
+    }
+
+    @Test
+    @DisplayName("#4642 反向护栏：合法自定义名（测试22 / 罗马帘穿杆）**照常可建**（判据不得误伤）")
+    void createOperationAcceptsLegitimateCustomNames() throws Exception {
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+
+        for (String custom : List.of("测试22", "罗马帘穿杆")) {
+            mockMvc.perform(post("/api/admin/production/operations")
+                            .contentType("application/json")
+                            .content("{\"name\":\"" + custom + "\",\"unit_price\":0.6}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.name").value(custom));
+        }
     }
 
     @Test
@@ -1217,9 +1279,9 @@ class ProductionControllerTest {
 
         mockMvc.perform(post("/api/admin/production/operations")
                         .contentType("application/json")
-                        .content("{\"name\":\"布帘车被\",\"unit_price\":0.6,\"positions\":[\"布帘\",\"纱帘\"]}"))
+                        .content("{\"name\":\"测试22\",\"unit_price\":0.6,\"positions\":[\"布帘\",\"纱帘\"]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.name").value("布帘车被"))
+                .andExpect(jsonPath("$.data.name").value("测试22"))
                 .andExpect(jsonPath("$.data.created_positions").value(2))
                 .andExpect(jsonPath("$.data.skipped_positions").value(0));
 
@@ -1227,8 +1289,9 @@ class ProductionControllerTest {
                 ArgumentCaptor.forClass(ProductionOperationPosition.class);
         verify(productionOperationPositionMapper, times(2)).insert(rows.capture());
         assertThat(rows.getAllValues()).extracting(ProductionOperationPosition::getLogicalName)
-                .as("矩阵行必须落在**逻辑名**上（前端「工艺项」表按它成行）")
-                .containsOnly("车被");
+                .as("矩阵行必须落在**逻辑名**上（前端「工艺项」表按它成行）—— 自定义名归一后等于自身。"
+                        + "⚠️ issue #4642 起旧形态名（`布帘车被`）在建之前就被拒 ⇒ 本用例输入即逻辑名")
+                .containsOnly("测试22");
     }
 
     @Test
@@ -1239,7 +1302,7 @@ class ProductionControllerTest {
 
         mockMvc.perform(post("/api/admin/production/operations")
                         .contentType("application/json")
-                        .content("{\"name\":\"罗马帘-穿杆\",\"unit_price\":0.6,\"positions\":[\"布帘\",\"布廉\"]}"))
+                        .content("{\"name\":\"罗马帘穿杆\",\"unit_price\":0.6,\"positions\":[\"布帘\",\"布廉\"]}"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.error.details").isArray())
                 .andExpect(jsonPath("$.error.details.length()").value(1))
@@ -1290,6 +1353,23 @@ class ProductionControllerTest {
                         .value(true))
                 .andExpect(jsonPath("$.data.pending_confirmation_total").value(1))
                 .andExpect(jsonPath("$.data.signal_keys_without_route").isArray());
+    }
+
+    @Test
+    @DisplayName("#4642 routing-gaps 同族归一：unrouted_operations[].name 对存量旧名行返回**逻辑名**")
+    void routingGapsNormalizesLegacyVariantNamesOnRead() throws Exception {
+        when(productionRoutingMapper.selectList(any())).thenReturn(List.of());
+        // 「精裁-布」的逻辑名是「精裁」，没有任何活跃主线消费它 ⇒ 它是缺口；名字必须是逻辑名。
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operationRow("op-v54-01", "精裁-布", "裁剪", "米", "0.40", 1),
+                operationRow("op-test22", "测试22", "其他", "米", "0.40", 2)));
+        when(productionRouteSignalMapper.selectList(any())).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/production/routing-gaps"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.unrouted_operations[0].name").value("精裁"))
+                // 反向护栏：自定义名归一后等于自身
+                .andExpect(jsonPath("$.data.unrouted_operations[1].name").value("测试22"));
     }
 
     @Test

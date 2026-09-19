@@ -273,9 +273,11 @@ const RULES_WITH_PRICE = [
 
 /**
  * 具名路线（新结构）：① 默认 + 三帘种 + 3 道主线 ② 纱帘专线（**空主线** ⇒ 空壳）。
- * ⚠️ 主线存的是**逻辑工序名**（`精裁`/`三边`，与 V71 种子同款书写），而 `production_operations.name`
- * 仍是旧名（`精裁-布`）—— 两者之间**没有**暴露给前端的映射 ⇒ 前端不发明元数据（静默 = 未知）；
- * `外帘装袋` 两侧同名（旧名不带部位后缀）⇒ 它是「库口径可见」的那一道。
+ * ⚠️ 主线存的是**逻辑工序名**（`精裁`/`三边`，与 V71 种子同款书写）。
+ * **issue #4642 起服务端读面已把 `production_operations.name` 归一后暴露**（catalog 的 `name` = 逻辑名，
+ * 库口径原名走 `library_name` 且 web 不得渲染）⇒ 前端**有了**映射，`libraryByName` 按逻辑名建键能查到
+ * （`resolved` 变好）。本文件上方那份 `CATALOG` 夹具仍保留**库口径旧名**（历史夹具形态，用于回归
+ * 「下拉/矩阵不按库名成行」等判据）；**新真值形态**见 ㉕-①′ 的 `LOGICAL_CATALOG`。
  * 旧形态（`curtain_type` × `craft` 展开快照）已随 P2b 退场 ⇒ 前端不得再按那个键渲染。
  */
 /**
@@ -2635,6 +2637,59 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
     const hint = screen.getByTestId('matrix-orphan-hint')
     expect(hint).toHaveTextContent('1')
     expect(hint).toHaveTextContent('部位')
+  })
+
+  it('㉕-①′ 工序库目录的 `name` 已是**逻辑工序名**（issue #4642）：弹窗渲染逻辑名，变体名不上屏', async () => {
+    // 夹具形态 = **读时归一后**的服务端响应（issue #4642）：库行 `精裁-布` 的 `name` 是 `精裁`，
+    // 库口径原名另走 `library_name`（web 不得渲染）。`测试22` 不在归一表里 ⇒ 归一后等于自身。
+    const LOGICAL_CATALOG = {
+      total: 2,
+      groups: [
+        {
+          group: '裁剪',
+          operations: [
+            {
+              id: 'op-v54-01', name: '精裁', library_name: '精裁-布', group: '裁剪',
+              unit: '套', unit_price: 8.5, is_must_finish: true, is_start_marker: true,
+            },
+          ],
+        },
+        {
+          group: '其他',
+          operations: [
+            {
+              id: 'op-test22', name: '测试22', library_name: '测试22', group: '其他',
+              unit: '米', unit_price: 0.5, is_must_finish: false, is_start_marker: false,
+            },
+          ],
+        },
+      ],
+    }
+    mockGetOperationsCatalog.mockResolvedValue(ok(LOGICAL_CATALOG))
+    await renderOperations()
+
+    await userEvent.click(screen.getByTestId('matrix-orphan-hint'))
+    await waitFor(() => expect(screen.getByTestId('orphan-attach-list')).toBeInTheDocument())
+
+    // ① 弹窗按**逻辑名**渲染（改前这里是库口径变体名 `精裁-布`）
+    //    ⚠️ id 用 `op-v54-01`（**不是** `op-精裁-布`）：后者被矩阵格的 `variant_operation_id` 指向
+    //    ⇒ 它不算孤儿、不会出现在本弹窗里（那是另一条判据 ㉕-② 的事）。
+    expect(screen.getByTestId('orphan-name-op-v54-01')).toHaveTextContent('精裁')
+    expect(screen.getByTestId('orphan-name-op-v54-01')).not.toHaveTextContent('精裁-布')
+    expect(screen.getByTestId('orphan-name-op-test22')).toHaveTextContent('测试22')
+
+    // ② 反向护栏：整屏都不得出现变体名（`library_name` 是库口径键，web **不得渲染**）
+    const orphanList = screen.getByTestId('orphan-attach-list')
+    expect(orphanList.textContent ?? '').not.toContain('精裁-布')
+
+    // ③ `libraryByName` 按 `name` 建键 ⇒ 归一后主线 chip 的库口径元数据解析**变好**
+    //    （`libraryByName.get('精裁')` 现在查得到 ⇒ `resolved=true`）。本页 chip **不渲染**
+    //    分组/单位（见 `StepView` 的注释：单价与库口径元数据不在 chip 上），故判据落在
+    //    「chip 正常渲染 + 整页无变体名」上；`resolved` 的服务面真值由 Java 断言守住。
+    await userEvent.click(screen.getByTestId('process-config-tab-routes'))
+    await waitFor(() => expect(screen.getByTestId('routing-step-11-1')).toBeInTheDocument())
+    expect(screen.getByTestId('routing-step-11-1')).toHaveTextContent('精裁')
+    expect(screen.getByTestId('routing-step-11-1')).not.toHaveTextContent('精裁-布')
   })
 
   it('㉕-② 反向护栏：已被矩阵格指向的工序**不算**孤儿（不提示）', async () => {

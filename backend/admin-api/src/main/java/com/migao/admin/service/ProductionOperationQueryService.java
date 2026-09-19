@@ -141,8 +141,10 @@ public class ProductionOperationQueryService {
      * 工序库目录：按分组 → 排序位的稳定顺序返回全部活跃工序。
      *
      * @return {total, groups:[{group, operations:[...]}]}；工序项含
-     *         {id, name, group, position, scope, unit, unit_price, is_must_finish, is_start_marker}
-     *         （{@code scope} = 部位级 {@code position} / 套级 {@code set}，V67，issue #4384 A1）
+     *         {id, name, library_name, group, position, scope, unit, unit_price, is_must_finish, is_start_marker, source}
+     *         （{@code scope} = 部位级 {@code position} / 套级 {@code set}，V67，issue #4384 A1）。
+     *         ⚠️ {@code name} = **逻辑工序名**（读时归一，issue #4642）；{@code library_name} = 库口径原名，
+     *         **web 界面不得渲染**（见 {@link #operationView}）
      */
     public Map<String, Object> catalog(Long tenantId) {
         List<ProductionOperation> rows = activeOperations(tenantId);
@@ -540,7 +542,10 @@ public class ProductionOperationQueryService {
                 pending++;
             }
             Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("name", op.getName());
+            // 读时归一（issue #4642，与 operationView 同口径）：缺口清单是**同一条泄漏路径**
+            // —— 当前 FE 无渲染方，但让库口径变体名留在 web 可见响应里就是下一次漏回界的入口。
+            entry.put("name", normalizeOperationName(op.getName()));
+            entry.put("library_name", op.getName());
             entry.put("group_name", op.getGroupName());
             entry.put("unit", op.getUnit());
             entry.put("unit_price", nz(op.getUnitPrice()));
@@ -665,11 +670,30 @@ public class ProductionOperationQueryService {
     /**
      * 工序项展示形态（目录项 / 写面 PUT 的响应**共用同一份**——两处各自拼一份必然漂移，
      * 而前端拿同一个 TS 类型渲染两者）。
+     *
+     * <p><b>{@code name} 读时归一（issue #4642）</b>：返回**逻辑工序名**（走**既有**
+     * {@link #normalizeOperationName}，不新造第二份表）—— 否则 web 面（工序库目录、孤儿接入弹窗）
+     * 直接渲染 {@code op.name} 就把**库口径变体名**（{@code 精裁-布} / {@code 布三边}）送上商家屏。
+     * 三条边界：</p>
+     * <ul>
+     *   <li><b>只归一能归一的</b>：未登记的自定义工序名（{@code 测试22}）归一后等于自身 ⇒ 原样返回；</li>
+     *   <li><b>不写库</b>：纯读时派生 —— {@code production_operations.name} 那一列一字未动
+     *       （本单不含数据迁移，可回溯「当时存的是什么」）；</li>
+     *   <li><b>库口径另给显式键</b>：{@code library_name} 承载**原始库名**（见下）。</li>
+     * </ul>
+     *
+     * <p>⚠️ <b>{@code library_name} = 库口径原名，web 界面不得渲染该键</b>（issue #4642 消费面核查）：
+     * 它的值域是**工人端快照名口径**（{@code 精裁-布}），渲染它等于把变体名送回商家屏。
+     * 它存在只为「按库名寻址/对账」的调用方（写面回显「我落的到底是哪一行」）；商家面显示名一律取
+     * {@code name}（逻辑名）+ {@code position}（部位）。</p>
      */
     public Map<String, Object> operationView(ProductionOperation op) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("id", op.getId());
-        view.put("name", op.getName());
+        view.put("name", normalizeOperationName(op.getName()));
+        // 库口径原名（**web 不得渲染**，见 javadoc）：库里那一列仍是旧名（精裁-布），
+        // 而 name 已是逻辑名（精裁）⇒ 需要「原始库名」的调用方从这里取，不从这里取显示名。
+        view.put("library_name", op.getName());
         view.put("group", op.getGroupName());
         view.put("position", op.getPosition());
         // 作用域（V67，issue #4384 A1）：部位级 / 套级（每樘窗一次）。**逐字取库**（与 unit/unit_price 同级）——
