@@ -2170,6 +2170,7 @@ _CASE_DF_007 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '2699系列雪尼尔窗帘面料', 'expect': 1}],
 )
 
 # ── DF-008 [ADVERSARIAL] 安全 - 批量删除/修改需二次确认（源: cases/defense.yml）──
