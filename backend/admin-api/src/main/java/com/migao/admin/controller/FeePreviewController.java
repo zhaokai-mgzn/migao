@@ -76,11 +76,16 @@ public class FeePreviewController {
         BigDecimal total = BigDecimal.ZERO;
         for (ProcessingFeeCalculator.Fee fee : fees) {
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("processingFee", fee.amount());
+            // 行金额 = 组合那半 + Σ 选项价（#4525 设计 §4.3：唯一进订单金额的数）
+            BigDecimal lineAmount = fee.lineAmount();
+            row.put("processingFee", lineAmount);
             row.put("processingFeeDetail", fee.detail());
+            // 顶层再给一份选项明细（前端展示用；与 detail 里的两个键**同源**，不另算）
+            row.put("specialOptions", fee.specialOptions());
+            row.put("specialOptionsTotal", fee.specialOptionsTotal());
             rows.add(row);
-            if (fee.amount() != null) {
-                total = total.add(fee.amount());
+            if (lineAmount != null) {
+                total = total.add(lineAmount);
             }
         }
 
