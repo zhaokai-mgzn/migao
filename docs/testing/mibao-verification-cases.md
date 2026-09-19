@@ -703,6 +703,7 @@
 你: 你们窗帘质量太差了，气死我了
 你: 帮我把问题整理成售后工单
 期望: interact(component=choice)
+数据: 前置（precondition）：小布对**单轮负面情绪**会走「主动建议」确定性节点（真值 = `backend/ai-agent-service/app/graph/handoff_offer.py` 的 `judge_handoff`：意图 ∈ `_OFFER_ALLOWED_INTENTS`（general / after_sales / complaint）且命中 S1 负面情绪词表 ⇒ 下发 `interact` choice 建议卡，与转人工工具是否可达无关）（success=true）；前置不成立时 `interact` 期望 unmatched，判红会伪装成「agent 不会建议」
 数据: 不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转
 数据: interact 卡片选项含『整理成售后工单』与『继续咨询小布』，且**不含**任何邀约人工转接的措辞（卡片文案判据见 tests/unit_ci_workflows/test_human_handoff_retired.py）
 数据: 用户点『整理成售后工单』后进入售后受理链路（确定性路由 after_sales, source=rule；判据见 tests/test_xiaobu_handoff_offer.py::TestOfferToDirectHandoffE2E）
@@ -714,7 +715,7 @@
 禁词: 客服马上联系您
 ```
 真值: ai-chat.handoff-offer, ai-chat.intent-tool-map
-溯源: xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工；2026-09-19 **退场改造**（用户裁定）：移除 human_handoff 的 expectations/must_succeed（不可满足）；**同批收口卡片文案**（邀约人工 → 继续受理：标题/选项/安抚文案改判，第 2 轮输入随之改为卡片新 value），前半（卡片 + 冷却）不变 ｜ tags: multi_turn, handoff, ai_guided
+溯源: xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工；2026-09-19 **退场改造**（用户裁定）：移除 human_handoff 的 expectations/must_succeed（不可满足）；**同批收口卡片文案**（邀约人工 → 继续受理：标题/选项/安抚文案改判，第 2 轮输入随之改为卡片新 value），前半（卡片 + 冷却）不变。2026-09-19（#4592 的 burn-down 缴费，与 CH-014 同批）：补**机器计分型**前置自断言（单轮负面情绪 ⇒ `handoff_offer` 确定性建议卡，意图白名单 general/after_sales/complaint，真值逐行核过 handoff_offer.py），把「前置不成立 ⇒ interact unmatched、判红却伪装成 agent 不会建议」这条形态挡在门口；user_inputs / expectations / forbidden_text 原样未动、无放宽。 ｜ tags: multi_turn, handoff, ai_guided
 
 ### CH-014. 用户拒绝建议 → 继续 AI 咨询且本会话不再自动建议 🔵
 ```
@@ -722,12 +723,13 @@
 你: 继续咨询小布
 你: 你们又没解决，气死我了
 期望: interact
+数据: 前置（precondition）：小布「主动建议转人工」的冷却**处于启用状态**且**每会话上限 = 1 次**（真值 = `backend/ai-agent-service/app/graph/handoff_judge.py` 的 `DEFAULT_HANDOFF_MAX_OFFERS = 1`，判据 = `_cooldown_blocked` 的 `offer_count >= DEFAULT_HANDOFF_MAX_OFFERS`；`handoff_offer.py` 在每次建议后把 `offer_count` +1）—— 本用例第 3 轮「冷却生效不再弹卡」正是按该上限校准的（success=true）；上限被改大或冷却判据被摘掉时，第 3 轮不会按预期收敛，判红会伪装成「agent 不弹建议卡」
 数据: 首次不满 → 建议卡片（offer_count 记为 1）
 数据: 用户点『继续咨询小布』→ 消息正常路由（general），不创建工单
 数据: 再次不满 → 冷却生效不再弹建议卡（handoff.offer_count >= 1）
 ```
 真值: ai-chat.handoff-offer
-溯源: xiaobu-ai-handoff-guidance.md 冷却/防骚扰 ｜ tags: multi_turn, handoff, cooldown
+溯源: xiaobu-ai-handoff-guidance.md 冷却/防骚扰。2026-09-19（#4592 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）：补**机器计分型**前置自断言（冷却启用 + `DEFAULT_HANDOFF_MAX_OFFERS = 1`，真值逐行核过 handoff_judge.py / handoff_offer.py），把「上限漂移 ⇒ 第 3 轮不收敛、判红却伪装成 agent 不弹卡」这条形态挡在门口；user_inputs / expectations / forbidden_text 原样未动、无放宽。 ｜ tags: multi_turn, handoff, cooldown
 
 ### CH-015. 用户显式『转人工』→ 如实告知无人工通道并继续服务（不得假承诺转接） 🔵
 ```
