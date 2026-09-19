@@ -143,12 +143,6 @@ export const STANDARD_FULLNESS = 2.0
 export const DEFAULT_PLEAT_SPACING = PLEAT_FABRIC_PER_FOLD / STANDARD_FULLNESS
 
 /**
- * 新明细行的**默认工艺规格**（三条默认值）。
- *
- * 与硬约束 1「缺值不写」的关系：默认值是**商家看得见的真值** ⇒ 必须写；
- * 「缺值不写」管的是**既没填也没默认**的键。
- */
-/**
  * 是否定型默认「**是**」—— 真值源 §10「布帘默认是 / 纱帘默认否」。
  *
  * 主帘的默认部位就是布帘（`CURTAIN_TYPE_CLOTH`）⇒ 默认档取「是」；
