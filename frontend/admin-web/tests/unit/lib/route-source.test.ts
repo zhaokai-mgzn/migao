@@ -19,32 +19,32 @@ describe('routeSourceNotice — 加工单路线来源提示（四态）', () => 
     expect(routeSourceNotice('derived_from_cache', '布帘×韩褶')).toBeNull()
   })
 
-  it('default：两维全不命中 ⇒ 高亮警示 + 要求核对工序与计件单价 + 去信号映射补', () => {
+  it('default：两维全不命中 ⇒ 高亮警示 + 要求核对工序与计件单价 + 引导把部位/做法填进订单', () => {
     const n = routeSourceNotice('default', '布帘×韩褶')
     expect(n?.key).toBe('default')
     expect(n?.tone).toBe('warning')
-    expect(n?.title).toContain('未识别工艺信号')
+    expect(n?.title).toContain('没有填部位/做法')
     expect(n?.title).toContain('请核对工序与计件单价')
     expect(n?.detail).toContain('本单实际使用：布帘×韩褶')
-    expect(n?.detail).toContain('信号映射')
+    expect(n?.detail).toContain('填进订单')
   })
 
   it('partial：只命中一维 ⇒ 提示另一半取默认值（notice 档，非高亮）', () => {
     const n = routeSourceNotice('partial', '纱帘×韩褶')
     expect(n?.key).toBe('partial')
     expect(n?.tone).toBe('notice')
-    expect(n?.title).toContain('只识别出一半')
+    expect(n?.title).toContain('只填了一半')
     expect(n?.detail).toContain('本单实际使用：纱帘×韩褶')
   })
 
-  it('missing_route：两维都命中但库里没路线 ⇒ 报 route_requested_key + 去工艺路线页建', () => {
+  it('missing_route：两维都命中但库里没路线 ⇒ 报 route_requested_key + 去工艺配置页建', () => {
     const n = routeSourceNotice('missing_route', '布帘×韩褶', '罗马帘×韩褶')
     expect(n?.key).toBe('missing_route')
     expect(n?.tone).toBe('warning')
-    expect(n?.title).toContain('工序库里没有这条路线')
+    expect(n?.title).toContain('没有对应路线')
     expect(n?.detail).toContain('本单识别的是 罗马帘×韩褶')
     expect(n?.detail).toContain('本单实际使用：布帘×韩褶')
-    expect(n?.detail).toContain('工艺路线')
+    expect(n?.detail).toContain('工艺配置')
   })
 
   it('missing_route 但缺 route_requested_key：不编造识别键，其余文案照给', () => {
@@ -57,6 +57,6 @@ describe('routeSourceNotice — 加工单路线来源提示（四态）', () => 
   it('键缺失时不编造路线名（route_key 为空 ⇒ 只给处置建议）', () => {
     const n = routeSourceNotice('default', null)
     expect(n?.detail).not.toContain('本单实际使用')
-    expect(n?.detail).toContain('信号映射')
+    expect(n?.detail).toContain('填进订单')
   })
 })

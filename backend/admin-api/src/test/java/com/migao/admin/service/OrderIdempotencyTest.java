@@ -26,6 +26,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
@@ -74,6 +75,9 @@ class OrderIdempotencyTest {
 
     @InjectMocks
     private OrderService orderService;
+    /** 加工费组合价目表（issue #4406 的取价依赖；本类不涉及加工费口径 ⇒ 空表 ⇒ 未定价 0） */
+    @Mock(lenient = true)
+    private com.migao.admin.mapper.ProcessingFeeCombinationMapper processingFeeCombinationMapper;
 
     @Mock
     private OrderMapper orderMapper;
@@ -104,6 +108,11 @@ class OrderIdempotencyTest {
 
     @BeforeEach
     void setUp() {
+        // issue #4406：取价点用**真实**对象（只桩价目表 Mapper）—— 金额算法仍走生产代码。
+        // 为什么不用 @Mock：@InjectMocks 的构造注入发生在本方法之前 ⇒ 直接塞 mock 会把
+        // 「谁发射加工费」这条接线本身也 mock 掉（接线判据就失去意义）。
+        ReflectionTestUtils.setField(orderService, "processingFeeCalculator",
+                new ProcessingFeeCalculator(processingFeeCombinationMapper));
         MybatisConfiguration conf = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, Order.class);

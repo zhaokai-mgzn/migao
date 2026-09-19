@@ -133,7 +133,7 @@ class ProcessingOrderRouteSourceTest {
                 processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper,
                 orderService, objectMapper,
                 new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper,
-                        clientRequestIdService),
+                        orderItemMapper, clientRequestIdService),
                 productionOperationQueryService, productionOperationQtyClient);
     }
 

@@ -204,9 +204,14 @@ describe('加工单生产明细页', () => {
     mockGetPiecework.mockResolvedValue(ok({ total: 0, per_worker: {}, per_operation: [] }))
     render(<ProductionDetailPage />)
 
-    await waitFor(() => expect(screen.getByText('暂无工序数据')).toBeInTheDocument())
-    expect(screen.getByText('暂无计件数据')).toBeInTheDocument()
-    expect(screen.getByTestId('task-card-qr-placeholder')).toBeInTheDocument()
+    // issue #4414：页面有**两个独立请求**（工序 + 计件）；waitFor 只等了其中一个，
+    // 后两条**同步断言**依赖另一个已 resolve ⇒ 间歇性红（部署关键路径）。
+    // ⇒ 一次 waitFor 同时断言三者。
+    await waitFor(() => {
+      expect(screen.getByText('暂无工序数据')).toBeInTheDocument()
+      expect(screen.getByText('暂无计件数据')).toBeInTheDocument()
+      expect(screen.getByTestId('task-card-qr-placeholder')).toBeInTheDocument()
+    })
   })
 
   // ── PG-019：存量加工单补生成工序（issue #4202 前端半边）──
@@ -387,7 +392,7 @@ describe('加工单生产明细页', () => {
 
 // ── 路线来源提示（issue #4307 交付物 2 / #4308 P1「静默回落」的用户侧可观测面）──
 // 四态：derived 不提示；partial 提示「另一半取默认值」；missing_route 提示「识别的是 X，
-// 但库里没有这条路线」；default 高亮提示「未识别工艺信号，请核对工序与计件单价」。
+// 但库里没有这条路线」；default 高亮提示「本单没有填部位/做法，请核对工序与计件单价」。
 // 红证（实现前）：三态全部静默 ⇒ 罗马帘订单拿到布帘 11 道工序而用户面零提示。
 describe('加工单生产明细页 — 路线来源提示（PP-014）', () => {
   const withRoute = (routeSource: string, routeKey: string, routeRequestedKey?: string) => ({
@@ -411,7 +416,7 @@ describe('加工单生产明细页 — 路线来源提示（PP-014）', () => {
     render(<ProductionDetailPage />)
 
     await waitFor(() => expect(screen.getByTestId('production-route-default')).toBeInTheDocument())
-    expect(screen.getByTestId('production-route-default')).toHaveTextContent('未识别工艺信号')
+    expect(screen.getByTestId('production-route-default')).toHaveTextContent('没有填部位/做法')
     expect(screen.getByTestId('production-route-default')).toHaveTextContent('请核对工序与计件单价')
     expect(screen.getByTestId('production-route-default-detail')).toHaveTextContent('布帘×韩褶')
     expect(screen.queryByTestId('production-route-partial')).not.toBeInTheDocument()
@@ -422,7 +427,7 @@ describe('加工单生产明细页 — 路线来源提示（PP-014）', () => {
     render(<ProductionDetailPage />)
 
     await waitFor(() => expect(screen.getByTestId('production-route-partial')).toBeInTheDocument())
-    expect(screen.getByTestId('production-route-partial')).toHaveTextContent('只识别出一半')
+    expect(screen.getByTestId('production-route-partial')).toHaveTextContent('只填了一半')
     expect(screen.queryByTestId('production-route-default')).not.toBeInTheDocument()
   })
 

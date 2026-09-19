@@ -271,6 +271,34 @@ export const craftCalcApi = {
     request.post<ApiResponse<CraftCalcResult>>('/api/admin/orders/craft-calc', params),
 }
 
+/**
+ * 加工费计价**预览**（issue #4450 · 前置 #4406）。
+ *
+ * **为什么必须有它**：下单页此前本地自算（Σ 加工项），而服务端创建订单按**选配组合取价**
+ * ⇒ 页面总额 ≠ 服务端总额 ⇒ 命中「实收金额与应收不一致」校验 ⇒ **带加工项的订单被拒单**。
+ * 用本端点把服务端的同一份取价结果提前拿到，页面显示 === 落库。
+ *
+ * 入参/出参与创建订单**同形**（`items[].processingInfo` / `{processingFee, processingFeeDetail}`），
+ * 且服务端**复用同一份取价实现** —— 前端不得自算。
+ */
+export interface FeePreviewRow {
+  /** 该行加工费（元）；未定价 / 缺米数 = 0 */
+  processingFee: number
+  /** 可审计构成（snake_case，与订单详情行同键名，可直接复用同一套渲染） */
+  processingFeeDetail?: Record<string, unknown>
+}
+
+export interface FeePreviewResult {
+  items: FeePreviewRow[]
+  processingFeeTotal: number
+}
+
+export const feePreviewApi = {
+  /** 加工费试算（**不落库**）—— 入参就是「即将提交的那一份」明细 */
+  preview: (payload: { items: Array<{ processingInfo?: unknown }> }) =>
+    request.post<ApiResponse<FeePreviewResult>>('/api/admin/orders/fee-preview', payload),
+}
+
 // 加工分类 API
 export const processingCategoryApi = {
   getProcessingCategories: () => 
@@ -1045,6 +1073,7 @@ const api = {
   afterSales: afterSalesApi,
   order: orderApi,
   craftCalc: craftCalcApi,
+  feePreview: feePreviewApi,
   processingOrder: processingOrderApi,
   production: productionApi,
   dashboard: dashboardApi,

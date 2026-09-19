@@ -913,8 +913,8 @@ CREATE TABLE IF NOT EXISTS production_route_rules (
     trigger_kind VARCHAR(24) NOT NULL CHECK (trigger_kind IN ('craft', 'option', 'shaped', 'processing_item')),
     trigger_value VARCHAR(64) NOT NULL,               -- 工艺名 / 特殊选项名（逐字 = ERP 写法；它是 join key）
     position VARCHAR(16),                             -- 部位限定；NULL = 不限
-    action VARCHAR(16) NOT NULL CHECK (action IN ('insert', 'remove')),
-    operation VARCHAR(64) NOT NULL,                   -- 逻辑工序名（增/删的那一道）
+    action VARCHAR(16) NOT NULL CHECK (action IN ('insert', 'remove', 'factor')),
+    operation VARCHAR(64),                            -- 逻辑工序名（增/删/覆盖系数的那一道）；factor 平摊档 = NULL
     after_operation VARCHAR(64),                      -- insert 锚点（逻辑工序名）；NULL = 追加末尾
     priority INTEGER NOT NULL DEFAULT 100,            -- 升序生效（同序按声明顺序）
     status VARCHAR(16) NOT NULL DEFAULT 'active',
@@ -924,8 +924,68 @@ CREATE TABLE IF NOT EXISTS production_route_rules (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_production_route_rules_tenant_trigger_operation
     ON production_route_rules (tenant_id, trigger_kind, trigger_value,
-                              COALESCE(position, ''), action, operation)
+                              COALESCE(position, ''), action, COALESCE(operation, ''))
     WHERE deleted = 0;
+
+-- ── 工序路线模型重构 P2（V72，issue #4432 = 母单 #4423 P2/3）──
+-- ① 规则表补 `factor`（计件系数档：旧 OPTION_FACTOR_SCOPES 的「一分为二 → ×1.7」必须有地方存；
+--    **不允许**把系数留在旧 production_option_factors —— 那就是第二份口径）；
+-- ② `action` CHECK 放宽为含 'factor'；`operation` 改为可空（平摊档 = operation IS NULL）；
+-- ③ insert/remove 的 operation 仍必填（兜底 CHECK）；
+-- ④ `production_crafts` = 商户级**默认工艺**：重构后路线模板**没有工艺维** ⇒ 缺 `craft` 时
+--    「从默认路线取对应维」**在实现上不成立**（母单 #4423 评论「🔴 规格订正」）⇒ 改为
+--    一次配置、全局确定的商户级默认工艺（不依赖每单的字符串匹配，不写死常量 韩褶）。
+-- 本段是 bootstrap 终态（本文件由 docker-entrypoint-initdb.d 执行，**迁移链不在该栈运行**
+-- ⇒ 只写迁移 = 新建库无该列/表 ⇒ 读面 500，同 #3270 形态）。
+ALTER TABLE production_route_rules ADD COLUMN IF NOT EXISTS factor NUMERIC(6,3);
+ALTER TABLE production_route_rules DROP CONSTRAINT IF EXISTS production_route_rules_action_check;
+ALTER TABLE production_route_rules
+    ADD CONSTRAINT production_route_rules_action_check
+    CHECK (action IN ('insert', 'remove', 'factor'));
+ALTER TABLE production_route_rules ALTER COLUMN operation DROP NOT NULL;
+ALTER TABLE production_route_rules DROP CONSTRAINT IF EXISTS production_route_rules_operation_required_check;
+ALTER TABLE production_route_rules
+    ADD CONSTRAINT production_route_rules_operation_required_check
+    CHECK (action = 'factor' OR operation IS NOT NULL);
+ALTER TABLE production_route_rules DROP CONSTRAINT IF EXISTS production_route_rules_factor_present_check;
+ALTER TABLE production_route_rules
+    ADD CONSTRAINT production_route_rules_factor_present_check
+    CHECK (action <> 'factor' OR factor IS NOT NULL);
+COMMENT ON COLUMN production_route_rules.factor IS
+    '计件系数（V72，issue #4432 = 母单 #4423 P2）。仅 action = ''factor'' 时有值：该档把命中工序的'
+    '计件系数**覆盖**为它（同一触发内按 priority 升序、**后档覆盖前档**，与 routing.py::factor_for 的'
+    '「例外档盖住平摊档」逐字同口径）；多个加系数选项之间**相乘**。'
+    '⚠️ 只认规则表登记过的触发：未登记的触发**不得**悄悄改系数（查不到档 ⇒ 保持 1.0）。';
+COMMENT ON COLUMN production_route_rules.operation IS
+    '要增/删/覆盖系数的**逻辑工序名**（与 OPERATION_LOGICAL_NAMES 值域一致）。'
+    'V72 起**可空**：action = ''factor'' 且 operation IS NULL = **平摊档**（该触发对该部位全部工序生效）。'
+    'action = ''insert''/''remove'' 时仍必填（由 production_route_rules_operation_required_check 保证）。';
+
+CREATE TABLE IF NOT EXISTS production_crafts (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    name VARCHAR(64) NOT NULL,                       -- 工艺名（逐字 = ERP 写法；与规则表 trigger_value 同词表）
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,       -- 商户级默认工艺；每租户活跃行中**恰好一条**
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_production_crafts_tenant_name
+    ON production_crafts (tenant_id, name)
+    WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_production_crafts_tenant_default
+    ON production_crafts (tenant_id)
+    WHERE is_default AND deleted = 0;
+COMMENT ON TABLE production_crafts IS
+    '工艺词表 + **商户级默认工艺**（V72，issue #4432 = 母单 #4423 P2）。'
+    '存在的理由（规格订正）：重构后路线模板**没有工艺维**（工艺已降为 production_route_rules 的触发键）'
+    '⇒ 缺 `craft` 时「从默认路线取对应维」**在实现上不成立**。而工艺决定「插入哪道工序 + 计件系数」'
+    '⇒ 猜错 = 算错工人工资。⇒ 改为**一次配置、全局确定**的商户级默认工艺。';
+COMMENT ON COLUMN production_crafts.is_default IS
+    '商户级默认工艺标记（V72，issue #4432）：缺 `craft` 时的兜底来源。'
+    '不变式：每租户活跃工艺中**恰好一条**（部分唯一索引 uk_production_crafts_tenant_default 保证 ≤1）。'
+    '⚠️ 缺默认工艺时**不得静默取常量**：要么 fail-closed，要么取种子默认值 + 在 route_source 上显式标记。';
 
 CREATE TABLE IF NOT EXISTS processing_position_operations (
     id VARCHAR(64) PRIMARY KEY,
@@ -2035,6 +2095,181 @@ VALUES
   ('rr-v70-24', 1, 'option', '加立边', NULL, 'insert', '立边', '三边', 240, 'active'),
   ('rr-v70-25', 1, 'option', '扣环', NULL, 'insert', '扣环', '三边', 250, 'active'),
   ('rr-v70-26', 1, 'option', '防翘扣', NULL, 'insert', '防翘扣', '三边', 260, 'active')
+ON CONFLICT (id) DO NOTHING;
+
+-- ── 工序路线模型重构 P2 的终态种子（V72，issue #4432 = 母单 #4423 P2/3）──
+-- 与 V72__switch_routing_model_consumers.sql **同口径**：按租户循环（`FROM tenants`）为**每一个**
+-- 活跃租户补齐三张新表 + 默认工艺 —— 不做 ⇒ 切换消费路径那一刻，非 1 号租户
+-- `defaultRouteTemplate=null` ⇒ `resolveRoute` T3 fail-closed ⇒ 一张加工单也生成不了（#4316 同族）。
+-- 幂等：`ON CONFLICT DO NOTHING` + `NOT EXISTS` 按业务唯一键去重（1 号租户 V71 已种过 ⇒ 跳过）。
+-- 口径：价目/适用性 ← V71 的规范矩阵（84 行）；主线/规则/默认工艺 ← **该租户自己的**
+-- `production_operations`（判据 17：不是从 1 号租户复制 —— 那会把客户改过的价复刻给别人）。
+INSERT INTO production_crafts (id, tenant_id, name, is_default, status)
+SELECT 'pc-v72-' || t.id, t.id,
+       COALESCE(
+           (SELECT c.name
+              FROM unnest(ARRAY['韩褶', '打孔', '四爪钩', '穿杆', '平幔']) WITH ORDINALITY AS c(name, ord)
+             WHERE EXISTS (
+                 SELECT 1 FROM production_operations o
+                  WHERE o.tenant_id = t.id AND o.deleted = 0 AND o.status = 'active'
+                    AND (CASE
+                             WHEN o.name LIKE '%-布' THEN left(o.name, length(o.name) - 2)
+                             WHEN o.name LIKE '%-纱' THEN left(o.name, length(o.name) - 2)
+                             WHEN o.name = '布三边' THEN '三边'
+                             WHEN o.name = '纱三边' THEN '三边'
+                             WHEN o.name = '布帘车被' THEN '车被'
+                             WHEN o.name = '帘头制作' THEN '帘头制作'
+                             WHEN o.name = '上车布-布' THEN '上车布'
+                             WHEN o.name = '上车布-纱' THEN '上车布'
+                             ELSE o.name END) = c.name)
+             ORDER BY c.ord LIMIT 1),
+           '韩褶'),
+       TRUE, 'active'
+  FROM tenants t
+ WHERE t.deleted = 0
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO production_operation_positions
+    (id, tenant_id, logical_name, position, unit_price, applicable, status)
+SELECT 'opp-v72-' || t.id || '-' || p.logical_name || '-' || p.position,
+       t.id, p.logical_name, p.position, p.unit_price, p.applicable, 'active'
+  FROM tenants t
+  JOIN production_operation_positions p
+    ON p.tenant_id = 1 AND p.deleted = 0 AND p.id LIKE 'opp-v70-%'
+ WHERE t.deleted = 0
+   AND NOT EXISTS (
+       SELECT 1 FROM production_operation_positions e
+        WHERE e.tenant_id = t.id AND e.logical_name = p.logical_name
+          AND e.position = p.position AND e.deleted = 0)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO production_route_templates
+    (id, tenant_id, name, is_default, positions, mainline, status)
+SELECT 'rt-v72-' || t.id, t.id, '窗帘工序路线（默认）', TRUE,
+       '["布帘", "纱帘", "帘头"]'::jsonb,
+       COALESCE(
+           (SELECT jsonb_agg(s.step ORDER BY s.ord)
+              FROM unnest(ARRAY['精裁', '三边', '熨烫', '定型', '复烫', '车被',
+                                '外帘打卷', '外帘装袋', '外帘发货']) WITH ORDINALITY AS s(step, ord)
+             WHERE s.step IN (
+                 SELECT CASE
+                     WHEN o.name LIKE '%-布' THEN left(o.name, length(o.name) - 2)
+                     WHEN o.name LIKE '%-纱' THEN left(o.name, length(o.name) - 2)
+                     WHEN o.name = '布三边' THEN '三边'
+                     WHEN o.name = '纱三边' THEN '三边'
+                     WHEN o.name = '布帘车被' THEN '车被'
+                     WHEN o.name = '帘头制作' THEN '帘头制作'
+                     WHEN o.name = '上车布-布' THEN '上车布'
+                     WHEN o.name = '上车布-纱' THEN '上车布'
+                     ELSE o.name END
+                   FROM production_operations o
+                  WHERE o.tenant_id = t.id AND o.deleted = 0 AND o.status = 'active')),
+           '["精裁", "三边", "熨烫", "定型", "复烫", "车被", "外帘打卷", "外帘装袋", "外帘发货"]'::jsonb),
+       'active'
+  FROM tenants t
+ WHERE t.deleted = 0
+   AND NOT EXISTS (
+       SELECT 1 FROM production_route_templates e
+        WHERE e.tenant_id = t.id AND e.name = '窗帘工序路线（默认）' AND e.deleted = 0)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO production_route_rules
+    (id, tenant_id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, status)
+SELECT 'rr-v72-' || t.id || '-' || r.rid, t.id, r.trigger_kind, r.trigger_value,
+       r.position, r.action, r.operation, r.after_operation, r.priority, 'active'
+  FROM tenants t
+  JOIN (VALUES
+      ('01', 'craft', '韩褶', NULL, 'insert', '韩褶', '三边', 10),
+      ('02', 'craft', '韩褶', '布帘', 'insert', '上车布', '韩褶', 20),
+      ('03', 'craft', '打孔', NULL, 'insert', '打孔', '三边', 30),
+      ('04', 'craft', '四爪钩', NULL, 'insert', '上车布', '三边', 40),
+      ('05', 'craft', '四爪钩', NULL, 'remove', '定型', NULL, 50),
+      ('06', 'craft', '四爪钩', NULL, 'remove', '复烫', NULL, 60),
+      ('07', 'craft', '穿杆', NULL, 'remove', '定型', NULL, 70),
+      ('08', 'craft', '穿杆', NULL, 'remove', '复烫', NULL, 80),
+      ('09', 'craft', '平幔', NULL, 'insert', '帘头制作', '三边', 90),
+      ('10', 'craft', '平幔', NULL, 'remove', '复烫', NULL, 100),
+      ('11', 'option', '拼1次', NULL, 'insert', '拼1次', '三边', 110),
+      ('12', 'option', '拼2次', NULL, 'insert', '拼2次', '三边', 120),
+      ('13', 'option', '拼3次', NULL, 'insert', '拼3次', '三边', 130),
+      ('14', 'option', '加花边', NULL, 'insert', '花边', '三边', 140),
+      ('15', 'option', '加铅块', NULL, 'insert', '铅坠', '三边', 150),
+      ('16', 'option', '接高', NULL, 'insert', '接高', '精裁', 160),
+      ('17', 'option', '双眼皮接高', NULL, 'insert', '接高', '精裁', 170),
+      ('18', 'option', '余料做绑带', NULL, 'insert', '绑带', '车被', 180),
+      ('19', 'option', '布绑带', NULL, 'insert', '绑带', '车被', 190),
+      ('20', 'option', '余料做帘头', NULL, 'insert', '帘头制作', '三边', 200),
+      ('21', 'option', '抱枕', NULL, 'insert', '抱枕', '外帘打卷', 210),
+      ('22', 'option', '纱绑带', NULL, 'insert', '绑带', '车被', 220),
+      ('23', 'option', '加logo条', NULL, 'insert', 'logo条', '三边', 230),
+      ('24', 'option', '加立边', NULL, 'insert', '立边', '三边', 240),
+      ('25', 'option', '扣环', NULL, 'insert', '扣环', '三边', 250),
+      ('26', 'option', '防翘扣', NULL, 'insert', '防翘扣', '三边', 260)
+  ) AS r(rid, trigger_kind, trigger_value, position, action, operation, after_operation, priority)
+    ON TRUE
+ WHERE t.deleted = 0
+   AND EXISTS (
+       SELECT 1 FROM production_operations o
+        WHERE o.tenant_id = t.id AND o.deleted = 0 AND o.status = 'active'
+          AND (CASE
+                   WHEN o.name LIKE '%-布' THEN left(o.name, length(o.name) - 2)
+                   WHEN o.name LIKE '%-纱' THEN left(o.name, length(o.name) - 2)
+                   WHEN o.name = '布三边' THEN '三边'
+                   WHEN o.name = '纱三边' THEN '三边'
+                   WHEN o.name = '布帘车被' THEN '车被'
+                   WHEN o.name = '帘头制作' THEN '帘头制作'
+                   WHEN o.name = '上车布-布' THEN '上车布'
+                   WHEN o.name = '上车布-纱' THEN '上车布'
+                   ELSE o.name END) = r.operation)
+   AND NOT EXISTS (
+       SELECT 1 FROM production_route_rules e
+        WHERE e.tenant_id = t.id AND e.deleted = 0
+          AND e.trigger_kind = r.trigger_kind AND e.trigger_value = r.trigger_value
+          AND COALESCE(e.position, '') = COALESCE(r.position, '')
+          AND e.action = r.action AND e.operation = r.operation)
+ON CONFLICT (id) DO NOTHING;
+
+-- 计件系数档搬进规则表（`action='factor'`）：旧 `production_option_factors` 的档位。
+-- ⚠️ 只软删旧表而不搬迁 = **静默丢掉计件系数**（一分为二 ×1.7 消失 ⇒ 工人少发钱）。
+INSERT INTO production_route_rules
+    (id, tenant_id, trigger_kind, trigger_value, position, action, operation, after_operation,
+     priority, factor, status)
+SELECT 'rr-v72-' || t.id || '-f-' || f.id, t.id, 'option', f.option_name, NULL, 'factor',
+       CASE
+           WHEN f.operation_name IS NULL THEN NULL
+           WHEN f.operation_name LIKE '%-布' THEN left(f.operation_name, length(f.operation_name) - 2)
+           WHEN f.operation_name LIKE '%-纱' THEN left(f.operation_name, length(f.operation_name) - 2)
+           WHEN f.operation_name = '布三边' THEN '三边'
+           WHEN f.operation_name = '纱三边' THEN '三边'
+           WHEN f.operation_name = '布帘车被' THEN '车被'
+           WHEN f.operation_name = '帘头制作' THEN '帘头制作'
+           WHEN f.operation_name = '上车布-布' THEN '上车布'
+           WHEN f.operation_name = '上车布-纱' THEN '上车布'
+           ELSE f.operation_name END,
+       NULL,
+       COALESCE(f.sort_order, 100),
+       f.factor,
+       'active'
+  FROM tenants t
+  JOIN production_option_factors f ON f.tenant_id = t.id AND f.deleted = 0
+ WHERE t.deleted = 0
+   AND NOT EXISTS (
+       SELECT 1 FROM production_route_rules e
+        WHERE e.tenant_id = t.id AND e.deleted = 0
+          AND e.trigger_kind = 'option' AND e.trigger_value = f.option_name
+          AND e.position IS NULL AND e.action = 'factor'
+          AND COALESCE(e.operation, '') = COALESCE(
+              CASE
+                  WHEN f.operation_name IS NULL THEN NULL
+                  WHEN f.operation_name LIKE '%-布' THEN left(f.operation_name, length(f.operation_name) - 2)
+                  WHEN f.operation_name LIKE '%-纱' THEN left(f.operation_name, length(f.operation_name) - 2)
+                  WHEN f.operation_name = '布三边' THEN '三边'
+                  WHEN f.operation_name = '纱三边' THEN '三边'
+                  WHEN f.operation_name = '布帘车被' THEN '车被'
+                  WHEN f.operation_name = '帘头制作' THEN '帘头制作'
+                  WHEN f.operation_name = '上车布-布' THEN '上车布'
+                  WHEN f.operation_name = '上车布-纱' THEN '上车布'
+                  ELSE f.operation_name END, ''))
 ON CONFLICT (id) DO NOTHING;
 
 -- 特殊选项 → 条件工序 / 计件系数种子（V59，issue #4230 Java 侧 v1a）

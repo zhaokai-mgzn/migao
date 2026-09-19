@@ -25,7 +25,6 @@ import type {
   ProductionScope,
   ProductionSeedTemplate,
   ProductionSource,
-  RouteSignal,
   Routing,
   RoutingGaps,
   RoutingsResponse,
@@ -51,8 +50,6 @@ import type {
  *   ⇒ **该部位静默拿到 0 道工序**。本页把它标成「空壳 · 不可用」，并让新建路线**自动进入序列编辑**。
  * - **护栏就地预检**（缺必完工序 / 引用库中不存在的工序）：后端仍是唯一权威，前端只把
  *   「保存失败」提前成「看得见」。
- * - **信号映射收进折叠的「存量单兜底」**（#4385 裁定 R-f：路线键已改直读订单行 V63 列，
- *   信号表降级为存量单兜底）⇒ 文案按此改写，不再写成「命中优先于默认路线」的主配置入口。
  * - **行业模板仅在工序库为空时出现**：开租审批通过时 `RegistrationService.applyProductionSeedTemplate`
  *   已按 `tenant.industry` **自动套用**（收口 #4316）⇒ 常驻卡片会让商家误以为必须手点；
  *   保留它只为两条补救路径（开租套用失败被显式降级 / #4316 之前的存量租户库为空）。
@@ -63,7 +60,6 @@ import type {
  *   GET    /api/admin/production/operations-catalog  POST /production/operations
  *   PUT    /api/admin/production/operations/{id}     （改单价 / 必完 / 作用域）
  *   GET    /api/admin/production/routing-gaps
- *   GET|POST /api/admin/production/route-signals     PUT|DELETE /route-signals/{id}
  *   GET|POST /api/admin/production/seed-templates[/{id}/apply]
  *   —— 写端点权限 processing:manage（以拦截器/后端为准，本页不做显隐分叉）。
  *
@@ -190,8 +186,6 @@ export default function ProcessConfigPage() {
   const [catalogError, setCatalogError] = useState('')
   const [routings, setRoutings] = useState<RoutingsResponse | null>(null)
   const [gaps, setGaps] = useState<RoutingGaps | null>(null)
-  const [signals, setSignals] = useState<RouteSignal[]>([])
-  const [signalsError, setSignalsError] = useState('')
   const [templates, setTemplates] = useState<ProductionSeedTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -217,11 +211,6 @@ export default function ProcessConfigPage() {
   const [newRoute, setNewRoute] = useState({ curtain_type: '', craft: '' })
   const [newOpOpen, setNewOpOpen] = useState(false)
   const [newOp, setNewOp] = useState({ name: '', group_name: '', unit: '', unit_price: '' })
-  const [signalForm, setSignalForm] = useState<{ id: number | null; signal: string; curtain_type: string; craft: string } | null>(
-    null,
-  )
-  /** 信号映射区默认**收起**：它是存量单兜底层，不是主配置步骤（#4385 R-f） */
-  const [signalsOpen, setSignalsOpen] = useState(false)
   const [confirmTemplate, setConfirmTemplate] = useState<ProductionSeedTemplate | null>(null)
   const [applying, setApplying] = useState('')
   const [busy, setBusy] = useState(false)
@@ -229,12 +218,11 @@ export default function ProcessConfigPage() {
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
-    // 五条只读端点互不依赖：任一条失败不得把整页吞掉（页面不白屏，失败处给可读提示）
-    const [routingsRes, catalogRes, gapsRes, signalsRes, templateRes] = await Promise.allSettled([
+    // 四条只读端点互不依赖：任一条失败不得把整页吞掉（页面不白屏，失败处给可读提示）
+    const [routingsRes, catalogRes, gapsRes, templateRes] = await Promise.allSettled([
       productionApi.getRoutings(),
       productionApi.getOperationsCatalog(),
       productionApi.getRoutingGaps(),
-      productionApi.getRouteSignals(),
       productionApi.getSeedTemplates(),
     ])
     if (routingsRes.status === 'fulfilled') {
@@ -251,13 +239,6 @@ export default function ProcessConfigPage() {
       setCatalogError('工序库加载失败，请稍后重试')
     }
     setGaps(gapsRes.status === 'fulfilled' ? gapsRes.value.data?.data ?? null : null)
-    if (signalsRes.status === 'fulfilled') {
-      setSignals(signalsRes.value.data?.data?.signals ?? [])
-      setSignalsError('')
-    } else {
-      setSignals([])
-      setSignalsError('信号映射加载失败，请稍后重试')
-    }
     setTemplates(templateRes.status === 'fulfilled' ? templateRes.value.data?.data ?? [] : [])
     setLoading(false)
   }, [])
@@ -289,8 +270,7 @@ export default function ProcessConfigPage() {
   const routingsReady = routeList.length > 0 && emptyShells.length === 0
   const pendingOps = useMemo(() => (gaps?.unrouted_operations ?? []).filter((o) => o.pending_confirmation), [gaps])
   const realUnrouted = useMemo(() => (gaps?.unrouted_operations ?? []).filter((o) => !o.pending_confirmation), [gaps])
-  const signalGaps = gaps?.signal_keys_without_route ?? []
-  const gapsState: 'done' | 'todo' | 'unknown' = gaps == null ? 'unknown' : realUnrouted.length === 0 && signalGaps.length === 0 ? 'done' : 'todo'
+  const gapsState: 'done' | 'todo' | 'unknown' = gaps == null ? 'unknown' : realUnrouted.length === 0 ? 'done' : 'todo'
 
   const routingsHint =
     routeList.length === 0
@@ -299,7 +279,7 @@ export default function ProcessConfigPage() {
         ? `有 ${emptyShells.length} 条「空壳」路线（序列为空）：该部位会静默拿到 0 道工序，请点「编辑序列」把工序排进去。`
         : ''
   const gapsHint =
-    `有 ${realUnrouted.length} 道工序未进任何路线、${signalGaps.length} 个信号组合没有对应路线。` +
+    `有 ${realUnrouted.length} 道工序未进任何路线。` +
     (pendingOps.length > 0 ? `（另有 ${pendingOps.length} 道「有意挂起」等客户确认，不计入待处理）` : '')
 
   // ────────────────────────── 序列编辑 ──────────────────────────
@@ -474,47 +454,7 @@ export default function ProcessConfigPage() {
     submitOperation(op.id, { unit_price: value })
   }
 
-  /** 信号映射保存：id 为空 = 新增（POST），有 id = 改（PUT） */
-  const saveSignal = async () => {
-    if (!signalForm) return
-    const signal = signalForm.signal.trim()
-    const curtain_type = signalForm.curtain_type.trim()
-    const craft = signalForm.craft.trim()
-    if (!signal || !curtain_type || !craft) {
-      toast.error('信号、部位、工艺都要填')
-      return
-    }
-    setBusy(true)
-    try {
-      const body = { signal, curtain_type, craft }
-      if (signalForm.id == null) await productionApi.createRouteSignal(body)
-      else await productionApi.updateRouteSignal(signalForm.id, body)
-      toast.success(signalForm.id == null ? '信号映射已新增' : '信号映射已更新')
-      setSignalForm(null)
-      await load()
-    } catch (e) {
-      console.error(e)
-      if (!isErrorToastShown(e)) toast.error('信号映射保存失败')
-    } finally {
-      setBusy(false)
-    }
-  }
 
-  /** 删除信号映射（先确认，再删；成功后重新拉取，避免本地猜测） */
-  const deleteSignal = async (s: RouteSignal) => {
-    if (!window.confirm(`确认删除信号「${s.signal}」的映射吗？删除后该信号将回落到默认路线。`)) return
-    setBusy(true)
-    try {
-      await productionApi.deleteRouteSignal(s.id)
-      toast.success('信号映射已删除')
-      await load()
-    } catch (e) {
-      console.error(e)
-      if (!isErrorToastShown(e)) toast.error('删除信号映射失败')
-    } finally {
-      setBusy(false)
-    }
-  }
 
   /**
    * 一键补套行业模板（**空态补救**，不是主路径）。
@@ -918,27 +858,6 @@ export default function ProcessConfigPage() {
                         </ul>
                       </div>
                     )}
-
-                    <div className="border-t border-amber-200 pt-3" data-testid="routings-gap-signals">
-                      <p className="text-sm text-neutral-600">没有路线的信号组合（这些信号目前会回落到默认路线）：</p>
-                      {signalGaps.length === 0 ? (
-                        <p className="mt-1 text-sm text-neutral-500" data-testid="routings-gap-signals-empty">
-                          无
-                        </p>
-                      ) : (
-                        <ul className="mt-1 flex flex-wrap gap-1.5">
-                          {signalGaps.map((k) => (
-                            <li
-                              key={`${k.curtain_type}|${k.craft}`}
-                              data-testid={`routings-gap-signal-${k.curtain_type}-${k.craft}`}
-                              className="rounded border border-amber-300 bg-white px-2 py-0.5 text-xs text-amber-800"
-                            >
-                              {k.curtain_type} × {k.craft}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
                   </div>
                 )}
               </div>
@@ -1151,107 +1070,6 @@ export default function ProcessConfigPage() {
                 )}
               </div>
 
-              {/* ── 存量单兜底：信号映射（#4385 裁定 R-f 已降级，默认收起） ── */}
-              <div className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="route-signals-section">
-                <button
-                  type="button"
-                  data-testid="route-signals-toggle"
-                  aria-expanded={signalsOpen}
-                  onClick={() => setSignalsOpen((v) => !v)}
-                  className="flex w-full items-center gap-2 text-left"
-                >
-                  {signalsOpen ? (
-                    <ChevronDown className="w-4 h-4 text-neutral-500" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-neutral-500" />
-                  )}
-                  <span className="text-base font-medium text-neutral-900">存量单兜底 · 信号映射</span>
-                  <span className="text-sm text-neutral-500">{signals.length} 条 —— 仅在订单没有填部位/工艺时才用</span>
-                </button>
-
-                {signalsOpen && (
-                  <div className="mt-3" data-testid="route-signals-body">
-                    <p className="mb-3 text-xs text-neutral-500">
-                      新订单的部位/工艺由订单行直接给出（V63 列），路线按它直读，不查这里的表。
-                      只有存量单或没填部位/工艺的单才会落到这一层：按「加工项名 → 加工项选项 → 商品名 → 销售方式」
-                      的顺序做关键词匹配，命中即取这里的部位/工艺；都不命中才回落默认路线。
-                      商家自定义的加工项名会参与匹配 —— 加自定义加工项后请回来核对这里。
-                    </p>
-                    <div className="mb-3 flex justify-end">
-                      <Button
-                        size="sm"
-                        data-testid="route-signal-new"
-                        onClick={() => setSignalForm({ id: null, signal: '', curtain_type: '', craft: '' })}
-                      >
-                        <Plus className="w-4 h-4 mr-1.5" />
-                        新增映射
-                      </Button>
-                    </div>
-
-                    {signalsError && (
-                      <p
-                        className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
-                        data-testid="route-signals-error"
-                      >
-                        {signalsError}
-                      </p>
-                    )}
-
-                    {signals.length === 0 ? (
-                      <p className="py-6 text-center text-sm text-neutral-400" data-testid="route-signals-empty">
-                        暂无信号映射（没填部位/工艺的订单将回落到默认路线）
-                      </p>
-                    ) : (
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
-                            <th className="py-2 pr-4 font-medium">信号</th>
-                            <th className="py-2 pr-4 font-medium">部位</th>
-                            <th className="py-2 pr-4 font-medium">工艺</th>
-                            <th className="py-2 font-medium">操作</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {signals.map((s) => (
-                            <tr key={s.id} className="border-b border-neutral-100 last:border-0" data-testid={`route-signal-${s.id}`}>
-                              <td className="py-2.5 pr-4 text-neutral-900">{s.signal}</td>
-                              <td className="py-2.5 pr-4 text-neutral-600">{s.curtain_type}</td>
-                              <td className="py-2.5 pr-4 text-neutral-600">{s.craft}</td>
-                              <td className="py-2.5">
-                                <div className="flex items-center gap-2">
-                                  <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    data-testid={`route-signal-edit-${s.id}`}
-                                    onClick={() =>
-                                      setSignalForm({
-                                        id: s.id,
-                                        signal: s.signal,
-                                        curtain_type: s.curtain_type,
-                                        craft: s.craft,
-                                      })
-                                    }
-                                  >
-                                    编辑
-                                  </Button>
-                                  <Button
-                                    variant="danger"
-                                    size="sm"
-                                    data-testid={`route-signal-delete-${s.id}`}
-                                    onClick={() => deleteSignal(s)}
-                                  >
-                                    删除
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         </>
@@ -1359,50 +1177,6 @@ export default function ProcessConfigPage() {
         </div>
       </Modal>
 
-      {/* 信号映射 新增/编辑 */}
-      <Modal
-        open={!!signalForm}
-        onClose={() => !busy && setSignalForm(null)}
-        title={signalForm?.id == null ? '新增信号映射' : '编辑信号映射'}
-        footer={
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" disabled={busy} onClick={() => setSignalForm(null)}>
-              取消
-            </Button>
-            <Button loading={busy} data-testid="route-signal-submit" onClick={saveSignal}>
-              保存
-            </Button>
-          </div>
-        }
-      >
-        {signalForm && (
-          <div className="space-y-3 text-sm">
-            <p className="text-neutral-600">
-              只在订单没有填部位/工艺时兜底：按「加工项名 → 加工项选项 → 商品名 → 销售方式」的顺序匹配关键词，
-              命中即取这里的部位/工艺。
-            </p>
-            {[
-              { key: 'signal', label: '信号（关键词）', ph: '如 罗马帘' },
-              { key: 'curtain_type', label: '部位', ph: '如 罗马帘' },
-              { key: 'craft', label: '工艺', ph: '如 韩褶' },
-            ].map((f) => (
-              <div key={f.key}>
-                <label className="mb-1 block text-neutral-600" htmlFor={`signal-${f.key}`}>
-                  {f.label}
-                </label>
-                <input
-                  id={`signal-${f.key}`}
-                  data-testid={`route-signal-${f.key}`}
-                  className={inputCls}
-                  placeholder={f.ph}
-                  value={(signalForm as unknown as Record<string, string>)[f.key]}
-                  onChange={(e) => setSignalForm({ ...signalForm, [f.key]: e.target.value })}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-      </Modal>
 
       {/* 一键套用确认（批量写入工序/路线，防误触；照知识库页范式） */}
       <Modal open={!!confirmTemplate} onClose={() => setConfirmTemplate(null)} title="套用行业模板" footer={null}>

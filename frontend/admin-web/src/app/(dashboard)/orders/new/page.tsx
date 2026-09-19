@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import { orderApi, productApi, customerApi, processingItemApi, craftCalcApi, type CraftCalcResult, type CraftCalcParams } from '@/lib/api'
+import { orderApi, productApi, customerApi, processingItemApi, craftCalcApi, feePreviewApi, type CraftCalcResult, type CraftCalcParams, type FeePreviewResult } from '@/lib/api'
 import { resolveImageUrl } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
 import { Button, Card, Input, Modal } from '@/components/ui'
@@ -138,6 +138,101 @@ function deriveProcessingQty(pi: ProcessingItem, fabricMeters: number): number {
 
 /** 试算防抖（issue #4434）：连打宽高时只在停手后发一次请求 */
 const CRAFT_CALC_DEBOUNCE_MS = 400
+
+/** 加工费计价预览防抖（issue #4450） */
+const FEE_PREVIEW_DEBOUNCE_MS = 300
+
+/** 该行已勾选的加工项明细（提交 payload 与加工费预览**共用**这一份构造） */
+function processingDetailsOf(line: OrderLineItem): Array<Record<string, unknown>> {
+  return Object.entries(line.selectedProcessing)
+    .filter(([, v]) => v.selected)
+    .map(([piId, v]) => {
+      const pi = line.processingItems.find((p) => p.id === piId)
+      if (!pi) return null
+      const unit = Number(pi.unitPrice) || 0
+      const qty = Math.max(1, Number(v.qty) || 1)
+      return {
+        id: pi.id,
+        name: pi.name,
+        unitPrice: unit,
+        quantity: qty,
+        unit: pi.unit,
+        pricingMethod: pi.pricingMethod,
+        subtotal: unit * qty,
+      }
+    })
+    .filter(Boolean) as Array<Record<string, unknown>>
+}
+
+/**
+ * 逐行 `processingInfo` 的**唯一构造点**（issue #4450）。
+ *
+ * 为什么必须唯一：加工费试算（`POST /orders/fee-preview`）与提交落库**必须看到同一份选配** ——
+ * 组合键由 `processingItems[].name` 派生、加工费米数由 `processingMeters` / `fabric_meters` 取
+ * （`ProcessingFeeCalculator.METER_KEYS`）。两处各拼一份 ⇒ 「页面显示 ≠ 落库」（#4406 的 R10）。
+ *
+ * ⚠️ **不含 `processingFee`**：它由服务端取价结果决定（写进来就是循环依赖）；
+ * 提交时由调用方补上服务端返回的那个数。
+ */
+function buildLineProcessingInfo(
+  line: OrderLineItem,
+  windowKey: string | undefined
+): Record<string, unknown> | undefined {
+  const sku = line.selectedSku
+  const colorName = uniqueColors(line.product?.skus).find(
+    (c) => c.id === line.selectedColorId
+  )?.name
+  const processingDetails = processingDetailsOf(line)
+
+  // 工艺规格落库（issue #4375 §4.2/§4.5）：只落用户真填了的键（缺值不写）。
+  // 拼色（双拼）时主布行额外绑组（§4.8）：componentRole=主布 + craftLineId。
+  // 樘窗绑组（issue #4395）：同樘窗的多条部位行共用**同一个** `craftLineId`。
+  const edgePrice = edgeUnitPriceOf(line)
+  const isPaired = edgePrice !== null
+  const pairKey = windowKey ?? line.id
+  const mainSpec = isPaired
+    ? { ...buildCraftSpec(line.craft), ...buildMainLineGroupKeys(pairKey) }
+    : {
+        ...buildCraftSpec(line.craft),
+        ...(windowKey ? buildWindowGroupKey(windowKey) : {}),
+      }
+
+  if (processingDetails.length === 0 && !sku && !colorName && Object.keys(mainSpec).length === 0) {
+    return undefined
+  }
+
+  const info: Record<string, unknown> = {
+    colorId: line.selectedColorId ?? undefined,
+    colorName,
+    skuId: sku?.id,
+    skuCode: sku?.skuCode,
+    sellingMethod: sku?.sellingMethod,
+    doorWidth: sku?.doorWidth,
+    processingItems: processingDetails,
+    ...mainSpec,
+  }
+
+  // 加工费米数（裁定 R-b：= 该樘窗**主布行**米数）+ 算料输出（#4273：输入与输出都要落）。
+  // ⚠️ `ProcessingFeeCalculator.METER_KEYS = (processingMeters, fabric_meters)` ——
+  //    一个都不写 ⇒ 服务端判「缺加工费米数」⇒ 加工费按 0 计（#4450 实证的第二处缺口）。
+  const meters = Number(line.quantity)
+  if (Number.isFinite(meters) && meters > 0) info.processingMeters = meters
+  const calcMeters = Number(line.calc?.fabric_meters)
+  if (Number.isFinite(calcMeters) && calcMeters > 0) info.fabric_meters = calcMeters
+
+  return info
+}
+
+/** 加工费计价失败 → 可读提示（**不给估算值**：未确认金额前不得提交） */
+function feePreviewErrorText(error: unknown): string {
+  const anyErr = error as {
+    response?: { data?: { message?: string; error?: { message?: string } } }
+    message?: string
+  }
+  const detail =
+    anyErr?.response?.data?.error?.message || anyErr?.response?.data?.message || anyErr?.message
+  return detail ? `加工费计价失败：${detail}` : '加工费计价失败，请稍后重试'
+}
 
 /**
  * 面料米数变化 ⇒ 已选中加工项的 `per_meter` 数量联动（issue #3005 回滚 #2986）。
@@ -548,11 +643,86 @@ export default function NewOrderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calcSignature])
 
+  // ===== 加工费计价预览（issue #4450 · 前置 #4406）=====
+  //
+  // **为什么必须有它**：本页此前本地自算（Σ 加工项），而服务端创建订单按**选配组合取价**
+  // ⇒ 页面总额 ≠ 服务端总额 ⇒ 命中创建路径「实收金额与应收不一致」校验 ⇒ **拒单**。
+  // 用服务端**同一份**取价实现提前拿到结果 ⇒ 页面显示 === 落库。
+  //
+  // ⚠️ 入参 = **即将提交的那一份** `processingInfo`（同一个 `buildLineProcessingInfo`）——
+  //    预览与提交各拼一份就是「显示 ≠ 落库」的第二次分叉。
+  const windowCraftLineIds = useMemo(
+    () =>
+      resolveWindowCraftLineIds(
+        lineItems.map((l) => ({
+          id: l.id,
+          windowLabel: l.windowLabel,
+          curtainType: l.craft.curtainType,
+        }))
+      ),
+    [lineItems]
+  )
+
+  /** 参与计价的行（与提交时的过滤条件**同一口径**：必须有商品） */
+  const pricedLines = useMemo(() => lineItems.filter((l) => l.product), [lineItems])
+
+  const feePreviewPayload = useMemo(
+    () => ({
+      items: pricedLines.map((l) => ({
+        processingInfo: buildLineProcessingInfo(l, windowCraftLineIds[l.id]),
+      })),
+    }),
+    [pricedLines, windowCraftLineIds]
+  )
+
+  const feePreviewSignature = useMemo(() => JSON.stringify(feePreviewPayload), [feePreviewPayload])
+
+  const [feePreview, setFeePreview] = useState<FeePreviewResult | null>(null)
+  const [feePreviewError, setFeePreviewError] = useState<string | null>(null)
+  const [feePreviewPending, setFeePreviewPending] = useState(false)
+
+  useEffect(() => {
+    // 没商品 ⇒ 没有可计价的行（本页初始态）⇒ 不请求
+    if (pricedLines.length === 0) {
+      setFeePreview(null)
+      setFeePreviewError(null)
+      setFeePreviewPending(false)
+      return
+    }
+    setFeePreviewPending(true)
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        const res = await feePreviewApi.preview(feePreviewPayload)
+        if (cancelled) return
+        setFeePreview(res.data?.data ?? null)
+        setFeePreviewError(null)
+      } catch (e) {
+        if (cancelled) return
+        setFeePreview(null)
+        setFeePreviewError(feePreviewErrorText(e))
+      } finally {
+        if (!cancelled) setFeePreviewPending(false)
+      }
+    }, FEE_PREVIEW_DEBOUNCE_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+    // 依赖只含**入参签名**：结果写回 totals 不改动入参 ⇒ 不会自激成请求风暴
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feePreviewSignature, pricedLines.length])
+
+  /** 未定价的行数（服务端按 0 计）—— 必须显式可见：`¥0.00` 与「本来就不收」分不清 */
+  const unpricedCount = (feePreview?.items ?? []).filter(
+    (row) =>
+      (row.processingFeeDetail as { fee_source?: string } | undefined)?.fee_source === 'unpriced'
+  ).length
+
   // ===== 费用汇总 =====
   const totals = useMemo(() => {
     let productSubtotal = 0
     let edgeSubtotal = 0
-    let processingFee = 0
 
     lineItems.forEach((item) => {
       if (!item.product) return
@@ -564,15 +734,12 @@ export default function NewOrderPage() {
       if (edgePrice !== null) {
         edgeSubtotal += edgeMetersOf(item) * edgePrice
       }
-      Object.entries(item.selectedProcessing).forEach(([piId, cfg]) => {
-        if (!cfg.selected) return
-        const pi = item.processingItems.find((p) => p.id === piId)
-        if (!pi) return
-        const price = Number(pi.unitPrice) || 0
-        const q = Math.max(1, Number(cfg.qty) || 1)
-        processingFee += price * q
-      })
     })
+
+    // 加工费 = **服务端取价结果**（issue #4450）。
+    // 此前这里是本地 `Σ 加工项单价 × 数量`，与服务端 #4406 的组合取价口径不同 ⇒ 提交必被拒。
+    // 预览未就绪时按 0 —— 由提交闸门拦住（不得用本地估算值提交）。
+    const processingFee = feePreview?.processingFeeTotal ?? 0
 
     return {
       productSubtotal,
@@ -580,7 +747,7 @@ export default function NewOrderPage() {
       processingFee,
       total: productSubtotal + edgeSubtotal + processingFee,
     }
-  }, [lineItems])
+  }, [lineItems, feePreview])
 
   // ===== 优惠金额 + 实收款 双向联动逻辑 =====
   const {
@@ -608,6 +775,17 @@ export default function NewOrderPage() {
 
     if (lineItems.length === 0) {
       e.lineItems = '请至少添加一个商品'
+    }
+
+    // 加工费计价闸门（issue #4450）：**页面总额必须就是服务端将算出的总额**，
+    // 否则提交会被创建路径的「实收金额与应收不一致」拒单。
+    // ⇒ 计价未就绪 / 失败时**一律不许提交**（宁可让商家等一下，也不要发一个必被拒的单）。
+    if (pricedLines.length > 0) {
+      if (feePreviewError) {
+        e.feePreview = feePreviewError
+      } else if (!feePreview || feePreviewPending) {
+        e.feePreview = '加工费计价中，请稍候再提交'
+      }
     }
 
     lineItems.forEach((line, idx) => {
@@ -660,120 +838,70 @@ export default function NewOrderPage() {
       return
     }
 
-    // 樘窗绑组（issue #4395）：同一樘窗的多条**部位行**（布行 + 纱行 + 将来的帘头行）
-    // 写**同一个** `craftLineId`。解析规则（未填 / 只有一行 / 代表行取谁）在纯函数里，判据也在那里。
-    const windowCraftLineIds = resolveWindowCraftLineIds(
-      lineItems.map((l) => ({
-        id: l.id,
-        windowLabel: l.windowLabel,
-        curtainType: l.craft.curtainType,
-      }))
-    )
+    // 樘窗绑组（issue #4395）：用**与加工费预览同一个** memo（`windowCraftLineIds`），
+    // 预览与提交必须看到同一份 `craftLineId`（两处各算一次 = 第二次分叉）。
+    const items: OrderItemFormData[] = pricedLines.flatMap((line, lineIndex) => {
+      // 加工费 = **服务端取价结果**（issue #4450）：页面显示 === 落库。
+      // 预览行与 `pricedLines` **同序**（服务端按下标一一对应）。
+      const lineFee = Number(feePreview?.items[lineIndex]?.processingFee) || 0
 
-    const items: OrderItemFormData[] = lineItems
-      .filter((l) => l.product)
-      .flatMap((line) => {
+      // `processingInfo` 由**同一个** `buildLineProcessingInfo` 构造（预览也是它）
+      const baseInfo = buildLineProcessingInfo(line, windowCraftLineIds[line.id])
+      const productSub = (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)
+      const edgePrice = edgeUnitPriceOf(line)
+      const pairKey = windowCraftLineIds[line.id] ?? line.id
+
+      const rows: OrderItemFormData[] = [
+        {
+          productId: line.product!.id,
+          productName: line.product!.name,
+          quantity: Number(line.quantity),
+          unitPrice: Number(line.unitPrice),
+          // 宽 / 高（issue #4420）：`order_items.width/height` 是**部位级**原生列，
+          // 后端 DTO 已带 `@DecimalMin(0)`（#4089 A17）。此前这页一个都不写 ⇒
+          // 订单详情 / 加工单 / 任务卡的宽高渲染永远拿不到值（#4403 的根因）。
+          width: Number(line.width),
+          height: Number(line.height),
+          subtotal: productSub + lineFee,
+          processingInfo: baseInfo
+            ? // `processingFee` 用**服务端试算值**；`processingFeeDetail` **不送** ——
+              // 服务端创建时按同一份取价写入权威构成，送一份客户端副本只会多一个可漂移的面。
+              { ...baseInfo, processingFee: lineFee }
+            : undefined,
+        } as OrderItemFormData,
+      ]
+
+      // 配布边行（§4.8 一樘窗 = 主布行 + 配布边行）：
+      // - **不携带工艺规格**（折数/开数/幅数是一樘窗的属性 ⇒ 两行都带会让工序与计件翻倍）
+      // - **不挂加工项**（硬约束：加工费只挂主布行）
+      // - **不关联主布商品**（后端按 productId 聚合库存/销量 ⇒ 复用会双扣库存、双计销量）
+      // - **绑组键与所在樘窗同一个**（issue #4395）：配布边行与主布行同属一樘窗 ⇒ 用 `pairKey`
+      //   而不是本行自指（主布行被并进别的樘窗时，自指会把配布边行丢在组外）
+      if (edgePrice !== null) {
         const sku = line.selectedSku
-        const colorName =
-          uniqueColors(line.product!.skus).find((c) => c.id === line.selectedColorId)?.name
+        const colorName = uniqueColors(line.product!.skus).find(
+          (c) => c.id === line.selectedColorId
+        )?.name
+        const edgeMeters = edgeMetersOf(line)
+        rows.push({
+          productName: COMPONENT_ROLE_EDGE,
+          quantity: edgeMeters,
+          unitPrice: edgePrice,
+          subtotal: edgeMeters * edgePrice,
+          processingInfo: {
+            colorName,
+            skuCode: sku?.skuCode,
+            doorWidth: sku?.doorWidth,
+            ...buildEdgeLineCraftSpec(
+              pairKey,
+              line.edgeMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
+            ),
+          },
+        } as OrderItemFormData)
+      }
 
-        const processingDetails = Object.entries(line.selectedProcessing)
-          .filter(([, v]) => v.selected)
-          .map(([piId, v]) => {
-            const pi = line.processingItems.find((p) => p.id === piId)
-            if (!pi) return null
-            const unit = Number(pi.unitPrice) || 0
-            const qty = Math.max(1, Number(v.qty) || 1)
-            return {
-              id: pi.id,
-              name: pi.name,
-              unitPrice: unit,
-              quantity: qty,
-              unit: pi.unit,
-              pricingMethod: pi.pricingMethod,
-              subtotal: unit * qty,
-            }
-          })
-          .filter(Boolean) as Array<Record<string, unknown>>
-
-        const lineProcessingFee = processingDetails.reduce(
-          (sum, d) => sum + ((d.unitPrice as number) || 0) * ((d.quantity as number) || 0),
-          0
-        )
-
-        const productSub = (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)
-
-        // 工艺规格落库（issue #4375 §4.2/§4.5）：只落用户真填了的键（缺值不写）。
-        // 拼色（双拼）时主布行额外绑组（§4.8）：componentRole=主布 + craftLineId。
-        // 樘窗绑组（issue #4395）：同樘窗的多条部位行共用**同一个** `craftLineId`
-        //   —— 拼色行沿用「自指」兜底（§4.8 表注「craftLineId 自指亦可」），但同樘窗有组键时**以组键为准**。
-        const edgePrice = edgeUnitPriceOf(line)
-        const isPaired = edgePrice !== null
-        const windowKey = windowCraftLineIds[line.id]
-        const pairKey = windowKey ?? line.id
-        const mainSpec = isPaired
-          ? { ...buildCraftSpec(line.craft), ...buildMainLineGroupKeys(pairKey) }
-          : {
-              ...buildCraftSpec(line.craft),
-              ...(windowKey ? buildWindowGroupKey(windowKey) : {}),
-            }
-
-        const rows: OrderItemFormData[] = [
-          {
-            productId: line.product!.id,
-            productName: line.product!.name,
-            quantity: Number(line.quantity),
-            unitPrice: Number(line.unitPrice),
-            // 宽 / 高（issue #4420）：`order_items.width/height` 是**部位级**原生列，
-            // 后端 DTO 已带 `@DecimalMin(0)`（#4089 A17）。此前这页一个都不写 ⇒
-            // 订单详情 / 加工单 / 任务卡的宽高渲染永远拿不到值（#4403 的根因）。
-            width: Number(line.width),
-            height: Number(line.height),
-            subtotal: productSub + lineProcessingFee,
-            processingInfo:
-              processingDetails.length > 0 || sku || colorName || Object.keys(mainSpec).length > 0
-                ? {
-                    colorId: line.selectedColorId ?? undefined,
-                    colorName,
-                    skuId: sku?.id,
-                    skuCode: sku?.skuCode,
-                    sellingMethod: sku?.sellingMethod,
-                    doorWidth: sku?.doorWidth,
-                    processingFee: lineProcessingFee,
-                    processingItems: processingDetails,
-                    ...mainSpec,
-                  }
-                : undefined,
-          } as OrderItemFormData,
-        ]
-
-        // 配布边行（§4.8 一樘窗 = 主布行 + 配布边行）：
-        // - **不携带工艺规格**（折数/开数/幅数是一樘窗的属性 ⇒ 两行都带会让工序与计件翻倍）
-        // - **不挂加工项**（硬约束：加工费只挂主布行）
-        // - **不关联主布商品**（后端按 productId 聚合库存/销量 ⇒ 复用会双扣库存、双计销量）
-        // - **绑组键与所在樘窗同一个**（issue #4395）：配布边行与主布行同属一樘窗 ⇒ 用 `pairKey`
-        //   而不是本行自指（主布行被并进别的樘窗时，自指会把配布边行丢在组外）
-        if (edgePrice !== null) {
-          const edgeMeters = edgeMetersOf(line)
-          rows.push({
-            productName: COMPONENT_ROLE_EDGE,
-            quantity: edgeMeters,
-            unitPrice: edgePrice,
-            subtotal: edgeMeters * edgePrice,
-            processingInfo: {
-              colorName,
-              skuCode: sku?.skuCode,
-              doorWidth: sku?.doorWidth,
-              ...buildEdgeLineCraftSpec(
-                pairKey,
-                line.edgeMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
-              ),
-            },
-          } as OrderItemFormData)
-        }
-
-        return rows
-      })
+      return rows
+    })
 
     const actual = actualNumber
     let finalRemark = remark.trim()
@@ -962,21 +1090,19 @@ export default function NewOrderPage() {
                       const meters = Number(line.quantity) || 0
                       const unit = Number(line.unitPrice) || 0
                       const sub = meters * unit
-                      const procRows = Object.entries(line.selectedProcessing)
-                        .filter(([, v]) => v.selected)
-                        .map(([piId, cfg]) => {
-                          const pi = line.processingItems.find((p) => p.id === piId)
-                          const qty = Math.max(1, Number(cfg.qty) || 1)
-                          const price = Number(pi?.unitPrice) || 0
-                          return {
-                            name: pi?.name ?? '加工项',
-                            qty,
-                            unitLabel: pi?.unit || '项',
-                            price,
-                            amount: price * qty,
-                          }
-                        })
-                      const procFee = procRows.reduce((s, r) => s + r.amount, 0)
+                      // 加工费 = **服务端取价结果**（issue #4450）—— 页面不得再按 Σ 加工项显示，
+                      // 否则「算式算出来的数」与「订单金额里的数」对不上（同一真值两个数）。
+                      const feeRow = feePreview?.items[idx]
+                      const feeDetail = feeRow?.processingFeeDetail as
+                        | { unit_price?: number; meters?: number; fee_source?: string; hint?: string }
+                        | undefined
+                      const procFee = Number(feeRow?.processingFee) || 0
+                      const feeUnit = Number(feeDetail?.unit_price)
+                      const feeMeters = Number(feeDetail?.meters)
+                      const feeExpr =
+                        Number.isFinite(feeUnit) && Number.isFinite(feeMeters)
+                          ? `${feeMeters} 米 × ${formatAmount(feeUnit)}/米`
+                          : null
                       const edgePrice = edgeUnitPriceOf(line)
                       const edgeMeters = edgeMetersOf(line)
                       const edgeFee = edgePrice === null ? 0 : edgeMeters * edgePrice
@@ -1005,14 +1131,13 @@ export default function NewOrderPage() {
                               expr={`${meters} 米 × ${formatAmount(unit)}/米`}
                               amount={sub}
                             />
-                            {procRows.map((r, i) => (
-                              <CostRow
-                                key={`${r.name}_${i}`}
-                                label={r.name}
-                                expr={`${r.qty} ${r.unitLabel} × ${formatAmount(r.price)}`}
-                                amount={r.amount}
-                              />
-                            ))}
+                            {feeDetail?.fee_source === 'unpriced' ? (
+                              <CostRow label="加工" expr="未定价（按 0 计）" amount={0} />
+                            ) : feeExpr ? (
+                              // label 用「加工」而非「加工费」：合计区已有一个「加工费」，
+                              // 两个同名文本会让「按文本定位」的判据与自动化都变得歧义
+                              <CostRow label="加工" expr={feeExpr} amount={procFee} />
+                            ) : null}
                             {edgeFee > 0 && edgePrice !== null && (
                               <CostRow
                                 label="配布边"
@@ -1037,6 +1162,26 @@ export default function NewOrderPage() {
                   value={formatAmount(totals.processingFee)}
                   highlight={totals.processingFee > 0}
                 />
+                {/* 加工费计价状态（issue #4450）：数字来自**服务端**，状态必须显式可见 */}
+                {feePreviewError && (
+                  <div className="rounded bg-red-50 px-2.5 py-1.5 text-xs text-red-700">
+                    {feePreviewError}（未确认金额前无法提交）
+                  </div>
+                )}
+                {!feePreviewError && feePreviewPending && pricedLines.length > 0 && (
+                  <div className="text-xs text-neutral-400">加工费计价中…</div>
+                )}
+                {!feePreviewError && unpricedCount > 0 && (
+                  <div className="rounded bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
+                    有 {unpricedCount} 行加工费未定价 —— 这些行按 0 计入订单金额，
+                    请到「加工费组合」定价后再下单
+                  </div>
+                )}
+                {errors.feePreview && (
+                  <div className="rounded bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
+                    {errors.feePreview}
+                  </div>
+                )}
                 <div className="my-2 border-t border-dashed border-neutral-200" />
                 <div className="flex items-baseline justify-between">
                   <span className="text-neutral-700">订单金额</span>
@@ -1522,7 +1667,7 @@ function LineItemBlock({
                 <span className="text-sm font-medium text-neutral-700">尺寸与数量</span>
               </div>
               <p className="mb-3 text-xs text-neutral-400">
-                宽 / 高按**成品尺寸**填，单位米。同一樘窗的布帘与纱帘高度常不同 ⇒ 每个部位各填各的
+                宽 / 高按成品尺寸填，单位米。同一樘窗的布帘与纱帘高度常不同 ⇒ 每个部位各填各的
               </p>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>

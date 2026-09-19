@@ -66,6 +66,9 @@ class OrderQuantityDecimalTest {
 
     @InjectMocks
     private OrderService orderService;
+    /** 加工费组合价目表（issue #4406 的取价依赖；本类不涉及加工费口径 ⇒ 空表 ⇒ 未定价 0） */
+    @Mock(lenient = true)
+    private com.migao.admin.mapper.ProcessingFeeCombinationMapper processingFeeCombinationMapper;
 
     @Mock
     private OrderMapper orderMapper;
@@ -96,6 +99,11 @@ class OrderQuantityDecimalTest {
 
     @BeforeEach
     void setUp() {
+        // issue #4406：取价点用**真实**对象（只桩价目表 Mapper）—— 金额算法仍走生产代码。
+        // 为什么不用 @Mock：@InjectMocks 的构造注入发生在本方法之前 ⇒ 直接塞 mock 会把
+        // 「谁发射加工费」这条接线本身也 mock 掉（接线判据就失去意义）。
+        ReflectionTestUtils.setField(orderService, "processingFeeCalculator",
+                new ProcessingFeeCalculator(processingFeeCombinationMapper));
         TenantContext.setTenantId(1L);
         ReflectionTestUtils.setField(orderService, "objectMapper", objectMapper);
 
@@ -125,6 +133,8 @@ class OrderQuantityDecimalTest {
         itemReq.setHeight(new BigDecimal("3.0"));
         itemReq.setProcessingInfo(processingInfo(processingItem("刺绣工艺", "30.00", "8.4", "per_area", "252.00")));
         itemReq.setSubtotal(new BigDecimal("1092.00"));
+        // issue #4406：加工费改由「加工费组合」取价 ⇒ 显式配 ¥30.00/米（= 原 Σ 口径的等价数）
+        givenPricedCombination("刺绣工艺", "30.00");
 
         OrderCreateRequest request = formRequest(itemReq);
 
@@ -138,7 +148,7 @@ class OrderQuantityDecimalTest {
 
         // then ②：总额 = 面料 100×8.4 + 加工费 30×8.4 = 840.00 + 252.00 = 1092.00
         assertThat(captured.totalAmount)
-                .as("订单总额必须按未截断的 8.4 计算（截断成 8 会得到 1040.00 = 少收 52.00）")
+                .as("订单总额必须按未截断的 8.4 计算（组合价 30.00×8.4 = 252.00；截断成 8 会得 240.00 = 少收 12.00）")
                 .isEqualByComparingTo(new BigDecimal("1092.00"));
     }
 
@@ -206,6 +216,7 @@ class OrderQuantityDecimalTest {
         itemReq.setUnitPrice(new BigDecimal("299.50"));
         itemReq.setProcessingInfo(processingInfo(processingItem("打孔", "8.00", "3", "per_meter", "24.00")));
         itemReq.setSubtotal(new BigDecimal("922.50"));
+        givenPricedCombination("打孔", "8.00");
 
         CapturedOrder captured = createAndCapture(formRequest(itemReq));
 
@@ -213,7 +224,7 @@ class OrderQuantityDecimalTest {
                 .as("整数数量 3 仍能落库")
                 .isEqualByComparingTo(new BigDecimal("3"));
         assertThat(captured.totalAmount)
-                .as("总额 = 299.50×3 + 8×3 = 898.50 + 24.00 = 922.50")
+                .as("总额 = 299.50×3 + 组合价 8.00×3 = 898.50 + 24.00 = 922.50")
                 .isEqualByComparingTo(new BigDecimal("922.50"));
     }
 
@@ -255,6 +266,7 @@ class OrderQuantityDecimalTest {
         agentItem.setWidth(new BigDecimal("2.8"));
         agentItem.setHeight(new BigDecimal("3.0"));
         agentItem.setProcessingInfo(processingInfo(processingItem("刺绣工艺", "30.00", "8.4", "per_area", "252.00")));
+        givenPricedCombination("刺绣工艺", "30.00");
 
         AgentOrderCreateRequest agentRequest = new AgentOrderCreateRequest();
         agentRequest.setCustomerName("张三");
@@ -287,7 +299,7 @@ class OrderQuantityDecimalTest {
                 .as("Agent 路径小计由服务端按 quantity × unitPrice 重算 = 840.00")
                 .isEqualByComparingTo(new BigDecimal("840.00"));
         assertThat(captured.totalAmount)
-                .as("Agent 路径总额 = 840.00 + 252.00 = 1092.00")
+                .as("Agent 路径总额 = 840.00 + 组合价 30.00×8.4 = 1092.00")
                 .isEqualByComparingTo(new BigDecimal("1092.00"));
     }
 
@@ -303,6 +315,7 @@ class OrderQuantityDecimalTest {
         itemReq.setUnitPrice(new BigDecimal("168.00"));
         itemReq.setProcessingInfo(processingInfo(processingItem("打孔", "8.00", "2.5", "per_meter", "20.00")));
         itemReq.setSubtotal(new BigDecimal("440.00"));
+        givenPricedCombination("打孔", "8.00");
 
         CapturedOrder captured = createAndCapture(formRequest(itemReq));
 
@@ -310,7 +323,7 @@ class OrderQuantityDecimalTest {
                 .as("per_meter 的 2.5 米必须保真（旧 Integer 列会失败/截断）")
                 .isEqualByComparingTo(new BigDecimal("2.5"));
         assertThat(captured.totalAmount)
-                .as("总额 = 168×2.5 + 8×2.5 = 420.00 + 20.00 = 440.00")
+                .as("总额 = 168×2.5 + 组合价 8.00×2.5 = 420.00 + 20.00 = 440.00")
                 .isEqualByComparingTo(new BigDecimal("440.00"));
     }
 
@@ -369,7 +382,24 @@ class OrderQuantityDecimalTest {
         info.put("processingFee", processingItem.get("subtotal"));
         info.put("sellingMethod", "bulk_cut");
         info.put("doorWidth", "2.8米");
+        // issue #4406：加工费米数 = 该樘窗主布行米数（= 本行数量）；纱含在组合价里，不另按米收
+        info.put("processingMeters", processingItem.get("quantity"));
         return info;
+    }
+
+    /**
+     * issue #4406：给「加工费组合」定价 —— 加工费 = **组合单价 × 加工费米数**，不再是 Σ 加工项。
+     *
+     * <p>本类原本用「Σ 加工项」的等价数字（如 8.00/米 × 2.5 米 = 20.00）构造期望值；接线后
+     * 同一笔钱由**组合价**给出（¥8.00/米 对任意加工项名一视同仁）—— 这正是本单要接的口径，
+     * 故这里显式配一条组合价，让断言继续校验「数量不截断」而不是被未定价的 0 掩盖。</p>
+     */
+    private void givenPricedCombination(String compositionKey, String unitPrice) {
+        when(processingFeeCombinationMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(com.migao.admin.entity.ProcessingFeeCombination.builder()
+                        .id("combo-" + compositionKey).tenantId(1L).compositionKey(compositionKey)
+                        .unitPrice(new BigDecimal(unitPrice)).status("active").source("实证").deleted(0)
+                        .build()));
     }
 
     private static Map<String, Object> processingItem(String name, String unitPrice, String quantity,

@@ -190,6 +190,25 @@ public class OrderDetailResponse {
         private BigDecimal amount;
 
         /**
+         * 本行加工费（issue #4406）：= 选配组合单价 × 加工费米数，**读落库值**（不重算）。
+         * 未定价组合 / 缺米数 = 0（见 {@code processingFeeDetail.fee_source=unpriced}）。
+         *
+         * <p>订单级 {@code processingFee} = Σ 本字段。**仍是 number**（{@code OrderItemList} /
+         * {@code OrderTable} 直接读）—— 新增信息一律进 {@link #processingFeeDetail}，
+         * 不改既有字段类型。</p>
+         */
+        private BigDecimal processingFee;
+
+        /**
+         * 加工费可审计构成（issue #4406）：组合 / 命中哪条规则 / 单价 / 单价来源 /
+         * 加工费米数 / 米数来源 / {@code fee_source} 三态（matched / unpriced / manual） / 金额 / 提示。
+         *
+         * <p>与 {@code processing_info.processingFeeDetail} 是**同一份**（落库原样透出）——
+         * 同族纪律见工序实例 {@code qty_source}：**不许静默**（算错钱要答得出「按什么算的」）。</p>
+         */
+        private Object processingFeeDetail;
+
+        /**
          * 创建时间
          */
         private OffsetDateTime createdAt;

@@ -11,7 +11,9 @@ import {
   type OrderOperations,
   type PieceworkSummary,
   type ProductionOperation,
+  type ProductionPosition,
   type ReportPayload,
+  type WorkLogRow,
 } from '../../../services/productionService'
 import { parseOrderIdFromQr, resolveOrderIdFromParams } from '../../../utils/productionQr'
 import {
@@ -44,6 +46,45 @@ function formatTime(timestamp: number): string {
 }
 
 /**
+ * 操作记录的统一展示行（issue #4347 §3.2）。
+ *
+ * <p>两个来源：**服务端** `work_logs`（全单流水，换设备也在）与**本机** `WorkLogEntry`
+ * （只在离线时兜底）。两者字段名不同 ⇒ 在这里收敛成同一形态，渲染处不再分支
+ * （两处各写一份渲染必然漂移）。</p>
+ */
+interface DisplayLog {
+  key: string
+  workerName: string
+  operation: string
+  qty: number | string
+  unit: string
+  /** 毫秒时间戳；服务端给 ISO 串，本机给 number */
+  at: number
+}
+
+function toDisplayLogs(serverLogs: WorkLogRow[] | undefined, localLogs: WorkLogEntry[]): DisplayLog[] {
+  if (serverLogs && serverLogs.length > 0) {
+    return serverLogs.map((row, index) => ({
+      key: `${row.created_at ?? ''}-${row.operation_name}-${index}`,
+      workerName: row.worker_name || '未署名',
+      operation: row.operation_name,
+      qty: row.qualified_qty,
+      // 服务端流水不带单位（单位属工序实例）；留空而不是编一个
+      unit: '',
+      at: row.created_at ? Date.parse(row.created_at) : Number.NaN,
+    }))
+  }
+  return localLogs.map((log) => ({
+    key: log.requestId,
+    workerName: log.worker_name || '未署名',
+    operation: log.operation,
+    qty: log.qty,
+    unit: log.unit,
+    at: log.createdAt,
+  }))
+}
+
+/**
  * 本次可报的剩余数量 = 应做 − 已报（下限 0）。
  *
  * 未报过的工序 = 应做数量 ⇒ 与真值源「默认 = 应做数量、上限 = 应做数量」一致；
@@ -58,6 +99,36 @@ function remainingQty(operation: ProductionOperation): number {
 function pieceworkOf(summary: PieceworkSummary | null, operationName: string): number | null {
   const found = summary?.per_operation?.find((item) => item.operation === operationName)
   return found ? Number(found.amount) : null
+}
+
+/**
+ * 部位规格摘要（issue #4347 §3.1）：工人要能核对自己做的是哪一件。
+ *
+ * <p>口径：**只显示服务端真的给了的键**（缺键就不显示）—— 不补默认值、不显示占位符。
+ * 后端在订单行取不到时一个规格键都不加（脏数据），此时这里自然什么都不显示。</p>
+ */
+function specSummary(position: ProductionPosition): string[] {
+  const parts: string[] = []
+  const size = [position.width, position.height].filter(
+    (v) => v !== null && v !== undefined && v !== '',
+  )
+  if (size.length > 0) parts.push(`尺寸 ${size.join(' × ')}`)
+  if (position.craft) parts.push(String(position.craft))
+  if (position.openCount !== null && position.openCount !== undefined && position.openCount !== '') {
+    parts.push(`开数 ${position.openCount}`)
+  }
+  if (position.cuttingMode) parts.push(String(position.cuttingMode))
+  if (position.isShaped !== null && position.isShaped !== undefined) {
+    parts.push(position.isShaped ? '定型' : '不定型')
+  }
+  if (position.fullness !== null && position.fullness !== undefined && position.fullness !== '') {
+    parts.push(`褶倍 ${position.fullness}`)
+  }
+  const meters = position.fabric_meters ?? position.processingMeters
+  if (meters !== null && meters !== undefined && meters !== '') {
+    parts.push(`用料 ${meters} 米`)
+  }
+  return parts
 }
 
 /**
@@ -270,6 +341,9 @@ export default function ProductionPage() {
     [detail, user, qtyInputs, loadOrder],
   )
 
+  /** 服务端是否给了操作记录（决定标题口径：全单流水 vs 本机兜底） */
+  const serverLogsAvailable = (detail?.work_logs?.length ?? 0) > 0
+  const displayLogs = toDisplayLogs(detail?.work_logs, workLogs)
   const positions = detail?.positions || []
   const progress = detail?.progress
   const percent = progress?.percent ?? 0
@@ -360,6 +434,10 @@ export default function ProductionPage() {
           {positions.map((position) => (
             <View key={position.position_name} className='production-position'>
               <Text className='production-position__name'>{position.position_name}</Text>
+              {/* 规格摘要（issue #4347 §3.1）：核对「做的是哪一件」。缺键不显示（不补默认值） */}
+              {specSummary(position).length > 0 && (
+                <Text className='production-position__spec'>{specSummary(position).join(' · ')}</Text>
+              )}
               {position.operations.map((operation) => {
                 const amount = pieceworkOf(piecework, operation.operation)
                 return (
@@ -410,14 +488,18 @@ export default function ProductionPage() {
             </View>
           ))}
 
-          {/* 报工明细（真值源 §5：操作记录 = 报工明细，实证「蒋雪云-定型 11.00」带时间戳） */}
-          {workLogs.length > 0 && (
+          {/* 操作记录（真值源 §5：操作记录 = 报工明细，实证「蒋雪云-定型 11.00」带时间戳）。
+              优先**服务端全单流水**（换设备也在、看得到别人报的工序）；
+              离线（服务端没给）时退回本机缓存，并显式标注 —— 不把本机冒充服务端真值。 */}
+          {displayLogs.length > 0 && (
             <View className='production-logs'>
-              <Text className='production-logs__title'>本单报工明细</Text>
-              {workLogs.map((log) => (
-                <Text key={log.requestId} className='production-logs__item'>
-                  {`${log.worker_name || '未署名'} · ${log.operation} · ${formatQty(log.qty)}${log.unit}`
-                    + ` · ${formatTime(log.createdAt)}`}
+              <Text className='production-logs__title'>
+                {serverLogsAvailable ? '本单操作记录' : '本单报工明细（本机）'}
+              </Text>
+              {displayLogs.map((log) => (
+                <Text key={log.key} className='production-logs__item'>
+                  {`${log.workerName} · ${log.operation} · ${formatQty(log.qty)}${log.unit}`
+                    + (Number.isNaN(log.at) ? '' : ` · ${formatTime(log.at)}`)}
                 </Text>
               ))}
             </View>

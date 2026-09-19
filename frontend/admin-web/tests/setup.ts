@@ -1,4 +1,10 @@
 import '@testing-library/jest-dom'
+// issue #4414：部署关键路径上的单测 flake —— CI 负载下 `waitFor`/`findBy*` 的**默认 1s 超时**不够，
+// 表现为「数据还没渲染出来」的间歇性红（`deploy-frontend` 的 Unit tests 步会因此挡住整条部署腿）。
+// 提到 5s：正常情况仍在毫秒级返回（waitFor 是轮询，不是固定等待），只在真的慢时才多等。
+import { configure } from '@testing-library/dom'
+
+configure({ asyncUtilTimeout: 5000 })
 import { vi, afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 

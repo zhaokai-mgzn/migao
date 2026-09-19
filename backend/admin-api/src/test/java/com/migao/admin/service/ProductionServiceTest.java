@@ -4,6 +4,7 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.Order;
+import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProductionWorkLog;
@@ -66,6 +67,8 @@ class ProductionServiceTest {
     @Mock
     private OrderMapper orderMapper;
     @Mock
+    private com.migao.admin.mapper.OrderItemMapper orderItemMapper;
+    @Mock
     private ClientRequestIdService clientRequestIdService;
 
     private ProductionService service;
@@ -74,7 +77,7 @@ class ProductionServiceTest {
     void setUp() {
         TenantContext.setTenantId(TENANT);
         service = new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper,
-                orderMapper, clientRequestIdService);
+                orderMapper, orderItemMapper, clientRequestIdService);
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
         when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder());
         // 无幂等键 ⇒ 既有用例全部走原路径（claim 返回 true = 首执），故此处只打桩「首执」分支；
@@ -950,5 +953,138 @@ class ProductionServiceTest {
         // 无键 ⇒ 绝不走「回放」分支（那会把合法的首次报工误判成重复）；
         // claim(null) / complete(null) 按既有契约是 no-op（返回 true / 不发 SQL），不构成本用例判据
         verify(clientRequestIdService, never()).replay(any(), any(), any());
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════
+    // 工人端规格可见面（issue #4459 §3.1）—— 扫码后要能核对「做的是哪一件」
+    // ══════════════════════════════════════════════════════════════════════════════════
+
+    /** 订单行夹具：宽高 + 工艺规格列（V63）+ 算料输出（processing_info）。 */
+    private OrderItem orderItem(String id, String productName, String width, String height) {
+        OrderItem item = new OrderItem();
+        item.setId(id);
+        item.setTenantId(TENANT);
+        item.setOrderId(ORDER_ID);
+        item.setProductName(productName);
+        item.setWidth(new BigDecimal(width));
+        item.setHeight(new BigDecimal(height));
+        item.setCurtainType("布帘");
+        item.setCraft("韩褶");
+        item.setOpenCount(4);
+        item.setCuttingMode("定高买宽");
+        item.setIsShaped(true);
+        item.setFullness(new BigDecimal("2.00"));
+        item.setDeleted(0);
+        java.util.Map<String, Object> pi = new java.util.LinkedHashMap<>();
+        pi.put("fabric_meters", new BigDecimal("12.3"));
+        pi.put("processingMeters", new BigDecimal("12.3"));
+        item.setProcessingInfo(pi);
+        return item;
+    }
+
+    @Test
+    @DisplayName("工人端规格可见面：扫码后部位带出 宽/高/工艺/加工类型/开数/褶倍/定型/用料（issue #4459 §3.1）")
+    void getOperationsCarriesOrderLineSpec() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder());
+        ProcessingPositionOperation op = ProcessingPositionOperation.builder()
+                .id("op-1").tenantId(TENANT).processingOrderId(PO_ID)
+                .positionName("布艺遮光帘A 米白").orderItemId("item-A").positionKind("布帘")
+                .seq(1).operationName("精裁-布").groupName("裁剪").unit("米")
+                .qty(new BigDecimal("12.30")).unitPrice(new BigDecimal("0.40")).factor(BigDecimal.ONE)
+                .isMustFinish(false).isStartMarker(true).status("pending").doneQty(BigDecimal.ZERO)
+                .deleted(0).build();
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(op));
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItem("item-A", "布艺遮光帘A", "6.6", "2.92")));
+
+        Map<String, Object> result = service.getOperations(ORDER_ID, TENANT);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> positions = (List<Map<String, Object>>) result.get("positions");
+        assertThat(positions).hasSize(1);
+        Map<String, Object> position = positions.get(0);
+        // 既有键不变（向后兼容）
+        assertThat(position.get("position_name")).isEqualTo("布艺遮光帘A 米白");
+        assertThat(position.get("order_item_id")).isEqualTo("item-A");
+        // 新增规格键：工人核对「做的是哪一件」的唯一依据
+        assertThat(position.get("width")).isEqualTo(new BigDecimal("6.6"));
+        assertThat(position.get("height")).isEqualTo(new BigDecimal("2.92"));
+        assertThat(position.get("craft")).isEqualTo("韩褶");
+        assertThat(position.get("curtainType")).isEqualTo("布帘");
+        assertThat(position.get("openCount")).isEqualTo(4);
+        assertThat(position.get("cuttingMode")).isEqualTo("定高买宽");
+        assertThat(position.get("isShaped")).isEqualTo(true);
+        assertThat(position.get("fullness")).isEqualTo(new BigDecimal("2.00"));
+        // 用料 = 算料输出（单一真值 = ai-agent 引擎，Java 侧不重算）
+        assertThat(position.get("fabric_meters")).isEqualTo(new BigDecimal("12.3"));
+    }
+
+    @Test
+    @DisplayName("操作记录：扫码响应带**服务端**全单报工流水（倒序 + 人/工序/数量/时刻）")
+    void getOperationsCarriesServerWorkLogs() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder());
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                positionOp("op-1", "布帘", 1, "精裁-布", "10.00", "10.00", "done", true, 0)));
+        when(orderItemMapper.selectList(any())).thenReturn(List.of());
+        ProductionWorkLog first = ProductionWorkLog.builder()
+                .id("w-1").tenantId(TENANT).processingOrderId(PO_ID).operationId("op-1")
+                .operationName("精裁-布").workerName("蒋雪云").qualifiedQty(new BigDecimal("11"))
+                .workType("normal").createdAt(OffsetDateTime.parse("2026-09-19T02:00:00Z")).deleted(0).build();
+        ProductionWorkLog second = ProductionWorkLog.builder()
+                .id("w-2").tenantId(TENANT).processingOrderId(PO_ID).operationId("op-1")
+                .operationName("定型-布").workerName("李红梅").qualifiedQty(new BigDecimal("3"))
+                .workType("rework").createdAt(OffsetDateTime.parse("2026-09-19T03:00:00Z")).deleted(0).build();
+        when(workLogMapper.selectList(any())).thenReturn(List.of(first, second));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> logs =
+                (List<Map<String, Object>>) service.getOperations(ORDER_ID, TENANT).get("work_logs");
+
+        assertThat(logs).hasSize(2);
+        // 倒序：最近的在最上面（工人关心「我刚报的进去了没有」）
+        assertThat(logs.get(0).get("worker_name")).isEqualTo("李红梅");
+        assertThat(logs.get(0).get("operation_name")).isEqualTo("定型-布");
+        assertThat(logs.get(0).get("work_type")).isEqualTo("rework");
+        assertThat(logs.get(1).get("worker_name")).isEqualTo("蒋雪云");
+        assertThat((BigDecimal) logs.get(1).get("qualified_qty")).isEqualByComparingTo("11");
+        assertThat(logs.get(1).get("created_at")).isEqualTo("2026-09-19T02:00:00Z");
+    }
+
+    @Test
+    @DisplayName("操作记录红证：无加工单 ⇒ work_logs 是**空数组**（键在场，不是 null）")
+    void getOperationsWorkLogsEmptyWhenNoProcessingOrder() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(null);
+
+        Map<String, Object> result = service.getOperations(ORDER_ID, TENANT);
+
+        assertThat(result).containsKey("work_logs");
+        assertThat((List<?>) result.get("work_logs")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("规格红证：订单行已不存在（脏数据）⇒ **不加任何规格键**，绝不补默认值冒充已知")
+    void getOperationsOmitsSpecWhenOrderLineGone() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder());
+        ProcessingPositionOperation op = ProcessingPositionOperation.builder()
+                .id("op-1").tenantId(TENANT).processingOrderId(PO_ID)
+                .positionName("布帘").orderItemId("item-gone").positionKind("布帘")
+                .seq(1).operationName("精裁-布").groupName("裁剪").unit("米")
+                .qty(new BigDecimal("1.00")).unitPrice(new BigDecimal("0.40")).factor(BigDecimal.ONE)
+                .isMustFinish(false).isStartMarker(false).status("pending").doneQty(BigDecimal.ZERO)
+                .deleted(0).build();
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(op));
+        when(orderItemMapper.selectList(any())).thenReturn(List.of());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> positions =
+                (List<Map<String, Object>>) service.getOperations(ORDER_ID, TENANT).get("positions");
+
+        assertThat(positions).hasSize(1);
+        assertThat(positions.get(0))
+                .as("订单行取不到 ⇒ 一个规格键都不加（缺键就缺，不补默认值）")
+                .doesNotContainKeys("width", "height", "craft", "fabric_meters");
     }
 }

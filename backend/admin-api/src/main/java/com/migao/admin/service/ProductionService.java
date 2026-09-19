@@ -5,10 +5,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.migao.admin.entity.Order;
+import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProductionWorkLog;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
@@ -89,6 +91,12 @@ public class ProductionService {
     private final ProcessingPositionOperationMapper positionOperationMapper;
     private final ProductionWorkLogMapper workLogMapper;
     private final OrderMapper orderMapper;
+    /**
+     * 订单行（工人端规格可见面用，issue #4459 §3.1）：扫码端要显示宽高/工艺/加工类型/用料，
+     * 而工序实例只存工序维度（`position_name`/`order_item_id`）⇒ 按 `order_item_id` 回查订单行。
+     * **只读**（本类不写订单行）。
+     */
+    private final OrderItemMapper orderItemMapper;
     private final ClientRequestIdService clientRequestIdService;
 
     // ============================================================ 实例化
@@ -323,16 +331,94 @@ public class ProductionService {
                 ? List.of()
                 : listOperations(po.getId(), tenantId);
         // 报工人（issue #4309）：**一次**取回报工记录再内存分组 —— 按工序逐个查是 N+1（#4304 同族）
-        Map<String, List<String>> workers = po == null
-                ? Map.of()
-                : workersByOperation(listWorkLogs(po.getId(), tenantId));
+        List<ProductionWorkLog> logs = po == null
+                ? List.of()
+                : listWorkLogs(po.getId(), tenantId);
+        Map<String, List<String>> workers = po == null ? Map.of() : workersByOperation(logs);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order_id", order.getId());
         result.put("qr_token", po == null ? null : po.getQrToken());
-        result.put("positions", buildPositions(operations, workers));
+        result.put("positions", buildPositions(operations, workers, orderSpecByItemId(order, tenantId)));
         result.put("progress", progressOf(operations));
+        // 操作记录（issue #4347 §3.2）：**服务端**报工流水，不是本机缓存。
+        // 工人端原来只显示本机 storage 里的报工（换设备就没了，也看不到别人做的工序）；
+        // 而截图里的「操作记录」是**全单流水**（谁、哪道、多少、何时）。
+        result.put("work_logs", workLogViews(logs));
         return result;
+    }
+
+    /**
+     * 报工流水（操作记录）的展示形态（issue #4347 §3.2）。
+     *
+     * <p>真值源 §5：「操作记录 = 报工明细（实证：{@code 蒋雪云-定型 11.00}… 带时间戳）」。</p>
+     *
+     * <p>口径：① **倒序**（最近的在最上面 —— 工人关心「我刚报的进去了没有」）；
+     * ② 字段是**展示面**，不参与计价（计价只读 {@code production_work_logs} 的快照列）；
+     * ③ 时间用 {@code createdAt}（落库时刻），不用 {@code workDate}（业务日期，补报会改它）。</p>
+     */
+    private List<Map<String, Object>> workLogViews(List<ProductionWorkLog> logs) {
+        List<Map<String, Object>> views = new ArrayList<>();
+        if (logs == null) {
+            return views;
+        }
+        for (int i = logs.size() - 1; i >= 0; i--) {
+            ProductionWorkLog log = logs.get(i);
+            Map<String, Object> view = new LinkedHashMap<>();
+            view.put("operation_name", StringUtils.hasText(log.getOperationName())
+                    ? log.getOperationName() : "未命名工序");
+            view.put("worker_name", StringUtils.hasText(log.getWorkerName())
+                    ? log.getWorkerName() : UNSIGNED_WORKER);
+            view.put("qualified_qty", nz(log.getQualifiedQty()));
+            view.put("work_type", log.getWorkType());
+            // 显式 ISO-8601（带秒）：`OffsetDateTime.toString()` 在秒为 0 时会**省略秒**
+            // （`…T02:00Z`）⇒ 前端 `Date.parse` 与逐字断言都要处理两种形态。钉死格式更省事。
+            view.put("created_at", log.getCreatedAt() == null
+                    ? null : log.getCreatedAt().format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+            views.add(view);
+        }
+        return views;
+    }
+
+    /**
+     * 订单行规格按 `order_items.id` 索引（工人端规格可见面，issue #4459 §3.1）。
+     *
+     * <p><b>为什么回查订单行而不是存在工序实例上</b>：规格是**订单侧的真值**（V63 列 + 算料输出），
+     * 在工序实例上再存一份就是第二份口径（漂移的那一份不会变红）。工序实例已带
+     * `order_item_id`（V69 / #4388 主定位键）⇒ 按它回查即可，**零迁移**。</p>
+     *
+     * <p><b>只读、不重算</b>：算料输出（`fabric_meters` / `processingMeters`）逐字取
+     * `processing_info` 里已落的值 —— 算料单一真值是 ai-agent 的引擎，Java 侧不复制第二份逻辑。</p>
+     */
+    private Map<String, Map<String, Object>> orderSpecByItemId(Order order, Long tenantId) {
+        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getOrderId, order.getId())
+                .eq(OrderItem::getTenantId, tenantId)
+                .eq(OrderItem::getDeleted, 0));
+        Map<String, Map<String, Object>> byId = new LinkedHashMap<>();
+        if (items == null) {
+            return byId;
+        }
+        for (OrderItem item : items) {
+            Map<String, Object> spec = new LinkedHashMap<>();
+            spec.put("product_name", item.getProductName());
+            // 宽/高：V63 列（下单页必填，issue #4420 起真的会写）
+            spec.put("width", item.getWidth());
+            spec.put("height", item.getHeight());
+            // 工艺规格：**唯一映射点**（OrderLineCraftFields）—— 不在此另写一份键名翻译
+            spec.putAll(OrderLineCraftFields.toSnapshotKeys(item));
+            // 算料输出（单一真值 = ai-agent 引擎）：逐字取 processing_info 里已落的值
+            Map<String, Object> pi = OrderLineCraftFields.normalize(item.getProcessingInfo());
+            if (pi != null) {
+                for (String key : OrderLineCraftFields.CALC_OUTPUT_SNAPSHOT_KEYS) {
+                    if (pi.containsKey(key)) {
+                        spec.put(key, pi.get(key));
+                    }
+                }
+            }
+            byId.put(item.getId(), spec);
+        }
+        return byId;
     }
 
     /**
@@ -681,6 +767,10 @@ public class ProductionService {
         result.put("total", money(totals.total()));
         result.put("per_worker", perWorkerRounded);
         result.put("per_operation", perOperationList);
+        // 下钻维度（真值源 §4 的下钻链：部位 → 套）。**同一份聚合**产出 ⇒
+        // 各维合计恒等于 total（判据：下钻合计 === 总额）。
+        result.put("per_position", amountAndQtyRows(totals.positionAmount(), totals.positionQty(), "position_name"));
+        result.put("per_set", amountAndQtyRows(totals.setAmount(), totals.setQty(), "order_item_id"));
         return result;
     }
 
@@ -717,6 +807,10 @@ public class ProductionService {
         result.put("total", money(totals.total()));
         result.put("per_worker", amountAndQtyRows(totals.workerAmount(), totals.workerQty(), "worker_name"));
         result.put("per_operation", amountAndQtyRows(totals.operationAmount(), totals.operationQty(), "operation"));
+        // 下钻维度（真值源 §4：「按人/按期/按单下钻」+ 部位 / 套）。与 per-order 汇总**同一份聚合**
+        // ⇒ 报表里某维合计 = 该维在各单上的贡献之和（不会出现两套口径漂移）。
+        result.put("per_position", amountAndQtyRows(totals.positionAmount(), totals.positionQty(), "position_name"));
+        result.put("per_set", amountAndQtyRows(totals.setAmount(), totals.setQty(), "order_item_id"));
         return result;
     }
 
@@ -748,19 +842,23 @@ public class ProductionService {
         Map<String, BigDecimal> workerQty = new LinkedHashMap<>();
         Map<String, BigDecimal> operationAmount = new LinkedHashMap<>();
         Map<String, BigDecimal> operationQty = new LinkedHashMap<>();
+        // 下钻维度（真值源 §4：报工 → 工序实例 → **部位** → **套** → 加工单 → 订单）。
+        // 数据取自**工序实例**（`position_name` / `order_item_id`），**不改 production_work_logs**
+        // （P2b 明列「不做」；V61 快照口径已冻结）。存量报工若实例已不存在 ⇒ 归「未知部位」，
+        // 不跳过（跳过会让下钻合计 ≠ 总额 —— 那正是「可核对」的判据）。
+        Map<String, BigDecimal> positionAmount = new LinkedHashMap<>();
+        Map<String, BigDecimal> positionQty = new LinkedHashMap<>();
+        Map<String, BigDecimal> setAmount = new LinkedHashMap<>();
+        Map<String, BigDecimal> setQty = new LinkedHashMap<>();
         BigDecimal total = BigDecimal.ZERO;
         for (ProductionWorkLog log : logs) {
             if (!"normal".equals(log.getWorkType())) {
                 continue; // 返工/报废不计件
             }
             boolean hasSnapshot = log.getUnitPrice() != null;
-            ProcessingPositionOperation op = null;
-            if (!hasSnapshot) {
-                // 存量报工（V61 之前的行，unit_price 为 NULL）⇒ 按实例回查兜底计价
-                op = operationLookup.apply(log.getOperationId());
-                if (op == null) {
-                    continue; // 既无快照、实例又真的不存在（脏数据）→ 该笔不可计价，跳过而不是抛错
-                }
+            ProcessingPositionOperation op = operationLookup.apply(log.getOperationId());
+            if (!hasSnapshot && op == null) {
+                continue; // 既无快照、实例又真的不存在（脏数据）→ 该笔不可计价，跳过而不是抛错
             }
             BigDecimal unitPrice = hasSnapshot ? log.getUnitPrice() : op.getUnitPrice();
             BigDecimal factor = hasSnapshot
@@ -777,13 +875,24 @@ public class ProductionService {
             if (!StringUtils.hasText(operation)) {
                 operation = "未命名工序";
             }
+            // 部位维度：实例的 position_name（展示名）；无实例 ⇒ 「未知部位」（不猜、不跳过）
+            String position = op == null || !StringUtils.hasText(op.getPositionName())
+                    ? "未知部位" : op.getPositionName();
+            // 套维度：实例的 order_item_id 即该樘窗/套的订单行（V69 / issue #4388 主定位键）
+            String set = op == null || !StringUtils.hasText(op.getOrderItemId())
+                    ? "未知套" : op.getOrderItemId();
             workerAmount.merge(worker, amount, BigDecimal::add);
             workerQty.merge(worker, nz(log.getQualifiedQty()), BigDecimal::add);
             operationAmount.merge(operation, amount, BigDecimal::add);
             operationQty.merge(operation, nz(log.getQualifiedQty()), BigDecimal::add);
+            positionAmount.merge(position, amount, BigDecimal::add);
+            positionQty.merge(position, nz(log.getQualifiedQty()), BigDecimal::add);
+            setAmount.merge(set, amount, BigDecimal::add);
+            setQty.merge(set, nz(log.getQualifiedQty()), BigDecimal::add);
             total = total.add(amount);
         }
-        return new PieceworkTotals(total, workerAmount, workerQty, operationAmount, operationQty);
+        return new PieceworkTotals(total, workerAmount, workerQty, operationAmount, operationQty,
+                positionAmount, positionQty, setAmount, setQty);
     }
 
     /** 聚合中间态（金额已逐笔取整；qty 为该维度的合格数量合计）。 */
@@ -791,7 +900,11 @@ public class ProductionService {
                                    Map<String, BigDecimal> workerAmount,
                                    Map<String, BigDecimal> workerQty,
                                    Map<String, BigDecimal> operationAmount,
-                                   Map<String, BigDecimal> operationQty) {
+                                   Map<String, BigDecimal> operationQty,
+                                   Map<String, BigDecimal> positionAmount,
+                                   Map<String, BigDecimal> positionQty,
+                                   Map<String, BigDecimal> setAmount,
+                                   Map<String, BigDecimal> setQty) {
     }
 
     /** {name: amount, qty} 行列表（保留首次出现顺序 = work_date 升序，报表可复现）。 */
@@ -902,6 +1015,9 @@ public class ProductionService {
         result.put("total", money(BigDecimal.ZERO));
         result.put("per_worker", new LinkedHashMap<>());
         result.put("per_operation", List.of());
+        // 空态也带齐下钻维度：键的**在场性**恒定 ⇒ 前端不必为「有没有这个键」写分支
+        result.put("per_position", List.of());
+        result.put("per_set", List.of());
         return result;
     }
 
@@ -997,7 +1113,8 @@ public class ProductionService {
      * ⇒ 回落 {@code position_name} 分组 ⇒ **读面行为逐字不变**（不猜、不编值）。</p>
      */
     private List<Map<String, Object>> buildPositions(List<ProcessingPositionOperation> operations,
-                                                     Map<String, List<String>> workersByOperation) {
+                                                     Map<String, List<String>> workersByOperation,
+                                                     Map<String, Map<String, Object>> specByItemId) {
         Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
         Map<String, ProcessingPositionOperation> headByKey = new LinkedHashMap<>();
         Set<String> seen = new HashSet<>();
@@ -1018,6 +1135,14 @@ public class ProductionService {
             // 行标识（issue #4388）：前端据此区分**同名**部位；存量行如实 null（不编值）
             position.put("order_item_id", head.getOrderItemId());
             position.put("position_kind", head.getPositionKind());
+            // 规格可见面（issue #4459 §3.1）：工人要能核对自己做的是哪一件 —— 宽高/工艺/加工类型/
+            // 褶倍/部位定型/用料。**逐字取订单行**（缺键就缺，不补默认值）；订单行已不在（脏数据）
+            // ⇒ 一个键都不加，前端按缺键渲染（不冒充已知）。
+            Map<String, Object> spec = head.getOrderItemId() == null
+                    ? null : specByItemId.get(head.getOrderItemId());
+            if (spec != null) {
+                position.putAll(spec);
+            }
             position.put("operations", grouped.get(key));
             positions.add(position);
         }

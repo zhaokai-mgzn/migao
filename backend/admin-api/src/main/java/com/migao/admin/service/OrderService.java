@@ -41,6 +41,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -76,6 +77,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 落账唯一语义点在该服务（delta 由 after-before 算出），本类只提供「变更前快照 + 变更点」。
      */
     private final StockLedgerService stockLedgerService;
+    /**
+     * 加工费**取价点**（issue #4406）：选配组合 → {@code processing_fee_combinations} 单价 × 加工费米数。
+     * 加工费只有这一个算法（本类不再自己 Σ 加工项 —— 那正是「配了组合费用订单金额一分不变」的病根）。
+     */
+    private final ProcessingFeeCalculator processingFeeCalculator;
 
     /**
      * 订单号序列号（线程安全）
@@ -369,8 +375,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                         })
                         .collect(Collectors.toList()));
                 // 后端统一计算加工费与实收款，避免前端重复计算
+                // issue #4406：加工费 = Σ 各行**落库时算好的**加工费（组合价 × 加工费米数），不重算。
                 BigDecimal processingFee = orderItems.stream()
-                        .map(item -> sumProcessingFee(item.getProcessingInfo()))
+                        .map(item -> storedProcessingFee(item.getProcessingInfo()))
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
                 resp.setProcessingFee(processingFee);
                 if (resp.getActualAmount() == null) {
@@ -450,16 +457,30 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         // 计算总金额（后端独立计算：unitPrice * quantity + 加工费，不依赖前端 subtotal 防止不一致）
+        // ── 加工费取价（issue #4406，用户裁定 2026-09-19）──
+        // 口径 = 「按选配组合匹配 `processing_fee_combinations` → 取单价 → × 加工费米数」；
+        // **未命中 ⇒ 0 + fee_source=unpriced + 可行动提示，绝不回落 Σ 加工项、绝不套默认价**
+        // （#4308「静默回落」同族纪律：静默 = 算错钱且无人知道）。
+        // 逐行结果按**下标**与 request.items 对齐（此刻明细行还没 id）。
+        List<ProcessingFeeCalculator.Fee> itemFees = processingFeeCalculator.feesFor(
+                request.getItems().stream()
+                        .map(OrderCreateRequest.OrderItemRequest::getProcessingInfo)
+                        .collect(Collectors.toList()),
+                tenantId);
         BigDecimal totalAmount = BigDecimal.ZERO;
-        for (OrderCreateRequest.OrderItemRequest itemRequest : request.getItems()) {
+        for (int i = 0; i < request.getItems().size(); i++) {
+            OrderCreateRequest.OrderItemRequest itemRequest = request.getItems().get(i);
             // 商品金额 = 单价 × 数量
             BigDecimal itemAmount = BigDecimal.ZERO;
             if (itemRequest.getUnitPrice() != null && itemRequest.getQuantity() != null) {
                 itemAmount = itemRequest.getUnitPrice().multiply(itemRequest.getQuantity());
             }
-            // 加工费（从 processingInfo 中解析）
-            BigDecimal processingFee = sumProcessingFee(itemRequest.getProcessingInfo());
-            totalAmount = totalAmount.add(itemAmount).add(processingFee);
+            totalAmount = totalAmount.add(itemAmount).add(itemFees.get(i).amount());
+            if (ProcessingFeeCalculator.FEE_SOURCE_UNPRICED.equals(itemFees.get(i).feeSource())) {
+                // 未定价 / 缺米数 ⇒ **不静默**：订单照样成立（金额 0），但日志留下可排查证据。
+                log.warn("加工费未定价（本行按 0 计）: tenantId={}, itemIndex={}, composition={}, hint={}",
+                        tenantId, i, itemFees.get(i).compositionKey(), itemFees.get(i).hint());
+            }
         }
 
         // 优惠金额（默认 0）；若提供了实收款，校验 应收 - 优惠 ≈ 实收（容差 0.01）
@@ -502,7 +523,22 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         orderMapper.insert(order);
 
         // 保存订单明细
-        for (OrderCreateRequest.OrderItemRequest itemRequest : request.getItems()) {
+        for (int i = 0; i < request.getItems().size(); i++) {
+            OrderCreateRequest.OrderItemRequest itemRequest = request.getItems().get(i);
+            // ── 加工费可审计构成落库（issue #4406）──
+            // 为什么落 `processing_info.processingFeeDetail` 而不是新列：加工费是**行级一个数 +
+            // 构成**，构成（组合/命中规则/单价/来源/米数/来源/三态）与 processing_info 同生命周期
+            // （R13 快照优先：改组合价后**已生成订单一字不变** ⇒ 读面读存量、不重算）。
+            // JSON **字符串**形态先归一化成 Map 再挂（否则 `put` 无处可落、detail 静默丢失）；
+            // 且**另起一份可变副本**（`Map.of` / `List.of` 一类不可变容器 `put` 会抛
+            // UnsupportedOperationException ⇒ 下单直接 500；同时也不该就地改调用方传进来的对象）。
+            Map<String, Object> normalizedInfo = OrderLineCraftFields.normalize(
+                    itemRequest.getProcessingInfo(), objectMapper);
+            if (normalizedInfo != null) {
+                Map<String, Object> feeAnnotated = new LinkedHashMap<>(normalizedInfo);
+                ProcessingFeeCalculator.attach(feeAnnotated, itemFees.get(i));
+                itemRequest.setProcessingInfo(feeAnnotated);
+            }
             OrderItem item = new OrderItem();
             item.setTenantId(tenantId);
             item.setOrderId(order.getId());
@@ -517,8 +553,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             // order_create）写入的 processing_info 顶层工艺规格键在此**物化**到 order_items 的列上。
             // 判在本方法（表单 / Agent / 程序化三条路径的**唯一共享入口**）才无死角；
             // 全部可空、不设必填校验（用户裁定「部位不是必填的」）⇒ 缺键就是缺。
-            OrderLineCraftFields.materialize(
-                    OrderLineCraftFields.normalize(itemRequest.getProcessingInfo(), objectMapper), item);
+            OrderLineCraftFields.materialize(normalizedInfo, item);
             item.setSubtotal(resolveItemSubtotal(itemRequest));
             orderItemMapper.insert(item);
         }
@@ -733,16 +768,21 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         response.setItems(itemResponses);
 
         // 后端统一聚合加工项，并计算加工费 / 实收款（架构决策：费用计算全部在后端）
+        // issue #4406：加工费 = Σ 各行**落库时算好的**加工费（组合价 × 加工费米数），不重算；
+        // 同时把该行的加工费与可审计构成透出（行级 processingFee / processingFeeDetail）。
+        // ⚠️ `processingItems` 列表保持原样（**明细快照**：当时选了哪些加工项），
+        //    其 `amount` 仍是「加工项目录单价 × 数量」——**它不再是加工费口径**（加工费见 processingFee）。
         List<OrderDetailResponse.ProcessingItemBrief> aggregatedProcessing = new ArrayList<>();
         BigDecimal processingFee = BigDecimal.ZERO;
-        for (OrderItem item : items) {
-            List<OrderDetailResponse.ProcessingItemBrief> briefs = extractProcessingItems(item.getProcessingInfo());
-            for (OrderDetailResponse.ProcessingItemBrief brief : briefs) {
-                aggregatedProcessing.add(brief);
-                if (brief.getAmount() != null) {
-                    processingFee = processingFee.add(brief.getAmount());
-                }
-            }
+        for (int i = 0; i < items.size(); i++) {
+            OrderItem item = items.get(i);
+            aggregatedProcessing.addAll(extractProcessingItems(item.getProcessingInfo()));
+            ProcessingFeeCalculator.Fee fee = ProcessingFeeCalculator.storedFee(item.getProcessingInfo());
+            BigDecimal itemFee = fee == null || fee.amount() == null ? BigDecimal.ZERO : fee.amount();
+            processingFee = processingFee.add(itemFee);
+            OrderDetailResponse.OrderItemResponse itemResponse = itemResponses.get(i);
+            itemResponse.setProcessingFee(itemFee);
+            itemResponse.setProcessingFeeDetail(fee == null ? null : fee.detail());
         }
         response.setProcessingItems(aggregatedProcessing);
         response.setProcessingFee(processingFee);
@@ -875,13 +915,19 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 计算单个订单明细 processingInfo 的加工费（仅供列表场景使用，无需返回详情）。
+     * 读单个订单明细的加工费（issue #4406）：**读落库时算好的那一份**，不重算。
+     *
+     * <p>旧实现 = {@code Σ 加工项单价 × 数量}（{@code extractProcessingItems} 求和）——
+     * 它是「配了组合费用订单金额一分不变」的病根，也是 R13「改组合价后历史订单一字不变」的破坏点
+     * （重算 ⇒ 历史订单金额随价目表漂移）。新口径 = 取
+     * {@code processing_info.processingFeeDetail.amount}（{@code createOrder} 落库的唯一权威值）。</p>
+     *
+     * <p>存量单（接线前生成、无 {@code processingFeeDetail}）⇒ **返回 0**（{@code unpriced}）：
+     * 「这一行没有权威加工费」必须显式可见，**不**拿一个重算值冒充历史（#4308 同族纪律）。</p>
      */
-    private BigDecimal sumProcessingFee(Object processingInfo) {
-        return extractProcessingItems(processingInfo).stream()
-                .map(OrderDetailResponse.ProcessingItemBrief::getAmount)
-                .filter(java.util.Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    private BigDecimal storedProcessingFee(Object processingInfo) {
+        ProcessingFeeCalculator.Fee fee = ProcessingFeeCalculator.storedFee(processingInfo);
+        return fee == null || fee.amount() == null ? BigDecimal.ZERO : fee.amount();
     }
 
     private BigDecimal toBigDecimal(Object value) {
