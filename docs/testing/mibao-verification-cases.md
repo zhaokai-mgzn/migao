@@ -2636,7 +2636,7 @@
 落库: order_phone → source=order_create; expect_phone=13800138000
 ```
 真值: order.create-flow, ai-chat.confirm-required
-溯源: 2026-09-13 新增（issue #3389）：能力下限用例（缺信息时收集而非拒单 + 能力误宣反模式） ｜ tags: order_create, honesty, capability, xiaobu
+溯源: 2026-09-13 新增（issue #3389）：能力下限用例（缺信息时收集而非拒单 + 能力误宣反模式）；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。 ｜ tags: order_create, honesty, capability, xiaobu
 
 ### OR-022. C 端新客（无历史收货信息）- 必须主动收集后下单，不得拒单 🔵
 ```
@@ -2669,7 +2669,7 @@
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
 ```
 真值: order.create-flow, ai-chat.confirm-required
-溯源: 2026-09-13 新增（issue #3391）：新客路径覆盖（多身份评测 + 无历史地址时的收集能力） ｜ tags: order_create, new_customer, capability, xiaobu
+溯源: 2026-09-13 新增（issue #3391）：新客路径覆盖（多身份评测 + 无历史地址时的收集能力）；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。 ｜ tags: order_create, new_customer, capability, xiaobu
 
 ### OR-023. C 端老客户下单 - 自动带出上次收货信息（form 预填真值，不得再问一遍） 🔵
 ```
@@ -2693,7 +2693,7 @@
 落库: order_phone → source=order_create; expect_phone=13800138000; expect_customer_name=张三; expect_address_contains=文三路
 ```
 真值: order.create-flow, ai-chat.confirm-required
-溯源: 2026-09-13 新增（issue #3397）：补齐零断言能力（地址预填 + 写前校验）；2026-09-14 协作轮重构（issue #3646）：固定 9 轮台词表实测与真实卡序列错位（R1 发 2 张 choice 卡、R2 的「米白」被当成加工项应答、R3 起 7 轮全 `tools=-`、order_create 从未发生 = 真实重放 0%/unstable），改为「有卡答卡 + repeat_until(order_create) 停机」；expectations/must_succeed/order_before/amount_verify/db_verify 原样保留（未放宽） ｜ tags: order_create, prefill, address, xiaobu
+溯源: 2026-09-13 新增（issue #3397）：补齐零断言能力（地址预填 + 写前校验）；2026-09-14 协作轮重构（issue #3646）：固定 9 轮台词表实测与真实卡序列错位（R1 发 2 张 choice 卡、R2 的「米白」被当成加工项应答、R3 起 7 轮全 `tools=-`、order_create 从未发生 = 真实重放 0%/unstable），改为「有卡答卡 + repeat_until(order_create) 停机」；expectations/must_succeed/order_before/amount_verify/db_verify 原样保留（未放宽）；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。 ｜ tags: order_create, prefill, address, xiaobu
 
 ### OR-024. C 端顾客已给数量后不得再问用量/褶皱倍数（防 2 倍金额与流程空转） 🔵
 ```
@@ -2721,7 +2721,7 @@
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室
 ```
 真值: order.create-flow, ai-chat.confirm-required
-溯源: 2026-09-13 新增（issue #3402）：沉淀 C-A1 主路径真因（数量口径 → 产出层反模式断言）；2026-09-19 **退场同步**（用户裁定）：第 3 条由「整场不得出现 human_handoff」改为「不得把主转化路径推给人工（假承诺话术为锚）」—— 原断言在工具退场后**恒真**（模型调不到它，工具名不在任何 skill 工具集，结构性判据见 tests/unit_ci_workflows/test_human_handoff_retired.py），而真实风险变成了模型改用自然语言承诺转接，故把锚点移到实际可失败的话术面 ｜ tags: order_create, quantity, ceiling, xiaobu
+溯源: 2026-09-13 新增（issue #3402）：沉淀 C-A1 主路径真因（数量口径 → 产出层反模式断言）；2026-09-19 **退场同步**（用户裁定）：第 3 条由「整场不得出现 human_handoff」改为「不得把主转化路径推给人工（假承诺话术为锚）」—— 原断言在工具退场后**恒真**（模型调不到它，工具名不在任何 skill 工具集，结构性判据见 tests/unit_ci_workflows/test_human_handoff_retired.py），而真实风险变成了模型改用自然语言承诺转接，故把锚点移到实际可失败的话术面；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。 ｜ tags: order_create, quantity, ceiling, xiaobu
 
 ### OR-025. C 端物流正向查询 - 工具可达 + 能力不否定（权限类禁词） 🔵
 ```

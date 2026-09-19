@@ -1608,6 +1608,26 @@ cases:
           customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
           color: "米白"
           colorName: "米白"
+    # ── burn-down 缴费（issue #4490，2026-09-19）────────────────────────────────
+    # 本 PR 改了 `.github/cases/**` ⇒ 按 `case-trust-baseline.json` 的 `burn_down`
+    # （`per_pr_min: 1` / `metric: entries` ⇒ **整条销账**）必须净缩 ≥1 条存量违规。
+    # 本条命中的两条存量违规 = `CASE-TRUST-NO-PRECONDITION-ASSERTION` +
+    # `CASE-TRUST-NO-SELF-CLEAN`，一次补齐（先例 = OR-012 / CH-019 / CR-001 / C003，同款治法）：
+    # · R1「我想买遮光窗帘…」按**商品名**定位下单对象 ⇒「该名字在栈里唯一」是本用例真正依赖、
+    #   且**只读**的前置（同名副本 >1 时 agent 会正确地反问要哪一件，而本用例的轮次表会把这条
+    #   合理行为判成 `order_create` 从未发生 = 归因全错）；
+    # · `namespaces` 护住该前置的基线/漂移两格，并与同手机号的建单用例互斥（自清理的弱证据形态）。
+    # ⚠️ 刻意**不**声明 `order_count_for_phone: 13800138000` —— 本用例自己就会给该号码建单，
+    # `after - before = +1 > max_growth(0)` ⇒ 漂移判据必然判红（「硬写一条注定红的守卫」）。
+    # **断言面（user_inputs / expectations / must_succeed / db_verify / order_before /
+    # forbidden_text / data_checks）一字未动、无放宽。**
+    namespaces:
+      - "product_name:遮光窗帘"
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     expectations:
       - tool: product_search
       - tool: product_detail
@@ -1653,7 +1673,7 @@ cases:
       - "任何一轮回复都不得出现「我无法提交订单 / 没法帮您下单」这类能力误宣"
       - "参数补齐后必须真实落单（order_create 成功 + 明细/数量/手机号正确）"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3389）：能力下限用例（缺信息时收集而非拒单 + 能力误宣反模式）"
+    merge_log: "2026-09-13 新增（issue #3389）：能力下限用例（缺信息时收集而非拒单 + 能力误宣反模式）；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
@@ -1731,6 +1751,26 @@ cases:
           fallback: "确认"
       - auto_respond:
           fallback: "确认"
+    # ── burn-down 缴费（issue #4490，2026-09-19）────────────────────────────────
+    # 本 PR 改了 `.github/cases/**` ⇒ 按 `case-trust-baseline.json` 的 `burn_down`
+    # （`per_pr_min: 1` / `metric: entries` ⇒ **整条销账**）必须净缩 ≥1 条存量违规。
+    # 本条命中的两条存量违规 = `CASE-TRUST-NO-PRECONDITION-ASSERTION` +
+    # `CASE-TRUST-NO-SELF-CLEAN`，一次补齐（先例 = OR-012 / CH-019 / CR-001 / C003，同款治法）：
+    # · R1「我想买遮光窗帘…」按**商品名**定位下单对象 ⇒「该名字在栈里唯一」是本用例真正依赖、
+    #   且**只读**的前置（同名副本 >1 时 agent 会正确地反问要哪一件，而本用例的轮次表会把这条
+    #   合理行为判成 `order_create` 从未发生 = 归因全错）；
+    # · `namespaces` 护住该前置的基线/漂移两格，并与同手机号的建单用例互斥（自清理的弱证据形态）。
+    # ⚠️ 刻意**不**声明 `order_count_for_phone: 13800138000` —— 本用例自己就会给该号码建单，
+    # `after - before = +1 > max_growth(0)` ⇒ 漂移判据必然判红（「硬写一条注定红的守卫」）。
+    # **断言面（user_inputs / expectations / must_succeed / db_verify / order_before /
+    # forbidden_text / data_checks）一字未动、无放宽。**
+    namespaces:
+      - "product_name:遮光窗帘"
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     expectations:
       - tool: product_search
       - tool: product_detail
@@ -1768,7 +1808,7 @@ cases:
       - "收集到的收货信息必须真的用于落单（订单手机号/明细与顾客所给一致）"
       - "全程不得出现「我无法提交订单 / 没法帮您下单」这类能力误宣"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3391）：新客路径覆盖（多身份评测 + 无历史地址时的收集能力）"
+    merge_log: "2026-09-13 新增（issue #3391）：新客路径覆盖（多身份评测 + 无历史地址时的收集能力）；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
@@ -1830,6 +1870,26 @@ cases:
           customer_address: "浙江省杭州市西湖区文三路1号1幢101室"
           color: "米白"
           colorName: "米白"
+    # ── burn-down 缴费（issue #4490，2026-09-19）────────────────────────────────
+    # 本 PR 改了 `.github/cases/**` ⇒ 按 `case-trust-baseline.json` 的 `burn_down`
+    # （`per_pr_min: 1` / `metric: entries` ⇒ **整条销账**）必须净缩 ≥1 条存量违规。
+    # 本条命中的两条存量违规 = `CASE-TRUST-NO-PRECONDITION-ASSERTION` +
+    # `CASE-TRUST-NO-SELF-CLEAN`，一次补齐（先例 = OR-012 / CH-019 / CR-001 / C003，同款治法）：
+    # · R1「我想买遮光窗帘…」按**商品名**定位下单对象 ⇒「该名字在栈里唯一」是本用例真正依赖、
+    #   且**只读**的前置（同名副本 >1 时 agent 会正确地反问要哪一件，而本用例的轮次表会把这条
+    #   合理行为判成 `order_create` 从未发生 = 归因全错）；
+    # · `namespaces` 护住该前置的基线/漂移两格，并与同手机号的建单用例互斥（自清理的弱证据形态）。
+    # ⚠️ 刻意**不**声明 `order_count_for_phone: 13800138000` —— 本用例自己就会给该号码建单，
+    # `after - before = +1 > max_growth(0)` ⇒ 漂移判据必然判红（「硬写一条注定红的守卫」）。
+    # **断言面（user_inputs / expectations / must_succeed / db_verify / order_before /
+    # forbidden_text / data_checks）一字未动、无放宽。**
+    namespaces:
+      - "product_name:遮光窗帘"
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     expectations:
       - tool: product_search
       - tool: product_detail
@@ -1873,7 +1933,7 @@ cases:
       - "预填值必须是真值 —— 掩码值会被顾客原样提交，订单会用掩码建号"
       - "写操作前必须经过 validate_input（confirm → 校验 → order_create）"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3397）：补齐零断言能力（地址预填 + 写前校验）；2026-09-14 协作轮重构（issue #3646）：固定 9 轮台词表实测与真实卡序列错位（R1 发 2 张 choice 卡、R2 的「米白」被当成加工项应答、R3 起 7 轮全 `tools=-`、order_create 从未发生 = 真实重放 0%/unstable），改为「有卡答卡 + repeat_until(order_create) 停机」；expectations/must_succeed/order_before/amount_verify/db_verify 原样保留（未放宽）"
+    merge_log: "2026-09-13 新增（issue #3397）：补齐零断言能力（地址预填 + 写前校验）；2026-09-14 协作轮重构（issue #3646）：固定 9 轮台词表实测与真实卡序列错位（R1 发 2 张 choice 卡、R2 的「米白」被当成加工项应答、R3 起 7 轮全 `tools=-`、order_create 从未发生 = 真实重放 0%/unstable），改为「有卡答卡 + repeat_until(order_create) 停机」；expectations/must_succeed/order_before/amount_verify/db_verify 原样保留（未放宽）；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
@@ -1942,6 +2002,26 @@ cases:
           fallback: "确认"
       - auto_respond:
           fallback: "确认"
+    # ── burn-down 缴费（issue #4490，2026-09-19）────────────────────────────────
+    # 本 PR 改了 `.github/cases/**` ⇒ 按 `case-trust-baseline.json` 的 `burn_down`
+    # （`per_pr_min: 1` / `metric: entries` ⇒ **整条销账**）必须净缩 ≥1 条存量违规。
+    # 本条命中的两条存量违规 = `CASE-TRUST-NO-PRECONDITION-ASSERTION` +
+    # `CASE-TRUST-NO-SELF-CLEAN`，一次补齐（先例 = OR-012 / CH-019 / CR-001 / C003，同款治法）：
+    # · R1「我想买遮光窗帘…」按**商品名**定位下单对象 ⇒「该名字在栈里唯一」是本用例真正依赖、
+    #   且**只读**的前置（同名副本 >1 时 agent 会正确地反问要哪一件，而本用例的轮次表会把这条
+    #   合理行为判成 `order_create` 从未发生 = 归因全错）；
+    # · `namespaces` 护住该前置的基线/漂移两格，并与同手机号的建单用例互斥（自清理的弱证据形态）。
+    # ⚠️ 刻意**不**声明 `order_count_for_phone: 13800138000` —— 本用例自己就会给该号码建单，
+    # `after - before = +1 > max_growth(0)` ⇒ 漂移判据必然判红（「硬写一条注定红的守卫」）。
+    # **断言面（user_inputs / expectations / must_succeed / db_verify / order_before /
+    # forbidden_text / data_checks）一字未动、无放宽。**
+    namespaces:
+      - "product_name:遮光窗帘"
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     expectations:
       - tool: product_search
       - tool: product_detail
@@ -1978,7 +2058,7 @@ cases:
       - "数量就是 3 米：金额 = 单价 × 3，最终必须真实落单（order_create 成功）"
       - "整场不得把主转化路径推给人工：不出现『已为您转接人工』『需要人工处理』之类的收场话术，也不得因此不落单（退场后该保护改以「假承诺」为锚，见下方 merge_log）"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3402）：沉淀 C-A1 主路径真因（数量口径 → 产出层反模式断言）；2026-09-19 **退场同步**（用户裁定）：第 3 条由「整场不得出现 human_handoff」改为「不得把主转化路径推给人工（假承诺话术为锚）」—— 原断言在工具退场后**恒真**（模型调不到它，工具名不在任何 skill 工具集，结构性判据见 tests/unit_ci_workflows/test_human_handoff_retired.py），而真实风险变成了模型改用自然语言承诺转接，故把锚点移到实际可失败的话术面"
+    merge_log: "2026-09-13 新增（issue #3402）：沉淀 C-A1 主路径真因（数量口径 → 产出层反模式断言）；2026-09-19 **退场同步**（用户裁定）：第 3 条由「整场不得出现 human_handoff」改为「不得把主转化路径推给人工（假承诺话术为锚）」—— 原断言在工具退场后**恒真**（模型调不到它，工具名不在任何 skill 工具集，结构性判据见 tests/unit_ci_workflows/test_human_handoff_retired.py），而真实风险变成了模型改用自然语言承诺转接，故把锚点移到实际可失败的话术面；2026-09-19（issue #4490 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘, customer_phone:13800138000]（R1 按商品名下单 ⇒ 名字唯一是本用例真正依赖且只读的前置；刻意不声明 order_count_for_phone —— 本用例自己建单，漂移判据必然判红）。断言面（user_inputs / expectations / must_succeed / db_verify / order_before / forbidden_text / data_checks）原样未动、无放宽。"
 
   - id: OR-025
     legacy_id: ""
