@@ -9,9 +9,10 @@ import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProcessingOrder;
-import com.migao.admin.entity.ProductionOptionFactor;
-import com.migao.admin.entity.ProductionOptionRouting;
+import com.migao.admin.entity.ProductionOperationPosition;
+import com.migao.admin.entity.ProductionRouteRule;
 import com.migao.admin.entity.ProductionRouteSignal;
+import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
@@ -50,12 +51,14 @@ import java.util.concurrent.ThreadLocalRandom;
  *    本就 confirmed ⇒ 回退自然不触发）；
  * 5. 订单侧联动（shipped 守卫 / 订单取消自动作废）由 OrderService 完成。
  *
- * <h2>工序来源（issue #4116，用户裁定「现在就切」，2026-09-18）</h2>
- * 生成加工单时的工序实例化读**工序库**：{@code production_routings}（部位×工艺 → 基准工序序列）
- * + {@code production_operations}（分组/单位/单价/is_must_finish/is_start_marker），
- * 经 {@link ProductionOperationQueryService#findRouting} 读出。
+ * <h2>工序来源（issue #4116 用户裁定「现在就切」；P2b / issue #4459 切到新结构）</h2>
+ * 生成加工单时的工序实例化读**工序库的新结构**：
+ * {@code production_route_templates}（具名主线）+ {@code production_route_rules}（工艺/选项触发的
+ * 增删与计件系数）+ {@code production_operation_positions}（部位价目与适用性）
+ * + {@code production_operations}（分组/单位/必完标记/作用域），经
+ * {@link ProductionOperationQueryService} 的新读面读出。
  * 加工项目录（快照的 {@code processingItems}）**不再是**工序真值源。
- * 取不到路线/工序 ⇒ fail-closed 中止生成（{@link #ERR_ROUTING_NOT_FOUND} /
+ * 取不到路线模板/工序 ⇒ fail-closed 中止生成（{@link #ERR_ROUTING_NOT_FOUND} /
  * {@link #ERR_OPERATION_NOT_FOUND} + {@link #INCIDENT_ROUTING_UNRESOLVED} 日志），**不回退**旧路径。
  *
  * <h2>部位语义（issue #4354 起：显式字段优先，派生是**长期兜底**）</h2>
@@ -124,9 +127,17 @@ public class ProcessingOrderService {
     public static final String INCIDENT_ROUTE_FALLBACK = "INCIDENT_PRODUCTION_ROUTE_FALLBACK";
 
     /**
-     * 默认路线键（派生不出 部位/工艺 时的兜底，issue #4116 用户裁定）。
-     * ⚠️ 这是**路线键**的兜底，不是**数据源**的兜底：默认路线同样必须来自工序库，
-     * 库里连它都没有 ⇒ fail-closed 中止生成（绝不回退加工项目录）。
+     * 默认**部位**（派生不出部位时的兜底）与默认**工艺**的**种子回填来源与文案措辞**。
+     *
+     * <p><b>⚠️ P2b（issue #4459 §1②）：二者已**退化为种子回填来源与文案措辞**，
+     * 运行时**不再**作为回落目标</b>：</p>
+     * <ul>
+     *   <li>{@link #DEFAULT_CURTAIN_TYPE} —— 部位维仍用它兜底（部位没有「商户级默认」表，
+     *       且它只决定「去取哪条路线模板」，取不到就 T2/T3，不改变工序内容）；</li>
+     *   <li>{@link #DEFAULT_CRAFT} —— **运行时不再取它**：缺 {@code craft} 取该租户
+     *       {@code production_crafts.is_default} 的默认工艺（商家可配）；查不到 ⇒ T3 fail-closed。
+     *       常量保留给 ① V72 种子回填的取值口径 ② 缺口查询的文案措辞。</li>
+     * </ul>
      *
      * <p>{@code public}（issue #4308）：缺口查询（{@code GET /production/routing-gaps}）要用
      * 同一对默认值算「某个信号单独命中时**会**派生出哪个键」—— 复制第二份默认值必然漂移。</p>
@@ -186,10 +197,15 @@ public class ProcessingOrderService {
     /**
      * {@code isShaped=false} 时从实例里剔除的工序（issue #4354，设计文档 §4.7）。
      * 与真值源 {@code routing.py::build_routing} 的 {@code route = [op for op in route
-     * if op not in ("定型-布", "复烫-布")]} **逐字同款**（工序名同源，且都在条件工序插入**之前**剔除
+     * if op not in ("定型-布", "复烫-布")]} **逐字同款**（且都在条件工序插入**之前**剔除
      * —— 否则以这两道为锚点的条件工序会因锚点消失而落到末尾，与 Python 的落位不一致）。
+     *
+     * <p><b>P2b（issue #4459）：值是**逻辑工序名**</b>（{@code 定型} / {@code 复烫}）——
+     * 新结构的序列元素就是逻辑名（主线 + 规则都归一为逻辑名）。新模型给 {@code shaped} 预留了
+     * 规则触发类型但**不种行**（母单冻结：26 条 = 工艺 10 + 选项 16），故本开关仍是代码侧接线，
+     * 与 {@code routing.py::build_route_v2} 的现状一致。</p>
      */
-    private static final List<String> UNSHAPED_REMOVED_OPERATIONS = List.of("定型-布", "复烫-布");
+    private static final List<String> UNSHAPED_REMOVED_OPERATIONS = List.of("定型", "复烫");
 
     /** 配布边（§4.8）：**不独立成加工部位**的部件角色 —— 组内出现主布行时它被合并进去。 */
     private static final String COMPONENT_ROLE_EDGE = "配布边";
@@ -201,7 +217,7 @@ public class ProcessingOrderService {
      * 实例化时同一樘窗（{@code craftGroupKey} 组）只落一次，而不是像部位级那样每个部位各落一次。</p>
      *
      * <p>⚠️ 这是**词表值**（库列注释冻结的两态之一），不是工序名白名单 —— 判据一律读
-     * {@link ProductionOperationQueryService#findRouting} 带出的 `scope`（逐字取库）；
+     * {@link #buildRoute} 从工序库带出的 `scope`（逐字取库）；
      * 硬编码 `外帘打卷/装袋/发货` 会让商家在工序库把某道改成部位级后**不生效**（第二份口径）。</p>
      */
     private static final String SCOPE_SET = "set";
@@ -331,16 +347,18 @@ public class ProcessingOrderService {
     /**
      * 实例化工序（issue #4116 切库后：工序来源 = **工序库**，不再是加工项目录）。
      *
-     * <p><b>工序来源（本包的核心变更）</b>：`production_routings`（部位×工艺 → 基准工序序列）
-     * + `production_operations`（每道工序的分组/单位/单价/必完标记），两者都是**库里的行**，
-     * 由 {@link ProductionOperationQueryService#findRouting} 读出。加工项目录（快照里的
+     * <p><b>工序来源（本包的核心变更；P2b 起为新结构）</b>：`production_route_templates`（主线）
+     * + `production_route_rules`（规则）+ `production_operation_positions`（部位价目/适用性）
+     * + `production_operations`（每道工序的分组/单位/必完标记/作用域），全部是**库里的行**，
+     * 由 {@link ProductionOperationQueryService} 的新读面读出（见 {@link #buildRoute}）。加工项目录（快照里的
      * `processingItems`）自此刻起**只**用于①派生路线键的信号、②加工单快照本身的展示，
      * **不再**提供工序 —— 旧的「工序 = 加工项名」路径已删除，取不到库数据时**显式失败**，
      * 不回退（回退会让「切库」变成装饰性的：旧路径还在 ⇒ 库为空也没人发现）。</p>
      *
      * <p><b>取路线判据</b>（订单侧**没有**部位/帘种字段，故必须显式定义取法）：按可派生信号
      * 匹配 `curtain_type`/`craft`，优先级 = 加工项名 &gt; 加工项 options &gt; 商品名 &gt; 销售方式，
-     * 命中即止；两类信号全不命中 ⇒ 默认路线 `布帘×韩褶`（见 {@link #deriveRouteKey}）。</p>
+     * 命中即止；两类信号全不命中 ⇒ 该租户的**默认路线模板**（见 {@link #deriveRouteKey}
+     * 与 {@link #resolveRoute}）。</p>
      *
      * <p><b>`is_must_finish` / `is_start_marker` 读库</b>：取 `production_operations` 的同名列
      * （V54 种子只把「外帘装袋」标为必完）。此前实例化用「每部位**末道**工序必完」的临时口径
@@ -395,10 +413,14 @@ public class ProcessingOrderService {
         List<Map<String, Object>> request = new ArrayList<>();
         // 多部位 roll-up 用（V60）：逐部位记 (route_key, route_source)，最后取最需关注的一条
         List<RouteResolution> resolutions = new ArrayList<>();
-        // 特殊选项映射（issue #4230）：两张表都极小，**一次取回**本租户的全部活跃行，
-        // 逐部位在内存里按本单的 specialOptions 过滤 —— 避免「每个选项一次查询」的 N+1。
-        List<ProductionOptionRouting> optionRoutings = productionOperationQueryService.optionRoutings(tenantId);
-        List<ProductionOptionFactor> optionFactors = productionOperationQueryService.optionFactors(tenantId);
+        // 新结构读面（P2b，issue #4459）：规则表 / 部位价目 / 工序库都极小，**一次取回**本租户的
+        // 全部活跃行，逐部位在内存里过滤 —— 避免「每道工序一次查询」的 N+1。
+        // 计件系数档也在**同一份规则表**里（action='factor'），不另开读取面（第二份口径）。
+        List<ProductionRouteRule> rules = productionOperationQueryService.routeRules(tenantId);
+        List<ProductionOperationPosition> priceRows =
+                productionOperationQueryService.operationPositions(tenantId);
+        Map<String, Map<String, Object>> catalog =
+                productionOperationQueryService.operationsByName(tenantId);
         // 樘窗绑组（issue #4354 引入，issue #4387 语义扩展）：组键 = `craftLineId`（缺省 ⇒ 本行 itemId ⇒ 各自成组）
         Set<String> groupsWithMainRow = groupsWithMainRow(snapshot);
         // 套级工序的承载体（issue #4384 A2）：每个樘窗组只挑一行（主布行）—— 见 setLevelKeeperItemIds
@@ -416,7 +438,7 @@ public class ProcessingOrderService {
             // `itemId` 恒非空（`buildSnapshot` 无条件落 `order_items.id` = 主键）⇒ 用它做承载标识。
             boolean keepsSetLevel = setLevelKeepers.contains(str(entry.get("itemId")));
             RouteKey key = deriveRouteKey(entry, tenantId);
-            RouteResolution resolution = resolveRoute(key, tenantId, entry);
+            RouteResolution resolution = resolveRoute(key, tenantId, entry, rules, priceRows, catalog);
             resolutions.add(resolution);
             Map<String, Object> route = resolution.route();
             List<Map<String, Object>> operations = new ArrayList<>();
@@ -436,10 +458,13 @@ public class ProcessingOrderService {
                 operation.put("is_start_marker", step.get("is_start_marker"));
                 operations.add(operation);
             }
-            // 定型接线（issue #4354，设计文档 §4.7）：`isShaped=false` ⇒ 剔除 定型-布 / 复烫-布
+            // 定型接线（issue #4354，设计文档 §4.7）：`isShaped=false` ⇒ 剔除 定型 / 复烫
             // （真值源 §10 登记的「唯一尚未接线」项）。**严格布尔 false** 才生效，且必须在条件工序
             // 插入**之前** —— 与 routing.py::build_routing 逐字同序（否则以这两道为锚点的条件工序
             // 会因锚点消失而落到末尾，与 Python 的落位不一致）。
+            // P2b（issue #4459）：判据从旧工序名（定型-布/复烫-布）换成**逻辑名**（定型/复烫）——
+            // 新结构里序列元素就是逻辑名。新模型给 `shaped` 预留了规则触发类型但**不种行**，
+            // 故本开关仍是代码侧接线（与 routing.py::build_route_v2 的现状一致）。
             if (Boolean.FALSE.equals(entry.get("isShaped"))) {
                 operations.removeIf(operation ->
                         UNSHAPED_REMOVED_OPERATIONS.contains(String.valueOf(operation.get("operation"))));
@@ -447,10 +472,10 @@ public class ProcessingOrderService {
             // 特殊选项（issue #4230）：插条件工序 → 重排 seq → 落计件系数
             List<String> options = specialOptions(entry);
             if (!options.isEmpty()) {
-                insertConditionalOperations(operations, options, optionRoutings, tenantId, entry);
+                insertConditionalOperations(operations, options, rules, tenantId, entry, catalog);
             }
             renumberSeq(operations);
-            applyFactors(operations, options, optionFactors);
+            applyFactors(operations, options, rules, str(entry.get("curtainType")));
             String productName = str(entry.get("productName"));
             String colorName = str(entry.get("colorName"));
             String positionName = productName == null ? "未命名部位"
@@ -623,49 +648,60 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 插入条件工序（issue #4230 验收判据 1）：选项 → {@code production_option_routings} →
-     * 把 {@code operation_name} 插到 {@code after_operation} 之后。
+     * 插入条件工序（issue #4230 验收判据 1；P2b 改读 {@code production_route_rules}）。
      *
-     * <p>与真值源 {@code routing.py::build_routing} + {@code _insert_after} 同口径：
-     * 锚点不在该部位路线中 ⇒ **追加到末尾**（例：纱帘路线没有「布帘车被」，
-     * 「余料做绑带/布绑带/纱绑带」就落到末尾）；同一锚点上的多个插入按 {@code sort_order}
-     * 依次插在锚点之后 ⇒ 后插的在前（与 Python 的 `insert(idx+1, …)` 逐字同款）。</p>
+     * <p>规则行的 {@code action='insert'} + {@code trigger_kind='option'} ⇒ 把
+     * {@code operation} 插到 {@code after_operation} 之后。与真值源
+     * {@code routing.py::build_route_v2} + {@code _insert_after} 同口径：
+     * 锚点不在该部位路线中 ⇒ **追加到末尾**；同一锚点上的多个插入按 {@code (priority, id)}
+     * 依次插在锚点之后 ⇒ 后插的在前（与 Python 的 {@code insert(idx+1, …)} 逐字同款）。</p>
      *
-     * <p>工序元数据（分组/单位/单价/必完/开始标记）**逐字取库**；条件工序在工序库无活跃行 ⇒
+     * <p>工序元数据（分组/单位/单价/必完/开始标记）**逐字取库**（经
+     * {@code variantNameOf} 把逻辑名换成该租户库里的变体名）；条件工序在工序库无活跃行 ⇒
      * fail-closed（{@link #ERR_OPERATION_NOT_FOUND}）—— 静默跳过会让「勾了却没加工序」
      * 在数据上消失，那正是本单要治的「设计过但从未接线」形态。</p>
      */
     private void insertConditionalOperations(List<Map<String, Object>> operations, List<String> options,
-                                             List<ProductionOptionRouting> optionRoutings,
-                                             Long tenantId, Map<String, Object> entry) {
-        List<ProductionOptionRouting> applicable = new ArrayList<>();
-        for (ProductionOptionRouting routing : optionRoutings) {
-            if (options.contains(routing.getOptionName())) {
-                applicable.add(routing);
+                                             List<ProductionRouteRule> rules,
+                                             Long tenantId, Map<String, Object> entry,
+                                             Map<String, Map<String, Object>> catalog) {
+        String position = str(entry.get("curtainType"));
+        List<ProductionRouteRule> applicable = new ArrayList<>();
+        for (ProductionRouteRule rule : rules) {
+            if (!"insert".equals(rule.getAction()) || !"option".equals(rule.getTriggerKind())) {
+                continue;
             }
+            if (!options.contains(rule.getTriggerValue())) {
+                continue;
+            }
+            if (rule.getPosition() != null && !Objects.equals(rule.getPosition(), position)) {
+                continue;   // 部位限定：不匹配本部位 ⇒ 不触发（与 build_route_v2 逐字同款）
+            }
+            applicable.add(rule);
         }
         if (applicable.isEmpty()) {
             return; // 选项未登记条件工序（纯系数选项 / 显式不计件选项）⇒ 路线不变，不是错误
         }
+        // 读取侧已按 (priority, id) 排好；此处再显式排一次，不依赖调用方（确定性的承重点）
         applicable.sort(Comparator.comparing(
-                (ProductionOptionRouting r) -> r.getSortOrder() == null ? 0 : r.getSortOrder())
-                .thenComparing(r -> r.getOptionName() == null ? "" : r.getOptionName()));
-        Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
+                        (ProductionRouteRule r) -> r.getPriority() == null ? 0 : r.getPriority())
+                .thenComparing(r -> r.getId() == null ? "" : r.getId()));
         List<String> missing = new ArrayList<>();
-        for (ProductionOptionRouting routing : applicable) {
-            String operationName = routing.getOperationName();
-            Map<String, Object> meta = catalog.get(operationName);
+        for (ProductionRouteRule rule : applicable) {
+            String logicalName = rule.getOperation();
+            String operationName = productionOperationQueryService.variantNameOf(logicalName, position, catalog);
+            Map<String, Object> meta = operationName == null ? null : catalog.get(operationName);
             if (meta == null) {
-                missing.add(operationName);
+                missing.add(logicalName);
                 continue;
             }
             Map<String, Object> operation = new LinkedHashMap<>();
             operation.put("operation", operationName);
             operation.putAll(meta);
-            int anchor = indexOfOperation(operations, routing.getAfterOperation());
+            int anchor = indexOfLogicalOperation(operations, rule.getAfterOperation());
             if (anchor < 0) {
                 log.info("特殊选项「{}」的锚点工序「{}」不在该部位路线中，条件工序「{}」追加到末尾: productName={}",
-                        routing.getOptionName(), routing.getAfterOperation(), operationName, entry.get("productName"));
+                        rule.getTriggerValue(), rule.getAfterOperation(), operationName, entry.get("productName"));
                 operations.add(operation);
             } else {
                 operations.add(anchor + 1, operation);
@@ -683,10 +719,21 @@ public class ProcessingOrderService {
         }
     }
 
-    /** 锚点工序在路线中的下标；不在 ⇒ -1（调用方按真值源口径追加到末尾）。 */
-    private static int indexOfOperation(List<Map<String, Object>> operations, String operationName) {
+    /**
+     * 锚点工序在**实例序列**中的下标；不在 ⇒ -1（调用方按真值源口径追加到末尾）。
+     *
+     * <p>锚点是**逻辑名**（规则表的 {@code after_operation}），而实例里的工序名是**变体名**
+     * （{@code 精裁-布}）⇒ 比较前先把实例名归一为逻辑名（{@code normalizeOperationName}）。
+     * 直接比变体名 ⇒ 锚点永远找不到 ⇒ 条件工序**静默全部追加到末尾**（顺序错 = 车间按错顺序干）。</p>
+     */
+    private int indexOfLogicalOperation(List<Map<String, Object>> operations, String logicalAnchor) {
+        if (logicalAnchor == null) {
+            return -1;
+        }
         for (int i = 0; i < operations.size(); i++) {
-            if (Objects.equals(operations.get(i).get("operation"), operationName)) {
+            String name = operations.get(i).get("operation") == null
+                    ? null : String.valueOf(operations.get(i).get("operation"));
+            if (Objects.equals(productionOperationQueryService.normalizeOperationName(name), logicalAnchor)) {
                 return i;
             }
         }
@@ -710,45 +757,52 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 落计件系数（issue #4230 验收判据 2）：选项 → {@code production_option_factors} →
-     * 该部位每道工序的 {@code factor}。
+     * 落计件系数（issue #4230 验收判据 2；P2b 改读 {@code production_route_rules} 的
+     * {@code action='factor'} 档）。
      *
      * <p>取用口径与真值源 {@code routing.py::factor_for} 逐字同口径：
-     * ① 单个选项内**例外档盖住平摊档**（{@code operation_name} 命中的档优先，否则取 NULL 档）
-     * —— 不是相乘（相乘会把「平摊 ×1.7 + 逐工序 ×2.0」算成 ×3.4，纯属重复计费）；
+     * ① 单个选项内**例外档盖住平摊档**（{@code operation} 命中的档优先，否则取 {@code operation IS NULL}
+     * 的平摊档）—— 不是相乘（相乘会把「平摊 ×1.7 + 逐工序 ×2.0」算成 ×3.4，纯属重复计费）；
      * ② 多个加系数选项之间**相乘**（独立倍率的合成口径）；
      * ③ 未登记的选项**不得**悄悄改系数（查不到档 ⇒ 保持 1）。</p>
+     *
+     * <p><b>限定档的两维（P2b）</b>：{@code operation} 是**逻辑名**（与实例里的变体名不同名 ⇒
+     * 比较前归一）；{@code position} 是**部位限定**（{@code NULL} = 不限部位）。两者在 V72 的
+     * 搬迁里逐条对齐 {@code OPTION_FACTOR_SCOPES} 的 {@code operation_name} / {@code curtain_type}。</p>
      *
      * <p>落进 {@code factor} 后由计件公式（{@code Σ 合格数 × 单价 × 系数}）真的乘进钱 ——
      * 该列自 V49 就存在、公式也真的读它，但**此前零写方** ⇒ 恒 1.00。</p>
      */
-    private static void applyFactors(List<Map<String, Object>> operations, List<String> options,
-                                     List<ProductionOptionFactor> optionFactors) {
-        if (options.isEmpty()) {
-            for (Map<String, Object> operation : operations) {
-                operation.put("factor", BigDecimal.ONE);
-            }
-            return;
-        }
+    private void applyFactors(List<Map<String, Object>> operations, List<String> options,
+                              List<ProductionRouteRule> rules, String position) {
         for (Map<String, Object> operation : operations) {
-            String operationName = String.valueOf(operation.get("operation"));
             BigDecimal factor = BigDecimal.ONE;
-            for (String option : options) {
-                ProductionOptionFactor scoped = null;
-                ProductionOptionFactor flat = null;
-                for (ProductionOptionFactor row : optionFactors) {
-                    if (!option.equals(row.getOptionName())) {
-                        continue;
+            if (!options.isEmpty()) {
+                String operationName = String.valueOf(operation.get("operation"));
+                String logicalName = productionOperationQueryService.normalizeOperationName(operationName);
+                for (String option : options) {
+                    ProductionRouteRule scoped = null;
+                    ProductionRouteRule flat = null;
+                    for (ProductionRouteRule rule : rules) {
+                        if (!"factor".equals(rule.getAction()) || !"option".equals(rule.getTriggerKind())
+                                || !option.equals(rule.getTriggerValue())) {
+                            continue;
+                        }
+                        // 部位限定（NULL = 不限部位）—— 与 routing.py::_scope_applies 逐字同口径：
+                        // 限定档只在部位一致时参与；否则连平摊档都不算（它不是本部位的档）。
+                        if (rule.getPosition() != null && !Objects.equals(rule.getPosition(), position)) {
+                            continue;
+                        }
+                        if (rule.getOperation() != null && rule.getOperation().equals(logicalName)) {
+                            scoped = rule;                 // 例外档（逐工序）
+                        } else if (rule.getOperation() == null) {
+                            flat = rule;                   // 平摊档（该部位全部工序）
+                        }
                     }
-                    if (operationName.equals(row.getOperationName())) {
-                        scoped = row;          // 例外档
-                    } else if (row.getOperationName() == null) {
-                        flat = row;            // 平摊档
+                    ProductionRouteRule hit = scoped != null ? scoped : flat;
+                    if (hit != null && hit.getFactor() != null) {
+                        factor = factor.multiply(hit.getFactor());
                     }
-                }
-                ProductionOptionFactor hit = scoped != null ? scoped : flat;
-                if (hit != null && hit.getFactor() != null) {
-                    factor = factor.multiply(hit.getFactor());
                 }
             }
             operation.put("factor", factor);
@@ -894,70 +948,234 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 取路线（工序库）+ 记来源（V60，issue #4308 三层回落语义逐层可观测）：
+     * 取路线（**新结构**：主线 + 规则 + 部位适用性）+ 记来源（V60，issue #4308 三层回落语义逐层可观测）。
+     *
+     * <p><b>P2b 切换（issue #4459）</b>：路线来源从旧 {@code production_routings} 的
+     * 「{@code (部位 × 工艺)} 展开快照」切到 {@code production_route_templates.mainline}
+     * + {@code production_route_rules} + {@code production_operation_positions}。
+     * 规则应用语义与真值源 {@code routing.py::build_route_v2} <b>逐字一致</b>
+     * （见 {@link #buildRoute}）。</p>
      *
      * <ul>
-     *   <li><b>T1</b> 信号全不命中 ⇒ 默认键 {@code 布帘×韩褶}，来源 {@code default}，
+     *   <li><b>T1</b> 信号全不命中 ⇒ 取该租户的**默认路线模板**，来源 {@code default}，
      *       记 {@link #INCIDENT_ROUTE_DEFAULTED}（warn 级 —— 迁移前这一层**连 info 都没有**）；</li>
-     *   <li><b>T2</b> 派生键命中但库中无该路线 ⇒ 回落默认路线，来源降级 {@code missing_route}
-     *       （**不并入 {@code partial}**：补救动作不同 —— T2 要「建路线」、只命中一维要「配信号」），
+     *   <li><b>T2</b> 派生键的部位**没有**路线模板 ⇒ 回落默认路线模板，来源降级 {@code missing_route}
+     *       （**不并入 {@code partial}**：补救动作不同 —— T2 要「建/改路线」、只命中一维要「配信号」），
      *       记 {@link #INCIDENT_ROUTE_FALLBACK}；</li>
-     *   <li><b>T3</b> 默认路线也没有 / 路线引用的工序缺行 ⇒ **fail-closed 中止生成**
-     *       （#4116 已落码，本单保持不动）。</li>
+     *   <li><b>T3</b> 该租户**连默认路线模板都没有** / 路线引用的工序在库中缺行 ⇒
+     *       **fail-closed 中止生成**（#4116 已落码，本单保持不动）。
+     *       ⚠️ **绝不**回落到常量 {@code 布帘×韩褶} 或加工项目录。</li>
      * </ul>
      *
      * <p>来源与「实际使用的路线键」必须**同源返回**：分两次算必然漂移（记下来的键与实际实例化的
      * 工序对不上，等于白记）。</p>
      */
     @SuppressWarnings("unchecked")
-    private RouteResolution resolveRoute(RouteKey key, Long tenantId, Map<String, Object> entry) {
+    private RouteResolution resolveRoute(RouteKey key, Long tenantId, Map<String, Object> entry,
+                                         List<ProductionRouteRule> rules,
+                                         List<ProductionOperationPosition> priceRows,
+                                         Map<String, Map<String, Object>> catalog) {
         String requestedKey = "default".equals(key.source()) ? null : key.curtainType() + "×" + key.craft();
         String usedKey = key.curtainType() + "×" + key.craft();
         String source = key.source();
-        if ("default".equals(source)) {
-            log.warn("{} 订单无任何信号命中（加工项名/options/商品名/销售方式），落默认路线 {}: "
-                            + "tenantId={}, productName={}, 信号={}",
-                    INCIDENT_ROUTE_DEFAULTED, usedKey, tenantId, entry.get("productName"), signals(entry));
-        }
-        Map<String, Object> route = productionOperationQueryService.findRouting(
-                tenantId, key.curtainType(), key.craft());
-        if (route == null) {
-            log.warn("{} 路线键「{}」在工序库无对应路线，回落默认路线 {}×{}（来源 {} ⇒ missing_route）: "
-                            + "tenantId={}, productName={}, 库中现有路线={}",
-                    INCIDENT_ROUTE_FALLBACK, usedKey, DEFAULT_CURTAIN_TYPE, DEFAULT_CRAFT, source,
-                    tenantId, entry.get("productName"), productionOperationQueryService.routingKeys(tenantId));
-            usedKey = DEFAULT_CURTAIN_TYPE + "×" + DEFAULT_CRAFT;
-            source = "missing_route";
-            route = productionOperationQueryService.findRouting(tenantId, DEFAULT_CURTAIN_TYPE, DEFAULT_CRAFT);
-        }
-        if (route == null) {
-            List<String> available = productionOperationQueryService.routingKeys(tenantId);
-            log.error("{} 工序库无可用工艺路线，生成加工单中止（不回退加工项目录）: tenantId={}, 需要={}, "
-                            + "默认={}×{}, 库中现有路线={}, productName={}",
-                    INCIDENT_ROUTING_UNRESOLVED, tenantId, usedKey, DEFAULT_CURTAIN_TYPE, DEFAULT_CRAFT,
-                    available, entry.get("productName"));
+        // 缺 `craft` 且该租户没有默认工艺（production_crafts.is_default）⇒ T3 fail-closed。
+        // 绝不静默取常量 `韩褶`：工艺决定「插入哪道工序 + 计件系数」，猜错 = 算错工人工资。
+        if (key.craft() == null) {
+            log.error("{} 订单缺 `craft` 且该租户没有默认工艺，生成加工单中止（不回退常量 韩褶）: "
+                            + "tenantId={}, 部位={}, productName={}",
+                    INCIDENT_ROUTING_UNRESOLVED, tenantId, key.curtainType(), entry.get("productName"));
             throw new BusinessException(ERR_ROUTING_NOT_FOUND,
-                    String.format("工序库缺少「%s×%s」的工艺路线，无法实例化工序（工序来源为工序库，不回退加工项目录）",
-                            DEFAULT_CURTAIN_TYPE, DEFAULT_CRAFT),
+                    String.format("订单未给出工艺（craft），且该租户没有配置默认工艺，无法实例化工序"),
                     422,
-                    String.format("请在工序库补齐工艺路线；当前库中路线 %s。"
-                                    + "若为空库，先确认 V54 种子迁移（V54__seed_production_operations.sql）已执行；"
+                    "请在「工艺配置」把一条工艺设为默认（缺 craft 的订单取它），"
+                            + "或在下单时给出工艺；查看入口 GET /api/admin/production/routings");
+        }
+        // T1：全无派生信号 ⇒ 直接取默认路线模板（**该租户的**默认，不是常量）
+        if ("default".equals(source)) {
+            log.warn("{} 订单无任何信号命中（加工项名/options/商品名/销售方式），落默认路线: "
+                            + "tenantId={}, productName={}, 信号={}",
+                    INCIDENT_ROUTE_DEFAULTED, tenantId, entry.get("productName"), signals(entry));
+        }
+        // T2：派生出部位/工艺但该部位没有路线模板 ⇒ 回落默认路线模板
+        ProductionRouteTemplate template =
+                productionOperationQueryService.routeTemplateFor(tenantId, key.curtainType());
+        if (template == null) {
+            log.warn("{} 部位「{}」没有可用的工艺路线模板，回落默认路线模板（来源 {} ⇒ missing_route）: "
+                            + "tenantId={}, productName={}, 库中现有路线模板={}",
+                    INCIDENT_ROUTE_FALLBACK, key.curtainType(), source,
+                    tenantId, entry.get("productName"), productionOperationQueryService.routingKeys(tenantId));
+            source = "missing_route";
+            template = productionOperationQueryService.defaultRouteTemplate(tenantId);
+        }
+        if (template == null) {
+            List<String> available = productionOperationQueryService.routingKeys(tenantId);
+            log.error("{} 该租户没有默认工艺路线模板，生成加工单中止（不回退加工项目录、不回退常量路线）: "
+                            + "tenantId={}, 需要={}, 库中现有路线模板={}, productName={}",
+                    INCIDENT_ROUTING_UNRESOLVED, tenantId, usedKey, available, entry.get("productName"));
+            throw new BusinessException(ERR_ROUTING_NOT_FOUND,
+                    String.format("工序库缺少「%s」的工艺路线模板，且该租户没有默认路线，无法实例化工序"
+                                    + "（工序来源为工序库，不回退加工项目录）", usedKey),
+                    422,
+                    String.format("请在「工艺配置 → 工艺路线」建一条路线并设为默认（当前库中路线模板 %s）；"
+                                    + "若为空库，先确认 V71/V72 种子迁移已执行；"
                                     + "查看入口 GET /api/admin/production/routings",
                             available.isEmpty() ? "**为空**" : "有：" + String.join("、", available)));
         }
+        Map<String, Object> route = buildRoute(template, key.curtainType(), key.craft(), entry,
+                rules, priceRows, catalog, tenantId);
         List<String> missing = (List<String>) route.get("missing_operations");
         if (missing != null && !missing.isEmpty()) {
             log.error("{} 工艺路线引用的工序在工序库无活跃行，生成加工单中止（不回退加工项目录）: "
                             + "tenantId={}, 路线={}, 缺工序={}, productName={}",
                     INCIDENT_ROUTING_UNRESOLVED, tenantId, usedKey, missing, entry.get("productName"));
             throw new BusinessException(ERR_OPERATION_NOT_FOUND,
-                    String.format("工艺路线「%s」引用的工序 %s 在工序库中不存在，无法实例化工序", usedKey, missing),
+                    String.format("工艺路线「%s」引用的工序 %s 在工序库中不存在，无法实例化工序",
+                            template.getName(), missing),
                     422,
                     String.format("请在工序库补上 %s（或改这条路线不再引用它们）；"
                                     + "工序库目录查看入口 GET /api/admin/production/operations-catalog",
                             String.join("、", missing)));
         }
         return new RouteResolution(route, usedKey, requestedKey, source);
+    }
+
+    /**
+     * **主线 + 规则 + 部位适用性** → 工序实例的基准序列（P2b，issue #4459）。
+     *
+     * <p>⚠️ <b>本方法是「怎么展开路线」的**唯一** Java 实现</b>，且必须与真值源
+     * {@code routing.py::build_route_v2} <b>逐字一致</b>（顺序敏感）：</p>
+     * <ol>
+     *   <li>取主线（{@code template.mainline}，逻辑工序名）；</li>
+     *   <li>按 {@code priority} <b>升序</b>应用规则（同 priority 按 id，读取侧已排好）：
+     *       触发命中（工艺精确匹配 / 选项 ∈ 本单选项）+ 部位限定通过 ⇒
+     *       {@code insert} 用 {@code after_operation} 定位（锚点不在序列中 ⇒ <b>追加末尾</b>，
+     *       与 {@code _insert_after} 同款）；{@code remove} 直接删除该逻辑工序名。
+     *       ⚠️ <b>{@code remove} 不先于 {@code insert}</b>：顺序完全由 {@code priority} 决定；</li>
+     *   <li>按 {@code production_operation_positions.applicable} <b>滤掉该部位不做的工序</b>
+     *       （缺该 {@code (逻辑工序, 部位)} 行 ⇒ 也滤掉：没有适用性行 = 没登记过，不猜）。</li>
+     * </ol>
+     *
+     * <p>工序元数据（分组/单位/单价/必完/开始标记/作用域）逐字取该租户的工序库行
+     * （经 {@link ProductionOperationQueryService#variantNameOf} 换回变体名）；
+     * 库中缺该变体 ⇒ 登记进 {@code missing_operations}（由调用方 fail-closed，**不猜默认值**）。</p>
+     *
+     * <p>单价取 {@code production_operation_positions.unit_price}（该部位价目），
+     * 而不是工序库行的价 —— 新结构里价目是**按部位**的（P1 实证当前两侧逐字相同；
+     * 分化后以价目表为准）。价目为 {@code null} 而 {@code applicable=true}（「没定价」）⇒
+     * 退回工序库行价，避免把已定价的工序实例算成 0 元。</p>
+     */
+    private Map<String, Object> buildRoute(ProductionRouteTemplate template, String position, String craft,
+                                           Map<String, Object> entry,
+                                           List<ProductionRouteRule> rules,
+                                           List<ProductionOperationPosition> priceRows,
+                                           Map<String, Map<String, Object>> catalog,
+                                           Long tenantId) {
+        Map<String, BigDecimal> priceByLogical = new LinkedHashMap<>();
+        Map<String, Boolean> applicableByLogical = new LinkedHashMap<>();
+        for (ProductionOperationPosition row : priceRows) {
+            if (!Objects.equals(row.getPosition(), position) || row.getLogicalName() == null) {
+                continue;
+            }
+            priceByLogical.put(row.getLogicalName(), row.getUnitPrice());
+            applicableByLogical.put(row.getLogicalName(), Boolean.TRUE.equals(row.getApplicable()));
+        }
+
+        List<String> sequence = new ArrayList<>();
+        for (String step : stringList(template.getMainline())) {
+            sequence.add(step);
+        }
+        List<String> options = specialOptions(entry);
+        for (ProductionRouteRule rule : rules) {
+            String kind = rule.getTriggerKind();
+            if ("craft".equals(kind)) {
+                if (!Objects.equals(rule.getTriggerValue(), craft)) {
+                    continue;
+                }
+            } else if ("option".equals(kind)) {
+                if (!options.contains(rule.getTriggerValue())) {
+                    continue;
+                }
+            } else {
+                // `shaped` / `processing_item` 是表结构预留的触发类型（V71/V72 无种子行）。
+                // 静默跳过会让「规则已落库但永不生效」变成无人可见的黑洞 ⇒ 与真值源
+                // routing.py::_rule_triggers 同款**显式失败**。
+                throw new BusinessException(ERR_ROUTING_NOT_FOUND,
+                        String.format("工艺路线规则「%s」的触发类型「%s」尚未实现，无法实例化工序",
+                                rule.getId(), kind),
+                        422,
+                        "请在「工艺配置 → 工艺路线」停用该规则，或联系研发实现该触发类型");
+            }
+            if (rule.getPosition() != null && !Objects.equals(rule.getPosition(), position)) {
+                continue;
+            }
+            if ("insert".equals(rule.getAction())) {
+                sequence = insertAfterLogical(sequence, rule.getOperation(), rule.getAfterOperation());
+            } else if ("remove".equals(rule.getAction())) {
+                String removed = rule.getOperation();
+                sequence.removeIf(op -> Objects.equals(op, removed));
+            }
+            // action='factor' 不参与序列构造（它只覆盖计件系数，见 applyFactors）
+        }
+
+        List<Map<String, Object>> steps = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+        int seq = 1;
+        for (String logicalName : sequence) {
+            if (!Boolean.TRUE.equals(applicableByLogical.get(logicalName))) {
+                continue;   // 该部位明确不做（或未登记适用性）⇒ 滤掉
+            }
+            String variant = productionOperationQueryService.variantNameOf(logicalName, position, catalog);
+            Map<String, Object> meta = variant == null ? null : catalog.get(variant);
+            if (meta == null) {
+                missing.add(logicalName);
+                continue;
+            }
+            Map<String, Object> step = new LinkedHashMap<>();
+            step.put("seq", seq++);
+            step.put("operation", variant);
+            step.put("group", meta.get("group"));
+            step.put("unit", meta.get("unit"));
+            BigDecimal price = priceByLogical.get(logicalName);
+            step.put("unit_price", price == null ? meta.get("unit_price") : price);
+            step.put("is_must_finish", meta.get("is_must_finish"));
+            step.put("is_start_marker", meta.get("is_start_marker"));
+            step.put("scope", meta.get("scope"));
+            steps.add(step);
+        }
+
+        Map<String, Object> route = new LinkedHashMap<>();
+        route.put("route_template_id", template.getId());
+        route.put("route_template_name", template.getName());
+        route.put("curtain_type", position);
+        route.put("craft", craft);
+        route.put("operation_count", steps.size());
+        route.put("missing_operations", missing);
+        route.put("operations", steps);
+        return route;
+    }
+
+    /** 把 {@code operation} 插到 {@code after} 之后（锚点不在序列中 ⇒ 追加末尾，同 {@code _insert_after}）。 */
+    private static List<String> insertAfterLogical(List<String> route, String operation, String after) {
+        int idx = after == null ? -1 : route.indexOf(after);
+        if (idx < 0) {
+            route.add(operation);
+            return route;
+        }
+        route.add(idx + 1, operation);
+        return route;
+    }
+
+    /** JSONB 列归一化为 {@code List<String>}（{@code JacksonTypeHandler} 反序列化后可能是 {@code List<?>}）。 */
+    private static List<String> stringList(Object raw) {
+        List<String> names = new ArrayList<>();
+        if (raw instanceof List<?> list) {
+            for (Object item : list) {
+                if (item != null) {
+                    names.add(String.valueOf(item));
+                }
+            }
+        }
+        return names;
     }
 
     /**
@@ -974,9 +1192,15 @@ public class ProcessingOrderService {
      *   <li><b>加工项推导</b> —— 显式字段缺的那一维由**加工项**（名称自带部位/工艺，如
      *       「韩褶-布」「打孔-纱」；或加工项 options）经信号映射表推出；</li>
      *   <li><b>信号派生兜底</b> —— 加工项也不给信号时，退到商品名 / 销售方式（同一张映射表）；
-     *       两层都不命中 ⇒ 两维取默认（来源 {@code default}，T1）。</li>
+     *       两层都不命中 ⇒ 两维取**该租户的默认**（部位常量 / 默认工艺，来源 {@code default}，T1）。</li>
      * </ol>
      * <p>只命中/只直读一维 ⇒ 来源 {@code partial}。</p>
+     *
+     * <p><b>⚠️ P2b：缺 {@code craft} 取「商户级默认工艺」，不再写死常量（issue #4459 §1②）</b>：
+     * {@code production_crafts} 的 {@code is_default} 行是**商家可配**的（改默认工艺 ⇒ 后续订单
+     * 插入的工序与计件系数随之变）；该租户**没有**默认工艺 ⇒ 返回 {@code null}，
+     * 由 {@link #resolveRoute} 走 T3 fail-closed（错误码 + suggestion 指名去「工艺配置」设默认），
+     * **绝不**静默取常量 {@code 韩褶}（商户只做打孔时会插错工序 + 算错计件系数 = 错发工资）。</p>
      *
      * <p><b>⚠️ 派生路径**不退场**（用户裁定 2026-09-19「部位不是必填的」）</b>：S1 的字段全部可空
      * ⇒「没填部位/工艺的单」永远存在 ⇒ 第 2/3 层与信号映射表是**长期**兜底，**不是**临时桥。
@@ -984,7 +1208,7 @@ public class ProcessingOrderService {
      * 第 3 层同样**不是**可删项：它是「商家自定义加工项」的兜底面（issue #4308 已做成商家可配）。</p>
      *
      * <p><b>为什么不校验显式字段的值</b>：它是订单侧已落库的真值，Java 只读不猜、不归一
-     * （错值/库里无该路线 ⇒ 由 {@link #resolveRoute} 的 T2 显式落 {@code missing_route}
+     * （错值/库里无该部位模板 ⇒ 由 {@link #resolveRoute} 的 T2 显式落 {@code missing_route}
      * 并记 incident 日志，绝不静默）。空白键（{@code " "}）视为**缺键**（{@code str} 会 trim）——
      * 否则会造出「{@code  ×韩褶}」这种不存在的键。</p>
      *
@@ -993,9 +1217,9 @@ public class ProcessingOrderService {
      * （来源记 {@code partial}）。</p>
      *
      * <p><b>来源四态（V60，issue #4308 冻结口径；落 {@code processing_orders.route_source}）</b>：
-     * {@code derived} = 两维都由库中信号映射命中且路线在库中存在；{@code partial} = 只命中/只直读一维；
+     * {@code derived} = 两维都由库中信号映射命中；{@code partial} = 只命中/只直读一维；
      * {@code default} = 两维全不命中（T1）。**本方法只产出这三态 + issue #4354 新增的 {@code direct}**；
-     * 第五态 {@code missing_route}（T2 = 键在库中无路线而回落默认路线）由 {@link #resolveRoute}
+     * 第五态 {@code missing_route}（T2 = 部位无模板而回落默认模板）由 {@link #resolveRoute}
      * 在回落时引入 —— 否则「回落过」与「本来就没派生」在数据上长得一模一样，
      * 而前者是错配高发形态。</p>
      */
@@ -1012,7 +1236,13 @@ public class ProcessingOrderService {
         List<ProductionRouteSignal> mappings = productionOperationQueryService.routeSignals(tenantId);
         String curtainType = directCurtainType != null
                 ? directCurtainType : firstSignalMatch(signals, mappings, true);
-        String craft = directCraft != null ? directCraft : firstSignalMatch(signals, mappings, false);
+        // 缺 `craft` 的兜底 = **该租户的默认工艺**（商家可配，issue #4459）。查不到 ⇒ null（T3 fail-closed）。
+        String defaultCraft = productionOperationQueryService.defaultCraft(tenantId);
+        String craft = directCraft != null
+                ? directCraft : firstSignalMatch(signals, mappings, false);
+        if (craft == null) {
+            craft = defaultCraft;
+        }
         String source;
         if (curtainType != null && craft != null) {
             // 有一维是直读的 ⇒ 补救动作 = 去信号映射补另一维（与「两维都派生」的 derived 区分开）
@@ -1022,9 +1252,7 @@ public class ProcessingOrderService {
         } else {
             source = "default";
         }
-        return new RouteKey(curtainType == null ? DEFAULT_CURTAIN_TYPE : curtainType,
-                craft == null ? DEFAULT_CRAFT : craft,
-                source);
+        return new RouteKey(curtainType == null ? DEFAULT_CURTAIN_TYPE : curtainType, craft, source);
     }
 
     /**
@@ -1102,7 +1330,7 @@ public class ProcessingOrderService {
      * 一次路线解析的结果：**实际使用**的路线 + **派生出来想用**的键 + 来源（V60，issue #4308）。
      * 三者必须同源返回 —— 分两次算必然漂移（「用的路线」与「记下来的键」对不上就白记了）。
      *
-     * @param routeKey          实际使用的路线键（T1/T2 时 = 默认 布帘×韩褶）
+     * @param routeKey          实际使用的路线键（= 派生出来的那个；T1 时 = 布帘×该租户默认工艺）
      * @param routeRequestedKey 想用的路线键（派生/直读出来的那个）；两维全不命中（source=default）时 null
      * @param routeSource       direct / derived / partial / missing_route / default
      */

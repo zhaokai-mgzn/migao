@@ -113,6 +113,14 @@ class ProductionControllerTest {
     @Mock
     private com.migao.admin.mapper.ProductionRouteSignalMapper productionRouteSignalMapper;
     @Mock
+    private com.migao.admin.mapper.ProductionRouteTemplateMapper productionRouteTemplateMapper;
+    @Mock
+    private com.migao.admin.mapper.ProductionRouteRuleMapper productionRouteRuleMapper;
+    @Mock
+    private com.migao.admin.mapper.ProductionOperationPositionMapper productionOperationPositionMapper;
+    @Mock
+    private com.migao.admin.mapper.ProductionCraftMapper productionCraftMapper;
+    @Mock
     private com.migao.admin.mapper.ProductionRoutingVersionMapper routingVersionMapper;
     @Mock
     private ProductionOperationPriceVersionMapper priceVersionMapper;
@@ -140,9 +148,9 @@ class ProductionControllerTest {
         // 工序库读面用**真实对象**（只 mock Mapper）：PUT 的响应形态 = 目录项形态（同一份
         // operationView），用 mock 会让「返回更新后的工序」退化成断言桩。
         ProductionOperationQueryService queryService =
-                new ProductionOperationQueryService(productionOperationMapper, productionRoutingMapper,
-                        productionOptionRoutingMapper, productionOptionFactorMapper,
-                       productionRouteSignalMapper);
+                new ProductionOperationQueryService(productionOperationMapper, productionRouteTemplateMapper,
+                        productionRouteRuleMapper, productionOperationPositionMapper,
+                        productionCraftMapper, productionRouteSignalMapper);
         // 存量单补工序（#4202）的派生走 ProcessingOrderService（工序库路线），故装配真实对象：
         // 与 generate 路径**同一份**路线解析（不复制第二份）。
         ProcessingOrderService processingOrderService = new ProcessingOrderService(
@@ -152,7 +160,7 @@ class ProductionControllerTest {
                 productionOperationMapper, priceVersionMapper, queryService);
         // 路线/信号写面（issue #4308）：真实对象（只 mock Mapper），响应形态 = 路线展示形态（同一份）
         ProductionRoutingCommandService routingCommandService = new ProductionRoutingCommandService(
-                productionRoutingMapper, routingVersionMapper, productionOperationMapper,
+                productionRouteTemplateMapper, routingVersionMapper, productionOperationMapper,
                 productionRouteSignalMapper, queryService);
         // 加工费组合定价（issue #4386）：真实服务（只 mock Mapper），写面响应形态 = 列表项形态
         // （同一份 combinationView）。控制器里这两个依赖是**字段注入**（不动既有 6 参构造），

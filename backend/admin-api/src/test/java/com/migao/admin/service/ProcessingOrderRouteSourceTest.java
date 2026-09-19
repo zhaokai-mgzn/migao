@@ -192,52 +192,38 @@ class ProcessingOrderRouteSourceTest {
                 .status("active").deleted(0).build();
     }
 
-    /** 路线库桩：只有 布帘×韩褶(11) / 纱帘×韩褶(6) / 帘头×平幔(7)；其余键返回 null（= 库里没有）。 */
+    /**
+     * 路线库桩（**新结构**，P2b / issue #4459）：默认路线模板 + 规则 26 行 + 部位价目 + 工序库。
+     *
+     * <p>与旧桩的差别：旧桩把 9 条「{@code (部位×工艺)} 展开快照」直接塞给 {@code findRouting}；
+     * 新桩只给**输入**，展开由生产代码做（{@code ProcessingOrderService.buildRoute}）。</p>
+     *
+     * <p><b>T2 的形态随之变化</b>：旧结构里「库里没有 罗马帘×韩褶 这条路线」；新结构里路线模板
+     * 只有「适用哪些帘种」这一维 ⇒ 「该部位没有模板」（罗马帘/帘头）就是 T2。默认模板**必须有**
+     * （否则 T3 fail-closed），故模板的 {@code positions} 收窄为 布帘/纱帘。</p>
+     */
     private void stubRoutings() {
-        when(productionOperationQueryService.findRouting(eq(TENANT), anyString(), anyString()))
-                .thenAnswer(inv -> route(inv.getArgument(1), inv.getArgument(2)));
-    }
-
-    private static Map<String, Object> route(String curtainType, String craft) {
-        String[][] steps = switch (curtainType + "×" + craft) {
-            case "布帘×韩褶" -> new String[][]{
-                    {"精裁-布", "裁剪", "米", "0.4", "false", "true"},
-                    {"布三边", "车位", "米", "0.4", "false", "false"},
-                    {"韩褶-布", "车位", "折", "0.4", "false", "false"},
-                    {"外帘装袋", "后道", "套", "1.0", "true", "false"},
-                    {"外帘发货", "后道", "套", "1.0", "false", "false"}};
-            case "纱帘×韩褶" -> new String[][]{
-                    {"精裁-纱", "裁剪", "米", "0.4", "false", "true"},
-                    {"纱三边", "车位", "米", "0.4", "false", "false"},
-                    {"韩褶-纱", "车位", "折", "0.4", "false", "false"}};
-            case "帘头×平幔" -> new String[][]{
-                    {"精裁-布", "裁剪", "米", "0.4", "false", "true"},
-                    {"帘头制作", "车位", "个", "2.0", "false", "false"}};
-            default -> null;
-        };
-        if (steps == null) {
-            return null;
-        }
-        List<Map<String, Object>> operations = new ArrayList<>();
-        int seq = 1;
-        for (String[] step : steps) {
-            Map<String, Object> view = new LinkedHashMap<>();
-            view.put("seq", seq++);
-            view.put("operation", step[0]);
-            view.put("group", step[1]);
-            view.put("unit", step[2]);
-            view.put("unit_price", new BigDecimal(step[3]));
-            view.put("is_must_finish", Boolean.valueOf(step[4]));
-            view.put("is_start_marker", Boolean.valueOf(step[5]));
-            operations.add(view);
-        }
-        Map<String, Object> route = new LinkedHashMap<>();
-        route.put("curtain_type", curtainType);
-        route.put("craft", craft);
-        route.put("operation_count", operations.size());
-        route.put("missing_operations", List.of());
-        route.put("operations", operations);
-        return route;
+        lenient().when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString()))
+                .thenAnswer(inv -> {
+                    String position = inv.getArgument(1);
+                    // 只有 布帘/纱帘 有路线模板（罗马帘/帘头没有 ⇒ T2 回落默认模板）
+                    return "布帘".equals(position) || "纱帘".equals(position)
+                            ? RoutingModelFixture.defaultTemplate(TENANT) : null;
+                });
+        lenient().when(productionOperationQueryService.defaultRouteTemplate(TENANT))
+                .thenReturn(RoutingModelFixture.defaultTemplate(TENANT));
+        lenient().when(productionOperationQueryService.routeRules(TENANT))
+                .thenReturn(RoutingModelFixture.rulesWithFactors(TENANT));
+        lenient().when(productionOperationQueryService.operationPositions(TENANT))
+                .thenReturn(RoutingModelFixture.canonicalPositions(TENANT));
+        lenient().when(productionOperationQueryService.operationsByName(TENANT))
+                .thenReturn(RoutingModelFixture.catalog());
+        lenient().when(productionOperationQueryService.defaultCraft(TENANT)).thenReturn("韩褶");
+        lenient().when(productionOperationQueryService.normalizeOperationName(anyString()))
+                .thenAnswer(inv -> RoutingModelFixture.logicalName(inv.getArgument(0)));
+        lenient().when(productionOperationQueryService.variantNameOf(anyString(), any(), any()))
+                .thenAnswer(inv -> RoutingModelFixture.variantNameOf(
+                        inv.getArgument(0), inv.getArgument(1), inv.getArgument(2)));
     }
 
     /** 订单/明细/主键回填的公共桩；返回捕获**落库行**的容器。 */
@@ -255,8 +241,12 @@ class ProcessingOrderRouteSourceTest {
             poRef.set(inserted);
             return 1;
         });
-        lenient().when(productionOperationQueryService.optionRoutings(TENANT)).thenReturn(List.of());
-        lenient().when(productionOperationQueryService.optionFactors(TENANT)).thenReturn(List.of());
+        lenient().when(productionOperationQueryService.routeRules(TENANT))
+                .thenReturn(RoutingModelFixture.rulesWithFactors(TENANT));
+        lenient().when(productionOperationQueryService.operationPositions(TENANT))
+                .thenReturn(RoutingModelFixture.canonicalPositions(TENANT));
+        lenient().when(productionOperationQueryService.operationsByName(TENANT))
+                .thenReturn(RoutingModelFixture.catalog());
         return poRef;
     }
 

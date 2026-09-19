@@ -7,14 +7,22 @@ import com.migao.admin.config.IndustryCodes;
 import com.migao.admin.dto.ProductionSeedTemplateInfo;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
+import com.migao.admin.entity.ProductionCraft;
+import com.migao.admin.entity.ProductionOperationPosition;
 import com.migao.admin.entity.ProductionOptionFactor;
 import com.migao.admin.entity.ProductionOptionRouting;
+import com.migao.admin.entity.ProductionRouteRule;
+import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionRouting;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.ProductionCraftMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
+import com.migao.admin.mapper.ProductionOperationPositionMapper;
 import com.migao.admin.mapper.ProductionOperationPriceVersionMapper;
 import com.migao.admin.mapper.ProductionOptionFactorMapper;
 import com.migao.admin.mapper.ProductionOptionRoutingMapper;
+import com.migao.admin.mapper.ProductionRouteRuleMapper;
+import com.migao.admin.mapper.ProductionRouteTemplateMapper;
 import com.migao.admin.mapper.ProductionRoutingMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -76,11 +84,186 @@ public class ProductionSeedTemplateService {
     public static final Set<String> ROUTING_SOURCES = Set.of("占位待确认", "推算", "实证");
 
     private final ProductionOperationMapper productionOperationMapper;
+    // ── 旧两表（P2b 起**只读**：作为新结构种子的数据源；行已由 V73 软删，不再是消费真值源）──
     private final ProductionRoutingMapper productionRoutingMapper;
     private final ProductionOptionRoutingMapper productionOptionRoutingMapper;
     private final ProductionOptionFactorMapper productionOptionFactorMapper;
+    // ── 新结构（P2b，issue #4459 §1④）：开租必须种「默认路线 + 默认工艺」，否则新租户零默认 ⇒ 建单全 fail-closed ──
+    private final ProductionRouteTemplateMapper productionRouteTemplateMapper;
+    private final ProductionOperationPositionMapper productionOperationPositionMapper;
+    private final ProductionRouteRuleMapper productionRouteRuleMapper;
+    private final ProductionCraftMapper productionCraftMapper;
     /** 单价版本账（V55 口径「当前价 = 最新版本行」）——不补 ⇒ 模板套出来的工序在改价/追溯面没有价。 */
     private final ProductionOperationPriceVersionMapper priceVersionMapper;
+
+    /** 规范主线（9 道，**不含**工艺槽位）；与 {@code routing.py::ROUTE_MAINLINE_STEPS} 逐字同源。 */
+    private static final List<String> ROUTE_MAINLINE_STEPS = List.of(
+            "精裁", "三边", "熨烫", "定型", "复烫", "车被", "外帘打卷", "外帘装袋", "外帘发货");
+
+    /** 默认路线模板名（与 V71/V72 种子逐字一致：同租户活跃路线不得重名 ⇒ 名字必须稳定）。 */
+    private static final String ROUTE_TEMPLATE_NAME_DEFAULT = "窗帘工序路线（默认）";
+
+    /** 规范工艺词表（默认工艺的候选序；与 V72 迁移的 {@code unnest(ARRAY[...])} 逐字一致）。 */
+    private static final List<String> CRAFT_VOCABULARY = List.of("韩褶", "打孔", "四爪钩", "穿杆", "平幔");
+
+    /** 旧工序名 → 逻辑工序名（35 条；与 {@code routing.py::OPERATION_LOGICAL_NAMES} 逐字同源）。 */
+    private static final Map<String, String> LOGICAL_NAMES = logicalNames();
+
+    /**
+     * 规范工艺变体规则（10 条）：{@code {trigger_value, position|NULL, action, operation, after|NULL}}。
+     *
+     * <p>与 {@code routing.py::ROUTE_RULES} 的 {@code trigger_kind='craft'} 部分逐条同源
+     * （{@code priority} 由播种顺序 10/20/… 生成，与 V71/V72 种子同值）。</p>
+     */
+    private static final String[][] CRAFT_RULES = {
+            {"韩褶", "NULL", "insert", "韩褶", "三边"},
+            {"韩褶", "布帘", "insert", "上车布", "韩褶"},
+            {"打孔", "NULL", "insert", "打孔", "三边"},
+            {"四爪钩", "NULL", "insert", "上车布", "三边"},
+            {"四爪钩", "NULL", "remove", "定型", "NULL"},
+            {"四爪钩", "NULL", "remove", "复烫", "NULL"},
+            {"穿杆", "NULL", "remove", "定型", "NULL"},
+            {"穿杆", "NULL", "remove", "复烫", "NULL"},
+            {"平幔", "NULL", "insert", "帘头制作", "三边"},
+            {"平幔", "NULL", "remove", "复烫", "NULL"},
+    };
+
+    /**
+     * 部位价目 + 适用性矩阵（**84 行** = 28 逻辑工序 × 3 部位）：
+     * {@code {logical_name, position, unit_price|NULL, applicable}}。
+     *
+     * <p>P1（#4427）冻结的**规范矩阵**的一次快照，与 {@code routing.py::OPERATION_POSITION_PRICES} /
+     * V71 的 84 行种子逐行同值（三源收敛由 {@code test_production_catalog_seed.py} 守）。
+     * 开租播种需要它：新租户不走迁移链（V72 的按租户回填只覆盖**存量**租户）⇒
+     * 没有本表就取不到 `applicable` ⇒ 主线被全部滤掉 ⇒ 实例化零工序。</p>
+     */
+    private static final String[][] CANONICAL_POSITION_PRICES = {
+            {"精裁", "布帘", "0.4", "true"},
+            {"精裁", "纱帘", "0.4", "true"},
+            {"精裁", "帘头", "0.4", "true"},
+            {"裁剪", "布帘", "0.4", "true"},
+            {"裁剪", "纱帘", "0.4", "true"},
+            {"裁剪", "帘头", "0.4", "true"},
+            {"三边", "布帘", "0.4", "true"},
+            {"三边", "纱帘", "0.4", "true"},
+            {"三边", "帘头", "0.4", "true"},
+            {"韩褶", "布帘", "0.4", "true"},
+            {"韩褶", "纱帘", "0.4", "true"},
+            {"韩褶", "帘头", "0.4", "true"},
+            {"上车布", "布帘", "0.5", "true"},
+            {"上车布", "纱帘", "0.5", "true"},
+            {"上车布", "帘头", null, "false"},
+            {"打孔", "布帘", "0.15", "true"},
+            {"打孔", "纱帘", "0.15", "true"},
+            {"打孔", "帘头", "0.15", "true"},
+            {"拼1次", "布帘", "0.8", "true"},
+            {"拼1次", "纱帘", null, "false"},
+            {"拼1次", "帘头", null, "false"},
+            {"拼2次", "布帘", "1.2", "true"},
+            {"拼2次", "纱帘", null, "false"},
+            {"拼2次", "帘头", null, "false"},
+            {"拼3次", "布帘", "1.6", "true"},
+            {"拼3次", "纱帘", null, "false"},
+            {"拼3次", "帘头", null, "false"},
+            {"花边", "布帘", "0.6", "true"},
+            {"花边", "纱帘", null, "false"},
+            {"花边", "帘头", null, "false"},
+            {"铅坠", "布帘", "0.3", "true"},
+            {"铅坠", "纱帘", null, "false"},
+            {"铅坠", "帘头", null, "false"},
+            {"接高", "布帘", "1.0", "true"},
+            {"接高", "纱帘", null, "false"},
+            {"接高", "帘头", null, "false"},
+            {"帘头制作", "布帘", null, "false"},
+            {"帘头制作", "纱帘", null, "false"},
+            {"帘头制作", "帘头", "2.0", "true"},
+            {"熨烫", "布帘", "0.35", "true"},
+            {"熨烫", "纱帘", null, "false"},
+            {"熨烫", "帘头", null, "false"},
+            {"定型", "布帘", "0.4", "true"},
+            {"定型", "纱帘", null, "false"},
+            {"定型", "帘头", "0.4", "true"},
+            {"复烫", "布帘", "0.35", "true"},
+            {"复烫", "纱帘", null, "false"},
+            {"复烫", "帘头", null, "false"},
+            {"车被", "布帘", "0.4", "true"},
+            {"车被", "纱帘", null, "false"},
+            {"车被", "帘头", null, "false"},
+            {"外帘打卷", "布帘", "1.0", "true"},
+            {"外帘打卷", "纱帘", "1.0", "true"},
+            {"外帘打卷", "帘头", "1.0", "true"},
+            {"外帘装袋", "布帘", "1.0", "true"},
+            {"外帘装袋", "纱帘", "1.0", "true"},
+            {"外帘装袋", "帘头", "1.0", "true"},
+            {"质检", "布帘", "1.5", "true"},
+            {"质检", "纱帘", "1.5", "true"},
+            {"质检", "帘头", "1.5", "true"},
+            {"外帘发货", "布帘", "1.0", "true"},
+            {"外帘发货", "纱帘", "1.0", "true"},
+            {"外帘发货", "帘头", "1.0", "true"},
+            {"绑带", "布帘", "0.5", "true"},
+            {"绑带", "纱帘", "0.5", "true"},
+            {"绑带", "帘头", null, "false"},
+            {"抱枕", "布帘", "2.0", "true"},
+            {"抱枕", "纱帘", "2.0", "true"},
+            {"抱枕", "帘头", "2.0", "true"},
+            {"腰靠垫", "布帘", "2.0", "true"},
+            {"腰靠垫", "纱帘", "2.0", "true"},
+            {"腰靠垫", "帘头", "2.0", "true"},
+            {"logo条", "布帘", "0.6", "true"},
+            {"logo条", "纱帘", null, "false"},
+            {"logo条", "帘头", null, "false"},
+            {"立边", "布帘", "0.5", "true"},
+            {"立边", "纱帘", null, "false"},
+            {"立边", "帘头", null, "false"},
+            {"扣环", "布帘", "0.3", "true"},
+            {"扣环", "纱帘", null, "false"},
+            {"扣环", "帘头", null, "false"},
+            {"防翘扣", "布帘", "0.2", "true"},
+            {"防翘扣", "纱帘", null, "false"},
+            {"防翘扣", "帘头", null, "false"},
+    };
+
+    /** 旧工序名 → 逻辑工序名（逐条写出；{@code 布三边}/{@code 布帘车被} 这类不规则名用规则推导会漏）。 */
+    private static Map<String, String> logicalNames() {
+        Map<String, String> names = new java.util.LinkedHashMap<>();
+        names.put("精裁-布", "精裁");
+        names.put("精裁-纱", "精裁");
+        names.put("裁剪-布", "裁剪");
+        names.put("裁剪-纱", "裁剪");
+        names.put("布三边", "三边");
+        names.put("纱三边", "三边");
+        names.put("韩褶-布", "韩褶");
+        names.put("韩褶-纱", "韩褶");
+        names.put("上车布-布", "上车布");
+        names.put("上车布-纱", "上车布");
+        names.put("打孔-布", "打孔");
+        names.put("打孔-纱", "打孔");
+        names.put("拼1次-布", "拼1次");
+        names.put("拼2次-布", "拼2次");
+        names.put("拼3次-布", "拼3次");
+        names.put("花边-布", "花边");
+        names.put("铅坠-布", "铅坠");
+        names.put("接高-布", "接高");
+        names.put("帘头制作", "帘头制作");
+        names.put("熨烫-布", "熨烫");
+        names.put("定型-布", "定型");
+        names.put("复烫-布", "复烫");
+        names.put("布帘车被", "车被");
+        names.put("外帘打卷", "外帘打卷");
+        names.put("外帘装袋", "外帘装袋");
+        names.put("质检", "质检");
+        names.put("外帘发货", "外帘发货");
+        names.put("绑带-布", "绑带");
+        names.put("抱枕", "抱枕");
+        names.put("腰靠垫", "腰靠垫");
+        names.put("绑带-纱", "绑带");
+        names.put("logo条-布", "logo条");
+        names.put("立边-布", "立边");
+        names.put("扣环-布", "扣环");
+        names.put("防翘扣-布", "防翘扣");
+        return Map.copyOf(names);
+    }
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -171,19 +354,250 @@ public class ProductionSeedTemplateService {
                     .deleted(0)
                     .build());
         }
-        newRoutings.forEach(productionRoutingMapper::insert);
-        newOptions.forEach(productionOptionRoutingMapper::insert);
-        newFactors.forEach(productionOptionFactorMapper::insert);
 
-        log.info("套用生产种子模板: templateId={}, tenantId={}, operations={}, routings={}, "
-                        + "options={}, factors={}, skipped={}",
+        // ── 新结构（P2b，issue #4459 §1④）────────────────────────────────────────────
+        // 🔴 **P0**：消费路径已切到新结构 ⇒ 新租户**零默认路线**时 `resolveRoute` T3 fail-closed
+        // ⇒ 该租户一张加工单也生成不了。故开租播种必须同时种：默认路线模板 + 默认工艺
+        // + 部位价目/适用性 + 规则表。
+        // 数据源：① 部位价目 = **规范矩阵**（P1 冻结的 84 行，逐条溯源到 routing.py::OPERATION_POSITION_PRICES）；
+        //        ② 主线/规则 = 模板 JSON 的 routings / option_routings 经**逻辑名归一**后过滤到本租户工序库。
+        // 幂等：一律按业务唯一键先查后插（第二次套用零 insert）。
+        List<ProductionOperationPosition> newPositions = planPositions(tenantId);
+        List<ProductionRouteTemplate> newTemplates = planRouteTemplates(tenantId, template);
+        List<ProductionRouteRule> newRules = planRouteRules(tenantId, template);
+        List<ProductionCraft> newCrafts = planCrafts(tenantId, template);
+
+        // 旧两表**不再写入**（P2b 起它们已退场：活跃行由 V73 软删，消费真值源 = 新结构）
+        newPositions.forEach(productionOperationPositionMapper::insert);
+        newTemplates.forEach(productionRouteTemplateMapper::insert);
+        newRules.forEach(productionRouteRuleMapper::insert);
+        newCrafts.forEach(productionCraftMapper::insert);
+
+        log.info("套用生产种子模板: templateId={}, tenantId={}, operations={}, 旧路线={}, 旧选项={}, 旧系数={}, "
+                        + "新-部位价目={}, 新-路线模板={}, 新-规则={}, 新-工艺={}, skipped={}",
                 templateId, tenantId, newOperations.size(), newRoutings.size(),
-                newOptions.size(), newFactors.size(), skipped);
+                newOptions.size(), newFactors.size(), newPositions.size(), newTemplates.size(),
+                newRules.size(), newCrafts.size(), skipped);
 
         Map<String, Object> result = result(templateId, true, null,
-                newOperations.size(), newRoutings.size(), newOptions.size(), skipped);
+                newOperations.size(), newTemplates.size(), newOptions.size(), skipped);
         result.put("created_option_factors", newFactors.size());
+        result.put("created_positions", newPositions.size());
+        result.put("created_route_rules", newRules.size());
+        result.put("created_crafts", newCrafts.size());
+        result.put("created_default_route", newTemplates.isEmpty() ? 0 : 1);
         return result;
+    }
+
+    // ══════════════════════ 新结构播种（P2b，issue #4459 §1④） ══════════════════════
+
+    /**
+     * 部位价目 + 适用性（规范矩阵，84 行 = 28 逻辑工序 × 3 部位）。
+     *
+     * <p>与 V71/V72 的种子**同一份规范矩阵**（P1 冻结、逐条溯源到
+     * {@code routing.py::OPERATION_POSITION_PRICES}）—— 三源收敛由
+     * {@code tests/unit_ci_workflows/test_production_catalog_seed.py} 守。</p>
+     *
+     * <p>过滤：只种该租户工序库里**归一后存在**的逻辑工序（否则价目行永远取不到变体名，
+     * 是「已落库但永不生效」的黑洞 —— 与 V72 的规则过滤同口径）。</p>
+     */
+    private List<ProductionOperationPosition> planPositions(Long tenantId) {
+        Set<String> existing = new LinkedHashSet<>();
+        List<ProductionOperationPosition> rows = productionOperationPositionMapper.selectList(
+                new LambdaQueryWrapper<ProductionOperationPosition>()
+                        .eq(ProductionOperationPosition::getTenantId, tenantId)
+                        .eq(ProductionOperationPosition::getDeleted, 0));
+        if (rows != null) {
+            rows.forEach(r -> existing.add(r.getLogicalName() + "×" + r.getPosition()));
+        }
+        Set<String> available = logicalNamesOf(tenantId);
+        List<ProductionOperationPosition> plan = new ArrayList<>();
+        for (String[] row : CANONICAL_POSITION_PRICES) {
+            String logical = row[0];
+            String position = row[1];
+            if (!available.contains(logical) || existing.contains(logical + "×" + position)) {
+                continue;
+            }
+            plan.add(ProductionOperationPosition.builder()
+                    .tenantId(tenantId)
+                    .logicalName(logical)
+                    .position(position)
+                    .unitPrice(row[2] == null ? null : new BigDecimal(row[2]))
+                    .applicable(Boolean.parseBoolean(row[3]))
+                    .status("active")
+                    .createdAt(OffsetDateTime.now())
+                    .updatedAt(OffsetDateTime.now())
+                    .deleted(0)
+                    .build());
+        }
+        return plan;
+    }
+
+    /**
+     * 默认路线模板（**恰一条**：{@code is_default = TRUE}，主线 = 规范 9 道 ∩ 本租户工序库）。
+     *
+     * <p>主线取**规范顺序**（{@code routing.py::ROUTE_MAINLINE_STEPS}）而不是模板 JSON 里
+     * 9 条旧路线的并集 —— 顺序是车间实际走线，且新模型只有一条主线。</p>
+     */
+    private List<ProductionRouteTemplate> planRouteTemplates(Long tenantId, JsonNode template) {
+        List<ProductionRouteTemplate> existing = productionRouteTemplateMapper.selectList(
+                new LambdaQueryWrapper<ProductionRouteTemplate>()
+                        .eq(ProductionRouteTemplate::getTenantId, tenantId)
+                        .eq(ProductionRouteTemplate::getDeleted, 0));
+        if (existing != null && !existing.isEmpty()) {
+            return List.of();   // 幂等键 = (tenant_id, name)（与 V49 的部分唯一索引同口径）
+        }
+        Set<String> available = logicalNamesOf(tenantId);
+        List<String> mainline = new ArrayList<>();
+        for (String step : ROUTE_MAINLINE_STEPS) {
+            if (available.contains(step)) {
+                mainline.add(step);
+            }
+        }
+        return List.of(ProductionRouteTemplate.builder()
+                .tenantId(tenantId)
+                .name(ROUTE_TEMPLATE_NAME_DEFAULT)
+                .isDefault(true)
+                .positions(List.of("布帘", "纱帘", "帘头"))
+                .mainline(mainline)
+                .status("active")
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .deleted(0)
+                .build());
+    }
+
+    /**
+     * 规则表（工艺变体 + 特殊选项 + 计件系数档）。
+     *
+     * <p>数据源 = 模板 JSON 的 {@code option_routings} / {@code option_factors} + 规范工艺变体规则；
+     * **工序名与锚点都归一为逻辑名**（不归一 ⇒ 锚点在逻辑名序列里找不到 ⇒ 条件工序静默追加末尾）。</p>
+     */
+    private List<ProductionRouteRule> planRouteRules(Long tenantId, JsonNode template) {
+        Set<String> existing = new LinkedHashSet<>();
+        List<ProductionRouteRule> rows = productionRouteRuleMapper.selectList(
+                new LambdaQueryWrapper<ProductionRouteRule>()
+                        .eq(ProductionRouteRule::getTenantId, tenantId)
+                        .eq(ProductionRouteRule::getDeleted, 0));
+        if (rows != null) {
+            rows.forEach(r -> existing.add(r.getTriggerKind() + "×" + r.getTriggerValue() + "×"
+                    + r.getAction() + "×" + (r.getOperation() == null ? "" : r.getOperation())));
+        }
+        Set<String> available = logicalNamesOf(tenantId);
+        List<ProductionRouteRule> plan = new ArrayList<>();
+        int priority = 10;
+        // ① 工艺变体（10 条，规范矩阵：与 routing.py::ROUTE_RULES 的 craft 部分逐条同源）
+        for (String[] rule : CRAFT_RULES) {
+            priority += 10;
+            addRule(plan, existing, available, tenantId, "craft", rule[0],
+                    "NULL".equals(rule[1]) ? null : rule[1], rule[2], rule[3],
+                    "NULL".equals(rule[4]) ? null : rule[4], priority, null);
+        }
+        // ② 特殊选项条件工序（模板 JSON 逐条搬迁，工序名与锚点归一为逻辑名）
+        for (JsonNode node : template.path("option_routings")) {
+            priority += 10;
+            addRule(plan, existing, available, tenantId, "option", node.path("option_name").asText(),
+                    null, "insert", logicalName(node.path("operation_name").asText()),
+                    logicalName(node.path("after_operation").asText()), priority, null);
+        }
+        // ③ 计件系数档（模板 JSON 逐条搬迁；operation_name 为空 = 平摊档 ⇒ operation 落 NULL）
+        for (JsonNode node : template.path("option_factors")) {
+            priority += 10;
+            String operationName = node.path("operation_name").isNull()
+                    ? null : logicalName(node.path("operation_name").asText());
+            addRule(plan, existing, available, tenantId, "option", node.path("option_name").asText(),
+                    null, "factor", operationName, null, priority,
+                    new BigDecimal(node.path("factor").asText("1")));
+        }
+        return plan;
+    }
+
+    private void addRule(List<ProductionRouteRule> plan, Set<String> existing, Set<String> available,
+                         Long tenantId, String kind, String trigger, String position, String action,
+                         String operation, String after, int priority, BigDecimal factor) {
+        // 该租户工序库里没有这道逻辑工序 ⇒ 不种（否则规则永远插不进来 = 黑洞）
+        if (operation != null && !available.contains(operation)) {
+            return;
+        }
+        String key = kind + "×" + trigger + "×" + action + "×" + (operation == null ? "" : operation);
+        if (!existing.add(key)) {
+            return;
+        }
+        plan.add(ProductionRouteRule.builder()
+                .tenantId(tenantId)
+                .triggerKind(kind)
+                .triggerValue(trigger)
+                .position(position)
+                .action(action)
+                .operation(operation)
+                .afterOperation(after)
+                .priority(priority)
+                .factor(factor)
+                .status("active")
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .deleted(0)
+                .build());
+    }
+
+    /**
+     * 商户级默认工艺（**恰一条** {@code is_default}）。
+     *
+     * <p>口径与 V72 迁移逐字一致：**优先 {@code 韩褶}**（V54 起的事实默认），否则退到规范工艺词表里
+     * 第一个该租户确实有工序的工艺，都没有 ⇒ 落 {@code 韩褶} 作为种子默认
+     * （**会落库、可在「工艺配置」改** ⇒ 不是「静默取常量」）。</p>
+     */
+    private List<ProductionCraft> planCrafts(Long tenantId, JsonNode template) {
+        List<ProductionCraft> existing = productionCraftMapper.selectList(
+                new LambdaQueryWrapper<ProductionCraft>()
+                        .eq(ProductionCraft::getTenantId, tenantId)
+                        .eq(ProductionCraft::getDeleted, 0));
+        if (existing != null && !existing.isEmpty()) {
+            return List.of();
+        }
+        Set<String> available = logicalNamesOf(tenantId);
+        String name = ProcessingOrderService.DEFAULT_CRAFT;
+        for (String candidate : CRAFT_VOCABULARY) {
+            if (available.contains(candidate)) {
+                name = candidate;
+                break;
+            }
+        }
+        return List.of(ProductionCraft.builder()
+                .tenantId(tenantId)
+                .name(name)
+                .isDefault(true)
+                .status("active")
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .deleted(0)
+                .build());
+    }
+
+    /** 该租户工序库里的**逻辑工序名**集合（工序库存的是旧名 ⇒ 必须归一）。 */
+    private Set<String> logicalNamesOf(Long tenantId) {
+        Set<String> names = new LinkedHashSet<>();
+        List<ProductionOperation> rows = productionOperationMapper.selectList(
+                new LambdaQueryWrapper<ProductionOperation>()
+                        .eq(ProductionOperation::getTenantId, tenantId)
+                        .eq(ProductionOperation::getDeleted, 0)
+                        .eq(ProductionOperation::getStatus, "active"));
+        if (rows != null) {
+            rows.forEach(op -> names.add(logicalName(op.getName())));
+        }
+        return names;
+    }
+
+    /**
+     * 旧工序名 → 逻辑工序名（与真值源 {@code routing.py::OPERATION_LOGICAL_NAMES} 同源；
+     * 未登记的名字原样返回）。
+     *
+     * <p>⚠️ 这是本类**唯一**的归一实现；与 {@code ProductionOperationQueryService} 的那一份
+     * 同源由 {@code ProductionOperationQueryServiceTest#logicalNameTableMatchesTruthSource} 守
+     * （本类只播种，不参与运行时实例化 ⇒ 不构成「第二份怎么展开路线」的实现）。</p>
+     */
+    private static String logicalName(String operationName) {
+        return LOGICAL_NAMES.getOrDefault(operationName, operationName);
     }
 
     // ══════════════════════ 计划（只读现状 → 算出该插哪些） ══════════════════════

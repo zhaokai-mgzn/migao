@@ -223,8 +223,12 @@ public class ProductionController {
     }
 
     /**
-     * 工艺路线模板（部位 × 工艺 → 工序序列；布帘·韩褶 = 11 道）
+     * 工艺路线模板（**具名主线 + 适用帘种 + 默认标记**，P2b / issue #4459 起为新结构）
      * GET /api/admin/production/routings
+     *
+     * <p>响应形态：{@code {total, routings:[{id, name, is_default, positions, mainline, status}]}}。
+     * 旧形态（{@code {curtain_type, craft, operations}} 的 9 条展开快照）已随 P2b 退场
+     * —— 前端由 P3（#4433）适配。</p>
      */
     @GetMapping("/routings")
     public ApiResponse<Map<String, Object>> routings() {
@@ -277,9 +281,14 @@ public class ProductionController {
     // ══════════════════════════ 工艺路线写面（issue #4308 P1）══════════════════════════
 
     /**
-     * 新建工艺路线（{@code operations} 可缺省 = 初版空序列）
+     * 新建工艺路线（{@code mainline} 可缺省 = 初版空主线）
      * POST /api/admin/production/routings
-     * body: {curtain_type, craft, operations?, status?}
+     * body: {name, mainline?, positions?, is_default?, status?}
+     *
+     * <p><b>P2b / issue #4459 形态变更</b>：写面从旧 {@code production_routings}
+     * （{@code {curtain_type, craft, operations}} 展开快照）切到
+     * {@code production_route_templates}（{@code {name, mainline, positions, is_default}}）。
+     * 工艺不再参与选路（它只触发 {@code production_route_rules}）。</p>
      *
      * <p>响应形态与 {@code GET /routings} 的单项**同构**（前端同一个 TS 类型渲染两者）。</p>
      */
@@ -291,12 +300,16 @@ public class ProductionController {
     }
 
     /**
-     * 改工艺路线序列（issue #4308 交付物 2；路线是计件工资与完工判定的唯一输入）
+     * 改工艺路线（issue #4308 交付物 2；路线是计件工资与完工判定的唯一输入）
      * PUT /api/admin/production/routings/{id}
-     * body: {operations: ["精裁-布", …], status?}
+     * body: {name?, is_default?, mainline?, positions?, status?}（**部分更新**：只写出现的字段）
      *
-     * <p><b>护栏（全部有红证）</b>：空序列拒 / 引用工序库中不存在的工序拒 / 重复工序拒 /
-     * 至少一道必完工序 / seq 归一化为 1..N / 每次变更落版本账（{@code production_routing_versions}）。
+     * <p><b>P2b / issue #4459 的 body 扩展与护栏（全部有红证）</b>：
+     * <b>改名只改 {@code name}</b>（不给 mainline 就不动序列）/ <b>{@code is_default} 恰一条</b>
+     * （置 true 时同事务把既有默认降级）/ <b>{@code is_default:false} ⇒ 422</b>
+     * （取消默认 ⇒ 该租户零默认 ⇒ 建单全 fail-closed）/ <b>停用默认路线 ⇒ 422</b> /
+     * 主线护栏（空主线拒 / 引用工序库中不存在的工序拒 / 重复工序拒 / 至少一道必完工序）/
+     * 序列真的变了才落版本账（{@code production_routing_versions}）。
      * 失败统一 **HTTP 422 + {@code error.details:[{field,message}]} 逐条理由**（一次报全）。</p>
      */
     @PutMapping("/routings/{id}")
@@ -305,6 +318,21 @@ public class ProductionController {
                                                           @RequestBody Map<String, Object> body) {
         return ApiResponse.success(productionRoutingCommandService.updateRouting(
                 id, body, TenantContext.getTenantId()));
+    }
+
+    /**
+     * 删工艺路线（**软删** {@code deleted=1}；P2b / issue #4459 新增）
+     * DELETE /api/admin/production/routings/{id}
+     *
+     * <p><b>护栏</b>：删默认 ⇒ 422（删了就是零默认 ⇒ 建单全 fail-closed）/ 删最后一条 ⇒ 422。
+     * 软删而非物理删：派生读 {@code deleted=0 AND status=active}，软删后立刻不参与选路，
+     * 而「谁在何时删掉哪条路线」是排查工序错配的唯一证据。</p>
+     */
+    @DeleteMapping("/routings/{id}")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> deleteRouting(@PathVariable String id) {
+        return ApiResponse.success(
+                productionRoutingCommandService.deleteRouting(id, TenantContext.getTenantId()));
     }
 
     // ══════════════════════════ 信号映射写面（issue #4308 交付物 3）══════════════════════
