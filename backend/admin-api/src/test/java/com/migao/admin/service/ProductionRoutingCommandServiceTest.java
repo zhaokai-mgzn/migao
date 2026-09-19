@@ -14,6 +14,7 @@ import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionRouting;
 import com.migao.admin.entity.ProductionRoutingVersion;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductionCraftMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
 import com.migao.admin.mapper.ProductionOperationPositionMapper;
@@ -76,6 +77,8 @@ class ProductionRoutingCommandServiceTest {
     @Mock
     private ProductionCraftMapper productionCraftMapper;
     @Mock
+    private ProcessingItemMapper processingItemMapper;
+    @Mock
     private ProductionRoutingVersionMapper productionRoutingVersionMapper;
     @Mock
     private ProductionOperationMapper productionOperationMapper;
@@ -109,7 +112,7 @@ class ProductionRoutingCommandServiceTest {
                 new ProductionOperationQueryService(productionOperationMapper, productionRouteTemplateMapper,
                         productionRouteRuleMapper, productionOperationPositionMapper,
                         productionCraftMapper, productionRouteSignalMapper),
-                productionRouteRuleMapper);
+                productionRouteRuleMapper, processingItemMapper);
     }
 
     @AfterEach

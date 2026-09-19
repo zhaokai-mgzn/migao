@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-035
+// case_ids: PG-018, PG-035, PG-053
 package com.migao.admin.controller;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.ProductionOperation;
+import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProductionOperationPosition;
 import com.migao.admin.entity.ProductionOperationPositionPriceVersion;
 import com.migao.admin.entity.ProductionRouteRule;
@@ -56,6 +57,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
@@ -163,12 +165,13 @@ class ProductionRoutingReadControllerTest {
                 productionOperationMapper, priceVersionMapper, productionOperationPositionMapper, queryService);
         ProductionRoutingCommandService routingCommandService = new ProductionRoutingCommandService(
                 productionRouteTemplateMapper, routingVersionMapper, productionOperationMapper,
-                queryService, productionRouteRuleMapper);
+                queryService, productionRouteRuleMapper, processingItemMapper);
         ProductionController controller = new ProductionController(service, queryService, commandService,
                 routingCommandService, processingOrderService, orderService);
         // 新读面（issue #4500）+ 矩阵写面（issue #4587 ②）：真实服务（只 mock 底层 Mapper）
         ProductionRoutingReadService routingReadService = new ProductionRoutingReadService(
-                productionOperationPositionMapper, productionRouteRuleMapper, queryService);
+                productionOperationPositionMapper, productionRouteRuleMapper, queryService,
+                processingItemMapper);
         ReflectionTestUtils.setField(controller, "productionRoutingReadService", routingReadService);
         ReflectionTestUtils.setField(controller, "productionOperationPositionCommandService",
                 new ProductionOperationPositionCommandService(productionOperationPositionMapper,
@@ -314,6 +317,76 @@ class ProductionRoutingReadControllerTest {
                 .andExpect(jsonPath("$.data[0].customer_unit_price").isEmpty())
                 // 有价的特殊选项行 ⇒ 原样透出（元/套）
                 .andExpect(jsonPath("$.data[3].customer_unit_price").value(15.00));
+    }
+
+    @Test
+    @DisplayName("GET /route-rule-options ⇒ {crafts, processing_items} 取值域（issue #4616；规则创建弹窗用）")
+    void routeRuleOptionsReturnsTriggerVocabulary() throws Exception {
+        when(productionCraftMapper.selectList(any())).thenReturn(List.of(
+                com.migao.admin.entity.ProductionCraft.builder().id("pc-1").tenantId(TENANT)
+                        .name("罗马帘").isDefault(false).status("active").deleted(0).build(),
+                com.migao.admin.entity.ProductionCraft.builder().id("pc-2").tenantId(TENANT)
+                        .name("韩褶").isDefault(true).status("active").deleted(0).build()));
+        when(processingItemMapper.selectList(any())).thenReturn(List.of(
+                ProcessingItem.builder().id("pi-1").tenantId(TENANT).name("花边")
+                        .status("active").deleted(0).build(),
+                ProcessingItem.builder().id("pi-2").tenantId(TENANT).name("拼接")
+                        .status("active").deleted(0).build()));
+
+        mockMvc.perform(get("/api/admin/production/route-rule-options"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.crafts[0]").value("罗马帘"))
+                .andExpect(jsonPath("$.data.crafts[1]").value("韩褶"))
+                .andExpect(jsonPath("$.data.processing_items[0]").value("花边"))
+                .andExpect(jsonPath("$.data.processing_items[1]").value("拼接"));
+    }
+
+    @Test
+    @DisplayName("POST /route-rules（trigger_kind=craft）⇒ 200 + 落库 trigger_kind='craft'（issue #4616 通用化）")
+    void createRouteRuleAcceptsCraftTriggerKind() throws Exception {
+        when(productionCraftMapper.selectList(any())).thenReturn(List.of(
+                com.migao.admin.entity.ProductionCraft.builder().id("pc-1").tenantId(TENANT)
+                        .name("罗马帘").isDefault(false).status("active").deleted(0).build()));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operation("op-1", "三边", "车位", "米", "0.4", "position")));
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of());
+
+        mockMvc.perform(post("/api/admin/production/route-rules")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"trigger_kind\":\"craft\",\"trigger_value\":\"罗马帘\","
+                                + "\"operation\":\"三边\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.trigger_kind").value("craft"))
+                .andExpect(jsonPath("$.data.trigger_value").value("罗马帘"))
+                .andExpect(jsonPath("$.data.action").value("insert"));
+
+        ArgumentCaptor<ProductionRouteRule> captor = ArgumentCaptor.forClass(ProductionRouteRule.class);
+        verify(productionRouteRuleMapper).insert(captor.capture());
+        assertThat(captor.getValue().getTriggerKind()).isEqualTo("craft");
+        assertThat(captor.getValue().getCustomerUnitPrice()).isNull();
+    }
+
+    @Test
+    @DisplayName("POST /route-rules：craft 带对客单价 ⇒ 422 + error.details 逐条（两套账不互读）")
+    void createRouteRuleRejectsCustomerPriceOnCraft() throws Exception {
+        when(productionCraftMapper.selectList(any())).thenReturn(List.of(
+                com.migao.admin.entity.ProductionCraft.builder().id("pc-1").tenantId(TENANT)
+                        .name("罗马帘").isDefault(false).status("active").deleted(0).build()));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operation("op-1", "三边", "车位", "米", "0.4", "position")));
+
+        mockMvc.perform(post("/api/admin/production/route-rules")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"trigger_kind\":\"craft\",\"trigger_value\":\"罗马帘\","
+                                + "\"operation\":\"三边\",\"customer_unit_price\":\"5.00\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.details[0].field").value("customer_unit_price"))
+                .andExpect(jsonPath("$.error.details[0].message").isNotEmpty());
+
+        verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
     }
 
     @Test

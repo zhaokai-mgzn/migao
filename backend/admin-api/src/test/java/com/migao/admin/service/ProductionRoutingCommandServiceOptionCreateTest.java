@@ -1,11 +1,12 @@
 package com.migao.admin.service;
 
-// case_ids: PG-032, PG-033
+// case_ids: PG-032, PG-033, PG-053
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionRouteRule;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductionCraftMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
 import com.migao.admin.mapper.ProductionOperationPositionMapper;
@@ -75,6 +76,8 @@ class ProductionRoutingCommandServiceOptionCreateTest {
     private ProductionOperationMapper productionOperationMapper;
     @Mock
     private ProductionRouteSignalMapper productionRouteSignalMapper;
+    @Mock
+    private ProcessingItemMapper processingItemMapper;
 
     private ProductionRoutingCommandService service;
 
@@ -86,7 +89,7 @@ class ProductionRoutingCommandServiceOptionCreateTest {
                 new ProductionOperationQueryService(productionOperationMapper, productionRouteTemplateMapper,
                         productionRouteRuleMapper, productionOperationPositionMapper,
                         productionCraftMapper, productionRouteSignalMapper),
-                productionRouteRuleMapper);
+                productionRouteRuleMapper, processingItemMapper);
         // 工序库：3 道（**变体名**口径 —— 库里存的是「三边/精裁」这类裸逻辑名与「精裁-布」变体名）
         lenient().when(productionOperationMapper.selectList(any())).thenReturn(List.of(
                 op("op-1", "三边"), op("op-2", "精裁-布"), op("op-3", "外帘打卷")));
@@ -192,7 +195,9 @@ class ProductionRoutingCommandServiceOptionCreateTest {
                     BusinessException e = (BusinessException) thrown;
                     assertThat(e.getHttpStatus()).isEqualTo(422);
                     assertThat(e.getDetails()).extracting("field").containsExactly("operation");
-                    assertThat(e.getMessage()).contains("不在工序库里");
+                    // 通用化后一句话摘要改为「条件工序规则校验未通过」，**逐条理由**仍在 details 里
+                    // （判据是「逐条可读」，不是「摘要里含某个词」—— 旧断言写死了摘要措辞）
+                    assertThat(e.getDetails().get(0).getMessage()).contains("工序库里没有");
                 });
         verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
     }
@@ -253,5 +258,209 @@ class ProductionRoutingCommandServiceOptionCreateTest {
                 body("trigger_value", "加流苏", "operation", "三边", "customer_unit_price", "-1"), TENANT))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(thrown -> assertThat(((BusinessException) thrown).getHttpStatus()).isEqualTo(422));
+    }
+
+    // ══════════════════ PG-053（issue #4616）：创建端点**通用化** —— craft / processing_item ══════════════════
+    //
+    // 用户裁定：「现在的问题是**没有入口往条件工序规则中添加新的工艺和加工项**」。
+    // 改前 `createOptionRule` 把 `triggerKind("option")` **写死** ⇒ craft / processing_item 规则
+    // 无法通过界面添加（库里现有 craft 10 条 + processing_item 3 条全是迁移种下的）⇒
+    // 商家新增一个工艺/加工项后**无法**让它在订单里插/删工序 ⇒ 该订单**静默少工序**。
+    //
+    // 红证（注入式，实测）：① 把 `triggerKind` 写回常量 "option" ⇒
+    // `craftRuleIsCreatedWithCraftTriggerKind` 红（断言 `trigger_kind='craft'`）；
+    // ② 去掉「触发值必须在对应词表里」分支 ⇒ `craftTriggerValueOutsideVocabularyIsRejected` +
+    // `processingItemTriggerValueOutsideCatalogIsRejected` 两条红（不再 422，且 insert 会被调用）；
+    // ③ 去掉「对客单价只属于 option」分支 ⇒ `craftRuleWithCustomerPriceIsRejected` 红；
+    // ④ 把「缺 trigger_kind ⇒ option」改成必填 ⇒ `missingTriggerKindStillDefaultsToOption` 红
+    // （**反向护栏**：老调用方/老 bundle 行为一字不变）。
+
+    /** 活跃工艺词表桩（craft 触发值的取值域）。 */
+    private void stubCrafts(String... names) {
+        List<com.migao.admin.entity.ProductionCraft> rows = new ArrayList<>();
+        for (String name : names) {
+            rows.add(com.migao.admin.entity.ProductionCraft.builder()
+                    .id("pc-" + name).tenantId(TENANT).name(name).isDefault(false)
+                    .status("active").deleted(0).build());
+        }
+        lenient().when(productionCraftMapper.selectList(any())).thenReturn(rows);
+    }
+
+    /** 加工项目录桩（processing_item 触发值的取值域；触发键 = 加工项名，**精确相等**）。 */
+    private void stubProcessingItems(String... names) {
+        List<com.migao.admin.entity.ProcessingItem> rows = new ArrayList<>();
+        for (String name : names) {
+            rows.add(com.migao.admin.entity.ProcessingItem.builder()
+                    .id("pi-" + name).tenantId(TENANT).name(name).status("active").deleted(0).build());
+        }
+        lenient().when(processingItemMapper.selectList(any())).thenReturn(rows);
+    }
+
+    @Test
+    @DisplayName("PG-053 建 craft 规则：trigger_kind='craft' 落库、触发值取自活跃工艺词表、无对客单价")
+    void craftRuleIsCreatedWithCraftTriggerKind() {
+        stubCrafts("罗马帘", "韩褶", "打孔");
+
+        Map<String, Object> result = service.createRouteRule(
+                body("trigger_kind", "craft", "trigger_value", "罗马帘", "operation", "三边",
+                        "after_operation", "精裁", "priority", "300"),
+                TENANT);
+
+        ProductionRouteRule row = inserted();
+        assertThat(row.getTriggerKind()).isEqualTo("craft");
+        assertThat(row.getTriggerValue()).isEqualTo("罗马帘");
+        assertThat(row.getAction()).isEqualTo("insert");
+        assertThat(row.getOperation()).isEqualTo("三边");
+        assertThat(row.getAfterOperation()).isEqualTo("精裁");
+        assertThat(row.getCustomerUnitPrice()).as("craft 行不按套计价 ⇒ 对客单价必须为空").isNull();
+        assertThat(result).containsEntry("trigger_kind", "craft")
+                .containsEntry("trigger_value", "罗马帘")
+                .containsEntry("action", "insert");
+    }
+
+    @Test
+    @DisplayName("PG-053 建 processing_item 规则：trigger_kind='processing_item' 落库、触发值取自加工项目录")
+    void processingItemRuleIsCreatedWithProcessingItemTriggerKind() {
+        stubProcessingItems("花边", "扣环", "拼接");
+
+        service.createRouteRule(
+                body("trigger_kind", "processing_item", "trigger_value", "拼接", "operation", "三边"), TENANT);
+
+        ProductionRouteRule row = inserted();
+        assertThat(row.getTriggerKind()).isEqualTo("processing_item");
+        assertThat(row.getTriggerValue()).isEqualTo("拼接");
+        assertThat(row.getCustomerUnitPrice()).isNull();
+    }
+
+    @Test
+    @DisplayName("PG-053 缺 trigger_kind ⇒ **仍按 option 建**（反向护栏：老调用方/老 bundle 一字不变）")
+    void missingTriggerKindStillDefaultsToOption() {
+        service.createRouteRule(body("trigger_value", "加流苏", "operation", "三边"), TENANT);
+
+        assertThat(inserted().getTriggerKind()).isEqualTo("option");
+    }
+
+    @Test
+    @DisplayName("PG-053 触发值不在工艺词表 ⇒ 422 逐条理由，且**一个字节都不写**")
+    void craftTriggerValueOutsideVocabularyIsRejected() {
+        stubCrafts("韩褶", "打孔");
+
+        assertThatThrownBy(() -> service.createRouteRule(
+                body("trigger_kind", "craft", "trigger_value", "罗马帘", "operation", "三边"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(thrown -> {
+                    BusinessException e = (BusinessException) thrown;
+                    assertThat(e.getHttpStatus()).isEqualTo(422);
+                    assertThat(e.getDetails()).extracting("field").containsExactly("trigger_value");
+                    assertThat(e.getDetails().get(0).getMessage()).contains("工艺词表");
+                });
+        verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
+    }
+
+    @Test
+    @DisplayName("PG-053 触发值不在加工项目录 ⇒ 422 逐条理由（触发键精确相等，目录里没有就永不命中）")
+    void processingItemTriggerValueOutsideCatalogIsRejected() {
+        stubProcessingItems("花边", "扣环");
+
+        assertThatThrownBy(() -> service.createRouteRule(
+                body("trigger_kind", "processing_item", "trigger_value", "拼接", "operation", "三边"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(thrown -> {
+                    BusinessException e = (BusinessException) thrown;
+                    assertThat(e.getHttpStatus()).isEqualTo(422);
+                    assertThat(e.getDetails()).extracting("field").containsExactly("trigger_value");
+                    assertThat(e.getDetails().get(0).getMessage()).contains("加工项目录");
+                });
+        verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
+    }
+
+    @Test
+    @DisplayName("PG-053 craft / 加工项带 customer_unit_price ⇒ 422（两套账不互读，不许放宽）")
+    void craftRuleWithCustomerPriceIsRejected() {
+        stubCrafts("罗马帘");
+
+        assertThatThrownBy(() -> service.createRouteRule(
+                body("trigger_kind", "craft", "trigger_value", "罗马帘", "operation", "三边",
+                        "customer_unit_price", "5.00"),
+                TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(thrown -> {
+                    BusinessException e = (BusinessException) thrown;
+                    assertThat(e.getHttpStatus()).isEqualTo(422);
+                    assertThat(e.getDetails()).extracting("field").containsExactly("customer_unit_price");
+                });
+        verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
+    }
+
+    @Test
+    @DisplayName("PG-053 trigger_kind='shaped'（结构预留、无种子行）⇒ 422，不落一行没人消费的规则")
+    void shapedTriggerKindIsRejected() {
+        assertThatThrownBy(() -> service.createRouteRule(
+                body("trigger_kind", "shaped", "trigger_value", "定型", "operation", "三边"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(thrown -> {
+                    BusinessException e = (BusinessException) thrown;
+                    assertThat(e.getHttpStatus()).isEqualTo(422);
+                    assertThat(e.getDetails()).extracting("field").containsExactly("trigger_kind");
+                });
+        verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
+    }
+
+    @Test
+    @DisplayName("PG-053 action='remove' ⇒ 落 remove 行（不再写死 insert）；带锚点 ⇒ 422")
+    void removeActionIsAcceptedAndAnchorIsRejected() {
+        stubCrafts("打孔");
+
+        service.createRouteRule(
+                body("trigger_kind", "craft", "trigger_value", "打孔", "action", "remove",
+                        "operation", "三边"),
+                TENANT);
+        assertThat(inserted().getAction()).isEqualTo("remove");
+        assertThat(inserted().getAfterOperation()).isNull();
+
+        assertThatThrownBy(() -> service.createRouteRule(
+                body("trigger_kind", "craft", "trigger_value", "打孔", "action", "remove",
+                        "operation", "三边", "after_operation", "外帘打卷"),
+                TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(thrown -> assertThat(((BusinessException) thrown).getDetails())
+                        .extracting("field").containsExactly("after_operation"));
+    }
+
+    @Test
+    @DisplayName("PG-053 多条违规**一次报全**（触发值 + 对客单价 + 目标工序三条同时给）")
+    void allViolationsAreReportedAtOnce() {
+        stubCrafts("韩褶");
+
+        assertThatThrownBy(() -> service.createRouteRule(
+                body("trigger_kind", "craft", "trigger_value", "罗马帘", "operation", "不存在的工序",
+                        "customer_unit_price", "5.00"),
+                TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(thrown -> assertThat(((BusinessException) thrown).getDetails())
+                        .extracting("field")
+                        .containsExactly("trigger_value", "customer_unit_price", "operation"));
+    }
+
+    @Test
+    @DisplayName("PG-053 同一条 craft 规则重复 ⇒ 409（唯一键按 kind + 触发值 + 动作 + 目标工序）")
+    void duplicateCraftRuleIsConflict() {
+        stubCrafts("罗马帘");
+        List<ProductionRouteRule> rows = new ArrayList<>();
+        rows.add(ProductionRouteRule.builder().id("rr-craft-1").tenantId(TENANT).triggerKind("craft")
+                .triggerValue("罗马帘").action("insert").operation("三边").priority(300)
+                .status("active").createdAt(OffsetDateTime.now()).updatedAt(OffsetDateTime.now())
+                .deleted(0).build());
+        lenient().when(productionRouteRuleMapper.selectList(any())).thenReturn(rows);
+
+        assertThatThrownBy(() -> service.createRouteRule(
+                body("trigger_kind", "craft", "trigger_value", "罗马帘", "operation", "三边"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(thrown -> {
+                    BusinessException e = (BusinessException) thrown;
+                    assertThat(e.getHttpStatus()).isEqualTo(409);
+                    assertThat(e.getMessage()).contains("已存在");
+                });
+        verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
     }
 }

@@ -577,25 +577,51 @@ public class ProductionController {
     }
 
     /**
-     * 新建**特殊选项**（issue #4570，用户裁定「你只要能新增工序项就行了，并可以设置为特殊选项或者工序，
-     * 也支持设置单价」）
+     * 条件工序规则创建弹窗的**触发值取值域**（issue #4616）
+     * GET /api/admin/production/route-rule-options
+     *
+     * <p>用户裁定：「现在的问题是**没有入口往条件工序规则中添加新的工艺和加工项**」。入口一开，
+     * 弹窗的「触发值」必须**按类型从对应词表取**（不手输）—— 手输一个词表里没有的名字 =
+     * 建一条永远不命中的规则（商家以为配了、加工单上却没有）。</p>
+     *
+     * <p>响应：{@code {crafts:[…], processing_items:[…]}} —— 活跃工艺词表（{@code production_crafts}，
+     * 此前**没有任何读端点**）+ 活跃加工项目录。特殊选项名**不在此列**（可新建，没有第二份词表）。</p>
+     */
+    @GetMapping("/route-rule-options")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> routeRuleOptions() {
+        return ApiResponse.success(
+                productionRoutingReadService.triggerOptions(TenantContext.getTenantId()));
+    }
+
+    /**
+     * 新建**条件工序规则**（issue #4616 起**通用化**；issue #4570 建立本端点）
      * POST /api/admin/production/route-rules
      *
-     * <p>请求体：{@code {trigger_value, operation, after_operation?, position?, priority?,
-     * customer_unit_price?}}。{@code operation} = **目标工序的逻辑名**（必须在该租户工序库里存在）；
-     * {@code customer_unit_price} = **对客单价（元/套）**，`null` = 未定价（**≠ 0 元**）。</p>
+     * <p>请求体：{@code {trigger_kind?, trigger_value, action?, operation, after_operation?, position?,
+     * priority?, customer_unit_price?}}。</p>
      *
-     * <p>本端点只建 {@code trigger_kind='option'} + {@code action='insert'} 的规则 —— 「工序」那半走
-     * {@code POST /production/operations}（计件单价，元/件·米·折），**两本账不混**。</p>
+     * <ul>
+     *   <li>{@code trigger_kind} ∈ <b>闭词表</b> {@code craft}（工艺）/ {@code option}（特殊选项）/
+     *       {@code processing_item}（加工项）；<b>缺省 = {@code option}</b>（老调用方/老 bundle
+     *       行为一字不变 —— 反向护栏）；{@code shaped} 是表结构预留、无种子行 ⇒ 收到即 422；</li>
+     *   <li>{@code trigger_value} <b>必须存在于对应词表</b>（craft ⇒ 活跃工艺词表；processing_item ⇒
+     *       加工项目录；option ⇒ 可新建）⇒ 不存在/已停用 ⇒ <b>422</b> 逐条理由；</li>
+     *   <li>{@code customer_unit_price}（元/套）<b>只允许 {@code trigger_kind='option'}</b>
+     *       —— craft / 加工项按工序单价**计件**（给工人），两套账不互读，带价 ⇒ 422；</li>
+     *   <li>{@code action} ∈ {@code insert}/{@code remove}（缺省 {@code insert}）；{@code operation} /
+     *       {@code after_operation} = <b>逻辑工序名</b>（必须在该租户工序库里存在）；</li>
+     *   <li>同一条「kind + 触发值 + 动作 + 目标工序」已存在 ⇒ <b>409</b>。</li>
+     * </ul>
      *
-     * <p>护栏逐条 422/409：名称或目标工序缺失 / 目标工序（或锚点）不在工序库 / 单价非数值·负·超两位小数；
-     * 同一条「特殊选项 → 插某工序」已存在 ⇒ 409。</p>
+     * <p>「工序」那半（新建一道工序 + 计件单价）走 {@code POST /production/operations}，
+     * <b>两本账不混</b>。</p>
      */
     @PostMapping("/route-rules")
     @RequirePermission("processing:manage")
     public ApiResponse<Map<String, Object>> createRouteRule(@RequestBody Map<String, Object> request) {
         return ApiResponse.success(
-                productionRoutingCommandService.createOptionRule(request, TenantContext.getTenantId()));
+                productionRoutingCommandService.createRouteRule(request, TenantContext.getTenantId()));
     }
 
     /**

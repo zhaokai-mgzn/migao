@@ -1019,16 +1019,41 @@ export interface RouteRuleCustomerPriceParams {
  * ⇒ 本 body **不带** `name` / `group_name` / `unit` / `unit_price` 那套工序字段。
  */
 export interface RouteRuleCreateParams {
-  /** 选项名（`trigger_value`）—— 对客可见，**与 ERP 名逐字一致**（#4389 join key 纪律） */
+  /**
+   * 触发维（**闭词表**，issue #4616）：`craft` 工艺 / `option` 特殊选项 / `processing_item` 加工项。
+   *
+   * 省略 = `option`（**反向护栏**：老调用方/老 bundle 行为一字不变）。`shaped` 是表结构预留、
+   * 无种子行 ⇒ 后端收到即 422（前端也不提供该档）。
+   */
+  trigger_kind?: RouteRuleTriggerKind
+  /** 触发值 —— `craft`/`processing_item` 必须**存在于对应词表**；`option` 可新建（#4389 join key 纪律） */
   trigger_value: string
+  /** 动作：`insert` 插入 / `remove` 移除；省略 = `insert`（老调用方行为不变） */
+  action?: 'insert' | 'remove'
   /** 目标工序（**逻辑工序名**，与 `production_route_rules.operation` 逐字一致，如 `精裁`） */
   operation: string
-  /** 插入锚点（逻辑工序名）；省略 / `null` = 追加末尾 */
+  /** 插入锚点（逻辑工序名）；省略 / `null` = 追加末尾（`remove` 不接受锚点） */
   after_operation?: string | null
   /** 规则应用顺序（越小越先）；省略 / `null` = 后端默认顺序 */
   priority?: number | null
-  /** 对客单价（**元/套**）；`null` = 未定价 */
+  /** 对客单价（**元/套**）；`null` = 未定价。**只允许 `trigger_kind='option'`**（两套账不互读） */
   customer_unit_price?: number | string | null
+}
+
+/** 条件工序规则的触发维（issue #4616；与后端闭词表 `TRIGGER_KINDS` 同口径）。 */
+export type RouteRuleTriggerKind = 'craft' | 'option' | 'processing_item'
+
+/**
+ * 规则创建弹窗的**触发值取值域**（issue #4616；`GET /api/admin/production/route-rule-options`）。
+ *
+ * 手输一个词表里没有的名字 = 建一条**永远不命中**的规则（商家以为配了、加工单上却没有）
+ * ⇒ 触发值必须从对应词表取。特殊选项名**不在此列**（可新建，没有第二份词表）。
+ */
+export interface RouteRuleTriggerOptions {
+  /** 活跃工艺词表（`production_crafts`） */
+  crafts: string[]
+  /** 活跃加工项目录（触发键 = 订单行的加工项名，**精确相等**） */
+  processing_items: string[]
 }
 
 
