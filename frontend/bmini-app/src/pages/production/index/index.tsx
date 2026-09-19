@@ -11,6 +11,7 @@ import {
   type OrderOperations,
   type PieceworkSummary,
   type ProductionOperation,
+  type ProductionPosition,
   type ReportPayload,
   type WorkLogRow,
 } from '../../../services/productionService'
@@ -98,6 +99,36 @@ function remainingQty(operation: ProductionOperation): number {
 function pieceworkOf(summary: PieceworkSummary | null, operationName: string): number | null {
   const found = summary?.per_operation?.find((item) => item.operation === operationName)
   return found ? Number(found.amount) : null
+}
+
+/**
+ * 部位规格摘要（issue #4347 §3.1）：工人要能核对自己做的是哪一件。
+ *
+ * <p>口径：**只显示服务端真的给了的键**（缺键就不显示）—— 不补默认值、不显示占位符。
+ * 后端在订单行取不到时一个规格键都不加（脏数据），此时这里自然什么都不显示。</p>
+ */
+function specSummary(position: ProductionPosition): string[] {
+  const parts: string[] = []
+  const size = [position.width, position.height].filter(
+    (v) => v !== null && v !== undefined && v !== '',
+  )
+  if (size.length > 0) parts.push(`尺寸 ${size.join(' × ')}`)
+  if (position.craft) parts.push(String(position.craft))
+  if (position.openCount !== null && position.openCount !== undefined && position.openCount !== '') {
+    parts.push(`开数 ${position.openCount}`)
+  }
+  if (position.cuttingMode) parts.push(String(position.cuttingMode))
+  if (position.isShaped !== null && position.isShaped !== undefined) {
+    parts.push(position.isShaped ? '定型' : '不定型')
+  }
+  if (position.fullness !== null && position.fullness !== undefined && position.fullness !== '') {
+    parts.push(`褶倍 ${position.fullness}`)
+  }
+  const meters = position.fabric_meters ?? position.processingMeters
+  if (meters !== null && meters !== undefined && meters !== '') {
+    parts.push(`用料 ${meters} 米`)
+  }
+  return parts
 }
 
 /**
@@ -403,6 +434,10 @@ export default function ProductionPage() {
           {positions.map((position) => (
             <View key={position.position_name} className='production-position'>
               <Text className='production-position__name'>{position.position_name}</Text>
+              {/* 规格摘要（issue #4347 §3.1）：核对「做的是哪一件」。缺键不显示（不补默认值） */}
+              {specSummary(position).length > 0 && (
+                <Text className='production-position__spec'>{specSummary(position).join(' · ')}</Text>
+              )}
               {position.operations.map((operation) => {
                 const amount = pieceworkOf(piecework, operation.operation)
                 return (

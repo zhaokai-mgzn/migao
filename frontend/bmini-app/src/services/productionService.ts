@@ -27,9 +27,30 @@ export interface ProductionOperation {
   done_qty: number
 }
 
-/** 部位分组（布帘/纱帘/帘头…） */
+/**
+ * 部位分组（布帘/纱帘/帘头…）+ **规格可见面**（issue #4347 §3.1）。
+ *
+ * <p>规格键**全部可选**：服务端在订单行取不到时**一个键都不加**（缺键就缺，不补默认值）——
+ * 前端因此必须按「有没有这个键」渲染，不得给缺键编一个默认值显示出来（那就是冒充已知）。</p>
+ */
 export interface ProductionPosition {
   position_name: string
+  /** 行标识（V69 / #4388）：区分**同名**部位 */
+  order_item_id?: string | null
+  position_kind?: string | null
+  /** 宽 / 高（订单行 V63 列；下单页必填） */
+  width?: number | string | null
+  height?: number | string | null
+  /** 工艺规格（逐字取订单行） */
+  craft?: string | null
+  curtainType?: string | null
+  openCount?: number | string | null
+  cuttingMode?: string | null
+  isShaped?: boolean | null
+  fullness?: number | string | null
+  /** 用料（算料输出，单一真值 = ai-agent 引擎；Java 侧不重算） */
+  fabric_meters?: number | string | null
+  processingMeters?: number | string | null
   operations: ProductionOperation[]
 }
 
