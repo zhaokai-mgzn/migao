@@ -52,6 +52,7 @@ import type {
   OperationPosition,
   RouteRule,
   RouteRuleCustomerPriceParams,
+  RouteRuleCreateParams,
   CraftCalcConfig,
   CraftCalcConfigResponse,
   RoutingGaps,
@@ -503,6 +504,13 @@ export const productionApi = {
   // `null` = 显式改回**未定价**（≠ 0 元）；非 option 行 / 负数 / 三位小数 ⇒ 422 逐条理由。
   updateRuleCustomerUnitPrice: (id: number | string, data: RouteRuleCustomerPriceParams) =>
     request.put<ApiResponse<RouteRule>>(`/api/admin/production/route-rules/${id}/customer-unit-price`, data),
+  // ④ 新增**特殊选项**（issue #4570；权限 processing:manage）：
+  // body = `{trigger_value, operation, after_operation?, priority?, customer_unit_price?}` ——
+  // `operation` 是**逻辑工序名**（与 `production_route_rules.operation` 逐字一致），
+  // 与 `createOperation` 的**计件**单价是两本账（不互换算、不混字段）。
+  // 失败 ⇒ `error.details[].message` 逐条理由（页面就地展示，**不吞成一句**）。
+  createOptionRule: (data: RouteRuleCreateParams) =>
+    request.post<ApiResponse<unknown>>('/api/admin/production/route-rules', data),
 
   // ── 工艺路线商家可配（契约所有者 = 后端 #4459；权限 processing:manage）──
   // 部分更新（只写出现的字段）：`{name?, is_default?, mainline?, positions?, status?}`

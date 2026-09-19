@@ -36,6 +36,19 @@
 //    失败 ⇒ 后端理由**逐条就地**展示且**不**刷新、**不**改显示；非 `option` 行**没有**编辑入口。
 //    ⚠️ 两套账不互读：这里写的是**对客元/套**（`production_route_rules`），
 //    「工序库明细」里那栏是**给工人的计件单价**（`production_operations.unit_price`）。
+// ⑯ **「新增」对话框的类型二选一**（issue #4570，用户裁定：「只要能新增工序项就行了，并可以设置为
+//    特殊选项或者工序，也支持设置单价」）：顶部 `create-kind-operation`（默认）/ `create-kind-option`
+//    二选一 + 一句话把**两本账**说清（计件元/件·米·折 vs 对客元/套，互不换算）；
+//    - **工序**（默认）⇒ 既有表单**一字不改**，仍走 `POST /api/admin/production/operations`（回归）；
+//    - **特殊选项** ⇒ 选项名 / 单价（元/套）/ 目标工序（必填）/ 锚点 / 优先级
+//      ⇒ `POST /api/admin/production/route-rules`，body **恰为**
+//      `{trigger_value, operation, after_operation?, priority?, customer_unit_price}` ——
+//      **不得**混入「工序」那套字段（`name`/`group_name`/`unit`/`unit_price`）；
+//      目标工序下拉取值域 = **逻辑工序名**（复用部位价目矩阵的行键，与
+//      `production_route_rules.operation` 逐字同源；**不新造第二份工序名清单**）；
+//    - 本地最小预检（名称 / 目标工序 / 单价 / 优先级）⇒ 就地理由 + **不发请求**；
+//      后端 422 ⇒ `optionPriceGuardReasons()` 把 `error.details[].message` **逐条**就地展示，
+//      **不刷新、不改页面数据**（成功才关框 + 重新拉取规则列表）。
 // 反 placeholder：断言落**真实数据行**与**请求体**，不断言「页面存在」。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -47,6 +60,8 @@ const mockCreateRouting = vi.fn()
 const mockDeleteRouting = vi.fn()
 const mockGetOperationsCatalog = vi.fn()
 const mockCreateOperation = vi.fn()
+// issue #4570：新增**特殊选项**（对客元/套）—— 与 `mockCreateOperation`（计件元）是两本账
+const mockCreateOptionRule = vi.fn()
 const mockUpdateOperation = vi.fn()
 const mockGetSeedTemplates = vi.fn()
 const mockGetOperationPositions = vi.fn()
@@ -68,6 +83,7 @@ vi.mock('@/lib/api', () => ({
     deleteRouting: (...a: unknown[]) => mockDeleteRouting(...a),
     getOperationsCatalog: (...a: unknown[]) => mockGetOperationsCatalog(...a),
     createOperation: (...a: unknown[]) => mockCreateOperation(...a),
+    createOptionRule: (...a: unknown[]) => mockCreateOptionRule(...a),
     updateOperation: (...a: unknown[]) => mockUpdateOperation(...a),
     getSeedTemplates: (...a: unknown[]) => mockGetSeedTemplates(...a),
     getOperationPositions: (...a: unknown[]) => mockGetOperationPositions(...a),
@@ -260,6 +276,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     mockCreateRouting.mockReset().mockResolvedValue(ok({ id: 13, name: '罗马帘专线', is_default: false, positions: ['布帘'], mainline: [], status: 'active' }))
     mockDeleteRouting.mockReset().mockResolvedValue(ok({ id: 12 }))
     mockCreateOperation.mockReset().mockResolvedValue(ok({ id: 'op-new' }))
+    mockCreateOptionRule.mockReset().mockResolvedValue(ok({ id: 31 }))
     mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'default', config: ENGINE_DEFAULT_CALC_CONFIG }))
     mockUpdateCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'stored', config: ENGINE_DEFAULT_CALC_CONFIG }))
     vi.mocked(toast.success).mockClear()
@@ -1407,5 +1424,173 @@ describe('新建路线的部位选项（issue #4556：包 F 的第 4 个部位�
     expect(screen.getByTestId('routings-create-position-布帘')).toBeChecked()
     expect(screen.getByTestId('routings-create-position-布料')).not.toBeChecked()
     expect(screen.queryByTestId('routings-create-position-mixed-hint')).toBeNull()
+  })
+
+})
+
+/**
+ * ══════════════════ ⑯ 「新增」对话框的类型二选一（issue #4570） ══════════════════
+ *
+ * 单列一个 describe（**本组自己**的夹具与调用计数）：
+ * ① 矩阵夹具要换回**基线**那份（逻辑工序名 = `精裁` / `三边` / `车被`）——
+ *    上一组把它换成了 30 道 × 4 部位的 `MATRIX_120`；
+ * ② mock 是**模块级共享**的（无全局 `clearMocks`）⇒ 要按本组自己的次数断言，
+ *    必须在 `beforeEach` 里 `mockReset()` 清掉前面积累的调用历史。
+ */
+describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue #4570）', () => {
+  beforeEach(() => {
+    mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS))
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG))
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS))
+    mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES))
+    mockCreateOperation.mockReset().mockResolvedValue(ok({ id: 'op-new' }))
+    mockCreateOptionRule.mockReset().mockResolvedValue(ok({ id: 31 }))
+  })
+
+  /** 打开「新增」对话框（工序项 tab 右上入口；类型默认「工序」） */
+  const openCreateDialog = async () => {
+    await renderCatalogDetail()
+    await waitFor(() => expect(screen.getByTestId('operations-catalog-total')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('routings-new-operation'))
+  }
+
+  it('⑯-① 类型二选一：默认「工序」（既有表单在、特殊选项字段不在）；切「特殊选项」⇒ 元/套 + 目标工序 + 锚点 + 优先级', async () => {
+    await openCreateDialog()
+
+    // 一句话把两本账说清（用户走查的核心困惑）
+    const ledgers = screen.getByTestId('create-kind-two-ledgers')
+    expect(ledgers).toHaveTextContent('计件')
+    expect(ledgers).toHaveTextContent('元/套')
+    expect(ledgers).toHaveTextContent('互不换算')
+
+    // 默认 = 工序：既有表单在场，特殊选项字段**不在**
+    expect(screen.getByTestId('create-kind-operation')).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByTestId('create-kind-option')).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByTestId('routings-create-op-unit_price')).toBeInTheDocument()
+    expect(screen.queryByTestId('routings-create-option-customer_unit_price')).toBeNull()
+
+    await userEvent.click(screen.getByTestId('create-kind-option'))
+    expect(screen.getByTestId('create-kind-option')).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByTestId('routings-create-option-customer_unit_price')).toBeInTheDocument()
+    expect(screen.getByTestId('routings-create-option-operation')).toBeInTheDocument()
+    expect(screen.getByTestId('routings-create-option-after_operation')).toBeInTheDocument()
+    expect(screen.getByTestId('routings-create-option-priority')).toBeInTheDocument()
+    // 切过去后「工序」那套字段退场（不是两套表单叠着）
+    expect(screen.queryByTestId('routings-create-op-unit_price')).toBeNull()
+
+    // 目标工序下拉 = **逻辑工序名**（与 `route_rules.operation` 同源），**不是**库口径的 `精裁-布`
+    const opts = within(screen.getByTestId('routings-create-option-operation'))
+      .getAllByRole('option')
+      .map((o) => o.textContent)
+    expect(opts).toContain('精裁')
+    expect(opts).toContain('三边')
+    expect(opts).not.toContain('精裁-布')
+  })
+
+  it('⑯-② 特殊选项提交 ⇒ POST /route-rules 的 body **恰为** {trigger_value, operation, customer_unit_price}（不混工序字段）', async () => {
+    await openCreateDialog()
+    await userEvent.click(screen.getByTestId('create-kind-option'))
+    await userEvent.type(screen.getByTestId('routings-create-option-trigger_value'), '拼3次')
+    await userEvent.type(screen.getByTestId('routings-create-option-customer_unit_price'), '15.5')
+    await userEvent.selectOptions(screen.getByTestId('routings-create-option-operation'), '精裁')
+    await userEvent.click(screen.getByTestId('routings-create-operation-submit'))
+
+    await waitFor(() => expect(mockCreateOptionRule).toHaveBeenCalledTimes(1))
+    const body = mockCreateOptionRule.mock.calls[0][0] as Record<string, unknown>
+    // 逐键：可选键（锚点 / 优先级）留空 ⇒ **不发**（不拿 null 冒充「没填」）
+    expect(Object.keys(body).sort()).toEqual(['customer_unit_price', 'operation', 'trigger_value'])
+    expect(body).toEqual({ trigger_value: '拼3次', operation: '精裁', customer_unit_price: 15.5 })
+    for (const k of ['name', 'group_name', 'unit', 'unit_price']) expect(body).not.toHaveProperty(k)
+    expect(mockCreateOperation).not.toHaveBeenCalled()
+    // 成功 ⇒ 关框 + 重新拉取规则列表
+    await waitFor(() => expect(mockGetRouteRules).toHaveBeenCalledTimes(2))
+    expect(screen.queryByTestId('routings-create-option-trigger_value')).toBeNull()
+  })
+
+  it('⑯-②b 特殊选项提交（填了锚点 + 优先级）⇒ body 只多这两个键', async () => {
+    await openCreateDialog()
+    await userEvent.click(screen.getByTestId('create-kind-option'))
+    await userEvent.type(screen.getByTestId('routings-create-option-trigger_value'), '免熨')
+    await userEvent.type(screen.getByTestId('routings-create-option-customer_unit_price'), '8')
+    await userEvent.selectOptions(screen.getByTestId('routings-create-option-operation'), '三边')
+    await userEvent.selectOptions(screen.getByTestId('routings-create-option-after_operation'), '精裁')
+    await userEvent.type(screen.getByTestId('routings-create-option-priority'), '220')
+    await userEvent.click(screen.getByTestId('routings-create-operation-submit'))
+
+    await waitFor(() => expect(mockCreateOptionRule).toHaveBeenCalledTimes(1))
+    expect(mockCreateOptionRule.mock.calls[0][0]).toEqual({
+      trigger_value: '免熨',
+      operation: '三边',
+      after_operation: '精裁',
+      priority: 220,
+      customer_unit_price: 8,
+    })
+  })
+
+  it('⑯-③ 特殊选项：目标工序为空 ⇒ **不发请求** + 就地理由（对话框不关）', async () => {
+    await openCreateDialog()
+    await userEvent.click(screen.getByTestId('create-kind-option'))
+    await userEvent.type(screen.getByTestId('routings-create-option-trigger_value'), '拼3次')
+    await userEvent.type(screen.getByTestId('routings-create-option-customer_unit_price'), '15.5')
+    // 目标工序**不选**
+    await userEvent.click(screen.getByTestId('routings-create-operation-submit'))
+
+    expect(mockCreateOptionRule).not.toHaveBeenCalled()
+    expect(screen.getByTestId('routings-create-option-reasons')).toHaveTextContent('目标工序')
+    expect(screen.getByTestId('routings-create-option-trigger_value')).toBeInTheDocument()
+  })
+
+  it('⑯-④ 特殊选项：单价非法（三位小数）⇒ **不发请求** + 就地理由', async () => {
+    await openCreateDialog()
+    await userEvent.click(screen.getByTestId('create-kind-option'))
+    await userEvent.type(screen.getByTestId('routings-create-option-trigger_value'), '拼3次')
+    await userEvent.type(screen.getByTestId('routings-create-option-customer_unit_price'), '12.345')
+    await userEvent.selectOptions(screen.getByTestId('routings-create-option-operation'), '精裁')
+    await userEvent.click(screen.getByTestId('routings-create-operation-submit'))
+
+    expect(mockCreateOptionRule).not.toHaveBeenCalled()
+    expect(screen.getByTestId('routings-create-option-reasons')).toHaveTextContent('两位小数')
+  })
+
+  it('⑯-⑤ 特殊选项：后端 422 ⇒ 理由**逐条**就地可见，且**不刷新**、不改页面数据', async () => {
+    mockCreateOptionRule
+      .mockReset()
+      .mockRejectedValue(guardError(['选项名不能为空', '单价不得超过两位小数']))
+    await openCreateDialog()
+    await userEvent.click(screen.getByTestId('create-kind-option'))
+    await userEvent.type(screen.getByTestId('routings-create-option-trigger_value'), '拼3次')
+    await userEvent.type(screen.getByTestId('routings-create-option-customer_unit_price'), '15.5')
+    await userEvent.selectOptions(screen.getByTestId('routings-create-option-operation'), '精裁')
+    await userEvent.click(screen.getByTestId('routings-create-operation-submit'))
+
+    await waitFor(() => expect(screen.getByTestId('routings-create-option-reasons')).toBeInTheDocument())
+    const items = within(screen.getByTestId('routings-create-option-reasons')).getAllByRole('listitem')
+    expect(items.map((li) => li.textContent)).toEqual(['选项名不能为空', '单价不得超过两位小数'])
+    // 不刷新（规则列表只被首屏 load 拉过一次）、不改页面数据（对话框仍开着、草稿还在）
+    expect(mockGetRouteRules).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('routings-create-option-trigger_value')).toHaveValue('拼3次')
+  })
+
+  it('⑯-⑥ 类型「工序」仍走 POST /operations（回归：切到特殊选项再切回，既有链路逐字不变）', async () => {
+    await openCreateDialog()
+    await userEvent.click(screen.getByTestId('create-kind-option'))
+    await userEvent.click(screen.getByTestId('create-kind-operation'))
+
+    await userEvent.type(screen.getByTestId('routings-create-op-name'), '罗马帘-穿杆')
+    await userEvent.type(screen.getByTestId('routings-create-op-group_name'), '车位')
+    await userEvent.type(screen.getByTestId('routings-create-op-unit'), '套')
+    await userEvent.type(screen.getByTestId('routings-create-op-unit_price'), '4.5')
+    await userEvent.click(screen.getByTestId('routings-create-operation-submit'))
+
+    await waitFor(() =>
+      expect(mockCreateOperation).toHaveBeenCalledWith({
+        name: '罗马帘-穿杆',
+        group_name: '车位',
+        unit: '套',
+        unit_price: 4.5,
+      }),
+    )
+    expect(mockCreateOptionRule).not.toHaveBeenCalled()
+    await waitFor(() => expect(mockGetOperationsCatalog).toHaveBeenCalledTimes(2))
   })
 })

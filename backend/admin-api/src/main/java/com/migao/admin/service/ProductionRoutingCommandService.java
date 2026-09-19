@@ -300,6 +300,136 @@ public class ProductionRoutingCommandService {
     }
 
     /**
+     * 新建**特殊选项**（`trigger_kind='option'` + `action='insert'`，issue #4570）。
+     *
+     * <p>用户裁定 2026-09-19：「你只要能**新增工序项**就行了，并可以**设置为特殊选项或者工序**，
+     * 也**支持设置单价**」——「工序」那半走既有 {@code POST /production/operations}（计件单价），
+     * 本方法是「特殊选项」那半（**对客单价，元/套**）。</p>
+     *
+     * <p><b>护栏（逐条 {@code error.details}，不静默）</b>：</p>
+     * <ul>
+     *   <li>名称 / 目标工序缺失或空白 ⇒ <b>422</b>；</li>
+     *   <li>目标工序**必须在该租户工序库里存在**（归一后的逻辑名口径）—— 否则规则命中后插不进来，
+     *       这条规则就是**黑洞**（V72 种子同款护栏）；锚点工序同理；</li>
+     *   <li>同名同 kind（同 {@code position}/{@code action}/{@code operation}）已存在 ⇒ <b>409</b>
+     *       （对齐 DB 唯一索引 {@code uk_production_route_rules_tenant_trigger_operation}）；</li>
+     *   <li>单价：可空（= 未定价 ≠ 0）；非数值 / 负数 / 超两位小数 ⇒ <b>422</b>（同
+     *       {@link #updateRuleCustomerUnitPrice} 的口径）。</li>
+     * </ul>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> createOptionRule(Map<String, Object> body, Long tenantId) {
+        String triggerValue = requiredText(body == null ? null : body.get("trigger_value"), "trigger_value");
+        String operation = requiredText(body == null ? null : body.get("operation"), "operation");
+        String afterOperation = optionalText(body == null ? null : body.get("after_operation"));
+        List<ApiResponse.ErrorDetail> details = new ArrayList<>();
+        if (!logicalOperationExists(operation, tenantId)) {
+            details.add(BusinessException.detail("operation", String.format(
+                    "工序库里没有「%s」—— 规则指向一道不存在的工序 ⇒ 命中后插不进来，这条规则等于黑洞",
+                    operation)));
+        }
+        if (afterOperation != null && !logicalOperationExists(afterOperation, tenantId)) {
+            details.add(BusinessException.detail("after_operation", String.format(
+                    "锚点工序「%s」不在工序库里 ⇒ 插不到它后面（会落到末尾，与商家预期不符）", afterOperation)));
+        }
+        if (!details.isEmpty()) {
+            throw BusinessException.validationError("目标工序不在工序库里", details,
+                    "先在「工艺项 → 工序库」建这道工序，或从下拉里选一道已存在的工序");
+        }
+        BigDecimal price = optionalCustomerPrice(body == null ? null : body.get("customer_unit_price"));
+
+        for (ProductionRouteRule existing : productionOperationQueryService.routeRules(tenantId)) {
+            if ("option".equals(existing.getTriggerKind())
+                    && Objects.equals(existing.getTriggerValue(), triggerValue)
+                    && "insert".equals(existing.getAction())
+                    && Objects.equals(existing.getOperation(), operation)) {
+                throw BusinessException.conflict(
+                        String.format("特殊选项「%s」已存在（同一条「插 %s」的规则）", triggerValue, operation),
+                        "改它的单价请用 PUT /api/admin/production/route-rules/{id}/customer-unit-price；"
+                                + "要换目标工序请先停用旧规则（查看入口 GET /api/admin/production/route-rules）");
+            }
+        }
+
+        Integer priority = optionalInt(body == null ? null : body.get("priority"));
+        ProductionRouteRule row = ProductionRouteRule.builder()
+                .tenantId(tenantId)
+                .triggerKind("option")
+                .triggerValue(triggerValue)
+                .position(optionalText(body == null ? null : body.get("position")))
+                .action("insert")
+                .operation(operation)
+                .afterOperation(afterOperation)
+                .priority(priority != null ? priority : nextRulePriority(tenantId))
+                .customerUnitPrice(price)
+                .status("active")
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .deleted(0)
+                .build();
+        productionRouteRuleMapper.insert(row);
+        log.info("新建特殊选项: tenantId={}, name={}, operation={}, price={}",
+                tenantId, triggerValue, operation, price);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", row.getId());
+        result.put("trigger_kind", row.getTriggerKind());
+        result.put("trigger_value", row.getTriggerValue());
+        result.put("operation", row.getOperation());
+        result.put("after_operation", row.getAfterOperation());
+        result.put("priority", row.getPriority());
+        result.put("customer_unit_price", price);
+        return result;
+    }
+
+    /** 新规则的默认优先级 = 本租户现有**最大优先级 + 10**（保证排在最后生效，顺序确定）。 */
+    private int nextRulePriority(Long tenantId) {
+        int max = 0;
+        for (ProductionRouteRule rule : productionOperationQueryService.routeRules(tenantId)) {
+            if (rule.getPriority() != null && rule.getPriority() > max) {
+                max = rule.getPriority();
+            }
+        }
+        return max + 10;
+    }
+
+    /**
+     * 该**逻辑工序名**是否在该租户工序库里存在。
+     *
+     * <p>库里存的是**变体名**（{@code 精裁-布}），而规则表 {@code operation} 存的是**逻辑名**
+     * （{@code 精裁}）⇒ 两态都接受：先按原样查库（部位无关的裸逻辑名，如 {@code 外帘打卷}），
+     * 再按 {@link ProductionOperationQueryService#normalizeOperationName} 归一后比对。</p>
+     */
+    private boolean logicalOperationExists(String logicalName, Long tenantId) {
+        Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
+        if (catalog.containsKey(logicalName)) {
+            return true;
+        }
+        return catalog.keySet().stream().anyMatch(
+                name -> logicalName.equals(productionOperationQueryService.normalizeOperationName(name)));
+    }
+
+    /** 可空整数（`null` / 空串 ⇒ `null`；非整数 ⇒ 422）。 */
+    private static Integer optionalInt(Object value) {
+        String text = value == null ? "" : String.valueOf(value).trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(text);
+        } catch (NumberFormatException e) {
+            throw BusinessException.validationError("优先级必须是整数",
+                    List.of(BusinessException.detail("priority", "优先级必须是整数")),
+                    "填一个整数（越大越晚生效），或留空由系统排在最后");
+        }
+    }
+
+    /** 可空文本（`null` / 空白 ⇒ `null`）。 */
+    private static String optionalText(Object value) {
+        String text = value == null ? null : String.valueOf(value).trim();
+        return text == null || text.isEmpty() ? null : text;
+    }
+
+    /**
      * 对客单价解析（**只**给特殊选项用）：{@code null} / 空串 ⇒ {@code null}（= 未定价）；
      * 非数值 / 负数 / 超过两位小数 ⇒ 422 逐条理由。
      *
