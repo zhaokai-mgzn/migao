@@ -645,6 +645,95 @@ class ProductionServiceTest {
                 .build();
     }
 
+    // ── 工序显示名统一（issue #4621）：工序实例 / 报工流水读面补 `logical_name` + `position` ──
+    //
+    // 口径（冻结）：显示名 = 逻辑工序名（既有映射**读时派生**）+ 部位（帘种 `position_kind`，如 `布帘`）。
+    // 既有 `operation` / `operation_name` 是**工人端快照名**（变体名 `精裁-布`）⇒ **一字不动**
+    // （历史数据与其它消费者仍要读它），但 **web 界面不得渲染该键**；派生**不写库**。
+
+    /** 带**帘种**（`position_kind`）的工序实例夹具：`positionKind` 为空 = 存量行（V69 之前没有该列）。 */
+    private ProcessingPositionOperation opWithPositionKind(String id, String name, String positionKind) {
+        return ProcessingPositionOperation.builder()
+                .id(id).tenantId(TENANT).processingOrderId(PO_ID)
+                .positionName("布帘").positionKind(positionKind).seq(1).operationName(name)
+                .groupName("后道").unit("套")
+                .qty(new BigDecimal("10.00")).unitPrice(new BigDecimal("1.00")).factor(BigDecimal.ONE)
+                .isMustFinish(false).isStartMarker(false)
+                .status("pending").doneQty(BigDecimal.ZERO).deleted(0)
+                .build();
+    }
+
+    /** 带**工序名快照**的报工记录（报工面显示名的来源；`operation_name` = 工人端快照名）。 */
+    private ProductionWorkLog workLogNamed(String id, String operationId, String operationName) {
+        return ProductionWorkLog.builder()
+                .id(id).tenantId(TENANT).processingOrderId(PO_ID).operationId(operationId)
+                .operationName(operationName).workerName("张三").workType("normal")
+                .qty(new BigDecimal("1.00")).qualifiedQty(new BigDecimal("1.00"))
+                .createdAt(OffsetDateTime.parse("2026-09-18T02:00:00Z")).deleted(0)
+                .build();
+    }
+
+    /** 从 getOperations 响应里取某工序实例的视图（positions → operations）。 */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> operationViewOf(Map<String, Object> result, String operationId) {
+        for (Map<String, Object> position : (List<Map<String, Object>>) result.get("positions")) {
+            for (Map<String, Object> view : (List<Map<String, Object>>) position.get("operations")) {
+                if (operationId.equals(view.get("id"))) {
+                    return view;
+                }
+            }
+        }
+        throw new AssertionError("工序实例未出现在响应里: " + operationId);
+    }
+
+    @Test
+    @DisplayName("#4621 工序实例读面补 logical_name + position（operation = 工人端快照名，一字不动）")
+    void operationViewAddsDisplayKeys() {
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                opWithPositionKind("op-1", "精裁-布", "布帘"),
+                opWithPositionKind("op-2", "外帘装袋", "布帘"),
+                opWithPositionKind("op-3", "精裁-布", null)));
+        when(workLogMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> result = service.getOperations(ORDER_ID, TENANT);
+
+        assertThat(operationViewOf(result, "op-1"))
+                .as("历史实例（快照名 = 变体名 `精裁-布`）⇒ 显示名读时派生为 `精裁` + `布帘`")
+                .containsEntry("operation", "精裁-布")
+                .containsEntry("logical_name", "精裁")
+                .containsEntry("position", "布帘");
+        assertThat(operationViewOf(result, "op-2"))
+                .as("部位无关工序（名字里没编部位）⇒ position 为空，界面只显示逻辑名")
+                .containsEntry("operation", "外帘装袋")
+                .containsEntry("logical_name", "外帘装袋")
+                .containsEntry("position", null);
+        assertThat(operationViewOf(result, "op-3"))
+                .as("存量行（V69 之前没有 position_kind）⇒ position 为空，logical_name 仍派生")
+                .containsEntry("operation", "精裁-布")
+                .containsEntry("logical_name", "精裁")
+                .containsEntry("position", null);
+    }
+
+    @Test
+    @DisplayName("#4621 报工流水读面补 logical_name + position（部位按 operationId 关联实例，不从名字猜）")
+    void workLogViewsAddDisplayKeys() {
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                opWithPositionKind("op-1", "精裁-布", "布帘")));
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                workLogNamed("log-1", "op-1", "精裁-布")));
+
+        Map<String, Object> result = service.getOperations(ORDER_ID, TENANT);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> logs = (List<Map<String, Object>>) result.get("work_logs");
+        assertThat(logs).singleElement()
+                .as("`operation_name` 是工人端快照名（一字不动）；界面渲染 logical_name + position")
+                .satisfies(row -> assertThat(row)
+                        .containsEntry("operation_name", "精裁-布")
+                        .containsEntry("logical_name", "精裁")
+                        .containsEntry("position", "布帘"));
+    }
+
     /** 从 getOperations 响应里取某工序实例的 workers（positions → operations → workers）。 */
     @SuppressWarnings("unchecked")
     private List<String> workersOf(Map<String, Object> result, String operationId) {

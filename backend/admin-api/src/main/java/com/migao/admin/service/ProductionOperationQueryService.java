@@ -343,7 +343,47 @@ public class ProductionOperationQueryService {
      * 自建工序不在 35 条表里是正常态；把它当错误会让「商家加一道自定义工序」变成 500。</p>
      */
     public String normalizeOperationName(String name) {
+        return logicalOperationName(name);
+    }
+
+    /**
+     * 同上，**静态入口**（issue #4621）：读面派生「工序显示名」时，**未注入本服务**的读面
+     * （{@code ProductionService} 的工序实例 / 报工流水读面）也要用**同一份表** ——
+     * 在那里另抄一份映射、或另写一处推导，就是第二份口径（漂移的那一份不会变红）。
+     *
+     * <p>语义与 {@link #normalizeOperationName} **逐字相同**（同一个 {@link #OPERATION_LOGICAL_NAMES}）：
+     * 未登记的工序名**原样返回**（商家自建工序不在 35 条表里是正常态）。</p>
+     */
+    public static String logicalOperationName(String name) {
         return name == null ? null : OPERATION_LOGICAL_NAMES.getOrDefault(name, name);
+    }
+
+    /**
+     * 工序实例的**显示用部位**（issue #4621，读时派生、**不写库**）。
+     *
+     * <p>web 界面的工序显示名口径 = 逻辑名（{@link #logicalOperationName}），该实例**带部位**时
+     * 拼成 {@code 逻辑名 · 部位}（如 {@code 三边 · 布帘}）。本方法回答「要不要拼、拼哪个部位」：</p>
+     * <ul>
+     *   <li>变体名与逻辑名**不同**（{@code 精裁-布} ≠ {@code 精裁}）⇒ 名字里**编了部位**
+     *       ⇒ 返回 {@code position}（{@code 布帘}）；</li>
+     *   <li>两者**相同**（{@code 外帘装袋} == {@code 外帘装袋}）⇒ 该工序**与部位无关**
+     *       （真值源里 7 道裸名工序：帘头制作 / 外帘打卷 / 外帘装袋 / 外帘发货 / 质检 / 抱枕 /
+     *       腰靠垫）⇒ 返回 {@code null}（界面只显示逻辑名，不拼部位）。</li>
+     * </ul>
+     *
+     * <p>判据直接用**既有映射**（{@link #logicalOperationName}）判定，**不新增第二份表**；
+     * 也不能拿 {@code production_operations.position} 列当判据 —— 那列对 {@code 外帘装袋} 是
+     * {@code 外帘}（套级/通用工序的部位列），拿它会拼出「外帘装袋 · 外帘」这种自相矛盾的名字。</p>
+     *
+     * @param operationName 实例上的工序名（变体名 / 报工快照名）
+     * @param position      该实例所属部位（路线部位 / 实例的 {@code position_kind}）
+     * @return 显示用部位；部位无关 / 任一侧缺失 ⇒ {@code null}
+     */
+    public static String displayPosition(String operationName, String position) {
+        if (operationName == null || position == null || position.isBlank()) {
+            return null;
+        }
+        return operationName.equals(logicalOperationName(operationName)) ? null : position;
     }
 
     /**

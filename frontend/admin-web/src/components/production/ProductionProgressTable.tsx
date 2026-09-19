@@ -3,6 +3,8 @@
 import Badge from '@/components/ui/Badge'
 import StatusBadge from '@/components/ui/StatusBadge'
 import { chipToneClasses } from '@/lib/status-chip'
+// 工序显示名的**唯一**口径（issue #4621）：逻辑名 · 部位 —— 本表**不得**直接渲染变体名
+import { operationDisplayName } from '@/lib/operation-display'
 import type { ProductionPosition } from '@/types'
 
 /**
@@ -81,7 +83,7 @@ export default function ProductionProgressTable({ positions, className }: Produc
                         >
                           <td className="px-4 py-3">
                             <span className="mr-2 text-xs text-neutral-400">{op.seq ?? ''}</span>
-                            <span className="text-neutral-900">{op.operation}</span>
+                            <span className="text-neutral-900">{operationDisplayName(op)}</span>
                             {op.is_must_finish && (
                               <Badge variant="warning" className="ml-2" title="此工序必须完成才可打包">
                                 必完

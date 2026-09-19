@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, RefreshCw, Search } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { productionApi } from '@/lib/api'
+// 工序显示名的**唯一**口径（issue #4621）：逻辑名 · 部位 —— 本页**不得**直接渲染变体名
+import { operationDisplayName } from '@/lib/operation-display'
 import { cn } from '@/lib/utils'
 import type { PieceworkReport } from '@/types'
 
@@ -287,13 +289,13 @@ export default function PieceworkReportPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {perOperation.map((o) => (
+                    {perOperation.map((o, index) => (
                       <tr
-                        key={o.operation}
+                        key={`${operationDisplayName(o)}-${index}`}
                         className="border-b border-neutral-100 last:border-0"
-                        data-testid={`operation-row-${o.operation}`}
+                        data-testid={`operation-row-${operationDisplayName(o)}`}
                       >
-                        <td className="pl-5 pr-4 py-3.5 text-neutral-900">{o.operation}</td>
+                        <td className="pl-5 pr-4 py-3.5 text-neutral-900">{operationDisplayName(o)}</td>
                         <td className="px-4 py-3.5 text-neutral-600">{formatQty(o.qty)}</td>
                         <td className="px-4 py-3.5 font-medium text-neutral-900">{formatMoney(o.amount)}</td>
                       </tr>

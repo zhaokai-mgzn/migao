@@ -347,7 +347,7 @@ public class ProductionService {
         // 操作记录（issue #4347 §3.2）：**服务端**报工流水，不是本机缓存。
         // 工人端原来只显示本机 storage 里的报工（换设备就没了，也看不到别人做的工序）；
         // 而截图里的「操作记录」是**全单流水**（谁、哪道、多少、何时）。
-        result.put("work_logs", workLogViews(logs));
+        result.put("work_logs", workLogViews(logs, positionKindByOperationName(operations)));
         return result;
     }
 
@@ -360,7 +360,8 @@ public class ProductionService {
      * ② 字段是**展示面**，不参与计价（计价只读 {@code production_work_logs} 的快照列）；
      * ③ 时间用 {@code createdAt}（落库时刻），不用 {@code workDate}（业务日期，补报会改它）。</p>
      */
-    private List<Map<String, Object>> workLogViews(List<ProductionWorkLog> logs) {
+    private List<Map<String, Object>> workLogViews(List<ProductionWorkLog> logs,
+                                                   Map<String, String> positionKindByName) {
         List<Map<String, Object>> views = new ArrayList<>();
         if (logs == null) {
             return views;
@@ -368,8 +369,15 @@ public class ProductionService {
         for (int i = logs.size() - 1; i >= 0; i--) {
             ProductionWorkLog log = logs.get(i);
             Map<String, Object> view = new LinkedHashMap<>();
-            view.put("operation_name", StringUtils.hasText(log.getOperationName())
-                    ? log.getOperationName() : "未命名工序");
+            String operationName = StringUtils.hasText(log.getOperationName())
+                    ? log.getOperationName() : "未命名工序";
+            // ⚠️ `operation_name` = **工人端快照名**（变体名 `精裁-布`）：历史数据与其它消费者仍要读它，
+            // **一字不动**；**web 界面不得渲染该键**（issue #4621）—— 界面显示下面的
+            // `logical_name` + `position`（读时派生、**不写库**）。
+            view.put("operation_name", operationName);
+            view.put("logical_name", ProductionOperationQueryService.logicalOperationName(operationName));
+            view.put("position", ProductionOperationQueryService.displayPosition(
+                    operationName, positionKindByName.get(operationName)));
             view.put("worker_name", StringUtils.hasText(log.getWorkerName())
                     ? log.getWorkerName() : UNSIGNED_WORKER);
             view.put("qualified_qty", nz(log.getQualifiedQty()));
@@ -803,13 +811,18 @@ public class ProductionService {
             wrapper.eq("worker_name", workerName.trim());
         }
 
-        PieceworkTotals totals = aggregate(list(wrapper), activeOperationsById(tenantId)::get);
+        Map<String, ProcessingPositionOperation> instancesById = activeOperationsById(tenantId);
+        PieceworkTotals totals = aggregate(list(wrapper), instancesById::get);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("period", month.toString());
         result.put("total", money(totals.total()));
         result.put("per_worker", amountAndQtyRows(totals.workerAmount(), totals.workerQty(), "worker_name"));
-        result.put("per_operation", amountAndQtyRows(totals.operationAmount(), totals.operationQty(), "operation"));
+        // 按工序明细（issue #4621）：每项**追加** `logical_name` + `position` 供 web 界面渲染
+        // 「逻辑名 · 部位」；`operation`（工人端快照名 = 变体名）**一字不动**（其它消费者仍要读它）。
+        // 分组口径不变：仍是「每个工序实例一行」（`精裁 · 布帘` / `精裁 · 纱帘` 各一行）。
+        result.put("per_operation", operationPieceworkRows(totals.operationAmount(), totals.operationQty(),
+                positionKindByOperationName(instancesById.values())));
         // 下钻维度（真值源 §4：「按人/按期/按单下钻」+ 部位 / 套）。与 per-order 汇总**同一份聚合**
         // ⇒ 报表里某维合计 = 该维在各单上的贡献之和（不会出现两套口径漂移）。
         result.put("per_position", amountAndQtyRows(totals.positionAmount(), totals.positionQty(), "position_name"));
@@ -939,6 +952,50 @@ public class ProductionService {
     }
 
     /**
+     * 工序名 → 部位种类（issue #4621）：报工快照（{@code production_work_logs}）**没有部位列**
+     * ⇒ 部位只能从**工序实例**带出（{@code position_kind}）。缺失即缺（**不猜**、不编值）——
+     * 界面按「只有逻辑名」渲染。
+     */
+    private static Map<String, String> positionKindByOperationName(
+            java.util.Collection<ProcessingPositionOperation> operations) {
+        Map<String, String> byName = new HashMap<>();
+        for (ProcessingPositionOperation op : operations) {
+            if (op != null && StringUtils.hasText(op.getOperationName())
+                    && StringUtils.hasText(op.getPositionKind())) {
+                byName.putIfAbsent(op.getOperationName(), op.getPositionKind());
+            }
+        }
+        return byName;
+    }
+
+    /**
+     * 计件「按工序」明细行（issue #4621）：在既有 {@code {operation, qty, amount}} 上**追加**
+     * {@code logical_name} + {@code position}（既有键名/含义**一字不改**）。
+     *
+     * <p>⚠️ {@code operation} = **工人端快照名**（变体名 {@code 精裁-布}）：它是历史快照名、
+     * 其它消费者仍要读它 ⇒ 保留；但 **web 界面不得渲染该键** —— 界面显示
+     * {@code logical_name} + {@code position}，两者都是**读时派生**（逻辑名走既有映射
+     * {@link ProductionOperationQueryService#logicalOperationName}，部位从工序实例带出），
+     * **不写库**。缺 {@code logical_name}（老数据 / 自建工序）⇒ 前端退回 {@code operation} 原文。</p>
+     */
+    private static List<Map<String, Object>> operationPieceworkRows(
+            Map<String, BigDecimal> amount, Map<String, BigDecimal> qty,
+            Map<String, String> positionKindByName) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        amount.forEach((operation, value) -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("operation", operation);
+            row.put("logical_name", ProductionOperationQueryService.logicalOperationName(operation));
+            row.put("position", ProductionOperationQueryService.displayPosition(
+                    operation, positionKindByName.get(operation)));
+            row.put("qty", nz(qty.get(operation)));
+            row.put("amount", money(value));
+            rows.add(row);
+        });
+        return rows;
+    }
+
+    /**
      * 全租户**活跃**工序实例按 id 索引（报表用）。
      *
      * <p>判据与 {@link #listOperations}（per-order）一致 = {@code tenant_id + deleted=0}：
@@ -981,16 +1038,20 @@ public class ProductionService {
 
         // 与 per-order 计件 / 期间报表**同一份**聚合（{@link #aggregate}）：金额 = 合格数量 ×
         // 实例快照单价 × 系数，排除返工/报废。工序实例按 id 直查（保持既有 B 端契约口径）。
-        PieceworkTotals totals = aggregate(list(wrapper), positionOperationMapper::selectById);
-
-        List<Map<String, Object>> details = new ArrayList<>();
-        totals.operationAmount().forEach((operation, amount) -> {
-            Map<String, Object> detail = new LinkedHashMap<>();
-            detail.put("operation", operation);
-            detail.put("qty", nz(totals.operationQty().get(operation)));
-            detail.put("amount", money(amount));
-            details.add(detail);
+        // 部位（issue #4621）：报工快照**没有部位列** ⇒ 从**同一次实例回查**里带出
+        // （不额外查库、不猜）—— 只为给 web 界面拼「逻辑名 · 部位」，**不写库**。
+        Map<String, String> positionKindByName = new HashMap<>();
+        PieceworkTotals totals = aggregate(list(wrapper), operationId -> {
+            ProcessingPositionOperation op = positionOperationMapper.selectById(operationId);
+            if (op != null && StringUtils.hasText(op.getOperationName())
+                    && StringUtils.hasText(op.getPositionKind())) {
+                positionKindByName.putIfAbsent(op.getOperationName(), op.getPositionKind());
+            }
+            return op;
         });
+
+        List<Map<String, Object>> details =
+                operationPieceworkRows(totals.operationAmount(), totals.operationQty(), positionKindByName);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("worker_name", workerName.trim());
@@ -1193,7 +1254,13 @@ public class ProductionService {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("id", op.getId());
         view.put("seq", op.getSeq());
+        // ⚠️ `operation` = **工人端快照名**（变体名 `精裁-布`）：历史数据与其它消费者仍要读它，
+        // **一字不动**；**web 界面不得渲染该键**（issue #4621）—— 界面显示下面的
+        // `logical_name` + `position`（读时派生、**不写库**）。
         view.put("operation", op.getOperationName());
+        view.put("logical_name", ProductionOperationQueryService.logicalOperationName(op.getOperationName()));
+        view.put("position", ProductionOperationQueryService.displayPosition(
+                op.getOperationName(), op.getPositionKind()));
         view.put("group", op.getGroupName());
         view.put("unit", op.getUnit());
         view.put("qty", nz(op.getQty()));

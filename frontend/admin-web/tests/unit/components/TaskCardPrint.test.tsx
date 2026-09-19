@@ -16,14 +16,15 @@ const positions: ProductionPosition[] = [
   {
     position_name: '布帘',
     operations: [
-      { id: 'op-1', seq: 1, operation: '精裁-布', unit: '套', qty: 2, status: 'pending', done_qty: 0 },
-      { id: 'op-2', seq: 2, operation: '外帘装袋', unit: '件', qty: 2, is_must_finish: true, status: 'pending', done_qty: 0 },
+      // issue #4621：后端读面补的显示名派生键（`operation` = 工人端快照名，界面不得渲染）
+      { id: 'op-1', seq: 1, operation: '精裁-布', logical_name: '精裁', position: '布帘', unit: '套', qty: 2, status: 'pending', done_qty: 0 },
+      { id: 'op-2', seq: 2, operation: '外帘装袋', logical_name: '外帘装袋', unit: '件', qty: 2, is_must_finish: true, status: 'pending', done_qty: 0 },
     ],
   },
   {
     position_name: '纱帘',
     operations: [
-      { id: 'op-3', seq: 1, operation: '韩褶-纱', unit: '折', qty: 24, status: 'pending', done_qty: 0 },
+      { id: 'op-3', seq: 1, operation: '韩褶-纱', logical_name: '韩褶', position: '纱帘', unit: '折', qty: 24, status: 'pending', done_qty: 0 },
     ],
   },
 ]
@@ -54,7 +55,9 @@ describe('TaskCardPrint', () => {
     render(<TaskCardPrint processingOrderNo="JG-20260917-0001" qrToken={QR_TOKEN} positions={positions} />)
 
     const row = screen.getByTestId('task-card-op-0')
-    expect(within(row).getByText('精裁-布')).toBeInTheDocument()
+    // issue #4621：纸面只显示「逻辑名 · 部位」，变体名（`精裁-布`）不上纸面
+    expect(within(row).getByText('精裁 · 布帘')).toBeInTheDocument()
+    expect(within(row).queryByText('精裁-布')).toBeNull()
     expect(within(row).getByTestId('task-card-op-qty')).toHaveTextContent('2 套')
     expect(within(row).getByTestId('task-card-op-position')).toHaveTextContent('布帘')
 

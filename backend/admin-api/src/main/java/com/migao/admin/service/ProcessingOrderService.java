@@ -516,7 +516,13 @@ public class ProcessingOrderService {
                     continue;
                 }
                 Map<String, Object> operation = new LinkedHashMap<>();
+                // ⚠️ `operation` = **工人端快照名**（变体名 `精裁-布`）：历史数据与其它消费者仍要读它，
+                // **一字不动**；**web 界面不得渲染该键**（issue #4621）—— 界面显示下面的
+                // `logical_name` + `position`（读时派生、**不写库**）。
                 operation.put("operation", step.get("operation"));
+                // 显示名派生键**从路线步骤逐字带出**（不在此另推一份 ⇒ 不会与路线读面漂移）
+                operation.put("logical_name", step.get("logical_name"));
+                operation.put("position", step.get("position"));
                 // 分组/单位/单价/必完/开始标记**逐字取库**（不猜、不补默认值）
                 operation.put("group", step.get("group"));
                 operation.put("unit", step.get("unit"));
@@ -822,7 +828,12 @@ public class ProcessingOrderService {
                 continue;
             }
             Map<String, Object> operation = new LinkedHashMap<>();
+            // ⚠️ `operation` = **工人端快照名**（变体名）：**web 界面不得渲染该键**（issue #4621）
             operation.put("operation", operationName);
+            // 显示名派生键：规则里的 `operation` **就是逻辑名**（`production_route_rules.operation`
+            // 与 OPERATION_LOGICAL_NAMES 的值域一致）⇒ 逐字带出，不再归一一次
+            operation.put("logical_name", logicalName);
+            operation.put("position", ProductionOperationQueryService.displayPosition(operationName, position));
             operation.putAll(meta);
             // 唯一性 = 取代（issue #4577）：目标工序已在序列里 ⇒ 先移除旧位置、再按本条规则的锚点插入
             operations.removeIf(existing -> Objects.equals(str(existing.get("operation")), operationName));
@@ -1281,6 +1292,10 @@ public class ProcessingOrderService {
             Map<String, Object> step = new LinkedHashMap<>();
             step.put("seq", seq++);
             step.put("operation", variant);
+            // 工序显示名的读时派生（issue #4621）：`logical_name` + `position` 供 **web 界面**渲染
+            // 「逻辑名 · 部位」；`operation` 是**工人端快照名**（变体名），**web 界面不得渲染该键**。
+            step.put("logical_name", logicalName);
+            step.put("position", ProductionOperationQueryService.displayPosition(variant, position));
             step.put("group", meta.get("group"));
             step.put("unit", meta.get("unit"));
             BigDecimal price = priceByLogical.get(logicalName);
