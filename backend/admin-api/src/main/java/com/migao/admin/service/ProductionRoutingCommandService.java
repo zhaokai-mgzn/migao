@@ -270,9 +270,19 @@ public class ProductionRoutingCommandService {
                 details.add(BusinessException.detail(field, "工序名不能为空"));
                 continue;
             }
-            if (!seen.add(name)) {
+            // ⚠️ 判重键必须是**归一后的逻辑名**，不是原始字符串（issue #4520）。
+            // 主线里合法出现两种写法：逻辑名（`精裁`，种子/矩阵的行键）与工序库变体名（`精裁-布`，
+            // `production_operations.name` / 「添加工序」选择器）。它们是**同一道工序**，但**字符串不同**
+            // ⇒ 按原始字符串判重会放行 `["精裁", …, "精裁-布"]` ⇒ 实例化出两道 `精裁`
+            // ⇒ **工人按两遍单价拿钱**。归一口径复用 P2b 的 `normalizeOperationName`
+            // （**不在此另存映射表** —— 那就是第二份口径，本仓明令禁止）。
+            String logicalName = productionOperationQueryService.normalizeOperationName(name);
+            if (!seen.add(logicalName)) {
                 details.add(BusinessException.detail(field,
-                        String.format("工序「%s」重复出现：同一道工序在一条路线里只能出现一次（否则工人按两遍单价拿钱）", name)));
+                        String.format("工序「%s」重复出现：同一道工序在一条路线里只能出现一次"
+                                        + "（否则工人按两遍单价拿钱）。⚠️ 注意「%s」与它的另一种写法"
+                                        + "（如「%s」/「%s」）是**同一道工序**，归一名都是「%s」",
+                                name, name, name + "-布", name + "-纱", logicalName)));
                 continue;
             }
             ProductionOperation op = library.get(name);
