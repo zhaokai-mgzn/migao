@@ -26,6 +26,7 @@ const orderCraftSpec = {
   patternRepeat: 0.32,
   processingMeters: 13.3,
   fabric_meters: 13.3,
+  formulaText: '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米',
   pleat_count: 52,
   per_panel_pleats: 26,
   panels: 4,
@@ -58,7 +59,7 @@ const rowValue = (rows: ReturnType<typeof craftSpecRows>, label: string) =>
   rows.find((row) => row.label === label)?.value
 
 describe('craftSpecRows — 订单/快照层（camelCase）', () => {
-  it('按 §4.9 表渲染全部 17 个字段', () => {
+  it('按 §4.9 表渲染全部 18 个字段（第 18 = 算料公式，issue #4546）', () => {
     const rows = craftSpecRows(orderCraftSpec)
     expect(rows.map((row) => row.label)).toEqual([
       '部位',
@@ -76,9 +77,18 @@ describe('craftSpecRows — 订单/快照层（camelCase）', () => {
       '实际褶倍',
       '面料米数',
       '加工费米数',
+      '算料公式',
       '是否对花',
       '花距',
     ])
+  })
+
+  it('#4546 边界：算料公式只登记**订单层 camelCase**（不放开 snake_case ⇒ C 端报价卡不加这一行）', () => {
+    // 三端同源的展示映射被 C 端报价卡共用，而 C 端 `curtain_calc` 输出里**有** `formula_text`
+    // ⇒ 登记 snake_case 别名会让公式串直接出现在**顾客**报价卡上 —— 那是超出 #4546 裁定的
+    // 产品面变更。本断言把这个边界钉住：要放开，先有裁定。
+    expect(rowValue(craftSpecRows({ formula_text: '韩折公式：…' }), '算料公式')).toBeUndefined()
+    expect(rowValue(craftSpecRows({ formulaText: '韩折公式：…' }), '算料公式')).toBe('韩折公式：…')
   })
 
   it('格式化：布尔 → 是/否、米数带单位、倍数带单位、选项数组顿号连接', () => {
@@ -205,6 +215,8 @@ describe('isCraftSpecKey / craftSpecLine', () => {
     expect(isCraftSpecKey('curtain_type')).toBe(true)
     expect(isCraftSpecKey('processing_meters')).toBe(true)
     expect(isCraftSpecKey('processingMeters')).toBe(true)
+    // 算料公式是工艺键 ⇒ 不会重复落进「其它字段」原始键值兜底行（issue #4546）
+    expect(isCraftSpecKey('formulaText')).toBe(true)
     expect(isCraftSpecKey('colorName')).toBe(false)
     expect(isCraftSpecKey('sellingMethod')).toBe(false)
   })
