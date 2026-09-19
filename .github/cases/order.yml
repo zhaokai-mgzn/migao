@@ -1292,10 +1292,13 @@ cases:
     #     `product_count_for_keyword` 先例 = OR-016 / OR-017）。
     # `max_growth: 1` 是**必须**的（门禁规则 h）：本用例自己会写一单 ⇒ 不给容忍度的话
     # `0 → 1 > 0` 恒判漂移、score 归零（实证判定跑 35295494688 的 PR-008/PR-016 形态）。
+    # ⚠️ 值必须**带引号**：不带引号会被 YAML 读成 `{'customer_phone': None}`（字典），
+    # 前缀分类守卫（`test_case_seed_truth.py::test_every_namespace_prefix_is_classified`）
+    # 会把它判成「未分类前缀」而报红 —— 本文件其余用例一律是 `"键:值"` 字符串形态。
     namespaces:
-      - customer_phone:13800138000
-      - product_name:夏日清风窗帘
-      - product_name:遮光窗帘
+      - "customer_phone:13800138000"
+      - "product_name:夏日清风窗帘"
+      - "product_name:遮光窗帘"
     precondition:
       - type: order_count_for_phone
         source: "13800138000"
