@@ -129,6 +129,17 @@ export function craftCalcParamsOf(line: CalcLineInput): CraftCalcParams | null {
   if (line.craft.specialOptions && line.craft.specialOptions.length > 0) {
     params.special_options = line.craft.specialOptions
   }
+  // 对花 / 花距（issue #4571）：**只在「对花 = 是」时带出** —— 与 `buildCraftSpec` 同口径
+  // （对花为否时留着花距是自相矛盾的输入，会让引擎多算一个花距）。
+  // 为什么必须传：定宽买高时引擎按 `每幅长 = 窗高 + 卷边 + 花距` 算（`has_pattern` 是**唯一**开关），
+  // 不传 ⇒ 试算比落库口径**少算「幅数 × 花距」**（页面预填的米数偏小 ⇒ 少收面料钱）。
+  if (line.craft.hasPattern === true) {
+    params.has_pattern = true
+    const repeat = Number(line.craft.patternRepeat)
+    if (Number.isFinite(repeat) && repeat > 0) {
+      params.pattern_repeat = repeat
+    }
+  }
   return params
 }
 
@@ -150,6 +161,10 @@ export function craftCalcSignature(params: CraftCalcParams | null): string {
     params.craft ?? '',
     params.style ?? '',
     (params.special_options ?? []).join(','),
+    // 对花 / 花距进签名（issue #4571）：改了它**必须重发试算** —— 否则页面留着旧口径的米数
+    // （定宽买高下差「幅数 × 花距」），而签名不变 ⇒ effect 不触发 ⇒ 静默错数。
+    params.has_pattern ? '1' : '0',
+    params.pattern_repeat ?? '',
   ].join('|')
 }
 

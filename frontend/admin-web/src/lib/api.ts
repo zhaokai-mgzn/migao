@@ -255,6 +255,14 @@ export interface CraftCalcParams {
    * 韩褶/打孔/四爪钩/穿杆/平幔。**公式由工艺推导**，权威表在算料引擎（`curtain_calc.resolve_craft_rule`）。
    */
   craft?: string
+  /**
+   * 是否对花（issue #4571）：**只在「定宽买高」时影响用料** —— 每幅长 +1 个花距
+   * （算料引擎 `curtain_calc` 的 `has_pattern`；定高买宽下它不改变用料）。
+   * 缺省 `false` = 不按对花算（**不是**「未指定」：本键不进三态语义）。
+   */
+  has_pattern?: boolean
+  /** 花距（米），仅 `has_pattern=true` 时有意义；行业常见 0.3~0.6 */
+  pattern_repeat?: number
 }
 
 /** 试算结果 —— 算料输出子集（§4.5 snake_case） */
