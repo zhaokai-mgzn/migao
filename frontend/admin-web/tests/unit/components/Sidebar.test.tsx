@@ -92,9 +92,11 @@ describe('Sidebar', () => {
     expect(screen.getByText('商品列表')).toBeInTheDocument()
     // #1403: 商品分类管理已移出侧边栏，入口内嵌到新增商品页
     expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
-    // issue #4490：「加工项管理」与「加工费管理」合并为「加工项与加工费」，归入生产管理组
-    expect(screen.getByText('加工项与加工费')).toBeInTheDocument()
-    expect(screen.queryByText('加工项管理')).not.toBeInTheDocument()
+    // issue #4490：「加工项管理」与「加工费管理」合并为单一入口（issue #4542 起菜单名 =「加工项管理」，
+    // 与服务端同名），归入商品管理组
+    expect(screen.getByText('加工项管理')).toBeInTheDocument()
+    // 旧菜单名（#4490 的合并名，用码点构造以免在源码里再写出它）不再出现在侧边栏（issue #4542 改名）
+    expect(screen.queryByText('\u52a0\u5de5\u9879\u4e0e\u52a0\u5de5\u8d39')).not.toBeInTheDocument()
     // #2969: 岗位权限（原角色权限）归入组织管理组，入口应显示（system:manage 权限，admin 全权限）
     expect(screen.getByText('岗位权限')).toBeInTheDocument()
     // 通知中心（全员）入口可见
@@ -332,7 +334,7 @@ describe('Sidebar', () => {
       expect(screen.getByText('订单列表')).toBeInTheDocument()
       // 无权限的
       expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
-      expect(screen.queryByText('加工项与加工费')).not.toBeInTheDocument()
+      expect(screen.queryByText('加工项管理')).not.toBeInTheDocument()
       expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
       // #2969: 客户管理组（客户列表+财务对账）整组隐藏
       expect(screen.queryByText('客户管理')).not.toBeInTheDocument()

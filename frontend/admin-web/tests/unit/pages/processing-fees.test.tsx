@@ -293,16 +293,16 @@ describe('加工费组合 tab（issue #4386；issue #4490 合并后为 /producti
     expect(screen.getByTestId('fee-combination-fc-1')).toBeInTheDocument()
   })
 
-  it('侧边栏：**商品管理组**含合并项「加工项与加工费」→ /production/processing（权限码 processing:manage）', async () => {
+  it('侧边栏：**商品管理组**含合并项「加工项管理」（#4542）→ /production/processing（权限码 processing:manage）', async () => {
     const { menuGroups } = await import('@/config/menu')
     // issue #4490（含同日**规格修订**：「合并后的菜单放入到商品管理大菜单下」）：
     // 「加工费管理」(/production/processing-fees) 与「加工项管理」(/processing) 合并为单一入口，
-    // 归**商品管理**组（取代原「加工项管理」的位置），权限码不变
+    // 归**商品管理**组（取代原「加工项管理」的位置），权限码不变；#4542 起菜单名 =「加工项管理」
     const product = menuGroups.find((g) => g.key === 'product-center')
     expect(product).toBeDefined()
     const entry = product!.children.find((c) => c.path === '/production/processing')
     expect(entry).toBeDefined()
-    expect(entry!.name).toBe('加工项与加工费')
+    expect(entry!.name).toBe('加工项管理')
     expect(entry!.permissionCode).toBe('processing:manage')
     expect(product!.children.map((c) => c.name)).toContain('商品列表')
     expect(product!.children.map((c) => c.path)).not.toContain('/processing')

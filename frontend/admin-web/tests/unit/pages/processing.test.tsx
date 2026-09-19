@@ -90,7 +90,7 @@ describe('ProcessingPage（issue #4490 合并后：/production/processing 的「
   it('should render page title', async () => {
     render(<ProcessingPage />)
     await waitFor(() => {
-      expect(screen.getByText('加工项与加工费')).toBeInTheDocument()
+      expect(screen.getByText('加工项管理')).toBeInTheDocument()
     })
   })
 

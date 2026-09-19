@@ -1,13 +1,13 @@
 // case_ids: PP-006, PG-040
 // PP-006（加工项目录 CRUD / 计价方式）+ PG-040（加工费**组合**定价）在 issue #4490 合并后的**单页形态**：
 // 「加工项管理」(/processing) 与「加工费管理」(/production/processing-fees) 合并为单一菜单入口
-// 「加工项与加工费」/production/processing（用户 2026-09-19 **规格修订**后归**商品管理**组）。
+// /production/processing（用户 2026-09-19 **规格修订**后归**商品管理**组；#4542 起菜单名 =「加工项管理」）。
 //
 // 本文件钉的是**合并本身的判据**（两半能力各自的断言在 processing.test.tsx / processing-fees.test.tsx）：
 // ① 菜单结构（用户 2026-09-19 **规格修订**：合并后的菜单放**商品管理**大菜单下）：
 //    **商品管理组含合并项**且路径/权限码正确；**生产管理组不含它**（回到三项）；
 //    全站不再有指向 /processing 或 /production/processing-fees 的菜单项，也不再有独立的
-//    「加工项管理」/「加工费管理」两项；
+//    「加工费管理」项（#4542 后菜单名 =「加工项管理」，只有一项）；
 // ② 两个旧路径都**重定向**到新入口（旧深链不 404）；加工费旧路径带 `?tab=fees` 直达第二栏；
 // ③ 页面**两个 tab**（加工项 / 加工费组合），默认落在「加工项」，切换后内容**互斥**（不平铺）；
 // ④ **切 tab 不丢状态**（两栏 state 挂在同一组件上：加工项表单草稿 / 加工费就地改价草稿）；
@@ -92,19 +92,19 @@ const productGroup = () => menuGroups.find((g) => g.key === 'product-center')
 // ────────────────────────── ① 菜单结构（侧边栏 IA） ──────────────────────────
 
 describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商品管理**组）', () => {
-  it('商品管理组含合并项「加工项与加工费」→ /production/processing（取代原「加工项管理」的位置）', () => {
+  it('商品管理组含合并项「加工项管理」（#4542 改名后与服务端同名）→ /production/processing', () => {
     const entry = productGroup()?.children.find((c) => c.key === 'processing')
     expect(entry).toBeDefined()
-    expect(entry!.name).toBe('加工项与加工费')
+    expect(entry!.name).toBe('加工项管理')
     expect(entry!.path).toBe('/production/processing')
     expect(entry!.permissionCode).toBe('processing:manage')
     // 与本组「商品列表」同组（用户裁定：合并后的菜单放入商品管理大菜单下），位次 = 原「加工项管理」那一格
-    expect(productGroup()!.children.map((c) => c.name)).toEqual(['商品列表', '加工项与加工费'])
+    expect(productGroup()!.children.map((c) => c.name)).toEqual(['商品列表', '加工项管理'])
     // 渲染出来的图标也必须是本项声明的那个（配置断言绿、画面错是 #4482 的既有形态）
     expect(entry!.icon).toBe('Scissors')
   })
 
-  it('生产管理组**不含**合并项（回到三项）；全站不再有独立「加工项管理」/「加工费管理」', () => {
+  it('生产管理组**不含**合并项（回到三项）；全站不再有独立的「加工费管理」项', () => {
     const productionPaths = productionGroup()!.children.map((c) => c.path)
     expect(productionPaths).toEqual(['/production', '/production/routings', '/production/piecework'])
     expect(productionPaths).not.toContain('/production/processing')
@@ -114,13 +114,17 @@ describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商�
       'processing:manage',
       'processing:manage',
     ])
-    // 全站不再有指向两个旧路径的菜单项，也不再有旧名
+    // 全站不再有指向两个旧路径的菜单项，也不再有独立的「加工费管理」项；
+    // ⚠️ 「加工项管理」是**合并后的唯一入口**（#4542 起菜单名）⇒ **必须**在菜单里，不得写成负断言。
     const allPaths = menuGroups.flatMap((g) => g.children.map((c) => c.path))
     expect(allPaths).not.toContain('/processing')
     expect(allPaths).not.toContain('/production/processing-fees')
     const allNames = menuGroups.flatMap((g) => g.children.map((c) => c.name))
-    expect(allNames).not.toContain('加工项管理')
     expect(allNames).not.toContain('加工费管理')
+    // #4542：旧菜单名（#4490 的合并名，U+52A0 U+5DE5 U+9879 U+4E0E U+52A0 U+5DE5 U+8D39）
+    // 已不存在 —— 用码点构造，避免在源码里再写出该旧名（issue #4542 判据 1：零命中）
+    expect(allNames).not.toContain('\u52a0\u5de5\u9879\u4e0e\u52a0\u5de5\u8d39')
+    expect(allNames.filter((n) => n === '加工项管理')).toHaveLength(1)
   })
 })
 
