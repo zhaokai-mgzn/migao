@@ -1261,9 +1261,11 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("#4230 判据 2：带「一分为二」（ERP 名，issue #4389）⇒ 该部位**每道**工序 factor=1.7；不带 ⇒ 1.00")
-    void specialOptionFactorAppliesToEveryOperationOfThePosition() {
+    @DisplayName("#4589：带「一分为二」（ERP 名）⇒ 工序实例 factor 仍恒 1（规则表里那条 ×1.7 档已无消费者）")
+    void specialOptionNoLongerAppliesFactorToOperations() {
         stubLibrary();
+        // 规则表里**仍有** active 的 `action='factor'`（一分为二 ×1.7）行 —— 历史种子照旧在，
+        // 但已无消费者 ⇒ 这正是本用例的判别力所在（改前这里逐条是 1.7）。
         stubOptionTables();
         stubGenerate(List.of(orderItemHanzheWithOptions("米白", List.of("一分为二"))));
         when(processingItemMapper.selectById("p1"))
@@ -1275,12 +1277,14 @@ class ProcessingOrderServiceTest {
         ArgumentCaptor<ProcessingPositionOperation> captor =
                 ArgumentCaptor.forClass(ProcessingPositionOperation.class);
         verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(captor.capture());
-        // 「一分为二」不加工序（只加系数）⇒ 工序数不变，但每道都乘 1.7
+        // 「一分为二」不加工序 ⇒ 工序数不变；系数已退场 ⇒ 每道 factor 恒 1
+        assertThat(captor.getAllValues()).extracting(ProcessingPositionOperation::getOperationName)
+                .containsExactlyElementsOf(java.util.Arrays.stream(V54_BULIAN_HANZHE).map(r -> r[0]).toList());
         assertThat(captor.getAllValues()).allSatisfy(instance ->
                 assertThat(instance.getFactor()).as("工序「%s」的系数", instance.getOperationName())
-                        .isEqualByComparingTo("1.7"));
+                        .isEqualByComparingTo("1"));
 
-        // 不带 ⇒ 逐条 1.00（防"系数被无条件写成 1.7"的假修复）
+        // 不带 ⇒ 同样逐条 1.00（两侧同口径；判别力由「改前带选项那侧是 1.7」承担）
         reset(positionOperationMapper);
         stubGenerate(List.of(orderItemHanzhe("米白")));
         realChainService().generate(List.of("order-001"), TENANT, "u1");
@@ -1323,22 +1327,26 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("#4230 判据 3：系数真的进了钱 —— 同一张单带/不带「一分为二」的计件合计比值 ≈ 1.7")
-    void specialOptionFactorReachesPieceworkAmount() {
+    @DisplayName("#4589：系数不再进钱 —— 同一张单带/不带「一分为二」的计件合计**相等**（比值 = 1）")
+    void specialOptionFactorNoLongerReachesPieceworkAmount() {
         BigDecimal withOption = pieceworkTotalFor(List.of("一分为二"));
         BigDecimal without = pieceworkTotalFor(List.of());
 
         assertThat(without).as("不带特殊选项 ⇒ 合计 = Σ(1 × 库单价)").isGreaterThan(BigDecimal.ZERO);
-        double ratio = withOption.divide(without, 6, RoundingMode.HALF_UP).doubleValue();
-        // 逐笔四舍五入到分（ProductionService.aggregate 的既有口径）⇒ 合计比值与 1.7 有 0.01 级偏差，
-        // 断言用容差而不是等号（等号会假红）；但「带系数 ≠ 不带」这一条是硬断言。
-        assertThat(ratio).as("计件合计比值（带 一分为二 / 不带）= 1.7 ± 0.01").isCloseTo(1.7, org.assertj.core.data.Offset.offset(0.01));
-        assertThat(withOption).as("系数必须让钱变多（方向）").isGreaterThan(without);
+        // 红证（改前实测）：比值 = 1.7（系数真的乘进了钱）⇒ 本断言红。
+        BigDecimal ratio = withOption.divide(without, 6, RoundingMode.HALF_UP);
+        assertThat(ratio)
+                .as("计件合计比值（带 一分为二 / 不带）必须 = 1 —— 系数已从算法退场（#4589）")
+                .isEqualByComparingTo("1.000000");
     }
 
     /** 生成一张带指定特殊选项的加工单，按**真实** ProductionService 算该单计件合计。 */
     @SuppressWarnings("unchecked")
     private BigDecimal pieceworkTotalFor(List<String> specialOptions) {
+        // 每次调用都重置工序实例 mapper：本方法在一次用例里被调用两次（带/不带选项），
+        // 而 #4589 之后两者的**工序配置签名逐值相同**（系数不再进签名）⇒ 不重置的话第二次
+        // generate 会命中「已实例化，重复调用跳过（幂等）」路径，本次调用的 stored 恒空。
+        reset(positionOperationMapper);
         stubLibrary();
         stubOptionTables();
         stubGenerate(List.of(orderItemHanzheWithOptions("米白", specialOptions)));

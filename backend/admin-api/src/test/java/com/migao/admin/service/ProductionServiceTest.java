@@ -408,8 +408,8 @@ class ProductionServiceTest {
     }
 
     @Test
-    @DisplayName("#4351 报工那一刻把工序实例的单价与系数写进报工快照（unit_price / factor）")
-    void reportSnapshotsUnitPriceAndFactor() {
+    @DisplayName("#4589 报工快照只固化单价（unit_price），**不再**写系数快照")
+    void reportSnapshotsUnitPriceWithoutFactor() {
         when(positionOperationMapper.selectById("op-1"))
                 .thenReturn(op("op-1", "韩褶-布", "10.00", false, "pending", "0.00", "0.40", "1.70"));
         when(positionOperationMapper.selectList(any())).thenReturn(List.of(
@@ -422,9 +422,10 @@ class ProductionServiceTest {
         assertThat(inserted.getValue().getUnitPrice())
                 .as("单价快照（报工时从工序实例写入）—— 聚合不得再回查实例")
                 .isEqualByComparingTo("0.40");
+        // 判别力：实例上的 factor = 1.70，而报工快照**必须不再固化它**（改前这里等于 1.70）
         assertThat(inserted.getValue().getFactor())
-                .as("系数快照（报工时从工序实例写入）")
-                .isEqualByComparingTo("1.70");
+                .as("系数快照已退场（#4589）：报工不再写 factor")
+                .isNull();
     }
 
     @Test

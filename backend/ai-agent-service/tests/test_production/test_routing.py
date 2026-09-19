@@ -78,11 +78,20 @@ def test_instance_operations_qty_from_calc():
     assert by_op["韩褶-布"]["qty_source"] == "formula"
 
 
-def test_instance_operations_one_split_factor():
-    """一分为二（ERP 名，issue #4389）特殊选项 → 计件系数 ×1.7（不插工序）"""
+def test_instance_operations_one_split_has_no_factor():
+    """#4589：「一分为二」不再给工序实例落 `factor` 键（系数从算法与数据里退场）。
+
+    红证（改前）：`instance_operations` 落 `"factor": factor_for(...)` = 1.7 ⇒
+    `"factor" not in i` 对 11 道工序**逐条红**。
+    """
     insts = instance_operations({**POSITION, "special_options": ["一分为二"]}, CALC)
-    assert all(i["factor"] == 1.7 for i in insts)
+    assert all("factor" not in i for i in insts)
     assert all(i["operation"] != "一分为二" for i in insts)
+    # 判别性：路线与逐值数量/单价必须与不带选项时**逐值相同**（系数退场 ≠ 顺手改了别的）
+    without = instance_operations(POSITION, CALC)
+    assert [i["operation"] for i in insts] == [i["operation"] for i in without]
+    assert [(i["qty"], i["unit_price"]) for i in insts] == \
+           [(i["qty"], i["unit_price"]) for i in without]
 
 
 def test_operation_catalog_grouping():

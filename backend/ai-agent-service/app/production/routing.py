@@ -128,7 +128,7 @@ NEW_MODEL_ONLY_OPERATIONS = frozenset({"配料", "打包"})
 # 真值源 §1【默】19 项特殊选项，按处置分三类（**每一类都要显式登记**，见下方
 # `NON_PIECEWORK_OPTIONS` / `OPTION_FACTOR_SCOPES` 的注释；门禁 =
 # `tests/test_production/test_special_options.py::TestCriterion1CoverageGate`）：
-#   ① 加条件工序 = 本表；② 加计件系数 = `OPTION_FACTOR_SCOPES`；③ 不计件 = `NON_PIECEWORK_OPTIONS`。
+#   ① 加条件工序 = 本表；② 加计件系数 = `OPTION_FACTOR_SCOPES`（#4589 起**零消费**，仅作历史真值源）；③ 不计件 = `NON_PIECEWORK_OPTIONS`。
 SPECIAL_OPTION_ROUTINGS: Dict[str, Dict[str, Any]] = {
     "拼1次": {"operation": "拼1次-布", "after": "布三边"},
     "拼2次": {"operation": "拼2次-布", "after": "布三边"},
@@ -151,25 +151,22 @@ SPECIAL_OPTION_ROUTINGS: Dict[str, Dict[str, Any]] = {
     "防翘扣": {"operation": "防翘扣-布", "after": "布三边"},
 }
 
-# ── 特殊选项 → 计件系数（真值源 §4「条件系数表：特殊选项 → **工序** → 系数」）──
-# 每个选项一个**档位列表**（按书写顺序解析，**后面的档覆盖前面的档** —— 与 CSS/路由表同构：
-# 先写平摊档，再写逐工序/逐部位的**例外**档），档位字段：
-#   `factor`         系数（乘在工序实例的 `factor` 上）
-#   `operation_name` 限定工序名；`None` = 该**部位全部**工序（平摊档）
-#   `curtain_type`   限定部位（布帘/纱帘/帘头）；`None` = 不限部位
-#   `source`         `实证` / `推算`（真值源标注口径，商家可配版本化）
+# ── 特殊选项 → 计件系数（**历史真值源，自 #4589 起零消费**）──
+# 用户裁定（2026-09-19，issue #4589）：「计件工资 = **数量 × 计件单价**，不需要考虑系数」
+# ⇒ `factor_for()` 已删除、工序实例**不再带 `factor` 键**，本表**没有任何读者**。
 #
-# v1 **只种「一分为二 ⇒ 1.7 / 全部工序」一个档** —— 它是唯一的**实证**值（真值源 §4 + 行业 ERP）。
-# issue #4230 §2.4 的逐工序/逐分组细算档（车位 ≈×2.0 / 后道 ×1.0 / 裁剪 ×1.2）是**纯推算**，
-# 且按其细算的总价会**低于**平摊 ×1.7 ⇒ **不拿推算值覆盖实证值**，v1 不启用、不种值。
-# 结构留 `operation_name` / `curtain_type` 两个限定档位，等客户确认后再细化（不把路堵死）——
-# 「该档位可用」由 `test_operation_scoped_factor_applies_to_that_operation_only` 以限定值构造证明。
+# ⚠️ **为什么不连表一起删**：本表是 **V59/V72 已发布迁移种子**（`production_option_factors`
+# 的「一分为二 ⇒ ×1.7」，V72 搬进 `production_route_rules` 的 `action='factor'` 行）与
+# `docs/sql/schema.sql` bootstrap 终态的**真值源镜像** —— 三源收敛守卫
+# （`tests/unit_ci_workflows/test_production_catalog_seed.py`）按它逐值比对**已发布**迁移。
+# 删表 = 删守卫（守卫只能靠删断言才绿 ⇒ 停手信号）。数据侧由新迁移**软删**那批活跃行
+# （`deleted=1`，留痕），列本身保留（历史工序实例快照 / 历史报工上的值是当时工资的证据）。
 #
-# ⚠️ **键 = ERP 名（issue #4389，用户裁定 R-e「以 ERP 为准改」）**：本表键是
-# 「订单选配 → 计件系数」的 **join key** —— 顾客按 ERP 说法选 `一分为二`，而旧键写作 `一分二`
-# ⇒ 查不到 ⇒ 系数静默退回 1.0 = **少发工人钱**（错一个字就静默失效，无任何东西变红）。
-# 旧写法 `一分二` **不是**兼容别名（R18 要求三张表的键与 ERP **逐字一致**）；存量库里已按
-# 旧名落地的行由**新迁移** `V65__align_special_option_names_with_erp.sql` 改名（已发布迁移不可改）。
+# 档位字段（仅历史语义）：`factor` 系数 / `operation_name` 限定工序（`None` = 全部工序）/
+# `curtain_type` 限定部位（`None` = 不限）/ `source` 实证·推算。
+#
+# ⚠️ **键 = ERP 名（issue #4389，用户裁定 R-e「以 ERP 为准改」）**：存量库里已按旧名
+# （`一分二`）落地的行由**新迁移** `V65__align_special_option_names_with_erp.sql` 改名。
 OPTION_FACTOR_SCOPES: Dict[str, List[Dict[str, Any]]] = {
     "一分为二": [
         {"factor": 1.7, "operation_name": None, "curtain_type": None, "source": "实证"},
@@ -194,9 +191,9 @@ NON_PIECEWORK_OPTIONS = frozenset({"余料带回-布", "余料带回-纱"})
 # （只列 `余料带回(布/纱)`）⇒ 我们手上只有截图这一个证据，无法判定它在 ERP 里是
 # 「材料无关的第三种可选值」还是「`全部` tab 下同一选项的另一种渲染 / 分组标题」
 # ⇒ 按用户裁定 R-e 的「不猜」纪律，**登记为待确认**，等客户确认它归
-# 「加条件工序 / 加计件系数 / 不计件」三类中的哪一类。
+# 「加条件工序 / 加计件系数 / 不计件」三类中的哪一类（「加计件系数」这一类自 #4589 起已退场）。
 #
-# 行为口径 = 与「不计件」相同（不加条件工序、不改计件系数、计件金额不变），但**语义不同**：
+# 行为口径 = 与「不计件」相同（不加条件工序、不改计件金额），但**语义不同**：
 # 它不是「已定论的不计件」，而是「未定论」。两者的区别在数据上可查（本集合 vs
 # `NON_PIECEWORK_OPTIONS`）⇒ 它**不落进静默黑洞**（`.get(opt) → None` 那种）。
 PENDING_CUSTOMER_CONFIRMATION_OPTIONS = frozenset({"余料带回"})
@@ -355,35 +352,6 @@ def build_routing(position: Dict[str, Any]) -> List[str]:
     return route
 
 
-def _scope_applies(scope: Dict[str, Any], position: Dict[str, Any], operation: str) -> bool:
-    """档位是否作用于该（部位, 工序）——`None` 限定 = 不限（见 `OPTION_FACTOR_SCOPES` 注释）。"""
-    operation_name = scope.get("operation_name")
-    if operation_name is not None and operation_name != operation:
-        return False
-    curtain_type = scope.get("curtain_type")
-    return curtain_type is None or curtain_type == position.get("curtain_type", "布帘")
-
-
-def factor_for(position: Dict[str, Any], operation: str) -> float:
-    """该工序实例的特殊选项计件系数（真值源 §4 条件系数表；无选项 ⇒ 1.0）。
-
-    单个选项内：**后面的档覆盖前面的档**（最后一个命中的档生效，见 `OPTION_FACTOR_SCOPES`
-    注释）—— 逐工序/逐部位的**例外档**因此能盖住平摊档，而**不是**与它相乘
-    （相乘会把「平摊 ×1.7 + 车位 ×2.0」算成 ×3.4，纯属重复计费）。
-    多个加系数选项并存：各自解出的系数**相乘**（独立倍率的合成口径；v1 只种「一分为二」一个档）。
-    只认 `OPTION_FACTOR_SCOPES` 登记过的选项：未登记的名字**不得**悄悄改系数。
-    """
-    factor = 1.0
-    for opt in position.get("special_options") or []:
-        resolved = None
-        for scope in OPTION_FACTOR_SCOPES.get(opt, ()):
-            if _scope_applies(scope, position, operation):
-                resolved = float(scope["factor"])   # 后档覆盖前档
-        if resolved is not None:
-            factor *= resolved
-    return factor
-
-
 def _insert_after(route: List[str], operation: str, after: str) -> List[str]:
     """把 operation 插到 after 之后（after 不在路线中则追加到末尾）。
 
@@ -413,14 +381,16 @@ def instance_operations(
     position: Dict[str, Any],
     calc_info: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
-    """实例化工序（应做数量=引擎输出 + 单价 + 必完/开始标记 + 特殊选项系数）。
+    """实例化工序（应做数量=引擎输出 + 单价 + 必完/开始标记）。
 
     Args:
         position: {curtain_type, craft, is_shaped, special_options, open_count}
         calc_info: 算料引擎输出（`curtain_calc.build_quote` 的返回，键见 METER_KEYS/FOLD_KEYS 等；
                    缺 `panels`/`set_count`/`holes` 时按 _qty_for 的兜底口径处理，不落 0）
-    Returns: 工序实例列表 [{seq, operation, group, unit, qty, unit_price, factor,
+    Returns: 工序实例列表 [{seq, operation, group, unit, qty, unit_price,
              is_must_finish, is_start_marker, qty_source}]
+
+    实例**不再带 `factor` 键**（issue #4589）：系数已从算法退场。
     """
     route = build_routing(position)
 
@@ -434,7 +404,6 @@ def instance_operations(
             "unit": meta["unit"],
             "qty": _qty_for(operation, calc_info),
             "unit_price": meta["unit_price"],
-            "factor": factor_for(position, operation),
             "is_must_finish": operation in MUST_FINISH_OPS,
             "is_start_marker": operation in START_MARKER_OPS,
             "qty_source": calc_info.get("source", "formula"),

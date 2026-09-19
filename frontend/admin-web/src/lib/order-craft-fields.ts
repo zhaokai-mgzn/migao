@@ -196,7 +196,10 @@ export function createDefaultCraftSpec(): CraftSpecInput {
  * ⚠️ **选项名 = ERP 名，且它是 join key**（issue #4389 裁定 R-e）：本清单是**写侧** ——
  * 用户勾选的值经 `buildCraftSpec` 落进 `processingInfo.specialOptions`，服务端拿它去
  * `production_option_routings` / `production_option_factors.option_name` **逐字**匹配。
- * 与库侧差一个字 ⇒ 条件工序不加、计件系数静默退回 1.0（**少发工人钱**）。
+ * 与库侧差一个字 ⇒ 条件工序不加（**少做工**）。
+ * ⚠️ 其中「计件系数」那半已退场（issue #4589 用户裁定）：计件工资 = 数量 × 计件单价，
+ * `OPTION_FACTOR_SCOPES` 自该单起**零消费**（保留仅为已发布迁移种子的真值源镜像）
+ * ⇒ 选项名对不上**不再**影响工人到手金额。
  * 故 `一分为二` / `余料带回-布` / `余料带回-纱` 必须与 `routing.py` 及迁移 V59 ∪ V65 逐字一致。
  */
 export const SPECIAL_OPTIONS = [

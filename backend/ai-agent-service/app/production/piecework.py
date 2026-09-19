@@ -1,7 +1,8 @@
 """窗帘计件与完工判定（issue #3993，M4-G-1）
 
-计件工资 = Σ(报工合格数量 × 工序单价 × 特殊选项系数)；单工序一人制
-（2026-09 客户确认，无计件人数分摊）。必完工序全绿 → 订单自动生产完成。
+计件工资 = **报工合格数量 × 工序单价**（issue #4589 用户裁定 2026-09-19：
+「计件工资在计件工资体现，算法是数量 × 计件单价，不需要考虑系数」⇒ 系数从算法里退场）；
+单工序一人制（2026-09 客户确认，无计件人数分摊）。必完工序全绿 → 订单自动生产完成。
 
 真值源：docs/curtain-production-rules.md §4/§5。
 """
@@ -17,10 +18,13 @@ def compute_piecework(
     instances: List[Dict[str, Any]],
     work_logs: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """按人/按期计件汇总：每道工序金额 = Σ(合格数量 × 单价 × 系数)。
+    """按人/按期计件汇总：每道工序金额 = Σ(合格数量 × 单价)。
+
+    系数（`factor`）**不参与计算**（issue #4589）：工序实例上即使带着历史快照的
+    `factor`（如「一分为二」的 1.7），金额也只按 数量 × 单价 —— 历史不回溯。
 
     Args:
-        instances: instance_operations 输出（含 qty/unit_price/factor/is_must_finish）
+        instances: instance_operations 输出（含 qty/unit_price/is_must_finish）
         work_logs: [{operation, worker, qty, qualified_qty, type(normal/rework/scrap),
                      work_date}]——返工/报废不计入工资
     Returns: {total, per_worker: {worker: 金额}, per_operation: [{operation, amount}],
@@ -39,7 +43,7 @@ def compute_piecework(
         if inst is None:
             continue
         qty = float(log.get("qualified_qty", log.get("qty", 0)))
-        amount = qty * float(inst["unit_price"]) * float(inst.get("factor", 1.0))
+        amount = qty * float(inst["unit_price"])
         worker = log.get("worker") or "未分配"
         per_worker[worker] = round(per_worker.get(worker, 0.0) + amount, 2)
         total += amount
@@ -50,7 +54,7 @@ def compute_piecework(
                    and l.get("type", "normal") == "normal"]
         op_amount = round(
             sum(float(l.get("qualified_qty", l.get("qty", 0))) for l in op_logs)
-            * float(inst["unit_price"]) * float(inst.get("factor", 1.0)), 2
+            * float(inst["unit_price"]), 2
         )
         per_operation.append({"operation": inst["operation"], "amount": op_amount})
 

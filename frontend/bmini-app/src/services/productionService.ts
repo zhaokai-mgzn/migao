@@ -20,7 +20,8 @@ export interface ProductionOperation {
   unit: string
   qty: number
   unit_price: number
-  factor?: number
+  // 计件系数（`factor`）**不再下发**（issue #4589）：计件工资 = 数量 × 计件单价，
+  // 系数已从算法与读面退场（服务端不再返回该键 ⇒ 声明留着就是过期契约）。
   is_must_finish: boolean
   is_start_marker: boolean
   status: string

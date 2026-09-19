@@ -3094,7 +3094,7 @@
 期望: direct_reply
 数据: 工艺路线实例化：布帘·韩褶 11 道（精裁-布→…→外帘发货）；定型=否移除 定型-布/复烫-布；特殊选项插条件工序（拼2次→拼2次-布）
 数据: 应做数量=算料引擎输出（韩褶-布=折数 48、米工序=用料 12.3、套工序=1）—— 报工只确认不心算
-数据: 计件 = Σ(合格数量 × 单价 × 特殊选项系数)：一分二 ×1.7；返工/报废不计件；单工序一人制（无计件人数分摊）
+数据: 计件 = Σ(合格数量 × 单价)—— **不乘任何系数**（issue #4589 用户裁定「计件工资 = 数量 × 计件单价，不需要考虑系数」，`factor` 已从算法退场）；返工/报废不计件；单工序一人制（无计件人数分摊）
 数据: 完工判定：必完工序（外帘装袋，打包前置）合格量满应做数量 → 订单自动生产完成
 跳过: [backend-contract] 生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037/038 惯例）
 ```
@@ -3108,12 +3108,12 @@
 数据: 19 项真值源特殊选项**每一项**都落在三类之一（加工序=SPECIAL_OPTION_ROUTINGS / 加系数=OPTION_FACTOR_SCOPES / 不计件=NON_PIECEWORK_OPTIONS），不允许第四类「未登记」
 数据: A′ 类 5 道新工序（绑带-纱/logo条-布/立边-布/扣环-布/防翘扣-布）在 OPERATION_CATALOG 中存在且分组/单位/单价齐全，且有映射指向它们
 数据: 三条复用映射的锚点位置正确：布绑带→绑带-布 在 布帘车被 之后、余料做帘头→帘头制作 在 布三边 之后、抱枕→抱枕 在 外帘打卷 之后（断言前后相邻工序）
-数据: 系数：一分二 ⇒ 每道工序 factor=1.7；不带选项 ⇒ 1.0；operation_name 限定档位可用（以限定值构造证明）；多个加系数选项相乘
-数据: 不计件显式：余料带回(布)/(纱) ⇒ 路线逐值不变、factor 仍 1.0，且它们是**被登记**为不计件而不是「查不到映射」
+数据: 系数已退场（issue #4589 改判）：真值源表 `OPTION_FACTOR_SCOPES` **保留**（它是 V59/V72 已发布迁移种子与 schema.sql 终态的真值源镜像，三源收敛守卫按它比对）但**零消费** —— 「一分为二」命中该档位时工序实例**逐值不变**、且**没有 `factor` 键**；往表里注入逐工序/逐部位限定档后实例仍逐值不变（零消费判据）
+数据: 不计件显式：余料带回-布/-纱 ⇒ 路线与工序实例**逐值不变**（**没有 `factor` 键**），且它们是**被登记**为不计件而不是「查不到映射」
 跳过: [backend-contract] 生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/test_special_options.py），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）
 ```
 真值: processing-manage.crud
-溯源: 2026-09-18 新增（issue #4230 v1a-PY）：真值源 19 项特殊选项的「三类全登记」结构门禁 + 5 道新工序 + 条件工序锚点 + 计件系数结构；与 PP-010 的分工 = PP-010 宽覆盖生产确定性核心，PP-013 专钉「19 项无第四类未登记」 ｜ tags: processing, production, piecework, special_options
+溯源: 2026-09-18 新增（issue #4230 v1a-PY）：真值源 19 项特殊选项的「三类全登记」结构门禁 + 5 道新工序 + 条件工序锚点 + 计件系数结构；与 PP-010 的分工 = PP-010 宽覆盖生产确定性核心，PP-013 专钉「19 项无第四类未登记」 ｜ 2026-09-19（issue #4589）：**系数从算法退场**（用户裁定「计件工资 = 数量 × 计件单价，不需要考虑系数」）⇒ 本用例的系数两条按新口径改判：真值源表 `OPTION_FACTOR_SCOPES` 保留（已发布迁移种子的镜像，三源收敛守卫依赖它）但**零消费**；判据从「一分为二 ⇒ factor=1.7」改成「实例**无 factor 键**、逐值不变」，红证同源（改前正好差 1.7 倍） ｜ tags: processing, production, piecework, special_options
 
 ### PP-011. 加工单生产明细与任务卡渲染（工序进度/二维码/计件） 🔵
 ```
@@ -3485,14 +3485,14 @@
 ```
 溯源: 2026-09-18 新增（issue #4208，P1，Java 半边；ai-agent 半边 = PR #4215）。红证（修复前实测）：把 `buildPositionPayload` 的 `fillQty` 换回「应做数量 = 订单数量」⇒ ProcessingOrderServiceTest 5 条红（`generateTakesQtyFromCalcEngineNotFromOrderQuantity` 期望 12.3/24 实得 2、`generateInstantiatesOperationsVerbatimFromOperationLibrary`、`derivePositionPayloadUsesOperationLibrary`、`generateFailsClosedWhenQtyServiceUnavailable`、`calcInfoDoesNotInventFabricMetersForNonPerMeter`）；把客户端的不可达分支改回「返回空列表」（静默降级）⇒ ProductionOperationQtyClientTest「unreachableServiceFailsClosed」红；实现前 `ProductionOperationQtyClient` 类不存在 ⇒ 新增测试文件编译失败（找不到符号）。实现：ProductionOperationQtyClient（照抄 BriefingGenerateClient 范式：RestTemplate + SimpleClientHttpRequestFactory 超时 + 复用既有配置键）+ ProcessingOrderService.buildPositionPayload 两段式（先解析路线、再一次性问数回填）+ calcInfo 键名映射 + V57 迁移与实体/落库/幂等签名四处同改 + ProductionService.operationView 透出 qty_source。**不做（如实登记）**：下单时落库算料输出（#4118，跟随项）；订单侧补「部位/帘种」字段（类注释既有登记）。2026-09-18 更正（issue #4299，P1）：本条的两处口径被实测推翻并已就地改写 —— ①「`per_meter` 时映射为 `fabric_meters`」的**判据字段**从 `sellingMethod` 改钉**加工项 `pricingMethod`**（真库 `sellingMethod` 11 个取值里 `per_meter` 一次都没出现过 ⇒ 旧写法永不命中，真实订单上米类 `qty` 恒为兜底 1）；②「折类 24（`pleat_count`）」是**单测桩的平行真值**（夹具常量，端点不产出）⇒ 改为 #4208 更正后的口径「折/幅/套 = 兜底 1 + `fallback`」。本单新增 PG-025 专钉新判据；红证见 PG-025 的 merge_log。 ｜ tags: processing-order, production-reporting, operation-qty, calc-engine
 
-### PG-023. 特殊选项 → 计件（Java 侧）——订单携带 specialOptions + 条件工序 + 计件系数 + 系数真的进钱 🔵
+### PG-023. 特殊选项 → 计件（Java 侧）——订单携带 specialOptions + 条件工序（计件系数已于 #4589 退场） 🔵
 ```
 数据: success=true
 数据: 订单携带（issue #4230 §2.1-1/2）：`processingInfo.specialOptions: string[]` 落在**既有 JSONB 内**（无需迁移），`buildSnapshot` 透传一份到加工单快照的 `items_snapshot[].specialOptions`（快照是加工单的固化真相，生成时的条件工序/系数都从快照读）。证据：ProcessingOrderServiceTest「generateSuccess」（快照五要素断言段）+ 判据 1/2 的用例（生成后实例即由快照的选项驱动）
 数据: 判据 1·加工序（**红证**）：建单带 `specialOptions:[\"拼1次\"]` ⇒ 工序实例**多出 `拼1次-布`** 且**插在 `布三边` 之后**（seq=3），分组/单位/单价**逐字取工序库**（车位/幅/0.8）；不带该选项时**不出现**。锚点不在该部位路线中时**追加到末尾**（与真值源 `routing.py::_insert_after` 同款，例：纱帘路线无「布帘车被」）。条件工序插入后 **seq 重排为 1..N** —— seq 是报工「越站」防呆（取「seq 最大的前道」）与页面排序的唯一顺序依据，序号重复/断档 = 越站校验错。证据：ProcessingOrderServiceTest「specialOptionInsertsConditionalOperationAfterAnchor」（含不带选项的负例同断言）+「conditionalOperationAppendsWhenAnchorAbsent」
-数据: 判据 2·加系数（**红证**）：建单带 `specialOptions:[\"一分二\"]` ⇒ 该部位**每道**工序实例 `factor = 1.7`；不带时为 `1.00`。取用口径与真值源 `routing.py::factor_for` 逐字同口径：单选项内**例外档盖住平摊档**（不是相乘 —— 相乘会把「平摊 ×1.7 + 逐工序 ×2.0」算成 ×3.4，重复计费）；多选项之间**相乘**；未登记选项**不得**悄悄改系数。证据：ProcessingOrderServiceTest「specialOptionFactorAppliesToEveryOperationOfThePosition」（带 1.7 / 不带 1 双向断言）
-数据: 判据 3·**系数真的进了钱**（把「写进列」与「进了钱」分开钉死）：同一张单带/不带「一分二」的**计件合计**比值 = 1.7。判据走**真实** `ProductionService.aggregate`（Σ 合格数 × 实例快照单价 × 系数）+ 每条实例一笔「合格 1」的报工，合计比值因逐笔四舍五入到分有 0.01 级偏差 ⇒ 断言用容差（±0.01）而不是等号（等号会假红），并硬断言方向「带系数 > 不带」。证据：ProcessingOrderServiceTest「specialOptionFactorReachesPieceworkAmount」
-数据: 判据 4·分类 C 不静默：`余料带回(布)` ⇒ 工序数**不变**、`factor` **仍为 1**，且**不是**因为「没映射到」—— 真值源 `NON_PIECEWORK_OPTIONS` 把它**显式登记为「不计件」**，两张表都**不种**（种进来会把它变成「有映射但系数 1」，两种语义又混成一种）。判别性：同一张单换成有映射的选项（余料做帘头）⇒ 工序数必须变 12。证据：ProcessingOrderServiceTest「nonPieceworkOptionIsExplicitNoop」+ ProductionOptionRoutingMigrationTest「nonPieceworkOptionsAreNotSeeded」
+数据: 判据 2·系数退场（**红证**，issue #4589 改判）：建单带 `specialOptions:[\"一分为二\"]` ⇒ 工序数**不变**、且该部位**每道**工序实例 `factor` 恒 `1`（规则表里那条 `action='factor'` 的 ×1.7 档**已无消费者**；改前实测逐条为 `1.7` ⇒ 红）。不带该选项时同样逐条 `1`（两侧同口径；判别力由「改前带选项那侧是 1.7」承担）。证据：ProcessingOrderServiceTest「specialOptionNoLongerAppliesFactorToOperations」
+数据: 判据 3·**系数不再进钱**（把「写进列」与「进了钱」分开钉死；issue #4589 改判）：同一张单带/不带「一分为二」的**计件合计比值 = 1**（改前实测 `1.701613` ⇒ 红）。判据走**真实** `ProductionService.aggregate` + 每条实例一笔「合格 1」的报工 ⇒ 覆盖「读面/快照/聚合」三处改动。证据：ProcessingOrderServiceTest「specialOptionFactorNoLongerReachesPieceworkAmount」
+数据: 判据 4·分类 C 不静默：`余料带回-布` ⇒ 工序数**不变**、实例 `factor` 仍为 1，且**不是**因为「没映射到」—— 真值源 `NON_PIECEWORK_OPTIONS` 把它**显式登记为「不计件」**，两张表都**不种**（种进来会把它变成「有映射但系数 1」，两种语义又混成一种）。判别性：同一张单换成有映射的选项（余料做帘头）⇒ 工序数必须变 12。证据：ProcessingOrderServiceTest「nonPieceworkOptionIsExplicitNoop」+ ProductionOptionRoutingMigrationTest「nonPieceworkOptionsAreNotSeeded」
 数据: 判据 5·种子防漂移（三源逐行相等）：V59 迁移的种子 ↔ `docs/sql/schema.sql` 的 bootstrap 终态 ↔ ai-agent `routing.py` 的 `SPECIAL_OPTION_ROUTINGS`（16 项，选项/条件工序/锚点/sort_order 逐值相等）与 `OPTION_FACTOR_SCOPES`（v1 只有「一分二 ⇒ ×1.7 / 该部位全部工序」一个**实证**档；§2.4 的逐工序细算档是纯推算 ⇒ 不种，不拿推算值覆盖实证值）。沿用 V54/V56 的既有防漂移范式。证据：ProductionOptionRoutingMigrationTest「seedMatchesTruthSourceAndBootstrap」+「factorScopesMatchTruthSource」
 数据: 结构判据：`production_option_factors.operation_name` **可空**（NULL = 该部位全部工序的平摊档；非空 = 逐工序例外档，为「不把路堵死」保留），唯一性必须走 **COALESCE 表达式索引** —— NULL 在普通唯一索引里互不相等，不加 COALESCE 就能插进多行「同选项同平摊档」⇒ 系数取值不确定（静默失真）。证据：ProductionOptionRoutingMigrationTest「tableShapeGuardsNullFlatScope」
 数据: 判据 6·不回归：无特殊选项的订单，工序实例的工序名/seq/单价/**factor 恒 1** 与改动前逐值相同。证据：ProcessingOrderServiceTest「noSpecialOptionsKeepsRouteAndFactorUnchanged」+「generateInstantiatesOperationsVerbatimFromOperationLibrary」
@@ -3500,7 +3500,7 @@
 数据: **已知缺口（如实登记）**：加工单详情响应新增 `specialOptions` 字段（`ProcessingOrderItemBrief`）—— 不加会让 Jackson 的未知属性使整份 `items` 静默变 null；**商家后台「特殊选项」配置页（v1b）与下单勾选 UI（v1c）不在本单**（真值源 §2.2 的默认值是行业推算，v1b 才让商家可配）。
 跳过: [backend-contract] 后端契约用例（生成加工单是服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProcessingOrderServiceTest（条件工序插入/锚点缺失/seq 重排/系数双向/系数进钱/不计件显式 no-op/fail-closed/不回归）/ ProductionOptionRoutingMigrationTest（V59 ↔ bootstrap ↔ routing.py 三源防漂移 + 结构判据）
 ```
-溯源: 2026-09-18 新增（issue #4230，P1，Java 侧 v1a；ai-agent 半边 = PR #4234）。红证（修复前实测）：把 `buildPositionPayload` 里「插条件工序 + 落系数」两段整体去掉（= 修复前「订单不携带 specialOptions、factor 恒 1」的形态）⇒ ProcessingOrderServiceTest **6 条红**（specialOptionInsertsConditionalOperationAfterAnchor / conditionalOperationAppendsWhenAnchorAbsent / specialOptionFactorAppliesToEveryOperationOfThePosition / specialOptionFactorReachesPieceworkAmount / nonPieceworkOptionIsExplicitNoop / specialOptionReferencingMissingOperationFailsClosed），还原后全绿（md5 复核还原一致）；实现前两张表/两个实体/两个 Mapper 不存在 ⇒ 新增测试文件编译失败（找不到符号）。实现：V59 迁移（两张表 + 16 行条件工序种子 + 1 行系数种子，**版本号从 V58 让位** —— main 的 #4257 已占用 V58）+ `ProductionOptionRouting`/`ProductionOptionFactor` 实体与 Mapper + `ProductionOperationQueryService` 三处只读方法（optionRoutings/optionFactors/operationsByName，与 findRouting 的 catalogByName 同一份读取口径）+ `ProcessingOrderService` 的 specialOptions 归一化 / insertConditionalOperations / renumberSeq / applyFactors + buildSnapshot 透传 + 详情响应补字段。**不做（如实登记）**：v1b 商家配置页、v1c 下单勾选 UI、§2.4 逐工序细算档（推算值，待客户确认）。 ｜ tags: processing-order, production-reporting, special-options, piecework
+溯源: 2026-09-18 新增（issue #4230，P1，Java 侧 v1a；ai-agent 半边 = PR #4234）。红证（修复前实测）：把 `buildPositionPayload` 里「插条件工序 + 落系数」两段整体去掉（= 修复前「订单不携带 specialOptions、factor 恒 1」的形态）⇒ ProcessingOrderServiceTest **6 条红**（specialOptionInsertsConditionalOperationAfterAnchor / conditionalOperationAppendsWhenAnchorAbsent / specialOptionFactorAppliesToEveryOperationOfThePosition / specialOptionFactorReachesPieceworkAmount / nonPieceworkOptionIsExplicitNoop / specialOptionReferencingMissingOperationFailsClosed），还原后全绿（md5 复核还原一致）；实现前两张表/两个实体/两个 Mapper 不存在 ⇒ 新增测试文件编译失败（找不到符号）。实现：V59 迁移（两张表 + 16 行条件工序种子 + 1 行系数种子，**版本号从 V58 让位** —— main 的 #4257 已占用 V58）+ `ProductionOptionRouting`/`ProductionOptionFactor` 实体与 Mapper + `ProductionOperationQueryService` 三处只读方法（optionRoutings/optionFactors/operationsByName，与 findRouting 的 catalogByName 同一份读取口径）+ `ProcessingOrderService` 的 specialOptions 归一化 / insertConditionalOperations / renumberSeq / applyFactors + buildSnapshot 透传 + 详情响应补字段。**不做（如实登记）**：v1b 商家配置页、v1c 下单勾选 UI、§2.4 逐工序细算档（推算值，待客户确认）。 ｜ 2026-09-19（issue #4589）：**系数从算法与数据退场**（用户裁定「计件工资 = 数量 × 计件单价，不需要考虑系数」）⇒ 本条判据 2/3 按新口径改判（原「每道 factor=1.7」「合计比值=1.7」→ 「factor 恒 1」「比值 = 1」），红证同源（改前实测逐条 1.7 / 比值 1.701613）；原测试方法 `specialOptionFactorAppliesToEveryOperationOfThePosition` / `specialOptionFactorReachesPieceworkAmount` 更名为 `specialOptionNoLongerAppliesFactorToOperations` / `specialOptionFactorNoLongerReachesPieceworkAmount`。实现：`ProcessingOrderService.applyFactors` 调用与实现删除 + V86 软删 `production_route_rules.action='factor'` 活跃行 + `ProductionService` 报工快照/聚合/读面三处去 factor + `routing.py::factor_for` 删除。 ｜ tags: processing-order, production-reporting, special-options, piecework
 
 ### PG-025. 米数映射判据 = 加工项 pricingMethod（取值用订单行 quantity）——calc_info.fabric_meters 真库可达面命中 67/68 🔵
 ```
@@ -4939,7 +4939,7 @@
 - PG-020: 工序库写面——PUT /production/operations/{id} + 单价版本表（当前价 = 最新版本行，实例快照冻结）
 - PG-021: 计件工资报表——GET /production/piecework/summary（按人/按期）+ 生产管理菜单同构
 - PG-022: 应做数量接算料引擎（Java 接线）——ProductionOperationQtyClient + buildPositionPayload + qty_source 列
-- PG-023: 特殊选项 → 计件（Java 侧）——订单携带 specialOptions + 条件工序 + 计件系数 + 系数真的进钱
+- PG-023: 特殊选项 → 计件（Java 侧）——订单携带 specialOptions + 条件工序（计件系数已于 #4589 退场）
 - PG-025: 米数映射判据 = 加工项 pricingMethod（取值用订单行 quantity）——calc_info.fabric_meters 真库可达面命中 67/68
 - PG-024: 加工单列表请求时序保护——旧的在飞响应晚到不得覆盖更新的列表数据（#4357 后落点为生产看板）
 - PG-026: 路线来源 T1：信号全不命中 ⇒ route_source=default + route_key=默认键 + requested=null + incident warn 日志

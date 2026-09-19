@@ -92,12 +92,12 @@ function makeDetail(overrides: Partial<OrderOperations> = {}): OrderOperations {
         operations: [
           {
             id: 'op1', seq: 1, operation: '精裁', group: '裁剪', unit: '米',
-            qty: 11, unit_price: 3.5, factor: 1, is_must_finish: true,
+            qty: 11, unit_price: 3.5, is_must_finish: true,
             is_start_marker: true, status: 'done', done_qty: 11,
           },
           {
             id: 'op2', seq: 2, operation: '韩褶', group: '车位', unit: '米',
-            qty: 11, unit_price: 5, factor: 1, is_must_finish: true,
+            qty: 11, unit_price: 5, is_must_finish: true,
             is_start_marker: false, status: 'pending', done_qty: 0,
           },
         ],
@@ -107,7 +107,7 @@ function makeDetail(overrides: Partial<OrderOperations> = {}): OrderOperations {
         operations: [
           {
             id: 'op3', seq: 3, operation: '定型', group: '后道', unit: '米',
-            qty: 11, unit_price: 4, factor: 1, is_must_finish: true,
+            qty: 11, unit_price: 4, is_must_finish: true,
             is_start_marker: false, status: 'pending', done_qty: 0,
           },
         ],
@@ -422,7 +422,7 @@ describe('ProductionPage 完成数量可编辑（issue #4206 判据 1）', () =>
             operations: [
               {
                 id: 'op2', seq: 2, operation: '韩褶', group: '车位', unit: '米',
-                qty: 11, unit_price: 5, factor: 1, is_must_finish: true,
+                qty: 11, unit_price: 5, is_must_finish: true,
                 is_start_marker: false, status: 'pending', done_qty: 5,
               },
             ],

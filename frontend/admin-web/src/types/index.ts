@@ -674,8 +674,8 @@ export interface ProductionOperation {
   /** 应做数量 */
   qty?: number
   unit_price?: number
-  /** 特殊选项计件系数 */
-  factor?: number
+  // 计件系数（`factor`）**不再下发**（issue #4589）：计件工资 = 数量 × 计件单价，
+  // 系数已从算法与读面退场 —— 保留字段只会让界面显示一个「有值却不算钱」的数。
   /** 必完工序：完成才可打包（完工门槛） */
   is_must_finish?: boolean
   /** 标记生产开始的首工序 */

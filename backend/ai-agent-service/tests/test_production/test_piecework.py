@@ -1,4 +1,8 @@
-"""计件与完工判定测试（app/production/piecework.py，issue #3993，M4-G-1）"""
+"""计件与完工判定测试（app/production/piecework.py，issue #3993，M4-G-1）
+
+issue #4589（用户裁定 2026-09-19）：计件工资 = **报工数量 × 计件单价**，不再乘任何系数
+—— 「一分为二」这类特殊选项的 ×1.7 系数已从算法里退场。
+"""
 # case_ids: PP-010
 import pytest
 
@@ -29,12 +33,22 @@ def test_compute_piecework_normal_only():
     assert "计件合计" in r["summary"]
 
 
-def test_compute_piecework_factor():
-    """一分为二（ERP 名，issue #4389）系数 ×1.7：韩褶 48 折 × 0.4 × 1.7"""
+def test_compute_piecework_ignores_factor():
+    """#4589：工序实例带系数（历史快照 1.7）时，金额仍 = 数量 × 单价。
+
+    红证（改前实测）：实现里乘了 `inst["factor"]` ⇒ 韩褶 48 折 × 0.4 × 1.7 = **32.64**，
+    而本断言期望 19.20 ⇒ 逐值红（正好差 1.7 倍）。逐笔与总额**两条路径**都断言：
+    本单改的就是这两处。
+    """
     insts = [{**i, "factor": 1.7} for i in INSTANCES]
     logs = [{"operation": "韩褶-布", "worker": "李红梅", "qty": 48, "qualified_qty": 48, "type": "normal"}]
     r = compute_piecework(insts, logs)
-    assert r["per_worker"]["李红梅"] == pytest.approx(48 * 0.4 * 1.7, abs=0.01)
+    assert r["per_worker"]["李红梅"] == pytest.approx(48 * 0.4, abs=0.01)
+    assert r["total"] == pytest.approx(48 * 0.4, abs=0.01)
+    per_operation = {row["operation"]: row["amount"] for row in r["per_operation"]}
+    assert per_operation["韩褶-布"] == pytest.approx(48 * 0.4, abs=0.01)
+    # 判别性：不得是 1.7 倍（防「把期望值改成 1.7 倍」式的假修复）
+    assert r["total"] != pytest.approx(48 * 0.4 * 1.7, abs=0.01)
 
 
 def test_is_production_done_must_finish_insufficient():
