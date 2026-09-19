@@ -1964,7 +1964,7 @@ _CASE_DA_006 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['这个月哪个商品卖得最好？', '最近一周卖得最多的是什么窗帘？'],
     expectations=['dashboard_stats(action=product_ranking, period=month)'],
-    data_checks=['dashboard_stats 支持 action=product_ranking：转发 admin-api GET /api/admin/dashboard/product-ranking（params period=day|month + limit）', '返回按 productId 聚合的销量排行（rank/productName/salesQty/salesAmount），ToolResult.data 为 dict 契约（list 响应包裹为 items）', '摘要含榜首商品名（如「本月销量排行: N个商品，榜首「星空全遮光窗帘」」）', '权限：admin/agent/tenant_admin/operator 可查；customer 拒绝（不越权）'],
+    data_checks=['前置（precondition）：`dashboard_stats` 的 `action=product_ranking` 存在且 `period` 白名单接受 `month`（真值 = `dashboard_stats.py` 的 `VALID_ACTIONS` 含 `product_ranking`、`period = period if period in (\\"day\\", \\"month\\") else \\"day\\"`），且转发通道 `GET /api/admin/dashboard/product-ranking` 在 `DashboardController` 里存在（success=true）—— R1 的期望 `period=month` 正是按该白名单校准的；action 被改名/移除或 `month` 被静默降级为 `day` 时，期望 `unmatched`，判红会伪装成「agent 不会查销量排行」', 'dashboard_stats 支持 action=product_ranking：转发 admin-api GET /api/admin/dashboard/product-ranking（params period=day|month + limit）', '返回按 productId 聚合的销量排行（rank/productName/salesQty/salesAmount），ToolResult.data 为 dict 契约（list 响应包裹为 items）', '摘要含榜首商品名（如「本月销量排行: N个商品，榜首「星空全遮光窗帘」」）', '权限：admin/agent/tenant_admin/operator 可查；customer 拒绝（不越权）'],
     skip_reason='[backend-contract] 非 LLM 行为：转发实现与权限由 ai-agent 单测验证（test_tools_dashboard_stats.py），不进入 agent-eval 冒烟',
     tags=['dashboard', 'ranking', 'product'],
     persona='',

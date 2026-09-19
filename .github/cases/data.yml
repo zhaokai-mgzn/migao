@@ -188,12 +188,28 @@ cases:
           action: product_ranking
           period: month
     data_checks:
+      # ── 前置自断言（issue #4589 的 Case Trust burn-down 缴费；口径照 DF-002/DF-004/PP-008 先例）──
+      # 本用例命中的**唯一**存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION（metric=entries
+      # ⇒ 必须**整条销账**）。它四条判据**全部以「product_ranking 这条 action 与它的取数通道
+      # 未被改动」为前提**：R1「这个月哪个商品卖得最好？」的期望是
+      # `dashboard_stats(args.action=product_ranking, period=month)` —— action 被改名/移除、
+      # 或 `period` 白名单不再接受 `month`（回落 `day`）⇒ 期望 `unmatched`，判红会伪装成
+      # 「agent 不会查销量排行」，归因错人。
+      # 口径：`assertion_taxonomy.declares_precondition` ② —— data_checks 里含前置关键词
+      # **且**是机器计分型，故本条带 `success=true`（= 计分标记，不新增断言强度）。
+      # 真值可核（本仓逐行）：`backend/ai-agent-service/app/tools/dashboard_stats.py` 的
+      # `VALID_ACTIONS` 含 `product_ranking`；`period` 白名单 = `period if period in
+      # ("day", "month") else "day"`（`month` 被接受，不会被静默降级）；`_product_ranking`
+      # 转发 `GET /api/admin/dashboard/product-ranking`（`DashboardController` 同路径，参数
+      # `period` / `limit`）。
+      # **断言面（user_inputs / expectations / 既有四条 data_checks）一字未动、无放宽。**
+      - "前置（precondition）：`dashboard_stats` 的 `action=product_ranking` 存在且 `period` 白名单接受 `month`（真值 = `dashboard_stats.py` 的 `VALID_ACTIONS` 含 `product_ranking`、`period = period if period in (\"day\", \"month\") else \"day\"`），且转发通道 `GET /api/admin/dashboard/product-ranking` 在 `DashboardController` 里存在（success=true）—— R1 的期望 `period=month` 正是按该白名单校准的；action 被改名/移除或 `month` 被静默降级为 `day` 时，期望 `unmatched`，判红会伪装成「agent 不会查销量排行」"
       - "dashboard_stats 支持 action=product_ranking：转发 admin-api GET /api/admin/dashboard/product-ranking（params period=day|month + limit）"
       - "返回按 productId 聚合的销量排行（rank/productName/salesQty/salesAmount），ToolResult.data 为 dict 契约（list 响应包裹为 items）"
       - "摘要含榜首商品名（如「本月销量排行: N个商品，榜首「星空全遮光窗帘」」）"
       - "权限：admin/agent/tenant_admin/operator 可查；customer 拒绝（不越权）"
     skip_reason: "[backend-contract] 非 LLM 行为：转发实现与权限由 ai-agent 单测验证（test_tools_dashboard_stats.py），不进入 agent-eval 冒烟"
-    merge_log: "2026-09-02 新增：POC 演示审查 E 项 — 米宝问数「哪个花色卖得最好」无工具支撑（dashboard_stats 无 TopN）；按订单数据实际粒度实现商品维度排行（order_items 无颜色字段，花色排行需 schema 变更后置）"
+    merge_log: "2026-09-02 新增：POC 演示审查 E 项 — 米宝问数「哪个花色卖得最好」无工具支撑（dashboard_stats 无 TopN）；按订单数据实际粒度实现商品维度排行（order_items 无颜色字段，花色排行需 schema 变更后置）。2026-09-19（issue #4589 的 Case Trust burn-down 缴费，metric=entries ⇒ 必须**整条销账**）：补一条**机器计分型**前置自断言（`data_checks` 含「前置」+ `success=true`）—— `action=product_ranking` 存在 + `period` 白名单接受 `month` + 转发通道存在（真值逐行核过 `dashboard_stats.py` 的 `VALID_ACTIONS` / period 白名单与 `DashboardController` 的 `/product-ranking`），把「action 改名 / month 静默降级 ⇒ 期望 unmatched ⇒ 判红伪装成 agent 不会查排行」挡在门口（口径照 DF-002/DF-004/PP-008 先例）。`user_inputs` / `expectations` / 既有四条 `data_checks` 原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_dashboard_stats.py"
