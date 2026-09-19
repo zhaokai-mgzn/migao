@@ -182,8 +182,22 @@ class TestAssertionSpecsWellFormed:
                     bad.append(f"{c['id']}.db_verify[{i}]: 不支持的 fetch={fetch!r}")
                 if fetch == "product_by_name" and not s.get("name"):
                     bad.append(f"{c['id']}.db_verify[{i}]: product_by_name 缺 name")
-                if fetch == "order_items" and not (s.get("expect_products") or s.get("expect_quantities")):
+                if fetch == "order_items" and not (s.get("expect_products") or s.get("expect_quantities")
+                                                   or s.get("expect_craft") or s.get("forbid_craft")):
                     bad.append(f"{c['id']}.db_verify[{i}]: order_items 没有任何期望（空断言）")
+                # 下单行要素（部位/工艺）落库值（issue #4454）：`expect_craft` / `forbid_craft`
+                # 是 2026-09-19 新增的**独立期望通道** —— 不读 productName/quantity，而读明细的
+                # `processing_info.craft`（顾客/商家说行话时，落库必须是**内部值**而非原话）。
+                # 空数组与非列表形态都判红：前者是空断言（声称核对了却什么都没核），
+                # 后者会让 runner 的 `for x in (spec.get(...) or [])` 逐**字符**迭代（静默假绿）。
+                for _key in ("expect_craft", "forbid_craft"):
+                    _v = s.get(_key)
+                    if _v is None:
+                        continue
+                    if not isinstance(_v, list) or not _v:
+                        bad.append(
+                            f"{c['id']}.db_verify[{i}]: {_key} 必须是非空列表"
+                            f"（空/非列表 = 空断言或逐字符迭代的静默假绿）")
                 if fetch == "order_phone" and not s.get("expect_phone"):
                     # 空断言 = 声称核对了落库手机号、其实没核对（issue #3386 同族风险）
                     bad.append(f"{c['id']}.db_verify[{i}]: order_phone 缺 expect_phone（空断言）")

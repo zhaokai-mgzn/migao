@@ -977,6 +977,7 @@ _CASE_CH_007 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── CH-008 [NORMAL] 顾客要求转人工 → 系统无人工转接通道，AI 如实告知并自行受理（不得假承诺转接）（源: cases/chat.yml）──
@@ -4031,6 +4032,32 @@ _CASE_OR_036 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-037 [NORMAL] 行话下单落内部值 - 顾客说「韩式褶」「纳米圈」⇒ craft 落「韩褶」「打孔」（不是原话）（源: cases/order.yml）──
+_CASE_OR_037 = EvalCase(
+    id='OR-037',
+    legacy_id='',
+    title='行话下单落内部值 - 顾客说「韩式褶」「纳米圈」⇒ craft 落「韩褶」「打孔」（不是原话）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我想买遮光窗帘，米白 3 米，要韩式褶的，加工项要纳米圈', {'repeat_until': {'tool_called': 'order_create', 'max': 8}, 'code': '123456', 'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}],
+    expectations=['order_create'],
+    data_checks=['顾客说「韩式褶」⇒ `processing_info.craft` 落内部值 `韩褶`（真值源 §8 工艺行的内部值），**不是**原话「韩式褶」——原话不是合法工艺值，工序路线按 部位×工艺 索引 ⇒ 取不到就只能靠加工项名猜（V58 实证工序与计件工资全错）。', '顾客说「纳米圈」⇒ 加工项侧照常按店铺目录匹配（`processing_item_query`），工艺侧仍落内部值；「纳米圈」属**打孔**一族的顾客说法，**不得**被当成 `craft` 的取值写库。', '**红证（实现前）**：`prompts/order.md` 与 C 端 `customer_order` 内联 prompt 均**无**「术语映射」段（实测 术语映射段=0 / craft 提及=0）⇒ AI 无依据把口语译成内部值；且 `db_verify[order_items]` 当时**没有** craft 断言能力（只核对 productName/quantity）⇒ 落了原话也不会有任何东西变红。', '**单一真值源**：术语表权威源 = `docs/curtain-production-rules.md` §8「术语表（AI 词汇底座，跨模块统一）」；两条 prompt 的术语映射段与知识卡片条目逐条由它派生，漂移由 `backend/ai-agent-service/tests/test_issue_4454_craft_glossary.py` 拦（双向包含：prompt 不得自创、真值源不得漏抄）。'],
+    skip_reason='',
+    tags=['order_create', 'craft_spec', 'glossary', 'industry_terms'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    order_before=['interact[confirm] before order_create'],
+    must_succeed=[{'tool': 'order_create'}],
+    amount_verify=[{'tool': 'order_create', 'product_name': '遮光窗帘', 'checks': ['unit_price', 'subtotal', 'total']}],
+    db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_craft': ['韩褶'], 'forbid_craft': ['韩式褶', '纳米圈', '罗马圈', 'S钩', '调节钩', '眼环']}],
+    pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
+    namespaces=['product_name:遮光窗帘', 'customer_phone:13800138000'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
+    auto_fill={'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'},
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -6760,6 +6787,7 @@ ALL_CASES = (
     _CASE_OR_034,
     _CASE_OR_035,
     _CASE_OR_036,
+    _CASE_OR_037,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

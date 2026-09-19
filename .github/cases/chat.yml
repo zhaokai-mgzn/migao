@@ -325,11 +325,30 @@ cases:
     expectations:
       - tool: product_search
       - tool: product_detail
+    # ── burn-down 缴费（issue #4454，2026-09-19）────────────────────────────────
+    # 本 PR 改了 `.github/cases/**` ⇒ 按 `case-trust-baseline.json` 的 `burn_down`
+    # （`per_pr_min: 1` / `metric: entries` ⇒ **整条销账**）必须净缩 ≥1 条存量违规。
+    # 本条命中的唯一一条存量违规 = `CASE-TRUST-NO-PRECONDITION-ASSERTION`：
+    # 本用例是**多轮**用例（≥2 轮 user_inputs）且 R5「看看遮光窗帘的详情，就第一款」
+    # 按**商品名**定位 ⇒ 「该名字在栈里唯一」是它真正依赖且**只读**的前置
+    # （同名副本 >1 时 agent 会**正确地**反问要哪一件，而固定轮次表会把这条合理行为
+    # 判成「没调 product_detail」—— 归因全错，本用例注释里已有同款实证）。
+    # 口径与 `pre_clean` 的商品定位同一份（`_list_products_matching`），
+    # 先例 = OR-014 / CH-019 / CR-001 / OR-009。
+    # ⚠️ **有意不声明 `namespaces`**：本用例**只读**（不建商品、不建单），而 `namespaces`
+    # 的语义是「本用例会创建/争用这个名字」⇒ 给只读用例声明它会被判 `CASE-TRUST-NO-SELF-CLEAN`
+    # （账面新增一条违规，与 burn-down「只许缩短」冲突）。只读用例的漂移恒为 0，
+    # 商品维漂移判据（缺省 `max_growth: 0`）已足够。
+    # **断言面（user_inputs / expectations / data_checks）一字未动、无放宽。**
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     data_checks:
       - "闲聊回复不调用 tool"
       - "product_detail 正确使用 product_search 返回的 ID（按商品名解析到同一件，不重新问顾客）"
     skip_reason: ""
-    merge_log: "eval M012 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实商品"
+    merge_log: "eval M012 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实商品；2026-09-19（issue #4454 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（**有意不声明 `namespaces`**：只读用例声明它会被判 CASE-TRUST-NO-SELF-CLEAN = 账面新增违规，与「只许缩短」冲突） —— R5 按**商品名**定位商品，「该名字唯一」是它真正依赖且**只读**的前置（同名副本 >1 时 agent 会正确地反问要哪一件，固定轮次表会把合理行为判成「没调 product_detail」= 归因全错）；口径与 `pre_clean` 的商品定位同一份（`_list_products_matching`），先例 = OR-014 / CH-019 / CR-001 / OR-009。断言（user_inputs / expectations / data_checks）原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
