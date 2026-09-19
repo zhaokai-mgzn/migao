@@ -376,7 +376,7 @@ class ProcessingOrderServiceTest {
                 processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper,
                 orderService, objectMapper,
                 new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper,
-                        clientRequestIdService),
+                        orderItemMapper, clientRequestIdService),
                 productionOperationQueryService, productionOperationQtyClient);
     }
 
@@ -1376,7 +1376,7 @@ class ProcessingOrderServiceTest {
         when(workLogMapper.selectList(any())).thenReturn(logs);
 
         ProductionService real = new ProductionService(processingOrderMapper, positionOperationMapper,
-                workLogMapper, orderMapper, clientRequestIdService);
+                workLogMapper, orderMapper, orderItemMapper, clientRequestIdService);
         Map<String, Object> piecework = real.piecework("order-001", TENANT);
         return (BigDecimal) piecework.get("total");
     }
@@ -1933,7 +1933,7 @@ class ProcessingOrderServiceTest {
         when(workLogMapper.selectList(any())).thenReturn(logs);
 
         ProductionService real = new ProductionService(processingOrderMapper, positionOperationMapper,
-                workLogMapper, orderMapper, clientRequestIdService);
+                workLogMapper, orderMapper, orderItemMapper, clientRequestIdService);
         return real.piecework("order-001", TENANT);
     }
 
@@ -2050,7 +2050,7 @@ class ProcessingOrderServiceTest {
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> readPositions() {
         ProductionService real = new ProductionService(processingOrderMapper, positionOperationMapper,
-                workLogMapper, orderMapper, clientRequestIdService);
+                workLogMapper, orderMapper, orderItemMapper, clientRequestIdService);
         return (List<Map<String, Object>>) real.getOperations("order-001", TENANT).get("positions");
     }
 
@@ -2218,7 +2218,7 @@ class ProcessingOrderServiceTest {
         when(positionOperationMapper.selectById(target.getId())).thenReturn(target);
 
         ProductionService real = new ProductionService(processingOrderMapper, positionOperationMapper,
-                workLogMapper, orderMapper, clientRequestIdService);
+                workLogMapper, orderMapper, orderItemMapper, clientRequestIdService);
         real.report("order-001", target.getId(),
                 Map.of("worker_name", "走查工人", "qty", BigDecimal.ONE,
                         "qualified_qty", BigDecimal.ONE, "work_type", "normal"),
@@ -2355,7 +2355,7 @@ class ProcessingOrderServiceTest {
             return 1;
         });
         ProductionService real = new ProductionService(processingOrderMapper, positionOperationMapper,
-                workLogMapper, orderMapper, clientRequestIdService);
+                workLogMapper, orderMapper, orderItemMapper, clientRequestIdService);
 
         Map<String, Object> first = real.instantiate("order-001", payload, TENANT);
         int afterFirst = stored.size();

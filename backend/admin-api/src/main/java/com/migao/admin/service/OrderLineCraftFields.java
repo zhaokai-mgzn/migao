@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -44,6 +45,29 @@ final class OrderLineCraftFields {
     // 别改回去。
 
     private OrderLineCraftFields() {
+    }
+
+    /**
+     * 算料输出键（**单一真值源 = ai-agent 算料引擎**）：加工单快照与工人端规格读面共用这一份清单。
+     *
+     * <p>键名是 <b>snake_case</b>（与 {@code CALC_INFO_KEYS} 同口径，见类注释）。
+     * 放在本类是因为「哪些键算算料输出」是**同一件事实**：两个读面各写一份必然漂移，
+     * 而漂移的那一份不会变红（本仓库反复复发的形态）。</p>
+     */
+    static final List<String> CALC_OUTPUT_SNAPSHOT_KEYS = List.of(
+            "fabric_meters", "pleat_count", "per_panel_pleats", "panels", "holes",
+            "fullness", "fullness_actual");
+
+    private static final ObjectMapper STATIC_MAPPER = new ObjectMapper();
+
+    /**
+     * {@code processing_info} 归一化（**无参重载**）：给不方便注入 {@code ObjectMapper} 的只读消费者用。
+     *
+     * <p>与 {@link #normalize(Object, ObjectMapper)} 同语义，只是自带一个静态 mapper ——
+     * 避免为「解析一个 JSONB 字符串」给服务类再加一个构造参数（那会牵动 11 处测试调用点）。</p>
+     */
+    static Map<String, Object> normalize(Object processingInfo) {
+        return normalize(processingInfo, STATIC_MAPPER);
     }
 
     /**

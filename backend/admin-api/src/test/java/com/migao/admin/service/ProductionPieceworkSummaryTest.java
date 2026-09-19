@@ -68,6 +68,8 @@ class ProductionPieceworkSummaryTest {
     @Mock
     private OrderMapper orderMapper;
     @Mock
+    private com.migao.admin.mapper.OrderItemMapper orderItemMapper;
+    @Mock
     private ClientRequestIdService clientRequestIdService;
 
     private ProductionService service;
@@ -76,7 +78,7 @@ class ProductionPieceworkSummaryTest {
     void setUp() {
         TenantContext.setTenantId(TENANT);
         service = new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper,
-                orderMapper, clientRequestIdService);
+                orderMapper, orderItemMapper, clientRequestIdService);
         Order order = new Order();
         order.setId(ORDER_ID);
         order.setTenantId(TENANT);
@@ -258,5 +260,136 @@ class ProductionPieceworkSummaryTest {
                 .isInstanceOf(BusinessException.class).hasMessageContaining("period");
         assertThatThrownBy(() -> service.pieceworkSummary("2026-13", null, TENANT))
                 .isInstanceOf(BusinessException.class).hasMessageContaining("period");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════
+    // 下钻维度（部位 / 套）—— 真值源 §4 的下钻链：报工 → 工序实例 → 部位 → 套 → 加工单 → 订单
+    // ══════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 带**部位与套定位键**的工序实例（V69 / issue #4388：`(order_item_id, position_kind)` 是主定位键）。
+     *
+     * <p>下钻维度只从**工序实例**取（`position_name` / `order_item_id`），
+     * **不改 `production_work_logs`**（P2b 明列「不做」；V61 快照口径已冻结）。</p>
+     */
+    private ProcessingPositionOperation opAt(String id, String operationName, String positionName,
+                                             String orderItemId, String unitPrice) {
+        return ProcessingPositionOperation.builder()
+                .id(id).tenantId(TENANT).processingOrderId(PO_ID)
+                .positionName(positionName).orderItemId(orderItemId).positionKind("布帘")
+                .seq(1).operationName(operationName).groupName("裁剪").unit("米")
+                .qty(new BigDecimal("12.30")).unitPrice(new BigDecimal(unitPrice))
+                .factor(BigDecimal.ONE).isMustFinish(false).isStartMarker(true)
+                .status("done").doneQty(new BigDecimal("3")).deleted(0).build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> rowsOf(Map<String, Object> report, String key) {
+        return (List<Map<String, Object>>) report.get(key);
+    }
+
+    private static BigDecimal sumAmount(List<Map<String, Object>> rows) {
+        return rows.stream()
+                .map(row -> (BigDecimal) row.get("amount"))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    @Test
+    @DisplayName("下钻：报表带 per_position / per_set 两维，且**各维合计 === 总额**（可核对判据）")
+    void drillDownByPositionAndSetSumsToTotal() {
+        // 两个部位（布帘 / 纱帘），两个套（行 A / 行 B）
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                snapshotLog("op-b", "精裁-布", "张三", "10", "0.40", "1.00", LocalDate.of(2026, 9, 18)),
+                snapshotLog("op-s", "精裁-纱", "李四", "5", "0.40", "1.00", LocalDate.of(2026, 9, 19)),
+                snapshotLog("op-b2", "韩褶-布", "张三", "4", "0.40", "1.70", LocalDate.of(2026, 9, 20))));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                opAt("op-b", "精裁-布", "布艺遮光帘A 米白", "item-A", "0.40"),
+                opAt("op-s", "精裁-纱", "纱帘B 本白", "item-B", "0.40"),
+                opAt("op-b2", "韩褶-布", "布艺遮光帘A 米白", "item-A", "0.40")));
+
+        Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
+
+        // 10×0.40 + 5×0.40 + 4×0.40×1.70 = 4.00 + 2.00 + 2.72 = 8.72
+        BigDecimal total = (BigDecimal) report.get("total");
+        assertThat(total).isEqualByComparingTo("8.72");
+
+        List<Map<String, Object>> perPosition = rowsOf(report, "per_position");
+        List<Map<String, Object>> perSet = rowsOf(report, "per_set");
+        assertThat(perPosition).as("部位维必须在场").isNotEmpty();
+        assertThat(perSet).as("套维必须在场").isNotEmpty();
+
+        assertThat(sumAmount(perPosition))
+                .as("下钻合计必须 === 总额（否则「可核对」不成立）")
+                .isEqualByComparingTo(total);
+        assertThat(sumAmount(perSet))
+                .as("下钻合计必须 === 总额（否则「可核对」不成立）")
+                .isEqualByComparingTo(total);
+
+        // 部位维逐值：布帘 = 4.00 + 2.72 = 6.72；纱帘 = 2.00
+        assertThat(perPosition).extracting(row -> row.get("position_name"))
+                .containsExactlyInAnyOrder("布艺遮光帘A 米白", "纱帘B 本白");
+        BigDecimal cloth = perPosition.stream()
+                .filter(row -> "布艺遮光帘A 米白".equals(row.get("position_name")))
+                .map(row -> (BigDecimal) row.get("amount")).findFirst().orElseThrow();
+        assertThat(cloth).isEqualByComparingTo("6.72");
+
+        // 套维逐值：item-A = 6.72；item-B = 2.00
+        BigDecimal setA = perSet.stream()
+                .filter(row -> "item-A".equals(row.get("order_item_id")))
+                .map(row -> (BigDecimal) row.get("amount")).findFirst().orElseThrow();
+        assertThat(setA).isEqualByComparingTo("6.72");
+    }
+
+    @Test
+    @DisplayName("下钻红证：实例已软删的报工归「未知部位/未知套」，**不跳过**（跳过会让合计 ≠ 总额）")
+    void drillDownKeepsUnlocatableRowsInsteadOfDroppingThem() {
+        // 带快照 ⇒ 可计价；但活跃实例集为空 ⇒ 拿不到部位/套
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                snapshotLog("op-gone", "精裁-布", "张三", "10", "0.12", "1.00", LocalDate.of(2026, 9, 18))));
+        when(positionOperationMapper.selectList(any())).thenReturn(new ArrayList<>());
+
+        Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
+
+        BigDecimal total = (BigDecimal) report.get("total");
+        assertThat(total).isEqualByComparingTo("1.20");
+        assertThat(rowsOf(report, "per_position")).singleElement()
+                .satisfies(row -> {
+                    assertThat(row.get("position_name")).isEqualTo("未知部位");
+                    assertThat((BigDecimal) row.get("amount")).isEqualByComparingTo("1.20");
+                });
+        assertThat(rowsOf(report, "per_set")).singleElement()
+                .satisfies(row -> assertThat(row.get("order_item_id")).isEqualTo("未知套"));
+        assertThat(sumAmount(rowsOf(report, "per_position")))
+                .as("定位不到的报工也必须计入下钻合计 —— 否则合计 < 总额")
+                .isEqualByComparingTo(total);
+    }
+
+    @Test
+    @DisplayName("per-order 端点同样带下钻两维（与期间报表共用同一份聚合 ⇒ 不会两套口径）")
+    void perOrderEndpointCarriesDrillDown() {
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                snapshotLog("op-b", "精裁-布", "张三", "10", "0.40", "1.00", LocalDate.of(2026, 9, 18))));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                opAt("op-b", "精裁-布", "布艺遮光帘A 米白", "item-A", "0.40")));
+
+        Map<String, Object> perOrder = service.piecework(ORDER_ID, TENANT);
+
+        assertThat((BigDecimal) perOrder.get("total")).isEqualByComparingTo("4.00");
+        assertThat(rowsOf(perOrder, "per_position")).singleElement()
+                .satisfies(row -> assertThat(row.get("position_name")).isEqualTo("布艺遮光帘A 米白"));
+        assertThat(rowsOf(perOrder, "per_set")).singleElement()
+                .satisfies(row -> assertThat(row.get("order_item_id")).isEqualTo("item-A"));
+    }
+
+    @Test
+    @DisplayName("空态也带齐下钻键（键的在场性恒定 ⇒ 前端不必为「有没有这个键」写分支）")
+    void emptyPieceworkCarriesDrillDownKeys() {
+        when(workLogMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
+
+        assertThat(report).containsKeys("per_position", "per_set");
+        assertThat(rowsOf(report, "per_position")).isEmpty();
+        assertThat(rowsOf(report, "per_set")).isEmpty();
     }
 }
