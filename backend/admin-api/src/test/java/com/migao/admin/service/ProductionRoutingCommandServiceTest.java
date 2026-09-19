@@ -7,13 +7,17 @@ import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
 import com.migao.admin.entity.ProductionRouteSignal;
+import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionRouting;
 import com.migao.admin.entity.ProductionRoutingVersion;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.ProductionCraftMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
+import com.migao.admin.mapper.ProductionOperationPositionMapper;
 import com.migao.admin.mapper.ProductionOperationPriceVersionMapper;
+import com.migao.admin.mapper.ProductionRouteRuleMapper;
 import com.migao.admin.mapper.ProductionRouteSignalMapper;
-import com.migao.admin.mapper.ProductionRoutingMapper;
+import com.migao.admin.mapper.ProductionRouteTemplateMapper;
 import com.migao.admin.mapper.ProductionRoutingVersionMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,7 +61,13 @@ class ProductionRoutingCommandServiceTest {
     private static final Long TENANT = 1L;
 
     @Mock
-    private ProductionRoutingMapper productionRoutingMapper;
+    private ProductionRouteTemplateMapper productionRouteTemplateMapper;
+    @Mock
+    private ProductionRouteRuleMapper productionRouteRuleMapper;
+    @Mock
+    private ProductionOperationPositionMapper productionOperationPositionMapper;
+    @Mock
+    private ProductionCraftMapper productionCraftMapper;
     @Mock
     private ProductionRoutingVersionMapper productionRoutingVersionMapper;
     @Mock
@@ -75,10 +85,11 @@ class ProductionRoutingCommandServiceTest {
         // 读面用**真实对象**（只 mock Mapper）：写面响应形态 = 路线/信号展示形态（同一份
         // routingView / signalView），用 mock 会让「返回更新后的路线」退化成断言桩。
         service = new ProductionRoutingCommandService(
-                productionRoutingMapper, productionRoutingVersionMapper, productionOperationMapper,
+                productionRouteTemplateMapper, productionRoutingVersionMapper, productionOperationMapper,
                 productionRouteSignalMapper,
-                new ProductionOperationQueryService(productionOperationMapper, null, null, null,
-                        productionRouteSignalMapper));
+                new ProductionOperationQueryService(productionOperationMapper, productionRouteTemplateMapper,
+                        productionRouteRuleMapper, productionOperationPositionMapper,
+                        productionCraftMapper, productionRouteSignalMapper));
     }
 
     @AfterEach
@@ -102,9 +113,11 @@ class ProductionRoutingCommandServiceTest {
                 op("外帘装袋", true), op("外帘发货", false)));
     }
 
-    private static ProductionRouting routing(String id, String curtainType, String craft, List<String> ops) {
-        return ProductionRouting.builder().id(id).tenantId(TENANT).curtainType(curtainType).craft(craft)
-                .operations(ops).status("active").deleted(0).build();
+    private static ProductionRouteTemplate routing(String id, String name, boolean isDefault,
+                                                   List<String> mainline) {
+        return ProductionRouteTemplate.builder().id(id).tenantId(TENANT).name(name)
+                .isDefault(isDefault).positions(List.of("布帘", "纱帘", "帘头"))
+                .mainline(mainline).status("active").deleted(0).build();
     }
 
     private static Map<String, Object> body(Object... kv) {
@@ -120,110 +133,232 @@ class ProductionRoutingCommandServiceTest {
                 : e.getDetails().stream().map(ApiResponse.ErrorDetail::getField).toList();
     }
 
-    // ══════════════════ 判据：改序列五条护栏（PG-032）══════════════════
+    // ══════════ 判据：路线写面护栏（PG-032；P2b / issue #4459 改模板表）══════════
 
     @Test
-    @DisplayName("护栏 1：空序列拒（422 + operations 逐条理由）")
-    void emptySequenceIsRejected() {
-        when(productionRoutingMapper.selectById("rt-1")).thenReturn(routing("rt-1", "布帘", "韩褶", List.of("布三边")));
+    @DisplayName("护栏 1：空主线拒（422 + mainline 逐条理由）")
+    void emptyMainlineIsRejected() {
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("布三边")));
         stubLibrary();
 
-        assertThatThrownBy(() -> service.updateRouting("rt-1", body("operations", List.of()), TENANT))
+        assertThatThrownBy(() -> service.updateRouting("rt-1", body("mainline", List.of()), TENANT))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> {
                     BusinessException be = (BusinessException) e;
                     assertThat(be.getHttpStatus()).as("护栏失败统一 422").isEqualTo(422);
-                    assertThat(detailFields(be)).contains("operations");
+                    assertThat(detailFields(be)).contains("mainline");
                 });
-        verify(productionRoutingMapper, never()).updateById(any(ProductionRouting.class));
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
         verify(productionRoutingVersionMapper, never()).insert(any(ProductionRoutingVersion.class));
     }
 
     @Test
     @DisplayName("护栏 2：引用工序库中不存在的工序拒（指名是哪一道）")
     void unknownOperationIsRejected() {
-        when(productionRoutingMapper.selectById("rt-1")).thenReturn(routing("rt-1", "布帘", "韩褶", List.of("布三边")));
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("布三边")));
         stubLibrary();
 
         assertThatThrownBy(() -> service.updateRouting("rt-1",
-                body("operations", List.of("布三边", "库里没有的工序", "外帘装袋")), TENANT))
+                body("mainline", List.of("布三边", "库里没有的工序", "外帘装袋")), TENANT))
                 .isInstanceOf(BusinessException.class)
-                .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("operations[1]"));
-        verify(productionRoutingMapper, never()).updateById(any(ProductionRouting.class));
+                .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("mainline[1]"));
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
     }
 
     @Test
     @DisplayName("护栏 3：重复工序拒（同工序两次 ⇒ 工人按两遍单价拿钱）")
     void duplicateOperationIsRejected() {
-        when(productionRoutingMapper.selectById("rt-1")).thenReturn(routing("rt-1", "布帘", "韩褶", List.of("布三边")));
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("布三边")));
         stubLibrary();
 
         assertThatThrownBy(() -> service.updateRouting("rt-1",
-                body("operations", List.of("布三边", "外帘装袋", "布三边")), TENANT))
+                body("mainline", List.of("布三边", "外帘装袋", "布三边")), TENANT))
                 .isInstanceOf(BusinessException.class)
-                .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("operations[2]"));
-        verify(productionRoutingMapper, never()).updateById(any(ProductionRouting.class));
+                .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("mainline[2]"));
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
     }
 
     @Test
     @DisplayName("护栏 4：至少一道必完工序（否则完工判定永远不成立 ⇒ 这张单永远完不了工）")
-    void sequenceWithoutMustFinishOperationIsRejected() {
-        when(productionRoutingMapper.selectById("rt-1")).thenReturn(routing("rt-1", "布帘", "韩褶", List.of("布三边")));
+    void mainlineWithoutMustFinishOperationIsRejected() {
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("布三边")));
         stubLibrary();
 
         assertThatThrownBy(() -> service.updateRouting("rt-1",
-                body("operations", List.of("布三边", "韩褶-布", "外帘发货")), TENANT))
+                body("mainline", List.of("布三边", "韩褶-布", "外帘发货")), TENANT))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("must_finish"));
-        verify(productionRoutingMapper, never()).updateById(any(ProductionRouting.class));
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
     }
 
     @Test
-    @DisplayName("护栏 5：合法序列 ⇒ seq 归一化为 1..N（存有序数组 + 响应逐位回读）且**落版本账**")
-    void validSequenceIsNormalizedAndVersioned() {
-        ProductionRouting existing = routing("rt-1", "布帘", "韩褶", List.of("布三边"));
-        when(productionRoutingMapper.selectById("rt-1")).thenReturn(existing);
+    @DisplayName("护栏 5：合法主线 ⇒ 逐位回读 + **落版本账**（序列真的变了才写）")
+    void validMainlineIsVersioned() {
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("布三边")));
         stubLibrary();
 
         Map<String, Object> result = service.updateRouting("rt-1",
-                body("operations", List.of("布三边", "韩褶-布", "外帘装袋")), TENANT);
+                body("mainline", List.of("布三边", "韩褶-布", "外帘装袋")), TENANT);
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> steps = (List<Map<String, Object>>) result.get("operations");
-        assertThat(steps).extracting((Map<String, Object> s) -> s.get("seq")).containsExactly(1, 2, 3);
-        assertThat(steps).extracting((Map<String, Object> s) -> s.get("operation"))
-                .containsExactly("布三边", "韩褶-布", "外帘装袋");
-        assertThat(result.get("operation_count")).isEqualTo(3);
-
+        assertThat(result.get("mainline")).asString().isEqualTo(List.of("布三边", "韩褶-布", "外帘装袋").toString());
         ArgumentCaptor<ProductionRoutingVersion> version = ArgumentCaptor.forClass(ProductionRoutingVersion.class);
         verify(productionRoutingVersionMapper).insert(version.capture());
         assertThat(version.getValue().getRoutingId()).isEqualTo("rt-1");
-        assertThat(version.getValue().getCurtainType()).isEqualTo("布帘");
-        assertThat(version.getValue().getCraft()).isEqualTo("韩褶");
-        assertThat(version.getValue().getOperationCount()).as("版本账记工序道数（对账少解析一次 JSON）").isEqualTo(3);
+        assertThat(version.getValue().getOperationCount()).as("版本账记工序道数").isEqualTo(3);
         assertThat(version.getValue().getOperations())
-                .as("版本账存的是**变更后**的有序序列（seq = 下标 + 1，不单独存）")
-                .isEqualTo(List.of("布三边", "韩褶-布", "外帘装袋"));
+                .as("版本账存的是**变更后**的有序序列").isEqualTo(List.of("布三边", "韩褶-布", "外帘装袋"));
     }
 
     @Test
-    @DisplayName("同序列重复提交 = 幂等空操作（不追加无意义的版本行，沿用单价版本账口径）")
-    void sameSequenceIsIdempotentNoop() {
-        when(productionRoutingMapper.selectById("rt-1"))
-                .thenReturn(routing("rt-1", "布帘", "韩褶", List.of("布三边", "外帘装袋")));
+    @DisplayName("同主线重复提交 = 幂等空操作（不追加无意义的版本行，沿用单价版本账口径）")
+    void sameMainlineIsIdempotentNoop() {
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("布三边", "外帘装袋")));
         stubLibrary();
 
-        service.updateRouting("rt-1", body("operations", List.of("布三边", "外帘装袋")), TENANT);
+        service.updateRouting("rt-1", body("mainline", List.of("布三边", "外帘装袋")), TENANT);
 
-        verify(productionRoutingMapper).updateById(any(ProductionRouting.class));
+        verify(productionRouteTemplateMapper).updateById(any(ProductionRouteTemplate.class));
         verify(productionRoutingVersionMapper, never()).insert(any(ProductionRoutingVersion.class));
+    }
+
+    @Test
+    @DisplayName("改名**只改 name**：不给 mainline 就不动序列（改一个名字不该顺带重写计件工资的输入）")
+    void renameOnlyChangesName() {
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "旧名", false, List.of("布三边", "外帘装袋")));
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-1", "旧名", false, List.of("布三边", "外帘装袋"))));
+
+        Map<String, Object> result = service.updateRouting("rt-1", body("name", "新名"), TENANT);
+
+        assertThat(result.get("name")).isEqualTo("新名");
+        assertThat(result.get("mainline")).as("序列必须一字不动").asString().isEqualTo(List.of("布三边", "外帘装袋").toString());
+        verify(productionRoutingVersionMapper, never()).insert(any(ProductionRoutingVersion.class));
+    }
+
+    @Test
+    @DisplayName("同租户活跃路线不得重名 ⇒ 409（否则撞 DB 唯一索引变 500）")
+    void renameToExistingNameIsConflict() {
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("布三边")));
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-1", "路线甲", false, List.of("布三边")),
+                routing("rt-2", "路线乙", false, List.of("外帘装袋"))));
+
+        assertThatThrownBy(() -> service.updateRouting("rt-1", body("name", "路线乙"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(409));
+    }
+
+    @Test
+    @DisplayName("is_default 恰一条：置 true 时把既有默认**同事务降级**（否则撞部分唯一索引变 500）")
+    void settingDefaultDemotesTheCurrentDefault() {
+        when(productionRouteTemplateMapper.selectById("rt-2"))
+                .thenReturn(routing("rt-2", "路线乙", false, List.of("外帘装袋")));
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-1", "路线甲", true, List.of("布三边")),
+                routing("rt-2", "路线乙", false, List.of("外帘装袋"))));
+
+        Map<String, Object> result = service.updateRouting("rt-2", body("is_default", true), TENANT);
+
+        assertThat(result.get("is_default")).isEqualTo(true);
+        ArgumentCaptor<ProductionRouteTemplate> updated =
+                ArgumentCaptor.forClass(ProductionRouteTemplate.class);
+        verify(productionRouteTemplateMapper, org.mockito.Mockito.atLeast(2)).updateById(updated.capture());
+        assertThat(updated.getAllValues())
+                .as("必须有一次是把**既有默认**（rt-1）降级为 false")
+                .anySatisfy(t -> {
+                    assertThat(t.getId()).isEqualTo("rt-1");
+                    assertThat(t.getIsDefault()).isEqualTo(false);
+                });
+    }
+
+    @Test
+    @DisplayName("is_default:false ⇒ 422（取消默认会让该租户零默认 ⇒ 缺信号订单建单全部 fail-closed）")
+    void clearingDefaultIsRejected() {
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", true, List.of("布三边")));
+
+        assertThatThrownBy(() -> service.updateRouting("rt-1", body("is_default", false), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(422);
+                    assertThat(detailFields((BusinessException) e)).contains("is_default");
+                });
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
+    }
+
+    @Test
+    @DisplayName("停用默认路线 ⇒ 422（停用它等于把租户变成零默认）")
+    void disablingDefaultIsRejected() {
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", true, List.of("布三边")));
+
+        assertThatThrownBy(() -> service.updateRouting("rt-1", body("status", "disabled"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("status"));
+    }
+
+    @Test
+    @DisplayName("删默认路线 ⇒ 422（删了就是零默认 ⇒ 建单全 fail-closed）")
+    void deletingDefaultIsRejected() {
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", true, List.of("布三边")));
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-1", "路线甲", true, List.of("布三边")),
+                routing("rt-2", "路线乙", false, List.of("外帘装袋"))));
+
+        assertThatThrownBy(() -> service.deleteRouting("rt-1", TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(422);
+                    assertThat(detailFields((BusinessException) e)).contains("is_default");
+                });
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
+    }
+
+    @Test
+    @DisplayName("删最后一条路线 ⇒ 422（删了没有任何路线可用 ⇒ 一张加工单也生成不了）")
+    void deletingTheLastRouteIsRejected() {
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("布三边")));
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-1", "路线甲", false, List.of("布三边"))));
+
+        assertThatThrownBy(() -> service.deleteRouting("rt-1", TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("id"));
+    }
+
+    @Test
+    @DisplayName("删非默认路线 = **软删**（deleted=1：谁在何时删掉哪条路线是排查错配的唯一证据）")
+    void deletingNonDefaultIsSoftDelete() {
+        when(productionRouteTemplateMapper.selectById("rt-2"))
+                .thenReturn(routing("rt-2", "路线乙", false, List.of("外帘装袋")));
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-1", "路线甲", true, List.of("布三边")),
+                routing("rt-2", "路线乙", false, List.of("外帘装袋"))));
+
+        Map<String, Object> result = service.deleteRouting("rt-2", TENANT);
+
+        assertThat(result.get("deleted")).isEqualTo(true);
+        ArgumentCaptor<ProductionRouteTemplate> updated =
+                ArgumentCaptor.forClass(ProductionRouteTemplate.class);
+        verify(productionRouteTemplateMapper).updateById(updated.capture());
+        assertThat(updated.getValue().getDeleted()).isEqualTo(1);
     }
 
     @Test
     @DisplayName("跨租户 / 不存在的路线 ⇒ 404（不泄漏别的租户的路线存在性）")
     void unknownRoutingIsNotFound() {
-        when(productionRoutingMapper.selectById("rt-x")).thenReturn(null);
-        assertThatThrownBy(() -> service.updateRouting("rt-x", body("operations", List.of("布三边")), TENANT))
+        when(productionRouteTemplateMapper.selectById("rt-x")).thenReturn(null);
+        assertThatThrownBy(() -> service.updateRouting("rt-x", body("mainline", List.of("布三边")), TENANT))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(404));
     }
@@ -231,35 +366,52 @@ class ProductionRoutingCommandServiceTest {
     // ══════════════════ 判据：新建路线（PG-032）══════════════════
 
     @Test
-    @DisplayName("新建路线：operations 缺省 = 初版空序列；响应与 GET /routings 单项同构；落首行版本账")
-    void createRoutingAllowsEmptyInitialSequence() {
-        when(productionRoutingMapper.selectList(any())).thenReturn(List.of());
-        when(productionOperationMapper.selectList(any())).thenReturn(List.of());
+    @DisplayName("新建路线：mainline 缺省 = 初版空主线；响应与 GET /routings 单项同构；落首行版本账")
+    void createRoutingAllowsEmptyInitialMainline() {
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
 
         Map<String, Object> result = service.createRouting(
-                body("curtain_type", "罗马帘", "craft", "韩褶"), TENANT);
+                body("name", "罗马帘专用路线"), TENANT);
 
-        assertThat(result.get("curtain_type")).isEqualTo("罗马帘");
-        assertThat(result.get("craft")).isEqualTo("韩褶");
-        assertThat(result.get("operation_count")).isEqualTo(0);
-        assertThat(result.get("operations")).isEqualTo(List.of());
-        ArgumentCaptor<ProductionRouting> inserted = ArgumentCaptor.forClass(ProductionRouting.class);
-        verify(productionRoutingMapper).insert(inserted.capture());
+        assertThat(result.get("name")).isEqualTo("罗马帘专用路线");
+        assertThat((List<?>) result.get("mainline")).isEmpty();
+        assertThat(result.get("positions")).as("缺省 = 适用三部位").asString().isEqualTo(List.of("布帘", "纱帘", "帘头").toString());
+        assertThat(result.get("is_default")).as("缺省 = 不是默认（不抢既有默认）").isEqualTo(false);
+        ArgumentCaptor<ProductionRouteTemplate> inserted =
+                ArgumentCaptor.forClass(ProductionRouteTemplate.class);
+        verify(productionRouteTemplateMapper).insert(inserted.capture());
         assertThat(inserted.getValue().getStatus()).isEqualTo("active");
         assertThat(inserted.getValue().getDeleted()).isEqualTo(0);
         verify(productionRoutingVersionMapper).insert(any(ProductionRoutingVersion.class));
     }
 
     @Test
-    @DisplayName("新建路线：同「部位×工艺」已存在（含停用行）⇒ 409（否则撞 DB 唯一索引变 500）")
-    void createRoutingRejectsDuplicateKey() {
-        when(productionRoutingMapper.selectList(any()))
-                .thenReturn(List.of(routing("rt-1", "布帘", "韩褶", List.of("布三边"))));
+    @DisplayName("新建路线：同租户活跃路线重名（含停用行）⇒ 409（否则撞 DB 唯一索引变 500）")
+    void createRoutingRejectsDuplicateName() {
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-1", "路线甲", false, List.of("布三边"))));
 
-        assertThatThrownBy(() -> service.createRouting(body("curtain_type", "布帘", "craft", "韩褶"), TENANT))
+        assertThatThrownBy(() -> service.createRouting(body("name", "路线甲"), TENANT))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(409));
-        verify(productionRoutingMapper, never()).insert(any(ProductionRouting.class));
+        verify(productionRouteTemplateMapper, never()).insert(any(ProductionRouteTemplate.class));
+    }
+
+    @Test
+    @DisplayName("新建默认路线：把既有默认同事务降级（恰一条默认的不变式）")
+    void createDefaultRoutingDemotesExistingDefault() {
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-1", "路线甲", true, List.of("布三边"))));
+
+        Map<String, Object> result = service.createRouting(
+                body("name", "路线乙", "is_default", true), TENANT);
+
+        assertThat(result.get("is_default")).isEqualTo(true);
+        ArgumentCaptor<ProductionRouteTemplate> updated =
+                ArgumentCaptor.forClass(ProductionRouteTemplate.class);
+        verify(productionRouteTemplateMapper).updateById(updated.capture());
+        assertThat(updated.getValue().getId()).isEqualTo("rt-1");
+        assertThat(updated.getValue().getIsDefault()).isEqualTo(false);
     }
 
     // ══════════════════ 判据：信号映射写面（PG-033）══════════════════
