@@ -3811,9 +3811,10 @@
 期望: inventory_manage(action=adjust)
 数据: 返回新库存数量
 清理: product_dedupe(product_keyword=遮光窗帘)
+必须成功: inventory_manage
 ```
 真值: product-sku-stock.realtime
-溯源: verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1）。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 收尾改答卡轮；③ pre_clean 去 price 过滤（关键词去重） ｜ tags: inventory, write
+溯源: verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1）。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 收尾改答卡轮；③ pre_clean 去 price 过滤（关键词去重）。2026-09-19（issue #4590 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（CASE-TRUST-NO-PRECONDITION-ASSERTION）+ `must_succeed[inventory_manage]`（CASE-TRUST-NO-EFFECT-ASSERTION）—— **断言只增不减**（expectations / data_checks / pre_clean / user_inputs 一字未动）；`product_count_for_keyword` 的取值与 OR-014 同源（遮光窗帘在两条腿的评测栈里都恰 1 件：mibao 栈 = xiaobu seed + mibao seed） ｜ tags: inventory, write
 
 ### PR-006. 低库存预警 🔵
 ```
