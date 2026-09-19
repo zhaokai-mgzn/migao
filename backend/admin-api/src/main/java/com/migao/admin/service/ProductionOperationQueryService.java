@@ -113,6 +113,18 @@ public class ProductionOperationQueryService {
     /** 帘头（{@code 帘头×平幔} 路线逐字引用 {@code 精裁-布}/{@code 布三边}/{@code 定型-布}）。 */
     private static final String POSITION_HEAD = "帘头";
 
+    /**
+     * **基线三部位**（布帘/纱帘/帘头；迁移 V71 的闭词表）—— 部位值域的**单一出处**。
+     *
+     * <p>issue #4614：路线写面（新建路线的默认适用帘种）与工序写面（新增工序的默认适用部位）
+     * 用的是**同一个值域**；各写一份必然漂移，而漂移的形态是「前端勾得出的部位、后端收不下」
+     * （或反过来）⇒ 商家在界面上选得动、提交却 422。故此处只留一份，两处引用。</p>
+     *
+     * <p>⚠️ 它只是**基线**，不是完整值域：矩阵里出现的第 4 个部位（如 {@code 布料}，V79）
+     * 同样合法（见 {@code ProductionOperationCommandService.rejectUnknownPositions}）。</p>
+     */
+    public static final List<String> BASELINE_POSITIONS = List.of("布帘", "纱帘", "帘头");
+
     private final ProductionOperationMapper productionOperationMapper;
     /** 具名主线（新结构的「基准工序序列」载体，V71 / V72）。 */
     private final ProductionRouteTemplateMapper productionRouteTemplateMapper;

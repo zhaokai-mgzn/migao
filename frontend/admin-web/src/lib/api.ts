@@ -64,6 +64,8 @@ import type {
   FeeCombinationUpdateParams,
   FeeGaps,
   RouteOperationCreateParams,
+  RouteOperationCreateResult,
+  OperationPositionsAttachResult,
   RouteSignalsResponse,
   ProductionSeedTemplate,
   ProductionSeedApplyResult,
@@ -497,8 +499,13 @@ export const productionApi = {
     ),
 
   // 工序库写：改单价 / 必完开关等（权限 processing:manage）
+  // issue #4614 范围补口：body 可带 `positions` ⇒ **存量孤儿接入**（只补缺失的矩阵行，
+  // 不删已有行、不覆盖已定价的格），响应附 `created_positions` / `skipped_positions` 如实报数。
   updateOperation: (id: string | number, data: ProductionOperationUpdateParams) =>
-    request.put<ApiResponse<CatalogOperation>>(`/api/admin/production/operations/${id}`, data),
+    request.put<ApiResponse<CatalogOperation & OperationPositionsAttachResult>>(
+      `/api/admin/production/operations/${id}`,
+      data,
+    ),
 
   // 工序**软删**（issue #4588；契约 #4587 ③）：`deleted=1`（不物理删 —— 历史报工仍引用它）。
   // 三条护栏**一次报全**（422 + `error.details[].message`：被活跃主线 / 活跃规则 / 矩阵格引用）；
@@ -555,8 +562,10 @@ export const productionApi = {
     request.delete<ApiResponse<Routing>>(`/api/admin/production/routings/${id}`),
 
   // 新增工序（建新路线时必须有工序可选）
+  // issue #4614：body 可带 `positions`（适用部位）⇒ 同一事务建出矩阵行，新工序**建完即可见**；
+  // 响应附 `created_positions` / `skipped_positions`（如实报数，前端 toast 照报，不自行推算）。
   createOperation: (data: RouteOperationCreateParams) =>
-    request.post<ApiResponse<CatalogOperation>>('/api/admin/production/operations', data),
+    request.post<ApiResponse<RouteOperationCreateResult>>('/api/admin/production/operations', data),
 
   // 信号映射**只读**（库数据：派生读库而非读硬编码常量表）——写面已随 #4452 退役，
   // 存量单仍需读面兜底 ⇒ 只留 `getRouteSignals`（#4534 已删三个死写方法）。

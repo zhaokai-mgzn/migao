@@ -3,6 +3,7 @@ package com.migao.admin.service;
 // case_ids: PG-020, PG-034, PG-039
 
 import com.migao.admin.entity.ProductionOperation;
+import com.migao.admin.entity.ProductionOperationPosition;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
@@ -20,6 +21,7 @@ import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -27,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -71,7 +74,7 @@ class ProductionOperationCommandServiceTest {
         // 读面用**真实对象**（只 mock Mapper）：响应形态 = 目录项形态（同一份 operationView），
         // 用 mock 会让「返回更新后的工序」退化成断言桩
         return new ProductionOperationCommandService(
-                productionOperationMapper, priceVersionMapper,
+                productionOperationMapper, priceVersionMapper, productionOperationPositionMapper,
                 new ProductionOperationQueryService(productionOperationMapper, productionRouteTemplateMapper,
                         productionRouteRuleMapper, productionOperationPositionMapper,
                         productionCraftMapper, productionRouteSignalMapper));
@@ -254,6 +257,220 @@ class ProductionOperationCommandServiceTest {
         assertThatThrownBy(() -> service().create(Map.of("name", "罗马帘-穿杆", "unit_price", -1), TENANT))
                 .isInstanceOf(BusinessException.class);
         verify(productionOperationMapper, never()).insert(any(ProductionOperation.class));
+    }
+
+    // ══════════════════ 新增工序同时建矩阵行（issue #4614）══════════════════
+    //
+    // 病根（用户实测原话「这个新增按钮，无法新增工序」）：`POST /operations` 只写
+    // `production_operations`（工序库），**不建矩阵行**；而「工艺项」表**只按矩阵行渲染**
+    // （`GET /operation-positions`）⇒ 新工序表里没有它、也没法定价（原「工序库明细」表已随
+    // #4588 取消）⇒ **无处可见的孤儿**。本组断言 = 「建完必须可见」的服务端半边。
+
+    /** 该租户矩阵里已有的一行（幂等判据用；`price` 模拟**商家改过的价**）。 */
+    private ProductionOperationPosition positionRow(String logicalName, String position, String price) {
+        return ProductionOperationPosition.builder()
+                .id("opp-" + logicalName + "-" + position).tenantId(TENANT)
+                .logicalName(logicalName).position(position)
+                .unitPrice(price == null ? null : new BigDecimal(price))
+                .applicable(true).status("active").deleted(0)
+                .build();
+    }
+
+    @Test
+    @DisplayName("#4614 带 positions ⇒ 为每个部位插矩阵行（logical_name = **归一后**的逻辑名）")
+    void createWithPositionsInsertsMatrixRows() {
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> result = service().create(Map.of(
+                "name", "布帘车被", "unit_price", 0.6, "positions", List.of("布帘", "纱帘")), TENANT);
+
+        ArgumentCaptor<ProductionOperationPosition> rows =
+                ArgumentCaptor.forClass(ProductionOperationPosition.class);
+        verify(productionOperationPositionMapper, times(2)).insert(rows.capture());
+        assertThat(rows.getAllValues()).extracting(ProductionOperationPosition::getPosition)
+                .containsExactly("布帘", "纱帘");
+        assertThat(rows.getAllValues()).extracting(ProductionOperationPosition::getLogicalName)
+                .as("logical_name 必须是**归一后的逻辑名**（布帘车被 ⇒ 车被）："
+                        + "「逻辑名 + 部位后缀」那类字符串规则会得到库里没有的「车被-布」"
+                        + "⇒ 只有复用 normalizeOperationName 才拿得到 车被")
+                .containsOnly("车被");
+        assertThat(rows.getAllValues()).extracting(ProductionOperationPosition::getUnitPrice)
+                .as("unit_price = 新建时填的计件单价（不发明第二份价）")
+                .allSatisfy(p -> assertThat(p).isEqualByComparingTo("0.6"));
+        assertThat(rows.getAllValues()).allSatisfy(r -> {
+            assertThat(r.getTenantId()).isEqualTo(TENANT);
+            assertThat(r.getApplicable()).as("新建即「做」（≠「没定价」）").isTrue();
+            assertThat(r.getStatus()).isEqualTo("active");
+            assertThat(r.getDeleted()).isZero();
+        });
+        assertThat(result.get("created_positions")).as("如实报数").isEqualTo(2);
+        assertThat(result.get("skipped_positions")).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("#4614 值域与前端 positionOptions 同口径：矩阵里出现的第 4 个部位（布料）可建")
+    void createAcceptsPositionThatOnlyExistsInTheMatrix() {
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+        when(productionOperationPositionMapper.selectList(any()))
+                .thenReturn(List.of(positionRow("配料", "布料", "0.2")));
+
+        Map<String, Object> result = service().create(Map.of(
+                "name", "罗马帘-穿杆", "unit_price", 0.6, "positions", List.of("布料")), TENANT);
+
+        ArgumentCaptor<ProductionOperationPosition> rows =
+                ArgumentCaptor.forClass(ProductionOperationPosition.class);
+        verify(productionOperationPositionMapper).insert(rows.capture());
+        assertThat(rows.getValue().getPosition()).isEqualTo("布料");
+        assertThat(result.get("created_positions")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("#4614 已有 (逻辑名, 部位) 行 ⇒ 跳过且**不覆盖商家改过的价**，响应如实报跳过数")
+    void createSkipsExistingPositionRowsWithoutOverwritingPrice() {
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+        when(productionOperationPositionMapper.selectList(any()))
+                .thenReturn(List.of(positionRow("车被", "布帘", "0.99")));
+
+        Map<String, Object> result = service().create(Map.of(
+                "name", "布帘车被", "unit_price", 0.6, "positions", List.of("布帘", "纱帘")), TENANT);
+
+        ArgumentCaptor<ProductionOperationPosition> rows =
+                ArgumentCaptor.forClass(ProductionOperationPosition.class);
+        verify(productionOperationPositionMapper, times(1)).insert(rows.capture());
+        assertThat(rows.getValue().getPosition()).as("只补缺的那个部位").isEqualTo("纱帘");
+        assertThat(result.get("created_positions")).isEqualTo(1);
+        assertThat(result.get("skipped_positions")).as("跳过数必须如实报（不假装成功）").isEqualTo(1);
+        // 不覆盖：整条路径没有任何 update —— 商家改过的 0.99 必须原样留着
+        verify(productionOperationPositionMapper, never()).updateById(any(ProductionOperationPosition.class));
+    }
+
+    @Test
+    @DisplayName("#4614 反向护栏：不带 positions ⇒ 一个矩阵行都不建、响应不出现新键（老调用方一字不变）")
+    void createWithoutPositionsKeepsLegacyBehaviour() {
+        when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+
+        Map<String, Object> result = service().create(Map.of(
+                "name", "罗马帘-穿杆", "unit_price", 0.6), TENANT);
+
+        verify(productionOperationPositionMapper, never()).insert(any(ProductionOperationPosition.class));
+        verify(productionOperationPositionMapper, never()).selectList(any());
+        assertThat(result)
+                .as("不给 positions = 今天的行为：只建工序库行，响应形态一字不变")
+                .doesNotContainKeys("created_positions", "skipped_positions");
+    }
+
+    @Test
+    @DisplayName("#4614 positions 含空串/未知部位/空数组 ⇒ 422 + error.details 逐条，且校验先于写入")
+    void createRejectsUnknownOrBlankPositions() {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service().create(Map.of(
+                "name", "罗马帘-穿杆", "unit_price", 0.6, "positions", List.of("布帘", "", "布廉")), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException be = (BusinessException) e;
+                    assertThat(be.getHttpStatus()).isEqualTo(422);
+                    assertThat(be.getDetails()).as("一次报全（不是报第一条就返回）").hasSize(2);
+                    assertThat(be.getDetails()).extracting(d -> d.getField()).containsOnly("positions");
+                    assertThat(be.getDetails()).extracting(d -> d.getMessage())
+                            .anySatisfy(m -> assertThat(m).contains("布廉"))
+                            .anySatisfy(m -> assertThat(m).contains("空"));
+                });
+        assertThatThrownBy(() -> service().create(Map.of(
+                "name", "罗马帘-穿杆", "unit_price", 0.6, "positions", List.of()), TENANT))
+                .as("显式空数组 = 「建出来又是孤儿」⇒ fail-closed（与 createRouting 的空 positions 同口径）")
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("positions");
+        assertThatThrownBy(() -> service().create(Map.of(
+                "name", "罗马帘-穿杆", "unit_price", 0.6, "positions", "布帘"), TENANT))
+                .as("非数组 ⇒ 422（不得静默当成空/当成没给）")
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("positions");
+
+        verify(productionOperationMapper, never()).insert(any(ProductionOperation.class));
+        verify(productionOperationPositionMapper, never()).insert(any(ProductionOperationPosition.class));
+    }
+
+    // ══════════════════ 存量孤儿接入（PUT 带 positions，issue #4614 范围补口）══════════════════
+    //
+    // 用户实测原话：「我现在在**工艺项**中看不到 测试22，但是在**路线编辑的下拉列表**能看到，是 bug」
+    // —— 用户此前用「新增工序」建的工序只有 `production_operations` 行、**没有矩阵行** ⇒ 孤儿：
+    // 「工艺项」表按矩阵渲染 ⇒ 看不到；下拉按工序库渲染 ⇒ 看得到（两边不一致）。
+    // #4609 把下拉也改成读矩阵后孤儿将**两边都看不到**（彻底不可达）⇒ 存量必须有接入路径。
+    // 本组断言 = 接入路径与新增路径**共用同一份实现**（口径不许分叉）。
+
+    @Test
+    @DisplayName("#4614 存量接入（PUT 带 positions）⇒ 只补缺失行：已有格跳过、不覆盖已定价、响应如实报数")
+    void updateAttachesMissingPositionRowsOnly() {
+        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
+        when(productionOperationMapper.updateById(any(ProductionOperation.class))).thenReturn(1);
+        // 「韩褶 × 布帘」已有活跃行且**商家已改过价**（0.99 ≠ 工序库的 0.40）
+        when(productionOperationPositionMapper.selectList(any()))
+                .thenReturn(List.of(positionRow("韩褶", "布帘", "0.99")));
+
+        Map<String, Object> view = service().update("op-v54-07",
+                Map.of("positions", List.of("布帘", "纱帘")), TENANT);
+
+        ArgumentCaptor<ProductionOperationPosition> rows =
+                ArgumentCaptor.forClass(ProductionOperationPosition.class);
+        verify(productionOperationPositionMapper, times(1)).insert(rows.capture());
+        assertThat(rows.getValue().getLogicalName()).isEqualTo("韩褶");
+        assertThat(rows.getValue().getPosition()).as("只补缺的那个部位").isEqualTo("纱帘");
+        assertThat(rows.getValue().getUnitPrice())
+                .as("补建行取工序**当前**计件单价（不发明第二份价）").isEqualByComparingTo("0.40");
+        assertThat(rows.getValue().getApplicable()).isTrue();
+        assertThat(rows.getValue().getStatus()).isEqualTo("active");
+        assertThat(rows.getValue().getDeleted()).isZero();
+        assertThat(view.get("created_positions")).isEqualTo(1);
+        assertThat(view.get("skipped_positions")).as("跳过数如实报（不覆盖已定价的格）").isEqualTo(1);
+        // 只补不改：整条路径没有任何矩阵行更新
+        verify(productionOperationPositionMapper, never()).updateById(any(ProductionOperationPosition.class));
+    }
+
+    @Test
+    @DisplayName("#4614 停用工序不接部位 ⇒ 422 且不落库（冻结判据：只在 deleted=0 AND status=active 上补）")
+    void updateRejectsPositionsOnDisabledOperation() {
+        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "disabled"));
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service().update("op-v54-07", Map.of("positions", List.of("布帘")), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("停用");
+        verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
+        verify(productionOperationPositionMapper, never()).insert(any(ProductionOperationPosition.class));
+    }
+
+    @Test
+    @DisplayName("#4614 反向护栏：PUT 不带 positions ⇒ 不碰矩阵、响应不出现新键（既有部分更新一字不变）")
+    void updateWithoutPositionsKeepsLegacyBehaviour() {
+        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
+        when(productionOperationMapper.updateById(any(ProductionOperation.class))).thenReturn(1);
+
+        Map<String, Object> view = service().update("op-v54-07", Map.of("unit_price", "0.55"), TENANT);
+
+        verify(productionOperationPositionMapper, never()).insert(any(ProductionOperationPosition.class));
+        verify(productionOperationPositionMapper, never()).selectList(any());
+        assertThat(view).doesNotContainKeys("created_positions", "skipped_positions");
+    }
+
+    @Test
+    @DisplayName("#4614 接入路径的值域校验与新增路径**同一份**：未知部位 ⇒ 422 逐条且不落库")
+    void updateRejectsUnknownPositionsWithSameVocabulary() {
+        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service().update("op-v54-07",
+                Map.of("positions", List.of("布帘", "布廉")), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException be = (BusinessException) e;
+                    assertThat(be.getHttpStatus()).isEqualTo(422);
+                    assertThat(be.getDetails()).hasSize(1);
+                    assertThat(be.getDetails().get(0).getMessage()).contains("布廉");
+                });
+        verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
+        verify(productionOperationPositionMapper, never()).insert(any(ProductionOperationPosition.class));
     }
 
     // ══════════════════ 作用域 scope（issue #4384 A1，PG-039）══════════════════

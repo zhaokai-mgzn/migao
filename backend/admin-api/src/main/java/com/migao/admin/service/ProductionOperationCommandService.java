@@ -10,6 +10,7 @@ import com.migao.admin.entity.ProductionRouteRule;
 import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.ProductionOperationMapper;
+import com.migao.admin.mapper.ProductionOperationPositionMapper;
 import com.migao.admin.mapper.ProductionOperationPriceVersionMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,7 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -64,6 +66,8 @@ public class ProductionOperationCommandService {
 
     private final ProductionOperationMapper productionOperationMapper;
     private final ProductionOperationPriceVersionMapper priceVersionMapper;
+    /** 部位价目 + 适用性矩阵（issue #4614：新增工序要同时建矩阵行，否则新工序在界面上无处可见）。 */
+    private final ProductionOperationPositionMapper productionOperationPositionMapper;
     private final ProductionOperationQueryService productionOperationQueryService;
 
     /**
@@ -137,6 +141,21 @@ public class ProductionOperationCommandService {
                 op.setIsStartMarker(startMarker);
             }
         }
+        // issue #4614（**存量孤儿接入路径**）：body 带 positions ⇒ 只**补**缺失的矩阵行。
+        // 校验先于写入（与新增路径同一份 `requestedPositions` / `rejectUnknownPositions`）。
+        List<String> positions = null;
+        List<ProductionOperationPosition> existingRows = List.of();
+        if (body != null && body.containsKey("positions")) {
+            positions = requestedPositions(body.get("positions"));
+            existingRows = tenantMatrixRows(tenantId);
+            rejectUnknownPositions(positions, existingRows);
+            // 冻结判据：矩阵行只在 deleted=0 **AND status='active'** 的工序上补（停用工序接部位 =
+            // 建出一批读面看不见的行，商家会以为「接了但没生效」）。
+            if (!"active".equals(op.getStatus())) {
+                throw BusinessException.validationError("工序「" + op.getName()
+                        + "」当前是停用状态：停用工序不接部位（先启用它，再接部位）");
+            }
+        }
         int rows = productionOperationMapper.updateById(partial);
         if (rows == 0) {
             throw BusinessException.notFound("工序");
@@ -153,7 +172,15 @@ public class ProductionOperationCommandService {
             log.info("工序调价: operationId={}, name={}, {} -> {}",
                     op.getId(), op.getName(), previousPrice, newPrice);
         }
-        return productionOperationQueryService.operationView(op);
+        Map<String, Object> view = productionOperationQueryService.operationView(op);
+        if (positions != null) {
+            Map<String, Integer> counts = attachPositions(tenantId, op, positions, existingRows);
+            view.put("created_positions", counts.get("created"));
+            view.put("skipped_positions", counts.get("skipped"));
+            log.info("存量工序接入部位: tenantId={}, operationId={}, name={}, positions={}, created={}, skipped={}",
+                    tenantId, op.getId(), op.getName(), positions, counts.get("created"), counts.get("skipped"));
+        }
+        return view;
     }
 
     /**
@@ -170,6 +197,18 @@ public class ProductionOperationCommandService {
      *
      * <p><b>不发明行业数据</b>：本端点只落**商家给的值**，不给任何默认单价/默认工序名
      * （猜出来的单价会直接算成工人工资，见 issue #4261）。</p>
+     *
+     * <p><b>issue #4614：为什么还要能同时建矩阵行</b>——用户实测原话「这个新增按钮，无法新增工序」：
+     * 本端点此前**只写 {@code production_operations}**，而「工艺项」表**只按矩阵行渲染**
+     * （{@code GET /operation-positions}）⇒ 新建的工序**在界面上无处可见**、连定价入口都没有
+     * （原「工序库明细」表已随 #4588 取消）。故 body 增可选 {@code positions}：
+     * 给了就**同一事务**为每个部位插一行矩阵行（{@code logical_name} = 工序名的**归一逻辑名**，
+     * 复用 {@link ProductionOperationQueryService#normalizeOperationName}；{@code unit_price} =
+     * 本次填的计件单价）。**不给 {@code positions} ⇒ 行为一字不变**（老调用方/脚本不受影响）。</p>
+     *
+     * <p><b>幂等</b>：同 {@code (tenant_id, logical_name, position)} 已有未软删行 ⇒ **跳过**
+     * （**不覆盖**商家改过的价），并在响应里**如实报数**
+     * （{@code created_positions} / {@code skipped_positions}）。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> create(Map<String, Object> body, Long tenantId) {
@@ -177,6 +216,15 @@ public class ProductionOperationCommandService {
         BigDecimal unitPrice = decimal(body.get("unit_price"), "unit_price");
         if (unitPrice.signum() < 0) {
             throw BusinessException.validationError("unit_price 不能为负");
+        }
+        // issue #4614：positions 给了才建矩阵行。**校验先于写入**（与 status/scope 同口径）——
+        // 部位写错一个不该先落一行工序库再回滚。
+        List<String> positions = null;
+        List<ProductionOperationPosition> existingRows = List.of();
+        if (body != null && body.containsKey("positions")) {
+            positions = requestedPositions(body.get("positions"));
+            existingRows = tenantMatrixRows(tenantId);
+            rejectUnknownPositions(positions, existingRows);
         }
         // 重名判据覆盖**停用/软删之外**的全部行：唯一索引是 (tenant_id, name) WHERE deleted=0，
         // 只比活跃行会让「同名停用行」撞 DB 索引 ⇒ 500 而不是可行动错误。
@@ -222,8 +270,138 @@ public class ProductionOperationCommandService {
                 .createdAt(OffsetDateTime.now())
                 .deleted(0)
                 .build());
-        log.info("新增工序: tenantId={}, name={}, unit={}, unitPrice={}", tenantId, name, op.getUnit(), unitPrice);
-        return productionOperationQueryService.operationView(op);
+        Map<String, Object> view = productionOperationQueryService.operationView(op);
+        if (positions != null) {
+            Map<String, Integer> counts = attachPositions(tenantId, op, positions, existingRows);
+            view.put("created_positions", counts.get("created"));
+            view.put("skipped_positions", counts.get("skipped"));
+        }
+        log.info("新增工序: tenantId={}, name={}, unit={}, unitPrice={}, positions={}",
+                tenantId, name, op.getUnit(), unitPrice, positions);
+        return view;
+    }
+
+    /**
+     * 按部位**补建**矩阵行 —— issue #4614 的**唯一**实现（新增路径 {@link #create} 与存量接入路径
+     * {@link #update} 共用；**严禁写第二份**：口径分叉就是又一次「工艺项表 / 路线下拉两边不一致」）。
+     *
+     * <p>语义 = **只补不改**：{@code (tenant_id, logical_name, position)} 已有行 ⇒ **跳过**
+     * （不覆盖商家改过的价、不删任何已有行）。新建行的 {@code unit_price} 取该工序**当前的计件单价**
+     * （{@code null} 就落 {@code null} = 「做但未定价」，商家在「工艺项」表里就地定价；
+     * **不发明单价** —— 猜出来的价会直接算成工人工资）。</p>
+     *
+     * @return {@code {created, skipped}}（如实报数，供响应与 toast 直接引用，前端不自行推算）
+     */
+    private Map<String, Integer> attachPositions(Long tenantId, ProductionOperation op,
+                                                 List<String> positions,
+                                                 List<ProductionOperationPosition> existingRows) {
+        String logicalName = productionOperationQueryService.normalizeOperationName(op.getName());
+        Set<String> already = new LinkedHashSet<>();
+        for (ProductionOperationPosition row : existingRows) {
+            if (logicalName.equals(row.getLogicalName())) {
+                already.add(row.getPosition());
+            }
+        }
+        int created = 0;
+        int skipped = 0;
+        for (String position : positions) {
+            if (already.contains(position)) {
+                // 幂等：商家改过的价必须原样留着（覆盖 = 把工价刷回工序库的值，工人工资当场变）
+                skipped++;
+                continue;
+            }
+            productionOperationPositionMapper.insert(ProductionOperationPosition.builder()
+                    .tenantId(tenantId)
+                    .logicalName(logicalName)
+                    .position(position)
+                    .unitPrice(op.getUnitPrice())
+                    .applicable(true)
+                    .status("active")
+                    .createdAt(OffsetDateTime.now())
+                    .updatedAt(OffsetDateTime.now())
+                    .deleted(0)
+                    .build());
+            created++;
+        }
+        return Map.of("created", created, "skipped", skipped);
+    }
+
+    /**
+     * 该租户矩阵里的**全部未软删行**（issue #4614）。一次取回、同时服务两件事：
+     * ① 值域 —— 「矩阵里出现的部位 ∪ 基线三部位」（与前端 {@code positionOptions} 同口径）；
+     * ② 幂等 —— 同 {@code (logical_name, position)} 已有行就跳过。
+     *
+     * <p>⚠️ 判据必须用 {@code deleted = 0}（**与唯一索引
+     * {@code uk_production_operation_positions_tenant_name_position … WHERE deleted = 0} 同域**）：
+     * 只比 {@code status='active'} 会漏掉停用行 ⇒ insert 撞索引 ⇒ 500 而不是可行动错误
+     * （同本类重名判据「必须覆盖停用行」的既有教训）。</p>
+     */
+    private List<ProductionOperationPosition> tenantMatrixRows(Long tenantId) {
+        List<ProductionOperationPosition> rows = productionOperationPositionMapper.selectList(
+                new LambdaQueryWrapper<ProductionOperationPosition>()
+                        .eq(ProductionOperationPosition::getTenantId, tenantId)
+                        .eq(ProductionOperationPosition::getDeleted, 0));
+        return rows == null ? List.of() : rows;
+    }
+
+    /**
+     * {@code positions} 取值（issue #4614）：必须是**非空数组**，元素去重保序（空串**留到校验里报**，
+     * 不在这里静默丢掉）。
+     *
+     * <p>显式空数组 ⇒ 422 而不是静默 no-op：那等于「建出一道在界面上无处可见的工序」
+     * —— 正是本单要治的病（与 {@code createRouting} 的空 {@code positions} 同口径）。</p>
+     */
+    private static List<String> requestedPositions(Object raw) {
+        if (!(raw instanceof List<?> list)) {
+            throw BusinessException.validationError("positions 必须是数组（如 [\"布帘\",\"纱帘\"]）");
+        }
+        if (list.isEmpty()) {
+            throw BusinessException.validationError(
+                    "positions 不能为空（至少勾一个适用部位，否则新工序不会出现在「工艺项」表里）");
+        }
+        List<String> out = new ArrayList<>();
+        for (Object item : list) {
+            String text = item == null ? "" : String.valueOf(item).trim();
+            if (!out.contains(text)) {
+                out.add(text);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 部位值域校验（issue #4614）：值域 = **该租户矩阵里出现的部位 ∪ 基线三部位**
+     * （{@link ProductionOperationQueryService#BASELINE_POSITIONS}）—— 与前端「新增」对话框的
+     * 「适用部位」勾选项**同一份口径**，前端勾得出的后端就必须收得下。
+     *
+     * <p>空串 / 未知部位 ⇒ **一次报全**（422 + {@code error.details} 逐条，照既有 422 形态）。
+     * 不校验的代价：一个笔误（{@code 布廉}）会静默落库并在「工艺项」表里长出一列谁也认不出的部位。</p>
+     */
+    private static void rejectUnknownPositions(List<String> positions,
+                                               List<ProductionOperationPosition> existingRows) {
+        Set<String> known = new LinkedHashSet<>(ProductionOperationQueryService.BASELINE_POSITIONS);
+        for (ProductionOperationPosition row : existingRows) {
+            if (StringUtils.hasText(row.getPosition())) {
+                known.add(row.getPosition());
+            }
+        }
+        List<ApiResponse.ErrorDetail> details = new ArrayList<>();
+        for (String position : positions) {
+            if (!StringUtils.hasText(position)) {
+                details.add(BusinessException.detail("positions",
+                        "适用部位不能为空（空串会在「工艺项」表里长出一列无名部位）"));
+            } else if (!known.contains(position)) {
+                details.add(BusinessException.detail("positions", String.format(
+                        "未知部位「%s」：只接受矩阵里已有的部位（%s）或基线三部位（%s）",
+                        position, String.join("/", known),
+                        String.join("/", ProductionOperationQueryService.BASELINE_POSITIONS))));
+            }
+        }
+        if (!details.isEmpty()) {
+            throw BusinessException.validationError(
+                    "新增工序未通过校验（" + details.size() + " 条问题）", details,
+                    "把「适用部位」改成矩阵里已有的部位（或基线三部位）后重试");
+        }
     }
 
     /**

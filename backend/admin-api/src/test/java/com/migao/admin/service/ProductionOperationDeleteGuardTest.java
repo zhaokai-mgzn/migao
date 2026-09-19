@@ -95,6 +95,7 @@ class ProductionOperationDeleteGuardTest {
 
     private ProductionOperationCommandService service() {
         return new ProductionOperationCommandService(productionOperationMapper, priceVersionMapper,
+                productionOperationPositionMapper,
                 new ProductionOperationQueryService(productionOperationMapper,
                         productionRouteTemplateMapper, productionRouteRuleMapper,
                         productionOperationPositionMapper, productionCraftMapper,

@@ -64,8 +64,11 @@ public class ProductionRoutingCommandService {
      * <p>为什么给默认而不是要求必填：V71/V72 种子路线就是「一条主线适用全部三种帘种」，
      * 前端「新建路线」也只需要先给个名字 ⇒ 强制填三元素数组只是摩擦。
      * 要收窄适用范围的商家可显式给 {@code positions}。</p>
+     *
+     * <p>issue #4614：与新增工序的默认「适用部位」是**同一份**（引用
+     * {@link ProductionOperationQueryService#BASELINE_POSITIONS}）—— 各写一份必然漂移。</p>
      */
-    private static final List<String> DEFAULT_POSITIONS = List.of("布帘", "纱帘", "帘头");
+    private static final List<String> DEFAULT_POSITIONS = ProductionOperationQueryService.BASELINE_POSITIONS;
 
     private final ProductionRouteTemplateMapper productionRouteTemplateMapper;
     private final ProductionRoutingVersionMapper productionRoutingVersionMapper;
