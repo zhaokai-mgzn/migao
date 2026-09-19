@@ -47,7 +47,9 @@ import {
 import { describeLogisticsProfile } from '@/lib/logistics'
 // D6 自动识别（issue #4526 · 设计 §5.1/§5.2）：超高/超宽 = 宽高 vs 门幅；倒幅/正幅 = cuttingMode 推导
 // ⚠️ 取自 **admin-web 专属**模块（不是三端同源的 `craft-display`，见该文件头）
-import { detectAutoFeatures, type AutoFeature } from '@/lib/craft-auto-features'
+// `AUTO_FEATURE_NAMES`（#4566）：下单页用它把目录里的**自动推导特征**滤出**手选**列表
+// （它们在目录里必须存在 —— 商家配「加工费组合」要能选到；但手选控件必须没有它们，判据 8）
+import { AUTO_FEATURE_NAMES, detectAutoFeatures, type AutoFeature } from '@/lib/craft-auto-features'
 // 费用明细的「加工 + 特殊选项」两半拆分（issue #4526 · 设计 §4.3 / 判据 5）——唯一实现
 import { buildFeeDetailDisplay } from '@/lib/order-fee-display'
 // #4371：加工项类型改为**店铺级目录**的 `ProcessingItem`（旧 `ProductProcessingItem` 已随解耦删除）
@@ -135,10 +137,13 @@ interface OrderLineItem {
    */
   openCountTouched: boolean
   /**
-   * 商家**手改过**是否定型（issue #4521，承接 #4489 的「手改留痕」纪律）——
-   * 落在**行状态**里（同 `openCountTouched`）。手改过 ⇒ 改帘体**不得覆盖**。
+   * 商家**手改过**是否定型（承接 #4489 的「手改留痕」纪律）—— 落在**行状态**里
+   * （同 `openCountTouched`）。手改过 ⇒ 改帘体**不得覆盖**。
+   *
+   * ⚠️ issue #4566：定型已搬到**加工项** ⇒ 本标记跟踪的是「商家手动勾/取消过『定型』**加工项**」，
+   * 而不是工艺规格里的某个字段（字段已随裁定退场）。
    */
-  isShapedTouched: boolean
+  shapedItemTouched: boolean
   /**
    * 用料米数来源（真值源 §8：折数/用料**必须带来源**，防多渠道不一致）—— issue #4434。
    * `公式计算` = 由算料引擎试算预填（宽/高/开数/拼次变化时自动重算）；
@@ -208,14 +213,103 @@ const SALE_FORM_FINISHED = '成品帘'
 type SaleForm = typeof SALE_FORM_FABRIC | typeof SALE_FORM_FINISHED
 
 /**
+ * 「定型」加工项名（**V83 目录逐字**）—— 它的勾选态就是 `isShaped` 的真值来源（issue #4566）。
+ *
+ * 用户 2026-09-19 裁定：「工艺规格中的**工艺，定型**，对花我觉得**直接通过加工项来勾选**，
+ * 其他保留」⇒ 定型是目录里的**手选特征**项（`unit_price=0`，价在加工费组合上）。
+ */
+const SHAPED_ITEM_NAME = '定型'
+
+/**
+ * 该行的**手选加工项**清单 —— 滤掉**自动推导特征**（`超高`/`超宽`/`倒幅`/`正幅`）。
+ *
+ * 为什么目录里有它们却要滤掉：商家配「加工费组合」时必须能选到它们
+ * （组合名就是 `韩折+超高+定型` 这种形态），但**下单页**的勾选控件不能有
+ * —— 它们是**推导**出来的（判据 8：自动识别特征出现手选项 ⇒ 红）。
+ * 单一真值 = `craft-auto-features.ts` 的 `AUTO_FEATURE_NAMES`（此处不抄第二份名字数组）。
+ */
+function handPickableProcessingItems(items: ProcessingItem[]): ProcessingItem[] {
+  const autoNames: readonly string[] = AUTO_FEATURE_NAMES
+  return items.filter((pi) => !autoNames.includes(pi.name))
+}
+
+/**
+ * 该行的**工艺**（issue #4566）—— 唯一取值函数：取**已勾选**加工项里第一个带 `craftHint` 的项。
+ *
+ * `craftHint` 是 V78 给加工项加的**显式声明**列（`processing_items.craft_hint`，目录里 5 个工艺项
+ * 声明它：`打孔`→打孔 · `韩折`/`韩定+S钩`→**韩褶** · `穿杆`→穿杆 · `平幔`→平幔）。
+ *
+ * ⚠️ 都没有 ⇒ `undefined`（**不猜、不填默认韩褶**）：后端 `deriveRouteKey` 会走
+ * 「显式 craft → `craft_hint` → 信号表 → 租户默认工艺」的降级链 —— 前端再补一份默认工艺
+ * 就是第二份口径（且正是它让 ERP 的「工艺+特征」组合名一行都匹配不上）。
+ *
+ * 按 `processingItems`（目录顺序）取，不按点击顺序 —— 单值护栏（`toggleProcessing`）保证
+ * 同单至多一个带 `craftHint` 的勾选项，这里只是让取值与点击先后无关。
+ */
+function craftFromItems(line: OrderLineItem): string | undefined {
+  return (
+    line.processingItems.find(
+      (pi) => Boolean(pi.craftHint) && line.selectedProcessing[pi.id]?.selected === true
+    )?.craftHint ?? undefined
+  )
+}
+
+/**
+ * 该行的**是否定型**（issue #4566）—— = 「定型」加工项是否被勾选。
+ *
+ * 三态语义留在**键的缺席**上：目录里没有「定型」项（老租户未重建目录）⇒ `undefined`
+ * ⇒ `buildCraftSpec` **不写该键**（后端按缺值处理，与今天「未指定」档同语义），**不报错**。
+ */
+function isShapedFromItems(line: OrderLineItem): boolean | undefined {
+  const item = line.processingItems.find((pi) => pi.name === SHAPED_ITEM_NAME)
+  if (!item) return undefined
+  return line.selectedProcessing[item.id]?.selected === true
+}
+
+/**
+ * 送进 `buildCraftSpec` / `craftCalcParamsOf` 的**派生后**工艺规格（页面侧**唯一派生点**）。
+ *
+ * `craft` / `isShaped` 的真值来源已从「工艺规格控件」搬到**加工项**（#4566）⇒ 读侧一律走本函数。
+ * ⚠️ `lib/craft-calc-request.ts` **不得**再加第二份派生逻辑（同一真值两处推导 = 页面显示 ≠ 落库）。
+ */
+function derivedCraftSpec(line: OrderLineItem): CraftSpecInput {
+  return { ...line.craft, craft: craftFromItems(line), isShaped: isShapedFromItems(line) }
+}
+
+/**
+ * 「定型」加工项的**默认勾选**（真值源 §10：布帘默认是 / 纱帘默认否）—— 返回新的 `selectedProcessing`。
+ *
+ * 今天的行为逐字保留（原来由 `defaultIsShapedForBody` 写 `craft.isShaped`，现在写**勾选态**）：
+ * 布帘默认**勾上**「定型」、纱帘默认**不勾**。三条边界：
+ * ① 商家**手动勾/取消过**定型（`shapedItemTouched`）⇒ 原样返回（不覆盖，同 `openCountTouched` 纪律）；
+ * ② 目录里**没有**「定型」项 ⇒ 原样返回（不报错、不凭空造项 ⇒ `isShaped` 落 `undefined`）；
+ * ③ 已经等于默认档 ⇒ 原样返回（不做无意义的状态更新）。
+ */
+function withShapedDefault(
+  line: OrderLineItem
+): Record<string, { selected: boolean; qty: number }> {
+  if (line.shapedItemTouched) return line.selectedProcessing
+  const item = line.processingItems.find((pi) => pi.name === SHAPED_ITEM_NAME)
+  if (!item) return line.selectedProcessing
+  const selected = defaultIsShapedForBody(line.curtainBody)
+  const prev = line.selectedProcessing[item.id]
+  if (prev?.selected === selected) return line.selectedProcessing
+  return {
+    ...line.selectedProcessing,
+    [item.id]: { selected, qty: prev?.qty ?? deriveProcessingQty(item, line.quantity) },
+  }
+}
+
+/**
  * 该行的**自动识别特征**（issue #4526 · 设计 §5.1/§5.2）—— 纯推导，**不是可勾选项**。
  *
  * 用户 2026-09-19：「超高 / 超宽是和门幅标准比较的……**这个要求做到自动识别**」。
  * 门幅取 SKU 的 `doorWidth`（缺省 2.8）；倒幅/正幅由 `cuttingMode` 唯一推导。
  *
- * ⚠️ 这些特征**进组合键**（R9：`打孔+超高+定型` 与 ERP 逐字同构）⇒ 与手选加工项一起落
+ * ⚠️ 这些特征**进组合键**（`打孔+超高+定型` 与 ERP 逐字同构）⇒ 与手选加工项一起落
  * `processingInfo.processingItems`（服务端的特征名唯一来源就是它），但**不计入手选计数**、
- * 也不在手选列表里出 checkbox（判据 8：手选项 ⇒ 红）。
+ * 也**不在手选列表里出 checkbox**（判据 8：手选项 ⇒ 红；由 `handPickableProcessingItems` 滤掉）。
+ * ⚠️ `定型` 已**不在**本函数里（#4566）：它是手选加工项，其勾选态单独派生 `isShaped`。
  */
 function autoFeaturesOf(line: OrderLineItem): AutoFeature[] {
   return detectAutoFeatures({
@@ -223,7 +317,6 @@ function autoFeaturesOf(line: OrderLineItem): AutoFeature[] {
     height: line.height,
     doorWidth: line.selectedSku?.doorWidth,
     cuttingMode: line.craft.cuttingMode,
-    isShaped: line.craft.isShaped,
   })
 }
 
@@ -300,7 +393,8 @@ function buildLineProcessingInfo(line: OrderLineItem): Record<string, unknown> |
   const mainSpec = isFabric
     ? {}
     : {
-        ...buildCraftSpec(line.craft),
+        // `craft` / `isShaped` 由**加工项**派生（#4566）⇒ 走唯一派生点，不读 `line.craft` 的那两个键
+        ...buildCraftSpec(derivedCraftSpec(line)),
         ...(curtainType ? { curtainType } : {}),
         ...(isPaired ? buildMainLineGroupKeys(line.id) : {}),
       }
@@ -426,15 +520,17 @@ function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
     height: null,
     processingItems: [],
     selectedProcessing: {},
-    // 默认档（issue #4420/#4493/#4521）：工艺「韩褶」/ 加工类型「定高买宽」/ 款式「单色」/
-    // 褶距 0.125 / 是否对花「否」/ 是否定型「是」（布帘默认）—— 都是**商家看得见的真值**
+    // 默认档（issue #4420/#4493/#4521）：加工类型「定高买宽」/ 款式「单色」/ 褶距 0.125 /
+    // 是否对花「否」—— 都是**商家看得见的真值**。
+    // ⚠️ #4566：`craft` / `isShaped` **不在**这里 —— 它们由**加工项**派生
+    // （工艺 = 勾选的工艺项的 `craftHint`；定型 = 「定型」加工项的勾选态），前端不补默认。
     craft: createDefaultCraftSpec(),
     edgeMeters: null,
     edgeUnitPrice: null,
     sheerMeters: null,
     sheerUnitPrice: null,
     openCountTouched: false,
-    isShapedTouched: false,
+    shapedItemTouched: false,
     metersSource: METERS_SOURCE_FORMULA,
     calc: null,
     calcError: null,
@@ -471,12 +567,16 @@ function sheerMetersOf(line: OrderLineItem): number {
 /**
  * 算料试算的入参（**唯一装配点**）：`craftCalcParamsOf` 需要**部位**判「纱帘不算料」
  * （issue #4521），而部位在行上是从帘体派生的 ⇒ 在这里派生一次，两处调用共用。
+ *
+ * ⚠️ #4566：`craft` 传**派生后**的规格（`craftFromItems` / `isShapedFromItems`）——
+ * `craftCalcParamsOf` 读的是 `line.craft.craft`，若这里传原始值，试算会按「未指定工艺」
+ * 或旧默认工艺算 ⇒ **页面显示 ≠ 落库**（工艺 → 公式/悬挂方式的分支取错）。
  */
 function calcInputOf(line: OrderLineItem) {
   return {
     width: line.width,
     height: line.height,
-    craft: line.craft,
+    craft: derivedCraftSpec(line),
     curtainType: curtainTypeOfBody(line.curtainBody),
   }
 }
@@ -557,16 +657,26 @@ export default function NewOrderPage() {
   useEffect(() => {
     if (processingCatalogLoading) return
     setLineItems((prev) =>
-      prev.map((it) =>
-        it.processingItems === processingCatalog ? it : { ...it, processingItems: processingCatalog }
-      )
+      prev.map((it) => {
+        if (it.processingItems === processingCatalog) return it
+        const next: OrderLineItem = { ...it, processingItems: processingCatalog }
+        // 目录到达 ⇒ 按帘体补「定型」的**默认勾选**（issue #4566；商家手动改过的不覆盖）
+        return { ...next, selectedProcessing: withShapedDefault(next) }
+      })
     )
   }, [processingCatalog, processingCatalogLoading])
 
   // ===== 行项更新工具 =====
   const updateLineItem = useCallback(
-    (lineId: string, patch: Partial<OrderLineItem>) => {
-      setLineItems((prev) => prev.map((it) => (it.id === lineId ? { ...it, ...patch } : it)))
+    (
+      lineId: string,
+      patch: Partial<OrderLineItem> | ((line: OrderLineItem) => Partial<OrderLineItem>)
+    ) => {
+      setLineItems((prev) =>
+        prev.map((it) =>
+          it.id === lineId ? { ...it, ...(typeof patch === 'function' ? patch(it) : patch) } : it
+        )
+      )
     },
     []
   )
@@ -580,7 +690,9 @@ export default function NewOrderPage() {
    *
    * 三条口径：
    * 1. **是否定型默认跟着帘体走**（真值源 §10 布帘是 / 纱帘否）—— 但**只在商家没手改过时**
-   *    （`isShapedTouched` 落在行状态里，同 `openCountTouched` 的纪律：手改过的值只能显式改回）；
+   *    （`shapedItemTouched` 落在行状态里，同 `openCountTouched` 的纪律：手改过的值只能显式改回）。
+   *    ⚠️ issue #4566：它现在写的是「定型」**加工项**的勾选态（`withShapedDefault`），
+   *    不再是工艺规格里的字段（字段已随裁定退场）；
    * 2. **用料来源**：纱帘 = 商家给定（`人工指定`，且不发算料请求）；布帘 = 回到公式计算；
    * 3. 切到纱帘时清掉上一次的算料结果/错误（纱帘不算料，留着旧公式串会骗人）。
    */
@@ -598,9 +710,8 @@ export default function NewOrderPage() {
           next.calc = null
           next.calcError = null
         }
-        if (!it.isShapedTouched) {
-          next.craft = { ...it.craft, isShaped: defaultIsShapedForBody(body) }
-        }
+        // 定型默认随帘体（#4566）：写「定型」加工项的勾选态，商家手改过则不覆盖
+        next.selectedProcessing = withShapedDefault(next)
         return next
       })
     )
@@ -786,12 +897,23 @@ export default function NewOrderPage() {
     const fallbackPrice =
       Number(detail?.price) || Number(detail?.basePrice) || Number(product.price) || 0
 
-    updateLineItem(lineId, {
-      product: detail,
-      productLoading: false,
-      unitPrice: fallbackPrice,
-      processingItems: processingCatalog,
-      selectedProcessing: {},
+    updateLineItem(lineId, (it) => {
+      const next: OrderLineItem = {
+        ...it,
+        product: detail,
+        productLoading: false,
+        unitPrice: fallbackPrice,
+        processingItems: processingCatalog,
+        selectedProcessing: {},
+      }
+      return {
+        product: next.product,
+        productLoading: next.productLoading,
+        unitPrice: next.unitPrice,
+        processingItems: next.processingItems,
+        // 换商品 = 清空勾选 ⇒ 按帘体补「定型」的默认勾选（issue #4566）
+        selectedProcessing: withShapedDefault(next),
+      }
     })
   }
 
@@ -813,19 +935,51 @@ export default function NewOrderPage() {
     })
   }
 
+  /**
+   * 勾选 / 取消一个加工项。
+   *
+   * **工艺单值护栏**（issue #4566）：路线键的工艺维是**单值** ⇒ 新勾的项带 `craftHint` 时，
+   * 自动取消**另一个**带 `craftHint`（不同名）的已勾项，并 `toast` 说明换了哪一个
+   * （**不静默**：同一张单出现两套工艺声明 = 两套工序，商家必须看见换了）。
+   *
+   * 勾/取消「定型」⇒ 记下「商家手动改过」（`shapedItemTouched`）⇒ 之后改帘体不再覆盖默认档。
+   */
   const toggleProcessing = (
     line: OrderLineItem,
     pi: ProcessingItem,
     selected: boolean
   ) => {
     const prev = line.selectedProcessing[pi.id] || { selected: false, qty: 1 }
+    const nextSelected: Record<string, { selected: boolean; qty: number }> = {
+      ...line.selectedProcessing,
+      // 选中即按当前面料米数推导数量（per_meter=米数，其余=1）；取消勾选保留原值（issue #3005 回滚 #2986）
+      [pi.id]: { selected, qty: selected ? deriveProcessingQty(pi, line.quantity) : prev.qty },
+    }
+
+    // 工艺单值护栏：一张单只能有一个工艺声明
+    let replaced: ProcessingItem | undefined
+    if (selected && pi.craftHint) {
+      replaced = line.processingItems.find(
+        (other) =>
+          other.id !== pi.id &&
+          Boolean(other.craftHint) &&
+          other.craftHint !== pi.craftHint &&
+          nextSelected[other.id]?.selected === true
+      )
+      if (replaced) {
+        nextSelected[replaced.id] = { ...nextSelected[replaced.id], selected: false }
+      }
+    }
+
     updateLineItem(line.id, {
-      selectedProcessing: {
-        ...line.selectedProcessing,
-        // 选中即按当前面料米数推导数量（per_meter=米数，其余=1）；取消勾选保留原值（issue #3005 回滚 #2986）
-        [pi.id]: { selected, qty: selected ? deriveProcessingQty(pi, line.quantity) : prev.qty },
-      },
+      selectedProcessing: nextSelected,
+      // 手改过定型（勾或取消）⇒ 留痕，改帘体不再覆盖
+      ...(pi.name === SHAPED_ITEM_NAME ? { shapedItemTouched: true } : {}),
     })
+
+    if (replaced) {
+      toast.info(`一张单只能有一个工艺：已把「${replaced.name}」换成「${pi.name}」`)
+    }
   }
 
   // 行商品数量（面料米数）**手工改**（issue #4434）：
@@ -1246,7 +1400,8 @@ export default function NewOrderPage() {
             doorWidth: sku?.doorWidth,
             ...buildSheerLineCraftSpec(
               pairKey,
-              buildCraftSpec(line.craft),
+              // 与主布行**同一份**工艺规格（含 #4566 从加工项派生的 craft / isShaped）
+              buildCraftSpec(derivedCraftSpec(line)),
               line.sheerMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
             ),
             // 纱帘用料米数 = 商家给定值（「买多少就是多少」）⇒ 落 `fabric_meters`，
@@ -1365,8 +1520,6 @@ export default function NewOrderPage() {
                             ...(patch.openCount !== undefined
                               ? { openCountTouched: true }
                               : {}),
-                            // 手改过「是否定型」⇒ 记下来，之后改帘体不再覆盖（issue #4521）
-                            ...(patch.isShaped !== undefined ? { isShapedTouched: true } : {}),
                           })
                         }
                         onEdgeMetersChange={(m) => updateLineItem(line.id, { edgeMeters: m })}
@@ -2402,6 +2555,12 @@ function LineItemBlock({
   ).length
   /** 自动识别特征（D6）—— 只读展示，**不计入** `selectedProcessingCount`（不是手选项） */
   const autoFeatures = autoFeaturesOf(line)
+  /**
+   * 手选加工项（issue #4566）—— 滤掉**自动推导特征**（超高/超宽/倒幅/正幅）。
+   * 它们在目录里**必须存在**（商家配「加工费组合」要能选到），但**不得**出现在手选控件里
+   * （判据 8：自动识别特征出现手选项 ⇒ 红）。单一真值 = `AUTO_FEATURE_NAMES`。
+   */
+  const handPickableItems = handPickableProcessingItems(line.processingItems)
   /** 布料组整组无加工（issue #4493）⇒ 自动识别块也不渲染 */
   const isFabricLine = line.saleForm === SALE_FORM_FABRIC
 
@@ -2413,7 +2572,8 @@ function LineItemBlock({
   /** 摘要（issue #4420）：一眼看懂「这是什么、多大、多少钱」—— 部位已移除（#4521）⇒ 取帘体 */
   const summarySpec = [
     line.curtainBody,
-    line.craft.craft,
+    // 工艺取**派生值**（#4566：来自加工项的 `craftHint`）—— 不读 `line.craft.craft`（那里已没有真值）
+    craftFromItems(line),
     line.craft.cuttingMode,
     line.craft.openCount ? OPEN_COUNT_LABEL[line.craft.openCount] : undefined,
     line.craft.style,
@@ -2577,11 +2737,12 @@ function LineItemBlock({
             >
               {processingLoading ? (
                 <div className="text-sm text-neutral-400 py-2">加工项加载中…</div>
-              ) : line.processingItems.length === 0 ? (
+              ) : handPickableItems.length === 0 ? (
                 <div className="text-sm text-neutral-400 py-2">暂无可用加工项</div>
               ) : (
                 <div className="space-y-2">
-                  {line.processingItems.map((pi) => {
+                  {/* #4566：手选列表 = 目录**滤掉自动推导特征**后的清单（超高/超宽/倒幅/正幅不出控件） */}
+                  {handPickableItems.map((pi) => {
                     const cfg = line.selectedProcessing[pi.id] || { selected: false, qty: 1 }
                     return (
                       <div
@@ -2597,6 +2758,7 @@ function LineItemBlock({
                           type="checkbox"
                           checked={cfg.selected}
                           onChange={(e) => onToggleProcessing(pi, e.target.checked)}
+                          aria-label={pi.name}
                           className="w-4 h-4 accent-primary-600"
                         />
                         <div className="flex-1 min-w-0">

@@ -251,6 +251,13 @@ export interface ProcessingItem {
   unit: string
   basePrice?: number // legacy alias for unitPrice
   status: ProcessingItemStatus
+  /**
+   * 该加工项**显式声明**的工艺（V78 的 `processing_items.craft_hint`，后端 `ProcessingItemResponse.craftHint`）。
+   *
+   * issue #4566（用户 2026-09-19 裁定「工艺…直接通过加工项来勾选」）：下单页的工艺维**从这里派生**
+   * —— 目录里只有 5 个工艺项带它（`打孔`/`韩折`→韩褶/`韩定+S钩`→韩褶/`穿杆`/`平幔`），其余为 `null`。
+   */
+  craftHint?: string | null
   pricingRules?: Record<string, unknown>
   options?: Record<string, unknown>[]
   description?: string

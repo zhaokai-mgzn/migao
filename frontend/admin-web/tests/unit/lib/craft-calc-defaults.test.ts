@@ -58,33 +58,37 @@ describe('下单页默认档与算料引擎常量同步（issue #4420）', () =>
     expect(DEFAULT_PLEAT_SPACING).toBe(0.125)
   })
 
-  it('默认值 = 用户裁定的档（工艺韩褶 / 加工类型定高买宽 / 款式单色 / 褶距 0.125 / 对花否 / 定型是）', () => {
+  it('默认值 = 用户裁定的档（加工类型定高买宽 / 款式单色 / 褶距 0.125 / 对花否）', () => {
     expect(DEFAULT_CUTTING_MODE).toBe('定高买宽')
     expect(DEFAULT_STYLE).toBe('单色')
-    // issue #4521：**部位不再进默认档**（主帘缺省即布帘）；定型默认「是」由**帘体**结构给
-    // （`defaultIsShapedForBody`，真值源 §10「布帘默认是」）。
+    // issue #4521：**部位不再进默认档**（主帘缺省即布帘）。
+    // issue #4566：**`craft` / `isShaped` 也不再进默认档** —— 用户 2026-09-19 裁定
+    // 「工艺规格中的**工艺，定型**……直接通过加工项来勾选」⇒ 它们由**加工项**派生
+    // （工艺 = 勾选的工艺项的 `craftHint`；定型 = 「定型」加工项的勾选态）。
+    // 前端**不得**再补一份默认工艺/默认定型 —— 那正是让 ERP「工艺+特征」组合名匹配不上的口径。
     expect(createDefaultCraftSpec()).toEqual({
-      craft: '韩褶',
       cuttingMode: '定高买宽',
       style: '单色',
       pleatSpacing: 0.125,
       hasPattern: false,
-      isShaped: true,
     })
+    expect(createDefaultCraftSpec()).not.toHaveProperty('craft')
+    expect(createDefaultCraftSpec()).not.toHaveProperty('isShaped')
   })
 
   it('默认值是**真值**：经 buildCraftSpec 后各键都落库（不是被「缺值不写」吞掉）', () => {
     const spec = buildCraftSpec(createDefaultCraftSpec())
     expect(spec).toEqual({
-      craft: '韩褶',
       cuttingMode: '定高买宽',
       style: '单色',
       pleatSpacing: 0.125,
       hasPattern: false,
-      isShaped: true,
     })
     // 部位**不在**默认档里（issue #4521）：写它 = 给主帘留一条被标成纱帘的口子
     expect(spec).not.toHaveProperty('curtainType')
+    // #4566：工艺 / 定型同样不在（真值来源是加工项，不是本默认档）
+    expect(spec).not.toHaveProperty('craft')
+    expect(spec).not.toHaveProperty('isShaped')
   })
 
   it('默认档与库侧枚举逐字一致（错一个字下游取不到路线）', () => {
