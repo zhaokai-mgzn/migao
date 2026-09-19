@@ -74,6 +74,23 @@ public class MigrationRunner implements CommandLineRunner {
     private final ObjectProvider<JdbcTemplate> jdbcProvider;
     private final ResourcePatternResolver resolver;
 
+    /**
+     * 最近一轮迁移的**可观测结果**（issue #4517）。
+     *
+     * <p>⚠️ 为什么需要它：本仓对**非连接类**失败是「跳过这一条、继续跑后面的」（:185，#3270 的刻意权衡），
+     * 于是「迁移全过」与「有迁移被跳过」在**部署期不可区分** —— 应用照常 UP、探活 200、部署 success，
+     * 而故障面后移到业务 500。本会话已**三次**因此付出代价（#4501 的 V74 / #4514 的 V72 /
+     * 由 V72 引发的「云上生成加工单对所有订单 500」）。</p>
+     *
+     * <p>⚠️ 语义边界：这里**只暴露事实**，**不参与**健康判定（见 {@link MigrationHealthIndicator}）——
+     * 让健康检查 DOWN 会把「历史非幂等迁移每次起栈必失败」变成「整个环境打挂」，
+     * 那是比原问题更糟的故障（{@code KNOWN_BENIGN_LEGACY} 那几条正是这种）。</p>
+     */
+    private volatile List<String> lastFailed = List.of();
+    private volatile int lastFailedRealCount = 0;
+    private volatile int lastFailedBenignCount = 0;
+    private volatile int lastSkippedByLedger = 0;
+
     @Value("${migao.migration.locations:classpath:db/migration/*.sql}")
     private String migrationPattern;
 
@@ -187,6 +204,32 @@ public class MigrationRunner implements CommandLineRunner {
             }
         }
         reportFailures(failed);
+        // 落可观测状态（issue #4517）—— 供 /actuator/health 的 details 暴露
+        List<String> benign = failed.stream().filter(MigrationRunner::isKnownBenignLegacy).toList();
+        this.lastFailed = List.copyOf(failed);
+        this.lastFailedBenignCount = benign.size();
+        this.lastFailedRealCount = failed.size() - benign.size();
+        this.lastSkippedByLedger = applied.size();
+    }
+
+    /** 最近一轮**失败**的迁移文件名（含已知存量非幂等那几条）—— 只读、供探针消费。 */
+    public List<String> getLastFailedMigrations() {
+        return lastFailed;
+    }
+
+    /** 最近一轮失败里**真正需要修**的条数（排除 {@code KNOWN_BENIGN_LEGACY}）。 */
+    public int getLastFailedRealCount() {
+        return lastFailedRealCount;
+    }
+
+    /** 最近一轮失败里属**已知存量非幂等**的条数（目标态已由 schema.sql 达成，重跑亦复现）。 */
+    public int getLastFailedBenignCount() {
+        return lastFailedBenignCount;
+    }
+
+    /** 本轮按台账**已应用**（跳过）的迁移数 —— 与失败数一起看才能判断「跑没跑」。 */
+    public int getLastSkippedByLedger() {
+        return lastSkippedByLedger;
     }
 
     /**
