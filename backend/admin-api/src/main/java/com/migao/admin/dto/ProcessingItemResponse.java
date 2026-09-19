@@ -80,6 +80,11 @@ public class ProcessingItemResponse {
     private Boolean aiRecommended;
 
     /**
+     * **显式声明的工艺**（V78，issue #4452）：路线键「工艺」维的受控来源；{@code null} = 没声明。
+     */
+    private String craftHint;
+
+    /**
      * 状态
      */
     private String status;

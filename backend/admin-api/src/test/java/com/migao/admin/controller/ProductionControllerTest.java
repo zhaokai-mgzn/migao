@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-019, PG-020, PG-021, PG-032, PG-033, PG-034, PG-035, PG-040
+// case_ids: PG-018, PG-019, PG-020, PG-021, PG-032, PG-033, PG-034, PG-035, PG-040, PG-048, PG-049
 package com.migao.admin.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -163,7 +163,7 @@ class ProductionControllerTest {
         // 路线/信号写面（issue #4308）：真实对象（只 mock Mapper），响应形态 = 路线展示形态（同一份）
         ProductionRoutingCommandService routingCommandService = new ProductionRoutingCommandService(
                 productionRouteTemplateMapper, routingVersionMapper, productionOperationMapper,
-                productionRouteSignalMapper, queryService);
+                queryService);
         // 加工费组合定价（issue #4386）：真实服务（只 mock Mapper），写面响应形态 = 列表项形态
         // （同一份 combinationView）。控制器里这两个依赖是**字段注入**（不动既有 6 参构造），
         // 故这里用 ReflectionTestUtils 装配 —— 目的只是让新端点可达，不改既有端点的装配。
@@ -1130,6 +1130,53 @@ class ProductionControllerTest {
     }
 
     @Test
+    @DisplayName("#4452 信号映射**写面已退役**：POST/PUT/DELETE /route-signals ⇒ 4xx（读面暂留）")
+    void signalWriteEndpointsAreRetired() throws Exception {
+        // 三个写面**没有 handler** ⇒ Spring 不路由（standalone MockMvc 下 `/route-signals` 只注册了 GET
+        // ⇒ 非 GET 返回 **404 未注册 / 405 方法不允许**，视具体方法与路径深度而定；
+        // 生产环境同形态：写面不可达）。
+        // ⚠️ 判据是「**写面不可达**」，不是写死某个具体状态码 —— 404/405 都是「端点不存在」的合法表达。
+        // 读面仍在（上一用例）：表降级为存量单兜底 ⇒ 读面留着排查历史单，写面退场。
+        var notRegistered = org.hamcrest.Matchers.anyOf(
+                org.hamcrest.Matchers.is(404), org.hamcrest.Matchers.is(405));
+        mockMvc.perform(post("/api/admin/production/route-signals")
+                        .contentType("application/json").content("{\"signal\":\"罗马帘\"}"))
+                .andExpect(status().is(notRegistered));
+        mockMvc.perform(put("/api/admin/production/route-signals/sig-1")
+                        .contentType("application/json").content("{\"craft\":\"韩褶\"}"))
+                .andExpect(status().is(notRegistered));
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/admin/production/route-signals/sig-1"))
+                .andExpect(status().is(notRegistered));
+    }
+
+    @Test
+    @DisplayName("#4452 异常订单清单：route_source ∈ {default, partial} 逐条可见 + 可行动文案")
+    void routingAnomaliesListsDefaultAndPartialOrders() throws Exception {
+        when(processingOrderMapper.selectList(any())).thenReturn(List.of(
+                ProcessingOrder.builder().id("po-1").tenantId(TENANT).orderId("order-1")
+                        .processingOrderNo("JG-20260919-0001")
+                        .routeKey("窗帘工序路线（默认）").routeRequestedKey(null)
+                        .routeSource("default").deleted(0).build(),
+                ProcessingOrder.builder().id("po-2").tenantId(TENANT).orderId("order-2")
+                        .processingOrderNo("JG-20260919-0002")
+                        .routeKey("窗帘工序路线（默认）").routeRequestedKey("纱帘×韩褶")
+                        .routeSource("partial").deleted(0).build()));
+
+        mockMvc.perform(get("/api/admin/production/orders/routing-anomalies"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.orders[0].processing_order_no").value("JG-20260919-0001"))
+                .andExpect(jsonPath("$.data.orders[0].route_key").value("窗帘工序路线（默认）"))
+                .andExpect(jsonPath("$.data.orders[0].route_requested_key").value(nullValue()))
+                .andExpect(jsonPath("$.data.orders[0].route_source").value("default"))
+                .andExpect(jsonPath("$.data.orders[0].suggestion").value(containsString("部位")))
+                .andExpect(jsonPath("$.data.orders[1].route_source").value("partial"))
+                .andExpect(jsonPath("$.data.orders[1].route_requested_key").value("纱帘×韩褶"))
+                .andExpect(jsonPath("$.data.orders[1].suggestion").value(containsString("缺的那一维")));
+    }
+
+    @Test
     @DisplayName("#4308 POST /operations ⇒ 200 + 单价版本账首行（商家建路线的前置）")
     void createOperationReturnsCatalogShape() throws Exception {
         when(productionOperationMapper.selectCount(any())).thenReturn(0L);
@@ -1165,14 +1212,20 @@ class ProductionControllerTest {
     }
 
     @Test
-    @DisplayName("#4308 五个写端点全部声明方法级 processing:manage（不新造权限码）")
+    @DisplayName("#4308/#4452 写端点全部声明方法级 processing:manage（不新造权限码）；信号写面已退役")
     void routingWriteFaceDeclaresManagePermission() throws Exception {
         assertManagePermission("createRouting", Map.class);
         assertManagePermission("updateRouting", String.class, Map.class);
-        assertManagePermission("createRouteSignal", Map.class);
-        assertManagePermission("updateRouteSignal", String.class, Map.class);
-        assertManagePermission("deleteRouteSignal", String.class);
         assertManagePermission("createOperation", Map.class);
+        assertManagePermission("routingAnomalies");
+        // 信号映射写面**已退役**（issue #4452）⇒ 三个 handler 不得再存在
+        // （存在即意味着写面还有入口，与「表降级为存量单兜底」自相矛盾）。
+        for (String retired : List.of("createRouteSignal", "updateRouteSignal", "deleteRouteSignal")) {
+            assertThat(java.util.Arrays.stream(ProductionController.class.getDeclaredMethods())
+                    .map(Method::getName))
+                    .as("信号映射写面已退役（issue #4452）：%s 不得再存在", retired)
+                    .doesNotContain(retired);
+        }
     }
 
     private void assertManagePermission(String method, Class<?>... params) throws Exception {

@@ -148,7 +148,7 @@ class ProductionRoutingReadControllerTest {
                 productionOperationMapper, priceVersionMapper, queryService);
         ProductionRoutingCommandService routingCommandService = new ProductionRoutingCommandService(
                 productionRouteTemplateMapper, routingVersionMapper, productionOperationMapper,
-                productionRouteSignalMapper, queryService);
+                queryService);
         ProductionController controller = new ProductionController(service, queryService, commandService,
                 routingCommandService, processingOrderService, orderService);
         // 新读面（issue #4500）：真实服务（只 mock 两张新表的 Mapper）
