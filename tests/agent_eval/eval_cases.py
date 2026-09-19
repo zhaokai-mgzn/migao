@@ -3864,6 +3864,8 @@ _CASE_OR_028 = EvalCase(
     must_succeed=[{'tool': 'order_create'}],
     amount_verify=[{'tool': 'order_create', 'product_name': '2699系列雪尼尔窗帘面料', 'checks': ['unit_price', 'subtotal', 'processing_fee', 'total']}],
     db_verify=[{'fetch': 'order_items', 'source': 'order_create', 'expect_products': ['2699系列雪尼尔窗帘面料'], 'expect_quantities': {'2699系列雪尼尔窗帘面料': 3}}],
+    namespaces=['customer_phone:13800138000', 'product_name:2699系列雪尼尔窗帘面料'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '2699系列雪尼尔窗帘面料', 'expect': 1}],
 )
 
 # ── OR-029 [NORMAL] B 端「先查商品再录订单」链路 - 确认卡点击后 order_create 必须真实执行（不得 Tool not found / 空头承诺）（源: cases/order.yml）──
@@ -3949,6 +3951,78 @@ _CASE_OR_032 = EvalCase(
     data_checks=['（散文、**不计分**）折数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）', '（散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）', '（散文、**不计分**）拼色用料系数（用户 2026-09-19 裁定）：拼1次 0.65 / 拼2次 1.2 米每折；52 折双开 ⇒ 34.1 / 62.7 米；拼3次未登记 ⇒ fail-closed 显式报缺口', '（散文、**不计分**）响应算料键 = **snake_case**（设计文档 §4.5 / CALC_INFO_KEYS 同口径）：fabric_meters / pleat_count / per_panel_pleats / per_fold / fullness / fullness_actual / formula_used / formula_text / source / craft_tier / warning —— 前端可原样塞进 processingInfo，零映射'],
     skip_reason='[backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['order', 'craft_calc', 'fabric', 'single_source_of_truth'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OR-033 [NORMAL] 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离（源: cases/order.yml）──
+_CASE_OR_033 = EvalCase(
+    id='OR-033',
+    legacy_id='',
+    title='订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（无 LLM 环节：本用例的判据由 Java 单测直接执行，见 traces.tests）'],
+    expectations=[],
+    data_checks=['**判据 1·11 个键逐键落列**（`OrderLineCraftFields.materialize` → `order_items` 的 V63 列）：工艺规格 8 键（`curtainType` / `craft` / `openCount` / `cuttingMode` / `isShaped` / `pleatSpacing` / `hasPattern` / `corner`）与算料输出 3 键（`fullness` / `fullness_actual` / `pleat_count`）都要落列；**Map 形态与 JSON 字符串形态都覆盖**（自定义 `@Select` 路径不经过 `JacksonTypeHandler`，`processing_info` 会是 JSON 字符串 ⇒ 只测一种形态 = 漏一半）。**注入法**：删掉 `materialize` 里 `isShaped` 那一行 ⇒ 判据 1 红。', '**判据 2·缺键就是缺**：用户裁定「部位不是必填的」⇒ 不造值、不补默认；`null` / 空串 / 非 Map 输入安全（不抛异常、不写入占位值）。', '**判据 3·读面键名逐字一致**（`toSnapshotKeys` → 加工单快照键）：算料输出三键必须是 **snake_case**（与 `CALC_INFO_KEYS` 同口径），工艺规格保持 camelCase —— 写成 camelCase 会让加工单侧「取不到值」，而那是**静默**的（缺键就缺）。**注入法**：把 `pleat_count` 改成 `pleatCount` ⇒ 判据 3 红。', '**判据 4·取不出值不静默但也不拒绝整单**：类型不对 / 解析失败 ⇒ 该列留 `null`（实现打 WARN，断言落在**值**上而非日志文本上）；布尔只认 JSON 布尔与 `true/false`（大小写不敏感，不凭字面猜中文）；数字形态宽松（整数/浮点/数字字符串）但结果类型确定。', '**开数是正整数不是固定枚举**（issue #4387）：`openCount=3`（三开）与 `5` 都原样搬运，不被当成非法枚举丢掉。', '**红证（注入式，写在测试类 javadoc）**：① `toSnapshotKeys` 的 `pleat_count` → `pleatCount` ⇒ 判据 3 红；② `materialize` 的 `isShaped` 行删掉 ⇒ 判据 1 红；③ `bool` 的 `\\"是\\"` 分支补上（凭字面猜中文）⇒ 判据 4 红。'],
+    skip_reason='[backend-contract] 后端契约（下单行要素映射的单一实现点，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/OrderLineCraftFieldsTest.java 执行',
+    tags=['order', 'craft_spec', 'order_item', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OR-034 [NORMAL] 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染（源: cases/order.yml）──
+_CASE_OR_034 = EvalCase(
+    id='OR-034',
+    legacy_id='',
+    title='工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）'],
+    expectations=[],
+    data_checks=['**一份定义吃两种键名口径**（设计文档 §4.9「一份 spec，三处渲染」）：`craft-display` 的 `craftSpecRows` 同时吃**订单/快照层 camelCase**（`order_items.processing_info` / `items_snapshot`）与**报价单 snake_case**（`curtain_calc` 输出）—— 两处各写一套定义 = 第二份口径，漂移的那一份不会变红。', '**§4.9 字段表逐项渲染**：17 个字段按表出（部位 / 工艺 / 加工类型 / 打开方式 / 是否定型 / 款式 / 特殊选项 / 总褶数 / 折数（每片）/ 褶距 / 幅数 / 褶倍 / 米数 / 是否对花 / 花距 …）；格式化口径 = 布尔 → 是/否、米数带单位、倍数带单位、选项数组顿号连接。', '**打开方式 1/2/3/4 → 单开/双开/三开/四开**（issue #4387 判据 1：候选必须含三开）；未知开数如实标「N 开」（不猜、不落默认值）。', '**加工类型取真值来源 `formula_used`**：`fixed_height*` → 定高买宽、`fixed_width*` / `roman_panel` → 定宽买高；未知 formula **fail-closed**（宁少一行，不漏内部代号给顾客）；订单层 `cuttingMode` 直存中文时优先于 `formula_used`。', '**缺值不渲染（§4.9 硬约束 2）**：键缺席 / `null` / 空串 / 空数组 / 非有限数 ⇒ 该行**不出现**，绝不出现 `undefined` / `null` / `NaN`，也不补默认值；部分缺值只渲染有值的行（存量单形态：完全没有工艺键 ⇒ 无「工艺规格」块，页面仍正常渲染）。', '**订单详情直读不二次推导**：真值来源 = `order_items.processing_info`（camelCase，§4.5），`OrderDetail` 的「商品明细」表按它渲染工艺规格与算料口径两块；`processingInfo=null`（存量单）时页面正常且无工艺块。'],
+    skip_reason='[backend-contract] 前端展示契约（admin-web 组件 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-display.test.ts 与 frontend/admin-web/tests/unit/components/OrderDetailCraftSpec.test.tsx 执行',
+    tags=['order', 'craft_spec', 'display', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OR-035 [NORMAL] 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫（源: cases/order.yml）──
+_CASE_OR_035 = EvalCase(
+    id='OR-035',
+    legacy_id='',
+    title='下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）'],
+    expectations=[],
+    data_checks=['**缺值不写（硬约束 1）**：用户没填 ⇒ 该键**不出现**，不写空串 / `0` / `false` 占位（下游会把它们当成真值）；空串 / 纯空白字符串 / `0` / `NaN` / 非数值一律不写。', '**显式「否」是真值**：`isShaped=false` / `hasPattern=false` **必须写**（不得当成「未填」丢弃）—— 与上一条是同一枚硬币的两面，两条一起才钉住「缺值」与「假值」的区别。', '**键名 camelCase（§4.5）**：`buildCraftSpec` 产出的键与订单/快照层、Java 侧逐字一致。', '**枚举逐字 = 库侧**（错一个字下游取不到路线）：部位 = 布帘/纱帘/帘头；工艺 = 韩褶/打孔/四爪钩/穿杆/平幔；加工类型 = 定高买宽/定宽买高；打开方式 = 单开(1)/双开(2)/三开(3)/四开(4)（含三开 = #4387 判据 1）；款式 = 单色/拼色；特殊选项 19 项逐字等于真值源 §1 清单且**不得残留旧写法**（选项名是 join key，与库侧差一个字 ⇒ 静默失效，issue #4389）。', '**录入控件 → 回调是确定性行为**：八个工艺控件渲染齐全；选部位/工艺 ⇒ `onChange` 收到 camelCase patch；选「双开」⇒ `openCount` 是**数字** 2（不是字符串）；选「三开」⇒ 数字 3；是否定型回到「未指定」⇒ `isShaped=undefined`（键不落库）；花距输入框只在「是否对花 = 是」时出现；特殊选项默认收起但**收起 ≠ 隐藏已选事实**（显示「已选 N 项」摘要），展开后 19 项齐全。', '**默认档常量与算料引擎的同步守卫**（issue #4420，同族 #4393）：前端默认档 / 算料常量**逐值读** `backend/ai-agent-service/app/tools/curtain_calc.py` 源文件比对，漂移即红 —— 前端自己写一份算料常量而库侧改了不跟 ⇒ **静默漂移**（页面显示的用料/褶距与加工单不一致，且没有任何东西变红）。判据取**值级**比对（读真值源，不抄现值），不是「与源码等值」的形态判据。默认三条（加工类型定高买宽 / 款式单色 / 褶距 0.125）必须是**真值**（经 `buildCraftSpec` 后三个键都落库，不被「缺值不写」吞掉），且与库侧枚举逐字一致。', '**红证（实现前）**：`@/lib/order-craft-fields` 无这四个默认档常量 ⇒ `craft-calc-defaults.test.ts` import 即红。'],
+    skip_reason='[backend-contract] 前端写侧契约（admin-web 组件 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/order-craft-fields.test.ts、frontend/admin-web/tests/unit/components/OrderCraftFields.test.tsx 与 frontend/admin-web/tests/unit/lib/craft-calc-defaults.test.ts 执行',
+    tags=['order', 'craft_spec', 'write_side', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OR-036 [NORMAL] 下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）（源: cases/order.yml）──
+_CASE_OR_036 = EvalCase(
+    id='OR-036',
+    legacy_id='',
+    title='下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）'],
+    expectations=[],
+    data_checks=['**判据 1·宽高齐全 ⇒ 试算并预填数量 + 展示后端产出的公式串**（用户裁定「用料米数按折数法自动算 + 把计算公式体现出来」）。红证（实现前）：数量恒为手填 1（算料试算未接线）。', '**判据 2·改宽 ⇒ 重新试算并更新数量**（防抖后）；**判据 3·手改数量 ⇒ 标记「人工指定」，且不被试算静默改回**（唯一回切通道 = 显式点「恢复按公式计算」）。红证（实现前）：手改后被试算静默覆盖回公式值。', '**判据 4·试算失败 ⇒ 行内显式提示，数量保持原样（不退回任何估算值）**。红证（实现前）：失败时给了一个估算米数（静默算错钱，`#4308`「静默回落」同族）。', '**判据 5·参数不全 ⇒ 不发请求**：只有宽没有高 ⇒ `craftCalcParamsOf` 返回 `null`（**不得**用默认窗宽猜一个米数）；宽/高非正数（0 与负数）同样 `null`。', '**判据 6·非韩褶工艺（打孔/四爪钩/穿杆/平幔）⇒ 不发请求**（折数法不适用，后端会 400）；韩褶 / 未指定工艺 ⇒ 可试算（未指定按默认韩褶档）。', '**判据 7·入参不变就不重发**：`craftCalcSignature` 对同一入参恒定（写回 `quantity` 不会再次触发试算）；改宽 / 改开数 / 改拼次 ⇒ 签名变化（该重算的必须重算）；`null` 入参 ⇒ 空签名（不触发请求）。', '**判据 8·失败给可行动提示、不给估算值**：`craftCalcErrorText` 优先取后端 `error.message`（如「拼3次纸表未登记」），无任何 message 时给兜底文案（不得空串，也不得悄悄算一个数）。', '**判据 9·用料来源两态是真值**（真值源 §8「用料必须带来源」）：「公式计算」与「人工指定」是两个不同真值 —— 手改后不得被静默改回。', '**与 OR-032 的分工**（main 的后端半边用例，issue #4421）：`OR-032` 锚**端点契约**（折数法纸表逐值、单一真值、snake_case 响应键）；本条锚**下单页前端接线**（何时发/不发请求、预填与人工指定的两态、失败不退回估算值）。两条互补，不重复。', '**红证（实现前）**：`@/lib/craft-calc-request` 不存在 ⇒ import 即红；接线侧数量恒为手填 1。'],
+    skip_reason='[backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx 执行',
+    tags=['order', 'craft_spec', 'craft_calc', 'backend_contract'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -4672,6 +4746,24 @@ _CASE_PG_039 = EvalCase(
     data_checks=['success=true', "判据 1·主数据正确（V67）：`production_operations` 新增 `scope VARCHAR(16) NOT NULL DEFAULT 'position'`（`ADD COLUMN IF NOT EXISTS`，幂等）+ 列注释写明 `position` = 部位级 / `set` = 套级（**每樘窗一次**）语义与 issue 号；幂等 `UPDATE ... SET scope='set' WHERE name IN ('外帘打卷','外帘装袋','外帘发货')`。终态语义 = 三道 `scope='set'`，**其余全部 `scope='position'`**（默认值兜住），由 `V54 ∪ V56` 的真实种子行名集合推演断言。`docs/sql/schema.sql` 同步终态（bootstrap 路径**不跑迁移链** ⇒ 只写迁移 = 新建库无该列，同 #3270 形态）。证据：ProductionOperationScopeMigrationTest", '判据 2·读面逐字取库：`ProductionOperationQueryService.findRouting` 返回的每道工序带 `scope`，与 `group`/`unit`/`unit_price` 同级（`operationMetaView` 一处整形，路线步骤与条件工序共用）。**注入法**：把库行的 `scope` 值改一个 ⇒ 断言跟着变（写死常量/不读库即红）。证据：ProductionOperationQueryServiceTest「findRoutingCarriesScopeVerbatimFromLibrary」+「findRoutingScopeFollowsTheLibraryRow」', '判据 3·写面可配 + 取值校验：`ProductionOperationCommandService` 的 `update`（PUT /operations/{id}）与 `create`（POST /operations）都接受 `scope`，口径与 `unit`/`unit_price`/`position` 相同（部分更新：未出现的字段不碰）；只允许 `position` / `set`，非法值 ⇒ 422 可读理由（`scope 仅支持 position/set`，照 `status 仅支持 active/disabled` 既有错误形状）。**注入法**：去掉取值校验 ⇒ 非法值落库 ⇒ 断言红。证据：ProductionOperationCommandServiceTest「updateSetsScope」「updateRejectsInvalidScope」「createDefaultsScopeToPosition」「createRejectsInvalidScope」', '判据 4·前端可见可改（issue #4416 后页面位置：工序库半边 = 「工艺配置」`/production/routings` 的**左栏**；旧 `/production/operations` 已重定向）渲染「作用域」列，逐行显示 部位级/套级，且可就地改为另一档（`PUT /operations/{id}` body 带 `scope`）。**注入法**：不渲染该列 ⇒ 断言红（找不到列头/找不到该行的 scope 控件）。证据：frontend/admin-web/tests/unit/components/OperationsScopeColumn.test.tsx', '**红证（实现前实测，本机）**：① `ProductionOperationScopeMigrationTest` 因 V67 文件不存在而红（判据 1 无列 ⇒ 红）；② `ProductionOperationQueryServiceTest` 的 scope 断言得 `expected \\"set\\" but was null`（读面不返回 scope）；③ `ProductionOperationCommandServiceTest` 的非法值用例得「没有异常抛出」（写面零校验）；④ `OperationsScopeColumn.test.tsx` 得找不到「作用域」列头。', '**未做（如实登记，避免把半截当完整交付）**：① **不做 A2** —— **不改** `ProcessingOrderService.buildPositionPayload`（套级工序按 `craftLineId` 组去重）；A2 依赖包 D（#4387 布行与纱行同组）先合，且与 D 同文件 ⇒ 本包不交付「套级去重生效」（A2 未落地时去重无从谈起，硬写 = 空断言）；② **不改** `backend/ai-agent-service/**`（用户裁定「Agent 层面先别碰」，缺口登记在 #4390）。'],
     skip_reason='[backend-contract] 后端契约 + 前端页面结构用例（迁移/表结构/服务层/页面渲染，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionOperationScopeMigrationTest + ProductionOperationQueryServiceTest + ProductionOperationCommandServiceTest + frontend/admin-web/tests/unit/components/OperationsScopeColumn.test.tsx 执行',
     tags=['processing-order', 'production', 'operations', 'scope', 'migration'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-041 [NORMAL] 生产看板分页 + 懒加载 —— 只对当前页扇出详情请求（消除 1+2N 请求扇出，issue #4360）（源: cases/processing-order.yml）──
+_CASE_PG_041 = EvalCase(
+    id='PG-041',
+    legacy_id='',
+    title='生产看板分页 + 懒加载 —— 只对当前页扇出详情请求（消除 1+2N 请求扇出，issue #4360）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['打开生产看板：100 张在产单只加载第一页，翻页才加载新页的工序进度与计件'],
+    expectations=[],
+    data_checks=['首屏只为**当前页**发详情请求（**核心/长期判据，红证在这条**）：给定 100 张加工单、页大小 20，`getOrderOperations` / `getPiecework` 各被调用 **≤ 页大小** 次，渲染出的数据行数 == 页大小，且**绝不**对第 21 单发起（`order-uuid-21` 零调用）。红证（实现前实测，本机 vitest）：原实现 `Promise.allSettled(orders.map(...))` 对全部 100 单扇出 ⇒ 该断言得 **100** 次（缺陷形态 = 每单 1 次）；断言先写 `toBeLessThanOrEqual(PAGE_SIZE)` 再写 `toBe(PAGE_SIZE)`（前者给缺陷形态留出可读的失败读数）。', '切页只为**新页**发：切到第 2 页后**累计**调用次数 == 2 × 页大小（第 1 页已加载的请求不重发）。', '切回已加载页**不重复请求**：第 2 页 → 第 1 页，`getOrderOperations` 调用次数**不增加**（按 processing order id 缓存）。', '「刷新」显式**清缓存**并重取当前页（刷新不是无操作，也不退化成整表扇出）。', '页大小可见可切：页脚「每页条数」下拉（`aria-label=\\"每页条数\\"` —— 查询区也有一个 combobox，裸 `getByRole` 会命中两个）20 → 50 只为新页补发详情，且控件回显 `50`。', '单行失败**不拖垮**其它行，且**失败也进缓存**：详情永久失败的行显示「—」，切页来回**不重发**（防把「失败不写缓存」改成每次重试的死循环）。', '**不做（如实登记，issue #4360 边界，避免把半截当完整交付）**：① 不新增聚合端点；② 不改后端批量（`ProductionService.piecework` 已用内存 `byId::get` 查表、`ProcessingOrderService.list` 已 `loadOrders` 批量 + LIMIT 100 —— 问题纯粹在前端扇出）；③ 列表响应仍逐行解析 `items` 快照属**响应体体积**问题（与请求数**不同因**），本单不动。'],
+    skip_reason='[backend-contract] 前端页面行为（admin-web 分页 / 懒加载 / 请求次数），由 vitest 单测覆盖（frontend/admin-web/tests/unit/pages/production-board.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟（同 PG-024 / PG-038 惯例）',
+    tags=['processing-order', 'production', 'performance', 'admin_web'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -6644,6 +6736,10 @@ ALL_CASES = (
     _CASE_OR_030,
     _CASE_OR_031,
     _CASE_OR_032,
+    _CASE_OR_033,
+    _CASE_OR_034,
+    _CASE_OR_035,
+    _CASE_OR_036,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
@@ -6683,6 +6779,7 @@ ALL_CASES = (
     _CASE_PG_036,
     _CASE_PG_037,
     _CASE_PG_039,
+    _CASE_PG_041,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,

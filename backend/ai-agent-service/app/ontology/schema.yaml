@@ -306,10 +306,11 @@ objects:
         target: product
         cardinality: "N:1"
         description: SKU 归属商品
-      - name: has_processing_items
-        target: processing_item
-        cardinality: "N:M"
-        description: SKU 关联加工项（算料）
+      # 原 `has_processing_items → processing_item`（N:M）已删除（issue #4431 B4）：
+      # #4371 已解耦 —— 加工项为**店铺级目录**，商品不再持有、也不再按商品分类过滤。
+      # 依据：绑定表 `product_processing_items` 与列 `processing_items.applicable_product_categories`
+      # 均由 V66__decouple_product_processing_items.sql DROP（此前注释误记为 V61）。
+      # 真值源：docs/design/position-instance-routing-model.md §9.4。
     actions:
       - name: product_query
         description: 查询商品/SKU（B 端 product / C 端 customer_product）
@@ -567,10 +568,9 @@ objects:
         target: processing_category
         cardinality: "N:1"
         description: 加工项归属加工分类
-      - name: linked_to_products
-        target: product_sku
-        cardinality: "N:M"
-        description: 加工项关联商品 SKU（算料）
+      # 原 `linked_to_products → product_sku`（N:M）已删除（issue #4431 B4 附带）：
+      # 它是 `product_sku.has_processing_items` 的**反向同一绑定**，#4371 解耦后两个方向
+      # 一起退场（绑定表已由 V66 DROP）。留一个方向 = 同一份假声明换个位置继续存在。
     actions:
       - name: processing_item_query
         description: 查询加工项（算料）
