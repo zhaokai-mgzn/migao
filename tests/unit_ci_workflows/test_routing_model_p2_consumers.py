@@ -35,9 +35,12 @@ MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
 JAVA_SERVICE_DIR = REPO / "backend/admin-api/src/main/java/com/migao/admin/service"
 SCHEMA = REPO / "docs/sql/schema.sql"
 
-#: 本单的迁移号（V71 已被 P1 / #4427 占用；已发布迁移不可改）。
+#: P2a 的迁移（V71 已被 P1 / #4427 占用；已发布迁移不可改）。
 V72_NAME = "V72__switch_routing_model_consumers.sql"
 V72 = MIGRATION_DIR / V72_NAME
+#: P2b 的迁移（**软删必须与消费切换同 PR 原子发布**；V72 已发布 ⇒ 不可改，只能新增 V73）。
+V73_NAME = "V73__retire_legacy_option_rule_tables.sql"
+V73 = MIGRATION_DIR / V73_NAME
 
 #: 新三表（P1 / #4427 建，本单开始有消费者）。
 NEW_TABLES = ("production_operation_positions", "production_route_templates", "production_route_rules")
@@ -72,6 +75,11 @@ def _insert_statements(body: str, table: str) -> list:
 def _v72_body(sql: str | None = None) -> str:
     """V72 的**可执行** SQL（去注释）；可注入（红证用临时内容，不落盘）。"""
     return _strip_comments(sql if sql is not None else _read(V72))
+
+
+def _v73_body(sql: str | None = None) -> str:
+    """V73（P2b）的**可执行** SQL（去注释）；可注入（红证用临时内容，不落盘）。"""
+    return _strip_comments(sql if sql is not None else _read(V73))
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
@@ -236,8 +244,6 @@ def test_default_craft_seeded_per_tenant(sql: str | None = None):
     )
 
 
-@pytest.mark.xfail(reason="消费路径切换（ProcessingOrderService 缺 craft 改取商户级默认工艺）"
-                         "不在本 PR 范围（见 PR 说明）；本判据是下一 PR 的红证前置", strict=False)
 def test_no_hardcoded_default_craft_constant_in_derive_route_key():
     """判据 B-3：`deriveRouteKey` 缺 `craft` 时**不得**回落到常量 `DEFAULT_CRAFT`。
 
@@ -259,30 +265,35 @@ def test_no_hardcoded_default_craft_constant_in_derive_route_key():
 #        **C-7 属 P2a**（V72 不得提前软删）；C-2/C-3/C-4 属 P2a（搬迁是纯增量）
 # ══════════════════════════════════════════════════════════════════════════════════
 
-@pytest.mark.xfail(reason="软删旧规则表**已从 V72 移出**（主会话复核 2026-09-19）："
-                         "Java 此刻仍读旧表，提前软删 = 条件工序不插 / 系数退回 1.0 = 少发工人钱；"
-                         "软删改与「三个消费服务改读规则表」同 PR 原子发布（P2b）", strict=False)
 def test_old_rule_tables_soft_deleted(sql: str | None = None):
     """判据 C-1（**P2b**）：旧两表的活跃行软删为 0（判据 12）。
 
-    ⚠️ 本判据**不属于 P2a** —— 见 `test_v72_must_not_retire_legacy_rule_tables` 的理由：
-    软删必须与消费路径切换同 PR 原子发布，否则中间态**少发工人钱**。
+    ⚠️ 软删**不在 V72**（P2a 已移出，见 `test_v72_must_not_retire_legacy_rule_tables`）：
+    它必须与消费路径切换**同一 PR** 原子发布，否则中间态**少发工人钱**。
+    ⇒ 本判据读 **V73**（P2b 的迁移；V72 已发布不可改，只能新增）。
     """
-    body = _v72_body(sql)
+    body = _v73_body(sql)
     for table in RETIRED_TABLES:
         stmt = re.search(r"UPDATE\s+" + table + r"\b[\s\S]*?;", body, re.I)
         assert stmt, (
-            f"V72 没有软删 {table} 的行 —— 不收口就是「同一份规则有两个真值源」，"
+            f"V73 没有软删 {table} 的行 —— 不收口就是「同一份规则有两个真值源」，"
             f"而漏的那一处正好是条件工序与计件系数（= 工人工资）"
         )
         assert re.search(r"SET[\s\S]{0,120}?deleted\s*=\s*1", stmt.group(0), re.I), (
-            f"V72 对 {table} 的处置不是软删（`SET deleted = 1`）"
+            f"V73 对 {table} 的处置不是软删（`SET deleted = 1`）"
         )
+
+
+def test_v73_migration_exists():
+    """P2b 的软删迁移必须存在（软删与消费切换同一 PR）。"""
+    assert V73.exists(), (
+        f"缺少 {V73_NAME} —— P2b 的「旧规则表退场」必须与消费路径切换同一 PR 原子发布"
+    )
 
 
 def test_old_rule_tables_not_dropped(sql: str | None = None):
     """判据 C-2：**表先不 DROP**（可回滚）；DROP 留待后续独立迁移。"""
-    body = _v72_body(sql)
+    body = _v72_body(sql) + _v73_body()
     for table in RETIRED_TABLES:
         assert not re.search(r"DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?" + table + r"\b", body, re.I), (
             f"V72 直接 DROP 了 {table} —— 规格明文「表本身先不 DROP」（可回滚），"
@@ -323,8 +334,6 @@ def test_option_factor_rules_migrated_into_rule_table(sql: str | None = None):
     )
 
 
-@pytest.mark.xfail(reason="旧规则表读取点收口（三个消费服务）不在本 PR 范围；"
-                         "本判据是下一 PR 的红证前置", strict=False)
 def test_no_reader_of_retired_rule_tables_in_consumer_services():
     """判据 C-5：三个消费服务的 Java 源码里**零**读取点（旧表已退场，判据 12）。
 
@@ -345,8 +354,6 @@ def test_no_reader_of_retired_rule_tables_in_consumer_services():
     )
 
 
-@pytest.mark.xfail(reason="消费服务改读 production_route_rules 不在本 PR 范围；"
-                         "本判据是下一 PR 的红证前置", strict=False)
 def test_consumers_read_the_rule_table():
     """判据 C-6：收口后三个服务确实读**新**规则表（不是把旧读取点删掉了事）。"""
     missing = [name for name in RETIRED_READER_SERVICES

@@ -1133,7 +1133,14 @@ public class ProcessingOrderService {
             sequence.add(step);
         }
         List<String> options = specialOptions(entry);
-        for (ProductionRouteRule rule : rules) {
+        // 顺序**必须**显式排一次（不依赖调用方）：与 routing.py::build_route_v2 的
+        // `sorted(ROUTE_RULES, key=priority)` 逐字同口径 —— 规则应用顺序敏感
+        // （`remove` 不先于 `insert`；锚点可用性由 priority 决定）。
+        List<ProductionRouteRule> ordered = new ArrayList<>(rules);
+        ordered.sort(Comparator.comparing(
+                        (ProductionRouteRule r) -> r.getPriority() == null ? 0 : r.getPriority())
+                .thenComparing(r -> r.getId() == null ? "" : r.getId()));
+        for (ProductionRouteRule rule : ordered) {
             String kind = rule.getTriggerKind();
             if ("craft".equals(kind)) {
                 if (!Objects.equals(rule.getTriggerValue(), craft)) {

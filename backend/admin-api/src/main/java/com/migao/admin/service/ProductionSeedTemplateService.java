@@ -9,21 +9,15 @@ import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
 import com.migao.admin.entity.ProductionCraft;
 import com.migao.admin.entity.ProductionOperationPosition;
-import com.migao.admin.entity.ProductionOptionFactor;
-import com.migao.admin.entity.ProductionOptionRouting;
 import com.migao.admin.entity.ProductionRouteRule;
 import com.migao.admin.entity.ProductionRouteTemplate;
-import com.migao.admin.entity.ProductionRouting;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.ProductionCraftMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
 import com.migao.admin.mapper.ProductionOperationPositionMapper;
 import com.migao.admin.mapper.ProductionOperationPriceVersionMapper;
-import com.migao.admin.mapper.ProductionOptionFactorMapper;
-import com.migao.admin.mapper.ProductionOptionRoutingMapper;
 import com.migao.admin.mapper.ProductionRouteRuleMapper;
 import com.migao.admin.mapper.ProductionRouteTemplateMapper;
-import com.migao.admin.mapper.ProductionRoutingMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
@@ -84,10 +78,6 @@ public class ProductionSeedTemplateService {
     public static final Set<String> ROUTING_SOURCES = Set.of("占位待确认", "推算", "实证");
 
     private final ProductionOperationMapper productionOperationMapper;
-    // ── 旧两表（P2b 起**只读**：作为新结构种子的数据源；行已由 V73 软删，不再是消费真值源）──
-    private final ProductionRoutingMapper productionRoutingMapper;
-    private final ProductionOptionRoutingMapper productionOptionRoutingMapper;
-    private final ProductionOptionFactorMapper productionOptionFactorMapper;
     // ── 新结构（P2b，issue #4459 §1④）：开租必须种「默认路线 + 默认工艺」，否则新租户零默认 ⇒ 建单全 fail-closed ──
     private final ProductionRouteTemplateMapper productionRouteTemplateMapper;
     private final ProductionOperationPositionMapper productionOperationPositionMapper;
@@ -332,17 +322,9 @@ public class ProductionSeedTemplateService {
     private Map<String, Object> applyTemplateNode(Long tenantId, JsonNode template) {
         String templateId = template.path("templateId").asText();
         List<ProductionOperation> newOperations = planOperations(tenantId, template.path("operations"));
-        List<ProductionRouting> newRoutings = planRoutings(tenantId, template.path("routings"));
-        List<ProductionOptionRouting> newOptions =
-                planOptionRoutings(tenantId, template.path("option_routings"));
-        List<ProductionOptionFactor> newFactors =
-                planOptionFactors(tenantId, template.path("option_factors"));
-
-        int skipped = (template.path("operations").size() - newOperations.size())
-                + (template.path("routings").size() - newRoutings.size())
-                + (template.path("option_routings").size() - newOptions.size())
-                + (template.path("option_factors").size() - newFactors.size());
-
+        // 旧两表**不再读也不再写**（P2b 起它们已退场：活跃行由 V73 软删，规则真值源 = 新结构）。
+        // 模板 JSON 的 routings / option_routings / option_factors 仍是**种子数据源**
+        // （经逻辑名归一后落进 production_route_templates / production_route_rules）。
         for (ProductionOperation op : newOperations) {
             productionOperationMapper.insert(op);
             // 单价版本账首行（与既有写面同口径）：不补 ⇒ 新工序在「当前价 = 最新版本行」下没有价
@@ -367,21 +349,32 @@ public class ProductionSeedTemplateService {
         List<ProductionRouteRule> newRules = planRouteRules(tenantId, template);
         List<ProductionCraft> newCrafts = planCrafts(tenantId, template);
 
+        // `skipped` = 模板里**已存在、本次未插**的种子行数（四个种子组各自计）：
+        // 工序 / 路线模板（新结构里 9 条旧路线收敛成 **1** 条模板 ⇒ 分母是 1）/ 选项映射 / 系数档。
+        int appliedOptionRules = (int) newRules.stream()
+                .filter(r -> "option".equals(r.getTriggerKind()) && "insert".equals(r.getAction()))
+                .count();
+        int appliedFactorRules = (int) newRules.stream()
+                .filter(r -> "factor".equals(r.getAction())).count();
+        int skipped = (template.path("operations").size() - newOperations.size())
+                + (1 - newTemplates.size())
+                + (template.path("option_routings").size() - appliedOptionRules)
+                + (template.path("option_factors").size() - appliedFactorRules);
+
         // 旧两表**不再写入**（P2b 起它们已退场：活跃行由 V73 软删，消费真值源 = 新结构）
         newPositions.forEach(productionOperationPositionMapper::insert);
         newTemplates.forEach(productionRouteTemplateMapper::insert);
         newRules.forEach(productionRouteRuleMapper::insert);
         newCrafts.forEach(productionCraftMapper::insert);
 
-        log.info("套用生产种子模板: templateId={}, tenantId={}, operations={}, 旧路线={}, 旧选项={}, 旧系数={}, "
+        log.info("套用生产种子模板: templateId={}, tenantId={}, operations={}, "
                         + "新-部位价目={}, 新-路线模板={}, 新-规则={}, 新-工艺={}, skipped={}",
-                templateId, tenantId, newOperations.size(), newRoutings.size(),
-                newOptions.size(), newFactors.size(), newPositions.size(), newTemplates.size(),
-                newRules.size(), newCrafts.size(), skipped);
+                templateId, tenantId, newOperations.size(), newPositions.size(),
+                newTemplates.size(), newRules.size(), newCrafts.size(), skipped);
 
         Map<String, Object> result = result(templateId, true, null,
-                newOperations.size(), newTemplates.size(), newOptions.size(), skipped);
-        result.put("created_option_factors", newFactors.size());
+                newOperations.size(), newTemplates.size(),
+                template.path("option_routings").size(), skipped);
         result.put("created_positions", newPositions.size());
         result.put("created_route_rules", newRules.size());
         result.put("created_crafts", newCrafts.size());
@@ -631,109 +624,6 @@ public class ProductionSeedTemplateService {
                     .status(node.path("status").asText("active"))
                     // provenance（本单的诚实性核心）：逐字取模板标注，**不在套用路径上"顺手修正"**
                     .source(sourceOf(node, OPERATION_SOURCES))
-                    .createdAt(OffsetDateTime.now())
-                    .updatedAt(OffsetDateTime.now())
-                    .deleted(0)
-                    .build());
-        }
-        return plan;
-    }
-
-    /** 幂等键 = {@code (tenant_id, curtain_type, craft)}。 */
-    private List<ProductionRouting> planRoutings(Long tenantId, JsonNode nodes) {
-        Set<String> existing = existingRoutingKeys(tenantId);
-        List<ProductionRouting> plan = new ArrayList<>();
-        for (JsonNode node : nodes) {
-            String curtainType = node.path("curtain_type").asText();
-            String craft = node.path("craft").asText();
-            if (existing.contains(curtainType + "×" + craft)) {
-                continue;
-            }
-            plan.add(ProductionRouting.builder()
-                    .tenantId(tenantId)
-                    .curtainType(curtainType)
-                    .craft(craft)
-                    // 路线按**工序名**引用（JSONB 数组），不需要 id 映射
-                    .operations(stringList(node.path("operations")))
-                    .status(node.path("status").asText("active"))
-                    .source(sourceOf(node, ROUTING_SOURCES))
-                    .createdAt(OffsetDateTime.now())
-                    .updatedAt(OffsetDateTime.now())
-                    .deleted(0)
-                    .build());
-        }
-        return plan;
-    }
-
-    /** 库中现有的路线键（{@code 部位×工艺}）——幂等判据的现状侧。 */
-    private Set<String> existingRoutingKeys(Long tenantId) {
-        Set<String> keys = new LinkedHashSet<>();
-        List<ProductionRouting> rows = productionRoutingMapper.selectList(
-                new LambdaQueryWrapper<ProductionRouting>()
-                        .eq(ProductionRouting::getTenantId, tenantId)
-                        .eq(ProductionRouting::getDeleted, 0));
-        if (rows != null) {
-            rows.forEach(r -> keys.add(r.getCurtainType() + "×" + r.getCraft()));
-        }
-        return keys;
-    }
-
-    /** 幂等键 = {@code (tenant_id, option_name, operation_name)}（V59 部分唯一索引同款）。 */
-    private List<ProductionOptionRouting> planOptionRoutings(Long tenantId, JsonNode nodes) {
-        Set<String> existing = new LinkedHashSet<>();
-        List<ProductionOptionRouting> rows = productionOptionRoutingMapper.selectList(
-                new LambdaQueryWrapper<ProductionOptionRouting>()
-                        .eq(ProductionOptionRouting::getTenantId, tenantId)
-                        .eq(ProductionOptionRouting::getDeleted, 0));
-        if (rows != null) {
-            rows.forEach(r -> existing.add(r.getOptionName() + "×" + r.getOperationName()));
-        }
-        List<ProductionOptionRouting> plan = new ArrayList<>();
-        for (JsonNode node : nodes) {
-            String optionName = node.path("option_name").asText();
-            String operationName = node.path("operation_name").asText();
-            if (existing.contains(optionName + "×" + operationName)) {
-                continue;
-            }
-            plan.add(ProductionOptionRouting.builder()
-                    .tenantId(tenantId)
-                    .optionName(optionName)
-                    .operationName(operationName)
-                    .afterOperation(node.path("after_operation").asText())
-                    .sortOrder(node.path("sort_order").asInt(0))
-                    .status("active")
-                    .createdAt(OffsetDateTime.now())
-                    .updatedAt(OffsetDateTime.now())
-                    .deleted(0)
-                    .build());
-        }
-        return plan;
-    }
-
-    /** 幂等键 = {@code (tenant_id, option_name, operation_name)}（NULL = 平摊档，按选项去重）。 */
-    private List<ProductionOptionFactor> planOptionFactors(Long tenantId, JsonNode nodes) {
-        Set<String> existing = new LinkedHashSet<>();
-        List<ProductionOptionFactor> rows = productionOptionFactorMapper.selectList(
-                new LambdaQueryWrapper<ProductionOptionFactor>()
-                        .eq(ProductionOptionFactor::getTenantId, tenantId)
-                        .eq(ProductionOptionFactor::getDeleted, 0));
-        if (rows != null) {
-            rows.forEach(f -> existing.add(f.getOptionName() + "×" + f.getOperationName()));
-        }
-        List<ProductionOptionFactor> plan = new ArrayList<>();
-        for (JsonNode node : nodes) {
-            String optionName = node.path("option_name").asText();
-            String operationName = node.path("operation_name").isNull()
-                    ? null : node.path("operation_name").asText();
-            if (existing.contains(optionName + "×" + operationName)) {
-                continue;
-            }
-            plan.add(ProductionOptionFactor.builder()
-                    .tenantId(tenantId)
-                    .optionName(optionName)
-                    .operationName(operationName)
-                    .factor(new BigDecimal(node.path("factor").asText("1")))
-                    .source(node.path("source").asText("推算"))
                     .createdAt(OffsetDateTime.now())
                     .updatedAt(OffsetDateTime.now())
                     .deleted(0)

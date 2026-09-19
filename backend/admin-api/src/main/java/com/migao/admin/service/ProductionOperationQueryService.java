@@ -93,7 +93,7 @@ public class ProductionOperationQueryService {
      * {@code 三边} 的布帘变体是 {@code 布三边}（**无 {@code -} 分隔**）、
      * {@code 车被} 的布帘变体是 {@code 布帘车被}（**前缀而非后缀**）——
      * 规则推导对这两道分别得到 {@code 三边-布} / {@code 车被-布}，库里都没有
-     * ⇒ {@code variantNameOf} 返回 {@code null} ⇒ **9 条路线的每一条**都在实例化时 fail-closed
+     * ⇒ {@code variantNameOf} 返回 {@code null} ⇒ **该部位的每一条路线**都在实例化时 fail-closed
      * （真值源里 {@code 布帘×韩褶} 的 11 道会解析成 9 道 + 2 个 null）。</p>
      *
      * <p>与真值源 {@code routing.py::OPERATION_LOGICAL_NAMES} 同款口径：**逐条显式写出，

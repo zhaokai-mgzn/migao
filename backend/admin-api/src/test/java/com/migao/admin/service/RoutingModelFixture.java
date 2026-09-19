@@ -280,6 +280,119 @@ public final class RoutingModelFixture {
         return rows;
     }
 
+    /** 规范部位价目（84 行 = 28 逻辑工序 × 3 部位）：与 V71 种子 / routing.py::OPERATION_POSITION_PRICES 逐行同值。 */
+    public static List<ProductionOperationPosition> canonicalPositions84(Long tenantId) {
+        String[][] rows = {
+                {"精裁", "布帘", "0.4", "true"},
+                {"精裁", "纱帘", "0.4", "true"},
+                {"精裁", "帘头", "0.4", "true"},
+                {"裁剪", "布帘", "0.4", "true"},
+                {"裁剪", "纱帘", "0.4", "true"},
+                {"裁剪", "帘头", "0.4", "true"},
+                {"三边", "布帘", "0.4", "true"},
+                {"三边", "纱帘", "0.4", "true"},
+                {"三边", "帘头", "0.4", "true"},
+                {"韩褶", "布帘", "0.4", "true"},
+                {"韩褶", "纱帘", "0.4", "true"},
+                {"韩褶", "帘头", "0.4", "true"},
+                {"上车布", "布帘", "0.5", "true"},
+                {"上车布", "纱帘", "0.5", "true"},
+                {"上车布", "帘头", null, "false"},
+                {"打孔", "布帘", "0.15", "true"},
+                {"打孔", "纱帘", "0.15", "true"},
+                {"打孔", "帘头", "0.15", "true"},
+                {"拼1次", "布帘", "0.8", "true"},
+                {"拼1次", "纱帘", null, "false"},
+                {"拼1次", "帘头", null, "false"},
+                {"拼2次", "布帘", "1.2", "true"},
+                {"拼2次", "纱帘", null, "false"},
+                {"拼2次", "帘头", null, "false"},
+                {"拼3次", "布帘", "1.6", "true"},
+                {"拼3次", "纱帘", null, "false"},
+                {"拼3次", "帘头", null, "false"},
+                {"花边", "布帘", "0.6", "true"},
+                {"花边", "纱帘", null, "false"},
+                {"花边", "帘头", null, "false"},
+                {"铅坠", "布帘", "0.3", "true"},
+                {"铅坠", "纱帘", null, "false"},
+                {"铅坠", "帘头", null, "false"},
+                {"接高", "布帘", "1.0", "true"},
+                {"接高", "纱帘", null, "false"},
+                {"接高", "帘头", null, "false"},
+                {"帘头制作", "布帘", null, "false"},
+                {"帘头制作", "纱帘", null, "false"},
+                {"帘头制作", "帘头", "2.0", "true"},
+                {"熨烫", "布帘", "0.35", "true"},
+                {"熨烫", "纱帘", null, "false"},
+                {"熨烫", "帘头", null, "false"},
+                {"定型", "布帘", "0.4", "true"},
+                {"定型", "纱帘", null, "false"},
+                {"定型", "帘头", "0.4", "true"},
+                {"复烫", "布帘", "0.35", "true"},
+                {"复烫", "纱帘", null, "false"},
+                {"复烫", "帘头", null, "false"},
+                {"车被", "布帘", "0.4", "true"},
+                {"车被", "纱帘", null, "false"},
+                {"车被", "帘头", null, "false"},
+                {"外帘打卷", "布帘", "1.0", "true"},
+                {"外帘打卷", "纱帘", "1.0", "true"},
+                {"外帘打卷", "帘头", "1.0", "true"},
+                {"外帘装袋", "布帘", "1.0", "true"},
+                {"外帘装袋", "纱帘", "1.0", "true"},
+                {"外帘装袋", "帘头", "1.0", "true"},
+                {"质检", "布帘", "1.5", "true"},
+                {"质检", "纱帘", "1.5", "true"},
+                {"质检", "帘头", "1.5", "true"},
+                {"外帘发货", "布帘", "1.0", "true"},
+                {"外帘发货", "纱帘", "1.0", "true"},
+                {"外帘发货", "帘头", "1.0", "true"},
+                {"绑带", "布帘", "0.5", "true"},
+                {"绑带", "纱帘", "0.5", "true"},
+                {"绑带", "帘头", null, "false"},
+                {"抱枕", "布帘", "2.0", "true"},
+                {"抱枕", "纱帘", "2.0", "true"},
+                {"抱枕", "帘头", "2.0", "true"},
+                {"腰靠垫", "布帘", "2.0", "true"},
+                {"腰靠垫", "纱帘", "2.0", "true"},
+                {"腰靠垫", "帘头", "2.0", "true"},
+                {"logo条", "布帘", "0.6", "true"},
+                {"logo条", "纱帘", null, "false"},
+                {"logo条", "帘头", null, "false"},
+                {"立边", "布帘", "0.5", "true"},
+                {"立边", "纱帘", null, "false"},
+                {"立边", "帘头", null, "false"},
+                {"扣环", "布帘", "0.3", "true"},
+                {"扣环", "纱帘", null, "false"},
+                {"扣环", "帘头", null, "false"},
+                {"防翘扣", "布帘", "0.2", "true"},
+                {"防翘扣", "纱帘", null, "false"},
+                {"防翘扣", "帘头", null, "false"},
+        };
+        List<ProductionOperationPosition> plan = new ArrayList<>();
+        for (String[] row : rows) {
+            plan.add(ProductionOperationPosition.builder()
+                    .id("opp-" + row[0] + "-" + row[1]).tenantId(tenantId)
+                    .logicalName(row[0]).position(row[1])
+                    .unitPrice(row[2] == null ? null : new BigDecimal(row[2]))
+                    .applicable(Boolean.parseBoolean(row[3]))
+                    .status("active").deleted(0).build());
+        }
+        return plan;
+    }
+
+    /** 旧结构的 9 条「(部位 × 工艺) 展开路线」冻结期望（真值源 routing.py::ROUTINGS 逐字快照）。 */
+    public static final String[][] LEGACY_ROUTINGS = {
+            {"布帘", "韩褶", "精裁-布,布三边,韩褶-布,上车布-布,熨烫-布,定型-布,复烫-布,布帘车被,外帘打卷,外帘装袋,外帘发货"},
+            {"布帘", "打孔", "精裁-布,布三边,打孔-布,熨烫-布,定型-布,复烫-布,布帘车被,外帘打卷,外帘装袋,外帘发货"},
+            {"布帘", "四爪钩", "精裁-布,布三边,上车布-布,熨烫-布,布帘车被,外帘打卷,外帘装袋,外帘发货"},
+            {"布帘", "穿杆", "精裁-布,布三边,熨烫-布,布帘车被,外帘打卷,外帘装袋,外帘发货"},
+            {"纱帘", "韩褶", "精裁-纱,纱三边,韩褶-纱,外帘打卷,外帘装袋,外帘发货"},
+            {"纱帘", "打孔", "精裁-纱,纱三边,打孔-纱,外帘打卷,外帘装袋,外帘发货"},
+            {"纱帘", "四爪钩", "精裁-纱,纱三边,上车布-纱,外帘打卷,外帘装袋,外帘发货"},
+            {"纱帘", "穿杆", "精裁-纱,纱三边,外帘打卷,外帘装袋,外帘发货"},
+            {"帘头", "平幔", "精裁-布,布三边,帘头制作,定型-布,外帘打卷,外帘装袋,外帘发货"},
+    };
+
     // ══════════════════════════ 规则表 ══════════════════════════
 
     /**
@@ -361,6 +474,16 @@ public final class RoutingModelFixture {
         return ProductionRouteTemplate.builder()
                 .id("rt-default").tenantId(tenantId).name(TEMPLATE_NAME).isDefault(true)
                 .positions(List.of("布帘", "纱帘"))
+                .mainline(mainline())
+                .status("active").deleted(0)
+                .build();
+    }
+
+    /** 默认路线模板（适用**三部位**，parity 用例用：真实种子就是三部位共用一条主线）。 */
+    public static ProductionRouteTemplate defaultTemplateAllPositions(Long tenantId) {
+        return ProductionRouteTemplate.builder()
+                .id("rt-default").tenantId(tenantId).name(TEMPLATE_NAME).isDefault(true)
+                .positions(List.of("布帘", "纱帘", "帘头"))
                 .mainline(mainline())
                 .status("active").deleted(0)
                 .build();

@@ -199,9 +199,6 @@ class ProductionSeedTemplateServiceTest {
         @DisplayName("套用成功：35 工序 + 9 路线 + 16 选项映射 + 1 系数，逐条带 source")
         void apply_createsAllSeedRows() {
             wireOperationLibrary();
-            when(productionRoutingMapper.selectList(any())).thenReturn(List.of());
-            when(productionOptionRoutingMapper.selectList(any())).thenReturn(List.of());
-            when(productionOptionFactorMapper.selectList(any())).thenReturn(List.of());
 
             Map<String, Object> result = service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
 
@@ -296,17 +293,8 @@ class ProductionSeedTemplateServiceTest {
                         return 1;
                     });
             AtomicInteger opCalls = new AtomicInteger();
-            AtomicInteger rtCalls = new AtomicInteger();
-            AtomicInteger optCalls = new AtomicInteger();
-            AtomicInteger faCalls = new AtomicInteger();
             when(productionOperationMapper.selectList(any())).thenAnswer(inv ->
                     opCalls.getAndIncrement() == 0 ? List.of() : existingOperations());
-            when(productionRoutingMapper.selectList(any())).thenAnswer(inv ->
-                    rtCalls.getAndIncrement() == 0 ? List.of() : existingRoutings());
-            when(productionOptionRoutingMapper.selectList(any())).thenAnswer(inv ->
-                    optCalls.getAndIncrement() == 0 ? List.of() : existingOptionRoutings());
-            when(productionOptionFactorMapper.selectList(any())).thenAnswer(inv ->
-                    faCalls.getAndIncrement() == 0 ? List.of() : existingOptionFactors());
 
             Map<String, Object> first = service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
             assertThat(first.get("created_operations")).isEqualTo(35);
@@ -322,8 +310,9 @@ class ProductionSeedTemplateServiceTest {
             assertThat(second.get("created_positions")).as("第二次不得再插部位价目（幂等）").isEqualTo(0);
             assertThat(second.get("created_route_rules")).as("第二次不得再插规则（幂等）").isEqualTo(0);
             assertThat(second.get("skipped"))
-                    .as("第二次全部跳过：35 工序 + 9 旧路线 + 16 旧选项映射 + 1 旧系数")
-                    .isEqualTo(35 + 9 + 16 + 1);
+                    .as("第二次全部跳过：35 工序 + 1 路线模板（新结构里 9 条旧路线收敛成 1 条）"
+                            + " + 16 选项映射 + 1 系数档")
+                    .isEqualTo(35 + 1 + 16 + 1);
             verify(productionOperationMapper, times(35)).insert(any(ProductionOperation.class));
             verify(productionRouteTemplateMapper, times(1)).insert(
                     org.mockito.ArgumentMatchers.<ProductionRouteTemplate>any());
@@ -342,9 +331,6 @@ class ProductionSeedTemplateServiceTest {
         @DisplayName("部分存在：只补缺的那些（不重复插入已存在的工序/路线）")
         void apply_onlyInsertsMissing() {
             when(productionOperationMapper.selectList(any())).thenReturn(existingOperations());
-            when(productionRoutingMapper.selectList(any())).thenReturn(List.of());
-            when(productionOptionRoutingMapper.selectList(any())).thenReturn(List.of());
-            when(productionOptionFactorMapper.selectList(any())).thenReturn(List.of());
 
             Map<String, Object> result = service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
 
@@ -437,9 +423,6 @@ class ProductionSeedTemplateServiceTest {
         @DisplayName("自由文本行业（未归一）⇒ 先归一为受控 code 再决定：布艺纺织 仍套用 curtain")
         void freeTextIndustry_isNormalizedFirst() {
             when(productionOperationMapper.selectList(any())).thenReturn(List.of());
-            when(productionRoutingMapper.selectList(any())).thenReturn(List.of());
-            when(productionOptionRoutingMapper.selectList(any())).thenReturn(List.of());
-            when(productionOptionFactorMapper.selectList(any())).thenReturn(List.of());
 
             Map<String, Object> result = service.applyTemplate(TENANT, "布艺纺织");
 
@@ -528,12 +511,6 @@ class ProductionSeedTemplateServiceTest {
                             .filter(o -> o.getDeleted() != null && o.getDeleted() == 0)
                             .filter(o -> currentTenant.equals(o.getTenantId()))
                             .toList());
-            when(rtMapper.selectList(any())).thenAnswer(inv ->
-                    routings.values().stream()
-                            .filter(r -> currentTenant.equals(r.getTenantId()))
-                            .toList());
-            when(optionMapper.selectList(any())).thenReturn(List.of());
-            when(factorMapper.selectList(any())).thenReturn(List.of());
 
             when(opMapper.insert(any(ProductionOperation.class))).thenAnswer(inv -> {
                 ProductionOperation op = inv.getArgument(0);
