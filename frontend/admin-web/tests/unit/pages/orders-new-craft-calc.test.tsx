@@ -219,8 +219,7 @@ describe('下单页算料试算接线（#4434）', () => {
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
 
     mockCraftCalcPreview.mockClear()
-    // 工艺改成 chips（issue #4489 判据 1）：先展开工艺规格，再一击即中
-    fireEvent.click(screen.getAllByRole('button', { name: /工艺规格/ })[0])
+    // 工艺改成 chips（issue #4489 判据 1）；#4508 起工艺规格**常显**（不再收起）
     fireEvent.click(
       within(screen.getAllByRole('radiogroup', { name: '工艺' })[0]).getByRole('radio', {
         name: '打孔',

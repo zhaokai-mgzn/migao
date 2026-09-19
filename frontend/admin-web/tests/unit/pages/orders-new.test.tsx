@@ -203,10 +203,10 @@ describe('NewOrderPage', () => {
 
   /** 展开工艺规格里的「特殊选项」区（issue #4420：默认收起） */
   /** 展开某一行（第 idx 个部位行）的「工艺规格」折叠区（issue #4493 三层体验②：默认收起） */
-  const expandCraft = (idx = 0) => {
-    const btn = screen.getAllByRole('button', { name: /工艺规格/ })[idx]
-    // 幂等：已展开就不动（同一用例里会被调用多次）
-    if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+  const expandCraft = (_idx = 0) => {
+    // issue #4508：**工艺规格不再收起**（撤销 #4493 的第二层折叠 —— 它把「特殊选项」
+    // 藏进了两层折叠里，用户实测「特殊选项怎么看不到了」）⇒ 本函数成为 no-op。
+    // 保留函数名是为了不逐个改 30+ 处调用点（零风险、零语义）。
   }
 
   /** 展开某一行（第 idx 个部位行）的「加工选项」折叠区（issue #4489 判据 3：默认折叠） */
@@ -828,6 +828,32 @@ describe('NewOrderPage', () => {
   // issue #4486：**「樘窗」字段已按用户裁定移除** ⇒ 原「樘窗绑组写侧」判据整体作废，
   // 换成「字段已移除」的红证（能力收窄的代价已登记在该 issue：布+纱 会算成 2 樘窗，
   // 套级工序各实例化 2 次 ⇒ 计件工资双付约 ¥3/樘）。
+  // ===== issue #4508：空态不该有「默认商品 1」=====
+  describe('#4508 空态不渲染商品组壳', () => {
+    it('刚进页面（未选商品）⇒ **不出现**「商品 1」等组壳元素（红证：修复前出现两次）', async () => {
+      render(<NewOrderPage />)
+      await screen.findByText('点击搜索并选择商品')
+      expect(screen.queryByText('商品 1')).toBeNull()
+      expect(screen.queryByText(/个部位/)).toBeNull()
+      expect(screen.queryByRole('button', { name: /新增部位/ })).toBeNull()
+    })
+
+    it('选了商品 ⇒ 组头出现商品名，**部位行头是「部位 1」而不是商品名**（不重复）', async () => {
+      mockGetProducts.mockResolvedValue({
+        data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
+      })
+      mockGetProduct.mockResolvedValue({
+        data: { data: { id: 'p1', name: '遮光窗帘', skus: [], price: 100 } },
+      })
+      render(<NewOrderPage />)
+      await pickProduct('遮光窗帘')
+      await screen.findByText('部位 1')
+      // 部位行头是「部位 N」（红证：修复前行头写的是商品名 ⇒ 与组头重复）
+      expect(screen.queryByText('商品 1')).toBeNull()
+      expect(screen.getByText('1 个部位')).toBeInTheDocument()
+    })
+  })
+
   describe('#4486 樘窗字段已移除', () => {
     beforeEach(() => {
       mockGetProducts.mockResolvedValue({
@@ -935,9 +961,7 @@ describe('NewOrderPage', () => {
       await setupCurtain()
       fireEvent.click(screen.getByRole('button', { name: /新增部位/ }))
 
-      await waitFor(() =>
-        expect(screen.getAllByRole('button', { name: /工艺规格/ })).toHaveLength(2)
-      )
+      await waitFor(() => expect(screen.getByText('部位 2')).toBeInTheDocument())
       // ⭐ issue #4485：新部位嵌在**同一个商品组**里 —— 「选择商品」只出现一次
       // （修复前是复制出第二张完整商品卡 ⇒ 看起来像两个商品）
       expect(screen.getAllByText('选择商品')).toHaveLength(1)
@@ -958,11 +982,7 @@ describe('NewOrderPage', () => {
     it('判据 6：同一商品两个部位（布 + 纱）⇒ 两条 order_items 各带**自己的**宽高', async () => {
       await setupCurtain()
       fireEvent.click(screen.getByRole('button', { name: /新增部位/ }))
-      await waitFor(() =>
-        expect(screen.getAllByRole('button', { name: /工艺规格/ })).toHaveLength(2)
-      )
-      expandCraft(0)
-      expandCraft(1)
+      await waitFor(() => expect(screen.getByText('部位 2')).toBeInTheDocument())
       pickChip('部位', '布帘', 0)
       pickChip('部位', '纱帘', 1)
       fillSize(0, '6.6', '2.6')
@@ -987,8 +1007,7 @@ describe('NewOrderPage', () => {
       fireEvent.click(header)
 
       // 收起 = **CSS 隐藏而非卸载**（issue #4489 的组件包发现：卸载会丢「手改留痕」标志）
-      const craftToggle = screen.getAllByRole('button', { name: /工艺规格/ })[0]
-      expect(craftToggle.closest('.hidden')).not.toBeNull()
+      expect(screen.getByText('尺寸与数量').closest('.hidden')).not.toBeNull()
       // 摘要仍报出尺寸（收起 ≠ 信息消失）
       expect(screen.getByText(/6\.6 × 2\.6 m/)).toBeInTheDocument()
     })

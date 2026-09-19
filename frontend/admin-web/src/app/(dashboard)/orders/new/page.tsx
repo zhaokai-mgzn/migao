@@ -1815,6 +1815,32 @@ function ProductGroupBlock({
     0
   )
 
+  // **空商品组**（issue #4508，用户实测反馈「进入新增商品页面不应该有个默认商品 1」）：
+  // 还没选商品 ⇒ **只渲染「选择商品」入口**，不渲染组壳（组头序号/商品名/N 个部位/金额、
+  // 部位行、「新增部位」、售卖形态）—— 否则刚进页面就看起来"已经有一个商品了"。
+  // ⚠️ 内部仍保留这一行（`lineItems` 初值不变）⇒ 提交 / 算料 / 取价的装配路径一律不动。
+  if (!group.product) {
+    const firstLine = group.lines[0]
+    return (
+      <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-4">
+        <Label required>选择商品</Label>
+        <button
+          type="button"
+          onClick={onPickProduct}
+          className="w-full h-11 rounded-lg border border-dashed border-neutral-300 bg-white text-sm text-neutral-500 hover:border-primary-500 hover:text-primary-600 transition-colors inline-flex items-center justify-center gap-2"
+        >
+          <Search className="w-4 h-4" />
+          点击搜索并选择商品
+        </button>
+        {errors[`line_${firstLine.id}_product`] && (
+          <p className="mt-1.5 text-sm text-red-600">
+            {errors[`line_${firstLine.id}_product`]}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-xl border border-neutral-200 bg-white">
       {/* 组头 = **商品基础属性**（一组一份，部位共用） */}
@@ -2061,8 +2087,6 @@ function LineItemBlock({
   const colorOptions = useMemo(() => uniqueColors(line.product?.skus), [line.product])
   /** 加工选项默认折叠（issue #4489 判据 3）—— 只影响渲染 */
   const [processingOpen, setProcessingOpen] = useState(false)
-  /** 工艺规格默认收起为摘要（issue #4493 三层体验②）—— 只影响渲染 */
-  const [craftOpen, setCraftOpen] = useState(false)
   const selectedProcessingCount = Object.values(line.selectedProcessing).filter(
     (c) => c.selected
   ).length
@@ -2111,8 +2135,9 @@ function LineItemBlock({
               ) : (
                 <ChevronDown className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
               )}
+              {/* 组头已写商品名 ⇒ 行头只写**部位**（issue #4508：不重复显示商品名） */}
               <span className="text-sm font-medium text-neutral-900 truncate">
-                {line.product?.name ?? `商品 ${index + 1}`}
+                部位 {index + 1}
               </span>
               {colorName && (
                 <span className="text-xs text-primary-600 shrink-0">{colorName}</span>
@@ -2333,41 +2358,20 @@ function LineItemBlock({
                 「新增部位」按钮移到**商品组底部**（issue #4485：部位嵌在商品下，不是新开一张商品卡）。 */}
 
             {/* 工艺规格（§4.2 字段表 A + §4.8 双拼）。
-                **默认收起为一行摘要**（issue #4493 三层体验②）：8 项默认档已全覆盖
-                ⇒ 商家常态**不用点**，只在偏离默认时展开改（用户「现在太多点选了」）。 */}
+                ⚠️ **不收起**（issue #4508 撤销了 #4493 的「默认收起为摘要」那一层）：
+                它把「特殊选项」藏进了**第二层折叠**（用户实测「特殊选项怎么看不到了」）。
+                「点选多」这个问题已由**默认档 8 项全覆盖**解决 ⇒ 商家常态本就不用点，
+                收起是多余的，还赔上了特殊选项的可见性。 */}
             <div className="pt-3 border-t border-neutral-100">
-              <button
-                type="button"
-                onClick={() => setCraftOpen((v) => !v)}
-                aria-expanded={craftOpen}
-                className="w-full flex items-center justify-between gap-2"
-              >
-                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-700 shrink-0">
-                  {craftOpen ? (
-                    <ChevronDown className="w-4 h-4 text-neutral-400" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-neutral-400" />
-                  )}
-                  <Settings2 className="w-4 h-4 text-neutral-500" />
-                  工艺规格
-                </span>
-                {!craftOpen && (
-                  <span className="text-xs text-neutral-500 truncate">
-                    {summarySpec || '按行业默认'}
-                  </span>
-                )}
-              </button>
-              {craftOpen && (
-                <OrderCraftFields
-                  value={line.craft}
-                  onChange={onChangeCraft}
-                  mainMeters={line.quantity}
-                  edgeMeters={line.edgeMeters}
-                  onEdgeMetersChange={onEdgeMetersChange}
-                  edgeUnitPrice={line.edgeUnitPrice}
-                  onEdgeUnitPriceChange={onEdgeUnitPriceChange}
-                />
-              )}
+              <OrderCraftFields
+                value={line.craft}
+                onChange={onChangeCraft}
+                mainMeters={line.quantity}
+                edgeMeters={line.edgeMeters}
+                onEdgeMetersChange={onEdgeMetersChange}
+                edgeUnitPrice={line.edgeUnitPrice}
+                onEdgeUnitPriceChange={onEdgeUnitPriceChange}
+              />
             </div>
       </div>
     </div>
