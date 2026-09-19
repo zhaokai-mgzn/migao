@@ -328,10 +328,11 @@ def test_deconflict_delete_is_present_and_precedes_the_insert():
     for seed in SEED_FILES:
         text = _seed_text(seed)
         parsed = deconflict_delete(text)
-        assert parsed is not None, (
-            f"{seed} 里没有去冲突语句 `DELETE FROM processing_items WHERE tenant_id = 1 AND "
-            "name IN ('打孔','韩折','定型') AND id LIKE 'pi-v83-%'` —— 没有它，V83 先跑时"
-            "（评测栈的常态：admin-api 启动即跑迁移）同名就是**两行**，PP-008 的前置恒红")
+        if parsed is None:
+            raise AssertionError(
+                f"{seed} 里没有去冲突语句 `DELETE FROM processing_items WHERE tenant_id = 1 AND "
+                "name IN ('打孔','韩折','定型') AND id LIKE 'pi-v83-%'` —— 没有它，V83 先跑时"
+                "（评测栈的常态：admin-api 启动即跑迁移）同名就是**两行**，PP-008 的前置恒红")
         names, pattern = parsed
         assert set(names) == set(PRICED_FIXTURES), (
             f"{seed} 的 DELETE 名字集 {sorted(names)} ≠ 3 条带价夹具 {sorted(PRICED_FIXTURES)}")
@@ -501,17 +502,13 @@ def test_parsers_detect_injected_drift():
             re_added = _catalog_or_none_on_fail(_append_row(text, {
                 "id": f"pi_eval_reinjected_{index:02d}", "name": old_name,
                 "pricing_method": "per_meter", "unit_price": 8, "unit": "米"}))
-            assert re_added is not None and old_name in re_added, \
-                f"{seed}: 把旧编造名 {old_name} 加回来读不出差异"
+            if re_added is None or old_name not in re_added:
+                raise AssertionError(f"{seed}: 把旧编造名 {old_name} 加回来读不出差异")
 
         # ⑥ 去掉 `craft_hint` 列 ⇒ 字段数 ≠ 列数 ⇒ 整段读不出行 ⇒ **直接报错**（fail-closed）
-        try:
+        with pytest.raises(AssertionError):
             seed_catalog(text.replace("description, craft_hint, options",
                                       "description, options", 1))
-        except AssertionError:
-            pass
-        else:                                        # pragma: no cover - 走到这里说明判据失效
-            raise AssertionError(f"{seed}: 去掉 `craft_hint` 列后解析器没有 fail-closed")
 
     # ⑦ **真实 V83** 上注入一处漂移也必须读得出（样本自证不替代真文件）
     assert v83_catalog(v83_text.replace("'韩褶'::varchar(16)", "'打孔'::varchar(16)", 1)) != source, \
