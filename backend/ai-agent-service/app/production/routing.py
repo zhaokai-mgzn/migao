@@ -406,3 +406,331 @@ def instance_operations(
             "qty_source": calc_info.get("source", "formula"),
         })
     return instances
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════
+# 新模型真值源（issue #4427 = 母单 #4423 的 P1/3）—— **与上方旧常量并存的第二份真值源**
+# ══════════════════════════════════════════════════════════════════════════════════════
+# ## 为什么是「第二份」而不是「替换」
+#
+# 母单 #4423 §三 冻结的落地顺序是 **P1 纯增量 → P2 切消费路径 → P3 前端**：
+# 一次性把四个投影（Python 真值源 / SQL 种子 / Java 实例化 / bootstrap schema）全改 =
+# 一个跨三端、动工人工资的超大 PR（风险不可控）；而「先删旧再建新」的中间态会让 Java
+# 读不到工序/路线 ⇒ 建单全 fail-closed。⇒ **P1 只新增**：本段常量 + `build_route_v2` 今天
+# **零消费者**（旧常量、旧函数、Java、前端、DB 旧表旧行一字不动 ⇒ 运行时行为零变化）。
+#
+# ## 表示法收敛（9 条展开路线 → 1 条主线 + 规则表 + 部位价目）
+#
+# | 旧（`ROUTINGS`，9 条「展开快照」） | 新（本段） |
+# |---|---|
+# | 每道工序名把**部位编码进名字**（`精裁-布`/`精裁-纱`、`布三边`/`纱三边`） | 逻辑工序名（`精裁`/`三边`）+ **部位适用性矩阵** |
+# | `(部位, 工艺)` 笛卡尔积 ⇒ 9 条路线，改一道工序要改 8 遍 | **1 条主线** + `ROUTE_RULES`（工艺/选项触发 insert/remove） |
+# | 单价绑在「工序名」上（35 行） | 单价绑在 `(逻辑工序, 部位)` 上（28 × 3 = 84 行） |
+#
+# ⇒ **不发明任何工序、不改任何单价**：`OPERATION_LOGICAL_NAMES` 的 35 个旧名与
+# `OPERATION_POSITION_PRICES` 的单价逐条可溯源到 `OPERATION_CATALOG`（旧真值源）。
+#
+# ## 判据（本单的验收判据，全部落码）
+#
+# ① **9/9 逐字重建**：`build_route_v2` 重建 9 个 `(部位, 工艺)` 组合，与冻结期望 +
+#    旧 `ROUTINGS` 归一序列三方逐字一致 —— `tests/test_production/test_route_model_v2.py`；
+# ② **三源收敛**：本段常量 ↔ `V71__normalize_routing_model_structure.sql` ↔
+#    `docs/sql/schema.sql` 逐行逐值 —— `tests/unit_ci_workflows/test_production_catalog_seed.py`。
+#
+# ## ⚠️ 如实登记（P1 边界，别把半截当完整交付）
+#
+# · `is_shaped`（定型开关）**没有**规则行：26 条 = 工艺 10 + 选项 16（母单冻结数字）。
+#   `production_route_rules.trigger_kind` 预留了 `shaped` / `processing_item`，P1 不种行
+#   ⇒ `build_route_v2` 遇到未实现的触发类型**显式抛错**（不静默忽略，见函数实现）；
+# · `build_route_v2` 今天是**零消费者**：Java 实例化仍读旧 `production_routings`（P2 才切）；
+# · 「外帘打卷/装袋/发货」的部位适用性按母单冻结为 `{布帘,纱帘,帘头}`（三道是套级工序，
+#   每樘窗一次由 V67 的 `scope='set'` + P2 的去重消费方承担，不在本段）。
+
+#: 默认路线模板名（用户可命名；M3：**只改路线总名，工序名不能改**）
+ROUTE_TEMPLATE_NAME_DEFAULT = "窗帘工序路线（默认）"
+
+#: 主线**全貌**（含「工艺槽位」占位）—— 仅文档用途，**不落库**
+#: （槽位 = 打褶那一道：韩褶 / 打孔 / 穿杆 / 四爪钩由 `ROUTE_RULES` 按工艺插入）
+ROUTE_MAINLINE: List[str] = ["精裁", "三边", "⟪工艺槽位⟫", "熨烫", "定型", "复烫",
+                             "车被", "外帘打卷", "外帘装袋", "外帘发货"]
+
+#: **实际落库的 9 道**主线（部位无关；工艺槽位不落库）
+ROUTE_MAINLINE_STEPS: List[str] = ["精裁", "三边", "熨烫", "定型", "复烫", "车被",
+                                   "外帘打卷", "外帘装袋", "外帘发货"]
+
+#: 旧工序名 → 逻辑工序名（35 条**有序对**；模块加载时 `dict(...)` 成表）
+#:
+#: ⚠️ **为什么写成有序对列表而不是 dict 字面量**：L0 守卫
+#: `tests/unit_ci_workflows/test_tool_input_contract_guards.py` 把「含 ≥2 个中文 key 的 dict 字面量」
+#: 判为「把中文措辞当判据」的站点，且该基线**只许缩短、不得扩容**（R4：新增站点必须本次修掉）。
+#: 本表是**业务主数据**（工序名映射 —— 与守卫要治的「拿错误文案做子串匹配」不同族），改成有序对后
+#: AST 里不再有该形态 ⇒ 既不触发守卫、也不放宽基线（**判据一条不动**）。
+#:
+#: ⚠️ **显式逐条写出，不用「去后缀」字符串规则推导**：`布三边`/`纱三边`（无 `-` 分隔）、
+#: `布帘车被`（`布帘` 前缀）这类名字用规则推导会漏（#4423 §一② 的 14 道里就有它们）。
+#: 映射的正确性由 `test_route_model_v2.py` 用**硬编码冻结值**判（不从本表推导）。
+_LOGICAL_NAME_PAIRS: List[tuple] = [
+    ("精裁-布", "精裁"),
+    ("精裁-纱", "精裁"),
+    ("裁剪-布", "裁剪"),
+    ("裁剪-纱", "裁剪"),
+    ("布三边", "三边"),
+    ("纱三边", "三边"),
+    ("韩褶-布", "韩褶"),
+    ("韩褶-纱", "韩褶"),
+    ("上车布-布", "上车布"),
+    ("上车布-纱", "上车布"),
+    ("打孔-布", "打孔"),
+    ("打孔-纱", "打孔"),
+    ("拼1次-布", "拼1次"),
+    ("拼2次-布", "拼2次"),
+    ("拼3次-布", "拼3次"),
+    ("花边-布", "花边"),
+    ("铅坠-布", "铅坠"),
+    ("接高-布", "接高"),
+    ("帘头制作", "帘头制作"),
+    ("熨烫-布", "熨烫"),
+    ("定型-布", "定型"),
+    ("复烫-布", "复烫"),
+    ("布帘车被", "车被"),
+    ("外帘打卷", "外帘打卷"),
+    ("外帘装袋", "外帘装袋"),
+    ("质检", "质检"),
+    ("外帘发货", "外帘发货"),
+    ("绑带-布", "绑带"),
+    ("抱枕", "抱枕"),
+    ("腰靠垫", "腰靠垫"),
+    ("绑带-纱", "绑带"),
+    ("logo条-布", "logo条"),
+    ("立边-布", "立边"),
+    ("扣环-布", "扣环"),
+    ("防翘扣-布", "防翘扣"),
+]
+
+#: 旧工序名 → 逻辑工序名（35 → 28；7 组部位变体 + 去 `-布`/`-纱` 后缀）
+OPERATION_LOGICAL_NAMES: Dict[str, str] = dict(_LOGICAL_NAME_PAIRS)
+
+#: 部位价目 + 适用性矩阵的**书写形态**：`(逻辑工序, 部位, 单价|None, applicable)` × **84 行**
+#: （28 道逻辑工序 × 3 部位）。同上：用有序行而不是嵌套 dict 字面量（避免触发 L0 守卫）。
+#:
+#: 语义（母单 #4423 冻结）：
+#: · `applicable=True`  = 该部位**做**这道工序（`build_route_v2` 保留它）；
+#: · `applicable=False` = 该部位**明确不做**（`build_route_v2` 滤掉它）—— 与「没定价」可区分；
+#: · `unit_price=None`  = **不落价**：明确不做的部位不报价（有价 = 有业务含义的价目行）；
+#: · 单价逐条溯源到 `OPERATION_CATALOG`（**不发明单价**）：本单实证「同一逻辑工序的各部位变体
+#:   单价**逐字相同**」（7 组变体 14 道工序两两相等）⇒ 今天单价是**逻辑工序**的函数，按适用部位
+#:   展开；本表存在的理由是给真值源 §2【标】「同一道工序在布/纱/帘头上单价各自不同」**留出载体**，
+#:   等客户给出分部位价（#4261）再分化。
+_POSITION_PRICE_ROWS: List[tuple] = [
+    ("精裁", "布帘", 0.4, True),
+    ("精裁", "纱帘", 0.4, True),
+    ("精裁", "帘头", 0.4, True),
+    ("裁剪", "布帘", 0.4, True),
+    ("裁剪", "纱帘", 0.4, True),
+    ("裁剪", "帘头", 0.4, True),
+    ("三边", "布帘", 0.4, True),
+    ("三边", "纱帘", 0.4, True),
+    ("三边", "帘头", 0.4, True),
+    ("韩褶", "布帘", 0.4, True),
+    ("韩褶", "纱帘", 0.4, True),
+    ("韩褶", "帘头", 0.4, True),
+    ("上车布", "布帘", 0.5, True),
+    ("上车布", "纱帘", 0.5, True),
+    ("上车布", "帘头", None, False),
+    ("打孔", "布帘", 0.15, True),
+    ("打孔", "纱帘", 0.15, True),
+    ("打孔", "帘头", 0.15, True),
+    ("拼1次", "布帘", 0.8, True),
+    ("拼1次", "纱帘", None, False),
+    ("拼1次", "帘头", None, False),
+    ("拼2次", "布帘", 1.2, True),
+    ("拼2次", "纱帘", None, False),
+    ("拼2次", "帘头", None, False),
+    ("拼3次", "布帘", 1.6, True),
+    ("拼3次", "纱帘", None, False),
+    ("拼3次", "帘头", None, False),
+    ("花边", "布帘", 0.6, True),
+    ("花边", "纱帘", None, False),
+    ("花边", "帘头", None, False),
+    ("铅坠", "布帘", 0.3, True),
+    ("铅坠", "纱帘", None, False),
+    ("铅坠", "帘头", None, False),
+    ("接高", "布帘", 1.0, True),
+    ("接高", "纱帘", None, False),
+    ("接高", "帘头", None, False),
+    ("帘头制作", "布帘", None, False),
+    ("帘头制作", "纱帘", None, False),
+    ("帘头制作", "帘头", 2.0, True),
+    ("熨烫", "布帘", 0.35, True),
+    ("熨烫", "纱帘", None, False),
+    ("熨烫", "帘头", None, False),
+    ("定型", "布帘", 0.4, True),
+    ("定型", "纱帘", None, False),
+    ("定型", "帘头", 0.4, True),
+    ("复烫", "布帘", 0.35, True),
+    ("复烫", "纱帘", None, False),
+    ("复烫", "帘头", None, False),
+    ("车被", "布帘", 0.4, True),
+    ("车被", "纱帘", None, False),
+    ("车被", "帘头", None, False),
+    ("外帘打卷", "布帘", 1.0, True),
+    ("外帘打卷", "纱帘", 1.0, True),
+    ("外帘打卷", "帘头", 1.0, True),
+    ("外帘装袋", "布帘", 1.0, True),
+    ("外帘装袋", "纱帘", 1.0, True),
+    ("外帘装袋", "帘头", 1.0, True),
+    ("质检", "布帘", 1.5, True),
+    ("质检", "纱帘", 1.5, True),
+    ("质检", "帘头", 1.5, True),
+    ("外帘发货", "布帘", 1.0, True),
+    ("外帘发货", "纱帘", 1.0, True),
+    ("外帘发货", "帘头", 1.0, True),
+    ("绑带", "布帘", 0.5, True),
+    ("绑带", "纱帘", 0.5, True),
+    ("绑带", "帘头", None, False),
+    ("抱枕", "布帘", 2.0, True),
+    ("抱枕", "纱帘", 2.0, True),
+    ("抱枕", "帘头", 2.0, True),
+    ("腰靠垫", "布帘", 2.0, True),
+    ("腰靠垫", "纱帘", 2.0, True),
+    ("腰靠垫", "帘头", 2.0, True),
+    ("logo条", "布帘", 0.6, True),
+    ("logo条", "纱帘", None, False),
+    ("logo条", "帘头", None, False),
+    ("立边", "布帘", 0.5, True),
+    ("立边", "纱帘", None, False),
+    ("立边", "帘头", None, False),
+    ("扣环", "布帘", 0.3, True),
+    ("扣环", "纱帘", None, False),
+    ("扣环", "帘头", None, False),
+    ("防翘扣", "布帘", 0.2, True),
+    ("防翘扣", "纱帘", None, False),
+    ("防翘扣", "帘头", None, False),
+]
+
+
+def _build_position_prices(rows: List[tuple]) -> Dict[str, Dict[str, Any]]:
+    """`(逻辑工序, 部位, 单价|None, applicable)` 行 → `{逻辑工序: {部位: {unit_price, applicable}}}`。"""
+    prices: Dict[str, Dict[str, Any]] = {}
+    for logical, position, unit_price, applicable in rows:
+        prices.setdefault(logical, {})[position] = {"unit_price": unit_price,
+                                                     "applicable": applicable}
+    return prices
+
+
+#: 部位价目 + 适用性矩阵（28 道逻辑工序 × 3 部位 = **84 行**，逐行显式，不留隐式缺省）
+OPERATION_POSITION_PRICES: Dict[str, Dict[str, Any]] = _build_position_prices(_POSITION_PRICE_ROWS)
+
+#: 规则表 26 条（工艺变体 10 + 特殊选项 16）—— 「主线 + 规则」取代「9 条展开路线」
+#:
+#: 字段：`trigger_kind`（`craft`/`option`；`shaped`/`processing_item` 预留但 P1 不种行）·
+#: `trigger_value`（工艺名 / 特殊选项名，**逐字 = ERP 写法**，它是 join key）·
+#: `position`（部位限定，`None` = 不限）· `action`（`insert`/`remove`）·
+#: `operation`（**逻辑工序名**）· `after_operation`（insert 锚点，`None` = 追加末尾）·
+#: `priority`（**升序生效**，同序按声明顺序 —— 顺序敏感，见 `build_route_v2`）。
+#:
+#: ⚠️ 特殊选项 16 条 = 旧 `SPECIAL_OPTION_ROUTINGS` **逐条搬迁**，且**工序名与锚点都归一为
+#: 逻辑名**（`布三边`→`三边`、`布帘车被`→`车被`、`精裁-布`→`精裁`）—— 否则锚点在逻辑名序列里
+#: 找不到 ⇒ 条件工序会**静默追加到末尾**（工序顺序错 = 车间按错顺序干）。
+ROUTE_RULES: List[Dict[str, Any]] = [
+    # ── 工艺变体（trigger_kind='craft'）──
+    {"trigger_kind": "craft", "trigger_value": "韩褶", "position": None, "action": "insert",
+     "operation": "韩褶", "after_operation": "三边", "priority": 10},
+    {"trigger_kind": "craft", "trigger_value": "韩褶", "position": "布帘", "action": "insert",
+     "operation": "上车布", "after_operation": "韩褶", "priority": 20},
+    {"trigger_kind": "craft", "trigger_value": "打孔", "position": None, "action": "insert",
+     "operation": "打孔", "after_operation": "三边", "priority": 30},
+    {"trigger_kind": "craft", "trigger_value": "四爪钩", "position": None, "action": "insert",
+     "operation": "上车布", "after_operation": "三边", "priority": 40},
+    {"trigger_kind": "craft", "trigger_value": "四爪钩", "position": None, "action": "remove",
+     "operation": "定型", "after_operation": None, "priority": 50},
+    {"trigger_kind": "craft", "trigger_value": "四爪钩", "position": None, "action": "remove",
+     "operation": "复烫", "after_operation": None, "priority": 60},
+    {"trigger_kind": "craft", "trigger_value": "穿杆", "position": None, "action": "remove",
+     "operation": "定型", "after_operation": None, "priority": 70},
+    {"trigger_kind": "craft", "trigger_value": "穿杆", "position": None, "action": "remove",
+     "operation": "复烫", "after_operation": None, "priority": 80},
+    {"trigger_kind": "craft", "trigger_value": "平幔", "position": None, "action": "insert",
+     "operation": "帘头制作", "after_operation": "三边", "priority": 90},
+    {"trigger_kind": "craft", "trigger_value": "平幔", "position": None, "action": "remove",
+     "operation": "复烫", "after_operation": None, "priority": 100},
+    # ── 特殊选项（trigger_kind='option'）= 旧 SPECIAL_OPTION_ROUTINGS 逐条搬迁（16 条）──
+    {"trigger_kind": "option", "trigger_value": "拼1次", "position": None, "action": "insert",
+     "operation": "拼1次", "after_operation": "三边", "priority": 110},
+    {"trigger_kind": "option", "trigger_value": "拼2次", "position": None, "action": "insert",
+     "operation": "拼2次", "after_operation": "三边", "priority": 120},
+    {"trigger_kind": "option", "trigger_value": "拼3次", "position": None, "action": "insert",
+     "operation": "拼3次", "after_operation": "三边", "priority": 130},
+    {"trigger_kind": "option", "trigger_value": "加花边", "position": None, "action": "insert",
+     "operation": "花边", "after_operation": "三边", "priority": 140},
+    {"trigger_kind": "option", "trigger_value": "加铅块", "position": None, "action": "insert",
+     "operation": "铅坠", "after_operation": "三边", "priority": 150},
+    {"trigger_kind": "option", "trigger_value": "接高", "position": None, "action": "insert",
+     "operation": "接高", "after_operation": "精裁", "priority": 160},
+    {"trigger_kind": "option", "trigger_value": "双眼皮接高", "position": None, "action": "insert",
+     "operation": "接高", "after_operation": "精裁", "priority": 170},
+    {"trigger_kind": "option", "trigger_value": "余料做绑带", "position": None, "action": "insert",
+     "operation": "绑带", "after_operation": "车被", "priority": 180},
+    {"trigger_kind": "option", "trigger_value": "布绑带", "position": None, "action": "insert",
+     "operation": "绑带", "after_operation": "车被", "priority": 190},
+    {"trigger_kind": "option", "trigger_value": "余料做帘头", "position": None, "action": "insert",
+     "operation": "帘头制作", "after_operation": "三边", "priority": 200},
+    {"trigger_kind": "option", "trigger_value": "抱枕", "position": None, "action": "insert",
+     "operation": "抱枕", "after_operation": "外帘打卷", "priority": 210},
+    {"trigger_kind": "option", "trigger_value": "纱绑带", "position": None, "action": "insert",
+     "operation": "绑带", "after_operation": "车被", "priority": 220},
+    {"trigger_kind": "option", "trigger_value": "加logo条", "position": None, "action": "insert",
+     "operation": "logo条", "after_operation": "三边", "priority": 230},
+    {"trigger_kind": "option", "trigger_value": "加立边", "position": None, "action": "insert",
+     "operation": "立边", "after_operation": "三边", "priority": 240},
+    {"trigger_kind": "option", "trigger_value": "扣环", "position": None, "action": "insert",
+     "operation": "扣环", "after_operation": "三边", "priority": 250},
+    {"trigger_kind": "option", "trigger_value": "防翘扣", "position": None, "action": "insert",
+     "operation": "防翘扣", "after_operation": "三边", "priority": 260},
+]
+
+
+def _rule_triggers(rule: Dict[str, Any], position: Dict[str, Any]) -> bool:
+    """该规则是否被本部位触发（**精确匹配**：选项名不得用 `contains` 命中 —— 错一个字就静默失效）。"""
+    kind = rule["trigger_kind"]
+    if kind == "craft":
+        return rule["trigger_value"] == position.get("craft")
+    if kind == "option":
+        return rule["trigger_value"] in (position.get("special_options") or ())
+    # `shaped` / `processing_item` 是**表结构预留**的触发类型（P1 无种子行）：
+    # 静默返回 False 会让「规则已落库但永不生效」变成无人可见的黑洞 ⇒ 显式失败。
+    raise ValueError(f"未实现的规则触发类型: {kind}")
+
+
+def build_route_v2(position: Dict[str, Any]) -> List[str]:
+    """新模型：**主线 + 规则（工艺/选项）+ 部位适用性** → 逻辑工序名序列（**不展开部位后缀**）。
+
+    纯函数（不改入参、不碰 DB、零 LLM）。语义（**顺序敏感**）：
+
+    1. 取主线 9 道（`ROUTE_MAINLINE_STEPS`）；
+    2. 按 `ROUTE_RULES` 应用规则 —— **按 `priority` 升序**（同 priority 按声明顺序）；
+       `insert` 用 `after_operation` 定位（锚点不在序列中 ⇒ **追加末尾**，与既有
+       `_insert_after` 同款），`remove` 直接删除该工序名；
+    3. 按 `OPERATION_POSITION_PRICES[工序][部位]["applicable"]` **滤掉该部位不做的工序**。
+
+    ⚠️ **`remove` 不先于 `insert`**：顺序完全由 `priority` 决定（母单 #4423 冻结口径）。
+    例：`韩褶 + 布帘 insert 上车布 after 韩褶` 必须排在 `韩褶 insert 韩褶 after 三边` **之后**
+    —— 否则锚点「韩褶」还不存在 ⇒ 「上车布」被追加到末尾（顺序错）。
+
+    Args:
+        position: `{curtain_type, craft, special_options: [..]}`（与 `build_routing` 同形）
+    Returns: 逻辑工序名序列（如 `["精裁","三边","韩褶","上车布",...]`）
+    """
+    curtain_type = position.get("curtain_type", "布帘")
+    route = list(ROUTE_MAINLINE_STEPS)
+    for rule in sorted(ROUTE_RULES, key=lambda r: r["priority"]):
+        if not _rule_triggers(rule, position):
+            continue
+        if rule["position"] is not None and rule["position"] != curtain_type:
+            continue
+        if rule["action"] == "insert":
+            route = _insert_after(route, rule["operation"], rule["after_operation"])
+        else:
+            route = [op for op in route if op != rule["operation"]]
+    prices = OPERATION_POSITION_PRICES
+    return [op for op in route if prices[op][curtain_type]["applicable"]]

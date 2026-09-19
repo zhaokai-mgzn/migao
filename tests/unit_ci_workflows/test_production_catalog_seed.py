@@ -50,6 +50,14 @@ V54 落**初始种子**（把 `app/production/routing.py` 的既有确定性常�
 工序行内顺序按 `sort_order` 连续，与迁移侧「两段拼接」的行序天然不同 ⇒ 工序按名称键比对、
 不依赖行序；路线侧 schema.sql 里同一条 INSERT 按 `V54 行 → V58 行` 顺序书写 ⇒ 行序可比）。
 
+## 第六源（issue #4427 = 母单 #4423 的 P1/3）：新路线模型的三张表（V71）
+
+`production_operation_positions`（部位价目 84 行）/ `production_route_templates`（1 条具名默认路线）/
+`production_route_rules`（26 条规则）—— 由 `V71__normalize_routing_model_structure.sql` 落库，
+与 `app/production/routing.py` 的**新真值源**（`ROUTE_MAINLINE_STEPS` / `OPERATION_POSITION_PRICES` /
+`ROUTE_RULES`）逐行逐值收敛（三源：`routing.py` ↔ V71 ↔ 本文件）。源同样**按内容发现**
+（`seed_sources_for(table)`）⇒ 将来的增量迁移无需改本文件。
+
 ## 漂移形态（本测试会让它变红；红证见文件尾 `test_parser_detects_injected_drift` /
 `test_routing_parser_detects_injected_drift`，注入式自证）
 
@@ -999,3 +1007,308 @@ def test_routing_parser_detects_injected_drift():
     assert re.search(r"ON\s+CONFLICT.*DO\s+NOTHING", good, re.I | re.S)
     assert not re.search(r"ON\s+CONFLICT.*DO\s+NOTHING", non_idempotent, re.I | re.S), \
         "幂等判据读不出丢失的 ON CONFLICT ⇒ 该断言是空断言"
+
+
+# ── ⑦ 新路线模型（issue #4427 = 母单 #4423 的 P1/3）：新真值源 ↔ V71 ↔ schema.sql 三源收敛 ──
+#
+# 为什么必须扩源：V71 新增三张表（部位价目 / 具名路线 / 规则表）—— 它们是**新模型的三个投影**
+# 里的两个（第三个 = `app/production/routing.py` 的 `ROUTE_MAINLINE_STEPS` /
+# `OPERATION_POSITION_PRICES` / `ROUTE_RULES`）。任一漂移 ⇒ P2 切换消费路径后「同一道工序在
+# 三个地方三个价」或「规则在库里、代码里没有」—— 与工序库/路线种子同族的**静默漂移面**。
+#
+# ⚠️ 判据 1（按内容发现源）同样适用：三张新表的种子源由 `seed_sources_for(table)` 发现，
+# 将来的增量迁移无需改本文件。
+
+POSITION_PRICE_COLUMNS = ("id", "tenant_id", "logical_name", "position", "unit_price",
+                          "applicable", "status")
+ROUTE_TEMPLATE_COLUMNS = ("id", "tenant_id", "name", "is_default", "positions", "mainline", "status")
+ROUTE_RULE_COLUMNS = ("id", "tenant_id", "trigger_kind", "trigger_value", "position", "action",
+                      "operation", "after_operation", "priority", "status")
+
+# 新表种子源：**按集合聚合**（判据 1）—— 新增种子迁移无需在此追加任何东西。
+POSITION_SEED_SQLS = seed_sources_for("production_operation_positions")
+TEMPLATE_SEED_SQLS = seed_sources_for("production_route_templates")
+RULE_SEED_SQLS = seed_sources_for("production_route_rules")
+
+#: 7 组「部位变体」（旧工序名 → 同一道逻辑工序）—— 同组内 group_name / unit / scope 必须一致
+VARIANT_GROUPS = {
+    "精裁": ("精裁-布", "精裁-纱"),
+    "裁剪": ("裁剪-布", "裁剪-纱"),
+    "三边": ("布三边", "纱三边"),
+    "韩褶": ("韩褶-布", "韩褶-纱"),
+    "上车布": ("上车布-布", "上车布-纱"),
+    "打孔": ("打孔-布", "打孔-纱"),
+    "绑带": ("绑带-布", "绑带-纱"),
+}
+
+
+def _num_or_none(raw):
+    """SQL 字面量 → 数字或 `None`（`NULL` = 该部位不报价，与 0 是两回事）。"""
+    value = normalize_value(raw)
+    return None if value == "NULL" else float(value)
+
+
+def _text_or_none(raw):
+    """SQL 字面量 → 文本或 `None`（`NULL` = 不限部位 / 追加末尾）。"""
+    value = normalize_value(raw)
+    return None if value == "NULL" else value
+
+
+def position_price_rows(sql: str) -> dict:
+    """部位价目行 → `{(逻辑工序, 部位): (单价|None, applicable, status)}`（**逐值**口径）。"""
+    return {(normalize_value(r["logical_name"]), normalize_value(r["position"])):
+            (_num_or_none(r["unit_price"]), normalize_value(r["applicable"]) == "TRUE",
+             normalize_value(r["status"]))
+            for r in parse_seed(sql, "production_operation_positions", POSITION_PRICE_COLUMNS)}
+
+
+def route_template_rows(sql: str) -> list:
+    """具名路线行 → `[{name, is_default, positions, mainline, status}]`（有序序列 = tuple）。"""
+    return [{"name": normalize_value(r["name"]),
+             "is_default": normalize_value(r["is_default"]) == "TRUE",
+             "positions": normalize_routing_operations(r["positions"]),
+             "mainline": normalize_routing_operations(r["mainline"]),
+             "status": normalize_value(r["status"])}
+            for r in parse_seed(sql, "production_route_templates", ROUTE_TEMPLATE_COLUMNS)]
+
+
+def route_rule_rows(sql: str) -> dict:
+    """规则行 → `{(触发类型, 触发值, 部位, 动作, 工序, 锚点): priority}`（`NULL` → `None`）。"""
+    return {(normalize_value(r["trigger_kind"]), normalize_value(r["trigger_value"]),
+             _text_or_none(r["position"]), normalize_value(r["action"]),
+             normalize_value(r["operation"]), _text_or_none(r["after_operation"])):
+            int(normalize_value(r["priority"]))
+            for r in parse_seed(sql, "production_route_rules", ROUTE_RULE_COLUMNS)}
+
+
+def _aggregate_text(seed_paths) -> str:
+    """把按内容发现的一组种子迁移**拼成一份文本**（多源聚合，版本号序）。"""
+    return "\n".join(path.read_text(encoding="utf-8") for path in seed_paths)
+
+
+def _route_v2_truth() -> tuple:
+    """`routing.py` 的新真值源（单一 import 点）→ `(部位价目, 主线, 规则, 默认路线名)`。"""
+    sys.path.insert(0, str(ROUTING_PY_DIR))
+    try:
+        from app.production.routing import (
+            OPERATION_POSITION_PRICES, ROUTE_MAINLINE_STEPS, ROUTE_RULES,
+            ROUTE_TEMPLATE_NAME_DEFAULT,
+        )
+        return (OPERATION_POSITION_PRICES, ROUTE_MAINLINE_STEPS, ROUTE_RULES,
+                ROUTE_TEMPLATE_NAME_DEFAULT)
+    finally:
+        sys.path.pop(0)
+
+
+def _truth_price_rows() -> dict:
+    prices, _, _, _ = _route_v2_truth()
+    return {(logical, pos): (
+                None if cell["unit_price"] is None else float(cell["unit_price"]),
+                bool(cell["applicable"]), "active")
+            for logical, by_position in prices.items()
+            for pos, cell in by_position.items()}
+
+
+def _truth_rule_rows() -> dict:
+    _, _, rules, _ = _route_v2_truth()
+    return {(r["trigger_kind"], r["trigger_value"], r["position"], r["action"],
+             r["operation"], r["after_operation"]): int(r["priority"]) for r in rules}
+
+
+def test_new_route_seed_sources_are_discovered_and_nonempty():
+    """自证（fail-closed）：三张新表的种子源都被**按内容**发现且每个源都真解析出行。
+
+    反例（本测试要挡的形态）：源发现退化成空集或只读到其中一个 ⇒ 下面三条三源收敛判据
+    全部空转（「绿了但没跑」）。
+    """
+    cases = (
+        ("部位价目", POSITION_SEED_SQLS, "production_operation_positions", POSITION_PRICE_COLUMNS),
+        ("具名路线", TEMPLATE_SEED_SQLS, "production_route_templates", ROUTE_TEMPLATE_COLUMNS),
+        ("规则", RULE_SEED_SQLS, "production_route_rules", ROUTE_RULE_COLUMNS),
+    )
+    for label, sources, table, columns in cases:
+        assert sources, (
+            f"未发现任何{label}种子源（`INSERT INTO {table}` 一个都扫不到）⇒ 本段判据退化成空跑")
+        for path in sources:
+            assert path.exists(), f"{label}种子迁移缺失：{path}"
+            assert parse_seed(path.read_text(encoding="utf-8"), table, columns), \
+                f"{path} 未解析到任何{label}行（该源等于没被读）"
+
+
+def test_position_prices_converge_across_three_sources(schema_sql):
+    """部位价目三源**逐行逐值**一致：`routing.py` ↔ V71 ↔ `schema.sql`（28 × 3 = 84 行）。
+
+    改一处不改另两处即红：① 只改 Python（改价/翻 applicable）⇒ 迁移与 bootstrap 对不上；
+    ② 只改 V71 ⇒ 与真值源对不上；③ 只改 schema.sql ⇒ 与迁移侧对不上。
+    """
+    truth = _truth_price_rows()
+    migration = position_price_rows(_aggregate_text(POSITION_SEED_SQLS))
+    bootstrap = position_price_rows(schema_sql)
+    assert len(truth) == 84, f"真值源的部位价目不是 84 行（28 × 3）：{len(truth)}"
+    assert len(migration) == 84, f"迁移侧的部位价目不是 84 行：{len(migration)}"
+    assert migration == truth, f"部位价目：迁移侧 ≠ routing.py：{_diff_keys(migration, truth)}"
+    assert bootstrap == truth, f"部位价目：schema.sql 终态 ≠ routing.py：{_diff_keys(bootstrap, truth)}"
+
+
+def test_route_template_converges_across_three_sources(schema_sql):
+    """具名路线三源逐值一致（**1 行**：名字 / 默认标记 / 适用帘种 / 主线序列 / 状态）。"""
+    _, mainline, _, name = _route_v2_truth()
+    truth = {"name": name, "is_default": True,
+             "positions": ("布帘", "纱帘", "帘头"), "mainline": tuple(mainline), "status": "active"}
+    migration = route_template_rows(_aggregate_text(TEMPLATE_SEED_SQLS))
+    assert len(migration) == 1, f"迁移侧的具名路线不是 1 行：{len(migration)}"
+    assert migration[0] == truth, f"具名路线：迁移侧 ≠ routing.py：{migration[0]} ≠ {truth}"
+    assert route_template_rows(schema_sql) == migration, \
+        "具名路线：schema.sql 终态 ≠ 迁移侧（bootstrap 库与迁移库路线不同）"
+
+
+def test_route_rules_converge_across_three_sources(schema_sql):
+    """规则表三源**逐行逐值**一致（26 行：工艺 10 + 特殊选项 16，含 priority）。"""
+    truth = _truth_rule_rows()
+    migration = route_rule_rows(_aggregate_text(RULE_SEED_SQLS))
+    bootstrap = route_rule_rows(schema_sql)
+    assert len(truth) == 26, f"真值源的规则不是 26 条：{len(truth)}"
+    assert len(migration) == 26, f"迁移侧的规则不是 26 条：{len(migration)}"
+    assert migration == truth, f"规则表：迁移侧 ≠ routing.py：{_diff_keys(migration, truth)}"
+    assert bootstrap == truth, f"规则表：schema.sql 终态 ≠ routing.py：{_diff_keys(bootstrap, truth)}"
+
+
+def test_new_route_operations_all_have_a_price_row(schema_sql):
+    """主线与规则引用的工序名都必须落在**已落库的逻辑工序集合**里（否则实例化无价可依）。
+
+    双向：`mainline` / `operation` / `after_operation` 逐条点名，缺一个即红（点名到工序名，
+    不是只给一句 assert）。
+    """
+    _, mainline, rules, _ = _route_v2_truth()
+    seeded = {key[0] for key in position_price_rows(_aggregate_text(POSITION_SEED_SQLS))}
+    assert set(mainline) <= seeded, \
+        f"主线引用了没有价目行的工序：{sorted(set(mainline) - seeded)}"
+    for rule in rules:
+        assert rule["operation"] in seeded, \
+            f"规则 {rule['trigger_value']} 引用了没有价目行的工序：{rule['operation']}"
+        if rule["after_operation"] is not None:
+            assert rule["after_operation"] in seeded, \
+                f"规则 {rule['trigger_value']} 的锚点没有价目行：{rule['after_operation']}"
+    # schema.sql 侧同样钉（bootstrap 库的价目行集合必须覆盖主线）
+    assert set(mainline) <= {key[0] for key in position_price_rows(schema_sql)}
+
+
+def test_position_variant_groups_share_group_unit_and_scope(catalog_rows):
+    """7 组部位变体的 `group_name` / `unit` / `scope` **同组内一致**（否则「同一道工序」不成立）。
+
+    合并成一行逻辑工序的前提 = 「它们只是同一道工序的两种部位写法」。分组/单位/作用域不同
+    意味着两个不同的车间口径被压成一行（单价与计件都会错）⇒ 本判据逐个点名不一致的那一组。
+    """
+    scopes = effective_scopes()
+    rows_by_name = {key_of(r): r for r in catalog_rows}
+    for logical, olds in sorted(VARIANT_GROUPS.items()):
+        missing = sorted(set(olds) - set(rows_by_name))
+        assert not missing, f"{logical} 组内有变体不在工序库种子里：{missing}"
+        groups = {normalize_value(rows_by_name[o]["group_name"]) for o in olds}
+        units = {normalize_value(rows_by_name[o]["unit"]) for o in olds}
+        group_scopes = {scopes.get(o) for o in olds}
+        assert len(groups) == 1, f"{logical} 组内 group_name 不一致：{sorted(groups)}"
+        assert len(units) == 1, f"{logical} 组内 unit 不一致：{sorted(units)}"
+        assert len(group_scopes) == 1, f"{logical} 组内 scope 不一致：{sorted(group_scopes)}"
+
+
+_SCOPE_SET_RE = re.compile(
+    r"UPDATE\s+production_operations\s+SET\s+scope\s*=\s*'([^']+)'\s*WHERE\s+name\s+IN\s*\(([^)]*)\)",
+    re.I | re.S)
+
+
+def scope_update_sources(migration_dir: Path = MIGRATION_DIR) -> tuple:
+    """按**内容**发现「工序作用域」回填迁移（版本号数值序）——不写死 V67。"""
+    directory = Path(migration_dir)
+    return tuple(p for p in sorted(directory.glob(MIGRATION_GLOB), key=lambda p: version_key(p.name))
+                 if re.search(r"UPDATE\s+production_operations\s+SET\s+scope\s*=",
+                              p.read_text(encoding="utf-8"), re.I))
+
+
+def effective_scopes(migration_dir: Path = MIGRATION_DIR) -> dict:
+    """旧工序名 → `scope` 的**有效状态**：列默认值 `'position'` ∪ 作用域回填迁移的 UPDATE。"""
+    scopes = {}
+    for path in seed_sources_for("production_operations", migration_dir):
+        for row in parse_seed(path.read_text(encoding="utf-8"), "production_operations", OP_COLUMNS):
+            scopes[ident(row["name"])] = "position"   # = production_operations.scope 的列默认值
+    for path in scope_update_sources(migration_dir):
+        for scope, names in _SCOPE_SET_RE.findall(path.read_text(encoding="utf-8")):
+            for name in re.findall(r"'([^']+)'", names):
+                scopes[name] = scope
+    return scopes
+
+
+def test_effective_scope_resolution_is_load_bearing():
+    """自证：作用域回填迁移**真被应用**（V67 的三道外帘工序 = 套级），且 7 组变体都是部位级。
+
+    反例（本测试要挡的形态）：`effective_scopes` 只读种子 INSERT（拿不到 scope）⇒
+    上一条「同组 scope 一致」退化成恒真（每组都是同一个默认值，判据永远绿）。
+    """
+    scopes = effective_scopes()
+    set_scope = {name for name, scope in scopes.items() if scope == "set"}
+    assert {"外帘打卷", "外帘装袋", "外帘发货"} <= set_scope, (
+        "作用域回填迁移没被读到 ⇒ scope 判据是空断言（该源按内容发现，不写死 V67）")
+    variant_names = {old for olds in VARIANT_GROUPS.values() for old in olds}
+    assert not (variant_names & set_scope), \
+        f"7 组部位变体里出现了套级工序：{sorted(variant_names & set_scope)}（与「同一道工序」前提冲突）"
+
+
+def test_variant_group_scope_mismatch_is_detected(tmp_path):
+    """注入式自证：给组内**一个**变体标成套级 ⇒ 同组 scope 不再一致（判据真能红）。"""
+    (tmp_path / "V54__seed_production_operations.sql").write_text(
+        "INSERT INTO production_operations (id, tenant_id, name, group_name, position, unit, "
+        "unit_price, is_must_finish, is_start_marker, sort_order, status) VALUES\n"
+        "  ('op-1', 1, '韩褶-布', '车位', '布帘', '折', 0.4, FALSE, FALSE, 1, 'active'),\n"
+        "  ('op-2', 1, '韩褶-纱', '车位', '纱帘', '折', 0.4, FALSE, FALSE, 2, 'active')\n"
+        "ON CONFLICT (tenant_id, name) WHERE deleted = 0 DO NOTHING;", encoding="utf-8")
+    (tmp_path / "V99__scope.sql").write_text(
+        "UPDATE production_operations SET scope = 'set' WHERE name IN ('韩褶-纱');", encoding="utf-8")
+    scopes = effective_scopes(tmp_path)
+    assert scopes["韩褶-布"] == "position", "注入夹具的默认作用域没被读到"
+    assert scopes["韩褶-纱"] == "set", "注入夹具的作用域回填没被读到"
+    assert len({scopes["韩褶-布"], scopes["韩褶-纱"]}) == 2, \
+        "同组 scope 不一致读不出来 ⇒ 「同组 scope 一致」判据是空断言"
+
+
+def test_new_route_parsers_detect_injected_drift():
+    """注入式自证：三张新表的解析器必须**能**照出漂移（改价/翻适用性/改主线/改优先级）。"""
+    good_positions = (
+        "INSERT INTO production_operation_positions "
+        "(id, tenant_id, logical_name, position, unit_price, applicable, status) VALUES\n"
+        "  ('opp-1', 1, '熨烫', '布帘', 0.35, TRUE, 'active'),\n"
+        "  ('opp-2', 1, '熨烫', '纱帘', NULL, FALSE, 'active')\n"
+        "ON CONFLICT (id) DO NOTHING;")
+    good_templates = (
+        "INSERT INTO production_route_templates "
+        "(id, tenant_id, name, is_default, positions, mainline, status) VALUES\n"
+        "  ('rt-1', 1, '窗帘工序路线（默认）', TRUE, '[\"布帘\", \"纱帘\", \"帘头\"]'::jsonb,\n"
+        "   '[\"精裁\", \"三边\"]'::jsonb, 'active')\n"
+        "ON CONFLICT (id) DO NOTHING;")
+    good_rules = (
+        "INSERT INTO production_route_rules "
+        "(id, tenant_id, trigger_kind, trigger_value, position, action, operation, "
+        "after_operation, priority, status) VALUES\n"
+        "  ('rr-1', 1, 'craft', '韩褶', NULL, 'insert', '韩褶', '三边', 10, 'active')\n"
+        "ON CONFLICT (id) DO NOTHING;")
+
+    base_prices = position_price_rows(good_positions)
+    assert base_prices[("熨烫", "布帘")] == (0.35, True, "active"), "部位价目解析器没读出合法行"
+    assert base_prices[("熨烫", "纱帘")][0] is None, "部位价目解析器没读出 NULL 价（明确不做）"
+    assert position_price_rows(good_positions.replace("0.35", "0.99")) != base_prices, \
+        "改单价读不出来 ⇒ 部位价目三源比对是空断言"
+    assert position_price_rows(good_positions.replace(
+        "'纱帘', NULL, FALSE", "'纱帘', NULL, TRUE")) != base_prices, \
+        "翻 applicable 读不出来 ⇒ 适用性比对是空断言"
+
+    base_templates = route_template_rows(good_templates)
+    assert base_templates[0]["mainline"] == ("精裁", "三边"), "具名路线解析器没读出主线序列"
+    assert route_template_rows(good_templates.replace('"三边"', '"打孔"')) != base_templates, \
+        "改主线序列读不出来 ⇒ 具名路线比对是空断言"
+
+    base_rules = route_rule_rows(good_rules)
+    assert base_rules[("craft", "韩褶", None, "insert", "韩褶", "三边")] == 10, \
+        "规则解析器没读出合法行（含 NULL 部位）"
+    assert route_rule_rows(good_rules.replace("10, 'active'", "99, 'active'")) != base_rules, \
+        "改 priority 读不出来 ⇒ 规则顺序比对是空断言"
+    assert route_rule_rows(good_rules.replace("'三边', 10", "NULL, 10")) != base_rules, \
+        "改锚点读不出来 ⇒ 规则比对是空断言"
