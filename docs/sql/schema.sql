@@ -520,6 +520,11 @@ CREATE TABLE customer_profiles (
     default_logistics_type VARCHAR(16) DEFAULT 'express',  -- 常用物流类型：express 快递 / logistics 物流专线
     default_logistics_company VARCHAR(128),  -- 客户常用物流/快递公司（下单自动带出）
 
+    -- 默认收货信息（issue #4419，V70 迁移；客户管理「收货信息」卡片）
+    default_receiver_name VARCHAR(100),  -- 默认收货人姓名（新增订单选客户自动带出）
+    default_receiver_phone VARCHAR(20),  -- 默认收货人电话（新增订单选客户自动带出）
+    default_receiver_address TEXT,  -- 默认收货详细地址（单字段文本，与 orders.customer_address 同口径）
+
     -- 生命周期
     lifecycle_stage VARCHAR(32) DEFAULT 'new',  -- new / growing / mature / declining / churned
     churn_risk_score DECIMAL(5, 4) DEFAULT 0.0000,  -- 流失风险评分 0-1

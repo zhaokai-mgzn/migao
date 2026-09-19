@@ -1183,7 +1183,7 @@
 真值: ai-chat.context-memory, ai-chat.intent-domains, order.states, order.logistics, id-resolve.index
 溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create]；2026-09-18 补前置自断言 precondition[product_count_for_keyword 遮光窗帘 expect=1]（issue #4046 的 OR-* 优先档 burn-down） ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
 
-## 客户域（8 case）
+## 客户域（9 case）
 
 ### CU-001. 客户列表 🟢
 ```
@@ -1278,6 +1278,20 @@
 ```
 真值: customer-crm.profile
 溯源: 2026-09-17 新增（issue #3984）：M2-D 客户工艺画像与常用物流存储覆盖登记。2026-09-17（issue #4007，run 35233821582 CU-008 reproducible）：原版是**写类**期望（customer_manage(action=update)）而输入场景是查询口径 → agent 不会调 update → 期望永不满足（恒红形态）。改读类：输入改「看看客户张三的工艺偏好和常用物流」+ 期望 action=detail（读）+ must_succeed；写路径明确交回单测契约（test_tool_field_name_contract.py，case_ids 含 CU-008）；2026-09-18 下沉复核（issue #4042，LLM 红例 run 35243351675 @67db87ae）：本条**已有**确定性断言（`expectations: customer_manage(action=detail)` + `must_succeed`），确定性层确实拦住并判红（首跑指纹 `no_success(customer_manage)`，2 次 run 复发）⇒ 属**产品行为缺陷**（问「客户工艺偏好/常用物流设置」时 agent 走了 order_query/logistics_track 答订单物流，没走客户档案），已另开单跟踪；断言形态不动 ｜ tags: customer, mibao, craft-profile, logistics
+
+### CU-009. 客户默认收货信息与常用物流档案（客户管理「收货信息」卡片 + 落库契约，issue #4419） 🔵
+```
+你: 客户管理里要能记录客户的收货地址、常用物流/快递方式和常用物流/快递公司；新增订单选客户时自动带出
+期望: direct_reply
+数据: customer_profiles 新增 default_receiver_name VARCHAR(100) / default_receiver_phone VARCHAR(20) / default_receiver_address TEXT（V70 迁移，列注释与 schema.sql bootstrap 终态同步）；PUT /api/admin/customers/{id} 非空拷贝落库，客户详情 GET /api/admin/customers/{id} 返回
+数据: 客户详情页「收货信息」卡片可查看/编辑：收货人姓名、收货人电话、收货地址、常用物流方式（express 快递 / logistics 物流专线）、常用物流公司（预置候选 datalist + 允许自定义）
+数据: 落库是**效果层**断言：CustomerReceiverAddressPersistTest 断言交给 Mapper 的实体内容（删掉 setXxx 即红）；前端由 customer-detail.test.tsx 断言 updateCustomer payload 五键齐全（空白不覆盖既有值）
+数据: 米宝写路径 customer_manage(update) 的 3 个新列与 CustomerService.updateCustomer 非空拷贝白名单**同集合**（test_tool_field_name_contract.py 的 java-service-null-copy 判据）——防 #4115 同款「工具可写 + 服务层静默丢弃」
+数据: 空白/缺省字段不覆盖既有收货信息（清空语义未定义 ⇒ 一律不覆盖），避免客户管理页把已录地址误抹掉
+跳过: [backend-contract] 字段落库与前端表单交互由确定性单测覆盖（CustomerReceiverAddressPersistTest + customer-detail.test.tsx + test_tool_field_name_contract.py）；读路径已由 CU-002/CU-008 覆盖，非 LLM 行为新增面，不进入 agent-eval 冒烟
+```
+真值: customer-crm.receiver-address
+溯源: 2026-09-19 新增（issue #4419）：客户管理「收货信息」闭环 —— V70 迁移 3 列 + 客户详情页卡片读写 + 米宝写白名单同集合 ｜ tags: customer, ui, logistics, receiver-address, admin-web
 
 ## 数据域（10 case）
 
@@ -1840,7 +1854,7 @@
 必须成功: employee_manage(update)
 ```
 真值: employee-role.users-endpoint, employee-role.write-require-admin, employee-role.update-field-consumption
-溯源: 2026-09-14 新增（issue #3593）：员工更新（改手机号）落库断言缺失 —— HR-001~007 无任何 update 覆盖，是 #3550（phone/roleIds 被 admin-api 静默忽略 → 200 假成功，PR #3561 已修）潜伏至今的用例层根因。断言口径：expectations.args 值级（action=update + 目标=种子员工 debug_employee_wangwu + 新值逐字 13900139111）+ must_succeed[update]（写真的成功）+ required_args[user_id, phone]（下发参数完整）。⚠️ 仍缺的能力：仓库 db_verify 只有 order_phone / order_items / product_by_name / after_sales_ticket（末项为 #3580 同批新增），**没有员工/用户核对器** ⇒ 接收侧静默忽略这一精确类尚不能机器判定。需要的 runner 规格（归属 runner 包，本包不碰 local_runner.py）：db_verify: [{fetch: employee, name: 「王五」, expect_fields: {phone: 「13900139111」}}] —— 取数走 GET /api/admin/users?keyword=<name>（或 /api/admin/users/{id}）→ 在 items 里按 name/phone 定位 → 逐条比对 expect_fields（值不等即失败，取不到记录也判失败而非跳过）；expect_fields.role_code 可同时覆盖角色侧（roleIds）同源缺陷。本条选「改手机号」而非「改角色」的理由：role 的**合法下发形态有两种**（role_ids=[角色表主键] 或 role=角色 code，见 AdminUserController.updateUser 与 employee_manage._update_user 的 if role_ids / elif role 分支），在 required_args / expectations 无 OR 分支能力时对任一形态做值级断言都会造成另一半假红；手机号只有 phone 一种形态，可做值级断言。角色侧（roleIds ↔ role code）的落库断言由同一 db_verify[employee].expect_fields.role_code 承担，建议 runner 包一并实现。 ｜ tags: update, write, confirm
+溯源: 2026-09-14 新增（issue #3593）：员工更新（改手机号）落库断言缺失 —— HR-001~007 无任何 update 覆盖，是 #3550（phone/roleIds 被 admin-api 静默忽略 → 200 假成功，PR #3561 已修）潜伏至今的用例层根因。断言口径：expectations.args 值级（action=update + 目标=种子员工 debug_employee_wangwu + 新值逐字 13900139111）+ must_succeed[update]（写真的成功）+ required_args[user_id, phone]（下发参数完整）。⚠️ 仍缺的能力：仓库 db_verify 只有 order_phone / order_items / product_by_name / after_sales_ticket（末项为 #3580 同批新增），**没有员工/用户核对器** ⇒ 接收侧静默忽略这一精确类尚不能机器判定。需要的 runner 规格（归属 runner 包，本包不碰 local_runner.py）：db_verify: [{fetch: employee, name: 「王五」, expect_fields: {phone: 「13900139111」}}] —— 取数走 GET /api/admin/users?keyword=<name>（或 /api/admin/users/{id}）→ 在 items 里按 name/phone 定位 → 逐条比对 expect_fields（值不等即失败，取不到记录也判失败而非跳过）；expect_fields.role_code 可同时覆盖角色侧（roleIds）同源缺陷。本条选「改手机号」而非「改角色」的理由：role 的**合法下发形态有两种**（role_ids=[角色表主键] 或 role=角色 code，见 AdminUserController.updateUser 与 employee_manage._update_user 的 if role_ids / elif role 分支），在 required_args / expectations 无 OR 分支能力时对任一形态做值级断言都会造成另一半假红；手机号只有 phone 一种形态，可做值级断言。角色侧（roleIds ↔ role code）的落库断言由同一 db_verify[employee].expect_fields.role_code 承担，建议 runner 包一并实现。；2026-09-19（issue #4419 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[employee_count_for_phone: 13700137000, expect: 1, max_growth: 0]` —— 改号前提 = 该号码名下确实有那位种子员工（前置不成立时红的表现像「agent 不会改号」，归因全错）；`max_growth: 0` 因本用例只让该号码名下减少一个（改走）、不新增。断言（user_inputs / expectations / must_succeed / required_args / namespaces）原样未动、无放宽 ｜ tags: update, write, confirm
 
 ### HR-009. 越权创建员工（仅 employee:list）- 不得自旋重复失败调用，须如实说明缺哪项权限并给开通路径 🔵
 ```
@@ -3956,7 +3970,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（44 case）
+## ui（45 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -4445,12 +4459,13 @@
 期望: direct_reply
 数据: 新增订单页「收货信息」卡提供「选择客户」入口，点击打开客户选择弹窗（标题「选择客户」），加载客户列表（customerApi.getCustomers）
 数据: 弹窗支持按 姓名/手机号 关键词搜索（Enter/搜索按钮触发 getCustomers 携带 keyword）；客户行展示 姓名（wechatNickname 优先）+ 手机号 + 省市区 + 来源渠道
-数据: 选中客户后自动回填：收货人姓名=客户昵称、手机号=phone、收货地址=省市区拼接（regionProvince regionCity regionDistrict），仍可手动修改
+数据: 选中客户后自动回填：收货人姓名/手机号/收货地址——**优先**取客户档案的默认收货地址（defaultReceiverName/defaultReceiverPhone/defaultReceiverAddress，客户管理「收货信息」卡片维护，issue #4419），档案未录时才回退旧口径（姓名=昵称、地址=省市区拼接 regionProvince regionCity regionDistrict）；仍可手动修改
+数据: 客户档案有常用物流时展示只读提示「常用物流：<方式> · <公司>」（两者都缺则不显示，不编造默认值）；发货页按同一档案带出方式/公司（UI-047）
 数据: 保留手动兜底：未命中客户/关闭弹窗后可直接手填收货信息提交订单；订单提交契约不变（OrderCreateRequest 无 customerId，不引入跨端契约改动）
 跳过: [backend-contract] 纯前端页面交互由 vitest 单测验证（orders-new.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
-溯源: 2026-09-09 新增（issue #3102）：新增订单表单选择已有客户自动回填收货信息（前端快捷回填，不动后端契约） ｜ tags: ui, orders, customer, order-create, admin-web
+溯源: 2026-09-09 新增（issue #3102）：新增订单表单选择已有客户自动回填收货信息（前端快捷回填，不动后端契约）；2026-09-19（issue #4419）：回填取值改为「默认收货地址优先、省市区拼接兜底」，并补常用物流只读提示 ｜ tags: ui, orders, customer, order-create, admin-web
 
 ### UI-039. 知识卡片：已归档卡片可「重新发布」+ 新增只读「查看」+ 副标题文案通俗化（#3108） 🔵
 ```
@@ -4543,6 +4558,18 @@
 真值: frontend-fix.next-build
 溯源: 2026-09-19 新增：admin-web 的 next build 门禁 + 路径门控 + 防回退锁（issue #4412；断链实证 11.5 小时 / 前端 404） ｜ tags: ci, next-build, build-contract
 
+### UI-047. 发货页带出客户常用物流方式/公司 + 写入 order_logistics.logistics_type（issue #4419） 🔵
+```
+你: 发货时要按客户常用的物流方式（快递/物流专线）和常用承运商预填，不用每次重选；物流类型要真的记到这一单上
+期望: direct_reply
+数据: 打开发货页时按订单 customerPhone 调 customerApi.getCustomers(keyword=phone)，**精确匹配 phone** 后才带出 defaultLogisticsType/defaultLogisticsCompany（关键词是模糊匹配，命中的其他客户不得采用）
+数据: 带出的常用公司在预置候选之外时，下拉补出该选项（否则 select 显示不出已存值）；用户已手动改过物流字段则不再覆盖（与发货人预填同口径）；查询失败不阻断发货
+数据: 确认发货 payload 携带 logisticsType（express/logistics），经 buildLogisticsPayload 透传；未选时不写（由后端按列默认 express 兜底，不写假值）
+跳过: [backend-contract] 纯前端交互 + payload 透传，由 vitest 单测（ship-order.test.tsx / data-adapter.test.ts / logistics.test.ts）覆盖；agent 工具参数未变，不进入 agent-eval 冒烟
+```
+真值: customer-crm.receiver-address
+溯源: 2026-09-19 新增（issue #4419）：发货页带出客户常用物流档案 + 补上 logistics_type 下发（此前 admin-web 从不设置）。编号从 UI-046 改为 UI-047 —— 该号已被 issue #4412 的构建契约用例占用（rebase 时发现） ｜ tags: ui, order, logistics, admin-web, customer
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -4572,8 +4599,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：335（活跃 154，跳过 181）
-- tier 分布：smoke 10 / normal 294 / adversarial 31
+- 用例总数：337（活跃 154，跳过 183）
+- tier 分布：smoke 10 / normal 296 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4581,7 +4608,7 @@
 - 分类域：3
 - 对话边界域：41
 - 跨域：3
-- 客户域：8
+- 客户域：9
 - 数据域：10
 - 防御域：22
 - finance：4
@@ -4597,7 +4624,7 @@
 - registry：1
 - 设置域：10
 - token-refresh：4
-- ui：44
+- ui：45
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

@@ -326,6 +326,22 @@ cases:
     namespaces:
       - "employee_phone:13700137000"
       - "employee_phone:13900139111"
+    # 前置自断言（issue #4419 的 burn-down 缴费；本用例此前命中的**唯一**一条存量违规是
+    # CASE-TRUST-NO-PRECONDITION-ASSERTION）：
+    # 本用例把种子员工（`debug_employee_wangwu`，王五）**改号** 13700137000 → 13900139111
+    # ⇒ 改号前 `13700137000` 名下必须**确实有**那位员工。前置不成立（种子没加载 / 已被
+    # HR-002 的同名产物顶掉）时，红的表现是「agent 说没找到该员工」——看起来像 agent 不会
+    # 改号，归因全错（PG-013 形态）。`expect: 1` 判基线（种子里该号码恰 1 条 users 记录）；
+    # `max_growth: 0` 判运行期漂移 —— 本用例只会让该号码名下**减少**一个（改走），不新增，
+    # 故容差取 0（并行用例若再造同号 ⇒ 判漂移，红/绿不可归因）。
+    # 定位口径与 `employee_remove` / `_eval_find_users` **同一份**（`_norm_phone` 数字归一，
+    # §18 单一真相源），不存在第二份「怎么数员工」的定义。断言只增不减：
+    # user_inputs / expectations / must_succeed / required_args / namespaces 原样未动。
+    precondition:
+      - type: employee_count_for_phone
+        source: "13700137000"
+        expect: 1
+        max_growth: 0
     # 写工具**真的成功**断言（#3361「调了 ≠ 成了」）：被 confirm 门禁拦下、工具报错、
     # 或模型压根没执行 update，都在此判失败 —— 这是「update 写路径有没有真的发生」的第一道门。
     must_succeed:
@@ -345,7 +361,7 @@ cases:
       - "PUT /api/admin/users/debug_employee_wangwu 落库后 users.phone = 13900139111，而不是 200 假成功（库里仍是 13700137000）"
       - "同租户内手机号唯一：13900139111 不与既有用户（13700137000 / 13800138000 / 13900139000）冲突，写入不被唯一校验拒绝"
     skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3593）：员工更新（改手机号）落库断言缺失 —— HR-001~007 无任何 update 覆盖，是 #3550（phone/roleIds 被 admin-api 静默忽略 → 200 假成功，PR #3561 已修）潜伏至今的用例层根因。断言口径：expectations.args 值级（action=update + 目标=种子员工 debug_employee_wangwu + 新值逐字 13900139111）+ must_succeed[update]（写真的成功）+ required_args[user_id, phone]（下发参数完整）。⚠️ 仍缺的能力：仓库 db_verify 只有 order_phone / order_items / product_by_name / after_sales_ticket（末项为 #3580 同批新增），**没有员工/用户核对器** ⇒ 接收侧静默忽略这一精确类尚不能机器判定。需要的 runner 规格（归属 runner 包，本包不碰 local_runner.py）：db_verify: [{fetch: employee, name: 「王五」, expect_fields: {phone: 「13900139111」}}] —— 取数走 GET /api/admin/users?keyword=<name>（或 /api/admin/users/{id}）→ 在 items 里按 name/phone 定位 → 逐条比对 expect_fields（值不等即失败，取不到记录也判失败而非跳过）；expect_fields.role_code 可同时覆盖角色侧（roleIds）同源缺陷。本条选「改手机号」而非「改角色」的理由：role 的**合法下发形态有两种**（role_ids=[角色表主键] 或 role=角色 code，见 AdminUserController.updateUser 与 employee_manage._update_user 的 if role_ids / elif role 分支），在 required_args / expectations 无 OR 分支能力时对任一形态做值级断言都会造成另一半假红；手机号只有 phone 一种形态，可做值级断言。角色侧（roleIds ↔ role code）的落库断言由同一 db_verify[employee].expect_fields.role_code 承担，建议 runner 包一并实现。"
+    merge_log: "2026-09-14 新增（issue #3593）：员工更新（改手机号）落库断言缺失 —— HR-001~007 无任何 update 覆盖，是 #3550（phone/roleIds 被 admin-api 静默忽略 → 200 假成功，PR #3561 已修）潜伏至今的用例层根因。断言口径：expectations.args 值级（action=update + 目标=种子员工 debug_employee_wangwu + 新值逐字 13900139111）+ must_succeed[update]（写真的成功）+ required_args[user_id, phone]（下发参数完整）。⚠️ 仍缺的能力：仓库 db_verify 只有 order_phone / order_items / product_by_name / after_sales_ticket（末项为 #3580 同批新增），**没有员工/用户核对器** ⇒ 接收侧静默忽略这一精确类尚不能机器判定。需要的 runner 规格（归属 runner 包，本包不碰 local_runner.py）：db_verify: [{fetch: employee, name: 「王五」, expect_fields: {phone: 「13900139111」}}] —— 取数走 GET /api/admin/users?keyword=<name>（或 /api/admin/users/{id}）→ 在 items 里按 name/phone 定位 → 逐条比对 expect_fields（值不等即失败，取不到记录也判失败而非跳过）；expect_fields.role_code 可同时覆盖角色侧（roleIds）同源缺陷。本条选「改手机号」而非「改角色」的理由：role 的**合法下发形态有两种**（role_ids=[角色表主键] 或 role=角色 code，见 AdminUserController.updateUser 与 employee_manage._update_user 的 if role_ids / elif role 分支），在 required_args / expectations 无 OR 分支能力时对任一形态做值级断言都会造成另一半假红；手机号只有 phone 一种形态，可做值级断言。角色侧（roleIds ↔ role code）的落库断言由同一 db_verify[employee].expect_fields.role_code 承担，建议 runner 包一并实现。；2026-09-19（issue #4419 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[employee_count_for_phone: 13700137000, expect: 1, max_growth: 0]` —— 改号前提 = 该号码名下确实有那位种子员工（前置不成立时红的表现像「agent 不会改号」，归因全错）；`max_growth: 0` 因本用例只让该号码名下减少一个（改走）、不新增。断言（user_inputs / expectations / must_succeed / required_args / namespaces）原样未动、无放宽"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_employee_field_consumption_contract.py"

@@ -1,4 +1,4 @@
-// case_ids: UI-040
+// case_ids: UI-040, UI-047
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -17,12 +17,17 @@ import userEvent from '@testing-library/user-event'
 const mockGetOrder = vi.fn()
 const mockUpdateLogistics = vi.fn()
 const mockUpdateOrderStatus = vi.fn()
+const mockGetCustomers = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   orderApi: {
     getOrder: (...args: any[]) => mockGetOrder(...args),
     updateLogistics: (...args: any[]) => mockUpdateLogistics(...args),
     updateOrderStatus: (...args: any[]) => mockUpdateOrderStatus(...args),
+  },
+  // 客户常用物流档案带出（issue #4419 / UI-047）
+  customerApi: {
+    getCustomers: (...args: any[]) => mockGetCustomers(...args),
   },
 }))
 
@@ -87,6 +92,8 @@ describe('ShipOrder', () => {
     })
     mockUpdateLogistics.mockResolvedValue({ data: { data: null } })
     mockUpdateOrderStatus.mockResolvedValue({ data: { data: null } })
+    // 默认：查不到客户档案（不覆盖发货页既有默认值「德邦快递」）
+    mockGetCustomers.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
     printSpy = vi.fn()
     window.print = printSpy as any
   })
@@ -245,5 +252,88 @@ describe('ShipOrder', () => {
     expect(doc!.textContent).toContain('遮光窗帘')
     // 发货人 = 当前输入值（尚未保存也要能印在纸面）
     expect(doc!.textContent).toContain('王五')
+  })
+
+  // ===== 客户常用物流档案带出（issue #4419 / UI-047）=====
+
+  it('按订单手机号精确查客户档案，带出常用物流方式与公司', async () => {
+    mockGetCustomers.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            // 关键词模糊命中但手机号不同 ⇒ 不得采用（防带错客户）
+            { id: 'c-other', phone: '13900139001', defaultLogisticsType: 'express', defaultLogisticsCompany: '顺丰速运' },
+            { id: 'c-hit', phone: '13900139000', defaultLogisticsType: 'logistics', defaultLogisticsCompany: '四季安物流' },
+          ],
+          total: 2,
+        },
+      },
+    })
+    render(<ShipOrder />)
+
+    await waitFor(() => {
+      expect(mockGetCustomers).toHaveBeenCalledWith(
+        expect.objectContaining({ keyword: '13900139000' })
+      )
+    })
+    await waitFor(() => {
+      const selects = screen.getAllByRole('combobox')
+      expect(selects[0]).toHaveValue('四季安物流')
+    })
+    // 物流方式带出为「物流/专线」（express 是后端列默认，不是客户档案里的值）
+    expect(screen.getByRole('radio', { name: '物流/专线' })).toBeChecked()
+  })
+
+  it('常用公司是预置列表之外的自定义承运商时，下拉里补出该选项（否则显示不出已存值）', async () => {
+    mockGetCustomers.mockResolvedValue({
+      data: {
+        data: {
+          items: [{ id: 'c-hit', phone: '13900139000', defaultLogisticsCompany: '本地专线·老王' }],
+          total: 1,
+        },
+      },
+    })
+    render(<ShipOrder />)
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('combobox')[0]).toHaveValue('本地专线·老王')
+    })
+    expect(screen.getByRole('option', { name: '本地专线·老王' })).toBeInTheDocument()
+  })
+
+  it('用户已手动改过物流公司后，档案带出不再覆盖手工输入', async () => {
+    const user = userEvent.setup()
+    mockGetCustomers.mockResolvedValue({
+      data: {
+        data: {
+          items: [{ id: 'c-hit', phone: '13900139000', defaultLogisticsCompany: '四季安物流' }],
+          total: 1,
+        },
+      },
+    })
+    render(<ShipOrder />)
+
+    const companySelect = (await screen.findAllByRole('combobox'))[0]
+    await user.selectOptions(companySelect, '顺丰速运')
+    // 等档案请求的 then 落地（若实现会覆盖，这里就会被打回四季安物流）
+    await waitFor(() => expect(mockGetCustomers).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 0))
+    expect(companySelect).toHaveValue('顺丰速运')
+  })
+
+  it('确认发货时 payload 携带物流方式（此前 admin-web 从不设置 logistics_type）', async () => {
+    const user = userEvent.setup()
+    render(<ShipOrder />)
+
+    await screen.findByPlaceholderText('请输入实际发货人姓名')
+    await user.click(screen.getByRole('radio', { name: '物流/专线' }))
+    await user.type(screen.getByPlaceholderText('请输入快递单号'), 'SF20260919001')
+    await user.click(screen.getByRole('button', { name: /确认发货/ }))
+
+    await waitFor(() => expect(mockUpdateLogistics).toHaveBeenCalledTimes(1))
+    expect(mockUpdateLogistics).toHaveBeenCalledWith(
+      'test-order-456',
+      expect.objectContaining({ logisticsType: 'logistics' })
+    )
   })
 })

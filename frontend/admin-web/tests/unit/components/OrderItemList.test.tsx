@@ -1,7 +1,7 @@
 // case_ids: OR-001, UI-020
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, fireEvent } from '@testing-library/react'
 import OrderItemList from '@/components/orders/OrderItemList'
 import type { OrderItem } from '@/types'
 
@@ -100,7 +100,8 @@ describe('OrderItemList', () => {
       expect(screen.getByText('门幅: 2.8m')).toBeInTheDocument()
     })
 
-    it('renders processingInfo raw when keys present', () => {
+    // issue #4426：内部键名的原始键值兜底行**默认收起**（展开后内容不变）
+    it('renders processingInfo raw when keys present（展开「其它字段」后）', () => {
       render(
         <OrderItemList
           items={[
@@ -110,6 +111,8 @@ describe('OrderItemList', () => {
           ]}
         />
       )
+      expect(screen.queryByText(/加工: edgeType: 卷边, quantity: 10/)).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: /其它字段/ }))
       expect(screen.getByText(/加工: edgeType: 卷边, quantity: 10/)).toBeInTheDocument()
     })
 
@@ -278,7 +281,8 @@ describe('OrderItemList', () => {
         />
       )
       expect(screen.getByText('韩褶')).toBeInTheDocument()
-      // 兜底行只剩非工艺键
+      // 兜底行只剩非工艺键（issue #4426：默认收起 ⇒ 先展开）
+      fireEvent.click(screen.getByRole('button', { name: /其它字段/ }))
       expect(screen.getByText(/加工: edgeType: 卷边/)).toBeInTheDocument()
       expect(screen.queryByText(/加工:.*craft/)).toBeNull()
     })
@@ -297,6 +301,86 @@ describe('OrderItemList', () => {
       expect(screen.queryByText('工艺')).toBeNull()
       expect(screen.queryByText('打开方式')).toBeNull()
       expect(container.textContent).not.toMatch(/undefined|null|NaN/)
+    })
+  })
+
+  // ===== issue #4426：只读展示重设计（尺寸突出 / 工艺·算料分组 / 兜底行收起 / 金额算式）=====
+  describe('#4426 只读展示重设计', () => {
+    it('判据 1：尺寸独立成块并加重（宽/高不再是 12px 灰字行内一项）', () => {
+      render(<OrderItemList items={[makeItem({ width: 3.5, height: 2.8 })]} />)
+      const w = screen.getByText('宽: 3.5m')
+      const h = screen.getByText('高: 2.8m')
+      // 加重：不再是 text-xs text-neutral-400（旧形态），而是 text-sm font-semibold
+      for (const el of [w, h]) {
+        expect(el.className).toContain('font-semibold')
+        expect(el.className).not.toContain('text-xs')
+      }
+    })
+
+    it('判据 2：工艺规格与算料口径**分成两组**（§5.9.3 输入 / 输出）', () => {
+      render(
+        <OrderItemList
+          items={[
+            makeItem({
+              processingInfo: {
+                curtainType: '布帘',
+                craft: '韩褶',
+                pleat_count: 52,
+                fabric_meters: 13.3,
+              },
+            }),
+          ]}
+        />
+      )
+      expect(screen.getByText('工艺规格')).toBeInTheDocument()
+      expect(screen.getByText('算料口径')).toBeInTheDocument()
+      // 输入归工艺组、输出归算料组（两组各自的标签都在）
+      expect(screen.getByText('部位')).toBeInTheDocument()
+      expect(screen.getByText('总褶数')).toBeInTheDocument()
+    })
+
+    it('判据 3：只有算料输出、没有输入键 ⇒ 不出现空的「工艺规格」组', () => {
+      render(<OrderItemList items={[makeItem({ processingInfo: { pleat_count: 52 } })]} />)
+      expect(screen.getByText('算料口径')).toBeInTheDocument()
+      expect(screen.queryByText('工艺规格')).toBeNull()
+    })
+
+    it('判据 4（红证）：原始键值兜底行默认收起，且按钮报出字段条数', () => {
+      render(
+        <OrderItemList
+          items={[makeItem({ processingInfo: { edgeType: '卷边', quantity: 10 } })]}
+        />
+      )
+      const toggle = screen.getByRole('button', { name: /其它字段/ })
+      expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      expect(toggle.textContent).toContain('2')
+      // 内部键名不在首屏
+      expect(screen.queryByText(/edgeType/)).toBeNull()
+    })
+
+    it('判据 5：小计带算式（数量 × 单价 + 加工费）—— 修复前只有列头与数值', () => {
+      render(
+        <OrderItemList
+          items={[makeItem({ quantity: 5, unitPrice: 100, subtotal: 500, processingFee: 50 })]}
+        />
+      )
+      // 小计与「订单总金额」同值 ⇒ 用 getAllByText
+      expect(screen.getAllByText('¥550.00').length).toBeGreaterThanOrEqual(1)
+      // 算式行：`5 × ¥100.00 + 加工 ¥50.00`
+      expect(screen.getByText(/5 × ¥100\.00 \+ 加工 ¥50\.00/)).toBeInTheDocument()
+    })
+
+    it('判据 6：无加工费时算式不带「+ 加工」尾巴（不凭空出现一项）', () => {
+      render(<OrderItemList items={[makeItem({ quantity: 5, unitPrice: 100, subtotal: 500 })]} />)
+      expect(screen.getByText(/5 × ¥100\.00$/)).toBeInTheDocument()
+    })
+
+    it('判据 7：只读 —— 本组件不引入任何编辑入口（无输入框/无 contenteditable）', () => {
+      const { container } = render(
+        <OrderItemList items={[makeItem({ width: 3.5, height: 2.8, processingFee: 50 })]} />
+      )
+      expect(container.querySelectorAll('input, textarea, select')).toHaveLength(0)
+      expect(container.querySelectorAll('[contenteditable="true"]')).toHaveLength(0)
     })
   })
 })

@@ -26,6 +26,10 @@ WRITABLE_FIELDS = frozenset({
     "vipLevel", "customerStatus", "agentNotes", "tags", "customFields",
     # 工艺画像与常用物流（issue #3984，V47，M2-D）
     "craftMode", "craftProfile", "defaultLogisticsType", "defaultLogisticsCompany",
+    # 默认收货信息（issue #4419，V70）：收货人姓名/电话/详细地址。
+    # 与 admin-api CustomerService.updateCustomer 的非空拷贝白名单**必须同集合**
+    # （跨端契约由 tests/test_tool_field_name_contract.py 强制）。
+    "defaultReceiverName", "defaultReceiverPhone", "defaultReceiverAddress",
 })
 
 # 姓名别名 → canonical 列名：客户实体无 name/nickname/realName 列，姓名存 wechatNickname

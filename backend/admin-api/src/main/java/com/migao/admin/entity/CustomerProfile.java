@@ -108,6 +108,16 @@ public class CustomerProfile {
     /** 客户常用物流/快递公司（下单自动带出） */
     private String defaultLogisticsCompany;
 
+    // --- 默认收货信息（issue #4419，V70；客户管理「收货信息」卡片）---
+    /** 默认收货人姓名（新增订单选客户自动带出） */
+    private String defaultReceiverName;
+
+    /** 默认收货人电话（新增订单选客户自动带出） */
+    private String defaultReceiverPhone;
+
+    /** 默认收货详细地址（单字段文本，与 orders.customer_address 同口径） */
+    private String defaultReceiverAddress;
+
     // --- 生命周期 ---
     /** new / growing / mature / declining / churned */
     private String lifecycleStage;

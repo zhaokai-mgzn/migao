@@ -1842,6 +1842,24 @@ _CASE_CU_008 = EvalCase(
     must_succeed=[{'tool': 'customer_manage'}],
 )
 
+# ── CU-009 [NORMAL] 客户默认收货信息与常用物流档案（客户管理「收货信息」卡片 + 落库契约，issue #4419）（源: cases/customer.yml）──
+_CASE_CU_009 = EvalCase(
+    id='CU-009',
+    legacy_id='',
+    title='客户默认收货信息与常用物流档案（客户管理「收货信息」卡片 + 落库契约，issue #4419）',
+    skill=Skill.CUSTOMER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['客户管理里要能记录客户的收货地址、常用物流/快递方式和常用物流/快递公司；新增订单选客户时自动带出'],
+    expectations=['direct_reply'],
+    data_checks=['customer_profiles 新增 default_receiver_name VARCHAR(100) / default_receiver_phone VARCHAR(20) / default_receiver_address TEXT（V70 迁移，列注释与 schema.sql bootstrap 终态同步）；PUT /api/admin/customers/{id} 非空拷贝落库，客户详情 GET /api/admin/customers/{id} 返回', '客户详情页「收货信息」卡片可查看/编辑：收货人姓名、收货人电话、收货地址、常用物流方式（express 快递 / logistics 物流专线）、常用物流公司（预置候选 datalist + 允许自定义）', '落库是**效果层**断言：CustomerReceiverAddressPersistTest 断言交给 Mapper 的实体内容（删掉 setXxx 即红）；前端由 customer-detail.test.tsx 断言 updateCustomer payload 五键齐全（空白不覆盖既有值）', '米宝写路径 customer_manage(update) 的 3 个新列与 CustomerService.updateCustomer 非空拷贝白名单**同集合**（test_tool_field_name_contract.py 的 java-service-null-copy 判据）——防 #4115 同款「工具可写 + 服务层静默丢弃」', '空白/缺省字段不覆盖既有收货信息（清空语义未定义 ⇒ 一律不覆盖），避免客户管理页把已录地址误抹掉'],
+    skip_reason='[backend-contract] 字段落库与前端表单交互由确定性单测覆盖（CustomerReceiverAddressPersistTest + customer-detail.test.tsx + test_tool_field_name_contract.py）；读路径已由 CU-002/CU-008 覆盖，非 LLM 行为新增面，不进入 agent-eval 冒烟',
+    tags=['customer', 'ui', 'logistics', 'receiver-address', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── DA-001 [NORMAL] 经营概览（源: cases/data.yml）──
 _CASE_DA_001 = EvalCase(
     id='DA-001',
@@ -2652,6 +2670,7 @@ _CASE_HR_008 = EvalCase(
     required_args=[{'tool': 'employee_manage', 'action': 'update', 'fields': ['user_id', 'phone']}],
     must_succeed=[{'tool': 'employee_manage', 'action': 'update'}],
     namespaces=['employee_phone:13700137000', 'employee_phone:13900139111'],
+    precondition=[{'type': 'employee_count_for_phone', 'source': '13700137000', 'expect': 1, 'max_growth': 0}],
 )
 
 # ── HR-009 [NORMAL] 越权创建员工（仅 employee:list）- 不得自旋重复失败调用，须如实说明缺哪项权限并给开通路径（源: cases/hr.yml）──
@@ -6227,7 +6246,7 @@ _CASE_UI_038 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['新增订单表单不支持选择客户，收货信息需纯手动输入；增加「选择客户」能力：从客户列表搜索选中后自动回填，提升下单效率与体验'],
     expectations=['direct_reply'],
-    data_checks=['新增订单页「收货信息」卡提供「选择客户」入口，点击打开客户选择弹窗（标题「选择客户」），加载客户列表（customerApi.getCustomers）', '弹窗支持按 姓名/手机号 关键词搜索（Enter/搜索按钮触发 getCustomers 携带 keyword）；客户行展示 姓名（wechatNickname 优先）+ 手机号 + 省市区 + 来源渠道', '选中客户后自动回填：收货人姓名=客户昵称、手机号=phone、收货地址=省市区拼接（regionProvince regionCity regionDistrict），仍可手动修改', '保留手动兜底：未命中客户/关闭弹窗后可直接手填收货信息提交订单；订单提交契约不变（OrderCreateRequest 无 customerId，不引入跨端契约改动）'],
+    data_checks=['新增订单页「收货信息」卡提供「选择客户」入口，点击打开客户选择弹窗（标题「选择客户」），加载客户列表（customerApi.getCustomers）', '弹窗支持按 姓名/手机号 关键词搜索（Enter/搜索按钮触发 getCustomers 携带 keyword）；客户行展示 姓名（wechatNickname 优先）+ 手机号 + 省市区 + 来源渠道', '选中客户后自动回填：收货人姓名/手机号/收货地址——**优先**取客户档案的默认收货地址（defaultReceiverName/defaultReceiverPhone/defaultReceiverAddress，客户管理「收货信息」卡片维护，issue #4419），档案未录时才回退旧口径（姓名=昵称、地址=省市区拼接 regionProvince regionCity regionDistrict）；仍可手动修改', '客户档案有常用物流时展示只读提示「常用物流：<方式> · <公司>」（两者都缺则不显示，不编造默认值）；发货页按同一档案带出方式/公司（UI-047）', '保留手动兜底：未命中客户/关闭弹窗后可直接手填收货信息提交订单；订单提交契约不变（OrderCreateRequest 无 customerId，不引入跨端契约改动）'],
     skip_reason='[backend-contract] 纯前端页面交互由 vitest 单测验证（orders-new.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'orders', 'customer', 'order-create', 'admin-web'],
     persona='',
@@ -6356,6 +6375,24 @@ _CASE_UI_046 = EvalCase(
     data_checks=['pr-check 的 admin-web-test job 在 tsc/lint 之后执行 npm run build（Next-only 校验）', '该步有 job 内路径门控：无 frontend/admin-web/** 变更时**未跑**（「没跑」不得读成「通过」）', 'checkout 为 fetch-depth: 0（否则三点 diff 取不到 merge-base，门控恒判无变更）'],
     skip_reason='[backend-contract] CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_admin_web_next_build_gate.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ci', 'next-build', 'build-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-047 [NORMAL] 发货页带出客户常用物流方式/公司 + 写入 order_logistics.logistics_type（issue #4419）（源: cases/ui.yml）──
+_CASE_UI_047 = EvalCase(
+    id='UI-047',
+    legacy_id='',
+    title='发货页带出客户常用物流方式/公司 + 写入 order_logistics.logistics_type（issue #4419）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['发货时要按客户常用的物流方式（快递/物流专线）和常用承运商预填，不用每次重选；物流类型要真的记到这一单上'],
+    expectations=['direct_reply'],
+    data_checks=['打开发货页时按订单 customerPhone 调 customerApi.getCustomers(keyword=phone)，**精确匹配 phone** 后才带出 defaultLogisticsType/defaultLogisticsCompany（关键词是模糊匹配，命中的其他客户不得采用）', '带出的常用公司在预置候选之外时，下拉补出该选项（否则 select 显示不出已存值）；用户已手动改过物流字段则不再覆盖（与发货人预填同口径）；查询失败不阻断发货', '确认发货 payload 携带 logisticsType（express/logistics），经 buildLogisticsPayload 透传；未选时不写（由后端按列默认 express 兜底，不写假值）'],
+    skip_reason='[backend-contract] 纯前端交互 + payload 透传，由 vitest 单测（ship-order.test.tsx / data-adapter.test.ts / logistics.test.ts）覆盖；agent 工具参数未变，不进入 agent-eval 冒烟',
+    tags=['ui', 'order', 'logistics', 'admin-web', 'customer'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -6494,6 +6531,7 @@ ALL_CASES = (
     _CASE_CU_006,
     _CASE_CU_007,
     _CASE_CU_008,
+    _CASE_CU_009,
     _CASE_DA_001,
     _CASE_DA_002,
     _CASE_DA_003,
@@ -6732,6 +6770,7 @@ ALL_CASES = (
     _CASE_UI_042,
     _CASE_UI_045,
     _CASE_UI_046,
+    _CASE_UI_047,
     _CASE_UT_001,
     _CASE_UT_002,
 )

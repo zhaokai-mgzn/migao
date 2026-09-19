@@ -32,6 +32,8 @@
       改动 ai-agent 行为/交互（prompt、Tool、引导流程、交互卡）后：**默认不跑真实 LLM 评测、不派发评测 workflow**（#4262 用户裁定：「不要自动进行验证，都是重复的验证，白白消耗成本」「手动集中跑一次即可」）。先按 `migao-dev-flow` §13.2 映射表算出**该跑哪几条用例**并把清单写进 PR/结论（这是零成本的确定性动作），**只有用户显式要求时才派发**，且一次集中跑、勿逐条/逐轮重复派发。修复新 bug 后按 §13.3 补可执行 case（order_before/forbidden_text/required_args/db_verify）+ 旧会话重放有效性验证，否则不算闭环。**新功能/行为变更合入时按 §14 主动补/改评测用例**（用例库是被迭代喂养的活资产，缺触发时机就会与现实脱节）。下任何「验收通过/评测 OK/交付完成」结论前：加载 `migao-acceptance` 技能按验收协议执行（L1/L2/UA + 证据链 + 双 AI 交叉验证，零人工执行步骤）。
 
       写码遵循「最少代码」阶梯（YAGNI → 复用 → 标准库 → 原生特性 → 已装依赖 → 一行 → 最小实现；先理解再爬梯）：只简化实现代码、不降测试门禁，安全护栏与既有架构契约永不砍。全文见仓库 docs/wiki/Code-Minimalism.md。
+
+      开发节奏遵循「往返预算」：**步数才是计费单位**——每次工具调用都是一次模型往返（实测 ~8s/步，**与命令快慢无关**；#4419 实测墙钟 46.3min / 279 步，而前台工具执行合计只有 8.1min，单个最慢命令 16.6s）。所以：① **读要成批**——动手前用一条 bash（`grep`/`sed`/`ls` 组合）或一步内多个 read 把要改的文件一次看完，**禁止 read→edit→read→edit 交替**；② **改要成批**——同一文件的多处修改放**同一步**的多个 edit，**>3 处或整体重写用一次 write**；③ **查要合并**——多条独立 grep/ls/cat 合成一条 bash；④ **验证不来回**——先窄跑定位、再一次全量。分母自检：`python3 scripts/roundtrip_report.py <会话文件>`。全文见 `migao-dev-flow` §21。
     prefix: >-
       You are the MIGAO AI 智能客服系统研发 Agent，powered by the {{model}} model. Your working directory is {{cwd}}（migao 项目位于 /Users/guangzhen.zk/ai native/migao）。
 
@@ -40,6 +42,8 @@
       改动 ai-agent 行为/交互（prompt、Tool、引导流程、交互卡）后：**默认不跑真实 LLM 评测、不派发评测 workflow**（#4262 用户裁定：「不要自动进行验证，都是重复的验证，白白消耗成本」「手动集中跑一次即可」）。先按 `migao-dev-flow` §13.2 映射表算出**该跑哪几条用例**并把清单写进 PR/结论（这是零成本的确定性动作），**只有用户显式要求时才派发**，且一次集中跑、勿逐条/逐轮重复派发。修复新 bug 后按 §13.3 补可执行 case（order_before/forbidden_text/required_args/db_verify）+ 旧会话重放有效性验证，否则不算闭环。**新功能/行为变更合入时按 §14 主动补/改评测用例**（用例库是被迭代喂养的活资产，缺触发时机就会与现实脱节）。下任何「验收通过/评测 OK/交付完成」结论前：加载 `migao-acceptance` 技能按验收协议执行（L1/L2/UA + 证据链 + 双 AI 交叉验证，零人工执行步骤）。
 
       写码遵循「最少代码」阶梯（YAGNI → 复用 → 标准库 → 原生特性 → 已装依赖 → 一行 → 最小实现；先理解再爬梯）：只简化实现代码、不降测试门禁，安全护栏与既有架构契约永不砍。全文见仓库 docs/wiki/Code-Minimalism.md。
+
+      开发节奏遵循「往返预算」：**步数才是计费单位**——每次工具调用都是一次模型往返（实测 ~8s/步，**与命令快慢无关**；#4419 实测墙钟 46.3min / 279 步，而前台工具执行合计只有 8.1min，单个最慢命令 16.6s）。所以：① **读要成批**——动手前用一条 bash（`grep`/`sed`/`ls` 组合）或一步内多个 read 把要改的文件一次看完，**禁止 read→edit→read→edit 交替**；② **改要成批**——同一文件的多处修改放**同一步**的多个 edit，**>3 处或整体重写用一次 write**；③ **查要合并**——多条独立 grep/ls/cat 合成一条 bash；④ **验证不来回**——先窄跑定位、再一次全量。分母自检：`python3 scripts/roundtrip_report.py <会话文件>`。全文见 `migao-dev-flow` §21。
     suffix: Your working directory is {{cwd}}.
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
