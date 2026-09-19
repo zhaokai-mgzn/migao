@@ -32,16 +32,29 @@ const CALC_SRC = resolve(
 
 const source = readFileSync(CALC_SRC, 'utf8')
 
-/** 从 Python 源里取 `NAME = { "键": 值, ... }` 形态的字面量映射（取不到 ⇒ 直接失败，不静默跳过） */
-function pyStrMap(name: string): Record<string, string> {
-  const m = source.match(new RegExp(`${name}\\s*:\\s*Dict\\[str, str\\]\\s*=\\s*\\{([^}]*)\\}`, 's'))
-  if (!m) throw new Error(`curtain_calc.py 里找不到映射 ${name}（本守卫必须能读到真值）`)
-  const out: Record<string, string> = {}
-  for (const line of m[1].split('\n')) {
-    const kv = line.match(/"([^"]+)"\s*:\s*([A-Z_]+|"[^"]+")/)
-    if (!kv) continue
-    const value = kv[2].startsWith('"') ? kv[2].slice(1, -1) : pyConst(kv[2])
-    out[kv[1]] = value
+/**
+ * 从 Python 源里取「工艺 → 公式/悬挂方式」的**唯一入口**（`resolve_craft_rule`）的登记项。
+ *
+ * ⚠️ 为什么不读「中文 key 的映射表」：本仓 `test_tool_input_contract_guards.py` 的
+ * `TestNoNewChineseWordingJudgement` 把「含 ≥2 个中文 key 的 dict 字面量」算作
+ * **中文措辞当判据**站点（基线只许缩短）⇒ 权威侧改用**入口函数 + 枚举常量**表达推导，
+ * 本守卫因此解析「常量定义 + 分支返回值」，取不到即直接失败（不静默跳过）。
+ */
+function pyCraftRules(): Record<string, { formula: string; mounting: string }> {
+  const branchRe = /if craft == (CRAFT_[A-Z_]+):\s*\n\s*return (FORMULA_[A-Z_]+), (MOUNTING_[A-Z_]+)/g
+  const constRe = (name: string) => {
+    const m = source.match(new RegExp(`^${name}\\s*=\\s*"([^"]+)"`, 'm'))
+    if (!m) throw new Error(`curtain_calc.py 里找不到常量 ${name}（本守卫必须能读到真值）`)
+    return m[1]
+  }
+  const out: Record<string, { formula: string; mounting: string }> = {}
+  for (const m of source.matchAll(branchRe)) {
+    out[constRe(m[1])] = { formula: constRe(m[2]), mounting: constRe(m[3]) }
+  }
+  if (Object.keys(out).length === 0) {
+    throw new Error(
+      'curtain_calc.py 的 resolve_craft_rule 分支解析不到任何登记项 —— 结构变了，请同步本守卫'
+    )
   }
   return out
 }
@@ -61,18 +74,27 @@ describe('工艺 → 公式 / 悬挂方式：前端副本与算料引擎真值�
     expect(CRAFT_CALC_FORMULA_FULLNESS).toBe('fullness')
   })
 
-  it('CRAFT_FORMULA 逐值一致：韩褶 → 韩折公式 / 打孔 → 褶倍数公式', () => {
-    const py = pyStrMap('CRAFT_FORMULA')
-    expect(Object.keys(py).sort()).toEqual(Object.keys(CRAFT_CALC_FORMULA_BY_CRAFT).sort())
-    expect(CRAFT_CALC_FORMULA_BY_CRAFT).toEqual(py)
+  it('resolve_craft_rule 逐值一致：韩褶 → 韩折公式+s_hook / 打孔 → 褶倍数公式+eyelet', () => {
+    const py = pyCraftRules()
     // 逐值写死（判据不依赖实现）：改任一侧 ⇒ 红
+    expect(py).toEqual({
+      韩褶: { formula: 'pleat', mounting: 's_hook' },
+      打孔: { formula: 'fullness', mounting: 'eyelet' },
+    })
+    // 前端两张表都必须是真值源的**投影**（键集与值逐值一致）
+    const frontFormula = Object.fromEntries(
+      Object.entries(CRAFT_CALC_FORMULA_BY_CRAFT).map(([k, v]) => [k, { formula: v }])
+    )
+    const frontMounting = Object.fromEntries(
+      Object.entries(CRAFT_CALC_MOUNTING_BY_CRAFT).map(([k, v]) => [k, { mounting: v }])
+    )
+    expect(Object.keys(CRAFT_CALC_FORMULA_BY_CRAFT).sort()).toEqual(Object.keys(py).sort())
+    expect(Object.keys(CRAFT_CALC_MOUNTING_BY_CRAFT).sort()).toEqual(Object.keys(py).sort())
+    for (const craft of Object.keys(py)) {
+      expect(frontFormula[craft]).toEqual({ formula: py[craft].formula })
+      expect(frontMounting[craft]).toEqual({ mounting: py[craft].mounting })
+    }
     expect(CRAFT_CALC_FORMULA_BY_CRAFT).toEqual({ 韩褶: 'pleat', 打孔: 'fullness' })
-  })
-
-  it('CRAFT_MOUNTING 逐值一致：韩褶 → s_hook / 打孔 → eyelet', () => {
-    const py = pyStrMap('CRAFT_MOUNTING')
-    expect(Object.keys(py).sort()).toEqual(Object.keys(CRAFT_CALC_MOUNTING_BY_CRAFT).sort())
-    expect(CRAFT_CALC_MOUNTING_BY_CRAFT).toEqual(py)
     expect(CRAFT_CALC_MOUNTING_BY_CRAFT).toEqual({ 韩褶: 's_hook', 打孔: 'eyelet' })
   })
 

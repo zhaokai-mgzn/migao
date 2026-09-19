@@ -33,8 +33,6 @@ import pytest
 
 from app.tools import curtain_calc
 from app.tools.curtain_calc import (
-    CRAFT_FORMULA,
-    CRAFT_MOUNTING,
     DEFAULT_CRAFT_CALC_CONFIG,
     DEFAULT_CRAFT_TIERS,
     DEFAULT_FULLNESS,
@@ -43,6 +41,7 @@ from app.tools.curtain_calc import (
     build_quote,
     ceil_to_step,
     resolve_craft_calc_config,
+    resolve_craft_rule,
 )
 
 # ── 冻结入参（两个公式共用同一组宽/开数，便于逐值对照）──
@@ -265,10 +264,18 @@ class TestFullnessIndependentOfOpenCount:
 class TestCraftDerivesFormula:
     """`craft → formula` 推导表是唯一口径；未登记工艺走兜底默认（不猜）。"""
 
-    def test_mapping_table_is_the_single_source(self):
-        """推导表逐值写死：韩褶 → 折数法（pleat）/ 打孔 → 倍数法（fullness）。"""
-        assert CRAFT_FORMULA == {"韩褶": "pleat", "打孔": "fullness"}
-        assert CRAFT_MOUNTING == {"韩褶": "s_hook", "打孔": "eyelet"}
+    def test_resolver_is_the_single_source(self):
+        """推导**入口**逐值写死：韩褶 → (折数法, s_hook) / 打孔 → (倍数法, eyelet)；未登记 ⇒ (None, None)。
+
+        ⚠️ 用**入口函数**而不是「中文 key 的映射表」：后者会命中本仓
+        `test_tool_input_contract_guards.py::TestNoNewChineseWordingJudgement` 的
+        「中文措辞当判据」站点（基线只许缩短，`curtain_calc.py` 在基线里是 0 条）。
+        """
+        assert resolve_craft_rule("韩褶") == ("pleat", "s_hook")
+        assert resolve_craft_rule("打孔") == ("fullness", "eyelet")
+        assert resolve_craft_rule("四爪钩") == (None, None)
+        assert resolve_craft_rule(None) == (None, None)
+        assert resolve_craft_rule("") == (None, None)
 
     def test_hole_punch_uses_fullness_formula(self):
         """**红证①**：打孔 ⇒ 走**倍数法**且 `fullness = 2.0`（走折数法 ⇒ 红）。

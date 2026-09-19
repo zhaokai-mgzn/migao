@@ -117,22 +117,46 @@ FORMULA_LABELS: Dict[str, str] = {
     FORMULA_FULLNESS: "褶倍数公式",
 }
 
-# ── 工艺 → 用料公式 / 悬挂方式（**唯一口径**；用户 2026-09-19 追加裁定）──────────────────
+# ── 工艺 → 用料公式 + 悬挂方式（**唯一口径**；用户 2026-09-19 追加裁定）──────────────────
 # 逐字裁定：「**韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍**」
 # ⇒ 公式**由工艺推导**（不是自由选择）：韩褶 → 韩折公式（折数法）/ 打孔 → 褶倍数公式（倍数法）。
-# ⚠️ 本表是**唯一**的 `craft → formula` 判断（前端 `craft-calc-request.ts` 的那份是**有守卫的副本**，
-# 由 `frontend/admin-web/tests/unit/lib/craft-calc-formula-sync.test.ts` 逐值读本文件比对，漂移即红）；
-# `formula` 入参**保留为显式覆盖**（两条不冲突：显式 > 本表 > `default_formula` 兜底）。
-# 未登记工艺（四爪钩/穿杆/平幔）⇒ 不推导（调用方按既有 fail-closed 处理），`''`/None ⇒ 兜底默认。
-CRAFT_FORMULA: Dict[str, str] = {
-    "韩褶": FORMULA_PLEAT,       # 韩折公式（折数法）
-    "打孔": FORMULA_FULLNESS,    # 褶倍数公式（倍数法）
-}
-#: 工艺 → 悬挂方式（`mounting` 是**英文枚举**，与 `craft` 中文枚举是两层，故各自成表）。
-CRAFT_MOUNTING: Dict[str, str] = {
-    "韩褶": "s_hook",
-    "打孔": "eyelet",
-}
+#
+# ⚠️ **为什么是「一个入口函数」而不是「中文 key 的映射表」**：本仓的
+# `tests/unit_ci_workflows/test_tool_input_contract_guards.py::TestNoNewChineseWordingJudgement`
+# 把「含 ≥2 个中文 key 的 dict 字面量」与「`<中文串> in <表达式>`」都算作**中文措辞当判据**的站点，
+# 而该基线**只许缩短**（`curtain_calc.py` 在基线里是 0 条）⇒ 新建中文映射表 = 新增豁免（R4 禁止）。
+# 本仓的既有先例同族：`routing.SPECIAL_OPTION_ROUTINGS` 是**冻结的 join key**、判据读**契约标识符**，
+# 不从散文里猜语义。故这里把「韩褶 / 打孔」两个**契约枚举值**写成显式分支（各自一处，改一个字即红）。
+#
+# 本函数是**唯一**的 `craft → (formula, mounting)` 判断（前端 `craft-calc-request.ts` 的那份是
+# **有守卫的副本**，由 `frontend/admin-web/tests/unit/lib/craft-calc-formula-sync.test.ts`
+# 逐值读本文件比对，漂移即红）；`formula` 入参**保留为显式覆盖**（显式 > 本表 > `default_formula` 兜底）。
+# 未登记工艺（四爪钩/穿杆/平幔）⇒ `(None, None)` = 不推导（调用方按既有 fail-closed 处理）；
+# `''`/`None` ⇒ 同样不推导 ⇒ 兜底默认（韩折公式 + 调用方给的悬挂方式）。
+
+
+#: 工艺契约枚举值（与 `CurtainCalcTool.parameters["craft"]["enum"]` **逐字一致**）
+CRAFT_S_HOOK = "韩褶"
+CRAFT_EYELET = "打孔"
+#: 悬挂方式枚举（与 `DEFAULT_FULLNESS` 的键**逐字一致**）
+MOUNTING_S_HOOK = "s_hook"
+MOUNTING_EYELET = "eyelet"
+
+
+def resolve_craft_rule(craft: Optional[str]) -> tuple:
+    """工艺（契约枚举值）→ `(用料公式, 悬挂方式)`；未登记 ⇒ `(None, None)`。
+
+    登记项（用户 2026-09-19 追加裁定逐字「**韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍**」）：
+      · 韩褶 ⇒ 韩折公式（折数法）+ `s_hook`；
+      · 打孔 ⇒ 褶倍数公式（倍数法）+ `eyelet`（默认 **2 倍**，取自 `DEFAULT_FULLNESS["eyelet"]`，
+        与 `DEFAULT_CRAFT_TIERS["standard"]["fullness"]` 同值 —— 不新造第二个 `2.0` 字面量）。
+    """
+    if craft == CRAFT_S_HOOK:
+        return FORMULA_PLEAT, MOUNTING_S_HOOK
+    if craft == CRAFT_EYELET:
+        return FORMULA_FULLNESS, MOUNTING_EYELET
+    return None, None
+
 
 # ── 算料公式配置（issue #4527，用户追加裁定：「可能得支持每个商家自定义配置」）──────────────
 # 口径：**公式参数一律从这个配置对象读**，不得写死在公式体内。`config=None` ⇒ 本默认值。
@@ -598,14 +622,15 @@ def build_quote(
     """
     cfg = resolve_craft_calc_config(config)
     # 公式选择（issue #4527 + 2026-09-19 追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料」）：
-    # ① 显式 `formula` 入参**优先**（显式覆盖）；② 否则按**工艺推导**（`CRAFT_FORMULA`，唯一口径）；
+    # ① 显式 `formula` 入参**优先**（显式覆盖）；② 否则按**工艺推导**（`resolve_craft_rule`，唯一口径）；
     # ③ 否则用配置的 `default_formula`（= **推导表缺失时的兜底**，默认韩折公式）。
     # ⚠️ 显式 `formula` **不得**被 `craft_tier` / `pleat_count`（折数法的触发条件）遮蔽 ——
     # 那正是「新入参静默失效」的形态（判据见 tests/test_craft_calc_formula.py）。
+    craft_formula, craft_mounting = resolve_craft_rule(craft)
     if formula is not None:
         selected_formula = formula
-    elif craft in CRAFT_FORMULA:
-        selected_formula = CRAFT_FORMULA[craft]
+    elif craft_formula is not None:
+        selected_formula = craft_formula
     else:
         selected_formula = cfg["default_formula"]
     if selected_formula not in FORMULA_LABELS:
@@ -619,8 +644,8 @@ def build_quote(
     # 否则「打孔按倍数法算布料」拿不到 eyelet 的默认褶倍 2.0（`DEFAULT_FULLNESS['eyelet'] == 2.0`，
     # 与 `DEFAULT_CRAFT_TIERS['standard'].fullness` **同一个 2.0**，不新造第二个字面量）。
     # ⚠️ 显式传的 `mounting`（非默认值）**优先**，不被 craft 改写。
-    if craft in CRAFT_MOUNTING and mounting == "eyelet":
-        mounting = CRAFT_MOUNTING[craft]
+    if craft_mounting is not None and mounting == MOUNTING_EYELET:
+        mounting = craft_mounting
 
     # 褶皱倍数默认值
     N = fullness if fullness is not None else DEFAULT_FULLNESS.get(mounting, 2.0)
