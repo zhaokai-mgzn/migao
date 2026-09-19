@@ -187,13 +187,21 @@ class TestMixedColorPerFold:
         assert data["per_fold"] == MIXED_PER_FOLD[option]
 
     def test_single_open_margin_still_point_two_for_mixed(self, client):
-        """单开余量仍为 0.2（防「顺手统一余量」）：拼1次 4 折单开 = 0.65×4+0.2 = 2.8。"""
+        """单开余量仍为 0.2（防「顺手统一余量」）。
+
+        实测口径（**代码事实，写死**）：宽 2.0m 单开标准档 ⇒ 折数 = round((2.0×2.0−0.2)/0.25) = **15 折**
+        （折数按**单色每折吃布** 0.25 反算，与拼色系数无关 —— issue #4421 既有口径），
+        用料 = 0.65×15 + 0.2 = **10.0 米**。
+        原断言写的是 `round(0.65×pleat_count+0.2, 2)`（自指、永不判红），本次改为**写死期望值**
+        （issue #4527 判据纪律：期望值不得从实现推导）。
+        """
         data = _data(client, {
             "width": 2.0, "open_count": 1, "style": "拼色", "special_options": ["拼1次"],
         })
         assert data["open_count"] == 1
         assert data["margin"] == 0.2
-        assert data["fabric_meters"] == round(0.65 * data["pleat_count"] + 0.2, 2)
+        assert data["pleat_count"] == 15
+        assert data["fabric_meters"] == 10.0
 
     def test_single_color_margin_anchor_untouched(self, client):
         """纸表单开锚（单色 4 折 = 1.2 米）不得被拼色改动带偏。"""
@@ -329,16 +337,22 @@ class TestSingleSourceOfTruth:
 
         判别性：把折数或余量换成别的数（哪怕只差 1 折 / 0.1 米）⇒ 本条红。
         倍数按 `:g` 渲染（2.0 → `2`），数字本身与 `data["fullness"]` 同源。
+        issue #4527 判据 4：串首**明确写出所用公式**（`韩折公式：`）—— 静默走另一支 ⇒ 红。
         """
         data = _data(client, FROZEN)
-        assert data["formula_text"] == "(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米"
+        assert data["formula_text"] == "韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米"
         assert data["fullness"] == 2.0
 
     def test_formula_text_reflects_single_open_margin(self, client):
-        """单开 ⇒ 公式串里的余量必须是 0.2（不是恒写 0.3）。"""
+        """单开 ⇒ 公式串里的余量必须是 0.2（不是恒写 0.3）。
+
+        ⚠️ issue #4527：用料米数一律**向上进位到 0.1** ⇒ 单开 23 折的 `0.25×23+0.2 = 5.95`
+        进位为 **6.0**；公式串必须与回传的米数**逐字一致**（`= 6米`，`:g` 渲染）。
+        """
         data = _data(client, {**FROZEN, "width": 3.0, "open_count": 1})
         assert data["margin"] == 0.2
-        assert f"+{data['margin']} = {data['fabric_meters']}米" in data["formula_text"]
+        assert data["fabric_meters"] == 6.0
+        assert f"+{data['margin']} = {data['fabric_meters']:g}米" in data["formula_text"]
 
     def test_formula_text_is_not_static(self, client):
         """两个不同输入 ⇒ 公式串必须不同（防「写死一句示例串」的假实现）。"""
@@ -357,6 +371,64 @@ class TestSingleSourceOfTruth:
         assert curtain_calc.MARGIN_MULTI == 0.3
         assert curtain_calc.DEFAULT_CRAFT_TIERS["standard"]["fullness"] == 2.0
         assert curtain_calc.DEFAULT_CRAFT_TIERS["economy"]["fullness"] == 1.8
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# issue #4527：公式选择（`formula`）透传 + 默认韩折公式 + 公式串写明所用公式
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestFormulaSelectionEndpoint:
+    """`formula` 入参由 admin-api（`CraftCalcClient`）原样透传；缺省 ⇒ 配置默认（韩折公式）。
+
+    ERP 实证锚点（#4343 取证，加工单 `CSO260915-02615`）：5.5m / 双开 / 2.00 倍 ⇒ **11.00 米**。
+    红证（实现前）：端点不认 `formula` ⇒ 请求体多出的键被 Pydantic 忽略 ⇒ 仍走折数法（11.3 米）⇒ 红。
+    """
+
+    def test_fullness_formula_matches_erp_anchor(self, client):
+        data = _data(client, {**FROZEN, "width": 5.5, "formula": "fullness"})
+        assert data["fabric_meters"] == 11.0
+        assert data["formula_text"].startswith("褶倍数公式：")
+        assert data["formula_text"].endswith("= 11.0米")
+        assert data["formula_used"] == "fixed_height_fullness"
+
+    def test_default_formula_is_pleat_and_is_named(self, client):
+        """不传 `formula` ⇒ 韩折公式，且 `formula_text` **明确写出所用公式**（静默走另一支 ⇒ 红）。"""
+        data = _data(client, FROZEN)
+        assert data["formula_text"].startswith("韩折公式：")
+        assert data["fabric_meters"] == 13.3
+
+    def test_fullness_is_independent_of_open_count(self, client):
+        """同一成品宽下 单开与双开同值（「总宽再×开数」的甲口径 ⇒ 22.0 ⇒ 红）。"""
+        single = _data(client, {**FROZEN, "width": 5.5, "open_count": 1, "formula": "fullness"})
+        double = _data(client, {**FROZEN, "width": 5.5, "open_count": 2, "formula": "fullness"})
+        assert single["fabric_meters"] == double["fabric_meters"] == 11.0
+
+    def test_unknown_formula_is_rejected_not_silently_defaulted(self, client):
+        """未知公式名 ⇒ 400（静默回退默认 = 算错钱且无人知道）。"""
+        resp = _post(client, {**FROZEN, "formula": "褶倍数"})
+        assert resp.status_code == 400
+        assert "CRAFT_CALC_INVALID_INPUT" in resp.text
+        assert "formula" in resp.text
+
+    # ── 追加裁定（用户 2026-09-19）：「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」──
+    # ⇒ 公式**由工艺推导**；`formula` 入参保留为显式覆盖。端点只透传 `craft`，推导表在算料引擎。
+
+    def test_craft_hole_punch_derives_fullness_formula(self, client):
+        """打孔 ⇒ 褶倍数公式 + 默认 2 倍 ⇒ 5.5m × 2.0 = 11.0 米（走折数法 ⇒ 11.3 ⇒ 红）。"""
+        data = _data(client, {"width": 5.5, "height": 2.5, "open_count": 2,
+                              "mounting": "eyelet", "craft": "打孔"})
+        assert data["fabric_meters"] == 11.0
+        assert data["fullness"] == 2.0
+        assert data["formula_text"].startswith("褶倍数公式：")
+        assert data["pleat_count"] is None
+
+    def test_craft_s_hook_derives_pleat_formula(self, client):
+        """韩褶 ⇒ 折数法（不显式传 mounting 也成立：推导表把韩褶映射到 s_hook）。"""
+        data = _data(client, {"width": 6.6, "height": 2.5, "open_count": 2,
+                              "mounting": "eyelet", "craft": "韩褶", "craft_tier": "standard"})
+        assert data["pleat_count"] == 52
+        assert data["fabric_meters"] == 13.3
+        assert data["formula_text"].startswith("韩折公式：")
 
 
 # ══════════════════════════════════════════════════════════════════════════

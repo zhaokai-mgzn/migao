@@ -4085,6 +4085,24 @@ _CASE_OR_037 = EvalCase(
     auto_fill={'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'},
 )
 
+# ── OR-039 [NORMAL] 算料公式可选 - 韩折公式（默认）/ 褶倍数公式 + 逐片口径（每片×开数）+ 用料向上进位到 0.1（源: cases/order.yml）──
+_CASE_OR_039 = EvalCase(
+    id='OR-039',
+    legacy_id='',
+    title='算料公式可选 - 韩折公式（默认）/ 褶倍数公式 + 逐片口径（每片×开数）+ 用料向上进位到 0.1',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家手工下单页按宽 5.5m / 双开 / 标准档，用褶倍数公式试算用料（预期 11.0 米）'],
+    expectations=['direct_reply'],
+    data_checks=["（散文、**不计分**）两种用料计算方法可选（issue #4527）：`formula='pleat'` 韩折公式（折数法，**默认**）/ `formula='fullness'` 褶倍数公式（倍数法）；未知取值 ⇒ 显式报错，不静默回退默认", '（散文、**不计分**）ERP 实证锚点（#4343 取证的加工单 CSO260915-02615）：宽 5.5m / 双开 / 理论褶倍 2.00 ⇒ **11.00 米**（= 5.5×2.00）—— 双开不得把总宽再乘 2（甲口径 22.00 米已被用户否决）', '（散文、**不计分**）逐片口径：每片宽 = 成品宽 ÷ 开数；总用料 = 每片用料 × 开数（每片余量 = 总余量 ÷ 开数 ⇒ 与既有 `0.25×总折数+总余量` 逐值一致，不改钱）', '（散文、**不计分**）用料米数一律**向上进位到 0.1**（`ceil(x*10)/10`）：截断 / 四舍五入即违约；进位只在总用料上做一次；金额/单价相关量不跟着改口径', '（散文、**不计分**）配置可注入（用户追加裁定「可能得支持每个商家自定义配置」）：默认值 = 既有常量逐值不变；护栏（褶倍下限 / 正数校验 / tiers 非空）不因可配而消失，非法配置显式报错；配置沿调用链显式传递', '（散文、**不计分**）公式串由**后端**（算料引擎）产出并写明所用公式（`韩折公式：` / `褶倍数公式：`）；Java / TS 侧只搬运、不自拼（自拼 = 第二份算料逻辑）'],
+    skip_reason='[backend-contract] 算料公式属确定性纯计算（无 LLM 行为）：判据在 pytest（tests/test_craft_calc_formula.py / tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）+ vitest（craft-calc-request.test.ts），不进 agent-eval 冒烟',
+    tags=['order', 'craft_calc', 'fabric', 'formula_selection', 'per_panel', 'meters_rounding'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -6818,6 +6836,7 @@ ALL_CASES = (
     _CASE_OR_036,
     _CASE_OR_038,
     _CASE_OR_037,
+    _CASE_OR_039,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

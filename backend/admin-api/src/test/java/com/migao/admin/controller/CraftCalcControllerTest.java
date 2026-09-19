@@ -61,7 +61,17 @@ class CraftCalcControllerTest extends BaseControllerTest {
                 new BigDecimal("13.3"), 52, 26, new BigDecimal("0.25"),
                 new BigDecimal("2.0"), new BigDecimal("2.02"),
                 "fixed_height_pleats",
-                "(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米",
+                "韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米",
+                "formula", "standard", "");
+    }
+
+    /** 褶倍数公式（issue #4527）冻结样例：5.5m / 双开 / 2.0 倍 ⇒ 11.0 米（ERP 实证锚点）。 */
+    private static CraftCalcClient.CraftCalcResult frozenFullness() {
+        return new CraftCalcClient.CraftCalcResult(
+                new BigDecimal("11.0"), 0, 0, null,
+                new BigDecimal("2.0"), null,
+                "fixed_height_fullness",
+                "褶倍数公式：(5.5÷2)×2 → 每片 2.75×2=5.5米 ×2片 = 11.0米",
                 "formula", "standard", "");
     }
 
@@ -83,7 +93,38 @@ class CraftCalcControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.fullness_actual").value(2.02))
                 .andExpect(jsonPath("$.data.source").value("formula"))
                 .andExpect(jsonPath("$.data.formula_text")
-                        .value("(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米"));
+                        .value("韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米"));
+    }
+
+    @Test
+    @DisplayName("#4527 formula 原样透传给 ai-agent（控制器不校验、不改写、不补默认值）")
+    @SuppressWarnings("unchecked")
+    void passesFormulaThroughVerbatim() throws Exception {
+        when(craftCalcClient.calc(any())).thenReturn(frozenFullness());
+
+        mockMvc.perform(post(URL).contentType(APPLICATION_JSON).content("""
+                        {"width":5.5,"open_count":2,"craft_tier":"standard","formula":"fullness"}
+                        """))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(craftCalcClient).calc(captor.capture());
+        assertThat(captor.getValue()).containsEntry("formula", "fullness");
+    }
+
+    @Test
+    @DisplayName("#4527 褶倍数公式：11.0 米 + 后端公式串（控制器**不自拼**公式，两种串形态都由引擎给）")
+    void returnsFullnessFormulaResultVerbatim() throws Exception {
+        when(craftCalcClient.calc(any())).thenReturn(frozenFullness());
+
+        mockMvc.perform(post(URL).contentType(APPLICATION_JSON).content("""
+                        {"width":5.5,"open_count":2,"craft_tier":"standard","formula":"fullness"}
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.fabric_meters").value(11.0))
+                .andExpect(jsonPath("$.data.formula_used").value("fixed_height_fullness"))
+                .andExpect(jsonPath("$.data.formula_text")
+                        .value("褶倍数公式：(5.5÷2)×2 → 每片 2.75×2=5.5米 ×2片 = 11.0米"));
     }
 
     @Test

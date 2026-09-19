@@ -2246,7 +2246,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（37 case）
+## 订单域（38 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2935,6 +2935,21 @@
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路1号1幢101室, color=米白, colorName=米白
 ```
 溯源: 2026-09-19 新增（issue #4454）：用户裁定「如果担心 AI 不理解一些略语，可以在知识卡片中内置行业知识」—— 「AI 听不懂行话」是**知识问题**（理解层），不是后端路线派生问题。本用例把判据挂在**落库值**上：行话 → 内部值（`韩式褶`→`韩褶`、`纳米圈`→`打孔`族）。配套改动：`prompts/order.md`（B 端）+ C 端 `customer_order` 内联 prompt 补「术语映射」段（部位 + 工艺两维度）、真值源 §8 补录工艺词汇两行、知识模板内置行业术语条目、`local_runner` 的 `db_verify[order_items]` 加 `expect_craft`/`forbid_craft` 能力。**不改运行时业务逻辑、不降任何既有断言。** ｜ tags: order_create, craft_spec, glossary, industry_terms
+
+### OR-039. 算料公式可选 - 韩折公式（默认）/ 褶倍数公式 + 逐片口径（每片×开数）+ 用料向上进位到 0.1 🔵
+```
+你: 商家手工下单页按宽 5.5m / 双开 / 标准档，用褶倍数公式试算用料（预期 11.0 米）
+期望: direct_reply
+数据: （散文、**不计分**）两种用料计算方法可选（issue #4527）：`formula='pleat'` 韩折公式（折数法，**默认**）/ `formula='fullness'` 褶倍数公式（倍数法）；未知取值 ⇒ 显式报错，不静默回退默认
+数据: （散文、**不计分**）ERP 实证锚点（#4343 取证的加工单 CSO260915-02615）：宽 5.5m / 双开 / 理论褶倍 2.00 ⇒ **11.00 米**（= 5.5×2.00）—— 双开不得把总宽再乘 2（甲口径 22.00 米已被用户否决）
+数据: （散文、**不计分**）逐片口径：每片宽 = 成品宽 ÷ 开数；总用料 = 每片用料 × 开数（每片余量 = 总余量 ÷ 开数 ⇒ 与既有 `0.25×总折数+总余量` 逐值一致，不改钱）
+数据: （散文、**不计分**）用料米数一律**向上进位到 0.1**（`ceil(x*10)/10`）：截断 / 四舍五入即违约；进位只在总用料上做一次；金额/单价相关量不跟着改口径
+数据: （散文、**不计分**）配置可注入（用户追加裁定「可能得支持每个商家自定义配置」）：默认值 = 既有常量逐值不变；护栏（褶倍下限 / 正数校验 / tiers 非空）不因可配而消失，非法配置显式报错；配置沿调用链显式传递
+数据: （散文、**不计分**）公式串由**后端**（算料引擎）产出并写明所用公式（`韩折公式：` / `褶倍数公式：`）；Java / TS 侧只搬运、不自拼（自拼 = 第二份算料逻辑）
+跳过: [backend-contract] 算料公式属确定性纯计算（无 LLM 行为）：判据在 pytest（tests/test_craft_calc_formula.py / tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）+ vitest（craft-calc-request.test.ts），不进 agent-eval 冒烟
+```
+真值: fabric-calc.formula-selection, fabric-calc.meters-ceiling, fabric-calc.craft-calc-config, fabric-calc.craft-calc-endpoint
+溯源: 2026-09-19 新增（issue #4527，包 D 算料口径）：用户裁定「两种用料计算方法可选、默认韩折 + 用料米数保留一位小数（向上进位）+ 按打开方式系数（逐片口径）」，追加裁定「公式参数支持每个商家自定义配置」。落码 = `curtain_calc.py`（`formula` 入参 + `DEFAULT_CRAFT_CALC_CONFIG` + `ceil_to_step` + 逐片口径 + 引擎产出 `formula_text`）、`internal.py` 端点透传 `formula`、Java 代理透传（不复制算料逻辑）、`craft-calc-request.ts` 默认 `formula='pleat'`。**不改运行时金额口径**（金额仍 = 用料 × 单价，只用料米数按裁定向上进位到 0.1）。与 OR-032 的分工：OR-032 锚**折数法端点契约与纸表逐值**（issue #4421），本条锚**公式选择 / 逐片口径 / 进位 / 配置注入**（issue #4527）。 ｜ tags: order, craft_calc, fabric, formula_selection, per_panel, meters_rounding
 
 ## 加工项域（12 case）
 
@@ -4717,8 +4732,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：345（活跃 155，跳过 190）
-- tier 分布：smoke 10 / normal 304 / adversarial 31
+- 用例总数：346（活跃 155，跳过 191）
+- tier 分布：smoke 10 / normal 305 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4735,7 +4750,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：37
+- 订单域：38
 - 加工项域：12
 - processing-order：40
 - 商品域：21

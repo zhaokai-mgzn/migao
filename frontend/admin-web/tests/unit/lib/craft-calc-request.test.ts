@@ -12,6 +12,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  CRAFT_CALC_FORMULA_FULLNESS,
+  CRAFT_CALC_FORMULA_PLEAT,
   CRAFT_CALC_MOUNTING,
   CRAFT_CALC_TIER,
   METERS_SOURCE_FORMULA,
@@ -31,14 +33,57 @@ const line = (over: Partial<Parameters<typeof craftCalcParamsOf>[0]> = {}) => ({
 })
 
 describe('craftCalcParamsOf — 凑齐入参才发请求（fail-closed）', () => {
-  it('宽高齐全 ⇒ 入参带标准档 + 韩褶 + 开数（开数缺省按 1）', () => {
+  it('宽高齐全 ⇒ 入参带标准档 + 韩褶 + 开数（开数缺省按 1）+ 默认公式（韩折）', () => {
     expect(craftCalcParamsOf(line())).toEqual({
       width: 6.6,
       height: 2.6,
       open_count: 1,
       mounting: CRAFT_CALC_MOUNTING,
       craft_tier: CRAFT_CALC_TIER,
+      formula: CRAFT_CALC_FORMULA_PLEAT,
     })
+  })
+
+  it('#4527 公式选择：缺省 ⇒ 韩折公式（pleat）；显式指定 ⇒ 原样带出（不认的取值也不静默改写）', () => {
+    // 缺省 = 韩折（用户裁定「默认用韩折的」）
+    expect(craftCalcParamsOf(line())?.formula).toBe('pleat')
+    expect(CRAFT_CALC_FORMULA_PLEAT).toBe('pleat')
+    expect(CRAFT_CALC_FORMULA_FULLNESS).toBe('fullness')
+    // 显式指定褶倍数公式 ⇒ 原样带出（前端不做映射、不做校验 —— 合法性由算料引擎判）
+    expect(craftCalcParamsOf(line({ formula: CRAFT_CALC_FORMULA_FULLNESS }))?.formula).toBe(
+      'fullness'
+    )
+    expect(craftCalcParamsOf(line({ formula: '褶倍数' }))?.formula).toBe('褶倍数')
+  })
+
+  it('#4527 公式进触发签名：换公式 ⇒ 签名变化（否则切了公式不会重算）', () => {
+    const pleat = craftCalcSignature(craftCalcParamsOf(line()))
+    const fullness = craftCalcSignature(
+      craftCalcParamsOf(line({ formula: CRAFT_CALC_FORMULA_FULLNESS }))
+    )
+    expect(pleat).not.toBe(fullness)
+  })
+
+  // ── 用户 2026-09-19 追加裁定：「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」──
+  it('#4527 韩褶 ⇒ 折数法（pleat）+ s_hook', () => {
+    const params = craftCalcParamsOf(line({ craft: { craft: '韩褶' } }))
+    expect(params).toMatchObject({
+      craft: '韩褶',
+      mounting: 's_hook',
+      formula: CRAFT_CALC_FORMULA_PLEAT,
+    })
+  })
+
+  it('#4527 打孔 ⇒ **必须发请求**且走倍数法（fullness）+ eyelet（旧口径下打孔返回 null ⇒ 永不发请求 ⇒ 红）', () => {
+    const params = craftCalcParamsOf(line({ craft: { craft: '打孔' } }))
+    expect(params).not.toBeNull()
+    expect(params).toMatchObject({
+      craft: '打孔',
+      mounting: 'eyelet',
+      formula: CRAFT_CALC_FORMULA_FULLNESS,
+    })
+    // 打孔不是韩褶 ⇒ 不得仍硬编码 s_hook（后端会按韩褶口径算）
+    expect(params?.mounting).not.toBe(CRAFT_CALC_MOUNTING)
   })
 
   it('开数/款式/拼次随工艺规格带出（拼色用料系数靠 special_options）', () => {
@@ -68,8 +113,8 @@ describe('craftCalcParamsOf — 凑齐入参才发请求（fail-closed）', () =
     expect(craftCalcParamsOf(line({ height: 0 }))).toBeNull()
   })
 
-  it('非韩褶工艺（打孔/四爪钩/穿杆/平幔）⇒ null（折数法不适用，后端会 400）', () => {
-    for (const craft of ['打孔', '四爪钩', '穿杆', '平幔']) {
+  it('非韩褶工艺（四爪钩/穿杆/平幔）⇒ null（无自动算料口径，后端答不出）', () => {
+    for (const craft of ['四爪钩', '穿杆', '平幔']) {
       expect(craftCalcParamsOf(line({ craft: { craft } }))).toBeNull()
     }
   })
@@ -94,7 +139,9 @@ describe('craftCalcParamsOf — 凑齐入参才发请求（fail-closed）', () =
   it('#4521 isAutoCalcUnavailable：纱帘恒为「无自动算料」（页面据此提示手填米数）', () => {
     expect(isAutoCalcUnavailable(line({ curtainType: CURTAIN_TYPE_SHEER }))).toBe(true)
     expect(isAutoCalcUnavailable(line({ craft: { craft: '韩褶' } }))).toBe(false)
-    expect(isAutoCalcUnavailable(line({ craft: { craft: '打孔' } }))).toBe(true)
+    // issue #4527 追加裁定后：**打孔有自动算料口径**（倍数法）⇒ 不再是「无自动算料」
+    expect(isAutoCalcUnavailable(line({ craft: { craft: '打孔' } }))).toBe(false)
+    expect(isAutoCalcUnavailable(line({ craft: { craft: '四爪钩' } }))).toBe(true)
   })
 })
 

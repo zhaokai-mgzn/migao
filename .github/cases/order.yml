@@ -3025,3 +3025,71 @@ cases:
       ci:
         - xiaobu-acceptance.yml
       verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # OR-039（issue #4527，2026-09-19）：**两种用料计算方法可选 + 逐片口径 + 向上进位到 0.1**
+  # ══════════════════════════════════════════════════════════════════════════
+  # 用户 2026-09-19 裁定（逐字）：「算出来的用料还要根据打开方式*系数，单开系数1，双开系数2，
+  # 以此类推，最后用料米数保留一位小数，除了使用韩折公式还有一种褶倍数计算公式，这都是用料
+  # 计算方法，你得根据用户要求选择不同的计算公式，默认用韩折的」；追加裁定「可能得支持每个
+  # 商家自定义配置」；澄清三问 → **乙**（公式吃每片宽，总用料 = 每片用料 × 开数）+ 向上进位。
+  #
+  # **ERP 实证锚点（防口径漂移，本用例的锚）**：加工单 `CSO260915-02615`（#4343 已取证）
+  # 宽 5.5m / 双开 / 理论褶倍 2.00 ⇒ 操作记录每道工序 **11.00 米**（= 5.5×2.00）
+  # ⇒ **双开不得把总宽再乘 2**（「甲」口径算成 22.00 米，与实证差一倍、直接进订单金额，已被否决）。
+  - id: OR-039
+    legacy_id: ""
+    title: "算料公式可选 - 韩折公式（默认）/ 褶倍数公式 + 逐片口径（每片×开数）+ 用料向上进位到 0.1"
+    domains:
+      - order
+      - processing
+    tier: normal
+    persona: ""
+    tags:
+      - order
+      - craft_calc
+      - fabric
+      - formula_selection
+      - per_panel
+      - meters_rounding
+    truths_ref:
+      - fabric-calc.formula-selection
+      - fabric-calc.meters-ceiling
+      - fabric-calc.craft-calc-config
+      - fabric-calc.craft-calc-endpoint
+    # ── 判据（每条都能红；期望值全部**写死**，不得从实现推导）──────────────────
+    # ① ERP 锚点：5.5 / 双开 / 2.0 / formula=fullness ⇒ 11.0 米（≠11.0 ⇒ 红；22.0 = 甲口径）；
+    # ② 逐片口径：6.6 / 双开 / 2.0 / formula=pleat ⇒ 总用料 = 每片用料 × 开数（每片 6.65 × 2 = 13.3）；
+    # ③ 向上进位：`ceil(x*10)/10`（截断 / 四舍五入 ⇒ 红；`0.25×23+0.2 = 5.95` ⇒ 6.0）；
+    # ④ 默认公式：不传 formula ⇒ 韩折公式，且 `formula_text` 串首写明所用公式（静默走另一支 ⇒ 红）；
+    # ⑤ 开数系数不得翻倍：同一成品宽下 单开与双开的 fullness 结果**相等**（总宽再×开数 ⇒ 22.0 ⇒ 红）；
+    # ⑥ 既有 fail-closed 不变：缺宽/缺高/非韩褶/纱帘 ⇒ 不发请求（前端三条 fail-closed 回归）；
+    # ⑦ 其余算料输出（折数/幅数/金额）逐值回归：与改前一致（52 折 / 13.3 米 / 34.1 / 62.7 / 11.8）。
+    # 配置可注入：`build_quote(..., config=None)` ⇒ 默认值 = 既有常量逐值不变（显式传默认配置 == 不传）；
+    # 非法配置显式报错（**不静默回退默认值**）；配置**沿调用链传递**，不读进模块级可变全局。
+    # ⚠️ 架构口径：**不新增第二份算料逻辑** —— `formula_text` 由算料引擎产出，Java / TS 只搬运；
+    # 公式名透传（Java 不校验、不改写、不补默认值）。
+    user_inputs:
+      - "商家手工下单页按宽 5.5m / 双开 / 标准档，用褶倍数公式试算用料（预期 11.0 米）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "（散文、**不计分**）两种用料计算方法可选（issue #4527）：`formula='pleat'` 韩折公式（折数法，**默认**）/ `formula='fullness'` 褶倍数公式（倍数法）；未知取值 ⇒ 显式报错，不静默回退默认"
+      - "（散文、**不计分**）ERP 实证锚点（#4343 取证的加工单 CSO260915-02615）：宽 5.5m / 双开 / 理论褶倍 2.00 ⇒ **11.00 米**（= 5.5×2.00）—— 双开不得把总宽再乘 2（甲口径 22.00 米已被用户否决）"
+      - "（散文、**不计分**）逐片口径：每片宽 = 成品宽 ÷ 开数；总用料 = 每片用料 × 开数（每片余量 = 总余量 ÷ 开数 ⇒ 与既有 `0.25×总折数+总余量` 逐值一致，不改钱）"
+      - "（散文、**不计分**）用料米数一律**向上进位到 0.1**（`ceil(x*10)/10`）：截断 / 四舍五入即违约；进位只在总用料上做一次；金额/单价相关量不跟着改口径"
+      - "（散文、**不计分**）配置可注入（用户追加裁定「可能得支持每个商家自定义配置」）：默认值 = 既有常量逐值不变；护栏（褶倍下限 / 正数校验 / tiers 非空）不因可配而消失，非法配置显式报错；配置沿调用链显式传递"
+      - "（散文、**不计分**）公式串由**后端**（算料引擎）产出并写明所用公式（`韩折公式：` / `褶倍数公式：`）；Java / TS 侧只搬运、不自拼（自拼 = 第二份算料逻辑）"
+    skip_reason: "[backend-contract] 算料公式属确定性纯计算（无 LLM 行为）：判据在 pytest（tests/test_craft_calc_formula.py / tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）+ vitest（craft-calc-request.test.ts），不进 agent-eval 冒烟"
+    merge_log: "2026-09-19 新增（issue #4527，包 D 算料口径）：用户裁定「两种用料计算方法可选、默认韩折 + 用料米数保留一位小数（向上进位）+ 按打开方式系数（逐片口径）」，追加裁定「公式参数支持每个商家自定义配置」。落码 = `curtain_calc.py`（`formula` 入参 + `DEFAULT_CRAFT_CALC_CONFIG` + `ceil_to_step` + 逐片口径 + 引擎产出 `formula_text`）、`internal.py` 端点透传 `formula`、Java 代理透传（不复制算料逻辑）、`craft-calc-request.ts` 默认 `formula='pleat'`。**不改运行时金额口径**（金额仍 = 用料 × 单价，只用料米数按裁定向上进位到 0.1）。与 OR-032 的分工：OR-032 锚**折数法端点契约与纸表逐值**（issue #4421），本条锚**公式选择 / 逐片口径 / 进位 / 配置注入**（issue #4527）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_craft_calc_formula.py"
+        - "backend/ai-agent-service/tests/test_production/test_craft_calc.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/CraftCalcClientTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/CraftCalcControllerTest.java"
+        - "frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts"
+      ci:
+        - ai-agent-tests.yml
+        - pr-check.yml
+      verifies: []
