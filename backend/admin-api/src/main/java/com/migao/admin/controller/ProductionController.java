@@ -522,4 +522,26 @@ public class ProductionController {
         return ApiResponse.success(
                 productionRoutingReadService.routeRules(TenantContext.getTenantId()));
     }
+
+    /**
+     * 新建**特殊选项**（issue #4570，用户裁定「你只要能新增工序项就行了，并可以设置为特殊选项或者工序，
+     * 也支持设置单价」）
+     * POST /api/admin/production/route-rules
+     *
+     * <p>请求体：{@code {trigger_value, operation, after_operation?, position?, priority?,
+     * customer_unit_price?}}。{@code operation} = **目标工序的逻辑名**（必须在该租户工序库里存在）；
+     * {@code customer_unit_price} = **对客单价（元/套）**，`null` = 未定价（**≠ 0 元**）。</p>
+     *
+     * <p>本端点只建 {@code trigger_kind='option'} + {@code action='insert'} 的规则 —— 「工序」那半走
+     * {@code POST /production/operations}（计件单价，元/件·米·折），**两本账不混**。</p>
+     *
+     * <p>护栏逐条 422/409：名称或目标工序缺失 / 目标工序（或锚点）不在工序库 / 单价非数值·负·超两位小数；
+     * 同一条「特殊选项 → 插某工序」已存在 ⇒ 409。</p>
+     */
+    @PostMapping("/route-rules")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> createRouteRule(@RequestBody Map<String, Object> request) {
+        return ApiResponse.success(
+                productionRoutingCommandService.createOptionRule(request, TenantContext.getTenantId()));
+    }
 }
