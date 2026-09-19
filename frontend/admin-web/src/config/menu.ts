@@ -109,7 +109,7 @@ export const menuGroups: MenuGroup[] = [
       // 工序库半边 = 该页**左栏**；旧路径 /production/operations 保留为重定向（旧深链不 404）。
       { key: 'production-process', name: '工艺配置', icon: 'Route', path: '/production/routings', permissionCode: 'processing:manage' },
       // issue #4386：加工费**组合**定价（不是每个加工项一个价）—— 商家配置面，下单时由系统按选配匹配
-      { key: 'production-processing-fees', name: '加工费管理', icon: 'BadgeDollarSign', path: '/production/processing-fees', permissionCode: 'processing:manage' },
+      { key: 'production-processing-fees', name: '加工费管理', icon: 'Receipt', path: '/production/processing-fees', permissionCode: 'processing:manage' },
       { key: 'production-piecework', name: '计件工资', icon: 'Calculator', path: '/production/piecework', permissionCode: 'processing:manage' },
     ],
   },
