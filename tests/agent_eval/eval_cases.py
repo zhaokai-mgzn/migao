@@ -3989,6 +3989,24 @@ _CASE_OR_034 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-035 [NORMAL] 下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）（源: cases/order.yml）──
+_CASE_OR_035 = EvalCase(
+    id='OR-035',
+    legacy_id='',
+    title='下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）'],
+    expectations=[],
+    data_checks=['**判据 1·宽高齐全 ⇒ 试算并预填数量 + 展示后端产出的公式串**（用户裁定「用料米数按折数法自动算 + 把计算公式体现出来」）。红证（实现前）：数量恒为手填 1（算料试算未接线）。', '**判据 2·改宽 ⇒ 重新试算并更新数量**（防抖后）；**判据 3·手改数量 ⇒ 标记「人工指定」，且不被试算静默改回**（唯一回切通道 = 显式点「恢复按公式计算」）。红证（实现前）：手改后被试算静默覆盖回公式值。', '**判据 4·试算失败 ⇒ 行内显式提示，数量保持原样（不退回任何估算值）**。红证（实现前）：失败时给了一个估算米数（静默算错钱，`#4308`「静默回落」同族）。', '**判据 5·参数不全 ⇒ 不发请求**：只有宽没有高 ⇒ `craftCalcParamsOf` 返回 `null`（**不得**用默认窗宽猜一个米数）；宽/高非正数（0 与负数）同样 `null`。', '**判据 6·非韩褶工艺（打孔/四爪钩/穿杆/平幔）⇒ 不发请求**（折数法不适用，后端会 400）；韩褶 / 未指定工艺 ⇒ 可试算（未指定按默认韩褶档）。', '**判据 7·入参不变就不重发**：`craftCalcSignature` 对同一入参恒定（写回 `quantity` 不会再次触发试算）；改宽 / 改开数 / 改拼次 ⇒ 签名变化（该重算的必须重算）；`null` 入参 ⇒ 空签名（不触发请求）。', '**判据 8·失败给可行动提示、不给估算值**：`craftCalcErrorText` 优先取后端 `error.message`（如「拼3次纸表未登记」），无任何 message 时给兜底文案（不得空串，也不得悄悄算一个数）。', '**判据 9·用料来源两态是真值**（真值源 §8「用料必须带来源」）：「公式计算」与「人工指定」是两个不同真值 —— 手改后不得被静默改回。', '**红证（实现前）**：`@/lib/craft-calc-request` 不存在 ⇒ import 即红；接线侧数量恒为手填 1。'],
+    skip_reason='[backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx 执行',
+    tags=['order', 'craft_spec', 'craft_calc', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -6698,6 +6716,7 @@ ALL_CASES = (
     _CASE_OR_032,
     _CASE_OR_033,
     _CASE_OR_034,
+    _CASE_OR_035,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
