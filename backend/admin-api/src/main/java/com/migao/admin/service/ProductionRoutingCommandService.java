@@ -3,10 +3,12 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.ProductionOperation;
+import com.migao.admin.entity.ProductionRouteRule;
 import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionRoutingVersion;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.ProductionOperationMapper;
+import com.migao.admin.mapper.ProductionRouteRuleMapper;
 import com.migao.admin.mapper.ProductionRouteTemplateMapper;
 import com.migao.admin.mapper.ProductionRoutingVersionMapper;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +17,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -66,6 +70,8 @@ public class ProductionRoutingCommandService {
     private final ProductionRoutingVersionMapper productionRoutingVersionMapper;
     private final ProductionOperationMapper productionOperationMapper;
     private final ProductionOperationQueryService productionOperationQueryService;
+    /** 规则表（issue #4567 起本类也写它：特殊选项对客单价 —— 只写一列，见该 mapper 的 default 方法）。 */
+    private final ProductionRouteRuleMapper productionRouteRuleMapper;
 
     // ══════════════════════════ 路线模板：新建 / 改 / 删（P2b，issue #4459）══════════════════════════
     //
@@ -241,6 +247,92 @@ public class ProductionRoutingCommandService {
         result.put("id", template.getId());
         result.put("deleted", true);
         return result;
+    }
+
+    // ══════════════════ 特殊选项对客单价（元/套，issue #4567）══════════════════
+
+    /**
+     * 改**特殊选项**的对客单价（{@code PUT /route-rules/{id}/customer-unit-price}，**元/套**）。
+     *
+     * <p><b>两套账不互读</b>（设计 §4.1）：本方法是**对客售价**账（{@code production_route_rules}
+     * 的元/套列）的唯一写点；工人**计件**账是 {@code production_operations.unit_price} /
+     * {@code production_route_rules.factor}，由 {@link ProductionOperationCommandService} 写 ——
+     * 本方法**只** {@code SET} 那一列 + {@code updated_at}，绝不碰 {@code factor}。</p>
+     *
+     * <p><b>护栏（逐条 {@code error.details}，不静默）</b>：</p>
+     * <ul>
+     *   <li>行不存在 / 非本租户 / 已软删 ⇒ <b>404</b>（{@code BusinessException.notFound}）；</li>
+     *   <li>该行 {@code trigger_kind != 'option'} ⇒ <b>422</b> —— **只有特殊选项按套计价**，
+     *       工艺变体（{@code craft}）不按套收费（写了也会被取价侧忽略 ⇒ 商家以为改了、其实没生效）；</li>
+     *   <li>价必须 ≥ 0 且**最多两位小数**、非数值 ⇒ <b>422</b>（列是 {@code NUMERIC(12,2)}：
+     *       静默四舍五入会让「我填的 6.005」变成 6.01 而无人知道）；</li>
+     *   <li>{@code null} / 空串 ⇒ <b>允许</b> = 显式改回**未定价**（语义是「还没定价」而不是 0 元）。</li>
+     * </ul>
+     *
+     * @return 更新后的规则展示形态（与读面 {@code GET /route-rules} 的单项**同构**）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> updateRuleCustomerUnitPrice(String id, Map<String, Object> body, Long tenantId) {
+        ProductionRouteRule rule = id == null ? null : productionRouteRuleMapper.selectById(id);
+        if (rule == null || !tenantId.equals(rule.getTenantId())
+                || !Integer.valueOf(0).equals(rule.getDeleted())) {
+            throw BusinessException.notFound("条件工序规则");
+        }
+        if (!"option".equals(rule.getTriggerKind())) {
+            throw BusinessException.validationError("只有特殊选项按套计价（工艺变体不按套收费）",
+                    List.of(BusinessException.detail("trigger_kind",
+                            String.format("这条规则的触发维是「%s」，不是特殊选项（option）—— "
+                                    + "工艺变体按工序单价计件，不按套收费", rule.getTriggerKind()))),
+                    "只给 trigger_kind='option' 的规则定价（读面 GET /api/admin/production/route-rules 带 trigger_kind）");
+        }
+        Object raw = body == null ? null : body.get("customer_unit_price");
+        BigDecimal price = optionalCustomerPrice(raw);
+
+        productionRouteRuleMapper.updateCustomerUnitPrice(rule.getId(), tenantId, price);
+        log.info("改特殊选项对客单价: tenantId={}, ruleId={}, value={}", tenantId, rule.getId(), price);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", rule.getId());
+        result.put("trigger_kind", rule.getTriggerKind());
+        result.put("trigger_value", rule.getTriggerValue());
+        result.put("customer_unit_price", price);
+        return result;
+    }
+
+    /**
+     * 对客单价解析（**只**给特殊选项用）：{@code null} / 空串 ⇒ {@code null}（= 未定价）；
+     * 非数值 / 负数 / 超过两位小数 ⇒ 422 逐条理由。
+     *
+     * <p>为什么用 {@code setScale(2, UNNECESSARY)} 而不是 {@code round}：前者在「填了 6.005」时
+     * **抛异常**（商家知道自己填多了），后者静默变成 6.01（改了钱且无人知道）。</p>
+     */
+    private static BigDecimal optionalCustomerPrice(Object value) {
+        String text = value == null ? "" : String.valueOf(value).trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        BigDecimal price;
+        try {
+            price = new BigDecimal(text);
+        } catch (NumberFormatException e) {
+            throw BusinessException.validationError("单价必须是数字",
+                    List.of(BusinessException.detail("customer_unit_price",
+                            "单价必须是数字（元/套）；要表示「还没定价」请传 null 或空串，**不要**传 0")),
+                    "填一个 ≥ 0 且最多两位小数的金额，或传 null 表示未定价");
+        }
+        if (price.signum() < 0) {
+            throw BusinessException.validationError("单价不能为负",
+                    List.of(BusinessException.detail("customer_unit_price", "单价不能为负（元/套）")),
+                    "填一个 ≥ 0 的金额，或传 null 表示未定价");
+        }
+        try {
+            return price.setScale(2, RoundingMode.UNNECESSARY);
+        } catch (ArithmeticException e) {
+            throw BusinessException.validationError("单价最多两位小数",
+                    List.of(BusinessException.detail("customer_unit_price",
+                            "单价最多两位小数（列是 NUMERIC(12,2)）—— 不接受静默四舍五入，请自己改到两位")),
+                    "把单价改到最多两位小数后重试");
+        }
     }
 
     /**

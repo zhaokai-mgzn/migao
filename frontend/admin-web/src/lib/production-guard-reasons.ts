@@ -123,3 +123,18 @@ export function craftCalcConfigGuardReasons(error: unknown): string[] {
   if (fb) return [fb]
   return ['保存失败，请稍后重试']
 }
+
+/**
+ * 特殊选项**对客单价**（元/套）行内编辑的护栏理由（issue #4567）。
+ *
+ * 与 `feeGuardReasons` 同口径（**不套**路线序列专属前缀 —— 本处的字段是「元/套」价，
+ * 套上「工序重复 / 缺必完工序」那族标签会误导商家）。后端把每一处不合法都列出来
+ * （非 option 行 / 负数 / 三位小数 / 非数值）⇒ 页面逐条展示，**不吞成一句「保存失败」**。
+ */
+export function optionPriceGuardReasons(error: unknown): string[] {
+  const reasons = detailsMessages(error)
+  if (reasons.length > 0) return reasons
+  const fb = fallbackMessage(error)
+  if (fb) return [fb]
+  return ['保存失败，请稍后重试']
+}
