@@ -26,6 +26,8 @@
 
 # case_ids: OR-032
 
+import re
+
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -243,19 +245,21 @@ class TestMixedColorPerFold:
         assert curtain_calc.mixed_times("加花边") is None
 
     def test_every_routing_mixed_option_is_parseable(self):
-        """覆盖率守卫：`routing` 里**所有** `拼N次` 选项都必须能被 `mixed_times` 解析。
+        """覆盖率守卫：`routing` 里**所有** `拼N次` 选项都必须被 `mixed_times` 解析成**那个 N**。
 
         防的形态（会**少算用料**）：将来加 `拼4次` 时正则不匹配 ⇒ 被当成「不是拼次」⇒
-        静默退回单色系数 0.25，而纸表可能已登记它的系数。解析不出即红。
+        静默退回单色系数 0.25，而纸表可能已登记它的系数。解析不出 / 解析成别的数即红。
         """
         from app.production.routing import SPECIAL_OPTION_ROUTINGS
 
         routing_mixed = [opt for opt in SPECIAL_OPTION_ROUTINGS if "拼" in opt]
         assert routing_mixed, "routing 里已无拼次选项 —— 本守卫的前提失效，请核 SPECIAL_OPTION_ROUTINGS"
         for option in routing_mixed:
-            times = curtain_calc.mixed_times(option)
-            assert times is not None, f"{option} 无法被 mixed_times 解析 ⇒ 会被当成非拼次、静默退回单色系数"
-            assert times >= 1
+            # 逐值断言（不用 `is not None` 这类弱形态）：期望值 = 选项名里内嵌的那个数字
+            expected = int(re.fullmatch(r"拼(\d+)次", option).group(1))
+            assert curtain_calc.mixed_times(option) == expected, (
+                f"{option} 解析出的拼次 ≠ {expected} ⇒ 会被当成非拼次、静默退回单色系数（少算用料）"
+            )
 
     def test_per_fold_is_reflected_in_fullness_actual(self, client):
         """实际倍数随用料走：拼2次 62.7 ÷ 6.6 = 9.5（理论倍数仍是 2.0）。"""
