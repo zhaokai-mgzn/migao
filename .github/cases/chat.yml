@@ -1495,7 +1495,13 @@ cases:
     data_checks:
       - "前端单测验证（无需真实 LLM）：发消息→切 B→切回 A→断言占位恢复→流结束断言回复可见"
     skip_reason: "[backend-contract] 前端 UI 状态修复，不进入 agent-eval 冒烟"
-    merge_log: "issue #2901：admin-web chat store 的 isStreaming/messages 为全局单例，切会话使在途 SSE 增量写空、assistant 消息仅在流结束入库 → 切回无等待动画且回复丢失。修复：liveMessage 按会话持有在途流，selectSession 重挂占位，流结束落视图/由历史权威路径接管。truths_ref 置空：纯前端 UI 状态用例，真值库（ai-chat.*）为后端 agent 行为，无对应真值（标缺口）。"
+    # 前置自断言（CASE-TRUST-NO-PRECONDITION-ASSERTION burn-down，口径同 chat.yml 既有两条
+    # `[backend-contract]` 形态）：本用例是**纯前端 store** 用例 —— 前置（会话 A 有**在途流**、
+    # 会话 B 存在）由单测**自建**（`chat-stream-session-switch.test.ts` 先挂起 A 的流、再切会话），
+    # 不依赖任何共享夹具 ⇒ 前置不成立时单测**直接红**，不会与「agent 不干活」同形。
+    # agent-eval 栈不跑本用例（skip_reason 已登记）⇒ 没有可挂的运行期 precondition 类型。
+    precondition: "本用例是 [backend-contract] 纯前端 store 用例：前置（会话 A 有在途流 + 会话 B 存在）由单测自建（frontend/admin-web/tests/unit/store/chat-stream-session-switch.test.ts），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它"
+    merge_log: "issue #2901：admin-web chat store 的 isStreaming/messages 为全局单例，切会话使在途 SSE 增量写空、assistant 消息仅在流结束入库 → 切回无等待动画且回复丢失。修复：liveMessage 按会话持有在途流，selectSession 重挂占位，流结束落视图/由历史权威路径接管。truths_ref 置空：纯前端 UI 状态用例，真值库（ai-chat.*）为后端 agent 行为，无对应真值（标缺口）。 ｜ 2026-09-20（issue #4614 的 case-trust burn-down 缴费，**整条销账**）：补 `precondition` 声明 —— 原条目只命中 CASE-TRUST-NO-PRECONDITION-ASSERTION，而本用例是 `[backend-contract]` 纯前端 store 用例、**没有**可挂的运行期 precondition 类型（`_PRECONDITION_TYPES` 全是后端共享夹具计数）⇒ 按 chat.yml 既有两条 `[backend-contract]` 形态用**声明式**字符串写清前置是什么、由谁满足、不成立时怎么红。user_inputs / expectations / data_checks / traces **一字未动**（无放宽）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/store/chat-stream-session-switch.test.ts"

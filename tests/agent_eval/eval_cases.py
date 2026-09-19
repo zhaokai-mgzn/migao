@@ -1388,6 +1388,7 @@ _CASE_CH_027 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端 store 用例：前置（会话 A 有在途流 + 会话 B 存在）由单测自建（frontend/admin-web/tests/unit/store/chat-stream-session-switch.test.ts），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它',
 )
 
 # ── CH-028 [NORMAL] 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）（源: cases/chat.yml）──

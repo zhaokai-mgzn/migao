@@ -942,7 +942,7 @@
 跳过: [backend-contract] 前端 UI 状态修复，不进入 agent-eval 冒烟
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: issue #2901：admin-web chat store 的 isStreaming/messages 为全局单例，切会话使在途 SSE 增量写空、assistant 消息仅在流结束入库 → 切回无等待动画且回复丢失。修复：liveMessage 按会话持有在途流，selectSession 重挂占位，流结束落视图/由历史权威路径接管。truths_ref 置空：纯前端 UI 状态用例，真值库（ai-chat.*）为后端 agent 行为，无对应真值（标缺口）。 ｜ tags: streaming, sse, multi_session, frontend
+溯源: issue #2901：admin-web chat store 的 isStreaming/messages 为全局单例，切会话使在途 SSE 增量写空、assistant 消息仅在流结束入库 → 切回无等待动画且回复丢失。修复：liveMessage 按会话持有在途流，selectSession 重挂占位，流结束落视图/由历史权威路径接管。truths_ref 置空：纯前端 UI 状态用例，真值库（ai-chat.*）为后端 agent 行为，无对应真值（标缺口）。 ｜ 2026-09-20（issue #4614 的 case-trust burn-down 缴费，**整条销账**）：补 `precondition` 声明 —— 原条目只命中 CASE-TRUST-NO-PRECONDITION-ASSERTION，而本用例是 `[backend-contract]` 纯前端 store 用例、**没有**可挂的运行期 precondition 类型（`_PRECONDITION_TYPES` 全是后端共享夹具计数）⇒ 按 chat.yml 既有两条 `[backend-contract]` 形态用**声明式**字符串写清前置是什么、由谁满足、不成立时怎么红。user_inputs / expectations / data_checks / traces **一字未动**（无放宽）。 ｜ tags: streaming, sse, multi_session, frontend
 
 ### CH-028. 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906） 🔵
 ```
