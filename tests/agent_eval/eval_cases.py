@@ -4891,7 +4891,7 @@ _CASE_PP_006 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['查询打孔加工的计价方式', '新增加工项，计价方式选按个', '名称叫测试加工，分类选窗帘加工（分类 ID：pcat_eval_curtain）', '计价方式按米，单价 8 元', '确认'],
     expectations=['processing_item_query(keyword=打孔)', 'processing_item_manage(action=create_processing_item)'],
-    data_checks=['processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）', '加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）', '商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）'],
+    data_checks=['前置（precondition）：评测栈种子里加工项「纳米圈打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`（8.00 元/米、status=active）、加工分类「窗帘加工」（`pcat_eval_curtain`）存在 —— 它们是 R1 的加工项查询与下面 `output_verify` 的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项或分类」，判红会伪装成「agent 不会建加工项」', 'processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）', '加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）', '商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）'],
     skip_reason='',
     tags=['processing_item', 'pricing'],
     persona='',
