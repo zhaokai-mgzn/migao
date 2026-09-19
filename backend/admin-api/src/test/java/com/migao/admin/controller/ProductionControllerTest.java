@@ -136,7 +136,7 @@ class ProductionControllerTest {
         TenantContext.setTenantId(TENANT);
         ProductionService service = new ProductionService(
                 processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper,
-                clientRequestIdService);
+                orderItemMapper, clientRequestIdService);
         // 工序库读面用**真实对象**（只 mock Mapper）：PUT 的响应形态 = 目录项形态（同一份
         // operationView），用 mock 会让「返回更新后的工序」退化成断言桩。
         ProductionOperationQueryService queryService =
