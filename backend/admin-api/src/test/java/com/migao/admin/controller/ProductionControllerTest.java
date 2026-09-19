@@ -164,7 +164,7 @@ class ProductionControllerTest {
                         processingFeeCombinationMapper, processingFeeCombinationVersionMapper,
                         processingItemMapper, feeQueryService);
         ProductionController controller = new ProductionController(service, queryService, commandService,
-                routingCommandService, processingOrderService);
+                routingCommandService, processingOrderService, orderService);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
                 "processingFeeQueryService", feeQueryService);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
