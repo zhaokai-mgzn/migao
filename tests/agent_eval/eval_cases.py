@@ -5165,7 +5165,7 @@ _CASE_PP_011 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['打开加工单生产明细，看工序进度和计件汇总，打印任务卡给工人扫码'],
     expectations=['direct_reply'],
-    data_checks=['工序进度表按部位分组渲染，行内给出「工序名 / 分组 / 应做数量+单位 / 单价 / 状态（待做|已完成）/ 已完成数量 / 报工人」', '必完工序（is_must_finish）加「必完」标记；非必完工序不得出现该标记', '进度条读 progress.percent 且与「已完成 done/total 道工序」文案一致（50% ⇒ 1/2）', '计件汇总渲染 total（¥ 两位小数）+ per_operation 明细；per_worker 非空时展示分人金额', '任务卡二维码内容 = qr_token（svg title = token）；qr_token 缺失时给占位提示而不是空码', '任务卡工序清单逐行渲染工序名 / 应做数量+单位 + 每行一个手工勾选位，并说明工人扫码后在小程序报工', '工序显示名统一（issue #4621，web 面命名统一 · 阶段 1）：加工单进度表 / 任务卡打印 / 计件报表「按工序」档一律渲染 **逻辑名 · 部位**（如 `精裁 · 布帘`）；**变体名**（`精裁-布` / `布三边`）不得出现在界面文案或 `data-testid` 里。后端读面**只加不改**地给出 `logical_name` + `position`（**读时派生、不写库**；既有 `operation` / `operation_name` 是**工人端快照名**，一字未动、web 界面不得渲染）；边界：老数据缺 `logical_name` ⇒ 退回 `operation` 原文（不空白）、`position` 为空（部位无关工序如 `外帘装袋`）⇒ 只显示逻辑名。红证：改前 tests/unit/components/{ProductionProgressTable,TaskCardPrint}.test.tsx 与 tests/unit/pages/production-piecework.test.tsx 得 `Unable to find an element with the text: 精裁 · 布帘` / `Unable to find an element by: [data-testid=\\"operation-row-韩褶 · 布帘\\"]`；防复发守卫 = tests/unit_ci_workflows/test_operation_display_name_guard.py（往临时副本注入 `{op.operation}` ⇒ 判红 + 内容指纹自证）', '无工序 / 无计件 / 接口失败均渲染空态或错误提示 + 重试，不白屏'],
+    data_checks=['工序进度表按部位分组渲染，行内给出「工序名 / 分组 / 应做数量+单位 / 单价 / 状态（待做|已完成）/ 已完成数量 / 报工人」', '必完工序（is_must_finish）加「必完」标记；非必完工序不得出现该标记', '进度条读 progress.percent 且与「已完成 done/total 道工序」文案一致（50% ⇒ 1/2）', '计件汇总渲染 total（¥ 两位小数）+ per_operation 明细；per_worker 非空时展示分人金额', '任务卡二维码内容 = qr_token（svg title = token）；qr_token 缺失时给占位提示而不是空码', '任务卡工序清单逐行渲染工序名 / 应做数量+单位 + 每行一个手工勾选位，并说明工人扫码后在小程序报工', '工序显示名统一（issue #4621，web 面命名统一 · 阶段 1）：加工单进度表 / 任务卡打印 / 计件报表「按工序」档一律渲染 **逻辑名 · 部位**（如 `精裁 · 布帘`）；**变体名**（`精裁-布` / `布三边`）不得出现在界面文案或 `data-testid` 里。后端读面**只加不改**地给出 `logical_name` + `position`（**读时派生、不写库**；既有 `operation` / `operation_name` 是**工人端快照名**，一字未动、web 界面不得渲染）；边界：老数据缺 `logical_name` ⇒ 退回 `operation` 原文（不空白）、`position` 为空（部位无关工序如 `外帘装袋`）⇒ 只显示逻辑名。红证：改前 tests/unit/components/{ProductionProgressTable,TaskCardPrint}.test.tsx 与 tests/unit/pages/production-piecework.test.tsx 得 `Unable to find an element with the text: 精裁 · 布帘` / `Unable to find an element by: [data-testid=\\"operation-row-韩褶 · 布帘\\"]`；防复发守卫 = tests/unit_ci_workflows/test_operation_display_name_guard.py（往临时副本注入 `{op.operation}` ⇒ 判红 + 内容指纹自证）。2026-09-20（issue #4630，同一 goal 的**漏改面**）：**第 4 个消费面** = 加工单「生产」页内嵌的计件表 `components/production/PieceworkTable.tsx`（同一份 `per_operation` 数据；#4621 只改了前三个面 ⇒ 它一直渲染变体名且**无任何判据会因此变红**）⇒ 本条判据的覆盖面从三面扩为**四面**（加工单进度表 / 任务卡打印 / 计件报表「按工序」档 / 加工单生产页计件表），`key` 与 `data-testid` 同样不得含变体名；守卫白名单同步补第 4 项（`len(FACES) >= 4`）。红证（改前实测）：tests/unit/components/PieceworkTable.test.tsx 得 `Unable to find an element with the text: 精裁 · 布帘` + `expected \'use client\'… to contain \'from \\\\\'@/lib/operation-display\\\\\'\'`', '无工序 / 无计件 / 接口失败均渲染空态或错误提示 + 重试，不白屏'],
     skip_reason='[backend-contract] 前端渲染行为（admin-web 组件/页面），由 vitest 单测全量覆盖（tests/unit/components/{ProductionProgressTable,PieceworkTable,TaskCardPrint}.test.tsx、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/lib/use-route-id.test.ts），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）',
     tags=['processing', 'production', 'admin_web', 'print_task_card', 'qrcode'],
     persona='',
@@ -5505,7 +5505,9 @@ _CASE_PR_012 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
     namespaces=['product_name:测试窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '测试窗帘', 'expect': 0, 'max_growth': 1}],
 )
 
 # ── PR-013 [NORMAL] 窗帘算料报价 - 褶皱倍数与用布量计算（源: cases/product.yml）──

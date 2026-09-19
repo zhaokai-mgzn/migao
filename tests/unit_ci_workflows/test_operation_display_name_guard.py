@@ -13,6 +13,12 @@ web 面存在**两套工序名**：`production_operations.name` 是旧命名（�
 既有 `operation` / `operation_name` 是**工人端快照名**（变体名）⇒ 保留，但
 **web 界面不得渲染该键**。
 
+⚠️ **白名单是判据的覆盖面**（issue #4630 的教训）：#4621 改了三个面，**第 4 个消费面**
+（加工单「生产」页的计件表 `PieceworkTable.tsx`，同一份 `per_operation` 数据）漏了，
+而当时它**不在** `FACES` 里 ⇒ 守卫照样全绿、没有任何东西会因此变红。
+⇒ 判断「某面该不该在清单里」的判据 = **它是否消费了带 `logical_name`/`position` 的读面**，
+而不是「#4621 当时改了哪几个文件」。
+
 ## 判据形态
 
 | # | 判据 | 红证（怎么让它红） |
@@ -40,10 +46,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 HELPER = "frontend/admin-web/src/lib/operation-display.ts"
 
 #: 受管面（显式白名单）：工序名会出现在这些界面上的位置
+#: 第 4 项是 issue #4630 补的**漏改面** —— 加工单「生产」页的计件表（`per_operation` 的
+#: 第 4 个消费面；#4621 只改了前三个 ⇒ 它一直渲染变体名，而**没有任何判据会因此变红**）。
 FACES: tuple[str, ...] = (
     "frontend/admin-web/src/components/production/ProductionProgressTable.tsx",
     "frontend/admin-web/src/components/production/TaskCardPrint.tsx",
     "frontend/admin-web/src/app/(dashboard)/production/piecework/page.tsx",
+    "frontend/admin-web/src/components/production/PieceworkTable.tsx",
 )
 
 #: 面必须 import 的符号（C2 的反空跑锚点：面文件真的在用那一份实现）
@@ -150,7 +159,7 @@ def test_c1_helper_is_the_single_composition_point():
 
 def test_c2_every_face_imports_the_shared_helper():
     """C2：每个受管面都 import 了 helper —— 面文件必须是「真的那一个」（反空跑）。"""
-    assert len(FACES) >= 3, "受管面清单被清空 ⇒ 本守卫会空跑通过（判据必须能判红）"
+    assert len(FACES) >= 4, "受管面清单被清空 ⇒ 本守卫会空跑通过（判据必须能判红）"
     for rel in FACES:
         src = _read(rel)
         assert REQUIRED_IMPORT in src, (

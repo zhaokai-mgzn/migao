@@ -722,7 +722,15 @@ export interface ProductionOperations {
 }
 
 export interface PieceworkOperationAmount {
+  /**
+   * ⚠️ **工人端快照名**（变体名，如 `精裁-布`）：其它消费者仍要读它 ⇒ 保留；
+   * **web 界面不得直接渲染该键**（issue #4621/#4630）—— 计件表用 `operationDisplayName()` 渲染。
+   */
   operation: string
+  /** 逻辑工序名（后端读时派生，如 `精裁`）；老数据 / 商家自建工序可能缺 ⇒ helper 退回 `operation` 原文 */
+  logical_name?: string | null
+  /** 部位（如 `布帘`）；部位无关工序 / 老数据为空 ⇒ 只显示逻辑名 */
+  position?: string | null
   amount: number
 }
 

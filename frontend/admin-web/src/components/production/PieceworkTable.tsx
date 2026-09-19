@@ -1,5 +1,6 @@
 'use client'
 
+import { operationDisplayName } from '@/lib/operation-display'
 import type { PieceworkSummary } from '@/types'
 
 /**
@@ -8,6 +9,9 @@ import type { PieceworkSummary } from '@/types'
  * 内部计件（给工人）合计 + per_operation 明细 + per_worker 分人；与对外加工费（per_meter 收顾客）
  * **两套账分离**，此处只呈现内部计件（真值源：docs/curtain-production-rules.md §4）。
  * 返工/报废不计件由后端聚合时排除，本组件只做展示。
+ *
+ * 工序显示名走**唯一**口径 `operationDisplayName()`（issue #4630，同 `per_operation` 的
+ * 第 4 个消费面）：渲染「逻辑名 · 部位」，**不渲染工人端快照名**（变体名）。
  */
 interface PieceworkTableProps {
   /** 后端计件响应（snake_case 键）；缺省/null → 空态 */
@@ -54,11 +58,11 @@ export default function PieceworkTable({ summary, className }: PieceworkTablePro
             <tbody>
               {perOperation.map((item, index) => (
                 <tr
-                  key={`${item.operation}-${index}`}
+                  key={`${operationDisplayName(item)}-${index}`}
                   data-testid={`piecework-operation-${index}`}
                   className="border-b border-neutral-100 last:border-b-0"
                 >
-                  <td className="px-4 py-3 text-neutral-900">{item.operation}</td>
+                  <td className="px-4 py-3 text-neutral-900">{operationDisplayName(item)}</td>
                   <td
                     className="px-4 py-3 text-neutral-900 whitespace-nowrap"
                     data-testid="piecework-operation-amount"
