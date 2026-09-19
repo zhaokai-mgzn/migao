@@ -61,18 +61,27 @@ public class CraftCalcController {
 
         CraftCalcClient.CraftCalcResult result = craftCalcClient.calc(request);
 
+        // ── 响应键名 = **snake_case**（设计文档 `docs/design/order-craft-spec-design.md` §4.5 键名口径）──
+        // 算料输出键与 `ProcessingOrderService.CALC_INFO_KEYS` / `routing.py` 的 `METER_KEYS`/`FOLD_KEYS`
+        // **同口径**（`fabric_meters` / `pleat_count` / `per_panel_pleats` / `fullness` /
+        // `fullness_actual`），且 `craft-display.ts` 也按 snake_case 认这些键。
+        // 理由（**这不是风格偏好**）：商家接受试算后，下一步就是把这些值落进 `processing_info`
+        // （关联 #4273「下单时未落库算料输出」）—— 若这里返回 camelCase，前端就得写一张
+        // camelCase→snake_case 映射表，那就是**第二份键名口径**，正是 §4.5 禁止的形态。
+        // ⇒ 前端可**原样**塞进 `processingInfo`，零映射。
+        // （请求体保持 snake_case：那是**透传**给 ai-agent 的入参，本来就该 snake_case。）
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("fabricMeters", result.fabricMeters());
-        data.put("pleatCount", result.pleatCount());
-        data.put("perPanelPleats", result.perPanelPleats());
-        data.put("perFold", result.perFold());
+        data.put("fabric_meters", result.fabricMeters());
+        data.put("pleat_count", result.pleatCount());
+        data.put("per_panel_pleats", result.perPanelPleats());
+        data.put("per_fold", result.perFold());
         data.put("fullness", result.fullness());
-        data.put("fullnessActual", result.fullnessActual());
-        data.put("formulaUsed", result.formulaUsed());
+        data.put("fullness_actual", result.fullnessActual());
+        data.put("formula_used", result.formulaUsed());
         // 公式串由 ai-agent 后端产出（与数值同源）—— 本层只搬运，**绝不**自拼
-        data.put("formulaText", result.formulaText());
+        data.put("formula_text", result.formulaText());
         data.put("source", result.source());
-        data.put("craftTier", result.craftTier());
+        data.put("craft_tier", result.craftTier());
         data.put("warning", result.warning());
         log.info("算料试算: width={} openCount={} tier={} => {}米/{}折",
                 width, request.get("open_count"), request.get("craft_tier"),

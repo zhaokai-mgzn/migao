@@ -3946,7 +3946,7 @@ _CASE_OR_032 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['商家手工下单页按宽 6.6m / 双开 / 标准档试算用料'],
     expectations=['direct_reply'],
-    data_checks=['（散文、**不计分**）折数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）', '（散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）', '（散文、**不计分**）拼色用料系数（用户 2026-09-19 裁定）：拼1次 0.65 / 拼2次 1.2 米每折；52 折双开 ⇒ 34.1 / 62.7 米；拼3次未登记 ⇒ fail-closed 显式报缺口'],
+    data_checks=['（散文、**不计分**）折数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）', '（散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）', '（散文、**不计分**）拼色用料系数（用户 2026-09-19 裁定）：拼1次 0.65 / 拼2次 1.2 米每折；52 折双开 ⇒ 34.1 / 62.7 米；拼3次未登记 ⇒ fail-closed 显式报缺口', '（散文、**不计分**）响应算料键 = **snake_case**（设计文档 §4.5 / CALC_INFO_KEYS 同口径）：fabric_meters / pleat_count / per_panel_pleats / per_fold / fullness / fullness_actual / formula_used / formula_text / source / craft_tier / warning —— 前端可原样塞进 processingInfo，零映射'],
     skip_reason='[backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['order', 'craft_calc', 'fabric', 'single_source_of_truth'],
     persona='',

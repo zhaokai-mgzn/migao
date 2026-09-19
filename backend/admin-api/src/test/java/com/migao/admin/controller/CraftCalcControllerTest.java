@@ -75,14 +75,14 @@ class CraftCalcControllerTest extends BaseControllerTest {
                         """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.fabricMeters").value(13.3))
-                .andExpect(jsonPath("$.data.pleatCount").value(52))
-                .andExpect(jsonPath("$.data.perPanelPleats").value(26))
-                .andExpect(jsonPath("$.data.perFold").value(0.25))
+                .andExpect(jsonPath("$.data.fabric_meters").value(13.3))
+                .andExpect(jsonPath("$.data.pleat_count").value(52))
+                .andExpect(jsonPath("$.data.per_panel_pleats").value(26))
+                .andExpect(jsonPath("$.data.per_fold").value(0.25))
                 .andExpect(jsonPath("$.data.fullness").value(2.0))
-                .andExpect(jsonPath("$.data.fullnessActual").value(2.02))
+                .andExpect(jsonPath("$.data.fullness_actual").value(2.02))
                 .andExpect(jsonPath("$.data.source").value("formula"))
-                .andExpect(jsonPath("$.data.formulaText")
+                .andExpect(jsonPath("$.data.formula_text")
                         .value("(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米"));
     }
 
@@ -154,6 +154,25 @@ class CraftCalcControllerTest extends BaseControllerTest {
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("CRAFT_CALC_UNAVAILABLE"));
+    }
+
+    @Test
+    @DisplayName("键名口径：响应算料键必须是 snake_case（设计文档 §4.5；改回 camelCase ⇒ 前端要写映射表 = 第二份口径）")
+    void calcKeysAreSnakeCase() throws Exception {
+        when(craftCalcClient.calc(any())).thenReturn(frozen());
+
+        String body = mockMvc.perform(post(URL).contentType(APPLICATION_JSON).content("{\"width\":6.6}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(body).contains("fabric_meters").contains("pleat_count").contains("per_panel_pleats")
+                .contains("per_fold").contains("fullness_actual").contains("formula_used")
+                .contains("formula_text").contains("craft_tier");
+        // 反证：任一 camelCase 算料键出现即红（`fullness`/`source`/`warning` 无大小写歧义，不在此列）
+        assertThat(body).doesNotContain("fabricMeters").doesNotContain("pleatCount")
+                .doesNotContain("perPanelPleats").doesNotContain("perFold")
+                .doesNotContain("fullnessActual").doesNotContain("formulaUsed")
+                .doesNotContain("formulaText").doesNotContain("craftTier");
     }
 
     @Test
