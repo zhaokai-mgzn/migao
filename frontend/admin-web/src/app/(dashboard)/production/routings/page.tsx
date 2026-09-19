@@ -444,16 +444,21 @@ function CollapsibleSection({
 /**
  * 主线上一步的展示口径（只读与草稿**共用一份** —— 两处各拼一份必然漂移）。
  *
- * ⚠️ `resolved` = 该工序能在**工序库**里查到（才有 分组/单位/单价/必完 这些库口径元数据）。
+ * ⚠️ `resolved` = 该工序能在**工序库**里查到（才有 分组/单位/必完 这些库口径元数据）。
  * 主线存的是**逻辑工序名**（`精裁`），而 `production_operations.name` 仍是旧名（`精裁-布`），
- * 两者之间**没有**暴露给前端的映射 ⇒ 前端**不猜**：查不到就只显示名字，不发明单位/单价。
+ * 两者之间**没有**暴露给前端的映射 ⇒ 前端**不猜**：查不到就只显示名字，不发明单位/必完。
+ *
+ * ⚠️ **本口径不含单价**（issue #4583 用户裁定）：单价是**计件工资**口径，属「工序项 / 部位价目」
+ * 那一屏的事；而这里能拿到的只有**工序库单价**，真正生效的价是**部位价目矩阵**的格价
+ * （`矩阵价 ?? 工序库价`，见 `ProcessingOrderService.buildRoute`）⇒ 显示它有误导性。
+ * 且「显示与否」曾取决于「逻辑名与变体名是否恰好一致」（`外帘打卷`/`外帘装袋`/`外帘发货`
+ * 三种部位同名才显示，其余 6 道不显示）⇒ **统一不显示**。
  */
 interface StepView {
   seq: number
   operation: string
   group?: string | null
   unit?: string | null
-  unit_price?: number | null
   is_must_finish?: boolean
   /** 工序库里有这条（有库口径元数据） */
   resolved: boolean
@@ -797,7 +802,6 @@ export default function ProcessConfigPage() {
         operation: name,
         group: lib?.group ?? null,
         unit: lib?.unit ?? null,
-        unit_price: lib?.unit_price ?? null,
         is_must_finish: lib?.is_must_finish,
         resolved: !!lib,
         missing: !knownOps.has(name),
@@ -1858,9 +1862,10 @@ export default function ProcessConfigPage() {
                                         >
                                           {step.operation}
                                         </span>
+                                        {/* 分组 · 单位 —— **不含单价**（#4583：单价归「工序项」那一屏，见 {@link StepView}） */}
                                         {step.resolved && (
                                           <span className="text-xs text-neutral-500">
-                                            {step.group ?? '—'} · {step.unit ?? '—'} · {money(step.unit_price)}
+                                            {step.group ?? '—'} · {step.unit ?? '—'}
                                           </span>
                                         )}
                                         {step.is_must_finish && <span className="text-xs text-amber-600">必完</span>}
@@ -1929,11 +1934,9 @@ export default function ProcessConfigPage() {
                                     >
                                       <span className="mr-1 text-neutral-400">{step.seq}.</span>
                                       {step.operation}
-                                      {step.resolved && (
-                                        <span className="ml-1.5 text-neutral-400">
-                                          {step.unit ?? '—'} · {money(step.unit_price)}
-                                        </span>
-                                      )}
+                                      {/* 主线 chip 只留 序号 + 工序名 (+ 必完 / 工序库中不存在或已停用)：
+                                          **不显示任何库口径元数据**（#4583）—— 否则「显示与否」取决于
+                                          逻辑名与变体名是否恰好一致，9 道 chip 两套口径（用户实测的现象）。 */}
                                       {step.is_must_finish && <span className="ml-1.5 text-amber-600">必完</span>}
                                       {step.missing && <span className="ml-1.5">工序库中不存在或已停用</span>}
                                     </li>

@@ -869,7 +869,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await waitFor(() => expect(mockGetOperationsCatalog).toHaveBeenCalledTimes(2))
   })
 
-  it('路线半边：主线逐道渲染 —— 库里查得到的带单位/单价/必完，逻辑名**不发明**元数据', async () => {
+  it('路线半边：主线逐道渲染 —— 库里查得到的只多出「必完」，逻辑名**不发明**元数据', async () => {
     await renderOnRoutes()
     await waitFor(() => expect(screen.getByTestId('routing-step-11-1')).toBeInTheDocument())
 
@@ -878,12 +878,36 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(logical).toHaveTextContent('精裁')
     expect(logical).not.toHaveTextContent('¥')
     expect(logical).not.toHaveTextContent('必完')
-    // 「外帘装袋」两侧同名 ⇒ 库口径（单位/单价/必完）可见
+    // 「外帘装袋」两侧同名 ⇒ 只有「必完」这一项库口径可见（**单价**见 #4583 已统一去掉）
     expect(screen.getByTestId('routing-step-11-3')).toHaveTextContent('外帘装袋')
-    expect(screen.getByTestId('routing-step-11-3')).toHaveTextContent('¥0.40')
     expect(screen.getByTestId('routing-step-11-3')).toHaveTextContent('必完')
+    expect(screen.getByTestId('routing-step-11-3')).not.toHaveTextContent('¥')
     // 空壳那条没有步骤可渲染
     expect(screen.queryByTestId('routing-step-12-1')).toBeNull()
+  })
+
+  it('主线 chips 与抽屉行**统一不显示单价**（#4583）：库口径可见的那道也不出现 ¥；抽屉保留 分组 · 单位', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-step-11-3')).toBeInTheDocument())
+
+    // ① 部位无关工序（`外帘装袋` 两侧同名 ⇒ `resolved=true`，改前唯一显示金额的那类）⇒ 也不得出现 ¥
+    const resolvedChip = screen.getByTestId('routing-step-11-3')
+    expect(resolvedChip).toHaveTextContent('外帘装袋')
+    expect(resolvedChip).toHaveTextContent('必完')
+    expect(resolvedChip).not.toHaveTextContent('¥')
+    // ② 逻辑名那道同样只有名字（与 ① 口径一致 —— 显示与否不再取决于「两套名字是否恰好一致」）
+    const logicalChip = screen.getByTestId('routing-step-11-1')
+    expect(logicalChip).toHaveTextContent('精裁')
+    expect(logicalChip).not.toHaveTextContent('¥')
+
+    await userEvent.click(screen.getByTestId('routing-edit-11'))
+    const resolvedDraft = screen.getByTestId('routing-draft-step-11-3')
+    expect(resolvedDraft).not.toHaveTextContent('¥')
+    // 抽屉仍保留 分组 · 单位（去掉的**只有**单价）
+    expect(resolvedDraft).toHaveTextContent('后道')
+    expect(resolvedDraft).toHaveTextContent('件')
+    // 逻辑名那行没有库口径 ⇒ 连 分组 · 单位 也没有（静默 = 未知，不得发明）
+    expect(screen.getByTestId('routing-draft-step-11-1')).not.toHaveTextContent('¥')
   })
 
   it('序列编辑：添加工序 → 保存 ⇒ `PUT {mainline:[...]}` 顺序等于屏幕顺序', async () => {
