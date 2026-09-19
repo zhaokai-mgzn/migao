@@ -54,8 +54,8 @@ import static org.mockito.Mockito.when;
  *       （去掉「真的变了」判断 ⇒ 幂等用例红）；</li>
  *   <li><b>校验 fail-closed</b>：负价 / 超两位小数 / 非布尔 ⇒ 422 + {@code details} 且**不落库**
  *       （去掉任一分支 ⇒ 对应用例红）；</li>
- *   <li><b>响应与读面单行同构</b>：11 键，含 {@code id}（写面寻址键）与 6 键变体元数据
- *       （去掉整形复用 ⇒ 键集断言红）。</li>
+ *   <li><b>响应与读面单行同构</b>：10 键，含 {@code id}（写面寻址键）与 5 键变体元数据
+ *       （issue #4622 去掉 {@code variant_name}；去掉整形复用 ⇒ 键集断言红）。</li>
  * </ol>
  */
 @ExtendWith(MockitoExtension.class)
@@ -323,7 +323,7 @@ class ProductionOperationPositionCommandServiceTest {
     }
 
     @Test
-    @DisplayName("响应 = 读面**单行同构**（11 键：含 id 寻址键 + 6 键变体元数据）")
+    @DisplayName("响应 = 读面**单行同构**（10 键：含 id 寻址键 + 5 键变体元数据；issue #4622 去掉变体名）")
     void responseShapeIsSameAsReadFace() {
         when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", true, 0));
         stubUpdateSucceeds();
@@ -332,11 +332,12 @@ class ProductionOperationPositionCommandServiceTest {
         Map<String, Object> result = service().update(ROW_ID, body("unit_price", "0.55"), TENANT);
 
         assertThat(result.keySet()).containsExactly("id", "operation", "position", "unit_price",
-                "applicable", "variant_operation_id", "variant_name", "unit", "group", "scope",
+                "applicable", "variant_operation_id", "unit", "group", "scope",
                 "is_must_finish");
         assertThat(result.get("id")).isEqualTo(ROW_ID);
         assertThat(result.get("variant_operation_id")).isEqualTo("op-busandbian");
-        assertThat(result.get("variant_name")).isEqualTo("布三边");
+        // issue #4622：变体名**不进响应**（红证：改前此处断言 `variant_name` == "布三边"、键数 11）
+        assertThat(result).doesNotContainKey("variant_name");
         assertThat(result.get("unit")).isEqualTo("米");
         assertThat(result.get("group")).isEqualTo("车位");
     }

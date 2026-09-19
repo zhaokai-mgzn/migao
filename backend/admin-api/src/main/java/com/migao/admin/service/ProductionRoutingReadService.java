@@ -121,9 +121,10 @@ public class ProductionRoutingReadService {
     /**
      * 部位价目矩阵：一道**逻辑工序** × 一个**部位** = 一格（28 × 3 = 84 格）。
      *
-     * @return 11 键/行（issue #4500 冻结 4 键 + issue #4587 追加 {@code id} 与 6 键变体元数据），
+     * @return 10 键/行（issue #4500 冻结 4 键 + issue #4587 追加 {@code id} 与 5 键变体元数据；
+     *         issue #4622 去掉 {@code variant_name}），
      *         按 `(operation, position)` 稳定排序；`applicable=false` 的格 `unit_price=null`
-     *         （**明确不做 ⇒ 不报价**，与「没定价」可区分）。变体查不到 ⇒ 6 键全 `null`（**不猜**）
+     *         （**明确不做 ⇒ 不报价**，与「没定价」可区分）。变体查不到 ⇒ 5 键全 `null`（**不猜**）
      */
     public List<Map<String, Object>> operationPositions(Long tenantId) {
         List<ProductionOperationPosition> rows = productionOperationPositionMapper.selectList(

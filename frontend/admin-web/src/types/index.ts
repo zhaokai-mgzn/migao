@@ -897,7 +897,7 @@ export interface RoutingCreateParams {
  * （那边仍是旧名 `精裁-布` / `布三边`）—— 取错会让矩阵退化成「一行一道旧工序」。
  * `applicable=false` ⇒ `unit_price=null`（**明确不做**与「没定价」可区分）。
  *
- * `id` + 后 6 键是 issue #4588（契约 #4587 ①）新增的**写面寻址 + 逻辑名↔变体名映射**：
+ * `id` + 后 5 键是 issue #4588（契约 #4587 ①）新增的**写面寻址 + 逻辑名↔变体工序映射**：
  * - `id` = 本矩阵行（`production_operation_positions.id`）—— 格内改价 / 改做不做用它寻址
  *   （`PUT /operation-positions/{id}`）；
  * - 后 5 键 = 该格**实际落到工人端**的那道工序的元数据，由后端
