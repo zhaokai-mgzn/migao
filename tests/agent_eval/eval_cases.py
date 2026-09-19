@@ -4865,9 +4865,9 @@ _CASE_PG_041 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-043 [NORMAL] 部位改走受控来源：componentRole 枚举（纱⇒纱帘 / 主布·配布边⇒布帘）+ curtain_type 列；商品名不再是判据（源: cases/processing-order.yml）──
-_CASE_PG_043 = EvalCase(
-    id='PG-043',
+# ── PG-048 [NORMAL] 部位改走受控来源：componentRole 枚举（纱⇒纱帘 / 主布·配布边⇒布帘）+ curtain_type 列；商品名不再是判据（源: cases/processing-order.yml）──
+_CASE_PG_048 = EvalCase(
+    id='PG-048',
     legacy_id='',
     title='部位改走受控来源：componentRole 枚举（纱⇒纱帘 / 主布·配布边⇒布帘）+ curtain_type 列；商品名不再是判据',
     skill=Skill.GENERAL,
@@ -4883,9 +4883,9 @@ _CASE_PG_043 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-044 [NORMAL] 工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变（源: cases/processing-order.yml）──
-_CASE_PG_044 = EvalCase(
-    id='PG-044',
+# ── PG-049 [NORMAL] 工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变（源: cases/processing-order.yml）──
+_CASE_PG_049 = EvalCase(
+    id='PG-049',
     legacy_id='',
     title='工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变',
     skill=Skill.GENERAL,
@@ -4901,9 +4901,9 @@ _CASE_PG_044 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-045 [NORMAL] 存量单兜底：无 V63 列值时仍能派生（信号表降级不删），且兜底信号源只剩加工项名/options（源: cases/processing-order.yml）──
-_CASE_PG_045 = EvalCase(
-    id='PG-045',
+# ── PG-050 [NORMAL] 存量单兜底：无 V63 列值时仍能派生（信号表降级不删），且兜底信号源只剩加工项名/options（源: cases/processing-order.yml）──
+_CASE_PG_050 = EvalCase(
+    id='PG-050',
     legacy_id='',
     title='存量单兜底：无 V63 列值时仍能派生（信号表降级不删），且兜底信号源只剩加工项名/options',
     skill=Skill.GENERAL,
@@ -4919,9 +4919,9 @@ _CASE_PG_045 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-046 [NORMAL] craft_hint 迁移只加列、不猜值（存量加工项一律留空）（源: cases/processing-order.yml）──
-_CASE_PG_046 = EvalCase(
-    id='PG-046',
+# ── PG-051 [NORMAL] craft_hint 迁移只加列、不猜值（存量加工项一律留空）（源: cases/processing-order.yml）──
+_CASE_PG_051 = EvalCase(
+    id='PG-051',
     legacy_id='',
     title='craft_hint 迁移只加列、不猜值（存量加工项一律留空）',
     skill=Skill.GENERAL,
@@ -4937,9 +4937,9 @@ _CASE_PG_046 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-047 [NORMAL] 信号映射写面退役（POST/PUT/DELETE /route-signals 不可达，读面暂留）+ 异常订单清单可查（源: cases/processing-order.yml）──
-_CASE_PG_047 = EvalCase(
-    id='PG-047',
+# ── PG-052 [NORMAL] 信号映射写面退役（POST/PUT/DELETE /route-signals 不可达，读面暂留）+ 异常订单清单可查（源: cases/processing-order.yml）──
+_CASE_PG_052 = EvalCase(
+    id='PG-052',
     legacy_id='',
     title='信号映射写面退役（POST/PUT/DELETE /route-signals 不可达，读面暂留）+ 异常订单清单可查',
     skill=Skill.GENERAL,
@@ -7007,11 +7007,11 @@ ALL_CASES = (
     _CASE_PG_037,
     _CASE_PG_039,
     _CASE_PG_041,
-    _CASE_PG_043,
-    _CASE_PG_044,
-    _CASE_PG_045,
-    _CASE_PG_046,
-    _CASE_PG_047,
+    _CASE_PG_048,
+    _CASE_PG_049,
+    _CASE_PG_050,
+    _CASE_PG_051,
+    _CASE_PG_052,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,

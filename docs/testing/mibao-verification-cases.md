@@ -3504,7 +3504,7 @@
 数据: **partial 与 missing_route 不得合并**（冻结契约）：两者都「有问题」但**补救动作不同** —— partial 要**补信号**、missing_route 要**建路线**；并成一个值后前端给不出可行动的提示语。证据：本用例 + PG-028 + PG-030 的次序断言（「multiPositionMissingRouteOutranksPartial」）
 跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest 执行
 ```
-溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-026。 ｜2026-09-19（issue #4452，包 C）：**判据来源已换** —— 部位改走 `componentRole` 受控枚举 + V63 `curtain_type` 列，工艺改走加工项显式声明 `craft_hint`；信号表**降级为存量单兜底**，且兜底信号源**只剩加工项名/options**（商品名与销售方式已从判据里摘掉）⇒ 本用例的「命中形态」随之改由**受控来源/显式字段**构造，`route_source` 断言相应更新（派生语义与 `severity` 次序未变）。详见 PG-043~PG-047。 ｜ tags: processing-order, production-routing, route-source
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-026。 ｜2026-09-19（issue #4452，包 C）：**判据来源已换** —— 部位改走 `componentRole` 受控枚举 + V63 `curtain_type` 列，工艺改走加工项显式声明 `craft_hint`；信号表**降级为存量单兜底**，且兜底信号源**只剩加工项名/options**（商品名与销售方式已从判据里摘掉）⇒ 本用例的「命中形态」随之改由**受控来源/显式字段**构造，`route_source` 断言相应更新（派生语义与 `severity` 次序未变）。详见 PG-048~PG-052。 ｜ tags: processing-order, production-routing, route-source
 
 ### PG-028. 路线来源 T2：两维都命中但库中无该路线 ⇒ route_source=missing_route + requested 记下「识别的键」 🔵
 ```
@@ -3515,7 +3515,7 @@
 数据: **T3 保持 fail-closed 不变**（#4116 已落码）：默认路线也没有 / 路线引用的工序缺行 ⇒ `PRODUCTION_ROUTING_NOT_FOUND` / `PRODUCTION_OPERATION_NOT_FOUND` + 可行动 suggestion + incident 日志，**不落半成品**。证据：ProcessingOrderServiceTest 的空库/缺工序两条负例（本单未改动该路径）
 跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest + ProcessingOrderServiceTest 执行
 ```
-溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-026。 ｜2026-09-19（issue #4452，包 C）：**判据来源已换** —— 部位改走 `componentRole` 受控枚举 + V63 `curtain_type` 列，工艺改走加工项显式声明 `craft_hint`；信号表**降级为存量单兜底**，且兜底信号源**只剩加工项名/options**（商品名与销售方式已从判据里摘掉）⇒ 本用例的「命中形态」随之改由**受控来源/显式字段**构造，`route_source` 断言相应更新（派生语义与 `severity` 次序未变）。详见 PG-043~PG-047。 ｜ tags: processing-order, production-routing, route-source, missing-route
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-026。 ｜2026-09-19（issue #4452，包 C）：**判据来源已换** —— 部位改走 `componentRole` 受控枚举 + V63 `curtain_type` 列，工艺改走加工项显式声明 `craft_hint`；信号表**降级为存量单兜底**，且兜底信号源**只剩加工项名/options**（商品名与销售方式已从判据里摘掉）⇒ 本用例的「命中形态」随之改由**受控来源/显式字段**构造，`route_source` 断言相应更新（派生语义与 `severity` 次序未变）。详见 PG-048~PG-052。 ｜ tags: processing-order, production-routing, route-source, missing-route
 
 ### PG-029. 路线来源 正常派生：两维都由库中信号命中且路线存在 ⇒ route_source=derived 且不打 incident 🔵
 ```
@@ -3524,7 +3524,7 @@
 数据: **红证（注入式，实测）**：把 `deriveRouteKey` 的库读取（`productionOperationQueryService.routeSignals(tenantId)`）换成空表（= 模拟「派生仍读常量、不看库」）⇒ 4 红 + 2 UnnecessaryStubbing 错（本用例 `[两维命中 + 路线存在 ⇒ derived]` 是其一）—— 这条同时证明「派生**读库**而非读常量」：判别物是**库里配了、迁移前常量表里没有**的信号行「罗马帘」。
 跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest 执行
 ```
-溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-026。 ｜2026-09-19（issue #4452，包 C）：**判据来源已换** —— 部位改走 `componentRole` 受控枚举 + V63 `curtain_type` 列，工艺改走加工项显式声明 `craft_hint`；信号表**降级为存量单兜底**，且兜底信号源**只剩加工项名/options**（商品名与销售方式已从判据里摘掉）⇒ 本用例的「命中形态」随之改由**受控来源/显式字段**构造，`route_source` 断言相应更新（派生语义与 `severity` 次序未变）。详见 PG-043~PG-047。 ｜ tags: processing-order, production-routing, route-source
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-026。 ｜2026-09-19（issue #4452，包 C）：**判据来源已换** —— 部位改走 `componentRole` 受控枚举 + V63 `curtain_type` 列，工艺改走加工项显式声明 `craft_hint`；信号表**降级为存量单兜底**，且兜底信号源**只剩加工项名/options**（商品名与销售方式已从判据里摘掉）⇒ 本用例的「命中形态」随之改由**受控来源/显式字段**构造，`route_source` 断言相应更新（派生语义与 `severity` 次序未变）。详见 PG-048~PG-052。 ｜ tags: processing-order, production-routing, route-source
 
 ### PG-030. 多部位 roll-up：三列取最需关注的一条（default > missing_route > partial > derived），三列同源 🔵
 ```
@@ -3535,7 +3535,7 @@
 数据: 未知 / null 来源取值落**最需关注**档（`severity` 的 `default -> 3`）：不静默降级为「正常」（与仓库「未知形态必须 fail-loud」同口径）。
 跳过: [backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingOrderRouteSourceTest 执行
 ```
-溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-026。**如实登记**：首版 roll-up 用例（2 条）在「partial↔missing_route 次序对调」注入下**仍全绿** ⇒ 当时是空断言，已补第三条判别用例。 ｜2026-09-19（issue #4452，包 C）：**判据来源已换** —— 部位改走 `componentRole` 受控枚举 + V63 `curtain_type` 列，工艺改走加工项显式声明 `craft_hint`；信号表**降级为存量单兜底**，且兜底信号源**只剩加工项名/options**（商品名与销售方式已从判据里摘掉）⇒ 本用例的「命中形态」随之改由**受控来源/显式字段**构造，`route_source` 断言相应更新（派生语义与 `severity` 次序未变）。详见 PG-043~PG-047。 ｜ tags: processing-order, production-routing, route-source, roll-up
+溯源: 2026-09-19 新增（issue #4308，P1）。红证见 data_checks。实现见 PG-026。**如实登记**：首版 roll-up 用例（2 条）在「partial↔missing_route 次序对调」注入下**仍全绿** ⇒ 当时是空断言，已补第三条判别用例。 ｜2026-09-19（issue #4452，包 C）：**判据来源已换** —— 部位改走 `componentRole` 受控枚举 + V63 `curtain_type` 列，工艺改走加工项显式声明 `craft_hint`；信号表**降级为存量单兜底**，且兜底信号源**只剩加工项名/options**（商品名与销售方式已从判据里摘掉）⇒ 本用例的「命中形态」随之改由**受控来源/显式字段**构造，`route_source` 断言相应更新（派生语义与 `severity` 次序未变）。详见 PG-048~PG-052。 ｜ tags: processing-order, production-routing, route-source, roll-up
 
 ### PG-031. V60 迁移契约：信号种子 ↔ 迁移前常量表 ↔ bootstrap 三源逐行相等 + 用途拆分 + 派生不再读常量 🔵
 ```
@@ -3669,7 +3669,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4431 B6 的用例追溯补正）：issue #4360（分页 + 懒加载）的行为**已实装且有 vitest 断言**，但 `.github/cases/**` 对该行为**零命中** —— 断言无处挂载（当时声明的 `PG-019` 是**后端**用例的误引用，已由 #4357 移除；文件头注释里如实登记了「没有对应用例 ID」）。本用例把该断言挂到**真实用例 ID** 上，判据 = **HTTP 调用次数**（渲染结果看不出请求扇出）。traces 指向实际执行断言的 production-board.test.tsx。**不改运行时行为、不改断言强度** —— 只是补上追溯链。 ｜ tags: processing-order, production, performance, admin_web
 
-### PG-043. 部位改走受控来源：componentRole 枚举（纱⇒纱帘 / 主布·配布边⇒布帘）+ curtain_type 列；商品名不再是判据 🔵
+### PG-048. 部位改走受控来源：componentRole 枚举（纱⇒纱帘 / 主布·配布边⇒布帘）+ curtain_type 列；商品名不再是判据 🔵
 ```
 数据: 受控来源优先：订单行带 `curtain_type=纱帘` + `craft=打孔` ⇒ 路线 = 纱帘×打孔，**且全程不读** `production_route_signals`（`verify(routeSignals, never())`）。红证（注入法）：把信号表**删空**（`routeSignals → List.of()`）—— 旧实现 `deriveRouteKey` 两维齐全时**仍**无条件先算 `signals(entry)` 并查表，且商品名是信号源 ⇒ 删空后派生不出任何一维 ⇒ 用例红。
 数据: `componentRole=纱` ⇒ 部位 = 纱帘（即使加工项名/商品名里没有任何「纱」字）。红证：摘掉 `componentRole` 这一层（部位只从 `curtain_type` 列取）⇒ 部位退化成默认「布帘」⇒ 请求键变 布帘×打孔 ⇒ 红。
@@ -3681,7 +3681,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4452，包 C）：部位维从「商品名 `contains` 猜」换成 `componentRole` 受控枚举 + V63 `curtain_type` 列。**如实登记（与设计文档的偏差）**：issue 验收判据表第 1/2 条把「商品名含纱但 componentRole=主布 ⇒ 布帘」写成行为判据，而主工作区设计文档 `processing-fee-and-option-pricing.md` §8 只把包 C 列为「消灭信号映射」—— 本用例按 **issue 正文（更具体）** 实现，并在此登记口径来源。 ｜ tags: processing-order, production-routing, route-source
 
-### PG-044. 工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变 🔵
+### PG-049. 工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变 🔵
 ```
 数据: 加工项「纳米圈打孔」声明 `craft_hint=打孔` ⇒ 工艺 = 打孔。红证：读侧仍 `contains` 加工项**名** ⇒ 该用例仍能通过（名字里恰好含「打孔」）⇒ 判据落在下一条（改声明）。
 数据: **改声明 ⇒ 结果随之变**：加工项名仍是「纳米圈打孔」但声明改成 `韩褶` ⇒ 请求键 = 布帘×韩褶。红证：读侧仍 `contains` 加工项名 ⇒ 结果不变（仍 打孔）⇒ 红。
@@ -3691,7 +3691,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4452，包 C）：`processing_items` 加 `craft_hint` 列（V78 迁移，**只加列不回填**）+ `buildSnapshot` 把声明带进快照 + `deriveRouteKey` 读它。写侧 = `POST/PUT /api/admin/processing-items` 的 `craftHint`（可空，留空 = 未声明，不猜）。 ｜ tags: processing-order, production-routing, processing-item
 
-### PG-045. 存量单兜底：无 V63 列值时仍能派生（信号表降级不删），且兜底信号源只剩加工项名/options 🔵
+### PG-050. 存量单兜底：无 V63 列值时仍能派生（信号表降级不删），且兜底信号源只剩加工项名/options 🔵
 ```
 数据: 存量单（无 `curtain_type`/`craft` 列值、无 `componentRole`、无 `craft_hint`）仍能派生成功：加工项名「韩褶-布」经信号表兜底 ⇒ 布帘×韩褶。红证：把兜底层一并删掉（存量单直接落默认）⇒ 请求键退化成 布帘×韩褶 或 null ⇒ 红。
 数据: **商品名 / 销售方式零命中**：存量单 + 加工项名不含任何信号关键字，而商品名含「纱帘」、销售方式含「打孔」⇒ 两维都派生不出来 ⇒ `route_requested_key = NULL` 且 `route_source = default`。红证：把商品名/销售方式放回信号源 ⇒ 请求键会变成 纱帘×打孔（或半命中 纱帘×韩褶）⇒ 红。
@@ -3701,7 +3701,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4452，包 C）：`production_route_signals` **降级为存量单兜底**（表不删 —— 存量单仍需派生）；兜底信号源**只剩加工项名/options**，商品名与销售方式已从判据里摘掉（同时「加工项比商品名权威」这个相对次序判据随之作废）。 ｜ tags: processing-order, production-routing, route-source, backward-compat
 
-### PG-046. craft_hint 迁移只加列、不猜值（存量加工项一律留空） 🔵
+### PG-051. craft_hint 迁移只加列、不猜值（存量加工项一律留空） 🔵
 ```
 数据: V78 迁移必须幂等：含 `ADD COLUMN IF NOT EXISTS craft_hint`（`MigrationRunner` 会重跑整文件）。
 数据: **不做存量回填**：迁移全文**不得**出现 `UPDATE processing_items` —— 按加工项名回填「能唯一确定的才填」**本身就是猜**（「韩褶-布」既含「韩褶」也可能是别的工艺名的一部分）⇒ 存量行 `craft_hint` 一律 NULL，存量单由信号表兜底，缺口由 routing-gaps / 异常订单清单可见。红证：迁移里加一条 `UPDATE processing_items SET craft_hint = …` ⇒ 红（该写法同时会被 `test_migration_references_exist_in_schema` 判红）。
@@ -3711,7 +3711,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4452，包 C）：V78 迁移（号段由主会话冻结分配：A=V77 / C=V78）。**版本号沿革**：首版误用 V77（与包 A 的 `V77__customer_option_unit_price.sql` 撞号），已按主会话指令改为 V78 并同步全部注释引用。 ｜ tags: processing-order, migration, processing-item
 
-### PG-047. 信号映射写面退役（POST/PUT/DELETE /route-signals 不可达，读面暂留）+ 异常订单清单可查 🔵
+### PG-052. 信号映射写面退役（POST/PUT/DELETE /route-signals 不可达，读面暂留）+ 异常订单清单可查 🔵
 ```
 数据: 写面退役：`POST/PUT/DELETE /api/admin/production/route-signals` 均**不可达**（404 未注册 / 405 方法不允许 —— 判据是「写面不可达」，不写死某个具体状态码）；服务类 `ProductionRoutingCommandService` 与控制器 `ProductionController` 均不得再有 `createSignal` / `updateSignal` / `deleteSignal` / `createRouteSignal` / `updateRouteSignal` / `deleteRouteSignal`。红证：把任一方法加回 ⇒ 红（存在即意味着写面还有入口）。
 数据: 读面暂留：`GET /route-signals` 仍 200 且形态不变（`{total, signals:[…]}`）—— 表降级为存量单兜底，读面留着排查历史单的派生来源。
@@ -4915,11 +4915,11 @@
 - PG-037: provenance 迁移（V62）：source 列 + 冻结回填映射（占位待确认 30 工序+6 路线 / 推算 5 工序+3 路线 / 实证空集）+ industry 存量归一
 - PG-039: 工序作用域 scope（V67）：外帘打卷/装袋/发货 = 套级（每樘窗一次）+ 读面逐字 + 写面可配校验 + 工序库页可见可改
 - PG-041: 生产看板分页 + 懒加载 —— 只对当前页扇出详情请求（消除 1+2N 请求扇出，issue #4360）
-- PG-043: 部位改走受控来源：componentRole 枚举（纱⇒纱帘 / 主布·配布边⇒布帘）+ curtain_type 列；商品名不再是判据
-- PG-044: 工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变
-- PG-045: 存量单兜底：无 V63 列值时仍能派生（信号表降级不删），且兜底信号源只剩加工项名/options
-- PG-046: craft_hint 迁移只加列、不猜值（存量加工项一律留空）
-- PG-047: 信号映射写面退役（POST/PUT/DELETE /route-signals 不可达，读面暂留）+ 异常订单清单可查
+- PG-048: 部位改走受控来源：componentRole 枚举（纱⇒纱帘 / 主布·配布边⇒布帘）+ curtain_type 列；商品名不再是判据
+- PG-049: 工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变
+- PG-050: 存量单兜底：无 V63 列值时仍能派生（信号表降级不删），且兜底信号源只剩加工项名/options
+- PG-051: craft_hint 迁移只加列、不猜值（存量加工项一律留空）
+- PG-052: 信号映射写面退役（POST/PUT/DELETE /route-signals 不可达，读面暂留）+ 异常订单清单可查
 - PP-007: 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）
