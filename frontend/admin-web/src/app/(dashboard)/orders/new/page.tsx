@@ -45,7 +45,9 @@ import {
   type CurtainBody,
 } from '@/lib/order-craft-fields'
 import { describeLogisticsProfile } from '@/lib/logistics'
-// D6 自动识别（issue #4526 · 设计 §5.1/§5.2）：超高/超宽 = 宽高 vs 门幅；倒幅/正幅 = cuttingMode 推导
+// D6 自动识别（issue #4526 · 设计 §5.1/§5.2）：超高/超宽 = 宽高 vs 门幅；倒幅 = cuttingMode 推导
+// ⚠️ #4592：`定高买宽`（= 正幅，缺省档）**不推导** —— 正幅不在加工项目录（V83）里，
+//    推它会让默认订单的组合键永远匹配不到价（加工费恒 ¥0.00）
 // ⚠️ 取自 **admin-web 专属**模块（不是三端同源的 `craft-display`，见该文件头）
 // `AUTO_FEATURE_NAMES`（#4566）：下单页用它把目录里的**自动推导特征**滤出**手选**列表
 // （它们在目录里必须存在 —— 商家配「加工费组合」要能选到；但手选控件必须没有它们，判据 8）
@@ -221,7 +223,7 @@ type SaleForm = typeof SALE_FORM_FABRIC | typeof SALE_FORM_FINISHED
 const SHAPED_ITEM_NAME = '定型'
 
 /**
- * 该行的**手选加工项**清单 —— 滤掉**自动推导特征**（`超高`/`超宽`/`倒幅`/`正幅`）。
+ * 该行的**手选加工项**清单 —— 滤掉**自动推导特征**（`超高`/`超宽`/`倒幅`）。
  *
  * 为什么目录里有它们却要滤掉：商家配「加工费组合」时必须能选到它们
  * （组合名就是 `韩折+超高+定型` 这种形态），但**下单页**的勾选控件不能有
@@ -304,7 +306,9 @@ function withShapedDefault(
  * 该行的**自动识别特征**（issue #4526 · 设计 §5.1/§5.2）—— 纯推导，**不是可勾选项**。
  *
  * 用户 2026-09-19：「超高 / 超宽是和门幅标准比较的……**这个要求做到自动识别**」。
- * 门幅取 SKU 的 `doorWidth`（缺省 2.8）；倒幅/正幅由 `cuttingMode` 唯一推导。
+ * 门幅取 SKU 的 `doorWidth`（缺省 2.8）；倒幅由 `cuttingMode` 唯一推导
+ * （`定高买宽` = 正幅，**不推导** —— issue #4592：正幅不在加工项目录里，推它会让默认订单
+ * 的组合键永远匹配不到价）。
  *
  * ⚠️ 这些特征**进组合键**（`打孔+超高+定型` 与 ERP 逐字同构）⇒ 与手选加工项一起落
  * `processingInfo.processingItems`（服务端的特征名唯一来源就是它），但**不计入手选计数**、
@@ -342,8 +346,10 @@ function processingDetailsOf(line: OrderLineItem): Array<Record<string, unknown>
     .filter(Boolean) as Array<Record<string, unknown>>
 
   // 自动识别特征（R9/D6）：与手选加工项**同一数组** —— 服务端 `featureNames` 只读
-  // `processingItems[].name`（`ProcessingFeeQueryService.featureNames`），不在这里带上
-  // ⇒ 组合键里永远没有超高/超宽/倒幅 ⇒ 组合价目匹配不到（设计 §5.3 特征集合）。
+  // `processingItems[].name`（`ProcessingFeeQueryService.featureNames`），**带上了**才进组合键
+  // ⇒ **组合加项 = 手选加工项 ∪ {超高, 超宽, 倒幅}**（设计 §5.3 特征集合）。
+  // ⚠️ 本数组是组合键的真值源 ⇒ 这里**不得**出现 `processing_items` 目录（V83）里没有的名字：
+  //    #4592 实测 `正幅` 就因此让**每张默认订单**的组合键永远匹配不到价（加工费恒 ¥0.00）。
   // 它们**没有单价**（不在加工项目录里）：单价恒 0，钱由**组合价目**决定（R10 的前提）。
   const derived = autoFeaturesOf(line).map((feature) => ({
     name: feature.name,
@@ -2565,7 +2571,7 @@ function LineItemBlock({
   /** 自动识别特征（D6）—— 只读展示，**不计入** `selectedProcessingCount`（不是手选项） */
   const autoFeatures = autoFeaturesOf(line)
   /**
-   * 手选加工项（issue #4566）—— 滤掉**自动推导特征**（超高/超宽/倒幅/正幅）。
+   * 手选加工项（issue #4566）—— 滤掉**自动推导特征**（超高/超宽/倒幅）。
    * 它们在目录里**必须存在**（商家配「加工费组合」要能选到），但**不得**出现在手选控件里
    * （判据 8：自动识别特征出现手选项 ⇒ 红）。单一真值 = `AUTO_FEATURE_NAMES`。
    */
@@ -2853,7 +2859,7 @@ function LineItemBlock({
                     </p>
                   )}
 
-                  {/* #4566：手选列表 = 目录**滤掉自动推导特征**后的清单（超高/超宽/倒幅/正幅不出控件） */}
+                  {/* #4566：手选列表 = 目录**滤掉自动推导特征**后的清单（超高/超宽/倒幅不出控件） */}
                   <div className="flex flex-wrap gap-2">
                     {visibleProcessingItems.map((pi) => {
                       const cfg = line.selectedProcessing[pi.id] || { selected: false, qty: 1 }
@@ -2915,8 +2921,10 @@ function LineItemBlock({
                     <div className="text-sm text-neutral-400 py-2">没有匹配的加工项</div>
                   )}
 
-                  {/* 自动识别（issue #4526 · D6）：超高/超宽 = 宽高 vs 门幅，倒幅/正幅 = cuttingMode
-                      推导 —— **只读**（不是可勾选项：手选项 = 与 cuttingMode 冲突的第二份口径）。
+                  {/* 自动识别（issue #4526 · D6）：超高/超宽 = 宽高 vs 门幅，倒幅 = cuttingMode
+                      推导（#4592：`定高买宽` = 正幅**不推导** —— 正幅不在加工项目录里，推它会让
+                      默认订单的组合键永远匹配不到价）—— **只读**（不是可勾选项：手选项 = 与
+                      cuttingMode 冲突的第二份口径）。
                       标来源「推算」：本条判据是**推理非实证**（设计 §5.2），不假装定论。
                       ⚠️ 布料组整组无加工（#4493）⇒ 这块也整块不渲染（与「加工项」「费用明细」同闸门）。 */}
                   {!isFabricLine && autoFeatures.length > 0 && (

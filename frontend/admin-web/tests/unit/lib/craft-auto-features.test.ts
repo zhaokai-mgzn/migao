@@ -10,7 +10,10 @@
  * 门幅 G   = SKU.doorWidth（缺省 2.8 米；窄幅布 1.4）
  * 卷边常量 = 0.3 米（**复用** curtain_calc 既有常量，不新造第二个数）
  * 超高 = (成品高 + 0.3) > G       超宽 = (成品宽 + 0.3) > G     ← 两者独立，可同时为真
- * 倒幅 = (cuttingMode == 定宽买高)  正幅 = (cuttingMode == 定高买宽)  ← 唯一推导，不设手选项
+ * 倒幅 = (cuttingMode == 定宽买高)  ← 唯一推导，不设手选项
+ * 正幅 = (cuttingMode == 定高买宽)  ← **不推导**（issue #4592）：正幅是窗帘常态、且**不在**
+ *                                     `processing_items` 目录（V83）里 ⇒ 推出它 = 默认订单的
+ *                                     组合键永远匹配不到价 ⇒ 加工费恒 ¥0.00（P0）
  * ```
  *
  * 红证（实现前）：`@/lib/craft-auto-features` 不存在 ⇒ import 即红（本文件不 mock，直接红在 import 上）。
@@ -26,6 +29,19 @@ const CALC_SRC = resolve(
   '../../../../../backend/ai-agent-service/app/tools/curtain_calc.py'
 )
 const source = readFileSync(CALC_SRC, 'utf8')
+
+/**
+ * 加工项目录种子（真值源）：`backend/admin-api/src/main/resources/db/migration/V83__seed_processing_item_catalog.sql`。
+ * issue #4592：自动推导特征会**进加工费组合键** ⇒ 清单里多一个目录没有的名字 = 商家配不出该组合
+ * = 组合价永远匹配不到（P0）。本文件据此把「清单 ↔ 目录」钉成**逐值对齐**。
+ */
+const V83_SEED_SRC = readFileSync(
+  resolve(
+    __dirname,
+    '../../../../../backend/admin-api/src/main/resources/db/migration/V83__seed_processing_item_catalog.sql'
+  ),
+  'utf8'
+)
 
 /** 从 Python 源里取一个模块级浮点常量（取不到 ⇒ 直接失败，不静默跳过） */
 function pyConst(name: string): number {
@@ -110,20 +126,25 @@ describe('超高 / 超宽 —— 与门幅比较，两者独立（设计 §5.2�
   })
 })
 
-describe('倒幅 / 正幅 —— 由 cuttingMode 唯一推导（不设手选项）', () => {
+describe('倒幅 —— 由 cuttingMode 唯一推导（不设手选项）；正幅（定高买宽）**不推导**', () => {
   it('定宽买高 ⇒ 倒幅（布旋转 90°，门幅变宽度方向）', () => {
     expect(names({ width: 1.5, height: 1.5, cuttingMode: '定宽买高' })).toContain('倒幅')
   })
 
-  it('定高买宽 ⇒ 正幅', () => {
-    expect(names({ width: 1.5, height: 1.5, cuttingMode: '定高买宽' })).toContain('正幅')
+  // 红证（issue #4592，修复前必红）：修复前 `定高买宽 ⇒ 正幅`，而 `正幅` 不在
+  // `processing_items` 目录（V83 只有 超高/超宽/倒幅）⇒ 商家配不出该组合 ⇒ 组合键永远
+  // 匹配不到价 ⇒ 加工费恒 ¥0.00。默认加工类型就是「定高买宽」⇒ **每一张默认订单**都中招。
+  it('定高买宽 ⇒ **不推出正幅**（用户裁定「正幅不用作为加工项的加项」）', () => {
+    expect(names({ width: 1.5, height: 1.5, cuttingMode: '定高买宽' })).not.toContain('正幅')
+    // 常态（定高买宽）+ 尺寸不超门幅 ⇒ **一条特征都没有**（不再靠「正幅」把只读块撑出来）
+    expect(names({ width: 1.5, height: 1.5, cuttingMode: '定高买宽' })).toEqual([])
   })
 
-  it('两个推导**互斥**（同一 cuttingMode 不可能既倒又正）', () => {
+  it('`倒幅` 只在定宽买高出现；定高买宽不推导任何朝向特征（两个推导不再「二选一」）', () => {
     const inverted = names({ width: 1.5, height: 1.5, cuttingMode: '定宽买高' })
     const upright = names({ width: 1.5, height: 1.5, cuttingMode: '定高买宽' })
-    expect(inverted).not.toContain('正幅')
-    expect(upright).not.toContain('倒幅')
+    expect(inverted).toEqual(['倒幅'])
+    expect(upright).toEqual([])
   })
 
   it('cuttingMode 未指定 / 表外取值 ⇒ 不推导（fail-closed，不猜一个朝向）', () => {
@@ -143,18 +164,37 @@ describe('来源标注 —— `source=推算`（设计 §5.2：本条是推理�
 })
 
 describe('自动特征不是可手选项（判据 8：手选项 ⇒ 红）', () => {
-  it('自动识别的特征名只可能是 超高 / 超宽 / 倒幅 / 正幅 这四个（推导产生，非商家勾选）', () => {
+  it('自动识别的特征名只可能是 超高 / 超宽 / 倒幅 这三个（推导产生，非商家勾选）', () => {
     const all = detectAutoFeatures({ width: 6.6, height: 2.6, doorWidth: 1.4, cuttingMode: '定宽买高' })
     expect(all.map((f) => f.name)).toEqual(['超宽', '超高', '倒幅'])
+  })
+
+  // 红证（issue #4592，修复前必红）：修复前 `AUTO_FEATURE_NAMES` = [..., '正幅']，
+  // 而 V83 目录只种了 3 项 ⇒ 下面的 `toEqual` 必红。
+  // 判据形态 = **逐值对齐**（清单 == 目录里标着「自动推导特征」的那几行，双向、按序），
+  // 不是「清单 ⊆ 目录」—— 后者放不出「目录多了一项而清单少推」的偏差。
+  it('#4592 清单与加工项目录（V83）**逐值对齐** —— 目录里没有的名字不得进组合键', () => {
+    const autoRowsInCatalog = [...V83_SEED_SRC.matchAll(
+      /\('(\d+)'::text,\s*'([^']+)'::text,\s*NULL::varchar\(16\),\s*'自动推导特征/g
+    )].map((m) => m[2])
+    // 目录侧自证：解析出的正是 V83 已种的三项（解析失配 ⇒ 本守卫必须红，不静默空跑）
+    expect(autoRowsInCatalog).toEqual(['超高', '超宽', '倒幅'])
+    // 清单侧：推导出的特征名与目录**逐值一致**（顺序也一致 —— 组合键归一化另有唯一实现）
+    expect(AUTO_FEATURE_NAMES).toEqual(autoRowsInCatalog)
+    // 「正幅」两侧都没有：目录没种 ⇒ 清单不得推（P0 的根因就是这个不对称）
+    expect(V83_SEED_SRC).not.toContain("'正幅'")
+    expect(AUTO_FEATURE_NAMES).not.toContain('正幅')
   })
 
   // issue #4566（用户 2026-09-19 裁定「工艺规格中的**工艺，定型**……直接通过加工项来勾选」）：
   // `定型` 是**手选**加工项，不再是自动推导特征 —— 其勾选态单独派生 `isShaped`。
   // 本清单同时是下单页滤出「手选列表」的**单一真值**（目录里必须存在这些项，
   // 但下单页的手选控件必须没有它们）。
-  it('#4566 自动推导特征清单 = 超高/超宽/倒幅/正幅（**不含定型**）', () => {
-    expect(AUTO_FEATURE_NAMES).toEqual(['超高', '超宽', '倒幅', '正幅'])
+  it('#4566 自动推导特征清单 = 超高/超宽/倒幅（**不含定型、也不含正幅**）', () => {
+    expect(AUTO_FEATURE_NAMES).toEqual(['超高', '超宽', '倒幅'])
     expect(AUTO_FEATURE_NAMES).not.toContain('定型')
+    // issue #4592：正幅是窗帘常态、不在加工项目录里 ⇒ 不得作为组合键加项
+    expect(AUTO_FEATURE_NAMES).not.toContain('正幅')
   })
 
   it('#4566 `定型` 不再由本模块推导：多传 `isShaped` 也不产出 `定型` 特征', () => {
@@ -167,6 +207,6 @@ describe('自动特征不是可手选项（判据 8：手选项 ⇒ 红）', () 
       // @ts-expect-error 入参类型已删掉 `isShaped`（#4566）；刻意多传，验证它不再影响结果
       isShaped: true,
     }).map((f) => f.name)
-    expect(names).toEqual(['超宽', '超高', '正幅'])
+    expect(names).toEqual(['超宽', '超高'])
   })
 })
