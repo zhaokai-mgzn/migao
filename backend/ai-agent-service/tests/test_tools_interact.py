@@ -105,7 +105,7 @@ class TestInteractChoice:
             title="请选择加工项",
             options=[
                 {"label": "1. 罗马杆环安装", "value": "proc_item_hook_roman"},
-                {"label": "2. 高温定型", "value": "proc_item_shape_high"},
+                {"label": "2. 定型", "value": "proc_item_shape_high"},
             ],
             pageMeta=page_meta,
         )

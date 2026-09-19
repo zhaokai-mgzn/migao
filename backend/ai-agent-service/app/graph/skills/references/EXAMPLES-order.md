@@ -49,10 +49,10 @@
 规则：只有 shipped 状态才能 completed；先查状态再操作。
 
 ### 例5: 创建带加工项的订单（加工费必须计入）
-用户: "李女士 13800138000，买遮光窗帘 3 米，要高温定型加工，地址杭州西湖区"
+用户: "李女士 13800138000，买遮光窗帘 3 米，要定型加工，地址杭州西湖区"
 ```
-→ product_detail(遮光窗帘) → skus=[...]；processing_item_query() → 店铺目录=[{id:"pi_shape_high", name:"高温定型", unit_price:20, unit:"米", pricing_method:"per_meter"}, ...]
-→ 用户确认 3 米 + 高温定型
+→ product_detail(遮光窗帘) → skus=[...]；processing_item_query() → 店铺目录=[{id:"pi_shape_high", name:"定型", unit_price:20, unit:"米", pricing_method:"per_meter"}, ...]
+→ 用户确认 3 米 + 定型
 → order_create(
     customer_name="李女士", customer_phone="13800138000",
     items=[{
@@ -61,7 +61,7 @@
       processing_info={
         colorId=..., colorName=..., sellingMethod="bulk_cut", doorWidth="2.8米",
         processingFee=60,  # 3米 × ¥20/米
-        processingItems=[{id:"pi_shape_high", name:"高温定型", unitPrice:20, quantity:3, unit:"米", pricingMethod:"per_meter", subtotal:60}]
+        processingItems=[{id:"pi_shape_high", name:"定型", unitPrice:20, quantity:3, unit:"米", pricingMethod:"per_meter", subtotal:60}]
       }
     }])
 → ✅ 订单已创建，总额 ¥324（面料 ¥264 + 加工费 ¥60）

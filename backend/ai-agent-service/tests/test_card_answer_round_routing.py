@@ -6,7 +6,7 @@
 | 轮 | 输入 | 工具 | agent 原文 |
 |---|---|---|---|
 | OR-015 R3 | （agent 发 `interact(choice, multiSelect, prefix=已选加工项：)` 卡） | … | 「是否需要加工项？（可多选…）」 |
-| OR-015 R4 | `已选加工项：纳米圈打孔 · ¥9.5/米` | **`tools=-`** | 「**下单属于订单模块的操作，我当前这边承接的…**」 |
+| OR-015 R4 | `已选加工项：打孔 · ¥9.5/米` | **`tools=-`** | 「**下单属于订单模块的操作，我当前这边承接的…**」 |
 | OR-015 R5 | `确认` | **`tools=-`** | 「**我承接的是商品侧的工作**」 |
 | OR-016 R2 | `不需要加工项` | **`tools=-`** | 「订单创建属于**订单模块**的活儿，我这边是…」（R3「确认下单」才恢复） |
 
@@ -16,7 +16,7 @@
 ## 零 LLM 探针实测（本文件 `test_probe_*` 把它钉住）
 
 ```
-RuleMatcher().match("已选加工项：纳米圈打孔 · ¥9.5/米")
+RuleMatcher().match("已选加工项：打孔 · ¥9.5/米")
   → product_inquiry  conf=0.95  kw=['加工项']            # rule_matcher.py:41 关键词表
 RuleMatcher().match("不需要加工项")
   → product_inquiry  conf=0.95  kw=['加工项']
@@ -60,15 +60,15 @@ PROCESSING_ITEM_CARD = {
     "component": "choice",
     "title": "是否需要加工项？（可多选，不需要请点「不需要加工项」）",
     "options": [
-        {"label": "纳米圈打孔 · ¥9.5/米", "value": "proc_item_pi_eval_punch"},
-        {"label": "韩式波浪折边 · ¥12/米", "value": "proc_item_pi_eval_wave"},
+        {"label": "打孔 · ¥9.5/米", "value": "proc_item_pi_eval_punch"},
+        {"label": "韩折 · ¥12/米", "value": "proc_item_pi_eval_wave"},
     ],
     "multiSelect": True,
     "multiSelectSubmitPrefix": "已选加工项：",
     "multiSelectSubmitLabel": "完成选择",
     "multiSelectSkipLabel": "不需要加工项",
 }
-ORDER_ANSWER_R4 = "已选加工项：纳米圈打孔 · ¥9.5/米"
+ORDER_ANSWER_R4 = "已选加工项：打孔 · ¥9.5/米"
 ORDER_ANSWER_R5 = "确认"
 
 
@@ -223,7 +223,7 @@ class TestReverseAnchors:
                 )
 
     def test_no_pending_and_no_card_routes_by_intent(self):
-        state = _state("已选加工项：纳米圈打孔", pending="", card=None, card_skill="")
+        state = _state("已选加工项：打孔", pending="", card=None, card_skill="")
         assert route_by_intent(state) == "product"
 
 

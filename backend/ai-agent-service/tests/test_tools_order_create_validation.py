@@ -149,7 +149,7 @@ class TestOrderCreateProcessingFeeConsistency:
             context=admin_tool_context,
             target_tool="order_create",
             target_action="create",
-            params=self._params(24.0, [{"name": "纳米圈打孔", "unitPrice": 8, "quantity": 3}]),
+            params=self._params(24.0, [{"name": "打孔", "unitPrice": 8, "quantity": 3}]),
         )
         assert result.success is True, result.message
 

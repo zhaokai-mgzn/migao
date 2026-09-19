@@ -1156,7 +1156,7 @@ cases:
       - "我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪"
       - auto_respond:
           fallback: "我是张三，手机13800138000，地址杭州市西湖区文三路1号"
-      - auto_select: true          # 答「请选择需要添加的加工项」多选卡：点首项（纳米圈打孔）
+      - auto_select: true          # 答「请选择需要添加的加工项」多选卡：点首项（打孔）
       - auto_respond:
           fallback: "确认"          # 点确认卡（confirmValue）／无卡则文本确认
       - auto_respond:
@@ -1205,7 +1205,7 @@ cases:
         checks: [unit_price, subtotal, total]
     data_checks:
       - "product_search 列表数据不含 colorId/skus，必须先调 product_detail 取详情"
-      - "加工项是**店铺级目录**（#4371 解耦：product_detail 不再返回 processing_items）⇒ 必须调 processing_item_query 拿目录，再在 confirm 之前用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「纳米圈打孔 ¥8/米」）"
+      - "加工项是**店铺级目录**（#4371 解耦：product_detail 不再返回 processing_items）⇒ 必须调 processing_item_query 拿目录，再在 confirm 之前用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「打孔 ¥8/米」）"
       - "所选加工项写入 order_create 的 processing_info.processingItems（id/name/unitPrice/quantity/unit/pricingMethod/subtotal），合计写入 processingFee 且计入订单金额；按米计价项加工数量=面料米数"
       - "顾客说「不需要加工项」可跳过；加工项确实为空时才告知无可用加工项"
       - "C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。"
@@ -1221,7 +1221,7 @@ cases:
       - "无可用加工项"
       - "该商品无加工项"
     skip_reason: ""
-    merge_log: "2026-09-12（issue #3361）交互轮改协议轮（auto_select 答加工项多选卡 + auto_respond 答表单/确认/验证码）：原静态「确认」喂不进加工项 choice 卡 → agent 重发同卡、轮数耗尽、order_create 未发生。2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式。2026-09-19（#4371 商品↔加工项解耦）：加工项来源由 `product_detail.processing_items` 改为**店铺级目录** `processing_item_query`（商品不再持有加工项）⇒ `expectations` 补 `processing_item_query`（显式期望；同时满足 C 端工具覆盖门禁）、`data_checks` 第 1/2 条同步改判（去掉 processing_items 的引用）；`user_inputs` / `order_before` / `must_succeed` / `amount_verify` / `forbidden_text` 原样未动（卡仍要发，只是来源从商品改成目录）。2026-09-19（issue #4416 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:夏日清风窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword: 夏日清风窗帘, expect: 1]` —— R1 按商品名定位下单目标，「该名字唯一」是它真正依赖且**只读**的前置（先例 = OR-014 / CH-019 / CR-001）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红，那是「硬写一条注定红的守卫」。断言（user_inputs / expectations / must_succeed / amount_verify / order_before / data_checks / forbidden_text）原样未动、无放宽。"
+    merge_log: "2026-09-12（issue #3361）交互轮改协议轮（auto_select 答加工项多选卡 + auto_respond 答表单/确认/验证码）：原静态「确认」喂不进加工项 choice 卡 → agent 重发同卡、轮数耗尽、order_create 未发生。2026-09-11 新增（issue #3270 C 端加工项能力补齐）：实测修复前 agent 只调 product_search 未调 product_detail，向顾客断言「这款商品暂未查询到可选加工项」，而该商品实际有 2 个加工项（打孔 ¥8/米、韩折 ¥12/米）→ 顾客永远选不到加工项、加工费进不了单。修复后实测同输入已主动列出真实加工项与单价。forbidden_text 锁定「凭列表错报无加工项」这一确定性反模式。2026-09-19（#4371 商品↔加工项解耦）：加工项来源由 `product_detail.processing_items` 改为**店铺级目录** `processing_item_query`（商品不再持有加工项）⇒ `expectations` 补 `processing_item_query`（显式期望；同时满足 C 端工具覆盖门禁）、`data_checks` 第 1/2 条同步改判（去掉 processing_items 的引用）；`user_inputs` / `order_before` / `must_succeed` / `amount_verify` / `forbidden_text` 原样未动（卡仍要发，只是来源从商品改成目录）。2026-09-19（issue #4416 的 burn-down 缴费 —— 改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-SELF-CLEAN + CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条**销账）：补 `namespaces[product_name:夏日清风窗帘, customer_phone:13800138000]` + `precondition[product_count_for_keyword: 夏日清风窗帘, expect: 1]` —— R1 按商品名定位下单目标，「该名字唯一」是它真正依赖且**只读**的前置（先例 = OR-014 / CH-019 / CR-001）。**有意不给 `order_count_for_phone`**：本用例自己会建单 ⇒ 漂移判据（缺省 `max_growth: 0`）必然判红，那是「硬写一条注定红的守卫」。断言（user_inputs / expectations / must_succeed / amount_verify / order_before / data_checks / forbidden_text）原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_customer_order_processing_item.py"
@@ -1255,7 +1255,7 @@ cases:
     # 期望金额（fixture 真值）：夏日清风 3m×158=474、遮光 2m×168=336、打孔 8/m → 24+16=40
     #   → 小计 810 + 加工费 40 = **850**
     user_inputs:
-      - "我要买两款：夏日清风窗帘 米白色 3 米，遮光窗帘 米白 2 米，都要纳米圈打孔加工"
+      - "我要买两款：夏日清风窗帘 米白色 3 米，遮光窗帘 米白 2 米，都要打孔加工"
       - auto_respond:
           fallback: "我是张三，手机13800138000，地址杭州市西湖区文三路1号"
       - auto_select: true
@@ -1485,7 +1485,7 @@ cases:
       - auto_respond:
           fallback: "米白"
       - auto_respond:
-          fallback: "纳米圈打孔"
+          fallback: "打孔"
       # 打岔轮：必须是**文本**送达（prefer_text），否则会被当时待答的卡片吃掉，
       # 那就测不到"打岔"这件事本身了（issue #3367 的协议轮教训）。
       - auto_respond:
@@ -1584,7 +1584,7 @@ cases:
     # 没有再发 form 卡或直接问 —— 而不是宣布"我做不到"并把顾客推去小程序。
     # 本用例顾客只给商品不给收货信息，专门压这条路径。
     user_inputs:
-      - "我想买遮光窗帘，米白 3 米，要纳米圈打孔加工"
+      - "我想买遮光窗帘，米白 3 米，要打孔加工"
       - auto_respond:
           fallback: "米白"
       # ⚠️ 这里**刻意不再重报数量**（issue #3395 复盘）：数量已在 R1 给过，
@@ -1715,7 +1715,7 @@ cases:
       color: "米白"
       colorName: "米白"
     user_inputs:
-      - "我想买遮光窗帘，米白 3 米，要纳米圈打孔加工"
+      - "我想买遮光窗帘，米白 3 米，要打孔加工"
       - auto_respond:
           fallback: "米白"
       # ⚠️ 这里**刻意不再重报数量**（issue #3395 复盘）：数量已在 R1 给过，
@@ -1977,7 +1977,7 @@ cases:
       # 首跑与重跑命中不同商品 → `db_verify[order_items]` 假红（实测 run 34757504648）。
       - "我想买遮光窗帘，米白 3 米，要打孔加工"
       - auto_respond:
-          fallback: "纳米圈打孔"
+          fallback: "打孔"
       # ⚠️ 数量**单独一轮**给出（C-A1 的形状）——这里是缺陷的触发点
       - "数量 3 米"
       - auto_respond:
@@ -2271,32 +2271,35 @@ cases:
     tags:
       - order_create
       - processing_item
-      - per_area
+      - per_meter
       - decimal_quantity
     truths_ref:
       - order.create-flow
     # ── 容量缺陷回归网（issue #3666）──
     # 现象：订单数量语义过窄 —— `order_items.quantity` 是 INTEGER，而数量口径按计价方式
     #   （docs/testing/acceptance-protocol.md:225：per_meter=米数 / per_set=1 / per_area=宽×高）。
-    #   per_area 的合法面积可以是小数：门幅 2.8m × 3m = **8.4 ㎡**，刺绣工艺 30 元/㎡
-    #   → 正确 252.00 元；整数只能表示 8 → 240.00 元 = **少收 12.00 元**。
+    #   计价数量可以是小数：**8.4 米**（per_meter），打孔 8.00 元/米
+    #   → 正确 67.20 元；整数只能表示 8 → 64.00 元 = **少收 3.20 元**。
+    #   ⚠️ 2026-09-19（issue #4572）：原形态是 per_area 8.4 ㎡ × 30 元/㎡ = 252.00，
+    #   接地夹具 `刺绣工艺`（`pi_eval_embroidery`）已按用户裁定**真删** ⇒ 本用例改判到
+    #   **per_meter**（接地对象 = 种子里的 `打孔`/`pi_eval_punch`，8.00 元/米），
+    #   金额**逐值重算**；**per_area 计价路径的评测覆盖随该夹具删除而移除**（如实登记）。
     # 归因（代码级）：DTO/entity `Integer quantity` + `order_items.quantity INTEGER`
     #   + `OrderService.extractProcessingItems()` 走 `toInteger()`（8.4 → 8，列表/详情
     #   加工费按截断值重算，与外层落库金额自相矛盾）。
     # 裁定：放宽为 DECIMAL(10,2)/BigDecimal（方案 A）。
     # 本条断言**金额数学关系**（acceptance-protocol §3.2）：
-    #   Σ加工费 = 30 × 8.4 = 252.00（截断成 8 会得 240.00 → processing_fee 断言判红）；
-    #   总额 = 面料 23.80×3 + 252.00 = 323.40；
+    #   Σ加工费 = 8.00 × 8.4 = 67.20（截断成 8 会得 64.00 → processing_fee 断言判红）；
+    #   总额 = 面料 23.80×3 + 67.20 = 138.60；
     #   落库明细数量 = 3（面料米数）—— 数量列放宽后仍必须保真。
-    # 注：本条不依赖"模型自己算面积"这一 LLM 算术能力（那是另一条能力线，且 8 vs 8.4
-    #   的首跑分歧正是 chat.yml:408 记录的**选中错商品**导致的金额不可复现）——
-    #   顾客在开口时说清面积真值，断言聚焦「数值透传→落库→计费」这一确定性链路。
+    # 注：本条不依赖"模型自己算数量"这一 LLM 算术能力（那是另一条能力线）——
+    #   顾客在开口时说清计价数量真值，断言聚焦「数值透传→落库→计费」这一确定性链路。
     user_inputs:
       - "给张三下单，手机 13800138000；2699系列雪尼尔窗帘面料，2699-03暖米色，散剪，2.8米门幅，要 3 米"
       # 刻意**只给面积真值**（不给门幅×米数的乘法题）：本条测的是「数值透传→落库→计费」
       # 的保真链路，不是让模型做算术。给面积真值可去掉"模型自己算 8 vs 8.4"的方差源，
       # 让断言只咬住截断缺陷本身（8.4 被截断成 8 → 加工费 240.00 ≠ 252.00 → 判红）。
-      - "再加刺绣工艺加工，面积算 8.4 平方米"
+      - "再加打孔加工，数量算 8.4 米"
       # 收尾协作轮（§13.5 先例 OR-026/OR-021）：B 端下单是「选规格 → 选加工项 → 填收货信息 →
       # 确认卡 → 写单」多步流程，**固定轮次表写不准**（首跑 2 轮就耗尽轮次：agent 只跑到
       # product_detail/interact，order_create 从未发生 → 用例判红，假失败）。
@@ -2348,8 +2351,9 @@ cases:
         source: "2699系列雪尼尔窗帘面料"
         expect: 1
     data_checks:
-      - "刺绣工艺 per_area 数量 = 8.4 ㎡，加工费 = 30 × 8.4 = 252.00 元（截断成 8 会变 240.00，少收 12.00）"
-      - "订单总额 = 面料小计 23.80×3=71.40 + 加工费 252.00 = 323.40 元"
+      - "打孔 per_meter 数量 = 8.4 米，加工费 = 8.00 × 8.4 = 67.20 元（截断成 8 会变 64.00，少收 3.20）"
+      - "订单总额 = 面料小计 23.80×3=71.40 + 加工费 67.20 = 138.60 元"
+      - "⚠️ 2026-09-19（issue #4572）：本用例原为 per_area（8.4 ㎡ × 30 元/㎡ = 252.00），接地夹具 `刺绣工艺` 按用户裁定真删 ⇒ 改判 per_meter 并逐值重算；**per_area 计价路径的评测覆盖随该夹具删除而移除**（如需恢复，须新增一个显式标注为评测夹具的 per_area 项）"
       - "订单明细数量落库为 3（面料米数），DECIMAL(10,2) 列不得改变整数数量的落库语义"
     # 自清理 / 前置自断言（2026-09-19 issue #4431 的 burn-down 缴费）：
     #   · namespaces：本用例**自己就会给 13800138000 建单**、且按**商品名**定位下单对象 ⇒
@@ -2399,14 +2403,14 @@ cases:
     # 全部取自 seed，替代原先与夹具矛盾、物理不可满足的三项：
     #   · 规格：seed 该商品只有 2699-03暖米色 与 2699-01本白（无 2699-06 蓝灰色）
     #   · 库存：seed 商品级 stock=1000、SKU 级 stock=500（无 9599）
-    #   · 加工项：目录只有 纳米圈打孔 ¥8/米、韩式波浪折边 ¥12/米、高温定型 ¥10/米、
+    #   · 加工项：目录只有 打孔 ¥8/米、韩折 ¥12/米、定型 ¥10/米、
     #     刺绣工艺 ¥30/平方米（无「穿杆孔加工」「包边处理」）
     #   · 客户：seed 唯一客户 = 张三 / 13800138000（旧值「赵凯 13456000919」不在 seed，
     #     而输入自称「已有客户」⇒ 合格 agent 必然停在澄清，「物理上走不完」）
     # 金额自洽（与 case_trust 的金额一致口径无关，仅供人工核对）：
     #   加工费 = (8+12+10) × 10 米 = ¥300；面料小计 = 23.8 × 10 = ¥238；预估合计 ≈ ¥538。
     user_inputs:
-      - "录订单 张三（13800138000）｜ 2699系列雪尼尔窗帘面料 · 2699-03暖米色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：纳米圈打孔、韩式波浪折边、高温定型"
+      - "录订单 张三（13800138000）｜ 2699系列雪尼尔窗帘面料 · 2699-03暖米色 · 散剪 · 2.8米 · 10 米 ｜ 加工项：打孔、韩折、定型"
       - "1. 2699系列雪尼尔窗帘面料｜¥23.8/米｜库存 1000"
       # ⚠️ 控制轮必须是 **dict（YAML block style）**：runner 只把 dict 轮解释成控制轮
       # （`isinstance(msg, dict)` → auto_select / auto_respond / repeat_until 分支），
@@ -2456,7 +2460,7 @@ cases:
         expect: 1
     data_checks:
       - "确认卡点击（confirmValue 逐字回传）后，order_create 必须**真实执行并落库**——不得出现 Tool not found / 空头承诺「请稍候，我这就提交」而订单永不创建"
-      - "order_create 的 customer_phone=13800138000、items 数量=10 米、unit_price=23.8（与商品库价一致）、加工项纳米圈打孔 ¥8/米 + 韩式波浪折边 ¥12/米 + 高温定型 ¥10/米（均取自 seed 加工项目录）"
+      - "order_create 的 customer_phone=13800138000、items 数量=10 米、unit_price=23.8（与商品库价一致）、加工项打孔 ¥8/米 + 韩折 ¥12/米 + 定型 ¥10/米（均取自 seed 加工项目录）"
     order_before:
       - "interact[choice] before product_detail"
       - "interact[confirm] before order_create"
@@ -2465,7 +2469,7 @@ cases:
         product_keyword: "2699系列雪尼尔窗帘面料"
         price: 23.8
     skip_reason: ""
-    merge_log: "2026-09-17 新增（issue #3976，线上实证 sess_202d55d49a254a10）：首条消息同时含商品细节与下单指令 → 意图路由判 product_inquiry → 整条 validate/confirm 链在 product skill 内完成，确认卡点击后模型调 order_create 撞 Tool not found（product 注册表无此工具）→ 空头承诺 + 订单永不落库。修复（route_by_intent 答卡轮归属 skill 迁移 + tool_not_found 兜底 relock + 8.4 收口扩展 B 端 order_create + metadata 假证据修复）后，确认轮应路由到 order skill 真实下单。2026-09-17 CI 门禁校准：B 端专属用例补 persona: mibao（C 端缺 sms_code 轮且 fixture 无该商品）、补 must_succeed[order_create]（效果层断言）与 precondition[product_count_for_keyword]（同名商品唯一前置，同 OR-008/OR-006 #3835 先例）。2026-09-17 夹具对齐（issue #4015，run 35233821582 @54e8fe9d 归因）：罐头输入与 tests/agent_eval/fixtures/mibao_eval_seed.sql 事实矛盾（规格 2699-06 蓝灰色 / 库存 9599 / 加工项 穿杆孔加工 ¥4/米 与 包边处理 ¥10/米 三项在 seed 里 0 命中；自称「已有客户」的赵凯 13456000919 亦不在 seed）⇒ 合格 agent 如实指出「对不上」并停在澄清，链路物理上走不完（恒红）。逐项改为 seed 真值（2699-03暖米色 / 库存 1000 / 纳米圈打孔 ¥8+韩式波浪折边 ¥12+高温定型 ¥10 / 张三 13800138000），并把后两轮改成 auto_select + repeat_until(tool_called=order_create) 协作轮（同 OR-016/OR-021 先例：卡内容由 LLM 动态生成，静态轮次表对不上就卡死）——断言（expectations / must_succeed / order_before / precondition）一律不放宽；2026-09-18 复核修正（issue #4042）：上面那次改写的**后两轮写法无效** —— 它们是 JSON **字符串**（`'{\"auto_select\": true}'` / `'{\"repeat_until\": …}'`），而 runner 只把 **dict** 轮当控制轮（非 dict 一律按纯文本发送，见 `run_case` 的 `isinstance(msg, dict)` 分支），故 auto_select/repeat_until 两个声明**静默失效**、顾客消息变成字面量 JSON、卡片无人作答 ⇒ `order_create` 永不执行（恒红且归因错人）。已改为 YAML block style 的 dict 轮；并补静态守卫（`tests/unit_ci_workflows/test_eval_auto_respond_l0.py::test_no_control_turn_is_written_as_json_string`）防复发"
+    merge_log: "2026-09-17 新增（issue #3976，线上实证 sess_202d55d49a254a10）：首条消息同时含商品细节与下单指令 → 意图路由判 product_inquiry → 整条 validate/confirm 链在 product skill 内完成，确认卡点击后模型调 order_create 撞 Tool not found（product 注册表无此工具）→ 空头承诺 + 订单永不落库。修复（route_by_intent 答卡轮归属 skill 迁移 + tool_not_found 兜底 relock + 8.4 收口扩展 B 端 order_create + metadata 假证据修复）后，确认轮应路由到 order skill 真实下单。2026-09-17 CI 门禁校准：B 端专属用例补 persona: mibao（C 端缺 sms_code 轮且 fixture 无该商品）、补 must_succeed[order_create]（效果层断言）与 precondition[product_count_for_keyword]（同名商品唯一前置，同 OR-008/OR-006 #3835 先例）。2026-09-17 夹具对齐（issue #4015，run 35233821582 @54e8fe9d 归因）：罐头输入与 tests/agent_eval/fixtures/mibao_eval_seed.sql 事实矛盾（规格 2699-06 蓝灰色 / 库存 9599 / 加工项 穿杆孔加工 ¥4/米 与 包边处理 ¥10/米 三项在 seed 里 0 命中；自称「已有客户」的赵凯 13456000919 亦不在 seed）⇒ 合格 agent 如实指出「对不上」并停在澄清，链路物理上走不完（恒红）。逐项改为 seed 真值（2699-03暖米色 / 库存 1000 / 打孔 ¥8+韩折 ¥12+定型 ¥10 / 张三 13800138000），并把后两轮改成 auto_select + repeat_until(tool_called=order_create) 协作轮（同 OR-016/OR-021 先例：卡内容由 LLM 动态生成，静态轮次表对不上就卡死）——断言（expectations / must_succeed / order_before / precondition）一律不放宽；2026-09-18 复核修正（issue #4042）：上面那次改写的**后两轮写法无效** —— 它们是 JSON **字符串**（`'{\"auto_select\": true}'` / `'{\"repeat_until\": …}'`），而 runner 只把 **dict** 轮当控制轮（非 dict 一律按纯文本发送，见 `run_case` 的 `isinstance(msg, dict)` 分支），故 auto_select/repeat_until 两个声明**静默失效**、顾客消息变成字面量 JSON、卡片无人作答 ⇒ `order_create` 永不执行（恒红且归因错人）。已改为 YAML block style 的 dict 轮；并补静态守卫（`tests/unit_ci_workflows/test_eval_auto_respond_l0.py::test_no_control_turn_is_written_as_json_string`）防复发"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_graph_nodes.py"

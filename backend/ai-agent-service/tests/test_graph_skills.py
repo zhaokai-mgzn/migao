@@ -1391,23 +1391,23 @@ class TestProcessingItemsFallback:
         """顾客**已经在文本里答过**加工项 → 不得再用卡重问一遍（C-A1 重放 9 实证）。
 
         transcript（run 34788143133，C-A1）：R2 小布在**文本**里问「需要一起加工吗？」→
-        R3 顾客答「纳米圈打孔」→ R5 代码兜底仍把 confirm 卡改写成加工项 choice 卡
+        R3 顾客答「打孔」→ R5 代码兜底仍把 confirm 卡改写成加工项 choice 卡
         —— 同一件事问第二遍，顾客不得不再答一次才轮到「确认下单」（UA 判定"有条件通过"那条）。
         记账 `PROC_ITEMS_ASKED_KEY` 只在**发卡**时落笔，文本问答不在账上，故这里另立判据。
         """
-        items = [{"id": "pi1", "name": "纳米圈打孔", "unitPrice": 8.0}]
+        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         msgs = [self._user("你好，有什么推荐的吗？"), self._detail_msg(items),
-                self._user("纳米圈打孔"), self._user("确认下单")]
+                self._user("打孔"), self._user("确认下单")]
         plan = lr2._plan_processing_items_rewrite([confirm], msgs)
         assert plan is None, "顾客已答过加工项，不得再用卡重问（C-A1 实证的重复提问）"
 
     def test_no_rewrite_when_user_answered_with_partial_name(self):
         """顾客说的是**加工项名的一部分**（「打孔加工」）同样算答过。
 
-        fixture 里叫「纳米圈打孔」，顾客口语常说「打孔」——只用全名匹配等于不匹配。
+        fixture 里叫「打孔」，顾客口语常说「打孔」——只用全名匹配等于不匹配。
         """
-        items = [{"id": "pi1", "name": "纳米圈打孔", "unitPrice": 8.0}]
+        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         msgs = [self._detail_msg(items), self._user("要打孔加工"), self._user("确认下单")]
         assert lr2._plan_processing_items_rewrite([confirm], msgs) is None
@@ -1418,7 +1418,7 @@ class TestProcessingItemsFallback:
         旧判据 `_last_user_declined_processing` 只看**最近一条**用户消息 ——
         顾客拒绝后又说「确认下单」就漏了，卡照样弹出来。
         """
-        items = [{"id": "pi1", "name": "纳米圈打孔", "unitPrice": 8.0}]
+        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         msgs = [self._detail_msg(items), self._user("不需要加工项"), self._user("确认下单")]
         assert lr2._plan_processing_items_rewrite([confirm], msgs) is None
@@ -1429,7 +1429,7 @@ class TestProcessingItemsFallback:
         为什么必须保这条（OR-017 依赖）：业务铁律是"confirm 前必须把加工项摆出来"，
         顾客下单时顺口带上加工项 ≠ 已看过可选项/单价；那时仍应发卡或至少问一次。
         """
-        items = [{"id": "pi1", "name": "纳米圈打孔", "unitPrice": 8.0}]
+        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         msgs = [self._user("帮我下单，遮光窗帘 3 米，要打孔加工"), self._detail_msg(items),
                 self._user("确认下单")]
@@ -1438,7 +1438,7 @@ class TestProcessingItemsFallback:
 
     def test_rewrite_fires_when_user_text_unrelated(self):
         """detail 之后顾客只说了数量/确认，没提加工项 → 仍要问（不得因新判据漏问）。"""
-        items = [{"id": "pi1", "name": "纳米圈打孔", "unitPrice": 8.0}]
+        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         msgs = [self._detail_msg(items), self._user("数量 3 米"), self._user("确认下单")]
         assert lr2._plan_processing_items_rewrite([confirm], msgs) is not None
@@ -2006,7 +2006,7 @@ class TestWriteConfirmedAcrossTurns:
             yield
 
 
-    LONG_CONFIRM = "确认下单：遮光窗帘 3米 米白 纳米圈打孔，总额528元，收货人张三 13800138000"
+    LONG_CONFIRM = "确认下单：遮光窗帘 3米 米白 打孔，总额528元，收货人张三 13800138000"
 
     def test_write_executes_on_code_turn_after_card_confirm(self):
         """模拟真实两轮：R1 用户点击确认卡（精确匹配）；R2 用户给验证码 → order_create"""
@@ -2141,7 +2141,7 @@ class TestWriteConfirmedAcrossTurns:
 class TestWriteConfirmedLifecycle:
     """记录与清除两个代码路径的直接覆盖（M1/M3 变异缺口）"""
 
-    LONG_CONFIRM = "确认下单：遮光窗帘 3米 米白 纳米圈打孔，总额528元，收货人张三 13800138000"
+    LONG_CONFIRM = "确认下单：遮光窗帘 3米 米白 打孔，总额528元，收货人张三 13800138000"
 
     def _run(self, store_state, user_msg, tool_calls):
         # 接地前置（issue #3361）：本类测确认链，不测接地闸门
@@ -2247,7 +2247,7 @@ class TestTurnStartCardConfirmRecord:
     卡片值 → 记录永不发生 → 写操作仍被拦。
     """
 
-    LONG_CONFIRM = "确认下单：遮光窗帘 3米 米白 纳米圈打孔，总额528元，收货人张三 13800138000"
+    LONG_CONFIRM = "确认下单：遮光窗帘 3米 米白 打孔，总额528元，收货人张三 13800138000"
 
     def test_record_on_confirm_click_turn(self):
         import asyncio
@@ -3568,7 +3568,7 @@ class TestCapabilityDenialHandoffWiring:
 class TestCurtainCalcDimensionGuard:
     """算料必须以**顾客给的窗户尺寸**为前提（issue #3395，DB 实证多收 3 倍钱）。
 
-    实证（run 34748745308，OR-022）：顾客「我想买遮光窗帘，米白 **3 米**，要纳米圈打孔加工」
+    实证（run 34748745308，OR-022）：顾客「我想买遮光窗帘，米白 **3 米**，要打孔加工」
     —— 说的是**买 3 米布**；模型却把它当成「窗宽 3 米」，再把窗高默认成 2.7 米去算料：
 
         P = ceil((3+0.3)×2/2.8) = 3 幅，M = 3×(2.7+0.3) = **9.0 米**
@@ -3589,7 +3589,7 @@ class TestCurtainCalcDimensionGuard:
 
     def test_purchase_meters_not_dimensions(self):
         """顾客说"要 3 米"是**购买数量**，不是窗户尺寸 → 不得算料（本 issue 的形态）。"""
-        msgs = [HumanMessage(content="我想买遮光窗帘，米白 3 米，要纳米圈打孔加工"),
+        msgs = [HumanMessage(content="我想买遮光窗帘，米白 3 米，要打孔加工"),
                 AIMessage(content="好的，帮您看看～"), HumanMessage(content="3 米")]
         assert not _conversation_mentions_dimensions(msgs), "把购买米数当窗宽 = 多收 3 倍钱"
 
@@ -3597,7 +3597,7 @@ class TestCurtainCalcDimensionGuard:
 class TestCurtainCalcDimensionGuardWiring:
     """守卫必须接在工具调用上：无尺寸证据时 curtain_calc 不得真的执行。"""
 
-    def _run(self, args, user_msg="我想买遮光窗帘，米白 3 米，要纳米圈打孔加工",
+    def _run(self, args, user_msg="我想买遮光窗帘，米白 3 米，要打孔加工",
              tool_name="curtain_calc", history=None):
         import asyncio, json as _json
 
@@ -3961,10 +3961,10 @@ class TestQuantityChoiceGuard:
 
     def test_ca1_card_blocked(self):
         """C-A1 原卡：用量框架 + 6 米（=2×3）→ 必须拦下。"""
-        out = self._run(self._card("请选择窗帘用量（米白·纳米圈打孔）",
+        out = self._run(self._card("请选择窗帘用量（米白·打孔）",
                                    ["3米（¥528，基本无褶皱）", "6米（约¥1056，褶皱饱满，推荐）"]),
                         self._msgs("你好，我想买窗帘", "第一款吧，白色，2.8 米门幅，按米卖",
-                                   "纳米圈打孔", "数量 3 米"))
+                                   "打孔", "数量 3 米"))
         assert out is not None, "2 倍用量选项必须拦下（会把 528 变成 1056）"
         import json as _json
         msg = _json.loads(out[1]).get("message", "")
@@ -4060,14 +4060,14 @@ class TestQuantityChoiceGuardWiring:
         return seen
 
     def _ca1_card(self):
-        return {"component": "choice", "title": "请选择窗帘用量（米白·纳米圈打孔）",
-                "options": [{"label": "3米（¥528，基本无褶皱）", "value": "数量3米，米白，纳米圈打孔"},
-                            {"label": "6米（约¥1056，褶皱饱满，推荐）", "value": "数量6米，米白，纳米圈打孔"}]}
+        return {"component": "choice", "title": "请选择窗帘用量（米白·打孔）",
+                "options": [{"label": "3米（¥528，基本无褶皱）", "value": "数量3米，米白，打孔"},
+                            {"label": "6米（约¥1056，褶皱饱满，推荐）", "value": "数量6米，米白，打孔"}]}
 
     def test_ca1_card_never_reaches_customer(self):
         seen = self._run(self._ca1_card(),
                          ["你好，我想买窗帘", "第一款吧，白色，2.8 米门幅，按米卖",
-                          "纳米圈打孔", "数量 3 米"])
+                          "打孔", "数量 3 米"])
         assert seen["calls"] == [], "把顾客的 3 米当窗宽、推荐 6 米的卡不得下发"
         assert "3" in seen["tool_content"], "拦截时必须说明顾客已给 3 米"
 
@@ -4559,7 +4559,7 @@ class TestProcessingItemsAskedPersistsCrossTurn:
     修法：把「加工项已问过」按**商品 id** 持久化到会话，跨轮生效；换商品（新 id）仍会正常再问。
     """
 
-    _ITEMS = [{"id": "pi1", "name": "纳米圈打孔", "unitPrice": 8.0, "unit": "米",
+    _ITEMS = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0, "unit": "米",
                "pricingMethod": "per_meter"}]
 
     def _run(self, store_extra=None, product_id="prod_eval_summer"):
@@ -4834,7 +4834,7 @@ class TestWriteInputRecovery:
         验证码也能作为文本落到 agent 手里。
         """
         seen = self._run(
-            "已选加工项：纳米圈打孔",
+            "已选加工项：打孔",
             {"component": "form", "title": "请确认收货信息", "fields": []},
             tool_name="interact",
             store_extra={"last_write_input_error": self._FLAG})
@@ -4913,38 +4913,38 @@ class TestWriteInputRecovery:
         （R2-R6），顾客每次都把同样的答案回给它 —— 真人会以为系统坏了。
         前两次放行（首次 + 一次合理重问），第三次起拦下并给出可执行指引。"""
         seen = self._run(
-            "已选加工项：纳米圈打孔",
+            "已选加工项：打孔",
             {"component": "choice", "title": "这款商品支持以下加工项，需要哪些呢？（可多选）",
-             "options": [{"label": "纳米圈打孔 ¥8/米"}, {"label": "不需要加工"}]},
+             "options": [{"label": "打孔 ¥8/米"}, {"label": "不需要加工"}]},
             tool_name="interact",
             store_extra={"card_emit_counts": {
-                "choice|这款商品支持以下加工项，需要哪些呢？（可多选）|纳米圈打孔 ¥8/米、不需要加工": 2}})
+                "choice|这款商品支持以下加工项，需要哪些呢？（可多选）|打孔 ¥8/米、不需要加工": 2}})
         assert seen["calls"] == [], "同一张 choice 卡已发 2 次，第 3 次必须拦下（否则就是 5 连发）"
 
     def test_same_choice_card_allowed_on_second_emission(self):
         seen = self._run(
-            "已选加工项：纳米圈打孔",
+            "已选加工项：打孔",
             {"component": "choice", "title": "这款商品支持以下加工项，需要哪些呢？（可多选）",
-             "options": [{"label": "纳米圈打孔 ¥8/米"}, {"label": "不需要加工"}]},
+             "options": [{"label": "打孔 ¥8/米"}, {"label": "不需要加工"}]},
             tool_name="interact",
             store_extra={"card_emit_counts": {
-                "choice|这款商品支持以下加工项，需要哪些呢？（可多选）|纳米圈打孔 ¥8/米、不需要加工": 1}})
+                "choice|这款商品支持以下加工项，需要哪些呢？（可多选）|打孔 ¥8/米、不需要加工": 1}})
         assert len(seen["calls"]) == 1, "第 2 次属合理重问，不能拦"
 
     def test_changed_options_is_a_different_card(self):
         """选项变了就是**另一张卡**（顾客改了商品/规格后重新确认）→ 不得误伤。"""
         seen = self._run(
-            "已选加工项：纳米圈打孔",
+            "已选加工项：打孔",
             {"component": "choice", "title": "这款商品支持以下加工项，需要哪些呢？（可多选）",
              "options": [{"label": "折边 ¥5/米"}, {"label": "不需要加工"}]},
             tool_name="interact",
             store_extra={"card_emit_counts": {
-                "choice|这款商品支持以下加工项，需要哪些呢？（可多选）|纳米圈打孔 ¥8/米、不需要加工": 5}})
+                "choice|这款商品支持以下加工项，需要哪些呢？（可多选）|打孔 ¥8/米、不需要加工": 5}})
         assert len(seen["calls"]) == 1, "选项变了 = 新卡，不该被旧卡的计数拦住"
 
     def test_emission_counted_on_success(self):
         seen = self._run(
-            "已选加工项：纳米圈打孔",
+            "已选加工项：打孔",
             {"component": "choice", "title": "选一下加工项"},
             tool_name="interact")
         counts = seen["final_store"].get("card_emit_counts") or {}
@@ -5414,7 +5414,7 @@ class TestConfirmationGateNoCardRepro:
             async def clear(self, sid):
                 return True
 
-        history = [HumanMessage(content="我想买遮光窗帘，米白 3 米，要纳米圈打孔加工")]
+        history = [HumanMessage(content="我想买遮光窗帘，米白 3 米，要打孔加工")]
         if with_confirm_card:
             history.append(ToolMessage(
                 content=json.dumps({"success": True,

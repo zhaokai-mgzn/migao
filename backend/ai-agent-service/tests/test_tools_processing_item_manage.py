@@ -636,9 +636,12 @@ class TestProcessingCalculatePrice:
 #   ✅ 最小修法：schema/execute 补 `width`/`height` 并下发 `dimensions`，
 #      `quantity` 保持计件数语义（有尺寸但未传数量时缺省 1）。
 #
-# 真值取自 B 端评测种子（tests/agent_eval/fixtures/mibao_eval_seed.sql:76-83）：
-# `pi_eval_embroidery`（刺绣工艺，per_area，30.00 元/平方米）→ 3.2m × 2.5m = 8㎡
-# → 30 × 8 × 1 = ¥240.00。
+# 口径取自后端实现（ProcessingItemService 的 per_area 分支：unitPrice × area × quantity）：
+# 30.00 元/平方米 × (3.2m × 2.5m = 8㎡) × 1 = ¥240.00。
+# ⚠️ 2026-09-19（issue #4572）：原注释称真值取自评测种子 `pi_eval_embroidery`（刺绣工艺，
+# per_area）—— 该夹具已按用户裁定**真删**（评测目录只保留 ERP 附件那 16 项，全 per_meter）
+# ⇒ 本文件改用**后端公式**作为真值来源（下面的常量是自足的测试夹具，不依赖种子）。
+# **per_area 计价路径的评测覆盖随该夹具删除而移除**（如实登记）。
 PER_AREA_ITEM_ID = "pi_eval_embroidery"
 PER_AREA_UNIT_PRICE = 30.00
 PER_AREA_WIDTH = 3.2

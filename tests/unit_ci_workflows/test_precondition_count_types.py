@@ -3,7 +3,7 @@
 
 ## 为什么必须有（同族病灶 = `PG-013` / `CU-003` 的归因污染）
 
-PP-008 的写动作是「停用种子加工项 `pi_eval_punch`（名字「纳米圈打孔」）」。它依赖的**真前置**
+PP-008 的写动作是「停用种子加工项 `pi_eval_punch`（名字「打孔」）」。它依赖的**真前置**
 是「那个共享夹具真的在、且只有一份」：
 
 - **不在** ⇒ 红的表现是 `unmatched expectation` —— 看起来像「agent 不会停用加工项」，归因全错；
@@ -59,7 +59,7 @@ class TestTypeIsImplemented:
         )
 
     def test_declared_type_passes_static_check(self):
-        spec = [{"type": TYPE_NAME, "source": "纳米圈打孔", "expect": 1}]
+        spec = [{"type": TYPE_NAME, "source": "打孔", "expect": 1}]
         assert _runner().check_precondition_declared(spec) == []
 
     def test_unknown_type_still_fail_closed(self):
@@ -70,14 +70,14 @@ class TestTypeIsImplemented:
     def test_capture_shape_collects_the_source(self):
         """`precondition_capture_shape` 必须收得到本类型的 source（否则运行期不取基线 = 空跑）。"""
         shape = _runner().precondition_capture_shape(
-            [{"type": TYPE_NAME, "source": "纳米圈打孔", "expect": 1}])
-        assert shape.get(TYPE_NAME) == ["纳米圈打孔"]
+            [{"type": TYPE_NAME, "source": "打孔", "expect": 1}])
+        assert shape.get(TYPE_NAME) == ["打孔"]
 
 
 class TestProbeCounting:
     """探针读数（纯函数口径）：三种结局都可判，读不出 = 失败关闭。"""
 
-    def _probe_with_items(self, monkeypatch, items, keyword="纳米圈打孔"):
+    def _probe_with_items(self, monkeypatch, items, keyword="打孔"):
         lr = _runner()
 
         class _Resp:
@@ -111,23 +111,25 @@ class TestProbeCounting:
     def test_counts_only_name_substring_hits(self, monkeypatch):
         """服务端是模糊匹配 ⇒ 客户端必须只留**名字真的含关键词**的项（口径同商品版）。"""
         n = self._probe_with_items(monkeypatch, [
-            {"name": "纳米圈打孔", "status": "active"},
-            {"name": "打孔（纳米圈）加厚", "status": "inactive"},   # 不含完整关键词 ⇒ 不计
+            {"name": "打孔", "status": "active"},
+            {"name": "纳米圈加厚", "status": "inactive"},   # 不含关键词「打孔」⇒ 不计
+            # ⚠️ #4572：关键词由「纳米圈打孔」改名「打孔」后，旧诱饵「打孔（纳米圈）加厚」
+            #    变成**真的含**关键词 ⇒ 判别性失效（诱饵必须真的不含关键词才算诱饵）
         ])
         assert n == 1
 
     def test_status_is_not_part_of_the_count(self, monkeypatch):
         """**不按 status 计**：停用（inactive）后件数必须**不变** —— 否则本用例的正常写动作
         会被判成「前置漂移」（假红）。判别性：把 `status == active` 加进过滤 ⇒ 本条红。"""
-        active = self._probe_with_items(monkeypatch, [{"name": "纳米圈打孔", "status": "active"}])
-        inactive = self._probe_with_items(monkeypatch, [{"name": "纳米圈打孔", "status": "inactive"}])
+        active = self._probe_with_items(monkeypatch, [{"name": "打孔", "status": "active"}])
+        inactive = self._probe_with_items(monkeypatch, [{"name": "打孔", "status": "inactive"}])
         assert active == inactive == 1
 
     def test_duplicate_fixture_is_visible(self, monkeypatch):
         """同名副本 >1 ⇒ 读数 >1（`expect: 1` 会判「前置本就不成立」）。"""
         assert self._probe_with_items(monkeypatch, [
-            {"name": "纳米圈打孔", "status": "active"},
-            {"name": "纳米圈打孔", "status": "active"},
+            {"name": "打孔", "status": "active"},
+            {"name": "打孔", "status": "active"},
         ]) == 2
 
     def test_empty_keyword_is_none_not_zero(self):
@@ -153,7 +155,7 @@ class TestProbeCounting:
 
         monkeypatch.setattr(lr.httpx, "AsyncClient", _Boom)
         monkeypatch.setattr(lr, "_admin_headers", lambda token: {})
-        assert asyncio.run(lr._probe_processing_item_count("tok", "纳米圈打孔")) is None
+        assert asyncio.run(lr._probe_processing_item_count("tok", "打孔")) is None
 
 
 class TestCaseDeclarationStillThere:
@@ -166,7 +168,7 @@ class TestCaseDeclarationStillThere:
         assert specs, "PP-008 的加工项前置声明消失了（基线格被拆掉 = 判据放宽）"
         spec = specs[0]
         assert spec.get("type") == TYPE_NAME, f"PP-008 的前置类型被换掉：{spec}"
-        assert spec.get("source") == "纳米圈打孔", f"PP-008 的前置定位键被改掉：{spec}"
+        assert spec.get("source") == "打孔", f"PP-008 的前置定位键被改掉：{spec}"
         assert int(spec.get("expect")) == 1, f"PP-008 的基线期望被改掉（放宽）：{spec}"
         # 断言面不得被这次缴费动过（只增前置）
         assert case.get("expectations"), "PP-008 的 expectations 消失"

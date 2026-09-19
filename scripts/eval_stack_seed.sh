@@ -91,7 +91,7 @@ echo "── 评测栈种子注入：persona=${PERSONA}（单一源 scripts/eval
 if [ ${#SEED_FILES[@]} -eq 1 ]; then
   echo "   规则：仅 C 端种子（xiaobu 栈不含 B 端 —— 叠加会改 created_at 排序，污染 C 端选品链路）"
 else
-  echo "   规则：C 端种子 + B 端种子（B 端点名数据：2699 商品/刺绣工艺/客户张三/员工王五/历史订单）"
+  echo "   规则：C 端种子 + B 端种子（B 端点名数据：2699 商品/ERP 加工项目录 16 项/客户张三/员工王五/历史订单）"
 fi
 
 if [ "$DRY_RUN" = "true" ]; then

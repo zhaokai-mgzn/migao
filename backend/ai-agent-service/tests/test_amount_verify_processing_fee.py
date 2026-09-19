@@ -112,7 +112,7 @@ class TestProcessingFeeCanonicalSource:
         """声明值与 Σ加工项一致（24 = 8×3）→ 无任何违规。"""
         m = _load_runner()
         results = [_round(8, None, total=95.4, fee_declared=24.0,
-                          proc_items=[{"name": "纳米圈打孔", "unitPrice": 8, "quantity": 3}])]
+                          proc_items=[{"name": "打孔", "unitPrice": 8, "quantity": 3}])]
         assert _run(m, results, ["subtotal", "processing_fee", "total"]) == []
 
     def test_fee_folded_subtotal_variant_still_clean(self):
@@ -120,7 +120,7 @@ class TestProcessingFeeCanonicalSource:
         m = _load_runner()
         # 服务端口径：71.4（面料）+ 24（加工）= 95.4，两种小计约定下总额都是 95.4
         r = _round(8, None, total=95.4, fee_declared=24.0,
-                   proc_items=[{"name": "纳米圈打孔", "unitPrice": 8, "quantity": 3}])
+                   proc_items=[{"name": "打孔", "unitPrice": 8, "quantity": 3}])
         item = r["tool_calls"][0]["args"]["items"][0]
         item["subtotal"] = 95.4      # 变体②：小计 71.4 + 加工费 24
         assert _run(m, [r], ["subtotal", "processing_fee", "total"]) == []

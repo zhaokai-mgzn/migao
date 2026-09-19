@@ -2105,7 +2105,7 @@ def check_repeated_card_ask(results: list) -> list:
     """「同一张卡顾客**已答过**又被重问」→ 违规（issue #3477 复盘 / 断言矩阵补行）。
 
     背景（C-A1 R5，run 34788143133 transcript）：R2 小布**文本**问「需要一起加工吗？」→
-    R3 顾客答「纳米圈打孔」→ R5 又发加工项 choice 卡 —— 同一件事问第二遍（加工项侧已由
+    R3 顾客答「打孔」→ R5 又发加工项 choice 卡 —— 同一件事问第二遍（加工项侧已由
     agent 守卫修 #3473，这里补**评测断言**，覆盖地址/数量/颜色等所有"同卡重问"）。
 
     与 `check_confirm_loop` 的分工：那条按"同事实 confirm ≥3 次"；本条按"同卡 + 已作答"，
@@ -3563,7 +3563,7 @@ def _evaluate_processing_configs_check(configs: list, check: str) -> tuple[bool,
     """评估落库谓词：'processingItemConfigs.<all|加工项名>.<字段><op><值>'。
 
     例：processingItemConfigs.all.finalPrice>0
-        processingItemConfigs.刺绣工艺.finalPrice==45
+        processingItemConfigs.打孔.finalPrice==9.5
     返回 (是否通过, 详情)；字段为空（价格未带入）即失败。
     """
     import re as _re
@@ -4740,7 +4740,7 @@ _PRECONDITION_TYPES: dict = {
     # （`_norm_phone` + `/api/admin/users` 列表），不存在第二份"怎么数员工"的定义。
     "employee_count_for_phone": "该手机号名下的员工/用户数（创建前置：目标可创建）",
     # 加工项存在性前置（issue #4527 的 burn-down 缴费，PP-008 使用）：
-    # `source` = 加工项名关键词（种子里的**唯一名**，如「纳米圈打孔」）→ 基线 = 名字含该
+    # `source` = 加工项名关键词（种子里的**唯一名**，如「打孔」）→ 基线 = 名字含该
     # 关键词的加工项件数。与 `product_count_for_keyword` 同构：用例的写动作（改价/停用）
     # 依赖「那个共享夹具真的在、且只有一份」—— 不在 ⇒ 红的表现是 `unmatched expectation`
     # （看起来像「agent 不会改加工项」，归因全错）；有同名副本 ⇒ 改到的可能不是种子那一件。

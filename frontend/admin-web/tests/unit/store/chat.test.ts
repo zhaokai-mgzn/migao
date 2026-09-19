@@ -188,10 +188,10 @@ describe('useChatStore (Zustand chat store) — #571', () => {
     it('should isolate selections across sessions (切换会话不串台)', () => {
       const s = useChatStore.getState()
       act(() => s.toggleChoiceSelection('sess1', 'processing_item_query', '打孔加工'))
-      act(() => s.toggleChoiceSelection('sess2', 'processing_item_query', '高温定型'))
+      act(() => s.toggleChoiceSelection('sess2', 'processing_item_query', '定型'))
 
       expect(useChatStore.getState().choiceSelections['sess1:processing_item_query']).toEqual(['打孔加工'])
-      expect(useChatStore.getState().choiceSelections['sess2:processing_item_query']).toEqual(['高温定型'])
+      expect(useChatStore.getState().choiceSelections['sess2:processing_item_query']).toEqual(['定型'])
     })
 
     it('should clear selections for a session:tool key', () => {

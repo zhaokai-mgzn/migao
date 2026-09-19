@@ -184,9 +184,9 @@ class TestScenarioActions:
     def test_click_multiselect_uses_frontend_prefix(self):
         prev = [_round(1, interactive=[{"type": "choice", "multiSelect": True,
                                         "multiSelectSubmitPrefix": "已选加工项：",
-                                        "options": [{"label": "纳米圈打孔 ¥8/米", "value": "pi1"}]}])]
+                                        "options": [{"label": "打孔 ¥8/米", "value": "pi1"}]}])]
         out = ar.resolve_action({"click": "first_option"}, prev)
-        assert out.startswith("已选加工项：") and "纳米圈打孔" in out, \
+        assert out.startswith("已选加工项：") and "打孔" in out, \
             "多选提交必须按前端协议（前缀+标签），否则模型看不懂选了什么"
 
     def test_no_card_click_falls_back_to_text(self):
@@ -365,12 +365,12 @@ class TestRepeatUntilRound:
             {"repeat_until": {"tool_called": "order_create", "max": 2}, "click": "auto",
              "fallback": "确认"},
         ]}
-        events = [self._ev(cards=[{"type": "choice", "options": [{"label": "纳米圈打孔", "value": "pi1"}]}]),
+        events = [self._ev(cards=[{"type": "choice", "options": [{"label": "打孔", "value": "pi1"}]}]),
                   self._ev(tools=["order_create"])]
         _res, sent = self._run(sc, events)
         # 第 1 次重复时还没有卡 → 用 fallback；卡出现后**必须按卡作答**（不是无脑重发同一句）
         assert sent[0] == "确认", f"无卡时应走 fallback: {sent}"
-        assert sent[1] == "纳米圈打孔", f"重复轮未按卡作答: {sent}"
+        assert sent[1] == "打孔", f"重复轮未按卡作答: {sent}"
 
 
 class TestScenarioCodeSupply:

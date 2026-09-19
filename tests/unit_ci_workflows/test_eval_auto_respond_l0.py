@@ -306,7 +306,7 @@ def test_confirm_and_choice_cards_still_yield_the_code_when_asked():
     """反向守卫（OR-023 同族正向半）：索码 + 待答 confirm/choice 卡 ⇒ 仍供码（卡型无关）。"""
     confirm = [{"type": "confirm", "title": "请确认订单信息", "confirmValue": "确认：商品=遮光窗帘"}]
     choice = [{"type": "choice", "title": "要哪些加工项",
-               "options": [{"label": "纳米圈打孔", "value": "pi1"}]}]
+               "options": [{"label": "打孔", "value": "pi1"}]}]
     for cards in (confirm, choice):
         got = lr.resolve_repeat_turn([_round(text=_SOFT_MENTION, cards=cards)],
                                      {"code": "123456", "fallback": "确认下单",

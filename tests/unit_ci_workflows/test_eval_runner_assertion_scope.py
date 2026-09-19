@@ -228,13 +228,13 @@ class TestFirstSuccessfulPayloadSameRound:
             1,
             [("processing_item_manage", self.LIST), ("processing_item_manage", self.CRAETE)],
             [("processing_item_manage", True, {"categories": [{"id": 1, "name": "折边"}]}),
-             ("processing_item_manage", True, {"id": 42, "name": "纳米圈打孔"})],
+             ("processing_item_manage", True, {"id": 42, "name": "打孔"})],
         )
 
     def test_picks_payload_of_declared_action(self):
         got = lr._first_successful_payload(
             [self._round()], "processing_item_manage", self.CRAETE)
-        assert got == {"id": 42, "name": "纳米圈打孔"}
+        assert got == {"id": 42, "name": "打孔"}
 
     def test_other_action_selector_still_picks_its_own(self):
         got = lr._first_successful_payload(
@@ -251,7 +251,7 @@ class TestFirstSuccessfulPayloadSameRound:
             1,
             [("processing_item_manage", self.CRAETE), ("processing_item_manage", self.LIST)],
             [("processing_item_manage", False, {"error": "加工分类不存在"}),
-             ("processing_item_manage", True, {"name": "纳米圈打孔"})],
+             ("processing_item_manage", True, {"name": "打孔"})],
         )
         assert lr._first_successful_payload(
             [r], "processing_item_manage", self.CRAETE) == {}

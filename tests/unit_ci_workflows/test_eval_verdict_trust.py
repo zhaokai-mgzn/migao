@@ -280,12 +280,12 @@ class TestConfirmLoopSameFactCriterion:
     def test_three_identical_content_cards_still_red(self):
         """**红证 A**：3 张内容相同的卡 ⇒ 仍判死循环（检测器不失效）。"""
         card = {"component": "confirm", "title": "确认创建商品",
-                "confirmValue": "确认：加工项=刺绣工艺；分类=窗帘布艺；单价=100"}
+                "confirmValue": "确认：加工项=打孔；分类=窗帘布艺；单价=100"}
         issues = lr.check_confirm_loop([_confirm_round(4, card), _confirm_round(5, card),
                                         _confirm_round(6, card)])
         assert len(issues) == 1, issues
         assert "R4/R5/R6" in issues[0], issues[0]
-        assert "确认：加工项=刺绣工艺" in issues[0], (
+        assert "确认：加工项=打孔" in issues[0], (
             f"失败信息未附卡的原文摘要 —— 复核无法独立完成: {issues[0]}")
         assert "判据=内容键" in issues[0], issues[0]
 
@@ -296,15 +296,15 @@ class TestConfirmLoopSameFactCriterion:
         判据本身 —— 把卡内容改成相同 ⇒ 本测试必红（防止夹具退化）。
         """
         cards = [_confirm_round(4, {"component": "confirm", "title": "确认创建商品",
-                                    "confirmValue": "加工项=刺绣工艺"}),
+                                    "confirmValue": "加工项=打孔"}),
                  _confirm_round(5, {"component": "confirm", "title": "确认创建商品",
-                                    "confirmValue": "加工项=刺绣工艺、高温定型"}),
+                                    "confirmValue": "加工项=打孔、定型"}),
                  _confirm_round(6, {"component": "confirm", "title": "确认创建商品",
-                                    "confirmValue": "加工项=刺绣工艺、高温定型、定型"})]
+                                    "confirmValue": "加工项=打孔、定型、定型"})]
         assert lr.check_confirm_loop(cards) == [], "不同事实的卡被判成死循环（误报）"
         # 防退化：内容改为相同 ⇒ 必须判红（否则本用例是空断言）
         same = [_confirm_round(4, {"component": "confirm", "title": "确认创建商品",
-                                   "confirmValue": "加工项=刺绣工艺"})]
+                                   "confirmValue": "加工项=打孔"})]
         assert lr.check_confirm_loop(same + same + same), "内容相同的卡没被判定（夹具退化）"
 
     def test_title_only_same_title_cards_still_detected_fail_closed(self):
@@ -330,14 +330,14 @@ class TestConfirmLoopSameFactCriterion:
     def test_fields_based_key_still_counts(self):
         """无 confirmValue 但 fields 相同 ⇒ 仍按内容键计数（同事实）。"""
         card = {"component": "confirm", "title": "确认创建商品",
-                "fields": [{"label": "加工项", "value": "刺绣工艺"}]}
+                "fields": [{"label": "加工项", "value": "打孔"}]}
         issues = lr.check_confirm_loop([_confirm_round(1, card), _confirm_round(2, card),
                                         _confirm_round(3, card)])
         assert len(issues) == 1 and "R1/R2/R3" in issues[0], issues
-        assert "加工项=刺绣工艺" in issues[0], issues[0]
+        assert "加工项=打孔" in issues[0], issues[0]
 
     def test_two_cards_still_tolerated(self):
         """2 次以内容忍（顾客取消后重新确认）不判死循环。"""
         card = {"component": "confirm", "title": "确认创建商品",
-                "confirmValue": "加工项=刺绣工艺"}
+                "confirmValue": "加工项=打孔"}
         assert lr.check_confirm_loop([_confirm_round(1, card), _confirm_round(2, card)]) == []

@@ -42,13 +42,13 @@ class TestOrderWrite:
     def test_order_create_with_processing_item(self, sess):
         """带加工项下单 → admin-api 验证 processingItems 与加工费已持久化（加工费不得遗漏）"""
         name_hint = f"E2E加工单_{TS}"
-        # 找一个带加工项的商品（高温定型/打孔等按米计价加工项），确保 product_detail 返回 processing_items
+        # 找一个带加工项的商品（定型/打孔等按米计价加工项），确保 product_detail 返回 processing_items
         products = admin_search_products("米白色遮光窗帘")
         assert products, "需要带加工项的商品数据（米白色遮光窗帘）"
         detail = admin_get(f"/api/admin/products/{products[0]['id']}")
         proc_items = (detail.get("data") or {}).get("processingItems") or []
         assert proc_items, "商品应关联加工项（前置数据），否则本测试无法验证加工费链路"
-        proc_name = proc_items[0].get("name", "高温定型")
+        proc_name = proc_items[0].get("name", "定型")
 
         # R1: 明确商品 + 明确要求加工项（按米计价的加工项 → 加工数量 = 面料米数）
         sess.send(f"帮我查一下米白色遮光窗帘")

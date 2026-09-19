@@ -160,7 +160,7 @@ export const TEST_PROCESSING_ITEM = {
   unitPrice: 35.00,
   unit: '米',
   status: 'active' as const,
-  description: 'E2E测试用加工项，韩式高温定型打褶',
+  description: 'E2E测试用加工项，韩式定型打褶',
   processingDays: 3,
 }
 

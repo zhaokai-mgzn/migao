@@ -269,7 +269,7 @@ class TestRealAssertionReachesSummary:
         results = [_round(
             2,
             [("processing_item_manage", "create_processing_item")],
-            [("processing_item_manage", True, {"name": "刺绣工艺", "pricingMethod": "area"})],
+            [("processing_item_manage", True, {"name": "打孔", "pricingMethod": "area"})],
         )]
         issues = lr.check_output_verify(results, [
             {"tool": "processing_item_manage", "action": "create_processing_item",

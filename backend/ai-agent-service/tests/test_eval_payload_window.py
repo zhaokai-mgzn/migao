@@ -171,7 +171,7 @@ def test_auto_fill_only_cases_are_covered(case_id):
 _SPEC_CARD = {"type": "choice", "title": "请选择遮光窗帘的规格（颜色）",
               "options": [{"label": "米白", "value": "米白"}]}
 _PROC_CARD = {"type": "choice", "title": "请选择遮光窗帘的加工项（可多选）", "multiSelect": True,
-              "options": [{"label": "韩式波浪折边", "value": "pi_hem"}]}
+              "options": [{"label": "韩折", "value": "pi_hem"}]}
 _FORM_CARD = {"type": "form", "title": "请填写客户信息（下单必填）",
               "formFields": [{"key": "customer_name"}, {"key": "customer_phone"},
                              {"key": "customer_address"}]}

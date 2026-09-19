@@ -193,12 +193,12 @@ class TestProductReadbackById:
         async def _fetcher(name, product_id):
             seen["name"], seen["product_id"] = name, product_id
             if product_id == CREATED_PRODUCT_ID:
-                return [{"processingItemName": "刺绣工艺", "finalPrice": 45}]
-            return [{"processingItemName": "刺绣工艺", "finalPrice": 30}]   # 种子 prod_eval_2699
+                return [{"processingItemName": "打孔", "finalPrice": 45}]
+            return [{"processingItemName": "打孔", "finalPrice": 30}]   # 种子 prod_eval_2699
 
         issues = self._run([{"fetch": "product_by_name", "source": "product_manage",
                              "action": "create", "name": PRODUCT_NAME,
-                             "checks": ["processingItemConfigs.刺绣工艺.finalPrice==45"]}],
+                             "checks": ["processingItemConfigs.打孔.finalPrice==45"]}],
                            [self._create_round()], _fetcher)
         assert issues == [], issues
         assert seen.get("product_id") == CREATED_PRODUCT_ID, seen
@@ -243,14 +243,14 @@ class TestProductReadbackById:
 
         async def _strict(token, name):          # 与存量替身**同签名**（不接受 product_id）
             calls.append((token, name))
-            return [{"processingItemName": "刺绣工艺", "finalPrice": 45}]
+            return [{"processingItemName": "打孔", "finalPrice": 45}]
 
         orig = lr._fetch_product_configs
         lr._fetch_product_configs = _strict
         try:
             issues = asyncio.run(lr.check_db_verify(
                 "tok", [{"fetch": "product_by_name", "name": "盯防加工项价格0908",
-                         "checks": ["processingItemConfigs.刺绣工艺.finalPrice==45"]}], []))
+                         "checks": ["processingItemConfigs.打孔.finalPrice==45"]}], []))
         finally:
             lr._fetch_product_configs = orig
         assert issues == [], issues
@@ -262,10 +262,10 @@ class TestProductReadbackById:
 
         async def _fetcher(name, product_id):
             seen["name"], seen["product_id"] = name, product_id
-            return [{"processingItemName": "刺绣工艺", "finalPrice": 45}]
+            return [{"processingItemName": "打孔", "finalPrice": 45}]
 
         issues = self._run([{"fetch": "product_by_name", "name": "盯防加工项价格0908",
-                             "checks": ["processingItemConfigs.刺绣工艺.finalPrice==45"]}],
+                             "checks": ["processingItemConfigs.打孔.finalPrice==45"]}],
                            [], _fetcher)
         assert issues == [], issues
         assert seen == {"name": "盯防加工项价格0908", "product_id": ""}, seen
@@ -285,7 +285,7 @@ class TestProductReadbackById:
 
         async def _fetcher(name, product_id):
             seen["product_id"] = product_id
-            return [{"processingItemName": "刺绣工艺", "finalPrice": 45}]
+            return [{"processingItemName": "打孔", "finalPrice": 45}]
 
         issues = self._run([{"fetch": "product_by_name", "source": "product_manage",
                              "name": PRODUCT_NAME,
