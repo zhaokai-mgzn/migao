@@ -360,24 +360,36 @@ class ProcessingFeeCalculatorTest {
     }
 
     @Test
-    @DisplayName("判据 1·选项名按 **Unicode 码点升序**（与书写顺序无关，两次生成逐值相同）")
+    @DisplayName("判据 1·选项名按 **全名 Unicode 码点升序**（与书写顺序无关，两次生成逐值相同）")
     void specialOptionsAreSortedByCodePoint() {
         givenCombinations(combination("定型+打孔+韩褶", "8.00"));
-        givenOptionRules(optionRule("接高", "2.50"), optionRule("加铅块", "6.00"));
+        // ⚠️ 判据必须用**首字符相同**的两个选项，否则「只比第一位」的实现也能通过
+        // （实证：`接高`(U+63A5) 与 `加铅块`(U+52A0) 首字符不同 ⇒ 首字符比较同样得
+        //  「加铅块, 接高」⇒ 那是**非判别性**判据 = 空断言）。
+        // `加铅块`(加 U+52A0 + 铅 U+94C5) 与 `加花边`(加 U+52A0 + 花 U+82B1)：
+        // 首字符**相同**，第二位 花(U+82B1) < 铅(U+94C5) ⇒ 全名序 = 「加花边」在前。
+        givenOptionRules(optionRule("接高", "2.50"), optionRule("加铅块", "6.00"),
+                optionRule("加花边", "1.50"));
 
         Map<String, Object> info = processingInfo(new BigDecimal("10.00"), "韩褶", "打孔", "定型");
-        info.put("specialOptions", List.of("接高", "加铅块"));   // 书写序：接(U+63A5) 在 加(U+52A0) 之前
+        info.put("specialOptions", List.of("加铅块", "接高", "加花边"));   // 书写序 ≠ 码点序
         ProcessingFeeCalculator.Fee fee = compute(info);
 
-        // 码点升序 ⇒ 「加」(U+52A0) 在前、「接」(U+63A5) 在后（**不是**书写顺序）
+        // 全名码点升序 ⇒ 加花边(U+82B1) < 加铅块(U+94C5) < 接高(U+63A5)？注意「接」U+63A5 < 「花」U+82B1
+        // ⇒ 真序 = 接高(63A5) < 加花边(52A0 82B1)？「加」U+52A0 < 「接」U+63A5 ⇒ 加* 在前。
+        // ⇒ 最终：加花边(52A0,82B1) < 加铅块(52A0,94C5) < 接高(63A5)
         assertThat(fee.specialOptions()).extracting(ProcessingFeeCalculator.SpecialOption::name)
-                .containsExactly("加铅块", "接高");
-        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("8.50");
+                .containsExactly("加花边", "加铅块", "接高");
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("10.00");
 
-        // 换一个书写顺序 ⇒ 明细**逐值相同**（顺序不确定 = 同一张单两次生成不同明细）
+        // 换书写顺序 ⇒ 明细**逐值相同**（顺序不确定 = 同一张单两次生成不同明细）
         Map<String, Object> reordered = processingInfo(new BigDecimal("10.00"), "韩褶", "打孔", "定型");
-        reordered.put("specialOptions", List.of("加铅块", "接高"));
+        reordered.put("specialOptions", List.of("接高", "加花边", "加铅块"));
         assertThat(compute(reordered).specialOptions()).isEqualTo(fee.specialOptions());
+        // 再换一次（把两个**首字符相同**的选项对调）—— 只比首字符的实现会在这里分叉
+        Map<String, Object> reordered2 = processingInfo(new BigDecimal("10.00"), "韩褶", "打孔", "定型");
+        reordered2.put("specialOptions", List.of("加铅块", "加花边", "接高"));
+        assertThat(compute(reordered2).specialOptions()).isEqualTo(fee.specialOptions());
     }
 
     @Test

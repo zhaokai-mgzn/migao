@@ -333,7 +333,12 @@ public class ProcessingFeeCalculator {
             options.add(new SpecialOption(name, unitPrice, 1,
                     priced ? unitPrice : BigDecimal.ZERO, priced));
         }
-        options.sort(Comparator.comparingInt(option -> option.name().codePointAt(0)));
+        // 按**全名**的 Unicode 码点升序（`String` 自然序 = UTF-16 码元序；本域全是 BMP 字符
+        // ⇒ 与码点序逐值一致）—— 与 `compositionKey` 的 `TreeSet<String>` **同源**，不自造第二种口径。
+        // ⚠️ **不得**用 `codePointAt(0)`（只比首字符）：`加铅块` / `加花边` / `加logo条` / `加立边`
+        // 首字符相同 ⇒ 并列 ⇒ 稳定排序退化成**商家勾选顺序** ⇒ 同一笔选择产出两种明细顺序
+        // （违反设计 §4.3 的确定性契约；实证：本类测试用首字符相同的两项才照得出）。
+        options.sort(Comparator.comparing(SpecialOption::name));
         return options;
     }
 
