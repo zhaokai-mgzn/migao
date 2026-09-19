@@ -4910,7 +4910,7 @@ _CASE_PP_007 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['把加工项纳米圈打孔的单价改成 9.5 元一米', {'repeat_until': {'tool_called': 'processing_item_manage', 'max': 3}, 'fallback': '确认'}, '再看下加工项纳米圈打孔的单价和计价方式', {'repeat_until': {'tool_called': 'processing_item_query', 'max': 3}, 'fallback': '确认'}],
     expectations=['processing_item_manage(action=update_item)', 'processing_item_query'],
-    data_checks=['回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter、status 仍为 active（未被清空）——只改 price 不得清空其它字段'],
+    data_checks=['前置（precondition）：评测栈种子里「纳米圈打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`（8.00 元/米）—— 它是下面 `update_item` 回读断言的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项」，判红会伪装成「agent 不会改价」', '回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter、status 仍为 active（未被清空）——只改 price 不得清空其它字段'],
     skip_reason='',
     tags=['processing_item', 'llm_behavior', 'tool_call', 'update'],
     persona='',
