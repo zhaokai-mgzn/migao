@@ -26,6 +26,12 @@ V74（#4399 特殊选项旧名回填）首版把载体①误写成 **`orders.pro
 
 ⚠️ 边界（如实登记）：本守卫只做**静态存在性**校验，**不能**替代真库执行
 （类型不匹配、约束冲突、JSONB 形状错等仍要真库才暴露）。
+
+## 判据 5（issue #4543）：迁移**必须至少含一条可执行语句**
+
+判据 1~4 全都**遍历「已出现的引用」** ⇒ **引用集为空 ⇒ 循环体不执行 ⇒ 恒真（vacuous）**
+⇒ 「一份**只有注释**的迁移」完全合法地通过（实证：PR #4532 的 V78 被脚本截掉两段 SQL 后**判绿**，
+靠 sha 校验 + 人工 diff 才发现）。判据 5 补上那个洞，且**只判「有没有语句」、不判语义**。
 """
 import re
 from pathlib import Path
@@ -246,6 +252,140 @@ def test_genuinely_missing_column_is_still_caught():
     assert missing == ["processing_items.craft_hint_not_added"], (
         "引用了既不在终态 schema、也不是本文件 ADD 出来的列 ⇒ 必须判红"
         "（否则这条守卫就是摆设 —— V74 首版那个缺陷会静默通过）"
+    )
+
+
+# ── 判据 5：迁移**必须至少含一条可执行语句**（issue #4543）─────────────────────
+# 病根：判据 1~4 全都**遍历「已出现的引用」** ⇒ 引用集为空时循环体不执行 ⇒ **恒真（vacuous）**
+# ⇒ 「一份只有注释的迁移」完全合法地通过。而它的后果是**真实故障**：
+# `MigrationRunner` 把它记进 `schema_migrations`（按文件名）⇒ **该迁移永不生效**，
+# 而 `docs/sql/schema.sql` 是手写终态、看起来「列在」⇒ **bootstrap 库有列、存量库没有**
+# ⇒ 存量环境查询 500（#3270 同族）。实证：PR #4532 用脚本改写 V78 文件尾注释时
+# 截掉了 `ALTER TABLE … ADD COLUMN` 与 `COMMENT ON COLUMN` 两段 SQL，守卫**判绿**，
+# 最后靠 `test_migration_immutability` 的 sha 校验 + 人工 diff 才发现
+# （那个 sha 校验验的是「文件没被改」，**不是**「文件里有东西」）。
+
+# 一条**可执行语句**的形态：`DDL/DML 关键字 + 操作对象`。
+# ⚠️ 关键字**必须带对象**（`ALTER TABLE` / `SET <标识符> =` 这种），否则：
+#   ① 裸 `SET`（`SET search_path = …`）会把**会话元数据设置**误判成数据改动；
+#   ② 裸 `CREATE`/`ALTER` 会把注释残留或半截 SQL 误判成有效语句。
+# ⇒ 本判据只判「**有没有语句**」，**不判语义**（语义是判据 1~4 的射程，见文件头边界）。
+_DDL_DML = re.compile(
+    r"\b(?:ALTER\s+(?:TABLE|INDEX|SEQUENCE|VIEW|SCHEMA)"
+    r"|CREATE\s+(?:TABLE|INDEX|UNIQUE\s+INDEX|SEQUENCE|VIEW|SCHEMA|TYPE|EXTENSION)"
+    r"|INSERT\s+INTO|UPDATE\s+[a-z_]|DELETE\s+FROM|DROP\s+(?:TABLE|INDEX|VIEW|COLUMN|CONSTRAINT|SEQUENCE)"
+    r"|COMMENT\s+ON|GRANT\b|REVOKE\b"
+    r"|SET\s+[a-z_][a-z0-9_]*\s*(?:=|TO\b))", re.I)
+
+# 「**只有注释、零语句**」的**存量**迁移（逐条给理由；**只许缩短**，见下面的自证测试）。
+# ⚠️ 为什么必须豁免而不是「顺手补上一条语句」：这三个文件**已被
+# `test_migration_immutability` 的账本 `migration_fingerprints.json` 冻结**
+# （`danger_scan` 机械阻塞改已发布迁移）⇒ 改/删它们都会让那条守卫红。
+# 不豁免 ⇒ 本判据在**存量仓库**上永久红 ⇒ 只能被人关掉（假红比没有守卫更糟）。
+#
+# ✅ **来历已核实（不是「疑似缺陷」，是「有意留空」）**：这三个文件由
+# `b11c172ad`（「极简 DB 迁移器替代 Flyway」）**以只有注释的形态新建**，用途 = 占住 Flyway
+# 时代的迁移号（旧 Flyway 已把它们跑过）⇒ 对新 MigrationRunner 是**刻意的 no-op**
+# （`git show b11c172ad -- <路径>` 的 diff 形态 = `new file` + 仅注释行；V2 更早的
+# `e7dcf7096`/`e7dcf4735` 版本才含 27~29 行 `INSERT`，那属于**旧 Flyway 目录**，不是本目录）。
+# ⇒ 它们**没有**「本应生效却空跑」的缺陷；本条豁免是**语义正确**的，不是「网开一面」。
+# ⚠️ 但本判据对**任何新增**迁移都会拦住同一形态（新增的「只有注释」迁移 = 真缺陷，
+# 因为新号在存量库**没有**已应用记录 ⇒ 它本该做的那件事永远不会发生）。
+VACUOUS_PLACEHOLDER_MIGRATIONS = {
+    "V2__init_rbac_data.sql":
+        "b11c172ad 新建的**占号**文件，全文 2 行注释（`-- RBAC 种子数据（幂等: ON CONFLICT DO NOTHING）`"
+        " + `-- 此文件仅作记录，实际数据由应用层初始化`）⇒ 有意 no-op（种子数据由应用层初始化）。",
+    "V3__backfill_position_from_role.sql":
+        "b11c172ad 新建的**占号**文件，全文 1 行注释（`-- 从角色表回填职位字段（历史数据迁移，已完成）`）"
+        "⇒ 有意 no-op（回填在 Flyway 时代已完成）。",
+    "V4__migrate_in_warehouse_to_on_sale.sql":
+        "b11c172ad 新建的**占号**文件，全文 1 行注释（`-- 在仓 → 在售状态迁移（历史数据迁移，已完成）`）"
+        "⇒ 有意 no-op（状态迁移在 Flyway 时代已完成）。",
+}
+
+
+def _statements_without_executable_sql(sql: str) -> bool:
+    """该迁移文本是否**一条可执行语句都没有**（= 剥注释后没有任何 DDL/DML 关键字 + 对象）。"""
+    return not _DDL_DML.search(_strip_comments(sql))
+
+
+def test_migration_must_contain_at_least_one_statement():
+    """判据 5（**承重**）：每个 `V*__*.sql` 迁移必须**至少含一条可执行语句**。
+
+    判据 1~4 全部只校验「**已出现**的引用」⇒ 引用集为空 ⇒ 循环体不执行 ⇒ 恒真（vacuous）。
+    本条补上那个洞：**只有注释的迁移**必须报出（issue #4543；实证 PR #4532 的 V78 事故）。
+
+    ⚠️ 只判「有没有语句」，**不判语句语义**（那是判据 1~4 的射程）。
+    """
+    files = sorted(MIGRATION_DIR.glob("V*.sql"))
+    assert files, f"{MIGRATION_DIR} 下一条迁移都没找到 —— 本判据空转（假绿）"
+    vacuous = [
+        p.name for p in files
+        if p.name not in VACUOUS_PLACEHOLDER_MIGRATIONS
+        and _statements_without_executable_sql(p.read_text(encoding="utf-8"))
+    ]
+    assert not vacuous, (
+        "这些迁移**一条可执行语句都没有**（只有注释）：\n  " + "\n  ".join(vacuous)
+        + "\n⇒ `MigrationRunner` 会把它记进 `schema_migrations`（按文件名）⇒ **该迁移永不生效**，"
+          "而 `docs/sql/schema.sql`（手写终态）看起来「列在」⇒ **bootstrap 库有列、存量库没有**"
+          "⇒ 存量环境查询 500（issue #4543；实证 PR #4532 的 V78：脚本改写注释时截掉了两段 SQL，"
+          "守卫判绿，靠 sha 校验 + 人工 diff 才发现）。\n"
+          "修法：把被截掉的 SQL 补回去（**新增**迁移走新文件；已发布迁移不可改）。"
+    )
+
+
+def test_comment_only_migration_is_reported():
+    """**红证（注入式）**：测试内构造一份**只有注释**的迁移 ⇒ 判据**必报出**。
+
+    ⚠️ 形态要求（issue #4543）：这里**不得**写成「仓库当下恰有该缺陷」的真值主张 ——
+    那种断言**修好即红**、报错指向错误方向（本仓 `migao-acceptance`「断言形态」节明令）。
+    """
+    injected = (
+        "-- V999__only_comments.sql\n"
+        "-- 本迁移把 processing_items.craft_hint 改成显式声明口径。\n"
+        "-- 脚本改写文件尾注释时，下面两段 SQL 被截掉了：\n"
+        "-- ALTER TABLE processing_items ADD COLUMN IF NOT EXISTS craft_hint VARCHAR(16);\n"
+        "-- COMMENT ON COLUMN processing_items.craft_hint IS '显式声明的工艺';\n"
+    )
+    assert _statements_without_executable_sql(injected), (
+        "只有注释的迁移**必须**被判据 5 报出（否则本守卫是摆设 —— PR #4532 的 V78 事故原样复发）"
+    )
+    # 与判据 1~4 对照：同一条文本在「引用」口径下**一条引用都抽不出来** ⇒ 那四条恒真放行
+    assert _referenced_tables(injected) == set() and _referenced_columns(injected) == set(), (
+        "注入样例必须复现「引用集为空」这一前提（否则证明不了判据 1~4 的空断言形态）"
+    )
+
+
+def test_normal_migration_is_not_reported():
+    """**红证的对照面**：正常迁移（含真语句）⇒ 判据**不报**（防「一律报红」的假守卫）。"""
+    normal = (
+        "-- V999__add_craft_hint.sql\n"
+        "ALTER TABLE processing_items ADD COLUMN IF NOT EXISTS craft_hint VARCHAR(16);\n"
+        "COMMENT ON COLUMN processing_items.craft_hint IS '显式声明的工艺';\n"
+    )
+    assert not _statements_without_executable_sql(normal)
+    # 边界（如实登记）：`SET <标识符> = …` 形态**算**一条语句（issue #4543 建议口径里含 `SET`）。
+    # 本判据只判「有没有语句」，**不判**「这条语句有没有实际效果」—— 后者是语义问题
+    # （例如整份迁移只写 `SET search_path`），不在本判据射程内。
+    assert not _statements_without_executable_sql("SET search_path = public;\n")
+    # 而**只有注释**的文本仍然报出（与上面两条对照，证明判据有区分力）
+    assert _statements_without_executable_sql("-- SET search_path = public;\n")
+
+
+def test_vacuous_placeholder_exemptions_are_still_vacuous():
+    """**防豁免腐烂**：豁免清单**只许缩短** —— 清单里的文件若已含真语句 ⇒ 红，逼人删掉该条。
+
+    没有这条，豁免会永久留在文件里（将来有人给 V3 补上语句、或清单被复制粘贴扩大）。
+    """
+    actual = {
+        p.name for p in sorted(MIGRATION_DIR.glob("V*.sql"))
+        if _statements_without_executable_sql(p.read_text(encoding="utf-8"))
+    }
+    assert actual == set(VACUOUS_PLACEHOLDER_MIGRATIONS), (
+        f"豁免清单与磁盘实际不符：\n  磁盘上零语句的迁移 = {sorted(actual)}\n"
+        f"  清单 = {sorted(VACUOUS_PLACEHOLDER_MIGRATIONS)}\n"
+        "⇒ 清单里多出来的条目已被修好/消失 ⇒ **删掉它**（只许缩短）；"
+        "磁盘上多出来的 ⇒ 是**新**缺陷 ⇒ 修迁移，不要加豁免。"
     )
 
 
