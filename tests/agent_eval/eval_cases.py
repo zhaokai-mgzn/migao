@@ -1094,7 +1094,7 @@ _CASE_CH_013 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['你们窗帘质量太差了，气死我了', '帮我把问题整理成售后工单'],
     expectations=['interact(component=choice)'],
-    data_checks=['不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转', 'interact 卡片选项含『整理成售后工单』与『继续咨询小布』，且**不含**任何邀约人工转接的措辞（卡片文案判据见 tests/unit_ci_workflows/test_human_handoff_retired.py）', '用户点『整理成售后工单』后进入售后受理链路（确定性路由 after_sales, source=rule；判据见 tests/test_xiaobu_handoff_offer.py::TestOfferToDirectHandoffE2E）', '整场不出现假承诺话术（机器断言见 forbidden_text）—— 系统已无人工转接通道'],
+    data_checks=['前置（precondition）：小布对**单轮负面情绪**会走「主动建议」确定性节点（真值 = `backend/ai-agent-service/app/graph/handoff_offer.py` 的 `judge_handoff`：意图 ∈ `_OFFER_ALLOWED_INTENTS`（general / after_sales / complaint）且命中 S1 负面情绪词表 ⇒ 下发 `interact` choice 建议卡，与转人工工具是否可达无关）（success=true）；前置不成立时 `interact` 期望 unmatched，判红会伪装成「agent 不会建议」', '不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转', 'interact 卡片选项含『整理成售后工单』与『继续咨询小布』，且**不含**任何邀约人工转接的措辞（卡片文案判据见 tests/unit_ci_workflows/test_human_handoff_retired.py）', '用户点『整理成售后工单』后进入售后受理链路（确定性路由 after_sales, source=rule；判据见 tests/test_xiaobu_handoff_offer.py::TestOfferToDirectHandoffE2E）', '整场不出现假承诺话术（机器断言见 forbidden_text）—— 系统已无人工转接通道'],
     skip_reason='',
     tags=['multi_turn', 'handoff', 'ai_guided'],
     persona='xiaobu',
@@ -1113,7 +1113,7 @@ _CASE_CH_014 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['你们太坑了，再也不买了', '继续咨询小布', '你们又没解决，气死我了'],
     expectations=['interact'],
-    data_checks=['首次不满 → 建议卡片（offer_count 记为 1）', '用户点『继续咨询小布』→ 消息正常路由（general），不创建工单', '再次不满 → 冷却生效不再弹建议卡（handoff.offer_count >= 1）'],
+    data_checks=['前置（precondition）：小布「主动建议转人工」的冷却**处于启用状态**且**每会话上限 = 1 次**（真值 = `backend/ai-agent-service/app/graph/handoff_judge.py` 的 `DEFAULT_HANDOFF_MAX_OFFERS = 1`，判据 = `_cooldown_blocked` 的 `offer_count >= DEFAULT_HANDOFF_MAX_OFFERS`；`handoff_offer.py` 在每次建议后把 `offer_count` +1）—— 本用例第 3 轮「冷却生效不再弹卡」正是按该上限校准的（success=true）；上限被改大或冷却判据被摘掉时，第 3 轮不会按预期收敛，判红会伪装成「agent 不弹建议卡」', '首次不满 → 建议卡片（offer_count 记为 1）', '用户点『继续咨询小布』→ 消息正常路由（general），不创建工单', '再次不满 → 冷却生效不再弹建议卡（handoff.offer_count >= 1）'],
     skip_reason='',
     tags=['multi_turn', 'handoff', 'cooldown'],
     persona='xiaobu',
@@ -4109,16 +4109,16 @@ _CASE_OR_039 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── OR-040 [NORMAL] 下单页自动识别 —— 超高/超宽由 成品宽高 + 卷边 vs 门幅 判定（两者独立可同时为真）+ 倒幅/正幅由 cuttingMode 唯一推导（无手选项）（源: cases/order.yml）──
+# ── OR-040 [NORMAL] 下单页自动识别 —— 超高/超宽由 成品宽高 + 卷边 vs 门幅 判定（两者独立可同时为真）+ 倒幅由 cuttingMode 唯一推导（无手选项）；正幅不推导（它不在加工项目录里）（源: cases/order.yml）──
 _CASE_OR_040 = EvalCase(
     id='OR-040',
     legacy_id='',
-    title='下单页自动识别 —— 超高/超宽由 成品宽高 + 卷边 vs 门幅 判定（两者独立可同时为真）+ 倒幅/正幅由 cuttingMode 唯一推导（无手选项）',
+    title='下单页自动识别 —— 超高/超宽由 成品宽高 + 卷边 vs 门幅 判定（两者独立可同时为真）+ 倒幅由 cuttingMode 唯一推导（无手选项）；正幅不推导（它不在加工项目录里）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
     user_inputs=['（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）'],
     expectations=[],
-    data_checks=['**D6·自动识别（用户 2026-09-19「超高 / 超宽是和门幅标准比较的……这个要求做到自动识别」）**：`超高 = (成品高 + 卷边) > 门幅`、`超宽 = (成品宽 + 卷边) > 门幅`；门幅缺省 2.8 米（窄幅布 1.4），卷边常量 **0.3 米复用算料引擎既有常量**（`curtain_calc.py` 的 `HEM_MARGIN`，同步守卫逐值比对，不新造第二个数）。红证：实现前无此纯函数 ⇒ import 即红；把阈值改成「固定 3 米」或让两者互斥 ⇒ 判据必红。', '**两者独立、可同时为真**：ERP 组合名 `韩折+超宽+超高+定型` 同时存在（设计 §5.2 证据链 ③）⇒ 判定不得互斥；同时为假（如 1.5×1.5 对 2.8 门幅）⇒ 两者都不出现。', '**倒幅/正幅由 `cuttingMode` 唯一推导**：`定宽买高` → 倒幅、`定高买宽` → 正幅；**不设手选项**（手选项 = 与 `cuttingMode` 冲突的第二份口径）。红证：删掉推导（或改成可手选）⇒ 判据必红。', "**`source='推算'` 照实标注**（设计 §5.2 边界：本条是推理非实证，未从 ERP 供应商取得判据）—— 判定结果带可读依据（哪两个数比出来的），且来源标「推算」+ 可配，不假装定论。", '**已知偏差（照实登记，不粉饰）**：自动特征由**客户端**（admin-web 下单页）推导并写进 `processingInfo.processingItems[]`，服务端只消费特征名、**不做任何 width/height/doorWidth 推导**（本轮裁定）。⇒ **米宝（agent）下单路径不推导自动特征** ⇒ 组合键缺 `超高/超宽/倒幅`（⚠️ `定型` 自 2026-09-19 起**不在**本清单里：用户裁定「定型 直接通过加工项来勾选」⇒ 它是**手选加工项**，不再是自动推导特征）⇒ 取价命中不到组合 ⇒ `unpriced`。这与既有 issue #4408（页面路径 14 道/¥3.00 vs 米宝路径 17 道/¥6.00）**同族**，待 agent 统一重构时收口；本轮 agent 冻结是用户裁定（D5）⇒ 偏差本身可接受，但**必须显式可见**。', '**下单页展示自动识别结果，且不计入手选计数**：自动特征（**超高 / 超宽 / 倒幅 / 正幅**；`定型` 自 2026-09-19 起是**手选加工项**，不在此列）出现在③加工项步骤的**只读**区（`自动识别` 块，带 `推算` 来源标注），**不是**可勾选项 —— 不出现「自动识别」的 checkbox，`已选 N 项` 只数商家手选的加工项。红证：删掉该只读块 ⇒ 判据必红。'],
+    data_checks=['**D6·自动识别（用户 2026-09-19「超高 / 超宽是和门幅标准比较的……这个要求做到自动识别」）**：`超高 = (成品高 + 卷边) > 门幅`、`超宽 = (成品宽 + 卷边) > 门幅`；门幅缺省 2.8 米（窄幅布 1.4），卷边常量 **0.3 米复用算料引擎既有常量**（`curtain_calc.py` 的 `HEM_MARGIN`，同步守卫逐值比对，不新造第二个数）。红证：实现前无此纯函数 ⇒ import 即红；把阈值改成「固定 3 米」或让两者互斥 ⇒ 判据必红。', '**两者独立、可同时为真**：ERP 组合名 `韩折+超宽+超高+定型` 同时存在（设计 §5.2 证据链 ③）⇒ 判定不得互斥；同时为假（如 1.5×1.5 对 2.8 门幅）⇒ 两者都不出现。', '**倒幅由 `cuttingMode` 唯一推导**（`定宽买高` → 倒幅）；**不设手选项**（手选项 = 与 `cuttingMode` 冲突的第二份口径）。红证：删掉推导（或改成可手选）⇒ 判据必红。', "**`定高买宽`（= 正幅，也是缺省加工类型）不推导任何朝向特征**（issue #4592，P0，用户 2026-09-19 裁定「窗帘默认都是正幅，**正幅不用作为加工项的加项**，但是**倒幅是需要的**」）：自动推导出的特征会**进加工费组合键**（`processingDetailsOf` 把它并进 `processingInfo.processingItems[]`，服务端 `ProcessingFeeQueryService.featureNames()` 只读该数组），而 `processing_items` 目录（V83）只种了 **超高 / 超宽 / 倒幅** 三项 —— **没有「正幅」** ⇒ 商家配不出含它的组合 ⇒ 组合键永远匹配不到价 ⇒ `fee_source='unpriced'` ⇒ 加工费恒 ¥0.00（默认档就是定高买宽 ⇒ **每一张默认订单**都中招）。⇒ **判据 = 自动推导特征清单与 V83 目录逐值对齐**（双向、按序，非「清单 ⊆ 目录」），且「默认定高买宽订单落库的组合加项不含 `正幅`」。红证（修复前实测）：`AUTO_FEATURE_NAMES` = `['超高','超宽','倒幅','正幅']` ⇒ 与目录逐值对齐断言 + 落库断言**双红**。", "**`source='推算'` 照实标注**（设计 §5.2 边界：本条是推理非实证，未从 ERP 供应商取得判据）—— 判定结果带可读依据（哪两个数比出来的），且来源标「推算」+ 可配，不假装定论。", '**已知偏差（照实登记，不粉饰）**：自动特征由**客户端**（admin-web 下单页）推导并写进 `processingInfo.processingItems[]`，服务端只消费特征名、**不做任何 width/height/doorWidth 推导**（本轮裁定）。⇒ **米宝（agent）下单路径不推导自动特征** ⇒ 组合键缺 `超高/超宽/倒幅`（⚠️ `定型` 自 2026-09-19 起**不在**本清单里：用户裁定「定型 直接通过加工项来勾选」⇒ 它是**手选加工项**，不再是自动推导特征）⇒ 取价命中不到组合 ⇒ `unpriced`。这与既有 issue #4408（页面路径 14 道/¥3.00 vs 米宝路径 17 道/¥6.00）**同族**，待 agent 统一重构时收口；本轮 agent 冻结是用户裁定（D5）⇒ 偏差本身可接受，但**必须显式可见**。', '**下单页展示自动识别结果，且不计入手选计数**：自动特征（**超高 / 超宽 / 倒幅**；`定型` 自 2026-09-19 起是**手选加工项**，不在此列；`正幅` 自 issue #4592 起**不再是**自动特征）出现在③加工项步骤的**只读**区（`自动识别` 块，带 `推算` 来源标注），**不是**可勾选项 —— 不出现「自动识别」的 checkbox，`已选 N 项` 只数商家手选的加工项。红证：删掉该只读块 ⇒ 判据必红。⚠️ 边界（#4592 的副作用，照实登记）：自动特征一条都没有时（如定高买宽 + 尺寸不超门幅）该只读块**整块不渲染** —— 这是既有闸门（`autoFeatures.length > 0`），不是新行为。'],
     skip_reason='[backend-contract] 前端展示契约（admin-web 纯函数 + 页面只读区，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-auto-features.test.ts（被测模块 = admin-web 专属的 `lib/craft-auto-features.ts`，**刻意不放进三端同源的 `lib/craft-display.ts`**）与 frontend/admin-web/tests/unit/pages/orders-new-auto-features.test.tsx 执行',
     tags=['order', 'craft_spec', 'auto_detect', 'dimension', 'display', 'backend_contract'],
     persona='',

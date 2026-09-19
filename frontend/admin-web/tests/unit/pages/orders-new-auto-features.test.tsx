@@ -150,12 +150,14 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
     openStep('加工项')
 
     await waitFor(() => {
-      const block = screen.getByTestId('auto-detected-features')
-      expect(within(block).queryByText('超宽')).toBeNull()
-      expect(within(block).queryByText('超高')).toBeNull()
-      // 缺省 cuttingMode = 定高买宽 ⇒ 正幅
-      expect(within(block).getByText('正幅')).toBeInTheDocument()
+      expect(screen.queryByText('超宽')).toBeNull()
+      expect(screen.queryByText('超高')).toBeNull()
     })
+    // 缺省 cuttingMode = 定高买宽（= 正幅）⇒ #4592 起**不推导任何特征** ⇒ 只读块整块不渲染。
+    // 红证（修复前必红）：修复前这里恒有「正幅」，而「正幅」不在加工项目录里 ⇒
+    // 默认订单的组合键永远匹配不到价 ⇒ 加工费恒 ¥0.00。
+    expect(screen.queryByText('正幅')).toBeNull()
+    expect(screen.queryByTestId('auto-detected-features')).toBeNull()
   })
 
   it('门幅 = SKU.doorWidth：1.5 高 × 1.0 宽 对 2.8 门幅不超，对 1.4 窄幅门幅判超高', async () => {
@@ -208,5 +210,36 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
     expect(within(block).getByText('超宽')).toBeInTheDocument()
     expect(within(block).getByText('超高')).toBeInTheDocument()
     expect(block.querySelectorAll('input')).toHaveLength(0)
+  })
+
+  /**
+   * 🔴 issue #4592（P0）的用户可见症状的**落库面**判据：默认「定高买宽」订单的组合键
+   * （= `processingInfo.processingItems[].name`，服务端 `featureNames()` 的唯一来源）
+   * **不得**含 `正幅` —— 它不在 `processing_items` 目录（V83）里 ⇒ 商家配不出含它的组合
+   * ⇒ 组合价永远匹配不到 ⇒ 加工费恒 ¥0.00。
+   *
+   * 红证（修复前必红）：修复前这里得到 `['超宽','超高','正幅']`（默认档 = 定高买宽）。
+   */
+  it('#4592 默认「定高买宽」订单落库的组合加项 = {超宽, 超高}，**不含「正幅」**', async () => {
+    // 带门幅 ⇒ setupLine 会连颜色 + 规格一起选上（缺颜色会被页面校验拦在提交前）
+    await setupLine({ doorWidth: '2.8米' })
+
+    fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
+    fireEvent.change(screen.getByPlaceholderText('请输入 11 位手机号'), {
+      target: { value: '13800138000' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), {
+      target: { value: '杭州市' },
+    })
+    // 加工费计价闸门（#4450）：未就绪时提交会被拦 ⇒ 先等计价落地（真实商家也是看到金额才提交）
+    await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
+    fireEvent.click(screen.getByText('提交订单'))
+    await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+
+    const info = mockCreateOrder.mock.calls[0][0].items[0].processingInfo as {
+      processingItems: Array<{ name: string }>
+    }
+    expect(info.processingItems.map((i) => i.name)).toEqual(['超宽', '超高'])
+    expect(info.processingItems.map((i) => i.name)).not.toContain('正幅')
   })
 })

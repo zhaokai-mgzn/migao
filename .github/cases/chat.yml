@@ -729,12 +729,21 @@ cases:
       - "已提交转人工申请"
       - "客服马上联系您"
     data_checks:
+      # ── 前置自断言（#4592 的 burn-down 缴费，与 CH-014 同批）────────────────────
+      # 本用例命中的唯一存量违规 = CASE-TRUST-NO-PRECONDITION-ASSERTION。
+      # 依赖的前置 = 「单轮负面情绪（general / after_sales / complaint 之一）会触发一次
+      # 建议卡」，它由**确定性节点** `handoff_offer` 产出（真值 = `app/graph/handoff_offer.py`
+      # 的 `judge_handoff` + `_OFFER_ALLOWED_INTENTS`），与转人工工具是否可达**无关**。
+      # 前置不成立（意图白名单收窄 / 建议节点被摘掉）时，`interact` 期望 unmatched ⇒
+      # 判红会伪装成「agent 不会建议」，归因错人。⇒ 写成机器计分型自断言（含 success=true）。
+      # **断言面（user_inputs / expectations / forbidden_text）一字未动、无放宽。**
+      - "前置（precondition）：小布对**单轮负面情绪**会走「主动建议」确定性节点（真值 = `backend/ai-agent-service/app/graph/handoff_offer.py` 的 `judge_handoff`：意图 ∈ `_OFFER_ALLOWED_INTENTS`（general / after_sales / complaint）且命中 S1 负面情绪词表 ⇒ 下发 `interact` choice 建议卡，与转人工工具是否可达无关）（success=true）；前置不成立时 `interact` 期望 unmatched，判红会伪装成「agent 不会建议」"
       - "不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转"
       - "interact 卡片选项含『整理成售后工单』与『继续咨询小布』，且**不含**任何邀约人工转接的措辞（卡片文案判据见 tests/unit_ci_workflows/test_human_handoff_retired.py）"
       - "用户点『整理成售后工单』后进入售后受理链路（确定性路由 after_sales, source=rule；判据见 tests/test_xiaobu_handoff_offer.py::TestOfferToDirectHandoffE2E）"
       - "整场不出现假承诺话术（机器断言见 forbidden_text）—— 系统已无人工转接通道"
     skip_reason: ""
-    merge_log: "xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工；2026-09-19 **退场改造**（用户裁定）：移除 human_handoff 的 expectations/must_succeed（不可满足）；**同批收口卡片文案**（邀约人工 → 继续受理：标题/选项/安抚文案改判，第 2 轮输入随之改为卡片新 value），前半（卡片 + 冷却）不变"
+    merge_log: "xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工；2026-09-19 **退场改造**（用户裁定）：移除 human_handoff 的 expectations/must_succeed（不可满足）；**同批收口卡片文案**（邀约人工 → 继续受理：标题/选项/安抚文案改判，第 2 轮输入随之改为卡片新 value），前半（卡片 + 冷却）不变。2026-09-19（#4592 的 burn-down 缴费，与 CH-014 同批）：补**机器计分型**前置自断言（单轮负面情绪 ⇒ `handoff_offer` 确定性建议卡，意图白名单 general/after_sales/complaint，真值逐行核过 handoff_offer.py），把「前置不成立 ⇒ interact unmatched、判红却伪装成 agent 不会建议」这条形态挡在门口；user_inputs / expectations / forbidden_text 原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_handoff_judge.py"
@@ -764,11 +773,22 @@ cases:
     expectations:
       - tool: interact
     data_checks:
+      # ── 前置自断言（#4592 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是
+      #    CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）──
+      # 本用例的三条判据**全部**以「建议卡冷却处于启用状态、且每会话上限 = 1 次」为前提
+      # （首轮弹卡 ⇒ offer_count 记 1 ⇒ 第三轮 `offer_count >= 上限` ⇒ 不再弹卡）。
+      # 上限被改大 / 冷却判据被摘掉时，第三轮的「不再弹卡」**不会红**，红的表现反而是
+      # `unmatched expectation`（看起来像「agent 不弹建议卡」）—— 归因错人。
+      # ⇒ 把这条**真正依赖且只读**的前置写成**可判定**自断言。
+      # 口径：`assertion_taxonomy.declares_precondition` 认「`data_checks` 里含前置关键词
+      # **且**是机器计分型」，故本条带 `success=true`（= 计分标记，**不新增断言强度**）。
+      # **断言面（user_inputs / expectations / forbidden_text）一字未动、无放宽。**
+      - "前置（precondition）：小布「主动建议转人工」的冷却**处于启用状态**且**每会话上限 = 1 次**（真值 = `backend/ai-agent-service/app/graph/handoff_judge.py` 的 `DEFAULT_HANDOFF_MAX_OFFERS = 1`，判据 = `_cooldown_blocked` 的 `offer_count >= DEFAULT_HANDOFF_MAX_OFFERS`；`handoff_offer.py` 在每次建议后把 `offer_count` +1）—— 本用例第 3 轮「冷却生效不再弹卡」正是按该上限校准的（success=true）；上限被改大或冷却判据被摘掉时，第 3 轮不会按预期收敛，判红会伪装成「agent 不弹建议卡」"
       - "首次不满 → 建议卡片（offer_count 记为 1）"
       - "用户点『继续咨询小布』→ 消息正常路由（general），不创建工单"
       - "再次不满 → 冷却生效不再弹建议卡（handoff.offer_count >= 1）"
     skip_reason: ""
-    merge_log: "xiaobu-ai-handoff-guidance.md 冷却/防骚扰"
+    merge_log: "xiaobu-ai-handoff-guidance.md 冷却/防骚扰。2026-09-19（#4592 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）：补**机器计分型**前置自断言（冷却启用 + `DEFAULT_HANDOFF_MAX_OFFERS = 1`，真值逐行核过 handoff_judge.py / handoff_offer.py），把「上限漂移 ⇒ 第 3 轮不收敛、判红却伪装成 agent 不弹卡」这条形态挡在门口；user_inputs / expectations / forbidden_text 原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_handoff_judge.py"
