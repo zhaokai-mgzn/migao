@@ -29,7 +29,7 @@ import java.util.Map;
  *   <tr><td>{@link #operationPositions}</td><td>{@code production_operation_positions}（V71 84 行）</td>
  *       <td>{@code {operation, position, unit_price, applicable}}</td><td>{@code (operation, position)}</td></tr>
  *   <tr><td>{@link #routeRules}</td><td>{@code production_route_rules}（V71 26 条）</td>
- *       <td>10 键（见 {@code ruleView}）</td><td>{@code (priority, id)}</td></tr>
+ *       <td>11 键（见 {@code ruleView}）</td><td>{@code (priority, id)}</td></tr>
  * </table>
  *
  * <p><b>只读</b>：本类只有 SELECT，端点也只有 GET。写面（改价/增删规则）留 v1b —— 与「商家配置面
@@ -52,8 +52,8 @@ import java.util.Map;
  * <p><b>与实例化读面的关系</b>：{@code ProductionOperationQueryService}（P2b / issue #4459）也读这两张表
  * （{@code operationPositions} / {@code routeRules}），但那是**实例化用**的读面：返回**实体**、
  * 规则**不过滤** {@code action}（实例化需要 {@code factor} 计件系数档）、顺序交给 SQL {@code ORDER BY}。
- * 本类是**展示用**的读面，契约有三处不同，故不合并：① 形状 = issue #4500 冻结的键（规则项 10 键、
- * **不含** {@code factor}）；② 过滤 = 只呈现**路线编排档**（{@code insert}/{@code remove}，26 条口径）；
+ * 本类是**展示用**的读面，契约有三处不同，故不合并：① 形状 = issue #4500 冻结的键（规则项 11 键、
+ * **不含** {@code factor}；`logical_name` 由 issue #4642 追加，见 {@link #ruleView}）；② 过滤 = 只呈现**路线编排档**（{@code insert}/{@code remove}，26 条口径）；
  * ③ 顺序 = Java 侧显式排序（见上，环境无关）。「怎么读这两张表」在 Mapper 层是同一条（同一组
  * 租户/软删/停用条件），差异只在投影 —— 合并会把「实例化契约」与「展示契约」耦成一处，
  * 任何一侧改口径都会静默改另一侧语义。</p>
@@ -165,7 +165,7 @@ public class ProductionRoutingReadService {
     /**
      * 规则区：工艺变体 ∪ 特殊选项（**26 条** = 工艺 10 + 选项 16，母单 #4423 冻结数字）。
      *
-     * @return 10 键（见 {@link #ruleView}），按 `(priority, id)` 稳定排序 ——
+     * @return 11 键（见 {@link #ruleView}），按 `(priority, id)` 稳定排序 ——
      *         **顺序敏感**（规则应用顺序决定工序序列），而 priority 撞档时「谁先」由 id 定
      */
     public List<Map<String, Object>> routeRules(Long tenantId) {
@@ -240,6 +240,13 @@ public class ProductionRoutingReadService {
      *
      * <p>本方法**不**做任何取价 / 回退：不读 {@code production_option_factors}、不做 contains
      * 匹配、不按 trigger_value 拼键 —— 值原样取自 {@code production_route_rules.customer_unit_price}。</p>
+     *
+     * <p><b>{@code operation} / {@code after_operation} 读时归一（issue #4642）</b>：规则表里可能存着
+     * **库口径变体名**（写面过去只做「归一后存在性校验」、**落库存原文**）⇒ 而
+     * {@code routings/page.tsx} 的规则表与规则删除确认文案**直接渲染这两个键**
+     * ⇒ 变体名（{@code 布三边}）会送上商家屏。归一走**既有**
+     * {@link ProductionOperationQueryService#normalizeOperationName}（不新造第二份表），
+     * 未登记的自定义名（{@code 测试22}）归一后等于自身；{@code null}（不限锚点）保持 {@code null}。</p>
      */
     private Map<String, Object> ruleView(ProductionRouteRule row) {
         Map<String, Object> view = new LinkedHashMap<>();
@@ -248,8 +255,13 @@ public class ProductionRoutingReadService {
         view.put("trigger_value", row.getTriggerValue());
         view.put("position", row.getPosition());
         view.put("action", row.getAction());
-        view.put("operation", row.getOperation());
-        view.put("after_operation", row.getAfterOperation());
+        view.put("operation", productionOperationQueryService.normalizeOperationName(row.getOperation()));
+        // 成对键（issue #4642）：`operation` 与 `logical_name` **同源**（都取归一后的逻辑名）——
+        // 读面必须成对给出逻辑工序名，否则 web 只能拼出工人端快照名（变体名）。见守卫
+        // `tests/unit_ci_workflows/test_op_name_registry_guard.py` 的 ③。
+        view.put("logical_name", productionOperationQueryService.normalizeOperationName(row.getOperation()));
+        view.put("after_operation",
+                productionOperationQueryService.normalizeOperationName(row.getAfterOperation()));
         view.put("priority", row.getPriority());
         view.put("status", row.getStatus());
         view.put("customer_unit_price", row.getCustomerUnitPrice());

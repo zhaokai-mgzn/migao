@@ -771,7 +771,16 @@ export type ProductionScope = 'position' | 'set'
 export interface CatalogOperation {
   /** 库主键（V54 种子为 `op-v54-01` 形态的字符串，勿假定为数字） */
   id: string | number
+  /**
+   * 工序名 —— **逻辑工序名**（issue #4642 读时归一；如 `精裁`，不是库口径旧名 `精裁-布`）。
+   * 商家面显示名一律用它（+ `position`）。
+   */
   name: string
+  /**
+   * **库口径原名**（如 `精裁-布` / `布三边`）—— 🔴 **web 界面不得渲染该键**：
+   * 它的值域是**工人端快照名口径**，渲染它等于把变体名送回商家屏。只为「按库名寻址/对账」保留。
+   */
+  library_name?: string | null
   /** 工序分组：裁剪 / 车位 / 后道 / 其他 */
   group?: string | null
   /** 部位：布帘 / 纱帘 / 帘头 / 外帘 */
@@ -990,6 +999,8 @@ export interface RouteRule {
   action?: string | null
   /** 目标工序（逻辑名） */
   operation?: string | null
+  /** 目标工序的逻辑名（与 `operation` **同源**，issue #4642 成对键；读面已归一，故两者相等） */
+  logical_name?: string | null
   /** `insert` 的锚点工序；`null` = 追加末尾 */
   after_operation?: string | null
   /** 规则应用顺序（`remove` 不先于 `insert` 完全由它决定）—— 顺序敏感 */

@@ -217,6 +217,12 @@ public class ProductionOperationCommandService {
         if (unitPrice.signum() < 0) {
             throw BusinessException.validationError("unit_price 不能为负");
         }
+        // issue #4642：**旧形态工序名不许建**（拒绝，不归一）。病根 = 同一个请求里
+        // `name` 原样落库、而 `attachPositions` 用归一后的逻辑名建矩阵行 ⇒ **同一道工序在库里两名并存**
+        // （库里 `布三边` + 矩阵行 `三边`），且 `name` 会经目录/孤儿弹窗上屏（变体名泄漏）。
+        // 为什么选**拒绝**而不是归一：`布三边` 归一成 `三边` 会与**既有** `三边` 行撞唯一索引
+        // `uk_production_operations_tenant_name`（⇒ 500 或建出重复/半成品），拒绝才与「一套名字」一致。
+        rejectVariantOperationName(name, tenantId);
         // issue #4614：positions 给了才建矩阵行。**校验先于写入**（与 status/scope 同口径）——
         // 部位写错一个不该先落一行工序库再回滚。
         List<String> positions = null;
@@ -442,6 +448,11 @@ public class ProductionOperationCommandService {
         }
         String variantName = op.getName();
         String logicalName = productionOperationQueryService.normalizeOperationName(variantName);
+        // issue #4642：护栏文案一律用**逻辑名**（`logicalName`）—— 它是 web 面唯一显示口径。
+        // 库口径变体名（`variantName`）只用于**判据**（主线/规则里两种写法都收、矩阵按变体名寻址），
+        // **不得**出现在 `error.details[].message` 里：前端 `variant-delete-reasons` 逐条渲染这些文案，
+        // 用变体名就等于把 `布三边` 送上商家屏（同 P1 的泄漏路径）。
+        // 「到底是哪条库行」的辨识度由**部位集合/分组**补足（见护栏③的 `logicalName × position`）。
         List<ApiResponse.ErrorDetail> details = new ArrayList<>();
         // ① 活跃路线主线（逻辑名或变体名命中；每条路线只报一次）
         for (ProductionRouteTemplate template : productionOperationQueryService.routeTemplates(tenantId)) {
@@ -451,7 +462,7 @@ public class ProductionOperationCommandService {
             }
             details.add(BusinessException.detail("routing", String.format(
                     "工序「%s」还在活跃路线「%s」的主线里 —— 先改主线（把它从该路线去掉），再删它",
-                    variantName, template.getName())));
+                    logicalName, template.getName())));
         }
         // ② 活跃规则（operation 或 after_operation 命中；报触发名）
         for (ProductionRouteRule rule : productionOperationQueryService.routeRules(tenantId)) {
@@ -461,7 +472,7 @@ public class ProductionOperationCommandService {
             }
             details.add(BusinessException.detail("route_rule", String.format(
                     "工序「%s」被活跃规则「%s → %s」引用（目标工序或锚点）—— 先删或改那条规则，再删它",
-                    variantName, rule.getTriggerValue(), rule.getOperation())));
+                    logicalName, rule.getTriggerValue(), rule.getOperation())));
         }
         // ③ 矩阵行（**遍历全部命中格**：帘头回落布帘变体 / 部位无关工序一格多部位）
         Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
@@ -475,7 +486,7 @@ public class ProductionOperationCommandService {
             }
             details.add(BusinessException.detail("operation_position", String.format(
                     "工序「%s」还挂在部位价目矩阵的「%s × %s」格上且该格是「做」—— 先在该部位设为「不做」，再删它",
-                    variantName, row.getLogicalName(), row.getPosition())));
+                    logicalName, row.getLogicalName(), row.getPosition())));
         }
         if (!details.isEmpty()) {
             throw BusinessException.validationError(
@@ -497,6 +508,43 @@ public class ProductionOperationCommandService {
     /** 规则里的工序名是否指向被删工序（逻辑名或变体名任一命中；主线/规则两处同一判据）。 */
     private static boolean hitsOperation(String value, String logicalName, String variantName) {
         return value != null && (value.equals(logicalName) || value.equals(variantName));
+    }
+
+    /**
+     * 新增工序时**拒绝旧形态（变体）工序名**（issue #4642）。
+     *
+     * <p>两条判据（命中任一 ⇒ **422 + {@code error.details:[{field,message}]} 逐条**，文案用商家语言）：</p>
+     * <ol>
+     *   <li><b>已登记旧名</b>：走**既有** {@link ProductionOperationQueryService#normalizeOperationName}，
+     *       归一后**不等于自身**即命中（35 条旧名：{@code 精裁-布} / {@code 布三边} / {@code 布帘车被}…）；</li>
+     *   <li><b>未登记的「逻辑名 + 部位后缀」写法</b>（{@code 罗马帘-穿杆}）：归一后等于自身，
+     *       故用部位后缀判据（部位词表是**闭**的：布 / 纱 / 帘）。</li>
+     * </ol>
+     *
+     * <p><b>合法自定义名照常可建</b>（{@code 测试22} / {@code 罗马帘穿杆}）：两条判据都不命中。</p>
+     */
+    private void rejectVariantOperationName(String name, Long tenantId) {
+        String logicalName = productionOperationQueryService.normalizeOperationName(name);
+        boolean isVariant;
+        if (name.equals(logicalName)) {
+            // 归一后等于自身 ⇒ 不是**已登记**的旧名。仍要拒「逻辑名 + 部位后缀」的**未登记**写法
+            // （`罗马帘-穿杆`）：部位词表是**闭**的（布 / 纱 / 帘）⇒ 后缀形态可判定。
+            isVariant = name.endsWith("-布") || name.endsWith("-纱") || name.endsWith("-帘");
+        } else {
+            // 归一后变了 ⇒ 该名字**是**归一表里的旧形态（`布三边` / `布帘车被` / `精裁-布`）。
+            // 判据直接来自**既有** `normalizeOperationName`（不新造第二份表）—— 「归一后不等于自身」
+            // 就是「它被登记为旧名」的可执行定义，无需再查库。
+            isVariant = true;
+        }
+        if (!isVariant) {
+            return;
+        }
+        throw BusinessException.validationError(
+                "工序名不要带部位（「" + name + "」是旧形态）",
+                java.util.List.of(new ApiResponse.ErrorDetail("name",
+                        "工序名不要带部位（别写「" + name + "」）；部位在下方勾选 —— "
+                                + "名字与部位是两件事，带部位的名字会让同一道工序在库里存成两名")),
+                "把名字改成不带部位的逻辑工序名（如「三边」），部位在下方勾选");
     }
 
     private static BigDecimal nz(BigDecimal value) {

@@ -304,6 +304,43 @@ class ProductionOperationDeleteGuardTest {
     }
 
     /**
+     * issue #4642（P2-1）：护栏文案**不得**泄漏库口径变体名。
+     *
+     * <p>前端 {@code routings/page.tsx} 的 {@code variant-delete-reasons} 把
+     * {@code error.details[].message} **逐条原样渲染** ⇒ 文案里写 {@code 布三边} 就等于把变体名
+     * 送上商家屏（与 P1 同一条泄漏路径，只是走 422 而不是 200）。文案改用同函数里**已有**的
+     * {@code logicalName}；「到底是哪条库行」的辨识度由**部位集合/分组**补足。</p>
+     *
+     * <p>本用例**只动 message 的显示口径**：三条护栏的判据（主线/规则/矩阵）与 field 一字不变。</p>
+     */
+    @Test
+    @DisplayName("#4642 三条护栏的 message 只用**逻辑名**（三边）—— 变体名（布三边）不得上屏")
+    void guardMessagesNeverLeakTheLibraryVariantName() {
+        when(productionOperationMapper.selectById(OP_ID)).thenReturn(operation(0));
+        stubCatalog();
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                routing("路线甲", List.of("三边"))));
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of(
+                rule("rr-1", "三边", null)));
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("三边", "布帘", true)));
+
+        assertThatThrownBy(() -> service().delete(OP_ID, TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException ex = (BusinessException) e;
+                    assertThat(ex.getDetails()).hasSize(3);
+                    // 正口径：每条理由都用逻辑名（可行动 = 商家认得的那道工序）
+                    assertThat(ex.getDetails()).allSatisfy(d -> assertThat(d.getMessage())
+                            .as("护栏文案必须用逻辑名「三边」").contains("三边"));
+                    // 反向护栏：变体名**不得**出现在任何一条理由里（前端逐条渲染这些 message）
+                    assertThat(ex.getDetails()).allSatisfy(d -> assertThat(d.getMessage())
+                            .as("库口径变体名「布三边」泄漏回 web 面（前端 variant-delete-reasons 逐条渲染）")
+                            .doesNotContain("布三边"));
+                });
+    }
+
+    /**
      * ⚠️ 断言**调用形态**（不是「塞进实体的值」，issue #4608）：MP 全局逻辑删除会把 {@code deleted}
      * 从 {@code updateById} 的 SET 子句里剔除 ⇒ 只有显式写列（{@code update(null, LambdaUpdateWrapper)}）
      * 才真落库；旧写法（{@code op.setDeleted(1); updateById(op);}）断言的是实体里的值，

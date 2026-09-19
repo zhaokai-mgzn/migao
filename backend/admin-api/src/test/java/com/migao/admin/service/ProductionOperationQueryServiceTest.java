@@ -143,7 +143,11 @@ class ProductionOperationQueryServiceTest {
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> tailoring = (List<Map<String, Object>>) groups.get(0).get("operations");
-        assertThat(tailoring).extracting(o -> o.get("name")).containsExactly("精裁-布", "精裁-纱");
+        // issue #4642 判据改钉新真值（**不是放宽**）：catalog 的 `name` 是**读时归一后的逻辑名**
+        // ⇒ 库行 `精裁-布` / `精裁-纱` 都返回 `精裁`（**顺序与条数一字不变**，只换显示口径）。
+        // 库口径原名仍可核：`library_name` 逐行保留旧名。
+        assertThat(tailoring).extracting(o -> o.get("name")).containsExactly("精裁", "精裁");
+        assertThat(tailoring).extracting(o -> o.get("library_name")).containsExactly("精裁-布", "精裁-纱");
         assertThat(tailoring.get(0).get("unit")).isEqualTo("米");
         assertThat((BigDecimal) tailoring.get(0).get("unit_price")).isEqualByComparingTo("0.40");
         assertThat(tailoring.get(0).get("is_start_marker")).isEqualTo(true);

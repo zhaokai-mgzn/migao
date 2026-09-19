@@ -564,10 +564,12 @@ public class ProductionController {
      * 规则区（工艺变体 ∪ 特殊选项 = **26 条**）
      * GET /api/admin/production/route-rules
      *
-     * <p>响应 {@code data} = 10 键（见 {@code ProductionRoutingReadService}），按 {@code (priority, id)}
+     * <p>响应 {@code data} = 11 键（见 {@code ProductionRoutingReadService}），按 {@code (priority, id)}
      * 稳定排序。只返回路线编排档（{@code insert}/{@code remove}）：计件系数档（{@code action='factor'}）
      * 不在此端点（P3 统一规则区不呈现系数）。{@code customer_unit_price}（元/套）只对
-     * {@code trigger_kind='option'} 有意义，{@code null} = 未定价（**≠ 0 元**）。</p>
+     * {@code trigger_kind='option'} 有意义，{@code null} = 未定价（**≠ 0 元**）。
+     * {@code operation} / {@code logical_name} 成对给出**逻辑工序名**（issue #4642 读时归一，
+     * 存量变体名行不再上屏）。</p>
      */
     @GetMapping("/route-rules")
     @RequirePermission("processing:manage")

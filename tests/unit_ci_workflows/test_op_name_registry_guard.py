@@ -40,6 +40,9 @@ S1（issue #4621 / `tests/unit_ci_workflows/test_operation_display_name_guard.py
   `ProductionOperationUpdateParams` 这类别的类型 —— 泛匹配会把只做类型透传的文件也拖进登记表，
   而登记表越大越容易被「顺手加白」。
   实测命中（去注释后）**5 个文件**：4 个受管面 + `types/index.ts`（豁免，纯类型声明）。
+  ⚠️ **该数字随标记口径变化，别照抄**（issue #4642 补 `CatalogOperation` 后命中集变为 7 个文件：
+  上述 5 个 + `lib/api.ts`（豁免，纯传输层）+ `routings/page.tsx`（豁免，商家配置页））——
+  自证命令：`python3 -m pytest tests/unit_ci_workflows/test_op_name_registry_guard.py -q -k c2_every_marker_hit`。
 - **③ 只看「同文件出现」**：这是**静态兜底**（粗判据），不是逐键判据 —— 逐键断言在 S1 的 Java 单测。
 
 ## 反空跑锚点（三条各一 + 一条全局阳性对照）
@@ -120,6 +123,12 @@ MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # 工序实例的**元素类型**本身（直接持有 `operation` 快照名）；今天只命中 `types/index.ts`，
     # 保留它是为了「直接拿元素类型渲染快照名」的新面也被照到（#4630 的形态）。
     ("ProductionOperation", re.compile(r"\bProductionOperation\b")),
+    # **工序库目录读面的元素类型**（`GET /operations-catalog` 的 `groups[].operations[]`）。
+    # issue #4642 实测补入：P1 正是从这条路漏过去的 —— 该读面的 `name` 曾返回**库口径变体名**
+    # （`精裁-布`），而 `routings/page.tsx` 的孤儿接入弹窗直接 `{op.name}` 渲染它；
+    # 标记集里没有 `CatalogOperation` ⇒ 注入一个「读 catalog 的新面」时命中集为空、守卫**不红**
+    # （改前实测）。精确词边界：`\bCatalogOperation\b` **不**匹配 `CatalogOperations` 这类别的类型名。
+    ("CatalogOperation", re.compile(r"\bCatalogOperation\b")),
 )
 
 #: **受管面**：必须 import 唯一 helper，且**不得**直接渲染快照名（`.operation` / `operation_name` /
@@ -140,14 +149,27 @@ EXEMPT_FACES: tuple[tuple[str, str], ...] = (
         "的注释已明写「**web 界面不得渲染该键**」（`logical_name` + `position` 也在这里声明）",
     ),
     (
+        "frontend/admin-web/src/lib/api.ts",
+        "**传输层**（`request.put<ApiResponse<CatalogOperation & OperationPositionsAttachResult>>`）："
+        "`CatalogOperation` 只作**泛型参数**声明响应类型，**不渲染**任何工序名（无 JSX、无 `.name` 取值）"
+        "⇒ 没有可管的渲染面。它命中标记只是因为「引用了读面的元素类型」这个形态本身",
+    ),
+    (
         "frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx",
-        "**矩阵 / 规则读面**：`row.operation`（矩阵行键）、`cell.operation`（`row.cells.get(p)`）、"
-        "`step.operation`（主线里存的值）、`newRule.operation`（规则弹窗「目标工序」，取自 "
-        "`logicalOps`）全部落在**逻辑工序名**值域 ⇒ 不是工人端快照名。⚠️ 该文件**当前未被任何标记"
-        "命中**（无 `per_operation` / `operation_name`，也不引用 `ProductionPosition` / "
-        "`ProductionOperation`；`ProductionOperationUpdateParams` 不匹配精确类型名）—— 属**预登记**："
-        "它是 `.operation` 的主要渲染点，一旦标记口径扩展或它新增快照读面，它已在册且有理由"
-        "（依据 = issue #4626 评论「豁免清单依据」实测表）",
+        "**商家配置页**（工艺项矩阵 / 路线主线 / 规则区）。本页工序名的**取值域全是逻辑工序名**："
+        "`row.operation`（矩阵行键 = `production_operation_positions.logical_name`）、"
+        "`cell.operation`、`step.operation`（`GET /routings` 的主线，读时已归一）、"
+        "`newRule.operation`（规则弹窗「目标工序」，取自 `logicalOps`）。"
+        "**issue #4642 起 `CatalogOperation` 也落在逻辑名值域**：`GET /operations-catalog` 的 `name` "
+        "已是**读时归一后的逻辑名**（库列仍是旧名、另走 `library_name` 且**web 不得渲染**）"
+        "⇒ 本页孤儿接入弹窗的 `{op.name}` 渲染的是逻辑名，不再是变体名。"
+        "⚠️ 本页**不**进 `MANAGED_FACES` 的理由：它渲染的是**读面已归一**的逻辑名，"
+        "不需要（也不该）再经 `operationDisplayName()` 做一次「快照名 → 逻辑名」转换；"
+        "真正的判据在服务端（读时归一 + 本守卫③ 的 Java 断言）。"
+        "**过期即红**：本页一旦出现直接渲染快照名的形态（`.operation` / `operation_name` / 裸 `{operation}`，"
+        "或重新从**快照类**读面取显示名）⇒ `_stale_exempt_faces` 判红，必须销账并转 `MANAGED_FACES`。"
+        "（改前本条理由写「该文件当前未被任何标记命中」且只谈 `.operation` 来源 —— "
+        "**与代码不符**：它当时渲染的正是 catalog 的 `op.name`，而那正是 P1 的漏点）",
     ),
 )
 
@@ -167,19 +189,15 @@ _JAVA_PUT_RE = re.compile(r'\.put\(\s*"(operation|operation_name)"')
 JAVA_PAIR_KEY = "logical_name"
 
 #: ③ 的**显式豁免**（文件, 理由）—— 逐条判断后登记（**不是**一律加白）；过期即红。
+#: ⚠️ **issue #4642 销账一条**：`ProductionRoutingReadService` 原先在这里（理由 = 「代码里没有
+#: `logical_name` 键，只在 javadoc 里提到」）—— 本单给 `ruleView()` 补上了**真的** `logical_name` 键
+#: ⇒ 该文件已**成对**，按「登记表只许缩短」销账（`_stale_java_exemptions` 会因此判红，必须删）。
 JAVA_EXEMPT: tuple[tuple[str, str], ...] = (
     (
         "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
         "**规则写面响应**（`POST/PUT /route-rules` 的回执）：`operation` = 规则表存的**逻辑工序名**"
         "（前端规则弹窗「目标工序」取自逻辑名域）⇒ 不是工人端快照名，无需 `logical_name`"
         "（issue #4626 评论明示豁免）",
-    ),
-    (
-        "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingReadService.java",
-        "**规则读面** `ruleView()` 的 `operation` 与写面同源（规则表 = 逻辑名）；"
-        "`positionView()` 的 `operation` 直接取 `row.getLogicalName()` ⇒ 两处都不是快照名。"
-        "⚠️ 本文件**代码里没有** `logical_name` 键（只在 javadoc 里提到）—— 判据按**去注释后的代码**"
-        "判定：注释不能充当代码契约（否则删注释 ⇒ 假红、加注释 ⇒ 假绿）",
     ),
 )
 
@@ -596,6 +614,55 @@ def test_c2_injected_unregistered_face_is_red(tmp_path: Path):
     )
     assert _unregistered_faces(REPO_ROOT) == [], "真树上 ② 的登记判据应为绿"
     assert _managed_face_violations(REPO_ROOT) == [], "真树上 ② 的受管面判据应为绿"
+
+
+def test_c2_injected_unregistered_catalog_face_is_red(tmp_path: Path):
+    """② 注入式红证（issue #4642）：新增一个**读 `operations-catalog` 的新面**而不登记 ⇒ 判红。
+
+    <p>红证形态 = `import type { CatalogOperation }` + `{o.name}` —— 正是 P1 漏过去的那条路
+    （`routings/page.tsx` 的孤儿接入弹窗读 `catalog.groups[].operations[].name`）。
+    **改前实测**：标记集里没有 `CatalogOperation` ⇒ 命中集为空、本判据**不红**（所以 P1 才漏了）。</p>
+    """
+    new_rel = "frontend/admin-web/src/components/production/NewCatalogFace.tsx"
+    ghost = (
+        "import type { CatalogOperation } from '@/types'\n"
+        "\n"
+        "export function NewCatalogFace({ operations }: { operations: CatalogOperation[] }) {\n"
+        "  return <ul>{operations.map((o) => <li key={String(o.id)}>{o.name}</li>)}</ul>\n"
+        "}\n"
+    )
+    target = tmp_path / new_rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(ghost, encoding="utf-8")
+    assert _fingerprint(target.read_text(encoding="utf-8")) == _fingerprint(ghost), "注入没生效"
+
+    # 标记口径自证：`CatalogOperation` 必须**真在** MARKERS 里（否则本红证恒红/恒绿都不可归因）
+    assert any(name == "CatalogOperation" for name, _p in MARKERS), (
+        "MARKERS 里没有 `CatalogOperation` ⇒ 读 catalog 的新面照不到（issue #4642 的 P1 漏点）"
+    )
+    assert _markers_in(_strip_comments(ghost)) == ["CatalogOperation"], (
+        f"注入面的标记命中不是 `['CatalogOperation']` ⇒ 本红证会空跑：{_markers_in(_strip_comments(ghost))}"
+    )
+
+    offenders = _unregistered_faces(tmp_path)
+    assert any(new_rel in o for o in offenders), (
+        f"新增一个读 `operations-catalog`（`CatalogOperation`）且**未登记**的面后判据没判红 ⇒ "
+        f"「自己发现新面」在 catalog 读面上仍是空判据（P1 的漏点未被堵住）：{offenders}"
+    )
+
+    # 阳性对照：把它登记进豁免表 ⇒ 同一判据变绿（证明红的归因是这个面未登记，不是别的噪声）。
+    # 直接改函数 globals 再还原（不 import 模块：pytest 的模块名取决于 rootdir，import 形态会空跑）。
+    globals_ = _unregistered_faces.__globals__
+    original_exempt = globals_["EXEMPT_FACES"]
+    try:
+        globals_["EXEMPT_FACES"] = original_exempt + ((new_rel, "阳性对照（临时登记）"),)
+        assert _unregistered_faces(tmp_path) == [], "登记后仍判红 ⇒ 判据与「未登记」无关（误红）"
+    finally:
+        globals_["EXEMPT_FACES"] = original_exempt
+    assert globals_["EXEMPT_FACES"] is original_exempt, "阳性对照污染了真树常量（必须还原）"
+
+    # 真树仍绿（注入只发生在 tmp 副本里）
+    assert _unregistered_faces(REPO_ROOT) == [], "真树上 ② 的登记判据应为绿"
 
 
 def test_c2_s1_registry_drift_is_red():

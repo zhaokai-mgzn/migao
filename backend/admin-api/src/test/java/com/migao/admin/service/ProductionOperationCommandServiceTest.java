@@ -117,7 +117,11 @@ class ProductionOperationCommandServiceTest {
 
         // ③ 响应 = 更新后的工序（形态 = 目录项：id/name/unit/unit_price...）
         assertThat(view.get("id")).isEqualTo("op-v54-07");
-        assertThat(view.get("name")).isEqualTo("韩褶-布");
+        // issue #4642 判据改钉新真值（**不是放宽**）：写面响应与 catalog 读面共用 `operationView`，
+        // `name` 已是**读时归一后的逻辑名**（库行 `韩褶-布` ⇒ `韩褶`）—— 改前这里断言的是库口径旧名。
+        assertThat(view.get("name")).isEqualTo("韩褶");
+        // 库口径原名走**显式键**（web 不得渲染；只为按库名寻址/对账的调用方保留）
+        assertThat(view.get("library_name")).isEqualTo("韩褶-布");
         assertThat((BigDecimal) view.get("unit_price")).isEqualByComparingTo("0.55");
     }
 
@@ -219,11 +223,11 @@ class ProductionOperationCommandServiceTest {
         when(productionOperationMapper.selectCount(any())).thenReturn(0L);
 
         Map<String, Object> result = service().create(Map.of(
-                "name", "罗马帘-穿杆", "group_name", "车位", "unit", "米", "unit_price", 0.6), TENANT);
+                "name", "罗马帘穿杆", "group_name", "车位", "unit", "米", "unit_price", 0.6), TENANT);
 
         ArgumentCaptor<ProductionOperation> op = ArgumentCaptor.forClass(ProductionOperation.class);
         verify(productionOperationMapper).insert(op.capture());
-        assertThat(op.getValue().getName()).isEqualTo("罗马帘-穿杆");
+        assertThat(op.getValue().getName()).isEqualTo("罗马帘穿杆");
         assertThat(op.getValue().getUnitPrice()).isEqualByComparingTo("0.6");
         assertThat(op.getValue().getStatus()).isEqualTo("active");
         assertThat(op.getValue().getDeleted()).isEqualTo(0);
@@ -232,7 +236,7 @@ class ProductionOperationCommandServiceTest {
         verify(priceVersionMapper).insert(version.capture());
         assertThat(version.getValue().getOperationId()).as("版本行必须挂在刚建的工序上").isEqualTo(op.getValue().getId());
         assertThat(version.getValue().getUnitPrice()).isEqualByComparingTo("0.6");
-        assertThat(result.get("name")).isEqualTo("罗马帘-穿杆");
+        assertThat(result.get("name")).isEqualTo("罗马帘穿杆");
     }
 
     @Test
@@ -240,7 +244,9 @@ class ProductionOperationCommandServiceTest {
     void createRejectsDuplicateName() {
         when(productionOperationMapper.selectCount(any())).thenReturn(1L);
 
-        assertThatThrownBy(() -> service().create(Map.of("name", "韩褶-布", "unit_price", 0.4), TENANT))
+        // ⚠️ 夹具改用**合法自定义名**（issue #4642）：旧形态名（`韩褶-布`）在建之前就被 422 拒，
+        // 到不了重名判据 ⇒ 用它会变成「断言 409 实得 422」的假红。重名判据本身一字未动。
+        assertThatThrownBy(() -> service().create(Map.of("name", "罗马帘穿杆", "unit_price", 0.4), TENANT))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(409));
         verify(productionOperationMapper, never()).insert(any(ProductionOperation.class));
@@ -252,9 +258,9 @@ class ProductionOperationCommandServiceTest {
     void createRejectsMissingOrNegativePrice() {
         assertThatThrownBy(() -> service().create(Map.of("unit_price", 0.4), TENANT))
                 .isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> service().create(Map.of("name", "罗马帘-穿杆"), TENANT))
+        assertThatThrownBy(() -> service().create(Map.of("name", "罗马帘穿杆"), TENANT))
                 .isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> service().create(Map.of("name", "罗马帘-穿杆", "unit_price", -1), TENANT))
+        assertThatThrownBy(() -> service().create(Map.of("name", "罗马帘穿杆", "unit_price", -1), TENANT))
                 .isInstanceOf(BusinessException.class);
         verify(productionOperationMapper, never()).insert(any(ProductionOperation.class));
     }
@@ -277,13 +283,13 @@ class ProductionOperationCommandServiceTest {
     }
 
     @Test
-    @DisplayName("#4614 带 positions ⇒ 为每个部位插矩阵行（logical_name = **归一后**的逻辑名）")
+    @DisplayName("#4614 带 positions ⇒ 为每个部位插矩阵行（logical_name = 该工序的**逻辑名**）")
     void createWithPositionsInsertsMatrixRows() {
         when(productionOperationMapper.selectCount(any())).thenReturn(0L);
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
 
         Map<String, Object> result = service().create(Map.of(
-                "name", "布帘车被", "unit_price", 0.6, "positions", List.of("布帘", "纱帘")), TENANT);
+                "name", "罗马帘穿杆", "unit_price", 0.6, "positions", List.of("布帘", "纱帘")), TENANT);
 
         ArgumentCaptor<ProductionOperationPosition> rows =
                 ArgumentCaptor.forClass(ProductionOperationPosition.class);
@@ -291,10 +297,11 @@ class ProductionOperationCommandServiceTest {
         assertThat(rows.getAllValues()).extracting(ProductionOperationPosition::getPosition)
                 .containsExactly("布帘", "纱帘");
         assertThat(rows.getAllValues()).extracting(ProductionOperationPosition::getLogicalName)
-                .as("logical_name 必须是**归一后的逻辑名**（布帘车被 ⇒ 车被）："
-                        + "「逻辑名 + 部位后缀」那类字符串规则会得到库里没有的「车被-布」"
-                        + "⇒ 只有复用 normalizeOperationName 才拿得到 车被")
-                .containsOnly("车被");
+                .as("logical_name 必须是**归一后的逻辑名**（复用 normalizeOperationName，不写第二份表）："
+                        + "「逻辑名 + 部位后缀」那类字符串规则会得到库里没有的「罗马帘穿杆-布」"
+                        + "⇒ 只有复用归一表才拿得到正确键。⚠️ issue #4642 起**旧形态工序名在建之前就被拒**"
+                        + "（`布帘车被` ⇒ 422），故本用例的输入本身就是逻辑名 —— 归一后等于自身")
+                .containsOnly("罗马帘穿杆");
         assertThat(rows.getAllValues()).extracting(ProductionOperationPosition::getUnitPrice)
                 .as("unit_price = 新建时填的计件单价（不发明第二份价）")
                 .allSatisfy(p -> assertThat(p).isEqualByComparingTo("0.6"));
@@ -316,7 +323,7 @@ class ProductionOperationCommandServiceTest {
                 .thenReturn(List.of(positionRow("配料", "布料", "0.2")));
 
         Map<String, Object> result = service().create(Map.of(
-                "name", "罗马帘-穿杆", "unit_price", 0.6, "positions", List.of("布料")), TENANT);
+                "name", "罗马帘穿杆", "unit_price", 0.6, "positions", List.of("布料")), TENANT);
 
         ArgumentCaptor<ProductionOperationPosition> rows =
                 ArgumentCaptor.forClass(ProductionOperationPosition.class);
@@ -330,10 +337,10 @@ class ProductionOperationCommandServiceTest {
     void createSkipsExistingPositionRowsWithoutOverwritingPrice() {
         when(productionOperationMapper.selectCount(any())).thenReturn(0L);
         when(productionOperationPositionMapper.selectList(any()))
-                .thenReturn(List.of(positionRow("车被", "布帘", "0.99")));
+                .thenReturn(List.of(positionRow("罗马帘穿杆", "布帘", "0.99")));
 
         Map<String, Object> result = service().create(Map.of(
-                "name", "布帘车被", "unit_price", 0.6, "positions", List.of("布帘", "纱帘")), TENANT);
+                "name", "罗马帘穿杆", "unit_price", 0.6, "positions", List.of("布帘", "纱帘")), TENANT);
 
         ArgumentCaptor<ProductionOperationPosition> rows =
                 ArgumentCaptor.forClass(ProductionOperationPosition.class);
@@ -351,7 +358,7 @@ class ProductionOperationCommandServiceTest {
         when(productionOperationMapper.selectCount(any())).thenReturn(0L);
 
         Map<String, Object> result = service().create(Map.of(
-                "name", "罗马帘-穿杆", "unit_price", 0.6), TENANT);
+                "name", "罗马帘穿杆", "unit_price", 0.6), TENANT);
 
         verify(productionOperationPositionMapper, never()).insert(any(ProductionOperationPosition.class));
         verify(productionOperationPositionMapper, never()).selectList(any());
@@ -366,7 +373,7 @@ class ProductionOperationCommandServiceTest {
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
 
         assertThatThrownBy(() -> service().create(Map.of(
-                "name", "罗马帘-穿杆", "unit_price", 0.6, "positions", List.of("布帘", "", "布廉")), TENANT))
+                "name", "罗马帘穿杆", "unit_price", 0.6, "positions", List.of("布帘", "", "布廉")), TENANT))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> {
                     BusinessException be = (BusinessException) e;
@@ -378,12 +385,12 @@ class ProductionOperationCommandServiceTest {
                             .anySatisfy(m -> assertThat(m).contains("空"));
                 });
         assertThatThrownBy(() -> service().create(Map.of(
-                "name", "罗马帘-穿杆", "unit_price", 0.6, "positions", List.of()), TENANT))
+                "name", "罗马帘穿杆", "unit_price", 0.6, "positions", List.of()), TENANT))
                 .as("显式空数组 = 「建出来又是孤儿」⇒ fail-closed（与 createRouting 的空 positions 同口径）")
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("positions");
         assertThatThrownBy(() -> service().create(Map.of(
-                "name", "罗马帘-穿杆", "unit_price", 0.6, "positions", "布帘"), TENANT))
+                "name", "罗马帘穿杆", "unit_price", 0.6, "positions", "布帘"), TENANT))
                 .as("非数组 ⇒ 422（不得静默当成空/当成没给）")
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("positions");
@@ -531,12 +538,12 @@ class ProductionOperationCommandServiceTest {
         when(productionOperationMapper.selectCount(any())).thenReturn(0L);
 
         Map<String, Object> withScope = service().create(Map.of(
-                "name", "罗马帘-穿杆", "unit_price", 0.6, "scope", "set"), TENANT);
+                "name", "罗马帘穿杆", "unit_price", 0.6, "scope", "set"), TENANT);
         assertThat(withScope.get("scope")).isEqualTo("set");
 
         when(productionOperationMapper.selectCount(any())).thenReturn(0L);
         Map<String, Object> without = service().create(Map.of(
-                "name", "罗马帘-打孔", "unit_price", 0.6), TENANT);
+                "name", "罗马帘打孔", "unit_price", 0.6), TENANT);
         assertThat(without.get("scope"))
                 .as("缺省必须是 position（部位级）—— 默认 set 会把商家新建的每道工序都静默去重")
                 .isEqualTo("position");
@@ -548,7 +555,7 @@ class ProductionOperationCommandServiceTest {
         when(productionOperationMapper.selectCount(any())).thenReturn(0L);
 
         assertThatThrownBy(() -> service().create(Map.of(
-                "name", "罗马帘-穿杆", "unit_price", 0.6, "scope", "SET"), TENANT))
+                "name", "罗马帘穿杆", "unit_price", 0.6, "scope", "SET"), TENANT))
                 .as("大小写敏感（库里存小写，'SET' 会让按 scope 过滤的读面/实例化侧查不到）")
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("scope");

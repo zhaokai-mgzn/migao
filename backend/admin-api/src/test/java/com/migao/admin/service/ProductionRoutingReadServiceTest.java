@@ -276,7 +276,8 @@ class ProductionRoutingReadServiceTest {
     }
 
     @Test
-    @DisplayName("规则：10 键逐字（含 null 的 position/after_operation 保留为 null，不省略键）")
+    @DisplayName("规则：11 键逐字（含 null 的 position/after_operation 保留为 null，不省略键；"
+            + "issue #4642 起含成对键 `logical_name`）")
     void routeRulesCarriesTenKeysVerbatim() {
         when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of(
                 rule("rr-v70-02", "craft", "韩褶", "布帘", "insert", "上车布", "韩褶", 20),
@@ -286,8 +287,11 @@ class ProductionRoutingReadServiceTest {
 
         assertThat(rows).hasSize(2);
         Map<String, Object> insert = rows.get(0);
+        // issue #4642 判据改钉新真值（**不是放宽**）：`logical_name` 是 `operation` 的**成对键**
+        // （两者同源 = 读时归一后的逻辑名）—— 键序仍是冻结判据，加/删/改名照旧红。
         assertThat(insert.keySet()).containsExactly("id", "trigger_kind", "trigger_value", "position",
-                "action", "operation", "after_operation", "priority", "status", "customer_unit_price");
+                "action", "operation", "logical_name", "after_operation", "priority", "status",
+                "customer_unit_price");
         assertThat(insert.get("trigger_value")).isEqualTo("韩褶");
         assertThat(insert.get("position")).isEqualTo("布帘");
         assertThat(insert.get("after_operation")).isEqualTo("韩褶");
