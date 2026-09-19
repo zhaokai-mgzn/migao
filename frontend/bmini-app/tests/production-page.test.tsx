@@ -75,6 +75,18 @@ function makeDetail(overrides: Partial<OrderOperations> = {}): OrderOperations {
     positions: [
       {
         position_name: '布帘',
+        // 规格可见面（issue #4347 §3.1）：后端按 order_item_id 回查订单行后带出
+        order_item_id: 'item-A',
+        position_kind: '布帘',
+        width: 6.6,
+        height: 2.92,
+        craft: '韩褶',
+        curtainType: '布帘',
+        openCount: 4,
+        cuttingMode: '定高买宽',
+        isShaped: true,
+        fullness: 2.0,
+        fabric_meters: 12.3,
         operations: [
           {
             id: 'op1', seq: 1, operation: '精裁', group: '裁剪', unit: '米',
@@ -145,6 +157,32 @@ describe('ProductionPage（工人扫码报工）', () => {
     expect(screen.getByText('应做 11米 · ¥3.50')).toBeTruthy()
     // 进度
     expect(screen.getByText('已完 1/3 道 · 33%')).toBeTruthy()
+  })
+
+  it('规格可见面：部位带出 尺寸/工艺/开数/加工类型/定型/褶倍/用料（issue #4347 §3.1）', async () => {
+    render(<ProductionPage />)
+    fireEvent.click(screen.getByText('扫一扫'))
+
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(ORDER_ID))
+
+    // 一行摘要，工人一眼核对「做的是哪一件」
+    expect(
+      await screen.findByText('尺寸 6.6 × 2.92 · 韩褶 · 开数 4 · 定高买宽 · 定型 · 褶倍 2 · 用料 12.3 米'),
+    ).toBeTruthy()
+  })
+
+  it('规格红证：订单行缺规格键 ⇒ **不显示任何占位/默认值**（缺键就缺，不冒充已知）', async () => {
+    // 纱帘这个部位在夹具里**没有任何**规格键（后端在订单行取不到时一个键都不加）
+    render(<ProductionPage />)
+    fireEvent.click(screen.getByText('扫一扫'))
+
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(ORDER_ID))
+
+    expect(await screen.findByText('纱帘')).toBeTruthy()
+    // 缺键 ⇒ 一行摘要都不渲染（若前端给缺键编默认值，这里会出现「尺寸 undefined」之类）
+    expect(screen.queryByText(/尺寸 undefined/)).toBeNull()
+    expect(screen.queryByText(/用料 undefined/)).toBeNull()
+    expect(screen.queryByText(/褶倍 undefined/)).toBeNull()
   })
 
   it('点「完成报工」→ 调用 reportOperation（qty 默认=应做数量、work_type=normal）', async () => {
