@@ -466,6 +466,17 @@ def _s1_drift(s1_source: str) -> list[str]:
     return sorted(set(_s1_faces(s1_source)) - set(MANAGED_FACES))
 
 
+def _s1_reverse_drift(s1_source: str) -> list[str]:
+    """本文件受管表里**没被** S1 的 `FACES` 覆盖的面（**反方向**的漂移 ⇒ 非空）。
+
+    <p>issue #4647 收口时实测的形态：本文件把会话卡登记进 `MANAGED_FACES` 却**忘了**同步 S1 的
+    `FACES` ⇒ 单向的 `_s1_drift` **不红**（它只查 S1 ⊆ 本文件），于是 S1 的 C2/C3 对这个面
+    **静默不生效** —— 而 PR 正文里还写着「已同步 S1 的 FACES」（**文档与代码不符**）。
+    ⇒ 判据必须是**双向**的：两处清单要么一致，要么显式登记理由（本文件没有该理由 ⇒ 必须一致）。</p>
+    """
+    return sorted(set(MANAGED_FACES) - set(_s1_faces(s1_source)))
+
+
 # ── ③ 判据本体 ───────────────────────────────────────────────────────────────
 
 def _java_put_faces(root: Path) -> dict[str, list[str]]:
@@ -767,12 +778,43 @@ def test_c2_exempt_faces_have_reasons_and_are_not_stale():
 
 
 def test_c2_registry_covers_s1_faces():
-    """② 防漂移：S1 的 `FACES` 必须全部落在本文件受管表里（两处清单不得漂移）。"""
+    """② 防漂移（**双向**）：S1 的 `FACES` 与本文件受管表必须**互相覆盖**（两处清单不得漂移）。"""
     source = (REPO_ROOT / S1_GUARD).read_text(encoding="utf-8")
     drift = _s1_drift(source)
     assert drift == [], (
         f"`{S1_GUARD}` 的 FACES 里有面没被本文件的 MANAGED_FACES 覆盖：{drift} —— "
         "两份清单漂移时，S1 会管住一个面而本文件不管（或反之）⇒ 覆盖面出现静默缺口"
+    )
+    reverse = _s1_reverse_drift(source)
+    assert reverse == [], (
+        f"本文件的 MANAGED_FACES 里有面没被 `{S1_GUARD}` 的 FACES 覆盖：{reverse} —— "
+        "**反方向**的漂移同样致命：本文件（② 的受管面判据）管住它、而 S1 的 C2/C3 对它"
+        "**静默不生效**。issue #4647 收口时实测过这一形态（会话卡只进了本文件、忘了同步 S1，"
+        "而单向判据不红）⇒ 两处清单必须一致，或显式登记理由"
+    )
+
+
+def test_c2_reverse_drift_injection_is_red():
+    """② 双向防漂移的**注入式红证**：把 S1 的 `FACES` 里那个面摘掉 ⇒ 反方向判据必红。
+
+    <p>红证形态 = issue #4647 收口时**实际发生过**的形态（只登记本文件、S1 漏同步）——
+    改前单向判据对此**不红**，所以这条红证是「下次再漏同步会不会被发现」的唯一机械答案。</p>
+    """
+    source = (REPO_ROOT / S1_GUARD).read_text(encoding="utf-8")
+    assert _s1_reverse_drift(source) == [], "真树上两处清单应一致（双向判据本应为绿）"
+
+    face = "frontend/admin-web/src/components/chat/ProductionProgressCard.tsx"
+    injected = source.replace(f'    "{face}",\n', "", 1)
+    assert _fingerprint(injected) != _fingerprint(source), (
+        f"在 `{S1_GUARD}` 的 FACES 里找不到 `{face}` ⇒ 本红证会**空跑**；"
+        "该面的登记形态变了就同步改本守卫"
+    )
+    assert _s1_reverse_drift(injected) == [face], (
+        "把 S1 的 FACES 摘掉一项后，**反方向**漂移判据没判红 ⇒ 双向判据是空判据"
+        "（这正是 issue #4647 收口时漏同步却没被发现的原因）"
+    )
+    assert _fingerprint((REPO_ROOT / S1_GUARD).read_text(encoding="utf-8")) == _fingerprint(source), (
+        "真树里的 S1 守卫内容变了 ⇒ 红证污染了被测对象"
     )
 
 
