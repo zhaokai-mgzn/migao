@@ -29,18 +29,22 @@ import java.util.Map;
  * </pre>
  *
  * <h2>口径（用户裁定，不得自行放宽）</h2>
- * 「**未定价组合 ⇒ 加工费 = 0（unpriced），直接切，不回落 Σ 加工项**」
+ * 「**未定价组合 ⇒ 组合那半 = 0（unpriced），直接切，不回落 Σ 加工项**」
  * ⇒ 未命中**绝不**静默套任何默认价（#4308「静默回落」同族纪律：静默 = 算错钱且无人知道）。
- * 代价已知并接受：商家必须先配组合，否则加工费为 0。
+ * 代价已知并接受：商家必须先配组合，否则**组合那半**为 0。
  *
  * <h2>「未定价」有两层，都必须在 detail 里可判（设计 §4.2）</h2>
  * <ul>
- *   <li><b>组合未命中</b> ⇒ 整体 {@code fee_source='unpriced'}、金额 0、<b>不回落</b> Σ 加工项；
- *       此时 {@code special_options[]} 也按 0 计（组合那半都没有价，谈选项价无意义）；</li>
+ *   <li><b>组合未命中 / 无加工项 / 缺米数</b> ⇒ {@code fee_source='unpriced'}、{@code amount}（**组合那半**）
+ *       为 0、<b>不回落</b> Σ 加工项；但 {@code special_options[]} **照常取价并计入行金额**
+ *       （用户裁定 2026-09-19 / issue #4594：选项是**按套的独立一笔账**，与组合是否定价、
+ *       米数是否齐全**无关** —— 曾经「组合没配价 ⇒ 选项被吞」会让商家勾了扣环/抱枕却一分钱不体现）；</li>
  *   <li><b>组合命中 ∧ 某选项未定价</b>（{@code customer_unit_price IS NULL}）⇒ {@code fee_source}
  *       仍 {@code 'matched'}（组合那半有效），**该选项**在 {@code special_options[]} 里
  *       {@code priced:false} + 计 0 + 可行动 hint ⇒ 绝不静默按 0 收。</li>
  * </ul>
+ * ⇒ {@code fee_source} 只表达**组合那半**的三态（matched / unpriced / manual），
+ * **不再蕴含「行金额 = 0」**（枚举取值不变）；行金额一律走 {@link Fee#lineAmount()}。
  *
  * <h2>为什么单独一个类（而不是塞回 OrderService）</h2>
  * ① 取价是**纯函数**（{@code processing_info} + 价目表 → 一个数 + 可审计构成），
@@ -125,11 +129,13 @@ public class ProcessingFeeCalculator {
      * 一行的加工费结果。
      *
      * @param amount              **组合那半**（元）= 组合单价 × 加工费米数；未定价 / 缺米数 = 0
+     *                            （⚠️ **不等于行金额** —— 行金额见 {@link #lineAmount()}）
      * @param feeSource           三态：matched / unpriced / manual（**枚举不变**）
      * @param compositionKey      归一化组合键（未命中时也要记下"当时选的是什么"）
      * @param unitPrice           命中的组合单价（元/米）；未命中 = null
      * @param meters              加工费米数（= 该樘窗主布行米数）；缺 = null
-     * @param specialOptions      选中特殊选项的逐项取价（**按选项名 Unicode 码点升序**，确定性）
+     * @param specialOptions      选中特殊选项的逐项取价（**按选项名 Unicode 码点升序**，确定性）；
+     *                            组合未定价时**同样取价**（选项与组合是否定价无关，issue #4594）
      * @param specialOptionsTotal Σ 选项价（元）；没选 = 0
      * @param detail              可审计构成（落 {@code processing_info.processingFeeDetail}，原样透传）
      * @param hint                未定价 / 缺米数时的**可行动**提示；命中且齐全 = null
@@ -145,6 +151,9 @@ public class ProcessingFeeCalculator {
          *
          * <p>{@code amount} 只记组合那半（与 #4406 的既有语义/键名**一字不改**），
          * 行金额由本方法合成 ⇒ 订单金额 / 试算合计都走这里，**不另拼一份口径**。</p>
+         *
+         * <p>⚠️ {@code fee_source='unpriced'}（组合那半 0）**不蕴含**行金额 0 ——
+         * 已定价的特殊选项照常计入（用户裁定 2026-09-19 / issue #4594）。</p>
          */
         public BigDecimal lineAmount() {
             return nz(amount).add(nz(specialOptionsTotal));
@@ -156,12 +165,16 @@ public class ProcessingFeeCalculator {
         }
 
         static Fee unpriced(String compositionKey, List<String> items, BigDecimal unitPrice,
-                            String priceSource, BigDecimal meters, String metersSource, String hint) {
-            // 组合那半都没有价 ⇒ 选项价不参与（仍记进 detail 供审计：选了哪些选项是**事实**）
+                            String priceSource, BigDecimal meters, String metersSource,
+                            List<SpecialOption> specialOptions, String hint) {
+            // 组合那半没有价 ⇒ **只有那一半**记 0；选项那半**照常计入**（用户裁定 2026-09-19 /
+            // issue #4594：选项是按套的独立一笔账，与组合是否定价、米数是否齐全无关）。
+            // `lineAmount()` = 0 + Σ 选项价 ⇒ 订单金额/试算合计都走它，不另拼一份口径。
+            BigDecimal optionsTotal = money(optionsTotal(specialOptions));
             return new Fee(BigDecimal.ZERO, FEE_SOURCE_UNPRICED, compositionKey, items, null,
-                    unitPrice, priceSource, meters, metersSource, List.of(), BigDecimal.ZERO,
+                    unitPrice, priceSource, meters, metersSource, specialOptions, optionsTotal,
                     detail(compositionKey, items, null, unitPrice, priceSource, meters, metersSource,
-                            FEE_SOURCE_UNPRICED, BigDecimal.ZERO, List.of(), BigDecimal.ZERO, hint),
+                            FEE_SOURCE_UNPRICED, BigDecimal.ZERO, specialOptions, optionsTotal, hint),
                     hint);
         }
 
@@ -264,11 +277,12 @@ public class ProcessingFeeCalculator {
     /**
      * 单行取价（**纯函数**，不碰库）：选配 → 组合键 → 匹配 → 组合单价 × 米数 + Σ 选项价 × 1。
      *
-     * <p>命中但米数缺失也返回 {@code unpriced}（0 元）—— 米数是金额的另一个因子，
+     * <p>命中但米数缺失也返回 {@code unpriced}（**组合那半** 0 元）—— 米数是**组合那半**的另一个因子，
      * 缺它就只能算 0；**不凭 {@code quantity} 猜**（猜出来的钱无人可复核）。</p>
      *
-     * <p>特殊选项**只在组合命中且米数齐全**时才计费（组合未命中 ⇒ 整体 unpriced 且金额 0，
-     * 不回落 Σ 加工项、也不单独收选项价）—— 设计 §4.2。</p>
+     * <p>特殊选项是**按套的独立一笔账**（用户裁定 2026-09-19 / issue #4594）：**无论组合那半是否
+     * 定得下来**（未命中 / 无加工项 / 缺米数）都照常取价并计入行金额 —— 组合未定价 ⇒ 只把**组合那半**
+     * 记 0，**不回落** Σ 加工项，也不吞掉已定价的选项价。</p>
      */
     public static Fee feeFor(Object processingInfo, Map<String, ProcessingFeeCombination> priced) {
         return feeFor(processingInfo, priced, Map.of());
@@ -286,16 +300,19 @@ public class ProcessingFeeCalculator {
         String compositionKey = ProcessingFeeCombinationCommandService.compositionKey(items);
         BigDecimal meters = meters(processingInfo);
         String metersSource = meters == null ? null : metersSource(processingInfo);
+        // 选项那半**先算**（issue #4594）：它是按套的独立一笔账 ⇒ 组合那半走哪条分支都不影响它
+        List<SpecialOption> specialOptions = specialOptions(processingInfo, optionPrices);
         if (compositionKey.isEmpty()) {
             return Fee.unpriced(compositionKey, List.of(), null, null, meters, metersSource,
-                    "本行没有选配任何加工项 ⇒ 没有可收的加工费（加工费按选配组合收）。"
+                    specialOptions,
+                    "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。"
                             + "若这单本该有加工费，请确认下单时是否漏选了加工项");
         }
         ProcessingFeeCombination row = priced == null ? null : priced.get(compositionKey);
         if (row == null || row.getUnitPrice() == null) {
             return Fee.unpriced(compositionKey, ProcessingFeeQueryService.itemsOf(compositionKey),
-                    null, null, meters, metersSource,
-                    String.format("选配组合「%s」在「加工费组合」里没有价 ⇒ 本行加工费按 0 计（未定价），"
+                    null, null, meters, metersSource, specialOptions,
+                    String.format("选配组合「%s」在「加工费组合」里没有价 ⇒ 本行**组合那半**按 0 计（未定价），"
                                     + "**不套任何默认价**。请去「加工费管理」(%s) 为该组合定价，"
                                     + "或确认这些加工项不该组合收费",
                             compositionKey, PRICING_ENTRY));
@@ -303,13 +320,12 @@ public class ProcessingFeeCalculator {
         List<String> normalizedItems = ProcessingFeeQueryService.itemsOf(compositionKey);
         if (meters == null) {
             return Fee.unpriced(compositionKey, normalizedItems, row.getUnitPrice(), row.getSource(),
-                    null, null,
-                    String.format("选配组合「%s」已定价 ¥%s/米，但本行**缺加工费米数** ⇒ 加工费按 0 计。"
+                    null, null, specialOptions,
+                    String.format("选配组合「%s」已定价 ¥%s/米，但本行**缺加工费米数** ⇒ **组合那半**按 0 计。"
                                     + "加工费米数 = 该樘窗主布行米数（算料侧给出，键 `processingMeters`）"
                                     + "⇒ 请补算料米数后重下单",
                             compositionKey, row.getUnitPrice().toPlainString()));
         }
-        List<SpecialOption> specialOptions = specialOptions(processingInfo, optionPrices);
         return Fee.matched(compositionKey, normalizedItems, row.getId(), row.getUnitPrice(),
                 row.getSource(), meters, metersSource, specialOptions,
                 unpricedOptionsHint(specialOptions));

@@ -176,10 +176,22 @@ cases:
     namespaces:
       - "product_name:遮光窗帘"
 
+    # 前置自断言（issue #4590 的 burn-down 缴费，形态与 OR-014/OR-016 逐字同款）：
+    # 本用例按**名字**定位被测对象（「调整遮光窗帘的库存」）⇒「该名字唯一」是它真正依赖、
+    # 且**只读**的前置（种子 + `pre_clean[product_dedupe]` 后恰为 1 件）。前置不成立时
+    # 红的表现是 `unmatched expectation`（看起来像「agent 不会改库存」，归因全错）。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     expectations:
       - tool: inventory_manage
         args:
           action: adjust
+    # 效果层断言（issue #4590 的 burn-down 缴费）：「调用了 ≠ 调成了」——
+    # 库存真的调整成功（`success=true`）才算过，只有 expectation 时工具失败也照样满分。
+    must_succeed:
+      - tool: inventory_manage
     data_checks:
       - "返回新库存数量"
     pre_clean:
@@ -189,7 +201,7 @@ cases:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
     skip_reason: ""
-    merge_log: "verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1）。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 收尾改答卡轮；③ pre_clean 去 price 过滤（关键词去重）"
+    merge_log: "verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1）。2026-09-14 校准（#3518）：① 输入去「100元的那件」价格点名（独立栈种子 ¥168）；② 收尾改答卡轮；③ pre_clean 去 price 过滤（关键词去重）。2026-09-19（issue #4590 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（CASE-TRUST-NO-PRECONDITION-ASSERTION）+ `must_succeed[inventory_manage]`（CASE-TRUST-NO-EFFECT-ASSERTION）—— **断言只增不减**（expectations / data_checks / pre_clean / user_inputs 一字未动）；`product_count_for_keyword` 的取值与 OR-014 同源（遮光窗帘在两条腿的评测栈里都恰 1 件：mibao 栈 = xiaobu seed + mibao seed）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_inventory_manage.py"

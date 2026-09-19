@@ -1,4 +1,4 @@
-// case_ids: OR-001, UI-020, OR-034
+// case_ids: OR-001, UI-020, OR-034, OR-039
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
 import { render, screen, within, fireEvent } from '@testing-library/react'
@@ -474,6 +474,49 @@ describe('OrderItemList', () => {
     it('判据 7：无 unpriced 行 ⇒ 不出现未定价提示（不制造噪音）', () => {
       render(<OrderItemList items={[makeItem({ processingFee: 30 })]} />)
       expect(screen.queryByText(/未定价/)).toBeNull()
+    })
+
+    // ── issue #4594（用户裁定 2026-09-19）：组合未定价时**已定价的特殊选项照常计入** ──────────
+    it('#4594 判据：unpriced + 已定价选项 ⇒ 行内报出「选项那半」，不再看起来一分钱不收', () => {
+      render(
+        <OrderItemList
+          items={[
+            makeItem({
+              // 行加工费 = 组合那半 0 + 选项 ¥3.00（后端 lineAmount()，前端只展示不重算）
+              processingFee: 3,
+              processingInfo: {
+                processingFeeDetail: {
+                  composition: '布帘+韩褶',
+                  fee_source: 'unpriced',
+                  amount: 0,
+                  special_options_total: 3,
+                  hint: '该组合未定价，请到加工费组合里配置',
+                },
+              },
+            }),
+          ]}
+        />
+      )
+      // 未定价仍显式可见（组合那半），且**同时**报出选项那半
+      const cell = screen.getByText(/^未定价/).parentElement!
+      expect(cell.textContent).toContain('选项 ¥3.00')
+      expect(cell.textContent).toContain('组合那半按 0 计；特殊选项照计')
+      // 未定价不得渲染成 ¥0.00（仓库硬纪律）
+      expect(screen.queryByText('¥0.00')).toBeNull()
+      // 行小计仍 = 小计 + 行加工费（选项那半真的进了钱）
+      expect(screen.getAllByText('¥503.00').length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('#4594 判据：unpriced 且**没选**选项 ⇒ 仍是纯「未定价」（不凭空出现选项文案）', () => {
+      render(
+        <OrderItemList
+          items={[
+            withFee({ fee_source: 'unpriced', amount: 0, special_options_total: 0 }, 0),
+          ]}
+        />
+      )
+      expect(screen.getByText('未定价')).toBeInTheDocument()
+      expect(screen.queryByText(/特殊选项照计/)).toBeNull()
     })
   })
 
