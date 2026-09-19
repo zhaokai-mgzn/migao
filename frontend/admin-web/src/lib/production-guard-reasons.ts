@@ -48,7 +48,7 @@ function fallbackMessage(error: unknown): string | null {
  * 缺必完工序 / 权限）。识别不了的原样透出 —— **绝不吞掉后端理由**（吞掉就等于回到「只弹保存失败」）。
  */
 export function describeRoutingGuard(raw: string): string {
-  const s = (raw || '').trim()
+  const s = merchantWording(raw).trim()
   if (!s) return '保存失败'
   const dup = s.match(/重复|duplicate/i)
   if (dup) return `工序重复：${s}`
@@ -66,6 +66,33 @@ export function routingGuardReasons(error: unknown): string[] {
   const fb = fallbackMessage(error)
   if (fb) return [describeRoutingGuard(fb)]
   return ['保存失败，请稍后重试']
+}
+
+/**
+ * **商家面术语过滤**（issue #4453 裁定：内部机制名不入商家面）。
+ *
+ * 后端的护栏理由里会出现 `缺信号订单` / `fail-closed` 这类**研发口径**的词，
+ * 而 #4453 已裁定「信号映射」是研发内部机制、商家页**不得**出现该概念
+ * （既有判据：`document.body.textContent` 不含「信号」）。
+ * ⇒ 这里**只换词、不删理由**（把后端理由吞成一句「保存失败」才是真正的退化）。
+ */
+export function merchantWording(raw: string): string {
+  return (raw || '').replace(/信号/g, '工艺').replace(/fail-closed/gi, '直接拒绝生成')
+}
+
+/**
+ * 路线**管理面**（改名 / 删除 / 设为默认）的护栏理由 → 逐条可读文案。
+ *
+ * ⚠️ **不套** `describeRoutingGuard` 的序列专属前缀（工序重复 / 缺必完工序 / 序列不能为空）：
+ * 那一族的判据是「主线序列」，而这三个动作的理由是「路线名不能为空」「默认路线不能删」——
+ * 套错标签会误导商家（实证：改名为空会得到「序列不能为空：路线名称不能为空」）。术语过滤照旧。
+ */
+export function routingAdminGuardReasons(error: unknown): string[] {
+  const reasons = detailsMessages(error)
+  if (reasons.length > 0) return reasons.map(merchantWording)
+  const fb = fallbackMessage(error)
+  if (fb) return [merchantWording(fb)]
+  return ['操作失败，请稍后重试']
 }
 
 /**

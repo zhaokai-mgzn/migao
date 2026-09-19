@@ -770,28 +770,24 @@ export interface OperationsCatalog {
   groups?: CatalogGroup[]
 }
 
-/** 工艺路线内一道工序（展示口径：库中缺该工序时 unit/unit_price 为 null，不猜默认值） */
-export interface RoutingStep {
-  seq: number
-  operation: string
-  group?: string | null
-  unit?: string | null
-  unit_price?: number | null
-  is_must_finish?: boolean
-  is_start_marker?: boolean
-  /** 作用域（V67，issue #4384 A1）：部位级 / 套级（每樘窗一次）；库中缺该工序 ⇒ null */
-  scope?: ProductionScope | null
-}
-
-/** 工艺路线模板（部位 × 工艺 → 工序序列；布帘·韩褶 = 11 道） */
+/**
+ * 工艺路线模板（**具名主线 + 适用帘种 + 默认标记**，P2b / issue #4459 起的新结构）。
+ *
+ * ⚠️ 旧形态（`{curtain_type, craft, operation_count, operations}` 的「部位 × 工艺」展开快照）
+ * **已随 P2b 退场**（`GET /routings` 的 javadoc 明写「前端由 P3（#4433）适配」）——
+ * 工艺不再参与选路，它只触发 `production_route_rules`。
+ */
 export interface Routing {
-  id?: number
-  curtain_type: string
-  craft: string
-  operation_count: number
-  operations?: RoutingStep[]
-  /** 来源可信度（#4361；缺省 = 老实例，不渲染徽标） */
-  source?: ProductionSource | null
+  id: number
+  /** 路线**总名**（如「窗帘工序路线（默认）」）—— 商家唯一可改的标识（改名只改它） */
+  name: string
+  /** 默认路线：**每租户恰一条**（DB 部分唯一索引保证 ≤1）—— 回落链的终点 */
+  is_default: boolean
+  /** 适用帘种集合（取值域同 `OperationPosition.position`：布帘/纱帘/帘头） */
+  positions?: string[]
+  /** 主线：**逻辑工序名**的有序序列（如 `["精裁","三边","韩褶"]`） */
+  mainline?: string[]
+  status?: string | null
 }
 
 /** GET /api/admin/production/routings */
@@ -846,17 +842,65 @@ export interface RouteSignalParams {
   priority?: number
 }
 
-/** PUT /api/admin/production/routings/{id} body —— 有序工序名列表（seq 由服务端归一为 1..N） */
-export interface RoutingSequenceParams {
-  operations: string[]
+/** PUT /api/admin/production/routings/{id} body —— **部分更新**：只写出现的字段（issue #4459 §1③） */
+export interface RoutingUpdateParams {
+  /** 改名**只改它**（不给 `mainline` 就不动序列） */
+  name?: string
+  /** 设为默认：**恰一条**（置 true 时服务端把既有默认降级）；⚠️ `false` ⇒ 422（零默认 ⇒ 建单全 fail-closed） */
+  is_default?: boolean
+  /** 主线：逻辑工序名的有序序列（seq 由服务端归一为 1..N） */
+  mainline?: string[]
+  /** 适用帘种集合 */
+  positions?: string[]
+  status?: string
 }
 
-/** POST /api/admin/production/routings body（新建路线；initial 序列可空，随后在编辑区排序） */
+/** POST /api/admin/production/routings body（新建路线；初版主线可缺省，随后在编辑区排） */
 export interface RoutingCreateParams {
-  curtain_type: string
-  craft: string
-  operations?: string[]
+  name: string
+  mainline?: string[]
+  positions?: string[]
+  is_default?: boolean
+  status?: string
 }
+
+// ── 新模型只读面（issue #4500 = 母单 #4423 的 P2c，P3 #4433 的消费面）──
+// ⚠️ 两个端点都**只读**（写面留 v1b）。顺序由服务端定（Java 侧显式比较器，环境无关）——
+//    前端**不得**重排（重排会与服务端口径分叉）。
+
+/**
+ * 部位价目一格：一道**逻辑工序** × 一个**部位** = 一个单价 + 一个适用性。
+ *
+ * ⚠️ `operation` 是**逻辑工序名**（`精裁` / `三边`），**不是** `production_operations.name`
+ * （那边仍是旧名 `精裁-布` / `布三边`）—— 取错会让矩阵退化成「一行一道旧工序」。
+ * `applicable=false` ⇒ `unit_price=null`（**明确不做**与「没定价」可区分）。
+ */
+export interface OperationPosition {
+  operation: string
+  position: string
+  unit_price?: number | null
+  applicable?: boolean | null
+}
+
+/** 统一规则区一条：工艺变体 ∪ 特殊选项的**路线编排**规则（`action` = insert / remove） */
+export interface RouteRule {
+  id: number
+  /** 触发维：`craft` 工艺 / `option` 特殊选项 */
+  trigger_kind?: string | null
+  /** 触发键取值 —— **与 ERP 名逐字一致**（#4389 join key 纪律：前端不得拼写或"纠正"） */
+  trigger_value?: string | null
+  /** 部位限定；`null` = 不限部位 */
+  position?: string | null
+  action?: string | null
+  /** 目标工序（逻辑名） */
+  operation?: string | null
+  /** `insert` 的锚点工序；`null` = 追加末尾 */
+  after_operation?: string | null
+  /** 规则应用顺序（`remove` 不先于 `insert` 完全由它决定）—— 顺序敏感 */
+  priority?: number | null
+  status?: string | null
+}
+
 
 /**
  * 路线写端点失败时的响应体（护栏理由）—— 后端**真实**信封（issue #4308「冻结补遗 ②」）：

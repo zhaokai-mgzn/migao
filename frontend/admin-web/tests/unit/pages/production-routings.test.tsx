@@ -1,30 +1,37 @@
 // case_ids: PG-020, PP-014
-// PG-020（issue #4203 / #4204）+ PP-014（issue #4307）**合并后**的单页用户面（issue #4416）：
-// 工序库与工艺路线合并为「工艺配置」/production/routings —— 两半能力**一个都不能少**。
+// PG-020（issue #4203 / #4204）+ PP-014（issue #4307）**合并后**的单页用户面（issue #4416），
+// 本单（issue #4433 = 母单 #4423 的 P3）把它适配到**新路线模型**（P1 #4427 / P2 #4432 / P2b #4459 / P2c #4500）。
 //
-// ① 工序库半边（原 /production/operations）：GET /operations-catalog 按分组渲染真实工序
-//    （名称/部位/作用域/单位/计件单价/必完），并支持改单价 / 必完开关 / 作用域（PUT）；
-// ② 路线半边（原 /production/routings）：路线序列渲染 + 从**工序库调色板**选工序 → 上移/下移/删除
-//    → 保存（PUT /routings/{id}，body {operations:[…]} 且**顺序等于屏幕顺序**）；
-// ③ 保存被拒逐条展示后端护栏理由（`error.details[].message`），空序列本地拦；
-// ④ **两个 tab**（issue #4482）：工艺项 / 工艺路线；缺口区已按用户裁定**整体移除**；
-// ⑤ 新建路线 / 新增工序 / 信号映射增删改；
-// ⑥ 就绪度检查器把「工序 → 路线」的先后依赖显性化；空序列路线标为「空壳 · 不可用」；
-// ⑦ 新建路线后**自动进入序列编辑**（消灭「建壳了但没排序」的静默态）；
-// ⑧ 行业模板卡**仅工序库为空时**出现（开租已自动套用，见 RegistrationService），补套能力不退化；
-// ⑩ 任一只读端点失败不得白屏，失败处给可读提示。
+// 新模型下的用户面判据（#4433）：
+// ① **部位价目矩阵**（tab「工艺项」主区）：`GET /operation-positions` 的 84 格（28 逻辑工序 × 3 部位）
+//    **整份呈现** —— 同一道工序三个部位各自真实价与适用性；`applicable=false` 的行**不得被过滤**；
+//    服务端顺序（`(operation, position)`）**不得重排**；
+// ② 「**不做**」（`applicable=false`）与「**没定价**」（`applicable=true` 但 `unit_price=null`）
+//    在界面上**可区分**（同 `route_source` 的「静默 = 未知」纪律）；
+// ③ **具名路线**：列表显示 `name` + **默认徽标** + 适用帘种 + 主线道数；**不再**出现「部位 × 工艺」标题；
+// ④ 危险操作**护栏就地展示**：删默认 ⇒ 拦；删最后一条 ⇒ 拦（后端也会 422，前端不许把理由吞成一句）；
+// ⑤ **改名只改 `name`**（对话框里**不出现**工序名/主线编辑）；
+// ⑥ **删除二次确认** → `DELETE` → 刷新；失败**逐条**展示理由；
+// ⑦ **设为默认** → `PUT {is_default:true}`；默认行不显示该入口；**绝不**提交 `is_default:false`（后端 422）；
+// ⑧ **统一规则区**（tab「工艺路线」次区）：26 条规则**不截断**，触发键**逐字取自后端**（#4389 join key 纪律）；
+// ⑨ **就绪度新增「默认路线」格**：无默认 ⇒ `data-state=todo` + 后果说明；
+// ⑩ **零退化**：工序库半边（分组/搜索/改价/必完/作用域/新增工序）+ 路线半边 + 两个 tab + 切 tab 不丢状态；
+// ⑪ 商家页**不得**出现「信号」（issue #4453 裁定：内部机制名不入商家面）。
 // 反 placeholder：断言落**真实数据行**与**请求体**，不断言「页面存在」。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const mockGetRoutings = vi.fn()
-const mockUpdateRoutingSequence = vi.fn()
+const mockUpdateRouting = vi.fn()
 const mockCreateRouting = vi.fn()
+const mockDeleteRouting = vi.fn()
 const mockGetOperationsCatalog = vi.fn()
 const mockCreateOperation = vi.fn()
 const mockUpdateOperation = vi.fn()
 const mockGetSeedTemplates = vi.fn()
+const mockGetOperationPositions = vi.fn()
+const mockGetRouteRules = vi.fn()
 // issue #4453 探针：信号映射是**研发内部机制**，商家页**不得**消费 ⇒ 它必须恒不被调用
 const mockGetRouteSignals = vi.fn()
 const mockApplySeedTemplate = vi.fn()
@@ -32,12 +39,15 @@ const mockApplySeedTemplate = vi.fn()
 vi.mock('@/lib/api', () => ({
   productionApi: {
     getRoutings: (...a: unknown[]) => mockGetRoutings(...a),
-    updateRoutingSequence: (...a: unknown[]) => mockUpdateRoutingSequence(...a),
+    updateRouting: (...a: unknown[]) => mockUpdateRouting(...a),
     createRouting: (...a: unknown[]) => mockCreateRouting(...a),
+    deleteRouting: (...a: unknown[]) => mockDeleteRouting(...a),
     getOperationsCatalog: (...a: unknown[]) => mockGetOperationsCatalog(...a),
     createOperation: (...a: unknown[]) => mockCreateOperation(...a),
     updateOperation: (...a: unknown[]) => mockUpdateOperation(...a),
     getSeedTemplates: (...a: unknown[]) => mockGetSeedTemplates(...a),
+    getOperationPositions: (...a: unknown[]) => mockGetOperationPositions(...a),
+    getRouteRules: (...a: unknown[]) => mockGetRouteRules(...a),
     getRouteSignals: (...a: unknown[]) => mockGetRouteSignals(...a),
     applySeedTemplate: (...a: unknown[]) => mockApplySeedTemplate(...a),
   },
@@ -48,7 +58,7 @@ import ProcessConfigPage from '@/app/(dashboard)/production/routings/page'
 
 const ok = (data: unknown) => ({ data: { success: true, data } })
 
-/** 工序库（库口径）：含 作用域 / provenance / 必完 / 首工序 —— 合并后左栏即调色板 */
+/** 工序库（库口径）：含 作用域 / provenance / 必完 / 首工序 —— 工艺项 tab 的次区（明细） */
 const CATALOG = {
   total: 4,
   groups: [
@@ -75,25 +85,41 @@ const CATALOG = {
 }
 
 /**
- * 路线：一条正常（布帘×韩褶）+ 一条**空壳**（纱帘×韩褶，`operation_count: 0`）。
- * 空壳来自 `POST /routings` 允许 `operations` 缺省（服务端护栏「空序列拒」只拦 PUT）
- * ⇒ 它会被 `findRouting` 正常命中并返回 0 道工序 ⇒ **该部位静默拿到 0 道工序**。
+ * 部位价目矩阵：**服务端顺序** = `(operation, position)`（Java 自然序：三边 < 精裁 < 车被）。
+ * 三态齐备 —— ① 有价（applicable=true）② **不做**（applicable=false ⇒ unit_price=null）
+ * ③ **没定价**（applicable=true 但 unit_price=null）。
+ */
+const POSITIONS = [
+  { operation: '三边', position: '帘头', unit_price: null, applicable: false },
+  { operation: '三边', position: '布帘', unit_price: 1.2, applicable: true },
+  { operation: '三边', position: '纱帘', unit_price: null, applicable: true },
+  { operation: '精裁', position: '帘头', unit_price: null, applicable: false },
+  { operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true },
+  { operation: '精裁', position: '纱帘', unit_price: 6, applicable: true },
+  { operation: '车被', position: '帘头', unit_price: null, applicable: false },
+  { operation: '车被', position: '布帘', unit_price: 3, applicable: true },
+  { operation: '车被', position: '纱帘', unit_price: null, applicable: false },
+]
+
+/** 规则区：工艺触发 insert（带锚点）/ 工艺触发 remove（带部位限定）/ 特殊选项触发 insert */
+const RULES = [
+  { id: 1, trigger_kind: 'craft', trigger_value: '韩褶', position: null, action: 'insert', operation: '韩褶', after_operation: '三边', priority: 10, status: 'active' },
+  { id: 2, trigger_kind: 'craft', trigger_value: '打孔', position: '布帘', action: 'remove', operation: '熨烫', after_operation: null, priority: 20, status: 'active' },
+  { id: 3, trigger_kind: 'option', trigger_value: '拼2次', position: '纱帘', action: 'insert', operation: '拼缝', after_operation: null, priority: 30, status: 'active' },
+]
+
+/**
+ * 具名路线（新结构）：① 默认 + 三帘种 + 3 道主线 ② 纱帘专线（**空主线** ⇒ 空壳）。
+ * ⚠️ 主线存的是**逻辑工序名**（`精裁`/`三边`，与 V71 种子同款书写），而 `production_operations.name`
+ * 仍是旧名（`精裁-布`）—— 两者之间**没有**暴露给前端的映射 ⇒ 前端不发明元数据（静默 = 未知）；
+ * `外帘装袋` 两侧同名（旧名不带部位后缀）⇒ 它是「库口径可见」的那一道。
+ * 旧形态（`curtain_type` × `craft` 展开快照）已随 P2b 退场 ⇒ 前端不得再按那个键渲染。
  */
 const ROUTINGS = {
   total: 2,
   routings: [
-    {
-      id: 11,
-      curtain_type: '布帘',
-      craft: '韩褶',
-      operation_count: 3,
-      operations: [
-        { seq: 1, operation: '精裁-布', group: '裁剪', unit: '套', unit_price: 8.5, is_must_finish: true, is_start_marker: true },
-        { seq: 2, operation: '韩褶-布', group: '车位', unit: '米', unit_price: 1.2, is_must_finish: false, is_start_marker: false },
-        { seq: 3, operation: '外帘装袋', group: '后道', unit: '件', unit_price: 0.4, is_must_finish: true, is_start_marker: false },
-      ],
-    },
-    { id: 12, curtain_type: '纱帘', craft: '韩褶', operation_count: 0, operations: [] },
+    { id: 11, name: '窗帘工序路线（默认）', is_default: true, positions: ['布帘', '纱帘', '帘头'], mainline: ['精裁', '三边', '外帘装袋'], status: 'active' },
+    { id: 12, name: '纱帘专线', is_default: false, positions: ['纱帘'], mainline: [], status: 'active' },
   ],
 }
 
@@ -110,7 +136,7 @@ const guardError = (reasons: string[]) => ({
       error: {
         code: 'VALIDATION_ERROR',
         message: `工艺路线校验未通过：${reasons.length} 项`,
-        details: reasons.map((message, i) => ({ field: `operations[${i}]`, message })),
+        details: reasons.map((message, i) => ({ field: `mainline[${i}]`, message })),
       },
       suggestion: '请修正后重试',
     },
@@ -118,84 +144,393 @@ const guardError = (reasons: string[]) => ({
   message: 'Request failed with status code 422',
 })
 
-
-/** 渲染并切到「工艺路线」tab（issue #4482：路线内容在第二个 tab，默认落在「工艺项」） */
+/** 渲染并切到「工艺路线」tab（路线内容在第二个 tab，默认落在「工艺项」） */
 const renderOnRoutes = async () => {
   render(<ProcessConfigPage />)
   await waitFor(() => expect(screen.getByTestId('process-config-tab-routes')).toBeInTheDocument())
   await userEvent.click(screen.getByTestId('process-config-tab-routes'))
 }
 
-describe('工艺配置页 /production/routings（工序库 + 工艺路线合并，issue #4416）', () => {
+/** 渲染并展开「工序库明细」折叠区（工序项 tab 的次区 —— 主区是部位价目矩阵） */
+const renderCatalogDetail = async () => {
+  render(<ProcessConfigPage />)
+  await waitFor(() => expect(screen.getByTestId('operations-catalog-toggle')).toBeInTheDocument())
+  await userEvent.click(screen.getByTestId('operations-catalog-toggle'))
+}
+
+/** 渲染路线 tab 并展开「条件工序规则」折叠区（26 条规则的呈现面） */
+const renderRules = async () => {
+  await renderOnRoutes()
+  await waitFor(() => expect(screen.getByTestId('route-rules-toggle')).toBeInTheDocument())
+  await userEvent.click(screen.getByTestId('route-rules-toggle'))
+}
+
+describe('工艺配置页 /production/routings（新路线模型，issue #4433 = 母单 #4423 的 P3）', () => {
   beforeEach(() => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG))
     mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS))
     mockGetSeedTemplates.mockReset().mockResolvedValue(ok(TEMPLATES))
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS))
+    mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES))
     mockGetRouteSignals.mockReset()
     mockApplySeedTemplate.mockReset().mockResolvedValue(ok({ created_operations: 35, created_routings: 9, skipped: 0 }))
     mockUpdateOperation.mockReset().mockResolvedValue(ok({ id: 'op-v54-03', name: '韩褶-布', unit_price: 2.5 }))
-    mockUpdateRoutingSequence.mockReset().mockResolvedValue(ok({ id: 11 }))
-    mockCreateRouting.mockReset().mockResolvedValue(ok({ id: 13, curtain_type: '罗马帘', craft: '韩褶', operation_count: 0, operations: [] }))
+    mockUpdateRouting.mockReset().mockResolvedValue(ok({ id: 12 }))
+    mockCreateRouting.mockReset().mockResolvedValue(ok({ id: 13, name: '罗马帘专线', is_default: false, positions: ['布帘'], mainline: [], status: 'active' }))
+    mockDeleteRouting.mockReset().mockResolvedValue(ok({ id: 12 }))
     mockCreateOperation.mockReset().mockResolvedValue(ok({ id: 'op-new' }))
     vi.mocked(toast.success).mockClear()
     vi.mocked(toast.error).mockClear()
   })
 
-  // ────────────────────────── ① 工序库半边（PG-020） ──────────────────────────
+  // ══════════════════ ①② 部位价目矩阵（tab「工艺项」主区） ══════════════════
 
-  it('tab「工艺项」：真实工序数据（总数 + 工序名 + 库口径单价）；切到「工艺路线」看到路线', async () => {
+  it('部位价目矩阵：84 格**整份**渲染 —— applicable=false 的行不得被过滤', async () => {
+    // 真实规模：28 逻辑工序 × 3 部位 = 84 格，其中约 1/3 是 applicable=false（「不做」）
+    const positions = ['布帘', '纱帘', '帘头']
+    const big = Array.from({ length: 28 }, (_, i) => `工序${i + 1}`).flatMap((operation, oi) =>
+      positions.map((position, pi) => ({
+        operation,
+        position,
+        unit_price: pi === 1 ? null : oi + pi,
+        applicable: pi !== 1,
+      })),
+    )
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok(big))
     render(<ProcessConfigPage />)
 
-    // 默认落在「工艺项」tab ⇒ 工序库可见、路线不可见（issue #4482：不再左右平铺）
-    await waitFor(() => expect(screen.getByTestId('operations-catalog-total')).toHaveTextContent('4'))
-    expect(screen.queryByTestId('routings-total')).not.toBeInTheDocument()
-
-    expect(within(screen.getByTestId('operation-row-op-v54-03')).getByText('韩褶-布')).toBeInTheDocument()
-    expect(within(screen.getByTestId('operation-row-op-v54-01')).getByText('精裁-布')).toBeInTheDocument()
-    expect(screen.getByTestId('operation-row-op-v54-03')).toHaveTextContent('¥1.20')
-    expect(screen.getByTestId('operation-row-op-v54-01')).toHaveTextContent('¥8.50')
-
-    // 切到「工艺路线」⇒ 路线可见、工序库不可见（互斥，不堆在一屏）
-    await userEvent.click(screen.getByTestId('process-config-tab-routes'))
-    await waitFor(() => expect(screen.getByTestId('routings-total')).toHaveTextContent('2'))
-    expect(screen.queryByTestId('operations-catalog-total')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    // 28 行 × 3 列 = 84 格（注入：过滤掉 applicable=false ⇒ 格数变 56，断言红）
+    expect(screen.getByTestId('operation-price-matrix-total')).toHaveTextContent('28')
+    expect(screen.getByTestId('operation-price-matrix-cells')).toHaveTextContent('84')
+    expect(screen.getAllByTestId(/^matrix-row-/)).toHaveLength(28)
+    expect(screen.getAllByTestId(/^matrix-cell-/)).toHaveLength(84)
+    // 被「不做」的那一列仍然在（不是被整列/整行滤掉）
+    expect(screen.getAllByTestId(/^matrix-cell-.*-纱帘$/)).toHaveLength(28)
+    expect(screen.getByTestId('matrix-cell-工序1-纱帘')).toHaveTextContent('不做')
   })
 
-  it('工序库半边：按分组展示（裁剪/车位/后道 三个分组标题 + 各自行数）', async () => {
+  it('部位价目矩阵：同一道工序三个部位各自显示真实价/适用性，且**服务端顺序不重排**', async () => {
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+
+    // 行序 = 服务端顺序（(operation, position) ⇒ 三边 / 精裁 / 车被）；注入：前端按字母重排 ⇒ 红
+    const rows = screen.getAllByTestId(/^matrix-row-/)
+    expect(rows.map((r) => r.getAttribute('data-operation'))).toEqual(['三边', '精裁', '车被'])
+
+    // 同一道「精裁」：布帘 ¥8.50 / 纱帘 ¥6.00 / 帘头 不做 —— 三个部位三份数据（不是一行一个价）
+    expect(screen.getByTestId('matrix-cell-精裁-布帘')).toHaveTextContent('¥8.50')
+    expect(screen.getByTestId('matrix-cell-精裁-纱帘')).toHaveTextContent('¥6.00')
+    expect(screen.getByTestId('matrix-cell-精裁-帘头')).toHaveTextContent('不做')
+    expect(screen.getByTestId('matrix-cell-三边-布帘')).toHaveTextContent('¥1.20')
+    // 列序 = 业务口径（布帘 / 纱帘 / 帘头），不是服务端格序
+    expect(within(screen.getByTestId('operation-price-matrix')).getAllByRole('columnheader').map((c) => c.textContent)).toEqual([
+      '工序',
+      '布帘',
+      '纱帘',
+      '帘头',
+    ])
+  })
+
+  it('「不做」与「没定价」在界面上**可区分**（同 route_source 的「静默 = 未知」纪律）', async () => {
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+
+    // applicable=false ⇒ 「不做」+ data-state=na（明确不做，不是漏配）
+    const na = screen.getByTestId('matrix-cell-车被-纱帘')
+    expect(na).toHaveAttribute('data-state', 'na')
+    expect(na).toHaveTextContent('不做')
+    expect(na).not.toHaveTextContent('未定价')
+
+    // applicable=true 但没价 ⇒ 「未定价」+ data-state=unpriced（有定价动作但还没填）
+    const unpriced = screen.getByTestId('matrix-cell-三边-纱帘')
+    expect(unpriced).toHaveAttribute('data-state', 'unpriced')
+    expect(unpriced).toHaveTextContent('未定价')
+    expect(unpriced).not.toHaveTextContent('不做')
+
+    // 有价的格不得被渲染成上面两态
+    expect(screen.getByTestId('matrix-cell-三边-布帘')).toHaveAttribute('data-state', 'priced')
+  })
+
+  it('部位价目矩阵：端点失败只在该区给可读提示（不白屏、不影响其余区）', async () => {
+    mockGetOperationPositions.mockReset().mockRejectedValueOnce(new Error('500'))
     render(<ProcessConfigPage />)
 
-    await waitFor(() => expect(screen.getByTestId('operation-group-裁剪')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix-error')).toHaveTextContent('部位价目加载失败'))
+    // 路线半边照常（切过去仍渲染真实数据）
+    await userEvent.click(screen.getByTestId('process-config-tab-routes'))
+    await waitFor(() => expect(screen.getByTestId('routings-total')).toHaveTextContent('2'))
+  })
+
+  // ══════════════════ ③ 具名路线（name + 默认徽标 + 适用帘种） ══════════════════
+
+  it('路线列表显示 name + 默认徽标 + 适用帘种 + 主线道数；不再出现「部位 × 工艺」标题', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routings-total')).toHaveTextContent('2'))
+
+    const box = screen.getByTestId('routing-11')
+    expect(within(box).getByTestId('routing-name-11')).toHaveTextContent('窗帘工序路线（默认）')
+    expect(within(box).getByTestId('routing-default-11')).toHaveTextContent('默认')
+    expect(within(box).getByTestId('routing-positions-11')).toHaveTextContent('布帘')
+    expect(within(box).getByTestId('routing-positions-11')).toHaveTextContent('纱帘')
+    expect(within(box).getByTestId('routing-positions-11')).toHaveTextContent('帘头')
+    expect(within(box).getByTestId('routing-mainline-count-11')).toHaveTextContent('3')
+
+    // 非默认路线**不得**带默认徽标（注入：徽标写死 ⇒ 红）
+    expect(within(screen.getByTestId('routing-12')).queryByTestId('routing-default-12')).toBeNull()
+    expect(within(screen.getByTestId('routing-12')).getByTestId('routing-positions-12')).toHaveTextContent('纱帘')
+
+    // 旧形态退场：不再按 (部位 × 工艺) 渲染
+    expect(document.body.textContent ?? '').not.toContain('×')
+  })
+
+  it('空壳口径：主线为空 ⇒ 「空壳 · 不可用」（正常路线不得被误标）', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-12')).toBeInTheDocument())
+
+    expect(screen.getByTestId('routing-empty-shell-12')).toHaveTextContent('空壳')
+    expect(screen.getByTestId('routing-12')).toHaveTextContent('0 道')
+    expect(within(screen.getByTestId('routing-11')).queryByTestId('routing-empty-shell-11')).toBeNull()
+  })
+
+  // ══════════════════ ④ 危险操作护栏（就地展示理由） ══════════════════
+
+  it('删默认 ⇒ 删除按钮**禁用**且就地给出可读理由（不靠后端 422 才知道）', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-delete-11')).toBeInTheDocument())
+
+    expect(screen.getByTestId('routing-delete-11')).toBeDisabled()
+    const reason = screen.getByTestId('routing-delete-blocked-11')
+    expect(reason).toHaveTextContent('默认')
+    expect(reason).toHaveTextContent('设为默认')
+    // 非默认路线可删（不得把护栏套到所有行上）
+    expect(screen.getByTestId('routing-delete-12')).toBeEnabled()
+  })
+
+  it('删最后一条 ⇒ 删除按钮**禁用**且就地说明后果', async () => {
+    mockGetRoutings.mockReset().mockResolvedValue(
+      ok({
+        total: 1,
+        routings: [{ id: 11, name: '唯一路线', is_default: true, positions: ['布帘'], mainline: ['精裁'], status: 'active' }],
+      }),
+    )
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-delete-11')).toBeInTheDocument())
+
+    expect(screen.getByTestId('routing-delete-11')).toBeDisabled()
+    expect(screen.getByTestId('routing-delete-blocked-11')).toHaveTextContent('最后一条')
+  })
+
+  it('恰一条默认：默认行**不显示**「设为默认」入口（后端 is_default:false ⇒ 422，前端不得发）', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-11')).toBeInTheDocument())
+
+    expect(screen.queryByTestId('routing-set-default-11')).toBeNull()
+    expect(screen.getByTestId('routing-set-default-12')).toBeInTheDocument()
+  })
+
+  // ══════════════════ ⑤ 改名（只改 name） ══════════════════
+
+  it('改名：对话框**只有路线名称**（不出现工序名/主线编辑），PUT 只提交 name', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-rename-11')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-rename-11'))
+    const modal = await screen.findByTestId('routing-rename-modal')
+    expect(within(modal).getByTestId('routing-rename-input')).toHaveValue('窗帘工序路线（默认）')
+    // 用户裁定「只是更改工艺路线总名」：对话框里**不得**出现工序名/主线编辑入口
+    expect(within(modal).queryByTestId('routing-rename-mainline')).toBeNull()
+    expect(modal.textContent ?? '').not.toContain('工序名')
+
+    await userEvent.clear(within(modal).getByTestId('routing-rename-input'))
+    await userEvent.type(within(modal).getByTestId('routing-rename-input'), '窗帘主线（默认）')
+    await userEvent.click(screen.getByTestId('routing-rename-submit'))
+
+    // 只提交 name —— 改名不得顺带重写主线（那是计件工资的输入）
+    await waitFor(() => expect(mockUpdateRouting).toHaveBeenCalledWith(11, { name: '窗帘主线（默认）' }))
+    await waitFor(() => expect(mockGetRoutings).toHaveBeenCalledTimes(2))
+  })
+
+  it('改名失败（重名 409/422）：理由**逐条**就地展示，不吞成一句「保存失败」', async () => {
+    mockUpdateRouting.mockReset().mockRejectedValueOnce(
+      guardError(['工艺路线「纱帘专线」已存在']),
+    )
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-rename-12')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-rename-12'))
+    await userEvent.clear(await screen.findByTestId('routing-rename-input'))
+    await userEvent.type(screen.getByTestId('routing-rename-input'), '纱帘专线')
+    await userEvent.click(screen.getByTestId('routing-rename-submit'))
+
+    await waitFor(() => expect(screen.getByTestId('routing-op-error-item-0')).toHaveTextContent('已存在'))
+    expect(screen.queryByText(/Request failed with status code/)).not.toBeInTheDocument()
+    expect(mockGetRoutings).toHaveBeenCalledTimes(1)
+  })
+
+  // ══════════════════ ⑥ 删除（二次确认 + DELETE + 刷新） ══════════════════
+
+  it('删除：**二次确认**后才发 DELETE，成功后刷新列表', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-delete-12')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-delete-12'))
+    // 只打开确认框 ⇒ 不得发请求（注入：去掉确认直接删 ⇒ 红）
+    expect(await screen.findByTestId('routing-confirm-modal')).toHaveAttribute('data-kind', 'delete')
+    expect(mockDeleteRouting).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByTestId('routing-confirm-delete-12'))
+    await waitFor(() => expect(mockDeleteRouting).toHaveBeenCalledWith(12))
+    await waitFor(() => expect(mockGetRoutings).toHaveBeenCalledTimes(2))
+  })
+
+  it('删除：确认框可取消 —— 取消后不发 DELETE', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-delete-12')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-delete-12'))
+    await userEvent.click(await screen.findByTestId('routing-confirm-cancel'))
+    expect(mockDeleteRouting).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('routing-confirm-modal')).toBeNull()
+  })
+
+  it('删除被后端拒（护栏 422）：理由逐条就地展示，且商家面不出现内部机制名', async () => {
+    mockDeleteRouting.mockReset().mockRejectedValueOnce(
+      guardError([
+        '默认路线不能删：删了该租户就没有默认路线 ⇒ 缺信号订单建单全部 fail-closed。请先把另一条设为默认，再删这条',
+      ]),
+    )
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-delete-12')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-delete-12'))
+    await userEvent.click(await screen.findByTestId('routing-confirm-delete-12'))
+
+    await waitFor(() => expect(screen.getByTestId('routing-op-error-item-0')).toBeInTheDocument())
+    expect(screen.getByTestId('routing-op-error-item-0')).toHaveTextContent('默认路线不能删')
+    // issue #4453：内部机制名不入商家面（只换词，不删理由）
+    expect(document.body.textContent ?? '').not.toContain('信号')
+    expect(document.body.textContent ?? '').not.toContain('fail-closed')
+    expect(mockGetRoutings).toHaveBeenCalledTimes(1)
+  })
+
+  // ══════════════════ ⑦ 设为默认（PUT is_default:true） ══════════════════
+
+  it('设为默认：二次确认 → `PUT {is_default:true}` → 刷新', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-set-default-12')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-set-default-12'))
+    expect(await screen.findByTestId('routing-confirm-modal')).toHaveAttribute('data-kind', 'default')
+    expect(mockUpdateRouting).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByTestId('routing-confirm-default-12'))
+    await waitFor(() => expect(mockUpdateRouting).toHaveBeenCalledWith(12, { is_default: true }))
+    await waitFor(() => expect(mockGetRoutings).toHaveBeenCalledTimes(2))
+  })
+
+  it('页面**绝不**提交 `is_default:false`（后端 422：取消默认 ⇒ 零默认 ⇒ 建单全 fail-closed）', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-set-default-12')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-set-default-12'))
+    await userEvent.click(await screen.findByTestId('routing-confirm-default-12'))
+    await waitFor(() => expect(mockUpdateRouting).toHaveBeenCalled())
+
+    const payloads = mockUpdateRouting.mock.calls.map((c) => c[1] as Record<string, unknown>)
+    expect(payloads.every((p) => p.is_default !== false)).toBe(true)
+  })
+
+  // ══════════════════ ⑧ 统一规则区（26 条不截断，触发键逐字取自后端） ══════════════════
+
+  it('规则区：26 条**整份**渲染（不截断），触发键**逐字**取自后端', async () => {
+    const big = Array.from({ length: 26 }, (_, i) => ({
+      id: 100 + i,
+      trigger_kind: i % 2 === 0 ? 'craft' : 'option',
+      trigger_value: `触发${i + 1}`,
+      position: i % 3 === 0 ? null : '布帘',
+      action: i % 4 === 0 ? 'remove' : 'insert',
+      operation: `工序${i + 1}`,
+      after_operation: i % 4 === 0 ? null : '三边',
+      priority: (i + 1) * 10,
+      status: 'active',
+    }))
+    mockGetRouteRules.mockReset().mockResolvedValue(ok(big))
+    await renderRules()
+
+    await waitFor(() => expect(screen.getByTestId('route-rules-total')).toBeInTheDocument())
+    expect(screen.getByTestId('route-rules-total')).toHaveTextContent('26')
+    // 注入：把 26 条截断成前 20 条（.slice(0,20)）⇒ 断言红
+    expect(screen.getAllByTestId(/^route-rule-\d+$/)).toHaveLength(26)
+    expect(screen.getByTestId('route-rule-trigger-100')).toHaveTextContent('触发1')
+  })
+
+  it('规则区：触发 → 动作 → 目标工序 / 部位限定 / priority 都可读（null = 不限部位 / 追加末尾）', async () => {
+    await renderRules()
+    await waitFor(() => expect(screen.getByTestId('route-rule-1')).toBeInTheDocument())
+
+    // ① 工艺触发 · 插入 after 锚点
+    const r1 = screen.getByTestId('route-rule-1')
+    expect(within(r1).getByTestId('route-rule-trigger-1')).toHaveTextContent('韩褶')
+    expect(within(r1).getByTestId('route-rule-action-1')).toHaveTextContent('插入')
+    expect(within(r1).getByTestId('route-rule-action-1')).toHaveTextContent('三边')
+    expect(within(r1).getByTestId('route-rule-target-1')).toHaveTextContent('韩褶')
+    expect(within(r1).getByTestId('route-rule-position-1')).toHaveTextContent('不限')
+    expect(within(r1).getByTestId('route-rule-priority-1')).toHaveTextContent('10')
+
+    // ② 工艺触发 · 移除（带部位限定）
+    const r2 = screen.getByTestId('route-rule-2')
+    expect(within(r2).getByTestId('route-rule-action-2')).toHaveTextContent('移除')
+    expect(within(r2).getByTestId('route-rule-position-2')).toHaveTextContent('布帘')
+    expect(within(r2).getByTestId('route-rule-target-2')).toHaveTextContent('熨烫')
+
+    // ③ 特殊选项触发（触发键**逐字**：拼2次 —— 前端不得"纠正"成「拼两次」）
+    const r3 = screen.getByTestId('route-rule-3')
+    expect(within(r3).getByTestId('route-rule-trigger-3')).toHaveTextContent('拼2次')
+    expect(within(r3).getByTestId('route-rule-position-3')).toHaveTextContent('纱帘')
+  })
+
+  // ══════════════════ ⑨ 就绪度「默认路线」格 ══════════════════
+
+  it('就绪度新增「默认路线」格：有默认 ⇒ done；无默认 ⇒ todo + 说明后果', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('readiness-step-default-route')).toBeInTheDocument())
+    expect(screen.getByTestId('readiness-step-default-route')).toHaveAttribute('data-state', 'done')
+  })
+
+  it('就绪度「默认路线」格：零默认 ⇒ todo，并说明「没有指定工艺的订单一张加工单也生成不了」', async () => {
+    mockGetRoutings.mockReset().mockResolvedValue(
+      ok({
+        total: 1,
+        routings: [{ id: 11, name: '唯一路线', is_default: false, positions: ['布帘'], mainline: ['精裁'], status: 'active' }],
+      }),
+    )
+    await renderOnRoutes()
+
+    await waitFor(() => expect(screen.getByTestId('readiness-step-default-route')).toHaveAttribute('data-state', 'todo'))
+    expect(screen.getByTestId('readiness-step-default-route')).toHaveTextContent('加工单')
+    expect(screen.getByTestId('readiness-step-default-route')).toHaveTextContent('设为默认')
+  })
+
+  // ══════════════════ ⑩ 零退化：工序库半边 / 路线半边 / 两个 tab / 切 tab 不丢状态 ══════════════════
+
+  it('工序库半边（折叠明细）：按分组展示 + 搜索过滤，真实行数与库口径单价', async () => {
+    await renderCatalogDetail()
+    await waitFor(() => expect(screen.getByTestId('operations-catalog-total')).toHaveTextContent('4'))
+
     expect(within(screen.getByTestId('operation-group-裁剪')).getAllByTestId(/^operation-row-/)).toHaveLength(2)
     expect(within(screen.getByTestId('operation-group-车位')).getAllByTestId(/^operation-row-/)).toHaveLength(1)
     expect(within(screen.getByTestId('operation-group-后道')).getAllByTestId(/^operation-row-/)).toHaveLength(1)
+    expect(screen.getByTestId('operation-row-op-v54-03')).toHaveTextContent('¥1.20')
+
+    // 搜索框过滤工序库明细（也过滤矩阵行）
+    await userEvent.type(screen.getByTestId('operations-search'), '韩褶')
+    await waitFor(() => expect(screen.queryByTestId('operation-group-裁剪')).toBeNull())
+    expect(screen.getByTestId('operation-row-op-v54-03')).toBeInTheDocument()
   })
 
-  it('工序库半边：必完开关按库口径渲染，且 is_start_marker 不显示为「必完」', async () => {
-    render(<ProcessConfigPage />)
-
-    await waitFor(() => expect(screen.getByTestId('operation-row-op-v54-04')).toBeInTheDocument())
-    expect(within(screen.getByTestId('operation-row-op-v54-04')).getByTestId('operation-must-finish-op-v54-04')).toBeChecked()
-    expect(within(screen.getByTestId('operation-row-op-v54-02')).getByTestId('operation-must-finish-op-v54-02')).not.toBeChecked()
-    // 首工序（is_start_marker）**不是**「必完」：op-v54-02 是首工序但库口径 is_must_finish=false
-    // ⇒ 必须显示「首工序」徽标、**不得**显示「必完」（把首工序误当完工门槛 = 这张单永远完不了工）
-    const startMarkerRow = screen.getByTestId('operation-row-op-v54-02')
-    expect(startMarkerRow).toHaveTextContent('首工序')
-    expect(within(startMarkerRow).queryByText('必完')).not.toBeInTheDocument()
-  })
-
-  it('工序库半边：作用域（部位级/套级）逐行可见且可改，走 PUT 只提交 scope', async () => {
-    render(<ProcessConfigPage />)
-
-    await waitFor(() => expect(screen.getByTestId('operation-scope-op-v54-04')).toBeInTheDocument())
-    expect(screen.getByTestId('operation-scope-op-v54-04')).toHaveValue('set')
-    expect(screen.getByTestId('operation-scope-op-v54-03')).toHaveValue('position')
-
-    await userEvent.selectOptions(screen.getByTestId('operation-scope-op-v54-03'), 'set')
-    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-03', { scope: 'set' }))
-  })
-
-  it('工序库半边：改单价 → 保存 → PUT 只提交 unit_price 并刷新工序库', async () => {
-    render(<ProcessConfigPage />)
+  it('工序库半边：改单价 → PUT **只带** unit_price；必完/作用域各只带自己的字段', async () => {
+    await renderCatalogDetail()
     await waitFor(() => expect(screen.getByTestId('operation-row-op-v54-03')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('operation-price-edit-op-v54-03'))
@@ -203,170 +538,29 @@ describe('工艺配置页 /production/routings（工序库 + 工艺路线合并�
     await userEvent.clear(input)
     await userEvent.type(input, '2.5')
     await userEvent.click(screen.getByTestId('operation-price-save-op-v54-03'))
-
     await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-03', { unit_price: 2.5 }))
-    await waitFor(() => expect(mockGetOperationsCatalog).toHaveBeenCalledTimes(2))
-  })
-
-  it('工序库半边：切必完开关 → PUT 提交 is_must_finish 布尔值', async () => {
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-row-op-v54-03')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('operation-must-finish-op-v54-03'))
     await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-03', { is_must_finish: true }))
+
+    expect(screen.getByTestId('operation-scope-op-v54-04')).toHaveValue('set')
+    await userEvent.selectOptions(screen.getByTestId('operation-scope-op-v54-03'), 'set')
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-03', { scope: 'set' }))
   })
 
-  it('工序库半边：改单价失败 → toast.error 且不刷新（不把失败伪装成成功）', async () => {
-    mockUpdateOperation.mockRejectedValueOnce(new Error('403 forbidden'))
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-row-op-v54-03')).toBeInTheDocument())
+  it('工序库半边：首工序（is_start_marker）**不得**被渲染成「必完」', async () => {
+    await renderCatalogDetail()
+    await waitFor(() => expect(screen.getByTestId('operation-row-op-v54-02')).toBeInTheDocument())
 
-    await userEvent.click(screen.getByTestId('operation-price-edit-op-v54-03'))
-    const input = screen.getByTestId('operation-price-input-op-v54-03')
-    await userEvent.clear(input)
-    await userEvent.type(input, '9.9')
-    await userEvent.click(screen.getByTestId('operation-price-save-op-v54-03'))
-
-    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled())
-    expect(mockGetOperationsCatalog).toHaveBeenCalledTimes(1)
+    const row = screen.getByTestId('operation-row-op-v54-02')
+    expect(row).toHaveTextContent('首工序')
+    expect(within(row).queryByText('必完')).not.toBeInTheDocument()
+    expect(within(screen.getByTestId('operation-row-op-v54-04')).getByTestId('operation-must-finish-op-v54-04')).toBeChecked()
   })
 
-  // ────────────────────────── ② 路线半边（PP-014） ──────────────────────────
-
-  it('路线半边：真实路线数据（路线数 + 部位×工艺标题 + 每道工序含单位/单价/必完）', async () => {
-    await renderOnRoutes()
-
-    await waitFor(() => expect(screen.getByTestId('routings-total')).toHaveTextContent('2'))
-    const box = screen.getByTestId('routing-布帘×韩褶')
-    expect(box).toHaveTextContent('3 道工序')
-    expect(within(box).getByTestId('routing-step-布帘×韩褶-1')).toHaveTextContent('精裁-布')
-    expect(within(box).getByTestId('routing-step-布帘×韩褶-1')).toHaveTextContent('¥8.50')
-    expect(within(box).getByTestId('routing-step-布帘×韩褶-2')).toHaveTextContent('¥1.20')
-    expect(within(box).getByTestId('routing-step-布帘×韩褶-3')).toHaveTextContent('必完')
-  })
-
-  it('序列编辑：从左栏工序库点「加入」→ 保存 → PUT 的 operations 顺序等于屏幕顺序', async () => {
-    await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routing-edit-布帘×韩褶')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('routing-edit-布帘×韩褶'))
-    expect(screen.getByTestId('routing-draft-step-布帘×韩褶-1')).toHaveTextContent('精裁-布')
-    expect(screen.getByTestId('routing-draft-step-布帘×韩褶-1')).toHaveTextContent('必完')
-
-    // 工序库在**另一个 tab** ⇒ 编辑器自带「添加工序」选择器（issue #4482）
-    await userEvent.selectOptions(screen.getByTestId('routing-add-select-布帘×韩褶'), '裁剪-布')
-    await userEvent.click(screen.getByTestId('routing-add-布帘×韩褶'))
-    await userEvent.click(screen.getByTestId('routing-save-布帘×韩褶'))
-
-    await waitFor(() =>
-      expect(mockUpdateRoutingSequence).toHaveBeenCalledWith(11, {
-        operations: ['精裁-布', '韩褶-布', '外帘装袋', '裁剪-布'],
-      }),
-    )
-    await waitFor(() => expect(mockGetRoutings).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(screen.queryByTestId('routing-save-布帘×韩褶')).not.toBeInTheDocument())
-  })
-
-  it('序列编辑：未进入编辑态时**没有**「添加工序」选择器（避免误加进别的路线）', async () => {
-    await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routing-edit-布帘×韩褶')).toBeInTheDocument())
-
-    expect(screen.queryByTestId('routing-add-select-布帘×韩褶')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByTestId('routing-edit-布帘×韩褶'))
-    expect(screen.getByTestId('routing-add-select-布帘×韩褶')).toBeInTheDocument()
-    // 未选工序时「加入」禁用
-    expect(screen.getByTestId('routing-add-布帘×韩褶')).toBeDisabled()
-  })
-
-  it('序列编辑：下移改变顺序后保存，PUT 请求体的顺序随之变化', async () => {
-    await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routing-edit-布帘×韩褶')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('routing-edit-布帘×韩褶'))
-    await userEvent.click(screen.getByTestId('routing-draft-down-布帘×韩褶-1'))
-    expect(screen.getByTestId('routing-draft-name-布帘×韩褶-1')).toHaveTextContent('韩褶-布')
-    await userEvent.click(screen.getByTestId('routing-save-布帘×韩褶'))
-
-    await waitFor(() =>
-      expect(mockUpdateRoutingSequence).toHaveBeenCalledWith(11, {
-        operations: ['韩褶-布', '精裁-布', '外帘装袋'],
-      }),
-    )
-  })
-
-  it('序列编辑：删除一道后保存，被删工序不再出现在请求体里', async () => {
-    await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routing-edit-布帘×韩褶')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('routing-edit-布帘×韩褶'))
-    await userEvent.click(screen.getByTestId('routing-draft-remove-布帘×韩褶-2'))
-    expect(screen.queryByTestId('routing-draft-step-布帘×韩褶-3')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByTestId('routing-save-布帘×韩褶'))
-
-    await waitFor(() =>
-      expect(mockUpdateRoutingSequence).toHaveBeenCalledWith(11, { operations: ['精裁-布', '外帘装袋'] }),
-    )
-  })
-
-  it('空序列：本地拦住不发请求，并说明为什么不能空', async () => {
-    await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routing-edit-纱帘×韩褶')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('routing-edit-纱帘×韩褶'))
-    await userEvent.click(screen.getByTestId('routing-save-纱帘×韩褶'))
-
-    await waitFor(() => expect(screen.getByTestId('routing-error-纱帘×韩褶')).toBeInTheDocument())
-    expect(screen.getByTestId('routing-error-item-0')).toHaveTextContent('序列不能为空')
-    expect(mockUpdateRoutingSequence).not.toHaveBeenCalled()
-    expect(mockGetRoutings).toHaveBeenCalledTimes(1)
-  })
-
-  it('保存被拒（护栏）：后端每条理由**逐条**展示，不合并成一句「保存失败」', async () => {
-    mockUpdateRoutingSequence.mockRejectedValueOnce(
-      guardError([
-        '工序「罗马帘-打孔」不在工序库中',
-        '工序「裁剪-布」在序列中重复出现 2 次',
-        '路线至少要有一道必完工序（当前 0 道）',
-      ]),
-    )
-    await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routing-edit-布帘×韩褶')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('routing-edit-布帘×韩褶'))
-    await userEvent.click(screen.getByTestId('routing-save-布帘×韩褶'))
-
-    await waitFor(() => expect(screen.getByTestId('routing-error-布帘×韩褶')).toBeInTheDocument())
-    expect(screen.getByTestId('routing-error-item-0')).toHaveTextContent('工序不存在：工序「罗马帘-打孔」不在工序库中')
-    expect(screen.getByTestId('routing-error-item-1')).toHaveTextContent('工序重复：')
-    expect(screen.getByTestId('routing-error-item-2')).toHaveTextContent('缺少必完工序：')
-    expect(within(screen.getByTestId('routing-error-布帘×韩褶')).getAllByTestId(/^routing-error-item-/)).toHaveLength(3)
-    expect(screen.getByTestId('routing-save-布帘×韩褶')).toBeInTheDocument()
-    expect(mockGetRoutings).toHaveBeenCalledTimes(1)
-  })
-
-  it('保存被拒（无 details 时退化）：只有 error.message 也逐条可读，不得弹通用文案', async () => {
-    mockUpdateRoutingSequence.mockRejectedValueOnce({
-      response: {
-        status: 422,
-        data: { success: false, error: { code: 'VALIDATION_ERROR', message: '路线至少要有一道必完工序' } },
-      },
-      message: 'Request failed with status code 422',
-    })
-    await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routing-edit-布帘×韩褶')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('routing-edit-布帘×韩褶'))
-    await userEvent.click(screen.getByTestId('routing-save-布帘×韩褶'))
-
-    await waitFor(() =>
-      expect(screen.getByTestId('routing-error-item-0')).toHaveTextContent('缺少必完工序：路线至少要有一道必完工序'),
-    )
-    expect(screen.queryByText(/Request failed with status code/)).not.toBeInTheDocument()
-  })
-
-  it('新增工序：提交名称/分组/单位/单价（POST /production/operations）并刷新工序库', async () => {
-    await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routings-total')).toHaveTextContent('2'))
+  it('工序库半边：新增工序（POST /operations）后刷新工序库', async () => {
+    await renderCatalogDetail()
+    await waitFor(() => expect(screen.getByTestId('operations-catalog-total')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('routings-new-operation'))
     await userEvent.type(screen.getByTestId('routings-create-op-name'), '罗马帘-穿杆')
@@ -386,90 +580,161 @@ describe('工艺配置页 /production/routings（工序库 + 工艺路线合并�
     await waitFor(() => expect(mockGetOperationsCatalog).toHaveBeenCalledTimes(2))
   })
 
-  // ────────────────────────── ⑥⑦ 引导：就绪度 + 空壳 + 自动进编辑 ──────────────────────────
+  it('路线半边：主线逐道渲染 —— 库里查得到的带单位/单价/必完，逻辑名**不发明**元数据', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-step-11-1')).toBeInTheDocument())
 
-  it('新建路线：POST /routings 后**自动进入序列编辑**（消灭「建壳了但没排序」的静默态）', async () => {
-    // 第二次拉取时新路线已在库里（真实后端行为）—— 空序列路线
+    // 逻辑工序名「精裁」在工序库里没有同名行 ⇒ 只显示名字（静默 = 未知，不得冒充已知）
+    const logical = screen.getByTestId('routing-step-11-1')
+    expect(logical).toHaveTextContent('精裁')
+    expect(logical).not.toHaveTextContent('¥')
+    expect(logical).not.toHaveTextContent('必完')
+    // 「外帘装袋」两侧同名 ⇒ 库口径（单位/单价/必完）可见
+    expect(screen.getByTestId('routing-step-11-3')).toHaveTextContent('外帘装袋')
+    expect(screen.getByTestId('routing-step-11-3')).toHaveTextContent('¥0.40')
+    expect(screen.getByTestId('routing-step-11-3')).toHaveTextContent('必完')
+    // 空壳那条没有步骤可渲染
+    expect(screen.queryByTestId('routing-step-12-1')).toBeNull()
+  })
+
+  it('序列编辑：添加工序 → 保存 ⇒ `PUT {mainline:[...]}` 顺序等于屏幕顺序', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-edit-11'))
+    expect(screen.getByTestId('routing-draft-step-11-1')).toHaveTextContent('精裁')
+
+    await userEvent.selectOptions(screen.getByTestId('routing-add-select-11'), '裁剪-布')
+    await userEvent.click(screen.getByTestId('routing-add-11'))
+    await userEvent.click(screen.getByTestId('routing-save-11'))
+
+    await waitFor(() =>
+      expect(mockUpdateRouting).toHaveBeenCalledWith(11, { mainline: ['精裁', '三边', '外帘装袋', '裁剪-布'] }),
+    )
+    await waitFor(() => expect(mockGetRoutings).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByTestId('routing-save-11')).not.toBeInTheDocument())
+  })
+
+  it('序列编辑：下移/删除改变顺序后保存，请求体随之变化', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-edit-11'))
+    await userEvent.click(screen.getByTestId('routing-draft-down-11-1'))
+    expect(screen.getByTestId('routing-draft-name-11-1')).toHaveTextContent('三边')
+    await userEvent.click(screen.getByTestId('routing-draft-remove-11-3'))
+    await userEvent.click(screen.getByTestId('routing-save-11'))
+
+    await waitFor(() => expect(mockUpdateRouting).toHaveBeenCalledWith(11, { mainline: ['三边', '精裁'] }))
+  })
+
+  it('空主线：本地拦住不发请求，并说明为什么不能空', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-edit-12')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-edit-12'))
+    await userEvent.click(screen.getByTestId('routing-save-12'))
+
+    await waitFor(() => expect(screen.getByTestId('routing-error-12')).toBeInTheDocument())
+    expect(screen.getByTestId('routing-error-item-0')).toHaveTextContent('不能为空')
+    expect(mockUpdateRouting).not.toHaveBeenCalled()
+  })
+
+  it('保存被拒（主线护栏）：后端理由**逐条**展示，不合并成一句「保存失败」', async () => {
+    mockUpdateRouting.mockReset().mockRejectedValueOnce(
+      guardError([
+        '工序「罗马帘-打孔」不在工序库中',
+        '工序「精裁」在主线中重复出现 2 次',
+        '路线至少要有一道必完工序（当前 0 道）',
+      ]),
+    )
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-edit-11'))
+    await userEvent.click(screen.getByTestId('routing-save-11'))
+
+    await waitFor(() => expect(screen.getByTestId('routing-error-11')).toBeInTheDocument())
+    expect(within(screen.getByTestId('routing-error-11')).getAllByTestId(/^routing-error-item-/)).toHaveLength(3)
+    expect(screen.getByTestId('routing-error-item-0')).toHaveTextContent('工序不存在')
+    expect(screen.getByTestId('routing-error-item-1')).toHaveTextContent('工序重复')
+    expect(screen.getByTestId('routing-error-item-2')).toHaveTextContent('缺少必完工序')
+  })
+
+  it('护栏就地预检：主线缺必完工序 ⇒ 黄条；但**判不了就不判**（逻辑名/库中缺失 ⇒ 静默 = 未知）', async () => {
+    // 两道都能在工序库里查到、且都不是必完 ⇒ 判得动 ⇒ 黄条
+    mockGetRoutings.mockReset().mockResolvedValue(
+      ok({
+        total: 1,
+        routings: [
+          { id: 11, name: '窗帘工序路线（默认）', is_default: true, positions: ['布帘'], mainline: ['韩褶-布', '裁剪-布'], status: 'active' },
+        ],
+      }),
+    )
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-edit-11'))
+    expect(screen.getByTestId('routing-precheck-11')).toHaveTextContent('必完')
+    // 预检只是提示，不阻断保存（后端仍是唯一权威）
+    expect(screen.getByTestId('routing-save-11')).toBeEnabled()
+  })
+
+  it('护栏就地预检：主线的逻辑工序名拿不到「必完」口径 ⇒ **不误报**黄条（未知 ≠ 违规）', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-edit-11'))
+    // 主线是逻辑名（精裁/三边）⇒ 工序库里查不到同名的 is_must_finish ⇒ 判不了就不判
+    expect(screen.queryByTestId('routing-precheck-11')).toBeNull()
+    expect(screen.queryByTestId('routing-precheck-missing-11')).toBeNull()
+  })
+
+  it('护栏就地预检：主线引用了工序库里没有的工序 ⇒ 该行标红并指名', async () => {
+    mockGetRoutings.mockReset().mockResolvedValue(
+      ok({
+        total: 1,
+        routings: [
+          { id: 11, name: '窗帘工序路线（默认）', is_default: true, positions: ['布帘'], mainline: ['韩褶-布', '罗马帘-打孔'], status: 'active' },
+        ],
+      }),
+    )
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('routing-edit-11'))
+    await waitFor(() => expect(screen.getByTestId('routing-draft-missing-11-2')).toBeInTheDocument())
+    expect(screen.getByTestId('routing-draft-missing-11-2')).toHaveTextContent('工序库中不存在')
+    expect(screen.queryByTestId('routing-draft-missing-11-1')).toBeNull()
+  })
+
+  it('新建路线：提交 `{name, positions, is_default}` 并自动进入主线编辑', async () => {
     mockGetRoutings
       .mockReset()
       .mockResolvedValueOnce(ok(ROUTINGS))
       .mockResolvedValue(
         ok({
           total: 3,
-          routings: [...ROUTINGS.routings, { id: 13, curtain_type: '罗马帘', craft: '韩褶', operation_count: 0, operations: [] }],
+          routings: [...ROUTINGS.routings, { id: 13, name: '罗马帘专线', is_default: false, positions: ['布帘'], mainline: [], status: 'active' }],
         }),
       )
     await renderOnRoutes()
     await waitFor(() => expect(screen.getByTestId('routings-total')).toHaveTextContent('2'))
 
     await userEvent.click(screen.getByTestId('routings-new-route'))
-    await userEvent.type(screen.getByTestId('routings-create-curtain-type'), '罗马帘')
-    await userEvent.type(screen.getByTestId('routings-create-craft'), '韩褶')
+    await userEvent.type(screen.getByTestId('routings-create-name'), '罗马帘专线')
+    await userEvent.click(screen.getByTestId('routings-create-position-帘头')) // 取消勾选「帘头」
     await userEvent.click(screen.getByTestId('routings-create-route-submit'))
 
     await waitFor(() =>
-      expect(mockCreateRouting).toHaveBeenCalledWith({ curtain_type: '罗马帘', craft: '韩褶', operations: [] }),
+      expect(mockCreateRouting).toHaveBeenCalledWith({ name: '罗马帘专线', positions: ['布帘', '纱帘'] }),
     )
-    // 已自动进入该路线的编辑态（而不是只 toast 一下就结束）
-    await waitFor(() => expect(screen.getByTestId('routing-save-罗马帘×韩褶')).toBeInTheDocument())
-    expect(screen.getByTestId('routing-draft-empty-罗马帘×韩褶')).toHaveTextContent('从左侧工序库')
+    // 建壳后**自动进入主线编辑**（消灭「建了条空壳但没人知道」的静默态）
+    await waitFor(() => expect(screen.getByTestId('routing-save-13')).toBeInTheDocument())
+    expect(screen.getByTestId('routing-draft-empty-13')).toHaveTextContent('从工序库选择')
   })
 
-  it('空壳路线（序列为空）标为「空壳 · 不可用」并说明后果（该部位会静默拿到 0 道工序）', async () => {
-    await renderOnRoutes()
-
-    await waitFor(() => expect(screen.getByTestId('routing-纱帘×韩褶')).toBeInTheDocument())
-    expect(screen.getByTestId('routing-empty-shell-纱帘×韩褶')).toHaveTextContent('空壳')
-    expect(screen.getByTestId('routing-纱帘×韩褶')).toHaveTextContent('0 道工序')
-    // 正常路线不得被误标
-    expect(screen.queryByTestId('routing-empty-shell-布帘×韩褶')).not.toBeInTheDocument()
-  })
-
-  it('就绪度检查器：**两步**状态可读，空壳路线让「工艺路线」步判为未完成', async () => {
-    await renderOnRoutes()
-
-    await waitFor(() => expect(screen.getByTestId('process-readiness')).toBeInTheDocument())
-    expect(screen.getByTestId('readiness-step-operations')).toHaveAttribute('data-state', 'done')
-    // 有一条空壳路线 ⇒ 路线步未完成（否则该部位静默 0 工序）
-    expect(screen.getByTestId('readiness-step-routings')).toHaveAttribute('data-state', 'todo')
-    expect(screen.getByTestId('readiness-step-routings')).toHaveTextContent('空壳')
-    // 原第 ③ 步「缺口」已按用户裁定移除（issue #4482）
-    expect(screen.queryByTestId('readiness-step-gaps')).not.toBeInTheDocument()
-  })
-
-  it('就绪度检查器：工序库为空 ⇒ 第 ① 步未完成，且行业模板补救卡出现', async () => {
-    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok({ total: 0, groups: [] }))
-    render(<ProcessConfigPage />)
-
-    await waitFor(() => expect(screen.getByTestId('readiness-step-operations')).toHaveAttribute('data-state', 'todo'))
-    expect(screen.getByTestId('seed-templates')).toBeInTheDocument()
-  })
-
-  // ────────────────────────── ④ 缺口分类（有意挂起 vs 真缺口） ──────────────────────────
-
-  it('行业模板卡：工序库非空时**不渲染**（开租已自动套用，不该让用户手动点）', async () => {
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operations-catalog-total')).toHaveTextContent('4'))
-    expect(screen.queryByTestId('seed-templates')).not.toBeInTheDocument()
-  })
-
-  it('行业模板卡（空态补救）：套用走 POST 并报服务端真实数字', async () => {
-    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok({ total: 0, groups: [] }))
-    render(<ProcessConfigPage />)
-
-    await waitFor(() => expect(screen.getByTestId('seed-template-apply-curtain')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('seed-template-apply-curtain'))
-    await userEvent.click(screen.getByTestId('seed-template-apply-confirm'))
-
-    await waitFor(() => expect(mockApplySeedTemplate).toHaveBeenCalledWith('curtain'))
-    await waitFor(() =>
-      expect(vi.mocked(toast.success)).toHaveBeenCalledWith(expect.stringContaining('新增 35 道工序')),
-    )
-  })
-
-  // ────────────────────────── ⑪ 两个 tab（issue #4482） ──────────────────────────
-
-  it('两个 tab 存在且默认落在「工艺项」；切换后内容互斥（不再左右平铺）', async () => {
+  it('两个 tab 存在且默认落在「工艺项」；切换后内容互斥（不平铺）', async () => {
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('process-config-tabs')).toBeInTheDocument())
 
@@ -478,124 +743,57 @@ describe('工艺配置页 /production/routings（工序库 + 工艺路线合并�
     expect(opsTab).toHaveTextContent('工艺项')
     expect(routesTab).toHaveTextContent('工艺路线')
     expect(opsTab).toHaveAttribute('data-state', 'active')
-    expect(routesTab).toHaveAttribute('data-state', 'inactive')
-
-    // 默认：工序库在、路线不在
-    expect(screen.getByTestId('operations-catalog')).toBeInTheDocument()
+    expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument()
     expect(screen.queryByTestId('routings-total')).not.toBeInTheDocument()
 
     await userEvent.click(routesTab)
     expect(routesTab).toHaveAttribute('data-state', 'active')
-    expect(screen.queryByTestId('operations-catalog')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('operation-price-matrix')).not.toBeInTheDocument()
     expect(screen.getByTestId('routings-total')).toBeInTheDocument()
   })
 
-  it('切 tab **不丢状态**：在「工艺路线」编辑序列 → 切走 → 切回，draft 仍在', async () => {
+  it('切 tab **不丢状态**：在「工艺路线」编辑主线 → 切走 → 切回，draft 仍在', async () => {
     await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routing-edit-布帘×韩褶')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
 
-    await userEvent.click(screen.getByTestId('routing-edit-布帘×韩褶'))
-    await userEvent.selectOptions(screen.getByTestId('routing-add-select-布帘×韩褶'), '裁剪-布')
-    await userEvent.click(screen.getByTestId('routing-add-布帘×韩褶'))
-    expect(screen.getByTestId('routing-draft-step-布帘×韩褶-4')).toHaveTextContent('裁剪-布')
+    await userEvent.click(screen.getByTestId('routing-edit-11'))
+    await userEvent.selectOptions(screen.getByTestId('routing-add-select-11'), '裁剪-布')
+    await userEvent.click(screen.getByTestId('routing-add-11'))
+    expect(screen.getByTestId('routing-draft-step-11-4')).toHaveTextContent('裁剪-布')
 
     await userEvent.click(screen.getByTestId('process-config-tab-operations'))
     await userEvent.click(screen.getByTestId('process-config-tab-routes'))
 
-    // 编辑态与 draft 都还在（两栏挂在同一组件上，state 不随 tab 重置）
-    expect(screen.getByTestId('routing-draft-step-布帘×韩褶-4')).toHaveTextContent('裁剪-布')
-    expect(screen.getByTestId('routing-save-布帘×韩褶')).toBeInTheDocument()
+    // 注入：把 draft 改成随 tab 重置 ⇒ 红
+    expect(screen.getByTestId('routing-draft-step-11-4')).toHaveTextContent('裁剪-布')
+    expect(screen.getByTestId('routing-save-11')).toBeInTheDocument()
   })
 
-  it('缺口功能已**整体移除**：页面无缺口区、无就绪度第③步、文本无「缺口」', async () => {
-    await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routings-total')).toHaveTextContent('2'))
-
-    for (const id of ['routings-gaps', 'routings-gaps-unavailable', 'readiness-step-gaps']) {
-      expect(screen.queryByTestId(id)).toBeNull()
-    }
-    expect(document.body.textContent ?? '').not.toContain('缺口')
-  })
-
-  // ────────────────────────── ⑩ 失败不白屏 ──────────────────────────
-
-  it('路线列表加载失败：错误提示 + 重试（不白屏）', async () => {
+  it('只读端点失败不白屏：路线列表失败给提示 + 重试；工序库失败只在该区提示', async () => {
     mockGetRoutings.mockReset().mockRejectedValueOnce(new Error('500')).mockResolvedValue(ok(ROUTINGS))
     render(<ProcessConfigPage />)
 
     await waitFor(() => expect(screen.getByTestId('routings-error')).toHaveTextContent('工艺路线加载失败'))
     await userEvent.click(screen.getByTestId('routings-retry'))
-    // 重试成功后回到正常 tab 结构（默认「工艺项」）⇒ 切到「工艺路线」看列表
     await userEvent.click(await screen.findByTestId('process-config-tab-routes'))
     await waitFor(() => expect(screen.getByTestId('routings-total')).toHaveTextContent('2'))
-    expect(screen.queryByTestId('routings-error')).not.toBeInTheDocument()
   })
 
-  it('工序库加载失败：只在「工艺项」tab 给可读提示，路线 tab 照常渲染（不整页白屏）', async () => {
+  it('工序库加载失败：展开明细后只在该区给可读提示，矩阵与路线半边照常', async () => {
     mockGetOperationsCatalog.mockReset().mockRejectedValueOnce(new Error('500')).mockResolvedValue(ok(CATALOG))
     render(<ProcessConfigPage />)
 
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('operations-catalog-toggle'))
     await waitFor(() => expect(screen.getByTestId('operations-catalog-error')).toHaveTextContent('工序库加载失败'))
-    // 路线 tab 不受影响
-    await userEvent.click(screen.getByTestId('process-config-tab-routes'))
-    await waitFor(() => expect(screen.getByTestId('routings-total')).toHaveTextContent('2'))
   })
 
-  // ────────────────────────── ⑦ 护栏**就地预检**（不等后端 422） ──────────────────────────
+  // ══════════════════ ⑪ 商家面不得出现内部机制名 ══════════════════
 
-  it('护栏就地预检：序列缺必完工序 ⇒ 编辑区立刻给黄条（这道单永远完不了工）', async () => {
-    await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routing-edit-布帘×韩褶')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('routing-edit-布帘×韩褶'))
-    // 起始序列有 2 道必完 ⇒ 不该报
-    expect(screen.queryByTestId('routing-precheck-布帘×韩褶')).not.toBeInTheDocument()
-
-    // 删掉两道必完工序（seq 1 与 3）⇒ 剩 韩褶-布（非必完）
-    await userEvent.click(screen.getByTestId('routing-draft-remove-布帘×韩褶-3'))
-    await userEvent.click(screen.getByTestId('routing-draft-remove-布帘×韩褶-1'))
-
-    await waitFor(() => expect(screen.getByTestId('routing-precheck-布帘×韩褶')).toBeInTheDocument())
-    expect(screen.getByTestId('routing-precheck-布帘×韩褶')).toHaveTextContent('必完')
-    // 预检只是提示，不阻断保存（后端仍是唯一权威）
-    expect(screen.getByTestId('routing-save-布帘×韩褶')).toBeEnabled()
-  })
-
-  it('护栏就地预检：序列引用了工序库里没有的工序 ⇒ 该行标红并指名', async () => {
-    // 路线引用了库中已不存在的工序（停用/被删）—— 保存必被后端拒，但页面必须**先**让人看见
-    mockGetRoutings.mockReset().mockResolvedValue(
-      ok({
-        total: 1,
-        routings: [
-          {
-            id: 11,
-            curtain_type: '布帘',
-            craft: '韩褶',
-            operation_count: 2,
-            operations: [
-              { seq: 1, operation: '精裁-布', group: '裁剪', unit: '套', unit_price: 8.5, is_must_finish: true },
-              { seq: 2, operation: '罗马帘-打孔', group: null, unit: null, unit_price: null, is_must_finish: false },
-            ],
-          },
-        ],
-      }),
-    )
-    await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routing-edit-布帘×韩褶')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('routing-edit-布帘×韩褶'))
-
-    await waitFor(() => expect(screen.getByTestId('routing-draft-missing-布帘×韩褶-2')).toBeInTheDocument())
-    expect(screen.getByTestId('routing-draft-missing-布帘×韩褶-2')).toHaveTextContent('工序库中不存在')
-    // 库里有的那一道不得被误标
-    expect(screen.queryByTestId('routing-draft-missing-布帘×韩褶-1')).not.toBeInTheDocument()
-  })
-
-  it('工艺配置页不得出现「信号映射」这个概念：不渲染该区、不发起 /route-signals 请求、页面文本无「信号」', async () => {
+  it('工艺配置页不得出现「信号映射」这个概念：不渲染该区、不发起请求、页面文本无「信号」', async () => {
     render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operations-catalog-total')).toHaveTextContent('4'))
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
 
-    // ① 不再渲染任何信号映射 UI（红证：修复前 route-signals-section / toggle / body / route-signal-* 全在）
     for (const id of [
       'route-signals-section',
       'route-signals-toggle',
@@ -608,12 +806,7 @@ describe('工艺配置页 /production/routings（工序库 + 工艺路线合并�
     ]) {
       expect(screen.queryByTestId(id)).toBeNull()
     }
-
-    // ② 页面不再发起任何 /route-signals 请求（红证：修复前 load() 会调 getRouteSignals）
     expect(mockGetRouteSignals).not.toHaveBeenCalled()
-
-    // ③ 连「信号」这两个字都不该露（用户裁定：客户完全不理解）
     expect(document.body.textContent ?? '').not.toContain('信号')
   })
-
 })

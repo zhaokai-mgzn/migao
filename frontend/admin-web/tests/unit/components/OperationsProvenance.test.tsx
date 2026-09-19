@@ -20,6 +20,9 @@ const mockApplySeedTemplate = vi.fn()
 // issue #4416：工序库并入「工艺配置」单页 ⇒ 该页还会拉缺口/信号两条只读端点
 const mockGetRoutingGaps = vi.fn()
 const mockGetRouteSignals = vi.fn()
+// issue #4433（P3）：该页新增两条只读面 —— 部位价目矩阵 / 条件工序规则
+const mockGetOperationPositions = vi.fn()
+const mockGetRouteRules = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   productionApi: {
@@ -30,6 +33,8 @@ vi.mock('@/lib/api', () => ({
     applySeedTemplate: (...args: unknown[]) => mockApplySeedTemplate(...args),
     getRoutingGaps: (...args: unknown[]) => mockGetRoutingGaps(...args),
     getRouteSignals: (...args: unknown[]) => mockGetRouteSignals(...args),
+    getOperationPositions: (...args: unknown[]) => mockGetOperationPositions(...args),
+    getRouteRules: (...args: unknown[]) => mockGetRouteRules(...args),
   },
 }))
 
@@ -54,27 +59,8 @@ const CATALOG = {
 const ROUTINGS = {
   total: 2,
   routings: [
-    {
-      id: 1,
-      curtain_type: '布帘',
-      craft: '韩褶',
-      operation_count: 2,
-      source: '推算',
-      operations: [
-        { seq: 1, operation: '精裁-布', group: '裁剪', unit: '套', unit_price: 8.5, is_must_finish: false, is_start_marker: true },
-        { seq: 2, operation: '罗马帘-成型', group: '裁剪', unit: '件', unit_price: 3, is_must_finish: false, is_start_marker: false },
-      ],
-    },
-    {
-      id: 2,
-      curtain_type: '罗马帘',
-      craft: '平幔',
-      operation_count: 1,
-      source: '占位待确认',
-      operations: [
-        { seq: 1, operation: '罗马帘-成型', group: '裁剪', unit: '件', unit_price: 3, is_must_finish: false, is_start_marker: false },
-      ],
-    },
+    { id: 11, name: '窗帘工序路线（默认）', is_default: true, positions: ['布帘', '纱帘', '帘头'], mainline: ['精裁-布'], status: 'active' },
+    { id: 12, name: '罗马帘专线', is_default: false, positions: ['罗马帘'], mainline: [], status: 'active' },
   ],
 }
 
@@ -88,6 +74,16 @@ const APPLY_RESULT = { created_operations: 30, created_routings: 9, skipped: 4 }
 
 const ok = (data: unknown) => ({ data: { success: true, data } })
 
+/**
+ * 渲染并展开「工序库明细」—— issue #4433 起工序库是该 tab 的**折叠次区**
+ * （主区 = 部位价目矩阵）⇒ 本文件的判据全部落在次区上，先展开。
+ */
+const renderCatalog = async () => {
+  render(<ProcessConfigPage />)
+  await waitFor(() => expect(screen.getByTestId('operations-catalog-toggle')).toBeInTheDocument())
+  await userEvent.click(screen.getByTestId('operations-catalog-toggle'))
+}
+
 describe('工序库页 provenance 徽标 + 一键套用行业模板（issue #4363）', () => {
   beforeEach(() => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG))
@@ -97,12 +93,14 @@ describe('工序库页 provenance 徽标 + 一键套用行业模板（issue #436
     mockApplySeedTemplate.mockReset().mockResolvedValue(ok(APPLY_RESULT))
     mockGetRoutingGaps.mockReset().mockResolvedValue(ok({ unrouted_operations: [], signal_keys_without_route: [] }))
     mockGetRouteSignals.mockReset().mockResolvedValue(ok({ total: 0, signals: [] }))
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok([]))
+    mockGetRouteRules.mockReset().mockResolvedValue(ok([]))
     vi.mocked(toast.success).mockClear()
     vi.mocked(toast.error).mockClear()
   })
 
   it('渲染真实工序数据：总数 + 工序名 + 库口径单价（反 placeholder）', async () => {
-    render(<ProcessConfigPage />)
+    await renderCatalog()
     await waitFor(() => expect(screen.getByTestId('operations-catalog-total')).toHaveTextContent('3'))
     expect(screen.getByTestId('operation-row-101')).toHaveTextContent('精裁-布')
     expect(screen.getByTestId('operation-row-101')).toHaveTextContent('¥8.50')
@@ -110,7 +108,7 @@ describe('工序库页 provenance 徽标 + 一键套用行业模板（issue #436
   })
 
   it("source='占位待确认' 的工序渲染「待确认」徽标（商家看得懂的「初始价·待确认」）", async () => {
-    render(<ProcessConfigPage />)
+    await renderCatalog()
     await waitFor(() => expect(screen.getByTestId('operation-row-103')).toBeInTheDocument())
 
     const badge = within(screen.getByTestId('operation-row-103')).getByTestId('operation-source-103')
@@ -118,7 +116,7 @@ describe('工序库页 provenance 徽标 + 一键套用行业模板（issue #436
   })
 
   it("source='实证' 的行**不**渲染「待确认」徽标（双向断言，防永远显示）", async () => {
-    render(<ProcessConfigPage />)
+    await renderCatalog()
     await waitFor(() => expect(screen.getByTestId('operation-row-101')).toBeInTheDocument())
 
     const row = screen.getByTestId('operation-row-101')
@@ -127,7 +125,7 @@ describe('工序库页 provenance 徽标 + 一键套用行业模板（issue #436
   })
 
   it("source='推算' 的行渲染「推算」徽标且不带「待确认」（三态互斥）", async () => {
-    render(<ProcessConfigPage />)
+    await renderCatalog()
     await waitFor(() => expect(screen.getByTestId('operation-row-102')).toBeInTheDocument())
 
     const row = screen.getByTestId('operation-row-102')
@@ -136,7 +134,7 @@ describe('工序库页 provenance 徽标 + 一键套用行业模板（issue #436
   })
 
   it('「占位待确认」是可行动引导：点徽标即进入该工序的改价入口（既有版本化写面）', async () => {
-    render(<ProcessConfigPage />)
+    await renderCatalog()
     await waitFor(() => expect(screen.getByTestId('operation-row-103')).toBeInTheDocument())
 
     // 未点击前没有输入框（改价入口是徽标本身，不是只有一个红点）
@@ -145,16 +143,18 @@ describe('工序库页 provenance 徽标 + 一键套用行业模板（issue #436
     expect(screen.getByTestId('operation-price-input-103')).toBeInTheDocument()
   })
 
-  it('工艺路线区展示路线的 source（三态口径与工序一致）', async () => {
+  it('工艺路线区渲染**新模型**的真实数据（总名 + 默认徽标；默认徽标不得写死）', async () => {
     render(<ProcessConfigPage />)
     // issue #4482：路线内容在「工艺路线」tab 上（默认落在「工艺项」）
     await waitFor(() => expect(screen.getByTestId('process-config-tab-routes')).toBeInTheDocument())
     await userEvent.click(screen.getByTestId('process-config-tab-routes'))
-    await waitFor(() => expect(screen.getByTestId('routing-布帘×韩褶')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('routing-11')).toBeInTheDocument())
 
-    expect(within(screen.getByTestId('routing-布帘×韩褶')).getByTestId('routing-source-布帘×韩褶')).toHaveTextContent('推算')
-    const placeholderRoute = within(screen.getByTestId('routing-罗马帘×平幔'))
-    expect(placeholderRoute.getByTestId('routing-source-罗马帘×平幔')).toHaveTextContent('初始价·待确认')
+    // ⚠️ issue #4433（P2b #4459 之后）：路线 provenance 已不在契约里（`templateView` 无 source）
+    // ⇒ 本文件不再断言它（按不存在的字段渲染 = 发明）；改断言新形态的等价事实：总名 + 默认徽标。
+    expect(screen.getByTestId('routing-name-11')).toHaveTextContent('窗帘工序路线（默认）')
+    expect(screen.getByTestId('routing-default-11')).toHaveTextContent('默认')
+    expect(within(screen.getByTestId('routing-12')).queryByTestId('routing-default-12')).toBeNull()
   })
 
   // ⚠️ issue #4416：行业模板卡**仅在工序库为空时**渲染（开租时 RegistrationService 已自动套用，
@@ -204,7 +204,7 @@ describe('工序库页 provenance 徽标 + 一键套用行业模板（issue #436
   })
 
   it('工序库非空 ⇒ **不渲染**行业模板卡（开租已自动套用，不该让用户手动点）', async () => {
-    render(<ProcessConfigPage />)
+    await renderCatalog()
     await waitFor(() => expect(screen.getByTestId('operations-catalog-total')).toHaveTextContent('3'))
     expect(screen.queryByTestId('seed-templates')).not.toBeInTheDocument()
   })
@@ -212,7 +212,7 @@ describe('工序库页 provenance 徽标 + 一键套用行业模板（issue #436
   it('工序库为空 ⇒ 空态显式指向「补套行业模板」（存量租户补救路径）', async () => {
     mockGetOperationsCatalog.mockResolvedValue(ok({ total: 0, groups: [] }))
     mockGetRoutings.mockResolvedValue(ok({ total: 0, routings: [] }))
-    render(<ProcessConfigPage />)
+    await renderCatalog()
 
     await waitFor(() => expect(screen.getByTestId('operations-catalog-empty')).toBeInTheDocument())
     expect(screen.getByTestId('operations-catalog-empty')).toHaveTextContent('补套行业模板')
