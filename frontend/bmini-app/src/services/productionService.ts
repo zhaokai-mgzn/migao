@@ -40,12 +40,29 @@ export interface ProductionProgress {
   percent: number
 }
 
+/**
+ * 操作记录一行（issue #4347 §3.2）：**服务端**报工流水。
+ *
+ * <p>与 `productionOffline.WorkLogEntry`（本机缓存）的区别：这是**全单**流水
+ * （含别人报的工序），换设备也在；本机那份只在离线时兜底。</p>
+ */
+export interface WorkLogRow {
+  operation_name: string
+  worker_name: string
+  qualified_qty: number | string
+  work_type?: string | null
+  /** 落库时刻（ISO 串）—— 不是业务日期（补报会改业务日期，落库时刻不会） */
+  created_at?: string | null
+}
+
 /** GET .../operations 的 data */
 export interface OrderOperations {
   order_id: string
   qr_token?: string
   positions: ProductionPosition[]
   progress: ProductionProgress
+  /** 操作记录（服务端报工流水，最近在前）；缺省 = 服务端未提供（按本机兜底渲染） */
+  work_logs?: WorkLogRow[]
 }
 
 /** 报工请求体（契约 2；work_type: normal 正常 / rework 返工 / scrap 报废） */

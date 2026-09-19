@@ -331,16 +331,53 @@ public class ProductionService {
                 ? List.of()
                 : listOperations(po.getId(), tenantId);
         // 报工人（issue #4309）：**一次**取回报工记录再内存分组 —— 按工序逐个查是 N+1（#4304 同族）
-        Map<String, List<String>> workers = po == null
-                ? Map.of()
-                : workersByOperation(listWorkLogs(po.getId(), tenantId));
+        List<ProductionWorkLog> logs = po == null
+                ? List.of()
+                : listWorkLogs(po.getId(), tenantId);
+        Map<String, List<String>> workers = po == null ? Map.of() : workersByOperation(logs);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order_id", order.getId());
         result.put("qr_token", po == null ? null : po.getQrToken());
         result.put("positions", buildPositions(operations, workers, orderSpecByItemId(order, tenantId)));
         result.put("progress", progressOf(operations));
+        // 操作记录（issue #4347 §3.2）：**服务端**报工流水，不是本机缓存。
+        // 工人端原来只显示本机 storage 里的报工（换设备就没了，也看不到别人做的工序）；
+        // 而截图里的「操作记录」是**全单流水**（谁、哪道、多少、何时）。
+        result.put("work_logs", workLogViews(logs));
         return result;
+    }
+
+    /**
+     * 报工流水（操作记录）的展示形态（issue #4347 §3.2）。
+     *
+     * <p>真值源 §5：「操作记录 = 报工明细（实证：{@code 蒋雪云-定型 11.00}… 带时间戳）」。</p>
+     *
+     * <p>口径：① **倒序**（最近的在最上面 —— 工人关心「我刚报的进去了没有」）；
+     * ② 字段是**展示面**，不参与计价（计价只读 {@code production_work_logs} 的快照列）；
+     * ③ 时间用 {@code createdAt}（落库时刻），不用 {@code workDate}（业务日期，补报会改它）。</p>
+     */
+    private List<Map<String, Object>> workLogViews(List<ProductionWorkLog> logs) {
+        List<Map<String, Object>> views = new ArrayList<>();
+        if (logs == null) {
+            return views;
+        }
+        for (int i = logs.size() - 1; i >= 0; i--) {
+            ProductionWorkLog log = logs.get(i);
+            Map<String, Object> view = new LinkedHashMap<>();
+            view.put("operation_name", StringUtils.hasText(log.getOperationName())
+                    ? log.getOperationName() : "未命名工序");
+            view.put("worker_name", StringUtils.hasText(log.getWorkerName())
+                    ? log.getWorkerName() : UNSIGNED_WORKER);
+            view.put("qualified_qty", nz(log.getQualifiedQty()));
+            view.put("work_type", log.getWorkType());
+            // 显式 ISO-8601（带秒）：`OffsetDateTime.toString()` 在秒为 0 时会**省略秒**
+            // （`…T02:00Z`）⇒ 前端 `Date.parse` 与逐字断言都要处理两种形态。钉死格式更省事。
+            view.put("created_at", log.getCreatedAt() == null
+                    ? null : log.getCreatedAt().format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+            views.add(view);
+        }
+        return views;
     }
 
     /**

@@ -1020,6 +1020,50 @@ class ProductionServiceTest {
     }
 
     @Test
+    @DisplayName("操作记录：扫码响应带**服务端**全单报工流水（倒序 + 人/工序/数量/时刻）")
+    void getOperationsCarriesServerWorkLogs() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder());
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                positionOp("op-1", "布帘", 1, "精裁-布", "10.00", "10.00", "done", true, 0)));
+        when(orderItemMapper.selectList(any())).thenReturn(List.of());
+        ProductionWorkLog first = ProductionWorkLog.builder()
+                .id("w-1").tenantId(TENANT).processingOrderId(PO_ID).operationId("op-1")
+                .operationName("精裁-布").workerName("蒋雪云").qualifiedQty(new BigDecimal("11"))
+                .workType("normal").createdAt(OffsetDateTime.parse("2026-09-19T02:00:00Z")).deleted(0).build();
+        ProductionWorkLog second = ProductionWorkLog.builder()
+                .id("w-2").tenantId(TENANT).processingOrderId(PO_ID).operationId("op-1")
+                .operationName("定型-布").workerName("李红梅").qualifiedQty(new BigDecimal("3"))
+                .workType("rework").createdAt(OffsetDateTime.parse("2026-09-19T03:00:00Z")).deleted(0).build();
+        when(workLogMapper.selectList(any())).thenReturn(List.of(first, second));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> logs =
+                (List<Map<String, Object>>) service.getOperations(ORDER_ID, TENANT).get("work_logs");
+
+        assertThat(logs).hasSize(2);
+        // 倒序：最近的在最上面（工人关心「我刚报的进去了没有」）
+        assertThat(logs.get(0).get("worker_name")).isEqualTo("李红梅");
+        assertThat(logs.get(0).get("operation_name")).isEqualTo("定型-布");
+        assertThat(logs.get(0).get("work_type")).isEqualTo("rework");
+        assertThat(logs.get(1).get("worker_name")).isEqualTo("蒋雪云");
+        assertThat((BigDecimal) logs.get(1).get("qualified_qty")).isEqualByComparingTo("11");
+        assertThat(logs.get(1).get("created_at")).isEqualTo("2026-09-19T02:00:00Z");
+    }
+
+    @Test
+    @DisplayName("操作记录红证：无加工单 ⇒ work_logs 是**空数组**（键在场，不是 null）")
+    void getOperationsWorkLogsEmptyWhenNoProcessingOrder() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(null);
+
+        Map<String, Object> result = service.getOperations(ORDER_ID, TENANT);
+
+        assertThat(result).containsKey("work_logs");
+        assertThat((List<?>) result.get("work_logs")).isEmpty();
+    }
+
+    @Test
     @DisplayName("规格红证：订单行已不存在（脏数据）⇒ **不加任何规格键**，绝不补默认值冒充已知")
     void getOperationsOmitsSpecWhenOrderLineGone() {
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));

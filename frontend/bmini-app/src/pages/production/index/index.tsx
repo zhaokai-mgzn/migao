@@ -12,6 +12,7 @@ import {
   type PieceworkSummary,
   type ProductionOperation,
   type ReportPayload,
+  type WorkLogRow,
 } from '../../../services/productionService'
 import { parseOrderIdFromQr, resolveOrderIdFromParams } from '../../../utils/productionQr'
 import {
@@ -41,6 +42,45 @@ function formatTime(timestamp: number): string {
   const date = new Date(timestamp)
   const pad = (value: number) => String(value).padStart(2, '0')
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+/**
+ * 操作记录的统一展示行（issue #4347 §3.2）。
+ *
+ * <p>两个来源：**服务端** `work_logs`（全单流水，换设备也在）与**本机** `WorkLogEntry`
+ * （只在离线时兜底）。两者字段名不同 ⇒ 在这里收敛成同一形态，渲染处不再分支
+ * （两处各写一份渲染必然漂移）。</p>
+ */
+interface DisplayLog {
+  key: string
+  workerName: string
+  operation: string
+  qty: number | string
+  unit: string
+  /** 毫秒时间戳；服务端给 ISO 串，本机给 number */
+  at: number
+}
+
+function toDisplayLogs(serverLogs: WorkLogRow[] | undefined, localLogs: WorkLogEntry[]): DisplayLog[] {
+  if (serverLogs && serverLogs.length > 0) {
+    return serverLogs.map((row, index) => ({
+      key: `${row.created_at ?? ''}-${row.operation_name}-${index}`,
+      workerName: row.worker_name || '未署名',
+      operation: row.operation_name,
+      qty: row.qualified_qty,
+      // 服务端流水不带单位（单位属工序实例）；留空而不是编一个
+      unit: '',
+      at: row.created_at ? Date.parse(row.created_at) : Number.NaN,
+    }))
+  }
+  return localLogs.map((log) => ({
+    key: log.requestId,
+    workerName: log.worker_name || '未署名',
+    operation: log.operation,
+    qty: log.qty,
+    unit: log.unit,
+    at: log.createdAt,
+  }))
 }
 
 /**
@@ -270,6 +310,9 @@ export default function ProductionPage() {
     [detail, user, qtyInputs, loadOrder],
   )
 
+  /** 服务端是否给了操作记录（决定标题口径：全单流水 vs 本机兜底） */
+  const serverLogsAvailable = (detail?.work_logs?.length ?? 0) > 0
+  const displayLogs = toDisplayLogs(detail?.work_logs, workLogs)
   const positions = detail?.positions || []
   const progress = detail?.progress
   const percent = progress?.percent ?? 0
@@ -410,14 +453,18 @@ export default function ProductionPage() {
             </View>
           ))}
 
-          {/* 报工明细（真值源 §5：操作记录 = 报工明细，实证「蒋雪云-定型 11.00」带时间戳） */}
-          {workLogs.length > 0 && (
+          {/* 操作记录（真值源 §5：操作记录 = 报工明细，实证「蒋雪云-定型 11.00」带时间戳）。
+              优先**服务端全单流水**（换设备也在、看得到别人报的工序）；
+              离线（服务端没给）时退回本机缓存，并显式标注 —— 不把本机冒充服务端真值。 */}
+          {displayLogs.length > 0 && (
             <View className='production-logs'>
-              <Text className='production-logs__title'>本单报工明细</Text>
-              {workLogs.map((log) => (
-                <Text key={log.requestId} className='production-logs__item'>
-                  {`${log.worker_name || '未署名'} · ${log.operation} · ${formatQty(log.qty)}${log.unit}`
-                    + ` · ${formatTime(log.createdAt)}`}
+              <Text className='production-logs__title'>
+                {serverLogsAvailable ? '本单操作记录' : '本单报工明细（本机）'}
+              </Text>
+              {displayLogs.map((log) => (
+                <Text key={log.key} className='production-logs__item'>
+                  {`${log.workerName} · ${log.operation} · ${formatQty(log.qty)}${log.unit}`
+                    + (Number.isNaN(log.at) ? '' : ` · ${formatTime(log.at)}`)}
                 </Text>
               ))}
             </View>
