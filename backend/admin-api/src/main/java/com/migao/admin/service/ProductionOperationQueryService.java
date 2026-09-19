@@ -182,16 +182,44 @@ public class ProductionOperationQueryService {
         return result;
     }
 
-    /** 路线单项展示形态（{@code GET /routings} 列表项 / 写面响应**共用同一份**，两处各拼一份必然漂移）。 */
+    /**
+     * 路线单项展示形态（{@code GET /routings} 列表项 / 写面响应**共用同一份**，两处各拼一份必然漂移）。
+     *
+     * <p><b>{@code mainline} 读时归一（issue #4632）</b>：逐项走**既有**
+     * {@link #normalizeOperationName}，把**存量**变体名（旧前端时代存进去的 {@code 精裁-布}）
+     * 归一为逻辑工序名 —— 否则「工艺路线」tab 的主线 chip 直接渲染这个数组，界面上就还是旧名
+     * （写面 #4618 只管住新写入的，管不住库里已有的）。三条边界：</p>
+     * <ul>
+     *   <li><b>只归一能归一的</b>：未登记的自定义工序名（{@code 测试22}）归一后等于自身 ⇒ 原样返回；</li>
+     *   <li><b>不写库</b>：纯读时派生（与 S1「读时派生、不写回填」同一范式）—— 库里仍是原值，
+     *       可回溯「当时存的是什么」；本类只有 SELECT（见 {@code queryServiceIsReadOnly}）；</li>
+     *   <li><b>顺序与重复不变</b>：逐项 map、不去重、不排序（主线序列是计件/完工判定的输入，
+     *       判重是**写面**护栏的事）。</li>
+     * </ul>
+     */
     public Map<String, Object> templateView(ProductionRouteTemplate template) {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("id", template.getId());
         entry.put("name", template.getName());
         entry.put("is_default", Boolean.TRUE.equals(template.getIsDefault()));
         entry.put("positions", stringList(template.getPositions()));
-        entry.put("mainline", stringList(template.getMainline()));
+        entry.put("mainline", normalizedMainline(template.getMainline()));
         entry.put("status", template.getStatus());
         return entry;
+    }
+
+    /**
+     * 主线序列的**读时归一**（issue #4632）：逐项走 {@link #normalizeOperationName}，**顺序与重复一字不变**。
+     *
+     * <p>实现**只有这一处**（写面 {@code ProductionRoutingCommandService} 落库前调的是同一个
+     * {@link #normalizeOperationName}）—— 另抄一份表就是第二份口径，漂移的那一份不会变红。</p>
+     */
+    private List<String> normalizedMainline(Object raw) {
+        List<String> out = new ArrayList<>();
+        for (String name : stringList(raw)) {
+            out.add(normalizeOperationName(name));
+        }
+        return out;
     }
 
     /**
