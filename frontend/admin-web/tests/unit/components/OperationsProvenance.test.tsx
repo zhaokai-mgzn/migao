@@ -75,9 +75,9 @@ const CATALOG = {
  * ⇒ 抽屉里每道变体都能查到自己的 provenance（按 `variant_operation_id` = 工序库 `id`）。
  */
 const POSITIONS = [
-  { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: '101', variant_name: '精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: false },
-  { id: 'pos-上车布-纱帘', operation: '上车布', position: '纱帘', unit_price: 0.5, applicable: true, variant_operation_id: '102', variant_name: '上车布-纱', unit: '米', group: '裁剪', scope: 'position', is_must_finish: false },
-  { id: 'pos-罗马帘-帘头', operation: '罗马帘', position: '帘头', unit_price: 3, applicable: true, variant_operation_id: '103', variant_name: '罗马帘-成型', unit: '件', group: '裁剪', scope: 'position', is_must_finish: false },
+  { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: '101', unit: '套', group: '裁剪', scope: 'position', is_must_finish: false },
+  { id: 'pos-上车布-纱帘', operation: '上车布', position: '纱帘', unit_price: 0.5, applicable: true, variant_operation_id: '102', unit: '米', group: '裁剪', scope: 'position', is_must_finish: false },
+  { id: 'pos-罗马帘-帘头', operation: '罗马帘', position: '帘头', unit_price: 3, applicable: true, variant_operation_id: '103', unit: '件', group: '裁剪', scope: 'position', is_must_finish: false },
 ]
 
 const ROUTINGS = {

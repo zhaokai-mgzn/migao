@@ -900,9 +900,12 @@ export interface RoutingCreateParams {
  * `id` + 后 6 键是 issue #4588（契约 #4587 ①）新增的**写面寻址 + 逻辑名↔变体名映射**：
  * - `id` = 本矩阵行（`production_operation_positions.id`）—— 格内改价 / 改做不做用它寻址
  *   （`PUT /operation-positions/{id}`）；
- * - 后 6 键 = 该格**实际落到工人端**的那道工序的元数据，由后端
+ * - 后 5 键 = 该格**实际落到工人端**的那道工序的元数据，由后端
  *   `ProductionOperationQueryService.variantNameOf` 推导（**前端不得另写一份推导**）；
- *   查不到 ⇒ 6 键**全 `null`**（静默 = 未知，不发明元数据）。
+ *   查不到 ⇒ 5 键**全 `null`**（静默 = 未知，不发明元数据）。
+ * ⚠️ **没有 `variant_name`**（issue #4622）：变体名（`布三边` / `精裁-布`）是**当前**工序库的旧名，
+ *   web 面只用**一套工序名** = 逻辑工序名（`operation`）+ 部位（`position`）⇒ 后端响应里已去掉该键
+ *   （键在响应里就仍是 web 可见的旧口径）；逻辑名 ↔ 变体的**寻址**用 `variant_operation_id`。
  */
 export interface OperationPosition {
   /** 矩阵行标识（`PUT /operation-positions/{id}` 的 `{id}`） */
@@ -911,10 +914,8 @@ export interface OperationPosition {
   position: string
   unit_price?: number | null
   applicable?: boolean | null
-  /** 该格对应的 `production_operations.id`（工人扫码端那道工序） */
+  /** 该格对应的 `production_operations.id`（工人扫码端那道工序；抽屉的 `PUT/DELETE` 按它寻址） */
   variant_operation_id?: string | null
-  /** 例：`三边 × 布帘` → `布三边`；`外帘打卷 × 布帘` → `外帘打卷`；`logo条 × 纱帘` → `null` */
-  variant_name?: string | null
   /** 变体的单位（米/折/件/套） */
   unit?: string | null
   /** 变体的分组（裁剪/车位/后道/其他） */

@@ -113,6 +113,12 @@
 //    - 「管理▸」抽屉：标题/说明改**商家语言**（`「精裁」在各部位的设置`），条目**以「部位」为主标识**
 //      —— 一个变体可能服务多个部位（`帘头` 回落复用 `布帘` 的变体）⇒ 主标识 = **它服务的部位集合**
 //      （`布帘 / 帘头`），`variant_name` **不上界面**（含 `aria-label` 与删除 toast）；
+//      ⚠️ **接口层同口径**：`GET /operation-positions` 的响应**已不含** `variant_name`
+//      （issue #4622 补口③；契约守卫 `tests/unit_ci_workflows/test_routing_read_endpoints.py` 同步改判）；
+//    - **补口①**：主线「工序是否存在」只按**矩阵里的逻辑工序名**判（原「工序库 ∪ 矩阵」并集会把
+//      残留的变体名误判为「存在」，而后端按逻辑名判 ⇒ 两边口径不一致）；
+//    - **补口②**：主线 chip 的「必完」按**矩阵聚合**三态（原读按变体名索引的工序库 ⇒ 逻辑名查不到
+//      ⇒ 那枚标记基本显示不出来）；`lacksMustFinish` 预检口径未动（它自带 `resolved` 门禁）；
 //    - **能力零变化（反向护栏）**：改分组 / 单位 / 作用域 / 必完 / 停用 / 删除**六项逐条断言仍可用**，
 //      接口与 body 口径一字未动（`PUT /operations/{id}` 部分更新、`DELETE /operations/{id}` 二次确认）；
 //    - 「新增工序」对话框的「工序名称」placeholder 不再示范部位后缀（`罗马帘-穿杆` ⇒ `罗马帘穿杆`）
@@ -208,7 +214,6 @@ const CATALOG = {
 /** 查不到变体 ⇒ 契约 #4587 ① 的 6 个新键**全 null**（不是空串、不是 0） */
 const NO_VARIANT = {
   variant_operation_id: null,
-  variant_name: null,
   unit: null,
   group: null,
   scope: null,
@@ -229,15 +234,20 @@ const NO_VARIANT = {
  */
 const POSITIONS = [
   { id: 'pos-三边-帘头', operation: '三边', position: '帘头', unit_price: null, applicable: false, ...NO_VARIANT },
-  { id: 'pos-三边-布帘', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', variant_name: '布三边', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
-  { id: 'pos-三边-纱帘', operation: '三边', position: '纱帘', unit_price: null, applicable: true, variant_operation_id: 'op-三边-纱', variant_name: '纱三边', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+  { id: 'pos-三边-布帘', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+  { id: 'pos-三边-纱帘', operation: '三边', position: '纱帘', unit_price: null, applicable: true, variant_operation_id: 'op-三边-纱', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
   { id: 'pos-精裁-帘头', operation: '精裁', position: '帘头', unit_price: null, applicable: false, ...NO_VARIANT },
-  { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: 'op-精裁-布', variant_name: '精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
-  { id: 'pos-精裁-纱帘', operation: '精裁', position: '纱帘', unit_price: 6, applicable: true, variant_operation_id: 'op-精裁-纱', variant_name: '精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
+  { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
+  { id: 'pos-精裁-纱帘', operation: '精裁', position: '纱帘', unit_price: 6, applicable: true, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
   { id: 'pos-车被-帘头', operation: '车被', position: '帘头', unit_price: null, applicable: false, ...NO_VARIANT },
-  { id: 'pos-车被-布帘', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', variant_name: '车被', unit: '件', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'pos-车被-布帘', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'set', is_must_finish: true },
   { id: 'pos-车被-纱帘', operation: '车被', position: '纱帘', unit_price: null, applicable: false, ...NO_VARIANT },
   { id: 'pos-韩褶-布帘', operation: '韩褶', position: '布帘', unit_price: 2, applicable: true, ...NO_VARIANT },
+  // 部位无关工序（`外帘打卷/装袋/发货`）**也是** 30 道逻辑工序之一（真值源
+  // `routing.py::OPERATION_POSITION_PRICES`）⇒ 真数据里它有矩阵格。夹具里补上这一格是**必须**的：
+  // issue #4622 补口① 起「主线里的工序是否存在」按**矩阵的逻辑工序名**判，夹具缺这格会让
+  // `外帘装袋` 被误报「不存在」（真数据不会 —— 这正是夹具与真值的差异）。
+  { id: 'pos-外帘装袋-布帘', operation: '外帘装袋', position: '布帘', unit_price: 1.0, applicable: true, variant_operation_id: 'op-v54-04', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
 ]
 
 /** 规则区：工艺触发 insert（带锚点）/ 工艺触发 remove（带部位限定）/ 特殊选项触发 insert */
@@ -432,9 +442,12 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
 
-    // 行序 = 服务端顺序（(operation, position) ⇒ 三边 / 精裁 / 车被 / 韩褶）；注入：前端按字母重排 ⇒ 红
+    // 行序 = 服务端顺序（`(operation, position)` ⇒ 三边 / 精裁 / 车被 / 韩褶 / 外帘装袋）；
+    // 注入：前端按字母重排 ⇒ 红
     const rows = screen.getAllByTestId(/^matrix-row-/)
-    expect(rows.map((r) => r.getAttribute('data-operation'))).toEqual(['三边', '精裁', '车被', '韩褶'])
+    expect(rows.map((r) => r.getAttribute('data-operation'))).toEqual([
+      '三边', '精裁', '车被', '韩褶', '外帘装袋',
+    ])
 
     // 同一道「精裁」：布帘 ¥8.50 / 纱帘 ¥6.00 / 帘头 不做 —— 三个部位三份数据（不是一行一个价）
     expect(screen.getByTestId('matrix-cell-精裁-布帘')).toHaveTextContent('¥8.50')
@@ -988,12 +1001,12 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     // 夹具刻意造出**部分部位**那一态（基座夹具里没有）：车被 布帘必完 / 纱帘**非**必完
     mockGetOperationPositions.mockReset().mockResolvedValue(
       ok([
-        { id: 'p1', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', variant_name: '布三边', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
-        { id: 'p2', operation: '三边', position: '纱帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-纱', variant_name: '纱三边', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
-        { id: 'p3', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: 'op-精裁-布', variant_name: '精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
-        { id: 'p4', operation: '精裁', position: '纱帘', unit_price: 6, applicable: true, variant_operation_id: 'op-精裁-纱', variant_name: '精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
-        { id: 'p5', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', variant_name: '车被', unit: '件', group: '后道', scope: 'set', is_must_finish: true },
-        { id: 'p6', operation: '车被', position: '纱帘', unit_price: null, applicable: true, variant_operation_id: 'op-车被-纱', variant_name: '车被-纱', unit: '件', group: '后道', scope: 'position', is_must_finish: false },
+        { id: 'p1', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+        { id: 'p2', operation: '三边', position: '纱帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-纱', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+        { id: 'p3', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
+        { id: 'p4', operation: '精裁', position: '纱帘', unit_price: 6, applicable: true, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
+        { id: 'p5', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'set', is_must_finish: true },
+        { id: 'p6', operation: '车被', position: '纱帘', unit_price: null, applicable: true, variant_operation_id: 'op-车被-纱', unit: '件', group: '后道', scope: 'position', is_must_finish: false },
         { id: 'p7', operation: '韩褶', position: '布帘', unit_price: 2, applicable: true, ...NO_VARIANT },
       ]),
     )
@@ -1183,8 +1196,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   it('㉖-③ 抽屉条目主标识 = 它**服务的部位集合**（`帘头` 回落复用 `布帘` 的变体 ⇒ 一条条目列两个部位）', async () => {
     mockGetOperationPositions.mockReset().mockResolvedValue(
       ok([
-        { id: 'p1', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', variant_name: '布三边', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
-        { id: 'p2', operation: '三边', position: '帘头', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', variant_name: '布三边', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+        { id: 'p1', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+        { id: 'p2', operation: '三边', position: '帘头', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
       ]),
     )
     await openManage('三边')
@@ -1577,16 +1590,20 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(empty).not.toHaveTextContent('点上方')
   })
 
-  it('路线半边：主线逐道渲染 —— 库里查得到的只多出「必完」，逻辑名**不发明**元数据', async () => {
+  it('路线半边：主线逐道渲染 —— 「必完」按**矩阵聚合**（issue #4622 补口②），不发明别的库口径元数据', async () => {
     await renderOnRoutes()
     await waitFor(() => expect(screen.getByTestId('routing-step-11-1')).toBeInTheDocument())
 
-    // 逻辑工序名「精裁」在工序库里没有同名行 ⇒ 只显示名字（静默 = 未知，不得冒充已知）
+    // 逻辑工序名「精裁」：矩阵里两格都必完 ⇒ chip 显示「必完」
+    // （改前读的是按**变体名**索引的工序库 ⇒ `精裁` 查不到 ⇒ 这枚标记基本显示不出来）
     const logical = screen.getByTestId('routing-step-11-1')
     expect(logical).toHaveTextContent('精裁')
     expect(logical).not.toHaveTextContent('¥')
-    expect(logical).not.toHaveTextContent('必完')
-    // 「外帘装袋」两侧同名 ⇒ 只有「必完」这一项库口径可见（**单价**见 #4583 已统一去掉）
+    expect(logical).toHaveTextContent('必完')
+    // 「三边」矩阵里都不必完 ⇒ 不显示（不得发明「非必完」这类新词）
+    expect(screen.getByTestId('routing-step-11-2')).not.toHaveTextContent('必完')
+    // 「外帘装袋」（部位无关工序）矩阵里**有**它的行且必完 ⇒ 也显示「必完」
+    // （它与工序库同名，但**判据不是名字** —— issue #4622 补口② 起一律按矩阵聚合）
     expect(screen.getByTestId('routing-step-11-3')).toHaveTextContent('外帘装袋')
     expect(screen.getByTestId('routing-step-11-3')).toHaveTextContent('必完')
     expect(screen.getByTestId('routing-step-11-3')).not.toHaveTextContent('¥')
@@ -1594,14 +1611,75 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.queryByTestId('routing-step-12-1')).toBeNull()
   })
 
+  it('㉖-⑦ 主线预检的存在性判定按**逻辑名域**（改前「工序库 ∪ 矩阵」并集 ⇒ 残留的变体名被误判为「存在」）', async () => {
+    // 存量数据：主线里残留变体名 `精裁-布`，而它在**工序库**里有同名行（旧口径据此判「存在」）
+    mockGetRoutings.mockReset().mockResolvedValue(
+      ok({
+        total: 1,
+        routings: [
+          { id: 11, name: '窗帘工序路线（默认）', is_default: true, positions: ['布帘'], mainline: ['精裁', '精裁-布'], status: 'active' },
+        ],
+      }),
+    )
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-step-11-2')).toBeInTheDocument())
+
+    // 只读 chip：变体名 ⇒ 标红并指名；合法逻辑名 ⇒ 不得误报
+    expect(screen.getByTestId('routing-step-11-2')).toHaveTextContent('工序库中不存在或已停用')
+    expect(screen.getByTestId('routing-step-11-1')).not.toHaveTextContent('工序库中不存在')
+
+    // 编辑态草稿行同口径（同一份 `missing`）
+    await userEvent.click(screen.getByTestId('routing-edit-11'))
+    const missing = await screen.findByTestId('routing-draft-missing-11-2')
+    expect(missing).toHaveTextContent('工序库中不存在')
+    expect(screen.queryByTestId('routing-draft-missing-11-1')).toBeNull()
+  })
+
+  it('㉖-⑧ 主线 chip 的「必完」按**矩阵聚合**三态：全必完 / 部分部位（title 列部位）/ 无', async () => {
+    // 矩阵：精裁 两格都必完；车被 **部分部位**必完（布帘必完 / 纱帘不必完）；三边 都不必完
+    mockGetOperationPositions.mockReset().mockResolvedValue(
+      ok([
+        { id: 'p1', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
+        { id: 'p2', operation: '精裁', position: '纱帘', unit_price: 6, applicable: true, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
+        { id: 'p3', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'set', is_must_finish: true },
+        { id: 'p4', operation: '车被', position: '纱帘', unit_price: 1, applicable: true, variant_operation_id: 'op-车被-纱', unit: '件', group: '后道', scope: 'position', is_must_finish: false },
+        { id: 'p5', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+      ]),
+    )
+    mockGetRoutings.mockReset().mockResolvedValue(
+      ok({
+        total: 1,
+        routings: [
+          { id: 11, name: '窗帘工序路线（默认）', is_default: true, positions: ['布帘'], mainline: ['精裁', '车被', '三边'], status: 'active' },
+        ],
+      }),
+    )
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-step-11-1')).toBeInTheDocument())
+
+    // ① 有必完元数据的格**全部**必完 ⇒ `必完`（不带「部分部位」）
+    const all = screen.getByTestId('routing-step-must-finish-11-1')
+    expect(all).toHaveTextContent('必完')
+    expect(all).not.toHaveTextContent('部分部位')
+
+    // ② **只有部分部位**必完 ⇒ 注明 + `title` **列出具体哪些部位**（不静默取第一个）
+    const partial = screen.getByTestId('routing-step-must-finish-11-2')
+    expect(partial).toHaveTextContent('必完（部分部位）')
+    expect(partial.getAttribute('title')).toContain('布帘')
+    expect(partial.getAttribute('title')).not.toContain('纱帘')
+
+    // ③ 一道都不必完 ⇒ **不显示**（不得发明「非必完」这类新词）
+    expect(screen.queryByTestId('routing-step-must-finish-11-3')).toBeNull()
+    expect(screen.getByTestId('routing-step-11-3')).not.toHaveTextContent('必完')
+  })
+
   it('主线 chips 与抽屉行**统一不显示单价**（#4583）：库口径可见的那道也不出现 ¥；抽屉保留 分组 · 单位', async () => {
     await renderOnRoutes()
     await waitFor(() => expect(screen.getByTestId('routing-step-11-3')).toBeInTheDocument())
 
-    // ① 部位无关工序（`外帘装袋` 两侧同名 ⇒ `resolved=true`，改前唯一显示金额的那类）⇒ 也不得出现 ¥
+    // ① 部位无关工序（`外帘装袋`）⇒ 也不得出现 ¥；矩阵里没有它的行 ⇒ 「必完」判不了（静默 = 未知）
     const resolvedChip = screen.getByTestId('routing-step-11-3')
     expect(resolvedChip).toHaveTextContent('外帘装袋')
-    expect(resolvedChip).toHaveTextContent('必完')
     expect(resolvedChip).not.toHaveTextContent('¥')
     // ② 逻辑名那道同样只有名字（与 ① 口径一致 —— 显示与否不再取决于「两套名字是否恰好一致」）
     const logicalChip = screen.getByTestId('routing-step-11-1')
@@ -1646,7 +1724,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
     // 取值域 = 矩阵行键（**逻辑名**，服务端顺序）；`slice(1)` 去掉占位项（value=''）
     // 注入：数据源换回工序库 `catalog.groups[].operations`（35 条**变体名**）⇒ 本断言红
-    expect(values.slice(1)).toEqual(['三边', '精裁', '车被', '韩褶'])
+    expect(values.slice(1)).toEqual(['三边', '精裁', '车被', '韩褶', '外帘装袋'])
     // 同一逻辑工序**只出现一次**（`精裁` 在矩阵里有 3 格 ⇒ 选择器里仍只有 1 项）
     expect(values.filter((v) => v === '精裁')).toHaveLength(1)
     // 带部位后缀的变体名一律不出现
@@ -1753,12 +1831,14 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.queryByTestId('routing-precheck-missing-11')).toBeNull()
   })
 
-  it('护栏就地预检：主线引用了工序库里没有的工序 ⇒ 该行标红并指名', async () => {
+  it('护栏就地预检：主线引用了矩阵里没有的工序 ⇒ 该行标红并指名（合法逻辑名**不误伤**）', async () => {
     mockGetRoutings.mockReset().mockResolvedValue(
       ok({
         total: 1,
         routings: [
-          { id: 11, name: '窗帘工序路线（默认）', is_default: true, positions: ['布帘'], mainline: ['韩褶-布', '罗马帘-打孔'], status: 'active' },
+          // ⚠️ issue #4622 补口① 起存在性按**矩阵的逻辑工序名**判 ⇒ 这里用**合法逻辑名** `精裁`
+          // 作对照行（变体名 `韩褶-布` 现在**也会**被正确标红 —— 那由 ㉖-⑦ 专测）
+          { id: 11, name: '窗帘工序路线（默认）', is_default: true, positions: ['布帘'], mainline: ['精裁', '罗马帘-打孔'], status: 'active' },
         ],
       }),
     )
@@ -2542,7 +2622,7 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
   /** 接入后矩阵里多出来的那一格（`variant_operation_id` 指向孤儿 ⇒ 它不再是孤儿） */
   const ATTACHED_CELL = {
     id: 'pos-测试22-布帘', operation: '测试22', position: '布帘', unit_price: 0.5, applicable: true,
-    variant_operation_id: 'op-test22', variant_name: '测试22', unit: '米', group: '其他',
+    variant_operation_id: 'op-test22', unit: '米', group: '其他',
     scope: 'position', is_must_finish: false,
   }
 

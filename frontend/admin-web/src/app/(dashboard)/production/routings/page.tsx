@@ -66,16 +66,18 @@ import type {
  *    「部位 × 工艺」展开快照 ⇒ 列表显示**总名**+默认徽标+适用帘种，**不再**出现 `部位 × 工艺` 标题；
  *    改名**只改 `name`**（不给 `mainline` 就不动序列 —— 改一个名字不该顺带重写计件工资的输入）。
  * 2. **部位价目矩阵的行键是逻辑工序名**（`精裁` / `三边`），**不是** `production_operations.name`
- *    （那边仍是旧名 `精裁-布` / `布三边`）。issue #4588（契约 #4587 ①）起矩阵每格**多带** 6 个
- *    变体元数据键（`variant_operation_id` / `variant_name` / `unit` / `group` / `scope` /
+ *    （那边仍是旧名 `精裁-布` / `布三边`）。issue #4588（契约 #4587 ①）起矩阵每格**多带** 5 个
+ *    变体元数据键（`variant_operation_id` / `unit` / `group` / `scope` /
  *    `is_must_finish`）—— 由后端 `variantNameOf` 推导，前端**直接取用、不另写一份推导**；
- *    6 键全 `null` = 查不到 ⇒ **不发明元数据**（静默 = 未知）。
+ *    5 键全 `null` = 查不到 ⇒ **不发明元数据**（静默 = 未知）。
  *    ⚠️ **web 面只用一套工序名**（issue #4622 = goal「web 面工序命名统一」阶段 3）：界面显示
  *    **逻辑工序名 + 部位**；`variant_name`（`布三边` / `logo条-布` 这类**变体名**）**不出现在任何
- *    界面位置**（含 `data-testid`）—— 它只是后端 `production_operations.name` 的旧口径。
+ *    界面位置**（含 `data-testid`）—— 它只是后端 `production_operations.name` 的旧口径，
+ *    **读面也已不再返回该键**（`ProductionRoutingReadService.positionView`）。
  *    `variant_operation_id` 仍要用：它是**寻址键**（抽屉条目按它去重、写面按它发 `PUT/DELETE`）。
- *    主线的「工序是否存在」判据**不变**：按「工序库 ∪ 矩阵」两侧并集判定
- *    （只按工序库判会让每条种子路线都误报「工序库中不存在」）。
+ *    主线的「工序是否存在」判据 = **矩阵里的逻辑工序名**（issue #4622 补口①：原口径是
+ *    「工序库 ∪ 矩阵」并集 —— 工序库键是**变体名**，会把残留的变体名误判成「存在」，
+ *    而后端按逻辑名判 ⇒ 同一件事两边判得不一样；矩阵是主线取值域的唯一权威）。
  * 3. **顺序口径**：`operation-positions` 按 `(operation, position)`、`route-rules` 按 `(priority, id)`
  *    —— **服务端已排好**，前端**不重排**（重排会与服务端口径分叉，同一张单两次生成会得到不同序列）。
  *
@@ -415,9 +417,16 @@ function ReadinessStep({
 /**
  * 主线上一步的展示口径（只读与草稿**共用一份** —— 两处各拼一份必然漂移）。
  *
- * ⚠️ `resolved` = 该工序能在**工序库**里查到（才有 分组/单位/必完 这些库口径元数据）。
+ * ⚠️ `resolved` = 该工序能在**工序库**里查到（才有 分组/单位 这些库口径元数据）。
  * 主线存的是**逻辑工序名**（`精裁`），而 `production_operations.name` 仍是旧名（`精裁-布`），
- * 两者之间**没有**暴露给前端的映射 ⇒ 前端**不猜**：查不到就只显示名字，不发明单位/必完。
+ * 两者之间**没有**暴露给前端的映射 ⇒ 前端**不猜**：查不到就只显示名字，不发明单位。
+ *
+ * ⚠️ **「必完」的判定来源是矩阵**（issue #4622 补口②）：`must_finish` 按矩阵**聚合**（复用主表那套
+ * 三态：全部必完 / 部分部位必完 / 无）。原口径读的是 `libraryByName.get(name)?.is_must_finish`
+ * —— 库按**变体名**索引，而主线存的是**逻辑名** ⇒ 查不到 ⇒ 那枚「必完」标记对逻辑名几乎永远
+ * 不显示（只有 `外帘装袋` 这类部位无关工序才显示）。
+ * `is_must_finish`（库口径）只剩一个用途：{@link ProcessConfigPage} 的「一道必完工序都没有」预检
+ * （它自带 `resolved` 门禁，口径未动）。
  *
  * ⚠️ **本口径不含单价**（issue #4583 用户裁定）：单价是**计件工资**口径，属「工序项 / 部位价目」
  * 那一屏的事；而这里能拿到的只有**工序库单价**，真正生效的价是**部位价目矩阵**的格价
@@ -430,10 +439,13 @@ interface StepView {
   operation: string
   group?: string | null
   unit?: string | null
+  /** 库口径必完（**只给「一道必完工序都没有」预检用**；chip 上的必完见 `must_finish`） */
   is_must_finish?: boolean
+  /** **矩阵**口径的必完三态（issue #4622 补口②）：`null` = 矩阵里查不到这道工序 ⇒ 不显示（未知） */
+  must_finish: { partial: boolean; positions: string[] } | null
   /** 工序库里有这条（有库口径元数据） */
   resolved: boolean
-  /** 工序库与部位价目表**都**没有它（停用/被删）⇒ 保存必被后端拒，但页面要先让人看见 */
+  /** 矩阵里没有它（停用/被删/名字是变体名）⇒ 保存必被后端拒，但页面要先让人看见 */
   missing: boolean
 }
 
@@ -585,8 +597,8 @@ function PositionCell({
 /**
  * 抽屉里的一行 = 该逻辑工序在**若干部位**上的设置（按 `variant_operation_id` 去重）。
  * ⚠️ **一个变体可能服务多个部位**（`帘头` 会回落复用 `布帘` 的变体）⇒ 条目主标识 = **它服务的
- * 部位集合**，**不是**变体名（issue #4622：`variant_name` 不上界面）。
- * 元数据**逐字取自**矩阵行的 6 个新键（契约 #4587 ①）—— 前端**不推导**、不补默认值。
+ * 部位集合**，**不是**变体名（issue #4622：读面已不返回 `variant_name`，界面也不显示它）。
+ * 元数据**逐字取自**矩阵行的 5 个新键（契约 #4587 ①）—— 前端**不推导**、不补默认值。
  */
 interface VariantView {
   id: string
@@ -599,6 +611,35 @@ interface VariantView {
   /** 工序库里的 provenance；查不到 ⇒ `null` ⇒ **不渲染徽标**（静默 = 未知） */
   source: ProductionSource | null
 }
+
+/**
+ * 必完标记的三态（issue #4610，用户裁定「**必完标记还是得在这里展示**」—— 它是完工门槛，
+ * 要一眼看得见；issue #4622 起**主表行尾与主线 chip 共用**这一份口径）。
+ *
+ * 数据来源 = 矩阵读面每行**已有**的 `is_must_finish`（契约 #4587 ① 的 5 键之一），
+ * **不新造字段、不另拉接口**；口径沿用该格的「各格不一致时逐个列出、**不静默取第一个**」纪律：
+ * ① 有变体元数据的格**全部**必完 ⇒ `必完`；
+ * ② **只有部分部位**必完 ⇒ `必完（部分部位）`，`title` 列出**具体哪些部位**；
+ * ③ 一道都没有（或读面没给该键）⇒ `null` ⇒ **不显示**（不得发明「非必完」这类新词）。
+ */
+const mustFinishOf = (row: { cells: Map<string, OperationPosition> }) => {
+  const yes: string[] = []
+  const no: string[] = []
+  row.cells.forEach((cell, position) => {
+    if (cell.is_must_finish == null) return
+    if (cell.is_must_finish) yes.push(position)
+    else no.push(position)
+  })
+  return yes.length === 0 ? null : { partial: no.length > 0, positions: yes }
+}
+
+/** 必完标记的展示文案（三态共用一份 —— 主表行尾与主线 chip 各拼一份必然漂移） */
+const mustFinishLabel = (mf: { partial: boolean }) => `必完${mf.partial ? '（部分部位）' : ''}`
+
+const mustFinishTitle = (mf: { partial: boolean; positions: string[] }) =>
+  mf.partial
+    ? `必完的部位：${mf.positions.join(' / ')}（其余部位不要求必完）`
+    : '必完：缺这道工序不能打包（部位级：每个部位都要做完）'
 
 export default function ProcessConfigPage() {
   // ── 只读面 ──
@@ -886,12 +927,13 @@ export default function ProcessConfigPage() {
     libraryOps.forEach((op) => m.set(String(op.id), op))
     return m
   }, [libraryOps])
-  /** 部位价目表里出现过的逻辑工序名（主线可能用它书写 ⇒ 判「工序是否存在」必须并上这一侧） */
+  /**
+   * 部位价目表里出现过的**逻辑工序名** —— 它同时是**主线取值域**与「工序是否存在」的**唯一权威**
+   * （issue #4622 补口①）。⚠️ 原口径是「工序库 ∪ 矩阵」并集，而工序库键是**变体名**
+   * （`精裁-布`）⇒ 主线里残留的变体名会被误判成「存在」而不报，后端（按逻辑名判）却会把它
+   * 当未知名 ⇒ **同一件事两边判得不一样**。
+   */
   const matrixOps = useMemo(() => new Set(matrix.map((c) => c.operation)), [matrix])
-  const knownOps = useMemo(
-    () => new Set<string>([...libraryByName.keys(), ...matrixOps]),
-    [libraryByName, matrixOps],
-  )
 
   /**
    * **孤儿工序**（issue #4614 范围补口）：工序库里有、但**没有任何矩阵格指向它**。
@@ -1026,32 +1068,24 @@ export default function ProcessConfigPage() {
   /**
    * 行尾元数据 = 该行各格变体元数据的**公共值**；各格不一致时**逐个列出**（用 ` / ` 分隔）——
    * **不许静默取第一个**（取第一个会让「这道工序在两个分组里」这种事静默消失）。
-   * 6 键全 `null`（查不到变体）⇒ 空数组 ⇒ 渲染 `—`（不发明元数据）。
+   * 5 键全 `null`（查不到变体）⇒ 空数组 ⇒ 渲染 `—`（不发明元数据）。
    */
   const metaText = (values: string[]) => (values.length > 0 ? values.join(' / ') : '—')
 
   const metaInconsistent = (values: string[]) => values.length > 1
 
   /**
-   * 行尾「必完」标记的三态（issue #4610，用户裁定「**必完标记还是得在这里展示**」——
-   * 它是完工门槛，要一眼看得见）。
-   *
-   * 数据来源 = 矩阵读面每行**已有**的 `is_must_finish`（契约 #4587 ① 的 6 键之一），
-   * **不新造字段、不另拉接口**；口径沿用该格的「各格不一致时逐个列出、**不静默取第一个**」纪律：
-   * ① 有变体元数据的格**全部**必完 ⇒ `必完`；
-   * ② **只有部分部位**必完 ⇒ `必完（部分部位）`，`title` 列出**具体哪些部位**；
-   * ③ 一道都没有（或读面没给该键）⇒ `null` ⇒ **不显示**（不得发明「非必完」这类新词）。
+   * **矩阵口径的必完聚合**（逻辑工序名 → 三态；issue #4622 补口②）：主表行尾与**主线 chip**
+   * 共用同一份口径（两处各写一份必然漂移）。
    */
-  const mustFinishOf = (row: { cells: Map<string, OperationPosition> }) => {
-    const yes: string[] = []
-    const no: string[] = []
-    row.cells.forEach((cell, position) => {
-      if (cell.is_must_finish == null) return
-      if (cell.is_must_finish) yes.push(position)
-      else no.push(position)
+  const matrixMustFinish = useMemo(() => {
+    const m = new Map<string, { partial: boolean; positions: string[] }>()
+    matrixRows.forEach((row) => {
+      const v = mustFinishOf(row)
+      if (v) m.set(row.operation, v)
     })
-    return yes.length === 0 ? null : { partial: no.length > 0, positions: yes }
-  }
+    return m
+  }, [matrixRows])
 
   /**
    * 「从工序库选择要添加的工序…」的取值域 = **逻辑工序名**（issue #4609）。
@@ -1151,11 +1185,14 @@ export default function ProcessConfigPage() {
         group: lib?.group ?? null,
         unit: lib?.unit ?? null,
         is_must_finish: lib?.is_must_finish,
+        // 必完 = **矩阵**口径（issue #4622 补口②；与主表行尾同一份聚合）
+        must_finish: matrixMustFinish.get(name) ?? null,
         resolved: !!lib,
-        missing: !knownOps.has(name),
+        // 存在性 = **矩阵里的逻辑工序名**（issue #4622 补口①；不再并上按变体名索引的工序库键）
+        missing: !matrixOps.has(name),
       }
     },
-    [libraryByName, knownOps],
+    [libraryByName, matrixMustFinish, matrixOps],
   )
 
   const openEditor = (routing: Routing) => {
@@ -2141,13 +2178,9 @@ export default function ProcessConfigPage() {
                                       <span
                                         className="text-xs text-amber-600"
                                         data-testid={`matrix-must-finish-${row.operation}`}
-                                        title={
-                                          mustFinish.partial
-                                            ? `必完的部位：${mustFinish.positions.join(' / ')}（其余部位不要求必完）`
-                                            : '必完：缺这道工序不能打包（部位级：每个部位都要做完）'
-                                        }
+                                        title={mustFinishTitle(mustFinish)}
                                       >
-                                        必完{mustFinish.partial ? '（部分部位）' : ''}
+                                        {mustFinishLabel(mustFinish)}
                                       </span>
                                     )}
                                     <button
@@ -2440,7 +2473,16 @@ export default function ProcessConfigPage() {
                                             {step.group ?? '—'} · {step.unit ?? '—'}
                                           </span>
                                         )}
-                                        {step.is_must_finish && <span className="text-xs text-amber-600">必完</span>}
+                                        {/* 必完：**矩阵**口径三态（issue #4622 补口② —— 原读工序库
+                                            的 `is_must_finish`，而库按变体名索引 ⇒ 逻辑名查不到） */}
+                                        {step.must_finish && (
+                                          <span
+                                            className="text-xs text-amber-600"
+                                            title={mustFinishTitle(step.must_finish)}
+                                          >
+                                            {mustFinishLabel(step.must_finish)}
+                                          </span>
+                                        )}
                                         {step.missing && (
                                           <span
                                             className="text-xs text-red-600"
@@ -2506,10 +2548,20 @@ export default function ProcessConfigPage() {
                                     >
                                       <span className="mr-1 text-neutral-400">{step.seq}.</span>
                                       {step.operation}
-                                      {/* 主线 chip 只留 序号 + 工序名 (+ 必完 / 工序库中不存在或已停用)：
+                                      {/* 主线 chip 只留 序号 + 工序名 (+ 必完 / 矩阵里查不到)：
                                           **不显示任何库口径元数据**（#4583）—— 否则「显示与否」取决于
-                                          逻辑名与变体名是否恰好一致，9 道 chip 两套口径（用户实测的现象）。 */}
-                                      {step.is_must_finish && <span className="ml-1.5 text-amber-600">必完</span>}
+                                          逻辑名与变体名是否恰好一致，9 道 chip 两套口径（用户实测的现象）。
+                                          ⚠️ 那枚「必完」本身**不是**库口径元数据：它按**矩阵聚合**
+                                          （issue #4622 补口②，与主表行尾同一份三态口径）。 */}
+                                      {step.must_finish && (
+                                        <span
+                                          className="ml-1.5 text-amber-600"
+                                          data-testid={`routing-step-must-finish-${id}-${step.seq}`}
+                                          title={mustFinishTitle(step.must_finish)}
+                                        >
+                                          {mustFinishLabel(step.must_finish)}
+                                        </span>
+                                      )}
                                       {step.missing && <span className="ml-1.5">工序库中不存在或已停用</span>}
                                     </li>
                                   )

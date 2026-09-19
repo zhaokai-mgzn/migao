@@ -8,7 +8,7 @@
 
 | 端点 | 形状 | 顺序口径 |
 |---|---|---|
-| `GET /api/admin/production/operation-positions` | `[{id, operation, position, unit_price, applicable, variant_operation_id, variant_name, unit, group, scope, is_must_finish}]`（30 逻辑工序 × 4 部位 = **120 格**，issue #4529 起；**后 6 键 + `id` = issue #4587 追加**） | `(operation, position)` |
+| `GET /api/admin/production/operation-positions` | `[{id, operation, position, unit_price, applicable, variant_operation_id, unit, group, scope, is_must_finish}]`（30 逻辑工序 × 4 部位 = **120 格**，issue #4529 起；`id` + 变体元数据 = issue #4587 追加；**`variant_name` 已按 issue #4622 去掉**） | `(operation, position)` |
 | `GET /api/admin/production/route-rules` | `[{id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, status, customer_unit_price}]`（**26 条**；末键 = issue #4567 追加的**元/套**价，`null` = 未定价 ≠ 0 元） | `(priority, id)` |
 
 ## 为什么需要本文件（三条**结构性**失效形态，各自不会自己变红）
@@ -54,11 +54,14 @@ RETIRED_TYPES = ("ProductionOptionRouting", "ProductionOptionFactor")
 
 #: 端点声明的形状（issue #4500 冻结，逐字；多一个键/少一个键/改名都红）。
 #: `customer_unit_price` 是 issue #4567 追加的第 10 键（**元/套**；`null` = 未定价 ≠ 0 元）。
-#: 部位价目 = **11 键**：前 4 键（issue #4500 冻结）+ `id`（前端 `PUT /operation-positions/{id}`
-#: 的寻址键）+ 6 键变体元数据（issue #4587 ①，母单 #4586 的「中间那座桥」：逻辑名 ↔ 变体名）。
-#: ⚠️ 本常量是**冻结判据**（不是「至少包含」）：改判为 11 键是**契约同步**，判别力不变 —— 加/删/改名照旧红。
+#: 部位价目 = **10 键**：前 4 键（issue #4500 冻结）+ `id`（前端 `PUT /operation-positions/{id}`
+#: 的寻址键）+ 5 键变体元数据（issue #4587 ①，母单 #4586 的「中间那座桥」）。
+#: ⚠️ **`variant_name` 已按 issue #4622 去掉**（goal「web 面工序命名统一」阶段 3）：它是**当前**
+#: 工序库的旧名（`布三边` / `精裁-布`），而 web 面只用**一套工序名** = 逻辑工序名 + 部位
+#: ⇒ 键留在响应里就仍是 web 可见的旧口径。改判为 10 键是**契约同步**，**不是**放宽判据
+#: —— 本常量仍是**冻结判据**（不是「至少包含」）：加/删/改名照旧红。
 POSITION_KEYS = ("id", "operation", "position", "unit_price", "applicable",
-                 "variant_operation_id", "variant_name", "unit", "group", "scope", "is_must_finish")
+                 "variant_operation_id", "unit", "group", "scope", "is_must_finish")
 RULE_KEYS = ("id", "trigger_kind", "trigger_value", "position", "action", "operation",
              "after_operation", "priority", "status", "customer_unit_price")
 
@@ -223,11 +226,14 @@ def test_route_rules_endpoint_declares_manage_permission_and_tenant():
 
 
 def test_position_view_keys_are_frozen_contract():
-    """判据 1c：部位价目项的键集/键序 = 11 键（逐字；issue #4587 起 = 原 4 键 + `id` + 6 键变体元数据）。"""
+    """判据 1c：部位价目项的键集/键序 = 10 键（逐字；issue #4587 起 = 原 4 键 + `id` + 5 键变体元数据，
+    issue #4622 起去掉 `variant_name`）。"""
     assert _view_keys("positionView") == POSITION_KEYS, (
-        f"部位价目项键集漂移（issue #4500 冻结 4 键 + #4587 追加 id/变体元数据：{POSITION_KEYS}）"
-        f"—— 前端矩阵按这 11 个键渲染，且 `id` 是格内改价 `PUT /operation-positions/{{id}}` 的寻址键；"
-        f"缺 `id` ⇒ 改价无法落地，缺变体键 ⇒ 单位/单价/必完一律显示不出来"
+        f"部位价目项键集漂移（issue #4500 冻结 4 键 + #4587 追加 id/变体元数据 − #4622 去掉变体名："
+        f"{POSITION_KEYS}）"
+        f"—— 前端矩阵按这 10 个键渲染，且 `id` 是格内改价 `PUT /operation-positions/{{id}}` 的寻址键；"
+        f"缺 `id` ⇒ 改价无法落地，缺变体键 ⇒ 单位/单价/必完一律显示不出来；"
+        f"多回 `variant_name` ⇒ 变体名又变成 web 可见的旧口径（issue #4622 的硬判据）"
     )
 
 

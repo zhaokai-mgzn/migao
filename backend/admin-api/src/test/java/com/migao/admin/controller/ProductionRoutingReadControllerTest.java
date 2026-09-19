@@ -222,7 +222,7 @@ class ProductionRoutingReadControllerTest {
     // ── 判据 1：端点存在 + 形状 + 信封 ──
 
     @Test
-    @DisplayName("GET /operation-positions ⇒ {success,data:[11 键/行]}，乱序入库也按 (operation, position) 返回")
+    @DisplayName("GET /operation-positions ⇒ {success,data:[10 键/行]}，乱序入库也按 (operation, position) 返回")
     void operationPositionsReturnsMatrixInStableOrder() throws Exception {
         // 故意乱序（三边 在 精裁 之前、帘头 在 布帘 之前）—— 排序由服务层显式承担
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
@@ -240,15 +240,15 @@ class ProductionRoutingReadControllerTest {
                 .andExpect(jsonPath("$.data[1].position").value("布帘"))
                 .andExpect(jsonPath("$.data[2].operation").value("精裁"))
                 .andExpect(jsonPath("$.data[2].position").value("纱帘"))
-                // 键集逐字（issue #4500 冻结 4 键 + #4587 追加 id/变体元数据）：不多不少（11 个）
-                .andExpect(jsonPath("$.data[0].length()").value(11))
+                // 键集逐字（issue #4500 冻结 4 键 + #4587 追加 id/变体元数据 − #4622 去掉变体名）：不多不少（10 个）
+                .andExpect(jsonPath("$.data[0].length()").value(10))
                 .andExpect(jsonPath("$.data[0].id").value("opp-三边-帘头"))
                 .andExpect(jsonPath("$.data[0].unit_price").value(0.40))
                 .andExpect(jsonPath("$.data[0].applicable").value(true));
     }
 
     @Test
-    @DisplayName("GET /operation-positions：变体元数据（帘头回落布帘变体；查不到 ⇒ 6 键全 null，不猜）")
+    @DisplayName("GET /operation-positions：变体元数据（帘头回落布帘变体；**不含变体名**，查不到 ⇒ 5 键全 null）")
     void operationPositionsCarriesVariantMetadata() throws Exception {
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
                 position("三边", "帘头", "0.40", true)));
@@ -257,9 +257,10 @@ class ProductionRoutingReadControllerTest {
 
         mockMvc.perform(get("/api/admin/production/operation-positions"))
                 .andExpect(status().isOk())
-                // 帘头历史上复用**布帘**变体（V54 帘头×平幔 逐字引用 布三边）—— 与实例化同一口径
+                // 帘头历史上复用**布帘**变体（V54 帘头×平幔 逐字引用 布三边）—— 由寻址键证明，与实例化同一口径
                 .andExpect(jsonPath("$.data[0].variant_operation_id").value("op-busandbian"))
-                .andExpect(jsonPath("$.data[0].variant_name").value("布三边"))
+                // issue #4622（红证：改前这里断言的是 `variant_name` == "布三边"）：变体名**不进响应**
+                .andExpect(jsonPath("$.data[0].variant_name").doesNotExist())
                 .andExpect(jsonPath("$.data[0].unit").value("米"))
                 .andExpect(jsonPath("$.data[0].group").value("车位"))
                 .andExpect(jsonPath("$.data[0].scope").value("set"))
@@ -267,7 +268,7 @@ class ProductionRoutingReadControllerTest {
     }
 
     @Test
-    @DisplayName("GET /operation-positions：库里没有该变体 ⇒ 6 键**保留且全 null**（logo条 × 纱帘）")
+    @DisplayName("GET /operation-positions：库里没有该变体 ⇒ 5 键**保留且全 null**（logo条 × 纱帘）")
     void operationPositionsKeepsVariantKeysNullWhenAbsent() throws Exception {
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
                 position("logo条", "纱帘", null, false)));
@@ -276,9 +277,9 @@ class ProductionRoutingReadControllerTest {
 
         mockMvc.perform(get("/api/admin/production/operation-positions"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].length()").value(11))
+                .andExpect(jsonPath("$.data[0].length()").value(10))
                 .andExpect(jsonPath("$.data[0].variant_operation_id").isEmpty())
-                .andExpect(jsonPath("$.data[0].variant_name").isEmpty())
+                .andExpect(jsonPath("$.data[0].variant_name").doesNotExist())
                 .andExpect(jsonPath("$.data[0].unit").isEmpty())
                 .andExpect(jsonPath("$.data[0].group").isEmpty())
                 .andExpect(jsonPath("$.data[0].scope").isEmpty())
@@ -484,8 +485,8 @@ class ProductionRoutingReadControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value("opp-三边-布帘"))
                 .andExpect(jsonPath("$.data.unit_price").value(0.55))
-                // 响应 = 读面单行同构（11 键）
-                .andExpect(jsonPath("$.data.length()").value(11));
+                // 响应 = 读面单行同构（issue #4622 起 10 键：去掉 `variant_name`）
+                .andExpect(jsonPath("$.data.length()").value(10));
         verify(positionPriceVersionMapper).insert(any(ProductionOperationPositionPriceVersion.class));
 
         // 「明确不做」⇒ 价强制落 NULL（不报价），且仍留痕（价真的变了）
