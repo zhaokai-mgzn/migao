@@ -1109,10 +1109,12 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(text).not.toContain('对客价')
   })
 
-  it('⑰-⑲ 新增工序：`POST /operations` 后刷新（一屏一张表后的新增入口）', async () => {
+  it('⑰-⑲ 新增工序：这一屏自带入口（`POST /operations` 后刷新 —— 一屏一张表后的新增入口）', async () => {
     await renderOperations()
 
-    await userEvent.click(screen.getByTestId('routings-new-operation'))
+    // 入口 = 这一屏表头那个（与页头「新增」同一个对话框；页头那个由 ⑯ 组覆盖）
+    await userEvent.click(screen.getByTestId('operations-new-operation'))
+    await waitFor(() => expect(screen.getByTestId('create-kind-operation')).toBeInTheDocument())
     await userEvent.type(screen.getByTestId('routings-create-op-name'), '罗马帘-穿杆')
     await userEvent.type(screen.getByTestId('routings-create-op-group_name'), '车位')
     await userEvent.type(screen.getByTestId('routings-create-op-unit'), '套')
