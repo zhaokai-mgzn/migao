@@ -163,6 +163,14 @@ public class ProcessingOrderResponse {
         /** 实际褶倍。 */
         @JsonProperty("fullness_actual")
         private Object fullnessActual;
+        /**
+         * 可读**算料公式串**（issue #4555）：车间/任务卡纸面据此告知「用料是怎么算出来的」。
+         * 快照键族是 snake_case，而订单层落的是 camelCase {@code processingInfo.formulaText}
+         * （取值键名映射见 {@code ProcessingOrderService} 的 {@code CALC_OUTPUT_SOURCE_KEY_ALIASES}）。
+         * 存量加工单无该键 ⇒ 恒 null（前端缺值不渲染）。
+         */
+        @JsonProperty("formula_text")
+        private Object formulaText;
     }
 
     @Data

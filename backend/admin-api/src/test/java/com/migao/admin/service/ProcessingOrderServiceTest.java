@@ -2725,6 +2725,95 @@ class ProcessingOrderServiceTest {
         assertThat(brief.getRoom()).as("快照里没有的键 → 响应就是 null（不造值）").isNull();
     }
 
+    // ── issue #4555：加工单快照补「算料公式」（车间/任务卡纸面看不到用料怎么算出来的）──
+    //
+    // **键名口径（读码实测，以代码事实为准）**：订单层 `processing_info` 落的是 camelCase
+    // `formulaText`（下单页把试算响应的 `formula_text` 原样搬进该键，#4546），而快照键族 /
+    // 响应 DTO / 三端展示映射都按 snake_case `formula_text` 读 ⇒ `copyIfPresent` 的**取值键名**
+    // 必须是 `formulaText`。若直接用键族名取值 ⇒ 恒取不到（静默缺行，判据 1 必红）。
+
+    private static final String FORMULA_TEXT =
+            "韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米";
+
+    /** 下单落库形态：`processing_info` 顶层 **camelCase** `formulaText`。 */
+    @SuppressWarnings("unchecked")
+    private OrderItem orderItemWithFormula() {
+        OrderItem item = orderItemWithProcessing("米白");
+        ((Map<String, Object>) item.getProcessingInfo()).put("formulaText", FORMULA_TEXT);
+        return item;
+    }
+
+    /** 本次生成落库的快照第一条（`generate` 的 insert 捕获）。 */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> insertedSnapshotEntry() {
+        ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(captor.capture());
+        List<Map<String, Object>> snapshot = (List<Map<String, Object>>) captor.getValue().getItemsSnapshot();
+        assertThat(snapshot).hasSize(1);
+        return snapshot.get(0);
+    }
+
+    @Test
+    @DisplayName("#4555 判据 1：下单落 processingInfo.formulaText ⇒ 加工单快照固化为 formula_text（逐字）")
+    void snapshotCarriesFormulaText() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemWithFormula()));
+
+        assertThat(realChainService().generate(List.of("order-001"), TENANT, "u1").get(0).isSuccess()).isTrue();
+
+        assertThat(insertedSnapshotEntry().get("formula_text"))
+                .as("车间/任务卡纸面靠这一行告知「用料是怎么算出来的」—— 缺键即不可见")
+                .isEqualTo(FORMULA_TEXT);
+    }
+
+    @Test
+    @DisplayName("#4555 判据 2 + 4（回归/不造值）：存量单无 formulaText ⇒ 快照**无** formula_text 键、不补默认串")
+    void legacySnapshotHasNoFormulaText() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemWithProcessing("米白")));
+
+        assertThat(realChainService().generate(List.of("order-001"), TENANT, "u1").get(0).isSuccess()).isTrue();
+
+        Map<String, Object> entry = insertedSnapshotEntry();
+        assertThat(entry).doesNotContainKey("formula_text");
+        // 判据 4 的红证：注入「缺键时补一个默认串」⇒ 本断言必红（缺键就是缺，Java 不造值）
+        assertThat(entry.values())
+                .as("不得补「公式」占位串 —— 造值会让存量加工单纸面多出一行假公式")
+                .noneMatch(value -> String.valueOf(value).contains("公式"));
+    }
+
+    @Test
+    @DisplayName("#4555 判据 3（后端半边）：快照带 formula_text ⇒ 加工单详情响应原样透出（DTO 未声明 ⇒ 丢值）")
+    void detailExposesFormulaText() {
+        Map<String, Object> entry = craftSpecSnapshotEntry();
+        entry.put("formula_text", FORMULA_TEXT);
+        ProcessingOrder po = po("po-1", "issued");
+        po.setItemsSnapshot(List.of(entry));
+        when(processingOrderMapper.selectOne(any())).thenReturn(po);
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+
+        ProcessingOrderResponse resp = processingOrderService.getDetail("po-1", TENANT);
+
+        assertThat(resp.getItems()).hasSize(1);
+        assertThat(resp.getItems().get(0).getFormulaText())
+                .as("展示面（ProcessingOrderBlock / TaskCardPrint）读的就是这个响应字段")
+                .isEqualTo(FORMULA_TEXT);
+    }
+
+    @Test
+    @DisplayName("#4555 判据 2（后端半边）：存量加工单快照无 formula_text ⇒ 响应该字段为 null（不回填）")
+    void detailLegacySnapshotHasNullFormulaText() {
+        ProcessingOrder po = po("po-1", "issued");
+        po.setItemsSnapshot(List.of(craftSpecSnapshotEntry()));
+        when(processingOrderMapper.selectOne(any())).thenReturn(po);
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+
+        ProcessingOrderResponse resp = processingOrderService.getDetail("po-1", TENANT);
+
+        assertThat(resp.getItems()).hasSize(1);
+        assertThat(resp.getItems().get(0).getFormulaText()).isNull();
+    }
+
     // ── 验收复核修复（PR #3345）：生成竞态/并发重复 ──────────────────
 
     @Test

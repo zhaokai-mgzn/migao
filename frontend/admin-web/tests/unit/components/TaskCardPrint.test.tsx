@@ -154,4 +154,38 @@ describe('TaskCardPrint', () => {
     expect(screen.queryByTestId('task-card-craft-spec')).toBeNull()
     expect(document.body.textContent).not.toMatch(/undefined|null|NaN/)
   })
+
+  // ── issue #4555：纸面看到「用料是怎么算出来的」─────────────────────────
+
+  it('#4555 判据 3（红证）：快照带 formula_text ⇒ 任务卡纸面渲染「算料公式」行（逐字）', () => {
+    const formulaItems = [
+      { ...craftItems[0], formula_text: '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米' },
+    ] as ProcessingOrderItem[]
+    render(
+      <TaskCardPrint
+        processingOrderNo="JG-20260917-0001"
+        qrToken={QR_TOKEN}
+        positions={positions}
+        items={formulaItems}
+      />
+    )
+
+    const spec = screen.getByTestId('task-card-craft-spec')
+    expect(within(spec).getByText('算料公式')).toBeInTheDocument()
+    expect(within(spec).getByText('韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米')).toBeInTheDocument()
+  })
+
+  it('#4555 判据 2（回归）：存量加工单无 formula_text 键 ⇒ 纸面无「算料公式」行、不出现 undefined/null/NaN', () => {
+    render(
+      <TaskCardPrint
+        processingOrderNo="JG-20260917-0001"
+        qrToken={QR_TOKEN}
+        positions={positions}
+        items={craftItems}
+      />
+    )
+
+    expect(screen.queryByText('算料公式')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/undefined|null|NaN/)
+  })
 })
