@@ -66,7 +66,7 @@
 
 ```
 L1 工序层（计件账 · 给工人）                         ✅ 本轮不动
-   production_operations(28 逻辑工序) + 部位价目(84) + 主线(9) + route_rules(26)
+   production_operations(30 逻辑工序) + 部位价目(120) + 主线(窗帘 10 / 布料 2) + route_rules(26)
 
 L2 特征层（下单可选项 = 特征词典）                    ★ R9 的落点
    processing_items 重建为 ERP 特征：打孔/韩折/韩定+S钩/定型/花边/扣环/接高/拼接/双眼皮/缎带/换货

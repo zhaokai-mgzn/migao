@@ -875,7 +875,7 @@ CREATE TABLE IF NOT EXISTS production_operation_positions (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     logical_name VARCHAR(64) NOT NULL,                -- 逻辑工序名（去部位后缀：精裁/三边/韩褶…）
-    position VARCHAR(16) NOT NULL,                    -- 部位：布帘/纱帘/帘头
+    position VARCHAR(16) NOT NULL,                    -- 部位：布帘/纱帘/帘头/布料（第 4 个部位，V79 / #4529）
     unit_price NUMERIC(10,2),                         -- 计件单价（元/单位）；NULL = 该部位明确不做（不报价）
     applicable BOOLEAN NOT NULL DEFAULT TRUE,         -- 该部位是否做这道工序；false = 明确不做（≠「没定价」）
     status VARCHAR(16) NOT NULL DEFAULT 'active',
@@ -1901,7 +1901,13 @@ VALUES
   ('op-v56-02', 1, 'logo条-布', '车位', NULL, '米', 0.6, FALSE, FALSE, 32, 'active'),
   ('op-v56-03', 1, '立边-布', '车位', NULL, '米', 0.5, FALSE, FALSE, 33, 'active'),
   ('op-v56-04', 1, '扣环-布', '车位', NULL, '个', 0.3, FALSE, FALSE, 34, 'active'),
-  ('op-v56-05', 1, '防翘扣-布', '车位', NULL, '个', 0.2, FALSE, FALSE, 35, 'active')
+  ('op-v56-05', 1, '防翘扣-布', '车位', NULL, '个', 0.2, FALSE, FALSE, 35, 'active'),
+  -- 末 2 行（op-v79-*）来自 V79__seed_fabric_route_and_packing_operation.sql（issue #4529 包 F）：
+  -- `配料`（布料单前道，单位 = 米）/ `打包`（跨产品形态的**套级**工序，单位 = 套）。
+  -- ⚠️ 单价 0 是 `production_operations.unit_price NOT NULL DEFAULT 0` 的产物，**不是定价 0**：
+  -- 「未定价」由部位价目行的 `unit_price = NULL + applicable = TRUE` 承载（见下方 120 行种子）。
+  ('op-v79-01', 1, '配料', '后道', NULL, '米', 0, FALSE, FALSE, 36, 'active'),
+  ('op-v79-02', 1, '打包', '后道', NULL, '套', 0, FALSE, FALSE, 37, 'active')
 ON CONFLICT (tenant_id, name) WHERE deleted = 0 DO NOTHING;
 
 -- 工艺路线模板种子（V54 的 6 条 + V58 的 3 条，issue #4246 的纱帘路线补齐）。
@@ -1940,17 +1946,19 @@ UPDATE production_operations
 SET source = CASE
         WHEN id LIKE 'op-v54-%' THEN '占位待确认'
         WHEN id LIKE 'op-v56-%' THEN '推算'
+        WHEN id LIKE 'op-v79-%' THEN '占位待确认'
     END
 WHERE source IS NULL
-  AND (id LIKE 'op-v54-%' OR id LIKE 'op-v56-%');
+  AND (id LIKE 'op-v54-%' OR id LIKE 'op-v56-%' OR id LIKE 'op-v79-%');
 
--- 工序作用域回填（V67，issue #4384 A1）：与迁移 V67 **逐字同集合** —— 只有三道外帘工序是套级
--- （每樘窗一次），其余全部由列默认值 'position' 兜住。幂等（重复执行写同样的值 = 语义空操作）。
--- bootstrap 的种子 INSERT 不带 scope 列 ⇒ 必须在此显式回填，否则新建库这三道会被当成部位级
+-- 工序作用域回填（V67，issue #4384 A1；`打包` 由 V79 / issue #4529 追加）：与迁移
+-- **逐字同集合** —— 三道外帘工序 + `打包` 是套级（每樘窗一次），其余全部由列默认值 'position'
+-- 兜住。幂等（重复执行写同样的值 = 语义空操作）。
+-- bootstrap 的种子 INSERT 不带 scope 列 ⇒ 必须在此显式回填，否则新建库这几道会被当成部位级
 -- （= 双付病根在全新库里原样复活）。
 UPDATE production_operations
 SET scope = 'set'
-WHERE name IN ('外帘打卷', '外帘装袋', '外帘发货');
+WHERE name IN ('外帘打卷', '外帘装袋', '外帘发货', '打包');
 
 UPDATE production_routings
 SET source = CASE
@@ -1972,12 +1980,13 @@ WHERE o.deleted = 0
   )
 ON CONFLICT (id) DO NOTHING;
 
--- ── 工序路线模型重构 P1 的三张新表种子（V71，issue #4427 = 母单 #4423 P1/3）──
--- 与 V71__normalize_routing_model_structure.sql **逐行逐值**同口径（三源收敛守卫：
--- tests/unit_ci_workflows/test_production_catalog_seed.py 按内容发现 V71 并与本文件比对）。
--- 内容 = 84 行部位价目（28 道逻辑工序 × 3 部位，逐行显式 applicable）+ 1 行具名默认路线
--- + 26 行规则（工艺变体 10 + 特殊选项 16）。幂等：ON CONFLICT (id) DO NOTHING。
--- ⚠️ 与旧种子段的关系：**纯增量** —— production_operations / production_routings 的种子一字不动。
+-- ── 工序路线模型重构 P1 的三张新表种子（V71，issue #4427 = 母单 #4423 P1/3；V79 / #4529 扩到 120 行 + 2 条路线）──
+-- 与 V71__normalize_routing_model_structure.sql / V79__seed_fabric_route_and_packing_operation.sql
+-- **逐行逐值**同口径（三源收敛守卫：tests/unit_ci_workflows/test_production_catalog_seed.py 按内容发现种子源）。
+-- 内容 = **120 行部位价目**（30 道逻辑工序 × 4 部位，逐行显式 applicable；第 4 部位 = `布料`）
+-- + **2 行具名路线**（窗帘默认 + 布料）+ 26 行规则（工艺变体 10 + 特殊选项 16）。
+-- 幂等：ON CONFLICT (id) DO NOTHING。
+-- ⚠️ 与旧种子段的关系：**纯增量** —— production_operations / production_routings 的种子只**追加**。
 
 INSERT INTO production_operation_positions
     (id, tenant_id, logical_name, position, unit_price, applicable, status)
@@ -2065,7 +2074,46 @@ VALUES
   ('opp-v70-81', 1, '扣环', '帘头', NULL, FALSE, 'active'),
   ('opp-v70-82', 1, '防翘扣', '布帘', 0.2, TRUE, 'active'),
   ('opp-v70-83', 1, '防翘扣', '纱帘', NULL, FALSE, 'active'),
-  ('opp-v70-84', 1, '防翘扣', '帘头', NULL, FALSE, 'active')
+  ('opp-v70-84', 1, '防翘扣', '帘头', NULL, FALSE, 'active'),
+  -- ── issue #4529（包 F）：第 4 个部位 `布料` 的 28 行（逐行显式 FALSE）+ 新增两道工序 ──
+  -- 84 + 36 = **120 行**（30 逻辑工序 × 4 部位）。与 V79 逐行逐值同口径。
+  ('opp-v79-01', 1, '精裁', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-02', 1, '裁剪', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-03', 1, '三边', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-04', 1, '韩褶', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-05', 1, '上车布', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-06', 1, '打孔', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-07', 1, '拼1次', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-08', 1, '拼2次', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-09', 1, '拼3次', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-10', 1, '花边', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-11', 1, '铅坠', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-12', 1, '接高', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-13', 1, '帘头制作', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-14', 1, '熨烫', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-15', 1, '定型', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-16', 1, '复烫', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-17', 1, '车被', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-18', 1, '外帘打卷', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-19', 1, '外帘装袋', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-20', 1, '质检', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-21', 1, '外帘发货', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-22', 1, '绑带', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-23', 1, '抱枕', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-24', 1, '腰靠垫', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-25', 1, 'logo条', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-26', 1, '立边', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-27', 1, '扣环', '布料', NULL, FALSE, 'active'),
+  ('opp-v79-28', 1, '防翘扣', '布料', NULL, FALSE, 'active'),
+  -- 「适用但未定价」（`applicable=TRUE` + `unit_price=NULL`）：商家在工序库自配（issue #4529）
+  ('opp-v79-29', 1, '配料', '布料', NULL, TRUE, 'active'),
+  ('opp-v79-30', 1, '配料', '布帘', NULL, FALSE, 'active'),
+  ('opp-v79-31', 1, '配料', '纱帘', NULL, FALSE, 'active'),
+  ('opp-v79-32', 1, '配料', '帘头', NULL, FALSE, 'active'),
+  ('opp-v79-33', 1, '打包', '布帘', NULL, TRUE, 'active'),
+  ('opp-v79-34', 1, '打包', '纱帘', NULL, TRUE, 'active'),
+  ('opp-v79-35', 1, '打包', '帘头', NULL, TRUE, 'active'),
+  ('opp-v79-36', 1, '打包', '布料', NULL, TRUE, 'active')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO production_route_templates
@@ -2073,7 +2121,13 @@ INSERT INTO production_route_templates
 VALUES
   ('rt-v70-01', 1, '窗帘工序路线（默认）', TRUE,
    '["布帘", "纱帘", "帘头"]'::jsonb,
-   '["精裁", "三边", "熨烫", "定型", "复烫", "车被", "外帘打卷", "外帘装袋", "外帘发货"]'::jsonb,
+   '["精裁", "三边", "熨烫", "定型", "复烫", "车被", "外帘打卷", "打包", "外帘装袋", "外帘发货"]'::jsonb,
+   'active'),
+  -- 第 2 条基础路线（V79，issue #4529 包 F）：布料单专用，`is_default=FALSE`
+  -- （每租户**恰好一条**默认 —— 部分唯一索引 uk_production_route_templates_tenant_default 保证）。
+  ('rt-v79-01', 1, '布料工序路线', FALSE,
+   '["布料"]'::jsonb,
+   '["配料", "打包"]'::jsonb,
    'active')
 ON CONFLICT (id) DO NOTHING;
 

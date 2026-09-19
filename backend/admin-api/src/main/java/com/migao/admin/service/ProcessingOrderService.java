@@ -152,6 +152,20 @@ public class ProcessingOrderService {
     public static final String DEFAULT_CRAFT = "韩褶";
 
     /**
+     * 售卖形态 → **布料基础路线**（issue #4529，包 F；用户裁定 2026-09-19）。
+     *
+     * <p>{@code processing_info.saleForm === '布料'}（前端 {@code SALE_FORM_FABRIC}，issue #4493
+     * 起落库）⇒ 该行走**布料路线**：部位维 = {@link #FABRIC_POSITION}（第 4 个部位），
+     * 主线 = {@code 配料 → 打包}（2 道）。</p>
+     *
+     * <p>⚠️ <b>缺键的存量单不得改变既有行为</b>（回归不变量）：判据是**逐字相等**的
+     * {@code "布料"}，缺键 / 其它取值（含 {@code 成品帘}）一律走原派生链。</p>
+     */
+    public static final String SALE_FORM_FABRIC = "布料";
+    /** 第 4 个部位（布料单专用）—— 与 {@code routing.py::FABRIC_POSITION} 逐字同源。 */
+    public static final String FABRIC_POSITION = "布料";
+
+    /**
      * 部位（帘种）与工艺的**派生来源**（V60，issue #4308）：租户级库表
      * {@code production_route_signals}，读面 = {@link ProductionOperationQueryService#routeSignals}。
      *
@@ -198,7 +212,11 @@ public class ProcessingOrderService {
     private static final List<String> CRAFT_SPEC_SNAPSHOT_KEYS = List.of(
             "curtainType", "craft", "cuttingMode", "openCount", "isShaped", "pleatSpacing",
             "hasPattern", "patternRepeat", "style", "room", "batchNo",
-            "componentRole", "craftLineId", "metersSource", "processingMeters");
+            "componentRole", "craftLineId", "metersSource", "processingMeters",
+            // 售卖形态（issue #4529）：`saleForm === '布料'` ⇒ 选**布料基础路线**（第 4 部位）。
+            // 与「部位/工艺」同一载体（`processing_info` 顶层，订单侧下单时原样落库）——
+            // 不进白名单 ⇒ 派生链读不到它 ⇒ 布料单永远落窗帘路线。
+            "saleForm");
 
     /**
      * {@code isShaped=false} 时从实例里剔除的工序（issue #4354，设计文档 §4.7）。
@@ -1338,6 +1356,16 @@ public class ProcessingOrderService {
         // ① 两维都直读 ⇒ direct（**不查**信号映射表：订单侧的真值优先于任何派生）
         String directCurtainType = str(entry.get("curtainType"));
         String directCraft = str(entry.get("craft"));
+        // ⓪ 售卖形态 = **布料** ⇒ 部位维直读为 `布料`（第 4 个部位），**不走**部位派生链
+        //    （issue #4529）：`componentRole` 受控枚举与存量信号表都是「窗帘部位」的口径
+        //    （主布/配布边/纱、布/纱/帘头…），用在布料单上必然错配成窗帘路线。
+        //    工艺维对布料单无意义（布料主线只有 配料/打包）⇒ 仍取该租户默认工艺，仅为满足
+        //    T3 的既有护栏（缺 `craft` 且无默认工艺 ⇒ fail-closed，本单不放宽该护栏）。
+        if (SALE_FORM_FABRIC.equals(str(entry.get("saleForm")))) {
+            String fabricCraft = directCraft != null
+                    ? directCraft : productionOperationQueryService.defaultCraft(tenantId);
+            return new RouteKey(FABRIC_POSITION, fabricCraft, "direct");
+        }
         if (directCurtainType != null && directCraft != null) {
             return new RouteKey(directCurtainType, directCraft, "direct");
         }

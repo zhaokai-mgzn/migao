@@ -3,7 +3,7 @@
   "industry": "curtain",
   "name": "布艺窗帘行业模板",
   "version": 1,
-  "description": "布艺窗帘行业预置生产种子：35 道工序（名称/分组/部位/单位/单价/必完/开始标记）+ 9 条工艺路线（部位×工艺 → 有序工序序列）+ 16 项特殊选项 → 条件工序 + 计件系数。逐字对齐 backend/ai-agent-service/app/production/routing.py（唯一真值源）。⚠️ 单价多为占位值（source=占位待确认）/ 行业推算值（source=推算），source=实证 当前为空集 —— 客户确认 #4261/#4343 前不要当成实证值。",
+  "description": "布艺窗帘行业预置生产种子：37 道工序（含 #4529 的 配料/打包）（名称/分组/部位/单位/单价/必完/开始标记）+ 9 条工艺路线（部位×工艺 → 有序工序序列）+ 16 项特殊选项 → 条件工序 + 计件系数。逐字对齐 backend/ai-agent-service/app/production/routing.py（唯一真值源）。⚠️ 单价多为占位值（source=占位待确认）/ 行业推算值（source=推算），source=实证 当前为空集 —— 客户确认 #4261/#4343 前不要当成实证值。",
   "idNote": "`id` 是**模板内的稳定键**（供文件内交叉引用/守卫逐行比对/溯源），**不是落库 id**：`production_operations.id` 是全局主键（V49），模板 id 原样插库会撞主键（1 号租户已占用 op-v54-01）。套用时 id 由 MyBatis-Plus ASSIGN_UUID 生成，幂等键 = (tenant_id, name)。同理 `routings[].id` / 路线的 `operations` 按**工序名**引用，不需要 id 映射。",
   "operations": [
     {
@@ -460,6 +460,34 @@
       "sort_order": 35,
       "status": "active",
       "source": "推算"
+    },
+    {
+      "id": "op-v79-01",
+      "name": "配料",
+      "group": "后道",
+      "position": null,
+      "unit": "米",
+      "unit_price": 0,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 36,
+      "status": "active",
+      "source": "占位待确认",
+      "scope": "position"
+    },
+    {
+      "id": "op-v79-02",
+      "name": "打包",
+      "group": "后道",
+      "position": null,
+      "unit": "套",
+      "unit_price": 0,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 37,
+      "status": "active",
+      "source": "占位待确认",
+      "scope": "set"
     }
   ],
   "routings": [

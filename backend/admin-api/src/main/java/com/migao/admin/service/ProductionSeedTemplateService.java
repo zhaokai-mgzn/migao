@@ -86,12 +86,21 @@ public class ProductionSeedTemplateService {
     /** 单价版本账（V55 口径「当前价 = 最新版本行」）——不补 ⇒ 模板套出来的工序在改价/追溯面没有价。 */
     private final ProductionOperationPriceVersionMapper priceVersionMapper;
 
-    /** 规范主线（9 道，**不含**工艺槽位）；与 {@code routing.py::ROUTE_MAINLINE_STEPS} 逐字同源。 */
+    /** 规范主线（**10 道** = 9 道 + `打包`，issue #4529；**不含**工艺槽位）；
+     * 与 {@code routing.py::ROUTE_MAINLINE_STEPS} 逐字同源。 */
     private static final List<String> ROUTE_MAINLINE_STEPS = List.of(
-            "精裁", "三边", "熨烫", "定型", "复烫", "车被", "外帘打卷", "外帘装袋", "外帘发货");
+            "精裁", "三边", "熨烫", "定型", "复烫", "车被", "外帘打卷", "打包", "外帘装袋", "外帘发货");
 
     /** 默认路线模板名（与 V71/V72 种子逐字一致：同租户活跃路线不得重名 ⇒ 名字必须稳定）。 */
     private static final String ROUTE_TEMPLATE_NAME_DEFAULT = "窗帘工序路线（默认）";
+
+    // ── 第 2 条基础路线：布料（issue #4529，包 F；用户裁定「每个租户默认两条基础工序路线」）──
+    /** 第 4 个部位（布料单专用）—— 与 {@code routing.py::FABRIC_POSITION} 逐字同源。 */
+    private static final String FABRIC_POSITION = "布料";
+    /** 布料主线（2 道）：`配料` → `打包` —— 与 {@code routing.py::FABRIC_MAINLINE_STEPS} 逐字同源。 */
+    private static final List<String> FABRIC_MAINLINE_STEPS = List.of("配料", "打包");
+    /** 布料路线模板名（与 V79 / schema.sql 种子逐字一致）。 */
+    private static final String FABRIC_ROUTE_TEMPLATE_NAME_DEFAULT = "布料工序路线";
 
     /** 规范工艺词表（默认工艺的候选序；与 V72 迁移的 {@code unnest(ARRAY[...])} 逐字一致）。 */
     private static final List<String> CRAFT_VOCABULARY = List.of("韩褶", "打孔", "四爪钩", "穿杆", "平幔");
@@ -119,7 +128,7 @@ public class ProductionSeedTemplateService {
     };
 
     /**
-     * 部位价目 + 适用性矩阵（**84 行** = 28 逻辑工序 × 3 部位）：
+     * 部位价目 + 适用性矩阵（**120 行** = 30 逻辑工序 × 4 部位，issue #4529 起）：
      * {@code {logical_name, position, unit_price|NULL, applicable}}。
      *
      * <p>P1（#4427）冻结的**规范矩阵**的一次快照，与 {@code routing.py::OPERATION_POSITION_PRICES} /
@@ -212,6 +221,45 @@ public class ProductionSeedTemplateService {
             {"防翘扣", "布帘", "0.2", "true"},
             {"防翘扣", "纱帘", null, "false"},
             {"防翘扣", "帘头", null, "false"},
+            // ── issue #4529（包 F）：第 4 个部位「布料」的 28 行（逐行显式 FALSE）+ 新增两道 ──
+            // 84 + 36 = **120 行**。与 V79 / schema.sql / routing.py 逐行同值（三源收敛守卫）。
+            // 「适用但未定价」= `applicable=true` 且 `unit_price=null`（`配料`/`打包`，商家自配）。
+            {"精裁", "布料", null, "false"},
+            {"裁剪", "布料", null, "false"},
+            {"三边", "布料", null, "false"},
+            {"韩褶", "布料", null, "false"},
+            {"上车布", "布料", null, "false"},
+            {"打孔", "布料", null, "false"},
+            {"拼1次", "布料", null, "false"},
+            {"拼2次", "布料", null, "false"},
+            {"拼3次", "布料", null, "false"},
+            {"花边", "布料", null, "false"},
+            {"铅坠", "布料", null, "false"},
+            {"接高", "布料", null, "false"},
+            {"帘头制作", "布料", null, "false"},
+            {"熨烫", "布料", null, "false"},
+            {"定型", "布料", null, "false"},
+            {"复烫", "布料", null, "false"},
+            {"车被", "布料", null, "false"},
+            {"外帘打卷", "布料", null, "false"},
+            {"外帘装袋", "布料", null, "false"},
+            {"质检", "布料", null, "false"},
+            {"外帘发货", "布料", null, "false"},
+            {"绑带", "布料", null, "false"},
+            {"抱枕", "布料", null, "false"},
+            {"腰靠垫", "布料", null, "false"},
+            {"logo条", "布料", null, "false"},
+            {"立边", "布料", null, "false"},
+            {"扣环", "布料", null, "false"},
+            {"防翘扣", "布料", null, "false"},
+            {"配料", "布料", null, "true"},
+            {"配料", "布帘", null, "false"},
+            {"配料", "纱帘", null, "false"},
+            {"配料", "帘头", null, "false"},
+            {"打包", "布帘", null, "true"},
+            {"打包", "纱帘", null, "true"},
+            {"打包", "帘头", null, "true"},
+            {"打包", "布料", null, "true"},
     };
 
     /** 旧工序名 → 逻辑工序名（逐条写出；{@code 布三边}/{@code 布帘车被} 这类不规则名用规则推导会漏）。 */
@@ -350,14 +398,15 @@ public class ProductionSeedTemplateService {
         List<ProductionCraft> newCrafts = planCrafts(tenantId, template);
 
         // `skipped` = 模板里**已存在、本次未插**的种子行数（四个种子组各自计）：
-        // 工序 / 路线模板（新结构里 9 条旧路线收敛成 **1** 条模板 ⇒ 分母是 1）/ 选项映射 / 系数档。
+        // 工序 / 路线模板（新结构里 9 条旧路线收敛成 **2** 条模板：窗帘默认 + 布料，issue #4529）
+        // / 选项映射 / 系数档。
         int appliedOptionRules = (int) newRules.stream()
                 .filter(r -> "option".equals(r.getTriggerKind()) && "insert".equals(r.getAction()))
                 .count();
         int appliedFactorRules = (int) newRules.stream()
                 .filter(r -> "factor".equals(r.getAction())).count();
         int skipped = (template.path("operations").size() - newOperations.size())
-                + (1 - newTemplates.size())
+                + (2 - newTemplates.size())
                 + (template.path("option_routings").size() - appliedOptionRules)
                 + (template.path("option_factors").size() - appliedFactorRules);
 
@@ -378,7 +427,8 @@ public class ProductionSeedTemplateService {
         result.put("created_positions", newPositions.size());
         result.put("created_route_rules", newRules.size());
         result.put("created_crafts", newCrafts.size());
-        result.put("created_default_route", newTemplates.isEmpty() ? 0 : 1);
+        result.put("created_default_route", (int) newTemplates.stream()
+                .filter(t -> Boolean.TRUE.equals(t.getIsDefault())).count());
         return result;
     }
 
@@ -427,37 +477,71 @@ public class ProductionSeedTemplateService {
     }
 
     /**
-     * 默认路线模板（**恰一条**：{@code is_default = TRUE}，主线 = 规范 9 道 ∩ 本租户工序库）。
+     * 基础路线模板（**恰两条**，issue #4529）：`窗帘工序路线（默认）`（{@code is_default=TRUE}）
+     * + `布料工序路线`（{@code FALSE}，`positions=["布料"]`）。
      *
-     * <p>主线取**规范顺序**（{@code routing.py::ROUTE_MAINLINE_STEPS}）而不是模板 JSON 里
-     * 9 条旧路线的并集 —— 顺序是车间实际走线，且新模型只有一条主线。</p>
+     * <p>主线取**规范顺序**（{@code routing.py::ROUTE_MAINLINE_STEPS} /
+     * {@code FABRIC_MAINLINE_STEPS}）而不是模板 JSON 里 9 条旧路线的并集 —— 顺序是车间实际走线，
+     * 且新模型每个部位只有一条主线。两条主线都过滤到**该租户工序库**（与 V72 的按租户回填同口径：
+     * 库里没有的工序不进他的主线，否则实例化 `missing_operations` ⇒ T3 fail-closed 422）。</p>
+     *
+     * <p>幂等键 = <b>{@code (tenant_id, name)}</b>（逐条判，不是「有任何一条就全跳过」）——
+     * 存量租户补布料路线时，已有的窗帘路线不得被重复种。</p>
      */
     private List<ProductionRouteTemplate> planRouteTemplates(Long tenantId, JsonNode template) {
         List<ProductionRouteTemplate> existing = productionRouteTemplateMapper.selectList(
                 new LambdaQueryWrapper<ProductionRouteTemplate>()
                         .eq(ProductionRouteTemplate::getTenantId, tenantId)
                         .eq(ProductionRouteTemplate::getDeleted, 0));
-        if (existing != null && !existing.isEmpty()) {
-            return List.of();   // 幂等键 = (tenant_id, name)（与 V49 的部分唯一索引同口径）
+        Set<String> existingNames = new LinkedHashSet<>();
+        if (existing != null) {
+            existing.forEach(row -> existingNames.add(row.getName()));
         }
         Set<String> available = logicalNamesOf(tenantId);
+        List<ProductionRouteTemplate> plan = new ArrayList<>();
+        // ① 窗帘默认路线（主线 10 道 ∩ 本租户工序库）
+        if (!existingNames.contains(ROUTE_TEMPLATE_NAME_DEFAULT)) {
+            List<String> mainline = mainlineOf(ROUTE_MAINLINE_STEPS, available);
+            plan.add(ProductionRouteTemplate.builder()
+                    .tenantId(tenantId)
+                    .name(ROUTE_TEMPLATE_NAME_DEFAULT)
+                    .isDefault(true)
+                    .positions(List.of("布帘", "纱帘", "帘头"))
+                    .mainline(mainline.isEmpty() ? ROUTE_MAINLINE_STEPS : mainline)
+                    .status("active")
+                    .createdAt(OffsetDateTime.now())
+                    .updatedAt(OffsetDateTime.now())
+                    .deleted(0)
+                    .build());
+        }
+        // ② 布料路线（issue #4529）：每租户**两条**基础路线之一；`is_default=FALSE`
+        //    （部分唯一索引 uk_production_route_templates_tenant_default 保证每租户至多一条默认）。
+        if (!existingNames.contains(FABRIC_ROUTE_TEMPLATE_NAME_DEFAULT)) {
+            List<String> fabricMainline = mainlineOf(FABRIC_MAINLINE_STEPS, available);
+            plan.add(ProductionRouteTemplate.builder()
+                    .tenantId(tenantId)
+                    .name(FABRIC_ROUTE_TEMPLATE_NAME_DEFAULT)
+                    .isDefault(false)
+                    .positions(List.of(FABRIC_POSITION))
+                    .mainline(fabricMainline.isEmpty() ? FABRIC_MAINLINE_STEPS : fabricMainline)
+                    .status("active")
+                    .createdAt(OffsetDateTime.now())
+                    .updatedAt(OffsetDateTime.now())
+                    .deleted(0)
+                    .build());
+        }
+        return plan;
+    }
+
+    /** 规范主线 ∩ 该租户工序库（**保持规范顺序**）——与 V72/V79 的按租户回填同口径。 */
+    private static List<String> mainlineOf(List<String> canonical, Set<String> available) {
         List<String> mainline = new ArrayList<>();
-        for (String step : ROUTE_MAINLINE_STEPS) {
+        for (String step : canonical) {
             if (available.contains(step)) {
                 mainline.add(step);
             }
         }
-        return List.of(ProductionRouteTemplate.builder()
-                .tenantId(tenantId)
-                .name(ROUTE_TEMPLATE_NAME_DEFAULT)
-                .isDefault(true)
-                .positions(List.of("布帘", "纱帘", "帘头"))
-                .mainline(mainline)
-                .status("active")
-                .createdAt(OffsetDateTime.now())
-                .updatedAt(OffsetDateTime.now())
-                .deleted(0)
-                .build());
+        return mainline;
     }
 
     /**
@@ -624,6 +708,9 @@ public class ProductionSeedTemplateService {
                     .status(node.path("status").asText("active"))
                     // provenance（本单的诚实性核心）：逐字取模板标注，**不在套用路径上"顺手修正"**
                     .source(sourceOf(node, OPERATION_SOURCES))
+                    // 作用域（issue #4529）：`打包` 是**套级**（`set`）—— 缺该列会让新租户把套级工序
+                    // 当部位级 ⇒ 一樘「布+纱」双付（#4408 形态）。模板逐条声明，不硬编码工序名。
+                    .scope(node.path("scope").asText("position"))
                     .createdAt(OffsetDateTime.now())
                     .updatedAt(OffsetDateTime.now())
                     .deleted(0)

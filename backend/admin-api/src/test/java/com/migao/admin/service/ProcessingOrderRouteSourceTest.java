@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PG-026, PG-027, PG-028, PG-029, PG-030
+// case_ids: PG-026, PG-027, PG-028, PG-029, PG-030, PG-039
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -206,6 +206,10 @@ class ProcessingOrderRouteSourceTest {
         lenient().when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString()))
                 .thenAnswer(inv -> {
                     String position = inv.getArgument(1);
+                    // 第 4 个部位（布料，issue #4529）：命中**布料路线模板**（positions=["布料"]）
+                    if (RoutingModelFixture.FABRIC_POSITION.equals(position)) {
+                        return RoutingModelFixture.fabricTemplate(TENANT);
+                    }
                     // 只有 布帘/纱帘 有路线模板（罗马帘/帘头没有 ⇒ T2 回落默认模板）
                     return "布帘".equals(position) || "纱帘".equals(position)
                             ? RoutingModelFixture.defaultTemplate(TENANT) : null;
@@ -315,6 +319,85 @@ class ProcessingOrderRouteSourceTest {
     }
 
     // ── 判据 ────────────────────────────────────────────────────────────────
+
+    // ══════════════════════════ 布料基础路线（issue #4529，包 F）══════════════════════════
+
+    /** 一条订单明细，可指定 {@code processing_info.saleForm}（售卖形态，前端 #4493 落库）。 */
+    private static OrderItem itemWithSaleForm(String itemId, String productName,
+                                              String processingItemName, String saleForm) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("colorName", "米白");
+        info.put("sellingMethod", "散剪");
+        if (saleForm != null) {
+            info.put("saleForm", saleForm);
+        }
+        info.put("processingItems", List.of(Map.of("id", "p-" + itemId, "name", processingItemName,
+                "unitPrice", 3.0, "quantity", 2, "unit", "米")));
+        return OrderItem.builder()
+                .id(itemId).tenantId(TENANT).orderId("order-001")
+                .productName(productName).quantity(BigDecimal.valueOf(2))
+                .width(new BigDecimal("2.5")).height(new BigDecimal("2.8"))
+                .processingInfo(info)
+                .build();
+    }
+
+    /** 本次生成落库的工序实例名（按落库顺序）。 */
+    private List<String> instanceOperationNames() {
+        ArgumentCaptor<com.migao.admin.entity.ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(com.migao.admin.entity.ProcessingPositionOperation.class);
+        org.mockito.Mockito.verify(positionOperationMapper, org.mockito.Mockito.atLeastOnce())
+                .insert(captor.capture());
+        return captor.getAllValues().stream()
+                .map(com.migao.admin.entity.ProcessingPositionOperation::getOperationName).toList();
+    }
+
+    @Test
+    @DisplayName("PG-039 布料单（saleForm=布料）⇒ 部位=布料 / 工序 = 配料 + 打包（issue #4529 判据 1）")
+    void fabricOrderSelectsTheFabricRoute() {
+        stubRoutings();
+        AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
+                itemWithSaleForm("item-1", "遮光布料X", "配料", "布料")));
+
+        var results = service().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        assertThat(po.get().getRouteKey())
+                .as("布料单必须落在**布料路线**上（部位 = 第 4 个部位「布料」）")
+                .isEqualTo(RoutingModelFixture.FABRIC_TEMPLATE_NAME);
+        assertThat(po.get().getRouteSource()).isEqualTo("direct");
+        assertThat(instanceOperationNames())
+                .as("布料单的工序 = 配料 + 打包（多一道窗帘工序 / 缺打包都红）")
+                .containsExactly("配料", "打包");
+    }
+
+    @Test
+    @DisplayName("PG-039 回归：缺 saleForm / saleForm=成品帘 ⇒ 与改前**逐字相同**（判据 5）")
+    void missingOrFinishedSaleFormKeepsTheLegacyDerivation() {
+        stubSignals();
+        stubRoutings();
+        // ① 缺键（存量单）：两维都缺 ⇒ 存量信号兜底 ⇒ 布帘×韩褶，来源 derived
+        //    （加工项名「韩褶-布」同时含 `布` 与 `韩褶` 两个信号 —— 存量单的典型形态）
+        AtomicReference<ProcessingOrder> missing = stubGenerate(List.of(
+                item("item-1", "遮光成品X", "韩褶-布")));
+        service().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(missing.get().getRouteKey()).isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
+        assertThat(missing.get().getRouteSource()).isEqualTo("derived");
+        List<String> missingOps = instanceOperationNames();
+
+        // ② 显式 saleForm=成品帘：必须与缺键**逐字相同**（不得被布料分支捕获）
+        // 只清调用记录（**不 reset 桩**）：`stubGenerate` 会重新桩上新的 poRef
+        org.mockito.Mockito.clearInvocations(positionOperationMapper);
+        AtomicReference<ProcessingOrder> finished = stubGenerate(List.of(
+                itemWithSaleForm("item-1", "遮光成品X", "韩褶-布", "成品帘")));
+        service().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(finished.get().getRouteKey())
+                .as("saleForm=成品帘 不得改变路线（只有 `布料` 才是布料单）")
+                .isEqualTo(missing.get().getRouteKey());
+        assertThat(finished.get().getRouteSource()).isEqualTo(missing.get().getRouteSource());
+        assertThat(instanceOperationNames())
+                .as("saleForm=成品帘 的工序序列与缺键存量单**逐字相同**（回归不变量）")
+                .isEqualTo(missingOps);
+    }
 
     @Test
     @DisplayName("PG-029 推导链①：结构化**列**（显式字段）压过 processing_info 同键 ⇒ direct 用列值")

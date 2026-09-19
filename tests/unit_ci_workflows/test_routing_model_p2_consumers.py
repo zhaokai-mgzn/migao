@@ -144,7 +144,7 @@ def test_backfill_uses_tenants_own_operations_not_tenant_one(sql: str | None = N
     )
     # 反向断言：**主线与规则**不得出现「从 1 号租户复制」的形态。
     # （部位价目表的回填源**是**规范矩阵 `p.tenant_id = 1 AND p.id LIKE 'opp-v70-%'` ——
-    #   那是 P1 冻结的 84 行真值源、不是「某个租户被改过的数据」；价目口径见 V72 注释。）
+    #   那是 P1 冻结的规范矩阵（#4529 起 120 行）、不是「某个租户被改过的数据」；价目口径见 V72 注释。）
     for stmt in _insert_statements(body, "production_route_templates") + \
             _insert_statements(body, "production_route_rules"):
         assert not re.search(r"tenant_id\s*=\s*1\b", stmt, re.I), (
@@ -187,7 +187,7 @@ def test_backfill_derives_operation_names_from_tenant_rows(sql: str | None = Non
     写死清单 = 「发明口径」：客户改过工序名后回填出来的主线/规则与他的库对不上。
 
     适用范围 = **主线与规则**（它们按租户库归一）。**部位价目表**的源是 P1 冻结的规范矩阵
-    （84 行，逐条溯源到 `production_operations.unit_price`），故不在此列 —— 它的判据是
+    （#4529 起 120 行，逐条溯源到 `production_operations.unit_price`），故不在此列 —— 它的判据是
     「逐行等于规范矩阵」，由 `test_production_catalog_seed.py` 的三源收敛守卫覆盖。
     """
     body = _v72_body(sql)
@@ -368,7 +368,7 @@ def test_consumers_read_the_rule_table():
 # 判据 E：开租播种（Java）的规范矩阵/主线/规则与真值源同源（P2b 新增）
 #
 # 为什么必须守：P2b 的开租播种路径**不跑迁移链**（新租户不走 V71/V72）⇒ 它必须自带一份
-# 规范矩阵（84 行）/ 主线（9 道）/ 工艺变体规则（10 条）。那是**第四份投影**
+# 规范矩阵（120 行）/ 主线（10 道）/ 工艺变体规则（10 条）。那是**第四份投影**
 # （routing.py / V71 迁移 / schema.sql / Java 播种）⇒ 不守就是「改了真值源而新租户拿到旧价」
 # 这类静默失效（判据 17 同族：错价直接算成工人工资）。
 # ══════════════════════════════════════════════════════════════════════════════════
@@ -417,14 +417,14 @@ def _python_position_rows(src: str) -> list:
 
 
 def test_seed_service_canonical_matrix_matches_truth_source():
-    """判据 E-1：Java 开租播种的 84 行规范矩阵与 `routing.py::OPERATION_POSITION_PRICES` 逐行同值。"""
+    """判据 E-1：Java 开租播种的 **120 行**规范矩阵与 `routing.py::OPERATION_POSITION_PRICES` 逐行同值。"""
     src = _read(SEED_SERVICE)
     rows = _java_array_rows(src, "CANONICAL_POSITION_PRICES")
-    assert len(rows) == 84, f"规范矩阵必须是 84 行（28 逻辑工序 × 3 部位），实测 {len(rows)}"
+    assert len(rows) == 120, f"规范矩阵必须是 120 行（30 逻辑工序 × 4 部位，issue #4529），实测 {len(rows)}"
 
     py_src = _read(ROUTING_PY)
     py_rows = _python_position_rows(py_src)
-    assert len(py_rows) == 84, f"真值源应有 84 行，实测 {len(py_rows)}"
+    assert len(py_rows) == 120, f"真值源应有 120 行，实测 {len(py_rows)}"
     expected = [(logical, position,
                  "null" if price is None else str(price),
                  "true" if applicable else "false")
@@ -436,7 +436,7 @@ def test_seed_service_canonical_matrix_matches_truth_source():
 
 
 def test_seed_service_mainline_matches_truth_source():
-    """判据 E-2：Java 开租播种的 9 道主线与 `routing.py::ROUTE_MAINLINE_STEPS` 逐字同值。"""
+    """判据 E-2：Java 开租播种的 10 道主线与 `routing.py::ROUTE_MAINLINE_STEPS` 逐字同值。"""
     src = _read(SEED_SERVICE)
     start = src.index("List<String> ROUTE_MAINLINE_STEPS = List.of(")
     end = src.index(");", start)

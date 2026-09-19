@@ -49,6 +49,10 @@ class ProductionOperationScopeMigrationTest {
     private static final String MIGRATION =
             "backend/admin-api/src/main/resources/db/migration/"
                     + "V67__add_scope_to_production_operations.sql";
+    /** V79（issue #4529，包 F）：把 `打包` 追加进套级集合（跨产品形态的套级工序）。 */
+    private static final String MIGRATION_V79 =
+            "backend/admin-api/src/main/resources/db/migration/"
+                    + "V79__seed_fabric_route_and_packing_operation.sql";
     private static final String SCHEMA = "docs/sql/schema.sql";
     private static final String SEED_V54 =
             "backend/admin-api/src/main/resources/db/migration/V54__seed_production_operations.sql";
@@ -56,11 +60,19 @@ class ProductionOperationScopeMigrationTest {
             "backend/admin-api/src/main/resources/db/migration/V56__seed_special_option_operations.sql";
 
     /**
-     * 冻结集合（issue #4384 用户裁定）：**恰好**这三道是套级（每樘窗一次）。
+     * V67 的冻结集合（issue #4384 用户裁定）：**恰好**这三道是套级（每樘窗一次）。
      * 集合写死 —— 漏标（少一道）或多标（把部位级工序也标成套级）都红。
      */
     private static final List<String> SET_SCOPE_OPERATIONS =
             List.of("外帘打卷", "外帘装袋", "外帘发货");
+
+    /**
+     * **终态**套级集合（issue #4529）：V67 的三道 + V79 的 `打包`（跨产品形态：布帘/纱帘/帘头/布料
+     * 都要做，一单一套一次 ⇒ 套级；靠 `scope='set'` 去重，**不是**靠适用性表达）。
+     * 顺序 = `schema.sql` 里 `name IN (...)` 的书写顺序（逐字比对）。
+     */
+    private static final List<String> TERMINAL_SET_SCOPE_OPERATIONS =
+            List.of("外帘打卷", "外帘装袋", "外帘发货", "打包");
 
     /** 合法取值（闭词表，与写面 {@code ProductionOperationCommandService} 的校验同口径）。 */
     private static final Set<String> SCOPE_VOCABULARY = Set.of("position", "set");
@@ -206,7 +218,7 @@ class ProductionOperationScopeMigrationTest {
     // ══════════════════════ ③ bootstrap 终态镜像 ══════════════════════
 
     @Test
-    @DisplayName("判据 1f：docs/sql/schema.sql 同步 V67 终态（列 + 注释 + 回填）")
+    @DisplayName("判据 1f：docs/sql/schema.sql 同步 V67 ∪ V79 终态（列 + 注释 + 回填）")
     void schemaSqlMirrorsMigrationFinalState() throws Exception {
         String schema = read(SCHEMA);
 
@@ -215,8 +227,15 @@ class ProductionOperationScopeMigrationTest {
                 .contains("ADD COLUMN IF NOT EXISTS scope VARCHAR(16) NOT NULL DEFAULT 'position'")
                 .contains("COMMENT ON COLUMN production_operations.scope");
         assertThat(setScopeOperationNames(schema))
-                .as("bootstrap 终态的回填必须与迁移逐字同集合（两份口径漂移 ⇒ 新建库与存量库不一致）")
-                .containsExactlyElementsOf(SET_SCOPE_OPERATIONS);
+                .as("bootstrap 终态的回填必须与迁移**逐字同集合**（V67 三道 + V79 的 打包）"
+                        + "—— 两份口径漂移 ⇒ 新建库与存量库不一致")
+                .containsExactlyElementsOf(TERMINAL_SET_SCOPE_OPERATIONS);
+        // 另一侧：迁移链（V67 ∪ V79）的并集也必须等于同一冻结集合（不写死单源）
+        List<String> migrationSet = new ArrayList<>(setScopeOperationNames(read(MIGRATION)));
+        migrationSet.addAll(setScopeOperationNames(read(MIGRATION_V79)));
+        assertThat(migrationSet)
+                .as("迁移链（V67 ∪ V79）的套级集合 ≠ 冻结终态 ⇒ bootstrap 与存量库会不一致")
+                .containsExactlyElementsOf(TERMINAL_SET_SCOPE_OPERATIONS);
     }
 
     @Test
