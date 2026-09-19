@@ -173,4 +173,32 @@ describe('OrderDetail 商品明细展示工艺规格', () => {
     await waitFor(() => expect(screen.getAllByText('测试窗帘布').length).toBeGreaterThan(0))
     expect(screen.queryAllByTestId('order-craft-spec')).toHaveLength(0)
   })
+
+  // issue #4546：用户裁定「要展示出来可以明确告知用料是如何计算出来的」
+  // ⇒ 详情页把落库的算料公式串**原样**渲染（真值 = `order_items.processing_info.formulaText`）。
+  it('判据 2（红证 #4546）：渲染「算料公式」行，且串**逐字**来自 processingInfo', async () => {
+    const formulaText = '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
+    mockGetOrder.mockResolvedValue({
+      data: { data: orderWith({ craft: '韩褶', fabric_meters: 13.3, formulaText }) },
+    })
+
+    render(<OrderDetailPage />)
+
+    const spec = await screen.findByTestId('order-craft-spec')
+    expect(within(spec).getByText('算料公式')).toBeInTheDocument()
+    expect(within(spec).getByText(formulaText)).toBeInTheDocument()
+  })
+
+  it('判据 4（回归 #4546）：存量单（无 formulaText 键）⇒ 无「算料公式」行，页面不出现该键名', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: orderWith({ craft: '韩褶', fabric_meters: 13.3 }) },
+    })
+
+    const { container } = render(<OrderDetailPage />)
+
+    const spec = await screen.findByTestId('order-craft-spec')
+    expect(within(spec).queryByText('算料公式')).toBeNull()
+    // 也不得把内部键名兜底渲染出来（`isCraftSpecKey` 认它 ⇒ 不进「其它字段」行）
+    expect(container.textContent).not.toMatch(/formulaText/)
+  })
 })

@@ -338,6 +338,12 @@ function buildLineProcessingInfo(line: OrderLineItem): Record<string, unknown> |
   if (Number.isFinite(meters) && meters > 0) info.processingMeters = meters
   const calcMeters = Number(line.calc?.fabric_meters)
   if (Number.isFinite(calcMeters) && calcMeters > 0) info.fabric_meters = calcMeters
+  // 算料公式串（issue #4546）：把**试算响应**里的 `formula_text` 原样落进订单层 camelCase 键
+  // `formulaText` —— 详情页据此告知商家「用料是怎么算出来的」。
+  // 🔴 **只透传、不得自拼**（`lib/api.ts` 头注释：公式串由 ai-agent 后端产出，前端自拼 = 第二份算料逻辑）。
+  // **无试算结果 ⇒ 不写该键**（写空串会让详情页多出一行空值）。
+  const formulaText = line.calc?.formula_text
+  if (typeof formulaText === 'string' && formulaText.trim() !== '') info.formulaText = formulaText
 
   return info
 }
