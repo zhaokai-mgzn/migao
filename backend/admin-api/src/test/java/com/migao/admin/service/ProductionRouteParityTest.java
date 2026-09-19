@@ -134,7 +134,7 @@ class ProductionRouteParityTest {
                 processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper,
                 orderService, new ObjectMapper(),
                 new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper,
-                        orderMapper, clientRequestIdService),
+                        orderMapper, orderItemMapper, clientRequestIdService),
                 queryService, productionOperationQtyClient);
 
         lenient().when(productionOperationQtyClient.resolve(any())).thenAnswer(inv -> {
