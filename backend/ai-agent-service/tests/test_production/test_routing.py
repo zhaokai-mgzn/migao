@@ -1,5 +1,5 @@
 """工艺路线实例化测试（app/production/routing.py，issue #3993，M4-G-1）"""
-# case_ids: PP-010
+# case_ids: PP-010, PG-023
 import pytest
 
 from app.production.routing import (
@@ -13,6 +13,8 @@ from app.production.routing import (
     ROUTINGS,
     SET_KEYS,
     SPECIAL_OPTION_ROUTINGS,
+    _rule_triggers,
+    build_route_v2,
     build_routing,
     instance_operations,
 )
@@ -304,3 +306,102 @@ def test_existing_routes_unchanged():
                                           "外帘打卷", "外帘装袋", "外帘发货"]
     assert ROUTINGS[("帘头", "平幔")] == ["精裁-布", "布三边", "帘头制作", "定型-布",
                                           "外帘打卷", "外帘装袋", "外帘发货"]
+
+
+# ══════════════════ 条件工序唯一性（**取代**，不是跳过）+ 加工项触发（issue #4577）══════════════════
+#
+# 钱风险（今天就在）：既有种子里**多条规则指向同一道工序** —— `接高`(160) 与 `双眼皮接高`(170)
+# 都插「接高」；`余料做绑带`(180) / `布绑带`(190) / `纱绑带`(220) 都插「绑带」。
+# 盲插（`route.insert(idx + 1, …)`，无去重）⇒ 序列里两道同名工序 ⇒ 每道落成一行
+# `processing_position_operations` ⇒ **工人按两遍/三遍单价拿钱**（同族事故 #4523）。
+#
+# 用户裁定（2026-09-19 原话）：「**工序需要保证唯一**，比如工艺带了绑带，特殊选项又选择余料做绑带，
+# 得用**特殊选项中的余料做绑带替代绑带这个工序**，余料做绑带的目标工序也是绑带就能替换，
+# **需要有这个前提**」⇒ 判据 = 目标工序名相同；语义 = **取代**（先移除旧位置、再按本规则锚点插入）。
+
+
+def test_same_target_operation_is_replaced_not_duplicated():
+    """任务A 红证①③：两条规则命中**同一道工序** ⇒ 序列里**恰好一个**。
+
+    注入（把 `_insert_after` 开头的「先移除已有该工序」删掉，改回盲插）⇒ 本用例必红（出现 2 个）。
+    """
+    route = build_routing({**POSITION, "special_options": ["接高", "双眼皮接高"]})
+    assert route.count("接高-布") == 1, (
+        f"两条规则指向**同一道工序** ⇒ 只能有一个（两个 = 工人按两遍单价拿钱）：{route}")
+    assert route.index("接高-布") == route.index("精裁-布") + 1, "位置按**后应用**（priority 170）那条的锚点"
+
+    # 三条绑带规则同理（`余料做绑带` / `布绑带` 都插「绑带-布」；`纱绑带` 是另一道「绑带-纱」）
+    twine = build_routing({**POSITION, "special_options": ["余料做绑带", "布绑带", "纱绑带"]})
+    assert twine.count("绑带-布") == 1, f"两条规则指向同一道工序 ⇒ 只有一个：{twine}"
+    assert twine.count("绑带-纱") == 1, "纱绑带 是另一道工序（绑带-纱）⇒ 各自一个"
+
+
+def test_replacement_moves_the_operation_to_the_later_rules_anchor(monkeypatch):
+    """任务A 红证②（位置）：锚点不同的两条规则命中同一工序 ⇒ 位置 = **priority 更大那条**的锚点。"""
+    import app.production.routing as routing
+
+    rules = routing.ROUTE_RULES + [
+        {"trigger_kind": "option", "trigger_value": "甲", "position": None, "action": "insert",
+         "operation": "绑带", "after_operation": "三边", "priority": 1000},
+        {"trigger_kind": "option", "trigger_value": "乙", "position": None, "action": "insert",
+         "operation": "绑带", "after_operation": "车被", "priority": 1010},
+    ]
+    monkeypatch.setattr(routing, "ROUTE_RULES", rules)
+    base = {"curtain_type": "布帘", "craft": "韩褶"}
+
+    both = routing.build_route_v2({**base, "special_options": ["甲", "乙"]})
+    assert both.count("绑带") == 1, f"同一道工序 ⇒ 恰好一个：{both}"
+    assert both.index("绑带") == both.index("车被") + 1, (
+        f"位置 = **后应用**（priority 1010）那条的锚点「车被」—— 跳过语义会让它停在「三边」：{both}")
+
+    only_first = routing.build_route_v2({**base, "special_options": ["甲"]})
+    assert only_first.index("绑带") == only_first.index("三边") + 1, "只命中甲 ⇒ 位置按甲的锚点（三边）"
+
+
+def test_different_target_operations_do_not_interfere(monkeypatch):
+    """任务A 红证②：两条规则命中**不同工序** ⇒ 互不影响（「取代」不得写成"清掉整段序列"）。"""
+    import app.production.routing as routing
+
+    rules = routing.ROUTE_RULES + [
+        {"trigger_kind": "option", "trigger_value": "甲", "position": None, "action": "insert",
+         "operation": "花边", "after_operation": "三边", "priority": 1000},
+        {"trigger_kind": "option", "trigger_value": "乙", "position": None, "action": "insert",
+         "operation": "扣环", "after_operation": "车被", "priority": 1010},
+    ]
+    monkeypatch.setattr(routing, "ROUTE_RULES", rules)
+    base = {"curtain_type": "布帘", "craft": "韩褶"}
+
+    before = routing.build_route_v2(base)
+    after = routing.build_route_v2({**base, "special_options": ["甲", "乙"]})
+    assert len(after) == len(before) + 2, f"两道**不同**工序 ⇒ 各加一个（不许清掉序列）：{after}"
+    assert after.index("花边") == after.index("三边") + 1
+    assert after.index("扣环") == after.index("车被") + 1
+    assert [op for op in after if op not in ("花边", "扣环")] == before, "其余工序逐字未动"
+
+
+def test_rule_triggers_accepts_processing_item_kind():
+    """任务B：`processing_item` 触发键 = `position["processing_items"]`（**精确相等**，不用 contains）。"""
+    rule = {"trigger_kind": "processing_item", "trigger_value": "花边"}
+    assert _rule_triggers(rule, {"processing_items": ["花边", "扣环"]}) is True
+    assert _rule_triggers(rule, {"processing_items": ["加花边"]}) is False, "错一个字不得命中（精确相等）"
+    assert _rule_triggers(rule, {}) is False, "缺键 ⇒ 不命中（不猜）"
+    # 未实现的触发类型仍**显式失败**（静默忽略会让「规则已落库但永不生效」变成黑洞）
+    with pytest.raises(ValueError, match="shaped"):
+        _rule_triggers({"trigger_kind": "shaped", "trigger_value": "x"}, {})
+
+
+def test_build_route_v2_processing_item_rule_inserts_once(monkeypatch):
+    """任务B：加工项命中 ⇒ 插工序（插在锚点后、只一次）；未命中 ⇒ 不插（两侧同口径）。"""
+    import app.production.routing as routing
+
+    rule = {"trigger_kind": "processing_item", "trigger_value": "花边", "position": None,
+            "action": "insert", "operation": "花边", "after_operation": "三边", "priority": 270}
+    monkeypatch.setattr(routing, "ROUTE_RULES", routing.ROUTE_RULES + [rule])
+
+    hit = routing.build_route_v2({"curtain_type": "布帘", "craft": "韩褶",
+                                  "processing_items": ["花边"]})
+    assert hit.count("花边") == 1, f"加工项命中 ⇒ 恰插一次：{hit}"
+    assert hit.index("花边") == hit.index("三边") + 1, "插在锚点「三边」之后"
+
+    miss = routing.build_route_v2({"curtain_type": "布帘", "craft": "韩褶"})
+    assert "花边" not in miss, "未命中 ⇒ 不插（缺 `processing_items` 键 = 不命中，不猜）"

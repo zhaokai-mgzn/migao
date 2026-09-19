@@ -385,7 +385,21 @@ def factor_for(position: Dict[str, Any], operation: str) -> float:
 
 
 def _insert_after(route: List[str], operation: str, after: str) -> List[str]:
-    """把 operation 插到 after 之后（after 不在路线中则追加到末尾）。"""
+    """把 operation 插到 after 之后（after 不在路线中则追加到末尾）。
+
+    **唯一性 = 取代**（issue #4577，用户裁定 2026-09-19 原话：「**工序需要保证唯一**，比如工艺带了
+    绑带，特殊选项又选择余料做绑带，得用**特殊选项中的余料做绑带替代绑带这个工序**，余料做绑带的
+    目标工序也是绑带就能替换，**需要有这个前提**」）。
+
+    ⇒ 判据 = **目标工序名相同**（前提）；语义 = **先移除序列里已有的该工序，再按本条规则的锚点插入**
+    （**取代**，不是"跳过"）。为什么不是跳过：跳过会让位置停留在**先应用**那条规则（可能是工艺的
+    锚点），而商家选特殊选项的意图是「按这个选项的工序来」。结果 = 该工序在序列里**恰好出现一次**。
+
+    规则应用顺序仍由 `priority` 升序决定（**顺序语义一字未动**）：既有种子里特殊选项的 priority
+    （110~260）大于工艺规则（10~100）⇒ **特殊选项自然覆盖工艺**，正是用户要的
+    「用余料做绑带替代绑带」。
+    """
+    route = [op for op in route if op != operation]
     try:
         idx = route.index(after)
     except ValueError:
@@ -709,7 +723,11 @@ OPERATION_POSITION_PRICES: Dict[str, Dict[str, Any]] = _build_position_prices(_P
 
 #: 规则表 26 条（工艺变体 10 + 特殊选项 16）—— 「主线 + 规则」取代「9 条展开路线」
 #:
-#: 字段：`trigger_kind`（`craft`/`option`；`shaped`/`processing_item` 预留但 P1 不种行）·
+#: 字段：`trigger_kind`（`craft`/`option`/`processing_item`；`shaped` 预留但无种子行）·
+#: ⚠️ `processing_item` 的**种子行不在本表**：它们由 `V84__seed_processing_item_route_rules.sql`
+#: 按租户种进 `production_route_rules`（issue #4577；本表仍是 V71 字面量种子的镜像 ——
+#: `tests/unit_ci_workflows/test_production_catalog_seed.py` 把「本表 ≡ V71 的 26 行」钉死）。
+#: 触发口径（`_rule_triggers`）两侧**同款**：加工项名精确相等。
 #: `trigger_value`（工艺名 / 特殊选项名，**逐字 = ERP 写法**，它是 join key）·
 #: `position`（部位限定，`None` = 不限）· `action`（`insert`/`remove`）·
 #: `operation`（**逻辑工序名**）· `after_operation`（insert 锚点，`None` = 追加末尾）·
@@ -783,7 +801,12 @@ def _rule_triggers(rule: Dict[str, Any], position: Dict[str, Any]) -> bool:
         return rule["trigger_value"] == position.get("craft")
     if kind == "option":
         return rule["trigger_value"] in (position.get("special_options") or ())
-    # `shaped` / `processing_item` 是**表结构预留**的触发类型（P1 无种子行）：
+    if kind == "processing_item":
+        # 加工项触发（issue #4577，用户裁定「加工项也触发工序」）：触发键 = 该行
+        # `processingInfo.processingItems[].name`（Java 侧同一口径；**精确相等** ——
+        # `contains` 只存在于存量信号兜底 `firstSignalMatch`，不在此处引入第二处）。
+        return rule["trigger_value"] in (position.get("processing_items") or ())
+    # `shaped` 仍是**表结构预留**的触发类型（无种子行、无消费路径）：
     # 静默返回 False 会让「规则已落库但永不生效」变成无人可见的黑洞 ⇒ 显式失败。
     raise ValueError(f"未实现的规则触发类型: {kind}")
 

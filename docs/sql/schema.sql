@@ -2427,6 +2427,46 @@ SELECT 'rr-v72-' || t.id || '-f-' || f.id, t.id, 'option', f.option_name, NULL, 
                   ELSE f.operation_name END, ''))
 ON CONFLICT (id) DO NOTHING;
 
+-- 加工项 → 条件工序种子（V84，issue #4577：用户裁定「加工项也触发工序」）。
+-- 3 条 `trigger_kind='processing_item'` 规则：花边(270)/扣环(280)/接高(290) —— 触发键 = 订单行
+-- `processingInfo.processingItems[].name`，**精确相等**；priority 落在 option 段（110–260）之后、
+-- 计件系数档（300）之前。`拼接` / `双眼皮` **刻意不建行**（拼几次由特殊选项表达，理由见 issue #4577）。
+-- 本文件是 bootstrap **终态**（该路径不跑迁移链）⇒ 与
+-- `V84__seed_processing_item_route_rules.sql` 逐值同款；防漂移 =
+-- tests/unit_ci_workflows/test_processing_item_route_rules_seed.py（迁移 ↔ 本文件 ↔ Java 种子服务三源）。
+INSERT INTO production_route_rules
+    (id, tenant_id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, status)
+SELECT 'rr-v84-' || t.id || '-' || r.rid, t.id, r.trigger_kind, r.trigger_value,
+       NULL, r.action, r.operation, r.after_operation, r.priority, 'active'
+  FROM tenants t
+  JOIN (VALUES
+      ('01', 'processing_item', '花边', 'insert', '花边', '三边', 270),
+      ('02', 'processing_item', '扣环', 'insert', '扣环', '三边', 280),
+      ('03', 'processing_item', '接高', 'insert', '接高', '精裁', 290)
+  ) AS r(rid, trigger_kind, trigger_value, action, operation, after_operation, priority)
+    ON TRUE
+ WHERE t.deleted = 0
+   AND EXISTS (
+       SELECT 1 FROM production_operations o
+        WHERE o.tenant_id = t.id AND o.deleted = 0 AND o.status = 'active'
+          AND (CASE
+                   WHEN o.name LIKE '%-布' THEN left(o.name, length(o.name) - 2)
+                   WHEN o.name LIKE '%-纱' THEN left(o.name, length(o.name) - 2)
+                   WHEN o.name = '布三边' THEN '三边'
+                   WHEN o.name = '纱三边' THEN '三边'
+                   WHEN o.name = '布帘车被' THEN '车被'
+                   WHEN o.name = '帘头制作' THEN '帘头制作'
+                   WHEN o.name = '上车布-布' THEN '上车布'
+                   WHEN o.name = '上车布-纱' THEN '上车布'
+                   ELSE o.name END) = r.operation)
+   AND NOT EXISTS (
+       SELECT 1 FROM production_route_rules e
+        WHERE e.tenant_id = t.id AND e.deleted = 0
+          AND e.trigger_kind = r.trigger_kind AND e.trigger_value = r.trigger_value
+          AND e.position IS NULL
+          AND e.action = r.action AND e.operation = r.operation)
+ON CONFLICT (id) DO NOTHING;
+
 -- 特殊选项 → 条件工序 / 计件系数种子（V59，issue #4230 Java 侧 v1a）
 -- 逐字抄自真值源 backend/ai-agent-service/app/production/routing.py 的 SPECIAL_OPTION_ROUTINGS
 -- （16 项，sort_order 与真值源字典序一致）与 OPTION_FACTOR_SCOPES（v1 只种「一分为二 ⇒ ×1.7」这个
