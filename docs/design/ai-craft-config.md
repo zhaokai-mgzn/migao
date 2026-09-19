@@ -32,7 +32,8 @@
 `operation` / `after_operation` / `position`），其中：
 
 - `trigger_kind` 是 `craft` / `option` / `processing_item` 的英文闭词表；
-- `after_operation` 是「**插入锚点**」—— 商家得知道「上车布要插在韩褶之后」；
+- `after_operation` 是「**插入锚点**」（**今天的实现列名**）—— 商家得知道「上车布要插在韩褶之后」
+  （**改后商家看到的是槽位口径**：「打褶槽由韩褶占据 ⇒ 上车布排在它之后」，见 §2.5）；
 - `priority` 决定生效顺序，且**顺序敏感**（`remove` 不先于 `insert`，锚点可用性由 priority 决定）。
 
 **一句话**：商家要先学会研发的数据模型，才能让「四爪钩不做复烫」这件事生效。
@@ -204,7 +205,7 @@ PYEOF
 | `打孔·布帘` | 11 | 精裁→三边→**打孔**→熨烫→定型→复烫→车被→外帘打卷→打包→外帘装袋→外帘发货 |
 | `韩褶·纱帘` | 7 | 精裁→三边→韩褶→外帘打卷→打包→外帘装袋→外帘发货（**无 上车布** —— 该规则 `position='布帘'`） |
 
-### 2.5 术语口径：本文件凡说「锚点 / 顺序」的地方，**一律按槽位口径表述**
+### 2.5 术语口径：**商家可见与 AI 解释**一律按槽位口径表述；「锚点」只作**实现列名**保留
 
 > 父 agent 同步信息（2026-09-20）：AI 的**解析与解释**要建立在「**槽位 / 派生**」语义上，
 > 而不是旧的「锚点」字段 —— 解释文案应是「因为选了韩褶 ⇒ **打褶槽**由韩褶占据 ⇒
@@ -212,6 +213,8 @@ PYEOF
 > `docs/design/operation-slot-model.md` 定义（**本文件写就时该文件尚未在 `origin/main` 上** ——
 > `git show origin/main:docs/design/operation-slot-model.md` ⇒ path does not exist ⇒ 本文按父 agent
 > 给出的口径表述，**不替它定义模型**）。
+> **该设计已立项**：`docs/design/operation-slot-model.md`（issue **#4653** 正在产出）⇒ 本文与它的对齐
+> **待 #4653 合入后**执行（见 §8.2 U9）。
 
 **本文的三层表述分工（不许混用）**：
 
@@ -566,8 +569,8 @@ CREATE TABLE production_operation_conditions (
 （「插在谁之后」），而真值源里本来就有槽位（`backend/ai-agent-service/app/production/routing.py:470`
 的 `ROUTE_MAINLINE` 第 3 位 `⟪工艺槽位⟫`）⇒ 新表**同时**带 `slot` / `slot_holder`
 （**呈现与解释口径**）与 `after_operation`（**落库与兼容口径**），二者由槽位模型定义派生关系。
-**槽位模型由 `docs/design/operation-slot-model.md` 定义（本文件写就时该文件尚未在 `origin/main` 上）；
-本文不替它定义，只登记"新表必须能承载槽位"这一约束。**
+**槽位模型由 `docs/design/operation-slot-model.md` 定义（issue #4653 正在产出；本文件写就时尚未在
+`origin/main` 上）；本文不替它定义，只登记「新表必须能承载槽位」这一约束，对齐待 #4653 合入（§8.2 U9）。**
 
 ### 5.2 `processing_item` 第三条路怎么收
 
@@ -812,6 +815,14 @@ python3 .github/llm_sink_check.py --issue <红例 issue 号>   # 0 = 已下沉 /
 
 | F13 | issue #4652 给的解释形状是 `{因为:{kind:'craft', value:'韩褶'}, 结果:'加了 上车布', 位置:'**打褶槽之后**'}` | 今天 `production_route_rules` **没有槽位列**（只有 `after_operation` 锚点列）；真值源 `ROUTE_MAINLINE` 里**有** `⟪工艺槽位⟫` 占位但**不落库**（`ROUTE_MAINLINE_STEPS` 不含它） | §2.5 定三层口径；§5.1 新表**必须**同时带 `slot` / `slot_holder` 与 `after_operation` |
 
+### 8.1.1 与父 agent 同步信息不符 / 尚未合入的事实（照实登记）
+
+| # | 同步信息 | 实测 | 处置 |
+|---|---|---|---|
+| S1 | 「另一份设计 `docs/design/operation-slot-model.md` 正在跑，它定义槽位模型」 | ✅ **一致**（`git show origin/main:docs/design/operation-slot-model.md` ⇒ **path does not exist** ⇒ 确为"正在跑"）。该设计由 **issue #4653** 产出 | §2.5 只按口径**表述**、不替它定义；对齐待 #4653 合入（§8.2 U9） |
+| S2 | 「解释文案应是『因为选了韩褶 ⇒ 打褶槽由韩褶占据 ⇒ 上车布排在它之后』」 | ✅ 口径已采纳，且**有实测依据**：真值源 `backend/ai-agent-service/app/production/routing.py:470` 的 `ROUTE_MAINLINE` 第 3 位本就是字面量 `⟪工艺槽位⟫` ⇒ **槽位不是新造概念**，是把被扁平化掉的语义**恢复**回来 | §2.5 三层分工表 + §4.1 人话模板 + §5.1 新表列 |
+| S3 | 「本会话不动 agent」 | ✅ 已声明（标题下「实现状态」段 + §7 N1′） | §6.2 用例清单标注**尚未落地** |
+
 ### 8.2 无法判定（**不猜**）
 
 | # | 事项 | 为什么无法判定 | 谁/什么能判定 |
@@ -824,7 +835,7 @@ python3 .github/llm_sink_check.py --issue <红例 issue 号>   # 0 = 已下沉 /
 | U6 | **「一个完整计费周期」的确切长度**（§5.6 退场判据） | 「30 天」是本文件的**建议值**，不是实测约束 | 运营裁定 |
 | U7 | **`buildRoute` docstring 的「唯一 Java 实现」是笔误还是设计意图** | 静态可判「与实测不符」（F5），但**无法判定作者本意** | 作者 / issue 回溯 |
 | U8 | **AI 侧 `confidence` 的判定标准** | 本文件给了三值枚举（high/medium/low），但**阈值口径**依赖模型能力实测 | 实现后实测（**且默认不跑 LLM，需用户显式要求**） |
-| U9 | **槽位模型的确切定义**（有哪些槽、`slot_holder` 如何派生、与 `after_operation` 的换算规则） | 定义权在 `docs/design/operation-slot-model.md`（**本文件写就时尚未在 `origin/main` 上** ⇒ 无法引用其内容）。本文只按父 agent 给出的口径**表述**，**不替它定义** | 该设计落地后，§4.1 / §5.1 的 `slot` / `slot_holder` 需按它**回填确切值域** |
+| U9 | **槽位模型的确切定义**（有哪些槽、`slot_holder` 如何派生、与 `after_operation` 的换算规则） | **不是「无法判定」，而是「依赖未合入」**：定义权在 `docs/design/operation-slot-model.md`，由 **issue #4653** 正在产出（实测 `git show origin/main:docs/design/operation-slot-model.md` ⇒ path does not exist ⇒ 本文写就时**尚不能引用其内容**）。本文只按父 agent 给出的口径**表述**，**不替它定义** | **待 #4653 合入后对齐**：§4.1 / §5.1 的 `slot` / `slot_holder` 按它**回填确切值域**；若 #4653 的定义与本文 §2.5 的三层分工不一致，**以 #4653 为准**并回改本文 |
 
 ---
 
