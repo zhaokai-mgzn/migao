@@ -22,6 +22,20 @@
 //    不动勾选仍提交**基线三部位**（既有行为逐字不变）。
 // ⑬ **跨形态勾选就地提示**（#4556 产品裁定 (a)；后端机制跟单 #4563）：同勾「`布料` + 帘种部位」⇒
 //    提示「会顶掉布料专用路线 / 可能丢工序」；**只**勾 `布料`（布料专线）或只勾基线三部位 ⇒ **不**提示。
+// ⑭ **用户走查三条**（issue #4567）：
+//    ① 条件工序规则表加「单价（元/套）」列 —— `option` 有价 ⇒ `money()`；`null` ⇒ 「**未定价**」
+//       （**不得**是 `¥0.00`：未定价 ≠ 0 元）；真 0 元 ⇒ 照显示 `¥0.00`；非 `option` ⇒ `—` + `title`；
+//    ② 工艺档位**显示名**中文化（`standard` ⇒ 标准档 / `economy` ⇒ 经济档，未知键回退原键），
+//       而**键**（`data-testid` / 提交的 `tiers` 键 / `label` 初值）仍是英文键；
+//    ③ 就绪度补第 4 步「算料配置」（`source='stored'` ⇒ done / `'default'` ⇒ todo /
+//       **读面未回来 ⇒ 中性 unknown**，不把「没加载」误报成「没配」）。
+// ⑮ **特殊选项单价可改**（issue #4567 追加，用户原文「特殊选项有单价，但数据不全，新增工序也无法
+//    增加特殊选项配置单价」）：`option` 行的「单价（元/套）」列给**行内编辑**（铅笔 → 输入 → 保存/
+//    取消，照「工序库明细」改计件单价的既有交互）⇒ `PUT /route-rules/{id}/customer-unit-price`
+//    的 body **只带** `{customer_unit_price}`；清空 = 发 `null`（**改回未定价**，≠ 0 元）；
+//    失败 ⇒ 后端理由**逐条就地**展示且**不**刷新、**不**改显示；非 `option` 行**没有**编辑入口。
+//    ⚠️ 两套账不互读：这里写的是**对客元/套**（`production_route_rules`），
+//    「工序库明细」里那栏是**给工人的计件单价**（`production_operations.unit_price`）。
 // 反 placeholder：断言落**真实数据行**与**请求体**，不断言「页面存在」。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -37,6 +51,8 @@ const mockUpdateOperation = vi.fn()
 const mockGetSeedTemplates = vi.fn()
 const mockGetOperationPositions = vi.fn()
 const mockGetRouteRules = vi.fn()
+// issue #4567：特殊选项**对客单价**（元/套）写面 —— 与计件单价 `mockUpdateOperation` 是两套账
+const mockUpdateRuleCustomerUnitPrice = vi.fn()
 // issue #4453 探针：信号映射是**研发内部机制**，商家页**不得**消费 ⇒ 它必须恒不被调用
 const mockGetRouteSignals = vi.fn()
 const mockApplySeedTemplate = vi.fn()
@@ -56,6 +72,7 @@ vi.mock('@/lib/api', () => ({
     getSeedTemplates: (...a: unknown[]) => mockGetSeedTemplates(...a),
     getOperationPositions: (...a: unknown[]) => mockGetOperationPositions(...a),
     getRouteRules: (...a: unknown[]) => mockGetRouteRules(...a),
+    updateRuleCustomerUnitPrice: (...a: unknown[]) => mockUpdateRuleCustomerUnitPrice(...a),
     getRouteSignals: (...a: unknown[]) => mockGetRouteSignals(...a),
     applySeedTemplate: (...a: unknown[]) => mockApplySeedTemplate(...a),
     getCraftCalcConfig: (...a: unknown[]) => mockGetCraftCalcConfig(...a),
@@ -116,6 +133,20 @@ const RULES = [
   { id: 1, trigger_kind: 'craft', trigger_value: '韩褶', position: null, action: 'insert', operation: '韩褶', after_operation: '三边', priority: 10, status: 'active' },
   { id: 2, trigger_kind: 'craft', trigger_value: '打孔', position: '布帘', action: 'remove', operation: '熨烫', after_operation: null, priority: 20, status: 'active' },
   { id: 3, trigger_kind: 'option', trigger_value: '拼2次', position: '纱帘', action: 'insert', operation: '拼缝', after_operation: null, priority: 30, status: 'active' },
+]
+
+/**
+ * 规则区**单价**夹具（issue #4567 用户走查①：「特殊选项缺乏单价，通常按套收费」）。
+ * 四态齐备，且 `¥0.00` 与「未定价」**同时在场**（0 元是真价、`null` 是未定价 —— 两者不得混）：
+ * ① `option` 有价 `12.5` ⇒ `¥12.50`；② `option` **未定价** `null` ⇒ 「未定价」；
+ * ③ `option` 定价恰为 `0` ⇒ `¥0.00`（真 0 元，**必须**照样显示成金额）；
+ * ④ 工艺变体 ⇒ `—`（工艺变体不按套计价）。
+ */
+const RULES_WITH_PRICE = [
+  { id: 21, trigger_kind: 'option', trigger_value: '拼2次', position: '纱帘', action: 'insert', operation: '拼缝', after_operation: null, priority: 210, status: 'active', customer_unit_price: 12.5 },
+  { id: 22, trigger_kind: 'option', trigger_value: '防翘扣', position: null, action: 'insert', operation: '防翘扣', after_operation: '三边', priority: 220, status: 'active', customer_unit_price: null },
+  { id: 23, trigger_kind: 'option', trigger_value: '免熨', position: null, action: 'insert', operation: '免熨', after_operation: null, priority: 230, status: 'active', customer_unit_price: 0 },
+  { id: 24, trigger_kind: 'craft', trigger_value: '韩褶', position: null, action: 'insert', operation: '韩褶', after_operation: '三边', priority: 10, status: 'active' },
 ]
 
 /**
@@ -221,6 +252,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     mockGetSeedTemplates.mockReset().mockResolvedValue(ok(TEMPLATES))
     mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS))
     mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES))
+    mockUpdateRuleCustomerUnitPrice.mockReset().mockResolvedValue(ok({ id: 21, customer_unit_price: 6 }))
     mockGetRouteSignals.mockReset()
     mockApplySeedTemplate.mockReset().mockResolvedValue(ok({ created_operations: 35, created_routings: 9, skipped: 0 }))
     mockUpdateOperation.mockReset().mockResolvedValue(ok({ id: 'op-v54-03', name: '韩褶-布', unit_price: 2.5 }))
@@ -561,6 +593,195 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await waitFor(() => expect(screen.getByTestId('readiness-step-default-route')).toHaveAttribute('data-state', 'todo'))
     expect(screen.getByTestId('readiness-step-default-route')).toHaveTextContent('加工单')
     expect(screen.getByTestId('readiness-step-default-route')).toHaveTextContent('设为默认')
+  })
+
+  // ══════════════════ ⑨b 就绪度第 4 步「算料配置」（issue #4567 用户走查③） ══════════════════
+
+  it('就绪度第 4 步「算料配置」：本租户有保存过的配置（source=stored）⇒ done', async () => {
+    // 该判据必须**先**在「算料配置」tab 把配置读回来 —— 读面是懒加载的，首屏它还不在
+    //（懒加载 → unknown 中性态见下一条；此处判的是「读到 stored 之后」）。
+    mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'stored', config: ENGINE_DEFAULT_CALC_CONFIG }))
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
+
+    const step = screen.getByTestId('readiness-step-calc-config')
+    // 注入：把第 4 步删掉（就绪度回到三步）⇒ getByTestId 直接抛错，断言红
+    expect(step).toHaveAttribute('data-state', 'done')
+    expect(step).toHaveTextContent('算料配置')
+    expect(step).toHaveTextContent('已保存')
+    // 已保存 ⇒ hint 留空（与既有三步 done 态一致）
+    expect(step).not.toHaveTextContent('下一步')
+  })
+
+  it('就绪度第 4 步「算料配置」：本租户无配置行（source=default）⇒ todo + 指向「算料配置」tab', async () => {
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
+
+    const step = screen.getByTestId('readiness-step-calc-config')
+    // 注入：把 source==='stored' 之外一律判 done ⇒ 本断言红（把「系统默认」谎报成「配好了」）
+    expect(step).toHaveAttribute('data-state', 'todo')
+    expect(step).toHaveTextContent('系统默认')
+    expect(step).toHaveTextContent('算料配置')
+    expect(step).toHaveTextContent('每折吃布')
+  })
+
+  it('就绪度第 4 步「算料配置」：读面还没回来 ⇒ **中性**（不把「没加载」误报成「没配」）', async () => {
+    // 挂起：GET 永不 resolve ⇒ calcConfig 停在 null（首屏真实形态）
+    mockGetCraftCalcConfig.mockReset().mockReturnValue(new Promise(() => {}))
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+
+    const step = screen.getByTestId('readiness-step-calc-config')
+    // 注入：把「未加载」并入 todo 分支 ⇒ 本断言红（未加载被误报成「没配」，正是本条的缺陷形态）
+    expect(step).toHaveAttribute('data-state', 'unknown')
+    expect(step).toHaveTextContent('读取中')
+    expect(step).not.toHaveTextContent('待完成')
+  })
+
+  // ══════════════════ ⑨c 条件工序规则区「单价（元/套）」列（issue #4567 用户走查①） ══════════════════
+
+  it('规则区单价：option 行有价渲染金额、**未定价渲染「未定价」且不含 ¥0.00**、真 0 元照显示 ¥0.00', async () => {
+    mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES_WITH_PRICE))
+    await renderRules()
+    await waitFor(() => expect(screen.getByTestId('route-rule-price-21')).toBeInTheDocument())
+
+    // ① 有价 ⇒ 用页面既有的 money() 渲染
+    expect(screen.getByTestId('route-rule-price-21')).toHaveTextContent('¥12.50')
+    expect(screen.getByTestId('route-rule-price-21')).toHaveAttribute('data-state', 'priced')
+
+    // ② 未定价 ⇒ 「未定价」，**不得**是 ¥0.00（未定价 ≠ 0 元 —— 仓库硬纪律）
+    const unpriced = screen.getByTestId('route-rule-price-22')
+    expect(unpriced).toHaveTextContent('未定价')
+    expect(unpriced).not.toHaveTextContent('¥0.00')
+    expect(unpriced).toHaveAttribute('data-state', 'unpriced')
+
+    // ③ 定价恰为 0 ⇒ 真价 0 元，照样显示金额（**不**被并进「未定价」）
+    expect(screen.getByTestId('route-rule-price-23')).toHaveTextContent('¥0.00')
+    expect(screen.getByTestId('route-rule-price-23')).toHaveAttribute('data-state', 'priced')
+    // 未定价那一格**不**含 ¥ 符号（与真 0 元在文本上也可区分）
+    expect(unpriced.textContent).not.toContain('¥')
+  })
+
+  it('规则区单价：非 option 行（craft 等工艺变体）⇒ 「—」+ 说明「只有特殊选项按套计价」', async () => {
+    mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES_WITH_PRICE))
+    await renderRules()
+    await waitFor(() => expect(screen.getByTestId('route-rule-price-24')).toBeInTheDocument())
+
+    const craft = screen.getByTestId('route-rule-price-24')
+    // 注入：把非 option 行按 money(null) 渲染 ⇒ 出 ¥0.00，断言红
+    expect(craft).toHaveTextContent('—')
+    expect(craft).not.toHaveTextContent('¥')
+    expect(craft).not.toHaveTextContent('未定价')
+    expect(craft).toHaveAttribute('data-state', 'na')
+    expect(craft).toHaveAttribute('title', '只有特殊选项按套计价')
+
+    // 表头 + 说明文案（特殊选项按**套**收费）
+    expect(within(screen.getByTestId('route-rules')).getByText('单价（元/套）')).toBeInTheDocument()
+    expect(screen.getByTestId('route-rules')).toHaveTextContent('按套收费')
+  })
+
+  it('规则区单价行内编辑（成功）：铅笔 → 输入 → 保存 ⇒ PUT 只带 {customer_unit_price}，成功后刷新', async () => {
+    mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES_WITH_PRICE))
+    mockUpdateRuleCustomerUnitPrice.mockReset().mockResolvedValue(ok({ id: 21, customer_unit_price: 6 }))
+    await renderRules()
+    await waitFor(() => expect(screen.getByTestId('route-rule-price-21')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('route-rule-price-edit-21'))
+    const input = screen.getByTestId('route-rule-price-input-21')
+    // 初值 = 当前价（不是 0）
+    expect(input).toHaveValue(12.5)
+    await userEvent.clear(input)
+    await userEvent.type(input, '6')
+    await userEvent.click(screen.getByTestId('route-rule-price-save-21'))
+
+    await waitFor(() => expect(mockUpdateRuleCustomerUnitPrice).toHaveBeenCalledTimes(1))
+    // 注入：顺手带上 factor / 计件单价 ⇒ 两套账互读，断言红
+    expect(mockUpdateRuleCustomerUnitPrice.mock.calls[0][0]).toBe(21)
+    expect(mockUpdateRuleCustomerUnitPrice.mock.calls[0][1]).toEqual({ customer_unit_price: 6 })
+    // 成功后重新拉取（结果可见，不靠本地乐观值假装成功）
+    await waitFor(() => expect(mockGetRouteRules.mock.calls.length).toBeGreaterThan(1))
+  })
+
+  it('规则区单价行内编辑（成功·清空）：清空 ⇒ PUT `null` = 改回**未定价**（不是 0 元）', async () => {
+    mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES_WITH_PRICE))
+    mockUpdateRuleCustomerUnitPrice.mockReset().mockResolvedValue(ok({ id: 21, customer_unit_price: null }))
+    await renderRules()
+    await waitFor(() => expect(screen.getByTestId('route-rule-price-21')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('route-rule-price-edit-21'))
+    await userEvent.clear(screen.getByTestId('route-rule-price-input-21'))
+    await userEvent.click(screen.getByTestId('route-rule-price-save-21'))
+
+    await waitFor(() => expect(mockUpdateRuleCustomerUnitPrice).toHaveBeenCalledTimes(1))
+    // 注入：把空串当 0 发 ⇒ 断言红（未定价 ≠ 0 元）
+    expect(mockUpdateRuleCustomerUnitPrice.mock.calls[0][1]).toEqual({ customer_unit_price: null })
+  })
+
+  it('规则区单价行内编辑（失败）：后端理由**逐条**就地展示，且不假装成功（不刷新、不改显示）', async () => {
+    mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES_WITH_PRICE))
+    const callsBefore = mockGetRouteRules.mock.calls.length
+    mockUpdateRuleCustomerUnitPrice.mockReset().mockRejectedValue({
+      response: {
+        status: 422,
+        data: {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: '只有特殊选项按套计价（工艺变体不按套收费）',
+            details: [
+              { field: 'trigger_kind', message: '这条规则的触发维是「craft」，不是特殊选项（option）' },
+            ],
+          },
+        },
+      },
+    })
+    await renderRules()
+    await waitFor(() => expect(screen.getByTestId('route-rule-price-21')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('route-rule-price-edit-21'))
+    await userEvent.clear(screen.getByTestId('route-rule-price-input-21'))
+    await userEvent.type(screen.getByTestId('route-rule-price-input-21'), '6')
+    await userEvent.click(screen.getByTestId('route-rule-price-save-21'))
+
+    // 注入：把理由吞成一句「保存失败」⇒ 断言红
+    const reasons = await screen.findByTestId('route-rule-price-reasons-21')
+    expect(reasons).toHaveTextContent('不是特殊选项')
+    // 失败 ⇒ 留在编辑态、不刷新、原值不被改成新值（静默写回 = 商家以为改了、取价侧没改）
+    expect(screen.getByTestId('route-rule-price-input-21')).toBeInTheDocument()
+    expect(mockGetRouteRules.mock.calls.length).toBe(callsBefore + 1)
+  })
+
+  it('规则区单价行内编辑（本地预检）：负数 / 三位小数 ⇒ 不发请求，就地给理由', async () => {
+    mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES_WITH_PRICE))
+    await renderRules()
+    await waitFor(() => expect(screen.getByTestId('route-rule-price-21')).toBeInTheDocument())
+
+    for (const bad of ['-1', '6.005']) {
+      await userEvent.click(screen.getByTestId('route-rule-price-edit-21'))
+      const input = screen.getByTestId('route-rule-price-input-21')
+      await userEvent.clear(input)
+      await userEvent.type(input, bad)
+      await userEvent.click(screen.getByTestId('route-rule-price-save-21'))
+      // 注入：去掉本地预检 ⇒ 请求被发出，断言红
+      expect(mockUpdateRuleCustomerUnitPrice).not.toHaveBeenCalled()
+      expect(await screen.findByTestId('route-rule-price-reasons-21')).toHaveTextContent('两位小数')
+      await userEvent.click(screen.getByTestId('route-rule-price-cancel-21'))
+    }
+  })
+
+  it('规则区单价：**非 option 行没有编辑入口**（工艺变体不按套收费，服务端也会 422）', async () => {
+    mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES_WITH_PRICE))
+    await renderRules()
+    await waitFor(() => expect(screen.getByTestId('route-rule-price-24')).toBeInTheDocument())
+
+    expect(screen.queryByTestId('route-rule-price-edit-24')).toBeNull()
+    // option 行有入口（对照组：证明不是「全都没有」）
+    expect(screen.getByTestId('route-rule-price-edit-21')).toBeInTheDocument()
   })
 
   // ══════════════════ ⑩ 零退化：工序库半边 / 路线半边 / 两个 tab / 切 tab 不丢状态 ══════════════════
@@ -962,6 +1183,48 @@ describe('算料配置 tab（issue #4528）', () => {
     await userEvent.click(screen.getByTestId('process-config-tab-calc'))
 
     expect(screen.getByTestId('craft-calc-config-scalar-margin_multi')).toHaveValue(0.45)
+  })
+
+  it('工艺档位显示中文（标准档 / 经济档），但**键**仍是 standard / economy（testid + 提交体 + label 初值）', async () => {
+    // 额外挂一个**未知档**：显示名回退原键（不得吞掉、不得猜中文）
+    mockGetCraftCalcConfig.mockReset().mockResolvedValue(
+      ok({
+        source: 'default',
+        config: {
+          ...ENGINE_DEFAULT_CALC_CONFIG,
+          tiers: {
+            standard: { fullness: 2.0, label: '标准工艺' },
+            economy: { fullness: 1.8, label: '经济工艺' },
+            custom: { fullness: 2.4, label: '' },
+          },
+        },
+      }),
+    )
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
+
+    // ① 显示名中文化：注入（去掉 TIER_DISPLAY_LABEL 映射）⇒ 断言红（界面回到英文键）
+    const rowOf = (name: string) =>
+      screen.getByTestId(`craft-calc-config-tier-${name}-label`).closest('tr') as HTMLElement
+    expect(rowOf('standard')).toHaveTextContent('标准档')
+    expect(rowOf('standard')).not.toHaveTextContent('standard')
+    expect(rowOf('economy')).toHaveTextContent('经济档')
+    expect(rowOf('economy')).not.toHaveTextContent('economy')
+    // ② 未知档 ⇒ 回退原键（不吞掉未知档）
+    expect(rowOf('custom')).toHaveTextContent('custom')
+
+    // ③ 键**不许改**：data-testid 仍是英文键；label 输入框初值 = 后端逐字（不是中文显示名）
+    expect(screen.getByTestId('craft-calc-config-tier-standard-fullness')).toHaveValue(2)
+    expect(screen.getByTestId('craft-calc-config-tier-standard-label')).toHaveValue('标准工艺')
+
+    // ④ 提交给 API 的 tiers 键仍是 standard / economy（中文只是显示名）
+    await userEvent.click(screen.getByTestId('craft-calc-config-save'))
+    await waitFor(() => expect(mockUpdateCraftCalcConfig).toHaveBeenCalledTimes(1))
+    const body = mockUpdateCraftCalcConfig.mock.calls[0][0] as { tiers: Record<string, unknown> }
+    expect(Object.keys(body.tiers).sort()).toEqual(['custom', 'economy', 'standard'])
+    expect(body.tiers).not.toHaveProperty('标准档')
   })
 
   it('算料配置加载失败 ⇒ 就地报错 + 重试入口（不白屏、不拿默认值顶替）', async () => {

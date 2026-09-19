@@ -27,7 +27,7 @@ import java.util.Map;
  *   <tr><td>{@link #operationPositions}</td><td>{@code production_operation_positions}（V71 84 行）</td>
  *       <td>{@code {operation, position, unit_price, applicable}}</td><td>{@code (operation, position)}</td></tr>
  *   <tr><td>{@link #routeRules}</td><td>{@code production_route_rules}（V71 26 条）</td>
- *       <td>9 键（见 {@code ruleView}）</td><td>{@code (priority, id)}</td></tr>
+ *       <td>10 键（见 {@code ruleView}）</td><td>{@code (priority, id)}</td></tr>
  * </table>
  *
  * <p><b>只读</b>：本类只有 SELECT，端点也只有 GET。写面（改价/增删规则）留 v1b —— 与「商家配置面
@@ -50,7 +50,7 @@ import java.util.Map;
  * <p><b>与实例化读面的关系</b>：{@code ProductionOperationQueryService}（P2b / issue #4459）也读这两张表
  * （{@code operationPositions} / {@code routeRules}），但那是**实例化用**的读面：返回**实体**、
  * 规则**不过滤** {@code action}（实例化需要 {@code factor} 计件系数档）、顺序交给 SQL {@code ORDER BY}。
- * 本类是**展示用**的读面，契约有三处不同，故不合并：① 形状 = issue #4500 冻结的键（规则项 9 键、
+ * 本类是**展示用**的读面，契约有三处不同，故不合并：① 形状 = issue #4500 冻结的键（规则项 10 键、
  * **不含** {@code factor}）；② 过滤 = 只呈现**路线编排档**（{@code insert}/{@code remove}，26 条口径）；
  * ③ 顺序 = Java 侧显式排序（见上，环境无关）。「怎么读这两张表」在 Mapper 层是同一条（同一组
  * 租户/软删/停用条件），差异只在投影 —— 合并会把「实例化契约」与「展示契约」耦成一处，
@@ -92,7 +92,7 @@ public class ProductionRoutingReadService {
     /**
      * 规则区：工艺变体 ∪ 特殊选项（**26 条** = 工艺 10 + 选项 16，母单 #4423 冻结数字）。
      *
-     * @return 9 键（见 {@link #ruleView}），按 `(priority, id)` 稳定排序 ——
+     * @return 10 键（见 {@link #ruleView}），按 `(priority, id)` 稳定排序 ——
      *         **顺序敏感**（规则应用顺序决定工序序列），而 priority 撞档时「谁先」由 id 定
      */
     public List<Map<String, Object>> routeRules(Long tenantId) {
@@ -128,7 +128,18 @@ public class ProductionRoutingReadService {
         return view;
     }
 
-    /** 规则项展示形态（**唯一**的整形点；`position` / `after_operation` 可为 null = 不限部位 / 追加末尾）。 */
+    /**
+     * 规则项展示形态（**唯一**的整形点；`position` / `after_operation` 可为 null = 不限部位 / 追加末尾）。
+     *
+     * <p>{@code customer_unit_price}（V77，**元/套**）只对 {@code trigger_kind='option'} 的
+     * **特殊选项**行有意义 —— 行业口径是「选项按**套**收费」（拼2次 / 防翘扣 一类）。
+     * ⚠️ {@code NULL} = **未定价**，与 {@code 0}（定价为 0 元）是两件事：前端**不得**把它
+     * 渲染成 {@code ¥0.00}（未定价 ≠ 0 元，仓库硬纪律）。非 {@code option} 行（{@code craft}
+     * 等工艺变体）**一律** {@code NULL} —— 工艺变体不按套计价。</p>
+     *
+     * <p>本方法**不**做任何取价 / 回退：不读 {@code production_option_factors}、不做 contains
+     * 匹配、不按 trigger_value 拼键 —— 值原样取自 {@code production_route_rules.customer_unit_price}。</p>
+     */
     private Map<String, Object> ruleView(ProductionRouteRule row) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("id", row.getId());
@@ -140,6 +151,7 @@ public class ProductionRoutingReadService {
         view.put("after_operation", row.getAfterOperation());
         view.put("priority", row.getPriority());
         view.put("status", row.getStatus());
+        view.put("customer_unit_price", row.getCustomerUnitPrice());
         return view;
     }
 }

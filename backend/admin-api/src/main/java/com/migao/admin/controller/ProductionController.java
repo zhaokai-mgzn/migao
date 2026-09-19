@@ -347,8 +347,30 @@ public class ProductionController {
                 productionRoutingCommandService.deleteRouting(id, TenantContext.getTenantId()));
     }
 
-    // ══════════════════ 信号映射：读面暂留 / 写面**已退役**（issue #4452）══════════════════
+    /**
+     * 改**特殊选项**的对客单价（元/套，issue #4567：用户走查「特殊选项有单价，但数据不全，
+     * 新增工序也无法增加特殊选项配置单价」）
+     * PUT /api/admin/production/route-rules/{id}/customer-unit-price
+     * body: {customer_unit_price}（元/套；{@code null} / 空串 = 显式改回**未定价**）
+     *
+     * <p><b>为什么单开一个端点而不是并进 {@code PUT /routings/{id}}</b>：这一列挂的是
+     * {@code trigger_kind='option'} 的**规则行**（不是路线），而「按套收费」是对客售价账 ——
+     * 与路线的车间路由语义、与工序库的**计件**单价是三件事（设计 §4.1 两套账不互读）。
+     * 并进路线写面会让「谁改了价」在审计上不可分辨。</p>
+     *
+     * <p><b>护栏</b>：行不存在 / 非本租户 ⇒ 404；{@code trigger_kind != 'option'} ⇒ 422
+     * （只有特殊选项按套计价）；价非数值 / 负数 / 超过两位小数 ⇒ 422。失败统一
+     * {@code error.details:[{field,message}]} 逐条理由。**只写这一列**，不碰计件系数 {@code factor}。</p>
+     */
+    @PutMapping("/route-rules/{id}/customer-unit-price")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> updateRuleCustomerUnitPrice(@PathVariable String id,
+                                                                       @RequestBody Map<String, Object> body) {
+        return ApiResponse.success(productionRoutingCommandService.updateRuleCustomerUnitPrice(
+                id, body, TenantContext.getTenantId()));
+    }
 
+    // ══════════════════ 信号映射：读面暂留 / 写面**已退役**（issue #4452）══════════════════
     /**
      * 信号映射列表（**存量单兜底表**的数据源 —— issue #4452 起它不再是新单的判据）。
      * GET /api/admin/production/route-signals
@@ -489,9 +511,10 @@ public class ProductionController {
      * 规则区（工艺变体 ∪ 特殊选项 = **26 条**）
      * GET /api/admin/production/route-rules
      *
-     * <p>响应 {@code data} = 9 键（见 {@code ProductionRoutingReadService}），按 {@code (priority, id)}
+     * <p>响应 {@code data} = 10 键（见 {@code ProductionRoutingReadService}），按 {@code (priority, id)}
      * 稳定排序。只返回路线编排档（{@code insert}/{@code remove}）：计件系数档（{@code action='factor'}）
-     * 不在此端点（P3 统一规则区不呈现系数）。</p>
+     * 不在此端点（P3 统一规则区不呈现系数）。{@code customer_unit_price}（元/套）只对
+     * {@code trigger_kind='option'} 有意义，{@code null} = 未定价（**≠ 0 元**）。</p>
      */
     @GetMapping("/route-rules")
     @RequirePermission("processing:manage")

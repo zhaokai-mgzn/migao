@@ -9,7 +9,7 @@
 | 端点 | 形状 | 顺序口径 |
 |---|---|---|
 | `GET /api/admin/production/operation-positions` | `[{operation, position, unit_price, applicable}]`（30 逻辑工序 × 4 部位 = **120 格**，issue #4529 起） | `(operation, position)` |
-| `GET /api/admin/production/route-rules` | `[{id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, status}]`（**26 条**） | `(priority, id)` |
+| `GET /api/admin/production/route-rules` | `[{id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, status, customer_unit_price}]`（**26 条**；末键 = issue #4567 追加的**元/套**价，`null` = 未定价 ≠ 0 元） | `(priority, id)` |
 
 ## 为什么需要本文件（三条**结构性**失效形态，各自不会自己变红）
 
@@ -53,9 +53,10 @@ RULE_TABLE = "production_route_rules"
 RETIRED_TYPES = ("ProductionOptionRouting", "ProductionOptionFactor")
 
 #: 端点声明的形状（issue #4500 冻结，逐字；多一个键/少一个键/改名都红）。
+#: `customer_unit_price` 是 issue #4567 追加的第 10 键（**元/套**；`null` = 未定价 ≠ 0 元）。
 POSITION_KEYS = ("operation", "position", "unit_price", "applicable")
 RULE_KEYS = ("id", "trigger_kind", "trigger_value", "position", "action", "operation",
-             "after_operation", "priority", "status")
+             "after_operation", "priority", "status", "customer_unit_price")
 
 #: 本端点呈现的规则动作 = 路线编排（`insert`/`remove`）。`action='factor'`（V72 从旧
 #: `production_option_factors` 搬来的**计件系数档**）**不在本端点**：它没有 `after_operation` 语义、
@@ -225,9 +226,10 @@ def test_position_view_keys_are_frozen_contract():
 
 
 def test_rule_view_keys_are_frozen_contract():
-    """判据 1d：规则项的键集/键序 = 9 个键（逐字）。"""
+    """判据 1d：规则项的键集/键序 = 10 个键（逐字；末键 = issue #4567 的 `customer_unit_price`）。"""
     assert _view_keys("ruleView") == RULE_KEYS, (
-        f"规则项键集漂移（issue #4500 冻结 {RULE_KEYS}）—— 前端 #4433 的统一规则区按这九个键渲染"
+        f"规则项键集漂移（issue #4500 冻结 + #4567 追加 `customer_unit_price`：{RULE_KEYS}）"
+        f"—— 前端 #4433 的统一规则区按这些键渲染"
     )
 
 

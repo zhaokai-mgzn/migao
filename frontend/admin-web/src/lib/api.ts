@@ -51,6 +51,7 @@ import type {
   RoutingUpdateParams,
   OperationPosition,
   RouteRule,
+  RouteRuleCustomerPriceParams,
   CraftCalcConfig,
   CraftCalcConfigResponse,
   RoutingGaps,
@@ -497,6 +498,11 @@ export const productionApi = {
   // ② 统一规则区：26 条（工艺 10 + 选项 16）—— 只含路线编排档（insert/remove），不含计件系数档
   getRouteRules: () =>
     request.get<ApiResponse<RouteRule[]>>('/api/admin/production/route-rules'),
+  // ③ 特殊选项**对客单价**写面（issue #4567；权限 processing:manage）：
+  // 只写 `production_route_rules.customer_unit_price`（元/套）—— 与工序库的**计件**单价两套账不互读。
+  // `null` = 显式改回**未定价**（≠ 0 元）；非 option 行 / 负数 / 三位小数 ⇒ 422 逐条理由。
+  updateRuleCustomerUnitPrice: (id: number | string, data: RouteRuleCustomerPriceParams) =>
+    request.put<ApiResponse<RouteRule>>(`/api/admin/production/route-rules/${id}/customer-unit-price`, data),
 
   // ── 工艺路线商家可配（契约所有者 = 后端 #4459；权限 processing:manage）──
   // 部分更新（只写出现的字段）：`{name?, is_default?, mainline?, positions?, status?}`

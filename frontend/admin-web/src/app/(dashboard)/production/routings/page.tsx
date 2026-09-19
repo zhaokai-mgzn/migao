@@ -13,12 +13,13 @@ import {
   RefreshCw,
   Star,
   Trash2,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, Modal } from '@/components/ui'
 import { isErrorToastShown, toastRequestError } from '@/lib/api-error'
 import { productionApi } from '@/lib/api'
-import { craftCalcConfigGuardReasons, routingAdminGuardReasons, routingGuardReasons } from '@/lib/production-guard-reasons'
+import { craftCalcConfigGuardReasons, optionPriceGuardReasons, routingAdminGuardReasons, routingGuardReasons } from '@/lib/production-guard-reasons'
 import { cn } from '@/lib/utils'
 import type {
   CatalogOperation,
@@ -83,7 +84,12 @@ import type {
  * 领域模型与裁定：docs/design/position-instance-routing-model.md（R-c 作用域 / R-f 解绑加工项）。
  */
 
-const money = (v?: number | null) => `¥${Number(v ?? 0).toFixed(2)}`
+/**
+ * 金额展示（`¥` + 两位小数）。
+ * ⚠️ `null` 会渲染成 `¥0.00` —— 即「未定价」被显示成「0 元」。**未定价的字段不得直接喂进来**：
+ * 先判 `null`（如 {@link RulePriceCell} 的「未定价」分支），再调本函数。
+ */
+const money = (v?: number | string | null) => `¥${Number(v ?? 0).toFixed(2)}`
 
 /**
  * 部位（帘种）**列序基线 + 兜底** —— 它**不是**值域权威（issue #4556）。
@@ -146,6 +152,127 @@ const ruleActionText = (rule: RouteRule) =>
     ? `移除「${rule.operation ?? '—'}」`
     : `在「${rule.after_operation ?? '末尾'}」之后插入「${rule.operation ?? '—'}」`
 
+/**
+ * 条件工序规则的「单价（元/套）」格（issue #4567）。
+ *
+ * 三态**互斥**且可区分（同矩阵的「不做 / 没定价」纪律）：
+ * - `option` + 有价 ⇒ `money()`；
+ * - `option` + `null` ⇒ **「未定价」** —— ⚠️ **不是** `¥0.00`（未定价 ≠ 0 元，仓库硬纪律；
+ *   `money(null)` 会算出 `¥0.00`，正是这里必须绕开的假值）；
+ * - 非 `option`（`craft` 等）⇒ `—` + `title` 说明「只有特殊选项按套计价」。
+ *
+ * `option` 行带**行内编辑**（照「工序库明细」改计件单价的既有交互：铅笔 → 输入 → 保存/取消）；
+ * 编辑态下失败理由**就地逐条**展示 —— 与计件单价那一栏同形态（同一页两套账，交互一致、
+ * 但写的是**不同**端点、**不同**的列）。
+ */
+function RulePriceCell({
+  rule,
+  editing,
+  draft,
+  busy,
+  reasons,
+  onStartEdit,
+  onDraftChange,
+  onSave,
+  onCancel,
+}: {
+  rule: RouteRule
+  editing: boolean
+  draft: string
+  busy: boolean
+  reasons: string[]
+  onStartEdit: () => void
+  onDraftChange: (v: string) => void
+  onSave: () => void
+  onCancel: () => void
+}) {
+  const isOption = rule.trigger_kind === 'option'
+  const raw = rule.customer_unit_price
+  const unpriced = raw === null || raw === undefined || raw === ''
+  const state = !isOption ? 'na' : unpriced ? 'unpriced' : 'priced'
+  const hasPrice = state === 'priced'
+  return (
+    <td
+      className={cn('py-2.5 pr-4', state === 'unpriced' ? 'text-amber-600' : 'text-neutral-600')}
+      data-testid={`route-rule-price-${rule.id}`}
+      data-state={state}
+      title={isOption ? '特殊选项按套收费（元/套）' : '只有特殊选项按套计价'}
+    >
+      {state === 'na' ? (
+        '—'
+      ) : editing ? (
+        <span className="flex items-center gap-1.5">
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            aria-label={`${rule.trigger_value ?? ''} 单价（元/套）`}
+            data-testid={`route-rule-price-input-${rule.id}`}
+            value={draft}
+            disabled={busy}
+            onChange={(e) => onDraftChange(e.target.value)}
+            className={cn(
+              'h-8 w-24 rounded border bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/15',
+              reasons.length > 0
+                ? 'border-red-300 focus:border-red-400'
+                : 'border-neutral-300 focus:border-primary-500',
+            )}
+          />
+          <button
+            type="button"
+            aria-label="保存单价"
+            data-testid={`route-rule-price-save-${rule.id}`}
+            disabled={busy}
+            onClick={onSave}
+            className="rounded p-1 text-primary-600 hover:bg-neutral-100 disabled:opacity-50"
+          >
+            <Check className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="取消"
+            data-testid={`route-rule-price-cancel-${rule.id}`}
+            disabled={busy}
+            onClick={onCancel}
+            className="rounded p-1 text-neutral-400 hover:bg-neutral-100 disabled:opacity-50"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </span>
+      ) : (
+        <span className="flex items-center gap-1.5">
+          <span>{unpriced ? '未定价' : money(raw)}</span>
+          <button
+            type="button"
+            aria-label={`编辑 ${rule.trigger_value ?? ''} 单价（元/套）`}
+            data-testid={`route-rule-price-edit-${rule.id}`}
+            onClick={onStartEdit}
+            className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        </span>
+      )}
+      {editing && reasons.length > 0 && (
+        <ul
+          className="mt-1 space-y-0.5 text-xs text-red-600"
+          data-testid={`route-rule-price-reasons-${rule.id}`}
+        >
+          {reasons.map((r, i) => (
+            <li key={i}>{r}</li>
+          ))}
+        </ul>
+      )}
+      {/* 编辑态下仍把「未定价 ≠ 0 元」写在旁边：清空输入框 = 改回未定价（不是 0 元） */}
+      {editing && (
+        <span className="mt-1 block text-[11px] text-neutral-400">
+          {hasPrice ? '清空 = 改回未定价（≠ 0 元）' : '填 0 表示真 0 元；清空 = 未定价'}
+        </span>
+      )}
+    </td>
+  )
+}
+
 // ────────────────────────── 算料配置（tab「算料配置」，issue #4528 = 包 E） ──────────────────────────
 
 /** 标量配置键（表单里逐个数字输入框；键名 = 后端列名 = 算料引擎配置键，**逐字同名**） */
@@ -171,6 +298,19 @@ const CALC_SCALAR_FIELDS: { key: CalcScalarKey; label: string; hint: string }[] 
 const CALC_FORMULA_LABEL: Record<string, string> = {
   pleat: '韩折公式（折数法）',
   fullness: '褶倍数公式（倍数法）',
+}
+
+/**
+ * 工艺档位的**显示名**（issue #4567 用户走查②：「英文改中文」）。
+ *
+ * ⚠️ 这只是**显示名**，**不是**档位真值 —— 真值源 = 后端 `curtain_calc.py::DEFAULT_CRAFT_TIERS`
+ * （前端不持有第二份档位定义，故这里**不**映射 `fullness`、**不**枚举全部档位）。
+ * 键本身（`data-testid` 的 `${name}`、提交给 API 的 `tiers` 键、`label` 输入框初值）
+ * **一律照旧用 `name`**：未知档**回退显示原键**（不吞掉、不猜中文）。
+ */
+const TIER_DISPLAY_LABEL: Record<string, string> = {
+  standard: '标准档',
+  economy: '经济档',
 }
 
 /** provenance 徽标；「占位待确认」是**可行动**引导：点它即进入该工序的改价入口（既有版本化写面） */
@@ -202,7 +342,7 @@ function SourceBadge({
   return <span data-testid={testId} className={className}>{meta.label}</span>
 }
 
-/** 就绪度一步（把「工序 → 路线 → 默认路线」的先后关系变成看得见的步骤） */
+/** 就绪度一步（把「工序 → 路线 → 默认路线 → 算料」的先后关系变成看得见的步骤） */
 function ReadinessStep({
   testId,
   index,
@@ -217,24 +357,35 @@ function ReadinessStep({
   hint?: string
 }) {
   const done = state === 'done'
+  /** 未知（如算料配置**还没加载完** / 加载失败）= **中性**呈现：把「没加载」显示成「没配」是误报 */
+  const unknown = state === 'unknown'
   return (
     <div
       data-testid={testId}
       data-state={state}
       className={cn(
         'rounded border px-3 py-2',
-        done ? 'border-emerald-200 bg-emerald-50/60' : 'border-amber-200 bg-amber-50/60',
+        done
+          ? 'border-emerald-200 bg-emerald-50/60'
+          : unknown
+            ? 'border-neutral-200 bg-neutral-50'
+            : 'border-amber-200 bg-amber-50/60',
       )}
     >
       <div className="flex items-center gap-2 text-sm">
-        <span className={cn('font-medium', done ? 'text-emerald-800' : 'text-amber-900')}>
+        <span
+          className={cn(
+            'font-medium',
+            done ? 'text-emerald-800' : unknown ? 'text-neutral-700' : 'text-amber-900',
+          )}
+        >
           {index}. {label}
         </span>
-        <span className={cn('text-xs', done ? 'text-emerald-700' : 'text-amber-800')}>
-          {done ? '已完成' : state === 'unknown' ? '未知' : '待完成'}
+        <span className={cn('text-xs', done ? 'text-emerald-700' : unknown ? 'text-neutral-500' : 'text-amber-800')}>
+          {done ? '已完成' : unknown ? '读取中' : '待完成'}
         </span>
       </div>
-      {!done && hint && <p className="mt-1 text-xs text-amber-800">{hint}</p>}
+      {!done && !unknown && hint && <p className="mt-1 text-xs text-amber-800">{hint}</p>}
     </div>
   )
 }
@@ -335,6 +486,14 @@ export default function ProcessConfigPage() {
   const [editingOpId, setEditingOpId] = useState<string | number | null>(null)
   const [opDraft, setOpDraft] = useState('')
   const [opBusy, setOpBusy] = useState(false)
+
+  // ── 特殊选项对客单价行内编辑（元/套；issue #4567）──
+  /** 正在编辑的行 id（null = 没有行在编辑态） */
+  const [editingRulePriceId, setEditingRulePriceId] = useState<string | number | null>(null)
+  const [rulePriceDraft, setRulePriceDraft] = useState('')
+  /** 保存被拒的**逐条**理由（就地展示，不吞成一句「保存失败」） */
+  const [rulePriceReasons, setRulePriceReasons] = useState<string[]>([])
+  const [rulePriceBusy, setRulePriceBusy] = useState(false)
 
   // ── 主线编辑 ──
   const [editing, setEditing] = useState<Routing | null>(null)
@@ -855,6 +1014,44 @@ export default function ProcessConfigPage() {
   }
 
   /**
+   * 保存特殊选项的**对客单价**（元/套，issue #4567）。
+   *
+   * 本地只做「能拦住就没必要打扰后端」的最小预检（空/非数值/负数/三位小数）；
+   * **语义护栏**（非 option 行等）一律以后端为准 —— 前端**不发明**第二份口径。
+   * 失败 ⇒ 逐条理由**就地**展示（`rulePriceReasons`），且**不**改本地 `rules`
+   * （静默写回会让商家以为改了、取价侧其实没改）。
+   */
+  const saveRulePrice = async (rule: RouteRule) => {
+    const raw = rulePriceDraft.trim()
+    const value = raw === '' ? null : Number(raw)
+    if (value !== null && (Number.isNaN(value) || value < 0 || !/^\d+(\.\d{1,2})?$/.test(raw))) {
+      setRulePriceReasons(['单价必须是 ≥ 0 且最多两位小数的数字（要表示「还没定价」请清空）'])
+      return
+    }
+    setRulePriceBusy(true)
+    setRulePriceReasons([])
+    try {
+      await productionApi.updateRuleCustomerUnitPrice(rule.id, { customer_unit_price: value })
+      toast.success(value === null ? '已改回未定价' : '单价已更新')
+      setEditingRulePriceId(null)
+      await load()
+    } catch (e) {
+      const reasons = optionPriceGuardReasons(e)
+      setRulePriceReasons(reasons)
+      if (!isErrorToastShown(e)) toast.error('单价保存失败')
+    } finally {
+      setRulePriceBusy(false)
+    }
+  }
+
+  /** 放弃编辑：清掉输入与**该次**失败理由（不把上一次的报错留给下一行） */
+  const cancelRulePrice = () => {
+    setEditingRulePriceId(null)
+    setRulePriceDraft('')
+    setRulePriceReasons([])
+  }
+
+  /**
    * 一键补套行业模板（**空态补救**，不是主路径）。
    * 结果 toast 必须报**服务端返回的真实数字**（新增/跳过）—— 缺结果体时显式报错，不假装成功。
    */
@@ -931,15 +1128,15 @@ export default function ProcessConfigPage() {
 
       {!loading && !error && (
         <>
-          {/* ── 就绪度（三步）：① 工序库 → ② 工艺路线 → ③ 默认路线 ── */}
+          {/* ── 就绪度（四步）：① 工序库 → ② 工艺路线 → ③ 默认路线 → ④ 算料配置 ── */}
           <div className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="process-readiness">
             <div className="mb-3 flex flex-wrap items-baseline gap-2">
               <h2 className="text-base font-medium text-neutral-900">配置就绪度</h2>
               <span className="text-sm text-neutral-500">
-                按顺序配：先有工序，才能排路线；路线里要有一条默认的兜底
+                按顺序配：先有工序，才能排路线；路线里要有一条默认的兜底；最后按你家口径核一遍算料
               </span>
             </div>
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
               <ReadinessStep
                 testId="readiness-step-operations"
                 index={1}
@@ -960,6 +1157,19 @@ export default function ProcessConfigPage() {
                 label={`默认路线 ${defaults.length} 条`}
                 state={defaults.length === 1 ? 'done' : 'todo'}
                 hint={defaultRouteHint}
+              />
+              {/* 第 4 步（issue #4567 用户走查③）：算料配置 —— `calcConfig` 是**懒加载**（切到
+                  「算料配置」tab 才发请求，见 `loadCalcConfig` 的 useEffect）⇒ 本页首屏它通常还是
+                  `null`，此时判 `unknown`（**中性**「读取中」），**不得**显示成 `todo`
+                  （把「没加载」误报成「没配」）；加载失败同样不谎报 done。 */}
+              <ReadinessStep
+                testId="readiness-step-calc-config"
+                index={4}
+                label={calcConfig?.source === 'stored' ? '算料配置 已保存' : '算料配置 系统默认'}
+                state={
+                  calcConfig?.source === 'stored' ? 'done' : calcError !== '' || calcConfig === null ? 'unknown' : 'todo'
+                }
+                hint={calcConfig?.source === 'stored' ? '' : '下一步：切到「算料配置」tab 按你家口径改每折吃布 / 余量 / 档位倍数。'}
               />
             </div>
           </div>
@@ -1659,6 +1869,7 @@ export default function ProcessConfigPage() {
                   <p className="mb-3 text-xs text-neutral-500">
                     触发键<strong>逐字取自后端</strong>（与订单里的工艺 / 选项名是同一个键）：错一个字就会查不到 ⇒
                     条件工序不加、计件系数退回 1.0。规则按优先级<strong>升序</strong>生效，顺序决定工序序列。
+                    特殊选项按<strong>套</strong>收费（元/套）；工艺变体不按套计价。
                   </p>
                   {rulesError ? (
                     <p
@@ -1680,6 +1891,7 @@ export default function ProcessConfigPage() {
                             <th className="py-2 pr-4 font-medium">部位限定</th>
                             <th className="py-2 pr-4 font-medium">动作</th>
                             <th className="py-2 pr-4 font-medium">目标工序</th>
+                            <th className="py-2 pr-4 font-medium">单价（元/套）</th>
                             <th className="py-2 pr-4 font-medium">优先级</th>
                           </tr>
                         </thead>
@@ -1705,6 +1917,21 @@ export default function ProcessConfigPage() {
                               <td className="py-2.5 pr-4 text-neutral-900" data-testid={`route-rule-target-${rule.id}`}>
                                 {rule.operation ?? '—'}
                               </td>
+                              <RulePriceCell
+                                rule={rule}
+                                editing={editingRulePriceId === rule.id}
+                                draft={rulePriceDraft}
+                                busy={rulePriceBusy}
+                                reasons={editingRulePriceId === rule.id ? rulePriceReasons : []}
+                                onStartEdit={() => {
+                                  setEditingRulePriceId(rule.id)
+                                  setRulePriceDraft(rule.customer_unit_price == null ? '' : String(rule.customer_unit_price))
+                                  setRulePriceReasons([])
+                                }}
+                                onDraftChange={setRulePriceDraft}
+                                onSave={() => void saveRulePrice(rule)}
+                                onCancel={cancelRulePrice}
+                              />
                               <td className="py-2.5 pr-4 text-neutral-500" data-testid={`route-rule-priority-${rule.id}`}>
                                 {rule.priority ?? '—'}
                               </td>
@@ -1812,7 +2039,9 @@ export default function ProcessConfigPage() {
                             <tbody>
                               {Object.entries(calcDraft.tiers ?? {}).map(([name, tier]) => (
                                 <tr key={name} className="border-b border-neutral-100">
-                                  <td className="py-1.5 pr-3 text-neutral-600">{name}</td>
+                                  <td className="py-1.5 pr-3 text-neutral-600" title={name}>
+                                    {TIER_DISPLAY_LABEL[name] ?? name}
+                                  </td>
                                   <td className="py-1.5 pr-3">
                                     <input
                                       className={inputCls}

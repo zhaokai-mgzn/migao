@@ -86,9 +86,15 @@ class ProductionRoutingReadServiceTest {
 
     private ProductionRouteRule rule(String id, String kind, String trigger, String pos, String action,
                                      String operation, String after, int priority) {
+        return rule(id, kind, trigger, pos, action, operation, after, priority, null);
+    }
+
+    private ProductionRouteRule rule(String id, String kind, String trigger, String pos, String action,
+                                     String operation, String after, int priority, String customerUnitPrice) {
         return ProductionRouteRule.builder()
                 .id(id).tenantId(TENANT).triggerKind(kind).triggerValue(trigger).position(pos)
                 .action(action).operation(operation).afterOperation(after).priority(priority)
+                .customerUnitPrice(customerUnitPrice == null ? null : new BigDecimal(customerUnitPrice))
                 .status("active").deleted(0).build();
     }
 
@@ -163,8 +169,8 @@ class ProductionRoutingReadServiceTest {
     }
 
     @Test
-    @DisplayName("规则：9 键逐字（含 null 的 position/after_operation 保留为 null，不省略键）")
-    void routeRulesCarriesNineKeysVerbatim() {
+    @DisplayName("规则：10 键逐字（含 null 的 position/after_operation 保留为 null，不省略键）")
+    void routeRulesCarriesTenKeysVerbatim() {
         when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of(
                 rule("rr-v70-02", "craft", "韩褶", "布帘", "insert", "上车布", "韩褶", 20),
                 rule("rr-v70-05", "craft", "四爪钩", null, "remove", "定型", null, 50)));
@@ -174,7 +180,7 @@ class ProductionRoutingReadServiceTest {
         assertThat(rows).hasSize(2);
         Map<String, Object> insert = rows.get(0);
         assertThat(insert.keySet()).containsExactly("id", "trigger_kind", "trigger_value", "position",
-                "action", "operation", "after_operation", "priority", "status");
+                "action", "operation", "after_operation", "priority", "status", "customer_unit_price");
         assertThat(insert.get("trigger_value")).isEqualTo("韩褶");
         assertThat(insert.get("position")).isEqualTo("布帘");
         assertThat(insert.get("after_operation")).isEqualTo("韩褶");
@@ -185,6 +191,37 @@ class ProductionRoutingReadServiceTest {
         assertThat(remove.get("position")).isNull();
         assertThat(remove).containsKey("after_operation");
         assertThat(remove.get("after_operation")).isNull();
+    }
+
+    @Test
+    @DisplayName("单价：option 行原样透出（元/套）；未定价行是 null（**不填 0**）；工艺变体行不取价")
+    void routeRulesCarriesCustomerUnitPriceVerbatim() {
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of(
+                rule("rr-v70-21", "option", "拼2次", null, "insert", "拼缝", null, 210, "12.50"),
+                rule("rr-v70-22", "option", "防翘扣", null, "insert", "防翘扣", "三边", 220),
+                rule("rr-v70-02", "craft", "韩褶", "布帘", "insert", "上车布", "韩褶", 20, "99.00")));
+
+        List<Map<String, Object>> rows = service().routeRules(TENANT);
+
+        // ⚠️ 输出顺序 = (priority, id) ⇒ 按 trigger_value 取行，**不**按入库序取下标
+        Map<String, Object> priced = rowOf(rows, "拼2次");
+        Map<String, Object> unpriced = rowOf(rows, "防翘扣");
+        Map<String, Object> craft = rowOf(rows, "韩褶");
+
+        // ① 特殊选项 · 有价 ⇒ 原样透出（元/套，BigDecimal 不转 double）
+        assertThat(priced.get("customer_unit_price")).isEqualTo(new BigDecimal("12.50"));
+        // ② 特殊选项 · 未定价 ⇒ **null**（不是 0 —— 未定价 ≠ 0 元）
+        assertThat(unpriced).containsKey("customer_unit_price");
+        assertThat(unpriced.get("customer_unit_price")).isNull();
+        // ③ 工艺变体：服务层**不做取价/回退** ⇒ 库里写什么就透什么（渲染成「—」是前端口径）
+        assertThat(craft.get("customer_unit_price")).isEqualTo(new BigDecimal("99.00"));
+    }
+
+    private static Map<String, Object> rowOf(List<Map<String, Object>> rows, String triggerValue) {
+        return rows.stream()
+                .filter(r -> triggerValue.equals(r.get("trigger_value")))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("规则区缺 trigger_value=" + triggerValue + " 的行"));
     }
 
     // ── 判据 3：行过滤只有 租户/软删/停用（+ 规则表 action）──
