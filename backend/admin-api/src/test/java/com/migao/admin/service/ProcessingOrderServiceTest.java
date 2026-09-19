@@ -16,6 +16,7 @@ import com.migao.admin.entity.ProductionOptionFactor;
 import com.migao.admin.entity.ProductionOptionRouting;
 import com.migao.admin.entity.ProductionRouteRule;
 import com.migao.admin.entity.ProductionRouteSignal;
+import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionWorkLog;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
@@ -214,7 +215,9 @@ class ProcessingOrderServiceTest {
      * 「库中映射命中的优先级高于默认」这条判据依赖本桩，缺了它所有派生用例都退化成 T1。</p>
      */
     private void stubLibrary() {
-        when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString()))
+        // lenient：**污染形态**用例（issue #4609）要把路线模板换成自己那一份 ⇒ 本桩备而不用；
+        // Mockito 严格桩会把「备而不用」判为失败 —— 那是噪音，不是缺陷（与下面几条同因）。
+        lenient().when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString()))
                 .thenAnswer(inv -> {
                     String position = inv.getArgument(1);
                     return RoutingModelFixture.defaultTemplate(TENANT).getPositions() instanceof List<?> ps
@@ -1686,6 +1689,80 @@ class ProcessingOrderServiceTest {
                 .contains("韩褶");
         assertThat(results.get(0).getSuggestion()).contains("/api/admin/production/operations-catalog");
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+    }
+
+    // ══════════════ 实例化不再静默丢（issue #4609，P0 的实例化半边）══════════════
+    //
+    // 病根：`applicableByLogical` 按**逻辑名**建键，而主线里可能存着**变体名**（`精裁-布`）⇒
+    // `get("精裁-布")` = null，与「该部位明确不做」（键存在且 false）**共用**一条 `continue`
+    // ⇒ 该道工序被静默丢掉：商家在界面上加了工序、路线卡片上也看得见，但加工单里没有它，
+    // 且**没有任何报错**（工人少一道活、少拿一笔计件钱）。
+    // 拆法：键不存在 ∧ 名字**根本不是逻辑工序名** ⇒ 进 `missing_operations`（可见，调用方 fail-closed）；
+    // 键存在且 false（该部位明确不做）⇒ 静默滤掉（**既有语义不变**）。
+
+    @Test
+    @DisplayName("#4609 实例化不再静默丢：主线里的**变体名**（未知名字）⇒ 进 missing_operations 并 fail-closed")
+    void unknownMainlineNameIsReportedInsteadOfSilentlyDropped() {
+        stubLibrary();
+        // 存量污染形态（修复前用界面加过工序的路线就是这样）：主线里存的是**变体名** `精裁-布`。
+        ProductionRouteTemplate polluted = RoutingModelFixture.defaultTemplate(TENANT);
+        polluted.setMainline(new ArrayList<>(List.of("精裁", "精裁-布", "外帘装袋")));
+        lenient().when(productionOperationQueryService.defaultRouteTemplate(TENANT)).thenReturn(polluted);
+        when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString())).thenReturn(polluted);
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemHanzhe("米白")));
+        // 幂等前置查询第一次返回 null；插入后回填同一行（同 stubGenerate）——
+        // 改后 fail-closed 发生在落库**之前**（insert 不被调用，故 lenient），
+        // 改前它会一路走到生成成功（那道工序被静默滤掉、加工单照样落库）—— 那正是本用例要红的形态。
+        java.util.concurrent.atomic.AtomicReference<ProcessingOrder> poRef =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenAnswer(inv -> poRef.get());
+        lenient().when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenAnswer(inv -> {
+            ProcessingOrder inserted = inv.getArgument(0);
+            inserted.setId("po-001");
+            poRef.set(inserted);
+            return 1;
+        });
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess())
+                .as("改前：静默滤掉 ⇒ 生成成功但少一道（本断言红）").isFalse();
+        assertThat(results.get(0).getCode()).isEqualTo(ProcessingOrderService.ERR_OPERATION_NOT_FOUND);
+        assertThat(results.get(0).getMessage()).as("指名报出主线里那个**不认识的名字**").contains("精裁-布");
+        assertThat(results.get(0).getSuggestion()).as("失败必须可行动").contains("operations-catalog");
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
+    }
+
+    @Test
+    @DisplayName("#4609 反向护栏：「该部位明确不做」（applicable=false）仍**静默滤掉**，不得误报成 missing")
+    void notApplicableOperationsAreStillFilteredSilently() {
+        stubLibrary();
+        // 规范 84 行价目里 `帘头制作 × 布帘` = applicable **false**（该部位明确不做）——
+        // 这不是错误：照常生成，只是该道不落实例（**不得** fail-closed、**不得**进 missing_operations）。
+        when(productionOperationQueryService.operationPositions(TENANT))
+                .thenReturn(RoutingModelFixture.canonicalPositions84(TENANT));
+        ProductionRouteTemplate withNotApplicable = RoutingModelFixture.defaultTemplate(TENANT);
+        withNotApplicable.setMainline(new ArrayList<>(List.of("精裁", "帘头制作", "外帘装袋")));
+        lenient().when(productionOperationQueryService.defaultRouteTemplate(TENANT)).thenReturn(withNotApplicable);
+        when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString())).thenReturn(withNotApplicable);
+        stubGenerate(List.of(orderItemHanzhe("米白")));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).as("「明确不做」不是错误：照常生成").isTrue();
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, atLeastOnce()).insert(captor.capture());
+        assertThat(captor.getAllValues()).extracting(ProcessingPositionOperation::getOperationName)
+                .as("该部位明确不做 ⇒ 该道不落实例（既有语义），且不 fail-closed")
+                .doesNotContain("帘头制作")
+                .contains("精裁-布");
     }
 
     @Test

@@ -1164,13 +1164,17 @@ public class ProcessingOrderService {
      *       {@code insert} 用 {@code after_operation} 定位（锚点不在序列中 ⇒ <b>追加末尾</b>，
      *       与 {@code _insert_after} 同款）；{@code remove} 直接删除该逻辑工序名。
      *       ⚠️ <b>{@code remove} 不先于 {@code insert}</b>：顺序完全由 {@code priority} 决定；</li>
-     *   <li>按 {@code production_operation_positions.applicable} <b>滤掉该部位不做的工序</b>
-     *       （缺该 {@code (逻辑工序, 部位)} 行 ⇒ 也滤掉：没有适用性行 = 没登记过，不猜）。</li>
+     *   <li>按 {@code production_operation_positions.applicable} <b>滤掉该部位不做的工序</b>：
+     *       键存在且 {@code false} ⇒ 「该部位明确不做」⇒ 静默滤掉；缺该 {@code (逻辑工序, 部位)} 行
+     *       且名字**本身就是逻辑工序名** ⇒ 也滤掉（没有适用性行 = 没登记过，不猜）；
+     *       ⚠️ 而名字**不是逻辑工序名**（变体名 / 别名，如 {@code 精裁-布}）⇒ 实例化按逻辑名建键
+     *       永远查不到 ⇒ **必须可见**（进 {@code missing_operations}，见 issue #4609）。</li>
      * </ol>
      *
      * <p>工序元数据（分组/单位/单价/必完/开始标记/作用域）逐字取该租户的工序库行
      * （经 {@link ProductionOperationQueryService#variantNameOf} 换回变体名）；
-     * 库中缺该变体 ⇒ 登记进 {@code missing_operations}（由调用方 fail-closed，**不猜默认值**）。</p>
+     * 库中缺该变体、或主线里出现**不认识的名字** ⇒ 登记进 {@code missing_operations}
+     * （由调用方 fail-closed，**不猜默认值**，也**不静默丢**）。</p>
      *
      * <p>单价取 {@code production_operation_positions.unit_price}（该部位价目），
      * 而不是工序库行的价 —— 新结构里价目是**按部位**的（P1 实证当前两侧逐字相同；
@@ -1249,8 +1253,24 @@ public class ProcessingOrderService {
         List<String> missing = new ArrayList<>();
         int seq = 1;
         for (String logicalName : sequence) {
-            if (!Boolean.TRUE.equals(applicableByLogical.get(logicalName))) {
-                continue;   // 该部位明确不做（或未登记适用性）⇒ 滤掉
+            Boolean applicable = applicableByLogical.get(logicalName);
+            if (applicable == null) {
+                // 键不存在 = **两件事**，必须拆开（issue #4609，P0 静默丢工序）：
+                // 改前这里与「该部位明确不做」共用一条 `continue` ⇒ 主线里存着**变体名**（`精裁-布`，
+                // 老 bundle / 界面加过工序的存量路线）时也被静默滤掉 —— 商家加了工序、路线卡片上也看得见，
+                // 但加工单里根本没有它，**没有任何报错**（工人少一道活、少拿一笔计件钱）。
+                // 判据复用**同一份**归一表（`normalizeOperationName`，不新造第二份）：
+                //  · 名字归一后**不等于自己** ⇒ 它是变体名 / 别名，实例化按逻辑名建键永远查不到
+                //    ⇒ **必须可见**：进 `missing_operations`（调用方据此 fail-closed 并指名报缺）；
+                //  · 名字本身就是逻辑工序名 ⇒ 只是该部位**没登记这一格**（未登记适用性）
+                //    ⇒ 保持原语义滤掉（没有适用性行 = 没登记过，不猜）。
+                if (!logicalName.equals(productionOperationQueryService.normalizeOperationName(logicalName))) {
+                    missing.add(logicalName);
+                }
+                continue;
+            }
+            if (!applicable) {
+                continue;   // 该部位**明确不做** ⇒ 静默滤掉（既有语义不变）
             }
             String variant = productionOperationQueryService.variantNameOf(logicalName, position, catalog);
             Map<String, Object> meta = variant == null ? null : catalog.get(variant);

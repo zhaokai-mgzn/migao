@@ -344,16 +344,16 @@ class ProductionRoutingCommandServiceTest {
         stubLibrary();
 
         Map<String, Object> result = service.updateRouting("rt-1",
-                body("mainline", List.of("布三边", "韩褶-布", "外帘装袋")), TENANT);
+                body("mainline", List.of("三边", "韩褶", "外帘装袋")), TENANT);
 
-        assertThat(result.get("mainline")).asString().isEqualTo(List.of("布三边", "韩褶-布", "外帘装袋").toString());
+        assertThat(result.get("mainline")).asString().isEqualTo(List.of("三边", "韩褶", "外帘装袋").toString());
         ArgumentCaptor<ProductionRoutingVersion> version = ArgumentCaptor.forClass(ProductionRoutingVersion.class);
         verify(productionRoutingVersionMapper).insert(version.capture());
         assertThat(version.getValue().getRoutingId())
                 .as("版本账挂的是**新结构**路线行 id（production_route_templates.id）").isEqualTo("rt-1");
         assertThat(version.getValue().getOperationCount()).as("版本账记工序道数").isEqualTo(3);
         assertThat(version.getValue().getOperations())
-                .as("版本账存的是**变更后**的有序序列").isEqualTo(List.of("布三边", "韩褶-布", "外帘装袋"));
+                .as("版本账存的是**变更后**的有序序列").isEqualTo(List.of("三边", "韩褶", "外帘装袋"));
         // ⚠️ 旧模型两列（部位/工艺）**必须为 null**：新模型没有这一维（工艺已降为规则触发键），
         //    而 V60 的两列是 NOT NULL ⇒ 传了非 null 反而会掩盖「写面还在按旧形状写」。
         // ⚠️ 但**本 mock 单测看不见 DB 约束拒绝**（admin-api 无 testcontainers/H2）——
@@ -369,13 +369,76 @@ class ProductionRoutingCommandServiceTest {
     @DisplayName("同主线重复提交 = 幂等空操作（不追加无意义的版本行，沿用单价版本账口径）")
     void sameMainlineIsIdempotentNoop() {
         when(productionRouteTemplateMapper.selectById("rt-1"))
-                .thenReturn(routing("rt-1", "路线甲", false, List.of("布三边", "外帘装袋")));
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("三边", "外帘装袋")));
         stubLibrary();
 
-        service.updateRouting("rt-1", body("mainline", List.of("布三边", "外帘装袋")), TENANT);
+        service.updateRouting("rt-1", body("mainline", List.of("三边", "外帘装袋")), TENANT);
 
         verify(productionRouteTemplateMapper).updateById(any(ProductionRouteTemplate.class));
         verify(productionRoutingVersionMapper, never()).insert(any(ProductionRoutingVersion.class));
+    }
+
+    // ══════════ 写入即归一（issue #4609，P0 静默丢工序的写面半边）══════════
+    //
+    // 病根链：前端「添加工序」下拉的 `value` 曾是**变体名**（`精裁-布`）⇒ 原样推进草稿 ⇒
+    // 后端 `validateMainline` 只校验不归一（变体名在库里查得到 ⇒ 放行）⇒ **原样落库**；
+    // 而实例化 `buildRoute` 的适用性矩阵按**逻辑名**建键 ⇒ `get("精裁-布")` = null ⇒
+    // 该道工序被**静默丢掉**（商家加了工序、加工单里没有、无任何报错）。
+    // ⇒ 写面落库前必须归一为**逻辑名**（任何客户端 / 老 bundle / 脚本都污染不了主线）。
+
+    @Test
+    @DisplayName("#4609 改主线即归一：PUT 传**变体名** ⇒ 落库 / 返回 / 版本账都是逻辑名（红证：改前原样落库）")
+    void updateNormalizesVariantNamesToLogical() {
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("三边")));
+        stubLibrary();
+
+        Map<String, Object> result = service.updateRouting("rt-1",
+                body("mainline", List.of("精裁-布", "韩褶-布", "外帘装袋")), TENANT);
+
+        ArgumentCaptor<ProductionRouteTemplate> updated =
+                ArgumentCaptor.forClass(ProductionRouteTemplate.class);
+        verify(productionRouteTemplateMapper).updateById(updated.capture());
+        assertThat(updated.getValue().getMainline())
+                .as("落库必须是逻辑名（`精裁-布` → `精裁`）—— 否则实例化按逻辑名查不到 ⇒ 静默丢工序")
+                .isEqualTo(List.of("精裁", "韩褶", "外帘装袋"));
+        assertThat(result.get("mainline")).asString()
+                .as("返回形态与落库同一份（读的是落库后那一行）")
+                .isEqualTo(List.of("精裁", "韩褶", "外帘装袋").toString());
+        ArgumentCaptor<ProductionRoutingVersion> version =
+                ArgumentCaptor.forClass(ProductionRoutingVersion.class);
+        verify(productionRoutingVersionMapper).insert(version.capture());
+        assertThat(version.getValue().getOperations()).as("版本账记的也是归一后的序列")
+                .isEqualTo(List.of("精裁", "韩褶", "外帘装袋"));
+    }
+
+    @Test
+    @DisplayName("#4609 新建也归一：POST 传**变体名** ⇒ 落库即逻辑名（新路线同样污染不了）")
+    void createNormalizesVariantNamesToLogical() {
+        stubLibrary();
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
+
+        service.createRouting(body("name", "路线新", "mainline", List.of("精裁-布", "外帘装袋")), TENANT);
+
+        ArgumentCaptor<ProductionRouteTemplate> inserted =
+                ArgumentCaptor.forClass(ProductionRouteTemplate.class);
+        verify(productionRouteTemplateMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().getMainline()).isEqualTo(List.of("精裁", "外帘装袋"));
+    }
+
+    @Test
+    @DisplayName("#4609 归一后的**逻辑名**必须存得进去（否则前端改对了也白改：`精裁` 在库里没有同名行）")
+    void logicalNamesAreAcceptedOnWrite() {
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("三边")));
+        stubLibrary();
+
+        // ⚠️ 存在性判据必须按**归一后的逻辑名**查（库里是变体名 `精裁-布`，没有裸 `精裁` 行）
+        Map<String, Object> result = service.updateRouting("rt-1",
+                body("mainline", List.of("精裁", "韩褶", "外帘装袋")), TENANT);
+
+        assertThat(result.get("mainline")).asString()
+                .isEqualTo(List.of("精裁", "韩褶", "外帘装袋").toString());
     }
 
     @Test

@@ -97,7 +97,9 @@ public class ProductionRoutingCommandService {
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> createRouting(Map<String, Object> body, Long tenantId) {
         String name = requiredText(body == null ? null : body.get("name"), "name");
-        List<String> mainline = stringList(body == null ? null : body.get("mainline"));
+        // 落库**前**归一为逻辑名（issue #4609）：老 bundle / 脚本 / 任何客户端传变体名（`精裁-布`）
+        // 都污染不了主线 —— 主线一旦存变体名，实例化按逻辑名建键就查不到 ⇒ 该道工序被**静默丢掉**。
+        List<String> mainline = normalizeMainline(stringList(body == null ? null : body.get("mainline")));
         List<String> positions = stringList(body == null ? null : body.get("positions"));
         if (!mainline.isEmpty()) {
             validateMainline(mainline, tenantId);
@@ -151,7 +153,8 @@ public class ProductionRoutingCommandService {
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> updateRouting(String id, Map<String, Object> body, Long tenantId) {
         ProductionRouteTemplate template = findRouting(id, tenantId);
-        List<String> mainline = stringList(body.get("mainline"));
+        // 与 createRouting 同一份口径：落库前归一为逻辑名（issue #4609，见 normalizeMainline）。
+        List<String> mainline = normalizeMainline(stringList(body.get("mainline")));
         if (body.containsKey("mainline")) {
             validateMainline(mainline, tenantId);
         }
@@ -438,12 +441,37 @@ public class ProductionRoutingCommandService {
      * 再按 {@link ProductionOperationQueryService#normalizeOperationName} 归一后比对。</p>
      */
     private boolean logicalOperationExists(String logicalName, Long tenantId) {
-        Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
-        if (catalog.containsKey(logicalName)) {
+        return logicalOperationExistsIn(logicalName,
+                productionOperationQueryService.operationsByName(tenantId).keySet());
+    }
+
+    /**
+     * 该**逻辑工序名**是否在该租户工序库里有行 —— **唯一一份**存在性判据（规则写面与主线护栏共用）：
+     * ① 库里有同名裸行（部位无关工序，如 {@code 外帘装袋}）；或 ② 库里有任一变体归一后等于它
+     * （{@code 精裁-布} / {@code 精裁-纱} ⇒ {@code 精裁}）。归一表只有 {@code normalizeOperationName} 一份。
+     */
+    private boolean logicalOperationExistsIn(String logicalName, Set<String> libraryNames) {
+        if (libraryNames.contains(logicalName)) {
             return true;
         }
-        return catalog.keySet().stream().anyMatch(
+        return libraryNames.stream().anyMatch(
                 name -> logicalName.equals(productionOperationQueryService.normalizeOperationName(name)));
+    }
+
+    /**
+     * 主线**落库前归一**：每一项按 {@link ProductionOperationQueryService#normalizeOperationName}
+     * 换成逻辑工序名（{@code 精裁-布} → {@code 精裁}）。归一表只有这一份，**不在此另存映射**。
+     *
+     * <p>为什么必须在落库前（issue #4609）：主线是实例化的输入，而实例化按**逻辑名**建适用性矩阵的键
+     * ⇒ 主线里存了变体名，那道工序在生成加工单时**查不到、被静默丢掉**（商家加了工序、加工单里没有，
+     * 且无任何报错）。写面归一后，任何客户端 / 老 bundle / 脚本都污染不了主线。</p>
+     */
+    private List<String> normalizeMainline(List<String> mainline) {
+        List<String> normalized = new ArrayList<>(mainline.size());
+        for (String name : mainline) {
+            normalized.add(productionOperationQueryService.normalizeOperationName(name));
+        }
+        return normalized;
     }
 
     /** 可空整数（`null` / 空串 ⇒ `null`；非整数 ⇒ 422）。 */
@@ -507,9 +535,10 @@ public class ProductionRoutingCommandService {
      * 主线护栏（**唯一一份**：新建与改主线共用）。违规**一次报全**，每条带
      * {@code field}（{@code mainline} / {@code mainline[i]} / {@code must_finish}）。
      *
-     * <p>主线存的是**逻辑工序名**（与 {@code OPERATION_LOGICAL_NAMES} 值域一致），
-     * 但商家在界面上看到的是工序库里的**变体名**（{@code 精裁-布}）⇒ 校验时两态都接受：
-     * 先按原样查库，查不到再按 {@code variantNameOf} 反查（避免「界面上选得出、后端说不存在」）。</p>
+     * <p><b>输入口径（issue #4609）</b>：调用方落库前已把每一项按
+     * {@link ProductionOperationQueryService#normalizeOperationName} **归一为逻辑名**
+     * （见 {@link #normalizeMainline}）⇒ 本方法只面对**逻辑名**，存在性也按逻辑名判
+     * （{@link #logicalOperationExistsIn}：库里有同名裸行，或库里有任一变体归一后等于它）。</p>
      */
     private void validateMainline(List<String> mainline, Long tenantId) {
         List<ApiResponse.ErrorDetail> details = new ArrayList<>();
@@ -517,7 +546,6 @@ public class ProductionRoutingCommandService {
             details.add(BusinessException.detail("mainline", "主线不能为空：一条路线至少要有 1 道工序"));
         }
         Map<String, ProductionOperation> library = activeOperationsByName(tenantId);
-        Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
         Set<String> seen = new LinkedHashSet<>();
         boolean anyMustFinish = false;
         for (int i = 0; i < mainline.size(); i++) {
@@ -528,11 +556,9 @@ public class ProductionRoutingCommandService {
                 continue;
             }
             // ⚠️ 判重键必须是**归一后的逻辑名**，不是原始字符串（issue #4520）。
-            // 主线里合法出现两种写法：逻辑名（`精裁`，种子/矩阵的行键）与工序库变体名（`精裁-布`，
-            // `production_operations.name` / 「添加工序」选择器）。它们是**同一道工序**，但**字符串不同**
-            // ⇒ 按原始字符串判重会放行 `["精裁", …, "精裁-布"]` ⇒ 实例化出两道 `精裁`
-            // ⇒ **工人按两遍单价拿钱**。归一口径复用 P2b 的 `normalizeOperationName`
-            // （**不在此另存映射表** —— 那就是第二份口径，本仓明令禁止）。
+            // 调用方（createRouting / updateRouting）落库前已按同一份归一表把每一项归一为逻辑名
+            // （issue #4609），故这里 `name` 与 `logicalName` 一般相同；判重仍按归一后的键，
+            // 保证「同一道工序的两种写法」永远不会同时进主线（否则实例化出两道 ⇒ 工人按两遍单价拿钱）。
             String logicalName = productionOperationQueryService.normalizeOperationName(name);
             if (!seen.add(logicalName)) {
                 details.add(BusinessException.detail(field,
@@ -542,19 +568,18 @@ public class ProductionRoutingCommandService {
                                 name, name, name + "-布", name + "-纱", logicalName)));
                 continue;
             }
-            ProductionOperation op = library.get(name);
-            if (op == null) {
-                // 逻辑名（新结构的书写形态）⇒ 反查该租户库里的变体名
-                String variant = productionOperationQueryService.variantNameOf(
-                        productionOperationQueryService.normalizeOperationName(name), null, catalog);
-                op = variant == null ? null : library.get(variant);
-            }
-            if (op == null) {
+            // 存在性判据按**逻辑名**（issue #4609）：工序库存的是**变体名**（`精裁-布`），
+            // 而主线存的是逻辑名（`精裁`）⇒ 判据 = ① 库里有同名裸行（部位无关工序，如 `外帘装袋`）
+            // 或 ② 库里有任一变体归一后等于它（`精裁-布` / `精裁-纱` ⇒ `精裁`）。
+            // ⚠️ 改前这里只按 `variantNameOf(逻辑名, null, catalog)` 反查 ⇒ **逻辑名一律查不到**
+            // （部位无关工序才查得到）⇒ 前端改成写逻辑名后，保存会被自己拒掉（「工序不存在」）。
+            ProductionOperation op = library.get(logicalName);
+            if (op == null && !logicalOperationExistsIn(logicalName, library.keySet())) {
                 details.add(BusinessException.detail(field,
                         String.format("工序「%s」在工序库中不存在或已停用：请先在「工序库」新增该工序，或从库里已有的工序里选", name)));
                 continue;
             }
-            if (Boolean.TRUE.equals(op.getIsMustFinish())) {
+            if (op != null && Boolean.TRUE.equals(op.getIsMustFinish())) {
                 anyMustFinish = true;
             }
         }
