@@ -62,6 +62,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "agent_eval" / "fixtures"
 V83 = (REPO / "backend" / "admin-api" / "src" / "main" / "resources" / "db"
