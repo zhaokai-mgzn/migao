@@ -2982,6 +2982,7 @@
 你: 确认
 期望: processing_item_query(keyword=打孔)
 期望: processing_item_manage(action=create_processing_item)
+数据: 前置（precondition）：评测栈种子里加工项「纳米圈打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`（8.00 元/米、status=active）、加工分类「窗帘加工」（`pcat_eval_curtain`）存在 —— 它们是 R1 的加工项查询与下面 `output_verify` 的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项或分类」，判红会伪装成「agent 不会建加工项」
 数据: processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）
 数据: 加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）
 数据: 商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）
@@ -2989,7 +2990,7 @@
 产出: processing_item_manage(create_processing_item) → name==测试加工; pricingMethod==per_meter
 ```
 真值: processing-manage.crud, product-sku-stock.create-flow
-溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮）。2026-09-14 收口（#3544，run 34809483940 实测）：`output_verify` 补 `action: create_processing_item` —— 原实现按**工具名**取首个成功 payload，而本工具是多 action（R2 的 list_categories 也成功）→ 核对到 `{'categories': [...]}` 造成**假红**（R5 建成功的 payload 从未被核对）；同时给 runner 加 action 过滤 + L0 不变式「多 action 工具的 output_verify 必须声明 action」。2026-09-14 再校准（#3658，run 34820346966 首次真重放）：实测 agent 首轮把分类名当 category_id 传（create 被拒「加工分类不存在」）后**同轮** list_categories 恢复重试成功（must_succeed 过），但 action 过滤按「该轮含 create 调用」取**首个成功 payload** → 又取到同轮 list_categories 的 `{'categories': [...]}` → 假红。runner 侧修复属禁改区，改为输入直接给分类 ID（pcat_eval_curtain，种子里确定存在），create 首轮成功、不再触发恢复轮（见 user_inputs 注释；计价方式枚举仍是本用例唯一行为面）。 ｜ tags: processing_item, pricing
+溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言。2026-09-14 校准（#3544，REPORT §2.3）：① 假绿升级——补 must_succeed（canonical 写成功断言，fail-closed）+ output_verify（name/pricingMethod 产出核对），此前只断言「调用过」，工具三次真执行全失败仍判 ✅（真缺口见 #3543）；② 输入「分类选打孔加工」改为种子里真实存在的「分类选窗帘加工」（原写法是加工项名/分类名混淆，agent 只能如实说没有该分类，白耗一轮）。2026-09-14 收口（#3544，run 34809483940 实测）：`output_verify` 补 `action: create_processing_item` —— 原实现按**工具名**取首个成功 payload，而本工具是多 action（R2 的 list_categories 也成功）→ 核对到 `{'categories': [...]}` 造成**假红**（R5 建成功的 payload 从未被核对）；同时给 runner 加 action 过滤 + L0 不变式「多 action 工具的 output_verify 必须声明 action」。2026-09-14 再校准（#3658，run 34820346966 首次真重放）：实测 agent 首轮把分类名当 category_id 传（create 被拒「加工分类不存在」）后**同轮** list_categories 恢复重试成功（must_succeed 过），但 action 过滤按「该轮含 create 调用」取**首个成功 payload** → 又取到同轮 list_categories 的 `{'categories': [...]}` → 假红。runner 侧修复属禁改区，改为输入直接给分类 ID（pcat_eval_curtain，种子里确定存在），create 首轮成功、不再触发恢复轮（见 user_inputs 注释；计价方式枚举仍是本用例唯一行为面）。2026-09-19（issue #4537 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）：补**机器计分型**前置自断言（种子加工项 `pi_eval_punch`「纳米圈打孔」存在且 per_meter / 8.00 元/米 / active、加工分类 `pcat_eval_curtain`「窗帘加工」存在 —— 它们是 R1 加工项查询与 `output_verify` 的接地对象），把「前置不成立 ⇒ 找不到加工项/分类，判红却伪装成 agent 不会建加工项」这条形态挡在门口；user_inputs / expectations / must_succeed / output_verify 原样未动、无放宽。 ｜ tags: processing_item, pricing
 
 ### PP-007. 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义） 🔵
 ```
