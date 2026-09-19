@@ -1317,4 +1317,210 @@ describe('NewOrderPage', () => {
       expect(info.cuttingMode).toBe('定高买宽')
     })
   })
+
+  // ===== #4576：加工项**一级分类导航 + 关键字搜索**（用户 2026-09-19 追加口径）==================
+  //
+  // 用户逐字：「加工项**有一级分类**，可以**先选一级分类再选具体加工项**，同时也加**关键字快速搜索**」。
+  // 病根：③加工项把店铺级目录的**全部** active 项平铺成一个扁平 checkbox 列表（V83 重建后 16 项、
+  // 商家还能继续自建）⇒ 项一多就逐行扫；且「带 craftHint 的工艺项（单选语义）」与其余项
+  // 长得一模一样，商家不知道「点了会不会顶掉前面那个」。
+  //
+  // 复用文件头已声明的用例（**不新增声明**）：OR-035（工艺规格写侧录入 —— 工艺/定型从加工项派生）、
+  // OR-014（下单加工项数量规则）。本组判据 = 分类导航 + 搜索 + 「单选」标记，均为这两条的交互承载。
+  describe('#4576 加工项分类导航 + 关键字搜索', () => {
+    /** 加工项目录：**两个分类**（`加工费` / `安装服务`），工艺项带 `craftHint` */
+    const CATEGORIZED_CATALOG = [
+      { id: 'pi-01', name: '打孔', craftHint: '打孔', categoryId: 'c1', categoryName: '加工费', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+      { id: 'pi-02', name: '韩折', craftHint: '韩褶', categoryId: 'c1', categoryName: '加工费', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+      { id: 'pi-06', name: '定型', categoryId: 'c1', categoryName: '加工费', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+      { id: 'pi-20', name: '罗马杆安装', categoryId: 'c2', categoryName: '安装服务', pricingMethod: 'per_set', unitPrice: 0, unit: '套' },
+    ]
+
+    const setup = async (items: unknown[] = CATEGORIZED_CATALOG) => {
+      mockGetProducts.mockResolvedValue({
+        data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
+      })
+      mockGetProduct.mockResolvedValue({
+        data: { data: { id: 'p1', name: '遮光窗帘', skus: [], price: 100 } },
+      })
+      mockGetProcessingItems.mockResolvedValue({ data: { data: { items } } })
+      render(<NewOrderPage />)
+      await pickProduct('遮光窗帘')
+      await screen.findByText('宽 (米)')
+      expandProcessing()
+    }
+
+    /** 第三个分类的填充项 —— 只用来把目录撑到 **> 8 项**（搜索框的出现阈值） */
+    const FILLERS = Array.from({ length: 6 }, (_, i) => ({
+      id: `pi-x${i}`,
+      name: `辅料${i}`,
+      categoryId: 'c3',
+      categoryName: '辅料',
+      pricingMethod: 'per_set',
+      unitPrice: 0,
+      unit: '套',
+    }))
+    const SEARCHABLE_CATALOG = [...CATEGORIZED_CATALOG, ...FILLERS]
+
+    /** 当前**可见**的加工项名（DOM 顺序 = 目录顺序） */
+    const visibleNames = () =>
+      screen.getAllByRole('checkbox').map((b) => b.getAttribute('aria-label'))
+    const searchBox = () => screen.getByTestId('processing-search')
+    /** 收起③ ⇒ 摘要（`已选 N 项 · 工艺：X`）可见 */
+    const collapseProcessing = () =>
+      fireEvent.click(screen.getAllByRole('button', { name: /^3 加工项/ })[0])
+
+    it('判据 1a：多分类 ⇒ 渲染分类选择器（每个分类一个 chip，带 data-testid）', async () => {
+      await setup()
+      expect(screen.getByTestId('processing-category-selector')).toBeInTheDocument()
+      expect(screen.getByTestId('processing-category-c1')).toBeInTheDocument()
+      expect(screen.getByTestId('processing-category-c2')).toBeInTheDocument()
+      // 默认落在**第一类**（目录顺序），其项可见
+      expect(visibleNames()).toEqual(['打孔', '韩折', '定型'])
+    })
+
+    it('判据 1b：**只有一类** ⇒ 不渲染分类选择器（一个 tab 是噪音），该类项照常平铺', async () => {
+      await setup(CATEGORIZED_CATALOG.filter((i) => i.categoryId === 'c1'))
+      expect(screen.queryByTestId('processing-category-selector')).toBeNull()
+      expect(visibleNames()).toEqual(['打孔', '韩折', '定型'])
+    })
+
+    it('判据 1c：目录**没配分类** ⇒ 不渲染选择器、不报错，全部平铺（老租户目录）', async () => {
+      await setup([
+        { id: 'pi-01', name: '打孔', craftHint: '打孔', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+        { id: 'pi-06', name: '定型', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+      ])
+      expect(screen.queryByTestId('processing-category-selector')).toBeNull()
+      expect(visibleNames()).toEqual(['打孔', '定型'])
+    })
+
+    it('判据 2：选分类 ⇒ 只显示该分类下的加工项', async () => {
+      await setup()
+      expect(visibleNames()).toEqual(['打孔', '韩折', '定型'])
+
+      fireEvent.click(screen.getByTestId('processing-category-c2'))
+      expect(visibleNames()).toEqual(['罗马杆安装'])
+
+      fireEvent.click(screen.getByTestId('processing-category-c1'))
+      expect(visibleNames()).toEqual(['打孔', '韩折', '定型'])
+    })
+
+    it('判据 3：搜索**跨分类**命中（并标出所属分类）；清空后回到当前选中的分类', async () => {
+      await setup(SEARCHABLE_CATALOG)
+      // 先停在第二类，再搜索第一类的项 ⇒ 命中即跨分类展示
+      fireEvent.click(screen.getByTestId('processing-category-c2'))
+      expect(visibleNames()).toEqual(['罗马杆安装'])
+
+      fireEvent.change(searchBox(), { target: { value: '打孔' } })
+      expect(visibleNames()).toEqual(['打孔'])
+      // 结果里标出它属于哪个分类（「打孔」在 `加工费` 下）
+      const chip = screen.getByRole('checkbox', { name: '打孔' }).closest('div')!
+      expect(chip.textContent).toContain('加工费')
+
+      // 清空 ⇒ 回到**当前选中的分类**（c2），而不是全部平铺
+      fireEvent.change(searchBox(), { target: { value: '' } })
+      expect(visibleNames()).toEqual(['罗马杆安装'])
+    })
+
+    it('判据 4：搜索过滤**不动**已选状态；被过滤掉但已选的项**仍在**提交 payload 里', async () => {
+      await setup(SEARCHABLE_CATALOG)
+      fireEvent.click(screen.getByRole('checkbox', { name: '打孔' }))
+
+      // 过滤掉「打孔」⇒ 控件里没有它，但勾选态还在（过滤只影响渲染）
+      fireEvent.change(searchBox(), { target: { value: '罗马' } })
+      expect(screen.queryByRole('checkbox', { name: '打孔' })).toBeNull()
+      fireEvent.change(searchBox(), { target: { value: '' } })
+      expect((screen.getByRole('checkbox', { name: '打孔' }) as HTMLInputElement).checked).toBe(
+        true
+      )
+
+      // 再把它过滤掉后提交 ⇒ payload 仍带着它（唯一构造点 `processingDetailsOf` 只读勾选态）
+      fireEvent.change(searchBox(), { target: { value: '罗马' } })
+      await fillCustomerAndSubmit()
+      await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+      const info = mockCreateOrder.mock.calls[0][0].items[0].processingInfo as Record<
+        string,
+        unknown
+      >
+      const names = (info.processingItems as Array<{ name: string }>).map((i) => i.name)
+      expect(names).toContain('打孔')
+    })
+
+    it('判据 5：「单选」标记**只**出现在带 `craftHint` 的工艺项上，且配一句换选提示', async () => {
+      await setup()
+      // 工艺项（打孔 / 韩折）有标记；手选特征（定型）没有
+      expect(screen.getByTestId('processing-single-badge-pi-01')).toBeInTheDocument()
+      expect(screen.getByTestId('processing-single-badge-pi-02')).toBeInTheDocument()
+      expect(screen.queryByTestId('processing-single-badge-pi-06')).toBeNull()
+      expect(screen.getByText(/换选会自动取消前一个/)).toBeInTheDocument()
+
+      // 切到**没有工艺项**的分类 ⇒ 标记与提示句都不出现（不误导）
+      fireEvent.click(screen.getByTestId('processing-category-c2'))
+      expect(screen.queryByTestId('processing-single-badge-pi-20')).toBeNull()
+      expect(screen.queryByText(/换选会自动取消前一个/)).toBeNull()
+    })
+
+    it('判据 6（回归）：工艺单值护栏不变 —— 勾第二个工艺项 ⇒ 自动取消前一个 + toast 说明', async () => {
+      await setup()
+      fireEvent.click(screen.getByRole('checkbox', { name: '打孔' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: '韩折' }))
+      expect((screen.getByRole('checkbox', { name: '打孔' }) as HTMLInputElement).checked).toBe(
+        false
+      )
+      expect((screen.getByRole('checkbox', { name: '韩折' }) as HTMLInputElement).checked).toBe(
+        true
+      )
+      expect(toast.info).toHaveBeenCalledWith('一张单只能有一个工艺：已把「打孔」换成「韩折」')
+    })
+
+    it('判据 7（回归）：自动推导特征仍**不在**手选控件里（分类目录下也一样）', async () => {
+      await setup([
+        ...CATEGORIZED_CATALOG,
+        { id: 'pi-14', name: '超高', categoryId: 'c1', categoryName: '加工费', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+        { id: 'pi-15', name: '超宽', categoryId: 'c1', categoryName: '加工费', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+        { id: 'pi-16', name: '倒幅', categoryId: 'c1', categoryName: '加工费', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+      ])
+      expect(visibleNames()).toEqual(['打孔', '韩折', '定型'])
+      for (const auto of ['超高', '超宽', '倒幅']) {
+        expect(screen.queryByRole('checkbox', { name: auto })).toBeNull()
+      }
+      // 推导结果照旧**只读可见**，且块内无任何输入控件
+      const block = screen.getByTestId('auto-detected-features')
+      expect(within(block).getByText('超宽')).toBeInTheDocument()
+      expect(block.querySelectorAll('input')).toHaveLength(0)
+    })
+
+    it('判据 8a：项数 ≤ 8 ⇒ **不出现**搜索框（项少时搜索是噪音）', async () => {
+      await setup()
+      expect(screen.queryByTestId('processing-search')).toBeNull()
+    })
+
+    it('判据 8b：项数 > 8 ⇒ 出现搜索框（带 data-testid + aria-label）', async () => {
+      await setup(SEARCHABLE_CATALOG)
+      const box = searchBox()
+      expect(box).toHaveAttribute('aria-label', '搜索加工项')
+      // 过滤即时生效（子串匹配）
+      fireEvent.change(box, { target: { value: '辅料3' } })
+      expect(visibleNames()).toEqual(['辅料3'])
+      // 无命中 ⇒ 显式空态（不静默留白）
+      fireEvent.change(box, { target: { value: '不存在的项' } })
+      expect(screen.getByText('没有匹配的加工项')).toBeInTheDocument()
+    })
+
+    it('判据 9a：已选摘要带出**工艺名**（`已选 N 项 · 工艺：X`）', async () => {
+      // 去掉「定型」⇒ 布帘默认勾选不会占一格，计数只反映手选的工艺项
+      await setup(CATEGORIZED_CATALOG.filter((i) => i.name !== '定型'))
+      fireEvent.click(screen.getByRole('checkbox', { name: '韩折' }))
+      collapseProcessing()
+      // 工艺取**派生值**（`craftHint`）—— 与②工艺规格摘要同一个取值点
+      expect(screen.getByText('已选 1 项 · 工艺：韩褶')).toBeInTheDocument()
+    })
+
+    it('判据 9b：没选工艺项 ⇒ 摘要只写「已选 N 项」（不出现空的「工艺：」）', async () => {
+      await setup()
+      // 布帘 ⇒ 「定型」默认勾上（1 项，无 `craftHint`）
+      collapseProcessing()
+      expect(screen.getByText('已选 1 项')).toBeInTheDocument()
+    })
+  })
 })
