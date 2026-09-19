@@ -9,6 +9,7 @@ vi.mock('sonner', () => ({
     success: vi.fn(),
     error: vi.fn(),
     info: vi.fn(),
+    warning: vi.fn(),
   },
 }))
 
@@ -103,6 +104,7 @@ vi.mock('@/lib/api', () => {
 
 import CustomerDetailPage from '@/app/(dashboard)/customers/[id]/CustomerDetail'
 import { customerApi } from '@/lib/api'
+import { toast } from 'sonner'
 
 describe('CustomerDetailPage', () => {
   beforeEach(() => {
@@ -271,5 +273,85 @@ describe('CustomerDetailPage', () => {
         expect.objectContaining({ defaultLogisticsCompany: '本地专线·老王' }),
       )
     })
+  })
+
+  // ── 清空语义的反馈口径（issue #4443）────────────────────────────────────
+  // 后端 updateCustomer 是「非空拷贝」：空白一律不覆盖（#4419 有意为之，由
+  // CustomerReceiverAddressPersistTest.updateCustomer_BlankReceiverFieldsDoNotWipeExisting 钉住）。
+  // 故前端**不得**把「清空」报成成功 —— 下面四条钉住「UI 反馈 == 实际效果」。
+
+  it('唯一改动是清空时：不下发、不报「已保存」、明确告知不支持，且输入框恢复服务端真值', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('receiver-card')).toBeInTheDocument()
+    })
+    fireEvent.change(screen.getByPlaceholderText('省市区 + 详细地址'), { target: { value: '' } })
+    fireEvent.click(screen.getByTestId('save-receiver'))
+
+    await waitFor(() => {
+      expect(toast.warning).toHaveBeenCalledWith('暂不支持清空：收货地址')
+    })
+    // 没有可落库的改动 ⇒ 不得发请求，更不得报成功
+    expect(customerApi.updateCustomer).not.toHaveBeenCalled()
+    expect(toast.success).not.toHaveBeenCalled()
+    // 界面必须回到服务端真值，否则「显示空白」是第二次谎报
+    expect(screen.getByPlaceholderText('省市区 + 详细地址')).toHaveValue(
+      '浙江省杭州市西湖区文三路1号1幢101室',
+    )
+  })
+
+  it('没有任何改动时保存：不调 API、不报「已保存」，只提示无改动', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('receiver-card')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByTestId('save-receiver'))
+
+    await waitFor(() => {
+      expect(toast.info).toHaveBeenCalledWith('收货信息没有改动')
+    })
+    expect(customerApi.updateCustomer).not.toHaveBeenCalled()
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
+  it('清空与真实改动并存：空白键不下发、如实告知清空不支持、不报「已保存」', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('receiver-card')).toBeInTheDocument()
+    })
+    fireEvent.change(screen.getByPlaceholderText('省市区 + 详细地址'), {
+      target: { value: '江苏省苏州市吴中区越溪街道1号' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('选择或输入承运商'), { target: { value: '' } })
+    fireEvent.click(screen.getByTestId('save-receiver'))
+
+    await waitFor(() => {
+      expect(customerApi.updateCustomer).toHaveBeenCalled()
+    })
+    const payload = vi.mocked(customerApi.updateCustomer).mock.calls[0][1] as Record<string, unknown>
+    expect(payload.defaultReceiverAddress).toBe('江苏省苏州市吴中区越溪街道1号')
+    // 空白键不下发：下发也无效，只会让人以为已清空
+    expect('defaultLogisticsCompany' in payload).toBe(false)
+    // 非空未改动字段照旧下发（保住既有「缺一不可」语义）
+    expect(payload.defaultReceiverName).toBe('张三')
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(toast.warning).toHaveBeenCalledWith('已保存其余改动；暂不支持清空：常用物流公司')
+    expect(screen.getByPlaceholderText('选择或输入承运商')).toHaveValue('四季安物流')
+  })
+
+  it('有真实改动且无清空时仍报「已保存」（防误伤）', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('receiver-card')).toBeInTheDocument()
+    })
+    fireEvent.change(screen.getByPlaceholderText('省市区 + 详细地址'), {
+      target: { value: '江苏省苏州市吴中区越溪街道1号' },
+    })
+    fireEvent.click(screen.getByTestId('save-receiver'))
+
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith('收货信息已保存')
+    })
+    expect(toast.warning).not.toHaveBeenCalled()
   })
 })
