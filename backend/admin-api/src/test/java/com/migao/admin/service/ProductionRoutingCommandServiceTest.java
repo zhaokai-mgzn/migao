@@ -156,6 +156,12 @@ class ProductionRoutingCommandServiceTest {
                 : e.getDetails().stream().map(ApiResponse.ErrorDetail::getField).toList();
     }
 
+    /** 逐条护栏理由的**文案**（issue #4647 / D3：这几条会被界面原样渲染，故必须逐字判）。 */
+    private static List<String> detailMessages(BusinessException e) {
+        return e.getDetails() == null ? List.of()
+                : e.getDetails().stream().map(ApiResponse.ErrorDetail::getMessage).toList();
+    }
+
     // ══════════ 特殊选项对客单价（元/套，issue #4567）══════════
 
     @Test
@@ -308,6 +314,36 @@ class ProductionRoutingCommandServiceTest {
                 body("mainline", List.of("精裁", "外帘装袋", "精裁-布")), TENANT))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("mainline[2]"));
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
+    }
+
+    @Test
+    @DisplayName("#4647 / D3(a)：判重文案**不得回显变体名** —— 本页护栏理由区直接渲染它（改前产出「精裁-布」）")
+    void duplicateOperationMessageDoesNotEchoVariantNames() {
+        // 病根（issue #4647 复验实测）：文案曾拼 `name + "-布"` / `name + "-纱"` ⇒ 产出
+        // 「精裁-布」/「精裁-纱」。而 FE 的 `routings/page.tsx` **确实渲染**这条 message
+        // （`setReasons(routingGuardReasons(e))` → `reasons.map(...)`，`describeRoutingGuard` 只加前缀、
+        // **不删内容**）⇒ 变体名**界面上屏**。
+        // 判据 = ① 整条 message 不含 `-布` / `-纱` / `-帘` 形态；② 改说**根因**（两条指向同一道逻辑工序）。
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("精裁-布")));
+        stubLibrary();
+
+        assertThatThrownBy(() -> service.updateRouting("rt-1",
+                body("mainline", List.of("精裁", "外帘装袋", "精裁-布")), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException be = (BusinessException) e;
+                    assertThat(detailMessages(be)).as("护栏理由逐条给出（既有形状不变）").isNotEmpty();
+                    for (String message : detailMessages(be)) {
+                        assertThat(message)
+                                .as("文案**不得**含变体名形态（`-布` / `-纱` / `-帘`）—— 它会被界面原样渲染")
+                                .doesNotContain("-布").doesNotContain("-纱").doesNotContain("-帘");
+                    }
+                    assertThat(detailMessages(be).get(0))
+                            .as("改说根因：两条指向**同一道逻辑工序**（读时归一后同名）+ 给出处置")
+                            .contains("同一道逻辑工序").contains("精裁");
+                });
         verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
     }
 

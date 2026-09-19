@@ -222,7 +222,7 @@ public class ProductionOperationCommandService {
         // （库里 `布三边` + 矩阵行 `三边`），且 `name` 会经目录/孤儿弹窗上屏（变体名泄漏）。
         // 为什么选**拒绝**而不是归一：`布三边` 归一成 `三边` 会与**既有** `三边` 行撞唯一索引
         // `uk_production_operations_tenant_name`（⇒ 500 或建出重复/半成品），拒绝才与「一套名字」一致。
-        rejectVariantOperationName(name, tenantId);
+        rejectVariantOperationName(name);
         // issue #4614：positions 给了才建矩阵行。**校验先于写入**（与 status/scope 同口径）——
         // 部位写错一个不该先落一行工序库再回滚。
         List<String> positions = null;
@@ -511,24 +511,39 @@ public class ProductionOperationCommandService {
     }
 
     /**
-     * 新增工序时**拒绝旧形态（变体）工序名**（issue #4642）。
+     * 新增工序时**拒绝带部位后缀的工序名**（issue #4642；文案改判 = issue #4647 / D2）。
      *
      * <p>两条判据（命中任一 ⇒ **422 + {@code error.details:[{field,message}]} 逐条**，文案用商家语言）：</p>
      * <ol>
      *   <li><b>已登记旧名</b>：走**既有** {@link ProductionOperationQueryService#normalizeOperationName}，
      *       归一后**不等于自身**即命中（35 条旧名：{@code 精裁-布} / {@code 布三边} / {@code 布帘车被}…）；</li>
-     *   <li><b>未登记的「逻辑名 + 部位后缀」写法</b>（{@code 罗马帘-穿杆}）：归一后等于自身，
-     *       故用部位后缀判据（部位词表是**闭**的：布 / 纱 / 帘）。</li>
+     *   <li><b>部位后缀形态</b>：名字以 {@code -布} / {@code -纱} / {@code -帘} 结尾 ⇒ 命中。
+     *       部位词表是**闭**的（布 / 纱 / 帘）⇒ 后缀形态可判定。</li>
      * </ol>
      *
-     * <p><b>合法自定义名照常可建</b>（{@code 测试22} / {@code 罗马帘穿杆}）：两条判据都不命中。</p>
+     * <p>🔴 <b>判据 2 的文案不得说「是旧形态」</b>（issue #4647 / D2 实测）：{@code 定制-布} /
+     * {@code 工艺-布} **不在** 35 条归一表里 ⇒ 它们**不是**旧形态，只是恰好以 {@code -布} 结尾。
+     * 文案说「是旧形态」是**事实错误**；准确表述 = 「工序名不要带部位后缀」。判据 1 命中时
+     * 可以照实说「已登记为旧名」。</p>
+     *
+     * <p><b>{@code 罗马帘-穿杆} 的取舍（明确登记）</b>：它**放行** —— 后缀是 {@code -穿杆}，
+     * 不是部位后缀；而「名字以部位后缀结尾」是一个**形态判据**，不依赖归一表 ⇒ 对已登记与未登记
+     * 的工序名**一视同仁**（{@code xx-布} / {@code xx-纱} / {@code xx-帘} 一律拒）。
+     * 代价（如实登记）：商家仍能建出与既有工序**同逻辑名**的第二行（{@code 罗马帘-穿杆} 与
+     * {@code 罗马帘穿杆} 归一后都是自身 ⇒ 两名并存）—— 这**不是本判据**能判的（它需要查库比逻辑名），
+     * 属**另一个**判据的范围；本单**不扩大**判据（issue #4647 明示：要扩大先报）。
+     * 边界由测试钉住：{@code ProductionOperationCommandServiceTest} 的
+     * 「#4647 部位后缀边界」一组（该拒的拒 / 该放的放）。</p>
+     *
+     * <p><b>合法自定义名照常可建</b>（{@code 测试22} / {@code 罗马帘穿杆} / {@code 外帘打卷}）。</p>
      */
-    private void rejectVariantOperationName(String name, Long tenantId) {
+    private void rejectVariantOperationName(String name) {
         String logicalName = productionOperationQueryService.normalizeOperationName(name);
         boolean isVariant;
         if (name.equals(logicalName)) {
-            // 归一后等于自身 ⇒ 不是**已登记**的旧名。仍要拒「逻辑名 + 部位后缀」的**未登记**写法
-            // （`罗马帘-穿杆`）：部位词表是**闭**的（布 / 纱 / 帘）⇒ 后缀形态可判定。
+            // 归一后等于自身 ⇒ 不是**已登记**的旧名。仍要拒「名字 + 部位后缀」的**未登记**写法：
+            // 部位词表是**闭**的（布 / 纱 / 帘）⇒ 后缀形态可判定，且对已登记 / 未登记**一视同仁**
+            // （`定制-布` 不在归一表里，但它同样把部位编进了名字 ⇒ 同样拒）。
             isVariant = name.endsWith("-布") || name.endsWith("-纱") || name.endsWith("-帘");
         } else {
             // 归一后变了 ⇒ 该名字**是**归一表里的旧形态（`布三边` / `布帘车被` / `精裁-布`）。
@@ -539,10 +554,15 @@ public class ProductionOperationCommandService {
         if (!isVariant) {
             return;
         }
+        // ⚠️ 文案**必须与判据一致**（issue #4647 / D2）：判据 1 命中（归一后变了）才是「已登记为旧名」；
+        // 判据 2 命中的名字（`定制-布` / `工艺-布`）**不在**归一表里 ⇒ 说它「是旧形态」是事实错误。
+        String why = name.equals(logicalName)
+                ? "工序名不要带部位后缀（`-布` / `-纱` / `-帘`）"
+                : "工序名不要带部位（「" + name + "」已登记为旧名）";
         throw BusinessException.validationError(
-                "工序名不要带部位（「" + name + "」是旧形态）",
+                why,
                 java.util.List.of(new ApiResponse.ErrorDetail("name",
-                        "工序名不要带部位（别写「" + name + "」）；部位在下方勾选 —— "
+                        "工序名不要带部位后缀（`-布` / `-纱` / `-帘`）；部位在下方勾选 —— "
                                 + "名字与部位是两件事，带部位的名字会让同一道工序在库里存成两名")),
                 "把名字改成不带部位的逻辑工序名（如「三边」），部位在下方勾选");
     }

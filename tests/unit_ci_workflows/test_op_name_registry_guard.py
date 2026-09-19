@@ -9,13 +9,15 @@ S1（issue #4621 / `tests/unit_ci_workflows/test_operation_display_name_guard.py
 「**白名单是判据的覆盖面**」。#4630 正是实证：第 4 个消费面（`PieceworkTable.tsx`，读**同一份**
 `per_operation`）漏在 `FACES` 之外 ⇒ 界面照旧渲染变体名（`精裁-布`），而**没有任何判据会因此变红**。
 
-本文件补上 S1 缺的三条（判据冻结于 issue #4626 的三条评论）：
+本文件补上 S1 缺的三条（判据冻结于 issue #4626 的三条评论）+ issue #4647 补的两条：
 
 | # | 判据 | 形态 | 红证 |
 |---|---|---|---|
 | ① | FE 源码（**去注释后**）不得出现变体名字面量（`-布` / `-纱`） | 扫 `frontend/admin-web/src/**`（`.ts`/`.tsx`）；豁免逐条登记 | 塞 `'精裁-布'` ⇒ 红 |
-| ② | **自维护登记机制**：命中标记的文件必须出现在「受管」或「豁免」之一 | 标记见 `MARKERS`；受管面必须 import 唯一 helper 且不裸渲染 | 新增一个读 `per_operation` 的面而不登记 ⇒ 红 |
+| ② | **自维护登记机制**：命中标记的文件必须出现在「受管」或「豁免」之一 | 标记见 `MARKERS`；受管面必须 import 唯一 helper 且不裸渲染 | 新增一个读 `per_operation` 的面而不登记 ⇒ 红；**把米宝会话卡退回裸渲染快照名 ⇒ 红**（#4647 / D1） |
 | ③ | 后端 **web 读面成对出现**：`put("operation"` / `put("operation_name"` 必须同文件出现 `logical_name` | 静态兜底（逐键权威在 S1 的 Java 单测里） | 去掉读面的 `logical_name` ⇒ 红 |
+| ③b | 后端**文案**不得用拼接拼出变体名（`name + "-布"`） | 扫生产 Java（`.equals`/`.endsWith` 判定式不算）；豁免逐条登记 | 注入 `name + "-布"` ⇒ 红（#4647 / D3） |
+| ④ | FE 不得在 JSX 渲染位置取 `library_name`（库口径原名键） | 扫 FE 语料；**含属性位置**（比「只拦子节点」严一格） | 往已豁免的 `routings/page.tsx` 塞 `{op.library_name}` ⇒ 红（#4647 / D5） |
 
 ② 是**本单的核心增量**：它按**数据来源**（快照类读面键 / 元素类型）而不是按「#4621 当时改了哪几个
 文件」判定覆盖面 ⇒ 下次再漏一个面，CI 直接判红，而不是等人扫（`PieceworkTable` 就是靠人扫才发现的）。
@@ -44,6 +46,15 @@ S1（issue #4621 / `tests/unit_ci_workflows/test_operation_display_name_guard.py
   上述 5 个 + `lib/api.ts`（豁免，纯传输层）+ `routings/page.tsx`（豁免，商家配置页））——
   自证命令：`python3 -m pytest tests/unit_ci_workflows/test_op_name_registry_guard.py -q -k c2_every_marker_hit`。
 - **③ 只看「同文件出现」**：这是**静态兜底**（粗判据），不是逐键判据 —— 逐键断言在 S1 的 Java 单测。
+- **③b（issue #4647 / D3）补上「文案拼接」这条漏点**：③ 判的是读面**落键**成对，**照不到文案拼接**
+  ⇒ 两条非删除路径长期把变体名拼进 422 文案（`ProductionRoutingCommandService` 主线判重
+  `name + "-布"` ⇒ **界面可见**；`ProcessingOrderService` 实例化 hint `logicalName + "（库中缺变体 …-布）"`）。
+  判据 = 生产 Java 里变体名字面量**不得出现在拼接表达式**里；`x.equals("-布")` / `x.endsWith("-布")`
+  是**判定**不是输出 ⇒ 不算违规；部位名取值（`"布帘"`）与变体名**同形不同物** ⇒ 逐条登记豁免。
+  **已知边界（如实登记，不粉饰）**：间接拼接（`String suffix = "-布"; … + suffix`）**照不到** ——
+  词法级判据无法可靠区分「这个变量后来被拼进文案」。真正的红线在 ③b 的 Java 单测断言上
+  （`ProductionRoutingCommandServiceTest` / `ProcessingOrderServiceTest` 直接断言 message / hint
+  **不含** `-布` / `-纱`）；本静态判据只兜住「直接写出来」这一形态。
 
 ## 反空跑锚点（三条各一 + 一条全局阳性对照）
 
@@ -52,7 +63,11 @@ S1（issue #4621 / `tests/unit_ci_workflows/test_operation_display_name_guard.py
 | ① 扫描根缺失 | `frontend/admin-web/src` / `backend/admin-api/src/main/java` 不存在 ⇒ 红（**不得**静默跳过） |
 | ② 命中集空 | 标记命中集合为空 ⇒ 红（机制已死 ≠ 没问题） |
 | ③ 登记表空 | 登记表 / 豁免表为空 ⇒ 红（判据会静默变成「扫了个空表」） |
+| ③b / ④ 锚点 | ③b 的豁免表为空 ⇒ 红；④ 的键名常量漂移 ⇒ 红 |
 | 全局阳性对照 | helper `operation-display.ts` 必须出现在 ① 的语料里（证明真扫到了我们关心的代码） |
+
+⚠️ **④ 与「不重写 S1」的关系**（issue #4647）：④ 是**新增**判据，与 S1 的 `FACES` 无关；
+② 的受管表新增了米宝会话卡 ⇒ 同步加进 S1 的 `FACES`（否则 `_s1_drift` 会红 —— 两处清单必须一致）。
 
 ## 边界（本单**不做**）
 
@@ -129,6 +144,14 @@ MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # 标记集里没有 `CatalogOperation` ⇒ 注入一个「读 catalog 的新面」时命中集为空、守卫**不红**
     # （改前实测）。精确词边界：`\bCatalogOperation\b` **不**匹配 `CatalogOperations` 这类别的类型名。
     ("CatalogOperation", re.compile(r"\bCatalogOperation\b")),
+    # **米宝会话卡的载荷键**（`production_progress_query` 精简载荷的 `current_operation`）。
+    # issue #4647 / D1 实测补入：`components/chat/ProductionProgressCard.tsx` 读的正是这个键，
+    # 而它的元素类型是**文件内本地接口** `ProductionCardOperation`（不是上面任何一个标记）
+    # ⇒ 标记集照不到它、它也不在任何登记表里 ⇒ **四条判据全绿**（复验方注入实验：把该面退回
+    # 裸渲染快照名 `String(currentFields?.operation ?? '')` ⇒ 改前不红）。补标记后该面进受管表。
+    ("current_operation", re.compile(r"\bcurrent_operation\b")),
+    # 本地元素类型名（同一条漏点的另一形态：将来某个面直接拿这个接口渲染快照名时也被照到）。
+    ("ProductionCardOperation", re.compile(r"\bProductionCardOperation\b")),
 )
 
 #: **受管面**：必须 import 唯一 helper，且**不得**直接渲染快照名（`.operation` / `operation_name` /
@@ -138,6 +161,10 @@ MANAGED_FACES: tuple[str, ...] = (
     "frontend/admin-web/src/components/production/TaskCardPrint.tsx",
     "frontend/admin-web/src/app/(dashboard)/production/piecework/page.tsx",
     "frontend/admin-web/src/components/production/PieceworkTable.tsx",
+    # issue #4647 / D1：米宝会话里的**生产进度卡** —— 它渲染 `current_operation`（工人端快照名），
+    # 改前**不在任何清单里**（复验方实测四项全 False）⇒ 把它退回裸渲染快照名时四条判据全绿。
+    # 今天它已走 `operationDisplayName()`（issue #4643），登记是为了让「下次再退回裸渲染」直接判红。
+    "frontend/admin-web/src/components/chat/ProductionProgressCard.tsx",
 )
 
 #: **豁免面**（文件, 理由）—— 逐条登记；**过期即红**（只许缩短）。
@@ -487,6 +514,182 @@ def _stale_java_exemptions(root: Path) -> list[str]:
     return problems
 
 
+# ── ③b 后端**文案**不得拼变体名（issue #4647 / D3）─────────────────────────────
+#
+# 病根（复验实测）：③ 只判「读面**落键**是否成对」⇒ 它**照不到文案拼接**。于是两条**非删除**路径
+# 长期把工人端快照名（变体名）拼进 422 文案：
+#   ① `ProductionRoutingCommandService` 主线判重：`name + "-布"` ⇒ 界面渲染出「精裁-布」；
+#   ② `ProcessingOrderService` 实例化 fail-closed 的 `hint`：`logicalName + "（库中缺变体 …-布）"`。
+# 判据 = 生产 Java 源码里**不得用字符串拼接**把变体名拼出来（比较谓词 `.equals()` / `.endsWith()`
+# 不算 —— 那是**判定**，不是**输出**）。
+
+#: 变体名形态的字符串字面量：`-布` / `-纱` / `-帘` 开头的后缀，或整串含 `-布`/`-纱`/`-帘`
+_JAVA_VARIANT_LITERAL_RE = re.compile(r'"-?[布纱帘]|-[布纱帘]"')
+#: 字符串拼接（`+ "…"` 或 `…" +`）；`!=` 里的 `=` 不在其前，故不误判
+_JAVA_CONCAT_RE = re.compile(r"\+\s*\"|\"\s*\+")
+#: **判定式**（不是输出）：`x.equals("-布")` / `x.endsWith("-布")` / `startsWith` / `contains`
+_JAVA_PREDICATE_RE = re.compile(r"\.(equals|endsWith|startsWith|contains)\s*\(")
+
+#: ③b 的**显式豁免**（文件, 字面量, 理由）—— 逐条判断后登记（**不是**一律加白）；过期即红。
+JAVA_TEXT_EXEMPT: tuple[tuple[str, str, str], ...] = (
+    (
+        "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+        '"布帘"',
+        "**部位名取值**（`CURTAIN_TYPE_CLOTH = \"布帘\"`，`curtainType` 闭词表的值，同文件另处"
+        "做 `Map.of(\"纱\", …, \"主布\", …)` 的**取值**）：它是「部位」，不是「工序名 + 部位后缀」"
+        "⇒ 与变体名同形不同物；逐条登记而不是放宽正则（放宽会让 `\"-布\"` 一并漏过）",
+    ),
+)
+
+
+def _java_text_concat_hits(root: Path) -> list[tuple[str, int, str]]:
+    """生产 Java 里「变体名字面量出现在拼接表达式里」的位置（**未扣豁免**）。"""
+    hits: list[tuple[str, int, str]] = []
+    for rel, text in _java_corpus(root):
+        for lineno, line in enumerate(_strip_comments(text).splitlines(), start=1):
+            if not _JAVA_CONCAT_RE.search(line):
+                continue
+            if _JAVA_PREDICATE_RE.search(line):
+                continue
+            if _JAVA_VARIANT_LITERAL_RE.search(line):
+                hits.append((rel, lineno, line.strip()))
+    return hits
+
+
+def _java_text_concat_offenders(root: Path) -> list[str]:
+    """③b 违规：**扣掉逐条登记的豁免字面量后**，拼接表达式里仍出现变体名字面量。
+
+    逐处扣减（`str.replace`）而不是「整行命中豁免就跳过」—— 后者会让「同一行既有豁免字面量、
+    又有真变体名」这种形态静默漏判（与 ① 同款）。
+    """
+    allowed: dict[str, list[str]] = {}
+    for rel, literal, _reason in JAVA_TEXT_EXEMPT:
+        allowed.setdefault(rel, []).append(literal)
+    offenders: list[str] = []
+    for rel, lineno, line in _java_text_concat_hits(root):
+        rest = line
+        for literal in allowed.get(rel, []):
+            rest = rest.replace(literal, "")
+        if _JAVA_VARIANT_LITERAL_RE.search(rest):
+            offenders.append(f"{rel}:{lineno} 把变体名拼进了文案：{line}")
+    return offenders
+
+
+def _stale_java_text_exemptions(root: Path) -> list[str]:
+    """③b 过期豁免（**只许缩短**）：文件不存在 / 理由缺失 / 字面量已不在代码里 ⇒ 销账。"""
+    problems: list[str] = []
+    for rel, literal, reason in JAVA_TEXT_EXEMPT:
+        path = root / rel
+        if not path.is_file():
+            problems.append(f"{rel} 不存在（豁免条目指向漂移路径 ⇒ 该条已失效，销账）")
+            continue
+        if len(reason.strip()) < 10:
+            problems.append(f"{rel} 的 `{literal}` 没写理由（新增/保留豁免必须逐条写理由）")
+        if literal not in _strip_comments(path.read_text(encoding="utf-8")):
+            problems.append(
+                f"{rel} 的 `{literal}` 已不在代码里 ⇒ 该豁免**过期**（登记表只许缩短：删掉这一条）"
+            )
+    return problems
+
+
+#: 库口径原名键：**web 界面不得渲染**（issue #4621 / #4642；今天只在 `types/index.ts` 的类型注释里
+#: 被提及）。issue #4647 / D5 实测：往**已豁免**的 `routings/page.tsx` 注入 `{op.library_name}` ⇒
+#: 判据全绿 ⇒ 该约束改前是**注释级**的。这里补一条机械判据。
+LIBRARY_NAME_KEY = "library_name"
+#: 取值形态：`{x.library_name}` / `{library_name}` / `{cond && op.library_name}` / `title={x.library_name}`。
+#: **比「只拦 JSX 子节点」严一格**（照实登记）：属性位置（tooltip / `data-*`）同属「渲染出去」，
+#: 一并拦；代价是它可能误伤纯内部 `data-*` 用法 —— 今天真树 **0 命中**，一旦出现就逐条判断后登记。
+#: 形态选择：`{` 与键之间**必须**要么直接是键（`{library_name}`），要么中间有 `.` / `&&` / `||` /
+#: `?` 这类**取值算子** —— 这一条把 TS **类型声明**（`{ library_name: string }`，冒号紧跟键名、
+#: 中间无算子）排除在外（否则判据会对着 `types/index.ts` 的类型声明恒红）。
+_LIBRARY_NAME_JSX_RE = re.compile(r"\{\s*(?:[^}]*?[.&|?]\s*)?library_name\b\s*(?=[,}\s]|$)")
+
+
+def _library_name_render_hits(root: Path) -> list[str]:
+    """FE 源码里「在 JSX 渲染位置取 `library_name`」的位置（**未扣豁免**）。"""
+    hits: list[str] = []
+    for rel, text in _fe_corpus(root):
+        for lineno, line in enumerate(_strip_comments(text).splitlines(), start=1):
+            if _LIBRARY_NAME_JSX_RE.search(line):
+                hits.append(f"{rel}:{lineno} {line.strip()}")
+    return hits
+
+
+# ── ④ `library_name` 不得渲染（issue #4647 / D5）──────────────────────────────
+
+def test_c4_library_name_is_never_rendered_by_web():
+    """④：FE 源码**不得**在 JSX 渲染位置取 `library_name`（库口径原名键）。
+
+    <p>issue #4647 / D5 实测：该约束改前是**注释级**的 —— 往**已豁免**的 `routings/page.tsx`
+    注入 `{op.library_name}` ⇒ 判据全绿。本判据把它落成机械判据。</p>
+    """
+    hits = _library_name_render_hits(REPO_ROOT)
+    assert hits == [], (
+        "FE 在 JSX 渲染位置取了 `library_name`（库口径原名，如 `精裁-布`）—— 该键**web 不得渲染**"
+        "（issue #4621 / #4642）：\n  " + "\n  ".join(hits)
+        + "\n处置：渲染读面已归一的 `name`（逻辑名）；库口径原名只作内部寻址/元数据解析"
+    )
+
+
+def test_c4_injected_library_name_render_is_red(tmp_path: Path):
+    """④ 注入式红证：往**已豁免**的 `routings/page.tsx` 塞 `{op.library_name}` ⇒ 判红。
+
+    <p>注入面刻意选**已豁免面** —— D5 的漏点正是「豁免表让这个文件整份不受 ② 管，
+    而 ① 只管字面量 ⇒ 渲染 `library_name` 无任何判据」。</p>
+    """
+    rel = "frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx"
+    original = (REPO_ROOT / rel).read_text(encoding="utf-8")
+    injected = original + "\nconst __leak = <span>{op.library_name}</span>\n"
+    assert _fingerprint(injected) != _fingerprint(original), "注入没生效"
+
+    target = tmp_path / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(injected, encoding="utf-8")
+
+    hits = _library_name_render_hits(tmp_path)
+    assert any(rel in h for h in hits), (
+        f"注入 `{{op.library_name}}` 后判据**没判红** ⇒ ④ 是空判据（D5 的漏点未被堵住）：{hits}"
+    )
+
+    # 阳性对照：还原 ⇒ 变绿（红的归因是那段渲染，不是别的噪声）
+    target.write_text(original, encoding="utf-8")
+    assert _library_name_render_hits(tmp_path) == [], "还原后仍判红 ⇒ 判据与目标无关（误红）"
+
+    # 还原自证 + 真树仍绿（今天 web 一处都不渲染该键 —— 泄漏是**未来**的风险）
+    assert _fingerprint((REPO_ROOT / rel).read_text(encoding="utf-8")) == _fingerprint(original), (
+        "真树文件内容变了 ⇒ 红证污染了被测对象（红证只许动**临时副本**）"
+    )
+    assert _library_name_render_hits(REPO_ROOT) == [], "真树上 ④ 应为绿"
+
+
+def test_c4_attribute_position_is_also_covered():
+    """④ 覆盖面自证（**如实登记**）：属性位置（`title={x.library_name}`）**也**被判据拦下。
+
+    <p>本判据比「只拦 JSX 子节点」严一格 —— 属性位置（tooltip / `data-*`）同属「渲染出去」。
+    这条断言把该口径写成可执行真值，避免复核者把它读成「只拦子节点」。</p>
+    """
+    for sample in (
+        "<th title={op.library_name}>工序</th>\n",          # 属性位置
+        "const x = <span>{op.library_name}</span>\n",        # 子节点位置
+        "const y = <span>{show && op.library_name}</span>\n",  # 表达式位置
+        "const z = <span>{library_name}</span>\n",           # 裸键（同一作用域解构出来的）
+        "const w = <span>{a ? library_name : ''}</span>\n",  # 三元取值
+    ):
+        assert _LIBRARY_NAME_JSX_RE.search(sample) is not None, (
+            f"样本 `{sample.strip()}` 未被判据命中 ⇒ 覆盖面与 docstring 不符（判据形态漂移了）"
+        )
+    # 反空跑：**非**取值位置不得命中（否则判据会退化成「见到标识符就红」/ 对着类型声明恒红）
+    for negative in (
+        "const x = library_name\n",
+        "// library_name 是库口径键\n",
+        "interface T { library_name: string }\n",
+        "type T = { library_name: string }\n",
+    ):
+        assert _LIBRARY_NAME_JSX_RE.search(negative) is None, (
+            f"样本 `{negative.strip()}` 被判据命中 ⇒ 判据过宽（类型声明 / 裸标识符不是渲染位置）"
+        )
+
+
 # ── ① 测试 ───────────────────────────────────────────────────────────────────
 
 def test_c1_fe_code_has_no_variant_name_literals():
@@ -690,6 +893,147 @@ def test_c2_s1_registry_drift_is_red():
     )
 
 
+# ── ② 测试（issue #4647 / D1：会话卡的漏点）───────────────────────────────────
+
+def test_c2_injected_bare_snapshot_render_in_progress_card_is_red(tmp_path: Path):
+    """② 注入式红证（issue #4647 / D1）：把**米宝会话卡**退回裸渲染快照名 ⇒ 判红。
+
+    <p>改前实测（复验方）：该面 `_markers_in()` = `[]`、不在 `MANAGED_FACES` / `EXEMPT_FACES` /
+    S1 `FACES`（四项全 False）⇒ 注入**四条判据全绿**（缺陷 6 可静默复发）。
+    根因 = 它读 `current_operation`、元素类型是文件内本地接口 `ProductionCardOperation`，
+    而 `MARKERS` 只认 `operation_name` / `per_operation` / `ProductionPosition` /
+    `ProductionOperation` / `CatalogOperation` ⇒ 照不到。</p>
+    """
+    rel = "frontend/admin-web/src/components/chat/ProductionProgressCard.tsx"
+    original = (REPO_ROOT / rel).read_text(encoding="utf-8")
+
+    # 注入形态 = 复验方给的「退回裸渲染快照名」：删 helper 导入 + 直接取 `current_operation`
+    injected = original.replace(
+        "import { operationDisplayName } from '@/lib/operation-display'\n", ""
+    )
+    assert _fingerprint(injected) != _fingerprint(original), (
+        f"在 `{rel}` 里找不到注入点（helper 的 import 形态变了）⇒ 本红证会**空跑**；"
+        "该面的导入形态变了就同步改本守卫"
+    )
+
+    # 标记口径自证：`current_operation` / `ProductionCardOperation` 必须**真在** MARKERS 里
+    # （否则本红证恒红/恒绿都不可归因）
+    for name in ("current_operation", "ProductionCardOperation"):
+        assert any(n == name for n, _p in MARKERS), (
+            f"MARKERS 里没有 `{name}` ⇒ 会话卡的读面键照不到（D1 的漏点未被堵住）"
+        )
+    assert _markers_in(_strip_comments(original)) != [], (
+        f"`{rel}` 在真树上**一个标记都不命中** ⇒ 登记机制照不到这个面（D1 的根因）"
+    )
+
+    # 受管面**全部**放进临时副本 —— 否则「文件不存在」的兜底路径会冒充红证
+    for face in MANAGED_FACES:
+        content = injected if face == rel else (REPO_ROOT / face).read_text(encoding="utf-8")
+        target = tmp_path / face
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+
+    face_offenders = _managed_face_violations(tmp_path)
+    assert any(rel in o and HELPER_SPECIFIER in o for o in face_offenders), (
+        f"会话卡 `{rel}` 被摘掉 helper 导入后判据没判红（或红的理由不是「没走唯一 helper」）⇒ "
+        f"受管面判据照不到这个面：{face_offenders}"
+    )
+    assert _unregistered_faces(tmp_path) == [], (
+        "会话卡已登记（在 MANAGED_FACES 里）⇒ 「未登记即红」不应因它而红"
+    )
+
+    # 还原自证 + 真树仍绿
+    assert _fingerprint((REPO_ROOT / rel).read_text(encoding="utf-8")) == _fingerprint(original), (
+        "真树文件内容变了 ⇒ 红证污染了被测对象（红证只许动**临时副本**）"
+    )
+    assert _managed_face_violations(REPO_ROOT) == [], "真树上会话卡应为绿（它已走 operationDisplayName）"
+
+
+# ── ③b 测试（issue #4647 / D3：文案拼接）──────────────────────────────────────
+
+def test_c3b_java_text_never_concatenates_variant_names():
+    """③b：生产 Java 文案**不得**用拼接把变体名（`-布`/`-纱`/`-帘`）拼出来。
+
+    <p>判据来自 issue #4647 / D3：③ 只判读面**落键**成对 ⇒ **照不到文案拼接**，于是
+    `ProductionRoutingCommandService`（主线判重）与 `ProcessingOrderService`（实例化 hint）
+    两条非删除路径把 `精裁-布` 拼进了 422 文案（前者**界面可见**）。</p>
+    """
+    offenders = _java_text_concat_offenders(REPO_ROOT)
+    assert offenders == [], (
+        "生产 Java 把**变体名**（工人端快照名，如 `精裁-布`）拼进了文案 —— 它会经 422 响应"
+        "上屏（工艺路线页的护栏理由区直接渲染 `details[].message`）：\n  "
+        + "\n  ".join(offenders)
+        + "\n处置：文案只写**逻辑名** + 说明（如「该工序在该部位缺库行」），"
+        "不得回显 `-布`/`-纱`/`-帘` 形态；确属另一个词表（如部位名 `布帘`）⇒ 逐条登记进 JAVA_TEXT_EXEMPT"
+    )
+
+
+def test_c3b_java_text_exemptions_are_registered_and_not_stale():
+    """③b 豁免登记：逐条有理由、文件存在、字面量仍在代码里（过期 ⇒ 红 = 只许缩短）。"""
+    assert JAVA_TEXT_EXEMPT, (
+        "③b 的豁免表为空 ⇒ 判据的覆盖面归零（若确已清理干净，请把本断言改成别的非空锚点，"
+        "而不是留一张空表）"
+    )
+    problems = _stale_java_text_exemptions(REPO_ROOT)
+    assert problems == [], "③b 豁免清单有问题：\n  " + "\n  ".join(problems)
+
+
+def test_c3b_injected_variant_name_concat_is_red(tmp_path: Path):
+    """③b 注入式红证：临时副本里把变体名拼进文案 ⇒ 判红；内容指纹自证注入/还原真生效。
+
+    <p>注入形态 = D3(a) 的**原始形态**（`name + "-布"`）—— 改前它在真树上、判据不存在；
+    改后判据必须能认出来。</p>
+    """
+    rel = "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java"
+    original = (REPO_ROOT / rel).read_text(encoding="utf-8")
+    injected = original.replace(
+        'String logicalName = productionOperationQueryService.normalizeOperationName(name);',
+        'String logicalName = productionOperationQueryService.normalizeOperationName(name);\n'
+        '            String leak = name + "-布";',
+    )
+    assert _fingerprint(injected) != _fingerprint(original), (
+        f"在 `{rel}` 里找不到注入点（归一调用的形态变了）⇒ 本红证会**空跑**；"
+        "该处实现变了就同步改本守卫"
+    )
+
+    target = tmp_path / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(injected, encoding="utf-8")
+
+    offenders = _java_text_concat_offenders(tmp_path)
+    assert any(rel in o and '"-布"' in o for o in offenders), (
+        f"把 `name + \"-布\"` 注入文案后判据**没判红** ⇒ ③b 是空判据（不会红的断言 = 空断言）：{offenders}"
+    )
+
+    # 阳性对照：还原 ⇒ 同一判据变绿（证明红的归因是那段拼接，不是别的噪声）
+    target.write_text(original, encoding="utf-8")
+    assert _java_text_concat_offenders(tmp_path) == [], "还原后仍判红 ⇒ 判据与目标无关（误红）"
+
+    # 还原自证 + 真树仍绿
+    assert _fingerprint((REPO_ROOT / rel).read_text(encoding="utf-8")) == _fingerprint(original), (
+        "真树文件内容变了 ⇒ 红证污染了被测对象（红证只许动**临时副本**）"
+    )
+    assert _java_text_concat_offenders(REPO_ROOT) == [], "真树上 ③b 应为绿"
+
+
+def test_c3b_variant_suffix_literals_alone_are_not_red():
+    """③b **判别力下界**：`"布帘"`（部位名）与 `.endsWith("-布")`（判定式）**不得**判红。
+
+    <p>没有这条，一个「见到 `-布` 就判红」的实现会静默通过 —— 它会误伤部位名取值与判定谓词，
+    逼出两个假豁免（豁免越多，判据越容易被顺手加白）。</p>
+    """
+    ghost = (
+        'private static final String POS = "布帘";\n'
+        'boolean isVariant(String name) { return name.endsWith("-布"); }\n'
+        'boolean same(String a) { return a.equals("-纱"); }\n'
+    )
+    assert _JAVA_CONCAT_RE.search(ghost) is None, "本下界样本本身不该含拼接（样本形态漂移了）"
+    assert _JAVA_VARIANT_LITERAL_RE.search(ghost) is not None, "本下界样本本身应含变体名字面量"
+    # 拼接 + 判定式同行 ⇒ 不判红（判定不是输出）
+    mixed = 'boolean f(String name) { return name.endsWith("-布") && true; } // x + "y"\n'
+    assert _JAVA_PREDICATE_RE.search(mixed) is not None, "判定式样本形态漂移了"
+
+
 # ── ③ 测试 ───────────────────────────────────────────────────────────────────
 
 def test_c3_java_read_faces_pair_operation_with_logical_name():
@@ -767,4 +1111,7 @@ def test_anchors_hit_sets_and_registry_are_not_empty():
     )
     assert JAVA_EXEMPT or _java_unpaired(REPO_ROOT) == [], (
         "③ 豁免表为空时判据必须仍能判红（此断言是 fail-closed 的兜底说明）"
+    )
+    assert LIBRARY_NAME_KEY == "library_name", (
+        "④ 的键名常量被改 ⇒ 判据扫的不是 `library_name`（键名是本判据的**被测对象**，不得漂移）"
     )

@@ -1402,8 +1402,44 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getCode()).isEqualTo(ProcessingOrderService.ERR_OPERATION_NOT_FOUND);
-        assertThat(results.get(0).getMessage()).contains("拼1次-布");
+        // ⚠️ 判据改钉**新真值**（issue #4647 / D3(b)，**不是放宽**）：改前这里断言 message 含
+        // `拼1次-布`（= 实现拼出来的**库内变体名**）⇒ 那条断言**就是在钉泄漏本身**。
+        // 现在 message 只报**逻辑名**（`拼1次`）+ 说清缺什么；变体名一律不上响应体。
+        assertThat(results.get(0).getMessage()).as("指名报缺：报的是**逻辑工序名**（拼1次）")
+                .contains("拼1次");
         assertThat(results.get(0).getSuggestion()).as("失败必须可行动").contains("operations-catalog");
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
+    }
+
+    @Test
+    @DisplayName("#4647 / D3(b)：实例化 fail-closed 的 hint **不得**拼变体名（改前拼「库中缺变体 拼1次-布 / …」）")
+    void missingOperationHintDoesNotLeakVariantNames() {
+        // 病根（issue #4647 复验实测）：hint 曾走 `logicalName + "（库中缺变体 " + expectedVariantLabel(…) + "）"`，
+        // 而 `expectedVariantLabel` 拼 `逻辑名 + "-布"` / `"布" + 逻辑名` / `"布帘" + 逻辑名`
+        // ⇒ 422 响应体里出现工人端快照名（改前实测日志：`缺工序=[拼1次（库中缺变体 拼1次-布 / 布拼1次 /
+        // 布帘拼1次 / 拼1次）]`）。判据 = message **与** suggestion 都不含 `-布` / `-纱` / `-帘` 形态，
+        // 且仍**指名报缺 + 说清缺在哪个部位**（可行动性不降）。
+        stubLibrary();
+        Map<String, Map<String, Object>> broken = RoutingModelFixture.catalog();
+        broken.remove("拼1次-布");
+        when(productionOperationQueryService.operationsByName(TENANT)).thenReturn(broken);
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemHanzheWithOptions("米白", List.of("拼1次"))));
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isFalse();
+        assertThat(results.get(0).getCode()).isEqualTo(ProcessingOrderService.ERR_OPERATION_NOT_FOUND);
+        assertThat(results.get(0).getMessage())
+                .as("响应体**不得**含变体名形态（`-布` / `-纱` / `-帘`）")
+                .doesNotContain("-布").doesNotContain("-纱").doesNotContain("-帘")
+                .as("可行动性不降：仍指名报缺 + 说清缺在哪个部位")
+                .contains("拼1次").contains("布帘");
+        assertThat(results.get(0).getSuggestion())
+                .as("suggestion 同样不得泄漏变体名").doesNotContain("-布").doesNotContain("-纱").doesNotContain("-帘")
+                .as("补救入口仍在").contains("operations-catalog");
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
         verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
     }
