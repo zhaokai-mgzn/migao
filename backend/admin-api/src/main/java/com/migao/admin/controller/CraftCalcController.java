@@ -39,8 +39,10 @@ public class CraftCalcController {
     /**
      * 算料试算。返回 ai-agent 的算料结果（数值 + 可读公式串）。
      *
-     * <p>入参 {@code {width, height?, open_count?, mounting?, craft_tier?, style?}} 原样透传：
+     * <p>入参 {@code {width, height?, open_count?, mounting?, craft_tier?, style?, formula?}} 原样透传：
      * 缺省值由 ai-agent 端点给，本层**不补默认值、不重算**（补默认值 = 第二份口径）。
+     * {@code formula}（issue #4527）= 用料**计算方法**（{@code pleat} 韩折公式＝折数法，默认 ｜
+     * {@code fullness} 褶倍数公式＝倍数法）—— 本层只搬运，**不校验、不改写**（口径只属算料引擎）。
      * 缺 {@code width} 或非正 ⇒ 400 且不发起远端调用（fail-closed，不猜窗宽）。</p>
      */
     @RequirePermission("order:list")
@@ -79,6 +81,7 @@ public class CraftCalcController {
         data.put("fullness_actual", result.fullnessActual());
         data.put("formula_used", result.formulaUsed());
         // 公式串由 ai-agent 后端产出（与数值同源）—— 本层只搬运，**绝不**自拼
+        // （issue #4527：两种用料公式的串形态不同 ⇒ 自拼 = 第二份算料逻辑）
         data.put("formula_text", result.formulaText());
         data.put("source", result.source());
         data.put("craft_tier", result.craftTier());

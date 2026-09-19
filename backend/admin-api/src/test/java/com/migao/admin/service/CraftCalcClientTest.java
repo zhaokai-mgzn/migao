@@ -73,6 +73,8 @@ class CraftCalcClientTest {
         body.put("open_count", 2);
         body.put("mounting", "s_hook");
         body.put("craft_tier", "standard");
+        // issue #4527：用料计算方法（pleat 韩折公式 / fullness 褶倍数公式）—— Java 侧只**透传**
+        body.put("formula", "pleat");
         return body;
     }
 
@@ -82,7 +84,7 @@ class CraftCalcClientTest {
                   "fabric_meters":13.3,"pleat_count":52,"per_panel_pleats":26,"open_count":2,
                   "margin":0.3,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,
                   "formula_used":"fixed_height_pleats",
-                  "formula_text":"(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米",
+                  "formula_text":"韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米",
                   "source":"formula","craft_tier":"standard","warning":""},
                  "requestId":"req_1","timestamp":1758100000}
                 """;
@@ -104,7 +106,7 @@ class CraftCalcClientTest {
         assertThat(result.fullnessActual()).isEqualByComparingTo("2.02");
         assertThat(result.formulaUsed()).isEqualTo("fixed_height_pleats");
         assertThat(result.formulaText())
-                .isEqualTo("(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米");
+                .isEqualTo("韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米");
         assertThat(result.source()).isEqualTo("formula");
         assertThat(result.craftTier()).isEqualTo("standard");
         assertThat(result.warning()).isEmpty();
@@ -130,6 +132,52 @@ class CraftCalcClientTest {
         assertThat(result.fabricMeters()).isEqualByComparingTo("34.1");
         assertThat(result.perFold()).isEqualByComparingTo("0.65");
         assertThat(result.formulaText()).contains("0.65×52");
+    }
+
+    @Test
+    @DisplayName("#4527 formula 透传：Java 侧不校验、不改写、不补默认值（算料口径只属引擎）")
+    @SuppressWarnings("rawtypes")
+    void passesFormulaThroughVerbatim() {
+        when(restTemplate.exchange(eq(URL), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok(responseBody()));
+
+        Map<String, Object> body = new LinkedHashMap<>(request());
+        body.put("formula", "fullness");
+        client.calc(body);
+
+        org.mockito.ArgumentCaptor<HttpEntity> captor = org.mockito.ArgumentCaptor.forClass(HttpEntity.class);
+        verify(restTemplate).exchange(eq(URL), eq(HttpMethod.POST), captor.capture(), eq(String.class));
+        Map<String, Object> sent = new ObjectMapper().convertValue(captor.getValue().getBody(), Map.class);
+        assertThat(sent).containsEntry("formula", "fullness");
+    }
+
+    @Test
+    @DisplayName("#4527 褶倍数公式响应：11.0 米 + 公式串由后端给（Java 侧只搬运，不自拼公式）")
+    void parsesFullnessFormulaResultVerbatim() {
+        when(restTemplate.exchange(eq(URL), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok("""
+                        {"success":true,"data":{
+                          "fabric_meters":11.0,"pleat_count":null,"per_panel_pleats":null,
+                          "open_count":2,"margin":null,"per_fold":null,
+                          "fullness":2.0,"fullness_actual":null,
+                          "formula_used":"fixed_height_fullness",
+                          "formula_text":"褶倍数公式：(5.5÷2)×2 → 每片 2.75×2=5.5米 ×2片 = 11.0米",
+                          "source":"formula","craft_tier":"standard","warning":""}}
+                        """));
+
+        CraftCalcClient.CraftCalcResult result = client.calc(Map.of(
+                "width", 5.5, "open_count", 2, "craft_tier", "standard", "formula", "fullness"));
+
+        assertThat(result.fabricMeters()).isEqualByComparingTo("11.0");
+        assertThat(result.formulaUsed()).isEqualTo("fixed_height_fullness");
+        assertThat(result.formulaText()).startsWith("褶倍数公式：").endsWith("= 11.0米");
+        // 折数类字段在褶倍数公式下**如实缺席**（不发明「52 折」这种数）：端点回 null ⇒ Java 侧取到 0
+        // （`fullness_actual` 有显式 null 判据 ⇒ null；`per_fold`/`pleat_count`/`per_panel_pleats`
+        //   走 `decimalValue()`/`asInt()`，null ⇒ 0 —— 既有解析口径，本包不改）。
+        assertThat(result.pleatCount()).isZero();
+        assertThat(result.perPanelPleats()).isZero();
+        assertThat(result.perFold()).isEqualByComparingTo("0");
+        assertThat(result.fullnessActual()).isNull();
     }
 
     @Test

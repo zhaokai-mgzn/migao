@@ -2246,7 +2246,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（39 case）
+## 订单域（40 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -2962,6 +2962,21 @@
 ```
 溯源: 2026-09-19 新增（issue #4526 包 B，设计文档 §5.1/§5.2 / §9 判据 8）：用户 2026-09-19 口径「超高 / 超宽是和门幅标准比较的，客户报的数据和门幅对比后能自动区分出来是超高还是超宽，这个要求做到自动识别」。此前前端**零落点**（`grep 超高` 只命中 Modal 注释）。本用例把判据挂到真实推导行为上：两条独立阈值 + cuttingMode 唯一推导 + 只读展示。**不改运行时行为、不改断言强度**。2026-09-19（同日裁定修正）：自动识别实现落在 **admin-web 专属**的 `lib/craft-auto-features.ts`（原稿误放进三端逐字同源的 `lib/craft-display.ts` ⇒ 会静默破坏「三端同源」不变量，既有 issue #4393 尚无守卫）—— `craft-display.ts` 已回退到与 mini-app / bmini-app **逐字一致**（sha 全等）。 ｜ tags: order, craft_spec, auto_detect, dimension, display, backend_contract
 
+### OR-041. 算料公式按工艺推导 - 韩褶⇒韩折公式（折数法）/ 打孔⇒倍数法（默认 2 倍）+ 逐片口径（每片×开数）+ 用料向上进位到 0.1 🔵
+```
+你: 商家手工下单页按宽 5.5m / 双开 / 标准档，工艺选打孔 ⇒ 按倍数法试算用料（预期 11.0 米）
+期望: direct_reply
+数据: （散文、**不计分**）公式**由工艺推导**（用户 2026-09-19 追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」）：韩褶 ⇒ 韩折公式（折数法）/ 打孔 ⇒ 褶倍数公式（倍数法，默认 2 倍）；未登记工艺/未指定 ⇒ 兜底默认（韩折公式）；`formula` 入参为**显式覆盖**（显式 > 推导表 > `default_formula` 兜底）
+数据: （散文、**不计分**）ERP 实证锚点（#4343 取证的加工单 CSO260915-02615）：宽 5.5m / 双开 / 理论褶倍 2.00 ⇒ **11.00 米**（= 5.5×2.00）—— 双开不得把总宽再乘 2（甲口径 22.00 米已被用户否决）
+数据: （散文、**不计分**）逐片口径：每片宽 = 成品宽 ÷ 开数；总用料 = 每片用料 × 开数（每片余量 = 总余量 ÷ 开数 ⇒ 与既有 `0.25×总折数+总余量` 逐值一致，不改钱）
+数据: （散文、**不计分**）用料米数一律**向上进位到 0.1**（`ceil(x*10)/10`）：截断 / 四舍五入即违约；进位只在总用料上做一次；金额/单价相关量不跟着改口径
+数据: （散文、**不计分**）配置可注入（用户追加裁定「可能得支持每个商家自定义配置」）：默认值 = 既有常量逐值不变；护栏（褶倍下限 / 正数校验 / tiers 非空）不因可配而消失，非法配置显式报错；配置沿调用链显式传递
+数据: （散文、**不计分**）公式串由**后端**（算料引擎）产出并写明所用公式（`韩折公式：` / `褶倍数公式：`）；Java / TS 侧只搬运、不自拼（自拼 = 第二份算料逻辑）；前端 `PLEAT_CRAFTS` 门必须放行打孔（否则「打孔按倍数法算布料」在页面上永不发生）
+跳过: [backend-contract] 算料公式属确定性纯计算（无 LLM 行为）：判据在 pytest（tests/test_craft_calc_formula.py / tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）+ vitest（craft-calc-request.test.ts / craft-calc-formula-sync.test.ts / orders-new-craft-calc.test.tsx），不进 agent-eval 冒烟
+```
+真值: fabric-calc.formula-selection, fabric-calc.meters-ceiling, fabric-calc.craft-calc-config, fabric-calc.craft-calc-endpoint
+溯源: 2026-09-19 新增（issue #4527，包 D 算料口径）：用户裁定「两种用料计算方法可选、默认韩折 + 用料米数保留一位小数（向上进位）+ 按打开方式系数（逐片口径）」，追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」与「公式参数支持每个商家自定义配置」。落码 = `curtain_calc.py`（`formula` 入参 + `CRAFT_FORMULA`/`CRAFT_MOUNTING` 推导表 + `DEFAULT_CRAFT_CALC_CONFIG` + `ceil_to_step` + 逐片口径 + 引擎产出 `formula_text`）、`internal.py` 端点透传 `formula`/`craft`、Java 代理透传（不复制算料逻辑）、`craft-calc-request.ts`（放行打孔 + mounting/formula 随 craft 走 + 有守卫的映射副本）。**不改运行时金额口径**（金额仍 = 用料 × 单价，只用料米数按裁定向上进位到 0.1）。编号：起草用 OR-039，合并 main 时 main 已占用 OR-039/OR-040（包 B #4526）⇒ 顺延 OR-041。 ｜ tags: order, craft_calc, fabric, formula_selection, per_panel, meters_rounding
+
 ## 加工项域（13 case）
 
 ### PP-002. 加工项分类列表 🔵
@@ -3030,7 +3045,7 @@
 必须成功: processing_item_manage(toggle_item_status)
 产出: processing_item_manage(toggle_item_status) → status==inactive
 ```
-溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。2026-09-19（issue #4542 的 burn-down 缴费）：补**机器计分型**前置自断言（种子 `pi_eval_punch`「纳米圈打孔」存在且 per_meter / active），把「前置不成立 ⇒ 找不到加工项却归因到 agent 不会停用」这条形态挡在门口；user_inputs / expectations / must_succeed / required_args / output_verify / forbidden_text 原样未动、无放宽。 ｜ tags: processing_item, llm_behavior, tool_call, toggle
+溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。2026-09-19（issue #4527 的 burn-down 缴费）：补 `precondition[processing_item_count_for_keyword: 纳米圈打孔, expect: 1]` —— 把「种子夹具存在且唯一」这条**真正依赖且只读**的前置写成可判定自断言；类型由本 PR 加到 runner 的 `_PRECONDITION_TYPES`（计数口径与 `product_count_for_keyword` 同构，不复制第二份「怎么数加工项」的定义）。断言面原样未动、无放宽。 ｜ tags: processing_item, llm_behavior, tool_call, toggle
 
 ### PP-009. 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计） 🔵
 ```
@@ -4816,8 +4831,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：353（活跃 155，跳过 198）
-- tier 分布：smoke 10 / normal 312 / adversarial 31
+- 用例总数：354（活跃 155，跳过 199）
+- tier 分布：smoke 10 / normal 313 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4834,7 +4849,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：39
+- 订单域：40
 - 加工项域：13
 - processing-order：45
 - 商品域：21
