@@ -128,6 +128,23 @@ public class ProductionSeedTemplateService {
     };
 
     /**
+     * 规范**加工项触发**规则（3 条，issue #4577）：{@code {trigger_value, action, operation, after}}。
+     *
+     * <p>与 V84 迁移逐条同值（`trigger_kind='processing_item'`，priority 270/280/290；**不**进
+     * {@code routing.py::ROUTE_RULES} —— 那张表被守卫钉为「≡ V71 的 26 行字面量种子」）。
+     * 触发键 = 订单行 {@code processingInfo.processingItems[].name}，**精确相等**。</p>
+     *
+     * <p>⚠️ `拼接` / `双眼皮` **刻意不建规则行**（理由登记在 issue #4577：用户裁定「只有选择了
+     * 这几个特殊选项才会有拼接工序」—— `拼接`/`双眼皮` 是**特征词**，拼几次由特殊选项
+     * `拼1次/拼2次/拼3次` 表达；造行 = 把错误结构化）。</p>
+     */
+    private static final String[][] PROCESSING_ITEM_RULES = {
+            {"花边", "insert", "花边", "三边"},
+            {"扣环", "insert", "扣环", "三边"},
+            {"接高", "insert", "接高", "精裁"},
+    };
+
+    /**
      * 部位价目 + 适用性矩阵（**120 行** = 30 逻辑工序 × 4 部位，issue #4529 起）：
      * {@code {logical_name, position, unit_price|NULL, applicable}}。
      *
@@ -545,7 +562,7 @@ public class ProductionSeedTemplateService {
     }
 
     /**
-     * 规则表（工艺变体 + 特殊选项 + 计件系数档）。
+     * 规则表（工艺变体 + 加工项触发 + 特殊选项 + 计件系数档）。
      *
      * <p>数据源 = 模板 JSON 的 {@code option_routings} / {@code option_factors} + 规范工艺变体规则；
      * **工序名与锚点都归一为逻辑名**（不归一 ⇒ 锚点在逻辑名序列里找不到 ⇒ 条件工序静默追加末尾）。</p>
@@ -577,7 +594,14 @@ public class ProductionSeedTemplateService {
                     null, "insert", logicalName(node.path("operation_name").asText()),
                     logicalName(node.path("after_operation").asText()), priority, null);
         }
-        // ③ 计件系数档（模板 JSON 逐条搬迁；operation_name 为空 = 平摊档 ⇒ operation 落 NULL）
+        // ③ 加工项触发（issue #4577：3 条，与 V84 逐条同值）—— 排在选项之后、系数档之前，
+        //    与 V84 的 priority 270/280/290（> 选项 260、< 系数 300）**同序**。
+        for (String[] rule : PROCESSING_ITEM_RULES) {
+            priority += 10;
+            addRule(plan, existing, available, tenantId, "processing_item", rule[0],
+                    null, rule[1], rule[2], rule[3], priority, null);
+        }
+        // ④ 计件系数档（模板 JSON 逐条搬迁；operation_name 为空 = 平摊档 ⇒ operation 落 NULL）
         for (JsonNode node : template.path("option_factors")) {
             priority += 10;
             String operationName = node.path("operation_name").isNull()

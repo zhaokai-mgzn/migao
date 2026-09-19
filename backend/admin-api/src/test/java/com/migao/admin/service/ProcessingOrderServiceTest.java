@@ -352,6 +352,16 @@ class ProcessingOrderServiceTest {
         return item;
     }
 
+    /**
+     * 带指定**加工项名**的订单明细（issue #4577）：`processing_item` 规则的触发键
+     * = 该行 `processingInfo.processingItems[].name`（**精确相等**）。
+     */
+    private OrderItem orderItemWithProcessingItemName(String colorName, String processingItemName) {
+        return processedItem("item-1", "布艺遮光帘A", colorName, List.of(
+                Map.of("id", "p1", "name", processingItemName, "unitPrice", 3.0,
+                        "quantity", 2, "unit", "折")));
+    }
+
     /** 「生成加工单 → 真链路实例化」的装配：真实 ProductionService + 真实 ProcessingOrderService。 */
     private ProcessingOrderService realChainService() {
         return new ProcessingOrderService(
@@ -1413,6 +1423,188 @@ class ProcessingOrderServiceTest {
         List<ProcessingPositionOperation> instances = captor.getAllValues();
         assertThat(instances.get(instances.size() - 1).getOperationName()).isEqualTo("绑带-布");
         assertThat(instances.get(instances.size() - 1).getSeq()).isEqualTo(V54_BULIAN_HANZHE.length + 1);
+    }
+
+    // ══════════════════ 条件工序**唯一性 = 取代**（issue #4577 任务 A）+ 加工项触发（任务 B）══════════════════
+    //
+    // 钱风险（今天就在）：既有种子里**多条规则指向同一道工序** —— `接高`(160) 与 `双眼皮接高`(170)
+    // 都插「接高」；`余料做绑带`(180) / `布绑带`(190) / `纱绑带`(220) 都插「绑带」。
+    // 盲插 ⇒ 序列里两道同名工序 ⇒ 每道落成 `processing_position_operations` 一行
+    // ⇒ **工人按两遍/三遍单价拿钱**（同族事故 #4523）。
+    //
+    // 用户裁定（2026-09-19 原话）：「**工序需要保证唯一**，比如工艺带了绑带，特殊选项又选择余料做绑带，
+    // 得用**特殊选项中的余料做绑带替代绑带这个工序**，余料做绑带的目标工序也是绑带就能替换，
+    // **需要有这个前提**」⇒ 判据 = 目标工序名相同；语义 = **取代**（先移除旧位置、再按本规则锚点插入）。
+
+    @Test
+    @DisplayName("#4577 任务A：同时命中「接高」+「双眼皮接高」⇒ 序列里「接高」恰好一个（三条绑带同理）")
+    void duplicateInsertRulesDoNotInsertTheSameOperationTwice() {
+        stubLibrary();
+        // 规范 84 行价目（接高@布帘 / 绑带@布帘 均 applicable=TRUE）⇒ 两条规则都在 buildRoute 里命中
+        when(productionOperationQueryService.operationPositions(TENANT))
+                .thenReturn(RoutingModelFixture.canonicalPositions84(TENANT));
+        stubGenerate(List.of(orderItemHanzheWithOptions("米白",
+                List.of("接高", "双眼皮接高", "余料做绑带", "布绑带", "纱绑带"))));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, atLeastOnce()).insert(captor.capture());
+        List<String> names = captor.getAllValues().stream()
+                .map(ProcessingPositionOperation::getOperationName).toList();
+
+        // 判别性：两条规则**真的都命中**了（否则下面的「恰好一个」是空断言）
+        assertThat(names).as("两条规则指向同一道工序，但只能落一行")
+                .contains("接高-布", "绑带-布");
+        assertThat(names.stream().filter("接高-布"::equals).count())
+                .as("「接高」(160) 与「双眼皮接高」(170) 是**同一道工序** ⇒ 恰好一个（否则按两遍单价拿钱）")
+                .isEqualTo(1);
+        assertThat(names.stream().filter("绑带-布"::equals).count())
+                .as("三条绑带规则（余料做绑带/布绑带/纱绑带）是**同一道工序** ⇒ 恰好一个")
+                .isEqualTo(1);
+        // 位置按**后应用**（priority 更大）那条规则的锚点：接高 在 精裁 之后、绑带 在 车被 之后
+        assertThat(names.indexOf("接高-布")).as("接高 紧跟 精裁-布（规则 170 的锚点）")
+                .isEqualTo(names.indexOf("精裁-布") + 1);
+        assertThat(names.indexOf("绑带-布")).as("绑带 紧跟 布帘车被（锚点 车被）")
+                .isEqualTo(names.indexOf("布帘车被") + 1);
+    }
+
+    @Test
+    @DisplayName("#4577 任务A：锚点不同的两条规则命中同一工序 ⇒ 位置 = priority 更大那条的锚点（取代语义）")
+    void laterRuleReplacesTheOperationAtItsOwnAnchor() {
+        stubLibrary();
+        List<ProductionRouteRule> rules = new ArrayList<>(RoutingModelFixture.rulesWithFactors(TENANT));
+        rules.add(rule("rr-a", "option", "甲", "insert", "绑带", "三边", 1000));
+        rules.add(rule("rr-b", "option", "乙", "insert", "绑带", "车被", 1010));
+        when(productionOperationQueryService.routeRules(TENANT)).thenReturn(rules);
+        stubGenerate(List.of(orderItemHanzheWithOptions("米白", List.of("甲", "乙"))));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, atLeastOnce()).insert(captor.capture());
+        List<String> names = captor.getAllValues().stream()
+                .map(ProcessingPositionOperation::getOperationName).toList();
+        assertThat(names.stream().filter("绑带-布"::equals).count()).isEqualTo(1);
+        assertThat(names.indexOf("绑带-布"))
+                .as("位置 = **后应用**（priority 1010）那条的锚点「车被」—— 跳过语义会让它停在「三边」")
+                .isEqualTo(names.indexOf("布帘车被") + 1);
+    }
+
+    @Test
+    @DisplayName("#4577 任务A：两条规则命中**不同**工序 ⇒ 互不影响（取代不得写成清掉整段序列）")
+    void differentTargetOperationsDoNotInterfere() {
+        stubLibrary();
+        List<ProductionRouteRule> rules = new ArrayList<>(RoutingModelFixture.rulesWithFactors(TENANT));
+        rules.add(rule("rr-a", "option", "甲", "insert", "花边", "三边", 1000));
+        rules.add(rule("rr-b", "option", "乙", "insert", "扣环", "车被", 1010));
+        when(productionOperationQueryService.routeRules(TENANT)).thenReturn(rules);
+
+        stubGenerate(List.of(orderItemHanzhe("米白")));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+        realChainService().generate(List.of("order-001"), TENANT, "u1");
+        ArgumentCaptor<ProcessingPositionOperation> baseCaptor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, atLeastOnce()).insert(baseCaptor.capture());
+        List<String> base = baseCaptor.getAllValues().stream()
+                .map(ProcessingPositionOperation::getOperationName).toList();
+
+        reset(positionOperationMapper);
+        stubGenerate(List.of(orderItemHanzheWithOptions("米白", List.of("甲", "乙"))));
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, atLeastOnce()).insert(captor.capture());
+        List<String> names = captor.getAllValues().stream()
+                .map(ProcessingPositionOperation::getOperationName).toList();
+
+        assertThat(names).as("两道**不同**工序 ⇒ 各加一个").hasSize(base.size() + 2)
+                .contains("花边-布", "扣环-布");
+        assertThat(names.indexOf("花边-布")).isEqualTo(names.indexOf("布三边") + 1);
+        assertThat(names.indexOf("扣环-布")).isEqualTo(names.indexOf("布帘车被") + 1);
+        assertThat(names.stream().filter(n -> !"花边-布".equals(n) && !"扣环-布".equals(n)).toList())
+                .as("其余工序逐字未动").isEqualTo(base);
+    }
+
+    /** 一条规则（issue #4577 的用例自建规则用）。 */
+    private static ProductionRouteRule rule(String id, String kind, String trigger, String action,
+                                            String operation, String after, int priority) {
+        return ProductionRouteRule.builder()
+                .id(id).tenantId(TENANT).triggerKind(kind).triggerValue(trigger)
+                .position(null).action(action).operation(operation).afterOperation(after)
+                .priority(priority).status("active").deleted(0).build();
+    }
+
+    @Test
+    @DisplayName("#4577 任务B：加工项「花边」命中 processing_item 规则 ⇒ 插「花边-布」；未命中 ⇒ 不插")
+    void processingItemRuleInsertsConditionalOperation() {
+        stubLibrary();
+        when(productionOperationQueryService.routeRules(TENANT))
+                .thenReturn(RoutingModelFixture.rulesWithProcessingItems(TENANT));
+        stubGenerate(List.of(orderItemWithProcessingItemName("米白", "花边")));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length + 1)).insert(captor.capture());
+        List<String> names = captor.getAllValues().stream()
+                .map(ProcessingPositionOperation::getOperationName).toList();
+        // 触发键 = 加工项名（**精确相等**）⇒ 插在锚点「三边」之后，且**只插一次**
+        assertThat(names.indexOf("花边-布")).as("花边 紧跟 布三边（锚点 三边）")
+                .isEqualTo(names.indexOf("布三边") + 1);
+        assertThat(names.stream().filter("花边-布"::equals).count()).isEqualTo(1);
+
+        // 负例（同断言内，避免两条用例各自打桩漂移）：加工项名「韩褶-布」≠「花边」⇒ 该工序不出现
+        reset(positionOperationMapper);
+        stubGenerate(List.of(orderItemHanzhe("米白")));
+        var without = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(without.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingPositionOperation> captor2 =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(captor2.capture());
+        assertThat(captor2.getAllValues()).extracting(ProcessingPositionOperation::getOperationName)
+                .doesNotContain("花边-布");
+    }
+
+    @Test
+    @DisplayName("#4577 任务B：processing_item 与 option 命中同一道工序 ⇒ 仍恰好一个（跨 kind 也取代）")
+    void processingItemAndOptionHittingTheSameOperationInsertOnce() {
+        stubLibrary();
+        when(productionOperationQueryService.routeRules(TENANT))
+                .thenReturn(RoutingModelFixture.rulesWithProcessingItems(TENANT));
+        // 加工项「接高」（processing_item 290）与特殊选项「接高」（option 160）都插「接高」
+        OrderItem item = orderItemWithProcessingItemName("米白", "接高");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) item.getProcessingInfo();
+        info.put("specialOptions", List.of("接高"));
+        stubGenerate(List.of(item));
+        when(processingItemMapper.selectById("p1"))
+                .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).isTrue();
+
+        ArgumentCaptor<ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(ProcessingPositionOperation.class);
+        verify(positionOperationMapper, atLeastOnce()).insert(captor.capture());
+        List<String> names = captor.getAllValues().stream()
+                .map(ProcessingPositionOperation::getOperationName).toList();
+        assertThat(names.stream().filter("接高-布"::equals).count())
+                .as("两个 kind 命中同一道工序 ⇒ 只落一行").isEqualTo(1);
     }
 
     @Test
