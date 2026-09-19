@@ -48,6 +48,9 @@ import type {
   ProductionOperationUpdateParams,
   Routing,
   RoutingCreateParams,
+  RoutingUpdateParams,
+  OperationPosition,
+  RouteRule,
   RoutingGaps,
   // 加工费组合定价（issue #4386）
   FeeCombination,
@@ -59,7 +62,6 @@ import type {
   RouteSignal,
   RouteSignalsResponse,
   RouteSignalParams,
-  RoutingSequenceParams,
   ProductionSeedTemplate,
   ProductionSeedApplyResult,
   ProductStatus,
@@ -472,15 +474,30 @@ export const productionApi = {
   updateOperation: (id: string | number, data: ProductionOperationUpdateParams) =>
     request.put<ApiResponse<CatalogOperation>>(`/api/admin/production/operations/${id}`, data),
 
-  // ── 工艺路线商家可配（issue #4307 前端半边；契约所有者 = 后端 4308，权限 processing:manage）──
-  // 路线序列写：body {operations: ["精裁-布", ...]}
-  // （服务端护栏：空序列 / 工序不存在 / 重复 / 缺必完工序 —— 失败响应体带逐条理由，页面照单展示）
-  updateRoutingSequence: (id: number, data: RoutingSequenceParams) =>
+  // ── 新路线模型只读面（issue #4500 = 母单 #4423 的 P2c；消费方 = P3 #4433）──
+  // 两个端点**只读**（写面留 v1b）；顺序由服务端定（Java 侧显式比较器，环境无关）⇒ 前端不得重排。
+  // ① 部位价目矩阵：84 格 = 28 逻辑工序 × 3 部位，`applicable=false` 的格 unit_price=null
+  getOperationPositions: () =>
+    request.get<ApiResponse<OperationPosition[]>>('/api/admin/production/operation-positions'),
+  // ② 统一规则区：26 条（工艺 10 + 选项 16）—— 只含路线编排档（insert/remove），不含计件系数档
+  getRouteRules: () =>
+    request.get<ApiResponse<RouteRule[]>>('/api/admin/production/route-rules'),
+
+  // ── 工艺路线商家可配（契约所有者 = 后端 #4459；权限 processing:manage）──
+  // 部分更新（只写出现的字段）：`{name?, is_default?, mainline?, positions?, status?}`
+  // ⚠️ 改名只给 `name`（不给 mainline 就不动序列）；`is_default:false` 服务端 422 ⇒ 前端不得发。
+  // （服务端护栏：空主线 / 工序不存在 / 重复 / 缺必完工序 / 重名 409 / 删默认 / 删最后一条
+  //   —— 失败响应体带逐条理由，页面照单展示）
+  updateRouting: (id: number, data: RoutingUpdateParams) =>
     request.put<ApiResponse<Routing>>(`/api/admin/production/routings/${id}`, data),
 
-  // 新建路线（部位 + 工艺；初版序列随后在编辑区排）
+  // 新建路线（具名；初版主线可空，随后在编辑区排；positions 缺省 = 三种帘种全适用）
   createRouting: (data: RoutingCreateParams) =>
     request.post<ApiResponse<Routing>>('/api/admin/production/routings', data),
+
+  // 删路线（**软删**；服务端护栏：删默认 ⇒ 422 / 删最后一条 ⇒ 422）
+  deleteRouting: (id: number) =>
+    request.delete<ApiResponse<Routing>>(`/api/admin/production/routings/${id}`),
 
   // 新增工序（建新路线时必须有工序可选）
   createOperation: (data: RouteOperationCreateParams) =>
