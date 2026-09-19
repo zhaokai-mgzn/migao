@@ -26,16 +26,29 @@ import pytest
 
 REPO = Path(__file__).resolve().parent.parent.parent
 MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
-V74_NAME = "V74__backfill_legacy_special_option_names.sql"
+# ⚠️ 修正版是 **V75**（V74 首版打在不存在的列上；Danger Scan 禁止改已发布迁移 ⇒ 只能新增）
+V74_NAME = "V75__backfill_legacy_special_option_names_fix.sql"
 
 OLD_NAME = "一分二"
 NEW_NAME = "一分为二"
 
 
+def _strip_comments(sql: str) -> str:
+    """剥掉 SQL 注释后再做文本判据。
+
+    ⚠️ **必须剥**：迁移的头注释里会**描述**表结构（如「`orders` 表根本没有这一列」、
+    实测命令里的 `CREATE TABLE orders (`）⇒ 不剥注释会把说明文字当成真实 DDL，产生**假红**
+    （本文件首版就栽在这里 —— 假红比没有守卫更糟：会被人直接关掉）。
+    """
+    import re as _re
+    sql = _re.sub(r"/\*[\s\S]*?\*/", " ", sql)
+    return _re.sub(r"--[^\n]*", " ", sql)
+
+
 def _sql() -> str:
     path = MIGRATION_DIR / V74_NAME
     assert path.exists(), (
-        f"规格锚点变了：找不到 {path} —— issue #4399 的回填迁移（若改号，请同步本守卫）"
+        f"规格锚点变了：找不到 {path} —— issue #4399/#4501 的回填迁移（若改号，请同步本守卫）"
     )
     return path.read_text(encoding="utf-8")
 
@@ -64,17 +77,17 @@ def _balanced_calls(sql: str, func: str) -> list:
 
 def test_migration_exists_and_targets_the_confirmed_old_name():
     """自证 + 判据 0：迁移存在，且**同时**出现旧名与新名（否则改了个寂寞）。"""
-    sql = _sql()
+    sql = _strip_comments(_sql())
     assert OLD_NAME in sql, f"迁移里没有旧名 {OLD_NAME!r}"
     assert NEW_NAME in sql, f"迁移里没有 ERP 新名 {NEW_NAME!r}"
 
 
 def test_both_carriers_are_covered():
     """判据 1：**两处载体**都要回填（订单 + 加工单快照）。"""
-    sql = _sql()
+    sql = _strip_comments(_sql())
     missing = []
-    if not re.search(r"UPDATE\s+orders\b", sql, re.I):
-        missing.append("orders（订单侧 processing_info）")
+    if not re.search(r"UPDATE\s+order_items\b", sql, re.I):
+        missing.append("order_items（**订单明细**的 processing_info —— 注意不是 `orders`）")
     if not re.search(r"UPDATE\s+processing_orders\b", sql, re.I):
         missing.append("processing_orders（加工单快照 items_snapshot）")
     assert not missing, (
@@ -85,7 +98,7 @@ def test_both_carriers_are_covered():
 
 def test_replaces_by_array_element_not_raw_text():
     """判据 2：**按数组元素**替换，**不得**对整段 JSONB 文本裸 `replace`。"""
-    sql = _sql()
+    sql = _strip_comments(_sql())
     # 反例形态：对 jsonb 文本做 replace（`一分二` 是 `一分为二` 的子串 ⇒ 会把新名改成 `一一分为二`）
     assert not re.search(r"replace\s*\(\s*\w*\.?\s*(processing_info|items_snapshot)\s*::\s*text", sql, re.I), (
         "回填用了「对整段 JSONB 文本 replace」—— `一分二` 是 `一分为二` 的子串，"
@@ -100,7 +113,7 @@ def test_replaces_by_array_element_not_raw_text():
 def test_preserves_element_order():
     """判据 3：**保序** —— `jsonb_agg` 不带 `ORDER BY` 时顺序未定义。"""
     sql = _sql()
-    aggs = _balanced_calls(sql, "jsonb_agg")
+    aggs = _balanced_calls(_strip_comments(sql), "jsonb_agg")
     assert aggs, "没有找到 jsonb_agg（重建数组）"
     unordered = [a for a in aggs if not re.search(r"ORDER\s+BY\b", a, re.I)]
     assert not unordered, (
@@ -114,7 +127,7 @@ def test_preserves_element_order():
 def test_is_idempotent_by_containment_guard():
     """判据 4：**幂等** —— 每条 UPDATE 都要带「仍含旧名」的 `@>` 守卫（重跑空转）。"""
     sql = _sql()
-    updates = re.findall(r"UPDATE\s+(?:orders|processing_orders)\b[\s\S]*?;", sql, re.I)
+    updates = re.findall(r"UPDATE\s+(?:order_items|processing_orders)\b[\s\S]*?;", _strip_comments(sql), re.I)
     assert len(updates) == 2, f"预期 2 条 UPDATE（两处载体），实得 {len(updates)}"
     for stmt in updates:
         assert "@>" in stmt, (
@@ -126,7 +139,7 @@ def test_is_idempotent_by_containment_guard():
 
 def test_does_not_touch_schema_sql():
     """判据 5：本迁移是**数据**回填 ⇒ **不得**改 schema（bootstrap 路径无需镜像）。"""
-    sql = _sql()
+    sql = _strip_comments(_sql())
     assert not re.search(r"\b(ALTER\s+TABLE|CREATE\s+TABLE|DROP\s+TABLE|CREATE\s+INDEX)\b", sql, re.I), (
         "回填迁移里出现了 DDL —— 本单只改**数据**，不动 schema（`docs/sql/schema.sql` 无需镜像）"
     )

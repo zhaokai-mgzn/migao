@@ -75,6 +75,12 @@ const shopCatalog = [
   { id: 'pi2', name: '韩式定型', pricingMethod: 'per_set', unitPrice: 8, unit: '套' },
 ]
 
+/** 展开「加工选项」折叠区（issue #4489 判据 3：默认折叠） */
+const expandProcessing = () => {
+  const btns = screen.getAllByRole('button', { name: /加工选项/ })
+  if (btns.length && btns[0].getAttribute('aria-expanded') === 'false') fireEvent.click(btns[0])
+}
+
 describe('NewOrderPage — 商品↔加工项解耦（#4371）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -103,8 +109,10 @@ describe('NewOrderPage — 商品↔加工项解耦（#4371）', () => {
 
     // 商品 payload 无 supportsProcessing/hasProcessing，旧实现会把选择器整块隐藏
     await waitFor(() => {
-      expect(screen.getByText('加工选项（可选）')).toBeInTheDocument()
+      // issue #4489 判据 3：加工选项**默认折叠** ⇒ 断言折叠头（不再是一段静态文案）
+      expect(screen.getByRole('button', { name: /加工选项/ })).toBeInTheDocument()
     })
+    expandProcessing()
     // 目录里的加工项渲染为可选行
     expect(await screen.findByText('打孔加工')).toBeInTheDocument()
     expect(screen.getByText('韩式定型')).toBeInTheDocument()
@@ -126,6 +134,7 @@ describe('NewOrderPage — 商品↔加工项解耦（#4371）', () => {
     fireEvent.click(await screen.findByText('点击搜索并选择商品'))
     fireEvent.click(await screen.findByText('遮光窗帘'))
     // 勾选目录第一项（打孔加工，按米 5 元）—— 等选择器渲染完再点
+    expandProcessing()
     const checkboxes = await screen.findAllByRole('checkbox')
     fireEvent.click(checkboxes[0])
 

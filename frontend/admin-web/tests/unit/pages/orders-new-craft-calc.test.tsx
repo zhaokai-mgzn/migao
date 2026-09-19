@@ -14,7 +14,7 @@
  * ④ 参数不全 ⇒ **不发请求**（不得用默认窗宽猜一个米数）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
 const mockCreateOrder = vi.fn()
 const mockGetProducts = vi.fn()
@@ -112,10 +112,11 @@ describe('下单页算料试算接线（#4434）', () => {
 
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
     // 入参 = 标准档 + 韩褶 + 开数（缺省 1）；**前端不补默认值、不重算**
+    // issue #4493：宽 → 打开方式联动（真值源 §10：>5m 四开）⇒ 入参带 open_count=4
     expect(mockCraftCalcPreview.mock.calls[0][0]).toMatchObject({
       width: 6.6,
       height: 2.6,
-      open_count: 1,
+      open_count: 4,
       mounting: 's_hook',
       craft_tier: 'standard',
     })
@@ -218,7 +219,13 @@ describe('下单页算料试算接线（#4434）', () => {
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
 
     mockCraftCalcPreview.mockClear()
-    fireEvent.change(screen.getByLabelText('工艺'), { target: { value: '打孔' } })
+    // 工艺改成 chips（issue #4489 判据 1）：先展开工艺规格，再一击即中
+    fireEvent.click(screen.getAllByRole('button', { name: /工艺规格/ })[0])
+    fireEvent.click(
+      within(screen.getAllByRole('radiogroup', { name: '工艺' })[0]).getByRole('radio', {
+        name: '打孔',
+      })
+    )
     await new Promise((r) => setTimeout(r, 600))
     expect(mockCraftCalcPreview).not.toHaveBeenCalled()
   })
