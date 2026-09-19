@@ -117,8 +117,9 @@
   待裁定项（关联 #4341），`curtain_calc` **不实现**。
   ⚠️ **缺口登记（不猜、不插值）**：纸表表头只有「1个折 / 2个折」两行，而 `SPECIAL_OPTION_ROUTINGS`
   有 `拼3次` ⇒ 该拼次**无用料系数依据**，命中时算料试算端点 fail-closed 返回
-  `MIXED_PER_FOLD_NOT_REGISTERED`（登记在 `curtain_calc.MIXED_PER_FOLD_UNREGISTERED`），
-  **不得**按 0.65/1.2 插值、也不得静默退回单色 0.25。
+  `MIXED_PER_FOLD_NOT_REGISTERED`；判据**与系数表同源**（`mixed_times` 解析出拼次 N、
+  而 N 不在 `curtain_calc.MIXED_COLOR_PER_FOLD_BY_TIMES` 里 ⇒ 缺口，见 `mixed_per_fold_gap`），
+  **没有**平行的「未登记清单」可漂移；**不得**按 0.65/1.2 插值、也不得静默退回单色 0.25。
   【背·未落码】拼色**主布/配布边**的**分列**用料（本式是拼色整体每折吃布，未拆主布/配布边两行）留待裁定。
 - 【标】**理论褶倍 vs 实际褶倍**（issue #4118 ④ **已落码**）：折数法响应**同时**给 `fullness`（档位/款式**理论**倍数，随档位走）与
   `fullness_actual`（**实际**倍数 = 用料 ÷ 窗宽，随用料走）—— 48 折双开：`0.25×48+0.3 = 12.3 米` ÷ 6.6 = **1.86 倍**（理论 2.0）；

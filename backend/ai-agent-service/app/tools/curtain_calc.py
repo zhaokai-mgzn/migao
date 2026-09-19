@@ -21,6 +21,7 @@ AI 智能客服系统 - 窗帘算料报价 Tool
 from __future__ import annotations
 
 import math
+import re
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -72,17 +73,21 @@ MIN_FULLNESS = 1.5                 # 褶皱倍数下限（低于影响美观，�
 # 拼色计价（元/折）属 issue #4341 的待裁定项，**本模块不实现**。
 # 余量与单色**同一套**（单开 0.2 / 多开 0.3）：52 折双开 ⇒ 单色 13.3 / 拼1次 34.1 / 拼2次 62.7。
 STYLE_MIXED = "拼色"                # 款式枚举取值（与 frontend order-craft-fields.ts 的 STYLE_OPTIONS 逐字一致）
-# ⚠️ 形态说明（**不是**风格偏好）：这里刻意用**两个等长元组**而不是 `{"拼1次": 0.65, ...}` 映射表 ——
-# 「含 ≥2 个中文 key 的 dict 字面量」在 CI 里被判为「中文措辞当判据」的新增站点
-# （`tests/unit_ci_workflows/test_tool_input_contract_guards.py` 判据 ②，基线只许缩短）。
-# 元组 + 下标配对表达的正是同一事实（选项名 ↔ 系数一一对应），且**不**把中文措辞当判据载体。
-# 取系数的入口是 `resolve_per_fold`（单一实现），调用方不要自行配对。
-MIXED_COLOR_PER_FOLD_OPTIONS: tuple = ("拼1次", "拼2次")
-MIXED_COLOR_PER_FOLD_VALUES: tuple = (0.65, 1.2)
-# 纸表**没有**登记的拼次（表头只有「1个折 / 2个折」，而 `routing.SPECIAL_OPTION_ROUTINGS`
-# 有「拼3次」）⇒ 显式登记为**缺口**：绝不插值、绝不静默退回单色系数。
-# 消费方（算料试算端点）命中它时 fail-closed 报错，让缺口可见（issue #4421 边界）。
-MIXED_PER_FOLD_UNREGISTERED: tuple = ("拼3次",)
+# 拼次（**数字**）→ 每折吃布（米）。键刻意是数字：纸表给的是「1 个折 / 2 个折」这两个**档位**，
+# 用中文选项名当键会把「措辞」变成判据（改一个字系数就静默失效 —— CI 判据 ②
+# `tests/unit_ci_workflows/test_tool_input_contract_guards.py` 明令不得新增该类站点），
+# 而**拼次本身是数字**。选项名只是**载体**（`拼N次` 里的 N 才是参数），见 `mixed_times`。
+MIXED_COLOR_PER_FOLD_BY_TIMES: Dict[int, float] = {1: 0.65, 2: 1.2}
+# 选项名 → 拼次。选项名是**冻结的 join key**（与 `routing.SPECIAL_OPTION_ROUTINGS` /
+# frontend `SPECIAL_OPTIONS` 逐字一致；改它就是少发工人钱），这里读的是**契约标识符**，
+# 不是从散文里猜语义。
+_MIXED_TIMES_RE = re.compile(r"^拼(\d+)次$")
+
+
+def mixed_times(option: str) -> Optional[int]:
+    """特殊选项名 → 拼次（数字）；不是「拼N次」形态 ⇒ None。"""
+    m = _MIXED_TIMES_RE.fullmatch(option or "")
+    return int(m.group(1)) if m else None
 
 # ── 工艺档位（【默】商家可配；每档 = 名义倍数 → 折数规则）──
 DEFAULT_CRAFT_TIERS: Dict[str, Dict[str, Any]] = {
@@ -106,26 +111,33 @@ def resolve_per_fold(
       · `style=拼色` 且部位级特殊选项含 `拼1次` / `拼2次` ⇒ 0.65 / 1.2 米每折；
       · 其余（含 `style=拼色` 但**没给**拼次）⇒ 单色口径 0.25。
 
-    ⚠️ 命中 `MIXED_PER_FOLD_UNREGISTERED`（如 `拼3次`：纸表没登记）**不在此静默兜底** ——
+    ⚠️ **纸表未登记的拼次**（如 `拼3次`：`mixed_times` 解析得出 3，但
+    `MIXED_COLOR_PER_FOLD_BY_TIMES` 里没有 3）**不在此静默兜底** ——
     本函数只负责「有登记系数就取它」，**缺口判定由调用方显式做**（`mixed_per_fold_gap`），
-    以免把「未登记」与「单色」混成同一个数。
+    以免把「未登记」与「单色」混成同一个数（那就是**少算用料**）。
     """
     if style != STYLE_MIXED:
         return PLEAT_FABRIC_PER_FOLD
     for option in special_options or []:
-        if option in MIXED_COLOR_PER_FOLD_OPTIONS:
-            return MIXED_COLOR_PER_FOLD_VALUES[MIXED_COLOR_PER_FOLD_OPTIONS.index(option)]
+        times = mixed_times(option)
+        if times in MIXED_COLOR_PER_FOLD_BY_TIMES:
+            return MIXED_COLOR_PER_FOLD_BY_TIMES[times]
     return PLEAT_FABRIC_PER_FOLD
 
 
 def mixed_per_fold_gap(special_options: Optional[List[str]] = None) -> Optional[str]:
     """拼色下**纸表未登记用料系数**的拼次（如 `拼3次`）→ 该选项名；无缺口 → None。
 
+    判据与系数表**同源**：`mixed_times` 解析得出拼次 N，而 N 不在
+    `MIXED_COLOR_PER_FOLD_BY_TIMES` 里 ⇒ 缺口。**没有**平行的「未登记清单」可漂移
+    （改一处忘一处 = 将来加 `拼4次` 时静默退回单色系数 ⇒ 少算用料）。
+
     为什么不猜：纸表表头只有「1个折 0.65 / 2个折 1.2」两行，`拼3次` 是**表外**项
     ⇒ 插值（0.65→1.2 线性外推）或退回单色 0.25 都是**发明口径**。调用方据此 fail-closed。
     """
     for option in special_options or []:
-        if option in MIXED_PER_FOLD_UNREGISTERED:
+        times = mixed_times(option)
+        if times is not None and times not in MIXED_COLOR_PER_FOLD_BY_TIMES:
             return option
     return None
 
@@ -219,8 +231,7 @@ def calculate_fabric_by_pleats(
     """折数法算料：用料 = **每折吃布** × 折数 + 余量（单开 0.2 / 多开 0.3）。
 
     `per_fold` = 每折吃布（米）：单色 0.25（缺省，`PLEAT_FABRIC_PER_FOLD`）；
-    拼色走 `MIXED_COLOR_PER_FOLD_OPTIONS` / `MIXED_COLOR_PER_FOLD_VALUES`（拼1次 0.65 / 拼2次 1.2
-    —— 用户 2026-09-19 裁定）。
+    拼色走 `MIXED_COLOR_PER_FOLD_BY_TIMES`（拼1次 0.65 / 拼2次 1.2 —— 用户 2026-09-19 裁定）。
     **余量不随拼色变化**（与单色同一套）。
 
     开数不可整除时自动取最近可行折数并告警。
@@ -392,7 +403,7 @@ def build_quote(
         if style == STYLE_MIXED and per_fold == PLEAT_FABRIC_PER_FOLD:
             gap = mixed_per_fold_gap(special_options)
             warning = (warning + " " if warning else "") + (
-                f"款式为拼色但未给出纸表已登记的拼次（{'/'.join(MIXED_COLOR_PER_FOLD_OPTIONS)}），"
+                f"款式为拼色但未给出纸表已登记的拼次（{'/'.join(f'拼{n}次' for n in sorted(MIXED_COLOR_PER_FOLD_BY_TIMES))}），"
                 f"本次按单色每折 {PLEAT_FABRIC_PER_FOLD:g} 米计算，非拼色用料系数。"
             )
             if gap:

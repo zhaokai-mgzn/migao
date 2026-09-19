@@ -153,7 +153,7 @@ class TestMixedColorPerFold:
         常量在、入口接错（如两个元组下标错位）时前者会红、后者不会。
         """
         for option, per_fold in MIXED_PER_FOLD.items():
-            assert option in curtain_calc.MIXED_COLOR_PER_FOLD_OPTIONS
+            assert curtain_calc.mixed_times(option) in curtain_calc.MIXED_COLOR_PER_FOLD_BY_TIMES
             assert curtain_calc.resolve_per_fold("拼色", [option]) == per_fold
         assert curtain_calc.resolve_per_fold("拼色", ["拼3次"]) == 0.25   # 未登记 ⇒ 不静默取系数（缺口由 mixed_per_fold_gap 显式判）
         assert curtain_calc.resolve_per_fold(None, ["拼1次"]) == 0.25     # 非拼色 ⇒ 单色口径
@@ -229,8 +229,33 @@ class TestMixedColorPerFold:
         assert "拼3次" in resp.text
 
     def test_unregistered_option_constant_is_registered_as_gap(self):
-        """缺口登记可机读：`MIXED_PER_FOLD_UNREGISTERED` 必须含 `拼3次`（登记缺口，不静默）。"""
-        assert "拼3次" in curtain_calc.MIXED_PER_FOLD_UNREGISTERED
+        """缺口**与系数表同源**：`mixed_times` 解析得出 N、而 N 不在表里 ⇒ 缺口（无平行清单可漂移）。
+
+        判别性：把缺口改成手维护的平行清单（旧形态）时，`拼4次` 会静默退回单色系数 ——
+        下面 `拼4次` 的断言就是防这个的（将来纸表加 3 后 `拼4次` 必须仍被判缺口）。
+        """
+        assert curtain_calc.mixed_times("拼3次") == 3
+        assert 3 not in curtain_calc.MIXED_COLOR_PER_FOLD_BY_TIMES
+        assert curtain_calc.mixed_per_fold_gap(["拼3次"]) == "拼3次"
+        assert curtain_calc.mixed_per_fold_gap(["拼4次"]) == "拼4次"      # 未登记的新拼次同样判缺口
+        assert curtain_calc.mixed_per_fold_gap(["拼1次"]) is None
+        assert curtain_calc.mixed_per_fold_gap(["加花边"]) is None        # 非拼次选项不是缺口
+        assert curtain_calc.mixed_times("加花边") is None
+
+    def test_every_routing_mixed_option_is_parseable(self):
+        """覆盖率守卫：`routing` 里**所有** `拼N次` 选项都必须能被 `mixed_times` 解析。
+
+        防的形态（会**少算用料**）：将来加 `拼4次` 时正则不匹配 ⇒ 被当成「不是拼次」⇒
+        静默退回单色系数 0.25，而纸表可能已登记它的系数。解析不出即红。
+        """
+        from app.production.routing import SPECIAL_OPTION_ROUTINGS
+
+        routing_mixed = [opt for opt in SPECIAL_OPTION_ROUTINGS if "拼" in opt]
+        assert routing_mixed, "routing 里已无拼次选项 —— 本守卫的前提失效，请核 SPECIAL_OPTION_ROUTINGS"
+        for option in routing_mixed:
+            times = curtain_calc.mixed_times(option)
+            assert times is not None, f"{option} 无法被 mixed_times 解析 ⇒ 会被当成非拼次、静默退回单色系数"
+            assert times >= 1
 
     def test_per_fold_is_reflected_in_fullness_actual(self, client):
         """实际倍数随用料走：拼2次 62.7 ÷ 6.6 = 9.5（理论倍数仍是 2.0）。"""
