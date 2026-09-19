@@ -68,6 +68,20 @@ public class CraftCalcClient {
     @Value("${ai-agent.service-token:}")
     private String serviceToken;
 
+    /**
+     * 生产构造器（Spring 装配）。
+     *
+     * <p>⚠️ {@code @Autowired} 是**有意显式**的：本类有**两个**构造器（生产用 + 测试注入
+     * RestTemplate 用）且**没有无参构造器** —— Spring 对「多构造器且无一标注」不作保证，
+     * 标注即把「用哪一个」写死（同族 {@link ProductionOperationQtyClient} 走的是
+     * 「public 无参 + 包私有测试构造器」形态；本类要注入 mapper，无法沿用）。</p>
+     *
+     * <p>🔴 **照实登记的守卫盲区（本包发现，未修）**：{@code AdminApiApplicationTest} **兜不住**
+     * 这类装配错误 —— 它 {@code catch (Exception e)} 之后只断言
+     * {@code !(e instanceof ClassNotFoundException)} ⇒ 启动期 {@code BeanInstantiationException}
+     * 会被**静默吞掉**、用例照绿（实测：去掉本注解再跑该用例仍绿）。故本注解不能只靠那条用例兜底。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
     public CraftCalcClient(CraftCalcConfigMapper craftCalcConfigMapper) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(CONNECT_TIMEOUT_MS);
