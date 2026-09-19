@@ -63,7 +63,7 @@ RETIRED_TYPES = ("ProductionOptionRouting", "ProductionOptionFactor")
 POSITION_KEYS = ("id", "operation", "position", "unit_price", "applicable",
                  "variant_operation_id", "unit", "group", "scope", "is_must_finish")
 RULE_KEYS = ("id", "trigger_kind", "trigger_value", "position", "action", "operation",
-             "logical_name", "after_operation", "priority", "status", "customer_unit_price")
+             "after_operation", "priority", "status", "customer_unit_price")
 
 #: 本端点呈现的规则动作 = 路线编排（`insert`/`remove`）。`action='factor'`（V72 从旧
 #: `production_option_factors` 搬来的**计件系数档**）**不在本端点**：它没有 `after_operation` 语义、
@@ -238,11 +238,13 @@ def test_position_view_keys_are_frozen_contract():
 
 
 def test_rule_view_keys_are_frozen_contract():
-    """判据 1d：规则项的键集/键序 = 11 个键（逐字；issue #4567 的 `customer_unit_price` +
-    issue #4642 的 `logical_name` —— 后者是 `operation` 的**成对键**，两者同源 = 归一后的逻辑名）。"""
+    """判据 1d：规则项的键集/键序 = 10 个键（逐字；末键 = issue #4567 的 `customer_unit_price`）。
+
+    ⚠️ issue #4643 把 `operation` / `after_operation` 改成**读时归一后的逻辑名**（读面兜住存量变体名行），
+    但**键集一字不动**（归一不新增也不删键）—— 本常量仍是**冻结判据**，加/删/改名照旧红。
+    """
     assert _view_keys("ruleView") == RULE_KEYS, (
-        f"规则项键集漂移（issue #4500 冻结 + #4567 追加 `customer_unit_price` + "
-        f"#4642 追加 `logical_name`：{RULE_KEYS}）"
+        f"规则项键集漂移（issue #4500 冻结 + #4567 追加 `customer_unit_price`：{RULE_KEYS}）"
         f"—— 前端 #4433 的统一规则区按这些键渲染"
     )
 

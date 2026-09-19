@@ -997,11 +997,9 @@ export interface RouteRule {
   /** 部位限定；`null` = 不限部位 */
   position?: string | null
   action?: string | null
-  /** 目标工序（逻辑名） */
+  /** 目标工序（逻辑名）—— issue #4643 起写面落库前归一、读面返回前同样归一（存量行兜底） */
   operation?: string | null
-  /** 目标工序的逻辑名（与 `operation` **同源**，issue #4642 成对键；读面已归一，故两者相等） */
-  logical_name?: string | null
-  /** `insert` 的锚点工序；`null` = 追加末尾 */
+  /** `insert` 的锚点工序（逻辑名）；`null` = 追加末尾 */
   after_operation?: string | null
   /** 规则应用顺序（`remove` 不先于 `insert` 完全由它决定）—— 顺序敏感 */
   priority?: number | null

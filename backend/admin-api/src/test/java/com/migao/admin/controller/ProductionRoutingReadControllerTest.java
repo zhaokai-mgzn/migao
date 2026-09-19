@@ -304,15 +304,14 @@ class ProductionRoutingReadControllerTest {
                 .andExpect(jsonPath("$.data[1].id").value("rr-v70-02"))
                 .andExpect(jsonPath("$.data[2].id").value("rr-v70-03"))
                 .andExpect(jsonPath("$.data[3].id").value("rr-v70-26"))
-                // 键集逐字（issue #4500 冻结 + #4567 追加 customer_unit_price + #4642 追加 logical_name）：不多不少（11 个）
-                .andExpect(jsonPath("$.data[0].length()").value(11))
+                // 键集逐字（issue #4500 冻结 + #4567 追加 customer_unit_price）：不多不少（10 个）；
+                // issue #4643 的读时归一**不新增也不删键**（`operation` / `after_operation` 只换值）
+                .andExpect(jsonPath("$.data[0].length()").value(10))
                 .andExpect(jsonPath("$.data[0].trigger_kind").value("craft"))
                 .andExpect(jsonPath("$.data[0].trigger_value").value("韩褶"))
                 .andExpect(jsonPath("$.data[0].position").isEmpty())
                 .andExpect(jsonPath("$.data[0].action").value("insert"))
                 .andExpect(jsonPath("$.data[0].operation").value("韩褶"))
-                // #4642：成对键（逻辑工序名）—— 与 `operation` 同源
-                .andExpect(jsonPath("$.data[0].logical_name").value("韩褶"))
                 .andExpect(jsonPath("$.data[0].after_operation").value("三边"))
                 .andExpect(jsonPath("$.data[0].priority").value(20))
                 .andExpect(jsonPath("$.data[0].status").value("active"))
@@ -323,10 +322,12 @@ class ProductionRoutingReadControllerTest {
     }
 
     @Test
-    @DisplayName("#4642 规则读面的 operation / after_operation 必须是**逻辑名**（存量变体名行 ⇒ 读时归一）")
+    @DisplayName("规则读面的 operation / after_operation 必须是**逻辑名**（存量变体名行 ⇒ 读时归一；"
+            + "服务面同断言见 #4643 的 ProductionRoutingReadServiceTest，本条是 **HTTP 面**的兜底）")
     void routeRulesNormalizeLegacyVariantNamesOnRead() throws Exception {
         // 存量形态：规则表里存的是**库口径变体名**（写面过去只做「归一后存在性校验」、**落库存原文**）
-        // ⇒ `routings/page.tsx` 的规则表与规则删除确认文案会把它直接渲染上屏。
+        // ⇒ `routings/page.tsx` 的规则表与规则删除确认文案会把它直接渲染上屏
+        // （本单 #4642 的 P2-3 豁免理由改真时点明的正是这条依赖）。
         when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of(
                 rule("rr-legacy-1", "craft", "韩褶", null, "insert", "布三边", "精裁-布", 10),
                 // 反向护栏：合法自定义名（不在归一表里）归一后等于自身

@@ -189,15 +189,22 @@ _JAVA_PUT_RE = re.compile(r'\.put\(\s*"(operation|operation_name)"')
 JAVA_PAIR_KEY = "logical_name"
 
 #: ③ 的**显式豁免**（文件, 理由）—— 逐条判断后登记（**不是**一律加白）；过期即红。
-#: ⚠️ **issue #4642 销账一条**：`ProductionRoutingReadService` 原先在这里（理由 = 「代码里没有
-#: `logical_name` 键，只在 javadoc 里提到」）—— 本单给 `ruleView()` 补上了**真的** `logical_name` 键
-#: ⇒ 该文件已**成对**，按「登记表只许缩短」销账（`_stale_java_exemptions` 会因此判红，必须删）。
 JAVA_EXEMPT: tuple[tuple[str, str], ...] = (
     (
         "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
         "**规则写面响应**（`POST/PUT /route-rules` 的回执）：`operation` = 规则表存的**逻辑工序名**"
         "（前端规则弹窗「目标工序」取自逻辑名域）⇒ 不是工人端快照名，无需 `logical_name`"
         "（issue #4626 评论明示豁免）",
+    ),
+    (
+        "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingReadService.java",
+        "**规则读面** `ruleView()` 的 `operation` / `after_operation` 取**逻辑工序名**（issue #4643 起"
+        "**读时归一**，写面落库前也归一 ⇒ 存量变体名行不再上屏）；`positionView()` 的 `operation`"
+        "直接取 `row.getLogicalName()` ⇒ 两处都不是快照名。"
+        "⚠️ 本文件**代码里没有** `logical_name` 键（只在 javadoc 里提到）—— 判据按**去注释后的代码**"
+        "判定：注释不能充当代码契约（否则删注释 ⇒ 假红、加注释 ⇒ 假绿）。"
+        "⚠️ 键集是**冻结判据**（10 键，见 `tests/unit_ci_workflows/test_routing_read_endpoints.py::"
+        "test_rule_view_keys_are_frozen_contract`）⇒ 归一**不新增键**，本豁免因此仍然成立",
     ),
 )
 
