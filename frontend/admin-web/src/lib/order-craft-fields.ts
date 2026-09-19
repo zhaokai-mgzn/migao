@@ -87,11 +87,36 @@ export const DEFAULT_PLEAT_SPACING = PLEAT_FABRIC_PER_FOLD / STANDARD_FULLNESS
  * 与硬约束 1「缺值不写」的关系：默认值是**商家看得见的真值** ⇒ 必须写；
  * 「缺值不写」管的是**既没填也没默认**的键。
  */
+/** 部位默认「布帘」—— 引导清单 `curtain_type`：`default_src=industry, default=布帘` */
+export const DEFAULT_CURTAIN_TYPE = '布帘'
+
+/** 工艺默认「韩褶」—— 引导清单 `craft`：`default_src=industry, default=韩褶` */
+export const DEFAULT_CRAFT = '韩褶'
+
+/**
+ * 是否对花默认「否」—— 真值源 §1 下单行要素实证（ERP 订单录入页：「是否对花: **不对花**」）。
+ * 三态里的「未指定」仍是独立真值，只是**默认**给「否」（商家看得见、可改）。
+ */
+export const DEFAULT_HAS_PATTERN = false
+
+/**
+ * 新明细行的**默认工艺规格**（issue #4493 扩到 8 项全覆盖）。
+ *
+ * 为什么扩：用户 2026-09-19「**现在太多点选了**」—— 8 个字段每个都要点一次。
+ * 把**有行业默认**的字段全部预填 ⇒ 商家**常态 0 点击**，只在偏离默认时改。
+ * 打开方式不在这里：它按**窗宽**联动（真值源 §10 的启发式，见页面侧 `deriveOpenCount`）。
+ *
+ * ⚠️ 与硬约束 1「缺值不写」的关系：默认值是**商家看得见的真值** ⇒ 必须写；
+ * 「缺值不写」管的是**既没填也没默认**的键。
+ */
 export function createDefaultCraftSpec(): CraftSpecInput {
   return {
+    curtainType: DEFAULT_CURTAIN_TYPE,
+    craft: DEFAULT_CRAFT,
     cuttingMode: DEFAULT_CUTTING_MODE,
     style: DEFAULT_STYLE,
     pleatSpacing: DEFAULT_PLEAT_SPACING,
+    hasPattern: DEFAULT_HAS_PATTERN,
   }
 }
 

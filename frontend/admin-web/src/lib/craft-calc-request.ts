@@ -104,3 +104,16 @@ export function craftCalcErrorText(error: unknown): string {
     anyErr?.message
   return detail ? `算料试算失败：${detail}` : '算料试算失败，请核对宽高与工艺后重试'
 }
+
+/**
+ * 该行**不可能**自动算料吗（issue #4488，用户裁定「这些**不需要自动算**，
+ * 这些**加工项直接体现费用**的，不用算米数」）。
+ *
+ * 与「参数没填齐」**必须区分**：前者是**口径**（非韩褶不走折数法 ⇒ 永远算不出），
+ * 后者只是还没填。页面据此给「该工艺无自动算料，请手填米数」的提示 ——
+ * 否则数量会**静默停在默认 1 米**（实测截图为 `商品 1 米 × ¥23.80/米 = ¥23.80`，金额错）。
+ */
+export function isAutoCalcUnavailable(line: CalcLineInput): boolean {
+  const craft = line.craft.craft
+  return craft !== undefined && !PLEAT_CRAFTS.has(craft)
+}

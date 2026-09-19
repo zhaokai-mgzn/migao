@@ -18,9 +18,11 @@ import {
   craftCalcErrorText,
   craftCalcParamsOf,
   craftCalcSignature,
+  isAutoCalcUnavailable,
 } from '@/lib/craft-calc-request'
 import {
   COMPONENT_ROLE_EDGE,
+  DEFAULT_CUTTING_MODE,
   METERS_SOURCE_FOLLOW,
   METERS_SOURCE_MANUAL,
   OPEN_COUNT_OPTIONS,
@@ -28,9 +30,7 @@ import {
   buildCraftSpec,
   buildEdgeLineCraftSpec,
   buildMainLineGroupKeys,
-  buildWindowGroupKey,
   createDefaultCraftSpec,
-  resolveWindowCraftLineIds,
   type CraftSpecInput,
 } from '@/lib/order-craft-fields'
 import { describeLogisticsProfile } from '@/lib/logistics'
@@ -56,10 +56,23 @@ interface ProductDetail extends Omit<Product, 'skus'> {
 
 interface OrderLineItem {
   id: string
+  /**
+   * **商品组标识**（issue #4485）——同一块布（同一商品 / 颜色 / 门幅）下的多个**部位行**共用它。
+   *
+   * 为什么用「扁平数组 + 组标识」而不是嵌套结构：裁定 **R-a**「一行 `order_items` = 一个部位」
+   * 是**落库**口径，提交与既有判据都按扁平数组走；分组**只是展示与编辑归属**
+   * ⇒ 用组标识把「同一商品」标出来，渲染时分组，模型一字不改。
+   */
+  groupId: string
   product: ProductDetail | null
   productLoading: boolean
   selectedColorId: string | null
   selectedSku: OrderProductSku | null
+  /**
+   * 售卖形态（issue #4493）——**商品组级**属性：同一块布按米卖还是做成帘。
+   * 存在行上、由组级处理器在组内同步（与颜色 / 门幅同一机制）。
+   */
+  saleForm: SaleForm
   quantity: number
   unitPrice: number
   /**
@@ -75,11 +88,12 @@ interface OrderLineItem {
   selectedProcessing: Record<string, { selected: boolean; qty: number }>
   /** 工艺规格录入（issue #4375 §4.2/§4.5）—— 未填的键不落库；三条默认档见 createDefaultCraftSpec */
   craft: CraftSpecInput
-  /**
-   * 樘窗名称 / 窗号（issue #4395）：同一樘窗的多条部位行（布行 + 纱行）填**同一个**窗号
-   * ⇒ 提交时写同一个 `craftLineId`（樘窗分组）。留空 ⇒ 本行自成一樘窗（存量语义不变）。
-   */
-  windowLabel: string
+  // ── 「樘窗」输入已移除（issue #4486，用户裁定「我感觉不需要」）──
+  // 代价已如实登记：商家手工路径不再能跨行绑樘窗 ⇒ 布 + 纱会算成 2 樘窗 ⇒ 套级工序
+  // （外帘打卷/装袋/发货）各实例化 2 次（计件工资双付，约 ¥3/樘）。见 issue #4486。
+  // ⚠️ **底层机制保留**：`lib/order-craft-fields.ts` 的 `resolveWindowCraftLineIds` /
+  // `buildWindowGroupKey` 与消费端 `ProcessingOrderService` 一字未动（API / Agent 仍可写该键）；
+  // 且 **`craftLineId` 仍用于配布边配对**（§4.8 主布行 + 配布边行），见 `buildLineProcessingInfo`。
   /** 配布边米数（§4.8）；`null` = 未改过 ⇒ 跟随主布米数 */
   edgeMeters: number | null
   /** 配布边单价；`null` = 未填 ⇒ 不生成配布边明细行（后端单价必须 > 0，不凭空造价） */
@@ -142,6 +156,18 @@ const CRAFT_CALC_DEBOUNCE_MS = 400
 /** 加工费计价预览防抖（issue #4450） */
 const FEE_PREVIEW_DEBOUNCE_MS = 300
 
+/**
+ * **售卖形态**（issue #4493，用户裁定）：同一块布既能**按米卖（布料）**、也能**做成帘（成品帘）**。
+ *
+ * - `布料` ⇒ **无加工**：不出现宽高 / 工艺规格 / 部位行 / 加工项 / 加工费，也不生成加工单；
+ * - `成品帘` ⇒ 上述全有（宽高**必填**）。
+ *
+ * 默认 `成品帘`：与今天的行为一致（所有字段照旧出现）⇒ 不静默改变任何现有商家的下单形态。
+ */
+const SALE_FORM_FABRIC = '布料'
+const SALE_FORM_FINISHED = '成品帘'
+type SaleForm = typeof SALE_FORM_FABRIC | typeof SALE_FORM_FINISHED
+
 /** 该行已勾选的加工项明细（提交 payload 与加工费预览**共用**这一份构造） */
 function processingDetailsOf(line: OrderLineItem): Array<Record<string, unknown>> {
   return Object.entries(line.selectedProcessing)
@@ -174,10 +200,7 @@ function processingDetailsOf(line: OrderLineItem): Array<Record<string, unknown>
  * ⚠️ **不含 `processingFee`**：它由服务端取价结果决定（写进来就是循环依赖）；
  * 提交时由调用方补上服务端返回的那个数。
  */
-function buildLineProcessingInfo(
-  line: OrderLineItem,
-  windowKey: string | undefined
-): Record<string, unknown> | undefined {
+function buildLineProcessingInfo(line: OrderLineItem): Record<string, unknown> | undefined {
   const sku = line.selectedSku
   const colorName = uniqueColors(line.product?.skus).find(
     (c) => c.id === line.selectedColorId
@@ -186,29 +209,44 @@ function buildLineProcessingInfo(
 
   // 工艺规格落库（issue #4375 §4.2/§4.5）：只落用户真填了的键（缺值不写）。
   // 拼色（双拼）时主布行额外绑组（§4.8）：componentRole=主布 + craftLineId。
-  // 樘窗绑组（issue #4395）：同樘窗的多条部位行共用**同一个** `craftLineId`。
-  const edgePrice = edgeUnitPriceOf(line)
+  // ⚠️ **樘窗跨行分组已移除**（issue #4486，用户裁定）：不再写 `buildWindowGroupKey`。
+  //    但 **`craftLineId` 自指仍保留** —— 它是 §4.8「配布边行被主布行吸收」的配对键
+  //    （消费端 `isAbsorbedEdgeRow` 按组键判定），删了配布边行会独立成部位。
+  // **布料单无加工**（issue #4493，用户裁定）：不写任何工艺规格、不写加工项。
+  // ⇒ 下游（订单详情 / 加工单）的「工艺规格」块自然不出现，且加工单不会被生成
+  //   （`ProcessingOrderService` 以「无加工项」拦），与既有链路零冲突。
+  const isFabric = line.saleForm === SALE_FORM_FABRIC
+  const edgePrice = isFabric ? null : edgeUnitPriceOf(line)
   const isPaired = edgePrice !== null
-  const pairKey = windowKey ?? line.id
-  const mainSpec = isPaired
-    ? { ...buildCraftSpec(line.craft), ...buildMainLineGroupKeys(pairKey) }
-    : {
-        ...buildCraftSpec(line.craft),
-        ...(windowKey ? buildWindowGroupKey(windowKey) : {}),
-      }
+  const mainSpec = isFabric
+    ? {}
+    : isPaired
+      ? { ...buildCraftSpec(line.craft), ...buildMainLineGroupKeys(line.id) }
+      : buildCraftSpec(line.craft)
 
-  if (processingDetails.length === 0 && !sku && !colorName && Object.keys(mainSpec).length === 0) {
+  if (
+    processingDetails.length === 0 &&
+    !sku &&
+    !colorName &&
+    Object.keys(mainSpec).length === 0 &&
+    !isFabric
+  ) {
     return undefined
   }
 
   const info: Record<string, unknown> = {
+    // **售卖形态显式落库**（issue #4493，用户裁定「显式写 saleForm」）：
+    // 不靠「有没有加工项」推导 —— 那是派生信号，会让「布料单」与「成品单**漏选**加工项」
+    // 在下游长得一模一样（前者正常、后者是错单），报表与排查分不开。
+    // 存量单无该键 ⇒ 读侧按「有加工项 = 成品帘」兜底（见 `readSaleForm`）。
+    saleForm: line.saleForm,
     colorId: line.selectedColorId ?? undefined,
     colorName,
     skuId: sku?.id,
     skuCode: sku?.skuCode,
     sellingMethod: sku?.sellingMethod,
     doorWidth: sku?.doorWidth,
-    processingItems: processingDetails,
+    ...(isFabric ? {} : { processingItems: processingDetails }),
     ...mainSpec,
   }
 
@@ -254,13 +292,32 @@ function requantifyProcessing(
   return next
 }
 
-function createEmptyLineItem(): OrderLineItem {
+
+/**
+ * 门幅 → 成品高**默认值**（用户 2026-09-19 裁定）：
+ * 「选完窗帘的门幅后，就可以把门幅高度默认设置为商品的高了，不用手填，**允许用户改**即可」。
+ *
+ * ⚠️ **只在「定高买宽」下默认**：定高布的**门幅就是它的固定高度**（2.8m）⇒ 默认成立；
+ * 定宽买高时门幅是**宽度**（如 1.4m），拿它当高是错的 ⇒ 不默认（宁可不填，也不填一个错的）。
+ * 取不到数字 ⇒ `null`（不猜、不填 0）。
+ */
+function heightFromDoorWidth(doorWidth: string | undefined): number | null {
+  if (!doorWidth) return null
+  const m = String(doorWidth).match(/(\d+(?:\.\d+)?)/)
+  if (!m) return null
+  const n = Number(m[1])
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
   return {
     id: genId(),
+    groupId,
     product: null,
     productLoading: false,
     selectedColorId: null,
     selectedSku: null,
+    saleForm: SALE_FORM_FINISHED,
     quantity: 1,
     unitPrice: 0,
     width: null,
@@ -269,7 +326,6 @@ function createEmptyLineItem(): OrderLineItem {
     selectedProcessing: {},
     // 三条默认档（issue #4420）：加工类型「定高买宽」/ 款式「单色」/ 褶距 0.125 —— 都是真值
     craft: createDefaultCraftSpec(),
-    windowLabel: '',
     edgeMeters: null,
     edgeUnitPrice: null,
     collapsed: false,
@@ -280,18 +336,19 @@ function createEmptyLineItem(): OrderLineItem {
 }
 
 /**
- * 「新增部位」（issue #4420）：复制本行的**商品 / 颜色 / 门幅 / 宽高 / 工艺规格**，
- * 只清空「部位」—— 一行 = 一个部位（裁定 R-a），布帘 + 纱帘 = 两行。
+ * 「新增部位」（issue #4420，**issue #4485 改为嵌套**）：在**同一商品**下追加一个部位行。
  *
- * 为什么继承 `windowLabel`：同一樘窗（一个窗户）的多条部位行要填**同一个窗号**才能绑成一樘窗
- * （#4395，套级工序与加工费按樘窗归属）。新行默认同窗 ⇒ 商家不用再手填一遍。
+ * 新行**继承商品基础属性**（商品 / 颜色 / 门幅·售卖方式 / 单价 / 宽高）与**同一个 `groupId`**
+ * ⇒ 渲染时它落在**同一张商品卡**里，商家看到的是「一个商品的两个部位」，而不是两个商品。
  *
- * 为什么清空 `curtainType` 而不是留原值：留着会让商家**以为**已经选好了新部位 ——
- * 两行同部位会让加工单长出两套同部位工序（§4.8 的重复计件同族错误）。
+ * 三条刻意**不**继承：
+ * 1. **部位**（`curtainType`）：留着会让商家以为已选好 ⇒ 两行同部位 ⇒ 加工单长出两套同部位工序；
+ * 2. **加工项**（`selectedProcessing`）：加工项按部位选（布帘要定型、纱帘不要），继承会**静默加钱**；
+ * 3. **数量**：各部位用料不同，必须各自算/各自填（沿用默认值 + 显式提示，见 `needsManualMeters`）。
  */
 function createPositionLine(source: OrderLineItem): OrderLineItem {
   return {
-    ...createEmptyLineItem(),
+    ...createEmptyLineItem(source.groupId),
     product: source.product,
     selectedColorId: source.selectedColorId,
     selectedSku: source.selectedSku,
@@ -300,7 +357,6 @@ function createPositionLine(source: OrderLineItem): OrderLineItem {
     height: source.height,
     processingItems: source.processingItems,
     craft: { ...source.craft, curtainType: undefined },
-    windowLabel: source.windowLabel,
   }
 }
 
@@ -411,6 +467,83 @@ export default function NewOrderPage() {
       next.splice(idx + 1, 0, createPositionLine(prev[idx]))
       return next
     })
+  }
+
+  /**
+   * 组内同步（issue #4485）：把 patch 写到同 `groupId` 的**所有**行 ——
+   * 商品 / 颜色 / 门幅·售卖方式 / 售卖形态都是**一组一份**的属性（部位共用）。
+   */
+  const patchGroup = useCallback((groupId: string, patch: Partial<OrderLineItem>) => {
+    setLineItems((prev) => prev.map((it) => (it.groupId === groupId ? { ...it, ...patch } : it)))
+  }, [])
+
+  /**
+   * 颜色（**组级**，issue #4485）：同一块布的颜色 ⇒ 组内所有部位行同步。
+   * 顺带按门幅给「高」填默认值（用户 2026-09-19 裁定，可改）。
+   */
+  const handleSelectColorForGroup = (groupId: string, colorId: string) => {
+    const sample = lineItems.find((l) => l.groupId === groupId)
+    const skusOfColor = (sample?.product?.skus || []).filter((s) => s.colorId === colorId)
+    const autoSku = skusOfColor.length === 1 ? skusOfColor[0] : null
+    patchGroup(groupId, {
+      selectedColorId: colorId,
+      selectedSku: autoSku,
+      ...(autoSku ? { unitPrice: Number(autoSku.price) } : {}),
+    })
+  }
+
+  /** 门幅 / 售卖方式（**组级**）：同上；并把「高」默认成门幅（仅定高买宽，可改） */
+  const handleSelectSkuForGroup = (groupId: string, sku: OrderProductSku) => {
+    const sample = lineItems.find((l) => l.groupId === groupId)
+    const isFixedHeight = (sample?.craft.cuttingMode ?? DEFAULT_CUTTING_MODE) === DEFAULT_CUTTING_MODE
+    const defaultHeight = isFixedHeight ? heightFromDoorWidth(sku.doorWidth) : null
+    setLineItems((prev) =>
+      prev.map((it) => {
+        if (it.groupId !== groupId) return it
+        const next: OrderLineItem = { ...it, selectedSku: sku, unitPrice: Number(sku.price) || 0 }
+        // 只在「还没填高」时补默认值 —— 商家填过的值不覆盖（同「手改留痕」纪律）
+        if (defaultHeight !== null && it.height === null) next.height = defaultHeight
+        return next
+      })
+    )
+  }
+
+  /**
+   * 售卖形态（**组级**，issue #4493）：布料 ⇒ 组内**只保留一行**（布料没有部位），
+   * 并清掉工艺规格 / 加工项 / 宽高（布料单无加工）；成品帘 ⇒ 组内所有行标回成品帘。
+   */
+  const handleSaleFormChange = (groupId: string, form: SaleForm) => {
+    setLineItems((prev) => {
+      const groupLines = prev.filter((l) => l.groupId === groupId)
+      if (groupLines.length === 0) return prev
+      if (form !== SALE_FORM_FABRIC) {
+        return prev.map((l) => (l.groupId === groupId ? { ...l, saleForm: form } : l))
+      }
+      const at = prev.findIndex((l) => l.groupId === groupId)
+      const kept: OrderLineItem = {
+        ...groupLines[0],
+        saleForm: form,
+        craft: {},
+        selectedProcessing: {},
+        width: null,
+        height: null,
+        calc: null,
+        calcError: null,
+        metersSource: METERS_SOURCE_FORMULA,
+      }
+      const next = prev.filter((l) => l.groupId !== groupId)
+      next.splice(at, 0, kept)
+      return next
+    })
+  }
+
+  /** 删除整个商品组（含其下所有部位行）；至少保留一组 */
+  const removeGroup = (groupId: string) => {
+    setLineItems((prev) => {
+      const next = prev.filter((l) => l.groupId !== groupId)
+      return next.length === 0 ? prev : next
+    })
+    setErrors({})
   }
 
   const removeLineItem = (lineId: string) => {
@@ -651,17 +784,34 @@ export default function NewOrderPage() {
   //
   // ⚠️ 入参 = **即将提交的那一份** `processingInfo`（同一个 `buildLineProcessingInfo`）——
   //    预览与提交各拼一份就是「显示 ≠ 落库」的第二次分叉。
-  const windowCraftLineIds = useMemo(
-    () =>
-      resolveWindowCraftLineIds(
-        lineItems.map((l) => ({
-          id: l.id,
-          windowLabel: l.windowLabel,
-          curtainType: l.craft.curtainType,
-        }))
-      ),
-    [lineItems]
-  )
+  /**
+   * **商品组**（issue #4485）：按 `groupId` 把扁平行数组分组（保持出现顺序）。
+   *
+   * 为什么仍保留扁平数组：裁定 **R-a**「一行 `order_items` = 一个部位」是**落库**口径 ——
+   * 提交 / 校验 / 算料 / 取价都按扁平数组走；分组**只是展示与编辑归属**，模型一字不改。
+   */
+  const productGroups = useMemo<ProductGroup[]>(() => {
+    const order: string[] = []
+    const byId = new Map<string, ProductGroup>()
+    for (const line of lineItems) {
+      let g = byId.get(line.groupId)
+      if (!g) {
+        g = {
+          id: line.groupId,
+          product: line.product,
+          productLoading: line.productLoading,
+          selectedColorId: line.selectedColorId,
+          selectedSku: line.selectedSku,
+          saleForm: line.saleForm,
+          lines: [],
+        }
+        byId.set(line.groupId, g)
+        order.push(line.groupId)
+      }
+      g.lines.push(line)
+    }
+    return order.map((id) => byId.get(id)!)
+  }, [lineItems])
 
   /** 参与计价的行（与提交时的过滤条件**同一口径**：必须有商品） */
   const pricedLines = useMemo(() => lineItems.filter((l) => l.product), [lineItems])
@@ -669,10 +819,10 @@ export default function NewOrderPage() {
   const feePreviewPayload = useMemo(
     () => ({
       items: pricedLines.map((l) => ({
-        processingInfo: buildLineProcessingInfo(l, windowCraftLineIds[l.id]),
+        processingInfo: buildLineProcessingInfo(l),
       })),
     }),
-    [pricedLines, windowCraftLineIds]
+    [pricedLines]
   )
 
   const feePreviewSignature = useMemo(() => JSON.stringify(feePreviewPayload), [feePreviewPayload])
@@ -805,14 +955,18 @@ export default function NewOrderPage() {
       if (skuOptions.length > 0 && !line.selectedSku) {
         e[`${prefix}_spec`] = `第 ${idx + 1} 个商品未选择规格`
       }
-      // 宽 / 高**必填**（issue #4420，用户 2026-09-19 裁定）：
-      // 它们是**不可推导的原始输入**（设计 §5.9.3）—— 丢了永远拿不回来，而用料 / 幅数 /
-      // 加工单复核全靠它。只存米数 = 把输入扔了只留输出（#4273 的根因形态）。
-      if (!(Number(line.width) > 0)) {
-        e[`${prefix}_width`] = `第 ${idx + 1} 个商品未填宽（米）`
-      }
-      if (!(Number(line.height) > 0)) {
-        e[`${prefix}_height`] = `第 ${idx + 1} 个商品未填高（米）`
+      // 宽 / 高**必填**（issue #4420）——但**仅成品帘**（issue #4493，用户裁定）：
+      // 布料按米卖，没有成品尺寸 ⇒ 布料单既不显示也不校验宽高
+      // （否则布料单会被「未填宽」直接卡住提交，实测形态）。
+      if (line.saleForm !== SALE_FORM_FABRIC) {
+        // 它们是**不可推导的原始输入**（设计 §5.9.3）—— 丢了永远拿不回来，而用料 / 幅数 /
+        // 加工单复核全靠它。只存米数 = 把输入扔了只留输出（#4273 的根因形态）。
+        if (!(Number(line.width) > 0)) {
+          e[`${prefix}_width`] = `第 ${idx + 1} 个商品未填宽（米）`
+        }
+        if (!(Number(line.height) > 0)) {
+          e[`${prefix}_height`] = `第 ${idx + 1} 个商品未填高（米）`
+        }
       }
       if (!line.quantity || line.quantity <= 0) {
         e[`${prefix}_quantity`] = '数量须大于 0'
@@ -838,18 +992,18 @@ export default function NewOrderPage() {
       return
     }
 
-    // 樘窗绑组（issue #4395）：用**与加工费预览同一个** memo（`windowCraftLineIds`），
-    // 预览与提交必须看到同一份 `craftLineId`（两处各算一次 = 第二次分叉）。
+    // 樘窗跨行分组已移除（issue #4486）；`craftLineId` 仍由 `buildLineProcessingInfo`
+    // 按**本行自指**写入，供 §4.8 配布边行被主布行吸收（不是跨行分组）。
     const items: OrderItemFormData[] = pricedLines.flatMap((line, lineIndex) => {
       // 加工费 = **服务端取价结果**（issue #4450）：页面显示 === 落库。
       // 预览行与 `pricedLines` **同序**（服务端按下标一一对应）。
       const lineFee = Number(feePreview?.items[lineIndex]?.processingFee) || 0
 
       // `processingInfo` 由**同一个** `buildLineProcessingInfo` 构造（预览也是它）
-      const baseInfo = buildLineProcessingInfo(line, windowCraftLineIds[line.id])
+      const baseInfo = buildLineProcessingInfo(line)
       const productSub = (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)
       const edgePrice = edgeUnitPriceOf(line)
-      const pairKey = windowCraftLineIds[line.id] ?? line.id
+      const pairKey = line.id
 
       const rows: OrderItemFormData[] = [
         {
@@ -965,34 +1119,51 @@ export default function NewOrderPage() {
               </div>
 
               <div className="space-y-4">
-                {lineItems.map((line, idx) => (
-                  <LineItemBlock
-                    key={line.id}
-                    index={idx}
-                    line={line}
-                    canRemove={lineItems.length > 1}
+                {productGroups.map((group, gi) => (
+                  <ProductGroupBlock
+                    key={group.id}
+                    index={gi}
+                    group={group}
+                    canRemove={productGroups.length > 1}
                     errors={errors}
-                    processingLoading={processingCatalogLoading}
-                    onPickProduct={() => openProductModalFor(line.id)}
-                    onRemove={() => removeLineItem(line.id)}
-                    onSelectColor={(colorId) => handleSelectColor(line, colorId)}
-                    onSelectSku={(sku) => handleSelectSku(line, sku)}
-                    onChangeQty={(q) => handleLineQtyChange(line, q)}
-                    onRestoreFormula={() => restoreFormulaMeters(line)}
-                    onChangePrice={(p) => updateLineItem(line.id, { unitPrice: p })}
-                    onChangeWidth={(w) => updateLineItem(line.id, { width: w })}
-                    onChangeHeight={(h) => updateLineItem(line.id, { height: h })}
-                    onToggleCollapsed={() =>
-                      updateLineItem(line.id, { collapsed: !line.collapsed })
-                    }
-                    onAddPosition={() => addPositionLine(line.id)}
-                    onToggleProcessing={(pi, sel) => toggleProcessing(line, pi, sel)}
-                    onChangeCraft={(patch) =>
-                      updateLineItem(line.id, { craft: { ...line.craft, ...patch } })
-                    }
-                    onChangeWindowLabel={(label) => updateLineItem(line.id, { windowLabel: label })}
-                    onEdgeMetersChange={(m) => updateLineItem(line.id, { edgeMeters: m })}
-                    onEdgeUnitPriceChange={(p) => updateLineItem(line.id, { edgeUnitPrice: p })}
+                    onPickProduct={() => openProductModalFor(group.lines[0].id)}
+                    onSelectColor={(colorId) => handleSelectColorForGroup(group.id, colorId)}
+                    onSelectSku={(sku) => handleSelectSkuForGroup(group.id, sku)}
+                    onChangeSaleForm={(form) => handleSaleFormChange(group.id, form)}
+                    onAddPosition={() => addPositionLine(group.lines[0].id)}
+                    onRemoveGroup={() => removeGroup(group.id)}
+                    onChangeQty={(lineId, q) => {
+                      const target = lineItems.find((l) => l.id === lineId)
+                      if (target) handleLineQtyChange(target, q)
+                    }}
+                    onChangePrice={(lineId, p) => updateLineItem(lineId, { unitPrice: p })}
+                    renderPosition={(line, li) => (
+                      <LineItemBlock
+                        key={line.id}
+                        index={li}
+                        line={line}
+                        canRemove={group.lines.length > 1}
+                        errors={errors}
+                        processingLoading={processingCatalogLoading}
+                        onRemove={() => removeLineItem(line.id)}
+                        onChangeQty={(q) => handleLineQtyChange(line, q)}
+                        onRestoreFormula={() => restoreFormulaMeters(line)}
+                        onChangePrice={(p) => updateLineItem(line.id, { unitPrice: p })}
+                        onChangeWidth={(w) => updateLineItem(line.id, { width: w })}
+                        onChangeHeight={(h) => updateLineItem(line.id, { height: h })}
+                        onToggleCollapsed={() =>
+                          updateLineItem(line.id, { collapsed: !line.collapsed })
+                        }
+                        onToggleProcessing={(pi, sel) => toggleProcessing(line, pi, sel)}
+                        onChangeCraft={(patch) =>
+                          updateLineItem(line.id, { craft: { ...line.craft, ...patch } })
+                        }
+                        onEdgeMetersChange={(m) => updateLineItem(line.id, { edgeMeters: m })}
+                        onEdgeUnitPriceChange={(p) =>
+                          updateLineItem(line.id, { edgeUnitPrice: p })
+                        }
+                      />
+                    )}
                   />
                 ))}
               </div>
@@ -1403,10 +1574,7 @@ interface LineItemBlockProps {
   canRemove: boolean
   errors: Record<string, string>
   processingLoading: boolean
-  onPickProduct: () => void
   onRemove: () => void
-  onSelectColor: (colorId: string) => void
-  onSelectSku: (sku: OrderProductSku) => void
   onChangeQty: (q: number) => void
   /** 「恢复按公式计算」（issue #4434）：切回算料预填（手改后不会被静默改回，只能显式恢复） */
   onRestoreFormula: () => void
@@ -1416,14 +1584,377 @@ interface LineItemBlockProps {
   onChangeHeight: (h: number | null) => void
   /** 卡片收起 / 展开（issue #4420）—— 只影响渲染 */
   onToggleCollapsed: () => void
-  /** 新增部位（issue #4420）：同一商品下追加一个部位行（布帘 + 纱帘 = 两行） */
-  onAddPosition: () => void
   onToggleProcessing: (pi: ProcessingItem, selected: boolean) => void
   onChangeCraft: (patch: Partial<CraftSpecInput>) => void
-  /** 樘窗窗号（issue #4395）：同樘窗的多条部位行填同一个值 */
-  onChangeWindowLabel: (label: string) => void
   onEdgeMetersChange: (meters: number | null) => void
   onEdgeUnitPriceChange: (price: number | null) => void
+}
+
+
+/**
+ * **布料行**（issue #4493，用户裁定「如果是布料下单就**无加工**了」）：
+ * 只有 **米数 / 单价** —— 不出现宽高 / 工艺规格 / 部位行 / 加工项 / 加工费。
+ *
+ * 为什么不复用部位行：部位行整套（工艺规格 8 项 + 宽高 + 加工项 + 算料）对布料**全是噪音**，
+ * 而且宽高对布料没有意义（布料按米卖，没有成品尺寸）。
+ */
+function FabricRow({
+  line,
+  errors,
+  onChangeQty,
+  onChangePrice,
+}: {
+  line: OrderLineItem
+  errors: Record<string, string>
+  onChangeQty: (q: number) => void
+  onChangePrice: (p: number) => void
+}) {
+  const errQty = errors[`line_${line.id}_quantity`]
+  const errPrice = errors[`line_${line.id}_unitPrice`]
+  const inputClass =
+    'w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15'
+  return (
+    <div className="rounded-lg border border-neutral-200 p-3">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label required>数量</Label>
+          <input
+            type="number"
+            min={1}
+            placeholder="米"
+            value={line.quantity || ''}
+            onChange={(e) => {
+              const raw = e.target.value
+              if (raw === '') onChangeQty(0)
+              else if (/^\d*\.?\d*$/.test(raw)) onChangeQty(Number(raw))
+            }}
+            className={inputClass}
+          />
+          {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
+        </div>
+        <div>
+          <Label required>单价 (¥/米)</Label>
+          <input
+            type="number"
+            min={0}
+            step={0.01}
+            value={line.unitPrice}
+            onChange={(e) => onChangePrice(Number(e.target.value) || 0)}
+            className={inputClass}
+          />
+          {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
+        </div>
+      </div>
+      <p className="mt-1.5 text-xs text-neutral-400">
+        布料按米计价：没有加工费，也不生成加工单
+      </p>
+    </div>
+  )
+}
+
+/** 一个**商品组**：同商品 / 同色 / 同门幅下的多个部位行（issue #4485） */
+interface ProductGroup {
+  id: string
+  product: ProductDetail | null
+  productLoading: boolean
+  selectedColorId: string | null
+  selectedSku: OrderProductSku | null
+  /** 售卖形态（issue #4493）：组级 —— 决定这一组下面出什么（布料 = 没有部位行） */
+  saleForm: SaleForm
+  lines: OrderLineItem[]
+}
+
+interface ProductGroupBlockProps {
+  index: number
+  group: ProductGroup
+  canRemove: boolean
+  errors: Record<string, string>
+  /** 选择商品（组级）：选完写回**组内所有部位行** */
+  onPickProduct: () => void
+  /** 颜色（组级）：同一块布的颜色，组内同步 */
+  onSelectColor: (colorId: string) => void
+  /** 门幅 / 售卖方式（组级）：同上 */
+  onSelectSku: (sku: OrderProductSku) => void
+  /** 售卖形态（组级，issue #4493）：布料 / 成品帘 */
+  onChangeSaleForm: (form: SaleForm) => void
+  /** 在本商品下新增一个部位行 */
+  onAddPosition: () => void
+  /** 删除整个商品组（含其下所有部位行） */
+  onRemoveGroup: () => void
+  /** 渲染一个部位行（由页面传入，保证部位行的 props 装配只有一处） */
+  renderPosition: (line: OrderLineItem, positionIndex: number) => React.ReactNode
+  /** 布料行（无部位）的 米数 / 单价 回调（issue #4493） */
+  onChangeQty: (lineId: string, qty: number) => void
+  onChangePrice: (lineId: string, price: number) => void
+}
+
+/**
+ * **商品组**（issue #4485）：一块布（同商品 / 同色 / 同门幅）下挂**多个部位行**。
+ *
+ * 用户 2026-09-19 口径：「新增部位应该在**已选择的商品下**去新增，现在像是两个商品，
+ * 商品的**基础属性应该共用**。」
+ *
+ * 为什么这样切：裁定 **R-a**「一行 `order_items` = 一个部位」是**落库**口径，与展示无关
+ * —— 旧实现把落库口径直接当成了 UI 结构（复制一行 = 复制整张商品卡）⇒ 同一商品的两个部位
+ * 看起来像两个商品、颜色与门幅还要各选一遍。
+ *
+ * 本组件只负责**商品基础属性**（选择商品 / 颜色 / 门幅·售卖方式）与部位行的排布；
+ * 组内改颜色或门幅 ⇒ **组内所有部位行同步**（它们是同一块布的属性）。
+ */
+function ProductGroupBlock({
+  index,
+  group,
+  canRemove,
+  errors,
+  onPickProduct,
+  onSelectColor,
+  onSelectSku,
+  onChangeSaleForm,
+  onAddPosition,
+  onRemoveGroup,
+  renderPosition,
+  onChangeQty,
+  onChangePrice,
+}: ProductGroupBlockProps) {
+  const colorOptions = useMemo(() => uniqueColors(group.product?.skus), [group.product])
+  const skuOptions = useMemo(() => {
+    if (!group.product?.skus || group.selectedColorId == null) return []
+    return group.product.skus.filter((s) => s.colorId === group.selectedColorId)
+  }, [group.product, group.selectedColorId])
+
+  const first = group.lines[0]
+  const errProduct = errors[`line_${first.id}_product`]
+  const errColor = errors[`line_${first.id}_color`]
+  const errSpec = errors[`line_${first.id}_spec`]
+  const colorName = colorOptions.find((c) => c.id === group.selectedColorId)?.name
+  const groupAmount = group.lines.reduce(
+    (s, l) => s + (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0),
+    0
+  )
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white">
+      {/* 组头 = **商品基础属性**（一组一份，部位共用） */}
+      <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-neutral-100 bg-neutral-50/60 rounded-t-xl">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="inline-flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-primary-600 text-white text-xs font-semibold">
+            {index + 1}
+          </span>
+          <span className="text-sm font-medium text-neutral-900 truncate">
+            {group.product?.name ?? `商品 ${index + 1}`}
+          </span>
+          {colorName && <span className="text-xs text-primary-600 shrink-0">{colorName}</span>}
+          <span className="text-xs text-neutral-400 shrink-0">
+            {group.lines.length} 个部位
+          </span>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="text-sm font-semibold text-neutral-900">
+            {formatAmount(groupAmount)}
+          </span>
+          {canRemove && (
+            <button
+              type="button"
+              onClick={onRemoveGroup}
+              className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-red-600 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              删除
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="p-4">
+        {/* 商品选择 */}
+        <div className="mb-4">
+          <Label required>选择商品</Label>
+          {group.product ? (
+            <div className="flex items-center gap-3 p-3 rounded-lg border border-neutral-200 bg-neutral-50/60">
+              {group.product.images?.[0] ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={resolveImageUrl(group.product.images[0])}
+                  alt={group.product.name}
+                  className="w-14 h-14 rounded object-cover bg-white border border-neutral-200"
+                />
+              ) : (
+                <div className="w-14 h-14 rounded bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-300">
+                  <Package className="w-6 h-6" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-neutral-900 truncate">
+                  {group.product.name}
+                </div>
+                <div className="text-xs text-neutral-500 mt-0.5">
+                  {group.product.categoryName || '-'} · 货号：{group.product.skuCode || '-'}
+                </div>
+              </div>
+              <button
+                onClick={onPickProduct}
+                className="text-sm text-primary-600 hover:text-primary-700"
+              >
+                重新选择
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onPickProduct}
+              className="w-full h-11 rounded-lg border border-dashed border-neutral-300 bg-white text-sm text-neutral-500 hover:border-primary-500 hover:text-primary-600 transition-colors inline-flex items-center justify-center gap-2"
+            >
+              <Search className="w-4 h-4" />
+              点击搜索并选择商品
+            </button>
+          )}
+          {errProduct && <p className="mt-1.5 text-sm text-red-600">{errProduct}</p>}
+        </div>
+
+        {/* 颜色 + 规格 */}
+        {group.product && (
+          <>
+            {group.productLoading ? (
+              <div className="text-sm text-neutral-400 py-4">商品规格加载中…</div>
+            ) : (
+              <>
+                {colorOptions.length > 0 && (
+                  <div className="mb-4">
+                    <Label required>颜色</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {colorOptions.map((c) => {
+                        const active = group.selectedColorId === c.id
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => onSelectColor(c.id)}
+                            className={
+                              'h-9 px-3 rounded border text-sm transition-colors ' +
+                              (active
+                                ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
+                                : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
+                            }
+                          >
+                            {c.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {errColor && <p className="mt-1.5 text-sm text-red-600">{errColor}</p>}
+                  </div>
+                )}
+
+                {group.selectedColorId != null && skuOptions.length > 0 && (
+                  <div className="mb-4">
+                    <Label required>门幅 / 售卖方式</Label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {skuOptions.map((sku) => {
+                        const active = group.selectedSku?.id === sku.id
+                        return (
+                          <button
+                            key={sku.id}
+                            type="button"
+                            onClick={() => onSelectSku(sku)}
+                            className={
+                              'flex items-center justify-between gap-2 px-3 py-2 rounded border text-sm transition-colors ' +
+                              (active
+                                ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
+                                : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
+                            }
+                          >
+                            <div className="text-left">
+                              <div className="font-medium">
+                                {sku.doorWidth || '默认规格'}
+                                {sku.sellingMethod && (
+                                  <span className="ml-2 text-xs text-neutral-500">
+                                    {sellingMethodLabel[sku.sellingMethod] || sku.sellingMethod}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-neutral-400 mt-0.5">
+                                库存 {sku.stock ?? 0}
+                              </div>
+                            </div>
+                            <span className="text-sm font-semibold">
+                              ¥{Number(sku.price).toFixed(2)}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {errSpec && <p className="mt-1.5 text-sm text-red-600">{errSpec}</p>}
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {/* **售卖形态**（issue #4493，用户裁定）——放在**商品公共属性区**：
+            它和「商品 / 颜色 / 门幅」一起定义「这一组是什么、怎么卖」，而且**决定这一组下面出什么**
+            （布料 ⇒ 没有部位行）。同一块布既能按米卖、也能做成帘 ⇒ 组级，不是行级、也不是商品属性。 */}
+        {group.product && (
+          <div className="mb-4">
+            <Label required>售卖形态</Label>
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="售卖形态">
+              {([SALE_FORM_FINISHED, SALE_FORM_FABRIC] as SaleForm[]).map((form) => {
+                const active = group.saleForm === form
+                return (
+                  <button
+                    key={form}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => onChangeSaleForm(form)}
+                    className={
+                      'h-9 px-3 rounded border text-sm transition-colors ' +
+                      (active
+                        ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
+                        : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
+                    }
+                  >
+                    {form}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-1.5 text-xs text-neutral-400">
+              {group.saleForm === SALE_FORM_FABRIC
+                ? '布料：按米卖，没有加工（不出现宽高 / 工艺规格 / 部位 / 加工项，也不生成加工单）'
+                : '成品帘：做成帘，需要部位 / 宽高 / 工艺规格与加工项'}
+            </p>
+          </div>
+        )}
+
+        {group.saleForm === SALE_FORM_FABRIC ? (
+          /* 布料单（issue #4493）：只有 米数 / 单价 —— 没有宽高、工艺规格、部位、加工项 */
+          <FabricRow
+            line={group.lines[0]}
+            errors={errors}
+            onChangeQty={(q) => onChangeQty(group.lines[0].id, q)}
+            onChangePrice={(v) => onChangePrice(group.lines[0].id, v)}
+          />
+        ) : (
+          <>
+            {/* 部位行（issue #4485）：嵌在**本商品**下，商品基础属性共用 */}
+            <div className="space-y-3">
+              {group.lines.map((line, li) => renderPosition(line, li))}
+            </div>
+
+            <button
+              type="button"
+              onClick={onAddPosition}
+              className="mt-3 w-full h-10 rounded-lg border border-dashed border-neutral-300 bg-white text-sm text-neutral-500 hover:border-primary-500 hover:text-primary-600 hover:bg-primary-50/30 transition-colors inline-flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              新增部位（同一商品，共用颜色与门幅）
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function LineItemBlock({
@@ -1432,35 +1963,25 @@ function LineItemBlock({
   canRemove,
   errors,
   processingLoading,
-  onPickProduct,
   onRemove,
-  onSelectColor,
-  onSelectSku,
   onChangeQty,
   onRestoreFormula,
   onChangePrice,
   onChangeWidth,
   onChangeHeight,
   onToggleCollapsed,
-  onAddPosition,
   onToggleProcessing,
   onChangeCraft,
-  onChangeWindowLabel,
   onEdgeMetersChange,
   onEdgeUnitPriceChange,
 }: LineItemBlockProps) {
-  const colorOptions = useMemo(
-    () => uniqueColors(line.product?.skus),
-    [line.product]
-  )
-  const skuOptions = useMemo(() => {
-    if (!line.product?.skus || line.selectedColorId == null) return []
-    return line.product.skus.filter((s) => s.colorId === line.selectedColorId)
-  }, [line.product, line.selectedColorId])
+  const colorOptions = useMemo(() => uniqueColors(line.product?.skus), [line.product])
+  /** 加工选项默认折叠（issue #4489 判据 3）—— 只影响渲染 */
+  const [processingOpen, setProcessingOpen] = useState(false)
+  const selectedProcessingCount = Object.values(line.selectedProcessing).filter(
+    (c) => c.selected
+  ).length
 
-  const errProduct = errors[`line_${line.id}_product`]
-  const errColor = errors[`line_${line.id}_color`]
-  const errSpec = errors[`line_${line.id}_spec`]
   const errQty = errors[`line_${line.id}_quantity`]
   const errPrice = errors[`line_${line.id}_unitPrice`]
   const errWidth = errors[`line_${line.id}_width`]
@@ -1537,128 +2058,6 @@ function LineItemBlock({
 
       {!line.collapsed && (
       <div className="p-4">
-        {/* 商品选择 */}
-        <div className="mb-4">
-          <Label required>选择商品</Label>
-          {line.product ? (
-            <div className="flex items-center gap-3 p-3 rounded-lg border border-neutral-200 bg-neutral-50/60">
-              {line.product.images?.[0] ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={resolveImageUrl(line.product.images[0])}
-                  alt={line.product.name}
-                  className="w-14 h-14 rounded object-cover bg-white border border-neutral-200"
-                />
-              ) : (
-                <div className="w-14 h-14 rounded bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-300">
-                  <Package className="w-6 h-6" />
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-neutral-900 truncate">
-                  {line.product.name}
-                </div>
-                <div className="text-xs text-neutral-500 mt-0.5">
-                  {line.product.categoryName || '-'} · 货号：{line.product.skuCode || '-'}
-                </div>
-              </div>
-              <button
-                onClick={onPickProduct}
-                className="text-sm text-primary-600 hover:text-primary-700"
-              >
-                重新选择
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={onPickProduct}
-              className="w-full h-11 rounded-lg border border-dashed border-neutral-300 bg-white text-sm text-neutral-500 hover:border-primary-500 hover:text-primary-600 transition-colors inline-flex items-center justify-center gap-2"
-            >
-              <Search className="w-4 h-4" />
-              点击搜索并选择商品
-            </button>
-          )}
-          {errProduct && <p className="mt-1.5 text-sm text-red-600">{errProduct}</p>}
-        </div>
-
-        {/* 颜色 + 规格 */}
-        {line.product && (
-          <>
-            {line.productLoading ? (
-              <div className="text-sm text-neutral-400 py-4">商品规格加载中…</div>
-            ) : (
-              <>
-                {colorOptions.length > 0 && (
-                  <div className="mb-4">
-                    <Label required>颜色</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {colorOptions.map((c) => {
-                        const active = line.selectedColorId === c.id
-                        return (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() => onSelectColor(c.id)}
-                            className={
-                              'h-9 px-3 rounded border text-sm transition-colors ' +
-                              (active
-                                ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
-                                : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
-                            }
-                          >
-                            {c.name}
-                          </button>
-                        )
-                      })}
-                    </div>
-                    {errColor && <p className="mt-1.5 text-sm text-red-600">{errColor}</p>}
-                  </div>
-                )}
-
-                {line.selectedColorId != null && skuOptions.length > 0 && (
-                  <div className="mb-4">
-                    <Label required>门幅 / 售卖方式</Label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {skuOptions.map((sku) => {
-                        const active = line.selectedSku?.id === sku.id
-                        return (
-                          <button
-                            key={sku.id}
-                            type="button"
-                            onClick={() => onSelectSku(sku)}
-                            className={
-                              'flex items-center justify-between gap-2 px-3 py-2 rounded border text-sm transition-colors ' +
-                              (active
-                                ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
-                                : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
-                            }
-                          >
-                            <div className="text-left">
-                              <div className="font-medium">
-                                {sku.doorWidth || '默认规格'}
-                                {sku.sellingMethod && (
-                                  <span className="ml-2 text-xs text-neutral-500">
-                                    {sellingMethodLabel[sku.sellingMethod] || sku.sellingMethod}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-xs text-neutral-400 mt-0.5">
-                                库存 {sku.stock ?? 0}
-                              </div>
-                            </div>
-                            <span className="text-sm font-semibold">
-                              ¥{Number(sku.price).toFixed(2)}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                    {errSpec && <p className="mt-1.5 text-sm text-red-600">{errSpec}</p>}
-                  </div>
-                )}
-              </>
-            )}
 
             {/* 尺寸与数量（issue #4420 分区①）：宽 / 高 必填 + 数量 / 单价 */}
             <div className="pt-3 border-t border-neutral-100">
@@ -1736,6 +2135,17 @@ function LineItemBlock({
                     </p>
                   ) : null}
                   {line.calcError && <p className="mt-1 text-xs text-red-600">{line.calcError}</p>}
+                  {/* 非韩褶不自动算用料（issue #4488，用户裁定）：加工项直接体现费用 ⇒ 米数手填。
+                      **不静默停在默认 1 米** —— 那会让「1 米 × 单价」直接算出一个错金额。 */}
+                  {!line.calc &&
+                    !line.calcError &&
+                    Number(line.width) > 0 &&
+                    Number(line.height) > 0 &&
+                    isAutoCalcUnavailable(line) && (
+                      <p className="mt-1 text-xs text-amber-600">
+                        该工艺无自动算料，请手填米数
+                      </p>
+                    )}
                 </div>
                 <div>
                   <Label required>单价 (¥/米)</Label>
@@ -1752,12 +2162,39 @@ function LineItemBlock({
               </div>
             </div>
 
-            {/* 加工选项（店铺级目录，与商品解耦 —— issue #4371） */}
+            {/* 加工选项（店铺级目录，与商品解耦 —— issue #4371）。
+                issue #4489 判据 3：**默认折叠**（与「特殊选项」同款）—— 商家「太多点选了」，
+                未选时只报「未选」，展开才列目录。 */}
             <div className="pt-2 border-t border-neutral-100">
-              <div className="flex items-center gap-2 mb-3">
-                <Settings2 className="w-4 h-4 text-neutral-500" />
-                <span className="text-sm font-medium text-neutral-700">加工选项（可选）</span>
-              </div>
+              <button
+                type="button"
+                onClick={() => setProcessingOpen((v) => !v)}
+                aria-expanded={processingOpen}
+                className="w-full flex items-center justify-between gap-2 mb-1"
+              >
+                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-700">
+                  {processingOpen ? (
+                    <ChevronDown className="w-4 h-4 text-neutral-400" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-neutral-400" />
+                  )}
+                  <Settings2 className="w-4 h-4 text-neutral-500" />
+                  加工选项
+                  <span className="text-xs font-normal text-neutral-400">（可选）</span>
+                </span>
+                <span
+                  className={
+                    'text-xs ' +
+                    (selectedProcessingCount > 0
+                      ? 'text-primary-600 font-medium'
+                      : 'text-neutral-400')
+                  }
+                >
+                  {selectedProcessingCount > 0 ? `已选 ${selectedProcessingCount} 项` : '未选'}
+                </span>
+              </button>
+              {processingOpen && (
+                <>
               {processingLoading ? (
                 <div className="text-sm text-neutral-400 py-2">加工项加载中…</div>
               ) : line.processingItems.length === 0 ? (
@@ -1801,42 +2238,12 @@ function LineItemBlock({
                   })}
                 </div>
               )}
+                </>
+              )}
             </div>
 
-            {/* 樘窗与部位（issue #4420 分区④ + #4395 樘窗绑组）：
-                一行 = 一个部位（裁定 R-a）⇒ 同一商品的布帘 + 纱帘 = 两行。
-                「新增部位」把商品/颜色/门幅/宽高/工艺一次带过去，商家只改部位与差异项。 */}
-            <div className="pt-3 border-t border-neutral-100">
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <label
-                  htmlFor={`window-${line.id}`}
-                  className="block text-sm font-medium text-neutral-700"
-                >
-                  樘窗
-                </label>
-                <button
-                  type="button"
-                  onClick={onAddPosition}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700 transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  新增部位
-                </button>
-              </div>
-              <input
-                id={`window-${line.id}`}
-                type="text"
-                placeholder="同窗填同一名称，如 客厅主窗"
-                value={line.windowLabel}
-                onChange={(e) => onChangeWindowLabel(e.target.value)}
-                className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-              />
-              <p className="mt-1.5 text-xs text-neutral-400">
-                一樘窗 = 一个窗户。同一扇窗的布帘 / 纱帘各占一行、填同一个窗号才会绑成一樘窗
-                （套级工序与加工费按樘窗归属）；留空 = 本行自成一樘窗。
-                「新增部位」会带出本行的商品与尺寸，只清空部位。
-              </p>
-            </div>
+            {/* 「樘窗」输入已移除（issue #4486，用户裁定「我感觉不需要」）；
+                「新增部位」按钮移到**商品组底部**（issue #4485：部位嵌在商品下，不是新开一张商品卡）。 */}
 
             {/* 工艺规格（§4.2 字段表 A + §4.8 双拼）：下单页此前一个工艺字段都不写 */}
             <OrderCraftFields
@@ -1848,8 +2255,6 @@ function LineItemBlock({
               edgeUnitPrice={line.edgeUnitPrice}
               onEdgeUnitPriceChange={onEdgeUnitPriceChange}
             />
-          </>
-        )}
       </div>
       )}
     </div>
