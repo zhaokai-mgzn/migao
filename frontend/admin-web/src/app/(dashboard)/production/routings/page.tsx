@@ -18,10 +18,12 @@ import { toast } from 'sonner'
 import { Button, Modal } from '@/components/ui'
 import { isErrorToastShown, toastRequestError } from '@/lib/api-error'
 import { productionApi } from '@/lib/api'
-import { routingAdminGuardReasons, routingGuardReasons } from '@/lib/production-guard-reasons'
+import { craftCalcConfigGuardReasons, routingAdminGuardReasons, routingGuardReasons } from '@/lib/production-guard-reasons'
 import { cn } from '@/lib/utils'
 import type {
   CatalogOperation,
+  CraftCalcConfig,
+  CraftCalcConfigResponse,
   OperationPosition,
   OperationsCatalog,
   ProductionScope,
@@ -133,6 +135,33 @@ const ruleActionText = (rule: RouteRule) =>
   rule.action === 'remove'
     ? `移除「${rule.operation ?? '—'}」`
     : `在「${rule.after_operation ?? '末尾'}」之后插入「${rule.operation ?? '—'}」`
+
+// ────────────────────────── 算料配置（tab「算料配置」，issue #4528 = 包 E） ──────────────────────────
+
+/** 标量配置键（表单里逐个数字输入框；键名 = 后端列名 = 算料引擎配置键，**逐字同名**） */
+type CalcScalarKey =
+  | 'per_fold_single'
+  | 'margin_single'
+  | 'margin_multi'
+  | 'min_fullness'
+  | 'side_margin'
+  | 'meters_rounding_step'
+
+/** 六个标量键的展示元数据（**只有文案**：默认值/范围一律由后端给，前端不持有） */
+const CALC_SCALAR_FIELDS: { key: CalcScalarKey; label: string; hint: string }[] = [
+  { key: 'per_fold_single', label: '单色每折吃布（米）', hint: '折数法：用料 = 每折吃布 × 折数 + 余量' },
+  { key: 'margin_single', label: '单开余量（米）', hint: '单开（一整幅）的包边余量' },
+  { key: 'margin_multi', label: '多开余量（米）', hint: '双开/四开的包边 + 对缝余量' },
+  { key: 'min_fullness', label: '褶倍下限', hint: '行业红线：不得低于系统默认值（低于它用料不足）' },
+  { key: 'side_margin', label: '卷边（米）', hint: '定宽买高的上下卷边合计' },
+  { key: 'meters_rounding_step', label: '进位步长（米）', hint: '用料只向上进位，不截断、不四舍五入' },
+]
+
+/** 兜底公式的可读文案（取值域由后端枚举给；这里只做展示映射） */
+const CALC_FORMULA_LABEL: Record<string, string> = {
+  pleat: '韩折公式（折数法）',
+  fullness: '褶倍数公式（倍数法）',
+}
 
 /** provenance 徽标；「占位待确认」是**可行动**引导：点它即进入该工序的改价入口（既有版本化写面） */
 function SourceBadge({
@@ -281,8 +310,8 @@ export default function ProcessConfigPage() {
   const [rules, setRules] = useState<RouteRule[]>([])
   const [rulesError, setRulesError] = useState('')
   const [loading, setLoading] = useState(true)
-  /** 两个 tab：`operations` 工艺项 / `routes` 工艺路线。默认落在「工艺项」—— 依赖顺序上它在前。 */
-  const [tab, setTab] = useState<'operations' | 'routes'>('operations')
+  /** 三个 tab：`operations` 工艺项 / `routes` 工艺路线 / `calc` 算料配置。默认落在「工艺项」—— 依赖顺序上它在前。 */
+  const [tab, setTab] = useState<'operations' | 'routes' | 'calc'>('operations')
   /** 「添加工序」选择器（路线 tab 内）—— 工序库在另一个 tab，编辑器必须自带入口 */
   const [picked, setPicked] = useState('')
   const [error, setError] = useState('')
@@ -312,6 +341,16 @@ export default function ProcessConfigPage() {
   const [confirmAction, setConfirmAction] = useState<{ kind: 'delete' | 'default'; routing: Routing } | null>(null)
   /** 管理面被拒的逐条理由（就地展示，不吞成一句「操作失败」） */
   const [opReasons, setOpReasons] = useState<string[]>([])
+
+  // ── 算料配置（tab「算料配置」，issue #4528 = 包 E）──
+  /** 读面响应（含 `source`：`default` = 系统默认值 / `stored` = 已保存的商家配置） */
+  const [calcConfig, setCalcConfig] = useState<CraftCalcConfigResponse | null>(null)
+  /** 表单草稿（切 tab 不丢：state 挂在本组件上） */
+  const [calcDraft, setCalcDraft] = useState<CraftCalcConfig | null>(null)
+  const [calcError, setCalcError] = useState('')
+  /** 保存被拒的逐条理由（**不吞**成一句「保存失败」—— 后端一次列出每一处不合法） */
+  const [calcReasons, setCalcReasons] = useState<string[]>([])
+  const [calcBusy, setCalcBusy] = useState(false)
 
   // ── 弹窗 ──
   const [newRouteOpen, setNewRouteOpen] = useState(false)
@@ -371,6 +410,68 @@ export default function ProcessConfigPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  // ────────────────────────── 算料配置（tab「算料配置」，issue #4528） ──────────────────────────
+
+  /**
+   * 读本租户生效的算料配置。
+   *
+   * 页面**不持有任何默认值**：本租户没配置行时后端回的是**算料引擎默认值**
+   * （`source='default'`）⇒ 直接渲染它（在 TS 侧抄一份默认值 = 第二份会漂的默认值）。
+   */
+  const loadCalcConfig = useCallback(async () => {
+    try {
+      const res = await productionApi.getCraftCalcConfig()
+      const data = res.data?.data ?? null
+      setCalcConfig(data)
+      setCalcDraft(data?.config ?? null)
+      setCalcError('')
+    } catch (e) {
+      setCalcConfig(null)
+      setCalcDraft(null)
+      setCalcError('算料配置加载失败，请稍后重试')
+      if (!isErrorToastShown(e)) toast.error('算料配置加载失败')
+    }
+  }, [])
+
+  // 懒加载：切到本 tab 才发请求（其余 tab 的加载面不受影响）
+  useEffect(() => {
+    if (tab === 'calc' && calcConfig === null && calcError === '') void loadCalcConfig()
+  }, [tab, calcConfig, calcError, loadCalcConfig])
+
+  /**
+   * 保存（`PUT` = **全量替换**）。
+   *
+   * 失败 ⇒ **逐条**展示后端理由 + **不**改本地草稿（更不静默写回默认值 —— 静默 = 商家以为改了、
+   * 系统按默认算 ⇒ 算错钱且无人知道）。
+   */
+  async function saveCalcConfig() {
+    if (!calcDraft) return
+    setCalcBusy(true)
+    setCalcReasons([])
+    try {
+      const res = await productionApi.updateCraftCalcConfig(calcDraft)
+      const data = res.data?.data ?? null
+      setCalcConfig(data)
+      setCalcDraft(data?.config ?? calcDraft)
+      toast.success('算料配置已保存，之后的算料按当前配置计算')
+    } catch (e) {
+      setCalcReasons(craftCalcConfigGuardReasons(e))
+      if (!isErrorToastShown(e)) toast.error('算料配置保存失败')
+    } finally {
+      setCalcBusy(false)
+    }
+  }
+
+  /** 草稿里某个数值键的当前值（渲染用；不在这里补默认值） */
+  const calcNumber = (key: CalcScalarKey): string => {
+    const v = calcDraft?.[key]
+    return v === undefined || v === null ? '' : String(v)
+  }
+
+  const setCalcNumber = (key: CalcScalarKey, raw: string) => {
+    setCalcDraft((d) => (d ? { ...d, [key]: raw === '' ? Number.NaN : Number(raw) } : d))
+  }
 
   const libraryOps = useMemo(() => (catalog?.groups ?? []).flatMap((g) => g.operations), [catalog])
   const libraryByName = useMemo(() => {
@@ -870,6 +971,7 @@ export default function ProcessConfigPage() {
             {([
               { key: 'operations', label: '工艺项' },
               { key: 'routes', label: '工艺路线' },
+              { key: 'calc', label: '算料配置' },
             ] as const).map((t) => (
               <button
                 key={t.key}
@@ -1568,6 +1670,202 @@ export default function ProcessConfigPage() {
                     </div>
                   )}
                 </CollapsibleSection>
+              </div>
+            )}
+
+            {/* ══════════════ tab「算料配置」：用料公式参数（issue #4528 = 包 E） ══════════════
+                本 tab 只回答一个问题：「算料的公式参数，我这家的口径是多少？」
+                ⚠️ 页面**不持有任何默认值**：本租户没配置行时，后端回的就是算料引擎默认值
+                （`source='default'`）⇒ 直接渲染 + 明确标注「当前使用系统默认值」
+                （把默认值伪装成商家配置 = 让商家以为改过、其实没改）。 */}
+            {tab === 'calc' && (
+              <div className="space-y-4" data-testid="craft-calc-config-panel">
+                <section className="rounded-lg border border-neutral-200 bg-white p-5">
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-base font-medium text-neutral-900">算料公式参数</h2>
+                    <span
+                      className={cn(
+                        'rounded px-2 py-0.5 text-xs',
+                        calcConfig?.source === 'stored'
+                          ? 'bg-primary-50 text-primary-700'
+                          : 'bg-neutral-100 text-neutral-600',
+                      )}
+                      data-testid="craft-calc-config-source"
+                    >
+                      {calcConfig?.source === 'stored' ? '已保存为您的配置' : '当前使用系统默认值'}
+                    </span>
+                  </div>
+                  <p className="text-sm text-neutral-500">
+                    这些参数决定用料米数（折数法：每折吃布 × 折数 + 余量）。保存后**新**的算料按当前配置计算，
+                    已生成的单据不受影响。
+                  </p>
+
+                  {calcError !== '' && (
+                    <div className="mt-3 flex items-center gap-3 text-sm text-danger-600" data-testid="craft-calc-config-error">
+                      <AlertCircle className="h-4 w-4" />
+                      <span>{calcError}</span>
+                      <Button size="sm" variant="secondary" data-testid="craft-calc-config-retry" onClick={() => void loadCalcConfig()}>
+                        重试
+                      </Button>
+                    </div>
+                  )}
+
+                  {calcError === '' && !calcDraft && (
+                    <p className="mt-3 text-sm text-neutral-400" data-testid="craft-calc-config-loading">
+                      正在读取算料配置…
+                    </p>
+                  )}
+
+                  {calcDraft && (
+                    <div className="mt-4 space-y-5 text-sm">
+                      {/* 主区：六个标量参数 */}
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {CALC_SCALAR_FIELDS.map((f) => (
+                          <label key={f.key} className="block">
+                            <span className="mb-1 block text-neutral-600">{f.label}</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              className={inputCls}
+                              data-testid={`craft-calc-config-scalar-${f.key}`}
+                              value={calcNumber(f.key)}
+                              onChange={(e) => setCalcNumber(f.key, e.target.value)}
+                            />
+                            <span className="mt-1 block text-xs text-neutral-400">{f.hint}</span>
+                          </label>
+                        ))}
+                      </div>
+
+                      {/* 兜底公式（工艺能推导时以工艺为准，这里只是推导表缺失时的兜底） */}
+                      <div>
+                        <label className="mb-1 block text-neutral-600" htmlFor="craft-calc-config-formula">
+                          兜底用料公式
+                        </label>
+                        <select
+                          id="craft-calc-config-formula"
+                          className={inputCls}
+                          data-testid="craft-calc-config-default_formula"
+                          value={calcDraft.default_formula}
+                          onChange={(e) => setCalcDraft((d) => (d ? { ...d, default_formula: e.target.value } : d))}
+                        >
+                          {Object.keys(CALC_FORMULA_LABEL).map((k) => (
+                            <option key={k} value={k}>
+                              {CALC_FORMULA_LABEL[k]}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="mt-1 block text-xs text-neutral-400">
+                          韩褶 / 打孔按工艺自动推导公式，这里只在该推导不适用时兜底。
+                        </span>
+                      </div>
+
+                      {/* 次区：档位与拼色系数（表格，逐行可改） */}
+                      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        <div>
+                          <h3 className="mb-2 text-neutral-700">工艺档位</h3>
+                          <table className="w-full text-sm">
+                            <tbody>
+                              {Object.entries(calcDraft.tiers ?? {}).map(([name, tier]) => (
+                                <tr key={name} className="border-b border-neutral-100">
+                                  <td className="py-1.5 pr-3 text-neutral-600">{name}</td>
+                                  <td className="py-1.5 pr-3">
+                                    <input
+                                      className={inputCls}
+                                      data-testid={`craft-calc-config-tier-${name}-label`}
+                                      value={tier.label ?? ''}
+                                      onChange={(e) =>
+                                        setCalcDraft((d) =>
+                                          d
+                                            ? { ...d, tiers: { ...d.tiers, [name]: { ...d.tiers[name], label: e.target.value } } }
+                                            : d,
+                                        )
+                                      }
+                                    />
+                                  </td>
+                                  <td className="py-1.5">
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      className={inputCls}
+                                      data-testid={`craft-calc-config-tier-${name}-fullness`}
+                                      value={String(tier.fullness ?? '')}
+                                      onChange={(e) =>
+                                        setCalcDraft((d) =>
+                                          d
+                                            ? {
+                                                ...d,
+                                                tiers: {
+                                                  ...d.tiers,
+                                                  [name]: {
+                                                    ...d.tiers[name],
+                                                    fullness: e.target.value === '' ? Number.NaN : Number(e.target.value),
+                                                  },
+                                                },
+                                              }
+                                            : d,
+                                        )
+                                      }
+                                    />
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div>
+                          <h3 className="mb-2 text-neutral-700">拼色每折吃布（米）</h3>
+                          <table className="w-full text-sm">
+                            <tbody>
+                              {Object.entries(calcDraft.per_fold_mixed_times ?? {}).map(([times, perFold]) => (
+                                <tr key={times} className="border-b border-neutral-100">
+                                  <td className="py-1.5 pr-3 text-neutral-600">拼{times}次</td>
+                                  <td className="py-1.5">
+                                    <input
+                                      type="number"
+                                      step="0.05"
+                                      className={inputCls}
+                                      data-testid={`craft-calc-config-mixed-${times}`}
+                                      value={String(perFold ?? '')}
+                                      onChange={(e) =>
+                                        setCalcDraft((d) =>
+                                          d
+                                            ? {
+                                                ...d,
+                                                per_fold_mixed_times: {
+                                                  ...d.per_fold_mixed_times,
+                                                  [times]: e.target.value === '' ? Number.NaN : Number(e.target.value),
+                                                },
+                                              }
+                                            : d,
+                                        )
+                                      }
+                                    />
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <Button loading={calcBusy} data-testid="craft-calc-config-save" onClick={saveCalcConfig}>
+                          保存配置
+                        </Button>
+                        <span className="text-xs text-neutral-400">保存后按当前配置计算；非法值会被整份拒绝并逐条说明理由。</span>
+                      </div>
+
+                      {/* 护栏理由**逐条**展示（后端一次列出每一处不合法）—— 不吞成一句「保存失败」 */}
+                      {calcReasons.length > 0 && (
+                        <ul className="space-y-1 text-danger-600" data-testid="craft-calc-config-reasons">
+                          {calcReasons.map((r) => (
+                            <li key={r}>{r}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </section>
               </div>
             )}
           </div>

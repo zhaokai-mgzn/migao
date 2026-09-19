@@ -1,4 +1,4 @@
-// case_ids: PG-020, PP-014
+// case_ids: PG-020, PP-014, OR-041
 // PG-020（issue #4203 / #4204）+ PP-014（issue #4307）**合并后**的单页用户面（issue #4416），
 // 本单（issue #4433 = 母单 #4423 的 P3）把它适配到**新路线模型**（P1 #4427 / P2 #4432 / P2b #4459 / P2c #4500）。
 //
@@ -35,6 +35,9 @@ const mockGetRouteRules = vi.fn()
 // issue #4453 探针：信号映射是**研发内部机制**，商家页**不得**消费 ⇒ 它必须恒不被调用
 const mockGetRouteSignals = vi.fn()
 const mockApplySeedTemplate = vi.fn()
+// issue #4528 = 包 E：算料配置读写（tab「算料配置」）
+const mockGetCraftCalcConfig = vi.fn()
+const mockUpdateCraftCalcConfig = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   productionApi: {
@@ -50,6 +53,8 @@ vi.mock('@/lib/api', () => ({
     getRouteRules: (...a: unknown[]) => mockGetRouteRules(...a),
     getRouteSignals: (...a: unknown[]) => mockGetRouteSignals(...a),
     applySeedTemplate: (...a: unknown[]) => mockApplySeedTemplate(...a),
+    getCraftCalcConfig: (...a: unknown[]) => mockGetCraftCalcConfig(...a),
+    updateCraftCalcConfig: (...a: unknown[]) => mockUpdateCraftCalcConfig(...a),
   },
 }))
 
@@ -127,6 +132,45 @@ const TEMPLATES = [
   { templateId: 'curtain', industry: 'curtain', name: '布艺窗帘行业模板', version: 1, description: '35 道工序 + 9 条路线' },
 ]
 
+/**
+ * 算料引擎**默认配置**（issue #4528）：本租户没有配置行时后端返回的那一份
+ * （`GET /api/admin/production/craft-calc-config` ⇒ `{source:'default', config}`）。
+ *
+ * ⚠️ 逐值**写死**（真值源 §8 / 包 D 既有常量）：判据不得从实现推导 —— 否则「前端抄了一份默认值」
+ * 这类缺陷不会红。前端**不持有**这份常量（它只在测试里当"后端会回什么"的替身）。
+ */
+const ENGINE_DEFAULT_CALC_CONFIG = {
+  per_fold_single: 0.25,
+  per_fold_mixed_times: { '1': 0.65, '2': 1.2 },
+  margin_single: 0.2,
+  margin_multi: 0.3,
+  min_fullness: 1.5,
+  tiers: {
+    standard: { fullness: 2.0, label: '标准工艺' },
+    economy: { fullness: 1.8, label: '经济工艺' },
+  },
+  default_formula: 'pleat',
+  side_margin: 0.3,
+  meters_rounding_step: 0.1,
+}
+
+/** 后端护栏失败信封（逐条理由；**不**含顶层 `error_messages` —— 那个字段后端不存在） */
+const CALC_GUARD_REJECTION = {
+  response: {
+    data: {
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: '算料配置有 2 处不合法，已整份拒绝',
+        details: [
+          { field: 'min_fullness', message: '不得低于行业红线 1.5' },
+          { field: 'default_formula', message: '必须是 [pleat, fullness] 之一' },
+        ],
+      },
+    },
+  },
+}
+
 /** 后端护栏失败响应体（**真实**信封：`error.details[].message` 逐条理由 —— issue #4308「冻结补遗 ②」） */
 const guardError = (reasons: string[]) => ({
   response: {
@@ -179,6 +223,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     mockCreateRouting.mockReset().mockResolvedValue(ok({ id: 13, name: '罗马帘专线', is_default: false, positions: ['布帘'], mainline: [], status: 'active' }))
     mockDeleteRouting.mockReset().mockResolvedValue(ok({ id: 12 }))
     mockCreateOperation.mockReset().mockResolvedValue(ok({ id: 'op-new' }))
+    mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'default', config: ENGINE_DEFAULT_CALC_CONFIG }))
+    mockUpdateCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'stored', config: ENGINE_DEFAULT_CALC_CONFIG }))
     vi.mocked(toast.success).mockClear()
     vi.mocked(toast.error).mockClear()
   })
@@ -809,4 +855,124 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(mockGetRouteSignals).not.toHaveBeenCalled()
     expect(document.body.textContent ?? '').not.toContain('信号')
   })
+
+/**
+ * ══════════════════ ⑫ 算料配置 tab（issue #4528 = 包 E） ══════════════════
+ *
+ * 判据（每条都能红）：
+ * ① 切到本 tab ⇒ 发**一次** `GET`，渲染**引擎默认值**并标注「当前使用系统默认值」
+ *    （把默认值伪装成商家配置 ⇒ 红；前端自带一份默认值 ⇒ 与后端逐值比对时红）；
+ * ② 改一个参数 ⇒ `PUT` 带**全量 9 键**（缺键 = 让后端静默回默认值 ⇒ 红）；
+ * ③ 非法值 ⇒ 后端 422 的**逐条**理由可见，且**不静默回退默认值**（草稿保持用户输入、不显示「已保存」⇒ 红）；
+ * ④ 切 tab 不丢草稿（state 挂在本组件上）。
+ */
+describe('算料配置 tab（issue #4528）', () => {
+  it('切到算料配置 tab ⇒ GET 一次 + 渲染引擎默认值 + 标注「当前使用系统默认值」', async () => {
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    // 懒加载：没切过去之前**不**发请求
+    expect(mockGetCraftCalcConfig).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
+    expect(mockGetCraftCalcConfig).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('craft-calc-config-source')).toHaveTextContent('当前使用系统默认值')
+    // 默认值来自**后端**（逐值渲染，前端不持有）
+    expect(screen.getByTestId('craft-calc-config-scalar-per_fold_single')).toHaveValue(0.25)
+    expect(screen.getByTestId('craft-calc-config-scalar-min_fullness')).toHaveValue(1.5)
+    expect(screen.getByTestId('craft-calc-config-default_formula')).toHaveValue('pleat')
+    expect(screen.getByTestId('craft-calc-config-tier-standard-fullness')).toHaveValue(2)
+    expect(screen.getByTestId('craft-calc-config-mixed-1')).toHaveValue(0.65)
+  })
+
+  it('改「单色每折吃布」⇒ PUT 带全量 9 键（缺键会让后端静默回默认值）', async () => {
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
+
+    const input = screen.getByTestId('craft-calc-config-scalar-per_fold_single')
+    await userEvent.clear(input)
+    await userEvent.type(input, '0.5')
+    mockUpdateCraftCalcConfig.mockResolvedValueOnce(
+      ok({ source: 'stored', config: { ...ENGINE_DEFAULT_CALC_CONFIG, per_fold_single: 0.5 } }),
+    )
+    await userEvent.click(screen.getByTestId('craft-calc-config-save'))
+
+    await waitFor(() => expect(mockUpdateCraftCalcConfig).toHaveBeenCalledTimes(1))
+    const body = mockUpdateCraftCalcConfig.mock.calls[0][0] as Record<string, unknown>
+    expect(body.per_fold_single).toBe(0.5)
+    expect(Object.keys(body).sort()).toEqual(
+      [
+        'per_fold_single',
+        'per_fold_mixed_times',
+        'margin_single',
+        'margin_multi',
+        'min_fullness',
+        'tiers',
+        'default_formula',
+        'side_margin',
+        'meters_rounding_step',
+      ].sort(),
+    )
+    // 保存成功后口径来源如实变「已保存为您的配置」
+    await waitFor(() =>
+      expect(screen.getByTestId('craft-calc-config-source')).toHaveTextContent('已保存为您的配置'),
+    )
+  })
+
+  it('非法值 ⇒ 422 逐条理由就地可见，且**不静默回退默认值**', async () => {
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
+
+    const input = screen.getByTestId('craft-calc-config-scalar-min_fullness')
+    await userEvent.clear(input)
+    await userEvent.type(input, '1')
+    mockUpdateCraftCalcConfig.mockRejectedValueOnce(CALC_GUARD_REJECTION)
+    await userEvent.click(screen.getByTestId('craft-calc-config-save'))
+
+    const reasons = await screen.findByTestId('craft-calc-config-reasons')
+    expect(reasons).toHaveTextContent('不得低于行业红线 1.5')
+    expect(reasons).toHaveTextContent('必须是 [pleat, fullness] 之一')
+    // 不静默回退：用户输入**还在**（没有被悄悄写回默认 1.5），且来源仍标注「系统默认值」
+    expect(screen.getByTestId('craft-calc-config-scalar-min_fullness')).toHaveValue(1)
+    expect(screen.getByTestId('craft-calc-config-source')).toHaveTextContent('当前使用系统默认值')
+  })
+
+  it('切 tab 不丢草稿（编辑中的参数在切走再切回后仍在）', async () => {
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
+
+    const input = screen.getByTestId('craft-calc-config-scalar-margin_multi')
+    await userEvent.clear(input)
+    await userEvent.type(input, '0.45')
+
+    await userEvent.click(screen.getByTestId('process-config-tab-routes'))
+    await waitFor(() => expect(screen.getByTestId('routings-list')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+
+    expect(screen.getByTestId('craft-calc-config-scalar-margin_multi')).toHaveValue(0.45)
+  })
+
+  it('算料配置加载失败 ⇒ 就地报错 + 重试入口（不白屏、不拿默认值顶替）', async () => {
+    mockGetCraftCalcConfig.mockReset().mockRejectedValueOnce(new Error('500')).mockResolvedValue(ok({
+      source: 'default',
+      config: ENGINE_DEFAULT_CALC_CONFIG,
+    }))
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-error')).toHaveTextContent('算料配置加载失败'))
+    expect(screen.queryByTestId('craft-calc-config-scalar-per_fold_single')).toBeNull()
+
+    await userEvent.click(screen.getByTestId('craft-calc-config-retry'))
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-scalar-per_fold_single')).toHaveValue(0.25))
+  })
+})
 })

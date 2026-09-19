@@ -1,9 +1,12 @@
 package com.migao.admin.service;
 
-// case_ids: OR-032
+// case_ids: OR-032, OR-041
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.migao.admin.config.TenantContext;
+import com.migao.admin.entity.CraftCalcConfig;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.CraftCalcConfigMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,6 +17,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 import java.lang.reflect.Field;
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,12 +53,15 @@ class CraftCalcClientTest {
     private static final String URL = "http://agent:8000/api/internal/production/craft-calc";
 
     private RestTemplate restTemplate;
+    private CraftCalcConfigMapper craftCalcConfigMapper;
     private CraftCalcClient client;
 
     @BeforeEach
     void setUp() throws Exception {
         restTemplate = mock(RestTemplate.class);
-        client = new CraftCalcClient(restTemplate);
+        craftCalcConfigMapper = mock(CraftCalcConfigMapper.class);
+        client = new CraftCalcClient(restTemplate, craftCalcConfigMapper);
+        TenantContext.clear();   // ThreadLocal：防上一条用例的租户泄漏进下一条
         inject("baseUrl", "http://agent:8000/");   // 尾斜杠必须被归一（既有 ProductionOperationQtyClient 同款）
         inject("serviceToken", "svc-token-1");
     }
@@ -294,5 +301,134 @@ class CraftCalcClientTest {
         assertThatThrownBy(() -> client.calc(null))
                 .isInstanceOf(BusinessException.class);
         verify(restTemplate, never()).exchange(anyString(), any(), any(), eq(String.class));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // issue #4528（包 E）：租户级配置注入 + 引擎默认值
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static final String DEFAULTS_URL = "http://agent:8000/api/internal/production/craft-calc-config";
+
+    /** 本租户配置行（判据：改它 ⇒ 折数法用料随之变）。 */
+    private static CraftCalcConfig storedRow(Long tenantId, String perFoldSingle, String marginMulti) {
+        return CraftCalcConfig.builder()
+                .id("ccc-" + tenantId)
+                .tenantId(tenantId)
+                .perFoldSingle(new BigDecimal(perFoldSingle))
+                .perFoldMixedTimes(Map.of("1", new BigDecimal("0.65"), "2", new BigDecimal("1.2")))
+                .marginSingle(new BigDecimal("0.2"))
+                .marginMulti(new BigDecimal(marginMulti))
+                .minFullness(new BigDecimal("1.5"))
+                .tiers(Map.of("standard", Map.of("fullness", new BigDecimal("2.0"), "label", "标准工艺")))
+                .defaultFormula("pleat")
+                .sideMargin(new BigDecimal("0.3"))
+                .metersRoundingStep(new BigDecimal("0.1"))
+                .status("active")
+                .deleted(0)
+                .build();
+    }
+
+    @SuppressWarnings("rawtypes")
+    private Map<String, Object> sentBody() {
+        org.mockito.ArgumentCaptor<HttpEntity> captor = org.mockito.ArgumentCaptor.forClass(HttpEntity.class);
+        verify(restTemplate).exchange(eq(URL), eq(HttpMethod.POST), captor.capture(), eq(String.class));
+        return new ObjectMapper().convertValue(captor.getValue().getBody(), Map.class);
+    }
+
+    @Test
+    @DisplayName("#4528 配置注入：本租户有配置行 ⇒ 随请求带上 config（键名 = 引擎配置键，零映射）")
+    @SuppressWarnings("unchecked")
+    void injectsTenantConfigWhenRowExists() {
+        when(restTemplate.exchange(eq(URL), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok(responseBody()));
+        when(craftCalcConfigMapper.selectActiveByTenant(7L)).thenReturn(storedRow(7L, "0.5", "0.3"));
+        TenantContext.setTenantId(7L);
+
+        Map<String, Object> original = request();
+        client.calc(original);
+
+        Map<String, Object> config = (Map<String, Object>) sentBody().get("config");
+        // 逐值比对用字符串形态：数值在线上是 JSON 数字，Java 侧是 BigDecimal
+        //（`BigDecimal.equals(Double)` 恒 false —— 按 equals 断言会得到「0.5 != 0.5」的假红）
+        assertThat(String.valueOf(config.get("per_fold_single"))).isEqualTo("0.5");
+        assertThat(String.valueOf(config.get("margin_multi"))).isEqualTo("0.3");
+        assertThat(config).containsEntry("default_formula", "pleat");
+        assertThat(config).containsKeys("per_fold_mixed_times", "margin_single", "min_fullness",
+                "tiers", "side_margin", "meters_rounding_step");
+        // 调用方的 map **不得**被就地改（上游可能复用同一个请求对象）
+        assertThat(original).doesNotContainKey("config");
+    }
+
+    @Test
+    @DisplayName("#4528 缺行 = 引擎默认值：不传 config ⇒ 未配置租户的算料结果与包 D 逐值一致")
+    void doesNotInjectConfigWhenNoRow() {
+        when(restTemplate.exchange(eq(URL), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok(responseBody()));
+        when(craftCalcConfigMapper.selectActiveByTenant(7L)).thenReturn(null);
+        TenantContext.setTenantId(7L);
+
+        client.calc(request());
+
+        // 红证：Java 侧自行补一份「默认配置」发过去 ⇒ 本断言红（那是第二份会漂的默认值）
+        assertThat(sentBody()).doesNotContainKey("config");
+    }
+
+    @Test
+    @DisplayName("#4528 不跨租户串：两次调用各带各的配置（无字段/静态缓存）")
+    @SuppressWarnings("unchecked")
+    void doesNotLeakConfigAcrossTenants() {
+        when(restTemplate.exchange(eq(URL), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok(responseBody()));
+        when(craftCalcConfigMapper.selectActiveByTenant(7L)).thenReturn(storedRow(7L, "0.5", "0.3"));
+        when(craftCalcConfigMapper.selectActiveByTenant(8L)).thenReturn(storedRow(8L, "0.2", "0.9"));
+
+        TenantContext.setTenantId(7L);
+        client.calc(request());
+        Map<String, Object> first = (Map<String, Object>) sentBody().get("config");
+
+        org.mockito.Mockito.reset(restTemplate);
+        when(restTemplate.exchange(eq(URL), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok(responseBody()));
+        TenantContext.setTenantId(8L);
+        client.calc(request());
+        Map<String, Object> second = (Map<String, Object>) sentBody().get("config");
+
+        assertThat(String.valueOf(first.get("per_fold_single"))).isEqualTo("0.5");
+        assertThat(String.valueOf(second.get("per_fold_single"))).isEqualTo("0.2");   // 红证：缓存 A 的配置 ⇒ 这里仍是 0.5
+        assertThat(String.valueOf(second.get("margin_multi"))).isEqualTo("0.9");
+    }
+
+    @Test
+    @DisplayName("#4528 引擎默认值：GET 内部端点逐值解析（Java 侧不写第二份默认常量）")
+    void readsEngineDefaults() {
+        when(restTemplate.exchange(eq(DEFAULTS_URL), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok("""
+                        {"success":true,"data":{"config":{
+                          "per_fold_single":0.25,"per_fold_mixed_times":{"1":0.65,"2":1.2},
+                          "margin_single":0.2,"margin_multi":0.3,"min_fullness":1.5,
+                          "tiers":{"standard":{"fullness":2.0,"label":"标准工艺"},
+                                   "economy":{"fullness":1.8,"label":"经济工艺"}},
+                          "default_formula":"pleat","side_margin":0.3,"meters_rounding_step":0.1}}}
+                        """));
+
+        Map<String, Object> config = client.defaultConfig();
+
+        assertThat(config).containsEntry("per_fold_single", 0.25);
+        assertThat(config).containsEntry("min_fullness", 1.5);
+        assertThat(config).containsEntry("default_formula", "pleat");
+        assertThat(config).containsEntry("meters_rounding_step", 0.1);
+        assertThat(config).hasSize(9);
+    }
+
+    @Test
+    @DisplayName("#4528 fail-closed：默认值端点缺 data.config ⇒ 422（拒绝凭空造一份默认值）")
+    void missingEngineDefaultsFailsClosed() {
+        when(restTemplate.exchange(eq(DEFAULTS_URL), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok("{\"success\":true,\"data\":{}}"));
+
+        assertThatThrownBy(() -> client.defaultConfig())
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("data.config")
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(422));
     }
 }

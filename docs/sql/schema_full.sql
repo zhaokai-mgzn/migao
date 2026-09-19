@@ -4,8 +4,9 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 docs/sql/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 27 张）：
---     client_request_keys, daily_briefings, finance_transactions, knowledge_candidates,
+--   本文件缺失（schema.sql 已有，共 28 张）：
+--     client_request_keys, craft_calc_configs, daily_briefings, finance_transactions,
+--     knowledge_candidates,
 --     knowledge_cards, processing_fee_combination_versions, processing_fee_combinations,
 --     processing_orders, processing_position_operations,
 --     production_crafts,
@@ -24,7 +25,9 @@
 --       production_operation_positions / production_route_templates / production_route_rules
 --       = V71，issue #4427 = 母单 #4423 P1/3 工序路线模型重构 —— **纯增量**三张新表；
 --       production_crafts = V72，issue #4432 = 母单 #4423 P2/3 —— 商户级默认工艺
---       （重构后路线模板没有工艺维 ⇒ 缺 craft 不能从默认路线取））
+--       （重构后路线模板没有工艺维 ⇒ 缺 craft 不能从默认路线取）；
+--       craft_calc_configs = V80，issue #4528 = 包 E —— 算料公式租户级配置
+--       （缺行 = 用引擎默认值，**不插种子行**））
 --   本文件仍会创建，但**早已被迁移 DROP**（共 4 张）：
 --     knowledge_documents, knowledge_sync_history, rag_chunks,   ← V36 迁移 DROP
 --     quick_reply_templates

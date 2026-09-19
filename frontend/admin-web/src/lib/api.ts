@@ -51,6 +51,8 @@ import type {
   RoutingUpdateParams,
   OperationPosition,
   RouteRule,
+  CraftCalcConfig,
+  CraftCalcConfigResponse,
   RoutingGaps,
   // 加工费组合定价（issue #4386）
   FeeCombination,
@@ -520,6 +522,15 @@ export const productionApi = {
   // 存量单仍需读面兜底 ⇒ 只留 `getRouteSignals`（#4534 已删三个死写方法）。
   getRouteSignals: () =>
     request.get<ApiResponse<RouteSignalsResponse>>('/api/admin/production/route-signals'),
+
+  // ── 算料公式**租户级配置**（issue #4528 = 包 E；契约所有者 = 后端 #4528，权限 processing:manage）──
+  // 缺配置行 ⇒ 后端返回**引擎默认值** + `source='default'`（前端不抄第二份默认值）。
+  // PUT = **全量替换**：缺键 / 未知键 / 非法值 ⇒ 422 + `error.details[].message` 逐条理由
+  //（**不得静默回退默认值** —— 静默 = 商家以为改了、系统按默认算 ⇒ 算错钱且无人知道）。
+  getCraftCalcConfig: () =>
+    request.get<ApiResponse<CraftCalcConfigResponse>>('/api/admin/production/craft-calc-config'),
+  updateCraftCalcConfig: (data: CraftCalcConfig) =>
+    request.put<ApiResponse<CraftCalcConfigResponse>>('/api/admin/production/craft-calc-config', data),
 
   // 缺口：①有活跃工序但未进任何活跃路线 ②库中无路线的信号组合
   getRoutingGaps: () =>

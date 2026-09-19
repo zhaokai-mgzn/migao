@@ -110,7 +110,7 @@
 | `tiers` | `{standard:{fullness:2.0}, economy:{fullness:1.8}}` | 工艺档位 |
 | `default_formula` | `"pleat"` | **craft 推导表缺失时的兜底**（不是恒定默认值） |
 | `side_margin` | `0.3` | 定宽买高上下卷边（米） |
-| `default_fabric_width` | `2.8` | 默认门幅（米） |
+| ~~`default_fabric_width`~~ | ~~`2.8`~~ | 🔴 **本键在实现里不存在**（包 D #4527 的 `DEFAULT_CRAFT_CALC_CONFIG` 无此键：门幅是 `build_quote(fabric_width=…)` 的**入参**，不是公式参数）⇒ **以实现为准**，包 E（#4528）**不建该列**、不凭空加一个没有消费者的配置键。跨源守卫 = `tests/unit_ci_workflows/test_craft_calc_config_contract.py`（该键出现在任何一源的**代码**里即红） |
 | `meters_rounding_step` | `0.1` | 用料**向上进位**步长 |
 
 **三条实现纪律**：
@@ -150,7 +150,7 @@
 | 包 | issue | 内容 | 依赖 |
 |---|---|---|---|
 | **D** | #4527 | `curtain_calc.py` 逐片口径 + 向上进位 + `formula` 推导；Java 代理透传；`craft-calc-request.ts` **放行打孔** | 无 |
-| **E** | #4528 | 租户级配置表 + 读写端点 + 护栏 + 配置页 tab | **等 D**（同文件） |
+| **E** | #4528 | 租户级配置表（V80 `craft_calc_configs`，单行/租户，**缺行 = 引擎默认值，不播种**）+ 读写端点（`GET|PUT /api/admin/production/craft-calc-config`）+ 护栏（422 逐条理由）+ 配置页 tab（挂 `/production/routings` 第三个 tab，不新开菜单）+ `CraftCalcClient` 注入本租户配置 | **等 D**（同文件） |
 | **F** | #4529 | `配料` 工序 + 第 4 部位（116 行）+ 第 2 条默认路线 + 订单侧读 `saleForm` + 开租播种 | **等 A（#4525，`schema.sql`）+ C（#4452，`ProcessingOrderService`）** |
 
 ---

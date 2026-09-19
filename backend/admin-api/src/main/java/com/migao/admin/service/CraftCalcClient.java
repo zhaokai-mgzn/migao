@@ -2,7 +2,10 @@ package com.migao.admin.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.migao.admin.config.TenantContext;
+import com.migao.admin.entity.CraftCalcConfig;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.CraftCalcConfigMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -16,6 +19,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -31,6 +35,11 @@ import java.util.Map;
  * 本类只做「问 + 取」。<b>公式串 {@code formula_text} 亦由 ai-agent 后端产出</b>，
  * 本类只搬运 —— Java / TS 侧自拼公式 = 第二份算料逻辑。</p>
  *
+ * <p><b>租户级配置注入（issue #4528 = 包 E）</b>：算料请求随带本租户的
+ * {@code craft_calc_configs} 配置（{@code config} 键）；<b>本租户没有配置行 ⇒ 不传</b>
+ * （算料引擎用它的默认值 ⇒ 未配置租户的结果与包 D 合并后**逐值一致**）。
+ * 默认值/公式的唯一实现仍在 {@code curtain_calc.py} —— 本类只做「问 + 取 + 带上配置」。</p>
+ *
  * <p><b>降级策略 = fail-closed</b>（同 {@code ProductionOperationQtyClient}）：
  * 服务不可达 / 未配置 token / 外壳 {@code success != true} / 响应缺 {@code fabric_meters}
  * 或 {@code formula_text} ⇒ 抛 {@link BusinessException}（422 + 可行动 suggestion）。
@@ -41,6 +50,8 @@ import java.util.Map;
 public class CraftCalcClient {
 
     private static final String CALC_PATH = "/api/internal/production/craft-calc";
+    /** 引擎**默认**配置（issue #4528）：缺配置行的租户由它给值（Java 侧不抄第二份默认值）。 */
+    private static final String DEFAULTS_PATH = "/api/internal/production/craft-calc-config";
     private static final int CONNECT_TIMEOUT_MS = 3_000;
     private static final int READ_TIMEOUT_MS = 10_000;
 
@@ -49,6 +60,7 @@ public class CraftCalcClient {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RestTemplate restTemplate;
+    private final CraftCalcConfigMapper craftCalcConfigMapper;
 
     @Value("${ai-agent.base-url:http://localhost:8000}")
     private String baseUrl;
@@ -56,16 +68,32 @@ public class CraftCalcClient {
     @Value("${ai-agent.service-token:}")
     private String serviceToken;
 
-    public CraftCalcClient() {
+    /**
+     * 生产构造器（Spring 装配）。
+     *
+     * <p>⚠️ {@code @Autowired} 是**有意显式**的：本类有**两个**构造器（生产用 + 测试注入
+     * RestTemplate 用）且**没有无参构造器** —— Spring 对「多构造器且无一标注」不作保证，
+     * 标注即把「用哪一个」写死（同族 {@link ProductionOperationQtyClient} 走的是
+     * 「public 无参 + 包私有测试构造器」形态；本类要注入 mapper，无法沿用）。</p>
+     *
+     * <p>🔴 **照实登记的守卫盲区（本包发现，未修）**：{@code AdminApiApplicationTest} **兜不住**
+     * 这类装配错误 —— 它 {@code catch (Exception e)} 之后只断言
+     * {@code !(e instanceof ClassNotFoundException)} ⇒ 启动期 {@code BeanInstantiationException}
+     * 会被**静默吞掉**、用例照绿（实测：去掉本注解再跑该用例仍绿）。故本注解不能只靠那条用例兜底。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    public CraftCalcClient(CraftCalcConfigMapper craftCalcConfigMapper) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(CONNECT_TIMEOUT_MS);
         factory.setReadTimeout(READ_TIMEOUT_MS);
         this.restTemplate = new RestTemplate(factory);
+        this.craftCalcConfigMapper = craftCalcConfigMapper;
     }
 
-    /** 仅供测试注入 MockRestTemplate */
-    CraftCalcClient(RestTemplate restTemplate) {
+    /** 仅供测试注入 MockRestTemplate / MockMapper */
+    CraftCalcClient(RestTemplate restTemplate, CraftCalcConfigMapper craftCalcConfigMapper) {
         this.restTemplate = restTemplate;
+        this.craftCalcConfigMapper = craftCalcConfigMapper;
     }
 
     /**
@@ -79,17 +107,18 @@ public class CraftCalcClient {
         if (request == null || request.get("width") == null) {
             throw unavailable(endpoint(), "缺少必填入参 width（窗宽，米）", null);
         }
-        String url = endpoint();
+        String url = endpoint(CALC_PATH);
         if (!StringUtils.hasText(serviceToken)) {
             throw unavailable(url, "未配置 ai-agent.service-token", null);
         }
+        Map<String, Object> payload = withTenantConfig(request);
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.set("X-Service-Token", serviceToken);
 
             ResponseEntity<String> response = restTemplate.exchange(
-                    url, HttpMethod.POST, new HttpEntity<>(request, headers), String.class);
+                    url, HttpMethod.POST, new HttpEntity<>(payload, headers), String.class);
 
             JsonNode root = objectMapper.readTree(response.getBody());
             if (root == null || !root.path("success").asBoolean(false)) {
@@ -130,8 +159,78 @@ public class CraftCalcClient {
     }
 
     private String endpoint() {
+        return endpoint(CALC_PATH);
+    }
+
+    private String endpoint(String path) {
         return (StringUtils.hasText(baseUrl) ? baseUrl : "http://localhost:8000")
-                .trim().replaceAll("/+$", "") + CALC_PATH;
+                .trim().replaceAll("/+$", "") + path;
+    }
+
+    /**
+     * 算料请求 + **本租户配置**（issue #4528 = 包 E）。
+     *
+     * <p>三条口径：</p>
+     * <ol>
+     *   <li><b>缺行 ⇒ 不加 {@code config} 键</b>：算料引擎用它的默认值 ⇒ 未配置租户的算料结果
+     *       与包 D 合并后**逐值一致**（把默认值从 Java 侧发过去 = 第二份会漂的默认值）；</li>
+     *   <li><b>不改调用方的 map</b>：返回新 map（请求对象可能是上游复用的，就地改会污染它）；</li>
+     *   <li><b>无租户上下文 ⇒ 不查不注入</b>（内部/无租户调用保持 #4528 之前的行为，
+     *       不猜一个租户去读别人的配置）。</li>
+     * </ol>
+     */
+    private Map<String, Object> withTenantConfig(Map<String, Object> request) {
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null) {
+            return request;
+        }
+        CraftCalcConfig row = craftCalcConfigMapper.selectActiveByTenant(tenantId);
+        if (row == null) {
+            return request;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>(request);
+        payload.put("config", row.toConfigMap());
+        return payload;
+    }
+
+    /**
+     * 算料引擎的**默认配置**（issue #4528）—— 缺配置行的租户读面用它 + {@code source='default'}。
+     *
+     * <p>为什么不在这里写一份默认常量：默认值就是算料口径的一部分，唯一实现在
+     * {@code curtain_calc.DEFAULT_CRAFT_CALC_CONFIG}；Java 侧再抄一份 = <b>第二份会漂的默认值</b>
+     * （引擎改默认、这里没跟 ⇒ 页面显示的「系统默认值」与实际算料口径不一致）。</p>
+     *
+     * @throws BusinessException 422（fail-closed）：不可达 / 未配置 token / 外壳失败 / 缺 {@code data.config}
+     */
+    public Map<String, Object> defaultConfig() {
+        String url = endpoint(DEFAULTS_PATH);
+        if (!StringUtils.hasText(serviceToken)) {
+            throw unavailable(url, "未配置 ai-agent.service-token", null);
+        }
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("X-Service-Token", serviceToken);
+            ResponseEntity<String> response = restTemplate.exchange(
+                    url, HttpMethod.GET, new HttpEntity<>(headers), String.class);
+            JsonNode root = objectMapper.readTree(response.getBody());
+            if (root == null || !root.path("success").asBoolean(false)) {
+                log.error("算料默认配置端点返回失败: url={}, body={}", url, response.getBody());
+                throw unavailable(url, "算料默认配置端点返回 success != true", null);
+            }
+            JsonNode config = root.path("data").path("config");
+            if (!config.isObject() || config.isEmpty()) {
+                log.error("算料默认配置端点响应缺 data.config，拒绝凭空造默认值: url={}, body={}",
+                        url, response.getBody());
+                throw unavailable(url, "算料默认配置端点响应缺少 data.config（拒绝凭空造一份默认值）", null);
+            }
+            return objectMapper.convertValue(config, new com.fasterxml.jackson.core.type.TypeReference<>() {
+            });
+        } catch (BusinessException e) {
+            throw e; // fail-closed 原样上抛（不吞、不降级）
+        } catch (Exception e) {
+            log.error("算料默认配置端点不可达: url={}, err={}", url, e.getMessage());
+            throw unavailable(url, e.getMessage(), e);
+        }
     }
 
     private BusinessException unavailable(String url, String reason, Exception cause) {

@@ -108,3 +108,18 @@ export function feeGuardReasons(error: unknown): string[] {
   if (fb) return [fb]
   return ['保存失败，请稍后重试']
 }
+
+/**
+ * 算料配置页（issue #4528）：从失败的请求里取**逐条**护栏理由。
+ *
+ * 与 `feeGuardReasons` 同口径（**不套**路线专属前缀 —— 本页的字段是公式参数，
+ * 套上「工序重复」那族标签会误导商家）。后端把**每一处**不合法都列出来
+ * （不是只报第一条）⇒ 页面逐条展示，商家一次改完。
+ */
+export function craftCalcConfigGuardReasons(error: unknown): string[] {
+  const reasons = detailsMessages(error)
+  if (reasons.length > 0) return reasons
+  const fb = fallbackMessage(error)
+  if (fb) return [fb]
+  return ['保存失败，请稍后重试']
+}
