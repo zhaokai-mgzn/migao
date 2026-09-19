@@ -851,7 +851,7 @@
 跳过: [backend-contract] 轮次护栏为代码层纯逻辑，由 pytest 单测覆盖（test_clarify_guard.py 17 例含端到端序列），不进入 agent-eval 冒烟
 ```
 真值: ai-chat.route-actions
-溯源: issue #2796：澄清轮次护栏（clarify_guard.apply_clarify_guard 挂 intent_router_node） ｜ tags: clarification, round_guard
+溯源: issue #2796：澄清轮次护栏（clarify_guard.apply_clarify_guard 挂 intent_router_node）；2026-09-19（issue #4598 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）：补**声明层** `precondition`（形态照 ST-008 / issue #4085 先例）—— 四条判据全部以「护栏启用 + `MAX_CLARIFY_ROUNDS = 2`」为前提，上限漂移时判红会伪装成「agent 无限追问」；**user_inputs / expectations / data_checks / traces 一字未动、无放宽**（声明层字段不新增断言强度，也不解除 skip）。 ｜ tags: clarification, round_guard
 
 ### CH-023. 图片澄清候选 grounded 商户库 - 商品类候选先检索真实商品（不编造） 🔵
 ```

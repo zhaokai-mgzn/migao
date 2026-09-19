@@ -1201,8 +1201,19 @@ cases:
       - "连续澄清 ≥ MAX_CLARIFY_ROUNDS(2) 轮后，不再以『您想做什么』追问——改给具体示例（查订单/搜商品/算料话术）+ **继续受理的下一步**（2026-09-19 退场改造：原「转人工出口」已不存在，兜底话术改为「直接把想问的原话发我」；判据见 backend/ai-agent-service/tests/test_clarify_guard.py）"
       - "用户给出实质意图/点选澄清卡 → 澄清计数清零，正常流程恢复"
       - "存储异常降级不阻断主流程"
+    # ── 前置自断言（issue #4598 的 Case Trust burn-down 缴费；metric=entries ⇒ 必须**整条销账**）──
+    # 本用例命中的**唯一**存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION。
+    # 本用例四条判据**全部以「澄清轮次护栏处于启用状态、且每会话澄清上限 = MAX_CLARIFY_ROUNDS(2)」
+    # 为前提**：上限被改大 / 护栏判据被摘掉 ⇒ 第 3、4 轮仍会继续追问，判红会伪装成
+    # 「agent 无限追问」（看起来像话术缺陷），而归因全错到 agent 身上。
+    # 口径：`assertion_taxonomy.declares_precondition` ①（声明层字段）—— 本用例是
+    # `[backend-contract]`（判据由 pytest 执行、agent-eval 栈不跑它）⇒ **有意不**声明 runner 的
+    # `type:` 计数型前置（那会是一条永不执行的假守卫）；形态与先例 ST-008（issue #4085）同一份：
+    # 把前置从 skip_reason 散文里搬成**机器可见的声明**。真值可核：
+    # `backend/ai-agent-service/app/graph/clarify_guard.py` 的 `MAX_CLARIFY_ROUNDS = 2`。
+    precondition: "澄清轮次护栏已启用并挂在意图路由节点上（`app/graph/nodes.py` 调 `apply_clarify_guard`），且每会话澄清上限 = MAX_CLARIFY_ROUNDS(2)（真值 = backend/ai-agent-service/app/graph/clarify_guard.py）；本用例是 [backend-contract]，判据由 backend/ai-agent-service/tests/test_clarify_guard.py 执行，agent-eval 栈不跑它"
     skip_reason: "[backend-contract] 轮次护栏为代码层纯逻辑，由 pytest 单测覆盖（test_clarify_guard.py 17 例含端到端序列），不进入 agent-eval 冒烟"
-    merge_log: "issue #2796：澄清轮次护栏（clarify_guard.apply_clarify_guard 挂 intent_router_node）"
+    merge_log: "issue #2796：澄清轮次护栏（clarify_guard.apply_clarify_guard 挂 intent_router_node）；2026-09-19（issue #4598 的 burn-down 缴费 —— 本用例命中的**唯一**一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）：补**声明层** `precondition`（形态照 ST-008 / issue #4085 先例）—— 四条判据全部以「护栏启用 + `MAX_CLARIFY_ROUNDS = 2`」为前提，上限漂移时判红会伪装成「agent 无限追问」；**user_inputs / expectations / data_checks / traces 一字未动、无放宽**（声明层字段不新增断言强度，也不解除 skip）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_clarify_guard.py"

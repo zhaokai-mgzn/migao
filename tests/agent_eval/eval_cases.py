@@ -1271,6 +1271,7 @@ _CASE_CH_022 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition='澄清轮次护栏已启用并挂在意图路由节点上（`app/graph/nodes.py` 调 `apply_clarify_guard`），且每会话澄清上限 = MAX_CLARIFY_ROUNDS(2)（真值 = backend/ai-agent-service/app/graph/clarify_guard.py）；本用例是 [backend-contract]，判据由 backend/ai-agent-service/tests/test_clarify_guard.py 执行，agent-eval 栈不跑它',
 )
 
 # ── CH-023 [NORMAL] 图片澄清候选 grounded 商户库 - 商品类候选先检索真实商品（不编造）（源: cases/chat.yml）──
