@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
@@ -179,6 +180,37 @@ class ProductionRoutingCommandServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("mainline[2]"));
         verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
+    }
+
+    @Test
+    @DisplayName("护栏 3b（issue #4520）：**混合写法**的同一道工序也拒 —— `精裁` 与 `精裁-布` 是一道工序")
+    void duplicateOperationAcrossNotationsIsRejected() {
+        // ⚠️ 这条是 issue #4520 的直接产物：判重键曾是**原始字符串**，于是
+        // `["精裁", …, "精裁-布"]` 被放行 ⇒ 实例化出两道 `精裁` ⇒ **工人按两遍单价拿钱**。
+        // 归一口径复用 P2b 的 normalizeOperationName（变体名 → 逻辑名），不另存映射表。
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("精裁-布")));
+        stubLibrary();
+
+        assertThatThrownBy(() -> service.updateRouting("rt-1",
+                body("mainline", List.of("精裁", "外帘装袋", "精裁-布")), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("mainline[2]"));
+        verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
+    }
+
+    @Test
+    @DisplayName("护栏 3c（issue #4520）：**不得误伤** —— 不同逻辑工序的变体名并存要放行")
+    void differentLogicalOperationsAreNotFalsePositives() {
+        // `精裁-布`（→精裁）与 `韩褶-布`（→韩褶）是**不同**工序 ⇒ 必须放行。
+        // 没有这条，一个「把所有变体名都当成同一个」的过度归一实现会静默通过。
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("精裁-布")));
+        stubLibrary();
+
+        assertThatCode(() -> service.updateRouting("rt-1",
+                body("mainline", List.of("精裁-布", "韩褶-布", "外帘装袋")), TENANT))
+                .doesNotThrowAnyException();
     }
 
     @Test
