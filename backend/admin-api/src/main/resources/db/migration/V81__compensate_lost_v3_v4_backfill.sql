@@ -1,0 +1,86 @@
+-- 【补偿迁移】把 V3 / V4 在 Flyway→自研迁移器替换时**丢掉的两笔意图回填**补回来（issue #4551）
+--
+-- ## 为什么需要本文件：那两条迁移**今天是一条注释**，且**无任何替代实现**
+--
+-- `b11c172ad`（「极简 DB 迁移器替代 Flyway」）把 V3 / V4 重建成了**占号空文件**：
+--   V3__backfill_position_from_role.sql        → `-- 从角色表回填职位字段（历史数据迁移，已完成）`
+--   V4__migrate_in_warehouse_to_on_sale.sql    → `-- 在仓 → 在售状态迁移（历史数据迁移，已完成）`
+-- 但**两条的原文在 Flyway 时代真实存在过**（`git show 5bb68d18b^:<路径>` 可证），
+-- 占号提交**没有给任何替代实现** ⇒ 意图随迁移器替换一起丢失。
+--
+-- ⚠️ 占号文件头注释写的「已完成」**在存量库上不成立**：
+--   MigrationRunner 的台账 `schema_migrations` 按**文件名**记账，而这两个文件名是
+--   **新建**的（`git show b11c172ad -- <路径>` 的 diff 形态 = `new file` + 仅注释行）
+--   ⇒ 对自研迁移器它们是**从未生效的 no-op**，不是「跑过了」。
+--   （#4548 取证报告：`acceptance/2026-09-19/4548-v2v3v4-intent/FINDINGS.md`）
+--
+-- ## 🔴 两笔缺口的严重度**不同**（V4 优先，V3 附带）
+--
+-- ### V4 —— `products.status: in_warehouse → on_sale`（**本单唯一实质风险**）
+-- `in_warehouse` 今天**不是合法态**，且应用层**反向封死**：
+--   - `ProductService.STATUS_TRANSITIONS` 的键集 = `{draft, under_review, on_sale, off_sale}`
+--     —— `in_warehouse` **既不是键也不是任何值** ⇒ 源态为它时 `allowedTransitions == null`
+--     ⇒ 抛「状态流转无效」；
+--   - `batchOnShelf` 的 `allowedStatuses = Set.of("off_sale")`；
+--   - `batchDelete` 的允许集 = `{draft, off_sale}`；
+--   - 前端 `ProductStatus` 联合类型已剔除它、列表筛选无「仓库中」、编辑表单不改 status。
+-- ⇒ 存量 `in_warehouse` 行**永久卡死**（不能上架/下架/删除）且**不会变红**（无守卫、无测试）
+--   ⇒ **唯一**能改它的东西就是 V4 那条 SQL —— 它今天是一条注释。
+--
+-- ### V3 —— `users.position ← users.role`（后果较轻，但读取面确有缺口）
+-- 应用层**已实现**「岗位按角色取值」（写时默认 + 读时兜底），所以展示层被兜底掩盖；
+-- 但**绕过 `toEmployeeMap` 的读取面没有兜底**：
+--   `UserController.getCurrentUser` → `UserInfoResponse.UserInfo.position`、
+--   `AuthService`（登录返回）⇒ 老用户在那里拿到空值。
+-- 数据层回填**无任何替代**（全仓 grep 只命中内存兜底，无 SQL）。
+--
+-- ## 为什么是**新增 V81** 而不是改 V3 / V4
+-- `.github/danger_scan.py` **机械阻塞**「已发布迁移被修改/删除」，且它的确认通道
+-- （`/danger-ack`）**只对 workflow 删除开放**，对迁移**没有** ⇒ 合规路径**只有**新增。
+-- 另：V3/V4 的内容已被 `tests/unit_ci_workflows/migration_fingerprints.json` 冻结
+-- （改一个字符即红）。同族先例 = V75（修正 V74）/ V76（重做 V72）。
+-- **号段**：V79 = 包 F（#4529）/ V80 = 包 E（#4528）已占用 ⇒ 本单取 **V81**。
+--
+-- ## 幂等（MigrationRunner 要求所有 SQL 可重复执行）
+-- 两条 UPDATE 都带**改后即不成立**的 WHERE 限定 ⇒ 重跑命中 **0 行**（空转）：
+--   ① 改完 `status` 不再是 `'in_warehouse'`；
+--   ② 改完 `position` 既非 NULL 也非 `''`。
+-- （bootstrap-first 路径会让迁移在已建好终态的库上再跑一遍，无守卫则重复改写。）
+--
+-- ## ⚠️ 与「不改 schema」的关系（issue #4551 硬约束 4，**已实跑核实**）
+-- 本文件是**纯数据迁移**（只有 `UPDATE`，无任何 DDL）⇒ **不同步 `docs/sql/schema.sql`**。
+-- 已实跑确认守卫不触发：
+--   - `tests/unit_ci_workflows/test_schema_integrity.py` 只校验 `schema.sql` **自己**的
+--     `CREATE/ALTER/COMMENT/INDEX/POLICY/REFERENCES` 目标（`_stmt_targets` 不含 `UPDATE`）
+--     ⇒ 与本迁移无关；
+--   - `tests/unit_ci_workflows/test_migration_references_exist_in_schema.py`（判据 1/2/5）
+--     会校验本迁移：引用的表 `products` / `users` 与列 `status` / `position` / `role`
+--     **都已存在于 `docs/sql/schema.sql`**（`users.position` 由
+--     `schema.sql:2456` 的 `ALTER TABLE users ADD COLUMN IF NOT EXISTS position VARCHAR(64)` 建出）
+--     ⇒ 全绿，无需改 schema。
+--
+-- ## 与 V3/V4 的关系（便于逐字比对）
+-- 本文件的两条 UPDATE **逐字等于** Flyway 时代的原文（`5bb68d18b^`）——
+-- 只把 `SET status = 'on_sale'` 的写法保留原样，便于 `diff` 出「补偿 = 原文」。
+--
+-- ## 不做
+-- - ❌ 不改任何**已发布**迁移（V2 / V3 / V4 一个字不动）。
+-- - ❌ 不动 `docs/sql/schema.sql`（数据迁移，不改 schema）。
+-- - ❌ 不碰 `.github/cases/**`、不碰 `frontend/**`。
+-- - ❌ 不在应用层加第二条口径（如给状态机补 `in_warehouse → on_sale` 边）——
+--   那会把一个**已废弃**的状态重新变合法，与前端枚举/状态机既定口径冲突。
+
+-- ══════════════════════════════════════════════════════════════════════════════════════
+-- ① V4（**优先**）：存量「在库」→「在售」
+--    原文 = `5bb68d18b^:backend/admin-api/src/main/resources/db/migration/V4__migrate_in_warehouse_to_on_sale.sql`
+--    ⚠️ 幂等判据 = 重跑 0 行：改完 status 不再是 'in_warehouse'
+-- ══════════════════════════════════════════════════════════════════════════════════════
+UPDATE products SET status = 'on_sale' WHERE status = 'in_warehouse';
+
+-- ══════════════════════════════════════════════════════════════════════════════════════
+-- ② V3（**附带**）：`position` 为空时从 `role` 回填
+--    原文 = `5bb68d18b^:backend/admin-api/src/main/resources/db/migration/V3__backfill_position_from_role.sql`
+--    ⚠️ 只补空值：**已非空的行不得被覆盖**（`WHERE` 同时挡 NULL 与空串）
+--    ⚠️ 幂等判据 = 重跑 0 行：改完 position 既非 NULL 也非 ''
+-- ══════════════════════════════════════════════════════════════════════════════════════
+UPDATE users SET position = role WHERE position IS NULL OR position = '';
