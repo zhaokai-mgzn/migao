@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 
 import pytest
@@ -39,14 +40,19 @@ COPIES: tuple[str, ...] = (
 
 #: 自动识别（下单页取价逻辑）必须住在 admin-web 专属文件里
 AUTO_FEATURES_MODULE = "frontend/admin-web/src/lib/craft-auto-features.ts"
-#: 不得出现在同源展示文件里的符号
-FORBIDDEN_IN_DISPLAY: tuple[str, ...] = (
+
+#: 专属模块**必须**导出的核心符号（**非空锚点**：防止模块被清空后 C2 空跑通过）
+CORE_EXPORTS: tuple[str, ...] = (
     "detectAutoFeatures",
     "resolveDoorWidth",
     "HEM_MARGIN",
     "DEFAULT_DOOR_WIDTH",
-    "AutoFeatureName",
 )
+
+#: 从专属模块源码里**动态**取导出符号名 —— **刻意不硬编码名单**（issue #4531 加固）：
+#: 硬编码的名单会**腐烂**（符号改名/新增 ⇒ 守卫静默失效，而没有任何东西会变红）。
+#: 动态取名的代价是「模块被清空 ⇒ 名单为空 ⇒ C2 恒真」，由上面的 `CORE_EXPORTS` 锚点堵住。
+_EXPORT_RE = re.compile(r"^export\s+(?:const|function|type|interface|class)\s+(\w+)", re.M)
 
 
 def _read(rel: str) -> bytes:
@@ -55,6 +61,11 @@ def _read(rel: str) -> bytes:
     if not path.is_file():
         pytest.fail(f"副本不存在：{rel}（三端同源守卫必须能读到它，路径漂移 = 红）")
     return path.read_bytes()
+
+
+def _exported_symbols(src: str) -> list[str]:
+    """专属模块导出的符号名（动态；保序去重）。"""
+    return list(dict.fromkeys(_EXPORT_RE.findall(src)))
 
 
 def _sha(rel: str) -> str:
@@ -72,9 +83,18 @@ def test_c1_three_copies_are_byte_identical():
 
 
 def test_c2_auto_features_not_in_the_shared_display_file():
-    """C2：自动识别（下单页取价逻辑）**不在**同源展示文件里（挪回去 ⇒ 红）。"""
+    """C2：专属模块的**全部**导出符号都不得出现在同源展示文件里（挪回去 ⇒ 红）。
+
+    ⚠️ 名单**动态取自专属模块**（不是硬编码）：硬编码名单会腐烂（符号改名/新增 ⇒
+    守卫静默失效）；空名单的退化风险由 `CORE_EXPORTS` 锚点在 C3 里堵住。
+    """
     display = _read(COPIES[0]).decode("utf-8")
-    leaked = [sym for sym in FORBIDDEN_IN_DISPLAY if sym in display]
+    symbols = _exported_symbols(_read(AUTO_FEATURES_MODULE).decode("utf-8"))
+    assert symbols, (
+        f"`{AUTO_FEATURES_MODULE}` 里解析不出任何导出符号 ⇒ C2 会**空跑通过**"
+        "（判据必须能判红）—— 模块被清空/改写形态时请同步修本守卫"
+    )
+    leaked = [sym for sym in symbols if sym in display]
     assert leaked == [], (
         f"`craft-display.ts` 里出现了自动识别符号 {leaked} —— 它是**下单页取价逻辑**，"
         "不是三端**展示**映射；放进同源文件会让另两端被迫背上下单页语义"
@@ -83,13 +103,17 @@ def test_c2_auto_features_not_in_the_shared_display_file():
     )
 
 
-def test_c3_auto_features_module_exists_and_exports_the_api():
-    """C3：自动识别模块存在且导出契约（被页面与测试消费的那几个符号）。"""
+def test_c3_auto_features_module_exists_and_exports_the_core_api():
+    """C3：专属模块存在、且导出**核心 API**（被页面与测试消费的那几个符号）。
+
+    `CORE_EXPORTS` 是 C2 动态名单的**非空锚点**：模块被清空 / 核心符号改名 ⇒ 这里先红，
+    而不是让 C2 静默变成恒真判据。
+    """
     src = _read(AUTO_FEATURES_MODULE).decode("utf-8")
-    missing = [sym for sym in FORBIDDEN_IN_DISPLAY if f"export const {sym}" not in src
-               and f"export function {sym}" not in src
-               and f"export type {sym}" not in src]
+    exported = set(_exported_symbols(src))
+    missing = [sym for sym in CORE_EXPORTS if sym not in exported]
     assert missing == [], (
-        f"`{AUTO_FEATURES_MODULE}` 缺少导出：{missing} —— 页面/测试按这些名字消费，"
-        "改名或漏导出 ⇒ 消费方 import 即红（但守卫要在**这里**先说清楚）"
+        f"`{AUTO_FEATURES_MODULE}` 缺少核心导出：{missing} —— 页面/测试按这些名字消费，"
+        "改名或漏导出 ⇒ 消费方 import 即红（守卫要在这里先说清楚）；"
+        "同时该锚点保证 C2 的动态名单不会退化成空名单"
     )
