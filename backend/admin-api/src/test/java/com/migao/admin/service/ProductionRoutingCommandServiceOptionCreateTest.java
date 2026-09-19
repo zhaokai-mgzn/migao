@@ -158,12 +158,39 @@ class ProductionRoutingCommandServiceOptionCreateTest {
     }
 
     @Test
-    @DisplayName("PG-032 目标工序也接受**变体名**（精裁-布 归一后 = 精裁 在库中）")
+    @DisplayName("PG-032 目标工序 / 锚点传**变体名** ⇒ 落库与回显都是**逻辑名**（精裁-布 → 精裁，issue #4643）")
     void acceptsVariantOperationName() {
-        service.createOptionRule(
-                body("trigger_value", "接高", "operation", "精裁-布"), TENANT);
+        Map<String, Object> result = service.createOptionRule(
+                body("trigger_value", "接高", "operation", "精裁-布", "after_operation", "精裁-布"), TENANT);
 
-        assertThat(inserted().getOperation()).isEqualTo("精裁-布");
+        ProductionRouteRule row = inserted();
+        // 改前实测：operation/after_operation 落的是变体名「精裁-布」⇒ GET /route-rules 回传变体名、
+        // 规则表与删除确认文案上屏两套工序名（红证）。
+        assertThat(row.getOperation()).isEqualTo("精裁");
+        assertThat(row.getAfterOperation()).isEqualTo("精裁");
+        assertThat(result).containsEntry("operation", "精裁").containsEntry("after_operation", "精裁");
+    }
+
+    @Test
+    @DisplayName("PG-032 归一**幂等**：未登记的自定义工序名（外帘打卷）落库等于自身 —— 不误改商家自建工序")
+    void customOperationNameIsStoredVerbatim() {
+        service.createOptionRule(body("trigger_value", "接高", "operation", "外帘打卷"), TENANT);
+
+        assertThat(inserted().getOperation()).isEqualTo("外帘打卷");
+    }
+
+    @Test
+    @DisplayName("PG-032 重复预检按**归一后**比对：存量变体名行（精裁-布）+ 新建逻辑名（精裁）⇒ 409，不落第二条重复规则")
+    void duplicateAgainstLegacyVariantRowIsConflict() {
+        List<ProductionRouteRule> rows = new ArrayList<>();
+        rows.add(existingRule("rr-1", "接高", "精裁-布"));
+        lenient().when(productionRouteRuleMapper.selectList(any())).thenReturn(rows);
+
+        assertThatThrownBy(() -> service.createOptionRule(
+                body("trigger_value", "接高", "operation", "精裁"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已存在");
+        verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
     }
 
     @Test

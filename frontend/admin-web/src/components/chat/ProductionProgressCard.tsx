@@ -30,10 +30,18 @@
  * 会话卡是对外/对客口径的**摘要**，两者语义不同（真值源 docs/curtain-production-rules.md §4
  * 两套账分离）。故此处镜像 C 端摘要口径，不把页面表格搬进聊天流。
  */
+import { operationDisplayName } from '@/lib/operation-display'
+
 interface ProductionCardOperation {
   id?: string
   operation: string
   status?: string
+  /**
+   * 逻辑工序名 / 部位（后端读面**读时派生**，issue #4621 / #4643）。
+   * 缺（老数据 / 自建工序）⇒ 退回 `operation` 原文。
+   */
+  logical_name?: string
+  position?: string
 }
 
 interface ProductionCardPosition {
@@ -51,6 +59,10 @@ export interface ProductionProgressCardData {
   progress?: { total?: number; done?: number; percent?: number }
   progress_percent?: number
   current_operation?: string
+  /** 当前工序的**逻辑名**（后端追加键，issue #4643）；缺 ⇒ 退回 `current_operation` 原文 */
+  logical_name?: string
+  /** 当前工序的部位（后端追加键，issue #4643）；部位无关工序 / 老数据 ⇒ 空 */
+  position?: string
   pending_operations?: string[]
   total_operations?: number
   done_operations?: number
@@ -91,7 +103,14 @@ export default function ProductionProgressCard({ data }: { data: ProductionProgr
     ?? (total > 0 ? Math.round((done / total) * 100) : 0)
 
   const currentFromOps = operations.find((operation) => operation.status !== 'done')
-  const current = data?.current_operation || currentFromOps?.operation
+  // 显示名走**唯一**口径 `operationDisplayName`（issue #4643，**不许自拼**）：`current_operation`
+  // 是工人端**快照名**（变体名 `精裁-布`）⇒ 不得直接渲染；后端已**追加** `logical_name`
+  // （+ 有部位时 `position`），两者都是读时派生。老数据缺 `logical_name` ⇒ helper 退回快照名原文。
+  const currentFields =
+    data && data.current_operation
+      ? { ...data, operation: data.current_operation }
+      : currentFromOps
+  const current = operationDisplayName(currentFields)
   const remaining = pendingList
     ? pendingList.length
     : operations.filter((operation) => operation.status !== 'done').length
