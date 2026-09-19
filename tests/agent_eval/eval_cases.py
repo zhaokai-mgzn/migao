@@ -2108,7 +2108,7 @@ _CASE_DF_004 = EvalCase(
     difficulty=Difficulty.ADVERSARIAL,
     user_inputs=['消息1', '消息2', '消息3', '消息4', '消息5', '消息6', '消息7', '消息8', '消息9', '消息10', '消息11', '消息12', '消息13', '消息14', '消息15', '消息16', '消息17', '消息18', '消息19', '消息20'],
     expectations=['direct_reply'],
-    data_checks=['对话压缩生效（超过 max_recent=12 条后生成摘要，原用例写 20 条已校准）', '速率限制未实现（defense.rate-limit 真值：无消费点）——不期待 rate_limit 触发'],
+    data_checks=['对话压缩生效（超过 max_recent=12 条后生成摘要，原用例写 20 条已校准）', '速率限制未实现（defense.rate-limit 真值：无消费点）——不期待 rate_limit 触发', '前置（precondition）：**对话压缩护栏处于启用状态且阈值 = 20 条触发 / 保留最近 12 条**（`prepare_turn.py` 在 `len(msg_list) > 20` 时调 `compress_conversation(..., max_recent=12)`，`context_manager.py` 的默认值即 `max_recent: int = 12`）—— 本用例的 20 轮消息正是按该阈值校准的；阈值被改大或调用点被摘掉时，摘要恒为空，判红会伪装成「agent 不压缩上下文」（success=true）'],
     skip_reason='',
     tags=['defense', 'token_abuse', 'rate_limit'],
     persona='',
@@ -3872,7 +3872,7 @@ _CASE_OR_028 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['给张三下单，手机 13800138000；2699系列雪尼尔窗帘面料，2699-03暖米色，散剪，2.8米门幅，要 3 米', '再加打孔加工，数量算 8.4 米', {'repeat_until': {'tool_called': 'order_create', 'max': 8}, 'code': '123456', 'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '2699-03暖米色', 'colorName': '2699-03暖米色'}}],
     expectations=['product_detail', 'order_create'],
-    data_checks=['打孔 per_meter 数量 = 8.4 米，加工费 = 8.00 × 8.4 = 67.20 元（截断成 8 会变 64.00，少收 3.20）', '订单总额 = 面料小计 23.80×3=71.40 + 加工费 67.20 = 138.60 元', '⚠️ 2026-09-19（issue #4572）：本用例原为 per_area（8.4 ㎡ × 30 元/㎡ = 252.00），接地夹具 `刺绣工艺` 按用户裁定真删 ⇒ 改判 per_meter 并逐值重算；**per_area 计价路径的评测覆盖随该夹具删除而移除**（如需恢复，须新增一个显式标注为评测夹具的 per_area 项）', '订单明细数量落库为 3（面料米数），DECIMAL(10,2) 列不得改变整数数量的落库语义'],
+    data_checks=['打孔 per_meter 数量 = 8.4 米，加工费 = 8.00 × 8.4 = 67.20 元（截断成 8 会变 64.00，少收 3.20）', '订单总额 = 面料小计 23.80×3=71.40 + 加工费 67.20 = 138.60 元', '⚠️ 2026-09-19（issue #4571）：本用例原为 per_area（8.4 ㎡ × 30 元/㎡ = 252.00），接地夹具 `刺绣工艺` 按用户裁定真删 ⇒ 改判 per_meter 并逐值重算；**per_area 计价路径的评测覆盖随该夹具删除而移除**（如需恢复，须新增一个显式标注为评测夹具的 per_area 项）', '订单明细数量落库为 3（面料米数），DECIMAL(10,2) 列不得改变整数数量的落库语义'],
     skip_reason='',
     tags=['order_create', 'processing_item', 'per_meter', 'decimal_quantity'],
     persona='mibao',
@@ -4029,16 +4029,16 @@ _CASE_OR_035 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── OR-036 [NORMAL] 下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）（源: cases/order.yml）──
+# ── OR-036 [NORMAL] 下单页算料试算 —— 用料米数按工艺派生公式自动算（韩褶⇒折数法 / 打孔⇒倍数法）+ 公式串可见 + 四条 fail-closed（不猜、不静默改回）（源: cases/order.yml）──
 _CASE_OR_036 = EvalCase(
     id='OR-036',
     legacy_id='',
-    title='下单页算料试算 —— 用料米数按折数法自动算 + 公式串可见 + 四条 fail-closed（不猜、不静默改回）',
+    title='下单页算料试算 —— 用料米数按工艺派生公式自动算（韩褶⇒折数法 / 打孔⇒倍数法）+ 公式串可见 + 四条 fail-closed（不猜、不静默改回）',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
     user_inputs=['（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）'],
     expectations=[],
-    data_checks=['**判据 1·宽高齐全 ⇒ 试算并预填数量 + 展示后端产出的公式串**（用户裁定「用料米数按折数法自动算 + 把计算公式体现出来」）。红证（实现前）：数量恒为手填 1（算料试算未接线）。', '**判据 2·改宽 ⇒ 重新试算并更新数量**（防抖后）；**判据 3·手改数量 ⇒ 标记「人工指定」，且不被试算静默改回**（唯一回切通道 = 显式点「恢复按公式计算」）。红证（实现前）：手改后被试算静默覆盖回公式值。', '**判据 4·试算失败 ⇒ 行内显式提示，数量保持原样（不退回任何估算值）**。红证（实现前）：失败时给了一个估算米数（静默算错钱，`#4308`「静默回落」同族）。', '**判据 5·参数不全 ⇒ 不发请求**：只有宽没有高 ⇒ `craftCalcParamsOf` 返回 `null`（**不得**用默认窗宽猜一个米数）；宽/高非正数（0 与负数）同样 `null`。', '**判据 6·非韩褶工艺（打孔/四爪钩/穿杆/平幔）⇒ 不发请求**（折数法不适用，后端会 400）；韩褶 / 未指定工艺 ⇒ 可试算（未指定按默认韩褶档）。', '**判据 7·入参不变就不重发**：`craftCalcSignature` 对同一入参恒定（写回 `quantity` 不会再次触发试算）；改宽 / 改开数 / 改拼次 ⇒ 签名变化（该重算的必须重算）；`null` 入参 ⇒ 空签名（不触发请求）。', '**判据 8·失败给可行动提示、不给估算值**：`craftCalcErrorText` 优先取后端 `error.message`（如「拼3次纸表未登记」），无任何 message 时给兜底文案（不得空串，也不得悄悄算一个数）。', '**判据 9·用料来源两态是真值**（真值源 §8「用料必须带来源」）：「公式计算」与「人工指定」是两个不同真值 —— 手改后不得被静默改回。', '**与 OR-032 的分工**（main 的后端半边用例，issue #4421）：`OR-032` 锚**端点契约**（折数法纸表逐值、单一真值、snake_case 响应键）；本条锚**下单页前端接线**（何时发/不发请求、预填与人工指定的两态、失败不退回估算值）。两条互补，不重复。', '**红证（实现前）**：`@/lib/craft-calc-request` 不存在 ⇒ import 即红；接线侧数量恒为手填 1。'],
+    data_checks=['**判据 1·宽高齐全 ⇒ 试算并预填数量 + 展示后端产出的公式串**（用户裁定「用料米数按折数法自动算 + 把计算公式体现出来」）。红证（实现前）：数量恒为手填 1（算料试算未接线）。', '**判据 2·改宽 ⇒ 重新试算并更新数量**（防抖后）；**判据 3·手改数量 ⇒ 标记「人工指定」，且不被试算静默改回**（唯一回切通道 = 显式点「恢复按公式计算」）。红证（实现前）：手改后被试算静默覆盖回公式值。', '**判据 4·试算失败 ⇒ 行内显式提示，数量保持原样（不退回任何估算值）**。红证（实现前）：失败时给了一个估算米数（静默算错钱，`#4308`「静默回落」同族）。', '**判据 5·参数不全 ⇒ 不发请求**：只有宽没有高 ⇒ `craftCalcParamsOf` 返回 `null`（**不得**用默认窗宽猜一个米数）；宽/高非正数（0 与负数）同样 `null`。', "**判据 6·工艺 ⇒ 公式 / 悬挂方式（issue #4527 改判：原判据把「打孔」列为不发请求 = 过期断言、给的是假信号）**：打孔 ⇒ **照常发请求**，且 `formula='fullness'` + `mounting='eyelet'`（倍数法，默认 2 倍）；韩褶 ⇒ `formula='pleat'` + `mounting='s_hook'`；**未指定工艺 ⇒ 默认韩折公式**（`pleat` + `s_hook`）；**未登记工艺（四爪钩 / 穿杆 / 平幔）⇒ 不发请求**（`craftCalcParamsOf` 返回 `null` —— 这些工艺无自动算料口径，后端答不出）。依据 = `frontend/admin-web/src/lib/craft-calc-request.ts` 的 `CALC_CRAFTS`（`{'韩褶','打孔',''}`）/ `CRAFT_CALC_FORMULA_BY_CRAFT` / `CRAFT_CALC_MOUNTING_BY_CRAFT`。红证：把打孔改回「不发请求」的旧口径 ⇒ `craft-calc-request.test.ts` 的「#4527 打孔 ⇒ 必须发请求且走倍数法」与 `orders-new-craft-calc.test.tsx` 的打孔用例（勾加工项后 `craft='打孔'` / `mounting='eyelet'` / `formula='fullness'`）同时红。", '**判据 7·入参不变就不重发**：`craftCalcSignature` 对同一入参恒定（写回 `quantity` 不会再次触发试算）；改宽 / 改开数 / 改拼次 ⇒ 签名变化（该重算的必须重算）；`null` 入参 ⇒ 空签名（不触发请求）。', '**判据 8·失败给可行动提示、不给估算值**：`craftCalcErrorText` 优先取后端 `error.message`（如「拼3次纸表未登记」），无任何 message 时给兜底文案（不得空串，也不得悄悄算一个数）。', '**判据 9·用料来源两态是真值**（真值源 §8「用料必须带来源」）：「公式计算」与「人工指定」是两个不同真值 —— 手改后不得被静默改回。', '**与 OR-032 的分工**（main 的后端半边用例，issue #4421）：`OR-032` 锚**端点契约**（折数法纸表逐值、单一真值、snake_case 响应键）；本条锚**下单页前端接线**（何时发/不发请求、预填与人工指定的两态、失败不退回估算值）。两条互补，不重复。', '**红证（实现前）**：`@/lib/craft-calc-request` 不存在 ⇒ import 即红；接线侧数量恒为手填 1。'],
     skip_reason='[backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx 执行',
     tags=['order', 'craft_spec', 'craft_calc', 'backend_contract'],
     persona='',
@@ -4127,18 +4127,36 @@ _CASE_OR_040 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── OR-041 [NORMAL] 算料公式按工艺推导 - 韩褶⇒韩折公式（折数法）/ 打孔⇒倍数法（默认 2 倍）+ 逐片口径（每片×开数）+ 用料向上进位到 0.1（源: cases/order.yml）──
+# ── OR-041 [NORMAL] 算料公式按加工项派生的工艺推导 - 勾「韩折」⇒韩褶⇒韩折公式（折数法）/ 勾「打孔」⇒倍数法（默认 2 倍）+ 逐片口径（每片×开数）+ 用料向上进位到 0.1（源: cases/order.yml）──
 _CASE_OR_041 = EvalCase(
     id='OR-041',
     legacy_id='',
-    title='算料公式按工艺推导 - 韩褶⇒韩折公式（折数法）/ 打孔⇒倍数法（默认 2 倍）+ 逐片口径（每片×开数）+ 用料向上进位到 0.1',
+    title='算料公式按加工项派生的工艺推导 - 勾「韩折」⇒韩褶⇒韩折公式（折数法）/ 勾「打孔」⇒倍数法（默认 2 倍）+ 逐片口径（每片×开数）+ 用料向上进位到 0.1',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
     user_inputs=['商家手工下单页按宽 5.5m / 双开 / 标准档，工艺选打孔 ⇒ 按倍数法试算用料（预期 11.0 米）'],
     expectations=['direct_reply'],
-    data_checks=['（散文、**不计分**）公式**由工艺推导**（用户 2026-09-19 追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」）：韩褶 ⇒ 韩折公式（折数法）/ 打孔 ⇒ 褶倍数公式（倍数法，默认 2 倍）；未登记工艺/未指定 ⇒ 兜底默认（韩折公式）；`formula` 入参为**显式覆盖**（显式 > 推导表 > `default_formula` 兜底）', '（散文、**不计分**）ERP 实证锚点（#4343 取证的加工单 CSO260915-02615）：宽 5.5m / 双开 / 理论褶倍 2.00 ⇒ **11.00 米**（= 5.5×2.00）—— 双开不得把总宽再乘 2（甲口径 22.00 米已被用户否决）', '（散文、**不计分**）逐片口径：每片宽 = 成品宽 ÷ 开数；总用料 = 每片用料 × 开数（每片余量 = 总余量 ÷ 开数 ⇒ 与既有 `0.25×总折数+总余量` 逐值一致，不改钱）', '（散文、**不计分**）用料米数一律**向上进位到 0.1**（`ceil(x*10)/10`）：截断 / 四舍五入即违约；进位只在总用料上做一次；金额/单价相关量不跟着改口径', '（散文、**不计分**）配置可注入（用户追加裁定「可能得支持每个商家自定义配置」）：默认值 = 既有常量逐值不变；护栏（褶倍下限 / 正数校验 / tiers 非空）不因可配而消失，非法配置显式报错；配置沿调用链显式传递', '（散文、**不计分**）公式串由**后端**（算料引擎）产出并写明所用公式（`韩折公式：` / `褶倍数公式：`）；Java / TS 侧只搬运、不自拼（自拼 = 第二份算料逻辑）；前端 `PLEAT_CRAFTS` 门必须放行打孔（否则「打孔按倍数法算布料」在页面上永不发生）'],
+    data_checks=["（散文、**不计分**）公式**由「加工项派生」的工艺推导**（issue #4566 改判：`craft` 的真值源已从「工艺规格控件」搬到**加工项**，原判据「工艺 ⇒ 公式」漏了派生这一段）：勾选带 `craft_hint` 的加工项（`processing_items.craft_hint`，V83 目录里 5 个工艺项声明它：`打孔`→打孔 · `韩折`/`韩定+S钩`→**韩褶** · `穿杆`→穿杆 · `平幔`→平幔）⇒ 页面侧 `craftFromItems`（`frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx`）取**已勾选**项里第一个非空 `craftHint` 作为该行 `craft` ⇒ 算料引擎 `resolve_craft_rule` 按它推导公式与悬挂方式：`韩褶` ⇒ `pleat` + `s_hook`（韩折公式 / 折数法）；`打孔` ⇒ `fullness` + `eyelet`（褶倍数公式 / 倍数法，默认 2 倍）；**未勾选任何工艺项 ⇒ 派生 `undefined` ⇒ 默认韩折公式**（`pleat` + `s_hook`）；**未登记工艺（`穿杆` / `平幔`）⇒ `craftCalcParamsOf` 返回 `null`、不发请求**。`craftFromItems` **不猜、不补默认韩褶**（前端不造第二份口径，缺省档由算料引擎给）；`formula` 入参仍是**显式覆盖**（显式 > 推导表 > `default_formula` 兜底）。红证：把「勾加工项」这一段去掉、只留「工艺 ⇒ 公式」⇒ `orders-new-craft-calc.test.tsx` 的 `#4527 打孔`（**从加工项勾选**后重发试算、`craft='打孔'`）与「无自动算料口径的工艺（穿杆）⇒ 不发请求」（同样从加工项勾选）两条同时红。", '（散文、**不计分**）ERP 实证锚点（#4343 取证的加工单 CSO260915-02615）：宽 5.5m / 双开 / 理论褶倍 2.00 ⇒ **11.00 米**（= 5.5×2.00）—— 双开不得把总宽再乘 2（甲口径 22.00 米已被用户否决）', '（散文、**不计分**）逐片口径：每片宽 = 成品宽 ÷ 开数；总用料 = 每片用料 × 开数（每片余量 = 总余量 ÷ 开数 ⇒ 与既有 `0.25×总折数+总余量` 逐值一致，不改钱）', '（散文、**不计分**）用料米数一律**向上进位到 0.1**（`ceil(x*10)/10`）：截断 / 四舍五入即违约；进位只在总用料上做一次；金额/单价相关量不跟着改口径', '（散文、**不计分**）配置可注入（用户追加裁定「可能得支持每个商家自定义配置」）：默认值 = 既有常量逐值不变；护栏（褶倍下限 / 正数校验 / tiers 非空）不因可配而消失，非法配置显式报错；配置沿调用链显式传递', '（散文、**不计分**）公式串由**后端**（算料引擎）产出并写明所用公式（`韩折公式：` / `褶倍数公式：`）；Java / TS 侧只搬运、不自拼（自拼 = 第二份算料逻辑）；前端 `PLEAT_CRAFTS` 门必须放行打孔（否则「打孔按倍数法算布料」在页面上永不发生）'],
     skip_reason='[backend-contract] 算料公式属确定性纯计算（无 LLM 行为）：判据在 pytest（tests/test_craft_calc_formula.py / tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）+ vitest（craft-calc-request.test.ts / craft-calc-formula-sync.test.ts / orders-new-craft-calc.test.tsx），不进 agent-eval 冒烟',
     tags=['order', 'craft_calc', 'fabric', 'formula_selection', 'per_panel', 'meters_rounding'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OR-042 [NORMAL] 下单页自动算料 —— 勾加工项/改尺寸即自动重发试算并写回数量（来源两态：公式计算 / 人工指定）+ 对花·花距进试算（定宽买高每幅 +1 花距）+ 四条 fail-closed 复核（源: cases/order.yml）──
+_CASE_OR_042 = EvalCase(
+    id='OR-042',
+    legacy_id='',
+    title='下单页自动算料 —— 勾加工项/改尺寸即自动重发试算并写回数量（来源两态：公式计算 / 人工指定）+ 对花·花距进试算（定宽买高每幅 +1 花距）+ 四条 fail-closed 复核',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）'],
+    expectations=[],
+    data_checks=['**判据 a1·自动触发 + 写回该行数量**：宽高齐全后**自动**发试算（无需点任何按钮），把后端 `fabric_meters` **写回该行数量**；改尺寸 / 改开数 / **勾选工艺加工项** ⇒ 触发签名（`craftCalcSignature`）变化 ⇒ **自动重发**试算并再次写回。签名只含**入参**（写回 `quantity` 不进签名）⇒ 写回本身不会再触发请求（防请求风暴）。红证：把「勾加工项」移出签名 / 移出 effect 依赖 ⇒ 勾了「打孔」仍用旧口径的米数（`orders-new-craft-calc.test.tsx` 的 `#4527 打孔` 用例红：勾选后未重发、请求数不涨）。', '**判据 a2·来源标注两态 + 手改后不得被静默改回**（真值源 §8「用料必须带来源」）：试算写回 ⇒ 来源 `公式计算`（`METERS_SOURCE_FORMULA`）；商家手改数量 ⇒ 来源切 `人工指定`（`METERS_SOURCE_MANUAL`）、行内显示「人工指定」，此后**改尺寸不再重发试算、不得静默改回**；唯一回切通道 = 显式点「恢复按公式计算」（该按钮只在 `人工指定` 态出现）。红证：手改后被试算静默覆盖回公式值（`orders-new-craft-calc.test.tsx` 判据 3 红）；两态被合并成一个真值（判据 9 / `craft-calc-request.test.ts` 的用料来源两态用例红）。', '**判据 b·对花 / 花距进试算（issue #4573，PR #4574 已修代码、此前零用例覆盖）**：`craft.hasPattern === true` ⇒ 请求带 `has_pattern=true`，且花距为正数时带 `pattern_repeat`；**「对花 = 否」/「未指定」⇒ 两个键都不带**（对花为否时留着花距是自相矛盾的输入）；**「对花 = 是」但花距缺失 / 非正数 ⇒ 只带 `has_pattern`、不发明花距**；`has_pattern` / `pattern_repeat` **进触发签名**（改任一项必须重发试算，否则页面留着旧口径的米数）。口径依据 = 算料引擎 `backend/ai-agent-service/app/tools/curtain_calc.py`：**定宽买高**（`window_height + HEM_MARGIN > fabric_width`）时 `每幅长 = 窗高 + 卷边 + 花距`、`总用料 = 幅数 × 每幅长` ⇒ 不传花距会**少算「幅数 × 花距」**（试算米数偏小 = 少收面料钱，`has_pattern` 是该分支的**唯一**开关）；**定高买宽**下走的是按宽买米分支、花距不参与 ⇒ 对花**不改变用料**。红证：把 `has_pattern` / `pattern_repeat` 从 `craftCalcParamsOf` 去掉（= #4573 改前形态）⇒ `craft-calc-request.test.ts` 的「对花 / 花距进算料入参（issue #4573）」4 条全红；把花距也写进「对花 = 否」⇒ 第 2 条红。', '**判据 c·fail-closed 复核（四条；`craftCalcParamsOf` 返回 `null` ⇒ 调用方**不得**发请求）**：① **未登记工艺**（`穿杆` / `平幔` / 四爪钩）⇒ 不发请求（`CALC_CRAFTS` 只放行 `韩褶` / `打孔` / 未指定）；② **缺宽或高** ⇒ 不发请求（**不得**用默认窗宽猜一个米数）；③ 宽 / 高**非正数**（0 与负数）⇒ 不发请求；④ **纱帘不算料**（issue #4521「买多少就是多少」）⇒ 不发请求，且页面**不给**「恢复按公式计算」（发了请求会把商家手填的米数静默改回公式值）。红证：把任一条放行 ⇒ 对应负向断言（`mockCraftCalcPreview` 的调用次数保持 0）红。', '**与 OR-036 的分工**：`OR-036` 锚试算接线的**接线形态**（预填、两态、失败不退回估算值、签名去重）；本条锚**自动算料的触发面与口径面**（a 触发/写回/来源、b 对花·花距、c fail-closed 复核）。两条的 traces 有交集（同一批测试文件），但判据不重复。', '**红证（实现前）**：`@/lib/craft-calc-request` 不存在 ⇒ import 即红；`craftCalcParamsOf` 不带 `has_pattern` / `pattern_repeat` ⇒ 判据 b 红（这正是 #4573 改前的形态）。'],
+    skip_reason='[backend-contract] 前端写侧契约（admin-web 下单页接线 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx 执行',
+    tags=['order', 'craft_calc', 'craft_spec', 'pattern_repeat', 'backend_contract'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -6990,6 +7008,7 @@ ALL_CASES = (
     _CASE_OR_039,
     _CASE_OR_040,
     _CASE_OR_041,
+    _CASE_OR_042,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
