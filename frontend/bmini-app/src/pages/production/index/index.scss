@@ -277,3 +277,51 @@
     border-radius: 34px;
   }
 }
+
+// 发货（issue #4483 = #4347 §二.2）：必完工序全绿后才出现
+.production-ship {
+  margin: 20px 24px 0;
+  padding: 20px;
+  background: #ffffff;
+  border-radius: 16px;
+
+  &__title {
+    display: block;
+    font-size: 30px;
+    font-weight: 600;
+    color: #0a2540;
+    padding-bottom: 12px;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  &__input {
+    flex: 1;
+    height: 72px;
+    padding: 0 20px;
+    font-size: 28px;
+    background: #f7f8fa;
+    border-radius: 12px;
+  }
+
+  &__btn {
+    min-width: 160px;
+    height: 72px;
+    font-size: 28px;
+    line-height: 72px;
+    color: #ffffff;
+    background: #1677ff;
+    border-radius: 12px;
+  }
+
+  &__hint {
+    display: block;
+    font-size: 24px;
+    color: #8a97a6;
+    padding-top: 12px;
+  }
+}
