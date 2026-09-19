@@ -365,6 +365,126 @@ def test_consumers_read_the_rule_table():
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
+# 判据 E：开租播种（Java）的规范矩阵/主线/规则与真值源同源（P2b 新增）
+#
+# 为什么必须守：P2b 的开租播种路径**不跑迁移链**（新租户不走 V71/V72）⇒ 它必须自带一份
+# 规范矩阵（84 行）/ 主线（9 道）/ 工艺变体规则（10 条）。那是**第四份投影**
+# （routing.py / V71 迁移 / schema.sql / Java 播种）⇒ 不守就是「改了真值源而新租户拿到旧价」
+# 这类静默失效（判据 17 同族：错价直接算成工人工资）。
+# ══════════════════════════════════════════════════════════════════════════════════
+
+#: 开租播种服务（Java）—— 规范矩阵 / 主线 / 工艺变体规则的第四份投影。
+SEED_SERVICE = JAVA_SERVICE_DIR / "ProductionSeedTemplateService.java"
+#: 真值源（Python）。
+ROUTING_PY = REPO / "backend/ai-agent-service/app/production/routing.py"
+
+
+def _java_array_rows(src: str, name: str) -> list:
+    """取 Java 里 `String[][] <name> = { ... };` 的逐行字符串元组（**逐字**，不去重不排序）。"""
+    start = src.index(f"String[][] {name} = {{")
+    end = src.index("};", start)
+    rows = []
+    for line in src[start:end].split("\n"):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        # ⚠️ 裸 `null` 必须归一为字符串 "null"（否则与真值源的 None 对不上）
+        cells = re.findall(r'"([^"]*)"|(null)', line)
+        rows.append(tuple(text if text else (bare or "") for text, bare in cells))
+    return rows
+
+
+def _python_pairs(src: str, marker: str, stop: str) -> list:
+    """取 Python 里形如 `("a", "b"),` 的有序对（限定在 marker..stop 之间）。"""
+    start = src.rindex(marker)
+    end = src.index(stop, start)
+    return re.findall(r'\("([^"]+)",\s*"([^"]+)"\),', src[start:end])
+
+
+def _python_position_rows(src: str) -> list:
+    """取 `_POSITION_PRICE_ROWS` 的逐行 `(逻辑名, 部位, 单价|None, applicable)`。"""
+    import ast as _ast
+
+    start = src.rindex("_POSITION_PRICE_ROWS: List[tuple] = [")
+    end = src.index("\n]", start)
+    rows = []
+    for line in src[start:end].split("\n"):
+        line = line.strip()
+        if not line.startswith("("):
+            continue
+        rows.append(_ast.literal_eval(line.rstrip(",")))
+    return rows
+
+
+def test_seed_service_canonical_matrix_matches_truth_source():
+    """判据 E-1：Java 开租播种的 84 行规范矩阵与 `routing.py::OPERATION_POSITION_PRICES` 逐行同值。"""
+    src = _read(SEED_SERVICE)
+    rows = _java_array_rows(src, "CANONICAL_POSITION_PRICES")
+    assert len(rows) == 84, f"规范矩阵必须是 84 行（28 逻辑工序 × 3 部位），实测 {len(rows)}"
+
+    py_src = _read(ROUTING_PY)
+    py_rows = _python_position_rows(py_src)
+    assert len(py_rows) == 84, f"真值源应有 84 行，实测 {len(py_rows)}"
+    expected = [(logical, position,
+                 "null" if price is None else str(price),
+                 "true" if applicable else "false")
+                for logical, position, price, applicable in py_rows]
+    assert rows == expected, (
+        "Java 开租播种的规范矩阵与真值源漂移了 —— 新租户会拿到旧价/旧适用性（**错发工资**）。"
+        "改真值源时必须同步 SEED_SERVICE 的 CANONICAL_POSITION_PRICES。"
+    )
+
+
+def test_seed_service_mainline_matches_truth_source():
+    """判据 E-2：Java 开租播种的 9 道主线与 `routing.py::ROUTE_MAINLINE_STEPS` 逐字同值。"""
+    src = _read(SEED_SERVICE)
+    start = src.index("List<String> ROUTE_MAINLINE_STEPS = List.of(")
+    end = src.index(");", start)
+    java_steps = re.findall(r'"([^"]+)"', src[start:end])
+
+    py_src = _read(ROUTING_PY)
+    # ⚠️ rindex：该标识符在 docstring 里也被提到（首次出现不是定义处）
+    pstart = py_src.rindex("ROUTE_MAINLINE_STEPS: List[str] = [")
+    pend = py_src.index('"]', pstart) + 1
+    py_steps = re.findall(r'"([^"]+)"', py_src[pstart:pend])
+
+    assert java_steps == py_steps, (
+        f"主线漂移：Java 播种={java_steps} vs 真值源={py_steps} —— "
+        f"新租户的主线与车间实际走线不一致（顺序错 = 按错顺序干）"
+    )
+
+
+def test_seed_service_craft_rules_match_truth_source():
+    """判据 E-3：Java 开租播种的 10 条工艺变体规则与 `routing.py::ROUTE_RULES` 的 craft 部分逐条同值。"""
+    import ast
+
+    src = _read(SEED_SERVICE)
+    rows = _java_array_rows(src, "CRAFT_RULES")
+    assert len(rows) == 10, f"工艺变体规则应为 10 条，实测 {len(rows)}"
+
+    py_src = _read(ROUTING_PY)
+    pstart = py_src.index("ROUTE_RULES: List[Dict[str, Any]] = [")
+    pend = py_src.index("\n]", pstart)
+    craft_rules = []
+    for entry in re.findall(r"\{[^{}]*\}", py_src[pstart:pend]):
+        rule = ast.literal_eval(entry)
+        if rule["trigger_kind"] != "craft":
+            continue
+        craft_rules.append((
+            rule["trigger_value"],
+            "NULL" if rule["position"] is None else rule["position"],
+            rule["action"],
+            rule["operation"],
+            "NULL" if rule["after_operation"] is None else rule["after_operation"],
+        ))
+
+    assert [tuple(r) for r in rows] == craft_rules, (
+        "工艺变体规则漂移（触发值/部位限定/动作/工序/锚点）—— "
+        "新租户会插错工序或锚点落空 ⇒ 条件工序静默追加末尾（顺序错）"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
 # 判据 D：bootstrap 终态同步（只写迁移 = 新建库无表 ⇒ 读面 500，同 #3270 形态）
 # ══════════════════════════════════════════════════════════════════════════════════
 
