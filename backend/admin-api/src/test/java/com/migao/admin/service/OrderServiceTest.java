@@ -58,6 +58,8 @@ class OrderServiceTest {
     private OrderService orderService;
 
     @Mock
+    private UserService userService;
+    @Mock
     private OrderMapper orderMapper;
 
     @Mock
@@ -2361,5 +2363,104 @@ class OrderServiceTest {
         // 回退到组合匹配的现有行，而不是拿陈旧 id 去 update（命中 0 行的静默失败）
         verify(productSkuMapper).restoreStock(COMBO_SKU_ID, 2);
         verify(productSkuMapper, never()).restoreStock(eq(999L), anyInt());
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════
+    // 发货下放到工人扫码端（issue #4347 §二.2）—— shipWithLogistics 是**原子**入口
+    // ══════════════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("发货红证：无货运单号 ⇒ 422（没有单号的「发货」在车间不可核对）")
+    void shipRejectsBlankTrackingNo() {
+        assertThatThrownBy(() -> orderService.shipWithLogistics("order-001", "  ", "顺丰"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("货运单号");
+        verify(orderLogisticsMapper, never()).insert(any(OrderLogistics.class));
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("发货守卫**复用同一份**：含加工项订单无 completed 加工单 ⇒ 被拒（工人端不绕加工）")
+    void shipReusesProcessingCompletedGuard() {
+        testOrder.setStatus("producing");
+        testOrderItem.setProcessingInfo(processingInfoMap());
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
+        when(processingOrderMapper.countCompletedByOrderId("order-001", 1L)).thenReturn(0L);
+
+        assertThatThrownBy(() -> orderService.shipWithLogistics("order-001", "SF123", "顺丰"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("须先完成加工单");
+        // 守卫在流转那一步拦下 ⇒ 订单状态绝不能被改
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("发货成功：记物流（含发货人）+ 原子流转 shipped —— 一个入口两件事")
+    void shipRecordsLogisticsAndTransitionsAtomically() {
+        when(userService.resolveCurrentUserDisplayName()).thenReturn("蒋雪云");
+        testOrder.setStatus("producing");
+        testOrderItem.setProcessingInfo(new LinkedHashMap<>());   // 无加工项 ⇒ 守卫放行
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of());
+        when(orderMapper.update(any(), any())).thenReturn(1);
+
+        orderService.shipWithLogistics("order-001", "SF123456", "顺丰");
+
+        ArgumentCaptor<OrderLogistics> captor = ArgumentCaptor.forClass(OrderLogistics.class);
+        verify(orderLogisticsMapper).insert(captor.capture());
+        assertThat(captor.getValue().getTrackingNo()).isEqualTo("SF123456");
+        assertThat(captor.getValue().getLogisticsCompany()).isEqualTo("顺丰");
+        // 发货人 = 当前登录人（工人扫码端登录的就是工人本人）⇒ 必须非空
+        assertThat(captor.getValue().getShipperName()).isNotBlank();
+        // 状态真的流转了（不是只记物流）
+        verify(orderMapper).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("发货：承运商缺省时取**既有物流记录**的承运商（工人端只填单号）")
+    void shipFallsBackToExistingCarrier() {
+        // 既有记录路径**不覆盖发货人**（改单号 ≠ 换经手人）⇒ 本用例不需要 stub 当前登录人
+        testOrder.setStatus("producing");
+        testOrderItem.setProcessingInfo(new LinkedHashMap<>());
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId("order-001", 1L))
+                .thenReturn(List.of(OrderLogistics.builder()
+                        .id("log-1").tenantId(1L).orderId("order-001")
+                        .logisticsCompany("德邦").trackingNo("OLD").status("in_transit").build()));
+        when(orderMapper.update(any(), any())).thenReturn(1);
+
+        orderService.shipWithLogistics("order-001", "DB999", null);
+
+        // 既有记录被更新（不新建），承运商保留「德邦」
+        ArgumentCaptor<OrderLogistics> captor = ArgumentCaptor.forClass(OrderLogistics.class);
+        verify(orderLogisticsMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getLogisticsCompany()).isEqualTo("德邦");
+        assertThat(captor.getValue().getTrackingNo()).isEqualTo("DB999");
+    }
+
+    @Test
+    @DisplayName("发货：承运商缺省且**无既有物流** ⇒ 422 显式报缺（不静默发一个没承运商的货）")
+    void shipRejectsMissingCarrierWithoutExistingRecord() {
+        testOrder.setStatus("producing");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderLogisticsMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> orderService.shipWithLogistics("order-001", "SF1", null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("承运商");
+    }
+
+    @Test
+    @DisplayName("发货：pending / cancelled 状态不可发货（与 PUT /logistics 同一状态前置）")
+    void shipRejectsWrongOrderStatus() {
+        testOrder.setStatus("pending");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+
+        assertThatThrownBy(() -> orderService.shipWithLogistics("order-001", "SF1", "顺丰"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("仅已确认/生产中/已发货");
     }
 }

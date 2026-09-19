@@ -2027,6 +2027,59 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
+     * **发货**（issue #4347 §二.2，用户裁定「发货下放到工人扫码端」）：记录物流 + 原子流转 {@code shipped}。
+     *
+     * <p>与既有 {@code order_manage(update_logistics)} 路径**同一份实现**：本方法只是把
+     * 「{@link #upsertLogistics} → {@link #shipOrderIfApplicable}」这对组合**公开**出来，
+     * 供工人扫码端调用 —— <b>不复制第二份守卫</b>（守卫在 {@code shipOrderIfApplicable} 里，
+     * 与 {@code updateOrderStatus} 路径同源：含加工项订单必须有 completed 加工单）。</p>
+     *
+     * <p><b>为什么不能只调既有的两个管理端点</b>：{@code PUT /orders/{id}/logistics} 只记物流
+     * **不流转状态**，{@code PUT /orders/{id}/status} 只流转**不记单号** ⇒ 工人要发一次货得调两次，
+     * 中间失败就是「有单号但没发货」或「发货了没单号」的静默不一致。
+     * 发货是**一个动作**，就该是一个原子入口。</p>
+     *
+     * @param orderId          订单 UUID
+     * @param trackingNo       货运单号（**必填** —— 没有单号的「发货」在车间不可核对）
+     * @param logisticsCompany 承运商；为空则保留既有值（工人端只填单号，承运商来自客户常用物流档案）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void shipWithLogistics(String orderId, String trackingNo, String logisticsCompany) {
+        if (!StringUtils.hasText(trackingNo)) {
+            throw BusinessException.validationError("货运单号不能为空");
+        }
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        // 与 PUT /orders/{id}/logistics 同一状态前置：仅已确认/生产中/已发货可记物流
+        String status = order.getStatus();
+        if (!"shipped".equals(status) && !"confirmed".equals(status) && !"producing".equals(status)) {
+            throw BusinessException.validationError("仅已确认/生产中/已发货状态可发货，当前状态: " + status);
+        }
+        String company = StringUtils.hasText(logisticsCompany)
+                ? logisticsCompany.trim()
+                : currentLogisticsCompany(orderId);
+        if (!StringUtils.hasText(company)) {
+            throw BusinessException.validationError("承运商不能为空（客户档案未带出常用物流时需显式选择）");
+        }
+        // 记物流（发货人 = 当前登录人；工人扫码端登录的就是工人本人）
+        upsertLogistics(orderId, company, trackingNo.trim(), null);
+        // 原子流转 shipped —— **守卫在这一步内**（含加工项订单必须有 completed 加工单）
+        shipOrderIfApplicable(orderId);
+    }
+
+    /** 既有物流记录的承运商（工人端只填单号时用它兜底；无既有记录 ⇒ null）。 */
+    private String currentLogisticsCompany(String orderId) {
+        List<OrderLogistics> existing =
+                orderLogisticsMapper.selectByOrderId(orderId, TenantContext.getTenantId());
+        if (existing == null || existing.isEmpty()) {
+            return null;
+        }
+        return existing.get(0).getLogisticsCompany();
+    }
+
+    /**
      * 发货联动：confirmed/producing 状态的订单在记录物流后原子流转为 shipped。
      * 已 shipped/completed 保持原状态（仅更新物流）；pending/cancelled 不强制流转。
      */
