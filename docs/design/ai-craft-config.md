@@ -1,4 +1,8 @@
-# 工艺配置「智能化」实施设计（issue #4650）
+# 工艺配置「智能化」实施设计（服务 #4652，母单 #4650）
+
+> **实现状态：本文件只是设计。本会话不动 ai-agent，实现待排期（#4652）。**
+> 本文件**不含**任何 agent 代码改动的实施步骤为「本次已做」—— §3/§4 全部是**待排期的设计**，
+> §6.2 的用例清单也**尚未落地**（本 PR 不改 `.github/cases/**`）。
 
 > 用户裁定（2026-09-20，逐字）：
 > > 「**我要求移除条件工序规则**，这个概念我都难以理解，用户如何去理解？我们要做到**智能化的产品**，而不是旧时代配置化的产品」
@@ -8,7 +12,8 @@
 `git show origin/main:<path>` / `git grep … origin/main` 取得（**不读本地工作区**，避免读到旧快照）；
 每条都附可复现命令，附录 A 是汇总。
 
-相关：#4620（命名统一评估，其 §7 是本文件的直接上游）· #4423（母单）· #4577（加工项触发）·
+相关：**#4652（agent 侧实现单，本文件的直接服务对象）** · #4650（initiative / 母单，覆盖 4 个阶段）·
+#4620（命名统一评估，其 §7 是本文件的直接上游）· #4423（母单）· #4577（加工项触发）·
 #4616（规则创建入口）· #4587 / #4588（规则软删）· #4609（静默丢工序）· #4621 / #4622（显示名口径）·
 #4261（待客户确认项）· #4235（迁移不可变）· #4262（评测成本裁定）。
 
@@ -199,9 +204,38 @@ PYEOF
 | `打孔·布帘` | 11 | 精裁→三边→**打孔**→熨烫→定型→复烫→车被→外帘打卷→打包→外帘装袋→外帘发货 |
 | `韩褶·纱帘` | 7 | 精裁→三边→韩褶→外帘打卷→打包→外帘装袋→外帘发货（**无 上车布** —— 该规则 `position='布帘'`） |
 
+### 2.5 术语口径：本文件凡说「锚点 / 顺序」的地方，**一律按槽位口径表述**
+
+> 父 agent 同步信息（2026-09-20）：AI 的**解析与解释**要建立在「**槽位 / 派生**」语义上，
+> 而不是旧的「锚点」字段 —— 解释文案应是「因为选了韩褶 ⇒ **打褶槽**由韩褶占据 ⇒
+> 上车布排在它之后」，**不是**「锚点在韩褶之后」。槽位模型由另一份设计
+> `docs/design/operation-slot-model.md` 定义（**本文件写就时该文件尚未在 `origin/main` 上** ——
+> `git show origin/main:docs/design/operation-slot-model.md` ⇒ path does not exist ⇒ 本文按父 agent
+> 给出的口径表述，**不替它定义模型**）。
+
+**本文的三层表述分工（不许混用）**：
+
+| 层 | 口径 | 例子 |
+|---|---|---|
+| **商家可见（人话）** | **槽位** | 「打褶槽由韩褶占据 ⇒ 上车布排在它之后」 |
+| **AI 意图 / 解释对象（结构化）** | **槽位**（`slot` + 关系），**不是裸锚点** | `{"slot": "打褶槽", "slot_holder": "韩褶", "relation": "after_slot"}` |
+| **今天的实现细节（列名）** | 仍是 `after_operation` | `production_route_rules.after_operation = '韩褶'` |
+
+**为什么保留第三层**：本文是**现状实测 + 迁移设计**，必须能指到**今天真实存在的列**
+（`backend/admin-api/src/main/resources/db/migration/V71__normalize_routing_model_structure.sql:242`
+的 `production_route_rules` 建表段里的 `after_operation`）。⇒ 凡引用**列名/代码**处写
+`after_operation`；凡写**解释文案 / 意图对象 / 呈现**处写**槽位**。**阶段 4 的承载收敛
+正是把第三层也换成槽位口径**（见 §5.1 的 `slot` / `slot_holder` 列）。
+
+**实测依据（槽位口径不是新发明的概念）**：真值源里**本来就有槽位** ——
+`backend/ai-agent-service/app/production/routing.py:470` 的 `ROUTE_MAINLINE` 第 3 位是字面量
+`⟪工艺槽位⟫`，注释写「槽位 = 打褶那一道：韩褶 / 打孔 / 穿杆 / 四爪钩由 `ROUTE_RULES` 按工艺插入」。
+而 `ROUTE_MAINLINE_STEPS`（实际落库的 10 道）**不含槽位** ⇒ 今天的规则表是**用
+`after_operation` 近似表达"槽位被谁占据 + 插在它之后"**。槽位模型是把这层**显式化**。
+
 ---
 
-## 3. 阶段 2 设计：**AI 对话式改条件**（核心）
+## 3. 阶段 2 设计：**AI 对话式改条件**（核心）**（实现待排期，见 #4652）**
 
 ### 3.0 阶段 2 的前提：阶段 1 必须先落地
 
@@ -221,9 +255,20 @@ PYEOF
   "operation":     "复烫",          // 逻辑工序名
   "after_operation": null,          // insert 必填（锚点）；remove 必须为 null
   "position":      null,            // 部位限定；null = 不限
-  "priority":      null             // 缺省由后端分配（见 §3.3）
+  "priority":      null,            // 缺省由后端分配（见 §3.3）
+  "slot":          "打褶槽",         // ★ 槽位口径（§2.5）：这道工序被哪个槽位决定；null = 不在槽位上
+  "slot_holder":   "韩褶"            // ★ 该槽位今天由谁占据（槽位模型的派生结果）
 }
 ```
+
+**⚠️ `slot` / `slot_holder` 与 `after_operation` 的关系（不许混用，见 §2.5）**：
+- **`slot` / `slot_holder` = 给商家看的、AI 解释用的口径**（「打褶槽由韩褶占据」）；
+- **`after_operation` = 今天真实存在的落库列**（`POST /route-rules` 收的就是它）；
+- 二者**必须同时存在**：前者用于**呈现与解释**，后者用于**落库**。
+  **只给 `slot` 不给 `after_operation` ⇒ 落库时还得反推一次（多一层漂移点）；
+  只给 `after_operation` 不给 `slot` ⇒ 解释文案会退化成"锚点在韩褶之后"**（正是父 agent 要避免的形态）。
+- 阶段 4 承载收敛后（§5.1），`after_operation` 由 `slot` + `slot_holder` 派生 ⇒ 那时
+  **AI 侧可以只产出槽位口径**。
 
 **AI 侧的产出是「候选 + 依据」，不是「已定稿」**：
 
@@ -310,7 +355,7 @@ prompt 消费**。两个工具 + 一个复用 = 3 个工具面，够用且可测
 {"component":"confirm","title":"确认修改工艺条件",
  "fields":[
    {"label":"条件","value":"工艺 = 四爪钩"},
-   {"label":"结果","value":"不做「复烫」这道工序"},
+   {"label":"结果","value":"不做「复烫」这道工序（复烫不在槽位上，是主线自带 ⇒ 直接移除）"},
    {"label":"影响面","value":"四爪钩 目前命中 2 个部位（布帘/纱帘）；改后这些部位的工序清单各少 1 道，计件工资相应减少"},
    {"label":"来源","value":"出厂知识（内置 29 条条件）"}
  ],
@@ -366,7 +411,7 @@ prompt 消费**。两个工具 + 一个复用 = 3 个工具面，够用且可测
 
 ---
 
-## 4. 阶段 3 设计：**AI 解释工序清单由来**
+## 4. 阶段 3 设计：**AI 解释工序清单由来**（实现待排期，见 #4652）
 
 ### 4.1 核心口径：后端给结构化理由，AI 只做措辞（**不许编造**）
 
@@ -383,29 +428,40 @@ prompt 消费**。两个工具 + 一个复用 = 3 个工具面，够用且可测
     "kind": "craft",                 // 与 production_route_rules.trigger_kind 同值域
     "value": "韩褶",                  // 触发值（逐字）
     "result": "added",               // added | removed | mainline
-    "anchor": "韩褶"                  // 插入锚点（逻辑工序名）；null = 追加末尾 / 非 insert
+    "slot": "打褶槽",                 // ★ 槽位（§2.5）：这道工序由哪个槽位决定；null = 不在槽位上
+    "slot_holder": "韩褶",            // ★ 该槽位今天由谁占据（"打褶槽由韩褶占据"）
+    "after_operation": "韩褶"         // 今天真实存在的锚点列值（落库口径，§2.5 第三层）
   }
 }
 ```
 
 **「结构化理由」的四条纪律**：
 
-1. **`kind` / `value` / `anchor` 逐字取自真值源**（规则行 / 主线），**不是 AI 生成的**；
+1. **`kind` / `value` / `slot` / `slot_holder` / `after_operation` 逐字取自真值源**（规则行 / 主线），**不是 AI 生成的**；
 2. **`result` 是三值枚举**，不是自由文本：`added`（被规则插入）/ `removed`（被规则移除，
    这类工序**不在**清单里，只在「被滤掉」视图出现）/ `mainline`（主线自带，无条件）；
-3. **AI 只把 `reason` 措辞成人话**，且**必须逐字包含 `value` 与 `anchor`**（可测断言，§6.3）；
+3. **AI 只把 `reason` 措辞成人话**，且**必须逐字包含 `value` 与 `slot_holder`**（可测断言，§6.3）；
 4. **`reason` 缺失（`null`）⇒ AI 必须说「这单是历史数据，没有记录原因」，不许推断**
    （见 §4.3）。
 
 **人话模板（AI 的措辞约束）**：
 
 ```
-kind=craft   + value=韩褶   + result=added + anchor=韩褶   → 「因为选了韩褶 ⇒ 加了上车布（插在韩褶之后）」
-kind=craft   + value=四爪钩 + result=removed               → 「因为选了四爪钩 ⇒ 不做定型」
-kind=option  + value=拼2次  + result=added + anchor=三边   → 「因为勾了『拼2次』⇒ 加了拼2次（插在三边之后）」
-kind=processing_item + value=花边 + result=added + anchor=三边 → 「因为这单带了加工项『花边』⇒ 加了花边（插在三边之后）」
-result=mainline                                            → 「这是工艺路线的主线工序，不需要条件」
+kind=craft   + value=韩褶   + result=added + slot=打褶槽 + slot_holder=韩褶
+  → 「因为选了韩褶 ⇒ **打褶槽由韩褶占据** ⇒ 上车布排在它之后」
+kind=craft   + value=四爪钩 + result=removed
+  → 「因为选了四爪钩 ⇒ 不做定型」（定型不在槽位上 ⇒ 直接移除）
+kind=option  + value=拼2次  + result=added + after_operation=三边
+  → 「因为勾了『拼2次』⇒ 拼1次/2次/3次 这一族排在 三边 之后」
+kind=processing_item + value=花边 + result=added + after_operation=三边
+  → 「因为这单带了加工项『花边』⇒ 花边排在 三边 之后」
+result=mainline
+  → 「这是工艺路线的主线工序，不需要条件」
 ```
+
+> ⚠️ **表述纪律（父 agent 同步信息 1）**：凡解释**「为什么排在这里」**，一律说
+> 「**〈槽位〉由〈触发值〉占据 ⇒ 〈工序〉排在它之后**」；**不许**写成「锚点在韩褶之后」。
+> 锚点（`after_operation`）是**落库列名**，不是给商家看的语言。
 
 ### 4.2 落在哪：前端落点
 
@@ -422,6 +478,9 @@ result=mainline                                            → 「这是工艺�
 数据来自同一份 `reason`（`result="removed"`）。**它不进工序清单**（清单不变），只在展开区出现。
 
 ### 4.3 与「快照名」红线的关系（历史加工单的解释必须对上**当时的**快照）
+
+> **槽位口径同样受本条约束**：`reason.slot` / `reason.slot_holder` 与 `reason.after_operation`
+> 一样是**当时**的证据，必须**落库时冻结**（见下）。
 
 **两条既有的、不得违反的裁定**：
 
@@ -457,7 +516,7 @@ result=mainline                                            → 「这是工艺�
 
 ---
 
-## 5. 阶段 4 设计：**承载收敛**（条件真正落到工序）
+## 5. 阶段 4 设计：**承载收敛**（条件真正落到工序）**（实现待排期；§5.4 的语义收敛是它的前置）**
 
 ### 5.1 工序侧需要哪些列
 
@@ -474,6 +533,8 @@ CREATE TABLE production_operation_conditions (
     trigger_value   VARCHAR(64) NOT NULL,
     action          VARCHAR(16) NOT NULL CHECK (action IN ('insert','remove')),
     after_operation VARCHAR(64),            -- ★★ 必须含「插入锚点」（技术必需项，见 §2.4）
+    slot            VARCHAR(32),            -- ★ 槽位名（§2.5 槽位口径）；null = 不在槽位上
+    slot_holder     VARCHAR(64),            -- ★ 该槽位由谁占据（派生结果，槽位模型定义）
     priority        INTEGER NOT NULL DEFAULT 100,
     status          VARCHAR(16) NOT NULL DEFAULT 'active',
     ...
@@ -500,6 +561,13 @@ CREATE TABLE production_operation_conditions (
 **🔴 `after_operation` 必须随条件一起搬**（技术必需项，不是可选项）：
 实测（§2.4）`上车布` 在 `韩褶` 条件下插在 `韩褶` 之后、在 `四爪钩` 条件下插在 `三边` 之后。
 **若把两条条件合并成"上车布的适用条件"而丢掉锚点 ⇒ 两条条件落到同一位置 ⇒ 车间按错顺序干。**
+
+**🔴 并且阶段 4 要把这层锚点「槽位化」**（§2.5）：`after_operation` 是**今天的近似表达**
+（「插在谁之后」），而真值源里本来就有槽位（`backend/ai-agent-service/app/production/routing.py:470`
+的 `ROUTE_MAINLINE` 第 3 位 `⟪工艺槽位⟫`）⇒ 新表**同时**带 `slot` / `slot_holder`
+（**呈现与解释口径**）与 `after_operation`（**落库与兼容口径**），二者由槽位模型定义派生关系。
+**槽位模型由 `docs/design/operation-slot-model.md` 定义（本文件写就时该文件尚未在 `origin/main` 上）；
+本文不替它定义，只登记"新表必须能承载槽位"这一约束。**
 
 ### 5.2 `processing_item` 第三条路怎么收
 
@@ -628,7 +696,7 @@ git show origin/main:backend/admin-api/src/main/resources/db/migration/V84__seed
 
 ---
 
-## 6. 与 AI 相关的评测与纪律
+## 6. 与 AI 相关的评测与纪律（**本 PR 未落地任何用例**；清单见 §6.2，实现待排期 #4652）
 
 ### 6.1 默认不跑真实 LLM 评测（#4262 裁定，**本条优先于 §14**）
 
@@ -676,7 +744,7 @@ backend/ai-agent-service/.venv/bin/python tests/agent_eval/local_runner.py smoke
 | # | 断言 | 形态 | **红证思路** |
 |---|---|---|---|
 | A1 | **意图解析正确性**：输入「我们家的四爪钩不做复烫」⇒ `intent = {trigger_kind:"craft", trigger_value:"四爪钩", action:"remove", operation:"复烫", after_operation:null}` | 结构化 `output_verify`（逐字段比对） | 改前：把 `remove` 的 `after_operation` 填成 `"复烫"`（模型常见错）⇒ 字段比对红；或把 `operation` 填成 `四爪钩` ⇒ 红 |
-| A2 | **锚点不丢**：输入「韩褶的时候加一道上车布」⇒ `after_operation == "韩褶"` | 结构化 `output_verify` | 改前：模型给 `after_operation: null`（"追加末尾"）⇒ 红。**这条是 §2.4 的锚点差异在 AI 侧的直接投影** |
+| A2 | **槽位不丢**：输入「韩褶的时候加一道上车布」⇒ `slot == "打褶槽"` ∧ `slot_holder == "韩褶"` ∧ `after_operation == "韩褶"` | 结构化 `output_verify` | 改前：模型给 `after_operation: null`（"追加末尾"）⇒ 红。**这条是 §2.4 的锚点差异在 AI 侧的直接投影，也是 §2.5 槽位口径的落点** |
 | A3 | **歧义不出卡**：输入「那个烫的别做了」⇒ `interact` **未被调用** + 输出含追问 | `order_before` + `forbidden_text` | 改前：模型猜一个工序直接出确认卡 ⇒ `interact` 被调用 ⇒ 红 |
 | A4 | **越权拒绝**：C 端会话（`role=customer`）请求改工艺条件 ⇒ 无写工具调用 + 拒绝话术 | `forbidden_text` + 工具调用断言 | 改前：工具 `allowed_roles` 没排除 customer ⇒ 工具被调用 ⇒ 红 |
 | A5 | **跨租户拒绝**：租户 A 的会话请求删租户 B 的规则 id ⇒ admin-api 404 + AI 如实转述 | `db_verify`（B 的规则仍在）+ `forbidden_text` | 改前：若 AI 侧自己按 id 查而不带租户 ⇒ 可能命中 B ⇒ `db_verify` 红 |
@@ -710,6 +778,7 @@ python3 .github/llm_sink_check.py --issue <红例 issue 号>   # 0 = 已下沉 /
 | # | 不做 | 为什么 |
 |---|---|---|
 | N1 | **不做「AI 自动改配置」** | 用户裁定「AI 只建议、不静默改」（issue 纪律段）。AI 的工具集里**没有任何写工具**（§3.5 约束 1） |
+| N1′ | **本会话不做任何 agent 实现** | 用户裁定「**agent 的改动先记成 issue，本会话先不动工**」（2026-09-20）⇒ 实现登记在 **#4652**，本文件只交设计 |
 | N2 | **不含 agent 的其它行为改造** | 本单只做「工艺配置」这一件事。prompt 的其它段落、其它工具、引导流程**一律不动** |
 | N3 | **不含与本次无关的重构** | 例：`buildRoute` 与 `insertConditionalOperations` 的语义收敛（§5.4）**是阶段 4 的前置**，属阶段 4，**不在阶段 1/2/3 里顺手做** |
 | N4 | **不改对客单价链路**（`PUT /route-rules/{id}/customer-unit-price`） | 「两套账不互读」是既有硬边界（`backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java:436` 的 `TRIGGER_KINDS` 校验：非 `option` 带价 ⇒ 422）；本单只碰**工序编排**那一套账 |
@@ -741,6 +810,8 @@ python3 .github/llm_sink_check.py --issue <红例 issue 号>   # 0 = 已下沉 /
 | F11 | issue 验收判据「条件仍可编辑（增/删），落库走现有规则写面」 | ✅ 可行，但**「增」有一个既有护栏要注意**：`remove` 不接受锚点（`backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java:471` 的 `after_operation` 校验）⇒ AI 的意图对象在 `action=remove` 时 `after_operation` 必须为 `null`，否则 422 | §3.1 / §3.2 |
 | F12 | issue 说「29 条内置条件成为出厂知识，默认正确、商家零配置」 | ⚠️ 措辞要收窄：**「默认存在且默认正确」成立**（29 行已在种子/DB 里）；但「出厂知识」若被读成「AI 自动生成新条件」则**不成立**（§7 N1 不做） | §1 已加限定段 |
 
+| F13 | issue #4652 给的解释形状是 `{因为:{kind:'craft', value:'韩褶'}, 结果:'加了 上车布', 位置:'**打褶槽之后**'}` | 今天 `production_route_rules` **没有槽位列**（只有 `after_operation` 锚点列）；真值源 `ROUTE_MAINLINE` 里**有** `⟪工艺槽位⟫` 占位但**不落库**（`ROUTE_MAINLINE_STEPS` 不含它） | §2.5 定三层口径；§5.1 新表**必须**同时带 `slot` / `slot_holder` 与 `after_operation` |
+
 ### 8.2 无法判定（**不猜**）
 
 | # | 事项 | 为什么无法判定 | 谁/什么能判定 |
@@ -753,6 +824,7 @@ python3 .github/llm_sink_check.py --issue <红例 issue 号>   # 0 = 已下沉 /
 | U6 | **「一个完整计费周期」的确切长度**（§5.6 退场判据） | 「30 天」是本文件的**建议值**，不是实测约束 | 运营裁定 |
 | U7 | **`buildRoute` docstring 的「唯一 Java 实现」是笔误还是设计意图** | 静态可判「与实测不符」（F5），但**无法判定作者本意** | 作者 / issue 回溯 |
 | U8 | **AI 侧 `confidence` 的判定标准** | 本文件给了三值枚举（high/medium/low），但**阈值口径**依赖模型能力实测 | 实现后实测（**且默认不跑 LLM，需用户显式要求**） |
+| U9 | **槽位模型的确切定义**（有哪些槽、`slot_holder` 如何派生、与 `after_operation` 的换算规则） | 定义权在 `docs/design/operation-slot-model.md`（**本文件写就时尚未在 `origin/main` 上** ⇒ 无法引用其内容）。本文只按父 agent 给出的口径**表述**，**不替它定义** | 该设计落地后，§4.1 / §5.1 的 `slot` / `slot_holder` 需按它**回填确切值域** |
 
 ---
 
