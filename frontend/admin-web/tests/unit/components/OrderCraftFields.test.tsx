@@ -1,19 +1,26 @@
-// case_ids: OR-035
+// case_ids: OR-035, OR-038
 // 原声明 `OR-009, UI-038` 是**借用式**（issue #4431 B7 核实并替换）：OR-009 是下单全流程、
 // UI-038 是「新增订单表单选择已有客户回填收货信息」—— 两条都不覆盖本文件被测行为（录入控件）。
 // 改用 **OR-035**（本 PR 新增，判据即本文件 + order-craft-fields.test.ts + craft-calc-defaults.test.ts）。
+// OR-038（issue #4521 新增）：**移除部位字段** + **纱帘子块**（与配布边逐字同构）。
 /**
  * 下单页工艺规格**录入控件**（issue #4375 包 4b · 设计文档 §4.6 入口 2）。
  *
- * 判据聚焦「录入 → 回调」的确定性行为（缺值不写、显式「否」是真值、拼色才出配布边）。
+ * 判据聚焦「录入 → 回调」的确定性行为（缺值不写、显式「否」是真值、拼色才出配布边、
+ * 带纱帘才出纱帘米数/单价）。
  *
- * ── issue #4489：下拉 → chips（一击即中）+ 部位联动定型默认 ──────────────────────
- * 定位方式随之从 `getByLabelText('部位')`（`<select>`）改为
- * `getByRole('radiogroup', { name: '部位' })` + `getByRole('radio', { name: '纱帘' })`。
+ * ── issue #4489：下拉 → chips（一击即中）──────────────────────────────────────
  * **断言强度不降**：原先逐字比对 `options.map(o => o.value)` 的判据，改为逐字比对
  * **每个 chip 的可见文案**（`getAllByRole('radio').map(r => r.textContent)`）；
  * 原先 `fireEvent.change(select, {value})` 的判据，改为**一次点击** chip 后断言 patch
- * （点击即选中 —— 这正是本单要的「一击即中」，比「展开→选」两步更强）。
+ * （点击即选中 —— 这正是「一击即中」，比「展开→选」两步更强）。
+ *
+ * ── issue #4521：**移除「部位」** + 纱帘子块 ──────────────────────────────────
+ * ① 「部位」chips 整体消失（红证：修复前 `getByRole('radiogroup', {name:'部位'})` 存在）；
+ * ② 「是否定型」的行业默认改由**帘体**结构决定（页面侧写回）⇒ 本组不再有部位联动判据，
+ *    改为判「改定型只 patch isShaped 一个键」；
+ * ③ 新增**纱帘子块**判据：`sheer=false` 不出现；`sheer=true` 出「纱帘米数 / 纱帘单价」，
+ *    米数默认 = 主布米数、可改、带来源留痕 —— 与「配布边」逐字同构。
  */
 import { useState } from 'react'
 import { describe, it, expect, vi } from 'vitest'
@@ -25,12 +32,18 @@ import { SPECIAL_OPTIONS, type CraftSpecInput } from '@/lib/order-craft-fields'
 function Harness({
   initial = {},
   mainMeters = 3,
+  sheer = false,
+  sheerMeters = null,
+  sheerUnitPrice = null,
   edgeMeters = null,
   edgeUnitPrice = null,
   onChangeSpy,
 }: {
   initial?: CraftSpecInput
   mainMeters?: number
+  sheer?: boolean
+  sheerMeters?: number | null
+  sheerUnitPrice?: number | null
   edgeMeters?: number | null
   edgeUnitPrice?: number | null
   onChangeSpy?: (patch: Partial<CraftSpecInput>) => void
@@ -38,6 +51,8 @@ function Harness({
   const [value, setValue] = useState<CraftSpecInput>(initial)
   const [edge, setEdge] = useState<number | null>(edgeMeters)
   const [price, setPrice] = useState<number | null>(edgeUnitPrice)
+  const [sMeters, setSMeters] = useState<number | null>(sheerMeters)
+  const [sPrice, setSPrice] = useState<number | null>(sheerUnitPrice)
   return (
     <OrderCraftFields
       value={value}
@@ -46,6 +61,11 @@ function Harness({
         setValue((prev) => ({ ...prev, ...patch }))
       }}
       mainMeters={mainMeters}
+      sheer={sheer}
+      sheerMeters={sMeters}
+      onSheerMetersChange={setSMeters}
+      sheerUnitPrice={sPrice}
+      onSheerUnitPriceChange={setSPrice}
       edgeMeters={edge}
       onEdgeMetersChange={setEdge}
       edgeUnitPrice={price}
@@ -67,41 +87,35 @@ const chipLabels = (group: string) =>
     .map((el) => el.textContent)
 
 describe('OrderCraftFields', () => {
-  it('渲染 §4.2 的八个工艺控件（部位/工艺/加工类型/打开方式/是否定型/款式/褶距/是否对花）', () => {
+  it('渲染 §4.2 的七个工艺控件（工艺/加工类型/打开方式/是否定型/款式/褶距/是否对花）', () => {
     render(<Harness />)
-    // 七个枚举字段 = chips 组（一击即中）；褶距仍是数值输入
-    for (const name of [
-      '部位',
-      '工艺',
-      '加工类型',
-      '打开方式',
-      '是否定型',
-      '款式',
-      '是否对花',
-    ]) {
+    // 六个枚举字段 = chips 组（一击即中）；褶距仍是数值输入
+    for (const name of ['工艺', '加工类型', '打开方式', '是否定型', '款式', '是否对花']) {
       expect(chipGroup(name)).toBeInTheDocument()
     }
     expect(screen.getByLabelText('褶距')).toBeInTheDocument()
   })
 
-  // issue #4489 判据「8 个字段全部可见且**一击可选**」：
+  // issue #4521 红证：修复前这里有 `radiogroup name="部位"`（布帘/纱帘/帘头 chips）。
+  // 部位已由**帘体**（商品组级）承载 ⇒ 本组件再出现部位 = 商家能选出与帘体矛盾的部位。
+  it('#4521 **不再有**「部位」字段（红证：修复前 radiogroup name=部位 存在）', () => {
+    render(<Harness />)
+    expect(screen.queryByRole('radiogroup', { name: '部位' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: '帘头' })).toBeNull()
+  })
+
+  // issue #4489 判据「枚举字段全部可见且**一击可选**」：
   // 红证 = 修复前是 `<select>`（无 radiogroup/radio 角色）⇒ 本判据必红；
   // 且「一击」是实质断言：**一次点击**即 `aria-checked=true`，不需要先「展开」。
   it('#4489 枚举字段一击即中：点一下 chip 就选中（无需先展开下拉）', () => {
     render(<Harness />)
-    expect(chip('部位', '纱帘')).toHaveAttribute('aria-checked', 'false')
-    fireEvent.click(chip('部位', '纱帘'))
-    expect(chip('部位', '纱帘')).toHaveAttribute('aria-checked', 'true')
-    expect(chip('部位', '未指定')).toHaveAttribute('aria-checked', 'false')
+    expect(chip('工艺', '打孔')).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(chip('工艺', '打孔'))
+    expect(chip('工艺', '打孔')).toHaveAttribute('aria-checked', 'true')
+    expect(chip('工艺', '未指定')).toHaveAttribute('aria-checked', 'false')
   })
 
   // 19 项特殊选项的判据已迁到 `OrderSpecialOptions.test.tsx`（issue #4511 组件抽离）。
-  it('部位 chips 的候选逐字 = 布帘/纱帘/帘头（错值会让加工单取错工序路线）', () => {
-    render(<Harness />)
-    // 逐字相等（含「未指定」档）—— 少一项 / 多一项 / 改一个字都会红
-    expect(chipLabels('部位')).toEqual(['未指定', '布帘', '纱帘', '帘头'])
-  })
-
   it('工艺 chips 的候选逐字 = 韩褶/打孔/四爪钩/穿杆/平幔', () => {
     render(<Harness />)
     expect(chipLabels('工艺')).toEqual(['未指定', '韩褶', '打孔', '四爪钩', '穿杆', '平幔'])
@@ -113,13 +127,10 @@ describe('OrderCraftFields', () => {
     expect(chipLabels('款式')).toEqual(['未指定', '单色', '拼色'])
   })
 
-  it('选部位/工艺 ⇒ onChange 收到 camelCase patch（部位联动定型见 #4489 判据）', () => {
+  it('选工艺 ⇒ onChange 收到 camelCase patch', () => {
     const spy = vi.fn()
     render(<Harness onChangeSpy={spy} />)
-    fireEvent.click(chip('部位', '纱帘'))
     fireEvent.click(chip('工艺', '打孔'))
-    // 部位=纱帘 同时带出联动默认 isShaped=false（真值源见组件内注释）—— 一次 patch，不分两次写
-    expect(spy).toHaveBeenCalledWith({ curtainType: '纱帘', isShaped: false })
     expect(spy).toHaveBeenCalledWith({ craft: '打孔' })
   })
 
@@ -236,88 +247,56 @@ describe('OrderCraftFields', () => {
     expect(inputByName('配布边米数')).toHaveValue(3)
   })
 
-  // ── issue #4489 判据 2：部位 → 是否定型 的联动默认 ────────────────────────────
-  // 真值源：`curtain_checklist.py` 的 `is_shaped.default_rule = curtain_type`
-  // （note 原文「布帘默认是/纱帘默认否/帘头是」）+ `curtain-fabric-quote-rules.md` §10。
-  // 红证：修复前无联动（改部位只 patch curtainType）⇒ 本组判据必红。
-  it('#4489 选「纱帘」⇒ 是否定型自动置「否」（同一 patch，UI 同步选中）', () => {
+  // ── issue #4521：部位联动**已移除**，定型默认改由帘体结构决定 ────────────────────
+  //
+  // 原 #4489 的「选部位 ⇒ 是否定型联动」判据整体作废（部位字段已不存在）。同一份真值源
+  // （布帘默认是 / 纱帘否）现在由**帘体**驱动，落点在页面侧（`defaultIsShapedForBody`）
+  // 与 `order-craft-fields.test.ts` 的纯函数判据 ⇒ 本组件只剩一条：改定型只 patch 一个键。
+  it('#4521 改「是否定型」只 patch isShaped 一个键（不再带出部位联动）', () => {
     const spy = vi.fn()
     render(<Harness onChangeSpy={spy} />)
-    fireEvent.click(chip('部位', '纱帘'))
-    expect(spy).toHaveBeenCalledWith({ curtainType: '纱帘', isShaped: false })
-    expect(chip('是否定型', '否')).toHaveAttribute('aria-checked', 'true')
-  })
-
-  it('#4489 选「布帘」⇒ 是否定型自动置「是」', () => {
-    const spy = vi.fn()
-    render(<Harness onChangeSpy={spy} />)
-    fireEvent.click(chip('部位', '布帘'))
-    expect(spy).toHaveBeenCalledWith({ curtainType: '布帘', isShaped: true })
-    expect(chip('是否定型', '是')).toHaveAttribute('aria-checked', 'true')
-  })
-
-  it('#4489 选「帘头」⇒ 是否定型自动置「是」（同一条 default_rule 的第三档）', () => {
-    const spy = vi.fn()
-    render(<Harness onChangeSpy={spy} />)
-    fireEvent.click(chip('部位', '帘头'))
-    expect(spy).toHaveBeenCalledWith({ curtainType: '帘头', isShaped: true })
-  })
-
-  it('#4489 改部位不影响「是否对花」（联动只覆盖 isShaped 一个键）', () => {
-    const spy = vi.fn()
-    render(<Harness onChangeSpy={spy} />)
-    fireEvent.click(chip('部位', '纱帘'))
+    fireEvent.click(chip('是否定型', '否'))
     expect(spy).toHaveBeenCalledTimes(1)
-    expect(spy.mock.calls[0][0]).not.toHaveProperty('hasPattern')
+    expect(spy.mock.calls[0][0]).toEqual({ isShaped: false })
   })
 
-  // ── issue #4489 判据 3：手改留痕（同 #4434 纪律）──────────────────────────────
-  // 手改过的值只能由用户显式改回 —— 再改部位**不得覆盖**。
-  it('#4489 手改成「是」后再改部位=纱帘 ⇒ 不被覆盖（仍是「是」）', () => {
-    const spy = vi.fn()
-    render(<Harness onChangeSpy={spy} />)
-    fireEvent.click(chip('是否定型', '是'))
-    spy.mockClear()
-    fireEvent.click(chip('部位', '纱帘'))
-    expect(spy).toHaveBeenCalledWith({ curtainType: '纱帘' })
-    expect(chip('是否定型', '是')).toHaveAttribute('aria-checked', 'true')
-    expect(chip('是否定型', '否')).toHaveAttribute('aria-checked', 'false')
+  // ── issue #4521：纱帘子块（用户口径「带纱帘就像配布边一样，让用户输入米数和单价」）────
+  it('#4521 帘体不含纱帘 ⇒ 不出现纱帘录入', () => {
+    render(<Harness sheer={false} />)
+    expect(screen.queryByLabelText('纱帘米数')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('纱帘单价')).not.toBeInTheDocument()
   })
 
-  // 最容易被写错的一档：手改**回「未指定」**也算手改 —— 若把「未指定」当成「没改过」，
-  // 下游就会把「商家明确说不问」重新变成「纱帘默认否」。
-  it('#4489 手改回「未指定」后再改部位=布帘 ⇒ 不被覆盖（仍是「未指定」）', () => {
-    const spy = vi.fn()
-    render(<Harness initial={{ isShaped: true }} onChangeSpy={spy} />)
-    fireEvent.click(chip('是否定型', '未指定'))
-    spy.mockClear()
-    fireEvent.click(chip('部位', '布帘'))
-    expect(spy).toHaveBeenCalledWith({ curtainType: '布帘' })
-    expect(chip('是否定型', '未指定')).toHaveAttribute('aria-checked', 'true')
+  it('#4521 帘体含纱帘 ⇒ 出现纱帘米数（默认显示主布米数）与纱帘单价', () => {
+    render(<Harness sheer mainMeters={3} />)
+    expect(inputByName('纱帘米数')).toHaveValue(3)
+    expect(inputByName('纱帘单价')).toHaveValue(null)
+    expect(screen.getByText(/默认 = 主布米数/)).toBeInTheDocument()
   })
 
-  it('#4489 带既有 isShaped 值进入（编辑存量行）⇒ 改部位不覆盖既有真值', () => {
-    const spy = vi.fn()
-    render(<Harness initial={{ isShaped: false }} onChangeSpy={spy} />)
-    fireEvent.click(chip('部位', '布帘'))
-    expect(spy).toHaveBeenCalledWith({ curtainType: '布帘' })
-    expect(chip('是否定型', '否')).toHaveAttribute('aria-checked', 'true')
+  it('#4521 纱帘米数可编辑 ⇒ 回调收到新米数', () => {
+    render(<Harness sheer mainMeters={3} />)
+    fireEvent.change(inputByName('纱帘米数'), { target: { value: '4.5' } })
+    expect(inputByName('纱帘米数')).toHaveValue(4.5)
   })
 
-  it('#4489 未手改时连续改部位 ⇒ 联动跟着走（纱帘→否，布帘→是）', () => {
-    render(<Harness />)
-    fireEvent.click(chip('部位', '纱帘'))
-    expect(chip('是否定型', '否')).toHaveAttribute('aria-checked', 'true')
-    fireEvent.click(chip('部位', '布帘'))
-    expect(chip('是否定型', '是')).toHaveAttribute('aria-checked', 'true')
+  it('#4521 纱帘米数来源：未改过「跟随主布」/ 改过「人工指定」/ 清空回到跟随', () => {
+    render(<Harness sheer mainMeters={3} />)
+    expect(screen.getByText('纱帘米数来源：跟随主布')).toBeInTheDocument()
+    fireEvent.change(inputByName('纱帘米数'), { target: { value: '4.5' } })
+    expect(screen.getByText('纱帘米数来源：人工指定')).toBeInTheDocument()
+    fireEvent.change(inputByName('纱帘米数'), { target: { value: '' } })
+    expect(screen.getByText('纱帘米数来源：跟随主布')).toBeInTheDocument()
+    expect(inputByName('纱帘米数')).toHaveValue(3)
   })
 
-  it('#4489 部位回到「未指定」⇒ 不动已联动的 isShaped（不删商家已见到的真值）', () => {
-    const spy = vi.fn()
-    render(<Harness onChangeSpy={spy} />)
-    fireEvent.click(chip('部位', '纱帘'))
-    spy.mockClear()
-    fireEvent.click(chip('部位', '未指定'))
-    expect(spy).toHaveBeenCalledWith({ curtainType: undefined })
+  it('#4521 纱帘与配布边**互不串**：只带纱帘时配布边不出现，反之亦然', () => {
+    const { unmount } = render(<Harness sheer mainMeters={3} />)
+    expect(screen.queryByLabelText('配布边米数')).not.toBeInTheDocument()
+    unmount()
+    render(<Harness mainMeters={3} />)
+    fireEvent.click(chip('款式', '拼色'))
+    expect(screen.queryByLabelText('纱帘米数')).not.toBeInTheDocument()
+    expect(inputByName('配布边米数')).toHaveValue(3)
   })
 })

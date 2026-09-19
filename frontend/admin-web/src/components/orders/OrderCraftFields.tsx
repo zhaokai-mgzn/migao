@@ -4,8 +4,8 @@
  * 下单页「工艺规格」录入区（issue #4375 包 4b · 设计文档 §4.6 入口 2）。
  *
  * 商家手工录单是布艺商家的主路径（行业 ERP 的订单录入页就是这一页）——
- * 本组件把这页此前**一个都不写**的工艺参数变成可录入项（部位/工艺/加工类型/打开方式/
- * 是否定型/款式/褶距/是否对花）。
+ * 本组件把这页此前**一个都不写**的工艺参数变成可录入项（工艺/加工类型/打开方式/
+ * 是否定型/款式/褶距/是否对花 + 纱帘 / 拼色配布边两个**选配子块**）。
  *
  * ⚠️ **19 项部位级特殊选项已迁出**（issue #4511）：用户口径「加工项 - 工艺规格 - 特殊选项
  * 都放到**平级**」⇒ 它现在由 `OrderExtraOptions` 渲染、由页面侧的**向导步骤**包壳。
@@ -28,19 +28,26 @@
  *
  * 病根：8 个字段都是**下拉** ⇒ 每个都要「点开 → 点选项」两步（最多 16 次点击）。
  * ① 枚举字段改 **chips**（一击即中，省掉「展开」那一步）；三态字段用**三段分段按钮**，
- *    「未指定」档保留（三态硬约束不变）；
- * ② 部位 → 是否定型 的**联动默认**（真值源见 `IS_SHAPED_DEFAULT_BY_CURTAIN_TYPE`）；
- * ③ **手改留痕**：手改过的「是否定型」不再被部位联动覆盖（同 #4434 纪律）。
+ *    「未指定」档保留（三态硬约束不变）。
  *
- * ⚠️ **落库一字未动**：chips 与下拉写的是**同一份** `CraftSpecInput` 键，
- * `lib/order-craft-fields.ts` 的 `buildCraftSpec` 不因本改造改一个字符。
+ * ── 移除「部位」+ 纱帘选配（issue #4521，用户 2026-09-19 裁定）────────────────────
+ *
+ * 「尺寸数量 / 工艺规格 / 加工项 / 特殊选项都是跟着商品基础属性走的，**部位只决定商品实际
+ * 用料米数**……不如把纱帘的设计参考拼色那样的交互，**移除部位功能，其实完全不需要**」
+ * 「相当于参考款式一样，在工艺规格中增加一个纱帘选项，如果**带纱帘就像配布边一样，
+ * 让用户输入米数和单价**」。
+ *
+ * ① **部位字段整体移除** —— 主帘缺省即布帘；纱帘由页面侧的**帘体**选择 + 纱帘行承载；
+ * ② **纱帘子块**（`sheer`）= 与「双拼·配布边」逐字同构：米数（默认 = 主布米数，可改，带来源）
+ *    + 单价（不填不生成纱帘明细行 —— 后端单价必须 > 0，不凭空造价）；
+ * ③ 「是否定型」的行业默认**改由帘体结构决定**（`defaultIsShapedForBody`，页面侧写回），
+ *    不再是本组件里的部位联动 —— 同一份真值源（布帘是 / 纱帘否），触发方式从交互变结构。
  */
 
-import { useId, useState } from 'react'
+import { useId } from 'react'
 import { Settings2 } from 'lucide-react'
 import {
   CRAFT_OPTIONS,
-  CURTAIN_TYPE_OPTIONS,
   CUTTING_MODE_OPTIONS,
   METERS_SOURCE_FOLLOW,
   METERS_SOURCE_MANUAL,
@@ -127,29 +134,21 @@ function ChipGroup<T>({
   )
 }
 
-/**
- * 部位 → 是否定型 的**联动默认档**（issue #4489）。
- *
- * 真值源（不是我发明的）：`backend/ai-agent-service/app/clarification/curtain_checklist.py`
- * 的 `is_shaped.default_rule = curtain_type`，note 原文
- * 「布帘默认是/纱帘默认否/帘头是（面料红线：真丝等不耐高温须不定型）」；
- * `docs/curtain-fabric-quote-rules.md` §10 同口径。
- *
- * 表外的部位取值（如将来新增）⇒ **不猜**：不给默认（`undefined`），商家自己选。
- */
-const IS_SHAPED_DEFAULT_BY_CURTAIN_TYPE: Record<string, boolean> = {
-  布帘: true,
-  纱帘: false,
-  帘头: true,
-}
-
 export interface OrderCraftFieldsProps {
   /** 当前录入值（未填的键缺省 ⇒ 不落库） */
   value: CraftSpecInput
   /** 局部更新（只合并传入的键） */
   onChange: (patch: Partial<CraftSpecInput>) => void
-  /** 主布米数（= 该行数量）；拼色时作为配布边米数的默认值 */
+  /** 主布米数（= 该行数量）；纱帘 / 配布边米数的默认值都取它 */
   mainMeters: number
+  /** 帘体是否含纱帘（issue #4521）—— 含 ⇒ 出「纱帘米数 / 纱帘单价」子块 */
+  sheer: boolean
+  /** 纱帘米数；`null` = 未改过（跟随主布米数） */
+  sheerMeters: number | null
+  onSheerMetersChange: (meters: number | null) => void
+  /** 纱帘单价；`null` = 未填（不生成纱帘明细行 —— 后端单价必须 > 0，不凭空造价） */
+  sheerUnitPrice: number | null
+  onSheerUnitPriceChange: (price: number | null) => void
   /** 配布边米数；`null` = 未改过（跟随主布） */
   edgeMeters: number | null
   onEdgeMetersChange: (meters: number | null) => void
@@ -162,6 +161,11 @@ export default function OrderCraftFields({
   value,
   onChange,
   mainMeters,
+  sheer,
+  sheerMeters,
+  onSheerMetersChange,
+  sheerUnitPrice,
+  onSheerUnitPriceChange,
   edgeMeters,
   onEdgeMetersChange,
   edgeUnitPrice,
@@ -181,30 +185,10 @@ export default function OrderCraftFields({
     'w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15'
 
   const isMixed = value.style === STYLE_MIXED
-  const metersSource = edgeMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
+  const edgeSource = edgeMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
   const effectiveEdgeMeters = edgeMeters ?? (Number(mainMeters) || 0)
-
-  /**
-   * 「是否定型」是否已被**用户/上游**定过（手改留痕，同 #4434）——
-   * 定过 ⇒ 改部位**不得**覆盖它（手改过的值只能由用户显式改回）。
-   *
-   * 初值取 `value.isShaped !== undefined`：编辑存量行时该值也是**已定的真值**，
-   * 不能因为「不是本次会话点的」就被部位联动冲掉。
-   */
-  const [isShapedTouched, setIsShapedTouched] = useState(value.isShaped !== undefined)
-
-  const changeCurtainType = (next: string | undefined) => {
-    const patch: Partial<CraftSpecInput> = { curtainType: next }
-    // 联动只在「没被定过」时生效；部位回到「未指定」⇒ 不动已联动的值（不删商家已见到的真值）
-    const linked = next === undefined ? undefined : IS_SHAPED_DEFAULT_BY_CURTAIN_TYPE[next]
-    if (!isShapedTouched && linked !== undefined) patch.isShaped = linked
-    onChange(patch)
-  }
-
-  const changeIsShaped = (next: boolean | undefined) => {
-    setIsShapedTouched(true)
-    onChange({ isShaped: next })
-  }
+  const sheerSource = sheerMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
+  const effectiveSheerMeters = sheerMeters ?? (Number(mainMeters) || 0)
 
   return (
     <div>
@@ -216,14 +200,9 @@ export default function OrderCraftFields({
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* 选部位会带出「是否定型」的行业默认（布帘是 / 纱帘否），手改过就不再覆盖 */}
-        <ChipGroup
-          label="部位"
-          options={toChipOptions(CURTAIN_TYPE_OPTIONS)}
-          value={value.curtainType}
-          onChange={changeCurtainType}
-        />
-
+        {/* ⚠️ 「部位」字段已移除（issue #4521，用户裁定「移除部位功能，其实完全不需要」）：
+            主帘缺省即布帘；纱帘由页面侧的**帘体**选择承载（`curtainBody`）——
+            这里再放一个部位下拉 = 让商家能选出一个与帘体矛盾的部位（两条真值打架）。 */}
         <ChipGroup
           label="工艺"
           options={toChipOptions(CRAFT_OPTIONS)}
@@ -249,7 +228,7 @@ export default function OrderCraftFields({
           label="是否定型"
           options={TRI_STATE_CHIPS}
           value={value.isShaped}
-          onChange={changeIsShaped}
+          onChange={(next) => onChange({ isShaped: next })}
         />
 
         <ChipGroup
@@ -302,6 +281,54 @@ export default function OrderCraftFields({
         )}
       </div>
 
+      {/* **纱帘**（issue #4521，用户口径「在工艺规格中增加一个纱帘选项，如果带纱帘就像
+          配布边一样，让用户输入米数和单价」）—— 与下面的「双拼·配布边」**逐字同构**：
+          米数（默认 = 主布米数，可改，带来源留痕）+ 单价（不填不生成纱帘明细行）。
+          ⚠️ 纱帘**不算料**（「买多少就是多少」）：这里不给「恢复按公式计算」，页面侧也不发试算。 */}
+      {sheer && (
+        <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50/60 p-3">
+          <div className="text-sm font-medium text-neutral-700 mb-2">
+            纱帘（一樘帘 = 主布行 + 纱帘行）
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor={fieldId('sheerMeters')} className={LABEL_CLASS}>
+                纱帘米数
+              </label>
+              <input
+                id={fieldId('sheerMeters')}
+                type="number"
+                min={0}
+                step={0.01}
+                value={effectiveSheerMeters}
+                onChange={(e) => onSheerMetersChange(numberOrNull(e.target.value))}
+                className={inputClass}
+              />
+              <p className="mt-1 text-xs text-neutral-400">默认 = 主布米数，可编辑</p>
+              <p className="mt-0.5 text-xs text-neutral-500">纱帘米数来源：{sheerSource}</p>
+            </div>
+            <div>
+              <label htmlFor={fieldId('sheerUnitPrice')} className={LABEL_CLASS}>
+                纱帘单价
+              </label>
+              <input
+                id={fieldId('sheerUnitPrice')}
+                type="number"
+                min={0}
+                step={0.01}
+                placeholder="¥ / 米"
+                value={sheerUnitPrice ?? ''}
+                onChange={(e) => onSheerUnitPriceChange(numberOrNull(e.target.value))}
+                className={inputClass}
+              />
+              <p className="mt-1 text-xs text-neutral-400">
+                填写后才会生成纱帘明细行（纱帘按米计价，买多少就是多少）
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 双拼（拼色）：配布边是**一条独立面料明细行**（§4.8） */}
       {isMixed && (
         <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50/60 p-3">
@@ -324,7 +351,7 @@ export default function OrderCraftFields({
               />
               <p className="mt-1 text-xs text-neutral-400">默认 = 主布米数，可编辑</p>
               <p className="mt-0.5 text-xs text-neutral-500">
-                配布边米数来源：{metersSource}
+                配布边米数来源：{edgeSource}
               </p>
             </div>
             <div>

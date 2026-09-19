@@ -23,16 +23,26 @@ import {
 } from '@/lib/craft-calc-request'
 import {
   COMPONENT_ROLE_EDGE,
+  CURTAIN_BODY_BOTH,
+  CURTAIN_BODY_CLOTH,
+  CURTAIN_BODY_OPTIONS,
+  CURTAIN_BODY_SHEER,
+  CURTAIN_TYPE_SHEER,
   DEFAULT_CUTTING_MODE,
   METERS_SOURCE_FOLLOW,
   METERS_SOURCE_MANUAL,
   OPEN_COUNT_OPTIONS,
   STYLE_MIXED,
+  bodyHasSheerLine,
   buildCraftSpec,
   buildEdgeLineCraftSpec,
   buildMainLineGroupKeys,
+  buildSheerLineCraftSpec,
   createDefaultCraftSpec,
+  curtainTypeOfBody,
+  defaultIsShapedForBody,
   type CraftSpecInput,
+  type CurtainBody,
 } from '@/lib/order-craft-fields'
 import { describeLogisticsProfile } from '@/lib/logistics'
 // #4371：加工项类型改为**店铺级目录**的 `ProcessingItem`（旧 `ProductProcessingItem` 已随解耦删除）
@@ -74,6 +84,14 @@ interface OrderLineItem {
    * 存在行上、由组级处理器在组内同步（与颜色 / 门幅同一机制）。
    */
   saleForm: SaleForm
+  /**
+   * **帘体**（issue #4521）—— 用户口径四类购买情况里的前三类：
+   * `布帘`（用料按韩折公式算）/ `纱帘`（**买多少填多少，不算料**）/ `布帘+纱帘`（两条明细行）。
+   *
+   * **组级**（与 `saleForm` 同一机制、组内同步）：一个商品组 = 一樘帘 —— 改帘体不该只改一半
+   * （主布行按公式算了料、纱帘行还留着）。
+   */
+  curtainBody: CurtainBody
   quantity: number
   unitPrice: number
   /**
@@ -99,13 +117,23 @@ interface OrderLineItem {
   edgeMeters: number | null
   /** 配布边单价；`null` = 未填 ⇒ 不生成配布边明细行（后端单价必须 > 0，不凭空造价） */
   edgeUnitPrice: number | null
-  /** 卡片是否收起（issue #4420 展示重构）—— 收起只影响渲染，不影响任何录入值 */
-  collapsed: boolean
+  /**
+   * 纱帘米数（issue #4521）；`null` = 未改过 ⇒ 跟随主布米数。
+   * 只有帘体含**纱帘明细行**（`bodyHasSheerLine` = 布帘+纱帘）时有意义。
+   */
+  sheerMeters: number | null
+  /** 纱帘单价；`null` = 未填 ⇒ 不生成纱帘明细行（后端单价必须 > 0，不凭空造价） */
+  sheerUnitPrice: number | null
   /**
    * 商家**手改过**打开方式（issue #4493 的宽→开数联动）——落在**行状态**里，
    * 不放组件内 state（收起/展开重挂不丢）。手改过 ⇒ 改宽**不得覆盖**。
    */
   openCountTouched: boolean
+  /**
+   * 商家**手改过**是否定型（issue #4521，承接 #4489 的「手改留痕」纪律）——
+   * 落在**行状态**里（同 `openCountTouched`）。手改过 ⇒ 改帘体**不得覆盖**。
+   */
+  isShapedTouched: boolean
   /**
    * 用料米数来源（真值源 §8：折数/用料**必须带来源**，防多渠道不一致）—— issue #4434。
    * `公式计算` = 由算料引擎试算预填（宽/高/开数/拼次变化时自动重算）；
@@ -223,12 +251,21 @@ function buildLineProcessingInfo(line: OrderLineItem): Record<string, unknown> |
   //   （`ProcessingOrderService` 以「无加工项」拦），与既有链路零冲突。
   const isFabric = line.saleForm === SALE_FORM_FABRIC
   const edgePrice = isFabric ? null : edgeUnitPriceOf(line)
-  const isPaired = edgePrice !== null
+  const sheerPrice = isFabric ? null : sheerUnitPriceOf(line)
+  // **有同行件**（配布边 / 纱帘）时主布行才写绑组键（issue #4521 把纱帘纳入同一口径）：
+  // 两行必须共用**同一个客户端行标识**，否则消费端 `craftGroupKey` 按各自 `itemId` 成组
+  // ⇒ 一樘帘被算成两樘 ⇒ 套级工序（外帘打卷/装袋/发货）实例化两次、计件双付（#4395 的病根）。
+  const isPaired = edgePrice !== null || sheerPrice !== null
+  // 部位（issue #4521）：主帘缺省即布帘 ⇒ **不写**；只有「只买纱帘」显式写 `curtainType=纱帘`
+  // （它是**另一个部位** —— 不写就会被下游当成布帘，取到错的工序路线）。
+  const curtainType = isFabric ? undefined : curtainTypeOfBody(line.curtainBody)
   const mainSpec = isFabric
     ? {}
-    : isPaired
-      ? { ...buildCraftSpec(line.craft), ...buildMainLineGroupKeys(line.id) }
-      : buildCraftSpec(line.craft)
+    : {
+        ...buildCraftSpec(line.craft),
+        ...(curtainType ? { curtainType } : {}),
+        ...(isPaired ? buildMainLineGroupKeys(line.id) : {}),
+      }
 
   if (
     processingDetails.length === 0 &&
@@ -337,18 +374,23 @@ function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
     selectedColorId: null,
     selectedSku: null,
     saleForm: SALE_FORM_FINISHED,
+    // 帘体默认「布帘」（issue #4521）：不带纱帘的普通窗帘 = 绝大多数场景
+    curtainBody: CURTAIN_BODY_CLOTH,
     quantity: 1,
     unitPrice: 0,
     width: null,
     height: null,
     processingItems: [],
     selectedProcessing: {},
-    // 三条默认档（issue #4420）：加工类型「定高买宽」/ 款式「单色」/ 褶距 0.125 —— 都是真值
+    // 默认档（issue #4420/#4493/#4521）：工艺「韩褶」/ 加工类型「定高买宽」/ 款式「单色」/
+    // 褶距 0.125 / 是否对花「否」/ 是否定型「是」（布帘默认）—— 都是**商家看得见的真值**
     craft: createDefaultCraftSpec(),
     edgeMeters: null,
     edgeUnitPrice: null,
-    collapsed: false,
+    sheerMeters: null,
+    sheerUnitPrice: null,
     openCountTouched: false,
+    isShapedTouched: false,
     metersSource: METERS_SOURCE_FORMULA,
     calc: null,
     calcError: null,
@@ -356,27 +398,42 @@ function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
 }
 
 /**
- * 「新增部位」（issue #4420，**issue #4485 改为嵌套**）：在**同一商品**下追加一个部位行。
+ * 「新增部位」已**整体移除**（issue #4521，用户 2026-09-19 裁定「移除部位功能，其实完全不需要」）。
  *
- * 新行**继承商品基础属性**（商品 / 颜色 / 门幅·售卖方式 / 单价 / 宽高）与**同一个 `groupId`**
- * ⇒ 渲染时它落在**同一张商品卡**里，商家看到的是「一个商品的两个部位」，而不是两个商品。
- *
- * 三条刻意**不**继承：
- * 1. **部位**（`curtainType`）：留着会让商家以为已选好 ⇒ 两行同部位 ⇒ 加工单长出两套同部位工序；
- * 2. **加工项**（`selectedProcessing`）：加工项按部位选（布帘要定型、纱帘不要），继承会**静默加钱**；
- * 3. **数量**：各部位用料不同，必须各自算/各自填（沿用默认值 + 显式提示，见 `needsManualMeters`）。
+ * 为什么移除：用户口径是「**尺寸数量 / 工艺规格 / 加工项 / 特殊选项都跟着商品基础属性走**，
+ * 部位只决定商品实际用料米数」—— 既然只有一个可变的「用料米数」，就没有第二个部位行可加：
+ * 一个商品组 = 一樘帘，需要纱帘时由**帘体**（`curtainBody`）表达，而不是再加一行。
+ * 落库仍可能是**两条**明细行（主布行 + 纱帘行），但那由帘体派生，不需要商家手工加行。
  */
-function createPositionLine(source: OrderLineItem): OrderLineItem {
+
+/**
+ * 纱帘**明细行**是否成立（issue #4521）：帘体 = **布帘+纱帘**（组合态）**且**填了纱帘单价。
+ *
+ * ⚠️ 「只买纱帘」不走这里：那一行本身就是纱帘（单价 = 该行 `unitPrice`），再生成一条 = 凭空多一行。
+ *
+ * 与配布边同一口径（`edgeUnitPriceOf`）：后端 `unitPrice` 带 `@Positive`（必须 > 0）
+ * ⇒ 不填价就不生成行，**不凭空造价**。
+ */
+function sheerUnitPriceOf(line: OrderLineItem): number | null {
+  if (!bodyHasSheerLine(line.curtainBody)) return null
+  return line.sheerUnitPrice != null && line.sheerUnitPrice > 0 ? line.sheerUnitPrice : null
+}
+
+/** 纱帘米数：默认 = 主布米数（= 该行数量），可编辑（「买多少就是多少」是商家给定值） */
+function sheerMetersOf(line: OrderLineItem): number {
+  return line.sheerMeters ?? (Number(line.quantity) || 0)
+}
+
+/**
+ * 算料试算的入参（**唯一装配点**）：`craftCalcParamsOf` 需要**部位**判「纱帘不算料」
+ * （issue #4521），而部位在行上是从帘体派生的 ⇒ 在这里派生一次，两处调用共用。
+ */
+function calcInputOf(line: OrderLineItem) {
   return {
-    ...createEmptyLineItem(source.groupId),
-    product: source.product,
-    selectedColorId: source.selectedColorId,
-    selectedSku: source.selectedSku,
-    unitPrice: source.unitPrice,
-    width: source.width,
-    height: source.height,
-    processingItems: source.processingItems,
-    craft: { ...source.craft, curtainType: undefined },
+    width: line.width,
+    height: line.height,
+    craft: line.craft,
+    curtainType: curtainTypeOfBody(line.curtainBody),
   }
 }
 
@@ -475,18 +532,34 @@ export default function NewOrderPage() {
   }
 
   /**
-   * 「新增部位」（issue #4420）：在**同一商品**下追加一个部位行（布帘 + 纱帘 = 两行）。
+   * **帘体**（**组级**，issue #4521）：一个商品组 = 一樘帘 ⇒ 组内同步。
    *
-   * 插在源行**后面**（不是列表末尾）—— 同樘窗的部位行相邻，商家一眼能看出它们是一组。
+   * 三条口径：
+   * 1. **是否定型默认跟着帘体走**（真值源 §10 布帘是 / 纱帘否）—— 但**只在商家没手改过时**
+   *    （`isShapedTouched` 落在行状态里，同 `openCountTouched` 的纪律：手改过的值只能显式改回）；
+   * 2. **用料来源**：纱帘 = 商家给定（`人工指定`，且不发算料请求）；布帘 = 回到公式计算；
+   * 3. 切到纱帘时清掉上一次的算料结果/错误（纱帘不算料，留着旧公式串会骗人）。
    */
-  const addPositionLine = (sourceId: string) => {
-    setLineItems((prev) => {
-      const idx = prev.findIndex((it) => it.id === sourceId)
-      if (idx < 0) return prev
-      const next = [...prev]
-      next.splice(idx + 1, 0, createPositionLine(prev[idx]))
-      return next
-    })
+  const handleCurtainBodyChange = (groupId: string, body: CurtainBody) => {
+    setLineItems((prev) =>
+      prev.map((it) => {
+        if (it.groupId !== groupId) return it
+        const next: OrderLineItem = {
+          ...it,
+          curtainBody: body,
+          metersSource:
+            body === CURTAIN_BODY_SHEER ? LINE_METERS_SOURCE_MANUAL : METERS_SOURCE_FORMULA,
+        }
+        if (body === CURTAIN_BODY_SHEER) {
+          next.calc = null
+          next.calcError = null
+        }
+        if (!it.isShapedTouched) {
+          next.craft = { ...it.craft, isShaped: defaultIsShapedForBody(body) }
+        }
+        return next
+      })
+    )
   }
 
   /**
@@ -550,6 +623,10 @@ export default function NewOrderPage() {
         calc: null,
         calcError: null,
         metersSource: METERS_SOURCE_FORMULA,
+        // 布料单没有帘体/纱帘（issue #4521）：清掉纱帘选配，避免切回成品帘时凭空多一条纱帘行
+        curtainBody: CURTAIN_BODY_CLOTH,
+        sheerMeters: null,
+        sheerUnitPrice: null,
       }
       const next = prev.filter((l) => l.groupId !== groupId)
       next.splice(at, 0, kept)
@@ -563,11 +640,6 @@ export default function NewOrderPage() {
       const next = prev.filter((l) => l.groupId !== groupId)
       return next.length === 0 ? prev : next
     })
-    setErrors({})
-  }
-
-  const removeLineItem = (lineId: string) => {
-    setLineItems((prev) => (prev.length <= 1 ? prev : prev.filter((it) => it.id !== lineId)))
     setErrors({})
   }
 
@@ -737,7 +809,7 @@ export default function NewOrderPage() {
   const calcSignature = useMemo(
     () =>
       lineItems
-        .map((l) => `${l.id}:${l.metersSource}:${craftCalcSignature(craftCalcParamsOf(l))}`)
+        .map((l) => `${l.id}:${l.metersSource}:${craftCalcSignature(craftCalcParamsOf(calcInputOf(l)))}`)
         .join(';'),
     [lineItems]
   )
@@ -746,7 +818,7 @@ export default function NewOrderPage() {
     const targets: Array<{ id: string; params: CraftCalcParams }> = []
     for (const line of lineItems) {
       if (line.metersSource !== METERS_SOURCE_FORMULA) continue
-      const params = craftCalcParamsOf(line)
+      const params = craftCalcParamsOf(calcInputOf(line))
       if (params) targets.push({ id: line.id, params })
     }
     if (targets.length === 0) return
@@ -823,6 +895,7 @@ export default function NewOrderPage() {
           selectedColorId: line.selectedColorId,
           selectedSku: line.selectedSku,
           saleForm: line.saleForm,
+          curtainBody: line.curtainBody,
           lines: [],
         }
         byId.set(line.groupId, g)
@@ -905,6 +978,7 @@ export default function NewOrderPage() {
   const totals = useMemo(() => {
     let productSubtotal = 0
     let edgeSubtotal = 0
+    let sheerSubtotal = 0
 
     lineItems.forEach((item) => {
       if (!item.product) return
@@ -916,6 +990,12 @@ export default function NewOrderPage() {
       if (edgePrice !== null) {
         edgeSubtotal += edgeMetersOf(item) * edgePrice
       }
+      // 纱帘（issue #4521）：也是一条**独立面料明细行** ⇒ 金额必须计入订单总额，
+      // 否则后端「应收 - 优惠 ≈ 实收」校验会拒单。
+      const sheerPrice = sheerUnitPriceOf(item)
+      if (sheerPrice !== null) {
+        sheerSubtotal += sheerMetersOf(item) * sheerPrice
+      }
     })
 
     // 加工费 = **服务端取价结果**（issue #4450）。
@@ -926,8 +1006,9 @@ export default function NewOrderPage() {
     return {
       productSubtotal,
       edgeSubtotal,
+      sheerSubtotal,
       processingFee,
-      total: productSubtotal + edgeSubtotal + processingFee,
+      total: productSubtotal + edgeSubtotal + sheerSubtotal + processingFee,
     }
   }, [lineItems, feePreview])
 
@@ -1005,6 +1086,14 @@ export default function NewOrderPage() {
       }
       if (line.unitPrice == null || line.unitPrice <= 0) {
         e[`${prefix}_unitPrice`] = '单价须大于 0'
+      }
+      // 带纱帘 ⇒ 纱帘单价必填（issue #4521）。为什么这里**不**沿用配布边的「不填不生成」：
+      // 配布边是款式=拼色的**副产物**，而帘体是商家**显式选**的 —— 显式选了「布帘+纱帘」
+      // 却静默丢掉纱帘行 = 交付一张与商家所见不符的错单（比拦住提交危险得多）。
+      if (line.saleForm !== SALE_FORM_FABRIC && bodyHasSheerLine(line.curtainBody)) {
+        if (!(Number(line.sheerUnitPrice) > 0)) {
+          e[`${prefix}_sheerUnitPrice`] = `第 ${idx + 1} 个商品的纱帘单价须大于 0（或把帘体改回「布帘」）`
+        }
       }
     })
 
@@ -1086,9 +1175,45 @@ export default function NewOrderPage() {
         } as OrderItemFormData)
       }
 
+      // 纱帘行（issue #4521）：与主布行**同一樘帘**（同 `craftLineId`）、携带**同一份工艺规格**
+      // —— 纱帘是**另一个部位**（工序路线按 `纱帘×工艺` 取 ⇒ 不带规格会被当成布帘），
+      // 这与配布边行「刻意不带规格」正好相反（配布边不是部位，带了会让工序与计件翻倍）。
+      // - **不挂加工项**（硬约束：加工费只挂主布行）
+      // - **不关联主布商品**（后端按 productId 聚合库存/销量 ⇒ 复用会双扣库存、双计销量）
+      // - 宽 / 高与主布行**同一份**：尺寸数量是商品组级属性（用户口径）⇒ 一樘帘共用
+      const sheerPrice = sheerUnitPriceOf(line)
+      if (sheerPrice !== null) {
+        const sku = line.selectedSku
+        const colorName = uniqueColors(line.product!.skus).find(
+          (c) => c.id === line.selectedColorId
+        )?.name
+        const sheerMeters = sheerMetersOf(line)
+        rows.push({
+          productName: CURTAIN_TYPE_SHEER,
+          quantity: sheerMeters,
+          unitPrice: sheerPrice,
+          subtotal: sheerMeters * sheerPrice,
+          width: Number(line.width),
+          height: Number(line.height),
+          processingInfo: {
+            saleForm: SALE_FORM_FINISHED,
+            colorName,
+            skuCode: sku?.skuCode,
+            doorWidth: sku?.doorWidth,
+            ...buildSheerLineCraftSpec(
+              pairKey,
+              buildCraftSpec(line.craft),
+              line.sheerMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
+            ),
+            // 纱帘用料米数 = 商家给定值（「买多少就是多少」）⇒ 落 `fabric_meters`，
+            // 让加工单的「应做数量」拿到真值（#4273 同口径）。
+            fabric_meters: sheerMeters,
+          },
+        } as OrderItemFormData)
+      }
+
       return rows
     })
-
     const actual = actualNumber
     let finalRemark = remark.trim()
     if (Math.abs(actual - totals.total) > 0.001) {
@@ -1162,22 +1287,19 @@ export default function NewOrderPage() {
                     onSelectColor={(colorId) => handleSelectColorForGroup(group.id, colorId)}
                     onSelectSku={(sku) => handleSelectSkuForGroup(group.id, sku)}
                     onChangeSaleForm={(form) => handleSaleFormChange(group.id, form)}
-                    onAddPosition={() => addPositionLine(group.lines[0].id)}
+                    onChangeCurtainBody={(body) => handleCurtainBodyChange(group.id, body)}
                     onRemoveGroup={() => removeGroup(group.id)}
                     onChangeQty={(lineId, q) => {
                       const target = lineItems.find((l) => l.id === lineId)
                       if (target) handleLineQtyChange(target, q)
                     }}
                     onChangePrice={(lineId, p) => updateLineItem(lineId, { unitPrice: p })}
-                    renderPosition={(line, li) => (
+                    renderPosition={(line) => (
                       <LineItemBlock
                         key={line.id}
-                        index={li}
                         line={line}
-                        canRemove={group.lines.length > 1}
                         errors={errors}
                         processingLoading={processingCatalogLoading}
-                        onRemove={() => removeLineItem(line.id)}
                         onChangeQty={(q) => handleLineQtyChange(line, q)}
                         onRestoreFormula={() => restoreFormulaMeters(line)}
                         onChangePrice={(p) => updateLineItem(line.id, { unitPrice: p })}
@@ -1191,9 +1313,6 @@ export default function NewOrderPage() {
                           })
                         }
                         onChangeHeight={(h) => updateLineItem(line.id, { height: h })}
-                        onToggleCollapsed={() =>
-                          updateLineItem(line.id, { collapsed: !line.collapsed })
-                        }
                         onToggleProcessing={(pi, sel) => toggleProcessing(line, pi, sel)}
                         onChangeCraft={(patch) =>
                           updateLineItem(line.id, {
@@ -1202,11 +1321,17 @@ export default function NewOrderPage() {
                             ...(patch.openCount !== undefined
                               ? { openCountTouched: true }
                               : {}),
+                            // 手改过「是否定型」⇒ 记下来，之后改帘体不再覆盖（issue #4521）
+                            ...(patch.isShaped !== undefined ? { isShapedTouched: true } : {}),
                           })
                         }
                         onEdgeMetersChange={(m) => updateLineItem(line.id, { edgeMeters: m })}
                         onEdgeUnitPriceChange={(p) =>
                           updateLineItem(line.id, { edgeUnitPrice: p })
+                        }
+                        onSheerMetersChange={(m) => updateLineItem(line.id, { sheerMeters: m })}
+                        onSheerUnitPriceChange={(p) =>
+                          updateLineItem(line.id, { sheerUnitPrice: p })
                         }
                       />
                     )}
@@ -1373,8 +1498,8 @@ export default function NewOrderPage() {
                                   <CostRow
                                     key={`p_${line.id}`}
                                     label={
-                                      line.craft.curtainType
-                                        ? `加工·${line.craft.curtainType}`
+                                      line.curtainBody === CURTAIN_BODY_SHEER
+                                        ? '加工·纱帘'
                                         : '加工'
                                     }
                                     expr={
@@ -1400,6 +1525,20 @@ export default function NewOrderPage() {
                                 />
                               )
                             })}
+                            {/* 纱帘（issue #4521）：与配布边同构的独立面料行 —— 米数 × 单价 */}
+                            {group.lines.map((line) => {
+                              const p = sheerUnitPriceOf(line)
+                              if (p === null) return null
+                              const m = sheerMetersOf(line)
+                              return (
+                                <CostRow
+                                  key={`s_${line.id}`}
+                                  label="纱帘"
+                                  expr={`${m} 米 × ${formatAmount(p)}/米`}
+                                  amount={m * p}
+                                />
+                              )
+                            })}
                           </div>
                         </div>
                       )
@@ -1411,6 +1550,9 @@ export default function NewOrderPage() {
                 <Row label="商品小计" value={formatAmount(totals.productSubtotal)} />
                 {totals.edgeSubtotal > 0 && (
                   <Row label="配布边" value={formatAmount(totals.edgeSubtotal)} />
+                )}
+                {totals.sheerSubtotal > 0 && (
+                  <Row label="纱帘" value={formatAmount(totals.sheerSubtotal)} />
                 )}
                 <Row
                   label="加工费"
@@ -1653,25 +1795,23 @@ export default function NewOrderPage() {
 
 // ====== 行项卡片 ======
 interface LineItemBlockProps {
-  index: number
   line: OrderLineItem
-  canRemove: boolean
   errors: Record<string, string>
   processingLoading: boolean
-  onRemove: () => void
   onChangeQty: (q: number) => void
   /** 「恢复按公式计算」（issue #4434）：切回算料预填（手改后不会被静默改回，只能显式恢复） */
   onRestoreFormula: () => void
   onChangePrice: (p: number) => void
-  /** 成品宽 / 高（米，部位级；issue #4420 必填） */
+  /** 成品宽 / 高（米；issue #4420 必填） */
   onChangeWidth: (w: number | null) => void
   onChangeHeight: (h: number | null) => void
-  /** 卡片收起 / 展开（issue #4420）—— 只影响渲染 */
-  onToggleCollapsed: () => void
   onToggleProcessing: (pi: ProcessingItem, selected: boolean) => void
   onChangeCraft: (patch: Partial<CraftSpecInput>) => void
   onEdgeMetersChange: (meters: number | null) => void
   onEdgeUnitPriceChange: (price: number | null) => void
+  /** 纱帘米数 / 单价（issue #4521）—— 帘体含纱帘时才有意义 */
+  onSheerMetersChange: (meters: number | null) => void
+  onSheerUnitPriceChange: (price: number | null) => void
 }
 
 
@@ -1743,8 +1883,10 @@ interface ProductGroup {
   productLoading: boolean
   selectedColorId: string | null
   selectedSku: OrderProductSku | null
-  /** 售卖形态（issue #4493）：组级 —— 决定这一组下面出什么（布料 = 没有部位行） */
+  /** 售卖形态（issue #4493）：组级 —— 决定这一组下面出什么（布料 = 没有加工） */
   saleForm: SaleForm
+  /** 帘体（issue #4521）：组级 —— 布帘 / 纱帘 / 布帘+纱帘（决定用料来源与落库行数） */
+  curtainBody: CurtainBody
   lines: OrderLineItem[]
 }
 
@@ -1761,12 +1903,12 @@ interface ProductGroupBlockProps {
   onSelectSku: (sku: OrderProductSku) => void
   /** 售卖形态（组级，issue #4493）：布料 / 成品帘 */
   onChangeSaleForm: (form: SaleForm) => void
-  /** 在本商品下新增一个部位行 */
-  onAddPosition: () => void
-  /** 删除整个商品组（含其下所有部位行） */
+  /** 帘体（组级，issue #4521）：布帘 / 纱帘 / 布帘+纱帘 */
+  onChangeCurtainBody: (body: CurtainBody) => void
+  /** 删除整个商品组 */
   onRemoveGroup: () => void
-  /** 渲染一个部位行（由页面传入，保证部位行的 props 装配只有一处） */
-  renderPosition: (line: OrderLineItem, positionIndex: number) => React.ReactNode
+  /** 渲染本组这一樘帘（由页面传入，保证 props 装配只有一处） */
+  renderPosition: (line: OrderLineItem) => React.ReactNode
   /** 布料行（无部位）的 米数 / 单价 回调（issue #4493） */
   onChangeQty: (lineId: string, qty: number) => void
   onChangePrice: (lineId: string, price: number) => void
@@ -1831,17 +1973,19 @@ function WizardStep({
 }
 
 /**
- * **商品组**（issue #4485）：一块布（同商品 / 同色 / 同门幅）下挂**多个部位行**。
+ * **商品组**（issue #4485；issue #4521 起 = **一樘帘**）：一块布（同商品 / 同色 / 同门幅）
+ * 下渲染**一份** ①尺寸与数量 ②工艺规格 ③加工项 ④特殊选项。
  *
  * 用户 2026-09-19 口径：「新增部位应该在**已选择的商品下**去新增，现在像是两个商品，
- * 商品的**基础属性应该共用**。」
+ * 商品的**基础属性应该共用**」→ 随后进一步裁定「**移除部位功能，其实完全不需要**」：
+ * 一个商品组 = 一樘帘，需要纱帘时改**帘体**（`curtainBody`），而不是再加一行。
  *
  * 为什么这样切：裁定 **R-a**「一行 `order_items` = 一个部位」是**落库**口径，与展示无关
  * —— 旧实现把落库口径直接当成了 UI 结构（复制一行 = 复制整张商品卡）⇒ 同一商品的两个部位
  * 看起来像两个商品、颜色与门幅还要各选一遍。
  *
- * 本组件只负责**商品基础属性**（选择商品 / 颜色 / 门幅·售卖方式）与部位行的排布；
- * 组内改颜色或门幅 ⇒ **组内所有部位行同步**（它们是同一块布的属性）。
+ * 本组件只负责**商品基础属性**（选择商品 / 颜色 / 门幅·售卖方式 / 售卖形态 / 帘体）与那一樘帘的排布；
+ * 组内改颜色、门幅、售卖形态或帘体 ⇒ **组内所有行同步**（它们是同一块布的属性）。
  */
 function ProductGroupBlock({
   index,
@@ -1852,7 +1996,7 @@ function ProductGroupBlock({
   onSelectColor,
   onSelectSku,
   onChangeSaleForm,
-  onAddPosition,
+  onChangeCurtainBody,
   onRemoveGroup,
   renderPosition,
   onChangeQty,
@@ -1912,8 +2056,9 @@ function ProductGroupBlock({
             {group.product?.name ?? `商品 ${index + 1}`}
           </span>
           {colorName && <span className="text-xs text-primary-600 shrink-0">{colorName}</span>}
+          {/* 组头报**帘体**（issue #4521）：部位行已移除 ⇒ 原来的「N 个部位」不再有意义 */}
           <span className="text-xs text-neutral-400 shrink-0">
-            {group.lines.length} 个部位
+            {group.saleForm === SALE_FORM_FABRIC ? '布料' : group.curtainBody}
           </span>
         </div>
         <div className="flex items-center gap-3 shrink-0">
@@ -2089,9 +2234,55 @@ function ProductGroupBlock({
             </div>
             <p className="mt-1.5 text-xs text-neutral-400">
               {group.saleForm === SALE_FORM_FABRIC
-                ? '布料：按米卖，没有加工（不出现宽高 / 工艺规格 / 部位 / 加工项，也不生成加工单）'
-                : '成品帘：做成帘，需要部位 / 宽高 / 工艺规格与加工项'}
+                ? '布料：按米卖，没有加工（不出现宽高 / 工艺规格 / 加工项，也不生成加工单）'
+                : '成品帘：做成帘，需要宽高 / 工艺规格与加工项'}
             </p>
+          </div>
+        )}
+
+        {/* **帘体**（issue #4521，用户口径的四类购买情况）——**商品组级**，与售卖形态同层：
+            它决定「用料怎么来」（布帘按韩折公式算；纱帘**买多少填多少**）与「落库几行」
+            （含纱帘 ⇒ 主布行 + 纱帘行；只买纱帘 ⇒ 一行 `curtainType=纱帘`）。
+            取代了原来的「部位」字段与「新增部位」按钮 —— 那两者让商家能选出**自相矛盾**的组合。 */}
+        {group.product && group.saleForm !== SALE_FORM_FABRIC && (
+          <div className="mb-4">
+            <Label required>帘体</Label>
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="帘体">
+              {CURTAIN_BODY_OPTIONS.map((body) => {
+                const active = group.curtainBody === body
+                return (
+                  <button
+                    key={body}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => onChangeCurtainBody(body)}
+                    className={
+                      'h-9 px-3 rounded border text-sm transition-colors ' +
+                      (active
+                        ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
+                        : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
+                    }
+                  >
+                    {body}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-1.5 text-xs text-neutral-400">
+              {group.curtainBody === CURTAIN_BODY_SHEER
+                ? '纱帘：买多少填多少（不自动算料）'
+                : group.curtainBody === CURTAIN_BODY_BOTH
+                  ? '布帘 + 纱帘：主布按韩折公式算料，纱帘填实际米数 —— 提交后是两条明细行'
+                  : '布帘：按韩折公式自动算用料米数'}
+            </p>
+            {/* 纱帘单价缺失的提示（issue #4521）：**常显**（不塞进可收起的步骤里 —— 否则
+                商家只知道「提交失败」却找不到该改哪里）；它就该长在「帘体」这个选择旁边。 */}
+            {errors[`line_${group.lines[0].id}_sheerUnitPrice`] && (
+              <p className="mt-1.5 text-sm text-red-600">
+                {errors[`line_${group.lines[0].id}_sheerUnitPrice`]}
+              </p>
+            )}
           </div>
         )}
 
@@ -2104,21 +2295,10 @@ function ProductGroupBlock({
             onChangePrice={(v) => onChangePrice(group.lines[0].id, v)}
           />
         ) : (
-          <>
-            {/* 部位行（issue #4485）：嵌在**本商品**下，商品基础属性共用 */}
-            <div className="space-y-3">
-              {group.lines.map((line, li) => renderPosition(line, li))}
-            </div>
-
-            <button
-              type="button"
-              onClick={onAddPosition}
-              className="mt-3 w-full h-10 rounded-lg border border-dashed border-neutral-300 bg-white text-sm text-neutral-500 hover:border-primary-500 hover:text-primary-600 hover:bg-primary-50/30 transition-colors inline-flex items-center justify-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              新增部位（同一商品，共用颜色与门幅）
-            </button>
-          </>
+          /* 一樘帘（issue #4521）：一个商品组 = 一樘帘 ⇒ 只渲染**一份** ①~④。
+             「新增部位」已移除（用户裁定「移除部位功能，其实完全不需要」）——
+             需要纱帘时改**帘体**，不是再加一行。 */
+          <div className="space-y-3">{renderPosition(group.lines[0])}</div>
         )}
       </div>
     </div>
@@ -2126,24 +2306,21 @@ function ProductGroupBlock({
 }
 
 function LineItemBlock({
-  index,
   line,
-  canRemove,
   errors,
   processingLoading,
-  onRemove,
   onChangeQty,
   onRestoreFormula,
   onChangePrice,
   onChangeWidth,
   onChangeHeight,
-  onToggleCollapsed,
   onToggleProcessing,
   onChangeCraft,
   onEdgeMetersChange,
   onEdgeUnitPriceChange,
+  onSheerMetersChange,
+  onSheerUnitPriceChange,
 }: LineItemBlockProps) {
-  const colorOptions = useMemo(() => uniqueColors(line.product?.skus), [line.product])
   /** 当前展开的**向导步骤**（issue #4511 手风琴）：1 尺寸与数量 / 2 工艺规格 / 3 加工项 / 4 特殊选项 */
   const [openStep, setOpenStep] = useState(1)
   const stepProps = (n: number) => ({
@@ -2159,10 +2336,9 @@ function LineItemBlock({
   const errWidth = errors[`line_${line.id}_width`]
   const errHeight = errors[`line_${line.id}_height`]
 
-  const colorName = colorOptions.find((c) => c.id === line.selectedColorId)?.name
-  /** 收起时的摘要（issue #4420）：一眼看懂「这是什么、多大、多少钱」 */
+  /** 摘要（issue #4420）：一眼看懂「这是什么、多大、多少钱」—— 部位已移除（#4521）⇒ 取帘体 */
   const summarySpec = [
-    line.craft.curtainType,
+    line.curtainBody,
     line.craft.craft,
     line.craft.cuttingMode,
     line.craft.openCount ? OPEN_COUNT_LABEL[line.craft.openCount] : undefined,
@@ -2172,67 +2348,13 @@ function LineItemBlock({
     .join(' · ')
   const summarySize =
     line.width && line.height ? `${line.width} × ${line.height} m` : '未填宽高'
-  const summaryAmount = formatAmount(
-    (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)
-  )
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white">
-      {/* 行项头部 = **摘要行**（issue #4420）：
-          收起时也能一眼看懂「什么商品 / 什么工艺 / 多大 / 多少钱」——
-          这是「信息偏多、不能全挤一块」的第一层解法：把**结论**常显、把**录入项**收起来。 */}
-      <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-neutral-100 bg-neutral-50/60 rounded-t-xl">
-        <button
-          type="button"
-          onClick={onToggleCollapsed}
-          aria-expanded={!line.collapsed}
-          className="flex items-start gap-2.5 text-left min-w-0 flex-1"
-        >
-          <span className="inline-flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-primary-600 text-white text-xs font-semibold mt-0.5">
-            {index + 1}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-1.5">
-              {line.collapsed ? (
-                <ChevronRight className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-              ) : (
-                <ChevronDown className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-              )}
-              {/* 组头已写商品名 ⇒ 行头只写**部位**（issue #4508：不重复显示商品名） */}
-              <span className="text-sm font-medium text-neutral-900 truncate">
-                部位 {index + 1}
-              </span>
-              {colorName && (
-                <span className="text-xs text-primary-600 shrink-0">{colorName}</span>
-              )}
-            </span>
-            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-neutral-500">
-              {summarySpec && <span>{summarySpec}</span>}
-              <span className="text-neutral-300">|</span>
-              <span className={line.width && line.height ? '' : 'text-amber-600'}>
-                {summarySize}
-              </span>
-              <span className="text-neutral-300">|</span>
-              <span className="font-medium text-neutral-700">{summaryAmount}</span>
-            </span>
-          </span>
-        </button>
-        {canRemove && (
-          <button
-            type="button"
-            onClick={onRemove}
-            className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-red-600 transition-colors shrink-0"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            删除
-          </button>
-        )}
-      </div>
-
-      {/* ⚠️ **收起用 CSS 隐藏，不卸载**（issue #4489 的组件包发现）：
-          组件内的「手改留痕」标志是 `useState`，卸载重挂会丢 —— 手改回「未指定」这一档
-          与「从没点过」在 props 上不可区分 ⇒ 重挂后被联动重新覆盖。保持挂载即消除该窄路径。 */}
-      <div className={line.collapsed ? 'hidden' : 'p-4'}>
+      {/* ⚠️ **行头已移除**（issue #4521）：组头已经写了商品名 / 颜色 / 帘体 / 金额 ——
+          部位行头再写一遍是同屏重复（#4508 修过一次「商品名重复」，这次去掉的是**整块**多余）；
+          「卡片收起」也随之取消：四个**手风琴步骤**本身就是密度控制（#4511）。 */}
+      <div className="p-4">
 
             {/* ① 尺寸与数量 */}
             <WizardStep
@@ -2244,7 +2366,7 @@ function LineItemBlock({
             {/* 尺寸与数量（issue #4420 分区①）：宽 / 高 必填 + 数量 / 单价 */}
             <div className="pt-3 border-t border-neutral-100">
               <p className="mb-3 text-xs text-neutral-400">
-                宽 / 高按成品尺寸填，单位米。同一樘窗的布帘与纱帘高度常不同 ⇒ 每个部位各填各的
+                宽 / 高按成品尺寸填，单位米 —— **一樘帘共用一份尺寸**（主布与纱帘同宽同高）
               </p>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
@@ -2295,8 +2417,14 @@ function LineItemBlock({
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
-                  {/* 算料来源与公式（issue #4434）—— 公式串**原样渲染后端产出**，前端不自拼 */}
-                  {line.metersSource === LINE_METERS_SOURCE_MANUAL ? (
+                  {/* 算料来源与公式（issue #4434）—— 公式串**原样渲染后端产出**，前端不自拼。
+                      ⚠️ 纱帘（issue #4521）：**买多少就是多少**，没有公式可恢复 ⇒ 只报口径，
+                      不给「恢复按公式计算」按钮（点了也没有公式可算）。 */}
+                  {line.curtainBody === CURTAIN_BODY_SHEER ? (
+                    <p className="mt-1 text-xs text-neutral-500">
+                      纱帘按实际买多少填，不自动算料
+                    </p>
+                  ) : line.metersSource === LINE_METERS_SOURCE_MANUAL ? (
                     <p className="mt-1 text-xs text-amber-600">
                       人工指定
                       <button
@@ -2319,7 +2447,8 @@ function LineItemBlock({
                     !line.calcError &&
                     Number(line.width) > 0 &&
                     Number(line.height) > 0 &&
-                    isAutoCalcUnavailable(line) && (
+                    line.curtainBody !== CURTAIN_BODY_SHEER &&
+                    isAutoCalcUnavailable(calcInputOf(line)) && (
                       <p className="mt-1 text-xs text-amber-600">
                         该工艺无自动算料，请手填米数
                       </p>
@@ -2353,6 +2482,11 @@ function LineItemBlock({
                 value={line.craft}
                 onChange={onChangeCraft}
                 mainMeters={line.quantity}
+                sheer={bodyHasSheerLine(line.curtainBody)}
+                sheerMeters={line.sheerMeters}
+                onSheerMetersChange={onSheerMetersChange}
+                sheerUnitPrice={line.sheerUnitPrice}
+                onSheerUnitPriceChange={onSheerUnitPriceChange}
                 edgeMeters={line.edgeMeters}
                 onEdgeMetersChange={onEdgeMetersChange}
                 edgeUnitPrice={line.edgeUnitPrice}

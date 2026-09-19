@@ -1,4 +1,4 @@
-// case_ids: OR-009, OR-014, UI-038, CU-009
+// case_ids: OR-009, OR-014, UI-038, CU-009, OR-038
 // OR-014（issue #3005 回滚 #2986）：下单加工项数量规则——per_meter→面料米数；per_set/fixed/per_area→1，
 // 商品数量变化联动重算；加工项行显示「名称+数量+金额」供对账，无数量输入框（数量由计价方式派生）
 // ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：加工项改为**店铺级目录**（processingItemApi.getProcessingItems
@@ -159,7 +159,7 @@ describe('NewOrderPage', () => {
     // 走「点击搜索并选择商品」→ 弹窗选择「测试窗帘」→ 展开数量/单价区域
     fireEvent.click(await screen.findByText('点击搜索并选择商品'))
     fireEvent.click(await screen.findByText('测试窗帘'))
-    await screen.findByText('部位 1')   // #4508：等商品落地（空态没有部位行/步骤）
+    await screen.findByText('帘体')   // #4508：等商品落地（空态没有组壳）
 
     // Label 无 htmlFor 关联，按「数量」label 所在容器定位输入框
     openWizardStep('尺寸与数量')
@@ -607,8 +607,6 @@ describe('NewOrderPage', () => {
 
       expandCraft()
 
-      pickChip('部位', '纱帘')
-      expandCraft()
       pickChip('工艺', '打孔')
       expandCraft()
       pickChip('加工类型', '定高买宽')
@@ -632,7 +630,7 @@ describe('NewOrderPage', () => {
       })
 
       expect(craftInfo()).toMatchObject({
-        curtainType: '纱帘',
+        // ⚠️ issue #4521：**部位不再由下单页写**（主帘缺省即布帘；只有纱帘行显式写）
         craft: '打孔',
         cuttingMode: '定高买宽',
         openCount: 2,
@@ -643,6 +641,7 @@ describe('NewOrderPage', () => {
         patternRepeat: 0.6,
         specialOptions: ['加铅块', '拼2次'],
       })
+      expect(craftInfo()).not.toHaveProperty('curtainType')
     })
 
     it('不填工艺规格 ⇒ payload 里不出现这些键（缺值不写，不写空串/0/false）', async () => {
@@ -661,19 +660,21 @@ describe('NewOrderPage', () => {
       // issue #4493：默认档扩到 8 项全覆盖 ⇒ 这几项**必须写**（商家看得见的真值）
       expect(info).toMatchObject({
         saleForm: '成品帘',
-        curtainType: '布帘',
+        // issue #4521：部位默认 = 布帘 ⇒ **不写**（下游 `DEFAULT_CURTAIN_TYPE` 缺省即此值）
         craft: '韩褶',
         cuttingMode: '定高买宽',
         style: '单色',
         pleatSpacing: 0.125,
         hasPattern: false,
+        // issue #4521：定型默认改由**帘体结构**决定（布帘 ⇒ 是）—— 仍是商家看得见的真值
+        isShaped: true,
         // **宽 → 打开方式**联动（真值源 §10 的启发式）：6.6m > 5m ⇒ 四开
         openCount: 4,
       })
 
       // 其余键仍然「缺值不写」（不写空串 / 0 / false 占位）
       for (const key of [
-        'isShaped',
+        'curtainType',
         'patternRepeat',
         'specialOptions',
         'componentRole',
@@ -836,16 +837,16 @@ describe('NewOrderPage', () => {
   // 换成「字段已移除」的红证（能力收窄的代价已登记在该 issue：布+纱 会算成 2 樘窗，
   // 套级工序各实例化 2 次 ⇒ 计件工资双付约 ¥3/樘）。
   // ===== issue #4508：空态不该有「默认商品 1」=====
-  describe('#4508 空态不渲染商品组壳', () => {
+  // ===== issue #4521：部位行**整体移除**（一个商品组 = 一樘帘）=====
+  describe('#4508/#4521 空态不渲染组壳；选了商品也**没有部位行**', () => {
     it('刚进页面（未选商品）⇒ **不出现**「商品 1」等组壳元素（红证：修复前出现两次）', async () => {
       render(<NewOrderPage />)
       await screen.findByText('点击搜索并选择商品')
       expect(screen.queryByText('商品 1')).toBeNull()
-      expect(screen.queryByText(/个部位/)).toBeNull()
-      expect(screen.queryByRole('button', { name: /新增部位/ })).toBeNull()
+      expect(screen.queryByText('帘体')).toBeNull()
     })
 
-    it('选了商品 ⇒ 组头出现商品名，**部位行头是「部位 1」而不是商品名**（不重复）', async () => {
+    it('#4521 选了商品 ⇒ 组头出现商品名 / 帘体；**不出现**「部位 N」行头、「N 个部位」、「新增部位」', async () => {
       mockGetProducts.mockResolvedValue({
         data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
       })
@@ -854,10 +855,12 @@ describe('NewOrderPage', () => {
       })
       render(<NewOrderPage />)
       await pickProduct('遮光窗帘')
-      await screen.findByText('部位 1')
-      // 部位行头是「部位 N」（红证：修复前行头写的是商品名 ⇒ 与组头重复）
+      await screen.findByText('帘体')
       expect(screen.queryByText('商品 1')).toBeNull()
-      expect(screen.getByText('1 个部位')).toBeInTheDocument()
+      // 红证：修复前这里有「部位 1」行头 + 「1 个部位」计数 + 「新增部位」按钮
+      expect(screen.queryByText(/^部位 \d+$/)).toBeNull()
+      expect(screen.queryByText(/个部位/)).toBeNull()
+      expect(screen.queryByRole('button', { name: /新增部位/ })).toBeNull()
     })
   })
 
@@ -889,7 +892,7 @@ describe('NewOrderPage', () => {
     })
   })
 
-  describe('#4420 尺寸必填 · 默认档 · 新增部位 · 展示折叠', () => {
+  describe('#4420/#4521 尺寸必填 · 默认档 · 帘体与纱帘 · 平级向导', () => {
     const setupCurtain = async () => {
       mockGetProducts.mockResolvedValue({
         data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
@@ -958,66 +961,135 @@ describe('NewOrderPage', () => {
       expect(checked('加工类型')).toEqual(['定高买宽'])
       expect(checked('款式')).toEqual(['单色'])
       expect((screen.getByLabelText('褶距') as HTMLInputElement).value).toBe('0.125')
-      // issue #4493 三层体验①：默认档扩到 8 项全覆盖（用户「太多点选了」）
-      expect(checked('部位')).toEqual(['布帘'])
+      // issue #4493 三层体验①：默认档全覆盖（用户「太多点选了」）
       expect(checked('工艺')).toEqual(['韩褶'])
       expect(checked('是否对花')).toEqual(['否'])
+      // issue #4521：部位换成**帘体**（组级 chips），默认「布帘」；
+      // 定型默认 = 是（布帘默认，真值源 §10）—— 原来靠「选部位联动」，现由帘体结构给
+      expect(checked('帘体')).toEqual(['布帘'])
+      expect(checked('是否定型')).toEqual(['是'])
     })
 
-    it('判据 5（#4485 红证）：「新增部位」⇒ 行数 +1、**同一张商品卡**、部位清空', async () => {
-      await setupCurtain()
-      fireEvent.click(screen.getByRole('button', { name: /新增部位/ }))
+    // ── issue #4521：四类购买情况（布帘 / 布帘+纱帘 / 只买纱帘 / 布料）──────────────
+    //
+    // 用户口径：「用户可能购买**带纱帘的窗帘，不带纱帘的窗帘和只买纱帘，还有布料**，这四种情况，
+    // **布帘需要算用料米数，纱帘不需要算用料米数，买多少就是多少**，如果买带纱帘的窗帘就要把
+    // 两种组合起来」+「**移除部位功能，其实完全不需要**」。
+    const pickBody = (body: string) => {
+      fireEvent.click(
+        within(screen.getByRole('radiogroup', { name: '帘体' })).getByRole('radio', { name: body })
+      )
+    }
+    /** 按 label 文本取输入框（纱帘米数 / 纱帘单价在工艺规格步骤里，标签与 input 有 htmlFor 关联） */
+    const field = (name: string) => screen.getByLabelText(name)
 
-      await waitFor(() => expect(screen.getByText('部位 2')).toBeInTheDocument())
-      // ⭐ issue #4485：新部位嵌在**同一个商品组**里 —— 「选择商品」只出现一次
-      // （修复前是复制出第二张完整商品卡 ⇒ 看起来像两个商品）
-      expect(screen.getAllByText('选择商品')).toHaveLength(1)
-      // 新行部位**必须清空**：继承会让商家以为已选好 ⇒ 两行同部位 ⇒ 加工单长出两套同部位工序
-      expandCraft(1)
-      const groups = screen.getAllByRole('radiogroup', { name: '部位' })
-      expect(groups).toHaveLength(2)
-      const checkedText = (g: HTMLElement) =>
-        within(g)
-          .getAllByRole('radio')
-          .filter((r) => r.getAttribute('aria-checked') === 'true')
-          .map((r) => r.textContent)
-      expect(checkedText(groups[0])).toEqual(['布帘'])
-      // 新行**不得**继承成同部位（两行同部位 ⇒ 加工单长出两套同部位工序）
-      expect(checkedText(groups[1])).not.toEqual(['布帘'])
+    it('判据 5（#4521 红证）：**没有**「新增部位」入口；一个商品组只渲染**一份** ①~④', async () => {
+      await setupCurtain()
+      expect(screen.queryByRole('button', { name: /新增部位/ })).toBeNull()
+      // 四个步骤各只有一份（红证：修复前「新增部位」会让它们翻倍）
+      expect(screen.getAllByRole('button', { name: /^1 尺寸与数量/ })).toHaveLength(1)
+      expect(screen.getAllByRole('button', { name: /^2 工艺规格/ })).toHaveLength(1)
+      expect(screen.getAllByRole('button', { name: /^3 加工项/ })).toHaveLength(1)
+      expect(screen.getAllByRole('button', { name: /^4 特殊选项/ })).toHaveLength(1)
+      // 行头（「部位 N」+ 行内「删除」）整体移除：删除只保留在**组头**一处
+      expect(screen.queryByText(/^部位 \d+$/)).toBeNull()
     })
 
-    it('判据 6：同一商品两个部位（布 + 纱）⇒ 两条 order_items 各带**自己的**宽高', async () => {
+    it('判据 6（#4521）：帘体 = 布帘+纱帘 ⇒ 出纱帘米数/单价，提交**两条**明细行（同樘帘）', async () => {
       await setupCurtain()
-      fireEvent.click(screen.getByRole('button', { name: /新增部位/ }))
-      await waitFor(() => expect(screen.getByText('部位 2')).toBeInTheDocument())
-      pickChip('部位', '布帘', 0)
-      pickChip('部位', '纱帘', 1)
       fillSize(0, '6.6', '2.6')
-      fillSize(1, '6.6', '1.6')
+      pickBody('布帘+纱帘')
+      expandCraft()
+      // 米数默认 = 主布米数（1 米），可改
+      expect((field('纱帘米数') as HTMLInputElement).value).toBe('1')
+      fireEvent.change(field('纱帘米数'), { target: { value: '4' } })
+      fireEvent.change(field('纱帘单价'), { target: { value: '30' } })
 
       await fillCustomerAndSubmit()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
 
       const items = mockCreateOrder.mock.calls[0][0].items
       expect(items).toHaveLength(2)
-      expect(items[0].height).toBe(2.6)
-      // 纱帘常做半帘 —— 宽高是**部位级**（§5.9.2），共用行级宽高必有一件算错用料
-      expect(items[1].height).toBe(1.6)
+      const [main, sheer] = items
+      // 主布行：部位缺省即布帘 ⇒ **不写** curtainType（下游 DEFAULT_CURTAIN_TYPE 兜底）
+      expect(main.processingInfo.curtainType).toBeUndefined()
+      expect(main.productName).toBe('遮光窗帘')
+      // 纱帘行：显式写部位 + 与主布行同樘帘 + 不挂加工项 + 不关联主布商品
+      expect(sheer.productName).toBe('纱帘')
+      expect(sheer.quantity).toBe(4)
+      expect(sheer.unitPrice).toBe(30)
+      expect(sheer.processingInfo.curtainType).toBe('纱帘')
+      // 纱帘是**另一个部位** ⇒ 必须带同一份工艺规格（否则取错路线）
+      expect(sheer.processingInfo.craft).toBe('韩褶')
+      expect(sheer.processingInfo.craftLineId).toBe(main.processingInfo.craftLineId)
+      expect(main.processingInfo.craftLineId).toBeTruthy()
+      expect(sheer.processingInfo.fabric_meters).toBe(4)
+      expect(sheer.processingInfo.metersSource).toBe('人工指定')
+      expect(sheer.processingInfo.processingItems).toBeUndefined()
+      expect(sheer.processingInfo.processingFee).toBeUndefined()
+      expect(sheer.productId).toBeUndefined()
+      // 宽 / 高与主布行同一份（尺寸数量是商品组级属性）
+      expect(sheer.width).toBe(6.6)
+      expect(sheer.height).toBe(2.6)
     })
 
-    it('判据 7（展示）：部位行可收起为摘要 —— 录入项隐藏、结论常显', async () => {
+    it('判据 7（#4521）：纱帘金额计入订单总额（否则后端「应收 - 优惠 ≈ 实收」会拒单）', async () => {
+      await setupCurtain() // 主布 ¥100/米 × 1 米
+      pickBody('布帘+纱帘')
+      expandCraft()
+      fireEvent.change(field('纱帘单价'), { target: { value: '30' } }) // 米数默认 1
+      await waitFor(() => {
+        expect(screen.getByText('订单金额').closest('div')!.textContent).toContain('¥130.00')
+      })
+      await fillCustomerAndSubmit()
+      await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+      expect(mockCreateOrder.mock.calls[0][0].actualAmount).toBe(130)
+    })
+
+    it('判据 8（#4521）：带纱帘但没填纱帘单价 ⇒ **提交被拦**（不得静默丢掉纱帘行）', async () => {
       await setupCurtain()
       fillSize(0, '6.6', '2.6')
-      // 行头 = 含摘要尺寸的那个按钮
-      const header = screen.getByText(/6\.6 × 2\.6 m/).closest('button') as HTMLElement
-      expect(header).toBeTruthy()
-      fireEvent.click(header)
+      pickBody('布帘+纱帘')
+      await fillCustomerAndSubmit()
+      await waitFor(() => {
+        expect(screen.getByText(/纱帘单价须大于 0/)).toBeInTheDocument()
+      })
+      expect(mockCreateOrder).not.toHaveBeenCalled()
+    })
 
-      // 收起 = **CSS 隐藏而非卸载**（issue #4489 的组件包发现：卸载会丢「手改留痕」标志）
-      // 行体收起 = CSS 隐藏（`hidden` 类）；步骤内容另见向导手风琴
-      expect(screen.getByText('尺寸与数量', { exact: false }).closest('.hidden')).not.toBeNull()
-      // 摘要仍报出尺寸（收起 ≠ 信息消失）
-      expect(screen.getByText(/6\.6 × 2\.6 m/)).toBeInTheDocument()
+    it('判据 9（#4521）：只买纱帘 ⇒ 一行且 `curtainType=纱帘`；用料**手填**（不算料、无公式）', async () => {
+      await setupCurtain()
+      pickBody('纱帘')
+      fillSize(0, '6.6', '2.6')
+      openWizardStep('尺寸与数量')
+      expect(screen.getByText('纱帘按实际买多少填，不自动算料')).toBeInTheDocument()
+      // 没有「恢复按公式计算」入口（纱帘根本没有公式可恢复）
+      expect(screen.queryByText('恢复按公式计算')).toBeNull()
+      const qtyInput = (await screen.findByText('数量'))
+        .closest('div')!
+        .querySelector('input') as HTMLInputElement
+      fireEvent.change(qtyInput, { target: { value: '5' } })
+
+      await fillCustomerAndSubmit()
+      await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+      const items = mockCreateOrder.mock.calls[0][0].items
+      expect(items).toHaveLength(1)
+      expect(items[0].processingInfo.curtainType).toBe('纱帘')
+      expect(items[0].quantity).toBe(5)
+      // 部位=纱帘 ⇒ 是否定型默认「否」（真值源 §10 布帘是 / 纱帘否）
+      expect(items[0].processingInfo.isShaped).toBe(false)
+    })
+
+    it('判据 10（#4521）：售卖形态=布料 ⇒ 不出现帘体 / ①~④（布料单无加工）', async () => {
+      await setupCurtain()
+      fireEvent.click(
+        within(screen.getByRole('radiogroup', { name: '售卖形态' })).getByRole('radio', {
+          name: '布料',
+        })
+      )
+      expect(screen.queryByRole('radiogroup', { name: '帘体' })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^1 尺寸与数量/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^2 工艺规格/ })).toBeNull()
     })
   })
 })

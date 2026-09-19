@@ -1,11 +1,13 @@
-// case_ids: OR-036
+// case_ids: OR-036, OR-038
 // 原声明 `OR-009, UI-038` 是**借用式**（issue #4431 B7 核实并替换）：OR-009 是下单全流程、
 // UI-038 是「新增订单表单选择已有客户回填收货信息」—— 两条都不覆盖本文件被测行为（算料试算纯函数）。
 // 改用 **OR-036**（本 PR 新增，判据即本文件 + orders-new-craft-calc.test.tsx）。
+// OR-038（issue #4521 新增）：**纱帘不算料**（「买多少就是多少」）这条 fail-closed。
 /**
  * 下单页算料试算的**纯函数半边**（issue #4434 · 前置 #4421）。
  *
- * 判据聚焦三条 fail-closed：**参数不全不发请求** / **非韩褶不发请求** / **失败不给估算值**。
+ * 判据聚焦四条 fail-closed：**参数不全不发请求** / **纱帘不算料** / **非韩褶不发请求** /
+ * **失败不给估算值**。
  * 红证（实现前）：`@/lib/craft-calc-request` 不存在 ⇒ import 即红。
  */
 import { describe, expect, it } from 'vitest'
@@ -17,7 +19,9 @@ import {
   craftCalcErrorText,
   craftCalcParamsOf,
   craftCalcSignature,
+  isAutoCalcUnavailable,
 } from '@/lib/craft-calc-request'
+import { CURTAIN_TYPE_SHEER } from '@/lib/order-craft-fields'
 
 const line = (over: Partial<Parameters<typeof craftCalcParamsOf>[0]> = {}) => ({
   width: 6.6,
@@ -73,6 +77,24 @@ describe('craftCalcParamsOf — 凑齐入参才发请求（fail-closed）', () =
   it('韩褶 / 未指定工艺 ⇒ 可试算（未指定按默认韩褶档）', () => {
     expect(craftCalcParamsOf(line({ craft: { craft: '韩褶' } }))).not.toBeNull()
     expect(craftCalcParamsOf(line({ craft: {} }))).not.toBeNull()
+  })
+
+  // issue #4521（用户裁定「**纱帘不需要算用料米数，买多少就是多少**」）：
+  // 纱帘发了试算请求 ⇒ 商家手填的米数会被公式值**静默改回**（错单且无人知道）。
+  it('#4521 纱帘 ⇒ null（买多少就是多少，**不得**发试算请求）', () => {
+    expect(
+      craftCalcParamsOf(line({ curtainType: CURTAIN_TYPE_SHEER, craft: { craft: '韩褶' } }))
+    ).toBeNull()
+  })
+
+  it('#4521 主帘（部位缺省 / 布帘）⇒ 照常试算（红证：不得把「不写部位」也一起挡掉）', () => {
+    expect(craftCalcParamsOf(line({ craft: { craft: '韩褶' } }))).not.toBeNull()
+  })
+
+  it('#4521 isAutoCalcUnavailable：纱帘恒为「无自动算料」（页面据此提示手填米数）', () => {
+    expect(isAutoCalcUnavailable(line({ curtainType: CURTAIN_TYPE_SHEER }))).toBe(true)
+    expect(isAutoCalcUnavailable(line({ craft: { craft: '韩褶' } }))).toBe(false)
+    expect(isAutoCalcUnavailable(line({ craft: { craft: '打孔' } }))).toBe(true)
   })
 })
 

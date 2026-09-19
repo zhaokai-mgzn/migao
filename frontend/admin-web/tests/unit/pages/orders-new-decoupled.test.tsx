@@ -107,8 +107,8 @@ describe('NewOrderPage — 商品↔加工项解耦（#4371）', () => {
     fireEvent.click(await screen.findByText('点击搜索并选择商品'))
     fireEvent.click(await screen.findByText('遮光窗帘'))
 
-    // #4508：空态不渲染组壳 ⇒ 先等商品落地（部位行出现）才有「加工选项」
-    await screen.findByText('部位 1')
+    // #4508：空态不渲染组壳 ⇒ 先等商品落地（组壳出现）才有「加工选项」
+    await screen.findByText('帘体')
     // 商品 payload 无 supportsProcessing/hasProcessing，旧实现会把选择器整块隐藏
     // issue #4489 判据 3：加工选项**默认折叠** ⇒ 断言折叠头（不再是一段静态文案）
     expect(screen.getByRole('button', { name: /^\d+ 加工项/ })).toBeInTheDocument()
@@ -133,8 +133,8 @@ describe('NewOrderPage — 商品↔加工项解耦（#4371）', () => {
 
     fireEvent.click(await screen.findByText('点击搜索并选择商品'))
     fireEvent.click(await screen.findByText('遮光窗帘'))
-    // #4508：先等商品落地（空态没有部位行 ⇒ 没有加工选项）
-    await screen.findByText('部位 1')
+    // #4508：先等商品落地（空态没有组壳 ⇒ 没有加工选项）
+    await screen.findByText('帘体')
     // 勾选目录第一项（打孔加工，按米 5 元）—— 等选择器渲染完再点
     expandProcessing()
     const checkboxes = await screen.findAllByRole('checkbox')

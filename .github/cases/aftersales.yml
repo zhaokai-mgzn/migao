@@ -237,6 +237,16 @@ cases:
     # 消除「同栈并行用例互相写同一命名空间」造成的非确定性（真实 run 34856561459）。
     namespaces:
       - "customer_phone:13800138000"
+    # 运行期前置断言（issue #4521 的 burn-down 缴费；口径与先例 AS-003 / OR-012 / chat.yml 的
+    # 订单卡片用例逐字同构）：本用例 R1/R2 都按**客户手机号**定位唯一目标单，依赖
+    # 「13800138000 名下订单集合稳定」—— 订单集合为空时 order_query 无从命中 ⇒ 后续建工单
+    # 整条链不成立，而报告上只表现为 `unmatched expectation`（看起来像 agent 不干活，归因全错）。
+    # 命名空间已在位（与同手机号的建单用例自动互斥）⇒ 本次只补「前置可见性」这一格。
+    # **有意不给 `expect`**：计数随栈而变（B 端种子叠加后同一号码笔数不同）⇒ 写死基线 =
+    # 依赖栈的恒红判据；漂移格（缺省 `max_growth: 0`）仍生效，且本用例**不建单**（只查单 + 建工单）。
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
 
     expectations:
       - tool: order_query
@@ -246,7 +256,7 @@ cases:
       - "aftersale_create 的 order_id 来自第2步查询结果"
       - "售后工单包含正确的退款原因"
     skip_reason: ""
-    merge_log: "eval M008 独有（售后全旅程）。2026-09-14 自包含化（issue #3568）：第 2 轮硬编码单号 ORD-20260701-0001（评测环境不存在，OR-006/OR-010 已实测 found:0）→ 换手机号唯一指代，同 AS-003（#3511）先例"
+    merge_log: "eval M008 独有（售后全旅程）。2026-09-14 自包含化（issue #3568）：第 2 轮硬编码单号 ORD-20260701-0001（评测环境不存在，OR-006/OR-010 已实测 found:0）→ 换手机号唯一指代，同 AS-003（#3511）先例。2026-09-19（issue #4521 的 burn-down 缴费，metric=entries ⇒ 必须整条销账）：本用例命中的唯一存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION ⇒ 补 `precondition[order_count_for_phone: 13800138000]`（有意不给 `expect`，同 AS-003/OR-012 口径；本用例不建单 ⇒ 漂移判据不会被自己踩红）。user_inputs / expectations / data_checks / namespaces 原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_aftersales.py"

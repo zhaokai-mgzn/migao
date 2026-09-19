@@ -1,4 +1,4 @@
-// case_ids: OR-035
+// case_ids: OR-035, OR-038
 // 原声明 `OR-009, UI-038` 是**借用式**（issue #4431 B7 核实并替换）：OR-009 是下单全流程、
 // UI-038 是「新增订单表单选择已有客户回填收货信息」—— 两条都不覆盖本文件被测行为
 // （默认档常量的**有守卫副本**：逐值读 curtain_calc.py 比对）。改用 **OR-035**（本 PR 新增）。
@@ -58,30 +58,33 @@ describe('下单页默认档与算料引擎常量同步（issue #4420）', () =>
     expect(DEFAULT_PLEAT_SPACING).toBe(0.125)
   })
 
-  it('三条默认值 = 用户裁定的档（加工类型定高买宽 / 款式单色 / 褶距 0.125）', () => {
+  it('默认值 = 用户裁定的档（工艺韩褶 / 加工类型定高买宽 / 款式单色 / 褶距 0.125 / 对花否 / 定型是）', () => {
     expect(DEFAULT_CUTTING_MODE).toBe('定高买宽')
     expect(DEFAULT_STYLE).toBe('单色')
-    // issue #4493：默认档扩到 8 项全覆盖（用户「太多点选了」）
+    // issue #4521：**部位不再进默认档**（主帘缺省即布帘）；定型默认「是」由**帘体**结构给
+    // （`defaultIsShapedForBody`，真值源 §10「布帘默认是」）。
     expect(createDefaultCraftSpec()).toEqual({
-      curtainType: '布帘',
       craft: '韩褶',
       cuttingMode: '定高买宽',
       style: '单色',
       pleatSpacing: 0.125,
       hasPattern: false,
+      isShaped: true,
     })
   })
 
-  it('默认值是**真值**：经 buildCraftSpec 后三个键都落库（不是被「缺值不写」吞掉）', () => {
+  it('默认值是**真值**：经 buildCraftSpec 后各键都落库（不是被「缺值不写」吞掉）', () => {
     const spec = buildCraftSpec(createDefaultCraftSpec())
     expect(spec).toEqual({
-      curtainType: '布帘',
       craft: '韩褶',
       cuttingMode: '定高买宽',
       style: '单色',
       pleatSpacing: 0.125,
       hasPattern: false,
+      isShaped: true,
     })
+    // 部位**不在**默认档里（issue #4521）：写它 = 给主帘留一条被标成纱帘的口子
+    expect(spec).not.toHaveProperty('curtainType')
   })
 
   it('默认档与库侧枚举逐字一致（错一个字下游取不到路线）', () => {

@@ -155,6 +155,7 @@ _CASE_AS_005 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
 # ── AS-006 [NORMAL] 售后工单退款/退货完结 - 按商品「退货回补库存」开关决定是否回补库存（源: cases/aftersales.yml）──
@@ -4040,6 +4041,24 @@ _CASE_OR_036 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-038 [NORMAL] 下单页移除「部位」—— 四类购买情况（布帘 / 布帘+纱帘 / 只买纱帘 / 布料）+ 纱帘不算料（源: cases/order.yml）──
+_CASE_OR_038 = EvalCase(
+    id='OR-038',
+    legacy_id='',
+    title='下单页移除「部位」—— 四类购买情况（布帘 / 布帘+纱帘 / 只买纱帘 / 布料）+ 纱帘不算料',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）'],
+    expectations=[],
+    data_checks=['**判据 A1·「部位」字段整体移除**：工艺规格里**没有**部位 chips（红证：修复前 `radiogroup name=部位` 存在）；`buildCraftSpec` 产出的对象**不含 `curtainType`** —— 主帘缺省即布帘（与下游 `ProcessingOrderService.DEFAULT_CURTAIN_TYPE` 同值），写侧再写它 = 留一条把主帘标成纱帘、取错工序路线的口子。', '**判据 A2·「新增部位」入口与部位行壳移除**：下单页**没有**「新增部位」按钮，一个商品组只渲染**一份** ①尺寸与数量 ②工艺规格 ③加工项 ④特殊选项（红证：修复前点「新增部位」会让四步各翻倍），也没有「部位 N」行头与「N 个部位」计数。', '**判据 A3·四类购买情况可达**：售卖形态=布料（无加工）；成品帘 + 帘体 ∈ {布帘, 纱帘, 布帘+纱帘}。帘体是**商品组级** chips，默认「布帘」。', '**判据 A4·布帘+纱帘 ⇒ 两条明细行**：主布行（`curtainType` 缺省、带 `craftLineId` 绑组键）+ 纱帘行（`curtainType=纱帘`、**携带同一份工艺规格** —— 纱帘是另一个部位，不带会被当成布帘；与配布边行「刻意不带规格」互为红证）；纱帘行**不挂加工项**、**不关联主布商品**（不双扣库存/不双计销量）、宽高与主布行同一份（尺寸数量是商品组级属性）。', '**判据 A5·纱帘不算料**：`craftCalcParamsOf` 对部位=纱帘返回 `null`（**不发试算请求** —— 用户口径「纱帘不需要算用料米数，买多少就是多少」，发了请求会把商家手填的米数静默改回公式值）；页面只报「纱帘按实际买多少填」，**不给**「恢复按公式计算」（没有公式可恢复）；`isAutoCalcUnavailable` 对纱帘恒为 true。', '**判据 A6·纱帘金额与闸门**：纱帘行金额计入订单总额（否则后端「应收 - 优惠 ≈ 实收」校验会拒单）；**带纱帘但没填纱帘单价 ⇒ 提交被拦且提示常显**（红证：静默丢一条商家显式选中的纱帘行 = 交付一张与所见不符的错单）。', '**判据 A7·部位默认 = 主布，定型默认改由帘体结构给**：只买纱帘时该行显式写 `curtainType=纱帘` 且「是否定型」默认「否」；布帘 / 布帘+纱帘 默认「是」（真值源 §10「布帘默认是 / 纱帘否」—— 原 #4489 的**选部位联动**改成**帘体结构默认**，同一份真值源）。', '**判据 A8·布料单不受影响**：售卖形态=布料 ⇒ 不出现帘体、不出现 ①~④（沿用 #4493 口径）。', '**红证（实现前）**：`CURTAIN_BODY_OPTIONS` / `buildSheerLineCraftSpec` / `bodyHasSheerLine` 不存在 ⇒ import 即红；页面仍有 `radiogroup name=部位` 与「新增部位」按钮。'],
+    skip_reason='[backend-contract] 前端写侧契约（admin-web 页面 + 组件 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/order-craft-fields.test.ts、frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts、frontend/admin-web/tests/unit/lib/craft-calc-defaults.test.ts、frontend/admin-web/tests/unit/components/OrderCraftFields.test.tsx 与 frontend/admin-web/tests/unit/pages/orders-new.test.tsx 执行',
+    tags=['order', 'craft_spec', 'write_side', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OR-037 [NORMAL] 行话下单落内部值 - 顾客说「韩式褶」「纳米圈」⇒ craft 落「韩褶」「打孔」（不是原话）（源: cases/order.yml）──
 _CASE_OR_037 = EvalCase(
     id='OR-037',
@@ -6797,6 +6816,7 @@ ALL_CASES = (
     _CASE_OR_034,
     _CASE_OR_035,
     _CASE_OR_036,
+    _CASE_OR_038,
     _CASE_OR_037,
     _CASE_PG_001,
     _CASE_PG_002,
