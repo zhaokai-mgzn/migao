@@ -3,10 +3,22 @@ description: 加工项/加工分类管理
 red_flags: []
 business_truths:
   - [processing-manage.crud] 加工项支持 CRUD
-  - [processing-manage.product-link] 加工项关联商品
   - [processing-manage.order-judge] 含加工订单判定逻辑
   - [processing-manage.category-sort] 加工分类支持排序
   - [processing-manage.pricing-methods] 加工项计价方式仅 per_meter/per_set/fixed/per_area（行业加工费按米计价、辅料含在加工费中）；无 per_piece 与「每米数量」密度（issue #3005 回滚 #2986）
+
+# ── 已否证真值（issue #4430 / B3）──────────────────────────────────────────────
+# 原条目 `[processing-manage.product-link] 加工项关联商品` 已被后续 issue **否证**：
+# 「商品 ↔ 加工项」绑定彻底解耦（加工项是**店铺级目录**，与商品无关），关联表
+# `product_processing_items` 已由迁移 DROP。此处**不是**「删掉就完事」—— 删掉是静默的：
+# ① 用例侧若还留着 truths_ref 只会得到「真值 ID 不存在」（分不清「否证」与「打错字」）；
+# ② 模板里留着未标注的过期条目则**永远不红**（`truths.py check` 只看引用完整性、不看真值内容）。
+# ⇒ 用 `retired_truths` 显式登记否证依据，由 `truths.py check` 判红：
+# 被登记的 ID 不得再被 `.github/cases/**` 引用，也不得仍留在 `business_truths`。
+retired_truths:
+  processing-manage.product-link:
+    retired_by: 4371
+    reason: "「商品 ↔ 加工项」绑定已彻底解耦（issue #4371）：加工项为**店铺级目录**、与商品无关，关联表 product_processing_items 已 DROP；加工项改由店铺级目录（processing_item_query，不带商品分类参数）取"
 
 primary_specs:
   - tests/e2e/specs/catalog/processing.spec.ts
@@ -24,5 +36,5 @@ reviewer_asserts:
 
 confidence_required: 80%
 common_pitfalls:
-  - 加工项关联商品未级联更新
+  # 「加工项关联商品未级联更新」已随 issue #4371 解耦删除（关联表已 DROP，不存在级联更新）
   - 含加工订单误判

@@ -318,8 +318,15 @@ class TestCraftSpecKeyCompletion:
         assert props["cuttingMode"]["enum"] == ["定高买宽", "定宽买高"], (
             "加工类型枚举 = 算料侧 `formula_used` 的两态口径（设计文档 §4.2）"
         )
-        assert props["openCount"]["enum"] == [1, 2, 4], (
-            "打开方式开数只认 1/2/4（单开/双开/四开）"
+        # 打开方式开数 = **正整数**，不是固定枚举（issue #4430）—— 权威是
+        # `V64__open_count_is_a_positive_integer.sql` 末段列注释（1 单开 / 2 双开·对开 /
+        # **3 三开** / 4 四开 …）与真值源 `docs/curtain-production-rules.md` §8「打开方式」。
+        # 写死 `enum: [1, 2, 4]` 会把用户口径里**明确存在**的三开当非法值拦在写面。
+        assert "enum" not in props["openCount"], (
+            "打开方式开数是正整数（1/2/3/4 …），不得写死为枚举（issue #4430 / V64）"
+        )
+        assert props["openCount"].get("minimum") == 1, (
+            "打开方式开数下限 = 1（正整数；0 与负数不是开数）"
         )
         for key in ("pleatSpacing", "patternRepeat", "fabric_meters", "pleat_count",
                     "per_panel_pleats", "panels", "fullness", "fullness_actual"):
@@ -360,16 +367,25 @@ class TestCraftSpecKeyCompletion:
             "必须说明该字段的真实后果（默认文案只对 SKU 规格族成立）"
         )
 
-        rejected = OrderCreateTool._validate_processing_info(0, {"openCount": 3})
-        assert rejected is not None and rejected.success is False
-        assert "打开方式" in (rejected.message or "")
-        assert "1" in (rejected.suggestion or "") and "4" in (rejected.suggestion or "")
+        # 打开方式（issue #4430）：取值域 = **正整数**，不是固定枚举 —— 三开必须放行，
+        # 1/2/4 与更大开数同样合法（V64：「正整数 1 / 2 / 3 / 4 …，不是固定枚举」）。
+        for legal in (1, 2, 3, 4, 6, 2.0):
+            assert OrderCreateTool._validate_processing_info(0, {"openCount": legal}) is None, (
+                f"openCount={legal!r} 是合法正整数开数，不得被写面拦掉（V64 / 真值源 §8）"
+            )
+        # 键缺席仍放行（可选透传，不得变成硬门槛 —— 存量单/普通商品没有这个键）
+        assert OrderCreateTool._validate_processing_info(0, {}) is None
 
-        for bad in ("2", True):        # 字符串数字 / 布尔都不得被当成开数 2/1 静默放行
+        for bad in (0, -1, 1.5, "2", True):   # 非正整数：0/负/小数/字符串数字/布尔
             rejected = OrderCreateTool._validate_processing_info(0, {"openCount": bad})
             assert rejected is not None and rejected.success is False, (
-                f"openCount={bad!r} 被静默接受 ⇒ 取值类型口径不严"
+                f"openCount={bad!r} 被静默接受 ⇒ 取值类型/下限口径不严"
             )
+            assert "打开方式" in (rejected.message or ""), "报错必须点名是哪个字段"
+        rejected = OrderCreateTool._validate_processing_info(0, {"openCount": 0})
+        assert "正整数" in (rejected.suggestion or ""), (
+            "必须点名合法取值域是**正整数**（含三开），让 LLM 下一轮自愈"
+        )
 
     @pytest.mark.parametrize(
         "pinfo, label",

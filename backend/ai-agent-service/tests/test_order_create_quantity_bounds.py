@@ -245,10 +245,11 @@ def test_write_tool_enum_semantic_params_declare_enum():
 def _invalid_enum_items(enum: list) -> list:
     """枚举项里**无效**的项（空转声明/垃圾值）。
 
-    issue #4374：数值枚举（如 `openCount` 的 `[1, 2, 4]`）是 JSON Schema 的合法形态
-    （`openCount` 的合法值本就是**数字**，不是字符串），但「非空字符串」这条字面口径会把它
+    issue #4374：**数值枚举**（形如 `[1, 2, 4]`）是 JSON Schema 的合法形态
+    （枚举项本就是**数字**，不是字符串），但「非空字符串」这条字面口径会把它
     误判成坏声明。本函数按**值的有效形态**判定（非空字符串 / 有限数值），
     语义不变：`[]`、`[None]`、`[""]`、`[True]`、`[{}]` 一律仍判无效。
+    （`openCount` 自 issue #4430 起是**正整数**、不再声明 `enum`，故此处只留通用形态示例。）
     """
     bad = []
     for v in enum:
@@ -285,7 +286,7 @@ def test_enum_item_guard_rejects_junk_and_accepts_numeric_enum():
     assert _invalid_enum_items([]) == []                      # 空列表由上方「非空」断言拦
     for junk in ([None], [""], [True], [{}], [[]], [float("nan")], [float("inf")]):
         assert _invalid_enum_items(junk) == junk, f"{junk} 未被判为无效枚举项（判据空转）"
-    assert _invalid_enum_items([1, 2, 4]) == []               # openCount 的合法值
+    assert _invalid_enum_items([1, 2, 4]) == []               # 数值枚举形态仍有效
     assert _invalid_enum_items(["定高买宽", "定宽买高"]) == []  # cuttingMode 的合法值
 
 
