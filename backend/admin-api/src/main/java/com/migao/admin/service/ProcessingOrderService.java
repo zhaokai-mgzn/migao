@@ -67,14 +67,20 @@ import java.util.concurrent.ThreadLocalRandom;
  * <p><b>一行 {@code order_items} = 一个部位（帘件）</b>（用户裁定 2026-09-19，issue #4387）：
  * 布 + 纱 = **两条明细行**，各成一个部位，靠 {@code craftLineId} 绑成**同一樘窗**（一个窗户）——
  * 樘窗是套级工序（#4384）与加工费樘窗级（#4386）的归属层级；配布边仍不独立成部位。</p>
- * 取法 = {@link #deriveRouteKey} 的三层链：
+ * 取法 = {@link #deriveRouteKey} 的三层链（issue #4452 起，第 2 层从「{@code contains} 猜文本」
+ * 换成**受控来源**）：
  * <b>显式字段</b>（issue #4362 起 = {@code order_items} 的 craft spec **列**；issue #4354 起
- * {@code processing_info} 顶层同键是旧载体）&gt; <b>加工项推导</b> &gt; <b>信号派生兜底</b>
- * （{@link ProductionOperationQueryService#routeSignals} 的商家可配信号映射表，issue #4308），
- * 三层的命中情况落 {@code processing_orders.route_source}（四态可观测）。
- * <p>⚠️ <b>派生路径**不退场**</b>（用户裁定 2026-09-19「部位不是必填的」）：S1 的字段**全部可空**、
- * 不设必填校验 ⇒ 「没填部位/工艺的单」永远存在，派生 + 信号映射表是**长期**兜底链。
- * 代码注释里旧表述「待订单侧补字段后连同信号表一起退场」**已作废**，不得再按它写回。</p>
+ * {@code processing_info} 顶层同键是旧载体）&gt; <b>受控来源</b>（部位 ← {@code componentRole}
+ * 受控枚举；工艺 ← 加工项显式声明 {@code processing_items.craft_hint}）&gt;
+ * <b>存量单信号兜底</b>（{@link ProductionOperationQueryService#routeSignals}，**只在两维都缺时**
+ * 才被读，且信号源只剩加工项名/options —— 商品名与销售方式已从判据里摘掉），
+ * 三层的命中情况落 {@code processing_orders.route_source}（四/五态可观测）。
+ * <p>⚠️ <b>存量兜底路径**不退场**</b>（用户裁定 2026-09-19「部位不是必填的」）：craft spec 列
+ * **全部可空**、不设必填校验 ⇒ 存量的「没填部位/工艺的单」永远存在，信号映射表是它们的
+ * **兜底面**（表**不删**）。但新单只要给出任一维（列值 / {@code componentRole} / {@code craft_hint}）
+ * ⇒ **全程不读**该表。代码注释里旧表述「待订单侧补字段后连同信号表一起退场」**已作废**，
+ * 不得再按它写回；同样作废的还有「加工项名/options/商品名/销售方式四段信号链」
+ * 与「加工项比商品名权威」这条相对次序判据（商品名不再参与）。</p>
  * <p>⚠️ 部位名与路线键仍**不是**同一个语义层（前者是展示名、后者是索引键），
  * 不得把前者当成后者的真值。</p>
  */
@@ -224,6 +230,28 @@ public class ProcessingOrderService {
 
     /** 部位（`curtainType`）取值「布帘」—— 樘窗的**主布行**（套级工序的承载体，同写侧 #4395 的代表行口径）。 */
     private static final String CURTAIN_TYPE_CLOTH = "布帘";
+
+    /** 部位（`curtainType`）取值「纱帘」—— 纱是**独立部位**（`componentRole=纱` 的行）。 */
+    private static final String CURTAIN_TYPE_SHEER = "纱帘";
+
+    /**
+     * **部件角色 → 部位**（V78，issue #4452）：受控枚举
+     * （`order_create.py` 的工具 schema 里就是 enum：主布 / 配布边 / 纱）⇒ 它是**结构化输入**，
+     * 不是「名词解释」。
+     *
+     * <p><b>为什么改走它</b>：旧派生链去**商品名**里 `contains '纱'` 判部位 —— 营销文案不是结构化输入，
+     * 而受控枚举已经在手边（{@code isAbsorbedEdgeRow} 早就用它判「纱 = 独立部位」）。</p>
+     *
+     * <p>{@code 配布边} ⇒ 布帘：它是**不独立成部位**的部件（组内出现主布行时被吸收，
+     * 见 {@link #isAbsorbedEdgeRow}），只有在组内没有主布行时才自成部位 ⇒ 此时它是**主布位**。</p>
+     *
+     * <p>⚠️ 未知取值 ⇒ **不猜**（返回 null，让该维落到缺维处理），不得默认成布帘：
+     * 枚举以后扩值（如「帘头」）时，旧代码静默按布帘算就是错配。</p>
+     */
+    private static final Map<String, String> COMPONENT_ROLE_POSITIONS = Map.of(
+            "纱", CURTAIN_TYPE_SHEER,
+            "主布", CURTAIN_TYPE_CLOTH,
+            COMPONENT_ROLE_EDGE, CURTAIN_TYPE_CLOTH);
 
     /** 加工单状态机（与 OrderService.STATUS_TRANSITIONS 同模式） */    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
             "generated", Set.of("issued", "cancelled"),
@@ -1025,8 +1053,8 @@ public class ProcessingOrderService {
         }
         // T1：全无派生信号 ⇒ 直接取默认路线模板（**该租户的**默认，不是常量）
         if ("default".equals(source)) {
-            log.warn("{} 订单无任何信号命中（加工项名/options/商品名/销售方式），落默认路线 {}: "
-                            + "tenantId={}, productName={}, 信号={}",
+            log.warn("{} 订单无任何信号命中（componentRole / craft_hint / 存量信号表的加工项名·options），"
+                            + "落默认路线 {}: tenantId={}, productName={}, 信号={}",
                     INCIDENT_ROUTE_DEFAULTED, usedKey, tenantId, entry.get("productName"), signals(entry));
         }
         // T2：派生出部位/工艺但该部位没有路线模板 ⇒ 回落默认路线模板
@@ -1249,22 +1277,34 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 路线键（`curtain_type` + `craft`）+ 来源：**显式字段 &gt; 加工项推导 &gt; 信号派生兜底**
+     * 路线键（`curtain_type` + `craft`）+ 来源：**显式字段 &gt; 受控来源 &gt; 存量单信号兜底**
      * （issue #4354 落码「直读优先」，issue #4362 把「显式字段」升级为 {@code order_items} 的
-     * craft spec 列并冻结为**三层链**）。
+     * craft spec 列，issue #4452 把第 2 层从「`contains` 猜文本」换成**受控来源**）。
      *
-     * <p><b>取法优先级（三层，冻结口径）</b>：</p>
+     * <p><b>取法优先级（三层，issue #4452 冻结口径）</b>：</p>
      * <ol>
      *   <li><b>显式字段</b>（最高）—— 订单行写下的部位/工艺。载体有两者、**同源**：
      *       {@code order_items.curtain_type} / {@code craft} <b>列</b>（V63 / issue #4362，结构化落库）
      *       与 {@code processing_info} 顶层的同键（issue #4354 起的旧载体，存量单）；
-     *       列非空时在 {@link #buildSnapshot} 里覆盖同键 ⇒ 两维都在 ⇒ 来源 {@code direct}；</li>
-     *   <li><b>加工项推导</b> —— 显式字段缺的那一维由**加工项**（名称自带部位/工艺，如
-     *       「韩褶-布」「打孔-纱」；或加工项 options）经信号映射表推出；</li>
-     *   <li><b>信号派生兜底</b> —— 加工项也不给信号时，退到商品名 / 销售方式（同一张映射表）；
-     *       两层都不命中 ⇒ 两维取**该租户的默认**（部位常量 / 默认工艺，来源 {@code default}，T1）。</li>
+     *       列非空时在 {@link #buildSnapshot} 里覆盖同键 ⇒ 两维都在 ⇒ 来源 {@code direct}
+     *       （**此时全程不读** {@code production_route_signals}）；</li>
+     *   <li><b>受控来源</b>（第 2 层，issue #4452 新增）—— 显式字段缺的那一维由**结构化字段**补齐：
+     *       部位 ← {@code componentRole} 受控枚举（{@link #COMPONENT_ROLE_POSITIONS}：{@code 纱} ⇒ 纱帘，
+     *       {@code 主布}/{@code 配布边} ⇒ 布帘）；工艺 ← 加工项的**显式声明**
+     *       {@code processing_items.craft_hint}（{@link #craftHintOf}）。
+     *       ⚠️ **不再** `contains` 加工项名 / 加工项 options —— 那些是**商家可自定义的自由文本**，
+     *       把判据绑在研发改的关键词表上就是「名词解释」（{@code craft-routing-customization.md} §4 P2）；</li>
+     *   <li><b>存量单信号兜底</b>（第 3 层，**两维都缺**时才轮到）—— 存量的**订单行**上没有 V63 列值
+     *       也没有 {@code componentRole} / {@code craft_hint}（老数据形态），此时才读
+     *       {@code production_route_signals} 兜底；信号源**只剩加工项名 / 加工项 options**
+     *       （商品名与销售方式已从判据里摘掉 —— 营销文案不是结构化输入）。
+     *       三层都不命中 ⇒ 两维取**该租户的默认**（部位常量 / 默认工艺，来源 {@code default}，T1）。</li>
      * </ol>
-     * <p>只命中/只直读一维 ⇒ 来源 {@code partial}。</p>
+     * <p>只补齐一维 ⇒ 来源 {@code partial}（补救动作 = 把另一维填进订单，或让加工项声明它）。</p>
+     *
+     * <p><b>信号表是「存量单兜底」，不是长期判据</b>（issue #4452）：表**不删**（存量单仍需派生），
+     * 但新单两维都缺时按既有四/五态 {@code route_source} **显式标注**（{@code default}/{@code partial}）
+     * 并由 {@code GET /production/orders/routing-anomalies} 列出可行动清单，**不静默落默认**。</p>
      *
      * <p><b>⚠️ P2b：缺 {@code craft} 取「商户级默认工艺」，不再写死常量（issue #4459 §1②）</b>：
      * {@code production_crafts} 的 {@code is_default} 行是**商家可配**的（改默认工艺 ⇒ 后续订单
@@ -1277,18 +1317,19 @@ public class ProcessingOrderService {
      * 代码注释里旧表述「待订单侧补字段后本方法连同信号表一起退场」**已作废**，不得再按它写回。
      * 第 3 层同样**不是**可删项：它是「商家自定义加工项」的兜底面（issue #4308 已做成商家可配）。</p>
      *
+     * <p><b>⚠️ 信号表已降级为「存量单兜底」（issue #4452）</b>：它**只在两维都缺**时才被读
+     * ⇒ 新单（带 V63 列值 / {@code componentRole} / {@code craft_hint} 任一）**全程不读**它。
+     * 表**不删**（存量单仍需派生），但不再是「长期判据」。</p>
+     *
      * <p><b>为什么不校验显式字段的值</b>：它是订单侧已落库的真值，Java 只读不猜、不归一
      * （错值/库里无该部位模板 ⇒ 由 {@link #resolveRoute} 的 T2 显式落 {@code missing_route}
      * 并记 incident 日志，绝不静默）。空白键（{@code " "}）视为**缺键**（{@code str} 会 trim）——
      * 否则会造出「{@code  ×韩褶}」这种不存在的键。</p>
      *
-     * <p>第 2/3 层的信号扫描优先级（命中即止）：① 加工项名 ② 加工项 options ③ 商品名 ④ 销售方式
-     * （见 {@link #signals}）。两类信号各自独立扫描，只会取到一半时另一半取默认值
-     * （来源记 {@code partial}）。</p>
-     *
      * <p><b>来源四态（V60，issue #4308 冻结口径；落 {@code processing_orders.route_source}）</b>：
-     * {@code derived} = 两维都由库中信号映射命中；{@code partial} = 只命中/只直读一维；
-     * {@code default} = 两维全不命中（T1）。**本方法只产出这三态 + issue #4354 新增的 {@code direct}**；
+     * {@code derived} = 两维都由库中信号映射命中（**只剩存量单**会走到这里）；
+     * {@code partial} = 只补齐一维；{@code default} = 两维全不命中（T1）。
+     * **本方法只产出这三态 + issue #4354 新增的 {@code direct}**；
      * 第五态 {@code missing_route}（T2 = 部位无模板而回落默认模板）由 {@link #resolveRoute}
      * 在回落时引入 —— 否则「回落过」与「本来就没派生」在数据上长得一模一样，
      * 而前者是错配高发形态。</p>
@@ -1300,19 +1341,26 @@ public class ProcessingOrderService {
         if (directCurtainType != null && directCraft != null) {
             return new RouteKey(directCurtainType, directCraft, "direct");
         }
-        // ② 只带一维 ⇒ 直读该维 + 派生另一维；③ 两维都缺（存量单）⇒ 保留既有派生
-        List<String> signals = signals(entry);
-        // 映射表来自**库**（租户级、商家可配）；常量表已删除 —— 派生不再读常量（issue #4308 P2）。
-        List<ProductionRouteSignal> mappings = productionOperationQueryService.routeSignals(tenantId);
-        String curtainType = directCurtainType != null
-                ? directCurtainType : firstSignalMatch(signals, mappings, true);
-        String craft = directCraft != null
-                ? directCraft : firstSignalMatch(signals, mappings, false);
+        // ② 受控来源补齐缺的那一维（issue #4452）：部位 ← componentRole 枚举；工艺 ← 加工项声明列。
+        String curtainType = directCurtainType != null ? directCurtainType : positionOfComponentRole(entry);
+        String craft = directCraft != null ? directCraft : craftHintOf(entry);
+        // ③ 两维都缺 ⇒ **存量单**（老数据没有 V63 列 / componentRole / craft_hint）才读信号表兜底。
+        //    信号源只剩加工项名/options（商品名与销售方式已摘掉，见 signals()）。
+        //    ⚠️ 本分支的**条件**就是「不读信号表」的判据：新单只要给出一维，本行不执行。
+        if (curtainType == null && craft == null) {
+            List<ProductionRouteSignal> mappings = productionOperationQueryService.routeSignals(tenantId);
+            if (!mappings.isEmpty()) {
+                List<String> signals = signals(entry);
+                curtainType = firstSignalMatch(signals, mappings, true);
+                craft = firstSignalMatch(signals, mappings, false);
+            }
+        }
         // ⚠️ 来源必须在**默认值补齐之前**算：补齐后 `craft != null` 恒真 ⇒ T1 会被误判成 partial
-        // （「没人派生过」与「只派生出一维」是两种不同的补救动作）。
+        // （「没人派生过」与「只补齐一维」是两种不同的补救动作）。
         String source;
         if (curtainType != null && craft != null) {
-            // 有一维是直读的 ⇒ 补救动作 = 去信号映射补另一维（与「两维都派生」的 derived 区分开）
+            // 有一维来自订单行显式字段/受控来源 ⇒ 补救动作 = 把另一维填进订单
+            // （与「两维都由信号表派生」的 derived 区分开）
             source = directCurtainType != null || directCraft != null ? "partial" : "derived";
         } else if (curtainType != null || craft != null) {
             source = "partial";
@@ -1328,15 +1376,54 @@ public class ProcessingOrderService {
     }
 
     /**
+     * 部位维的**受控来源**（issue #4452）：{@code componentRole} 受控枚举 → 部位名。
+     *
+     * <p>受控枚举值见 {@link #COMPONENT_ROLE_POSITIONS}（写侧 {@code order_create.py} 的 enum：
+     * 主布 / 配布边 / 纱）。**未知取值返回 null**（不猜、不默认成布帘）—— 该维按缺维处理，
+     * 由 {@code route_source} 显式标注并在异常订单清单里可见。</p>
+     */
+    private static String positionOfComponentRole(Map<String, Object> entry) {
+        String role = str(entry.get("componentRole"));
+        // 缺键（存量单）/ 未知取值 ⇒ null（**不猜**）：Map.of 也不接受 null 键
+        return role == null ? null : COMPONENT_ROLE_POSITIONS.get(role);
+    }
+
+    /**
+     * 工艺维的**显式声明**（issue #4452）：取本行加工项在 {@code processing_items.craft_hint}
+     * 里声明的工艺（{@link #buildSnapshot} 从加工项目录带进快照的 {@code craftHint} 键）。
+     *
+     * <p>逐加工项取**第一个有声明**的（加工项列表有序）；都不声明 ⇒ 返回 null（该维按缺维处理）。</p>
+     */
+    @SuppressWarnings("unchecked")
+    private static String craftHintOf(Map<String, Object> entry) {
+        if (entry.get("processingItems") instanceof List<?> items) {
+            for (Object raw : items) {
+                if (raw instanceof Map<?, ?> item) {
+                    String hint = str(((Map<String, Object>) item).get("craftHint"));
+                    if (hint != null) {
+                        return hint;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * 订单侧可派生信号，**顺序即推导链的第 2/3 层**（命中即止，外层先说话）：
      * <ol>
      *   <li><b>加工项推导</b>（issue #4362 冻结的第 2 层）：加工项**名**（加工项目录里工序名自带
-     *       部位/工艺，如「韩褶-布」「打孔-纱」「帘头制作」）&gt; 加工项 **options**（如「四爪钩」）；</li>
-     *   <li><b>信号派生兜底</b>（第 3 层，加工项不给信号时才轮到）：商品名 &gt; 销售方式。</li>
+     * **存量单兜底**信号（issue #4452 起**只剩加工项名 / 加工项 options**，命中即止）：
+     * <ol>
+     *   <li>加工项**名**（老订单行上工序名自带部位/工艺，如「韩褶-布」「打孔-纱」「帘头制作」）；</li>
+     *   <li>加工项 **options**（如「四爪钩」）。</li>
      * </ol>
-     * ⚠️ 两层的**相对次序**就是判据（加工项比商品名权威）—— 不得为「代码好看」重排；
-     * 谁把商品名提到加工项名之前，纱帘订单就会因商品名里一个「布」字拿到布帘路线
-     * （V58 已实证过的错配形态）。
+     *
+     * <p>⚠️ <b>商品名与销售方式**已摘掉**</b>（issue #4452 交付判据 4）：它们是**营销文案**，
+     * 不是结构化输入 —— 旧实现去商品名里 {@code contains '纱'} 判部位，正是本单要消灭的
+     * 「名词解释」。同时「加工项比商品名权威」这个相对次序判据随之作废（商品名不再参与）。</p>
+     *
+     * <p>本方法**只在两维都缺时**被调用（见 {@link #deriveRouteKey}）⇒ 它不再参与新单的路线键。</p>
      */
     @SuppressWarnings("unchecked")
     private static List<String> signals(Map<String, Object> entry) {
@@ -1359,14 +1446,6 @@ public class ProcessingOrderService {
                     }
                 }
             }
-        }
-        String productName = str(entry.get("productName"));
-        if (productName != null) {
-            signals.add(productName);
-        }
-        String sellingMethod = str(entry.get("sellingMethod"));
-        if (sellingMethod != null) {
-            signals.add(sellingMethod);
         }
         return signals;
     }
@@ -1437,6 +1516,54 @@ public class ProcessingOrderService {
     }
 
     // ============================================================ 存量单恢复 / 打印计数
+
+    /**
+     * **异常订单清单**（issue #4452 交付物 ④）：{@code route_source ∈ {default, partial}} 的加工单
+     * 逐条可查 —— 加工单号 + **实际使用键** + **请求键** + **可行动文案**。
+     *
+     * <p><b>为什么必须有它</b>：信号映射退场后，「部位/工艺是猜的或没填」这件事**必须有可观测面**
+     * —— 否则退场只是把静默错配从「猜错」换成「悄悄落默认」（两者用户侧都看不见）。
+     * 五态 {@code route_source} 早就在库里，但**没有清单** ⇒ 商家不知道要去看哪张单。</p>
+     *
+     * <p><b>两只清单的补救动作不同</b>（这就是不能把两者合并的原因）：</p>
+     * <ul>
+     *   <li>{@code default}（两维全不命中 = 零信息）⇒ 去下单侧**把部位与工艺填上**
+     *       （或让加工项声明它的工艺 {@code craft_hint}）；</li>
+     *   <li>{@code partial}（只补齐一维）⇒ 把**缺的那一维**填上。</li>
+     * </ul>
+     *
+     * <p>{@code missing_route} **不在本清单**：它不是「订单没填」而是「库里缺路线」
+     * ⇒ 由既有 {@code GET /production/routing-gaps} 承担（补救 = 建路线）。</p>
+     *
+     * @return {@code {total, orders:[{processing_order_no, order_id, route_key,
+     *         route_requested_key, route_source, suggestion}]}}
+     */
+    public Map<String, Object> routingAnomalies(Long tenantId) {
+        List<ProcessingOrder> rows = processingOrderMapper.selectList(
+                new LambdaQueryWrapper<ProcessingOrder>()
+                        .eq(ProcessingOrder::getTenantId, tenantId)
+                        .eq(ProcessingOrder::getDeleted, 0)
+                        .in(ProcessingOrder::getRouteSource, List.of("default", "partial"))
+                        .orderByAsc(ProcessingOrder::getCreatedAt));
+        List<Map<String, Object>> orders = new ArrayList<>();
+        for (ProcessingOrder row : rows == null ? List.<ProcessingOrder>of() : rows) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("processing_order_no", row.getProcessingOrderNo());
+            entry.put("order_id", row.getOrderId());
+            entry.put("route_key", row.getRouteKey());
+            entry.put("route_requested_key", row.getRouteRequestedKey());
+            entry.put("route_source", row.getRouteSource());
+            entry.put("suggestion", "default".equals(row.getRouteSource())
+                    ? "这张单的部位与工艺都没填 ⇒ 系统取了默认路线。请在下单侧补上部位（帘种）与工艺，"
+                            + "或给加工项声明它的工艺（craft_hint），再重新生成加工单"
+                    : "这张单只填了一维（部位或工艺）⇒ 另一维取了默认。请把缺的那一维补上再重新生成加工单");
+            orders.add(entry);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("total", orders.size());
+        result.put("orders", orders);
+        return result;
+    }
 
     /**
      * 按订单派生工序实例 payload（issue #4202）——{@code POST /api/admin/production/orders/{orderId}/instantiate}
@@ -1553,6 +1680,11 @@ public class ProcessingOrderService {
                         enriched.put("options", piEntity.getOptions());
                         if (!enriched.containsKey("unit")) {
                             enriched.put("unit", piEntity.getUnit());
+                        }
+                        // 加工项**显式声明**的工艺（V78，issue #4452）：路线键「工艺」维的受控来源。
+                        // 缺省 ⇒ 不落键（缺键就是缺键，派生链再走存量兜底 —— 不造值）。
+                        if (piEntity.getCraftHint() != null && !piEntity.getCraftHint().isBlank()) {
+                            enriched.put("craftHint", piEntity.getCraftHint().trim());
                         }
                     }
                 }

@@ -6,7 +6,6 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
-import com.migao.admin.entity.ProductionRouteSignal;
 import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionRouting;
 import com.migao.admin.entity.ProductionRoutingVersion;
@@ -73,6 +72,7 @@ class ProductionRoutingCommandServiceTest {
     private ProductionRoutingVersionMapper productionRoutingVersionMapper;
     @Mock
     private ProductionOperationMapper productionOperationMapper;
+    /** 信号映射表（issue #4452 起**只**给读面 `ProductionOperationQueryService` 用；写面已退役）。 */
     @Mock
     private ProductionRouteSignalMapper productionRouteSignalMapper;
     @Mock
@@ -83,11 +83,10 @@ class ProductionRoutingCommandServiceTest {
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(TENANT);
-        // 读面用**真实对象**（只 mock Mapper）：写面响应形态 = 路线/信号展示形态（同一份
-        // routingView / signalView），用 mock 会让「返回更新后的路线」退化成断言桩。
+        // 读面用**真实对象**（只 mock Mapper）：写面响应形态 = 路线展示形态（同一份 routingView），
+        // 用 mock 会让「返回更新后的路线」退化成断言桩。
         service = new ProductionRoutingCommandService(
                 productionRouteTemplateMapper, productionRoutingVersionMapper, productionOperationMapper,
-                productionRouteSignalMapper,
                 new ProductionOperationQueryService(productionOperationMapper, productionRouteTemplateMapper,
                         productionRouteRuleMapper, productionOperationPositionMapper,
                         productionCraftMapper, productionRouteSignalMapper));
@@ -445,88 +444,21 @@ class ProductionRoutingCommandServiceTest {
         assertThat(updated.getValue().getId()).isEqualTo("rt-1");
         assertThat(updated.getValue().getIsDefault()).isEqualTo(false);
     }
+    // ══════════ 判据：信号映射写面**已退役**（PG-033；issue #4452）══════════
 
-    // ══════════════════ 判据：信号映射写面（PG-033）══════════════════
-
+    /**
+     * 三个写面方法（{@code createSignal} / {@code updateSignal} / {@code deleteSignal}）
+     * **必须已从服务类删除**：让商家继续往「存量单兜底表」里加行，只会让已经不该被读的判据继续增长。
+     *
+     * <p><b>红证</b>：把任一方法加回 {@code ProductionRoutingCommandService} ⇒ 本用例红
+     * （方法存在 ⇒ 写面还有入口，只是控制器暂时没暴露）。</p>
+     */
     @Test
-    @DisplayName("新增信号：两维都不给 ⇒ 422 逐条理由（死数据不得落库）；给一维即可")
-    void createSignalRequiresAtLeastOneTarget() {
-        assertThatThrownBy(() -> service.createSignal(body("signal", "罗马帘"), TENANT))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("curtain_type"));
-        verify(productionRouteSignalMapper, never()).insert(any(ProductionRouteSignal.class));
-    }
-
-    @Test
-    @DisplayName("新增信号：priority 缺省 = 该用途内最大 + 1（与「顺序即优先级」同口径）")
-    void createSignalAssignsNextPriorityWithinPurpose() {
-        when(productionRouteSignalMapper.selectList(any())).thenReturn(List.of(
-                signal("s1", "帘头", "帘头", null, 1),
-                signal("s2", "纱", "纱帘", null, 2),
-                signal("s3", "韩褶", null, "韩褶", 1)));
-
-        Map<String, Object> result = service.createSignal(
-                body("signal", "罗马帘", "curtain_type", "罗马帘"), TENANT);
-
-        assertThat(result.get("priority")).as("帘种用途内最大是 2 ⇒ 新行取 3（工艺行的 1 不算）").isEqualTo(3);
-        assertThat(result.get("curtain_type")).isEqualTo("罗马帘");
-        assertThat(result.get("craft")).isNull();
-    }
-
-    @Test
-    @DisplayName("新增信号：同信号同用途重复 ⇒ 409；跨用途允许（「帘头」两行是设计）")
-    void createSignalRejectsSamePurposeDuplicateButAllowsCrossPurpose() {
-        when(productionRouteSignalMapper.selectList(any()))
-                .thenReturn(List.of(signal("s1", "帘头", "帘头", null, 1)));
-
-        assertThatThrownBy(() -> service.createSignal(
-                body("signal", "帘头", "curtain_type", "纱帘"), TENANT))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(409));
-
-        // 跨用途（工艺侧）不撞：既有行是帘种行
-        Map<String, Object> ok = service.createSignal(body("signal", "帘头", "craft", "平幔"), TENANT);
-        assertThat(ok.get("craft")).isEqualTo("平幔");
-    }
-
-    @Test
-    @DisplayName("新增信号：同用途 priority 撞档 ⇒ 422（撞档时「谁先命中」由内部 id 决定，对商家不可预测）")
-    void createSignalRejectsPriorityCollisionWithinPurpose() {
-        when(productionRouteSignalMapper.selectList(any())).thenReturn(List.of(
-                signal("s1", "帘头", "帘头", null, 1),
-                signal("s2", "纱", "纱帘", null, 2)));
-
-        assertThatThrownBy(() -> service.createSignal(
-                body("signal", "罗马帘", "curtain_type", "罗马帘", "priority", 1), TENANT))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("priority"));
-        verify(productionRouteSignalMapper, never()).insert(any(ProductionRouteSignal.class));
-    }
-
-    @Test
-    @DisplayName("改信号：把两维都清空 ⇒ 422（不得把一行变成死数据）；删信号 = 软删（deleted=1）")
-    void updateAndDeleteSignalGuards() {
-        ProductionRouteSignal row = signal("s1", "帘头", "帘头", null, 1);
-        when(productionRouteSignalMapper.selectById("s1")).thenReturn(row);
-        // lenient：本用例先撞「两维都清空」护栏（在唯一性校验之前就抛）⇒ 备而不用的桩是噪音
-        lenient().when(productionRouteSignalMapper.selectList(any())).thenReturn(List.of(row));
-
-        assertThatThrownBy(() -> service.updateSignal("s1",
-                body("curtain_type", "", "craft", ""), TENANT))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("curtain_type"));
-
-        Map<String, Object> deleted = service.deleteSignal("s1", TENANT);
-        assertThat(deleted.get("deleted")).isEqualTo(true);
-        ArgumentCaptor<ProductionRouteSignal> updated = ArgumentCaptor.forClass(ProductionRouteSignal.class);
-        verify(productionRouteSignalMapper).updateById(updated.capture());
-        assertThat(updated.getValue().getDeleted()).as("软删：谁在何时删掉哪条映射是排查错配的唯一证据").isEqualTo(1);
-    }
-
-    private static ProductionRouteSignal signal(String id, String keyword, String curtainType,
-                                                String craft, int priority) {
-        return ProductionRouteSignal.builder().id(id).tenantId(TENANT).signal(keyword)
-                .curtainType(curtainType).craft(craft).priority(priority)
-                .status("active").deleted(0).build();
+    @DisplayName("#4452 信号映射写面已退役：服务类不得再有 createSignal / updateSignal / deleteSignal")
+    void signalWriteSurfaceIsRetired() {
+        assertThat(java.util.Arrays.stream(ProductionRoutingCommandService.class.getDeclaredMethods())
+                .map(java.lang.reflect.Method::getName))
+                .as("信号映射写面已退役（issue #4452）—— 表降级为存量单兜底，读面暂留、写面退场")
+                .doesNotContain("createSignal", "updateSignal", "deleteSignal");
     }
 }

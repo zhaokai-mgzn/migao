@@ -20,8 +20,8 @@
     "deadline": "2026-12-31"
   },
   "anchor_sha": "44615b6c9be18d23709a92c0c7e027da259f0836",
-  "case_total": 349,
-  "violation_case_count": 52,
+  "case_total": 354,
+  "violation_case_count": 47,
   "rule_counts": {
     "CASE-TRUST-EMPTY-ASSERTION": 1,
     "CASE-TRUST-NO-EFFECT-ASSERTION": 19,
@@ -29,7 +29,7 @@
     "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE": 0,
     "CASE-TRUST-FORBIDDEN-TEXT-SOLE": 5,
     "CASE-TRUST-VOLATILE-LOCATOR": 1,
-    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 51,
+    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 46,
     "CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH": 0,
     "CASE-TRUST-STALE-LINE-REF": 0,
     "CASE-TRUST-SINGLE-LEG-NO-PERSONA": 0
@@ -82,11 +82,6 @@
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
     },
-    "CH-016": {
-      "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
     "CH-018": {
       "codes": [
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
@@ -126,11 +121,6 @@
     "CH-033": {
       "codes": [
         "CASE-TRUST-FORBIDDEN-TEXT-SOLE",
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
-    "CH-035": {
-      "codes": [
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
     },
@@ -186,11 +176,6 @@
       ]
     },
     "DF-004": {
-      "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
-    "DF-005": {
       "codes": [
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
@@ -289,16 +274,6 @@
         "CASE-TRUST-NO-EFFECT-ASSERTION",
         "CASE-TRUST-NO-PRECONDITION-ASSERTION",
         "CASE-TRUST-NO-SELF-CLEAN"
-      ]
-    },
-    "PP-006": {
-      "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
-    "PP-007": {
-      "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
     },
     "PR-005": {

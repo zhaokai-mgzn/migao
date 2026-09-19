@@ -2365,6 +2365,12 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ;
 -- 加工项每米数量密度（V33）
 ALTER TABLE processing_items ADD COLUMN IF NOT EXISTS per_meter_quantity DECIMAL(6,2);
 
+-- 加工项**显式声明**的工艺（V78，issue #4452）：路线键「工艺」维的受控来源。
+-- NULL = 商家没声明（不是「工艺=空」）⇒ 该维按缺维处理、route_source 显式标注，不猜。
+-- 迁移 V78 只加列、**不回填**（按加工项名回填本身就是猜；存量单由 production_route_signals 兜底）。
+-- 本行是 bootstrap 终态对齐（bootstrap 路径不跑迁移链；缺列 ⇒ 加工单查询 500，形态见 #3270）。
+ALTER TABLE processing_items ADD COLUMN IF NOT EXISTS craft_hint VARCHAR(16);
+
 -- 租户品牌/通知设置（V15）
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS logo VARCHAR(512);
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS notification_enabled BOOLEAN DEFAULT FALSE;

@@ -1158,6 +1158,7 @@ _CASE_CH_016 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
 # ── CH-017 [NORMAL] 转人工携带 AI 对话上下文 - 客服工作台可见转人工前对话（GB/T 47746-2026 对齐）（源: cases/chat.yml）──
@@ -1521,6 +1522,7 @@ _CASE_CH_035 = EvalCase(
     required_args=[{'tool': 'product_search', 'fields': ['keyword']}],
     must_succeed=[{'tool': 'product_search'}],
     post_session=[{'fetch': 'user_memories', 'agent_type': 'xiaobu', 'checks': ['count>=1', 'has_key:curtain_style', 'value_contains:奶油风']}],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
 # ── CH-037 [NORMAL] 窗帘下单澄清清单引擎（必填/默认三层/矛盾拦截/轮次上限，单测覆盖）（源: cases/chat.yml）──
@@ -2131,6 +2133,7 @@ _CASE_DF_005 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── DF-006 [ADVERSARIAL] 安全 - Prompt Injection 冒充系统指令（源: cases/defense.yml）──
@@ -4114,8 +4117,8 @@ _CASE_OR_040 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）'],
     expectations=[],
-    data_checks=['**D6·自动识别（用户 2026-09-19「超高 / 超宽是和门幅标准比较的……这个要求做到自动识别」）**：`超高 = (成品高 + 卷边) > 门幅`、`超宽 = (成品宽 + 卷边) > 门幅`；门幅缺省 2.8 米（窄幅布 1.4），卷边常量 **0.3 米复用算料引擎既有常量**（`curtain_calc.py` 的 `HEM_MARGIN`，同步守卫逐值比对，不新造第二个数）。红证：实现前无此纯函数 ⇒ import 即红；把阈值改成「固定 3 米」或让两者互斥 ⇒ 判据必红。', '**两者独立、可同时为真**：ERP 组合名 `韩折+超宽+超高+定型` 同时存在（设计 §5.2 证据链 ③）⇒ 判定不得互斥；同时为假（如 1.5×1.5 对 2.8 门幅）⇒ 两者都不出现。', '**倒幅/正幅由 `cuttingMode` 唯一推导**：`定宽买高` → 倒幅、`定高买宽` → 正幅；**不设手选项**（手选项 = 与 `cuttingMode` 冲突的第二份口径）。红证：删掉推导（或改成可手选）⇒ 判据必红。', "**`source='推算'` 照实标注**（设计 §5.2 边界：本条是推理非实证，未从 ERP 供应商取得判据）—— 判定结果带可读依据（哪两个数比出来的），且来源标「推算」+ 可配，不假装定论。", '**下单页展示自动识别结果，且不计入手选计数**：自动特征出现在③加工项步骤的**只读**区（`自动识别` 块，带 `推算` 来源标注），**不是**可勾选项 —— 不出现「自动识别」的 checkbox，`已选 N 项` 只数商家手选的加工项。红证：删掉该只读块 ⇒ 判据必红。'],
-    skip_reason='[backend-contract] 前端展示契约（admin-web 纯函数 + 页面只读区，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-auto-features.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-auto-features.test.tsx 执行',
+    data_checks=['**D6·自动识别（用户 2026-09-19「超高 / 超宽是和门幅标准比较的……这个要求做到自动识别」）**：`超高 = (成品高 + 卷边) > 门幅`、`超宽 = (成品宽 + 卷边) > 门幅`；门幅缺省 2.8 米（窄幅布 1.4），卷边常量 **0.3 米复用算料引擎既有常量**（`curtain_calc.py` 的 `HEM_MARGIN`，同步守卫逐值比对，不新造第二个数）。红证：实现前无此纯函数 ⇒ import 即红；把阈值改成「固定 3 米」或让两者互斥 ⇒ 判据必红。', '**两者独立、可同时为真**：ERP 组合名 `韩折+超宽+超高+定型` 同时存在（设计 §5.2 证据链 ③）⇒ 判定不得互斥；同时为假（如 1.5×1.5 对 2.8 门幅）⇒ 两者都不出现。', '**倒幅/正幅由 `cuttingMode` 唯一推导**：`定宽买高` → 倒幅、`定高买宽` → 正幅；**不设手选项**（手选项 = 与 `cuttingMode` 冲突的第二份口径）。红证：删掉推导（或改成可手选）⇒ 判据必红。', "**`source='推算'` 照实标注**（设计 §5.2 边界：本条是推理非实证，未从 ERP 供应商取得判据）—— 判定结果带可读依据（哪两个数比出来的），且来源标「推算」+ 可配，不假装定论。", '**已知偏差（照实登记，不粉饰）**：自动特征由**客户端**（admin-web 下单页）推导并写进 `processingInfo.processingItems[]`，服务端只消费特征名、**不做任何 width/height/doorWidth 推导**（本轮裁定）。⇒ **米宝（agent）下单路径不推导自动特征** ⇒ 组合键缺 `超高/超宽/倒幅/定型` ⇒ 取价命中不到组合 ⇒ `unpriced`。这与既有 issue #4408（页面路径 14 道/¥3.00 vs 米宝路径 17 道/¥6.00）**同族**，待 agent 统一重构时收口；本轮 agent 冻结是用户裁定（D5）⇒ 偏差本身可接受，但**必须显式可见**。', '**下单页展示自动识别结果，且不计入手选计数**：自动特征出现在③加工项步骤的**只读**区（`自动识别` 块，带 `推算` 来源标注），**不是**可勾选项 —— 不出现「自动识别」的 checkbox，`已选 N 项` 只数商家手选的加工项。红证：删掉该只读块 ⇒ 判据必红。'],
+    skip_reason='[backend-contract] 前端展示契约（admin-web 纯函数 + 页面只读区，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-auto-features.test.ts（被测模块 = admin-web 专属的 `lib/craft-auto-features.ts`，**刻意不放进三端同源的 `lib/craft-display.ts`**）与 frontend/admin-web/tests/unit/pages/orders-new-auto-features.test.tsx 执行',
     tags=['order', 'craft_spec', 'auto_detect', 'dimension', 'display', 'backend_contract'],
     persona='',
     debug_user='',
@@ -4738,16 +4741,16 @@ _CASE_PG_032 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-033 [NORMAL] 信号映射写面：GET/POST/PUT/DELETE /route-signals（商家可增删改，派生读它）（源: cases/processing-order.yml）──
+# ── PG-033 [NORMAL] 信号映射写面**已退役**（issue #4452）：POST/PUT/DELETE /route-signals 不可达，读面 GET 暂留（源: cases/processing-order.yml）──
 _CASE_PG_033 = EvalCase(
     id='PG-033',
     legacy_id='',
-    title='信号映射写面：GET/POST/PUT/DELETE /route-signals（商家可增删改，派生读它）',
+    title='信号映射写面**已退役**（issue #4452）：POST/PUT/DELETE /route-signals 不可达，读面 GET 暂留',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=[],
     expectations=[],
-    data_checks=['success=true', '写面完整集 = `GET`（列表 `{total, signals:[{id,signal,curtain_type,craft,priority,status}]}`）+ `POST` + `PUT /{id}` + `DELETE /{id}`，全部方法级 `processing:manage`。证据：ProductionControllerTest「routeSignalsListShape」+「routingWriteFaceDeclaresManagePermissions」+ ProductionRoutingCommandServiceTest 4 项', '护栏：① 两维（`curtain_type`/`craft`）**至少给一个**（都不给 ⇒ 命中后什么都不改 = 死数据；DB 侧另有 CHECK 兜底）；② `priority` 缺省 = **该用途内**最大 + 1（与迁移前常量表「顺序即优先级」同口径；帘种行与工艺行各自排序）；③ 同信号**同用途**重复 ⇒ 409，**跨用途允许**（「帘头」两行是设计，见 PG-031 判据 2）；④ 同用途 `priority` 撞档 ⇒ 422（撞档时「谁先命中」由内部 id 决定，对商家**不可预测**）；⑤ 改信号把两维都清空 ⇒ 422。证据：ProductionRoutingCommandServiceTest「createSignalRequiresAtLeastOneTarget」/「createSignalAssignsNextPriorityWithinPurpose」/「createSignalRejectsSamePurposeDuplicateButAllowsCrossPurpose」/「createSignalRejectsPriorityCollisionWithinPurpose」/「updateAndDeleteSignalGuards」', '删除 = **软删**（`deleted=1`）：派生读 `deleted=0 AND status=active` ⇒ 立刻不再参与派生；而「谁在何时删掉哪条映射」是排查路线错配的唯一证据（物理删会丢掉它）。证据：ProductionRoutingCommandServiceTest「updateAndDeleteSignalGuards」', '**红证（注入式）**：① 去掉「至少一维」校验 ⇒ 该用例红；② 把 priority 缺省改成固定 0 ⇒ 取序用例红；③ 去掉同用途重复校验 ⇒ 409 断言红；④ 去掉 priority 撞档校验 ⇒ `priority` 断言红；⑤ 把软删改成 `deleted=0`（等价物理删语义）⇒ 软删断言红。'],
+    data_checks=['success=true', '**写面已退役（issue #4452）**：`POST` / `PUT /{id}` / `DELETE /{id}` 三个端点**不可达**（404 未注册 / 405 方法不允许 —— 判据是「写面不可达」，不写死具体状态码）；服务类与控制器均不得再有 `createSignal` / `updateSignal` / `deleteSignal` / `createRouteSignal` / `updateRouteSignal` / `deleteRouteSignal`。证据：ProductionControllerTest「signalWriteEndpointsAreRetired」+「routingWriteFaceDeclaresManagePermission」+ ProductionRoutingCommandServiceTest「signalWriteSurfaceIsRetired」', '**读面暂留**：`GET /route-signals` 仍 200 且形态不变（`{total, signals:[{id,signal,curtain_type,craft,priority,status}]}`）—— 表降级为**存量单兜底**，读面留着排查历史单的派生来源。证据：ProductionControllerTest「routeSignalsListShape」', '**已作废的旧判据（issue #4452，防假真值回填）**：本用例原文写的是「写面完整集 = GET+POST+PUT+DELETE，全部方法级 `processing:manage`」+ 五条写面护栏（至少一维 / priority 缺省取序 / 同用途重复 409 / priority 撞档 422 / 改信号清空两维 422）+ 「删除 = 软删」—— 那套判据随写面**整体退役**（信号表降级为存量单兜底，让商家继续往里加行只会让已经不该被读的判据继续增长）⇒ **不得再按旧口径写回**。', '**红证（注入式）**：把任一写面方法（`createSignal` / `updateSignal` / `deleteSignal` / `createRouteSignal` / `updateRouteSignal` / `deleteRouteSignal`）加回服务类或控制器 ⇒ 本用例红（存在即意味着写面还有入口，与「表降级为存量单兜底」自相矛盾）。'],
     skip_reason='[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProductionRoutingCommandServiceTest + ProductionControllerTest 执行',
     tags=['processing-order', 'production-routing', 'route-signals'],
     persona='',
@@ -4882,6 +4885,96 @@ _CASE_PG_041 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-048 [NORMAL] 部位改走受控来源：componentRole 枚举（纱⇒纱帘 / 主布·配布边⇒布帘）+ curtain_type 列；商品名不再是判据（源: cases/processing-order.yml）──
+_CASE_PG_048 = EvalCase(
+    id='PG-048',
+    legacy_id='',
+    title='部位改走受控来源：componentRole 枚举（纱⇒纱帘 / 主布·配布边⇒布帘）+ curtain_type 列；商品名不再是判据',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['受控来源优先：订单行带 `curtain_type=纱帘` + `craft=打孔` ⇒ 路线 = 纱帘×打孔，**且全程不读** `production_route_signals`（`verify(routeSignals, never())`）。红证（注入法）：把信号表**删空**（`routeSignals → List.of()`）—— 旧实现 `deriveRouteKey` 两维齐全时**仍**无条件先算 `signals(entry)` 并查表，且商品名是信号源 ⇒ 删空后派生不出任何一维 ⇒ 用例红。', '`componentRole=纱` ⇒ 部位 = 纱帘（即使加工项名/商品名里没有任何「纱」字）。红证：摘掉 `componentRole` 这一层（部位只从 `curtain_type` 列取）⇒ 部位退化成默认「布帘」⇒ 请求键变 布帘×打孔 ⇒ 红。', '商品名含「纱」但 `componentRole=主布` ⇒ 部位 = **布帘**（营销文案不是结构化输入）。红证：把部位来源改回「商品名 `contains`」⇒ 部位 = 纱帘 ⇒ 红。', '未知 `componentRole` 取值 ⇒ **不猜**（该维按缺维处理，`route_source` 显式标注），不得默认成布帘 —— 枚举以后扩值（如「帘头」）时旧代码静默按布帘算就是错配。', '结构性判据：`ProcessingOrderService.signals()` 方法体里**零残留** `productName` / `sellingMethod`（行为判据挡不住「代码里还留着那两行、只是当前恰好不命中」）。红证：把那两段加回 `signals()` ⇒ 红。', '证据：`ProcessingRouteSourceDeclarationTest`（componentRoleSheerWithDeclaredCraftHint / productNameIsNotAPositionSignal / explicitLineFieldsNeverReadTheSignalTable / signalsMethodHasNoProductNameOrSellingMethodRemnants）'],
+    skip_reason='[backend-contract] 后端契约用例（生成加工单是服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProcessingRouteSourceDeclarationTest',
+    tags=['processing-order', 'production-routing', 'route-source'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-049 [NORMAL] 工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变（源: cases/processing-order.yml）──
+_CASE_PG_049 = EvalCase(
+    id='PG-049',
+    legacy_id='',
+    title='工艺改走加工项**显式声明**（processing_items.craft_hint）：改声明⇒结果变，改名字⇒结果不变',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['加工项「纳米圈打孔」声明 `craft_hint=打孔` ⇒ 工艺 = 打孔。红证：读侧仍 `contains` 加工项**名** ⇒ 该用例仍能通过（名字里恰好含「打孔」）⇒ 判据落在下一条（改声明）。', '**改声明 ⇒ 结果随之变**：加工项名仍是「纳米圈打孔」但声明改成 `韩褶` ⇒ 请求键 = 布帘×韩褶。红证：读侧仍 `contains` 加工项名 ⇒ 结果不变（仍 打孔）⇒ 红。', '**改名字 ⇒ 结果不变**：两条明细加工项名不同（「A 款加工」/「B 款加工」、名字里都**没有**「打孔」二字），声明都是 `打孔` ⇒ 两条请求键**逐字相同**（都是 布帘×打孔）。红证：读侧仍 `contains` 加工项名 ⇒ 名里没有「打孔」的那条派不出工艺 ⇒ 两条不等 ⇒ 红。', '证据：`ProcessingRouteSourceDeclarationTest`（craftComesFromDeclaredHintNotFromName / renamingProcessingItemDoesNotChangeRoute）'],
+    skip_reason='[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingRouteSourceDeclarationTest 执行',
+    tags=['processing-order', 'production-routing', 'processing-item'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-050 [NORMAL] 存量单兜底：无 V63 列值时仍能派生（信号表降级不删），且兜底信号源只剩加工项名/options（源: cases/processing-order.yml）──
+_CASE_PG_050 = EvalCase(
+    id='PG-050',
+    legacy_id='',
+    title='存量单兜底：无 V63 列值时仍能派生（信号表降级不删），且兜底信号源只剩加工项名/options',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['存量单（无 `curtain_type`/`craft` 列值、无 `componentRole`、无 `craft_hint`）仍能派生成功：加工项名「韩褶-布」经信号表兜底 ⇒ 布帘×韩褶。红证：把兜底层一并删掉（存量单直接落默认）⇒ 请求键退化成 布帘×韩褶 或 null ⇒ 红。', '**商品名 / 销售方式零命中**：存量单 + 加工项名不含任何信号关键字，而商品名含「纱帘」、销售方式含「打孔」⇒ 两维都派生不出来 ⇒ `route_requested_key = NULL` 且 `route_source = default`。红证：把商品名/销售方式放回信号源 ⇒ 请求键会变成 纱帘×打孔（或半命中 纱帘×韩褶）⇒ 红。', '**两维都缺才读信号表**：任一新单（带 `curtain_type` 或 `componentRole` 或 `craft_hint` 任一）⇒ `routeSignals` 零调用（Mockito 严格桩的 UnnecessaryStubbing 把「备而不用」也钉成红）。', '证据：`ProcessingRouteSourceDeclarationTest`（legacyOrderWithoutV63ColumnsStillDerives / productNameAndSellingMethodAreNotSignalSources）+ `ProcessingOrderRouteSourceTest`（explicitColumnBeatsProcessingItemDerivation / derivedKeyMissingFromLibraryIsMissingRouteAndKeepsRequestedKey 的 `never()` 断言）'],
+    skip_reason='[backend-contract] 后端契约用例（服务端写路径，无 LLM 环节）：断言由 ProcessingRouteSourceDeclarationTest + ProcessingOrderRouteSourceTest 执行',
+    tags=['processing-order', 'production-routing', 'route-source', 'backward-compat'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-051 [NORMAL] craft_hint 迁移只加列、不猜值（存量加工项一律留空）（源: cases/processing-order.yml）──
+_CASE_PG_051 = EvalCase(
+    id='PG-051',
+    legacy_id='',
+    title='craft_hint 迁移只加列、不猜值（存量加工项一律留空）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['V78 迁移必须幂等：含 `ADD COLUMN IF NOT EXISTS craft_hint`（`MigrationRunner` 会重跑整文件）。', '**不做存量回填**：迁移全文**不得**出现 `UPDATE processing_items` —— 按加工项名回填「能唯一确定的才填」**本身就是猜**（「韩褶-布」既含「韩褶」也可能是别的工艺名的一部分）⇒ 存量行 `craft_hint` 一律 NULL，存量单由信号表兜底，缺口由 routing-gaps / 异常订单清单可见。红证：迁移里加一条 `UPDATE processing_items SET craft_hint = …` ⇒ 红（该写法同时会被 `test_migration_references_exist_in_schema` 判红）。', '**如实登记（未完成项）**：本包**未**同步 `docs/sql/schema.sql`（该文件是包 A 独占）⇒ bootstrap-first 路径建出的库没有该列，靠随后的迁移链补上；本迁移自身不引用该列（只 ADD COLUMN）故不受影响。', '证据：`ProcessingRouteSourceDeclarationTest.craftHintMigrationAddsColumnWithoutGuessing`'],
+    skip_reason='[backend-contract] 迁移契约（静态校验迁移文本，无 LLM 环节）：断言由 ProcessingRouteSourceDeclarationTest 执行',
+    tags=['processing-order', 'migration', 'processing-item'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-052 [NORMAL] 信号映射写面退役（POST/PUT/DELETE /route-signals 不可达，读面暂留）+ 异常订单清单可查（源: cases/processing-order.yml）──
+_CASE_PG_052 = EvalCase(
+    id='PG-052',
+    legacy_id='',
+    title='信号映射写面退役（POST/PUT/DELETE /route-signals 不可达，读面暂留）+ 异常订单清单可查',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['写面退役：`POST/PUT/DELETE /api/admin/production/route-signals` 均**不可达**（404 未注册 / 405 方法不允许 —— 判据是「写面不可达」，不写死某个具体状态码）；服务类 `ProductionRoutingCommandService` 与控制器 `ProductionController` 均不得再有 `createSignal` / `updateSignal` / `deleteSignal` / `createRouteSignal` / `updateRouteSignal` / `deleteRouteSignal`。红证：把任一方法加回 ⇒ 红（存在即意味着写面还有入口）。', '读面暂留：`GET /route-signals` 仍 200 且形态不变（`{total, signals:[…]}`）—— 表降级为存量单兜底，读面留着排查历史单的派生来源。', '**异常订单清单**（本单的价值所在）：`GET /api/admin/production/orders/routing-anomalies` 返回 `route_source ∈ {default, partial}` 的加工单逐条（加工单号 + `route_key` + `route_requested_key` + `route_source` + **可行动 suggestion**）；`default` 与 `partial` 的文案**不同**（补救动作不同：default = 两维都没填；partial = 只填了一维）。红证：端点不存在 ⇒ 404 ⇒ 红。', '`missing_route`（库里缺路线）**不在本清单** —— 它不是「订单没填」而是「库里缺路线」，由既有 `GET /routing-gaps` 承担（补救 = 建路线）。', '证据：`ProductionControllerTest`（signalWriteEndpointsAreRetired / routingWriteFaceDeclaresManagePermission / routingAnomaliesListsDefaultAndPartialOrders）+ `ProductionRoutingCommandServiceTest.signalWriteSurfaceIsRetired`'],
+    skip_reason='[backend-contract] 后端契约用例（服务端端点，无 LLM 环节）：断言由 ProductionControllerTest + ProductionRoutingCommandServiceTest 执行',
+    tags=['processing-order', 'production-routing', 'observability', 'api'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PP-002 [NORMAL] 加工项分类列表（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -4909,7 +5002,7 @@ _CASE_PP_006 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['查询打孔加工的计价方式', '新增加工项，计价方式选按个', '名称叫测试加工，分类选窗帘加工（分类 ID：pcat_eval_curtain）', '计价方式按米，单价 8 元', '确认'],
     expectations=['processing_item_query(keyword=打孔)', 'processing_item_manage(action=create_processing_item)'],
-    data_checks=['processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）', '加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）', '商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）'],
+    data_checks=['前置（precondition）：评测栈种子里加工项「纳米圈打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`（8.00 元/米、status=active）、加工分类「窗帘加工」（`pcat_eval_curtain`）存在 —— 它们是 R1 的加工项查询与下面 `output_verify` 的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项或分类」，判红会伪装成「agent 不会建加工项」', 'processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）', '加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）', '商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）'],
     skip_reason='',
     tags=['processing_item', 'pricing'],
     persona='',
@@ -4929,7 +5022,7 @@ _CASE_PP_007 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['把加工项纳米圈打孔的单价改成 9.5 元一米', {'repeat_until': {'tool_called': 'processing_item_manage', 'max': 3}, 'fallback': '确认'}, '再看下加工项纳米圈打孔的单价和计价方式', {'repeat_until': {'tool_called': 'processing_item_query', 'max': 3}, 'fallback': '确认'}],
     expectations=['processing_item_manage(action=update_item)', 'processing_item_query'],
-    data_checks=['回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter、status 仍为 active（未被清空）——只改 price 不得清空其它字段'],
+    data_checks=['前置（precondition）：评测栈种子里「纳米圈打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`（8.00 元/米）—— 它是下面 `update_item` 回读断言的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项」，判红会伪装成「agent 不会改价」', '回读结果中 name 仍为「纳米圈打孔」、pricingMethod 仍为 per_meter、status 仍为 active（未被清空）——只改 price 不得清空其它字段'],
     skip_reason='',
     tags=['processing_item', 'llm_behavior', 'tool_call', 'update'],
     persona='',
@@ -4974,7 +5067,7 @@ _CASE_PP_009 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['刺绣工艺按面积算多少钱？宽 3.2 米、高 2.5 米', {'repeat_until': {'tool_called': 'processing_item_manage', 'max': 2}, 'fallback': '用刺绣工艺算，宽 3.2 米、高 2.5 米，帮我报个价'}],
     expectations=['processing_item_manage(action=calculate_price)'],
-    data_checks=['per_area 的 quantity 是**计件数**（同一尺寸做几件，缺省 1）；面积由 dimensions(宽×高) 承载——把宽×高写进 quantity 会双计（30×8×8=¥1920，应为 ¥240）', '本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（`docs/testing/acceptance-protocol.md:288` 与 `.github/cases/order.yml:905` 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积（真值源 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java`）', '回复需给出金额 ¥240（30 元/㎡ × 8㎡）并对得上用户给的尺寸', '前置（precondition）：评测栈种子里「刺绣工艺」（`pi_eval_embroidery`）存在、`pricingMethod=per_area`、`unitPrice=30.00` 元/㎡ —— 它是 `output_verify.totalPrice=240.00` 的接地真值（success=true）；前置不成立时金额必然对不上，判红会伪装成「agent 算错面积」'],
+    data_checks=['per_area 的 quantity 是**计件数**（同一尺寸做几件，缺省 1）；面积由 dimensions(宽×高) 承载——把宽×高写进 quantity 会双计（30×8×8=¥1920，应为 ¥240）', '本端点的契约与 order_create 不同：order_create 由 agent 自己算 quantity=宽×高（`docs/testing/acceptance-protocol.md:288` @df3623466344 与 `.github/cases/order.yml:905` @df3623466344 的口径只适用那条路径）；calculate_price 由后端从 dimensions 算面积（真值源 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java`）', '回复需给出金额 ¥240（30 元/㎡ × 8㎡）并对得上用户给的尺寸', '前置（precondition）：评测栈种子里「刺绣工艺」（`pi_eval_embroidery`）存在、`pricingMethod=per_area`、`unitPrice=30.00` 元/㎡ —— 它是 `output_verify.totalPrice=240.00` 的接地真值（success=true）；前置不成立时金额必然对不上，判红会伪装成「agent 算错面积」'],
     skip_reason='',
     tags=['processing_item', 'llm_behavior', 'tool_call', 'calculate_price', 'per_area'],
     persona='',
@@ -6936,6 +7029,11 @@ ALL_CASES = (
     _CASE_PG_037,
     _CASE_PG_039,
     _CASE_PG_041,
+    _CASE_PG_048,
+    _CASE_PG_049,
+    _CASE_PG_050,
+    _CASE_PG_051,
+    _CASE_PG_052,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,

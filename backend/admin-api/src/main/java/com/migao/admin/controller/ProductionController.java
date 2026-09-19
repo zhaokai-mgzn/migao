@@ -347,50 +347,40 @@ public class ProductionController {
                 productionRoutingCommandService.deleteRouting(id, TenantContext.getTenantId()));
     }
 
-    // ══════════════════════════ 信号映射写面（issue #4308 交付物 3）══════════════════════
+    // ══════════════════ 信号映射：读面暂留 / 写面**已退役**（issue #4452）══════════════════
 
     /**
-     * 信号映射列表（派生路线键的数据源；迁移前是 Java 常量表）
+     * 信号映射列表（**存量单兜底表**的数据源 —— issue #4452 起它不再是新单的判据）。
      * GET /api/admin/production/route-signals
+     *
+     * <p><b>为什么读面暂留而写面退役</b>：`production_route_signals` 降级为「存量单兜底」
+     * （表不删 —— 存量单仍需派生），读面留着便于排查历史单的派生来源；
+     * 而 `POST/PUT/DELETE` 三个写面**已删除**（404）—— 让商家继续往兜底表里加行，
+     * 只会让「已经不该被读的判据」继续增长（issue #4452：部位改走 {@code componentRole} 受控枚举、
+     * 工艺改走加工项的显式声明 {@code processing_items.craft_hint}）。</p>
      */
     @GetMapping("/route-signals")
     public ApiResponse<Map<String, Object>> routeSignals() {
         return ApiResponse.success(productionOperationQueryService.routeSignalList(TenantContext.getTenantId()));
     }
 
-    /**
-     * 新增信号映射
-     * POST /api/admin/production/route-signals
-     * body: {signal, curtain_type?, craft?, priority?, status?}（两维至少给一个）
-     */
-    @PostMapping("/route-signals")
-    @RequirePermission("processing:manage")
-    public ApiResponse<Map<String, Object>> createRouteSignal(@RequestBody Map<String, Object> body) {
-        return ApiResponse.success(
-                productionRoutingCommandService.createSignal(body, TenantContext.getTenantId()));
-    }
+    // ══════════════════ 异常订单清单（issue #4452 交付物 ④）══════════════════
 
     /**
-     * 改信号映射（部分更新：只写 body 里出现的字段）
-     * PUT /api/admin/production/route-signals/{id}
+     * **异常订单清单**：{@code route_source ∈ {default, partial}} 的加工单逐条可见
+     * （加工单号 + 实际使用键 + 请求键 + 可行动文案）。
+     *
+     * <p>信号映射退场后，「部位/工艺是猜的或没填」必须有**可观测面** —— 否则退场只是把静默错配
+     * 从「猜错」换成「悄悄落默认」。{@code missing_route}（库里缺路线）不在本清单，
+     * 由 {@code GET /routing-gaps} 承担。</p>
+     *
+     * GET /api/admin/production/orders/routing-anomalies
      */
-    @PutMapping("/route-signals/{id}")
+    @GetMapping("/orders/routing-anomalies")
     @RequirePermission("processing:manage")
-    public ApiResponse<Map<String, Object>> updateRouteSignal(@PathVariable String id,
-                                                              @RequestBody Map<String, Object> body) {
-        return ApiResponse.success(productionRoutingCommandService.updateSignal(
-                id, body, TenantContext.getTenantId()));
-    }
-
-    /**
-     * 删信号映射（**软删**：deleted=1 —— 谁在何时删掉哪条映射是排查路线错配的唯一证据）
-     * DELETE /api/admin/production/route-signals/{id}
-     */
-    @DeleteMapping("/route-signals/{id}")
-    @RequirePermission("processing:manage")
-    public ApiResponse<Map<String, Object>> deleteRouteSignal(@PathVariable String id) {
+    public ApiResponse<Map<String, Object>> routingAnomalies() {
         return ApiResponse.success(
-                productionRoutingCommandService.deleteSignal(id, TenantContext.getTenantId()));
+                processingOrderService.routingAnomalies(TenantContext.getTenantId()));
     }
 
     // ══════════════════════════ 缺口可查（issue #4308 交付物 5 / P4）══════════════════════════

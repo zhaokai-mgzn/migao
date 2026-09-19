@@ -279,6 +279,18 @@ class ProcessingOrderRouteSourceTest {
     private static OrderItem itemWithCarriers(String itemId, String productName, String processingItemName,
                                               String columnCurtainType, String columnCraft,
                                               String jsonCurtainType, String jsonCraft) {
+        return itemWithCarriers(itemId, productName, processingItemName, columnCurtainType, columnCraft,
+                jsonCurtainType, jsonCraft, null);
+    }
+
+    /**
+     * 同 {@link #itemWithCarriers}，另可给 {@code processing_info} 顶层的 {@code componentRole}
+     * （**受控枚举**：主布 / 配布边 / 纱 —— issue #4452 起它是部位维的受控来源）。
+     */
+    private static OrderItem itemWithCarriers(String itemId, String productName, String processingItemName,
+                                              String columnCurtainType, String columnCraft,
+                                              String jsonCurtainType, String jsonCraft,
+                                              String componentRole) {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("colorName", "米白");
         info.put("sellingMethod", "散剪");
@@ -287,6 +299,9 @@ class ProcessingOrderRouteSourceTest {
         }
         if (jsonCraft != null) {
             info.put("craft", jsonCraft);
+        }
+        if (componentRole != null) {
+            info.put("componentRole", componentRole);
         }
         info.put("processingItems", List.of(Map.of("id", "p-" + itemId, "name", processingItemName,
                 "unitPrice", 3.0, "quantity", 2, "unit", "米")));
@@ -327,37 +342,39 @@ class ProcessingOrderRouteSourceTest {
     }
 
     @Test
-    @DisplayName("PG-027 推导链②：显式字段给一维 + 加工项推导给另一维 ⇒ partial（显式维不被覆盖）")
+    @DisplayName("PG-027 推导链②：显式字段给一维 + componentRole 给另一维 ⇒ partial（显式维不被覆盖）")
     void explicitColumnBeatsProcessingItemDerivation() {
-        stubSignals();
         stubRoutings();
-        // 列只给工艺 打孔（布帘×打孔 库里**没有**这条路线 —— 桩里只有 布帘×韩褶/纱帘×韩褶/帘头×平幔）
-        // ⇒ 用「加工项名 韩褶-布」推帘种：加工项名含「布」⇒ 布帘；加工项名也含「韩褶」，
-        //   但工艺维**已被显式字段占住**（打孔）⇒ 必须是 布帘×打孔 ⇒ missing_route（回落默认）。
-        // 若显式字段被推导覆盖 ⇒ 会得到 布帘×韩褶 + derived ⇒ 本用例红。
+        // 列只给工艺 打孔；部位由**受控来源** componentRole=纱 补齐（issue #4452：部位不再猜加工项名）。
+        // ⇒ 纱帘×打孔，来源 partial（有一维来自受控来源、不是两维都由信号表派生）。
+        // 若显式字段被补齐覆盖 ⇒ 会得到别的键 ⇒ 本用例红。
+        // ⚠️ 本用例**不** stub 信号表（两维都不缺 ⇒ 派生链第 3 层不该被触碰）—— 这也是
+        // 「新单不读信号表」的判据之一（UnnecessaryStubbing 会把它钉成红）。
         AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
-                itemWithCarriers("item-1", "遮光成品X", "韩褶-布", null, "打孔", null, null)));
+                itemWithCarriers("item-1", "遮光成品X", "工序甲", null, "打孔", null, null, "纱")));
 
         var results = service().generate(List.of("order-001"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isTrue();
         assertThat(po.get().getRouteSource())
-                .as("只直读一维 ⇒ partial（新结构里「该部位有模板」= 有路线 ⇒ 不回落；"
-                        + "补救动作 = 去信号映射补另一维）")
+                .as("显式工艺 + componentRole 补齐部位 ⇒ partial（补救动作 = 把另一维填进订单）")
                 .isEqualTo("partial");
         assertThat(po.get().getRouteRequestedKey())
-                .as("显式工艺（打孔）必须压过加工项名里的「韩褶」—— 否则就是「推导盖掉用户填的值」")
-                .isEqualTo("布帘×打孔");
+                .as("显式工艺（打孔）必须压过任何补齐 —— 否则就是「补齐盖掉用户填的值」")
+                .isEqualTo("纱帘×打孔");
+        org.mockito.Mockito.verify(productionOperationQueryService, org.mockito.Mockito.never())
+                .routeSignals(TENANT);
     }
 
     @Test
-    @DisplayName("PG-029 推导链③：加工项推导（第 2 层）压过商品名信号（第 3 层）")
-    void processingItemDerivationBeatsProductNameSignal() {
+    @DisplayName("PG-029 商品名不再是信号源：加工项名/options 是**存量单兜底**的唯一信号源")
+    void productNameIsNoLongerASignalSource() {
         stubSignals();
         stubRoutings();
-        // 商品名含「纱」（第 3 层信号）；加工项名「打孔-布」含「布」+「打孔」（第 2 层）
-        // ⇒ 必须取加工项那一层：布帘×打孔（库里没有 ⇒ missing_route）。
-        // 若把商品名提到加工项名之前 ⇒ 得到 纱帘×打孔 / 纱帘×韩褶 ⇒ 本用例红。
+        // 商品名含「纱」（旧实现里这是帘种信号源，会把部位带成纱帘）；
+        // 加工项名「打孔-布」在**存量兜底**里同时命中 布（帘种）与 打孔（工艺）。
+        // ⇒ 新口径：帘种来自加工项名 ⇒ 布帘×打孔（库里没有 ⇒ missing_route）。
+        // 若商品名仍是信号源且排在加工项名之前 ⇒ 得到 纱帘×打孔 ⇒ 本用例红。
         AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
                 itemWithCarriers("item-1", "遮光纱A", "打孔-布", null, null, null, null)));
 
@@ -365,7 +382,7 @@ class ProcessingOrderRouteSourceTest {
 
         assertThat(results.get(0).isSuccess()).isTrue();
         assertThat(po.get().getRouteRequestedKey())
-                .as("加工项比商品名权威（V58 实证：商品名里一个「布/纱」字就会选错路线）")
+                .as("商品名里的「纱」不再参与判据（加工项名才是存量兜底的信号源）")
                 .isEqualTo("布帘×打孔");
     }
 
@@ -374,10 +391,12 @@ class ProcessingOrderRouteSourceTest {
     void hookAccessorySignalPointsAtMainLine() {
         stubSignals();
         stubRoutings();
-        // 加工项名就是「四爪钩」（配件本身），商品名含「布」⇒ 帘种 布帘。
-        // V63 前：信号 四爪钩 → craft=四爪钩 ⇒ 派生键 布帘×四爪钩（库里没有该路线 ⇒ missing_route，
-        //         requested=布帘×四爪钩）；V63 后：指向主线工艺 韩褶 ⇒ 布帘×韩褶 + **derived**。
-        // ⇒ 断言 routeSource=derived 且 requested=布帘×韩褶 就能区分两者（本用例即红证）。
+        // 加工项名就是「四爪钩」（配件本身）—— **存量单兜底**（无 V63 列 / componentRole）：
+        // V63 前：信号 四爪钩 → craft=四爪钩 ⇒ 派生键 布帘×四爪钩（库里没有 ⇒ missing_route）；
+        // V63 后：指向主线工艺 韩褶 ⇒ 工艺 = 韩褶。
+        // issue #4452：**部位不再来自商品名** ⇒ 部位维缺 ⇒ 取默认 布帘，来源 partial
+        // （旧实现里商品名「布艺遮光帘A」含「布」会把它带成「derived」—— 那条判据已作废）。
+        // ⇒ 断言「工艺 = 韩褶 而不是 四爪钩」即可区分 V63 前后（本用例即红证）。
         AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
                 itemWithCarriers("item-1", "布艺遮光帘A", "四爪钩", null, null, null, null)));
 
@@ -385,8 +404,8 @@ class ProcessingOrderRouteSourceTest {
 
         assertThat(results.get(0).isSuccess()).isTrue();
         assertThat(po.get().getRouteSource())
-                .as("指向主线 ⇒ 是干净派生（derived），不是「识别的键库里没有」（missing_route）")
-                .isEqualTo("derived");
+                .as("部位维缺（商品名不再是判据）⇒ partial，不是「两维都由信号表派生」的 derived")
+                .isEqualTo("partial");
         assertThat(po.get().getRouteKey()).as("P2b：route_key = 实际使用的路线").isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
         assertThat(po.get().getRouteRequestedKey())
                 .as("不得再派生/记录「布帘×四爪钩」—— 四爪钩是加工项（配件），不是并列工艺")
@@ -419,29 +438,35 @@ class ProcessingOrderRouteSourceTest {
     }
 
     @Test
-    @DisplayName("PG-027 半命中：只派生出一维 ⇒ route_source=partial + 键 = 命中维 + 默认维")
+    @DisplayName("PG-027 半命中：只补齐一维 ⇒ route_source=partial + 键 = 补齐维 + 默认维")
     void singleDimensionHitIsPartial() {
-        stubSignals();
         stubRoutings();
-        // 商品名含「纱」= 只命中帘种；工艺无一命中 ⇒ 取默认 韩褶 ⇒ 纱帘×韩褶（库里有）
-        AtomicReference<ProcessingOrder> po = stubGenerate(List.of(item("item-1", "遮光纱A", "工序甲")));
+        // 受控来源给一维（componentRole=纱 ⇒ 纱帘），另一维（工艺）缺 ⇒ 取该租户默认 韩褶
+        // ⇒ 纱帘×韩褶（库里有）。⚠️ issue #4452 起「商品名含纱」不再是半命中的形态
+        // （商品名不再是判据）—— 半命中改由**受控来源**给出一维来构造。
+        AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
+                itemWithCarriers("item-1", "遮光纱A", "工序甲", null, null, null, null, "纱")));
 
         var results = service().generate(List.of("order-001"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isTrue();
-        assertThat(po.get().getRouteSource()).as("只命中一维 ⇒ partial（补救动作 = 去信号映射补另一维）")
+        assertThat(po.get().getRouteSource()).as("只补齐一维 ⇒ partial（补救动作 = 把另一维填进订单）")
                 .isEqualTo("partial");
         assertThat(po.get().getRouteKey()).as("P2b：route_key = 实际使用的路线").isEqualTo(RoutingModelFixture.TEMPLATE_NAME);
         assertThat(po.get().getRouteRequestedKey()).as("partial 也要记下「想走的键」").isEqualTo("纱帘×韩褶");
     }
 
     @Test
-    @DisplayName("PG-028 T2：两维都命中但库中无该路线 ⇒ missing_route + requested 记下那个键（不是 partial）")
+    @DisplayName("PG-028 T2：键在库中无该路线 ⇒ missing_route + requested 记下那个键（不是 partial）")
     void derivedKeyMissingFromLibraryIsMissingRouteAndKeepsRequestedKey() {
-        stubSignals();
         stubRoutings();
-        // 「罗马帘」在**库里配了信号**（商家自建行），但库里**没有** 罗马帘×韩褶 这条路线
-        AtomicReference<ProcessingOrder> po = stubGenerate(List.of(item("item-1", "罗马帘A", "罗马帘")));
+        // 「罗马帘」部位**没有**路线模板（库里只有 布帘/纱帘）—— 键由订单行显式给出
+        // （issue #4452：部位不再从信号/商品名派生 ⇒ 「库里没有的部位」只能由显式字段构造）。
+        // 工艺维缺 ⇒ 取该租户默认 韩褶 ⇒ 想走的键 = 罗马帘×韩褶（库里没有 ⇒ 回落默认模板）。
+        // ⚠️ 本用例**不** stub 信号表：两维都不缺 ⇒ 派生链第 3 层不该被触碰
+        // （「新单不读信号表」的判据之一，UnnecessaryStubbing 会把它钉成红）。
+        AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
+                itemWithCarriers("item-1", "罗马帘A", "工序甲", "罗马帘", null, null, null)));
 
         var results = service().generate(List.of("order-001"), TENANT, "u1");
 
@@ -464,6 +489,8 @@ class ProcessingOrderRouteSourceTest {
         assertThat(captor.getAllValues())
                 .extracting(com.migao.admin.entity.ProcessingPositionOperation::getOperationName)
                 .contains("韩褶-布", "布三边");
+        org.mockito.Mockito.verify(productionOperationQueryService, org.mockito.Mockito.never())
+                .routeSignals(TENANT);
     }
 
     @Test
@@ -491,10 +518,13 @@ class ProcessingOrderRouteSourceTest {
     void multiPositionRollsUpToMostNeedingAttention() {
         stubSignals();
         stubRoutings();
-        // 部位①「韩褶-布」= derived；部位②「罗马帘」= missing_route ⇒ 后者更需要人看
+        // 部位①「韩褶-布」= 存量兜底两维命中 ⇒ derived；部位② = 显式「罗马帘」部位、库里没有模板
+        // ⇒ missing_route ⇒ 后者更需要人看。
+        // ⚠️ issue #4452：missing_route 只能由**显式部位**构造（部位不再从信号/商品名派生）
+        // ⇒ 部位② 用列值给出，部位① 仍走存量兜底（两维都缺 ⇒ 才读信号表）。
         AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
-                item("item-1", "布艺遮光帘A", "韩褶-布"),
-                item("item-2", "罗马帘A", "罗马帘")));
+                itemWithCarriers("item-1", "布艺遮光帘A", "韩褶-布", null, null, null, null),
+                itemWithCarriers("item-2", "罗马帘A", "工序甲", "罗马帘", null, null, null)));
 
         var results = service().generate(List.of("order-001"), TENANT, "u1");
 
@@ -514,8 +544,8 @@ class ProcessingOrderRouteSourceTest {
         stubSignals();
         stubRoutings();
         AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
-                item("item-1", "罗马帘A", "罗马帘"),      // missing_route
-                item("item-2", "遮光成品X", "工序甲")));   // default（零信号）
+                itemWithCarriers("item-1", "罗马帘A", "工序甲", "罗马帘", null, null, null), // missing_route
+                itemWithCarriers("item-2", "遮光成品X", "工序甲", null, null, null, null))); // default（零信息）
 
         var results = service().generate(List.of("order-001"), TENANT, "u1");
 
@@ -528,22 +558,23 @@ class ProcessingOrderRouteSourceTest {
     }
 
     @Test
-    @DisplayName("PG-030 多部位 roll-up：missing_route 盖住 partial（两条都「有问题」，但补救动作不同）")
+    @DisplayName("PG-030 多部位 roll-up：default 盖住 partial（两条都「有问题」，但补救动作不同）")
     void multiPositionMissingRouteOutranksPartial() {
         stubSignals();
         stubRoutings();
-        // 部位①「遮光纱A」= partial（只命中帘种）；部位②「罗马帘A」= missing_route
-        // ⇒ 判别 missing_route 与 partial 的**相对次序**（冻结口径：default > missing_route > partial > derived）
+        // 部位① componentRole=纱 ⇒ partial（只补齐一维）；部位② 两维全缺 ⇒ default
+        // ⇒ 判别 default 与 partial 的**相对次序**（冻结口径：default > missing_route > partial > derived）
         AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
-                item("item-1", "遮光纱A", "工序甲"),
-                item("item-2", "罗马帘A", "罗马帘")));
+                itemWithCarriers("item-1", "遮光纱A", "工序甲", null, null, null, null, "纱"),
+                itemWithCarriers("item-2", "遮光成品X", "工序甲", null, null, null, null)));
 
         var results = service().generate(List.of("order-001"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isTrue();
-        assertThat(po.get().getRouteSource()).as("missing_route 比 partial 更需关注（补救 = 建路线）")
-                .isEqualTo("missing_route");
-        assertThat(po.get().getRouteRequestedKey()).isEqualTo("罗马帘×韩褶");
+        assertThat(po.get().getRouteSource()).as("default（零信息）比 partial 更需关注（补救 = 填部位/工艺）")
+                .isEqualTo("default");
+        assertThat(po.get().getRouteRequestedKey())
+                .as("roll-up 到 default ⇒ 没有「想走的键」（三列同源：不得拿 partial 那条的键）").isNull();
     }
 
     private String logText() {

@@ -173,8 +173,24 @@ cases:
     data_checks:
       - "迭代上限内终止或主动询问是否展开"
       - "最终回复不包含所有 SKU × 颜色 × 色号展开"
+    # 前置自断言（issue #4531 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是
+    # CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须**整条销账**）。
+    #
+    # 本用例的攻击面是**递归展开**（「对每个商品列出所有 SKU / 对每个 SKU 列出所有颜色…」）
+    # —— 前提是商品目录**至少有一件商品**可展开；目录为空时每一层都无对象可递归，这条
+    # 「迭代不失控」的判据就退化成**空跑**（绿了但没测到东西，`migao-acceptance` 的「空跑」形态）。
+    # `source` 取种子内**已实证存在**的商品名「遮光窗帘」（同 CH-007 双端 / CH-019 米宝腿的
+    # 既有声明，两腿都成立）；口径与 `pre_clean` 的商品定位同一份（`_list_products_matching`）。
+    # ⚠️ **有意不声明 `namespaces`**：本用例**只读**（只查不写），给只读用例声明 `namespaces`
+    # 会被判 CASE-TRUST-NO-SELF-CLEAN = 账面新增违规，与 burn-down「只许缩短」冲突；
+    # 只读用例的商品维漂移恒为 0，缺省 `max_growth: 0` 已足够。
+    # **断言面（user_inputs / expectations / data_checks）一字未动、无放宽。**
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     skip_reason: ""
-    merge_log: "eval D005 独有"
+    merge_log: "eval D005 独有；2026-09-19（issue #4531 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]` —— 「商品目录非空（至少一件可展开）」是本用例攻击面（递归展开不失控）**真正依赖且只读**的前提，目录为空时该判据退化成空跑；有意不声明 `namespaces`（只读用例声明它 = 账面新增 NO-SELF-CLEAN，与「只许缩短」冲突）。user_inputs / expectations / data_checks 原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_performance_isolation.py"

@@ -1,0 +1,53 @@
+-- 加工项**显式声明**的工艺列 `craft_hint`（issue #4452，包 C）
+--
+-- ## 病根（代码事实）
+-- 路线键「工艺」维此前靠 `contains` 猜**加工项名**（`ProcessingOrderService.signals()` →
+-- `production_route_signals` 的文本包含匹配）。而加工项目录是**商家可自定义的业务数据**
+-- （POC 已建过「POC-加工工艺」这类名字）⇒ 判据绑在研发改的关键词表上，
+-- 商家每加一个自定义加工项名就多一分**静默错配**
+-- （`docs/design/craft-routing-customization.md` §4 P2 实证：V58 错配 ⇒ 纱帘订单拿到布帘
+-- 11 道工序，**工序与工资全错**）。
+--
+-- ## 语义（冻结）
+-- | 取值 | 含义 |
+-- |---|---|
+-- | `NULL` | **商家没声明**（不是「工艺=空」）⇒ 该维按缺维处理，`route_source` 显式标注 |
+-- | 非空 | 该加工项代表哪个工艺（韩褶 / 打孔 / 穿杆 / 平幔 …）—— 路线键工艺维的**受控来源** |
+--
+-- 读侧 = `ProcessingOrderService.craftHintOf`（经 `buildSnapshot` 从加工项目录带进快照的
+-- `craftHint` 键）；写侧 = `POST/PUT /api/admin/processing-items` 的 `craftHint` 字段。
+-- 改声明 ⇒ 路线随之变；改加工项**名** ⇒ 路线**不变**（判据不是名字）。
+--
+-- ## ⚠️ **不做**存量回填（**不猜**，issue #4452 验收判据 5）
+-- 按加工项名回填「能唯一确定的才填」**本身就是猜**（「韩褶-布」既含「韩褶」也可能是别的
+-- 工艺名的一部分）⇒ 本迁移**只加列**，`craft_hint` 对存量行一律留空。
+-- 存量单的路线派生由 `production_route_signals`（**降级为存量单兜底**，表不删）继续承担；
+-- 缺口由 `GET /production/routing-gaps` 与 `GET /production/orders/routing-anomalies` 可见。
+--
+-- ## 为什么是**新迁移 V78**（不改 V60/V63）
+-- `MigrationRunner` 的台账 `schema_migrations` 按**文件名**记，已应用的文件**整份跳过**
+-- （`applied.contains(filename)` ⇒ `continue`）⇒ 往 V60/V63 里加列会「CI 绿、存量环境永远拿不到」
+-- = **绿了但没生效**（本仓库最忌讳的形态）。故 V60/V63 **一字不动**。
+--
+-- ## 幂等（MigrationRunner 要求所有 SQL 可重复执行）
+-- `ADD COLUMN IF NOT EXISTS` / `COMMENT ON` 均幂等。
+--
+-- ## bootstrap 终态同步（**已做**）
+-- `docs/sql/schema.sql` 的「11. bootstrap 对齐」段已同步本列
+-- （`ALTER TABLE processing_items ADD COLUMN IF NOT EXISTS craft_hint VARCHAR(16)`）。
+-- **为什么必须同步**（不是可选项）：bootstrap 路径（docker `docker-entrypoint-initdb.d` 执行
+-- `schema.sql`）**不跑迁移链** ⇒ 缺列 ⇒ 加工单查询/落库 500 → ai-agent 工具拿到
+-- 「服务暂时不可用」→ 熔断 → 整轮评测被污染（#3270 实证形态）。
+-- 机械守卫 = `tests/unit_ci_workflows/test_schema_integrity.py`
+-- （`TestSchemaCoversMigrationChainColumns` + `TestSchemaCoversEntityColumns`）—— 本列**两处都要**：
+-- 迁移链是结构变更的事实源，schema.sql 只负责终态对齐（漂移即 CI block）。
+
+-- ── 加列（可空；留空 = 商家没声明，见上「语义」）──
+ALTER TABLE processing_items ADD COLUMN IF NOT EXISTS craft_hint VARCHAR(16);
+
+COMMENT ON COLUMN processing_items.craft_hint IS
+    '加工项显式声明的工艺（V78，issue #4452）：路线键「工艺」维的受控来源（韩褶/打孔/穿杆/平幔…）。'
+    'NULL = 商家没声明（不是「工艺=空」）⇒ 该维按缺维处理、route_source 显式标注，不猜。'
+    '读侧 = ProcessingOrderService.craftHintOf；写侧 = POST/PUT /api/admin/processing-items。'
+    '本列不做存量回填（按名字回填本身就是猜）—— 存量单由 production_route_signals 兜底。';
+

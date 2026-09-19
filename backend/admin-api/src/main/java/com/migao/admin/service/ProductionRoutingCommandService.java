@@ -3,12 +3,10 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.ProductionOperation;
-import com.migao.admin.entity.ProductionRouteSignal;
 import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionRoutingVersion;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.ProductionOperationMapper;
-import com.migao.admin.mapper.ProductionRouteSignalMapper;
 import com.migao.admin.mapper.ProductionRouteTemplateMapper;
 import com.migao.admin.mapper.ProductionRoutingVersionMapper;
 import lombok.RequiredArgsConstructor;
@@ -67,7 +65,6 @@ public class ProductionRoutingCommandService {
     private final ProductionRouteTemplateMapper productionRouteTemplateMapper;
     private final ProductionRoutingVersionMapper productionRoutingVersionMapper;
     private final ProductionOperationMapper productionOperationMapper;
-    private final ProductionRouteSignalMapper productionRouteSignalMapper;
     private final ProductionOperationQueryService productionOperationQueryService;
 
     // ══════════════════════════ 路线模板：新建 / 改 / 删（P2b，issue #4459）══════════════════════════
@@ -335,157 +332,22 @@ public class ProductionRoutingCommandService {
         }
     }
 
-    // ══════════════════════════════ 信号映射：增 / 改 / 删 ══════════════════════════════
-
-    /**
-     * 新增信号映射（{@code POST /route-signals}）。
-     *
-     * <p>一行至少给出一维（{@code curtain_type} / {@code craft}）—— DB 侧另有 CHECK 兜底；
-     * 两维都给 = 一个信号同时定帘种与工艺。{@code priority} 缺省 = **该用途内**最大 + 1
-     * （与迁移前常量表的「顺序即优先级」同口径）。</p>
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> createSignal(Map<String, Object> body, Long tenantId) {
-        String signal = requiredText(body == null ? null : body.get("signal"), "signal");
-        String curtainType = optionalText(body.get("curtain_type"));
-        String craft = optionalText(body.get("craft"));
-        List<ApiResponse.ErrorDetail> details = new ArrayList<>();
-        if (curtainType == null && craft == null) {
-            details.add(BusinessException.detail("curtain_type",
-                    "curtain_type 与 craft 至少要给一个：两个都不给 ⇒ 这行信号命中后什么都不改，是死数据"));
-        }
-        Integer priority = optionalInt(body.get("priority"), "priority", details);
-        if (!details.isEmpty()) {
-            throw BusinessException.validationError("信号映射未通过校验（" + details.size() + " 条问题）", details,
-                    "给 signal 一个非空关键字，并至少指定 curtain_type 或 craft");
-        }
-        validateSignalUniqueness(null, signal, curtainType, craft,
-                priority == null ? nextPriority(tenantId, curtainType, craft) : priority, tenantId);
-
-        ProductionRouteSignal row = ProductionRouteSignal.builder()
-                .tenantId(tenantId)
-                .signal(signal)
-                .curtainType(curtainType)
-                .craft(craft)
-                .priority(priority == null ? nextPriority(tenantId, curtainType, craft) : priority)
-                .status(body.containsKey("status") ? requiredStatus(body.get("status")) : "active")
-                .createdAt(OffsetDateTime.now())
-                .updatedAt(OffsetDateTime.now())
-                .deleted(0)
-                .build();
-        productionRouteSignalMapper.insert(row);
-        log.info("新增信号映射: tenantId={}, signal={}, curtainType={}, craft={}, priority={}",
-                tenantId, signal, curtainType, craft, row.getPriority());
-        return productionOperationQueryService.signalView(row);
-    }
-
-    /** 改信号映射（{@code PUT /route-signals/{id}}，部分更新：只写 body 里出现的字段）。 */
-    @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> updateSignal(String id, Map<String, Object> body, Long tenantId) {
-        ProductionRouteSignal row = findSignal(id, tenantId);
-        String signal = body.containsKey("signal") ? requiredText(body.get("signal"), "signal") : row.getSignal();
-        String curtainType = body.containsKey("curtain_type")
-                ? optionalText(body.get("curtain_type")) : row.getCurtainType();
-        String craft = body.containsKey("craft") ? optionalText(body.get("craft")) : row.getCraft();
-        List<ApiResponse.ErrorDetail> details = new ArrayList<>();
-        if (curtainType == null && craft == null) {
-            details.add(BusinessException.detail("curtain_type",
-                    "curtain_type 与 craft 至少要留一个：两个都清空 ⇒ 这行信号命中后什么都不改，是死数据"));
-        }
-        Integer priority = body.containsKey("priority")
-                ? optionalInt(body.get("priority"), "priority", details) : row.getPriority();
-        if (!details.isEmpty()) {
-            throw BusinessException.validationError("信号映射未通过校验（" + details.size() + " 条问题）", details,
-                    "至少保留 curtain_type 或 craft 之一");
-        }
-        validateSignalUniqueness(row.getId(), signal, curtainType, craft, priority, tenantId);
-
-        row.setSignal(signal);
-        row.setCurtainType(curtainType);
-        row.setCraft(craft);
-        row.setPriority(priority);
-        row.setUpdatedAt(OffsetDateTime.now());
-        if (body.containsKey("status")) {
-            row.setStatus(requiredStatus(body.get("status")));
-        }
-        productionRouteSignalMapper.updateById(row);
-        return productionOperationQueryService.signalView(row);
-    }
-
-    /**
-     * 删信号映射（{@code DELETE /route-signals/{id}}）—— **软删**（{@code deleted=1}）。
-     *
-     * <p>为什么不物理删：派生读的是 {@code deleted=0 AND status=active}，软删后这行立刻不参与派生；
-     * 而「谁在什么时候删掉了哪条映射」在排查路线错配时是唯一的证据。</p>
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> deleteSignal(String id, Long tenantId) {
-        ProductionRouteSignal row = findSignal(id, tenantId);
-        row.setDeleted(1);
-        row.setUpdatedAt(OffsetDateTime.now());
-        productionRouteSignalMapper.updateById(row);
-        log.info("删除信号映射: tenantId={}, signalId={}, signal={}", tenantId, row.getId(), row.getSignal());
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("id", row.getId());
-        result.put("deleted", true);
-        return result;
-    }
-
-    /**
-     * 同用途唯一 + 同用途 priority 不撞档（issue #4308）。
-     *
-     * <p>为什么挡 priority 撞档：派生按 {@code (priority, id)} 扫描，两行同 priority 时「谁先命中」
-     * 由 uuid 决定 ⇒ 对商家**不可预测**（同一份配置在不同租户/不同重建后可能给出不同路线键）。
-     * 与其留一个不可预测的静默行为，不如在写面直接拒掉（并给可行动建议）。</p>
-     */
-    private void validateSignalUniqueness(String selfId, String signal, String curtainType,
-                                          String craft, Integer priority, Long tenantId) {
-        for (ProductionRouteSignal other : allSignals(tenantId)) {
-            if (Objects.equals(other.getId(), selfId) || !Objects.equals(other.getSignal(), signal)) {
-                continue;
-            }
-            if (curtainType != null && other.getCurtainType() != null) {
-                throw BusinessException.conflict(
-                        String.format("信号「%s」的**帘种**映射已存在（已映射到「%s」）", signal, other.getCurtainType()),
-                        "同一信号在同一用途下只能有一条映射：改那一条，或换个信号关键字");
-            }
-            if (craft != null && other.getCraft() != null) {
-                throw BusinessException.conflict(
-                        String.format("信号「%s」的**工艺**映射已存在（已映射到「%s」）", signal, other.getCraft()),
-                        "同一信号在同一用途下只能有一条映射：改那一条，或换个信号关键字");
-            }
-        }
-        if (priority == null) {
-            return;
-        }
-        for (ProductionRouteSignal other : allSignals(tenantId)) {
-            if (Objects.equals(other.getId(), selfId) || !Objects.equals(other.getPriority(), priority)) {
-                continue;
-            }
-            boolean samePurpose = (curtainType != null && other.getCurtainType() != null)
-                    || (craft != null && other.getCraft() != null);
-            if (samePurpose) {
-                throw BusinessException.validationError(
-                        String.format("priority=%d 在同一用途下已被信号「%s」占用", priority, other.getSignal()),
-                        List.of(BusinessException.detail("priority",
-                                "同用途内 priority 必须唯一：撞档时「谁先命中」由内部 id 决定，对商家不可预测")),
-                        "换一个 priority，或省略该字段让服务端自动取「同用途最大 + 1」");
-            }
-        }
-    }
-
-    /** 该用途内的下一个 priority（帘种行与工艺行**各自**排序，见 V60 迁移的「用途拆分」）。 */
-    private int nextPriority(Long tenantId, String curtainType, String craft) {
-        int max = 0;
-        for (ProductionRouteSignal row : allSignals(tenantId)) {
-            boolean samePurpose = (curtainType != null && row.getCurtainType() != null)
-                    || (craft != null && row.getCraft() != null);
-            if (samePurpose && row.getPriority() != null) {
-                max = Math.max(max, row.getPriority());
-            }
-        }
-        return max + 1;
-    }
+    // ══════════════════════ 信号映射写面**已退役**（issue #4452）══════════════════════
+    //
+    // `POST/PUT/DELETE /production/route-signals` 三个端点**已删除**（连同本类的
+    // `createSignal` / `updateSignal` / `deleteSignal` 与三条护栏 validateSignalUniqueness /
+    // nextPriority / findSignal / allSignals）。
+    //
+    // 为什么退役：`production_route_signals` 是「关键词 → 名词」的**对照表** + `contains` 文本匹配，
+    // 匹配源是**自由文本**（加工项名 / options / 商品名 / 销售方式）。它不表达业务逻辑，
+    // 且判据绑在「研发改的常量表」上而加工项目录是**商家可自定义的业务数据**
+    // ⇒ 商家每加一个自定义名就多一分静默错配（craft-routing-customization.md §4 P2 实证：
+    // 纱帘订单拿到布帘 11 道工序，工序与工资全错）。
+    //
+    // issue #4452 起：部位维改走 `componentRole` 受控枚举 / V63 `curtain_type` 列，
+    // 工艺维改走加工项的**显式声明** `processing_items.craft_hint`；
+    // 信号表**降级为存量单兜底**（表不删 —— 存量单仍需派生），故读面 `GET /route-signals` 暂留。
+    // ⇒ 让商家继续往兜底表里加行，只会让「已经不该被读的判据」继续增长，故写面先退场。
 
     // ══════════════════════════════ 读取 / 版本账 ══════════════════════════════
 
@@ -498,29 +360,12 @@ public class ProductionRoutingCommandService {
         return template;
     }
 
-    private ProductionRouteSignal findSignal(String id, Long tenantId) {
-        ProductionRouteSignal row = id == null ? null : productionRouteSignalMapper.selectById(id);
-        if (row == null || !tenantId.equals(row.getTenantId())
-                || !Integer.valueOf(0).equals(row.getDeleted())) {
-            throw BusinessException.notFound("信号映射");
-        }
-        return row;
-    }
-
     /** 全部未软删路线模板（含 disabled：重名判据要覆盖停用行，否则会撞 DB 唯一索引）。 */
     private List<ProductionRouteTemplate> allRoutings(Long tenantId) {
         List<ProductionRouteTemplate> rows = productionRouteTemplateMapper.selectList(
                 new LambdaQueryWrapper<ProductionRouteTemplate>()
                         .eq(ProductionRouteTemplate::getTenantId, tenantId)
                         .eq(ProductionRouteTemplate::getDeleted, 0));
-        return rows == null ? List.of() : rows;
-    }
-
-    private List<ProductionRouteSignal> allSignals(Long tenantId) {
-        List<ProductionRouteSignal> rows = productionRouteSignalMapper.selectList(
-                new LambdaQueryWrapper<ProductionRouteSignal>()
-                        .eq(ProductionRouteSignal::getTenantId, tenantId)
-                        .eq(ProductionRouteSignal::getDeleted, 0));
         return rows == null ? List.of() : rows;
     }
 
@@ -587,14 +432,6 @@ public class ProductionRoutingCommandService {
             throw BusinessException.validationError(field + " 不能为空");
         }
         return text;
-    }
-
-    private static String optionalText(Object value) {
-        if (value == null) {
-            return null;
-        }
-        String text = String.valueOf(value).trim();
-        return text.isEmpty() ? null : text;
     }
 
     private static String requiredStatus(Object value) {
