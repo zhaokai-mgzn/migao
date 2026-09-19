@@ -37,6 +37,11 @@ export interface QuoteData {
   has_pattern?: boolean | null
   pattern_repeat?: number | null
   processing_meters?: number | null
+  /**
+   * 算料公式串（issue #4546，用户 2026-09-19 追加裁定「**C端也要能看到**」）：
+   * 由算料引擎产出、**原样**来自 `curtain_calc` 输出；缺键/`null`/空串 ⇒ 该行不渲染。
+   */
+  formula_text?: string | null
 }
 
 interface QuotationCardProps {

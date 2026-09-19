@@ -1,4 +1,4 @@
-// case_ids: OR-010, CH-010, CH-030, CH-038
+// case_ids: OR-010, CH-010, CH-030, CH-038, OR-034
 /**
  * QuotationCard 交互测试 — 报价单确认下单（interact 报价 → 防连点锁）
  *
@@ -112,6 +112,15 @@ describe('QuotationCard — 报价单确认下单', () => {
     expect(screen.getByText('13.3米')).toBeTruthy()
     expect(screen.getByText('0.32米')).toBeTruthy()
     expect(screen.getByText('是否对花')).toBeTruthy()
+  })
+
+  it('#4546 判据：渲染「算料公式」行 —— C 端顾客也能看到用料是怎么算出来的', () => {
+    // 用户 2026-09-19 追加裁定「C端也要能看到」⇒ 报价卡（吃 `curtain_calc` 原始输出，snake_case）
+    // 必须渲染该行。🔴 红证：删掉键表里的 `formula_text` 别名 ⇒ 本断言红。
+    const formulaText = '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
+    render(<QuotationCard data={{ ...baseQuote, ...craftSpec, formula_text: formulaText }} />)
+    expect(screen.getByText('算料公式')).toBeTruthy()
+    expect(screen.getByText(formulaText)).toBeTruthy()
   })
 
   it('定宽买高：`fixed_width*` / `roman_panel` 都映射为「定宽买高」（§4.2）', () => {
