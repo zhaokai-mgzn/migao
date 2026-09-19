@@ -3041,7 +3041,7 @@
 必须成功: processing_item_manage(toggle_item_status)
 产出: processing_item_manage(toggle_item_status) → status==inactive
 ```
-溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。 ｜ tags: processing_item, llm_behavior, tool_call, toggle
+溯源: 2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。2026-09-19（issue #4527 的 burn-down 缴费）：补 `precondition[processing_item_count_for_keyword: 纳米圈打孔, expect: 1]` —— 把「种子夹具存在且唯一」这条**真正依赖且只读**的前置写成可判定自断言；类型由本 PR 加到 runner 的 `_PRECONDITION_TYPES`（计数口径与 `product_count_for_keyword` 同构，不复制第二份「怎么数加工项」的定义）。断言面原样未动、无放宽。 ｜ tags: processing_item, llm_behavior, tool_call, toggle
 
 ### PP-009. 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计） 🔵
 ```

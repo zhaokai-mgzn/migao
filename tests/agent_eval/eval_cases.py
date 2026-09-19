@@ -4961,6 +4961,7 @@ _CASE_PP_008 = EvalCase(
     required_args=[{'tool': 'processing_item_manage', 'fields': ['item_id', 'status']}],
     must_succeed=[{'tool': 'processing_item_manage', 'action': 'toggle_item_status'}],
     output_verify=[{'tool': 'processing_item_manage', 'action': 'toggle_item_status', 'expect': {'status': 'inactive'}}],
+    precondition=[{'type': 'processing_item_count_for_keyword', 'source': '纳米圈打孔', 'expect': 1}],
 )
 
 # ── PP-009 [NORMAL] 米宝加工项 LLM 行为：per_area 按面积算价（calculate_price 下发 dimensions，不双计）（源: cases/processing.yml）──

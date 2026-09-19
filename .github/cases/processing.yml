@@ -259,8 +259,23 @@ cases:
       - "无法停用"
     data_checks:
       - "status 目标值为 inactive（工具返回 `{item_id, status}` 可直接核对）；重复执行幂等（再停用一次仍是 inactive）"
+    # ── 前置自断言（issue #4527 的 burn-down 缴费）────────────────────────────────
+    # 本用例命中的唯一一条存量违规是 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（metric=entries
+    # ⇒ 必须**整条销账**）。它的**真前置**是「种子加工项 `pi_eval_punch`（名字「纳米圈打孔」）
+    # 存在且只有一件」—— 不在 ⇒ 红的表现是 `unmatched expectation`（看起来像「agent 不会停用
+    # 加工项」，归因全错，同 PG-013 / CU-003 的形态）；有同名副本 ⇒ 停用的可能不是种子那一件。
+    # 口径：`expect: 1`（种子唯一名，真值确实恒为 1，同 OR-014/OR-025 的「按名唯一」）；
+    # **不按 status 计**（本用例的写动作就是改状态，把 status 计入口径会把正常行为判成漂移）。
+    # 类型 `processing_item_count_for_keyword` 由本 PR 加到 runner 的 `_PRECONDITION_TYPES`
+    # （计数口径与 `product_count_for_keyword` 同构；`GET /api/admin/processing-items?keyword=`）。
+    # **断言面（user_inputs / expectations / must_succeed / required_args / output_verify /
+    # forbidden_text / data_checks）一字未动、无放宽。**
+    precondition:
+      - type: processing_item_count_for_keyword
+        source: "纳米圈打孔"
+        expect: 1
     skip_reason: ""
-    merge_log: "2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。"
+    merge_log: "2026-09-14 新增（issue #3568）：`processing_item_manage(action=toggle_item_status)` 此前**零用例覆盖**（同 PP-007 的覆盖边界）。断言机器可判：must_succeed(action=toggle_item_status) + required_args[item_id,status] + output_verify(status=inactive，显式 action) + forbidden_text。⚠️ 数据副作用：停用种子加工项 `pi_eval_punch` 会影响依赖它的用例（OR-016/OR-024 等加工项流程）—— 评测栈每次重建，同栈内请让本条**后跑**（或由 pre_clean 复位）；本包未新增 runner 侧 pre_clean 类型，故在此显式标注。2026-09-19（issue #4527 的 burn-down 缴费）：补 `precondition[processing_item_count_for_keyword: 纳米圈打孔, expect: 1]` —— 把「种子夹具存在且唯一」这条**真正依赖且只读**的前置写成可判定自断言；类型由本 PR 加到 runner 的 `_PRECONDITION_TYPES`（计数口径与 `product_count_for_keyword` 同构，不复制第二份「怎么数加工项」的定义）。断言面原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"

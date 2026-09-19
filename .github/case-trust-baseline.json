@@ -20,8 +20,8 @@
     "deadline": "2026-12-31"
   },
   "anchor_sha": "44615b6c9be18d23709a92c0c7e027da259f0836",
-  "case_total": 348,
-  "violation_case_count": 55,
+  "case_total": 349,
+  "violation_case_count": 54,
   "rule_counts": {
     "CASE-TRUST-EMPTY-ASSERTION": 1,
     "CASE-TRUST-NO-EFFECT-ASSERTION": 19,
@@ -29,7 +29,7 @@
     "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE": 0,
     "CASE-TRUST-FORBIDDEN-TEXT-SOLE": 6,
     "CASE-TRUST-VOLATILE-LOCATOR": 1,
-    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 53,
+    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 52,
     "CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH": 0,
     "CASE-TRUST-STALE-LINE-REF": 0,
     "CASE-TRUST-SINGLE-LEG-NO-PERSONA": 0
@@ -307,11 +307,6 @@
       ]
     },
     "PP-007": {
-      "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
-    "PP-008": {
       "codes": [
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
