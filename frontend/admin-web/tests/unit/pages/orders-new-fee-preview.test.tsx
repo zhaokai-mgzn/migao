@@ -87,6 +87,12 @@ const feeMatched = (amount = 133) => ({
   },
 })
 
+/** 展开「加工选项」折叠区（issue #4489 判据 3：默认折叠） */
+const expandProcessing = () => {
+  const btn = screen.getAllByRole('button', { name: /加工选项/ })[0]
+  if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+}
+
 const inputOf = (label: string, idx = 0) =>
   screen
     .getAllByText(label)
@@ -101,6 +107,7 @@ async function setupLine() {
   fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
   fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
   await waitFor(() => expect(inputOf('数量')).toHaveValue(13.3))
+  expandProcessing()
   fireEvent.click(screen.getByRole('checkbox'))
 }
 

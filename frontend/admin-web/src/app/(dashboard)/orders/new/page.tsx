@@ -101,6 +101,11 @@ interface OrderLineItem {
   /** 卡片是否收起（issue #4420 展示重构）—— 收起只影响渲染，不影响任何录入值 */
   collapsed: boolean
   /**
+   * 商家**手改过**打开方式（issue #4493 的宽→开数联动）——落在**行状态**里，
+   * 不放组件内 state（收起/展开重挂不丢）。手改过 ⇒ 改宽**不得覆盖**。
+   */
+  openCountTouched: boolean
+  /**
    * 用料米数来源（真值源 §8：折数/用料**必须带来源**，防多渠道不一致）—— issue #4434。
    * `公式计算` = 由算料引擎试算预填（宽/高/开数/拼次变化时自动重算）；
    * `人工指定` = 商家手改过 ⇒ **试算不得静默改回**（只有显式「恢复按公式计算」才切回）。
@@ -309,6 +314,19 @@ function heightFromDoorWidth(doorWidth: string | undefined): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
+/**
+ * 宽 → 打开方式（真值源 §10 的启发式，**今天未落码**）：
+ * 「≤2.2m 默认单开、>2.2m 默认双开、大窗（>5m）四开」。
+ *
+ * ⚠️ 只在商家**没手改过**打开方式时联动（`openCountTouched` 落在**行状态**里，
+ * 不放组件内 state —— 收起/展开不会丢，同 #4489 的教训）。
+ */
+function deriveOpenCount(width: number): number {
+  if (width > 5) return 4
+  if (width > 2.2) return 2
+  return 1
+}
+
 function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
   return {
     id: genId(),
@@ -329,6 +347,7 @@ function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
     edgeMeters: null,
     edgeUnitPrice: null,
     collapsed: false,
+    openCountTouched: false,
     metersSource: METERS_SOURCE_FORMULA,
     calc: null,
     calcError: null,
@@ -825,6 +844,13 @@ export default function NewOrderPage() {
     [pricedLines]
   )
 
+  /** 行 id → 取价行下标（`pricedLines` 与 `feePreview.items` 同序） */
+  const feeIndexByLineId = useMemo(() => {
+    const m = new Map<string, number>()
+    pricedLines.forEach((l, i) => m.set(l.id, i))
+    return m
+  }, [pricedLines])
+
   const feePreviewSignature = useMemo(() => JSON.stringify(feePreviewPayload), [feePreviewPayload])
 
   const [feePreview, setFeePreview] = useState<FeePreviewResult | null>(null)
@@ -864,10 +890,15 @@ export default function NewOrderPage() {
   }, [feePreviewSignature, pricedLines.length])
 
   /** 未定价的行数（服务端按 0 计）—— 必须显式可见：`¥0.00` 与「本来就不收」分不清 */
-  const unpricedCount = (feePreview?.items ?? []).filter(
-    (row) =>
+  // ⚠️ **布料行不计入「未定价」**（issue #4493）：布料无加工 ⇒ 服务端按 0 计是**正常**的，
+  // 把它算成「未定价」会让每一张布料单都挂一条假警报。
+  const unpricedCount = (feePreview?.items ?? []).filter((row, i) => {
+    const line = pricedLines[i]
+    if (!line || line.saleForm === SALE_FORM_FABRIC) return false
+    return (
       (row.processingFeeDetail as { fee_source?: string } | undefined)?.fee_source === 'unpriced'
-  ).length
+    )
+  }).length
 
   // ===== 费用汇总 =====
   const totals = useMemo(() => {
@@ -1149,14 +1180,28 @@ export default function NewOrderPage() {
                         onChangeQty={(q) => handleLineQtyChange(line, q)}
                         onRestoreFormula={() => restoreFormulaMeters(line)}
                         onChangePrice={(p) => updateLineItem(line.id, { unitPrice: p })}
-                        onChangeWidth={(w) => updateLineItem(line.id, { width: w })}
+                        onChangeWidth={(w) =>
+                          updateLineItem(line.id, {
+                            width: w,
+                            // **宽 → 打开方式**联动（真值源 §10 的启发式）：手改过就不覆盖
+                            ...(w !== null && !line.openCountTouched
+                              ? { craft: { ...line.craft, openCount: deriveOpenCount(w) } }
+                              : {}),
+                          })
+                        }
                         onChangeHeight={(h) => updateLineItem(line.id, { height: h })}
                         onToggleCollapsed={() =>
                           updateLineItem(line.id, { collapsed: !line.collapsed })
                         }
                         onToggleProcessing={(pi, sel) => toggleProcessing(line, pi, sel)}
                         onChangeCraft={(patch) =>
-                          updateLineItem(line.id, { craft: { ...line.craft, ...patch } })
+                          updateLineItem(line.id, {
+                            craft: { ...line.craft, ...patch },
+                            // 商家手改了打开方式 ⇒ 记下来（行状态），之后改宽不再覆盖
+                            ...(patch.openCount !== undefined
+                              ? { openCountTouched: true }
+                              : {}),
+                          })
                         }
                         onEdgeMetersChange={(m) => updateLineItem(line.id, { edgeMeters: m })}
                         onEdgeUnitPriceChange={(p) =>
@@ -1249,73 +1294,111 @@ export default function NewOrderPage() {
             <div className="p-6">
               <SectionTitle icon={<Receipt className="w-4 h-4" />} title="费用明细" />
 
-              {/* 行项费用构成（issue #4420 重设计）。
-                  此前只有「商品名 ×数量 · ¥单价 +加工 ¥x」一行摘要 —— **看不出钱是怎么来的**，
-                  而商家要拿它对报价单与加工单。现在每行摊开成**可核对的算式**：
-                  商品「米数 × 单价」、加工项逐条「数量 单位 × 单价」、配布边单列。 */}
-              {lineItems.some((l) => l.product) && (
+              {/* 行项费用构成（issue #4420 重设计；**issue #4488② 改为按商品组合并**）。
+                  用户 2026-09-19：「费用计算也不对」⇒「**按商品合并商品金额**」。
+                  商品金额按**商品组**并成一行（米数 = 各部位之和）；**加工费仍逐部位**
+                  （加工费按部位归属，不合并 —— 合并会看不出是哪个部位收的）。 */}
+              {productGroups.some((g) => g.product) && (
                 <div className="mb-4 space-y-3">
-                  {lineItems
-                    .filter((l) => l.product)
-                    .map((line, idx) => {
-                      const meters = Number(line.quantity) || 0
-                      const unit = Number(line.unitPrice) || 0
-                      const sub = meters * unit
-                      // 加工费 = **服务端取价结果**（issue #4450）—— 页面不得再按 Σ 加工项显示，
-                      // 否则「算式算出来的数」与「订单金额里的数」对不上（同一真值两个数）。
-                      const feeRow = feePreview?.items[idx]
-                      const feeDetail = feeRow?.processingFeeDetail as
-                        | { unit_price?: number; meters?: number; fee_source?: string; hint?: string }
-                        | undefined
-                      const procFee = Number(feeRow?.processingFee) || 0
-                      const feeUnit = Number(feeDetail?.unit_price)
-                      const feeMeters = Number(feeDetail?.meters)
-                      const feeExpr =
-                        Number.isFinite(feeUnit) && Number.isFinite(feeMeters)
-                          ? `${feeMeters} 米 × ${formatAmount(feeUnit)}/米`
-                          : null
-                      const edgePrice = edgeUnitPriceOf(line)
-                      const edgeMeters = edgeMetersOf(line)
-                      const edgeFee = edgePrice === null ? 0 : edgeMeters * edgePrice
+                  {productGroups
+                    .filter((g) => g.product)
+                    .map((group, gi) => {
+                      const groupMeters = group.lines.reduce(
+                        (acc, l) => acc + (Number(l.quantity) || 0),
+                        0
+                      )
+                      const groupUnit = Number(group.lines[0].unitPrice) || 0
+                      const groupSub = group.lines.reduce(
+                        (acc, l) =>
+                          acc + (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0),
+                        0
+                      )
+                      const groupProc = group.lines.reduce((acc, l) => {
+                        const i = feeIndexByLineId.get(l.id)
+                        return acc + (i === undefined ? 0 : Number(feePreview?.items[i]?.processingFee) || 0)
+                      }, 0)
+                      const groupEdge = group.lines.reduce((acc, l) => {
+                        const p = edgeUnitPriceOf(l)
+                        return acc + (p === null ? 0 : edgeMetersOf(l) * p)
+                      }, 0)
+                      const groupColor = uniqueColors(group.product?.skus).find(
+                        (c) => c.id === group.selectedColorId
+                      )?.name
+                      const isFabric = group.saleForm === SALE_FORM_FABRIC
                       return (
                         <div
-                          key={line.id}
+                          key={group.id}
                           className="rounded-lg border border-neutral-200 overflow-hidden"
                         >
                           <div className="flex items-center justify-between gap-2 px-3 py-2 bg-neutral-50/70">
                             <span className="text-xs font-medium text-neutral-700 truncate">
-                              <span className="text-neutral-400 mr-1">{idx + 1}.</span>
-                              {line.product?.name}
-                              {line.craft.curtainType && (
-                                <span className="ml-1.5 font-normal text-neutral-500">
-                                  {line.craft.curtainType}
+                              <span className="text-neutral-400 mr-1">{gi + 1}.</span>
+                              {group.product?.name}
+                              {groupColor && (
+                                <span className="ml-1.5 font-normal text-primary-600">
+                                  {groupColor}
                                 </span>
+                              )}
+                              {isFabric && (
+                                <span className="ml-1.5 font-normal text-neutral-500">布料</span>
                               )}
                             </span>
                             <span className="text-sm font-semibold text-neutral-900 shrink-0">
-                              {formatAmount(sub + procFee + edgeFee)}
+                              {formatAmount(groupSub + groupProc + groupEdge)}
                             </span>
                           </div>
                           <div className="px-3 py-2 space-y-1">
+                            {/* 商品金额**按商品组合并成一行**（米数 = 各部位之和，总额不变） */}
                             <CostRow
                               label="商品"
-                              expr={`${meters} 米 × ${formatAmount(unit)}/米`}
-                              amount={sub}
+                              expr={`${groupMeters} 米 × ${formatAmount(groupUnit)}/米`}
+                              amount={groupSub}
                             />
-                            {feeDetail?.fee_source === 'unpriced' ? (
-                              <CostRow label="加工" expr="未定价（按 0 计）" amount={0} />
-                            ) : feeExpr ? (
-                              // label 用「加工」而非「加工费」：合计区已有一个「加工费」，
-                              // 两个同名文本会让「按文本定位」的判据与自动化都变得歧义
-                              <CostRow label="加工" expr={feeExpr} amount={procFee} />
-                            ) : null}
-                            {edgeFee > 0 && edgePrice !== null && (
-                              <CostRow
-                                label="配布边"
-                                expr={`${edgeMeters} 米 × ${formatAmount(edgePrice)}/米`}
-                                amount={edgeFee}
-                              />
-                            )}
+                            {/* 加工费**逐部位**（成品帘才有） */}
+                            {!isFabric &&
+                              group.lines.map((line) => {
+                                const i = feeIndexByLineId.get(line.id)
+                                const feeRow = i === undefined ? undefined : feePreview?.items[i]
+                                const d = feeRow?.processingFeeDetail as
+                                  | { unit_price?: number; meters?: number; fee_source?: string }
+                                  | undefined
+                                const unit = Number(d?.unit_price)
+                                const meters = Number(d?.meters)
+                                const expr =
+                                  Number.isFinite(unit) && Number.isFinite(meters)
+                                    ? `${meters} 米 × ${formatAmount(unit)}/米`
+                                    : null
+                                return (
+                                  <CostRow
+                                    key={`p_${line.id}`}
+                                    label={
+                                      line.craft.curtainType
+                                        ? `加工·${line.craft.curtainType}`
+                                        : '加工'
+                                    }
+                                    expr={
+                                      d?.fee_source === 'unpriced'
+                                        ? '未定价（按 0 计）'
+                                        : (expr ?? '—')
+                                    }
+                                    amount={Number(feeRow?.processingFee) || 0}
+                                  />
+                                )
+                              })}
+                            {/* 配布边逐行（§4.8 一樘窗 = 主布行 + 配布边行） */}
+                            {group.lines.map((line) => {
+                              const p = edgeUnitPriceOf(line)
+                              if (p === null) return null
+                              const m = edgeMetersOf(line)
+                              return (
+                                <CostRow
+                                  key={`e_${line.id}`}
+                                  label="配布边"
+                                  expr={`${m} 米 × ${formatAmount(p)}/米`}
+                                  amount={m * p}
+                                />
+                              )
+                            })}
                           </div>
                         </div>
                       )
@@ -1978,6 +2061,8 @@ function LineItemBlock({
   const colorOptions = useMemo(() => uniqueColors(line.product?.skus), [line.product])
   /** 加工选项默认折叠（issue #4489 判据 3）—— 只影响渲染 */
   const [processingOpen, setProcessingOpen] = useState(false)
+  /** 工艺规格默认收起为摘要（issue #4493 三层体验②）—— 只影响渲染 */
+  const [craftOpen, setCraftOpen] = useState(false)
   const selectedProcessingCount = Object.values(line.selectedProcessing).filter(
     (c) => c.selected
   ).length
@@ -2056,8 +2141,10 @@ function LineItemBlock({
         )}
       </div>
 
-      {!line.collapsed && (
-      <div className="p-4">
+      {/* ⚠️ **收起用 CSS 隐藏，不卸载**（issue #4489 的组件包发现）：
+          组件内的「手改留痕」标志是 `useState`，卸载重挂会丢 —— 手改回「未指定」这一档
+          与「从没点过」在 props 上不可区分 ⇒ 重挂后被联动重新覆盖。保持挂载即消除该窄路径。 */}
+      <div className={line.collapsed ? 'hidden' : 'p-4'}>
 
             {/* 尺寸与数量（issue #4420 分区①）：宽 / 高 必填 + 数量 / 单价 */}
             <div className="pt-3 border-t border-neutral-100">
@@ -2245,18 +2332,44 @@ function LineItemBlock({
             {/* 「樘窗」输入已移除（issue #4486，用户裁定「我感觉不需要」）；
                 「新增部位」按钮移到**商品组底部**（issue #4485：部位嵌在商品下，不是新开一张商品卡）。 */}
 
-            {/* 工艺规格（§4.2 字段表 A + §4.8 双拼）：下单页此前一个工艺字段都不写 */}
-            <OrderCraftFields
-              value={line.craft}
-              onChange={onChangeCraft}
-              mainMeters={line.quantity}
-              edgeMeters={line.edgeMeters}
-              onEdgeMetersChange={onEdgeMetersChange}
-              edgeUnitPrice={line.edgeUnitPrice}
-              onEdgeUnitPriceChange={onEdgeUnitPriceChange}
-            />
+            {/* 工艺规格（§4.2 字段表 A + §4.8 双拼）。
+                **默认收起为一行摘要**（issue #4493 三层体验②）：8 项默认档已全覆盖
+                ⇒ 商家常态**不用点**，只在偏离默认时展开改（用户「现在太多点选了」）。 */}
+            <div className="pt-3 border-t border-neutral-100">
+              <button
+                type="button"
+                onClick={() => setCraftOpen((v) => !v)}
+                aria-expanded={craftOpen}
+                className="w-full flex items-center justify-between gap-2"
+              >
+                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-700 shrink-0">
+                  {craftOpen ? (
+                    <ChevronDown className="w-4 h-4 text-neutral-400" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-neutral-400" />
+                  )}
+                  <Settings2 className="w-4 h-4 text-neutral-500" />
+                  工艺规格
+                </span>
+                {!craftOpen && (
+                  <span className="text-xs text-neutral-500 truncate">
+                    {summarySpec || '按行业默认'}
+                  </span>
+                )}
+              </button>
+              {craftOpen && (
+                <OrderCraftFields
+                  value={line.craft}
+                  onChange={onChangeCraft}
+                  mainMeters={line.quantity}
+                  edgeMeters={line.edgeMeters}
+                  onEdgeMetersChange={onEdgeMetersChange}
+                  edgeUnitPrice={line.edgeUnitPrice}
+                  onEdgeUnitPriceChange={onEdgeUnitPriceChange}
+                />
+              )}
+            </div>
       </div>
-      )}
     </div>
   )
 }
