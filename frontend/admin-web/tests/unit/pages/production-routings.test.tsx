@@ -17,6 +17,9 @@
 // ⑨ **就绪度新增「默认路线」格**：无默认 ⇒ `data-state=todo` + 后果说明；
 // ⑩ **零退化**：工序库半边（分组/搜索/改价/必完/作用域/新增工序）+ 路线半边 + 两个 tab + 切 tab 不丢状态；
 // ⑪ 商家页**不得**出现「信号」（issue #4453 裁定：内部机制名不入商家面）。
+// ⑫ **新建路线的部位勾选与部位价目矩阵同源**（issue #4556）：包 F（#4529 / V79）落库的第 4 个部位
+//    `布料` 必须**可选**、能建出 `positions:['布料']` 的路线；矩阵读面 120 格**逐值不变**（回归）；
+//    不动勾选仍提交**基线三部位**（既有行为逐字不变）。
 // 反 placeholder：断言落**真实数据行**与**请求体**，不断言「页面存在」。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -975,4 +978,128 @@ describe('算料配置 tab（issue #4528）', () => {
     await waitFor(() => expect(screen.getByTestId('craft-calc-config-scalar-per_fold_single')).toHaveValue(0.25))
   })
 })
+})
+
+/**
+ * 部位价目矩阵的**真实规模**夹具（issue #4529 / V79：30 逻辑工序 × **4** 部位 = **120** 格）。
+ * 第 4 个部位 = `布料` —— #4556 的不对称就长在这：**读面**（本夹具）本来就看得见它，
+ * **写面**（新建路线的勾选项）却建不出来。
+ * 服务端顺序 = `(operation, position)`；本夹具按 `工序1..30` × `布帘/纱帘/帘头/布料` 逐格铺开。
+ * 三态齐备：纱帘列 `applicable=false`（不做）/ 布料列 `unit_price=null`（做但未定价）/ 其余有价。
+ */
+const MATRIX_120 = Array.from({ length: 30 }, (_, i) => `工序${i + 1}`).flatMap((operation, oi) =>
+  ['布帘', '纱帘', '帘头', '布料'].map((position, pi) => ({
+    operation,
+    position,
+    unit_price: pi === 3 ? null : oi + pi,
+    applicable: pi !== 1,
+  })),
+)
+
+describe('新建路线的部位选项（issue #4556：包 F 的第 4 个部位「布料」）', () => {
+  beforeEach(() => {
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok(MATRIX_120))
+  })
+
+  it('判据③ 回归：矩阵列**逐值不变** —— 30 道 × 4 部位 = 120 格整份呈现，`布料` 列在（读面本来就看得见）', async () => {
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+
+    expect(screen.getByTestId('operation-price-matrix-total')).toHaveTextContent('30')
+    expect(screen.getByTestId('operation-price-matrix-cells')).toHaveTextContent('120')
+    expect(screen.getAllByTestId(/^matrix-row-/)).toHaveLength(30)
+    expect(screen.getAllByTestId(/^matrix-cell-/)).toHaveLength(120)
+    // 逐列 30 格 —— **四列一个不少**（改口径把 `布料` 列滤掉/重排 ⇒ 红）
+    for (const p of ['布帘', '纱帘', '帘头', '布料']) {
+      expect(screen.getAllByTestId(new RegExp(`^matrix-cell-.*-${p}$`))).toHaveLength(30)
+    }
+    // 列序 = 基线三部位在前、矩阵里的新部位**追加在后**（不重排、不丢列）
+    expect(
+      within(screen.getByTestId('operation-price-matrix'))
+        .getAllByRole('columnheader')
+        .map((th) => th.textContent),
+    ).toEqual(['工序', '布帘', '纱帘', '帘头', '布料'])
+  })
+
+  it('判据① 「新建路线」的部位勾选**含 `布料`**（不含 ⇒ 红）', async () => {
+    await renderOnRoutes()
+    await userEvent.click(screen.getByTestId('routings-new-route'))
+    await waitFor(() => expect(screen.getByTestId('routings-create-name')).toBeInTheDocument())
+
+    for (const p of ['布帘', '纱帘', '帘头', '布料']) {
+      expect(screen.getByTestId(`routings-create-position-${p}`)).toBeInTheDocument()
+    }
+    // 默认 = **基线三部位全适用**（与后端 `ProductionRoutingCommandService.DEFAULT_POSITIONS` 同口径）；
+    // `布料` 是**按需勾选**的第 4 项（默认不勾：勾上会建出一条「也适用布料」的路线，
+    // 而路线命中是 `(is_default DESC, id)` 首个命中 ⇒ 会**顶掉**种子自带的 `布料工序路线`）。
+    expect(screen.getByTestId('routings-create-position-布帘')).toBeChecked()
+    expect(screen.getByTestId('routings-create-position-布料')).not.toBeChecked()
+  })
+
+  it('判据② 能建出 `positions=[\'布料\']` 的路线（建不出 ⇒ 红）', async () => {
+    await renderOnRoutes()
+    await userEvent.click(screen.getByTestId('routings-new-route'))
+    await userEvent.type(screen.getByTestId('routings-create-name'), '布料工序路线')
+    // 取消基线三部位 → 勾上第 4 部位 `布料`
+    for (const p of ['布帘', '纱帘', '帘头']) {
+      await userEvent.click(screen.getByTestId(`routings-create-position-${p}`))
+    }
+    await userEvent.click(screen.getByTestId('routings-create-position-布料'))
+    await userEvent.click(screen.getByTestId('routings-create-route-submit'))
+
+    await waitFor(() =>
+      expect(mockCreateRouting).toHaveBeenCalledWith({ name: '布料工序路线', positions: ['布料'] }),
+    )
+  })
+
+  it('判据④ 回归：不动勾选 ⇒ 仍提交**基线三部位**（既有行为逐字不变）', async () => {
+    await renderOnRoutes()
+    await userEvent.click(screen.getByTestId('routings-new-route'))
+    await userEvent.type(screen.getByTestId('routings-create-name'), '窗帘工序路线')
+    await userEvent.click(screen.getByTestId('routings-create-route-submit'))
+
+    await waitFor(() =>
+      expect(mockCreateRouting).toHaveBeenCalledWith({
+        name: '窗帘工序路线',
+        positions: ['布帘', '纱帘', '帘头'],
+      }),
+    )
+  })
+
+  it('`positions` 是**开放多值集合**（后端不校验闭词表）⇒ 前端**不发明**互斥规则：勾「布料 + 三部位」四个都提交', async () => {
+    // ⚠️ 照实登记（#4556 报告）：跨形态路线的**副作用**（顶掉 `布料工序路线`）已回报产品裁定，
+    // 本测试只钉「前端不擅自新增校验」这一条既有后端语义，**不**主张跨形态是可取的。
+    await renderOnRoutes()
+    await userEvent.click(screen.getByTestId('routings-new-route'))
+    await userEvent.type(screen.getByTestId('routings-create-name'), '跨形态路线')
+    await userEvent.click(screen.getByTestId('routings-create-position-布料'))
+    await userEvent.click(screen.getByTestId('routings-create-route-submit'))
+
+    await waitFor(() =>
+      expect(mockCreateRouting).toHaveBeenCalledWith({
+        name: '跨形态路线',
+        positions: ['布帘', '纱帘', '帘头', '布料'],
+      }),
+    )
+  })
+
+  it('兜底：部位价目读面失败 ⇒ 勾选项退回基线三部位（矩阵挂了也要能建路线，不得一个选项都没有）', async () => {
+    mockGetOperationPositions.mockReset().mockRejectedValue(new Error('500'))
+    await renderOnRoutes()
+    await userEvent.click(screen.getByTestId('routings-new-route'))
+    await waitFor(() => expect(screen.getByTestId('routings-create-name')).toBeInTheDocument())
+
+    for (const p of ['布帘', '纱帘', '帘头']) {
+      expect(screen.getByTestId(`routings-create-position-${p}`)).toBeInTheDocument()
+    }
+    await userEvent.type(screen.getByTestId('routings-create-name'), '窗帘工序路线')
+    await userEvent.click(screen.getByTestId('routings-create-route-submit'))
+
+    await waitFor(() =>
+      expect(mockCreateRouting).toHaveBeenCalledWith({
+        name: '窗帘工序路线',
+        positions: ['布帘', '纱帘', '帘头'],
+      }),
+    )
+  })
 })
