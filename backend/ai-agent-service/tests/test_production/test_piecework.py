@@ -1,7 +1,11 @@
 """计件与完工判定测试（app/production/piecework.py，issue #3993，M4-G-1）
 
-issue #4589（用户裁定 2026-09-19）：计件工资 = **报工数量 × 计件单价**，不再乘任何系数
-—— 「一分为二」这类特殊选项的 ×1.7 系数已从算法里退场。
+issue #4589（用户裁定 2026-09-19）：计件工资 = **报工数量 × 计件单价**，系数不再由下单流程产生
+—— 「一分为二」这类特殊选项的 ×1.7 系数已从**新报工**里退场（新实例不带 `factor` 键）。
+
+issue #4604（用户裁定 B：**不追溯**）：**历史实例**仍按**当时快照**的系数继续算（历史仍 1.7×）；
+只有新实例（`factor` 缺省）才是 1×。⇒ 本文件两条判据成对：历史面**必须乘**、新面**必须不乘**。
+⚠️ #4589 期间「读时不算系数」的效果恰恰是**回溯**（历史金额从 1.7× 掉到 1×）——「落库不动」≠「历史不回溯」。
 """
 # case_ids: PP-010
 import pytest
@@ -33,21 +37,38 @@ def test_compute_piecework_normal_only():
     assert "计件合计" in r["summary"]
 
 
-def test_compute_piecework_ignores_factor():
-    """#4589：工序实例带系数（历史快照 1.7）时，金额仍 = 数量 × 单价。
+def test_compute_piecework_applies_historical_snapshot_factor():
+    """#4604 历史面：实例带**当时快照**的系数（1.7）⇒ 金额 = 数量 × 单价 × 1.7（用户裁定 B 不追溯）。
 
-    红证（改前实测）：实现里乘了 `inst["factor"]` ⇒ 韩褶 48 折 × 0.4 × 1.7 = **32.64**，
-    而本断言期望 19.20 ⇒ 逐值红（正好差 1.7 倍）。逐笔与总额**两条路径**都断言：
-    本单改的就是这两处。
+    红证（main 实测，改前）：实现里已去掉乘系数 ⇒ 韩褶 48 折 × 0.4 = **19.20**，
+    而本断言期望 **32.64** ⇒ 逐值红（正好差 1.7 倍）。逐笔、总额、按工序**三条路径**都断言
+    —— 本单恢复的就是「逐笔 + 总额」两处公式。
     """
     insts = [{**i, "factor": 1.7} for i in INSTANCES]
+    logs = [{"operation": "韩褶-布", "worker": "李红梅", "qty": 48, "qualified_qty": 48, "type": "normal"}]
+    r = compute_piecework(insts, logs)
+    assert r["per_worker"]["李红梅"] == pytest.approx(48 * 0.4 * 1.7, abs=0.01)
+    assert r["total"] == pytest.approx(48 * 0.4 * 1.7, abs=0.01)
+    per_operation = {row["operation"]: row["amount"] for row in r["per_operation"]}
+    assert per_operation["韩褶-布"] == pytest.approx(48 * 0.4 * 1.7, abs=0.01)
+    # 判别性：不得是 1 倍（防「把期望值改回不乘」式的假修复）
+    assert r["total"] != pytest.approx(48 * 0.4, abs=0.01)
+
+
+def test_compute_piecework_new_instance_without_factor_key_is_one():
+    """#4604 新报工面（**反向护栏**）：新实例（#4589 起不带 `factor` 键）⇒ 系数缺省 1 ⇒ 不乘。
+
+    防「系数又被加回新单」：若实现写成 `inst["factor"]`（无缺省）⇒ KeyError 红；
+    若写成「先按选项名反查系数」⇒ 金额会变 32.64 ⇒ 红。
+    """
+    insts = [{k: v for k, v in i.items() if k != "factor"} for i in INSTANCES]
     logs = [{"operation": "韩褶-布", "worker": "李红梅", "qty": 48, "qualified_qty": 48, "type": "normal"}]
     r = compute_piecework(insts, logs)
     assert r["per_worker"]["李红梅"] == pytest.approx(48 * 0.4, abs=0.01)
     assert r["total"] == pytest.approx(48 * 0.4, abs=0.01)
     per_operation = {row["operation"]: row["amount"] for row in r["per_operation"]}
     assert per_operation["韩褶-布"] == pytest.approx(48 * 0.4, abs=0.01)
-    # 判别性：不得是 1.7 倍（防「把期望值改成 1.7 倍」式的假修复）
+    # 判别性：不得是 1.7 倍
     assert r["total"] != pytest.approx(48 * 0.4 * 1.7, abs=0.01)
 
 

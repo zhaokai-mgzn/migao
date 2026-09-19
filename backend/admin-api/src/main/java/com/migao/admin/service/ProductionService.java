@@ -831,8 +831,14 @@ public class ProductionService {
      * 被跳过 ⇒ 工人已做的活的钱从合计里消失**且不报错**。真值源 §4 要的是「逐笔可追溯」
      * （调价只影响新报工，历史报工按当时价）——回查实例做不到这一点，快照才做得到。</p>
      *
-     * <p>⚠️ {@code production_work_logs.factor} 列**保留**（历史报工上它是当时工资的证据），
-     * 但自 #4589 起**不再参与计算**：历史报工快照有值也不乘（不回溯、不写回填脚本）。</p>
+     * <p><b>系数按「当时快照」继续算（issue #4604，用户裁定 B：不追溯）</b>：
+     * {@code production_work_logs.factor} 列**保留**（历史报工上它是当时工资的证据），
+     * 且**历史报工照旧乘它**（快照 {@code 1.70} 的「一分二」活仍是 1.7×）⇒ 历史金额**一字不变**；
+     * #4589 起新报工**不再写** {@code factor} ⇒ 快照恒 {@code NULL} ⇒ 系数取 1 ⇒ 以后不乘。</p>
+     *
+     * <p>⚠️ 金额是**读时计算**的（本表没有金额列）⇒ 「落库数据没动」**不等于**「历史不回溯」：
+     * 把系数从读时算法里拿掉，历史金额会立刻从 1.7× 掉到 1×（呈现/结算值变了）。
+     * 「不追溯」只能靠**读时仍按快照算**来兑现，而不是靠不写回填脚本。</p>
      *
      * <p>实例回查只剩两个**展示/兜底**用途：① 工序名（快照缺失时用报工自己的
      * {@code operation_name}）；② **存量报工**（{@code unit_price} 为 {@code NULL} = V61 之前的行）
@@ -868,10 +874,15 @@ public class ProductionService {
                 continue; // 既无快照、实例又真的不存在（脏数据）→ 该笔不可计价，跳过而不是抛错
             }
             BigDecimal unitPrice = hasSnapshot ? log.getUnitPrice() : op.getUnitPrice();
-            // 系数（log/op 的 factor 快照）**不参与计算**（issue #4589）：计件 = 数量 × 单价。
-            // 列与历史值都留着（那是当时工资的证据），但不再乘 —— 不回溯、不写回填脚本。
+            // 系数取**当时快照**（issue #4604，用户裁定 B：不追溯）—— 有单价快照时读报工自己的
+            // `factor`（历史报工仍 1.7×），缺快照的存量报工才回落实例；`factor` 为 NULL ⇒ 取 1。
+            // #4589 起新报工不再写 `factor` ⇒ 快照恒 NULL ⇒ 新报工自然 1×（不再产生非 1 系数）。
+            BigDecimal factor = hasSnapshot
+                    ? (log.getFactor() == null ? BigDecimal.ONE : log.getFactor())
+                    : (op.getFactor() == null ? BigDecimal.ONE : op.getFactor());
             BigDecimal amount = money(nz(log.getQualifiedQty())
-                    .multiply(nz(unitPrice)));
+                    .multiply(nz(unitPrice))
+                    .multiply(factor));
             String worker = StringUtils.hasText(log.getWorkerName()) ? log.getWorkerName() : "未分配";
             // 工序名 = 展示字段：优先报工自身的快照（报工时已落库），缺失时回查实例
             String operation = StringUtils.hasText(log.getOperationName())

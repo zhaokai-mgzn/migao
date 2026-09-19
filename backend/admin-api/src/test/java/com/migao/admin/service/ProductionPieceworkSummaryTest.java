@@ -49,6 +49,11 @@ import static org.mockito.Mockito.when;
  *
  * <p>⑤（issue #4351，P0）：**金额在报工那一刻固化** —— 带快照的报工在实例软删（重新实例化）后
  * 金额**不变**；④ 只对「既无快照、实例又真的不存在」的真·脏数据成立。</p>
+ *
+ * <p>⑥（issue #4604，用户裁定 B **不追溯**）：读时用**当时快照**的系数 —— 历史报工（快照
+ * {@code factor=1.70}，如「一分二」）金额**一字不变**；新报工（#4589 起不再写 {@code factor}）
+ * 快照恒 {@code NULL} ⇒ 系数取 1 ⇒ 以后不乘。⚠️ #4589 把聚合改成「读时不算系数」时，
+ * 效果恰恰是**回溯**（落库数据没动，但呈现/结算值从 1.7× 掉到 1×）——「落库不动」≠「历史不回溯」。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -128,6 +133,19 @@ class ProductionPieceworkSummaryTest {
         return log;
     }
 
+    /**
+     * **新报工**形态（#4589 起）：只有单价快照、{@code factor} 留 {@code NULL}。
+     *
+     * <p>反向护栏（issue #4604）：系数**不得**被加回新单 —— 有单价快照时不许回落到实例的
+     * {@code factor}（实例上可能仍是历史值 1.70）。</p>
+     */
+    private ProductionWorkLog newStyleLog(String opId, String name, String worker, String qualifiedQty,
+                                          String unitPrice, LocalDate workDate) {
+        ProductionWorkLog log = log(opId, name, worker, qualifiedQty, "normal", workDate);
+        log.setUnitPrice(new BigDecimal(unitPrice));
+        return log; // factor 保持 NULL = 新报工形态
+    }
+
     @Test
     @DisplayName("走查实测单可复现：精裁-布 3 米 × ¥0.40 ⇒ per_worker 金额 1.20")
     void walkthroughOrderIsReproducible() {
@@ -153,6 +171,46 @@ class ProductionPieceworkSummaryTest {
     }
 
     @Test
+    @DisplayName("#4604 历史面：报工快照 factor=1.70 ⇒ 金额 = 数量 × 单价 × 1.70（用户裁定 B 不追溯）")
+    void historicalSnapshotFactorStillApplies() {
+        // 历史报工（「一分二」时代）：4 合格 × ¥0.40 × 快照 1.70 = ¥2.72
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                snapshotLog("op-1", "韩褶-布", "张三", "4", "0.40", "1.70", LocalDate.of(2026, 9, 18))));
+        // 实例现值已不是 1.70 ⇒ 必须读**报工自己的快照**（读实例会得到 1.60，判别力在此）
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-1", "韩褶-布", "0.40", "1.00")));
+
+        Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
+
+        assertThat((BigDecimal) report.get("total"))
+                .as("历史报工按「当时快照」的系数继续算 ⇒ 金额一字不变（issue #4604；main 上曾是 1.60）")
+                .isEqualByComparingTo("2.72");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> perWorker = (List<Map<String, Object>>) report.get("per_worker");
+        assertThat((BigDecimal) perWorker.get(0).get("amount")).isEqualByComparingTo("2.72");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> perOperation = (List<Map<String, Object>>) report.get("per_operation");
+        assertThat((BigDecimal) perOperation.get(0).get("amount")).isEqualByComparingTo("2.72");
+    }
+
+    @Test
+    @DisplayName("#4604 新报工面（反向护栏）：factor 快照为 NULL ⇒ 金额 = 数量 × 单价，不乘实例系数")
+    void newReportWithoutFactorSnapshotIsNotMultiplied() {
+        // #4589 起新报工只写单价快照、不写 factor
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                newStyleLog("op-1", "韩褶-布", "张三", "10", "0.40", LocalDate.of(2026, 9, 18))));
+        // 实例上仍是历史快照 1.70：有单价快照时**不得**回落到实例系数
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-1", "韩褶-布", "0.40", "1.70")));
+
+        Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
+
+        assertThat((BigDecimal) report.get("total"))
+                .as("factor 快照为 NULL ⇒ 取 1（防「系数又被加回新单」，issue #4604）")
+                .isEqualByComparingTo("4.00");
+    }
+
+    @Test
     @DisplayName("口径一致性（#4205 红证判据）：同一批报工下，per-order 合计 == 报表 total")
     void summaryTotalEqualsPerOrderTotal() {
         List<ProductionWorkLog> logs = List.of(
@@ -168,9 +226,10 @@ class ProductionPieceworkSummaryTest {
         Map<String, Object> perOrder = service.piecework(ORDER_ID, TENANT);
         Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
 
-        // 10×0.40 + 5×0.40 = 4.00 + 2.00 = 6.00（#4589：系数不再乘 —— 实例快照里的 1.70 已不进钱）；返工 3 米不计件
-        assertThat((BigDecimal) perOrder.get("total")).isEqualByComparingTo("6.00");
-        assertThat((BigDecimal) report.get("total")).isEqualByComparingTo("6.00");
+        // 10×0.40×1.00 + 5×0.40×**1.70** = 4.00 + 3.40 = 7.40（#4604：报工无单价快照 ⇒ 回落到实例的
+        // 单价**与系数**；返工 3 米不计件）
+        assertThat((BigDecimal) perOrder.get("total")).isEqualByComparingTo("7.40");
+        assertThat((BigDecimal) report.get("total")).isEqualByComparingTo("7.40");
         assertThat((BigDecimal) report.get("total"))
                 .as("两套端点必须共用同一份聚合（禁止复制第二套算法）")
                 .isEqualByComparingTo((BigDecimal) perOrder.get("total"));
@@ -309,9 +368,10 @@ class ProductionPieceworkSummaryTest {
 
         Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
 
-        // 10×0.40 + 5×0.40 + 4×0.40 = 4.00 + 2.00 + 1.60 = 7.60（#4589：快照里的 1.70 已不进钱）
+        // 10×0.40×1.00 + 5×0.40×1.00 + 4×0.40×**1.70** = 4.00 + 2.00 + 2.72 = 8.72
+        // （#4604：逐笔按**当时快照**的系数算；第 3 笔快照 1.70）
         BigDecimal total = (BigDecimal) report.get("total");
-        assertThat(total).isEqualByComparingTo("7.60");
+        assertThat(total).isEqualByComparingTo("8.72");
 
         List<Map<String, Object>> perPosition = rowsOf(report, "per_position");
         List<Map<String, Object>> perSet = rowsOf(report, "per_set");
@@ -325,19 +385,19 @@ class ProductionPieceworkSummaryTest {
                 .as("下钻合计必须 === 总额（否则「可核对」不成立）")
                 .isEqualByComparingTo(total);
 
-        // 部位维逐值：布帘 = 4.00 + 1.60 = 5.60；纱帘 = 2.00
+        // 部位维逐值：布帘 = 4.00 + 2.72 = 6.72；纱帘 = 2.00
         assertThat(perPosition).extracting(row -> row.get("position_name"))
                 .containsExactlyInAnyOrder("布艺遮光帘A 米白", "纱帘B 本白");
         BigDecimal cloth = perPosition.stream()
                 .filter(row -> "布艺遮光帘A 米白".equals(row.get("position_name")))
                 .map(row -> (BigDecimal) row.get("amount")).findFirst().orElseThrow();
-        assertThat(cloth).isEqualByComparingTo("5.60");
+        assertThat(cloth).isEqualByComparingTo("6.72");
 
-        // 套维逐值：item-A = 5.60；item-B = 2.00
+        // 套维逐值：item-A = 6.72；item-B = 2.00
         BigDecimal setA = perSet.stream()
                 .filter(row -> "item-A".equals(row.get("order_item_id")))
                 .map(row -> (BigDecimal) row.get("amount")).findFirst().orElseThrow();
-        assertThat(setA).isEqualByComparingTo("5.60");
+        assertThat(setA).isEqualByComparingTo("6.72");
     }
 
     @Test

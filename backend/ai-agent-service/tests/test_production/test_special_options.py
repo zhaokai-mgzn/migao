@@ -16,6 +16,11 @@
   真值源镜像，三源收敛守卫依赖它），但自本单起**零消费** —— 本文件用「注入限定档后
   实例逐值不变」证明它对运行期**没有任何影响**（见 `TestCriterion4FactorScope`）。
 
+#4604 口径（用户裁定 B：**不追溯**）：系数只从**新报工**退场，**历史实例**仍按**当时快照**的
+系数继续算（历史金额一字不变）。⇒ 判据 4 的「零消费」只针对**下单流程**（`routing.py` 不写
+`factor`）；`compute_piecework` 对**带 `factor` 的历史实例**仍必须乘 —— 见
+`TestCriterion7ErpNameAlignment::test_erp_name_money_halves_are_split_by_snapshot` 的历史半边。
+
 红证（实现前逐条红，红因已核）：
 - 判据 1：10 个未登记选项 ⇒ `test_every_truth_source_option_is_registered` 红（列名点名）；
 - 判据 2：5 道新工序不在 `OPERATION_CATALOG` ⇒ `test_new_operations_are_in_catalog` KeyError；
@@ -414,7 +419,8 @@ class TestCriterion7ErpNameAlignment:
       `test_leftover_return_erp_names_are_registered` 红；第三种 `余料带回`（无后缀）**零登记** ⇒
       `test_third_leftover_return_is_explicitly_registered` 红（落进静默黑洞）。
 
-    #4589 起「进了钱」这条改判为**方向相反**的判据：ERP 名不再改变计件合计。
+    #4589/#4604 起「进了钱」这条拆成**两半**（用户裁定 B 不追溯）：新实例不再带系数（半边 ①），
+    # 历史实例仍按当时快照的系数算（半边 ②）—— 两半都钉，缺任一半都会让口径漂移。
     """
 
     def test_erp_name_one_split_into_two_no_longer_applies_factor(self):
@@ -427,11 +433,13 @@ class TestCriterion7ErpNameAlignment:
         assert all(i["operation"] != "一分为二" for i in with_option)
         assert [i["operation"] for i in with_option] == BASE_ROUTE
 
-    def test_erp_name_no_longer_reaches_the_money(self):
-        """判据 1 的「进了钱」半边（#4589 改判）：ERP 名 `一分为二` 的计件合计 **= 不带选项**。
+    def test_erp_name_money_halves_are_split_by_snapshot(self):
+        """判据 1 的「进了钱」半边（#4604 改判，用户裁定 B 不追溯）—— 两半都断言：
 
-        红证（改前实测）：走**真实** `compute_piecework`（当时 = Σ 合格数 × 单价 × 系数）⇒
-        `boosted / base = 1.7`，而本断言要求比值 1.0 ⇒ 红（正好差 1.7 倍）。
+        ① **新实例**（`instance_operations` 产出，**无 `factor` 键**）⇒ 系数缺省 1 ⇒ 合计 = 不带选项；
+        ② **历史实例**（当时快照 `factor=1.7`）⇒ 合计 = 不带选项的 **1.7 倍**（历史金额一字不变）。
+
+        红证（main 实测）：实现里两处都不乘系数 ⇒ 历史半边期望 1.7 倍而实测 1.0 倍 ⇒ 红。
         """
         from app.production.piecework import compute_piecework
         plain = instance_operations(POSITION, CALC)
@@ -439,11 +447,14 @@ class TestCriterion7ErpNameAlignment:
         logs = [{"operation": i["operation"], "worker": "李红梅", "qty": i["qty"],
                  "qualified_qty": i["qty"], "type": "normal"} for i in plain]
         base = compute_piecework(plain, logs)["total"]
-        boosted = compute_piecework(with_erp, logs)["total"]
         assert base > 0, "前置自断言：合计必须非 0（否则比值判据空跑）"
-        assert boosted == pytest.approx(base, abs=0.01), "「一分为二」不得再改变计件合计"
-        # 判别性：不得是 1.7 倍（防「把期望值改成 1.7 倍」式的假修复）
-        assert boosted != pytest.approx(base * 1.7, abs=0.05)
+        # ① 新实例：无 `factor` 键 ⇒ 缺省 1 ⇒ 与不带选项一致
+        assert compute_piecework(with_erp, logs)["total"] == pytest.approx(base, abs=0.01), \
+            "新实例（无 factor 键）⇒ 系数缺省 1，不得再改变计件合计"
+        # ② 历史实例：当时快照 1.7 ⇒ 仍按 1.7 倍计（不追溯）
+        historical = [{**i, "factor": 1.7} for i in plain]
+        assert compute_piecework(historical, logs)["total"] == pytest.approx(base * 1.7, abs=0.05), \
+            "历史实例（快照 factor=1.7）⇒ 计件合计必须仍是 1.7 倍（issue #4604 不追溯）"
 
     def test_registry_keys_are_exactly_the_erp_names(self):
         """判据 1/2 的**注册表键**半边：三张表的键里不得残留旧写法。

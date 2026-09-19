@@ -189,13 +189,14 @@ class AgentProductionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.worker_name").value("张三"))
                 .andExpect(jsonPath("$.data.period").value("2026-09"))
-                .andExpect(jsonPath("$.data.total").value(6.00))
+                .andExpect(jsonPath("$.data.total").value(7.40))
                 .andExpect(jsonPath("$.data.details[0].operation").value("精裁-布"))
                 .andExpect(jsonPath("$.data.details[0].qty").value(10.0))
                 .andExpect(jsonPath("$.data.details[0].amount").value(4.00))
                 .andExpect(jsonPath("$.data.details[1].operation").value("韩褶-布"))
-                // #4589：系数不再进钱 —— 5 × 0.40 = 2.00（改前实测 3.40 = 5×0.40×1.70 ⇒ 红）
-                .andExpect(jsonPath("$.data.details[1].amount").value(2.00))
+                // #4604：报工无单价快照 ⇒ 回落实例的单价**与系数** —— 5 × 0.40 × 1.70 = 3.40
+                // （#4589 期间曾算成 2.00 = 不乘系数 ⇒ 回溯；用户裁定 B 不追溯 ⇒ 恢复 3.40）
+                .andExpect(jsonPath("$.data.details[1].amount").value(3.40))
                 .andReturn().getResponse().getContentAsString();
 
         JsonNode data = objectMapper.readTree(body).path("data");
