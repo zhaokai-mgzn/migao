@@ -2845,7 +2845,7 @@
 真值: fabric-calc.pleat-method, fabric-calc.craft-tier, fabric-calc.fullness-actual, fabric-calc.mixed-color-per-fold, fabric-calc.craft-calc-endpoint
 溯源: 2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 折数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。同日追加用户裁定：拼色每折吃布系数（拼1次 0.65 / 拼2次 1.2 米每折，纸表表头原文，是**用料**而非计价）—— 与真值源 §10 旧措辞冲突，已按裁定改正 docs §10；`拼3次` 纸表未登记 ⇒ 显式缺口 fail-closed，不插值。 ｜ tags: order, craft_calc, fabric, single_source_of_truth
 
-## 加工项域（11 case）
+## 加工项域（12 case）
 
 ### PP-002. 加工项分类列表 🔵
 ```
@@ -3025,6 +3025,22 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-09-19 新增（issue #4386，P1；用户裁定「缺乏加工费的管理模块」+ 组合口径）。交付：V68 `processing_fee_combinations` + `processing_fee_combination_versions`（与 #4308 的 production_routing_versions 同构）+ 写面五条护栏（422 details 逐条 / 409 撞唯一键）+ `composition_key` 确定性归一化（与书写顺序无关）+ 缺口端点 + `/production/processing-fees` 管理页与侧边栏入口。**未做**：计价接线（不改 OrderService.sumProcessingFee / orders-new 页 / ai-agent）—— 本包交付的是**商家的配置面**（先例 #4308：先交付写面+护栏+缺口，消费面由 #4354 后续接）；`processing_rules` 落码不做。 ｜ tags: processing, processing_fee, fee_combination, composition_key, normalization, version_ledger, gap_visibility
+
+### PG-041. 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项） 🔵
+```
+数据: success=true
+数据: 判据 1·**选配组合命中 ⇒ 落库加工费 = 该组合单价 × 加工费米数**（不再 Σ 加工项）：组合「定型+打孔+韩褶」定价 ¥8.00/米、加工费米数 12.30 米 ⇒ 行加工费 98.40（Σ 加工项口径会得 9.50×2×2 = 38.00），订单总额 = 商品 599.00 + 98.40 = 697.40。证据：ProcessingFeeCalculatorTest「matchedCombinationUsesCombinationPriceTimesProcessingMeters」+ OrderServiceTest「createOrder_processingFeeComesFromMatchedCombination」（**注入**：退回 Σ 加工项 ⇒ 总额断言红，实测 637.00 vs 697.40）
+数据: 判据 2·**未定价组合 ⇒ 金额 0 + fee_source=unpriced + 可行动提示，绝不回落任何默认价**（用户裁定：「直接切，不回落 Σ 加工项」；#4308「静默回落」同族纪律）。空价目表、停用组合、组合键不匹配三种形态都归 unpriced；提示指向「加工费管理」定价入口。证据：ProcessingFeeCalculatorTest「unpricedCombinationYieldsZeroWithActionableHint」「emptyCombinationTableYieldsZeroNotDefaultPrice」「disabledCombinationIsNotUsedForPricing」+ OrderServiceTest「createOrder_unpricedCombinationStoresZeroAndHint」（**注入**：让未命中分支回落 Σ 加工项或套默认档价 ⇒ 4 条红，实测 599.00 vs 618.00）
+数据: 判据 3·**可审计 processingFeeDetail**：组合 composition / 命中哪条规则 matched_rule_id / 单价 unit_price / 单价来源 price_source / 加工费米数 meters / 米数来源 meters_source / fee_source 三态（matched·unpriced·manual） / 金额 amount / 未定价时的可行动 hint —— 随行落库到 `processing_info.processingFeeDetail`（读面与加工单快照读同一份），金额字段 `processingFee` 仍是 number（不改既有字段类型）。证据：ProcessingFeeCalculatorTest 全部用例的 detail 断言 + OrderServiceTest「createOrder_processingFeeComesFromMatchedCombination」
+数据: 判据 4·**组合键归一化复用写面同一份实现**（不许第二份）：`ProcessingFeeCombinationCommandService.compositionKey`（trim → 丢空 → 去重 → Unicode 码点升序 → `+` 连接）⇒ 「韩褶+打孔+定型」与「定型+打孔+韩褶」命中同一条规则、同一笔钱。证据：ProcessingFeeCalculatorTest「compositionKeyOrderIndependent」（**注入**：改回书写顺序敏感 ⇒ 红）
+数据: 判据 5·**加工费米数 = 该樘窗主布行米数**（裁定 R-b；纱含在组合价里，不另按米收）：取 `processing_info.processingMeters`，兼容键 `fabric_meters` 并记 `meters_source`；命中组合但**米数缺失 ⇒ 0 + unpriced**（不凭 quantity 猜米数）。证据：ProcessingFeeCalculatorTest「metersFallBackToFabricMetersAndRecordSource」「matchedCombinationWithoutMetersYieldsZero」
+数据: 判据 6·**改组合价 ⇒ 新单按新价；已生成订单一字不变**（R13 快照优先）：读面读 `processing_info.processingFeeDetail` 的落库值，**不重算** ⇒ 历史订单金额不随价目表漂移；存量单（接线前生成、无 detail）读 0 且不拿 Σ 加工项冒充。证据：OrderServiceTest「changingCombinationPriceLeavesExistingOrderUntouched」「readPathsReturnStoredFeeNotRecomputed」「legacyOrderWithoutStoredDetailReadsZero」（**注入**：读面改成重算 ⇒ 红，实测 98.40 vs 19.00）
+数据: 判据 7·**加工费不带商品维度**（R15）：同一选配在任意商品上取到同一个组合价（#4371 解耦后组合费用表是店铺级）。证据：ProcessingFeeCalculatorTest「sameCompositionSamePriceOnAnyProduct」
+数据: 判据 8·**两套账不互读**（R9）：对外加工费**不得**由 `production_operations.unit_price` / 加工项目录单价算出（那两处是给工人付的成本）。证据：ProcessingFeeCalculatorTest「processingFeeNeverDerivedFromOperationUnitPrice」（**注入**：让取价读工序/加工项单价 ⇒ 红）
+数据: **未落地（如实登记）**：① 前端 `orders/new/page.tsx` 仍是本地自算（本单**只做后端**，PR #4424 正在改该文件）⇒ 页面显示 ≠ 落库（R10 未闭合）；② C 端 `curtain_calc.py` 的 `DEFAULT_PROCESSING_PRICE` 常量未降级为种子 ⇒ 报价单与订单的**双算**（R10 / 关联 #4118）未闭合；③ `fee_source=manual`（人工改价通道）只定义未落码；④ ai-agent 侧 `order_create` 不声明 processingFee 的推广登记在关联 #4390。
+跳过: [backend-contract] 后端契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCalculatorTest + OrderServiceTest 执行
+```
+溯源: 2026-09-19 新增（issue #4406，P1；用户裁定「未定价组合 ⇒ 加工费 = 0（unpriced），直接切，不回落 Σ 加工项」）。交付：ProcessingFeeCalculator（选配 → 归一化组合键 → 匹配 processing_fee_combinations → 单价 × 加工费米数）+ OrderService 接线（创建/列表/详情三条读面）+ processingFeeDetail 可审计构成随行落库 + fee_source 三态。**未做**：前端下单页改调服务端计价、C 端 DEFAULT_PROCESSING_PRICE 降级为种子（双算 R10 未闭合）、manual 改价通道、ai-agent 侧推广。 ｜ tags: processing_fee, fee_combination, consumption_face, fee_source, unpriced, snapshot_priority
 
 ## processing-order（39 case）
 
@@ -4596,8 +4612,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：337（活跃 154，跳过 183）
-- tier 分布：smoke 10 / normal 296 / adversarial 31
+- 用例总数：338（活跃 154，跳过 184）
+- tier 分布：smoke 10 / normal 297 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4615,7 +4631,7 @@
 - onboarding：5
 - ontology：4
 - 订单域：31
-- 加工项域：11
+- 加工项域：12
 - processing-order：39
 - 商品域：21
 - registry：1
@@ -4696,4 +4712,5 @@
 - PP-012: 内部算料数量端点 - 应做数量=引擎输出/兜底 1/未知工序 fallback（单测覆盖）
 - PP-014: 工艺路线商家可配用户面 - 序列编辑护栏逐条可见 / 缺口区 / 信号映射 / 四态路线来源提示（前端单测覆盖）
 - PG-040: 加工费组合定价 - 组合→单价（元/米）写面五条护栏 + composition_key 归一化 + 版本账 + 未定价缺口可见
+- PG-041: 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项）
 
