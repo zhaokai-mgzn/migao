@@ -47,6 +47,7 @@ jest.mock('../src/services/productionService', () => ({
   ...jest.requireActual('../src/services/productionService'),
   getOrderOperations: jest.fn(),
   reportOperation: jest.fn(),
+  shipOrder: jest.fn(),
   getOrderPiecework: jest.fn(),
 }))
 
@@ -62,6 +63,7 @@ import {
   getOrderOperations,
   getOrderPiecework,
   reportOperation,
+  shipOrder,
 } from '../src/services/productionService'
 import type { OrderOperations } from '../src/services/productionService'
 
@@ -136,6 +138,7 @@ function makeDetail(overrides: Partial<OrderOperations> = {}): OrderOperations {
 const mockGet = getOrderOperations as jest.Mock
 const mockReport = reportOperation as jest.Mock
 const mockPiecework = getOrderPiecework as jest.Mock
+const mockShip = shipOrder as jest.Mock
 
 describe('ProductionPage（工人扫码报工）', () => {
   beforeEach(() => {
@@ -152,6 +155,7 @@ describe('ProductionPage（工人扫码报工）', () => {
         per_operation: [{ operation: '韩褶', amount: 55 }, { operation: '精裁', amount: 38.5 }],
       },
     })
+    mockShip.mockResolvedValue({ success: true, data: { order_id: ORDER_ID, status: 'shipped' } })
     mockReport.mockResolvedValue({
       success: true,
       data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false },
@@ -538,4 +542,69 @@ describe('ProductionPage 深链带参直达（issue #4206 判据 4）', () => {
     await waitFor(() => expect(screen.getByText('扫码或输入加工单号后显示本单工序')).toBeTruthy())
     expect(mockGet).not.toHaveBeenCalled()
   })
+  it('发货：必完工序全绿 ⇒ 出现发货入口；填单号点发货 ⇒ 调 shipOrder 一次（原子入口）', async () => {
+    // 全部工序已报满 ⇒ isCompleted
+    mockGet.mockResolvedValue({
+      success: true,
+      data: makeDetail({
+        progress: { total: 3, done: 3, percent: 100 },
+        work_logs: [],
+      }),
+    })
+    render(<ProductionPage />)
+    fireEvent.click(screen.getByText('扫一扫'))
+    await screen.findByText('✅ 订单生产完成')
+
+    fireEvent.change(screen.getByPlaceholderText('货运单号'), { target: { value: 'SF123456' } })
+    fireEvent.click(screen.getByRole('button', { name: '发货' }))
+
+    await waitFor(() => expect(mockShip).toHaveBeenCalledTimes(1))
+    // 只调一次 —— 记物流与流转状态是**一个**原子动作（分两次会产生静默不一致）
+    expect(mockShip).toHaveBeenCalledWith(ORDER_ID, 'SF123456')
+    expect(await screen.findByText('✅ 已发货')).toBeTruthy()
+  })
+
+  it('发货红证：单号为空 ⇒ 前端拦下**不发请求**并提示', async () => {
+    mockGet.mockResolvedValue({
+      success: true,
+      data: makeDetail({ progress: { total: 3, done: 3, percent: 100 }, work_logs: [] }),
+    })
+    render(<ProductionPage />)
+    fireEvent.click(screen.getByText('扫一扫'))
+    await screen.findByText('✅ 订单生产完成')
+
+    fireEvent.click(screen.getByRole('button', { name: '发货' }))
+
+    expect(await screen.findByText('请先填写货运单号')).toBeTruthy()
+    expect(mockShip).not.toHaveBeenCalled()
+  })
+
+  it('发货红证：后端拒绝（守卫/状态不符）⇒ 展示后端 message，**不谎报已发货**', async () => {
+    mockGet.mockResolvedValue({
+      success: true,
+      data: makeDetail({ progress: { total: 3, done: 3, percent: 100 }, work_logs: [] }),
+    })
+    mockShip.mockResolvedValue({ success: false, message: '订单含加工项，须先完成加工单后再发货' })
+
+    render(<ProductionPage />)
+    fireEvent.click(screen.getByText('扫一扫'))
+    await screen.findByText('✅ 订单生产完成')
+
+    fireEvent.change(screen.getByPlaceholderText('货运单号'), { target: { value: 'SF1' } })
+    fireEvent.click(screen.getByRole('button', { name: '发货' }))
+
+    expect(await screen.findByText('订单含加工项，须先完成加工单后再发货')).toBeTruthy()
+    // 失败 ⇒ **不得**出现「已发货」（UI 反馈必须等于实际效果）
+    expect(screen.queryByText('✅ 已发货')).toBeNull()
+  })
+
+  it('发货入口：生产**未**完成时不出现（门禁在 UI 层也可见）', async () => {
+    render(<ProductionPage />)
+    fireEvent.click(screen.getByText('扫一扫'))
+    await screen.findByText('韩褶')
+
+    expect(screen.queryByRole('button', { name: '发货' })).toBeNull()
+    expect(screen.queryByPlaceholderText('货运单号')).toBeNull()
+  })
+
 })

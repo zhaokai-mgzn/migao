@@ -76,6 +76,15 @@ export interface WorkLogRow {
   created_at?: string | null
 }
 
+/**
+ * 发货结果（issue #4483 = 母单 #4347 §二.2，发货下放到工人扫码端）。
+ * 后端原子入口：记物流（含发货人）+ 流转 shipped，**一个动作一个入口**。
+ */
+export interface ShipResult {
+  order_id: string
+  status: string
+}
+
 /** GET .../operations 的 data */
 export interface OrderOperations {
   order_id: string
@@ -273,4 +282,35 @@ export async function getOrderPiecework(
   }
 }
 
-export default { getOrderOperations, getOrderPiecework, reportOperation }
+/**
+ * **发货**（issue #4483 = #4347 §二.2）：录货运单号 ⇒ 订单 shipped（**原子**）。
+ *
+ * <p>为什么不是两个调用：后端 `PUT /logistics` 只记物流、`PUT /status` 只流转，
+ * 分两次调用中间失败就是「有单号但没发货」或「发货了没单号」的静默不一致 ——
+ * 故后端提供了原子入口 `POST /production/orders/{id}/ship`，这里只调它一次。</p>
+ *
+ * <p>承运商可不传：后端会取**既有物流记录**的承运商（工人端只填单号）；
+ * 都没有时后端 422 显式报缺（不静默发一个没承运商的货）。</p>
+ */
+export async function shipOrder(
+  orderId: string,
+  trackingNo: string,
+  logisticsCompany?: string,
+): Promise<ProductionResponse<ShipResult>> {
+  try {
+    const res = await post<ProductionResponse<ShipResult>>(
+      `/api/admin/production/orders/${encodeURIComponent(orderId)}/ship`,
+      { trackingNo, logisticsCompany },
+      { baseURL: API_BASE_URL },
+    )
+    return toResponse(res, '发货失败，请重试')
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error?.data?.message || error?.message || '发货失败，请重试',
+      offline: !error?.statusCode,
+    }
+  }
+}
+
+export default { getOrderOperations, getOrderPiecework, reportOperation, shipOrder }

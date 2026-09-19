@@ -8,6 +8,7 @@ import {
   newReportRequestId,
   reportInFlightLock,
   reportOperation,
+  shipOrder,
   type OrderOperations,
   type PieceworkSummary,
   type ProductionOperation,
@@ -150,6 +151,10 @@ export default function ProductionPage() {
   const [manualId, setManualId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  /** 发货（issue #4483 = #4347 §二.2）：工人自己录单号并发货，不等管理端 */
+  const [trackingNo, setTrackingNo] = useState('')
+  const [shipping, setShipping] = useState(false)
+  const [shipped, setShipped] = useState(false)
   const [orderCompleted, setOrderCompleted] = useState(false)
   /**
    * 报工在飞锁（issue #4116 §5-1）：值 = 正在报工的工序 id（null = 空闲）。
@@ -344,6 +349,36 @@ export default function ProductionPage() {
   /** 服务端是否给了操作记录（决定标题口径：全单流水 vs 本机兜底） */
   const serverLogsAvailable = (detail?.work_logs?.length ?? 0) > 0
   const displayLogs = toDisplayLogs(detail?.work_logs, workLogs)
+  /**
+   * 发货（issue #4483 = #4347 §二.2）：录货运单号 ⇒ 订单 shipped。
+   *
+   * <p>后端是**原子入口**（记物流 + 流转状态一次完成），故这里只调一次 ——
+   * 分两次调用中间失败会产生「有单号但没发货」或「发货了没单号」的静默不一致。</p>
+   *
+   * <p>失败只展示后端 message（守卫/状态不符都由后端判定并指名原因），**不猜**。</p>
+   */
+  const handleShip = useCallback(async () => {
+    if (!detail) return
+    const no = trackingNo.trim()
+    if (!no) {
+      setError('请先填写货运单号')
+      return
+    }
+    setShipping(true)
+    setError('')
+    try {
+      const res = await shipOrder(detail.order_id, no)
+      if (!res.success) {
+        setError(res.message || '发货失败，请重试')
+        return
+      }
+      setShipped(true)
+      setTrackingNo('')
+    } finally {
+      setShipping(false)
+    }
+  }, [detail, trackingNo])
+
   const positions = detail?.positions || []
   const progress = detail?.progress
   const percent = progress?.percent ?? 0
@@ -427,6 +462,38 @@ export default function ProductionPage() {
           {isCompleted && (
             <View className='production-completed'>
               <Text className='production-completed__text'>✅ 订单生产完成</Text>
+            </View>
+          )}
+
+          {/* 发货（issue #4483 = #4347 §二.2）：必完工序全绿后才出现 ——
+              门禁由后端判定（含加工项订单必须有 completed 加工单），前端只呈现入口。 */}
+          {isCompleted && !shipped && (
+            <View className='production-ship'>
+              <Text className='production-ship__title'>发货</Text>
+              <View className='production-ship__row'>
+                <Input
+                  className='production-ship__input'
+                  value={trackingNo}
+                  placeholder='货运单号'
+                  onInput={(event) => setTrackingNo(event.detail.value)}
+                />
+                <Button
+                  className='production-ship__btn'
+                  disabled={shipping}
+                  onClick={handleShip}
+                >
+                  {shipping ? '发货中…' : '发货'}
+                </Button>
+              </View>
+              <Text className='production-ship__hint'>
+                填写货运单号即完成发货（承运商取本单已记录的物流方式）
+              </Text>
+            </View>
+          )}
+
+          {shipped && (
+            <View className='production-completed'>
+              <Text className='production-completed__text'>✅ 已发货</Text>
             </View>
           )}
 
