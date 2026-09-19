@@ -175,6 +175,21 @@ cases:
       # 点名工单号消除顺序依赖，点名原因给 db_verify 提供真值。
       - "把工单 AS-20260914-9001 关闭，关闭原因写「客户已协商一致」"
       - "确认"
+    # ── 前置自断言（issue #4527 的 burn-down 缴费）────────────────────────────────
+    # 本用例命中的唯一一条存量违规是 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（metric=entries
+    # ⇒ 必须**整条销账**）。它的**真前置**是「被点名的 seed 工单 `AS-20260914-9001` 在库里」
+    # —— `pre_clean[aftersales_ticket_prepare]` 只把**它**复位回 pending，而
+    # `_reset_aftersales_ticket` 在「库里没有该工单」时**只回一条消息、不中断评测**
+    # ⇒ 工单缺失时红的表现是 `unmatched expectation`（看起来像「agent 不会关工单」，归因全错）。
+    # 口径：按**工单号**计数（不可变键；**不按 status** —— 本用例的写动作就是改 status，
+    # 把它计入口径会把正常行为判成漂移），`expect: 1`（点名工单在 seed 里唯一）。
+    # 类型 `aftersales_ticket_count_for_ticket_no` 由本 PR 加到 runner 的 `_PRECONDITION_TYPES`
+    # （取数与 `_reset_aftersales_ticket` 同一张表 / 同一个不可变键，§18 单一真相源；**只读**）。
+    # **断言面（user_inputs / expectations / db_verify / data_checks）一字未动、无放宽。**
+    precondition:
+      - type: aftersales_ticket_count_for_ticket_no
+        source: "AS-20260914-9001"
+        expect: 1
     pre_clean:
       - type: aftersales_ticket_prepare
     expectations:
@@ -502,6 +517,10 @@ cases:
       - "我上次申请的那个换货单现在处理到哪一步了"
     expectations:
       - tool: aftersale_query
+    # forbidden-text-intent: 本用例的被测行为**就是**「能力自我否定」这条禁令 —— #3477 一族（agent 对
+    # 有权限的能力答「没有权限/无权限」）在售后域的对应形态；正向可达性由 expectations[aftersale_query]
+    # 承载，禁令侧无「某一轮良性措辞误伤」的风险（该单轮只问进度，正常回复不会出现权限字样）。
+    # 声明形态照 `assertion_taxonomy.has_forbidden_text_intent` 的既有约定（issue #4527 的 burn-down 缴费）。
     forbidden_text:
       - "没有权限"
       - "无权限"

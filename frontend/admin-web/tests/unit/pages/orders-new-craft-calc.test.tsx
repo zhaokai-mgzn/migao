@@ -211,7 +211,7 @@ describe('下单页算料试算接线（#4434）', () => {
     expect(qtyInput()).toHaveValue(1)
   })
 
-  it('判据 7：非韩褶工艺（打孔）⇒ 不发请求（折数法不适用，后端会 400）', async () => {
+  it('#4527 打孔 ⇒ **照常发请求**且走倍数法（eyelet + fullness）——「打孔按倍数法算布料」必须在页面上真的发生', async () => {
     render(<NewOrderPage />)
     await pickProduct()
     fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
@@ -225,6 +225,30 @@ describe('下单页算料试算接线（#4434）', () => {
     fireEvent.click(
       within(screen.getAllByRole('radiogroup', { name: '工艺' })[0]).getByRole('radio', {
         name: '打孔',
+      })
+    )
+    // 旧口径下打孔返回 null ⇒ 永不发请求 ⇒ 本断言红（这正是本条要防的形态）
+    await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
+    expect(mockCraftCalcPreview.mock.calls[0][0]).toMatchObject({
+      craft: '打孔',
+      mounting: 'eyelet',
+      formula: 'fullness',
+    })
+  })
+
+  it('判据 7：无自动算料口径的工艺（四爪钩）⇒ 不发请求（后端答不出）', async () => {
+    render(<NewOrderPage />)
+    await pickProduct()
+    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
+
+    mockCraftCalcPreview.mockClear()
+    const craftStep = screen.getAllByRole('button', { name: /^\d+ 工艺规格/ })[0]
+    if (craftStep.getAttribute('aria-expanded') === 'false') fireEvent.click(craftStep)
+    fireEvent.click(
+      within(screen.getAllByRole('radiogroup', { name: '工艺' })[0]).getByRole('radio', {
+        name: '四爪钩',
       })
     )
     await new Promise((r) => setTimeout(r, 600))

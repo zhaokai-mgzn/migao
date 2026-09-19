@@ -95,6 +95,22 @@ class CraftCalcRequest(BaseModel):
         default_factory=list,
         description="部位级特殊选项（逐字名，见 routing.SPECIAL_OPTION_ROUTINGS）；拼色用料系数由 拼1次/拼2次 决定",
     )
+    formula: Optional[str] = Field(
+        None,
+        description=(
+            "用料计算方法（issue #4527，用户 2026-09-19 裁定）：pleat 韩折公式（折数法，**默认**）/ "
+            "fullness 褶倍数公式（倍数法）。缺省由算料引擎的配置默认值给（本端点**不补默认值**，"
+            "补默认值 = 第二份口径）；未知取值 ⇒ 400。"
+        ),
+    )
+    craft: Optional[str] = Field(
+        None,
+        description=(
+            "安装工艺（用户 2026-09-19 追加裁定「**韩折用韩折公式算布料，打孔按倍数法算布料**」）："
+            "韩褶/打孔/四爪钩/穿杆/平幔。**公式由工艺推导**（唯一口径在算料引擎 `curtain_calc.CRAFT_FORMULA`）："
+            "韩褶 ⇒ 韩折公式、打孔 ⇒ 褶倍数公式（默认 2 倍）；本端点只透传，不复制推导表。"
+        ),
+    )
 
 
 @router.post("/tools/execute")
@@ -283,21 +299,24 @@ async def operation_qty(
 
 def _formula_text(
     width: float, fullness: float, pleat_count: int, open_count: int,
-    meters: float, per_fold: float,
+    meters: float, per_fold: float, margin: float,
 ) -> str:
-    """可读公式串 —— **后端产出**，与数值同源（issue #4421 交付物 1）。
+    """可读公式串（**折数法/韩折公式**）—— **后端产出**，与数值同源（issue #4421 交付物 1）。
 
-    形态：`(6.6+0.3)×2.0 → 52折 → 0.25×52+0.3 = 13.3米`；
+    形态：`韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米`；
     拼色时系数如实换（`0.65×52+0.3 = 34.1米`）。
 
-    四个数字全部取自**同一次算料**：倍数/折数/每折吃布来自引擎（`build_quote` 的
-    `fullness` / `pleat_count` / `per_fold`），余量走 `curtain_calc.margin_for_open_count`
-    （与算料同一个函数）⇒ 公式串不可能与米数不一致；
+    数字全部取自**同一次算料**：倍数/折数/每折吃布/余量来自引擎（`build_quote` 的
+    `fullness` / `pleat_count` / `per_fold` / `margin`）⇒ 公式串不可能与米数不一致；
     前端**不得**自拼（前端自拼 = 第二份算料逻辑）。
+
+    ⚠️ issue #4527 起公式串由**算料引擎** `curtain_calc` 产出（`quote["formula_text"]`）——
+    因为「公式名 + 逐片表达式」两种公式各不相同，端点自拼就是**第二份算料逻辑**。
+    本函数保留为**折数法**的兼容形态（本仓 `test_formula_text_is_derived_from_same_numbers`
+    等既有断言仍可直调它），端点实际返回的是引擎那一份。
     """
-    margin = curtain_calc.margin_for_open_count(open_count)
     return (
-        f"({width:g}+{margin:g})×{fullness:g} → {pleat_count:g}折 → "
+        f"韩折公式：({width:g}+{margin:g})×{fullness:g} → {pleat_count:g}折 → "
         f"{per_fold:g}×{pleat_count:g}+{margin:g} = {meters:g}米"
     )
 
@@ -354,16 +373,20 @@ async def craft_calc(
             craft_tier=request.craft_tier,
             style=request.style,
             special_options=request.special_options,
+            formula=request.formula,
+            craft=request.craft,
         )
-    except ValueError as e:  # 倍数低于行业下限（MIN_FULLNESS）等入参非法
+    except ValueError as e:  # 倍数低于行业下限（MIN_FULLNESS）/ 未知公式名等入参非法
         raise HTTPException(
             status_code=400,
             detail={"success": False, "error": {"code": "CRAFT_CALC_INVALID_INPUT", "message": str(e)}},
         ) from e
 
-    if "pleat_count" not in quote:
-        # `mounting != s_hook` ⇒ 引擎走倍数法，本端点答不出折数法结果。
-        # **不静默回落**：如实报错，由调用方显式选韩褶。
+    if quote["formula"] == curtain_calc.FORMULA_PLEAT and "pleat_count" not in quote:
+        # 走到这里只有一种情形：**折数法**下 `mounting != s_hook`（引擎走了倍数法分支）
+        # ⇒ 本端点答不出折数法结果。**不静默回落**：如实报错，由调用方显式选韩褶。
+        # ⚠️ `formula='fullness'`（褶倍数公式）**是**合法的另一种用料计算方法（issue #4527）——
+        # 它本就不产出折数，不得被这条守卫当成「不走折数法」拒掉 ⇒ 只在**折数法**下判它。
         raise HTTPException(
             status_code=400,
             detail={
@@ -372,32 +395,35 @@ async def craft_calc(
                     "code": "CRAFT_CALC_NOT_PLEAT_MODE",
                     "message": (
                         f"悬挂方式 {request.mounting} 不走折数法（折数法仅在 mounting=s_hook 生效），"
-                        "无法给出折数/用料，请改用 s_hook"
+                        "无法给出折数/用料，请改用 s_hook 或显式传 formula=fullness（褶倍数公式）"
                     ),
                 },
             },
         )
 
+    # 折数类字段（`pleat_count` / `per_panel_pleats` / `margin` / `per_fold`）**只有折数法产出**：
+    # 褶倍数公式（`formula='fullness'`）本就不按折算 ⇒ 如实给 `None`（键恒在，前端判空），
+    # **不发明** 0 / 1 冒充「0 折」——那是第二份口径（issue #4527 交付物 3 同族纪律）。
     data = {
         "fabric_meters": quote["fabric_meters"],
-        "pleat_count": quote["pleat_count"],
-        "per_panel_pleats": quote["per_panel_pleats"],
-        "open_count": quote["open_count"],
-        "margin": quote["margin"],
-        "per_fold": quote["per_fold"],
+        "pleat_count": quote.get("pleat_count"),
+        "per_panel_pleats": quote.get("per_panel_pleats"),
+        "open_count": request.open_count,
+        "margin": quote.get("margin"),
+        "per_fold": quote.get("per_fold"),
         "fullness": quote["fullness"],
         "fullness_actual": quote.get("fullness_actual"),
         "formula_used": quote["formula_used"],
-        "formula_text": _formula_text(
-            request.width, quote["fullness"], quote["pleat_count"],
-            request.open_count, quote["fabric_meters"], quote["per_fold"],
-        ),
+        # 公式串**由算料引擎产出**（issue #4527）：公式名 + 逐片表达式随公式而异，
+        # 端点自拼 = 第二份算料逻辑。引擎保证它与 `fabric_meters` 同源。
+        "formula_text": quote["formula_text"],
         "source": quote["source"],
         "craft_tier": quote["craft_tier"],
         "warning": quote["warning"],
     }
     logger.info(
         f"Craft calc: width={request.width} open_count={request.open_count} "
-        f"tier={request.craft_tier} => {data['fabric_meters']}m / {data['pleat_count']}折"
+        f"tier={request.craft_tier} formula={quote['formula']} "
+        f"=> {data['fabric_meters']}m / {data['pleat_count']}折"
     )
     return make_response(True, data=data)
