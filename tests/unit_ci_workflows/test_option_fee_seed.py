@@ -9,6 +9,8 @@
 | 非 `option` 行被写了价 | 工艺变体也按套收费（§4.1 冻结的边界被破） | `test_only_option_rows_carry_a_customer_price` |
 | 种子价与生成器漂移 | 「固定种子生成一次、写死」这条硬约束失效 ⇒ 定价不可复现 | `test_seed_rows_match_the_deterministic_generator` |
 | 种子缺 `source='synthetic'` | 测试价被当成真实价目（设计 §7 硬约束 ②） | 同上 + `test_seed_carries_synthetic_provenance` |
+| 合成价以 `active` 落库 | **生产 tenant 1 按随机价收费**（P1 钱风险） | `test_synthetic_combination_rows_are_all_disabled` |
+| 合成选项价落 `customer_unit_price` | 同上（该列无 status 可门控） | `test_migration_never_prices_customer_unit_price` |
 | 计件路径读了本列 | 对客售价泄漏成工人计件单价（两套账互读，判据 10） | `test_piecework_paths_never_read_customer_unit_price` |
 | 读面改成重算 | 改价回算历史订单（R13 快照冻结被破，判据 11） | `test_read_paths_still_read_the_persisted_detail` |
 
@@ -18,6 +20,16 @@
 （价格 / source / 列名）后必须**读得出差异**；`test_piecework_read_guard_detects_injected_read`
 把一处假读取注入到**临时副本**上必须被照出来。没有这两条，上面的逐值比对与 grep 守卫
 都可能「绿了但没跑」。
+
+## 🔴 合成价**一律不得参与取价**（issue #4525 复核的 P1 钱风险）
+
+`MigrationRunner` 在 **admin-api 启动时**执行迁移 ⇒ **生产一样会跑**；而取价侧只过滤
+`status='active'`（**不按 `source` 过滤**）⇒ 任何一行 active 的合成价 = 生产 tenant 1
+按随机价收费。故本文件钉两条红线：
+
+* `test_synthetic_combination_rows_are_all_disabled` —— 92 行组合价**全部** `status='disabled'`；
+* `test_migration_never_prices_customer_unit_price` —— 迁移**不得**给 `customer_unit_price`
+  落任何价（该列无 status 可门控 ⇒ 恒 `NULL` = 未定价 ⇒ `priced:false` 显式可见）。
 
 ## ⚠️ 设计文档与代码事实的冲突（以代码事实为准）
 
@@ -118,17 +130,6 @@ def combination_seed_rows(sql: str) -> dict:
     return rows
 
 
-def option_price_rows(sql: str) -> dict:
-    """V77 的选项定价 UPDATE → `{规则行 id: 单价}`（逐值口径）。"""
-    match = re.search(r"FROM\s*\(VALUES(.*?)\)\s*AS\s*v\(id,\s*unit_price\)", sql, re.S | re.I)
-    assert match, "V77 没有 `FROM (VALUES …) AS v(id, unit_price)` 段"
-    rows = {}
-    for fields in _split_values(match.group(1)):
-        assert len(fields) == 2, f"选项定价行列数不是 2: {fields}"
-        rows[_unquote(fields[0])] = _unquote(fields[1])
-    return rows
-
-
 # ══════════════════════════ ① 列（设计 §4.1）══════════════════════════
 
 def test_v77_adds_customer_unit_price_column():
@@ -154,22 +155,64 @@ def test_v77_adds_customer_unit_price_column():
 
 
 def test_v77_migration_is_idempotent():
-    """重复执行必须空转：`ADD COLUMN IF NOT EXISTS` + `ON CONFLICT DO NOTHING` + `WHERE` 守卫。
+    """重复执行必须空转：`ADD COLUMN IF NOT EXISTS` + `ON CONFLICT DO NOTHING`。
 
     反例（本测试要挡的形态）：裸 `ADD COLUMN` 第二次执行报错（迁移链断在半路）；
-    种子 `INSERT` 无 `ON CONFLICT` ⇒ 第二次执行主键冲突；`UPDATE` 无 `IS NULL` 守卫
-    ⇒ 每次部署都覆盖商家改过的价。
+    种子 `INSERT` 无 `ON CONFLICT` ⇒ 第二次执行主键冲突。
     """
     sql = migration_text()
     assert "ADD COLUMN IF NOT EXISTS" in sql
     assert re.search(r"ON\s+CONFLICT\s*\(id\)\s+DO\s+NOTHING", sql, re.I), \
         "组合价目种子没有 `ON CONFLICT (id) DO NOTHING`（重复执行会主键冲突）"
-    update = re.search(r"UPDATE\s+production_route_rules.*?;", sql, re.S | re.I)
-    assert update, "V77 缺少选项定价 UPDATE"
-    assert re.search(r"customer_unit_price\s+IS\s+NULL", update.group(0), re.I), \
-        "选项定价 UPDATE 没有 `customer_unit_price IS NULL` 守卫（会覆盖商家改过的价）"
-    assert re.search(r"trigger_kind\s*=\s*'option'", update.group(0), re.I), \
-        "选项定价 UPDATE 没有 `trigger_kind='option'` 限定（可能写到工艺变体行上）"
+    assert not re.search(r"^\s*UPDATE\s", sql, re.M | re.I), \
+        "V77 不该有任何 UPDATE（合成选项价不落库 —— 见文件头「合成价一律不得参与取价」）"
+
+
+def test_synthetic_combination_rows_are_all_disabled():
+    """🔴 **92 行合成价必须全部 `status='disabled'`**（issue #4525 复核的 P1 钱风险）。
+
+    `MigrationRunner` 在 **admin-api 启动时**执行本迁移 ⇒ **生产一样会跑**；而取价侧
+    （`ProcessingFeeCalculator.pricedCombinations`）只过滤 `tenantId + deleted=0 + status='active'`，
+    **不按 `source` 过滤** ⇒ 任何一行 active 的合成价都会让**生产 tenant 1 的真实订单按随机价收费**。
+
+    判据形态：逐行取 status 列，出现非 `disabled` ⇒ 红（点名是哪一行）。
+    """
+    match = re.search(
+        r"INSERT\s+INTO\s+processing_fee_combinations\b.*?VALUES(.*?)ON\s+CONFLICT",
+        migration_text(), re.S | re.I)
+    assert match, "V77 没有组合价目 INSERT 段"
+    bad = []
+    for fields in _split_values(match.group(1)):
+        assert len(fields) == 8, f"组合价目行列数不是 8: {fields}"
+        status = _unquote(fields[5])
+        if status != "disabled":
+            bad.append((_unquote(fields[2]), status))
+    assert bad == [], (
+        f"合成价目里有**参与取价**的行（status != 'disabled'）：{bad[:5]}"
+        f" —— 生产 tenant 1 会按随机价收费（#4525 P1 钱风险）")
+
+
+def test_migration_never_prices_customer_unit_price():
+    """🔴 V77 **不得**给 `customer_unit_price` 落任何价（复核裁定 (i)：列无 status 可门控）。
+
+    取价侧判据是 `customer_unit_price IS NOT NULL`（`optionPrices` 只收非空行）⇒ 列一旦被
+    合成值填充，**生产 tenant 1 的特殊选项就按随机价收费**，且没有任何 status 能挡住它。
+    ⇒ 合成选项价**只作测试资产**（注释块 + 生成器），库中该列恒 `NULL` = 未定价
+    （取价侧 `priced:false` + 可行动 hint，显式可见、不静默按 0 收）。
+
+    判据：出现任何把该列写成非空值的语句 ⇒ 红。**可红性自证**见下方注入断言。
+    """
+    sql = migration_text()
+    assert not re.search(r"SET\s+customer_unit_price\s*=", sql, re.I), \
+        "V77 里出现了 `SET customer_unit_price = …` ⇒ 合成选项价会参与真实取价（#4525 P1）"
+    # 注入式自证：同形态的语句必须被本条判据照出来
+    injected = "UPDATE production_route_rules AS r SET customer_unit_price = 9.99 FROM (VALUES (1)) v;"
+    assert re.search(r"SET\s+customer_unit_price\s*=", injected, re.I), \
+        "本判据读不出注入的 `SET customer_unit_price =` ⇒ 它是空断言"
+    # 生成器仍保留 16 条合成价作为**测试资产**（可重算、逐值相同）
+    options = synthetic.option_rows()
+    assert len(options) == 16
+    assert {o["source"] for o in options} == {"synthetic"}
 
 
 # ══════════════════════════ ② 种子（设计 §7）══════════════════════════
@@ -212,32 +255,27 @@ def test_seed_carries_synthetic_provenance():
 
 
 def test_priced_option_rows_are_exactly_the_option_rules():
-    """选项定价 = **16 条** `trigger_kind='option'` 规则行，逐条点名（设计 §4.1 + §7 的冲突登记）。
+    """合成选项价 = **16 条** `trigger_kind='option'` 规则行，逐条点名（设计 §4.1 + §7 的冲突登记）。
 
-    逐条点名而不是只数条数：少一条 = 那个选项静默按 0 收（顾客少付 / 商家少收），
-    而「16 条」这个数字本身说不出是哪一条缺了。
+    逐条点名而不是只数条数：少一条 = 那个选项在测试资产里缺失（无从核对「未定价 vs 定价」两层）。
+
+    ⚠️ 这些价**不落库**（复核裁定 (i)）⇒ 判据落在**生成器**上，并由
+    `test_migration_never_prices_customer_unit_price` 保证迁移不把它们写进库。
     """
-    rows = option_price_rows(migration_text())
-    expected_ids = {row["rule_id"] for row in synthetic.option_rows()}
-    assert set(rows) == expected_ids, (
-        f"选项定价的规则行集合不一致：仅迁移有={sorted(set(rows) - expected_ids)} "
-        f"仅生成器有={sorted(expected_ids - set(rows))}")
-    assert len(rows) == 16, f"选项定价不是 16 条：{len(rows)}"
-    assert len({row["name"] for row in synthetic.option_rows()}) == 16
+    options = synthetic.option_rows()
+    expected_ids = {row["rule_id"] for row in options}
+    assert len(options) == 16, f"合成选项价不是 16 条：{len(options)}"
+    assert len(expected_ids) == 16
+    assert len({row["name"] for row in options}) == 16
     # 19 项里没有 `option` 规则行的 3 项**不得**被定价（造规则行会违反 §4.1 与 R11 边界）
     assert len(synthetic.UNPRICED_BY_DESIGN) == 3
-    assert set(synthetic.UNPRICED_BY_DESIGN) & {row["name"] for row in synthetic.option_rows()} == set()
-    for rule_id, price in rows.items():
-        assert 1.00 <= float(price) <= 10.00, f"{rule_id} 的单价 {price} 不在 1.00~10.00 元/套"
+    assert set(synthetic.UNPRICED_BY_DESIGN) & {row["name"] for row in options} == set()
+    for row in options:
+        assert 1.00 <= float(row["unit_price"]) <= 10.00, \
+            f"{row['rule_id']} 的单价 {row['unit_price']} 不在 1.00~10.00 元/套"
+    # 逐条落在 V71 的 16 条 option 规则行上（id 形态可核）
+    assert all(re.fullmatch(r"rr-v70-\d{2}", rid) for rid in expected_ids)
 
-
-def test_option_prices_match_the_generator():
-    """选项价逐值等于生成器（与组合价目同一纪律）。"""
-    expected = {row["rule_id"]: row["unit_price"] for row in synthetic.option_rows()}
-    assert option_price_rows(migration_text()) == expected
-
-
-# ══════════════════════════ ③ 与 schema.sql / fixture 的收敛 ══════════════════════════
 
 def test_schema_sql_carries_the_new_column():
     """bootstrap 路径（`docs/sql/schema.sql`）必须同步终态 —— 该路径**不跑迁移链**。
@@ -334,7 +372,6 @@ def test_parsers_detect_injected_drift():
     """改迁移里一个字（价 / source / 列名 / 规则行）⇒ 解析结果必须不等（否则比对是空断言）。"""
     sql = migration_text()
     base_combos = combination_seed_rows(sql)
-    base_options = option_price_rows(sql)
 
     # 组合价：把第一条的单价换成另一个数（**不写死具体值**：种子会随生成器前进）
     first_combo_price = sorted(base_combos.values())[0][0]
@@ -343,13 +380,6 @@ def test_parsers_detect_injected_drift():
 
     drifted_source = re.sub(r"'synthetic'\)", "'实证')", sql, count=1)
     assert combination_seed_rows(drifted_source) != base_combos, "改 provenance 读不出来"
-    # 选项价：把第一条的单价换成另一个数（**不写死具体值**：种子会随生成器前进）
-    first_option_price = sorted(base_options.values())[0]
-    drifted_option = sql.replace(f", {first_option_price})", ", 9.99)", 1)
-    assert option_price_rows(drifted_option) != base_options, "改选项价读不出来"
-
-    drifted_id = re.sub(r"rr-v70-\d+", "rr-v70-99", sql, count=1)
-    assert option_price_rows(drifted_id) != base_options, "改规则行 id 读不出来"
 
     # 列名判据同样可红
     assert not re.search(r"customer_unit_price\s+NUMERIC\(12,\s*2\)",
@@ -366,5 +396,5 @@ def test_generator_rejects_drifted_row_counts(monkeypatch):
 if __name__ == "__main__":  # pragma: no cover - 手工排查入口
     print(f"migration={MIGRATION}")
     print(f"combos={len(combination_seed_rows(migration_text()))} "
-          f"options={len(option_price_rows(migration_text()))}")
+          f"options={len(synthetic.option_rows())}")
     raise SystemExit(pytest.main([__file__, "-q"]))
