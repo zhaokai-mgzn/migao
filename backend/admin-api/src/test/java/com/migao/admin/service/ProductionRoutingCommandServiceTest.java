@@ -578,4 +578,64 @@ class ProductionRoutingCommandServiceTest {
                 .as("信号映射写面已退役（issue #4452）—— 表降级为存量单兜底，读面暂留、写面退场")
                 .doesNotContain("createSignal", "updateSignal", "deleteSignal");
     }
+
+    // ══════════ 判据：软删条件工序规则（PG-032；issue #4587 ④）══════════
+
+    private static ProductionRouteRule rule(String id, int deleted) {
+        return ProductionRouteRule.builder()
+                .id(id).tenantId(TENANT).triggerKind("option").triggerValue("拼2次")
+                .action("insert").operation("拼2次").afterOperation("三边").priority(210)
+                .status("active").deleted(deleted).build();
+    }
+
+    /**
+     * 软删（{@code deleted=1}，**不物理删**）：规则只影响「插/删一道工序」，删错了重加即可 ⇒
+     * **无硬护栏**；但仍留痕 —— 「谁在什么时候删掉了哪条规则」是排查工序顺序错的唯一线索。
+     *
+     * <p><b>红证</b>：改成物理删（{@code deleteById}）⇒ 本用例红。</p>
+     */
+    @Test
+    @DisplayName("软删规则 ⇒ 200 {id,deleted:true} 且落 deleted=1（不物理删）")
+    void deleteRouteRuleSoftDeletes() {
+        when(productionRouteRuleMapper.selectById("rr-1")).thenReturn(rule("rr-1", 0));
+
+        Map<String, Object> result = service.deleteRouteRule("rr-1", TENANT);
+
+        ArgumentCaptor<ProductionRouteRule> captor = ArgumentCaptor.forClass(ProductionRouteRule.class);
+        verify(productionRouteRuleMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getDeleted()).isEqualTo(1);
+        verify(productionRouteRuleMapper, never()).deleteById(any(String.class));
+        assertThat(result.get("id")).isEqualTo("rr-1");
+        assertThat(result.get("deleted")).isEqualTo(true);
+    }
+
+    /**
+     * 不存在 / 跨租户 / 已软删 ⇒ <b>404</b>（与 {@code PUT /route-rules/{id}/customer-unit-price}
+     * 同口径：已软删的行不该再被写面寻址）。
+     *
+     * <p><b>红证</b>：去掉 {@code deleted != 0} 分支（幂等当成功）⇒ 「已软删 ⇒ 404」断言红。</p>
+     */
+    @Test
+    @DisplayName("删规则：不存在 / 跨租户 / 已软删 ⇒ 404（且不写库）")
+    void deleteRouteRuleRejectsMissingForeignAndDeleted() {
+        when(productionRouteRuleMapper.selectById("nope")).thenReturn(null);
+        assertThatThrownBy(() -> service.deleteRouteRule("nope", TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(404));
+
+        ProductionRouteRule foreign = rule("rr-1", 0);
+        foreign.setTenantId(99L);
+        when(productionRouteRuleMapper.selectById("rr-1")).thenReturn(foreign);
+        assertThatThrownBy(() -> service.deleteRouteRule("rr-1", TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(404));
+
+        when(productionRouteRuleMapper.selectById("rr-1")).thenReturn(rule("rr-1", 1));
+        assertThatThrownBy(() -> service.deleteRouteRule("rr-1", TENANT))
+                .as("已软删 ⇒ 404（不是幂等 200）—— 写面不再寻址已退场的行")
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(404));
+
+        verify(productionRouteRuleMapper, never()).updateById(any(ProductionRouteRule.class));
+    }
 }

@@ -1130,6 +1130,27 @@ CREATE INDEX IF NOT EXISTS idx_op_price_versions_operation
     WHERE deleted = 0;
 COMMENT ON TABLE production_operation_price_versions IS '工序计件单价版本（V55，issue #4204）：当前价 = 最新版本行；实例单价仍是生成时快照，改价不影响既有实例与历史报工';
 
+-- 部位价目矩阵格的计件单价版本（V86，issue #4587 = 母单 #4586 包A）
+-- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V86__create_operation_position_price_versions.sql
+-- 为什么两处都要：本文件是**全新库的一次性 bootstrap**（docker-entrypoint-initdb.d 执行），
+-- 而 **Flyway/MigrationRunner 不在该栈运行** —— 只存在于迁移链的表在建库后并不存在（#3270 形态）。
+-- 口径（与 V55 同范式，唯一差别 = unit_price **可空**）：一行 = 一次**真的变了**的矩阵格单价变更；
+-- NULL = 改回**未定价**或「明确不做 ⇒ 不报价」（**≠ 0 元**：0 是「定价为 0 元」，两件事）。
+-- 本表**不回填**：矩阵格当前价 = production_operation_positions.unit_price 本身（不派生自账本）。
+CREATE TABLE IF NOT EXISTS production_operation_position_price_versions (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    position_row_id VARCHAR(64) NOT NULL REFERENCES production_operation_positions(id),
+    unit_price NUMERIC(10,2),                        -- 该次变更后的计件单价（元/单位）；NULL = 未定价 / 不做
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_op_position_price_versions_row
+    ON production_operation_position_price_versions (position_row_id, created_at DESC)
+    WHERE deleted = 0;
+COMMENT ON TABLE production_operation_position_price_versions IS '部位价目矩阵格的计件单价版本（V86，issue #4587）：每次**真变价**一行；当前价 = production_operation_positions.unit_price 本身，本表只记变更';
+COMMENT ON COLUMN production_operation_position_price_versions.unit_price IS '本次变更后的**计件**单价（元/单位，付工人）；NULL = 未定价或明确不做（≠ 0 元，0 是定价为 0 元）';
+
 -- 特殊选项 → 条件工序 / 计件系数（V59，issue #4230 Java 侧 v1a）
 -- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V59__create_production_option_tables.sql
 -- 为什么两处都要：本文件是**全新库的一次性 bootstrap**（docker-entrypoint-initdb.d 执行），

@@ -4,10 +4,15 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPosition;
 import com.migao.admin.entity.ProductionRouteRule;
+import com.migao.admin.mapper.ProductionCraftMapper;
+import com.migao.admin.mapper.ProductionOperationMapper;
 import com.migao.admin.mapper.ProductionOperationPositionMapper;
 import com.migao.admin.mapper.ProductionRouteRuleMapper;
+import com.migao.admin.mapper.ProductionRouteSignalMapper;
+import com.migao.admin.mapper.ProductionRouteTemplateMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -57,9 +62,22 @@ class ProductionRoutingReadServiceTest {
     private ProductionOperationPositionMapper productionOperationPositionMapper;
     @Mock
     private ProductionRouteRuleMapper productionRouteRuleMapper;
+    /** 工序库（变体名元数据来源，issue #4587 ①）：读面经 {@code ProductionOperationQueryService} 取。 */
+    @Mock
+    private ProductionOperationMapper productionOperationMapper;
+    @Mock
+    private ProductionRouteTemplateMapper productionRouteTemplateMapper;
+    @Mock
+    private ProductionCraftMapper productionCraftMapper;
+    @Mock
+    private ProductionRouteSignalMapper productionRouteSignalMapper;
 
     private ProductionRoutingReadService service() {
-        return new ProductionRoutingReadService(productionOperationPositionMapper, productionRouteRuleMapper);
+        ProductionOperationQueryService queryService = new ProductionOperationQueryService(
+                productionOperationMapper, productionRouteTemplateMapper, productionRouteRuleMapper,
+                productionOperationPositionMapper, productionCraftMapper, productionRouteSignalMapper);
+        return new ProductionRoutingReadService(productionOperationPositionMapper,
+                productionRouteRuleMapper, queryService);
     }
 
     /**
@@ -73,6 +91,7 @@ class ProductionRoutingReadServiceTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, ProductionOperationPosition.class);
         TableInfoHelper.initTableInfo(assistant, ProductionRouteRule.class);
+        TableInfoHelper.initTableInfo(assistant, ProductionOperation.class);
     }
 
     // ── 夹具 ──
@@ -82,6 +101,15 @@ class ProductionRoutingReadServiceTest {
                 .id("opp-" + logical + "-" + pos).tenantId(TENANT).logicalName(logical).position(pos)
                 .unitPrice(price == null ? null : new BigDecimal(price))
                 .applicable(applicable).status("active").deleted(0).build();
+    }
+
+    /** 工序库行（变体名元数据；`id` 是 ① 的 `variant_operation_id` 来源）。 */
+    private ProductionOperation operation(String id, String name, String group, String unit,
+                                          String unitPrice, String scope, boolean mustFinish) {
+        return ProductionOperation.builder()
+                .id(id).tenantId(TENANT).name(name).groupName(group).unit(unit)
+                .unitPrice(new BigDecimal(unitPrice)).scope(scope).isMustFinish(mustFinish)
+                .isStartMarker(false).sortOrder(1).status("active").deleted(0).build();
     }
 
     private ProductionRouteRule rule(String id, String kind, String trigger, String pos, String action,
@@ -165,7 +193,79 @@ class ProductionRoutingReadServiceTest {
         assertThat(rows.get(0).get("operation")).isEqualTo("精裁");
         assertThat(rows.get(0)).doesNotContainKey("logical_name");
         assertThat(rows.get(0).keySet())
-                .containsExactly("operation", "position", "unit_price", "applicable");
+                .containsExactly("id", "operation", "position", "unit_price", "applicable",
+                        "variant_operation_id", "variant_name", "unit", "group", "scope",
+                        "is_must_finish");
+    }
+
+    // ── 判据 2b：逻辑名 ↔ 变体名映射（issue #4587 ①，母单 #4586 的「中间那座桥」）──
+
+    @Test
+    @DisplayName("部位价目：6 新键 = 该格实际落到工人端那道工序的元数据（复用 variantNameOf，不另写推导）")
+    void operationPositionsCarriesVariantMetadata() {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("三边", "布帘", "0.40", true)));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operation("op-busandbian", "布三边", "车位", "米", "0.40", "position", false)));
+
+        Map<String, Object> row = service().operationPositions(TENANT).get(0);
+
+        assertThat(row.get("variant_operation_id")).isEqualTo("op-busandbian");
+        assertThat(row.get("variant_name")).isEqualTo("布三边");
+        assertThat(row.get("unit")).isEqualTo("米");
+        assertThat(row.get("group")).isEqualTo("车位");
+        assertThat(row.get("scope")).isEqualTo("position");
+        assertThat(row.get("is_must_finish")).isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("部位价目：帘头回落布帘变体（三边 × 帘头 ⇒ 布三边，与实例化同一口径）")
+    void operationPositionsFallsBackToClothVariantForCurtainHead() {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("三边", "帘头", "0.40", true)));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operation("op-busandbian", "布三边", "车位", "米", "0.40", "position", false)));
+
+        Map<String, Object> row = service().operationPositions(TENANT).get(0);
+
+        assertThat(row.get("variant_name")).as("帘头历史上复用布帘变体（V54 帘头×平幔 逐字引用 布三边）")
+                .isEqualTo("布三边");
+        assertThat(row.get("variant_operation_id")).isEqualTo("op-busandbian");
+    }
+
+    @Test
+    @DisplayName("部位价目：库里没有该变体 ⇒ 6 键全 null（logo条 × 纱帘 —— 不猜、不拼名字）")
+    void operationPositionsLeavesVariantKeysNullWhenNoVariant() {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("logo条", "纱帘", null, false)));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operation("op-logob", "logo条-布", "车位", "米", "0.60", "position", false)));
+
+        Map<String, Object> row = service().operationPositions(TENANT).get(0);
+
+        assertThat(row).containsKeys("variant_operation_id", "variant_name", "unit", "group",
+                "scope", "is_must_finish");
+        assertThat(row.get("variant_operation_id")).isNull();
+        assertThat(row.get("variant_name")).isNull();
+        assertThat(row.get("unit")).isNull();
+        assertThat(row.get("group")).isNull();
+        assertThat(row.get("scope")).isNull();
+        assertThat(row.get("is_must_finish")).isNull();
+    }
+
+    @Test
+    @DisplayName("部位价目：部位无关的工序回落裸逻辑名（外帘打卷 × 布帘 ⇒ 外帘打卷，一格多部位）")
+    void operationPositionsFallsBackToBareLogicalName() {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("外帘打卷", "布帘", "1.00", true)));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operation("op-dajuan", "外帘打卷", "后道", "套", "1.00", "set", false)));
+
+        Map<String, Object> row = service().operationPositions(TENANT).get(0);
+
+        assertThat(row.get("variant_name")).isEqualTo("外帘打卷");
+        assertThat(row.get("variant_operation_id")).isEqualTo("op-dajuan");
+        assertThat(row.get("scope")).isEqualTo("set");
     }
 
     @Test

@@ -7,6 +7,7 @@ import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
+import com.migao.admin.service.ProductionOperationPositionCommandService;
 import com.migao.admin.service.ProductionOperationQueryService;
 import com.migao.admin.service.ProcessingFeeCombinationCommandService;
 import com.migao.admin.service.ProcessingFeeQueryService;
@@ -81,6 +82,15 @@ public class ProductionController {
      */
     @org.springframework.beans.factory.annotation.Autowired
     private ProductionRoutingReadService productionRoutingReadService;
+
+    /**
+     * 部位价目矩阵**写面**（issue #4587 ② = 母单 #4586 包A）：格内改价 / 改做不做。
+     *
+     * <p>与上面两条同款用字段注入：本类构造签名被 {@code ProductionControllerTest} 的 standaloneSetup
+     * 显式装配（6 个参数），加参数会把既有测试的每一处装配都改一遍 —— 而本单的改动面不应扩到那里。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    private ProductionOperationPositionCommandService productionOperationPositionCommandService;
 
     /**
      * 实例化工序 + 生成加工单二维码 token
@@ -271,6 +281,23 @@ public class ProductionController {
                                                             @RequestBody Map<String, Object> body) {
         return ApiResponse.success(productionOperationCommandService.update(
                 id, body, TenantContext.getTenantId()));
+    }
+
+    /**
+     * **软删工序**（issue #4587 ③ = 母单 #4586 包A）
+     * DELETE /api/admin/production/operations/{id}
+     *
+     * <p>软删 {@code deleted=1}（不物理删：历史报工/工序实例仍引用它）。三条护栏**一次报全**
+     * （422 + {@code error.details}）：① 被活跃路线主线引用（按逻辑名或变体名命中，给路线名）；
+     * ② 被活跃 {@code production_route_rules} 的 {@code operation}/{@code after_operation} 命中
+     * （给触发名）；③ 被矩阵行引用（该变体对应的**全部** {@code (逻辑名, 部位)} 格中任一
+     * {@code applicable=true}，给部位）。已软删 ⇒ <b>200 幂等 no-op</b>。</p>
+     */
+    @DeleteMapping("/operations/{id}")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> deleteOperation(@PathVariable String id) {
+        return ApiResponse.success(
+                productionOperationCommandService.delete(id, TenantContext.getTenantId()));
     }
 
     /**
@@ -508,6 +535,32 @@ public class ProductionController {
     }
 
     /**
+     * 矩阵格**就地改价 / 改做不做**（issue #4587 ② = 母单 #4586 包A）
+     * PUT /api/admin/production/operation-positions/{id}
+     * body: {unit_price?: number|null, applicable?: boolean}
+     *
+     * <p><b>部分更新</b>：只写 body 里出现的键。三态（与 V71 列口径同款，不得发明第四态）：
+     * {@code applicable=false} ⇒ 价**强制落 NULL**（明确不做 ⇒ 不报价）；
+     * {@code applicable=true} + 价 null = 「**适用但未定价**」（合法，商家待办）；
+     * 显式 {@code unit_price=null} = 改回「**未定价**」（**≠ 0 元**）。</p>
+     *
+     * <p><b>这一屏的价是给工人的「计件单价」</b>（报工工资 = 数量 × 计件单价），**不是对客加工费**
+     * —— 对客那两本账在别处：基础加工费 = 加工项组合费用（元/米），特殊选项 =
+     * {@code PUT /route-rules/{id}/customer-unit-price}（元/套）。三本账不得互读、不得混。</p>
+     *
+     * <p>校验失败 ⇒ 422 + {@code error.details} 逐条（负价 / 超两位小数 / 非布尔）；
+     * 行不存在 / 跨租户 / 已软删 ⇒ 404。价**真的变了**才同事务向 V86 账表追加一行（改价必须留痕）。
+     * 响应与 {@code GET /operation-positions} 的**单行同构**（前端同一个类型渲染）。</p>
+     */
+    @PutMapping("/operation-positions/{id}")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> updateOperationPosition(@PathVariable String id,
+                                                                    @RequestBody Map<String, Object> body) {
+        return ApiResponse.success(productionOperationPositionCommandService.update(
+                id, body, TenantContext.getTenantId()));
+    }
+
+    /**
      * 规则区（工艺变体 ∪ 特殊选项 = **26 条**）
      * GET /api/admin/production/route-rules
      *
@@ -543,5 +596,20 @@ public class ProductionController {
     public ApiResponse<Map<String, Object>> createRouteRule(@RequestBody Map<String, Object> request) {
         return ApiResponse.success(
                 productionRoutingCommandService.createOptionRule(request, TenantContext.getTenantId()));
+    }
+
+    /**
+     * **软删条件工序规则**（issue #4587 ④ = 母单 #4586 包A）
+     * DELETE /api/admin/production/route-rules/{id}
+     *
+     * <p>软删 {@code deleted=1}（不物理删：规则是排查工序顺序错的唯一线索）。**无硬护栏** ——
+     * 规则只影响「插/删一道工序」，删错了重加即可。不存在 / 跨租户 / 已软删 ⇒ 404；
+     * 响应 {@code {id, deleted:true}}。</p>
+     */
+    @DeleteMapping("/route-rules/{id}")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> deleteRouteRule(@PathVariable String id) {
+        return ApiResponse.success(
+                productionRoutingCommandService.deleteRouteRule(id, TenantContext.getTenantId()));
     }
 }

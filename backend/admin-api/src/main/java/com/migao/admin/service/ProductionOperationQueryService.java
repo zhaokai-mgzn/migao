@@ -390,6 +390,16 @@ public class ProductionOperationQueryService {
     }
 
     /**
+     * 路线主线的**逻辑工序名**序列（JSONB 列归一化；与 {@link #templateView} 同一份口径）。
+     *
+     * <p>public 的理由（issue #4587 ③）：删工序的护栏要按主线逐个工序名比对 ——
+     * 归一化必须与读面同一份，在写面自己解一遍 JSONB 就是第二份口径。</p>
+     */
+    public List<String> mainlineOf(ProductionRouteTemplate template) {
+        return template == null ? List.of() : stringList(template.getMainline());
+    }
+
+    /**
      * 信号 → 路线键映射（V60，issue #4308，**派生用**读面）。
      *
      * <p>与迁移前 {@code ProcessingOrderService} 里两个 {@code String[][]} 常量的分工完全相同，
@@ -493,8 +503,14 @@ public class ProductionOperationQueryService {
     // 内部读取口径
     // ══════════════════════════════════════════════════════════════════════════════
 
-    /** 活跃路线模板（tenant + deleted=0 + status=active；默认优先、其余按 id 稳定）。 */
-    private List<ProductionRouteTemplate> routeTemplates(Long tenantId) {
+    /**
+     * 活跃路线模板（tenant + deleted=0 + status=active；默认优先、其余按 id 稳定）。
+     *
+     * <p>public 的理由（issue #4587 ③）：删工序的护栏要判「它还在不在某条**活跃主线**里」
+     * —— 那条判据必须读**同一份**活跃口径（{@code deleted=0 AND status='active'}），
+     * 在写面另拼一次查询就是第二份口径。</p>
+     */
+    public List<ProductionRouteTemplate> routeTemplates(Long tenantId) {
         List<ProductionRouteTemplate> rows = productionRouteTemplateMapper.selectList(
                 new LambdaQueryWrapper<ProductionRouteTemplate>()
                         .eq(ProductionRouteTemplate::getTenantId, tenantId)
@@ -575,6 +591,8 @@ public class ProductionOperationQueryService {
      */
     private Map<String, Object> operationMetaView(ProductionOperation op) {
         Map<String, Object> view = new LinkedHashMap<>();
+        // id：矩阵读面要用它当 `variant_operation_id`（issue #4587 ①「该格实际落到工人端那道工序」）
+        view.put("id", op == null ? null : op.getId());
         view.put("group", op == null ? null : op.getGroupName());
         view.put("unit", op == null ? null : op.getUnit());
         view.put("unit_price", op == null ? null : nz(op.getUnitPrice()));

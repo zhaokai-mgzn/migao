@@ -4,8 +4,11 @@ package com.migao.admin.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.config.TenantContext;
+import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPosition;
+import com.migao.admin.entity.ProductionOperationPositionPriceVersion;
 import com.migao.admin.entity.ProductionRouteRule;
+import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingItemMapper;
@@ -25,6 +28,7 @@ import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
+import com.migao.admin.service.ProductionOperationPositionCommandService;
 import com.migao.admin.service.ProductionOperationQtyClient;
 import com.migao.admin.service.ProductionOperationQueryService;
 import com.migao.admin.service.ProductionRoutingCommandService;
@@ -52,8 +56,10 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -90,6 +96,9 @@ class ProductionRoutingReadControllerTest {
     private ProductionOperationPositionMapper productionOperationPositionMapper;
     @Mock
     private ProductionRouteRuleMapper productionRouteRuleMapper;
+    /** 矩阵格**计件单价**版本账（V86，issue #4587 ②）。 */
+    @Mock
+    private com.migao.admin.mapper.ProductionOperationPositionPriceVersionMapper positionPriceVersionMapper;
 
     // ── 只为装配 ProductionController 而存在（本类不触碰这些链路；口径同 P2b 后的
     //    ProductionControllerTest 装配：queryService 已改读新三表 + 工艺表）──
@@ -137,6 +146,8 @@ class ProductionRoutingReadControllerTest {
                 assistant, ProductionOperationPosition.class);
         com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
                 assistant, ProductionRouteRule.class);
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                assistant, ProductionOperation.class);
         ProductionService service = new ProductionService(
                 processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper,
                 orderItemMapper, clientRequestIdService);
@@ -153,9 +164,13 @@ class ProductionRoutingReadControllerTest {
                 queryService, productionRouteRuleMapper);
         ProductionController controller = new ProductionController(service, queryService, commandService,
                 routingCommandService, processingOrderService, orderService);
-        // 新读面（issue #4500）：真实服务（只 mock 两张新表的 Mapper）
-        ReflectionTestUtils.setField(controller, "productionRoutingReadService",
-                new ProductionRoutingReadService(productionOperationPositionMapper, productionRouteRuleMapper));
+        // 新读面（issue #4500）+ 矩阵写面（issue #4587 ②）：真实服务（只 mock 底层 Mapper）
+        ProductionRoutingReadService routingReadService = new ProductionRoutingReadService(
+                productionOperationPositionMapper, productionRouteRuleMapper, queryService);
+        ReflectionTestUtils.setField(controller, "productionRoutingReadService", routingReadService);
+        ReflectionTestUtils.setField(controller, "productionOperationPositionCommandService",
+                new ProductionOperationPositionCommandService(productionOperationPositionMapper,
+                        positionPriceVersionMapper, routingReadService));
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -181,6 +196,15 @@ class ProductionRoutingReadControllerTest {
         return rule(id, kind, trigger, pos, action, operation, after, priority, null);
     }
 
+    /** 工序库行（变体名元数据的来源，issue #4587 ①）。 */
+    private ProductionOperation operation(String id, String name, String group, String unit,
+                                          String unitPrice, String scope) {
+        return ProductionOperation.builder()
+                .id(id).tenantId(TENANT).name(name).groupName(group).unit(unit)
+                .unitPrice(new BigDecimal(unitPrice)).scope(scope).isMustFinish(false)
+                .isStartMarker(false).sortOrder(1).status("active").deleted(0).build();
+    }
+
     private ProductionRouteRule rule(String id, String kind, String trigger, String pos, String action,
                                      String operation, String after, int priority, String customerUnitPrice) {
         return ProductionRouteRule.builder()
@@ -193,8 +217,7 @@ class ProductionRoutingReadControllerTest {
     // ── 判据 1：端点存在 + 形状 + 信封 ──
 
     @Test
-    @DisplayName("GET /operation-positions ⇒ {success,data:[{operation,position,unit_price,applicable}]}，"
-            + "乱序入库也按 (operation, position) 返回")
+    @DisplayName("GET /operation-positions ⇒ {success,data:[11 键/行]}，乱序入库也按 (operation, position) 返回")
     void operationPositionsReturnsMatrixInStableOrder() throws Exception {
         // 故意乱序（三边 在 精裁 之前、帘头 在 布帘 之前）—— 排序由服务层显式承担
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
@@ -212,10 +235,49 @@ class ProductionRoutingReadControllerTest {
                 .andExpect(jsonPath("$.data[1].position").value("布帘"))
                 .andExpect(jsonPath("$.data[2].operation").value("精裁"))
                 .andExpect(jsonPath("$.data[2].position").value("纱帘"))
-                // 键集逐字（issue #4500 冻结）：不多不少
-                .andExpect(jsonPath("$.data[0].length()").value(4))
+                // 键集逐字（issue #4500 冻结 4 键 + #4587 追加 id/变体元数据）：不多不少（11 个）
+                .andExpect(jsonPath("$.data[0].length()").value(11))
+                .andExpect(jsonPath("$.data[0].id").value("opp-三边-帘头"))
                 .andExpect(jsonPath("$.data[0].unit_price").value(0.40))
                 .andExpect(jsonPath("$.data[0].applicable").value(true));
+    }
+
+    @Test
+    @DisplayName("GET /operation-positions：变体元数据（帘头回落布帘变体；查不到 ⇒ 6 键全 null，不猜）")
+    void operationPositionsCarriesVariantMetadata() throws Exception {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("三边", "帘头", "0.40", true)));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operation("op-busandbian", "布三边", "车位", "米", "0.40", "set")));
+
+        mockMvc.perform(get("/api/admin/production/operation-positions"))
+                .andExpect(status().isOk())
+                // 帘头历史上复用**布帘**变体（V54 帘头×平幔 逐字引用 布三边）—— 与实例化同一口径
+                .andExpect(jsonPath("$.data[0].variant_operation_id").value("op-busandbian"))
+                .andExpect(jsonPath("$.data[0].variant_name").value("布三边"))
+                .andExpect(jsonPath("$.data[0].unit").value("米"))
+                .andExpect(jsonPath("$.data[0].group").value("车位"))
+                .andExpect(jsonPath("$.data[0].scope").value("set"))
+                .andExpect(jsonPath("$.data[0].is_must_finish").value(false));
+    }
+
+    @Test
+    @DisplayName("GET /operation-positions：库里没有该变体 ⇒ 6 键**保留且全 null**（logo条 × 纱帘）")
+    void operationPositionsKeepsVariantKeysNullWhenAbsent() throws Exception {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("logo条", "纱帘", null, false)));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operation("op-logob", "logo条-布", "车位", "米", "0.60", "position")));
+
+        mockMvc.perform(get("/api/admin/production/operation-positions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].length()").value(11))
+                .andExpect(jsonPath("$.data[0].variant_operation_id").isEmpty())
+                .andExpect(jsonPath("$.data[0].variant_name").isEmpty())
+                .andExpect(jsonPath("$.data[0].unit").isEmpty())
+                .andExpect(jsonPath("$.data[0].group").isEmpty())
+                .andExpect(jsonPath("$.data[0].scope").isEmpty())
+                .andExpect(jsonPath("$.data[0].is_must_finish").isEmpty());
     }
 
     @Test
@@ -328,6 +390,137 @@ class ProductionRoutingReadControllerTest {
                     .as("%s 的权限必须是 processing:manage（价目与规则是生产配置面）", name)
                     .isEqualTo("processing:manage");
         }
+    }
+
+    // ══════════════════ 矩阵格写面（issue #4587 ② = 母单 #4586 包A）══════════════════
+
+    @Test
+    @DisplayName("PUT /operation-positions/{id} ⇒ 200，改价留痕；不做 ⇒ 价清空；负价/三位小数 ⇒ 422 逐条")
+    void updateOperationPositionEndpointSemantics() throws Exception {
+        when(productionOperationPositionMapper.selectById("opp-三边-布帘"))
+                .thenReturn(position("三边", "布帘", "0.40", true));
+        when(productionOperationPositionMapper.updatePriceAndApplicable(
+                any(), any(), any(), any(), any())).thenReturn(1);
+
+        mockMvc.perform(put("/api/admin/production/operation-positions/opp-三边-布帘")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"unit_price\":0.55}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value("opp-三边-布帘"))
+                .andExpect(jsonPath("$.data.unit_price").value(0.55))
+                // 响应 = 读面单行同构（11 键）
+                .andExpect(jsonPath("$.data.length()").value(11));
+        verify(positionPriceVersionMapper).insert(any(ProductionOperationPositionPriceVersion.class));
+
+        // 「明确不做」⇒ 价强制落 NULL（不报价），且仍留痕（价真的变了）
+        mockMvc.perform(put("/api/admin/production/operation-positions/opp-三边-布帘")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"applicable\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.applicable").value(false))
+                .andExpect(jsonPath("$.data.unit_price").isEmpty());
+
+        // 负价 / 超两位小数 ⇒ 422 + error.details 逐条
+        for (String bad : new String[]{"-1", "0.555"}) {
+            mockMvc.perform(put("/api/admin/production/operation-positions/opp-三边-布帘")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"unit_price\":\"" + bad + "\"}"))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.error.details[0].field").value("unit_price"));
+        }
+
+        // 行不存在 ⇒ 404
+        mockMvc.perform(put("/api/admin/production/operation-positions/nope")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"unit_price\":0.55}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("矩阵写面端点声明 processing:manage（与 PUT /operations/{id} 同码）")
+    void updateOperationPositionDeclaresManagePermission() throws Exception {
+        Method method = ProductionController.class.getMethod("updateOperationPosition",
+                String.class, Map.class);
+        RequirePermission ann = method.getAnnotation(RequirePermission.class);
+        assertThat(ann).as("矩阵格改价必须声明方法级 @RequirePermission").isNotNull();
+        assertThat(ann.value()).isEqualTo("processing:manage");
+    }
+
+    @Test
+    @DisplayName("DELETE /route-rules/{id} ⇒ 200 软删 {id,deleted:true}；不存在/已软删 ⇒ 404")
+    void deleteRouteRuleEndpointSoftDeletes() throws Exception {
+        when(productionRouteRuleMapper.selectById("rr-opt-1"))
+                .thenReturn(rule("rr-opt-1", "option", "拼2次", null, "insert", "拼缝", null, 210));
+
+        mockMvc.perform(delete("/api/admin/production/route-rules/rr-opt-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value("rr-opt-1"))
+                .andExpect(jsonPath("$.data.deleted").value(true));
+        ArgumentCaptor<ProductionRouteRule> captor = ArgumentCaptor.forClass(ProductionRouteRule.class);
+        verify(productionRouteRuleMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getDeleted()).as("软删（不物理删）：deleted=1").isEqualTo(1);
+
+        mockMvc.perform(delete("/api/admin/production/route-rules/nope"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("DELETE /operations/{id} ⇒ 200 软删；三条护栏一次报全（422 + details 逐条）")
+    void deleteOperationEndpointGuardsAndSoftDeletes() throws Exception {
+        ProductionOperation beingDeleted = ProductionOperation.builder()
+                .id("op-busandbian").tenantId(TENANT).name("布三边")
+                .groupName("车位").unit("米").unitPrice(new BigDecimal("0.40"))
+                .scope("position").isMustFinish(false).isStartMarker(false).sortOrder(1)
+                .status("active").deleted(0).build();
+        when(productionOperationMapper.selectById("op-busandbian")).thenReturn(beingDeleted);
+        // 工序库（`variantNameOf` 的解析源）：`布三边` 在库 ⇒ `三边 × 布帘` / `三边 × 帘头` 都解析到它
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(beingDeleted));
+        // ① 活跃路线主线命中（主线存逻辑名 三边 ⇒ 变体名 布三边 也要能命中）
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                ProductionRouteTemplate.builder().id("rt-1").tenantId(TENANT).name("窗帘工序路线（默认）")
+                        .isDefault(true).positions(List.of("布帘")).mainline(List.of("三边", "车被"))
+                        .status("active").deleted(0).build()));
+        // ② 活跃规则命中（operation = 逻辑名）
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of(
+                rule("rr-1", "craft", "韩褶", "布帘", "insert", "三边", "韩褶", 20)));
+        // ③ 矩阵行命中（**全部命中格**：帘头会回落布帘变体 ⇒ 两格都要报）
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("三边", "布帘", "0.40", true),
+                position("三边", "帘头", "0.40", true)));
+
+        String body = mockMvc.perform(delete("/api/admin/production/operations/op-busandbian"))
+                .andExpect(status().isUnprocessableEntity())
+                .andReturn().getResponse()
+                .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(body).contains("routing").contains("route_rule").contains("operation_position");
+        assertThat(body).as("护栏 3 要遍历全部命中格（布帘 + 帘头回落），不是只看一格")
+                .contains("布帘").contains("帘头");
+        verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
+
+        // 三条都清干净 ⇒ 200 软删（deleted=1，不物理删）
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of());
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
+        mockMvc.perform(delete("/api/admin/production/operations/op-busandbian"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.deleted").value(true));
+        ArgumentCaptor<ProductionOperation> deleted = ArgumentCaptor.forClass(ProductionOperation.class);
+        verify(productionOperationMapper).updateById(deleted.capture());
+        assertThat(deleted.getValue().getDeleted()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("DELETE /operations/{id} 已软删 ⇒ 200 幂等 no-op（不报 404）")
+    void deleteOperationIsIdempotentWhenAlreadyDeleted() throws Exception {
+        when(productionOperationMapper.selectById("op-busandbian")).thenReturn(
+                ProductionOperation.builder().id("op-busandbian").tenantId(TENANT).name("布三边")
+                        .status("active").deleted(1).build());
+
+        mockMvc.perform(delete("/api/admin/production/operations/op-busandbian"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.deleted").value(true));
+        verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
     }
 
     @Test

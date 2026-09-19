@@ -295,6 +295,13 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.ProductionRouteRuleMapper productionRouteRuleMapper;
 
+    // 部位价目矩阵格**计件单价**版本账（issue #4587 ⑤，V86）：同族坑再犯一次 ——
+    // `ProductionOperationPositionCommandService` 的构造参数含它，未 mock ⇒ 上下文起不来
+    // ⇒ 本类 26 条安全用例连坐全 error（实测：「Property 'sqlSessionFactory' … are required」）。
+    @MockBean
+    private com.migao.admin.mapper.ProductionOperationPositionPriceVersionMapper
+            productionOperationPositionPriceVersionMapper;
+
     @MockBean
     private com.migao.admin.mapper.ProductionCraftMapper productionCraftMapper;
 

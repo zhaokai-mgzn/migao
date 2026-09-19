@@ -1,8 +1,12 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.ProductionOperation;
+import com.migao.admin.entity.ProductionOperationPosition;
 import com.migao.admin.entity.ProductionOperationPriceVersion;
+import com.migao.admin.entity.ProductionRouteRule;
+import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.ProductionOperationMapper;
 import com.migao.admin.mapper.ProductionOperationPriceVersionMapper;
@@ -14,6 +18,9 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -216,6 +223,96 @@ public class ProductionOperationCommandService {
                 .build());
         log.info("新增工序: tenantId={}, name={}, unit={}, unitPrice={}", tenantId, name, op.getUnit(), unitPrice);
         return productionOperationQueryService.operationView(op);
+    }
+
+    /**
+     * 软删工序（{@code DELETE /api/admin/production/operations/{id}}，issue #4587 ③）。
+     *
+     * <p><b>为什么软删而不是物理删</b>：历史报工（{@code production_work_logs}）与工序实例
+     * （{@code processing_position_operations}）仍按工序名引用它 —— 物理删会让「这道工序当时按什么价
+     * 算的」永远答不出来（与路线/信号软删同口径）。</p>
+     *
+     * <p><b>三条护栏一次报全</b>（422 + {@code error.details:[{field,message}]}，不是报第一条就返回）：</p>
+     * <ol>
+     *   <li>{@code routing} —— 被**活跃路线主线**引用（按逻辑名**或**变体名命中；主线存的是逻辑名，
+     *       但写面两种写法都收）⇒ 报出路线名，让商家知道「先改哪条主线」；</li>
+     *   <li>{@code route_rule} —— 被**活跃规则**的 {@code operation} 或 {@code after_operation} 命中
+     *       ⇒ 报出触发名（工艺/选项），让商家知道「先删/改哪条规则」；</li>
+     *   <li>{@code operation_position} —— 被**矩阵行**引用（该变体对应的 {@code (逻辑名, 部位)} 行里
+     *       任一 {@code applicable=true}）⇒ 报出部位，让商家知道「先在哪个部位设为不做」。</li>
+     * </ol>
+     *
+     * <p>⚠️ 护栏 3 必须**遍历全部命中格**：一个变体可能被多格引用 —— {@code 帘头} 会回落
+     * {@code 布帘} 变体（{@code 三边 × 帘头} 与 {@code 三边 × 布帘} 都指向 {@code 布三边}），
+     * 部位无关的工序（{@code 外帘打卷}）更是**一格多部位**。只看一格 ⇒ 删完别的格变成
+     * 「指向不存在工序」的悬空引用（而矩阵读面的 6 键会静默全 null）。</p>
+     *
+     * <p>已软删 ⇒ <b>200 幂等 no-op</b>（不报 404：调用方要的是「它现在不在活跃集里」，已经满足）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> delete(String id, Long tenantId) {
+        ProductionOperation op = id == null ? null : productionOperationMapper.selectById(id);
+        if (op == null || !tenantId.equals(op.getTenantId())) {
+            throw BusinessException.notFound("工序");
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", op.getId());
+        result.put("deleted", true);
+        if (Integer.valueOf(1).equals(op.getDeleted())) {
+            return result;
+        }
+        String variantName = op.getName();
+        String logicalName = productionOperationQueryService.normalizeOperationName(variantName);
+        List<ApiResponse.ErrorDetail> details = new ArrayList<>();
+        // ① 活跃路线主线（逻辑名或变体名命中；每条路线只报一次）
+        for (ProductionRouteTemplate template : productionOperationQueryService.routeTemplates(tenantId)) {
+            List<String> mainline = productionOperationQueryService.mainlineOf(template);
+            if (!mainline.contains(logicalName) && !mainline.contains(variantName)) {
+                continue;
+            }
+            details.add(BusinessException.detail("routing", String.format(
+                    "工序「%s」还在活跃路线「%s」的主线里 —— 先改主线（把它从该路线去掉），再删它",
+                    variantName, template.getName())));
+        }
+        // ② 活跃规则（operation 或 after_operation 命中；报触发名）
+        for (ProductionRouteRule rule : productionOperationQueryService.routeRules(tenantId)) {
+            if (!hitsOperation(rule.getOperation(), logicalName, variantName)
+                    && !hitsOperation(rule.getAfterOperation(), logicalName, variantName)) {
+                continue;
+            }
+            details.add(BusinessException.detail("route_rule", String.format(
+                    "工序「%s」被活跃规则「%s → %s」引用（目标工序或锚点）—— 先删或改那条规则，再删它",
+                    variantName, rule.getTriggerValue(), rule.getOperation())));
+        }
+        // ③ 矩阵行（**遍历全部命中格**：帘头回落布帘变体 / 部位无关工序一格多部位）
+        Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
+        for (ProductionOperationPosition row : productionOperationQueryService.operationPositions(tenantId)) {
+            if (!Boolean.TRUE.equals(row.getApplicable())) {
+                continue;
+            }
+            if (!variantName.equals(productionOperationQueryService.variantNameOf(
+                    row.getLogicalName(), row.getPosition(), catalog))) {
+                continue;
+            }
+            details.add(BusinessException.detail("operation_position", String.format(
+                    "工序「%s」还挂在部位价目矩阵的「%s × %s」格上且该格是「做」—— 先在该部位设为「不做」，再删它",
+                    variantName, row.getLogicalName(), row.getPosition())));
+        }
+        if (!details.isEmpty()) {
+            throw BusinessException.validationError(
+                    "删除工序未通过校验（" + details.size() + " 条问题）", details,
+                    "按每条理由处理：先改主线 / 先删改那条规则 / 先在对应部位设为不做");
+        }
+        op.setDeleted(1);
+        op.setUpdatedAt(OffsetDateTime.now());
+        productionOperationMapper.updateById(op);
+        log.info("软删工序: tenantId={}, operationId={}, name={}", tenantId, op.getId(), op.getName());
+        return result;
+    }
+
+    /** 规则里的工序名是否指向被删工序（逻辑名或变体名任一命中；主线/规则两处同一判据）。 */
+    private static boolean hitsOperation(String value, String logicalName, String variantName) {
+        return value != null && (value.equals(logicalName) || value.equals(variantName));
     }
 
     private static BigDecimal nz(BigDecimal value) {
