@@ -1,15 +1,27 @@
 // case_ids: OR-040
 // @vitest-environment jsdom
 /**
- * 下单页「自动识别」只读展示（issue #4526 包 B · 设计文档 §5.1/§5.2 / §9 判据 8）。
+ * 下单页「**系统识别**」（自动识别）—— 放置位置（#4658）+ 可采纳/不采纳（#4657）。
  *
- * 用户 2026-09-19：「超高 / 超宽是和门幅标准比较的，客户报的数据和门幅对比后能自动区分出来
- * 是超高还是超宽，**这个要求做到自动识别**」。
+ * 用户 2026-09-20：「这里**推算的结果放在工艺规格选择那是不是更好**，他们两才是有联动的，
+ * **加工项没有联动效果**，另外超宽是如何推算的？」+「**推算的结果应该允许用户采纳或者不采纳吧**，
+ * 避免可能会推算错的情况」。
  *
- * 判据：③加工项步骤里出现**只读**的「自动识别」块（标来源「推算」），内容随宽/高/门幅/cuttingMode
- * 变化；且**不是**可勾选项（没有自动识别的 checkbox），`已选 N 项` 只数商家手选的加工项。
+ * 判据：
+ * ① **位置**：块渲染在**②工艺规格**（`auto-detected-features`），**③加工项区只保留可勾的东西**
+ *    （该区不得再出现「自动识别/推算」块 —— 它不可手选、与勾选无联动）；
+ * ② **紧挨依据**：**逐条**显示 `reason` 文案（商家要能核对「为什么判它超宽」），不只是名字；
+ * ③ **①尺寸行徽标**：填尺寸时就看得见识别结果（与②读**同一份** `detectAutoFeatures` 推导）；
+ * ④ **可裁决**（#4657）：每条可 采纳/不采纳，系统漏判可**强制加**；**生效值**
+ *    = `推算 ∪ 强制加 − 不采纳` ⇒ **唯一**进加工费组合键（`processingInfo.processingItems[].name`）；
+ * ⑤ **留痕**：行上看得见「已忽略系统推算（依据：…）」/「手动加（系统未推算）」；
+ * ⑥ **门幅取默认值时界面看得出来**（那是「推算可能错」的最大来源）；
+ * ⑦ **判据 8 不放宽**：推导项**仍不得**出现在手选控件里（覆盖控件是**独立**的按钮，不是勾选框）。
  *
- * 红证（实现前）：页面无「自动识别」块 ⇒ `findByTestId('auto-detected-features')` 超时即红。
+ * 红证（实现前）：
+ * - ③加工项区**有**该块（`stepSection('加工项')` 内能查到 `auto-detected-features`）⇒ ①必红；
+ * - ②工艺规格区**无**该块、`reason` 只在 `title` 属性里（正文无依据文案）⇒ ②必红；
+ * - 无 `size-auto-badge-*` / `auto-feature-reject-*` / `auto-feature-add-*` ⇒ ③④必红。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
@@ -64,12 +76,22 @@ const openStep = (title: string) => {
   if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
 }
 
+/**
+ * 某一步骤的**整段 DOM**（`WizardStep` 根 div = 标题按钮的父元素）——
+ * 这样才能断言「某块**在不在**这一步里」：手风琴会把未展开步骤的内容**卸载**，
+ * 只查 `screen.queryByTestId` 无法区分「不在这区」与「这区没展开」（会变成空断言）。
+ */
+const stepSection = (title: string) => {
+  const btn = screen.getAllByRole('button', { name: new RegExp(`^\\d+ ${title}`) })[0]
+  return btn.closest('div') as HTMLElement
+}
+
 const inputOf = (label: string, idx = 0) =>
   screen
     .getAllByText(label)
     .map((el) => el.closest('div')!.querySelector('input') as HTMLInputElement)[idx]
 
-/** 选商品（SKU 可带门幅）→ 填宽高 */
+/** 选商品（SKU 可带门幅）→ 填宽高（默认门幅缺省 2.8 ⇒ 6.6×2.6 识别出超宽 + 超高） */
 async function setupLine(opts: { doorWidth?: string; width?: string; height?: string } = {}) {
   const { doorWidth, width = '6.6', height = '2.6' } = opts
   mockGetProducts.mockResolvedValue({
@@ -107,7 +129,26 @@ async function setupLine(opts: { doorWidth?: string; width?: string; height?: st
   openStep('尺寸与数量')
   fireEvent.change(inputOf('宽 (米)'), { target: { value: width } })
   fireEvent.change(inputOf('高 (米)'), { target: { value: height } })
-  openStep('加工项')
+}
+
+/** 填客户信息 → 提交 → 取**落库**的组合键加项（`processingInfo.processingItems[].name`） */
+async function submitAndGetProcessingNames(): Promise<string[]> {
+  fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
+  fireEvent.change(screen.getByPlaceholderText('请输入 11 位手机号'), {
+    target: { value: '13800138000' },
+  })
+  fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), {
+    target: { value: '杭州市' },
+  })
+  // 加工费计价闸门（#4450）：未就绪时提交会被拦 ⇒ 先等计价落地（真实商家也是看到金额才提交）
+  await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
+  fireEvent.click(screen.getByText('提交订单'))
+  await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+
+  const info = mockCreateOrder.mock.calls[0][0].items[0].processingInfo as {
+    processingItems: Array<{ name: string }>
+  }
+  return info.processingItems.map((i) => i.name)
 }
 
 beforeEach(() => {
@@ -124,11 +165,12 @@ beforeEach(() => {
   mockGetCustomers.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
 })
 
-describe('D6：自动识别结果只读可见（判据 8）', () => {
-  it('6.6×2.6 对缺省门幅 2.8 ⇒ 自动识别出「超宽 + 超高」，并标来源「推算」', async () => {
+describe('#4658：系统识别块在②工艺规格（不在③加工项）+ 逐条依据 + 尺寸行徽标', () => {
+  it('#4658 ②工艺规格里出现「系统识别」，且**逐条**显示判定依据（reason 文案，不是只有名字）', async () => {
     await setupLine()
+    openStep('工艺规格')
 
-    const block = await screen.findByTestId('auto-detected-features')
+    const block = within(stepSection('工艺规格')).getByTestId('auto-detected-features')
     expect(within(block).getByText('超宽')).toBeInTheDocument()
     expect(within(block).getByText('超高')).toBeInTheDocument()
     // 照实标注：推理非实证（设计 §5.2）—— **每条**特征都带来源标注
@@ -138,50 +180,109 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
       expect(chip.textContent).toContain('（推算）')
       expect(chip.getAttribute('title')).toBeTruthy()
     }
+    // 🔴 #4658 的核心：**正文里**逐条给依据（旧实现只在 `title` 属性里 ⇒ 商家看不见判定过程）
+    expect(
+      within(block).getByText(/成品宽 6\.6 \+ 卷边 0\.3 = 6\.9 米 > 门幅 2\.8 米/)
+    ).toBeInTheDocument()
+    expect(
+      within(block).getByText(/成品高 2\.6 \+ 卷边 0\.3 = 2\.9 米 > 门幅 2\.8 米/)
+    ).toBeInTheDocument()
+    // 覆盖控件是**按钮**，不是勾选框（判据 8 不放宽）
+    expect(block.querySelectorAll('input')).toHaveLength(0)
   })
 
-  it('改宽高 ⇒ 识别结果跟着变（不是写死的展示文案）', async () => {
+  it('#4658 ③加工项区**只保留可勾的东西** —— 该区不得再出现「自动识别/推算」块', async () => {
     await setupLine()
-    await screen.findByTestId('auto-detected-features')
+    openStep('加工项')
+
+    const section = stepSection('加工项')
+    // 先自证「取到的确实是③加工项那一段」（否则下面的 null 断言会空跑）
+    expect(within(section).getAllByRole('checkbox').length).toBeGreaterThan(0)
+    expect(within(section).queryByTestId('auto-detected-features')).toBeNull()
+    expect(within(section).queryByText(/自动识别/)).toBeNull()
+    expect(within(section).queryByText(/推算/)).toBeNull()
+  })
+
+  it('#4658 ①尺寸行旁的就地徽标：有超宽时出现，不超时消失', async () => {
+    await setupLine()
+    expect(await screen.findByTestId('size-auto-badge-超宽')).toBeInTheDocument()
+    expect(screen.getByTestId('size-auto-badge-超高')).toBeInTheDocument()
 
     openStep('尺寸与数量')
     fireEvent.change(inputOf('宽 (米)'), { target: { value: '1.5' } })
     fireEvent.change(inputOf('高 (米)'), { target: { value: '1.5' } })
-    openStep('加工项')
+
+    await waitFor(() => expect(screen.queryByTestId('size-auto-badge-超宽')).toBeNull())
+    expect(screen.queryByTestId('size-auto-badge-超高')).toBeNull()
+  })
+
+  it('#4657 门幅走了**默认值** ⇒ 界面看得出来（②标出 + ①徽标提示）', async () => {
+    await setupLine() // 无 doorWidth ⇒ 默认 2.8
+    expect(screen.getByTestId('size-door-width-fallback')).toBeInTheDocument()
+    openStep('工艺规格')
+    expect(screen.getByTestId('door-width-fallback')).toBeInTheDocument()
+  })
+
+  it('#4657 SKU 真的给了门幅 ⇒ **不谎报**成默认值（反向护栏）', async () => {
+    await setupLine({ doorWidth: '2.8米' })
+    expect(screen.queryByTestId('size-door-width-fallback')).toBeNull()
+    openStep('工艺规格')
+    expect(screen.queryByTestId('door-width-fallback')).toBeNull()
+  })
+})
+
+describe('D6：自动识别结果只读可见（判据 8）', () => {
+  it('改宽高 ⇒ 识别结果跟着变（不是写死的展示文案）', async () => {
+    await setupLine()
+    openStep('工艺规格')
+    const block = screen.getByTestId('auto-detected-features')
+    expect(within(block).getByText('超宽')).toBeInTheDocument()
+
+    openStep('尺寸与数量')
+    fireEvent.change(inputOf('宽 (米)'), { target: { value: '1.5' } })
+    fireEvent.change(inputOf('高 (米)'), { target: { value: '1.5' } })
+    openStep('工艺规格')
 
     await waitFor(() => {
-      expect(screen.queryByText('超宽')).toBeNull()
-      expect(screen.queryByText('超高')).toBeNull()
+      expect(screen.queryByTestId('auto-feature-超宽')).toBeNull()
+      expect(screen.queryByTestId('auto-feature-超高')).toBeNull()
     })
-    // 缺省 cuttingMode = 定高买宽（= 正幅）⇒ #4592 起**不推导任何特征** ⇒ 只读块整块不渲染。
+    // 缺省 cuttingMode = 定高买宽（= 正幅）⇒ #4592 起**不推导任何特征**。
     // 红证（修复前必红）：修复前这里恒有「正幅」，而「正幅」不在加工项目录里 ⇒
     // 默认订单的组合键永远匹配不到价 ⇒ 加工费恒 ¥0.00。
     expect(screen.queryByText('正幅')).toBeNull()
-    expect(screen.queryByTestId('auto-detected-features')).toBeNull()
+    // 块**仍在**（#4657 要能「强制加」+ 门幅默认值要可见）—— 但一条识别行都没有
+    const blockAfter = screen.getByTestId('auto-detected-features')
+    expect(within(blockAfter).queryByText('超宽')).toBeNull()
+    expect(within(blockAfter).queryByText('超高')).toBeNull()
+    expect(within(blockAfter).getByText(/系统未识别出特征/)).toBeInTheDocument()
   })
 
   it('门幅 = SKU.doorWidth：1.5 高 × 1.0 宽 对 2.8 门幅不超，对 1.4 窄幅门幅判超高', async () => {
     await setupLine({ doorWidth: '1.4米', width: '1.0', height: '1.5' })
+    openStep('工艺规格')
 
-    const block = await screen.findByTestId('auto-detected-features')
+    const block = screen.getByTestId('auto-detected-features')
     expect(within(block).getByText('超高')).toBeInTheDocument()
     expect(within(block).queryByText('超宽')).toBeNull()
   })
 
   it('自动识别结果**不是**可勾选项（没有它的 checkbox），也不计入「已选 N 项」', async () => {
     await setupLine()
+    openStep('工艺规格')
 
-    const block = await screen.findByTestId('auto-detected-features')
+    const block = screen.getByTestId('auto-detected-features')
     expect(block.querySelectorAll('input')).toHaveLength(0)
     // 一个手选加工项都没勾 ⇒ 摘要必须是「未选」（自动特征不算手选）
-    expect(screen.getByText('未选')).toBeInTheDocument()
+    // ⚠️ 用 `stepSection` 限定在③加工项那一段：④特殊选项的摘要也是「未选」（全局查会命中 2 处）
+    expect(within(stepSection('加工项')).getByText('未选')).toBeInTheDocument()
   })
 
   // issue #4566（用户 2026-09-19 裁定「工艺规格中的**工艺，定型**……直接通过加工项来勾选」）：
   // 加工项目录里的**自动推导特征**（超高/超宽/倒幅）**必须存在**（商家配「加工费组合」时要能选到
   // `韩折+超高+定型` 这种名字），但**下单页的手选控件必须没有它们**（判据 8：手选项 ⇒ 红）。
   // 单一真值 = `lib/craft-auto-features.ts` 的 `AUTO_FEATURE_NAMES`（页面不抄第二份名字数组）。
-  it('#4566 目录里的「超高/超宽/倒幅」**不出手选控件**（只出现在只读的自动识别块里）', async () => {
+  it('#4566 目录里的「超高/超宽/倒幅」**不出手选控件**（只出现在②只读的系统识别块里）', async () => {
     mockGetProcessingItems.mockResolvedValue({
       data: {
         data: {
@@ -197,7 +298,8 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
     })
     await setupLine()
 
-    // 手选列表 = 目录 − 自动推导特征（红证：修复前这里会出现 5 个 checkbox）
+    // ③加工项：手选列表 = 目录 − 自动推导特征（红证：修复前这里会出现 5 个 checkbox）
+    openStep('加工项')
     expect(screen.getAllByRole('checkbox').map((b) => b.getAttribute('aria-label'))).toEqual([
       '韩折',
       '定型',
@@ -206,10 +308,58 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
       expect(screen.queryByRole('checkbox', { name: auto })).toBeNull()
     }
     // 推导结果照旧**只读可见**（6.6×2.6 对缺省门幅 2.8 ⇒ 超宽 + 超高），块内无任何输入控件
-    const block = await screen.findByTestId('auto-detected-features')
+    openStep('工艺规格')
+    const block = screen.getByTestId('auto-detected-features')
     expect(within(block).getByText('超宽')).toBeInTheDocument()
     expect(within(block).getByText('超高')).toBeInTheDocument()
     expect(block.querySelectorAll('input')).toHaveLength(0)
+  })
+})
+
+describe('#4657：推算结果可**采纳 / 不采纳** + 强制加（生效值唯一 ⇒ 组合键）', () => {
+  it('#4657 不采纳「超宽」⇒ 留痕「已忽略系统推算（依据：…）」且组合键里**不再含**它', async () => {
+    await setupLine({ doorWidth: '2.8米' })
+    openStep('工艺规格')
+
+    // 红证（实现前）：无 `auto-feature-reject-*` 控件 ⇒ 本条必红
+    fireEvent.click(screen.getByTestId('auto-feature-reject-超宽'))
+
+    // 留痕：行上看得见「已忽略系统推算」+ **原推算依据**（谁改的、原判据是什么）
+    const rejected = await screen.findByTestId('auto-feature-rejected-超宽')
+    expect(rejected.textContent).toContain('已忽略系统推算')
+    expect(rejected.textContent).toContain('成品宽 6.6 + 卷边 0.3 = 6.9 米 > 门幅 2.8 米')
+    // ① 徽标 = **生效值** ⇒ 超宽消失、超高仍在
+    expect(screen.queryByTestId('size-auto-badge-超宽')).toBeNull()
+    expect(screen.getByTestId('size-auto-badge-超高')).toBeInTheDocument()
+    // 落库的组合键 = 生效值（唯一口径：界面与 payload 不会各说各话）
+    expect(await submitAndGetProcessingNames()).toEqual(['超高'])
+  })
+
+  it('#4657 不采纳后「采纳」⇒ 生效值回来（裁决可逆，不是单向开关）', async () => {
+    await setupLine({ doorWidth: '2.8米' })
+    openStep('工艺规格')
+
+    fireEvent.click(screen.getByTestId('auto-feature-reject-超宽'))
+    await screen.findByTestId('auto-feature-rejected-超宽')
+    fireEvent.click(screen.getByTestId('auto-feature-adopt-超宽'))
+
+    await waitFor(() => expect(screen.queryByTestId('auto-feature-rejected-超宽')).toBeNull())
+    expect(screen.getByTestId('size-auto-badge-超宽')).toBeInTheDocument()
+    expect(await submitAndGetProcessingNames()).toEqual(['超宽', '超高'])
+  })
+
+  it('#4657 系统**没推**也能**强制加**（如门幅数据缺失漏判）⇒ 组合键含它 + 留痕「手动加」', async () => {
+    await setupLine({ doorWidth: '2.8米' })
+    openStep('工艺规格')
+
+    // 红证（实现前）：无 `auto-feature-add-*` 路径 ⇒ 本条必红
+    fireEvent.click(screen.getByTestId('auto-feature-add-倒幅'))
+
+    const manual = await screen.findByTestId('auto-feature-manual-倒幅')
+    expect(manual.textContent).toContain('手动加（系统未推算）')
+    expect(screen.getByTestId('size-auto-badge-倒幅')).toBeInTheDocument()
+    // 生效值 = 推算 ∪ 强制加（顺序 = 推算在前；组合键归一化另有唯一实现）
+    expect(await submitAndGetProcessingNames()).toEqual(['超宽', '超高', '倒幅'])
   })
 
   /**
@@ -224,22 +374,8 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
     // 带门幅 ⇒ setupLine 会连颜色 + 规格一起选上（缺颜色会被页面校验拦在提交前）
     await setupLine({ doorWidth: '2.8米' })
 
-    fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
-    fireEvent.change(screen.getByPlaceholderText('请输入 11 位手机号'), {
-      target: { value: '13800138000' },
-    })
-    fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), {
-      target: { value: '杭州市' },
-    })
-    // 加工费计价闸门（#4450）：未就绪时提交会被拦 ⇒ 先等计价落地（真实商家也是看到金额才提交）
-    await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
-    fireEvent.click(screen.getByText('提交订单'))
-    await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
-
-    const info = mockCreateOrder.mock.calls[0][0].items[0].processingInfo as {
-      processingItems: Array<{ name: string }>
-    }
-    expect(info.processingItems.map((i) => i.name)).toEqual(['超宽', '超高'])
-    expect(info.processingItems.map((i) => i.name)).not.toContain('正幅')
+    const names = await submitAndGetProcessingNames()
+    expect(names).toEqual(['超宽', '超高'])
+    expect(names).not.toContain('正幅')
   })
 })
