@@ -347,13 +347,14 @@ describeOrSkip('LLM 业务裁判', () => {
     expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)
   })
 
-  test.skip('加工项管理 — 页面可访问', async ({ page }) => {
+  // issue #4490：入口已合并为「加工项与加工费」/production/processing（旧 /processing 重定向到它）
+  test.skip('加工项与加工费 — 页面可访问', async ({ page }) => {
     const apiCalls = startApiCapture(page)
-    await page.goto('/processing')
+    await page.goto('/production/processing')
     await page.waitForTimeout(3000)
     const evidence = await captureEvidence(page)
     const result = await judge.evaluate({
-      scenario: '管理员查看加工项管理',
+      scenario: '管理员查看加工项与加工费',
       criteria: ['页面正常加载，非白屏', '如有数据，加工项名称可见', '页面无异常报错'],
       evidence: { ...evidence, apiCalls },
     })

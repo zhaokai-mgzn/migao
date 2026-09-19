@@ -139,20 +139,24 @@ describe('生产管理菜单入口（侧边栏）', () => {
     const group = screen.getByText('生产管理').closest('.mb-4') as HTMLElement
     expect(group).toBeTruthy()
     const links = group.querySelectorAll('a')
-    // 4 项：生产看板 / 工艺配置（issue #4416：工序库 + 工艺路线**合并**为单一入口）/ 加工费管理 / 计件工资。
+    // 4 项：生产看板 / 工艺配置（issue #4416：工序库 + 工艺路线**合并**为单一入口）/
+    //      加工项与加工费（issue #4490：「加工项管理」+「加工费管理」**合并**为单一入口）/ 计件工资。
     // ⚠️ issue #4416 把原第 2 项「工序库」与第 3 项「工艺路线」合并为「工艺配置」⇒ 项数 5 → 4；
-    //    加工费管理与计件工资的**相对位次不变**（各前移一位）。
+    //    issue #4490 把「加工费管理」（原第 3 项）与商品管理组的「加工项管理」合并为
+    //    「加工项与加工费」⇒ **项数仍为 4**，第 2/3/4 项的相对位次不变。
     expect(links).toHaveLength(4)
     expect(links[0].textContent).toContain('生产看板')
     expect(links[0]).toHaveAttribute('href', '/production')
     expect(links[1].textContent).toContain('工艺配置')
     expect(links[1]).toHaveAttribute('href', '/production/routings')
-    expect(links[2].textContent).toContain('加工费管理')
-    expect(links[2]).toHaveAttribute('href', '/production/processing-fees')
-    // issue #4482：图标换成**费用单据**语义的 Receipt（原 BadgeDollarSign 偏"会员/折扣"观感，
-    // 与「计件工资」的 Calculator 也不够区分）
-    const feesIcon = productionEntry('production-processing-fees')?.icon
-    expect(feesIcon).toBe('Receipt')
+    expect(links[2].textContent).toContain('加工项与加工费')
+    expect(links[2]).toHaveAttribute('href', '/production/processing')
+    // issue #4490：合并项沿用「加工项」的 Scissors（默认 tab 就是「加工项」）。
+    // ⚠️ 断言**渲染出来的**图标，不只断言配置字符串 —— #4482 把加工费项配成 `'Receipt'`，
+    //    而 Sidebar 的 `iconMap` 从未登记该键 ⇒ 静默回落成 BarChart3：配置断言绿、画面错。
+    //    本项现在用的 Scissors 已在 iconMap 内，故 `icon-scissors` 必须真的渲染出来。
+    expect(productionEntry('production-processing')?.icon).toBe('Scissors')
+    expect(links[2].querySelector('[data-testid="icon-scissors"]')).toBeTruthy()
     expect(links[3].textContent).toContain('计件工资')
     expect(links[3]).toHaveAttribute('href', '/production/piecework')
     // 旧「工序库」入口不再作为独立菜单项（页面改为重定向，旧深链仍可达）
@@ -175,6 +179,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
   })
 
   it('权限码口径一致：生产管理组四项统一 processing:manage（与既有 menu.ts 口径一致）', () => {
+    // issue #4490：合并**不改变权限码** —— 两个旧菜单项本来就是 processing:manage（组内同码）
     const group = menuGroups.find((g) => g.key === 'production')
     expect(group).toBeTruthy()
     // issue #4416：工序库 + 工艺路线合并为「工艺配置」⇒ 5 项 → 4 项，权限码口径不变

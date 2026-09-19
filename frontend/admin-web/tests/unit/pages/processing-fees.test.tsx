@@ -1,5 +1,8 @@
 // case_ids: PG-040
-// PG-040（issue #4386，前端半边）：加工费管理页 /production/processing-fees ——
+// PG-040（issue #4386，前端半边）：加工费**组合**定价面 ——
+// ⚠️ 2026-09-19（issue #4490 合并）：断言对象从独立页 /production/processing-fees 改为**合并后的
+// 唯一入口** /production/processing 的**第二个 tab「加工费组合」**（`?tab=fees` 直达）。能力一条不少：
+// 组合列表 / 新建（勾选集合，不自己拼 key）/ 护栏理由逐条 / 空组合本地拦 / 缺口区 / 改单价 / 停用二次确认。
 // ① 组合列表渲染**真实数据**（选配特征 + 单价 元/米）；
 // ② 新建：勾选加工项（**顺序无关**）→ 提交 `POST /processing-fee-combinations`；
 // ③ 护栏理由**逐条**展示：按**真实信封** `error.details[].message` 读（不读不存在的 `error_messages`）；
@@ -32,9 +35,18 @@ vi.mock('@/lib/api', () => ({
   processingItemApi: {
     getProcessingItems: (...args: unknown[]) => mockGetProcessingItems(...args),
   },
+  // issue #4490：合并页同一组件里还有加工项半边（列表 + 加工分类抽屉），挂载时会拉分类
+  processingCategoryApi: {
+    getProcessingCategories: vi.fn().mockResolvedValue({ data: { data: [{ id: 'cat-1', name: '窗帘加工' }] } }),
+  },
 }))
 
-import ProcessingFeesPage from '@/app/(dashboard)/production/processing-fees/page'
+import ProcessingPage from '@/app/(dashboard)/production/processing/page'
+
+vi.mock('next/navigation', () => ({
+  // 合并页默认落在「加工项」tab；本文件测的是第二栏 ⇒ 用 `?tab=fees` 直达（与旧路径重定向同一条路）
+  useSearchParams: () => new URLSearchParams('tab=fees'),
+}))
 
 const ok = (data: unknown) => ({ data: { success: true, data } })
 
@@ -102,9 +114,9 @@ beforeEach(() => {
   mockDisableFeeCombination.mockResolvedValue(ok({ id: 'fc-1', status: 'disabled' }))
 })
 
-describe('加工费管理页（issue #4386）', () => {
+describe('加工费组合 tab（issue #4386；issue #4490 合并后为 /production/processing 的第二栏）', () => {
   it('组合列表渲染真实数据：选配特征 + 单价（元/米），不是「页面存在」', async () => {
-    render(<ProcessingFeesPage />)
+    render(<ProcessingPage />)
     await waitFor(() => expect(screen.getByTestId('fee-combinations-total')).toHaveTextContent('2'))
 
     const row = screen.getByTestId('fee-combination-fc-2')
@@ -116,7 +128,7 @@ describe('加工费管理页（issue #4386）', () => {
   })
 
   it('新建：勾选加工项 + 单价 → POST /processing-fee-combinations（提交勾选集合，不自己拼 key）', async () => {
-    render(<ProcessingFeesPage />)
+    render(<ProcessingPage />)
     await waitFor(() => expect(screen.getByTestId('fee-combinations-total')).toHaveTextContent('2'))
 
     await userEvent.click(screen.getByTestId('fee-combination-new'))
@@ -132,7 +144,7 @@ describe('加工费管理页（issue #4386）', () => {
   })
 
   it('新建弹窗只有一组底栏按钮：按钮走 Modal 的 footer（不叠加内置默认底栏「确定」）+ 文案不留字面 markdown 星号', async () => {
-    render(<ProcessingFeesPage />)
+    render(<ProcessingPage />)
     await waitFor(() => expect(screen.getByTestId('fee-combinations-total')).toHaveTextContent('2'))
 
     await userEvent.click(screen.getByTestId('fee-combination-new'))
@@ -173,7 +185,7 @@ describe('加工费管理页（issue #4386）', () => {
         },
       },
     })
-    render(<ProcessingFeesPage />)
+    render(<ProcessingPage />)
     await waitFor(() => expect(screen.getByTestId('fee-combinations-total')).toHaveTextContent('2'))
 
     await userEvent.click(screen.getByTestId('fee-combination-new'))
@@ -204,7 +216,7 @@ describe('加工费管理页（issue #4386）', () => {
         },
       },
     })
-    render(<ProcessingFeesPage />)
+    render(<ProcessingPage />)
     await waitFor(() => expect(screen.getByTestId('fee-combinations-total')).toHaveTextContent('2'))
 
     await userEvent.click(screen.getByTestId('fee-combination-new'))
@@ -218,7 +230,7 @@ describe('加工费管理页（issue #4386）', () => {
   })
 
   it('空组合本地先拦：不发出 POST，并给出「至少选 1 个加工项」理由', async () => {
-    render(<ProcessingFeesPage />)
+    render(<ProcessingPage />)
     await waitFor(() => expect(screen.getByTestId('fee-combinations-total')).toHaveTextContent('2'))
 
     await userEvent.click(screen.getByTestId('fee-combination-new'))
@@ -232,7 +244,7 @@ describe('加工费管理页（issue #4386）', () => {
   })
 
   it('缺口区：未定价组合逐条可见（含出现次数），不是只显示条数', async () => {
-    render(<ProcessingFeesPage />)
+    render(<ProcessingPage />)
     await waitFor(() => expect(screen.getByTestId('fee-gaps-total')).toHaveTextContent('1'))
 
     const gap = screen.getByTestId('fee-gap-定型+韩褶')
@@ -243,7 +255,7 @@ describe('加工费管理页（issue #4386）', () => {
 
   it('改单价走 PUT /{id}（body 只有 unit_price）；停用走 DELETE /{id}（二次确认后）', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<ProcessingFeesPage />)
+    render(<ProcessingPage />)
     await waitFor(() => expect(screen.getByTestId('fee-combination-fc-1')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('fee-combination-edit-fc-1'))
@@ -264,7 +276,7 @@ describe('加工费管理页（issue #4386）', () => {
       .mockReset()
       .mockRejectedValueOnce(new Error('500'))
       .mockResolvedValue(ok(COMBINATIONS))
-    render(<ProcessingFeesPage />)
+    render(<ProcessingPage />)
 
     await waitFor(() => expect(screen.getByTestId('fee-combinations-error')).toHaveTextContent('加载失败'))
     await userEvent.click(screen.getByTestId('fee-combinations-retry'))
@@ -274,25 +286,29 @@ describe('加工费管理页（issue #4386）', () => {
 
   it('缺口接口失败：只在缺口区给可读提示，组合列表照常渲染（不整页白屏）', async () => {
     mockGetFeeGaps.mockReset().mockRejectedValueOnce(new Error('500'))
-    render(<ProcessingFeesPage />)
+    render(<ProcessingPage />)
 
     await waitFor(() => expect(screen.getByTestId('fee-combinations-total')).toHaveTextContent('2'))
     expect(screen.getByTestId('fee-gaps-unavailable')).toHaveTextContent('缺口数据加载失败')
     expect(screen.getByTestId('fee-combination-fc-1')).toBeInTheDocument()
   })
 
-  it('侧边栏：生产管理组含「加工费管理」→ /production/processing-fees（权限码 processing:manage）', async () => {
+  it('侧边栏：生产管理组含合并项「加工项与加工费」→ /production/processing（权限码 processing:manage）', async () => {
     const { menuGroups } = await import('@/config/menu')
     const production = menuGroups.find((g) => g.key === 'production')
     expect(production).toBeDefined()
-    const entry = production!.children.find((c) => c.path === '/production/processing-fees')
+    // issue #4490：「加工费管理」(/production/processing-fees) 与「加工项管理」(/processing) 合并为
+    // 单一入口 ⇒ 本页归属的那一项改名改路径，但**仍在本组**且权限码不变
+    const entry = production!.children.find((c) => c.path === '/production/processing')
     expect(entry).toBeDefined()
+    expect(entry!.name).toBe('加工项与加工费')
     expect(entry!.permissionCode).toBe('processing:manage')
-    // 生产管理组归并结果必须仍在（本包只**追加**一项，不重排既有项）
+    // 生产管理组归并结果必须仍在（合并只收敛入口，不重排既有项）
     // ⚠️ issue #4416：原第 2 项「工序库」与第 3 项「工艺路线」已合并为「工艺配置」⇒
     //    /production/operations **不再是**菜单项（页面改为重定向，旧深链仍可达）
     expect(production!.children.map((c) => c.path)).toContain('/production/routings')
     expect(production!.children.map((c) => c.name)).toContain('工艺配置')
     expect(production!.children.map((c) => c.path)).not.toContain('/production/operations')
+    expect(production!.children.map((c) => c.path)).not.toContain('/production/processing-fees')
   })
 })

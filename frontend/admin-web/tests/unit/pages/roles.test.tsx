@@ -161,7 +161,8 @@ describe('RolesPage', () => {
     expect(tree.getByText('在线接待')).toBeInTheDocument()
     expect(tree.getByText('知识库')).toBeInTheDocument()
     expect(tree.getByText('商品列表')).toBeInTheDocument()
-    expect(tree.getByText('加工项管理')).toBeInTheDocument()
+    // issue #4490：「加工项管理」+「加工费管理」合并为「加工项与加工费」（权限树与真实侧边栏同源）
+    expect(tree.getByText('加工项与加工费')).toBeInTheDocument()
     expect(tree.getByText('订单列表')).toBeInTheDocument()
     expect(tree.getByText('售后工单')).toBeInTheDocument()
     expect(tree.getByText('客户列表')).toBeInTheDocument()
@@ -190,7 +191,7 @@ describe('RolesPage', () => {
     expect(extras.getByText('商品分类')).toBeInTheDocument()
     // 菜单码不进操作权限节
     expect(extras.queryByText('售后工单')).not.toBeInTheDocument()
-    expect(extras.queryByText('加工项管理')).not.toBeInTheDocument()
+    expect(extras.queryByText('加工项与加工费')).not.toBeInTheDocument()
   })
 
   it('勾选菜单项「在线接待」→ 创建岗位时 permissionIds 含 agent:session 权限ID（代码映射，#3094 米宝菜单已移除）', async () => {

@@ -1,6 +1,11 @@
 // case_ids: PP-006
 // PP-006（issue #3005 回滚 #2986）：加工项无「每米数量」——计价方式仅 per_meter/per_set/fixed/per_area，
 // 表单与列表均无每米数量输入/列，保存 payload 不带 perMeterQuantity
+// ⚠️ 2026-09-19（issue #4490 合并）：本文件断言的对象从 `/processing`（旧「加工项管理」页）改为
+// **合并后的唯一入口** `/production/processing` 的**第一个 tab「加工项」** —— 加工项半边的能力
+// （列表 / 新增 / 编辑 / 删除 / 分类 / 计价方式 / 优惠）一条不少，只是换了页面与归属菜单组。
+// 合并本身的判据（菜单结构 / 两个旧路径重定向 / 两个 tab / 切 tab 不丢状态）在
+// tests/unit/pages/processing-merged.test.tsx。
 // ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：原 `UI-026`（加工项列表展示「适用商品分类」列）
 // 断言**已删除** —— `applicable_product_categories` 列与过滤链路随解耦整体退场（V66 迁移 DROP），
 // 该列不再渲染，用例对象已不存在（用例 UI-026 亦同步从 .github/cases/ui.yml 删除）。
@@ -29,6 +34,16 @@ vi.mock('@/lib/api', () => ({
   categoryApi: {
     getCategories: (...args: any[]) => mockGetCategories(...args),
   },
+  // issue #4490：合并页同一组件里还有加工费组合半边（本文件不测它，但它在挂载时会拉数据）
+  productionApi: {
+    getFeeCombinations: vi.fn().mockResolvedValue({ data: { data: { combinations: [] } } }),
+    getFeeGaps: vi.fn().mockResolvedValue({ data: { data: { unpriced_combinations: [] } } }),
+  },
+}))
+
+// issue #4490：合并页用 `?tab=` 支持旧路径直达（Suspense + useSearchParams），测试里给个空参
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(''),
 }))
 
 // Mock sonner
@@ -51,7 +66,7 @@ vi.mock('@/components/ui', () => ({
   ),
 }))
 
-import ProcessingPage from '@/app/(dashboard)/processing/page'
+import ProcessingPage from '@/app/(dashboard)/production/processing/page'
 
 const mockItems = [
   { id: '1', name: '打孔加工', unitPrice: 5, pricingMethod: 'per_meter' },
@@ -61,7 +76,7 @@ const mockItems = [
 
 const mockCategories = [{ id: 'cat1', name: '通用加工' }]
 
-describe('ProcessingPage', () => {
+describe('ProcessingPage（issue #4490 合并后：/production/processing 的「加工项」tab）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetProcessingItems.mockResolvedValue({
@@ -75,14 +90,14 @@ describe('ProcessingPage', () => {
   it('should render page title', async () => {
     render(<ProcessingPage />)
     await waitFor(() => {
-      expect(screen.getByText('加工项管理')).toBeInTheDocument()
+      expect(screen.getByText('加工项与加工费')).toBeInTheDocument()
     })
   })
 
   it('should render page description', async () => {
     render(<ProcessingPage />)
     await waitFor(() => {
-      expect(screen.getByText(/加工项是指为特定订单定制的产品修改服务/)).toBeInTheDocument()
+      expect(screen.getByText(/加工项是下单时客户可选的加工服务/)).toBeInTheDocument()
     })
   })
 

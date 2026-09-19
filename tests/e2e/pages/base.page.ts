@@ -39,7 +39,8 @@ import {
 const SIDEBAR_MENU: Record<string, string> = {
   '/dashboard': '经营看板',
   '/products': '商品管理',
-  '/processing': '加工项管理',
+  // issue #4490：「加工项管理」+「加工费管理」合并为「加工项与加工费」/production/processing（生产管理组）
+  '/production/processing': '加工项与加工费',
   '/orders': '订单管理',
   '/after-sales': '售后管理',
   '/customers': '客户管理',
