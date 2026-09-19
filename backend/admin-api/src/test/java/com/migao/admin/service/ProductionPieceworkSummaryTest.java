@@ -146,6 +146,51 @@ class ProductionPieceworkSummaryTest {
         return log; // factor 保持 NULL = 新报工形态
     }
 
+    /**
+     * 带**帘种**（`position_kind`）的工序实例夹具（issue #4621）：`per_operation` 的 `position`
+     * 从实例带出 —— 报工快照（`production_work_logs`）**没有部位列**，只能按 `operationId` join。
+     */
+    private ProcessingPositionOperation opWithPositionKind(String id, String name, String positionKind) {
+        return ProcessingPositionOperation.builder()
+                .id(id).tenantId(TENANT).processingOrderId(PO_ID)
+                .positionName("布艺遮光帘A 米白").positionKind(positionKind).seq(1).operationName(name)
+                .groupName("裁剪").unit("米")
+                .qty(new BigDecimal("12.30")).unitPrice(new BigDecimal("0.40"))
+                .factor(BigDecimal.ONE).isMustFinish(false).isStartMarker(true)
+                .status("done").doneQty(new BigDecimal("3")).deleted(0).build();
+    }
+
+    // ── 工序显示名统一（issue #4621）：`per_operation` 补 `logical_name` + `position` ──
+    // 口径：显示名 = 逻辑工序名（既有映射读时派生）+ 帘种；既有 `operation` 键 = 工人端快照名
+    // ⇒ **一字不动**；**web 界面不得渲染该键**。分组口径不变（仍是「每个工序实例一行」）。
+
+    @Test
+    @DisplayName("#4621 per_operation 补 logical_name + position（帘种从实例带出；部位无关工序给空）")
+    void perOperationAddsDisplayKeys() {
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                log("op-1", "精裁-布", "张三", "10", "normal", LocalDate.of(2026, 9, 18)),
+                log("op-2", "外帘装袋", "张三", "5", "normal", LocalDate.of(2026, 9, 18))));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                opWithPositionKind("op-1", "精裁-布", "布帘"),
+                opWithPositionKind("op-2", "外帘装袋", "布帘")));
+
+        Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> perOperation = (List<Map<String, Object>>) report.get("per_operation");
+        assertThat(perOperation)
+                .as("分组口径不变：每个工序实例一行（`精裁 · 布帘` / `外帘装袋` 各一行）")
+                .hasSize(2);
+        assertThat(perOperation).anySatisfy(row -> assertThat(row)
+                .containsEntry("operation", "精裁-布")
+                .containsEntry("logical_name", "精裁")
+                .containsEntry("position", "布帘"));
+        assertThat(perOperation).anySatisfy(row -> assertThat(row)
+                .containsEntry("operation", "外帘装袋")
+                .containsEntry("logical_name", "外帘装袋")
+                .containsEntry("position", null));
+    }
+
     @Test
     @DisplayName("走查实测单可复现：精裁-布 3 米 × ¥0.40 ⇒ per_worker 金额 1.20")
     void walkthroughOrderIsReproducible() {

@@ -3209,6 +3209,40 @@ class ProcessingOrderServiceTest {
                 .containsEntry("is_must_finish", true);
     }
 
+    // ══════════════════ 工序显示名统一（issue #4621，web 面命名统一 · 阶段 1）══════════════════
+    //
+    // 口径（冻结）：显示名 = **逻辑工序名**（既有映射读时派生）+ 部位（帘种），如 `精裁 · 布帘`；
+    // 部位无关工序（`外帘装袋`）⇒ 只显示逻辑名。既有 `operation` 键 = **工人端快照名**（变体名
+    // `精裁-布`）⇒ **一字不动**（历史数据与其它消费者仍要读它），但 **web 界面不得渲染该键**。
+    // 派生是**读时**做的、**不写库**。
+
+    @Test
+    @DisplayName("#4621 派生 payload 补 logical_name + position：历史实例（快照名 精裁-布）读时派生为「精裁 · 布帘」")
+    @SuppressWarnings("unchecked")
+    void derivePositionPayloadAddsOperationDisplayKeys() {
+        stubLibrary();
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemHanzhe("米白")));
+
+        List<Map<String, Object>> positions = processingOrderService.derivePositionPayload("order-001", TENANT);
+
+        List<Map<String, Object>> operations = (List<Map<String, Object>>) positions.get(0).get("operations");
+        // 历史实例（快照名 = 变体名 `精裁-布`）：显示名 = `精裁` + `布帘`（不改库、不改快照名）
+        assertThat(operations.get(0))
+                .as("既有键一字未动 + 两个派生键（web 界面只渲染后者）")
+                .containsEntry("operation", "精裁-布")
+                .containsEntry("group", "裁剪")
+                .containsEntry("unit", "米")
+                .containsEntry("is_start_marker", true)
+                .containsEntry("logical_name", "精裁")
+                .containsEntry("position", "布帘");
+        // 部位无关工序（名字里没编部位）⇒ position 为空（界面只显示逻辑名，不拼「外帘装袋 · 布帘」）
+        assertThat(operations.get(9))
+                .containsEntry("operation", "外帘装袋")
+                .containsEntry("logical_name", "外帘装袋")
+                .containsEntry("position", null);
+    }
+
     @Test
     @DisplayName("#4202 派生 fail-closed：工序库无路线 ⇒ 中止（绝不返回空 payload 落个空壳）")
     void derivePositionPayloadFailsClosedOnEmptyLibrary() {

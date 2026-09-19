@@ -16,6 +16,10 @@ const positions: ProductionPosition[] = [
         id: 'op-1',
         seq: 1,
         operation: '精裁-布',
+        // issue #4621：后端读面补的**显示名派生键**（读时派生、不写库）；
+        // `operation` 是**工人端快照名**（变体名），界面不得渲染它
+        logical_name: '精裁',
+        position: '布帘',
         group: '裁剪',
         unit: '套',
         qty: 2,
@@ -29,6 +33,8 @@ const positions: ProductionPosition[] = [
         id: 'op-2',
         seq: 2,
         operation: '外帘装袋',
+        // 部位无关工序：后端 `position` 为空 ⇒ 界面只显示逻辑名（不拼空部位）
+        logical_name: '外帘装袋',
         group: '后道',
         unit: '件',
         qty: 2,
@@ -47,6 +53,8 @@ const positions: ProductionPosition[] = [
         id: 'op-3',
         seq: 1,
         operation: '韩褶-纱',
+        logical_name: '韩褶',
+        position: '纱帘',
         group: '车位',
         unit: '折',
         qty: 24,
@@ -68,7 +76,9 @@ describe('ProductionProgressTable', () => {
     expect(screen.getByTestId('position-group-纱帘')).toBeInTheDocument()
 
     const row = screen.getByTestId('operation-row-op-1')
-    expect(within(row).getByText('精裁-布')).toBeInTheDocument()
+    // issue #4621：工序名只显示「逻辑名 · 部位」—— 变体名（`精裁-布`）不得出现在界面
+    expect(within(row).getByText('精裁 · 布帘')).toBeInTheDocument()
+    expect(within(row).queryByText('精裁-布')).toBeNull()
     expect(within(row).getByTestId('op-group')).toHaveTextContent('裁剪')
     expect(within(row).getByTestId('op-qty')).toHaveTextContent('2 套')
     expect(within(row).getByTestId('op-unit-price')).toHaveTextContent('¥8.50')
@@ -77,6 +87,46 @@ describe('ProductionProgressTable', () => {
 
     // 第二个部位的行也必须渲染（分组不吞数据）
     expect(screen.getByTestId('operation-row-op-3')).toBeInTheDocument()
+  })
+
+  // ── 工序显示名统一（issue #4621）：只显示「逻辑名 · 部位」，变体名不得出现在界面 ──
+  // 口径（冻结）：显示名 = 逻辑工序名；该实例有部位 ⇒ `逻辑名 · 部位`（如 `三边 · 布帘`）；
+  // 部位无关工序（外帘装袋）⇒ 只显示逻辑名。派生是**后端读时**做的（`logical_name` / `position`
+  // 两个新键），前端只拼装、**不写库**；`operation` 是工人端快照名，只作老数据兜底。
+
+  it('工序列只显示「逻辑名 · 部位」，变体名（精裁-布 / 韩褶-纱）不出现', () => {
+    render(<ProductionProgressTable positions={positions} />)
+
+    expect(within(screen.getByTestId('operation-row-op-1')).getByText('精裁 · 布帘')).toBeInTheDocument()
+    expect(within(screen.getByTestId('operation-row-op-3')).getByText('韩褶 · 纱帘')).toBeInTheDocument()
+    // 全表都不得出现变体名（那是工人端快照名，不是界面文案）
+    expect(screen.queryByText('精裁-布')).toBeNull()
+    expect(screen.queryByText('韩褶-纱')).toBeNull()
+  })
+
+  it('部位无关工序（外帘装袋）只显示逻辑名，不拼空部位', () => {
+    render(<ProductionProgressTable positions={positions} />)
+
+    const row = within(screen.getByTestId('operation-row-op-2'))
+    expect(row.getByText('外帘装袋')).toBeInTheDocument()
+    expect(row.queryByText(/·/)).toBeNull()
+  })
+
+  it('老数据缺 logical_name ⇒ 退回 operation 原文（不显示空白）', () => {
+    render(
+      <ProductionProgressTable
+        positions={[
+          {
+            position_name: '布帘',
+            operations: [
+              { id: 'legacy-1', seq: 1, operation: '定型-布', status: 'pending', done_qty: 0 },
+            ],
+          },
+        ]}
+      />,
+    )
+
+    expect(within(screen.getByTestId('operation-row-legacy-1')).getByText('定型-布')).toBeInTheDocument()
   })
 
   it('必完工序（is_must_finish）加「必完」标记，非必完工序不加', () => {

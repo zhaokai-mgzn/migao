@@ -7,6 +7,8 @@ import Badge from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
 // 工艺规格展示的单一真值定义（设计文档 §4.9「一份 spec，三处渲染」）
 import { craftSpecRows } from '@/lib/craft-display'
+// 工序显示名的**唯一**口径（issue #4621）：逻辑名 · 部位 —— 纸面**不得**直接渲染变体名
+import { operationDisplayName } from '@/lib/operation-display'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
 
 /**
@@ -183,7 +185,7 @@ export default function TaskCardPrint({
                   {op.positionName || '—'}
                 </td>
                 <td className="border border-neutral-400 px-2 py-1.5">
-                  {op.operation}
+                  {operationDisplayName(op)}
                   {op.is_must_finish && (
                     <Badge variant="warning" className="ml-2">
                       必完
