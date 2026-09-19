@@ -6,6 +6,7 @@ from app.production.routing import (
     HOLE_KEYS,
     HOLE_PER_METER,
     METER_KEYS,
+    NEW_MODEL_ONLY_OPERATIONS,
     OPERATION_CATALOG,
     PANEL_KEYS,
     PENDING_CUSTOMER_CONFIRMATION_OPERATIONS,
@@ -244,25 +245,33 @@ def test_sheer_routes_consume_only_existing_operations():
 
 
 def test_operation_catalog_size_is_frozen_for_this_issue():
-    """零新造工序（判据 2 红线）：工序库条目数 = V54 的 30 道 + V56 的 5 道 = 35。
+    """工序库条目数冻结：V54 的 30 道 + V56 的 5 道 + **V79 的 2 道**（issue #4529）= 37。
 
-    本单**只加路线**；任何「顺手加一道工序/改一个单价」都会让这里红
+    #4246 本单**只加路线**；#4529 显式新增 `配料`/`打包` 两道（用户裁定）⇒ 数字随之 +2。
+    任何「顺手加一道工序/改一个单价」都会让这里红
     （工序库 ↔ 种子 SQL 的逐行逐值比对另见
     `tests/unit_ci_workflows/test_production_catalog_seed.py`）。
     """
-    assert len(OPERATION_CATALOG) == 35, (
-        "工序库条目数变了 —— 本单（#4246）不许新造工序/改单价；"
-        "确需新增请走新迁移 + 同步 V54∪V56∪V58 聚合守卫")
+    assert len(OPERATION_CATALOG) == 37, (
+        "工序库条目数变了 —— 确需新增请走新迁移 + 同步 V54∪V56∪V79 聚合守卫 + 模板/120 行价目")
     assert OPERATION_CATALOG["上车布-纱"] == {"group": "车位", "unit": "米", "unit_price": 0.5}
     assert OPERATION_CATALOG["打孔-纱"] == {"group": "车位", "unit": "孔", "unit_price": 0.15}
+    # issue #4529：两道新工序的**冻结值**（单位是判据：单位错 ⇒ 应做数量口径错）
+    assert OPERATION_CATALOG["配料"] == {"group": "后道", "unit": "米", "unit_price": 0.0}
+    assert OPERATION_CATALOG["打包"] == {"group": "后道", "unit": "套", "unit_price": 0.0}
 
 
 def _orphan_operations() -> set:
-    """有工序、有价、**零消费**的工序（既不在任何路线里，也不被任何特殊选项条件工序引用）。"""
+    """有工序、有价、**零消费**的工序（既不在任何路线里，也不被任何特殊选项条件工序引用）。
+
+    `NEW_MODEL_ONLY_OPERATIONS`（`配料`/`打包`）**不算孤儿**：它们被**新模型**的主线消费
+    （`FABRIC_MAINLINE_STEPS` / `ROUTE_MAINLINE_STEPS`），只是旧 `ROUTINGS` 不引用它们
+    （旧快照一字未动 —— 消费路径未切换）。
+    """
     consumed = {op for ops in ROUTINGS.values() for op in ops}
     consumed |= {rule["operation"] for rule in SPECIAL_OPTION_ROUTINGS.values()
                  if "operation" in rule}
-    return set(OPERATION_CATALOG) - consumed
+    return set(OPERATION_CATALOG) - consumed - set(NEW_MODEL_ONLY_OPERATIONS)
 
 
 def test_orphan_operations_are_explicitly_registered():
