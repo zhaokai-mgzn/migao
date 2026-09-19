@@ -11,6 +11,10 @@ case-contract 标准（design/16-case-contract.md）的用例库（cases/*.yml�
   1. index  — 打印全量真值索引 {ID: 文本摘要}
   2. check  — 校验用例的 truths_ref 全部可解析（不可解析 → exit 1，CI fail-closed）；
               空 truths_ref 视为「已标注缺口」，仅告警不失败
+  3. check 同时校验**已否证真值**（issue #4430 / B3）：模板里可用 `retired_truths` 登记
+              「被后续 issue 否证」的真值（须写 `retired_by` + `reason`）；被登记的 ID
+              **不得**再被 cases 引用、**不得**仍留在 `business_truths`，否则 exit 1
+              —— 否则「过期真值」只是**静默**存活（引用完整性校验不看真值内容）
 
 用法:
   python3 truths.py index --templates seed/migao/templates
@@ -23,6 +27,11 @@ import re
 import sys
 
 ID_RE = re.compile(r"^\[([a-z0-9.-]+)\]\s")
+
+# 阻塞（exit 1）的问题类型 —— `gap`（truths_ref 为空）**不在**其中：它是「已标注缺口」，
+# 按既有口径只告警。`retired*`（issue #4430 / B3）是**否证登记**的三种坏形态，必须阻塞。
+BLOCKING_PROBLEM_KINDS = frozenset({"unresolved", "duplicate",
+                                    "retired", "retired-meta", "retired-live"})
 
 
 def _here():
@@ -73,9 +82,65 @@ def load_all_truths(templates_dir):
     return index, conflicts, unid
 
 
+# ── 已否证真值（issue #4430 / B3）────────────────────────────────────────────
+# 病根：真值模板只被校验**引用完整性**（cases 的 truths_ref 能不能解析），**不校验真值内容**
+# ⇒ 条目被后续 issue 否证后（如 #4371 把「商品 ↔ 加工项」绑定彻底解耦、表已 DROP），
+# 模板里的过期条目**静默存活**：没人引用它 = 没人会红（「不会红的断言 = 空断言」同族）。
+# ⇒ 用 `retired_truths` 显式登记否证，并给三条**可红**判据（缺任一即 exit 1）：
+#   ① 登记必须写 `retired_by`（否证它的 issue 号）与 `reason`（否证依据，写明「什么已不成立」）；
+#   ② 被登记的 ID **不得**仍留在 `business_truths`（要么活着、要么否证，不留自相矛盾）；
+#   ③ 被登记的 ID **不得**再被 `.github/cases/**` 的 truths_ref 引用。
+RETIRED_REQUIRED_KEYS = ("retired_by", "reason")
+
+
+def load_retired(template_path):
+    """加载单个模板的 `retired_truths` → ({id: meta}, 问题列表)。
+
+    形状（与既有模板同风格，yaml_light 可解析的嵌套映射）：
+
+        retired_truths:
+          <模板名>.<短名>:
+            retired_by: 4371
+            reason: "商品 ↔ 加工项绑定已解耦（product_processing_items 已 DROP）"
+    """
+    load_file = _yaml()
+    data = load_file(template_path)
+    raw = data.get("retired_truths") or {}
+    retired, problems = {}, []
+    if not isinstance(raw, dict):
+        return retired, [{"id": "-", "msg": "retired_truths 必须是「真值 ID → {retired_by, reason}」映射"}]
+    for tid, meta in raw.items():
+        meta = meta if isinstance(meta, dict) else {}
+        missing = [k for k in RETIRED_REQUIRED_KEYS if not str(meta.get(k) or "").strip()]
+        if missing:
+            problems.append({
+                "id": tid,
+                "msg": f"已否证真值缺 {'/'.join(missing)}"
+                       "（必须写明否证它的 issue 号与依据，否则「为什么不再成立」无人可查）",
+            })
+        retired[tid] = meta
+    return retired, problems
+
+
+def load_all_retired(templates_dir):
+    """加载目录下全部模板的 `retired_truths` → ({id: meta}, 问题列表)。"""
+    index, problems = {}, []
+    for fn in sorted(os.listdir(templates_dir)):
+        if not fn.endswith(".yml"):
+            continue
+        retired, probs = load_retired(os.path.join(templates_dir, fn))
+        problems.extend(probs)
+        for tid, meta in retired.items():
+            if tid in index:
+                problems.append({"id": tid, "msg": "同一条真值在两个模板里被登记为已否证"})
+            index[tid] = meta
+    return index, problems
+
+
 def check_cases(cases_dir, templates_dir):
     """校验 cases/*.yml 的全部 truths_ref。返回 (report, exit_code)。"""
     index, conflicts, _ = load_all_truths(templates_dir)
+    retired, retired_meta_problems = load_all_retired(templates_dir)
     problems, gaps, total_refs = [], 0, 0
     seen_ids = {}
     for fn in sorted(os.listdir(cases_dir)):
@@ -99,12 +164,33 @@ def check_cases(cases_dir, templates_dir):
                 continue
             for ref in refs:
                 total_refs += 1
+                if ref in retired:
+                    meta = retired[ref]
+                    problems.append({
+                        "case": c.get("id"), "kind": "retired",
+                        "msg": f"引用了**已被否证**的真值 {ref}"
+                               f"（retired_by #{meta.get('retired_by')}）：{meta.get('reason')}"
+                               " —— 请改用现行真值，或先撤回该否证登记",
+                    })
+                    continue
                 if ref not in index:
                     problems.append({"case": c.get("id"), "kind": "unresolved",
                                      "msg": f"真值 ID 不存在: {ref}"})
+    # 否证登记自身的完整性（issue #4430 / B3）：缺 retired_by/reason、既否证又活着、两处登记
+    for p in retired_meta_problems:
+        problems.append({"case": "retired_truths", "kind": "retired-meta",
+                         "msg": f"{p['id']}: {p['msg']}"})
+    for tid in sorted(retired):
+        if tid in index:
+            problems.append({
+                "case": "retired_truths", "kind": "retired-live",
+                "msg": f"真值 {tid} 同时在 business_truths 与 retired_truths 里 —— "
+                       "要么活着、要么否证：从 business_truths 删掉它（否则索引/渲染仍把它当真值）",
+            })
     unresolved = [p for p in problems if p["kind"] == "unresolved"]
     report = {
         "template_truths": len(index),
+        "retired_truths": len(retired),
         "truth_conflicts": conflicts,
         "case_refs": total_refs,
         "gap_cases": gaps,
@@ -112,7 +198,9 @@ def check_cases(cases_dir, templates_dir):
         "duplicate_ids": [p for p in problems if p["kind"] == "duplicate"],
     }
     duplicates = report["duplicate_ids"]
-    return report, 1 if (unresolved or conflicts or duplicates) else 0
+    blocking = [p for p in problems if p["kind"] in BLOCKING_PROBLEM_KINDS]
+    # `conflicts`（同一真值 ID 出现在两个模板）不在 problems 里，但一直是阻塞项 —— 保持原口径。
+    return report, 1 if (blocking or conflicts) else 0
 
 
 def find_case(cases_dir, case_id):
@@ -350,6 +438,14 @@ def main(argv=None):
         if args.truth_id in index:
             print(index[args.truth_id])
             return 0
+        # 已否证的真值要**可行动**（issue #4430 / B3）：「不存在」与「已被否证」是两件事 ——
+        # 前者可能是打错字，后者应当改用现行真值（并点名否证它的 issue）。
+        retired, _ = load_all_retired(args.templates)
+        if args.truth_id in retired:
+            meta = retired[args.truth_id]
+            print(f"❌ 真值已被否证: {args.truth_id}"
+                  f"（retired_by #{meta.get('retired_by')}）：{meta.get('reason')}", file=sys.stderr)
+            return 1
         print(f"❌ 真值不存在: {args.truth_id}（真值库 {args.templates}）", file=sys.stderr)
         return 1
 
@@ -366,9 +462,13 @@ def main(argv=None):
 
     if args.cmd == "index":
         index, conflicts, unid = load_all_truths(args.templates)
+        retired, retired_problems = load_all_retired(args.templates)
         _print_index(index)
-        print(f"\n合计 {len(index)} 条真值；无 ID {unid} 条；冲突 {len(conflicts)} 个")
-        return 1 if conflicts else 0
+        print(f"\n合计 {len(index)} 条真值；已否证 {len(retired)} 条；无 ID {unid} 条；"
+              f"冲突 {len(conflicts)} 个")
+        for p in retired_problems:
+            print(f"  ❌ {p['id']}: {p['msg']}")
+        return 1 if (conflicts or retired_problems) else 0
 
     if args.cmd == "render":
         from pathlib import Path
@@ -383,15 +483,16 @@ def main(argv=None):
         return 0
 
     report, code = check_cases(args.cases, args.templates)
-    print(f"真值库: {report['template_truths']} 条 | 用例引用: {report['case_refs']} 处 | "
+    print(f"真值库: {report['template_truths']} 条 | 已否证: {report['retired_truths']} 条 | "
+          f"用例引用: {report['case_refs']} 处 | "
           f"缺口用例: {report['gap_cases']} 个 | 冲突: {len(report['truth_conflicts'])} 个")
     for p in report["problems"]:
-        mark = "❌" if p["kind"] == "unresolved" else "⚠️"
+        mark = "❌" if p["kind"] in BLOCKING_PROBLEM_KINDS else "⚠️"
         print(f"  {mark} {p['case']}: {p['msg']}")
     if code:
-        print("\n❌ 存在不可解析的真值引用（fail-closed）")
+        print("\n❌ 真值引用/否证登记存在阻塞问题（fail-closed）")
     else:
-        print("\n✅ 全部用例的 truths_ref 可解析")
+        print("\n✅ 全部用例的 truths_ref 可解析，且已否证真值无残留引用")
     return code
 
 

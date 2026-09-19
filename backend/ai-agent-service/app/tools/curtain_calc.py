@@ -279,7 +279,7 @@ def build_quote(
         fabric_price: 面料单价（元/米）
         has_pattern: 是否对花
         pattern_repeat: 花距（米）
-        open_count: 打开方式开数（1 单开 / 2 双开 / 4 四开；默认 1）
+        open_count: 打开方式开数（**正整数** 1 单开 / 2 双开 / 3 三开 / 4 四开 …；默认 1）
         pleat_count: 折数（韩褶折数法；给定时按 0.25×折数+余量 算料，issue #3982）
         source: 折数/用料取值来源（formula / manual / customer_quoted）
         craft_tier: 工艺档位（standard / economy；与 pleat_count 二选一）
@@ -553,7 +553,7 @@ class CurtainCalcTool(BaseTool):
             },
             "open_count": {
                 "type": "integer",
-                "description": "打开方式开数：1 单开 / 2 双开 / 4 四开（默认 1）。对开总折数必须偶数、四开能被 4 整除",
+                "description": "打开方式开数：**正整数** 1 单开 / 2 双开 / 3 三开 / 4 四开 …（默认 1；不是固定枚举，issue #4430）。对开总折数必须偶数、四开能被 4 整除",
             },
             "pleat_count": {
                 "type": "integer",

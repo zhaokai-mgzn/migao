@@ -67,8 +67,13 @@ _METERS_SOURCES = ("跟随主布", "人工指定")
 # 加工类型 = 算料侧 `formula_used` 的两态口径（设计文档 §4.2：`fixed_height*` → 定高买宽；
 # `fixed_width*` / `roman_panel` → 定宽买高）。**与 `mounting`（悬挂方式）是两层**，不互相推导。
 _CUTTING_MODES = ("定高买宽", "定宽买高")
-# 打开方式开数：单开/双开/四开（`curtain_calc` 的 `open_count`）。**数值枚举**，只认这三个数。
-_OPEN_COUNTS = (1, 2, 4)
+# 打开方式开数：单开/双开/三开/四开 …（`curtain_calc` 的 `open_count`）。**正整数**，
+# 不是固定枚举（issue #4430）—— 权威是 `V64__open_count_is_a_positive_integer.sql` 末段
+# 列注释「**正整数** 1 单开 / 2 双开·对开 / **3 三开** / 4 四开 …，不是固定枚举」与真值源
+# `docs/curtain-production-rules.md` §8「打开方式」。原写死 `(1, 2, 4)` ⇒ 三开（用户口径
+# 2026-09-19 明确存在）在写面被当非法值拦掉 —— 正是 V64 要堵的「读它的人会当成枚举」形态。
+# 取值域由 `_reject_invalid_open_count` 判（下限 1，与 schema 的 `minimum: 1` 同口径；
+# schema 那一处**只能写字面量**，见该键的注释）。
 # 算料输出的取值来源（真值源 `docs/curtain-fabric-quote-rules.md` §8 原文口径：
 # 「折数/用料必须带来源（公式计算 / 人工指定 / 客户自报），防止多渠道不一致」）。
 _SOURCES = ("公式计算", "人工指定", "客户自报")
@@ -359,7 +364,7 @@ class OrderCreateTool(BaseTool):
         "【工艺规格·必带】引导清单/顾客已明确的工艺参数必须写进 items[i].processing_info（**顶层键**）："
         "curtainType（部位：布帘/纱帘/帘头）、craft（安装工艺：韩褶/打孔/穿杆/平幔 —— "
         "**与 mounting 是两层，不要互相推导**）、isShaped（是否定型）、style（单色/拼色）、"
-        "cuttingMode（加工类型：定高买宽/定宽买高）、openCount（打开方式开数：1/2/4）、"
+        "cuttingMode（加工类型：定高买宽/定宽买高）、openCount（打开方式开数：**正整数** 1/2/3/4 …，不是固定枚举）、"
         "pleatSpacing（褶距，米）、hasPattern + patternRepeat（是否对花 + 花距，米）、"
         "corner（转角形态，取自清单「窗型」：平开/落地/飘窗/转角/L窗）、"
         "specialOptions（下单勾选的特殊选项，如 拼1次/加铅块/加花边/抱枕/布绑带）。"
@@ -569,8 +574,10 @@ class OrderCreateTool(BaseTool):
                                 },
                                 "openCount": {
                                     "type": "integer",
-                                    "enum": [1, 2, 4],
-                                    "description": "打开方式开数：1 单开 / 2 双开 / 4 四开（引导清单已采集）。折数整除校验与算料余量按它走；顾客没说 ⇒ 不填",
+                                    # 字面量（不得写成 `_OPEN_COUNT_MIN`）：`parameters` 必须能被
+                                    # `ast.literal_eval` 求值（admin-api 的跨语言契约测试按此读 schema）。
+                                    "minimum": 1,
+                                    "description": "打开方式开数：**正整数** 1 单开 / 2 双开 / 3 三开 / 4 四开 …（引导清单已采集；不是固定枚举，issue #4430）。折数整除校验与算料余量按它走；顾客没说 ⇒ 不填",
                                 },
                                 "pleatSpacing": {
                                     "type": "number",
@@ -900,10 +907,9 @@ class OrderCreateTool(BaseTool):
         `impact`（issue #4346）：**后果说明**必须与该字段的真实后果一致 —— 工艺规格的后果是
         「取到错误工序路线」，不是「SKU 匹配不到」。默认文案只对 SKU 规格族成立。
 
-        数值枚举（issue #4374）：`openCount` 这类**数值**枚举（1/2/4）走同一条闸门 ——
-        严格按「类型 + 字面」比对：字符串 `"2"` 与布尔 `True` 都**不算** 2/1
-        （刻意不做类型归一化，同「不做别名归一化」口径：静默接受变体的代价是
-        **静默按错的开数算折数/余量**）。
+        数值取值域（issue #4374 / #4430）：`openCount` 这类**正整数**取值域**不走本闸门**
+        （它不是枚举，见 `_reject_invalid_open_count`）—— 本闸门只做「类型 + 字面」成员比对，
+        把「正整数」表达成 `enum` 就是 #4430 的缺陷本身（三开被当非法值）。
         """
         if raw is None:
             return None  # 可选字段（单 SKU 商品不一定有售卖方式）
@@ -920,15 +926,10 @@ class OrderCreateTool(BaseTool):
             hint = "（per_piece 按个不支持，issue #3005）"
         else:
             hint = ""
-        # 取值来源**按字段族**分流：数值枚举（openCount）不来自 product_detail，
-        # 照抄 SKU 规格族的「product_detail 返回的原值」会误导 LLM 去查商品详情。
-        if all(isinstance(v, str) for v in legal):
-            suggestion = f"请改用 product_detail 返回的**原值**：{' / '.join(legal)}{hint}"
-        else:
-            suggestion = (
-                f"请改用合法值：{' / '.join(str(v) for v in legal)}{hint}"
-                "（必须是**数值**型，字符串「2」不算 2）"
-            )
+        # 本闸门只剩**字符串枚举**族（售卖方式/计价方式/工艺规格/取值来源）——
+        # 原先还兼管数值枚举 `openCount`，已按 issue #4430 拆到
+        # `_reject_invalid_open_count`（正整数不是枚举，硬塞进成员比对就会把三开拦掉）。
+        suggestion = f"请改用 product_detail 返回的**原值**：{' / '.join(legal)}{hint}"
         return ToolResult(
             success=False,
             error=f"{where}{field_label}无效",
@@ -940,6 +941,40 @@ class OrderCreateTool(BaseTool):
                 ))
             ),
             suggestion=suggestion,
+        )
+
+    @staticmethod
+    def _reject_invalid_open_count(where: str, raw: Any) -> Optional[ToolResult]:
+        """打开方式开数闸门（issue #4430）：取值域 = **正整数**，不是固定枚举。
+
+        权威 = `V64__open_count_is_a_positive_integer.sql` 末段列注释（**正整数**
+        1 单开 / 2 双开·对开 / 3 三开 / 4 四开 …）与真值源 §8「打开方式」。
+        原先在 schema 里写死 `enum: [1, 2, 4]` 并走 `_reject_invalid_enum` ⇒ **三开在写面
+        被当非法值拦掉**（用户口径明确含三开），而 V64 要堵的正是「读它的人会当成枚举」。
+
+        仍按「类型 + 下限」严格比对（字符串 `"2"` / 布尔 `True` 不算 2/1，同
+        `_reject_invalid_enum` 的口径：静默接受变体的代价是**静默按错的开数算折数/余量**），
+        但**不再限定 1/2/4** —— 3 开（及 5 开、6 开…）都是合法输入。
+        """
+        if raw is None:
+            return None  # 可选键：顾客没说 ⇒ 不填（不得变成硬门槛）
+        # 与 JSON Schema `type: integer` + `minimum: 1` 同口径：整数（含 2.0 这类整值浮点）
+        # 且 ≥ 1；字符串/布尔/小数/0/负数一律拒绝。
+        ok = (not isinstance(raw, bool) and isinstance(raw, (int, float))
+              and float(raw).is_integer() and raw >= 1)
+        if ok:
+            return None
+        return ToolResult(
+            success=False,
+            error=f"{where}打开方式无效",
+            message=(
+                f"{where}的打开方式是「{raw}」，不是合法开数 —— "
+                "错值会让加工单按**错误开数**算折数/余量并取到错误工序路线。"
+            ),
+            suggestion=(
+                "请把 processing_info.openCount 改成**正整数**开数：1 单开 / 2 双开 / "
+                "3 三开 / 4 四开 …（不是固定枚举；必须是**数值**型，字符串「2」不算 2）"
+            ),
         )
 
     @staticmethod
@@ -973,7 +1008,6 @@ class OrderCreateTool(BaseTool):
             # 写侧补全（issue #4374 / 设计文档 §4.2）：加工类型与打开方式错值同样会
             # 让加工单取到**错误工序路线**（加工类型还决定定高/定宽买料口径）。
             ("加工类型", "cuttingMode", _CUTTING_MODES),
-            ("打开方式", "openCount", _OPEN_COUNTS),
             # 取值来源（真值源 §8 要求「必须带来源，防多渠道不一致」）——
             # 写「formula」这类**算料侧英文**值不算带来源：落库后没人知道那是哪个口径。
             ("取值来源", "source", _SOURCES),
@@ -983,6 +1017,11 @@ class OrderCreateTool(BaseTool):
                 impact=craft_spec_impact)
             if rejected is not None:
                 return rejected
+        # 打开方式开数（issue #4430）：**正整数**取值域，不走枚举闸门 —— 硬塞成成员比对
+        # 就是「把正整数当枚举实现」的缺陷本身（三开被拦）。
+        rejected = OrderCreateTool._reject_invalid_open_count(where, pinfo.get("openCount"))
+        if rejected is not None:
+            return rejected
         # 算料输出/工艺规格的**数值键非负**（issue #4374 交付物 4）：负米数/负幅数会一路写进订单，
         # 加工单按它算数量 ⇒ 负用料。键缺席一律放行（可选透传，不得变成硬门槛）。
         for key, label in _CRAFT_SPEC_NUMBERS + _CALC_OUTPUT_LABELS:
