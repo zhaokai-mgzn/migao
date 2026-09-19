@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-035, PG-039
+// case_ids: PG-018, PG-032, PG-035, PG-039
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -211,6 +211,101 @@ class ProductionOperationQueryServiceTest {
         assertThat((List<?>) items.get(0).get("positions")).isEmpty();
     }
 
+    // ══════════════════ 读面「读时归一」（issue #4632）══════════════════
+    //
+    // 病根：写面（#4618）已做到「保存时归一为逻辑名」，但**存量**主线若在旧前端时代存过变体名
+    // （`精裁-布`），读面原样返回 ⇒ 「工艺路线」tab 的主线 chip 上仍渲染旧名（违反 goal 判据）。
+    // 修法 = 在 `templateView`（读写面共用的展示形态）返回前逐项走**既有** `normalizeOperationName`：
+    // 读时归一、**不写库**、不改写面语义（两处同一份实现，不新造第二份映射）。
+
+    /**
+     * 读面归一的**主判据**（issue #4632）：存量变体名 ⇒ 逻辑工序名。
+     *
+     * <p>一条断言同时锁三条边界：① **自定义名原样**（{@code 测试22} 归一后等于自身 ⇒ 不得被抹成空
+     * 或别的名字）；② **顺序不变**（主线序列的顺序是计件/完工判定的输入）；③ **重复不去重**
+     * （{@code 精裁-布} 与 {@code 精裁} 是同一道工序各排一次 ⇒ 归一后仍是两项 —— 判重是**写面**
+     * 护栏的事，读面去重会让「库里有几道」与「界面显示几道」永久对不上）。</p>
+     *
+     * <p>红证（修复前实测）：本断言得 {@code ["精裁-布", "布三边", "测试22", "精裁"]}。</p>
+     */
+    @Test
+    @DisplayName("存量主线读时归一：变体名 ⇒ 逻辑名（自定义名原样 / 顺序与重复一字不变，issue #4632）")
+    void routingsNormalizeLegacyVariantNamesOnRead() {
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                template("rt-legacy", "存量路线", true, List.of("布帘"),
+                        List.of("精裁-布", "布三边", "测试22", "精裁"))));
+
+        Map<String, Object> result = service().routings(TENANT);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) result.get("routings");
+        assertThat(items.get(0).get("mainline"))
+                .as("读面归一：变体名 ⇒ 逻辑名；自定义名原样；顺序不变；不去重"
+                        + "（去重/排序会改计件与完工判定的输入）")
+                .isEqualTo(List.of("精裁", "三边", "测试22", "精裁"));
+    }
+
+    /**
+     * 「**同一份**归一实现」判据（issue #4632 验收判据 5）：读面逐项的结果必须等于
+     * {@link ProductionOperationQueryService#normalizeOperationName} 逐项的结果 —— 读面自己另抄
+     * 一份映射表时本断言与 {@link #logicalNameTableMatchesTruthSource()} 会**一起**红
+     * （抄的那份不会跟真值源走）。
+     */
+    @Test
+    @DisplayName("读面归一与写面同一份实现：逐项等于 normalizeOperationName（不新造第二份映射）")
+    void readFaceNormalizationUsesTheSingleExistingImplementation() {
+        ProductionOperationQueryService service = service();
+        List<String> raw = new java.util.ArrayList<>(LEGACY_NAMES);
+        raw.add("测试22");
+        raw.add("罗马帘穿杆");
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                template("rt-same", "同源路线", true, List.of("布帘"), raw)));
+
+        Map<String, Object> result = service().routings(TENANT);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) result.get("routings");
+        assertThat(items.get(0).get("mainline"))
+                .as("读面必须逐项走 normalizeOperationName（另抄一份表 ⇒ 与真值源判据一起红）")
+                .isEqualTo(raw.stream().map(service::normalizeOperationName).toList());
+    }
+
+    /** 幂等判据（issue #4632）：逻辑名再归一仍是自身，否则同一道工序读两次得到两个名字。 */
+    @Test
+    @DisplayName("读面归一幂等：35 条旧名逐条（精裁-布 ⇒ 精裁 ⇒ 精裁）")
+    void readFaceNormalizationIsIdempotent() {
+        ProductionOperationQueryService service = service();
+        List<String> notIdempotent = new java.util.ArrayList<>();
+        for (String legacy : LEGACY_NAMES) {
+            String logical = service.normalizeOperationName(legacy);
+            if (!logical.equals(service.normalizeOperationName(logical))) {
+                notIdempotent.add(legacy + " ⇒ " + logical);
+            }
+        }
+        assertThat(notIdempotent)
+                .as("归一必须幂等（不幂等 ⇒ chip 上的名字会随读写次数漂移）")
+                .isEmpty();
+    }
+
+    /** 反向护栏（issue #4632）：**只归一能归一的** —— 未登记的自定义工序名原样返回。 */
+    @Test
+    @DisplayName("读面归一不误伤自定义名：测试22 / 罗马帘穿杆 原样返回；空主线仍是空数组")
+    void readFaceNormalizationKeepsCustomNamesVerbatim() {
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                template("rt-custom", "自定义路线", false, List.of("布帘"),
+                        List.of("测试22", "罗马帘穿杆")),
+                template("rt-empty", "空主线路线", false, List.of("布帘"), List.of())));
+
+        Map<String, Object> result = service().routings(TENANT);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) result.get("routings");
+        assertThat(items.get(0).get("mainline"))
+                .as("未登记的名字归一后等于自身 ⇒ 原样返回（不得变空、不得变成别的工序）")
+                .isEqualTo(List.of("测试22", "罗马帘穿杆"));
+        assertThat((List<?>) items.get(1).get("mainline")).isEmpty();
+    }
+
     @Test
     @DisplayName("routeTemplateFor：按**适用帘种**命中；没有该部位的模板 ⇒ null（不猜、不回落）")
     void routeTemplateForMatchesPositions() {
@@ -322,6 +417,11 @@ class ProductionOperationQueryServiceTest {
         verify(productionRouteTemplateMapper, org.mockito.Mockito.never())
                 .insert(any(ProductionRouteTemplate.class));
         verify(productionRouteTemplateMapper, org.mockito.Mockito.never()).deleteById(any(String.class));
+        // 读时归一（issue #4632）**不得**变成「读时回填」：读面走过的路径里对库只有 SELECT。
+        verify(productionOperationMapper, org.mockito.Mockito.never())
+                .updateById(any(ProductionOperation.class));
+        verify(productionRouteTemplateMapper, org.mockito.Mockito.never())
+                .updateById(any(ProductionRouteTemplate.class));
     }
 
     // ══════════════════ variantNameOf：35 条旧名的**往返判据**（issue #4459 §2①）══════════════════

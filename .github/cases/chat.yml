@@ -1532,7 +1532,13 @@ cases:
     data_checks:
       - "前端单测验证（无需真实 LLM）：A 流挂起→切 B→B 发送→双流增量→A 完成→B 完成→两会话终态可见"
     skip_reason: "[backend-contract] 前端 UI 状态能力，不进入 agent-eval 冒烟"
-    merge_log: "issue #2906：#2901 修复（liveMessage 单缓冲）仍假设全局单并发流。重构为 messageStore（每会话快照）+ streams（每会话在途流）+ withView 投影（messages/isStreaming 兼容）：sendMessage 只挡当前会话、SSE 按归属流写入、stopStreaming 只停当前、轮换迁移流与快照、SessionList 显示每会话等待动效。truths_ref 置空：纯前端状态用例，真值库为后端 agent 行为，无对应真值（标缺口）。"
+    # 前置自断言（CASE-TRUST-NO-PRECONDITION-ASSERTION burn-down，口径同 CH-027 与本文件另两条
+    # `[backend-contract]` 形态）：本用例是**纯前端 store** 用例 —— 前置（会话 A 有**在途流**、
+    # 会话 B 存在且可发送）由单测**自建**（`chat-multi-session.test.ts` 先挂起 A 的流、再在 B 发送），
+    # 不依赖任何共享夹具 ⇒ 前置不成立时单测**直接红**，不会与「agent 不干活」同形。
+    # agent-eval 栈不跑本用例（skip_reason 已登记）⇒ 没有可挂的运行期 precondition 类型。
+    precondition: "本用例是 [backend-contract] 纯前端 store 用例：前置（会话 A 有在途流 + 会话 B 存在且可发送）由单测自建（frontend/admin-web/tests/unit/store/chat-multi-session.test.ts），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它"
+    merge_log: "issue #2906：#2901 修复（liveMessage 单缓冲）仍假设全局单并发流。重构为 messageStore（每会话快照）+ streams（每会话在途流）+ withView 投影（messages/isStreaming 兼容）：sendMessage 只挡当前会话、SSE 按归属流写入、stopStreaming 只停当前、轮换迁移流与快照、SessionList 显示每会话等待动效。truths_ref 置空：纯前端状态用例，真值库为后端 agent 行为，无对应真值（标缺口）。 ｜ 2026-09-20（issue #4632 的 case-trust burn-down 缴费，**整条销账**）：补 `precondition` 声明 —— 原条目只命中 CASE-TRUST-NO-PRECONDITION-ASSERTION，而本用例是 `[backend-contract]` 纯前端 store 用例、**没有**可挂的运行期 precondition 类型（`_PRECONDITION_TYPES` 全是后端共享夹具计数）⇒ 按 CH-027 先例用**声明式**字符串写清前置是什么、由谁满足、不成立时怎么红。user_inputs / expectations / data_checks / traces **一字未动**（无放宽）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/store/chat-multi-session.test.ts"

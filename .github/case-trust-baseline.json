@@ -88,11 +88,6 @@
         "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
     },
-    "CH-028": {
-      "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
     "CH-033": {
       "codes": [
         "CASE-TRUST-FORBIDDEN-TEXT-SOLE",
