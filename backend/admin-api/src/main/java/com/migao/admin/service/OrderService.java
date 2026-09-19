@@ -475,7 +475,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             if (itemRequest.getUnitPrice() != null && itemRequest.getQuantity() != null) {
                 itemAmount = itemRequest.getUnitPrice().multiply(itemRequest.getQuantity());
             }
-            totalAmount = totalAmount.add(itemAmount).add(itemFees.get(i).amount());
+            totalAmount = totalAmount.add(itemAmount).add(itemFees.get(i).lineAmount());
             if (ProcessingFeeCalculator.FEE_SOURCE_UNPRICED.equals(itemFees.get(i).feeSource())) {
                 // 未定价 / 缺米数 ⇒ **不静默**：订单照样成立（金额 0），但日志留下可排查证据。
                 log.warn("加工费未定价（本行按 0 计）: tenantId={}, itemIndex={}, composition={}, hint={}",
@@ -778,7 +778,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             OrderItem item = items.get(i);
             aggregatedProcessing.addAll(extractProcessingItems(item.getProcessingInfo()));
             ProcessingFeeCalculator.Fee fee = ProcessingFeeCalculator.storedFee(item.getProcessingInfo());
-            BigDecimal itemFee = fee == null || fee.amount() == null ? BigDecimal.ZERO : fee.amount();
+            // #4525：行加工费 = 组合那半 + Σ 选项价（落库时的完整行金额；读面**不重算**，R13）
+            BigDecimal itemFee = fee == null ? BigDecimal.ZERO : fee.lineAmount();
             processingFee = processingFee.add(itemFee);
             OrderDetailResponse.OrderItemResponse itemResponse = itemResponses.get(i);
             itemResponse.setProcessingFee(itemFee);
@@ -927,7 +928,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     private BigDecimal storedProcessingFee(Object processingInfo) {
         ProcessingFeeCalculator.Fee fee = ProcessingFeeCalculator.storedFee(processingInfo);
-        return fee == null || fee.amount() == null ? BigDecimal.ZERO : fee.amount();
+        return fee == null ? BigDecimal.ZERO : fee.lineAmount();
     }
 
     private BigDecimal toBigDecimal(Object value) {

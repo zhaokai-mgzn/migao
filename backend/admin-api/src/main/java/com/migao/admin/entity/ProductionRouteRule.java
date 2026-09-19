@@ -72,6 +72,21 @@ public class ProductionRouteRule {
     /** 计件系数（仅 {@code action='factor'} 时有值；同一触发内后档覆盖前档） */
     private BigDecimal factor;
 
+    /**
+     * 该**特殊选项**对**顾客**的**元/套**单价（V77 加列，issue #4525；设计 §4.1）。
+     *
+     * <p><b>对客售价账（L3②）</b>：{@code NULL} = <b>未定价</b>（≠ 0）⇒ 取价侧必须显式可见
+     * （{@code special_options[].priced=false} + 可行动 hint），<b>不得静默按 0 收</b>。
+     * 只有 {@code triggerKind='option'} 行才有值；{@code craft} / {@code shaped} / {@code factor}
+     * 行一律 {@code NULL}（工艺变体不按套收费）。</p>
+     *
+     * <p>⚠️ <b>计件路径绝不读本列</b>：{@code ProductionService} / {@code piecework} 与
+     * {@link #factor} / {@code production_operations.unit_price} 是给工人付的成本账，
+     * 与本列（对客售价）两套账不互读 —— 列名的 {@code customer_} 前缀就是让这条纪律
+     * <b>在 grep 层可判</b>（本表同时承载车间路由语义与对客价语义）。</p>
+     */
+    private BigDecimal customerUnitPrice;
+
     private String status;
 
     private OffsetDateTime createdAt;

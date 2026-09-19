@@ -74,6 +74,7 @@
     "V73__retire_legacy_option_rule_tables.sql": "sha256:3ef954b10c80011ff80473f90e7efdc42edf17270ca470119d22e6ba138b289f",
     "V74__backfill_legacy_special_option_names.sql": "sha256:cca4684bd3d294bd9b88ff7b650b80fbc7c308ab965322879efd4a2f15e4143f",
     "V75__backfill_legacy_special_option_names_fix.sql": "sha256:6dfe340516c108f11dc2347b07872a2b68a7ae6ecd206cdf5aaeb3aec4f15b78",
-    "V76__redo_v72_with_sort_order_fix.sql": "sha256:c6fdcb0ebefead9d510ea43bf8d2af2f3d7a2c3b0e10e76e9724787346e93cd9"
+    "V76__redo_v72_with_sort_order_fix.sql": "sha256:c6fdcb0ebefead9d510ea43bf8d2af2f3d7a2c3b0e10e76e9724787346e93cd9",
+    "V77__customer_option_unit_price.sql": "sha256:24d7c15bf5b768a38887ab8382dffa129d9ca6aac4122b687c7f35693dec5f64"
   }
 }
