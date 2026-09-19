@@ -10,7 +10,7 @@
     "per_pr_min": 1,
     "scope": "case_touching_prs"
   },
-  "cases_fingerprint": "4857568256461114",
+  "cases_fingerprint": "70beadb95c26104e",
   "entries": {
     "generated-freshness": {},
     "heartbeat": {
@@ -85,9 +85,9 @@
       "version": 1
     }
   },
-  "generated_at": "2026-09-19T07:50:27.363122+00:00",
+  "generated_at": "2026-09-19T07:53:39.099026+00:00",
   "policy_version": 1,
-  "reason": "issue #4525：PP-009 的陈旧行引用改成全路径 + 真实锚点 + @<sha> 限定（acceptance-protocol.md:288 / order.yml:905）⇒ 基线条目 acceptance-protocol.md#225|bare 已归零，按全量对账销账",
+  "reason": "issue #4525：PP-009 的两条陈旧行引用已改为全路径 + 真实锚点 + sha 限定 ⇒ 原基线条目（验收协议那份裸行号引用）已归零，按全量对账销账",
   "regenerate_command": "python3 scripts/drift_audit.py --regen-baseline --reason '<理由>'",
   "schema": "migao.drift-audit-baseline/1"
 }
