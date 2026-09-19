@@ -2247,7 +2247,7 @@ SELECT 'rr-v72-' || t.id || '-f-' || f.id, t.id, 'option', f.option_name, NULL, 
            WHEN f.operation_name = '上车布-纱' THEN '上车布'
            ELSE f.operation_name END,
        NULL,
-       COALESCE(f.sort_order, 100),
+       100,   -- issue #4514：原写 COALESCE(f.sort_order, 100)，但 production_option_factors **没有 sort_order 列**（V59 建表起就没有；本文件里 sort_order 出现在其它表）⇒ 该引用必然报错、整份迁移回滚。改用注释里已写明的默认值 100。
        f.factor,
        'active'
   FROM tenants t
