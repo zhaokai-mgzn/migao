@@ -26,10 +26,12 @@ import type {
   CraftCalcConfig,
   CraftCalcConfigResponse,
   OperationPosition,
+  OperationPositionUpdateParams,
   OperationsCatalog,
   ProductionScope,
   ProductionSeedTemplate,
   ProductionSource,
+  ProductionOperationUpdateParams,
   RouteRule,
   RouteRuleCreateParams,
   Routing,
@@ -41,15 +43,22 @@ import type {
  *
  * ## 新模型下这一页回答两个问题（**一屏一件事**，不做功能平铺）
  *
- * | tab | 它回答的问题 | 主区 | 次区（折叠） |
+ * | tab | 它回答的问题 | 主区 | 维护面 |
  * |---|---|---|---|
- * | **工艺项** | 「每道工序在**哪个部位**做、各自**多少钱**？」 | 部位价目矩阵（28 逻辑工序 × 3 部位 = 84 格） | 工序库明细（分组/单位/作用域/必完/改单价） |
- * | **工艺路线** | 「订单按哪条主线走、什么时候插/删工序？」 | 具名路线（默认徽标 + 适用帘种 + 主线 + 改名/设默认/删除） | 条件工序规则（26 条） |
+ * | **工艺项** | 「每道工序在**哪个部位**做、给**工人**多少钱？」 | **一张表**：行 = 逻辑工序、列 = 部位、格 = 价 / 不做 / 未定价（**格内就地可改**） | 行尾「管理▸」抽屉（变体：分组 / 单位 / 作用域 / 必完 / 停用 / 删除） |
+ * | **工艺路线** | 「订单按哪条主线走、什么时候插/删工序？」 | 具名路线（默认徽标 + 适用帘种 + 主线 + 改名/设默认/删除） | 条件工序规则（26 条；折叠区） |
  *
- * 为什么两个 tab 各自再分「主区 / 折叠次区」：tab 只是第一层拆分；把 84 格矩阵与 35 行工序库
- * 依次堆进一屏仍然是**功能平铺**（用户 2026-09-19 总要求：「别把功能直接平铺到一个页面上」）。
- * 主区回答本 tab 的问题，次区是同一件事的**明细/维护面** ⇒ 折叠（用户原话：若某 tab 内部仍显拥挤
- * ⇒ 继续拆（抽屉 / 子页 / **折叠区**），而不是平铺）。
+ * **工艺项为什么不再分「主区 / 折叠次区」**（issue #4588 = 母单 #4586 包 B；契约 #4587）：
+ * 原形态是**两张平铺表** —— 主区 84 格**只读**矩阵 + 折叠次区 35 行「工序库明细」（能改计件单价
+ * 但**改了不生效**：真正生效的是矩阵格）。同一个概念两个载体、改一处不生效、还没有任何提示
+ * ⇒ 用户裁定**方案 A：合并成一屏一张表**（用户原话：「工艺项我确实没看懂这样设计是要干啥」）。
+ * 「一屏一件事」的纪律不变，只是这件事现在由**一张表**承载，明细面收进**抽屉**（不是平铺）。
+ *
+ * **这一屏的价是「给工人的计件单价」**（用户裁定 2026-09-19）：
+ * `production_operation_positions.unit_price` = 计件单价，**报工工资 = 数量 × 计件单价**。
+ * 收顾客的那笔钱**不在这里** —— 基础工序在「加工项组合费用」，特殊选项在「条件工序规则」
+ * （`production_route_rules.customer_unit_price`，元/套）。两本账**互不换算** ⇒ 这一屏
+ * **不得**出现「加工费」「对客价」字样，也**不引入任何计件系数概念**。
  *
  * ## 与旧形态的三处关键差异（P2b #4459 / P2c #4500 之后）
  *
@@ -57,8 +66,11 @@ import type {
  *    「部位 × 工艺」展开快照 ⇒ 列表显示**总名**+默认徽标+适用帘种，**不再**出现 `部位 × 工艺` 标题；
  *    改名**只改 `name`**（不给 `mainline` 就不动序列 —— 改一个名字不该顺带重写计件工资的输入）。
  * 2. **部位价目矩阵的行键是逻辑工序名**（`精裁` / `三边`），**不是** `production_operations.name`
- *    （那边仍是旧名 `精裁-布` / `布三边`）。两者之间**没有**暴露给前端的映射 ⇒ 前端**不猜**：
- *    矩阵按矩阵自己的键渲染，主线的「工序是否存在」按「工序库 ∪ 矩阵」两侧并集判定
+ *    （那边仍是旧名 `精裁-布` / `布三边`）。issue #4588（契约 #4587 ①）起矩阵每格**多带** 6 个
+ *    变体元数据键（`variant_operation_id` / `variant_name` / `unit` / `group` / `scope` /
+ *    `is_must_finish`）—— 由后端 `variantNameOf` 推导，前端**直接渲染、不另写一份推导**；
+ *    6 键全 `null` = 查不到 ⇒ **不发明元数据**（静默 = 未知）。
+ *    主线的「工序是否存在」判据**不变**：按「工序库 ∪ 矩阵」两侧并集判定
  *    （只按工序库判会让每条种子路线都误报「工序库中不存在」）。
  * 3. **顺序口径**：`operation-positions` 按 `(operation, position)`、`route-rules` 按 `(priority, id)`
  *    —— **服务端已排好**，前端**不重排**（重排会与服务端口径分叉，同一张单两次生成会得到不同序列）。
@@ -69,15 +81,20 @@ import type {
  * - **删最后一条 ⇒ 拦**（同因）；两条同时成立时**两条理由都给**（后端也一次报全）；
  * - **设为默认**只对非默认行开放（`is_default:false` 后端 422 ⇒ 前端**永不**提交 false）；
  * - 危险操作（删除 / 设为默认）**二次确认**；护栏理由**就地逐条**展示（复用 `lib/production-guard-reasons.ts`）；
+ *   工艺项 tab 的两处删除同口径：删**工序变体**（`DELETE /operations/{id}`，三条护栏一次报全）与
+ *   删**条件工序规则**（`DELETE /route-rules/{id}`，无硬护栏）—— 都先二次确认，被拒时逐条就地给理由。
  * - 商家面**不得**出现内部机制名（issue #4453：「信号映射」是研发内部机制）⇒ 后端理由过
  *   `merchantWording` 只换词、不删理由。
  *
  * ## 契约（冻结，**不得自行发明端点/字段名**）
  *   GET    /api/admin/production/routings                 POST /routings   body {name, mainline?, positions?, is_default?}
  *   PUT    /api/admin/production/routings/{id}            DELETE /routings/{id}      （部分更新 {name?, is_default?, mainline?, positions?, status?}）
- *   GET    /api/admin/production/operation-positions      GET  /route-rules          （#4500 两个只读面；写面留 v1b）
+ *   GET    /api/admin/production/operation-positions      GET  /route-rules
+ *   PUT    /api/admin/production/operation-positions/{id}  （#4588 矩阵格写面：部分更新 {unit_price?} / {applicable?}）
+ *   DELETE /api/admin/production/operations/{id}          （#4588 工序软删：三条护栏一次报全）
+ *   DELETE /api/admin/production/route-rules/{id}         （#4588 规则软删：无硬护栏）
  *   GET    /api/admin/production/operations-catalog       POST /production/operations
- *   PUT    /api/admin/production/operations/{id}          （改单价 / 必完 / 作用域）
+ *   PUT    /api/admin/production/operations/{id}          （改分组 / 单位 / 必完 / 作用域 / status）
  *   GET|POST /api/admin/production/seed-templates[/{id}/apply]
  *   —— 写端点权限 processing:manage（以拦截器/后端为准，本页不做显隐分叉）。
  *
@@ -466,6 +483,168 @@ interface StepView {
   missing: boolean
 }
 
+/**
+ * 部位价目**格**（issue #4588）：一屏一张表的单元格 —— 三态 + 格内就地改价 + 「不做 ⇄」。
+ *
+ * 三态**互斥**且可区分（既有判据，重做时不许丢）：
+ * - `priced` ⇒ `¥x.xx`（`0` 是**真价**，照显示 `¥0.00` —— ≠「未定价」）；
+ * - `unpriced` ⇒ 「未定价」（`applicable=true` 但 `unit_price=null`，是**待办**、不是 0 元）；
+ * - `na` ⇒ 「不做」（`applicable=false`，**明确不做**，不是漏配）。
+ *
+ * 两个写动作**同一端点、不同 body**（契约 #4587 ② 是**部分更新** ⇒ body **只带**变了的键）：
+ * 改价 ⇒ `{unit_price}`（清空 = `null` = 改回未定价）；「不做 ⇄」⇒ `{applicable}`。
+ * 失败理由**就地逐条**展示（后端 `error.details[].message`，**不**吞成一句「保存失败」）。
+ */
+function PositionCell({
+  cell,
+  state,
+  editing,
+  draft,
+  busy,
+  reasons,
+  onStartEdit,
+  onDraftChange,
+  onSave,
+  onCancel,
+  onToggleApplicable,
+}: {
+  cell: OperationPosition
+  state: 'na' | 'unpriced' | 'priced'
+  editing: boolean
+  draft: string
+  busy: boolean
+  reasons: string[]
+  onStartEdit: () => void
+  onDraftChange: (v: string) => void
+  onSave: () => void
+  onCancel: () => void
+  onToggleApplicable: () => void
+}) {
+  const key = `${cell.operation}-${cell.position}`
+  const hasPrice = state === 'priced'
+  return (
+    <td
+      data-testid={`matrix-cell-${key}`}
+      data-state={state}
+      title={
+        state === 'na'
+          ? `${cell.position}不做「${cell.operation}」这道工序`
+          : state === 'unpriced'
+            ? `${cell.position}做「${cell.operation}」，但还没定价（≠ ¥0.00）`
+            : `${cell.position}「${cell.operation}」计件单价（给工人） ${money(cell.unit_price)}`
+      }
+      className={cn(
+        'py-2.5 pr-4 align-top',
+        state === 'na' ? 'text-neutral-400' : state === 'unpriced' ? 'text-amber-700' : 'text-neutral-900',
+      )}
+    >
+      {state === 'na' ? (
+        <span className="flex items-center gap-1.5">
+          <span>不做</span>
+          <button
+            type="button"
+            aria-label={`${key} 改成做这道工序`}
+            data-testid={`matrix-applicable-${key}`}
+            onClick={onToggleApplicable}
+            className="rounded px-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+          >
+            ⇄
+          </button>
+        </span>
+      ) : editing ? (
+        <span className="flex items-center gap-1.5">
+          <input
+            value={draft}
+            inputMode="decimal"
+            aria-label={`${key} 计件单价（给工人）`}
+            data-testid={`matrix-price-input-${key}`}
+            disabled={busy}
+            onChange={(e) => onDraftChange(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && onSave()}
+            className={cn(
+              'h-8 w-24 rounded border bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/15',
+              reasons.length > 0 ? 'border-red-300 focus:border-red-400' : 'border-neutral-300 focus:border-primary-500',
+            )}
+          />
+          <button
+            type="button"
+            aria-label="保存计件单价"
+            data-testid={`matrix-price-save-${key}`}
+            disabled={busy}
+            onClick={onSave}
+            className="rounded p-1 text-primary-600 hover:bg-neutral-100 disabled:opacity-50"
+          >
+            <Check className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="取消"
+            data-testid={`matrix-price-cancel-${key}`}
+            disabled={busy}
+            onClick={onCancel}
+            className="rounded p-1 text-neutral-400 hover:bg-neutral-100 disabled:opacity-50"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </span>
+      ) : (
+        <span className="flex items-center gap-1.5">
+          <span>{state === 'unpriced' ? '未定价' : money(cell.unit_price)}</span>
+          <button
+            type="button"
+            aria-label={`编辑 ${key} 计件单价（给工人）`}
+            data-testid={`matrix-price-edit-${key}`}
+            onClick={onStartEdit}
+            className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label={`${key} 改成不做这道工序`}
+            data-testid={`matrix-applicable-${key}`}
+            title={`${cell.position}不做「${cell.operation}」—— 点一下改成不做`}
+            onClick={onToggleApplicable}
+            className="rounded px-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+          >
+            ⇄
+          </button>
+        </span>
+      )}
+      {editing && reasons.length > 0 && (
+        <ul className="mt-1 space-y-0.5 text-xs text-red-600" data-testid={`matrix-price-reasons-${key}`}>
+          {reasons.map((r, i) => (
+            <li key={i}>{r}</li>
+          ))}
+        </ul>
+      )}
+      {/* 编辑态下仍把「未定价 ≠ 0 元」写在旁边：清空输入框 = 改回未定价（不是 0 元） */}
+      {editing && (
+        <span className="mt-1 block text-[11px] text-neutral-400">
+          {hasPrice ? '清空 = 改回未定价（≠ 0 元）' : '填 0 表示真 0 元；清空 = 未定价'}
+        </span>
+      )}
+    </td>
+  )
+}
+
+/**
+ * 抽屉里的一行 = 该逻辑工序落到工人端的一道**变体工序**（按 `variant_operation_id` 去重）。
+ * 元数据**逐字取自**矩阵行的 6 个新键（契约 #4587 ①）—— 前端**不推导**、不补默认值。
+ */
+interface VariantView {
+  id: string
+  name: string | null
+  group: string | null
+  unit: string | null
+  scope: ProductionScope
+  is_must_finish: boolean
+  /** 该变体覆盖的部位（去重，矩阵列序） */
+  positions: string[]
+  /** 工序库里的 provenance；查不到 ⇒ `null` ⇒ **不渲染徽标**（静默 = 未知） */
+  source: ProductionSource | null
+}
+
 export default function ProcessConfigPage() {
   // ── 只读面 ──
   const [catalog, setCatalog] = useState<OperationsCatalog | null>(null)
@@ -482,16 +661,32 @@ export default function ProcessConfigPage() {
   /** 「添加工序」选择器（路线 tab 内）—— 工序库在另一个 tab，编辑器必须自带入口 */
   const [picked, setPicked] = useState('')
   const [error, setError] = useState('')
-  /** 工序名搜索（**一个控件管整个「工艺项」tab**：矩阵行 + 工序库明细） */
+  /** 工序名搜索（**一个控件管整个「工艺项」tab**：这一屏唯一的表按行过滤） */
   const [search, setSearch] = useState('')
-  /** 次区折叠（默认收起：主区是矩阵，明细面按需展开） */
-  const [catalogOpen, setCatalogOpen] = useState(false)
+  /** 条件工序规则折叠区（默认收起：主区是路线列表，规则是明细面） */
   const [rulesOpen, setRulesOpen] = useState(false)
 
-  // ── 工序库行内编辑（单价；作用域/必完为即时写） ──
-  const [editingOpId, setEditingOpId] = useState<string | number | null>(null)
-  const [opDraft, setOpDraft] = useState('')
-  const [opBusy, setOpBusy] = useState(false)
+  // ── 矩阵格写面（issue #4588；契约 #4587 ②）──
+  /** 正在编辑的格（键 = `工序-部位`）；`null` = 没有格在编辑态 */
+  const [cellEditing, setCellEditing] = useState<string | null>(null)
+  const [cellDraft, setCellDraft] = useState('')
+  const [cellBusy, setCellBusy] = useState(false)
+  /** 保存被拒的**逐条**理由（按格就地展示，不吞成一句「保存失败」） */
+  const [cellReasons, setCellReasons] = useState<{ key: string; items: string[] } | null>(null)
+
+  // ── 「管理▸」抽屉（变体维护面：分组 / 单位 / 作用域 / 必完 / 停用 / 删除）──
+  const [manageOp, setManageOp] = useState<string | null>(null)
+  const [editingVariantId, setEditingVariantId] = useState<string | null>(null)
+  const [variantDraft, setVariantDraft] = useState({ group_name: '', unit: '' })
+  const [variantBusy, setVariantBusy] = useState(false)
+  /** 删除工序的二次确认目标（`null` = 没有行在确认态） */
+  const [confirmDeleteOpId, setConfirmDeleteOpId] = useState<string | null>(null)
+  const [variantReasons, setVariantReasons] = useState<{ id: string; items: string[] } | null>(null)
+
+  // ── 条件工序规则删除（issue #4588；契约 #4587 ④）──
+  const [confirmDeleteRuleId, setConfirmDeleteRuleId] = useState<number | null>(null)
+  const [ruleDeleteReasons, setRuleDeleteReasons] = useState<{ id: number; items: string[] } | null>(null)
+  const [ruleBusy, setRuleBusy] = useState(false)
 
   // ── 特殊选项对客单价行内编辑（元/套；issue #4567）──
   /** 正在编辑的行 id（null = 没有行在编辑态） */
@@ -675,6 +870,16 @@ export default function ProcessConfigPage() {
     libraryOps.forEach((op) => m.set(op.name, op))
     return m
   }, [libraryOps])
+  /**
+   * 工序库按 **id** 索引 —— 抽屉里某道变体的 provenance（`source`）只能这样查：
+   * 变体名（`精裁-布`）与逻辑名（`精裁`）不是同一把尺，按名字查会查空或查错。
+   * 查不到 ⇒ `source = null` ⇒ **不渲染徽标**（静默 = 未知，不得冒充已知）。
+   */
+  const libraryById = useMemo(() => {
+    const m = new Map<string, CatalogOperation>()
+    libraryOps.forEach((op) => m.set(String(op.id), op))
+    return m
+  }, [libraryOps])
   /** 部位价目表里出现过的逻辑工序名（主线可能用它书写 ⇒ 判「工序是否存在」必须并上这一侧） */
   const matrixOps = useMemo(() => new Set(matrix.map((c) => c.operation)), [matrix])
   const knownOps = useMemo(
@@ -684,16 +889,7 @@ export default function ProcessConfigPage() {
 
   const q = search.trim().toLowerCase()
 
-  /** 工序库明细按搜索词过滤（分组内过滤；整组被滤空则不渲染该组） */
-  const visibleGroups = useMemo(
-    () =>
-      (catalog?.groups ?? [])
-        .map((g) => ({ ...g, operations: g.operations.filter((op) => !q || op.name.toLowerCase().includes(q)) }))
-        .filter((g) => g.operations.length > 0),
-    [catalog, q],
-  )
-
-  // ────────────────────────── 部位价目矩阵（tab「工艺项」主区） ──────────────────────────
+  // ────────────────────────── 工艺项：一屏一张表（issue #4588） ──────────────────────────
 
   /** 列 = 闭词表里**数据里真有**的部位 + 未知部位（追加在后；不丢数据） */
   const positionColumns = useMemo(() => {
@@ -768,6 +964,69 @@ export default function ProcessConfigPage() {
     if (cell.applicable === false) return 'na'
     return cell.unit_price == null ? 'unpriced' : 'priced'
   }
+
+  /** 未定价格数（**待办计数**：做但还没定价；「不做」不算、真 0 元不算） */
+  const unpricedCount = useMemo(
+    () => matrix.filter((c) => cellState(c) === 'unpriced').length,
+    [matrix],
+  )
+
+  /** 一行里出现过的元数据值（去重、保序、剔除空值）—— 「不许静默取第一个」的公共值口径 */
+  const distinctMeta = (
+    row: { cells: Map<string, OperationPosition> },
+    pick: (c: OperationPosition) => string | null | undefined,
+  ) => {
+    const out: string[] = []
+    row.cells.forEach((c) => {
+      const v = pick(c)
+      if (v && !out.includes(v)) out.push(v)
+    })
+    return out
+  }
+
+  /**
+   * 行尾元数据 = 该行各格变体元数据的**公共值**；各格不一致时**逐个列出**（用 ` / ` 分隔）——
+   * **不许静默取第一个**（取第一个会让「这道工序在两个分组里」这种事静默消失）。
+   * 6 键全 `null`（查不到变体）⇒ 空数组 ⇒ 渲染 `—`（不发明元数据）。
+   */
+  const metaText = (values: string[]) => (values.length > 0 ? values.join(' / ') : '—')
+
+  const metaInconsistent = (values: string[]) => values.length > 1
+
+  /** 该逻辑工序的变体（按 `variant_operation_id` 去重；矩阵列序 = 部位顺序） */
+  const variantsOf = useCallback(
+    (row: { cells: Map<string, OperationPosition> }): VariantView[] => {
+      const byId = new Map<string, VariantView>()
+      row.cells.forEach((c) => {
+        const id = c.variant_operation_id
+        if (!id) return
+        const existing = byId.get(id)
+        if (existing) {
+          if (!existing.positions.includes(c.position)) existing.positions.push(c.position)
+          return
+        }
+        byId.set(id, {
+          id,
+          name: c.variant_name ?? null,
+          group: c.group ?? null,
+          unit: c.unit ?? null,
+          scope: c.scope === 'set' ? 'set' : 'position',
+          is_must_finish: !!c.is_must_finish,
+          positions: [c.position],
+          source: libraryById.get(id)?.source ?? null,
+        })
+      })
+      return [...byId.values()]
+    },
+    [libraryById],
+  )
+
+  /** 抽屉当前展示的变体（按 `manageOp` 找到那一行） */
+  const manageRow = useMemo(
+    () => matrixRows.find((r) => r.operation === manageOp) ?? null,
+    [matrixRows, manageOp],
+  )
+  const manageVariants = useMemo(() => (manageRow ? variantsOf(manageRow) : []), [manageRow, variantsOf])
 
   // ────────────────────────── 就绪度（先后依赖显性化） ──────────────────────────
 
@@ -989,6 +1248,13 @@ export default function ProcessConfigPage() {
 
   // ────────────────────────── 工序库写面 ──────────────────────────
 
+  /** 打开「新增」对话框：每次都回到默认类型「工序」，并清掉上一次的失败理由（不留给下一次） */
+  const openCreateOperation = () => {
+    setNewKind('operation')
+    setNewOptionReasons([])
+    setNewOpOpen(true)
+  }
+
   const createOperation = async () => {
     const name = newOp.name.trim()
     const price = Number(newOp.unit_price)
@@ -1074,28 +1340,123 @@ export default function ProcessConfigPage() {
     }
   }
 
-  /** 工序库写路径统一出口：成功 toast + 重新拉取（结果可见），失败可读提示且不假装成功 */
-  const submitOperation = async (id: string | number, payload: Parameters<typeof productionApi.updateOperation>[1]) => {
-    setOpBusy(true)
+  // ────────────────────────── 矩阵格写面（issue #4588；契约 #4587 ②） ──────────────────────────
+
+  const cellKeyOf = (operation: string, position: string) => `${operation}-${position}`
+
+  /**
+   * 矩阵格写面统一出口（契约 #4587 ② 是**部分更新** ⇒ body 只带变了的那个键）。
+   * 失败 ⇒ 理由**逐条**就地展示在该格，且**不**收摊、**不**刷新
+   * （静默写回 = 商家以为改了、取价侧其实没改）。
+   */
+  const submitCell = async (
+    key: string,
+    id: string | null | undefined,
+    payload: OperationPositionUpdateParams,
+  ) => {
+    if (!id) {
+      // 契约保证每行都有 `id`；真缺了就说清楚，不静默失败
+      setCellReasons({ key, items: ['这一格缺少行标识，无法保存 —— 请点右上「刷新」重试'] })
+      return
+    }
+    setCellBusy(true)
+    setCellReasons(null)
     try {
-      await productionApi.updateOperation(id, payload)
-      toast.success('工序已更新')
-      setEditingOpId(null)
+      await productionApi.updateOperationPosition(id, payload)
+      toast.success(
+        payload.applicable === undefined ? '计件单价已更新' : payload.applicable ? '已设为做这道工序' : '已设为不做',
+      )
+      setCellEditing(null)
       await load()
     } catch (e) {
-      toastRequestError(e, '工序更新失败')
+      setCellReasons({ key, items: routingAdminGuardReasons(e) })
+      if (!isErrorToastShown(e)) toast.error('保存失败')
     } finally {
-      setOpBusy(false)
+      setCellBusy(false)
     }
   }
 
-  const savePrice = (op: CatalogOperation) => {
-    const value = Number(opDraft)
-    if (opDraft.trim() === '' || Number.isNaN(value)) {
-      toast.error('请输入有效单价')
+  /**
+   * 保存格内**计件单价（给工人）**。空输入 = **改回未定价**（发 `null`，≠ 0 元）。
+   * 本地只拦「送出去也必被拒」的形态（非数值 / 负数 / 三位小数）—— 语义护栏以后端为准
+   * （后端一次报全 `error.details`，前端不发明第二份口径）。
+   */
+  const saveCellPrice = (cell: OperationPosition) => {
+    const key = cellKeyOf(cell.operation, cell.position)
+    const raw = cellDraft.trim()
+    if (raw !== '' && !/^\d+(\.\d{1,2})?$/.test(raw)) {
+      setCellReasons({ key, items: ['计件单价必须是 ≥ 0 且最多两位小数的数字（要表示「还没定价」请清空）'] })
       return
     }
-    submitOperation(op.id, { unit_price: value })
+    void submitCell(key, cell.id, { unit_price: raw === '' ? null : Number(raw) })
+  }
+
+  /** 「不做 ⇄」：同一端点，body **只带** `applicable`（切回做 ⇒ `true`） */
+  const toggleCellApplicable = (cell: OperationPosition) => {
+    void submitCell(cellKeyOf(cell.operation, cell.position), cell.id, { applicable: cell.applicable === false })
+  }
+
+  const cancelCellEdit = () => {
+    setCellEditing(null)
+    setCellDraft('')
+    setCellReasons(null)
+  }
+
+  // ────────────────────────── 「管理▸」抽屉：变体维护面（issue #4588） ──────────────────────────
+
+  /** 变体写面统一出口（既有 `PUT /operations/{id}`；部分更新 ⇒ 只带变了的字段） */
+  const submitVariant = async (id: string, payload: ProductionOperationUpdateParams) => {
+    setVariantBusy(true)
+    setVariantReasons(null)
+    try {
+      await productionApi.updateOperation(id, payload)
+      toast.success('工序已更新')
+      setEditingVariantId(null)
+      await load()
+    } catch (e) {
+      setVariantReasons({ id, items: routingAdminGuardReasons(e) })
+      if (!isErrorToastShown(e)) toast.error('工序更新失败')
+    } finally {
+      setVariantBusy(false)
+    }
+  }
+
+  /**
+   * 删除工序（**软删**，契约 #4587 ③）：二次确认后发 `DELETE /operations/{id}`。
+   * 三条护栏（被活跃主线 / 活跃规则 / 矩阵格引用）由后端**一次报全** ⇒ 逐条就地展示。
+   */
+  const removeVariant = async (variant: VariantView) => {
+    setVariantBusy(true)
+    setVariantReasons(null)
+    try {
+      await productionApi.deleteOperation(variant.id)
+      toast.success(`已删除工序「${variant.name ?? variant.id}」`)
+      setConfirmDeleteOpId(null)
+      await load()
+    } catch (e) {
+      setVariantReasons({ id: variant.id, items: routingAdminGuardReasons(e) })
+      if (!isErrorToastShown(e)) toast.error('删除失败')
+    } finally {
+      setVariantBusy(false)
+    }
+  }
+
+  // ────────────────────────── 条件工序规则删除（issue #4588；契约 #4587 ④） ──────────────────────────
+
+  const removeRule = async (rule: RouteRule) => {
+    setRuleBusy(true)
+    setRuleDeleteReasons(null)
+    try {
+      await productionApi.deleteRouteRule(rule.id)
+      toast.success('规则已删除')
+      setConfirmDeleteRuleId(null)
+      await load()
+    } catch (e) {
+      setRuleDeleteReasons({ id: rule.id, items: routingAdminGuardReasons(e) })
+      if (!isErrorToastShown(e)) toast.error('删除失败')
+    } finally {
+      setRuleBusy(false)
+    }
   }
 
   /**
@@ -1184,12 +1545,7 @@ export default function ProcessConfigPage() {
             variant="secondary"
             size="sm"
             data-testid="routings-new-operation"
-            onClick={() => {
-              // 每次打开都回到默认类型「工序」，并清掉上一次的失败理由（不留给下一次）
-              setNewKind('operation')
-              setNewOptionReasons([])
-              setNewOpOpen(true)
-            }}
+            onClick={openCreateOperation}
           >
             <Plus className="w-4 h-4 mr-1.5" />
             新增
@@ -1235,9 +1591,13 @@ export default function ProcessConfigPage() {
               <ReadinessStep
                 testId="readiness-step-operations"
                 index={1}
-                label={`工序库 ${total} 道`}
+                label={catalogError ? '工序库 读取失败' : `工序库 ${total} 道`}
                 state={operationsReady ? 'done' : 'todo'}
-                hint="下一步：用下方「行业模板」补套，或点右上「新增」逐道建（工序 / 特殊选项）。"
+                hint={
+                  catalogError
+                    ? '工序库没读出来（≠ 没配）：点右上「刷新」重试。'
+                    : '下一步：用下方「行业模板」补套，或点右上「新增」逐道建（工序 / 特殊选项）。'
+                }
               />
               <ReadinessStep
                 testId="readiness-step-routings"
@@ -1344,14 +1704,16 @@ export default function ProcessConfigPage() {
           </div>
 
           <div>
-            {/* ══════════════ tab「工艺项」：主区 = 部位价目矩阵，次区 = 工序库明细 ══════════════ */}
+            {/* ══════════ tab「工艺项」：**一屏一张表**（行 = 逻辑工序 / 列 = 部位 / 格可就地改） ══════════
+                issue #4588 = 母单 #4586 包 B（契约 #4587）。原「主区只读矩阵 + 折叠次区工序库明细」两张
+                平铺表已合并成这一张：明细面（分组 / 单位 / 作用域 / 必完 / 停用 / 删除）收进行尾
+                「管理▸」抽屉 —— 同一个概念**只有一个载体**，改价只有一个入口（矩阵格）。 */}
             {tab === 'operations' && (
-              <div className="space-y-4">
-                {/* 主区：部位价目矩阵（这一屏回答「每道工序在哪个部位做、多少钱」） */}
+              <div className="space-y-4" data-testid="craft-operations-panel">
                 <section className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="operation-price-matrix">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-baseline gap-2">
-                      <h2 className="text-base font-medium text-neutral-900">部位价目</h2>
+                      <h2 className="text-base font-medium text-neutral-900">工艺项 · 计件单价（给工人）</h2>
                       <span className="text-sm text-neutral-500">
                         <span data-testid="operation-price-matrix-total">{matrixRows.length}</span> 道工序 ×{' '}
                         {positionColumns.length} 个部位 ={' '}
@@ -1361,19 +1723,41 @@ export default function ProcessConfigPage() {
                         格
                       </span>
                     </div>
-                    <input
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="搜索工序名…"
-                      aria-label="搜索工序"
-                      data-testid="operations-search"
-                      className="h-8 w-40 rounded border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:border-primary-500"
-                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={cn(
+                          'rounded px-2 py-0.5 text-xs',
+                          unpricedCount > 0 ? 'bg-amber-50 text-amber-700' : 'bg-neutral-100 text-neutral-500',
+                        )}
+                        data-testid="matrix-unpriced-count"
+                        title="这些格「做这道工序但还没定价」—— 报工按未定价处理，请补价"
+                      >
+                        未定价 {unpricedCount} 项
+                      </span>
+                      <input
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="搜索工序名…"
+                        aria-label="搜索工序"
+                        data-testid="operations-search"
+                        className="h-8 w-40 rounded border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:border-primary-500"
+                      />
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        data-testid="operations-new-operation"
+                        onClick={openCreateOperation}
+                      >
+                        <Plus className="w-4 h-4 mr-1.5" />
+                        新增工序
+                      </Button>
+                    </div>
                   </div>
                   <p className="mb-3 text-xs text-neutral-500">
-                    同一道工序在布帘 / 纱帘 / 帘头<strong>各自定价</strong>：<span className="text-neutral-400">不做</span> =
-                    该部位明确不做这道工序（不是漏配）；<span className="text-amber-700">未定价</span> =
-                    做但还没定价。改价写面随 v1b 开放，当前为只读呈现。
+                    这一屏的价是<strong>计件单价（给工人）</strong>：报工工资 = 数量 × 计件单价。
+                    <span className="text-neutral-400">不做</span> = 该部位明确不做这道工序（不是漏配）；
+                    <span className="text-amber-700">未定价</span> = 做但还没定价（≠ ¥0.00；真 0 元照显示 ¥0.00）。
+                    收顾客的那笔钱不在这里 —— 基础工序在「加工项组合费用」，特殊选项在「条件工序规则」。
                   </p>
 
                   {matrixError ? (
@@ -1386,7 +1770,7 @@ export default function ProcessConfigPage() {
                   ) : visibleMatrixRows.length === 0 ? (
                     <p className="py-8 text-center text-sm text-neutral-400" data-testid="operation-price-matrix-empty">
                       {matrixRows.length === 0
-                        ? '暂无部位价目数据 —— 工序的单价在下方「工序库明细」里维护'
+                        ? '暂无部位价目数据 —— 点上方「新增工序」建一道，再回这里给各部位定价'
                         : '没有匹配的工序，换个关键词试试'}
                     </p>
                   ) : (
@@ -1394,215 +1778,114 @@ export default function ProcessConfigPage() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
-                            <th className="py-2 pr-4 font-medium">工序</th>
+                            <th className="py-2 pr-4 font-medium">工序（工人看到的）</th>
                             {positionColumns.map((p) => (
                               <th key={p} className="py-2 pr-4 font-medium">
                                 {p}
                               </th>
                             ))}
+                            <th className="py-2 pr-4 font-medium">元数据 / 操作</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {visibleMatrixRows.map((row) => (
-                            <tr
-                              key={row.operation}
-                              className="border-b border-neutral-100 last:border-0"
-                              data-testid={`matrix-row-${row.operation}`}
-                              data-operation={row.operation}
-                            >
-                              <td className="py-2.5 pr-4 text-neutral-900">{row.operation}</td>
-                              {positionColumns.map((p) => {
-                                const cell = row.cells.get(p)
-                                const state = cellState(cell)
-                                return (
-                                  <td
-                                    key={p}
-                                    data-testid={`matrix-cell-${row.operation}-${p}`}
-                                    data-state={state}
-                                    title={
-                                      state === 'na'
-                                        ? `${p}不做「${row.operation}」这道工序`
-                                        : state === 'unpriced'
-                                          ? `${p}做「${row.operation}」，但还没定价`
-                                          : `${p}「${row.operation}」单价 ${money(cell?.unit_price)}`
-                                    }
-                                    className={cn(
-                                      'py-2.5 pr-4',
-                                      state === 'na'
-                                        ? 'text-neutral-400'
-                                        : state === 'unpriced'
-                                          ? 'text-amber-700'
-                                          : 'text-neutral-900',
-                                    )}
+                          {visibleMatrixRows.map((row) => {
+                            const groups = distinctMeta(row, (c) => c.group)
+                            const units = distinctMeta(row, (c) => c.unit)
+                            const names = distinctMeta(row, (c) => c.variant_name)
+                            const inconsistent = metaInconsistent(groups) || metaInconsistent(units)
+                            return (
+                              <tr
+                                key={row.operation}
+                                className="border-b border-neutral-100 last:border-0"
+                                data-testid={`matrix-row-${row.operation}`}
+                                data-operation={row.operation}
+                              >
+                                <td className="py-2.5 pr-4 align-top">
+                                  <div className="text-neutral-900">{row.operation}</div>
+                                  {/* 该行落到工人端的**变体名**（`variant_name` 去重）—— 查不到就不编造 */}
+                                  <div
+                                    className="text-xs text-neutral-400"
+                                    data-testid={`matrix-variants-${row.operation}`}
                                   >
-                                    {state === 'na' ? '不做' : state === 'unpriced' ? '未定价' : money(cell?.unit_price)}
-                                  </td>
-                                )
-                              })}
-                            </tr>
-                          ))}
+                                    {names.length > 0 ? names.join(' / ') : '—'}
+                                  </div>
+                                </td>
+                                {positionColumns.map((p) => {
+                                  const cell = row.cells.get(p)
+                                  // 矩阵里没有这一格：不假装有数据（也不给「不做 / 0 元」这两个假值）
+                                  if (!cell) {
+                                    return (
+                                      <td
+                                        key={p}
+                                        data-testid={`matrix-cell-${row.operation}-${p}`}
+                                        data-state="unpriced"
+                                        className="py-2.5 pr-4 align-top text-amber-700"
+                                        title={`${p}没有这一格的配置`}
+                                      >
+                                        未定价
+                                      </td>
+                                    )
+                                  }
+                                  const key = cellKeyOf(row.operation, p)
+                                  return (
+                                    <PositionCell
+                                      key={p}
+                                      cell={cell}
+                                      state={cellState(cell)}
+                                      editing={cellEditing === key}
+                                      draft={cellDraft}
+                                      busy={cellBusy}
+                                      reasons={cellEditing === key && cellReasons?.key === key ? cellReasons.items : []}
+                                      onStartEdit={() => {
+                                        setCellEditing(key)
+                                        setCellDraft(cell.unit_price == null ? '' : String(cell.unit_price))
+                                        setCellReasons(null)
+                                      }}
+                                      onDraftChange={setCellDraft}
+                                      onSave={() => saveCellPrice(cell)}
+                                      onCancel={cancelCellEdit}
+                                      onToggleApplicable={() => toggleCellApplicable(cell)}
+                                    />
+                                  )
+                                })}
+                                {/* 行尾元数据**只留** `分组 · 单位`（用户 2026-09-19 追加裁定：作用域 / 必完
+                                    收进抽屉）+「管理▸」入口；各格不一致时逐个列出，**不静默取第一个** */}
+                                <td
+                                  className="py-2.5 pr-4 align-top"
+                                  data-testid={`matrix-meta-${row.operation}`}
+                                  data-inconsistent={inconsistent ? 'true' : undefined}
+                                  title={inconsistent ? '各部位的变体元数据不一致，已逐个列出' : undefined}
+                                >
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-xs text-neutral-500">
+                                      {groups.length === 0 && units.length === 0
+                                        ? '—'
+                                        : `${metaText(groups)} · ${metaText(units)}`}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      data-testid={`matrix-manage-${row.operation}`}
+                                      onClick={() => {
+                                        setManageOp(row.operation)
+                                        setEditingVariantId(null)
+                                        setConfirmDeleteOpId(null)
+                                        setVariantReasons(null)
+                                      }}
+                                      title="管理这道工序的变体：分组 / 单位 / 作用域 / 必完 / 停用 / 删除"
+                                      className="rounded px-1.5 py-0.5 text-xs text-primary-700 hover:bg-neutral-100"
+                                    >
+                                      管理▸
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
                         </tbody>
                       </table>
                     </div>
                   )}
                 </section>
-
-                {/* 次区（折叠）：工序库明细 —— 分组 / 单位 / 作用域 / 必完 / 改单价 */}
-                <CollapsibleSection
-                  testId="operations-catalog"
-                  title="工序库明细"
-                  hint="分组 · 单位 · 作用域 · 必完 · 改单价"
-                  count={`共 ${total} 道`}
-                  open={catalogOpen}
-                  onToggle={() => setCatalogOpen((v) => !v)}
-                >
-                  <p className="mb-3 text-xs text-neutral-500">
-                    工序分组 · 作用域（部位级/套级） · 计件单价 · 必完开关；调价只影响新报工（历史报工按当时价）。
-                  </p>
-                  {catalogError ? (
-                    <p
-                      className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
-                      data-testid="operations-catalog-error"
-                    >
-                      {catalogError}
-                    </p>
-                  ) : (
-                    <>
-                      {visibleGroups.length === 0 ? (
-                        <p className="py-8 text-center text-sm text-neutral-400" data-testid="operations-catalog-empty">
-                          {total === 0
-                            ? '暂无工序数据 —— 用上方「补套行业模板」载入行业预置工序与工艺路线'
-                            : '没有匹配的工序，换个关键词试试'}
-                        </p>
-                      ) : (
-                        <div className="space-y-5">
-                          {visibleGroups.map((g) => (
-                            <div key={g.group} data-testid={`operation-group-${g.group}`}>
-                              <div className="mb-2 flex items-center gap-2">
-                                <span className="text-sm font-medium text-neutral-900">{g.group}</span>
-                                <span className="text-xs text-neutral-400">{g.operations.length} 道</span>
-                              </div>
-                              <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                  <thead>
-                                    <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
-                                      <th className="py-2 pr-4 font-medium">工序名称</th>
-                                      <th className="py-2 pr-4 font-medium">部位</th>
-                                      <th className="py-2 pr-4 font-medium">作用域</th>
-                                      <th className="py-2 pr-4 font-medium">单位</th>
-                                      <th className="py-2 pr-4 font-medium">计件单价</th>
-                                      <th className="py-2 pr-4 font-medium">必完</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {g.operations.map((op) => (
-                                      <tr
-                                        key={op.id}
-                                        className="border-b border-neutral-100 last:border-0"
-                                        data-testid={`operation-row-${op.id}`}
-                                      >
-                                        <td className="py-2.5 pr-4 text-neutral-900">
-                                          {op.name}
-                                          {op.is_start_marker && (
-                                            <span className="ml-2 rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] text-neutral-500">
-                                              首工序
-                                            </span>
-                                          )}
-                                          <SourceBadge
-                                            source={op.source}
-                                            testId={`operation-source-${op.id}`}
-                                            onConfirmPrice={() => {
-                                              setEditingOpId(op.id)
-                                              setOpDraft(String(op.unit_price ?? 0))
-                                            }}
-                                          />
-                                        </td>
-                                        <td className="py-2.5 pr-4 text-neutral-600">{op.position ?? '—'}</td>
-                                        {/* 作用域（#4384 A1）：可见 + 可改。就地改档走既有写面（PUT body 带 scope）。 */}
-                                        <td className="py-2.5 pr-4">
-                                          <select
-                                            aria-label={`${op.name} 作用域`}
-                                            data-testid={`operation-scope-${op.id}`}
-                                            value={scopeOf(op)}
-                                            disabled={opBusy}
-                                            title={SCOPE_META[scopeOf(op)].title}
-                                            onChange={(e) =>
-                                              submitOperation(op.id, { scope: e.target.value as ProductionScope })
-                                            }
-                                            className="h-8 rounded border border-neutral-300 bg-white px-1.5 text-sm text-neutral-700 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 disabled:opacity-50"
-                                          >
-                                            {SCOPE_ORDER.map((s) => (
-                                              <option key={s} value={s} title={SCOPE_META[s].title}>
-                                                {SCOPE_META[s].label}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </td>
-                                        <td className="py-2.5 pr-4 text-neutral-600">{op.unit ?? '—'}</td>
-                                        <td className="py-2.5 pr-4 text-neutral-900">
-                                          {editingOpId === op.id ? (
-                                            <span className="flex items-center gap-1.5">
-                                              <input
-                                                value={opDraft}
-                                                inputMode="decimal"
-                                                aria-label={`${op.name} 计件单价`}
-                                                data-testid={`operation-price-input-${op.id}`}
-                                                onChange={(e) => setOpDraft(e.target.value)}
-                                                onKeyDown={(e) => e.key === 'Enter' && savePrice(op)}
-                                                className="h-8 w-24 rounded border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                                              />
-                                              <button
-                                                type="button"
-                                                aria-label="保存单价"
-                                                data-testid={`operation-price-save-${op.id}`}
-                                                disabled={opBusy}
-                                                onClick={() => savePrice(op)}
-                                                className="rounded p-1 text-primary-600 hover:bg-neutral-100 disabled:opacity-50"
-                                              >
-                                                <Check className="w-4 h-4" />
-                                              </button>
-                                            </span>
-                                          ) : (
-                                            <span className="flex items-center gap-1.5">
-                                              <span>{money(op.unit_price)}</span>
-                                              <button
-                                                type="button"
-                                                aria-label={`编辑 ${op.name} 单价`}
-                                                data-testid={`operation-price-edit-${op.id}`}
-                                                onClick={() => {
-                                                  setEditingOpId(op.id)
-                                                  setOpDraft(String(op.unit_price ?? 0))
-                                                }}
-                                                className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
-                                              >
-                                                <Pencil className="w-3.5 h-3.5" />
-                                              </button>
-                                            </span>
-                                          )}
-                                        </td>
-                                        <td className="py-2.5 pr-4">
-                                          <input
-                                            type="checkbox"
-                                            aria-label={`${op.name} 必须完成才可打包`}
-                                            data-testid={`operation-must-finish-${op.id}`}
-                                            checked={!!op.is_must_finish}
-                                            disabled={opBusy}
-                                            onChange={(e) => submitOperation(op.id, { is_must_finish: e.target.checked })}
-                                            className="h-4 w-4 accent-primary-600"
-                                          />
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </CollapsibleSection>
               </div>
             )}
 
@@ -1987,6 +2270,7 @@ export default function ProcessConfigPage() {
                             <th className="py-2 pr-4 font-medium">目标工序</th>
                             <th className="py-2 pr-4 font-medium">单价（元/套）</th>
                             <th className="py-2 pr-4 font-medium">优先级</th>
+                            <th className="py-2 pr-4 font-medium">操作</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2028,6 +2312,50 @@ export default function ProcessConfigPage() {
                               />
                               <td className="py-2.5 pr-4 text-neutral-500" data-testid={`route-rule-priority-${rule.id}`}>
                                 {rule.priority ?? '—'}
+                              </td>
+                              {/* 删除（issue #4588；契约 #4587 ④）：二次确认 → `DELETE /route-rules/{id}`；
+                                  失败理由**逐条**就地展示（不吞成一句「删除失败」）。 */}
+                              <td className="py-2.5 pr-4">
+                                {confirmDeleteRuleId === rule.id ? (
+                                  <span className="flex items-center gap-1.5">
+                                    <Button
+                                      size="sm"
+                                      variant="danger"
+                                      data-testid={`route-rule-delete-confirm-${rule.id}`}
+                                      disabled={ruleBusy}
+                                      onClick={() => void removeRule(rule)}
+                                    >
+                                      确认删除
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      data-testid={`route-rule-delete-cancel-${rule.id}`}
+                                      onClick={() => setConfirmDeleteRuleId(null)}
+                                    >
+                                      取消
+                                    </Button>
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    data-testid={`route-rule-delete-${rule.id}`}
+                                    onClick={() => {
+                                      setConfirmDeleteRuleId(rule.id)
+                                      setRuleDeleteReasons(null)
+                                    }}
+                                    className="rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-red-600"
+                                  >
+                                    删除
+                                  </button>
+                                )}
+                                {ruleDeleteReasons?.id === rule.id && (
+                                  <ul className="mt-1 space-y-0.5 text-xs text-red-600" data-testid="route-rule-delete-reasons">
+                                    {ruleDeleteReasons.items.map((r, i) => (
+                                      <li key={i}>{r}</li>
+                                    ))}
+                                  </ul>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -2386,6 +2714,199 @@ export default function ProcessConfigPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* 「管理▸」抽屉（issue #4588）：该逻辑工序的**变体**维护面。
+          ⚠️ 作用域 / 必完 **只在这里**（用户 2026-09-19 追加裁定：「作用域 · 必完 完全不知道干嘛的，
+          也可以移除」⇒ 从主表移除的是**显示**，不是语义）—— 两处各配一句商家看得懂的解释。 */}
+      <Modal
+        open={manageOp !== null}
+        onClose={() => !variantBusy && setManageOp(null)}
+        title={manageOp ? `管理「${manageOp}」的工序变体` : ''}
+        width={760}
+        footer={
+          <Button variant="secondary" data-testid="operations-manage-close" onClick={() => setManageOp(null)}>
+            关闭
+          </Button>
+        }
+      >
+        <div className="space-y-3 text-sm" data-testid="operations-manage-drawer">
+          <p className="text-neutral-600">
+            这些是<strong>工人扫码时看到的工序</strong>（同一道逻辑工序在不同部位会落成不同变体）。
+            分组与单位决定报工口径；<strong>作用域</strong>：套级 = 每樘窗只做一次；
+            <strong>必完</strong>：缺这道工序不能打包。
+          </p>
+          {manageVariants.length === 0 ? (
+            <p className="py-6 text-center text-sm text-neutral-400" data-testid="operations-manage-empty">
+              这道工序还没有落到工人端的工序（矩阵里查不到它的变体）—— 请核对各部位的适用性配置。
+            </p>
+          ) : (
+            <div className="divide-y divide-neutral-100">
+              {manageVariants.map((v) => (
+                <div key={v.id} className="py-3" data-testid={`variant-row-${v.id}`}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-neutral-900">{v.name ?? '—'}</span>
+                    {v.source && <SourceBadge source={v.source} testId={`variant-source-${v.id}`} />}
+                    <span className="text-xs text-neutral-400">覆盖 {v.positions.join(' / ')}</span>
+                  </div>
+
+                  {/* 分组 · 单位：就地改（`PUT /operations/{id}` 部分更新） */}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {editingVariantId === v.id ? (
+                      <>
+                        <input
+                          aria-label="分组"
+                          data-testid={`variant-group-input-${v.id}`}
+                          className={cn(inputCls, 'h-8 w-28')}
+                          value={variantDraft.group_name}
+                          onChange={(e) => setVariantDraft({ ...variantDraft, group_name: e.target.value })}
+                        />
+                        <input
+                          aria-label="单位"
+                          data-testid={`variant-unit-input-${v.id}`}
+                          className={cn(inputCls, 'h-8 w-24')}
+                          value={variantDraft.unit}
+                          onChange={(e) => setVariantDraft({ ...variantDraft, unit: e.target.value })}
+                        />
+                        <Button
+                          size="sm"
+                          data-testid={`variant-meta-save-${v.id}`}
+                          disabled={variantBusy}
+                          onClick={() =>
+                            void submitVariant(v.id, {
+                              group_name: variantDraft.group_name,
+                              unit: variantDraft.unit,
+                            })
+                          }
+                        >
+                          保存
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          data-testid={`variant-meta-cancel-${v.id}`}
+                          onClick={() => setEditingVariantId(null)}
+                        >
+                          取消
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-neutral-600">
+                          {v.group ?? '—'} · {v.unit ?? '—'}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`编辑 ${v.name ?? v.id} 的分组与单位`}
+                          data-testid={`variant-meta-edit-${v.id}`}
+                          onClick={() => {
+                            setEditingVariantId(v.id)
+                            setVariantDraft({ group_name: v.group ?? '', unit: v.unit ?? '' })
+                          }}
+                          className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* 作用域（V67 闭词表两档）+ 一句解释 */}
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+                    <span>作用域</span>
+                    <select
+                      aria-label={`${v.name ?? v.id} 作用域`}
+                      data-testid={`variant-scope-${v.id}`}
+                      value={v.scope}
+                      disabled={variantBusy}
+                      title={SCOPE_META[v.scope].title}
+                      onChange={(e) => void submitVariant(v.id, { scope: e.target.value as ProductionScope })}
+                      className="h-8 rounded border border-neutral-300 bg-white px-1.5 text-sm text-neutral-700 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 disabled:opacity-50"
+                    >
+                      {SCOPE_ORDER.map((s) => (
+                        <option key={s} value={s}>
+                          {SCOPE_META[s].label}
+                        </option>
+                      ))}
+                    </select>
+                    <span>套级 = 每樘窗只做一次（部位级 = 每个部位各做一次）</span>
+                  </div>
+
+                  {/* 必完 + 一句解释 */}
+                  <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+                    <input
+                      type="checkbox"
+                      aria-label={`${v.name ?? v.id} 必完`}
+                      data-testid={`variant-must-finish-${v.id}`}
+                      checked={v.is_must_finish}
+                      disabled={variantBusy}
+                      onChange={(e) => void submitVariant(v.id, { is_must_finish: e.target.checked })}
+                      className="h-4 w-4 accent-primary-600"
+                    />
+                    <span>必完</span>
+                    <span>缺这道工序不能打包</span>
+                  </label>
+
+                  {/* 停用（`PUT /operations/{id}` 的 status）/ 删除（`DELETE /operations/{id}`，二次确认） */}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      data-testid={`variant-disable-${v.id}`}
+                      disabled={variantBusy}
+                      onClick={() => void submitVariant(v.id, { status: 'inactive' })}
+                    >
+                      停用
+                    </Button>
+                    {confirmDeleteOpId === v.id ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          data-testid={`variant-delete-confirm-${v.id}`}
+                          disabled={variantBusy}
+                          onClick={() => void removeVariant(v)}
+                        >
+                          确认删除
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          data-testid={`variant-delete-cancel-${v.id}`}
+                          onClick={() => setConfirmDeleteOpId(null)}
+                        >
+                          取消
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        data-testid={`variant-delete-${v.id}`}
+                        onClick={() => {
+                          setConfirmDeleteOpId(v.id)
+                          setVariantReasons(null)
+                        }}
+                      >
+                        删除
+                      </Button>
+                    )}
+                    <span className="text-xs text-neutral-400">删除后历史报工不受影响</span>
+                  </div>
+
+                  {/* 护栏理由**逐条**就地展示（后端一次报全：被活跃主线 / 活跃规则 / 矩阵格引用） */}
+                  {variantReasons?.id === v.id && (
+                    <ul className="mt-2 space-y-0.5 text-xs text-red-600" data-testid="variant-delete-reasons">
+                      {variantReasons.items.map((r, i) => (
+                        <li key={i}>{r}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </Modal>
 
       {/* 新增（**类型二选一**：工序 / 特殊选项；issue #4570） */}
