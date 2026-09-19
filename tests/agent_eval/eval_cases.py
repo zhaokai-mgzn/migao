@@ -5487,7 +5487,9 @@ _CASE_PR_012 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'product_manage', 'action': 'create'}],
     namespaces=['product_name:测试窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '测试窗帘', 'expect': 0, 'max_growth': 1}],
 )
 
 # ── PR-013 [NORMAL] 窗帘算料报价 - 褶皱倍数与用布量计算（源: cases/product.yml）──

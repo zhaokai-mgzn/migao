@@ -3939,9 +3939,10 @@
 期望: product_manage(action=create, price=200)
 期望: validate_input
 数据: 最终 price=200（不是 100）
+必须成功: product_manage(create)
 ```
 真值: product-sku-stock.create-flow, ai-chat.validate-input
-溯源: eval M003 独有（中途纠偏）；2026-09-09 校准：补「窗帘布艺」点分类卡轮（「分类选窗帘」后 agent 查分类树发现无「窗帘」精确分类发 choice 卡，原脚本后续轮跳过点卡导致分类卡反复发、6 轮走不到 create——与 PR-008 同类）。2026-09-19（#4371 商品↔加工项解耦）：删除「不需要加工项」一轮 + `expectations[processing_item_query]` + `data_checks[无加工项关联]` —— 建品不再经加工项（商品不持有加工项），该断言的对象已不存在；改价纠偏意图与其余断言原样未动。 ｜ tags: multi_turn, correction, mid_flow_change
+溯源: eval M003 独有（中途纠偏）；2026-09-09 校准：补「窗帘布艺」点分类卡轮（「分类选窗帘」后 agent 查分类树发现无「窗帘」精确分类发 choice 卡，原脚本后续轮跳过点卡导致分类卡反复发、6 轮走不到 create——与 PR-008 同类）。2026-09-19（#4371 商品↔加工项解耦）：删除「不需要加工项」一轮 + `expectations[processing_item_query]` + `data_checks[无加工项关联]` —— 建品不再经加工项（商品不持有加工项），该断言的对象已不存在；改价纠偏意图与其余断言原样未动。2026-09-20（issue #4630 的 case-trust burn-down 缴费）：真修本条的存量两码而非收窄 —— 补 `precondition[product_count_for_keyword: 测试窗帘, expect: 0, max_growth: 1]`（清 CASE-TRUST-NO-PRECONDITION-ASSERTION；本用例自建该名字，「名字空闲」是它真正依赖且只读的前置）与 `must_succeed[product_manage(create)]`（清 CASE-TRUST-NO-EFFECT-ASSERTION）；断言只增不减，`expectations` / `data_checks` / `user_inputs` 一字未动。 ｜ tags: multi_turn, correction, mid_flow_change
 
 ### PR-013. 窗帘算料报价 - 褶皱倍数与用布量计算 🔵
 ```

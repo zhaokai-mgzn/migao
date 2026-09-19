@@ -710,6 +710,21 @@ cases:
     namespaces:
       - "product_name:测试窗帘"
 
+    # ── 前置自断言（issue #4630 的 case-trust burn-down 缴费，形态与 PR-008 逐字同款）──
+    # 本用例**自建**「测试窗帘」⇒ 该名字必须空闲（`expect: 0`）；`max_growth: 1` 只容忍
+    # 本用例自己造的那一个（并行用例再造同名 ⇒ 仍判漂移，见 assertion_taxonomy 的 #4200 规则）。
+    # 前置不成立时的表现是 agent 发同名选择卡、`product_manage(create)` 永不执行 ⇒
+    # 红的样子像「agent 不会建品」，归因全错。
+    precondition:
+      - type: product_count_for_keyword
+        source: "测试窗帘"
+        expect: 0
+        max_growth: 1
+    # 效果层断言：「调用了 ≠ 创建成功了」（#3778）—— 工具返回 success=false 时本用例必须红。
+    must_succeed:
+      - tool: product_manage
+        action: create
+
     expectations:
       - tool: product_manage
         args:
@@ -719,7 +734,7 @@ cases:
     data_checks:
       - "最终 price=200（不是 100）"
     skip_reason: ""
-    merge_log: "eval M003 独有（中途纠偏）；2026-09-09 校准：补「窗帘布艺」点分类卡轮（「分类选窗帘」后 agent 查分类树发现无「窗帘」精确分类发 choice 卡，原脚本后续轮跳过点卡导致分类卡反复发、6 轮走不到 create——与 PR-008 同类）。2026-09-19（#4371 商品↔加工项解耦）：删除「不需要加工项」一轮 + `expectations[processing_item_query]` + `data_checks[无加工项关联]` —— 建品不再经加工项（商品不持有加工项），该断言的对象已不存在；改价纠偏意图与其余断言原样未动。"
+    merge_log: "eval M003 独有（中途纠偏）；2026-09-09 校准：补「窗帘布艺」点分类卡轮（「分类选窗帘」后 agent 查分类树发现无「窗帘」精确分类发 choice 卡，原脚本后续轮跳过点卡导致分类卡反复发、6 轮走不到 create——与 PR-008 同类）。2026-09-19（#4371 商品↔加工项解耦）：删除「不需要加工项」一轮 + `expectations[processing_item_query]` + `data_checks[无加工项关联]` —— 建品不再经加工项（商品不持有加工项），该断言的对象已不存在；改价纠偏意图与其余断言原样未动。2026-09-20（issue #4630 的 case-trust burn-down 缴费）：真修本条的存量两码而非收窄 —— 补 `precondition[product_count_for_keyword: 测试窗帘, expect: 0, max_growth: 1]`（清 CASE-TRUST-NO-PRECONDITION-ASSERTION；本用例自建该名字，「名字空闲」是它真正依赖且只读的前置）与 `must_succeed[product_manage(create)]`（清 CASE-TRUST-NO-EFFECT-ASSERTION）；断言只增不减，`expectations` / `data_checks` / `user_inputs` 一字未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_product.py"
