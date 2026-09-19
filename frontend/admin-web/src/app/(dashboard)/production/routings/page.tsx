@@ -46,7 +46,7 @@ import type {
  * | tab | 它回答的问题 | 主区 | 维护面 |
  * |---|---|---|---|
  * | **工艺项** | 「每道工序在**哪个部位**做、给**工人**多少钱？」 | **一张表**：行 = 逻辑工序、列 = 部位、格 = 价 / 不做 / 未定价（**格内就地可改**） | 行尾 = `分组 · 单位` + **必完标记**（issue #4610：完工门槛要一眼看得见，部分部位必完时注明）+「管理▸」抽屉（**这道工序在各部位的设置**：分组 / 单位 / 作用域 / 必完 / 停用 / 删除） |
- * | **工艺路线** | 「订单按哪条主线走、什么时候插/删工序？」 | 具名路线（默认徽标 + 适用帘种 + 主线 + 改名/设默认/删除） | 条件工序规则（26 条；**常驻展开**，issue #4613 起不可折叠） |
+ * | **工艺路线** | 「订单按哪条主线走、什么时候插/删工序？」 | 具名路线（默认徽标 + 适用帘种 + 主线 + 改名/设默认/删除） | 每道工序在「工艺项」tab 的 `管理▸` 抽屉里有一节**适用条件**（人话；issue #4650 阶段 1 起**不再有**独立的「条件工序规则」表） |
  *
  * **工艺项为什么不再分「主区 / 折叠次区」**（issue #4588 = 母单 #4586 包 B；契约 #4587）：
  * 原形态是**两张平铺表** —— 主区 84 格**只读**矩阵 + 折叠次区 35 行「工序库明细」（能改计件单价
@@ -56,7 +56,7 @@ import type {
  *
  * **这一屏的价是「给工人的计件单价」**（用户裁定 2026-09-19）：
  * `production_operation_positions.unit_price` = 计件单价，**报工工资 = 数量 × 计件单价**。
- * 收顾客的那笔钱**不在这里** —— 基础工序在「加工项组合费用」，特殊选项在「条件工序规则」
+ * 收顾客的那笔钱**不在这里** —— 基础工序在「加工项组合费用」，特殊选项在**工序抽屉的「适用条件」**里
  * （`production_route_rules.customer_unit_price`，元/套）。两本账**互不换算** ⇒ 这一屏
  * **不得**出现「加工费」「对客价」字样，也**不引入任何计件系数概念**。
  *
@@ -88,7 +88,7 @@ import type {
  * - **设为默认**只对非默认行开放（`is_default:false` 后端 422 ⇒ 前端**永不**提交 false）；
  * - 危险操作（删除 / 设为默认）**二次确认**；护栏理由**就地逐条**展示（复用 `lib/production-guard-reasons.ts`）；
  *   工艺项 tab 的两处删除同口径：删**工序**（`DELETE /operations/{id}`，三条护栏一次报全）与
- *   删**条件工序规则**（`DELETE /route-rules/{id}`，无硬护栏）—— 都先二次确认，被拒时逐条就地给理由。
+ *   删**一条适用条件**（`DELETE /route-rules/{id}`，无硬护栏）—— 都先二次确认，被拒时逐条就地给理由。
  * - 商家面**不得**出现内部机制名（issue #4453：「信号映射」是研发内部机制）⇒ 后端理由过
  *   `merchantWording` 只换词、不删理由。
  *
@@ -97,8 +97,10 @@ import type {
  *   PUT    /api/admin/production/routings/{id}            DELETE /routings/{id}      （部分更新 {name?, is_default?, mainline?, positions?, status?}）
  *   GET    /api/admin/production/operation-positions      GET  /route-rules
  *   PUT    /api/admin/production/operation-positions/{id}  （#4588 矩阵格写面：部分更新 {unit_price?} / {applicable?}）
+ *   POST   /api/admin/production/route-rules              （#4650 阶段 1：**条件的唯一创建写面**，被抽屉的「添加条件」复用）
  *   DELETE /api/admin/production/operations/{id}          （#4588 工序软删：三条护栏一次报全）
- *   DELETE /api/admin/production/route-rules/{id}         （#4588 规则软删：无硬护栏）
+ *   DELETE /api/admin/production/route-rules/{id}         （#4588 规则软删：无硬护栏；#4650 起从抽屉里删一条条件）
+ *   PUT    /api/admin/production/route-rules/{id}/customer-unit-price （#4567 特殊选项对客单价）
  *   GET    /api/admin/production/operations-catalog       POST /production/operations
  *   PUT    /api/admin/production/operations/{id}          （改分组 / 单位 / 必完 / 作用域 / status）
  *   GET|POST /api/admin/production/seed-templates[/{id}/apply]
@@ -170,11 +172,24 @@ const TRIGGER_KIND_LABEL: Record<string, string> = {
   processing_item: '加工项',
 }
 
-/** 规则动作的可读文案：`insert` 带锚点（无锚点 = 追加末尾）/ `remove` 移除 */
-const ruleActionText = (rule: RouteRule) =>
-  rule.action === 'remove'
-    ? `移除「${rule.operation ?? '—'}」`
-    : `在「${rule.after_operation ?? '末尾'}」之后插入「${rule.operation ?? '—'}」`
+/**
+ * 一条条件的**人话**（issue #4650 阶段 1 —— 用户裁定「移除条件工序规则，这个概念我都难以理解」）。
+ *
+ * 商家看到的不是「触发类型 / 动作 / 目标工序 / 插入锚点」，而是**这道工序在什么情况下做**：
+ * - `insert` + 锚点 ⇒ `工艺 = 韩褶 时插入（在「三边」之后）`；
+ * - `insert` 无锚点 ⇒ `… 时插入（追加到末尾）`（**不**渲染成「在「末尾」之后」—— 那是把空值当工序名）；
+ * - `remove` ⇒ `工艺 = 四爪钩 时不做`。
+ *
+ * 目标工序由**所在抽屉**表达（这一段只列 `operation === 该工序` 的条件）⇒ 话里不重复工序名。
+ */
+const conditionText = (rule: RouteRule) => {
+  const kind = TRIGGER_KIND_LABEL[rule.trigger_kind ?? ''] ?? rule.trigger_kind ?? '—'
+  const value = rule.trigger_value ?? '—'
+  if (rule.action === 'remove') return `${kind} = ${value} 时不做`
+  return rule.after_operation
+    ? `${kind} = ${value} 时插入（在「${rule.after_operation}」之后）`
+    : `${kind} = ${value} 时插入（追加到末尾）`
+}
 
 /**
  * 条件工序规则的「单价（元/套）」格（issue #4567）。
@@ -216,8 +231,8 @@ function RulePriceCell({
   const state = !isOption ? 'na' : unpriced ? 'unpriced' : 'priced'
   const hasPrice = state === 'priced'
   return (
-    <td
-      className={cn('py-2.5 pr-4', state === 'unpriced' ? 'text-amber-600' : 'text-neutral-600')}
+    <div
+      className={cn('flex flex-col gap-0.5', state === 'unpriced' ? 'text-amber-600' : 'text-neutral-600')}
       data-testid={`route-rule-price-${rule.id}`}
       data-state={state}
       title={isOption ? '特殊选项按套收费（元/套）' : '只有特殊选项按套计价'}
@@ -293,7 +308,7 @@ function RulePriceCell({
           {hasPrice ? '清空 = 改回未定价（≠ 0 元）' : '填 0 表示真 0 元；清空 = 未定价'}
         </span>
       )}
-    </td>
+    </div>
   )
 }
 
@@ -679,38 +694,33 @@ export default function ProcessConfigPage() {
   const [confirmDeleteOpId, setConfirmDeleteOpId] = useState<string | null>(null)
   const [variantReasons, setVariantReasons] = useState<{ id: string; items: string[] } | null>(null)
 
-  // ── 条件工序规则删除（issue #4588；契约 #4587 ④；issue #4617 改弹框）──
+  // ── 一条条件的删除（issue #4588；契约 #4587 ④；issue #4617 改弹框）──
   const [confirmDeleteRuleId, setConfirmDeleteRuleId] = useState<number | null>(null)
   const [ruleDeleteReasons, setRuleDeleteReasons] = useState<{ id: number; items: string[] } | null>(null)
   const [ruleBusy, setRuleBusy] = useState(false)
 
-  // ── 条件工序规则**创建**（issue #4616；用户裁定「没有入口往条件工序规则中添加新的工艺和加工项」）──
-  /** 规则区「新增规则」弹窗 */
-  const [newRuleOpen, setNewRuleOpen] = useState(false)
+  // ── 抽屉里的「适用条件」（issue #4650 阶段 1：条件**挂在工序身上**，独立规则表从界面移除）──
   /**
    * 触发值**取值域**（`GET /route-rule-options`）：工艺词表 + 加工项目录。
    * 拿不到就退化成空列表 —— 下拉里没有可选项，**不静默给一份写死的词表**（那是第二份会漂的口径）。
    */
   const [ruleOptions, setRuleOptions] = useState<RouteRuleTriggerOptions>({ crafts: [], processing_items: [] })
-  const [newRule, setNewRule] = useState<{
+  /** 「添加条件」表单是否展开（就地展开在该工序的抽屉里，**不是**弹窗、**不是**独立表） */
+  const [conditionFormOpen, setConditionFormOpen] = useState(false)
+  /**
+   * 添加条件只问**两件事**（用户裁定：商家不该填「触发类型 / 触发值 / 部位限定 / 动作 / 目标工序 /
+   * 插入锚点 / 优先级」七个字段）：**什么时候**（种类 + 取值）与**做还是不做**；
+   * 「插在哪道之后」只在「做」时出现，且**带默认值**（见 {@link anchorDefaultFor}，别让商家猜）。
+   * 目标工序 = 当前抽屉那道工序（不需要问）。`priority` 交给后端默认顺序（界面不再有这个概念）。
+   */
+  const [conditionDraft, setConditionDraft] = useState<{
     trigger_kind: RouteRuleTriggerKind
     trigger_value: string
     action: 'insert' | 'remove'
-    operation: string
     after_operation: string
-    priority: string
-    customer_unit_price: string
-  }>({
-    trigger_kind: 'craft',
-    trigger_value: '',
-    action: 'insert',
-    operation: '',
-    after_operation: '',
-    priority: '',
-    customer_unit_price: '',
-  })
-  /** 新建规则的**就地**理由（本地预检 ∪ 后端 `error.details[].message` 逐条） */
-  const [newRuleReasons, setNewRuleReasons] = useState<string[]>([])
+  }>({ trigger_kind: 'craft', trigger_value: '', action: 'insert', after_operation: '' })
+  /** 添加条件的**就地**理由（本地预检 ∪ 后端 `error.details[].message` 逐条） */
+  const [conditionReasons, setConditionReasons] = useState<string[]>([])
 
   // ── 特殊选项对客单价行内编辑（元/套；issue #4567）──
   /** 正在编辑的行 id（null = 没有行在编辑态） */
@@ -782,13 +792,18 @@ export default function ProcessConfigPage() {
    * 特殊选项或者工序，也支持设置单价」）。默认 `operation`（工序 —— 既有链路逐字不变）。
    */
   const [newKind, setNewKind] = useState<'operation' | 'option'>('operation')
-  /** 特殊选项草稿（`trigger_value` = 选项名；`customer_unit_price` = **对客**元/套） */
+  /**
+   * 特殊选项草稿（`trigger_value` = 选项名；`customer_unit_price` = **对客**元/套）。
+   *
+   * issue #4650 阶段 1：**优先级整块去掉**（界面不再有这个概念，交给后端默认顺序 ——
+   * 与今天留空同义）；「插入锚点」改叫**插在哪道工序之后**，且选定目标工序后**自动填默认值**
+   * （{@link anchorDefaultFor}），商家不用猜。
+   */
   const [newOption, setNewOption] = useState({
     trigger_value: '',
     customer_unit_price: '',
     operation: '',
     after_operation: '',
-    priority: '',
   })
   /** 新增特殊选项的**就地**理由（本地预检 ∪ 后端 `error.details[].message` 逐条） */
   const [newOptionReasons, setNewOptionReasons] = useState<string[]>([])
@@ -834,7 +849,7 @@ export default function ProcessConfigPage() {
       setRulesError('')
     } else {
       setRules([])
-      setRulesError('条件工序规则加载失败，请稍后重试')
+      setRulesError('适用条件加载失败，请稍后重试')
     }
     // 触发值取值域（issue #4616）：**拿不到就空列表**（下拉无可选项），
     // 不回落任何写死的词表 —— 回落 = 第二份会漂的口径（新建的工艺永远进不了下拉）。
@@ -1163,6 +1178,37 @@ export default function ProcessConfigPage() {
   )
   const routingsReady = routeList.length > 0 && emptyShells.length === 0
   const defaults = useMemo(() => routeList.filter((r) => r.is_default), [routeList])
+
+  // ────────────────────────── 适用条件（挂在工序身上；issue #4650 阶段 1） ──────────────────────────
+
+  /**
+   * 当前抽屉那道工序的**适用条件** —— 归属判据 = `production_route_rules.operation`（**逻辑工序名**，
+   * 与矩阵行键同源）。一条规则只属于**它目标的那道工序**：独立表搬走之后，「哪些条件属于谁」
+   * 由这个过滤唯一决定（不再有第二处归属口径）。
+   */
+  const manageConditions = useMemo(
+    () => (manageOp ? rules.filter((r) => r.operation === manageOp) : []),
+    [rules, manageOp],
+  )
+
+  /**
+   * 「插在哪道之后」的**默认值**（用户裁定：锚点要给默认值，**别让商家猜**）。
+   *
+   * 两段口径，先真值后常识：
+   * ① 该工序**现有**插入条件用的锚点（= 今天 `routing.py` 种子里这道工序的锚点，
+   *    如 `上车布` 在`韩褶`下插在`韩褶`后）—— 有就直接沿用，商家不用重新想一遍；
+   * ② 没有现成条件 ⇒ 用**默认主线里它的前一道工序**（插在它前面那道之后 = 保持它现在的位置）；
+   * ③ 都不成立（工序不在主线上）⇒ 空 = 追加到末尾（与后端 `after_operation` 缺省同义）。
+   */
+  const anchorDefaultFor = (operation: string) => {
+    const seeded = rules.find(
+      (r) => r.operation === operation && r.action !== 'remove' && (r.after_operation ?? '') !== '',
+    )
+    if (seeded) return seeded.after_operation as string
+    const mainline = routeList.find((r) => r.is_default)?.mainline ?? []
+    const idx = mainline.indexOf(operation)
+    return idx > 0 ? mainline[idx - 1] : ''
+  }
 
   const routingsHint =
     routeList.length === 0
@@ -1533,29 +1579,25 @@ export default function ProcessConfigPage() {
     } else if (!/^\d+(\.\d{1,2})?$/.test(rawPrice)) {
       reasons.push('单价必须是 ≥ 0 且最多两位小数的数字（元/套）')
     }
-    const rawPriority = newOption.priority.trim()
-    if (rawPriority !== '' && !/^\d+$/.test(rawPriority)) {
-      reasons.push('优先级必须是不小于 0 的整数（留空 = 按后端默认顺序）')
-    }
     if (reasons.length > 0) {
       setNewOptionReasons(reasons)
       return
     }
-    // 可选键**留空就不发**（`after_operation?` / `priority?`）—— 不拿 `null` 冒充「没填」
+    // 可选键**留空就不发**（`after_operation?`）—— 不拿 `null` 冒充「没填」；
+    // `priority` 不再由界面提供（issue #4650 阶段 1）⇒ 省略 = 后端默认顺序（与今天留空同义）。
     const payload: RouteRuleCreateParams = {
       trigger_value: trigger,
       operation: newOption.operation,
       customer_unit_price: Number(rawPrice),
     }
     if (newOption.after_operation) payload.after_operation = newOption.after_operation
-    if (rawPriority !== '') payload.priority = Number(rawPriority)
     setBusy(true)
     setNewOptionReasons([])
     try {
       await productionApi.createOptionRule(payload)
       toast.success('特殊选项已新增')
       setNewOpOpen(false)
-      setNewOption({ trigger_value: '', customer_unit_price: '', operation: '', after_operation: '', priority: '' })
+      setNewOption({ trigger_value: '', customer_unit_price: '', operation: '', after_operation: '' })
       await load()
     } catch (e) {
       console.error(e)
@@ -1567,88 +1609,85 @@ export default function ProcessConfigPage() {
   }
 
   /**
-   * 新建**条件工序规则**（issue #4616：触发类型 = 工艺 / 特殊选项 / 加工项）。
+   * 给**当前抽屉那道工序**加一条适用条件（issue #4650 阶段 1）。
    *
-   * 用户裁定：「现在的问题是**没有入口往条件工序规则中添加新的工艺和加工项**」——
-   * 缺了入口 ⇒ 商家新增工艺/加工项后**无法**让它在订单里插/删工序 ⇒ 该订单**静默少工序**。
+   * 用户裁定：「**我要求移除条件工序规则**，这个概念我都难以理解，用户如何去理解？」⇒ 商家只回答
+   * **两件事**（{@link conditionDraft}）：什么时候 + 做还是不做；目标工序 = 抽屉那道工序，
+   * 「插在哪道之后」在「做」时给**可选项 + 默认值**（{@link anchorDefaultFor}）。
    *
+   * 落库**复用现有写面** `POST /route-rules`（**严禁**新造第二套写面；本阶段零迁移、行为不变）。
    * 本地只做「拦得住就不打扰后端」的最小预检；**语义护栏**一律以后端为准
-   * （触发值是否在词表里、对客单价是否只属于 option、目标工序/锚点是否在工序库）
-   * ⇒ 失败时逐条理由**就地**展示，**不刷新、不改页面数据**（静默写回 = 商家以为建好了、
-   * 订单侧其实没生效）。
+   * （取值是否在词表里、锚点是否在工序库）⇒ 失败时逐条理由**就地**展示，
+   * **不刷新、不改页面数据**（静默写回 = 商家以为加上了、订单侧其实没生效）。
    */
-  const createRule = async () => {
+  const createCondition = async () => {
+    if (!manageOp) return
     const reasons: string[] = []
-    const trigger = newRule.trigger_value.trim()
+    const trigger = conditionDraft.trigger_value.trim()
     if (!trigger) {
       reasons.push(
-        newRule.trigger_kind === 'option'
-          ? '请填写选项名称'
-          : newRule.trigger_kind === 'craft'
-            ? '请选择工艺：触发值必须来自工艺词表（手输一个词表里没有的名字 = 这条规则永远不命中）'
-            : '请选择加工项：触发值必须来自加工项目录（触发键 = 订单里的加工项名，精确相等）',
+        conditionDraft.trigger_kind === 'craft'
+          ? '请选择什么时候生效：工艺必须从列表里选（手输一个不在列表里的名字 = 这条条件永远不命中）'
+          : conditionDraft.trigger_kind === 'processing_item'
+            ? '请选择什么时候生效：加工项必须从列表里选（触发键 = 订单里的加工项名，精确相等）'
+            : '请选择什么时候生效：特殊选项必须从列表里选（选项名是订单里的键，错一个字就查不到）',
       )
     }
-    if (!newRule.operation) reasons.push('请选择目标工序：这条规则要在哪道工序上生效')
-    const rawPrice = newRule.customer_unit_price.trim()
-    if (newRule.trigger_kind === 'option' && rawPrice !== '' && !/^\d+(\.\d{1,2})?$/.test(rawPrice)) {
-      reasons.push('单价必须是 ≥ 0 且最多两位小数的数字（元/套）；留空 = 未定价')
-    }
-    const rawPriority = newRule.priority.trim()
-    if (rawPriority !== '' && !/^\d+$/.test(rawPriority)) {
-      reasons.push('优先级必须是不小于 0 的整数（留空 = 按后端默认顺序）')
-    }
     if (reasons.length > 0) {
-      setNewRuleReasons(reasons)
+      setConditionReasons(reasons)
       return
     }
-    // 可选键**留空就不发**（`after_operation?` / `priority?` / `customer_unit_price?`）——
-    // 不拿 `null` 冒充「没填」。对客单价**只对 option 发**（craft/加工项带了后端会 422）。
+    // 可选键**留空就不发**（`after_operation?`）—— 不拿 `null` 冒充「没填」；
+    // `priority` 不再由界面提供 ⇒ 省略 = 后端默认顺序（与今天留空同义）。
     const payload: RouteRuleCreateParams = {
-      trigger_kind: newRule.trigger_kind,
+      trigger_kind: conditionDraft.trigger_kind,
       trigger_value: trigger,
-      action: newRule.action,
-      operation: newRule.operation,
+      action: conditionDraft.action,
+      operation: manageOp,
     }
-    if (newRule.action === 'insert' && newRule.after_operation) payload.after_operation = newRule.after_operation
-    if (rawPriority !== '') payload.priority = Number(rawPriority)
-    if (newRule.trigger_kind === 'option' && rawPrice !== '') payload.customer_unit_price = Number(rawPrice)
+    if (conditionDraft.action === 'insert' && conditionDraft.after_operation) {
+      payload.after_operation = conditionDraft.after_operation
+    }
     setBusy(true)
-    setNewRuleReasons([])
+    setConditionReasons([])
     try {
       await productionApi.createOptionRule(payload)
-      toast.success('条件工序规则已新增')
-      setNewRuleOpen(false)
-      setNewRule({
-        trigger_kind: 'craft',
-        trigger_value: '',
-        action: 'insert',
-        operation: '',
-        after_operation: '',
-        priority: '',
-        customer_unit_price: '',
-      })
+      toast.success('条件已添加')
+      setConditionFormOpen(false)
       await load()
     } catch (e) {
       console.error(e)
-      setNewRuleReasons(optionPriceGuardReasons(e))
-      if (!isErrorToastShown(e)) toast.error('新增规则失败')
+      setConditionReasons(optionPriceGuardReasons(e))
+      if (!isErrorToastShown(e)) toast.error('添加条件失败')
     } finally {
       setBusy(false)
     }
   }
 
-  /** 打开「新增规则」弹窗：每次回到默认（工艺触发 / 插入），并清掉上一次的失败理由 */
-  const openCreateRule = () => {
-    setNewRule((r) => ({ ...r, trigger_value: '', operation: '', after_operation: '', priority: '', customer_unit_price: '' }))
-    setNewRuleReasons([])
-    setNewRuleOpen(true)
+  /** 展开「添加条件」表单：每次回到默认（工艺 / 做 / 锚点取默认值），并清掉上一次的失败理由 */
+  const openConditionForm = () => {
+    setConditionDraft({
+      trigger_kind: 'craft',
+      trigger_value: '',
+      action: 'insert',
+      after_operation: manageOp ? anchorDefaultFor(manageOp) : '',
+    })
+    setConditionReasons([])
+    setConditionFormOpen(true)
   }
 
-  /** 规则弹窗里「触发类型」切换 ⇒ 触发值换来源（工艺/加工项从词表选，特殊选项可新建）+ 清空已选值 */
-  const switchRuleKind = (kind: RouteRuleTriggerKind) => {
-    setNewRule((r) => ({ ...r, trigger_kind: kind, trigger_value: '', customer_unit_price: '' }))
-    setNewRuleReasons([])
+  /** 「什么时候」的种类切换 ⇒ 取值换来源（工艺/加工项/特殊选项各自一份词表）+ 清空已选值 */
+  const switchConditionKind = (kind: RouteRuleTriggerKind) => {
+    setConditionDraft((d) => ({ ...d, trigger_kind: kind, trigger_value: '' }))
+    setConditionReasons([])
+  }
+
+  /** 关闭抽屉 ⇒ 一并收摊「添加条件」表单（不把半截草稿留给下一道工序） */
+  const closeManage = () => {
+    if (variantBusy) return
+    setManageOp(null)
+    setConditionFormOpen(false)
+    setConditionReasons([])
   }
 
   // ────────────────────────── 矩阵格写面（issue #4588；契约 #4587 ②） ──────────────────────────
@@ -2074,7 +2113,8 @@ export default function ProcessConfigPage() {
                     这一屏的价是<strong>计件单价（给工人）</strong>：报工工资 = 数量 × 计件单价。
                     <span className="text-neutral-400">不做</span> = 该部位明确不做这道工序（不是漏配）；
                     <span className="text-amber-700">未定价</span> = 做但还没定价（≠ ¥0.00；真 0 元照显示 ¥0.00）。
-                    收顾客的那笔钱不在这里 —— 基础工序在「加工项组合费用」，特殊选项在「条件工序规则」。
+                    收顾客的那笔钱不在这里 —— 基础工序在「加工项组合费用」，特殊选项在每道工序的
+                    <strong>「适用条件」</strong>里（按套计价）。
                   </p>
 
                   {matrixError ? (
@@ -2212,7 +2252,12 @@ export default function ProcessConfigPage() {
               </div>
             )}
 
-            {/* ══════════════ tab「工艺路线」：主区 = 具名路线，次区 = 条件工序规则 ══════════════ */}
+                {/* ══════════════ tab「工艺路线」：主区 = 具名路线 ══════════════
+                    ⚠️ issue #4650 阶段 1（用户裁定「我要求移除条件工序规则，这个概念我都难以理解」）：
+                    次区的**独立规则表**（26 条 + 「新增规则」入口 + 触发类型/动作/锚点/优先级那套术语）
+                    **整块移除** —— 条件改为**挂在工序身上**（「工艺项」tab 的 `管理▸` 抽屉里一节
+                    「适用条件」，人话）。后端 `GET/POST/DELETE /route-rules` 端点**保留**
+                    （阶段 2 的 AI 入口与阶段 4 的承载收敛还要用），本阶段零迁移、实例化行为不变。 */}
             {tab === 'routes' && (
               <div className="space-y-4">
                 {/* 主区：具名路线（name + 默认徽标 + 适用帘种 + 主线 + 改名/设默认/删除） */}
@@ -2577,119 +2622,6 @@ export default function ProcessConfigPage() {
                   )}
                 </section>
 
-                {/* 次区：统一规则区 —— 工艺变体 ∪ 特殊选项（26 条）。
-                    **常驻展开**（issue #4613 用户裁定：「条件工序默认不要折叠，打开，移除可折叠功能」）
-                    —— 折叠曾让商家要多点一下才看得到规则，连说明也被藏起来；现无展开/收起开关。 */}
-                <section className="rounded-lg border border-neutral-200 bg-white" data-testid="route-rules">
-                  <div className="flex flex-wrap items-center gap-2 px-5 py-3">
-                    <span className="text-sm font-medium text-neutral-900">条件工序规则</span>
-                    <span className="text-xs text-neutral-400" data-testid="route-rules-total">
-                      共 {rules.length} 条
-                    </span>
-                    {/* 规则区**唯一**的创建入口（issue #4616：此前只有「特殊选项」那一支能从
-                        「新增工序」对话框进，工艺 / 加工项触发的规则**界面加不了**） */}
-                    <Button size="sm" className="ml-auto" data-testid="route-rules-new" onClick={openCreateRule}>
-                      <Plus className="w-3.5 h-3.5 mr-1.5" />
-                      新增规则
-                    </Button>
-                    <span className="hidden text-xs text-neutral-400 sm:inline">
-                      工艺 / 特殊选项 / 加工项触发时，往主线里插一道或删一道
-                    </span>
-                  </div>
-                  <div className="border-t border-neutral-100 p-5 pt-4" data-testid="route-rules-body">
-                  <p className="mb-3 text-xs text-neutral-500">
-                    触发键<strong>逐字取自后端</strong>（与订单里的工艺 / 选项名是同一个键）：错一个字就会查不到 ⇒
-                    条件工序不加、计件系数退回 1.0。规则按优先级<strong>升序</strong>生效，顺序决定工序序列。
-                    特殊选项按<strong>套</strong>收费（元/套）；工艺变体不按套计价。
-                  </p>
-                  {rulesError ? (
-                    <p
-                      className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
-                      data-testid="route-rules-error"
-                    >
-                      {rulesError}
-                    </p>
-                  ) : rules.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-neutral-400" data-testid="route-rules-empty">
-                      暂无条件工序规则 —— 订单的工艺与特殊选项都不需要额外增删工序
-                    </p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
-                            <th className="py-2 pr-4 font-medium">触发</th>
-                            <th className="py-2 pr-4 font-medium">部位限定</th>
-                            <th className="py-2 pr-4 font-medium">动作</th>
-                            <th className="py-2 pr-4 font-medium">目标工序</th>
-                            <th className="py-2 pr-4 font-medium">单价（元/套）</th>
-                            <th className="py-2 pr-4 font-medium">优先级</th>
-                            <th className="py-2 pr-4 font-medium">操作</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {rules.map((rule) => (
-                            <tr
-                              key={rule.id}
-                              className="border-b border-neutral-100 last:border-0"
-                              data-testid={`route-rule-${rule.id}`}
-                            >
-                              <td className="py-2.5 pr-4 text-neutral-900" data-testid={`route-rule-trigger-${rule.id}`}>
-                                <span className="mr-1.5 rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] text-neutral-500">
-                                  {TRIGGER_KIND_LABEL[rule.trigger_kind ?? ''] ?? rule.trigger_kind ?? '—'}
-                                </span>
-                                {rule.trigger_value ?? '—'}
-                              </td>
-                              <td className="py-2.5 pr-4 text-neutral-600" data-testid={`route-rule-position-${rule.id}`}>
-                                {rule.position ?? '不限'}
-                              </td>
-                              <td className="py-2.5 pr-4 text-neutral-700" data-testid={`route-rule-action-${rule.id}`}>
-                                {ruleActionText(rule)}
-                              </td>
-                              <td className="py-2.5 pr-4 text-neutral-900" data-testid={`route-rule-target-${rule.id}`}>
-                                {rule.operation ?? '—'}
-                              </td>
-                              <RulePriceCell
-                                rule={rule}
-                                editing={editingRulePriceId === rule.id}
-                                draft={rulePriceDraft}
-                                busy={rulePriceBusy}
-                                reasons={editingRulePriceId === rule.id ? rulePriceReasons : []}
-                                onStartEdit={() => {
-                                  setEditingRulePriceId(rule.id)
-                                  setRulePriceDraft(rule.customer_unit_price == null ? '' : String(rule.customer_unit_price))
-                                  setRulePriceReasons([])
-                                }}
-                                onDraftChange={setRulePriceDraft}
-                                onSave={() => void saveRulePrice(rule)}
-                                onCancel={cancelRulePrice}
-                              />
-                              <td className="py-2.5 pr-4 text-neutral-500" data-testid={`route-rule-priority-${rule.id}`}>
-                                {rule.priority ?? '—'}
-                              </td>
-                              {/* 删除（issue #4588；契约 #4587 ④）：二次确认 → `DELETE /route-rules/{id}`；
-                                  失败理由**逐条**就地展示（不吞成一句「删除失败」）。 */}
-                              <td className="py-2.5 pr-4">
-                                <button
-                                  type="button"
-                                  data-testid={`route-rule-delete-${rule.id}`}
-                                  onClick={() => {
-                                    setConfirmDeleteRuleId(rule.id)
-                                    setRuleDeleteReasons(null)
-                                  }}
-                                  className="rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-red-600"
-                                >
-                                  删除
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                  </div>
-                </section>
               </div>
             )}
 
@@ -3050,11 +2982,11 @@ export default function ProcessConfigPage() {
           两处各配一句商家看得懂的解释（口径一致，含「部位级要每个部位都做完」那一层）。 */}
       <Modal
         open={manageOp !== null}
-        onClose={() => !variantBusy && setManageOp(null)}
+        onClose={closeManage}
         title={manageOp ? `「${manageOp}」在各部位的设置` : ''}
         width={760}
         footer={
-          <Button variant="secondary" data-testid="operations-manage-close" onClick={() => setManageOp(null)}>
+          <Button variant="secondary" data-testid="operations-manage-close" onClick={closeManage}>
             关闭
           </Button>
         }
@@ -3204,6 +3136,217 @@ export default function ProcessConfigPage() {
               ))}
             </div>
           )}
+
+          {/* ── 适用条件（issue #4650 阶段 1）：条件**挂在工序身上** —— 独立规则表已从界面移除 ──
+              商家看到的只有**人话**（「工艺 = 韩褶 时插入（在「三边」之后）」），不再是
+              「触发类型 / 触发值 / 部位限定 / 动作 / 目标工序 / 插入锚点 / 优先级」那七格。
+              归属判据 = `production_route_rules.operation === 本工序`（逻辑工序名）。
+              写面**复用现有端点**（`POST /route-rules` / `DELETE /route-rules/{id}`）—— 不新造第二套。 */}
+          <div className="rounded border border-neutral-200 bg-neutral-50 p-3" data-testid="operation-conditions">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium text-neutral-900">适用条件</span>
+              <span className="text-xs text-neutral-500">这道工序在什么情况下做</span>
+              <Button
+                size="sm"
+                className="ml-auto"
+                data-testid="operation-condition-add"
+                onClick={openConditionForm}
+              >
+                <Plus className="w-3.5 h-3.5 mr-1.5" />
+                添加条件
+              </Button>
+            </div>
+
+            <p className="mt-1 text-xs text-neutral-400">
+              条件里的名字<strong>逐字取自</strong>订单里的工艺 / 特殊选项 / 加工项（错一个字就不会命中）。
+              特殊选项按<strong>套</strong>收费（元/套）；工艺与加工项不按套计价。
+            </p>
+
+            {rulesError ? (
+              // 读面失败 ⇒ 就地报错：**不**把它渲染成「没有条件」（静默 = 商家以为没配过）
+              <p
+                className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600"
+                data-testid="operation-conditions-error"
+              >
+                {rulesError}
+              </p>
+            ) : manageConditions.length === 0 ? (
+              <p className="mt-2 text-xs text-neutral-400" data-testid="operation-conditions-empty">
+                没有额外条件 —— 无论订单选什么工艺、什么特殊选项，这道工序都按主线做。
+              </p>
+            ) : (
+              <ul className="mt-2 divide-y divide-neutral-100">
+                {manageConditions.map((rule) => (
+                  <li
+                    key={rule.id}
+                    className="flex flex-wrap items-center gap-2 py-2"
+                    data-testid={`operation-condition-${rule.id}`}
+                  >
+                    <span className="text-neutral-800" data-testid={`operation-condition-text-${rule.id}`}>
+                      {conditionText(rule)}
+                    </span>
+                    {/* 特殊选项按**套**收费（元/套）：那笔对客的钱挂在**这条条件**上（issue #4567）——
+                        独立表没了，但它仍是唯一载体，故跟着条件一起搬进抽屉，写面一字未动。 */}
+                    {rule.trigger_kind === 'option' && (
+                      <RulePriceCell
+                        rule={rule}
+                        editing={editingRulePriceId === rule.id}
+                        draft={rulePriceDraft}
+                        busy={rulePriceBusy}
+                        reasons={editingRulePriceId === rule.id ? rulePriceReasons : []}
+                        onStartEdit={() => {
+                          setEditingRulePriceId(rule.id)
+                          setRulePriceDraft(rule.customer_unit_price == null ? '' : String(rule.customer_unit_price))
+                          setRulePriceReasons([])
+                        }}
+                        onDraftChange={setRulePriceDraft}
+                        onSave={() => void saveRulePrice(rule)}
+                        onCancel={cancelRulePrice}
+                      />
+                    )}
+                    {/* 删除（issue #4588；契约 #4587 ④）：二次确认 → `DELETE /route-rules/{id}`；
+                        失败理由**逐条**就地展示（不吞成一句「删除失败」）。 */}
+                    <button
+                      type="button"
+                      data-testid={`operation-condition-delete-${rule.id}`}
+                      onClick={() => {
+                        setConfirmDeleteRuleId(rule.id)
+                        setRuleDeleteReasons(null)
+                      }}
+                      className="ml-auto rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-red-600"
+                    >
+                      删除
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {/* 「添加条件」= **两件事**（什么时候 / 做还是不做）+ 「做」时给「插在哪道之后」的可选项与默认值 */}
+            {conditionFormOpen && (
+              <div className="mt-3 space-y-2 rounded border border-neutral-200 bg-white p-3" data-testid="operation-condition-form">
+                <div>
+                  <span className="mb-1 block text-xs text-neutral-600">什么时候</span>
+                  <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="什么时候">
+                    {([
+                      { key: 'craft', label: '工艺' },
+                      { key: 'option', label: '特殊选项' },
+                      { key: 'processing_item', label: '加工项' },
+                    ] as const).map((k) => (
+                      <button
+                        key={k.key}
+                        type="button"
+                        role="radio"
+                        aria-checked={conditionDraft.trigger_kind === k.key}
+                        data-testid={`condition-kind-${k.key}`}
+                        onClick={() => switchConditionKind(k.key)}
+                        className={cn(
+                          'rounded-full border px-3 py-1 text-sm transition-colors',
+                          conditionDraft.trigger_kind === k.key
+                            ? 'border-primary-600 bg-neutral-50 font-medium text-primary-700'
+                            : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50',
+                        )}
+                      >
+                        {k.label}
+                      </button>
+                    ))}
+                  </div>
+                  {/* 取值**从列表选、不手输**：手输一个词表里没有的名字 = 这条条件永远不命中 */}
+                  <select
+                    id="condition-value"
+                    aria-label="什么时候生效"
+                    data-testid="condition-value"
+                    className={cn(inputCls, 'mt-2')}
+                    value={conditionDraft.trigger_value}
+                    onChange={(e) => setConditionDraft((d) => ({ ...d, trigger_value: e.target.value }))}
+                  >
+                    <option value="">
+                      {conditionDraft.trigger_kind === 'craft'
+                        ? '从工艺列表里选…'
+                        : conditionDraft.trigger_kind === 'processing_item'
+                          ? '从加工项列表里选…'
+                          : '从特殊选项列表里选…'}
+                    </option>
+                    {(conditionDraft.trigger_kind === 'craft'
+                      ? ruleOptions.crafts
+                      : conditionDraft.trigger_kind === 'processing_item'
+                        ? ruleOptions.processing_items
+                        : optionNames
+                    ).map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-neutral-600" htmlFor="condition-action">
+                    做还是不做
+                  </label>
+                  <select
+                    id="condition-action"
+                    data-testid="condition-action"
+                    className={inputCls}
+                    value={conditionDraft.action}
+                    onChange={(e) => {
+                      const action = e.target.value as 'insert' | 'remove'
+                      setConditionDraft((d) => ({ ...d, action, after_operation: '' }))
+                    }}
+                  >
+                    <option value="insert">做（订单命中时加上这道工序）</option>
+                    <option value="remove">不做（订单命中时去掉这道工序）</option>
+                  </select>
+                </div>
+
+                {/* 「插在哪道之后」**只对「做」有意义**（不做没有位置）—— 切到不做时整块不渲染。
+                    默认值 = 该工序现有条件的锚点，其次 = 默认主线里它的前一道（别让商家猜）。 */}
+                {conditionDraft.action === 'insert' && (
+                  <div>
+                    <label className="mb-1 block text-xs text-neutral-600" htmlFor="condition-anchor">
+                      插在哪道工序之后
+                    </label>
+                    <select
+                      id="condition-anchor"
+                      data-testid="condition-anchor"
+                      className={inputCls}
+                      value={conditionDraft.after_operation}
+                      onChange={(e) => setConditionDraft((d) => ({ ...d, after_operation: e.target.value }))}
+                    >
+                      <option value="">放到最后（末尾）</option>
+                      {logicalOps.map((op) => (
+                        <option key={op} value={op}>
+                          {op}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {conditionReasons.length > 0 && (
+                  <ul className="space-y-0.5 text-xs text-red-600" data-testid="condition-add-reasons">
+                    {conditionReasons.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                )}
+
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    data-testid="condition-add-cancel"
+                    onClick={() => setConditionFormOpen(false)}
+                  >
+                    取消
+                  </Button>
+                  <Button loading={busy} data-testid="condition-add-submit" onClick={createCondition}>
+                    保存
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </Modal>
 
@@ -3375,14 +3518,21 @@ export default function ProcessConfigPage() {
               </div>
               <div>
                 <label className="mb-1 block text-neutral-600" htmlFor="new-option-operation">
-                  目标工序
+                  这道选项落在哪道工序上
                 </label>
                 <select
                   id="new-option-operation"
                   data-testid="routings-create-option-operation"
                   className={inputCls}
                   value={newOption.operation}
-                  onChange={(e) => setNewOption({ ...newOption, operation: e.target.value })}
+                  onChange={(e) =>
+                    // 选定工序 ⇒ **顺手填上**「插在哪道之后」的默认值（issue #4650：别让商家猜）
+                    setNewOption({
+                      ...newOption,
+                      operation: e.target.value,
+                      after_operation: e.target.value ? anchorDefaultFor(e.target.value) : '',
+                    })
+                  }
                 >
                   <option value="">选择这条选项落在哪道工序上…</option>
                   {logicalOps.map((op) => (
@@ -3394,7 +3544,7 @@ export default function ProcessConfigPage() {
               </div>
               <div>
                 <label className="mb-1 block text-neutral-600" htmlFor="new-option-after_operation">
-                  插入锚点（可选）
+                  插在哪道工序之后（可选）
                 </label>
                 <select
                   id="new-option-after_operation"
@@ -3403,27 +3553,16 @@ export default function ProcessConfigPage() {
                   value={newOption.after_operation}
                   onChange={(e) => setNewOption({ ...newOption, after_operation: e.target.value })}
                 >
-                  <option value="">末尾追加</option>
+                  <option value="">放到最后（末尾）</option>
                   {logicalOps.map((op) => (
                     <option key={op} value={op}>
                       {op}
                     </option>
                   ))}
                 </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-neutral-600" htmlFor="new-option-priority">
-                  优先级（可选）
-                </label>
-                <input
-                  id="new-option-priority"
-                  inputMode="numeric"
-                  data-testid="routings-create-option-priority"
-                  className={inputCls}
-                  placeholder="数字越小越先应用（留空 = 后端默认顺序）"
-                  value={newOption.priority}
-                  onChange={(e) => setNewOption({ ...newOption, priority: e.target.value })}
-                />
+                <p className="mt-1 text-xs text-neutral-400">
+                  已按这道工序现有的位置填好默认值，通常不用改。
+                </p>
               </div>
               {newOptionReasons.length > 0 && (
                 <ul
@@ -3518,33 +3657,24 @@ export default function ProcessConfigPage() {
         </div>
       </Modal>
 
-      {/* 删除**条件工序规则**的二次确认（issue #4617）：与「删除工艺路线」同形态的弹框 ——
-          就地展开的确认在长表格里既易误点、又看不清删的是哪一行（用户裁定的病根）。
-          内容写清「这条规则是什么」（触发类型 + 触发值 + 动作 + 目标工序）⇒ 一眼确认没删错。
+      {/* 删除**一条适用条件**的二次确认（issue #4617 的弹框形态；issue #4650 起从工序抽屉里点）——
+          内容写清「删的是哪一条」，用的是**人话**（`工艺 = 韩褶 时插入（在「三边」之后）`），
+          不是「触发类型 + 触发值 + 动作 + 目标工序」那套配置术语。
           删除中禁用按钮（防重复提交）；失败理由**逐条**就地展示（不吞成一句「删除失败」）。 */}
       <Modal
         open={deleteRuleTarget !== null}
         onClose={() => !ruleBusy && setConfirmDeleteRuleId(null)}
-        title="删除条件工序规则"
+        title="删除这条适用条件"
         footer={null}
       >
         {deleteRuleTarget && (
           <div data-testid="route-rule-delete-modal" data-rule={deleteRuleTarget.id} className="space-y-3 text-sm">
             <p className="text-neutral-600">
-              将删除这条规则：
-              <span className="ml-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] text-neutral-500">
-                {TRIGGER_KIND_LABEL[deleteRuleTarget.trigger_kind ?? ''] ??
-                  deleteRuleTarget.trigger_kind ??
-                  '—'}
-              </span>
-              <strong className="ml-1">{deleteRuleTarget.trigger_value ?? '—'}</strong>
-              <span className="ml-1">→ {ruleActionText(deleteRuleTarget)}</span>
+              将删除这条条件：<strong className="ml-1">{conditionText(deleteRuleTarget)}</strong>
             </p>
             <p className="text-neutral-500">
-              删除后，订单命中这个
-              {TRIGGER_KIND_LABEL[deleteRuleTarget.trigger_kind ?? ''] ?? '触发值'}
-              时<strong>不再</strong>增删这道工序（加工单按当前主线生成）。
-              规则是<strong>软删</strong>（保留排查工序顺序错的线索），历史加工单一字不变。
+              删除后，订单命中这个条件时<strong>不再</strong>增删「{deleteRuleTarget.operation ?? '—'}」这道工序
+              （加工单按当前主线生成）。历史加工单一字不变。
             </p>
             {ruleDeleteReasons && (
               <ul className="space-y-0.5 text-xs text-red-600" data-testid="route-rule-delete-reasons">
@@ -3623,221 +3753,6 @@ export default function ProcessConfigPage() {
         )}
       </Modal>
 
-      {/* 新增**条件工序规则**（issue #4616）：触发类型 = 工艺 / 特殊选项 / 加工项。
-          - **触发值按类型从对应词表取**（工艺 ⇒ 活跃工艺词表；加工项 ⇒ 加工项目录；
-            特殊选项 ⇒ 可新建，给既有选项名做候选 + 允许手输）—— 手输一个词表里没有的名字
-            = 建一条永远不命中的规则（商家以为配了、加工单上却没有）；
-          - **动作**（插入 / 移除）；**目标工序 / 插入锚点**复用主线同一份**逻辑工序名**取值域；
-          - 选**特殊选项**才显示「对客单价（元/套）」（可空 = 未定价）—— craft / 加工项按工序单价
-            **计件**，两套账不互读，后端也会拒。 */}
-      <Modal
-        open={newRuleOpen}
-        onClose={() => !busy && setNewRuleOpen(false)}
-        title="新增条件工序规则"
-        footer={null}
-      >
-        <div className="space-y-3 text-sm" data-testid="route-rule-create-modal">
-          <div>
-            <span className="mb-1 block text-neutral-600">触发类型</span>
-            <div className="flex gap-2" role="radiogroup" aria-label="触发类型">
-              {([
-                { key: 'craft', label: '工艺' },
-                { key: 'option', label: '特殊选项' },
-                { key: 'processing_item', label: '加工项' },
-              ] as const).map((k) => (
-                <button
-                  key={k.key}
-                  type="button"
-                  role="radio"
-                  aria-checked={newRule.trigger_kind === k.key}
-                  data-testid={`rule-kind-${k.key}`}
-                  onClick={() => switchRuleKind(k.key)}
-                  className={cn(
-                    'rounded-full border px-3 py-1 text-sm transition-colors',
-                    newRule.trigger_kind === k.key
-                      ? 'border-primary-600 bg-neutral-50 font-medium text-primary-700'
-                      : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50',
-                  )}
-                >
-                  {k.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-neutral-600" htmlFor="rule-trigger-value">
-              触发值
-            </label>
-            {newRule.trigger_kind === 'option' ? (
-              <>
-                <input
-                  id="rule-trigger-value"
-                  data-testid="rule-trigger-value"
-                  className={inputCls}
-                  list="rule-option-names"
-                  placeholder="如 拼3次 / 免熨 / 防翘扣（可新建）"
-                  value={newRule.trigger_value}
-                  onChange={(e) => setNewRule({ ...newRule, trigger_value: e.target.value })}
-                />
-                {/* 候选 = 既有规则里出现过的选项名（**不发明**词表；特殊选项名本来就可新建） */}
-                <datalist id="rule-option-names">
-                  {optionNames.map((name) => (
-                    <option key={name} value={name} />
-                  ))}
-                </datalist>
-              </>
-            ) : (
-              <select
-                id="rule-trigger-value"
-                data-testid="rule-trigger-value"
-                className={inputCls}
-                value={newRule.trigger_value}
-                onChange={(e) => setNewRule({ ...newRule, trigger_value: e.target.value })}
-              >
-                <option value="">
-                  {newRule.trigger_kind === 'craft'
-                    ? '从工艺词表里选…'
-                    : '从加工项目录里选…'}
-                </option>
-                {(newRule.trigger_kind === 'craft' ? ruleOptions.crafts : ruleOptions.processing_items).map(
-                  (name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ),
-                )}
-              </select>
-            )}
-            <p className="mt-1 text-xs text-neutral-400">
-              {newRule.trigger_kind === 'craft'
-                ? '触发键 = 订单里的工艺名（逐字相等）—— 词表里没有的工艺，请先建工艺。'
-                : newRule.trigger_kind === 'processing_item'
-                  ? '触发键 = 订单里的加工项名（逐字相等）—— 目录里没有的加工项，请先在「加工项管理」建。'
-                  : '选项名对客可见，**与 ERP 名逐字一致**（错一个字就查不到）。'}
-            </p>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-neutral-600" htmlFor="rule-action">
-              动作
-            </label>
-            <select
-              id="rule-action"
-              data-testid="rule-action"
-              className={inputCls}
-              value={newRule.action}
-              onChange={(e) =>
-                setNewRule({ ...newRule, action: e.target.value as 'insert' | 'remove', after_operation: '' })
-              }
-            >
-              <option value="insert">插入（在锚点之后加一道工序）</option>
-              <option value="remove">移除（把这道工序从序列里去掉）</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-neutral-600" htmlFor="rule-operation">
-              目标工序
-            </label>
-            <select
-              id="rule-operation"
-              data-testid="rule-operation"
-              className={inputCls}
-              value={newRule.operation}
-              onChange={(e) => setNewRule({ ...newRule, operation: e.target.value })}
-            >
-              <option value="">选择这道规则落在哪道工序上…</option>
-              {logicalOps.map((op) => (
-                <option key={op} value={op}>
-                  {op}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 锚点**只对「插入」有意义**（移除没有锚点）—— 切到移除时整块不渲染 */}
-          {newRule.action === 'insert' && (
-            <div>
-              <label className="mb-1 block text-neutral-600" htmlFor="rule-after-operation">
-                插入锚点（可选）
-              </label>
-              <select
-                id="rule-after-operation"
-                data-testid="rule-after-operation"
-                className={inputCls}
-                value={newRule.after_operation}
-                onChange={(e) => setNewRule({ ...newRule, after_operation: e.target.value })}
-              >
-                <option value="">末尾追加</option>
-                {logicalOps.map((op) => (
-                  <option key={op} value={op}>
-                    {op}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div>
-            <label className="mb-1 block text-neutral-600" htmlFor="rule-priority">
-              优先级（可选）
-            </label>
-            <input
-              id="rule-priority"
-              inputMode="numeric"
-              data-testid="rule-priority"
-              className={inputCls}
-              placeholder="数字越小越先应用（留空 = 后端默认顺序）"
-              value={newRule.priority}
-              onChange={(e) => setNewRule({ ...newRule, priority: e.target.value })}
-            />
-          </div>
-
-          {/* 对客单价**只对特殊选项**有意义（craft / 加工项按工序单价计件，两套账不互读） */}
-          {newRule.trigger_kind === 'option' && (
-            <div>
-              <label className="mb-1 block text-neutral-600" htmlFor="rule-customer-unit-price">
-                对客单价（元/套，可空）
-              </label>
-              <input
-                id="rule-customer-unit-price"
-                inputMode="decimal"
-                data-testid="rule-customer-unit-price"
-                className={inputCls}
-                placeholder="如 12.5；留空 = 未定价（≠ 0 元）"
-                value={newRule.customer_unit_price}
-                onChange={(e) => setNewRule({ ...newRule, customer_unit_price: e.target.value })}
-              />
-              <p className="mt-1 text-xs text-neutral-400">
-                这是对顾客的按套价（元/套），不进工人的计件工资；留空 = 未定价（**不是 0 元**）。
-              </p>
-            </div>
-          )}
-
-          {newRuleReasons.length > 0 && (
-            <ul className="space-y-0.5 text-xs text-red-600" data-testid="rule-create-reasons">
-              {newRuleReasons.map((r, i) => (
-                <li key={i}>{r}</li>
-              ))}
-            </ul>
-          )}
-
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="secondary"
-              disabled={busy}
-              data-testid="rule-create-cancel"
-              onClick={() => setNewRuleOpen(false)}
-            >
-              取消
-            </Button>
-            <Button loading={busy} data-testid="rule-create-submit" onClick={createRule}>
-              保存
-            </Button>
-          </div>
-        </div>
-      </Modal>
 
       {/* 一键套用确认（批量写入工序/路线，防误触；照知识库页范式） */}
       <Modal open={!!confirmTemplate} onClose={() => setConfirmTemplate(null)} title="套用行业模板" footer={null}>

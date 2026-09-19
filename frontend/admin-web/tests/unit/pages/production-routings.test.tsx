@@ -82,6 +82,8 @@
 // ㉒ **条件工序规则移除折叠、常驻展开**（issue #4613，用户原话「条件工序默认不要折叠，打开，
 //    移除可折叠功能」）：页面加载后**未点任何 toggle** 规则表与说明直接可见；标题 + `共 N 条` + hint
 //    保留；`route-rules-toggle` **不存在**（移除的是折叠能力，不只是「默认打开」）。
+//    ⚠️ **#4650 阶段 1 改判**：上面这一条说的是**独立规则表**的折叠 —— 那张表已整块移除
+//    （见 ㉗）；「常驻可见」的口径随条件迁到**工序抽屉的「适用条件」**（无 toggle）。
 // ㉓ **「新增工序」入口去重**（issue #4615，用户原话「这里还有个一样的按钮，可以移除掉，保留最上面的
 //    「新增」，但是要改成**新增工序**」）：入口**只在页头**（`routings-new-operation`，文案 = `新增工序`）；
 //    面板内重复的 `operations-new-operation` **不存在**；矩阵空态提示指向**右上**（入口换位置后
@@ -124,6 +126,21 @@
 //    - 「新增工序」对话框的「工序名称」placeholder 不再示范部位后缀（`罗马帘-穿杆` ⇒ `罗马帘穿杆`）
 //      + 一句「工序名不要带部位 —— 部位在下面勾选」；**不加**阻断式校验（#4614 的预检不变）；
 //    - 红证（修复前实测，窄跑）：9 failed / 115 passed；实现后 124/124 绿。
+// ㉗ **「条件工序规则」概念从界面消失（issue #4650 阶段 1，用户原话「**我要求移除条件工序规则**，
+//    这个概念我都难以理解，用户如何去理解？我们要做到**智能化的产品**，而不是旧时代配置化的产品」）**：
+//    商家界面**不再有**那张要求他填「触发类型 / 触发值 / 部位限定 / 动作 / 目标工序 / 插入锚点 /
+//    优先级」的独立规则表（`route-rules*` 一族 testid 与「新增规则」入口**一律不存在**），
+//    术语也不得出现在页面文本里；条件改为**挂在工序身上** —— 「工艺项」tab 的 `管理▸` 抽屉里一节
+//    **「适用条件」**，一句人话（`工艺 = 韩褶 时插入（在「三边」之后）` / `工艺 = 四爪钩 时不做` /
+//    无锚点 ⇒ `插入（追加到末尾）`）；归属判据 = `production_route_rules.operation === 该工序`。
+//    **零迁移 + 行为不变**：后端 `GET/POST/DELETE /route-rules` 端点**保留**（阶段 2 的 AI 入口与
+//    阶段 4 的承载收敛还要用），写面**复用现有端点**（**严禁**新造第二套）；页面加载**零写请求**；
+//    添加只问**两件事**（什么时候 / 做还是不做），取值**从词表选、不手输**，「插在哪道之后」给
+//    可选项 + **默认值**（该工序现有条件的锚点 ⇒ 默认主线里它的前一道）；特殊选项的「元/套」
+//    跟着条件一起搬进抽屉（写面一字未动）；「新增 → 特殊选项」对话框**去掉优先级**、
+//    锚点改叫「插在哪道工序之后」并自动填默认值。
+//    - 红证（改前实测，窄跑 `-t ㉗`）：10 failed（独立表/术语仍在、抽屉里没有「适用条件」一族）
+//      ⇒ 实现后 10/10 绿；全文件 132/132 绿。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -263,11 +280,14 @@ const RULES = [
  * ① `option` 有价 `12.5` ⇒ `¥12.50`；② `option` **未定价** `null` ⇒ 「未定价」；
  * ③ `option` 定价恰为 `0` ⇒ `¥0.00`（真 0 元，**必须**照样显示成金额）；
  * ④ 工艺变体 ⇒ `—`（工艺变体不按套计价）。
+ *
+ * ⚠️ issue #4650 阶段 1：价随**条件**一起搬进工序抽屉 ⇒ 四条规则的目标工序都落在同一道
+ * 可在矩阵里打开抽屉的工序（`韩褶`）上，测试才能一次看全四态。
  */
 const RULES_WITH_PRICE = [
-  { id: 21, trigger_kind: 'option', trigger_value: '拼2次', position: '纱帘', action: 'insert', operation: '拼缝', after_operation: null, priority: 210, status: 'active', customer_unit_price: 12.5 },
-  { id: 22, trigger_kind: 'option', trigger_value: '防翘扣', position: null, action: 'insert', operation: '防翘扣', after_operation: '三边', priority: 220, status: 'active', customer_unit_price: null },
-  { id: 23, trigger_kind: 'option', trigger_value: '免熨', position: null, action: 'insert', operation: '免熨', after_operation: null, priority: 230, status: 'active', customer_unit_price: 0 },
+  { id: 21, trigger_kind: 'option', trigger_value: '拼2次', position: '纱帘', action: 'insert', operation: '韩褶', after_operation: null, priority: 210, status: 'active', customer_unit_price: 12.5 },
+  { id: 22, trigger_kind: 'option', trigger_value: '防翘扣', position: null, action: 'insert', operation: '韩褶', after_operation: '三边', priority: 220, status: 'active', customer_unit_price: null },
+  { id: 23, trigger_kind: 'option', trigger_value: '免熨', position: null, action: 'insert', operation: '韩褶', after_operation: null, priority: 230, status: 'active', customer_unit_price: 0 },
   { id: 24, trigger_kind: 'craft', trigger_value: '韩褶', position: null, action: 'insert', operation: '韩褶', after_operation: '三边', priority: 10, status: 'active' },
 ]
 
@@ -375,13 +395,18 @@ const renderOperations = async () => {
 const openManage = async (operation: string) => {
   await renderOperations()
   await userEvent.click(screen.getByTestId(`matrix-manage-${operation}`))
-  await waitFor(() => expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument())
+  await waitFor(() => expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument()
+  )
 }
 
-/** 渲染路线 tab（条件工序规则**常驻展开**，issue #4613 起没有折叠开关可点） */
-const renderRules = async () => {
-  await renderOnRoutes()
-  await waitFor(() => expect(screen.getByTestId('route-rules-body')).toBeInTheDocument())
+/**
+ * 打开某逻辑工序的抽屉并等「适用条件」一节就位（issue #4650 阶段 1：条件**挂在工序身上**）。
+ * ⚠️ 一个测试里**只能调一次** `openManage`（它会 `render` 一个新的页面实例 ⇒ 同 testid 出现两份）。
+ * 需要看第二道工序时：`userEvent.click(screen.getByTestId('matrix-manage-X'))`。
+ */
+const openConditions = async (operation: string) => {
+  await openManage(operation)
+  return screen.findByTestId('operation-conditions')
 }
 
 describe('工艺配置页 /production/routings（新路线模型，issue #4433 = 母单 #4423 的 P3）', () => {
@@ -676,69 +701,64 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(payloads.every((p) => p.is_default !== false)).toBe(true)
   })
 
-  // ══════════════════ ⑧ 统一规则区（26 条不截断，触发键逐字取自后端） ══════════════════
+  // ══════════════════ ⑧ 适用条件（26 条不截断，取值逐字取自后端；issue #4650 阶段 1 起挂在工序上） ══════════════════
 
-  it('⑳ 条件工序规则**常驻展开**：页面加载后（未点任何 toggle）规则表直接可见（issue #4613）', async () => {
-    await renderOnRoutes()
+  it('⑳ 适用条件**常驻可见**：打开抽屉即见，没有折叠开关（issue #4613 口径随 #4650 迁到抽屉）', async () => {
+    const section = await openConditions('韩褶')
 
-    // 规则表**直接可见** —— 改前默认收起（要再点一下才看得到，连带说明也被藏起来）⇒ 本断言红
-    await waitFor(() => expect(screen.getByTestId('route-rules-body')).toBeInTheDocument())
-    expect(screen.getByTestId('route-rules-total')).toHaveTextContent('共 3 条')
-    expect(screen.getAllByTestId(/^route-rule-\d+$/)).toHaveLength(3)
-    expect(screen.getByTestId('route-rule-trigger-1')).toHaveTextContent('韩褶')
-    // 标题与 hint 仍在（只是不再可折叠）
-    expect(screen.getByTestId('route-rules')).toHaveTextContent('条件工序规则')
-    // hint 文案随 #4616 扩到「工艺 / 特殊选项 / 加工项」（触发维闭词表新增加工项）
-    expect(screen.getByTestId('route-rules')).toHaveTextContent('工艺 / 特殊选项 / 加工项触发时，往主线里插一道或删一道')
+    // 条件**直接可见** —— 改前默认收起（要再点一下才看得到，连带说明也被藏起来）⇒ 本断言红
+    expect(within(section).getAllByTestId(/^operation-condition-\d+$/)).toHaveLength(1)
+    expect(within(section).getByTestId('operation-condition-text-1')).toHaveTextContent('韩褶')
+    expect(section).toHaveTextContent('适用条件')
     // 反向断言：折叠开关**不存在**（移除的是折叠**能力**，不只是「默认打开」）
+    expect(screen.queryByTestId('operation-conditions-toggle')).toBeNull()
     expect(screen.queryByTestId('route-rules-toggle')).toBeNull()
   })
 
-  it('规则区：26 条**整份**渲染（不截断），触发键**逐字**取自后端', async () => {
+  it('适用条件：26 条**整份**渲染（不截断），取值**逐字**取自后端', async () => {
     const big = Array.from({ length: 26 }, (_, i) => ({
       id: 100 + i,
       trigger_kind: i % 2 === 0 ? 'craft' : 'option',
       trigger_value: `触发${i + 1}`,
       position: i % 3 === 0 ? null : '布帘',
       action: i % 4 === 0 ? 'remove' : 'insert',
-      operation: `工序${i + 1}`,
-      after_operation: i % 4 === 0 ? null : '三边',
+      operation: '三边',
+      after_operation: i % 4 === 0 ? null : '精裁',
       priority: (i + 1) * 10,
       status: 'active',
     }))
     mockGetRouteRules.mockReset().mockResolvedValue(ok(big))
-    await renderRules()
+    const section = await openConditions('三边')
 
-    await waitFor(() => expect(screen.getByTestId('route-rules-total')).toBeInTheDocument())
-    expect(screen.getByTestId('route-rules-total')).toHaveTextContent('26')
     // 注入：把 26 条截断成前 20 条（.slice(0,20)）⇒ 断言红
-    expect(screen.getAllByTestId(/^route-rule-\d+$/)).toHaveLength(26)
-    expect(screen.getByTestId('route-rule-trigger-100')).toHaveTextContent('触发1')
+    expect(within(section).getAllByTestId(/^operation-condition-\d+$/)).toHaveLength(26)
+    expect(within(section).getByTestId('operation-condition-text-100')).toHaveTextContent('触发1')
   })
 
-  it('规则区：触发 → 动作 → 目标工序 / 部位限定 / priority 都可读（null = 不限部位 / 追加末尾）', async () => {
-    await renderRules()
-    await waitFor(() => expect(screen.getByTestId('route-rule-1')).toBeInTheDocument())
+  it('适用条件：三种形态的**人话**都可读（带锚点 / 不做 / 追加到末尾）', async () => {
+    mockGetRouteRules.mockReset().mockResolvedValue(
+      ok([
+        { id: 1, trigger_kind: 'craft', trigger_value: '韩褶', position: null, action: 'insert', operation: '韩褶', after_operation: '三边', priority: 10, status: 'active' },
+        { id: 2, trigger_kind: 'craft', trigger_value: '打孔', position: '布帘', action: 'remove', operation: '车被', after_operation: null, priority: 20, status: 'active' },
+        { id: 3, trigger_kind: 'option', trigger_value: '拼2次', position: '纱帘', action: 'insert', operation: '外帘装袋', after_operation: null, priority: 30, status: 'active' },
+      ]),
+    )
+    await openConditions('韩褶')
 
-    // ① 工艺触发 · 插入 after 锚点
-    const r1 = screen.getByTestId('route-rule-1')
-    expect(within(r1).getByTestId('route-rule-trigger-1')).toHaveTextContent('韩褶')
-    expect(within(r1).getByTestId('route-rule-action-1')).toHaveTextContent('插入')
-    expect(within(r1).getByTestId('route-rule-action-1')).toHaveTextContent('三边')
-    expect(within(r1).getByTestId('route-rule-target-1')).toHaveTextContent('韩褶')
-    expect(within(r1).getByTestId('route-rule-position-1')).toHaveTextContent('不限')
-    expect(within(r1).getByTestId('route-rule-priority-1')).toHaveTextContent('10')
+    // ① 工艺触发 · 插入 after 锚点（取值**逐字**取自后端）
+    expect(screen.getByTestId('operation-condition-text-1')).toHaveTextContent('工艺 = 韩褶 时插入（在「三边」之后）')
 
-    // ② 工艺触发 · 移除（带部位限定）
-    const r2 = screen.getByTestId('route-rule-2')
-    expect(within(r2).getByTestId('route-rule-action-2')).toHaveTextContent('移除')
-    expect(within(r2).getByTestId('route-rule-position-2')).toHaveTextContent('布帘')
-    expect(within(r2).getByTestId('route-rule-target-2')).toHaveTextContent('熨烫')
+    await userEvent.click(screen.getByTestId('operations-manage-close'))
+    await userEvent.click(screen.getByTestId('matrix-manage-车被'))
+    // ② 工艺触发 · 不做
+    expect(await screen.findByTestId('operation-condition-text-2')).toHaveTextContent('工艺 = 打孔 时不做')
 
-    // ③ 特殊选项触发（触发键**逐字**：拼2次 —— 前端不得"纠正"成「拼两次」）
-    const r3 = screen.getByTestId('route-rule-3')
-    expect(within(r3).getByTestId('route-rule-trigger-3')).toHaveTextContent('拼2次')
-    expect(within(r3).getByTestId('route-rule-position-3')).toHaveTextContent('纱帘')
+    await userEvent.click(screen.getByTestId('operations-manage-close'))
+    await userEvent.click(screen.getByTestId('matrix-manage-外帘装袋'))
+    // ③ 特殊选项触发 · 无锚点 ⇒ 「追加到末尾」；取值**逐字**：拼2次（前端不得"纠正"成「拼两次」）
+    expect(await screen.findByTestId('operation-condition-text-3')).toHaveTextContent(
+      '特殊选项 = 拼2次 时插入（追加到末尾）',
+    )
   })
 
   // ══════════════════ ⑨ 就绪度「默认路线」格 ══════════════════
@@ -811,11 +831,14 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(step).not.toHaveTextContent('待完成')
   })
 
-  // ══════════════════ ⑨c 条件工序规则区「单价（元/套）」列（issue #4567 用户走查①） ══════════════════
+  // ══════════════════ ⑨c 适用条件里的「单价（元/套）」（issue #4567 用户走查①；#4650 起随条件搬进抽屉） ══════════════════
+  //
+  // 独立规则表没了，但那笔**对客按套**的钱仍然只有一个载体 = **特殊选项触发的那条条件**
+  // ⇒ 跟着条件一起搬进工序抽屉，写面（`PUT /route-rules/{id}/customer-unit-price`）一字未动。
 
   it('规则区单价：option 行有价渲染金额、**未定价渲染「未定价」且不含 ¥0.00**、真 0 元照显示 ¥0.00', async () => {
     mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES_WITH_PRICE))
-    await renderRules()
+    await openConditions('韩褶')
     await waitFor(() => expect(screen.getByTestId('route-rule-price-21')).toBeInTheDocument())
 
     // ① 有价 ⇒ 用页面既有的 money() 渲染
@@ -835,28 +858,24 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(unpriced.textContent).not.toContain('¥')
   })
 
-  it('规则区单价：非 option 行（craft 等工艺变体）⇒ 「—」+ 说明「只有特殊选项按套计价」', async () => {
+  it('规则区单价：非 option 行（craft 等工艺变体）⇒ **不出现**价格格（工艺变体不按套计价）', async () => {
     mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES_WITH_PRICE))
-    await renderRules()
-    await waitFor(() => expect(screen.getByTestId('route-rule-price-24')).toBeInTheDocument())
+    const section = await openConditions('韩褶')
+    await waitFor(() => expect(screen.getByTestId('route-rule-price-21')).toBeInTheDocument())
 
-    const craft = screen.getByTestId('route-rule-price-24')
-    // 注入：把非 option 行按 money(null) 渲染 ⇒ 出 ¥0.00，断言红
-    expect(craft).toHaveTextContent('—')
-    expect(craft).not.toHaveTextContent('¥')
-    expect(craft).not.toHaveTextContent('未定价')
-    expect(craft).toHaveAttribute('data-state', 'na')
-    expect(craft).toHaveAttribute('title', '只有特殊选项按套计价')
+    // 注入：给非 option 行也渲染价格格（`money(null)` 会出 ¥0.00 —— 未定价 ≠ 0 元）⇒ 断言红
+    expect(screen.queryByTestId('route-rule-price-24')).toBeNull()
+    // 那条条件本身仍在（只是它没有那笔对客的钱）—— 三态仍可区分：有价 / 未定价 / 不适用（无价格格）
+    expect(screen.getByTestId('operation-condition-text-24')).toHaveTextContent('工艺 = 韩褶 时插入（在「三边」之后）')
 
-    // 表头 + 说明文案（特殊选项按**套**收费）
-    expect(within(screen.getByTestId('route-rules')).getByText('单价（元/套）')).toBeInTheDocument()
-    expect(screen.getByTestId('route-rules')).toHaveTextContent('按套收费')
+    // 说明文案（特殊选项按**套**收费）就地写在「适用条件」一节里
+    expect(section).toHaveTextContent('按套收费')
   })
 
   it('规则区单价行内编辑（成功）：铅笔 → 输入 → 保存 ⇒ PUT 只带 {customer_unit_price}，成功后刷新', async () => {
     mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES_WITH_PRICE))
     mockUpdateRuleCustomerUnitPrice.mockReset().mockResolvedValue(ok({ id: 21, customer_unit_price: 6 }))
-    await renderRules()
+    await openConditions('韩褶')
     await waitFor(() => expect(screen.getByTestId('route-rule-price-21')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('route-rule-price-edit-21'))
@@ -878,7 +897,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   it('规则区单价行内编辑（成功·清空）：清空 ⇒ PUT `null` = 改回**未定价**（不是 0 元）', async () => {
     mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES_WITH_PRICE))
     mockUpdateRuleCustomerUnitPrice.mockReset().mockResolvedValue(ok({ id: 21, customer_unit_price: null }))
-    await renderRules()
+    await openConditions('韩褶')
     await waitFor(() => expect(screen.getByTestId('route-rule-price-21')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('route-rule-price-edit-21'))
@@ -908,7 +927,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
         },
       },
     })
-    await renderRules()
+    await openConditions('韩褶')
     await waitFor(() => expect(screen.getByTestId('route-rule-price-21')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('route-rule-price-edit-21'))
@@ -926,7 +945,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('规则区单价行内编辑（本地预检）：负数 / 三位小数 ⇒ 不发请求，就地给理由', async () => {
     mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES_WITH_PRICE))
-    await renderRules()
+    await openConditions('韩褶')
     await waitFor(() => expect(screen.getByTestId('route-rule-price-21')).toBeInTheDocument())
 
     for (const bad of ['-1', '6.005']) {
@@ -944,9 +963,10 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('规则区单价：**非 option 行没有编辑入口**（工艺变体不按套收费，服务端也会 422）', async () => {
     mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES_WITH_PRICE))
-    await renderRules()
-    await waitFor(() => expect(screen.getByTestId('route-rule-price-24')).toBeInTheDocument())
+    await openConditions('韩褶')
+    await waitFor(() => expect(screen.getByTestId('route-rule-price-21')).toBeInTheDocument())
 
+    expect(screen.queryByTestId('route-rule-price-24')).toBeNull()
     expect(screen.queryByTestId('route-rule-price-edit-24')).toBeNull()
     // option 行有入口（对照组：证明不是「全都没有」）
     expect(screen.getByTestId('route-rule-price-edit-21')).toBeInTheDocument()
@@ -1306,12 +1326,12 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.queryByTestId('variant-delete-confirm-op-精裁-布')).toBeNull()
   })
 
-  it('⑰-⑯ 条件工序规则：加「操作」列 + 删除（二次确认后 `DELETE /route-rules/{id}`）', async () => {
-    await renderRules()
-    const r1 = screen.getByTestId('route-rule-1')
-    expect(within(r1).getByTestId('route-rule-delete-1')).toBeInTheDocument()
+  it('⑰-⑯ 适用条件：删除（二次确认后 `DELETE /route-rules/{id}`）', async () => {
+    const section = await openConditions('韩褶')
+    const r1 = within(section).getByTestId('operation-condition-1')
+    expect(within(r1).getByTestId('operation-condition-delete-1')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByTestId('route-rule-delete-1'))
+    await userEvent.click(screen.getByTestId('operation-condition-delete-1'))
     expect(mockDeleteRouteRule).not.toHaveBeenCalled()
     await userEvent.click(screen.getByTestId('route-rule-delete-confirm-1'))
 
@@ -1319,34 +1339,34 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await waitFor(() => expect(mockGetRouteRules).toHaveBeenCalledTimes(2))
   })
 
-  it('⑰-⑰ 条件工序规则：删除被拒 ⇒ 护栏理由逐条就地展示', async () => {
+  it('⑰-⑰ 适用条件：删除被拒 ⇒ 护栏理由逐条就地展示', async () => {
     mockDeleteRouteRule.mockReset().mockRejectedValueOnce(guardError(['规则已被订单引用', '请先停用该选项']))
-    await renderRules()
+    await openConditions('韩褶')
 
-    await userEvent.click(screen.getByTestId('route-rule-delete-2'))
-    await userEvent.click(screen.getByTestId('route-rule-delete-confirm-2'))
+    await userEvent.click(screen.getByTestId('operation-condition-delete-1'))
+    await userEvent.click(screen.getByTestId('route-rule-delete-confirm-1'))
 
     const reasons = await screen.findByTestId('route-rule-delete-reasons')
     expect(reasons).toHaveTextContent('规则已被订单引用')
     expect(reasons).toHaveTextContent('请先停用该选项')
   })
 
-  // ══════════════════ ⑱ 规则创建入口（issue #4616）══════════════════
+  // ══════════════════ ⑱ 「添加条件」入口（issue #4616 的入口，issue #4650 起挂在工序抽屉里）══════════════════
   //
   // 用户裁定：「现在的问题是**没有入口往条件工序规则中添加新的工艺和加工项**」——
   // 缺了入口 ⇒ 商家新增工艺/加工项后**无法**让它在订单里插/删工序 ⇒ 该订单**静默少工序**。
+  // #4650 阶段 1：入口从独立规则表**搬到工序抽屉**，且只问**两件事**（什么时候 / 做还是不做）。
 
-  it('⑱-① 规则区有「新增规则」入口 ⇒ 建**工艺**触发规则，body 带 trigger_kind/action', async () => {
-    await renderRules()
+  it('⑱-① 「添加条件」入口 ⇒ 建**工艺**触发条件，body 带 trigger_kind/action/operation', async () => {
+    await openConditions('三边')
 
-    await userEvent.click(screen.getByTestId('route-rules-new'))
-    await waitFor(() => expect(screen.getByTestId('route-rule-create-modal')).toBeInTheDocument())
-    // 默认触发类型 = 工艺；触发值**从工艺词表取**（下拉，不是手输）
-    expect(screen.getByTestId('rule-kind-craft')).toHaveAttribute('aria-checked', 'true')
-    await userEvent.selectOptions(screen.getByTestId('rule-trigger-value'), '罗马帘')
-    await userEvent.selectOptions(screen.getByTestId('rule-operation'), '三边')
-    await userEvent.selectOptions(screen.getByTestId('rule-after-operation'), '精裁')
-    await userEvent.click(screen.getByTestId('rule-create-submit'))
+    await userEvent.click(screen.getByTestId('operation-condition-add'))
+    await waitFor(() => expect(screen.getByTestId('operation-condition-form')).toBeInTheDocument())
+    // 默认「什么时候」= 工艺；取值**从工艺列表取**（下拉，不是手输）
+    expect(screen.getByTestId('condition-kind-craft')).toHaveAttribute('aria-checked', 'true')
+    await userEvent.selectOptions(screen.getByTestId('condition-value'), '罗马帘')
+    await userEvent.selectOptions(screen.getByTestId('condition-anchor'), '精裁')
+    await userEvent.click(screen.getByTestId('condition-add-submit'))
 
     await waitFor(() =>
       expect(mockCreateOptionRule).toHaveBeenCalledWith({
@@ -1357,18 +1377,17 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
         after_operation: '精裁',
       }),
     )
-    // 建完 load() 刷新 ⇒ 新规则立刻出现在表里
+    // 建完 load() 刷新 ⇒ 新条件立刻出现在该工序的「适用条件」里
     await waitFor(() => expect(mockGetRouteRules).toHaveBeenCalledTimes(2))
   })
 
-  it('⑱-② 建**加工项**触发规则：触发值取自加工项目录（下拉）', async () => {
-    await renderRules()
+  it('⑱-② 建**加工项**触发条件：取值取自加工项目录（下拉）', async () => {
+    await openConditions('三边')
 
-    await userEvent.click(screen.getByTestId('route-rules-new'))
-    await userEvent.click(screen.getByTestId('rule-kind-processing_item'))
-    await userEvent.selectOptions(screen.getByTestId('rule-trigger-value'), '拼接')
-    await userEvent.selectOptions(screen.getByTestId('rule-operation'), '三边')
-    await userEvent.click(screen.getByTestId('rule-create-submit'))
+    await userEvent.click(screen.getByTestId('operation-condition-add'))
+    await userEvent.click(screen.getByTestId('condition-kind-processing_item'))
+    await userEvent.selectOptions(screen.getByTestId('condition-value'), '拼接')
+    await userEvent.click(screen.getByTestId('condition-add-submit'))
 
     await waitFor(() =>
       expect(mockCreateOptionRule).toHaveBeenCalledWith({
@@ -1376,46 +1395,47 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
         trigger_value: '拼接',
         action: 'insert',
         operation: '三边',
+        after_operation: '精裁',
       }),
     )
   })
 
-  it('⑱-③ 触发类型切换 ⇒ 字段随之变：**只有特殊选项**出现「对客单价」', async () => {
-    await renderRules()
-    await userEvent.click(screen.getByTestId('route-rules-new'))
+  it('⑱-③ 「什么时候」切换 ⇒ 取值来源随之变（三档**都是下拉**，选项逐字来自对应来源）', async () => {
+    await openConditions('韩褶')
+    await userEvent.click(screen.getByTestId('operation-condition-add'))
 
-    // 默认「工艺」⇒ 无对客单价（craft 按工序单价**计件**，两套账不互读）
-    expect(screen.queryByTestId('rule-customer-unit-price')).toBeNull()
-    expect(screen.getByTestId('rule-trigger-value').tagName).toBe('SELECT')
+    // 默认「工艺」⇒ 选项 = 活跃工艺词表
+    expect(screen.getByTestId('condition-value').tagName).toBe('SELECT')
+    expect(within(screen.getByTestId('condition-value')).getByRole('option', { name: '罗马帘' })).toBeInTheDocument()
 
-    await userEvent.click(screen.getByTestId('rule-kind-option'))
-    expect(screen.getByTestId('rule-customer-unit-price')).toBeInTheDocument()
-    // 特殊选项名**可新建** ⇒ 这一档是输入框（带既有选项名候选），不是封闭下拉
-    expect(screen.getByTestId('rule-trigger-value').tagName).toBe('INPUT')
+    await userEvent.click(screen.getByTestId('condition-kind-processing_item'))
+    expect(screen.getByTestId('condition-value').tagName).toBe('SELECT')
+    expect(within(screen.getByTestId('condition-value')).getByRole('option', { name: '拼接' })).toBeInTheDocument()
+    // 切换 ⇒ 已选取值被清空（不把上一档的值带过去）
+    expect(screen.getByTestId('condition-value')).toHaveValue('')
 
-    await userEvent.click(screen.getByTestId('rule-kind-processing_item'))
-    expect(screen.queryByTestId('rule-customer-unit-price')).toBeNull()
-    expect(screen.getByTestId('rule-trigger-value').tagName).toBe('SELECT')
+    // 特殊选项档的取值 = 既有选项名（**不手输**；新建选项走「新增 → 特殊选项」）
+    await userEvent.click(screen.getByTestId('condition-kind-option'))
+    expect(screen.getByTestId('condition-value').tagName).toBe('SELECT')
+    expect(within(screen.getByTestId('condition-value')).getByRole('option', { name: '拼2次' })).toBeInTheDocument()
   })
 
-  it('⑱-④ 特殊选项：动作切到「移除」⇒ 锚点字段消失（锚点只对插入有意义）', async () => {
-    await renderRules()
-    await userEvent.click(screen.getByTestId('route-rules-new'))
-    await userEvent.click(screen.getByTestId('rule-kind-option'))
+  it('⑱-④ 「做还是不做」切到「不做」⇒ 「插在哪道工序之后」整块消失（不做没有位置）', async () => {
+    await openConditions('韩褶')
+    await userEvent.click(screen.getByTestId('operation-condition-add'))
 
-    expect(screen.getByTestId('rule-after-operation')).toBeInTheDocument()
-    await userEvent.selectOptions(screen.getByTestId('rule-action'), 'remove')
-    expect(screen.queryByTestId('rule-after-operation')).toBeNull()
+    expect(screen.getByTestId('condition-anchor')).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByTestId('condition-action'), 'remove')
+    expect(screen.queryByTestId('condition-anchor')).toBeNull()
   })
 
-  it('⑱-⑤ 本地预检：未选触发值 / 未选目标工序 ⇒ 逐条就地理由 + **不发请求**', async () => {
-    await renderRules()
-    await userEvent.click(screen.getByTestId('route-rules-new'))
-    await userEvent.click(screen.getByTestId('rule-create-submit'))
+  it('⑱-⑤ 本地预检：未选取值 ⇒ 逐条就地理由 + **不发请求**', async () => {
+    await openConditions('韩褶')
+    await userEvent.click(screen.getByTestId('operation-condition-add'))
+    await userEvent.click(screen.getByTestId('condition-add-submit'))
 
-    const reasons = await screen.findByTestId('rule-create-reasons')
-    expect(reasons).toHaveTextContent('请选择工艺')
-    expect(reasons).toHaveTextContent('请选择目标工序')
+    const reasons = await screen.findByTestId('condition-add-reasons')
+    expect(reasons).toHaveTextContent('请选择什么时候生效')
     expect(mockCreateOptionRule).not.toHaveBeenCalled()
   })
 
@@ -1423,18 +1443,18 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     mockCreateOptionRule
       .mockReset()
       .mockRejectedValueOnce(guardError(['工艺词表里没有活跃的「罗马帘」', '对客单价只属于特殊选项']))
-    await renderRules()
-    await userEvent.click(screen.getByTestId('route-rules-new'))
-    await userEvent.selectOptions(screen.getByTestId('rule-trigger-value'), '罗马帘')
-    await userEvent.selectOptions(screen.getByTestId('rule-operation'), '三边')
-    await userEvent.click(screen.getByTestId('rule-create-submit'))
+    await openConditions('三边')
+    await userEvent.click(screen.getByTestId('operation-condition-add'))
+    await userEvent.selectOptions(screen.getByTestId('condition-value'), '罗马帘')
+    await userEvent.click(screen.getByTestId('condition-add-submit'))
 
-    const reasons = await screen.findByTestId('rule-create-reasons')
+    const reasons = await screen.findByTestId('condition-add-reasons')
     expect(reasons).toHaveTextContent('工艺词表里没有活跃的「罗马帘」')
     expect(reasons).toHaveTextContent('对客单价只属于特殊选项')
-    // 失败 ⇒ **不**刷新（静默写回 = 商家以为建好了、订单侧其实没生效）
+    // 失败 ⇒ **不**刷新（静默写回 = 商家以为加上了、订单侧其实没生效）
     expect(mockGetRouteRules).toHaveBeenCalledTimes(1)
-    expect(screen.getByTestId('route-rule-create-modal')).toBeInTheDocument()
+    // 表单仍在（理由要看得见、草稿不丢）
+    expect(screen.getByTestId('operation-condition-form')).toBeInTheDocument()
   })
 
   // ══════════════════ ⑲ 删除改弹框（issue #4617）══════════════════
@@ -1442,25 +1462,23 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   // 用户裁定：「确认删除的交互为什么不是弹框选择，交互需要优化」——
   // 同页此前两套形态并存：路线删除用弹框，规则/工序删除是**就地展开**的确认按钮。
 
-  it('⑲-① 点规则「删除」⇒ **出现弹框**（不再就地展开），弹框里能读出删的是哪条规则', async () => {
-    await renderRules()
+  it('⑲-① 点条件「删除」⇒ **出现弹框**（不再就地展开），弹框里能读出删的是哪条', async () => {
+    await openConditions('韩褶')
 
-    await userEvent.click(screen.getByTestId('route-rule-delete-1'))
+    await userEvent.click(screen.getByTestId('operation-condition-delete-1'))
 
     const modal = await screen.findByTestId('route-rule-delete-modal', {}, { timeout: 1500 })
-    // 弹框写清「这条规则是什么」：触发类型 + 触发值 + 动作 + 目标工序
-    expect(modal).toHaveTextContent('工艺')
-    expect(modal).toHaveTextContent('韩褶')
-    expect(modal).toHaveTextContent('在「三边」之后插入「韩褶」')
+    // 弹框用**人话**写清删的是哪一条（不是「触发类型 + 触发值 + 动作」那套配置术语）
+    expect(modal).toHaveTextContent('工艺 = 韩褶 时插入（在「三边」之后）')
     expect(modal).toHaveAttribute('data-rule', '1')
     // 红证：改前这一格是**就地展开**的「确认删除 / 取消」两个按钮，`route-rule-delete-modal` 不存在
     expect(mockDeleteRouteRule).not.toHaveBeenCalled()
   })
 
   it('⑲-② 弹框「取消」⇒ **不发请求**，弹框消失', async () => {
-    await renderRules()
-    await userEvent.click(screen.getByTestId('route-rule-delete-2'))
-    await userEvent.click(await screen.findByTestId('route-rule-delete-cancel-2', {}, { timeout: 1500 }))
+    await openConditions('韩褶')
+    await userEvent.click(screen.getByTestId('operation-condition-delete-1'))
+    await userEvent.click(await screen.findByTestId('route-rule-delete-cancel-1', {}, { timeout: 1500 }))
 
     expect(mockDeleteRouteRule).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.queryByTestId('route-rule-delete-modal')).toBeNull())
@@ -1473,8 +1491,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
         resolveDelete = resolve
       }),
     )
-    await renderRules()
-    await userEvent.click(screen.getByTestId('route-rule-delete-1'))
+    await openConditions('韩褶')
+    await userEvent.click(screen.getByTestId('operation-condition-delete-1'))
     const confirm = await screen.findByTestId('route-rule-delete-confirm-1', {}, { timeout: 1500 })
     await userEvent.click(confirm)
 
@@ -1491,9 +1509,9 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('⑲-④ 删除被拒 ⇒ 理由**逐条**在弹框里就地展示（不吞成一句「删除失败」）', async () => {
     mockDeleteRouteRule.mockReset().mockRejectedValueOnce(guardError(['规则已被订单引用', '请先停用该选项']))
-    await renderRules()
-    await userEvent.click(screen.getByTestId('route-rule-delete-2'))
-    await userEvent.click(await screen.findByTestId('route-rule-delete-confirm-2', {}, { timeout: 1500 }))
+    await openConditions('韩褶')
+    await userEvent.click(screen.getByTestId('operation-condition-delete-1'))
+    await userEvent.click(await screen.findByTestId('route-rule-delete-confirm-1', {}, { timeout: 1500 }))
 
     const reasons = await screen.findByTestId('route-rule-delete-reasons')
     expect(reasons).toHaveTextContent('规则已被订单引用')
@@ -1528,7 +1546,9 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(text).toContain('报工工资 = 数量 × 计件单价')
     expect(text).toContain('收顾客')
     expect(text).toContain('加工项组合费用')
-    expect(text).toContain('条件工序规则')
+    // issue #4650 阶段 1：对客的那笔钱指到**工序的「适用条件」**（独立规则表已从界面移除）
+    expect(text).toContain('适用条件')
+    expect(text).not.toContain('条件工序规则')
     // 用户裁定 A：这一屏的价是**给工人**的计件单价 —— 不得叫成「加工费 / 对客价」
     expect(text).not.toContain('加工费')
     expect(text).not.toContain('对客价')
@@ -1986,6 +2006,189 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(document.body.textContent ?? '').not.toContain('信号')
   })
 
+  // ══════════════════ ㉗ 「条件工序规则」概念从界面消失（issue #4650 阶段 1）══════════════════
+  //
+  // 用户裁定（逐字）：「**我要求移除条件工序规则**，这个概念我都难以理解，用户如何去理解？
+  // 我们要做到**智能化的产品**，而不是旧时代配置化的产品」。
+  //
+  // 商家**不该**再看到一张要求他填「触发类型 / 触发值 / 部位限定 / 动作 / 目标工序 / 插入锚点 /
+  // 优先级」的表；他只该看到 **工艺项（工序 + 部位 + 价）** 与 **每道工序「在什么情况下做」**（一句人话）。
+  //
+  // 阶段 1 是**零迁移 + 行为不变**的纯呈现改造：
+  // - 后端 `GET/POST/DELETE /route-rules` **端点保留**（阶段 2 的 AI 入口与阶段 4 的承载收敛还要用）；
+  // - `production_route_rules` **一行不动**（页面加载**零写请求**）；
+  // - 条件的**呈现与编辑落点**从「独立规则表」搬到**工序抽屉**里的「适用条件」一节。
+
+  it('㉗-① 工艺配置页**任何 tab** 都不再出现「条件工序规则」独立表（含标题/入口/表体）', async () => {
+    await renderOnRoutes()
+
+    // 红证：改前这一区是**常驻展开**的（`route-rules` / `route-rules-body` / `route-rules-total` /
+    // 「新增规则」入口 `route-rules-new` 全都在）
+    expect(screen.queryByTestId('route-rules')).toBeNull()
+    expect(screen.queryByTestId('route-rules-body')).toBeNull()
+    expect(screen.queryByTestId('route-rules-total')).toBeNull()
+    expect(screen.queryByTestId('route-rules-new')).toBeNull()
+    expect(screen.queryByTestId('route-rule-create-modal')).toBeNull()
+
+    // 术语也不得出现（用户原话：「这个概念我都难以理解，用户如何去理解？」）
+    const text = document.body.textContent ?? ''
+    for (const banned of ['条件工序规则', '触发类型', '触发值', '部位限定', '插入锚点', '优先级', '新增规则']) {
+      expect(text).not.toContain(banned)
+    }
+  })
+
+  it('㉗-② 工序抽屉里**有**「适用条件」一节，且是**人话**（改前没有这一节）', async () => {
+    await openManage('韩褶')
+
+    const section = await screen.findByTestId('operation-conditions')
+    expect(section).toHaveTextContent('适用条件')
+    // 规则 1：craft 韩褶 → insert 韩褶，锚点 三边
+    expect(screen.getByTestId('operation-condition-text-1')).toHaveTextContent('工艺 = 韩褶 时插入（在「三边」之后）')
+    // 该工序**没有**的规则不得出现在它的抽屉里（按目标工序归属）
+    expect(screen.queryByTestId('operation-condition-2')).toBeNull()
+  })
+
+  it('㉗-③ 人话三态：`不做` / `插入（在「X」之后）` / 无锚点 ⇒ 「追加到末尾」', async () => {
+    mockGetRouteRules.mockReset().mockResolvedValue(
+      ok([
+        { id: 1, trigger_kind: 'craft', trigger_value: '韩褶', position: null, action: 'insert', operation: '韩褶', after_operation: '三边', priority: 10, status: 'active' },
+        { id: 2, trigger_kind: 'craft', trigger_value: '打孔', position: '布帘', action: 'remove', operation: '车被', after_operation: null, priority: 20, status: 'active' },
+        { id: 3, trigger_kind: 'option', trigger_value: '拼2次', position: '纱帘', action: 'insert', operation: '外帘装袋', after_operation: null, priority: 30, status: 'active' },
+      ]),
+    )
+    await renderOperations()
+    await userEvent.click(screen.getByTestId('matrix-manage-车被'))
+    // 规则 2：craft 打孔 → remove 车被 ⇒ 「时不做」
+    expect(await screen.findByTestId('operation-condition-text-2')).toHaveTextContent('工艺 = 打孔 时不做')
+
+    await userEvent.click(screen.getByTestId('operations-manage-close'))
+    await userEvent.click(screen.getByTestId('matrix-manage-外帘装袋'))
+    // 规则 3：option 拼2次 → insert 外帘装袋，无锚点 ⇒ 「追加到末尾」（**不得**渲染成「在「末尾」之后」）
+    const text = screen.getByTestId('operation-condition-text-3').textContent ?? ''
+    expect(text).toContain('特殊选项 = 拼2次 时插入')
+    expect(text).toContain('追加到末尾')
+    expect(text).not.toContain('「末尾」')
+  })
+
+  it('㉗-④ 添加条件只问两件事（什么时候 / 做还是不做）⇒ 复用**现有**写面 `POST /route-rules`', async () => {
+    await openManage('三边')
+    await userEvent.click(screen.getByTestId('operation-condition-add'))
+
+    // ① 「什么时候」= 种类（默认工艺）+ 取值（**从词表选，不手输** ⇒ SELECT）
+    expect(screen.getByTestId('condition-kind-craft')).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByTestId('condition-value').tagName).toBe('SELECT')
+    await userEvent.selectOptions(screen.getByTestId('condition-value'), '罗马帘')
+    // ② 「做还是不做」
+    await userEvent.selectOptions(screen.getByTestId('condition-action'), 'insert')
+    // ③ 插在哪道之后（可选项 + 默认值）
+    await userEvent.selectOptions(screen.getByTestId('condition-anchor'), '精裁')
+    await userEvent.click(screen.getByTestId('condition-add-submit'))
+
+    await waitFor(() =>
+      expect(mockCreateOptionRule).toHaveBeenCalledWith({
+        trigger_kind: 'craft',
+        trigger_value: '罗马帘',
+        action: 'insert',
+        operation: '三边',
+        after_operation: '精裁',
+      }),
+    )
+    // 成功 ⇒ load() 刷新（新条件立刻出现在该工序的「适用条件」里）
+    await waitFor(() => expect(mockGetRouteRules).toHaveBeenCalledTimes(2))
+  })
+
+  it('㉗-⑤ 锚点默认值 = 该工序现有条件的锚点（**别让商家猜**），且「不做」时锚点整块不渲染', async () => {
+    await openManage('韩褶')
+    await userEvent.click(screen.getByTestId('operation-condition-add'))
+
+    // 韩褶的现有插入条件锚点是「三边」（= 今天 routing.py 种子里该工序的锚点）⇒ 默认选中它
+    expect(screen.getByTestId('condition-anchor')).toHaveValue('三边')
+
+    await userEvent.selectOptions(screen.getByTestId('condition-action'), 'remove')
+    expect(screen.queryByTestId('condition-anchor')).toBeNull()
+  })
+
+  it('㉗-⑥ 加工项触发：取值取自加工项目录（下拉）', async () => {
+    await openManage('三边')
+    await userEvent.click(screen.getByTestId('operation-condition-add'))
+    await userEvent.click(screen.getByTestId('condition-kind-processing_item'))
+    await userEvent.selectOptions(screen.getByTestId('condition-value'), '拼接')
+    await userEvent.click(screen.getByTestId('condition-add-submit'))
+
+    await waitFor(() =>
+      expect(mockCreateOptionRule).toHaveBeenCalledWith({
+        trigger_kind: 'processing_item',
+        trigger_value: '拼接',
+        action: 'insert',
+        operation: '三边',
+        after_operation: '精裁',
+      }),
+    )
+  })
+
+  it('㉗-⑦ 本地预检：未选取值 ⇒ 逐条就地理由 + **不发请求**（不改页面数据）', async () => {
+    await openManage('三边')
+    await userEvent.click(screen.getByTestId('operation-condition-add'))
+    await userEvent.click(screen.getByTestId('condition-add-submit'))
+
+    expect(await screen.findByTestId('condition-add-reasons')).toHaveTextContent('请选择')
+    expect(mockCreateOptionRule).not.toHaveBeenCalled()
+    expect(mockGetRouteRules).toHaveBeenCalledTimes(1)
+  })
+
+  it('㉗-⑧ 反向护栏（能力不减）：条件**删除**仍可用，且走**现有**端点 `DELETE /route-rules/{id}`', async () => {
+    await openManage('韩褶')
+    await userEvent.click(screen.getByTestId('operation-condition-delete-1'))
+
+    const modal = await screen.findByTestId('route-rule-delete-modal', {}, { timeout: 1500 })
+    // 弹框写清删的是**哪一条**（人话，不是「触发类型 + 动作」那套术语）
+    expect(modal).toHaveTextContent('工艺 = 韩褶 时插入（在「三边」之后）')
+    expect(modal).toHaveAttribute('data-rule', '1')
+    expect(mockDeleteRouteRule).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByTestId('route-rule-delete-confirm-1'))
+    await waitFor(() => expect(mockDeleteRouteRule).toHaveBeenCalledWith(1))
+    await waitFor(() => expect(mockGetRouteRules).toHaveBeenCalledTimes(2))
+  })
+
+  it('㉗-⑨ 回归锁（零写面）：页面加载**不发任何写请求** —— `production_route_rules` 一行未动', async () => {
+    await renderOnRoutes()
+
+    expect(mockCreateOptionRule).not.toHaveBeenCalled()
+    expect(mockDeleteRouteRule).not.toHaveBeenCalled()
+    expect(mockUpdateRuleCustomerUnitPrice).not.toHaveBeenCalled()
+    // 读面照旧（一次），且没有第二条规则读面端点被发明出来
+    expect(mockGetRouteRules).toHaveBeenCalledTimes(1)
+  })
+
+  it('㉗-⑩ 回归锁（同一套规则配置逐项不变）：每条规则仍**逐条**出现在它目标工序的「适用条件」里', async () => {
+    // 同一套规则配置（4 条：工艺 insert / 工艺 remove / 特殊选项 / 加工项）——
+    // 搬走独立表**不得**丢规则、不得改归属、不得跨工序串味。
+    mockGetRouteRules.mockReset().mockResolvedValue(
+      ok([
+        { id: 1, trigger_kind: 'craft', trigger_value: '韩褶', position: null, action: 'insert', operation: '韩褶', after_operation: '三边', priority: 10, status: 'active' },
+        { id: 2, trigger_kind: 'craft', trigger_value: '打孔', position: '布帘', action: 'remove', operation: '韩褶', after_operation: null, priority: 20, status: 'active' },
+        { id: 3, trigger_kind: 'option', trigger_value: '拼2次', position: '纱帘', action: 'insert', operation: '三边', after_operation: null, priority: 30, status: 'active' },
+        { id: 4, trigger_kind: 'processing_item', trigger_value: '花边', position: null, action: 'insert', operation: '精裁', after_operation: '三边', priority: 40, status: 'active' },
+      ]),
+    )
+
+    await renderOperations()
+    // 逐工序：只列属于它自己的那几条，一条不多、一条不少
+    const expected: Record<string, string[]> = {
+      韩褶: ['工艺 = 韩褶 时插入（在「三边」之后）', '工艺 = 打孔 时不做'],
+      三边: ['特殊选项 = 拼2次 时插入（追加到末尾）'],
+      精裁: ['加工项 = 花边 时插入（在「三边」之后）'],
+    }
+    for (const [operation, texts] of Object.entries(expected)) {
+      await userEvent.click(screen.getByTestId(`matrix-manage-${operation}`))
+      const section = await screen.findByTestId('operation-conditions')
+      expect(within(section).getAllByTestId(/^operation-condition-\d+$/)).toHaveLength(texts.length)
+      for (const t of texts) expect(within(section).getByText(t)).toBeInTheDocument()
+      await userEvent.click(screen.getByTestId('operations-manage-close'))
+    }
+  })
+
 /**
  * ══════════════════ ⑫ 算料配置 tab（issue #4528 = 包 E） ══════════════════
  *
@@ -2342,7 +2545,7 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
     await userEvent.click(screen.getByTestId('routings-new-operation'))
   }
 
-  it('⑯-① 类型二选一：默认「工序」（既有表单在、特殊选项字段不在）；切「特殊选项」⇒ 元/套 + 目标工序 + 锚点 + 优先级', async () => {
+  it('⑯-① 类型二选一：默认「工序」（既有表单在、特殊选项字段不在）；切「特殊选项」⇒ 元/套 + 落在哪道工序 + 插在哪道之后', async () => {
     await openCreateDialog()
 
     // 一句话把两本账说清（用户走查的核心困惑）
@@ -2362,7 +2565,8 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
     expect(screen.getByTestId('routings-create-option-customer_unit_price')).toBeInTheDocument()
     expect(screen.getByTestId('routings-create-option-operation')).toBeInTheDocument()
     expect(screen.getByTestId('routings-create-option-after_operation')).toBeInTheDocument()
-    expect(screen.getByTestId('routings-create-option-priority')).toBeInTheDocument()
+    // issue #4650 阶段 1：**优先级整块去掉** —— 界面不再有这个概念（后端按默认顺序）
+    expect(screen.queryByTestId('routings-create-option-priority')).toBeNull()
     // 切过去后「工序」那套字段退场（不是两套表单叠着）
     expect(screen.queryByTestId('routings-create-op-unit_price')).toBeNull()
 
@@ -2395,14 +2599,16 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
     expect(screen.queryByTestId('routings-create-option-trigger_value')).toBeNull()
   })
 
-  it('⑯-②b 特殊选项提交（填了锚点 + 优先级）⇒ body 只多这两个键', async () => {
+  it('⑯-②b 特殊选项：选定工序 ⇒ 「插在哪道之后」**自动填默认值**（issue #4650：别让商家猜）', async () => {
     await openCreateDialog()
     await userEvent.click(screen.getByTestId('create-kind-option'))
     await userEvent.type(screen.getByTestId('routings-create-option-trigger_value'), '免熨')
     await userEvent.type(screen.getByTestId('routings-create-option-customer_unit_price'), '8')
     await userEvent.selectOptions(screen.getByTestId('routings-create-option-operation'), '三边')
-    await userEvent.selectOptions(screen.getByTestId('routings-create-option-after_operation'), '精裁')
-    await userEvent.type(screen.getByTestId('routings-create-option-priority'), '220')
+
+    // 三边在默认主线里位于「精裁」之后 ⇒ 默认值 = 精裁（与今天种子里该工序的锚点同口径）
+    expect(screen.getByTestId('routings-create-option-after_operation')).toHaveValue('精裁')
+
     await userEvent.click(screen.getByTestId('routings-create-operation-submit'))
 
     await waitFor(() => expect(mockCreateOptionRule).toHaveBeenCalledTimes(1))
@@ -2410,7 +2616,6 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
       trigger_value: '免熨',
       operation: '三边',
       after_operation: '精裁',
-      priority: 220,
       customer_unit_price: 8,
     })
   })
@@ -2797,4 +3002,5 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
     expect(mockUpdateOperation).not.toHaveBeenCalled()
     expect(screen.getByTestId('orphan-attach-list')).toBeInTheDocument()
   })
+
 })

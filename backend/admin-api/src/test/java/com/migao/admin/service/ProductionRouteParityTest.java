@@ -264,4 +264,62 @@ class ProductionRouteParityTest {
                 .isInstanceOf(com.migao.admin.exception.BusinessException.class)
                 .hasMessageContaining("无法实例化工序");
     }
+
+    /**
+     * **回归锁（issue #4650 阶段 1）**：「条件工序规则」独立表从商家界面移除，条件改为挂在**工序**上。
+     *
+     * <h2>判据</h2>
+     * 同一套规则配置下，订单实例化产出的工序序列**逐项不变** —— 与
+     * {@link RoutingModelFixture#LEGACY_ROUTINGS}（真值源 {@code routing.py::ROUTINGS} 的冻结快照）
+     * 逐字相同；且**换了配置载体也不许漂**：这里喂的是**更全**的规范种子
+     * （{@code rulesWithProcessingItems} = 26 条 craft/option + 系数档 + 3 条加工项触发规则），
+     * 而 {@link #allNineCombinationsRebuildTheLegacyRoutesVerbatim()} 喂的是 {@code rulesWithFactors}。
+     *
+     * <h2>为什么阶段 1 必须有它</h2>
+     * 阶段 1 改的只是**呈现与编辑落点**（独立规则表 ⇒ 工序抽屉的「适用条件」），
+     * 写面（{@code POST/DELETE /route-rules}）、读面、实例化**一律不动**。
+     * 这条锁把「界面搬了、实例化语义却跟着漂了」钉死：规则 priority 序 / 锚点归一 /
+     * 部位适用性过滤 / 加工项触发——任一处被动过，序列就变红。
+     *
+     * <h2>红证（注入式自证，判据不是空断言）</h2>
+     * 把「上车布」那条规则的 priority 提到锚点「韩褶」之前 ⇒ 锚点尚未存在 ⇒ 上车布追加末尾
+     * ⇒ 与冻结期望不同（同 {@link #reorderingRulesByPriorityIsWhatKeepsTheSequenceStable()} 的注入形态）。
+     */
+    @Test
+    @DisplayName("回归锁（#4650 阶段 1）：同一套规则配置下，实例化产出的工序序列逐项不变")
+    void instantiationSequenceIsUnchangedForTheCanonicalRuleConfig() {
+        // ① 更全的规范种子（含加工项触发规则；订单没带那些加工项 ⇒ 它们不命中）
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(
+                RoutingModelFixture.rulesWithProcessingItems(TENANT));
+
+        List<String> failures = new ArrayList<>();
+        for (String[] expected : RoutingModelFixture.LEGACY_ROUTINGS) {
+            List<String> frozen = List.of(expected[2].split(","));
+            List<String> actual = instantiate(expected[0], expected[1]);
+            if (!frozen.equals(actual)) {
+                failures.add(expected[0] + "×" + expected[1] + "\n  期望: " + frozen + "\n  实际: " + actual);
+            }
+        }
+        assertThat(failures)
+                .as("移除独立规则表**不得**改动实例化语义（界面搬了、工序序列漂了 = 车间按错顺序干）")
+                .isEmpty();
+
+        // ② 注入式自证：同一条规则挪一下 priority（锚点「韩褶」尚未插入）⇒ 序列必须变
+        //    （不变 ⇒ 上面那条是空断言：拿生产代码的输出与生产代码自己比）
+        List<ProductionRouteRule> reordered = new ArrayList<>();
+        for (ProductionRouteRule rule : RoutingModelFixture.rulesWithProcessingItems(TENANT)) {
+            reordered.add(ProductionRouteRule.builder()
+                    .id(rule.getId()).tenantId(rule.getTenantId())
+                    .triggerKind(rule.getTriggerKind()).triggerValue(rule.getTriggerValue())
+                    .position(rule.getPosition()).action(rule.getAction())
+                    .operation(rule.getOperation()).afterOperation(rule.getAfterOperation())
+                    .priority("上车布".equals(rule.getOperation()) ? 5 : rule.getPriority())
+                    .factor(rule.getFactor()).status(rule.getStatus()).deleted(rule.getDeleted())
+                    .build());
+        }
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(reordered);
+        assertThat(instantiate("布帘", "韩褶"))
+                .as("priority 注入 ⇒ 序列漂移（判据有判别力）")
+                .isNotEqualTo(List.of(RoutingModelFixture.LEGACY_ROUTINGS[0][2].split(",")));
+    }
 }
