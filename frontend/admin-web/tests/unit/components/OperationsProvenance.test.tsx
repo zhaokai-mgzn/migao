@@ -147,6 +147,9 @@ describe('工序库页 provenance 徽标 + 一键套用行业模板（issue #436
 
   it('工艺路线区展示路线的 source（三态口径与工序一致）', async () => {
     render(<ProcessConfigPage />)
+    // issue #4482：路线内容在「工艺路线」tab 上（默认落在「工艺项」）
+    await waitFor(() => expect(screen.getByTestId('process-config-tab-routes')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-routes'))
     await waitFor(() => expect(screen.getByTestId('routing-布帘×韩褶')).toBeInTheDocument())
 
     expect(within(screen.getByTestId('routing-布帘×韩褶')).getByTestId('routing-source-布帘×韩褶')).toHaveTextContent('推算')

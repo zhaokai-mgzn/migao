@@ -128,6 +128,10 @@ const tableText = () => screen.getByRole('table').textContent ?? ''
 /** 状态筛选下拉：用 aria-label 定位（页脚分页也有一个 combobox，裸 getByRole 会命中两个） */
 const statusSelect = () => screen.getByRole('combobox', { name: '状态筛选' })
 
+/** 取生产管理组里的某个菜单项（issue #4482：断言 icon） */
+const productionEntry = (key: string) =>
+  menuGroups.find((g) => g.key === 'production')?.children.find((c) => c.key === key)
+
 describe('生产管理菜单入口（侧边栏）', () => {
   it('侧边栏出现「生产管理」组与四个节点，路径与权限码正确', () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
@@ -145,6 +149,10 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(links[1]).toHaveAttribute('href', '/production/routings')
     expect(links[2].textContent).toContain('加工费管理')
     expect(links[2]).toHaveAttribute('href', '/production/processing-fees')
+    // issue #4482：图标换成**费用单据**语义的 Receipt（原 BadgeDollarSign 偏"会员/折扣"观感，
+    // 与「计件工资」的 Calculator 也不够区分）
+    const feesIcon = productionEntry('production-processing-fees')?.icon
+    expect(feesIcon).toBe('Receipt')
     expect(links[3].textContent).toContain('计件工资')
     expect(links[3]).toHaveAttribute('href', '/production/piecework')
     // 旧「工序库」入口不再作为独立菜单项（页面改为重定向，旧深链仍可达）
