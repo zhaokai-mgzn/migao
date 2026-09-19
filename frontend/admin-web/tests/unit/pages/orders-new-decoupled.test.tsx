@@ -31,6 +31,24 @@ vi.mock('@/lib/api', () => ({
   customerApi: {
     getCustomers: (...args: any[]) => mockGetCustomers(...args),
   },
+  // 算料试算（#4434）：本文件验的是商品↔加工项解耦，与算料正交 ⇒ 停在「进行中」
+  craftCalcApi: { preview: () => new Promise(() => {}) },
+  // 加工费计价预览（#4450）：同样正交 ⇒ 桩成「组合价 == Σ 加工项」的服务端
+  // （数值与旧口径一致 ⇒ 本文件断言不变）。**必须 resolve**：未就绪时页面会拦住提交。
+  feePreviewApi: {
+    preview: (payload: any) => {
+      const items = (payload?.items ?? []).map((it: any) => {
+        const details = it?.processingInfo?.processingItems ?? []
+        const fee = details.reduce(
+          (s: number, d: any) => s + (Number(d.unitPrice) || 0) * (Number(d.quantity) || 0),
+          0
+        )
+        return { processingFee: fee, processingFeeDetail: { fee_source: 'matched', amount: fee } }
+      })
+      const processingFeeTotal = items.reduce((s: number, r: any) => s + r.processingFee, 0)
+      return Promise.resolve({ data: { data: { items, processingFeeTotal } } })
+    },
+  },
 }))
 
 vi.mock('next/link', () => ({

@@ -28,6 +28,18 @@ vi.mock('@/lib/api', () => ({
   processingItemApi: { getProcessingItems: (...a: unknown[]) => mockGetProcessingItems(...a) },
   customerApi: { getCustomers: (...a: unknown[]) => mockGetCustomers(...a) },
   craftCalcApi: { preview: (...a: unknown[]) => mockCraftCalcPreview(...a) },
+  // 加工费计价预览（issue #4450）：本文件验的是**算料试算**接线，与加工费取价正交
+  // ⇒ 桩成「无加工项 ⇒ 加工费 0」的服务端（本文件各用例都没选加工项）。
+  // **必须 resolve**：预览未就绪时页面会拦住提交。
+  feePreviewApi: {
+    preview: (payload: { items?: Array<{ processingInfo?: { processingItems?: unknown[] } }> }) => {
+      const items = (payload?.items ?? []).map(() => ({
+        processingFee: 0,
+        processingFeeDetail: { fee_source: 'unpriced', amount: 0 },
+      }))
+      return Promise.resolve({ data: { data: { items, processingFeeTotal: 0 } } })
+    },
+  },
 }))
 
 vi.mock('next/link', () => ({

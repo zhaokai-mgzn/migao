@@ -31,6 +31,27 @@ vi.mock('@/lib/api', () => ({
   // ⇒ 让试算停在「进行中」（永不 resolve），避免它改写「数量」污染这些判据。
   // 试算自身的判据在 `orders-new-craft-calc.test.tsx`。
   craftCalcApi: { preview: () => new Promise(() => {}) },
+  // 加工费计价预览（issue #4450）：本文件验的是樘窗绑组 / 配布边 / 加工项数量口径，
+  // 与「组合取价」正交 ⇒ 桩成一个**组合价 == Σ 加工项**的服务端
+  // （数值与旧口径逐值一致 ⇒ 这些判据的断言一字不用改；组合取价本身的判据在
+  //  `orders-new-fee-preview.test.tsx`）。**必须 resolve**：预览未就绪时页面会拦住提交。
+  feePreviewApi: {
+    preview: (payload: any) => {
+      const items = (payload?.items ?? []).map((it: any) => {
+        const details = it?.processingInfo?.processingItems ?? []
+        const fee = details.reduce(
+          (s: number, d: any) => s + (Number(d.unitPrice) || 0) * (Number(d.quantity) || 0),
+          0
+        )
+        return {
+          processingFee: fee,
+          processingFeeDetail: { fee_source: 'matched', unit_price: 0, meters: 0, amount: fee },
+        }
+      })
+      const processingFeeTotal = items.reduce((s: number, r: any) => s + r.processingFee, 0)
+      return Promise.resolve({ data: { data: { items, processingFeeTotal } } })
+    },
+  },
 }))
 
 // useOrderAmounts 使用真实实现（纯状态 hook，无外部依赖）：
@@ -186,10 +207,13 @@ describe('NewOrderPage', () => {
     fireEvent.click(toggles[idx])
   }
 
-  const fillCustomerAndSubmit = () => {
+  const fillCustomerAndSubmit = async () => {
     fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
     fireEvent.change(screen.getByPlaceholderText('请输入 11 位手机号'), { target: { value: '13800138000' } })
     fireEvent.change(screen.getByPlaceholderText('请输入详细收货地址'), { target: { value: '杭州市' } })
+    // 加工费计价闸门（issue #4450）：**页面总额必须就是服务端将算出的总额**，未就绪时提交会被拦
+    // ⇒ 提交前等计价落地（真实商家也是看到金额才提交）。判据本身在 orders-new-fee-preview.test.tsx。
+    await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
     fireEvent.click(screen.getByText('提交订单'))
   }
 
@@ -234,7 +258,7 @@ describe('NewOrderPage', () => {
     })
 
     // 提交时 processingItems.quantity = 面料米数 3
-    fillCustomerAndSubmit()
+    await fillCustomerAndSubmit()
     await waitFor(() => {
       expect(mockCreateOrder).toHaveBeenCalled()
     })
@@ -279,7 +303,7 @@ describe('NewOrderPage', () => {
     })
 
     // 提交时 quantity = 面料米数
-    fillCustomerAndSubmit()
+    await fillCustomerAndSubmit()
     await waitFor(() => {
       expect(mockCreateOrder).toHaveBeenCalled()
     })
@@ -320,7 +344,7 @@ describe('NewOrderPage', () => {
     })
 
     // 提交时 quantity = 1
-    fillCustomerAndSubmit()
+    await fillCustomerAndSubmit()
     await waitFor(() => {
       expect(mockCreateOrder).toHaveBeenCalled()
     })
@@ -391,7 +415,7 @@ describe('NewOrderPage', () => {
     fireEvent.change(actualInput(), { target: { value: '165' } })
     fireEvent.blur(actualInput())
 
-    fillCustomerAndSubmit()
+    await fillCustomerAndSubmit()
     await waitFor(() => {
       expect(mockCreateOrder).toHaveBeenCalled()
     })
@@ -562,7 +586,7 @@ describe('NewOrderPage', () => {
       fireEvent.click(screen.getByRole('button', { name: '加铅块' }))
       fireEvent.click(screen.getByRole('button', { name: '拼2次' }))
 
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => {
         expect(mockCreateOrder).toHaveBeenCalled()
       })
@@ -584,7 +608,7 @@ describe('NewOrderPage', () => {
     it('不填工艺规格 ⇒ payload 里不出现这些键（缺值不写，不写空串/0/false）', async () => {
       await setupCurtain()
 
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => {
         expect(mockCreateOrder).toHaveBeenCalled()
       })
@@ -621,7 +645,7 @@ describe('NewOrderPage', () => {
       await setupCurtain()
       fireEvent.change(field('款式'), { target: { value: '单色' } })
 
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => {
         expect(mockCreateOrder).toHaveBeenCalled()
       })
@@ -637,7 +661,7 @@ describe('NewOrderPage', () => {
       fireEvent.change(field('款式'), { target: { value: '拼色' } })
       fireEvent.change(field('配布边单价'), { target: { value: '40' } })
 
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => {
         expect(mockCreateOrder).toHaveBeenCalled()
       })
@@ -671,7 +695,7 @@ describe('NewOrderPage', () => {
 
       fireEvent.change(field('配布边米数'), { target: { value: '2.5' } })
 
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => {
         expect(mockCreateOrder).toHaveBeenCalled()
       })
@@ -688,7 +712,7 @@ describe('NewOrderPage', () => {
       fireEvent.change(field('款式'), { target: { value: '拼色' } })
       fireEvent.change(field('配布边单价'), { target: { value: '40' } })
 
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => {
         expect(mockCreateOrder).toHaveBeenCalled()
       })
@@ -707,7 +731,7 @@ describe('NewOrderPage', () => {
       fireEvent.change(field('款式'), { target: { value: '拼色' } })
       fireEvent.change(field('配布边单价'), { target: { value: '40' } })
 
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => {
         expect(mockCreateOrder).toHaveBeenCalled()
       })
@@ -721,7 +745,7 @@ describe('NewOrderPage', () => {
       await setupCurtain()
       fireEvent.change(field('款式'), { target: { value: '拼色' } })
 
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => {
         expect(mockCreateOrder).toHaveBeenCalled()
       })
@@ -741,7 +765,7 @@ describe('NewOrderPage', () => {
         expect(screen.getByText('订单金额').closest('div')!.textContent).toContain('¥140.00')
       })
 
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => {
         expect(mockCreateOrder).toHaveBeenCalled()
       })
@@ -822,7 +846,7 @@ describe('NewOrderPage', () => {
       fireEvent.change(windows[0], { target: { value: '客厅主窗' } })
       fireEvent.change(windows[1], { target: { value: '客厅主窗' } })
 
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => {
         expect(mockCreateOrder).toHaveBeenCalled()
       })
@@ -844,7 +868,7 @@ describe('NewOrderPage', () => {
       fireEvent.change(windows[0], { target: { value: '客厅主窗' } })
       fireEvent.change(windows[1], { target: { value: '次卧窗' } })
 
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => {
         expect(mockCreateOrder).toHaveBeenCalled()
       })
@@ -858,7 +882,7 @@ describe('NewOrderPage', () => {
     it('#4395 未填樘窗 ⇒ 两行都不写 craftLineId（**存量语义不变**：各自成组）', async () => {
       await setupClothPlusSheer()
 
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => {
         expect(mockCreateOrder).toHaveBeenCalled()
       })
@@ -880,7 +904,7 @@ describe('NewOrderPage', () => {
       fireEvent.change(fields('款式')[0], { target: { value: '拼色' } })
       fireEvent.change(fields('配布边单价')[0], { target: { value: '40' } })
 
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => {
         expect(mockCreateOrder).toHaveBeenCalled()
       })
@@ -922,7 +946,7 @@ describe('NewOrderPage', () => {
       fireEvent.click(await screen.findByText('遮光窗帘'))
       await screen.findByText('宽 (米)')
       // 刻意**不走** pickProduct（它会补齐宽高）——这里要的就是「没填」的形态
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
 
       await waitFor(() => {
         expect(screen.getByText('第 1 个商品未填宽（米）')).toBeInTheDocument()
@@ -934,7 +958,7 @@ describe('NewOrderPage', () => {
     it('判据 2（红证）：填了宽/高 ⇒ payload 的 items[].width/height 是数值（修复前这两个键根本不出现）', async () => {
       await setupCurtain()
       fillSize(0, '6.6', '2.6')
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
 
       const item = mockCreateOrder.mock.calls[0][0].items[0]
@@ -944,7 +968,7 @@ describe('NewOrderPage', () => {
 
     it('判据 3：三条默认档随单落库（加工类型定高买宽 / 款式单色 / 褶距 0.125）', async () => {
       await setupCurtain()
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
 
       expect(mockCreateOrder.mock.calls[0][0].items[0].processingInfo).toMatchObject({
@@ -987,7 +1011,7 @@ describe('NewOrderPage', () => {
       fillSize(0, '6.6', '2.6')
       fillSize(1, '6.6', '1.6')
 
-      fillCustomerAndSubmit()
+      await fillCustomerAndSubmit()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
 
       const items = mockCreateOrder.mock.calls[0][0].items
