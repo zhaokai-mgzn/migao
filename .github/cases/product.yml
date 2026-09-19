@@ -477,6 +477,26 @@ cases:
       - id-resolve.no-fabricate
     user_inputs:
       - "把遮光窗帘的价格改成 199"
+    # ── burn-down 缴费（issue #4490 规格修订，2026-09-19）──────────────────────────
+    # 本 PR 改了 `.github/cases/**` ⇒ 按 `case-trust-baseline.json` 的 `burn_down`
+    # （`per_pr_min: 1` / `metric: entries` ⇒ **整条销账**）必须净缩 ≥1 条存量违规。
+    # 本条命中的两条存量违规 = `CASE-TRUST-NO-PRECONDITION-ASSERTION` +
+    # `CASE-TRUST-NO-SELF-CLEAN`，一次补齐（先例 = OR-014 / CH-019 / CR-001 / C003，同款治法）：
+    # · 本用例的**全部动作**就是「把遮光窗帘的价格改成 199」——按**商品名**解析 ID
+    #   （`product_update.product_id = 遮光窗帘`）⇒「该名字在栈里唯一」是它真正依赖、且**只读**的前置：
+    #   同名副本 >1 时 agent 会**正确地**反问要改哪一件 ⇒ `product_update` 永不发生，而报告上只表现为
+    #   `unmatched expectation` = 看起来像「agent 不会解析名字」（归因全错，同 AS-003/PG-013/CU-003 形态）。
+    #   口径与 `pre_clean` 的商品定位同一份（`_list_products_matching`）。
+    # · `namespaces` 护住该前置的基线/漂移两格，并与**同样写「遮光窗帘」的用例**（PR-005/PR-010/PR-012/
+    #   OR-014 一族）互斥（自清理的弱证据形态）。
+    # ⚠️ 刻意**不**声明 `order_count_for_phone`：本用例与订单无关，声明它是与断言无关的纸面缴费。
+    # **断言面（user_inputs / expectations / data_checks）一字未动、无放宽。**
+    namespaces:
+      - "product_name:遮光窗帘"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     expectations:
       - tool: product_update
         args:
@@ -485,7 +505,7 @@ cases:
     data_checks:
       - "success=true"
     skip_reason: ""
-    merge_log: "eval P007 + verification 2.8（同义，取 eval 的 ID 解析版）"
+    merge_log: "eval P007 + verification 2.8（同义，取 eval 的 ID 解析版）；2026-09-19（issue #4490 规格修订的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition[product_count_for_keyword: 遮光窗帘, expect: 1] + namespaces[product_name:遮光窗帘]（本用例按商品名解析 ID ⇒ 名字唯一是它真正依赖且只读的前置；与同样写遮光窗帘的用例互斥）。断言面（user_inputs / expectations / data_checks）原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_product_search.py"

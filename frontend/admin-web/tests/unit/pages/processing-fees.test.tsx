@@ -293,22 +293,27 @@ describe('加工费组合 tab（issue #4386；issue #4490 合并后为 /producti
     expect(screen.getByTestId('fee-combination-fc-1')).toBeInTheDocument()
   })
 
-  it('侧边栏：生产管理组含合并项「加工项与加工费」→ /production/processing（权限码 processing:manage）', async () => {
+  it('侧边栏：**商品管理组**含合并项「加工项与加工费」→ /production/processing（权限码 processing:manage）', async () => {
     const { menuGroups } = await import('@/config/menu')
-    const production = menuGroups.find((g) => g.key === 'production')
-    expect(production).toBeDefined()
-    // issue #4490：「加工费管理」(/production/processing-fees) 与「加工项管理」(/processing) 合并为
-    // 单一入口 ⇒ 本页归属的那一项改名改路径，但**仍在本组**且权限码不变
-    const entry = production!.children.find((c) => c.path === '/production/processing')
+    // issue #4490（含同日**规格修订**：「合并后的菜单放入到商品管理大菜单下」）：
+    // 「加工费管理」(/production/processing-fees) 与「加工项管理」(/processing) 合并为单一入口，
+    // 归**商品管理**组（取代原「加工项管理」的位置），权限码不变
+    const product = menuGroups.find((g) => g.key === 'product-center')
+    expect(product).toBeDefined()
+    const entry = product!.children.find((c) => c.path === '/production/processing')
     expect(entry).toBeDefined()
     expect(entry!.name).toBe('加工项与加工费')
     expect(entry!.permissionCode).toBe('processing:manage')
+    expect(product!.children.map((c) => c.name)).toContain('商品列表')
+    expect(product!.children.map((c) => c.path)).not.toContain('/processing')
     // 生产管理组归并结果必须仍在（合并只收敛入口，不重排既有项）
     // ⚠️ issue #4416：原第 2 项「工序库」与第 3 项「工艺路线」已合并为「工艺配置」⇒
     //    /production/operations **不再是**菜单项（页面改为重定向，旧深链仍可达）
+    const production = menuGroups.find((g) => g.key === 'production')
     expect(production!.children.map((c) => c.path)).toContain('/production/routings')
     expect(production!.children.map((c) => c.name)).toContain('工艺配置')
     expect(production!.children.map((c) => c.path)).not.toContain('/production/operations')
     expect(production!.children.map((c) => c.path)).not.toContain('/production/processing-fees')
+    expect(production!.children.map((c) => c.path)).not.toContain('/production/processing')
   })
 })

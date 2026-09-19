@@ -7,7 +7,8 @@
 //   PG-038 把加工单列表页并入生产看板后，搜索/筛选/刷新全由看板承担 ⇒ 竞态保护必须随代码一起搬
 //   （留在被合并掉的页面里 = 保护随页面一起消失）。
 // PG-038（issue #4357）：加工单菜单并入生产管理组，且与生产看板**合并为单一入口** ——
-//   ① 侧边栏：订单管理组 = 订单列表 / 售后工单（**不含**加工单）；生产管理组 4 项不变；
+//   ① 侧边栏：订单管理组 = 订单列表 / 售后工单（**不含**加工单）；生产管理组 = 生产看板 / 工艺配置 /
+//      计件工资（issue #4490 规格修订后回到 3 项 —— 「加工项与加工费」归**商品管理**组）；
 //   ② /production 吸收加工单列表页的**全部**既有能力：关键词/状态筛选、重置、刷新、
 //      商品与数量快照摘要、「查看」跳订单详情（**合并 ≠ 丢能力**）；
 //   ③ 保留 #4305 入口收敛：发加工/开始加工/加工完成/取消 四个按钮**仍不渲染**。
@@ -128,39 +129,28 @@ const tableText = () => screen.getByRole('table').textContent ?? ''
 /** 状态筛选下拉：用 aria-label 定位（页脚分页也有一个 combobox，裸 getByRole 会命中两个） */
 const statusSelect = () => screen.getByRole('combobox', { name: '状态筛选' })
 
-/** 取生产管理组里的某个菜单项（issue #4482：断言 icon） */
-const productionEntry = (key: string) =>
-  menuGroups.find((g) => g.key === 'production')?.children.find((c) => c.key === key)
-
 describe('生产管理菜单入口（侧边栏）', () => {
-  it('侧边栏出现「生产管理」组与四个节点，路径与权限码正确', () => {
+  it('侧边栏出现「生产管理」组与**三个**节点，路径与权限码正确', () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
 
     const group = screen.getByText('生产管理').closest('.mb-4') as HTMLElement
     expect(group).toBeTruthy()
     const links = group.querySelectorAll('a')
-    // 4 项：生产看板 / 工艺配置（issue #4416：工序库 + 工艺路线**合并**为单一入口）/
-    //      加工项与加工费（issue #4490：「加工项管理」+「加工费管理」**合并**为单一入口）/ 计件工资。
+    // 3 项：生产看板 / 工艺配置（issue #4416：工序库 + 工艺路线**合并**为单一入口）/ 计件工资。
     // ⚠️ issue #4416 把原第 2 项「工序库」与第 3 项「工艺路线」合并为「工艺配置」⇒ 项数 5 → 4；
-    //    issue #4490 把「加工费管理」（原第 3 项）与商品管理组的「加工项管理」合并为
-    //    「加工项与加工费」⇒ **项数仍为 4**，第 2/3/4 项的相对位次不变。
-    expect(links).toHaveLength(4)
+    //    issue #4490（含同日**规格修订**）把「加工费管理」与「加工项管理」合并为「加工项与加工费」，
+    //    并按用户裁定**归入商品管理组** ⇒ 本组 4 → **3**。
+    expect(links).toHaveLength(3)
     expect(links[0].textContent).toContain('生产看板')
     expect(links[0]).toHaveAttribute('href', '/production')
     expect(links[1].textContent).toContain('工艺配置')
     expect(links[1]).toHaveAttribute('href', '/production/routings')
-    expect(links[2].textContent).toContain('加工项与加工费')
-    expect(links[2]).toHaveAttribute('href', '/production/processing')
-    // issue #4490：合并项沿用「加工项」的 Scissors（默认 tab 就是「加工项」）。
-    // ⚠️ 断言**渲染出来的**图标，不只断言配置字符串 —— #4482 把加工费项配成 `'Receipt'`，
-    //    而 Sidebar 的 `iconMap` 从未登记该键 ⇒ 静默回落成 BarChart3：配置断言绿、画面错。
-    //    本项现在用的 Scissors 已在 iconMap 内，故 `icon-scissors` 必须真的渲染出来。
-    expect(productionEntry('production-processing')?.icon).toBe('Scissors')
-    expect(links[2].querySelector('[data-testid="icon-scissors"]')).toBeTruthy()
-    expect(links[3].textContent).toContain('计件工资')
-    expect(links[3]).toHaveAttribute('href', '/production/piecework')
+    expect(links[2].textContent).toContain('计件工资')
+    expect(links[2]).toHaveAttribute('href', '/production/piecework')
     // 旧「工序库」入口不再作为独立菜单项（页面改为重定向，旧深链仍可达）
     expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('工序库')
+    // 合并项**不在本组**（归商品管理组；它的结构/图标断言在 processing-merged.test.tsx）
+    expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('加工项与加工费')
   })
 
   it('「加工单」不再是独立菜单项：订单管理组只余订单列表/售后工单（issue #4357）', () => {
@@ -178,13 +168,13 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(hrefs).not.toContain('/processing-orders')
   })
 
-  it('权限码口径一致：生产管理组四项统一 processing:manage（与既有 menu.ts 口径一致）', () => {
+  it('权限码口径一致：生产管理组三项统一 processing:manage（与既有 menu.ts 口径一致）', () => {
     // issue #4490：合并**不改变权限码** —— 两个旧菜单项本来就是 processing:manage（组内同码）
     const group = menuGroups.find((g) => g.key === 'production')
     expect(group).toBeTruthy()
-    // issue #4416：工序库 + 工艺路线合并为「工艺配置」⇒ 5 项 → 4 项，权限码口径不变
+    // issue #4416：工序库 + 工艺路线合并为「工艺配置」⇒ 5 项 → 4 项，权限码口径不变；
+    // issue #4490 规格修订：「加工项与加工费」归商品管理组 ⇒ 本组 4 → 3 项，口径仍不变
     expect(group!.children.map((c) => c.permissionCode)).toEqual([
-      'processing:manage',
       'processing:manage',
       'processing:manage',
       'processing:manage',
