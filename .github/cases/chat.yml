@@ -1347,6 +1347,26 @@ cases:
       - order_create
     truths_ref:
       - ai-chat.context-memory
+    # ── 前置自断言 + 自清理声明（issue #4664 的 Case Trust burn-down 缴费）──────────────
+    # 本条原被 `CASE-TRUST-NO-PRECONDITION-ASSERTION` + `CASE-TRUST-NO-SELF-CLEAN` 两码命中。
+    # ① 前置：本用例的**整个被测行为**（「最近订单收货信息预填」）依赖「该手机号名下**已有**
+    #    历史订单」—— `db_verify` 断言的历史值（张三 / 13800138000 / 文三路1号1幢101室）
+    #    就是种子里那两笔订单（`EVAL-ORD-0001` / `EVAL-ORD-0002`）。该集合若被**别人**改写，
+    #    `customer_address_query` 取到的「最近订单」就不是用例依赖的那一笔 ⇒ 红/绿**不可归因
+    #    于 agent 行为**（#3835 的形态），故声明 `order_count_for_phone`（真值源 =
+    #    `local_runner._PRECONDITION_TYPES`，取数与 `order_query` 同一份口径）。
+    #    ⚠️ **不给 `expect`**：本用例自己每次会新增 1 单，重试后基线必然增长 ⇒ 写死期望值会在
+    #    第二次跑起**恒红**（#3800 的形态）。改声明**运行期漂移**：只允许本用例自己新增 1 单
+    #    （`max_growth: 1`，同 HR-002 的先例）。
+    # ② 自清理：本用例往「手机号 13800138000 名下的订单集合」这个**全局资源**里写 ⇒ 显式声明
+    #    `namespaces`（与 `pre_clean` 同一份 `<kind>:<值>` 约定；`order_create` 无对应
+    #    `pre_clean` 类型，故按既有弱形态声明资源归属，保证并行用例互斥）。
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
+        max_growth: 1
+    namespaces:
+      - "customer_phone:13800138000"
     # ── 解 skip（issue #3360）：原 skip_reason 写的是「agent-eval 无稳定订单数据」，
     # 而 fixture 早已注入归属 debug_customer_1 的 2 笔订单（张三 / 13800138000 /
     # 文三路1号1幢101室）—— 理由过期后没人回头解 skip，这条能力长期**零可执行覆盖**。
