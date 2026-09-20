@@ -13,7 +13,7 @@ import type { ProductionPosition } from '@/types'
  * 工序进度表（issue #4000，M4-H 按需单据渲染）
  *
  * 按**套**（一樘窗 = 一套，issue #4686 用户裁定 2026-09-20）分组展示加工单的工序实例：工序名 /
- * 分组 / 应做数量+单位 / 单价 / 状态 / 已完成数量 / 报工人。组头按行业口径标 **第 N 套 / 共 M 套**
+ * 分组 / 应做数量+单位 / 计件单价 / 状态 / 已完成数量 / 报工人。组头按行业口径标 **第 N 套 / 共 M 套**
  * （真值源 `docs/curtain-production-rules.md` 的「**第 N 套/共 M 套**」口径 —— 按该文本检索，不写行号）。
  *
  * ⚠️ **套键取自读面追加的 `set_no` 键**（issue #4784）：读面 `ProductionService.buildPositions`
@@ -121,7 +121,9 @@ export default function ProductionProgressTable({ positions, className }: Produc
                       <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">工序</th>
                       <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">分组</th>
                       <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">应做数量</th>
-                      <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">单价</th>
+                      {/* issue #4910：本列的值就是**计件单价**（部位价目矩阵格价，报工计件用）
+                          ⇒ 列头逐字写作「计件单价」，避免被读成销售单价 */}
+                      <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">计件单价</th>
                       <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">状态</th>
                       <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">已完成数量</th>
                       <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">报工人</th>

@@ -68,6 +68,17 @@ const positions: ProductionPosition[] = [
 ]
 
 describe('ProductionProgressTable', () => {
+  // issue #4910：本列的值就是**计件单价**（工人报工计价用，= 部位价目矩阵格价）
+  // ⇒ 列头逐字「计件单价」，避免被读成销售单价
+  it('列表头为「计件单价」而非孤立的「单价」', () => {
+    render(<ProductionProgressTable positions={positions} />)
+
+    // 每个部位块一张表 ⇒ 表头数量与同一行的另一列表头「应做数量」逐块相同
+    expect(screen.getAllByText('计件单价')).toHaveLength(screen.getAllByText('应做数量').length)
+    // 反向护栏：不得再有孤立的「单价」表头（旧文案 = 红）
+    expect(screen.queryByText('单价')).toBeNull()
+  })
+
   it('按部位分组渲染工序行：工序名/分组/应做数量+单位/单价/状态/已完成数量', () => {
     render(<ProductionProgressTable positions={positions} />)
 
@@ -210,7 +221,8 @@ describe('ProductionProgressTable', () => {
     const headers = within(screen.getByTestId('position-group-布帘'))
       .getAllByRole('columnheader')
       .map((th) => th.textContent)
-    expect(headers).toEqual(['工序', '分组', '应做数量', '单价', '状态', '已完成数量', '报工人'])
+    // issue #4910：第 4 列由「单价」改判为「计件单价」（值本来就是计件单价，列宽/顺序一字未动）
+    expect(headers).toEqual(['工序', '分组', '应做数量', '计件单价', '状态', '已完成数量', '报工人'])
   })
 
   // ── 套口径（issue #4686，用户裁定 2026-09-20「一樘窗 = 一套」）──
