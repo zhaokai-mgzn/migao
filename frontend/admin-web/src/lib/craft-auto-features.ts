@@ -28,9 +28,12 @@
  * ⚠️ 它**只**用于**宽**方向（`超宽`）；**高**方向必须用 {@link HEM_MARGIN}（issue #4661）：
  * 两者今天同值 0.3、**语义不同**（左右覆盖余量 ≠ 上下卷边），混用 = 与真值源口径脱钩。
  *
- * 同步守卫 = `tests/unit/lib/craft-auto-features.test.ts`（逐值读 Python 源比对，漂移即红）——
+ * 🔴 **本副本有守卫**（issue #4656 收口，**漂移会被拦**）：
+ * - `tests/unit/lib/craft-auto-features.test.ts` —— 前端腿，逐值读 Python 源比对（漂移即红）；
+ * - `tests/unit_ci_workflows/test_hem_margin_cross_language_drift.py` —— Python 腿（独立 job），
+ *   另钉**上面那行引文逐字一致**（注释里的值/语义也会腐烂，§19.2 ③）。
+ *
  * 本仓「副本必须有同步守卫」纪律的落点（同族 #4393 / `PLEAT_FABRIC_PER_FOLD`）。
- * （副本**漂移机制**另见 issue #4656，不在本单。）
  */
 export const SIDE_MARGIN = 0.3
 
@@ -39,6 +42,11 @@ export const SIDE_MARGIN = 0.3
  * （`HEM_MARGIN = 0.3  # 定宽布：上下卷边合计（脚位+止口）`）—— 本文件是**副本**。
  *
  * ⚠️ 它**只**用于**高**方向（`超高`）；**宽**方向必须用 {@link SIDE_MARGIN}（issue #4661）。
+ *
+ * 🔴 **本副本有守卫**（issue #4656 收口，**漂移会被拦**）：常量值与上面那行引文（值 + 语义注释）
+ * 都由守卫逐值读 Python 源比对 ——
+ * `tests/unit/lib/craft-auto-features.test.ts`（前端腿，漂移即红）+
+ * `tests/unit_ci_workflows/test_hem_margin_cross_language_drift.py`（Python 腿，独立 job）。
  */
 export const HEM_MARGIN = 0.3
 
