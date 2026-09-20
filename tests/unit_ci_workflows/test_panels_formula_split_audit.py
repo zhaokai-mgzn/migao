@@ -50,7 +50,8 @@ AUTO_FEATURES_TS = REPO_ROOT / "frontend/admin-web/src/lib/craft-auto-features.t
 
 #: §4.5 的锚点（**文本锚点，不写死行号** —— 行号会随文档编辑腐烂）
 SECTION_ANCHOR = "### 4.5 分幅公式"
-SECTION_END = "\n---\n\n## 5. "
+#: 结束锚点用「本节的收尾行」而非泛化的 `---`（§4.5.1 内部也有 `---` 分隔线 ⇒ 泛化锚点会截短本节）
+SECTION_END = "一致 ⇒ 去掉中间取整**不引入**新的米数口径）。"
 
 #: 对照表固定前提（表头下方那段逐字写着这两个值；从文档里读，不在这里另立一份）
 GEOMETRY = {"门幅": 2.8, "窗高": 2.6}
@@ -197,11 +198,19 @@ class TestPanelsFormulaSplitAudit:
             )
 
     def test_three_formulas_are_quoted_in_doc(self):
-        """C5：三条公式串逐字出现在 §4.5（代码改了、文档没改 ⇒ 红）。"""
-        section = _section(_read(DESIGN_DOC))
+        """C5：三条公式串逐字出现在文档（代码改了、文档没改 ⇒ 红）。
+
+        ⚠️ 读**全文**而非只读 §4.5：`ceil_to_step` 那条公式串随「中间量该不该取整」的论证
+        落在 **§4.5.1**（裁定与修法边界）；三条口径的登记仍以 §4.5 表格为准（C1/C2 钉住）。
+        """
+        text = _read(DESIGN_DOC)
+        section = _section(text)
+        assert "### 4.5.1 裁定" in section, (
+            "§4.5 里找不到 §4.5.1 的裁定小节（「裁定与修法边界」的留档落点）—— 裁定留档被删 ⇒ 红"
+        )
         for formula in FORMULA_STRINGS:
-            assert formula in section, (
-                f"§4.5 里找不到公式串「{formula}」—— 三条口径的登记被删/被改写 ⇒ 红"
+            assert formula in text, (
+                f"文档里找不到公式串「{formula}」—— 三条口径的登记被删/被改写 ⇒ 红"
             )
 
     def test_frontend_over_width_criterion_matches_path_a(self):

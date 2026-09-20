@@ -173,7 +173,7 @@
 ⚠️ **后端今天完全不认 `saleForm`**（`grep -rn "saleForm" backend/` 零命中）⇒ 读 `saleForm` 是**新增行为**；
 **缺键的存量单不得改变既有行为**（回归不变量）。
 
-### 4.5 分幅公式（`panels`）**三条口径不一致**（issue #4760 核清，**未修**）
+### 4.5 分幅公式（`panels`）**三条口径不一致**（issue #4760：已核清 + **已裁定 (A)**，执行依赖 #4652）
 
 **本节的公式串是实测读源的结论**（`backend/ai-agent-service/app/tools/curtain_calc.py`），
 不是提案；**代码改了本节必须同改**（机械判据 = `tests/unit_ci_workflows/test_panels_formula_split_audit.py`，
@@ -216,8 +216,41 @@
 亦与 A 同式。**B1/B2 漏 `side_margin` 是引擎内部不一致**，不是「粗估 vs 精算」的有意分工
 （两通路都产出进报价的**同一个** `fabric_meters`，无任何文档把它标为粗估）。
 
-🔴 **修法落在 `backend/ai-agent-service/**` ⇒ 本会话不动（用户裁定 #4652）** ⇒ 本单**只核清 + 登记**，
-**未改一个数值**；修法需**业务裁定**（改 B1/B2 会改商家页试算出来的钱）⇒ 见 issue #4760 与关联 PR body 的「待裁定」段。
+### 4.5.1 裁定（2026-09-21，用户）与修法边界
+
+> **用户裁定原文（2026-09-21，issue #4760）**：「**A) 按真值源统一 B1/B2（含 side_margin）**」
+
+- **已裁定**：**统一到 A** —— `build_quote()` 的 **B1**（`formula='fullness'`）与 **B2**（`pleat_mode`）
+  两个分支的 `panels` **必须与 `calculate_fabric_meters()` 的定宽分支同式**（**含** `side_margin`）。
+  **代价已知情并接受**：改 B1/B2 **会改商家手工下单页试算出来的钱**（窄门幅/小窗场景从 1 幅变 2 幅，
+  米数可能翻倍）；**历史订单快照不动**（快照冻结）。
+- 🔴 **执行依赖 `backend/ai-agent-service/**` ⇒ 依赖 #4652 排期**（用户裁定「本会话不动 ai-agent」）
+  ⇒ 本单（#4760 核清单）**只核清 + 判定 + 登记，未改一个数值**；本节的对照表是**改前实测留档**
+  （「谁在何时因何裁定」= 本小节 + issue #4760 + PR #4764 的判定段）。
+
+**修法边界（具体到文件与函数）** —— `backend/ai-agent-service/app/tools/curtain_calc.py`：
+
+| 落点 | 现状 | 改为 |
+|---|---|---|
+| `calculate_fabric_meters()` 定宽分支 | `ceil((W + cfg["side_margin"]) × N / G)` | **不动**（= 权威式，B1/B2 向它看齐） |
+| `build_quote()` 的 `formula='fullness'` 分支 | `panels = ceil(meters / G)`，`meters` = `_per_panel_fullness_meters(...)` 的 `ceil_to_step(W × N, 0.1)` 结果 | `panels = ceil((W + cfg["side_margin"]) × N / G)` |
+| `build_quote()` 的 `pleat_mode` 分支（`fixed_width_pleats`） | `panels = ceil(meters / G)`（折数法总用料 ÷ 门幅） | 同式（含 `side_margin`） |
+| 建议 | 三处各写一遍 | 抽**一处** `panels_for_fixed_width(window_width, fullness, fabric_width, cfg)`，三处引用（「一处公式、三处引用」） |
+
+**⚠️ 顺带：`ceil_to_step(宽 × 褶倍, 0.1)` 那道取整该不该保留？—— 建议去掉（依据如下，本单不实施）**
+
+- `meters_rounding_step = 0.1` 的**语义**是「**用料米数**只许向上、不许抹零」（#4527 判据 3，防抹零少算钱）；
+- 但 `panels` 数的是「**几幅布**」（整数、物理裁剪单位），**不是**「买几米」⇒ 在**分幅判据**里
+  先把 `W × N` 进位到 0.1 再除以门幅，是**对中间量套用了最终量的口径**；
+- **实测它会改变 `panels`**（不是无害的表示误差）：`W = 1.45`、`N = 1.8`、`G = 2.8` 时
+  `ceil_to_step(2.61, 0.1) = 2.7` ⇒ `ceil(2.7 / 2.8) = 1 幅`；**去掉取整** ⇒ `ceil(2.61 / 2.8) = 1 幅`，
+  而**含 `side_margin`** ⇒ `ceil((1.45+0.3) × 1.8 / 2.8) = ceil(3.15 / 2.8) = 2 幅`（与 A 同式）；
+  ⚠️ 该组在**只加 `side_margin` 而不去取整**时得 `ceil(ceil_to_step(2.7)/2.8) = 1 幅` ⇒
+  **仍与 A 不一致**（`W=4.0/N=2.0/G=2.8` 同族：`ceil_to_step(8.0)/2.8 = 3` vs A `ceil(8.6/2.8) = 4`）
+  ⇒ **两道差异都要修，只修 `side_margin` 修不干净**；
+- ⇒ 建议：**分幅用原始乘积**（`(W + side_margin) × N / G` 直接 `ceil`），
+  `ceil_to_step` 只作用在**最终回传的用料米数**上（今天 B1 的 `meters = panels × 每幅长` 本就**没有**再进位，
+  与 A 的 `meters = panels × panel_length` 一致 ⇒ 去掉中间取整**不引入**新的米数口径）。
 
 ---
 
@@ -293,7 +326,8 @@
    后者不在 `production_operations_source_check` 的枚举里）。
 8. **本包未做（照实登记）**：`docs/sql/schema.sql` 与 `routing.py` / V79 / Java 播种（共四源）已逐行收敛；
    **真实 LLM 评测未跑**（用户裁定「默认不自动验证」）⇒ agent 侧行为面未验（本包只动确定性层）。
-9. **分幅公式三条口径不一致（issue #4760，**未修**）**：`calculate_fabric_meters`（含 `side_margin`）vs
-   `build_quote` 的 `fullness` / `pleat` 两支（不含）⇒ 同一张单两个 `panels`。核清读数、真值源判定与
-   修法边界见 **§4.5**；修法需改 `backend/ai-agent-service/**` ⇒ 依赖 #4652（用户裁定本会话不动）
-   **且需业务裁定**（改试算口径 = 改商家看到的钱）⇒ 本单只登记，未改任何数值。
+9. **分幅公式三条口径不一致（issue #4760：**已裁定 (A)，待 ai-agent 排期执行**）**：
+   `calculate_fabric_meters`（含 `side_margin`）vs `build_quote` 的 `fullness` / `pleat` 两支（不含）
+   ⇒ 同一张单两个 `panels`。**用户 2026-09-21 裁定「A) 按真值源统一 B1/B2（含 side_margin）」**；
+   核清读数、修法边界（具体到文件与函数）与 `ceil_to_step` 中间量的处置建议见 **§4.5 / §4.5.1**；
+   修法落在 `backend/ai-agent-service/**` ⇒ 依赖 #4652 ⇒ 本单只登记，未改任何数值。
