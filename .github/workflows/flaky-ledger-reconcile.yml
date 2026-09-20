@@ -75,8 +75,27 @@ jobs:
       - name: 台账自检（fail-closed：台账不合规就不参与对账）
         run: python3 .github/scripts/flaky_ledger.py selftest
 
+      - name: 引导期检查（main 上还没有判据子命令 ⇒ 本轮显式跳过，**不是**通过）
+        id: preflight
+        run: |
+          set -uo pipefail
+          # 判据与动作都取 **main** 的 `.github/scripts/flaky_ledger.py`（对账语义要求判据与主路径同源），
+          # 而本兜底是**随 PR 落地**的：PR 尚未合并时 main 上还没有 `ledger-drift`
+          # ⇒ 本轮无法对账。该形态**必须长得像「没跑」**（下游步骤显式跳过 + `::warning::`），
+          # 不许装成「已同步」（2026-09-20 实测：本 workflow 首次运行正落在这个窗口里）。
+          # ⚠️ 「将来有人删掉 `ledger-drift`」这条风险由 **required** 的
+          # `tests/unit_ci_workflows/test_flaky_ledger_reconcile.py` 钉住（删掉即红）——
+          # 故这里的「跳过」不会变成一个长期静默的失效形态。
+          if python3 .github/scripts/flaky_ledger.py ledger-drift --help >/dev/null 2>&1; then
+            echo "ready=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=0" >> "$GITHUB_OUTPUT"
+            echo "::warning::main 的 flaky_ledger.py 还没有 \`ledger-drift\` 子命令（引导期：本兜底随 PR 落地，main 尚未包含它）⇒ 本轮**跳过**（跳过 ≠ 通过）"
+          fi
+
       - name: 对账判定（纯函数；**状态级** —— 台账分支是否领先 main）
         id: drift
+        if: steps.preflight.outputs.ready == '1'
         run: |
           # ⚠️ `set -o pipefail` **必需**：本行接了 `tee`（写 job summary）。没有它时管道退出码
           #    取 `tee` 的 0 ⇒ 判据失败（含 `exit 3` 无法判定）被吞掉 ⇒ `drift` 输出为空
@@ -86,17 +105,17 @@ jobs:
             --branch "$LEDGER_BRANCH" --gh-output "$GITHUB_OUTPUT" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: 无漂移 ⇒ 零动作收工（幂等：不碰 PR、不 approve、不 push）
-        if: steps.drift.outputs.drift != '1'
+        if: steps.preflight.outputs.ready == '1' && steps.drift.outputs.drift != '1'
         run: echo "::notice::✅ 台账已与 main 同步（$LEDGER_BRANCH 不领先）—— 兜底零动作（#4825）"
 
       - name: 分叉告警（main 有分支没有的条目 ⇒ 台账「只追加」语义被破坏）
-        if: steps.drift.outcome == 'success' && steps.drift.outputs.behind != '0'
+        if: steps.preflight.outputs.ready == '1' && steps.drift.outcome == 'success' && steps.drift.outputs.behind != '0'
         run: |
           echo "::error::台账分叉：main 上有 ${{ steps.drift.outputs.behind }} 条条目不在 $LEDGER_BRANCH 上 —— 台账语义是**只追加**（main 恒为分支的子集），正常不可能；查是否有人改写/回退过该分支"
           exit 1
 
       - name: 有漂移 ⇒ 补 approve（复用 #4804 的实现）+ 补 arm auto-merge
-        if: steps.drift.outputs.drift == '1'
+        if: steps.preflight.outputs.ready == '1' && steps.drift.outputs.drift == '1'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

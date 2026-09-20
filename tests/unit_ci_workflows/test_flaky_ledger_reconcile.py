@@ -238,7 +238,10 @@ def audit_reconcile(src: str) -> list:
             bad.append(f"step[{i}] 引用了 GITHUB_TOKEN 之外的 secrets {sorted(extra)}（红线：不许新增 secret）")
 
     # ③ 判据必须来自**同一实现**（同脚本同参数，不复制规则），且失败不许被 `tee` 吞掉
-    drift_steps = [s for s in steps if "flaky_ledger.py ledger-drift" in _step_text(s)]
+    #    ⚠️ 排除引导期的 `--help` 探测步骤：那不是对账判定（否则 `drift_steps[0]` 会指错步骤）。
+    drift_steps = [s for s in steps
+                   if "flaky_ledger.py ledger-drift" in _step_text(s)
+                   and "ledger-drift --help" not in _step_text(s)]
     if not drift_steps:
         bad.append("没有调用 `flaky_ledger.py ledger-drift` 的步骤 ⇒ 兜底判据根本不会被调用")
     else:
@@ -255,6 +258,24 @@ def audit_reconcile(src: str) -> list:
         bad.append("缺「无漂移 ⇒ 零动作」分支（`if: steps.drift.outputs.drift != '1'`）")
     if not any(re.search(r"steps\.drift\.outputs\.drift\s*==\s*'1'", t) for t in ifs):
         bad.append("缺「有漂移 ⇒ 补 approve + 补 arm」分支（`if: steps.drift.outputs.drift == '1'`）")
+
+    # ④b 引导期：判据/动作都取 **main** 的脚本，而本兜底随 PR 落地 ⇒ PR 未合并时 main 上还没有
+    #     `ledger-drift`（实测：首次运行 exit 2「invalid choice: 'ledger-drift'」）。
+    #     该形态必须**显式跳过 + 告警**（跳过 ≠ 通过）；且**每个依赖 drift 输出的步骤**都必须
+    #     以「引导期就绪」为前置 —— 否则 `drift` 输出为空会让 `drift != '1'` 为真，
+    #     于是打印「✅ 台账已与 main 同步」= **假绿**（本单要治的形态同族）。
+    pre = [s for s in steps if "ledger-drift --help" in _step_text(s)]
+    if not pre or "preflight" not in str(pre[0].get("id") or ""):
+        bad.append("缺「引导期」preflight 步骤（`ledger-drift --help` + `id: preflight*`）")
+    # ⚠️ **只认命令行形态**（`echo "::warning::`）—— 本步骤的**注释**里恰好写着 `` `::warning::` ``
+    #    （说明用），子串判据会被自己的说明文案骗绿。这是本仓库第 4 次踩「提及 ≠ 调用」
+    #    （前三次：`--disable-auto` / `autoMergeRequest` / `head_branch=`）。
+    elif not re.search(r'(?m)^\s*echo\s+"::warning::', _step_text(pre[0])):
+        bad.append("preflight 在「main 还没有判据子命令」时必须 `::warning::`（跳过 ≠ 通过，红线）")
+    for i, t in enumerate(ifs):
+        if "steps.drift." in t and "steps.preflight.outputs.ready == '1'" not in t:
+            bad.append(f"step[{i}] 依赖 drift 输出却没以「引导期就绪」为前置 ⇒ 引导期会打印"
+                       f"「✅ 已与 main 同步」= **假绿**（红线）")
 
     # ⑤ 复用 #4804 的 approve 实现（不复制规则），并保留越权面收敛与 fail-closed
     approve_steps = [s for s in steps if re.search(r"flaky_ledger\.py\s+approve\b", _step_text(s))]
@@ -354,8 +375,9 @@ class TestReconcileWorkflowRedProofs:
 
     def test_inject_removing_no_drift_branch(self):
         """摘掉「无漂移 ⇒ 零动作」分支 ⇒ 兜底会在已同步时反复动作 ⇒ 必红。"""
-        mutated = REAL_RECONCILE.replace("        if: steps.drift.outputs.drift != '1'\n",
-                                         "        if: false\n", 1)
+        mutated = REAL_RECONCILE.replace(
+            "        if: steps.preflight.outputs.ready == '1' && "
+            "steps.drift.outputs.drift != '1'\n", "        if: false\n", 1)
         assert mutated != REAL_RECONCILE, "注入锚点失效（先修本测试）"
         assert any("零动作" in v for v in audit_reconcile(mutated))
 
@@ -414,6 +436,23 @@ class TestReconcileWorkflowRedProofs:
                                          "  group: flaky-triage-ledger", 1)
         assert mutated != REAL_RECONCILE, "注入锚点失效（先修本测试）"
         assert any("concurrency" in v for v in audit_reconcile(mutated))
+
+    def test_inject_removing_preflight_guard(self):
+        """摘掉某步的「引导期就绪」前置 ⇒ 引导期 `drift` 输出为空 ⇒ 会打印「✅ 已同步」= 假绿 ⇒ 必红。"""
+        mutated = REAL_RECONCILE.replace("steps.preflight.outputs.ready == '1' && ", "", 1)
+        assert mutated != REAL_RECONCILE, "注入锚点失效（先修本测试）"
+        violations = audit_reconcile(mutated)
+        assert any("假绿" in v for v in violations), violations
+
+    def test_inject_removing_preflight_warning(self):
+        """引导期不告警（静默跳过）⇒ 必红。"""
+        mutated = REAL_RECONCILE.replace(
+            'echo "::warning::main 的 flaky_ledger.py 还没有 \\`ledger-drift\\` 子命令'
+            '（引导期：本兜底随 PR 落地，main 尚未包含它）⇒ 本轮**跳过**（跳过 ≠ 通过）"',
+            'echo "跳过本轮"', 1)
+        assert mutated != REAL_RECONCILE, "注入锚点失效（先修本测试）"
+        violations = audit_reconcile(mutated)
+        assert any("跳过 ≠ 通过" in v for v in violations), violations
 
 
 # ── 既有护栏未被削弱（逐条锚点 + 注入式红证） ────────────────────────────────────
