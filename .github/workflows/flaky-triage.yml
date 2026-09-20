@@ -1,0 +1,220 @@
+name: Flaky Triage (失败重跑分流)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# issue #4717 —— CI 层两项：① failed job **重跑分流 + 记账**；② **flaky 台账**。
+# （测试层的机械守卫「时间相关用例必须冻结时钟」= (C) 项，由另一单承担，不在本文件。）
+#
+# 背景（本会话真实发生两次）：#4713（`new Date()` 造期望值 vs 消息时间戳 ⇒ 跨分钟边界必红，
+# ~10~15% 随机红，且落在 **required** 的 `mini-app typecheck + unit tests` 里 ⇒ 随机卡任何 PR）、
+# #4717（`task-card-qr`「等 A 后同步断言 B」的 commit 竞态）。同形 = 随机红 ⇒ 告警疲劳 ⇒ 归因层失效。
+#
+# 为什么是**独立 workflow + `workflow_run` 触发**（而不是「在被测 workflow 内重跑」）：
+#   GitHub Actions **没有** per-job 原生 retry；能拿到「第二次真实结果」的唯一机制是
+#   `gh run rerun <id> --failed`，而它只能由**已结束的 run 之外**的主体发起 ⇒
+#   `workflow_run: types:[completed]` 是唯一可行触发面（同一个 run 内自举不可能）。
+#   ⚠️ 本文件**不参与 required 集合**，且**不改任何被测 workflow**：它的失效形态是
+#   「分流不生效」（可观测：台账不增长 / 日志有 `::notice::`），**不是**「别人的 CI 变红」。
+#
+# 三条红线（判据本体全在 `.github/scripts/flaky_ledger.py`，本文件只「取事实 → 执行动作」）：
+#   ① **绝不静默放行** —— 第二次绿 ⇒ 打 `flaky/rerun-green` + `block/merge` + PR 评论
+#      **并卸下 auto-merge**（`gh pr merge --disable-auto`）⇒「第二次绿」≠「通过」。
+#      （#4248 实证：`block/merge` 标签**拦不住已 arm** 的 auto-merge，只有 `--disable-auto` 能停住。）
+#   ② **绝不无限重跑** —— `MAX_ATTEMPTS = 2`（首次 + 最多 1 次重跑）；第二次仍红 ⇒ **照常失败**。
+#   ③ **绝不误判 infra** —— cancelled / timed_out / startup_failure / 从未跑起来的 job（无 steps）/
+#      只在「取代码 · 装依赖」步骤失败的 job ⇒ **不算 flaky、也不重跑**（仅登记 infra_suspect）。
+#
+# 守卫（本文件的结构不许被静默改坏）：`tests/unit_ci_workflows/test_flaky_triage.py`，
+# 跑在 **required** 的 `ci workflow helper unit tests` 里（每条判据都带注入式红证）。
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_run:
+    # 白名单口径 = 「PR 上跑测试 且 重跑无副作用」。故意不收：
+    #   · Drift Audit / Agent Behavior Eval / Demo Evidence Gate —— 报告型，不阻塞；
+    #   · Deploy Reconcile / deploy-* —— **重跑有副作用**（会真的部署）；
+    #   · Post-Deploy Eval 等真实 LLM workflow —— 重跑 = 重复烧 token（#4262 用户裁定）。
+    workflows:
+      - PR Check
+      - Mini-App CI
+      - AI Agent Service Unit Tests
+      - Bmini-App CI
+    types: [completed]
+
+# 台账 push 是「读-改-写」⇒ 串行化，防并发 run 互相覆盖（幂等键仍在脚本侧，双保险）
+concurrency:
+  group: flaky-triage-ledger
+  cancel-in-progress: false
+
+permissions:
+  actions: write        # gh run rerun（重跑失败 job）
+  contents: write       # 推台账分支 chore/flaky-ledger
+  pull-requests: write  # PR 评论 / 标签 / 卸 auto-merge
+  issues: write         # gh label create --force（标签是 issue 元数据）
+
+jobs:
+  triage:
+    name: Flaky Triage (重跑分流 + 记账)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # 只分流 PR 运行（部署/定时/手动不参与）。第二道闸在脚本里（同一判据，双重）
+    if: github.event.workflow_run.event == 'pull_request'
+    steps:
+      - name: Checkout（台账基线 = main；`workflow_run` 默认取默认分支，显式声明）
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: 台账自检（fail-closed：台账不合规就不参与分流）
+        run: python3 .github/scripts/flaky_ledger.py selftest
+
+      - name: 取本次 run + job 事实（只读）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          python3 .github/scripts/flaky_ledger.py fetch \
+            --repo "$GITHUB_REPOSITORY" --run-id "$RUN_ID" --out /tmp/flaky-bundle.json
+
+      - name: 分流判定（纯函数；不判定 = 不改任何状态）
+        id: decide
+        run: |
+          # ⚠️ `set -o pipefail` **必需**：本行接了 `tee`（写 job summary）。没有它时管道退出码
+          #    取 `tee` 的 0 ⇒ 判据失败会被吞掉 ⇒ `action` 为空 ⇒ 所有 `if:` 全假 ⇒
+          #    **静默 no-op**（"分流没生效"装成"没有 flaky"）。守卫：audit_workflow 的 pipefail 判据。
+          set -o pipefail
+          python3 .github/scripts/flaky_ledger.py decide \
+            --bundle /tmp/flaky-bundle.json \
+            --entries-out /tmp/flaky-entries.json \
+            --comment-out /tmp/flaky-comment.md \
+            --gh-output "$GITHUB_OUTPUT" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # ── ① 首次失败 ⇒ 重跑失败 job（**上限 1 次**）────────────────────────────
+      - name: ① 首次失败 ⇒ 自动重跑失败 job（最多 1 次）
+        if: steps.decide.outputs.action == 'rerun'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          # fail-closed：重跑没发出去就**红**（不静默）—— 否则「分流没生效」会装成「没有 flaky」
+          if ! gh run rerun "$RUN_ID" --failed --repo "$GITHUB_REPOSITORY"; then
+            echo "::error::触发失败 job 重跑失败（配额/权限/run 状态？）⇒ fail-closed，不静默"
+            exit 1
+          fi
+          echo "::notice::🔁 已触发失败 job 重跑（上限 1 次）——第二次结果由下一次 workflow_run 判定"
+
+      # ── ② 第二次绿 ⇒ 标 flaky + **卸下 auto-merge**（绝不静默放行）──────────
+      - name: ② 第二次绿 ⇒ 标 flaky + 卸 auto-merge（第二次绿 ≠ 通过）
+        if: steps.decide.outputs.action == 'mark_flaky'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.decide.outputs.pr }}
+        run: |
+          set -uo pipefail
+          # ②a **先真的停住**（「不自动放行」的实体动作）—— `block/merge` 防「再次 arm」；
+          #     `--disable-auto` 停住**已 arm** 的 auto-merge
+          #     （#4248 实证：光靠 `block/merge` 标签拦不住已 arm 的 auto-merge，只有它停得住）
+          gh pr merge "$PR_NUMBER" --disable-auto --repo "$GITHUB_REPOSITORY" 2>&1 \
+            || echo "ℹ️ --disable-auto 无操作（未 arm 或已卸下）—— 非错误"
+          # ②b 可见标注（--force = 已存在则更新，不因已存在而失败）
+          gh label create "flaky/rerun-green" --force --color FBCA04 \
+            --description "重跑才绿（flaky）：第二次绿 ≠ 通过，需显式放行" \
+            --repo "$GITHUB_REPOSITORY"
+          gh label create "block/merge" --force --color B60205 \
+            --description "人工闸：禁止 auto-merge" \
+            --repo "$GITHUB_REPOSITORY"
+          gh pr edit "$PR_NUMBER" --add-label "flaky/rerun-green" --repo "$GITHUB_REPOSITORY"
+          gh pr edit "$PR_NUMBER" --add-label "block/merge" --repo "$GITHUB_REPOSITORY"
+          # ②c **复核 + fail-closed**：标注/阻断必须**真的落地**，否则本 job 红。
+          #     理由：标不上却继续 ⇒ 就是「静默放行」（本仓库最贵的形态：绿了但没跑）。
+          LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name]|join(",")' \
+            --repo "$GITHUB_REPOSITORY")
+          AUTO=$(gh pr view "$PR_NUMBER" --json autoMergeRequest \
+            --jq '.autoMergeRequest // "none"' --repo "$GITHUB_REPOSITORY")
+          echo "复核：labels=[$LABELS] autoMergeRequest=$AUTO"
+          case ",$LABELS," in *",flaky/rerun-green,"*) ;; *)
+            echo "::error::可见标注未落地：flaky/rerun-green 不在 [$LABELS] ⇒ fail-closed"; exit 1;; esac
+          case ",$LABELS," in *",block/merge,"*) ;; *)
+            echo "::error::可见标注未落地：block/merge 不在 [$LABELS] ⇒ fail-closed"; exit 1;; esac
+          [ "$AUTO" = "none" ] || {
+            echo "::error::auto-merge 仍在 arm（$AUTO）⇒ **自动放行未被阻止** ⇒ fail-closed"; exit 1; }
+          echo "::notice::🎈 flaky 已标注（flaky/rerun-green + block/merge + 已卸 auto-merge）—— 第二次绿 ≠ 通过"
+
+      # ── ③ 可见评论（幂等：同 marker 已存在则**更新**，不重复堆积 ⇒ 不再造噪音）──
+      - name: ③ PR 评论（幂等：同 marker 更新而非重复创建）
+        if: steps.decide.outputs.entry_count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.decide.outputs.pr }}
+        run: |
+          set -uo pipefail
+          EXISTING_ID=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --paginate --slurp \
+            --jq '[.[][] | select(.body | startswith("<!-- flaky-triage:"))] | .[0].id // empty' \
+            2>/dev/null || true)
+          if [ -n "${EXISTING_ID:-}" ]; then
+            # fail-closed：评论没贴上就**红**（可见标注不许静默失效）
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$EXISTING_ID" \
+              -F body=@/tmp/flaky-comment.md >/dev/null \
+              || { echo "::error::更新 triage 评论失败 ⇒ fail-closed，不静默"; exit 1; }
+            echo "♻️ 已更新既有 triage 评论 #$EXISTING_ID（幂等，不重复堆积）"
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+              -F body=@/tmp/flaky-comment.md >/dev/null \
+              || { echo "::error::贴 triage 评论失败 ⇒ fail-closed，不静默"; exit 1; }
+            echo "💬 已贴 triage 评论"
+          fi
+
+      # ── ④ 记账：只追加 + 幂等，落仓 `.github/flaky-ledger.json` ───────────────
+      - name: ④ 台账追加（只追加 + 幂等；落仓 = 文件，不是隐藏状态）
+        if: steps.decide.outputs.entry_count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -uo pipefail
+          BRANCH="chore/flaky-ledger"
+          # 台账分支已存在 ⇒ 以它为基线（避免与未合并的既有条目分叉）
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch --quiet origin "$BRANCH"
+            git checkout -B "$BRANCH" FETCH_HEAD
+          else
+            git checkout -B "$BRANCH"
+          fi
+          python3 .github/scripts/flaky_ledger.py append \
+            --ledger .github/flaky-ledger.json --entries /tmp/flaky-entries.json
+          # 幂等判据（机械）：同 (workflow, run_id, job) 已登记 ⇒ append 是空操作 ⇒ 无 diff
+          if git diff --quiet -- .github/flaky-ledger.json; then
+            echo "::notice::⏭️ 台账无新增（幂等：同一 (workflow, run_id, job) 已登记）"
+            exit 0
+          fi
+          git config user.name "migao-flaky-bot"
+          git config user.email "flaky-bot@users.noreply.github.com"
+          git add .github/flaky-ledger.json
+          git commit -q -m "chore(ci): flaky 台账追加（run ${RUN_ID}）"
+          git push --quiet origin "$BRANCH" || {
+            echo "::error::台账 push 失败 ⇒ 记账**未落仓**（fail-closed，不静默）"; exit 1; }
+          # 落仓复核：**远端 ref** 必须就是本次提交（判据是远端，不是本地 git log）
+          git fetch --quiet origin "$BRANCH"
+          [ "$(git rev-parse FETCH_HEAD)" = "$(git rev-parse HEAD)" ] || {
+            echo "::error::台账未落到远端分支 $BRANCH（落仓复核失败）"; exit 1; }
+          if [ -z "$(gh pr list --head "$BRANCH" --state open --json number \
+                       --jq '.[0].number // empty' --repo "$GITHUB_REPOSITORY")" ]; then
+            # ⚠️ body 里**不得**出现 issue 关闭关键词 + 号（本仓库 close-linked-issues 是朴素正则，
+            #    任何「关键词 + #号」形态都会被误判为关闭意图，包括反引号里的样例）。
+            gh pr create --base main --head "$BRANCH" --repo "$GITHUB_REPOSITORY" \
+              --title "chore(ci): flaky 台账滚动追加" \
+              --body "由 \`.github/workflows/flaky-triage.yml\` 自动追加（关联 issue 4717，**不关闭**它）。
+
+              只改 \`.github/flaky-ledger.json\`：**只追加**、幂等（键 = \`(workflow, run_id, job)\`）、可审计。
+
+              消费方式：**条数现取**（本台账不写任何计数）；同一 \`job\` 反复出现 \`kind=flaky\` ⇒ 按 \`migao-acceptance\`「随机红 = 归因层失效」开单修根因，而不是继续重跑。" \
+              || { echo "::error::台账 PR 创建失败 ⇒ 台账停在分支上、main 不增长（fail-closed）"; exit 1; }
+            gh pr merge "$BRANCH" --auto --squash --repo "$GITHUB_REPOSITORY" 2>&1 \
+              || echo "ℹ️ auto-merge arm 失败（非致命；台账 PR 仍可人工合并）"
+          fi
+          echo "::notice::📒 flaky 台账已追加并推送 $BRANCH（落仓复核通过）"
