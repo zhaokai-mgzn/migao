@@ -663,4 +663,211 @@ class ProcessingFeeCalculatorTest {
         assertThat(fee.amount()).isEqualByComparingTo("0");
         assertThat(fee.feeSource()).isEqualTo("unpriced");
     }
+
+    // ══════════════════════ #4855 拼色加价（用户 2026-09-21 裁定）══════════════════════
+    //
+    // 裁定逐字：「拼色计价规则就是拼色款另加 2.4 元/米 先按这个算吧」＋
+    // 「**两处都按 2.4 元/米（订单侧撤掉元/套）**」⇒ 订单侧**不再**对 `拼1次` / `拼2次`
+    // 按 `production_route_rules.customer_unit_price`（元/套，V82 种子 3.00 / 5.00）计费，
+    // 改按 **2.4 元/米 × 该款面料米数** —— 与报价侧（`curtain_calc.build_quote`）**同源同价**
+    // （跨语言同源判据见 `tests/unit_ci_workflows/test_mixed_color_surcharge_cross_side.py`）。
+    //
+    // 🔴 三条边界（不得越界）：
+    //   ① 只动 `拼1次` / `拼2次` 两行 —— 同一份 V82 种子里别的选项（双眼皮接高 / 布绑带…）**一字未动**；
+    //   ② 那两行**不是**「未定价」：库里 `customer_unit_price` 一字未动（不改数据面），
+    //      取价侧把它们记为 `billing=per_meter`（`priced=true`）⇒ **不进**「未定价」提示；
+    //   ③ **不追溯**：存量单读面（`storedFee`）不重算、`production_work_logs` 一字不动。
+
+    /** 拼色订单行：款式 + **面料米数**（`fabric_meters` = 报价侧同源键）+ 特殊选项。 */
+    private static Map<String, Object> mixedColorInfo(String style, String fabricMeters, String... options) {
+        // 单面料行时 `processing_meters == fabric_meters`（真值源 §6.1）⇒ 两个键同值（与下单页落库同形）
+        Map<String, Object> info = processingInfo(
+                fabricMeters == null ? null : new BigDecimal(fabricMeters), "韩褶");
+        if (fabricMeters != null) {
+            info.put("fabric_meters", new BigDecimal(fabricMeters));
+        }
+        if (style != null) {
+            info.put("style", style);
+        }
+        if (options.length > 0) {
+            info.put("specialOptions", List.of(options));
+        }
+        return info;
+    }
+
+    @Test
+    @DisplayName("#4855 判据 1·拼色款 ⇒ 另加 2.4 元/米 × 面料米数；**不再**按元/套收拼1次的 3.00")
+    void mixedColorSurchargeIsPerMeterTimesFabricMeters() {
+        givenCombinations(combination("韩褶", "10.00"));
+        givenOptionRules(optionRule("拼1次", "3.00"));
+
+        ProcessingFeeCalculator.Fee fee = compute(mixedColorInfo("拼色", "34.10", "拼1次"));
+
+        // 组合那半：10.00 × 34.10 = 341.00；拼色加价：2.4 × 34.10 = 81.84
+        assertThat(fee.amount()).isEqualByComparingTo("341.00");
+        assertThat(fee.mixedColor().surcharge()).isEqualByComparingTo("81.84");
+        assertThat(fee.mixedColor().meters()).isEqualByComparingTo("34.10");
+        assertThat(fee.mixedColor().metersSource()).isEqualTo("fabric_meters");
+        assertThat(fee.mixedColor().options()).containsExactly("拼1次");
+        assertThat(fee.lineAmount()).isEqualByComparingTo("422.84");
+        // 🔴 撤掉元/套：库里那笔 3.00 元/套 **不再**计入（旧口径 341.00 + 3.00 = 344.00 ⇒ 红）
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("0");
+        assertThat(fee.lineAmount()).isNotEqualByComparingTo("344.00");
+        // 边界 ②：拼1次 **不是**「未定价」—— 照列、`priced=true`、`billing=per_meter`、金额 0
+        assertThat(fee.specialOptions()).singleElement().satisfies(option -> {
+            assertThat(option.name()).isEqualTo("拼1次");
+            assertThat(option.priced()).isTrue();
+            assertThat(option.billing()).isEqualTo(ProcessingFeeCalculator.BILLING_PER_METER);
+            assertThat(option.amount()).isEqualByComparingTo("0");
+            assertThat(option.unitPrice()).isEqualByComparingTo("3.00");   // 库里那笔价**原样可见**（未改数据）
+        });
+        assertThat(fee.hint()).isNull();   // 米数齐全 ⇒ 无「未定价 / 缺米数」提示
+        // detail 契约（#4855：新增键只加不改）
+        assertThat(fee.detail())
+                .containsEntry("mixed_color_surcharge", new BigDecimal("81.84"))
+                .containsEntry("mixed_color_surcharge_per_meter", new BigDecimal("2.4"))
+                .containsEntry("mixed_color_meters", new BigDecimal("34.10"))
+                .containsEntry("mixed_color_meters_source", "fabric_meters");
+        assertThat(fee.detail().get("mixed_color_options")).isEqualTo(List.of("拼1次"));
+    }
+
+    @Test
+    @DisplayName("#4855 判据 1b·真值源 §10 算例逐值：拼2次 62.7 米 ⇒ 150.48 元（旧口径 5.00 元/套）")
+    void mixedColorSurchargeMatchesTruthSourceExample() {
+        givenCombinations(combination("韩褶", "10.00"));
+        givenOptionRules(optionRule("拼2次", "5.00"));
+
+        ProcessingFeeCalculator.Fee fee = compute(mixedColorInfo("拼色", "62.70", "拼2次"));
+
+        assertThat(fee.amount()).isEqualByComparingTo("627.00");
+        assertThat(fee.mixedColor().surcharge()).isEqualByComparingTo("150.48");
+        assertThat(fee.lineAmount()).isEqualByComparingTo("777.48");
+        assertThat(fee.lineAmount()).isNotEqualByComparingTo("632.00");   // 旧口径（627.00 + 5.00）⇒ 红
+    }
+
+    @Test
+    @DisplayName("#4855 判据 2·**单色款不受影响**（回归）：款式=单色 / 不传 style ⇒ 加价 0、行金额逐分不变")
+    void singleColorHasNoMixedColorSurcharge() {
+        givenCombinations(combination("韩褶", "10.00"));
+        givenOptionRules(optionRule("拼1次", "3.00"));
+
+        ProcessingFeeCalculator.Fee noStyle = compute(mixedColorInfo(null, "13.30"));
+        assertThat(noStyle.mixedColor().surcharge()).isEqualByComparingTo("0");
+        assertThat(noStyle.lineAmount()).isEqualByComparingTo("133.00");
+
+        ProcessingFeeCalculator.Fee single = compute(mixedColorInfo("单色", "13.30"));
+        assertThat(single.mixedColor().surcharge()).isEqualByComparingTo("0");
+        assertThat(single.lineAmount()).isEqualByComparingTo("133.00");
+        assertThat(single.mixedColor()).isEqualTo(ProcessingFeeCalculator.MixedColor.NONE);
+    }
+
+    @Test
+    @DisplayName("#4855 判据 3·一樘窗只收一次（同 `craftLineId` 两行 ⇒ 只有第一行承接）")
+    void mixedColorChargedOncePerWindow() {
+        givenCombinations(combination("韩褶", "10.00"));
+
+        Map<String, Object> cloth = mixedColorInfo("拼色", "34.10");
+        cloth.put("craftLineId", "w1");
+        Map<String, Object> sheer = mixedColorInfo("拼色", "20.00");
+        sheer.put("craftLineId", "w1");
+        sheer.put("processingMeters", new BigDecimal("20.00"));
+
+        List<ProcessingFeeCalculator.Fee> fees = calculator.feesFor(List.of(cloth, sheer), TENANT);
+
+        assertThat(fees.get(0).mixedColor().surcharge()).isEqualByComparingTo("81.84");
+        assertThat(fees.get(1).mixedColor().surcharge()).isEqualByComparingTo("0");     // 不重复收
+        assertThat(fees.get(1).lineAmount()).isEqualByComparingTo("200.00");            // 组合那半照算
+    }
+
+    @Test
+    @DisplayName("#4855 判据 4·拼色但**缺面料米数** ⇒ 加价 0 + 可行动提示（不猜米数）")
+    void missingFabricMetersYieldsZeroWithActionableHint() {
+        givenCombinations(combination("韩褶", "10.00"));
+
+        Map<String, Object> info = processingInfo(null, "韩褶");   // 无 processingMeters / fabric_meters
+        info.put("style", "拼色");
+        ProcessingFeeCalculator.Fee fee = compute(info);
+
+        assertThat(fee.mixedColor().surcharge()).isEqualByComparingTo("0");
+        assertThat(fee.mixedColor().meters()).isNull();
+        assertThat(fee.hint()).contains("拼色加价").contains("缺面料米数");
+    }
+
+    @Test
+    @DisplayName("#4855 判据 5·其余特殊选项仍按元/套（拼色加价是**第三半**，不与选项那半混算）")
+    void otherOptionsStillChargedPerSet() {
+        givenCombinations(combination("韩褶", "10.00"));
+        givenOptionRules(optionRule("加铅块", "6.00"), optionRule("拼1次", "3.00"));
+
+        ProcessingFeeCalculator.Fee fee = compute(mixedColorInfo("拼色", "34.10", "加铅块", "拼1次"));
+
+        assertThat(fee.specialOptions()).extracting(ProcessingFeeCalculator.SpecialOption::name)
+                .containsExactly("加铅块", "拼1次");
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("6.00");
+        assertThat(fee.mixedColor().surcharge()).isEqualByComparingTo("81.84");
+        assertThat(fee.lineAmount()).isEqualByComparingTo("428.84");    // 341.00 + 6.00 + 81.84
+    }
+
+    @Test
+    @DisplayName("#4855 边界登记·**拼3次**不在本裁定范围：仍按元/套计（纸表未登记其用料系数）")
+    void unregisteredMixedTimesStillChargedPerSet() {
+        givenCombinations(combination("韩褶", "10.00"));
+        givenOptionRules(optionRule("拼3次", "7.00"));
+
+        ProcessingFeeCalculator.Fee fee = compute(mixedColorInfo("拼色", "34.10", "拼3次"));
+
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("7.00");
+        assertThat(fee.specialOptions()).singleElement()
+                .satisfies(option -> assertThat(option.billing())
+                        .isEqualTo(ProcessingFeeCalculator.BILLING_PER_SET));
+        assertThat(fee.lineAmount()).isEqualByComparingTo("429.84");    // 341.00 + 7.00 + 81.84
+    }
+
+    @Test
+    @DisplayName("#4855 边界登记·拼次选项但款式≠拼色 ⇒ 两侧都不计（元/套已撤、加价只认拼色款）")
+    void mixedTimesWithoutMixedStyleIsChargedNowhere() {
+        givenCombinations(combination("韩褶", "10.00"));
+        givenOptionRules(optionRule("拼1次", "3.00"));
+
+        ProcessingFeeCalculator.Fee fee = compute(mixedColorInfo("单色", "34.10", "拼1次"));
+
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("0");
+        assertThat(fee.mixedColor().surcharge()).isEqualByComparingTo("0");
+        assertThat(fee.lineAmount()).isEqualByComparingTo("341.00");
+        // 不静默：选项仍在明细里可见（billing=per_meter），只是两侧都不计
+        assertThat(fee.specialOptions()).singleElement()
+                .satisfies(option -> assertThat(option.billing())
+                        .isEqualTo(ProcessingFeeCalculator.BILLING_PER_METER));
+    }
+
+    @Test
+    @DisplayName("#4855 判据 6·**不追溯**：存量单读面不重算（无键 ⇒ 0），有键 ⇒ 原样读回")
+    void storedFeeNeverRecomputesMixedColorSurcharge() {
+        Map<String, Object> legacyDetail = new LinkedHashMap<>();
+        legacyDetail.put("amount", new BigDecimal("341.00"));
+        legacyDetail.put("fee_source", "matched");
+        legacyDetail.put("meters", new BigDecimal("34.10"));
+        legacyDetail.put("special_options", List.of());
+        legacyDetail.put("special_options_total", BigDecimal.ZERO);
+        Map<String, Object> legacy = Map.of("processingFeeDetail", legacyDetail);
+
+        // #4855 之前生成的单：detail 里**没有**拼色加价那半 ⇒ 0（当时确实没这一笔，不是「漏读」，
+        // 也**不重算** —— R13「改价 ⇒ 新单按新价，已生成订单一字不变」）
+        ProcessingFeeCalculator.Fee stored = ProcessingFeeCalculator.storedFee(legacy);
+        assertThat(stored.mixedColor().surcharge()).isEqualByComparingTo("0");
+        assertThat(stored.lineAmount()).isEqualByComparingTo("341.00");
+
+        Map<String, Object> withSurcharge = new LinkedHashMap<>(legacyDetail);
+        withSurcharge.put("mixed_color_surcharge", new BigDecimal("81.84"));
+        withSurcharge.put("mixed_color_meters", new BigDecimal("34.10"));
+        withSurcharge.put("mixed_color_meters_source", "fabric_meters");
+        withSurcharge.put("mixed_color_options", List.of("拼1次"));
+
+        ProcessingFeeCalculator.Fee storedNew = ProcessingFeeCalculator.storedFee(
+                Map.of("processingFeeDetail", withSurcharge));
+        assertThat(storedNew.mixedColor().surcharge()).isEqualByComparingTo("81.84");
+        assertThat(storedNew.mixedColor().meters()).isEqualByComparingTo("34.10");
+        assertThat(storedNew.mixedColor().options()).containsExactly("拼1次");
+        assertThat(storedNew.lineAmount()).isEqualByComparingTo("422.84");
+    }
 }

@@ -1999,6 +1999,26 @@ export default function NewOrderPage() {
                                   />
                                 ))
                               })}
+                            {/* 拼色加价（#4855，用户 2026-09-21 裁定）：行金额的**第三个分量** ——
+                                拼色款另加 2.4 元/米 × 面料米数（报价侧同源同价）。
+                                键缺席（存量单 / 旧服务端）⇒ 0 ⇒ 不渲染该行（显示口径逐字不变）。 */}
+                            {!isFabric &&
+                              group.lines.map((line) => {
+                                const i = feeIndexByLineId.get(line.id)
+                                const feeRow = i === undefined ? undefined : feePreview?.items[i]
+                                const display = buildFeeDetailDisplay({
+                                  processingFee: feeRow?.processingFee,
+                                  processingFeeDetail: feeRow?.processingFeeDetail ?? null,
+                                })
+                                return display.mixedColorSurcharge > 0 ? (
+                                  <CostRow
+                                    key={`m_${line.id}`}
+                                    label="拼色加价"
+                                    expr={display.mixedColorSurchargeExpr}
+                                    amount={display.mixedColorSurcharge}
+                                  />
+                                ) : null
+                              })}
                             {/* 配布边逐行（§4.8 一樘窗 = 主布行 + 配布边行） */}
                             {group.lines.map((line) => {
                               const p = edgeUnitPriceOf(line)

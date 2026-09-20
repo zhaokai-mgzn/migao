@@ -51,7 +51,8 @@ public class FeePreviewController {
      * 页面可以把「即将提交的那一份」原样送来，避免预览与提交两套入参。
      * 缺 {@code items} / 空数组 ⇒ 返回空列表（不报错：下单页在没选商品时本就会问）。</p>
      *
-     * <p>响应 {@code data}：{@code items[i] = {processingFee, processingFeeDetail}}
+     * <p>响应 {@code data}：{@code items[i] = {processingFee, processingFeeDetail, specialOptions,
+     * specialOptionsTotal, mixedColorSurcharge}}
      * （与订单详情行的键名**逐字一致**，页面与详情页可用同一套渲染）+ {@code processingFeeTotal}。</p>
      */
     @RequirePermission("order:list")
@@ -76,13 +77,18 @@ public class FeePreviewController {
         BigDecimal total = BigDecimal.ZERO;
         for (ProcessingFeeCalculator.Fee fee : fees) {
             Map<String, Object> row = new LinkedHashMap<>();
-            // 行金额 = 组合那半 + Σ 选项价（#4525 设计 §4.3：唯一进订单金额的数）
+            // 行金额 = 组合那半 + Σ 选项价 + 拼色加价（#4525 设计 §4.3：唯一进订单金额的数；
+            // 第三个分量由 #4855 追加 —— 三段相加 === processingFee）
             BigDecimal lineAmount = fee.lineAmount();
             row.put("processingFee", lineAmount);
             row.put("processingFeeDetail", fee.detail());
             // 顶层再给一份选项明细（前端展示用；与 detail 里的两个键**同源**，不另算）
             row.put("specialOptions", fee.specialOptions());
             row.put("specialOptionsTotal", fee.specialOptionsTotal());
+            // 拼色加价（#4855，用户 2026-09-21 裁定「两处都按 2.4 元/米」）：行金额的**第三个分量**
+            // （元/米 × 该款面料米数）—— 与 detail 的 `mixed_color_surcharge` **同源**，不另算。
+            row.put("mixedColorSurcharge",
+                    fee.mixedColor() == null ? null : fee.mixedColor().surcharge());
             rows.add(row);
             if (lineAmount != null) {
                 total = total.add(lineAmount);

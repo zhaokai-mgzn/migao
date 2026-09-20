@@ -35,7 +35,7 @@ describe('特殊选项行（R2：选了特殊选项 ⇒ 进费用明细）', () 
     expect(display.baseAmount).toBe(106.4)
     expect(display.specialOptionsTotal).toBe(6)
     expect(display.specialOptionRows).toEqual([
-      { key: '加铅块', label: '加铅块', expr: '¥6.00/套 × 1 套', amount: 6 },
+      { key: '加铅块', label: '加铅块', expr: '¥6.00/套 × 1 套', amount: 6, billing: 'per_set' },
     ])
     // 同一真值：组合那半 + 特殊选项 = 行金额（订单金额里的那个数）
     expect(display.baseAmount + display.specialOptionsTotal).toBe(112.4)
@@ -73,7 +73,7 @@ describe('特殊选项行（R2：选了特殊选项 ⇒ 进费用明细）', () 
     })
 
     expect(display.specialOptionRows).toEqual([
-      { key: '加铅块', label: '加铅块', expr: '未定价（按 0 计）', amount: 0 },
+      { key: '加铅块', label: '加铅块', expr: '未定价（按 0 计）', amount: 0, billing: 'per_set' },
     ])
     // 未定价 = 按 0 计，所以合计仍与订单金额一致（不静默改数）
     expect(display.baseAmount + display.specialOptionsTotal).toBe(106.4)
@@ -135,5 +135,90 @@ describe('特殊选项行（R2：选了特殊选项 ⇒ 进费用明细）', () 
 
     expect(display.specialOptionsTotal).toBe(7)
     expect(display.baseAmount + display.specialOptionsTotal).toBe(113.4)
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 拼色加价（#4855，用户 2026-09-21 裁定「拼色计价 = 拼色款另加 2.4 元/米」「两处都按 2.4 元/米」）
+//
+// 行金额自此有**三个分量**：组合那半 + 特殊选项（元/套）+ 拼色加价（元/米 × 面料米数）。
+// 判据：① 三段相加 === processingFee（少算一段 = 页面显示 ≠ 落库 ⇒ 红）；
+//      ② `拼1次`/`拼2次` 改按元/米计（`billing=per_meter`）⇒ **不得**读成「未定价」，也不得再显示一个元/套价；
+//      ③ 键缺席（存量单 / 旧服务端）⇒ 显示口径逐字等于改造前（不引入第三个口径）。
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('拼色加价（#4855：拼色款另加 2.4 元/米）', () => {
+  it('拼色款：三段相加 === 行金额；`拼1次` 显示「已并入拼色加价」且金额 0（不再显示元/套价）', () => {
+    const display = buildFeeDetailDisplay({
+      // 真值源 §10 算例：52 折双开 拼1次 ⇒ 组合那半 341.00 + 拼色加价 81.84 = 422.84
+      processingFee: 422.84,
+      processingFeeDetail: {
+        amount: 341,
+        special_options: [
+          // 库里那笔元/套价（V82 种子 3.00）仍在，但**不再被取价使用**（改按元/米）
+          { name: '拼1次', unit_price: 3, sets: 1, amount: 0, priced: true, billing: 'per_meter' },
+        ],
+        special_options_total: 0,
+        mixed_color_surcharge: 81.84,
+        mixed_color_surcharge_per_meter: 2.4,
+        mixed_color_meters: 34.1,
+        mixed_color_options: ['拼1次'],
+      },
+    })
+
+    expect(display.mixedColorSurcharge).toBe(81.84)
+    expect(display.mixedColorSurchargeExpr).toBe('34.1 米 × ¥2.40/米')
+    expect(display.specialOptionRows).toEqual([
+      {
+        key: '拼1次',
+        label: '拼1次',
+        expr: '按 ¥2.40/米 计（已并入拼色加价）',
+        amount: 0,
+        billing: 'per_meter',
+      },
+    ])
+    // 🔴 三段相加 === 行金额（订单金额里的那个数）
+    expect(display.baseAmount + display.specialOptionsTotal + display.mixedColorSurcharge)
+      .toBeCloseTo(422.84, 2)
+  })
+
+  it('单色款 / 键缺席（存量单）⇒ 加价 0、加工行 = 整个 processingFee（显示口径逐字不变）', () => {
+    const legacy = buildFeeDetailDisplay({
+      processingFee: 106.4,
+      processingFeeDetail: { amount: 106.4, unit_price: 8, meters: 13.3 },
+    })
+    expect(legacy.mixedColorSurcharge).toBe(0)
+    expect(legacy.baseAmount).toBe(106.4)
+
+    const single = buildFeeDetailDisplay({
+      processingFee: 133,
+      processingFeeDetail: {
+        amount: 133,
+        special_options: [],
+        special_options_total: 0,
+        mixed_color_surcharge: 0,
+        mixed_color_surcharge_per_meter: 2.4,
+        mixed_color_meters: null,
+      },
+    })
+    expect(single.mixedColorSurcharge).toBe(0)
+    expect(single.baseAmount).toBe(133)
+  })
+
+  it('amount 缺失 ⇒ 用「行金额 − 选项合计 − 拼色加价」反推组合那半（仍不双算）', () => {
+    const display = buildFeeDetailDisplay({
+      processingFee: 428.84,
+      processingFeeDetail: {
+        special_options: [{ name: '加铅块', unit_price: 6, sets: 1, amount: 6, priced: true }],
+        special_options_total: 6,
+        mixed_color_surcharge: 81.84,
+        mixed_color_surcharge_per_meter: 2.4,
+        mixed_color_meters: 34.1,
+      },
+    })
+
+    expect(display.baseAmount).toBe(341)
+    expect(display.baseAmount + display.specialOptionsTotal + display.mixedColorSurcharge)
+      .toBeCloseTo(428.84, 2)
   })
 })
