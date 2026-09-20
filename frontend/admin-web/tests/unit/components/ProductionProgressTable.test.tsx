@@ -212,4 +212,34 @@ describe('ProductionProgressTable', () => {
       .map((th) => th.textContent)
     expect(headers).toEqual(['工序', '分组', '应做数量', '单价', '状态', '已完成数量', '报工人'])
   })
+
+  // ── 套口径（issue #4686，用户裁定 2026-09-20「一樘窗 = 一套」）──
+  // 分组粒度 = 一樘窗 = 一套；组头按行业口径显示「第 N 套 / 共 M 套」
+  // （真值源 `docs/curtain-production-rules.md` 的「第 N 套/共 M 套」口径 —— 按该文本检索，不写行号）。
+  // 套号来源：读面已按 `order_item_id` 分组返回**有序**列表 ⇒ N = 该组在列表中的序号、M = 列表长度。
+
+  it('多窗订单：组头显示「第 N 套 / 共 M 套」，序号稳定唯一', () => {
+    render(<ProductionProgressTable positions={positions} />)
+
+    const first = screen.getByTestId('position-group-布帘')
+    const second = screen.getByTestId('position-group-纱帘')
+    expect(within(first).getByText('第 1 套 / 共 2 套')).toBeInTheDocument()
+    expect(within(second).getByText('第 2 套 / 共 2 套')).toBeInTheDocument()
+  })
+
+  it('单窗订单：组头显示「第 1 套 / 共 1 套」', () => {
+    render(<ProductionProgressTable positions={[positions[0]]} />)
+
+    expect(screen.getByText('第 1 套 / 共 1 套')).toBeInTheDocument()
+  })
+
+  it('组头不再把一樘窗称作「部位」，但仍保留「这是哪一樘窗」的副标题', () => {
+    render(<ProductionProgressTable positions={positions} />)
+
+    // 红证（改前实测）：组头逐字为「部位：布帘」/「部位：纱帘」⇒ 下一条改前必红
+    expect(screen.queryByText(/部位/)).toBeNull()
+    // position_name（加工产物名[+色号]）降为副标题 —— 它是**这一套是哪一樘窗**，不是「部位」
+    expect(within(screen.getByTestId('position-group-布帘')).getByText('布帘')).toBeInTheDocument()
+    expect(within(screen.getByTestId('position-group-纱帘')).getByText('纱帘')).toBeInTheDocument()
+  })
 })

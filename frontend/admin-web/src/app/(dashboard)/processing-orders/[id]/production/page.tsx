@@ -310,7 +310,7 @@ export default function ProcessingOrderProductionPage() {
             </p>
           )}
 
-          {/* 工序进度（按部位分组 + 必完工序标记） */}
+          {/* 工序进度（按**套**分组：一樘窗 = 一套，issue #4686；组头标「第 N 套 / 共 M 套」+ 必完工序标记） */}
           <div className="rounded-lg border border-neutral-200 bg-white p-5">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-base font-medium text-neutral-900">工序进度</h2>
