@@ -4720,25 +4720,41 @@ async def check_debug_user_precondition(token: str, case) -> list:
 #      `precondition[order_count_for_phone]: … (capture=… → after=…)` —— 于是
 #      「前置不成立」与「行为失败」在 summary 的 `failures` 里**形态不同、可机器分辨**，
 #      不再需要靠人读日志猜（这正是两次审计分歧的治本点）。
+#   ④ **靶子存在性下界**（issue #4838）：`min(capture, after) < 下界` → 同样记一条
+#      **断言级失败**（靶子**本就不存在** / **在运行期间被清零**）。为什么必须补这一条：
+#      ③ 只抓「增长」，而 ① **只在用例声明 `expect` 时生效** —— 本仓既有口径是「只声明
+#      `precondition`、**有意不给** `expect`」（给精确值 = 依赖栈的恒红判据，反模式由
+#      `CH-034` 登记）⇒ 这类用例在靶子被清零时 capture/after 可以**一致地**都是 0，
+#      ①②③ **全不触发** ⇒ **静默拿到绿**，而结论是在靶子不存在的情况下得出的（与 agent
+#      行为无因果）。下界只取**结构最小值**（计数型 = 1），不随栈漂移、只在「清零」时触发。
 # ⚠️ 措辞红线：成功路径的消息**不得含**「未复位」/「失败」（见 `_run_pre_clean` docstring）。
 _PRECONDITION_NO_DRIFT = 0
 
-# ── precondition type 的**唯一真相源**（issue #3835）────────────────────────────
-# 键 = `precondition[].type`；值 = 该 type 的 `source` 是什么（只用于**消息措辞**，
-# 让"哪个靶子坏了"在报告里一眼可读）。
+# ── precondition type 的**唯一真相源**（issue #3835 / #4838）───────────────────
+# 键 = `precondition[].type`；值 = 该 type 的**元数据**（两个键，缺任一即 fail-closed）：
+#   · `what` = 该 type 的 `source` 是什么（只用于**消息措辞**，让"哪个靶子坏了"一眼可读）；
+#   · `min`  = **靶子存在性下界**（issue #4838）：`min(capture, after) >= min` 才算
+#     「靶子还在」。计数型一律 `1`（共享夹具必须真的在）；非计数型 = `None`
+#     （如 `debug_permissions_effective` 由自己的判定函数判"是否生效"，不数件数）。
+#     ⚠️ 下界**只取结构最小值**（1），**不是**"精确值"：精确值随栈而变 ⇒ 恒红（`CH-034`
+#     登记的反模式，本单**禁止**用「补个 `expect`」换绿）；下界不随栈漂移，且「靶子被
+#     清零」时必然触发 —— 这正是它同时满足「稳定」与「抓得住失效」的原因。
+#     **禁止**把某个 type 的 `min` 调成 0 让它闭嘴：那等于把该类型的用例退回
+#     「靶子不存在也判绿」的假绿缺口（守卫 =
+#     `tests/unit_ci_workflows/test_precondition_target_present.py`）。
 # ⚠️ **未登记的 type 必须仍然 fail-closed**（`check_precondition_declared` 报 config_error，
 # 不让用例带一个不生效的守卫跑）—— 新增 type 时只加这里 + 在捕获/回读点接上探针，
 # **不得**放宽 `check_precondition_drift` / `check_precondition_declared` 的兜底分支。
 _PRECONDITION_TYPES: dict = {
-    "order_count_for_phone": "手机号名下订单数",
-    "product_count_for_keyword": "名字含该关键词的商品件数",
+    "order_count_for_phone": {"what": "手机号名下订单数", "min": 1},
+    "product_count_for_keyword": {"what": "名字含该关键词的商品件数", "min": 1},
     # 员工创建/更新的**前置**（issue #4189 的 burn-down 缴费，HR-002 使用）：
     # `source` = 手机号（数字归一的不可变键）→ 基线 = 该号码名下的员工/用户数。
     # 与 `order_count_for_phone` 同构：`expect` 判基线（HR-002 声明 expect=0 = 创建目标
     # 必须空闲），`max_growth` 判运行期漂移（HR-002 声明 max_growth=1 = 只允许本用例
     # 自己造的那一个；并行用例再造同名 ⇒ 判红）。定位口径与 `employee_remove` 同一份
     # （`_norm_phone` + `/api/admin/users` 列表），不存在第二份"怎么数员工"的定义。
-    "employee_count_for_phone": "该手机号名下的员工/用户数（创建前置：目标可创建）",
+    "employee_count_for_phone": {"what": "该手机号名下的员工/用户数（创建前置：目标可创建）", "min": 1},
     # 加工项存在性前置（issue #4527 的 burn-down 缴费，PP-008 使用）：
     # `source` = 加工项名关键词（种子里的**唯一名**，如「打孔」）→ 基线 = 名字含该
     # 关键词的加工项件数。与 `product_count_for_keyword` 同构：用例的写动作（改价/停用）
@@ -4746,7 +4762,7 @@ _PRECONDITION_TYPES: dict = {
     # （看起来像「agent 不会改加工项」，归因全错）；有同名副本 ⇒ 改到的可能不是种子那一件。
     # ⚠️ 计数**按名字**（不按 status）：`toggle_item_status` 正是本用例要做的写动作，
     # 若把 status 计入口径，正常行为会被判成「前置漂移」（假红）。
-    "processing_item_count_for_keyword": "名字含该关键词的加工项件数（写前置：共享夹具存在且唯一）",
+    "processing_item_count_for_keyword": {"what": "名字含该关键词的加工项件数（写前置：共享夹具存在且唯一）", "min": 1},
     # 售后工单存在性前置（issue #4527 的 burn-down 缴费，AS-004 使用）：
     # `source` = 用例点名的工单号（不可变键，如 `AS-20260914-9001`）→ 基线 = 该工单号
     # 在 `after_sales_tickets` 里的条数。AS-004 的 `pre_clean[aftersales_ticket_prepare]`
@@ -4756,13 +4772,74 @@ _PRECONDITION_TYPES: dict = {
     # ⚠️ 口径 = 按**工单号**计数（不按 status）：本用例的写动作就是改 status，
     # 把它计入口径会把正常行为判成漂移（同 `processing_item_count_for_keyword` 的理由）。
     # 取数走 DB（与复位同一张表 / 同一个不可变键，§18 单一真相源；`db_verify` 仍走 HTTP 产出侧）。
-    "aftersales_ticket_count_for_ticket_no": "该工单号在 after_sales_tickets 里的条数（写前置：点名工单存在）",
+    "aftersales_ticket_count_for_ticket_no": {"what": "该工单号在 after_sales_tickets 里的条数（写前置：点名工单存在）", "min": 1},
     # 评测可控权限（issue #4108）：`source` = 用例声明的 `debug_permissions`（逗号分隔权限码）。
     # 判据**不是**"数一个共享字面量有没有漂移"，而是"**本用例的权限范围是否真的生效**"——
     # 见 `check_debug_permissions_effective`。`source` 语义与上两条一致 =「我依赖的那个
     # 不可变键」；此处那个键就是用例自己声明的权限码串（渲染器与用例**同源**）。
-    "debug_permissions_effective": "本用例声明的 DEBUG 权限范围是否真的生效",
+    # ⚠️ `min: None` = **该类型不按件数判「靶子还在不在」**：它的判据是
+    # `check_debug_permissions_effective`（观测服务端**真的**给了什么范围），
+    # 由那条自己的 fail-closed 分支承重。**不得**为了"让判据统一"给它编一个件数下界。
+    "debug_permissions_effective": {"what": "本用例声明的 DEBUG 权限范围是否真的生效", "min": None},
 }
+
+
+def _precondition_what(t: str) -> str:
+    """该 type 的**可读措辞**（消息用）—— 类型表的值是元数据字典，此处只取 `what`。"""
+    meta = _PRECONDITION_TYPES.get(t)
+    return str((meta or {}).get("what") or t) if isinstance(meta, dict) else str(t)
+
+
+def precondition_min(t: str):
+    """该 type 的**结构下界**（靶子存在性）：计数型 = 1；不按件数判 = `None`（issue #4838）。"""
+    meta = _PRECONDITION_TYPES.get(t)
+    return meta.get("min") if isinstance(meta, dict) else None
+
+
+def _coerce_expect_min(value):
+    """`expect_min` 的**形态归一**（issue #4838）：非负整数 ⇒ `int`；其余 ⇒ `None`。
+
+    拒绝 `bool` / `None` / 负数 / 非数。**两处共用同一份口径**（`precondition_lower_bound`
+    取值 / `check_precondition_declared` 判形态），避免"取值放行、声明层判红"或反过来的双源漂移。
+    """
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    return n if n >= 0 else None
+
+
+def precondition_lower_bound(spec: dict, t: str):
+    """该前置声明的**靶子存在性下界**（issue #4838）—— 纯函数，L0 守卫直接调用。
+
+    取值优先级（**只表达"靶子还在不在"，不引入精确值**）：
+      ① 显式 `expect_min: <int>` —— 用例自己声明的最小可判定条件（可选，本仓暂无实例）；
+      ② 显式 `expect: 0` —— 该前置的语义是「**靶子必须不存在**」（创建类用例：HR-002 /
+         PR-008 / PR-011 / PR-012 / PR-019 / CH-005）⇒ 存在性下界 = 0。
+         **不得**套用类型缺省的 1：那会把"自建成功"（0 → 1）判成"靶子消失"，
+         把 agent 失败伪装成前置失败（归因污染，比原缺口更坏）。
+      ③ 否则 = 类型结构下界 `precondition_min(t)`（计数型 = 1；非计数型 = `None`）。
+    `expect` 是**精确值**（判"捕获时是不是那个值"），与下界是两回事：`expect: 3` 不把下界
+    抬到 3（那会让"靶子从 3 变 1"这种**用例自身语义**误判）—— 下界只判「还在不在」。
+
+    ⚠️ `expect_min` **形态非法**（`null` / 负数 / 非数 / 布尔）时**不回退成「无下界」**
+    （那正是本单要堵的缺口本身）⇒ 继续走 ②③；该非法声明另由
+    `check_precondition_declared` 报 config_error（**判红，不静默跳过**）。
+    """
+    if "expect_min" in spec:
+        em = _coerce_expect_min(spec.get("expect_min"))
+        if em is not None:
+            return em
+    expect = spec.get("expect")
+    if expect is not None:
+        try:
+            if int(expect) == 0:
+                return 0
+        except (TypeError, ValueError):
+            pass
+    return precondition_min(t)
 
 
 def precondition_capture_shape(specs: list) -> dict:
@@ -4929,14 +5006,21 @@ async def _probe_aftersales_ticket_count(ticket_no: str) -> int | None:
 
 
 def check_precondition_drift(specs: list, before: dict, after: dict) -> list:
-    """运行期前置一致性断言（**纯函数**，issue #3781 / #3835）——返回断言级问题串。
+    """运行期前置一致性断言（**纯函数**，issue #3781 / #3835 / #4838）——返回断言级问题串。
 
     `before`/`after` 形态：`{"<type>:<source>": int}`（取不到的源不入字典）。
-    **两条判据**（缺任一条都会让"前置坏了"伪装成"agent 表现不好"）：
+    **三条判据**（缺任一条都会让"前置坏了"伪装成"agent 表现不好"）：
       ① **基线判据**（可选，声明 `expect: <int>` 时生效）：`before != expect` ⇒
          前置**本就不成立**（例如用例开跑时同名商品已有 2 件 —— 上一跑的残留/别人的
          运行期污染）。只看漂移会漏掉这一格：基线本来就是坏的，`after - before` 仍为 0。
-      ② **漂移判据**：`after - before > max_growth`（默认 `_PRECONDITION_NO_DRIFT = 0`，
+      ② **靶子存在性下界**（**恒生效**，issue #4838）：`min(before, after) < 下界` ⇒
+         前置**本就不成立（靶子不存在）**或**在运行期间被清零**。下界 = 显式 `expect_min`
+         > 显式 `expect: 0` ⇒ 0 > 类型结构下界（计数型 = 1），见 `precondition_lower_bound`。
+         **为什么必须恒生效**：① 只在声明 `expect` 时生效，而本仓既有口径是「只声明
+         `precondition`、有意不给 `expect`」⇒ 靶子被清零时 `before`/`after` 可以**一致地**
+         都是 0，①②③ 全不触发 ⇒ **静默拿到绿**，结论却是在靶子不存在时得出的。
+         下界只取结构最小值（1）⇒ **不随栈漂移**（不是 `CH-034` 那种恒红判据）。
+      ③ **漂移判据**：`after - before > max_growth`（默认 `_PRECONDITION_NO_DRIFT = 0`，
          即"运行期间**不得**新增"）⇒ 前置被**运行中的并行用例**改写。
     取不到基线/现值时**不报**（那是环境层问题，由 pre_clean 消息与 infra 通道承载；
     在这里报会把"网络抖动"伪装成"前置不成立"，正是本仓库反复踩的归因污染）。
@@ -4965,7 +5049,7 @@ def check_precondition_drift(specs: list, before: dict, after: dict) -> list:
         b, a = before.get(key), after.get(key)
         if b is None or a is None:
             continue
-        what = _PRECONDITION_TYPES[t]
+        what = _precondition_what(t)
         expect = s.get("expect")
         if expect is not None:
             try:
@@ -4980,6 +5064,26 @@ def check_precondition_drift(specs: list, before: dict, after: dict) -> list:
                     f"capture={b}，而用例声明 expect={expect_i}。本次红/绿**不可归因于 "
                     f"agent 行为**：靶子在被测事件发生**之前**就已经不是用例依赖的那个"
                     f"（典型来源：上一跑的残留、或别的用例在运行期造了同名副本，#3835）")
+                continue
+        # ② 靶子存在性下界（#4838）—— **恒生效**，不依赖用例是否声明 `expect`。
+        #    「没测到」与「测了且通过」在这里被分开：靶子不在 ⇒ 本条失败 ⇒ 该用例进
+        #    `case_asset_failures`（#4245），**不是** agent 行为失败。
+        lower = precondition_lower_bound(s, t)
+        if lower:
+            if b < lower:
+                issues.append(
+                    f"precondition[{t}]: 前置**目标不可达（靶子不存在）** —— {what} "
+                    f"{src!r} capture={b}，低于靶子存在性下界 {lower}。本次红/绿"
+                    f"**不可归因于 agent 行为**：用例依赖的靶子在开跑**之前**就不在"
+                    f"（种子没生成 / 该数据被清零 / 环境换栈）⇒ 没有靶子时的「通过」"
+                    f"不构成结论（#4838）")
+                continue
+            if a < lower:
+                issues.append(
+                    f"precondition[{t}]: 前置**在本次运行期间消失（靶子被清零）** —— "
+                    f"{what} {src!r} capture={b} → after={a}，低于靶子存在性下界 {lower}。"
+                    f"本次红/绿**不可归因于 agent 行为**：本用例依赖的目标集合在运行期间"
+                    f"被删空（并行用例/复位动作/数据清理）⇒ 行为断言的判别力已丢失（#4838）")
                 continue
         try:
             max_growth = int(s.get("max_growth", _PRECONDITION_NO_DRIFT))
@@ -4999,7 +5103,8 @@ def precondition_not_applied_fact(result: dict, pre_clean_bad: list) -> list:
 
     族成员（在 `_failure_signature` 里同属 `precondition_not_applied(...)` 这一原子）：
       ① `pre_clean: 前置未应用` / `PRECONDITION_NOT_APPLIED` —— 夹具层没准备（#3781）；
-      ② `precondition[<type>]` —— `check_precondition_drift` 观测到靶子漂移 / 本就不成立（#3835）。
+      ② `precondition[<type>]` —— `check_precondition_drift` 观测到靶子**不存在 / 被清零**
+         （存在性下界，`#4838`）或漂移 / 本就不成立（`#3835`）。
     两者都让该用例本次的**红/绿失去判别力**（runner 原文：「本次红/绿**不可归因于
     agent 行为**」）⇒ 归因必须单列，不得混进 `deterministic_failures`（"agent/产品的
     确定性回归"）或 `systemic_recurrence`（"跨 run 复发"）—— 那两桶都在指名 agent/产品，
@@ -5054,11 +5159,33 @@ async def _probe_employee_absent(token: str, emp_id: str = "", name: str = "",
 
 
 def check_precondition_declared(specs: list) -> list:
-    """声明层静态一致（L0）：声明的 type 必须已有实现（fail-closed，不静默跳过）。"""
+    """声明层静态一致（L0）：声明的 type 必须已有实现**且带靶子存在性下界**（fail-closed）。
+
+    issue #4838：`_PRECONDITION_TYPES` 的每一项都必须**显式**给出 `min` 键
+    （计数型 = 1，非计数型 = `None`）—— 缺键即 config_error，**不静默当成"无下界"**：
+    那正是本单要堵的「前置靶子消失了却不判红」缺口（新类型顺手漏掉下界 ⇒ 又出现一类
+    静默绿的用例）。`expect_min` 形态非法（非整数 / 负数）同样 config_error ——
+    前置断言**宁可判红也不静默跳过**（同 `expect` 非整数的处置口径）。
+    """
     issues = []
-    for t in precondition_capture_shape(specs):
-        if t not in _PRECONDITION_TYPES:
+    for s in specs or []:
+        if not isinstance(s, dict):
+            continue
+        t = str(s.get("type") or "")
+        if not t:
+            continue
+        meta = _PRECONDITION_TYPES.get(t)
+        if meta is None:
             issues.append(f"precondition: 声明的 type {t!r} 没有实现（断言会静默跳过）")
+            continue
+        if not isinstance(meta, dict) or "min" not in meta:
+            issues.append(
+                f"precondition: type {t!r} 未声明靶子存在性下界 `min`（fail-closed，"
+                f"见 #4838）—— 缺它则该类型的前置在靶子被清零时**静默判绿**")
+        em = s.get("expect_min")
+        if "expect_min" in s and _coerce_expect_min(em) is None:
+            issues.append(
+                f"precondition[{t}]: `expect_min` 必须是非负整数（该断言会静默跳过）: {em!r}")
     return issues
 
 
