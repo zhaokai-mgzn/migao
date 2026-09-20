@@ -1,5 +1,5 @@
 // case_ids: OR-001, OR-002, OR-003, UI-024, UI-040
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { markErrorToastShown } from '@/lib/api-error'
@@ -93,13 +93,19 @@ const mockOrder = {
 }
 
 describe('OrderDetailPage', () => {
-  // `window.print` 一律用 `vi.spyOn` 注入 + 这里统一还原（issue #4759 的 D 项）。
-  // 反例（原写法）：`window.print = vi.fn() as any` —— **直接赋值** jsdom 的 `window.print`
-  // 且从不还原 ⇒ 该改写会**泄漏到同文件后续用例**，让"打印没被调用"这类断言在被污染的
-  // 环境里恒真/恒假（本文件断言里已有两处「已完成订单也能补打发货单」依赖真实打印面）。
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
+  // `window.print` 用 `vi.spyOn` 注入，并在**创建它的那个用例里** `printSpy.mockRestore()` 还原。
+  //
+  // 反例一（#4768 之前）：`window.print = vi.fn() as any` —— **直接赋值** jsdom 的 `window.print`
+  // 且从不还原 ⇒ 泄漏到同文件后续用例，让「打印没被调用」这类断言恒真/恒假。
+  // 🔴 反例二（#4768 的写法，**本单修的就是它**）：`afterEach(() => vi.restoreAllMocks())` ——
+  // 它对**每一个**注册过的 mock 调 `mockRestore()`（= `mockReset()` + `state.restore()`），
+  // 而 `mockReset()` 会 `implementation = undefined` ⇒ **本文件的 `vi.fn()` 替身
+  // （mockGetOrder / mockConfirmPayment / mockRefundOrder）被清成「返回 undefined」**。
+  // 而 RTL 的 `cleanup()` 也在 `afterEach` 且**本文件先跑**（实测：那一刻组件**尚未卸载**）
+  // ⇒ 存在「替身已清空、组件仍挂载」的窗口：组件 effect 只要在这个窗口里再跑一次，
+  // 页面拿到 `undefined` ⇒ `undefined.then` 同步抛 ⇒ 组件崩 ⇒ **本文件任意用例随机红**、
+  // **卡住前端部署**（CI 实测：`ShipOrder.tsx:154`，`deploy-frontend.yml` 的「Unit tests」步）。
+  // ⇒ 只还原**自己创建的那个 spy**，不做文件级清场（issue #4773；同根因见 #4496 / #4497）。
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -269,16 +275,27 @@ describe('OrderDetailPage', () => {
   // ===== 补打发货单（issue #3768 / UI-040）：发货页有状态守卫进不去，重打只能从详情页 =====
 
   it('已发货订单操作区显示「打印发货单」且点击真的触发 window.print', async () => {
+    // 还原**只针对这一个 spy**（见 describe 头的反例二）：文件级 `restoreAllMocks()` 会连
+    // `vi.fn()` 替身的实现一起清掉 ⇒ 页面 effect 命中 `undefined` ⇒ 本文件随机红、卡住部署。
     const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
-    mockGetOrder.mockResolvedValue({
-      data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } },
-    })
-    render(<OrderDetailPage />)
+    try {
+      mockGetOrder.mockResolvedValue({
+        data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } },
+      })
+      render(<OrderDetailPage />)
 
-    const btn = await screen.findByRole('button', { name: /打印发货单/ })
-    await userEvent.setup().click(btn)
+      const btn = await screen.findByRole('button', { name: /打印发货单/ })
+      await userEvent.setup().click(btn)
 
-    expect(printSpy).toHaveBeenCalledTimes(1)
+      expect(printSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      printSpy.mockRestore()
+    }
+  })
+
+  it('打印用例跑完后 window.print 必须已还原（否则泄漏到后续用例 ⇒「没打印」类断言恒真/恒假）', () => {
+    // 反向护栏：删掉上面那条用例的 `finally { printSpy.mockRestore() }` ⇒ 本判据必红。
+    expect(vi.isMockFunction(window.print)).toBe(false)
   })
 
   it('已完成订单也能补打发货单', async () => {
