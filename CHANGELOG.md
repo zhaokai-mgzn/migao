@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+### 加工单打印任务卡改「洗水码」形态：按商品行（部位）出码（2026-09-21，issue #4946）
+
+- **用户裁定（三条，2026-09-21）**：① 洗水码固定 **60mm × 30mm**；② 粒度 = **商品行（部位）**，一个商品一张纸；
+  ③ 洗水码**取代** A4 任务卡。理由（用户逐字）：「当前生产环节都是按单个商品工序去生产……
+  那得打印三张纸，每个商品一张纸，二维码也得生成三张分别对应三套工序」。
+- `backend/admin-api`：`GET /production/orders/{orderId}/operations` 的 `positions[]` **只加不改**地补三个键
+  —— `part_token` / `part_short_code` / `scan_url`（= `https://<稳定域名>/s/<短码>`，印刷品上二维码的内容）；
+  既有键与顶层 `qr_token` 一字未动。扫码读面 `GET /production/scan` 新增**短码 / 整条 URL** 归一
+  （设计 §1.4 逐字要求；`/s/<短码>` → 短码 → token），既有四形态路径一字未动，跨租户短码 fail-closed。
+- `frontend/admin-web`：`TaskCardPrint` 由「一单一卡的 A4 版式」改为 **N 张 60mm×30mm 洗水码**
+  （N = 部位数，每张自带该部位的二维码 + 人可读短码 + 加工单公共属性 + 工序摘要）；
+  「生成二维码（测试用）」弹层由「一单一码」改为**按商品数量出码**。
+- 用例库：`PP-011` 的 3 条既有 `data_checks` 按新真值**改判**（旧口径「任务卡二维码 = `qr_token`（加工单级）」
+  「A4 逐道工序表 + 手工勾选位」「测试弹层 = 加工单号纯文本一码」均已作废）。
+- 真值源：`docs/curtain-production-rules.md` §1 补录本次裁定（形态 / 粒度 / 公共属性 / 摘要边界 / 码的内容）。
+
 ### 评测完成判定收紧：`unstable`（两次皆败但成因不同）不再按波动放行（2026-09-14）
 
 - `tests/agent_eval/local_runner.py`：`_COMPLETION_RELEASED_CLASSES` 由 `{llm-noise, unstable}`
