@@ -7,6 +7,8 @@ export default defineAppConfig({
     'pages/sessions/detail/index',
     'pages/auth/login/index',
     'pages/production/index/index',
+    // 工人登录（issue #4733）：工号 + PIN，主路径不依赖微信；与商家登录页是两条链路
+    'pages/worker/login/index',
   ],
   window: {
     backgroundTextStyle: 'light',

@@ -46,6 +46,8 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final ServiceTokenFilter serviceTokenFilter;
+    /** 工人登录态过滤器（issue #4733）：X-Worker-Session-Id → ROLE_WORKER 认证。 */
+    private final WorkerSessionFilter workerSessionFilter;
     private final UserDetailsService userDetailsService;
     /** 403 响应体序列化（与 @RequirePermission 拒绝同一份措辞，issue #4105 F1）。 */
     private final ObjectMapper objectMapper;
@@ -146,6 +148,9 @@ public class SecurityConfig {
                                 "/api/auth/h5/authorize",
                                 "/api/auth/h5/callback",
                                 "/api/auth/refresh",
+                                // 工人登录（issue #4733）：工号 + PIN 是**公开入口**（工人没有商家账号）
+                                // —— 只放行登录本身；/api/worker/** 的其余端点仍需有效工人 session
+                                "/api/worker/login",
                                 // 短信验证码接口（公开）
                                 "/api/auth/sms/**",
                                 // 企业入驻申请接口（公开）
@@ -167,6 +172,11 @@ public class SecurityConfig {
                         // 细粒度权限由 @RequirePermission + PermissionInterceptor 在业务层校验。
                         .requestMatchers("/api/admin/**")
                         .access(adminApiAuthorizationManager())
+                        // 工人端（issue #4733）：**新路径**，不匹配 /api/admin/** ⇒ 工人身份到不了管理后台。
+                        // 准入判据 = 有效工人 session（由 WorkerSessionService.resolveIdentity 在每个端点上判，
+                        // 无 session/已结束/已闲置超时 ⇒ 401）。此处只要求「已认证」，把细粒度留给业务层，
+                        // 与 /api/admin/** 的分工一致。
+                        .requestMatchers("/api/worker/**").authenticated()
                         // 其他路径需要认证（包括 /api/super-admin/** 超管接口，由业务层校验超管角色）
                         .anyRequest().authenticated()
                 )
@@ -180,6 +190,9 @@ public class SecurityConfig {
                 // Service Token 过滤器在 JWT 过滤器之前，用于内部服务调用
                 .addFilterBefore(serviceTokenFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // 工人过滤器在 JWT 之后：**只在 SecurityContext 尚无认证时**设置
+                // ⇒ 商家（持 JWT）的请求逐字走既有链路（本过滤器对它是 no-op）
+                .addFilterAfter(workerSessionFilter, JwtAuthenticationFilter.class)
 
                 // 配置认证提供者
                 .authenticationProvider(authenticationProvider())
@@ -214,7 +227,8 @@ public class SecurityConfig {
      *   <li>平台管理员（admin/super_admin）与内部服务（service）：直接放行；</li>
      *   <li>拒绝集合 {@link #ADMIN_API_REJECTED_ROLES}（小程序/B2C 用户 customer/agent +
      *       <b>工人端身份 worker</b>）：一律拒绝（垂直越权防护，不回归；worker 为 issue #4727
-     *       按 #4716 设计 C11 预留，见该常量 javadoc）；</li>
+     *       按 #4716 设计 C11 预留，见该常量 javadoc）。<b>issue #4733 复用它</b>（不新造第二套：
+     *       本单只落码「工人可达面 = {@code /api/worker/**}」+ 该集合的既有判据的**红证**）；</li>
      *   <li>其余角色视为商户员工角色（含角色管理创建的自定义角色）：允许进入管理后台，
      *       具体接口能否访问由 {@code @RequirePermission} + {@link PermissionInterceptor} 按权限码细粒度校验。</li>
      * </ul>
@@ -243,7 +257,8 @@ public class SecurityConfig {
                 if ("admin".equals(role) || "super_admin".equals(role) || "service".equals(role)) {
                     return new AuthorizationDecision(true);
                 }
-                // 拒绝集合：C 端顾客/坐席 + 工人端身份（垂直越权防护）
+                // 拒绝集合：C 端顾客/坐席 + 工人端身份（垂直越权防护）。#4727 已预留 worker；
+                // #4733 只加红证断言，**不复制第二份判定**（同族口径必须只有一处）
                 if (ADMIN_API_REJECTED_ROLES.contains(role)) {
                     return new AuthorizationDecision(false);
                 }
@@ -295,6 +310,18 @@ public class SecurityConfig {
     @Bean
     public FilterRegistrationBean<JwtAuthenticationFilter> jwtFilterRegistration(JwtAuthenticationFilter filter) {
         FilterRegistrationBean<JwtAuthenticationFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    /**
+     * 禁止 Spring Boot 自动注册 WorkerSessionFilter 为 Servlet Filter
+     * （只通过 Spring Security 过滤链管理，避免双重执行）
+     */
+    @Bean
+    public FilterRegistrationBean<WorkerSessionFilter> workerSessionFilterRegistration(
+            WorkerSessionFilter filter) {
+        FilterRegistrationBean<WorkerSessionFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setEnabled(false);
         return registration;
     }

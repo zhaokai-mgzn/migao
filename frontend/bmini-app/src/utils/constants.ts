@@ -13,6 +13,10 @@ export const STORAGE_KEYS = {
   TOKEN: 'auth_token',
   USER: 'auth_user',
   TENANT_ID: 'tenant_id',
+  // 工人登录态（issue #4733）：与商家账号**彻底分离**的两个键 —— 工人 session id 是不可猜的
+  // 服务端会话标识（不是 JWT），WORKER 是「当前工人」的展示缓存（真值仍在服务端）。
+  WORKER_SESSION: 'worker_session_id',
+  WORKER: 'worker_current',
 } as const
 
 // 默认租户 ID（开发用）

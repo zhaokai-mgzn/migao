@@ -42,12 +42,18 @@ CREATE TABLE users (
     nickname VARCHAR(128),
     avatar VARCHAR(512),
     role VARCHAR(64),
+    -- 工人工号（V98，issue #4733）：非 NULL = 该行是**工人档案**（role=worker）；
+    -- NULL = 商家用户（本列引入前的全部存量行）。租户内唯一（部分唯一索引见下）。
+    worker_no VARCHAR(64),
     session_ttl INTEGER DEFAULT 3600,
     status VARCHAR(32) DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
 );
+CREATE UNIQUE INDEX IF NOT EXISTS uk_users_tenant_worker_no
+    ON users (tenant_id, worker_no)
+    WHERE worker_no IS NOT NULL AND deleted = 0;
 
 -- 角色表：RBAC 角色定义
 CREATE TABLE roles (
@@ -1137,6 +1143,47 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_set_part_tokens_part
     ON processing_set_part_tokens (tenant_id, set_id, order_item_id)
     WHERE deleted = 0;
 
+-- 工人登录态（V98，issue #4733）：报工身份的**唯一根** —— 服务端从本表解 worker_id/worker_name，
+-- 报工请求体里的同名字段被忽略（迁移链同款见 db/migration/V98__create_worker_sessions_and_worker_no.sql）
+CREATE TABLE IF NOT EXISTS worker_sessions (
+    id VARCHAR(64) PRIMARY KEY,                      -- 会话 id（32 位 UUID 去横线）：前端以 X-Worker-Session-Id 回传
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    worker_id VARCHAR(64) NOT NULL REFERENCES users(id),
+    worker_no VARCHAR(64),
+    worker_name VARCHAR(64),
+    device_label VARCHAR(64),
+    started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    last_seen_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    idle_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,  -- 闲置过期（默认 15 分钟，租户可配 5~60）
+    ended_at TIMESTAMP WITH TIME ZONE,               -- NULL = 仍活跃
+    end_reason VARCHAR(16),                          -- logout / idle / switched / revoked
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_worker_sessions_worker
+    ON worker_sessions (tenant_id, worker_id, started_at DESC)
+    WHERE deleted = 0;
+
+-- 报工身份旁路账（V98，issue #4733，**只追加**）：一行 = 一次报工动作。
+-- 为什么不给 production_work_logs 加列：那是冻结契约 + 红线（设计 §3.4 / worker-scan-terminal.md §7）
+CREATE TABLE IF NOT EXISTS worker_report_audits (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    processing_order_id VARCHAR(64) NOT NULL REFERENCES processing_orders(id),
+    work_log_id VARCHAR(64),
+    operation_id VARCHAR(64),
+    worker_id VARCHAR(64),
+    worker_name VARCHAR(64),
+    worker_session_id VARCHAR(64),
+    identity_source VARCHAR(16) NOT NULL,            -- server_session（权威）/ client_body（显式降级）
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_worker_report_audits_log
+    ON worker_report_audits (tenant_id, work_log_id)
+    WHERE deleted = 0;
+
 CREATE TABLE IF NOT EXISTS production_work_logs (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
@@ -1172,6 +1219,12 @@ COMMENT ON TABLE production_operations IS '生产工序库：分组（裁剪/车
 COMMENT ON TABLE production_routings IS '工艺路线模板：部位×工艺 → 基准工序序列（V49，issue #3995）';
 COMMENT ON TABLE processing_position_operations IS '工序实例：加工单×部位×工序（应做数量/单价/系数/必完标记/报工进度），扫码报工的推进单元';
 COMMENT ON TABLE production_work_logs IS '报工记录（明细不可变）：报工三态 normal/rework/scrap；计件 = Σ(合格数量×**报工自己的单价快照**×**系数快照**)，排除返工/报废；单工序一人制；快照见 V61（issue #4351）';
+COMMENT ON COLUMN users.worker_no IS '工人工号（V98，issue #4733）：非 NULL = 工人档案（role=worker）；租户内唯一（uk_users_tenant_worker_no）';
+COMMENT ON TABLE worker_sessions IS '工人登录态（V98，issue #4733）：服务端是身份的权威 —— 报工只带 X-Worker-Session-Id，worker_id/worker_name 一律由本表解出，body 同名字段被忽略';
+COMMENT ON COLUMN worker_sessions.idle_expires_at IS '闲置过期时刻（默认 15 分钟，租户可配 5~60）：每次成功请求由服务端顺延；过期 session 报工 ⇒ 401（不静默续期）';
+COMMENT ON COLUMN worker_sessions.end_reason IS '结束原因：logout 主动登出 / idle 闲置超时 / switched 快速切换工人 / revoked 停用撤销';
+COMMENT ON TABLE worker_report_audits IS '报工身份旁路账（V98，issue #4733，只追加）：一行 = 一次报工动作；production_work_logs 是冻结契约（不加列）⇒「由哪个设备会话报的」走旁路';
+COMMENT ON COLUMN worker_report_audits.identity_source IS 'server_session = 服务端从工人 session 解出（权威，忽略 body）；client_body = 无工人 session 的显式降级（商家侧报工），来源被标注而非静默';
 COMMENT ON COLUMN production_work_logs.unit_price IS '计件单价快照（元/单位，V61，issue #4351）：报工那一刻从工序实例写入；聚合只读本列 ⇒ 重新实例化软删旧实例不影响历史报工的钱；NULL=本列引入前的存量行（按实例回查兜底）';
 COMMENT ON COLUMN production_work_logs.factor IS '计件系数快照（V61，issue #4351）：与 unit_price 同一次报工写入、同一口径；NULL=存量行';
 COMMENT ON COLUMN production_work_logs.price_state IS '计件单价三态标记（V90，issue #4696）：priced=有价（含显式定价 0 元）；unpriced=未定价（unit_price 为 NULL，聚合不得按 0 计件）；NULL=本列引入前的存量行';
