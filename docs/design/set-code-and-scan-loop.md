@@ -26,6 +26,16 @@
 > ⚠️ **仍然成立**：A 模式的**功能面**（扫码解析 / 工序推断 / 完成主闭环 / 卡点报表 / 防呆④⑤）**尚未落码** ——
 > 切片⓪ 只落**数据层**（边界逐条登记在 `tests/unit_ci_workflows/test_set_code_storage_v92_migration.py`）。
 >
+> 🔴 **口径订正（issue #4826，2026-09-21）：上面这条「仍然成立」已过期 —— A 模式的功能面已落码。**
+> **原文措辞一字未删**（保留在上方 ⚠️ 句里，作历史留档），改判如下（逐项给落点，**不猜**）：
+> ① **扫码解析 + 工序推断** = PR #4769（merge `916378c3c`）⇒ `backend/admin-api/src/main/java/com/migao/admin/service/ProductionScanService.java`；
+> ② **完成主闭环**（一次事务 + `done_at` + 幂等）= 同上 PR ⇒ `backend/admin-api/src/main/java/com/migao/admin/service/ProductionScanCompleteService.java`（端点 `POST /api/worker/production/scan/complete`）；
+> ③ **卡点报表** = `backend/admin-api/src/main/java/com/migao/admin/service/ProductionStuckPointService.java` + `ProductionController` 的 `GET /api/admin/production/stuck-points`（响应带 `threshold_source`）；
+> ④ **防呆④⑤** = #4694 删越站闸门 + #4769 的 `OPERATION_NOT_IN_SCAN_TARGET` / `OPERATION_AMBIGUOUS` / `NO_PENDING_OPERATION`（均有承重测试）。
+> **仍然成立的部分**（**未改判**）：切片⓪ 只落**数据层**这一句仍对；上面那条的「边界登记」锚点
+> （`tests/unit_ci_workflows/test_set_code_storage_v92_migration.py`）指的是**数据层**的边界，仍然有效。
+> ⚠️ 本单**只改判这一条**，§1.2 的 F 表逐行、§4.4、§8、§11、§13、§15 的其它结论**一律不动**。
+>
 > 🔴 **口径订正（issue #4791，2026-09-20；来源 = #4698 切片④ 核清，主会话已裁定）**：
 > 本单改**两处措辞**（**纯文档，零代码/零契约账本改动**）——
 > ① §5.3 ④ 的判据名统一为**代码实际的** `OPERATION_NOT_IN_SCAN_TARGET`（`CODE_POSITION_MISMATCH` 留档为**曾用名**）；
@@ -942,8 +952,9 @@ V92（数据层：两张新表 + 六列 + 回填；C 模式列一并建好但零
      （#4698 切片⓪ / PR #4722，merge `d295097bb`，2026-09-20；原写 `V89` ⇒ **口径订正**见 §11.1）
    │
    ├─⓪.5 **新单套号分配器**（§2.4 的落码；本切片原**缺失** ⇒ **#4789 补**）  ← 写面
+   │        ✅ **已落码（PR #4805，merge `047e76bbc`）** —— 见本节末「口径订正」
    │        **无新迁移**（载体 `processing_order_sets` / `processing_set_part_tokens` 已由 V92 建好）
-   │        ⚠️ **缺它的后果**（#4725 实测登记）：`processing_order_sets` 只有 V92 的**存量回填**在写
+   │        ⚠️ **原缺失的后果**（#4725 实测登记）：`processing_order_sets` 只有 V92 的**存量回填**在写
    │        ⇒ 新单无 `set_no` ⇒ 码无从生成 ⇒ 二维码按钮对新单是空的、工人 H5 扫不到
    │
    ├─① 扫码解析 + 推断算法（§3）          ← 只读面，可独立验收（D3/D4）
@@ -989,6 +1000,15 @@ V92（数据层：两张新表 + 六列 + 回填；C 模式列一并建好但零
      → 加工单生产明细页的二维码按钮（码 = 加工单号 / 部位 token）
      → 工人 H5 扫一扫 → /scan 解析到 (set_no, position) → 报工
 ```
+
+> 🔴 **口径订正（issue #4826，2026-09-21）：⓪.5 已落码 —— 上面这段「#4789 补」的描述是「落码前」的原文（历史留档）。**
+> **实测（不猜）**：PR #4805（merge `047e76bbc`）落了 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderSetAllocator.java`，
+> 并**已接进** `ProductionService` 的实例化路径（`ProductionService` 持有 `ProcessingOrderSetAllocator` 并在实例化时调 `ensureSets`）；
+> #4789 已关闭。本节表里的口径逐条落码：分配单位 = 樘窗组（`craftLineId ?? itemId`）、与 V92 **同口径**、
+> 序号 `MAX+1`（**不带 `deleted = 0`**）、幂等（已有 live 套行 ⇒ 整段跳过 + `ON CONFLICT … DO NOTHING`）、
+> 并发（撞唯一键 ⇒ 捕获后重读 MAX 重试 ≤3 次，`REQUIRES_NEW`）、`>999` 显式拒绝、同事务生成 `processing_set_part_tokens`。
+> ⇒ 上文那条「**缺它的后果**」随之**不再是当前状态**（保留原文，仅把措辞改成「原缺失的后果」）。
+> ⚠️ 本单**只改判 ⓪.5 这一片**；§14 的 ①~⑤ 各切片与「并行安全边界」段**一字不动**。
 
 ---
 
