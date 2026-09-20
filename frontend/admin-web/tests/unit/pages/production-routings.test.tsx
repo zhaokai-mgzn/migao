@@ -207,6 +207,33 @@
 //      被护栏③打桩 422）；D 的判词是 `Unable to find an element by:
 //      [data-testid="variant-detach-and-delete-op-test22"]`（改前那条路根本没给出来）。
 //      C 是「**没有**按名字命中的格 ⇒ 才用普通软删」的回归锁（改前改后都绿，**不是**红证）。
+// ㉛ **工艺项两层改造**（issue #4677 = 设计 `docs/design/public-operations-and-craft-ui.md` §4 / §6 / §7；
+//    用户裁定「把 UI 改造作为 #4673 的一部分」；后端 #4676 已合并）：
+//    - **两层**：`【工序】`（按**车间分组可折叠** —— 裁剪（裁床）/ 车位（缝制）/ 后整（烫工及后整）/ 质检，
+//      **行业术语**，界面**不得**出现「槽位」这类我们发明的词）+ `【打包发货】`（**一列价**：单价 元/套 + 必完）；
+//    - **分区判据 = 既有 `scope`**（`scope='set'` ⇒ 交付环节；其余含 `null` ⇒ 工序）—— **不新造概念**，
+//      也**不是**「有没有矩阵格」（判据换成格 ⇒ 交付工序在某部位没格时整行消失 = #4674 形态）；
+//    - **列收窄到部位词表**（`布帘 / 纱帘 / 帘头`）：`布料` 是**销售形态**不是窗帘部位 ⇒ 不再当第 4 列；
+//      ⚠️ **只收窄列、不动数据** —— `布料` 的格仍在读面里（`variant_operation_id` 的载体、V88 的保命格），
+//      孤儿判据（#4614）与「新建路线 / 新增工序」的勾选项（`positionOptions`，含 `布料`，#4556）**逐字不变**；
+//    - 🔴 **硬要求**（#4677 评论逐字）：「商家必须能在一个明确、可见的位置给布料单的 `裁剪` 与 `打包` 定价，
+//      **且不依赖矩阵里存在「布料」列**」⇒ 新增 `【布料单】` 小区（`fabric-sheet-section`）：`裁剪` + `打包`
+//      各一行、一列价，**读写 `× 布料` 那一格本身**（走既有 `PUT /operation-positions/{id}`）；
+//      **取舍**：不用「工序库行价」（`buildRoute` 的回落条件 = 「格存在 + 做 + 价 NULL」且回落值是
+//      `NOT NULL DEFAULT 0` ⇒ 标「布料单按此价」会把**未定价显示成真 0 元**，且格不存在时它根本不参与实例化）；
+//    - **#4674 从根上避免（四条约束）**：① 第二层的行**不依赖矩阵格**（判据是 `scope`）⇒ 一格都没有也有行 + `管理▸`；
+//      ② `管理▸` **在行上**（`ManageButton`，两个分区共用）；③ 停用/删除渲染在 `manageVariants.map(...)`
+//      **循环体外**（既有形态，本单**回归**锁住）；④ 空态**给出路**（两个可点动作，不写页面里没有的指引）；
+//    - **种子自愈（§6，与模型无关）**：① 「补套行业模板」入口从「只在工序库为空时显示」改成
+//      「**缺失即显示**」（工序库为空 ∨ 两条基础路线不齐；幂等）；② **就绪度②** 从「数条数」改成
+//      「**两条基础路线是否齐**」并**点名**（`窗帘工序路线（默认）` / `布料工序路线`，与后端常量逐字同名）；
+//    - **端点接入（验收协议 v1.11 三问）**：页面**真的调** `GET /operation-layers`（改前**零前端调用点**
+//      ⇒ 文件在 main ≠ 被触发）；入口 = 「工艺项」tab（**默认 tab**，首屏即触发）；
+//      `GET /operation-positions` 仍调（拿格的 `id` ⇒ 抽屉写面寻址）——两条读面**同一份数据**；
+//    - **红证（修复前实测）**：把 `page.tsx` 换回 `origin/main` 版本后窄跑本组 ⇒ **17 failed**
+//      （`delivery-section` / `matrix-workshop-toggle-裁剪` / `fabric-sheet-section` / `seed-templates`
+//      均 `Unable to find an element`；就绪度② `data-state` 仍是 `done`；`getOperationLayers` 恒未被调用）
+//      ⇒ 实现后全文件 170/170 绿。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -221,7 +248,49 @@ const mockCreateOperation = vi.fn()
 const mockCreateOptionRule = vi.fn()
 const mockUpdateOperation = vi.fn()
 const mockGetSeedTemplates = vi.fn()
-const mockGetOperationPositions = vi.fn()
+const mockGetOperationLayers = vi.fn()
+/**
+ * `getOperationPositions` 的替身（issue #4677）：**自带一份当前夹具**，并在夹具被换掉时
+ * **同步**给两层分区读面（`getOperationLayers` ⇒ `buildLayers(夹具)`）。
+ *
+ * <p>为什么需要同步：页面读**两个**端点 —— ① `GET /operation-positions`（拿格的 `id` ⇒ 抽屉
+ * 写面寻址）与 ② `GET /operation-layers`（分区 + 一列价聚合）。两者必须是**同一份**数据
+ * （否则「工序层」与「打包发货层」会对不上）。而各用例历来只换 ① 的夹具
+ * ⇒ 用 `setDefault` 一处换、两处同步，**既有写法逐字不变**。</p>
+ *
+ * <p>⚠️ 不用「② 直接调 ①」的委托写法：`mockResolvedValueOnce` 的**一次性队列**会被调两次，
+ * 让那些「首次 X、之后 Y」的用例（抽屉开着时读面变空那一族）静默错位。</p>
+ */
+const makePositionsSpy = () => {
+  let current: unknown = []
+  const spy: any = vi.fn(() => Promise.resolve(current))
+  /** 换夹具（等价于原来的 `mockReset().mockResolvedValue(ok(v))`），并同步分区读面 */
+  spy.setDefault = (v: unknown) => {
+    current = ok(v)
+    // ⚠️ **不要** `mockReset()` 分区读面：那会连**实现**一起清掉 ⇒ 页面 await 到 `undefined`
+    // ⇒ `templateRes.value.data` 抛未处理拒绝（假红）。`mockResolvedValue` 是替换而非清除实现。
+    mockGetOperationLayers.mockResolvedValue(ok(buildLayers(v as any[])))
+    spy.mockClear()
+    return spy
+  }
+  /** 「首次 v、之后沿用当前夹具」—— 一次性队列只由**页面那一次**读面消费 */
+  spy.setDefaultOnce = (v: unknown) => {
+    spy.mockImplementationOnce(() => Promise.resolve(ok(v)))
+    return spy
+  }
+  /** 读面失败（端点挂了）：分区读面同样跟着失败（两处口径一致） */
+  spy.setDefaultRejected = (e: unknown) => {
+    mockGetOperationLayers.mockRejectedValue(e)
+    spy.mockClear()
+    return spy
+  }
+  spy.setDefaultRejectedOnce = (e: unknown) => {
+    spy.mockImplementationOnce(() => Promise.reject(e))
+    return spy
+  }
+  return spy
+}
+const mockGetOperationPositions = makePositionsSpy()
 const mockGetRouteRules = vi.fn()
 // issue #4616：规则创建弹窗的触发值取值域（工艺词表 + 加工项目录）
 const mockGetRouteRuleOptions = vi.fn()
@@ -250,6 +319,7 @@ vi.mock('@/lib/api', () => ({
     updateOperation: (...a: unknown[]) => mockUpdateOperation(...a),
     getSeedTemplates: (...a: unknown[]) => mockGetSeedTemplates(...a),
     getOperationPositions: (...a: unknown[]) => mockGetOperationPositions(...a),
+    getOperationLayers: (...a: unknown[]) => mockGetOperationLayers(...a),
     getRouteRules: (...a: unknown[]) => mockGetRouteRules(...a),
     getRouteRuleOptions: (...a: unknown[]) => mockGetRouteRuleOptions(...a),
     updateOperationPosition: (...a: unknown[]) => mockUpdateOperationPosition(...a),
@@ -319,13 +389,15 @@ const POSITIONS = [
   { id: 'pos-三边-帘头', operation: '三边', position: '帘头', unit_price: null, applicable: false, ...NO_VARIANT },
   { id: 'pos-三边-布帘', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
   { id: 'pos-三边-纱帘', operation: '三边', position: '纱帘', unit_price: null, applicable: true, variant_operation_id: 'op-三边-纱', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+  // ⚠️ 真数据里一道工序**只属一个车间**（`group` 是库行元数据）。夹具里 `精裁` 两格分组不同
+  // （裁剪 / 车位）是**故意**造的「不一致 ⇒ 逐个列出」形态（见 ⑰-②）；`三边` 两格同组 ⇒ 不冲突。
   // `帘头` 回落复用 `布帘` 的变体（真值源 `variantNameOf` 的第 2 步）—— 夹具照真形态给
   // `variant_operation_id`，否则这一格在抽屉里**不出现**（抽屉按 `variant_operation_id` 去重）。
   { id: 'pos-精裁-帘头', operation: '精裁', position: '帘头', unit_price: null, applicable: false, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
   { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
   { id: 'pos-精裁-纱帘', operation: '精裁', position: '纱帘', unit_price: 6, applicable: true, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
   { id: 'pos-车被-帘头', operation: '车被', position: '帘头', unit_price: null, applicable: false, ...NO_VARIANT },
-  { id: 'pos-车被-布帘', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'pos-车被-布帘', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'position', is_must_finish: true },
   { id: 'pos-车被-纱帘', operation: '车被', position: '纱帘', unit_price: null, applicable: false, ...NO_VARIANT },
   { id: 'pos-韩褶-布帘', operation: '韩褶', position: '布帘', unit_price: 2, applicable: true, ...NO_VARIANT },
   // 部位无关工序（`外帘打卷/装袋/发货`）**也是** 30 道逻辑工序之一（真值源
@@ -334,6 +406,57 @@ const POSITIONS = [
   // `外帘装袋` 被误报「不存在」（真数据不会 —— 这正是夹具与真值的差异）。
   { id: 'pos-外帘装袋-布帘', operation: '外帘装袋', position: '布帘', unit_price: 1.0, applicable: true, variant_operation_id: 'op-v54-04', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
 ]
+
+/**
+ * **两层分区读面的等价打桩**（issue #4677；契约 #4676）：把一份矩阵格按**既有** `scope` 切成
+ * `operations`（其余，含 `null`）与 `delivery`（`scope='set'`，**聚合成一列价**）。
+ *
+ * <p>⚠️ 聚合口径**逐条照抄后端** `ProductionRoutingReadService.deliveryView`（判据是**行为等价**）：
+ * ① 有 `applicable=TRUE` 格价全同 ⇒ `priced`；② 有 `NULL` ⇒ `unpriced`（**未定价 ≠ ¥0.00**，
+ * 且**不回落工序库行价**）；③ 不同 ⇒ `multiple_prices` + `different_price_count`
+ * （**不静默取第一个**）；④ 一格「做」都没有 ⇒ `no_applicable_position`。</p>
+ *
+ * <p>夹具里 `车被` 是**部位级**工序（真值源 `routing.py` 的 `布帘车被`，`scope='position'`），
+ * `外帘装袋` / `打包` 是**套级**（V79 的 `SET scope='set'`）⇒ 分区后：工序层 = 三边 / 精裁 / 车被 /
+ * 韩褶，交付层 = 外帘装袋。</p>
+ */
+const buildLayers = (cells: any[]) => {
+  const deliveryCells = new Map<string, any[]>()
+  const operations: any[] = []
+  for (const c of cells) {
+    if (c.scope === 'set') {
+      deliveryCells.set(c.operation, [...(deliveryCells.get(c.operation) ?? []), c])
+    } else {
+      operations.push(c)
+    }
+  }
+  const delivery = [...deliveryCells.entries()].map(([operation, group]) => {
+    const applicable = group.filter((c) => c.applicable === true)
+    const prices = [...new Set(applicable.filter((c) => c.unit_price != null).map((c) => c.unit_price))]
+    const unpriced = applicable.some((c) => c.unit_price == null)
+    const price_state =
+      applicable.length === 0
+        ? 'no_applicable_position'
+        : unpriced
+          ? 'unpriced'
+          : prices.length === 1
+            ? 'priced'
+            : 'multiple_prices'
+    const first = (k: string) => group.find((c) => c[k] != null)?.[k] ?? null
+    return {
+      operation,
+      scope: 'set',
+      unit: first('unit'),
+      group: first('group'),
+      is_must_finish: first('is_must_finish'),
+      price: price_state === 'priced' ? prices[0] : null,
+      price_state,
+      different_price_count: price_state === 'multiple_prices' ? prices.length : 0,
+      applicable_positions: applicable.map((c) => c.position),
+    }
+  })
+  return { operations, delivery }
+}
 
 /** 规则区：工艺触发 insert（带锚点）/ 工艺触发 remove（带部位限定）/ 特殊选项触发 insert */
 const RULES = [
@@ -542,7 +665,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG))
     mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS))
     mockGetSeedTemplates.mockReset().mockResolvedValue(ok(TEMPLATES))
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS))
+    mockGetOperationPositions.setDefault(POSITIONS)
     mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES))
     mockGetRouteRuleOptions.mockReset().mockResolvedValue(ok(RULE_TRIGGER_OPTIONS))
     mockUpdateRuleCustomerUnitPrice.mockReset().mockResolvedValue(ok({ id: 21, customer_unit_price: 6 }))
@@ -579,7 +702,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
         applicable: pi !== 1,
       })),
     )
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok(big))
+    mockGetOperationPositions.setDefault(big)
     render(<ProcessConfigPage />)
 
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
@@ -597,11 +720,13 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
 
-    // 行序 = 服务端顺序（`(operation, position)` ⇒ 三边 / 精裁 / 车被 / 韩褶 / 外帘装袋）；
+    // 行序 = **车间分组顺序**（裁剪 → 车位 → 后整 → 未分组）∧ 组内 = 服务端顺序（`(operation, position)`）；
     // 注入：前端按字母重排 ⇒ 红
+    // ⚠️ issue #4677 起**交付环节（`scope='set'`）不在本表**：`外帘装袋` 落到下面
+    //    【打包发货】区（一列价），本表只剩工序层四道（见本用例末的交付层断言）。
     const rows = screen.getAllByTestId(/^matrix-row-/)
     expect(rows.map((r) => r.getAttribute('data-operation'))).toEqual([
-      '三边', '精裁', '车被', '韩褶', '外帘装袋',
+      '精裁', '三边', '车被', '韩褶',
     ])
 
     // 同一道「精裁」：布帘 ¥8.50 / 纱帘 ¥6.00 / 帘头 不做 —— 三个部位三份数据（不是一行一个价）
@@ -618,6 +743,15 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
       '帘头',
       '元数据 / 操作',
     ])
+
+    // 【打包发货】层（issue #4677）：`外帘装袋`（`scope='set'`）**各一行、一列价** ——
+    // 不是按 4 个部位重复渲染成 4 格（红证：改前 `打包 │ 未定价 │ 未定价 │ 未定价 │ 未定价`）
+    const delivery = screen.getByTestId('delivery-section')
+    expect(within(delivery).getByTestId('delivery-row-外帘装袋')).toBeInTheDocument()
+    expect(within(delivery).getByTestId('delivery-price-外帘装袋')).toHaveAttribute('data-price-state', 'priced')
+    expect(within(delivery).getByTestId('delivery-price-外帘装袋')).toHaveTextContent('¥1.00')
+    // 交付环节**不得**再出现在工序层的矩阵行里（两处各渲染一份 = 改一次价要改两处）
+    expect(screen.queryByTestId('matrix-row-外帘装袋')).toBeNull()
   })
 
   it('「不做」与「没定价」在界面上**可区分**（同 route_source 的「静默 = 未知」纪律）', async () => {
@@ -641,7 +775,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   })
 
   it('部位价目矩阵：端点失败只在该区给可读提示（不白屏、不影响其余区）', async () => {
-    mockGetOperationPositions.mockReset().mockRejectedValueOnce(new Error('500'))
+    mockGetOperationPositions.setDefaultRejectedOnce(new Error('500'))
     render(<ProcessConfigPage />)
 
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix-error')).toHaveTextContent('部位价目加载失败'))
@@ -882,7 +1016,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(await screen.findByTestId('operation-condition-text-2')).toHaveTextContent('工艺 = 打孔 时不做')
 
     await userEvent.click(screen.getByTestId('operations-manage-close'))
-    await userEvent.click(screen.getByTestId('matrix-manage-外帘装袋'))
+    await userEvent.click(screen.getByTestId('delivery-manage-外帘装袋'))
     // ③ 特殊选项触发 · 无锚点 ⇒ 「追加到末尾」；取值**逐字**：拼2次（前端不得"纠正"成「拼两次」）
     expect(await screen.findByTestId('operation-condition-text-3')).toHaveTextContent(
       '特殊选项 = 拼2次 时插入（追加到末尾）',
@@ -1117,8 +1251,11 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
       expect(screen.queryByTestId(id)).toBeNull()
     }
     expect(within(panel).queryByText('工序库明细')).toBeNull()
-    // 一屏只有**一张**表（两张平铺表正是本次要治的形态）
-    expect(within(panel).getAllByRole('table')).toHaveLength(1)
+    // 工序层只有**一张**「车间矩阵」表（两张平铺表正是本次要治的形态）。
+    // ⚠️ issue #4677：一屏现在是**两层**（【工序】+【打包发货】）外加一个【布料单】定价小区
+    // ⇒ 这条断言按**新设计**改判成「工序层只有一张表」；
+    // 判据本身（不得再出现第二张平铺的工序明细表）**一字不放宽**。
+    expect(within(panel).getAllByTestId('operation-workshop-table')).toHaveLength(1)
     // 用户 2026-09-19 追加裁定：**作用域**收进抽屉 ⇒ 这个词不得出现在主表；
     // ⚠️ 同日**改判**（issue #4610）：「必完标记还是得在这里展示」⇒ 必完回到主表行尾，
     //    但它只是**只读标记**（维护面仍在抽屉里）—— 见 ⑳ 的三态断言。
@@ -1149,17 +1286,15 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('⑳ 行尾必完标记三态：全必完 ⇒ `必完`；部分部位 ⇒ `必完（部分部位）` + title 列部位；无 ⇒ 不显示（issue #4610）', async () => {
     // 夹具刻意造出**部分部位**那一态（基座夹具里没有）：车被 布帘必完 / 纱帘**非**必完
-    mockGetOperationPositions.mockReset().mockResolvedValue(
-      ok([
+    mockGetOperationPositions.setDefault([
         { id: 'p1', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
         { id: 'p2', operation: '三边', position: '纱帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-纱', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
         { id: 'p3', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
         { id: 'p4', operation: '精裁', position: '纱帘', unit_price: 6, applicable: true, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
-        { id: 'p5', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'set', is_must_finish: true },
+        { id: 'p5', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'position', is_must_finish: true },
         { id: 'p6', operation: '车被', position: '纱帘', unit_price: null, applicable: true, variant_operation_id: 'op-车被-纱', unit: '件', group: '后道', scope: 'position', is_must_finish: false },
         { id: 'p7', operation: '韩褶', position: '布帘', unit_price: 2, applicable: true, ...NO_VARIANT },
-      ]),
-    )
+    ])
     await renderOperations()
 
     // ① 有变体的格**全部**必完 ⇒ `必完`（不带「部分部位」）
@@ -1322,7 +1457,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(row).toHaveTextContent('件')
 
     // 作用域：闭词表两档 + 一句商家看得懂的解释
-    expect(screen.getByTestId('variant-scope-op-车被')).toHaveValue('set')
+    expect(screen.getByTestId('variant-scope-op-车被')).toHaveValue('position')
     expect(row).toHaveTextContent('每樘窗只做一次')
     // 必完：勾选态 + 一句解释（issue #4610 追加：解释要能回答「多部位时判谁」）
     expect(screen.getByTestId('variant-must-finish-op-车被')).toBeChecked()
@@ -1362,12 +1497,10 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   })
 
   it('㉖-③ 抽屉条目主标识 = 它**服务的部位集合**（`帘头` 回落复用 `布帘` 的变体 ⇒ 一条条目列两个部位）', async () => {
-    mockGetOperationPositions.mockReset().mockResolvedValue(
-      ok([
+    mockGetOperationPositions.setDefault([
         { id: 'p1', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
         { id: 'p2', operation: '三边', position: '帘头', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
-      ]),
-    )
+    ])
     await openManage('三边')
 
     // 一个变体服务多个部位 ⇒ 仍只列一条（按 id 去重），主标识是**部位集合**而不是变体名
@@ -1450,7 +1583,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('㉙-① 抽屉层「停用 / 删除」**不依赖**矩阵格：格关联不上时照样有入口（**红证**：改前只有「关闭」）', async () => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    mockGetOperationPositions.setDefault(POSITIONS_WITH_TEST22)
     await openManage('测试22')
 
     // 抽屉层入口**与矩阵格无关** —— 库里那一行在，入口就在
@@ -1467,9 +1600,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     // 复现路径 = 抽屉开着时读面变空（`load()` 后这一行的格没了）—— 这正是「行在 · 抽屉空」。
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
     mockGetOperationPositions
-      .mockReset()
-      .mockResolvedValueOnce(ok(POSITIONS_WITH_TEST22)) // 首次：这一行有格 ⇒ 抽屉能开
-      .mockResolvedValue(ok(POSITIONS)) // 之后：这一行的格没了 ⇒ 抽屉空
+      .setDefault(POSITIONS) // 之后：这一行的格没了 ⇒ 抽屉空
+      .setDefaultOnce(POSITIONS_WITH_TEST22) // 首次：这一行有格 ⇒ 抽屉能开
     await openManage('测试22')
     // 抽屉层的「停用」走既有写面 + `load()` ⇒ 用它把读面刷成「这一行的格没了」
     await userEvent.click(screen.getByTestId('operations-manage-disable'))
@@ -1497,7 +1629,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('㉙-③ 删除**成功**：按名字命中的格仍在「做」⇒ 走 detach-and-delete（**能过护栏③**那条路；#4692 改判）', async () => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    mockGetOperationPositions.setDefault(POSITIONS_WITH_TEST22)
     await openManage('测试22')
 
     await userEvent.click(screen.getByTestId('operations-manage-delete'))
@@ -1520,7 +1652,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('㉙-④ 反向护栏**不放宽**：仍挂在主线/规则 ⇒ 删除被拦，理由**逐条**就地展示', async () => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    mockGetOperationPositions.setDefault(POSITIONS_WITH_TEST22)
     mockDeleteOperation
       .mockReset()
       .mockRejectedValueOnce(
@@ -1545,7 +1677,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('㉙-⑤ 口径对齐：`variant_operation_id` 关联不上 ⇒ 抽屉**显式提示**「未关联到本工序」（**红证**：改前静默空）', async () => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_TEST22_MISLINKED))
+    mockGetOperationPositions.setDefault(POSITIONS_TEST22_MISLINKED)
     await openManage('测试22')
 
     // 提示在（改前**静默空** —— 那几格在抽屉里根本不出现）
@@ -1562,7 +1694,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('㉙-⑥ 抽屉层「停用」走既有 `PUT /operations/{id}` 的 `status`（与逐行停用同一写面）', async () => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    mockGetOperationPositions.setDefault(POSITIONS_WITH_TEST22)
     await openManage('测试22')
 
     await userEvent.click(screen.getByTestId('operations-manage-disable'))
@@ -1571,7 +1703,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('㉙-⑦ 抽屉层写面被拒：理由**逐条**就地展示（不吞成一句「操作失败」）', async () => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    mockGetOperationPositions.setDefault(POSITIONS_WITH_TEST22)
     mockUpdateOperation
       .mockReset()
       .mockRejectedValueOnce(guardError(['被活跃路线「窗帘工序路线（默认）」引用，不能停用']))
@@ -1609,7 +1741,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('#4692-A 用户那个形态（格**按名字**命中、`variant_operation_id` 为 null）⇒ 走 `detachPositions: true` 且**真删掉**（**红证**：改前普通删除 ⇒ 护栏③ 422）', async () => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    mockGetOperationPositions.setDefault(POSITIONS_WITH_TEST22)
     // 后端那把尺（按名字）：普通删除 422、detach 能过
     beGuardByName()
     await openManage('测试22')
@@ -1635,7 +1767,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('#4692-B 两把尺一致：**前端不再按 `variant_operation_id` 选删除路径**（注入「FE 按 id 判、BE 按名判」⇒ 必红）', async () => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    mockGetOperationPositions.setDefault(POSITIONS_WITH_TEST22)
     // 前提自证（不是空跑）：这一格的关联键确实是 null（id 那把尺判「没有格」），而行键（名字）是 `测试22`
     const cell = POSITIONS_WITH_TEST22.find((c) => c.operation === '测试22')!
     expect(cell.variant_operation_id).toBeNull()
@@ -1658,9 +1790,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   it('#4692-C 正文「删除这道工序」入口也走通：**没有任何按名字命中的格** ⇒ 才用普通软删（spec A 第 2 款）', async () => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
     mockGetOperationPositions
-      .mockReset()
-      .mockResolvedValueOnce(ok(POSITIONS_WITH_TEST22)) // 首次：这一行有格 ⇒ 抽屉能开
-      .mockResolvedValue(ok(POSITIONS)) // 之后：这一行的格没了 ⇒ 抽屉空（正文入口出现）
+      .setDefault(POSITIONS) // 之后：这一行的格没了 ⇒ 抽屉空
+      .setDefaultOnce(POSITIONS_WITH_TEST22) // 首次：这一行有格 ⇒ 抽屉能开（正文入口出现）
     await openManage('测试22')
     // 用抽屉层「停用」把读面刷成「这一行的格没了」（与 ㉙-② 同一手法）
     await userEvent.click(screen.getByTestId('operations-manage-disable'))
@@ -1680,7 +1811,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('#4692-D 抽屉里**变体行**的删除入口在用户形态下不再死路：只给「设为不做并删除」（普通删除不渲染 —— 它只会 422）', async () => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    mockGetOperationPositions.setDefault(POSITIONS_WITH_TEST22)
     beGuardByName()
     await openManage('测试22')
 
@@ -1702,7 +1833,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('#4692-E 护栏**不放宽**：仍挂在主线/规则 ⇒ 新路径（detach）**照样被拦**，理由逐条就地展示、矩阵一格不动', async () => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    mockGetOperationPositions.setDefault(POSITIONS_WITH_TEST22)
     mockDeleteOperation
       .mockReset()
       .mockRejectedValueOnce(
@@ -2096,9 +2227,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   it('#4665-C 一键删除后**表格里那一行消失**（级联软删矩阵行；改前「删成功但行还在」）', async () => {
     // 读面序列：首次（渲染）返回全量；删除后的那次刷新 = 后端已级联软删 ⇒ **不含**「精裁」
     mockGetOperationPositions
-      .mockReset()
-      .mockResolvedValueOnce(ok(POSITIONS))
-      .mockResolvedValue(ok(POSITIONS.filter((c) => c.operation !== '精裁')))
+      .setDefault(POSITIONS.filter((c) => c.operation !== '精裁'))
+      .setDefaultOnce(POSITIONS)
     await openManage('精裁')
     expect(screen.getByTestId('matrix-row-精裁')).toBeInTheDocument()
 
@@ -2181,7 +2311,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   })
 
   it('⑳ 矩阵空态指向**右上**入口（issue #4615：入口换位置后不得留下死引用）', async () => {
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok([]))
+    mockGetOperationPositions.setDefault([])
     await renderOperations()
 
     const empty = screen.getByTestId('operation-price-matrix-empty')
@@ -2236,15 +2366,13 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('㉖-⑧ 主线 chip 的「必完」按**矩阵聚合**三态：全必完 / 部分部位（title 列部位）/ 无', async () => {
     // 矩阵：精裁 两格都必完；车被 **部分部位**必完（布帘必完 / 纱帘不必完）；三边 都不必完
-    mockGetOperationPositions.mockReset().mockResolvedValue(
-      ok([
+    mockGetOperationPositions.setDefault([
         { id: 'p1', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
         { id: 'p2', operation: '精裁', position: '纱帘', unit_price: 6, applicable: true, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
-        { id: 'p3', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'set', is_must_finish: true },
+        { id: 'p3', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'position', is_must_finish: true },
         { id: 'p4', operation: '车被', position: '纱帘', unit_price: 1, applicable: true, variant_operation_id: 'op-车被-纱', unit: '件', group: '后道', scope: 'position', is_must_finish: false },
         { id: 'p5', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
-      ]),
-    )
+    ])
     mockGetRoutings.mockReset().mockResolvedValue(
       ok({
         total: 1,
@@ -2637,7 +2765,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(await screen.findByTestId('operation-condition-text-2')).toHaveTextContent('工艺 = 打孔 时不做')
 
     await userEvent.click(screen.getByTestId('operations-manage-close'))
-    await userEvent.click(screen.getByTestId('matrix-manage-外帘装袋'))
+    await userEvent.click(screen.getByTestId('delivery-manage-外帘装袋'))
     // 规则 3：option 拼2次 → insert 外帘装袋，无锚点 ⇒ 「追加到末尾」（**不得**渲染成「在「末尾」之后」）
     const text = screen.getByTestId('operation-condition-text-3').textContent ?? ''
     expect(text).toContain('特殊选项 = 拼2次 时插入')
@@ -2945,27 +3073,43 @@ const MATRIX_120 = Array.from({ length: 30 }, (_, i) => `工序${i + 1}`).flatMa
 
 describe('新建路线的部位选项（issue #4556：包 F 的第 4 个部位「布料」）', () => {
   beforeEach(() => {
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok(MATRIX_120))
+    mockGetOperationPositions.setDefault(MATRIX_120)
   })
 
-  it('判据③ 回归：矩阵列**逐值不变** —— 30 道 × 4 部位 = 120 格整份呈现，`布料` 列在（读面本来就看得见）', async () => {
+  /**
+   * **改判（issue #4677 = 设计 §4.3「列收窄」）**：改前本用例断言「矩阵 30 × **4** 部位 = **120** 格、
+   * `布料` 列在」。两层界面**有意**把 `布料` 从**列**里拿掉（它是**销售形态**，不是窗帘的部位）——
+   * 但**一格都不许丢**：`布料` 的四类格（工序层的 30 格 + 交付层的 1 格）必须在界面上**仍有位置**。
+   *
+   * ⇒ 本用例的**判据强度不放宽**，只是换了承载位置：
+   *   ① 工序层 = 30 道 × **3** 部位 = **90** 格（`布料` 不再占一列）；
+   *   ② 读面响应**一格未丢**：`布料` 的 30 格 + `打包 × 布料` 那一格仍在（只是不再当列渲染）；
+   *   ③ `布料` 不再出现在列头（红证：改前第 4 列 = `布料`）。
+   * 注：夹具里 30 道工序**都是**部位级（无 `scope='set'`）⇒ 交付层为空，`打包 × 布料` 的
+   * 「[布料单] 定价入口」由下面那组专门用例（`FABRIC_SHEET_CELLS`）钉住。
+   */
+  it('判据③ 改判（#4677）：工序层列收窄到**三部位**（90 格）；`布料` 不再当列，但**读面一格未丢**', async () => {
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
 
     expect(screen.getByTestId('operation-price-matrix-total')).toHaveTextContent('30')
-    expect(screen.getByTestId('operation-price-matrix-cells')).toHaveTextContent('120')
+    expect(screen.getByTestId('operation-price-matrix-cells')).toHaveTextContent('90')
     expect(screen.getAllByTestId(/^matrix-row-/)).toHaveLength(30)
-    expect(screen.getAllByTestId(/^matrix-cell-/)).toHaveLength(120)
-    // 逐列 30 格 —— **四列一个不少**（改口径把 `布料` 列滤掉/重排 ⇒ 红）
-    for (const p of ['布帘', '纱帘', '帘头', '布料']) {
+    // 工序层渲染的格 = 30 × 3 = 90（`布料` 列已收窄掉）
+    expect(screen.getAllByTestId(/^matrix-cell-/)).toHaveLength(90)
+    for (const p of ['布帘', '纱帘', '帘头']) {
       expect(screen.getAllByTestId(new RegExp(`^matrix-cell-.*-${p}$`))).toHaveLength(30)
     }
-    // 列序 = 基线三部位在前、矩阵里的新部位**追加在后**（不重排、不丢列）
+    // 红证：改前第 4 列就是 `布料`（`['工序','布帘','纱帘','帘头','布料','元数据 / 操作']`）
     expect(
       within(screen.getByTestId('operation-price-matrix'))
         .getAllByRole('columnheader')
         .map((th) => th.textContent),
-    ).toEqual(['工序', '布帘', '纱帘', '帘头', '布料', '元数据 / 操作'])
+    ).toEqual(['工序', '布帘', '纱帘', '帘头', '元数据 / 操作'])
+    // 读面响应**一格未丢**（只是不再当列渲染）—— 注入：把 `布料` 格从读面响应里删掉 ⇒ 红
+    const delivered = buildLayers(MATRIX_120)
+    expect(delivered.operations.filter((c) => c.position === '布料')).toHaveLength(30)
+    expect(delivered.operations.filter((c) => c.position === '布料').every((c) => c.unit_price == null)).toBe(true)
   })
 
   it('判据① 「新建路线」的部位勾选**含 `布料`**（不含 ⇒ 红）', async () => {
@@ -3031,7 +3175,7 @@ describe('新建路线的部位选项（issue #4556：包 F 的第 4 个部位�
   })
 
   it('兜底：部位价目读面失败 ⇒ 勾选项退回基线三部位（矩阵挂了也要能建路线，不得一个选项都没有）', async () => {
-    mockGetOperationPositions.mockReset().mockRejectedValue(new Error('500'))
+    mockGetOperationPositions.setDefaultRejected(new Error('500'))
     await renderOnRoutes()
     await userEvent.click(screen.getByTestId('routings-new-route'))
     await waitFor(() => expect(screen.getByTestId('routings-create-name')).toBeInTheDocument())
@@ -3106,7 +3250,7 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
   beforeEach(() => {
     mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS))
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG))
-    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS))
+    mockGetOperationPositions.setDefault(POSITIONS)
     mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES))
     mockCreateOperation
       .mockReset()
@@ -3309,12 +3453,10 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
   })
 
   it('㉔-③ 值域与「新建路线」同源（复用 positionOptions）：矩阵里的第 4 个部位 `布料` 也可勾', async () => {
-    mockGetOperationPositions.mockResolvedValue(
-      ok([
-        ...POSITIONS,
-        { id: 'pos-配料-布料', operation: '配料', position: '布料', unit_price: 0.2, applicable: true, ...NO_VARIANT },
-      ]),
-    )
+    mockGetOperationPositions.setDefault([
+      ...POSITIONS,
+      { id: 'pos-配料-布料', operation: '配料', position: '布料', unit_price: 0.2, applicable: true, ...NO_VARIANT },
+    ])
     await openCreateDialog()
     await fillOperationForm()
 
@@ -3333,14 +3475,12 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
   it('㉔-④ 新增成功后**立刻出现在「工艺项」表里**（load() 刷新 ⇒ 可就地定价）', async () => {
     // 第一次读矩阵 = 旧快照（不含新工序）；新增后的第二次 = 含新工序的两个部位格
     mockGetOperationPositions
-      .mockResolvedValueOnce(ok(POSITIONS))
-      .mockResolvedValue(
-        ok([
-          ...POSITIONS,
-          { id: 'pos-罗马帘-穿杆-布帘', operation: '罗马帘-穿杆', position: '布帘', unit_price: 4.5, applicable: true, ...NO_VARIANT },
-          { id: 'pos-罗马帘-穿杆-纱帘', operation: '罗马帘-穿杆', position: '纱帘', unit_price: 4.5, applicable: true, ...NO_VARIANT },
-        ]),
-      )
+      .setDefault([
+        ...POSITIONS,
+        { id: 'pos-罗马帘-穿杆-布帘', operation: '罗马帘-穿杆', position: '布帘', unit_price: 4.5, applicable: true, ...NO_VARIANT },
+        { id: 'pos-罗马帘-穿杆-纱帘', operation: '罗马帘-穿杆', position: '纱帘', unit_price: 4.5, applicable: true, ...NO_VARIANT },
+      ])
+      .setDefaultOnce(POSITIONS)
     await renderOperations()
     // 基线：表里**没有**它（这正是用户实测「什么也没出现」的那一屏）
     expect(screen.queryByTestId('matrix-row-罗马帘-穿杆')).toBeNull()
@@ -3521,8 +3661,8 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
     mockGetOperationsCatalog.mockResolvedValue(ok(ORPHAN_CATALOG))
     mockUpdateOperation.mockResolvedValue(ok({ id: 'op-test22', created_positions: 3, skipped_positions: 0 }))
     mockGetOperationPositions
-      .mockResolvedValueOnce(ok(POSITIONS))
-      .mockResolvedValue(ok([...POSITIONS, ATTACHED_CELL]))
+      .setDefault([...POSITIONS, ATTACHED_CELL])
+      .setDefaultOnce(POSITIONS)
     await renderOperations()
     // 红证基线：改前「工艺项」表里没有它（用户实测的那一屏）
     expect(screen.queryByTestId('matrix-row-测试22')).toBeNull()
@@ -3578,4 +3718,400 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
     expect(screen.getByTestId('orphan-attach-list')).toBeInTheDocument()
   })
 
+})
+
+/**
+ * ══════════════════ #4677：工艺项**两层改造**（设计 `docs/design/public-operations-and-craft-ui.md`
+ * §4 界面改造 / §6 种子自愈 / §7 第 7 条）══════════════════
+ *
+ * 本组用自己的**真形态**夹具（`LAYER_CELLS`）：一道工序只属一个车间（真数据如此）、
+ * 交付环节（`scope='set'`）四道齐（打包 / 外帘打卷 / 外帘装袋 / 外帘发货）、
+ * **`裁剪 × 布料` 保命格**在场（V88 逐字保留的那一格）。
+ *
+ * 红证（改前必红，逐条实测见 PR 描述）：
+ * ① 交付环节**按部位 4 格**渲染（改后 = **一列价**）⇒ `delivery-row-*` / `delivery-price-*` 不存在；
+ * ② 工序层**没有**车间分组、不可折叠 ⇒ `matrix-workshop-*` 不存在；
+ * ③ `布料` 当第 4 个部位列出来 ⇒ 列头含 `布料`、工序层 4 列；
+ * ④ **布料单的 `裁剪` / `打包` 没有可见定价位置** ⇒ `fabric-sheet-*` 不存在（#4677 评论逐字的硬要求）；
+ * ⑤ 补套入口在工序库非空时**隐藏** ⇒ `seed-templates` 不存在；
+ * ⑥ 就绪度②**只数条数** ⇒ 缺 `布料工序路线` 时仍显示「已完成」。
+ */
+const LAYER_CELLS = [
+  // ── 工序层（`scope='position'`）：裁剪（裁床）/ 车位（缝制）/ 后整（烫工及后整）/ 质检 ──
+  { id: 'lc-1', operation: '精裁', position: '布帘', unit_price: 0.4, applicable: true, variant_operation_id: 'lop-精裁', unit: '米', group: '裁剪', scope: 'position', is_must_finish: true },
+  { id: 'lc-2', operation: '精裁', position: '纱帘', unit_price: 0.4, applicable: true, variant_operation_id: 'lop-精裁-纱', unit: '米', group: '裁剪', scope: 'position', is_must_finish: true },
+  { id: 'lc-3', operation: '精裁', position: '帘头', unit_price: 0.4, applicable: true, variant_operation_id: 'lop-精裁', unit: '米', group: '裁剪', scope: 'position', is_must_finish: true },
+  { id: 'lc-4', operation: '三边', position: '布帘', unit_price: 0.4, applicable: true, variant_operation_id: 'lop-三边', unit: '米', group: '车位', scope: 'position', is_must_finish: true },
+  { id: 'lc-5', operation: '三边', position: '纱帘', unit_price: 0.4, applicable: true, variant_operation_id: 'lop-三边-纱', unit: '米', group: '车位', scope: 'position', is_must_finish: true },
+  { id: 'lc-6', operation: '熨烫', position: '布帘', unit_price: 0.6, applicable: true, variant_operation_id: 'lop-熨烫', unit: '米', group: '后整', scope: 'position', is_must_finish: false },
+  { id: 'lc-7', operation: '质检', position: '布帘', unit_price: null, applicable: true, variant_operation_id: 'lop-质检', unit: '件', group: '质检', scope: 'position', is_must_finish: false },
+  // ── 🔴 `裁剪 × 布料` **保命格**（V88 逐字保留：存量未实例化布料单补生成需要它）──
+  { id: 'lc-8', operation: '裁剪', position: '布料', unit_price: 7, applicable: true, variant_operation_id: 'lop-裁剪-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
+  // ── 交付层（`scope='set'`）：四道齐，一列价四态各一 ──
+  // `打包`：4 个部位价全同 1.5 ⇒ `priced`
+  { id: 'lc-9', operation: '打包', position: '布帘', unit_price: 1.5, applicable: true, variant_operation_id: 'lop-打包', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'lc-10', operation: '打包', position: '纱帘', unit_price: 1.5, applicable: true, variant_operation_id: 'lop-打包', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'lc-11', operation: '打包', position: '帘头', unit_price: 1.5, applicable: true, variant_operation_id: 'lop-打包', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'lc-12', operation: '打包', position: '布料', unit_price: 1.5, applicable: true, variant_operation_id: 'lop-打包', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  // `外帘打卷`：4 格全 `applicable=false` ⇒ `no_applicable_position`
+  { id: 'lc-13', operation: '外帘打卷', position: '布帘', unit_price: null, applicable: false, variant_operation_id: 'lop-外帘打卷', unit: '套', group: '后道', scope: 'set', is_must_finish: false },
+  { id: 'lc-14', operation: '外帘打卷', position: '纱帘', unit_price: null, applicable: false, variant_operation_id: 'lop-外帘打卷', unit: '套', group: '后道', scope: 'set', is_must_finish: false },
+  // `外帘装袋`：**未定价**（`applicable=true` + 价 `null`）⇒ `unpriced`（**≠ ¥0.00**）
+  { id: 'lc-15', operation: '外帘装袋', position: '布帘', unit_price: null, applicable: true, variant_operation_id: 'lop-外帘装袋', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'lc-15b', operation: '外帘装袋', position: '纱帘', unit_price: null, applicable: true, variant_operation_id: 'lop-外帘装袋', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  // `外帘发货`：各部位不同价（1 / 2）⇒ `multiple_prices` + 计数（**不静默取第一个**）
+  { id: 'lc-16', operation: '外帘发货', position: '布帘', unit_price: 1, applicable: true, variant_operation_id: 'lop-外帘发货', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'lc-17', operation: '外帘发货', position: '纱帘', unit_price: 2, applicable: true, variant_operation_id: 'lop-外帘发货', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+]
+
+/** 缺 `布料工序路线`（工序库**非空**）—— §6 修法 A/B 的**红证形态** */
+const ROUTINGS_WITHOUT_FABRIC = {
+  total: 1,
+  routings: [
+    { id: 11, name: '窗帘工序路线（默认）', is_default: true, positions: ['布帘', '纱帘', '帘头'], mainline: ['精裁', '三边'], status: 'active' },
+  ],
+}
+
+/** 两条基础路线**齐**（与后端 `ProductionSeedTemplateService` 的两个常量逐字同名） */
+const ROUTINGS_WITH_BASE = {
+  total: 2,
+  routings: [
+    { id: 11, name: '窗帘工序路线（默认）', is_default: true, positions: ['布帘', '纱帘', '帘头'], mainline: ['精裁', '三边'], status: 'active' },
+    { id: 13, name: '布料工序路线', is_default: false, positions: ['布料'], mainline: ['裁剪', '打包'], status: 'active' },
+  ],
+}
+
+describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包发货】一列价 + 【布料单】定价入口）', () => {
+  beforeEach(() => {
+    // 本组**自带全部**夹具（模块级 mock 无全局 clearMocks，别的 describe 的 beforeEach
+    // 只 reset 自己关心的那几个 ⇒ 不能指望它们）—— 少一个就会 await 到 `undefined`。
+    mockGetOperationPositions.setDefault(LAYER_CELLS)
+    mockGetOperationLayers.mockClear()
+    mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS_WITH_BASE))
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG))
+    mockGetSeedTemplates.mockReset().mockResolvedValue(ok(TEMPLATES))
+    mockGetRouteRules.mockReset().mockResolvedValue(ok(RULES))
+    mockGetRouteRuleOptions.mockReset().mockResolvedValue(ok(RULE_TRIGGER_OPTIONS))
+    mockUpdateOperationPosition.mockReset().mockResolvedValue(ok({ id: 'lc-8' }))
+    mockUpdateOperation.mockReset().mockResolvedValue(ok({ id: 'lop-打包' }))
+    mockDeleteOperation.mockReset().mockResolvedValue(ok({ id: 'lop-打包', deleted: true }))
+  })
+
+  // ────────────────────── 两层布局（B1 / B2 / B3 / B4） ──────────────────────
+
+  it('B1 两层分区：`scope=set` 的成员落【打包发货】，其余落【工序】—— 判据是**既有 `scope`**，不是「有没有矩阵格」', async () => {
+    await renderOperations()
+
+    // 【工序】：`scope='position'` 的四道（含**布料单**的 `裁剪`）
+    const workshop = screen.getByTestId('operation-price-matrix')
+    for (const op of ['精裁', '三边', '熨烫', '质检', '裁剪']) {
+      expect(within(workshop).getByTestId(`matrix-row-${op}`)).toBeInTheDocument()
+    }
+    // 【打包发货】：`scope='set'` 的四道 —— 判据换成「有没有矩阵格」时，`外帘打卷`
+    // （4 格全 `applicable=false`）会**整行消失**（#4674 形态）⇒ 它必须在场
+    const delivery = screen.getByTestId('delivery-section')
+    for (const op of ['打包', '外帘打卷', '外帘装袋', '外帘发货']) {
+      expect(within(delivery).getByTestId(`delivery-row-${op}`)).toBeInTheDocument()
+    }
+    // 两区**互斥**：交付环节不得再在工序层渲染一遍（改一次价要改两处）
+    for (const op of ['打包', '外帘打卷', '外帘装袋', '外帘发货']) {
+      expect(within(workshop).queryByTestId(`matrix-row-${op}`)).toBeNull()
+    }
+  })
+
+  it('B2 「工序」区**按车间分组可折叠**（行业术语：裁剪（裁床）/ 车位（缝制）/ 后整（烫工及后整）/ 质检）；界面**不出现「槽位」**', async () => {
+    await renderOperations()
+
+    // 四个车间组各一个可折叠容器（默认展开 —— 商家进来第一眼要看见工序）
+    const expected = [
+      ['裁剪', '裁剪（裁床）'],
+      ['车位', '车位（缝制）'],
+      ['后整', '后整（烫工及后整）'],
+      ['质检', '质检'],
+    ] as const
+    for (const [group, label] of expected) {
+      const toggle = screen.getByTestId(`matrix-workshop-toggle-${group}`)
+      expect(toggle).toHaveAttribute('aria-expanded', 'true')
+      expect(toggle).toHaveTextContent(label)
+    }
+    // 折叠：收起「裁剪（裁床）」⇒ 这一组的行不再渲染（表头/其他组不受影响）
+    await userEvent.click(screen.getByTestId('matrix-workshop-toggle-裁剪'))
+    expect(screen.queryByTestId('matrix-row-精裁')).toBeNull()
+    expect(screen.getByTestId('matrix-row-三边')).toBeInTheDocument()
+    expect(screen.getByTestId('matrix-workshop-toggle-裁剪')).toHaveAttribute('aria-expanded', 'false')
+    // 再点开 ⇒ 回来
+    await userEvent.click(screen.getByTestId('matrix-workshop-toggle-裁剪'))
+    expect(screen.getByTestId('matrix-row-精裁')).toBeInTheDocument()
+
+    // 用户裁定：**不许**用「槽位」这类我们发明的词（`docs/design/operation-slot-model.md` 的
+    // 「槽位」是**打褶那一道**的内部口径，不是商家语言）
+    expect(screen.getByTestId('craft-operations-panel')).not.toHaveTextContent('槽位')
+  })
+
+  it('B3 「打包发货」区 = **一列价** + 单位（元/套）+ 必完（红证：改前交付工序按 4 个部位渲染成 4 格）', async () => {
+    await renderOperations()
+    const delivery = screen.getByTestId('delivery-section')
+
+    // 列头**恰三列**（工序 / 单价 / 单位·必完·操作）—— 不是「工序 + 4 个部位」
+    expect(within(delivery).getAllByRole('columnheader').map((c) => c.textContent)).toEqual([
+      '工序',
+      '单价',
+      '单位 · 必完 · 操作',
+    ])
+    // 一行一价（不是每部位一格）
+    expect(within(delivery).getAllByTestId(/^delivery-row-/)).toHaveLength(4)
+    expect(within(delivery).getAllByTestId(/^delivery-price-/)).toHaveLength(4)
+    expect(within(delivery).queryAllByTestId(/^matrix-cell-/)).toHaveLength(0)
+
+    expect(within(delivery).getByTestId('delivery-price-打包')).toHaveTextContent('¥1.50')
+    expect(within(delivery).getByTestId('delivery-price-打包')).toHaveTextContent('/套')
+    expect(within(delivery).getByTestId('delivery-must-finish-打包')).toHaveTextContent('必完')
+    // 单位元/套（行尾元数据逐字取后端）
+    expect(within(delivery).getByTestId('delivery-row-打包')).toHaveTextContent('后整（烫工及后整）')
+    expect(within(delivery).getByTestId('delivery-row-打包')).toHaveTextContent('套')
+  })
+
+  it('B4 `布料` **不出现在列头**（列收窄到部位词表）；但读面那一格**仍在**（孤儿判据 #4614 的载体）', async () => {
+    await renderOperations()
+    const workshop = screen.getByTestId('operation-price-matrix')
+
+    expect(within(workshop).getAllByRole('columnheader').map((c) => c.textContent)).toEqual([
+      '工序',
+      '布帘',
+      '纱帘',
+      '帘头',
+      '元数据 / 操作',
+    ])
+    expect(within(workshop).queryByTestId('matrix-cell-裁剪-布料')).toBeNull()
+    // ⚠️ **不得**把 `布料` 从读面响应里删掉：它是 `variant_operation_id` 的载体，
+    // 也是 V88 的保命格 ⇒ 它只在**列**里退场，在**数据**里一字不动
+    expect(LAYER_CELLS.some((c) => c.position === '布料' && c.operation === '裁剪')).toBe(true)
+  })
+
+  // ────────────────────── 反向护栏（三态语义不变 / 不静默取第一个） ──────────────────────
+
+  it('反向护栏 B5：三态语义**不变** —— `不做` ≠ `未定价` ≠ `¥0.00`；工序层照旧可区分', async () => {
+    await renderOperations()
+
+    // `质检` 布帘：`applicable=true` + 价 null ⇒ 未定价（且**不含 ¥**）
+    const unpriced = screen.getByTestId('matrix-cell-质检-布帘')
+    expect(unpriced).toHaveAttribute('data-state', 'unpriced')
+    expect(unpriced).toHaveTextContent('未定价')
+    expect(unpriced).not.toHaveTextContent('¥')
+
+    // `精裁` 布帘：真价 ¥0.40（真 0 元也必须显示成金额 —— 这里用非 0 真价钉住「有价」态）
+    const priced = screen.getByTestId('matrix-cell-精裁-布帘')
+    expect(priced).toHaveAttribute('data-state', 'priced')
+    expect(priced).toHaveTextContent('¥0.40')
+
+    // 「不做」态：把 `三边 × 帘头` 切不做 ⇒ `{applicable:false}`，显示「不做」而不是「未定价」
+    await userEvent.click(screen.getByTestId('matrix-applicable-三边-布帘'))
+    await waitFor(() =>
+      expect(mockUpdateOperationPosition).toHaveBeenCalledWith('lc-4', { applicable: false }),
+    )
+  })
+
+  it('反向护栏 B7-①：一列价**未定价 ≠ ¥0.00**（改前回落工序库行价会把「未定价」变成真 0 元 ⇒ 工人白干）', async () => {
+    await renderOperations()
+    const cell = screen.getByTestId('delivery-price-外帘装袋')
+
+    expect(cell).toHaveAttribute('data-price-state', 'unpriced')
+    expect(cell).toHaveTextContent('未定价')
+    // **不得**渲染成 ¥0.00（与真 0 元在文本上也可区分）
+    expect(cell).not.toHaveTextContent('¥0.00')
+    expect(cell).not.toHaveTextContent('¥')
+  })
+
+  it('反向护栏 B7-②：各部位不同价 ⇒ **显式提示 + 计数**（**不静默取第一个**）', async () => {
+    await renderOperations()
+    const cell = screen.getByTestId('delivery-price-外帘发货')
+
+    expect(cell).toHaveAttribute('data-price-state', 'multiple_prices')
+    expect(cell).toHaveTextContent('各部位不同价（2 处）')
+    // 两个价（¥1.00 / ¥2.00）**一个都不许**被当成「这一行的价」显示
+    expect(cell).not.toHaveTextContent('¥1.00')
+    expect(cell).not.toHaveTextContent('¥2.00')
+    // 引导到抽屉逐个改（不静默、不丢信息）
+    expect(cell.getAttribute('title')).toContain('各部位不同价')
+  })
+
+  it('反向护栏 B7-③：一格「做」都没有 ⇒ 如实报出（`no_applicable_position`），不假装成 0 元或未定价', async () => {
+    await renderOperations()
+    const cell = screen.getByTestId('delivery-price-外帘打卷')
+
+    expect(cell).toHaveAttribute('data-price-state', 'no_applicable_position')
+    expect(cell).toHaveTextContent('没有部位设为「做」')
+    expect(cell).not.toHaveTextContent('未定价')
+    expect(cell).not.toHaveTextContent('¥')
+  })
+
+  // ────────────────────── #4674 从根上避免（四条约束） ──────────────────────
+
+  it('B6-① 交付环节的行**不依赖矩阵格**：某道交付工序一格都没有 ⇒ 仍有行 + `管理▸`（**红证**：改前 #4674 死路）', async () => {
+    // 交付工序 `外帘装袋` 的格**全部**不在矩阵里（真形态：矩阵读面按租户，某部位一格没配）。
+    // ⚠️ 真后端的**分区读面**仍会给出这一行（它按 `production_operations` 的行分区，**不看格**）
+    // ⇒ 分区读面用 `setLayersDefault` 覆写成「有这一行、但 `no_applicable_position`」。
+    const withoutCells = LAYER_CELLS.filter((c) => c.operation !== '外帘装袋')
+    mockGetOperationPositions.setDefault(withoutCells)
+    mockGetOperationLayers.mockResolvedValue(
+      ok({
+        operations: withoutCells,
+        delivery: [
+          ...buildLayers(LAYER_CELLS).delivery.filter((r) => r.operation !== '外帘装袋'),
+          { operation: '外帘装袋', scope: 'set', unit: '套', group: '后道', is_must_finish: true, price: null, price_state: 'no_applicable_position', different_price_count: 0, applicable_positions: [] },
+        ],
+      }),
+    )
+    await renderOperations()
+
+    const delivery = screen.getByTestId('delivery-section')
+    expect(within(delivery).getByTestId('delivery-row-外帘装袋')).toBeInTheDocument()
+    expect(within(delivery).getByTestId('delivery-manage-外帘装袋')).toBeInTheDocument()
+    expect(within(delivery).getByTestId('delivery-price-外帘装袋')).toHaveAttribute(
+      'data-price-state',
+      'no_applicable_position',
+    )
+  })
+
+  it('B6-② `管理▸` **在行上**（与矩阵格无关）；抽屉层「停用 / 删除」在 `manageVariants` 循环体**外** ⇒ 空态也有出路', async () => {
+    const withoutCells = LAYER_CELLS.filter((c) => c.operation !== '外帘装袋')
+    mockGetOperationPositions.setDefault(withoutCells)
+    mockGetOperationLayers.mockResolvedValue(
+      ok({
+        operations: withoutCells,
+        delivery: [
+          ...buildLayers(LAYER_CELLS).delivery.filter((r) => r.operation !== '外帘装袋'),
+          { operation: '外帘装袋', scope: 'set', unit: '套', group: '后道', is_must_finish: true, price: null, price_state: 'no_applicable_position', different_price_count: 0, applicable_positions: [] },
+        ],
+      }),
+    )
+    await renderOperations()
+
+    // 行上的入口（不是「格上的入口」）
+    await userEvent.click(screen.getByTestId('delivery-manage-外帘装袋'))
+    await waitFor(() => expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument())
+
+    // 抽屉空态（`manageVariants.length === 0`）⇒ 停用 / 删除**照样在**（**红证**：改前只有「关闭」）
+    expect(screen.getByTestId('operations-manage-disable')).toBeInTheDocument()
+    expect(screen.getByTestId('operations-manage-delete')).toBeInTheDocument()
+    expect(screen.getByTestId('operations-manage-close')).toBeInTheDocument()
+  })
+
+  // ────────────────────── 🔴 硬要求：布料单定价入口 ──────────────────────
+
+  it('🔴 硬要求：商家能在**明确、可见**的位置给布料单的 `裁剪` + `打包` 定价，**且不依赖矩阵里存在「布料」列**', async () => {
+    await renderOperations()
+
+    // 前置：工序层的列**不含** `布料`（这正是「那个保命格不可见」的病根）
+    const workshop = screen.getByTestId('operation-price-matrix')
+    expect(within(workshop).queryByTestId('matrix-cell-裁剪-布料')).toBeNull()
+
+    // ① 入口可见：`裁剪` + `打包` 各一行、一列价
+    const fabric = screen.getByTestId('fabric-sheet-section')
+    expect(within(fabric).getByTestId('fabric-sheet-row-裁剪')).toBeInTheDocument()
+    expect(within(fabric).getByTestId('fabric-sheet-row-打包')).toBeInTheDocument()
+
+    // ⚠️ 同一个逻辑工序在**两个区**各有一行（工序层 / 布料单），而 `matrix-cell-*` 的 testid 是
+    // 「工序 × 部位」⇒ 同 testid 会出现两份。取【布料单】那一份（`within(fabric)` 收窄到本区）。
+    expect(within(fabric).getAllByTestId('matrix-cell-裁剪-布料')).toHaveLength(1)
+    expect(within(fabric).getByTestId('matrix-cell-裁剪-布料')).toHaveAttribute('data-state', 'priced')
+    expect(within(fabric).getByTestId('matrix-cell-裁剪-布料')).toHaveTextContent('¥7.00')
+
+    // ③ `打包 × 布料`（¥1.50）同样在这里可见（改前只有「打包 × 4 部位」四格）
+    expect(within(fabric).getByTestId('matrix-cell-打包-布料')).toHaveTextContent('¥1.50')
+
+    // ④ **可写**：就地改价 ⇒ 走既有 `PUT /operation-positions/{id}`，body **只带** `{unit_price}`
+    await userEvent.click(within(fabric).getAllByTestId('matrix-price-edit-裁剪-布料')[0])
+    const input = within(fabric).getAllByTestId('matrix-price-input-裁剪-布料')[0]
+    await userEvent.clear(input)
+    await userEvent.type(input, '8.5')
+    await userEvent.click(within(fabric).getAllByTestId('matrix-price-save-裁剪-布料')[0])
+    await waitFor(() =>
+      expect(mockUpdateOperationPosition).toHaveBeenCalledWith('lc-8', { unit_price: 8.5 }),
+    )
+    expect(Object.keys(mockUpdateOperationPosition.mock.calls[0][1] as object)).toEqual(['unit_price'])
+  })
+
+  it('🔴 硬要求·空态给出路：`× 布料` 那一格缺失 ⇒ 两个可点动作（接入部位 / 补套行业模板），**不写**页面里没有的指引', async () => {
+    // 格不存在（该租户矩阵里没有 `裁剪 × 布料`）⇒ 本区必须给出路（#4674 从根上避免的第 ④ 条约束）。
+    // 同时让「补套行业模板」入口在场（缺 `布料工序路线`）—— 否则第二个动作无处可去。
+    mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS_WITHOUT_FABRIC))
+    mockGetOperationPositions.setDefault(LAYER_CELLS.filter((c) => c.id !== 'lc-8'))
+    await renderOperations()
+
+    const fabric = screen.getByTestId('fabric-sheet-section')
+    const missing = within(fabric).getByTestId('fabric-sheet-missing-裁剪')
+    expect(missing).toHaveTextContent('没有「裁剪 × 布料」这一格')
+    // 旧死路文案**不得**出现（页面里没有「各部位的适用性配置」这种东西可核对）
+    expect(missing).not.toHaveTextContent('请核对各部位的适用性配置')
+
+    // 动作①「接入部位…」⇒ 真的打开接入弹窗
+    await userEvent.click(within(fabric).getByTestId('fabric-sheet-attach-裁剪'))
+    await waitFor(() => expect(screen.getByTestId('orphan-attach-list')).toBeInTheDocument())
+    expect(screen.getByTestId('orphan-attach-submit')).toBeInTheDocument()
+
+    // 动作②「补套行业模板」⇒ 把商家带到补套入口（幂等：已存在的条目自动跳过）
+    expect(screen.getByTestId('seed-templates')).toBeInTheDocument()
+    await userEvent.click(within(fabric).getByTestId('fabric-sheet-seed-裁剪'))
+    expect(screen.getByTestId('seed-template-apply-curtain')).toBeInTheDocument()
+  })
+
+  // ────────────────────── §6 种子自愈（与模型无关） ──────────────────────
+
+  it('§6-① 补套入口改成「**缺失即显示**」（幂等）：工序库**非空**但缺 `布料工序路线` ⇒ 入口仍可见（**红证**：改前 `!operationsReady` 才显示）', async () => {
+    // 工序库**非空**（`CATALOG.total = 4`）∧ 缺 `布料工序路线`
+    mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS_WITHOUT_FABRIC))
+    await renderOperations()
+
+    expect(screen.getByTestId('seed-templates')).toBeInTheDocument()
+    // 标题要说清**为什么**出现（不是「工序库为空」）
+    expect(screen.getByTestId('seed-templates')).toHaveTextContent('缺基础路线')
+    expect(screen.getByTestId('seed-template-apply-curtain')).toBeInTheDocument()
+  })
+
+  it('§6-① 反向护栏：两条基础路线**齐**且工序库非空 ⇒ 补套入口**不显示**（不是常驻噪音）', async () => {
+    mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS_WITH_BASE))
+    await renderOperations()
+
+    expect(screen.queryByTestId('seed-templates')).toBeNull()
+  })
+
+  it('§6-② 就绪度②从「**数条数**」改成「**两条基础路线是否齐**」并**点名**（**红证**：改前 `工艺路线 2 条` 就显示「已完成」）', async () => {
+    // 改前：`routeList.length = 1 > 0` 且无空壳 ⇒ **只数条数** ⇒ `data-state="done"`
+    mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS_WITHOUT_FABRIC))
+    await renderOperations()
+
+    const step = screen.getByTestId('readiness-step-routings')
+    // 改前：`工艺路线 2 条` + `data-state="done"`（只数条数 ⇒ 缺布料路线照样「已完成」）
+    expect(step).toHaveAttribute('data-state', 'todo')
+    expect(step).toHaveTextContent('基础路线 1/2 条')
+    expect(step).toHaveTextContent('缺 布料工序路线')
+    // 后果要说清（点名 + 为什么）
+    expect(step).toHaveTextContent('窗帘单与布料单各自的主线')
+  })
+
+  it('§6-② 反向护栏：两条基础路线齐 ⇒ 就绪度② `done`（不误报）', async () => {
+    mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS_WITH_BASE))
+    await renderOperations()
+
+    const step = screen.getByTestId('readiness-step-routings')
+    expect(step).toHaveAttribute('data-state', 'done')
+    expect(step).toHaveTextContent('基础路线 2/2 条')
+    expect(step).not.toHaveTextContent('缺 ')
+  })
+
+  // ────────────────────── 验收协议 v1.11 三问：端点**有调用点 + 入口可达** ──────────────────────
+
+  it('端点接入（验收协议 v1.11）：页面**真的调** `GET /operation-layers`（文件在 main ≠ 被触发）', async () => {
+    await renderOperations()
+    // 红证：改前 `operation-layers` **零前端调用点**（文件在 main、无人触发）⇒ 这条必红
+    expect(mockGetOperationLayers).toHaveBeenCalled()
+  })
+
+  it('端点接入（验收协议 v1.11）：入口可达 —— 打开「工艺项」tab（默认 tab）即触发，无需二次跳转', async () => {
+    render(<ProcessConfigPage />)
+    // 默认就落在「工艺项」tab ⇒ 首屏渲染即触发（不是藏在某个二级入口后面）
+    await waitFor(() => expect(screen.getByTestId('delivery-section')).toBeInTheDocument())
+    expect(mockGetOperationLayers).toHaveBeenCalledTimes(1)
+  })
 })

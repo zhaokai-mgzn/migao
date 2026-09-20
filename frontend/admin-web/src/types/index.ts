@@ -999,6 +999,45 @@ export interface OperationPositionUpdateParams {
 }
 
 /**
+ * 工艺项**两层分区**里「打包发货」层的一行（issue #4677 = 设计
+ * `docs/design/public-operations-and-craft-ui.md` §4.1/§4.5 方案 A；契约 #4676）。
+ *
+ * 分区判据 = **既有** `scope`（`scope='set'` ⇒ 本层；**不新造概念**）。本层的「一列价」是
+ * 服务端按该工序**全部 `applicable=TRUE` 格**聚合出来的**显式规则**（**不是删格**）：
+ *
+ * - `priced` ⇒ 各格价全同，`price` = 那个价；
+ * - `unpriced` ⇒ 有格没定价，`price = null` —— **未定价 ≠ ¥0.00**（回落工序库行价会把
+ *   「未定价」变成真 0 元，工人白干）；
+ * - `multiple_prices` ⇒ 各格价不同，`price = null` + `different_price_count`
+ *   （**不静默取第一个**）；
+ * - `no_applicable_position` ⇒ 一格「做」都没有。
+ */
+export interface OperationLayerDeliveryRow {
+  operation: string
+  scope: ProductionScope
+  unit?: string | null
+  group?: string | null
+  is_must_finish?: boolean | null
+  price?: number | null
+  price_state: 'priced' | 'unpriced' | 'multiple_prices' | 'no_applicable_position'
+  different_price_count: number
+  /** 该工序**仍是「做」**的部位（抽屉的做/不做逐格控件按它渲染） */
+  applicable_positions: string[]
+}
+
+/**
+ * `GET /operation-layers` 的 `data`（issue #4676）。
+ *
+ * ⚠️ `operations` 段的每行与 `GET /operation-positions` **同形**（同一个 `positionView`）
+ * ⇒ 前端同一份渲染代码；本端点只是**多给一层分区 + 一列价聚合**，**不替代**原端点
+ * （抽屉的 `PUT /operation-positions/{id}` 仍按格的 `id` 寻址）。
+ */
+export interface OperationLayers {
+  operations: OperationPosition[]
+  delivery: OperationLayerDeliveryRow[]
+}
+
+/**
  * 算料公式**租户级配置**（issue #4528 = 包 E）—— 键与算料引擎
  * `curtain_calc.DEFAULT_CRAFT_CALC_CONFIG` **逐字同名**
  * （`GET|PUT /api/admin/production/craft-calc-config` 的 `data.config`）。
