@@ -1259,6 +1259,8 @@ describe('NewOrderPage', () => {
         expect(screen.queryByRole('checkbox', { name: auto })).toBeNull()
       }
       // 推导结果照旧**只读可见**（来源「推算」），且块内没有任何输入控件
+      // ⚠️ issue #4658：该块已从 ③加工项 移到 **②工艺规格** ⇒ 先展开②再断言（手风琴会卸载未展开步骤）
+      expandCraft()
       const block = screen.getByTestId('auto-detected-features')
       expect(within(block).getByText('超宽')).toBeInTheDocument()
       expect(within(block).getByText('超高')).toBeInTheDocument()
@@ -1515,6 +1517,8 @@ describe('NewOrderPage', () => {
         expect(screen.queryByRole('checkbox', { name: auto })).toBeNull()
       }
       // 推导结果照旧**只读可见**，且块内无任何输入控件
+      // ⚠️ issue #4658：该块已从 ③加工项 移到 **②工艺规格** ⇒ 先展开②再断言
+      expandCraft()
       const block = screen.getByTestId('auto-detected-features')
       expect(within(block).getByText('超宽')).toBeInTheDocument()
       expect(block.querySelectorAll('input')).toHaveLength(0)

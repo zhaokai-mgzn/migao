@@ -52,7 +52,13 @@ import { describeLogisticsProfile } from '@/lib/logistics'
 // ⚠️ 取自 **admin-web 专属**模块（不是三端同源的 `craft-display`，见该文件头）
 // `AUTO_FEATURE_NAMES`（#4566）：下单页用它把目录里的**自动推导特征**滤出**手选**列表
 // （它们在目录里必须存在 —— 商家配「加工费组合」要能选到；但手选控件必须没有它们，判据 8）
-import { AUTO_FEATURE_NAMES, detectAutoFeatures, type AutoFeature } from '@/lib/craft-auto-features'
+import {
+  AUTO_FEATURE_NAMES,
+  detectAutoFeatures,
+  resolveDoorWidth,
+  type AutoFeature,
+  type AutoFeatureName,
+} from '@/lib/craft-auto-features'
 // 费用明细的「加工 + 特殊选项」两半拆分（issue #4526 · 设计 §4.3 / 判据 5）——唯一实现
 import { buildFeeDetailDisplay } from '@/lib/order-fee-display'
 // #4371：加工项类型改为**店铺级目录**的 `ProcessingItem`（旧 `ProductProcessingItem` 已随解耦删除）
@@ -115,6 +121,16 @@ interface OrderLineItem {
   height: number | null
   processingItems: ProcessingItem[]
   selectedProcessing: Record<string, { selected: boolean; qty: number }>
+  /**
+   * 商家**不采纳**的系统推算特征名（issue #4657）—— 推算结果会**进加工费组合键**
+   * ⇒ 推算错 = 价格错，商家必须能纠正。缺省（`undefined`）= 全部采纳。
+   */
+  rejectedAutoFeatures?: string[]
+  /**
+   * 商家**强制加**的自动识别特征名（issue #4657）—— 系统没推、但商家知道该算
+   * （例：SKU 没录门幅 ⇒ 系统按默认 2.8 米兜底 ⇒ 本该超宽却漏判）。
+   */
+  manualAutoFeatures?: string[]
   /** 工艺规格录入（issue #4375 §4.2/§4.5）—— 未填的键不落库；三条默认档见 createDefaultCraftSpec */
   craft: CraftSpecInput
   // ── 「樘窗」输入已移除（issue #4486，用户裁定「我感觉不需要」）──
@@ -361,6 +377,80 @@ function autoFeaturesOf(line: OrderLineItem): AutoFeature[] {
   })
 }
 
+/**
+ * **系统识别**块里的一行（issue #4657）：系统推算的（含被**不采纳**的，留痕要看得见）
+ * 或商家**强制加**的。
+ *
+ * ⚠️ 不复用 lib 的 `AutoFeature`：那里 `source` 只可能是 `推算`（推导产生）；
+ * 本行多了 `手动加`（商家强制加、系统没推）这一档 —— 它只在**页面侧**有意义。
+ */
+interface SystemAutoFeatureRow {
+  name: AutoFeatureName
+  source: '推算' | '手动加'
+  reason: string
+  /** 系统推算过、但被商家**不采纳** ⇒ **不在**生效值里（只作留痕展示） */
+  rejected: boolean
+}
+
+/** 商家对系统推算的**裁决**（issue #4657）：`adopt` 恢复系统推算 · `reject` 不采纳 · `add` 强制加 */
+type AutoFeatureDecision = 'adopt' | 'reject' | 'add'
+
+/** 强制加那一行的依据文案（系统没推算依据可引用 ⇒ 照实说明「未推算」，不编一个理由） */
+const MANUAL_ADD_REASON = '系统未推算，商家手动加'
+
+/**
+ * 系统识别块的**展示行** —— 系统推算的（含被不采纳的）+ 商家强制加的。
+ *
+ * 单一真值：推算一律走 {@link autoFeaturesOf}（`lib/craft-auto-features.ts` 的
+ * `detectAutoFeatures`）—— **本页不得出现第二份推导**。
+ */
+function autoFeatureRowsOf(line: OrderLineItem): SystemAutoFeatureRow[] {
+  const rejected = line.rejectedAutoFeatures ?? []
+  const detected = autoFeaturesOf(line)
+  const rows: SystemAutoFeatureRow[] = detected.map((f) => ({
+    ...f,
+    rejected: rejected.includes(f.name),
+  }))
+  for (const name of new Set(line.manualAutoFeatures ?? [])) {
+    // 强制加：只认自动识别清单里的名字（不凭一个字符串造出目录里没有的组合键加项 —— #4592 的教训）
+    if (!(AUTO_FEATURE_NAMES as readonly string[]).includes(name)) continue
+    // 系统已推算出来的不重复列（生效值里也不会出现两次）
+    if (detected.some((f) => f.name === name)) continue
+    rows.push({
+      name: name as AutoFeatureName,
+      source: '手动加',
+      reason: MANUAL_ADD_REASON,
+      rejected: false,
+    })
+  }
+  return rows
+}
+
+/**
+ * 该行的**生效**自动识别特征 = `推算 ∪ 强制加 − 不采纳`（issue #4657）——
+ * **唯一**喂给加工费组合键的清单（界面徽标与 `processingDetailsOf` 共用它，
+ * 绝不允许「两个来源各说各话」）。
+ *
+ * 为什么合成放在**页面侧**而不是 `lib/craft-auto-features.ts`：那个文件是**推导判据**的
+ * 单一真值（判据修正另有其单），本函数是**商家裁决**的合成 —— 两者变化原因不同，
+ * 且裁决态是**行状态**（随行落库 ⇒ 日后判据变化不影响已下的单）。
+ */
+function effectiveAutoFeaturesOf(line: OrderLineItem): SystemAutoFeatureRow[] {
+  return autoFeatureRowsOf(line).filter((row) => !row.rejected)
+}
+
+/**
+ * SKU 是否提供了**可用**门幅（issue #4657：门幅取默认值时界面必须能看出来）。
+ *
+ * ⚠️ 只判「有没有可用门幅」，**不重复解析门幅数值**（数值一律走 lib 的 `resolveDoorWidth`）
+ * —— 缺省 2.8 是「推算可能算错」的最大来源，商家得知道这是默认值而不是实证。
+ */
+function hasUsableDoorWidth(doorWidth: unknown): boolean {
+  if (doorWidth === null || doorWidth === undefined) return false
+  const match = String(doorWidth).match(/(\d+(?:\.\d+)?)/)
+  return match !== null && Number(match[1]) > 0
+}
+
 /** 该行已勾选的加工项明细（提交 payload 与加工费预览**共用**这一份构造） */
 function processingDetailsOf(line: OrderLineItem): Array<Record<string, unknown>> {
   const handPicked = Object.entries(line.selectedProcessing)
@@ -388,7 +478,7 @@ function processingDetailsOf(line: OrderLineItem): Array<Record<string, unknown>
   // ⚠️ 本数组是组合键的真值源 ⇒ 这里**不得**出现 `processing_items` 目录（V83）里没有的名字：
   //    #4592 实测 `正幅` 就因此让**每张默认订单**的组合键永远匹配不到价（加工费恒 ¥0.00）。
   // 它们**没有单价**（不在加工项目录里）：单价恒 0，钱由**组合价目**决定（R10 的前提）。
-  const derived = autoFeaturesOf(line).map((feature) => ({
+  const derived = effectiveAutoFeaturesOf(line).map((feature) => ({
     name: feature.name,
     unitPrice: 0,
     quantity: 1,
@@ -722,6 +812,41 @@ export default function NewOrderPage() {
       )
     },
     []
+  )
+
+  /**
+   * 自动识别特征的**裁决**（issue #4657）—— 生效值 = `推算 ∪ 强制加 − 不采纳`。
+   *
+   * - `reject` = **不采纳**（推算错会直接算错加工费，商家必须能纠正）；
+   * - `add` = **强制加**（系统漏判，如 SKU 没录门幅 ⇒ 按默认 2.8 兜底 ⇒ 本该超宽却没推）；
+   * - `adopt` = **恢复系统推算**（同时清掉强制加 —— 两个来源不会同时留下同一个名字）。
+   *
+   * 裁决随**行状态**走，落库的是**生效值**（`processingDetailsOf`）⇒ 日后推算判据修正
+   * **不影响**已下的单（快照，零迁移：`processingInfo` JSON 已能承载）。
+   */
+  const decideAutoFeature = useCallback(
+    (lineId: string, name: string, decision: AutoFeatureDecision) => {
+      updateLineItem(lineId, (it) => {
+        const without = (list: string[] | undefined) => (list ?? []).filter((n) => n !== name)
+        if (decision === 'reject') {
+          return {
+            rejectedAutoFeatures: [...new Set([...(it.rejectedAutoFeatures ?? []), name])],
+            manualAutoFeatures: without(it.manualAutoFeatures),
+          }
+        }
+        if (decision === 'add') {
+          return {
+            rejectedAutoFeatures: without(it.rejectedAutoFeatures),
+            manualAutoFeatures: [...new Set([...(it.manualAutoFeatures ?? []), name])],
+          }
+        }
+        return {
+          rejectedAutoFeatures: without(it.rejectedAutoFeatures),
+          manualAutoFeatures: without(it.manualAutoFeatures),
+        }
+      })
+    },
+    [updateLineItem]
   )
 
   const addLineItem = () => {
@@ -1608,6 +1733,9 @@ export default function NewOrderPage() {
                               : {}),
                           })
                         }
+                        onAutoFeatureDecision={(name, decision) =>
+                          decideAutoFeature(line.id, name, decision)
+                        }
                         onEdgeMetersChange={(m) => updateLineItem(line.id, { edgeMeters: m })}
                         onEdgeUnitPriceChange={(p) =>
                           updateLineItem(line.id, { edgeUnitPrice: p })
@@ -2165,6 +2293,11 @@ interface LineItemBlockProps {
   onChangeHeight: (h: number | null) => void
   onToggleProcessing: (pi: ProcessingItem, selected: boolean) => void
   onChangeCraft: (patch: Partial<CraftSpecInput>) => void
+  /**
+   * 自动识别特征的**裁决**（issue #4657）—— `reject` 不采纳 · `add` 强制加 · `adopt` 恢复系统推算。
+   * 生效值 = `推算 ∪ 强制加 − 不采纳` ⇒ 唯一喂给加工费组合键（绝不允许两个来源各说各话）。
+   */
+  onAutoFeatureDecision: (name: string, decision: AutoFeatureDecision) => void
   onEdgeMetersChange: (meters: number | null) => void
   onEdgeUnitPriceChange: (price: number | null) => void
   /** 纱帘米数 / 单价（issue #4521）—— 帘体含纱帘时才有意义 */
@@ -2285,6 +2418,7 @@ function WizardStep({
   step,
   title,
   summary,
+  badges,
   open,
   onToggle,
   children,
@@ -2293,6 +2427,11 @@ function WizardStep({
   title: string
   /** 收起时显示的已选摘要 */
   summary?: string
+  /**
+   * 标题旁的**就地徽标**（issue #4658）：① 尺寸与数量那行显示系统识别结果 ——
+   * 商家**填尺寸时**就看得见提示（不必翻到②工艺规格才发现）。展开/收起都渲染。
+   */
+  badges?: React.ReactNode
   open: boolean
   onToggle: () => void
   children: React.ReactNode
@@ -2314,6 +2453,7 @@ function WizardStep({
           {step}
         </span>
         <span className="text-sm font-medium text-neutral-700 shrink-0">{title}</span>
+        {badges}
         <span className="ml-auto flex items-center gap-1.5 min-w-0">
           {!open && summary && (
             <span className="text-xs text-neutral-500 truncate">{summary}</span>
@@ -2674,6 +2814,7 @@ function LineItemBlock({
   onChangeHeight,
   onToggleProcessing,
   onChangeCraft,
+  onAutoFeatureDecision,
   onEdgeMetersChange,
   onEdgeUnitPriceChange,
   onSheerMetersChange,
@@ -2697,8 +2838,23 @@ function LineItemBlock({
   const selectedProcessingCount = Object.values(line.selectedProcessing).filter(
     (c) => c.selected
   ).length
-  /** 自动识别特征（D6）—— 只读展示，**不计入** `selectedProcessingCount`（不是手选项） */
-  const autoFeatures = autoFeaturesOf(line)
+  /**
+   * **系统识别**（issue #4658 放置 + #4657 可采纳/不采纳）—— 只读 + 可裁决，**不计入**
+   * `selectedProcessingCount`（不是手选项）。
+   *
+   * - `autoFeatureRows` = 展示行（含被**不采纳**的 —— 留痕要看得见）；
+   * - `autoFeatures` = **生效值** = `推算 ∪ 强制加 − 不采纳`（与 `processingDetailsOf` 同一份）；
+   * - `addableAutoFeatures` = 系统**没推**也没强制加的特征 ⇒ 提供「强制加」入口
+   *   （门幅数据缺失导致漏判时，商家要能补）。
+   */
+  const autoFeatureRows = autoFeatureRowsOf(line)
+  const autoFeatures = autoFeatureRows.filter((row) => !row.rejected)
+  const addableAutoFeatures = AUTO_FEATURE_NAMES.filter(
+    (name) => !autoFeatureRows.some((row) => row.name === name)
+  )
+  /** 门幅（米）+ 是否走了缺省值（issue #4657：默认值必须在界面上看得出来） */
+  const doorWidthValue = resolveDoorWidth(line.selectedSku?.doorWidth)
+  const doorWidthFallback = !hasUsableDoorWidth(line.selectedSku?.doorWidth)
   /**
    * 手选加工项（issue #4566）—— 滤掉**自动推导特征**（超高/超宽/倒幅）。
    * 它们在目录里**必须存在**（商家配「加工费组合」要能选到），但**不得**出现在手选控件里
@@ -2750,6 +2906,37 @@ function LineItemBlock({
   /** 布料组整组无加工（issue #4493）⇒ 自动识别块也不渲染 */
   const isFabricLine = line.saleForm === SALE_FORM_FABRIC
 
+  /**
+   * ① 尺寸行旁的**就地徽标**（issue #4658）—— 生效特征名 + （门幅走了默认值时的）提示。
+   *
+   * 与 ②「系统识别」块**读同一份** `autoFeatures`（同一 `detectAutoFeatures` 推导 ⇒
+   * 严禁第二份推导实现）。被**不采纳**的不出现在徽标里（徽标 = 生效值）。
+   */
+  const sizeAutoBadges =
+    !isFabricLine && (autoFeatures.length > 0 || doorWidthFallback) ? (
+      <span data-testid="size-auto-badges" className="flex items-center gap-1 shrink-0">
+        {autoFeatures.map((row) => (
+          <span
+            key={row.name}
+            data-testid={`size-auto-badge-${row.name}`}
+            title={row.reason}
+            className="rounded border border-amber-200 bg-amber-50 px-1 text-[10px] leading-4 text-amber-700"
+          >
+            {row.name}
+          </span>
+        ))}
+        {doorWidthFallback && (
+          <span
+            data-testid="size-door-width-fallback"
+            title={`该 SKU 未提供门幅 —— 系统按默认 ${doorWidthValue} 米推算，可能不准`}
+            className="rounded border border-neutral-300 bg-neutral-100 px-1 text-[10px] leading-4 text-neutral-500"
+          >
+            门幅默认 {doorWidthValue}
+          </span>
+        )}
+      </span>
+    ) : null
+
   const errQty = errors[`line_${line.id}_quantity`]
   const errPrice = errors[`line_${line.id}_unitPrice`]
   const errWidth = errors[`line_${line.id}_width`]
@@ -2780,6 +2967,7 @@ function LineItemBlock({
             <WizardStep
               step={1}
               title="尺寸与数量"
+              badges={sizeAutoBadges}
               summary={`${summarySize} · ${line.quantity} 米 · ${formatAmount(Number(line.unitPrice) || 0)}/米`}
               {...stepProps(1)}
             >
@@ -2917,6 +3105,120 @@ function LineItemBlock({
                 edgeUnitPrice={line.edgeUnitPrice}
                 onEdgeUnitPriceChange={onEdgeUnitPriceChange}
               />
+
+              {/* **系统识别**（issue #4658：从 ③加工项 移到 ②工艺规格）—— 为什么归这里：
+                  它由「成品宽/高 + SKU 门幅」推出、产出进**加工费组合键** ⇒ 属**规格/报价**语义；
+                  且它**不可手选、与加工项勾选无联动** ⇒ 放在「你勾什么」的加工项区会误导。
+                  这里**紧挨推导依据**展示（`reason` 逐条显示，商家要能核对判定）。
+
+                  issue #4657：推算错 = 价格错（推算特征进组合键）⇒ 每条可**采纳 / 不采纳**，
+                  系统漏判时可**强制加**；**生效值** = `推算 ∪ 强制加 − 不采纳`（唯一喂给组合键）。
+                  标来源「推算」：本条判据是**推理非实证**，不假装定论；门幅走默认值时也照实标出。
+                  ⚠️ 布料组整组无加工（#4493）⇒ 这块整块不渲染（与「加工项」「费用明细」同闸门）。 */}
+              {!isFabricLine && (
+                <div
+                  data-testid="auto-detected-features"
+                  className="mt-3 rounded border border-dashed border-neutral-300 bg-neutral-50/60 px-3 py-2"
+                >
+                  <div className="text-xs font-medium text-neutral-600">
+                    系统识别（按成品宽高与门幅推算，不可手选；可采纳 / 不采纳）
+                  </div>
+                  {doorWidthFallback && (
+                    <p data-testid="door-width-fallback" className="mt-1 text-xs text-amber-600">
+                      该 SKU 未提供门幅 ⇒ 按默认 {doorWidthValue} 米推算 —— 依据可能不准，请核对后再采纳
+                    </p>
+                  )}
+                  <ul className="mt-1.5 space-y-1">
+                    {autoFeatureRows.map((row) => (
+                      <li
+                        key={row.name}
+                        data-testid={`auto-feature-${row.name}`}
+                        className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+                      >
+                        <span
+                          title={row.reason}
+                          className={
+                            'text-xs ' +
+                            (row.rejected ? 'text-neutral-400 line-through' : 'text-neutral-700')
+                          }
+                        >
+                          <span className="font-medium">{row.name}</span>
+                          <span className="text-neutral-400">（{row.source}）</span>
+                        </span>
+                        {/* 逐条显示**判定依据**（#4658：商家要能核对「为什么判它超宽」） */}
+                        <span className="text-[11px] text-neutral-500">{row.reason}</span>
+                        {row.rejected ? (
+                          <>
+                            {/* 留痕（#4657）：谁改的、原推算是什么 —— 一行看得见 */}
+                            <span
+                              data-testid={`auto-feature-rejected-${row.name}`}
+                              className="text-[11px] text-amber-600"
+                            >
+                              已忽略系统推算（依据：{row.reason}）
+                            </span>
+                            <button
+                              type="button"
+                              data-testid={`auto-feature-adopt-${row.name}`}
+                              onClick={() => onAutoFeatureDecision(row.name, 'adopt')}
+                              className="text-[11px] text-primary-600 underline hover:text-primary-700"
+                            >
+                              采纳
+                            </button>
+                          </>
+                        ) : row.source === '手动加' ? (
+                          <>
+                            <span
+                              data-testid={`auto-feature-manual-${row.name}`}
+                              className="text-[11px] text-amber-600"
+                            >
+                              手动加（系统未推算）
+                            </span>
+                            <button
+                              type="button"
+                              data-testid={`auto-feature-remove-${row.name}`}
+                              onClick={() => onAutoFeatureDecision(row.name, 'adopt')}
+                              className="text-[11px] text-neutral-500 underline hover:text-neutral-700"
+                            >
+                              移除
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            data-testid={`auto-feature-reject-${row.name}`}
+                            onClick={() => onAutoFeatureDecision(row.name, 'reject')}
+                            className="text-[11px] text-neutral-500 underline hover:text-neutral-700"
+                          >
+                            不采纳
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                    {autoFeatureRows.length === 0 && (
+                      <li className="text-xs text-neutral-400">
+                        系统未识别出特征（如确有，可手动加）
+                      </li>
+                    )}
+                  </ul>
+                  {/* **强制加**（#4657）：系统没推、但商家知道该算 —— 门幅数据缺失导致漏判时的唯一补救 */}
+                  {addableAutoFeatures.length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] text-neutral-400">系统未推算？手动加：</span>
+                      {addableAutoFeatures.map((name) => (
+                        <button
+                          key={name}
+                          type="button"
+                          data-testid={`auto-feature-add-${name}`}
+                          onClick={() => onAutoFeatureDecision(name, 'add')}
+                          className="rounded border border-neutral-300 bg-white px-1.5 text-[11px] leading-5 text-neutral-600 hover:border-neutral-400"
+                        >
+                          + {name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </WizardStep>
 
             {/* ③ 加工项 */}
@@ -3055,34 +3357,9 @@ function LineItemBlock({
                     <div className="text-sm text-neutral-400 py-2">没有匹配的加工项</div>
                   )}
 
-                  {/* 自动识别（issue #4526 · D6）：超高/超宽 = 宽高 vs 门幅，倒幅 = cuttingMode
-                      推导（#4592：`定高买宽` = 正幅**不推导** —— 正幅不在加工项目录里，推它会让
-                      默认订单的组合键永远匹配不到价）—— **只读**（不是可勾选项：手选项 = 与
-                      cuttingMode 冲突的第二份口径）。
-                      标来源「推算」：本条判据是**推理非实证**（设计 §5.2），不假装定论。
-                      ⚠️ 布料组整组无加工（#4493）⇒ 这块也整块不渲染（与「加工项」「费用明细」同闸门）。 */}
-                  {!isFabricLine && autoFeatures.length > 0 && (
-                    <div
-                      data-testid="auto-detected-features"
-                      className="rounded border border-dashed border-neutral-300 bg-neutral-50/60 px-3 py-2"
-                    >
-                      <div className="text-xs font-medium text-neutral-600">
-                        自动识别（按宽高与门幅推算，不可手选）
-                      </div>
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {autoFeatures.map((feature) => (
-                          <span
-                            key={feature.name}
-                            title={feature.reason}
-                            className="inline-flex items-center gap-1 rounded border border-neutral-300 bg-white px-2 py-0.5 text-xs text-neutral-700"
-                          >
-                            {feature.name}
-                            <span className="text-neutral-400">（{feature.source}）</span>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  {/* ⚠️ 「自动识别」块**已移出**本区（issue #4658）：加工项区**只保留可勾的东西**
+                      —— 该块由宽高 + 门幅推出、产出进加工费组合键，属**规格/报价**语义，
+                      且**不可手选、与勾选无联动** ⇒ 现渲染在 ②工艺规格（`auto-detected-features`）。 */}
                 </div>
               )}
             </WizardStep>
