@@ -7,6 +7,10 @@
  *
  * issue #4355（设计文档 §4.9 ① 报价单）：工艺规格展示 —— 与 mini-app 同款卡片同源实现
  * （同一份 spec 三处渲染；**缺值不渲染**，绝不出现 undefined/null/NaN）。
+ *
+ * issue #4292：本卡与 mini-app（C 端小布）那一份**逐字节同源** —— 补「实际褶倍 ≠ 理论褶倍时
+ * 同时展示实际值」（#4118 ④：客户自报 48 折时卡片显示「2 倍褶皱 · 12.3 米面料」而实际 1.86 倍）。
+ * 防两半再次漂移的守卫见 `quotation-card-same-source.test.ts`。
  */
 import React from 'react'
 import '@testing-library/jest-dom'
@@ -45,6 +49,31 @@ describe('QuotationCard — 报价单确认下单', () => {
     fireEvent.click(screen.getByText('确认下单'))
     fireEvent.click(screen.getByText('确认下单'))
     expect(onConfirm).toHaveBeenCalledTimes(1)
+  })
+
+  // ── issue #4292 / #4118 ④：理论褶倍 vs 实际褶倍（与 C 端 mini-app 逐字同款）──────
+
+  it('实际褶倍 ≠ 理论褶倍时同时展示实际值（issue #4118 ④）', () => {
+    // 客户自报 48 折场景：`fullness`=档位理论值 2，`fullness_actual`=12.3÷6.6=1.86
+    render(
+      <QuotationCard
+        data={{ ...baseQuote, fullness: 2, fullness_actual: 1.86, fabric_meters: 12.3 }}
+      />
+    )
+    expect(screen.getByText(/2 倍褶皱/)).toBeTruthy()
+    expect(screen.getByText(/实际 1\.86 倍/)).toBeTruthy()
+    expect(screen.getByText(/12\.3 米面料/)).toBeTruthy()
+  })
+
+  it('实际褶倍 = 理论褶倍时不重复标注「实际」', () => {
+    render(<QuotationCard data={{ ...baseQuote, fullness: 2, fullness_actual: 2 }} />)
+    expect(screen.queryByText(/实际/)).toBeNull()
+  })
+
+  it('无 fullness_actual 字段（旧载荷）时保持原渲染（向后兼容）', () => {
+    render(<QuotationCard data={{ ...baseQuote, fullness: 2 }} />)
+    expect(screen.getByText(/2 倍褶皱/)).toBeTruthy()
+    expect(screen.queryByText(/实际/)).toBeNull()
   })
 
   // ── issue #4355：工艺规格展示（设计文档 §4.9 ①）─────────────────────
