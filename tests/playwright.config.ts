@@ -13,7 +13,14 @@ if (!process.env.CI) process.env.E2E_MOCK_AUTH = 'true'
 // **没有「构建产物」这一层** ⇒ `tests/xiaobu_dist_freshness.py` 的内容指纹不适用（它判的是
 // 「dist 是不是当前源码的产物」）。dev server 形态下的等价判据 = **服务身份**：
 // 听 3001 的进程，其 cwd 是不是本检出的 frontend/admin-web。
-const ADMIN_WEB_PORT = 3001
+//
+// ⚠️ **端口可覆盖**（`ADMIN_WEB_PORT`，issue #4874 实测加）：硬编码 3001 时，只要**任何另一个
+// checkout**（多会话并行、或上一轮留下的 dev server）还听着 3001，上面的服务身份守卫就会**正确拒绝**
+// 本检出跑 E2E —— 而那个占用者可能是**别的会话正在用的服务**，不能一律 `pkill`（杀别人的 dev server
+// 是破坏性动作）。这与 `migao-dev-flow` §2.3 第 3 条「端口隔离：本地服务端口用环境变量覆盖
+// （API_PORT/AGENT_PORT/WEB_PORT），会话各自 .env.local，杜绝 8080/8001/3001 互抢」是同一条纪律。
+// 未设该变量时行为**逐字不变**（= 3001）；`BASE_URL` 与 dev server 命令都从它派生。
+const ADMIN_WEB_PORT = Number(process.env.ADMIN_WEB_PORT || 3001)
 const ADMIN_WEB_DIR = path.resolve(__dirname, '../frontend/admin-web')
 const IDENTITY_GUARD = path.resolve(__dirname, 'admin_web_devserver_identity.py')
 
@@ -32,6 +39,7 @@ if (!process.env.CI) {
     throw new Error(
       `[admin-web-e2e] 本地起服务前的「服务身份」前置断言未通过（exit ${identity.status}）：` +
         '拒绝在「3001 已被可能是另一个检出的服务占用」的状态下跑 E2E —— ' +
+        '（可用 `ADMIN_WEB_PORT=<别的空闲端口>` 换端口，无需杀掉占用者）' +
         '那会让断言与截图在本检出上判定、却跑在别人的代码上（静默假绿，issue #4313）。' +
         '请先停掉占用 3001 的进程再重跑。'
     )
@@ -53,7 +61,7 @@ export default defineConfig({
   use: {
     // 本地开发默认 mock SMS API（无后端），CI 通过 env 传入真实 API 地址
     testIdAttribute: 'data-testid',
-    baseURL: process.env.BASE_URL || 'http://localhost:3001',
+    baseURL: process.env.BASE_URL || `http://localhost:${ADMIN_WEB_PORT}`,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'off',
@@ -105,7 +113,8 @@ export default defineConfig({
 
   // CI 也启动本地 Next.js dev server，E2E 测的是 PR 新代码而非旧部署
   webServer: {
-    command: 'npm run dev',
+    // 端口从常量派生（可被 `ADMIN_WEB_PORT` 覆盖）；未设时逐字等价于原 `npm run dev`（= 3001）。
+    command: `npx next dev -p ${ADMIN_WEB_PORT}`,
     cwd: '../frontend/admin-web',
     port: ADMIN_WEB_PORT,
     // issue #4313：字面量 false（**本地也不再静默复用**）。复用「已在 3001 上监听的服务」时
