@@ -1162,6 +1162,34 @@ CREATE INDEX IF NOT EXISTS idx_op_position_price_versions_row
 COMMENT ON TABLE production_operation_position_price_versions IS '部位价目矩阵格的计件单价版本（V86，issue #4587）：每次**真变价**一行；当前价 = production_operation_positions.unit_price 本身，本表只记变更';
 COMMENT ON COLUMN production_operation_position_price_versions.unit_price IS '本次变更后的**计件**单价（元/单位，付工人）；NULL = 未定价或明确不做（≠ 0 元，0 是定价为 0 元）';
 
+-- 未定价实例的**显式补价**动作账（V94，issue #4709 C）
+-- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V94__create_instance_repricing_logs.sql
+-- 为什么两处都要：本文件是**全新库的一次性 bootstrap**（docker-entrypoint-initdb.d 执行），
+-- 而 **Flyway/MigrationRunner 不在该栈运行** —— 只存在于迁移链的表在建库后并不存在（#3270 形态）。
+-- 用途：商家事后在部位价目矩阵补价时，把**已实例化**的 `unit_price IS NULL` 行补成当前矩阵价
+-- （只补 NULL，已有价含 0 一律不动），并留痕（batch_id = 一次动作）+ 可回滚（rolled_back_at）。
+-- 不记 old_unit_price：本表只由「NULL ⇒ 有价」写入（服务层 CAS 谓词机械保证）⇒ 旧值恒 NULL。
+CREATE TABLE IF NOT EXISTS production_instance_repricing_logs (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    batch_id VARCHAR(64) NOT NULL,                   -- 一次补价动作 = 一个批次（回滚粒度）
+    processing_order_id VARCHAR(64) NOT NULL REFERENCES processing_orders(id),
+    position_operation_id VARCHAR(64) NOT NULL REFERENCES processing_position_operations(id),
+    new_unit_price NUMERIC(10,2) NOT NULL,           -- 本次补上的单价 = 补价那一刻矩阵格的当前价
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    rolled_back_at TIMESTAMP WITH TIME ZONE,         -- 回滚时刻；NULL = 未回滚
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_instance_repricing_batch
+    ON production_instance_repricing_logs (tenant_id, batch_id)
+    WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_instance_repricing_operation
+    ON production_instance_repricing_logs (position_operation_id)
+    WHERE deleted = 0;
+COMMENT ON TABLE production_instance_repricing_logs IS '未定价实例的**显式补价**动作账（V94，issue #4709）：一行 = 一个被补价的实例行；只由「unit_price IS NULL ⇒ 当前矩阵价」写入（已有价的行永远不产生账行）；batch_id = 一次动作，回滚按批（rolled_back_at 留痕）';
+COMMENT ON COLUMN production_instance_repricing_logs.new_unit_price IS '本次补上的计件单价（元/单位）= 补价那一刻部位价目矩阵的当前价；回滚只在实例行当前值仍等于本值时才还原（CAS），不覆盖后续改动';
+COMMENT ON COLUMN production_instance_repricing_logs.rolled_back_at IS '回滚时刻（NULL = 未回滚）；回滚只还原 unit_price → NULL，不碰 factor / done_qty / status / 报工历史';
+
 -- 特殊选项 → 条件工序 / 计件系数（V59，issue #4230 Java 侧 v1a）
 -- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V59__create_production_option_tables.sql
 -- 为什么两处都要：本文件是**全新库的一次性 bootstrap**（docker-entrypoint-initdb.d 执行），
