@@ -372,9 +372,12 @@ def bootstrap_row_values(schema_sql: str) -> dict:
 def test_row_values_match_the_open_tenant_seed(seed_json):
     """与**开租播种**终态逐值比对（`seed.json` 是那条路径的数据源）。
 
-    ⚠️ `scope` 只比对 `seed.json` **自己声明了**的那些行 —— 它只给 `配料` / `打包` 两行写了
-    `scope`（其余 35 行走 `ProductionSeedTemplateService` 的默认值 `position`）。那处**已知分叉**
-    由下一条测试**显式登记**（不是静默豁免）。
+    ⚠️ `scope` 只比对 `seed.json` **自己声明了**的那些行（其余行走
+    `ProductionSeedTemplateService` 的默认值 `position`）—— 该默认值与终态口径**等价**
+    （未声明 ⇒ `position`），故「声明了才比」不是豁免而是同一口径。
+    **原来这里登记着一处已知分叉**（三道套级工序缺声明 ⇒ 开租播种落 `position` 而终态落
+    `set` ⇒「布 + 纱」各付两次）：issue #4715 已**真修**（`seed.json` 补声明 + 新迁移 V95
+    纠正存量），登记随之删除 —— 判据现由下一条测试钉成「**分叉集必须为空**」。
     """
     seeded = {op["name"]: op for op in seed_json["operations"]}
     for row in baseline_rows(migration_text()):
@@ -390,17 +393,18 @@ def test_row_values_match_the_open_tenant_seed(seed_json):
             assert unquote(row["scope"]) == op["scope"], f"`{name}` scope 不一致"
 
 
-#: **已登记的分叉（本单不修，另开单）**：`seed.json` 没给这三道**套级**工序写 `scope`
-#: ⇒ 开租播种按默认值落 `position`，而迁移链（V67）/ bootstrap 落 `set`。
-#: 后果 = 开租租户的「布 + 纱」订单把这三道**各付两次**（#4408 双付家族）；
-#: ⚠️ 与 #4707 的「422」**不是同一个缺陷**（本单只治 422），故**不**在本单改 `seed.json`。
-OPEN_TENANT_SCOPE_DIVERGENCE = ("外帘打卷", "外帘装袋", "外帘发货")
+def test_open_tenant_scope_divergence_is_sold_out(seed_json):
+    """开租播种的 `scope` 与终态**必须逐行一致**（分叉集为空）。
 
+    历史（issue #4707 的登记，**已由 #4715 销账**）：`seed.json` 没给
+    `外帘打卷` / `外帘装袋` / `外帘发货` 写 `scope` ⇒ 开租播种按默认值落 `position`，
+    而迁移链（V67）/ bootstrap 落 `set` ⇒ 一樘「布 + 纱」订单把这三道**各付两次**
+    （#4408 双付家族，P1 涉钱）。
 
-def test_open_tenant_scope_divergence_is_explicitly_registered(seed_json):
-    """分叉登记（**只许缩短**）：开租播种的 `scope` 与终态不一致的工序**恰好**是这三道。
-
-    谁把 `seed.json` 补上了 ⇒ 本测试变红 ⇒ 必须来删掉这条登记（不允许它悄悄留着）。
+    **销账方式**（issue #4715）：`seed.json` 给三道补 `scope: "set"`（根因，治新租户）
+    + 新迁移 `V95` 纠正存量播种行（只改播种来源、不覆盖商家自建）。⇒ 本测试由「登记**恰好**
+    这三道」改判为「分叉集**必须为空**」—— 判据**只加强不放宽**（原来允许这三道分裂，
+    现在一道都不允许）。
     """
     seeded = {op["name"]: op for op in seed_json["operations"]}
     diverged = set()
@@ -408,9 +412,9 @@ def test_open_tenant_scope_divergence_is_explicitly_registered(seed_json):
         name = unquote(row["name"])
         if unquote(row["scope"]) != seeded[name].get("scope", "position"):
             diverged.add(name)
-    assert diverged == set(OPEN_TENANT_SCOPE_DIVERGENCE), (
-        f"开租播种 scope 分叉集变了：实测 {sorted(diverged)} / "
-        f"登记 {sorted(OPEN_TENANT_SCOPE_DIVERGENCE)} —— 若已修好请删除本登记")
+    assert diverged == set(), (
+        f"开租播种 scope 分叉集必须为空，实测 {sorted(diverged)} —— "
+        f"开租租户的「布 + 纱」订单会把这些套级工序**各付两次**（#4408 双付家族）")
 
 
 def test_scope_set_only_for_the_four_set_level_operations():

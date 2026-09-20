@@ -4,7 +4,7 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 docs/sql/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 32 张）：
+--   本文件缺失（schema.sql 已有，共 34 张）：
 --     client_request_keys, craft_calc_configs, daily_briefings, finance_transactions,
 --     knowledge_candidates,
 --     knowledge_cards, processing_fee_combination_versions, processing_fee_combinations,
@@ -20,7 +20,7 @@
 --     production_routings,
 --     production_work_logs, role_permissions,
 --     session_states, stock_ledger_entries, tenant_payment_qrcodes, user_suggestion_prefs,
---     user_memories
+--     user_memories, worker_report_audits, worker_sessions
 --     （production_option_factors / production_option_routings = V59，issue #4230 Java 侧；
 --       production_route_signals / production_routing_versions = V60，issue #4308 路线可配；
 --       processing_fee_combinations / processing_fee_combination_versions = V68，issue #4386
@@ -36,7 +36,9 @@
 --       craft_calc_configs = V80，issue #4528 = 包 E —— 算料公式租户级配置
 --       （缺行 = 用引擎默认值，**不插种子行**）；
 --       processing_order_sets / processing_set_part_tokens = V92，issue #4698 切片 ⓪
---       —— 套号落库 + 一部位一码的码载体（扫码报工闭环的数据层地基））
+--       —— 套号落库 + 一部位一码的码载体（扫码报工闭环的数据层地基）；
+--       worker_sessions / worker_report_audits = V98，issue #4733
+--       —— 工人登录态（报工身份的**唯一根**：服务端解身份、忽略 body 同名字段）+ 报工身份旁路账）
 --   本文件仍会创建，但**早已被迁移 DROP**（共 4 张）：
 --     knowledge_documents, knowledge_sync_history, rag_chunks,   ← V36 迁移 DROP
 --     quick_reply_templates

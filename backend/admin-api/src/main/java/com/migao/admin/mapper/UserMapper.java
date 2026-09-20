@@ -23,7 +23,7 @@ public interface UserMapper extends BaseMapper<User> {
      * （审计 07 P1-2：禁止静默 LIMIT 1 导致登录落错租户）。
      */
     @InterceptorIgnore(tenantLine = "true")
-    @Select("SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, session_ttl, status, created_at, updated_at, deleted FROM users WHERE phone = #{phone} AND deleted = 0 AND status = 'active' ORDER BY updated_at DESC")
+    @Select("SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, worker_no, session_ttl, status, created_at, updated_at, deleted FROM users WHERE phone = #{phone} AND deleted = 0 AND status = 'active' ORDER BY updated_at DESC")
     List<User> selectActiveUsersByPhoneIgnoreTenant(@Param("phone") String phone);
 
     /**
@@ -34,7 +34,7 @@ public interface UserMapper extends BaseMapper<User> {
      * 与 C 端 findOrCreate 语义相反：B 端「匹配不到即拒绝」，禁止自动建号。
      */
     @InterceptorIgnore(tenantLine = "true")
-    @Select("SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, session_ttl, status, created_at, updated_at, deleted FROM users WHERE phone = #{phone} AND deleted = 0 AND status = 'active' AND role NOT IN ('customer', 'agent') ORDER BY updated_at DESC")
+    @Select("SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, worker_no, session_ttl, status, created_at, updated_at, deleted FROM users WHERE phone = #{phone} AND deleted = 0 AND status = 'active' AND role NOT IN ('customer', 'agent') ORDER BY updated_at DESC")
     List<User> selectActiveEmployeesByPhoneIgnoreTenant(@Param("phone") String phone);
 
     /**

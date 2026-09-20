@@ -94,8 +94,12 @@
 
 ### 1.2 行业正名（来源：《成品窗帘生产流程及工作规范》，**用户提供的外部文档**）
 
-> ⚠️ **如实登记**：该文档**不在本仓库内**（实测 `git ls-tree -r --name-only origin/main | grep -i "生产流程\|工作规范\|成品窗帘"` ⇒ **零命中**）。
-> 下面这张对照表引自用户在本单评论里给出的逐字引文 + 仓库内既有登记，**我无法在仓库内逐字复核**（进 §8「无法判定」U1）。
+> 🔴 **口径订正（issue #4751，2026-09-20）**：原写「该文档**不在本仓库内** … **我无法在仓库内逐字复核**」
+> = **当时基线**（本设计定稿时，仓库内确无该文档）。
+> **后来变了**：引文摘录**已入库** = `docs/curtain-production-process-standard.md`（关联 #4678），
+> 其 §0 来源已更正为「**`curl` 直抓该页面**」（关联 #4682 的 PR #4750）⇒ **现已可逐字复核**（见该文 §0）。
+> ⚠️ 仍**不在仓库内**的 = **整篇原文**（该文只摘录术语相关段落、未逐字复核全文）—— 故**下方对照表仍应
+> 以该文 §2 的逐字引文为准**；需要完整章节时**向用户索取**，**不猜、不补写**（§8 U1 已同步订正）。
 
 | 仓库分组（`production_operations.group_name`） | 行业正名 | 行业职责（用户引文） |
 |---|---|---|
@@ -402,7 +406,21 @@ git ls-tree --name-only origin/main backend/admin-api/src/main/resources/db/migr
 ⇒ **当前最大号 = `V87`**（`V87__retire_factor_route_rules.sql`），**本次迁移 = `V88`**（新文件，例 `V88__retire_material_prep_and_fabric_position.sql`）。
 
 ⚠️ **已发布迁移不可改**（`backend/admin-api/src/main/resources/db/migration/V79__seed_fabric_route_and_packing_operation.sql:12-15` 逐字：`MigrationRunner` 按**文件名**记台账，已应用的文件整份跳过 ⇒ 改旧迁移只对全新库生效，存量环境永远拿不到 = 「CI 绿、功能静默缺失」，issue #4235）。
-⚠️ 另有**指纹守卫**：`tests/unit_ci_workflows/migration_fingerprints.json` 对每个已发布迁移钉 `sha256`（实测 85 条，含 V79）⇒ **改 V79 = 红**。必须**新增 V88**。
+⚠️ 另有**指纹守卫**：`tests/unit_ci_workflows/migration_fingerprints.json` 对**每个已发布迁移**钉 `sha256`（**覆盖全部已发布迁移；条数现取、本文不写死**）⇒ **改 V79 = 红**。必须**新增 V88**。
+
+```bash
+# 复算「指纹覆盖条数」（**本文不写死任何条数**）
+git show origin/main:tests/unit_ci_workflows/migration_fingerprints.json \
+  | python3 -c "import json,sys; print(len(json.load(sys.stdin)['migrations']))"   # → 当前已登记条数
+```
+
+> 🔴 **口径订正（issue #4742，2026-09-20）：本条原写「实测 ~~85 条~~，含 V79」⇒ 改为「现取、不写死」。**
+> **① 当时基线**：本文定稿时 `migrations` 键 = **85 条**（含 `V79`）—— **原措辞保留在上一段**。
+> **② 后来变了**：`V90` / `V91` / `V92` / `V93` / `V94` 相继入账 ⇒ **该读数早已过期**。
+> ⚠️ **连「转述口径」也会当场过期**：主会话给过的「现为 89 条含 V92」在实测时**已非 89** ——
+> 同款实证见 `docs/design/set-code-and-scan-loop.md` §1.2 的口径订正注（issue #4731 / PR #4740）。
+> **③ 故结论改为**：条数**现取**（复算命令见上），**不写死**；
+> **「已发布迁移不可改 ⇒ 改 V79 = 红」的结论不变**。
 
 ### 5.2 V88 改什么（逐条）
 
@@ -522,9 +540,12 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 |---|---|---|
 | `tests/unit_ci_workflows/test_fabric_route_seed.py` | 判据 4 钉死 `mainline=("配料","打包")`（`tests/unit_ci_workflows/test_fabric_route_seed.py:50`） | **必须**同步改判（`配料` → `裁剪`）；判据 6 的「每租户两道工序行」也要改 |
 | `tests/unit_ci_workflows/test_production_catalog_seed.py` | 钉「`routing.py` 常量 ≡ V71/V79 字面量种子」 | **必须**同步（种子字面量变了） |
-| `tests/unit_ci_workflows/migration_fingerprints.json` | 85 条 `sha256` | **新增 V88 一条**（V79 的指纹**不动**） |
+| `tests/unit_ci_workflows/migration_fingerprints.json` | **覆盖全部已发布迁移**（**条数现取、不写死**；原写 ~~85 条 `sha256`~~ ⇒ **基线读数**留档，见 §5.1 口径订正注） | **新增 V88 一条**（V79 的指纹**不动**） |
 | `backend/admin-api/src/main/resources/production-templates/curtain/seed.json` | 描述里逐字写「37 道工序（含 #4529 的 配料/打包）」 | **必须**同步（`配料` 退场后是 36 道） |
 | `backend/admin-api/src/main/resources/db/migration/V79__….sql` | —— | **一个字不动**（§5.1 红线） |
+
+⚠️ **指纹条数现取、本文不写死**（原写 ~~85 条~~ = **基线读数**，早已过期：`V90`~`V94` 相继入账 ⇒ 见 §5.1 口径订正注）：
+`git show origin/main:tests/unit_ci_workflows/migration_fingerprints.json | python3 -c "import json,sys; print(len(json.load(sys.stdin)['migrations']))"`（复算命令同 §5.1）。
 
 ⚠️ **本单（docs-only）不改上述任何文件** —— 它们是**实现单**的改动面，登记在此以免漏。
 
@@ -566,7 +587,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 |---|---|---|---|
 | C1 | 槽位是**主线内部**的**顺序**模型（`docs/design/operation-slot-model.md:389-391`：边缘槽 / 打褶槽 / 挂钩槽 / 蒸烫槽…），用于**派生锚点** | 本设计的两层是**工艺项表格的分区**（按 `scope`），与「顺序」正交 | **不冲突** —— 两个问题域不同（一个是「工序排第几」，一个是「这道工序属哪个区」）。**但**：`docs/design/ai-craft-config.md:223-224` 要求「商家可见（人话）一律用**槽位**」⇒ 与用户裁定「界面用行业术语、不许用我们发明的词」**冲突**（见 C3） |
 | C2 | `docs/design/operation-slot-model.md:881` 计划**新增槽位定义表** `production_operation_slots` | 本设计**不引入**任何槽位表；分区判据用**既有** `scope` | **本设计不依赖它**（#4650 阶段 4 的产物）。若阶段 4 落地后槽位成为真值源，**本设计的 §4.2 分区判据不受影响**（`scope` 与槽位是两把尺） |
-| C3 | `docs/design/ai-craft-config.md:208` 逐字：「术语口径：**商家可见与 AI 解释**一律按槽位口径表述；「锚点」只作**实现列名**保留」；`docs/design/ai-craft-config.md:223` 把「槽位」列为**商家可见（人话）** | 用户 2026-09-20 裁定（#4673 评论）：「**界面第一层用行业术语**（裁剪/车位/后整/质检），**不许**用"槽位"这类我们发明的词」 | **用户裁定为准**。⇒ `docs/design/ai-craft-config.md` 的 §2.5 需要**回改**（把「商家可见一律用槽位」收窄为「**仅主线顺序解释**可用槽位；**工艺项分区/命名**用行业术语」）。**本单不改它**（docs-only 单只产出一份文件），**登记为实现单/后续单的动作** |
+| C3 | `docs/design/ai-craft-config.md` §2.5 逐字（**历史留档，勿当现状读**）：「术语口径：**商家可见与 AI 解释**一律按槽位口径表述；「锚点」只作**实现列名**保留」；同文把「槽位」列为**商家可见（人话）** | 用户 2026-09-20 裁定（#4673 评论）：「**界面第一层用行业术语**（裁剪/车位/后整/质检），**不许**用"槽位"这类我们发明的词」 | **用户裁定为准**，且**已回改**（关联 #4678）：`docs/design/ai-craft-config.md` §2.5 现标题为「**仅主线顺序的解释**可用槽位；**商家可见的分组/分区一律用行业术语**（裁剪/车位/后整/质检）」，并带「口径收窄（关联 #4678）」注。🔴 **口径订正**：原写「需要**回改**」= **当时基线的动作项**（原文措辞保留），**该动作已由 #4678 完成** ⇒ 现读作「**已回改**」。**本单不改它**（docs-only） |
 | C4 | `docs/design/operation-slot-model.md:182` 逐字：「槽位的**语义已被冻结为「打褶那一道」**」（依据 `backend/ai-agent-service/app/production/routing.py:470`） | 本设计 §1.3 **采纳**这条：全仓只有「打褶槽」有真值源逐字依据；其余槽名是该设计的推导 | **一致**（本设计不引用任何槽名做界面分区） |
 
 ### 7.2 vs `docs/design/ai-craft-config.md`（AI 层）
@@ -588,8 +609,15 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 
 > | 10 | **布料单 = `配料` + `打包` 两道**；成品帘单主线 **9 + 打包 = 10 道**，且 `打包` 只出现 1 行（套级，不按部位展开） | 多/少/重复 ⇒ 红 |
 
-⇒ V88 生效后**这条判据会变红**（布料单变成 `裁剪` + `打包`）。
-⇒ **该文档需要回改**（`配料` → `裁剪`），**本单不改**（docs-only，只产出一份文件）⇒ **登记为实现单的动作**。
+**当时的登记（历史留档，勿当现状读）**：上面那段逐字引文是 **#4678 回改之前**的形态；
+当时（本单写就时）该文档**尚未回改**，`docs/design/craft-calc-and-fabric-routing.md` 的判据 #10 钉的还是旧口径
+⇒ **若 V88 生效，这条判据会变红**（布料单变成 `裁剪` + `打包`）。
+⇒ 因此当时**登记**：「该文档需要回改（`配料` → `裁剪`），本单不改（docs-only），留给实现单」。
+
+> ✅ **现状（已消除）**：**已由 #4678 回改** —— 判据 #10 现已写成「**布料单 = `裁剪` + `打包` 两道**
+> （**目标口径 · issue #4676 / 迁移 V88 生效**；旧口径 `配料` + `打包` **已作废**）」，该文档下方另有
+> 「**口径变更（issue #4678）**」注。⇒ 本处**不再需要**实现单回改；保留本节的**登记历史**，
+> 是为了说明「当时为什么把这条冲突登记下来」（§7 的其它冲突点**仍照旧**）。
 
 ---
 
@@ -608,7 +636,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 
 | # | 项 | 为什么无法判定 |
 |---|---|---|
-| **U1** | 《成品窗帘生产流程及工作规范》的**逐字原文** | 该文档**不在仓库内**（实测 `git ls-tree -r --name-only origin/main \| grep -i "生产流程\|工作规范\|成品窗帘"` ⇒ 零命中）。§1.2 的对照表引自用户在 #4673 评论里给出的引文 ⇒ **无法在仓库内逐字复核**。**建议**：实现单把该文档（或引文摘录）**入库**，让术语有可复核的真值源 |
+| **U1** | 《成品窗帘生产流程及工作规范》的**逐字原文** | 🔴 **该限制已解除**（**历史留档，勿当现状读**）：~~该文档**不在仓库内**（实测 `git ls-tree -r --name-only origin/main \| grep -i "生产流程\|工作规范\|成品窗帘"` ⇒ 零命中）。§1.2 的对照表引自用户在 #4673 评论里给出的引文 ⇒ **无法在仓库内逐字复核**。**建议**：实现单把该文档（或引文摘录）**入库**~~ ⇒ **已入库** = `docs/curtain-production-process-standard.md`（关联 #4678），且该文 §0 的来源标注已更正为「**`curl` 直抓该页面**」（关联 #4682 的 PR #4750，**非二手转述**）⇒ **§1.2 的术语引文现已可在仓库内逐字复核**（见该文 §0「效力边界」+ §2「逐字引文」）。⚠️ **仍未入库的** = **整篇原文**（该文只摘录术语相关段落、**未**逐字复核全文）⇒ 需要完整章节时**向用户索取**，**不猜、不补写** |
 | **U2** | 「未定价 ⇒ 告警、不得静默 ¥0.00」的**既有机制** | **实测不存在**（§3.5）：后端零命中，唯一载体是前端徽标。⇒ 该验收判据需要**新落码**，不在本单 |
 | **U3** | `精裁` 与 `裁剪` 是**同工位两种叫法**还是**两道活**（粗裁 → 精裁） | 仓库**明确挂着待确认**：`backend/ai-agent-service/app/production/routing.py:119`（`PENDING_CUSTOMER_CONFIRMATION_OPERATIONS`）+ `backend/ai-agent-service/app/production/routing.py:112-114` 逐字「**不猜**」+ `docs/design/craft-routing-customization.md:20`（登记为「企业差异」）。**用户只裁定了布料单用 `裁剪`，没裁定两者关系** |
 | **U4** | `scope='set'` 是否**长期**等价于「交付环节」 | 这是**实测巧合**（§4.2）：今天的 4 道交付工序恰好都是 `scope='set'`。**没有**任何真值源说「不改变产品 ⇔ 套级」。⇒ 需**待观察**（出现反例时分区判据要换） |
@@ -628,7 +656,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 | **F5** | 「`配料` 是公共工序（用户早期口径）」 | 用户 **00:35 的评论已明确更正**为 `裁剪`（「先前说的『配料是公共工序』是**不精确的叫法**」） | ⇒ 以 `裁剪` 为准（§3.3） |
 | **F6** | 「`布料` 降为形态 ⇒ 36 格价目**全部**退场」 | 若**全部**退场，存量布料单补生成会**静默丢 `裁剪`**（§5.3）⇒ 必须**留 1 格**（`裁剪 × 布料`），实际退场 **31 格**（**订正**：原写值见 §5.2 表后的「口径订正」注） | ⇒ §5.2 ⑤ |
 | **F7** | 「`质检` 是「工序」层成员」（用户设计输入里的两层表） | `质检` **不在任何主线**（`backend/ai-agent-service/app/production/routing.py:480` 的 10 道不含它），且被登记为 `PENDING_CUSTOMER_CONFIRMATION_OPERATIONS` | ⇒ §4.2 第 2 条 + U5：界面呈现，但**不声称**它会执行 |
-| **F8** | 「改 V79 即可」 | V79 是**已发布迁移**（不可改）+ 有 `sha256` 指纹守卫（`tests/unit_ci_workflows/migration_fingerprints.json`，85 条含 V79） | ⇒ 必须**新增 V88**（§5.1） |
+| **F8** | 「改 V79 即可」 | V79 是**已发布迁移**（不可改）+ 有 `sha256` 指纹守卫（`tests/unit_ci_workflows/migration_fingerprints.json`，**条数现取、本文不写死**；原写 ~~85 条含 V79~~ = **基线读数**，见 §5.1 口径订正注） | ⇒ 必须**新增 V88**（§5.1） |
 
 ---
 
@@ -774,10 +802,19 @@ git ls-tree --name-only origin/main backend/admin-api/src/main/resources/db/migr
 
 git ls-tree --name-only origin/main backend/admin-api/src/main/resources/db/migration/ | wc -l
 # → 85（V1…V87，中间有跳号）
+#   🔴 **口径订正（issue #4751，2026-09-20）**：`# → 85` = **基线读数**（原措辞保留在上一行）。
+#   **① 当时基线**：本文定稿时 `V1…V87` ⇒ **85**。**② 后来变了**：`V88`~`V95` 相继入账
+#   （`V95` 由关联 #4715 的 PR #4745 合入）⇒ **该读数早已过期**。
+#   **③ 故改为 Z**：命令不变，数字以**当次实跑输出**为准（本文**不写死**）。
 
 git show origin/main:tests/unit_ci_workflows/migration_fingerprints.json \
   | python3 -c "import json,sys; print(len(json.load(sys.stdin)['migrations']))"
 # → 85（每个已发布迁移一条 sha256 ⇒ 改 V79 = 红）
+#   🔴 **口径订正（issue #4751，2026-09-20）**：同上，`# → 85` = **基线读数**（原措辞保留在上一行）。
+#   **① 当时基线**：85。**② 后来变了**：`V88`~`V95` 相继入账 ⇒ 指纹条数随之增长。
+#   **③ 故改为 Z**：以这条命令的**当次输出**为准（**不写死**；命令自证，§19.2③）。
+#   ⚠️ 上面两条命令的读数**应当相等**（每个已发布迁移一条 sha256）—— 不等即说明账本漏登/多登，
+#      先查账再引用（核法：`git ls-tree … | grep -c '\.sql$'` 与 JSON 键数逐条比对）。
 ```
 
 ### A.9 既有守卫（V88 的改动面）
@@ -794,8 +831,12 @@ git show origin/main:tests/unit_ci_workflows/test_fabric_route_seed.py | grep -n
 ### A.10 既有设计的冲突点（§7）
 
 ```bash
-git show origin/main:docs/design/craft-calc-and-fabric-routing.md | sed -n '179p'
-# → | 10 | **布料单 = `配料` + `打包` 两道**；… | 多/少/重复 ⇒ 红 |   ← V88 后这条会变红（§7.4）
+git show origin/main:docs/design/craft-calc-and-fabric-routing.md | grep -n "布料单 = "
+# → 判据 #10 的**现状**（**已由 #4678 回改**）：
+#    | 10 | **布料单 = `裁剪` + `打包` 两道**（**目标口径 · issue #4676 / 迁移 V88 生效**；
+#         旧口径 `配料` + `打包` **已作废**）… | 多/少/重复 ⇒ 红 |
+#   ⚠️ 本单写就时该行逐字为「**布料单 = `配料` + `打包` 两道**」⇒ 当时登记为「V88 后这条会变红」（§7.4）。
+#      该取证**已过时**（#4678 已回改，见 §7.4 的「现状（已消除）」）；此处只作**历史留档**。
 
 git show origin/main:docs/design/ai-craft-config.md | sed -n '208p'
 # → ### 2.5 术语口径：**商家可见与 AI 解释**一律按槽位口径表述；「锚点」只作**实现列名**保留

@@ -3,6 +3,7 @@ package com.migao.admin.controller;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.service.ProcessingOrderService;
@@ -14,6 +15,7 @@ import com.migao.admin.service.ProcessingFeeCombinationCommandService;
 import com.migao.admin.service.ProcessingFeeQueryService;
 import com.migao.admin.service.ProductionRoutingCommandService;
 import com.migao.admin.service.ProductionRoutingReadService;
+import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -92,6 +94,16 @@ public class ProductionController {
      */
     @org.springframework.beans.factory.annotation.Autowired
     private ProductionOperationPositionCommandService productionOperationPositionCommandService;
+
+    /**
+     * 扫码解析 + 工序推断（切片 ①，issue #4698）。
+     *
+     * <p>与上面几条同款用字段注入：本类构造签名被 {@code ProductionControllerTest} 的 standaloneSetup
+     * 显式装配（6 个参数），加参数会把既有测试的装配全改一遍 —— 而本单的改动面不应扩到那里。
+     * Spring 生产装配下该依赖一定非 null（同包 {@code @Service}）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    private ProductionScanService productionScanService;
 
     /**
      * 未定价实例的**显式补价路径**（issue #4709 C）：只补 {@code NULL}、已有价一律不动、进度不清零。
@@ -201,6 +213,34 @@ public class ProductionController {
     }
 
     /**
+     * 扫码解析 + 工序推断（**只读**，切片 ① / issue #4698；设计 §2.3 / §2.6 / §3）
+     * GET /api/admin/production/scan?token=…&amp;operation_id=…
+     *
+     * <p>把「找部位 + 找工序」两步从工人手里拿走（今天 ≥4 步 ⇒ 一次扫码 = 1 步）：</p>
+     * <ul>
+     *   <li><b>新码</b>（{@code processing_set_part_tokens}，带套带部位）⇒ 返回
+     *       {@code granularity="set_position"} + {@code (set_no, position)} + **系统推断的下一道待做工序**
+     *       （部位级优先 → 套级回落 {@code rerouted=true}），{@code needs_selection} 为空
+     *       —— 部位由码给出，**工人不选**；</li>
+     *   <li><b>旧码</b>（既有四形态 qr_token / processing_order_no / order_no / order_id）⇒ 降级形态
+     *       {@code granularity="order"} + {@code needs_selection:["set","position"]} + 可选清单
+     *       —— 🔴 <b>绝不默认取第 1 套</b>（{@code set_no}/{@code position}/{@code operation} 一律 null）；</li>
+     *   <li>{@code operation_id} 可选 = 工人「一键改」（必须属于本次扫码的部位/套，否则 422）。</li>
+     * </ul>
+     *
+     * <p><b>本端点不写库</b>（报工主闭环 = 切片 ②）：它只返回一屏所需数据。
+     * 硬约束「工序必须确定」在本层体现为<b>拒绝产出非唯一确定的工序</b>
+     * （{@code seq} 重复 ⇒ 422 {@code OPERATION_AMBIGUOUS}，不静默取第一道）。</p>
+     */
+    @GetMapping("/scan")
+    public ApiResponse<Map<String, Object>> scan(
+            @RequestParam(name = "token") String token,
+            @RequestParam(name = "operation_id", required = false) String operationId) {
+        return ApiResponse.success(productionScanService.resolve(
+                token, operationId, TenantContext.getTenantId()));
+    }
+
+    /**
      * 扫码报工（推进工序进度 + 记录个人计件）
      * POST /api/admin/production/orders/{orderId}/operations/{operationId}/report
      * body: {worker_id, worker_name, qty, qualified_qty, work_type(normal/rework/scrap)}
@@ -216,8 +256,22 @@ public class ProductionController {
             @PathVariable String operationId,
             @RequestBody(required = false) Map<String, Object> body,
             @RequestHeader(value = ClientRequestIdService.HEADER, required = false) String clientRequestId) {
+        // 商家侧报工（issue #4733）：**显式**沿用既有 body 口径 —— 来源被标注为 client_body 并落
+        // worker_report_audits。取舍：本单不改变商家侧既有行为（逐条断言见 ProductionServiceTest），
+        // 但「谁都能填」这件事从此在数据上**可见**，不再静默。工人身份请走 /api/worker/**（服务端解）。
         return ApiResponse.success(productionService.report(
-                orderId, operationId, body, TenantContext.getTenantId(), clientRequestId));
+                orderId, operationId, body, TenantContext.getTenantId(), clientRequestId,
+                WorkerIdentity.fromClientBody(
+                        asText(body, "worker_id"), asText(body, "worker_name"))));
+    }
+
+    /** body 取文本（商家侧报工身份口径，与 ProductionService.str 同语义：空白 ⇒ null）。 */
+    private static String asText(Map<String, Object> body, String key) {
+        if (body == null || body.get(key) == null) {
+            return null;
+        }
+        String value = String.valueOf(body.get(key));
+        return value.isBlank() ? null : value;
     }
 
     /**

@@ -228,6 +228,19 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.OrderMapper orderMapper;
     @MockBean
     private com.migao.admin.mapper.ProcessingOrderMapper processingOrderMapper;
+
+    // 工人登录态（issue #4733）：WorkerSessionFilter 依赖这两个 bean，
+    // 缺任一 ⇒ 本测试的 Spring 上下文起不来（本文件既有口径：Mapper 一律 @MockBean 顶替）
+    @MockBean
+    private com.migao.admin.mapper.WorkerSessionMapper workerSessionMapper;
+
+    // 报工身份旁路账 Mapper（issue #4733）：MyBatis-Plus 自动扫描到的 Mapper，本上下文无
+    // sqlSessionFactory（MybatisPlusAutoConfiguration 已排除），按本文件既有口径 @MockBean 顶替
+    @MockBean
+    private com.migao.admin.mapper.WorkerReportAuditMapper workerReportAuditMapper;
+
+    @MockBean
+    private com.migao.admin.worker.WorkerSessionService workerSessionService;
     @MockBean
     private com.migao.admin.mapper.PermissionMapper permissionMapper;
     @MockBean
@@ -286,6 +299,13 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.ProcessingPositionOperationMapper processingPositionOperationMapper;
     @MockBean
     private com.migao.admin.mapper.ProductionWorkLogMapper productionWorkLogMapper;
+    // 扫码闭环两张新表（issue #4698 切片 ⓪，V92）：一部位一码 token + 套号载体。同族坑再犯一次
+    // （实测：漏了前者 ⇒ `productionController` 的 `productionScanService` 建不出来 ⇒
+    // 本类 26 条全 error「Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required」）。
+    @MockBean
+    private com.migao.admin.mapper.ProcessingSetPartTokenMapper processingSetPartTokenMapper;
+    @MockBean
+    private com.migao.admin.mapper.ProcessingOrderSetMapper processingOrderSetMapper;
     // 单价版本表（issue #4204，V55）：同上——@MapperScan 会尝试创建它，没有 sqlSessionFactory
     // 时上下文整体起不来（26 条安全用例连坐失败，实测）。
     @MockBean

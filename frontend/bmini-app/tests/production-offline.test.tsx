@@ -117,9 +117,8 @@ function makeDetail(): OrderOperations {
   }
 }
 
+// 身份**不在请求体里**（issue #4733）：服务端从工人 session 解身份
 const PAYLOAD: ReportPayload = {
-  worker_id: 'u1',
-  worker_name: '张师傅',
   qty: 11,
   qualified_qty: 11,
   work_type: 'normal',

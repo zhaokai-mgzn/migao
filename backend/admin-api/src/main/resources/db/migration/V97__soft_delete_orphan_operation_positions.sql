@@ -52,7 +52,10 @@
 --
 -- ## 迁移号（**现取**）
 -- `ls backend/admin-api/src/main/resources/db/migration | tail` 现取 ⇒ **V97**
--- （V95 被 #4715 预留、V96 被 #4741 预留；若 push 时 V97 也被占 ⇒ 取下一个空闲号并在 PR body 说明）。
+-- （合入时 main 已有 V95 = #4715、V98 = #4733；**V96 / V97 空闲**，取 V97；
+--  若 push 时 V97 也被占 ⇒ 取下一个空闲号并在 PR body 说明）。
+-- ⚠️ 本仓允许**号段有洞**（V96 缺号不影响 Flyway：`MigrationRunner` 按版本号排序，
+-- 不要求连号；且已应用的迁移按**文件名**记账）。
 --
 -- ## 为什么必须是**新迁移**（不能改 V71 / V88~V94）
 -- `MigrationRunner` 的台账 `schema_migrations` 按**文件名**记账、已应用的文件**整份跳过**

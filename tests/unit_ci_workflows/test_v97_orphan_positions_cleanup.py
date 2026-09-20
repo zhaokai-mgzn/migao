@@ -106,14 +106,18 @@ def _java_variant_map() -> set:
 
 # ══════════════════════ 静态判据（文本层） ══════════════════════
 
-def test_v97_migration_exists_with_next_free_number():
-    """迁移号**现取**：V97 存在且目录里没有更高的号（V95 被 #4715、V96 被 #4741 预留）。"""
+def test_v97_migration_exists_and_version_is_unique():
+    """迁移号**现取**：V97 存在，且目录里**恰有一个** V97（禁止与已发布迁移重号）。
+
+    ⚠️ **不断言「V97 是最高号」**（第一版那样写，本单实测被 main 前进打红）：
+    main 上已有 **V98**（工人登录态，#4733）⇒ 「最高号」是**可变**断言，
+    一有更新的迁移就假红。真正的判据是**同号唯一**（另有全仓守卫
+    `test_migration_version_uniqueness.py` 兜底），本处只钉「V97 在、且只此一条」。
+    """
     assert MIGRATION.exists(), f"缺少 {MIGRATION.name}"
-    versions = sorted(int(m.group(1)) for m in
-                      (re.match(r"V(\d+)__", p.name) for p in MIGRATION_DIR.glob("V*.sql")) if m)
-    assert versions[-1] == 97, (
-        f"V97 不是最高号（实际最高 V{versions[-1]}）—— 若 V97 已被别的 PR 占用，"
-        "本迁移必须改号并在 PR body 说明（禁止与已发布迁移重号）")
+    v97 = sorted(p.name for p in MIGRATION_DIR.glob("V97__*.sql"))
+    assert v97 == [MIGRATION.name], (
+        f"V97 号不唯一（实际 {v97}）—— 若 V97 已被别的 PR 占用，本迁移必须改号并在 PR body 说明")
 
 
 def test_v97_variant_map_matches_production_code():

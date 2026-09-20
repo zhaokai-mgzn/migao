@@ -32,9 +32,31 @@
 | **R4** | 公式参数**租户级可配**；现有常量 = 默认值 | 用户 |
 | **R5** | 布料单**只有一道工序「配料」**，且要在**工序表**中定义 | 用户 |
 | **R6** | 每租户默认**两条**基础工序路线：一条**窗帘**的、一条**布料**的 | 用户 |
-| **R7** | 「布料」作为**第 4 个部位**（部位价目表 84 → **116 行**，逐行显式） | 用户（三选一选 A） |
+| **R7** | 「布料」作为**第 4 个部位**（部位价目表 84 → ~~**116 行**~~ ⇒ **落地值 = 120 行**，**行数现取、本文不写死**，逐行显式；见下方「口径订正」注） | 用户（三选一选 A） |
 | **R8** | 「配料」工序：**单位 = 米**、**计件单价留空（NULL）+ `source='待确认'`**，商家自配 | 用户（三选一选 A） |
 | **R9** | `curtain_calc.py` / `routing.py` 视为**确定性核心**，本轮**放开可改**；prompt / 技能 / 工具定义 / graph / 引导流程**一字不动** | 用户（两轮澄清均选 A） |
+
+> 🔴 **口径订正（issue #4751，2026-09-20）**：R7 原写「部位价目表 84 → **116 行**」。
+> **① 当时基线**：**84 → 116**（= 设计稿的**预估**；`84` = V71 终态、`116` = 预估的「84 + 32」）。
+> **② 后来变了**：关联 #4529 的 PR #4553 **落地实测 = 120 行**（`84 + 36`；该 PR 的提交信息逐字写着
+> 「同步注释/文档字符串里的矩阵行数（**84→120**）」）⇒ **R7 / §5 分包表 F 行的 `116` 未随之更新**，
+> 属**设计稿预估值 vs 落地值**的漂移（同文 §4.3 的 120 行已在 #4553 同步，故文内**自相矛盾**）。
+> **③ 故改为 Z**：**不写死**，改为「**现取 + 复算命令**」（三条命令互为交叉校验）：
+>
+> ```bash
+> # ① 真值源（Python）：`_POSITION_PRICE_ROWS` 的元组行数
+> awk '/^_POSITION_PRICE_ROWS/,/^\]/' backend/ai-agent-service/app/production/routing.py | grep -c '^    ("'
+> # ② 迁移链终态（V71 建 84 行 + V79 补 36 行；V88 是软删 `deleted=1`，不减总行数）
+> git show origin/main:backend/admin-api/src/main/resources/db/migration/V71__normalize_routing_model_structure.sql | awk '/INSERT INTO production_operation_positions/,/;/' | grep -c "^  ('"
+> git show origin/main:backend/admin-api/src/main/resources/db/migration/V79__seed_fabric_route_and_packing_operation.sql | awk '/INSERT INTO production_operation_positions/,/;/' | grep -c "^  ('"
+> # ③ 开租播种终态（bootstrap）：同一张表的 INSERT 行数
+> awk '/INSERT INTO production_operation_positions/,/;/' docs/sql/schema.sql | grep -c "^  ('"
+> ```
+>
+> （本单实测：① = **120**、② = **84 + 36**、③ = **120** ⇒ 三源一致，**120** 是当前总行数。）
+> ⚠️ **口径提示**：`V88` 之后「矩阵行数」与「**生效**格数」**不再相等**（V88 软删 `配料 × 4 部位` +
+> 其余布料格共 31 格，但 `deleted=1` 仍在表里）⇒ 引用「多少行」时**必须说清是哪一种**
+> （`总行数` / `生效行数` / `applicable=TRUE` 行数）。本设计 R7 指的是**总行数（逐行显式播种）**。
 
 ---
 
@@ -159,7 +181,7 @@
 |---|---|---|---|
 | **D** | #4527 | `curtain_calc.py` 逐片口径 + 向上进位 + `formula` 推导；Java 代理透传；`craft-calc-request.ts` **放行打孔** | 无 |
 | **E** | #4528 | 租户级配置表（V80 `craft_calc_configs`，单行/租户，**缺行 = 引擎默认值，不播种**）+ 读写端点（`GET|PUT /api/admin/production/craft-calc-config`）+ 护栏（422 逐条理由）+ 配置页 tab（挂 `/production/routings` 第三个 tab，不新开菜单）+ `CraftCalcClient` 注入本租户配置 | **等 D**（同文件） |
-| **F** | #4529 | `配料` 工序 + 第 4 部位（116 行）+ 第 2 条默认路线 + 订单侧读 `saleForm` + 开租播种 | **等 A（#4525，`schema.sql`）+ C（#4452，`ProcessingOrderService`）** |
+| **F** | #4529 | `配料` 工序 + 第 4 部位（~~116 行~~ ⇒ **落地值 120 行**，**现取**、见 R7 的口径订正注）+ 第 2 条默认路线 + 订单侧读 `saleForm` + 开租播种 | **等 A（#4525，`schema.sql`）+ C（#4452，`ProcessingOrderService`）** |
 
 ---
 
@@ -198,7 +220,9 @@
 > ⇒ ai-agent 排期时必须**连同该测试一起改判**（文案改成「已被 #4673 改判为 `裁剪`」）并同步 `seed.json`。
 > **本会话不动工**（用户裁定 #4652）⇒ 本单**只登记**，登记处见
 > `docs/design/set-code-and-scan-loop.md` §10 的 **C12**。
-> 上游依据：`docs/design/public-operations-and-craft-ui.md` §7.4 已把此处登记为「**该文档需要回改**」的冲突点。
+> 上游依据：`docs/design/public-operations-and-craft-ui.md` §7.4 **曾**把此处登记为「该文档需要回改」的冲突点
+> —— 该回改**已由 #4678 完成**（本表判据 #10 的上方「口径变更」注即其结果），§7.4 的现状块已同步；
+> 此处保留指向，只为**留档**「当时为什么登记这条冲突」。
 
 ---
 
@@ -217,8 +241,9 @@
    但 #4343 明确登记过这两道的对应关系**未能确定** ⇒ **按 ERP 顺序推断、待客户确认**（不假装定论）。
 7. **设计稿与 DDL 冲突一处（以代码事实为准，issue #4529）**：§4.3 写「`配料` 计件单价留空（NULL）」，
    而 `production_operations.unit_price` 是 `NOT NULL DEFAULT 0`（V49 DDL）⇒ 工序库行落 **0**；
-   「未定价」的真载体 = **部位价目行** `unit_price = NULL` + `applicable = TRUE`（120 行里的
-   `配料 × 布料` / `打包 × 4 部位`）+ `source` 落受控枚举值 `占位待确认`（**不是** `待确认` ——
+   「未定价」的真载体 = **部位价目行** `unit_price = NULL` + `applicable = TRUE`（**行数现取**，见 R7
+   的口径订正注；原文写 ~~120 行里的~~ = 当时读数 —— **基数未变，但 V88 后「总行数」≠「生效行数」**，
+   故此处不再写死；`配料 × 布料` / `打包 × 4 部位`）+ `source` 落受控枚举值 `占位待确认`（**不是** `待确认` ——
    后者不在 `production_operations_source_check` 的枚举里）。
 8. **本包未做（照实登记）**：`docs/sql/schema.sql` 与 `routing.py` / V79 / Java 播种（共四源）已逐行收敛；
    **真实 LLM 评测未跑**（用户裁定「默认不自动验证」）⇒ agent 侧行为面未验（本包只动确定性层）。

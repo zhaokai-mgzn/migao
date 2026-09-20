@@ -9,7 +9,9 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
+import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.ProcessingPositionOperation;
+import com.migao.admin.entity.ProcessingSetPartToken;
 import com.migao.admin.entity.ProcessingFeeCombination;
 import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProductionOperation;
@@ -38,6 +40,7 @@ import com.migao.admin.service.ProcessingFeeQueryService;
 import com.migao.admin.service.ProductionOperationQueryService;
 import com.migao.admin.service.ProductionInstanceRepricingService;
 import com.migao.admin.service.ProductionOperationQtyClient;
+import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
 import com.migao.admin.service.RoutingModelFixture;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -151,6 +154,11 @@ class ProductionControllerTest {
     /** 应做数量来源（issue #4208 接线）：存量单补工序的派生路径与 generate 路径同一份，故也要打桩。 */
     @Mock
     private ProductionOperationQtyClient operationQtyClient;
+    /** 扫码解析的两张新表（V92，切片 ⓪ / issue #4698）：一部位一码 token + 套号载体。 */
+    @Mock
+    private com.migao.admin.mapper.ProcessingSetPartTokenMapper setPartTokenMapper;
+    @Mock
+    private com.migao.admin.mapper.ProcessingOrderSetMapper orderSetMapper;
 
     @BeforeEach
     void setUp() {
@@ -190,6 +198,11 @@ class ProductionControllerTest {
                 "processingFeeQueryService", feeQueryService);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
                 "processingFeeCombinationCommandService", feeCommandService);
+        // 扫码解析 + 工序推断（切片 ①，issue #4698）：同样字段注入 ⇒ 这里装配真实服务
+        // （只 mock Mapper），端点契约（路径 / 参数名 / 信封）才有意义。
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "productionScanService",
+                new ProductionScanService(setPartTokenMapper, orderSetMapper, processingOrderMapper,
+                        positionOperationMapper, orderItemMapper, queryService, service));
         // 未定价实例补价（issue #4709 C）：与上面同款字段注入 —— 真实服务（只 mock Mapper），
         // 响应形态就是前端消费的那个 Map（不复制第二份装配、不动既有 6 参构造）。
         ProductionInstanceRepricingService repricingService = new ProductionInstanceRepricingService(
@@ -398,6 +411,73 @@ class ProductionControllerTest {
                 .andExpect(jsonPath("$.data.progress.total").value(2))
                 .andExpect(jsonPath("$.data.progress.done").value(1))
                 .andExpect(jsonPath("$.data.progress.percent").value(50));
+    }
+
+    @Test
+    @DisplayName("扫码解析（切片 ①）→ 200：新码带套带部位 + 系统推断下一道，部位不选")
+    void scanResolvesNewTokenToSetPositionAndInferredOperation() throws Exception {
+        when(setPartTokenMapper.selectOne(any())).thenReturn(ProcessingSetPartToken.builder()
+                .id("tok-1").tenantId(TENANT).processingOrderId(PO_ID).setId("set-14")
+                .orderItemId("oi-cloth").positionKind("布帘").token("newtok").deleted(0).build());
+        when(orderSetMapper.selectById("set-14")).thenReturn(ProcessingOrderSet.builder()
+                .id("set-14").tenantId(TENANT).processingOrderId(PO_ID)
+                .setIndex(14).setNo("CSO260915-02615-014").deleted(0).build());
+        when(processingOrderMapper.selectById(PO_ID)).thenReturn(processingOrder("tok123"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                scanOp("op-1", 1, "精裁-布", "done"),
+                scanOp("op-2", 2, "定型-布", "pending")));
+
+        mockMvc.perform(get("/api/admin/production/scan").param("token", "newtok"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.granularity").value("set_position"))
+                .andExpect(jsonPath("$.data.set_no").value("CSO260915-02615-014"))
+                .andExpect(jsonPath("$.data.set_index").value(14))
+                .andExpect(jsonPath("$.data.position.order_item_id").value("oi-cloth"))
+                .andExpect(jsonPath("$.data.position.position_kind").value("布帘"))
+                .andExpect(jsonPath("$.data.operation.operation_id").value("op-2"))
+                .andExpect(jsonPath("$.data.operation.determined_by").value("inferred"))
+                .andExpect(jsonPath("$.data.operation.rerouted").value(false))
+                .andExpect(jsonPath("$.data.needs_selection").isEmpty());
+    }
+
+    @Test
+    @DisplayName("扫码解析（切片 ①）→ 200：旧码降级为加工单级 + 强制选套选部位（绝不默认取第 1 套）")
+    void scanLegacyTokenDegradesWithoutDefaultingToFirstSet() throws Exception {
+        when(setPartTokenMapper.selectOne(any())).thenReturn(null);
+        when(orderMapper.selectById("oldtoke")).thenReturn(null);
+        when(orderMapper.selectOne(any())).thenReturn(null);
+        when(processingOrderMapper.selectOne(any())).thenReturn(processingOrder("oldtoke"));
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT))
+                .thenReturn(processingOrder("oldtoke"));
+        when(orderSetMapper.selectList(any())).thenReturn(List.of(ProcessingOrderSet.builder()
+                .id("set-1").tenantId(TENANT).processingOrderId(PO_ID)
+                .setIndex(1).setNo("CSO260915-02615-001").deleted(0).build()));
+
+        mockMvc.perform(get("/api/admin/production/scan").param("token", "oldtoke"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.granularity").value("order"))
+                // 第 1 套只作为候选出现在 selections 里，**不是**默认值
+                .andExpect(jsonPath("$.data.set_no").value(nullValue()))
+                .andExpect(jsonPath("$.data.set_index").value(nullValue()))
+                .andExpect(jsonPath("$.data.position").value(nullValue()))
+                .andExpect(jsonPath("$.data.operation").value(nullValue()))
+                .andExpect(jsonPath("$.data.needs_selection[0]").value("set"))
+                .andExpect(jsonPath("$.data.needs_selection[1]").value("position"))
+                .andExpect(jsonPath("$.data.selections[0].set_no").value("CSO260915-02615-001"));
+    }
+
+    /** 扫码解析夹具：带套带部位的工序实例（V92 的 set_id / order_item_id）。 */
+    private static ProcessingPositionOperation scanOp(String id, int seq, String name, String status) {
+        return ProcessingPositionOperation.builder()
+                .id(id).tenantId(TENANT).processingOrderId(PO_ID).setId("set-14")
+                .orderItemId("oi-cloth").positionKind("布帘").positionName("布艺遮光帘A")
+                .seq(seq).operationName(name).groupName("车位").unit("米")
+                .qty(new BigDecimal("11")).doneQty("done".equals(status)
+                        ? new BigDecimal("11") : BigDecimal.ZERO)
+                .unitPrice(new BigDecimal("3.50")).isMustFinish(false).isStartMarker(false)
+                .status(status).deleted(0)
+                .build();
     }
 
     @Test

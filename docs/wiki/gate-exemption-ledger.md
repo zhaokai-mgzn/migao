@@ -96,7 +96,18 @@ python3 -m pytest tests/unit_ci_workflows/test_qa_exemptions_liveness.py -q
 | 26 | `.github/workflows/nightly-verification.yml` 第 50 行 `@f88f8639`；`.github/workflows/verify-trigger.yml` 的 `REMAIN=$(… \|\| echo "9999")` | 各 1 处 | nightly：`pytest -m "p1" … \|\| pytest -m "not p0" …` ⇒ 步骤退出码 = **回退命令**的码 ⇒ p1 档失败被更宽档的成功掩盖（教科书形态）。verify-trigger：取额度失败**伪装成「额度充足」**⇒ 后续候选收集失败变空 ⇒「合法空跑 exit 0」⇒ 合并后静默永不贴出 | ⚠️ 可（不影响 PR 门禁） | 登记 + 建议：nightly 去掉回退（或分别记录两档结论）；REMAIN 改三态 |
 | 27 | `.github/workflows/*.yml` 的 `continue-on-error: true` | **4 处真实设置**（全为 step 级，**job 级 0 个**）：`post-deploy-eval.yml` 的 flake 索引 / 真实 LLM 评测 / Download 汇总；`pr-check.yml` 的 Security audit | step 级 ⇒ 该 step 的失败不阻塞其 job。真实 LLM 评测那条**有意如此**（判红交给 `completion_verdict`），另三条属诊断。 | ⚠️ **多数不宜收紧** | 见 §3.1；建议只收紧「flake 索引」那条（索引为空 ⇒ 结论标 unknown 而不是静默） |
 | 28 | `.github/llm_sink_check.py` 的 `EXIT_UNKNOWN = 3` | 1 常量；CI 唯一调用是 `--selftest`（只可能返 0/1） | 产生 exit 3 的分支全在 `--issue --check-backfill` / `--all`，**CI 从不调用** ⇒ 「无法判定」这一态在 CI 不可达。 | ⚠️ 可 | 登记：不是「放行」，是**判据没被用上**。建议接线 `--all` 或删掉该态以免误以为有覆盖 |
-| 29 | `.github/cases/**` 的 `skip_reason` | C2 → **156 / 317 条用例 = 49%** | **另一专路在治**（本 PR 只登记，不重复）。机制：非空 ⇒ 从 active/smoke/adversarial 生成集与覆盖计数中剔除；门禁只校验「点名的 pytest 文件存在且可被 collect」，**不校验它是否真覆盖该用例**。 | ✅ 可（另有专路） | 登记 |
+| 29 | `.github/cases/**` 的 `skip_reason` | C2 → ~~**156 / 317 条用例 = 49%**~~ ⇒ 🔴 **现取、不写死**（原读数 = **基线读数**，见本行后的「口径订正」注；复算命令 = §0 的 C2 那一条）：**非空 `skip_reason` / 用例总数** 都随用例库增长而变 | **另一专路在治**（本 PR 只登记，不重复）。机制：非空 ⇒ 从 active/smoke/adversarial 生成集与覆盖计数中剔除；门禁只校验「点名的 pytest 文件存在且可被 collect」，**不校验它是否真覆盖该用例**。 | ✅ 可（另有专路） | 登记 |
+
+> 🔴 **口径订正（issue #4751，2026-09-20）**：本条原写「**156 / 317 条用例 = 49%**」。
+> **① 当时基线**：= **156 / 317**（= 49.2%）—— 原措辞保留在上一行的删除线里。
+> **② 后来变了**：用例库增长（+44 条）**且**放行面同时扩大 ⇒ **分子分母都过期**。
+> 核实读数（**本单实测，命令 = §0 的 C2**，同一份 `load_case_dicts` 口径、同一份 `origin/main`）：
+> **`skip_reason` 非空 = 206 条 / 用例总数 = 361 条 = 57.1%**。
+> **③ 故改为 Z**：**不写死**，改为「**现取 + 复算命令**」（§0 的 C2 那一条，本页不复制第二份口径）。
+> ⚠️ **口径已核清、不是猜的**：两个数都由 §0 的 C2 命令现算（与 156/317 同一口径、同一函数），
+> 且**逐时点可复现** —— 在本文盘点的基线 `f88f8639` / `8a97c025` 上跑同一命令仍得 **156 / 317**，
+> 在当前 `origin/main` 上得 **206 / 361** ⇒ 差异是**用例库增长**，不是口径变化（复现命令见 PR body）。
+> ⚠️ **未改的口径边界**：「49%」这个**百分比**本行不再写死（它是两个会漂移的数之比）；需要百分比时现算。
 | 30 | `.github/case-trust-baseline.json` → `violations`（另有 `.github/case_trust_gate.py` 的 `_REF_EXEMPT_FILES`） | C3 → **135 用例 / 214（用例,违规码）行**，`burn_down` 10 键 | **另一专路在治**（本 PR 只登记）。含 `EMPTY-ASSERTION`（恒真断言）与 `NO-EFFECT-ASSERTION`（写类无效果层断言）等真实未修缺陷。机制本身已是本仓最佳实践（全量对账陈旧即红、增长即红、生效配置读 `origin/main`）。 | ✅ 可（另有专路） | 登记 |
 | 31 | `scripts/drift_audit.py` 的 `REF_SURFACE_EXEMPT` / `MUTABLE_KEY_EXEMPT` / `scripts/drift_audit_baseline.json` | 基线：**65 条存量放行 / 可销账 0**（`python3 scripts/drift_audit.py` 汇总行） | **#4045 在飞，本 PR 只登记不改**。注意该脚本已在 `f88f8639` 上判 **DRIFT**（新增漂移 3，全部来自 worktree 落后 main 造成的技能版本回退 —— 本 PR rebase 后已消失，见 §5 实测）。 | ⛔ 本 PR 不动 | 登记 |
 | 32 | `.github/eval-coverage-baseline.yml`（`scripts/case_coverage.py` 的四道锁） | C4 → **4 条**（1 阻塞 + 3 只报告） | 唯一阻塞条目 `order_manage[missing_positive]` **真在抑制一个真实缺口**：B 端改状态/发货的正常档路径零评测证据。**这是本账里唯一「删掉就红」的收紧**（`python3 scripts/mibao_coverage.py --check --strict-gaps` → exit 1）。 | ⚠️ 正解是补用例，不是删条目 | 见 §3.4。机制已带 issue/日期/陈旧即红/增长即红 ⇒ **不建议再收紧机制本身** |
@@ -262,7 +273,7 @@ N 个月」即视为陈旧 ⇒ 红），而不是留成永久门票。
 
 ## §4 未做 / 存疑
 
-1. **`skip_reason`（C2，156/317）与 `case-trust-baseline`（C3，135/214）**：另有专路在治，
+1. **`skip_reason`（C2，~~156/317~~ ⇒ **现取**，见 §2 第 29 条的口径订正注）与 `case-trust-baseline`（C3，~~135/214~~ ⇒ **现取**，见 §0 的 C3 命令）**：另有专路在治，
    本账只登记，不重复改动（避免同文件双写冲突）。
 2. **`scripts/drift_audit.py` 的基线与豁免**：#4045 在飞，本 PR 只登记。
 3. **workflows（`.github/workflows/**`）的 4 类改动**（S1 #6/#7/#8、S2 #25/#26）：本 PR

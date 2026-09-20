@@ -48,6 +48,10 @@ EXPECTED_DELETE_ORDER = (
     # V94（issue #4709）新增：补价动作账引用 **processing_orders** 与 **processing_position_operations**
     # 两张父表 ⇒ 必须最先删（`test_plan_covers_every_table_referencing_orders` 会自动要求它出现；
     # 本元组是 issue #4242 判据 1 的**显式序列**，故新增一层时同步在这里显式化）。
+    # V98（issue #4733）新增：报工身份旁路账引用 **processing_orders** 与 **production_work_logs**
+    # 的语义父行 ⇒ 与 production_work_logs 同层最先删（`test_plan_covers_every_table_referencing_orders`
+    # 会自动要求它出现；本元组是 issue #4242 判据 1 的**显式序列**，故新增一层时同步显式化）。
+    "worker_report_audits",
     "production_instance_repricing_logs",
     "production_work_logs",
     "processing_position_operations",
@@ -74,6 +78,7 @@ PO_ROWS = [{
 }]
 # dry-run 应报出的行数（= 实际将被删除的行数；由计划派生的 COUNT 查询取回）
 COUNTS = {
+    "worker_report_audits": 0,                 # V98（issue #4733）：本夹具未走过工人报工
     "production_instance_repricing_logs": 0,   # V94（issue #4709）：本夹具的订单未做过补价
     "production_work_logs": 1,
     "processing_position_operations": 11,

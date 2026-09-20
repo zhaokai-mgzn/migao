@@ -93,6 +93,8 @@
     "V92__add_processing_order_sets_and_scan_loop.sql": "sha256:8357af4370acb873487fc3f2d47e209ca1f7d7b66821d3f436473c6bd27bfda8",
     "V93__backfill_route_rules_for_empty_catalogs.sql": "sha256:9a03ed37a5c247c44109d8df87792ce50e9f48e42c8bb70e5e05c69aca6cab1c",
     "V94__create_instance_repricing_logs.sql": "sha256:eb13555e67790188c624bebb6163e72ee0934d2e6506142208be7b88398df099",
-    "V97__soft_delete_orphan_operation_positions.sql": "sha256:3a9af4c5f6a2e0cdd3c6d749d853ad8641117b0283c5e4ac4a3b1513bf87696b"
+    "V95__correct_seeded_set_scope_for_existing_tenants.sql": "sha256:65565436e5cde06b04bf69f787a86e82419f184e1a78d7888787af2f672b62f5",
+    "V97__soft_delete_orphan_operation_positions.sql": "sha256:da3ee780d84a419636860ec9da60df95c2d1595138d33b7697045466b37f5243",
+    "V98__create_worker_sessions_and_worker_no.sql": "sha256:ad7580afc72ad21c7b63046e21d97e8f721157be33c0bffb51316edc5c7aaa10"
   }
 }

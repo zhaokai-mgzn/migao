@@ -22,9 +22,9 @@ import {
 } from '../src/services/productionService'
 
 const ORDER_ID = 'CSO260915-02615'
+// 身份**不在请求体里**（issue #4733）：worker_id/worker_name 已从契约移除，
+// 服务端从工人 session（X-Worker-Session-Id）解身份。
 const PAYLOAD = {
-  worker_id: 'u1',
-  worker_name: '张师傅',
   qty: 11,
   qualified_qty: 11,
   work_type: 'normal' as const,

@@ -59,6 +59,9 @@ function handleErrorStatus(statusCode: number, data: any): void {
       try {
         Taro.removeStorageSync(STORAGE_KEYS.TOKEN)
         Taro.removeStorageSync(STORAGE_KEYS.USER)
+        // 工人登录态（issue #4733）一并清：401 = 会话无效/已闲置超时 ⇒ 留着只会让每次请求都白跑
+        Taro.removeStorageSync(STORAGE_KEYS.WORKER_SESSION)
+        Taro.removeStorageSync(STORAGE_KEYS.WORKER)
       } catch {}
       Taro.showToast({ title: '登录已过期，请重新登录', icon: 'none' })
       setTimeout(() => {
