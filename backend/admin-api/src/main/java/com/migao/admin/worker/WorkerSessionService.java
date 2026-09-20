@@ -123,12 +123,8 @@ public class WorkerSessionService {
      * {@link #resolveIdentity} 拿可读文案。</p>
      */
     public WorkerIdentity resolveIdentityOrNull(String sessionId) {
-        if (!StringUtils.hasText(sessionId)) {
-            return null;
-        }
-        WorkerSession session = workerSessionMapper.selectActiveById(sessionId.trim());
+        WorkerSession session = loadActiveSession(sessionId);
         if (session == null) {
-            log.debug("[工人登录态] session 不存在/已结束：{}", sessionId);
             return null;
         }
         OffsetDateTime now = OffsetDateTime.now();
@@ -141,6 +137,53 @@ public class WorkerSessionService {
         workerSessionMapper.touch(session.getId(), now, now.plusMinutes(effectiveIdleMinutes()));
         return new WorkerIdentity(session.getWorkerId(), session.getWorkerName(),
                 WorkerIdentity.SOURCE_SERVER_SESSION, session.getId());
+    }
+
+    /**
+     * 读会话行 + **定租户**（issue #4864）—— 全仓唯一一处「租户由会话行解出」的实现。
+     *
+     * <p><b>为什么需要它</b>：改前 {@code worker_sessions} 的读取受租户拦截器管，而租户**正是**
+     * 要从会话行里取的 ⇒ 循环（读行要租户、租户来自行）⇒ 拦截器抛
+     * {@code Tenant context not initialized} ⇒ {@code /api/worker/**} 除 {@code /login} 外全部 401。
+     * 破环口径 = 会话查找走**不受租户拦截器约束**的按主键查询
+     * （{@code WorkerSessionMapper.selectActiveById} 的 {@code @InterceptorIgnore}，
+     * 安全性论证见该处 javadoc），拿到行之后**才**把租户定下来。</p>
+     *
+     * <p>三条纪律（每条都有断言，见 {@code WorkerTenantCycleGuardTest}）：</p>
+     * <ol>
+     *   <li><b>租户只来自会话行</b>：{@code TenantContext} 只被设为 {@code session.getTenantId()}，
+     *       请求里的任何东西（{@code Host} / {@code X-Tenant-Id} / body）都改不了它；</li>
+     *   <li><b>请求已带租户时必须一致</b>（fail-closed）：线程上已有 {@code TenantContext}
+     *       （商家 JWT / Service Token / 别的工人会话）且与会话租户不符 ⇒ 当无效会话拒绝。
+     *       没有这条，「免租户查询」就会变成一条**换租户**的通道（A 租户的身份 + B 租户的
+     *       session id ⇒ 在 B 租户上下文里执行）；</li>
+     *   <li><b>先定租户、再做后续租户受管的写</b>：{@code endSession} / {@code touch} 仍带
+     *       {@code tenant_id} 谓词（第二道闸），故租户必须在它们之前设好。</li>
+     * </ol>
+     *
+     * @param sessionId 请求头 {@code X-Worker-Session-Id} 的取值（可空）
+     * @return 会话行；空/不存在/已结束/租户不一致 ⇒ {@code null}（调用方 fail-closed 拒绝）
+     */
+    private WorkerSession loadActiveSession(String sessionId) {
+        if (!StringUtils.hasText(sessionId)) {
+            return null;
+        }
+        // ① 按主键直查：这条查询**不需要**租户条件 —— 租户正是它要解出来的东西。
+        WorkerSession session = workerSessionMapper.selectActiveById(sessionId.trim());
+        if (session == null) {
+            log.debug("[工人登录态] session 不存在/已结束：{}", sessionId);
+            return null;
+        }
+        // ② 请求已带租户上下文 ⇒ 会话必须同租户（否则「免租户查询」会变成换租户通道）
+        Long requestTenant = TenantContext.getTenantId();
+        if (requestTenant != null && !requestTenant.equals(session.getTenantId())) {
+            log.warn("[工人登录态] 会话租户 {} 与请求租户 {} 不一致 ⇒ 拒绝：sessionId={}",
+                    session.getTenantId(), requestTenant, session.getId());
+            return null;
+        }
+        // ③ 读完行**才**能把租户定下来：此后本线程所有查询（touch/endSession/业务读面）恢复租户过滤
+        TenantContext.setTenantId(session.getTenantId());
+        return session;
     }
 
     /**
@@ -169,7 +212,9 @@ public class WorkerSessionService {
 
     /** 当前工人信息（报工页页头「当前工人：张三」的数据来源 = **服务端 session**，不是前端 state）。 */
     public Map<String, Object> currentWorker(String sessionId) {
-        WorkerSession session = workerSessionMapper.selectActiveById(sessionId == null ? null : sessionId.trim());
+        // 与 resolveIdentity 走**同一处**读行/定租户（issue #4864）：否则这条端点会绕过
+        // 「会话租户必须与请求租户一致」那条 fail-closed 判定。
+        WorkerSession session = loadActiveSession(sessionId);
         if (session == null) {
             throw BusinessException.authFailed("工人登录已失效，请重新登录");
         }

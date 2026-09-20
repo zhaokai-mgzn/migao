@@ -1,8 +1,7 @@
 package com.migao.admin.security;
 
 import com.migao.admin.config.TenantContext;
-import com.migao.admin.entity.WorkerSession;
-import com.migao.admin.mapper.WorkerSessionMapper;
+import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.worker.WorkerSessionService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -19,7 +18,6 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -40,55 +38,83 @@ import java.util.List;
  *
  * <p>与 JWT 的优先级：**只在 SecurityContext 尚无认证时**设置 —— 商家（持 JWT）的请求
  * 逐字走既有链路（本过滤器对它是 no-op，不改变任何既有行为）。</p>
+ *
+ * <p>🔴 <b>issue #4864（工人端除 {@code /login} 外全链路 401）</b>：本过滤器原先**自己**读
+ * {@code worker_sessions} 行（{@code workerSessionMapper.selectActiveById}），而该表受租户拦截器管、
+ * 租户又要从那一行里取 ⇒ 循环 ⇒ 拦截器抛 {@code Tenant context not initialized} ⇒ catch 吞成
+ * 「未认证」⇒ 401。现在：① 会话解析**只有一处**实现（委托
+ * {@link WorkerSessionService#resolveIdentityOrNull}，租户在读到行之后才定下来）；
+ * ② 认证期异常记 **ERROR + 栈**（不静默）；③ 过滤器链的后续执行移出 catch（旧实现会在下游异常时
+ * 把整条链**执行两次**）；④ 租户上下文由本过滤器自己清（不依赖别的过滤器的 finally）。</p>
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class WorkerSessionFilter extends OncePerRequestFilter {
 
-    private final WorkerSessionMapper workerSessionMapper;
     private final WorkerSessionService workerSessionService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
+        String sessionId = request.getHeader(WorkerSessionService.SESSION_HEADER);
         try {
-            String sessionId = request.getHeader(WorkerSessionService.SESSION_HEADER);
             if (StringUtils.hasText(sessionId)
                     && SecurityContextHolder.getContext().getAuthentication() == null) {
                 authenticate(request, sessionId.trim());
             }
-            filterChain.doFilter(request, response);
         } catch (Exception e) {
-            // 认证异常不得静默降级为匿名放行后的 500：记日志 + 不设认证（下游按 401 拒绝）
-            log.warn("[工人登录态] 过滤器异常（请求继续未认证状态）: {}", e.getMessage());
+            // 🔴 认证期异常**不得静默**（issue #4864）：旧实现是 `log.warn(e.getMessage())`，
+            // 把「租户上下文缺失 ⇒ 工人端全链路 401」这种**系统性故障**降级成一条看不出异常类型、
+            // 也没有栈的 WARN ⇒ 没人能发现。改为 ERROR + 栈 + 稳定标记（可 grep / 可告警）。
+            // 会话 id 是凭据 ⇒ 只记前 8 位，不进日志全文。
+            // 处置仍是 fail-closed：清掉可能被部分写入的认证状态 ⇒ 下游按 401 拒绝（不降级为匿名放行）。
+            log.error("[工人登录态][filter-error] 会话认证异常，本次请求按未认证拒绝：sessionIdPrefix={}",
+                    sessionIdPrefix(sessionId), e);
+            SecurityContextHolder.clearContext();
+            TenantContext.clear();
+        }
+        // ⚠️ 过滤器链的后续执行**必须在 catch 之外**：旧实现把 `filterChain.doFilter` 同时写在
+        // try 与 catch 里 ⇒ 下游抛异常时整条链被**执行两次**（一次真实处理 + 一次重放）。
+        try {
             filterChain.doFilter(request, response);
+        } finally {
+            // 本过滤器自己设的租户上下文自己清（不再依赖 JwtAuthenticationFilter 的 finally ——
+            // 那条隐式耦合正是本缺陷长期无人察觉的同族形态）
+            TenantContext.clear();
         }
     }
 
+    /**
+     * 会话 ⇒ 认证。
+     *
+     * <p>🔴 <b>只有一处权威实现</b>（issue #4864）：本方法原先自己抄了一份「读会话行 + 闲置判 +
+     * endSession + touch + setTenantContext」，与 {@link WorkerSessionService#resolveIdentityOrNull}
+     * 里的同名逻辑**两份并存**（且过滤器那份**没有**把租户先定下来 ⇒ 循环）。现在直接委托服务层 ——
+     * 单一出处，两边不可能再漂移。</p>
+     */
     private void authenticate(HttpServletRequest request, String sessionId) {
-        WorkerSession session = workerSessionMapper.selectActiveById(sessionId);
-        if (session == null) {
-            log.debug("[工人登录态] session 不存在/已结束：{}", sessionId);
+        WorkerIdentity identity = workerSessionService.resolveIdentityOrNull(sessionId);
+        if (identity == null) {
+            // 无效 / 已结束 / 已闲置超时 / 会话租户与请求租户不一致 ⇒ 不设认证 ⇒ 下游 401
+            // （原因已在 WorkerSessionService 留痕，不在此重复打日志）
             return;
         }
-        OffsetDateTime now = OffsetDateTime.now();
-        if (session.getIdleExpiresAt() == null || !session.getIdleExpiresAt().isAfter(now)) {
-            // 闲置超时：结束会话（留痕 idle）—— **不静默续期**，也不按上一个人记账
-            workerSessionMapper.endSession(sessionId, now, "idle");
-            log.info("[工人登录态] 闲置超时登出：workerId={}", session.getWorkerId());
-            return;
-        }
-        // 租户上下文（tenantId 由会话行给出，工人无法自选租户）
-        TenantContext.setTenantId(session.getTenantId());
-        workerSessionMapper.touch(sessionId, now, now.plusMinutes(workerSessionService.effectiveIdleMinutes()));
-
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                session.getWorkerId(), sessionId,
+                identity.workerId(), identity.sessionId(),
                 List.of(new SimpleGrantedAuthority("ROLE_WORKER"), new SimpleGrantedAuthority("worker")));
         authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
         SecurityContextHolder.getContext().setAuthentication(authentication);
+    }
+
+    /** 会话 id 的日志前缀（凭据不进日志全文）。 */
+    private static String sessionIdPrefix(String sessionId) {
+        if (!StringUtils.hasText(sessionId)) {
+            return "(none)";
+        }
+        String trimmed = sessionId.trim();
+        return trimmed.length() <= 8 ? trimmed : trimmed.substring(0, 8);
     }
 
     /**
