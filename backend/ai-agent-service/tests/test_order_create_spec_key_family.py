@@ -30,7 +30,8 @@ import copy
 import re
 from pathlib import Path
 
-from app.tools.order_create import OrderCreateTool
+from app.tools.curtain_calc import DEFAULT_CRAFT_TIERS, FORMULA_LABELS
+from app.tools.order_create import OrderCreateTool, _CRAFT_SPEC_NUMBERS
 
 from tests.test_employee_field_consumption_contract import _method_body
 
@@ -282,7 +283,7 @@ class TestCraftSpecEnumGate:
 # ══════════════════════════════════════════════════════════════════════════════
 # 写侧补全：工艺键 + 算料输出键（issue #4374 包 4a · 设计文档 §4.2 / §4.3 / §4.6 入口 1）
 # ══════════════════════════════════════════════════════════════════════════════
-# 病根：包 1（#4346）只声明了 9 个 craft 键 ⇒ 加工类型/打开方式/褶距/对花与**全部算料输出键**
+# 病根：包 1（#4346）只声明了 9 个 craft 键 ⇒ 加工类型/打开方式/用料公式/对花与**全部算料输出键**
 # 既不在 schema、也不在「必带」指令里 ⇒ LLM 大概率不写 ⇒ 订单/加工单面**看不到**这些字段
 # （缺值不渲染 ⇒ 不出错，但用户看不到）。
 #
@@ -291,7 +292,11 @@ class TestCraftSpecEnumGate:
 # ② **算料输出键只许原样透传** —— 唯一来源是 `curtain_calc` 输出（键名 snake_case 逐字一致，
 #    设计文档 §4.5）；缺就不填，**禁止自己推算/补 0**（不发明数字）。
 _CRAFT_SPEC_EXTRA_KEYS = (
-    "cuttingMode", "openCount", "pleatSpacing", "hasPattern", "patternRepeat",
+    "cuttingMode", "openCount", "hasPattern", "patternRepeat",
+    # 用料公式 / 算料档位（issue #4873）：与**工艺配置的算料配置同源**
+    # （`curtain_calc.FORMULA_LABELS` / `DEFAULT_CRAFT_TIERS`），写面**只透传**
+    # （不推导、不补默认值 —— 「顾客没说就不填」）。
+    "formula", "craftTier",
     # 转角（issue #4362，S1）：C 端澄清清单**已经问了**（window_type 的 note：「转角影响开数与片数」）
     # 却零消费者 ⇒ 属算料输入，必须随单落库（列 `order_items.corner`）。
     "corner",
@@ -328,7 +333,7 @@ class TestCraftSpecKeyCompletion:
         assert props["openCount"].get("minimum") == 1, (
             "打开方式开数下限 = 1（正整数；0 与负数不是开数）"
         )
-        for key in ("pleatSpacing", "patternRepeat", "fabric_meters", "pleat_count",
+        for key in ("patternRepeat", "fabric_meters", "pleat_count",
                     "per_panel_pleats", "panels", "fullness", "fullness_actual"):
             assert props[key].get("minimum") == 0, f"{key} 必须声明为非负数（minimum: 0）"
 
@@ -356,6 +361,31 @@ class TestCraftSpecKeyCompletion:
         desc = OrderCreateTool.description
         for value in ("公式计算", "人工指定", "客户自报"):
             assert value in desc, f"描述未教 source 的合法值「{value}」"
+
+    def test_formula_and_craft_tier_value_domains_match_calc_engine(self):
+        """`formula` / `craftTier` 的值域 = **算料引擎的值域**（逐值读源，不抄第三份清单）。
+
+        需求（issue #4873）：「这里需要和工艺配置的算料配置保持一致」⇒ schema 的 enum 必须与
+        `curtain_calc.FORMULA_LABELS` / `DEFAULT_CRAFT_TIERS` 的键一致；写死一份副本 = 漂移源
+        （库侧改了不跟，没有任何东西会红）。
+        """
+        props = _pi_props()
+        assert set(props["formula"]["enum"]) == set(FORMULA_LABELS), (
+            "formula 值域必须与 curtain_calc.FORMULA_LABELS 的键逐字一致"
+        )
+        assert set(props["craftTier"]["enum"]) == set(DEFAULT_CRAFT_TIERS), (
+            "craftTier 值域必须与 curtain_calc.DEFAULT_CRAFT_TIERS 的键逐字一致"
+        )
+
+    def test_pleat_spacing_is_retired_from_every_write_face(self):
+        """退役键（褶距）**净删**：schema / 数值闸门表 /「必带」提示词清单里都不许留死键。
+
+        红证：把 `("pleatSpacing", "褶距")` 放回 `_CRAFT_SPEC_NUMBERS`，或把 schema 属性 /
+        提示词清单里的褶距加回来 ⇒ 本断言红。
+        """
+        assert "pleatSpacing" not in _pi_props(), "schema 仍声明褶距 ⇒ 退役键没净删"
+        assert "pleatSpacing" not in dict(_CRAFT_SPEC_NUMBERS), "数值闸门表仍留着褶距"
+        assert "褶距" not in OrderCreateTool.description, "「工艺规格·必带」提示词清单仍在教褶距"
 
     def test_cutting_mode_and_open_count_enum_gate(self):
         """取值闸门：错值/别名一律拒绝并点名合法值（沿用 `_reject_invalid_enum` 口径）。"""
@@ -390,7 +420,6 @@ class TestCraftSpecKeyCompletion:
     @pytest.mark.parametrize(
         "pinfo, label",
         [
-            ({"pleatSpacing": -0.1}, "褶距"),
             ({"patternRepeat": -0.5}, "花距"),
             ({"fabric_meters": -1}, "面料米数"),
             ({"pleat_count": -48}, "折数"),
@@ -408,11 +437,12 @@ class TestCraftSpecKeyCompletion:
         assert label in (result.message or ""), "报错必须点名是哪个字段"
 
     def test_valid_extra_keys_pass(self):
-        """合法值放行（含 0：褶距/花距可以合法为 0）。"""
+        """合法值放行（含 0：花距可以合法为 0）。"""
         assert OrderCreateTool._validate_processing_info(0, {
             "cuttingMode": "定宽买高",
             "openCount": 2,
-            "pleatSpacing": 0.1,
+            "formula": "fullness",
+            "craftTier": "standard",
             "hasPattern": True,
             "patternRepeat": 0,
             "fabric_meters": 12.3,
@@ -467,7 +497,7 @@ class TestCraftSpecKeyCompletion:
 # （显式值仍会生效 ⇒ 填错就取到那条独立路线）。
 ORDER_LINE_CRAFT_SPEC_KEYS = (
     "curtainType", "craft", "openCount", "cuttingMode", "isShaped",
-    "pleatSpacing", "pleat_count", "fullness", "fullness_actual", "hasPattern", "corner",
+    "formula", "craftTier", "pleat_count", "fullness", "fullness_actual", "hasPattern", "corner",
 )
 
 
@@ -494,7 +524,7 @@ class TestCraftIsSingleValuedAndHookIsAnItem:
         )
 
     def test_every_order_line_element_is_declared_and_taught(self):
-        """真值源 §1 的下单行要素（11 项）必须**声明 + 教学**同时存在（#4362 S1）。"""
+        """真值源 §1 的下单行要素（11 项）+ 用料公式/算料档位（issue #4873）必须**声明 + 教学**同时存在（#4362 S1）。"""
         props = _pi_props()
         desc = OrderCreateTool.description
         for key in ORDER_LINE_CRAFT_SPEC_KEYS:
