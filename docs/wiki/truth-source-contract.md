@@ -244,9 +244,22 @@ git -C "$R" status --porcelain                                 # 必须为空
 > python3 -c "import sys;sys.path.insert(0,'.github');from render_cases import load_case_dicts;d=load_case_dicts('.github/cases');print('用例总数',len(d),'声明 namespaces 的条数',sum(1 for c in d if c.get('namespaces')))"
 > ```
 >
-> ⚠️ 同族的**硬编码现值还有一处**（`scripts/drift_audit.py` 的 `world-selfbuilt-namespace` 条目里
-> 逐字写着「289 条用例里只有 **19 条**声明 `namespaces`」）—— **本单不改它**（docs-only，
-> 且它与本页是两份副本）；已在关联 PR body **登记**为同族发现。
+> ✅ **同族硬编码已收口（issue #4759，代码面）**：`scripts/drift_audit.py` 的
+> `world-selfbuilt-namespace` 条目原先逐字写着「289 条用例里只有 **19 条**声明 `namespaces`」
+> —— 与本页是**两份副本**（#4751 只改了文档侧）。#4759 起该读数由 `scripts/drift_audit.py` 的
+> `live_namespace_reading()` **从用例库现取**（经 `.github/render_cases.load_case_dicts`，
+> 与上面那条复算命令**同一函数、同一口径**）⇒ **两份副本已消失**：本页与 `--list-checks`
+> 的输出**都**由现场统计派生，**谁写死谁红**。核法（一条命令，直接看代码面那一份）：
+>
+> ```bash
+> python3 scripts/drift_audit.py --list-checks | python3 -c "import json,sys;print(next(u['why'] for u in json.load(sys.stdin)['unimplemented'] if u['id']=='world-selfbuilt-namespace'))"
+> ```
+>
+> 红证 = `tests/unit_ci_workflows/test_drift_audit_contract.py` 的
+> `test_unimplemented_namespace_reading_is_live_not_hardcoded`（注入「3 条用例 / 其中 1 条声明」的
+> 最小用例库 ⇒ 读数必须跟着变）与 `test_unimplemented_namespace_reading_matches_truth_source_recompute`
+> （`--list-checks` 读数 == 上面那条复算命令的读数）。**实测**：把读数写死回 `289 / 19` ⇒ 两判据均红；
+> 还原 ⇒ 均绿。
 > 口径提示：本行的「声明 `namespaces`」= **列表非空**（不是「出现 `namespaces:` 字样」——
 > `*.yml` 里有大量**注释**在解释「为什么**有意不**声明它」，按字面 grep 会多算）。
 | `sync-copy-landing` | I1 | §4 的**兑现/撤回**要改 `docs/wiki/DEV-FLOW.md` 正文，该文件正被别的包改（相撞风险） | 一个后续小单：渲染脚本（兑现）或页头措辞改写（撤回），二者取一 |

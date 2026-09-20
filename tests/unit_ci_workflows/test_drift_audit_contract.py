@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -185,6 +186,89 @@ def test_unimplemented_registry_is_explicit():
     assert {"ref-semantic-hit", "runtime-fencing", "sync-copy-landing"} <= ids
     for u in data["unimplemented"]:
         assert u["why"].strip() and u["missing"].strip(), f"{u['id']} 未写清为什么/缺什么"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# #4759：未实装登记里的**读数**必须现取，不得写死
+#   （原缺陷形态：本文件与 `docs/wiki/truth-source-contract.md` §6 **各写一份**
+#     「289 条用例里只有 19 条声明 namespaces」⇒ 两份各自漂移；#4751 只改了文档侧。）
+# ─────────────────────────────────────────────────────────────────────────────
+_READING_RE = re.compile(r"(\d+) 条用例 / 其中 (\d+) 条声明")
+
+# ⚠️ 名字与文件上方已有的 `CASE_TMPL`（`{extra}` 那个）区分开 —— 同名会**静默遮蔽**它。
+MINI_CASE_TMPL = """cases:
+  - id: FX-{n:03d}
+    title: fixture {n}
+{ns}"""
+
+
+def _mini_repo(tmp: Path, cases: dict[str, str]) -> Path:
+    """只有 `.github/` 的最小仓库：拷**真的** `render_cases.py` / `yaml_light.py`
+    （保证与判据**同一加载器** = 同源），用例库由参数给定（= 真值源的**注入面**）。"""
+    gh = tmp / ".github"
+    (gh / "cases").mkdir(parents=True, exist_ok=True)
+    for name in ("render_cases.py", "yaml_light.py"):
+        (gh / name).write_bytes((REPO_ROOT / ".github" / name).read_bytes())
+    for name, body in cases.items():
+        (gh / "cases" / name).write_text(body, encoding="utf-8")
+    return tmp
+
+
+def _why_of(data: dict, cid: str = "world-selfbuilt-namespace") -> str:
+    return next(u["why"] for u in data["unimplemented"] if u["id"] == cid)
+
+
+def _reading_of(why: str) -> tuple[int, int]:
+    m = _READING_RE.search(why)
+    assert m, f"未实装登记里没有可现取的读数（口径被写死或被删掉了？）：{why}"
+    return int(m.group(1)), int(m.group(2))
+
+
+def _list_checks(repo: Path | None = None) -> dict:
+    cmd = [sys.executable, str(DRIFT), "--list-checks"]
+    if repo is not None:
+        cmd += ["--repo", str(repo)]
+    p = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=str(REPO_ROOT))
+    return json.loads(p.stdout)
+
+
+def test_unimplemented_namespace_reading_is_live_not_hardcoded(tmp_path):
+    """红证（#4759）：读数必须**从用例库现取**。
+
+    注入式夹具：造一个只有 **3 条用例（其中 1 条声明 `namespaces`）** 的最小仓库 ⇒
+    打印出来的读数**必须**是 `3 / 1`。谁把数字写死（历史值 = `289 / 19`，即
+    `docs/wiki/truth-source-contract.md` §6 标注的「基线读数」）或写死成任何与现场不符的值
+    ⇒ 本判据必红（它读的是被测系统的**输出**，不是本文件里的常量）。
+    """
+    repo = _mini_repo(tmp_path, {
+        "fx_a.yml": MINI_CASE_TMPL.format(n=1, ns="    namespaces:\n      - fx_ns\n"),
+        "fx_b.yml": MINI_CASE_TMPL.format(n=2, ns=""),
+        "fx_c.yml": MINI_CASE_TMPL.format(n=3, ns=""),
+    })
+    got = _reading_of(_why_of(_list_checks(repo)))
+    assert got == (3, 1), (
+        f"读数没有跟着用例库走（注入 3 条/1 条声明，得到 {got}）—— 说明它被写死了。"
+        "未实装登记里的覆盖率必须从 `.github/cases/**` 现取（#4759）")
+
+
+def test_unimplemented_namespace_reading_matches_truth_source_recompute():
+    """同一口径自证：`--list-checks` 的读数 == 真值源 §6 复算命令的读数（**同一函数**）。
+
+    这就是「两份副本已消失」的判据：两边都从 `.github/cases/**` 现算，谁写死谁红。
+    """
+    got = _reading_of(_why_of(_list_checks()))
+    gh = REPO_ROOT / ".github"
+    added = str(gh) not in sys.path
+    if added:
+        sys.path.insert(0, str(gh))
+    try:
+        from render_cases import load_case_dicts  # noqa: PLC0415 —— 延迟导入，避免污染收集期
+        cases = load_case_dicts(str(gh / "cases"))
+    finally:
+        if added:
+            sys.path.remove(str(gh))
+    live = (len(cases), sum(1 for c in cases if c.get("namespaces")))
+    assert got == live, f"`--list-checks` 读数 {got} ≠ 真值源复算读数 {live}（两份副本又分叉了）"
 
 
 # 每条判据的**红证**：夹具名 -> 判据 id。新增判据不补夹具 ⇒ 本表对不上 ⇒ 红。
