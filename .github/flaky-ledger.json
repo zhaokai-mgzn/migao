@@ -94,6 +94,24 @@
       "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
       "status": "open",
       "follow_up": null
+    },
+    {
+      "workflow": "PR Check",
+      "job": "Case Trust Gate (断言可信度)",
+      "run_id": 35497591498,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/35497591498",
+      "pr": 4829,
+      "head_sha": "61b230fe8a2514ca812bf494269539dce603888c",
+      "head_branch": "chore/case-truth-repin-4646",
+      "first_failure_step": "Judge changed case entries (fail-closed)",
+      "rerun_result": "failure",
+      "kind": "confirmed_failure",
+      "observed_at": "2026-09-20T07:46:23Z",
+      "reason": "同一 commit **两次都失败** ⇒ 确定性失败（已用「第二次真实结果」排除 flaky）",
+      "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
+      "status": "open",
+      "follow_up": null
     }
   ]
 }
