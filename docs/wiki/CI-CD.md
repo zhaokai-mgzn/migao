@@ -208,6 +208,67 @@ ssh <swas> 'grep -nE "^[[:space:]]*server[[:space:]]" /opt/migao-deploy/nginx/ng
 改完 `docker compose exec -T nginx nginx -s reload`。
 `deploy.sh` 里的 `cp src/deploy/swas/nginx.conf ./nginx/nginx.conf` 是**原地截断+写入** ⇒ 不换 inode ✓。
 
+### 不许往回走（issue #4852）：排队的旧 run 不得把服务回退
+
+**事故形态**（2026-09-20 生产 CI 实测）：三条部署腿共用**同一把** server 侧 `flock`
+（`deploy/swas/deploy.sh`，窗口 600s）⇒ run 按**创建时刻**排队，而 `main` 在排队期间前进
+⇒ **为旧 commit 创建的 run 会在更新的 run 成功之后才执行**；旧判据是「该 TAG 的镜像在不在本地」
+⇒ 旧 tag 的镜像当时都在本地 ⇒ 服务被重建为旧 tag，而 **run 结论 success + 健康检查三个全 200 +
+`✅ SWAS 部署成功（tag=旧tag）`** ⇒ **三重绿、零告警**，线上长期跑旧代码。
+
+**闸门判据**（`deploy/swas/deploy.sh` 的「2.05」段，**在 flock 之内**）：
+
+```
+逐服务：target tag 是**该服务当前在跑 tag 的祖先**（提交图语义）⇒ 跳过该服务 + `::warning::`
+判不出（非 sha tag / 容器没起 / API 取不到 / 分叉）                        ⇒ 放行 + `::warning::`（fail-open）
+显式回滚（ALLOW_DOWNGRADE=1）                                             ⇒ 放行 + 日志写「这是显式回滚」
+```
+
+- **祖先关系 = 提交图语义**（等价于 `git merge-base --is-ancestor <target> <current>`），
+  **不是**字符串比较、**不是**时间戳（tag 是 `sha-<7>`，字典序与提交序无关）。
+- **实现走 GitHub compare API**（`api.github.com`，同一张提交图）而不是本地 `git`：**实测**
+  服务器上 `git clone --filter=tree:0` 连 `github.com:443` **超时**，而 `api.github.com` 200/0.6s、
+  `python3` 在（判据源只有一处：`DOWNGRADE_API`，可被守卫测试桩化）。
+- **未认证限 60 次/小时/IP** ⇒ 一次部署内同「在跑 tag」**只查一次**（缓存）。
+- **显式回滚仍能往回走**：`gh workflow run deploy-*.yml -f image_tag=<tag>`（= workflow 的 `MODE=rollback`）
+  注入 `ALLOW_DOWNGRADE=1`；**#4767 的「失败即回滚」那次尝试同样带 1**（回滚本身就是往回走，
+  否则新闸门会把既有护栏一起挡掉）。
+- **本次实际生效 tag 逐服务一行**（`EFFECTIVE_TAG=<svc>:<tag>`，被跳过的服务也有一行，值 = 在跑的那个）
+  落 `$GITHUB_STEP_SUMMARY` 并拼进部署结论行 —— 事故里那句只报**请求的** tag 的
+  `✅ 部署成功（tag=…）` 正是误导源。
+
+#### 取舍：`deploy.sh` 该不该只部署「本次变更涉及的服务」？（**本单不改**，如实登记）
+
+现状判据 = 「该 TAG 的镜像**在不在**本地/ACR」（`docker compose pull <svc>` 成功 ⇒ 纳入 `UP_SERVICES`）。
+它**其实已经是**一种「只部署本次变更涉及的服务」的弱形式：每个 deploy workflow 只构建**自己那个模块**
+的镜像（`.github/workflows/deploy-admin-api.yml` 等的 `IMAGE_NAME` + paths 触发）⇒ 没改的模块在该 tag 下
+**没有镜像** ⇒ pull 失败 ⇒ 被跳过。但它与「哪个模块改了」**不等价**，两类偏差：
+① **同 sha 的兄弟 workflow**：一个 commit 同时改两个模块 ⇒ 两个 workflow 建出**同 tag** 的两个镜像
+⇒ 后到的 run 会把两个服务都部署（同 commit、方向不会往回走 ⇒ 无害，但「谁部署了什么」变模糊）；
+② **回滚 / 重放 / 手工指定 tag**：此时「镜像在不在」与「改了没改」完全无关，按模块判会**少部署**。
+⇒ **结论：不加这一层。** 判据真值（「本次变更涉及哪些模块」）在**远端不可得**（远端只有 tag ⇒ 镜像），
+只能由 CI 侧按 `git diff` 算完再传下去 ⇒ 新增一条跨进程契约（易漂移）、且与「失败即回滚」语义冲突；
+更关键的是 **#4852 的危险方向是「往回走」，按模块判**不能**阻止往回走**（旧 run 的模块改动照样会被部署）。
+本单用「不许往回走」闸门直接治危险方向，它同时覆盖回滚/重放/schedule 对账等**所有**来源。
+**代价（如实登记）**：一次运行仍可能对「没改的模块」做一次**同 commit** 的重复部署（幂等、无回退风险，
+只多花约一个服务的拉取时间）。
+
+#### 上真机后怎么验证（**可执行判据**）
+
+```bash
+# ① job summary 的远端输出里看闸门结论行（CI 日志会被截断，summary 不会）
+#    期望：`闸门结论：允许部署=[…] / 因「往回走」跳过=[…]` + 三条 `EFFECTIVE_TAG=<svc>:<tag>`
+# ② 只读核对「线上到底是哪个 commit」（真机观测，不写任何状态）
+aliyun swas-open run-command --biz-region-id cn-hangzhou --instance-id <实例> --type RunShellScript \
+  --timeout 60 --name migao-ro --command-content \
+  'cd /opt/migao-deploy && for s in admin-api ai-agent admin-web; do cid=$(docker compose ps -q $s); echo "$s $(docker inspect --format "{{.Config.Image}}" $cid)"; done'
+# ③ 红证（自然发生，不能手工造）：连续合并造成排队 ⇒ 旧 run 排到新 run 之后
+#    期望：它的 summary 出现 `DOWNGRADE_SKIPPED=<svc>:<target>:<running>` 且**没有** up -d 该服务
+```
+
+⚠️ **不要**用 `-f image_tag=<旧 tag>` 去"演练"回退 —— 那正是**显式回滚路径**（注入 `ALLOW_DOWNGRADE=1`），
+必然放行，演练不出闸门。守卫测试：`tests/unit_ci_workflows/test_swas_deploy_no_downgrade.py`。
+
 ### 远端输出在哪看（**排查真因的第一步**）
 
 `deploy.sh` 的输出在 SWAS API 里是 **base64**（`InvocationResult.Output`）。

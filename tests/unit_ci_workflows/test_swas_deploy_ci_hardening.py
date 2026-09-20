@@ -161,8 +161,12 @@ def test_failure_path_retries_once_then_rolls_back_then_alerts():
     #    **本次尝试**的远端回显）⇒ 直接用 `$PREV_GOOD_TAG` 会把回滚目标渲染成**空串**（实测踩到）
     snap = re.search(r"^ROLLBACK_TAG=\$PREV_GOOD_TAG$", text, re.M)
     assert snap, "回滚前没有 `ROLLBACK_TAG=$PREV_GOOD_TAG` 快照 —— 告警里的回滚目标会变成空串"
-    call = re.search(r'^deploy_attempt\s+"\$ROLLBACK_TAG"$', text, re.M)
-    assert call, "没有「用上一个可用 tag 再跑一次 deploy」的回滚调用（`deploy_attempt \"$ROLLBACK_TAG\"`）"
+    call = re.search(r'^deploy_attempt\s+"\$ROLLBACK_TAG"\s+1$', text, re.M)
+    assert call, (
+        "没有「用上一个可用 tag 再跑一次 deploy」的回滚调用，或该调用丢了显式降级许可 —— "
+        '期望 `deploy_attempt "$ROLLBACK_TAG" 1`（issue #4852 ②：回滚本身就是「往回走」，'
+        "不带许可会被新增的「不许往回走」闸门挡掉）"
+    )
     assert snap.start() < call.start(), "`ROLLBACK_TAG` 快照必须发生在回滚调用**之前**"
     assert re.search(r'deploy_attempt\s+"\$IMAGE_TAG"', text), "没有 `deploy_attempt \"$IMAGE_TAG\"` 调用"
 

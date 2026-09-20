@@ -551,6 +551,93 @@ def approve_runs(repo: str, run_ids) -> list:
     return list(run_ids)
 
 
+# ── #4825：台账落仓的**状态级对账**（独立兜底；不依赖 flaky-triage.yml 还活着） ────
+#
+# 为什么需要它（**实测**，别照抄 issue 文本）：#4804 的修法（上面的 `approve`）是
+# `flaky-triage.yml` 的一个**步骤** ⇒ 该 workflow 一停（被禁用 / 语法坏 / `actions: write` 丢），
+# 台账就**静默**停在 `chore/flaky-ledger` 分支上 —— 它不参与 required 集合，台账停在分支上
+# 不会让任何 PR 变红，**没有任何东西会因此告警**。
+# 本节的判据只看**状态**（分支内容 vs main 内容），不看事件 ⇒ 与 `workflow_run` 触发面正交，
+# 故可作为独立兜底（形态照抄 `.github/workflows/deploy-reconcile.yml` 的「独立对账」先例）。
+
+#: 台账在仓库里的**相对**路径（git 侧按相对路径取分支副本；由 LEDGER_PATH 派生，不写死副本）
+LEDGER_REL = "/".join(LEDGER_PATH.parts[-2:])
+
+
+def _key_str(key) -> str:
+    """幂等键的可读/可比较形态（`workflow/run_id/job`）—— 报告与对账都用它，避免元组排序问题。"""
+    return "/".join(str(part) for part in key)
+
+
+def ledger_keys(ledger) -> set:
+    """台账条目的幂等键集合（`(workflow, run_id, job)`）。计数一律**现取**。"""
+    return {entry_key(e) for e in (ledger or {}).get("entries") or []}
+
+
+def ledger_drift(main_ledger, branch_ledger) -> dict:
+    """**纯函数**（无 IO）：#4825 兜底的判据本体 —— 台账分支相对 main 的漂移。
+
+    期望状态由台账语义决定（**只追加** ⇒ main 的条目集恒为分支的子集）：
+      · `ahead`  = 分支有、main 没有 ⇒ **已记账却没落到 main**（本单要治的形态：
+        台账停在分支上，而谁也不会因此变红）；
+      · `behind` = main 有、分支没有 ⇒ 分支被改写/回退（**不该出现**：只追加语义被破坏）。
+
+    返回的 `ahead`/`behind` 是**排好序的字符串键**（幂等键的可读形态），不是计数 ——
+    本文件与 workflow 都**不写死任何条数/阈值**（硬编码计数会随追加腐烂，见 #4701/#4714/#4742）。
+    """
+    main_keys = ledger_keys(main_ledger)
+    branch_keys = ledger_keys(branch_ledger)
+    return {
+        "ahead": sorted(_key_str(k) for k in branch_keys - main_keys),
+        "behind": sorted(_key_str(k) for k in main_keys - branch_keys),
+        "main_total": len(main_keys),
+        "branch_total": len(branch_keys),
+    }
+
+
+def _git(*args):
+    return subprocess.run(["git", *args], capture_output=True, text=True)
+
+
+def read_branch_ledger(branch: str = LEDGER_BRANCH):
+    """取**远端台账分支**上的台账。三态，不许把「读不到」当「无漂移」：
+
+    · `dict`  —— 读到了；
+    · `None`  —— 分支**不存在**（还没记过账 ⇒ 没有「已记账却未落 main」的内容 ⇒ 非漂移）；
+    · 抛 `RuntimeError` —— **无法判定**（网络/权限/文件缺失）⇒ CLI 退 `3`，调用方必须当红读。
+    """
+    ls = _git("ls-remote", "--heads", "origin", branch)
+    if ls.returncode != 0:
+        raise RuntimeError(
+            f"git ls-remote 失败（无法判定分支是否存在）：{(ls.stderr or '').strip()[:200]}")
+    if not ls.stdout.strip():
+        return None
+    fetch = _git("fetch", "--quiet", "origin", branch)
+    if fetch.returncode != 0:
+        raise RuntimeError(
+            f"git fetch origin {branch} 失败：{(fetch.stderr or '').strip()[:200]}")
+    show = _git("show", f"FETCH_HEAD:{LEDGER_REL}")
+    if show.returncode != 0:
+        raise RuntimeError(
+            f"读不到 {branch}:{LEDGER_REL}：{(show.stderr or '').strip()[:200]}")
+    return json.loads(show.stdout)
+
+
+def branch_head_age_minutes():
+    """台账分支 HEAD（= 刚 fetch 的 `FETCH_HEAD`）的提交年龄（分钟）；取不到 ⇒ `None`。
+
+    用途：区分「兜底刚发出、check 还在产出（异步窗口）」与「推上去了却久久落不到 main」。
+    """
+    out = _git("log", "-1", "--format=%ct", "FETCH_HEAD")
+    if out.returncode != 0 or not out.stdout.strip():
+        return None
+    try:
+        ct = int(out.stdout.strip())
+    except ValueError:
+        return None
+    return max(0, int((datetime.now(timezone.utc).timestamp() - ct) // 60))
+
+
 # ── 报告（可见性：结论必须落在 PR / run summary 上，不许只在日志深处） ───────────
 
 
@@ -681,6 +768,14 @@ def main(argv=None) -> int:
                    help="只看该分支的 pull_request run（台账分支）")
     p.add_argument("--json-out", help="写出被批准的 run id 列表（供复核/审计）")
 
+    p = sub.add_parser("ledger-drift",
+                       help="台账落仓对账（#4825 兜底判据）：台账分支是否领先 main")
+    p.add_argument("--branch", default=LEDGER_BRANCH, help="台账分支名")
+    p.add_argument("--main-file", default=str(LEDGER_PATH), help="main 侧台账（工作区 = main 检出）")
+    p.add_argument("--branch-file", help="离线：直接读该文件当分支台账（测试 / 本地复跑）")
+    p.add_argument("--json-out")
+    p.add_argument("--gh-output")
+
     p = sub.add_parser("append", help="只追加 + 幂等地写入台账")
     p.add_argument("--ledger", default=str(LEDGER_PATH))
     p.add_argument("--entries", required=True)
@@ -747,6 +842,50 @@ def main(argv=None) -> int:
         print(f"✅ 已 approve {len(ids)} 个 run —— 它们将真正执行并产出 check-runs")
         if args.json_out:
             _write(args.json_out, json.dumps(ids, ensure_ascii=False))
+        return 0
+
+    if args.cmd == "ledger-drift":
+        age = None
+        try:
+            main_ledger = load_ledger(Path(args.main_file))
+            if args.branch_file:
+                branch_ledger = load_ledger(Path(args.branch_file))
+            else:
+                branch_ledger = read_branch_ledger(args.branch)
+                if branch_ledger is not None:
+                    age = branch_head_age_minutes()
+        except (RuntimeError, OSError, ValueError) as exc:
+            print(f"⛔ 无法判定台账漂移（{exc}）⇒ **不得**当「无漂移」读（未跑 ≠ 通过）",
+                  file=sys.stderr)
+            return 3
+        if branch_ledger is None:
+            # 分支不存在 ⇒ 没有「已记账却未落 main」的内容。**不**把它读成「main 有而分支没有」
+            # （那会凭空报一堆分叉），故显式给零漂移。
+            drift = {"ahead": [], "behind": [],
+                     "main_total": len(ledger_keys(main_ledger)), "branch_total": 0}
+            state = "no-branch"
+        else:
+            drift = ledger_drift(main_ledger, branch_ledger)
+            state = "drift" if drift["ahead"] else "in-sync"
+        drift["state"] = state
+        drift["age_minutes"] = age
+        print(f"📒 台账对账（{args.branch}）：main {drift['main_total']} 条 · "
+              f"分支 {drift['branch_total']} 条 ⇒ **领先 main {len(drift['ahead'])} 条** / "
+              f"落后 {len(drift['behind'])} 条"
+              f"（分支 HEAD {age if age is not None else '—'} 分钟前；状态 {state}）")
+        for key in drift["ahead"]:
+            print(f"   ⏳ 已记账但未落 main：{key}")
+        for key in drift["behind"]:
+            print(f"   ⚠️ main 有而分支没有（台账**只追加** ⇒ 这是分叉）：{key}")
+        if args.json_out:
+            _write(args.json_out, json.dumps(drift, ensure_ascii=False, indent=2))
+        if args.gh_output:
+            with open(args.gh_output, "a", encoding="utf-8") as fh:
+                fh.write(f"drift={1 if drift['ahead'] else 0}\n")
+                fh.write(f"ahead={len(drift['ahead'])}\n")
+                fh.write(f"behind={len(drift['behind'])}\n")
+                fh.write(f"state={state}\n")
+                fh.write(f"age_minutes={age if age is not None else ''}\n")
         return 0
 
     if args.cmd == "append":
