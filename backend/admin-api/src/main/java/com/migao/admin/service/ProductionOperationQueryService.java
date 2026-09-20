@@ -128,6 +128,14 @@ public class ProductionOperationQueryService {
      */
     public static final List<String> BASELINE_POSITIONS = List.of("布帘", "纱帘", "帘头");
 
+    /**
+     * 去部位化（issue #4883）后，同一逻辑工序**唯一**价的取行来源 —— 用户裁定「取布帘价」。
+     *
+     * <p>只用于 {@link #collapseToLogical} 的选行与 {@link #variantNameOf} 的变体名回落，
+     * <b>不是</b>新的值域：{@code BASELINE_POSITIONS} 仍是部位处的值域出处。</p>
+     */
+    public static final String COLLAPSE_PRICE_SOURCE_POSITION = "布帘";
+
     private final ProductionOperationMapper productionOperationMapper;
     /** 具名主线（新结构的「基准工序序列」载体，V71 / V72）。 */
     private final ProductionRouteTemplateMapper productionRouteTemplateMapper;
@@ -333,11 +341,15 @@ public class ProductionOperationQueryService {
     }
 
     /**
-     * 部位价目 + 适用性矩阵（**实例化用**读面）：{@code (逻辑工序, 部位) → 单价 / 是否做}。
+     * 部位价目 + 适用性矩阵（**原始行**读面）：{@code (逻辑工序, 部位) → 单价 / 是否做}。
      *
      * <p>只返回**活跃**行（{@code status=active} + 未软删 + 同租户），按
      * {@code (logical_name, position)} 稳定排序 —— 取用侧按键查，顺序不影响结果，
      * 但确定序让「同一张单两次生成」的中间态可比对。</p>
+     *
+     * <p>⚠️ 去部位化（issue #4883）后，取用侧**不应**直接按 {@code position} 过滤取价 ——
+     * 价目一律走 {@link #collapseToLogical}（一道逻辑工序一个价）。本方法保留原始行，
+     * 供写面（寻址 {@code id}）与「按部位回写」等仍需矩阵行的场景使用。</p>
      */
     public List<ProductionOperationPosition> operationPositions(Long tenantId) {
         List<ProductionOperationPosition> rows = productionOperationPositionMapper.selectList(
@@ -348,6 +360,80 @@ public class ProductionOperationQueryService {
                         .orderByAsc(ProductionOperationPosition::getLogicalName)
                         .orderByAsc(ProductionOperationPosition::getPosition));
         return rows == null ? List.of() : rows;
+    }
+
+    /**
+     * 部位价目矩阵 → **一道逻辑工序一行、一个价**（去部位化，issue #4883）。
+     *
+     * <p>矩阵的键曾是 {@code (逻辑工序, 部位)}；用户裁定「部位不再参与取价，取布帘价」
+     * ⇒ 取用侧必须先把同一 {@code logical_name} 的多行**收敛为一行**。收敛顺序
+     * （**完全确定**，不依赖 DB 返回序 —— 漂移会让同一张单两次生成得到不同工资）：</p>
+     * <ol>
+     *   <li>{@code applicable = TRUE} 的行优先：{@code FALSE} = 当年「该部位明确不做」，
+     *       其 {@code unit_price} 一律 {@code NULL} ⇒ 优先它会把**有价**的工序（如
+     *       {@code 帘头制作}：布帘格 FALSE+NULL、帘头格 TRUE+¥2.00）判成「未定价」；</li>
+     *   <li>其中 {@link #COLLAPSE_PRICE_SOURCE_POSITION 布帘} 列优先（用户裁定「取布帘价」）；</li>
+     *   <li>再按 {@code position} 字典序、{@code id} 升序（同部位重复行同样确定）。</li>
+     * </ol>
+     *
+     * <p>🔴 <b>价只「选行」、绝不「回落」</b>（issue #4696，P1）：收敛行的 {@code unit_price}
+     * 是 {@code NULL} ⇒ 就是**未定价**，<b>不得</b>回落 {@code production_operations.unit_price}
+     * （那是 {@code NOT NULL DEFAULT 0} ⇒ 回落把「未定价」变成「真 0 元」，工人白干且无人知道）。</p>
+     *
+     * <p><b>为什么在代码里收敛、而不是加一条迁移把这些行软删</b>：V71 的矩阵种子是
+     * {@code routing.py} ↔ {@code V71} ↔ {@code docs/sql/schema.sql} <b>三源收敛</b>的冻结产物，
+     * 且 <b>bootstrap 路径不跑迁移链</b>（{@code docs/sql/schema.sql} 是终态种子）——
+     * 在迁移里删种子行会让 bootstrap 与迁移链终态**分叉**，而那正是既有守卫要防的形态。
+     * ⇒ 收敛发生在**三个取用侧共用的这一处**（读面 / 实例化 / 补价），物理行保持不动。</p>
+     *
+     * @return 每个 {@code logical_name} 一行，按 {@code logical_name} 升序（与
+     *         {@code GET /operation-positions} 的既有「按逻辑工序名稳定排序」同口径）
+     */
+    public static List<ProductionOperationPosition> collapseToLogical(List<ProductionOperationPosition> rows) {
+        Map<String, ProductionOperationPosition> survivors = new LinkedHashMap<>();
+        if (rows != null) {
+            for (ProductionOperationPosition row : rows) {
+                if (row == null || row.getLogicalName() == null) {
+                    continue;
+                }
+                ProductionOperationPosition current = survivors.get(row.getLogicalName());
+                if (current == null || beatsForCollapse(row, current)) {
+                    survivors.put(row.getLogicalName(), row);
+                }
+            }
+        }
+        List<String> names = new ArrayList<>(survivors.keySet());
+        names.sort(String::compareTo);
+        List<ProductionOperationPosition> out = new ArrayList<>();
+        for (String name : names) {
+            out.add(survivors.get(name));
+        }
+        return out;
+    }
+
+    /** {@link #collapseToLogical} 的选行比较：{@code candidate} 是否应取代 {@code current}。 */
+    private static boolean beatsForCollapse(ProductionOperationPosition candidate,
+                                            ProductionOperationPosition current) {
+        int byApplicable = Boolean.compare(Boolean.TRUE.equals(candidate.getApplicable()),
+                Boolean.TRUE.equals(current.getApplicable()));
+        if (byApplicable != 0) {
+            return byApplicable > 0;
+        }
+        int bySourcePosition = Boolean.compare(
+                COLLAPSE_PRICE_SOURCE_POSITION.equals(candidate.getPosition()),
+                COLLAPSE_PRICE_SOURCE_POSITION.equals(current.getPosition()));
+        if (bySourcePosition != 0) {
+            return bySourcePosition > 0;
+        }
+        int byPosition = blankSafe(candidate.getPosition()).compareTo(blankSafe(current.getPosition()));
+        if (byPosition != 0) {
+            return byPosition < 0;
+        }
+        return blankSafe(candidate.getId()).compareTo(blankSafe(current.getId())) < 0;
+    }
+
+    private static String blankSafe(String value) {
+        return value == null ? "" : value;
     }
 
     /**

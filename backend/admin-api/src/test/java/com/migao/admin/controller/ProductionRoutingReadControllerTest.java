@@ -222,9 +222,9 @@ class ProductionRoutingReadControllerTest {
     // ── 判据 1：端点存在 + 形状 + 信封 ──
 
     @Test
-    @DisplayName("GET /operation-positions ⇒ {success,data:[10 键/行]}，乱序入库也按 (operation, position) 返回")
-    void operationPositionsReturnsMatrixInStableOrder() throws Exception {
-        // 故意乱序（三边 在 精裁 之前、帘头 在 布帘 之前）—— 排序由服务层显式承担
+    @DisplayName("GET /operation-positions ⇒ {success,data:[10 键/行]}，乱序入库也按**逻辑工序名**返回（一道工序一行）")
+    void operationPositionsReturnsOneRowPerLogicalOperationInStableOrder() throws Exception {
+        // 故意乱序（三边 在 精裁 之前、帘头 在 布帘 之前）—— 收敛与排序由服务层显式承担
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
                 position("三边", "帘头", "0.40", true),
                 position("精裁", "纱帘", "0.40", true),
@@ -233,13 +233,13 @@ class ProductionRoutingReadControllerTest {
         mockMvc.perform(get("/api/admin/production/operation-positions"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.length()").value(3))
+                // 去部位化（issue #4883）：**一道逻辑工序一行** ⇒ 3 行收敛为 2 行
+                // （`精裁` 的 纱帘/布帘 两格合并为布帘那一格），按逻辑工序名稳定排序
+                .andExpect(jsonPath("$.data.length()").value(2))
                 .andExpect(jsonPath("$.data[0].operation").value("三边"))
                 .andExpect(jsonPath("$.data[0].position").value("帘头"))
                 .andExpect(jsonPath("$.data[1].operation").value("精裁"))
                 .andExpect(jsonPath("$.data[1].position").value("布帘"))
-                .andExpect(jsonPath("$.data[2].operation").value("精裁"))
-                .andExpect(jsonPath("$.data[2].position").value("纱帘"))
                 // 键集逐字（issue #4500 冻结 4 键 + #4587 追加 id/变体元数据 − #4622 去掉变体名）：不多不少（10 个）
                 .andExpect(jsonPath("$.data[0].length()").value(10))
                 .andExpect(jsonPath("$.data[0].id").value("opp-三边-帘头"))
@@ -413,8 +413,8 @@ class ProductionRoutingReadControllerTest {
     }
 
     @Test
-    @DisplayName("「不做」与「没定价」在响应里**可区分**：applicable=false + unit_price=null 原样返回（不丢行、不填 0）")
-    void operationPositionsKeepsNotApplicableRowsVerbatim() throws Exception {
+    @DisplayName("「不做」与「没定价」在响应里**可区分**：收敛取**适用**那条，false 行不冒充它")
+    void operationPositionsCollapsesToTheApplicableRow() throws Exception {
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
                 position("熨烫", "纱帘", null, false),
                 position("熨烫", "布帘", "0.35", true)));
@@ -426,15 +426,35 @@ class ProductionRoutingReadControllerTest {
         Map<?, ?> data = (Map<?, ?>) objectMapper.readValue(body, Map.class);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("data");
-        assertThat(rows).hasSize(2);
+        // 去部位化（issue #4883）：两行收敛为一行 —— 幸存行 = 适用且布帘列那条。
+        assertThat(rows).hasSize(1);
         assertThat(rows.get(0).get("operation")).isEqualTo("熨烫");
         assertThat(rows.get(0).get("position")).isEqualTo("布帘");
         assertThat(rows.get(0).get("unit_price")).isEqualTo(0.35);
         assertThat(rows.get(0).get("applicable")).isEqualTo(true);
-        assertThat(rows.get(1).get("position")).isEqualTo("纱帘");
-        assertThat(rows.get(1).get("applicable")).isEqualTo(false);
-        assertThat(rows.get(1)).containsKey("unit_price");
-        assertThat(rows.get(1).get("unit_price")).isNull();
+    }
+
+    @Test
+    @DisplayName("GET /operation-positions：一道工序**一格适用都没有** ⇒ 仍出该行（不适用/未定价不得被读面吞掉）")
+    void operationPositionsKeepsAnOperationWhoseCellsAreAllNotApplicable() throws Exception {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("帘头制作", "布帘", null, false),
+                position("帘头制作", "纱帘", null, false)));
+
+        String body = mockMvc.perform(get("/api/admin/production/operation-positions"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse()
+                .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        Map<?, ?> data = (Map<?, ?>) objectMapper.readValue(body, Map.class);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("data");
+        // 收敛只在**同一逻辑工序内部**选行 ⇒ 该工序不会因「一格适用都没有」被整行抹掉
+        // （读面不做值过滤，issue #4500；也不得把「不适用」显示成「价 0 元」）。
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get("operation")).isEqualTo("帘头制作");
+        assertThat(rows.get(0).get("applicable")).isEqualTo(false);
+        assertThat(rows.get(0)).containsKey("unit_price");
+        assertThat(rows.get(0).get("unit_price")).isNull();
     }
 
     @Test

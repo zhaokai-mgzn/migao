@@ -810,8 +810,9 @@ public class ProcessingOrderService {
                     || !conditionalRuleTriggers(rule, options, processingItems)) {
                 continue;
             }
+            // 规则级部位限定照旧生效（理由与红证同 buildRoute，见那里的注释）。
             if (rule.getPosition() != null && !Objects.equals(rule.getPosition(), position)) {
-                continue;   // 部位限定：不匹配本部位 ⇒ 不触发（与 build_route_v2 逐字同款）
+                continue;   // 部位限定：不匹配本部位 ⇒ 不触发
             }
             applicable.add(rule);
         }
@@ -1191,11 +1192,17 @@ public class ProcessingOrderService {
      * <ol>
      *   <li>取主线（{@code template.mainline}，逻辑工序名）；</li>
      *   <li>按 {@code priority} <b>升序</b>应用规则（同 priority 按 id，读取侧已排好）：
-     *       触发命中（工艺精确匹配 / 选项 ∈ 本单选项）+ 部位限定通过 ⇒
+     *       触发命中（工艺精确匹配 / 选项 ∈ 本单选项）⇒
      *       {@code insert} 用 {@code after_operation} 定位（锚点不在序列中 ⇒ <b>追加末尾</b>，
      *       与 {@code _insert_after} 同款）；{@code remove} 直接删除该逻辑工序名。
-     *       ⚠️ <b>{@code remove} 不先于 {@code insert}</b>：顺序完全由 {@code priority} 决定；</li>
-     *   <li>按 {@code production_operation_positions.applicable} <b>滤掉该部位不做的工序</b>：
+     *       ⚠️ <b>{@code remove} 不先于 {@code insert}</b>：顺序完全由 {@code priority} 决定。
+     *       ⚠️ <b>规则级</b>的 {@code position}（部位限定）**照旧筛选** —— 它与「路线层的帘种适用性」
+     *       （{@code production_route_templates.positions}）**不是**同一件事：实测去掉它会让规范
+     *       9 条老路线的逐字重建判据变红（`ProductionRouteParityTest`），并让 `韩褶 × 布帘` 那条
+     *       插入 {@code 上车布} 的规则对帘头单生效 ⇒ 帘头主线多一道不该做的工序（错发计件工资）；</li>
+     *   <li>按 {@code production_operation_positions.applicable} <b>滤掉该部位不做的工序</b>
+     *       （<b>本批保留</b>：issue #4883 只把**取价**去部位化 ——「适用性」是矩阵的**数据层**
+     *       约束，不是商家配置面的「部位」；去掉它有 3 条判据当场变红，红证见 {@code buildRoute} 方法体）：
      *       键存在且 {@code false} ⇒ 「该部位明确不做」⇒ 静默滤掉；缺该 {@code (逻辑工序, 部位)} 行
      *       且名字**本身就是逻辑工序名** ⇒ 也滤掉（没有适用性行 = 没登记过，不猜）；
      *       ⚠️ 而名字**不是逻辑工序名**（变体名 / 别名，如 {@code 精裁-布}）⇒ 实例化按逻辑名建键
@@ -1207,8 +1214,9 @@ public class ProcessingOrderService {
      * 库中缺该变体、或主线里出现**不认识的名字** ⇒ 登记进 {@code missing_operations}
      * （由调用方 fail-closed，**不猜默认值**，也**不静默丢**）。</p>
      *
-     * <p><b>单价 = 该部位价目矩阵格</b>（{@code production_operation_positions.unit_price}），
-     * <b>逐字带出、绝不回落</b>（issue #4696，P1）：格价 {@code NULL} = <b>未定价</b> ⇒
+     * <p><b>单价 = 该逻辑工序的「一口价」</b>（去部位化，issue #4883：矩阵按逻辑工序收敛为一行，
+     * 收敛规则见 {@link ProductionOperationQueryService#collapseToLogical}；用户裁定取布帘价），
+     * <b>逐字带出、绝不回落</b>（issue #4696，P1）：该价 {@code NULL} = <b>未定价</b> ⇒
      * 实例快照落 {@code NULL}（不是 0）。</p>
      *
      * <p>⚠️ 改前这里回落「工序库行价」（{@code production_operations.unit_price}，V49 DDL 是
@@ -1224,13 +1232,31 @@ public class ProcessingOrderService {
                                            List<ProductionOperationPosition> priceRows,
                                            Map<String, Map<String, Object>> catalog,
                                            Long tenantId) {
+        // 价目**一口价**（去部位化，issue #4883）：部位不再参与取价 ⇒ 把矩阵按逻辑工序收敛成
+        // 「一道逻辑工序 → 一个价」（收敛规则 = ProductionOperationQueryService#collapseToLogical：
+        // 适用行优先、其中**布帘列**优先 —— 用户裁定「取布帘价」）。
+        // 🔴 未定价（收敛行的 unit_price IS NULL）**不得**回落工序库行价（issue #4696）：
+        // 工序库是 `NOT NULL DEFAULT 0` ⇒ 回落把「未定价」变成「真 0 元」（工人白干且无人知道）。
         Map<String, BigDecimal> priceByLogical = new LinkedHashMap<>();
+        for (ProductionOperationPosition row
+                : ProductionOperationQueryService.collapseToLogical(priceRows)) {
+            priceByLogical.put(row.getLogicalName(), row.getUnitPrice());
+        }
+        // 「该部位做不做这道工序」**仍在实例化时筛选**（本批**不动**它）：它是价目矩阵的
+        // **数据层**约束，不是商家配置面上的「部位」。去掉它的**实测红证**（3 条判据当场变红）：
+        //  · `ProductionRouteParityTest#skippingApplicabilityFilterWouldLeakClothOnlyOperationsIntoSheerRoute`
+        //    —— 专为「别去掉它」写的注入式守卫：去掉后纱帘单要么带上布帘专属的
+        //    熨烫/定型/复烫/车被、要么整单 fail-closed，两条路都不是旧结构行为；
+        //  · 9 条老路线**逐字重建**（{@code allNineCombinationsRebuildTheLegacyRoutesVerbatim}）
+        //    与 {@code instantiationSequenceIsUnchangedForTheCanonicalRuleConfig}；
+        //  · 另有 **40 条**既有用例的工序数期望随之改变（`打包` 在布帘列本是
+        //    {@code applicable=false} ⇒ 去掉筛选后布帘单多出「打包」：11 → 12 道）。
+        // ⇒ 保留筛选；「把适用性也一起去掉」需**单独裁定**并同时退休上面那 3 条守卫。
         Map<String, Boolean> applicableByLogical = new LinkedHashMap<>();
         for (ProductionOperationPosition row : priceRows) {
             if (!Objects.equals(row.getPosition(), position) || row.getLogicalName() == null) {
                 continue;
             }
-            priceByLogical.put(row.getLogicalName(), row.getUnitPrice());
             applicableByLogical.put(row.getLogicalName(), Boolean.TRUE.equals(row.getApplicable()));
         }
 
@@ -1273,6 +1299,12 @@ public class ProcessingOrderService {
                         422,
                         "请在「工艺配置 → 工艺路线」停用该规则，或联系研发实现该触发类型");
             }
+            // ⚠️ 规则的 `position`（**规则级**部位限定）**照旧生效** —— 它**不是**「路线层的帘种适用性」
+            // （那个是 `production_route_templates.positions`，见 `routeTemplateFor`）。
+            // 实测红证：去掉这一行 ⇒ 规范 9 条老路线的**逐字重建**判据（`ProductionRouteParityTest`
+            // 的 9/9 + 「少一道工序就红」的注入用例）当场变红，且 `韩褶 × 布帘` 这条插入 `上车布`
+            // 的规则会开始对**帘头**单生效 ⇒ 帘头主线多出一道它本来不做的工序（错发计件工资）。
+            // ⇒ 保留筛选；配置面（`工艺配置`）不再暴露该字段，存量行的值继续生效。
             if (rule.getPosition() != null && !Objects.equals(rule.getPosition(), position)) {
                 continue;
             }

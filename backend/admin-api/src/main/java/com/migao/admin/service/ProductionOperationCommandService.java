@@ -145,17 +145,23 @@ public class ProductionOperationCommandService {
                 op.setIsStartMarker(startMarker);
             }
         }
-        // issue #4614（**存量孤儿接入路径**）：body 带 positions ⇒ 只**补**缺失的矩阵行。
+        // issue #4614（**存量孤儿接入路径**）+ 去部位化（issue #4883）：body 带 positions ⇒ 只**补**
+        // 缺失的矩阵行；**省略 positions ⇒ 也补那一行**（恒有且只有一行）—— 判据同 {@link #create}。
         // 校验先于写入（与新增路径同一份 `requestedPositions` / `rejectUnknownPositions`）。
+        // ⚠️ 停用工序：省略 positions 时**不兜底建行**（建出来的行读面看不见 = 「接了但没生效」），
+        //    显式传 positions 仍走既有 422 护栏。
+        boolean explicitPositions = body != null && body.containsKey("positions");
         List<String> positions = null;
         List<ProductionOperationPosition> existingRows = List.of();
-        if (body != null && body.containsKey("positions")) {
-            positions = requestedPositions(body.get("positions"));
+        if (explicitPositions || "active".equals(op.getStatus())) {
+            positions = explicitPositions
+                    ? requestedPositions(body.get("positions"))
+                    : List.of(ProductionOperationQueryService.COLLAPSE_PRICE_SOURCE_POSITION);
             existingRows = tenantMatrixRows(tenantId);
             rejectUnknownPositions(positions, existingRows);
             // 冻结判据：矩阵行只在 deleted=0 **AND status='active'** 的工序上补（停用工序接部位 =
             // 建出一批读面看不见的行，商家会以为「接了但没生效」）。
-            if (!"active".equals(op.getStatus())) {
+            if (explicitPositions && !"active".equals(op.getStatus())) {
                 throw BusinessException.validationError("工序「" + op.getName()
                         + "」当前是停用状态：停用工序不接部位（先启用它，再接部位）");
             }
@@ -208,7 +214,9 @@ public class ProductionOperationCommandService {
      * （原「工序库明细」表已随 #4588 取消）。故 body 增可选 {@code positions}：
      * 给了就**同一事务**为每个部位插一行矩阵行（{@code logical_name} = 工序名的**归一逻辑名**，
      * 复用 {@link ProductionOperationQueryService#normalizeOperationName}；{@code unit_price} =
-     * 本次填的计件单价）。**不给 {@code positions} ⇒ 行为一字不变**（老调用方/脚本不受影响）。</p>
+     * 本次填的计件单价）。**去部位化（issue #4883）后：省略 {@code positions} 也会建那一行**
+     * （兜底值 = 收敛的「取价来源列」常量）—— 前端不再传 {@code positions}，不兜底 ⇒ 新工序在
+     * 「工艺项」表里**无处可见**、连定价入口都没有（#4614 复发）。</p>
      *
      * <p><b>幂等</b>：同 {@code (tenant_id, logical_name, position)} 已有未软删行 ⇒ **跳过**
      * （**不覆盖**商家改过的价），并在响应里**如实报数**
@@ -227,15 +235,18 @@ public class ProductionOperationCommandService {
         // 为什么选**拒绝**而不是归一：`布三边` 归一成 `三边` 会与**既有** `三边` 行撞唯一索引
         // `uk_production_operations_tenant_name`（⇒ 500 或建出重复/半成品），拒绝才与「一套名字」一致。
         rejectVariantOperationName(name);
-        // issue #4614：positions 给了才建矩阵行。**校验先于写入**（与 status/scope 同口径）——
+        // issue #4614 + 去部位化（issue #4883）：**省略 `positions` 也必须建那一行价目行** ——
+        // 前端去部位化后不再勾部位（不再传 `positions`），若不兜底 ⇒ 新工序在「工艺项」表里
+        // **无处可见**、连定价入口都没有（用户实测原话「这个新增按钮，无法新增工序」）⇒ #4614 当场复发。
+        // 兜底值 = 收敛的「取价来源列」常量（{@link ProductionOperationQueryService#COLLAPSE_PRICE_SOURCE_POSITION}，
+        // 与读面/实例化收敛**同一个出处**，不新造第二个）；
+        // 显式传 `positions` 仍按传入值建（老调用方/脚本不受影响）。**校验先于写入**（与 status/scope 同口径）——
         // 部位写错一个不该先落一行工序库再回滚。
-        List<String> positions = null;
-        List<ProductionOperationPosition> existingRows = List.of();
-        if (body != null && body.containsKey("positions")) {
-            positions = requestedPositions(body.get("positions"));
-            existingRows = tenantMatrixRows(tenantId);
-            rejectUnknownPositions(positions, existingRows);
-        }
+        List<String> positions = body != null && body.containsKey("positions")
+                ? requestedPositions(body.get("positions"))
+                : List.of(ProductionOperationQueryService.COLLAPSE_PRICE_SOURCE_POSITION);
+        List<ProductionOperationPosition> existingRows = tenantMatrixRows(tenantId);
+        rejectUnknownPositions(positions, existingRows);
         // 重名判据覆盖**停用/软删之外**的全部行：唯一索引是 (tenant_id, name) WHERE deleted=0，
         // 只比活跃行会让「同名停用行」撞 DB 索引 ⇒ 500 而不是可行动错误。
         Long sameName = productionOperationMapper.selectCount(new LambdaQueryWrapper<ProductionOperation>()

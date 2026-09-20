@@ -8,7 +8,7 @@
 
 | 端点 | 形状 | 顺序口径 |
 |---|---|---|
-| `GET /api/admin/production/operation-positions` | `[{id, operation, position, unit_price, applicable, variant_operation_id, unit, group, scope, is_must_finish}]`（30 逻辑工序 × 4 部位 = **120 格**，issue #4529 起；`id` + 变体元数据 = issue #4587 追加；**`variant_name` 已按 issue #4622 去掉**） | `(operation, position)` |
+| `GET /api/admin/production/operation-positions` | `[{id, operation, position, unit_price, applicable, variant_operation_id, unit, group, scope, is_must_finish}]`（物理表 30 逻辑工序 × 4 部位 = 120 行；**去部位化后端点收敛为「一道逻辑工序一行」= 30 行**，issue #4883；`id` + 变体元数据 = issue #4587 追加；**`variant_name` 已按 issue #4622 去掉**） | **先收敛**（`collapseToLogical`）**再按逻辑工序名** |
 | `GET /api/admin/production/route-rules` | `[{id, trigger_kind, trigger_value, position, action, operation, after_operation, priority, status, customer_unit_price}]`（**26 条**；末键 = issue #4567 追加的**元/套**价，`null` = 未定价 ≠ 0 元） | `(priority, id)` |
 
 ## 为什么需要本文件（三条**结构性**失效形态，各自不会自己变红）
@@ -29,7 +29,7 @@
 |---|---|---|
 | 1 | 两个端点存在 + `processing:manage` + `TenantContext.getTenantId()` 隔离 + 信封形状/键集逐字 | 今天端点不存在 ⇒ 红；改键名/加键 ⇒ 红 |
 | 2 | 数据源**只**是新两表（旧表 entity/mapper 零命中） | 把服务改成 `ProductionOptionRoutingMapper` ⇒ 红 |
-| 3 | 顺序口径落码：`(logical_name, position)` / `(priority, id)` | 去掉 `thenComparing` ⇒ 红 |
+| 3 | 顺序口径落码：**收敛**（适用优先 → 布帘列 → `position` → `id`）**+ 按逻辑工序名排序** / `(priority, id)` | 去掉收敛或排序 ⇒ 红 |
 | 4 | **无行丢弃过滤**：`eq` 目标集恰为 `{TenantId, Deleted, Status}`（规则表另加 `action IN (insert, remove)`） | 加 `.eq(...getApplicable, true)` ⇒ 红（120 格变少） |
 | 5 | 端点可见性 = 真值源**全集**：V71 的 84/26 行逐值等于 `routing.py` 且每行对端点可见 | 改一格价目（0.4 → 0.45）⇒ 红；把一行种成 `status='disabled'` ⇒ 红 |
 
@@ -44,6 +44,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 CONTROLLER = REPO / "backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java"
 SERVICE = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingReadService.java"
+#: 收敛实现的**唯一**出处（issue #4883 去部位化）：读面 / 实例化 / 补价三处共用它。
+QUERY_SERVICE = REPO / ("backend/admin-api/src/main/java/com/migao/admin/service/"
+                        "ProductionOperationQueryService.java")
 MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
 ROUTING_PY_DIR = REPO / "backend/ai-agent-service"
 
@@ -432,13 +435,35 @@ def test_never_reads_retired_rule_tables():
 # 判据 3：顺序口径落码（派生必须确定性）
 # ══════════════════════════════════════════════════════════════════════════════════
 
-def test_position_order_is_operation_then_position():
-    """判据 3a：部位价目按 `(operation, position)` 稳定排序。"""
+def test_position_order_is_logical_name_after_collapse():
+    """判据 3a（**改判**，issue #4883 去部位化）：先**收敛**，再按**逻辑工序名**稳定排序。
+
+    改前口径 = `(operation, position)` —— 它的前提是「同一逻辑工序在多个部位各有一行」。
+    去部位化后读面必须把同一逻辑工序的多行**收敛成一行**（否则界面上同一道工序重复出现，
+    且「改价改的是哪一行」取决于 DB 返回序 ⇒ 同一道工序两次刷新取到不同的价）。
+    收敛顺序**完全确定**（不依赖 DB 返回序）= `applicable = TRUE` 优先 → 其中**布帘列**优先
+    （用户裁定「取布帘价」）→ `position` 字典序 → `id` 升序。
+    """
     src = _java_code(SERVICE)
-    assert re.search(r"comparing\(ProductionOperationPosition::getLogicalName\)[\s\S]{0,120}?"
-                     r"thenComparing\(ProductionOperationPosition::getPosition\)", src), (
-        "部位价目没有按 `(operation, position)` 排序（缺 `comparing(getLogicalName)` + "
-        "`thenComparing(getPosition)`）—— 不排序 ⇒ 每次刷新顺序都变（issue #4500 硬要求 2）"
+    assert "ProductionOperationQueryService.collapseToLogical" in src, (
+        "读面没有走 `collapseToLogical` 收敛 —— 矩阵物理行仍是 (逻辑工序, 部位) 多行，"
+        "端点会把同一道工序按部位重复返回（一道工序一个价的前提不成立）"
+    )
+    assert not re.search(r"thenComparing\(ProductionOperationPosition::getPosition\)", src), (
+        "读面仍在按 `(operation, position)` 排序 —— 那是去部位化**之前**的口径"
+    )
+    collapsed = _java_code(QUERY_SERVICE)
+    assert re.search(r"names\.sort\(String::compareTo\)", collapsed), (
+        "收敛结果没有按逻辑工序名排序 ⇒ 每次刷新顺序都变（issue #4500 硬要求 2）"
+    )
+    assert re.search(r"Boolean\.compare\(\s*Boolean\.TRUE\.equals\(candidate\.getApplicable\(\)\)",
+                     collapsed), (
+        "收敛没有「适用行优先」这一档 —— 少了它，`帘头制作` 这类「布帘格 applicable=FALSE 且价 NULL」"
+        "的工序会被收敛成**未定价**（而它有价：帘头格 ¥2.00）"
+    )
+    assert re.search(r"COLLAPSE_PRICE_SOURCE_POSITION\.equals\(candidate\.getPosition\(\)\)",
+                     collapsed), (
+        "收敛没有「布帘列优先」这一档 —— 用户裁定「取布帘价」，少了它取哪一行不确定"
     )
 
 
@@ -461,7 +486,8 @@ def test_position_query_has_no_row_dropping_filter():
 
     任何额外的值过滤（如 `.eq(getApplicable, true)` = 只返回「做」的部位、
     `.isNotNull(getUnitPrice)` = 只返回有价的）都会让矩阵**少格** —— 而「不做」与「没定价」
-    在界面上必须可区分（#4433 判据 2）⇒ 120 格必须整份呈现。
+    在界面上必须可区分（#4433 判据 2）⇒ 全表必须整份取回（**过滤可以没有，收敛必须有** ——
+    收敛在 Java 侧由 `collapseToLogical` 承担，不是靠 `.eq(...)` 把行丢掉）。
     """
     assert _eq_targets("ProductionOperationPosition") == {"TenantId", "Deleted", "Status"}, (
         f"部位价目的过滤条件漂移：{sorted(_eq_targets('ProductionOperationPosition'))} —— "
