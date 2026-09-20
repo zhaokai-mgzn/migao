@@ -370,6 +370,104 @@ class ProcessingOrderRouteSourceTest {
                 .containsExactly("配料", "打包");
     }
 
+    /**
+     * 一条订单明细：**卖布行** —— 与 {@link #itemWithSaleForm} 的差别只有一个，
+     * 但正是真库的形态：**没有 `processingItems` 键**（按米卖布不选加工项；issue #4909 真库实证）。
+     */
+    private static OrderItem fabricItemWithoutProcessingItems(String itemId, String productName, String saleForm) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("colorName", "米白");
+        info.put("sellingMethod", "full_roll");
+        if (saleForm != null) {
+            info.put("saleForm", saleForm);
+        }
+        return OrderItem.builder()
+                .id(itemId).tenantId(TENANT).orderId("order-001")
+                .productName(productName).quantity(BigDecimal.TEN)
+                .width(new BigDecimal("2.5")).height(new BigDecimal("2.8"))
+                .processingInfo(info)
+                .build();
+    }
+
+    /**
+     * 🔴 <b>真库实证的缺陷形态（issue #4909）</b>：加工单 `JG-20260921-8237`（订单 `20260921973550001`）
+     * 含一件卖布（`saleForm=布料` / `sellingMethod=full_roll` / 10 米）却**零工序**。
+     *
+     * <p>与上面 PG-039 那条的区别就是**红证所在**：PG-039 的夹具把 `配料` 塞进了 `processingItems`，
+     * 而真库的卖布行**没有这个键** ⇒ 改前 {@code buildSnapshot} 的 `procs.isEmpty()` 把它整行丢掉
+     * ⇒ {@code deriveRouteKey} 的布料分支永不执行（整件商品的工序凭空消失，且无任何报错）。</p>
+     */
+    @Test
+    @DisplayName("PG-057 卖布行（saleForm=布料、**无** processingItems）⇒ 仍走布料基础路线并实例化工序")
+    void fabricLineWithoutProcessingItemsStillGetsTheFabricRoute() {
+        stubRoutings();
+        AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
+                fabricItemWithoutProcessingItems("item-1", "9231 遮光窗帘", "布料")));
+
+        var results = service().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess())
+                .as("改前：快照被清空 ⇒ 该单被判「无加工项，无需生成加工单」")
+                .isTrue();
+        assertThat(po.get().getRouteKey())
+                .as("卖布行的路线 = **布料路线**（改前该行根本不参与路线解析）")
+                .isEqualTo(RoutingModelFixture.FABRIC_TEMPLATE_NAME);
+        assertThat(instanceOperationNames())
+                .as("布料基础路线的工序必须落库"
+                        + "（夹具主线 = V79 版 [配料,打包]；真库 V88 终态 = [裁剪,打包]，见 MainlineOperationReferenceTest）")
+                .containsExactly("配料", "打包");
+    }
+
+    /**
+     * 🔴 <b>随单发现的第二处缺陷（issue #4909 判据 3）</b>：卖布行按米卖、**没有加工项**
+     * ⇒ {@code isMeterBasedLine} 第 1 段判 false（{@code processingItems} 缺失）⇒ 米数进不了
+     * {@code calc_info} ⇒ 端点按缺键兜底 <b>1</b>（{@code qty_source=fallback}）
+     * ⇒ 10 米的布单只做 1 米、计件按 1 米算。
+     */
+    @Test
+    @DisplayName("PG-057 卖布行的算料输入带米数（订单行 quantity）—— 不得兜底 1（#4208 红线）")
+    void fabricLineWithoutProcessingItemsSendsOrderQuantityAsMeters() {
+        stubRoutings();
+        stubGenerate(List.of(fabricItemWithoutProcessingItems("item-1", "9231 遮光窗帘", "布料")));
+
+        service().generate(List.of("order-001"), TENANT, "u1");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Map<String, Object>>> captor = ArgumentCaptor.forClass(List.class);
+        org.mockito.Mockito.verify(productionOperationQtyClient).resolve(captor.capture());
+        Map<String, Object> request = captor.getValue().get(0);
+        assertThat(request.get("position_name")).isEqualTo("9231 遮光窗帘 米白");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> calcInfo = (Map<String, Object>) request.get("calc_info");
+        assertThat(calcInfo)
+                .as("卖布行的米数只能取**订单行数量**（与 isMeterBasedLine 的取值口径同源）；"
+                        + "缺键 ⇒ 端点兜底 1 ⇒ 10 米的布单只做 1 米")
+                .containsEntry("fabric_meters", BigDecimal.TEN);
+    }
+
+    /**
+     * 反向护栏（issue #4909 的边界）：**没有** `saleForm=布料` 的行（普通配件 / 赠品行）
+     * ⇒ 旧语义逐字不变 —— 无加工项仍不进快照（不成部位、不产工序、也不得凭空生成加工单）。
+     */
+    @Test
+    @DisplayName("PG-057 反向护栏：无加工项且**非**卖布行 ⇒ 仍不进快照（旧语义不变）")
+    void itemWithoutProcessingItemsAndWithoutFabricSaleFormIsStillSkipped() {
+        stubRoutings();
+        // 只桩到「订单 + 明细」：本用例的路径在**幂等检查之前**就中止（快照为空）
+        // ⇒ 不走 stubGenerate 的 selectActiveByOrderId / insert，避免严格桩判「备而不用」。
+        when(orderMapper.selectById("order-001")).thenReturn(Order.builder()
+                .id("order-001").tenantId(TENANT).orderNo("ORD-20260919-0001").status("confirmed").build());
+        when(orderItemMapper.selectList(any())).thenReturn(
+                List.of(fabricItemWithoutProcessingItems("item-1", "普通配件", null)));
+
+        var results = service().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess())
+                .as("无加工项且非卖布行 ⇒ 订单仍判「无加工项，无需生成加工单」（改前语义，不得被本单放宽）")
+                .isFalse();
+        assertThat(results.get(0).getMessage()).contains("无加工项");
+    }
+
     /** 本次生成落库的工序实例（按落库顺序）—— 落库**值**的判据只能从捕获的实体上取。 */
     private List<com.migao.admin.entity.ProcessingPositionOperation> instanceOperations() {
         ArgumentCaptor<com.migao.admin.entity.ProcessingPositionOperation> captor =
