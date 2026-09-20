@@ -715,6 +715,7 @@ git grep -niE "标准工时|standard_hours|std_hours" origin/main
 | **C9** | 🔴 **越站防呆原为 422 拒绝**（`assertPredecessorsDone`），与**裁定②-2「不拦生产顺序」直接冲突** | 同上 | ✅ **已落码**（issue #4694，2026-09-20）：闸门**已删除**（`assertPredecessorsDone` 整条删除，不留死代码），既有 422 `OPERATION_SEQUENCE_VIOLATION` 断言**已改钉**为「越站 ⇒ 放行」，并登记为**放宽型行为变化**（§5.3 ②）。本设计继承该口径，**不得**再加回顺序闸门 |
 | **C10** | **防呆④「非本部位码」今天形式上是空的**（F18：码无部位 ⇒ 只能校验「属于本加工单」） | 同上 `doReport` 的三重校验 | **本设计补全**（码带部位 ⇒ 相等断言）；登记为**收紧型行为变化**（§5.3 ④） |
 | **C11** | **本设计**新增**一条防呆（⑤ 工序必须确定）**，真值源 `:56` 只写了四条 | 真值源 `docs/curtain-production-rules.md` `:56` | **显式登记为「真值源四条 + 裁定②-2 的硬约束」**，不假装它是真值源原文 |
+| **C12** | 🔴 **布料主线真值源仍是旧口径**：`routing.py` 的 `FABRIC_MAINLINE_STEPS` = `["配料","打包"]`，而 #4673 已**改判**为 `裁剪`、V88 已按裁定落码；**钉住它的测试文案还把 `配料` 称「裁定」= 过期裁定** | `backend/ai-agent-service/app/production/routing.py` 的 `FABRIC_MAINLINE_STEPS`；`backend/ai-agent-service/tests/test_production/test_fabric_route.py`；口径真值源 `docs/design/craft-calc-and-fabric-routing.md` §6 判据 #10 | **只登记，不修**（issue #4701 的 P1）：ai-agent 属用户裁定「本会话不动工」（#4652）⇒ 等 ai-agent 排期时**连同其钉住测试一起改判**（文案的「裁定」必须改成「已被 #4673 改判为 `裁剪`」）并同步 `seed.json`。⚠️ **当前零影响**（`build_route_v2` 生产代码**零消费方**，`routing.py` 自述）⇒ **未来一改即假红** |
 
 ---
 

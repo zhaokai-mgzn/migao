@@ -412,9 +412,23 @@ git ls-tree --name-only origin/main backend/admin-api/src/main/resources/db/migr
 | ② | `配料 × 4 部位` 矩阵行 **软删** | `production_operation_positions`（`logical_name='配料'`） | 同上 |
 | ③ | **布料主线改** `["配料","打包"]` → `["裁剪","打包"]` | `production_route_templates.mainline`（`name='布料工序路线'`，**按租户**） | 手术式替换（同 V79 ⑥ 的 `jsonb` 形态）；`NOT (mainline @> '["裁剪"]')` 判重 |
 | ④ | **`裁剪 × 布料` 格**：`applicable` **TRUE** | `production_operation_positions`（V79 已种该行：`backend/admin-api/src/main/resources/db/migration/V79__seed_fabric_route_and_packing_operation.sql:92` / `backend/admin-api/src/main/resources/db/migration/V79__seed_fabric_route_and_packing_operation.sql:141`，`applicable=FALSE`） | `UPDATE … WHERE logical_name='裁剪' AND position='布料'` |
-| ⑤ | **其余 35 格软删**（§2.4 的 36 − 1） | `production_operation_positions`（`position='布料' AND logical_name <> '裁剪'`） | 同上 |
+| ⑤ | **其余 31 格软删**（§2.4 的 36 − 1 保命格 − 4 `打包` 格 = 31；**口径订正**见表后注） | `production_operation_positions`（`position='布料' AND logical_name NOT IN ('裁剪','打包')`） | 同上 |
 | ⑥ | **按租户循环**（存量租户） | ①②③④⑤ 全部要覆盖**每个活跃租户**（`FROM tenants WHERE deleted=0`） | 与 V79 同款（`backend/admin-api/src/main/resources/db/migration/V79__seed_fabric_route_and_packing_operation.sql:56-68`）；只种 1 号租户 ⇒ 非 1 号租户全量 422（`backend/admin-api/src/main/resources/db/migration/V79__seed_fabric_route_and_packing_operation.sql:17-21` 逐字警告） |
 | ⑦ | **不动** `打包` 的 4 格 + `scope='set'` | —— | 见 §5.4 红线 |
+
+> 🔴 **口径订正（issue #4701，2026-09-20）：⑤ 的退场格数 = **31**，不是本文原写的「35 格」。**
+> **依据**（主会话裁定 + **真库红证**）：`36 − 1（`裁剪 × 布料` 保命格）− 4（`打包` 格）= 31`；
+> 保留 = `裁剪 × 布料` + `打包 × {布帘,纱帘,帘头,布料}` = **5 格** ⇒ `31 + 5 = 36`（可机械核验）。
+> **历史留档（为什么改）**：本文原写 35（= `36 − 1`），它与**同一份设计**的 ⑦「`打包` 4 格**不动**」
+> **不能同时成立** —— 35 **含** `打包 × 布料` 一格，而删掉它后
+> `ProcessingOrderService.buildRoute` 的适用性矩阵查不到键 ⇒ 走静默 `continue` ⇒ 布料单**只剩 `裁剪` 一道**
+> （**真库红证**：注入 `logical_name NOT IN ('裁剪')` ⇒ 退场 32 / 存活 4 / 布料单实例化工序数 **1**；
+> 正确版 **2**）⇒ 直接触发 §5.7 的 **S1**，也违反 §8.3 F1 的红线（「交付环节的一列价**绝不能用删格实现**」）。
+> ⇒ 以 ⑦ + S1 + F1 为准**订正为 31 格**，谓词随之补上 `打包` 排除项
+> （本文原写 `logical_name <> '裁剪'`，缺 `NOT IN ('打包')`）。
+> 落码 = **V88**（issue #4676）；口径出处 = #4676 评论 / #4701。
+> 机械判据 = `tests/unit_ci_workflows/test_public_ops_v88_migration.py` 的
+> `test_design_doc_retired_cell_count_is_31`（把本节 ⑤ / §5.6 ⑤ / §8.3 F6 三处逐处钉死）。
 
 ### 5.3 🔴 为什么 `裁剪 × 布料` 这一格**必须留**（不是可选项）
 
@@ -471,7 +485,7 @@ git ls-tree --name-only origin/main backend/admin-api/src/main/resources/db/migr
 | ② | `配料 × 4 部位` 矩阵行 `deleted=0` 复原（按 id 前缀 `opp-v79-%`，V79 回滚 SQL 同款：`backend/admin-api/src/main/resources/db/migration/V79__seed_fabric_route_and_packing_operation.sql:30`） |
 | ③ | 布料主线改回 `["配料","打包"]` |
 | ④ | `裁剪 × 布料` 格 `applicable` 改回 `FALSE` |
-| ⑤ | 其余 35 格 `deleted=0` 复原 |
+| ⑤ | 其余 31 格 `deleted=0` 复原 |
 
 ⚠️ **回滚不能复原的东西（如实登记）**：V88 生效期间**新建**的布料单已经按 `["裁剪","打包"]` 实例化 ⇒ 回滚后这些单的实例**不会**自动变回 `配料`（实例是快照）。回滚的语义是「**让新单回到旧行为**」，**不是**「让历史单回到旧行为」。
 
@@ -596,7 +610,7 @@ git ls-tree --name-only origin/main backend/admin-api/src/main/resources/db/migr
 | **F3** | 「**只影响新单**」（直觉：快照保护存量单） | **对已实例化的存量单成立**；但**未实例化的存量单**（「补生成工序」路径）**会**按当前配置重新派生（`backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java:117` + `backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java:123`） | ⇒ §5.3：`裁剪 × 布料` 格**必须留**；§5.4 给出准确边界 |
 | **F4** | 「工序库行价可以当兜底价」 | `production_operations.unit_price` 是 `NOT NULL DEFAULT 0`，种子里恒为 `0`（`backend/admin-api/src/main/resources/db/migration/V79__seed_fabric_route_and_packing_operation.sql:47-50`）⇒ 回落 = **0 元**，不是「未定价」 | ⇒ §3.4 ③ + U6 |
 | **F5** | 「`配料` 是公共工序（用户早期口径）」 | 用户 **00:35 的评论已明确更正**为 `裁剪`（「先前说的『配料是公共工序』是**不精确的叫法**」） | ⇒ 以 `裁剪` 为准（§3.3） |
-| **F6** | 「`布料` 降为形态 ⇒ 36 格价目**全部**退场」 | 若**全部**退场，存量布料单补生成会**静默丢 `裁剪`**（§5.3）⇒ 必须**留 1 格**（`裁剪 × 布料`），实际退场 **35 格** | ⇒ §5.2 ⑤ |
+| **F6** | 「`布料` 降为形态 ⇒ 36 格价目**全部**退场」 | 若**全部**退场，存量布料单补生成会**静默丢 `裁剪`**（§5.3）⇒ 必须**留 1 格**（`裁剪 × 布料`），实际退场 **31 格**（**订正**：原写值见 §5.2 表后的「口径订正」注） | ⇒ §5.2 ⑤ |
 | **F7** | 「`质检` 是「工序」层成员」（用户设计输入里的两层表） | `质检` **不在任何主线**（`backend/ai-agent-service/app/production/routing.py:480` 的 10 道不含它），且被登记为 `PENDING_CUSTOMER_CONFIRMATION_OPERATIONS` | ⇒ §4.2 第 2 条 + U5：界面呈现，但**不声称**它会执行 |
 | **F8** | 「改 V79 即可」 | V79 是**已发布迁移**（不可改）+ 有 `sha256` 指纹守卫（`tests/unit_ci_workflows/migration_fingerprints.json`，85 条含 V79） | ⇒ 必须**新增 V88**（§5.1） |
 
