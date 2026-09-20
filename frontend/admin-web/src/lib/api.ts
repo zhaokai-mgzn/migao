@@ -51,7 +51,6 @@ import type {
   RoutingUpdateParams,
   OperationPosition,
   OperationPositionUpdateParams,
-  OperationLayerDeliveryRow,
   OperationLayers,
   RouteRule,
   RouteRuleCustomerPriceParams,

@@ -29,6 +29,8 @@ const mockGetRoutingGaps = vi.fn()
 const mockGetRouteSignals = vi.fn()
 // issue #4433（P3）：该页新增两条只读面 —— 部位价目矩阵 / 条件工序规则
 const mockGetOperationPositions = vi.fn()
+// issue #4677：两层分区读面（页面同时读 `operation-positions` 与 `operation-layers`）
+const mockGetOperationLayers = vi.fn()
 const mockGetRouteRules = vi.fn()
 // issue #4616：规则创建弹窗的触发值取值域（工艺词表 + 加工项目录）
 const mockGetRouteRuleOptions = vi.fn()
@@ -47,6 +49,7 @@ vi.mock('@/lib/api', () => ({
     getRoutingGaps: (...args: unknown[]) => mockGetRoutingGaps(...args),
     getRouteSignals: (...args: unknown[]) => mockGetRouteSignals(...args),
     getOperationPositions: (...args: unknown[]) => mockGetOperationPositions(...args),
+    getOperationLayers: (...args: unknown[]) => mockGetOperationLayers(...args),
     getRouteRules: (...args: unknown[]) => mockGetRouteRules(...args),
     getRouteRuleOptions: (...args: unknown[]) => mockGetRouteRuleOptions(...args),
     updateOperationPosition: (...args: unknown[]) => mockUpdateOperationPosition(...args),
@@ -100,9 +103,18 @@ const renderMatrix = async () => {
 }
 
 /** 打开某逻辑工序的「管理▸」抽屉（作用域 / 必完 的**唯一**入口，issue #4588） */
+/**
+ * 打开某道工序的「管理▸」抽屉。
+ *
+ * ⚠️ issue #4677：一屏分两层 ⇒ 入口 testid 前缀按**分区**不同 —— 工序层 = `matrix-manage-*`，
+ * 「打包发货」层 = `delivery-manage-*`（本文件的 `外帘打卷` 是**套级** ⇒ 落在后者）。
+ * 两个前缀都试（找不到前者就找后者），**不把分区判据抄进测试**（那是实现的事）。
+ */
 const openVariant = async (operation: string) => {
   await renderMatrix()
-  await userEvent.click(screen.getByTestId(`matrix-manage-${operation}`))
+  const entry =
+    screen.queryByTestId(`matrix-manage-${operation}`) ?? screen.getByTestId(`delivery-manage-${operation}`)
+  await userEvent.click(entry)
   await waitFor(() => expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument())
 }
 
@@ -115,7 +127,52 @@ describe('工序「作用域」档位（issue #4384 A1；#4588 收进行抽屉�
     mockApplySeedTemplate.mockReset()
     mockGetRoutingGaps.mockReset().mockResolvedValue(ok({ unrouted_operations: [], signal_keys_without_route: [] }))
     mockGetRouteSignals.mockReset().mockResolvedValue(ok({ total: 0, signals: [] }))
+
+/**
+ * `getOperationLayers` 的替身（issue #4677）：页面读**两个**端点 ——
+ * ① `GET /operation-positions`（拿格的 `id` ⇒ 抽屉写面寻址）与 ② `GET /operation-layers`
+ * （两层分区 + 「打包发货」一列价聚合）。两者必须是**同一份**数据 ⇒ 这里从 `POSITIONS`
+ * **按既有 `scope` 分区**（口径照抄后端 `ProductionRoutingReadService.deliveryView`）。
+ */
+const layersOf = (cells: any[]) => {
+  const deliveryCells = new Map<string, any[]>()
+  const operations: any[] = []
+  for (const c of cells) {
+    if (c.scope === 'set') deliveryCells.set(c.operation, [...(deliveryCells.get(c.operation) ?? []), c])
+    else operations.push(c)
+  }
+  const delivery = [...deliveryCells.entries()].map(([operation, group]) => {
+    const applicable = group.filter((c) => c.applicable === true)
+    const prices = [...new Set(applicable.filter((c) => c.unit_price != null).map((c) => c.unit_price))]
+    const unpriced = applicable.some((c) => c.unit_price == null)
+    const price_state =
+      applicable.length === 0
+        ? 'no_applicable_position'
+        : unpriced
+          ? 'unpriced'
+          : prices.length === 1
+            ? 'priced'
+            : 'multiple_prices'
+    const first = (k: string) => group.find((c) => c[k] != null)?.[k] ?? null
+    return {
+      operation,
+      scope: 'set',
+      unit: first('unit'),
+      group: first('group'),
+      is_must_finish: first('is_must_finish'),
+      price: price_state === 'priced' ? prices[0] : null,
+      price_state,
+      different_price_count: price_state === 'multiple_prices' ? prices.length : 0,
+      applicable_positions: applicable.map((c) => c.position),
+    }
+  })
+  return { operations, delivery }
+}
+
     mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS))
+    // (issue #4677) 分区读面与矩阵夹具**同源** —— 一处换、两处同步
+    mockGetOperationLayers.mockReset().mockResolvedValue(ok(layersOf(POSITIONS)))
+
     mockGetRouteRules.mockReset().mockResolvedValue(ok([]))
     mockGetRouteRuleOptions.mockReset().mockResolvedValue(ok({ crafts: [], processing_items: [] }))
     mockUpdateOperationPosition.mockReset().mockResolvedValue(ok({ id: 'pos-精裁-布帘' }))
@@ -138,7 +195,8 @@ describe('工序「作用域」档位（issue #4384 A1；#4588 收进行抽屉�
   it('判据 4b：逐行渲染**真实取值**（外帘打卷 = 套级；精裁-布 = 部位级）', async () => {
     await renderMatrix()
 
-    await userEvent.click(screen.getByTestId('matrix-manage-外帘打卷'))
+    // issue #4677：`外帘打卷` 是套级 ⇒ 入口在【打包发货】区
+    await userEvent.click(screen.getByTestId('delivery-manage-外帘打卷'))
     expect(scopeControl('op-v54-24')).toHaveValue('set')
     expect(scopeControl('op-v54-24').selectedOptions[0]).toHaveTextContent('套级')
 
