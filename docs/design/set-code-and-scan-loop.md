@@ -585,7 +585,7 @@ complete(set_no, order_item_id, [operation_id], [qty], worker, clientRequestId):
 
 | 判据名（= 响应 `error.code`，**逐字冻结**） | HTTP | 触发条件（**逐字读源**：符号引用） | 响应体 | 承重证据 | `docs/wiki/CONTRACT-LEDGER.md` |
 |---|---|---|---|---|---|
-| `SCAN_NEEDS_SELECTION` | **422** | `ProductionScanCompleteService#doComplete`：`ProductionScanService.GRANULARITY_ORDER.equals(scan.get("granularity"))` ⇒ 解析落到**旧码降级形态**（新 `processing_set_part_tokens` 未命中、回落既有四形态）。⚠️ **选择键只给一半**（`set_id` / `order_item_id` 缺一）**同样落到这里** —— `ProductionScanService#resolve` 只在**两个键都非空**时才走 `legacySelectionView`，否则走 `degradedView` | `{success:false, error:{code,message}, suggestion}` + HTTP **422**（`GlobalExceptionHandler#handleBusinessException` 按 `BusinessException.httpStatus` 回） | `ProductionScanCompleteServiceTest#legacyCodeIsRejectedWithoutPickingFirstSet` + `#legacyCodeWithPartialSelectionIsStillRejected`（**本单补 `code` / `httpStatus` 断言**） | ✅ **已登记**（「工人端扫码完成」行逐字：「都不给 ⇒ 旧码仍 **422 `SCAN_NEEDS_SELECTION`**」）⇒ 设计与账本**口径一致** |
+| `SCAN_NEEDS_SELECTION` | **422** | `ProductionScanCompleteService#doComplete`：`ProductionScanService.GRANULARITY_ORDER.equals(scan.get("granularity"))` ⇒ 解析落到**旧码降级形态**（新 `processing_set_part_tokens` 未命中、回落既有四形态）。⚠️ **选择键只给一半**（`set_id` / `order_item_id` 缺一）**同样落到这里** —— `ProductionScanService#resolve` 只在**两个键都非空**时才走 `legacySelectionView`，否则走 `degradedView` | `{success:false, error:{code,message}, suggestion}`（信封固有键 `requestId` / `timestamp` 照旧；这三条码的 `error.details` 为 null ⇒ 不下发）+ HTTP **422**（`GlobalExceptionHandler#handleBusinessException` 按 `BusinessException.httpStatus` 回） | `ProductionScanCompleteServiceTest#legacyCodeIsRejectedWithoutPickingFirstSet` + `#legacyCodeWithPartialSelectionIsStillRejected`（**本单补 `code` / `httpStatus` 断言**） | ✅ **已登记**（「工人端扫码完成」行逐字：「都不给 ⇒ 旧码仍 **422 `SCAN_NEEDS_SELECTION`**」）⇒ 设计与账本**口径一致** |
 | `SET_ALREADY_COMPLETED` | **409** | `ProductionScanCompleteService#doComplete`：`scan.get("operation") == null` **且** `Boolean.TRUE.equals(scan.get("completed"))` ⇒ 该套**全部工序实例**都已 `done_qty ≥ qty`（`completed` 键由 `ProductionScanService` 的 `setPositionView` 落 = `chosen == null`）⇒ **本次未记账** | 同上 + HTTP **409** | `ProductionScanCompleteServiceTest#alreadyCompletedSetIsRejectedWithoutWriting`（**本单补 `code` / `httpStatus` 断言**） | ❌ **账本未登记该码**（只登记了**读面响应键** `completed`）⇒ **本单只登记，不代账本裁定** |
 | `OPERATION_ALREADY_ADVANCED` | **409** | **两个落点、同一个码**：<br>**(a) 并发推进**：`ProductionService#applyScanComplete` 里 CAS `ProcessingPositionOperationMapper#advanceDoneQtyIfUnchanged` **影响行数 0** ⇒ fail-closed（= F14），**绝不静默覆盖别人的报工**；<br>**(b) 推断之后被报满**：`ProductionScanCompleteService#doComplete` 在 `qty` 缺省时算出 `plannedRemaining(op) ≤ 0`（`ProductionScanService#resolve` 读到的工序与记账前 `ProductionService#requireActiveOperation` 重读之间出现并发窗口） | 同上 + HTTP **409** | (a) `ProductionScanCompleteServiceTest#midFailureReleasesPlaceholderAndDoesNotSnapshot`（**本单补 `code` / `httpStatus` 断言**）；<br>(b) `ProductionScanCompleteServiceTest#operationFilledBetweenResolveAndChargeIsRejected`（**本单补**：`selectList` 读到「未完成 6/11 米」而 `selectById` 重读到「已报满 11/11」= 并发窗口的**可执行形态**） | ❌ **账本未登记该码**（`docs/design/worker-h5-scan-and-report.md` 有登记：CAS 影响行数 0 ⇒ 409 `OPERATION_ALREADY_ADVANCED`） |
 
@@ -598,7 +598,9 @@ complete(set_no, order_item_id, [operation_id], [qty], worker, clientRequestId):
 > **不变量（跨两面，落码必须保持）**：
 >
 > > **`completed = true` ⇒ 对该套的下一次 `POST /api/worker/production/scan/complete`
-> > 必然返回 409 `SET_ALREADY_COMPLETED`。**
+> > 必然返回 409 `SET_ALREADY_COMPLETED`**（**唯一例外**：命中 `X-Client-Request-Id` **同键回放**时
+> > 走 `ClientRequestIdService` 的回放路径 —— 幂等占位在**解析之前**，回放**不重新判定**工序，
+> > 返回首次结果，见 §5.3 ① 与 §5.2 ⓪）。
 >
 > 🔴 **不许「统一」这两处的措辞**（统一到任一侧都是错的）；**也不要让读面去预告 409** ——
 > 读面塞 HTTP 语义会把「状态报告」与「写协议」耦合。§3.2 ③ 与上表原文**一律保留留档**。
