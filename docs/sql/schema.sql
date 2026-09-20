@@ -1071,8 +1071,15 @@ CREATE TABLE IF NOT EXISTS processing_position_operations (
     factor NUMERIC(6,2) NOT NULL DEFAULT 1,          -- 特殊选项计件系数（一分为二 ×1.7，ERP 名；issue #4389）
     is_must_finish BOOLEAN NOT NULL DEFAULT FALSE,
     is_start_marker BOOLEAN NOT NULL DEFAULT FALSE,
-    status VARCHAR(16) NOT NULL DEFAULT 'pending',   -- pending 待做 / done 已报工
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',   -- pending 待做 / in_progress 进行中（C 模式预留，V92）/ done 已报工
     done_qty NUMERIC(12,2) NOT NULL DEFAULT 0,       -- 合格累计数量（返工/报废不累加）
+    -- 套归属 + A/C 模式时序（V92，issue #4698）：全部可空，存量行留空（与 V69 的 order_item_id 同款「不猜」）
+    set_id VARCHAR(64),                              -- 指向 processing_order_sets.id；NULL = 本列引入前的存量行
+    set_no VARCHAR(64),                              -- 套号快照 = {processing_order_no}-{pad3(set_index)}；NULL = 存量行
+    done_at TIMESTAMP WITH TIME ZONE,                -- 完成时刻（A 模式唯一必需的新增时序列；不得用 updated_at 冒充）
+    worker_id VARCHAR(64),                           -- 报工人 id（C 模式预留，A 模式默认路径不读不写）
+    worker_name VARCHAR(64),                         -- 报工人姓名（C 模式预留）
+    started_at TIMESTAMP WITH TIME ZONE,             -- 开工时刻（C 模式预留）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER NOT NULL DEFAULT 0
@@ -1085,6 +1092,50 @@ CREATE INDEX IF NOT EXISTS idx_position_operations_order_item
     WHERE deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_position_operations_tenant
     ON processing_position_operations (tenant_id, status);
+-- 卡点报表索引（V92，issue #4698 设计 §11.2 ⑥）：A 模式「没开工」判据 = pending + 立即前道 done + 等待时长
+CREATE INDEX IF NOT EXISTS idx_position_operations_status_done
+    ON processing_position_operations (tenant_id, status, done_at);
+
+-- 套号载体（V92，issue #4698 / 设计 §2.2）：一个加工单 × 一套 = 一行；一套 = 一樘窗（craftLineId 组）
+CREATE TABLE IF NOT EXISTS processing_order_sets (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    processing_order_id VARCHAR(64) NOT NULL REFERENCES processing_orders(id),
+    set_index INT NOT NULL,                          -- 一樘窗在本加工单里的次序（1 起，只增不复用：软删行仍占号）
+    set_no VARCHAR(64) NOT NULL,                     -- {processing_order_no}-{pad3(set_index)}（落库冗余：码里印的是它）
+    craft_line_id VARCHAR(64),                       -- 樘窗组键（= 快照 craftLineId，缺省 = 主布行 itemId）；可空
+    position_item_ids JSONB NOT NULL DEFAULT '[]',   -- 本套的部位行 order_items.id 数组（有序）
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_order_sets_index
+    ON processing_order_sets (tenant_id, processing_order_id, set_index)
+    WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_order_sets_no
+    ON processing_order_sets (tenant_id, set_no)
+    WHERE deleted = 0;
+
+-- 部位码载体（V92，issue #4698 / 设计 §2.3）：一部位一码（一樘窗 ≤3~4 码）；载体是 token，工序不进码
+CREATE TABLE IF NOT EXISTS processing_set_part_tokens (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    processing_order_id VARCHAR(64) NOT NULL REFERENCES processing_orders(id),
+    set_id VARCHAR(64) NOT NULL REFERENCES processing_order_sets(id),
+    order_item_id VARCHAR(36) NOT NULL,              -- 部位行（一部位一码）
+    position_kind VARCHAR(16),
+    token VARCHAR(64),                               -- 32 位 UUID 去横线；撤销 = 置 NULL（不换新 token）
+    print_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_set_part_tokens_token
+    ON processing_set_part_tokens (token)
+    WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_set_part_tokens_part
+    ON processing_set_part_tokens (tenant_id, set_id, order_item_id)
+    WHERE deleted = 0;
 
 CREATE TABLE IF NOT EXISTS production_work_logs (
     id VARCHAR(64) PRIMARY KEY,
@@ -1125,6 +1176,23 @@ COMMENT ON COLUMN production_work_logs.unit_price IS '计件单价快照（元/�
 COMMENT ON COLUMN production_work_logs.factor IS '计件系数快照（V61，issue #4351）：与 unit_price 同一次报工写入、同一口径；NULL=存量行';
 COMMENT ON COLUMN production_work_logs.price_state IS '计件单价三态标记（V90，issue #4696）：priced=有价（含显式定价 0 元）；unpriced=未定价（unit_price 为 NULL，聚合不得按 0 计件）；NULL=本列引入前的存量行';
 COMMENT ON COLUMN processing_position_operations.unit_price IS '实例快照单价（元/单位）：NULL=未定价（≠ 0 元，0 是显式定价为 0 元）；实例化侧不得回落工序库行价（V90，issue #4696）';
+-- 套号 + 扫码闭环数据层（V92，issue #4698）：迁移链同款见 backend/admin-api/src/main/resources/db/migration/V92__add_processing_order_sets_and_scan_loop.sql
+COMMENT ON TABLE processing_order_sets IS '套号载体（V92，issue #4698 / 设计 §2.2）：一个加工单 × 一套 = 一行。一套 = 一樘窗（= 一个 craftLineId 组 / 一个窗的全部部位合计一套，用户裁定 2026-09-20）';
+COMMENT ON COLUMN processing_order_sets.set_index IS '一樘窗在本加工单里的次序（1 起，3 位零填充进 set_no）。只增不复用：软删行仍占号（MAX 查询不带 deleted=0）⇒ 重排/改名/删窗都不改已有套号';
+COMMENT ON COLUMN processing_order_sets.set_no IS '可读套号 = {processing_order_no}-{pad3(set_index)}（落库冗余）：码里印的是它，扫码解析按文本查唯一索引；冗余不漂移的条件 = 单号与 set_index 一经分配不变';
+COMMENT ON COLUMN processing_order_sets.craft_line_id IS '樘窗组键（= 快照 craftLineId，缺省 = 该组主布行的 itemId）；可空（存量/脏快照，与 ProcessingOrderService.craftGroupKey 同口径）';
+COMMENT ON COLUMN processing_order_sets.position_item_ids IS '本套包含的部位行 order_items.id 数组（有序）⇒「这套有哪几个部位」不靠反查，也是回填时认领已有套行的指纹';
+COMMENT ON COLUMN processing_order_sets.deleted IS '软删（软删 ≠ 释放号）：被删的窗不回收序号，新窗取 MAX(set_index)+1（设计 §2.4 规则 1）';
+COMMENT ON TABLE processing_set_part_tokens IS '部位码载体（V92，issue #4698 / 设计 §2.3）：一部位一码（一樘窗 ≤3~4 码）。载体是 token（与 processing_orders.qr_token 同格式），工序不进码';
+COMMENT ON COLUMN processing_set_part_tokens.token IS '码 token（32 位 UUID 去横线）。撤销 = 置 NULL（与 ProcessingOrderMapper.revokeQrToken 逐字同语义：这张纸作废，不换新 token）';
+COMMENT ON COLUMN processing_set_part_tokens.print_count IS '打印次数（原子自增 COALESCE(print_count,0)+1；多人同时打印不丢计数）';
+COMMENT ON COLUMN processing_position_operations.set_id IS '套归属（V92，issue #4698）：指向 processing_order_sets.id。可空 = 存量行（与 V69 的 order_item_id 同款「留空不猜」）';
+COMMENT ON COLUMN processing_position_operations.set_no IS '套号快照（V92，issue #4698）：与 set_id 同一次回填写入；可空（存量行）。用途：扫码归属校验 + 计件按套下钻（零改动 production_work_logs）';
+COMMENT ON COLUMN processing_position_operations.done_at IS '完成时刻（V92，issue #4698）：A 模式唯一必需的新增时序列（做完扫一次 = 完工）。不得用 updated_at 冒充（会被任何更新污染）';
+COMMENT ON COLUMN processing_position_operations.worker_id IS '报工人 id（V92，issue #4698）：C 模式预留（A 模式默认路径不读不写）';
+COMMENT ON COLUMN processing_position_operations.worker_name IS '报工人姓名（V92，issue #4698）：C 模式预留（A 模式默认路径不读不写）';
+COMMENT ON COLUMN processing_position_operations.started_at IS '开工时刻（V92，issue #4698）：C 模式预留（A 模式默认路径不读不写）';
+COMMENT ON COLUMN processing_position_operations.status IS 'pending 待做 / in_progress 进行中（C 模式预留，V92 只扩取值域、零行为变化）/ done 已报工';
 
 -- 工序计件单价版本（V55，issue #4204）：当前价 = 最新版本行；实例单价仍是生成时快照。
 -- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V55__create_production_operation_price_versions.sql
