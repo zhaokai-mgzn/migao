@@ -92,9 +92,13 @@ def test_v84_seeds_exactly_the_three_processing_item_rules():
 def test_bootstrap_schema_sql_carries_the_same_three_rows():
     """判据 1（bootstrap 半边）：`docs/sql/schema.sql` 逐值同款（该路径不跑迁移链）。"""
     sql = _strip_comments(SCHEMA.read_text(encoding="utf-8"))
+    # ⚠️ 选择器按 `rr-v84-` 收敛（issue #4714 起）：V93 的补种段也含 `processing_item` 三个触发值，
+    # 而它的列集是 **8 列**（带 `position`，与 V72 同形）⇒ 用旧的 `"processing_item" in chunk`
+    # 选择器会把 V93 段也捞进来，`_rule_rows` 的 7 列列序判据当场假红。
+    # **判据本身一字不放宽**：仍是「V84 段逐值 = EXPECTED」，且列序漂移照旧 fail-closed。
     matches = [_expected_from(_rule_rows(chunk))
                for chunk in re.findall(r"INSERT INTO production_route_rules(.*?);", sql, re.S)
-               if "processing_item" in chunk]
+               if "rr-v84-" in chunk]
     assert matches, "schema.sql 里没有 `processing_item` 规则种子 —— bootstrap 路径拿不到这 3 条"
     assert matches[0] == list(EXPECTED)
 
