@@ -3390,7 +3390,8 @@ export default function ProcessConfigPage() {
                   <strong className="mx-1">
                     {manageUnlinked.flatMap((v) => v.positions).join(' / ')}
                   </strong>
-                  的格<strong>没有关联到它</strong>（矩阵里那些格指向的不是这道工序）。
+                  的格<strong>没有关联到它</strong>（矩阵里那些格指向的不是这道工序）——
+                  下面带「这些格指向的不是这道工序」标记的行**不提供设置**（改它们就是改另一道工序）；
                   点底部<strong className="mx-1">删除</strong>可直接删掉这道工序。
                 </p>
               )}
@@ -3413,7 +3414,10 @@ export default function ProcessConfigPage() {
                   {/* **指向别处**的格（issue #4674 C 的形态②）：只**如实报出**、**不给**写面 ——
                       对它 PUT/DELETE 就是改另一道工序（正是「两把尺不一致」要暴露、不是要掩盖的东西）。 */}
                   {v.foreign ? (
-                    <p className="mt-2 text-xs text-neutral-500">
+                    <p
+                      className="mt-2 text-xs text-neutral-500"
+                      data-testid={`variant-foreign-note-${v.id}`}
+                    >
                       矩阵里这几格关联到的是另一道工序 ⇒ 这里不提供设置；请到那道工序的抽屉里改，
                       或点底部「删除」把本工序删掉。
                     </p>
