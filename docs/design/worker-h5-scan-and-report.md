@@ -526,8 +526,8 @@ users (role='worker', permissions=[], worker_no=<工号>, password_hash=<PIN 的
 |---|---|---|---|---|
 | **C1** | 🔴 `frontend/admin-web/src/components/production/TaskCardPrint.tsx`（码 = **裸 `qr_token`**，注释逐字「不放单号拼接串」） | **冲突** | **本设计为准**（码 = 标准 HTTPS URL） | 裁定③「任意扫一扫工具都能用」**只有 URL 能做到**；裸 token 扫了**不跳转**。⇒ **改打印内容**；`processing_orders.qr_token` **列与撤销语义一字不动** |
 | **C2** | **#4687** `docs/design/set-code-and-scan-loop.md`（**902 行**，已合并） | **依赖 + 追加** | **#4687 为准**（闭环/码粒度/token 形态/推断算法/防呆/旧码双读）<br>**本设计追加**：URL 形态 + 短码列 + 登录两条腿 + 会话/归属 | 本设计**不改** #4687 的任何冻结形态（token = 32 位 UUID、一部位一码、撤销 = 置 NULL）；只**追加** `short_code` 列与 URL 层 |
-| **C3** | 🔴 **#4687 §11 写的迁移号 `V89`** | **冲突（已过期）** | **实测为准**（迁移号**现取**） | 实测 `origin/main` 上 `V89` = `V89__backfill_fabric_seed_for_existing_tenants.sql`、`V90` = `V90__unpriced_is_not_zero.sql` ⇒ **`V89` 已被占用**（#4687 定稿后 main 前进了）。⇒ 本设计的迁移号**不写死**，落码时现取（附录 A A2 给命令） |
-| **C4** | 🔴 **#4687 / #4698 的载体表在 main 上不存在** | **依赖（未落码）** | **本设计依赖它们先落** | 实测 `processing_order_sets` / `processing_set_part_tokens` 在 `backend/**` `docs/sql/**` `tests/**` **零命中**（只在 `docs/` 里出现）⇒ 本设计的 `short_code` 列是**追加到一张尚未存在的表**上 ⇒ **落地顺序 = #4687 先落、本设计随后**（§7.3） |
+| **C3** | 🔴 **#4687 §11 写的迁移号 `V89`** | **冲突（已过期）** | **实测为准**（迁移号**现取，不写死**） | 实测 `origin/main` @ `042f32bca`：`V89` = `V89__backfill_fabric_seed_for_existing_tenants.sql`、`V90` = `V90__unpriced_is_not_zero.sql`、**`V92` = `V92__add_processing_order_sets_and_scan_loop.sql`（#4698 切片⓪，已落）** ⇒ **`V89` 已被占用**（#4687 定稿后 main 前进了），且**迁移头已从基线时的 V90 前进到 V92**（**口径订正**见表后注）。⇒ 本设计的迁移号**不写死**，落码时**现取**（附录 A A2 给命令） |
+| **C4** | ✅ **#4687 / #4698 的载体表已在 main**（**口径订正**见表后注） | **依赖（顺序约束已解除）** | **落地顺序约束解除**（载体已落，本设计可直接追加） | 实测（`origin/main` @ `042f32bca`）：`V92__add_processing_order_sets_and_scan_loop.sql` 已建 `processing_order_sets` + `processing_set_part_tokens`（含 `uk_set_part_tokens_token` / `uk_set_part_tokens_part`），并给 `processing_position_operations` 加 **6 列**（`set_id` / `set_no` / **`done_at`** / `worker_id` / `worker_name` / `started_at`）⇒ 与 **#4687 §11.2 逐条一致** ⇒ 本设计的 `short_code` 列可**直接追加**（§7.3） |
 | **C5** | 🔴 **#4694**（越站不拦 + 防呆⑤ 工序必须确定） | **依赖** | **#4694 为准** | 实测 `ProductionService.doReport` 逐字：缺 `operationId` 直接拒绝；**无**顺序闸门。本设计**继承**，**不得**加回顺序闸门 |
 | **C6** | 🔴 **既有微信登录链路**（`AuthController` / `AuthService` / `UserIdentity`） | **部分依赖 + 假设被推翻** | **实测为准** | ✅ 小程序侧（`bmini` / `mini`）可用；🔴 **H5 网页授权是 501 占位**（`buildWechatH5AuthorizeUrl` / `handleWechatH5Callback` 逐字抛 `NOT_IMPLEMENTED`）+ **无公众号配置** ⇒ 「复用既有链路」只能复用 `UserIdentity` **表与模式**，**不能**复用一条已实现的 H5 OAuth（§2.2 / §8.3） |
 | **C7** | **`docs/design/worker-scan-terminal.md`**（**已定稿**，2026-09-19，263 行） | **依赖 + 冲突** | **冲突处：本设计为准**（见下） | ✅ 依赖：§9 落码状态（规格字段/操作记录/计件下钻/逐笔可追溯/打包/发货 **均已 main**）⇒ 本设计**不重做**这些。<br>🔴 **冲突**：该文档裁定 5 逐字「**发货权限 = 工人身份直接可发**」，依据是「发货端点与扫码端点**同为 `order:list`** ⇒ 不需要「仓管」角色」—— 这**把「工人」等同于持 `order:list` 的商家员工**，与 #4716 的红线「**不许给工人商家权限**」**直接冲突**。<br>⇒ **以 #4716 为准**（更新的用户裁定 + 显式红线）；该文档的**能力**（发货下放）保留，**权限载体**改为新 `worker` 角色 + `/api/worker/**`（§2.4） |
@@ -536,6 +536,22 @@ users (role='worker', permissions=[], worker_no=<工号>, password_hash=<PIN 的
 | **C10** | **`frontend/bmini-app/src/utils/productionQr.ts`** 的三形态容错解析（注释自述「与后端 `resolveOrder` 的三形态一致」） | **依赖 + 陈旧注释** | **后端为准** | 实测后端 `resolveOrder` 已是**四形态**（④ `processing_order_no`，issue #4222）⇒ 该注释**陈旧**。⇒ 本设计**复用**其**解析逻辑**（纯函数，与 Taro 无关），并登记注释待订正 |
 | **C11** | 🔴 **`/api/admin/**` 门禁 vs 工人身份** | **冲突** | **本设计为准**（§2.4） | 实测：`ProductionController` 类级 `@RequirePermission("order:list")` 且挂在 `/api/admin/**`；该路径对非 `customer`/`agent` 角色**放行进入**；**10 个 controller 无 `@RequirePermission`**。⇒ 工人若走既有路径 = **拿到商家权限** ⇒ 违反红线 ⇒ 必须新 `/api/worker/**` + 拒绝集合追加 `worker` |
 | **C12** | **`docs/design/c-end-tenant-domain-routing.md`**（`<tenantId>.app.migaozn.com`） | **依赖** | **既有为准** | H5 的租户解析可复用 `backend/admin-api/src/main/java/com/migao/admin/config/TenantDomainResolver.java`（`X-Tenant-Id` 头 > Host 正则）。⚠️ 但**稳定短链域名**取 `app.migaozn.com`（**不带** `<tenantId>` 子域）⇒ 租户由**短码**解出（短码全局唯一，天然带租户），**不依赖**域名子域 |
+
+> 🔴 **口径订正（issue #4716，2026-09-20）：C3 / C4 两条结论已过期，按下述改判。**
+> **依据**：**#4698 切片⓪（PR #4722，merge `d295097bb`，2026-09-20）** 落
+> **`V92__add_processing_order_sets_and_scan_loop.sql`** —— 同时建好
+> `processing_order_sets` + `processing_set_part_tokens`（含 `uk_set_part_tokens_token` / `uk_set_part_tokens_part`），
+> 并给 `processing_position_operations` 加 **6 列**（`set_id` / `set_no` / **`done_at`** / `worker_id` / `worker_name` / `started_at`），
+> 与 **#4687 §11.2 逐条一致**。
+> **C4 改判**：载体表**已在 main** ⇒ **「#4687 必须先落」的落地顺序约束解除**（本设计的 `short_code` 可直接追加）。
+> **C3 改判**：迁移头**已从基线时的 V90 前进到 V92**（`V92` 已落）⇒ **下一个自由号落码时现取**；
+> 「**迁移号现取、不写死**」的**原则不变**（§7.1 / 附录 A A2 同款）。
+> **历史留档（为什么改）**：本文测量基线 = `origin/main` @ `9462c7e18`，当时迁移头 = **V90**、
+> `processing_order_sets` / `processing_set_part_tokens` 在 `backend/**` `docs/sql/**` `tests/**` **零命中**
+> （只在 `docs/` 出现）⇒ 当时结论「本设计依赖它们先落」「追加到一张尚未存在的表上」**在当时为真**；
+> 而 **#4722 恰在本设计合并前一刻落进 main** —— `d295097bb` 是本文合并点 `d1d9bd742` 的**直接父提交**
+> ⇒ 基线事实变了、结论随之改判为「**已落码、顺序约束解除**」。
+> 机械判据 = 附录 A **A2**（迁移头）与 **A4**（两表命中数）—— 同一组命令现在返回**非零命中**。
 
 ---
 
@@ -583,8 +599,8 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 ### 7.3 落地顺序（依赖决定）
 
 ```
-#4687（V??：processing_order_sets + processing_set_part_tokens + 推断 + 完成事务 + 旧码降级）
-   │   ← 🔴 必须先落（C4：载体表在 main 上不存在）
+#4687 切片⓪（V92：processing_order_sets + processing_set_part_tokens；**已落** = PR #4722）
+   │   ← ✅ **顺序约束已解除**（C4 口径订正：载体表已在 main，本设计可直接追加）
    ├─① 短链 + 短码 + /s/{code}（§1.3 / §1.4）        ← 只读面 + 一张表加列
    ├─② 工人身份 + 登录两条腿 + /api/worker/**（§2）   ← 与 ① 同包（都要 users.worker_no）
    ├─③ 会话 / 归属 / 超时（§3.1~3.4）                ← 与 ② 同包
@@ -644,13 +660,19 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 | **F1** | 「既有微信登录链路可复用（H5）」 | 🔴 **H5 网页授权是 501 占位**：`AuthService.buildWechatH5AuthorizeUrl` / `handleWechatH5Callback` **逐字抛** `BusinessException("NOT_IMPLEMENTED", "微信公众号 OAuth 尚未实现", 501)`；端点存在但服务层未实现 | 附录 A A5 |
 | **F2** | 「有公众号配置」 | 🔴 `application.yml` 的 `wechat:` **只有** `mini` + `bmini` + `mock-enabled`，**无公众号段** | 附录 A A5 |
 | **F3** | 「工人端页面 ❌ 没有」 | ✅ **对了一半**：**H5 工人端没有**；但 `frontend/bmini-app` 的 `pages/production/index` **已是工人扫码报工页**（578 行，含扫码/报工/计件/发货/离线队列），`docs/design/worker-scan-terminal.md` §9 记其落码状态 **✅ main** | 附录 A A1 |
-| **F4** | 「#4687 的迁移号 = V89」 | 🔴 **已被占用**：main 上 `V89` = 面料种子回填、`V90` = 未定价≠0 ⇒ 迁移号**必须现取** | 附录 A A2 |
+| **F4** | 「#4687 的迁移号 = V89」 | 🔴 **已被占用**：main 上 `V89` = 面料种子回填、`V90` = 未定价≠0、**`V92` = 套号落库（#4698 切片⓪，已落）** ⇒ 迁移号**必须现取**（**订正**：迁移头已从基线时的 V90 前进到 **V92**；原写「→ V90」见表后「口径订正」注） | 附录 A A2 |
 | **F5** | 「码是 token，改成 URL 就行」 | ⚠️ **不止改打印**：`frontend/admin-web/src/components/production/TaskCardPrint.tsx` 的注释把「只放 `qr_token`、不放拼接串」写成**纪律** ⇒ 改它 = **改一条既有纪律**，必须登记（C1） | 附录 A A9 |
-| **F6** | 「#4687 / #4698 的表已落」 | 🔴 `processing_order_sets` / `processing_set_part_tokens` 在 `backend/**` `docs/sql/**` `tests/**` **零命中**（只在 `docs/` 出现）⇒ **尚未落码** | 附录 A A4 |
+| **F6** | 「#4687 / #4698 的表已落」 | ✅ **已落码**（**口径订正**见表后注）：`V92__add_processing_order_sets_and_scan_loop.sql` 已建 `processing_order_sets` + `processing_set_part_tokens`（含 `uk_set_part_tokens_token` / `uk_set_part_tokens_part`），并给 `processing_position_operations` 加 **6 列**（含 `done_at`）⇒ 与 #4687 §11.2 逐条一致 | 附录 A A4 |
 | **F7** | 「工人身份可以直接用商家员工」 | 🔴 **与红线冲突**：`ProductionController` 类级 `@RequirePermission("order:list")` + `/api/admin/**` 对非 `customer`/`agent` 放行 + **10 个 controller 无 `@RequirePermission`** | 附录 A A6 / A7 |
 | **F8** | 「`worker-scan-terminal.md` 的工人权限口径可继承」 | 🔴 其裁定 5 逐字「发货权限 = **工人身份直接可发**」，依据「发货端点与扫码端点**同为 `order:list`**」⇒ **把工人等同于商家员工**，与 #4716 红线**冲突** ⇒ 以 #4716 为准（C7） | 附录 A A10 |
 | **F9** | 「`productionQr.ts` 的注释是当前真值」 | ⚠️ **陈旧**：其注释自述「与后端 `resolveOrder` 的**三形态**一致」，而后端已是**四形态**（④ `processing_order_no`，issue #4222） | 附录 A A11 |
 | **F10** | 「`docs/design/set-code-and-scan-loop.md` = 898 行」 | ⚠️ 实测 **902 行**（差异不影响内容，如实登记） | 附录 A A1 |
+
+> 🔴 **口径订正（issue #4716，2026-09-20）：F4 / F6 两条结论已过期**（完整依据与历史留档见 §6 表后的「口径订正」注）。
+> **F4**：迁移头**已从基线时的 V90 前进到 V92**（`V92__add_processing_order_sets_and_scan_loop.sql` 已落，PR #4722）
+> ⇒ 原写「→ V90」**不再是当前值**；「**迁移号现取、不写死**」的**原则不变**。
+> **F6**：`processing_order_sets` / `processing_set_part_tokens` **已由 #4698 切片⓪ / V92 落码**
+> （+ `processing_position_operations` 6 列含 `done_at`）⇒ 原写「零命中 ⇒ 尚未落码」**不再成立**。
 
 ### 8.4 待用户裁定（**集中列出，不替业务决定**）
 
@@ -688,11 +710,16 @@ wc -l frontend/bmini-app/src/pages/production/index/index.tsx           # → 57
 
 ```bash
 git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/migration/ \
-  | grep -oE 'V[0-9]+' | sort -t V -k2 -n | tail -1        # → V90（基线时）
-git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/migration/ | grep -E 'V89|V90'
+  | grep -oE 'V[0-9]+' | sort -t V -k2 -n | tail -1        # → V92（口径订正时；基线时为 V90）
+git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/migration/ | grep -E 'V89|V90|V92'
 # → V89__backfill_fabric_seed_for_existing_tenants.sql / V90__unpriced_is_not_zero.sql
-# ⇒ #4687 §11 写的 V89 已被占用
+#   / V92__add_processing_order_sets_and_scan_loop.sql（#4698 切片⓪，已落）
+# ⇒ #4687 §11 写的 V89 已被占用；迁移头会继续前进 ⇒ 本节数字只是**实测快照**，落码时**现取**
 ```
+
+> 🔴 **口径订正（issue #4716，2026-09-20）**：上面 `# → V90（基线时）` 是**基线快照**、**不是当前值** ——
+> 现为 **V92**（`V92__add_processing_order_sets_and_scan_loop.sql` 已落，PR #4722，实测 `origin/main` @ `042f32bca`）。
+> **原则不变**：迁移号**现取、不写死**（正文 §7.1 同款）。
 
 ### A3 迁移指纹账本（新增迁移必须登记）
 
@@ -704,10 +731,19 @@ git show origin/main:tests/unit_ci_workflows/migration_fingerprints.json \
 ### A4 #4687 / #4698 的载体表是否已落码（F6）
 
 ```bash
-git grep -l 'processing_order_sets'      origin/main -- 'backend/**' 'docs/sql/**' 'tests/**' | wc -l   # → 0
-git grep -l 'processing_set_part_tokens' origin/main -- 'backend/**' 'docs/sql/**' 'tests/**' | wc -l   # → 0
-# ⇒ 两张表在代码/迁移/bootstrap schema 里零命中（只在 docs/ 出现）⇒ 尚未落码
+git grep -l 'processing_order_sets'      origin/main -- 'backend/**' 'docs/sql/**' 'tests/**' | wc -l   # → 6（口径订正时；基线时为 0）
+git grep -l 'processing_set_part_tokens' origin/main -- 'backend/**' 'docs/sql/**' 'tests/**' | wc -l   # → 5（口径订正时；基线时为 0）
+# ⇒ 两张表**已落码**（命中 = V92 迁移 + 相关测试/bootstrap 终态）⇒ **顺序约束解除**（C4 口径订正）
+git show origin/main:backend/admin-api/src/main/resources/db/migration/V92__add_processing_order_sets_and_scan_loop.sql \
+  | grep -cE 'CREATE TABLE IF NOT EXISTS (processing_order_sets|processing_set_part_tokens)'   # → 2
+# ⇒ 与 #4687 §11.2 逐条一致（两表 + uk_set_part_tokens_token / uk_set_part_tokens_part + 实例 6 列含 done_at）
 ```
+
+> 🔴 **口径订正（issue #4716，2026-09-20）**：本节原写「两张表零命中 ⇒ **尚未落码**」——
+> 那是**基线 `9462c7e18` 的真值**；**#4698 切片⓪（PR #4722，merge `d295097bb`）在基线之后、
+> 本设计合并之前落进 main**（`d295097bb` 是本文合并点 `d1d9bd742` 的**直接父提交**）
+> ⇒ 同一组命令现在返回**非零命中**，结论改判为「**已落码**」（实测 `origin/main` @ `042f32bca`）。
+> **历史留档**见 §6 表后的「口径订正」注。
 
 ### A5 微信 H5 网页授权与公众号配置（F1 / F2）
 
