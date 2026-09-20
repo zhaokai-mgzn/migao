@@ -215,7 +215,7 @@ describe('ProductionProgressTable', () => {
 
   // ── 套口径（issue #4686，用户裁定 2026-09-20「一樘窗 = 一套」）──
   // 分组粒度 = 一樘窗 = 一套；组头按行业口径显示「第 N 套 / 共 M 套」
-  // （真值源 docs/curtain-production-rules.md:9 逐字「第 N 套/共 M 套」）。
+  // （真值源 `docs/curtain-production-rules.md` 的「第 N 套/共 M 套」口径 —— 按该文本检索，不写行号）。
   // 套号来源：读面已按 `order_item_id` 分组返回**有序**列表 ⇒ N = 该组在列表中的序号、M = 列表长度。
 
   it('多窗订单：组头显示「第 N 套 / 共 M 套」，序号稳定唯一', () => {

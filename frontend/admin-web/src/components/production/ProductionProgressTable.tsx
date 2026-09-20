@@ -12,7 +12,8 @@ import type { ProductionPosition } from '@/types'
  *
  * 按**套**（一樘窗 = 一套，issue #4686 用户裁定 2026-09-20）分组展示加工单的工序实例：工序名 /
  * 分组 / 应做数量+单位 / 单价 / 状态 / 已完成数量 / 报工人。组头按行业口径标 **第 N 套 / 共 M 套**
- * （真值源 docs/curtain-production-rules.md:9 逐字「第 N 套/共 M 套」）：读面已按 `order_item_id`
+ * （真值源 `docs/curtain-production-rules.md` 的「**第 N 套/共 M 套**」口径 —— 按该文本检索，不写行号）：
+ * 读面已按 `order_item_id`
  * （= 一樘窗）分组返回**有序**列表（`ProductionService.buildPositions`）⇒ N = 该组在列表中的序号、
  * M = 列表长度，前端不另起一套口径。
  * ⚠️ 这里的分组**不是「部位」**（部位 = 布帘/纱帘/帘头，读面键 = `position_kind`）；`position_name`
