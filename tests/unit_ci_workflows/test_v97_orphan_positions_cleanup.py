@@ -21,16 +21,23 @@
 
 ⇒ 存量孤儿 = **2 条**（全库 `deleted = 1` 的工序行只有 1 条，见上表）。
 
-## 本文件钉的七件事（各有红证，互不掩盖）
+## 本文件钉的事（各有红证，互不掩盖）
 
-1. **判据口径 = 生产代码**：`V97` 的 `variant_map` 与 `ProductionOperationQueryService.variantNames()`
-   **逐条相等**（解析 Java 源码双向比对，不写死条数）；
+0. 🔴 **口径归属（issue #4796）**：`V97` 的 `variant_map`（30 条）**不是运行期口径** ——
+   运行期 `VARIANT_NAMES = variantNamesWithCurtainHead()` = 该表 **+ `headVariants()` 的 21 条帘头回落**
+   （#4777 把那条隐式回落改成显式表）。差异**恰为那 21 格**（判据 1b 逐格钉住）；
+   拿 V97 的 map 当运行期口径 ⇒ 帘头格被计成「**从未登记**」（判据 1c 给出该假阳性读数）；
+1. **`variant_map` = V97 冻结的那 30 条**：与 `ProductionOperationQueryService.variantNames()`
+   **逐条相等**（解析 Java 源码双向比对，不写死条数）—— 这是**迁移不可变**的判据，
+   **不是**「与运行期一致」的判据（见 0）；
 2. **写形态 = 显式写列**：`SET deleted = 1, updated_at = NOW()` —— 禁 `setDeleted(1); updateById(...)`
    （MyBatis-Plus 全局逻辑删除会把该字段从 SET 子句剔除 ⇒ 静默 no-op，issue #4608）；
 3. **只软删、不物理删**：全文**没有** `DELETE FROM production_operation_positions`；
 4. **判据严格**：必须同时含「期望变体名 **`deleted = 1`** 存在」与「活跃库里没有」两半 ——
-   去掉前半 ⇒ 变成「按错误判据清理」，会把**从未登记**的格（真库 105 条，帘头占绝大多数、
-   且带商家显式价）一并删掉（**红证**：注入 ⇒ 必红）；
+   去掉前半 ⇒ 变成「按错误判据清理」，会把**V97 口径下解析不到**的格一并删掉
+   （真库读数 **105 条**，帘头占绝大多数、且带商家显式价）⇒ **红证**：注入 ⇒ 必红。
+   ⚠️ 「105」是 **V97 口径的读数**（判据口径的产物，不是运行期事实）：其中帘头格在
+   **运行期解析得到**（回落布帘变体）⇒ 真去删它就是**静默丢弃商家的价**（判据 1c 给对比读数）；
 5. **数量对账**：迁移末尾的 `DO $$ … RAISE EXCEPTION` 与写语句**共用同一份判据**
    （判据漂移 ⇒ 当场回滚）；
 6. **幂等**：真库跑两次净效果相同（第二次 0 行）；
@@ -55,6 +62,13 @@ from pathlib import Path
 
 import pytest
 
+# ⚠️ 运行期口径（`variantNameOf` **实际查的那张表**）的**唯一**载体在 `test_v91_…`（issue #4796）：
+# 「同一口径只放一处」—— 本文件**不**再自己解析一份「运行期表」，只解析 **V97 冻结的那 30 条**。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_v91_baseline_operations_backfill import (  # noqa: E402
+    RETIRED_LOGICAL_NAMES, SCHEMA_SQL, bootstrap_row_values, canonical_matrix,
+    runtime_resolve, runtime_variant_map)
+
 REPO = Path(__file__).resolve().parents[2]
 MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
 MIGRATION = MIGRATION_DIR / "V97__soft_delete_orphan_operation_positions.sql"
@@ -67,6 +81,8 @@ SCHEMA = REPO / "docs/sql/schema.sql"
 _VARIANT_CALL = re.compile(r'variant\(\s*names\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)')
 #: SQL 侧的 `variant_map` 行：`('精裁', '布帘', '精裁-布'),`
 _SQL_MAP_ROW = re.compile(r"\(\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*\)")
+#: 部位值域 = V71 的三部位闭词表 + V79 的 `布料`（第 4 部位）—— 逐格比对必须覆盖全部 4 个部位。
+_VARIANT_POSITIONS = ("布帘", "纱帘", "帘头", "布料")
 
 
 def _strip_comments(sql: str) -> str:
@@ -104,6 +120,38 @@ def _java_variant_map() -> set:
     return triples
 
 
+# ══════════════════ 口径对齐（issue #4796）：SQL map ⇄ 运行期解析 ══════════════════
+# 运行期口径的**唯一**载体 = `test_v91_…::runtime_variant_map` / `runtime_resolve`（上面已 import）：
+# 「同一口径只放一处」—— 本文件只负责「V97 冻结的那 30 条」与它的**逐格差异清单**。
+
+
+def _sql_map() -> dict:
+    """SQL 侧 `variant_map` 的 `{(逻辑名, 部位): 变体名}`。"""
+    return {(l, p): v for l, p, v in _sql_variant_map(MIGRATION.read_text(encoding="utf-8"))}
+
+
+def _map_vs_runtime_diff(sql_map: dict, runtime: dict) -> dict:
+    """SQL map 口径 与 运行期口径 的**逐格差异清单**（键 = 格，值 = `(SQL 侧, 运行期侧)`）。
+
+    格域 = 两表逻辑名**并集** × 4 个部位 —— 只在「两表都有的逻辑名」上比，会漏掉
+    「一侧完全没有该逻辑名」这一差异形态。
+    """
+    logicals = {logical for logical, _ in sql_map} | {logical for logical, _ in runtime}
+    diff = {}
+    for logical in sorted(logicals):
+        for position in _VARIANT_POSITIONS:
+            cell = (logical, position)
+            if sql_map.get(cell) != runtime.get(cell):
+                diff[cell] = (sql_map.get(cell), runtime.get(cell))
+    return diff
+
+
+def _curtain_head_fallback_cells(runtime: dict) -> set:
+    """运行期表里**帘头回落**那一族格 = 「有布帘条目的逻辑名」的帘头格（**不写死 21**）。"""
+    cloth = {logical for logical, position in runtime if position == "布帘"}
+    return {(logical, "帘头") for logical in cloth}
+
+
 # ══════════════════════ 静态判据（文本层） ══════════════════════
 
 def test_v97_migration_exists_and_version_is_unique():
@@ -121,7 +169,11 @@ def test_v97_migration_exists_and_version_is_unique():
 
 
 def test_v97_variant_map_matches_production_code():
-    """判据 1：SQL 的 `variant_map` **逐条相等**于 Java `variantNames()`（双向，不写死条数）。"""
+    """判据 1：SQL 的 `variant_map` **逐条相等**于 Java `variantNames()`（双向，不写死条数）。
+
+    ⚠️ 这是**迁移不可变**的判据（`variantNames()` = V97 冻结的那 30 条），**不是**运行期口径 ——
+    运行期 `VARIANT_NAMES = variantNamesWithCurtainHead()` 另有 21 条帘头回落（判据 1b）。
+    """
     sql_map = _sql_variant_map(MIGRATION.read_text(encoding="utf-8"))
     java_map = _java_variant_map()
     assert sql_map == java_map, (
@@ -130,6 +182,95 @@ def test_v97_variant_map_matches_production_code():
         f"  SQL 缺失：{sorted(java_map - sql_map)}")
     assert len(java_map) == len({(a, b) for a, b, _ in java_map}), (
         "生产代码里同一 (逻辑名, 部位) 出现两条不同变体 —— 逆索引有歧义")
+    # 🔴 issue #4796：这张冻结表是**运行期表**的真子集 —— 它不得凭空发明一条运行期解析不到的变体名
+    sql_cells = {(l, p): v for l, p, v in sql_map}
+    runtime = runtime_variant_map()
+    assert set(sql_cells) < set(runtime) and all(runtime[cell] == variant
+                                                 for cell, variant in sql_cells.items()), (
+        "V97 的 `variant_map` 必须是运行期 `VARIANT_NAMES` 的**真子集**"
+        "（多出的条目 = 冻结表在运行期表之外发明了解析，见 issue #4796）")
+
+
+def test_v97_map_vs_runtime_diff_is_exactly_the_curtain_head_fallback():
+    """判据 1b（issue #4796）：SQL map 与**运行期解析**的逐格差异**恰为 21 条帘头回落**。
+
+    「差异清单」是**机器钉住**的（不是"没发现"）：任何人再拿 V97 的 map 当运行期口径，
+    差异面（帘头回落）与规模都在这里被断言 ⇒ 口径分叉不会静默。
+    """
+    sql_map = _sql_map()
+    runtime = runtime_variant_map()
+    assert sql_map and runtime, "读不到口径表 —— 判据会空跑"
+    diff = _map_vs_runtime_diff(sql_map, runtime)
+    expected = _curtain_head_fallback_cells(runtime)
+    assert expected, "运行期表里读不到帘头回落那一族格 —— 判据会空跑"
+    print(f"[#4796] V97 map {len(sql_map)} 条 / 运行期 {len(runtime)} 条 / 逐格差异 {len(diff)} 格"
+          f"（期望恰为 {len(expected)} 条帘头回落）")
+    assert set(diff) == expected, (
+        "V97 的 map 与运行期解析的差异**不止**帘头回落（判据口径与运行期分叉）：\n"
+        f"  多出：{sorted(set(diff) - expected)}\n"
+        f"  缺失：{sorted(expected - set(diff))}")
+    cloth = {logical: variant for (logical, position), variant in runtime.items()
+             if position == "布帘"}
+    for (logical, position), (v97, run) in sorted(diff.items()):
+        assert position == "帘头", f"差异格 `{logical}×{position}` 不是帘头格 ⇒ 口径分叉"
+        assert v97 is None, (
+            f"`{logical}×{position}` 在 V97 的 map 里竟有值 `{v97}` ⇒ 它就不是「表未命中 ⇒ 回落裸名」形态")
+        assert run == cloth[logical], (
+            f"运行期对 `{logical}×{position}` 的解析必须等于它的布帘变体 `{cloth[logical]}`，"
+            f"实际 `{run}`（#4777 的帘头回落 = 取布帘那一列）")
+    # 除帘头外**零差异** —— 含 #4707 的 `裁剪 × 布料` 回落：两表**都有**（不是差异）
+    logicals = {logical for logical, _ in sql_map} | {logical for logical, _ in runtime}
+    others = [(logical, position) for logical in sorted(logicals)
+              for position in _VARIANT_POSITIONS if position != "帘头"]
+    assert all(sql_map.get(cell) == runtime.get(cell) for cell in others), (
+        "帘头之外还有口径差异（例如 #4707 的布料回落只落在一份表里）："
+        f"{sorted(c for c in others if sql_map.get(c) != runtime.get(c))}")
+    assert ("裁剪", "布料") in sql_map and sql_map[("裁剪", "布料")] == runtime[("裁剪", "布料")], (
+        "#4707 的 `裁剪 × 布料` 回落必须**两表都有**（V97 的 map 刻意含它，运行期也含）")
+
+
+def test_v97_criterion_miscounts_curtain_head_cells_that_the_runtime_resolves():
+    """判据 1c（issue #4796 的**假阳性读数**）：同一批格，两份口径给出不同读数。
+
+    对象 = 规范矩阵里 `applicable = TRUE` 的格（`ProductionSeedTemplateService.CANONICAL_POSITION_PRICES`）
+    × 工序库（`docs/sql/schema.sql` 的 36 行基线）：
+
+    * **V97 口径**（30 条 map，**刻意不含**帘头回落 —— 迁移注释逐字写明）⇒ 帘头格落裸逻辑名
+      ⇒ 库里没有 ⇒ 计成「**从未登记 / 解析不到**」= `#4672`「105 格」的算法；
+    * **运行期口径**（`VARIANT_NAMES` = map + 21 条帘头回落）⇒ **0 格**。
+
+    ⇒ 那份读数是**判据口径的产物**，不是运行期事实；据此去"清理"那些格 = 丢掉商家的价
+    （真库 `三边 × 帘头` 带商家显式价 ¥0.10 + `applicable = TRUE`）。
+    """
+    library = set(bootstrap_row_values(SCHEMA_SQL.read_text(encoding="utf-8")))
+    sql_map = _sql_map()
+    runtime = runtime_variant_map()
+    applicable = [(logical, position) for logical, position, ok in canonical_matrix()
+                  if ok and logical not in RETIRED_LOGICAL_NAMES]
+    assert applicable, "规范矩阵里没有 applicable 的格 —— 判据会空跑"
+    v97_unresolved = sorted(f"{l}×{p}" for l, p in applicable
+                            if runtime_resolve(l, p, sql_map, library) is None)
+    runtime_unresolved = sorted(f"{l}×{p}" for l, p in applicable
+                                if runtime_resolve(l, p, runtime, library) is None)
+    print(f"[#4796] applicable 格 {len(applicable)} 个：V97 口径「解析不到」{len(v97_unresolved)} 个 "
+          f"{v97_unresolved} / 运行期口径 {len(runtime_unresolved)} 个 {runtime_unresolved}")
+    assert runtime_unresolved == [], (
+        f"运行期口径下 applicable 格竟解析不到：{runtime_unresolved}（该部位的单会 fail-closed 422）")
+    cloth_logicals = {logical for (logical, position) in runtime if position == "布帘"}
+    expected = {f"{logical}×帘头" for logical in cloth_logicals if (logical, "帘头") in applicable}
+    assert expected, "规范矩阵里没有「布帘列逻辑名 × 帘头」的 applicable 格 —— 判据会空跑"
+    assert set(v97_unresolved) == expected, (
+        "V97 口径的「解析不到」读数必须**恰为**帘头格（= 假阳性面）：\n"
+        f"  期望：{sorted(expected)}\n  实际：{v97_unresolved}")
+    # 🔴 反向护栏（判据**没有**放宽成恒真）：真「解析不到」的格，两份口径都判 None
+    for cell in (("配料", "布帘"), ("从未登记的工序", "帘头")):
+        assert runtime_resolve(*cell, sql_map, library) is None, f"V97 口径把 {cell} 判成解析得到"
+        assert runtime_resolve(*cell, runtime, library) is None, f"运行期口径把 {cell} 判成解析得到"
+    # 🔴 反向护栏（**注入式**）：把一条真「解析不到」的格塞进 applicable 集 ⇒ 上面那半条判据必红
+    injected = [f"{l}×{p}" for l, p in applicable + [("从未登记的工序", "帘头")]
+                if runtime_resolve(l, p, runtime, library) is None]
+    assert injected == ["从未登记的工序×帘头"], (
+        f"注入一条真「解析不到」的格后运行期口径判据竟不报 ⇒ 判据被放宽成恒真（实际 {injected}）")
 
 
 def test_v97_soft_deletes_explicitly_and_never_physically_deletes():
@@ -314,6 +455,22 @@ def test_guard_detects_injected_drift():
     # ⑥ 剥注释本身是承重的（否则「改代码但注释还在」会让判据恒绿）
     assert "SET deleted = 1" in _strip_comments(sql), "剥注释后正文里必须仍有 `SET deleted = 1`"
 
+    # ⑦ #4796：从**运行期**表里删掉一条帘头条目 ⇒ 「逐格差异清单」判据必红（不是恒真）
+    java = QUERY_SERVICE.read_text(encoding="utf-8")
+    dropped_head = java.replace('variant(names, "三边", "帘头", "布三边");', "")
+    assert dropped_head != java, "注入「删一条帘头条目」没生效 ⇒ 本红证是空断言"
+    injected_runtime = runtime_variant_map(dropped_head)
+    assert ("三边", "帘头") not in injected_runtime, "注入后运行期表里仍读得到该帘头条目 ⇒ 注入没生效"
+    injected_diff = _map_vs_runtime_diff(_sql_map(), injected_runtime)
+    injected_expected = _curtain_head_fallback_cells(injected_runtime)
+    assert set(injected_diff) == injected_expected - {("三边", "帘头")}, (
+        "删掉一条帘头条目后差异面**必须恰好少掉那一格** ⇒ 判据 1b 才不是空断言，"
+        f"实际 {sorted(set(injected_diff) ^ (injected_expected - {('三边', '帘头')}))}")
+    # 且该格在运行期口径下变成**真解析不到**（证明判据仍抓得住真缺口）
+    library = set(bootstrap_row_values(SCHEMA_SQL.read_text(encoding="utf-8")))
+    assert runtime_resolve("三边", "帘头", injected_runtime, library) is None, (
+        "删掉帘头条目后 `三边 × 帘头` 竟仍解析得到 ⇒ 判据对真缺口无判别力")
+
 
 # ══════════════════════ 真库判据（本机 PG 二进制；缺则显式 skip） ══════════════════════
 
@@ -345,8 +502,9 @@ CREATE TABLE production_work_logs (
     unit_price NUMERIC(10,2), factor NUMERIC(6,3), deleted INTEGER NOT NULL DEFAULT 0);
 """
 
-#: 真库形态的种子：**2 条真孤儿** + **3 条「从未登记」的格** + 1 条健康格 + 历史快照行。
-#: 「从未登记」那 3 条是判据 4 的反向护栏（放宽判据 ⇒ 它们被误删 ⇒ 红）。
+#: 真库形态的种子：**2 条真孤儿** + **3 条 V97 口径下「解析不到」的格** + 1 条健康格 + 历史快照行。
+#: 那 3 条是判据 4 的反向护栏（放宽判据 ⇒ 它们被误删 ⇒ 红）；
+#: ⚠️ 「解析不到」是 **V97 口径**的判定 —— `never-1`（`三边 × 帘头`）在运行期**解析得到**（判据 1c）。
 _SEED = """
 INSERT INTO tenants (id) VALUES (1);
 -- 工序库：36 条健康变体里只种本测试用到的 + 1 条已软删的自定义工序
@@ -360,7 +518,10 @@ INSERT INTO production_operation_positions
     -- ① 真孤儿 2 条（工序 测试22 已 deleted = 1）
     ('orphan-1', 1, '测试22', '布帘', 0.20, TRUE, 0),
     ('orphan-2', 1, '测试22', '纱帘', 0.30, TRUE, 0),
-    -- ② 「从未登记」的格 3 条（工序库里**从来没有**该名字）—— 不得被删
+    -- ② V97 口径下「解析不到」的格 3 条 —— 不得被删。
+    --    ⚠️ `never-1` = `三边 × 帘头` 在**运行期解析得到** `布三边`（种子 `op-2`，`deleted = 0`）：
+    --    它落在这里只因 **V97 的 `variant_map` 不含帘头回落**（判据 1b/1c 钉住该差异），
+    --    不是「从未登记」；真去删它就是丢商家的价（真库该格 ¥0.10 / `applicable = TRUE`）。
     ('never-1',  1, '三边', '帘头', 0.10, TRUE, 0),
     ('never-2',  1, '定型', '纱帘', NULL, FALSE, 0),
     ('never-3',  1, '打包', '布料', NULL, TRUE, 0),
@@ -483,8 +644,8 @@ def test_v97_cleanup_is_idempotent_and_hits_exactly_the_orphans(psql):
         f"改前就存在的孤儿未被软删（它同样是真孤儿，必须一并清理）：{after_first}"
     for kept in ("never-1:0", "never-2:0", "never-3:0", "healthy-1:0", "already-1:1"):
         assert kept in after_first, (
-            f"非孤儿行 `{kept}` 被误删/误改 —— 判据放宽了（真库实测这类「从未登记」的格有 105 条，"
-            f"且带商家显式价）：{after_first}")
+            f"非孤儿行 `{kept}` 被误删/误改 —— 判据放宽了（真库 **V97 口径**读数：这类格 105 条，"
+            f"且带商家显式价；其中帘头格运行期解析得到，见判据 1b/1c）：{after_first}")
     # 软删必须带 updated_at 审计（不是「只改 deleted」）
     stamped = psql("SELECT count(*) FROM production_operation_positions "
                    "WHERE id IN ('orphan-1','orphan-2') AND deleted = 1 AND updated_at > created_at;")

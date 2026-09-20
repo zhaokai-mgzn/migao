@@ -613,6 +613,12 @@ SEED_SERVICE = REPO / (
 
 VARIANT_CALL_RE = re.compile(
     r'variant\(\s*names\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)')
+#: 运行期解析表的**入口点声明**（issue #4796）：`variantNameOf` 查的是 `VARIANT_NAMES`，
+#: 而它是**合成**出来的（`variantNames()` + `headVariants()`）⇒ 判据必须钉住这一处。
+VARIANT_ENTRY_RE = re.compile(
+    r"private static final Map<String, Map<String, String>> VARIANT_NAMES\s*=\s*(\w+)\(\)")
+#: 入口点必须合成的 builder（改组合方式 ⇒ 判据**显式报红**，不静默读一个过期子集）。
+VARIANT_ENTRY_BUILDER = "variantNamesWithCurtainHead"
 MATRIX_ROW_RE = re.compile(
     r'\{\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*(null|"[^"]*")\s*,\s*"(true|false)"\s*\}')
 
@@ -621,8 +627,26 @@ FABRIC_KEEP_APPLICABLE_LOGICAL = "裁剪"
 FABRIC_POSITION = "布料"
 
 
-def runtime_variant_map() -> dict[tuple[str, str], str]:
-    pairs = VARIANT_CALL_RE.findall(QUERY_SERVICE.read_text(encoding="utf-8"))
+def runtime_variant_map(java_text: str | None = None) -> dict[tuple[str, str], str]:
+    """运行期 `VARIANT_NAMES` 的逐条逆索引 —— **`variantNameOf` 实际查的那张表**。
+
+    🔴 issue #4796：口径**只此一处**。`V97` 的 `variant_map`（30 条，已发布迁移**指纹冻结**）
+    是它的**真子集**，差异恰为 21 条帘头回落（`headVariants()`，issue #4777）
+    ⇒ 任何「某格解析得到吗」的判据都必须走本函数，**不得**拿 V97 的 map 当运行期口径
+    （那样会把帘头格计成「从未登记」，真去"清理"就是静默丢弃商家的价）。
+
+    ⚠️ 入口点声明本身是判据的一部分：`VARIANT_NAMES` 的**合成方式**变了 ⇒ 本函数显式报红
+    （否则「文件里所有 `variant(names, …)`」会被当成运行期表 = 判据口径静默分叉）。
+
+    @param java_text 注入用源码文本（注入式红证）；缺省读真源码。
+    """
+    text = QUERY_SERVICE.read_text(encoding="utf-8") if java_text is None else java_text
+    entry = VARIANT_ENTRY_RE.search(text)
+    assert entry, "读不到 `VARIANT_NAMES = <builder>()` 的入口点声明（守卫会空跑 —— 必须修解析）"
+    assert entry.group(1) == VARIANT_ENTRY_BUILDER, (
+        f"运行期解析表的入口点变成了 `{entry.group(1)}()` —— 本判据读的是**运行期那张表**，"
+        f"入口点变更必须同步（否则判据口径与生产分叉，issue #4796）")
+    pairs = VARIANT_CALL_RE.findall(text)
     assert pairs, "解析不到 `variantNames()` 的逆索引（守卫会空跑 —— 必须修解析）"
     return {(logical, position): variant for logical, position, variant in pairs}
 
