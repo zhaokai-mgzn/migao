@@ -377,6 +377,114 @@ $ shasum -a 256 page.tsx
 
 ---
 
+## R4.3 · 复核 agent 独立抽样（6 条注入，逐次还原到 BASE）
+
+复核裁判 = **GLM-5.3-Flash**（provider `scnet-token-plan`，与主验收**不同模型族**），**不看**主验收结论。
+完整性自证：`page.tsx` BASE `017660477835219b0908d6e7a518369e4a7d388274ef4c422f8c123da2a003e9`，6 次注入**逐次 `cp` 还原并比对，每次都 == BASE**；基线全量 `170 passed`（注入前后各一次）。
+
+| # | 注入 | 目标 | 实测 |
+|---|---|---|---|
+| 1 | `deliveryRows` 加 `.filter(r => (cellsByOp.get(r.operation) ?? []).length > 0)` | `B6-①` | **1 failed** `Unable to find: delivery-row-外帘装袋` |
+| 2 | footer 的 disable/delete 各包 `{manageVariants.length > 0 && (…)}` | `B6-②` | **1 failed** `Unable to find: operations-manage-disable` |
+| 3 | `deliveryRows` 忽略服务端 `price_state`、由格自行重算 4 态 | `B7-①/②/③` | **3 passed（全绿）** ⚠️ ⇒ 「不重算」**无红证** |
+| 4 | `multiple_prices` ⇒ 静默取第一个价 | `B7-②` | **1 failed**（仅 B7-②） |
+| 5 | `setMatrix((...data ?? []).filter(c => c.position !== '布料'))` | `B4` | **B4 绿**；同一注入下 `🔴 硬要求` **红** ⇒ B4 检测不到 |
+| 6 | `matrixColumnsOf` → `return [...present]` | `B4` | **1 failed** `expected [...'布料'...] to deeply equal [...]` |
+
+复核另发现（主验收初判漏判，已采纳）：
+- **`deliveryOps` 注释漂移**：`page.tsx:1152-1158` 注释称「取自服务端的分区读面（`delivery` 段）」，实现 `:1159-1162` 却是 `new Set(matrix.filter(c => c.scope === 'set').map(c => c.operation))` ⇒ 按**矩阵格**取。
+- **`operation-layers` 失败无错误面**：`:1018` 失败静默置空 ⇒ 前端兜底把**有价**工序渲染成 `no_applicable_position`（「未设置（没有部位设为「做」）」）= 假话代替报错。
+- **假红陷阱**：`-t "#4677"` 会匹配 describe 外的 `判据③ 改判（#4677）`（`:3091`），该用例依赖其它 describe 留下的 mock 状态 ⇒ 过滤跑必然 `Test timed out in 5000ms`（**假红**，全量跑绿）。
+- **`<td>` 嵌套的影响边界**（比主验收更精确）：页面是 `'use client'` 且内容被 `2552 {!loading && !error && (…)}` 门控 ⇒ **SSR 首屏不含该 HTML**，故**不会**触发浏览器解析器多出一列；影响限于客户端渲染（浏览器给内层 `td` 套匿名 table、`py-2.5 pr-4` 双份 ⇒ 布料单单价列的内边距/列宽/对齐与同表其它列不一致）。
+
+---
+
+## R4.4 · 主验收补的两条红证（复核 agent 指出的缺口）
+
+### ① 「逐字取自服务端（前端不重算）」原本**不可证伪** ⇒ 补可证伪红证
+
+根因：测试 `buildLayers(夹具)`（`:423-459`）从**同一份夹具格**推导服务端 `delivery` 段 ⇒ 服务端值与前端重算值**构造性相等**。故复核注入 3 得「3 passed 全绿」。
+
+探针（服务端与矩阵格**故意不一致**）：
+
+```ts
+  it('【验收探针】「逐字取自服务端」可证伪：服务端说 priced，矩阵格说未定价 ⇒ 必须显示 ¥9.99', async () => {
+    mockGetOperationLayers.mockResolvedValue(ok({
+      operations: LAYER_CELLS,
+      delivery: [{ operation: '外帘装袋', scope: 'set', unit: '套', group: '后道', is_must_finish: true,
+                   price: 9.99, price_state: 'priced', different_price_count: 0, applicable_positions: ['布帘'] }],
+    }))
+    await renderOperations()
+    const cell = screen.getByTestId('delivery-price-外帘装袋')
+    expect(cell).toHaveAttribute('data-price-state', 'priced')
+    expect(cell).toHaveTextContent('¥9.99')
+    expect(cell).not.toHaveTextContent('未定价')   // 矩阵格里该工序是 unpriced ⇒ 自行重算必红
+  })
+```
+
+```
+=== ① 基线（未注入生产代码）应绿 ===
+ ✓ tests/unit/pages/production-routings.test.tsx (171 tests | 170 skipped) 68ms
+      Tests  1 passed | 170 skipped (171)
+
+=== ② 注入「前端重算」后 ===
+   × … > 【验收探针】「逐字取自服务端」可证伪：服务端说 priced，矩阵格说未定价 ⇒ 必须显示 ¥9.99 70ms
+Received:
+    4115|     expect(cell).toHaveTextContent('¥9.99')
+      Tests  1 failed | 170 skipped (171)
+
+=== ③ 还原 ===
+017660477835219b0908d6e7a518369e4a7d388274ef4c422f8c123da2a003e9   （== BASE）
+git status --porcelain → 干净
+```
+
+⇒ **A2「前端不重算」成立**（值级红证），**但交付测试未钉住** ⇒ P2-8。
+
+### ② 「第二层的行不依赖矩阵格」**端到端不成立**（后端探针，本次主验收复现复核发现）
+
+```java
+    @Test
+    @DisplayName("【验收探针】真形态：`scope='set'` 且**零矩阵格**的工序 —— delivery 段有行吗？")
+    void acceptanceProbe_zeroCellSetOperationStillHasDeliveryRow() {
+        stubPackingCatalog();                       // 工序库：打包 / 外帘打卷 / 外帘装袋 三行均 scope='set'
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("打包", "布帘", "1.50", true)));   // 矩阵里**只有 `打包` 一格**
+        Map<String, Object> layers = service().operationLayers(TENANT);
+        List<Map<String, Object>> delivery = (List<Map<String, Object>>) layers.get("delivery");
+        System.out.println("PROBE delivery operations = " + delivery.stream().map(r -> r.get("operation")).toList());
+        assertThat(delivery).extracting(r -> r.get("operation"))
+                .as("零矩阵格的 scope='set' 工序也应有一行（#4674 从根上避免的第①条约束）")
+                .containsExactly("打包", "外帘装袋", "外帘打卷");
+    }
+```
+
+```
+$ ./mvnw -q -o -Dtest=ProductionOperationLayersTest test
+PROBE delivery operations = [打包]
+[ERROR] Tests run: 8, Failures: 1, Errors: 0, Skipped: 0
+[ERROR]   ProductionOperationLayersTest.acceptanceProbe_zeroCellSetOperationStillHasDeliveryRow:260
+          [零矩阵格的 scope='set' 工序也应有一行（#4674 从根上避免的第①条约束）]
+          but could not find the following elements:
+[ERROR] Failed to execute goal … maven-surefire-plugin:3.2.5:test
+```
+
+**还原自证**：
+
+```
+$ shasum -a 256 src/test/java/com/migao/admin/service/ProductionOperationLayersTest.java
+e0eccfbe42764ad9d35208d174bab560a0ee337596e32bead8760ca3c3ed8d66
+$ git show HEAD:…/ProductionOperationLayersTest.java | shasum -a 256
+e0eccfbe42764ad9d35208d174bab560a0ee337596e32bead8760ca3c3ed8d66
+$ git status --porcelain
+（空）
+```
+
+⇒ **服务端 `delivery` 段只给出 `[打包]`**，零格的 `外帘装袋`/`外帘打卷` 一行都没有 ⇒ **D6① 端到端不成立**（改判 P15 + 新增 **P1-2**）。
+根因锚点：`ProductionRoutingReadService.operationLayers`（`:174-185`）遍历 `operationPositions(tenantId)`（`:138-154`，`productionOperationPositionMapper.selectList` = **只读矩阵表**）。
+「为什么交付测试没抓到」：前端 `B6-①`（`:3950-3974`）**手造**服务端 delivery 行（`:3958-3967`），其注释（`:3952-3953`）声称「真后端按 `production_operations` 行分区、不看格」**与实现不符**；后端 `ProductionOperationLayersTest:228-246` 的 DisplayName 写「甚至零格」，stub 却是 `position("外帘装袋","布帘",null,false)` = **有格 + `applicable=false`**。
+
+---
+
 ## R5 · 后端读面（#4676，已合并）四态实现核对
 
 `ProductionRoutingReadService.java:217-256` @efa59d98a：
