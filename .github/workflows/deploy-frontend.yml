@@ -129,6 +129,10 @@ jobs:
           ACR_U: ${{ secrets.ACR_USERNAME }}
           ACR_P: ${{ secrets.ACR_PASSWORD }}
           IMAGE_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
+          # 显式降级许可（issue #4852 ②）：`workflow_dispatch -f image_tag=<tag>`（MODE=rollback）
+          # 是**人工回滚接口** ⇒ 只有这条路径给 1，其余（push / schedule 构建部署）恒 0
+          # ⇒ 远端闸门「target 是当前在跑 tag 的祖先就跳过该服务」对普通部署生效、对显式回滚放行。
+          ALLOW_DOWNGRADE: ${{ steps.tag.outputs.MODE == 'rollback' && '1' || '0' }}
         run: |
           bash deploy/scripts/swas-deploy-ci.sh \
             ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$ACR_U" "$ACR_P" "$IMAGE_TAG"

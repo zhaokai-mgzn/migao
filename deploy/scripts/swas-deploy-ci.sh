@@ -29,6 +29,18 @@
 #     本单实现的是 issue 明示可接受的替代式 —— **失败即回滚到上一个可用镜像**；
 #   · **硬超时不做自动回滚**：远端 RunCommand 的 `--timeout 3600` ⇒ 超时那一刻远端**可能仍在跑**，
 #     此刻回滚会与它抢 deploy.sh 的 flock（等待 600s 后才失败）⇒ 改为显式告警 + 恢复手册。
+#
+# ── 2026-09-21 部署链加固之二（issue #4852，排队的旧 run 静默回退生产）──
+# 闸门本体在远端 `deploy/swas/deploy.sh`（「target tag 是当前在跑 tag 的祖先 ⇒ 跳过该服务 + 告警」，
+# 且必须**在 flock 之内**判 ⇒ 只能在远端判，否则有 TOCTOU 窗口）。本脚本负责**三件接线**：
+#   ② **显式降级许可**：把 `ALLOW_DOWNGRADE`（0/1）注入远端 —— workflow 的 MODE=rollback
+#      （`gh workflow run deploy-*.yml -f image_tag=<tag>`）给 1；#4767 的**自动回滚**那次尝试也给 1
+#      （回滚本身就是往回走）。缺省 0 ⇒ 闸门生效。**只认 `1`**，其它值一律当 0（不许误开）。
+#   ③ **部署结论行必须说「实际生效 tag」**：解析远端打的 `EFFECTIVE_TAG=<svc>:<tag>` /
+#      `DOWNGRADE_SKIPPED=<svc>:<target>:<running>`，逐服务落 `$GITHUB_STEP_SUMMARY` +
+#      拼进 `✅ SWAS 部署成功（…）` 那一行 —— 事故里那句 `✅ 部署成功（tag=sha-7b03ed3）`
+#      只说了**请求的** tag，正是误导源。
+#   ④ 远端 `::warning::` 行随远端输出一起 printf 到 stdout ⇒ GitHub 会把它渲染成注解（不静默）。
 # ══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -39,6 +51,14 @@ SK=$4
 ACR_USERNAME=${5:-}
 ACR_PASSWORD=${6:-}
 IMAGE_TAG=${7:-latest}
+# 显式降级许可（issue #4852 ②）：`gh workflow run deploy-*.yml -f image_tag=<tag>` 是**人工回滚接口**
+# ⇒ workflow 在 MODE=rollback 时注入 `ALLOW_DOWNGRADE=1`（由本脚本转成远端环境变量）。
+# **只认 `1`**：其它值（空 / 0 / 拼错）一律当 0 ⇒ 许可只能由显式路径给出，不会被环境意外打开。
+ALLOW_DOWNGRADE=${ALLOW_DOWNGRADE:-0}
+case "$ALLOW_DOWNGRADE" in
+  1) ;;
+  *) ALLOW_DOWNGRADE=0 ;;
+esac
 
 # ── 硬超时参数（issue #4767 ①）────────────────────────────────────────────────
 # DEPLOY_TIMEOUT_SECONDS：**一次「发起 SWAS 调用 + 轮询结果」的总墙钟上界**（不是次数上界）。
@@ -183,6 +203,7 @@ PY
 }
 
 # 解码 + 取出回滚点（远端 deploy.sh 成功时记的 `.last-good-tag`，由 bootstrap 回显）
+# 以及远端逐服务打的「实际生效 tag / 因往回走被跳过」（issue #4852 ③）。
 capture_remote_log() {
   local res=$1 prev
   REMOTE_LOG=$(extract_remote_log "$res" 2>/dev/null) || REMOTE_LOG=""
@@ -190,6 +211,47 @@ capture_remote_log() {
   # ⚠️ 不接 `head -1`：pipefail 下 `head` 提前退出会让上游吃 SIGPIPE ⇒ 整条管道非零 ⇒ set -e 误杀
   prev=$(printf '%s\n' "$REMOTE_LOG" | sed -n 's/^PREV_GOOD_TAG=//p')
   PREV_GOOD_TAG=${prev%%$'\n'*}
+  # 逐服务「实际生效 tag」（`<svc>:<tag>`，三行）+ 被闸门跳过的服务（`<svc>:<target>:<running>`）
+  EFFECTIVE_TAGS=$(printf '%s\n' "$REMOTE_LOG" | sed -n 's/^ *EFFECTIVE_TAG=//p')
+  DOWNGRADE_SKIPS=$(printf '%s\n' "$REMOTE_LOG" | sed -n 's/^ *DOWNGRADE_SKIPPED=//p')
+  return 0
+}
+
+# 逐服务生效 tag → 一行（`admin-api=sha-x / ai-agent=sha-y / admin-web=sha-z`）；
+# 远端没打标记（deploy.sh 版本早于 #4852）⇒ 空串（**不是**「已确认生效」）。
+effective_tags_line() {
+  printf '%s\n' "$EFFECTIVE_TAGS" \
+    | awk -F: 'NF>=2 {printf "%s%s=%s", (n++ ? " / " : ""), $1, $2} END {if (n) print ""}'
+}
+
+# 拼进部署结论行：`；本次实际生效：`…``（取不到就**明写取不到**，不许沉默）
+effective_suffix() {
+  local line
+  line=$(effective_tags_line)
+  if [ -n "$line" ]; then
+    echo "；本次实际生效：\`$line\`"
+  else
+    echo "；⚠️ 远端未给出「实际生效 tag 逐服务」（deploy.sh 版本早于 #4852 ⇒ 这不是「已确认」）"
+  fi
+}
+
+# 「实际生效 tag 逐服务一行」+ 被跳过的服务（**落 job summary**，issue #4852 ③）
+report_effective_tags() {
+  local line skips
+  line=$(effective_tags_line)
+  if [ -z "$line" ]; then
+    say "- ⚠️ 本次**无法**给出「实际生效 tag 逐服务」：远端输出里没有 \`EFFECTIVE_TAG=\` 标记"
+    say "  （远端 deploy.sh 版本早于 #4852 ⇒ 这一项是「未知」，不是「已确认生效」）"
+    return 0
+  fi
+  say "- 本次**实际生效** tag（逐服务）：\`$line\`"
+  skips=$(printf '%s\n' "$DOWNGRADE_SKIPS" \
+    | awk -F: 'NF>=3 {printf "%s%s（跳过：target=%s 是当前在跑 %s 的祖先）", (n++ ? "；" : ""), $1, $2, $3} END {if (n) print ""}')
+  if [ -n "$skips" ]; then
+    say "- ⚠️ 因「不许往回走」被跳过的服务（issue #4852）：$skips"
+    say "  · 这是**期望行为**：更新的那次部署已生效，本次旧 run 不得把它回退"
+    say "  · **故意**回滚请走显式接口：\`gh workflow run deploy-admin-api.yml -f image_tag=<tag>\`（该路径注入 ALLOW_DOWNGRADE=1）"
+  fi
   return 0
 }
 
@@ -248,7 +310,12 @@ fi
 #    deploy.sh **成功**（rc=0）后把本次 tag 写进 `.last-good-tag`。
 #    无 marker（本改动上线后的首次部署）⇒ 退化为从**正在运行的容器镜像**取多数派 tag。
 #    两处都在**同一次云调用**里完成 ⇒ 不额外增加 CLI 往返。
-BOOTSTRAP="PREV=\$(cat /opt/migao-deploy/.last-good-tag 2>/dev/null || true); if [ -z \"\$PREV\" ] && command -v docker >/dev/null 2>&1; then PREV=\$(docker ps --format '{{.Image}}' 2>/dev/null | grep 'ai-customer-service/' | sed 's/.*://' | sort | uniq -c | sort -rn | head -1 | awk '{print \$2}'); fi; echo \"PREV_GOOD_TAG=\${PREV:-}\"; ${REGISTRY_SETUP}SRC=\$(mktemp -d) && TAR=\$(mktemp) && curl -fsSL --retry 3 https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main -o \"\$TAR\" && tar xzf \"\$TAR\" -C \"\$SRC\" --strip-components=1 && mkdir -p /opt/migao-deploy && cp \"\$SRC\"/deploy/swas/deploy.sh /opt/migao-deploy/.deploy.sh.new && mv -f /opt/migao-deploy/.deploy.sh.new /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh ${IMAGE_TAG}; rc=\$?; if [ \$rc -eq 0 ]; then echo \"${IMAGE_TAG}\" > /opt/migao-deploy/.last-good-tag; fi; rm -rf \"\$SRC\" \"\$TAR\"; exit \$rc"
+#
+# ④ 降级许可（issue #4852 ②）：`ALLOW_DOWNGRADE=__ALLOW_DOWNGRADE__` 是**每次尝试各自渲染**的
+#    占位符（`deploy_attempt` 替换；渲染后仍留占位符 ⇒ 当场报错，绝不静默当「无许可」）。
+#    写成 `export …;` 前置（而不是 `${VAR}=… bash …` 前缀）⇒ 「cp → mv -f → bash deploy.sh」
+#    的**原子安装形态**逐字不变（那是既有护栏，见 tests/unit_ci_workflows/test_swas_deploy_ci_bootstrap.py）。
+BOOTSTRAP="export ALLOW_DOWNGRADE=__ALLOW_DOWNGRADE__; PREV=\$(cat /opt/migao-deploy/.last-good-tag 2>/dev/null || true); if [ -z \"\$PREV\" ] && command -v docker >/dev/null 2>&1; then PREV=\$(docker ps --format '{{.Image}}' 2>/dev/null | grep 'ai-customer-service/' | sed 's/.*://' | sort | uniq -c | sort -rn | head -1 | awk '{print \$2}'); fi; echo \"PREV_GOOD_TAG=\${PREV:-}\"; ${REGISTRY_SETUP}SRC=\$(mktemp -d) && TAR=\$(mktemp) && curl -fsSL --retry 3 https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main -o \"\$TAR\" && tar xzf \"\$TAR\" -C \"\$SRC\" --strip-components=1 && mkdir -p /opt/migao-deploy && cp \"\$SRC\"/deploy/swas/deploy.sh /opt/migao-deploy/.deploy.sh.new && mv -f /opt/migao-deploy/.deploy.sh.new /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh ${IMAGE_TAG}; rc=\$?; if [ \$rc -eq 0 ]; then echo \"${IMAGE_TAG}\" > /opt/migao-deploy/.last-good-tag; fi; rm -rf \"\$SRC\" \"\$TAR\"; exit \$rc"
 
 # ── 一次完整的「触发 + 轮询」（issue #4767 ①②③）────────────────────────────
 # 结果写进全局：DEPLOY_RC（0=Success / 1=远端 Failed / 2=硬超时 / 3=云 API 调用失败）
@@ -256,22 +323,35 @@ BOOTSTRAP="PREV=\$(cat /opt/migao-deploy/.last-good-tag 2>/dev/null || true); if
 # ⚠️ 本函数**恒返回 0**（结果只走 DEPLOY_RC）：`set -e` 下「函数返回非零」会当场终止脚本，
 #    那样重试 / 回滚 / 告警全都被跳过（实测踩到，红证方向正好反过来）。
 deploy_attempt() {
-  local tag=$1
+  local tag=$1 allow=${2:-0}
   DEPLOY_RC=3
   REMOTE_LOG=""
   PREV_GOOD_TAG=""
+  EFFECTIVE_TAGS=""
+  DOWNGRADE_SKIPS=""
   # 每次尝试**各自**一个墙钟预算：一次尝试绝不无限轮询
   DEADLINE=$(( $(date +%s) + DEPLOY_TIMEOUT_SECONDS ))
 
   # ⚠️ BOOTSTRAP 里的 tag 是**CI 侧**展开的（`${IMAGE_TAG}`，见上面的转义纪律）⇒ 回滚要用**别的**
   #    tag 时必须按目标 tag 重写这一处。少写这一步的后果最恶劣：回滚会把**同一个坏镜像**再部署一次
   #    还报告"已回滚"（实测踩到）⇒ 替换没生效时**当场报错**，不许静默继续。
+  #    ⚠️ 判据里的基线要**先渲染掉降级许可占位符**（否则占位符一被替换，`!= $BOOTSTRAP` 恒成立 ⇒
+  #    这条检查静默失效）。
   local bootstrap=${BOOTSTRAP//"$IMAGE_TAG"/"$tag"}
-  if [ "$tag" != "$IMAGE_TAG" ] && [ "$bootstrap" = "$BOOTSTRAP" ]; then
+  bootstrap=${bootstrap//__ALLOW_DOWNGRADE__/$allow}
+  if [ "$tag" != "$IMAGE_TAG" ] && [ "$bootstrap" = "${BOOTSTRAP//__ALLOW_DOWNGRADE__/$allow}" ]; then
     echo "❌ 回滚 tag 替换未生效：BOOTSTRAP 里找不到当前 tag（$IMAGE_TAG）—— 拒绝用错 tag 部署"
     DEPLOY_RC=3
     return 0
   fi
+  # 降级许可（issue #4852 ②）必须真的注进去：占位符还在 ⇒ 远端会拿到「许可状态未知」⇒ 拒绝部署
+  case "$bootstrap" in
+    *__ALLOW_DOWNGRADE__*)
+      echo "❌ 降级许可注入未生效：BOOTSTRAP 里仍留 __ALLOW_DOWNGRADE__ 占位符 —— 拒绝在「许可状态未知」下部署"
+      DEPLOY_RC=3
+      return 0 ;;
+  esac
+  echo "  本次尝试：tag=${tag} / ALLOW_DOWNGRADE=${allow}"
 
   # RunCommand 可能被阿里云 API 限流（并发触发时 Throttling），重试 3 次
   local INVOKE="" INVOKE_ID="" attempt
@@ -354,15 +434,17 @@ say "# SWAS 部署（远端 deploy.sh）"
 say ""
 say "- 目标实例：\`$INSTANCE_ID\`（${REGION}）"
 say "- 镜像 tag：\`$IMAGE_TAG\`"
+say "- 显式降级许可（ALLOW_DOWNGRADE）：\`$ALLOW_DOWNGRADE\`（=1 ⇒ **这是显式回滚**，允许「往回走」）"
 say "- 硬超时预算：${DEPLOY_TIMEOUT_SECONDS}s / 次尝试（单次 CLI 调用 ${CLI_TIMEOUT_SECONDS}s）"
 
-deploy_attempt "$IMAGE_TAG"
+deploy_attempt "$IMAGE_TAG" "$ALLOW_DOWNGRADE"
 ATTEMPT_RC=$DEPLOY_RC
 emit_remote_log "第 1 次部署（tag=${IMAGE_TAG}）远端输出"
+report_effective_tags
 
 if [ "$ATTEMPT_RC" -eq 0 ]; then
   say ""
-  say "✅ SWAS 部署成功（tag=\`$IMAGE_TAG\`）"
+  say "✅ SWAS 部署成功（tag=\`$IMAGE_TAG\`）$(effective_suffix)"
   exit 0
 fi
 
@@ -387,13 +469,14 @@ say "⚠️ 第 1 次部署失败（tag=\`$IMAGE_TAG\`）—— 10s 后**自动�
 echo "⚠️ 第 1 次部署失败，10s 后自动重试一次（同一 tag=${IMAGE_TAG}）"
 nap "$RETRY_PAUSE_SECONDS"
 
-deploy_attempt "$IMAGE_TAG"
+deploy_attempt "$IMAGE_TAG" "$ALLOW_DOWNGRADE"
 ATTEMPT_RC=$DEPLOY_RC
 emit_remote_log "第 2 次部署（自动重试，tag=${IMAGE_TAG}）远端输出"
+report_effective_tags
 
 if [ "$ATTEMPT_RC" -eq 0 ]; then
   say ""
-  say "✅ SWAS 部署成功（第 2 次尝试，tag=\`$IMAGE_TAG\`）"
+  say "✅ SWAS 部署成功（第 2 次尝试，tag=\`$IMAGE_TAG\`）$(effective_suffix)"
   exit 0
 fi
 
@@ -423,13 +506,17 @@ echo "⚠️ 自动重试仍失败 ⇒ 回滚到上一个可用镜像 tag=$PREV_
 ROLLBACK_TAG=$PREV_GOOD_TAG
 nap "$RETRY_PAUSE_SECONDS"
 
-deploy_attempt "$ROLLBACK_TAG"
+# ⚠️ 回滚**本身就是往回走**（issue #4852 ②）⇒ 这一次尝试带**显式降级许可** `ALLOW_DOWNGRADE=1`，
+#    否则新闸门会把 #4767 的「失败即回滚」也一起挡掉（= 削弱既有护栏）。
+echo "⚠️ 回滚尝试：这是**显式回滚**（#4767 失败即回滚）⇒ ALLOW_DOWNGRADE=1，允许往回走"
+deploy_attempt "$ROLLBACK_TAG" 1
 ROLLBACK_RC=$DEPLOY_RC
 emit_remote_log "回滚部署（tag=${ROLLBACK_TAG}）远端输出"
+report_effective_tags
 
 if [ "$ROLLBACK_RC" -eq 0 ]; then
   say ""
-  say "::error::部署失败（tag=\`$IMAGE_TAG\`）—— **已自动回滚到上一个可用镜像 tag=\`$ROLLBACK_TAG\`**，环境已恢复服务。"
+  say "::error::部署失败（tag=\`$IMAGE_TAG\`）—— **已自动回滚到上一个可用镜像 tag=\`$ROLLBACK_TAG\`**，环境已恢复服务。$(effective_suffix)"
   say "根因在**新镜像**，不在环境：请看上面第 1/2 次部署的远端输出（已解码，含真正的报错）。"
   exit 1
 fi
