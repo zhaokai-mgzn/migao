@@ -227,7 +227,6 @@ export default function OrderTable({
           ) : (
             orders.map((order) => {
               const checked = selectedIds.includes(order.id)
-              const firstItem = order.items?.[0]
               return (
                 <tr
                   key={order.id}
@@ -251,16 +250,22 @@ export default function OrderTable({
                     {order.orderNo || order.id}
                   </td>
 
-                  {/* 采购商品（取第一项展示：名称 + 货号） */}
+                  {/* 采购商品（与「采购明细」同源：N 条明细 ⇒ N 组「名称 + 货号」；
+                      issue #4908：改前只渲染 items[0] ⇒ 多商品订单其余商品在列表上完全不可见） */}
                   <td className="pl-0 pr-4 py-4 min-w-[160px]">
-                    {firstItem ? (
-                      <div className="space-y-1">
-                        <div className="text-neutral-900 font-medium leading-tight">
-                          {firstItem.productName}
-                        </div>
-                        <div className="text-xs text-neutral-500 leading-tight">
-                          货号 {(firstItem as any).skuCode || firstItem.productCode || '-'}
-                        </div>
+                    {order.items?.length ? (
+                      <div className="space-y-2">
+                        {order.items.map((item, itemIdx) => (
+                          // 列表接口不下发 item.id（#2916）→ key 用 id 兜底序号，避免 React key 警告
+                          <div key={item.id ?? `${order.id}-product-${itemIdx}`} className="space-y-0.5">
+                            <div className="text-neutral-900 font-medium leading-tight">
+                              {item.productName}
+                            </div>
+                            <div className="text-xs text-neutral-500 leading-tight">
+                              货号 {item.productCode || '-'}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     ) : (
                       <span className="text-neutral-400">暂无数据</span>

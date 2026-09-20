@@ -3,7 +3,7 @@
  * 覆盖：基本渲染、采购商品列、采购明细列、加工项计费、空状态、加载状态
  */
 // case_ids: UI-002, UI-020, UI-019, UI-030
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import OrderTable from '@/components/orders/OrderTable'
 import type { Order, OrderStatus } from '@/types'
@@ -63,6 +63,30 @@ describe('OrderTable', () => {
     const names = screen.getAllByText('窗帘')
     expect(names.length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText(/货号/)).toBeTruthy()
+  })
+
+  // issue #4908（真库实证 20260921973550001 三个商品）：改前「采购商品」列只渲染 `items[0]`
+  // ⇒ 多商品订单的其余商品在列表上完全看不见（同行的「采购明细」列却是 3 行）
+  it('多商品订单：采购商品列逐条渲染全部商品（名称 + 货号），不是只渲染第一条', () => {
+    const multiItemOrder = {
+      ...mockOrder,
+      items: [
+        { ...mockOrder.items[0], id: 'item-1', productName: '2699系列雪尼尔窗帘面料', productCode: '2699' },
+        { ...mockOrder.items[0], id: 'item-2', productName: '金刚棉', productCode: '金刚棉-02' },
+        { ...mockOrder.items[0], id: 'item-3', productName: '9231 遮光窗帘', productCode: '9231-05' },
+      ],
+    }
+    render(<OrderTable {...defaultProps} orders={[multiItemOrder]} />)
+
+    // 「名称 + 货号」是采购商品列的形态 ⇒ 先用 `货号 X` 定位该列，再断言三条都落在**同一个单元格**里
+    // （改前这里只有 1 条 —— 这正是红证）
+    const skuLines = screen.getAllByText(/^货号 /)
+    expect(skuLines).toHaveLength(3)
+    const goodsCell = skuLines[0].closest('td')!
+    expect(within(goodsCell).getByText('2699系列雪尼尔窗帘面料')).toBeTruthy()
+    expect(within(goodsCell).getByText('金刚棉')).toBeTruthy()
+    expect(within(goodsCell).getByText('9231 遮光窗帘')).toBeTruthy()
+    expect(within(goodsCell).getByText('货号 9231-05')).toBeTruthy()
   })
 
   // issue #3889：producing（生产中）不再以「待发货」展示，避免用户误以为可直接发货
