@@ -211,7 +211,7 @@
   两个函数口径不同，不靠「配置未注入 agent」解释。
 
 **口径真值源（谁对）**：`docs/curtain-fabric-quote-rules.md` §3 逐字写
-`幅数 P = ceil((W + 0.3) × N / G)`（0.3 = 左右各 15cm **覆盖余量**）⇒ **真值源站 A（含 `side_margin`）**；
+`幅数 P = ceil((W + SIDE_MARGIN) × N / G)`（`SIDE_MARGIN` = 左右各 15cm **覆盖余量**，数值见该文 §0「数值常量清单」）⇒ **真值源站 A（含 `side_margin`）**；
 前端判据（`frontend/admin-web/src/lib/craft-auto-features.ts` 的 `(宽 + SIDE_MARGIN) × 褶倍 > 门幅`）
 亦与 A 同式。**B1/B2 漏 `side_margin` 是引擎内部不一致**，不是「粗估 vs 精算」的有意分工
 （两通路都产出进报价的**同一个** `fabric_meters`，无任何文档把它标为粗估）。
