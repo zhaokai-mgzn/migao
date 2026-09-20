@@ -1084,6 +1084,8 @@ _CASE_CH_012 = EvalCase(
     order_before=['interact[confirm] before aftersale_create'],
     required_args=[{'tool': 'aftersale_create', 'fields': ['order_id']}],
     must_succeed=[{'tool': 'aftersale_create'}],
+    namespaces=['order_no:EVAL-ORD-0002'],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
 # ── CH-013 [NORMAL] AI 检测不满情绪 → 建议卡片（继续受理）→ 用户点卡后进入售后受理链路（源: cases/chat.yml）──
