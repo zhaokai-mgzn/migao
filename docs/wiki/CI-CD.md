@@ -130,6 +130,14 @@ gh workflow run deploy-admin-api.yml -f image_tag=<上一个可用 tag>
   健康 ⇒ 强制 reload 收回正式色，**然后才**删 green；正式容器不健康 ⇒ **本轮不碰任何容器**、中止
   （放行口见下）。快照必须在**第 1 步覆盖配置之前**读（第 1 步每次都把 canonical 正式色抄回去，
   之后再也看不出这件事）—— 守卫 `judge_upstream_switch_rails` 钉住这条顺序。
+- **切换的「作用域」必须跟着闸门筛出的集合走**（#4828 × #4852 的接口；两个特性**各自独立开发**、
+  谁都没覆盖对方）：§2.5 的逐服务循环由 `$UP_SERVICES` 驱动，而 `$UP_SERVICES` 是 §2 的
+  `for svc in $ALLOWED_SERVICES` 循环**追加**得到的（= 「不许往回走」闸门筛出的集合）。
+  若有人把 §2.5 改回**硬编码服务表**，后果是双重的：① 被闸门跳过的服务照样被替换 ⇒ 旧 tag
+  重新上线（#4852「三重绿、零回退告警」事故原样复发）；② 它的上游被切到用**旧镜像**起的 green
+  ⇒ #4828 刚消灭的窗口以另一种形式回来。判据 = `judge_switch_scope_follows_gate`
+  （`tests/unit_ci_workflows/test_swas_deploy_blue_green.py`）；**机制本身的存活性**另由元守卫
+  `tests/unit_ci_workflows/test_swas_deploy_guard_inventory.py` 钉住（删文件 / 摘接线 / 删红证 ⇒ 红）。
 - **内存前提**：green 与旧容器**并存** ⇒ 部署前预检 `MemAvailable ≥ 2048MB`（最重服务 mem_limit 1536m + 512m 余量）；
   不足 ⇒ **中止部署**（fail-closed，旧容器不动、环境不受影响）。
 - **green 探针 `restart: "no"`**：探针崩了不许自愈复活（`unless-stopped` 会让它在 docker 重启后

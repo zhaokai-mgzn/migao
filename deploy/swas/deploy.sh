@@ -554,12 +554,10 @@ wait_healthy() {
 # ══════════════════════════════════════════════════════════════════════════
 # ⚠️ `NGINX_CONF` / `NGINX_CONF_BAK` 定义在脚本开头（**第 1 步之前** —— 残留切换快照必须先于
 #    第 1 步的配置覆盖读取），两个变量跟着一起上移，保持**唯一一份**定义。
-# ⚠️ 上游切换的**作用域** = §2.5 的 `for svc in $UP_SERVICES`；`$UP_SERVICES` 由 §2 的
-#    `for svc in $ALLOWED_SERVICES` 追加得到（= #4852「不许往回走」闸门筛出的集合）。
-#    这里**刻意不放**一份硬编码服务名单：那样一份常量会邀请后人把 §2.5 改成
-#    `for svc in $<那份名单>` 从而**绕过闸门** ⇒ 被跳过的服务照样被替换 + 上游被切到用**旧镜像**
-#    起的 green（#4852 的事故与本单的窗口同时复发，而两个守卫文件都不会变红）。
-#    守卫：`judge_switch_scope_follows_gate`（tests/unit_ci_workflows/test_swas_deploy_blue_green.py）。
+# ⚠️ 上游切换的**作用域** = §2.5 的逐服务循环（**不许**在这里放一份硬编码服务名单 ——
+#    那会邀请后人把 §2.5 改成遍历它，从而绕过「不许往回走」闸门筛出的集合）。
+#    完整口径（含它由谁追加得到）见 docs/wiki/CI-CD.md 的严格蓝绿小节；
+#    判据 = tests/unit_ci_workflows/test_swas_deploy_blue_green.py 的 `judge_switch_scope_follows_gate`。
 BG_SWITCHED=""
 # 上游目标容器名：正式色 = compose 服务名（与 docker-compose.yml 一致）；green 色 = `<服务>-green`
 upstream_host() {
