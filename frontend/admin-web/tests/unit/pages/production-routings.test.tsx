@@ -2466,7 +2466,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('routing-draft-empty-13')).toHaveTextContent('从工序库选择')
   })
 
-  it('**两个 tab**（工序与路线 / 算料配置）且默认落前者；工序表与路线列表**同屏**（用户裁定合并后的形态）', async () => {
+  it('**两个 tab**（工序管理 / 算料配置）且默认落前者；工序表与路线列表**同屏**（用户裁定合并后的形态）', async () => {
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('process-config-tabs')).toBeInTheDocument())
 
@@ -2474,7 +2474,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(within(tabs).getAllByRole('tab')).toHaveLength(2)
     const processTab = screen.getByTestId('process-config-tab-process')
     const calcTab = screen.getByTestId('process-config-tab-calc')
-    expect(processTab).toHaveTextContent('工序与路线')
+    expect(processTab).toHaveTextContent('工序管理')
     expect(calcTab).toHaveTextContent('算料配置')
     expect(processTab).toHaveAttribute('data-state', 'active')
 
