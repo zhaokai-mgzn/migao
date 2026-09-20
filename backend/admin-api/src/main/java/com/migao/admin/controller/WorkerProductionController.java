@@ -10,6 +10,7 @@ import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.worker.WorkerSessionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -103,7 +104,11 @@ public class WorkerProductionController {
     /**
      * 工人扫码解析 + 工序推断（**只读**，切片 ① / 设计 §2.3 / §2.6 / §3；切片 ② 接线）。
      *
-     * <p>GET /api/worker/production/scan?token=…&amp;operation_id=…</p>
+     * <p>GET /api/worker/production/scan?token=…&amp;operation_id=…&amp;set_id=…&amp;order_item_id=…</p>
+     *
+     * <p><b>旧码收口（issue #4794）</b>：{@code set_id} + {@code order_item_id} 是**可选**入参，
+     * 只在旧码（{@code granularity="order"}）降级形态下由工人「选完套 + 选部位」后回传 ⇒
+     * 服务端按同一份推断口径重新解析出部位级视图。不给 ⇒ 与改前逐字一致的降级形态。</p>
      *
      * <p><b>为什么工人端也要一个</b>：切片 ① 的 {@code /api/admin/production/scan} 工人在门禁处
      * 到不了（{@code ADMIN_API_REJECTED_ROLES} 含 {@code worker}）⇒ A 模式「扫码 ⇒ 一屏」在工人端
@@ -116,10 +121,17 @@ public class WorkerProductionController {
     public ApiResponse<Map<String, Object>> scan(
             @RequestParam(name = "token") String token,
             @RequestParam(name = "operation_id", required = false) String operationId,
+            @RequestParam(name = "set_id", required = false) String setId,
+            @RequestParam(name = "order_item_id", required = false) String orderItemId,
             @RequestHeader(value = WorkerSessionService.SESSION_HEADER, required = false) String sessionId) {
         requireWorker(sessionId);
-        return ApiResponse.success(productionScanService.resolve(
-                token, operationId, TenantContext.getTenantId()));
+        Long tenantId = TenantContext.getTenantId();
+        // 旧码收口（issue #4794）：选了（套 + 部位）才走扩展重载；否则**逐字**走既有 3 参签名
+        // （既有调用方/既有响应一字不动 —— 无选择时连方法都不同）。
+        Map<String, Object> view = StringUtils.hasText(setId) || StringUtils.hasText(orderItemId)
+                ? productionScanService.resolve(token, operationId, setId, orderItemId, tenantId)
+                : productionScanService.resolve(token, operationId, tenantId);
+        return ApiResponse.success(view);
     }
 
     /**

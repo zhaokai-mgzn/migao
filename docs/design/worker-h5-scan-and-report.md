@@ -725,7 +725,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 
 | # | 项 | 状态 | 为什么 / 何时 |
 |---|---|---|---|
-| D1 | 🔴 **旧码「选完套+部位」之后的收口** | **未闭环** | 切片① 的 `resolve(token, operationId, tenantId)` 只接受 `token` —— **旧码没有部位级 token**（旧码是加工单级 `qr_token`）⇒ 选完套/部位后**没有可再解析的键**，页面停在"已选：第 N 套 · 部位"。**闭环需要在切片① 的解析契约上加 `set_id` + `order_item_id` 入参**（本单**不动**切片① 的冻结契约）⇒ 登记为切片① 的跟随单。**复核（rebase 时实测）**：切片② 的 `resolve(token, operationId, tenantId)` 签名**未变**、`ProductionScanCompleteService` 也**不认** `set_id`/`order_item_id` ⇒ **该缺口仍开**（不是被切片② 顺手闭掉的） |
+| D1 | 🔴 **旧码「选完套+部位」之后的收口** | ✅ **已闭环（issue #4794）** | 契约扩展（**只加不改**）：`ProductionScanService.resolve(token, operationId, setId, orderItemId, tenantId)` 重载 + `GET /api/worker/production/scan?…&set_id=&order_item_id=` + `POST …/scan/complete` body 可选 `set_id`/`order_item_id` ⇒ 服务端按**同一份**推断口径重新解析出部位级视图（工序仍由**系统**推断 = 防呆⑤）。3 参 `resolve` 与「无选择 ⇒ `granularity="order"` + `needs_selection`」**逐字不变**；**新码路径不读**这两个入参。旧码端到端 = 扫码 ⇒ 选套 ⇒ 选部位 ⇒ **报工成功**（一次事务），实测输出见 PR #4794 |
 | D2 | 稳定短链 `GET /s/{shortCode}`（302）+ `processing_set_part_tokens.short_code` 列（§1.3 / §1.4 / §7.1①②） | **未落码** | 属设计 §7.3 的 **①**，本切片不含。**今天码从哪来**：页面 `?t=<token>` 直接带 token（或手输），**不依赖短链** |
 | D3 | 切片② 的 `completeByScan` 原子事务（§5.2） | ✅ **已落码（PR #4769，merge `916378c3c`）** | 端点 = `POST /api/worker/production/scan/complete`（**main**）。⚠️ **本单前端仍走既有的 `/orders/{orderId}/operations/{operationId}/report`**（父会话明示「不扩大范围」）⇒ **改用 `scan/complete` 是跟随单**（它才是 §5.2 的一次事务闭环：按 `token` 定位部位 + 幂等 + 审计旁路） |
 | D4 | 微信网页授权（腿 B，§2.2） | **不做** | 服务层 501 占位 + 无公众号配置 ⇒ 按用户裁定「本单不做」 |

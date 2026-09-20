@@ -136,8 +136,23 @@ export function afterComplete(view, receipt) {
   }
 }
 
-/** 报工回执 ⇒ 给工人的一句话（`replayed` 必须显式说清「没有新增计件」，不谎报一笔新报工）。 */
-export function doneNotice(receipt) {
+/**
+ * 旧码收口（issue #4794）：报工要回传的「套 + 部位」。
+ *
+ * 🔴 两条判据都在这里（纯函数 ⇒ 可被 `node --test` 钉住）：
+ *   ① **只有旧码**（`granularity === "order"`）才有这两个键 —— 新码主路径恒 `null`
+ *      ⇒ 报工 body **只带 token**（#4792 的防呆⑤ 断言一条不放宽）；
+ *   ② **两个都选了**才回传（半截选择不带：服务端仍要求完整选择 ⇒ 否则它会回落到降级形态）。
+ *
+ * 它**不**决定工序：工序仍由服务端推断（防呆⑤）；跨部位的 `operation_id` 仍由服务端 422（防呆④）。
+ */
+export function legacySelection(view, selection) {
+  if (view?.granularity !== 'order') return null
+  if (!selection?.setId || !selection?.orderItemId) return null
+  return { setId: selection.setId, orderItemId: selection.orderItemId }
+}
+
+/** 报工回执 ⇒ 给工人的一句话（`replayed` 必须显式说清「没有新增计件」，不谎报一笔新报工）。 */export function doneNotice(receipt) {
   if (receipt.replayed) return '这次没有新增计件：重复提交已回放（同一次扫码只算一次）'
   if (receipt.orderCompleted) return '已报工 · 本单已完工 🎉'
   if (receipt.setCompleted === true) return '已报工 · 本套已完工 🎉'
@@ -202,8 +217,7 @@ function selectView(state) {
     <div class="wh5-group"><span class="wh5-group-label">选套</span>${setsHtml}</div>
     ${set ? `<div class="wh5-group"><span class="wh5-group-label">选部位</span>${posHtml}</div>` : ''}
     <p class="wh5-sub" id="wh5-legacy-pending">本单：${esc(state.view?.processing_order_no ?? '')}</p>
-    <p class="wh5-error" id="wh5-legacy-blocked">⚠️ 旧码无法一次扫码完工（选完套/部位也报不了工）：
-      请重新打印带套号 + 部位的任务卡，或在工序列表里按部位逐道报工。</p>
+    <p class="wh5-sub" id="wh5-legacy-hint">选完套 + 部位即可报工 —— 该做哪道工序由**系统**推断（不用你找）。</p>
   </section>`
 }
 

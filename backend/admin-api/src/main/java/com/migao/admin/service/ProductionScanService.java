@@ -137,17 +137,51 @@ public class ProductionScanService {
      * @return 一屏所需数据（见类 javadoc）；旧码 ⇒ 降级形态 + {@code needs_selection}
      */
     public Map<String, Object> resolve(String token, String operationId, Long tenantId) {
+        return resolve(token, operationId, null, null, tenantId);
+    }
+
+    /**
+     * 扫码解析（**契约扩展**，issue #4794）：旧码「选完套 + 部位」之后的收口。
+     *
+     * <p>旧码（{@code processing_orders.qr_token} 等四形态）只到**加工单级** ⇒ 没有部位级 token
+     * ⇒ 选完套/部位后**没有可再解析的键**（设计 {@code docs/design/worker-h5-scan-and-report.md}
+     * §9.3 D1）。本重载**只加不改**：给 {@code setId} + {@code orderItemId} ⇒ 服务端据此按
+     * <b>同一份</b>推断口径重新解析出部位级视图；不给（或只给一半）⇒ 与改前**逐字一致**的
+     * 降级形态（{@code needs_selection}）。</p>
+     *
+     * <p><b>为什么不新增端点、也不让降级形态直接升一档</b>：</p>
+     * <ul>
+     *   <li>「解析」本就是同一个只读面（读面加两个**可选**入参 = 契约扩展；新增端点 = 第二套响应形状）；</li>
+     *   <li>降级形态**必须**保留 {@code granularity="order"}：它是「系统明确知道它不知道是哪套」的
+     *       机器可读信号（前端据此强制选择，绝不默认取第 1 套）—— 升档 = 把该信号删掉；</li>
+     *   <li>新码路径**不读**这两个入参（码已给出套 × 部位）⇒ 对已有新码**零影响**。</li>
+     * </ul>
+     *
+     * <p>🔴 <b>幂等 / 鉴权</b>：仍是只读（无写库、无 {@code @Transactional}）；身份由调用方从
+     * {@code X-Worker-Session-Id} 解（本类不碰身份）；所选（套, 部位）必须属于**本次扫码那张单**
+     * —— 否则 422 {@code SCAN_SELECTION_NOT_IN_ORDER}（fail-closed，不按别人的单记账）。</p>
+     *
+     * @param setId       可选：工人从降级清单 {@code selections[].set_id} 里选的套
+     * @param orderItemId 可选：工人从 {@code selections[].positions[].order_item_id} 里选的部位
+     */
+    public Map<String, Object> resolve(String token, String operationId, String setId, String orderItemId,
+                                       Long tenantId) {
         if (!StringUtils.hasText(token)) {
             throw BusinessException.validationError("扫码内容不能为空");
         }
         String key = token.trim();
         // ① 新码优先（带套带部位）；未命中**只回落**，不并行写（设计 §2.6 双读一致性）
         ProcessingSetPartToken partToken = findPartToken(key, tenantId);
-        if (partToken == null) {
-            // ②~⑤ 既有四形态（一字不动）；全不命中 ⇒ 404「订单不存在」（既有行为）
-            return degradedView(key, tenantId);
+        if (partToken != null) {
+            // 🔴 新码**不读** setId/orderItemId：套 × 部位由码给出 ⇒ 契约扩展对已有新码零影响
+            return setPositionView(partToken, operationId, tenantId);
         }
-        return setPositionView(partToken, operationId, tenantId);
+        // ①′ 旧码收口（issue #4794）：选完套 + 部位 ⇒ 部位级视图（工序仍由系统推断）
+        if (StringUtils.hasText(setId) && StringUtils.hasText(orderItemId)) {
+            return legacySelectionView(key, setId.trim(), orderItemId.trim(), operationId, tenantId);
+        }
+        // ②~⑤ 既有四形态（一字不动）；全不命中 ⇒ 404「订单不存在」（既有行为）
+        return degradedView(key, tenantId);
     }
 
     /** 新码命中：`token` 未撤销 + 同租户（fail-closed，`deleted = 0` 正向相等）。 */
@@ -165,13 +199,26 @@ public class ProductionScanService {
                                                 Long tenantId) {
         ProcessingOrderSet set = requireSet(partToken, tenantId);
         ProcessingOrder po = requireProcessingOrder(set.getProcessingOrderId(), tenantId);
+        return setPositionView(po, set, partToken.getOrderItemId(), partToken.getPositionKind(),
+                operationId, tenantId);
+    }
+
+    /**
+     * 部位级视图（新码与「旧码 + 选择」**共用同一份**推断/整形实现）。
+     *
+     * <p>套 × 部位的**来源**不同（新码由码给出 / 旧码由工人选择 + 服务端校验），但「推断哪一道、
+     * 一键改的归属校验、套级回落、进度、卡点」必须逐字同源 —— 否则两条路径迟早给出不同的工序。</p>
+     */
+    private Map<String, Object> setPositionView(ProcessingOrder po, ProcessingOrderSet set,
+                                                String orderItemId, String positionKind,
+                                                String operationId, Long tenantId) {
         List<ProcessingPositionOperation> setOperations =
                 listSetOperations(po.getId(), set.getId(), tenantId);
         Map<String, Map<String, Object>> catalog = operationQueryService.operationsByName(tenantId);
 
         // ── ① 部位级：扫到的那个部位的未完成工序 ──────────────────────────────
         List<ProcessingPositionOperation> candidates =
-                pending(setOperations, op -> partToken.getOrderItemId().equals(op.getOrderItemId()));
+                pending(setOperations, op -> orderItemId.equals(op.getOrderItemId()));
         // ── ② 套级回落：本部位干完 ⇒ 整樘窗的套级活（打卷/装袋/发货）──────────
         boolean rerouted = false;
         if (candidates.isEmpty()) {
@@ -190,7 +237,7 @@ public class ProductionScanService {
                         .findFirst()
                         .orElseThrow(() -> new BusinessException("OPERATION_NOT_IN_SCAN_TARGET",
                                 "工序 " + operationId.trim() + " 不属于本次扫码的部位（"
-                                        + partToken.getOrderItemId() + "），不得跨部位报工",
+                                        + orderItemId + "），不得跨部位报工",
                                 422,
                                 "请重新扫码，或在返回的 alternatives 里选择本部位/本套的待做工序"));
                 determinedBy = DETERMINED_BY_PICKED;
@@ -219,7 +266,7 @@ public class ProductionScanService {
         result.put("processing_order_no", po.getProcessingOrderNo());
         result.put("set_no", set.getSetNo());
         result.put("set_index", set.getSetIndex());
-        result.put("position", positionView(partToken, setOperations, tenantId));
+        result.put("position", positionView(orderItemId, positionKind, setOperations, tenantId));
         result.put("operation", chosen == null
                 ? null
                 : operationView(chosen, determinedBy, rerouted));
@@ -291,6 +338,50 @@ public class ProductionScanService {
     }
 
     /**
+     * 旧码收口（issue #4794）：工人从降级清单里选的（套 + 部位）⇒ **部位级视图**。
+     *
+     * <p>分工：<b>码</b>决定「哪张单」（仍走既有四形态，一字不动）；<b>选择</b>只决定「这张单里的
+     * 哪一套、哪个部位」。选完之后的推断/整形与**新码逐字同源**（{@link #setPositionView}）——
+     * 在旧码侧再写一份推断就是第二份口径（两处迟早不同）。</p>
+     *
+     * <p>🔴 <b>fail-closed</b>：所选（套, 部位）必须属于**本次扫码那张单**，且部位必须是该套
+     * <b>活跃工序实例</b>里的部位（与 {@code selections} 清单**同一份**判据）—— 否则 422，
+     * 绝不「按别处的单/不存在的部位」静默记账。</p>
+     */
+    private Map<String, Object> legacySelectionView(String key, String setId, String orderItemId,
+                                                    String operationId, Long tenantId) {
+        Order order = productionService.resolveOrder(key, tenantId);
+        ProcessingOrder po = processingOrderMapper.selectActiveByOrderId(order.getId(), tenantId);
+        if (po == null) {
+            throw new BusinessException("SCAN_SELECTION_NOT_IN_ORDER",
+                    "该单没有活跃加工单，选不出套/部位 ⇒ 拒绝记账", 422,
+                    "请重新打印带套号 + 部位的新任务卡（新码由码给出套 × 部位，无需选择）");
+        }
+        // 套：同租户 + 未软删 + 与本次扫码的加工单一致（三任一条不成立 ⇒ 422）
+        ProcessingOrderSet set = orderSetMapper.selectById(setId);
+        if (set == null || !tenantId.equals(set.getTenantId())
+                || !Integer.valueOf(0).equals(set.getDeleted())
+                || !po.getId().equals(set.getProcessingOrderId())) {
+            throw new BusinessException("SCAN_SELECTION_NOT_IN_ORDER",
+                    "所选的套（" + setId + "）不属于本次扫码的加工单 ⇒ 拒绝记账", 422,
+                    "请重新扫码，并从本单返回的 selections 清单里选择套号");
+        }
+        List<ProcessingPositionOperation> setOperations = listSetOperations(po.getId(), set.getId(), tenantId);
+        if (setOperations.stream().noneMatch(op -> orderItemId.equals(op.getOrderItemId()))) {
+            throw new BusinessException("SCAN_SELECTION_NOT_IN_ORDER",
+                    "所选的部位（" + orderItemId + "）不属于该套 ⇒ 拒绝记账", 422,
+                    "请重新选择部位（清单只列该套**真能报工**的部位）");
+        }
+        String positionKind = setOperations.stream()
+                .filter(op -> orderItemId.equals(op.getOrderItemId()))
+                .map(ProcessingPositionOperation::getPositionKind)
+                .filter(StringUtils::hasText)
+                .findFirst()
+                .orElse(null);
+        return setPositionView(po, set, orderItemId, positionKind, operationId, tenantId);
+    }
+
+    /**
      * 可选清单 = 该单的**套 × 部位**（设计 §2.6）。
      *
      * <p>部位取自该单**活跃工序实例**的 {@code order_item_id}（= 真能报工的部位；未实例化的套给空清单，
@@ -329,16 +420,16 @@ public class ProductionScanService {
 
     // ============================================================ 整形
 
-    private Map<String, Object> positionView(ProcessingSetPartToken partToken,
+    private Map<String, Object> positionView(String orderItemId, String positionKind,
                                              List<ProcessingPositionOperation> setOperations,
                                              Long tenantId) {
         String positionName = setOperations.stream()
-                .filter(op -> partToken.getOrderItemId().equals(op.getOrderItemId()))
+                .filter(op -> orderItemId.equals(op.getOrderItemId()))
                 .map(ProcessingPositionOperation::getPositionName)
                 .filter(StringUtils::hasText)
                 .findFirst()
-                .orElseGet(() -> productNameOf(partToken.getOrderItemId(), tenantId));
-        return positionEntry(partToken.getOrderItemId(), partToken.getPositionKind(), positionName);
+                .orElseGet(() -> productNameOf(orderItemId, tenantId));
+        return positionEntry(orderItemId, positionKind, positionName);
     }
 
     private static Map<String, Object> positionEntry(String orderItemId, String positionKind,

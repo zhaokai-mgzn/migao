@@ -18,7 +18,8 @@
 //   ② 一键改（`alternatives`）才带 `operation_id` ⇒ 归属由**服务端**校验（防呆④）；
 //   ③ 幂等键：**同一屏复用同一个键**（重试 = 回放，不重复计件）；成功换屏 ⇒ 换新键；
 //   ④ 回执驱动一屏：`set_completed` / `next_operation` ⇒ 接着做下一道 / 本套完工（不再重复提交）；
-//   ⑤ 旧码（`granularity:"order"`）⇒ **一个写请求都不发**（不硬塞 `set_id`/`order_item_id`）；
+//   ⑤ 旧码（`granularity:"order"`）⇒ 未选定前**一个写请求都不发**；选完套 + 部位后
+//      **能报工**（issue #4794 收口：body 带 `set_id` + `order_item_id`，仍**不带** `operation_id`）；
 //   ⑥ 未登录 ⇒ 无【完成】按钮，且硬点也**不发请求**（fail-closed）；
 //   ⑦ 工序未确定（`operation == null`）⇒ 页面**不崩**且不出现报工按钮。
 import test from 'node:test'
@@ -201,6 +202,17 @@ const DEGRADED_VIEW = {
     { set_id: 'set-1', set_no: 1, set_index: 0, positions: [{ order_item_id: 'oi-1', position_name: '布帘' }] },
     { set_id: 'set-2', set_no: 2, set_index: 1, positions: [{ order_item_id: 'oi-2', position_name: '纱帘' }] },
   ],
+}
+
+/** 旧码 + 工人选了（第 2 套 · 纱帘）⇒ 服务端**重新解析**出的部位级视图（逐字照 `setPositionView`）。 */
+const LEGACY_RESOLVED_VIEW = {
+  ...CLOTH_VIEW,
+  set_no: 2,
+  set_index: 1,
+  position: { order_item_id: 'oi-2', position_kind: '纱帘', position_name: '纱帘' },
+  operation: { ...CLOTH_VIEW.operation, operation_id: 'op-gauze', logical_name: '定型' },
+  alternatives: [],
+  needs_selection: [],
 }
 
 /** 回执（逐字照 `applyReport` 的键 + 切片② 追加的键）。 */
@@ -422,9 +434,9 @@ test('🔴 ④ 回执 `set_completed:true` ⇒ 显示本套已完工，且【完
   app.destroy()
 })
 
-// ============================================================ ⑤ 旧码：不硬塞 set_id/order_item_id
+// ============================================================ ⑤ 旧码：选完套 + 部位 ⇒ 能报工（issue #4794）
 
-test('🔴 ⑤ 旧码（granularity:"order"）⇒ 一个写请求都不发 + 不硬塞 set_id/order_item_id + 给指路文案', async () => {
+test('🔴 ⑤ 旧码：未选定前**一个写请求都不发**（不硬塞 set_id/order_item_id、不退回客户端定工序的 /report）', async () => {
   const doc = fakeDom()
   const f = routeFetch({ '/api/worker/production/scan?': resolveOk(DEGRADED_VIEW) })
   const app = bootPage({ doc, f })
@@ -432,14 +444,47 @@ test('🔴 ⑤ 旧码（granularity:"order"）⇒ 一个写请求都不发 + 不
 
   assert.match(doc.html, /选套/, '旧码仍必须让工人显式选套')
   assert.ok(!/id="wh5-report"/.test(doc.html), '旧码未选定 ⇒ 不得出现报工按钮')
-  // 选套 + 选部位（两跳都是工人显式动作）
+  assert.equal(f.calls.filter((c) => c.method === 'POST').length, 0, '未选定 ⇒ 一个写请求都不许发')
+  app.destroy()
+})
+
+test('🔴 ⑤ 旧码端到端：扫码 ⇒ 选套 ⇒ 选部位 ⇒ **报工成功**（一次事务；改前停在这一屏，无路可走）', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({
+    // 旧码：无选择的解析 ⇒ 降级形态；带（套 + 部位）的解析 ⇒ 部位级视图（服务端推断工序）
+    '/api/worker/production/scan?': (call) =>
+      call.url.includes('set_id=set-2') && call.url.includes('order_item_id=oi-2')
+        ? resolveOk(LEGACY_RESOLVED_VIEW)
+        : resolveOk(DEGRADED_VIEW),
+    '/api/worker/production/scan/complete': receipt({
+      set_no: 2, position: { order_item_id: 'oi-2', position_name: '纱帘' },
+    }),
+  })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'JG20260920001')
+
+  // 两跳都是工人显式动作：选套 ⇒ 出现该套的部位；选部位 ⇒ 重新解析 ⇒ 可报工
   await fireEl(doc.querySelectorAll('[data-set-id]')[1])
   await fireEl(doc.querySelectorAll('[data-order-item-id]')[0])
+  await waitFor(() => doc.html.includes('id="wh5-report"'), '旧码选完套 + 部位后的报工按钮')
 
-  // 🔴 D1（未闭）：选完套+部位后**没有可再解析的键**（selections 里没有 operation_id）⇒
-  // 页面**不得**硬塞 set_id/order_item_id 去调 scan/complete，也不得退回客户端定工序的 /report。
-  assert.equal(f.calls.filter((c) => c.method === 'POST').length, 0, '旧码路径一个写请求都不许发')
-  assert.match(doc.html, /重新打印/, '旧码无法一次扫码完工 ⇒ 必须给工人指路（fail-closed 而不是死路）')
+  const gets = f.calls.filter((c) => c.method === 'GET')
+  assert.equal(gets.length, 2, '选完部位必须**再解析一次**（服务端按 (码, 套, 部位) 推断工序）')
+  assert.match(gets[1].url, /[?&]set_id=set-2(&|$)/, '重新解析必须把 set_id 交给服务端（前端不猜套）')
+  assert.match(gets[1].url, /[?&]order_item_id=oi-2(&|$)/, '重新解析必须把 order_item_id 交给服务端')
+
+  await doc.fire('wh5-report')
+
+  const posts = f.calls.filter((c) => c.method === 'POST')
+  assert.equal(posts.length, 1, '点一次【完成】= 一个写请求（一次事务由服务端保证）')
+  assert.match(posts[0].url, /\/api\/worker\/production\/scan\/complete$/)
+  assert.ok(!posts[0].url.includes('/report'), '不得退回客户端定工序的 /report')
+  // 🔴 旧码收口：body 带（套 + 部位）⇒ 服务端重解析**同一部位**；
+  // **不带** operation_id ⇒ 工序仍由**系统**推断（防呆⑤ 在旧码路径同样成立）
+  assert.deepEqual(posts[0].body, { token: 'JG20260920001', set_id: 'set-2', order_item_id: 'oi-2' })
+  assert.ok(!('operation_id' in posts[0].body), '旧码默认路径不得由客户端定工序（防呆⑤）')
+  assert.ok(!('worker_id' in posts[0].body), '身份仍只来自 X-Worker-Session-Id')
+  assert.match(doc.html, /已报工/, '报工成功必须给回执文案')
   app.destroy()
 })
 

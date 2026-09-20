@@ -105,9 +105,14 @@ public class ProductionScanCompleteService {
             throw BusinessException.validationError("扫码内容不能为空（token 缺失）");
         }
         String pickedOperationId = ProductionService.str(body == null ? null : body.get("operation_id"));
+        // 🔴 旧码收口（issue #4794）：工人从降级清单里选的（套 + 部位）。**只加不改** ——
+        // 两个键都不给 ⇒ 下面那条「旧码降级 ⇒ 422 SCAN_NEEDS_SELECTION」一字不动。
+        // ⚠️ **新码路径不读**这两个键（码已给出套 × 部位）⇒ 对已有新码零影响。
+        String setId = ProductionService.str(body == null ? null : body.get("set_id"));
+        String orderItemId = ProductionService.str(body == null ? null : body.get("order_item_id"));
 
         // 解析 + 推断 = 切片 ① 的**同一份**实现（新码优先，未命中回落既有四形态）
-        Map<String, Object> scan = scanService.resolve(token, pickedOperationId, tenantId);
+        Map<String, Object> scan = scanService.resolve(token, pickedOperationId, setId, orderItemId, tenantId);
 
         // 🔴 旧码降级形态（设计 §2.6）：只到加工单级 ⇒ 必须由工人选套 + 选部位。
         // **绝不默认取第 1 套** —— 默认 = 把进度/计件静默记到错的套上（正是要治的病）。
@@ -178,7 +183,7 @@ public class ProductionScanCompleteService {
         result.put("set_no", scan.get("set_no"));
         result.put("position", scan.get("position"));
         result.put("rerouted", Boolean.TRUE.equals(operationView.get("rerouted")));
-        enrichNextOperation(result, token, tenantId);
+        enrichNextOperation(result, token, setId, orderItemId, tenantId);
         return result;
     }
 
@@ -189,9 +194,10 @@ public class ProductionScanCompleteService {
      * 释放幂等键并重试，把一次报工记两遍（静默重复计件）。故只记 warn + 显式给 {@code null}
      * （三个键都在，值是 null = 未知，不是「没有下一道」）。</p>
      */
-    private void enrichNextOperation(Map<String, Object> result, String token, Long tenantId) {
+    private void enrichNextOperation(Map<String, Object> result, String token, String setId,
+                                     String orderItemId, Long tenantId) {
         try {
-            Map<String, Object> next = scanService.resolve(token, null, tenantId);
+            Map<String, Object> next = scanService.resolve(token, null, setId, orderItemId, tenantId);
             result.put("set_progress", next.get("set_progress"));
             result.put("set_completed", next.get("completed"));
             result.put("next_operation", next.get("operation"));

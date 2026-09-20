@@ -282,6 +282,97 @@ class ProductionScanCompleteServiceTest {
     }
 
     @Test
+    @DisplayName("🔴 旧码收口（issue #4794）：选完套 + 部位（body 带 set_id + order_item_id）⇒ **能报工**，一次事务记账")
+    void legacyCodeWithSelectionCompletesInOneTransaction() {
+        stubLegacyScan();
+
+        Map<String, Object> payload = body(OLD_CODE);
+        payload.put("set_id", SET_ID);
+        payload.put("order_item_id", ITEM_CLOTH);
+
+        Map<String, Object> result = service.complete(payload, TENANT, "key-1", WORKER);
+
+        // 改前：set_id/order_item_id 不被读 ⇒ 降级形态 ⇒ 422 SCAN_NEEDS_SELECTION（本测试必红）
+        ProductionWorkLog log = capturedWorkLog();
+        assertThat(log.getOperationId()).isEqualTo(OP_CLOTH);
+        assertThat(log.getWorkerId()).isEqualTo("w-1");
+        assertThat(result.get("set_no")).isEqualTo(SET_NO);
+        assertThat(result.get("position")).isNotNull();
+        // 一次事务的三处写入：明细 → CAS → done_at（与**新码**主路径**同一份**实现）
+        verify(positionOperationMapper).advanceDoneQtyIfUnchanged(
+                eq(OP_CLOTH), eq(TENANT), eq(BigDecimal.ZERO), eq("pending"),
+                eq(new BigDecimal("11")), any(OffsetDateTime.class));
+        verify(positionOperationMapper).recordCompletionIfDone(
+                eq(OP_CLOTH), eq(TENANT), any(OffsetDateTime.class));
+        verify(clientRequestIdService).complete(eq(TENANT), eq("key-1"), any());
+    }
+
+    @Test
+    @DisplayName("🔴 旧码收口：只选一半（缺 order_item_id）⇒ 仍 422 SCAN_NEEDS_SELECTION，且零写入")
+    void legacyCodeWithPartialSelectionIsStillRejected() {
+        stubLegacyScan();
+        Map<String, Object> payload = body(OLD_CODE);
+        payload.put("set_id", SET_ID);
+
+        assertThatThrownBy(() -> service.complete(payload, TENANT, "key-1", WORKER))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("旧码");
+
+        assertNothingWritten();
+    }
+
+    @Test
+    @DisplayName("🔴 旧码收口（越权面）：所选套不属于本次扫码的加工单 ⇒ 422，且零写入")
+    void legacySelectionOutsideScannedOrderIsRejected() {
+        stubLegacyScan();
+        when(orderSetMapper.selectById("set-other")).thenReturn(ProcessingOrderSet.builder()
+                .id("set-other").tenantId(TENANT).processingOrderId("po-other").setIndex(1)
+                .setNo("CSO-OTHER-001").deleted(0).build());
+        Map<String, Object> payload = body(OLD_CODE);
+        payload.put("set_id", "set-other");
+        payload.put("order_item_id", ITEM_CLOTH);
+
+        assertThatThrownBy(() -> service.complete(payload, TENANT, "key-1", WORKER))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不属于本次扫码的加工单");
+
+        assertNothingWritten();
+    }
+
+    @Test
+    @DisplayName("🔴 反向护栏：**新码**主路径即使被硬塞 set_id / order_item_id 也**不读**（零影响）")
+    void newCodePathIgnoresStuffedSelection() {
+        // 新码指向「布帘」；body 里硬塞一个**别的**套 + 别的部位 ⇒ 仍按码给的部位推断
+        stubPending(List.of(
+                op(OP_CLOTH, ITEM_CLOTH, 1, "精裁-布", "11", "0", new BigDecimal("3.50")),
+                op(OP_GAUZE, ITEM_GAUZE, 1, "精裁-纱", "8", "0", new BigDecimal("2.00"))));
+        Map<String, Object> payload = body(TOKEN);
+        payload.put("set_id", "set-hacked");
+        payload.put("order_item_id", ITEM_GAUZE);
+
+        Map<String, Object> result = service.complete(payload, TENANT, "key-1", WORKER);
+
+        assertThat(result.get("operation_id")).isEqualTo(OP_CLOTH);
+        assertThat(capturedWorkLog().getOperationId()).isEqualTo(OP_CLOTH);
+    }
+
+    @Test
+    @DisplayName("🔴 旧码收口 + 防呆④：所选部位之外的工序（一键改）⇒ 422 OPERATION_NOT_IN_SCAN_TARGET，零写入")
+    void legacySelectionCrossPositionPickIsRejected() {
+        stubLegacyScan();
+        Map<String, Object> payload = body(OLD_CODE);
+        payload.put("set_id", SET_ID);
+        payload.put("order_item_id", ITEM_CLOTH);
+        payload.put("operation_id", OP_GAUZE); // 属**另一个**部位
+
+        assertThatThrownBy(() -> service.complete(payload, TENANT, "key-1", WORKER))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不属于本次扫码的部位");
+
+        assertNothingWritten();
+    }
+
+    @Test
     @DisplayName("跨部位报工被拒（防呆④）：扫布帘的码却指定纱帘的工序 ⇒ 422，且零写入")
     void crossPositionPickIsRejected() {
         stubPending(List.of(
@@ -457,6 +548,18 @@ class ProductionScanCompleteServiceTest {
                 .thenReturn(operations.size() > 1 ? operations.get(1) : operations.get(0));
         when(positionOperationMapper.advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
+    }
+
+    /**
+     * 旧码（加工单级 {@code qr_token}）路径：新码未命中 ⇒ 走**真实**的四形态解析；
+     * 该单的**套 × 部位**清单与工序实例就位（工人从清单里选套 + 选部位）。
+     */
+    private void stubLegacyScan() {
+        when(setPartTokenMapper.selectOne(any())).thenReturn(null);
+        when(orderMapper.selectById(OLD_CODE)).thenReturn(order());
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder());
+        when(orderSetMapper.selectById(SET_ID)).thenReturn(orderSet());
+        stubPending(Set_OP_CLOTH_DONE_0);
     }
 
     private ProductionWorkLog capturedWorkLog() {

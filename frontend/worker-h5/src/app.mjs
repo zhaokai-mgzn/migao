@@ -12,7 +12,7 @@
 
 import { createApi, SESSION_EXPIRED } from './api.mjs'
 import { parseScanInput, tenantIdFromLocation } from './scan-input.mjs'
-import { afterComplete, doneNotice, initialState, reduce, renderPage } from './render.mjs'
+import { afterComplete, doneNotice, initialState, legacySelection, reduce, renderPage } from './render.mjs'
 
 /** 造一个「本机唯一」的幂等键（补传必须复用同一个键 ⇒ 绝不能在重发时重新生成）。 */
 function newRequestId() {
@@ -140,6 +140,8 @@ export function createApp({ doc, api, location = globalThis.location }) {
           // 只有「一键改」（工人显式指定）才带 operation_id：归属由**服务端**校验（防呆④）。
           // 默认路径**只带 token** ⇒ 哪道工序由**系统**定（防呆⑤），数量由服务端取「剩余应做」。
           operationId: v.operation.determined_by === 'picked' ? v.operation.operation_id : undefined,
+          // 旧码收口（#4794）：只有旧码路径的视图才有 `__selection`（新码恒 undefined ⇒ body 只带 token）
+          selection: v.__selection,
           clientRequestId,
         })
         // 回执驱动下一屏：接着做下一道 / 本套完工（`afterComplete` 丢掉 __requestId ⇒ 下一笔换新键）
@@ -153,22 +155,49 @@ export function createApp({ doc, api, location = globalThis.location }) {
       el.addEventListener('click', () => dispatch({ type: 'pickSet', setId: el.dataset.setId, setNo: el.dataset.setNo }))
     }
     for (const el of doc.querySelectorAll('[data-order-item-id]')) {
-      el.addEventListener('click', () => dispatch({ type: 'pickPosition', orderItemId: el.dataset.orderItemId }))
+      el.addEventListener('click', () => { void pickPosition(el.dataset.orderItemId) })
     }
     for (const el of doc.querySelectorAll('.wh5-alt[data-operation-id]')) {
-      el.addEventListener('click', () => { void doScan(state.view?.__token ?? '', el.dataset.operationId) })
+      el.addEventListener('click', () => {
+        void doScan(state.view?.__token ?? '', el.dataset.operationId, state.view?.__selection)
+      })
     }
   }
 
-  async function doScan(raw, operationId) {
+  /**
+   * 旧码收口（issue #4794）：选完套 + 部位 ⇒ **服务端**按 (码, 套, 部位) 重新解析出部位级视图。
+   *
+   * 🔴 为什么必须再请求一次（而不是前端自己挑工序）：工序由**服务端**推断（防呆⑤）——
+   * 前端自己挑 = 把「哪道工序」交给客户端，正是 #4792 要治的病。选择经 `legacySelection()`
+   * 判定（新码恒 null）；选中项随视图带下去（`__selection`），报工时原样回传 ⇒ 服务端重解析同一部位。
+   */
+  async function pickPosition(orderItemId) {
+    const setId = state.selection.setId
+    const token = state.view?.__token
+    dispatch({ type: 'pickPosition', orderItemId })
+    const selection = legacySelection(state.view, { setId, orderItemId })
+    if (!token || !selection) return
+    try {
+      const view = await api.resolveScan({ token, selection })
+      state = { ...state, view: { ...view, __token: token, __selection: selection } }
+      dispatch({ type: 'resolved', view: state.view })
+    } catch (e) {
+      fail(e)
+    }
+  }
+
+  async function doScan(raw, operationId, selection) {
     const token = parseScanInput(raw, href)
     if (!token) {
       dispatch({ type: 'error', error: '没有识别到码：请扫一次，或手工输入短码 / 加工单号' })
       return
     }
     try {
-      const view = await api.resolveScan({ token, operationId })
-      state = { ...state, view: { ...view, __token: token } }
+      const view = await api.resolveScan({ token, operationId, selection })
+      state = {
+        ...state,
+        view: { ...view, __token: token, ...(selection ? { __selection: selection } : {}) },
+      }
       dispatch({ type: 'resolved', view: state.view })
     } catch (e) {
       fail(e)

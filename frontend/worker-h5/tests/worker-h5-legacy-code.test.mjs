@@ -10,8 +10,9 @@
 // 页面必须**强制选套 + 选部位**，且**未选定前不得显示任何工序、不得可报工**。
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
-import { initialState, reduce, renderPage } from '../src/render.mjs'
+import { initialState, legacySelection, reduce, renderPage } from '../src/render.mjs'
 import { createApi } from '../src/api.mjs'
 
 /** 已登录态（未登录时 renderPage 一律回登录页 —— 那是正确行为，不是被测量的东西）。 */
@@ -103,4 +104,47 @@ test('旧码：完成态为 null（未知）⇒ 页面不得显示「已完成�
   const s = reduce(workerLoggedIn(), { type: 'resolved', view: DEGRADED })
   const html = renderPage(s, DEGRADED)
   assert.ok(!/本套已完成/.test(html), 'completed=null（未知）不得渲染成「已完成」')
+})
+
+// ============================================================ 旧码收口（issue #4794）
+
+test('🔴 旧码收口：选完套 + 部位 ⇒ 重新解析出部位级视图 ⇒ **可报工**（改前页面停在「已选：第 N 套 · 部位」无路可走）', () => {
+  let s = reduce(workerLoggedIn(), { type: 'resolved', view: DEGRADED })
+  s = reduce(s, { type: 'pickSet', setId: 'set-2', setNo: 2 })
+  s = reduce(s, { type: 'pickPosition', orderItemId: 'oi-2' })
+
+  // 选择态：仍然没有报工按钮（工序未确定 ⇒ 防呆⑤）
+  assert.ok(!/id="wh5-report"/.test(renderPage(s, DEGRADED)), '选择态不得直接出现报工按钮')
+
+  // 服务端按 (token, 套, 部位) 重新解析 ⇒ 部位级视图（工序由系统推断，前端不猜）
+  const resolved = {
+    granularity: 'set_position', set_no: 2, set_index: 1,
+    position: { order_item_id: 'oi-2', position_name: '纱帘' },
+    operation: { operation_id: 'op-9', logical_name: '定型', unit: '米', qty: 8, determined_by: 'inferred' },
+    alternatives: [], needs_selection: [], completed: false,
+  }
+  const done = reduce(s, { type: 'resolved', view: resolved })
+  assert.equal(done.mode, 'main', '重新解析成功 ⇒ 进主屏（不再是选择态）')
+  const html = renderPage(done, resolved)
+  assert.match(html, /第\s*2\s*套/)
+  assert.match(html, /定型/)
+  assert.match(html, /id="wh5-report"/, '🔴 旧码选完套 + 部位后**必须**能报工（D1 收口）')
+})
+
+test('🔴 反向护栏：`legacySelection()` 只对**旧码**视图给键 ⇒ 新码主路径恒不回传 set_id / order_item_id', () => {
+  const sel = { setId: 'set-2', orderItemId: 'oi-2' }
+  assert.deepEqual(legacySelection({ granularity: 'order' }, sel), sel, '旧码 ⇒ 回传（服务端据此重解析部位）')
+  assert.equal(legacySelection({ granularity: 'set_position' }, sel), null,
+    '🔴 新码主路径恒 null ⇒ body 只带 token（#4792 的防呆⑤ 断言不放宽）')
+  assert.equal(legacySelection({ granularity: 'order' }, { setId: 'set-2', orderItemId: null }), null,
+    '只选了一半（没选部位）⇒ 不回传半截选择（服务端仍要求完整选择）')
+  assert.equal(legacySelection(undefined, sel), null)
+})
+
+test('🔴 接线护栏：app.mjs 的「选部位」必须**重新解析**（只改 state = 页面停在选择态 = D1 原样复发）', () => {
+  const app = readFileSync(new URL('../src/app.mjs', import.meta.url), 'utf8')
+  assert.match(app, /async function pickPosition\(/, '选部位必须走重新解析（不是只 dispatch 一个 action）')
+  assert.match(app, /resolveScan\(\{[^}]*selection/, '重新解析必须带 selection（set_id + order_item_id）')
+  assert.match(app, /legacySelection\(/, '选择的合法性判据必须走纯函数（新码恒 null）')
+  assert.match(app, /selection:\s*(v|state\.view)\??\.__selection/, '报工必须回传 __selection（服务端据此重解析同一部位）')
 })

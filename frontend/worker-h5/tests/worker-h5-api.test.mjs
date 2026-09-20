@@ -132,6 +132,56 @@ test('② 一键改 / 显式数量：才带 operation_id / qty（默认路径一
   assert.deepEqual(f.calls[1].body, { token: 'tok-1', operation_id: 'op-2', qty: 6, qualified_qty: 6, work_type: 'rework' })
 })
 
+test('🔴 旧码收口（#4794）：选完套 + 部位 ⇒ 解析与报工都带 set_id + order_item_id（改前一个都不带 ⇒ 服务端恒 422 SCAN_NEEDS_SELECTION）', async () => {
+  const f = stubFetch([
+    LOGIN_OK,
+    {
+      status: 200,
+      body: {
+        success: true,
+        data: {
+          granularity: 'set_position', set_no: 14, needs_selection: [],
+          position: { order_item_id: 'oi-cloth', position_name: '布帘' },
+          operation: { operation_id: 'op-1', logical_name: '定型' },
+        },
+      },
+    },
+    { status: 200, body: { success: true, data: { operation_id: 'op-1', done_qty: 11, set_no: 14 } } },
+  ])
+  const api = createApi({ fetchImpl: f, storage: memStorage(), baseUrl: '' })
+  await api.login({ workerNo: 'A017', pin: '1234' })
+
+  const selection = { setId: 'set-14', orderItemId: 'oi-cloth' }
+  const view = await api.resolveScan({ token: 'legacy-1', selection })
+  const r = await api.completeByScan({ token: 'legacy-1', selection })
+
+  // ① 重新解析：旧码 + （套, 部位）⇒ 服务端按**同一份**推断口径给部位级视图
+  assert.match(f.calls[1].url, /[?&]set_id=set-14(&|$)/, '旧码收口必须把 set_id 交给服务端（前端不猜套）')
+  assert.match(f.calls[1].url, /[?&]order_item_id=oi-cloth(&|$)/, '旧码收口必须把 order_item_id 交给服务端（前端不猜部位）')
+  assert.equal(view.granularity, 'set_position')
+  assert.equal(view.operation.operation_id, 'op-1', '工序仍由**服务端**推断（防呆⑤）')
+  // ② 报工：同一个 (token, 套, 部位) ⇒ 服务端重解析同一部位，一次事务记账
+  assert.deepEqual(f.calls[2].body, { token: 'legacy-1', set_id: 'set-14', order_item_id: 'oi-cloth' })
+  assert.ok(!('worker_id' in f.calls[2].body), '身份仍只来自 X-Worker-Session-Id')
+  assert.equal(r.doneQty, 11)
+})
+
+test('🔴 反向护栏：不传 selection ⇒ 解析与报工一个 set_id / order_item_id 都不带（新码主路径零影响）', async () => {
+  const f = stubFetch([
+    LOGIN_OK,
+    { status: 200, body: { success: true, data: { granularity: 'set_position', needs_selection: [] } } },
+    { status: 200, body: { success: true, data: { operation_id: 'op-1' } } },
+  ])
+  const api = createApi({ fetchImpl: f, storage: memStorage(), baseUrl: '' })
+  await api.login({ workerNo: 'A017', pin: '1234' })
+
+  await api.resolveScan({ token: 'new-1' })
+  await api.completeByScan({ token: 'new-1' })
+
+  assert.ok(!/set_id|order_item_id/.test(f.calls[1].url), '新码解析 URL 不得出现 set_id / order_item_id')
+  assert.deepEqual(f.calls[2].body, { token: 'new-1' }, '新码报工 body 仍**只带 token**（#4792 的既有断言不放宽）')
+})
+
 test('🔴 ③ 401（闲置超时 / 已被切换）⇒ 抛 SESSION_EXPIRED 且**清本地缓存**（不静默续期）', async () => {
   const f = stubFetch([LOGIN_OK, { status: 401, body: { success: false, error: { code: 'UNAUTHORIZED' } } }])
   const store = memStorage()
@@ -195,9 +245,10 @@ test('🔴 红线：写请求 body 绝不携带 unit_price / factor / set_id / o
   const body = f.calls[1].body
   assert.ok(!('unit_price' in body), '🔴 写请求 body 不得携带 unit_price（历史计件单价是工资凭证）')
   assert.ok(!('factor' in body), '🔴 写请求 body 不得携带 factor')
-  // 🔴 D1（#4792）：旧码收口需要切片① 契约扩展 ⇒ 本单**不**硬塞 set_id/order_item_id
-  assert.ok(!('set_id' in body), '本单不扩契约：body 不得出现 set_id')
-  assert.ok(!('order_item_id' in body), '本单不扩契约：body 不得出现 order_item_id')
+  // 🔴 旧码收口（#4794）走**具名的** `selection` 通道 ⇒ 顶层 setId/orderItemId 依旧进不去
+  // （调用方硬塞无效：白名单只认 selection；新码主路径恒不带这两个键）
+  assert.ok(!('set_id' in body), '顶层 setId 不得进 body（旧码收口只走具名 selection 通道）')
+  assert.ok(!('order_item_id' in body), '顶层 orderItemId 不得进 body（同上）')
   assert.deepEqual(Object.keys(body).sort(), ['operation_id', 'qty', 'qualified_qty', 'token', 'work_type'])
 })
 
