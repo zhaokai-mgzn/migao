@@ -26,6 +26,12 @@
 > ⚠️ **仍然成立**：A 模式的**功能面**（扫码解析 / 工序推断 / 完成主闭环 / 卡点报表 / 防呆④⑤）**尚未落码** ——
 > 切片⓪ 只落**数据层**（边界逐条登记在 `tests/unit_ci_workflows/test_set_code_storage_v92_migration.py`）。
 >
+> 🔴 **口径订正（issue #4791，2026-09-20；来源 = #4698 切片④ 核清，主会话已裁定）**：
+> 本单改**两处措辞**（**纯文档，零代码/零契约账本改动**）——
+> ① §5.3 ④ 的判据名统一为**代码实际的** `OPERATION_NOT_IN_SCAN_TARGET`（`CODE_POSITION_MISMATCH` 留档为**曾用名**）；
+> ② §5.3 ④ 的判据形态从「`order_item_id` 字面等式」改为「**候选集成员资格**」，并显式写明与 §3.2 ② 套级回落的关系。
+> 逐处说明见 **§5.3 ④ 表后注**；**全文「设计写了但代码没有」的清单（只登记、不改判）见 §16**。
+>
 > **配套真值源**：[curtain-production-rules.md](../curtain-production-rules.md) ·
 > [curtain-production-process-standard.md](../curtain-production-process-standard.md) ·
 > [worker-scan-terminal.md](worker-scan-terminal.md) ·
@@ -392,7 +398,7 @@ infer_next(set, scanned_order_item_id):
 |---|---|
 | **默认路径**（绝大多数） | 系统推断的「下一道待做」直接作为待报工序 ⇒ **零额外交互**（裁定②-3） |
 | **工人要报的不是它** | 一屏内提供 `alternatives`（同套同部位的其他未完成工序，按 `seq` 排）⇒ **一键改**（一次点选） |
-| **接口层** | 完成端点接受**可选** `operation_id`：<br>· 省略 ⇒ 服务端用 §3.2 推断；<br>· 给出 ⇒ **必须属于该套该部位**（否则 422，§5.3 ④） |
+| **接口层** | 完成端点接受**可选** `operation_id`：<br>· 省略 ⇒ 服务端用 §3.2 推断；<br>· 给出 ⇒ **必须属于本次扫码的候选集**（该套该部位 **∪** 套级回落候选；否则 422 `OPERATION_NOT_IN_SCAN_TARGET`，§5.3 ④；<s>原写「必须属于该套该部位」</s> —— 措辞已按 §5.3 ④ 的口径订正对齐） |
 | 🔴 **硬约束（裁定②-2）** | **绝不允许**在「工序未确定」的情况下直接记账 ⇒ 服务端**必须**在写 `production_work_logs` 前解析出**唯一确定的 `operation_id`**：<br>· 推断出唯一一道 ⇒ 用推断值；<br>· 推断出**零道**（该部位无未完成工序）⇒ **拒绝**（`NO_PENDING_OPERATION`，不记账）；<br>· 推断出**多道**（理论上不会：`min(seq)` 唯一；仅当 `seq` 重复的脏数据）⇒ **拒绝并要求显式 `operation_id`**（`OPERATION_AMBIGUOUS`，不记账） |
 | **红证（必须有）** | 注入「`operation_id` 未确定却写了 `production_work_logs`」⇒ **必红**。形态：mock 掉推断使返回值集合 >1 且不传 `operation_id` ⇒ 断言**没有** `workLogMapper.insert` 调用 + 返回 `OPERATION_AMBIGUOUS`。**反向**：删掉该断言 ⇒ 该测试必须变红（不会红的断言 = 空断言） |
 
@@ -512,7 +518,7 @@ infer_next(set, scanned_order_item_id):
 ```
 complete(set_no, order_item_id, [operation_id], [qty], worker, clientRequestId):
   ⓪ 幂等占位（X-Client-Request-Id，F15 逐字复用）⇒ 同键直接回放，不执行
-  ① 解析 token / set_no ⇒ (set_id, order_item_id)，并校验工序归属（防呆④）
+  ① 解析 token / set_no ⇒ (set_id, order_item_id)，并校验工序归属（防呆④：**候选集成员资格**，§5.3 ④）
   ② 定工序：operation_id 显式给出则校验归属；否则 §3.2 推断
      ⇒ 推断出零道 / 多道 ⇒ 拒绝（§3.3 硬约束，不记账）
   ③ 防呆：幂等 / 数量上限（拒绝不 clamp）/ 非本部位码（§5.3）
@@ -527,9 +533,20 @@ complete(set_no, order_item_id, [operation_id], [qty], worker, clientRequestId):
 | ① | 「**幂等**（重复扫提示已报）」 | `X-Client-Request-Id` 同键 ⇒ 不执行 + 回放首次结果 + `replayed=true`（F15 逐字复用）。**扫描**是只读 ⇒ 天然幂等 | ✅ 已落码（`report`） | **新端点复用同一机制**（不新造） |
 | ② | 「**越站提示**（非本工序）」 | ⚠️ **改判**：**不再拦截**，改为**推断时自然避开**（默认给「下一道待做」）+ 改道时**只提示不阻断** | ✅ **闸门已删除**（issue #4694，2026-09-20）：原「422 拒绝」（`assertPredecessorsDone`）整条删除 ⇒ 顺序**不拦**（跳站按实际工序正常记账） | ✅ **已落码**（#4694）：删除该闸门 + 既有 422 断言**改钉**为「放行」+ 登记为放宽（§10 C9）。**本设计只剩增量**：推断时自然避开 + 只提示不阻断 |
 | ③ | 「**数量上限校验**（≤应做数量+合理损耗）」 | `done_qty + 本次合格数 <= qty`，否则 422 `REPORT_QTY_EXCEEDS_PLANNED`（**拒绝不 clamp**） | ✅ 已落码（`assertWithinPlannedQty`） | 无（**「合理损耗」当前实现为 0 容差** ⇒ 待裁定 §8 A4） |
-| ④ | 「**非本部位码提示**」 | **断言**：`op.order_item_id == token.order_item_id`（**码给的身份 vs 工序实例的身份**），不等 ⇒ 422 `CODE_POSITION_MISMATCH` + 指名 | ⚠️ **F18：今天形式上是空的**（码无部位 ⇒ 只能校验「属于本加工单」） | ✅ **本设计的核心增量**：码带部位 ⇒ 这条防呆**才真正成立** |
+| ④ | 「**非本部位码提示**」 | **断言（候选集成员资格，不是字面等式）**：显式给出的 `operation_id` **必须属于本次扫码的候选集** —— ① 部位级候选（该套该部位）**∪** ② §3.2② 的**套级回落候选**（本部位无待做 ⇒ 套级工序）；不在其中 ⇒ 422 `OPERATION_NOT_IN_SCAN_TARGET` + 指名（<s>**原写**：`op.order_item_id == token.order_item_id`，不等 ⇒ 422 `CODE_POSITION_MISMATCH`</s> ⇒ **口径订正见本条注**） | ⚠️ **F18：今天形式上是空的**（码无部位 ⇒ 只能校验「属于本加工单」） | ✅ **本设计的核心增量**：码带部位 ⇒ 这条防呆**才真正成立** |
 | **⑤（本设计新增）** | **裁定②-2 的硬约束** | **断言**：写 `production_work_logs` 前 `operation_id` **唯一确定**；否则 422 `OPERATION_AMBIGUOUS` / `NO_PENDING_OPERATION` 且**不记账**（红证见 §3.3） | ❌ **今天不存在**（端点在 URL 里强制给了 `operationId`，**没有「不确定」这个态**） | ✅ 新增（**因为 A 模式把「选工序」交给了系统**） |
 
+> 🔴 **④ 的口径订正（issue #4791，2026-09-20；来自 #4698 切片④ 核清，主会话已裁定）—— 两处，原文措辞一律保留为历史留档**：
+> **① 判据名统一（同一判据曾有两个名字）**：本文原写 `CODE_POSITION_MISMATCH`，但**代码从未实现该名**
+> （`origin/main` 全仓只有本文 1 处、代码 0 处）—— 落码实际用的是 **`OPERATION_NOT_IN_SCAN_TARGET`**
+> （已进 `CONTRACT-LEDGER.md`）⇒ **保留代码名**，本文统一指向它。
+> **`CODE_POSITION_MISMATCH` = 曾用名（已废，勿再引用）**。
+> **② 判据形态从「字面等式」改为「候选集成员资格」**：原写 `op.order_item_id == token.order_item_id` ——
+> **与 §3.2② 套级回落直接冲突**：扫**纱帘**的码、本部位干完 ⇒ 系统给**套级工序**，
+> 其 `order_item_id` 是**承载部位（布帘）** ⇒ **字面等式必然不等** ⇒ 照字面实现会**拒掉套级回落**，
+> 打断 D4（防死锁）。⇒ 现实现按**候选集成员资格**判定（已落码 + 有承重红证：去掉部位过滤 ⇒
+> 跨部位报工被接受、真写了 `work_logs`）；**「回落时按套级候选集判定，不是 `order_item_id` 等式」**。
+>
 > 🔴 **两条必须登记的行为变化**：
 > **②放宽**（越站不再拦截）与 **④收紧**（越部位报工被拒）。
 > 两者都是**用户裁定 / 真值源的直接结果**，但**必须显式写进落码单的验收判据**，
@@ -735,7 +752,7 @@ git grep -niE "标准工时|standard_hours|std_hours" origin/main
 | **C7** | **V69 的「存量行留空」策略**被本设计**第二次复用**（`set_id` / `set_no` 可空） | `backend/admin-api/src/main/resources/db/migration/V69__add_position_identity_to_position_operations.sql` | **同款处置**（留空 + 读面兜底）⇒ 一致性保持；**不**引入第二种存量兼容范式 |
 | **C8** | **`report` 端点刻意不加 `@Transactional`**，而「完成」要落三处 | `backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java` 的 `report` javadoc | **不改 `report`**；**新增**事务化的扫码完成入口，幂等占位在外层（§4.2 方案 A） |
 | **C9** | 🔴 **越站防呆原为 422 拒绝**（`assertPredecessorsDone`），与**裁定②-2「不拦生产顺序」直接冲突** | 同上 | ✅ **已落码**（issue #4694，2026-09-20）：闸门**已删除**（`assertPredecessorsDone` 整条删除，不留死代码），既有 422 `OPERATION_SEQUENCE_VIOLATION` 断言**已改钉**为「越站 ⇒ 放行」，并登记为**放宽型行为变化**（§5.3 ②）。本设计继承该口径，**不得**再加回顺序闸门 |
-| **C10** | **防呆④「非本部位码」今天形式上是空的**（F18：码无部位 ⇒ 只能校验「属于本加工单」） | 同上 `doReport` 的三重校验 | **本设计补全**（码带部位 ⇒ 相等断言）；登记为**收紧型行为变化**（§5.3 ④） |
+| **C10** | **防呆④「非本部位码」今天形式上是空的**（F18：码无部位 ⇒ 只能校验「属于本加工单」） | 同上 `doReport` 的三重校验 | **本设计补全**（码带部位 ⇒ **候选集成员资格断言**〔<s>原写「相等断言」</s> ⇒ 口径订正见 §5.3 ④ 表后注〕）；登记为**收紧型行为变化**（§5.3 ④） |
 | **C11** | **本设计**新增**一条防呆（⑤ 工序必须确定）**，真值源 `:56` 只写了四条 | 真值源 `docs/curtain-production-rules.md` `:56` | **显式登记为「真值源四条 + 裁定②-2 的硬约束」**，不假装它是真值源原文 |
 | **C12** | 🔴 **布料主线真值源仍是旧口径**：`routing.py` 的 `FABRIC_MAINLINE_STEPS` = `["配料","打包"]`，而 #4673 已**改判**为 `裁剪`、V88 已按裁定落码；**钉住它的测试文案还把 `配料` 称「裁定」= 过期裁定** | `backend/ai-agent-service/app/production/routing.py` 的 `FABRIC_MAINLINE_STEPS`；`backend/ai-agent-service/tests/test_production/test_fabric_route.py`；口径真值源 `docs/design/craft-calc-and-fabric-routing.md` §6 判据 #10 | **只登记，不修**（issue #4701 的 P1）：ai-agent 属用户裁定「本会话不动工」（#4652）⇒ 等 ai-agent 排期时**连同其钉住测试一起改判**（文案的「裁定」必须改成「已被 #4673 改判为 `裁剪`」）并同步 `seed.json`。⚠️ **当前零影响**（`build_route_v2` 生产代码**零消费方**，`routing.py` 自述）⇒ **未来一改即假红** |
 
@@ -888,7 +905,7 @@ issue #4687 的 10 条要求 ⇒ 本文落点：
 | **D6** | 🔴 **不拦生产顺序**：前道未完成时，报**后续**工序**成功**（不再 422） | 仍返回 422 `OPERATION_SEQUENCE_VIOLATION` ⇒ 红（裁定②-2） |
 | D7 | 完成 ⇒ **同事务**落 `production_work_logs` + `done_qty` + **`done_at`** | 任一处缺 ⇒ 红 |
 | D8 | A 模式卡点可答「上道几点完成、等了多久」 | 用 `updated_at` 冒充 `done_at` ⇒ 红（会被任何更新污染） |
-| D9 | 传**别的部位**的码报本部位的工序 ⇒ **422** | 放行 ⇒ 红（§5.3 ④） |
+| D9 | 传**别的部位**的码报本部位的工序 ⇒ **422**（判据 = **非候选集成员**，§5.3 ④；判据名 `OPERATION_NOT_IN_SCAN_TARGET`，<s>曾用名 `CODE_POSITION_MISMATCH`</s>） | 放行 ⇒ 红（§5.3 ④） |
 | D10 | **旧码**（加工单级）仍可解析 ⇒ 返回 `granularity="order"` + **强制选部位** | 旧码 404 ⇒ 红；旧码**默认取第 1 套** ⇒ 红 |
 | D11 | 报工金额**逐字不变**（本设计不改既有金额口径） | 任一历史金额变化 ⇒ 红 |
 | D12 | 存量单（`order_item_id` 为 NULL 的行）**行为逐字不变** | 读面报错 / 归错套 ⇒ 红 |
@@ -962,3 +979,60 @@ git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/Pro
 git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/migration/ | grep -o 'V[0-9]*' | sort -t V -k2 -n | tail -1
 git show origin/main:tests/unit_ci_workflows/migration_fingerprints.json | python3 -c "import json,sys; print(len(json.load(sys.stdin)['migrations']))"
 ```
+
+---
+
+## 16. 全文扫描：「设计写了但代码没有」的判据名 / 口径（**只登记，不改判**）
+
+> **来源**：issue #4791（#4698 切片④ 核清）第 2 项要求 —— 顺带全文扫一遍本文的判据名 / 口径，
+> 与 `origin/main` 的**实际代码**对照，**给清单**。
+> 🔴 **本节的纪律**：**只登记，不裁定谁对** —— 每条只写「设计写了什么 / 代码里是什么 / 差在哪」，
+> **处置留给主会话**。本单**只改了 §5.3 ④ 的两处措辞**（主会话已裁定的那两处），其余**一律不动**。
+> 复算口径 = `grep` 本文的 `SCREAMING_CASE` 标识符 × `grep` 代码里的实际错误码（双向）。
+
+### 16.1 错误码 / 判据名对照（本文写到的每一个）
+
+| 本文判据名 | 本文落点 | 代码实际（`origin/main` 实测） | 状态 |
+|---|---|---|---|
+| `OPERATION_NOT_IN_SCAN_TARGET` | §3.3 / §5.3 ④ / §12 D9 | `ProductionScanService` 抛 422；`CONTRACT-LEDGER.md` 已登记；`ProductionScanServiceTest` 钉住 | ✅ **一致**（**曾用名 `CODE_POSITION_MISMATCH`** ⇒ 本单已统一，见 §5.3 ④ 表后注） |
+| `OPERATION_AMBIGUOUS` | §3.3 / §5.2 / §5.3 ⑤ | `ProductionScanService` 抛 422；账本已登记 | ✅ 一致 |
+| `NO_PENDING_OPERATION` | §3.3 / §5.3 ⑤ | `ProductionScanCompleteService` 抛 422 | ✅ 一致 |
+| `REPORT_QTY_EXCEEDS_PLANNED` | §5.3 ③ | `ProductionService.assertWithinPlannedQty` 抛 422 | ✅ 一致 |
+| `OPERATION_SEQUENCE_VIOLATION` | §5.3 ② / §10 C9 / §12 D6 | **代码已删除**（#4694 删 `assertPredecessorsDone`）；仅剩测试注释里的历史引用 | ✅ **一致**（本文已按 #4694 改判为「越站 ⇒ 放行」） |
+| `CODE_POSITION_MISMATCH` | ~~§5.3 ④~~ | **代码 0 处**（本单改动**前**实测：`origin/main` 全仓**仅本文 1 处**，代码 0 处；改动**后**本文仅剩**留档 / 曾用名注**里的引用） | 🔴 **设计写了、代码从未实现** ⇒ **本单已统一到 `OPERATION_NOT_IN_SCAN_TARGET`** |
+
+### 16.2 反向差异（**代码已落码、本文未登记** —— 如实登记，本单不改）
+
+| 代码实际 | 落点 | 本文状态 |
+|---|---|---|
+| `SCAN_NEEDS_SELECTION`（422） | `ProductionScanCompleteService`（旧码降级 ⇒ 不默认取第 1 套） | ❌ **本文零提及**（§2.6 只写了「必须让工人选部位」，**没给判据名**） |
+| `SET_ALREADY_COMPLETED`（409） | 同上（本套工序都已完成 ⇒ 零写入） | ❌ **本文零提及**（§3.2 ③ 只写「返回『本套已完成』，不报错」——**与「409 拒绝」是两种口径**） |
+| `OPERATION_ALREADY_ADVANCED`（409） | 同上 + `ProductionService`（CAS 影响行数 0 ⇒ fail-closed） | ❌ **本文零提及**（F14 只写「影响行数 0 = 被并发推进 ⇒ fail-closed」，**没给判据名**；`worker-h5-scan-and-report.md` 有登记） |
+
+### 16.3 非错误码的判据 / 口径（**SCREAMING_CASE 全量扫描的其余命中，逐条交代**）
+
+> 扫法：`grep -oE '\b[A-Z][A-Z0-9_]{4,}\b' docs/design/set-code-and-scan-loop.md | sort | uniq -c`。
+> 其余命中**不是判据名**，逐类交代（**避免"扫出来的东西"被当成"没实现的判据"**）：
+
+| 命中 | 类别 | 判定 |
+|---|---|---|
+| `SELECT` / `UPDATE` / `INSERT` / `CREATE` / `ALTER` / `TABLE` / `COLUMN` / `INDEX` / `REFERENCES` / `UNIQUE` / `DEFAULT` / `EXISTS` / `COALESCE` / `DISTINCT` / `WHERE` / `ORDER` / `NOTHING` / `CONFLICT` / `NUMERIC` / `JSONB` / `INTEGER` / `BIGINT` / `VARCHAR` / `TIMESTAMPTZ` / `EPOCH` / `EXTRACT` / `COMMENT` / `ASSIGN_UUID` / `ERROR` | SQL 关键字 / 类型 / 函数名 | **不是判据名**（本文 §6.3 / §11 的 SQL 片段） |
+| `V92__` / `V89__` / `V88__` / `V87__` / `V86__` | 迁移文件名前缀 | 迁移号**现取**（§11.1 / §15） |
+| `CSO260915` | 示例单号 | 示例数据（§2.1） |
+| `YAGNI` | 方法论名 | 不是判据 |
+| `PENDING` | §3.2 伪码**谓词** | ✅ **已落码**：`ProductionService.isDone`（`done_qty ≥ qty`），`ProductionScanService` 逐字复用 |
+| `STATUS_TRANSITIONS` | Java **符号常量名**（F10） | ✅ 存在（`ProcessingOrderService`） |
+| `FABRIC_MAINLINE_STEPS` | Python **符号常量名**（§10 C12） | ✅ 存在（`routing.py`）—— **但口径已过期**（登记在 C12，**本单不改**） |
+| `ROLLBACK_NAME` | 测试里的**符号锚点**（§11.4） | ✅ 存在（`test_set_code_storage_v92_migration.py`） |
+
+### 16.4 其它「设计写了、代码没有」的口径（非错误码）
+
+| # | 本文写的 | 代码实际 | 状态 |
+|---|---|---|---|
+| 1 | §5.3 ④：`op.order_item_id == token.order_item_id`（**字面等式**） | **候选集成员资格**（部位级 ∪ 套级回落） | 🔴 **字面实现会打断 §3.2 ② 套级回落（D4 防死锁）** ⇒ **本单已改为「候选集成员资格」** |
+| 2 | §6.4 / §8 A2：`threshold_source ∈ {history, default}`（`T = S1 ?? S3`） | **恒为 `default`**（S3）—— `history` 只出现在注释里，**S1 未落码** | ⚠️ **设计写了、代码没有**（代码自述「S1 落码后才会出现 `history`」）⇒ **只登记** |
+| 3 | §6.1 ②：「开了没完」（`in_progress` + `started_at`） | **未落码**（仅 C 模式，`V92` 只建列） | ✅ **设计已自述为「C 模式预留」**（§4.4 / §8 A3）—— 非缺陷 |
+| 4 | §6.1 ③ / ④：附加两种卡法（「必完不一致」「正常在产」） | 落码的 `stalled.kind` 只有 `not_started` 一种 | ⚠️ **设计写了、代码没有**（③④ 原文标为「附加，免费」）⇒ **只登记** |
+| 5 | §12 D9 的 422 判据 | ✅ 已落码（`OPERATION_NOT_IN_SCAN_TARGET`，含测试） | ✅ 一致（判据名见 §16.1） |
+
+> 🔴 **本节不含裁定**：上表 ⚠️ / 🔴 各行**都未在本单修改**（本单只动 §5.3 ④ 的两处，即 16.1 的 `CODE_POSITION_MISMATCH` 行与 16.4 的第 1 行）。
