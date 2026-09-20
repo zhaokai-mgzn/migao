@@ -192,20 +192,20 @@ const layersOf = (cells: any[]) => {
     expect(within(screen.getByTestId('craft-operations-panel')).queryByText('作用域')).toBeNull()
   })
 
-  it('判据 4b：逐行渲染**真实取值**（外帘打卷 = 套级；精裁-布 = 部位级）', async () => {
+  it('判据 4b：逐行渲染**真实取值**（外帘打卷 = 按套；精裁 = 按件）', async () => {
     await renderMatrix()
 
     // issue #4677：`外帘打卷` 是套级 ⇒ 入口在【打包发货】区
     await userEvent.click(screen.getByTestId('delivery-manage-外帘打卷'))
     expect(scopeControl('op-v54-24')).toHaveValue('set')
-    expect(scopeControl('op-v54-24').selectedOptions[0]).toHaveTextContent('套级')
+    expect(scopeControl('op-v54-24').selectedOptions[0]).toHaveTextContent('按套')
 
     await userEvent.click(screen.getByTestId('operations-manage-close'))
     await userEvent.click(screen.getByTestId('matrix-manage-精裁'))
 
     // 同一屏里必须与套级**区分开**（一律渲染成同一档 = 这个控件没有信息量）
     expect(scopeControl('op-v54-01')).toHaveValue('position')
-    expect(scopeControl('op-v54-01').selectedOptions[0]).toHaveTextContent('部位级')
+    expect(scopeControl('op-v54-01').selectedOptions[0]).toHaveTextContent('按件')
   })
 
   it('判据 4c：可就地改档 —— 套级改回部位级 ⇒ PUT 只提交 { scope }（不带单价等无关字段）', async () => {

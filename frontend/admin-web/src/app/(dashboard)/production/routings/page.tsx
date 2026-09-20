@@ -47,14 +47,20 @@ import type {
  *
  * | tab | 它回答的问题 | 主区 | 维护面 |
  * |---|---|---|---|
- * | **工艺项** | 「每道工序在**哪个部位**做、给**工人**多少钱？」 | **一张表**：行 = 逻辑工序、列 = 部位、格 = 价 / 不做 / 未定价（**格内就地可改**） | 行尾 = `分组 · 单位` + **必完标记**（issue #4610：完工门槛要一眼看得见，部分部位必完时注明）+「管理▸」抽屉（**这道工序在各部位的设置**：分组 / 单位 / 作用域 / 必完 / 停用 / 删除） |
- * | **工艺路线** | 「订单按哪条主线走、什么时候插/删工序？」 | 具名路线（默认徽标 + 适用帘种 + 主线 + 改名/设默认/删除） | 每道工序在「工艺项」tab 的 `管理▸` 抽屉里有一节**适用条件**（人话；issue #4650 阶段 1 起**不再有**独立的「条件工序规则」表） |
+ * | **工艺项** | 「每道工序给**工人**多少钱？」 | **一张表**：行 = 一道逻辑工序、**一道工序一个单价**（就地可改）+ **必完标记**（issue #4610：完工门槛要一眼看得见） | 行尾 = `分组 · 单位` + 「管理▸」抽屉（分组 / 单位 / 作用域 / 必完 / 停用 / 删除） |
+ * | **工艺路线** | 「订单按哪条主线走、什么时候插/删工序？」 | 具名路线（默认徽标 + 主线 + 改名/设默认/删除） | 每道工序在「工艺项」tab 的 `管理▸` 抽屉里有一节**适用条件**（人话；issue #4650 阶段 1 起**不再有**独立的「条件工序规则」表） |
  *
- * **工艺项为什么不再分「主区 / 折叠次区」**（issue #4588 = 母单 #4586 包 B；契约 #4587）：
- * 原形态是**两张平铺表** —— 主区 84 格**只读**矩阵 + 折叠次区 35 行「工序库明细」（能改计件单价
- * 但**改了不生效**：真正生效的是矩阵格）。同一个概念两个载体、改一处不生效、还没有任何提示
- * ⇒ 用户裁定**方案 A：合并成一屏一张表**（用户原话：「工艺项我确实没看懂这样设计是要干啥」）。
- * 「一屏一件事」的纪律不变，只是这件事现在由**一张表**承载，明细面收进**抽屉**（不是平铺）。
+ * ## 为什么这一屏不再有「部位」（issue #4886，用户裁定）
+ *
+ * 用户裁定「新的工艺不应该配置部位」⇒ 这一层**彻底退场**：价目**塌缩成「一道工序一个价」**
+ * （配套后端改动后 `GET /operation-positions` 每个逻辑工序名**只返回一行**，未定价保留 `NULL`）。
+ * ⚠️ 只从**配置这一层**退场 —— 订单行 `curtain_type` 与加工单 `position_name` **保留**
+ * （加工环节仍需区分布/纱）⇒ 订单页 / 加工单页 / 报工页**不动**。
+ *
+ * **工艺项为什么是一屏一张表**（issue #4588 = 母单 #4586 包 B；契约 #4587）：
+ * 原形态是**两张平铺表** —— 主区只读矩阵 + 折叠次区「工序库明细」（能改计件单价但**改了不生效**）。
+ * 同一个概念两个载体、改一处不生效、还没有任何提示 ⇒ 用户裁定**方案 A：合并成一屏一张表**
+ * （用户原话：「工艺项我确实没看懂这样设计是要干啥」）。明细面收进**抽屉**（不是平铺）。
  *
  * **这一屏的价是「给工人的计件单价」**（用户裁定 2026-09-19）：
  * `production_operation_positions.unit_price` = 计件单价，**报工工资 = 数量 × 计件单价**。
@@ -62,24 +68,20 @@ import type {
  * （`production_route_rules.customer_unit_price`，元/套）。两本账**互不换算** ⇒ 这一屏
  * **不得**出现「加工费」「对客价」字样，也**不引入任何计件系数概念**。
  *
- * ## 与旧形态的三处关键差异（P2b #4459 / P2c #4500 之后）
+ * ## 与旧形态的关键差异（P2b #4459 / P2c #4500 之后）
  *
- * 1. **路线 = 一条具名主线**（`{id, name, is_default, positions, mainline}`），不再是
- *    「部位 × 工艺」展开快照 ⇒ 列表显示**总名**+默认徽标+适用帘种，**不再**出现 `部位 × 工艺` 标题；
- *    改名**只改 `name`**（不给 `mainline` 就不动序列 —— 改一个名字不该顺带重写计件工资的输入）。
- * 2. **部位价目矩阵的行键是逻辑工序名**（`精裁` / `三边`），**不是** `production_operations.name`
- *    （那边仍是旧名 `精裁-布` / `布三边`）。issue #4588（契约 #4587 ①）起矩阵每格**多带** 5 个
- *    变体元数据键（`variant_operation_id` / `unit` / `group` / `scope` /
- *    `is_must_finish`）—— 由后端 `variantNameOf` 推导，前端**直接取用、不另写一份推导**；
- *    5 键全 `null` = 查不到 ⇒ **不发明元数据**（静默 = 未知）。
- *    ⚠️ **web 面只用一套工序名**（issue #4622 = goal「web 面工序命名统一」阶段 3）：界面显示
- *    **逻辑工序名 + 部位**；`variant_name`（`布三边` / `logo条-布` 这类**变体名**）**不出现在任何
- *    界面位置**（含 `data-testid`）—— 它只是后端 `production_operations.name` 的旧口径，
- *    **读面也已不再返回该键**（`ProductionRoutingReadService.positionView`）。
+ * 1. **路线 = 一条具名主线**（`{id, name, is_default, mainline}`）—— 改名**只改 `name`**
+ *    （不给 `mainline` 就不动序列：改一个名字不该顺带重写计件工资的输入）。
+ * 2. **行键是逻辑工序名**（`精裁` / `三边`），**不是** `production_operations.name`
+ *    （那边仍是旧名 `精裁-布` / `布三边`）。每行带的 5 个变体元数据键（`variant_operation_id` /
+ *    `unit` / `group` / `scope` / `is_must_finish`）由后端 `variantNameOf` 推导，
+ *    前端**直接取用、不另写一份推导**；5 键全 `null` = 查不到 ⇒ **不发明元数据**（静默 = 未知）。
+ *    ⚠️ `variant_name`（`布三边` / `logo条-布` 这类**变体名**）**不出现在任何界面位置**
+ *    （含 `data-testid`）—— 它只是后端 `production_operations.name` 的旧口径，读面也不返回它。
  *    `variant_operation_id` 仍要用：它是**寻址键**（抽屉条目按它去重、写面按它发 `PUT/DELETE`）。
- *    主线的「工序是否存在」判据 = **矩阵里的逻辑工序名**（issue #4622 补口①：原口径是
- *    「工序库 ∪ 矩阵」并集 —— 工序库键是**变体名**，会把残留的变体名误判成「存在」，
- *    而后端按逻辑名判 ⇒ 同一件事两边判得不一样；矩阵是主线取值域的唯一权威）。
+ *    主线的「工序是否存在」判据 = **价目表里的逻辑工序名**（issue #4622 补口①：原口径是
+ *    「工序库 ∪ 价目表」并集 —— 工序库键是**变体名**，会把残留的变体名误判成「存在」，
+ *    而后端按逻辑名判 ⇒ 同一件事两边判得不一样）。
  * 3. **顺序口径**：`operation-positions` 按 `(operation, position)`、`route-rules` 按 `(priority, id)`
  *    —— **服务端已排好**，前端**不重排**（重排会与服务端口径分叉，同一张单两次生成会得到不同序列）。
  *
@@ -120,21 +122,53 @@ import type {
 const money = (v?: number | string | null) => `¥${Number(v ?? 0).toFixed(2)}`
 
 /**
- * 部位（帘种）**列序基线 + 兜底** —— 它**不是**值域权威（issue #4556）。
+ * 逻辑工序名 —— **行键的唯一口径**（issue #4886）。
  *
- * 取值域的真源 = `production_operation_positions.position`，而本页**已经在读**它
- * （`GET /operation-positions` 的部位价目矩阵）⇒ 可选部位由 {@link positionOptions} 从矩阵带出：
- * 矩阵里出现的部位**自动**进选项，**新增部位不需要改这一行**（改这一行就是「值域在页面里硬编码」
- * 的又一次漂移 —— 同族 #4440，也正是本条缺陷的成因：包 F / #4529 落库的第 4 个部位 `布料`
- * 读面看得见、写面却建不出来）。
- *
- * 它只剩两个用途：① 矩阵列 / 勾选项的**基线顺序**；② 矩阵**未加载或为空**时的兜底选项
- * （页面不至于连路线都建不出来）。
- * ⚠️ 后端**没有**部位枚举端点（#4556 实测）：`GET /operation-positions` 是**数据行**（按租户），
- * 不是词表。后端自己那份同形常量 `ProductionRoutingCommandService.DEFAULT_POSITIONS` 的语义是
- * **新路线的默认适用帘种**（见 `newRoute` 初值），**不是**可选范围。
+ * ⚠️ 该值在接口里的字段名历史上叫 `operation`（后端 `ProductionRoutingReadService.positionView`
+ * 逐字写的就是 `logical_name`）；配套后端可能改叫 `logical_name` ⇒ 这里做
+ * `logical_name ?? operation` **兜底读取**，**两种命名都能渲染**（前端不猜、不发明第三份名字）。
  */
-const POSITION_DOMAIN = ['布帘', '纱帘', '帘头']
+const logicalNameOf = (cell: OperationPosition): string =>
+  (cell as OperationPosition & { logical_name?: string | null }).logical_name ?? cell.operation
+
+/**
+ * 收敛的**平局优先部位**（issue #4886）—— ⚠️ 这是**兼容用的 tie-breaker，不是配置概念**：
+ * 它**不参与任何界面文案**，只用来在「同一逻辑名仍有多行」时与后端「取原基线价」的取舍对齐，
+ * 保证两边选出**同一行**（选错行 = `PUT /operation-positions/{id}` 改的是另一个价）。
+ */
+const CONVERGE_PREFERRED_POSITION = '布帘'
+
+/**
+ * 同一逻辑名多行时的**收敛选择**（规则逐字见 {@link convergeByLogicalName}）：
+ * ① 优先 `applicable === true`；② 其中优先 {@link CONVERGE_PREFERRED_POSITION}；
+ * ③ 再按 `position` 字典序取首个（**不静默取「第一个出现的」**—— 那会随服务端排序漂移）。
+ */
+const pickConvergedCell = (group: OperationPosition[]): OperationPosition => {
+  const applicable = group.filter((c) => c.applicable === true)
+  const pool = applicable.length > 0 ? applicable : group
+  const preferred = pool.find((c) => c.position === CONVERGE_PREFERRED_POSITION)
+  if (preferred) return preferred
+  return [...pool].sort((a, b) => a.position.localeCompare(b.position))[0]
+}
+
+/**
+ * **按逻辑工序名去重收敛为一行**（issue #4886 的**健壮性**要求）——
+ * 这是「前后端可各自独立上线」的那道桥。
+ *
+ * 配套后端上线后 `GET /operation-positions` 每个逻辑工序名**只返回一行**；在它上线前
+ * （或读面回退）接口**仍可能返回同一逻辑名的多行**。前端不得因此渲染出重复行
+ * ⇒ 一律收敛成一行（规则见 {@link pickConvergedCell}）。
+ * ⚠️ 收敛后**保留那一行的 `id`** —— 它就是 `PUT /operation-positions/{id}` 的寻址键。
+ * 行序**保持服务端首次出现的顺序**（`Map` 插入序 = 服务端序，前端不重排）。
+ */
+const convergeByLogicalName = (cells: OperationPosition[]): OperationPosition[] => {
+  const byName = new Map<string, OperationPosition[]>()
+  cells.forEach((cell) => {
+    const name = logicalNameOf(cell)
+    byName.set(name, [...(byName.get(name) ?? []), cell])
+  })
+  return [...byName.values()].map(pickConvergedCell)
+}
 
 /**
  * 第一层「工序」的**车间分组**（issue #4677 = 设计 §4.1 元素②；**行业术语**，不是我们发明的词）。
@@ -166,33 +200,6 @@ const workshopRank = (group: string): number => {
   return i < 0 ? WORKSHOP_LABEL.length : i
 }
 
-/**
- * 第一层「工序」的列 = 矩阵里出现的部位 ∩ **部位词表**（issue #4677 = 设计 §4.3 的**列收窄**）。
- *
- * ⚠️ 为什么必须收窄：`布料` 是**销售形态**（卖布按米），不是窗帘的部位；迁移后矩阵里**仍必须有**
- * `裁剪 × 布料` 一格（V88 的**保命格**：存量未实例化布料单补生成需要它）⇒ 不收窄的话「布料」
- * 会继续当第 4 个部位列出来（36 格噪音）。**不得**把 `布料` 从读面响应里删掉 —— 它是
- * `variant_operation_id` 的载体，也是保命格。
- *
- * ⚠️ 与 {@link positionOptions}（「新建路线」/「新增工序」的**勾选项**）**不是同一份**：勾选项
- * 保留矩阵里带出的全部部位（含 `布料`，#4556 的既有能力，**不放宽**）—— 收窄的只有**列**。
- */
-const matrixColumnsOf = (operations: OperationPosition[]): string[] => {
-  const present = new Set(operations.map((c) => c.position))
-  return POSITION_DOMAIN.filter((p) => present.has(p))
-}
-
-/**
- * 布料单**定价入口**要列的两道工序（issue #4677 硬要求；V88 起布料主线 = `裁剪` + `打包`）。
- *
- * 判据不是「名字里有布料」也不是「矩阵里有没有布料列」—— 是**布料单实际会实例化的两道活**：
- * `裁剪`（工序层，按部位做）与 `打包`（交付层，一列价）。
- */
-const FABRIC_SHEET_OPERATIONS = ['裁剪', '打包']
-
-/** 布料单的价格落在**哪一格**：`裁剪 × 布料` 与 `打包 × 布料`（V88 逐字保留的两格） */
-const FABRIC_SHEET_POSITION = '布料'
-
 const inputCls =
   'h-9 w-full rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400'
 
@@ -210,10 +217,13 @@ const SOURCE_META: Record<ProductionSource, { label: string; className: string }
 /**
  * 工序作用域两档（V67，issue #4384 A1）——**闭词表**，与后端 `ProductionOperationCommandService`
  * 的校验、迁移 V67 的列注释同口径（前端不发明第三值）。
+ *
+ * ⚠️ **取值（`position` / `set`）是后端契约，一字不动**；变的只是**展示名**（issue #4886：
+ * 配置面不再出现部位概念 ⇒ 原「部位级 / 套级」改叫「按件 / 按套」，语义不变）。
  */
 const SCOPE_META: Record<ProductionScope, { label: string; title: string }> = {
-  position: { label: '部位级', title: '每部位一次（如布帘一道、纱帘一道）' },
-  set: { label: '套级', title: '每套窗一次（一套「布 + 纱」只做一次）' },
+  position: { label: '按件', title: '每件各做一次（不按套去重）' },
+  set: { label: '按套', title: '每套窗只做一次（一套「布 + 纱」只做一次）' },
 }
 const SCOPE_ORDER: ProductionScope[] = ['position', 'set']
 
@@ -500,18 +510,16 @@ function ReadinessStep({
  * 且 web 不得渲染）⇒ `libraryByName` 按逻辑名建键**能查到**，`resolved` 因此**变好**
  * （改前库按变体名索引、主线存逻辑名 ⇒ 几乎恒为 `false`）。仍然**不猜**：查不到就只显示名字，不发明单位。
  *
- * ⚠️ **「必完」的判定来源是矩阵**（issue #4622 补口②）：`must_finish` 按矩阵**聚合**（复用主表那套
- * 三态：全部必完 / 部分部位必完 / 无）。原口径读的是 `libraryByName.get(name)?.is_must_finish`
- * —— 库按**变体名**索引，而主线存的是**逻辑名** ⇒ 查不到 ⇒ 那枚「必完」标记对逻辑名几乎永远
- * 不显示（只有 `外帘装袋` 这类部位无关工序才显示）。
+* ⚠️ **「必完」的判定来源是价目表**（issue #4622 补口②；issue #4886 起收敛为**布尔**）：
+* 原口径读的是 `libraryByName.get(name)?.is_must_finish` —— 库按**变体名**索引，而主线存的是
+* **逻辑名** ⇒ 查不到 ⇒ 那枚「必完」标记对逻辑名几乎永远不显示。
  * `is_must_finish`（库口径）只剩一个用途：{@link ProcessConfigPage} 的「一道必完工序都没有」预检
  * （它自带 `resolved` 门禁，口径未动）。
  *
- * ⚠️ **本口径不含单价**（issue #4583 用户裁定）：单价是**计件工资**口径，属「工序项 / 部位价目」
- * 那一屏的事；而这里能拿到的只有**工序库单价**，真正生效的价是**部位价目矩阵**的格价
- * （`矩阵价 ?? 工序库价`，见 `ProcessingOrderService.buildRoute`）⇒ 显示它有误导性。
+* ⚠️ **本口径不含单价**（issue #4583 用户裁定）：单价是**计件工资**口径，属「工艺项」那一屏的事；
+* 而这里能拿到的只有**工序库单价**，真正生效的价是价目行上的价 ⇒ 显示它有误导性。
  * 且「显示与否」曾取决于「逻辑名与变体名是否恰好一致」（`外帘打卷`/`外帘装袋`/`外帘发货`
- * 三种部位同名才显示，其余 6 道不显示）⇒ **统一不显示**。
+ * 只有那三处逻辑名与库口径名恰好同名时才显示，其余 6 道不显示）⇒ **统一不显示**。
  */
 interface StepView {
   seq: number
@@ -520,8 +528,8 @@ interface StepView {
   unit?: string | null
   /** 库口径必完（**只给「一道必完工序都没有」预检用**；chip 上的必完见 `must_finish`） */
   is_must_finish?: boolean
-  /** **矩阵**口径的必完三态（issue #4622 补口②）：`null` = 矩阵里查不到这道工序 ⇒ 不显示（未知） */
-  must_finish: { partial: boolean; positions: string[] } | null
+/** **价目表**口径的必完（issue #4622 补口② / #4886）：`null` = 查不到这道工序 ⇒ 不显示（未知） */
+must_finish: boolean | null
   /** 工序库里有这条（有库口径元数据） */
   resolved: boolean
   /** 矩阵里没有它（停用/被删/名字是变体名）⇒ 保存必被后端拒，但页面要先让人看见 */
@@ -529,68 +537,132 @@ interface StepView {
 }
 
 /**
- * 部位价目**格**（issue #4588）：一屏一张表的单元格 —— 三态 + 格内就地改价 + 「不做 ⇄」。
+ * 工序**单价格**（issue #4886）：一屏一张表里该工序的**唯一一个价** —— 就地可改。
  *
  * 三态**互斥**且可区分（既有判据，重做时不许丢）：
  * - `priced` ⇒ `¥x.xx`（`0` 是**真价**，照显示 `¥0.00` —— ≠「未定价」）；
- * - `unpriced` ⇒ 「未定价」（`applicable=true` 但 `unit_price=null`，是**待办**、不是 0 元）；
- * - `na` ⇒ 「不做」（`applicable=false`，**明确不做**，不是漏配）。
+ * - `unpriced` ⇒ 「未定价」（`unit_price = null`，是**待办**、不是 0 元；**绝不**回落工序库单价）；
+ * - `na` ⇒ 「不做」（`applicable = false` 的历史残留形态，**只读**呈现 —— 做/不做开关已随
+ *   「一道工序一个价」退场）。
  *
- * 两个写动作**同一端点、不同 body**（契约 #4587 ② 是**部分更新** ⇒ body **只带**变了的键）：
- * 改价 ⇒ `{unit_price}`（清空 = `null` = 改回未定价）；「做 ⇄ 不做」⇒ `{applicable}`。
- * 失败理由**就地逐条**展示（后端 `error.details[].message`，**不**吞成一句「保存失败」）。
+ * 写动作**一个端点、一个 body**：改价 ⇒ `PUT /operation-positions/{id}` `{unit_price}`
+ * （清空 = `null` = 改回未定价）。失败理由**就地逐条**展示
+ * （后端 `error.details[].message`，**不**吞成一句「保存失败」）。
  */
-
-/**
- * 「做 / 不做」控件（issue #4665 —— 用户实测「无法删除，而且没有地方设置做于不做」）。
- *
- * <p>改前：做/不做只藏在**主表格**的裸 `⇄` 图标里（只有 `title`/`aria-label` 提示）——
- * 而商家此刻在**抽屉**里（删除弹框让他「先去设为不做」），抽屉里根本没有这个开关 ⇒ 死路。
- * 现在**两处共用这一个控件**（主表格的格 + 抽屉里该工序的各部位条目）：
- * ① **有可见文字**（`做` / `不做`），不再靠 hover 才知道它是什么；
- * ② 文案就是**动作**（点一下会发生什么），三态语义不变（`不做` / `未定价` / `¥x.xx`）。</p>
- */
-function ApplicableToggle({
-  applicable,
-  label,
-  testId,
-  disabled,
-  onToggle,
+function OperationPriceCell({
+  operation,
+  cell,
+  editing,
+  draft,
+  busy,
+  reasons,
+  onStartEdit,
+  onDraftChange,
+  onSave,
+  onCancel,
 }: {
-  applicable: boolean
-  /** 可读的部位名（`布帘` / `布帘 / 帘头`）—— 进 aria-label 与 title */
-  label: string
-  testId: string
-  disabled?: boolean
-  onToggle: () => void
+  operation: string
+  cell?: OperationPosition | null
+  editing: boolean
+  draft: string
+  busy: boolean
+  reasons: string[]
+  onStartEdit: () => void
+  onDraftChange: (v: string) => void
+  onSave: () => void
+  onCancel: () => void
 }) {
-  const action = applicable ? '改成不做这道工序' : '改成做这道工序'
+  const state = cellState(cell)
+  const hasPrice = state === 'priced'
   return (
-    <button
-      type="button"
-      aria-label={`${label} ${action}`}
-      title={`${label}：点一下${action}`}
-      data-testid={testId}
-      data-applicable={applicable ? 'yes' : 'no'}
-      disabled={disabled}
-      onClick={onToggle}
+    <div
+      data-testid={`operation-price-${operation}`}
+      data-state={state}
+      title={
+        state === 'na'
+          ? `「${operation}」当前配置为不做这道工序`
+          : state === 'unpriced'
+            ? `「${operation}」还没定价（≠ ¥0.00）`
+            : `「${operation}」计件单价（给工人） ${money(cell?.unit_price)}`
+      }
       className={cn(
-        'shrink-0 rounded border px-1.5 py-0.5 text-xs leading-none transition-colors disabled:opacity-50',
-        applicable
-          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-          : 'border-neutral-300 bg-neutral-50 text-neutral-500 hover:bg-neutral-100',
+        state === 'na' ? 'text-neutral-400' : state === 'unpriced' ? 'text-amber-700' : 'text-neutral-900',
       )}
     >
-      {applicable ? '做' : '不做'}
-    </button>
+      {state === 'na' ? (
+        <span>不做</span>
+      ) : editing ? (
+        <span className="flex items-center gap-1.5">
+          <input
+            value={draft}
+            inputMode="decimal"
+            aria-label={`${operation} 计件单价（给工人）`}
+            data-testid={`operation-price-input-${operation}`}
+            disabled={busy}
+            onChange={(e) => onDraftChange(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && onSave()}
+            className={cn(
+              'h-8 w-24 rounded border bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/15',
+              reasons.length > 0 ? 'border-red-300 focus:border-red-400' : 'border-neutral-300 focus:border-primary-500',
+            )}
+          />
+          <button
+            type="button"
+            aria-label="保存计件单价"
+            data-testid={`operation-price-save-${operation}`}
+            disabled={busy}
+            onClick={onSave}
+            className="rounded p-1 text-primary-600 hover:bg-neutral-100 disabled:opacity-50"
+          >
+            <Check className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="取消"
+            data-testid={`operation-price-cancel-${operation}`}
+            disabled={busy}
+            onClick={onCancel}
+            className="rounded p-1 text-neutral-400 hover:bg-neutral-100 disabled:opacity-50"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </span>
+      ) : (
+        <span className="flex items-center gap-1.5">
+          <span>{state === 'unpriced' ? '未定价' : money(cell?.unit_price)}</span>
+          <button
+            type="button"
+            aria-label={`编辑「${operation}」计件单价（给工人）`}
+            data-testid={`operation-price-edit-${operation}`}
+            onClick={onStartEdit}
+            className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        </span>
+      )}
+      {editing && reasons.length > 0 && (
+        <ul className="mt-1 space-y-0.5 text-xs text-red-600" data-testid={`operation-price-reasons-${operation}`}>
+          {reasons.map((r, i) => (
+            <li key={i}>{r}</li>
+          ))}
+        </ul>
+      )}
+      {/* 编辑态下仍把「未定价 ≠ 0 元」写在旁边：清空输入框 = 改回未定价（不是 0 元） */}
+      {editing && (
+        <span className="mt-1 block text-[11px] text-neutral-400">
+          {hasPrice ? '清空 = 改回未定价（≠ 0 元）' : '填 0 表示真 0 元；清空 = 未定价'}
+        </span>
+      )}
+    </div>
   )
 }
 
 /**
  * 行尾「管理▸」入口（issue #4677 = 设计 §7 第 7 条约束②：**移到行上**、与格无关）。
  *
- * 两个分区共用：工序层（按部位三列）与打包发货层（一列价）**同一份抽屉**—— 抽屉的判据是
- * 逻辑工序名（`manageOp`），与「在哪个分区」无关。
+ * 两个分区共用：工序层与打包发货层**同一份抽屉** —— 抽屉的判据是逻辑工序名（`manageOp`），
+ * 与「在哪个分区」无关。
  */
 function ManageButton({
   operation,
@@ -606,7 +678,7 @@ function ManageButton({
       type="button"
       data-testid={`${testIdPrefix}-${operation}`}
       onClick={() => onOpen(operation)}
-      title="管理这道工序在各部位的设置：分组 / 单位 / 作用域 / 必完 / 停用 / 删除"
+      title="管理这道工序的设置：分组 / 单位 / 作用域 / 必完 / 停用 / 删除"
       className="rounded px-1.5 py-0.5 text-xs text-primary-700 hover:bg-neutral-100"
     >
       管理▸
@@ -614,148 +686,13 @@ function ManageButton({
   )
 }
 
-function PositionCell({
-  cell,
-  state,
-  editing,
-  draft,
-  busy,
-  reasons,
-  as = 'td',
-  onStartEdit,
-  onDraftChange,
-  onSave,
-  onCancel,
-  onToggleApplicable,
-}: {
-  cell: OperationPosition
-  state: 'na' | 'unpriced' | 'priced'
-  editing: boolean
-  draft: string
-  busy: boolean
-  reasons: string[]
-  /**
-   * 根元素（issue #4721 P2-1）。缺省 `td` = 主表的**格**；`div` 供**已经在 `<td>` 里**的
-   * 复用点（【布料单】小区）—— `<td>` 嵌 `<td>` 是**非法 DOM**，浏览器会按 HTML 解析规则
-   * 隐式闭合/重排（`jsdom` 不做纠错 ⇒ 单测绿而真实渲染可能不同 = 假绿）。
-   * 只换根元素：三态 / `data-testid` / 写面**一字不动**。
-   */
-  as?: 'td' | 'div'
-  onStartEdit: () => void
-  onDraftChange: (v: string) => void
-  onSave: () => void
-  onCancel: () => void
-  onToggleApplicable: () => void
-}) {
-  const key = `${cell.operation}-${cell.position}`
-  const hasPrice = state === 'priced'
-  const Root = as
-  return (
-    <Root
-      data-testid={`matrix-cell-${key}`}
-      data-state={state}
-      title={
-        state === 'na'
-          ? `${cell.position}不做「${cell.operation}」这道工序`
-          : state === 'unpriced'
-            ? `${cell.position}做「${cell.operation}」，但还没定价（≠ ¥0.00）`
-            : `${cell.position}「${cell.operation}」计件单价（给工人） ${money(cell.unit_price)}`
-      }
-      className={cn(
-        'py-2.5 pr-4',
-        // `align-top` 是**表格格**的对齐属性 ⇒ 只在 `td` 上加（`div` 上无意义）
-        as === 'td' && 'align-top',
-        state === 'na' ? 'text-neutral-400' : state === 'unpriced' ? 'text-amber-700' : 'text-neutral-900',
-      )}
-    >
-      {state === 'na' ? (
-        <span className="flex items-center gap-1.5">
-          <span>不做</span>
-          <ApplicableToggle
-            applicable={false}
-            label={key}
-            testId={`matrix-applicable-${key}`}
-            onToggle={onToggleApplicable}
-          />
-        </span>
-      ) : editing ? (
-        <span className="flex items-center gap-1.5">
-          <input
-            value={draft}
-            inputMode="decimal"
-            aria-label={`${key} 计件单价（给工人）`}
-            data-testid={`matrix-price-input-${key}`}
-            disabled={busy}
-            onChange={(e) => onDraftChange(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && onSave()}
-            className={cn(
-              'h-8 w-24 rounded border bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/15',
-              reasons.length > 0 ? 'border-red-300 focus:border-red-400' : 'border-neutral-300 focus:border-primary-500',
-            )}
-          />
-          <button
-            type="button"
-            aria-label="保存计件单价"
-            data-testid={`matrix-price-save-${key}`}
-            disabled={busy}
-            onClick={onSave}
-            className="rounded p-1 text-primary-600 hover:bg-neutral-100 disabled:opacity-50"
-          >
-            <Check className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            aria-label="取消"
-            data-testid={`matrix-price-cancel-${key}`}
-            disabled={busy}
-            onClick={onCancel}
-            className="rounded p-1 text-neutral-400 hover:bg-neutral-100 disabled:opacity-50"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </span>
-      ) : (
-        <span className="flex items-center gap-1.5">
-          <span>{state === 'unpriced' ? '未定价' : money(cell.unit_price)}</span>
-          <button
-            type="button"
-            aria-label={`编辑 ${key} 计件单价（给工人）`}
-            data-testid={`matrix-price-edit-${key}`}
-            onClick={onStartEdit}
-            className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
-          <ApplicableToggle
-            applicable
-            label={key}
-            testId={`matrix-applicable-${key}`}
-            onToggle={onToggleApplicable}
-          />
-        </span>
-      )}
-      {editing && reasons.length > 0 && (
-        <ul className="mt-1 space-y-0.5 text-xs text-red-600" data-testid={`matrix-price-reasons-${key}`}>
-          {reasons.map((r, i) => (
-            <li key={i}>{r}</li>
-          ))}
-        </ul>
-      )}
-      {/* 编辑态下仍把「未定价 ≠ 0 元」写在旁边：清空输入框 = 改回未定价（不是 0 元） */}
-      {editing && (
-        <span className="mt-1 block text-[11px] text-neutral-400">
-          {hasPrice ? '清空 = 改回未定价（≠ 0 元）' : '填 0 表示真 0 元；清空 = 未定价'}
-        </span>
-      )}
-    </Root>
-  )
-}
 
 /**
- * 抽屉里的一行 = 该逻辑工序在**若干部位**上的设置（按 `variant_operation_id` 去重）。
- * ⚠️ **一个变体可能服务多个部位**（`帘头` 会回落复用 `布帘` 的变体）⇒ 条目主标识 = **它服务的
- * 部位集合**，**不是**变体名（issue #4622：读面已不返回 `variant_name`，界面也不显示它）。
- * 元数据**逐字取自**矩阵行的 5 个新键（契约 #4587 ①）—— 前端**不推导**、不补默认值。
+ * 抽屉里的一行 = 该逻辑工序**落到工人端的那道工序**的设置（按 `variant_operation_id` 去重）。
+ *
+ * ⚠️ 条目主标识 = **逻辑工序名**（`manageOp`，issue #4886）—— 变体名（`布三边`）不上界面
+ * （issue #4622：读面也不返回它）。元数据**逐字取自**读面的 5 个键（契约 #4587 ①）——
+ * 前端**不推导**、不补默认值。
  */
 interface VariantView {
   id: string
@@ -763,54 +700,62 @@ interface VariantView {
   unit: string | null
   scope: ProductionScope
   is_must_finish: boolean
-  /** 它**服务的部位**（去重，矩阵列序）—— issue #4622 起这是条目主标识 */
-  positions: string[]
   /** 工序库里的 provenance；查不到 ⇒ `null` ⇒ **不渲染徽标**（静默 = 未知） */
   source: ProductionSource | null
   /**
-   * 本条目是**按逻辑名回退**认出来的（issue #4674 C）：它服务的格 `variant_operation_id`
-   * **未指向**该工序（NULL / 指向别处）⇒ 读面给不出变体 id，而**后端判据**（`variantNameOf`
-   * 按 `(逻辑名, 部位)` 反查）认得出它 ⇒ 两把尺不一致。
-   * ⇒ 前端**照样认**（与后端同一份口径、不静默空）但**显式提示**「这些格未关联到本工序」，
-   * 并把「接入部位 / 删除工序」两个出路摆在抽屉层（**不许只改文案掩盖不一致**）。
+   * 本条目是**按逻辑名回退**认出来的（issue #4674 C）：它的价目行 `variant_operation_id`
+   * **未指向**该工序（NULL）⇒ 读面给不出变体 id，而**后端判据**（`variantNameOf` 按逻辑名反查）
+   * 认得出它 ⇒ 两把尺不一致。
+   * ⇒ 前端**照样认**（与后端同一份口径、不静默空）但**显式提示**「这些价目行未关联到本工序」。
    */
   unlinked: boolean
   /**
-   * **指向别处**的格（issue #4674 C 的形态②）：格自带的 `variant_operation_id` 与
-   * 「按逻辑名认出来的那道工序」**不是同一个** ⇒ 这一格属于**别的**工序。
+   * **指向别处**的价目行（issue #4674 C 的形态②）：行自带的 `variant_operation_id` 与
+   * 「按逻辑名认出来的那道工序」**不是同一个** ⇒ 这一行属于**别的**工序。
    * 这种行**只如实报出、不给写面**（对它 PUT/DELETE 就是改另一道工序）。
    */
   foreign?: boolean
 }
 
 /**
- * 必完标记的三态（issue #4610，用户裁定「**必完标记还是得在这里展示**」—— 它是完工门槛，
- * 要一眼看得见；issue #4622 起**主表行尾与主线 chip 共用**这一份口径）。
- *
- * 数据来源 = 矩阵读面每行**已有**的 `is_must_finish`（契约 #4587 ① 的 5 键之一），
- * **不新造字段、不另拉接口**；口径沿用该格的「各格不一致时逐个列出、**不静默取第一个**」纪律：
- * ① 有变体元数据的格**全部**必完 ⇒ `必完`；
- * ② **只有部分部位**必完 ⇒ `必完（部分部位）`，`title` 列出**具体哪些部位**；
- * ③ 一道都没有（或读面没给该键）⇒ `null` ⇒ **不显示**（不得发明「非必完」这类新词）。
+ * 一道工序的三态：明确不做（`applicable=false`）/ 没定价 / 有价 —— 三态**不同形**
+ * （`null` 价**绝不**渲染成 `¥0.00`）。顶层函数（不闭包）⇒ 单价格组件也能用同一份判据。
  */
-const mustFinishOf = (row: { cells: Map<string, OperationPosition> }) => {
-  const yes: string[] = []
-  const no: string[] = []
-  row.cells.forEach((cell, position) => {
-    if (cell.is_must_finish == null) return
-    if (cell.is_must_finish) yes.push(position)
-    else no.push(position)
-  })
-  return yes.length === 0 ? null : { partial: no.length > 0, positions: yes }
+const cellState = (cell?: OperationPosition | null): 'na' | 'unpriced' | 'priced' => {
+  if (!cell) return 'unpriced'
+  if (cell.applicable === false) return 'na'
+  return cell.unit_price == null ? 'unpriced' : 'priced'
 }
 
-/** 必完标记的展示文案（三态共用一份 —— 主表行尾与主线 chip 各拼一份必然漂移） */
-const mustFinishLabel = (mf: { partial: boolean }) => `必完${mf.partial ? '（部分部位）' : ''}`
+/**
+ * 必完口径（issue #4610，用户裁定「**必完标记还是得在这里展示**」—— 它是完工门槛，
+ * 要一眼看得见；主表行尾与主线 chip **共用**这一份）。
+ *
+ * 数据来源 = 读面每行**已有**的 `is_must_finish`（契约 #4587 ① 的 5 键之一），
+ * **不新造字段、不另拉接口**。
+ * ⚠️ issue #4886：**一道工序一个价**之后，原「必完（部分子项）」那种多档聚合三态**不再存在**
+ * ⇒ 判据**只看该工序自己那一行**的 `is_must_finish`（`null` = 读面没给 ⇒ **不显示**，
+ * 不得发明「非必完」这类新词）。
+ */
+const mustFinishOf = (cell?: OperationPosition | null): boolean => cell?.is_must_finish === true
 
-const mustFinishTitle = (mf: { partial: boolean; positions: string[] }) =>
-  mf.partial
-    ? `必完的部位：${mf.positions.join(' / ')}（其余部位不要求必完）`
-    : '必完：缺这道工序不能打包（部位级：每个部位都要做完）'
+/** 必完标记的展示文案（主表行尾与主线 chip 共用一份 —— 各拼一份必然漂移） */
+const mustFinishLabel = () => '必完'
+
+/** 必完标记的 title（主表行尾与主线 chip 共用一份） */
+const mustFinishTitle = () => '必完：缺这道工序不能打包'
+
+/**
+ * 价目表的一行 = **一道逻辑工序**（issue #4886）。
+ *
+ * `cells` 是**单元素** Map（键 = 该行原属的 `position`），只为「按行取元数据」的既有调用点保留
+ * 同形；新代码请直接用 `cell`（`positions` 已不是这一层的概念）。
+ */
+interface MatrixRow {
+  operation: string
+  cell: OperationPosition
+  cells: Map<string, OperationPosition>
+}
 
 export default function ProcessConfigPage() {
   // ── 只读面 ──
@@ -829,7 +774,7 @@ export default function ProcessConfigPage() {
    * 两层分区读面（`GET /operation-layers`）**失败**的显式面（issue #4729 = 独立验收 #4677 的 P2-10）。
    *
    * ⚠️ 失败**必须显式报错**：静默置空 ⇒ 「服务端没给行」的兜底分支会把**有价**的交付工序
-   * 渲染成 `no_applicable_position`（「未设置（没有部位设为「做」）」）—— 那是**用假话代替报错**
+   * 渲染成 `no_applicable_position`（「未设置」）—— 那是**用假话代替报错**
    * （读面一挂，商家以为「没设置」，实际是没读到）。
    */
   const [layersError, setLayersError] = useState('')
@@ -845,14 +790,14 @@ export default function ProcessConfigPage() {
   const [search, setSearch] = useState('')
 
   // ── 矩阵格写面（issue #4588；契约 #4587 ②）──
-  /** 正在编辑的格（键 = `工序-部位`）；`null` = 没有格在编辑态 */
+  /** 正在编辑的工序（键 = 逻辑工序名）；`null` = 没有行在编辑态 */
   const [cellEditing, setCellEditing] = useState<string | null>(null)
   const [cellDraft, setCellDraft] = useState('')
   const [cellBusy, setCellBusy] = useState(false)
   /** 保存被拒的**逐条**理由（按格就地展示，不吞成一句「保存失败」） */
   const [cellReasons, setCellReasons] = useState<{ key: string; items: string[] } | null>(null)
 
-  // ── 「管理▸」抽屉（该工序在**各部位**的设置维护面：分组 / 单位 / 作用域 / 必完 / 停用 / 删除）──
+  // ── 「管理▸」抽屉（该工序的设置维护面：分组 / 单位 / 作用域 / 必完 / 停用 / 删除）──
   const [manageOp, setManageOp] = useState<string | null>(null)
   /**
    * 第一层【工序】的**车间折叠**状态（issue #4677 = 设计 §4.1 元素②）。
@@ -893,7 +838,7 @@ export default function ProcessConfigPage() {
   /** 「添加条件」表单是否展开（就地展开在该工序的抽屉里，**不是**弹窗、**不是**独立表） */
   const [conditionFormOpen, setConditionFormOpen] = useState(false)
   /**
-   * 添加条件只问**两件事**（用户裁定：商家不该填「触发类型 / 触发值 / 部位限定 / 动作 / 目标工序 /
+   * 添加条件只问**两件事**（用户裁定：商家不该填「触发类型 / 触发值 / 限定范围 / 动作 / 目标工序 /
    * 插入锚点 / 优先级」七个字段）：**什么时候**（种类 + 取值）与**做还是不做**；
    * 「插在哪道之后」只在「做」时出现，且**带默认值**（见 {@link anchorDefaultFor}，别让商家猜）。
    * 目标工序 = 当前抽屉那道工序（不需要问）。`priority` 交给后端默认顺序（界面不再有这个概念）。
@@ -944,34 +889,14 @@ export default function ProcessConfigPage() {
   // ── 弹窗 ──
   const [newRouteOpen, setNewRouteOpen] = useState(false)
   /**
-   * 新建路线：默认**基线三部位**全适用（收窄适用范围就取消勾选；至少留一个）。
-   * ⚠️ 默认**不含** `布料`（与后端 `DEFAULT_POSITIONS` 同口径）：路线命中是
-   * `(is_default DESC, id)` **首个命中**，而新路线的 id 是 UUID（恒小于种子 `rt-v79-01`）
-   * ⇒ 勾上 `布料` 会**顶掉**种子自带的 `布料工序路线`，让布料单走窗帘主线（其工序对布料
-   * `applicable=false` ⇒ 被适用性矩阵滤空 = 零/少工序加工单）。`布料` 因此是**按需勾选**的第 4 项。
+   * 新建路线：**只问名字**（issue #4886 —— 路线适用范围随旧配置面一起退场）。
+   * 路线命中仍是 `(is_default DESC, id)` 首个命中，但不再由前端挑适用范围。
    */
-  const [newRoute, setNewRoute] = useState<{ name: string; positions: string[] }>({
-    name: '',
-    positions: POSITION_DOMAIN,
-  })
+  const [newRoute, setNewRoute] = useState<{ name: string }>({ name: '' })
   const [newOpOpen, setNewOpOpen] = useState(false)
   const [newOp, setNewOp] = useState({ name: '', group_name: '', unit: '', unit_price: '' })
-  /**
-   * 「新增」对话框里**工序**那一支的「适用部位」（issue #4614，形态裁定 A）。
-   *
-   * 默认 = **基线三部位**（与「新建路线」的适用帘种默认一致）；勾选项 = {@link positionOptions}
-   * （矩阵带出的部位 ∪ 基线，**不写死第二份**）。一个都不勾 ⇒ 本地预检拦下（不发请求）——
-   * 因为「没勾部位」= 建出来在「工艺项」表里看不到它、也没法定价（原病原地复发）。
-   */
-  const [newOpPositions, setNewOpPositions] = useState<string[]>(POSITION_DOMAIN)
   /** 新增**工序**的**就地**理由（本地预检；照 {@link newOptionReasons} 那套形态逐条展示） */
   const [newOpReasons, setNewOpReasons] = useState<string[]>([])
-  // ── 存量孤儿接入（issue #4614 范围补口）──
-  const [orphanOpen, setOrphanOpen] = useState(false)
-  /** 每道孤儿工序勾的**适用部位**（初值 = 基线三部位，与新增工序同一份值域口径） */
-  const [orphanPicks, setOrphanPicks] = useState<Record<string, string[]>>({})
-  const [orphanReasons, setOrphanReasons] = useState<string[]>([])
-  const [orphanBusy, setOrphanBusy] = useState(false)
   /**
    * 「新增」对话框的**类型二选一**（issue #4570，用户裁定：「只要能新增工序项就行了，并可以设置为
    * 特殊选项或者工序，也支持设置单价」）。默认 `operation`（工序 —— 既有链路逐字不变）。
@@ -1028,13 +953,17 @@ export default function ProcessConfigPage() {
     }
     setTemplates(templateRes.status === 'fulfilled' ? templateRes.value.data?.data ?? [] : [])
     if (positionsRes.status === 'fulfilled') {
-      // 矩阵 = **全部**矩阵格（含 `scope='set'` 的交付环节格）—— 抽屉的做/不做与改价都按格的
-      // `id` 寻址，而两层分区读面的 `delivery` 段是**聚合行**（9 键、无 `id`）⇒ 写面必须靠这里。
-      setMatrix(positionsRes.value.data?.data ?? [])
+      // 价目行 = **全部**行（含 `scope='set'` 的交付环节行）—— 改价按行的 `id` 寻址，而两层分区
+      // 读面的 `delivery` 段是**聚合行**（无 `id`）⇒ 写面必须靠这里。
+      // ⚠️ issue #4886：`logical_name ?? operation` 兜底归一在**入口一处**做，
+      // 下游一律按 `operation` = 逻辑工序名读（不把 fallback 散落到每个消费点）。
+      setMatrix(
+        (positionsRes.value.data?.data ?? []).map((c) => ({ ...c, operation: logicalNameOf(c) })),
+      )
       setMatrixError('')
     } else {
       setMatrix([])
-      setMatrixError('部位价目加载失败，请稍后重试')
+      setMatrixError('工序单价加载失败，请稍后重试')
     }
     // 两层分区（issue #4677）：`operations` / `delivery` 两段 + 「打包发货」的一列价
     // （`price_state` 逐字用服务端聚合 —— 前端不重算，见 §4.5 方案 A 的 3 条规则）
@@ -1147,7 +1076,7 @@ export default function ProcessConfigPage() {
     return m
   }, [libraryOps])
   /**
-   * 部位价目表里出现过的**逻辑工序名** —— 它同时是**主线取值域**与「工序是否存在」的**唯一权威**
+   * 价目表里出现过的**逻辑工序名** —— 它同时是**主线取值域**与「工序是否存在」的**唯一权威**
    * （issue #4622 补口①）。⚠️ 原口径是「工序库 ∪ 矩阵」并集，而工序库键是**变体名**
    * （`精裁-布`）⇒ 主线里残留的变体名会被误判成「存在」而不报，后端（按逻辑名判）却会把它
    * 当未知名 ⇒ **同一件事两边判得不一样**。
@@ -1155,15 +1084,15 @@ export default function ProcessConfigPage() {
   const matrixOps = useMemo(() => new Set(matrix.map((c) => c.operation)), [matrix])
 
   /**
-   * **孤儿工序**（issue #4614 范围补口）：工序库里有、但**没有任何矩阵格指向它**。
+   * **孤儿工序**（issue #4614 范围补口）：工序库里有、但**没有任何价目行指向它**。
    *
    * <p>用户实测原话：「我现在在**工艺项**中看不到 测试22，但是在**路线编辑的下拉列表**能看到，是 bug」
-   * —— 两边口径不一致（「工艺项」按矩阵渲染、「路线编辑」下拉按工序库渲染）。#4609 把下拉也改成读矩阵后
-   * 孤儿**两边都看不到**（彻底不可达）⇒ 必须给存量孤儿一条**接入路径**。</p>
+   * —— 两边口径不一致（「工艺项」按价目行渲染、「路线编辑」下拉按工序库渲染）。</p>
    *
-   * <p>判据用 **`variant_operation_id`**（读面按后端的 `variantNameOf` 反查出来的「该格落地变体」）
-   * 而**不是**名字 —— 变体名（`精裁-布`）与逻辑名（`精裁`）不是同一把尺，前端也没有归一表
-   * （归一只在后端一份，见 `normalizeOperationName`）。</p>
+   * <p>判据用 **`variant_operation_id`**（读面按后端的 `variantNameOf` 反查出来的「该行落地变体」）
+   * 而**不是**名字。⚠️ issue #4886：它的**出路**（接入弹窗）已随旧配置面退场 ⇒ 现在只作**只读提示**
+   * （见渲染处的 `matrix-orphan-hint`）；配套后端「一道工序一行」落地后，新建工序即自带价目行，
+   * 孤儿只剩存量数据。</p>
    */
   const orphanOps = useMemo(() => {
     const referenced = new Set(
@@ -1182,10 +1111,10 @@ export default function ProcessConfigPage() {
   /**
    * **交付环节**（`scope='set'`）的工序名集合 —— 判据是**既有** `scope`（**不新造概念**）。
    *
-   * ⚠️ **本集合只用于「从矩阵行里把交付格摘出去」**（列收窄 / 工序层成行），
+   * ⚠️ **本集合只用于「从价目行里把交付环节摘出去」**（工序层成行），
    * **不是**「打包发货层有哪些行」的判据 —— 那一层由**服务端 `delivery` 段**给行
-   * （后端按**工序库**的 `scope='set'` 行分区，**不看格**，issue #4729）。
-   * 在这里按格造行 = 零矩阵格的交付工序**整行消失**（#4674 形态：表格里有、抽屉里空、无处可删）。
+   * （后端按**工序库**的 `scope='set'` 行分区，**不看行**，issue #4729）。
+   * 在这里按行造行 = 零价目行的交付工序**整行消失**（#4674 形态：表格里有、抽屉里空、无处可删）。
    */
   const deliveryOps = useMemo(
     () => new Set(matrix.filter((c) => c.scope === 'set').map((c) => c.operation)),
@@ -1193,74 +1122,30 @@ export default function ProcessConfigPage() {
   )
 
   /**
-   * 第一层【工序】的列 = 矩阵里出现的部位 ∩ **部位词表**（设计 §4.3 的**列收窄**）——
-   * `布料` 不再当第 4 个部位列出来（它是**销售形态**，不是窗帘的部位）。
+   * 行 = **一道逻辑工序一个单价**（issue #4886）。
    *
-   * ⚠️ **只收窄列，不动数据**：`布料` 的格仍在 `matrix` 里（`variant_operation_id` 的载体、
-   * V88 的保命格）⇒ 孤儿判据（#4614）与「新建路线 / 新增工序」的勾选项（{@link positionOptions}）
-   * **逐字不变**。
+   * ⚠️ 先按逻辑工序名**去重收敛**（{@link convergeByLogicalName}）—— 配套后端未上线时读面
+   * 可能仍返回同一逻辑名的多行；收敛后每行恰好持有**那一行**（`cell`），`cells` 只为既有
+   * 「按行取元数据」的调用点保留同形（单元素 Map）。
+   * **保持服务端顺序**（`Map` 插入序 = 首次出现顺序），前端**不重排**。
+   * ⚠️ **不过滤** `applicable=false` 的行 —— 「明确不做」与「没定价」必须在界面上可区分。
    */
-  const matrixColumns = useMemo(
-    () => matrixColumnsOf(matrix.filter((c) => !deliveryOps.has(c.operation))),
-    [matrix, deliveryOps],
-  )
-
-  /** 列 = 闭词表里**数据里真有**的部位 + 未知部位（追加在后；不丢数据） */
-  const positionColumns = useMemo(() => {
-    const present = new Set(matrix.map((c) => c.position))
-    return [
-      ...POSITION_DOMAIN.filter((p) => present.has(p)),
-      ...[...present].filter((p) => !POSITION_DOMAIN.includes(p)),
-    ]
-  }, [matrix])
-  /**
-   * 「新建路线」的**部位勾选项** = {@link positionColumns}（与部位价目矩阵**同源**）
-   * ⇒ `布料` 等新增部位**自动**可选（issue #4556：原来这里直接用 `POSITION_DOMAIN`，于是
-   * 矩阵读面看得见 `布料`、写面却建不出它）；矩阵读面失败时退回基线三部位（**不是**空列表 ——
-   * 否则读面一挂就连路线都建不出来）。
-   */
-  const positionOptions = useMemo(
-    () => (positionColumns.length > 0 ? positionColumns : POSITION_DOMAIN),
-    [positionColumns],
+  const matrixRows = useMemo<MatrixRow[]>(
+    () =>
+      convergeByLogicalName(matrix).map((cell) => ({
+        operation: cell.operation,
+        cell,
+        cells: new Map([[cell.position, cell]]),
+      })),
+    [matrix],
   )
 
   /**
-   * **跨形态勾选**（issue #4556 产品裁定 (a)；后端机制跟单 #4563）：既勾了基线帘种部位、
-   * 又勾了基线**之外**的部位（如 `布料`）。命中 ⇒ 就地提示。
-   *
-   * 为什么必须提示（读码实测的机制链）：路线命中是 `(is_default DESC, id ASC)` **首个命中**，
-   * 而新路线的 id 是 UUID（十六进制字符恒小于种子 `rt-v79-01`）⇒ 这条跨形态路线会**顶掉**
-   * 系统自带的布料专用路线 ⇒ 布料单改走窗帘主线，而窗帘各道工序对布料 `applicable=FALSE`
-   * ⇒ 被适用性矩阵滤掉 ⇒ **丢工序**（V79 只留 `配料`/`打包` 对布料适用）。
-   *
-   * 判据**不写死 `布料`**：以 `POSITION_DOMAIN`（基线帘种）为参照 ⇒ 将来新增第 5 个部位自动落入本提示。
+   * 某道工序在价目读面里的**那一行**（issue #4886：一屏一行一道工序）。
+   * `null` = 该工序没有价目行（「打包发货」层的必完回落服务端 `is_must_finish`）。
    */
-  const mixedFormPick = useMemo(() => {
-    const curtain = newRoute.positions.filter((p) => POSITION_DOMAIN.includes(p))
-    const others = newRoute.positions.filter((p) => !POSITION_DOMAIN.includes(p))
-    if (curtain.length === 0 || others.length === 0) return null
-    return { curtainText: curtain.join(' / '), othersText: others.join(' / ') }
-  }, [newRoute.positions])
-
-  /**
-   * 行 = 逻辑工序（**保持服务端顺序**：`Map` 的插入顺序即首次出现顺序）。
-   * ⚠️ **不过滤** `applicable=false` 的格 —— 「明确不做」与「没定价」必须在界面上可区分。
-   */
-  const matrixRows = useMemo(() => {
-    const byOp = new Map<string, Map<string, OperationPosition>>()
-    matrix.forEach((cell) => {
-      if (!byOp.has(cell.operation)) byOp.set(cell.operation, new Map())
-      byOp.get(cell.operation)!.set(cell.position, cell)
-    })
-    return [...byOp.entries()].map(([operation, cells]) => ({ operation, cells }))
-  }, [matrix])
-
-  /**
-   * 某道工序在矩阵里的**全部格**（按行键取）—— 打包发货层的「必完」聚合要用它
-   * （与 `matrixRows` 同一份口径：按**逻辑工序名**取，不看格的关联键）。
-   */
-  const matrixCellsByOp = useCallback(
-    (operation: string) => matrixRows.find((r) => r.operation === operation)?.cells ?? new Map(),
+  const matrixRowCell = useCallback(
+    (operation: string) => matrixRows.find((r) => r.operation === operation)?.cell ?? null,
     [matrixRows],
   )
 
@@ -1268,9 +1153,9 @@ export default function ProcessConfigPage() {
    * 「目标工序 / 插入锚点」下拉的取值域 = **逻辑工序名**（issue #4570）。
    *
    * ⚠️ 口径：`production_route_rules.operation` / `after_operation` 存的是**逻辑工序名**
-   * （`精裁` / `三边`），而 `production_operations.name` 是**库口径**（带部位后缀 `精裁-布`）
+   * （`精裁` / `三边`），而 `production_operations.name` 是**库口径**（旧名 `精裁-布`）
    * —— 两者不是同一把尺（本页 `stepView` 的 `resolved` 判据早已按此区分）。
-   * ⇒ 本页唯一**已有**的逻辑名来源就是部位价目矩阵的行键（`GET /operation-positions`，
+   * ⇒ 本页唯一**已有**的逻辑名来源就是价目表的行键（`GET /operation-positions`，
    * 服务端顺序）⇒ 直接复用它，**不新造第二份工序名清单**、不重排、不拼写。
    */
   const logicalOps = useMemo(() => matrixRows.map((r) => r.operation), [matrixRows])
@@ -1298,13 +1183,6 @@ export default function ProcessConfigPage() {
     [matrixRows, deliveryOps],
   )
 
-  /** 一格三态：明确不做（applicable=false）/ 没定价 / 有价 —— 三态**不同形** */
-  const cellState = (cell?: OperationPosition): 'na' | 'unpriced' | 'priced' => {
-    if (!cell) return 'unpriced'
-    if (cell.applicable === false) return 'na'
-    return cell.unit_price == null ? 'unpriced' : 'priced'
-  }
-
   /** 一行里出现过的元数据值（去重、保序、剔除空值）—— 「不许静默取第一个」的公共值口径 */
   const distinctMeta = (
     row: { cells: Map<string, OperationPosition> },
@@ -1324,7 +1202,7 @@ export default function ProcessConfigPage() {
    * 顺序按 {@link WORKSHOP_LABEL}（裁剪 → 车位 → 后整 → 质检 → 其他），认不出的组**照原样追加在后**。
    */
   const workshopGroups = useMemo(() => {
-    const byGroup = new Map<string, { operation: string; cells: Map<string, OperationPosition> }[]>()
+    const byGroup = new Map<string, MatrixRow[]>()
     operationsRows.forEach((row) => {
       const groups = distinctMeta(row, (c) => c.group)
       const key = groups.length > 0 ? groups.join(' / ') : ''
@@ -1379,32 +1257,6 @@ export default function ProcessConfigPage() {
     return [...byOp.values()].map((r) => ({ ...r, cells: cellsByOp.get(r.operation) ?? [] }))
   }, [deliveryAgg, matrix])
 
-  /**
-   * 🔴 **布料单定价入口**（issue #4677 的硬要求）：`裁剪` + `打包` **各一行、一列价**。
-   *
-   * <p>病根（#4677 评论逐字）：V88 保留了 `裁剪 × 布料` **保命格**（存量未实例化布料单补生成
-   * 需要它），而两层界面的列 = `布帘 / 纱帘 / 帘头`（**不含布料**）⇒ 那个格**不可见**
-   * ⇒ 布料单的 `裁剪` 价**没有定价入口**。</p>
-   *
-   * <p>落点选择（**取舍**，见 PR 描述）：**不用**「工序库行价」（方案①）—— 实测
-   * `ProcessingOrderService.buildRoute` 的回落条件 = 「格存在 + `applicable=TRUE` + 价 `NULL`」，
-   * 且回落值是工序库 `unit_price`（`NOT NULL DEFAULT 0`）⇒ 界面标「布料单按此价」会把
-   * **未定价显示成真 0 元**（工人白干），且「格不存在 ⇒ 滤掉」时它**根本不参与**实例化
-   * （标了也是假话）。**改用方案②**：本区**直接读写 `× 布料` 那一格**（价与三态逐字取自格，
-   * 走既有 `PUT /operation-positions/{id}` 写面）⇒ 商家改的就是布料单**实际会用的那个价**，
-   * 不新增端点、不新增字段、零 Java 改动。</p>
-   */
-  const fabricSheetRows = useMemo(
-    () =>
-      FABRIC_SHEET_OPERATIONS.map((operation) => {
-        const row = matrixRows.find((r) => r.operation === operation) ?? null
-        const cell = row?.cells.get(FABRIC_SHEET_POSITION)
-        return { operation, row, cell, state: cellState(cell) }
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [matrixRows],
-  )
-
   const visibleMatrixRows = useMemo(
     () => operationsRows.filter((r) => !q || r.operation.toLowerCase().includes(q)),
     [operationsRows, q],
@@ -1430,10 +1282,13 @@ export default function ProcessConfigPage() {
   const workshopTitle = (group: string, count: number) =>
     `${group === '' ? '未分组' : workshopLabel(group)} · ${count} 道`
 
-  /** 未定价格数（**待办计数**：做但还没定价；「不做」不算、真 0 元不算） */
+  /**
+   * 未定价工序数（**待办计数**：还没定价；「不做」不算、真 0 元不算）。
+   * ⚠️ 按**收敛后的行**数（一屏一行一道工序）—— 直接数 `matrix` 会把同一道工序的多行重复计数。
+   */
   const unpricedCount = useMemo(
-    () => matrix.filter((c) => cellState(c) === 'unpriced').length,
-    [matrix],
+    () => matrixRows.filter((r) => cellState(r.cell) === 'unpriced').length,
+    [matrixRows],
   )
 
   /**
@@ -1450,9 +1305,9 @@ export default function ProcessConfigPage() {
    * 共用同一份口径（两处各写一份必然漂移）。
    */
   const matrixMustFinish = useMemo(() => {
-    const m = new Map<string, { partial: boolean; positions: string[] }>()
+    const m = new Map<string, boolean>()
     matrixRows.forEach((row) => {
-      const v = mustFinishOf(row)
+      const v = mustFinishOf(row.cell)
       if (v) m.set(row.operation, v)
     })
     return m
@@ -1462,10 +1317,10 @@ export default function ProcessConfigPage() {
    * 「从工序库选择要添加的工序…」的取值域 = **逻辑工序名**（issue #4609）。
    *
    * ⚠️ 为什么不能再用 `catalog.groups[].operations`（{@link libraryOps}）：那是**库口径**，35 行里
-   * 同一道逻辑工序按部位**重复出现**（`精裁-布` / `精裁-纱`），且 `value` 是变体名 ⇒
+   * 同一道逻辑工序在库里**重复出现**（`精裁-布` / `精裁-纱`），且 `value` 是变体名 ⇒
    * 加入主线的就是变体名（`精裁-布`），而实例化 `buildRoute` 的适用性矩阵按**逻辑名**建键
    * ⇒ `get("精裁-布")` = null ⇒ **该道工序被静默丢掉**（商家加了工序，加工单里没有）。
-   * 取值域改由**矩阵读面的行键**给出（与 {@link logicalOps} 同源：天然是逻辑名、天然去重）；
+   * 取值域改由**价目读面的行键**给出（与 {@link logicalOps} 同源：天然是逻辑名、天然去重）；
    * 分组取该行各格的**公共值**（各格不一致时逐个列出 —— 同 {@link metaText} 口径，不静默取第一个）。
    *
    * ⚠️ `libraryByName`（主线 chips 解析**变体**元数据）仍按变体名索引，**不要**一起改。
@@ -1476,7 +1331,7 @@ export default function ProcessConfigPage() {
   )
 
   /**
-   * **抽屉的「部位列表」与表格成行的口径必须对齐**（issue #4674 C，治本）。
+   * **抽屉的设置行与表格成行的口径必须对齐**（issue #4674 C，治本）。
    *
    * <p>表格按**逻辑名**成行（`matrixRows` 的键 = `GET /operation-positions` 的 `operation`），
    * 而抽屉原先**只**按格的 `variant_operation_id` 找变体 ⇒ 该键为 NULL / 指向别处时抽屉**静默空**
@@ -1484,7 +1339,7 @@ export default function ProcessConfigPage() {
    *
    * <p>回退判据 = **工序库按逻辑名查到的那一行**（`libraryByName` 的键 = 读时归一后的逻辑名，
    * 与矩阵行键同源）—— 与后端 `variantNameOf` 的裸名兜底同一份口径：读面查不到变体（5 键全 null）
-   * 时，后端仍按 `(逻辑名, 部位)` 认得出这道工序（护栏③就是这么判的）⇒ 前端**不得**判得比后端严。</p>
+   * 时，后端仍按逻辑名认得出这道工序（护栏③就是这么判的）⇒ 前端**不得**判得比后端严。</p>
    *
    * <p>⚠️ 同名多行（`精裁-布` / `精裁-纱` 归一后同名）**不静默取第一个**：取**排序稳定**的首行
    * （服务端顺序）并如实报出候选数，让「到底是哪条库行」可解释（与 `metaText` 同纪律）。</p>
@@ -1506,7 +1361,7 @@ export default function ProcessConfigPage() {
    * 同一**逻辑名**下的**全部**库行 id（issue #4674 C 的「属于本工序」判据）。
    *
    * <p>⚠️ **必须按集合判、不能只比首行**：同一道逻辑工序在库里有**多行**（`韩褶-布` / `韩褶-纱`
-   * 归一后同名，矩阵按 `(逻辑名, 部位)` 各自指到不同那行）⇒ 只比首行会把**合法的**格误判成
+   * 归一后同名，价目表按逻辑名各自指到不同那行）⇒ 只比首行会把**合法的**行误判成
    * 「指向别处」而抽掉它的写面（那才是真的判错）。</p>
    */
   const idsByName = useMemo(() => {
@@ -1531,7 +1386,7 @@ export default function ProcessConfigPage() {
     [matrixRows, manageOp],
   )
 
-  /** 该逻辑工序在矩阵里的**全部格**（与后端 `matchingCells` 同域：按行键取，不看格的关联键） */
+  /** 该逻辑工序在价目表里的**全部行**（与后端 `matchingCells` 同域：按行键取，不看关联键） */
   const manageOpCells = useMemo(
     () => (manageRow ? [...manageRow.cells.values()] : []),
     [manageRow],
@@ -1541,17 +1396,17 @@ export default function ProcessConfigPage() {
    * **删除路径的唯一判据 = 与后端护栏③同一把尺（按名字）**（issue #4692，治本）。
    *
    * <p>后端护栏③（{@code ProductionOperationCommandService.matchingCells} + {@code applicable}）
-   * 按**名字**判「这道工序还挂不挂在部位价目矩阵上」—— 它**从不看**格的
-   * {@code variant_operation_id}。前端若拿 {@code variant_operation_id} 当「有没有格 / 能不能删 /
+   * 按**名字**判「这道工序还挂不挂在价目表上」—— 它**从不看**行的
+   * {@code variant_operation_id}。前端若拿 {@code variant_operation_id} 当「有没有行 / 能不能删 /
    * 走哪条删除路径」的判据，就会出现**前端说能删、后端 422 拦下**：用户第 3 次报的删除死路
    * （格按名字命中、关联键却是 {@code null}）就是这么来的。</p>
    *
-   * <p>判据 = **本行（行键 = 逻辑工序名）里仍是「做」的格**。它与后端**同向**（按名字），且是后端
+   * <p>判据 = **本行（行键 = 逻辑工序名）里仍是「做」的行**。它与后端**同向**（按名字），且是后端
    * 命中集的**超集**（后端按 {@code variantNameOf} 解析出的变体，其逻辑名必然是行键；解析不出时
    * 后端也不命中）⇒ **fail-safe**：前端**绝不会**在后端会拦时选「普通删除」，最坏只是多走一次
    * 能过的 detach-and-delete（后端摘 0 格）。</p>
    *
-   * <p>{@code variant_operation_id} 仍用于**展示**（「这些格未关联到本工序」是有价值的信息），
+   * <p>{@code variant_operation_id} 仍用于**展示**（「这些行未关联到本工序」是有价值的信息），
    * 但**不得**再作为「能否删 / 走哪条路」的判据（issue #4692 的硬要求）。</p>
    */
   const opDeleteBlockerCells = useMemo(
@@ -1560,27 +1415,15 @@ export default function ProcessConfigPage() {
   )
 
   /**
-   * 接入弹窗要列出的工序（issue #4674 B）：抽屉空态点「接入部位…」时**只列这一道**
-   * （商家此刻就在它身上 —— 让他回整份孤儿清单里再找一遍是同一类死路）；
-   * 顶部「N 道工序还没接部位」那个入口仍列**全部**孤儿。
-   */
-  const orphanListOps = useMemo(() => {
-    if (!manageOpEntry) return orphanOps
-    const id = String(manageOpEntry.op.id)
-    return Object.prototype.hasOwnProperty.call(orphanPicks, id) ? [manageOpEntry.op] : orphanOps
-  }, [manageOpEntry, orphanOps, orphanPicks])
-
-  /**
-   * 该逻辑工序在各部位的设置行（issue #4674 C：`variant_operation_id` 关联不上时**回退按逻辑名**
+   * 该逻辑工序的设置行（issue #4674 C：`variant_operation_id` 关联不上时**回退按逻辑名**
    * 认同一道工序，并打上 `unlinked` 标记 ⇒ 界面**显式提示**，不再静默空）。
-   * 矩阵列序 = 部位顺序。
    *
-   * <p>⚠️ 回退**只在读面没给 id 时**生效（`null` / 缺键）：格的 `variant_operation_id` **非空**就说明
-   * 它指向**那道**工序 —— 指向别的工序的格**不属于**这一行，不得按名字硬拽进来
-   * （那不是「对齐口径」，是**把别人的格算到这道工序头上**）。</p>
+   * <p>⚠️ 回退**只在读面没给 id 时**生效（`null` / 缺键）：行的 `variant_operation_id` **非空**就说明
+   * 它指向**那道**工序 —— 指向别的工序的行**不属于**这一行，不得按名字硬拽进来
+   * （那不是「对齐口径」，是**把别人那一行算到这道工序头上**）。</p>
    */
   const variantsOf = useCallback(
-    (row: { operation: string; cells: Map<string, OperationPosition> }): VariantView[] => {
+    (row: MatrixRow): VariantView[] => {
       const byId = new Map<string, VariantView>()
       // 「按逻辑名认出来的那道工序」—— 与后端 `variantNameOf` 的裸名兜底同一份口径
       const byName = fallbackOpByName.get(row.operation)?.op ?? null
@@ -1593,26 +1436,21 @@ export default function ProcessConfigPage() {
         const id = explicit ?? (fallback ? String(fallback.id) : null)
         if (!id) return
         // 两把尺不一致的**两种形态**都算「未关联到本工序」：
-        // ① 格没给 id（读面查不到变体）⇒ 靠逻辑名认出来；
-        // ② 格给了 id 但它**不是**按逻辑名认出来的那道工序 ⇒ 该格指向别处（既有的悬空引用形态）。
+        // ① 行没给 id（读面查不到变体）⇒ 靠逻辑名认出来；
+        // ② 行给了 id 但它**不是**按逻辑名认出来的那道工序 ⇒ 该行指向别处（既有的悬空引用形态）。
         const entry = libraryById.get(id)
-        // 形态②：格指向的那道工序**在库里查得到**，却**不属于**本逻辑名下的任何一行
-        // ⇒ 这一格属于**别的**工序（只如实报出、不给写面：对它 PUT/DELETE 就是改另一道工序）。
+        // 形态②：行指向的那道工序**在库里查得到**，却**不属于**本逻辑名下的任何一行
+        // ⇒ 这一行属于**别的**工序（只如实报出、不给写面：对它 PUT/DELETE 就是改另一道工序）。
         const foreign = !!explicit && entry != null && ownIds != null && !ownIds.has(String(explicit))
         // 「未关联到本工序」= 靠逻辑名认出来的（没给 id）+ 指向别处的
         const unlinked = !explicit || foreign
-        const existing = byId.get(id)
-        if (existing) {
-          if (!existing.positions.includes(c.position)) existing.positions.push(c.position)
-          return
-        }
+        if (byId.has(id)) return
         byId.set(id, {
           id,
           group: (fallback?.group ?? c.group) ?? null,
           unit: (fallback?.unit ?? c.unit) ?? null,
           scope: fallback?.scope === 'set' || c.scope === 'set' ? 'set' : 'position',
           is_must_finish: fallback ? !!fallback.is_must_finish : !!c.is_must_finish,
-          positions: [c.position],
           source: entry?.source ?? fallback?.source ?? null,
           unlinked,
           foreign,
@@ -1645,11 +1483,11 @@ export default function ProcessConfigPage() {
     [manageVariants, confirmDeleteOpId],
   )
   /**
-   * 删除弹框要「一键设为不做」的格（issue #4665）：判据与**后端护栏③同源** ——
-   * 该变体对应的矩阵格里 `applicable=true` 的那些（含帘头回落布帘变体、部位无关工序一格多部位）。
+   * 删除弹框要「一键设为不做」的行（issue #4665）：判据与**后端护栏③同源** ——
+   * 该变体对应的价目行里 `applicable=true` 的那些。
    *
-   * <p>前端只用它来**如实说清将发生什么**（「将把这 N 个格子设为不做，然后删除该工序」）——
-   * **判据以后端为准**：真正的摘格在后端同一事务里按同一判据做（前端不发明第二份口径，
+   * <p>前端只用它来**如实说清将发生什么**（「将把这 N 行设为不做，然后删除该工序」）——
+   * **判据以后端为准**：真正的摘行在后端同一事务里按同一判据做（前端不发明第二份口径，
    * 也不自己去逐个 PUT：那是两步、会留下「第一步成功、第二步失败」的中间态）。</p>
    */
   const deleteOpCells = useMemo(() => {
@@ -1670,9 +1508,9 @@ export default function ProcessConfigPage() {
     [confirmDeleteOpByName, fallbackOpByName],
   )
   /**
-   * 抽屉层删除弹框要如实报出的格（issue #4674）：**按行键取全部格**（与后端 `matchingCells` 同域）
-   * —— 关联不上的格**也在内**（后端护栏③照样拦它们）。`applicable=false` 的格单独标出，
-   * 因为那几格**不拦**（#4665 C 的判据）。
+   * 抽屉层删除弹框要如实报出的行（issue #4674）：**按行键取全部行**（与后端 `matchingCells` 同域）
+   * —— 关联不上的行**也在内**（后端护栏③照样拦它们）。`applicable=false` 的行单独标出，
+   * 因为那几行**不拦**（#4665 C 的判据）。
    */
   const deleteOpByNameCells = useMemo(
     () => (deleteOpByNameTarget ? manageOpCells : []),
@@ -1845,24 +1683,22 @@ export default function ProcessConfigPage() {
     }
   }
 
-  /** 新建路线：名字 + 适用帘种 → 建壳后**立刻进入主线编辑**（消灭「建壳了但没排」的静默态） */
+  /** 新建路线：只问名字 → 建壳后**立刻进入主线编辑**（消灭「建壳了但没排」的静默态） */
   const createRoute = async () => {
     const name = newRoute.name.trim()
     if (!name) {
       toast.error('请填写路线名称')
       return
     }
-    if (newRoute.positions.length === 0) {
-      toast.error('请至少勾选一个适用帘种')
-      return
-    }
     setBusy(true)
     try {
-      const res = await productionApi.createRouting({ name, positions: newRoute.positions })
+      // issue #4886：**不再传 `positions`**（省略字段，而不是传空数组 —— 空数组会被读成
+      // 「不适用任何范围」，语义不同）。路线的适用范围由配套后端决定。
+      const res = await productionApi.createRouting({ name })
       const created = res.data?.data as Routing | undefined
       toast.success(`已新建路线「${name}」，请把工序排进主线`)
       setNewRouteOpen(false)
-      setNewRoute({ name: '', positions: POSITION_DOMAIN })
+      setNewRoute({ name: '' })
       await load()
       if (created?.id) {
         openEditor({ ...created, mainline: created.mainline ?? [] })
@@ -1952,26 +1788,24 @@ export default function ProcessConfigPage() {
 
   // ────────────────────────── 工序库写面 ──────────────────────────
 
-  /** 打开「新增」对话框：每次都回到默认类型「工序」+ 默认适用部位（基线三部位），并清掉上一次的失败理由 */
+  /** 打开「新增」对话框：每次都回到默认类型「工序」，并清掉上一次的失败理由 */
   const openCreateOperation = () => {
     setNewKind('operation')
     setNewOptionReasons([])
     setNewOpReasons([])
-    setNewOpPositions(POSITION_DOMAIN)
     setNewOpOpen(true)
   }
 
   /**
-   * 新增**工序**（issue #4614：**同时**为勾选的每个部位建一行矩阵行）。
+   * 新增**工序**（`POST /operations`）。
    *
-   * <p>为什么要带 `positions`：不带的话后端只写工序库，「工艺项」表（只按 `GET /operation-positions`
-   * 渲染）里**看不到它** —— 用户实测原话「这个新增按钮，无法新增工序」。</p>
+   * <p>⚠️ issue #4886：请求体**不再带 `positions`**（「适用部位」已随旧配置面退场）——
+   * 新工序如何进价目表由配套后端负责（本页这一批不再有这个概念）。
+   * ⚠️ **跨包依赖（如实登记）**：配套后端未上线前，不带 `positions` ⇒ 后端只写工序库、
+   * 不建价目行 ⇒ 新工序在「工艺项」表里看不到（#4614 那个病根会短期复发）。</p>
    *
-   * <p>本地预检只拦「拦得住就不打扰后端」的那几条（名称/单价/部位），**语义护栏一律以后端为准**
+   * <p>本地预检只拦「拦得住就不打扰后端」的那几条（名称/单价），**语义护栏一律以后端为准**
    * （前端不发明第二份口径）⇒ 失败理由**就地**逐条展示，**不刷新、不改页面数据**。</p>
-   *
-   * <p>结果 toast 必须报**服务端返回的真实数字**（新建/跳过）—— 缺结果体时显式报错，
-   * 不假装成功（照 {@link applyTemplate} 既有纪律）。</p>
    */
   const createOperation = async () => {
     const name = newOp.name.trim()
@@ -1981,11 +1815,6 @@ export default function ProcessConfigPage() {
     if (newOp.unit_price.trim() === '' || Number.isNaN(price)) {
       reasons.push('请输入有效单价（元/件·米·折）')
     }
-    if (newOpPositions.length === 0) {
-      reasons.push(
-        '请至少勾选一个适用部位：工序只在勾选的部位上出现 —— 一个都不勾，建出来在「工艺项」表里看不到它，也没法定价',
-      )
-    }
     if (reasons.length > 0) {
       setNewOpReasons(reasons)
       return
@@ -1993,98 +1822,21 @@ export default function ProcessConfigPage() {
     setNewOpReasons([])
     setBusy(true)
     try {
-      const res = await productionApi.createOperation({
+      await productionApi.createOperation({
         name,
         group_name: newOp.group_name.trim() || undefined,
         unit: newOp.unit.trim() || undefined,
         unit_price: price,
-        positions: newOpPositions,
       })
-      const result = res.data?.data
-      if (!result || result.created_positions === undefined || result.skipped_positions === undefined) {
-        toast.error('新增结果缺失（服务端未返回部位写入数），请刷新页面核对「工艺项」表')
-      } else {
-        toast.success(
-          `已新增工序「${name}」：新建 ${result.created_positions} 个部位的价目格、` +
-            `跳过 ${result.skipped_positions} 个（已存在的部位保留原价）`,
-        )
-      }
+      toast.success(`已新增工序「${name}」`)
       setNewOpOpen(false)
       setNewOp({ name: '', group_name: '', unit: '', unit_price: '' })
-      setNewOpPositions(POSITION_DOMAIN)
       await load()
     } catch (e) {
       console.error(e)
       if (!isErrorToastShown(e)) toast.error('新增工序失败')
     } finally {
       setBusy(false)
-    }
-  }
-
-  /**
-   * 打开**存量孤儿接入**弹窗（issue #4614 范围补口）：每道孤儿默认勾**基线三部位**
-   * （与新增工序的默认一致；不想接的那道把部位全取消勾即可）。
-   */
-  const openOrphanAttach = () => {
-    const next: Record<string, string[]> = {}
-    orphanOps.forEach((op) => {
-      next[String(op.id)] = POSITION_DOMAIN
-    })
-    setOrphanPicks(next)
-    setOrphanReasons([])
-    setOrphanOpen(true)
-  }
-
-  /**
-   * 把勾了部位的孤儿工序**接进**矩阵（`PUT /operations/{id}` 带 `positions`）。
-   *
-   * <p>后端**只补缺失行**：已存在的活跃行跳过（不覆盖已定价的格）、不删任何已有行；
-   * 响应如实报数 ⇒ toast 报**服务端真实数字**（缺结果体时显式报错，不假装成功）。</p>
-   *
-   * <p>值域校验与新增路径**同一份**（后端一处实现）—— 前端不发明第二份口径，
-   * 失败理由照 `routingAdminGuardReasons` **逐条**就地展示。</p>
-   */
-  const attachOrphans = async () => {
-    const picks = orphanOps
-      .map((op) => ({ op, positions: orphanPicks[String(op.id)] ?? [] }))
-      .filter((x) => x.positions.length > 0)
-    if (picks.length === 0) {
-      setOrphanReasons([
-        '请至少给一道工序勾一个适用部位：一个部位都不勾的工序接不进来（在「工艺项」表里看不到它，也没法定价）',
-      ])
-      return
-    }
-    setOrphanReasons([])
-    setOrphanBusy(true)
-    let created = 0
-    let skipped = 0
-    let done = 0
-    try {
-      for (const { op, positions } of picks) {
-        const res = await productionApi.updateOperation(op.id, { positions })
-        const result = res.data?.data
-        if (!result || result.created_positions === undefined || result.skipped_positions === undefined) {
-          toast.error(`「${op.name}」的接入结果缺失（服务端未返回部位写入数），请刷新页面核对「工艺项」表`)
-          await load()
-          return
-        }
-        created += result.created_positions
-        skipped += result.skipped_positions
-        done++
-      }
-      toast.success(
-        `已接入 ${done} 道工序：新建 ${created} 个部位价目格、跳过 ${skipped} 个（已存在的格保留原价）`,
-      )
-      setOrphanOpen(false)
-      await load()
-    } catch (e) {
-      console.error(e)
-      setOrphanReasons(routingAdminGuardReasons(e))
-      // 不假装成功：如实报出已经接进去几道（失败前完成的那些**已经落库**了）
-      if (!isErrorToastShown(e)) toast.error(`接入失败（已接入 ${done} 道）`)
-      await load()
-    } finally {
-      setOrphanBusy(false)
     }
   }
 
@@ -2237,11 +1989,14 @@ export default function ProcessConfigPage() {
 
   // ────────────────────────── 矩阵格写面（issue #4588；契约 #4587 ②） ──────────────────────────
 
-  const cellKeyOf = (operation: string, position: string) => `${operation}-${position}`
+  /**
+   * 就地改价的**编辑键** = 逻辑工序名（issue #4886：一道工序一个价 ⇒ 键里不再有第二维）。
+   */
+  const cellKeyOf = (operation: string) => operation
 
   /**
-   * 矩阵格写面统一出口（契约 #4587 ② 是**部分更新** ⇒ body 只带变了的那个键）。
-   * 失败 ⇒ 理由**逐条**就地展示在该格，且**不**收摊、**不**刷新
+   * 价目写面统一出口（契约 #4587 ② 是**部分更新** ⇒ body 只带变了的那个键）。
+   * 失败 ⇒ 理由**逐条**就地展示在该行，且**不**收摊、**不**刷新
    * （静默写回 = 商家以为改了、取价侧其实没改）。
    */
   const submitCell = async (
@@ -2251,16 +2006,14 @@ export default function ProcessConfigPage() {
   ) => {
     if (!id) {
       // 契约保证每行都有 `id`；真缺了就说清楚，不静默失败
-      setCellReasons({ key, items: ['这一格缺少行标识，无法保存 —— 请点右上「刷新」重试'] })
+      setCellReasons({ key, items: ['这一行缺少行标识，无法保存 —— 请点右上「刷新」重试'] })
       return
     }
     setCellBusy(true)
     setCellReasons(null)
     try {
       await productionApi.updateOperationPosition(id, payload)
-      toast.success(
-        payload.applicable === undefined ? '计件单价已更新' : payload.applicable ? '已设为做这道工序' : '已设为不做',
-      )
+      toast.success(payload.unit_price == null ? '已改回未定价' : '计件单价已更新')
       setCellEditing(null)
       await load()
     } catch (e) {
@@ -2272,12 +2025,12 @@ export default function ProcessConfigPage() {
   }
 
   /**
-   * 保存格内**计件单价（给工人）**。空输入 = **改回未定价**（发 `null`，≠ 0 元）。
+   * 保存**计件单价（给工人）**。空输入 = **改回未定价**（发 `null`，≠ 0 元）。
    * 本地只拦「送出去也必被拒」的形态（非数值 / 负数 / 三位小数）—— 语义护栏以后端为准
    * （后端一次报全 `error.details`，前端不发明第二份口径）。
    */
   const saveCellPrice = (cell: OperationPosition) => {
-    const key = cellKeyOf(cell.operation, cell.position)
+    const key = cellKeyOf(cell.operation)
     const raw = cellDraft.trim()
     if (raw !== '' && !/^\d+(\.\d{1,2})?$/.test(raw)) {
       setCellReasons({ key, items: ['计件单价必须是 ≥ 0 且最多两位小数的数字（要表示「还没定价」请清空）'] })
@@ -2286,18 +2039,13 @@ export default function ProcessConfigPage() {
     void submitCell(key, cell.id, { unit_price: raw === '' ? null : Number(raw) })
   }
 
-  /** 「不做 ⇄」：同一端点，body **只带** `applicable`（切回做 ⇒ `true`） */
-  const toggleCellApplicable = (cell: OperationPosition) => {
-    void submitCell(cellKeyOf(cell.operation, cell.position), cell.id, { applicable: cell.applicable === false })
-  }
-
   const cancelCellEdit = () => {
     setCellEditing(null)
     setCellDraft('')
     setCellReasons(null)
   }
 
-  // ────────────────────────── 「管理▸」抽屉：各部位的工序设置维护面（issue #4588；#4622 换主标识） ──────────────────────────
+  // ────────────────────────── 「管理▸」抽屉：工序设置维护面（issue #4588；#4622 换主标识） ──────────────────────────
 
   /** 抽屉写面统一出口（既有 `PUT /operations/{id}`；部分更新 ⇒ 只带变了的字段） */
   const submitVariant = async (id: string, payload: ProductionOperationUpdateParams) => {
@@ -2325,7 +2073,7 @@ export default function ProcessConfigPage() {
     setVariantReasons(null)
     try {
       await productionApi.deleteOperation(variant.id)
-      toast.success(`已删除工序（${variant.positions.join(' / ')}）`)
+      toast.success(`已删除工序「${manageOp ?? ''}」`)
       setConfirmDeleteOpId(null)
       await load()
     } catch (e) {
@@ -2351,7 +2099,7 @@ export default function ProcessConfigPage() {
     setVariantReasons(null)
     try {
       await productionApi.deleteOperation(variant.id, { detachPositions: true })
-      toast.success(`已设为不做并删除工序（${variant.positions.join(' / ')}）`)
+      toast.success(`已设为不做并删除工序「${manageOp ?? ''}」`)
       setConfirmDeleteOpId(null)
       await load()
     } catch (e) {
@@ -2435,19 +2183,6 @@ export default function ProcessConfigPage() {
     } finally {
       setVariantBusy(false)
     }
-  }
-
-  /**
-   * 抽屉空态的第一个出路（issue #4674 B）：**给这道工序接入部位**（补矩阵行）。
-   * 复用 #4614 **已有**的孤儿接入流程（同一弹窗、同一端点 `PUT /operations/{id}` 带 `positions`），
-   * 只是把候选**收敛到这一道**（商家此刻就在它身上，不该让他在整份孤儿清单里再找一遍）。
-   */
-  const openAttachForCurrentOp = () => {
-    if (!manageOpEntry) return
-    const id = String(manageOpEntry.op.id)
-    setOrphanPicks({ [id]: POSITION_DOMAIN })
-    setOrphanReasons([])
-    setOrphanOpen(true)
   }
 
   // ────────────────────────── 条件工序规则删除（issue #4588；契约 #4587 ④） ──────────────────────────
@@ -2542,7 +2277,7 @@ export default function ProcessConfigPage() {
         <div>
           <h1 className="text-xl font-semibold text-neutral-900">工艺配置</h1>
           <p className="mt-0.5 text-sm text-neutral-500">
-            工序（在哪些部位做、各自多少钱）→ 工艺路线（订单按哪条主线走）。路线是计件工资与完工判定的唯一输入
+            工序（各自多少钱）→ 工艺路线（订单按哪条主线走）。路线是计件工资与完工判定的唯一输入
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -2727,7 +2462,7 @@ export default function ProcessConfigPage() {
           </div>
 
           <div>
-            {/* ══════════ tab「工艺项」：**一屏一张表**（行 = 逻辑工序 / 列 = 部位 / 格可就地改） ══════════
+            {/* ══════════ tab「工艺项」：**一屏一张表**（行 = 逻辑工序 · 一道工序一个价） ══════════
                 issue #4588 = 母单 #4586 包 B（契约 #4587）。原「主区只读矩阵 + 折叠次区工序库明细」两张
                 平铺表已合并成这一张：明细面（分组 / 单位 / 作用域 / 必完 / 停用 / 删除）收进行尾
                 「管理▸」抽屉 —— 同一个概念**只有一个载体**，改价只有一个入口（矩阵格）。
@@ -2740,12 +2475,8 @@ export default function ProcessConfigPage() {
                     <div className="flex flex-wrap items-baseline gap-2">
                       <h2 className="text-base font-medium text-neutral-900">工艺项 · 计件单价（给工人）</h2>
                       <span className="text-sm text-neutral-500">
-                        <span data-testid="operation-price-matrix-total">{operationsRows.length}</span> 道工序 ×{' '}
-                        {matrixColumns.length} 个部位 ={' '}
-                        <span data-testid="operation-price-matrix-cells">
-                          {operationsRows.length * matrixColumns.length}
-                        </span>{' '}
-                        格
+                        <span data-testid="operation-price-matrix-total">{operationsRows.length}</span> 道工序 ·
+                        一道工序一个价
                       </span>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -2755,22 +2486,21 @@ export default function ProcessConfigPage() {
                           unpricedCount > 0 ? 'bg-amber-50 text-amber-700' : 'bg-neutral-100 text-neutral-500',
                         )}
                         data-testid="matrix-unpriced-count"
-                        title="这些格「做这道工序但还没定价」—— 报工按未定价处理，请补价"
+                        title="这些工序还没定价 —— 报工按未定价处理，请补价"
                       >
                         未定价 {unpricedCount} 项
                       </span>
-                      {/* 孤儿提示（issue #4614 范围补口）：工序库里有、但没有任何部位价目行 ⇒
-                          「工艺项」表里看不到它、也没法定价（存量工序没有接入路径 = 不可达）。 */}
+                      {/* 孤儿提示（issue #4614；issue #4886 起**只读**）：工序库里有、但没有任何价目行
+                          ⇒ 下表看不到它、也没法定价。旧的「接入」弹窗已随旧配置面退场 ⇒
+                          这里**不摆死路按钮**，只如实报数（出路见 title）。 */}
                       {orphanOps.length > 0 && (
-                        <button
-                          type="button"
+                        <span
                           data-testid="matrix-orphan-hint"
-                          onClick={openOrphanAttach}
-                          className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700 underline decoration-dotted hover:bg-amber-100"
-                          title="这些工序在工序库里有、但没有任何部位价目行 —— 接进来才能定价"
+                          className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700"
+                          title="这些工序在工序库里有、但没有任何价目行 —— 下表看不到它们，也没法定价。点右上「刷新」重试；若仍缺失，用下方「补套行业模板」补齐，或用「新增工序」重建。"
                         >
-                          有 {orphanOps.length} 道工序还没接部位 ⇒ 接进来才能定价
-                        </button>
+                          有 {orphanOps.length} 道工序还没有价目行（下表看不到）
+                        </span>
                       )}
                       <input
                         value={search}
@@ -2784,8 +2514,8 @@ export default function ProcessConfigPage() {
                   </div>
                   <p className="mb-3 text-xs text-neutral-500">
                     这一屏的价是<strong>计件单价（给工人）</strong>：报工工资 = 数量 × 计件单价。
-                    <span className="text-neutral-400">不做</span> = 该部位明确不做这道工序（不是漏配）；
-                    <span className="text-amber-700">未定价</span> = 做但还没定价（≠ ¥0.00；真 0 元照显示 ¥0.00）。
+                    <strong>一道工序一个价</strong>（issue #4886）；
+                    <span className="text-amber-700">未定价</span> = 还没定价（≠ ¥0.00；真 0 元照显示 ¥0.00）。
                     收顾客的那笔钱不在这里 —— 基础工序在「加工项组合费用」，特殊选项在每道工序的
                     <strong>「适用条件」</strong>里（按套计价）。
                   </p>
@@ -2800,7 +2530,7 @@ export default function ProcessConfigPage() {
                    ) : visibleMatrixRows.length === 0 ? (
                      <p className="py-8 text-center text-sm text-neutral-400" data-testid="operation-price-matrix-empty">
                        {operationsRows.length === 0
-                         ? '暂无部位价目数据 —— 点右上「新增工序」建一道，再回这里给各部位定价'
+                         ? '暂无可定价的工序 —— 点右上「新增工序」建一道，再回这里定价'
                          : '没有匹配的工序，换个关键词试试'}
                      </p>
                    ) : (
@@ -2809,16 +2539,12 @@ export default function ProcessConfigPage() {
                          <thead>
                            <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
                              <th className="py-2 pr-4 font-medium">工序</th>
-                             {matrixColumns.map((p) => (
-                               <th key={p} className="py-2 pr-4 font-medium">
-                                 {p}
-                               </th>
-                             ))}
-                             <th className="py-2 pr-4 font-medium">元数据 / 操作</th>
+                             <th className="py-2 pr-4 font-medium">单价</th>
+                             <th className="py-2 pr-4 font-medium">分组 · 单位 · 必完 · 操作</th>
                            </tr>
                          </thead>
                          {/* **按车间分组可折叠**（issue #4677 = 设计 §4.1 元素②）：一个分组一个
-                             `<tbody>`（不是嵌套表）—— 折叠只收起这一组的行，表头（列 = 部位）不动。
+                             `<tbody>`（不是嵌套表）—— 折叠只收起这一组的行，表头不动。
                              组名 = 行尾元数据的 `group` 经**行业正名**（`裁剪` ⇒ 裁剪（裁床）…）；
                              ⚠️ 界面上一律**不出现「槽位」**这类我们发明的词（用户裁定）。 */}
                          {visibleWorkshopGroups.map((g) => (
@@ -2827,7 +2553,7 @@ export default function ProcessConfigPage() {
                              data-testid={`matrix-workshop-${g.group || '未分组'}`}
                            >
                              <tr className="border-b border-neutral-100 bg-neutral-50/60">
-                               <td colSpan={matrixColumns.length + 2} className="py-1.5 pr-4">
+                               <td colSpan={3} className="py-1.5 pr-4">
                                  <button
                                    type="button"
                                    aria-expanded={openWorkshops[g.group || '__ungrouped__'] !== false}
@@ -2852,7 +2578,8 @@ export default function ProcessConfigPage() {
                                  const groups = distinctMeta(row, (c) => c.group)
                                  const units = distinctMeta(row, (c) => c.unit)
                                  const inconsistent = metaInconsistent(groups) || metaInconsistent(units)
-                                 const mustFinish = mustFinishOf(row)
+                                 const mustFinish = mustFinishOf(row.cell)
+                                 const key = cellKeyOf(row.operation)
                                  return (
                                    <tr
                                      key={row.operation}
@@ -2861,57 +2588,37 @@ export default function ProcessConfigPage() {
                                      data-operation={row.operation}
                                    >
                                      <td className="py-2.5 pr-4 align-top">
-                                       {/* 行首只显示**逻辑工序名**（issue #4622）：该行「哪个部位做 / 不做」
-                                           已由**列与格**表达 ⇒ 不再重复一遍变体名（`布三边` / `logo条-布`
-                                           这类名字不出现在任何界面位置）。 */}
+                                       {/* 行首只显示**逻辑工序名**（issue #4622 / #4886）：行 = 一道工序，
+                                           变体名（`布三边` / `logo条-布`）不出现在任何界面位置。 */}
                                        <div className="text-neutral-900">{row.operation}</div>
                                      </td>
-                                     {matrixColumns.map((p) => {
-                                       const cell = row.cells.get(p)
-                                       // 矩阵里没有这一格：不假装有数据（也不给「不做 / 0 元」这两个假值）
-                                       if (!cell) {
-                                         return (
-                                           <td
-                                             key={p}
-                                             data-testid={`matrix-cell-${row.operation}-${p}`}
-                                             data-state="unpriced"
-                                             className="py-2.5 pr-4 align-top text-amber-700"
-                                             title={`${p}没有这一格的配置`}
-                                           >
-                                             未定价
-                                           </td>
-                                         )
-                                       }
-                                       const key = cellKeyOf(row.operation, p)
-                                       return (
-                                         <PositionCell
-                                           key={p}
-                                           cell={cell}
-                                           state={cellState(cell)}
-                                           editing={cellEditing === key}
-                                           draft={cellDraft}
-                                           busy={cellBusy}
-                                           reasons={cellEditing === key && cellReasons?.key === key ? cellReasons.items : []}
-                                           onStartEdit={() => {
-                                             setCellEditing(key)
-                                             setCellDraft(cell.unit_price == null ? '' : String(cell.unit_price))
-                                             setCellReasons(null)
-                                           }}
-                                           onDraftChange={setCellDraft}
-                                           onSave={() => saveCellPrice(cell)}
-                                           onCancel={cancelCellEdit}
-                                           onToggleApplicable={() => toggleCellApplicable(cell)}
-                                         />
-                                       )
-                                     })}
+                                     {/* **一道工序一个价**（issue #4886）：就地可改的**唯一**单价 —— 未定价照显示
+                                         「未定价」，**绝不**回落 ¥0.00，也**绝不**回落工序库单价（历史 P0 #4696）。 */}
+                                     <td className="py-2.5 pr-4 align-top">
+                                       <OperationPriceCell
+                                         operation={row.operation}
+                                         cell={row.cell}
+                                         editing={cellEditing === key}
+                                         draft={cellDraft}
+                                         busy={cellBusy}
+                                         reasons={cellEditing === key && cellReasons?.key === key ? cellReasons.items : []}
+                                         onStartEdit={() => {
+                                           setCellEditing(key)
+                                           setCellDraft(row.cell.unit_price == null ? '' : String(row.cell.unit_price))
+                                           setCellReasons(null)
+                                         }}
+                                         onDraftChange={setCellDraft}
+                                         onSave={() => saveCellPrice(row.cell)}
+                                         onCancel={cancelCellEdit}
+                                       />
+                                     </td>
                                      {/* 行尾元数据 = `分组 · 单位`（作用域收进抽屉）+ **必完标记**（issue #4610：
-                                         完工门槛要一眼看得见）+「管理▸」入口；各格不一致时逐个列出，
-                                         **不静默取第一个** */}
+                                         完工门槛要一眼看得见）+「管理▸」入口；不一致时逐个列出，**不静默取第一个** */}
                                      <td
                                        className="py-2.5 pr-4 align-top"
                                        data-testid={`matrix-meta-${row.operation}`}
                                        data-inconsistent={inconsistent ? 'true' : undefined}
-                                       title={inconsistent ? '各部位的分组 / 单位不一致，已逐个列出' : undefined}
+                                       title={inconsistent ? '分组 / 单位不一致，已逐个列出' : undefined}
                                      >
                                        <div className="flex flex-wrap items-center gap-2">
                                          <span className="text-xs text-neutral-500">
@@ -2923,9 +2630,9 @@ export default function ProcessConfigPage() {
                                            <span
                                              className="text-xs text-amber-600"
                                              data-testid={`matrix-must-finish-${row.operation}`}
-                                             title={mustFinishTitle(mustFinish)}
-                                           >
-                                             {mustFinishLabel(mustFinish)}
+                                             title={mustFinishTitle()}
+                                             >
+                                             {mustFinishLabel()}
                                            </span>
                                          )}
                                          <ManageButton operation={row.operation} onOpen={openManageFor} />
@@ -2942,10 +2649,10 @@ export default function ProcessConfigPage() {
                 </section>
                  {/* ══════════ 【打包发货】：`scope='set'` 的成员 —— **一列价** ══════════
                      issue #4677 = 设计 §4.1/§4.5 方案 A：分区判据 = **既有** `scope`
-                     （**不新造概念**）；「一列价」是**服务端聚合的显式规则**（**不是删格** ——
-                     删格会让该工序在缺格的部位单里静默消失 = 少一道活、少一笔计件钱）。
-                     ⚠️ **行的存在不依赖矩阵格**（#4674 从根上避免的第 ① 条约束）：即使某道交付
-                     工序一个格都没有，这里仍有一行 + `管理▸`（`no_applicable_position` 如实报出）。 */}
+                     （**不新造概念**）；「一列价」是**服务端聚合的显式规则**（**不是删行** ——
+                     删行会让该工序在缺行的单据里静默消失 = 少一道活、少一笔计件钱）。
+                     ⚠️ **行的存在不依赖价目行**（#4674 从根上避免的第 ① 条约束）：即使某道交付
+                     工序一行价都没有，这里仍有一行 + `管理▸`（`no_applicable_position` 如实报出）。 */}
                  <section className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="delivery-section">
                    <div className="mb-3 flex flex-wrap items-baseline gap-2">
                      <h2 className="text-base font-medium text-neutral-900">【打包发货】</h2>
@@ -2954,9 +2661,9 @@ export default function ProcessConfigPage() {
                      </span>
                    </div>
                    <p className="mb-3 text-xs text-neutral-500">
-                     这几道活<strong>不按部位分</strong>（一套窗只做一次）⇒ 一个价。价格由各部位的设置
-                     聚合成一列：全部相同 ⇒ 显示该价；<span className="text-amber-700">未定价</span>
-                     （≠ ¥0.00）；各部位不同价 ⇒ <strong>显式提示</strong>并引导到「管理▸」逐个改
+                     这几道活<strong>每套窗只做一次</strong> ⇒ 一个价。价格逐字取服务端聚合：
+                     有价 ⇒ 显示该价；<span className="text-amber-700">未定价</span>（≠ ¥0.00）；
+                     有多个价不一致 ⇒ <strong>显式提示</strong>并引导到「管理▸」核对
                      （<strong>不静默取第一个</strong>）。
                    </p>
                    {/* 🔴 issue #4729（P2-10）：读面**失败** ⇒ **显式报错**（不静默降级成「未设置」） */}
@@ -2984,7 +2691,7 @@ export default function ProcessConfigPage() {
                          </thead>
                          <tbody>
                            {deliveryRows.map((row) => {
-                             const mustFinish = mustFinishOf({ cells: matrixCellsByOp(row.operation) })
+                             const mustFinish = mustFinishOf(matrixRowCell(row.operation))
                              return (
                                <tr
                                  key={row.operation}
@@ -3006,11 +2713,11 @@ export default function ProcessConfigPage() {
                                    data-price-state={row.price_state}
                                    title={
                                      row.price_state === 'unpriced'
-                                       ? '有部位还没定价（≠ ¥0.00）'
+                                       ? '还没定价（≠ ¥0.00）'
                                        : row.price_state === 'multiple_prices'
-                                         ? '各部位不同价 —— 到「管理▸」里逐个部位看'
+                                         ? '有多行价不一致 —— 到「管理▸」核对'
                                          : row.price_state === 'no_applicable_position'
-                                           ? '一个部位都没设为「做」'
+                                           ? '这道工序当前没有可用的价'
                                            : undefined
                                    }
                                  >
@@ -3021,35 +2728,26 @@ export default function ProcessConfigPage() {
                                      </>
                                    ) : row.price_state === 'unpriced' ? (
                                      <>未定价 /{row.unit ?? '套'}</>
-                                   ) : row.price_state === 'multiple_prices' ? (
-                                     <>各部位不同价（{row.different_price_count} 处）</>
-                                   ) : (
-                                     <>未设置（没有部位设为「做」）</>
-                                   )}
+                                     ) : row.price_state === 'multiple_prices' ? (
+                                       <>多行价不一致（{row.different_price_count} 处）</>
+                                     ) : (
+                                       <>未设置（没有可用的价）</>
+                                     )}
                                  </td>
                                  <td className="py-2.5 pr-4 align-top">
                                    <div className="flex flex-wrap items-center gap-2">
                                      <span className="text-xs text-neutral-500">
                                        {row.group ? workshopLabel(row.group) : '—'} · {row.unit ?? '—'}
                                      </span>
-                                     {/* 必完：格上有元数据就按格聚合（部分部位 / 全部位）；
-                                         **零格行**回落服务端 `is_must_finish`（issue #4729 —— 否则
-                                         零格交付行的「必完」恒不显示，而库里那一行是 `true`）。 */}
-                                     {mustFinish ? (
+                                     {/* 必完：价目行上有元数据就用它；**零价目行**回落服务端 `is_must_finish`
+                                         （issue #4729 —— 否则零行交付行的「必完」恒不显示，而库里那一行是 `true`）。 */}
+                                     {mustFinish || row.is_must_finish === true ? (
                                        <span
                                          className="text-xs text-amber-600"
                                          data-testid={`delivery-must-finish-${row.operation}`}
-                                         title={mustFinishTitle(mustFinish)}
+                                         title={mustFinishTitle()}
                                        >
-                                         {mustFinishLabel(mustFinish)}
-                                       </span>
-                                     ) : row.is_must_finish === true ? (
-                                       <span
-                                         className="text-xs text-amber-600"
-                                         data-testid={`delivery-must-finish-${row.operation}`}
-                                         title="必完：缺这道工序不能打包（工序库行的作用域为套级）"
-                                       >
-                                         必完
+                                         {mustFinishLabel()}
                                        </span>
                                      ) : null}
                                      <ManageButton
@@ -3068,118 +2766,7 @@ export default function ProcessConfigPage() {
                    )}
                  </section>
 
-                 {/* ══════════ 🔴 【布料单】定价入口（issue #4677 硬要求）══════════
-                     「商家必须能在一个明确、可见的位置给布料单的 `裁剪` 与 `打包` 定价，
-                     **且不依赖矩阵里存在「布料」列**」—— 本区就是那个位置。
-                     落点 = **`× 布料` 那一格本身**（V88 逐字保留的两格）⇒ 读写的是布料单
-                     实际会用的那个价（取舍理由见 `fabricSheetRows` 的注释与 PR 描述）。 */}
-                 <section className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="fabric-sheet-section">
-                   <div className="mb-3 flex flex-wrap items-baseline gap-2">
-                     <h2 className="text-base font-medium text-neutral-900">【布料单】</h2>
-                     <span className="text-sm text-neutral-500">裁剪 + 打包 · 一列价（布料单按此价）</span>
-                   </div>
-                   <p className="mb-3 text-xs text-neutral-500">
-                     卖布按米、不走窗帘那三个部位 ⇒ <strong>「布料」不出现在上面的列里</strong>，
-                     但布料单一样要算这两道活的计件钱。<strong>这里就是给它定价的地方</strong>
-                     （改的就是布料单实际会用的那个价）：<span className="text-neutral-400">不做</span> /
-                     <span className="text-amber-700">未定价</span>（≠ ¥0.00）/ ¥x.xx 三态不变。
-                   </p>
-                   <div className="overflow-x-auto">
-                     <table className="w-full text-sm">
-                       <thead>
-                         <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
-                           <th className="py-2 pr-4 font-medium">工序</th>
-                           <th className="py-2 pr-4 font-medium">单价（布料单按此价）</th>
-                           <th className="py-2 pr-4 font-medium">元数据 / 操作</th>
-                         </tr>
-                       </thead>
-                       <tbody>
-                         {fabricSheetRows.map((r) => {
-                           const fabricKey = cellKeyOf(r.operation, FABRIC_SHEET_POSITION)
-                           return (
-                             <tr key={r.operation} data-testid={`fabric-sheet-row-${r.operation}`}>
-                               <td className="py-2.5 pr-4 align-top">
-                                 <div className="text-neutral-900">{r.operation}</div>
-                               </td>
-                               <td className="py-2.5 pr-4 align-top">
-                                 {r.cell ? (
-                                   /* 复用主表**同一个** `PositionCell`（同一个三态口径、同一个写面
-                                      `PUT /operation-positions/{id}`、同一份本地预检）⇒ 不发明第二份改价交互 */
-                                   /* ⚠️ **根元素必须是 `div`**（issue #4721 P2-1）：本区这一层已经是
-                                      `<td>`，而 `PositionCell` 缺省根元素也是 `<td>` ⇒ `<td>` 嵌 `<td>`
-                                      是**非法 DOM**（浏览器按 HTML 解析规则隐式闭合/重排 ⇒ 真实渲染与
-                                      `jsdom` 里的断言可能不同）。⇒ 传 `as="div"`；三态 / `data-testid` /
-                                      写面**一字不动**。 */
-                                   <PositionCell
-                                     as="div"
-                                     cell={r.cell}
-                                     state={r.state}
-                                     editing={cellEditing === fabricKey}
-                                     draft={cellDraft}
-                                     busy={cellBusy}
-                                     reasons={cellEditing === fabricKey && cellReasons?.key === fabricKey ? cellReasons.items : []}
-                                     onStartEdit={() => {
-                                       setCellEditing(fabricKey)
-                                       setCellDraft(r.cell?.unit_price == null ? '' : String(r.cell.unit_price))
-                                       setCellReasons(null)
-                                     }}
-                                     onDraftChange={setCellDraft}
-                                     onSave={() => r.cell && saveCellPrice(r.cell)}
-                                     onCancel={cancelCellEdit}
-                                     onToggleApplicable={() => r.cell && toggleCellApplicable(r.cell)}
-                                   />
-                                 ) : (
-                                   /* 格不存在 ⇒ **给出路**（#4674 从根上避免的第 ④ 条约束）：
-                                      不写「请核对各部位的适用性配置」这类页面里没有的指引，
-                                      直接给两个可点动作（接入部位 / 补套行业模板）。 */
-                                   <span className="text-xs text-amber-700" data-testid={`fabric-sheet-missing-${r.operation}`}>
-                                     没有「{r.operation} × {FABRIC_SHEET_POSITION}」这一格 ⇒ 现在没法定价
-                                     <span className="mt-1 flex flex-wrap gap-2">
-                                       <button
-                                         type="button"
-                                         data-testid={`fabric-sheet-attach-${r.operation}`}
-                                         onClick={openOrphanAttach}
-                                         className="rounded px-1.5 py-0.5 text-primary-700 underline decoration-dotted hover:bg-neutral-100"
-                                       >
-                                         接入部位…
-                                       </button>
-                                       <button
-                                         type="button"
-                                         data-testid={`fabric-sheet-seed-${r.operation}`}
-                                         onClick={() =>
-                                           document
-                                             .querySelector('[data-testid="seed-templates"]')
-                                             ?.scrollIntoView({ block: 'center' })
-                                         }
-                                         className="rounded px-1.5 py-0.5 text-primary-700 underline decoration-dotted hover:bg-neutral-100"
-                                       >
-                                         补套行业模板
-                                       </button>
-                                     </span>
-                                   </span>
-                                 )}
-                               </td>
-                               <td className="py-2.5 pr-4 align-top">
-                                 <div className="flex flex-wrap items-center gap-2">
-                                   <span className="text-xs text-neutral-500">
-                                     {r.row
-                                       ? `${metaText(distinctMeta(r.row, (c) => c.group))} · ${metaText(distinctMeta(r.row, (c) => c.unit))}`
-                                       : '—'}
-                                   </span>
-                                   <ManageButton
-                                     operation={r.operation}
-                                     onOpen={openManageFor}
-                                     testIdPrefix="fabric-sheet-manage"
-                                   />
-                                 </div>
-                               </td>
-                             </tr>
-                           )
-                         })}
-                       </tbody>
-                     </table>
-                   </div>
-                 </section>
+
               </div>
             )}
 
@@ -3191,14 +2778,13 @@ export default function ProcessConfigPage() {
                     （阶段 2 的 AI 入口与阶段 4 的承载收敛还要用），本阶段零迁移、实例化行为不变。 */}
             {tab === 'routes' && (
               <div className="space-y-4">
-                {/* 主区：具名路线（name + 默认徽标 + 适用帘种 + 主线 + 改名/设默认/删除） */}
+                {/* 主区：具名路线（name + 默认徽标 + 主线 + 改名/设默认/删除） */}
                 <section className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="routings-list">
                   <div className="mb-3 flex items-baseline gap-2">
                     <h2 className="text-base font-medium text-neutral-900">工艺路线</h2>
-                    <span className="text-sm text-neutral-500">
-                      共 <span data-testid="routings-total">{routings?.total ?? 0}</span> 条 · 每条 = 一条有序主线 +
-                      适用帘种
-                    </span>
+                      <span className="text-sm text-neutral-500">
+                        共 <span data-testid="routings-total">{routings?.total ?? 0}</span> 条 · 每条 = 一条有序主线
+                      </span>
                   </div>
 
                   {/* 管理面被拒：逐条理由就地展示（不吞成一句「操作失败」） */}
@@ -3223,7 +2809,7 @@ export default function ProcessConfigPage() {
 
                   {routeList.length === 0 ? (
                     <p className="py-8 text-center text-sm text-neutral-400" data-testid="routings-empty">
-                      暂无工艺路线 —— 点右上「新建路线」建一条（一条路线 = 一条有序主线 + 适用帘种）
+                      暂无工艺路线 —— 点右上「新建路线」建一条（一条路线 = 一条有序主线）
                     </p>
                   ) : (
                     <div className="space-y-4">
@@ -3249,9 +2835,7 @@ export default function ProcessConfigPage() {
                                     默认
                                   </span>
                                 )}
-                                <span className="text-xs text-neutral-400" data-testid={`routing-positions-${id}`}>
-                                  适用：{(routing.positions ?? []).join(' / ') || '—'}
-                                </span>
+
                                 <span
                                   className="text-xs text-neutral-400"
                                   data-testid={`routing-mainline-count-${id}`}
@@ -3454,11 +3038,8 @@ export default function ProcessConfigPage() {
                                         {/* 必完：**矩阵**口径三态（issue #4622 补口② —— 原读工序库
                                             的 `is_must_finish`，而库按变体名索引 ⇒ 逻辑名查不到） */}
                                         {step.must_finish && (
-                                          <span
-                                            className="text-xs text-amber-600"
-                                            title={mustFinishTitle(step.must_finish)}
-                                          >
-                                            {mustFinishLabel(step.must_finish)}
+                                          <span className="text-xs text-amber-600" title={mustFinishTitle()}>
+                                            {mustFinishLabel()}
                                           </span>
                                         )}
                                         {step.missing && (
@@ -3535,9 +3116,9 @@ export default function ProcessConfigPage() {
                                         <span
                                           className="ml-1.5 text-amber-600"
                                           data-testid={`routing-step-must-finish-${id}-${step.seq}`}
-                                          title={mustFinishTitle(step.must_finish)}
+                                          title={mustFinishTitle()}
                                         >
-                                          {mustFinishLabel(step.must_finish)}
+                                          {mustFinishLabel()}
                                         </span>
                                       )}
                                       {step.missing && <span className="ml-1.5">工序库中不存在或已停用</span>}
@@ -3757,8 +3338,8 @@ export default function ProcessConfigPage() {
         </>
       )}
 
-      {/* 新建路线：名字 + 适用帘种（勾选项 = 部位价目矩阵里真有的部位，含第 4 个部位 `布料`；
-          默认只勾**基线三部位** —— 见 `newRoute` 初值的理由） */}
+      {/* 新建路线：**只问名字**（issue #4886 —— 路线适用范围已随旧配置面退场，
+          `POST /routings` 不再传 `positions`） */}
       <Modal
         open={newRouteOpen}
         onClose={() => !busy && setNewRouteOpen(false)}
@@ -3780,7 +3361,7 @@ export default function ProcessConfigPage() {
           </p>
           <div>
             <label className="mb-1 block text-neutral-600" htmlFor="new-route-name">
-              路线名称（如 窗帘工序路线 / 纱帘专线）
+              路线名称（如 窗帘工序路线 / 加急专线）
             </label>
             <input
               id="new-route-name"
@@ -3790,42 +3371,7 @@ export default function ProcessConfigPage() {
               onChange={(e) => setNewRoute({ ...newRoute, name: e.target.value })}
             />
           </div>
-          <div>
-            <span className="mb-1 block text-neutral-600">适用帘种（至少勾一个）</span>
-            <div className="flex flex-wrap gap-3">
-              {positionOptions.map((p) => (
-                <label key={p} className="flex items-center gap-1.5 text-neutral-700">
-                  <input
-                    type="checkbox"
-                    data-testid={`routings-create-position-${p}`}
-                    checked={newRoute.positions.includes(p)}
-                    onChange={(e) =>
-                      setNewRoute((prev) => ({
-                        ...prev,
-                        positions: e.target.checked
-                          ? positionOptions.filter((x) => x === p || prev.positions.includes(x))
-                          : prev.positions.filter((x) => x !== p),
-                      }))
-                    }
-                    className="h-4 w-4 accent-primary-600"
-                  />
-                  {p}
-                </label>
-              ))}
-            </div>
-            {/* 跨形态就地提示（#4556 裁定 (a)）：只提示、**不拦** —— 互斥/优先级是后端语义，跟单 #4563 */}
-            {mixedFormPick && (
-              <p
-                data-testid="routings-create-position-mixed-hint"
-                className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800"
-              >
-                ⚠️ 同时勾了帘种部位（{mixedFormPick.curtainText}）与「{mixedFormPick.othersText}」：
-                这条新路线会<strong>顶掉</strong>系统自带的「{mixedFormPick.othersText}」专用路线，
-                「{mixedFormPick.othersText}」单将按这条路线的工序出单 ⇒ 可能<strong>丢工序</strong>。
-                建议把「{mixedFormPick.othersText}」<strong>单独建一条路线</strong>（只勾它）。
-              </p>
-            )}
-          </div>
+
         </div>
       </Modal>
 
@@ -3905,28 +3451,27 @@ export default function ProcessConfigPage() {
         )}
       </Modal>
 
-      {/* 「管理▸」抽屉（issue #4588）：该逻辑工序在**各部位**的设置维护面（issue #4622：条目主标识
-          = **部位**，变体名不上界面）。
+      {/* 「管理▸」抽屉（issue #4588）：该逻辑工序的设置维护面（issue #4622：条目主标识 = 逻辑工序名，
+          变体名不上界面）。
           ⚠️ 作用域 / 必完的**维护面**在这里（用户 2026-09-19 追加裁定：「作用域 · 必完 完全不知道干嘛的，
           也可以移除」⇒ 从主表移除的是**显示**，不是语义）；**必完**的只读标记按用户 2026-09-19 改判
-          回到主表行尾（issue #4610：它是完工门槛，要一眼看得见），作用域仍只在抽屉里。
-          两处各配一句商家看得懂的解释（口径一致，含「部位级要每个部位都做完」那一层）。 */}
+          回到主表行尾（issue #4610：它是完工门槛，要一眼看得见），作用域仍只在抽屉里。 */}
       <Modal
         open={manageOp !== null}
         onClose={closeManage}
-        title={manageOp ? `「${manageOp}」在各部位的设置` : ''}
+        title={manageOp ? `「${manageOp}」的设置` : ''}
         width={760}
         footer={
-          /* **抽屉层**的工序入口（issue #4674 A）：与**矩阵格是否关联得上无关** ——
-             工序库那一行确实存在，就永远有「停用 / 删除」可走。
-             改前这两件事**只**挂在「各部位的设置」**行内** ⇒ `manageVariants` 为空时只剩一句
-             死路文案 + 一个「关闭」（正是用户截图的形态：「这条测试数据已经没有办法删除了，无删除入口」）。
-             写面**复用既有端点**：停用 = `PUT /operations/{id}` 的 `status`；删除 = `DELETE /operations/{id}`（软删）。
-             ⚠️ 删除的**路径**由 {@link opDeleteBlockerCells} 定（与后端护栏③**同一把尺：按名字**，issue #4692）：
-             本行还有「做」的格 ⇒ 走 #4671 的 `…/detach-and-delete`（设为不做 + 级联软删矩阵行 + 删除，一次事务）；
-             一格都没挂 ⇒ 才走普通软删。**改前一律走普通删除**（按 `variant_operation_id` 判「没有格」）
-             ⇒ 用户那个形态（格按名字命中、关联键为 null）必然 422 = 第 3 次「仍然不能删除」；
-             仍挂在主线/规则 ⇒ 后端照旧 422，理由逐条就地展示（**不放宽**）。 */
+          /* **抽屉层**的工序入口（issue #4674 A）：与**价目行是否关联得上无关** ——
+           * 工序库那一行确实存在，就永远有「停用 / 删除」可走。
+           * 改前这两件事**只**挂在设置**行内** ⇒ `manageVariants` 为空时只剩一句
+           * 死路文案 + 一个「关闭」（正是用户截图的形态：「这条测试数据已经没有办法删除了，无删除入口」）。
+           * 写面**复用既有端点**：停用 = `PUT /operations/{id}` 的 `status`；删除 = `DELETE /operations/{id}`（软删）。
+           * ⚠️ 删除的**路径**由 {@link opDeleteBlockerCells} 定（与后端护栏③**同一把尺：按名字**，issue #4692）：
+           * 本行还有「做」的行 ⇒ 走 #4671 的 `…/detach-and-delete`（设为不做 + 级联软删价目行 + 删除，一次事务）；
+           * 一行都没挂 ⇒ 才走普通软删。**改前一律走普通删除**（按 `variant_operation_id` 判「没有行」）
+           * ⇒ 用户那个形态（行按名字命中、关联键为 null）必然 422 = 第 3 次「仍然不能删除」；
+           * 仍挂在主线/规则 ⇒ 后端照旧 422，理由逐条就地展示（**不放宽**）。 */
           <div className="flex w-full flex-wrap items-center gap-2">
             <Button
               size="sm"
@@ -3959,10 +3504,8 @@ export default function ProcessConfigPage() {
       >
         <div className="space-y-3 text-sm" data-testid="operations-manage-drawer">
           <p className="text-neutral-600">
-            这道工序在<strong>各部位的设置</strong>（多个部位共用同一份设置时只列一条）。
-            分组与单位决定报工口径；<strong>作用域</strong>：套级 = 每套窗只做一次；
-            <strong>必完</strong>：缺这道工序不能打包；<strong>部位级工序要每个部位都做完</strong>才算完
-            （套级每套窗一次）。
+            这道工序的设置。分组与单位决定报工口径；<strong>作用域</strong>：按套 = 每套窗只做一次，
+            按件 = 每件各做一次；<strong>必完</strong>：缺这道工序不能打包。
           </p>
           {/* 抽屉层写面被拒：逐条理由就地展示（不吞成一句「操作失败」） */}
           {opLevelReasons && (
@@ -3973,30 +3516,22 @@ export default function ProcessConfigPage() {
             </ul>
           )}
           {manageVariants.length === 0 ? (
-            /* 空态**必须给出路**（issue #4674 B）：说清**为什么**空 + 给**两个可点动作**。
-               改前只有一句「请核对各部位的适用性配置」—— 而页面上**没有地方**可核对（死路指引）。 */
+            /* 空态**必须给出路**（issue #4674 B）：说清**为什么**空 + 给可点动作。
+               改前只有一句「请核对适用性配置」—— 而页面上**没有地方**可核对（死路指引）。 */
             <div className="py-4 text-center" data-testid="operations-manage-empty">
               <p className="text-sm text-neutral-500">
-                「{manageOp}」在<strong>工序库</strong>里有这一行，但它在部位价目矩阵里
+                「{manageOp}」在<strong>工序库</strong>里有这一行，但它在价目表里
                 {manageOpCells.length > 0 ? (
-                  <>有 {manageOpCells.length} 个格，而这些格<strong>都没有关联到它</strong></>
+                  <>有 {manageOpCells.length} 行，而这些行<strong>都没有关联到它</strong></>
                 ) : (
-                  <><strong>还没有任何格</strong></>
+                  <><strong>还没有任何价目行</strong></>
                 )}
                 ⇒ 它现在不出现在加工单里，也没法定价。
               </p>
               <p className="mt-1 text-xs text-neutral-400">
-                两条路都行：给它接入要做的部位（补上矩阵格，之后可就地定价），或者把这道工序删掉。
+                点下面的「删除这道工序」把它删掉；若只是读面没读全，请点右上「刷新」重试。
               </p>
               <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-                <Button
-                  size="sm"
-                  data-testid="operations-manage-attach"
-                  disabled={variantBusy || !manageOpEntry}
-                  onClick={openAttachForCurrentOp}
-                >
-                  接入部位…
-                </Button>
                 <Button
                   size="sm"
                   variant="secondary"
@@ -4017,27 +3552,25 @@ export default function ProcessConfigPage() {
                   className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800"
                   data-testid="operations-manage-unlinked-hint"
                 >
-                  ⚠️ 这道工序在
-                  <strong className="mx-1">
-                    {manageUnlinked.flatMap((v) => v.positions).join(' / ')}
-                  </strong>
-                  的格<strong>没有关联到它</strong>（矩阵里那些格指向的不是这道工序）——
-                  下面带「这些格指向的不是这道工序」标记的行**不提供设置**（改它们就是改另一道工序）；
+                  ⚠️ 这道工序有
+                  <strong className="mx-1">{manageUnlinked.length}</strong>
+                  条设置<strong>没有关联到它</strong>（价目行指向的不是这道工序）——
+                  下面带「这些行指向的不是这道工序」标记的行**不提供设置**（改它们就是改另一道工序）；
                   点底部<strong className="mx-1">删除</strong>可直接删掉这道工序。
                 </p>
               )}
               {manageVariants.map((v) => (
                 <div key={v.id} className="py-3" data-testid={`variant-row-${v.id}`}>
                   <div className="flex flex-wrap items-center gap-2">
-                    {/* 主标识 = **部位集合**（issue #4622）—— 一个变体可能服务多个部位，变体名不上界面 */}
-                    <span className="font-medium text-neutral-900">{v.positions.join(' / ')}</span>
+                    {/* 主标识 = **逻辑工序名**（issue #4622 / #4886）—— 变体名不上界面 */}
+                    <span className="font-medium text-neutral-900">{manageOp}</span>
                     {v.source && <SourceBadge source={v.source} testId={`variant-source-${v.id}`} />}
                     {v.foreign && (
                       <span
                         className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700"
                         data-testid={`variant-foreign-${v.id}`}
                       >
-                        这些格指向的不是这道工序
+                        这些行指向的不是这道工序
                       </span>
                     )}
                   </div>
@@ -4049,43 +3582,13 @@ export default function ProcessConfigPage() {
                       className="mt-2 text-xs text-neutral-500"
                       data-testid={`variant-foreign-note-${v.id}`}
                     >
-                      矩阵里这几格关联到的是另一道工序 ⇒ 这里不提供设置；请到那道工序的抽屉里改，
+                      价目表里这几行关联到的是另一道工序 ⇒ 这里不提供设置；请到那道工序的抽屉里改，
                       或点底部「删除」把本工序删掉。
                     </p>
                   ) : (
                     <>
-                  {/* **做 / 不做**（issue #4665）：用户实测「无法删除，而且没有地方设置做于不做」——
-                      删除弹框让他「先去设为不做」，而做/不做此前**只**藏在主表格的裸 `⇄` 里，
-                      商家此刻正在这个抽屉里 ⇒ 死路。这里按**部位逐格**给显式控件（与主表格**同一个**
-                      `ApplicableToggle`，同一端点 `PUT /operation-positions/{id}` body 只带 `{applicable}`）。
-                      三态语义不变：`做` + 价 = 计件单价；`做` + 无价 = 未定价（≠ ¥0.00）；`不做`。 */}
-                  <div className="mt-2 flex flex-wrap items-center gap-2" data-testid={`drawer-applicable-row-${v.id}`}>
-                    <span className="text-xs text-neutral-500">做 / 不做</span>
-                    {v.positions.map((position) => {
-                      const cell = manageRow?.cells.get(position)
-                      if (!cell) return null
-                      const priced = cell.applicable !== false && cell.unit_price != null
-                      return (
-                        <span key={position} className="flex items-center gap-1">
-                          <span className="text-xs text-neutral-400">{position}</span>
-                          <ApplicableToggle
-                            applicable={cell.applicable !== false}
-                            label={position}
-                            testId={`drawer-applicable-${manageOp}-${position}`}
-                            disabled={variantBusy}
-                            onToggle={() => toggleCellApplicable(cell)}
-                          />
-                          {/* 价与「做/不做」并排 ⇒ 三态一眼可辨；`未定价` **不得**渲染成 ¥0.00 */}
-                          <span
-                            className="text-xs text-neutral-500"
-                            data-testid={`drawer-price-${manageOp}-${position}`}
-                          >
-                            {cell.applicable === false ? '' : priced ? money(cell.unit_price) : '未定价'}
-                          </span>
-                        </span>
-                      )
-                    })}
-                  </div>
+                    {/* issue #4886：「做 / 不做」开关随旧配置面一起退场（一道工序一个价 ⇒ 没有第二个维度）。
+                        价与三态在主表的**单价格**里（`operation-price-*`），这里只维护元数据。 */}
 
                   {/* 分组 · 单位：就地改（`PUT /operations/{id}` 部分更新） */}
                   <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -4134,7 +3637,7 @@ export default function ProcessConfigPage() {
                         </span>
                         <button
                           type="button"
-                          aria-label={`编辑「${v.positions.join(' / ')}」的分组与单位`}
+                          aria-label={`编辑「${manageOp}」的分组与单位`}
                           data-testid={`variant-meta-edit-${v.id}`}
                           onClick={() => {
                             setEditingVariantId(v.id)
@@ -4152,7 +3655,7 @@ export default function ProcessConfigPage() {
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
                     <span>作用域</span>
                     <select
-                      aria-label={`「${v.positions.join(' / ')}」作用域`}
+                      aria-label={`「${manageOp}」作用域`}
                       data-testid={`variant-scope-${v.id}`}
                       value={v.scope}
                       disabled={variantBusy}
@@ -4166,21 +3669,21 @@ export default function ProcessConfigPage() {
                         </option>
                       ))}
                     </select>
-                    <span>套级 = 每套窗只做一次（部位级 = 每个部位各做一次）</span>
+                    <span>按套 = 每套窗只做一次；按件 = 每件各做一次</span>
                   </div>
 
                   {/* 必完 + 一句解释 */}
                   <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
                     <input
                       type="checkbox"
-                      aria-label={`「${v.positions.join(' / ')}」必完`}
+                      aria-label={`「${manageOp}」必完`}
                       data-testid={`variant-must-finish-${v.id}`}
                       checked={v.is_must_finish}
                       disabled={variantBusy}
                       onChange={(e) => void submitVariant(v.id, { is_must_finish: e.target.checked })}
                       className="h-4 w-4 accent-primary-600"
                     />
-                    <span>必完 · 缺这道工序不能打包（部位级：每个部位都要做完）</span>
+                    <span>必完 · 缺这道工序不能打包</span>
                   </label>
 
                   {/* 停用（`PUT /operations/{id}` 的 status）/ 删除（`DELETE /operations/{id}`，二次确认） */}
@@ -4216,7 +3719,7 @@ export default function ProcessConfigPage() {
 
           {/* ── 适用条件（issue #4650 阶段 1）：条件**挂在工序身上** —— 独立规则表已从界面移除 ──
               商家看到的只有**人话**（「工艺 = 韩褶 时插入（在「三边」之后）」），不再是
-              「触发类型 / 触发值 / 部位限定 / 动作 / 目标工序 / 插入锚点 / 优先级」那七格。
+              「触发类型 / 触发值 / 限定范围 / 动作 / 目标工序 / 插入锚点 / 优先级」那七格。
               归属判据 = `production_route_rules.operation === 本工序`（逻辑工序名）。
               写面**复用现有端点**（`POST /route-rules` / `DELETE /route-rules/{id}`）—— 不新造第二套。 */}
           <div className="rounded border border-neutral-200 bg-neutral-50 p-3" data-testid="operation-conditions">
@@ -4486,9 +3989,9 @@ export default function ProcessConfigPage() {
                 单价直接决定工人计件工资，请与车间核对后再填（调价只影响新报工，历史报工按当时价）。
               </p>
               {([
-                // ⚠️ issue #4622：placeholder 不得再示范「把部位编进名字」的旧写法（`罗马帘-穿杆`）；
-                // 工序名 = **逻辑工序名**，部位由下方「适用部位」勾选（#4614）。
-                { key: 'name', label: '工序名称', ph: '如 罗马帘穿杆', hint: '工序名不要带部位 —— 部位在下面勾选（同一道工序在各部位共用这个名字）' },
+                // ⚠️ issue #4622：placeholder 不得再示范「把前缀编进名字」的旧写法（`罗马帘-穿杆`）；
+                // 工序名 = **逻辑工序名**，只写这道活本身（#4886：不再有任何前后缀勾选）。
+                { key: 'name', label: '工序名称', ph: '如 罗马帘穿杆', hint: '工序名只写这道活本身（如「精裁」「三边」），不要带任何前缀或后缀' },
                 { key: 'group_name', label: '分组', ph: '裁剪 / 车位 / 后道 / 其他' },
                 { key: 'unit', label: '单位', ph: '米 / 套 / 件 / 个 / 折' },
               ] as { key: string; label: string; ph: string; hint?: string }[]).map((f) => (
@@ -4524,35 +4027,7 @@ export default function ProcessConfigPage() {
                   onChange={(e) => setNewOp({ ...newOp, unit_price: e.target.value })}
                 />
               </div>
-              {/* 适用部位多选（issue #4614）：勾选项 = `positionOptions`（矩阵带出 ∪ 基线三部位，
-                  与「新建路线」的适用帘种**同一份口径**）；默认勾基线三部位。 */}
-              <div>
-                <span className="mb-1 block text-neutral-600">适用部位（至少勾一个）</span>
-                <div className="flex flex-wrap gap-3">
-                  {positionOptions.map((p) => (
-                    <label key={p} className="flex items-center gap-1.5 text-neutral-700">
-                      <input
-                        type="checkbox"
-                        data-testid={`routings-create-op-position-${p}`}
-                        checked={newOpPositions.includes(p)}
-                        onChange={(e) =>
-                          setNewOpPositions((prev) =>
-                            e.target.checked
-                              ? positionOptions.filter((x) => x === p || prev.includes(x))
-                              : prev.filter((x) => x !== p),
-                          )
-                        }
-                        className="h-4 w-4 accent-primary-600"
-                      />
-                      {p}
-                    </label>
-                  ))}
-                </div>
-                <p className="mt-1 text-xs text-neutral-400">
-                  勾了哪些部位，这道工序就出现在「工艺项」表的哪些格上并可逐格定价；
-                  一个都不勾 ⇒ 建出来在表里看不到它。
-                </p>
-              </div>
+
               {newOpReasons.length > 0 && (
                 <ul className="space-y-0.5 text-xs text-red-600" data-testid="routings-create-op-reasons">
                   {newOpReasons.map((r, i) => (
@@ -4656,83 +4131,7 @@ export default function ProcessConfigPage() {
         </div>
       </Modal>
 
-      {/* 存量孤儿接入（issue #4614 范围补口）：工序库里有、但没有任何部位价目行的工序
-          ⇒ 勾适用部位后 `PUT /operations/{id}` 带 `positions` **只补缺失行**（不删、不覆盖）。 */}
-      <Modal
-        open={orphanOpen}
-        onClose={() => !orphanBusy && setOrphanOpen(false)}
-        title="接入部位价目"
-        footer={
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" disabled={orphanBusy} onClick={() => setOrphanOpen(false)}>
-              取消
-            </Button>
-            <Button loading={orphanBusy} data-testid="orphan-attach-submit" onClick={attachOrphans}>
-              接入
-            </Button>
-          </div>
-        }
-      >
-        <div className="space-y-3 text-sm">
-          <p className="text-neutral-600">
-            这些工序在<strong>工序库</strong>里有，但<strong>没有任何部位价目行</strong> ⇒
-            「工艺项」表里看不到它们、也没法定价（路线编辑的下拉里能看到，是两边口径不一致）。
-            勾上要做的部位并接入后，它们会立刻出现在「工艺项」表里，可就地定价。
-          </p>
-          <p className="text-xs text-neutral-400">
-            已有部位价目行<strong>不会被改动</strong>（已定的价保留原价）；想跳过某道工序，把它的部位全部取消勾选即可。
-          </p>
-          <ul className="space-y-3" data-testid="orphan-attach-list">
-            {orphanListOps.map((op) => (
-              <li
-                key={String(op.id)}
-                className="rounded border border-neutral-200 px-3 py-2"
-                data-testid={`orphan-row-${op.id}`}
-              >
-                <div className="mb-1.5 flex flex-wrap items-baseline gap-2">
-                  <span className="font-medium text-neutral-900" data-testid={`orphan-name-${op.id}`}>
-                    {op.name}
-                  </span>
-                  <span className="text-xs text-neutral-500">
-                    {op.group ?? '其他'} · {op.unit ?? '米'}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  {positionOptions.map((p) => (
-                    <label key={p} className="flex items-center gap-1.5 text-neutral-700">
-                      <input
-                        type="checkbox"
-                        data-testid={`orphan-position-${op.id}-${p}`}
-                        checked={(orphanPicks[String(op.id)] ?? []).includes(p)}
-                        onChange={(e) =>
-                          setOrphanPicks((prev) => {
-                            const cur = prev[String(op.id)] ?? []
-                            return {
-                              ...prev,
-                              [String(op.id)]: e.target.checked
-                                ? positionOptions.filter((x) => x === p || cur.includes(x))
-                                : cur.filter((x) => x !== p),
-                            }
-                          })
-                        }
-                        className="h-4 w-4 accent-primary-600"
-                      />
-                      {p}
-                    </label>
-                  ))}
-                </div>
-              </li>
-            ))}
-          </ul>
-          {orphanReasons.length > 0 && (
-            <ul className="space-y-0.5 text-xs text-red-600" data-testid="orphan-attach-reasons">
-              {orphanReasons.map((r, i) => (
-                <li key={i}>{r}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </Modal>
+
 
       {/* 删除**一条适用条件**的二次确认（issue #4617 的弹框形态；issue #4650 起从工序抽屉里点）——
           内容写清「删的是哪一条」，用的是**人话**（`工艺 = 韩褶 时插入（在「三边」之后）`），
@@ -4793,50 +4192,37 @@ export default function ProcessConfigPage() {
         {deleteOpTarget && (
           <div data-testid="variant-delete-modal" data-variant={deleteOpTarget.id} className="space-y-3 text-sm">
             <p className="text-neutral-600">
-              {/* 主标识 = **部位**（issue #4622：变体名不上界面；本弹框由 #4617 新增，
-                  合并时同步成同一口径 —— 与抽屉条目的主标识一致） */}
-              将删除这道工序在<strong className="mx-1">{deleteOpTarget.positions.join(' / ')}</strong>上的设置。
+              {/* 主标识 = **逻辑工序名**（issue #4622 / #4886：变体名不上界面） */}
+              将删除工序<strong className="mx-1">「{manageOp}」</strong>。
             </p>
             <p className="text-neutral-500">
-              删除后它不再出现在工序库与部位价目里，新加工单不会再生成这道工序；
+              删除后它不再出现在工序库与工序单价表里，新加工单不会再生成这道工序；
               <strong>历史报工不受影响</strong>（报工按当时的工序快照）。
             </p>
             {/* 一键「设为不做并删除」（issue #4665 A）：把删除的前置交给系统自己做，并**说清将发生什么**。
-                改前：弹框让他「先在该部位设为『不做』，再删它」，而做/不做开关藏在主表格的裸 `⇄` 里、
+                改前：弹框让他「先设为『不做』再删它」，而做/不做开关藏在主表格的裸 `⇄` 里、
                 抽屉里没有 ⇒ 用户实测「无法删除，而且没有地方设置做于不做」。 */}
             {deleteOpCells.length > 0 && (
               <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
-                这道工序还挂在部位价目矩阵的
-                <strong className="mx-1">
-                  {deleteOpCells.map((c) => c.position).join(' / ')}
-                </strong>
-                格上（共 {deleteOpCells.length} 个格子）且是「做」。点下面的
+                这道工序还有 {deleteOpCells.length} 行价目是「做」。点下面的
                 <strong className="mx-1">设为不做并删除</strong>
-                ：系统会<strong>把这 {deleteOpCells.length} 个格子设为不做</strong>，然后删除该工序（一次完成，
+                ：系统会<strong>先把这些行设为不做</strong>，然后删除该工序（一次完成，
                 不留半成品）；<strong>历史报工不受影响</strong>。
-                {deleteOpCells.length !== deleteOpTarget.positions.length && (
-                  <span className="mt-1 block text-xs">
-                    也可以先到「工艺项」表里「{manageOp}」这一行（或本抽屉的「做 / 不做」）逐格改成不做，
-                    再回来确认删除。
-                  </span>
-                )}
               </p>
             )}
-            {/* issue #4692：**两把尺**的另一个落点 —— 格的 `variant_operation_id` 关联不上（读面查不到变体）
-                时，上面那条（按 id 取格）会**空**，弹框就只剩「确认删除」⇒ 普通删除必被护栏③（**按名字**）
-                422 拦下 = 同一类死路。判据改用**与护栏③同一把尺**（`opDeleteBlockerCells`：本行仍是「做」的格）
+            {/* issue #4692：**两把尺**的另一个落点 —— 行的 `variant_operation_id` 关联不上（读面查不到变体）
+                时，上面那条（按 id 取行）会**空**，弹框就只剩「确认删除」⇒ 普通删除必被护栏③（**按名字**）
+                422 拦下 = 同一类死路。判据改用**与护栏③同一把尺**（`opDeleteBlockerCells`：本行仍是「做」的行）
                 ⇒ 走能过护栏的 detach-and-delete；**普通删除按钮此时不渲染**（它只会 422，不摆死路）。 */}
             {deleteOpCells.length === 0 && opDeleteBlockerCells.length > 0 && (
               <p
                 className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800"
                 data-testid="variant-delete-cells-by-name"
               >
-                「{manageOp}」这一行在部位价目矩阵里的
-                <strong className="mx-1">
-                  {opDeleteBlockerCells.map((c) => c.position).join(' / ')}
-                </strong>
-                格还是「做」。点下面的<strong className="mx-1">设为不做并删除</strong>
-                ：系统会把挡着它删不掉的那些格<strong>设为不做</strong>，然后删除该工序（一次完成，
+                「{manageOp}」还有
+                <strong className="mx-1">{opDeleteBlockerCells.length}</strong>
+                行价目是「做」。点下面的<strong className="mx-1">设为不做并删除</strong>
+                ：系统会把挡着它删不掉的那些行<strong>设为不做</strong>，然后删除该工序（一次完成，
                 不留半成品）；<strong>历史报工不受影响</strong>。
               </p>
             )}
@@ -4885,9 +4271,9 @@ export default function ProcessConfigPage() {
       </Modal>
 
       {/* 删除**工序**（抽屉层那处，issue #4674 A）的二次确认：目标 = **工序库那一行**（按逻辑名寻址），
-          **与矩阵格是否关联得上无关** —— 改前这里根本没有入口（`manageVariants` 为空 ⇒ 弹框不渲染）。
+          **与价目行是否关联得上无关** —— 改前这里根本没有入口（`manageVariants` 为空 ⇒ 弹框不渲染）。
           形态与上面那条**同一套**（同一页面不留两套形态，issue #4617 的裁定照旧）；
-          删的是**哪一道工序**写在第一句；矩阵格逐格如实报出（含**未关联**的格 —— 后端护栏③按名字照样算它们）；
+          删的是**哪一道工序**写在第一句；价目行逐行如实报出（含**未关联**的行 —— 后端护栏③按名字照样算它们）；
           失败理由**逐条**就地展示，弹框**不收摊**（#4617 纪律）。 */}
       <Modal
         open={deleteOpByNameTarget !== null}
@@ -4908,7 +4294,7 @@ export default function ProcessConfigPage() {
                 : '工序库里的这一行'}）。
             </p>
             <p className="text-neutral-500">
-              删除后它不再出现在工序库与部位价目里，新加工单不会再生成这道工序；
+              删除后它不再出现在工序库与工序单价表里，新加工单不会再生成这道工序；
               <strong>历史报工不受影响</strong>（报工按当时的工序快照）。
             </p>
             {deleteOpByNameCells.length === 0 ? (
@@ -4916,28 +4302,21 @@ export default function ProcessConfigPage() {
                 className="rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-neutral-600"
                 data-testid="operations-manage-delete-nocells"
               >
-                这道工序<strong>没有挂任何部位价目格</strong> ⇒ 删除不会有格需要摘。
+                这道工序<strong>没有挂任何价目行</strong> ⇒ 删除不会有行需要摘。
               </p>
             ) : opDeleteBlockerCells.length > 0 ? (
-              /* issue #4692：判据与后端护栏③**同一把尺（按名字）** —— 有「做」的格 ⇒ 走
-                 detach-and-delete（设为不做 + 级联软删矩阵行 + 删除，后端**一次事务**）。
-                 文案**说清将发生什么**（改前这里写「后端会拦下并告诉你先在哪一格设为不做」——
-                 而本入口**不会**被拦，那句话是改前那条走错路径留下的死路文案）。 */
+              /* issue #4692：判据与后端护栏③**同一把尺（按名字）** —— 有「做」的行 ⇒ 走
+               detach-and-delete（设为不做 + 级联软删价目行 + 删除，后端**一次事务**）。
+               文案**说清将发生什么**（改前这里写「后端会拦下并告诉你先在哪一格设为不做」——
+               而本入口**不会**被拦，那句话是改前那条走错路径留下的死路文案）。 */
               <p
                 className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800"
                 data-testid="operations-manage-delete-cells"
               >
-                它在部位价目矩阵里有
-                <strong className="mx-1">
-                  {deleteOpByNameCells.map((c) => c.position).join(' / ')}
-                </strong>
-                共 {deleteOpByNameCells.length} 个格，其中
-                <strong className="mx-1">
-                  {opDeleteBlockerCells.map((c) => c.position).join(' / ')}
-                </strong>
-                还是「做」。点「确认删除」：系统会把这
+                它在价目表里共 {deleteOpByNameCells.length} 行，其中
                 <strong className="mx-1">{opDeleteBlockerCells.length}</strong>
-                个格<strong>设为不做</strong>，然后删除这道工序（一次完成，不留半成品）；
+                行还是「做」。点「确认删除」：系统会把这几行<strong>设为不做</strong>，
+                然后删除这道工序（一次完成，不留半成品）；
                 <strong>历史报工不受影响</strong>（报工按当时的工序快照）。
               </p>
             ) : (
@@ -4945,11 +4324,7 @@ export default function ProcessConfigPage() {
                 className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800"
                 data-testid="operations-manage-delete-cells"
               >
-                它在部位价目矩阵里有
-                <strong className="mx-1">
-                  {deleteOpByNameCells.map((c) => c.position).join(' / ')}
-                </strong>
-                共 {deleteOpByNameCells.length} 个格，且都已经是「不做」⇒ 删除时这些格会一起清掉；
+                它在价目表里共 {deleteOpByNameCells.length} 行，且都已经是「不做」⇒ 删除时这些行会一起清掉；
                 <strong>历史报工不受影响</strong>。
               </p>
             )}

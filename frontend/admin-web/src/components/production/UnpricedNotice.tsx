@@ -14,7 +14,7 @@ import type { UnpricedPiecework } from '@/types'
  * 且「没定价」与「价本来就是 0」不可区分。</p>
  *
  * <p>本组件把三件事摆到**真正算钱的页面**上：① 未定价工序的合格数量（干了多少活）；
- * ② 逐条工序名（该给哪道定价）；③ **定价入口**（跳「工艺配置 → 工艺路线」的部位价目矩阵）。
+ * ② 逐条工序名（该给哪道定价）；③ **定价入口**（跳「工艺配置」的工序单价表）。
  * 未定价的报工**不进**计件合计（后端 `unpriced` 块已排除）——本块只做「说不清的钱要显形」。</p>
  *
  * <p>零条未定价 ⇒ 不渲染任何东西（不制造噪音）。</p>
@@ -25,7 +25,7 @@ interface UnpricedNoticeProps {
   className?: string
 }
 
-/** 定价入口（部位价目矩阵就在「工艺配置 → 工艺路线」页；URL 与后端 hint 同源） */
+/** 定价入口（工序单价表就在「工艺配置」页；URL 与后端 hint 同源） */
 export const PRICING_ENTRY_HREF = '/production/routings'
 
 export default function UnpricedNotice({ unpriced, className }: UnpricedNoticeProps) {
@@ -63,7 +63,7 @@ export default function UnpricedNotice({ unpriced, className }: UnpricedNoticePr
         data-testid="piecework-unpriced-pricing-link"
         className="mt-2 inline-block rounded border border-amber-400 bg-white px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
       >
-        去定价（工艺配置 → 工艺路线 · 部位价目矩阵）
+        去定价（工艺配置 · 工序单价）
       </Link>
     </div>
   )
