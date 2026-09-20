@@ -13,7 +13,7 @@
 
 A 与 B1/B2 都在**给商家算料**（米宝下单 vs 商家手工下单页试算）⇒ **同一张单两个答案**；
 差 1 幅 = 差整整一幅长（`H + HEM_MARGIN`）⇒ 面料费 + 加工费同幅变化（**涉钱**）。
-真值源 `docs/curtain-fabric-quote-rules.md` §3 写的是 `P = ceil((W + 0.3) × N / G)` ⇒ 站 **A**。
+真值源 `docs/curtain-fabric-quote-rules.md` §3 写的是 `P = ceil((W + SIDE_MARGIN) × N / G)`（#4819 起该节只写符号，数值见该文 §0「数值常量清单」）⇒ 站 **A**。
 
 ## 本守卫钉什么（**不钉「不一致」本身**）
 

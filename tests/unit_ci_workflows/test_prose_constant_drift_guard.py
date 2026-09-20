@@ -32,20 +32,27 @@
 | C2 | §3 的公式行里**不得出现**这些常量的数值字面量（消灭副本，防回退） | 把 §3 的 `(W + SIDE_MARGIN)` 改回 `(W + 0.3)` ⇒ 红 |
 | C3 | **判别力下界（反恒真）**：符号表必须非空且覆盖 §3 实际引用的符号；每个符号必须在引擎源码里**真被消费**（除定义处外还有引用）；值必须为正数 | 删掉 §0 的表格 ⇒ 红；把 `ROMAN_SIDE` 内联成字面量（定义还在但无消费点）⇒ 红 |
 | C4 | **文档不得同时声称同一个常量的两个不同数值**（`0.3` 与 `0.35` 并存 ⇒ 必有一处说谎） | 往 §0 之外再抄一份不同值的余量 ⇒ 红 |
-| C5 | **注入式自证**：C1~C4 的判定函数在**构造的**缺陷载荷上必须报错；同一载荷不注入 ⇒ 通过 | 见 `TestGuardSelfProof`（证明主测试的绿不是空跑） |
+| C5 | **注入式自证**：C1~C4、C6 的判定函数在**构造的**缺陷载荷上必须报错；同一载荷不注入 ⇒ 通过 | 见 `TestGuardSelfProof`（证明主测试的绿不是空跑） |
+| C6 | **引用方不得归属一个真值源章节里没有的数/节**（「假真值源」**第二形态**：真值源没错，是**引用方抄了旧数**；issue #4832） | 写一句「`quote-rules §10` = 0.15」而 §10 正文里没有 `0.15` ⇒ 红；写「`quote-rules §126`」而真值源没有该节 ⇒ 红 |
 
 ⚠️ **本守卫不 import 被测引擎**（`app` 包的导入期需要完整 `.env` ⇒ 会红于环境而非红于口径）
 —— 与 `test_hem_margin_cross_language_drift.py` / `test_fabric_width_truth_source.py` 同族，照源读常量。
 
-⚠️ **边界（照实登记，别把「登记了」读成「治住了」）**：本守卫只覆盖 §0 清单登记的 **12 个标量常量**
+⚠️ **边界（照实登记，别把「登记了」读成「治住了」）**：C1~C4 覆盖 §0 清单登记的 **12 个标量常量**
 + §3 的公式行。字典型常量（`DEFAULT_FULLNESS` / `DEFAULT_PROCESSING_PRICE` / `DEFAULT_CRAFT_TIERS`）
-与拼色系数表的散文副本仍散在 §1 / §5 / §8 / §10；`docs/design/**` 的引用面（`docs/design/` 不在
-drift 受管引用面内）也**未收口** —— 均登记在 issue #4819 报告的分叉项里，不冒充已覆盖。
+与拼色系数表的散文副本仍散在 §1 / §5 / §8 / §10（issue #4819 报告的分叉项，本单不改其数值）。
+
+**C6（issue #4832 新增）收口「引用面」**：判定面 = 全仓 `JUDGED_EXTS` 的**已跟踪**文件
+（派生副本见 `NOT_JUDGED`）—— 引用方归属给真值源某节的数值，必须能在该节正文里**逐字找到**。
+⚠️ **C6 自身的已知边界（不冒充已覆盖）**：判据是**行级**的 —— 数值被折到**下一行**的引用**不判**
+（实测 `docs/design/craft-calc-and-fabric-routing.md` 的 §3 引用就是这种换行形态：本单已**手工**
+改正并登记在 PR 里，但判据不覆盖它）。
 """
 from __future__ import annotations
 
 import ast
 import re
+import subprocess
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -321,6 +328,149 @@ def test_no_conflicting_value_claimed_outside_checklist() -> None:
     )
 
 
+# ── C6：引用方不得声称真值源章节里有它没有的数/节（issue #4832）────────────────
+#
+# 病根（「假真值源」**第二形态**）：不是「真值源写错数」，而是「**引用方抄的是旧数**」。
+# 实测（本单的原始发现）：`docs/design/order-craft-spec-design.md` 两处引
+# 「`quote-rules §10` = 拼色主布用料 `0.25×折数 + 0.15`（单开）」，而 §10 现行写的是
+# 「余量不随拼色变化」（单开 / 多开 = `MARGIN_SINGLE` / `MARGIN_MULTI`）—— `0.15` 在真值源里
+# **已不存在**（#4421 的用户裁定把「拼色主布用料」那句旧措辞连同它的数一起作废）。
+#
+# 危害比 C1~C4 更直接：**引用方被认为"已经查过真值源"** ⇒ 错值被当成权威
+# （#4760 的判定就逐字引过真值源的 §3）⇒ 照着设计文档实现 = 算错钱。
+
+#: 被判的真值源（引用方对它的**章节**做数值归属）
+CITED_DOC = "docs/curtain-fabric-quote-rules.md"
+#: 引用形态 P1：**指名**真值源的章节引用（`quote-rules §10` / `curtain-fabric-quote-rules.md §10`）
+CITED_REF = re.compile(r"(?:quote-rules|(?:docs/)?curtain-fabric-quote-rules\.md)`?\s*§\s*(\d+)")
+#: 引用形态 P2：**简写**归属（`真值源 §10：…`）。防空口判到别的真值源上 ⇒ 仅当**本文件**提到过
+#: 真值源时才判它（本仓 `docs/curtain-production-rules.md` 也自称「真值源」，且只有 §1~§8）
+BARE_TRUTH_REF = re.compile(r"真值源\s*§\s*(\d+)\s*[：:]")
+#: 判定的文件类型。**漏一类 = 那一类永久免检，且没有任何东西会红** ⇒ 按扩展名收全仓，
+#: **不按目录开白名单**（目录白名单会让新目录静默免检）。
+JUDGED_EXTS = (".md", ".py", ".yml", ".yaml", ".ts", ".tsx", ".java", ".sql", ".sh")
+#: **有意不判**的派生副本：内容是别的单一源的生成物 ⇒ 判它等于把同一件事判两份（源面已判）
+NOT_JUDGED = {
+    "tests/unit_ci_workflows/test_prose_constant_drift_guard.py":
+        "**判据自身**：它的 docstring 举例与注入自证载荷**必须**是失效引用（写红证的前提条件），"
+        "否则本判据的红证根本写不出来 —— 与 `drift_audit` 的 `refs-are-fixtures` 同一取舍",
+    ".github/cases/": "由 `.github/templates/**` 经渲染脚本生成（判源面）",
+    "docs/testing/mibao-verification-cases.md": "由 `.github/cases/**` 生成",
+    "tests/agent_eval/eval_cases.py": "与用例库同步的生成物",
+}
+
+
+def _truth_sections(truth_text: str) -> dict[str, str]:
+    r"""切真值源的「## N.」小节 ⇒ `{N: 正文}`。
+
+    ⚠️ 标题正则**必须**要求「点号后还有空白」：`^##\s+(\d+)\.` 会把子节标题 `## 8.1 …`
+    也读成 §8 并把父节正文**覆盖掉**（实测：那样 §8 的正文只剩 §8.1，判据对 §8 的引用
+    **假红**；误红即坏断言）。子节文字**归入父节**（§8.1 是 §8 的一部分）⇒ 判据更宽松、不误红。
+    """
+    out: dict[str, list[str]] = {}
+    cur: str | None = None
+    for line in truth_text.splitlines():
+        m = re.match(r"^##\s+(\d+)\.\s+\S", line)
+        if m:
+            cur = m.group(1)
+            out[cur] = []
+            continue
+        if cur is not None:
+            out[cur].append(line)
+    return {k: "\n".join(v) for k, v in out.items()}
+
+
+def _judged_files() -> dict[str, str]:
+    """受判引用面：全仓**已跟踪**的 `JUDGED_EXTS` 文件，减去 `NOT_JUDGED`（派生副本）。"""
+    listed = subprocess.run(
+        ["git", "ls-files"], cwd=REPO, capture_output=True, text=True, check=True,
+    ).stdout
+    out: dict[str, str] = {}
+    for rel in listed.split("\n"):
+        if not rel or not rel.endswith(JUDGED_EXTS):
+            continue
+        if any(rel.startswith(prefix) for prefix in NOT_JUDGED):
+            continue
+        if rel == CITED_DOC:
+            continue  # 真值源自己不算「引用方」（它对别节的内部引用是裸 `§N`）
+        try:
+            out[rel] = (REPO / rel).read_text(encoding="utf8")
+        except (OSError, UnicodeDecodeError):
+            continue
+    return out
+
+
+def _citation_findings(truth_text: str, docs: dict[str, str]) -> list[str]:
+    """C6 判定体（**纯函数**，供注入式自证复用）⇒ 漂移条目（空 = 干净）。
+
+    判据 = 引用方同一行里**归属给真值源某节**的每个数值，都必须在那一节的正文里**逐字存在**；
+    被引的章节号本身也必须存在（`§126` 这种「**旧行号冒充章节号**」的引用即红）。
+    """
+    sections = _truth_sections(truth_text)
+    findings: list[str] = []
+    for rel, text in sorted(docs.items()):
+        mentions_truth = CITED_DOC in text
+        for lineno, line in enumerate(text.splitlines(), 1):
+            refs = [(m.group(1), "指名") for m in CITED_REF.finditer(line)]
+            if not refs and mentions_truth:
+                refs = [(m.group(1), "简写") for m in BARE_TRUTH_REF.finditer(line)]
+            for sec, form in refs:
+                values = _FLOAT.findall(line)
+                if not values:
+                    continue
+                at = f"{rel} 第 {lineno} 行（{form}引用 §{sec}）"
+                body = sections.get(sec)
+                if body is None:
+                    findings.append(
+                        f"{at}：真值源里**没有 §{sec} 这一节** —— 章节号很可能是旧行号冒充的"
+                        f"（该文现有节：{sorted(sections, key=int)}）")
+                    continue
+                missing = [v for v in values if v not in body]
+                if missing:
+                    findings.append(
+                        f"{at}：行内数值 {missing} 在真值源 §{sec} 的正文里**不存在** —— 抄的是旧数")
+    return findings
+
+
+def test_citations_do_not_claim_values_absent_from_truth_source() -> None:
+    """C6：引用方归属给真值源某节的数值/节号必须真的存在（引用方不得说谎，issue #4832）。"""
+    findings = _citation_findings(_doc_text(), _judged_files())
+    assert findings == [], (
+        "引用了真值源里**不存在的数值或章节**（「假真值源」第二形态：真值源没错，是**引用方抄了旧数**）"
+        "—— 后来人会把这些数当权威用（#4760 的判定就逐字引过真值源）⇒ 照它实现即算错钱。"
+        "修法 = **改成符号引用 + 章节名**（不写数值），**不是**把数值同步一份（同步的副本仍会腐烂）：\n  "
+        + "\n  ".join(findings)
+    )
+
+
+def test_citation_guard_has_discriminating_power() -> None:
+    """C6 反空跑：真值源章节表可解析、受判引用面非空、且面里**真的**有对真值源的引用。"""
+    sections = _truth_sections(_doc_text())
+    assert sections, "真值源 §N 章节表解析为空 ⇒ 章节存在性判据空跑（不会红的断言 = 空断言）"
+    docs = _judged_files()
+    assert len(docs) >= 50, f"受判引用面只有 {len(docs)} 个文件 ⇒ 面被收窄到判不到东西"
+    named = [rel for rel, text in docs.items() if CITED_DOC in text]
+    assert len(named) >= 5, f"只有 {len(named)} 个文件提到真值源 ⇒ 引用面判据疑似空跑：{named}"
+
+
+def test_judged_surface_exclusions_are_few_and_real() -> None:
+    """C6 反空跑②：豁免（`NOT_JUDGED`）必须**条条命中真实文件**且数量有下界 —— 豁免不得默默变宽。
+
+    形态来源：豁免清单本身是「静默失效」的高发地（一条写错的 prefix ⇒ 那片文件**永久免检**，
+    而判据照旧全绿）。故这里要求 ① 每条 prefix 至少命中一个**已跟踪**文件；② 豁免条目数不超过
+    登记时的上限（只许缩短，加豁免必须同时解释为何它不是契约引用载体）。
+    """
+    listed = subprocess.run(
+        ["git", "ls-files"], cwd=REPO, capture_output=True, text=True, check=True,
+    ).stdout.split("\n")
+    for prefix, reason in NOT_JUDGED.items():
+        hits = [rel for rel in listed if rel.startswith(prefix)]
+        assert hits, f"豁免「{prefix}」命中 0 个已跟踪文件 ⇒ 它是条**空豁免**（{reason}）"
+    assert len(NOT_JUDGED) <= 4, (
+        f"豁免条目涨到 {len(NOT_JUDGED)} 条 ⇒ 判据面在悄悄变窄（豁免只许缩短，新增必须显式评审）"
+    )
+
+
 # ── C5：注入式自证（证明上面的绿不是空跑）─────────────────────────────────────
 
 def _payload(checklist: str, section3: str) -> str:
@@ -402,6 +552,50 @@ class TestGuardSelfProof:
         truth = _engine_value(source, "SIDE_MARGIN")
         payload = _payload(_ROW.format(v=truth), "`SIDE_MARGIN` 覆盖余量按符号取")
         assert _conflicting_claims(payload, source) == [], "干净载荷被判成矛盾 ⇒ 判据误红"
+
+    def test_c6_detects_missing_section(self) -> None:
+        """C6 自证①：引用一个真值源里**不存在**的章节号 ⇒ 同一判定体必须报出来。"""
+        payload = {"docs/design/x.md": "| quote-rules §999 | 拼色 = 0.15（单开） |\n"}
+        findings = _citation_findings(_doc_text(), payload)
+        assert findings and "§999" in findings[0], (
+            f"注入不存在的章节号 §999 后判定体没报：{findings} ⇒ C6 是空断言"
+        )
+
+    def test_c6_detects_stale_number(self) -> None:
+        """C6 自证②：章节**存在**、但写一个该节正文里没有的数 ⇒ 必须报出来（本单的形态）。"""
+        sections = _truth_sections(_doc_text())
+        sec = sorted(sections, key=int)[-1]
+        probe = "9.99"                       # 构造一个必然不在任何章节里的数（不写死任何常量值）
+        while probe in sections[sec]:
+            probe += "9"
+        payload = {"docs/design/x.md": f"| quote-rules §{sec} | 余量 = {probe}（单开） |\n"}
+        findings = _citation_findings(_doc_text(), payload)
+        assert findings and probe in findings[0], (
+            f"注入 §{sec} 正文里没有的数 {probe} 后判定体没报：{findings} ⇒ C6 是空断言"
+        )
+
+    def test_c6_clean_payload_passes(self) -> None:
+        """C6 反向：引用该节**真有**的数 ⇒ 不得报（证明红由注入引起，不是判据乱红）。"""
+        sections = _truth_sections(_doc_text())
+        sec = sorted(sections, key=int)[-1]
+        numbers = _FLOAT.findall(sections[sec])
+        assert numbers, f"真值源 §{sec} 里读不到数值 ⇒ 反向载荷构造不出来，请换一节"
+        payload = {"docs/design/x.md": f"| quote-rules §{sec} | 该节正文含 {numbers[0]} |\n"}
+        assert _citation_findings(_doc_text(), payload) == [], "干净载荷被判成漂移 ⇒ 判据误红"
+
+    def test_c6_symbolic_payload_passes(self) -> None:
+        """C6 反向：**符号引用**（整行不写任何数值）本就不该被判 —— 这正是本单的修法方向。"""
+        payload = {"docs/design/x.md": "| quote-rules §10 | 余量不随拼色变化 = `MARGIN_SINGLE` |\n"}
+        assert _citation_findings(_doc_text(), payload) == [], (
+            "符号引用被判红 ⇒ 判据把本单的修法方向挡住了（自相矛盾）"
+        )
+
+    def test_truth_sections_keep_subsection_text_in_parent(self) -> None:
+        """C6 前提自证：子节标题（`## 8.1`）**不得**把父节正文截断/覆盖 —— 否则判据假红。"""
+        sections = _truth_sections("## 8. 父节\n正文A\n\n## 8.1 子节\n正文B\n\n## 9. 下节\n正文C\n")
+        assert "正文A" in sections.get("8", ""), f"§8 正文被子节覆盖/截断：{sections!r} ⇒ 判据假红"
+        assert "正文B" in sections.get("8", ""), f"§8.1 的文字没归到父节 §8：{sections!r}"
+        assert sections.get("9", "").strip() == "正文C", f"下一节没被正确切出：{sections!r}"
 
     def test_anchor_missing_is_not_silent(self) -> None:
         """锚点缺失必须**抛错**而不是返回空串（否则整组判据会静默空跑）。"""

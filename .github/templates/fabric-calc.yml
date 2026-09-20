@@ -22,7 +22,7 @@ business_truths:
   - [fabric-calc.craft-calc-config] 算料公式参数一律从**配置对象**读（issue #4527 用户追加裁定「可能得支持每个商家自定义配置」）：`build_quote(..., config=None)` ⇒ 模块级只读常量 `DEFAULT_CRAFT_CALC_CONFIG`（默认值 = 既有常量逐值不变）；键 = `per_fold_single` / `per_fold_mixed_times` / `margin_single` / `margin_multi` / `min_fullness` / `tiers` / `default_formula` / `side_margin` / `meters_rounding_step`。**护栏不因可配而消失**（配置来自商家 = 不可信输入 ⇒ 非法即显式报错，不静默回退默认值）；配置沿调用链显式传递，**不得**读进模块级可变全局（并发互相污染）。持久化与商家配置界面属后续包，本包不做
   - [fabric-calc.craft-calc-endpoint] 算料试算单一真值（issue #4421）：商家手工下单页试算走 ai-agent `POST /api/internal/production/craft-calc`（Service Token），admin-api `CraftCalcClient` + `POST /api/admin/orders/craft-calc`（**不落库**）只做「问 + 取」——**Java / TS 侧不复制第二份算料逻辑**；可读公式串 `formula_text`（如 `韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米`）由**后端**按同一份数字产出，前端不得自拼；`mounting != s_hook` ⇒ 400 拒绝，**不静默回落**倍数法（`formula='fullness'` 是合法的另一种计算方法，不受该守卫限制）
   # 未落码 ⇒ **不登记为真值**（登记 = 承诺代码能做到，属「文档承诺、代码不读」的静默失效）：
-  #   拼色（主布用料 / 按折加价 2.4 元/米）、定型报价加价 —— 见 docs/curtain-fabric-quote-rules.md §10 的【背·未落码】登记。
+  #   拼色（**主布 / 配布边分列**用料；**计价**元/折口径待裁定 #4341）、定型报价加价 —— 见 docs/curtain-fabric-quote-rules.md §10 / §11 的【背·未落码】登记。
   - [fabric-calc.no-fabrication] 不编造报价数据，必须通过 curtain_calc 工具计算
 
 primary_specs:
