@@ -17,6 +17,7 @@ import com.migao.admin.service.ProductionRoutingCommandService;
 import com.migao.admin.service.ProductionRoutingReadService;
 import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
+import com.migao.admin.service.ProductionStuckPointService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -104,6 +105,16 @@ public class ProductionController {
      */
     @org.springframework.beans.factory.annotation.Autowired
     private ProductionScanService productionScanService;
+
+    /**
+     * 「卡在哪」的判据与报表（切片 ③，issue #4776；设计 §6）。
+     *
+     * <p>与上面几条同款用字段注入：本类构造签名被 {@code ProductionControllerTest} 的 standaloneSetup
+     * 显式装配（6 个参数），加参数会把既有测试的装配全改一遍 —— 而本单的改动面不应扩到那里。
+     * Spring 生产装配下该依赖一定非 null（同包 {@code @Service}）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    private ProductionStuckPointService productionStuckPointService;
 
     /**
      * 未定价实例的**显式补价路径**（issue #4709 C）：只补 {@code NULL}、已有价一律不动、进度不清零。
@@ -238,6 +249,31 @@ public class ProductionController {
             @RequestParam(name = "operation_id", required = false) String operationId) {
         return ApiResponse.success(productionScanService.resolve(
                 token, operationId, TenantContext.getTenantId()));
+    }
+
+    /**
+     * 「卡在哪」卡点报表（**只读**，切片 ③ / issue #4776；设计 §6.1 行① / §6.3）
+     * GET /api/admin/production/stuck-points?processing_order_id=…
+     *
+     * <p><b>A 模式只查「没开工」那一种</b>（裁定②-3，设计 §6 开头逐字：「『卡在哪』<b>在 A 模式下的
+     * 口径 = 只有『没开工』那一种</b>」）—— 判据 = 没开工 + 立即前道已完成 + 等待超阈值；
+     * 「上道几点完成、等了多久」都可答（D8）。B/C 模式的卡点（「开了没完」）**不在本片**
+     * （§6.1 行②仅 C；§8 A3「C 只作预留」）。</p>
+     *
+     * <p>🔴 「卡了多久」取**前道 {@code done_at}**，<b>绝不用 {@code updated_at}</b>（§6.1 逐字点名
+     * 它会被任何更新污染 ⇒ 会静默给出错数）。阈值 = S3 全局默认常量（可配
+     * {@code migao.production.stuck-point.wait-threshold-hours}），响应带 {@code threshold_source}
+     * ⇒「阈值从哪来」可解释（§6.4；S1 历史中位数属 §8 A2 待裁定，本片不发明）。</p>
+     *
+     * <p>权限沿用类级 {@code order:list}（读口径；与 {@code /operations}、{@code /piecework} 同款）。</p>
+     *
+     * @param processingOrderId 可选：只看某一个加工单（缺省 = 本租户全部活跃加工单）
+     */
+    @GetMapping("/stuck-points")
+    public ApiResponse<Map<String, Object>> stuckPoints(
+            @RequestParam(name = "processing_order_id", required = false) String processingOrderId) {
+        return ApiResponse.success(productionStuckPointService.report(
+                processingOrderId, TenantContext.getTenantId()));
     }
 
     /**

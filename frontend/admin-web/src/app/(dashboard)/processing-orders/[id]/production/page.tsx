@@ -6,7 +6,7 @@ import { AlertCircle, ArrowLeft, Copy, Printer, QrCode, RefreshCw, ShieldOff, Wr
 import { QRCodeSVG } from 'qrcode.react'
 import { Button, Modal } from '@/components/ui'
 import StatusBadge from '@/components/ui/StatusBadge'
-import { cn } from '@/lib/utils'
+import { cn, formatFullDateTime } from '@/lib/utils'
 import { chipToneClasses } from '@/lib/status-chip'
 import { processingOrderStatusChipFor } from '@/lib/processing-order'
 import { processingOrderApi, productionApi } from '@/lib/api'
@@ -16,7 +16,7 @@ import { routeSourceNotice } from '@/lib/route-source'
 import ProductionProgressTable from '@/components/production/ProductionProgressTable'
 import PieceworkTable from '@/components/production/PieceworkTable'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
-import type { PieceworkSummary, ProcessingOrder, ProductionOperations } from '@/types'
+import type { PieceworkSummary, ProcessingOrder, ProductionOperations, StuckPointsReport } from '@/types'
 
 /**
  * 加工单生产明细（issue #4000，M4-H 按需单据渲染）
@@ -55,12 +55,16 @@ export default function ProcessingOrderProductionPage() {
   // **纯前端渲染 + 零写请求**（不碰 qr_token，不调任何端点）。
   const [testQrOpen, setTestQrOpen] = useState(false)
   const [testQrCopied, setTestQrCopied] = useState(false)
+  // 「卡在哪」卡点报表（切片 ③，issue #4776；只读；设计 §6）
+  const [stuckPoints, setStuckPoints] = useState<StuckPointsReport | null>(null)
+  const [stuckPointsError, setStuckPointsError] = useState('')
 
   const load = useCallback(async () => {
     if (!id) return
     setLoading(true)
     setError('')
     setOperationsError('')
+    setStuckPointsError('')
     try {
       const detailRes = await processingOrderApi.detail(id)
       const detail = detailRes.data?.data ?? null
@@ -90,6 +94,18 @@ export default function ProcessingOrderProductionPage() {
         setOperationsError('工序进度加载失败，请稍后重试')
       }
       setPiecework(pieceRes.status === 'fulfilled' ? pieceRes.value.data?.data ?? null : null)
+
+      // 卡点报表（切片 ③，issue #4776）：按**加工单 id** 取（不是订单 id）——
+      // 报表是「按套 × 工序」的，加工单才是套的归属。失败不吞掉上面两条（页面不白屏）。
+      try {
+        const stuckRes = await productionApi.getStuckPoints(detail.id)
+        setStuckPoints(stuckRes.data?.data ?? null)
+        setStuckPointsError('')
+      } catch (e) {
+        console.error(e)
+        setStuckPoints(null)
+        setStuckPointsError('卡点报表加载失败，请稍后重试')
+      }
     } catch (e) {
       console.error(e)
       setPo(null)
@@ -479,6 +495,65 @@ export default function ProcessingOrderProductionPage() {
           <div className="rounded-lg border border-neutral-200 bg-white p-5">
             <h2 className="mb-3 text-base font-medium text-neutral-900">计件汇总</h2>
             <PieceworkTable summary={piecework} />
+          </div>
+
+          {/* 「卡在哪」（切片 ③，issue #4776；设计 §6）：🔴 A 模式**只查「没开工」那一种**
+              （裁定②-3）—— 「开了没完」属 C 模式（未落码），不在本面板。
+              等待时长 = 上道 **done_at** 起算（不用 updated_at：它会被任何更新污染）。
+              阈值来源随响应给出（threshold_source）⇒「阈值从哪来」不静默。 */}
+          <div className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="production-stuck-points">
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-base font-medium text-neutral-900">卡在哪</h2>
+              <span className="text-xs text-neutral-500">
+                A 模式 · 只查「没开工」；阈值 {stuckPoints?.threshold_hours ?? '—'} 小时（
+                {stuckPoints?.threshold_source === 'history' ? '历史中位数' : '系统兜底默认值'}）
+              </span>
+            </div>
+            {stuckPointsError ? (
+              <div
+                className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-6 text-sm text-neutral-600"
+                data-testid="production-stuck-points-error"
+              >
+                <AlertCircle className="w-4 h-4 text-red-500" />
+                {stuckPointsError}
+              </div>
+            ) : (
+              <>
+                <p className="mb-2 text-xs text-neutral-500" data-testid="production-stuck-points-states">
+                  本单工序三态：没开工 {stuckPoints?.states?.not_started ?? 0} 道 · 做了一半{' '}
+                  {stuckPoints?.states?.in_progress ?? 0} 道 · 已完成 {stuckPoints?.states?.completed ?? 0} 道
+                </p>
+                {(stuckPoints?.stuck_total ?? 0) === 0 ? (
+                  <p className="text-sm text-neutral-500" data-testid="production-stuck-points-empty">
+                    没有「上道已交、这道没人扫」的工序
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {(stuckPoints?.stuck ?? []).map((row) => (
+                      <li
+                        key={`${row.set_id ?? ''}-${row.operation?.operation_id ?? ''}`}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded border border-neutral-200 px-3 py-2 text-sm"
+                        data-testid="production-stuck-points-row"
+                      >
+                        <span className="text-neutral-900">
+                          <span className="font-medium">{row.set_no ?? row.processing_order_id ?? '—'}</span>
+                          <span className="mx-1 text-neutral-400">·</span>
+                          {row.operation?.position
+                            ? `${row.operation?.logical_name ?? ''} · ${row.operation.position}`
+                            : (row.operation?.logical_name ?? '—')}
+                        </span>
+                        <span className="text-red-600">
+                          等了 {(row.stalled_hours ?? 0).toFixed(1)} 小时
+                          {row.predecessor?.done_at
+                            ? `（上道 ${formatFullDateTime(row.predecessor.done_at)} 完成）`
+                            : ''}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
           </div>
 
           {/* 可打印任务卡：屏幕隐藏（display:none），点「打印任务卡」时只打印它 */}

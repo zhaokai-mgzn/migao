@@ -76,7 +76,9 @@ import java.util.function.Predicate;
  *   <li>§3.1 的 {@code display_name} 不落：显示名 = {@code logical_name} + {@code position}，
  *       由**既有**前端 helper 拼接（本类只给两个源键）—— 在 Java 侧再拼一份就是第二份口径
  *       （#4621 / #4630 的同族纪律）。</li>
- *   <li>{@code stalled}（§3.1）属切片 ③（卡点报表），本切片不落。</li>
+ *   <li>{@code stalled}（§3.1）**已于切片 ③（issue #4776）落码**：判据本体在
+ *       {@link ProductionStuckPointService}（A 模式只判「没开工」那一种；「卡了多久」取前道
+ *       {@code done_at}）—— 本类只把该键**加**进响应（既有键一字不动）。</li>
  * </ul>
  */
 @Slf4j
@@ -114,6 +116,14 @@ public class ProductionScanService {
      * 在扫描侧再写一份就是第二份口径（两处迟早不同），故只调用 {@link ProductionService#resolveOrder}。
      */
     private final ProductionService productionService;
+
+    /**
+     * 「卡在哪」的判据（切片 ③，issue #4776；设计 §6）：一屏输出里的 {@code stalled} 键由它算。
+     *
+     * <p>判据**只有一份**（{@link ProductionStuckPointService}）—— 在扫描侧再写一遍
+     * 「没开工 / 上道完成时刻 / 等超阈值」就是第二份口径（两处迟早不同）。</p>
+     */
+    private final ProductionStuckPointService stuckPointService;
 
     // ============================================================ 解析入口
 
@@ -215,6 +225,11 @@ public class ProductionScanService {
                 : operationView(chosen, determinedBy, rerouted));
         result.put("alternatives", alternativeViews(sorted, chosen));
         result.put("set_progress", productionService.progressOf(setOperations));
+        // ④ 卡点判据（切片 ③，issue #4776；设计 §3.1 逐字：「"stalled": { "kind": null }} // §6：
+        //    非空 = 这道卡住了，附判据与阈值来源」）。**只加一个键**，既有键一字不动。
+        //    A 模式只判「没开工」那一种；「卡了多久」取**前道 done_at**，绝不用 updated_at
+        //    （§6.1 逐字点名它会被任何更新污染 ⇒ 会静默给出错数）。
+        result.put("stalled", stuckPointService.stalledView(setOperations, chosen));
         // ③ 本套无活可做 ⇒ 「本套已完成」（含完成时刻），不报错（设计 §3.2）
         result.put("completed", chosen == null);
         result.put("completed_at", completedAt(setOperations));
