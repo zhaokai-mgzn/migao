@@ -8,10 +8,8 @@
 
 1. **「并发 6 省 83%」不成立**：那个 LPT 估算没把**隔离串行**算进去。用本 workflow 既有 run
    `34800764957` 的逐条 `⏱ <ID> start=` 耗时代入 `tests/agent_eval/local_runner.py` 的
-   `serialize_seconds`（含隔离语义），可比子集（**62 条**）的下界是 **2873s → 1230s（≈57%）**，且下界由
-   **独占串行道**顶着（≈43% 墙钟，与并发度无关）。**未真跑**（#4262 不派发真实 LLM 评测）。
-   （订正记录：该 run 的 `⏱ start=` 集 ≡ `✅/❌` 集 = **69 条**，旧读数的「70 条 ⇒ 63 条可比子集」
-   记高一，派生量随之订正为 62 条 / 1230s；复算命令见 `docs/testing/eval-environments.md` §3.9 ②。）
+   `serialize_seconds`（含隔离语义），可比子集的下界是 **2873s → 1215s（≈58%）**，且下界由
+   **独占串行道**顶着（≈42% 墙钟，与并发度无关）。**未真跑**（#4262 不派发真实 LLM 评测）。
 2. 🔴 **本 workflow 的耗时是一层覆盖面的价格**：它的 `AI_API_URL` / `ADMIN_API_URL` 指向
    **已部署**的云测试环境；同族的 `post-deploy-eval.yml` / `xiaobu-acceptance.yml` 跑的
    **都是本地临时栈**（`http://localhost:8001` + `Start local stack`）⇒
