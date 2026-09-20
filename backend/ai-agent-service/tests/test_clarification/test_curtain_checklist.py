@@ -159,6 +159,22 @@ def test_craft_spec_maps_checklist_ids_to_processing_info_keys():
     }
 
 
+def test_craft_spec_maps_room_to_room_key():
+    """房间名必须落库（issue #4390 缺口④ 的残留）。
+
+    病灶（实测）：`room` 是清单里 **`required: True`** 的问项（note 原话「逐扇窗；房间名用户自定义
+    （北次卧）」）⇒ **小布每单都必问**；但 `CHECKLIST_TO_CRAFT_SPEC` 里**没有**它 ⇒ 答案收进 collector
+    后**零消费者**，会话结束即丢 —— 「问到了却不落库」本来正是本映射表要消灭的形态。
+
+    为什么确定是**遗漏**而不是有意排除（同文件对 `cutting_mode` 的排除就**写了理由**，此处一字皆无）：
+    admin-api 的 `ProcessingOrderService.CRAFT_SPEC_SNAPSHOT_KEYS` **白名单里有 `"room"`**，
+    且该白名单的 javadoc 明写「新键不加进这里就**不会进快照** ⇒ 车间少一道活 / 少一个展示字段」
+    ⇒ 后端**已承诺**接这个键，是写侧（本映射表）没送。
+    """
+    spec = to_craft_spec({"room": "北次卧"})
+    assert spec == {"room": "北次卧"}, f"房间名必须原样落 processing_info.room: {spec}"
+
+
 def test_craft_spec_omits_missing_fields_never_invents_defaults():
     # 只收集了帘型 ⇒ 只有这一个键；**不得**补 craft/formula 的行业默认值
     # （默认值由 merged_defaults 管，落库只认真实采集到的值 —— 否则库里会出现「没人说过」的工艺）
@@ -191,7 +207,7 @@ def test_craft_spec_mapping_targets_are_all_declared_order_line_elements():
     declared = set(CHECKLIST_TO_CRAFT_SPEC.values()) | set(CALC_OUTPUT_PASSTHROUGH_KEYS)
     assert declared == {
         "curtainType", "craft", "openCount", "isShaped", "formula",
-        "hasPattern", "corner", "fullness", "fullness_actual", "pleat_count",
+        "hasPattern", "corner", "room", "fullness", "fullness_actual", "pleat_count",
     }
 
 
