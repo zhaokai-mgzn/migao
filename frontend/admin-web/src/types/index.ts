@@ -698,6 +698,14 @@ export interface ProductionOperation {
 export interface ProductionPosition {
   position_name?: string | null
   /**
+   * 订单行主键（`order_items.id`）—— **商品行 = 部位**的定位键（issue #4388 起为分组键）。
+   * 洗水码靠它与加工单快照明细对齐（`ProcessingOrderItem` 快照里的 `itemId`），
+   * 逐张取该商品自己的工艺摘要；存量行如实 `null`（读面不编值）⇒ 消费方按缺键渲染，不猜。
+   */
+  order_item_id?: string | null
+  /** 部位类型码（布帘/纱帘/帘头…）；老数据缺省 ⇒ 只显示 `position_name` */
+  position_kind?: string | null
+  /**
    * 樘窗（套）键（issue #4784）：与计件报表 `per_set` 的 `set_no` **同一份口径**
    * （后端 `ProductionService.setKey`：V92 落库套号优先、无号回落樘窗组键
    * `craftLineId ?? itemId`）—— 一樘「布 + 纱 + 帘头」= **1 套**。
@@ -706,6 +714,21 @@ export interface ProductionPosition {
    * 缺键（老数据 / 读面未升级）⇒ 消费方退回「每个部位自成一套」，不猜。
    */
   set_no?: string | null
+  /**
+   * 该部位（= 商品行）的扫码报工 token（issue #4946，洗水码粒度 = 商品行）。
+   * 与加工单级 `qr_token` **不是一回事**：它只覆盖本商品自己的工序集；可撤销 ⇒ 缺键如实 `null`。
+   */
+  part_token?: string | null
+  /** 该部位码的**人可读短码**（8 位，如 `7K3M9QP2`）：扫码枪/人眼读不出来时工人可手输 */
+  part_short_code?: string | null
+  /** 该部位二维码的**确切内容**（如 `https://app.migaozn.com/s/7K3M9QP2`）—— 前端**不拼**，逐字用 */
+  scan_url?: string | null
+  /** 订单行商品名（读面按 `order_item_id` 回查订单行）：纸面/弹层标「这一张是给哪一件的」 */
+  product_name?: string | null
+  /** 订单行宽度（米；V63 列，读面回查；缺键不补默认值） */
+  width?: number | null
+  /** 订单行高度（米；V63 列，读面回查；缺键不补默认值） */
+  height?: number | null
   operations?: ProductionOperation[]
 }
 

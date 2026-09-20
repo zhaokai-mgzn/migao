@@ -491,6 +491,14 @@ cases:
         - "frontend/admin-web/tests/unit/lib/use-route-id.test.ts"
         - "tests/unit_ci_workflows/test_operation_display_name_guard.py"
         - "frontend/admin-web/tests/unit/lib/operation-display.test.ts"
+        # issue #4946：洗水码（按商品行/部位出码）的**后端半边**由 Java 测试覆盖 ——
+        # 读面三键（`part_token`/`part_short_code`/`scan_url`）、扫码入参归一（整条 URL / 裸短码）、
+        # 撤销扩面（部位码与 `qr_token` 同事务作废）+ 重新发码。声明了 `PP-011` 的测试文件必须列在这里
+        # （用例的 traces 是「谁在覆盖它」的单一事实源）。
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionServicePartCodeTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionPartCodeRealMappingTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/ProcessingSetPartTokenMapperTest.java"
       ci:
         - pr-check.yml
       verifies: []

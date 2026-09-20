@@ -14,6 +14,10 @@
 // PP-011（issue #4726，A 档）：加工单生产明细页「生成二维码（测试用）」入口 —— 把**加工单号**画成
 // 纯文本码（**只读**：零写请求、qr_token 一字不动）+ 一键复制单号 + 按 processing:manage 显隐，
 // 用于串联「扫码 → 手动输单号 → 报工 → 计件」端到端联调（B 档小程序码需 bmini 凭据，本单缺）。
+// PP-011（issue #4946，用户裁定 2026-09-21）：**洗水码取代 A4 任务卡** —— 生产页传
+// `positions` 给任务卡（每部位一张 60×30mm，码 = 该部位自己的 `scan_url`/`part_token`），
+// 且「生成二维码（测试用）」弹层**逐张**出码（N 个部位 ⇒ N 张，各带人可读短码 + 复制短码），
+// 不再是「一张单号码」。撤销语义（`qr_token` 为空 ⇒ 占位文案）逐字保留。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -63,12 +67,24 @@ const PROCESSING_ORDER = {
   generatedAt: '2026-09-17 10:00:00',
 }
 
+/** issue #4946：纸面/弹层的码 = **该部位自己的** `scan_url`（不是加工单号，也不是单张 qr_token） */
+const PART_SCAN_URL = 'https://app.migaozn.com/s/7K3M9QP2'
+const PART_SHORT_CODE = '7K3M9QP2'
+
 const OPERATIONS = {
   order_id: 'order-uuid-1',
   qr_token: 'qr-token-abc123',
   positions: [
     {
       position_name: '布帘',
+      // issue #4946：粒度 = 商品行 = 部位，码 = 该部位自己的 `scan_url`（人可读短码 = part_short_code）
+      order_item_id: 'item-1',
+      position_kind: '布帘',
+      set_no: 'JG-20260917-0001-001',
+      product_name: '布艺遮光帘A',
+      part_token: 'part-token-1',
+      part_short_code: PART_SHORT_CODE,
+      scan_url: PART_SCAN_URL,
       operations: [
         {
           id: 'op-1',
@@ -108,8 +124,22 @@ const PIECEWORK = {
 
 const ok = (data: unknown) => ({ data: { success: true, data } })
 
-/** 撤销后后端语义：qr_token 置空（工序实例仍在），见 PG-019 data_checks「二维码撤销」 */
-const OPERATIONS_REVOKED = { ...OPERATIONS, qr_token: null }
+/**
+ * 撤销后后端语义：`qr_token` 置空（工序实例仍在），见 PG-019 data_checks「二维码撤销」。
+ *
+ * issue #4946：任务卡印的是**部位自己的码**（`scan_url`/`part_token`）⇒ 撤销必须覆盖它们
+ * （码失效 ⇒ 读面不再给码），否则页面上仍挂着已作废的码、纸面占位文案也不会出现。
+ */
+const OPERATIONS_REVOKED = {
+  ...OPERATIONS,
+  qr_token: null,
+  positions: OPERATIONS.positions.map((position) => ({
+    ...position,
+    part_token: null,
+    part_short_code: null,
+    scan_url: null,
+  })),
+}
 
 describe('加工单生产明细页', () => {
   beforeEach(() => {
@@ -449,7 +479,7 @@ describe('加工单生产明细页', () => {
     expect(entry).toHaveTextContent('测试用')
   })
 
-  it('#4726 点开弹层：二维码内容 = 加工单号（纯文本，**不是** qr_token）+ 明示「测试用」', async () => {
+  it('#4946 点开弹层：**逐张**出码（第 0 张 = 该部位自己的 scan_url，不是单号码、不是 qr_token）+ 明示「测试用」', async () => {
     render(<ProductionDetailPage />)
     await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
 
@@ -458,12 +488,13 @@ describe('加工单生产明细页', () => {
     // 红证（改前实测）：点击后无二维码/无单号 ⇒ findByRole 超时必红
     const dialog = await screen.findByRole('dialog', { name: '生成二维码（测试用）' })
 
-    const qr = within(dialog).getByTestId('production-test-qr-code')
+    const qr = within(dialog).getByTestId('production-test-qr-code-0')
     expect(qr.tagName.toLowerCase()).toBe('svg')
-    // qrcode.react 的 title prop → svg <title>；断言**加工单号**真的进了二维码组件
-    expect(within(qr).getByTitle('JG-20260917-0001')).toBeInTheDocument()
+    // qrcode.react 的 title prop → svg <title>；断言**该部位自己的扫码内容**真的进了二维码组件
+    // （issue #4946：逐张出码，第 0 张 = 第 0 个部位）
+    expect(within(qr).getByTitle(PART_SCAN_URL)).toBeInTheDocument()
     expect(qr.querySelectorAll('path').length).toBeGreaterThan(0)
-    // 内容不得是 qr_token（A 档 = 纯文本单号码，与任务卡的 token 码是两回事）
+    // 内容不得是 qr_token（任务卡的码与「测试用」弹层的码都不是单号拼接串）
     expect(within(qr).queryByTitle('qr-token-abc123')).toBeNull()
 
     // 屏幕上也要有可读的单号文本（扫码工具读不出来时人眼可核）
@@ -493,9 +524,9 @@ describe('加工单生产明细页', () => {
     render(<ProductionDetailPage />)
     await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
 
-    // 操作前：任务卡二维码内容 = qr_token（页面上的**权威**报工码）
-    const tokenBefore = screen.getByTestId('task-card-qr').querySelector('title')?.textContent
-    expect(tokenBefore).toBe('qr-token-abc123')
+    // 操作前：任务卡二维码内容 = **该部位自己的码**（issue #4946；页面上的权威扫码入口）
+    const codeBefore = screen.getByTestId('task-card-qr').querySelector('title')?.textContent
+    expect(codeBefore).toBe(PART_SCAN_URL)
 
     await userEvent.click(screen.getByTestId('production-test-qr-button'))
     await screen.findByRole('dialog', { name: '生成二维码（测试用）' })
@@ -508,10 +539,79 @@ describe('加工单生产明细页', () => {
     // 也不许借生成之名重新拉数据（生成是纯前端渲染，不触发任何网络）
     expect(mockGetOrderOperations).toHaveBeenCalledTimes(1)
     expect(mockGetPiecework).toHaveBeenCalledTimes(1)
-    // qr_token 一字不动（撤销/重发都会让它变）
-    expect(screen.getByTestId('task-card-qr').querySelector('title')?.textContent).toBe('qr-token-abc123')
+    // 码内容一字不动（撤销/重发都会让它变）
+    expect(screen.getByTestId('task-card-qr').querySelector('title')?.textContent).toBe(PART_SCAN_URL)
     // 测试码弹层开着也不影响权威码的存在
     expect(screen.getByTestId('task-card-qr')).toBeInTheDocument()
+  })
+
+  // ── #4946：弹层**逐张**出码（N 个商品/部位 ⇒ N 张码，各带短码 + 复制短码）──
+  // 用户裁定（2026-09-21）：「一个加工单里有 3 个商品，就要出 3 张，每张二维码对应自己的工序」。
+  const OPERATIONS_THREE_PARTS = {
+    ...OPERATIONS,
+    positions: [
+      { ...OPERATIONS.positions[0] },
+      {
+        position_name: '纱帘',
+        order_item_id: 'item-2',
+        position_kind: '纱帘',
+        set_no: 'JG-20260917-0001-001',
+        product_name: '纱帘B',
+        part_token: 'part-token-2',
+        part_short_code: 'QW8Z2N4B',
+        scan_url: 'https://app.migaozn.com/s/QW8Z2N4B',
+        operations: [
+          { id: 'op-3', seq: 1, operation: '韩褶-纱', logical_name: '韩褶', position: '纱帘', group: '车位', unit: '折', qty: 24, status: 'pending', done_qty: 0 },
+        ],
+      },
+      // 第 3 个部位还没有码（未生成 / 已撤销）⇒ 逐张如实说明，不画假码
+      {
+        position_name: '帘头',
+        order_item_id: 'item-3',
+        position_kind: '帘头',
+        set_no: 'JG-20260917-0001-002',
+        product_name: '帘头C',
+        part_token: null,
+        part_short_code: null,
+        scan_url: null,
+        operations: [],
+      },
+    ],
+  }
+
+  it('#4946 弹层逐张出码：N 个部位 ⇒ N 张（各 = 自己的 scan_url + 短码 + 复制短码），缺码的那张如实说明', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    mockGetOrderOperations.mockResolvedValue(ok(OPERATIONS_THREE_PARTS))
+    render(<ProductionDetailPage />)
+
+    // 纸面侧先成立：3 个部位 ⇒ **恰好** 3 张洗水码（页面把 positions 原样交给任务卡）
+    await waitFor(() => expect(screen.getByTestId('task-card-label-2')).toBeInTheDocument())
+    expect(screen.getAllByTestId(/^task-card-label-\d$/)).toHaveLength(3)
+    expect(within(screen.getByTestId('task-card-label-2')).getByTestId('task-card-qr-placeholder')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId('production-test-qr-button'))
+    const dialog = await screen.findByRole('dialog', { name: '生成二维码（测试用）' })
+
+    // 逐张：第 0/1 张真码（各自不同的 scan_url），第 2 张无码 ⇒ 只出说明，不画假码
+    expect(within(within(dialog).getByTestId('production-test-qr-code-0')).getByTitle(PART_SCAN_URL)).toBeInTheDocument()
+    expect(
+      within(within(dialog).getByTestId('production-test-qr-code-1')).getByTitle('https://app.migaozn.com/s/QW8Z2N4B'),
+    ).toBeInTheDocument()
+    expect(within(dialog).queryByTestId('production-test-qr-code-2')).toBeNull()
+
+    // 每张都标明是**哪一件**（商品名/部位名）+ 人可读短码
+    const first = within(dialog).getByTestId('production-test-qr-position-0')
+    expect(first).toHaveTextContent('布帘')
+    expect(first).toHaveTextContent(PART_SHORT_CODE)
+    const third = within(dialog).getByTestId('production-test-qr-position-2')
+    expect(third).toHaveTextContent('帘头')
+    expect(third).toHaveTextContent('暂无码')
+
+    // 逐张「复制短码」：复制的是**该部位的短码**（工人手输用），不是加工单号
+    await userEvent.click(within(dialog).getByTestId('production-test-qr-copy-1'))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('QW8Z2N4B'))
+    expect(writeText).not.toHaveBeenCalledWith('JG-20260917-0001')
   })
 
   it('#4726 权限显隐：无 processing:manage（客服）时入口不渲染', async () => {

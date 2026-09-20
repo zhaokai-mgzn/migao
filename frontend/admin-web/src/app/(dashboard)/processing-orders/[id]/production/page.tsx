@@ -51,10 +51,12 @@ export default function ProcessingOrderProductionPage() {
   const [repricing, setRepricing] = useState(false)
   const [repriceError, setRepriceError] = useState('')
   const [repriceNotice, setRepriceNotice] = useState('')
-  // 生成二维码（测试用，issue #4726，A 档）：把**加工单号**画成纯文本码供端到端联调。
-  // **纯前端渲染 + 零写请求**（不碰 qr_token，不调任何端点）。
+  // 生成二维码（测试用，issue #4726，A 档 → issue #4946 改为**逐部位**出码）：
+  // 逐张把该部位的 `scan_url` / `part_token` 画成纯文本码供端到端联调。
+  // **纯前端渲染 + 零写请求**（不碰 qr_token / part_token，不调任何端点）。
   const [testQrOpen, setTestQrOpen] = useState(false)
-  const [testQrCopied, setTestQrCopied] = useState(false)
+  // 复制反馈的**键**（'order' = 复制单号；`part-${i}` = 复制第 i 个部位的短码）
+  const [testQrCopiedKey, setTestQrCopiedKey] = useState('')
   // 「卡在哪」卡点报表（切片 ③，issue #4776；只读；设计 §6）
   const [stuckPoints, setStuckPoints] = useState<StuckPointsReport | null>(null)
   const [stuckPointsError, setStuckPointsError] = useState('')
@@ -201,19 +203,19 @@ export default function ProcessingOrderProductionPage() {
   }
 
   /**
-   * 生成二维码（测试用，issue #4726，A 档 = 加工单号纯文本码）。
+   * 生成二维码（测试用，issue #4726，A 档；**issue #4946 改为逐部位出码**）。
    *
    * 用户诉求（2026-09-20）：「加个按钮生成二维码，这样就能串联起来扫码生产&计件，主要是用来测试」。
-   * 串联链路 = 屏幕出码 → 任意扫码工具读到**加工单号** → 工人在 bmini 报工页
-   * （frontend/bmini-app/src/pages/production/index）**手动输入**单号 → 报工 → 计件。
+   * 用户裁定（2026-09-21）：粒度 = **商品行 = 部位** —— 一个加工单 3 个商品就要出 3 张码，
+   * 每张码**对应该商品自己的工序集** ⇒ 本弹层逐张渲染 `positions` 的 `scan_url` / `part_token`
+   * （不再是「一张加工单号纯文本码」，那与本单粒度相悖）。
    *
-   * ⚠️ 与「打印任务卡」的码**不是同一个**：任务卡印的是后端 `qr_token`（token 化、可撤销，扫码报工的
-   * 权威入口）；本按钮是**纯前端**把加工单号画成码 —— 只读、不写库、既不生成也不撤销 token。
+   * ⚠️ 与纸面的关系：任务卡（洗水码）印的是**同一个**部位码 ⇒ 两者同源、逐张一致。
    * ⚠️ 限制：工人端**无登录** ⇒ 计件归属靠 worker_id/worker_name，可能落「未署名」或商家账号
-   * ⇒ 发工资对不上人（#4716 解决）；A 档**不是**「扫一下就进」，B 档小程序码才是。
+   * ⇒ 发工资对不上人（#4716 解决）。
    */
   const openTestQr = () => {
-    setTestQrCopied(false)
+    setTestQrCopiedKey('')
     setTestQrOpen(true)
   }
 
@@ -221,7 +223,16 @@ export default function ProcessingOrderProductionPage() {
   const copyTestQrNo = () => {
     navigator.clipboard
       .writeText(po?.processingOrderNo ?? '')
-      .then(() => setTestQrCopied(true))
+      .then(() => setTestQrCopiedKey('order'))
+      .catch((e) => console.error('Clipboard write failed:', e))
+  }
+
+  /** 复制**该部位的**人可读短码（扫码工具读不出来时工人手输）；缺码则不提供该动作。 */
+  const copyPartShortCode = (shortCode: string | null | undefined, index: number) => {
+    if (!shortCode) return
+    navigator.clipboard
+      .writeText(shortCode)
+      .then(() => setTestQrCopiedKey(`part-${index}`))
       .catch((e) => console.error('Clipboard write failed:', e))
   }
 
@@ -238,7 +249,8 @@ export default function ProcessingOrderProductionPage() {
   // 生成二维码（测试用，issue #4726）：与「撤销二维码」同级显隐（同为 processing:manage 口径，
   // 避免无权限角色看到按钮却 403；本入口本身不调端点，但保持同一码以免口径分叉）
   const canTestQr = hasPermission('processing:manage')
-  // 工序还在但码没了 = 刚撤销过 ⇒ 任务卡占位文案不得再指向本页不存在的「补生成工序」
+  // 工序还在但码没了 = 刚撤销过 ⇒ 任务卡占位文案不得再指向本页不存在的「补生成工序」。
+  // issue #4946：洗水码粒度 = 商品行 ⇒ 该文案**逐张**生效（哪张缺码就写在哪张上）。
   const qrPlaceholderHint =
     positionCount > 0 && !operations?.qr_token ? '二维码已撤销（旧码已失效）' : undefined
   // 未定价工序实例（issue #4709 C）：有未定价实例 ⇒ 给「按当前价重算」入口。
@@ -556,14 +568,17 @@ export default function ProcessingOrderProductionPage() {
             )}
           </div>
 
-          {/* 可打印任务卡：屏幕隐藏（display:none），点「打印任务卡」时只打印它 */}
+          {/* 可打印洗水码（issue #4946：一个商品行/部位一张 60mm×30mm，码 = 该部位自己的 scan_url）；
+              屏幕隐藏（display:none），点「打印任务卡」时只打印它 */}
           <TaskCardPrint
             processingOrderNo={po.processingOrderNo}
             orderNo={po.orderNo}
-            qrToken={operations?.qr_token}
-            qrPlaceholderHint={qrPlaceholderHint}
+            // 加工单公共属性：**每张**洗水码都要呈现
+            customerName={po.customerName}
+            expectedDeliveryDate={po.expectedDeliveryDate}
             positions={operations?.positions}
-            // 工艺规格真值来源 = 加工单快照明细（issue #4355 / 设计文档 §4.9 ③）
+            qrPlaceholderHint={qrPlaceholderHint}
+            // 工艺摘要（issue #4355）真值来源 = 加工单快照明细，按 order_item_id 逐张对齐
             items={po.items}
           />
 
@@ -583,7 +598,7 @@ export default function ProcessingOrderProductionPage() {
                 </Button>
                 <Button data-testid="production-test-qr-copy" onClick={copyTestQrNo}>
                   <Copy className="w-4 h-4 mr-1.5" />
-                  {testQrCopied ? '已复制' : '复制单号'}
+                  {testQrCopiedKey === 'order' ? '已复制' : '复制单号'}
                 </Button>
               </div>
             }
@@ -595,26 +610,86 @@ export default function ProcessingOrderProductionPage() {
               >
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>
-                  <span className="font-medium">测试用</span>：二维码内容 = 加工单号（纯文本），
-                  工人扫码后需在报工页<span className="font-medium">手动输入</span>单号，
-                  不是「扫一下就进」。
+                  <span className="font-medium">测试用</span>：逐张渲染每个商品/部位自己的扫码内容
+                  （scan_url / part_token），不是加工单号；扫码工具读不出来时可复制短码，
+                  或在报工页<span className="font-medium">手动输入</span>加工单号。
                 </span>
               </p>
-              <div className="flex flex-col items-center gap-2">
-                <QRCodeSVG
-                  value={po.processingOrderNo}
-                  size={180}
-                  level="M"
-                  title={po.processingOrderNo}
-                  data-testid="production-test-qr-code"
-                  className="border border-neutral-300 p-1"
-                />
-                <p className="font-medium text-neutral-900" data-testid="production-test-qr-order-no">
-                  {po.processingOrderNo}
+
+              <p className="font-medium text-neutral-900" data-testid="production-test-qr-order-no">
+                {po.processingOrderNo}
+              </p>
+
+              {/* 逐部位出码（issue #4946）：一个商品/部位一张，各带人可读短码 + 复制短码 */}
+              {positionCount === 0 ? (
+                <p className="text-neutral-500" data-testid="production-test-qr-empty">
+                  该加工单暂无商品/部位，无码可生成（先「补生成工序」）。
                 </p>
-              </div>
+              ) : (
+                <div className="space-y-3">
+                  {(operations?.positions ?? []).map((position, index) => {
+                    const qrValue = position.scan_url ?? position.part_token ?? null
+                    const name = position.position_name || position.product_name || '—'
+                    return (
+                      <div
+                        key={position.order_item_id ?? `part-${index}`}
+                        data-testid={`production-test-qr-position-${index}`}
+                        className={cn(
+                          'flex items-start gap-3 rounded border px-3 py-2',
+                          qrValue ? 'border-neutral-200' : 'border-dashed border-neutral-300 bg-neutral-50',
+                        )}
+                      >
+                        <div className="shrink-0 text-center">
+                          {qrValue ? (
+                            <QRCodeSVG
+                              value={qrValue}
+                              size={140}
+                              level="M"
+                              title={qrValue}
+                              data-testid={`production-test-qr-code-${index}`}
+                              className="border border-neutral-300 p-1"
+                            />
+                          ) : (
+                            <div
+                              data-testid={`production-test-qr-placeholder-${index}`}
+                              className="flex h-[148px] w-[148px] items-center justify-center border border-dashed border-neutral-400 p-2 text-center text-xs text-neutral-500"
+                            >
+                              该部位暂无码（未生成 / 已撤销）
+                            </div>
+                          )}
+                          <p className="mt-1 text-xs font-medium text-neutral-900">{name}</p>
+                          {position.product_name && position.product_name !== name && (
+                            <p className="text-xs text-neutral-500">{position.product_name}</p>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-1.5 text-xs">
+                          <p className="text-neutral-700">
+                            人可读短码 <span className="font-mono font-semibold">{position.part_short_code || '—'}</span>
+                          </p>
+                          {!qrValue && (
+                            <p className="text-neutral-500">
+                              该部位没有码 ⇒ 本张不画假码：请先补生成/重新发码，或按短码联系班长。
+                            </p>
+                          )}
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={!position.part_short_code}
+                            data-testid={`production-test-qr-copy-${index}`}
+                            onClick={() => copyPartShortCode(position.part_short_code, index)}
+                          >
+                            <Copy className="w-4 h-4 mr-1.5" />
+                            {testQrCopiedKey === `part-${index}` ? '已复制' : '复制短码'}
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
               <p className="text-xs text-neutral-500">
-                本码只读生成：不写入、不撤销任何数据，与任务卡的报工码（qr_token）互不影响。
+                本码只读生成：不写入、不撤销任何数据，与纸面洗水码（同一份部位码）逐张一致。
                 计件归属仍按工人署名（工人端暂无登录），发工资前请核对报工人。
               </p>
             </div>
