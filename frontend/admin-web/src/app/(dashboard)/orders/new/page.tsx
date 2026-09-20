@@ -57,11 +57,14 @@ import {
   AUTO_FEATURE_NAMES,
   detectAutoFeatureNotices,
   detectAutoFeatures,
-  resolveDoorWidth,
+  parseDoorWidth,
   type AutoFeature,
   type AutoFeatureName,
   type AutoFeatureNotice,
 } from '@/lib/craft-auto-features'
+// 门幅选择规则（issue #4877，用户 2026-09-21 裁定）：**可行 / 不可行 + 哪个最省**
+// —— 定高买宽取可行集里最小门幅、定宽买高取分幅最少；所有门幅都不满足 ⇒ 必然走接高。
+import { judgeDoorWidthChoice, resolveCutPlan } from '@/lib/door-width-plan'
 // 费用明细的「加工 + 特殊选项」两半拆分（issue #4526 · 设计 §4.3 / 判据 5）——唯一实现
 import { buildFeeDetailDisplay } from '@/lib/order-fee-display'
 // #4371：加工项类型改为**店铺级目录**的 `ProcessingItem`（旧 `ProductProcessingItem` 已随解耦删除）
@@ -373,6 +376,35 @@ function withShapedDefault(
  * ⚠️ **本页是推导的单一真值**：判据一律走 `lib/craft-auto-features.ts`（#4662 起「超宽」含**褶倍**、
  * 几何矛盾另走 {@link autoFeatureNoticesOf}）—— 本页**不得**出现第二份推导。
  */
+/**
+ * 该颜色的**默认选中 SKU**（issue #4877 裁定 C：**规则驱动默认选中**）。
+ *
+ * ① 只有一个 SKU ⇒ 直接选它（既有行为，与门幅规则无关）；
+ * ② 多个门幅 ⇒ 交给**门幅规则** `resolveCutPlan`（可行集取最小门幅 / 定宽买高取分幅最少），
+ *    **且该门幅在本颜色下唯一对应一个 SKU** 时才自动选中 —— 多个 SKU 同门幅（如散剪/整卷）
+ *    ⇒ 售卖方式该由客服选，系统**不替他猜**；
+ * ③ 规则不可判定（缺尺寸 / 缺加工类型 / 门幅未维护）⇒ **不自动选**（不猜）。
+ *
+ * ⚠️ 调用点只有「换颜色」（那里本来就会重置 `selectedSku`）⇒ **不会覆盖客服已手选的门幅**。
+ */
+function pickAutoSkuForColor(
+  line: OrderLineItem,
+  skusOfColor: OrderProductSku[]
+): OrderProductSku | null {
+  if (skusOfColor.length === 1) return skusOfColor[0]
+  const plan = resolveCutPlan({
+    width: line.width,
+    height: line.height,
+    cuttingMode: line.craft.cuttingMode,
+    candidates: skusOfColor.map((sku) => sku.doorWidth),
+    fullness: STANDARD_FULLNESS,
+    openCount: line.craft.openCount,
+  })
+  if (plan.state !== 'single_panel') return null
+  const exact = skusOfColor.filter((sku) => parseDoorWidth(sku.doorWidth) === plan.doorWidth)
+  return exact.length === 1 ? exact[0] : null
+}
+
 function autoFeaturesOf(line: OrderLineItem): AutoFeature[] {
   return detectAutoFeatures({
     width: line.width,
@@ -466,18 +498,6 @@ function autoFeatureRowsOf(line: OrderLineItem): SystemAutoFeatureRow[] {
  */
 function effectiveAutoFeaturesOf(line: OrderLineItem): SystemAutoFeatureRow[] {
   return autoFeatureRowsOf(line).filter((row) => !row.rejected)
-}
-
-/**
- * SKU 是否提供了**可用**门幅（issue #4657：门幅取默认值时界面必须能看出来）。
- *
- * ⚠️ 只判「有没有可用门幅」，**不重复解析门幅数值**（数值一律走 lib 的 `resolveDoorWidth`）
- * —— 缺省 2.8 是「推算可能算错」的最大来源，商家得知道这是默认值而不是实证。
- */
-function hasUsableDoorWidth(doorWidth: unknown): boolean {
-  if (doorWidth === null || doorWidth === undefined) return false
-  const match = String(doorWidth).match(/(\d+(?:\.\d+)?)/)
-  return match !== null && Number(match[1]) > 0
 }
 
 /** 该行已勾选的加工项明细（提交 payload 与加工费预览**共用**这一份构造） */
@@ -929,7 +949,8 @@ export default function NewOrderPage() {
   const handleSelectColorForGroup = (groupId: string, colorId: string) => {
     const sample = lineItems.find((l) => l.groupId === groupId)
     const skusOfColor = (sample?.product?.skus || []).filter((s) => s.colorId === colorId)
-    const autoSku = skusOfColor.length === 1 ? skusOfColor[0] : null
+    // issue #4877 裁定 C：多门幅时按**门幅规则**选默认（可行集最小门幅 / 定宽买高分幅最少）
+    const autoSku = sample ? pickAutoSkuForColor(sample, skusOfColor) : null
     patchGroup(groupId, {
       selectedColorId: colorId,
       selectedSku: autoSku,
@@ -951,6 +972,21 @@ export default function NewOrderPage() {
         return next
       })
     )
+  }
+
+  /**
+   * 尺寸 / 加工类型变化后：该组**还没选门幅** ⇒ 按**门幅规则**补一个默认（issue #4877 裁定 C）。
+   *
+   * ⚠️ 只在 `selectedSku` **为空**时补 —— 客服手选过就**不覆盖**（同「手改留痕」纪律）；
+   * 规则判不了（缺尺寸 / 门幅未维护 / 多个 SKU 同门幅）⇒ **什么都不做**（不猜）。
+   */
+  const autoSelectSkuByRuleForGroup = (groupId: string, patch: Partial<OrderLineItem>) => {
+    const sample = lineItems.find((l) => l.groupId === groupId)
+    if (!sample || sample.selectedSku) return
+    const next = { ...sample, ...patch }
+    const skusOfColor = (next.product?.skus ?? []).filter((s) => s.colorId === next.selectedColorId)
+    const sku = pickAutoSkuForColor(next, skusOfColor)
+    if (sku) handleSelectSkuForGroup(groupId, sku)
   }
 
   /**
@@ -1117,7 +1153,8 @@ export default function NewOrderPage() {
   // ===== 颜色 / 规格 选择 =====
   const handleSelectColor = (line: OrderLineItem, colorId: string) => {
     const skusOfColor = (line.product?.skus || []).filter((s) => s.colorId === colorId)
-    const autoSku = skusOfColor.length === 1 ? skusOfColor[0] : null
+    // issue #4877 裁定 C：多门幅时按**门幅规则**选默认（可行集最小门幅 / 定宽买高分幅最少）
+    const autoSku = pickAutoSkuForColor(line, skusOfColor)
     updateLineItem(line.id, {
       selectedColorId: colorId,
       selectedSku: autoSku,
@@ -1742,7 +1779,7 @@ export default function NewOrderPage() {
                         onChangeQty={(q) => handleLineQtyChange(line, q)}
                         onRestoreFormula={() => restoreFormulaMeters(line)}
                         onChangePrice={(p) => updateLineItem(line.id, { unitPrice: p })}
-                        onChangeWidth={(w) =>
+                        onChangeWidth={(w) => {
                           updateLineItem(line.id, {
                             width: w,
                             // **宽 → 打开方式**联动（真值源 §10 的启发式）：手改过就不覆盖
@@ -1750,10 +1787,15 @@ export default function NewOrderPage() {
                               ? { craft: { ...line.craft, openCount: deriveOpenCount(w) } }
                               : {}),
                           })
-                        }
-                        onChangeHeight={(h) => updateLineItem(line.id, { height: h })}
+                          // 尺寸齐了 ⇒ 若该组还没选门幅，按**门幅规则**补默认（issue #4877 裁定 C）
+                          autoSelectSkuByRuleForGroup(line.groupId, { width: w })
+                        }}
+                        onChangeHeight={(h) => {
+                          updateLineItem(line.id, { height: h })
+                          autoSelectSkuByRuleForGroup(line.groupId, { height: h })
+                        }}
                         onToggleProcessing={(pi, sel) => toggleProcessing(line, pi, sel)}
-                        onChangeCraft={(patch) =>
+                        onChangeCraft={(patch) => {
                           updateLineItem(line.id, {
                             craft: { ...line.craft, ...patch },
                             // 商家手改了打开方式 ⇒ 记下来（行状态），之后改宽不再覆盖
@@ -1761,7 +1803,11 @@ export default function NewOrderPage() {
                               ? { openCountTouched: true }
                               : {}),
                           })
-                        }
+                          // 加工类型（定高买宽 / 定宽买高）变了 ⇒ 规则解可能变 ⇒ 未选门幅时补默认
+                          autoSelectSkuByRuleForGroup(line.groupId, {
+                            craft: { ...line.craft, ...patch },
+                          })
+                        }}
                         onAutoFeatureDecision={(name, decision) =>
                           decideAutoFeature(line.id, name, decision)
                         }
@@ -2964,9 +3010,31 @@ function LineItemBlock({
   )
   /** 系统识别**提示**（issue #4662）：缺褶倍 ⇒ 未判超宽 / 加工类型几何矛盾 ⇒ 系统实际按哪种算 */
   const autoFeatureNotices = autoFeatureNoticesOf(line)
-  /** 门幅（米）+ 是否走了缺省值（issue #4657：默认值必须在界面上看得出来） */
-  const doorWidthValue = resolveDoorWidth(line.selectedSku?.doorWidth)
-  const doorWidthFallback = !hasUsableDoorWidth(line.selectedSku?.doorWidth)
+  /**
+   * 门幅（issue #4877）：**已无缺省门幅** —— 解析不到 ⇒ `null` ⇒ 界面显式说「无法判定」。
+   * 旧行为「按默认 2.8 米推算」= 本单要替换掉的错误做法（真单实测：门幅 2.8/3.2 之差会让
+   * 同一张单得出「需接高」与「单幅可做」两种相反结论）。
+   */
+  const selectedDoorWidth = parseDoorWidth(line.selectedSku?.doorWidth)
+  const doorWidthMissing = selectedDoorWidth === null
+  /**
+   * **门幅规则**（issue #4877）：候选 = 本行该颜色的 SKU 门幅；解 = 可行集取最小门幅 /
+   * 定宽买高取分幅最少。所选门幅**不可行** ⇒ `infeasible`（需接高，强告警）；
+   * **非最优** ⇒ `suboptimal`（提示可换最省门幅 —— 只提示，**不改客服的选择**）。
+   */
+  const doorWidthChoice = judgeDoorWidthChoice(
+    {
+      width: line.width,
+      height: line.height,
+      cuttingMode: line.craft.cuttingMode,
+      candidates: (line.product?.skus ?? [])
+        .filter((sku) => sku.colorId === line.selectedColorId)
+        .map((sku) => sku.doorWidth),
+      fullness: STANDARD_FULLNESS,
+      openCount: line.craft.openCount,
+    },
+    selectedDoorWidth
+  )
   /**
    * 手选加工项（issue #4566）—— 滤掉**自动推导特征**（超高/超宽/倒幅）。
    * 它们在目录里**必须存在**（商家配「加工费组合」要能选到），但**不得**出现在手选控件里
@@ -3025,7 +3093,7 @@ function LineItemBlock({
    * 严禁第二份推导实现）。被**不采纳**的不出现在徽标里（徽标 = 生效值）。
    */
   const sizeAutoBadges =
-    !isFabricLine && (autoFeatures.length > 0 || doorWidthFallback) ? (
+    !isFabricLine && (autoFeatures.length > 0 || doorWidthMissing) ? (
       <span data-testid="size-auto-badges" className="flex items-center gap-1 shrink-0">
         {autoFeatures.map((row) => (
           <span
@@ -3037,13 +3105,13 @@ function LineItemBlock({
             {row.name}
           </span>
         ))}
-        {doorWidthFallback && (
+        {doorWidthMissing && (
           <span
-            data-testid="size-door-width-fallback"
-            title={`该 SKU 未提供门幅 —— 系统按默认 ${doorWidthValue} 米推算，可能不准`}
+            data-testid="size-door-width-missing"
+            title="该 SKU 未维护门幅 —— 超高/超宽都判不了（系统不按缺省门幅推算）"
             className="rounded border border-neutral-300 bg-neutral-100 px-1 text-[10px] leading-4 text-neutral-500"
           >
-            门幅默认 {doorWidthValue}
+            门幅未维护
           </span>
         )}
       </span>
@@ -3235,9 +3303,25 @@ function LineItemBlock({
                   <div className="text-xs font-medium text-neutral-600">
                     系统识别（按成品宽高与门幅推算，不可手选；可采纳 / 不采纳）
                   </div>
-                  {doorWidthFallback && (
-                    <p data-testid="door-width-fallback" className="mt-1 text-xs text-amber-600">
-                      该 SKU 未提供门幅 ⇒ 按默认 {doorWidthValue} 米推算 —— 依据可能不准，请核对后再采纳
+                  {doorWidthMissing && (
+                    <p data-testid="door-width-missing" className="mt-1 text-xs text-amber-600">
+                      该 SKU 未维护门幅 ⇒ **超高 / 超宽都判不了**（系统不按缺省门幅推算）—— 请先补商品门幅
+                    </p>
+                  )}
+                  {/* **门幅规则**（issue #4877）：① 所选门幅不可行 ⇒ 需接高（强告警）；
+                      ② 可行但**不是最省**（非规则解）⇒ 提示可换最优门幅。
+                      ⚠️ 只是**提示**：不改客服已选的门幅、不进加工费组合键。 */}
+                  {doorWidthChoice.verdict === 'infeasible' && doorWidthChoice.suggestion && (
+                    <p
+                      data-testid="door-width-needs-splice"
+                      className="mt-1 text-xs font-medium text-danger-600"
+                    >
+                      {doorWidthChoice.suggestion}
+                    </p>
+                  )}
+                  {doorWidthChoice.verdict === 'suboptimal' && doorWidthChoice.suggestion && (
+                    <p data-testid="door-width-suboptimal" className="mt-1 text-xs text-amber-700">
+                      {doorWidthChoice.suggestion}
                     </p>
                   )}
                   {/* **提示**（issue #4662）：① 缺褶倍 ⇒ 未判超宽（不猜、也不静默）；

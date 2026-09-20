@@ -55,8 +55,12 @@ import {
   parseDoorWidth,
 } from '@/lib/craft-auto-features'
 
-/** 候选门幅（米）—— 数字或 SKU 原值（`2.8米` 这类字符串走同一份解析） */
-export type DoorWidthCandidate = number | string
+/**
+ * 候选门幅（米）—— 数字或 SKU 原值（`2.8米` 这类字符串走同一份解析）。
+ * 允许 `null` / `undefined`（SKU 的 `doorWidth` 在商品模型里是**可选**字段）：
+ * **解析不到即剔除**（不默认成任何值 —— 见 `normalizeCandidates`）。
+ */
+export type DoorWidthCandidate = number | string | null | undefined
 
 /** 判不了的原因（**每一类都对应一个「本系统缺什么」**，不许静默挑一个默认值顶上） */
 export type CutPlanUndecidableCode =
