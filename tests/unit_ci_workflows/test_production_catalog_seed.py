@@ -482,18 +482,41 @@ def test_routing_operations_exist_in_seed(catalog_rows, routing_rows):
 
 
 def test_routings_match_python(routing_rows, python_catalog):
-    """V54 ∪ V58 工艺路线种子逐条等于 ROUTINGS（部位×工艺 → 有序工序序列）"""
+    """`(部位, 工艺)` 的 9 条**字面量**种子 → **工艺维**投影 == `ROUTINGS`（**5 条**，issue #4937）。
+
+    🔴 **去部位化（#4937）后的口径**：`routing.py::ROUTINGS` 只按**工艺**建键（9 → 5 条）。
+    已发布迁移的字面量（V54 ∪ V58）仍是 `(部位, 工艺)` 的 9 行（**不可改**）⇒
+    比对口径 = **投影**：每个工艺取**布帘**那一行（与价目矩阵的取价来源部位同源 ——
+    用户裁定「取布帘价」；`平幔` 只有帘头一行，无歧义）。
+
+    ⚠️ **守卫强度未降**（逐项可红）：
+      · ① 9 行字面量**一条不许少**（`len(rows) == 9`，少一条即红 —— 否则投影会静默变空）；
+      · ② 5 个工艺键**逐条相等**（改名 / 少一个工艺即红）；
+      · ③ 每个工艺的工序序列**逐字相等**（含顺序；改一道即红）；
+      · ④ 布帘行的 11 道回归锚点仍在（防整条路线被误删）。
+    """
     _, routings = python_catalog
     rows = routing_rows
-    assert len(rows) == len(routings), "路线条数与 ROUTINGS 不一致"
+    assert len(rows) == 9, (
+        f"V54 ∪ V58 的路线字面量应为 9 条 `(部位, 工艺)`（实际 {len(rows)}）—— "
+        f"已发布迁移不可改；少一条会让下面的投影静默变空")
 
     parsed = {(normalize_value(r["curtain_type"]), normalize_value(r["craft"])):
               normalize_routing_operations(r["operations"]) for r in rows}
     expected = {key: tuple(ops) for key, ops in routings.items()}
-    assert parsed == expected, "路线内容漂移（逐条比对 部位×工艺 → 工序序列）"
+    # 投影：每工艺取「布帘」行；无布帘行（`平幔`）⇒ 取该工艺唯一那一行
+    projected = {}
+    for (curtain_type, craft), ops in parsed.items():
+        if curtain_type == "布帘" or craft not in {c for (ct, c) in parsed if ct == "布帘"}:
+            projected.setdefault(craft, ops)
+    assert set(projected) == set(expected), (
+        f"路线**工艺键**漂移：投影得到 {sorted(projected)}，真值源 {sorted(expected)}")
+    assert projected == expected, (
+        f"路线内容漂移（逐条比对 **工艺** → 工序序列）："
+        f"{_diff_keys(projected, expected)}")
     # 布帘·韩褶 = 11 道实证走线（回归锚点，防整条路线被误删）
     assert len(parsed[("布帘", "韩褶")]) == 11
-    # #4246 新增的 3 条纱帘路线（逐字钉死 —— 它们此前**不存在** ⇒ 派生键回落布帘路线）
+    # 纱帘行仍在（它们是 V54 ∪ V58 的字面量；部位维**只**从 `routing.py` 的键里退场）
     assert parsed[("纱帘", "打孔")] == ("精裁-纱", "纱三边", "打孔-纱",
                                         "外帘打卷", "外帘装袋", "外帘发货")
     assert parsed[("纱帘", "四爪钩")] == ("精裁-纱", "纱三边", "上车布-纱",
@@ -562,13 +585,25 @@ def test_template_matches_python_catalog(template_json, catalog_rows, python_cat
 
 
 def test_template_matches_python_routings(template_json, routing_rows, python_catalog):
-    """模板路线 ↔ `ROUTINGS`（部位×工艺 → 有序工序序列）逐条相等，且逐行等于迁移聚合。"""
+    """模板路线（`(部位, 工艺)` **9 行**）→ **工艺维**投影 == `ROUTINGS`（5 条），且逐行等于迁移聚合。
+
+    ⚠️ 模板 JSON 与迁移 SQL 都是**字面量**（9 行，`(部位, 工艺)` 键）⇒ 它们之间仍**逐行**比对
+    （两侧同构，不改口径）；只有与 `routing.py::ROUTINGS` 的比对走**投影**（见
+    `test_routings_match_python` 的口径说明）。
+    """
     _, routings = python_catalog
     rows = template_routings(template_json)
     parsed = {(normalize_value(r["curtain_type"]), normalize_value(r["craft"])):
               normalize_routing_operations(r["operations"]) for r in rows}
     expected = {key: tuple(ops) for key, ops in routings.items()}
-    assert parsed == expected, "模板路线内容漂移（逐条比对 部位×工艺 → 工序序列）"
+    assert len(parsed) == 9, f"模板路线字面量应为 9 行（实际 {len(parsed)}）"
+    projected = {}
+    cloth_crafts = {ct for (ct, c) in parsed}
+    for (curtain_type, craft), ops in parsed.items():
+        if curtain_type == "布帘" or craft not in {c for (ct, c) in parsed if ct == "布帘"}:
+            projected.setdefault(craft, ops)
+    assert projected == expected, (
+        f"模板路线**工艺维**投影漂移：{_diff_keys(projected, expected)}")
     # 两侧**同构**归一后逐行比对（模板 JSON 行 vs 迁移 SQL 行）：SQL 侧的值带外层引号且多
     # `tenant_id` 列 ⇒ 直接 `rows == routing_rows` 是苹果比橘子（实测初版即假红）。
     template_rows_norm = [routing_row_of(r) for r in rows]
@@ -616,8 +651,10 @@ def test_template_sources_are_the_frozen_provenance_mapping(template_json, catal
     assert sources == {"占位待确认", "推算"}, (
         f"模板 source 取值集合 = {sorted(sources)}，冻结映射要求恰好 {{占位待确认, 推算}}"
         "（出现「实证」= 多标：今天没有任何工序/路线够得上实证，#4343 已证明 布帘×韩褶 与客户真实加工单不符）")
+    # 🔴 issue #4937：`推算` 档 5 → **9**（新增 4 道纱帘变体，id = `op-v56-06..09` ——
+    # 与 V56 同族「行业推算」档；`占位待确认` 仍是 32）
     assert sum(1 for e in template_json["operations"] if e["source"] == "占位待确认") == 32
-    assert sum(1 for e in template_json["operations"] if e["source"] == "推算") == 5
+    assert sum(1 for e in template_json["operations"] if e["source"] == "推算") == 9
     assert sum(1 for e in template_json["routings"] if e["source"] == "占位待确认") == 6
     assert sum(1 for e in template_json["routings"] if e["source"] == "推算") == 3
 
@@ -658,7 +695,9 @@ def test_every_template_source_is_really_read(template_json):
     本条再钉一次「解析出来确实有东西」。
     """
     assert template_json.get("templateId") == "curtain"
-    assert len(template_json["operations"]) == 37, "模板工序数不是 37（35 + #4529 的 配料/打包）"
+    # 🔴 issue #4937：37 → **41**（补 4 道纱帘变体 —— `applicable` 过滤退场后它们会进纱帘路线）
+    assert len(template_json["operations"]) == 41, (
+        "模板工序数不是 41（35 + #4529 的 配料/打包 + issue #4937 的 4 道纱帘变体）")
     assert len(template_json["routings"]) == 9, "模板路线数不是 9"
     assert len(template_json["option_routings"]) == 16
     assert len(template_json["option_factors"]) >= 1
@@ -1162,16 +1201,60 @@ def _text_or_none(raw):
 
 
 def _price_rows(rows) -> dict:
-    """部位价目行（已解析）→ `{(逻辑工序, 部位): (单价|None, applicable, status)}`（**逐值**口径）。"""
-    return {(normalize_value(r["logical_name"]), normalize_value(r["position"])):
-            (_num_or_none(r["unit_price"]), normalize_value(r["applicable"]) == "TRUE",
-             normalize_value(r["status"]))
-            for r in rows}
+    """价目行（已解析）→ `{逻辑工序: (单价|None, applicable, status)}`（**逐值**口径）。
+
+    🔴 **键 = 逻辑工序（不是 `(逻辑工序, 部位)`）**（issue #4937）：部位退场后，矩阵的
+    **终态**是「一道逻辑工序一行」⇒ 三源比对的口径随之收敛。⚠️ 若某一源里**同一逻辑工序
+    出现多行**（例如只改迁移没改 schema ⇒ 120 行态），`dict` 会**静默只留最后一行**
+    ⇒ 判据退化成「只要最后一行对上就算过」。为此本函数**fail-closed**：多行即抛。
+    ⚠️ 已发布迁移的字面量（V71/V79/V89）**仍是 120 行态** ⇒ 必须先用
+    `collapse_position_rows` 收敛（见 `position_price_rows_multi`）；`schema.sql` 的
+    **终态**入口是 `schema_terminal_price_rows`。
+    """
+    out: dict = {}
+    for r in rows:
+        logical = normalize_value(r["logical_name"])
+        if logical in out:
+            raise AssertionError(
+                f"同一逻辑工序 `{logical}` 在价目源里出现多行 —— 终态要求「一道逻辑工序一行」；"
+                f"单键 dict 会静默丢掉其中一行 ⇒ 判据退化成空断言。请先核该源是否还在 120 行态")
+        out[logical] = (_num_or_none(r["unit_price"]),
+                        normalize_value(r["applicable"]) == "TRUE",
+                        normalize_value(r["status"]))
+    return out
 
 
 def position_price_rows(sql: str) -> dict:
-    """部位价目行 → `{(逻辑工序, 部位): (单价|None, applicable, status)}`（**逐值**口径）。"""
+    """价目行 → `{逻辑工序: (单价|None, applicable, status)}`（**逐值**口径）。
+
+    ⚠️ **要求输入已在终态**（一道逻辑工序一行）—— 120 行态会 fail-closed 抛错（见 `_price_rows`）。
+    `docs/sql/schema.sql` 的矩阵段是 **120 行字面量**（已发布迁移的行集合必须可比对）⇒
+    读 bootstrap **终态**请用 `schema_terminal_price_rows()`。
+    """
     return _price_rows(parse_seed(sql, "production_operation_positions", POSITION_PRICE_COLUMNS))
+
+
+def schema_terminal_price_rows(sql: str) -> dict:
+    """`docs/sql/schema.sql` 的矩阵段 → **bootstrap 终态**的 `{逻辑工序: (价, 适用, status)}`。
+
+    终态 = 「按显式 `deleted` 分流 ⇒ 存活行」+「按四档选行收敛为一道逻辑工序一行」
+    （issue #4937 / V104；两份判据都与生产代码同源，见 `collapse_position_rows`）。
+    """
+    rows = parse_seed(sql, "production_operation_positions", POSITION_PRICE_COLUMNS)
+    alive = [r for r in rows if normalize_value(r.get("deleted", "0")) != "1"]
+    return _price_rows(collapse_position_rows(alive))
+
+
+def position_pair_rows(sql: str) -> dict:
+    """价目行 → `{(逻辑工序, 部位): (单价|None, applicable, status)}`（**历史 120 行态**的入口）。
+
+    ⚠️ 只给「必须看部位维」的判据用（如本文件 `_position_seed_drift_is_detected` 的历史解析自证）；
+    **终态口径一律用 `position_price_rows`**（单键）。
+    """
+    return {(normalize_value(r["logical_name"]), normalize_value(r["position"])):
+            (_num_or_none(r["unit_price"]), normalize_value(r["applicable"]) == "TRUE",
+             normalize_value(r["status"]))
+            for r in parse_seed(sql, "production_operation_positions", POSITION_PRICE_COLUMNS)}
 
 
 def _template_rows(rows) -> list:
@@ -1222,9 +1305,52 @@ def _parse_each(seed_paths, table: str, columns) -> list:
     return rows
 
 
+#: 四档选行规则的「布帘列」字面量（与 `routing.py::COLLAPSE_PRICE_SOURCE_POSITION` /
+#: Java `ProductionOperationQueryService.COLLAPSE_PRICE_SOURCE_POSITION` / `V104` 的 SQL **同值**；
+#: 跨语言/跨文件同值由 `test_deposition_total_migration.py` 的
+#: `test_java_collapse_source_position_matches_the_sql_literal` 与
+#: `tests/test_production/test_position_collapse_mirror.py` 钉）。
+COLLAPSE_PRICE_SOURCE_POSITION = "布帘"
+
+
+def collapse_position_rows(rows: list) -> list:
+    """**四档选行**：`(逻辑工序, 部位)` 多行 → 每逻辑工序一行（issue #4937 的终态口径）。
+
+    档序 = ① `applicable IS TRUE` 优先 ② `position = '布帘'` 优先 ③ `position` 字典序
+    ④ `id` 升序 —— **与 `ProductionOperationQueryService#collapseToLogical` / `V104` 的
+    SQL 逐档同序**（三处同序由各自的守卫钉；这里**不另发明一套**）。
+
+    ⚠️ 迁移侧的字面量（V71/V79/V89）是**已发布迁移**、仍是 120 行态 ⇒ 必须先在测试侧按
+    同一规则收敛到 30 行，才能与 `routing.py` / `schema.sql` 的终态逐值比对。
+    """
+    grouped: dict = {}
+    for row in rows:
+        logical = normalize_value(row["logical_name"])
+        grouped.setdefault(logical, []).append(row)
+
+    def rank(row):
+        return (0 if normalize_value(row["applicable"]) == "TRUE" else 1,
+                0 if normalize_value(row["position"]) == COLLAPSE_PRICE_SOURCE_POSITION else 1,
+                normalize_value(row["position"]), normalize_value(row["id"]))
+
+    out = []
+    for logical in sorted(grouped):
+        out.append(sorted(grouped[logical], key=rank)[0])
+    return out
+
+
 def position_price_rows_multi(seed_paths) -> dict:
-    return _price_rows(_parse_each(seed_paths, "production_operation_positions",
-                                   POSITION_PRICE_COLUMNS))
+    """多源（逐源解析 + 拼接）→ **收敛后**的 `{逻辑工序: (价, 适用, status)}`（30 行）。"""
+    rows = _parse_each(seed_paths, "production_operation_positions", POSITION_PRICE_COLUMNS)
+    return _price_rows(collapse_position_rows(rows))
+
+
+def position_pair_rows_multi(seed_paths) -> dict:
+    """`position_pair_rows` 的**多源逐源解析**版（历史 120 行态；见该函数的说明）。"""
+    out: dict = {}
+    for path in seed_paths:
+        out.update(position_pair_rows(path.read_text(encoding="utf-8")))
+    return out
 
 
 def route_template_rows_multi(seed_paths) -> list:
@@ -1263,17 +1389,24 @@ def _fabric_truth() -> tuple:
 
 
 def _truth_price_rows() -> dict:
+    """真值源 `OPERATION_POSITION_PRICES` → `{逻辑工序: (价, 适用, status)}`（**单键**，issue #4937）。
+
+    ⚠️ 本表原来是 `[逻辑工序][部位]` 两级；部位退场后只按逻辑工序建键 —— 三源比对的键随之收敛。
+    """
     prices, _, _, _ = _route_v2_truth()
-    return {(logical, pos): (
-                None if cell["unit_price"] is None else float(cell["unit_price"]),
-                bool(cell["applicable"]), "active")
-            for logical, by_position in prices.items()
-            for pos, cell in by_position.items()}
+    return {logical: (None if cell["unit_price"] is None else float(cell["unit_price"]),
+                      bool(cell["applicable"]), "active")
+            for logical, cell in prices.items()}
 
 
 def _truth_rule_rows() -> dict:
+    """真值源 `ROUTE_RULES` → `{(触发类型, 触发值, 动作, 工序, 锚点): priority}`。
+
+    🔴 **`position` 维已退场**（issue #4937 / O2）：`routing.py` 的规则字典**不再有该键**，
+    终态 SQL 侧一律 `NULL` ⇒ 本键元组随之收敛（三源都按同一口径比对）。
+    """
     _, _, rules, _ = _route_v2_truth()
-    return {(r["trigger_kind"], r["trigger_value"], r["position"], r["action"],
+    return {(r["trigger_kind"], r["trigger_value"], r["action"],
              r["operation"], r["after_operation"]): int(r["priority"]) for r in rules}
 
 
@@ -1298,72 +1431,69 @@ def test_new_route_seed_sources_are_discovered_and_nonempty():
 
 
 def test_position_prices_converge_across_three_sources(schema_sql):
-    """部位价目三源**逐行逐值**一致：`routing.py` ↔ V71 ∪ V79 ↔ `schema.sql`（30 × 4 = 120 行）。
+    """价目**三源逐值一致**：`routing.py` ↔ V71 ∪ V79 ∪ V89（+ V102/V104 的终态改写）↔ `schema.sql`。
 
-    改一处不改另两处即红：① 只改 Python（改价/翻 applicable）⇒ 迁移与 bootstrap 对不上；
-    ② 只改迁移 ⇒ 与真值源对不上；③ 只改 schema.sql ⇒ 与迁移侧对不上。
-    ⚠️ 多源必须**逐源解析**（`position_price_rows_multi`）：先拼接再解析只会读到第一个源
-    ⇒ V79 的 36 格被静默漏掉（「绿了但没跑」）。
+    🔴 **issue #4937（去部位化彻底版）之后的键 = 逻辑工序**（一道一行，**30 行**）：
+    部位退场 ⇒ 三源比对的口径从 `(逻辑工序, 部位)` 收敛为 `逻辑工序`。
+    ⚠️ 所有三源**此刻都是 120 行态**（V71/V79/V89 的字面量是已发布迁移、不可改），
+    而**终态**（`ProductionOperationQueryService#collapseToLogical` 的四档选行）把 120 行收敛成 30 行
+    ⇒ 本判据比对的是**收敛后**的 30 行：`{逻辑工序: (价, 适用, status)}`。
+
+    **守卫强度未降**（逐项可红）：
+      · ① **改名**：`routing.py` 的键与 SQL 的 `logical_name` 逐条相等 ⇒ 改任一侧即红；
+      · ② **改价**：`_num_or_none` 逐值比 ⇒ 价漂移即红（含「有价 → 未定价」）；
+      · ③ **翻适用**：`applicable` 逐值比 ⇒ 即红；
+      · ④ **加减行**：三源行数**都**必须恰好 30（`len(...) == 30` 三条断言）⇒ 少一道/多一道即红；
+      · ⑤ **多行不静默**：`_price_rows` 对「同一逻辑工序多行」**fail-closed 抛错** ⇒
+        「只改一处、另一处还在旧口径」不可能被静默吞掉。
+
+    ⚠️ 多源必须**逐源解析**：先拼接再解析只会读到第一个源（V79 的 36 行被静默漏掉，「绿了但没跑」）。
     """
     truth = _truth_price_rows()
     migration = position_price_rows_multi(POSITION_SEED_SQLS)
-    bootstrap = position_price_rows(schema_sql)
-    assert len(truth) == 120, f"真值源的部位价目不是 120 行（30 × 4）：{len(truth)}"
-    assert len(migration) == 120, f"迁移侧的部位价目不是 120 行：{len(migration)}"
-    assert migration == truth, f"部位价目：迁移侧 ≠ routing.py：{_diff_keys(migration, truth)}"
-    # ⚠️ bootstrap 是**终态**（issue #4690）：V88 退场的格在库里**行保留 + `deleted = 1`**
-    # ⇒ 与真值源的可比口径 = 「**存活格**逐值相等 + 退场格**恰好**是 V88 那一组」。
-    # 直接拿全部 120 格比真值源会「拿终态比旧口径」（苹果比橘子），且会漏掉「该退的没退」。
-    bootstrap_alive, bootstrap_retired = _split_by_deleted(schema_sql)
-    retired = _v88_retired_cells()
-    assert set(bootstrap_alive) | bootstrap_retired == set(truth), (
-        f"bootstrap 的格集合 ≠ routing.py 的 120 格：仅 bootstrap 有 = "
-        f"{sorted((set(bootstrap_alive) | bootstrap_retired) - set(truth))}，仅真值源有 = "
-        f"{sorted(set(truth) - (set(bootstrap_alive) | bootstrap_retired))}")
-    # 存活格逐值相等；**保命格是唯一有意例外**：V88 ④ 把 `裁剪 × 布料` 翻成 `applicable=TRUE`
-    # （真值源仍是 V79 的 FALSE —— 它属 ai-agent，本单红线不改）⇒ 单列出来比对，不放进「逐值相等」里。
-    keep_cell = ("裁剪", "布料")
-    assert bootstrap_alive.get(keep_cell, (None, None, None))[1] is True, (
-        f"bootstrap 的保命格 {keep_cell} 不是 `applicable=TRUE`：{bootstrap_alive.get(keep_cell)}"
-        f" —— 依据设计 F3（存量未实例化布料单会按当前配置重算）")
-    without_keep = {k: v for k, v in bootstrap_alive.items() if k != keep_cell}
-    truth_without_keep = {k: v for k, v in truth.items()
-                          if k != keep_cell and k not in retired}
-    assert without_keep == truth_without_keep, (
-        f"部位价目（bootstrap **存活**格）≠ routing.py："
-        f"{_diff_keys(without_keep, truth_without_keep)} —— 价目/适用性/状态任一漂移即红")
-    assert bootstrap_retired == retired, (
-        f"bootstrap 退场的格 ≠ V88 的退场集合：仅 bootstrap 退 = "
-        f"{sorted(bootstrap_retired - retired)}，仅 V88 退 = {sorted(retired - bootstrap_retired)}")
+    bootstrap = schema_terminal_price_rows(schema_sql)
+    assert len(truth) == 30, f"真值源的价目不是 30 行（一道逻辑工序一行）：{len(truth)}"
+    assert len(migration) == 30, f"迁移侧的价目不是 30 行：{len(migration)}"
+    assert len(bootstrap) == 30, f"bootstrap 的价目不是 30 行：{len(bootstrap)}"
+    assert migration == truth, f"价目：迁移侧 ≠ routing.py：{_diff_keys(migration, truth)}"
+    assert bootstrap == truth, (
+        f"价目：schema.sql 终态 ≠ routing.py：{_diff_keys(bootstrap, truth)} —— "
+        f"价/适用性/状态任一漂移即红")
+    # 自证（防空跑）：真值源里**既有有价行也有未定价行**，否则「价逐值比」这一半可能空转
+    assert any(v[0] is not None for v in truth.values()), "真值源全是未定价 ⇒ 价判据空跑"
+    assert any(v[0] is None for v in truth.values()), "真值源全是定价 ⇒ 「未定价」判据空跑"
+    assert {v[1] for v in truth.values()} == {True}, (
+        "终态要求**每一行都适用**（部位维退场后 applicable 不再是筛选器）："
+        f"{sorted({v[1] for v in truth.values()})}")
 
 
-def _split_by_deleted(sql: str) -> tuple:
-    """`schema.sql` 的矩阵行 → `(存活格 dict, 退场格集合)`（按显式 `deleted` 列分流）。
+def _position_seed_drift_is_detected():
+    """自证（供 `test_price_row_parser_detects_injected_drift` 复用）：键/值任一漂移都读得出来。
 
-    为什么按**格**分流而不是按行删掉：bootstrap 与迁移链的**行集合必须相同**（否则
-    「行整个消失」这一形态不可判）⇒ 退场只能靠 `deleted` 表达。
+    这里用的是**单键**口径（终态口径）—— 与三源比对同源，避免「自证用一套口径、比对用另一套」。
     """
-    rows = parse_seed(sql, "production_operation_positions", POSITION_PRICE_COLUMNS)
-    alive, retired = {}, set()
-    for row in rows:
-        key = (normalize_value(row["logical_name"]), normalize_value(row["position"]))
-        if normalize_value(row.get("deleted", "0")) == "1":
-            retired.add(key)
-        else:
-            alive[key] = _price_rows([row])[key]
-    return alive, retired
-
-
-def _v88_retired_cells() -> set:
-    """V88 退场的格（② `配料 × 4 部位` + ⑤ 其余布料格）—— **从 V88 的谓词读**，不硬编码。"""
-    v88 = MIGRATION_DIR / "V88__retire_material_prep_and_fabric_position.sql"
-    body = sql_code(v88.read_text(encoding="utf-8"))
-    retired_logical = re.search(r"logical_name\s*=\s*'([^']*)'", body)
-    excluded = re.search(r"logical_name\s+NOT\s+IN\s*\(([^)]*)\)", body)
-    assert retired_logical and excluded, "V88 的退场谓词读不出来 ⇒ 本判据的前提不成立"
-    banned = set(re.findall(r"'([^']*)'", excluded.group(1)))
-    return {(lg, pos) for lg, pos in position_price_rows_multi(POSITION_SEED_SQLS)
-            if lg == retired_logical.group(1) or (pos == "布料" and lg not in banned)}
+    good = (
+        "INSERT INTO production_operation_positions "
+        "(id, tenant_id, logical_name, position, unit_price, applicable, status) VALUES\n"
+        "  ('opp-1', 1, '熨烫', '通用', 0.35, TRUE, 'active'),\n"
+        "  ('opp-2', 1, '打包', '通用', NULL, TRUE, 'active')\n"
+        "ON CONFLICT (id) DO NOTHING;")
+    base = position_price_rows(good)
+    assert base["熨烫"] == (0.35, True, "active"), "价目解析器没读出合法行"
+    assert base["打包"][0] is None, "价目解析器没读出 NULL 价（未定价）"
+    assert position_price_rows(good.replace("0.35", "0.99")) != base, \
+        "改单价读不出来 ⇒ 三源比对是空断言"
+    assert position_price_rows(good.replace("'打包', '通用', NULL, TRUE", "'打包', '通用', NULL, FALSE")) != base, \
+        "翻 applicable 读不出来 ⇒ 适用性比对是空断言"
+    assert position_price_rows(good.replace("'熨烫', '通用', 0.35, TRUE", "'三边', '通用', 0.35, TRUE")) != base, \
+        "改逻辑工序名读不出来 ⇒ 键比对是空断言"
+    # 多行刻意 fail-closed（不许静默只留最后一行）
+    import pytest as _pytest
+    with _pytest.raises(AssertionError, match="出现多行"):
+        position_price_rows(good.replace(
+            "  ('opp-2', 1, '打包', '通用', NULL, TRUE, 'active')",
+            "  ('opp-2', 1, '打包', '通用', NULL, TRUE, 'active'),\n"
+            "  ('opp-3', 1, '熨烫', '布帘', 0.99, TRUE, 'active')"))
 
 
 def test_route_template_converges_across_three_sources(schema_sql):
@@ -1433,14 +1563,52 @@ def _with_packing_on_default_route(rows: list) -> list:
 
 
 def test_route_rules_converge_across_three_sources(schema_sql):
-    """规则表三源**逐行逐值**一致（26 行：工艺 10 + 特殊选项 16，含 priority）。"""
+    """规则表三源**逐行逐值**一致（26 行：工艺 10 + 特殊选项 16，含 priority）。
+
+    🔴 **issue #4937 / O2 之后的键不含 `position`**：规则级部位限定退场 ⇒
+    `routing.py` 的规则字典不再有该键、`docs/sql/schema.sql` 的字面量与
+    `V103__clear_route_rule_positions.sql` 的终态都是 `NULL`。
+    ⚠️ 迁移侧的字面量（V71）里 `韩褶 → 上车布` 那条**仍是 `布帘`**（已发布迁移不可改）
+    ⇒ 比对前按 **V103 的语义**把 `position` 归一为 `None`（= 迁移链终态）。
+    """
     truth = _truth_rule_rows()
     migration = route_rule_rows_multi(RULE_SEED_SQLS)
     bootstrap = route_rule_rows(schema_sql)
+    # V103 的语义（终态）：存活规则的 position 一律清空 ⇒ 比对键统一去掉该维
+    migration = {(k[0], k[1], k[3], k[4], k[5]): v for k, v in migration.items()}
+    bootstrap = {(k[0], k[1], k[3], k[4], k[5]): v for k, v in bootstrap.items()}
     assert len(truth) == 26, f"真值源的规则不是 26 条：{len(truth)}"
     assert len(migration) == 26, f"迁移侧的规则不是 26 条：{len(migration)}"
+    assert len(bootstrap) == 26, f"bootstrap 的规则不是 26 条：{len(bootstrap)}"
     assert migration == truth, f"规则表：迁移侧 ≠ routing.py：{_diff_keys(migration, truth)}"
     assert bootstrap == truth, f"规则表：schema.sql 终态 ≠ routing.py：{_diff_keys(bootstrap, truth)}"
+    # 自证：真值源里**确实没有** position 键（O2 的判据落点），且迁移侧的原始字面量里**有**一条
+    # （否则上面的「去掉该维」是空操作 ⇒ 判据可能空跑）
+    py_rules, _, _, _ = _route_v2_truth()
+    assert not any("position" in r for r in py_rules), "routing.py 的规则仍有 `position` 键（O2 未完成）"
+    raw_migration = route_rule_rows_multi(RULE_SEED_SQLS)
+    assert any(k[2] is not None for k in raw_migration), (
+        "迁移侧的字面量里没有任何 `position` 非 NULL 的规则 ⇒ 本判据的「归一」是空操作")
+
+
+def test_rule_positions_are_cleared_in_every_terminal_source(schema_sql):
+    """🔴 O2 终态三方核验：`routing.py`（无键）/ `schema.sql` 字面量 / `V103` 迁移**都必须清空**。
+
+    只改一处即红：① `routing.py` 留着 `position` 键 ⇒ 读侧还会筛；
+    ② `schema.sql` 的字面量还带 `布帘` ⇒ 新建库的规则仍限部位；
+    ③ 没有 `V103` 迁移 ⇒ 存量库的值永远清不掉（「CI 全绿、功能静默缺失」，issue #4235）。
+    """
+    v103 = MIGRATION_DIR / "V103__clear_route_rule_positions.sql"
+    assert v103.exists(), "缺 `V103__clear_route_rule_positions.sql` ⇒ 存量库的规则 position 永远是旧值"
+    body = sql_code(v103.read_text(encoding="utf-8"))
+    assert re.search(r"SET\s+position\s*=\s*NULL", body), "V103 没有把 position 写成 NULL"
+    # schema.sql：V70 的 26 行字面量（**非** V93 的 VALUES 段）必须全是 NULL
+    v70_block = schema_sql[schema_sql.index("INSERT INTO production_route_rules"):
+                           schema_sql.index("-- ── 工序路线模型重构 P2 的终态种子")]
+    positions = re.findall(r"\('rr-v70-\d+', 1, '[^']*', '[^']*', (NULL|'[^']*')", v70_block)
+    assert len(positions) == 26, f"V70 规则字面量解析出 {len(positions)} 行，期望 26"
+    assert set(positions) == {"NULL"}, (
+        f"schema.sql 的 V70 规则字面量仍有非 NULL 的 position：{sorted(set(positions))}")
 
 
 def test_new_route_operations_all_have_a_price_row(schema_sql):
@@ -1451,7 +1619,7 @@ def test_new_route_operations_all_have_a_price_row(schema_sql):
     """
     _, mainline, rules, _ = _route_v2_truth()
     _, fabric_mainline, _ = _fabric_truth()
-    seeded = {key[0] for key in position_price_rows_multi(POSITION_SEED_SQLS)}
+    seeded = set(position_price_rows_multi(POSITION_SEED_SQLS))
     for label, steps in (("窗帘主线", mainline), ("布料主线", fabric_mainline)):
         assert set(steps) <= seeded, \
             f"{label}引用了没有价目行的工序：{sorted(set(steps) - seeded)}"
@@ -1462,7 +1630,7 @@ def test_new_route_operations_all_have_a_price_row(schema_sql):
             assert rule["after_operation"] in seeded, \
                 f"规则 {rule['trigger_value']} 的锚点没有价目行：{rule['after_operation']}"
     # schema.sql 侧同样钉（bootstrap 库的价目行集合必须覆盖两条主线）
-    bootstrap_seeded = {key[0] for key in position_price_rows(schema_sql)}
+    bootstrap_seeded = set(schema_terminal_price_rows(schema_sql))
     assert set(mainline) <= bootstrap_seeded
     assert set(fabric_mainline) <= bootstrap_seeded
 
@@ -1546,11 +1714,12 @@ def test_variant_group_scope_mismatch_is_detected(tmp_path):
 
 def test_new_route_parsers_detect_injected_drift():
     """注入式自证：三张新表的解析器必须**能**照出漂移（改价/翻适用性/改主线/改优先级）。"""
+    # ⚠️ #4937 之后**终态是一道逻辑工序一行** ⇒ 夹具随之改成两行两个工序（不再是同工序两部位）
     good_positions = (
         "INSERT INTO production_operation_positions "
         "(id, tenant_id, logical_name, position, unit_price, applicable, status) VALUES\n"
-        "  ('opp-1', 1, '熨烫', '布帘', 0.35, TRUE, 'active'),\n"
-        "  ('opp-2', 1, '熨烫', '纱帘', NULL, FALSE, 'active')\n"
+        "  ('opp-1', 1, '熨烫', '通用', 0.35, TRUE, 'active'),\n"
+        "  ('opp-2', 1, '打包', '通用', NULL, TRUE, 'active')\n"
         "ON CONFLICT (id) DO NOTHING;")
     good_templates = (
         "INSERT INTO production_route_templates "
@@ -1566,13 +1735,16 @@ def test_new_route_parsers_detect_injected_drift():
         "ON CONFLICT (id) DO NOTHING;")
 
     base_prices = position_price_rows(good_positions)
-    assert base_prices[("熨烫", "布帘")] == (0.35, True, "active"), "部位价目解析器没读出合法行"
-    assert base_prices[("熨烫", "纱帘")][0] is None, "部位价目解析器没读出 NULL 价（明确不做）"
+    assert base_prices["熨烫"] == (0.35, True, "active"), "价目解析器没读出合法行"
+    assert base_prices["打包"][0] is None, "价目解析器没读出 NULL 价（未定价）"
     assert position_price_rows(good_positions.replace("0.35", "0.99")) != base_prices, \
-        "改单价读不出来 ⇒ 部位价目三源比对是空断言"
+        "改单价读不出来 ⇒ 价目三源比对是空断言"
     assert position_price_rows(good_positions.replace(
-        "'纱帘', NULL, FALSE", "'纱帘', NULL, TRUE")) != base_prices, \
+        "'打包', '通用', NULL, TRUE", "'打包', '通用', NULL, FALSE")) != base_prices, \
         "翻 applicable 读不出来 ⇒ 适用性比对是空断言"
+    assert position_price_rows(good_positions.replace(
+        "'熨烫', '通用', 0.35, TRUE", "'三边', '通用', 0.35, TRUE")) != base_prices, \
+        "改逻辑工序名读不出来 ⇒ 键比对是空断言"
 
     base_templates = route_template_rows(good_templates)
     assert base_templates[0]["mainline"] == ("精裁", "三边"), "具名路线解析器没读出主线序列"

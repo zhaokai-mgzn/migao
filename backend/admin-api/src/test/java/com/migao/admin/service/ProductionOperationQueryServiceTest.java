@@ -428,10 +428,10 @@ class ProductionOperationQueryServiceTest {
                 .updateById(any(ProductionRouteTemplate.class));
     }
 
-    // ══════════════════ variantNameOf：35 条旧名的**往返判据**（issue #4459 §2①）══════════════════
+    // ══════════════════ variantNameOf：39 条旧名的**往返判据**（issue #4459 §2①）══════════════════
 
     /**
-     * 判据（**锁死方式**，issue #4459 §2①）：对 35 条旧名逐条
+     * 判据（**锁死方式**，issue #4459 §2①）：对 39 条旧名逐条
      * {@code variantNameOf(normalizeOperationName(name), position(name)) == name}。
      *
      * <p>这条往返判据是「新结构的逻辑名 ↔ 工序库的旧变体名」映射的**唯一**可失败判据：
@@ -442,10 +442,12 @@ class ProductionOperationQueryServiceTest {
      * 按真值源的表逐条给出。</p>
      */
     @Test
-    @DisplayName("variantNameOf 往返判据：35 条旧名逐条可逆（改后缀规则/加减一条即红）")
+    @DisplayName("variantNameOf 往返判据：39 条旧名逐条可逆（改后缀规则/加减一条即红）")
     void variantNameOfRoundTripsAllLegacyNames() {
         Map<String, String> logicalNames = logicalNamePairs();
-        assertThat(logicalNames).as("真值源有 35 条旧名").hasSize(35);
+        // 🔴 issue #4937：35 → **39** 条（新增 4 道纱帘变体；见
+        // `logicalNameTableMatchesTruthSource` 的注释）
+        assertThat(logicalNames).as("真值源有 39 条旧名").hasSize(39);
 
         Map<String, Map<String, Object>> catalog = new LinkedHashMap<>();
         logicalNames.keySet().forEach(name -> catalog.put(name, Map.of()));
@@ -528,15 +530,32 @@ class ProductionOperationQueryServiceTest {
         // ⚠️ 用 lastIndexOf：`_LOGICAL_NAME_PAIRS` 在 docstring 里也被提到过（首次出现不是定义处）
         int pairsAt = py.indexOf("_LOGICAL_NAME_PAIRS: List[tuple]");
         int namesAt = py.indexOf("OPERATION_LOGICAL_NAMES: Dict", pairsAt);
+        // ⚠️ 真值源有**两段**：`_LOGICAL_NAME_PAIRS`（35 条多行有序对）+ `withSheerVariants`
+        // 函数里的**单行** `dict(...)` 调用（issue #4937 的 4 条纱帘变体）。
+        // ⇒ 两段一起解析（多行形态 + 单行形态），否则只读到 35 条而「运行期表 = 39 条」判据会红。
         Matcher matcher = Pattern.compile("\\n\\s*\\(\"([^\"]+)\",\\s*\"([^\"]+)\"\\),")
                 .matcher(py.substring(pairsAt, namesAt));
+        Matcher inline = Pattern.compile("\\(\"([^\"]+-纱)\",\\s*\"([^\"]+)\"\\)")
+                .matcher(py);
         Map<String, String> fromPython = new LinkedHashMap<>();
         while (matcher.find()) {
             fromPython.put(matcher.group(1), matcher.group(2));
         }
-        assertThat(fromPython).as("真值源里应解析出 35 条有序对").hasSize(35);
+        while (inline.find()) {
+            fromPython.putIfAbsent(inline.group(1), inline.group(2));
+        }
+        // 🔴 issue #4937：真值源增加了 **4 条纱帘变体**（`熨烫-纱`/`定型-纱`/`复烫-纱`/`车被-纱`
+        // —— `applicable` 过滤退场后它们会进纱帘路线，必须能解析回逻辑名）⇒ 35 → **39** 条。
+        assertThat(fromPython)
+                .as("真值源里应解析出 39 条有序对（35 条冻结段 + issue #4937 的 4 条纱帘变体）")
+                .hasSize(39);
+        // ⚠️ 比对**全表**（39 条）：Java 侧的运行期表 = 冻结的 35 条段
+        // （`logicalNamePairs()`）+ 4 条纱帘变体段（`withSheerVariants(...)`，见生产代码注释）
+        // ⇒ 两段合起来必须与真值源逐条一致。**不许**只比前 35 条：那会让新增的 4 条
+        // **完全没有同源判据**（漂移不会红）。
         assertThat(logicalNamePairs())
-                .as("Java 侧的表必须与真值源逐条一致（改一处不改另一处 ⇒ 本判据红）")
+                .as("Java 侧的「旧名 → 逻辑名」表必须与真值源逐条一致"
+                        + "（改一处不改另一处 ⇒ 本判据红）")
                 .isEqualTo(fromPython);
     }
 
@@ -549,13 +568,15 @@ class ProductionOperationQueryServiceTest {
         return names;
     }
 
-    /** 35 条旧工序名（真值源 {@code OPERATION_LOGICAL_NAMES} 的键集，逐条写出）。 */
+    /** **39** 条旧工序名（真值源 {@code OPERATION_LOGICAL_NAMES} 的键集，逐条写出）。 */
     private static final List<String> LEGACY_NAMES = List.of(
             "精裁-布", "精裁-纱", "裁剪-布", "裁剪-纱", "布三边", "纱三边", "韩褶-布", "韩褶-纱",
             "上车布-布", "上车布-纱", "打孔-布", "打孔-纱", "拼1次-布", "拼2次-布", "拼3次-布",
             "花边-布", "铅坠-布", "接高-布", "帘头制作", "熨烫-布", "定型-布", "复烫-布",
             "布帘车被", "外帘打卷", "外帘装袋", "质检", "外帘发货", "绑带-布", "抱枕", "腰靠垫",
-            "绑带-纱", "logo条-布", "立边-布", "扣环-布", "防翘扣-布");
+            "绑带-纱", "logo条-布", "立边-布", "扣环-布", "防翘扣-布",
+            // issue #4937：4 道纱帘变体（见 `logicalNameTableMatchesTruthSource` 的注释）
+            "熨烫-纱", "定型-纱", "复烫-纱", "车被-纱");
 
     /** 旧名的**部位**（测试侧推导：带后缀的直接读后缀；不规则名按真值源的表逐条给出）。 */
     private static String positionOfLegacyName(String legacy) {

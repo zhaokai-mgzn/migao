@@ -173,7 +173,8 @@ public class ProductionRoutingReadService {
      * {@code delivery} 段<b>一行都没有</b>（实测 {@code PROBE delivery operations = [打包]}）⇒
      * 该形态下【打包发货】层无行、无 {@code 管理▸}、抽屉打不开。设计要求（#4675 §7 第 7 条 /
      * #4677 四条约束）是「<b>第二层的行不依赖矩阵格</b>」—— 现状只在渲染层成立（前端手造行时才成立）。
-     * 零格 ⇒ <b>仍有一行</b>，价态给 {@code no_applicable_position}（4 态之一，语义一字不改）。</p>
+     * 零格 ⇒ <b>仍有一行</b>，价态给 {@code unpriced}（issue #4937：原第 4 态
+     * {@code no_applicable_position} 随部位维退场 —— 零格与「一格未定价」同判）。</p>
      *
      * <p>两段的<b>并集是全集</b>：{@code operations} = 矩阵行里<b>不属于</b>交付工序集合的那些
      * （含 {@code scope=null} 的安全方向 —— 变体查不到 ⇒ 落工序层，不落交付层）。</p>
@@ -226,27 +227,32 @@ public class ProductionRoutingReadService {
     /**
      * 交付环节的**一列价**行（显式规则 = 设计 §4.5 方案 A：**保留矩阵格、在读面聚合成一列**）。
      *
-     * <p>取值口径 = 该工序**所有 {@code applicable=TRUE} 格**的 {@code unit_price}，逐条规则：</p>
+     * <p>🔴 <b>去部位化（issue #4937 / O1，用户裁定 2026-09-21「不计成本的改」）</b>：
+     * <b>不再按 {@code applicable} 过滤</b>，且第 4 态 {@code no_applicable_position}
+     * <b>退场</b> —— 部位没了，「没有部位做」这句话不成立。取值口径 = 该工序**全部**矩阵格的
+     * {@code unit_price}，逐条规则：</p>
      * <ol>
-     *   <li>全部相同 ⇒ {@code price_state="priced"} + {@code price=该价}；</li>
-     *   <li>有 {@code NULL} ⇒ {@code price_state="unpriced"} + {@code price=null}
+     *   <li>全部相同（且非 NULL）⇒ {@code price_state="priced"} + {@code price=该价}；</li>
+     *   <li>有 {@code NULL} **或一格都没有** ⇒ {@code price_state="unpriced"} + {@code price=null}
      *       —— <b>未定价 ≠ ¥0.00</b>，且**不得**回落工序库行价（设计 F4/U6：
      *       {@code production_operations.unit_price} 是 {@code NOT NULL DEFAULT 0} ⇒
-     *       回落会把「未定价」变成「真 0 元」，工人白干）；</li>
+     *       回落会把「未定价」变成「真 0 元」，工人白干）。
+     *       ⚠️ 「零格」此前判 {@code no_applicable_position}，现在与「一格未定价」<b>同判
+     *       {@code unpriced}</b>：两者对商家的行动完全一致（去工序库/矩阵定价），
+     *       而区分它们的那一维（部位适用性）已退场；</li>
      *   <li>不相同 ⇒ {@code price_state="multiple_prices"} + {@code price=null} +
-     *       {@code different_price_count=不同价的个数}（**不静默取第一个**，设计 B7）；</li>
-     *   <li>一格 {@code applicable=TRUE} 都没有 ⇒ {@code price_state="no_applicable_position"}。</li>
+     *       {@code different_price_count=不同价的个数}（**不静默取第一个**，设计 B7）。</li>
      * </ol>
      *
      * <p>⚠️ 本方法**只读矩阵格**（{@code production_operation_positions}）的**价**，**不读**
      * {@code production_operations.unit_price} —— 「工序库行价兜底」是**实例化路径**
-     * （{@code ProcessingOrderService.buildRoute}）的既有语义，其触发条件是
-     * 「格存在 + {@code applicable=TRUE} + 价 {@code NULL}」，且回落值是 **0**（设计 F4）。
+     * （{@code ProcessingOrderService.buildRoute}）的既有语义，且其触发条件是
+     * 「格存在 + 价 {@code NULL}」，回落值是 **0**（设计 F4）。
      * 本层不复制那条兜底：读面的「未定价」必须与「¥0.00」可区分。</p>
      *
      * <p><b>零格（{@code cells} 为空）是正当形态</b>（issue #4729）：行由工序库给出（见
      * {@link #operationLayers}），该工序可能一个矩阵格都没有 ⇒ 仍出 9 键行、价态
-     * {@code no_applicable_position}；行尾元数据（单位 / 分组 / 必完）回落**工序库行**
+     * {@code unpriced}；行尾元数据（单位 / 分组 / 必完）回落**工序库行**
      * （{@code library}）—— 那是工序自身的元数据，不是价（价**绝不**回落，见上）。</p>
      *
      * @param library 该工序的工序库元数据（{@code scope='set'} 那一行）；格里的元数据优先，
@@ -258,10 +264,6 @@ public class ProductionRoutingReadService {
         List<String> applicablePositions = new ArrayList<>();
         boolean unpriced = false;
         for (Map<String, Object> cell : cells) {
-            if (!Boolean.TRUE.equals(cell.get("applicable"))) {
-                continue;
-            }
-            applicablePositions.add(String.valueOf(cell.get("position")));
             Object price = cell.get("unit_price");
             if (price == null) {
                 unpriced = true;
@@ -271,9 +273,8 @@ public class ProductionRoutingReadService {
         }
         String priceState;
         BigDecimal price = null;
-        if (applicablePositions.isEmpty()) {
-            priceState = "no_applicable_position";
-        } else if (unpriced) {
+        if (unpriced || prices.isEmpty()) {
+            // 🔴 零格也走这一路（原先判 `no_applicable_position`，该态已随部位维退场）
             priceState = "unpriced";
         } else if (prices.size() == 1) {
             priceState = "priced";
@@ -290,6 +291,8 @@ public class ProductionRoutingReadService {
         view.put("price", price);
         view.put("price_state", priceState);
         view.put("different_price_count", "multiple_prices".equals(priceState) ? prices.size() : 0);
+        // ⚠️ 键**保留**（9 键契约：`tests/unit_ci_workflows/test_routing_read_endpoints.py` 的
+        // `DELIVERY_KEYS` 逐字冻结）—— 但语义已随部位维退场 ⇒ **恒 `[]`**，不再是「参与取值的部位」。
         view.put("applicable_positions", applicablePositions);
         return view;
     }

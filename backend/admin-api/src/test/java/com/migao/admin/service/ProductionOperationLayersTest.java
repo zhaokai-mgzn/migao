@@ -45,7 +45,7 @@ import static org.mockito.Mockito.when;
  *   <li><b>各部位不同价 ⇒ 不静默取第一个</b>（{@code multiple_prices} + {@code different_price_count}，
  *       设计 B7）；</li>
  *   <li><b>交付行的存活与矩阵格数无关</b>（只剩一格仍是 delivery 行；**零格也有行**，价态
- *       {@code no_applicable_position}）—— 设计 F1 红线：一列价**不得**用「删格」实现
+ *       {@code unpriced}）—— 设计 F1 红线：一列价**不得**用「删格」实现
  *       （删格 ⇒ 该部位单里静默消失 ⇒ 少一道活、少一笔计件钱）。🔴 **行来源 = 工序库的
  *       {@code scope='set'} 行，不是矩阵行**（issue #4729 修正 = 独立验收 #4677 的 P1-2：
  *       改前遍历 {@code operationPositions()} 只读矩阵表 ⇒ 零格工序在 delivery 段一行都没有）；</li>
@@ -174,7 +174,9 @@ class ProductionOperationLayersTest {
         assertThat(row.get("unit")).isEqualTo("套");
         assertThat(row.get("group")).isEqualTo("后道");
         // 去部位化（issue #4883）：三格收敛为一格（适用 + 布帘列优先）⇒ 只剩布帘那一条。
-        assertThat(row.get("applicable_positions")).isEqualTo(List.of("布帘"));
+        // 🔴 issue #4937 / O1：`applicable_positions` 键**保留**（9 键契约）但语义已退场 ⇒ **恒 `[]`**
+        assertThat(row.get("applicable_positions")).as("适用性维已退场 ⇒ 参与取值的部位恒为空")
+                .isEqualTo(List.of());
     }
 
     @Test
@@ -212,7 +214,9 @@ class ProductionOperationLayersTest {
 
         assertThat(row.get("price_state")).isEqualTo("priced");
         assertThat(row.get("price")).isEqualTo(new BigDecimal("1.00"));
-        assertThat(row.get("applicable_positions")).isEqualTo(List.of("布帘"));
+        // 🔴 issue #4937 / O1：`applicable_positions` 键**保留**（9 键契约）但语义已退场 ⇒ **恒 `[]`**
+        assertThat(row.get("applicable_positions")).as("适用性维已退场 ⇒ 参与取值的部位恒为空")
+                .isEqualTo(List.of());
     }
 
     @Test
@@ -228,7 +232,9 @@ class ProductionOperationLayersTest {
 
         assertThat(row.get("price_state")).isEqualTo("priced");
         assertThat(row.get("price")).isEqualTo(new BigDecimal("1.00"));
-        assertThat(row.get("applicable_positions")).isEqualTo(List.of("布帘"));
+        // 🔴 issue #4937 / O1：`applicable_positions` 键**保留**（9 键契约）但语义已退场 ⇒ **恒 `[]`**
+        assertThat(row.get("applicable_positions")).as("适用性维已退场 ⇒ 参与取值的部位恒为空")
+                .isEqualTo(List.of());
     }
 
     // ── 判据 4：交付行的存活与矩阵格数无关（F1 红线）──
@@ -247,7 +253,8 @@ class ProductionOperationLayersTest {
                 .extracting(r -> r.get("operation")).containsExactly("外帘打卷", "外帘装袋", "打包");
         // 零个适用格也**不消失**（只是 `no_applicable_position`）—— 换成「按格分区」这里会少一行。
         Map<String, Object> empty = deliveryRow(layers, "外帘装袋");
-        assertThat(empty.get("price_state")).isEqualTo("no_applicable_position");
+        // 🔴 issue #4937 / O1：第 4 态 `no_applicable_position` **退场** —— 零格与「一格未定价」同判
+        assertThat(empty.get("price_state")).isEqualTo("unpriced");
         assertThat(empty.get("applicable_positions")).isEqualTo(List.of());
     }
 
@@ -255,7 +262,7 @@ class ProductionOperationLayersTest {
 
     @Test
     @DisplayName("🔴 零矩阵格：`scope='set'` 的工序**一个格都没有** ⇒ 仍有 delivery 行 + "
-            + "`no_applicable_position`（**行来源 = 工序库，不是矩阵行**）")
+            + "`unpriced`（**行来源 = 工序库，不是矩阵行**；#4937 起零格不再单列一态）")
     void deliveryRowExistsWhenOperationHasNoMatrixCellsAtAll() {
         stubPackingCatalog();
         // 矩阵里**只有**部位级工序的格：三道套级工序（打包 / 外帘打卷 / 外帘装袋）**一格都没有**。
@@ -268,10 +275,10 @@ class ProductionOperationLayersTest {
         // 零格工序**照样各有一行**（判据是工序库行的 `scope`，不是「有没有格」）
         assertThat((List<Map<String, Object>>) layers.get("delivery"))
                 .extracting(r -> r.get("operation")).containsExactly("外帘打卷", "外帘装袋", "打包");
-        // 零格 ⇒ 4 态之一 `no_applicable_position`（**语义一字不改**：不假装 ¥0.00、不假装未定价）
+        // 零格 ⇒ `unpriced`（#4937：原第 4 态退场；仍不假装 ¥0.00）
         for (String operation : List.of("打包", "外帘打卷", "外帘装袋")) {
             Map<String, Object> row = deliveryRow(layers, operation);
-            assertThat(row.get("price_state")).isEqualTo("no_applicable_position");
+            assertThat(row.get("price_state")).isEqualTo("unpriced");
             assertThat(row.get("price")).isNull();
             assertThat(row.get("different_price_count")).isEqualTo(0);
             assertThat(row.get("applicable_positions")).isEqualTo(List.of());
@@ -300,7 +307,8 @@ class ProductionOperationLayersTest {
         Map<String, Object> packing = deliveryRow(layers, "打包");
         assertThat(packing.get("price_state")).isEqualTo("priced");
         assertThat(packing.get("price")).isEqualTo(new BigDecimal("1.50"));
-        assertThat(packing.get("applicable_positions")).isEqualTo(List.of("布帘"));
+        assertThat(packing.get("applicable_positions")).as("适用性维已退场 ⇒ 恒 `[]`")
+                .isEqualTo(List.of());
     }
 
     @Test
@@ -317,9 +325,10 @@ class ProductionOperationLayersTest {
 
         assertThat((List<Map<String, Object>>) layers.get("delivery"))
                 .extracting(r -> r.get("operation")).containsExactly("外帘打卷", "外帘装袋", "打包");
-        // 行内 `applicable_positions` 亦随去部位化收敛为一格（issue #4883：适用 + 布帘列优先）
+        // 🔴 issue #4937：`applicable_positions` 随适用性维**整体退场** ⇒ 恒 `[]`
         assertThat(deliveryRow(layers, "打包").get("applicable_positions"))
-                .isEqualTo(List.of("布帘"));
+                .as("适用性维已退场 ⇒ 参与取值的部位恒为空")
+                .isEqualTo(List.of());
     }
 
     // ── 判据 5：与既有端点同形 ──

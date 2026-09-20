@@ -16,17 +16,40 @@ import java.time.OffsetDateTime;
 public interface ProductionOperationPositionMapper extends BaseMapper<ProductionOperationPosition> {
 
     /**
-     * 只写矩阵格的**两列可写面**（{@code unit_price} / {@code applicable}）+ {@code updated_at}
-     * （issue #4587 ②）。
+     * 只写矩阵格的**一列可写面**（{@code unit_price}）+ {@code updated_at}
+     * （issue #4937 / O1：{@code applicable} 已退场 ⇒ 写面不再写它）。
      *
      * <p><b>为什么用 {@code LambdaUpdateWrapper} 而不是实体 {@code updateById}</b>：
      * ① {@code updateById} 会把整行按实体回写（漏设字段即写成 null）；② 更关键的是
      * <b>MyBatis-Plus 的 NOT_NULL 策略会把 null 字段从 UPDATE 里省掉</b> ⇒
-     * 「把价改回<b>未定价</b>（NULL）」与「明确不做 ⇒ 价强制清空」这两条语义<b>根本写不进去</b>
+     * 「把价改回<b>未定价</b>（NULL）」这条语义<b>根本写不进去</b>
      * （静默保留旧价 = 商家以为改回未定价、实际照旧计价 ⇒ 工人工资错）。本方法**显式** SET 两列。</p>
      *
-     * @param unitPrice  {@code null} = 未定价 / 明确不做（**≠ 0 元**）
-     * @param applicable 该部位是否做这道工序
+     * @param unitPrice {@code null} = 未定价（**≠ 0 元**）
+     * @return 受影响行数（0 = 行不存在 / 非本租户 / 已软删）
+     */
+    default int updateUnitPrice(String id, Long tenantId, BigDecimal unitPrice,
+                                OffsetDateTime updatedAt) {
+        return update(null, new LambdaUpdateWrapper<ProductionOperationPosition>()
+                .eq(ProductionOperationPosition::getId, id)
+                .eq(ProductionOperationPosition::getTenantId, tenantId)
+                .eq(ProductionOperationPosition::getDeleted, 0)
+                .set(ProductionOperationPosition::getUnitPrice, unitPrice)
+                .set(ProductionOperationPosition::getUpdatedAt, updatedAt));
+    }
+
+    /**
+     * 「**设为不做**」形态（{@code applicable = false} + 价强制清空）—— 只被**删工序**
+     * 那条路径用（{@code ProductionOperationCommandService#deleteDetaching} 的「一键摘格」，
+     * issue #4665 A）。
+     *
+     * <p>⚠️ <b>与 {@link #updateUnitPrice} 并存是**有意**的</b>（issue #4937 / O1）：
+     * 商家配置面的 {@code applicable} 已退场（{@code PUT /operation-positions/{id}} 收到该字段
+     * **422**），但**删工序**那条路径仍需把命中的格标成「不做」以便护栏③放行
+     * —— 这是**内部一致性动作**，不是商家配置入口。⛔ 不得据此重新开放商家改 {@code applicable} 的入口。</p>
+     *
+     * @param unitPrice  {@code null} = 明确不做 ⇒ 不报价（**≠ 0 元**）
+     * @param applicable 该部位是否做这道工序（本路径恒 {@code false}）
      * @return 受影响行数（0 = 行不存在 / 非本租户 / 已软删）
      */
     default int updatePriceAndApplicable(String id, Long tenantId, BigDecimal unitPrice,

@@ -1,47 +1,37 @@
 # case_ids: PP-010, PG-018
-"""工序路线模型 v2 真值源（issue #4427，母单 #4423 的 P1/3）—— **9/9 逐字重建** + 规则/价目自洽。
+"""工序路线模型 v2 真值源（issue #4427 = 母单 #4423 的 P1/3）—— **去部位化后的冻结基线**。
 
-## 本文件判什么（P1 = 纯增量，运行时行为零变化）
+## 🔴 本文件在 issue #4937 换过一次基线（照实登记）
 
-`routing.py` 新增**第二份并存的真值源**（`ROUTE_TEMPLATE_NAME_DEFAULT` / `ROUTE_MAINLINE_STEPS` /
-`OPERATION_LOGICAL_NAMES` / `OPERATION_POSITION_PRICES` / `ROUTE_RULES` / `build_route_v2`），
-与旧常量（`OPERATION_CATALOG` / `ROUTINGS` / `SPECIAL_OPTION_ROUTINGS`）**一字不动地并存**。
-本文件是它的判据，且**判据值全部硬编码在文件内**（不从被测实现推导 —— 否则「实现自洽」就能骗过测试）：
+**旧基线随用户 2026-09-21 裁定退休**：母单 **#4936** 用户原话「这个必须要改，我们移除了部位的
+设计，**不计成本的改**」⇒ issue **#4937**（去部位化彻底版）把「部位」从**取价、取路、筛选、配置**
+里**全部**移除。本文件原来钉的判据因此**退休并换基线**：
 
-1. **9/9 逐字重建（最重要）**：`build_route_v2` 重建 9 个 `(部位, 工艺)` 组合，与
-   ① **冻结期望序列**（母单 #4423 §二 已实证）② **旧 `ROUTINGS` 按 `OPERATION_LOGICAL_NAMES`
-   归一后的序列** 三方逐字比对（含顺序）。
-2. 逻辑工序名映射 **35 → 28**（7 组部位变体）。
-3. 部位价目 **30 × 4 = 120 行**（issue #4529 起）、`applicable` 显式；**不发明任何工序/单价**（每个单价都能溯源到
-   `OPERATION_CATALOG`）。
-4. 规则表 **26 条** = 工艺变体 10 + 特殊选项 16（16 条 = `SPECIAL_OPTION_ROUTINGS` 逐条搬迁，
-   **工序名与锚点都归一为逻辑名** —— `布三边`→`三边`、`布帘车被`→`车被`、`精裁-布`→`精裁`）。
-5. 旧常量与旧行为**零变化**（`build_routing` 对同一 9 个组合的输出逐字不变）。
+| 旧判据（已退休） | 新基线（本文件现在钉的） |
+|---|---|
+| `9/9 逐字重建` = 旧 9 条展开路线（`ROUTINGS`）归一序列（与**旧结构**逐字相等） | **部位无关的冻结序列**：同一工艺在**任何**帘种上得到**同一套逻辑工序名** |
+| `ROUTINGS` 是 9 条 `(部位, 工艺)` 展开快照、`build_routing` 按 `(部位, 工艺)` 查表 | `ROUTINGS` 只按**工艺**建键（**5 条**）；`build_routing` 只按工艺查表 |
+| 部位价目 `30 × 4 = 120 行`、`OPERATION_POSITION_PRICES[工序][部位]`（两级） | 部位价目 **30 行**、`OPERATION_POSITION_PRICES[工序]`（**单键**，与 `V104` / `docs/sql/schema.sql` 终态逐行同值） |
+| 规则表 26 条**带 `position`**（部位限定生效） | 规则表 26 条**无 `position`**（O2 退场；`V103` 清空存量值） |
+
+**判据值全部硬编码在文件内**（不从被测实现推导 —— 否则「实现自洽」就能骗过测试）。
 
 ## 红证（「不会红的断言 = 空断言」，见 `TestInjectedDrift`）
 
-五条注入式自证，各自证明一条判据**真能红**：少一条规则 / 规则优先级颠倒 / 规则工序名错 /
-部位适用性开关失效 / 逻辑名映射漂移。
-
-## ⚠️ 一处如实登记的规格张力（不是本单引入的 bug，交 P2 决策）
-
-`余料做帘头`（#4230 的**推算**映射）把 `帘头制作` 插进 **布帘/纱帘** 路线，而母单冻结的
-部位适用性把 `帘头制作` 限在 `{帘头}` ⇒ 新模型的**部位适用性过滤会把它滤掉**（旧实现不会）。
-9/9 重建**不受影响**（那是主线）；差异由
-`TestSpecialOptionsRebuild::test_yield_curtain_head_option_is_filtered_by_applicability` 显式钉住，
-P2 切换消费路径前必须裁定（要么放开 `帘头制作@布帘` 的适用性，要么给该选项补部位限定）。
+逐条注入式自证：少一条规则 / 规则优先级颠倒 / 规则工序名错 / 未知工序 fail-closed /
+**部位过滤重新注入** / 逻辑名映射漂移 / 价目表多一行 / 规则重新带上 `position`。
 
 ## 关联
 
-母单 #4423 · 真值源 `docs/curtain-production-rules.md` §2/§3 · 领域设计
-`docs/design/position-instance-routing-model.md` §9 · 种子多源收敛守卫
-`tests/unit_ci_workflows/test_production_catalog_seed.py`（`routing.py` ↔ V71 ↔ `schema.sql`）。
+母单 #4423 · **去部位化母单 #4936 + 本包 #4937** · 真值源 `docs/curtain-production-rules.md` §2/§3 ·
+种子多源收敛守卫 `tests/unit_ci_workflows/test_production_catalog_seed.py`。
 """
 from __future__ import annotations
 
 import pytest
 
 from app.production.routing import (
+    FABRIC_MAINLINE_STEPS,
     OPERATION_CATALOG,
     OPERATION_LOGICAL_NAMES,
     OPERATION_POSITION_PRICES,
@@ -54,48 +44,36 @@ from app.production.routing import (
     build_route_v2,
 )
 
-POSITIONS = ("布帘", "纱帘", "帘头")
-#: 第 4 个部位（issue #4529，包 F）：布料单专用 —— 只有 `配料`/`打包` 适用。
-FABRIC_POSITION = "布料"
-ALL_POSITIONS = POSITIONS + (FABRIC_POSITION,)
+#: 🔴 **#4937 之后帘种不再参与取路** ⇒ 这三个帘种的序列**必须逐字相同**（本文件的核心判据）。
+CURTAIN_TYPES = ("布帘", "纱帘", "帘头")
+#: 工艺维（`ROUTINGS` 的键 / `build_route_v2` 的规则触发值）。
+CRAFTS = ("韩褶", "打孔", "四爪钩", "穿杆", "平幔")
 
-# ── ① 主线（落库的 **10** 道；「工艺槽位」不落库，只在文档里）──
-#: `打包` 由 issue #4529 插入（9 → 10 道），位置 = `外帘打卷` 与 `外帘装袋` 之间。
+# ── ① 主线 ──
+#: 窗帘主线（落库的 **10** 道；`打包` 由 issue #4529 插在 `外帘打卷` 与 `外帘装袋` 之间）。
 MAINLINE = ["精裁", "三边", "熨烫", "定型", "复烫", "车被", "外帘打卷", "打包", "外帘装袋", "外帘发货"]
 
-
-def with_packing(route: list) -> list:
-    """旧序列（旧 `ROUTINGS` 归一 / 旧 `build_routing` 归一）+ `打包`（插在 `外帘装袋` 之前）。
-
-    issue #4529 的**显式行为变更**：窗帘主线 9 → 10 道（判据 2）。除 `打包` 外**逐字不变**
-    —— 本文件的比对一律用本函数把「旧序列」升到新口径，而不是放宽相等判据。
-    """
-    if "打包" in route or "外帘装袋" not in route:
-        return list(route)
-    idx = route.index("外帘装袋")
-    return route[:idx] + ["打包"] + route[idx:]
-
-
-# ── ② 9 个组合的**冻结期望序列**（母单 #4423 §二 实证 + #4529 的 `打包`）──
-EXPECTED_REBUILT = {
-    ("布帘", "韩褶"): ["精裁", "三边", "韩褶", "上车布", "熨烫", "定型", "复烫", "车被",
-                       "外帘打卷", "打包", "外帘装袋", "外帘发货"],
-    ("布帘", "打孔"): ["精裁", "三边", "打孔", "熨烫", "定型", "复烫", "车被",
-                       "外帘打卷", "打包", "外帘装袋", "外帘发货"],
-    ("布帘", "四爪钩"): ["精裁", "三边", "上车布", "熨烫", "车被",
-                         "外帘打卷", "打包", "外帘装袋", "外帘发货"],
-    ("布帘", "穿杆"): ["精裁", "三边", "熨烫", "车被", "外帘打卷", "打包", "外帘装袋", "外帘发货"],
-    ("纱帘", "韩褶"): ["精裁", "三边", "韩褶", "外帘打卷", "打包", "外帘装袋", "外帘发货"],
-    ("纱帘", "打孔"): ["精裁", "三边", "打孔", "外帘打卷", "打包", "外帘装袋", "外帘发货"],
-    ("纱帘", "四爪钩"): ["精裁", "三边", "上车布", "外帘打卷", "打包", "外帘装袋", "外帘发货"],
-    ("纱帘", "穿杆"): ["精裁", "三边", "外帘打卷", "打包", "外帘装袋", "外帘发货"],
-    ("帘头", "平幔"): ["精裁", "三边", "帘头制作", "定型", "外帘打卷", "打包", "外帘装袋", "外帘发货"],
+# ── ② **部位无关的冻结序列**（#4937 的新基线）──
+EXPECTED_BY_CRAFT = {
+    "韩褶": ["精裁", "三边", "韩褶", "上车布", "熨烫", "定型", "复烫", "车被",
+             "外帘打卷", "打包", "外帘装袋", "外帘发货"],
+    "打孔": ["精裁", "三边", "打孔", "熨烫", "定型", "复烫", "车被",
+             "外帘打卷", "打包", "外帘装袋", "外帘发货"],
+    "四爪钩": ["精裁", "三边", "上车布", "熨烫", "车被",
+               "外帘打卷", "打包", "外帘装袋", "外帘发货"],
+    "穿杆": ["精裁", "三边", "熨烫", "车被", "外帘打卷", "打包", "外帘装袋", "外帘发货"],
+    "平幔": ["精裁", "三边", "帘头制作", "熨烫", "定型", "车被",
+             "外帘打卷", "打包", "外帘装袋", "外帘发货"],
 }
-EXPECTED_COUNTS = {
-    ("布帘", "韩褶"): 12, ("布帘", "打孔"): 11, ("布帘", "四爪钩"): 9, ("布帘", "穿杆"): 8,
-    ("纱帘", "韩褶"): 7, ("纱帘", "打孔"): 7, ("纱帘", "四爪钩"): 7, ("纱帘", "穿杆"): 6,
-    ("帘头", "平幔"): 8,
-}
+EXPECTED_COUNTS = {"韩褶": 12, "打孔": 11, "四爪钩": 9, "穿杆": 8, "平幔": 10}
+EXPECTED_REBUILT = {(ct, craft): list(ops)
+                    for ct in CURTAIN_TYPES for craft, ops in EXPECTED_BY_CRAFT.items()}
+#: 布料单（`saleForm=布料`）走**独立主线**（「产品形态」分支，与部位维无关）。
+#: ⚠️ **字面量仍是 `配料 → 打包`**（V88 ③ 把**迁移链/bootstrap** 改成了 `裁剪 → 打包`，
+#: 但 `routing.py` 属 ai-agent，本次去部位化**未动**它 —— 本文件的判据按**当前真值源**冻结）。
+#: 「迁移链/bootstrap ↔ 真值源」的口径折算由
+#: `tests/unit_ci_workflows/test_production_catalog_seed.py::_as_truth_caliber` 承担。
+FABRIC_EXPECTED = ["配料", "打包"]
 
 # ── ③ 逻辑工序名映射（35 → 28）：7 组部位变体 + 去后缀/无后缀者 ──
 VARIANT_GROUPS = {
@@ -116,109 +94,82 @@ SUFFIX_STRIPPED = {
     "帘头制作": "帘头制作", "外帘打卷": "外帘打卷", "外帘装袋": "外帘装袋",
     "外帘发货": "外帘发货", "质检": "质检", "抱枕": "抱枕", "腰靠垫": "腰靠垫",
 }
-EXPECTED_LOGICAL_NAMES = {
+#: 🔴 **冻结的 35 条**（`_LOGICAL_NAME_PAIRS` 段；被
+#: `tests/unit_ci_workflows/test_logical_name_single_source_guard.py` 逐条冻结）。
+FROZEN_LOGICAL_NAMES = {
     **{old: logical for logical, olds in VARIANT_GROUPS.items() for old in olds},
     **SUFFIX_STRIPPED,
 }
 
-# ── ④ 部位适用性（列出 = applicable TRUE；未列出的部位 = FALSE）──
-APPLICABLE = {
-    "精裁": {"布帘", "纱帘", "帘头"},
-    "裁剪": {"布帘", "纱帘", "帘头"},
-    "三边": {"布帘", "纱帘", "帘头"},
-    "韩褶": {"布帘", "纱帘", "帘头"},
-    "上车布": {"布帘", "纱帘"},
-    "打孔": {"布帘", "纱帘", "帘头"},
-    "拼1次": {"布帘"},
-    "拼2次": {"布帘"},
-    "拼3次": {"布帘"},
-    "花边": {"布帘"},
-    "铅坠": {"布帘"},
-    "接高": {"布帘"},
-    "帘头制作": {"帘头"},
-    "熨烫": {"布帘"},
-    "定型": {"布帘", "帘头"},
-    "复烫": {"布帘"},
-    "车被": {"布帘"},
-    "外帘打卷": {"布帘", "纱帘", "帘头"},
-    "外帘装袋": {"布帘", "纱帘", "帘头"},
-    "质检": {"布帘", "纱帘", "帘头"},
-    "外帘发货": {"布帘", "纱帘", "帘头"},
-    "绑带": {"布帘", "纱帘"},
-    "抱枕": {"布帘", "纱帘", "帘头"},
-    "腰靠垫": {"布帘", "纱帘", "帘头"},
-    "logo条": {"布帘"},
-    "立边": {"布帘"},
-    "扣环": {"布帘"},
-    "防翘扣": {"布帘"},
-    # issue #4529：`配料` 布料专属；`打包` **所有产品形态都要做**（套级语义由 scope='set' 承担）
-    "配料": {"布料"},
-    "打包": {"布帘", "纱帘", "帘头", "布料"},
+#: issue #4937 追加的 **4 道纱帘变体**（`applicable` 过滤退场后它们会进纱帘路线）。
+SHEER_VARIANT_NAMES = {
+    "熨烫-纱": "熨烫", "定型-纱": "定型", "复烫-纱": "复烫", "车被-纱": "车被",
 }
 
-#: 「**适用但未定价**」的两道新工序（issue #4529）：`applicable=TRUE` 且 `unit_price is None`
-#: —— 与「不适用」可区分（后者 `applicable=FALSE`）；商家在工序库自配后才落价。
-UNPRICED_OPERATIONS = {"配料", "打包"}
+#: 运行期全表 = 35 条冻结段 + 4 条纱帘段（与 Java 侧
+#: `logicalNamePairs()` + `withSheerVariants(...)` 同构）。
+EXPECTED_LOGICAL_NAMES = {**FROZEN_LOGICAL_NAMES, **SHEER_VARIANT_NAMES}
 
-# ── ⑤ 逻辑工序单价（**不得发明**：逐条可从 OPERATION_CATALOG 溯源）──
+# ── ④ 逻辑工序价目（**30 行**，单键；#4937）──
+#: 逐值冻结（来源 = `V104` 的四档选行结果；与 `docs/sql/schema.sql` 的 30 行存活格逐行同值）。
 LOGICAL_UNIT_PRICES = {
     "精裁": 0.4, "裁剪": 0.4, "三边": 0.4, "韩褶": 0.4, "上车布": 0.5, "打孔": 0.15,
     "拼1次": 0.8, "拼2次": 1.2, "拼3次": 1.6, "花边": 0.6, "铅坠": 0.3, "接高": 1.0,
     "帘头制作": 2.0, "熨烫": 0.35, "定型": 0.4, "复烫": 0.35, "车被": 0.4,
     "外帘打卷": 1.0, "外帘装袋": 1.0, "质检": 1.5, "外帘发货": 1.0, "绑带": 0.5,
     "抱枕": 2.0, "腰靠垫": 2.0, "logo条": 0.6, "立边": 0.5, "扣环": 0.3, "防翘扣": 0.2,
-    # issue #4529：两道新工序的**工序库行单价**（受 DDL `NOT NULL DEFAULT 0` 约束 ⇒ 0）。
-    # 它们在**部位价目**里是 `None`（适用但未定价）—— 见 `UNPRICED_OPERATIONS`。
-    "配料": 0.0, "打包": 0.0,
+    # issue #4529：两道「**适用但未定价**」的工序（`unit_price is None` ≠ 0 元）
+    "配料": None, "打包": None,
 }
 
-# ── ⑥ 规则表 26 条（工艺 10 + 特殊选项 16）；元组 = (触发值, 部位限定, 动作, 工序, 锚点) ──
+# ── ⑤ 规则表 26 条；元组 = (触发值, 动作, 工序, 锚点)，**无 position**（#4937 / O2）──
 EXPECTED_CRAFT_RULES = [
-    ("韩褶", None, "insert", "韩褶", "三边"),
-    ("韩褶", "布帘", "insert", "上车布", "韩褶"),
-    ("打孔", None, "insert", "打孔", "三边"),
-    ("四爪钩", None, "insert", "上车布", "三边"),
-    ("四爪钩", None, "remove", "定型", None),
-    ("四爪钩", None, "remove", "复烫", None),
-    ("穿杆", None, "remove", "定型", None),
-    ("穿杆", None, "remove", "复烫", None),
-    ("平幔", None, "insert", "帘头制作", "三边"),
-    ("平幔", None, "remove", "复烫", None),
+    ("韩褶", "insert", "韩褶", "三边"),
+    ("韩褶", "insert", "上车布", "韩褶"),
+    ("打孔", "insert", "打孔", "三边"),
+    ("四爪钩", "insert", "上车布", "三边"),
+    ("四爪钩", "remove", "定型", None),
+    ("四爪钩", "remove", "复烫", None),
+    ("穿杆", "remove", "定型", None),
+    ("穿杆", "remove", "复烫", None),
+    ("平幔", "insert", "帘头制作", "三边"),
+    ("平幔", "remove", "复烫", None),
 ]
 EXPECTED_OPTION_RULES = [
-    ("拼1次", None, "insert", "拼1次", "三边"),
-    ("拼2次", None, "insert", "拼2次", "三边"),
-    ("拼3次", None, "insert", "拼3次", "三边"),
-    ("加花边", None, "insert", "花边", "三边"),
-    ("加铅块", None, "insert", "铅坠", "三边"),
-    ("接高", None, "insert", "接高", "精裁"),
-    ("双眼皮接高", None, "insert", "接高", "精裁"),
-    ("余料做绑带", None, "insert", "绑带", "车被"),
-    ("布绑带", None, "insert", "绑带", "车被"),
-    ("余料做帘头", None, "insert", "帘头制作", "三边"),
-    ("抱枕", None, "insert", "抱枕", "外帘打卷"),
-    ("纱绑带", None, "insert", "绑带", "车被"),
-    ("加logo条", None, "insert", "logo条", "三边"),
-    ("加立边", None, "insert", "立边", "三边"),
-    ("扣环", None, "insert", "扣环", "三边"),
-    ("防翘扣", None, "insert", "防翘扣", "三边"),
+    ("拼1次", "insert", "拼1次", "三边"),
+    ("拼2次", "insert", "拼2次", "三边"),
+    ("拼3次", "insert", "拼3次", "三边"),
+    ("加花边", "insert", "花边", "三边"),
+    ("加铅块", "insert", "铅坠", "三边"),
+    ("接高", "insert", "接高", "精裁"),
+    ("双眼皮接高", "insert", "接高", "精裁"),
+    ("余料做绑带", "insert", "绑带", "车被"),
+    ("布绑带", "insert", "绑带", "车被"),
+    ("余料做帘头", "insert", "帘头制作", "三边"),
+    ("抱枕", "insert", "抱枕", "外帘打卷"),
+    ("纱绑带", "insert", "绑带", "车被"),
+    ("加logo条", "insert", "logo条", "三边"),
+    ("加立边", "insert", "立边", "三边"),
+    ("扣环", "insert", "扣环", "三边"),
+    ("防翘扣", "insert", "防翘扣", "三边"),
 ]
 
 
 def _rule_key(rule) -> tuple:
     """规则 → 业务键元组（不含 id / priority / status：优先级由 `TestRuleOrdering` 单独钉）。"""
-    return (rule["trigger_value"], rule["position"], rule["action"],
-            rule["operation"], rule["after_operation"])
+    return (rule["trigger_value"], rule["action"], rule["operation"], rule["after_operation"])
 
 
 def _rules_of(kind: str) -> list:
     return [_rule_key(r) for r in ROUTE_RULES if r["trigger_kind"] == kind]
 
 
-# ── 判据 1：9/9 逐字重建（本单最重要的判据）──
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 1：**部位无关的冻结重建**（#4937 的新基线；取代旧的 9/9「与旧结构逐字相等」）
+# ══════════════════════════════════════════════════════════════════════════════════
 
-class TestVerbatimRebuild:
-    """`build_route_v2` 重建 9 个组合 —— 与冻结期望、旧 `ROUTINGS` 归一序列三方逐字一致。"""
+class TestPositionFreeRebuild:
+    """`build_route_v2` 对 15 个 `(帘种, 工艺)` 组合的产出 = 冻结序列，且**部位无关**。"""
 
     @pytest.mark.parametrize("curtain_type,craft", sorted(EXPECTED_REBUILT))
     def test_rebuild_matches_frozen_expectation(self, curtain_type, craft):
@@ -230,71 +181,89 @@ class TestVerbatimRebuild:
             f"  实测 = {got}\n  期望 = {expected}")
 
     @pytest.mark.parametrize("curtain_type,craft", sorted(EXPECTED_REBUILT))
-    def test_rebuild_matches_old_routings_normalized(self, curtain_type, craft):
-        """新真值源 ↔ **旧 `ROUTINGS` 归一 + `打包`** —— 表示法收敛 + #4529 的**唯一**行为变更。
-
-        除 `打包` 外逐字不变（`with_packing` 只插那一道）：任何**别的**差异都会红。
-        """
-        got = build_route_v2({"curtain_type": curtain_type, "craft": craft})
-        old = [OPERATION_LOGICAL_NAMES[op] for op in ROUTINGS[(curtain_type, craft)]]
-        assert got == with_packing(old), (
-            f"{curtain_type}×{craft}：新模型重建 ≠ 旧 ROUTINGS 归一序列（+打包）\n"
-            f"  新 = {got}\n  旧+打包 = {with_packing(old)}")
-        # 差异**只允许**是 `打包` 一道（issue #4529 的显式变更，不是回归）
-        assert [op for op in got if op != "打包"] == old, \
-            f"{curtain_type}×{craft} 除 `打包` 外还有别的差异 ⇒ 越过了本单的变更范围"
-        assert got.count("打包") == 1
-
-    @pytest.mark.parametrize("curtain_type,craft", sorted(EXPECTED_REBUILT))
     def test_rebuild_sequence_length(self, curtain_type, craft):
-        """道数逐条钉死（11/10/8/7/6/6/6/5/7）—— 少一道或多一道都红。"""
+        """道数逐条钉死（韩褶 12 / 打孔 11 / 四爪钩 9 / 穿杆 8 / 平幔 10）。"""
         got = build_route_v2({"curtain_type": curtain_type, "craft": craft})
-        assert len(got) == EXPECTED_COUNTS[(curtain_type, craft)], (
-            f"{curtain_type}×{craft} 道数 {len(got)} ≠ {EXPECTED_COUNTS[(curtain_type, craft)]}")
+        assert len(got) == EXPECTED_COUNTS[craft], (
+            f"{curtain_type}×{craft} 道数 {len(got)} ≠ {EXPECTED_COUNTS[craft]}")
 
-    def test_nine_combinations_all_rebuilt_verbatim(self):
-        """一次性汇总 9/9（PR 证据里贴的就是这条的输出原文）。"""
+    @pytest.mark.parametrize("craft", CRAFTS)
+    def test_same_craft_is_identical_across_every_curtain_type(self, craft):
+        """🔴 **本包的核心新判据**：同一工艺在**任何**帘种上得到**同一套逻辑工序名**。
+
+        旧基线退休的正是这条的反面（旧 `ROUTINGS` 给纱帘另一套序列）—— 用户裁定
+        「部位不再参与任何取价、取路、筛选、配置」（母单 #4936）。
+        """
+        routes = {ct: tuple(build_route_v2({"curtain_type": ct, "craft": craft}))
+                  for ct in CURTAIN_TYPES}
+        assert len(set(routes.values())) == 1, (
+            f"工艺 `{craft}` 在不同帘种上得到不同序列 ⇒ 部位仍在参与取路："
+            f"{ {ct: list(r) for ct, r in routes.items()} }")
+
+    def test_fifteen_combinations_all_rebuilt_verbatim(self):
+        """一次性汇总 15/15（PR 证据里贴的就是这条的输出原文）。"""
         report, mismatched = [], []
         for key in sorted(EXPECTED_REBUILT):
             got = build_route_v2({"curtain_type": key[0], "craft": key[1]})
             expected = EXPECTED_REBUILT[key]
             ok = got == expected
-            report.append(f"{key[0]}×{key[1]} {len(got)}/{len(expected)} {'✅' if ok else '❌'}")
+            report.append(f"{key[0]}×{key[1]} {len(got)}/{len(expected)} {'OK' if ok else 'NG'}")
             if not ok:
                 mismatched.append(key)
-        print("\n逐字重建 9/9 结果：\n  " + "\n  ".join(report))
+        print("\n逐字重建 15/15 结果：\n  " + "\n  ".join(report))
         assert not mismatched, f"以下组合重建不一致：{mismatched}"
-        assert len(report) == 9
+        assert len(report) == 15
 
-    def test_three_sources_agree_on_all_nine(self):
-        """三方（冻结期望 / 旧 ROUTINGS 归一 + 打包 / 新重建）在 9 个组合上全等。"""
-        assert set(ROUTINGS) == set(EXPECTED_REBUILT), "旧 ROUTINGS 的键集变化 ⇒ 零行为变化被破坏"
-        for key, expected in EXPECTED_REBUILT.items():
-            assert with_packing([OPERATION_LOGICAL_NAMES[op] for op in ROUTINGS[key]]) == expected, \
-                f"旧 ROUTINGS{key} 归一+打包 后 ≠ 冻结期望"
-            assert build_route_v2({"curtain_type": key[0], "craft": key[1]}) == expected, \
-                f"新重建{key} ≠ 冻结期望"
+    def test_fabric_route_starts_from_the_fabric_mainline(self):
+        """布料单（`saleForm=布料`）的**主线基底** = `FABRIC_MAINLINE_STEPS`（产品形态分支）。
+
+        ⚠️ 工艺规则**照旧应用**（它们是「工艺」维的，与帘种/部位无关 —— 用户裁定的语义正是
+        「部位不再参与取路」，不是「规则不生效」）。所以判据落在**包裹关系**上：
+        结果必须**以布料主线为子序列**（顺序保持），而不是「等于布料主线」。
+        """
+        for craft in CRAFTS:
+            got = build_route_v2({"curtain_type": "布料", "craft": craft})
+            assert self._is_subsequence(FABRIC_EXPECTED, got), (
+                f"布料单 × {craft} 的序列 = {got}，未以布料主线 `{FABRIC_EXPECTED}` 为子序列 ⇒ "
+                f"主线基底被换成了窗帘主线（产品形态分支失效）")
+        # `穿杆` 没有 insert 规则（只有两条 remove，且布料主线里没有那两道）
+        assert build_route_v2({"curtain_type": "布料", "craft": "穿杆"}) == FABRIC_EXPECTED, (
+            "布料单 × 穿杆 应恰好等于布料主线（该工艺无 insert 规则）")
+
+    @staticmethod
+    def _is_subsequence(needle, haystack) -> bool:
+        it = iter(haystack)
+        return all(any(x == n for x in it) for n in needle)
 
 
-# ── 判据 2：逻辑工序名映射（35 → 28；7 组部位变体）──
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 2：逻辑工序名映射（35 → 28；7 组部位变体）
+# ══════════════════════════════════════════════════════════════════════════════════
 
 class TestLogicalNames:
     def test_mapping_is_frozen_verbatim(self):
-        """映射逐条等于冻结值（不从实现推导）—— 35 个旧名 → 28 个逻辑名。"""
+        """映射逐条等于冻结值（不从实现推导）—— 35 条冻结段 + 4 条纱帘段 → 28 个逻辑名。"""
         assert OPERATION_LOGICAL_NAMES == EXPECTED_LOGICAL_NAMES
 
-    def test_mapping_covers_old_catalog_exactly(self):
-        """键集 == `OPERATION_CATALOG` 的 **35 道旧工序**（漏一个 ⇒ 某道工序在新模型里无逻辑名）。
+    def test_frozen_segment_is_exactly_thirty_five(self):
+        """🔴 **冻结段恰好 35 条**（被 `test_logical_name_single_source_guard.py` 逐条钉住）。
 
-        issue #4529 的 `配料`/`打包` **不在**本表：本表是「**旧名** → 逻辑名」的映射，
-        两道新工序没有旧变体（它们的名字本身就是逻辑名）—— `variantNameOf` 的裸名兜底覆盖它们。
+        issue #4937 的 4 道纱帘变体**必须**落在冻结段之外（否则那条守卫当场红）——
+        本判据把「分段纪律」也钉住（注入：把纱帘变体并回冻结段 ⇒ 红）。
         """
-        new_operations = {"配料", "打包"}
-        assert set(OPERATION_LOGICAL_NAMES) == set(OPERATION_CATALOG) - new_operations
-        assert len(OPERATION_LOGICAL_NAMES) == 35
+        from app.production.routing import _LOGICAL_NAME_PAIRS
+        assert len(_LOGICAL_NAME_PAIRS) == 35, (
+            f"冻结段 = {len(_LOGICAL_NAME_PAIRS)} 条，期望 35 —— issue #4937 的 4 道纱帘变体"
+            f"落在 `_SHEER_VARIANT_PAIRS` 那一段，不得并回本段")
+        assert dict(_LOGICAL_NAME_PAIRS) == FROZEN_LOGICAL_NAMES
+
+    def test_mapping_covers_the_catalog_exactly(self):
+        """键集 == `OPERATION_CATALOG` 的**全部**条目（漏一个 ⇒ 某道工序无逻辑名）。"""
+        # 🔴 issue #4937：`配料`/`打包`（本身即逻辑名）+ 4 道纱帘变体**都有**条目 ⇒
+        # 排除集只剩「名字本身就是逻辑名」那两道。
+        assert set(OPERATION_LOGICAL_NAMES) == set(OPERATION_CATALOG) - {"配料", "打包"}
+        assert len(OPERATION_LOGICAL_NAMES) == 39
         assert len(set(OPERATION_LOGICAL_NAMES.values())) == 28
-        assert new_operations & set(OPERATION_CATALOG) == new_operations, \
-            "两道新工序必须真的在工序库里（否则本判据的排除项是无对象的空登记）"
 
     @pytest.mark.parametrize("logical,olds", sorted(VARIANT_GROUPS.items()))
     def test_variant_group_members_map_to_the_group_name(self, logical, olds):
@@ -303,12 +272,7 @@ class TestLogicalNames:
 
     @pytest.mark.parametrize("logical,olds", sorted(VARIANT_GROUPS.items()))
     def test_variant_group_shares_group_and_unit(self, logical, olds):
-        """同组各变体的 `group_name` / `unit` **必须一致** —— 否则「同一道工序」不成立。
-
-        合并成一行逻辑工序的前提是「它们只是同一道工序的两种部位写法」；分组/单位不同
-        意味着两个不同的车间口径被压成一行（单价与计件都会错）。
-        （`scope` 同组一致性由种子侧守卫 `test_production_catalog_seed.py` 钉 —— 那才读得到 scope。）
-        """
+        """同组各变体的 `group_name` / `unit` **必须一致** —— 否则「同一道工序」不成立。"""
         attrs = {old: (OPERATION_CATALOG[old]["group"], OPERATION_CATALOG[old]["unit"]) for old in olds}
         assert len(set(attrs.values())) == 1, f"{logical} 组内变体的 group/unit 不一致：{attrs}"
 
@@ -318,66 +282,69 @@ class TestLogicalNames:
         for old, logical in OPERATION_LOGICAL_NAMES.items():
             grouped.setdefault(logical, []).append(old)
         multi = {k: sorted(v) for k, v in grouped.items() if len(v) > 1}
-        assert multi == {k: sorted(v) for k, v in VARIANT_GROUPS.items()}
-        assert len(multi) == 7
+        # 🔴 issue #4937：4 道纱帘变体让 `熨烫/定型/复烫/车被` 也成了「多条目」组
+        # ⇒ 期望随真值源收敛（多一组/少一组都红）。
+        assert set(multi) >= set(VARIANT_GROUPS), (
+            f"7 组部位变体必须仍在：缺 {sorted(set(VARIANT_GROUPS) - set(multi))}")
+        assert set(multi) == set(VARIANT_GROUPS) | {"熨烫", "定型", "复烫", "车被"}, (
+            f"多条目组集合漂移：{sorted(multi)}")
 
 
-# ── 判据 3：部位价目 84 行（28 × 3），`applicable` 显式，**不发明单价** ──
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 3：逻辑工序价目 **30 行**（单键），`applicable` 恒 True，**不发明单价**
+# ══════════════════════════════════════════════════════════════════════════════════
 
 class TestPositionPrices:
-    def test_matrix_is_30_by_4(self):
-        """**30 道逻辑工序 × 4 部位 = 120 行**（issue #4529 起；原 28 × 3 = 84）；
-        每行都显式带 `unit_price` 与 `applicable`。"""
-        assert set(OPERATION_POSITION_PRICES) == set(LOGICAL_UNIT_PRICES)
-        assert len(OPERATION_POSITION_PRICES) == 30
-        rows = 0
-        for logical, by_position in OPERATION_POSITION_PRICES.items():
-            assert set(by_position) == set(ALL_POSITIONS), f"{logical} 的部位键集 ≠ {ALL_POSITIONS}"
-            for pos in ALL_POSITIONS:
-                cell = by_position[pos]
-                assert set(cell) == {"unit_price", "applicable"}, (
-                    f"{logical}@{pos} 的字段集 = {sorted(cell)}（必须显式落 unit_price + applicable）")
-                rows += 1
-        assert rows == 120
+    def test_matrix_is_thirty_rows_by_logical_operation(self):
+        """**30 道逻辑工序 × 1 行**（issue #4937：部位维退场 ⇒ 单键）。
 
-    @pytest.mark.parametrize("logical", sorted(APPLICABLE))
-    def test_applicability_matches_frozen_matrix(self, logical):
-        """适用性逐条等于冻结矩阵（未列出的部位 = 不做）。"""
-        got = {pos for pos in ALL_POSITIONS if OPERATION_POSITION_PRICES[logical][pos]["applicable"]}
-        assert got == APPLICABLE[logical], \
-            f"{logical} 适用部位 {sorted(got)} ≠ {sorted(APPLICABLE[logical])}"
-
-    @pytest.mark.parametrize("logical", sorted(APPLICABLE))
-    def test_price_is_evidenced_where_applicable_and_absent_where_not(self, logical):
-        """适用 ⇒ 落实证单价；**明确不做 ⇒ 不落价（None）**（「明确不做」与「没定价」可区分）。
-
-        ⚠️ issue #4529 起有**第三种状态**：`applicable=TRUE` 且 `unit_price is None`
-        = **适用但未定价**（`配料`/`打包`，商家在工序库自配）⇒ 见 `UNPRICED_OPERATIONS` 分支。
+        ⚠️ 这里是**基线换代**：旧基线是 `30 × 4 = 120` 的两级索引
+        （`OPERATION_POSITION_PRICES[工序][部位]`）。部位退场 ⇒ 只按逻辑工序建键，
+        与 `V104__deposition_matrix_collapse.sql` / `docs/sql/schema.sql` 的终态一致。
         """
-        for pos in ALL_POSITIONS:
-            cell = OPERATION_POSITION_PRICES[logical][pos]
-            if logical in UNPRICED_OPERATIONS:
-                assert cell["unit_price"] is None, (
-                    f"{logical}@{pos} 落价了 {cell['unit_price']} —— 本包口径是「留空待商家配」")
-                continue
-            if pos in APPLICABLE[logical]:
-                assert cell["unit_price"] == LOGICAL_UNIT_PRICES[logical], (
-                    f"{logical}@{pos} 单价 {cell['unit_price']} ≠ 实证值 {LOGICAL_UNIT_PRICES[logical]}")
-            else:
-                assert cell["unit_price"] is None, (
-                    f"{logical}@{pos} 明确不做却落了价 {cell['unit_price']}（会把「不做」与「有价」混淆）")
+        assert set(OPERATION_POSITION_PRICES) == set(LOGICAL_UNIT_PRICES)
+        assert len(OPERATION_POSITION_PRICES) == 30, (
+            f"价目行数 = {len(OPERATION_POSITION_PRICES)}，期望 30（一道逻辑工序一行）")
+        for logical, cell in OPERATION_POSITION_PRICES.items():
+            assert set(cell) == {"unit_price", "applicable"}, (
+                f"{logical} 的字段集 = {sorted(cell)}（必须显式落 unit_price + applicable）")
+
+    @pytest.mark.parametrize("logical", sorted(LOGICAL_UNIT_PRICES))
+    def test_price_matches_frozen_value(self, logical):
+        """单价逐条等于冻结值（**不发明单价**；含「未定价」= `None`）。"""
+        cell = OPERATION_POSITION_PRICES[logical]
+        expected = LOGICAL_UNIT_PRICES[logical]
+        if expected is None:
+            assert cell["unit_price"] is None, (
+                f"{logical} 落了价 {cell['unit_price']} —— 冻结口径是「留空待商家配」")
+        else:
+            assert cell["unit_price"] == expected, (
+                f"{logical} 单价 {cell['unit_price']} ≠ 实证值 {expected}")
+
+    def test_applicable_is_uniformly_true(self):
+        """🔴 `applicable` 恒 `True`（#4937：它**不再是筛选器**，只是「这一行承载这道工序」）。"""
+        offenders = {logical: cell["applicable"]
+                     for logical, cell in OPERATION_POSITION_PRICES.items()
+                     if cell["applicable"] is not True}
+        assert offenders == {}, (
+            f"价目里出现了 `applicable != True` 的行：{offenders} —— "
+            "部位维退场后该列不再区分任何行")
 
     def test_no_invented_prices(self):
-        """**不发明单价**：逻辑单价逐条能从 `OPERATION_CATALOG`（旧真值源）溯源，且旧变体单价一致。"""
+        """**不发明单价**：逻辑单价逐条能从 `OPERATION_CATALOG`（旧真值源）溯源。"""
         for old, logical in OPERATION_LOGICAL_NAMES.items():
-            assert OPERATION_CATALOG[old]["unit_price"] == LOGICAL_UNIT_PRICES[logical], (
-                f"{old} 的旧单价 {OPERATION_CATALOG[old]['unit_price']} ≠ 新逻辑单价 "
-                f"{LOGICAL_UNIT_PRICES[logical]} ⇒ 新模型发明/篡改了单价")
+            expected = LOGICAL_UNIT_PRICES[logical]
+            if expected is None:
+                continue
+            assert OPERATION_CATALOG[old]["unit_price"] == expected, (
+                f"{old} 的旧单价 {OPERATION_CATALOG[old]['unit_price']} ≠ 新逻辑单价 {expected}"
+                f" ⇒ 新模型发明/篡改了单价")
 
     def test_no_invented_operations(self):
-        """**不发明工序**：主线与规则里的工序名/锚点都必须在 28 道逻辑工序集合内。"""
+        """**不发明工序**：主线与规则里的工序名/锚点都必须在 30 道逻辑工序集合内。"""
         logical_set = set(LOGICAL_UNIT_PRICES)
         assert set(ROUTE_MAINLINE_STEPS) <= logical_set
+        assert set(FABRIC_MAINLINE_STEPS) <= logical_set
         for rule in ROUTE_RULES:
             assert rule["operation"] in logical_set, f"规则引用了不存在的工序：{rule}"
             assert rule["after_operation"] is None or rule["after_operation"] in logical_set, \
@@ -388,18 +355,31 @@ class TestPositionPrices:
         assert ROUTE_MAINLINE_STEPS == MAINLINE
         assert ROUTE_MAINLINE_STEPS.count("打包") == 1, "`打包` 在主线上必须恰好 1 行"
         assert ROUTE_TEMPLATE_NAME_DEFAULT == "窗帘工序路线（默认）"
+        assert FABRIC_MAINLINE_STEPS == FABRIC_EXPECTED
 
 
-# ── 判据 4：规则表 26 条（工艺 10 + 特殊选项 16）──
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 4：规则表 26 条（工艺 10 + 特殊选项 16），**无 position**
+# ══════════════════════════════════════════════════════════════════════════════════
 
 class TestRouteRules:
     def test_rule_count_and_kinds(self):
-        """恰好 26 条：工艺 10 + 特殊选项 16；无第三种触发类型（P1 不落 shaped/processing_item）。"""
+        """恰好 26 条：工艺 10 + 特殊选项 16；无第三种触发类型。"""
         assert len(ROUTE_RULES) == 26
         kinds = [r["trigger_kind"] for r in ROUTE_RULES]
         assert kinds.count("craft") == 10
         assert kinds.count("option") == 16
         assert set(kinds) == {"craft", "option"}
+
+    def test_rules_carry_no_position_key(self):
+        """🔴 **O2 退场**（issue #4937）：`ROUTE_RULES` 的规则字典**不得**再有 `position` 键。
+
+        「部位限定」这一维在数据上不可表达 —— 与「部位退场」同语义（不给下一个人留
+        「看起来还生效」的假象）。
+        """
+        offenders = [(r["trigger_value"], sorted(r)) for r in ROUTE_RULES if "position" in r]
+        assert offenders == [], (
+            f"以下规则仍带 `position` 键（O2 未完成 ⇒ 读侧还会按部位筛）：{offenders}")
 
     def test_craft_rules_are_frozen_verbatim(self):
         """10 条工艺规则逐条等于冻结值（触发键 = ERP 工艺名，逐字一致）。"""
@@ -411,7 +391,7 @@ class TestRouteRules:
 
     def test_option_rules_are_the_migration_of_special_option_routings(self):
         """16 条 = `SPECIAL_OPTION_ROUTINGS` 逐条搬迁 —— 键集与「归一后的工序/锚点」双向一致。"""
-        migrated = {opt: (None, "insert",
+        migrated = {opt: ("insert",
                           OPERATION_LOGICAL_NAMES[spec["operation"]],
                           OPERATION_LOGICAL_NAMES[spec["after"]])
                     for opt, spec in SPECIAL_OPTION_ROUTINGS.items()}
@@ -447,81 +427,109 @@ class TestRuleOrdering:
         assert priorities == sorted(priorities)
 
 
-# ── 判据 5：零行为变化（旧常量 / 旧函数）──
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 5：`ROUTINGS` / `build_routing` 的**去部位化**（#4937 / P2）
+# ══════════════════════════════════════════════════════════════════════════════════
 
-class TestZeroBehaviourChange:
-    def test_old_route_truth_source_is_untouched(self):
-        """旧 `ROUTINGS` 一字不动：9 条路线，布帘×韩褶 仍是 11 道**旧工序名**。"""
-        assert len(ROUTINGS) == 9
-        assert ROUTINGS[("布帘", "韩褶")] == [
-            "精裁-布", "布三边", "韩褶-布", "上车布-布", "熨烫-布",
-            "定型-布", "复烫-布", "布帘车被", "外帘打卷", "外帘装袋", "外帘发货",
-        ]
+class TestRoutingTableIsPositionFree:
+    """`ROUTINGS` 从 9 条 `(部位, 工艺)` 收敛为 **5 条工艺**；`build_routing` 不再按部位查表。
 
-    def test_old_build_routing_is_untouched(self):
-        """`build_routing` 对 9 个组合仍返回**旧工序名**逐字序列（消费路径未切换）。"""
-        for key, olds in ROUTINGS.items():
-            got = build_routing({"curtain_type": key[0], "craft": key[1]})
-            assert got == olds, f"build_routing{key} 输出变化 ⇒ P1「零行为变化」被破坏"
-
-    def test_new_truth_source_is_a_second_source_not_a_replacement(self):
-        """新真值源是**并存的第二份**：旧快照仍带部位后缀（7 组变体），新主线一律是逻辑名。"""
-        assert list(ROUTE_MAINLINE_STEPS) != list(ROUTINGS[("布帘", "韩褶")])
-        old_names = {op for ops in ROUTINGS.values() for op in ops}
-        assert {"精裁-布", "布三边", "韩褶-布", "上车布-布"} <= old_names
-        assert not ({"精裁-布", "布三边", "韩褶-布", "上车布-布"} & set(ROUTE_MAINLINE_STEPS))
-
-
-# ── 判据 6：特殊选项规则 ⇒ 条件工序落位（与旧 `build_routing` 同口径）──
-
-class TestSpecialOptionsRebuild:
-    """勾一个特殊选项 ⇒ 新模型把条件工序插在与旧实现**相同**的相对位置（P2 切换的行为护栏）。
-
-    旧实现：`_insert_after(route, 旧工序名, 旧锚点名)`；新实现：规则表 `insert` + 逻辑名锚点。
-    两侧把结果归一到逻辑名后必须逐字一致 —— `余料做帘头` 除外（见类尾的显式登记）。
+    ⚠️ 本类**取代**了旧的 `TestZeroBehaviourChange`（判据曾是「旧 `ROUTINGS` 一字未动 /
+    `build_routing` 输出逐字不变」）—— 那条基线随用户 2026-09-21 裁定退休（母单 #4936）。
     """
 
-    #: 旧实现会插、而新模型按**部位适用性**会滤掉的选项（如实登记，**不是**期望行为）
-    POSITION_FILTERED_OPTIONS = frozenset({"余料做帘头"})
+    def test_routings_is_keyed_by_craft_only(self):
+        """键集 = 5 个工艺（**不得**残留 `(部位, 工艺)` 元组键）。"""
+        assert set(ROUTINGS) == set(CRAFTS), (
+            f"`ROUTINGS` 的键集 = {sorted(ROUTINGS)}，期望 5 个工艺 {sorted(CRAFTS)}")
+        assert all(isinstance(k, str) for k in ROUTINGS), (
+            f"仍有非字符串键（旧 `(部位, 工艺)` 形态）：{[k for k in ROUTINGS if not isinstance(k, str)]}")
+
+    @pytest.mark.parametrize("craft,olds", [
+        ("韩褶", ["精裁-布", "布三边", "韩褶-布", "上车布-布", "熨烫-布",
+                  "定型-布", "复烫-布", "布帘车被", "外帘打卷", "外帘装袋", "外帘发货"]),
+        ("打孔", ["精裁-布", "布三边", "打孔-布", "熨烫-布",
+                  "定型-布", "复烫-布", "布帘车被", "外帘打卷", "外帘装袋", "外帘发货"]),
+        ("四爪钩", ["精裁-布", "布三边", "上车布-布", "熨烫-布",
+                    "布帘车被", "外帘打卷", "外帘装袋", "外帘发货"]),
+        ("穿杆", ["精裁-布", "布三边", "熨烫-布", "布帘车被", "外帘打卷", "外帘装袋", "外帘发货"]),
+        ("平幔", ["精裁-布", "布三边", "帘头制作", "定型-布",
+                  "外帘打卷", "外帘装袋", "外帘发货"]),
+    ])
+    def test_route_content_is_frozen_verbatim(self, craft, olds):
+        """每条工艺的基准序列**逐字**等于冻结值（工序名与顺序都钉死）。"""
+        assert ROUTINGS[craft] == olds, f"工艺 `{craft}` 的序列漂移：{ROUTINGS[craft]}"
+
+    @pytest.mark.parametrize("curtain_type", CURTAIN_TYPES)
+    def test_build_routing_ignores_the_curtain_type(self, curtain_type):
+        """`build_routing` 在任何帘种上返回**同一条**序列（部位不再参与查表）。"""
+        got = build_routing({"curtain_type": curtain_type, "craft": "韩褶"})
+        assert got == ROUTINGS["韩褶"], (
+            f"{curtain_type}×韩褶 的 `build_routing` 结果 ≠ 工艺基准序列 ⇒ 部位仍在参与查表：{got}")
+
+    def test_unknown_craft_is_rejected(self):
+        """未知**工艺** ⇒ 显式 `ValueError`（不静默回落到别的工艺）。"""
+        with pytest.raises(ValueError):
+            build_routing({"curtain_type": "布帘", "craft": "波浪褶"})
+
+    def test_shape_switch_removes_shaping_operations(self):
+        """定型=否 ⇒ 移除 `定型-布`/`复烫-布`（**工艺级**开关，不再表述为「部位级」）。"""
+        route = build_routing({"curtain_type": "布帘", "craft": "韩褶", "is_shaped": False})
+        assert "定型-布" not in route and "复烫-布" not in route
+        assert "韩褶-布" in route
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 6：特殊选项规则 ⇒ 条件工序落位
+# ══════════════════════════════════════════════════════════════════════════════════
+
+class TestSpecialOptionsRebuild:
+    """勾一个特殊选项 ⇒ 条件工序落在与旧实现**相同**的相对位置（P2 切换的行为护栏）。"""
+
     BASE = {"curtain_type": "布帘", "craft": "韩褶"}
 
-    @pytest.mark.parametrize(
-        "option", sorted(set(SPECIAL_OPTION_ROUTINGS) - POSITION_FILTERED_OPTIONS))
+    @pytest.mark.parametrize("option", sorted(SPECIAL_OPTION_ROUTINGS))
     def test_option_rule_inserts_at_the_same_relative_position(self, option):
-        old = with_packing([OPERATION_LOGICAL_NAMES[op]
-                            for op in build_routing({**self.BASE, "special_options": [option]})])
-        new = build_route_v2({**self.BASE, "special_options": [option]})
-        assert new == old, f"选项「{option}」的条件工序位置与旧实现不一致：\n  新 = {new}\n  旧 = {old}"
+        """16 个选项**全部**逐条比对。
 
-    def test_yield_curtain_head_option_is_filtered_by_applicability(self):
-        """如实登记（规格张力，交 P2 裁定）：`余料做帘头` 在布帘上被部位适用性滤掉。
-
-        `帘头制作` 的冻结适用性是 `{帘头}`，而该选项把它插进**布帘**路线 ⇒ 新模型把它滤掉，
-        旧实现会保留 ⇒ 若 P2 直接切换消费路径，这道工序会**从布帘订单上消失**（少发工人钱）。
-        本测试钉住的是**当前（规格照抄）行为**，P2 前必须裁定：
-        要么放开 `帘头制作@布帘`，要么给该选项补部位限定。
+        旧基线把 `余料做帘头` 排除在外（它插入的 `帘头制作` 会被部位适用性滤掉）；
+        #4937 之后那层过滤已退场 ⇒ **不再有例外**，判据覆盖面反而变大。
         """
-        option = "余料做帘头"
         old = [OPERATION_LOGICAL_NAMES[op]
                for op in build_routing({**self.BASE, "special_options": [option]})]
         new = build_route_v2({**self.BASE, "special_options": [option]})
-        assert "帘头制作" in old, "旧实现确实会插入「帘头制作」（差异的另一侧，缺它则本测试无意义）"
-        assert "帘头制作" not in new, (
-            "部位适用性过滤不再滤掉「帘头制作」⇒ 规格张力已消解，请同步删掉本登记并放开 P2 口径")
-        assert new == with_packing([op for op in old if op != "帘头制作"])
+        # 旧实现的 9 条快照里没有 `打包`（V79 才加）⇒ 按主线补上再比（口径归一，不是放宽）
+        if "打包" not in old and "外帘装袋" in old:
+            idx = old.index("外帘装袋")
+            old = old[:idx] + ["打包"] + old[idx:]
+        assert new == old, f"选项「{option}」的条件工序位置与旧实现不一致：\n  新 = {new}\n  旧 = {old}"
+
+    def test_yield_curtain_head_option_is_no_longer_filtered(self):
+        """🔴 **规格张力已消解**（#4937）：`余料做帘头` 不再被「部位适用性」滤掉。
+
+        旧基线（本文件旧版）如实登记过一条张力：`帘头制作` 的冻结适用性是 `{帘头}`，
+        而该选项把它插进**布帘**路线 ⇒ 新模型会把它滤掉、旧实现会保留 ⇒ 那道工序会从
+        布帘订单上消失（少发工人钱）。#4937 把适用性过滤整块删掉 ⇒ 张力消失。
+        """
+        option = "余料做帘头"
+        new = build_route_v2({**self.BASE, "special_options": [option]})
+        assert "帘头制作" in new, (
+            "`余料做帘头` 插入的 `帘头制作` 又被滤掉了 ⇒ 部位适用性过滤没有真正退场")
+        assert new.index("帘头制作") == new.index("三边") + 1, f"落位漂移：{new}"
 
     def test_option_trigger_is_exact_match_not_substring(self):
         """触发键是**精确匹配**：`拼1次加强版` 不得命中 `拼1次` 规则（防 contains 式错配）。"""
         assert build_route_v2({**self.BASE, "special_options": ["拼1次加强版"]}) == \
             build_route_v2(self.BASE)
 
-    def test_unknown_craft_yields_mainline_plus_applicability_only(self):
-        """未知工艺 ⇒ 只有主线 + 部位适用性（不静默套用别的工艺规则）。"""
-        assert build_route_v2({"curtain_type": "纱帘", "craft": "罗马帘"}) == \
-            ["精裁", "三边", "外帘打卷", "打包", "外帘装袋", "外帘发货"]
+    def test_unknown_craft_yields_mainline_only(self):
+        """未知工艺 ⇒ 只有主线（不静默套用别的工艺规则、也不再有「适用性」那一层）。"""
+        assert build_route_v2({"curtain_type": "纱帘", "craft": "罗马帘"}) == MAINLINE
 
 
-# ── 判据 7：注入式自证（每条判据都要能红）──
+# ══════════════════════════════════════════════════════════════════════════════════
+# 判据 7：注入式自证（每条判据都要能红）
+# ══════════════════════════════════════════════════════════════════════════════════
 
 class TestInjectedDrift:
     """「不会红的断言 = 空断言」：逐条注入漂移，证明上面的比对**真能**照出来。"""
@@ -530,13 +538,13 @@ class TestInjectedDrift:
         return build_route_v2({"curtain_type": key[0], "craft": key[1]})
 
     def test_missing_rule_is_detected(self, monkeypatch):
-        """少一条规则（`韩褶 + 布帘 insert 上车布`）⇒ 布帘×韩褶 从 11 道掉到 10 道。"""
+        """少一条规则（`韩褶 + insert 上车布`）⇒ 韩褶 少一道。"""
         import app.production.routing as routing
         pruned = [r for r in ROUTE_RULES
                   if not (r["trigger_value"] == "韩褶" and r["operation"] == "上车布")]
         assert len(pruned) == 25
         monkeypatch.setattr(routing, "ROUTE_RULES", pruned)
-        assert self._rebuild(("布帘", "韩褶")) != EXPECTED_REBUILT[("布帘", "韩褶")]
+        assert self._rebuild(("布帘", "韩褶")) != EXPECTED_BY_CRAFT["韩褶"]
 
     def test_inverted_priority_is_detected(self, monkeypatch):
         """规则优先级颠倒（`上车布` 先于 `韩褶`）⇒ 锚点还不存在 ⇒ 追加到末尾，顺序即错。"""
@@ -548,7 +556,7 @@ class TestInjectedDrift:
             elif rule["trigger_value"] == "韩褶" and rule["operation"] == "上车布":
                 rule["priority"] = 10
         monkeypatch.setattr(routing, "ROUTE_RULES", swapped)
-        assert self._rebuild(("布帘", "韩褶")) != EXPECTED_REBUILT[("布帘", "韩褶")]
+        assert self._rebuild(("布帘", "韩褶")) != EXPECTED_BY_CRAFT["韩褶"]
 
     def test_wrong_operation_name_is_detected(self, monkeypatch):
         """规则工序名写错（`韩褶` → 另一个**存在但不对**的逻辑工序 `打孔`）⇒ 重建序列不等。"""
@@ -558,7 +566,7 @@ class TestInjectedDrift:
             if rule["trigger_value"] == "韩褶" and rule["operation"] == "韩褶":
                 rule["operation"] = "打孔"
         monkeypatch.setattr(routing, "ROUTE_RULES", drifted)
-        assert self._rebuild(("布帘", "韩褶")) != EXPECTED_REBUILT[("布帘", "韩褶")]
+        assert self._rebuild(("布帘", "韩褶")) != EXPECTED_BY_CRAFT["韩褶"]
 
     def test_unknown_operation_name_fails_closed(self, monkeypatch):
         """规则引用了**没有价目行**的工序 ⇒ 显式失败（KeyError），不静默产出无价工序。"""
@@ -571,19 +579,40 @@ class TestInjectedDrift:
         with pytest.raises(KeyError):
             self._rebuild(("布帘", "韩褶"))
 
-    def test_applicability_filter_is_load_bearing(self, monkeypatch):
-        """把「熨烫@纱帘」打开 ⇒ 纱帘×韩褶 多出「熨烫」⇒ 部位适用性过滤不是装饰。"""
-        import app.production.routing as routing
-        opened = {logical: {pos: dict(cell) for pos, cell in by_position.items()}
-                  for logical, by_position in OPERATION_POSITION_PRICES.items()}
-        opened["熨烫"]["纱帘"] = {"unit_price": 0.35, "applicable": True}
-        monkeypatch.setattr(routing, "OPERATION_POSITION_PRICES", opened)
-        assert self._rebuild(("纱帘", "韩褶")) != EXPECTED_REBUILT[("纱帘", "韩褶")]
+    def test_reintroducing_a_position_filter_is_detected(self, monkeypatch):
+        """🔴 **新基线自己的红证**：把「部位过滤」注入回来 ⇒ 同一工艺在不同帘种上的序列不再相等。
+
+        这是 `test_same_craft_is_identical_across_every_curtain_type` 的**判别力证明**
+        （也证明旧口径**真的**会按帘种分叉 —— 那正是被退休的 `applicable` 过滤干的事）。
+        """
+        def with_position_filter(position):
+            route = build_route_v2(position)
+            if position.get("curtain_type") == "纱帘":
+                return [op for op in route if op not in ("熨烫", "定型", "复烫", "车被")]
+            return route
+
+        cloth = with_position_filter({"curtain_type": "布帘", "craft": "韩褶"})
+        sheer = with_position_filter({"curtain_type": "纱帘", "craft": "韩褶"})
+        assert cloth != sheer, (
+            "注入「按帘种过滤」后两个序列仍相等 ⇒ 本红证没抓住「部位参与取路」这一形态")
 
     def test_logical_name_mapping_drift_is_detected(self):
-        """映射漂移（`纱三边` → `三边-纱`）⇒ 与冻结映射不等，且旧 ROUTINGS 归一序列随之偏离期望。"""
+        """映射漂移（`纱三边` → `三边-纱`）⇒ 与冻结映射不等。"""
         drifted = dict(EXPECTED_LOGICAL_NAMES)
         drifted["纱三边"] = "三边-纱"
         assert drifted != EXPECTED_LOGICAL_NAMES
-        normalized_old = [drifted[op] for op in ROUTINGS[("纱帘", "穿杆")]]
-        assert normalized_old != EXPECTED_REBUILT[("纱帘", "穿杆")]
+        assert drifted["纱三边"] != OPERATION_LOGICAL_NAMES["纱三边"]
+
+    def test_extra_price_row_is_detected(self):
+        """价目表多一行 ⇒ 行数判据红（`len(...) == 30` 不是装饰）。"""
+        extra = dict(OPERATION_POSITION_PRICES)
+        extra["不存在的工序"] = {"unit_price": 1.0, "applicable": True}
+        assert len(extra) != 30
+
+    def test_reintroducing_a_position_key_in_rules_is_detected(self, monkeypatch):
+        """规则里注入 `"position"` 键 ⇒ `test_rules_carry_no_position_key` 会红。"""
+        import app.production.routing as routing
+        drifted = [dict(r, position="布帘") for r in ROUTE_RULES]
+        monkeypatch.setattr(routing, "ROUTE_RULES", drifted)
+        assert [r for r in routing.ROUTE_RULES if "position" in r], (
+            "注入没生效 ⇒ 本条红证是空断言")

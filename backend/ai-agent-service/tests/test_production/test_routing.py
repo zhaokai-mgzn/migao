@@ -12,6 +12,7 @@ from app.production.routing import (
     PENDING_CUSTOMER_CONFIRMATION_OPERATIONS,
     ROUTINGS,
     SET_KEYS,
+    SHEER_VARIANT_OPERATIONS,
     SPECIAL_OPTION_ROUTINGS,
     _rule_triggers,
     build_route_v2,
@@ -215,44 +216,81 @@ def test_qty_keys_are_declared():
 #
 # 本单只补 3 条路线，**零新造工序**（`上车布-纱` ¥0.5/米、`打孔-纱` ¥0.15/孔 早已在库里、
 # 有价、零消费 —— 设计时就打算给纱帘用，只是路线没建）。
+#
+# 🔴🔴 **issue #4937（去部位化彻底版）之后的判据换基线**：`ROUTINGS` 只按**工艺**建键
+# （9 → **5** 条），**部位维退场** ⇒ 「纱帘×打孔」不再是一张独立的路线表项，而是
+# **工艺 `打孔` 的基准序列**（与布帘同工艺取同一条）。用户裁定 2026-09-21：
+# 「我们移除了部位的设计，**不计成本的改**」（母单 #4936）。
+# ⇒ 本节原来的 3 条纱帘路线断言（逐字序列 + 「不得回落布帘路线」）**随基线退休**；取而代之的
+# 是**更强**的判据：**任何帘种 + 同一工艺 ⇒ 同一序列**（见 `test_craft_route_is_position_free`）。
 # ══════════════════════════════════════════════════════════════════════════════
 
-#: issue #4246 §二 表格的逐字工序序列（真值源 = issue 正文，不是本测试的发明）
-SHEER_ROUTES = {
-    ("纱帘", "打孔"): ["精裁-纱", "纱三边", "打孔-纱", "外帘打卷", "外帘装袋", "外帘发货"],
-    ("纱帘", "四爪钩"): ["精裁-纱", "纱三边", "上车布-纱", "外帘打卷", "外帘装袋", "外帘发货"],
-    ("纱帘", "穿杆"): ["精裁-纱", "纱三边", "外帘打卷", "外帘装袋", "外帘发货"],
+#: 🔴 **#4937 之后的新判据**：`ROUTINGS` 只按工艺建键（9 → 5 条），**部位维退场**。
+#: 冻结值 = **工艺 → 基准工序序列**（来源 = #4937 收敛后的 `ROUTINGS`；每个工艺取多部位里
+#: 那一条权威序列 —— 布帘那一行，与价目矩阵的取价来源部位同源）。
+CRAFT_ROUTES = {
+    "韩褶": ["精裁-布", "布三边", "韩褶-布", "上车布-布", "熨烫-布",
+             "定型-布", "复烫-布", "布帘车被", "外帘打卷", "外帘装袋", "外帘发货"],
+    "打孔": ["精裁-布", "布三边", "打孔-布", "熨烫-布",
+             "定型-布", "复烫-布", "布帘车被", "外帘打卷", "外帘装袋", "外帘发货"],
+    "四爪钩": ["精裁-布", "布三边", "上车布-布", "熨烫-布",
+               "布帘车被", "外帘打卷", "外帘装袋", "外帘发货"],
+    "穿杆": ["精裁-布", "布三边", "熨烫-布", "布帘车被", "外帘打卷", "外帘装袋", "外帘发货"],
+    "平幔": ["精裁-布", "布三边", "帘头制作", "定型-布", "外帘打卷", "外帘装袋", "外帘发货"],
 }
 
 
-@pytest.mark.parametrize("key,expected", sorted(SHEER_ROUTES.items()))
-def test_sheer_route_is_exact(key, expected):
-    """3 条纱帘路线可用且序列与 #4246 §二 表格**逐字相等**（判据 1）"""
-    curtain_type, craft = key
-    route = build_routing({"curtain_type": curtain_type, "craft": craft, "is_shaped": True})
-    assert route == expected, f"{curtain_type}×{craft} 路线漂移"
+def test_routings_is_keyed_by_craft_only():
+    """`ROUTINGS` 的键集 = **5 个工艺**（不再是 9 个 `(部位, 工艺)` 组合）——#4937 / P2 的落点。
 
-
-def test_sheer_drill_route_does_not_fall_back_to_cloth_route():
-    """判据 4（本单的核心）：纱帘×打孔 命中自己的路线，**不再**回落 布帘×韩褶。
-
-    回落形态（实现前）：`build_routing` 会抛 `ValueError`（ROUTINGS 里没有该键），
-    而 Java 侧 `deriveRouteKey` 的兜底是「取不到路线 ⇒ 用默认路线 布帘×韩褶」⇒
-    纱帘订单拿到 11 道布帘工序。故断言：既不得等于布帘路线，也不得含任何 `-布` 工序。
+    双向：键**不得**含 `(部位, 工艺)` 元组（旧形态未退干净即红），也**不得**多/少一个工艺。
     """
-    sheer_drill = build_routing({"curtain_type": "纱帘", "craft": "打孔"})
-    cloth_route = build_routing({"curtain_type": "布帘", "craft": "韩褶"})
-    assert sheer_drill != cloth_route, "纱帘×打孔 落回了布帘×韩褶 ⇒ 工序与计件单价全错"
-    assert not [op for op in sheer_drill if op.endswith("-布")], (
-        "纱帘路线上出现了布帘工序 ⇒ 工人按布帘工序报工、按布帘单价计件")
-    assert "打孔-纱" in sheer_drill and "精裁-布" not in sheer_drill
+    assert set(ROUTINGS) == set(CRAFT_ROUTES), (
+        f"`ROUTINGS` 的键集漂移：{sorted(ROUTINGS)} —— 期望 5 个工艺 {sorted(CRAFT_ROUTES)}"
+        f"（issue #4937：部位不再参与取路）")
+    assert all(isinstance(k, str) for k in ROUTINGS), (
+        f"`ROUTINGS` 仍有非字符串键（旧 `(部位, 工艺)` 形态未退干净）："
+        f"{[k for k in ROUTINGS if not isinstance(k, str)]}")
 
 
-def test_sheer_routes_consume_only_existing_operations():
-    """零新造工序（判据 2）：3 条新路线的每道工序都必须是**已存在**的工序库条目"""
-    missing = sorted({op for ops in SHEER_ROUTES.values() for op in ops
+@pytest.mark.parametrize("craft,expected", sorted(CRAFT_ROUTES.items()))
+def test_craft_route_is_exact(craft, expected):
+    """每个工艺的基准序列**逐字**等于冻结值（含顺序）。"""
+    assert ROUTINGS[craft] == expected, f"工艺 `{craft}` 的基准序列漂移：{ROUTINGS[craft]}"
+
+
+@pytest.mark.parametrize("craft", sorted(CRAFT_ROUTES))
+@pytest.mark.parametrize("curtain_type", ["布帘", "纱帘", "帘头"])
+def test_craft_route_is_position_free(craft, curtain_type):
+    """🔴 **部位不参与取路**（#4937 的核心判据）：同一工艺在**任何**帘种上取到**同一序列**。
+
+    ⚠️ 这条取代了 `#4246` 的「纱帘×打孔 不得回落布帘路线」判据 —— 部位维退场后，
+    「纱帘拿到布帘的工序」不再是缺陷，而是**用户裁定的语义**（「部位不再参与任何取价、取路、
+    筛选、配置」）。**守卫强度只升不降**：原来只判 3 个纱帘组合，现在判 **5 工艺 × 3 帘种**。
+    """
+    route = build_routing({"curtain_type": curtain_type, "craft": craft, "is_shaped": True})
+    assert route == CRAFT_ROUTES[craft], (
+        f"{curtain_type}×{craft} 的路线 ≠ 工艺 `{craft}` 的基准序列 —— 部位仍在参与取路："
+        f"\n  实测 = {route}\n  期望 = {CRAFT_ROUTES[craft]}")
+
+
+def test_sheer_variants_are_explicitly_registered_not_orphaned():
+    """纱帘专属变体（`精裁-纱` 一族）**显式登记**：它们不再被旧 `ROUTINGS` 引用，但**仍必需**。"""
+    assert SHEER_VARIANT_OPERATIONS <= set(OPERATION_CATALOG), (
+        f"纱帘变体不在工序库里：{sorted(SHEER_VARIANT_OPERATIONS - set(OPERATION_CATALOG))}")
+    assert SHEER_VARIANT_OPERATIONS <= set(PENDING_CUSTOMER_CONFIRMATION_OPERATIONS), (
+        "纱帘变体没有显式登记 ⇒ 它们会被算成「忘了建路线」的孤儿（守卫会双向红）")
+    assert SHEER_VARIANT_OPERATIONS <= set(
+        __import__("app.production.routing", fromlist=["OPERATION_LOGICAL_NAMES"]).OPERATION_LOGICAL_NAMES), (
+        "纱帘变体不在 `OPERATION_LOGICAL_NAMES` 里 ⇒ 变体名解析不到"
+        "（纱帘单实例化会 fail-closed）")
+
+
+def test_craft_routes_consume_only_existing_operations():
+    """零新造工序：每个工艺的每道工序都必须是**已存在**的工序库条目。"""
+    missing = sorted({op for ops in CRAFT_ROUTES.values() for op in ops
                       if op not in OPERATION_CATALOG})
-    assert not missing, f"纱帘路线引用了工序库里不存在的工序（本单不许新造工序）：{missing}"
+    assert not missing, f"工艺路线引用了工序库里不存在的工序（不许新造工序）：{missing}"
 
 
 def test_operation_catalog_size_is_frozen_for_this_issue():
@@ -263,8 +301,10 @@ def test_operation_catalog_size_is_frozen_for_this_issue():
     （工序库 ↔ 种子 SQL 的逐行逐值比对另见
     `tests/unit_ci_workflows/test_production_catalog_seed.py`）。
     """
-    assert len(OPERATION_CATALOG) == 37, (
-        "工序库条目数变了 —— 确需新增请走新迁移 + 同步 V54∪V56∪V79 聚合守卫 + 模板/120 行价目")
+    # 🔴 issue #4937：37 → **41**（新增 4 道纱帘变体 `熨烫-纱/定型-纱/复烫-纱/车被-纱` ——
+    # `applicable` 过滤退场后它们会进纱帘路线，没有变体行 ⇒ 整张纱帘单 fail-closed）。
+    assert len(OPERATION_CATALOG) == 41, (
+        "工序库条目数变了 —— 确需新增请走新迁移 + 同步 V54∪V56∪V79 聚合守卫 + 模板/价目终态")
     assert OPERATION_CATALOG["上车布-纱"] == {"group": "车位", "unit": "米", "unit_price": 0.5}
     assert OPERATION_CATALOG["打孔-纱"] == {"group": "车位", "unit": "孔", "unit_price": 0.15}
     # issue #4529：两道新工序的**冻结值**（单位是判据：单位错 ⇒ 应做数量口径错）
@@ -296,25 +336,36 @@ def test_orphan_operations_are_explicitly_registered():
     """
     assert _orphan_operations() == set(PENDING_CUSTOMER_CONFIRMATION_OPERATIONS), (
         "孤儿工序集合漂移：有意不消费（待客户确认）与「忘了建路线」必须在数据上可区分")
-    assert _orphan_operations() == {"裁剪-布", "裁剪-纱", "质检", "腰靠垫"}
+    # issue #4937：登记集合 = 4 道「待客户确认」+ **9 道纱帘专属变体**
+    # （不再被旧 `ROUTINGS` 引用，但仍必需 —— 见 `SHEER_VARIANT_OPERATIONS` 的注释）
+    assert _orphan_operations() == ({"裁剪-布", "裁剪-纱", "质检", "腰靠垫"}
+                                    | set(SHEER_VARIANT_OPERATIONS))
 
 
-def test_sheer_routes_deorphan_the_two_sheer_operations():
-    """判据 3 前半：`上车布-纱` / `打孔-纱` 被新路线消费 ⇒ **不再**是孤儿"""
+def test_sheer_variants_are_no_longer_consumed_by_the_legacy_routings():
+    """🔴 基线翻转（issue #4937）：`上车布-纱`/`打孔-纱` **重新成为**「有意不消费」。
+
+    ⚠️ 这是**有意**的方向反转，不是回归：`ROUTINGS` 去部位化后只消费**布帘**那一行
+    （工艺键的权威序列）⇒ 纱帘专属变体不再出现在旧模型路线里。它们**仍然必需**
+    （`variantNameOf` 解析纱帘单的变体名），故登记进
+    `PENDING_CUSTOMER_CONFIRMATION_OPERATIONS`，与「忘了建路线」在数据上可区分。
+    """
     orphans = _orphan_operations()
-    assert "上车布-纱" not in orphans, "上车布-纱 仍零消费（#4246 的四爪钩路线没消费它）"
-    assert "打孔-纱" not in orphans, "打孔-纱 仍零消费（#4246 的打孔路线没消费它）"
-    assert ("纱帘", "四爪钩") in ROUTINGS and ("纱帘", "打孔") in ROUTINGS
+    assert "上车布-纱" in orphans and "打孔-纱" in orphans, (
+        "纱帘变体不在孤儿集合里 ⇒ 本判据的前提（`ROUTINGS` 只按工艺）不成立")
+    assert SHEER_VARIANT_OPERATIONS <= set(PENDING_CUSTOMER_CONFIRMATION_OPERATIONS)
 
 
-def test_existing_routes_unchanged():
-    """判据 6（不回归）：既有 6 条路线逐值不变（布帘×韩褶 仍是 11 道实证走线）"""
-    assert len(ROUTINGS) == 9, "路线总数应为 既有 6 条 + #4246 新增 3 条"
-    assert len(ROUTINGS[("布帘", "韩褶")]) == 11
-    assert ROUTINGS[("纱帘", "韩褶")] == ["精裁-纱", "纱三边", "韩褶-纱",
-                                          "外帘打卷", "外帘装袋", "外帘发货"]
-    assert ROUTINGS[("帘头", "平幔")] == ["精裁-布", "布三边", "帘头制作", "定型-布",
-                                          "外帘打卷", "外帘装袋", "外帘发货"]
+def test_craft_routes_are_frozen():
+    """5 条工艺路线的道数冻结（韩褶 11 / 打孔 10 / 四爪钩 8 / 穿杆 7 / 平幔 7）。"""
+    assert len(ROUTINGS) == 5, f"路线总数应为 5 个工艺（#4937 去部位化后）：{len(ROUTINGS)}"
+    assert len(ROUTINGS["韩褶"]) == 11
+    assert len(ROUTINGS["打孔"]) == 10
+    assert len(ROUTINGS["四爪钩"]) == 8
+    assert len(ROUTINGS["穿杆"]) == 7
+    assert len(ROUTINGS["平幔"]) == 7
+    assert ROUTINGS["平幔"] == ["精裁-布", "布三边", "帘头制作", "定型-布",
+                                "外帘打卷", "外帘装袋", "外帘发货"]
 
 
 # ══════════════════ 条件工序唯一性（**取代**，不是跳过）+ 加工项触发（issue #4577）══════════════════

@@ -33,12 +33,10 @@ import java.util.Map;
  * 它**只看代码**（扫描前做 Java 词法级去注释，字符串字面量保留）⇒ 文档里写清列名是安全的
  * （issue #4595 修准了该判据；此前它是裸子串扫描，会把注释里的提及误判成越界读取）。</p>
  *
- * <p><b>三态（与 V71 列口径同款，不得发明第四态）</b>：</p>
- * <ol>
- *   <li>{@code applicable=false} ⇒ 价<b>强制落 NULL</b>（「明确不做 ⇒ 不报价」）；</li>
- *   <li>{@code applicable=true} + 价 NULL ⇒ 「<b>适用但未定价</b>」（合法状态，商家待办）；</li>
- *   <li>显式传 {@code unit_price=null} ⇒ 改回「<b>未定价</b>」（<b>≠ 0 元</b>）。</li>
- * </ol>
+ * <p><b>状态（issue #4937 / O1 之后的终态）</b>：可写面**只剩 `unit_price` 一列** ——
+ * {@code applicable}（部位适用性）已**退场**，收到该字段一律 **422 + 可行动 hint**（<b>拒绝</b>，
+ * 不静默忽略）。价的两态仍在：显式传 {@code unit_price=null} ⇒ 「<b>未定价</b>」（<b>≠ 0 元</b>）；
+ * 传数值 ⇒ 有价（{@code 0} 就是<b>有价 0 元</b>，与「未定价」在数据上可区分）。</p>
  *
  * <p><b>留痕（不许静默）</b>：价<b>真的变了</b>才同事务向
  * {@code production_operation_position_price_versions}（V86）追加一行 —— 本仓既有契约是
@@ -61,17 +59,23 @@ public class ProductionOperationPositionCommandService {
     private final ProductionOperationPositionPriceVersionMapper priceVersionMapper;
     /** 响应形态 = ① 的单行同构（同一份 {@code positionView}，前端同一个类型渲染）。 */
     private final ProductionRoutingReadService productionRoutingReadService;
-    /**
-     * 工序库**读面**（issue #4798）：护栏判「这一格解析得到变体工序吗」必须复用
-     * {@link ProductionOperationQueryService#variantNameOf} 这**一份**解析口径 ——
-     * 另抄一份映射表 / 另写一处推导，漂移的那一份不会变红。
-     */
-    private final ProductionOperationQueryService productionOperationQueryService;
+    // ⛔ issue #4937 / O1：原来的 `ProductionOperationQueryService` 依赖（#4798 的
+    // 「结果态 applicable=true 必须解析得到变体工序」护栏）已**随 `applicable` 字段主体一并退休**
+    // —— 判据的输入不复存在。「能解析出变体」这件事现由实例化侧的 `missing_operations` 兜底
+    // （`ProcessingOrderService.buildRoute` fail-closed 并指名报缺）。
 
     /**
-     * 矩阵格就地改价 / 改做不做（**部分更新**：只写 body 里出现的键）。
+     * 矩阵格就地改价（**部分更新**：只写 body 里出现的键）。
      *
-     * @param body 可含 {@code unit_price}（number|null）/ {@code applicable}（boolean）；
+     * <p>🔴 <b>{@code applicable} 已退场（issue #4937 / O1，用户裁定 2026-09-21「不计成本的改」）</b>：
+     * body 里出现 {@code applicable} ⇒ <b>422 + 可行动 hint</b>（「部位适用性已退场，不再受理该字段」），
+     * <b>拒绝</b>而**不静默忽略** —— 静默 no-op 是本仓最忌的形态（调用方以为改成了「不做」，
+     * 实际那格照旧参与实例化 ⇒ 工人按错工序拿钱，且**没有任何报错**）。
+     * 其护栏 {@code variantOperationOf}（#4798 的「结果态 {@code applicable=true} 必须解析得到变体」）
+     * 随该字段主体**一并退休** —— 判据的输入已经不复存在（且「能解析出变体」这件事已由
+     * 实例化侧的 {@code missing_operations} 兜底）。</p>
+     *
+     * @param body 只可含 {@code unit_price}（number|null）；
      *             {@code null} 的价 = 显式改回**未定价**（≠ 0 元）
      * @return 更新后的矩阵格（形态与 {@code GET /operation-positions} 的**单行同构**）
      */
@@ -86,24 +90,15 @@ public class ProductionOperationPositionCommandService {
         // 改价前的价必须先留存：下面 row 会被就地改成新值（用于响应），改完再比就恒等 ⇒ 版本账永空
         BigDecimal previousPrice = row.getUnitPrice();
         BigDecimal newPrice = previousPrice;
-        boolean newApplicable = Boolean.TRUE.equals(row.getApplicable());
         List<ApiResponse.ErrorDetail> details = new ArrayList<>();
+        // ⛔ **显式拒绝**（不是静默忽略）：部位适用性已退场，不再受理该字段（issue #4937 / O1）。
         if (body != null && body.containsKey("applicable")) {
-            newApplicable = bool(body.get("applicable"), details);
+            details.add(BusinessException.detail("applicable",
+                    "部位适用性已退场，不再受理该字段 —— 矩阵格只承载「这道逻辑工序的计件单价」；"
+                            + "请只传 unit_price（不传 applicable）"));
         }
         if (body != null && body.containsKey("unit_price")) {
             newPrice = price(body.get("unit_price"), details);
-        }
-        // ── 不变式（issue #4798）：写完**结果态** {@code applicable=true} 的格，必须能解析出变体工序 ──
-        // 否则实例化侧（`ProcessingOrderService.buildRoute` 的**同一个** `variantNameOf`）会把它记进
-        // `missing_operations` ⇒ 调用方 **422 整单中止**。写面放行这种配置 = 「商家配好了、下单必失败」
-        // —— 正是 #4707 的同款机制（当时只补了那一条显式回落），写面此前**没有**前置护栏。
-        // ⚠️ 只在**结果态**为 true 时判：`applicable=false` 一律放行 ⇒ 永远给得出路（不造死路）。
-        if (newApplicable && variantOperationOf(row, tenantId) == null) {
-            details.add(BusinessException.detail("applicable", String.format(
-                    "「%s × %s」在工序库里没有对应的工序 —— 设为「做」后加工单会因缺工序而生成失败；"
-                            + "请保持「不做」，或先在工序库补上这个部位的这道工序",
-                    row.getLogicalName(), row.getPosition())));
         }
         if (!details.isEmpty()) {
             // 违规**一次报全**（不是报第一条就返回）；失败一律不落库
@@ -111,17 +106,12 @@ public class ProductionOperationPositionCommandService {
                     "部位价目更新未通过校验（" + details.size() + " 条问题）", details,
                     "单价填 ≥ 0 且最多两位小数的金额；要表示「未定价」请传 null，**不要**传 0");
         }
-        if (!newApplicable) {
-            // 明确不做 ⇒ 不报价（V71 列口径）：价强制清空，与「适用但未定价」在数据上同形但语义不同
-            newPrice = null;
-        }
-        int rows = productionOperationPositionMapper.updatePriceAndApplicable(
-                row.getId(), tenantId, newPrice, newApplicable, OffsetDateTime.now());
+        int rows = productionOperationPositionMapper.updateUnitPrice(
+                row.getId(), tenantId, newPrice, OffsetDateTime.now());
         if (rows == 0) {
             throw BusinessException.notFound("部位价目行");
         }
         row.setUnitPrice(newPrice);
-        row.setApplicable(newApplicable);
         if (priceChanged(previousPrice, newPrice)) {
             priceVersionMapper.insert(ProductionOperationPositionPriceVersion.builder()
                     .tenantId(tenantId)
@@ -138,17 +128,6 @@ public class ProductionOperationPositionCommandService {
     }
 
     /**
-     * 该矩阵格解析到的**变体工序名**（{@code null} = 解析不到 ⇒ 实例化必然拒绝这一格）。
-     *
-     * <p>判据 = 实例化侧**同一个** {@link ProductionOperationQueryService#variantNameOf}
-     * （解析序：变体表 → 帘头回落布帘 → 裸逻辑名 → {@code null}）。不在这里另写映射表。</p>
-     */
-    private String variantOperationOf(ProductionOperationPosition row, Long tenantId) {
-        return productionOperationQueryService.variantNameOf(row.getLogicalName(), row.getPosition(),
-                productionOperationQueryService.operationsByName(tenantId));
-    }
-
-    /**
      * 价**真的变了**才记账（{@code null} 与任何值都算变：改回未定价 / 不做 ⇒ 价清空）。
      *
      * <p>用 {@code compareTo} 而不是 {@code equals}：{@code 0.40} 与 {@code 0.4} 是同一个价
@@ -159,22 +138,6 @@ public class ProductionOperationPositionCommandService {
             return before != after;
         }
         return before.compareTo(after) != 0;
-    }
-
-    /** 布尔解析（非布尔 ⇒ 记一条 detail；返回值是占位，details 非空时调用方必然抛 422）。 */
-    private static boolean bool(Object value, List<ApiResponse.ErrorDetail> details) {
-        if (value instanceof Boolean b) {
-            return b;
-        }
-        String text = value == null ? null : String.valueOf(value).trim();
-        if ("true".equalsIgnoreCase(text)) {
-            return true;
-        }
-        if ("false".equalsIgnoreCase(text)) {
-            return false;
-        }
-        details.add(BusinessException.detail("applicable", "applicable 必须是布尔值（true / false）"));
-        return false;
     }
 
     /**

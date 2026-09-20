@@ -322,9 +322,14 @@ class TestCriterion4FactorScope:
         finally:
             scope.remove(scoped)
         assert all("factor" not in i for i in on_cloth)
+        # 🔴 issue #4937：`ROUTINGS` 去部位化 ⇒ 纱帘取**布帘那一行**（工艺 `韩褶` 的权威序列）
+        # —— 旧期望 `精裁-纱/纱三边/韩褶-纱…`（纱帘专属行）随基线退休。
         assert [i["operation"] for i in on_silk] == [
-            "精裁-纱", "纱三边", "韩褶-纱", "外帘打卷", "外帘装袋", "外帘发货",
-        ]
+            "精裁-布", "布三边", "韩褶-布", "上车布-布", "熨烫-布",
+            "定型-布", "复烫-布", "布帘车被", "外帘打卷", "外帘装袋", "外帘发货",
+        ], (
+            "纱帘×韩褶 的实例序列 ≠ 工艺 `韩褶` 的基准序列 ⇒ 部位仍在参与取路"
+            "（issue #4937：部位不再参与任何取价、取路、筛选、配置）")
         assert all("factor" not in i for i in on_silk)
 
     def test_independent_options_no_longer_multiply(self):

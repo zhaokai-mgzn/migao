@@ -203,25 +203,40 @@ def test_v97_map_vs_runtime_diff_is_exactly_the_curtain_head_fallback():
     diff = _map_vs_runtime_diff(sql_map, runtime)
     expected = _curtain_head_fallback_cells(runtime)
     assert expected, "运行期表里读不到帘头回落那一族格 —— 判据会空跑"
+    # 🔴 issue #4937：运行期表**还多出 4 格纱帘变体**（`熨烫/定型/复烫/车被 × 纱帘`）——
+    # `applicable` 过滤退场后它们会进纱帘路线，故 `sheerVariants(...)` 新增了这 4 条映射。
+    # ⚠️ 它们是**第二类可解释差异**，必须逐格钉住（不许把 `expected` 放宽成一团）。
+    sheer_added = {("熨烫", "纱帘"), ("定型", "纱帘"), ("复烫", "纱帘"), ("车被", "纱帘")}
+    assert sheer_added <= set(runtime), (
+        "运行期表里缺 issue #4937 的 4 条纱帘变体 —— 纱帘单会 fail-closed")
     print(f"[#4796] V97 map {len(sql_map)} 条 / 运行期 {len(runtime)} 条 / 逐格差异 {len(diff)} 格"
-          f"（期望恰为 {len(expected)} 条帘头回落）")
-    assert set(diff) == expected, (
-        "V97 的 map 与运行期解析的差异**不止**帘头回落（判据口径与运行期分叉）：\n"
-        f"  多出：{sorted(set(diff) - expected)}\n"
-        f"  缺失：{sorted(expected - set(diff))}")
+          f"（期望恰为 {len(expected)} 条帘头回落 + {len(sheer_added)} 条 #4937 纱帘变体）")
+    assert set(diff) == expected | sheer_added, (
+        "V97 的 map 与运行期解析的差异**不止**「帘头回落 + #4937 纱帘变体」（判据口径与运行期分叉）：\n"
+        f"  多出：{sorted(set(diff) - expected - sheer_added)}\n"
+        f"  缺失：{sorted((expected | sheer_added) - set(diff))}")
     cloth = {logical: variant for (logical, position), variant in runtime.items()
              if position == "布帘"}
     for (logical, position), (v97, run) in sorted(diff.items()):
+        if (logical, position) in sheer_added:
+            # issue #4937 的第二类差异：V97 的 map 里没有该格（它是本包新增的），
+            # 运行期解析到**纱帘变体**（`熨烫-纱` 一族）⇒ 逐格钉住值。
+            assert v97 is None, (
+                f"`{logical}×纱帘` 在 V97 的 map 里竟有值 `{v97}` ⇒ 它不是 #4937 新增的那一族")
+            assert run == f"{logical}-纱", (
+                f"运行期对 `{logical}×纱帘` 的解析必须是 `{logical}-纱`，实际 `{run}`")
+            continue
         assert position == "帘头", f"差异格 `{logical}×{position}` 不是帘头格 ⇒ 口径分叉"
         assert v97 is None, (
             f"`{logical}×{position}` 在 V97 的 map 里竟有值 `{v97}` ⇒ 它就不是「表未命中 ⇒ 回落裸名」形态")
         assert run == cloth[logical], (
             f"运行期对 `{logical}×{position}` 的解析必须等于它的布帘变体 `{cloth[logical]}`，"
             f"实际 `{run}`（#4777 的帘头回落 = 取布帘那一列）")
-    # 除帘头外**零差异** —— 含 #4707 的 `裁剪 × 布料` 回落：两表**都有**（不是差异）
+    # 除「帘头 + #4937 纱帘变体」外**零差异** —— 含 #4707 的 `裁剪 × 布料` 回落：两表**都有**（不是差异）
     logicals = {logical for logical, _ in sql_map} | {logical for logical, _ in runtime}
     others = [(logical, position) for logical in sorted(logicals)
-              for position in _VARIANT_POSITIONS if position != "帘头"]
+              for position in _VARIANT_POSITIONS
+              if position != "帘头" and (logical, position) not in sheer_added]
     assert all(sql_map.get(cell) == runtime.get(cell) for cell in others), (
         "帘头之外还有口径差异（例如 #4707 的布料回落只落在一份表里）："
         f"{sorted(c for c in others if sql_map.get(c) != runtime.get(c))}")
@@ -463,6 +478,9 @@ def test_guard_detects_injected_drift():
     assert ("三边", "帘头") not in injected_runtime, "注入后运行期表里仍读得到该帘头条目 ⇒ 注入没生效"
     injected_diff = _map_vs_runtime_diff(_sql_map(), injected_runtime)
     injected_expected = _curtain_head_fallback_cells(injected_runtime)
+    # 🔴 issue #4937：运行期表另含 4 格纱帘变体（第二类可解释差异，见判据 1b 的注释）
+    injected_expected = injected_expected | {("熨烫", "纱帘"), ("定型", "纱帘"),
+                                             ("复烫", "纱帘"), ("车被", "纱帘")}
     assert set(injected_diff) == injected_expected - {("三边", "帘头")}, (
         "删掉一条帘头条目后差异面**必须恰好少掉那一格** ⇒ 判据 1b 才不是空断言，"
         f"实际 {sorted(set(injected_diff) ^ (injected_expected - {('三边', '帘头')}))}")

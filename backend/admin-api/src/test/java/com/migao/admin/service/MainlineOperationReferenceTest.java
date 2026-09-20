@@ -167,24 +167,40 @@ class MainlineOperationReferenceTest {
     }
 
     /**
-     * ⚠️ **为什么这里按「至少一个适用部位」而不是「逐部位」判**（口径边界，照实登记）：
-     * 运行时 `buildRoute` 的 `missing_operations` **只对矩阵格 `applicable = TRUE` 的 (逻辑名, 部位)
-     * 生效** —— 矩阵格 `applicable = FALSE`（「该部位明确不做」）会在**取变体之前**被静默滤掉。
-     * 例：`纱帘 × 熨烫/定型/复烫/车被` 在规范矩阵里是 `FALSE` ⇒ 纱帘单里本来就没有这四道，
-     * 它们解析不出来**不是缺陷**（逐部位判会**假红**）。
-     * ⇒ 逐格口径由**静态面**守（`tests/unit_ci_workflows/test_v91_baseline_operations_backfill.py`
-     * 的 `test_canonical_matrix_applicable_cells_all_resolve_at_runtime`：解析本类的
-     * `variantNames()` 与 `ProductionSeedTemplateService.CANONICAL_POSITION_PRICES` 逐格比对），
-     * 本类守「**解析路径本身通**」。
+     * 🔴 **基线换代（issue #4937）**：本判据原来钉的是「`纱帘 × 熨烫` 解析不出**不是**缺陷」
+     * （因为矩阵格 `applicable = FALSE` ⇒ 运行时在取变体**之前**就把它静默滤掉了）。
+     *
+     * <p>用户 2026-09-21 裁定（母单 #4936「我们移除了部位的设计，**不计成本的改**」）把那条过滤
+     * **整块删除** ⇒ 纱帘单里**真的**会出现 `熨烫/定型/复烫/车被` ⇒ 「解析不出」**不再是**可接受形态
+     * —— 它会进 `missing_operations` ⇒ **422 整单中止**。本包因此补了 4 道纱帘变体
+     * （`docs/sql/schema.sql` 的 `op-v56-06..09` + `sheerVariants(...)` 的映射）。</p>
+     *
+     * <p><b>新判据（守卫强度只升不降）</b>：`熨烫 × 纱帘` 必须解析到 **`熨烫-纱`**；
+     * 且把这件事**扩到全部三部位 × 全部主线工序**（旧判据只覆盖 1 格）。</p>
      */
     @Test
-    @DisplayName("PG-018 口径边界自证：`纱帘 × 熨烫` 解析不出但**不是**缺陷（矩阵格 FALSE ⇒ 静默滤掉）")
-    void nonApplicablePositionStepsAreNotDangling() {
+    @DisplayName("PG-018（#4937 新基线）：`纱帘 × 熨烫` 解析得到 `熨烫-纱`，且三部位 × 主线全部可解析")
+    void everyMainlineStepResolvesForEveryPosition() {
         Map<String, Map<String, Object>> catalog = catalog();
         assertThat(service().variantNameOf("熨烫", "纱帘", catalog))
-                .as("库中只有 `熨烫-布`（布帘变体）⇒ 纱帘部位解析不出 —— 这是矩阵格 FALSE 的预期结果")
-                .isNull();
+                .as("库里有 `熨烫-纱`（issue #4937 补的 4 道之一）⇒ 纱帘部位必须解析到它"
+                        + "（解析不出 = 纱帘单 422 整单中止）")
+                .isEqualTo("熨烫-纱");
         assertThat(service().variantNameOf("熨烫", "布帘", catalog)).isEqualTo("熨烫-布");
+
+        List<String> dangling = new ArrayList<>();
+        for (String position : List.of("布帘", "纱帘", "帘头")) {
+            for (String step : CURTAIN_MAINLINE) {
+                if (service().variantNameOf(step, position, catalog) == null) {
+                    dangling.add(position + "×" + step);
+                }
+            }
+        }
+        assertThat(dangling)
+                .as("🔴 issue #4937：`applicable` 过滤退场后，主线里的**每一道**在**每一个**帘种上"
+                        + "都必须解析得到变体 —— 否则该帘种的单会 422 整单中止"
+                        + "（缺哪一格就补哪一格的变体行，**不许**把它登记成「预期解析不出」）")
+                .isEmpty();
     }
 
     // ══════════════════════════ ② 布料主线（2 道 × 布料）═════════════════════════════

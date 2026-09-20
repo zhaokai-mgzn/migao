@@ -981,11 +981,13 @@ class ProductionControllerTest {
             {"复烫-布", "后道", "米", "0.35", "false", "false"},
             {"布帘车被", "后道", "米", "0.4", "false", "false"},
             {"外帘打卷", "后道", "套", "1.0", "false", "false"},
+            // 🔴 issue #4937 / O4：`打包` 跟着**主线**进路线（旧口径下它被 `applicable` 过滤挡住）
+            {"打包", "后道", "套", "0.0", "false", "false"},
             {"外帘装袋", "后道", "套", "1.0", "true", "false"},
             {"外帘发货", "后道", "套", "1.0", "false", "false"}};
 
     /**
-     * 工序库桩：把 V54 的「布帘×韩褶」路线与 11 道工序行装进真实
+     * 工序库桩：把 V54 的「布帘×韩褶」路线与 12 道工序行装进真实
      * {@link ProductionOperationQueryService}（只 mock Mapper）⇒ 派生走的是**真解析**，
      * 不是被 stub 的 findRouting（否则「派生结果 = 库」的断言会退化成自证）。
      */
@@ -1080,21 +1082,22 @@ class ProductionControllerTest {
                         .contentType("application/json").content("{}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.operation_count").value(11))
+                .andExpect(jsonPath("$.data.operation_count").value(12))
                 .andExpect(jsonPath("$.data.qr_token").value(matchesPattern("[0-9a-f]{32}")));
 
         // 效果层：派生的 11 道工序逐字落库（部位/序号/工序名/应做数量/单价/必完标记）
         ArgumentCaptor<ProcessingPositionOperation> captor =
                 ArgumentCaptor.forClass(ProcessingPositionOperation.class);
-        verify(positionOperationMapper, times(11)).insert(captor.capture());
+        verify(positionOperationMapper, times(12)).insert(captor.capture());
         List<ProcessingPositionOperation> inserted = captor.getAllValues();
         assertThat(inserted.get(0).getPositionName()).isEqualTo("布艺遮光帘A 米白");
         assertThat(inserted.get(0).getSeq()).isEqualTo(1);
         assertThat(inserted.get(0).getOperationName()).isEqualTo("精裁-布");
         assertThat(inserted.get(0).getUnitPrice()).isEqualByComparingTo("0.40");
         assertThat(inserted.get(0).getQty()).isEqualByComparingTo("2");
-        assertThat(inserted.get(10).getOperationName()).isEqualTo("外帘发货");
-        assertThat(inserted.get(9).getIsMustFinish()).isTrue();
+        // 🔴 issue #4937 / O4：`打包` 进路线后位次后移一位
+        assertThat(inserted.get(11).getOperationName()).isEqualTo("外帘发货");
+        assertThat(inserted.get(10).getIsMustFinish()).isTrue();
     }
 
     @Test
@@ -1111,9 +1114,9 @@ class ProductionControllerTest {
         mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/instantiate")
                         .contentType("application/json").content("{\"positions\":[]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.operation_count").value(11));
+                .andExpect(jsonPath("$.data.operation_count").value(12));
 
-        verify(positionOperationMapper, times(11)).insert(any(ProcessingPositionOperation.class));
+        verify(positionOperationMapper, times(12)).insert(any(ProcessingPositionOperation.class));
     }
 
     @Test
@@ -1131,7 +1134,7 @@ class ProductionControllerTest {
                         .contentType("application/json").content("{}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.qr_token").value(existingToken))
-                .andExpect(jsonPath("$.data.operation_count").value(11));
+                .andExpect(jsonPath("$.data.operation_count").value(12));
 
         // 一行都不碰：不重插、不软删（软删走 update）、不清零报工进度
         verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));

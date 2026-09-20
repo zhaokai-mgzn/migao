@@ -110,8 +110,7 @@ class ProductionOperationPositionCommandServiceTest {
         return new ProductionOperationPositionCommandService(productionOperationPositionMapper,
                 priceVersionMapper,
                 new ProductionRoutingReadService(productionOperationPositionMapper,
-                        productionRouteRuleMapper, queryService, processingItemMapper),
-                queryService);
+                        productionRouteRuleMapper, queryService, processingItemMapper));
     }
 
     // ── 夹具 ──
@@ -133,8 +132,9 @@ class ProductionOperationPositionCommandServiceTest {
     }
 
     private void stubUpdateSucceeds() {
-        when(productionOperationPositionMapper.updatePriceAndApplicable(
-                any(), any(), any(), any(), any())).thenReturn(1);
+        // 🔴 issue #4937 / O1：写面只写 `unit_price` 一列（`applicable` 退场）
+        when(productionOperationPositionMapper.updateUnitPrice(
+                any(), any(), any(), any())).thenReturn(1);
     }
 
     private Map<String, Object> body(Object... keyValues) {
@@ -156,8 +156,8 @@ class ProductionOperationPositionCommandServiceTest {
 
         Map<String, Object> result = service().update(ROW_ID, body("unit_price", "0.55"), TENANT);
 
-        verify(productionOperationPositionMapper).updatePriceAndApplicable(
-                eq(ROW_ID), eq(TENANT), eq(new BigDecimal("0.55")), eq(true), any());
+        verify(productionOperationPositionMapper).updateUnitPrice(
+                eq(ROW_ID), eq(TENANT), eq(new BigDecimal("0.55")), any());
         ArgumentCaptor<ProductionOperationPositionPriceVersion> captor =
                 ArgumentCaptor.forClass(ProductionOperationPositionPriceVersion.class);
         verify(priceVersionMapper).insert(captor.capture());
@@ -179,55 +179,10 @@ class ProductionOperationPositionCommandServiceTest {
         verify(priceVersionMapper, never()).insert(any(ProductionOperationPositionPriceVersion.class));
     }
 
-    @Test
-    @DisplayName("只改「做不做」不改价 ⇒ 不追加账行（价没变）")
-    void applicableOnlyChangeDoesNotAppendVersionRow() {
-        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", true, 0));
-        stubUpdateSucceeds();
-        stubCatalog();
-
-        service().update(ROW_ID, body("applicable", true), TENANT);
-
-        verify(priceVersionMapper, never()).insert(any(ProductionOperationPositionPriceVersion.class));
-    }
 
     // ── 判据 2：三态（不做 / 未定价 / 显式 null）──
 
-    @Test
-    @DisplayName("applicable=false ⇒ 价**强制落 NULL**（明确不做 ⇒ 不报价）且账行如实记 NULL（不填 0）")
-    void applicableFalseForcesPriceToNull() {
-        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", true, 0));
-        stubUpdateSucceeds();
-        stubCatalog();
 
-        Map<String, Object> result = service().update(ROW_ID, body("applicable", false), TENANT);
-
-        verify(productionOperationPositionMapper).updatePriceAndApplicable(
-                eq(ROW_ID), eq(TENANT), eq(null), eq(false), any());
-        ArgumentCaptor<ProductionOperationPositionPriceVersion> captor =
-                ArgumentCaptor.forClass(ProductionOperationPositionPriceVersion.class);
-        verify(priceVersionMapper).insert(captor.capture());
-        assertThat(captor.getValue().getUnitPrice()).as("改回不做 ⇒ 价清空，账本记 NULL（≠ 0 元）").isNull();
-        assertThat(result.get("applicable")).isEqualTo(false);
-        assertThat(result).containsKey("unit_price");
-        assertThat(result.get("unit_price")).isNull();
-    }
-
-    @Test
-    @DisplayName("applicable=true + 价 null = 「适用但未定价」（**合法**状态，不是错误）")
-    void applicableTrueWithoutPriceIsLegal() {
-        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row(null, false, 0));
-        stubUpdateSucceeds();
-        stubCatalog();
-
-        Map<String, Object> result = service().update(ROW_ID, body("applicable", true), TENANT);
-
-        verify(productionOperationPositionMapper).updatePriceAndApplicable(
-                eq(ROW_ID), eq(TENANT), eq(null), eq(true), any());
-        verify(priceVersionMapper, never()).insert(any(ProductionOperationPositionPriceVersion.class));
-        assertThat(result.get("applicable")).isEqualTo(true);
-        assertThat(result.get("unit_price")).isNull();
-    }
 
     @Test
     @DisplayName("显式 unit_price=null ⇒ 改回「未定价」（**≠ 0 元**）且留痕")
@@ -238,8 +193,8 @@ class ProductionOperationPositionCommandServiceTest {
 
         Map<String, Object> result = service().update(ROW_ID, body("unit_price", null), TENANT);
 
-        verify(productionOperationPositionMapper).updatePriceAndApplicable(
-                eq(ROW_ID), eq(TENANT), eq(null), eq(true), any());
+        verify(productionOperationPositionMapper).updateUnitPrice(
+                eq(ROW_ID), eq(TENANT), eq(null), any());
         ArgumentCaptor<ProductionOperationPositionPriceVersion> captor =
                 ArgumentCaptor.forClass(ProductionOperationPositionPriceVersion.class);
         verify(priceVersionMapper).insert(captor.capture());
@@ -264,8 +219,8 @@ class ProductionOperationPositionCommandServiceTest {
                     assertThat(ex.getDetails()).singleElement()
                             .satisfies(d -> assertThat(d.getField()).isEqualTo("unit_price"));
                 });
-        verify(productionOperationPositionMapper, never()).updatePriceAndApplicable(
-                any(), any(), any(), any(), any());
+        verify(productionOperationPositionMapper, never()).updateUnitPrice(
+                any(), any(), any(), any());
         verify(priceVersionMapper, never()).insert(any(ProductionOperationPositionPriceVersion.class));
     }
 
@@ -283,26 +238,10 @@ class ProductionOperationPositionCommandServiceTest {
                     assertThat(ex.getDetails()).singleElement()
                             .satisfies(d -> assertThat(d.getField()).isEqualTo("unit_price"));
                 });
-        verify(productionOperationPositionMapper, never()).updatePriceAndApplicable(
-                any(), any(), any(), any(), any());
+        verify(productionOperationPositionMapper, never()).updateUnitPrice(
+                any(), any(), any(), any());
     }
 
-    @Test
-    @DisplayName("applicable 非布尔 ⇒ 422 + error.details 且不落库")
-    void nonBooleanApplicableRejectedWithDetails() {
-        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", true, 0));
-
-        assertThatThrownBy(() -> service().update(ROW_ID, body("applicable", "yes"), TENANT))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(e -> {
-                    BusinessException ex = (BusinessException) e;
-                    assertThat(ex.getHttpStatus()).isEqualTo(422);
-                    assertThat(ex.getDetails()).singleElement()
-                            .satisfies(d -> assertThat(d.getField()).isEqualTo("applicable"));
-                });
-        verify(productionOperationPositionMapper, never()).updatePriceAndApplicable(
-                any(), any(), any(), any(), any());
-    }
 
     // ── 判据 4：寻址与响应形态 ──
 
@@ -326,8 +265,8 @@ class ProductionOperationPositionCommandServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(404));
 
-        verify(productionOperationPositionMapper, never()).updatePriceAndApplicable(
-                any(), any(), any(), any(), any());
+        verify(productionOperationPositionMapper, never()).updateUnitPrice(
+                any(), any(), any(), any());
     }
 
     @Test
@@ -374,91 +313,50 @@ class ProductionOperationPositionCommandServiceTest {
         return r;
     }
 
-    @Test
-    @DisplayName("🔴 该部位解析不到变体工序 ⇒ 设为「做」被 422 拦下（改前写库成功 = 配好了却整单 422）")
-    void applicableTrueRejectedWhenVariantUnresolvable() {
-        stubCatalogWithoutSandbian();
-        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", false, 0));
 
-        assertThatThrownBy(() -> service().update(
-                ROW_ID, body("applicable", true, "unit_price", "0.50"), TENANT))
+
+
+
+
+
+    @Test
+    @DisplayName("🔴 issue #4937 / O1：收到 `applicable` 字段 ⇒ 422 + 可行动 hint（**拒绝**，不静默忽略）")
+    void applicableFieldIsRejectedWithAnActionableHint() {
+        ProductionOperationPosition row = ProductionOperationPosition.builder()
+                .id("opp-三边-布帘").tenantId(TENANT).logicalName("三边").position("布帘")
+                .unitPrice(new BigDecimal("0.40")).applicable(true)
+                .status("active").deleted(0).build();
+        when(productionOperationPositionMapper.selectById("opp-三边-布帘")).thenReturn(row);
+
+        assertThatThrownBy(() -> service().update("opp-三边-布帘",
+                Map.of("applicable", false), TENANT))
                 .isInstanceOf(BusinessException.class)
-                .satisfies(e -> {
-                    BusinessException ex = (BusinessException) e;
-                    assertThat(ex.getHttpStatus()).isEqualTo(422);
-                    assertThat(ex.getDetails()).singleElement().satisfies(d -> {
-                        assertThat(d.getField()).isEqualTo("applicable");
-                        // 商家语言 + 给出路；且**不泄漏**变体名（#4642：web 面只显示逻辑名）
-                        assertThat(d.getMessage()).contains("三边 × 布帘").contains("不做");
-                        assertThat(d.getMessage()).doesNotContain("布三边");
-                    });
-                });
-        verify(productionOperationPositionMapper, never()).updatePriceAndApplicable(
-                any(), any(), any(), any(), any());
-        verify(priceVersionMapper, never()).insert(any(ProductionOperationPositionPriceVersion.class));
+                .hasMessageContaining("未通过校验")
+                .satisfies(e -> assertThat(((BusinessException) e).getDetails())
+                        .as("必须点名 `applicable` 并给出可行动 hint（静默 no-op 是本仓最忌的形态）")
+                        .anySatisfy(d -> {
+                            assertThat(d.getField()).isEqualTo("applicable");
+                            assertThat(d.getMessage())
+                                    .contains("部位适用性已退场")
+                                    .contains("只传 unit_price");
+                        }));
+        verify(productionOperationPositionMapper, never())
+                .updateUnitPrice(any(), any(), any(), any());
     }
 
     @Test
-    @DisplayName("不变式含**只改价**：存量坏格（applicable=true 且解析不到变体）改价也被拦（不留「改得动、用不了」的价）")
-    void priceOnlyChangeOnUnresolvableApplicableRowRejected() {
-        stubCatalogWithoutSandbian();
-        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", true, 0));
+    @DisplayName("🔴 issue #4937 / O1：`applicable` 与 `unit_price` 同时传 ⇒ 整份拒绝（价也不落库）")
+    void applicableFieldRejectsTheWholeRequest() {
+        ProductionOperationPosition row = ProductionOperationPosition.builder()
+                .id("opp-三边-布帘").tenantId(TENANT).logicalName("三边").position("布帘")
+                .unitPrice(new BigDecimal("0.40")).applicable(true)
+                .status("active").deleted(0).build();
+        when(productionOperationPositionMapper.selectById("opp-三边-布帘")).thenReturn(row);
 
-        assertThatThrownBy(() -> service().update(ROW_ID, body("unit_price", "0.55"), TENANT))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(422));
-        verify(productionOperationPositionMapper, never()).updatePriceAndApplicable(
-                any(), any(), any(), any(), any());
-    }
-
-    @Test
-    @DisplayName("反向护栏：设为「不做」**永远放行**（解析不到变体时也放行 ⇒ 不造死路）")
-    void applicableFalseAlwaysAllowedEvenWhenUnresolvable() {
-        stubCatalogWithoutSandbian();
-        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", true, 0));
-        stubUpdateSucceeds();
-
-        Map<String, Object> result = service().update(ROW_ID, body("applicable", false), TENANT);
-
-        assertThat(result.get("applicable")).isEqualTo(false);
-        assertThat(result.get("unit_price")).as("不做 ⇒ 价强制落 NULL").isNull();
-    }
-
-    @Test
-    @DisplayName("反向护栏：解析得到变体 ⇒ 设为「做」照旧放行（行为一字不变）")
-    void applicableTrueAllowedWhenVariantResolvable() {
-        stubCatalog();
-        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", false, 0));
-        stubUpdateSucceeds();
-
-        Map<String, Object> result = service().update(ROW_ID, body("applicable", true), TENANT);
-
-        assertThat(result.get("applicable")).isEqualTo(true);
-    }
-
-    @Test
-    @DisplayName("反向护栏：**部位无关**工序（裸逻辑名在库里）⇒ 放行（`variantNameOf` 第 3 步）")
-    void applicableTrueAllowedForPositionIndependentOperation() {
-        stubCatalogWithoutSandbian();   // 库里只有 `质检`（裸逻辑名）
-        ProductionOperationPosition row = rowAt("质检", "布帘", null, false);
-        when(productionOperationPositionMapper.selectById(row.getId())).thenReturn(row);
-        stubUpdateSucceeds();
-
-        Map<String, Object> result = service().update(row.getId(), body("applicable", true), TENANT);
-
-        assertThat(result.get("applicable")).isEqualTo(true);
-    }
-
-    @Test
-    @DisplayName("反向护栏：**帘头回落布帘变体** ⇒ 放行（`variantNameOf` 第 2 步，判据与实例化同一份）")
-    void applicableTrueAllowedWhenLintouFallsBackToClothVariant() {
-        stubCatalog();   // 只有 `布三边`，没有帘头专属变体
-        ProductionOperationPosition row = rowAt("三边", "帘头", null, false);
-        when(productionOperationPositionMapper.selectById(row.getId())).thenReturn(row);
-        stubUpdateSucceeds();
-
-        Map<String, Object> result = service().update(row.getId(), body("applicable", true), TENANT);
-
-        assertThat(result.get("applicable")).isEqualTo(true);
+        assertThatThrownBy(() -> service().update("opp-三边-布帘",
+                Map.of("unit_price", "0.55", "applicable", true), TENANT))
+                .isInstanceOf(BusinessException.class);
+        verify(productionOperationPositionMapper, never())
+                .updateUnitPrice(any(), any(), any(), any());
     }
 }
