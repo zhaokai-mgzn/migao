@@ -10,6 +10,16 @@
 依赖：第一波测试创建的分类、加工分类数据。如缺失会自动尝试创建或跳过。
 """
 
+# case_ids: PP-002, PP-009, PR-001, PR-002, CU-001, HR-004
+# 域映射（本文件是**跨域** HTTP 冒烟：一条文件覆盖多域，故按域逐条声明）：
+#   PP-002  加工项目录 / 分类 CRUD
+#   PP-009  `POST /api/admin/processing-items/calculate` **退场守卫**
+#           （issue #4882：加工项已无单价与计价方式 ⇒ 端点整体删除；真值实测 405，
+#            不是 404 —— 见 `ProcessingItemControllerTest.calculateEndpointIsGone`）
+#   PR-001 / PR-002  商品 CRUD
+#   CU-001           客户管理
+#   HR-004           员工账号管理
+
 import time
 import uuid
 
