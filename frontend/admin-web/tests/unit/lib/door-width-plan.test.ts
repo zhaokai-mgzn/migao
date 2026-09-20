@@ -33,7 +33,7 @@
  */
 import { describe, it, expect } from 'vitest'
 
-import { resolveCutPlan } from '@/lib/door-width-plan'
+import { resolveCutPlan, judgeDoorWidthChoice } from '@/lib/door-width-plan'
 import { HEM_MARGIN, SIDE_MARGIN } from '@/lib/craft-auto-features'
 
 describe('门幅选择规则 resolveCutPlan（issue #4877）', () => {
@@ -230,5 +230,57 @@ describe('门幅选择规则 resolveCutPlan（issue #4877）', () => {
       candidates: [2.75 + HEM_MARGIN],
     })
     expect(byHeight.state).toBe('single_panel')
+  })
+})
+
+describe('客服所选门幅 ⇒ 相对规则解的提示 judgeDoorWidthChoice（issue #4877）', () => {
+  const base = { width: 3.0, height: 2.75, candidates: [2.8, 3.2] as const }
+
+  it('选了**非最优**（可行但更宽）⇒ `suboptimal` + 建议文案点名规则解', () => {
+    const judged = judgeDoorWidthChoice(
+      { ...base, cuttingMode: '定高买宽' },
+      3.4, // 不在候选集里也不影响判定：只要比规则解宽就是「占了宽幅布」
+    )
+    expect(judged.verdict).toBe('suboptimal')
+    expect(judged.suggestion).toContain('3.2 米门幅')
+  })
+
+  it('选了**规则解** ⇒ `optimal` 且**不给建议**（不 nag）', () => {
+    const judged = judgeDoorWidthChoice({ ...base, cuttingMode: '定高买宽' }, 3.2)
+    expect(judged.verdict).toBe('optimal')
+    expect(judged.suggestion).toBeNull()
+  })
+
+  it('所选门幅**单幅做不出** ⇒ `infeasible`（比非最优更强：先告警「需接高」）', () => {
+    const judged = judgeDoorWidthChoice({ ...base, cuttingMode: '定高买宽' }, 2.8)
+    expect(judged.verdict).toBe('infeasible')
+    expect(judged.suggestion).toContain('需接高')
+    expect(judged.suggestion).toContain('3.2 米门幅')
+  })
+
+  it('定宽买高：所选门幅分幅更多 ⇒ `suboptimal`，文案给出**多买的幅数**', () => {
+    const judged = judgeDoorWidthChoice(
+      { width: 3.0, height: 2.75, fullness: 2, cuttingMode: '定宽买高', candidates: [2.8, 3.4] },
+      2.8,
+    )
+    expect(judged.verdict).toBe('suboptimal')
+    expect(judged.suggestion).toContain('少 1 幅')
+  })
+
+  it('定宽买高：分幅数**并列**（米数相同）⇒ `optimal`（挑哪个门幅是库存/单价的事，不 nag）', () => {
+    const judged = judgeDoorWidthChoice(
+      { width: 1.0, height: 2.75, fullness: 2, cuttingMode: '定宽买高', candidates: [2.8, 3.0] },
+      3.0,
+    )
+    expect(judged.verdict).toBe('optimal')
+    expect(judged.suggestion).toBeNull()
+  })
+
+  it('未选门幅 / 门幅未维护 / 规则不可判定 ⇒ `unknown`（没有可比对象 ⇒ 不提示最优）', () => {
+    expect(judgeDoorWidthChoice({ ...base, cuttingMode: '定高买宽' }, undefined).verdict).toBe('unknown')
+    expect(judgeDoorWidthChoice({ ...base, cuttingMode: '定高买宽' }, '加宽').verdict).toBe('unknown')
+    expect(
+      judgeDoorWidthChoice({ ...base, cuttingMode: '定高买宽', candidates: [] }, 2.8).verdict,
+    ).toBe('unknown')
   })
 })

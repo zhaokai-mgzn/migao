@@ -51,31 +51,26 @@ export const SIDE_MARGIN = 0.3
 export const HEM_MARGIN = 0.3
 
 /**
- * **门幅缺省值**（米）—— SKU 未携带 `doorWidth` 时本页按它推算。
- *
- * 🔴 **它不是前端自己编的数**（issue #4746）：缺省口径 = **算料引擎的默认门幅**
- * （`curtain_calc.build_quote(fabric_width: float = 2.8)`，米宝下单通路不传门幅时的值）
- * —— 逐值锚定见守卫 `tests/unit/lib/craft-auto-features.test.ts`（改一处必红）。
- *
- * ## 门幅三处口径（issue #4746，**核清后的结论**）
+ * ## 门幅口径（issue #4877 **改判：前端不再持有「缺省门幅」**）
  *
  * | 口径 | 值 | 来源 | 谁在读 |
  * |---|---|---|---|
- * | 商品/SKU 门幅（**权威**） | 商品可配（种子 2.8；窄幅布 1.4） | 商品 `doorWidths` ⇒ `product_skus.door_width` | 本页判定（{@link resolveDoorWidth}）、SKU 定位 / 加工费组合键 |
- * | 前端**缺省**门幅 | {@link DEFAULT_DOOR_WIDTH} = 2.8 | 算料引擎默认门幅（`build_quote` 的 `fabric_width` 默认值） | SKU 未携带门幅时的判定 |
- * | 引擎**端点**门幅 | 3.2 | `backend/ai-agent-service/app/api/internal.py::_FABRIC_WIDTH`（**硬编码**） | 商家手工下单页**试算通路** |
+ * | 商品/SKU 门幅（**权威**） | 商品可配（种子 2.8；窄幅布 1.4） | 商品 `doorWidths` ⇒ `product_skus.door_width` | 本页判定（{@link parseDoorWidth}）、规则（`door-width-plan.ts`）、SKU 定位 / 加工费组合键 |
+ * | 引擎**端点**门幅 | **硬编码**（`backend/ai-agent-service/app/api/internal.py` 的 `_FABRIC_WIDTH`） | 算料试算通路 | **尚未按 SKU 门幅接线** = 分叉 #4652 |
  *
- * ⚠️ **口径分裂（照实登记）**：引擎端点那个 3.2 的注释写着「商家手工下单页当前没有门幅字段」
- * —— **已过期**（商家侧有门幅：商品 `doorWidths` ⇒ `product_skus.door_width` ⇒ 下单页
- * `SKU.doorWidth`）。⇒ 同一张单：本页按 SKU 门幅（缺省 2.8）判「超宽/超高」并**进加工费组合键**，
- * 引擎按 3.2 算分幅 ⇒ **可能不一致**（组合键与实际算料对不上 ⇒ 报价/加工费对不上）。
+ * 🔴 **「缺省门幅」已删除**（issue #4877；用户 2026-09-21 裁定「如果所有门幅都不满足，
+ * 那必然走接高」+「加工类型是显式输入」）：SKU 未携带门幅 ⇒ {@link parseDoorWidth} 返回 `null`
+ * ⇒ 判定面**不判**并显式告知（`missing-door-width`）、规则面（`door-width-plan.ts` 的
+ * `resolveCutPlan`）返回 `undecidable` —— **不得**回退任何默认门幅继续推算。
+ * 旧行为「静默按缺省门幅判超高/超宽」正是本单要替换掉的错误做法（真单实测：同一张 3.0×2.75 的
+ * 单子，门幅按 2.8 / 3.2 之差会得到「需接高」与「单幅可做」两种相反结论，用料 9.15 / 6.3 米）。
  *
- * **权威 = SKU/商品门幅**（设计 §3.2「门幅 G = SKU.doorWidth（缺省 2.8 米）」+ 商家可配）；
- * 引擎侧改为**接收**该值是**分叉 #4652**（本单**不动 ai-agent**）。⇒ 本文件**刻意不抄** 3.2
+ * ⚠️ **口径分裂照实登记**：引擎端点按它自己的硬编码值算分幅，本页按 **SKU 门幅** 判
+ * ⇒ 两者可能不一致（组合键与实际算料对不上）。**权威 = SKU/商品门幅**；引擎侧改为**接收**该值
+ * = **分叉 #4652**（本单不动 ai-agent）。⇒ 本文件**刻意不抄**那个值
  * （抄一份 = 第二份会漂移的口径，同族 #4656）：守卫
  * `tests/unit_ci_workflows/test_fabric_width_truth_source.py`（前端出现该值字面量即红）。
  */
-export const DEFAULT_DOOR_WIDTH = 2.8
 
 /**
  * **自动推导**特征名清单（**推导产生**，不是商家勾选项 —— 判据 8：出现手选项 ⇒ 红）。
@@ -153,13 +148,7 @@ export function parseDoorWidth(doorWidth: unknown): number | null {
   return positiveNumber(match[1])
 }
 
-/**
- * 门幅（米）—— **保留「缺省 {@link DEFAULT_DOOR_WIDTH}」的旧语义**（存量调用方 = 自动识别）；
- * 内部走 {@link parseDoorWidth}，**解析只有一份**。
- */
-export function resolveDoorWidth(doorWidth: unknown): number {
-  return parseDoorWidth(doorWidth) ?? DEFAULT_DOOR_WIDTH
-}
+
 
 /** 一条自动识别特征入参（尺寸一律米；`doorWidth` 给原始值，本函数负责解析） */
 export interface AutoFeatureInput {
@@ -167,7 +156,7 @@ export interface AutoFeatureInput {
   width?: number | null
   /** 成品高（米）；缺失 / 非正数 ⇒ 不判超高 */
   height?: number | null
-  /** SKU 门幅（原样传入，本函数用 {@link resolveDoorWidth} 解析） */
+  /** SKU 门幅（原样传入，本函数用 {@link parseDoorWidth} 解析；解析不到 ⇒ **不判**，见 #4877） */
   doorWidth?: unknown
   /**
    * 加工类型（`定高买宽` / `定宽买高`）—— **决定哪个方向受门幅约束**（issue #4661）：
@@ -233,11 +222,18 @@ export const CUTTING_MODE_FIXED_WIDTH = '定宽买高'
  */
 export function detectAutoFeatures(input: AutoFeatureInput): AutoFeature[] {
   const features: AutoFeature[] = []
-  const doorWidth = resolveDoorWidth(input.doorWidth)
   const mode = input.cuttingMode
 
   // 加工类型缺失 / 表外取值 ⇒ 两个方向**都不判**（保守，不猜）；`倒幅` 亦不推导。
   if (mode !== CUTTING_MODE_FIXED_HEIGHT && mode !== CUTTING_MODE_FIXED_WIDTH) return features
+
+  // 🔴 门幅缺失 / 不可解析 ⇒ **超高 / 超宽都不判**（issue #4877：**已无缺省门幅**）。
+  // 「判不了」必须长得像「判不了」（由 {@link detectAutoFeatureNotices} 显式告知），
+  // 不许拿一个默认门幅顶上 —— 真单实测：同一张 3.0×2.75 的单子，门幅按 2.8 / 3.2 之差
+  // 会得到「需接高」与「单幅可做」两种相反结论。
+  // ⚠️ **`倒幅` 照常推导**（见下）：它由**加工类型**唯一决定、与门幅无关 ——
+  // 因为门幅缺数据就连它一起吞掉 = 静默少一个加工费组合键项（改钱），那不是「不猜」，是「漏判」。
+  const doorWidth = parseDoorWidth(input.doorWidth)
 
   // 宽方向（只属 `定宽买高`）：判据 = 算料引擎的**分幅**条件
   // `ceil((宽 + side_margin) × 褶倍 ÷ 门幅) ≥ 2` ⟺ `(宽 + side_margin) × 褶倍 > 门幅`（#4662）。
@@ -245,6 +241,7 @@ export function detectAutoFeatures(input: AutoFeatureInput): AutoFeature[] {
   const width = positiveNumber(input.width)
   const fullness = positiveNumber(input.fullness)
   if (
+    doorWidth !== null &&
     mode === CUTTING_MODE_FIXED_WIDTH &&
     width !== null &&
     fullness !== null &&
@@ -264,7 +261,12 @@ export function detectAutoFeatures(input: AutoFeatureInput): AutoFeature[] {
   // ⚠️ **不取整**：引擎的定高可用条件是 `window_height + HEM_MARGIN <= fabric_width`（原始浮点）——
   // 取整会让「成品高 2.5001」这类输入在前端判「不超高」而引擎实际回落定宽（静默不一致）。
   const height = positiveNumber(input.height)
-  if (mode === CUTTING_MODE_FIXED_HEIGHT && height !== null && height + HEM_MARGIN > doorWidth) {
+  if (
+    doorWidth !== null &&
+    mode === CUTTING_MODE_FIXED_HEIGHT &&
+    height !== null &&
+    height + HEM_MARGIN > doorWidth
+  ) {
     features.push({
       name: '超高',
       source: '推算',
@@ -289,7 +291,7 @@ export function detectAutoFeatures(input: AutoFeatureInput): AutoFeature[] {
  * {@link detectAutoFeatures} 的推算结果（组合键只能含 `processing_items` 目录里有的名字 —— #4592 的 P0）。
  */
 export interface AutoFeatureNotice {
-  kind: 'missing-fullness' | 'cutting-mode-conflict'
+  kind: 'missing-fullness' | 'cutting-mode-conflict' | 'missing-door-width'
   /** 可读依据（哪两个数比出来的 + 前提）。口径一律来自算料引擎的同款判据，**前端不编** */
   reason: string
 }
@@ -320,7 +322,16 @@ export function detectAutoFeatureNotices(input: AutoFeatureInput): AutoFeatureNo
   const mode = input.cuttingMode
   if (mode !== CUTTING_MODE_FIXED_HEIGHT && mode !== CUTTING_MODE_FIXED_WIDTH) return notices
 
-  const doorWidth = resolveDoorWidth(input.doorWidth)
+  // 🔴 门幅缺失 / 不可解析 ⇒ 判定面**什么都没判**（issue #4877）⇒ 显式告知并直接返回：
+  // 再做「缺褶倍」「几何矛盾」两条提示会误导（它们的前提都依赖门幅）。
+  const doorWidth = parseDoorWidth(input.doorWidth)
+  if (doorWidth === null) {
+    notices.push({
+      kind: 'missing-door-width',
+      reason: '该 SKU 未维护门幅 ⇒ 超高/超宽都判不了（系统不按缺省门幅推算，请先补商品门幅）',
+    })
+    return notices
+  }
   const width = positiveNumber(input.width)
   const height = positiveNumber(input.height)
 

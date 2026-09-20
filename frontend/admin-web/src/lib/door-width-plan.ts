@@ -233,3 +233,110 @@ export function resolveCutPlan(input: CutPlanInput): CutPlan {
       ` ⇒ ${chosen.panels} 幅（取分幅最少；并列取较小门幅）`,
   }
 }
+
+/** 客服所选门幅相对**规则解**的判定（用户 2026-09-21：「客服选了不是最省的门幅 ⇒ 提示可选最优」） */
+export type DoorWidthChoiceVerdict =
+  /** 就是规则解（或并列最优）⇒ **不提示**（不 nag） */
+  | 'optimal'
+  /** 可行但不是规则解 ⇒ 提示可换更省的门幅 */
+  | 'suboptimal'
+  /** **选的这个门幅单幅做不出**（定高买宽下高度超限）⇒ 比「非最优」更强的告警：需接高 */
+  | 'infeasible'
+  /** 判不了（未选门幅 / 门幅未维护 / 规则自身不可判定）⇒ 不提示最优 */
+  | 'unknown'
+
+export interface DoorWidthChoice {
+  plan: CutPlan
+  /** 客服所选门幅（解析不到 ⇒ `null` = 未选 / 未维护） */
+  selectedDoorWidth: number | null
+  verdict: DoorWidthChoiceVerdict
+  /** 可执行建议（`suboptimal` / `infeasible` 时非空；其余 ⇒ `null`，界面不提示） */
+  suggestion: string | null
+}
+
+/**
+ * 客服所选门幅 ⇒ 相对规则解的判定与建议（issue #4877）。
+ *
+ * 三条边界（都有判据）：
+ * ① **未选 / 未维护 / 规则不可判定 ⇒ `unknown`**（不提示「最优」—— 没有可比的对象）；
+ * ② **所选门幅不可行 ⇒ `infeasible`**（比「非最优」更强：先告警「需接高」，再给规则解）；
+ * ③ **并列最优不提示**：定宽买高下分幅数相同 = 米数相同 ⇒ 判 `optimal`（挑哪个门幅是库存/单价的事，
+ *    系统不 nag）。
+ */
+export function judgeDoorWidthChoice(
+  input: CutPlanInput,
+  selectedDoorWidth?: DoorWidthCandidate | null,
+): DoorWidthChoice {
+  const plan = resolveCutPlan(input)
+  const selected =
+    typeof selectedDoorWidth === 'number' ? positive(selectedDoorWidth) : parseDoorWidth(selectedDoorWidth)
+  if (plan.state === 'undecidable' || selected === null) {
+    return { plan, selectedDoorWidth: selected, verdict: 'unknown', suggestion: null }
+  }
+
+  const allowance = Math.max(positive(input.allowance) ?? 0, 0)
+  const selectedEffective = round3(selected - allowance)
+
+  // 没有任何门幅能单幅做成 ⇒ 无论客服选了哪一个，结论都是「需接高」。
+  if (plan.state === 'needs_splice') {
+    return {
+      plan,
+      selectedDoorWidth: selected,
+      verdict: 'infeasible',
+      suggestion:
+        `所选 ${selected} 米门幅单幅做不出成品高（需接高：缺口 ${plan.gapMeters} 米 × ${plan.panelCount} 片）` +
+        ` —— 本单**没有任何门幅**能单幅做成（规则解同此结论）`,
+    }
+  }
+
+  if (plan.doorWidth === selected) {
+    return { plan, selectedDoorWidth: selected, verdict: 'optimal', suggestion: null }
+  }
+
+  const height = positive(input.height)
+  const needHeight = height === null ? null : round3(height + HEM_MARGIN)
+
+  // 定高买宽：规则解 = **可行集里最小门幅**（用料与门幅无关 ⇒ 取小 = 不占宽幅布 + 可能的单价差）
+  if (input.cuttingMode === CUTTING_MODE_FIXED_HEIGHT) {
+    if (needHeight !== null && needHeight > selectedEffective) {
+      return {
+        plan,
+        selectedDoorWidth: selected,
+        verdict: 'infeasible',
+        suggestion:
+          `所选 ${selected} 米门幅单幅做不出（成品高 ${height} + 上下卷边 ${HEM_MARGIN} = ${needHeight} 米，` +
+          `缺口 ${round3(needHeight - selectedEffective)} 米 ⇒ **需接高**）；规则解 = ${plan.doorWidth} 米门幅`,
+      }
+    }
+    return {
+      plan,
+      selectedDoorWidth: selected,
+      verdict: 'suboptimal',
+      suggestion:
+        `规则解是 ${plan.doorWidth} 米门幅（可行集里最小：成品高 ${height} + 上下卷边 ${HEM_MARGIN} = ` +
+        `${needHeight} 米 ≤ ${plan.doorWidth} 米）—— 换它可少占宽幅布（宽幅布留给真正超高的窗）`,
+    }
+  }
+
+  // 定宽买高：规则解 = **分幅最少**（门幅越大 ⇒ 幅数越少 ⇒ 米数越省）⇒ 多出的每幅都是真金白银
+  const width = positive(input.width)
+  const fullness = positive(input.fullness)
+  if (width === null || fullness === null) {
+    return { plan, selectedDoorWidth: selected, verdict: 'unknown', suggestion: null }
+  }
+  const need = (width + SIDE_MARGIN) * fullness
+  const selectedPanels = Math.max(1, Math.ceil(need / selectedEffective))
+  if (selectedPanels <= plan.panels) {
+    // 并列（分幅数相同 ⇒ 米数相同）：挑哪个门幅是库存/单价的事，不 nag。
+    return { plan, selectedDoorWidth: selected, verdict: 'optimal', suggestion: null }
+  }
+  const perPanel = round3((height ?? 0) + HEM_MARGIN)
+  return {
+    plan,
+    selectedDoorWidth: selected,
+    verdict: 'suboptimal',
+    suggestion:
+      `所选 ${selected} 米门幅要 ${selectedPanels} 幅；规则解 ${plan.doorWidth} 米只要 ${plan.panels} 幅` +
+      `（少 ${selectedPanels - plan.panels} 幅 × 每幅 ${perPanel} 米用料）`,
+  }
+}
