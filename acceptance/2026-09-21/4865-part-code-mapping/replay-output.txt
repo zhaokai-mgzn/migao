@@ -1,10 +1,12 @@
+# 本文件已按 Case Trust 规则 G 抹号：机器绝对路径（/Users/…/migao-wt/<worktree>/）与
+# `文件名:行号` token 已抹去 —— 异常类型 / SQL 原文 / 状态码 / 哈希**一字未动**。
 ═══ ① 一次性 PostgreSQL 16（端口 54505）+ docs/sql/schema.sql（bootstrap 终态）═══
-psql:/Users/guangzhen.zk/ai native/migao-wt/4865-short-code-mapping/docs/sql/schema.sql:821: 注意:  关系 "production_operations" 的 约束"production_operations_source_check" 不存在
-psql:/Users/guangzhen.zk/ai native/migao-wt/4865-short-code-mapping/docs/sql/schema.sql:864: 注意:  关系 "production_routings" 的 约束"production_routings_source_check" 不存在
-psql:/Users/guangzhen.zk/ai native/migao-wt/4865-short-code-mapping/docs/sql/schema.sql:952: 注意:  关系 "production_route_rules" 的 约束"production_route_rules_operation_required_check" 不存在
-psql:/Users/guangzhen.zk/ai native/migao-wt/4865-short-code-mapping/docs/sql/schema.sql:956: 注意:  关系 "production_route_rules" 的 约束"production_route_rules_factor_present_check" 不存在
-psql:/Users/guangzhen.zk/ai native/migao-wt/4865-short-code-mapping/docs/sql/schema.sql:2825: 注意:  关系 "audit_logs" 的列 "tool_name" 已经存在，跳过
-psql:/Users/guangzhen.zk/ai native/migao-wt/4865-short-code-mapping/docs/sql/schema.sql:2845: 注意:  关系 "user_memories" 的列 "agent_type" 已经存在，跳过
+psql:docs/sql/schema.sql: 注意:  关系 "production_operations" 的 约束"production_operations_source_check" 不存在
+psql:docs/sql/schema.sql: 注意:  关系 "production_routings" 的 约束"production_routings_source_check" 不存在
+psql:docs/sql/schema.sql: 注意:  关系 "production_route_rules" 的 约束"production_route_rules_operation_required_check" 不存在
+psql:docs/sql/schema.sql: 注意:  关系 "production_route_rules" 的 约束"production_route_rules_factor_present_check" 不存在
+psql:docs/sql/schema.sql: 注意:  关系 "audit_logs" 的列 "tool_name" 已经存在，跳过
+psql:docs/sql/schema.sql: 注意:  关系 "user_memories" 的列 "agent_type" 已经存在，跳过
    ✅ 建库 + 夹具完成（用户 13900004865 / 订单 acc-fix4865-order / 3 个部位行）
 
 ═══ ② 起 admin-api（:8081，连这个一次性库）+ nginx 替身（:8080）═══
@@ -28,27 +30,27 @@ psql:/Users/guangzhen.zk/ai native/migao-wt/4865-short-code-mapping/docs/sql/sch
    ── admin-api 日志里的异常（若有）──
    435:2026-09-20 19:18:31.807 [main] ERROR c.migao.admin.config.MigrationRunner - ❌ 迁移失败（已跳过，继续执行其余迁移）: V72__switch_routing_model_consumers.sql
    436:org.springframework.jdbc.BadSqlGrammarException: StatementCallback; bad SQL grammar [-- 工序路线模型重构 **P2：切消费路径**（issue #4432 = 母单 #4423 的 P2/3）
-   817:	at org.springframework.jdbc.support.SQLStateSQLExceptionTranslator.doTranslate(SQLStateSQLExceptionTranslator.java:112)
-   818:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java:107)
-   819:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java:116)
-   820:	at org.springframework.jdbc.core.JdbcTemplate.translateException(JdbcTemplate.java:1548)
-   826:	at org.springframework.util.function.ThrowingConsumer$1.acceptWithException(ThrowingConsumer.java:82)
+   817:	at org.springframework.jdbc.support.SQLStateSQLExceptionTranslator.doTranslate(SQLStateSQLExceptionTranslator.java)
+   818:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java)
+   819:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java)
+   820:	at org.springframework.jdbc.core.JdbcTemplate.translateException(JdbcTemplate.java)
+   826:	at org.springframework.util.function.ThrowingConsumer$1.acceptWithException(ThrowingConsumer.java)
    845:Caused by: org.postgresql.util.PSQLException: 错误: 字段 f.sort_order 不存在
    864:2026-09-20 19:18:31.809 [main] ERROR c.migao.admin.config.MigrationRunner - ❌ 迁移失败（已跳过，继续执行其余迁移）: V74__backfill_legacy_special_option_names.sql
    865:org.springframework.jdbc.BadSqlGrammarException: StatementCallback; bad SQL grammar [-- 特殊选项**旧名存量回填**（issue #4399；上游 = #4389 / PR #4396 的「未做项」）
-   971:	at org.springframework.jdbc.support.SQLStateSQLExceptionTranslator.doTranslate(SQLStateSQLExceptionTranslator.java:112)
-   972:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java:107)
-   973:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java:116)
-   974:	at org.springframework.jdbc.core.JdbcTemplate.translateException(JdbcTemplate.java:1548)
-   980:	at org.springframework.util.function.ThrowingConsumer$1.acceptWithException(ThrowingConsumer.java:82)
+   971:	at org.springframework.jdbc.support.SQLStateSQLExceptionTranslator.doTranslate(SQLStateSQLExceptionTranslator.java)
+   972:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java)
+   973:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java)
+   974:	at org.springframework.jdbc.core.JdbcTemplate.translateException(JdbcTemplate.java)
+   980:	at org.springframework.util.function.ThrowingConsumer$1.acceptWithException(ThrowingConsumer.java)
    999:Caused by: org.postgresql.util.PSQLException: 错误: 字段 "processing_info" 不存在
    1024:2026-09-20 19:18:31.822 [main] ERROR c.migao.admin.config.MigrationRunner - ❌ 迁移失败（已跳过，继续执行其余迁移）: V79__seed_fabric_route_and_packing_operation.sql
    1025:org.springframework.dao.DuplicateKeyException: StatementCallback; SQL [-- 布料基础路线 + 「打包」工序（issue #4529，包 F；用户裁定 2026-09-19）
-   1305:	at org.springframework.jdbc.support.SQLStateSQLExceptionTranslator.doTranslate(SQLStateSQLExceptionTranslator.java:116)
-   1306:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java:107)
-   1307:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java:116)
-   1308:	at org.springframework.jdbc.core.JdbcTemplate.translateException(JdbcTemplate.java:1548)
-   1314:	at org.springframework.util.function.ThrowingConsumer$1.acceptWithException(ThrowingConsumer.java:82)
+   1305:	at org.springframework.jdbc.support.SQLStateSQLExceptionTranslator.doTranslate(SQLStateSQLExceptionTranslator.java)
+   1306:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java)
+   1307:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java)
+   1308:	at org.springframework.jdbc.core.JdbcTemplate.translateException(JdbcTemplate.java)
+   1314:	at org.springframework.util.function.ThrowingConsumer$1.acceptWithException(ThrowingConsumer.java)
    1333:Caused by: org.postgresql.util.PSQLException: 错误: 重复键违反唯一约束"production_operations_pkey"
    1390:2026-09-20 19:18:31.846 [main] ERROR c.migao.admin.config.MigrationRunner - ❌ 本次有 6 条迁移失败，schema 可能与代码不一致（请立即修复并在修复后重跑）：[V33__add_processing_item_per_meter_quantity.sql, V34__rollback_processing_item_per_meter_quantity.sql, V41__align_bootstrap_schema_missing_columns.sql, V72__switch_routing_model_consumers.sql, V74__backfill_legacy_special_option_names.sql, V79__seed_fabric_route_and_packing_operation.sql]
    ── 库内实况（部位码 / 短码）──
