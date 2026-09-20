@@ -1,0 +1,109 @@
+name: Worker H5 Tests
+
+# ── 为什么单独成一个 workflow（issue #4786，承接 #4765 的 D6）────────────────────
+# `frontend/worker-h5/` 是工人端 H5 第一切片（#4765，已随 `01e72187f` 合入 main）：
+# **零依赖 + 零构建** —— 纯 ES module（`.mjs`）+ HTML/CSS，测试用 **Node 内置 `--test`**，
+# 不需要 `npm install`、不需要构建步骤。
+#
+# 但在补本文件之前，`.github/workflows/` 里**没有任何一条腿碰过这个目录**
+# （`grep -rn 'worker-h5' .github/` = 0 命中；前端腿 `admin-web-test` / `deploy-frontend`
+# / `demo-evidence` 都只认 `frontend/admin-web/**`）⇒ 那 29 条测试**只在本地跑**，
+# 在 CI 里是**死文件**：改坏了没有任何东西会红。
+# 这正是本仓最忌的形态 ——「CI 不覆盖 ≠ 已覆盖」（#4765 的包明确写了
+# 「不得说成『CI 已覆盖本页面』」）。
+#
+# ── 为什么是**新文件**，而不是往 pr-check.yml 的 admin-web-test job 里加一步 ──
+#   · `admin-web-test` 的 `npm ci` + `tsc` + `eslint` + `vitest` 是 admin-web 专属的重活
+#     （实测数分钟），本腿是**秒级零依赖**；混在一起会让「秒级腿」被「分钟级腿」的
+#     失败/超时掩埋（诊断信号丢失）。
+#   · 独立 workflow = 独立 check 名 ⇒ 可独立观测、将来可独立提升为 required。
+#   · 独立 `paths:` 过滤 ⇒ **pr-check.yml 的既有触发面一个字节都没动**，本 PR 的
+#     「改坏全流水线」风险面因此为 0（`frontend/admin-web/**` 的既有过滤更不可能被弄坏）。
+#
+# ── 触发面（`paths:` 只含本目录 + 本 workflow 自身）──
+#   · `frontend/worker-h5/**` —— 被测对象。
+#   · 本 workflow 自身 —— 否则「只改这条腿」的 PR 不会触发它 ⇒ 改坏了没有证据。
+#   ⚠️ 路径过滤同时解决「历史分支 / 该目录不存在时不许红」：目录不存在的 ref 上
+#      不可能有 PR 命中 `frontend/worker-h5/**` ⇒ 本 workflow 根本不触发 ⇒ 天然不会红。
+#      另有一层显式存在性判断兜底（`workflow_dispatch` 可在任意 ref 上手动跑）：见
+#      `Verify test files exist` 步 —— 「没跑」必须长得像「没跑」，不能长得像「通过」。
+#
+# ⚠️ 防回退锁：`tests/unit_ci_workflows/test_worker_h5_ci_wiring.py`
+#    （删掉 `node --test` 步 / 去掉 paths / 加 `continue-on-error` ⇒ 必红）。
+
+# ── ⚠️ 与仓库既有 CI 纪律的关系（`docs/wiki/CI-CD.md`「变更门控」）──────────────
+# 该纪律写着「**不要改回 workflow 级 `paths` 过滤** —— required check 会卡在 "Waiting"
+# 永不报告」，并给它留了一个例外：**信息性（非 required）check** 可以用 workflow 级
+# `paths`（先例 = `agent-behavior-eval.yml` 只门控零 LLM 的映射 job，#3653/#4034）。
+# 本腿**正是那个例外**：它是**非 required 的信息性 check**（新 check 名，未进分支保护的
+# required 集合）⇒ 不会出现「required check 悬空永不报告」。
+#
+# 🔴 **提升为 required 的前置条件（硬约束，不是建议）**：
+# 若将来要把本 check 提升为 required，**必须先删掉下面 workflow 级的 `paths:`**，
+# 改成仓库既有的 **job 内 diff 门控**（`git diff --name-only origin/main...HEAD` +
+# `GITHUB_OUTPUT`，见 pr-check.yml 的 `Detect admin-web changes` 步）——
+# 否则 required check 会在不命中 paths 的 PR 上**卡在 "Waiting" 永不报告**，
+# 形态 =「没有任何检查会变红，但 PR 合不了」（本仓 #4231 同族）。
+# **先改门控，再改分支保护。**
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/worker-h5/**'
+      - '.github/workflows/worker-h5-tests.yml'
+  workflow_dispatch:
+
+# 同 PR 新 push 取消旧 run（与 pr-check.yml 同一队列治理口径）
+concurrency:
+  group: worker-h5-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# 最小权限：本腿只读仓库、不评论、不建 issue、不碰 secrets
+permissions:
+  contents: read
+
+jobs:
+  worker-h5-test:
+    name: worker-h5 unit tests (node --test)
+    runs-on: ubuntu-latest
+    # 实测：29 条测试本地 ~0.2s（node 20 / node 24 均 29 pass）；超时只用于兜住
+    # runner 排队与慢启动，不用于掩盖真实失败。
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      # 与 admin-web-test 同一 Node 主版本（'20'）—— 不引入第二个 Node 口径。
+      # 已在 Node 20.20.2 上实跑验证（29 pass / 0 fail）。
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
+      # 「该目录不存在时不许红」的显式兜底（不只依赖 paths 过滤）：
+      #   `workflow_dispatch` 可以在任意 ref 上手动跑，而历史 ref 上该目录可能不存在；
+      #   bash 的 glob 不匹配时会把字面量 `*.test.mjs` 原样交给 node ⇒ node 以非零退出
+      #   ⇒ 一条**与被测代码无关的红**。故先判存在性。
+      # 反向也判：目录在但一个测试都没有 ⇒ 这是「测试被清空」的死文件形态，必须红
+      #   （绿着空跑 = 假绿，比不装这条腿更坏）。
+      - name: Verify test files exist
+        id: detect
+        run: |
+          if [ ! -d frontend/worker-h5/tests ]; then
+            echo "⏭️ frontend/worker-h5/tests/ 不存在（历史 ref / 目录被移除）—— 本腿**未跑**"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          shopt -s nullglob
+          files=(frontend/worker-h5/tests/*.test.mjs)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::frontend/worker-h5/tests/ 存在但没有任何 *.test.mjs —— 测试被清空（死文件形态），阻塞"
+            exit 1
+          fi
+          echo "✅ 发现 ${#files[@]} 个测试文件：${files[*]}"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+
+      # 🔴 零 install、零构建：worker-h5 是纯 ES module + Node 内置 test runner。
+      #    改这里的命令前先看 tests/unit_ci_workflows/test_worker_h5_ci_wiring.py。
+      - name: Run worker-h5 unit tests (node --test)
+        if: steps.detect.outputs.found == 'true'
+        run: node --test frontend/worker-h5/tests/*.test.mjs
