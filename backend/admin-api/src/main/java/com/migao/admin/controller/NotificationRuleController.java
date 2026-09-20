@@ -5,6 +5,7 @@ import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.NotificationRuleDTO;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.SaveNotificationRuleRequest;
+import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.NotificationRuleService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,10 +20,16 @@ import org.springframework.web.bind.annotation.*;
  * - POST   /api/admin/notification-rules            → 创建租户规则
  * - PUT    /api/admin/notification-rules/{id}        → 更新租户规则
  * - DELETE /api/admin/notification-rules/{id}        → 删除租户规则（系统规则禁止）
+ *
+ * <p><b>权限（issue #4727 权限注解面审计）</b>：本控制器此前**无任何 {@code @RequirePermission}**，
+ * 而 {@code /api/admin/**} 对非 customer/agent 角色一律放行进入 ⇒ 最低权限员工可读写租户级通知规则。
+ * 补类级 {@code system:manage}（与「租户设置」同族：本面是租户级配置，不是自助数据）。
+ * 实测调用方：前端 {@code frontend/} 与 ai-agent 均**零调用**（仅单测命中）⇒ 加注解零回归。</p>
  */
 @Slf4j
 @RestController
 @RequestMapping("/api/admin/notification-rules")
+@RequirePermission("system:manage")
 @RequiredArgsConstructor
 public class NotificationRuleController {
 

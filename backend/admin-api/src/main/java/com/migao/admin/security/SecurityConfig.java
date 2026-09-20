@@ -33,6 +33,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Spring Security 配置类
@@ -48,6 +49,22 @@ public class SecurityConfig {
     private final UserDetailsService userDetailsService;
     /** 403 响应体序列化（与 @RequirePermission 拒绝同一份措辞，issue #4105 F1）。 */
     private final ObjectMapper objectMapper;
+
+    /**
+     * {@code /api/admin/**} **一律拒绝**的角色码集合（issue #4727 权限注解面审计）。
+     *
+     * <p>C 端顾客 / C 端坐席（customer / agent）自 #4105 起在门禁处拒绝。**工人端身份（worker）**
+     * 由 #4716 工人端 H5 设计的冲突登记 C11 追加进同一集合：工人**不得**借既有
+     * {@code /api/admin/**} 路径拿到商家能力（用户红线「不许给工人商家权限」）。
+     * 工人端落码时走独立路径 {@code /api/worker/**}（不匹配 {@code /api/admin/**} ⇒ 落到
+     * {@code anyRequest().authenticated()}），本集合只做「误用既有路径」的兜底闸。</p>
+     *
+     * <p>⚠️ 与 {@code RoleService} 的岗位码是**开放集合**（「岗位权限」页可创建任意岗位码）
+     * 存在一个已知的碰撞面：若某租户自建了 code 恰为 {@code worker} 的岗位，其员工会被本集合
+     * 拒绝进入管理后台。当前全仓无 {@code worker} 岗位种子（见 #4727 审计表「残余风险」），
+     * 属有意取舍 —— 工人端落地后 {@code worker} 是**保留码**，租户不应再自建同名岗位。</p>
+     */
+    private static final Set<String> ADMIN_API_REJECTED_ROLES = Set.of("customer", "agent", "worker");
 
     /**
      * CORS 允许的域名列表（从 .env / 环境变量注入，支持 Spring 属性解析）
@@ -145,7 +162,8 @@ public class SecurityConfig {
                         ).permitAll()
                         // 管理后台接口：允许平台管理员(ADMIN/SUPER_ADMIN)、内部服务(SERVICE)
                         // 以及商户员工角色（operator/product_manager/知识编辑/角色管理创建的自定义角色等）
-                        // 访问；小程序/B2C 用户（customer/agent）一律禁止（垂直越权防护）。
+                        // 访问；小程序/B2C 用户（customer/agent）与工人端身份（worker）一律禁止
+                        // （垂直越权防护，拒绝集合见 ADMIN_API_REJECTED_ROLES）。
                         // 细粒度权限由 @RequirePermission + PermissionInterceptor 在业务层校验。
                         .requestMatchers("/api/admin/**")
                         .access(adminApiAuthorizationManager())
@@ -194,7 +212,9 @@ public class SecurityConfig {
      * <p>角色口径：
      * <ul>
      *   <li>平台管理员（admin/super_admin）与内部服务（service）：直接放行；</li>
-     *   <li>小程序/B2C 用户角色（customer/agent）：一律拒绝（垂直越权防护，不回归）；</li>
+     *   <li>拒绝集合 {@link #ADMIN_API_REJECTED_ROLES}（小程序/B2C 用户 customer/agent +
+     *       <b>工人端身份 worker</b>）：一律拒绝（垂直越权防护，不回归；worker 为 issue #4727
+     *       按 #4716 设计 C11 预留，见该常量 javadoc）；</li>
      *   <li>其余角色视为商户员工角色（含角色管理创建的自定义角色）：允许进入管理后台，
      *       具体接口能否访问由 {@code @RequirePermission} + {@link PermissionInterceptor} 按权限码细粒度校验。</li>
      * </ul>
@@ -223,8 +243,8 @@ public class SecurityConfig {
                 if ("admin".equals(role) || "super_admin".equals(role) || "service".equals(role)) {
                     return new AuthorizationDecision(true);
                 }
-                // 小程序/B2C 用户：拒绝（垂直越权防护）
-                if ("customer".equals(role) || "agent".equals(role)) {
+                // 拒绝集合：C 端顾客/坐席 + 工人端身份（垂直越权防护）
+                if (ADMIN_API_REJECTED_ROLES.contains(role)) {
                     return new AuthorizationDecision(false);
                 }
                 hasRole = true;
