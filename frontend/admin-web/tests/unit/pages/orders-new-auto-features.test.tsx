@@ -245,6 +245,98 @@ describe('#4877 门幅规则接线（裁定 C：规则驱动默认选中 + 非�
   })
 })
 
+/**
+ * 选商品（**给定 SKU 明细**：可含「同门幅多售卖方式」与库存）→ 选颜色（不点门幅，交给规则）→
+ * 填宽高（传 `null` ⇒ **不填**，用于「尺寸未填」形态）。
+ */
+async function setupLineWithSkus(opts: {
+  skus: Array<{ doorWidth: string; sellingMethod?: string; stock?: number; price?: number }>
+  width?: string | null
+  height?: string | null
+}): Promise<void> {
+  const { skus, width = '3.0', height = '2.4' } = opts
+  mockGetProducts.mockResolvedValue({
+    data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
+  })
+  mockGetProduct.mockResolvedValue({
+    data: {
+      data: {
+        id: 'p1',
+        name: '遮光窗帘',
+        price: 100,
+        skus: skus.map((s, i) => ({
+          id: `sku${i}`,
+          colorId: 'c1',
+          colorName: '米白',
+          doorWidth: s.doorWidth,
+          price: s.price ?? 100,
+          sellingMethod: s.sellingMethod ?? 'bulk_cut',
+          stock: s.stock ?? 10,
+        })),
+      },
+    },
+  })
+  render(<NewOrderPage />)
+  fireEvent.click(await screen.findByText('点击搜索并选择商品'))
+  fireEvent.click(await screen.findByText('遮光窗帘'))
+  await screen.findByText('宽 (米)')
+  fireEvent.click(await screen.findByRole('button', { name: '米白' }))
+  openStep('尺寸与数量')
+  if (width !== null) fireEvent.change(inputOf('宽 (米)'), { target: { value: width } })
+  if (height !== null) fireEvent.change(inputOf('高 (米)'), { target: { value: height } })
+}
+
+describe('#4899 反选门幅：**自动选中会被规则重算**、手选不被覆盖、判不了要显式说明', () => {
+  // 红证（改前实测）：`autoSelectSkuByRuleForGroup` 里 `if (sample.selectedSku) return` ——
+  // **自动选中的 SKU 也算「已选」** ⇒ 尺寸再变、规则解变了也不重算 ⇒ 页面停在旧门幅上
+  // （用户 2026-09-21 人工验证：「无法通过工艺&加工项选配反选最优的门幅SKU」）。
+  it('自动选中后改尺寸 ⇒ **自动改选**新的最优门幅（改前停在旧门幅 ⇒ 红）', async () => {
+    await setupLineWithSkus({ skus: [{ doorWidth: '2.8米' }, { doorWidth: '3.2米' }], height: '2.4' })
+    // 2.4 + 0.3 = 2.7 ≤ 2.8 ⇒ 规则解 = 2.8（自动选中）⇒ 无告警
+    expect(screen.queryByTestId('door-width-needs-splice')).toBeNull()
+
+    // 改成 2.75 ⇒ 2.8 不可行、3.2 可行 ⇒ **应自动改选 3.2**（停在 2.8 会报「需接高」⇒ 红）
+    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.75' } })
+    await waitFor(() => expect(screen.queryByTestId('door-width-needs-splice')).toBeNull())
+    // 3.2 生效的旁证：2.75 + 0.3 = 3.05 ≤ 3.2 ⇒ 「超高」也随之消失
+    expect(screen.queryByTestId('size-auto-badge-超高')).toBeNull()
+  })
+
+  // 回归护栏（**不是**红证条）：客服手选过 ⇒ 规则**不覆盖**，只提示可换最优。
+  it('客服**手选**过 ⇒ 规则不覆盖（改尺寸后仍保持手选 + 只给提示）', async () => {
+    await setupLineWithSkus({ skus: [{ doorWidth: '2.8米' }, { doorWidth: '3.2米' }], height: '2.4' })
+    fireEvent.click(await screen.findByText('3.2米')) // 手选（非规则解）
+    openStep('尺寸与数量')
+    expect(await screen.findByTestId('door-width-suboptimal')).toBeInTheDocument()
+
+    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.5' } }) // 规则解仍是 2.8
+    await waitFor(() => expect(screen.getByTestId('door-width-suboptimal')).toBeInTheDocument())
+  })
+
+  // 红证（改前实测）：最优门幅下有**多个 SKU**（散剪/整卷）时 `pickAutoSkuForColor` 返回 null
+  // ⇒ 什么都不选 ⇒ 界面显示「门幅未维护」（**误导**：不是没维护，是没选到）。
+  it('同一最优门幅下有多个 SKU（散剪/整卷）⇒ 也要选出一个默认（有库存优先）', async () => {
+    await setupLineWithSkus({
+      skus: [
+        { doorWidth: '2.8米', sellingMethod: 'bulk_cut', stock: 5 },
+        { doorWidth: '2.8米', sellingMethod: 'full_roll', stock: 0 },
+      ],
+      height: '2.4',
+    })
+    openStep('尺寸与数量')
+    // 已经选中了一个 SKU ⇒ 不该出现「未维护门幅」的误导徽标
+    expect(screen.queryByTestId('size-door-width-missing')).toBeNull()
+  })
+
+  // 红证（改前实测）：尺寸未填 ⇒ 规则 `undecidable`，页面**静默什么都不做**（用户看到「选不了门幅」）。
+  it('尺寸未填 ⇒ **显式说明**「填完成品宽高后自动选最优门幅」（静默 ⇒ 红）', async () => {
+    await setupLineWithSkus({ skus: [{ doorWidth: '2.8米' }, { doorWidth: '3.2米' }], width: null, height: null })
+    openStep('尺寸与数量')
+    const hint = await screen.findByTestId('door-width-need-size')
+    expect(hint.textContent).toContain('自动选最优门幅')
+  })
+})
+
 /** 填客户信息 → 提交 → 取**落库**的组合键加项（`processingInfo.processingItems[].name`） */
 async function submitAndGetProcessingNames(): Promise<string[]> {
   fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
@@ -339,14 +431,26 @@ describe('#4658：系统识别块在②工艺规格（不在③加工项）+ 逐
   // 🔴 issue #4877 改判：**缺省门幅已删除** —— 未维护门幅不再「按 2.8 推算」，而是**不判** + 显式告知。
   // 红证（改前实测）：本用例改前断言 `size-door-width-fallback` / `door-width-fallback`
   // （文案「按默认 2.8 米推算」）—— 那正是本单要替换掉的错误做法。
-  it('#4877 SKU 未维护门幅 ⇒ **不判**：显式告知 + 徽标，且**不再有**「按默认门幅推算」', async () => {
-    await setupLine() // 无 doorWidth = SKU 未维护门幅
+  it('#4877 SKU 未维护门幅 ⇒ **不判**：显式告知 + 徽标（**须先选中一个 SKU**）', async () => {
+    // issue #4899 更正：`setupLine()` **不点颜色** ⇒ 根本没有选中的 SKU —— 那是「未选规格」，
+    // **不是**「门幅未维护」（旧断言把两者混成同一个徽标 = 误导）。门幅不可解析要走「已选中但解析不到」。
+    await setupLine({ doorWidth: '加宽' })
     expect(screen.getByTestId('size-door-width-missing')).toBeInTheDocument()
     openStep('尺寸与数量')
     expect(screen.getByTestId('door-width-missing')).toBeInTheDocument()
     expect(screen.queryByTestId('door-width-fallback')).toBeNull()
     // 不判 ⇒ 一条识别特征都没有（旧行为会按缺省门幅推出「超高」）
     expect(within(screen.getByTestId('auto-detected-features')).queryByText('超高')).toBeNull()
+  })
+
+  // 红证（issue #4899，改前实测）：改前 `doorWidthMissing = selectedDoorWidth === null` ⇒
+  // **没选 SKU** 也会被标成「门幅未维护」并给「该 SKU 未维护门幅」的告知 ⇒ 本次必红。
+  it('#4899 未选规格 ⇒ **不谎报**「门幅未维护」（那是「未选规格」，另有提交闸门）', async () => {
+    await setupLine() // 不点颜色 ⇒ 没有选中的 SKU
+    expect(screen.queryByTestId('size-door-width-missing')).toBeNull()
+    openStep('尺寸与数量')
+    expect(screen.queryByTestId('door-width-missing')).toBeNull()
+    expect(screen.queryByTestId('auto-feature-notice-missing-door-width')).toBeNull()
   })
 
   it('#4877 SKU 真的给了门幅 ⇒ **不谎报**成「未维护」（反向护栏）', async () => {
