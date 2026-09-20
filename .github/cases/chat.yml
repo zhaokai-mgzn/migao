@@ -89,6 +89,38 @@ cases:
       - tool: product_manage
       # 第二句含「订单」触发词 → 允许切换出 pending 创建流程
       - tool: order_query
+    # 效果层断言（issue #4517 的 burn-down 缴费；门禁 a2 条 / #3778「调用了 ≠ 成了」）：
+    # R2 的核心诉求是「**真的**把今天的订单查出来」，裸工具名期望只证明「被调用过」⇒
+    # 补 `must_succeed[order_query]` 读 tool_result.success（查询失败时判红，不再与
+    # 「查了但没查成」同形）。只增不减：expectations / forbidden_tools / data_checks 原样未动。
+    must_succeed:
+      - tool: order_query
+    # 全局命名空间声明（issue #3781 同款）：本用例与同样争用「名含『测试』的商品」的用例
+    # 自动互斥 —— 并行的建品用例造出同名商品会污染本用例「不该存在」的判据。
+    namespaces:
+      - "product_name:测试"
+    # 清理型前置（清理族 + 目标 = 本用例自己声明的资源 ⇒ 「不在种子里」是良性 no-op）：
+    # 上一轮**跑坏**（agent 真发了 create）留下的「测试」商品会让下面的基线不为 0 ⇒
+    # 先复位再评，保证重试前置与首跑等价（同 HR-002 的 `employee_remove` 口径）。
+    pre_clean:
+      - type: product_remove
+        product_keyword: "测试"
+    # 运行期前置断言（issue #4517 的 burn-down 缴费；口径与先例 HR-002 / PR-008 / CH-005 同构）：
+    # 本用例的意义是「没有创建」⇒ 名含「测试」的商品必须**基线为 0**（`expect: 0`）。
+    # `expect: 0` 同时把靶子存在性下界降为 0（`precondition_lower_bound` 规则②：创建类用例
+    # 不得套用类型缺省的 1，否则「自建成功 0→1」会被判成「靶子消失」，把 agent 失败伪装成
+    # 前置失败 —— 归因污染比原缺口更坏）。
+    # ⚠️ **`max_growth: 1` 不是放宽、是归因正确**：本用例已声明 `namespaces[product_name:测试]`
+    # ⇒ 命中 `SELF-TARGET-NO-MAX-GROWTH` 的前提（「声明的自建名」），该规则要求 `max_growth ≥ 1`
+    # （缺省 0 ⇒ 正常行为下 `0 → 1 > 0` 恒判漂移、score 归零；实证 PR-008 / PR-016 判定跑
+    # 35295494688）。语义上：**万一** agent 真发了 create，正确的判红通道是 `forbidden_tools`
+    # （跨轮、action 限定），**不该**同时/替代性地报成「前置漂移」—— 容差 1 只容忍那一个，
+    # 并行用例再造同名（`0 → 2`）仍判漂移。
+    precondition:
+      - type: product_count_for_keyword
+        source: "测试"
+        expect: 0
+        max_growth: 1
     # 用户中途说「算了，不创建了」→ **全程**不得发创建写调用（#3544 收口批）：
     # 原先写在 data_checks 的「product_manage(action=create) 未被调用」是假绿 ——
     # 「未被调用」的计分语义是**本轮**没调用 + 计分循环「任一轮满足即过」⇒ 2 轮用例恒真
@@ -99,7 +131,7 @@ cases:
     data_checks:
       - "切换由『订单』域触发词命中，而非字符数"
     skip_reason: ""
-    merge_log: "eval M004 + verification 8.2（原用例「长度>10」与代码不符，已按 ai-chat.escape-hatch 校准）。2026-09-14 校准（#3544 收口批）：data_checks 里恒真的「product_manage(action=create) 未被调用」升级为 forbidden_tools（action 限定，跨轮全程禁用）"
+    merge_log: "eval M004 + verification 8.2（原用例「长度>10」与代码不符，已按 ai-chat.escape-hatch 校准）。2026-09-14 校准（#3544 收口批）：data_checks 里恒真的「product_manage(action=create) 未被调用」升级为 forbidden_tools（action 限定，跨轮全程禁用）。2026-09-21（issue #4946 的 burn-down 缴费 —— 本 PR 改了 `cases/*.yml` ⇒ 每 PR 至少净缩 1 条存量违规，metric=entries ⇒ 必须**整条销账**）：本用例命中的三条存量违规（CASE-TRUST-NO-EFFECT-ASSERTION / NO-SELF-CLEAN / NO-PRECONDITION-ASSERTION）逐条修掉 —— ① 补 `must_succeed[order_query]` 效果层断言（R2 的诉求是「真的查出来」，裸工具名只证明「调用了」）；② 补 `namespaces[product_name:测试]` + `pre_clean[product_remove:测试]`（并行同名建品用例会污染判据；跑坏留下的同名商品会让基线不为 0 ⇒ 先复位再评，重试前置与首跑等价）；③ 补 `precondition[product_count_for_keyword:测试, expect:0, max_growth:0]`（本用例的意义就是「没有创建」⇒ 基线 0 + 整轮不增长；`expect:0` 依 `precondition_lower_bound` 规则②把存在性下界降为 0）。user_inputs / expectations / forbidden_tools / data_checks / traces 原样未动、无放宽。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_advanced.py"

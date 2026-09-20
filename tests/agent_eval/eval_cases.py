@@ -886,6 +886,10 @@ _CASE_CH_002 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_tools=[{'tool': 'product_manage', 'action': 'create'}],
+    must_succeed=[{'tool': 'order_query'}],
+    pre_clean=[{'type': 'product_remove', 'product_keyword': '测试'}],
+    namespaces=['product_name:测试'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '测试', 'expect': 0, 'max_growth': 1}],
 )
 
 # ── CH-003 [NORMAL] 模糊意图引导 - 不猜测，澄清卡或文本列选项（低学历点选友好）（源: cases/chat.yml）──

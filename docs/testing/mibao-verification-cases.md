@@ -544,10 +544,12 @@
 期望: product_manage
 期望: order_query
 数据: 切换由『订单』域触发词命中，而非字符数
+清理: product_remove(product_keyword=测试)
 全程禁用: product_manage(create)
+必须成功: order_query
 ```
 真值: ai-chat.escape-hatch
-溯源: eval M004 + verification 8.2（原用例「长度>10」与代码不符，已按 ai-chat.escape-hatch 校准）。2026-09-14 校准（#3544 收口批）：data_checks 里恒真的「product_manage(action=create) 未被调用」升级为 forbidden_tools（action 限定，跨轮全程禁用） ｜ tags: multi_turn, cancel, user_abort
+溯源: eval M004 + verification 8.2（原用例「长度>10」与代码不符，已按 ai-chat.escape-hatch 校准）。2026-09-14 校准（#3544 收口批）：data_checks 里恒真的「product_manage(action=create) 未被调用」升级为 forbidden_tools（action 限定，跨轮全程禁用）。2026-09-21（issue #4946 的 burn-down 缴费 —— 本 PR 改了 `cases/*.yml` ⇒ 每 PR 至少净缩 1 条存量违规，metric=entries ⇒ 必须**整条销账**）：本用例命中的三条存量违规（CASE-TRUST-NO-EFFECT-ASSERTION / NO-SELF-CLEAN / NO-PRECONDITION-ASSERTION）逐条修掉 —— ① 补 `must_succeed[order_query]` 效果层断言（R2 的诉求是「真的查出来」，裸工具名只证明「调用了」）；② 补 `namespaces[product_name:测试]` + `pre_clean[product_remove:测试]`（并行同名建品用例会污染判据；跑坏留下的同名商品会让基线不为 0 ⇒ 先复位再评，重试前置与首跑等价）；③ 补 `precondition[product_count_for_keyword:测试, expect:0, max_growth:0]`（本用例的意义就是「没有创建」⇒ 基线 0 + 整轮不增长；`expect:0` 依 `precondition_lower_bound` 规则②把存在性下界降为 0）。user_inputs / expectations / forbidden_tools / data_checks / traces 原样未动、无放宽。 ｜ tags: multi_turn, cancel, user_abort
 
 ### CH-003. 模糊意图引导 - 不猜测，澄清卡或文本列选项（低学历点选友好） 🔵
 ```
