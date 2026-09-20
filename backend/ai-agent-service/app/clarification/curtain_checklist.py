@@ -72,6 +72,14 @@ CHECKLIST_TO_CRAFT_SPEC: Dict[str, str] = {
     "formula": "formula",
     "has_pattern": "hasPattern",
     "window_type": "corner",
+    # 房间名（issue #4390 缺口④ 的残留）：清单里 `room` 是 **`required: True`** 的问项
+    # （note 原话「逐扇窗；房间名用户自定义（北次卧）」）⇒ **每单必问**；而本表此前**没收它**
+    # ⇒ 答案收进 collector 后**零消费者**、会话结束即丢 —— 这正是本映射表要消灭的
+    # 「问到了却不落库」形态。
+    # 为什么确定是**遗漏**而非有意排除：同文件对 `cutting_mode` 的排除**写了理由**，此处一字皆无；
+    # 且 admin-api 的 `ProcessingOrderService.CRAFT_SPEC_SNAPSHOT_KEYS` **白名单里有 `"room"`**
+    # （其 javadoc 明写「新键不加进这里就不会进快照」）⇒ 后端**已承诺**接这个键，是写侧没送。
+    "room": "room",
 }
 
 # 算料输出键：**引擎是真值源**，清单只做透传（键名已是 `CALC_INFO_KEYS` 口径，不改名）。
