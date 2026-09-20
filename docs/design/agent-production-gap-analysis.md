@@ -445,12 +445,27 @@ load_cases_from_yaml 直读），且 inline dict 语法受 yaml_light 解析器�
 
 ### Prompt 体系评估（实证）
 基础层（identity + principles + PROMPT-rules）质量高（实战打磨、引用实拍 session）。
-**领域层严重不均衡**：product.md 53 行（建品稳定通过）vs staff.md 20 行 / customer.md
-21 行（HR-005/CU-003 反复失败）。薄领域的 agent 行为靠 LLM 泛化、发散，最终依赖 5 个
+**领域层严重不均衡**（**行数现取、本节不写死**；原写 ~~product.md 53 行 … staff.md 20 行 / customer.md 21 行~~ = **当时基线读数**，见下方「口径订正」注）：product.md ~~53 行~~（建品稳定通过）vs staff.md ~~20 行~~ / customer.md
+~~21 行~~（HR-005/CU-003 反复失败）。薄领域的 agent 行为靠 LLM 泛化、发散，最终依赖 5 个
 基建 PR 才闭环——领域 prompt 补齐能减少对基建补丁依赖（上限提升）。
 
+> 🔴 **口径订正（issue #4751，2026-09-20）**：本段原写「product.md **53** 行 / staff.md **20** 行 /
+> customer.md **21** 行」。**① 当时基线**：= **53 / 20 / 21**（原措辞保留在上一段的删除线里）。
+> **② 后来变了**：下方「落地」节自己就记着 `staff.md 20→40`、`customer.md 21→46`（Round 33）
+> ⇒ **同一份文档里自相矛盾**：本段是**补齐前**的读数，落地节是**补齐后**的读数，两处被当成同一时点读。
+> **③ 故改为 Z**：**不写死**，改为**现取 + 复算命令**，并**理顺文内矛盾**（本段口径 = 「当时基线」，
+> 落地节口径 = 「该单补齐后」；两者**不是同一时点**，勿混读）：
+>
+> ```bash
+> wc -l backend/ai-agent-service/app/graph/skills/references/prompts/{product,staff,customer}.md
+> ```
+>
+> ⚠️ 该命令给的是**当次**行数（实测：product.md **59** / staff.md **45** / customer.md **53**）
+> —— 与「当时基线」（53/20/21）和「落地节补齐后」（40/46）**三个时点都不同**，说明行数**会随迭代漂移**
+> ⇒ 引用时一律**现取**，别把任一读数当现状。
+
 ### 落地
-1. **#3166 staff.md 补齐**（20→40 行）：创建角色 6 步流程（list_permissions 查权限 →
+1. **#3166 staff.md 补齐**（~~20→40 行~~ ⇒ **该单落地时的读数，勿当现状**；现行数用上面 Round 32 的 `wc -l` 命令现取）：创建角色 6 步流程（list_permissions 查权限 →
    查重名 → 权限映射（无独立「库存」权限）→ 收集 name/code → validate_input → confirm
    卡 → create）+ EXAMPLES 补角色创建/重名示例。快照上限 4900→8000。
 2. **#3167 admin-api createRole 契约 bug**：探针实拍——角色逻辑删除（deleted=1）后，
@@ -470,7 +485,7 @@ load_cases_from_yaml 直读），且 inline dict 语法受 yaml_light 解析器�
 
 staff 补齐（#3166）验证有效后，同款处理 customer：
 
-- **#3169 customer.md（21→46 行）**：打标签 6 步流程（查客户 → 重名 choice 卡
+- **#3169 customer.md（~~21→46 行~~ ⇒ **该单落地时的读数，勿当现状**；现行数用 Round 32 的 `wc -l` 命令现取）**：打标签 6 步流程（查客户 → 重名 choice 卡
   （value 必须真实 customer_id，防自造代码）→ 查标签 → **幂等保护**（已有标签
   不盲目重复 add_tag）→ validate_input → confirm 卡 → add_tag）+ 更新客户流程
   + 领域规则（真实 UUID、隐私、写操作确认链）+ EXAMPLES 补打标签/幂等示例。
