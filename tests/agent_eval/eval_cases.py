@@ -175,6 +175,9 @@ _CASE_AS_006 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'after_sales_manage'}],
+    pre_clean=[{'type': 'aftersales_ticket_prepare'}],
+    precondition=[{'type': 'aftersales_ticket_count_for_ticket_no', 'source': 'AS-20260701-0002', 'expect': 1}],
 )
 
 # ── AS-007 [NORMAL] 换货选目标商品后必须确认加工项（before 生成换货工单确认卡）（源: cases/aftersales.yml）──

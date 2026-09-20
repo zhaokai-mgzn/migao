@@ -76,10 +76,12 @@
 期望: after_sales_manage(action=update_status, status=resolved)
 数据: refund/return 工单 resolved 时：订单全部商品 allow_return_restock=true 才恢复 SKU 库存；任一商品为 false 则整单不回补（窗帘定制退货不可再售）
 数据: allow_return_restock 默认 false；米宝不得在售后完成后默认引导恢复库存/重新上架
+清理: aftersales_ticket_prepare
+必须成功: after_sales_manage
 跳过: 依赖生产不存在的固定测试工单 AS-20260701-0002（评测数据脱节）——回补库存逻辑已由 admin-api 单测覆盖（AfterSalesTicketServiceTest），LLM 行为待重构为自包含（先建工单再完结）
 ```
 真值: aftersales-flow.return-restock-switch
-溯源: issue #2991 新增：售后完结库存联动按商品开关收敛，窗帘行业定制退货不可再售 ｜ tags: update, status, cross_skill
+溯源: issue #2991 新增：售后完结库存联动按商品开关收敛，窗帘行业定制退货不可再售 ｜ 2026-09-21（issue #4947 的 case-trust burn-down 缴费）：补 **`precondition[aftersales_ticket_count_for_ticket_no: AS-20260701-0002, expect: 1]`**（真前置 = 点名工单存在，否则「完结」没有对象、红的表现像「米宝不会完结工单」）+ **`pre_clean[aftersales_ticket_prepare]`**（重试前置等价性，同 AS-004）+ **`must_succeed[after_sales_manage]`**（效果层：「调用了 ≠ 成了」，#3778）—— 三格**全部复用既有已登记类型**，不新增 type、不改探针；`user_inputs` / `expectations` / `data_checks` / `skip_reason` / `traces` **一字未动、无放宽**。本条 `skip_reason` 非空 ⇒ 三格当前不进运行期（先例：OR-006 那类 skip 用例）。 ｜ tags: update, status, cross_skill
 
 ### AS-007. 换货选目标商品后必须确认加工项（before 生成换货工单确认卡） 🔵
 ```
