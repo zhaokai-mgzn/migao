@@ -51,6 +51,8 @@ import type {
   RoutingUpdateParams,
   OperationPosition,
   OperationPositionUpdateParams,
+  OperationLayerDeliveryRow,
+  OperationLayers,
   RouteRule,
   RouteRuleCustomerPriceParams,
   RouteRuleCreateParams,
@@ -528,6 +530,13 @@ export const productionApi = {
   // issue #4588（契约 #4587 ①）：每行多出 `id`（写面寻址）+ 6 个变体元数据键（逻辑名↔变体名映射）。
   getOperationPositions: () =>
     request.get<ApiResponse<OperationPosition[]>>('/api/admin/production/operation-positions'),
+  // ①-0 **两层分区**读面（issue #4677 = 设计 §4.1/§4.2；后端 #4676 已合并 `6908122bb`）：
+  // 按**既有** `scope` 分区 —— `scope='set'` ⇒ `delivery`（打包发货：打包 / 外帘打卷 / 外帘装袋 /
+  // 外帘发货，**一列价**）；其余（`'position'` 或 `null`）⇒ `operations`（工序，按部位三列）。
+  // ⚠️ 「一列价」是**服务端聚合的显式规则**（不静默取第一个、不回落工序库行价）⇒ 前端**不重算**：
+  // 在 TS 侧再写一份聚合 = 第二份会漂的口径。
+  getOperationLayers: () =>
+    request.get<ApiResponse<OperationLayers>>('/api/admin/production/operation-layers'),
   // ①-b 矩阵格**写面**（issue #4588；契约 #4587 ②；权限 processing:manage）：
   // **部分更新** ⇒ body 只带变了的键（`{unit_price}` 或 `{applicable}`）；
   // `applicable=false` ⇒ 后端把价强制落 NULL；`unit_price=null` = 改回**未定价**（≠ 0 元）；
