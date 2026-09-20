@@ -24,7 +24,7 @@
 设计 §5.2 ⑤ 的谓词是 `position='布料' AND logical_name <> '裁剪'`、F6 写「实际退场 **35 格**」
 （= V79 的 36 格 − 1 保命格）。这与**同一份设计**的 ⑦「`打包` 4 格**不动**」**不能同时成立**：
 36 − 1 = 35 **含** `打包 × 布料` 一格，而删掉它会让布料单在 `buildRoute` 里查不到 `打包` 的键
-（`ProcessingOrderService.java:1242` 的静默 `continue`）⇒ **布料单只剩 `裁剪` 一道**
+（`ProcessingOrderService.buildRoute` 的 `applicable == null ⇒ continue`；**不写裸行号** —— 见 `migao-dev-flow` §16.7 引用纪律）⇒ **布料单只剩 `裁剪` 一道**
 ⇒ 直接触发本单自己的 **S1**。⇒ 以 ⑦ + S1 + F1 为准：退场 **31** 格（36 − 1 − 4），保留 **5** 格。
 本文件把这条算术**逐格断言**（`test_⑤_retires_31_cells_not_35`），红证见 `TestInjectedDrift`。
 
