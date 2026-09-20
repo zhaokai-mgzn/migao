@@ -6,10 +6,12 @@
 // （错了就把进度/钱记到错的套/错的人头上）。判据放在纯函数里 ⇒ 可被 `node --test` 直接钉住，
 // 不需要 DOM、不需要浏览器（最少代码阶梯：原生特性优先，不引 jsdom/happy-dom）。
 //
-// 🔴 三条硬约束（每条都有对应断言）：
+// 🔴 四条硬约束（每条都有对应断言）：
 //   ① 旧码（`granularity:"order"`）⇒ **进 select 态，绝不默认取第 1 套**；
 //   ② 工序未确定（`operation == null`）⇒ **不得出现报工按钮**（防呆⑤）；
-//   ③ 未登录（`worker == null`）⇒ **不得出现报工按钮**（未登录不能报工）。
+//   ③ 未登录（`worker == null`）⇒ **不得出现报工按钮**（未登录不能报工）；
+//   ④ 报工回执（`scan/complete`）⇒ 屏上只认回执给的「下一道 / 本套已完成」（#4792），
+//      前端**不**自己猜下一道工序（猜错 = 把下一笔计件记到错的工序上）。
 
 /** 初始态：未登录。 */
 export function initialState() {
@@ -54,6 +56,16 @@ export function reduce(state, action) {
         notice: `已选：第 ${set?.set_no ?? '?'} 套 · ${pos?.position_name ?? ''}`,
       }
     }
+    case 'completed':
+      // 报工成功 ⇒ 屏上换成**回执**给的「下一道 / 本套已完成」（`__requestId` 已在 afterComplete 丢掉）
+      return {
+        ...state,
+        view: action.view,
+        selection: { setId: null, orderItemId: null },
+        notice: action.notice ?? null,
+        error: null,
+        mode: 'main',
+      }
     case 'notice':
       return { ...state, notice: action.notice ?? null }
     case 'error':
@@ -96,6 +108,41 @@ function reportButton(state, view) {
   return canReport(state, view)
     ? `<button id="wh5-report" class="wh5-primary" type="button">完 成</button>`
     : ''
+}
+
+/**
+ * 报工回执 ⇒ 下一屏（A 模式闭环的「接着做」那一半，设计 §4.1 ⑥）。
+ *
+ * 🔴 三条纪律：
+ *   ① 屏上的工序**只**来自回执（`next_operation`）—— 前端不猜下一道；
+ *   ② `__requestId` 必须**丢掉**：下一道是新的一笔 ⇒ 必须换新幂等键
+ *      （复用旧键会被服务端回放成「已报过」⇒ 静默漏计件）；
+ *   ③ `__token` 必须**保留**：同一个码接着做下一道，不必重扫（用户核心诉求「只扫一次」）。
+ *
+ * `set_completed` 为 `null`（服务端「下一道」推断失败，见 `enrichNextOperation` 的尽力而为）
+ * ⇒ **不**敢说完工（不知道就说不知道），只把工序置空 ⇒ 报工按钮自然消失。
+ */
+export function afterComplete(view, receipt) {
+  const { __requestId, ...rest } = view ?? {}
+  return {
+    ...rest,
+    set_no: receipt.setNo ?? view?.set_no ?? null,
+    position: receipt.position ?? view?.position ?? null,
+    set_progress: receipt.setProgress ?? view?.set_progress ?? null,
+    operation: receipt.nextOperation ?? null,
+    alternatives: [],
+    needs_selection: [],
+    completed: receipt.setCompleted === true,
+  }
+}
+
+/** 报工回执 ⇒ 给工人的一句话（`replayed` 必须显式说清「没有新增计件」，不谎报一笔新报工）。 */
+export function doneNotice(receipt) {
+  if (receipt.replayed) return '这次没有新增计件：重复提交已回放（同一次扫码只算一次）'
+  if (receipt.orderCompleted) return '已报工 · 本单已完工 🎉'
+  if (receipt.setCompleted === true) return '已报工 · 本套已完工 🎉'
+  if (receipt.nextOperation?.logical_name) return `已报工 · 下一道：${receipt.nextOperation.logical_name}`
+  return '已报工'
 }
 
 /** 页头：**服务端**带来的「当前工人」+ 一步切换 + 登出（共用 PAD 三条，设计 §3.1~§3.3）。 */
@@ -155,12 +202,29 @@ function selectView(state) {
     <div class="wh5-group"><span class="wh5-group-label">选套</span>${setsHtml}</div>
     ${set ? `<div class="wh5-group"><span class="wh5-group-label">选部位</span>${posHtml}</div>` : ''}
     <p class="wh5-sub" id="wh5-legacy-pending">本单：${esc(state.view?.processing_order_no ?? '')}</p>
+    <p class="wh5-error" id="wh5-legacy-blocked">⚠️ 旧码无法一次扫码完工（选完套/部位也报不了工）：
+      请重新打印带套号 + 部位的任务卡，或在工序列表里按部位逐道报工。</p>
   </section>`
 }
 
 function mainView(state) {
   const v = state.view
   const op = v.operation
+  // 🔴 工序未确定（本套已完工 / 服务端推断不出待做工序）⇒ **只给结论，不给报工按钮**。
+  // 改前这里直接读 `op.unit_price` ⇒ TypeError（页面白屏）；而「回执驱动的一屏」正好会走到这个形态
+  // （`set_completed:true` / `next_operation:null`）⇒ 必须显式分支（防呆⑤ 的记账侧那一半）。
+  if (!op) {
+    return `${header(state)}
+  <section class="wh5-card">
+    <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
+    ${v.completed === true
+      ? '<p class="wh5-done" id="wh5-completed">本套已完成 🎉</p>'
+      : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待做工序（工序未确定 ⇒ 不得记账）</p>'}
+    ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
+    ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
+    <button id="wh5-rescan" class="wh5-ghost" type="button">重扫</button>
+  </section>`
+  }
   const price = op.unit_price === null || op.unit_price === undefined
     ? '<span class="wh5-unpriced">未定价</span>'
     : `<span class="wh5-price">${fmtQty(op.unit_price)} 元/${esc(op.unit ?? '')}</span>`
