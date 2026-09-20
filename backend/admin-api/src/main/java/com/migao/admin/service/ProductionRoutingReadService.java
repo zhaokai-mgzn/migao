@@ -128,12 +128,17 @@ public class ProductionRoutingReadService {
     }
 
     /**
-     * 部位价目矩阵：一道**逻辑工序** × 一个**部位** = 一格（28 × 3 = 84 格）。
+     * 工序**一口价**列表（去部位化，issue #4883）：一道**逻辑工序** = 一行。
+     *
+     * <p>矩阵的物理键仍是 {@code (逻辑工序, 部位)}（V71 的种子行是三源收敛的冻结产物、
+     * bootstrap 路径不跑迁移链 ⇒ 删行会让 bootstrap 与迁移链终态分叉）⇒ 本读面在**读时**
+     * 按逻辑工序收敛为一行，收敛规则 = {@link ProductionOperationQueryService#collapseToLogical}
+     * （与**实例化侧**、**补价侧**共用同一份实现，避免第二份口径漂移）。</p>
      *
      * @return 10 键/行（issue #4500 冻结 4 键 + issue #4587 追加 {@code id} 与 5 键变体元数据；
-     *         issue #4622 去掉 {@code variant_name}），
-     *         按 `(operation, position)` 稳定排序；`applicable=false` 的格 `unit_price=null`
-     *         （**明确不做 ⇒ 不报价**，与「没定价」可区分）。变体查不到 ⇒ 5 键全 `null`（**不猜**）
+     *         issue #4622 去掉 {@code variant_name}），按 `logical_name` 稳定排序；
+     *         收敛行的 `unit_price` 为 `null` ⇒ **未定价**（与「价 0 元」可区分）。
+     *         变体查不到 ⇒ 5 键全 `null`（**不猜**）
      */
     public List<Map<String, Object>> operationPositions(Long tenantId) {
         List<ProductionOperationPosition> rows = productionOperationPositionMapper.selectList(
@@ -141,9 +146,8 @@ public class ProductionRoutingReadService {
                         .eq(ProductionOperationPosition::getTenantId, tenantId)
                         .eq(ProductionOperationPosition::getDeleted, 0)
                         .eq(ProductionOperationPosition::getStatus, "active"));
-        List<ProductionOperationPosition> ordered = rows == null ? new ArrayList<>() : new ArrayList<>(rows);
-        ordered.sort(Comparator.comparing(ProductionOperationPosition::getLogicalName)
-                .thenComparing(ProductionOperationPosition::getPosition));
+        List<ProductionOperationPosition> ordered =
+                ProductionOperationQueryService.collapseToLogical(rows == null ? List.of() : rows);
         // 工序库一次取回、循环内复用（避免 N+1）：变体元数据的读取口径与实例化侧同一份
         Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
         List<Map<String, Object>> items = new ArrayList<>();

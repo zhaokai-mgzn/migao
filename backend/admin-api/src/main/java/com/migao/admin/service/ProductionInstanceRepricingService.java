@@ -218,33 +218,37 @@ public class ProductionInstanceRepricingService {
     }
 
     /**
-     * 当前部位价目矩阵价：{@code (部位, 逻辑工序)} → 单价（**未定价的格值为 {@code null}**，
-     * 与实例化路径 {@code ProcessingOrderService.buildRoute} 读**同一份**读面
-     * {@link ProductionOperationQueryService#operationPositions}）。
+     * 当前**工序一口价**：{@code 逻辑工序} → 单价（**未定价的值为 {@code null}**，
+     * 与实例化路径 {@code ProcessingOrderService.buildRoute} 读**同一份**收敛实现
+     * {@link ProductionOperationQueryService#collapseToLogical}）。
+     *
+     * <p>去部位化（issue #4883）：键曾是 {@code (部位, 逻辑工序)}；价不再随部位变化
+     * ⇒ 键塌缩为逻辑工序名（部位维退场 ⇒ 不再需要「不许猜部位」的那层保护）。</p>
      */
     private Map<String, BigDecimal> currentMatrixPrices(Long tenantId) {
         Map<String, BigDecimal> prices = new HashMap<>();
-        for (ProductionOperationPosition row : productionOperationQueryService.operationPositions(tenantId)) {
-            if (row.getPosition() == null || row.getLogicalName() == null) {
-                continue;
-            }
-            prices.put(row.getPosition() + "\u0001" + row.getLogicalName(), row.getUnitPrice());
+        for (ProductionOperationPosition row : ProductionOperationQueryService.collapseToLogical(
+                productionOperationQueryService.operationPositions(tenantId))) {
+            prices.put(row.getLogicalName(), row.getUnitPrice());
         }
         return prices;
     }
 
     /**
-     * 实例行 → 矩阵格键。{@code position_kind} = 快照的帘种（= 实例化时的路线部位）；
-     * 逻辑工序名按**既有唯一映射**派生（{@link ProductionOperationQueryService#logicalOperationName}，
-     * 不新造第二份表）。两者任一缺失（V69 之前的存量行没有 {@code position_kind}）⇒ 取不到格
-     * ⇒ 如实判「仍未定价」（不猜部位 —— 猜错会把别的部位的价补到这一行上）。
+     * 实例行 → 价目键。{@code position_kind} 的**存在性**仍是前置（**不追溯**：V69 之前没有
+     * {@code position_kind} 的存量行维持「仍未定价」，本批不扩大补价射程）；逻辑工序名按
+     * **既有唯一映射**派生（{@link ProductionOperationQueryService#logicalOperationName}，
+     * 不新造第二份表）。
+     *
+     * <p>去部位化（issue #4883）：键里**不再拼 {@code position_kind}** —— 价不再随部位变化
+     * （{@link ProductionOperationQueryService#collapseToLogical} 收敛成一道工序一个价）
+     * ⇒ 保留部位维只会让「同一道工序在两个部位各有一格」这件事继续存在，而那个概念已经退场。</p>
      */
     private static String cellKey(ProcessingPositionOperation op) {
         if (!StringUtils.hasText(op.getPositionKind()) || !StringUtils.hasText(op.getOperationName())) {
             return null;
         }
-        return op.getPositionKind() + "\u0001"
-                + ProductionOperationQueryService.logicalOperationName(op.getOperationName());
+        return ProductionOperationQueryService.logicalOperationName(op.getOperationName());
     }
 
     /** 结果里的工序行（与计件报表的 {@code unpriced.operations} 同形：{@code operation} + {@code logical_name}）。 */

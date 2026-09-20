@@ -154,7 +154,7 @@ class ProductionOperationLayersTest {
     // ── 判据 2/3：一列价的显式规则 ──
 
     @Test
-    @DisplayName("一列价：各部位同价 ⇒ priced + 该价；键集 9 个且 unit/必完取自工序库")
+    @DisplayName("一列价：去部位化后每道工序**只有一格** ⇒ priced + 该价；键集 9 个且 unit/必完取自工序库")
     void deliveryPriceIsOneColumnWhenAllPositionsAgree() {
         stubPackingCatalog();
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
@@ -173,7 +173,8 @@ class ProductionOperationLayersTest {
         assertThat(row.get("different_price_count")).isEqualTo(0);
         assertThat(row.get("unit")).isEqualTo("套");
         assertThat(row.get("group")).isEqualTo("后道");
-        assertThat(row.get("applicable_positions")).isEqualTo(List.of("布帘", "帘头", "纱帘"));
+        // 去部位化（issue #4883）：三格收敛为一格（适用 + 布帘列优先）⇒ 只剩布帘那一条。
+        assertThat(row.get("applicable_positions")).isEqualTo(List.of("布帘"));
     }
 
     @Test
@@ -196,19 +197,22 @@ class ProductionOperationLayersTest {
     }
 
     @Test
-    @DisplayName("一列价：各部位不同价 ⇒ multiple_prices + 计数（**不静默取第一个**，设计 B7）")
-    void deliveryPriceIsNotSilentlyTheFirstWhenPositionsDiffer() {
+    @DisplayName("去部位化后交付段不再有「多价」态：收敛按**显式规则**选行（布帘列赢），不是「取第一行」")
+    void deliveryPriceComesFromTheCollapseRuleNotFromTheFirstRow() {
         stubPackingCatalog();
+        // 故意把**纱帘**放第一行（乱序）+ 给它更高的价：期待价仍来自**布帘列**（1.00）
+        // ⇒ 证明「取哪个价」由 ProductionOperationQueryService#collapseToLogical 的显式顺序决定，
+        // 与 DB 返回序无关（改前这里判 multiple_prices，因为同一道工序在多个部位各有价）。
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
-                position("外帘打卷", "布帘", "1.00", true),
                 position("外帘打卷", "纱帘", "1.50", true),
-                position("外帘打卷", "帘头", "1.50", true)));
+                position("外帘打卷", "帘头", "1.50", true),
+                position("外帘打卷", "布帘", "1.00", true)));
 
         Map<String, Object> row = deliveryRow(service().operationLayers(TENANT), "外帘打卷");
 
-        assertThat(row.get("price_state")).isEqualTo("multiple_prices");
-        assertThat(row.get("price")).isNull();
-        assertThat(row.get("different_price_count")).isEqualTo(2);
+        assertThat(row.get("price_state")).isEqualTo("priced");
+        assertThat(row.get("price")).isEqualTo(new BigDecimal("1.00"));
+        assertThat(row.get("applicable_positions")).isEqualTo(List.of("布帘"));
     }
 
     @Test
@@ -313,9 +317,9 @@ class ProductionOperationLayersTest {
 
         assertThat((List<Map<String, Object>>) layers.get("delivery"))
                 .extracting(r -> r.get("operation")).containsExactly("外帘打卷", "外帘装袋", "打包");
-        // 行内 `applicable_positions` 仍是矩阵读面的 `(operation, position)` 稳定序
+        // 行内 `applicable_positions` 亦随去部位化收敛为一格（issue #4883：适用 + 布帘列优先）
         assertThat(deliveryRow(layers, "打包").get("applicable_positions"))
-                .isEqualTo(List.of("布帘", "纱帘"));
+                .isEqualTo(List.of("布帘"));
     }
 
     // ── 判据 5：与既有端点同形 ──

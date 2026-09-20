@@ -132,8 +132,8 @@ class ProductionRoutingReadServiceTest {
     // ── 判据 1：顺序确定性（乱序入库 ⇒ 稳定输出）──
 
     @Test
-    @DisplayName("部位价目：乱序入库 ⇒ 按 (operation, position) 输出（去掉比较器即红）")
-    void operationPositionsSortsByOperationThenPosition() {
+    @DisplayName("部位价目：乱序入库 ⇒ **一道逻辑工序一行**、按逻辑工序名稳定输出（去掉收敛/排序即红）")
+    void operationPositionsCollapsesToOneRowPerLogicalOperation() {
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
                 position("韩褶", "布帘", "0.40", true),
                 position("精裁", "纱帘", "0.40", true),
@@ -142,8 +142,11 @@ class ProductionRoutingReadServiceTest {
 
         List<Map<String, Object>> rows = service().operationPositions(TENANT);
 
+        // 去部位化（issue #4883）：**一道逻辑工序一行**、按逻辑工序名稳定排序；
+        // 同一逻辑工序的多行收敛为一行（规则 = ProductionOperationQueryService#collapseToLogical：
+        // 适用行优先、其中**布帘列**优先）⇒ 4 行收敛为 3 行，`精裁` 的两个部位合并为布帘那一格。
         assertThat(rows).extracting(r -> r.get("operation") + "/" + r.get("position"))
-                .containsExactly("三边/帘头", "精裁/布帘", "精裁/纱帘", "韩褶/布帘");
+                .containsExactly("三边/帘头", "精裁/布帘", "韩褶/布帘");
     }
 
     @Test
@@ -164,8 +167,8 @@ class ProductionRoutingReadServiceTest {
     // ── 判据 2：逐字取库（注入式）──
 
     @Test
-    @DisplayName("部位价目：单价/applicable 逐字取库；applicable=false 的格 unit_price=null 且**不丢行**")
-    void operationPositionsCarriesPriceAndApplicabilityVerbatim() {
+    @DisplayName("部位价目：价与 applicable **逐字**取**收敛后的幸存行**（不聚合、不回落）")
+    void operationPositionsCarriesSurvivorRowVerbatim() {
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
                 position("熨烫", "布帘", "0.35", true),
                 position("熨烫", "纱帘", null, false),
@@ -173,16 +176,29 @@ class ProductionRoutingReadServiceTest {
 
         List<Map<String, Object>> rows = service().operationPositions(TENANT);
 
-        assertThat(rows).hasSize(3);
-        assertThat(rows).extracting(r -> r.get("position")).containsExactly("布帘", "帘头", "纱帘");
+        // 去部位化（issue #4883）：三行收敛为一行 —— 幸存行 = **适用**且**布帘列**那条。
+        // 价与适用性逐字取幸存行：纱帘的 null 与帘头的 0.42 都不再出现（不做 min/max/平均）。
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get("operation")).isEqualTo("熨烫");
+        assertThat(rows.get(0).get("position")).isEqualTo("布帘");
         assertThat((BigDecimal) rows.get(0).get("unit_price")).isEqualByComparingTo("0.35");
         assertThat(rows.get(0).get("applicable")).isEqualTo(true);
-        // 「明确不做」= applicable false：价可以是 null（不报价），也可以有价（历史价保留）
-        assertThat(rows.get(1).get("applicable")).isEqualTo(false);
-        assertThat((BigDecimal) rows.get(1).get("unit_price")).isEqualByComparingTo("0.42");
-        assertThat(rows.get(2).get("applicable")).isEqualTo(false);
-        assertThat(rows.get(2)).containsKey("unit_price");
-        assertThat(rows.get(2).get("unit_price")).isNull();
+    }
+
+    @Test
+    @DisplayName("去部位化收敛**不回落**：布帘列未定价（null）⇒ 不借其他部位的价（#4696 同族）")
+    void operationPositionsCollapseKeepsUnpricedRatherThanBorrowingAPrice() {
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("定型", "布帘", null, true),
+                position("定型", "帘头", "0.42", true)));
+
+        List<Map<String, Object>> rows = service().operationPositions(TENANT);
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get("position")).isEqualTo("布帘");
+        assertThat(rows.get(0)).containsKey("unit_price");
+        assertThat(rows.get(0).get("unit_price"))
+                .as("未定价是**一态**（NULL），不得被别的部位的有价顶替").isNull();
     }
 
     @Test
