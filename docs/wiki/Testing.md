@@ -8,7 +8,7 @@
 
 ```
            ┌─────────────┐
-           │  E2E 冒烟    │  ← pytest (tests/smoke/), 11 文件, P0~P1
+           │  E2E 冒烟    │  ← pytest (tests/smoke/), ~~11~~ 12 文件, P0~P1
            ├─────────────┤
            │  E2E 浏览器   │  ← Playwright (tests/e2e/specs/), 30 文件, 按域组织
            ├─────────────┤
@@ -17,6 +17,20 @@
            │ 单元测试      │  ← 纯逻辑, Mock 外部依赖
            └─────────────┘
 ```
+
+> 🔴 **口径订正（issue #4759，2026-09-20）**：上面金字塔里「E2E 冒烟 `tests/smoke/`」的文件数原写 **11**。
+> **① 当时基线**：= **11**（原措辞保留在上一行的删除线里）。**② 后来变了**：该目录下
+> `test_*.py` 实测 **12** 个（`test_01_*.py`~`test_11_*.py` 之外还有 `test_react_smartness.py`）。
+> **③ 故改为 Z**：**现取 + 复算命令**（本页不写死）：
+>
+> ```bash
+> ls -1 tests/smoke/test_*.py | wc -l   # 只数用例文件；同目录的 config.py / conftest.py / helpers.py / __init__.py 是夹具不是用例
+> ```
+>
+> ⚠️ **口径边界**：这里数的是 `test_*.py`（**用例文件**），不是「目录下所有 `.py`」（后者含 4 个夹具文件）。
+> ⚠️ **同代码块里的另一处计数本单只登记不改**：「Playwright `tests/e2e/specs/` **30 文件**」实测已 **37**
+> —— 本单边界是「只改 #4759 登记的 5+1 处」，该处已在关联 PR body 登记为**同族发现**，**本单未改**
+> （故那一格仍是已知过期值，勿据以当真值）。
 
 ## 各模块测试
 
@@ -53,20 +67,47 @@ python3 -c "import sys,collections;sys.path.insert(0,'.github');from render_case
 
 | tier | 数量 | 频率 | workflow |
 |------|------|------|----------|
-| smoke | ~~7~~ **10** | 每次 PR（100% 通过才合并） | pr-check `agent-eval-smoke` |
-| normal | ~~81~~ **319** | 按需手动触发 | agent-eval（local_runner.py normal） |
-| adversarial | ~~26~~ **31** | 每周六 03:00（只追踪不阻塞） | agent-eval-adversarial |
+| smoke | **现取**（命令见上） | ~~每次 PR（100% 通过才合并）~~ ⇒ **无自动档**（仅手动） | ~~pr-check `agent-eval-smoke`~~（该 job 已按 #3653 移除）⇒ 手动 `post-deploy-eval` 的 `workflow_dispatch` 可选 `tier=smoke` |
+| normal | **现取**（命令见上） | ~~按需手动触发~~ ⇒ **每周一自动**（`post-deploy-eval` 定时档）+ 按需手动 | `post-deploy-eval`（每周一，normal 全量）/ `agent-eval`（手动，local_runner.py normal） |
+| adversarial | **现取**（命令见上） | ~~每周六 03:00（只追踪不阻塞）~~ ⇒ **仅手动 `workflow_dispatch`**（定时已按 #4262 删除） | agent-eval-adversarial |
 
 > 🔴 **口径订正（issue #4751，2026-09-20）**：本表「数量」列原写 `smoke 7 / normal 81 / adversarial 26`。
 > **① 当时基线**：= **7 / 81 / 26**（原措辞保留在上表的删除线里）。**② 后来变了**：用例库逐条增长
-> ⇒ 当时读数早已过期（实测现为 **10 / 319 / 31**，另有 **1 条** `tier` 缺省 —— 见下）。
-> **③ 故改为 Z**：数字以**上面那条复算命令**的**当次输出**为准（**本页不写死**）。
-> ⚠️ **「数量」与「频率」两列的可信度不同**：数量列已按命令现取；**频率列本单未逐格复核**
-> （已知 `adversarial` 的「每周六 03:00」与 `.github/workflows/agent-eval-adversarial.yml`
-> 的「**仅手动 `workflow_dispatch`**」不符 —— 关联 #4262 已删该 cron）⇒ **读频率列请回看 workflow 文件本体**，
-> 本单只订正数量列（避免把未复核的口径写成真值）。
-> ⚠️ `tier` **缺省 1 条**（`PG-020`，`processing-order.yml`）⇒ 三档之和 ≠ 总条数，**这是现状不是漏算**
+> ⇒ 当时读数早已过期（#4751 实测当时为 **10 / 319 / 31**，另有 **1 条** `tier` 缺省 —— 见下）。
+> **③ 故改为 Z**：**数量列不再写死**，改为「**现取**」（命令 = 上面那条复算命令的 `tier` 字典，
+> **本页不复制第二份口径**）。⚠️ **连 #4751 自己写的「现取」读数也已再次漂移**（#4759 核清：
+> `normal` 319 → **320**、总条数 361 → **362**）⇒ 这正是「不写死」的理由，**本单不再补写新数字**。
+>
+> 🔴 **口径订正（issue #4759，2026-09-20）——「频率」+「workflow」两列**：#4751 明说这两列
+> 「未逐格复核」，本单**逐格回看 workflow 文件本体**后订正三处（原措辞保留在上表的删除线里）：
+> **① `smoke`**：原写「每次 PR（100% 通过才合并）」+ workflow `pr-check agent-eval-smoke` ——
+> 该 job 已按 **#3653**（2026-09-15）移除（理由：云环境不含 PR 分支代码 ⇒ 结果与本 PR 无因果；
+> 锚点 = `.github/workflows/pr-check.yml` 里 gitleaks 段前的那段注释）⇒ **该档现在没有任何自动触发**，
+> 只剩手动（`post-deploy-eval` 的 `workflow_dispatch` `tier` 输入可选 `smoke`）。
+> **② `normal`**：原写「按需手动触发」—— 实测 `.github/workflows/post-deploy-eval.yml` 有
+> `schedule: cron '0 3 * * 1'`（**每周一**；按 #4262 由「每 3 天」收紧），定时档恒跑 **normal 全量**
+> （`${{ github.event.inputs.tier || 'normal' }}`，schedule 无 inputs ⇒ 回落 normal）⇒ 频率是
+> 「**每周一自动 + 按需手动**」，不是「仅手动」。
+> **③ `adversarial`**：原写「每周六 03:00」—— 实测 `.github/workflows/agent-eval-adversarial.yml`
+> 的 `on:` **只有 `workflow_dispatch`**（每周定时已按 **#4262** 用户裁定删除：自动真实 LLM 触发
+> 由 3 条收敛为 1 条）⇒ 改为「**仅手动**」。
+> ✅ **「谁对」的结论（先核清再改，本单只改一边）**：**workflow 文件是权威，文档是过期副本**。
+> 依据：① 定时档的**成本裁定**（#4262，用户原话「不要自动进行验证，都是重复的验证，白白消耗成本」）
+> 落在 workflow 上 —— 把文档改回「每周六」= **与用户裁定相反**；② 频率是**运行期事实**，
+> 只有 workflow 能证明它（`.github/workflows/**` 是唯一可执行真值源）。
+> ⇒ 三处**一律改文档**，workflow **一个字节未动**（同时满足本单「禁改 `.github/workflows/**`」的边界，关联 #4717）。
+> ⚠️ **`tier` 缺省 1 条**（`PG-020`，`processing-order.yml`）⇒ 三档之和 ≠ 总条数，**这是现状不是漏算**
 > （核法 = 复算命令的 `tier` 字典里那个 `None` 键）。
+> ✅ **该条根因已核清（issue #4759）**：`PG-020`（#4204 新增）**应落 `normal`** ——
+> 同域 `PG-*` 全族（`PG-001`~`PG-041`，40+ 条）**无一例外**都是 `normal`，且形状同族
+> （`skip_reason` 带 `[backend-contract]`、断言全由 Java 单测执行、不进 agent-eval 冒烟）；
+> 更关键的是 `tier` 的**缺省语义本身就是 `normal`**（`.github/render_cases.py` 里
+> `c.get("tier", "normal")`）⇒ **运行期行为与显式声明完全一致，缺的只是那一行声明**。
+> ⛔ **本单不做（如实登记，不粉饰）**：改它必须动 `.github/cases/processing-order.yml`，而
+> ① 本单文件边界明确「`.github/cases/**` 别碰」；② 触碰用例库会触发 `Case Trust Gate` 的
+> **burn-down 缴费**（`scope=case_touching_prs` ⇒ 同 PR 必须**整条销账 ≥1 条**存量违规）+ 生成物重渲染，
+> 属另一条专路的活 ⇒ **登记为后续小单**（预期改动 = 加一行 `tier: normal`；生成物**零变化**，
+> 因为缺省已是 `normal`）。
 
 **G5 追溯铁律**：新增/修改测试文件头部必须声明 `# case_ids: OR-001, OR-002`（对应 `.github/cases/` 中的用例 ID），否则 qa-growth-gate block。存量测试未声明 → warn。
 

@@ -1,5 +1,5 @@
 // case_ids: OR-001, OR-002, OR-003, UI-024, UI-040
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { markErrorToastShown } from '@/lib/api-error'
@@ -93,6 +93,14 @@ const mockOrder = {
 }
 
 describe('OrderDetailPage', () => {
+  // `window.print` 一律用 `vi.spyOn` 注入 + 这里统一还原（issue #4759 的 D 项）。
+  // 反例（原写法）：`window.print = vi.fn() as any` —— **直接赋值** jsdom 的 `window.print`
+  // 且从不还原 ⇒ 该改写会**泄漏到同文件后续用例**，让"打印没被调用"这类断言在被污染的
+  // 环境里恒真/恒假（本文件断言里已有两处「已完成订单也能补打发货单」依赖真实打印面）。
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetOrder.mockResolvedValue({
@@ -261,8 +269,7 @@ describe('OrderDetailPage', () => {
   // ===== 补打发货单（issue #3768 / UI-040）：发货页有状态守卫进不去，重打只能从详情页 =====
 
   it('已发货订单操作区显示「打印发货单」且点击真的触发 window.print', async () => {
-    const printSpy = vi.fn()
-    window.print = printSpy as any
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
     mockGetOrder.mockResolvedValue({
       data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } },
     })

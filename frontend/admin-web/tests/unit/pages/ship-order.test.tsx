@@ -1,6 +1,6 @@
 // case_ids: UI-040, UI-047
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -82,7 +82,13 @@ const mockOrder = {
 import ShipOrder from '@/app/(dashboard)/orders/[id]/ship/ShipOrder'
 
 describe('ShipOrder', () => {
-  let printSpy: ReturnType<typeof vi.fn>
+  // `window.print` 一律用 `vi.spyOn` 注入 + 这里统一还原（issue #4759 的 D 项）。
+  // 反例（原写法）：`window.print = vi.fn() as any` —— **直接赋值** jsdom 的 `window.print`
+  // 且从不还原 ⇒ 该改写会**泄漏到同文件后续用例**（甚至跨文件若共用环境），
+  // 让"打印没被调用"这类断言在被污染的环境里恒真/恒假。
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -94,8 +100,6 @@ describe('ShipOrder', () => {
     mockUpdateOrderStatus.mockResolvedValue({ data: { data: null } })
     // 默认：查不到客户档案（不覆盖发货页既有默认值「德邦快递」）
     mockGetCustomers.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
-    printSpy = vi.fn()
-    window.print = printSpy as any
   })
 
 
@@ -228,6 +232,7 @@ describe('ShipOrder', () => {
   })
 
   it('发货前可打印发货单：点击真的触发 window.print', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
     const user = userEvent.setup()
     render(<ShipOrder />)
 

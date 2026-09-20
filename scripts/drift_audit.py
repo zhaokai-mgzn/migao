@@ -962,7 +962,7 @@ def check_regression_guard(a: Audit) -> CheckResult:
             r.findings.append(Finding(f"{c.id}|empty-surface",
                                       f"判据 {c.id} 允许判定面为 0（空集恒真 = 空断言）"))
     r.notes.append(f"判据集合：{[c.id for c in CHECKS]}")
-    r.notes.append(f"未实装登记：{[u['id'] for u in UNIMPLEMENTED]}")
+    r.notes.append(f"未实装登记：{[u['id'] for u in unimplemented_entries(a.repo)]}")
     return r
 
 
@@ -1057,6 +1057,59 @@ CHECKS: list[Check] = [
 CHECK_BY_ID = {c.id: c for c in CHECKS}
 
 # ── 未实装登记（**如实登记，不用恒真判断凑数**）──────────────────────────────
+# ⚠️ `world-selfbuilt-namespace` 的覆盖率读数**现取、不写死**（#4759）：原先本文件与
+#    `docs/wiki/truth-source-contract.md` §6 **各写一份**「289 条用例里只有 19 条」⇒ 两份
+#    各自漂移（#4751 只改了文档侧）。现在由 `live_namespace_reading()` 从用例库**现取**，
+#    与文档 §6 的复算命令**同一函数、同一口径**（`namespaces` **列表非空**，不是按字面 grep）。
+_NAMESPACE_READING_SLOT = "@@namespace-reading@@"
+
+
+def live_namespace_reading(repo: Path) -> tuple[int, int] | None:
+    """现取『用例总数 / 声明 `namespaces` 的条数』—— **不写死**（#4759）。
+
+    真值源 = 用例库本身（`.github/cases/*.yml`），经 `.github/render_cases.load_case_dicts`
+    读取（按**路径**加载，同 `_load_gate_module`：不往 `sys.path` 里塞常驻条目）。
+    取不到（夹具仓库没有 `.github/`、解析失败）⇒ `None` —— 调用方**不得编造读数**。
+    """
+    gh = repo / ".github"
+    if not (gh / "render_cases.py").is_file() or not (gh / "cases").is_dir():
+        return None
+    added = str(gh) not in sys.path
+    if added:
+        sys.path.insert(0, str(gh))  # `render_cases` 内部 `from yaml_light import …` 是普通导入
+    try:
+        spec = importlib.util.spec_from_file_location("render_cases", gh / "render_cases.py")
+        if spec is None or spec.loader is None:
+            return None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        cases = mod.load_case_dicts(str(gh / "cases"))
+    except Exception:  # noqa: BLE001 —— 读数取不到 ⇒ 退回「不写死」写法，绝不编造
+        return None
+    finally:
+        if added and str(gh) in sys.path:
+            sys.path.remove(str(gh))
+    return len(cases), sum(1 for c in cases if c.get("namespaces"))
+
+
+def unimplemented_entries(repo: Path) -> list[dict[str, str]]:
+    """未实装登记：`UNIMPLEMENTED` 是**模板**，读数槽位由现场统计填充。"""
+    reading = live_namespace_reading(repo)
+    phrase = (
+        f"**现取**（{reading[0]} 条用例 / 其中 {reading[1]} 条声明 `namespaces`；"
+        "复算命令见 `docs/wiki/truth-source-contract.md` §6）"
+        if reading else
+        "**现取**（本仓库读不到 `.github/cases/` ⇒ 以 `docs/wiki/truth-source-contract.md` "
+        "§6 的复算命令为准）"
+    )
+    out: list[dict[str, str]] = []
+    for entry in UNIMPLEMENTED:
+        entry = dict(entry)
+        entry["why"] = entry["why"].replace(_NAMESPACE_READING_SLOT, phrase)
+        out.append(entry)
+    return out
+
+
 UNIMPLEMENTED: list[dict[str, str]] = [
     {
         "id": "ref-semantic-hit",
@@ -1119,7 +1172,8 @@ UNIMPLEMENTED: list[dict[str, str]] = [
         "id": "world-selfbuilt-namespace",
         "invariant": "I3",
         "what": "并发世界自建：写用例的**显式资源声明**（namespace 锁）覆盖率门禁",
-        "why": "289 条用例里只有 **19 条**声明 `namespaces`。『哪些用例算写用例』本身无零误红判据"
+        "why": "写用例的**显式资源声明**（namespace 锁）覆盖率："
+               + _NAMESPACE_READING_SLOT + "。『哪些用例算写用例』本身无零误红判据"
                "（工具是读还是写由工具实现决定，不在用例声明里）。故当前只作**活指标**报告，不阻塞。",
         "missing": "需要用例 schema 补『写工具清单』或 runner 导出每轮的写工具事件，才能把"
                    "『写用例未声明 namespace』变成可判定的结构性缺失。",
@@ -1456,7 +1510,7 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
         "repo": str(a.repo),
         "changed_files": sorted(changed) if changed is not None else None,
         "checks": [],
-        "unimplemented": UNIMPLEMENTED,
+        "unimplemented": unimplemented_entries(a.repo),
         "summary": {},
     }
     new_total = new_out_total = 0
@@ -1800,6 +1854,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--now", default=None, help="基准时刻 ISO8601（L0 夹具用）")
     ap.add_argument("--list-checks", action="store_true", help="打印判据集合（机器可读）")
     args = ap.parse_args(argv)
+    repo = Path(args.repo).resolve()
 
     if args.list_checks:
         print(json.dumps({
@@ -1807,11 +1862,10 @@ def main(argv: list[str] | None = None) -> int:
                         "judgment": c.judgment, "remedy": c.remedy,
                         "network": c.network, "min_evaluated": c.min_evaluated}
                        for c in CHECKS],
-            "unimplemented": UNIMPLEMENTED,
+            "unimplemented": unimplemented_entries(repo),
         }, ensure_ascii=False, indent=2))
         return 0
 
-    repo = Path(args.repo).resolve()
     baseline_path = Path(args.baseline) if args.baseline else repo / DEFAULT_BASELINE
     baseline = load_baseline(baseline_path)
     now = _parse_ts(args.now) if args.now else None
