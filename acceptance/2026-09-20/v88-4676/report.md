@@ -105,7 +105,7 @@
 | 主张 | 判定 | 证据引用 |
 |---|---|---|
 | 8. `docs/sql/schema.sql` 仍是旧口径 | **成立（口径分裂属实）** | `schema.sql`：`('opp-v79-29', 1, '配料', '布料', NULL, TRUE, 'active')`、`'["配料", "打包"]'::jsonb`（`rt-v79-01`）；#4690 OPEN |
-| 9. 真值源未收敛 | **成立（口径分裂属实）** | `routing.py:465 FABRIC_MAINLINE_STEPS: List[str] = ["配料", "打包"]`；`routing.py:638 ("裁剪", "布料", None, False)`；`seed.json` `operations: 37`（description 逐字「37 道工序」）；`routing.py` OPERATION_CATALOG 实测 **37** 道 |
+| 9. 真值源未收敛 | **成立（口径分裂属实）** | 按符号检索 `FABRIC_MAINLINE_STEPS` ⇒ `FABRIC_MAINLINE_STEPS: List[str] = ["配料", "打包"]`；按文本检索 `("裁剪", "布料", None, False)` ⇒ `裁剪×布料` 仍 FALSE；`seed.json` `operations: 37`（description 逐字「37 道工序」）；`routing.py` 的 `OPERATION_CATALOG` 实测 **37** 道（以上均在 `backend/ai-agent-service/app/production/routing.py`，出处 `@f511c0fa0`） |
 
 ### E. 红线（三张快照表一字不动）
 
@@ -183,7 +183,7 @@ delivery   | 打包×纱帘 scope=set
 
 - **证据引用**：
   - `grep -rn "operation-layers" frontend/admin-web/src` ⇒ **零命中**
-  - 全仓 `operation-layers` 仅 3 处：`ProductionController.java`（端点定义）、`test_routing_read_endpoints.py`（静态判据）、`ProductionController.java:565`（注释）
+  - 全仓 `operation-layers` 仅 3 处：`ProductionController` 的 `@GetMapping("/operation-layers")`（端点定义）、`test_routing_read_endpoints.py` 的静态判据、`ProductionController` 里该端点的 javadoc 注释（按文本 `operation-layers` 检索即可定位；出处 `@f511c0fa0`）
   - 真实界面页 `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx`（4340 行）**9 处**调用 `operation-positions`，**0 处**调用 `operation-layers`
   - 同页无「两层 / 交付 / delivery / 打包发货」任何 UI 标记（`grep` 零命中）
   - issue **#4677**（工艺项界面改造）状态 = **OPEN**，标题逐字含「依赖 #4676」
@@ -208,12 +208,12 @@ delivery   | 打包×纱帘 scope=set
 ### P1-1 · `routing.py` 真值源与「钉住它的测试」**共同**与 V88 终态冲突（口径分裂 + 测试陷阱）
 
 - **证据引用**：
-  - `routing.py:465`：`FABRIC_MAINLINE_STEPS: List[str] = ["配料", "打包"]`
-  - `backend/ai-agent-service/tests/test_production/test_fabric_route.py:96`：
+  - 按符号检索 `FABRIC_MAINLINE_STEPS`（`backend/ai-agent-service/app/production/routing.py`，出处 `@f511c0fa0`）⇒ `FABRIC_MAINLINE_STEPS: List[str] = ["配料", "打包"]`
+  - `backend/ai-agent-service/tests/test_production/test_fabric_route.py`（按测试名 `test_fabric_mainline_is_material_prep_then_packing` 检索）：
     `assert FABRIC_MAINLINE_STEPS == ["配料", "打包"], (f"布料主线漂移：{FABRIC_MAINLINE_STEPS}（裁定 = 配料 → 打包）")`
-  - `test_fabric_route.py:108`：`assert build_route_v2({"curtain_type": FABRIC_POSITION, "craft": craft}) == ["配料", "打包"]`
-  - `routing.py:638`：`("裁剪", "布料", None, False)`（`裁剪×布料` 仍 FALSE）
-  - `routing.py:448` 逐字：「`build_route_v2` 今天是**零消费者**：Java 实例化仍读旧 `production_routings`（P2 才切）」
+  - 同文件（按测试名 `test_fabric_order_route_is_exactly_two_operations` 检索）：`assert build_route_v2({"curtain_type": FABRIC_POSITION, "craft": craft}) == ["配料", "打包"]`
+  - 按文本检索 `("裁剪", "布料", None, False)`（`routing.py`，出处 `@f511c0fa0`）⇒ `裁剪×布料` 仍 FALSE
+  - `routing.py` 内按文本检索「零消费者」逐字：「`build_route_v2` 今天是**零消费者**：Java 实例化仍读旧 `production_routings`（P2 才切）」
   - 本验收复核：`grep -rn "build_route_v2" app/` ⇒ **生产代码零消费方**（仅测试与注释）
 - **归因（机制级）**：该断言与 `routing.py` 值**同源**（都写 `配料`），因此**改一处不改另一处必红**。
   更关键：断言文案把 **`配料`** 称作「**裁定**」，而 #4673 的裁定恰恰是**改判**为 `裁剪`（V88 已按裁定落码）
@@ -249,9 +249,9 @@ delivery   | 打包×纱帘 scope=set
   （真实原因是「有更新的迁移了，请把本判据的下一个自由号 +1」；文案却说「请区分回滚与新增」）。
 - **影响**：下一次合法新增迁移（V89/V90…）会让本测试红，读者按文案排查会查错方向。修法：断言改为「V88 存在且 ≤ max」或把「下一个自由号」提为显式常量。
 
-### P2-4 · 前端 `routings/page.tsx:1071` 注释已过期（仍称「V79 只留 `配料`/`打包` 对布料适用」）
+### P2-4 · 前端 `routings/page.tsx` 的跨形态勾选注释已过期（仍称「V79 只留 `配料`/`打包` 对布料适用」）
 
-- **证据引用**：`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:1071`：
+- **证据引用**：按文本「V79 只留」检索 `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx`（出处 `@f511c0fa0`）：
   `* ⇒ 被适用性矩阵滤掉 ⇒ **丢工序**（V79 只留 `配料`/`打包` 对布料适用）。`
 - **归因（机制级）**：V88 之后布料适用格 = `裁剪×布料` + `打包×布料`（`配料×布料` 已退场）⇒
   该注释给出的**跨形态勾选风险提示**依据已变；文案本身正是「注释漂移 = 假绿来源」形态。
@@ -259,7 +259,7 @@ delivery   | 打包×纱帘 scope=set
 
 ### P2-5 · 红证类里有一条**恒真空断言**（`or True`）
 
-- **证据引用**：`tests/unit_ci_workflows/test_public_ops_v88_migration.py:529`：
+- **证据引用**：`tests/unit_ci_workflows/test_public_ops_v88_migration.py`（按测试名 `TestInjectedDrift::test_s1_red_when_mainline_rewrite_is_dropped` 检索）：
   `assert _s1_violations(broken) == [] or True  # 主线仍 2 道（配料+打包）⇒ S1 不一定红`
 - **归因（值级）**：`X or True` 恒为真 ⇒ 该行**不构成断言**（`migao-acceptance`「空断言」形态）。
   同测试的下一条（`assert _s6_violations(broken)`）是真断言，故红证**未失效**；但这一行应删或改成有判别力的形态。
@@ -326,7 +326,7 @@ delivery   | 打包×纱帘 scope=set
 | **基线取晚（假红）** | 注入式红证全部在**注入前**取基线（`pytest` 基线 24 passed 先跑），再注入后跑；不用「跑两次比较」这类易取晚基线的写法 |
 | **测试自行重建被测系统的产物路径（假红）** | 未按名字拼任何路径；真库/测试路径均来自被测系统自身（`pytest` 直接跑仓内文件、`psql -f` 直接读仓内迁移文件） |
 | **重放未复现缺陷前置条件（假绿）** | 红证 A3 **显式复现了 35 格前置条件**（改谓词后真库读数 `存活=4`）并给出观测值（`实例化工序数=1`）；未把「跑过了」当「测到了」 |
-| **注释漂移** | 不引用注释当判据：V88 的 grep 自检注释（自称 2/0）**实测 10/5** 已作为 P2-1 记录；前端 `routings/page.tsx:1071` 过期注释作为 P2-4 记录 |
+| **注释漂移** | 不引用注释当判据：V88 的 grep 自检注释（自称 2/0）**实测 10/5** 已作为 P2-1 记录；前端 `routings/page.tsx` 里按「V79 只留」检索到的过期注释作为 P2-4 记录 |
 | **红证锚点读可变引用（判据自红）** | 全部锚点为**逐字节内联片段 + `@f511c0fa0`**；**未**引用 `origin/main`（验收期间 origin/main 已从 `f511c0fa0` 推进到 `82a6fbcfb`，正是移动靶实证） |
 | **红证缓存卫生（#4260）** | 每次注入前后 `find … -name __pycache__ -exec rm -rf {} +`，并以 **sha256 前 16 位**自证注入生效（**禁 mtime/size**） |
 | **证据过渡帧 / 失败即丢证据** | 真库读数取**终态稳定值**（V88 #2 之后再读）；md5 指纹含 `updated_at::text` ⇒ 能判「第二次是否重写」而不只是「行数相同」 |
@@ -345,7 +345,7 @@ delivery   | 打包×纱帘 scope=set
 | P2-1 V88 自检注释 | 把注释里的 grep 命令改成守卫同款 `_strip_comments` 后计数，或直接引用守卫名 | #4676 |
 | P2-2 设计稿 35 vs 代码 31 | 在设计 §5.2 ⑤ / §6 F6 登记「订正为 31（依据 ⑦+S1+F1）」，并加文档一致性判据 | #4675 |
 | P2-3 自毁式真值断言 | `assert max(versions) == 88` → 改为「V88 存在」+ 显式「下一个自由号」常量 | #4676 |
-| P2-4 前端过期注释 | 更新 `routings/page.tsx:1071` 的适用格口径（`裁剪`+`打包`） | #4677 |
+| P2-4 前端过期注释 | 更新 `routings/page.tsx` 里按「V79 只留」检索到的那条注释的适用格口径（`裁剪`+`打包`） | #4677 |
 | P2-5 恒真空断言 | 删除 `or True` 行（或改成有判别力形态） | #4676 |
 
 **case 有效性验证（本报告的负向夹具即可作为重放基线）**：
@@ -360,3 +360,79 @@ delivery   | 打包×纱帘 scope=set
 2. **`build_route_v2` 的运行时行为未核**：`backend/ai-agent-service` 缺 `fastapi` 依赖，无法在本机跑其 pytest（`ImportError: No module named 'fastapi'`）。因此 P1-1 的判定依据是**源码级**（函数零生产消费方 + 断言逐字），**非运行级** ⇒ 归因强度标为「存在性/值级」，未升到「机制级运行时」。
 3. **双 AI 交叉验证未执行**：本会话未派发独立复核模型（GLM-5.3-Flash）。按协议 §1.5/§1.7，**主验收结论已引证据**，但「双裁判一致性」一项**未做** ⇒ 记为**未达成项**，供上级决定是否补跑。
 4. **未在真实云测试环境（SWAS）打活环境判定**：按 v1.9，活环境判定需先断言「无部署在飞」并记录被测 SHA；本次验收对象是**仓库/迁移/真库**，未触活环境。
+
+---
+
+## 12. 后记（验收后新增；**不改 §1~§11 的任何当时判定**）
+
+本节记录**验收报告提交之后** main 上的进展。§1~§11 的判定在**当时（`f511c0fa0`）**成立，**不予修改**；
+本节只做「截至新 sha 已修」的登记 + 一处对**我自己的复现口径**的澄清。
+
+**后记基准 sha**：`9462c7e18`（main，含 `e0db762d5` / `efa59d98a` / `9a66a6239` / `b364a7eb5` / `9462c7e18`）
+
+### 12.1 后记澄清（**对我自己 §5 复现口径的限定**，非改判定）
+
+§5 的真库复现是**打了补丁的 V79**（仅把 `NULL` 显式化为 `NULL::numeric`）⇒ 得到 `退场=31 / 存活=5 / 合计=36`。
+**本验收补充实测（`psql` 外层包 `BEGIN; … COMMIT;`，复刻 `MigrationRunner` 的整文件单事务语义）**：
+
+```
+=== 只跑 V79（原样，未打补丁）+ 整文件单事务 ===
+ERROR: column "unit_price" is of type numeric but expression is of type text
+--- 回滚后读数 ---
+t1 布料格=0   t1 配料工序行=0   t1 布料路线=0   t1 任何矩阵格=0
+```
+
+⇒ **「31 格退场」只在 V79 播种成功过的库上可观测**。在 V79 整文件回滚的真库上，V88 的 ⑤ 匹配 **0 行**。
+这与 #4685 的 V89 设计一致（其文件头逐字：「真库上这 36 格**从未写入** ⇒ 直接落 **5 格存活集**即达终态」）——
+本验收独立复现并确认该口径：
+
+```
+=== V79 原样（回滚）→ V89 → V88，逐租户 ===
+V89：无 ERROR；t1 布料格=2  t2 布料格=2（= 裁剪×布料 + 打包×布料）
+      t1 布料路线=1  t2 布料路线=1
+V88：t1 退场=0 存活=5   t2 退场=0 存活=5
+      t1 主线=["裁剪", "打包"]   t2 主线=["裁剪", "打包"]
+```
+
+⇒ 真库路径的终态是 **0 退场 / 5 存活**，与补丁路径的 **31 / 5** 在**语义上等价**（存活集相同），
+但**格数与 `deleted` 读数不同**。§5 的 31/5/36 应读作「**V79 播种成功时的中间态→终态**」，
+**不得**读作「真库必然观测到 31 格退场」。
+
+### 12.2 本报告 P0/P1/P2 的后续处置（截至 `9462c7e18`）
+
+| 本报告条目 | 后续状态 | 证据（按符号 / 文本锚点，出处 `9462c7e18`） |
+|---|---|---|
+| **P0-1** 端点零发射点 | ✅ **已修**（#4677 / `efa59d98a`） | 发射点 = `frontend/admin-web/src/lib/api.ts` 的 `getOperationLayers`（`request.get(… '/api/admin/production/operation-layers')`）；入口可达 = `routings/page.tsx` 的 `load()` 里 `productionApi.getOperationLayers()` 并 `setDeliveryAgg(… .delivery ?? [])`；默认落在「工艺项」tab |
+| **P0-2** V79 根因未修 | ✅ **已修**（#4685 / `9a66a6239`） | 新增 `V89__backfill_fabric_seed_for_existing_tenants.sql`（按租户 + 逐行 `NULL::numeric` + 幂等 + 不覆盖商家已改）；本验收独立复现 V79 回滚后 V89 补种成功（见 §12.1） |
+| **P1-1** `routing.py` 测试陷阱 | ⏳ **仍在** | `routing.py` 的 `FABRIC_MAINLINE_STEPS` 仍 `["配料", "打包"]`；`test_fabric_route.py` 的 `test_fabric_mainline_is_material_prep_then_packing` 仍逐字断言该旧值（#4711 只做了「真值源口径登记」） |
+| **P2-1** V88 自检注释计数 | ✅ **已修**（#4701 / `e0db762d5`） | 新增 `test_selfcheck_comment_counts_do_not_drift`：**未冻结**迁移的注释**不得**再写「在自己所在文件上跑 `grep -c`」的自检计数；V88 因被 `migration_fingerprints.json` 逐字节冻结而列豁免（注释改不动 ⇒ 只能靠守卫层兜住） |
+| **P2-2** 设计稿 35 vs 31 | ✅ **已修**（#4701） | 设计稿 §5.2 ⑤ 改为「其余 **31** 格软删」+ 表后「口径订正」注（issue #4701）；§6 F6 同步改为 31 |
+| **P2-3** 自毁式真值断言 | ✅ **已修**（#4701） | `assert max(versions) == 88` → `assert 88 in versions` |
+| **P2-4** 前端过期注释 | ⏳ **待核**（未在本后记范围内逐字复核） | 未在 `9462c7e18` 上复核「V79 只留」注释是否已更新 ⇒ 记为**未核**，不下判定 |
+| **P2-5** 恒真空断言 `or True` | ✅ **已修**（#4701） | 该行已删，并在 docstring 里逐字登记「原写 `assert _s1_violations(broken) == [] or True`（= **恒真空断言**，issue #4701 P2-5）」 |
+
+### 12.3 🔴 判据面咬到了写判据的人（本报告自身被 `Case Trust Gate` 判红）
+
+本报告**首次提交（`5e352fd97`）后 PR #4700 被 `Case Trust Gate` 判红**（required 集合 ⇒ PR 一度 BLOCKED），
+根因 = **规则 G `CASE-TRUST-STALE-LINE-REF`**：我在报告里写了 **8 处裸 `文件名` + 行号** 引用
+（5 个不同的「裸 basename ＋ 行号」组合：`routing.py` 三处、`ProductionController.java` 一处、`routings/page.tsx` 三处；
+**此处刻意不复写其字面形态** —— 一复写就又触发同一条规则，见下），
+而门禁的解析规则（`.github/case_trust_gate.py` 的 `_resolve_repo_path`）对**裸 basename** 先跑
+`git ls-files -- <basename>`（**匹配不到**，因为 git 路径规格按仓库根解析），
+再回落 `git ls-files -- '*<basename>'`（**多命中** ⇒ 不解析）⇒ 判「该文件在 origin/main 上不存在」。
+
+**这就是我在 §9 里登记的同一形态，发生在报告自己身上**：
+- 与 **P2-1**（V88 注释里的自检计数）同族：**判据/引用面自己会漂、会骗人**；
+- 与 §9「红证锚点读可变引用」同族：**裸行号对活跃文件是移动靶**。
+
+**处置（只改写法，未删任何证据引用）**：8 处全部改为**符号 / 文本锚点**
+（如「按符号检索 `FABRIC_MAINLINE_STEPS`」「按测试名 `test_fabric_order_route_is_exactly_two_operations` 检索」）
+或保留**全路径**（全路径可被 `git ls-files` 唯一解析），并统一标注出处 `@<sha>`。
+**未为了让门禁变绿而砍掉任何一条证据**。
+
+**沉淀价值（建议）**：`CASE-TRUST-STALE-LINE-REF` 的 `fix` 文案现在写「改用符号/文本锚点，**或**写成 `@<sha>` 限定的行号形式」——
+但**裸 basename + `@<sha>`** 仍会被判「文件不存在」（`_resolve_repo_path` 不认 `@sha` 后缀，只认路径本身）。
+⇒ 建议把该规则的 `fix` 补一句：**`@<sha>` 限定必须与「可被 `git ls-files` 唯一解析的路径」同时满足**
+（否则「照文案改」的人会再踩一次——正是本报告 §12.3 的实测）。
+另建议：`_resolve_repo_path` 对**裸 basename 多命中**时，可考虑按「本 PR 是否新增该文件」降级为警告而非阻塞，
+否则任何引用常见 basename（`page.tsx` / `routing.py`）的报告都会被判红。

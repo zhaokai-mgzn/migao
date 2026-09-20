@@ -180,5 +180,5 @@ $ grep -n "配料\|布料工序路线" docs/sql/schema.sql
 $ sed -n '96p' backend/ai-agent-service/tests/test_production/test_fabric_route.py
     assert FABRIC_MAINLINE_STEPS == ["配料", "打包"], (
 $ grep -rn "build_route_v2" backend/ai-agent-service/app/
-（生产代码零消费方；routing.py:448 自述「今天是零消费者（P2 才切）」）
+（生产代码零消费方；`routing.py` 内按「零消费者」检索到的注释自述「今天是零消费者（P2 才切）」，出处 `@f511c0fa0`）
 ```
