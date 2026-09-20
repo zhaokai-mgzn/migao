@@ -281,17 +281,141 @@ if [ "${DISK_PCT:-0}" -gt "$DISK_WARN_PCT" ]; then
 fi
 report_rollback_point
 
+# ══════════════════════════════════════════════════════════════════════════
+# 2.05 「不许往回走」闸门（issue #4852）
+#
+# 事故（**生产 CI 实测**，非推断）：三条部署腿共用**同一把 server 侧 flock** ⇒ run 按**创建时刻**排队，
+# 而 main 在排队期间前进 ⇒ **为旧 commit 创建的 run 会在更新的 run 成功之后才执行**；旧判据是
+# 「该 TAG 的镜像在不在本地/ACR」⇒ 旧 tag 的镜像当时都在本地 ⇒ **服务被重建为旧 tag**，
+# 而 run 结论 success、健康检查三个全 200、deploy.sh 自己的结论也是「✅ 部署成功」⇒ **三重绿、零告警**。
+# 实测铁证：`35499382654`(56c8c5107,08:22 创建,~08:30 执行) → `35499604094`(ace521ff1,08:27 创建,
+# ~08:38 执行) → `35499280090`(**7b03ed3d7**, **08:20 创建**, ~08:42 执行, 部署 `sha-7b03ed3`) ✗
+# —— 它自己的日志里已经打出「回滚点 sha-ace521f」（= 它**知道**更新的部署刚刚成功），却仍然往回部署。
+#
+# 判据（**逐服务**）：target tag 是**该服务当前在跑 tag 的祖先** ⇒ 本服务**跳过** + `::warning::`（不静默）。
+# 祖先关系 = **提交图**语义（等价于 `git merge-base --is-ancestor <target> <current>`），
+# **不是**字符串比较、**也不是**时间戳（tag 是 `sha-<7>` ⇒ 字典序与提交序无关）。
+# 实现走 GitHub compare API（**同一张提交图**）而不是本地 `git`：**实测**（2026-09-21）该服务器上
+# `git clone --filter=tree:0 https://github.com/zhaokai-mgzn/migao` 连 `github.com:443` **超时**
+# 32s（git 2.43.7 在，且同一次调用里 `git ls-remote` 成功 ⇒ 时通时不通），而 `api.github.com`
+# 0.6s/HTTP 200 ⇒ 本地没有可用的历史、API 才是可靠判据（复核数据见 docs/wiki/CI-CD.md）。
+# ⚠️ 未认证 API 限 **60 次/小时/IP** ⇒ 一次部署内同「在跑 tag」**只查一次**（见下面的缓存）；
+# 取不到判据（非 sha tag / 容器没起 / API 取不到 / 分叉）⇒ **fail-open + 告警**（不许静默放行）。
+# 显式回滚（`gh workflow run deploy-*.yml -f image_tag=<tag>`，即 workflow 的 MODE=rollback）
+# 经 `ALLOW_DOWNGRADE=1` 注入许可 ⇒ **仍能往回走**（#4767 的「失败即回滚」同样带这份许可）。
+# ══════════════════════════════════════════════════════════════════════════
+ALLOW_DOWNGRADE=${ALLOW_DOWNGRADE:-0}
+# 判据源（**唯一一处**）：GitHub compare API。可被覆盖 ⇒ 守卫测试用桩打同一条码路。
+DOWNGRADE_API=${DOWNGRADE_API:-https://api.github.com/repos/zhaokai-mgzn/migao/compare}
+
+# `sha-<hex>` → 提交 sha；其它形态（latest / v1.2.3 / 空）⇒ 空串（= 没有提交序可判）
+tag_to_sha() {
+  local t=${1#sha-}
+  case "$t" in
+    *[!0-9a-f]*|"") echo ""; return 0 ;;
+  esac
+  if [ "${#t}" -ge 7 ]; then echo "$t"; else echo ""; fi
+  return 0
+}
+
+# 该服务**当前在跑**的镜像 tag（容器没起 / docker 取不到 ⇒ 空串 = 判不了）
+running_tag_of() {
+  local svc=$1 cid img
+  cid=$(docker compose ps -q "$svc" 2>/dev/null || true)
+  # 取第一行：不用 `head`（pipefail 下 head 早退会让上游吃 SIGPIPE ⇒ 整条管道非零）
+  cid=${cid%%$'\n'*}
+  [ -n "$cid" ] || return 0
+  img=$(docker inspect --format '{{.Config.Image}}' "$cid" 2>/dev/null || true)
+  echo "${img##*:}"
+  return 0
+}
+
+# 判据本体 = `git merge-base --is-ancestor <target> <current>`（**提交图**祖先关系）：
+#   downgrade = target 是在跑的**祖先** ⇒ 本次部署会让该服务**往回走**（issue #4852 的事故形态）
+#   forward   = 在跑的是 target 的祖先 ⇒ 正常前进（首次部署由 unknown 分支 fail-open 覆盖）
+#   same      = 同一 commit（同 sha 重跑 / 重复部署）
+#   unknown   = 判不了（非 sha tag / 取不到在跑 tag / API 取不到 / 分叉）⇒ **fail-open + 告警**
+# ⚠️ API 的 `status` 是**相对于 `compare/<base>...<head>`** 的：这里 base=target、head=current，
+#    故 `ahead`（current 在 target 之后）⇒ target 是祖先 ⇒ downgrade；`behind` ⇒ 前进。
+ancestry_verdict() {
+  local target=$1 current=$2 t c json status
+  t=$(tag_to_sha "$target"); c=$(tag_to_sha "$current")
+  [ -n "$t" ] && [ -n "$c" ] || { echo unknown; return 0; }
+  [ "$t" != "$c" ] || { echo same; return 0; }
+  json=$(curl -fsS -m 20 -H 'Accept: application/vnd.github+json' "$DOWNGRADE_API/$t...$c" 2>/dev/null || true)
+  status=$(printf '%s' "$json" | python3 -c 'import sys, json
+try:
+    print(json.load(sys.stdin).get("status") or "")
+except Exception:
+    print("")' 2>/dev/null || true)
+  case "$status" in
+    ahead)     echo downgrade ;;
+    behind)    echo forward ;;
+    identical) echo same ;;
+    *)         echo unknown ;;
+  esac
+  return 0
+}
+
+echo "== 2.05 「不许往回走」闸门（issue #4852）=="
+if [ "$ALLOW_DOWNGRADE" = "1" ]; then
+  echo "  ⚠️ ALLOW_DOWNGRADE=1 ⇒ **这是显式回滚**（人工指定 image_tag / #4767 的失败即回滚）：闸门放行，允许往回走"
+fi
+ALLOWED_SERVICES=""
+SKIPPED_SERVICES=""
+VERDICT_CACHE_CUR="__no_cache__"   # 一次部署内同「在跑 tag」只查一次 API（匿名 API 限 60 次/小时）
+VERDICT_CACHE_VAL=""
+for svc in admin-api ai-agent admin-web; do
+  cur=$(running_tag_of "$svc")
+  if [ "$cur" = "$VERDICT_CACHE_CUR" ]; then
+    verdict=$VERDICT_CACHE_VAL
+  else
+    verdict=$(ancestry_verdict "$TAG" "$cur")
+    # ⚠️ 缓存写在**父 shell**（不能用 `verdict=$(...)` 的返回再绕一层：命令替换是子 shell，缓存会丢）
+    VERDICT_CACHE_CUR=$cur; VERDICT_CACHE_VAL=$verdict
+  fi
+  if [ "$ALLOW_DOWNGRADE" = "1" ]; then
+    echo "  ↩ ${svc}：**显式回滚**放行（target=${TAG} / 在跑=${cur:-无} / 判据=${verdict}）"
+  elif [ "$verdict" = "downgrade" ]; then
+    echo "  ::warning::${svc} **跳过**：target=${TAG} 是**当前在跑 tag=${cur} 的祖先** ⇒ 本次部署会让它**往回走**（issue #4852）"
+    echo "     ⇒ 不部署 ${svc}（线上保持 ${cur}）：更新的那次部署已生效；**故意回滚**请走 \`gh workflow run deploy-*.yml -f image_tag=${TAG}\`"
+    SKIPPED_SERVICES="$SKIPPED_SERVICES $svc"
+    continue
+  elif [ "$verdict" = "unknown" ]; then
+    echo "  ::warning::${svc} 判不出「target vs 在跑」的提交序（target=${TAG} / 在跑=${cur:-无}）⇒ **放行但告警**（fail-open，issue #4852）"
+  fi
+  ALLOWED_SERVICES="$ALLOWED_SERVICES $svc"
+done
+echo "  闸门结论：允许部署=[${ALLOWED_SERVICES# }] / 因「往回走」跳过=[${SKIPPED_SERVICES# }]"
+
 echo "== 2. 拉取镜像（tag=${TAG}）=="
 registry_login
 export IMAGE_TAG="$TAG"
 # 逐服务拉取：某个镜像尚未推送（首次接入）时跳过该服务，其余照常滚动更新
 UP_SERVICES="nginx"
-for svc in admin-api ai-agent admin-web; do
+for svc in $ALLOWED_SERVICES; do
   if timeout 180 docker compose pull "$svc" >/dev/null 2>&1; then
     UP_SERVICES="$UP_SERVICES $svc"
   else
     echo "  ⚠️ $svc 镜像拉取失败/超时（可能尚未推送 :${TAG}），跳过该服务"
   fi
+done
+# ── 2.1 「本次实际生效 tag」逐服务一行（issue #4852 ③）──────────────────────
+# 事故里最误导的一句话就是 `✅ SWAS 部署成功（tag=sha-7b03ed3）` —— 它只说了**请求的** tag，
+# 没说线上**实际**是哪个 commit。这里逐服务打机器可读行（CI 侧解析后落 `$GITHUB_STEP_SUMMARY`
+# 与部署结论行）⇒ 「线上到底是哪个 commit」一眼可查，被闸门跳过的服务同样在列（生效 = 在跑的那个）。
+# ⚠️ 格式是契约（CI 侧 `swas-deploy-ci.sh` 按它解析，守卫测试钉住）：`EFFECTIVE_TAG=<svc>:<tag>`
+echo "== 2.1 本次实际生效 tag（逐服务）=="
+for svc in admin-api ai-agent admin-web; do
+  case " $UP_SERVICES " in
+    *" $svc "*) eff=$TAG ;;
+    *) eff=$(running_tag_of "$svc"); [ -n "$eff" ] || eff="unknown" ;;
+  esac
+  echo "  EFFECTIVE_TAG=${svc}:${eff}"
+done
+# 被闸门跳过的服务逐条给出**判据数据**（谁 vs 谁），便于事后对账：`DOWNGRADE_SKIPPED=<svc>:<target>:<running>`
+for svc in $SKIPPED_SERVICES; do
+  echo "  DOWNGRADE_SKIPPED=${svc}:${TAG}:$(running_tag_of "$svc")"
 done
 # ══════════════════════════════════════════════════════════════════════════
 # 2.5 严格蓝绿（issue #4785）：**先起新的 → 健康检查通过 → 再切流量**
