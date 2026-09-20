@@ -1961,7 +1961,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## misc（16 case）
+## misc（17 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -2146,6 +2146,18 @@
 跳过: [backend-contract] 部署 workflow / 发布脚本由 pytest 单测 + 沙箱行为测试验证（tests/unit_ci_workflows/test_worker_h5_hosting.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-20 新增（issue #4837）：worker-h5 落位 app.migaozn.com/w/ —— CI 发布 + 身份断言 + 静态根禁删守卫（含注入式红证） ｜ tags: ci, deploy, worker-h5, hosting
+
+### MC-017. SWAS 部署成功路径零 502（nginx upstream 切换 + 切换作用域跟随 #4852 闸门） 🔵
+```
+你: deploy/swas/deploy.sh 部署成功时，替换正式容器的那几十秒里 api.migaozn.com 不得出现 502（流量走在已通过健康检查的 green 上）
+期望: direct_reply
+数据: 切换序列：green 起 → 健康检查通过 → 改一行 nginx 上游到 green 色 → 替换正式容器 → 正式容器健康 → 改回正式色 → 才删 green。切流量前必须先证明新容器健康；删 green 前必须已切回正式色
+数据: 作用域：§2.5 的逐服务循环必须由 `$UP_SERVICES`（= #4852 闸门筛出的 `$ALLOWED_SERVICES` 追加得到）驱动并排除 nginx。硬编码服务表 ⇒ 被闸门跳过的服务照样被替换 + 上游被切到用旧镜像起的 green（#4852 事故与 #4828 窗口同时复发，且两个守卫文件都不变红）
+数据: 写坏爆炸半径 = 全站所有域名 ⇒ 六条对消：只改一行（不是恰好一行即不切）/ 先校验后落盘（候选经 stdin 进运行中的 nginx 跑 nginx -t）/ 原地改写（同 inode，禁 mv 与 sed -i）/ 落盘后复校 / 失败就地写回上一版 / EXIT trap + 残留切换收敛 fail-closed
+数据: 残留切换收敛：快照必须在第 1 步覆盖配置之前读（文件 ∪ 上一版备份），收敛必须排在删 green 之前、必须强制 reload（不许走「文件已等于目标 ⇒ 无需切换」短路）、正式容器不健康即中止且不碰任何容器
+跳过: [backend-contract] 部署链编排由 pytest 单测 + 桩化执行式红证验证（tests/unit_ci_workflows/test_swas_deploy_blue_green.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-21 新增（issue #4828）：部署成功路径 502 窗口打到 0 —— nginx upstream 切换 + 残留切换收敛 + 切换作用域跟随 #4852 闸门（含注入式与执行式红证） ｜ tags: ci, deploy, blue-green, nginx
 
 ## onboarding（5 case）
 
@@ -4997,8 +5009,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：364（活跃 155，跳过 209）
-- tier 分布：smoke 10 / normal 323 / adversarial 31
+- 用例总数：365（活跃 155，跳过 210）
+- tier 分布：smoke 10 / normal 324 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -5012,7 +5024,7 @@
 - finance：4
 - 人事域：10
 - knowledge：7
-- misc：16
+- misc：17
 - onboarding：5
 - ontology：4
 - 订单域：41
@@ -5053,6 +5065,7 @@
 - KN-008: 知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
 - MC-016: 工人端 H5 静态落位 app.migaozn.com/w/（CI 自动发布 + 页面身份断言 + 静态根禁删）
+- MC-017: SWAS 部署成功路径零 502（nginx upstream 切换 + 切换作用域跟随 #4852 闸门）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

@@ -619,6 +619,73 @@ def judge_upstream_switch_rails(deploy_text: str) -> list:
     return v
 
 
+def judge_switch_scope_follows_gate(deploy_text: str) -> list:
+    """⑩ issue #4828 × #4852：上游切换的**作用域**必须跟着「闸门筛出的集合」走。
+
+    为什么单独一条判据（**两个特性各自独立开发，谁都没覆盖对方**）：
+      · #4852（§2.05）按**提交图祖先关系**把「往回走」的服务从 `$ALLOWED_SERVICES` 里剔掉，
+        并把它灌进 `$UP_SERVICES`（拉取循环 / 生效 tag 都按它算）；
+      · #4828（§2.5）按 `$UP_SERVICES` 逐服务做蓝绿 + 上游切换。
+    ⇒ 两者**唯一的接口**就是 `$UP_SERVICES`。若 §2.5 的循环被改回**硬编码服务表**
+      （`for svc in admin-api ai-agent admin-web`），后果是**双重**的，而且**两个守卫文件都不会变红**
+      （#4852 的守卫只钉**拉取**循环；本文件原有判据只钉「批量替换」这个形态）：
+      ① 被 #4852 跳过的服务**照样被替换** ⇒ 旧 tag 重新上线（#4852「三重绿、零回退告警」事故原样复发）；
+      ② 它的上游被切到一个用**旧镜像**起的 green 上 ⇒ 本单刚消灭的窗口以另一种形式回来。
+    ⇒ 判据（每条对应一个具体形态）：
+      · §2.5 的循环必须由 `$UP_SERVICES` 驱动，且该段里**不得**出现硬编码服务名的同形循环；
+      · `$UP_SERVICES` 必须由 `$ALLOWED_SERVICES`（闸门筛出的集合）**追加**得到 —— 不许另起名单；
+      · `nginx` 必须在循环内被 `continue` 排除（它没有 green 对偶、也不是任何 upstream 的目标）；
+      · 两个上游切换调用必须在**循环体内**（逐服务作用域），不许提到循环外做批量切换。
+    """
+    v = []
+    loop_head = "for svc in $UP_SERVICES; do"
+    i_loop = deploy_text.find(loop_head)
+    if i_loop < 0:
+        v.append(f"§2.5 的循环不是由 `$UP_SERVICES` 驱动（找不到 `{loop_head}`）")
+        return v
+    i_26 = deploy_text.find("# ── 2.6 nginx")
+    if i_26 < 0 or i_26 < i_loop:
+        v.append("找不到 §2.6 的边界（`# ── 2.6 nginx`）—— 判据作用域无法确定（判据已过期）")
+        return v
+    sec = deploy_text[i_loop:i_26]
+    # ① 硬编码服务名的同形循环 ⇒ 作用域与闸门筛出的集合脱钩
+    for m in re.finditer(r"for\s+(\w+)\s+in\s+([^\n;]+?)\s*;?\s*do", sec):
+        rhs = m.group(2).strip()
+        if rhs.startswith("$"):
+            continue
+        if any(s in rhs for s in GREENS.values()):
+            v.append(
+                f"§2.5 段里出现硬编码服务名的循环 `for {m.group(1)} in {rhs}; do` —— 作用域不再跟着 "
+                "#4852 闸门筛出的 `$ALLOWED_SERVICES` 走 ⇒ 被跳过的服务照样被替换 + 上游被切"
+                "（两个事故同时复发）"
+            )
+    # ② 接口：`$UP_SERVICES` 必须由 `$ALLOWED_SERVICES` 循环追加得到
+    i_gate = deploy_text.find("for svc in $ALLOWED_SERVICES; do")
+    if i_gate < 0:
+        v.append("找不到闸门筛出的集合的消费点（`for svc in $ALLOWED_SERVICES; do`）—— #4852 的接口断了")
+    else:
+        i_gate_end = deploy_text.find("\ndone\n", i_gate)
+        gate_blk = deploy_text[i_gate:i_gate_end] if i_gate_end > i_gate else deploy_text[i_gate:i_gate + 600]
+        if 'UP_SERVICES="$UP_SERVICES $svc"' not in gate_blk:
+            v.append(
+                "`$UP_SERVICES` 不是在 `$ALLOWED_SERVICES` 循环里追加得到的 ⇒ §2.5 的作用域与"
+                "闸门筛出的集合脱钩（另起了一套名单）"
+            )
+    # ③ nginx 必须被排除（它没有 green 对偶）
+    if 'if [ "$svc" = "nginx" ]; then continue; fi' not in sec:
+        v.append(
+            "§2.5 的循环没有排除 `nginx`（它没有 green 对偶、也不是任何 upstream 的目标 ⇒ "
+            "对它切上游必然失败并把部署整个拖停）"
+        )
+    # ④ 两个切换调用必须在逐服务循环体内
+    i_done = sec.rfind("\ndone\n")
+    body = sec[:i_done] if i_done > 0 else sec
+    for call in (GREEN_SWITCH, OFFICIAL_SWITCH):
+        if call not in body:
+            v.append(f"`{call}` 不在 §2.5 的逐服务循环体内（批量/循环外切换 = 作用域失控）")
+    return v
+
+
 def all_violations(text: str, base: dict, bg: dict, nginx_text: str) -> list:
     return (
         judge_no_batch_replace(text)
@@ -630,6 +697,7 @@ def all_violations(text: str, base: dict, bg: dict, nginx_text: str) -> list:
         + judge_upstream_indirection(nginx_text, text, base)
         + judge_switch_sequence(text)
         + judge_upstream_switch_rails(text)
+        + judge_switch_scope_follows_gate(text)
     )
 
 
@@ -674,6 +742,12 @@ def test_upstream_switch_rails_are_clean_on_the_real_script():
     """⑨ #4828 第二版：上游切换**自身坏路径**的对消措施在真实脚本上必须干净（独立判红）。"""
     v = judge_upstream_switch_rails(read_deploy_sh())
     assert not v, "上游切换护栏判据判红：\n- " + "\n- ".join(v)
+
+
+def test_switch_scope_follows_gate_is_clean_on_the_real_script():
+    """⑩ #4828 × #4852 的作用域接口判据在真实脚本上必须干净（独立判红）。"""
+    v = judge_switch_scope_follows_gate(read_deploy_sh())
+    assert not v, "切换作用域判据判红：\n- " + "\n- ".join(v)
 
 
 def test_nginx_conf_parses_as_three_switchable_upstreams():
@@ -1052,6 +1126,48 @@ def test_injection_pre_write_validation_removed_goes_red():
         "  if false; then",
     )
     assert judge_switch_sequence(injected), "去掉先校验后落盘后没红"
+
+
+def test_injection_switch_scope_hardcoded_goes_red():
+    """注入⑳（#4828 × #4852 的作用域接口）：§2.5 的循环改回**硬编码服务表** ⇒ 必红。
+
+    形态 = 绕过 #4852 闸门筛出的 `$ALLOWED_SERVICES` ⇒ 被跳过的服务照样被替换（旧 tag 重新上线）
+    + 上游被切到用旧镜像起的 green。**实测两个守卫文件都不会变红**（这是本判据存在的全部理由）。
+    """
+    text = read_deploy_sh()
+    injected = _inject(text, "for svc in $UP_SERVICES; do", "for svc in admin-api ai-agent admin-web; do")
+    assert judge_switch_scope_follows_gate(injected), "作用域硬编码后没红（判据无判别力）"
+
+
+def test_injection_switch_scope_linkage_broken_goes_red():
+    """注入㉑：把 `$UP_SERVICES` 的追加断掉（另起一套名单）⇒ 必红。"""
+    text = read_deploy_sh()
+    injected = _inject(text, '    UP_SERVICES="$UP_SERVICES $svc"', '    UP_SERVICES="$UP_SERVICES"')
+    assert judge_switch_scope_follows_gate(injected), "闸门接口断掉后没红（判据无判别力）"
+
+
+def test_injection_nginx_not_excluded_from_switch_loop_goes_red():
+    """注入㉒：§2.5 的循环不再排除 `nginx` ⇒ 必红。"""
+    text = read_deploy_sh()
+    injected = _inject(text, '  if [ "$svc" = "nginx" ]; then continue; fi\n', "")
+    assert judge_switch_scope_follows_gate(injected), "nginx 未被排除后没红（判据无判别力）"
+
+
+def test_injection_batch_switch_outside_service_loop_goes_red():
+    """注入㉓：把 ①.5 的切换整块从循环体里摘掉、改成循环**之前**的一次批量切换 ⇒ 必红。"""
+    text = read_deploy_sh()
+    start = text.find("  # ── ①.5 切流量到 green")
+    end = text.find("  # ── ② 切换：替换正式容器", start)
+    assert 0 < start < end, "反空跑锚点：找不到 ①.5 段的边界（判据已过期）"
+    block = text[start:end]
+    assert GREEN_SWITCH in block, "反空跑锚点：①.5 段里没有切换调用"
+    cut = text[:start] + text[end:]
+    assert cut != text, "反空跑锚点：摘掉 ①.5 段没有改变文本（空跑）"
+    injected = _inject(
+        cut, "for svc in $UP_SERVICES; do",
+        'bg_switch_upstream "$svc" green || exit 1\nfor svc in $UP_SERVICES; do',
+    )
+    assert judge_switch_scope_follows_gate(injected), "切换被移到循环外后没红（判据无判别力）"
 
 
 # ══════════════════════════════════════════════════════════════════════════

@@ -3158,6 +3158,24 @@ _CASE_MC_016 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-017 [NORMAL] SWAS 部署成功路径零 502（nginx upstream 切换 + 切换作用域跟随 #4852 闸门）（源: cases/misc.yml）──
+_CASE_MC_017 = EvalCase(
+    id='MC-017',
+    legacy_id='',
+    title='SWAS 部署成功路径零 502（nginx upstream 切换 + 切换作用域跟随 #4852 闸门）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['deploy/swas/deploy.sh 部署成功时，替换正式容器的那几十秒里 api.migaozn.com 不得出现 502（流量走在已通过健康检查的 green 上）'],
+    expectations=['direct_reply'],
+    data_checks=['切换序列：green 起 → 健康检查通过 → 改一行 nginx 上游到 green 色 → 替换正式容器 → 正式容器健康 → 改回正式色 → 才删 green。切流量前必须先证明新容器健康；删 green 前必须已切回正式色', '作用域：§2.5 的逐服务循环必须由 `$UP_SERVICES`（= #4852 闸门筛出的 `$ALLOWED_SERVICES` 追加得到）驱动并排除 nginx。硬编码服务表 ⇒ 被闸门跳过的服务照样被替换 + 上游被切到用旧镜像起的 green（#4852 事故与 #4828 窗口同时复发，且两个守卫文件都不变红）', '写坏爆炸半径 = 全站所有域名 ⇒ 六条对消：只改一行（不是恰好一行即不切）/ 先校验后落盘（候选经 stdin 进运行中的 nginx 跑 nginx -t）/ 原地改写（同 inode，禁 mv 与 sed -i）/ 落盘后复校 / 失败就地写回上一版 / EXIT trap + 残留切换收敛 fail-closed', '残留切换收敛：快照必须在第 1 步覆盖配置之前读（文件 ∪ 上一版备份），收敛必须排在删 green 之前、必须强制 reload（不许走「文件已等于目标 ⇒ 无需切换」短路）、正式容器不健康即中止且不碰任何容器'],
+    skip_reason='[backend-contract] 部署链编排由 pytest 单测 + 桩化执行式红证验证（tests/unit_ci_workflows/test_swas_deploy_blue_green.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'blue-green', 'nginx'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -7142,6 +7160,7 @@ ALL_CASES = (
     _CASE_MC_014,
     _CASE_MC_015,
     _CASE_MC_016,
+    _CASE_MC_017,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
