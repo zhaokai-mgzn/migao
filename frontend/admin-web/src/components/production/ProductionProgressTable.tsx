@@ -10,7 +10,13 @@ import type { ProductionPosition } from '@/types'
 /**
  * 工序进度表（issue #4000，M4-H 按需单据渲染）
  *
- * 按**部位**分组展示加工单的工序实例：工序名 / 分组 / 应做数量+单位 / 单价 / 状态 / 已完成数量 / 报工人。
+ * 按**套**（一樘窗 = 一套，issue #4686 用户裁定 2026-09-20）分组展示加工单的工序实例：工序名 /
+ * 分组 / 应做数量+单位 / 单价 / 状态 / 已完成数量 / 报工人。组头按行业口径标 **第 N 套 / 共 M 套**
+ * （真值源 docs/curtain-production-rules.md:9 逐字「第 N 套/共 M 套」）：读面已按 `order_item_id`
+ * （= 一樘窗）分组返回**有序**列表（`ProductionService.buildPositions`）⇒ N = 该组在列表中的序号、
+ * M = 列表长度，前端不另起一套口径。
+ * ⚠️ 这里的分组**不是「部位」**（部位 = 布帘/纱帘/帘头，读面键 = `position_kind`）；`position_name`
+ * 是**展示名**（加工产物名[+色号]），降为副标题 —— 它回答的是「这一套是哪一樘窗」。
  * 必完工序（is_must_finish，「此工序必须完成才可打包」）加「必完」badge —— 商家据此看进度、
  * 工人据此知道哪道不能漏（真值源：docs/curtain-production-rules.md §2 工序库）。
  * 应做数量由算料引擎给出、报工只确认（§3），故此处只读展示、不做手工计算。
@@ -36,9 +42,11 @@ function statusChip(status?: string | null): { label: string; tone: 'success' | 
 }
 
 export default function ProductionProgressTable({ positions, className }: ProductionProgressTableProps) {
-  const groups = (positions ?? []).filter((p) => (p.operations ?? []).length > 0)
+  // 套口径（issue #4686）：读面按 `order_item_id`（一樘窗 = 一套）分组返回**有序**列表
+  // ⇒ 套号 / 套数直接由该列表派生（N = 序号、M = 列表长度），不在前端另数一遍。
+  const sets = positions ?? []
 
-  if (groups.length === 0) {
+  if (sets.every((s) => (s.operations ?? []).length === 0)) {
     return (
       <div className={className} data-testid="production-progress-empty">
         <p className="py-8 text-center text-sm text-neutral-400">暂无工序数据</p>
@@ -49,15 +57,19 @@ export default function ProductionProgressTable({ positions, className }: Produc
   return (
     <div className={className}>
       <div className="space-y-6">
-        {groups.map((position, groupIndex) => {
-          const name = position.position_name || '未命名部位'
+        {sets.map((set, setIndex) => {
+          const operations = set.operations ?? []
+          if (operations.length === 0) return null
+          const name = set.position_name || ''
           return (
-            <div key={`${name}-${groupIndex}`} data-testid={`position-group-${name}`}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-sm font-medium text-neutral-900">部位：{name}</span>
-                <span className="text-xs text-neutral-400">
-                  {(position.operations ?? []).length} 道工序
+            <div key={`${name}-${setIndex}`} data-testid={`position-group-${name}`}>
+              <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="text-sm font-medium text-neutral-900">
+                  第 {setIndex + 1} 套 / 共 {sets.length} 套
                 </span>
+                {/* 副标题 = 这一套是**哪一樘窗**（加工产物名[+色号]）；它不是「部位」 */}
+                {name && <span className="text-xs text-neutral-500">{name}</span>}
+                <span className="text-xs text-neutral-400">{operations.length} 道工序</span>
               </div>
               <div className="overflow-x-auto rounded-lg border border-neutral-200">
                 <table className="w-full text-sm">
@@ -73,7 +85,7 @@ export default function ProductionProgressTable({ positions, className }: Produc
                     </tr>
                   </thead>
                   <tbody>
-                    {(position.operations ?? []).map((op) => {
+                    {operations.map((op) => {
                       const chip = statusChip(op.status)
                       return (
                         <tr
