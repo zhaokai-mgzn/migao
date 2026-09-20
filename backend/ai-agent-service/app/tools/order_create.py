@@ -246,6 +246,20 @@ def _entry_processing_fee(entry: Any) -> float:
     整体删除 ⇒ 明细里再没有可相乘的单价，唯一可得的口径就是声明的加工费合计。
     本函数只服务于「顾客确认过的事实 vs 本次要执行的事实」比对（issue #4037/F22）——
     加工费一旦在顾客确认后变化，照样会被拦下（护栏语义不变，只是取值来源变了）。
+
+    🔴 **残余风险（issue #4390 缺口③，本包未落地，如实登记）**：这个「声明值」**没有接地** ——
+    服务端建单的 `totalAmount` 取 `ProcessingFeeCalculator.feesFor`（选配组合 →
+    `processing_fee_combinations` 取价 × 加工费米数 + Σ 特殊选项价 + 拼色加价），**不用**
+    声明值 ⇒ 顾客在确认卡上看到的加工费与服务端会收的那笔**可以是两个数**
+    （issue #4118「双算」同族：实证曾「模型声明 252、服务端重算 311.4」）。
+    唯一权威入口是 `POST /api/admin/orders/fee-preview`（`FeePreviewController`：与建单
+    **同一个**取价实现、纯试算零写、请求体与建单同形），但**消费它 = 每个带加工费域的单
+    多一次 HTTP POST** ⇒ 实测**红 6 个既有用例**（`tests/test_order_create_quantity_bounds.py`：
+    `TestOrderCreateProcessingFeeAndItemBounds::test_legal_processing_values_still_pass` 的 5 个
+    参数化 + `TestOrderCreateEnumGuards::test_legacy_pricing_method_no_longer_gated`），
+    它们断言 `mock_client.post.await_count == 1`（该文件共 5 处该断言，另 3 处用例不含加工费域）
+    —— 那些文件不在本包白名单（只许**新建**测试文件）⇒ 按「缺前提就停下报告」登记为需授权项，
+    **不在此硬做、也不把它固化成期望**。
     """
     pinfo = entry.get("processing_info") if isinstance(entry, dict) else None
     if not isinstance(pinfo, dict):
@@ -397,10 +411,27 @@ class OrderCreateTool(BaseTool):
         "customer_quoted → 「客户自报」）。"
         "**没算料 / 输出里没有该键 ⇒ 就不要填**（**不要补 0**、不要按倍数自己乘）——"
         "算料数字只有一个真值源，自己推算会让报价单与订单对不上。"
-        "【双拼·主布/配布边】拼色（双拼）时一扇窗拆**两条明细行**：主布行带 componentRole=主布 "
-        "与全部工艺规格；配布边行带 componentRole=配布边 + craftLineId=主布行的行标识"
-        "（绑成一组，否则加工单会把一扇窗算成两扇、折数/开数/工序/计件全部翻倍），"
-        "并带 metersSource（跟随主布/人工指定）。**加工项只挂主布行**。"
+        # 樘窗绑组（issue #4387 语义扩展 / issue #4390 缺口①）：组键 = craftLineId，
+        # 服务端**缺省回落本行 itemId** ⇒ 值必须**逐字相等**才算同组。原描述教的是
+        # 「配布边行带 craftLineId=主布行的行标识」—— 行 id 要落库后才有 ⇒ 照它写
+        # **结构上永远绑不上组**（主布行的组键是它自己的 itemId），后果静默且致命（翻倍）。
+        "【樘窗绑组·craftLineId】一个**樘窗**（一个窗户）= 一个 craftLineId 组，可有多条明细行："
+        "布行 + 纱行（**各成一个部位**）+ 配布边行（**不独立成部位**，被主布行吸收）。"
+        "**同一樘窗的每一行都必须写同一个 craftLineId**（服务端按值**逐字相等**判同组；"
+        "缺省 = 本行各自成组）；值是**你自己起的稳定字符串标识**（如 w1）——"
+        "**不是订单行 id**（行 id 要落库后才有，下单前拿不到）。"
+        # ⚠️ 两个方向都要写（同一根因的两半，都是**静默涉钱**的）：错值让组键对不上/撞上，
+        # 服务端都照字面判同组。只教「每行写同一个值」⇒ 模型极易把 w1 当成「那个组」的名字
+        # 而给**两个窗户**都写 w1 ⇒ 两扇并成一扇（算**少**）。两者必须对称地在场。
+        "⚠️ **不同樘窗必须用互不相同的值**（w1 / w2 …）：一张单有两个窗户时 4 行都写 w1 "
+        "会被判成**同一樘窗** ⇒ 两扇窗并成一扇，套数/工序/计件**算少**。"
+        "⚠️ 只给配布边行写、主布行不写 = 组键对不上 ⇒ 一扇窗被算成两扇，"
+        "折数/开数/工序/计件**全部翻倍**，同樘窗的同名 specialOptions 也会被收两次。"
+        "【双拼·主布/配布边】拼色（双拼）时主布行带 componentRole=主布 + 全部工艺规格；"
+        "配布边行带 componentRole=配布边 + **同一个 craftLineId** 并带 metersSource"
+        "（跟随主布/人工指定）。**布 + 纱**则两行分别带 componentRole=主布 / 纱，"
+        "并写**同一个 craftLineId**（绑成同一樘窗；纱是**独立部位**，不会因为同组而消失）。"
+        "**加工项只挂主布行**。"
         "【加工费米数】加工费按**主布米数**算（配布边米数不参与）—— 米数由算料（curtain_calc）给出，"
         "**不要自己推算**。"
         "【铁律·加工项】加工项是**店铺级目录，与商品无关**（issue #4371）——**必须先调用 "
@@ -560,9 +591,15 @@ class OrderCreateTool(BaseTool):
                                     "enum": ["主布", "配布边", "纱"],
                                     "description": "明细行角色（设计文档 §4.8）。缺省视为「主布」（存量单兼容）。双拼 = 主布行 + 配布边行**两条明细行**",
                                 },
+                                # 樘窗组键（issue #4387 语义扩展 / issue #4390 缺口①）：
+                                # 服务端组键 = `craftLineId`，**缺省回落本行 `itemId`**
+                                # ⇒ 值必须**逐字相等**才算同组。旧描述只教「配布边行填主布行的
+                                # 行标识」⇒ 结构上绑不上组（行 id 下单前不存在，见
+                                # `_reject_ungrouped_craft_lines` 的说明）；旧描述的
+                                # 「只生成一个部位」对**纱行**也是错的（纱是独立部位）。
                                 "craftLineId": {
                                     "type": "string",
-                                    "description": "**同一扇窗的绑组标识**：配布边行填主布行的行标识 ⇒ 加工单只生成一个部位（否则一扇窗被算成两扇，折数/开数/工序/计件全部翻倍）",
+                                    "description": "**同一樘窗（一个窗户）的绑组标识**：同一樘窗的**每一行都写同一个值**（服务端按值**逐字相等**判同组；缺省 = 本行各自成组），且**不同樘窗必须用互不相同的值**（w1 / w2 …）—— 两个窗户复用同一个值会被判成同一樘窗 ⇒ 两扇被并成一扇，套数/工序/计件**算少**。值是**你自己起的稳定字符串**（如 w1），**不是订单行 id** —— 下单前还没有行 id。布行 + 纱行同组时**各成一个部位**（纱是独立部位）；配布边行同组时被主布行**吸收**（不独立成部位）。只给配布边行写、主布行不写 ⇒ 绑不上组 ⇒ 一扇窗被算成两扇（折数/开数/工序/计件全部翻倍）",
                                 },
                                 "metersSource": {
                                     "type": "string",
@@ -984,6 +1021,65 @@ class OrderCreateTool(BaseTool):
         )
 
     @staticmethod
+    def _reject_invalid_special_options(where: str, raw: Any) -> Optional[ToolResult]:
+        """特殊选项（`specialOptions`）**形态**闸门（issue #4390 缺口②）。
+
+        为什么必须有：`processing_info` 是**整体透传**的，而 `BaseTool.validate_args` 显式
+        **不校验嵌套明细项**（docstring：「嵌套明细项（`items[].xxx`，由各工具自己的精确失败面
+        负责」）⇒ 写面对这串值此前零校验。而服务端唯一的消费点是「**只认字符串数组**」的
+        （`ProcessingOrderService.specialOptions()`：`!(raw instanceof List) ⇒ List.of()`）
+        ——其余形态**整份静默丢弃** ⇒ 车间拿不到勾选、工人拿不到那笔计件（台账原文的受害面），
+        全链路无告警。空白元素同样不可用（空名字按选项名精确匹配取不到价）。
+        重复项则让「同一樘窗同名选项只收一次」（#4725）的口径变得不可读：写两遍 = 模型
+        把它当成了两笔钱。
+
+        只做确定性判定（无 LLM / 无网络），沿用 `_reject_invalid_enum` 的口径：
+        拒绝 + 点名正确形态，让 LLM 下一轮自愈，**绝不静默接受**。
+        """
+        if raw is None:
+            return None  # 可选键：顾客没勾 ⇒ 不填（不得变成硬门槛）
+        if not isinstance(raw, list):
+            return ToolResult(
+                success=False,
+                error=f"{where}特殊选项格式错误",
+                message=(
+                    f"{where}的 processing_info.specialOptions 是 {type(raw).__name__}，"
+                    "不是**数组** —— 服务端只认字符串数组，其余形态会被**整份丢弃**（静默）："
+                    "车间看不到勾选、工人拿不到那笔计件。"
+                ),
+                suggestion=(
+                    "请把 specialOptions 写成**字符串数组**（如 [\"拼1次\", \"加铅块\"]）；"
+                    "一个都没勾就不要传这个键"
+                ),
+            )
+        seen: List[str] = []
+        for idx, option in enumerate(raw):
+            if not isinstance(option, str) or not option.strip():
+                return ToolResult(
+                    success=False,
+                    error=f"{where}特殊选项格式错误",
+                    message=(
+                        f"{where}的 processing_info.specialOptions 第 {idx + 1} 项是「{option}」，"
+                        "不是非空字符串 —— 脏元素取不到价（服务端按选项名**精确匹配**取价）。"
+                    ),
+                    suggestion=(
+                        "specialOptions 的每一项都必须是**非空字符串**选项名（如 \"加铅块\"）"
+                    ),
+                )
+            if option in seen:
+                return ToolResult(
+                    success=False,
+                    error=f"{where}特殊选项重复",
+                    message=(
+                        f"{where}的 processing_info.specialOptions 里「{option}」**重复**了 —— "
+                        "同一樘窗的同名选项只收一次（写两遍说明把它当成了两笔钱）。"
+                    ),
+                    suggestion="请去掉重复项：同一个选项只写一次",
+                )
+            seen.append(option)
+        return None
+
+    @staticmethod
     def _validate_processing_info(i: int, pinfo: Any) -> Optional[ToolResult]:
         """`processing_info` 内的范围/枚举闸门（issue #3622）。
 
@@ -1026,6 +1122,12 @@ class OrderCreateTool(BaseTool):
         # 打开方式开数（issue #4430）：**正整数**取值域，不走枚举闸门 —— 硬塞成成员比对
         # 就是「把正整数当枚举实现」的缺陷本身（三开被拦）。
         rejected = OrderCreateTool._reject_invalid_open_count(where, pinfo.get("openCount"))
+        if rejected is not None:
+            return rejected
+        # 特殊选项形态（issue #4390 缺口②）：非数组/脏元素会被服务端**整份丢弃**（静默）
+        # ⇒ 在写面 fail-fast（见 `_reject_invalid_special_options`）。
+        rejected = OrderCreateTool._reject_invalid_special_options(
+            where, pinfo.get("specialOptions"))
         if rejected is not None:
             return rejected
         # 算料输出/工艺规格的**数值键非负**（issue #4374 交付物 4）：负米数/负幅数会一路写进订单，
@@ -1078,6 +1180,100 @@ class OrderCreateTool(BaseTool):
                     "负数量的加工项不成立（数量 = 该行面料米数，米数不能为负）")
                 if rejected is not None:
                     return rejected
+        return None
+
+    @staticmethod
+    def _reject_ungrouped_craft_lines(items: List[Dict[str, Any]]) -> Optional[ToolResult]:
+        """樘窗绑组（`craftLineId`）**跨行**闸门（issue #4387 语义扩展 / issue #4390 缺口①）。
+
+        判据直接对齐服务端读侧实现 `ProcessingOrderService.craftGroupKey`：
+        **组键 = 本行的 `craftLineId`，缺省回落本行 `itemId`**（两个不同行的 `itemId` 天然
+        不等 ⇒ 缺键的行**各自成组**）。于是：
+
+        - 只给**配布边行**写组键、主布行不写 ⇒ **结构上永远绑不上组**（主布行的组键是它自己的
+          `itemId`，配布边行写什么都对不上）⇒ 配布边行不被吸收 ⇒ **一扇窗被算成两扇**：
+          折数/开数/工序/计件全部翻倍，且同樘窗的同名特殊选项会被收两次
+          （`ProcessingFeeCalculator.windowKey` 的樘窗级去重同时失效）。
+          ⚠️ 工具描述**原先教的正是这个形态**（「配布边行带 `craftLineId=主布行的行标识`」）
+          —— 而行 id 要**落库后**才有，下单前拿不到 ⇒ 那条教学是不可执行的（本闸门 + 描述
+          改写一起修它）。
+        - 组键只绑住**一行** ⇒ 是个空转的键（模型以为绑上了、实际没有）⇒ 同样拒绝。
+        - 单行樘窗**不该**写组键：缺键时的行为与「自成一组」逐字等价。
+
+        **判据边界（如实登记，不猜）**：本闸门只判「一个组键绑住了几行」，**判不出跨樘窗撞键**
+        —— 两个窗户误用同一个值 ⇒ 两扇被并成一扇、套数/工序/计件**算少**（与上面第一条
+        **同一个静默涉钱面，方向相反**）。要判它必须知道「这张单有几个窗户」，而**该事实不由
+        任何输入给出**：`curtainType` / `componentRole` 的组合也不足以判定（同一樘窗可以有两行
+        `componentRole=主布`，如 布帘 + 帘头；转角窗也可能有两个同类部位）⇒ 刻意**不做**启发式
+        猜测（猜错会误伤合法单，R2 反例）。该方向由**描述约束**守住，哨兵断言在
+        `tests/test_issue_4390_craft_line_and_fee.py::test_description_requires_distinct_values_per_window`。
+
+        只做确定性判定（无 LLM / 无网络）。**跨行**才判得出来，故不放进逐行的
+        `_validate_processing_info`（那里只看得到一行）。
+        """
+        group_rows: Dict[str, List[int]] = {}
+        edge_rows: List[int] = []
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            pinfo = item.get("processing_info")
+            if not isinstance(pinfo, dict):
+                continue
+            if str(pinfo.get("componentRole") or "").strip() == "配布边":
+                edge_rows.append(i)
+            raw = pinfo.get("craftLineId")
+            if raw is None:
+                continue
+            if not isinstance(raw, str) or not raw.strip():
+                return ToolResult(
+                    success=False,
+                    error=f"商品明细第 {i + 1} 项 craftLineId 无效",
+                    message=(
+                        f"商品明细第 {i + 1} 项的 processing_info.craftLineId 是「{raw}」，"
+                        "不是**非空字符串** —— 服务端按字面取值判是否同组，"
+                        "非字符串形态绑不上樘窗。"
+                    ),
+                    suggestion=(
+                        "craftLineId 用**你自己起的稳定字符串**（如 w1）："
+                        "同一樘窗的每一行写**同一个值**"
+                    ),
+                )
+            group_rows.setdefault(raw.strip(), []).append(i)
+
+        for i in edge_rows:
+            raw = items[i]["processing_info"].get("craftLineId")
+            if not (isinstance(raw, str) and raw.strip()):
+                return ToolResult(
+                    success=False,
+                    error=f"商品明细第 {i + 1} 项配布边未绑樘窗",
+                    message=(
+                        f"商品明细第 {i + 1} 项的 componentRole=配布边，但没有 craftLineId —— "
+                        "这一行**不会被吸收**进主布部位，加工单会把它算成**另一个部位**："
+                        "一扇窗算两扇（折数/开数/工序/计件全部翻倍）。"
+                    ),
+                    suggestion=(
+                        "把同一樘窗的**每一行**（主布行 + 配布边行）的 "
+                        "processing_info.craftLineId 写成**同一个值**（自己起一个稳定标识，"
+                        "如 w1）—— **不要**写订单行 id（下单前还没有它）；"
+                        "只写在配布边行上一样绑不上组"
+                    ),
+                )
+
+        for key, rows in group_rows.items():
+            if len(rows) < 2:
+                return ToolResult(
+                    success=False,
+                    error=f"商品明细第 {rows[0] + 1} 项 craftLineId 悬空",
+                    message=(
+                        f"craftLineId「{key}」在本单里只出现在**第 {rows[0] + 1} 项**一行上 —— "
+                        "组键要**至少两行逐字相同**才算同一樘窗（单行樘窗不该写组键）。"
+                        "悬空的组键 = 以为绑上了、实际各自成组。"
+                    ),
+                    suggestion=(
+                        "要绑樘窗：把同一樘窗的**每一行**都写**同一个** craftLineId（逐字相同）；"
+                        "单行樘窗请**删掉** craftLineId（缺键时行为与自成一组逐字等价）"
+                    ),
+                )
         return None
 
     @staticmethod
@@ -1559,6 +1755,12 @@ class OrderCreateTool(BaseTool):
             _bounds_reject = self._validate_item_value_bounds(i, item)
             if _bounds_reject is not None:
                 return _bounds_reject
+
+        # ── 樘窗绑组闸门（issue #4387 语义扩展 / issue #4390 缺口①）──
+        # **跨行**才判得出来（组键要至少两行逐字相同），故排在逐行校验之后、任何网络调用之前。
+        _group_reject = self._reject_ungrouped_craft_lines(items)
+        if _group_reject is not None:
+            return _group_reject
 
         # ── 缺参的**结构化**形态（issue #4080 T3）──
         # 下面 4 个失败点（缺少商品明细 / 缺少短信验证码 / 验证码格式无效 / 验证码错误或已过期）
