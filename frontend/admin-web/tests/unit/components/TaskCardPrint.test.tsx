@@ -122,7 +122,10 @@ describe('TaskCardPrint', () => {
     expect(within(spec).getByText('加铅线、双褶')).toBeInTheDocument()
     expect(within(spec).getByText('52')).toBeInTheDocument()
     expect(within(spec).getByText('26')).toBeInTheDocument()
-    expect(within(spec).getByText('0.1米')).toBeInTheDocument()
+    // ⚠️ #4876：任务卡载荷里仍带 `pleatSpacing: 0.1`，而 `craft-display` 的「褶距」行已整体删除
+    // ⇒ 断言它**不再出现在纸面上**（车间按工艺生产：这一行不再有信息量，也不该留半截渲染分支）。
+    expect(within(spec).queryByText('褶距')).toBeNull()
+    expect(within(spec).queryByText('0.1米')).toBeNull()
     expect(within(spec).getByText('4')).toBeInTheDocument()
     expect(within(spec).getByText('2 倍')).toBeInTheDocument()
     expect(within(spec).getByText('1.86 倍')).toBeInTheDocument()

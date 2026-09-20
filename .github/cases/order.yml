@@ -2793,7 +2793,7 @@ cases:
     expectations: []
     data_checks:
       - "**一份定义吃两种键名口径**（设计文档 §4.9「一份 spec，三处渲染」）：`craft-display` 的 `craftSpecRows` 同时吃**订单/快照层 camelCase**（`order_items.processing_info` / `items_snapshot`）与**报价单 snake_case**（`curtain_calc` 输出）—— 两处各写一套定义 = 第二份口径，漂移的那一份不会变红。"
-      - "**§4.9 字段表逐项渲染**：17 个字段按表出（部位 / 工艺 / 加工类型 / 打开方式 / 是否定型 / 款式 / 特殊选项 / 总褶数 / 折数（每片）/ 褶距 / 幅数 / 褶倍 / 米数 / 是否对花 / 花距 …）；格式化口径 = 布尔 → 是/否、米数带单位、倍数带单位、选项数组顿号连接。"
+      - "**§4.9 字段表逐项渲染**：**17** 个字段按表出（部位 / 工艺 / 加工类型 / 打开方式 / 是否定型 / 款式 / 特殊选项 / 总褶数 / 折数（每片）/ 幅数 / 褶倍 / 实际褶倍 / 米数 / 加工费米数 / 算料公式 / 是否对花 / 花距）；格式化口径 = 布尔 → 是/否、米数带单位、倍数带单位、选项数组顿号连接。⚠️ **2026-09-21 改判（issue #4876）**：原表里的「**褶距**」行**已整体删除**（用户裁定「应该直接删除这个字段，要做就做干净」）⇒ 字段数由 18 变 17，且**存量单也不再渲染褶距**（载荷里仍带 `pleatSpacing` 时断言它**不被渲染** —— 见 `craft-display.test.ts` 的 #4876 判据与三个组件测试的反向断言）。工位口径：`OrderLineCraftFields.materialize` / `order_items.pleat_spacing` 列**仍在**（DB 列与 Java 读面未删，属数据层存量；删的是**展示行**）。"
       - "**打开方式 1/2/3/4 → 单开/双开/三开/四开**（issue #4387 判据 1：候选必须含三开）；未知开数如实标「N 开」（不猜、不落默认值）。"
       - "**加工类型取真值来源 `formula_used`**：`fixed_height*` → 定高买宽、`fixed_width*` / `roman_panel` → 定宽买高；未知 formula **fail-closed**（宁少一行，不漏内部代号给顾客）；订单层 `cuttingMode` 直存中文时优先于 `formula_used`。"
       - "**缺值不渲染（§4.9 硬约束 2）**：键缺席 / `null` / 空串 / 空数组 / 非有限数 ⇒ 该行**不出现**，绝不出现 `undefined` / `null` / `NaN`，也不补默认值；部分缺值只渲染有值的行（存量单形态：完全没有工艺键 ⇒ 无「工艺规格」块，页面仍正常渲染）。"
@@ -2830,11 +2830,13 @@ cases:
       - "**显式「否」是真值**：`isShaped=false` / `hasPattern=false` **必须写**（不得当成「未填」丢弃）—— 与上一条是同一枚硬币的两面，两条一起才钉住「缺值」与「假值」的区别。"
       - "**键名 camelCase（§4.5）**：`buildCraftSpec` 产出的键与订单/快照层、Java 侧逐字一致。"
       - "**枚举逐字 = 库侧**（错一个字下游取不到路线）：部位 = 布帘/纱帘/帘头；工艺 = 韩褶/打孔/四爪钩/穿杆/平幔（**2026-09-19 起工艺不再由本卡片录入** —— 它由勾选的加工项的 `craft_hint` **派生**后照旧写 `craft` 键，值域不变；`四爪钩` 在重建后的加工项目录里暂缺 ⇒ 页面不可达，归属见关联 #4365 阶段 2）；加工类型 = 定高买宽/定宽买高；打开方式 = 单开(1)/双开(2)/三开(3)/四开(4)（含三开 = #4387 判据 1）；款式 = 单色/拼色；特殊选项 19 项逐字等于真值源 §1 清单且**不得残留旧写法**（选项名是 join key，与库侧差一个字 ⇒ 静默失效，issue #4389）。"
-      - "**录入控件 → 回调是确定性行为**：本卡片渲染 **加工类型 / 打开方式 / 款式 / 褶距 / 是否对花（+ 花距）** 五个录入位；⚠️ **2026-09-19 起「工艺」「是否定型」两个控件已移除**（用户裁定「工艺规格中的 工艺、定型 直接通过加工项来勾选，其他保留」）—— 它们的真值改由**加工项派生**：`craft` ← 选中加工项的 `craft_hint`、`isShaped` ← 「定型」加工项是否勾选（目录里没有该加工项 ⇒ 键不落库，与旧「未指定」档同语义）；这两条等价断言落在 `tests/unit/pages/orders-new.test.tsx`。其余不变：选「双开」⇒ `openCount` 是**数字** 2（不是字符串）；选「三开」⇒ 数字 3；花距输入框只在「是否对花 = 是」时出现；特殊选项默认收起但**收起 ≠ 隐藏已选事实**（显示「已选 N 项」摘要），展开后 19 项齐全。**对花保留在本卡片**：它是**算料输入**（定宽买高时每幅 +1 个花距，`curtain_calc.py`），且 ERP 91 项加工费名单里 **0 行**含对花。"
-      - "**默认档常量与算料引擎的同步守卫**（issue #4420，同族 #4393）：前端默认档 / 算料常量**逐值读** `backend/ai-agent-service/app/tools/curtain_calc.py` 源文件比对，漂移即红 —— 前端自己写一份算料常量而库侧改了不跟 ⇒ **静默漂移**（页面显示的用料/褶距与加工单不一致，且没有任何东西变红）。判据取**值级**比对（读真值源，不抄现值），不是「与源码等值」的形态判据。默认三条（加工类型定高买宽 / 款式单色 / 褶距 0.125）必须是**真值**（经 `buildCraftSpec` 后三个键都落库，不被「缺值不写」吞掉），且与库侧枚举逐字一致。"
+      - "**录入控件 → 回调是确定性行为**：本卡片渲染 **加工类型 / 打开方式 / 款式 / 用料公式 / 是否对花（+ 花距）** 五个录入位（⚠️ **2026-09-21 改判（issue #4874）**：「**褶距**」录入位随「移除订单工艺规格中的褶距字段」退场，替换位 = **用料公式** chips）；⚠️ **2026-09-19 起「工艺」「是否定型」两个控件已移除**（用户裁定「工艺规格中的 工艺、定型 直接通过加工项来勾选，其他保留」）—— 它们的真值改由**加工项派生**：`craft` ← 选中加工项的 `craft_hint`、`isShaped` ← 「定型」加工项是否勾选（目录里没有该加工项 ⇒ 键不落库，与旧「未指定」档同语义）；这两条等价断言落在 `tests/unit/pages/orders-new.test.tsx`。其余不变：选「双开」⇒ `openCount` 是**数字** 2（不是字符串）；选「三开」⇒ 数字 3；花距输入框只在「是否对花 = 是」时出现；特殊选项默认收起但**收起 ≠ 隐藏已选事实**（显示「已选 N 项」摘要），展开后 19 项齐全。**对花保留在本卡片**：它是**算料输入**（定宽买高时每幅 +1 个花距，`curtain_calc.py`），且 ERP 91 项加工费名单里 **0 行**含对花。"
+      - "**默认档常量与算料引擎的同步守卫**（issue #4420，同族 #4393）：前端默认档 / 算料常量**逐值读** `backend/ai-agent-service/app/tools/curtain_calc.py` 源文件比对，漂移即红 —— 前端自己写一份算料常量而库侧改了不跟 ⇒ **静默漂移**（页面显示的用料与加工单不一致，且没有任何东西变红）。判据取**值级**比对（读真值源，不抄现值），不是「与源码等值」的形态判据。⚠️ **2026-09-21 改判（issue #4874）**：默认档由「加工类型定高买宽 / 款式单色 / **褶距 0.125**」三条改为「加工类型定高买宽 / 款式单色 / **用料公式 `pleat`（韩折公式·折数法）**」两条 + 「算料档位落在**配置里真实存在的键**上」；`DEFAULT_PLEAT_SPACING` 常量随字段**整体删除**（不是留着不写）。"
+      - "**用料公式 + 算料档位（issue #4874，2026-09-21 新增判据）**：①「用料公式」chips 的**值域** = `lib/craft-calc-request.ts` 的 `CRAFT_CALC_FORMULAS`（`pleat` / `fullness`）、**文案** = `CRAFT_CALC_FORMULA_LABELS`（韩折公式（折数法）/ 褶倍数公式（倍数法））—— **唯一一份**，工艺配置页的「兜底用料公式」下拉**复用同一张表**（`routings/page.tsx` 不再自带副本；原副本逐字相同但**无守卫**，issue #4878 独立复核销账）；② 生效公式 = 商家显式选 ⇒ **工艺推导**（`CRAFT_CALC_FORMULA_BY_CRAFT` 的有守卫副本）⇒ 算料配置 `default_formula` ⇒ 常量 `pleat`（`effectiveCraftCalcFormula`，与引擎的「显式 > 推导表 > 兜底」**同序**）；③ 选 `pleat` ⇒ 展示**自动算出的折数**（试算响应 `pleat_count`，无结果写 `—`、**不编数**）、选 `fullness` ⇒ 展示**档位 chips**（值域 = 算料配置 `tiers` 的**键**、文案 = `tiers[key].label`；**显示的是生效值** `craftTier ?? defaultCraftCalcTier(config)` 而非「一个都不选中」—— issue #4878 独立复核）；④ 档位缺省必须落在**算料配置里真实存在的档位键**上（`standard` 在则用它、否则取首个键，配置读不到才回落常量）；⑤ 两个键**都落库**：`formula` / `craftTier` 进 `processingInfo`（缺值不写；`craftTier` 同时作为算料请求的 `craft_tier`），并**同 PR 补进加工单快照白名单** `ProcessingOrderService.CRAFT_SPEC_SNAPSHOT_KEYS`（否则「加工单能看出按哪档算料」是半截迁移）；⑥ 算料配置**未加载** ⇒ 显式提示（`craft-calc-config-missing`）且**不阻断录入**（不静默按缺省走）。承载测试：`frontend/admin-web/tests/unit/components/OrderCraftFields.test.tsx`、`frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx`、`frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts`。"
+      - "**褶距写侧净删（issue #4874 判据，反向断言）**：`CraftSpecInput` 无 `pleatSpacing` 键、`buildCraftSpec({pleatSpacing: 0.125})` ⇒ 产出 `{}`（该键不再落库）；工艺规格卡片**没有**褶距输入框（红证：修复前 `getByLabel('褶距')` 命中）。⚠️ **展示面也已删除**（issue #4876，用户裁定「做干净」）：`lib/craft-display.ts`（**三端逐字同源**）的「褶距」行整体退场 ⇒ 连存量单也不再渲染它；守护 = `craft-display.test.ts` 的 #4876 判据（`rowValue(rows,'褶距') === undefined` + 字段清单不含「褶距」）与三个组件测试的反向断言。**仅 `order_items.pleat_spacing` 列与 Java 读面保留**（数据层存量，不删列）。"
       - "**红证（实现前）**：`@/lib/order-craft-fields` 无这四个默认档常量 ⇒ `craft-calc-defaults.test.ts` import 即红。"
     skip_reason: "[backend-contract] 前端写侧契约（admin-web 组件 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/order-craft-fields.test.ts、frontend/admin-web/tests/unit/components/OrderCraftFields.test.tsx 与 frontend/admin-web/tests/unit/lib/craft-calc-defaults.test.ts 执行"
-    merge_log: "2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4375（下单页录入工艺规格）/ #4395（樘窗分组写侧）/ #4420（默认档 + 算料常量同步守卫）的行为此前**零评测用例**，新增测试借 `OR-009`（下单全流程选品→选SKU→确认数量→下单）与 `UI-038`（新增订单表单**选择已有客户**回填收货信息）过门禁 —— UI-038 与被测行为完全无关。本用例把判据挂到真实行为上：写侧两条硬约束（缺值不写 / 键名 camelCase）+ 枚举与库侧逐字 + 默认档常量的**有守卫副本**。**不改运行时行为、不改断言强度**。2026-09-19（用户裁定「工艺、定型 直接通过加工项来勾选」）：本用例两条判据随控件退场**改判**（「八个工艺控件」→ 五个；「选工艺 ⇒ patch」与「是否定型回未指定 ⇒ isShaped=undefined」→ 改由加工项的 `craft_hint` / 「定型」项派生，等价断言在 `tests/unit/pages/orders-new.test.tsx`）—— **是口径迁移不是放宽**：原断言测的两个控件已不存在，等价行为在新入口被重新钉住；对花 / 加工类型 / 打开方式 / 款式 / 褶距五条判据一字未动。"
+    merge_log: "2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4375（下单页录入工艺规格）/ #4395（樘窗分组写侧）/ #4420（默认档 + 算料常量同步守卫）的行为此前**零评测用例**，新增测试借 `OR-009`（下单全流程选品→选SKU→确认数量→下单）与 `UI-038`（新增订单表单**选择已有客户**回填收货信息）过门禁 —— UI-038 与被测行为完全无关。本用例把判据挂到真实行为上：写侧两条硬约束（缺值不写 / 键名 camelCase）+ 枚举与库侧逐字 + 默认档常量的**有守卫副本**。**不改运行时行为、不改断言强度**。2026-09-19（用户裁定「工艺、定型 直接通过加工项来勾选」）：本用例两条判据随控件退场**改判**（「八个工艺控件」→ 五个；「选工艺 ⇒ patch」与「是否定型回未指定 ⇒ isShaped=undefined」→ 改由加工项的 `craft_hint` / 「定型」项派生，等价断言在 `tests/unit/pages/orders-new.test.tsx`）—— **是口径迁移不是放宽**：原断言测的两个控件已不存在，等价行为在新入口被重新钉住；对花 / 加工类型 / 打开方式 / 款式 / **褶距**五条判据一字未动。 2026-09-21（issue #4874 / 用户需求批次）：**褶距那条判据随字段退场改判**（↔ 新增「用料公式 + 算料档位」「褶距写侧净删（反向断言）」两条判据，见 data_checks ③④）；「五个录入位」里的「褶距」换成「**用料公式**」；默认档常量改为「加工类型 / 款式 / **用料公式**」。**是口径迁移不是放宽**：原断言测的控件已不存在，等价行为在新入口被重新钉住（承载测试 `OrderCraftFields.test.tsx` / `orders-new-craft-calc.test.tsx` / `craft-calc-request.test.ts` / `craft-calc-defaults.test.ts`）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/order-craft-fields.test.ts"
@@ -2892,7 +2894,7 @@ cases:
   # 如果买带纱帘的窗帘就要把两种组合起来」。
   - id: OR-038
     legacy_id: ""
-    title: "下单页移除「部位」—— 四类购买情况（布帘 / 布帘+纱帘 / 只买纱帘 / 布料）+ 纱帘不算料"
+    title: "下单页移除「部位」—— 购买情况（布帘 / 只买纱帘 / 布料）+ **纱帘与布帘用料算法完全一致**（2026-09-21 反转原「纱帘不算料」口径）"
     domains:
       - order
       - product
@@ -2910,16 +2912,16 @@ cases:
     data_checks:
       - "**判据 A1·「部位」字段整体移除**：工艺规格里**没有**部位 chips（红证：修复前 `radiogroup name=部位` 存在）；`buildCraftSpec` 产出的对象**不含 `curtainType`** —— 主帘缺省即布帘（与下游 `ProcessingOrderService.DEFAULT_CURTAIN_TYPE` 同值），写侧再写它 = 留一条把主帘标成纱帘、取错工序路线的口子。"
       - "**判据 A2·「新增部位」入口与部位行壳移除**：下单页**没有**「新增部位」按钮，一个商品组只渲染**一份** ①尺寸与数量 ②工艺规格 ③加工项 ④特殊选项（红证：修复前点「新增部位」会让四步各翻倍），也没有「部位 N」行头与「N 个部位」计数。"
-      - "**判据 A3·四类购买情况可达**：售卖形态=布料（无加工）；成品帘 + 帘体 ∈ {布帘, 纱帘, 布帘+纱帘}。帘体是**商品组级** chips，默认「布帘」。"
-      - "**判据 A4·布帘+纱帘 ⇒ 两条明细行**：主布行（`curtainType` 缺省、带 `craftLineId` 绑组键）+ 纱帘行（`curtainType=纱帘`、**携带同一份工艺规格** —— 纱帘是另一个部位，不带会被当成布帘；与配布边行「刻意不带规格」互为红证）；纱帘行**不挂加工项**、**不关联主布商品**（不双扣库存/不双计销量）、宽高与主布行同一份（尺寸数量是商品组级属性）。"
-      - "**判据 A5·纱帘不算料**：`craftCalcParamsOf` 对部位=纱帘返回 `null`（**不发试算请求** —— 用户口径「纱帘不需要算用料米数，买多少就是多少」，发了请求会把商家手填的米数静默改回公式值）；页面只报「纱帘按实际买多少填」，**不给**「恢复按公式计算」（没有公式可恢复）；`isAutoCalcUnavailable` 对纱帘恒为 true。"
+      - "**判据 A3·购买情况可达**（2026-09-21 改判，issue #4874）：售卖形态=布料（无加工）；成品帘 + 帘体 ∈ **{布帘, 纱帘}** —— 「**布帘+纱帘**」档**已随用户裁定「订单需要移除布帘+纱帘的选项」整体删除**；需要「布 + 纱」时 = **两个商品组各一行**（一组布帘、一组纱帘）。帘体仍是**商品组级** chips，默认「布帘」。红证：把该档加回 `CURTAIN_BODY_OPTIONS` ⇒ 反向断言红。"
+      - "**判据 A4·（改判为反向）「布帘+纱帘」整族派生不存在**：`bodyHasSheerLine` / `buildSheerLineCraftSpec` / 纱帘米数 / 纱帘单价 / 第二条纱帘明细行 / 费用明细「纱帘」行 / `totals.sheerSubtotal` / 提交校验里的纱帘单价必填**全部退场**（模块导出清单 + 页面子块**反向断言**：`CURTAIN_BODY_OPTIONS` 恰为 `['布帘','纱帘']`、页面不再出现纱帘米数/单价子块）。⚠️ **纱帘这行本身仍在**：`帘体=纱帘` 时该行显式写 `curtainType=纱帘`（**工序路线**的索引键，必须写），按该行 `unitPrice` 计价。"
+      - "**判据 A5·（2026-09-21 口径反转，issue #4875）纱帘与布帘用料算法完全一致**：用户裁定「订单中选择**纱帘**时，**用料算法和布帘的用料算法完全一致**，之前给的信息是错误的」⇒ **作废** #4521 的「纱帘不算料 / 买多少就是多少」：`craftCalcParamsOf({curtainType:'纱帘', …})` **不再返回 `null`**，其 `formula` / `craft_tier` / `mounting` 与**同参数的布帘行逐值相同**；`isAutoCalcUnavailable({curtainType:'纱帘'})` ⇒ `false`；页面**不再出现**「纱帘按实际买多少填，不自动算料」，纱帘行与布帘行共用同一条渲染路径（算料公式串 / 「人工指定 + 恢复按公式计算」/ 算料错误）。**注入式红证**：把 `CURTAIN_TYPE_SHEER` 的 fail-closed 加回 ⇒ `craft-calc-request.test.ts` 与 `orders-new.test.tsx` 的反向断言红。⚠️ **只反转「算不算料」**：`curtainType=纱帘` 仍是工序路线索引键；「是否定型」默认仍随帘体（布帘默认是 / 纱帘默认否）。"
       - "**判据 A6·纱帘金额与闸门**：纱帘行金额计入订单总额（否则后端「应收 - 优惠 ≈ 实收」校验会拒单）；**带纱帘但没填纱帘单价 ⇒ 提交被拦且提示常显**（红证：静默丢一条商家显式选中的纱帘行 = 交付一张与所见不符的错单）。"
-      - "**判据 A7·部位默认 = 主布，定型默认改由帘体结构给**：只买纱帘时该行显式写 `curtainType=纱帘` 且「是否定型」默认「否」；布帘 / 布帘+纱帘 默认「是」（真值源 §10「布帘默认是 / 纱帘否」—— 原 #4489 的**选部位联动**改成**帘体结构默认**，同一份真值源）。"
+      - "**判据 A7·部位默认 = 主布，定型默认由帘体结构给**（2026-09-21 改判尾部）：只买纱帘时该行显式写 `curtainType=纱帘` 且「是否定型」默认「否」；帘体=布帘 默认「是」（真值源 §10「布帘默认是 / 纱帘否」—— 原 #4489 的**选部位联动**改成**帘体结构默认**，同一份真值源）。⚠️ 原文列的「布帘 / **布帘+纱帘** 默认是」中后者随该档删除退场。"
       - "**判据 A8·布料单不受影响**：售卖形态=布料 ⇒ 不出现帘体、不出现 ①~④（沿用 #4493 口径）。"
-      - "**判据 A9·帘行米数输入框文案 = 「用料米数」（issue #4598）**：帘（成品）行的米数输入框 label = 「用料米数」+ 旁注「= 加工费米数」—— 这个数**就是加工费米数**（`info.processingMeters = line.quantity`，加工费 = 组合单价 × 它），且它的值由算料写回（`fabric_meters`）；叫「数量」会被商家读成「买几樘 / 几件」，而这个数直接决定加工费。**反向断言**：布料行（`FabricRow`）仍是「数量」、且**不出现**「用料米数」也不出现「= 加工费米数」（布料按 `sellingMethod` 卖布，两个输入框**不是同一个业务，禁止一起改**）。承载测试 = `frontend/admin-web/tests/unit/pages/orders-new.test.tsx` 判据 11。红证（改前）：`getByText('用料米数')` 抛 `Unable to find an element with the text: 用料米数`。"
-      - "**红证（实现前）**：`CURTAIN_BODY_OPTIONS` / `buildSheerLineCraftSpec` / `bodyHasSheerLine` 不存在 ⇒ import 即红；页面仍有 `radiogroup name=部位` 与「新增部位」按钮。"
+      - "**判据 A9·帘行米数输入框文案 = 「用料米数」（issue #4598）**：帘（成品）行的米数输入框 label = 「用料米数」+ 旁注「= 加工费米数」—— 这个数**就是加工费米数**（`info.processingMeters = line.quantity`，加工费 = 组合单价 × 它），且它的值由算料写回（`fabric_meters`）；叫「数量」会被商家读成「买几**套** / 几件」，而这个数直接决定加工费。**反向断言**：布料行（`FabricRow`）仍是「数量」、且**不出现**「用料米数」也不出现「= 加工费米数」（布料按 `sellingMethod` 卖布，两个输入框**不是同一个业务，禁止一起改**）。承载测试 = `frontend/admin-web/tests/unit/pages/orders-new.test.tsx` 判据 11。红证（改前）：`getByText('用料米数')` 抛 `Unable to find an element with the text: 用料米数`。"
+      - "**红证（实现前）**：`CURTAIN_BODY_OPTIONS` / `buildSheerLineCraftSpec` / `bodyHasSheerLine` 不存在 ⇒ import 即红；页面仍有 `radiogroup name=部位` 与「新增部位」按钮。⚠️ **2026-09-21 补一条反向红证**（issue #4874/#4875）：把 `'布帘+纱帘'` 加回 `CURTAIN_BODY_OPTIONS`、或把 `CURTAIN_TYPE_SHEER` 的算料 fail-closed 加回 `craftCalcParamsOf`，对应反向断言（「只有两档」/「纱帘与布帘同参同算」）**必红**。"
     skip_reason: "[backend-contract] 前端写侧契约（admin-web 页面 + 组件 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/order-craft-fields.test.ts、frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts、frontend/admin-web/tests/unit/lib/craft-calc-defaults.test.ts、frontend/admin-web/tests/unit/components/OrderCraftFields.test.tsx 与 frontend/admin-web/tests/unit/pages/orders-new.test.tsx 执行"
-    merge_log: "2026-09-19 新增（issue #4521）：用户实测反馈「新增订单页面还是有问题……部位只决定商品实际用料米数……移除部位功能，其实完全不需要」+「四种情况……纱帘不需要算用料米数，买多少就是多少」。本用例把判据挂在**四类购买情况的可达性与落库形态**上（A1~A8）。与 OR-035 的分工：OR-035 锚工艺规格**写侧两条硬约束与枚举逐字**（部位曾是其一部分，本次从它里面移除）；OR-036 锚**算料试算**接线（本次加「纱帘不算料」这条 fail-closed）。**不改运行时金额口径、不降任何既有断言**。 2026-09-19（issue #4598）：新增**判据 A9**（帘行米数输入框 label「数量」→「用料米数」+ 旁注「= 加工费米数」；布料行保持「数量」且不得出现「用料米数」—— 反向断言），承载测试 = 已在 traces.tests 里的 `orders-new.test.tsx` 判据 11。**A1~A8 一字未动、断言只增不减**。"
+    merge_log: "2026-09-19 新增（issue #4521）：用户实测反馈「新增订单页面还是有问题……部位只决定商品实际用料米数……移除部位功能，其实完全不需要」+「四种情况……纱帘不需要算用料米数，买多少就是多少」。本用例把判据挂在**四类购买情况的可达性与落库形态**上（A1~A8）。与 OR-035 的分工：OR-035 锚工艺规格**写侧两条硬约束与枚举逐字**（部位曾是其一部分，本次从它里面移除）；OR-036 锚**算料试算**接线（本次加「纱帘不算料」这条 fail-closed）。**不改运行时金额口径、不降任何既有断言**。 2026-09-19（issue #4598）：新增**判据 A9**（帘行米数输入框 label「数量」→「用料米数」+ 旁注「= 加工费米数」；布料行保持「数量」且不得出现「用料米数」—— 反向断言），承载测试 = 已在 traces.tests 里的 `orders-new.test.tsx` 判据 11。**A1~A8 一字未动、断言只增不减**。 2026-09-21（issue #4874 + #4875）：**A3 改判**（「布帘+纱帘」档随用户裁定「订单需要移除布帘+纱帘的选项」整体删除 ⇒ 剩 布帘 / 只买纱帘 / 布料，需要「布+纱」= 两个商品组）、**A4 改判为反向**（整族派生退场，反向断言）、**A5 口径反转**（用户裁定「订单中选择纱帘时，用料算法和布帘的用料算法完全一致，之前给的信息是错误的」⇒ 删除 `craftCalcParamsOf` / `isAutoCalcUnavailable` 两处 `CURTAIN_TYPE_SHEER` fail-closed，纱帘与布帘同参同算）、**A7 尾部退场**（「布帘+纱帘 默认是」随该档删除）、**A9 术语**（「买几樘」→「买几套」）；新增一条**反向红证**。**是口径迁移不是放宽**：失效断言测的档位/算法已不存在或被用户裁定反转，等价（反向）行为在同一批承载测试里被重新钉住。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/order-craft-fields.test.ts"
@@ -3051,7 +3053,7 @@ cases:
     expectations: []
     data_checks:
       - "**R10·加工项选择控件不出现任何单价文本**：用户 2026-09-19「订单上的加工项选择控件不要展示加工项单价」—— ERP 的加工项是**组合价目**（特征集合 → 元/米），价格只在**组合**上存在 ⇒ 逐项显示单价必然误导（同一真值两个数）。判据 = 该控件渲染出的文本里不出现 `¥` 金额 / `/ 米` / `/ 套` 形态（红证：修复前渲染 `¥5.00 / 米` 与选中后的 `3米 · ¥15.00`）。"
-      - "**R10·选中态仍可对账**：摘掉的是**钱**，不是数量 —— 选中后仍显示「数量 + 单位」（如 `3米`），否则商家无从核对勾了什么。"
+      - "**R10·选中态仍可对账**：摘掉的是**钱**，不是数量 —— 选中后仍显示「数量 + 单位」（如 `3米`），否则商家无从核对勾了什么。⚠️ **2026-09-21 边界补注（issue #4874，独立复核提请注意）**：R10 约束的是**逐项加工项控件**；同批「加工项」区块**下方新增**了「**加工费组合**」明细块（`processing-fee-combinations`），它**依用户需求**显式展示**组合名 + 单价（元/米）+ 来源**，未定价行还给「改单价」输入（`fee-unit-price-override`）。两者**不是同一处**：组合块的价格是**组合价**（ERP 口径里的那个数，唯一真值），逐项控件仍然**不显示任何单价** ⇒ 本判据不因该块而放宽。"
       - "**R2·费用明细出现特殊选项行**：逐项 `名称 单价/套 × 套数`（数据来自服务端 `processingFeeDetail.special_options[]`，契约见设计 §4.3，已冻结）。空数组 = 没选 ⇒ **不出现该块**（缺值不渲染）。"
       - "**同一真值（判据 5）**：特殊选项行的金额之和 = `special_options_total`；且「加工」行金额 = `processingFeeDetail.amount`（**组合那半**）+ 特殊选项行 = 行金额 `processingFee` ⇒ 费用明细逐行之和 === 订单金额里的那个数（不出现第二份口径、不双算）。"
       - "**未定价显式可见（判据 3 的展示面）**：`priced:false` 的选项必须显式标「未定价（按 0 计）」，不许静默按 0 收。"
@@ -3202,7 +3204,7 @@ cases:
   # b 对花 / 花距进试算、c 四条 fail-closed 复核）。两条互补，不重复。
   - id: OR-042
     legacy_id: ""
-    title: "下单页自动算料 —— 勾加工项/改尺寸即自动重发试算并写回数量（来源两态：公式计算 / 人工指定）+ 对花·花距进试算（定宽买高每幅 +1 花距）+ 四条 fail-closed 复核"
+    title: "下单页自动算料 —— 勾加工项/改尺寸即自动重发试算并写回数量（来源两态：公式计算 / 人工指定）+ 对花·花距进试算（定宽买高每幅 +1 花距）+ **三条** fail-closed 复核（原第四条「纱帘不算料」已于 2026-09-21 随 #4875 口径反转作废）"
     domains:
       - order
       - product
@@ -3222,15 +3224,116 @@ cases:
       - "**判据 a1·自动触发 + 写回该行「用料米数」**：宽高齐全后**自动**发试算（无需点任何按钮），把后端 `fabric_meters` **写回该行米数输入框**（issue #4598 起其 label = 「用料米数」，旧文案「数量」；断言强度不变）；改尺寸 / 改开数 / **勾选工艺加工项** ⇒ 触发签名（`craftCalcSignature`）变化 ⇒ **自动重发**试算并再次写回。签名只含**入参**（写回 `quantity` 不进签名）⇒ 写回本身不会再触发请求（防请求风暴）。红证：把「勾加工项」移出签名 / 移出 effect 依赖 ⇒ 勾了「打孔」仍用旧口径的米数（`orders-new-craft-calc.test.tsx` 的 `#4527 打孔` 用例红：勾选后未重发、请求数不涨）。"
       - "**判据 a2·来源标注两态 + 手改后不得被静默改回**（真值源 §8「用料必须带来源」）：试算写回 ⇒ 来源 `公式计算`（`METERS_SOURCE_FORMULA`）；商家手改「用料米数」（同 a1 的字段口径）⇒ 来源切 `人工指定`（`METERS_SOURCE_MANUAL`）、行内显示「人工指定」，此后**改尺寸不再重发试算、不得静默改回**；唯一回切通道 = 显式点「恢复按公式计算」（该按钮只在 `人工指定` 态出现）。红证：手改后被试算静默覆盖回公式值（`orders-new-craft-calc.test.tsx` 判据 3 红）；两态被合并成一个真值（判据 9 / `craft-calc-request.test.ts` 的用料来源两态用例红）。"
       - "**判据 b·对花 / 花距进试算（issue #4573，PR #4574 已修代码、此前零用例覆盖）**：`craft.hasPattern === true` ⇒ 请求带 `has_pattern=true`，且花距为正数时带 `pattern_repeat`；**「对花 = 否」/「未指定」⇒ 两个键都不带**（对花为否时留着花距是自相矛盾的输入）；**「对花 = 是」但花距缺失 / 非正数 ⇒ 只带 `has_pattern`、不发明花距**；`has_pattern` / `pattern_repeat` **进触发签名**（改任一项必须重发试算，否则页面留着旧口径的米数）。口径依据 = 算料引擎 `backend/ai-agent-service/app/tools/curtain_calc.py`：**定宽买高**（`window_height + HEM_MARGIN > fabric_width`）时 `每幅长 = 窗高 + 卷边 + 花距`、`总用料 = 幅数 × 每幅长` ⇒ 不传花距会**少算「幅数 × 花距」**（试算米数偏小 = 少收面料钱，`has_pattern` 是该分支的**唯一**开关）；**定高买宽**下走的是按宽买米分支、花距不参与 ⇒ 对花**不改变用料**。红证：把 `has_pattern` / `pattern_repeat` 从 `craftCalcParamsOf` 去掉（= #4573 改前形态）⇒ `craft-calc-request.test.ts` 的「对花 / 花距进算料入参（issue #4573）」4 条全红；把花距也写进「对花 = 否」⇒ 第 2 条红。"
-      - "**判据 c·fail-closed 复核（四条；`craftCalcParamsOf` 返回 `null` ⇒ 调用方**不得**发请求）**：① **未登记工艺**（`穿杆` / `平幔` / 四爪钩）⇒ 不发请求（`CALC_CRAFTS` 只放行 `韩褶` / `打孔` / 未指定）；② **缺宽或高** ⇒ 不发请求（**不得**用默认窗宽猜一个米数）；③ 宽 / 高**非正数**（0 与负数）⇒ 不发请求；④ **纱帘不算料**（issue #4521「买多少就是多少」）⇒ 不发请求，且页面**不给**「恢复按公式计算」（发了请求会把商家手填的米数静默改回公式值）。红证：把任一条放行 ⇒ 对应负向断言（`mockCraftCalcPreview` 的调用次数保持 0）红。"
+      - "**判据 c·fail-closed 复核（四条；`craftCalcParamsOf` 返回 `null` ⇒ 调用方**不得**发请求）**：① **未登记工艺**（`穿杆` / `平幔` / 四爪钩）⇒ 不发请求（`CALC_CRAFTS` 只放行 `韩褶` / `打孔` / 未指定）；② **缺宽或高** ⇒ 不发请求（**不得**用默认窗宽猜一个米数）；③ 宽 / 高**非正数**（0 与负数）⇒ 不发请求；④ ~~**纱帘不算料**（issue #4521「买多少就是多少」）⇒ 不发请求，且页面**不给**「恢复按公式计算」~~ —— **2026-09-21 该条作废**（issue #4875 用户裁定：「订单中选择**纱帘**时，**用料算法和布帘的用料算法完全一致**，之前给的信息是错误的」）⇒ 本判据由**四条收敛为三条**（① 未登记工艺 ② 缺宽或高 ③ 宽/高非正数），**纱帘与布帘同参同算**（反向断言见 OR-038 判据 A5）。红证：把任一条放行 ⇒ 对应负向断言（`mockCraftCalcPreview` 的调用次数保持 0）红。"
       - "**与 OR-036 的分工**：`OR-036` 锚试算接线的**接线形态**（预填、两态、失败不退回估算值、签名去重）；本条锚**自动算料的触发面与口径面**（a 触发/写回/来源、b 对花·花距、c fail-closed 复核）。两条的 traces 有交集（同一批测试文件），但判据不重复。"
       - "**红证（实现前）**：`@/lib/craft-calc-request` 不存在 ⇒ import 即红；`craftCalcParamsOf` 不带 `has_pattern` / `pattern_repeat` ⇒ 判据 b 红（这正是 #4573 改前的形态）。"
     skip_reason: "[backend-contract] 前端写侧契约（admin-web 下单页接线 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx 执行"
-    merge_log: "2026-09-19 新增（issue #4575 用例库收口）：#4573（对花 / 花距进算料入参，PR #4574 已修代码）**零用例覆盖** —— 那 4 条 `#4573` 测试挂在 OR-036 / OR-038 的 `case_ids` 下，而两条用例的判据一字未提对花 / 花距 ⇒「改回不传花距」全库无红（假绿）。本条把「自动算料」这条链路补成可红判据：a) 自动触发 + 写回该行数量 + 来源两态（`公式计算` / `人工指定`，手改后不得被静默改回）；b) 对花 / 花距进试算（定宽买高每幅 +1 花距 / 定高买宽不改变用料 / 对花 = 否不带花距 / 花距进签名）；c) 四条 fail-closed 复核（未登记工艺 / 缺宽高 / 非正数 / 纱帘）。**不改运行时行为、不降任何既有断言**；与 OR-036 的分工见判据末条。 2026-09-19（issue #4598）：**判据 a1 / a2 措辞同步** —— 原文的「数量」指**帘行米数输入框**，其 label 自 #4598 起是「用料米数」（旧文案「数量」）⇒ 措辞改为字段名本身，**语义与断言强度一字未变**。"
+    merge_log: "2026-09-19 新增（issue #4575 用例库收口）：#4573（对花 / 花距进算料入参，PR #4574 已修代码）**零用例覆盖** —— 那 4 条 `#4573` 测试挂在 OR-036 / OR-038 的 `case_ids` 下，而两条用例的判据一字未提对花 / 花距 ⇒「改回不传花距」全库无红（假绿）。本条把「自动算料」这条链路补成可红判据：a) 自动触发 + 写回该行数量 + 来源两态（`公式计算` / `人工指定`，手改后不得被静默改回）；b) 对花 / 花距进试算（定宽买高每幅 +1 花距 / 定高买宽不改变用料 / 对花 = 否不带花距 / 花距进签名）；c) 四条 fail-closed 复核（未登记工艺 / 缺宽高 / 非正数 / 纱帘）。**不改运行时行为、不降任何既有断言**；与 OR-036 的分工见判据末条。 2026-09-19（issue #4598）：**判据 a1 / a2 措辞同步** —— 原文的「数量」指**帘行米数输入框**，其 label 自 #4598 起是「用料米数」（旧文案「数量」）⇒ 措辞改为字段名本身，**语义与断言强度一字未变**。 2026-09-21（issue #4875 口径反转）：判据 c 由「**四条** fail-closed」收敛为「**三条**」—— 原第 ④ 条「纱帘不算料」随用户裁定「纱帘与布帘用料算法完全一致」**作废**（不是放宽：那一条测的口径已被用户明确推翻）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts"
         - "frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # issue #4874 / #4875（用户 2026-09-21 需求批次）：下单页重构后的三条新判据面。
+  # 全部为 [backend-contract] 形态（user_inputs / expectations 留空 ⇒ 不经 runner 执行，
+  # 计分通道 = traces.tests；与 PG-042 同款，故不适用 a1/a2 与前置自断言规则）。
+  # ==========================================================================
+  - id: OR-043
+    legacy_id: ""
+    title: "下单页两步化 —— 四段手风琴合并为「尺寸与数量 · 工艺规格」+「加工项 · 特殊选项」两个区块"
+    domains:
+      - order
+    tier: normal
+    persona: ""
+    tags:
+      - order
+      - craft_spec
+      - ui_structure
+      - backend_contract
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**只有两个步骤区块**：`wizard-step-1`（标题含「尺寸与数量 · 工艺规格」）与 `wizard-step-2`（标题含「加工项 · 特殊选项」）各恰好一个；**反向断言** `wizard-step-3` / `wizard-step-4` **不存在**（合并 = 真的合并，不是并存）。红证：把四段手风琴改回去 ⇒ 反向断言红。"
+      - "判据 2·**录入面一件不丢**：原四段里的控件（宽/高/用料米数/单价、加工类型/打开方式/款式/用料公式/是否对花、加工项勾选、特殊选项 19 项）仍全部可达 —— 变的是**信息层次**，不是能力。承载测试 = `orders-new.test.tsx`（原四段锚点改写为两段**等价**锚点，**不删断言**）与 `orders-new-fee-preview.test.tsx` 的 `expandProcessing()`（区块 2 默认收起、`aria-expanded` 可切）。"
+      - "判据 3·**真实浏览器走查**（migao-dev-flow §15.2）：`tests/e2e/specs/orders/order-create.spec.ts` 的真浏览器用例断言两个区块标题可见、③④ 步骤号不存在、且「用料公式」chips 在位而「褶距」已移除。"
+      - "判据 4·**布局遮挡几何探针**（§15.3）：展开两个区块后米宝 FAB 与「提交订单」按钮矩形**两个方向都不重叠**。"
+    skip_reason: "[backend-contract] 前端页面结构契约（admin-web vitest + Playwright 真浏览器，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/orders-new.test.tsx 与 tests/e2e/specs/orders/order-create.spec.ts 执行"
+    merge_log: "2026-09-21 新增（issue #4874；用户原话「新增订单时尺寸数量到特殊选项我们要简化为两步搞定，我建议尺寸数量+工艺规格合并到一个区块，另外两个合并」）。此前四段手风琴（①尺寸与数量 ②工艺规格 ③加工项 ④特殊选项）只有分散在各测试里的锚点，**没有一条用例锚住「几步」这个结构事实**。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/orders-new.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx"
+        - "tests/e2e/specs/orders/order-create.spec.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: OR-044
+    legacy_id: ""
+    title: "加工项区块的「加工费组合」明细块 —— 组合名逐字同源 + 未定价可就地改单价并随建单提交"
+    domains:
+      - order
+      - processing
+    tier: normal
+    persona: ""
+    tags:
+      - order
+      - processing_fee
+      - manual_override
+      - backend_contract
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**组合名逐字同源**：块内 `fee-combination-name` = `processingFeeDetail.items.join(' + ')`（与「加工费组合」页同一写法）；组合键为空 ⇒ 显示「没有可匹配的组合（缺选配信息）」，**不渲染空组合名**（`unpricedCombinationLabel` 的既有口径）。"
+      - "判据 2·**未定价 ⇒ 就地改单价**：`fee_source='unpriced'` ∧ 组合键非空 ⇒ 出现 `fee-unit-price-override`；输入后**立即以该价重发 `feePreview`**（`mockFeePreview` 末次调用的 `items[0].processingInfo.processingFeeOverride` = 输入值），且**建单请求体**里同一键 = 同一值 —— 预览与提交**共用** `buildLineProcessingInfo`（本仓硬纪律：试算与提交必须看到同一份选配）。红证：删掉 `processingFeeOverride` 的落库 ⇒ 请求体断言红。"
+      - "判据 3·**组合键为空 ⇒ 不给入口**（没有 key 可同步）：输入框不出现、`fee-combination-no-composition` 提示在位。红证：无条件渲染输入框 ⇒ 该反向断言红。"
+      - "判据 4·**已定价行只读**：`fee-unit-price` 显示服务端价、无输入框，且不再出现「去『加工费组合』定价」链接。"
+      - "判据 5·**入口常驻 + 陈旧改价清零**（2026-09-21 独立复核 #4878 补）：① 预览转 `fee_source='manual'` 之后输入框**仍在**（打错一个字还能改）；② 勾/取消加工项（组合键变）⇒ 上一组合的 `processingFeeOverride` **被清零**，不得给新组合静默定价。红证：把任一条退回去 ⇒ 对应断言单独变红。"
+      - "判据 6·**与后端采纳条件对齐**（跨端一致性；后端侧判据见 PG-042 判据 9/10）：仅「组合未命中 ∧ 键非空 ∧ override 为正数」才采用；命中组合时**忽略** override。"
+    skip_reason: "[backend-contract] 下单页 ↔ 后端取价契约（admin-web vitest，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx 执行"
+    merge_log: "2026-09-21 新增（issue #4874 + #4872；用户原话「订单中加工费组合未配置的情况下，允许更改该单价，并且在加工项下面添加具体的组合名」）。背景：V77 的 92 行组合价目**全部 disabled** ⇒ 今天任何订单都取不到组合价，本条是商家**自建价目**的唯一通路（不是回落、不是默认价）。判据 5 为独立复核（#4878）补。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/orders-new-fee-detail.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: OR-045
+    legacy_id: ""
+    title: "新增订单收货信息 —— 「常用物流/快递」+「常用物流公司」两控件（选客户默认带出 → 落 orders 两列 → 发货页订单值优先）"
+    domains:
+      - order
+      - customer
+    tier: normal
+    persona: ""
+    tags:
+      - order
+      - logistics
+      - default_receiver
+      - backend_contract
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**两个可编辑控件**：`order-logistics-type`（选项 = `lib/logistics.ts` 的 `LOGISTICS_TYPES`，另含空值「未指定」）与 `order-logistics-company`（datalist 候选来自 `LOGISTICS_COMPANIES` 且**允许自定义**）。原**只读**提示 `picked-logistics-hint` **已删除**（不留两份口径）。"
+      - "判据 2·**选客户默认带出、可改**：按 `Customer.defaultLogisticsType` / `defaultLogisticsCompany` 带出；客户档案没录 ⇒ 两控为空（**「未指定」是真值**，不编造「快递」—— 编了就等于替客户做了决定，且会遮蔽发货页的档案回落）。"
+      - "判据 3·**随建单落库**：顶层 `logisticsType` / `logisticsCompany`（**缺值不写**）⇒ `OrderCreateRequest` → `Order` → `orders.logistics_type` / `orders.logistics_company`（V100）。⚠️ `orders.logistics_type` **不设列默认**：未传 ⇒ NULL —— 否则「商家没选」与「选了快递」在库里不可区分，发货页的「订单优先」会被幽灵 `express` 永久遮蔽客户档案里的「物流专线」（#4419 口径被推翻）。"
+      - "判据 4·**发货页订单值优先**：订单自带的值优先用；订单没记的那一半才回落按收货手机号反查客户档案（既有兜底**不删、不改门禁**、用户手改过不覆盖）。双向断言 + 注入式红证（把优先级调反 ⇒ 红）。"
+    skip_reason: "[backend-contract] 下单页 ↔ 订单表 ↔ 发货页契约（admin-web vitest + admin-api Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/orders-new.test.tsx、frontend/admin-web/tests/unit/pages/ship-order.test.tsx 与 backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java 执行"
+    merge_log: "2026-09-21 新增（issue #4872 + #4874；用户原话「新增订单时收货信息中缺少用户的常用物流/快递以及常用公司，选择客户后要默认带出」）。判据 3 的「不设列默认」为同日独立复核（#4878）修正 —— 原实现给了 `DEFAULT 'express'`，会把「未指定」这一档从库里抹掉。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/orders-new.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/ship-order.test.tsx"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java"
       ci:
         - pr-check.yml
       verifies: []

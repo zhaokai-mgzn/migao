@@ -186,14 +186,17 @@ describe('ProcessingOrderBlock', () => {
     expect(within(spec).getByText('是否定型').parentElement?.textContent).toContain('是')
   })
 
-  it('快照明细展示算料口径：总褶数/折数（每片）/褶距/幅数/褶倍/米数/是否对花/花距（PG-019）', async () => {
+  it('快照明细展示算料口径：总褶数/折数（每片）/幅数/褶倍/米数/是否对花/花距（PG-019）—— ⚠️ #4876 起**不再渲染「褶距」**', async () => {
     mockedDetail.mockResolvedValueOnce({ data: { data: poWithCraft } })
     render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
 
     const spec = await screen.findByTestId('po-item-craft-spec')
     expect(within(spec).getByText('52')).toBeInTheDocument()
     expect(within(spec).getByText('26')).toBeInTheDocument()
-    expect(within(spec).getByText('0.1米')).toBeInTheDocument()
+    // ⚠️ #4876：#4878 把 `formula`/`craftTier` 补进了**加工单快照白名单**；本条只锚「褶距」这一行的退场
+    // （存量快照里仍有 `pleatSpacing` ⇒ 断言它**不再被渲染**）。
+    expect(within(spec).queryByText('褶距')).toBeNull()
+    expect(within(spec).queryByText('0.1米')).toBeNull()
     expect(within(spec).getByText('4')).toBeInTheDocument()
     expect(within(spec).getByText('2 倍')).toBeInTheDocument()
     expect(within(spec).getByText('1.86 倍')).toBeInTheDocument()

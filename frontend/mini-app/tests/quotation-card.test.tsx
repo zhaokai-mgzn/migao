@@ -104,11 +104,14 @@ describe('QuotationCard — 报价单确认下单', () => {
     expect(screen.getByText('加铅线、双褶')).toBeTruthy()
   })
 
-  it('渲染算料口径：总褶数/折数（每片）/褶距/加工费米数/是否对花/花距', () => {
+  it('渲染算料口径：总褶数/折数（每片）/加工费米数/是否对花/花距 —— ⚠️ #4876 起**不再渲染「褶距」**', () => {
     render(<QuotationCard data={{ ...baseQuote, ...craftSpec }} />)
     expect(screen.getByText('52')).toBeTruthy()
     expect(screen.getByText('26')).toBeTruthy()
-    expect(screen.getByText('0.1米')).toBeTruthy()
+    // ⚠️ #4876：`craftSpec` 夹具里仍带 `pleat_spacing`（存量形态），而 `craft-display` 的「褶距」行
+    // 三端同源整体删除 ⇒ 断言它**不再渲染**（C 端报价卡同样不再显示这一行）。
+    expect(screen.queryByText('褶距')).toBeNull()
+    expect(screen.queryByText('0.1米')).toBeNull()
     expect(screen.getByText('13.3米')).toBeTruthy()
     expect(screen.getByText('0.32米')).toBeTruthy()
     expect(screen.getByText('是否对花')).toBeTruthy()
