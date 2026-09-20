@@ -2,34 +2,9 @@
   "_note": "「用墙钟造期望值」（形态 A）的**存量**违规清单（burn-down）。计数是「该文件上判出的命中数」，**不是**『这些永远豁免』。判据本体 = `tests/unit_ci_workflows/time_flaky_guard.py` 的 `reconcile()`；复核命令 = `python3 tests/unit_ci_workflows/time_flaky_guard.py --list`。",
   "_entry_key_note": "条目 key 为 `<仓库相对路径>|wallclock-expected|<流进 expect 的污点标识符>`，**不含行号** —— 否则改一行就换 key，「只许缩短」会退化成随机红。",
   "_scope_note": "对账是**全量**的（照 `scripts/drift_audit_baseline.json` 的形态）：① 不在本清单里的新命中 ⇒ 红；② 计数超出本清单 ⇒ 红；③ 本清单里记着、现在**已不再漂移**的条目 ⇒ 红（必须销账）。⇒ 存量只许缩短。",
-  "_why_not_fixed_here": "本单（关联 #4717 的测试层部分）的红线是**只加守卫、不改 frontend/** —— 故这三处按「只登记不改」处理。修法见各条 `remedy`：期望值从**夹具自身**派生，或 `useFakeTimers()` + `setSystemTime(FROZEN_NOW)` 冻结；**不要**放宽既有断言。",
+  "_why_not_fixed_here": "【沿革 · 已失效，勿照抄】原文：本单（关联 #4717 的测试层部分）的红线是**只加守卫、不改 frontend/** —— 故这三处按「只登记不改」处理。修法见各条 `remedy`：期望值从**夹具自身**派生，或 `useFakeTimers()` + `setSystemTime(FROZEN_NOW)` 冻结；**不要**放宽既有断言。\n\n**2026-09-20 更新（issue #4761）**：这 3 条真实潜伏 flaky 已按上述 remedy 修掉并**销账** ⇒ `entries` 现为**空**。\n① 冻结时钟走**导入期夹具** `frontend/admin-web/tests/unit/helpers/frozen-clock.ts` —— 必须独立模块：`import` 声明会被提升，写在测试文件里「先冻结后导入」**不成立**（实测页面仍在真实墙钟定格）。\n② 守卫自测同步改判：原 `test_repo_ledger_is_well_formed` 用「账本非空」防「扫描面失效 ⇒ 0 命中是假的」，那是**错的不变式**（本账本契约 = 修好即删 ⇒ 全修完必然为空，会把「修完」判红）；改为 `test_scan_surface_still_has_discriminating_power` 的**正向注入式红证**（喂守卫自己的红样本 ⇒ 必须判红）+ 真实仓库三态全空。\n③ **机制更正**：原条目 ③ 写的「页面用本地月 ⇒ 每月 1 日 00:00~08:00（CST）必红」**前提不成立** —— 页面 `currentPeriod()` **也是** `toISOString()`（UTC），两侧同钟同区 ⇒ 那 8 小时**不红**；真实 flaky 是「期望值 render 前取 / 页面 render 时取」的窄月界竞态。但「月」的业务口径经查证确为**本地月** ⇒ **页面用 UTC 月本身是产品缺陷**（CST 10/1 00:30 实测 页面 period=2026-09 而本地月=2026-10），按「只动 tests/**」红线未改页面，需另立产品缺陷单。",
   "_when_to_regen": "① 你按 `remedy` 修好了某条 ⇒ 删掉该条目（删不掉会被门禁判「账本残留」）；② 判据集合本身变化（新增/改名规则）⇒ 重生成。",
   "_anchor_sha": "030e85d474507f650093087f83e46355243be5b5",
   "_anchor_note": "读数取自 `_anchor_sha`（本守卫首次落地时的 origin/main）。它只是**出处留档**，不是判据 —— 守卫不复核它。",
-  "entries": {
-    "frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx|wallclock-expected|todayLocal": {
-      "count": 2,
-      "mechanism": "辅助函数 todayLocal() 用 new Date() 造「今天」（yyyy-MM-dd），断言侧拿它比组件渲染/回传的日期：expect(dateInput).toHaveAttribute('min', todayLocal())（首处）与 expect(mockedUpdate).toHaveBeenCalledWith('po-gen', { …, expectedDeliveryDate: todayLocal() })（次处）。组件在**渲染时刻**取「今天」，断言在**断言时刻**取「今天」⇒ 跨**午夜**边界必红。",
-      "severity": "低概率（约 1/86400 每次）但**必红**，且落在 required 的 admin-web typecheck + unit tests 里。",
-      "reason": "存量真实形态（**不是误判**）：期望值是墙钟派生值而非夹具派生值，跨日边界会翻转。本单只加守卫、不改 frontend（红线），故登记豁免。",
-      "remedy": "vi.useFakeTimers() + vi.setSystemTime(FROZEN_TODAY)，夹具与断言同一固定时刻；或把期望值锚到夹具里显式写死的日期串上。",
-      "follow_up": "#4717"
-    },
-    "frontend/admin-web/tests/unit/pages/finance.test.tsx|wallclock-expected|currentPeriod": {
-      "count": 8,
-      "mechanism": "模块级 const currentPeriod = { start: fmtDate(new Date(y, m, 1)), end: fmtDate(new Date()) }（模块级求值）—— 在**模块加载时**取「本月1号 ~ 今天」，随后 8 处断言拿它比页面默认填充值与三个数据源的查询参数（该文件 8 处，`--list` 打印精确行号）。页面在**渲染时刻**算同一个区间 ⇒ 跨**午夜**（或跨月首）边界必红；模块级求值还把两个时刻的间隔拉长到整个文件加载 + 用例执行。",
-      "severity": "低概率但**必红**，且落在 required 的 admin-web typecheck + unit tests 里；模块级求值放大了窗口。",
-      "reason": "存量真实形态（**不是误判**）。本单只加守卫、不改 frontend（红线），故登记豁免。",
-      "remedy": "vi.useFakeTimers() + vi.setSystemTime(new Date('2026-09-15T10:00:00')) 冻结后再求 currentPeriod（或把期望值改成写死的 '2026-09-01' / '2026-09-15'）。",
-      "follow_up": "#4717"
-    },
-    "frontend/admin-web/tests/unit/pages/production-piecework.test.tsx|wallclock-expected|expected": {
-      "count": 2,
-      "mechanism": "const expected = new Date().toISOString().slice(0, 7)（首处）—— 取**当前月** YYYY-MM，断言侧拿它比默认查询参数与期间控件的值（次处与三处）。除了跨月边界，toISOString() 是 **UTC** 而页面用的是**本地**月 ⇒ 在 UTC+8 的每月 1 日 00:00~08:00 这 8 小时里两者**必然不同**（不是低概率，是每月固定 8 小时必红）。",
-      "severity": "**每月 1 日 00:00~08:00（CST）必红**（UTC/本地错位），其余时间跨月边界必红；落在 required 的 admin-web typecheck + unit tests 里。",
-      "reason": "存量真实形态（**不是误判**），且是本批三条里最硬的一条（时区错位 ⇒ 每月固定 8 小时必红）。本单只加守卫、不改 frontend（红线），故登记豁免。",
-      "remedy": "vi.useFakeTimers() + vi.setSystemTime(new Date('2026-09-15T10:00:00'))，期望值改成写死的 '2026-09'（同时消掉 UTC/本地错位）。",
-      "follow_up": "#4717"
-    }
-  }
+  "entries": {}
 }

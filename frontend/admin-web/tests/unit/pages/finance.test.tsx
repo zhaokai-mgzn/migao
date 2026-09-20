@@ -1,6 +1,6 @@
 import React from 'react';
 // case_ids: FN-001, FN-002, FN-003, FN-004
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -81,7 +81,33 @@ vi.mock('@/components/ui', () => ({
   Badge: ({ children, variant }: any) => <span data-testid="badge" data-variant={variant}>{children}</span>,
 }))
 
+// ── 冻结墙钟（issue #4761 第 2 条：**模块级** `currentPeriod`）────────────────
+// 病根（比 #1/#3 更隐蔽）：本文件的 `currentPeriod` 是**模块级求值** —— 它在
+// `import FinancePage from ...` 的**那一刻**定格；而被测页面 `src/app/(dashboard)/finance/page.tsx`
+// 也有一份**同形的模块级** `CURRENT_PERIOD = getCurrentPeriod()`。两者各自在「模块加载」与
+// 「模块加载」取时钟（测试侧定格于加载期、页面侧在加载期定格后**沿用到用例执行**）⇒ 只要
+// **模块加载 → 断言**之间跨过午夜（或跨月首），两者就分叉必红。
+// 模块级求值还把两个时刻的间隔从「一次 render」放大到「整个文件加载 + 用例执行」。
+//
+// 修法（要处理「模块级求值在导入时定格」这一点，**不是只改断言**）：
+//   ① 用**导入期夹具** `./helpers/frozen-clock` 在**被测页面之前**冻结系统时钟
+//      ⇒ 页面的模块级 `CURRENT_PERIOD` 与本文件的 `currentPeriod` 都定格在**同一冻结时刻**；
+//      ⚠️ 这一步**必须**走独立模块：`import` 声明会被提升，写在文件里「先冻结后导入」不成立
+//      （实测：页面仍在真实墙钟上定格，`结束日期` 读回真实今天）；
+//   ② 每条用例前 `setSystemTime(FROZEN_NOW)` 复位 ⇒ 用例之间不累积漂移。
+import { FROZEN_NOW } from '../helpers/frozen-clock'
 import FinancePage from '@/app/(dashboard)/finance/page'
+
+// 与页面 `getCurrentPeriod()` **同形**的本期派生（自然月 = 本月 1 号 ~ 今天）。
+// 关键：它现在在**冻结之后**求值 ⇒ 与页面 `CURRENT_PERIOD` 同一时刻定格。
+const fmtDate = (d: Date) => {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+const currentPeriod = {
+  start: fmtDate(new Date(FROZEN_NOW.getFullYear(), FROZEN_NOW.getMonth(), 1)),
+  end: fmtDate(FROZEN_NOW),
+}
 
 const mockSummary = {
   totalIncome: 150,
@@ -113,6 +139,7 @@ describe('FinancePage', () => {
   const user = userEvent.setup()
 
   beforeEach(() => {
+    vi.setSystemTime(FROZEN_NOW) // 每条用例复位到同一冻结时刻（模块级 currentPeriod 已定格）
     vi.clearAllMocks()
     mockGetSummary.mockResolvedValue({ data: { data: mockSummary } })
     mockGetTransactions.mockResolvedValue({
@@ -121,6 +148,10 @@ describe('FinancePage', () => {
     mockGetReconciliation.mockResolvedValue({
       data: { data: { items: [], total: 0 } },
     })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('should render page title', () => {
@@ -216,15 +247,7 @@ describe('FinancePage', () => {
   })
 
   // ── 本期默认时间范围（FN-004）：自然月 = 本月1号 ~ 今天 ──
-
-  const fmtDate = (d: Date) => {
-    const pad = (n: number) => String(n).padStart(2, '0')
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-  }
-  const currentPeriod = {
-    start: fmtDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1)),
-    end: fmtDate(new Date()),
-  }
+  // 期望值 `currentPeriod` 见文件头（**模块级**，与页面同刻定格；issue #4761 第 2 条）
 
   it('打开页面默认填充本期（本月1号~今天）并生效查询', async () => {
     render(<FinancePage />)

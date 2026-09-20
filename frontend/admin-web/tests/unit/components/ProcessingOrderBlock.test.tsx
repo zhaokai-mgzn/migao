@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
 // case_ids: PG-001, PG-005, PG-019, UI-019, UI-030
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+// 冻结墙钟（issue #4761 第 3 条）：辅助函数 `todayLocal()` 用 `new Date()` 造「今天」，
+// 组件在**渲染时刻**、断言在**断言时刻**各取一次 ⇒ 跨午夜必红。
+// 修法：与页面**同一真值源**（冻结后的系统时钟）派生「今天」，两个时刻不可能跨日。
+// ⚠️ 冻结走独立模块（`import` 声明会被提升 ⇒ 写在文件里「先冻结后导入」不成立）。
+import { FROZEN_NOW } from '../helpers/frozen-clock'
 import ProcessingOrderBlock from '@/components/orders/ProcessingOrderBlock'
 
 vi.mock('@/lib/api', () => ({
@@ -89,9 +94,15 @@ const poWithFormula = {
   items: [{ ...poIssued.items[0], craft: '韩褶', formula_text: FORMULA_TEXT }],
 }
 
-/** 本地时区今天（yyyy-MM-dd），与组件 min/防御校验同口径（issue #3901） */
+/**
+ * 本地时区「今天」（yyyy-MM-dd），与组件 min/防御校验同口径（issue #3901）。
+ *
+ * issue #4761：**不再**读墙钟 —— 改从冻结时刻 `FROZEN_NOW` 派生，与组件同刻。
+ * 改前形态 `new Date()` 的隐患：组件在渲染时取「今天」、断言在断言时再取一次，
+ * 两次调用之间跨过午夜 ⇒ `min` 是昨天、期望值是今天 ⇒ required job 里随机红。
+ */
 function todayLocal(): string {
-  const d = new Date()
+  const d = FROZEN_NOW
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
   return `${d.getFullYear()}-${mm}-${dd}`
@@ -99,7 +110,12 @@ function todayLocal(): string {
 
 describe('ProcessingOrderBlock', () => {
   beforeEach(() => {
+    vi.setSystemTime(FROZEN_NOW) // 组件与断言都读这一时刻
     vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('含加工项且无加工单 → 展示「生成加工单」入口（PG-001）', async () => {
