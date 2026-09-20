@@ -1,6 +1,8 @@
 // case_ids: PG-018, PG-019, PG-020, PG-021, PG-032, PG-033, PG-034, PG-035, PG-040, PG-048, PG-049
 package com.migao.admin.controller;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.config.TenantContext;
@@ -37,7 +39,9 @@ import com.migao.admin.service.ProductionOperationQueryService;
 import com.migao.admin.service.ProductionOperationQtyClient;
 import com.migao.admin.service.ProductionService;
 import com.migao.admin.service.RoutingModelFixture;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -64,10 +68,12 @@ import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -211,6 +217,21 @@ class ProductionControllerTest {
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+    }
+
+    /**
+     * {@code LambdaUpdateWrapper.set(...)} 会**立即**求值列名（不像 {@code LambdaQueryWrapper.eq}
+     * 延迟到渲染 SQL）⇒ standalone MockMvc 单测没有 MapperScan 建立的 TableInfo 缓存时会抛
+     * 「can not find lambda cache for this entity」。工序软删（#4608）与矩阵行软删（#4665 C）
+     * 都走 {@code LambdaUpdateWrapper}，故在此初始化这两张表的缓存
+     * （同 {@code ProductionOperationDeleteGuardTest} 的既有做法）。
+     */
+    @BeforeAll
+    static void primeMybatisPlusLambdaCache() {
+        MybatisConfiguration configuration = new MybatisConfiguration();
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "");
+        TableInfoHelper.initTableInfo(assistant, ProductionOperation.class);
+        TableInfoHelper.initTableInfo(assistant, ProductionOperationPosition.class);
     }
 
     // ── 夹具 ──
@@ -1292,6 +1313,143 @@ class ProductionControllerTest {
                 .as("矩阵行必须落在**逻辑名**上（前端「工艺项」表按它成行）—— 自定义名归一后等于自身。"
                         + "⚠️ issue #4642 起旧形态名（`布帘车被`）在建之前就被拒 ⇒ 本用例输入即逻辑名")
                 .containsOnly("测试22");
+    }
+
+    /**
+     * issue #4665 A：`DELETE /operations/{id}/detach-and-delete` —— 一键「设为不做并删除」
+     * 的**原子**落点：后端**一次事务**里先把受影响的矩阵格设为不做，再软删工序 + 级联软删矩阵行。
+     *
+     * <p>红证（改前）：该端点不存在 ⇒ 404；矩阵格那一条护栏照旧 422（商家只能手工两步）。</p>
+     */
+    @Test
+    @DisplayName("#4665 DELETE /operations/{id}/detach-and-delete ⇒ 一次事务摘格 + 级联 + 删除（200）")
+    void deleteOperationDetachesPositionsThenDeletes() throws Exception {
+        when(productionOperationMapper.selectById("op-1"))
+                .thenReturn(operationRow("op-1", "布三边", "车位", "米", "0.40", 1));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operationRow("op-1", "布三边", "车位", "米", "0.40", 1)));
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of());
+        ProductionOperationPosition cell = ProductionOperationPosition.builder()
+                .id("opp-三边-布帘").tenantId(TENANT).logicalName("三边").position("布帘")
+                .unitPrice(new BigDecimal("0.40")).applicable(true).status("active").deleted(0).build();
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(cell));
+        when(productionOperationPositionMapper.updatePriceAndApplicable(
+                any(), any(), any(), any(), any())).thenReturn(1);
+        when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(1);
+        when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
+
+        mockMvc.perform(delete("/api/admin/production/operations/op-1/detach-and-delete"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.deleted").value(true))
+                .andExpect(jsonPath("$.data.detached_positions").value(1))
+                .andExpect(jsonPath("$.data.deleted_positions").value(1));
+
+        // 摘格、级联软删、工序软删**都在**（不是只摘格 / 只删）
+        verify(productionOperationPositionMapper).updatePriceAndApplicable(
+                eq("opp-三边-布帘"), eq(TENANT), isNull(), eq(false), any());
+        verify(productionOperationPositionMapper).softDelete(eq("opp-三边-布帘"), eq(TENANT), any());
+        verify(productionOperationMapper).update(isNull(), any());
+    }
+
+    /**
+     * issue #4665 C：删除要**删干净** —— 工序软删的**同一事务**里级联软删它引用的矩阵行，
+     * 否则读面（只看 {@code deleted=0}）照旧返回那一行 ⇒ 工艺项表格里那一行还在
+     * （用户实测「依然删不干净」）。响应如实报数 {@code deleted_positions}。
+     */
+    @Test
+    @DisplayName("#4665 C DELETE ⇒ 同一事务级联软删矩阵行 + 响应如实报数（deleted_positions）")
+    void deleteOperationCascadesSoftDeleteToMatrixRows() throws Exception {
+        when(productionOperationMapper.selectById("op-1"))
+                .thenReturn(operationRow("op-1", "布三边", "车位", "米", "0.40", 1));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operationRow("op-1", "布三边", "车位", "米", "0.40", 1)));
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of());
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                ProductionOperationPosition.builder()
+                        .id("opp-三边-布帘").tenantId(TENANT).logicalName("三边").position("布帘")
+                        .unitPrice(new BigDecimal("0.40")).applicable(false).status("active").deleted(0)
+                        .build()));
+        when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(1);
+        when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
+
+        mockMvc.perform(delete("/api/admin/production/operations/op-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.deleted").value(true))
+                .andExpect(jsonPath("$.data.deleted_positions").value(1));
+
+        // 级联软删走**显式写列**的 `softDelete`（#4608：`updateById` 会被 MP 剔除该字段 ⇒ 静默 no-op）
+        verify(productionOperationPositionMapper).softDelete(eq("opp-三边-布帘"), eq(TENANT), any());
+        verify(productionOperationPositionMapper, never())
+                .updateById(any(ProductionOperationPosition.class));
+        // 工序行本身也软删（显式写列）
+        verify(productionOperationMapper).update(isNull(), any());
+    }
+
+    /**
+     * issue #4665 C **一次事务**：矩阵行软删失败 ⇒ fail-closed（工序行**不得**被写）。
+     *
+     * <p>单测层能断言的是「抛 422 + 不写工序行」；真正的回滚由 {@code @Transactional} 保证
+     * （半完成态 = 工序删了、行还在 = 用户实测的「删不干净」）。</p>
+     */
+    @Test
+    @DisplayName("#4665 C 一次事务：矩阵行软删失败 ⇒ 422 且工序行不写（不留半完成态）")
+    void deleteOperationFailsClosedWhenCascadeFails() throws Exception {
+        when(productionOperationMapper.selectById("op-1"))
+                .thenReturn(operationRow("op-1", "布三边", "车位", "米", "0.40", 1));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operationRow("op-1", "布三边", "车位", "米", "0.40", 1)));
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of());
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                ProductionOperationPosition.builder()
+                        .id("opp-三边-布帘").tenantId(TENANT).logicalName("三边").position("布帘")
+                        .unitPrice(new BigDecimal("0.40")).applicable(false).status("active").deleted(0)
+                        .build()));
+        // 0 = 行不存在 / 非本租户 / 已软删 ⇒ 必须 fail-closed
+        when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(0);
+
+        mockMvc.perform(delete("/api/admin/production/operations/op-1"))
+                .andExpect(status().isUnprocessableEntity());
+
+        verify(productionOperationMapper, never()).update(isNull(), any());
+    }
+
+    /**
+     * 反向护栏（issue #4665 明确要求）：主线命中时，一键端点
+     * **也必须被拦**（主线涉及车间顺序，必须人工确认），且**一格都不许被摘**。
+     */
+    @Test
+    @DisplayName("#4665 反向护栏：主线命中 ⇒ 一键端点 **也被拦**（422，一格不摘）")
+    void deleteOperationWithDetachStillRejectsMainlineReference() throws Exception {
+        when(productionOperationMapper.selectById("op-1"))
+                .thenReturn(operationRow("op-1", "布三边", "车位", "米", "0.40", 1));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operationRow("op-1", "布三边", "车位", "米", "0.40", 1)));
+        ProductionRouteTemplate template = ProductionRouteTemplate.builder()
+                .id("rt-1").tenantId(TENANT).name("窗帘工序路线（默认）").isDefault(true)
+                .positions(List.of("布帘", "帘头")).mainline(List.of("精裁", "三边"))
+                .status("active").deleted(0).build();
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(template));
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of());
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                ProductionOperationPosition.builder()
+                        .id("opp-三边-布帘").tenantId(TENANT).logicalName("三边").position("布帘")
+                        .unitPrice(new BigDecimal("0.40")).applicable(true).status("active").deleted(0)
+                        .build()));
+
+        mockMvc.perform(delete("/api/admin/production/operations/op-1/detach-and-delete"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.details[0].field").value("routing"))
+                .andExpect(jsonPath("$.error.details[0].message").value(
+                        containsString("先改主线")));
+
+        // 拦下 ⇒ 无副作用（既不摘格、也不级联软删、也不删工序）
+        verify(productionOperationPositionMapper, never())
+                .updatePriceAndApplicable(any(), any(), any(), any(), any());
+        verify(productionOperationPositionMapper, never()).softDelete(any(), any(), any());
+        verify(productionOperationMapper, never()).update(isNull(), any());
     }
 
     @Test

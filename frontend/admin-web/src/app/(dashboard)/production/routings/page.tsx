@@ -475,9 +475,55 @@ interface StepView {
  * - `na` ⇒ 「不做」（`applicable=false`，**明确不做**，不是漏配）。
  *
  * 两个写动作**同一端点、不同 body**（契约 #4587 ② 是**部分更新** ⇒ body **只带**变了的键）：
- * 改价 ⇒ `{unit_price}`（清空 = `null` = 改回未定价）；「不做 ⇄」⇒ `{applicable}`。
+ * 改价 ⇒ `{unit_price}`（清空 = `null` = 改回未定价）；「做 ⇄ 不做」⇒ `{applicable}`。
  * 失败理由**就地逐条**展示（后端 `error.details[].message`，**不**吞成一句「保存失败」）。
  */
+
+/**
+ * 「做 / 不做」控件（issue #4665 —— 用户实测「无法删除，而且没有地方设置做于不做」）。
+ *
+ * <p>改前：做/不做只藏在**主表格**的裸 `⇄` 图标里（只有 `title`/`aria-label` 提示）——
+ * 而商家此刻在**抽屉**里（删除弹框让他「先去设为不做」），抽屉里根本没有这个开关 ⇒ 死路。
+ * 现在**两处共用这一个控件**（主表格的格 + 抽屉里该工序的各部位条目）：
+ * ① **有可见文字**（`做` / `不做`），不再靠 hover 才知道它是什么；
+ * ② 文案就是**动作**（点一下会发生什么），三态语义不变（`不做` / `未定价` / `¥x.xx`）。</p>
+ */
+function ApplicableToggle({
+  applicable,
+  label,
+  testId,
+  disabled,
+  onToggle,
+}: {
+  applicable: boolean
+  /** 可读的部位名（`布帘` / `布帘 / 帘头`）—— 进 aria-label 与 title */
+  label: string
+  testId: string
+  disabled?: boolean
+  onToggle: () => void
+}) {
+  const action = applicable ? '改成不做这道工序' : '改成做这道工序'
+  return (
+    <button
+      type="button"
+      aria-label={`${label} ${action}`}
+      title={`${label}：点一下${action}`}
+      data-testid={testId}
+      data-applicable={applicable ? 'yes' : 'no'}
+      disabled={disabled}
+      onClick={onToggle}
+      className={cn(
+        'shrink-0 rounded border px-1.5 py-0.5 text-xs leading-none transition-colors disabled:opacity-50',
+        applicable
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+          : 'border-neutral-300 bg-neutral-50 text-neutral-500 hover:bg-neutral-100',
+      )}
+    >
+      {applicable ? '做' : '不做'}
+    </button>
+  )
+}
+
 function PositionCell({
   cell,
   state,
@@ -524,15 +570,12 @@ function PositionCell({
       {state === 'na' ? (
         <span className="flex items-center gap-1.5">
           <span>不做</span>
-          <button
-            type="button"
-            aria-label={`${key} 改成做这道工序`}
-            data-testid={`matrix-applicable-${key}`}
-            onClick={onToggleApplicable}
-            className="rounded px-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
-          >
-            ⇄
-          </button>
+          <ApplicableToggle
+            applicable={false}
+            label={key}
+            testId={`matrix-applicable-${key}`}
+            onToggle={onToggleApplicable}
+          />
         </span>
       ) : editing ? (
         <span className="flex items-center gap-1.5">
@@ -582,16 +625,12 @@ function PositionCell({
           >
             <Pencil className="w-3.5 h-3.5" />
           </button>
-          <button
-            type="button"
-            aria-label={`${key} 改成不做这道工序`}
-            data-testid={`matrix-applicable-${key}`}
-            title={`${cell.position}不做「${cell.operation}」—— 点一下改成不做`}
-            onClick={onToggleApplicable}
-            className="rounded px-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
-          >
-            ⇄
-          </button>
+          <ApplicableToggle
+            applicable
+            label={key}
+            testId={`matrix-applicable-${key}`}
+            onToggle={onToggleApplicable}
+          />
         </span>
       )}
       {editing && reasons.length > 0 && (
@@ -1167,6 +1206,22 @@ export default function ProcessConfigPage() {
     () => manageVariants.find((v) => v.id === confirmDeleteOpId) ?? null,
     [manageVariants, confirmDeleteOpId],
   )
+  /**
+   * 删除弹框要「一键设为不做」的格（issue #4665）：判据与**后端护栏③同源** ——
+   * 该变体对应的矩阵格里 `applicable=true` 的那些（含帘头回落布帘变体、部位无关工序一格多部位）。
+   *
+   * <p>前端只用它来**如实说清将发生什么**（「将把这 N 个格子设为不做，然后删除该工序」）——
+   * **判据以后端为准**：真正的摘格在后端同一事务里按同一判据做（前端不发明第二份口径，
+   * 也不自己去逐个 PUT：那是两步、会留下「第一步成功、第二步失败」的中间态）。</p>
+   */
+  const deleteOpCells = useMemo(() => {
+    if (!deleteOpTarget) return []
+    const cells: OperationPosition[] = []
+    manageRow?.cells.forEach((c) => {
+      if (c.variant_operation_id === deleteOpTarget.id && c.applicable !== false) cells.push(c)
+    })
+    return cells
+  }, [deleteOpTarget, manageRow])
 
   // ────────────────────────── 就绪度（先后依赖显性化） ──────────────────────────
 
@@ -1781,6 +1836,32 @@ export default function ProcessConfigPage() {
     try {
       await productionApi.deleteOperation(variant.id)
       toast.success(`已删除工序（${variant.positions.join(' / ')}）`)
+      setConfirmDeleteOpId(null)
+      await load()
+    } catch (e) {
+      setVariantReasons({ id: variant.id, items: routingAdminGuardReasons(e) })
+      if (!isErrorToastShown(e)) toast.error('删除失败')
+    } finally {
+      setVariantBusy(false)
+    }
+  }
+
+  /**
+   * **一键「设为不做并删除」**（issue #4665 A；用户实测「无法删除，而且没有地方设置做于不做」）。
+   *
+   * <p>把删除的前置（把受影响的矩阵格设为不做）**交给系统自己做** —— 后端**一次事务**：
+   * 先摘格（{@code applicable=false}）再软删工序，并**级联软删矩阵行**（删干净，见 issue #4665 C）。
+   * 前端只发**一次**请求（`?detach_positions=true`）⇒ **没有**「第一步成功、第二步失败」的中间态。</p>
+   *
+   * <p>⚠️ **护栏不放宽**：主线 / 规则两条由后端照旧拦（主线涉及车间顺序，必须人工确认）⇒
+   * 失败理由**逐条就地**展示、弹框不收摊、页面不刷新（不留半完成态）。</p>
+   */
+  const removeVariantDetaching = async (variant: VariantView) => {
+    setVariantBusy(true)
+    setVariantReasons(null)
+    try {
+      await productionApi.deleteOperation(variant.id, { detachPositions: true })
+      toast.success(`已设为不做并删除工序（${variant.positions.join(' / ')}）`)
       setConfirmDeleteOpId(null)
       await load()
     } catch (e) {
@@ -3012,6 +3093,39 @@ export default function ProcessConfigPage() {
                     {v.source && <SourceBadge source={v.source} testId={`variant-source-${v.id}`} />}
                   </div>
 
+                  {/* **做 / 不做**（issue #4665）：用户实测「无法删除，而且没有地方设置做于不做」——
+                      删除弹框让他「先去设为不做」，而做/不做此前**只**藏在主表格的裸 `⇄` 里，
+                      商家此刻正在这个抽屉里 ⇒ 死路。这里按**部位逐格**给显式控件（与主表格**同一个**
+                      `ApplicableToggle`，同一端点 `PUT /operation-positions/{id}` body 只带 `{applicable}`）。
+                      三态语义不变：`做` + 价 = 计件单价；`做` + 无价 = 未定价（≠ ¥0.00）；`不做`。 */}
+                  <div className="mt-2 flex flex-wrap items-center gap-2" data-testid={`drawer-applicable-row-${v.id}`}>
+                    <span className="text-xs text-neutral-500">做 / 不做</span>
+                    {v.positions.map((position) => {
+                      const cell = manageRow?.cells.get(position)
+                      if (!cell) return null
+                      const priced = cell.applicable !== false && cell.unit_price != null
+                      return (
+                        <span key={position} className="flex items-center gap-1">
+                          <span className="text-xs text-neutral-400">{position}</span>
+                          <ApplicableToggle
+                            applicable={cell.applicable !== false}
+                            label={position}
+                            testId={`drawer-applicable-${manageOp}-${position}`}
+                            disabled={variantBusy}
+                            onToggle={() => toggleCellApplicable(cell)}
+                          />
+                          {/* 价与「做/不做」并排 ⇒ 三态一眼可辨；`未定价` **不得**渲染成 ¥0.00 */}
+                          <span
+                            className="text-xs text-neutral-500"
+                            data-testid={`drawer-price-${manageOp}-${position}`}
+                          >
+                            {cell.applicable === false ? '' : priced ? money(cell.unit_price) : '未定价'}
+                          </span>
+                        </span>
+                      )
+                    })}
+                  </div>
+
                   {/* 分组 · 单位：就地改（`PUT /operations/{id}` 部分更新） */}
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     {editingVariantId === v.id ? (
@@ -3724,6 +3838,27 @@ export default function ProcessConfigPage() {
               删除后它不再出现在工序库与部位价目里，新加工单不会再生成这道工序；
               <strong>历史报工不受影响</strong>（报工按当时的工序快照）。
             </p>
+            {/* 一键「设为不做并删除」（issue #4665 A）：把删除的前置交给系统自己做，并**说清将发生什么**。
+                改前：弹框让他「先在该部位设为『不做』，再删它」，而做/不做开关藏在主表格的裸 `⇄` 里、
+                抽屉里没有 ⇒ 用户实测「无法删除，而且没有地方设置做于不做」。 */}
+            {deleteOpCells.length > 0 && (
+              <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                这道工序还挂在部位价目矩阵的
+                <strong className="mx-1">
+                  {deleteOpCells.map((c) => c.position).join(' / ')}
+                </strong>
+                格上（共 {deleteOpCells.length} 个格子）且是「做」。点下面的
+                <strong className="mx-1">设为不做并删除</strong>
+                ：系统会<strong>把这 {deleteOpCells.length} 个格子设为不做</strong>，然后删除该工序（一次完成，
+                不留半成品）；<strong>历史报工不受影响</strong>。
+                {deleteOpCells.length !== deleteOpTarget.positions.length && (
+                  <span className="mt-1 block text-xs">
+                    也可以先到「工艺项」表里「{manageOp}」这一行（或本抽屉的「做 / 不做」）逐格改成不做，
+                    再回来确认删除。
+                  </span>
+                )}
+              </p>
+            )}
             {variantReasons && (
               <ul className="space-y-0.5 text-xs text-red-600" data-testid="variant-delete-reasons">
                 {variantReasons.items.map((r, i) => (
@@ -3740,6 +3875,16 @@ export default function ProcessConfigPage() {
               >
                 取消
               </Button>
+              {deleteOpCells.length > 0 && (
+                <Button
+                  variant="secondary"
+                  loading={variantBusy}
+                  data-testid={`variant-detach-and-delete-${deleteOpTarget.id}`}
+                  onClick={() => void removeVariantDetaching(deleteOpTarget)}
+                >
+                  设为不做并删除
+                </Button>
+              )}
               <Button
                 variant="danger"
                 loading={variantBusy}

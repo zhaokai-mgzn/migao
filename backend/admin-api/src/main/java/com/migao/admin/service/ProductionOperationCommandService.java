@@ -433,6 +433,11 @@ public class ProductionOperationCommandService {
      * 「指向不存在工序」的悬空引用（而矩阵读面的 5 键会静默全 null）。</p>
      *
      * <p>已软删 ⇒ <b>200 幂等 no-op</b>（不报 404：调用方要的是「它现在不在活跃集里」，已经满足）。</p>
+     *
+     * <p>⚠️ <b>本方法必须是「工序软删」的**唯一落点**</b>：{@code tests/unit_ci_workflows/
+     * test_logic_delete_write_shape.py} 的锚点按**第一个名为 {@code delete} 的方法**取体
+     * （issue #4608 的显式写列守卫）—— 把它挪到别的方法后面会让守卫**失锚**（CI 红）。
+     * 带 {@code detachPositions} 的入口见 {@link #deleteDetaching(String, Long)}。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> delete(String id, Long tenantId) {
@@ -443,6 +448,7 @@ public class ProductionOperationCommandService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", op.getId());
         result.put("deleted", true);
+        result.put("detached_positions", 0);
         if (Integer.valueOf(1).equals(op.getDeleted())) {
             return result;
         }
@@ -453,6 +459,142 @@ public class ProductionOperationCommandService {
         // **不得**出现在 `error.details[].message` 里：前端 `variant-delete-reasons` 逐条渲染这些文案，
         // 用变体名就等于把 `布三边` 送上商家屏（同 P1 的泄漏路径）。
         // 「到底是哪条库行」的辨识度由**部位集合/分组**补足（见护栏③的 `logicalName × position`）。
+        // 护栏①主线 / ②规则：与一键版本**共用同一份判据**（`operationReferenceGuards`）。
+        List<ApiResponse.ErrorDetail> details = operationReferenceGuards(tenantId, logicalName, variantName);
+        // ③ 矩阵行（**遍历全部命中格**：帘头回落布帘变体 / 部位无关工序一格多部位）。
+        // ⚠️ 命中格**先整份收进列表**（不管 applicable）：它是三处的**同一份判据** ——
+        // 护栏③（applicable=true ⇒ 拦）、一键摘格（把这些格设为不做）、级联软删（把这些行删掉）。
+        // 三处各写一遍必然漂移（一处改了另两处忘改 ⇒ 要么拦不住、要么摘不干净、要么删不干净）。
+        List<ProductionOperationPosition> matchingCells = matchingCells(tenantId, variantName);
+        for (ProductionOperationPosition row : matchingCells) {
+            if (!Boolean.TRUE.equals(row.getApplicable())) {
+                continue;
+            }
+            details.add(BusinessException.detail("operation_position", String.format(
+                    "工序「%s」还挂在部位价目矩阵的「%s × %s」格上且该格是「做」—— 先在该部位设为「不做」，再删它",
+                    logicalName, row.getLogicalName(), row.getPosition())));
+        }
+        if (!details.isEmpty()) {
+            throw BusinessException.validationError(
+                    "删除工序未通过校验（" + details.size() + " 条问题）", details,
+                    "按每条理由处理：先改主线 / 先删改那条规则 / 先在对应部位设为不做");
+        }
+        OffsetDateTime now = OffsetDateTime.now();
+        // 级联软删矩阵行（issue #4665 C：删工序要「删干净」）—— 见 `cascadeSoftDeleteCells` 的说明
+        result.put("deleted_positions", cascadeSoftDeleteCells(tenantId, matchingCells, now));
+        // ⚠️ 必须**显式写列**（issue #4608），不得写成 `op.setDeleted(1); updateById(op);`：
+        // MP 全局逻辑删除会把逻辑删除字段从 updateById 的 SET 子句里**剔除** ⇒ deleted 永不落库，
+        // 而调用仍返回成功 = 删除静默 no-op（用户实测「提示成功但数据还在」）。
+        // 显式 .set(...) 绕过字段剔除，同时保住审计字段 updated_at（「谁在什么时候删的」的唯一证据）。
+        productionOperationMapper.update(null, new LambdaUpdateWrapper<ProductionOperation>()
+                .eq(ProductionOperation::getId, id)
+                .set(ProductionOperation::getDeleted, 1)
+                .set(ProductionOperation::getUpdatedAt, now));
+        log.info("软删工序: tenantId={}, operationId={}, name={}, 级联软删矩阵行={}",
+                tenantId, op.getId(), op.getName(), result.get("deleted_positions"));
+        return result;
+    }
+
+    /**
+     * 一键「**设为不做并删除**」（issue #4665 A；用户实测「无法删除，而且没有地方设置做于不做」）。
+     *
+     * <p><b>与 {@link #delete(String, Long)} 的唯一差别</b>：护栏③「矩阵格是『做』」**可一键满足** ——
+     * 同一事务里先把命中的格设为 {@code applicable=false}（价强制清空，与 V71 列口径一致），
+     * 再软删工序 + **级联软删矩阵行**（#4665 C：删干净）。前端**只发一次**请求 ⇒ **没有**
+     * 「第一步成功、第二步失败」的中间态。</p>
+     *
+     * <p><b>护栏不放宽</b>（本单硬要求）：护栏①<b>活跃路线主线</b>与②<b>活跃规则</b>**照样拦**
+     * （主线涉及车间顺序，必须人工确认）；且**先判护栏、后摘格** ⇒ 被拦时**一格都不摘**。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> deleteDetaching(String id, Long tenantId) {
+        ProductionOperation op = id == null ? null : productionOperationMapper.selectById(id);
+        if (op == null || !tenantId.equals(op.getTenantId())) {
+            throw BusinessException.notFound("工序");
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", op.getId());
+        result.put("deleted", true);
+        result.put("detached_positions", 0);
+        if (Integer.valueOf(1).equals(op.getDeleted())) {
+            return result;
+        }
+        String variantName = op.getName();
+        String logicalName = productionOperationQueryService.normalizeOperationName(variantName);
+        // ⚠️ 护栏①/② **与两参版本同一份判据**（`operationReferenceGuards`）—— 不许在这里少判一条；
+        // 护栏③（矩阵格是「做」）**不判** = 本按钮要一键满足的那一条。
+        List<ApiResponse.ErrorDetail> details = operationReferenceGuards(tenantId, logicalName, variantName);
+        if (!details.isEmpty()) {
+            throw BusinessException.validationError(
+                    "删除工序未通过校验（" + details.size() + " 条问题）", details,
+                    "按每条理由处理：先改主线 / 先删改那条规则 / 先在对应部位设为不做");
+        }
+        List<ProductionOperationPosition> matchingCells = matchingCells(tenantId, variantName);
+        // 一键摘格：**先判护栏、后摘格** ⇒ 被拦时一格都不摘。写形态复用矩阵写面同一份
+        // （`updatePriceAndApplicable`：不做 ⇒ 价强制清空，与「明确不做 ⇒ 不报价」同口径）。
+        OffsetDateTime now = OffsetDateTime.now();
+        int detached = 0;
+        for (ProductionOperationPosition row : matchingCells) {
+            if (!Boolean.TRUE.equals(row.getApplicable())) {
+                continue;
+            }
+            productionOperationPositionMapper.updatePriceAndApplicable(
+                    row.getId(), tenantId, null, false, now);
+            detached++;
+        }
+        result.put("detached_positions", detached);
+        if (detached > 0) {
+            log.info("一键摘格（设为不做）: tenantId={}, operationId={}, cells={}", tenantId, id, detached);
+        }
+        result.put("deleted_positions", cascadeSoftDeleteCells(tenantId, matchingCells, now));
+        // 显式写列（同 `delete`：不走 updateById —— MP 会剔除该字段 ⇒ 静默 no-op，issue #4608）
+        productionOperationMapper.update(null, new LambdaUpdateWrapper<ProductionOperation>()
+                .eq(ProductionOperation::getId, id)
+                .set(ProductionOperation::getDeleted, 1)
+                .set(ProductionOperation::getUpdatedAt, now));
+        log.info("软删工序（一键摘格）: tenantId={}, operationId={}, name={}, 级联软删矩阵行={}",
+                tenantId, op.getId(), op.getName(), result.get("deleted_positions"));
+        return result;
+    }
+
+    /**
+     * **级联软删**属于该工序的矩阵行（issue #4665 C：删工序要「删干净」），返回删了几行。
+     *
+     * <p>工序软删后矩阵行若还在，{@code GET /operation-positions} 照旧返回它（读面过滤只有
+     * 租户 + {@code deleted=0} + {@code status='active'}，**不看它挂的那道工序是否已删**）⇒
+     * 工艺项表格里那一行**照旧显示** = 用户实测「依然删不干净」。判据与护栏③/一键摘格**同一份**
+     * （{@code matchingCells}，含帘头回落 / 一格多部位）；写形态**显式写列**（{@code softDelete}：
+     * {@code deleted=1} + {@code updated_at} —— 不走 {@code updateById}，那是 #4608 的静默 no-op）。</p>
+     *
+     * <p><b>一次事务</b>：影响 0 行（并发下已被别人删掉）⇒ <b>fail-closed</b> 抛 422 让整个事务回滚，
+     * 不留「工序删了、行还在」的半完成态。</p>
+     */
+    private int cascadeSoftDeleteCells(Long tenantId, List<ProductionOperationPosition> matchingCells,
+                                       OffsetDateTime now) {
+        int cascadeDeleted = 0;
+        for (ProductionOperationPosition row : matchingCells) {
+            if (productionOperationPositionMapper.softDelete(row.getId(), tenantId, now) == 0) {
+                throw BusinessException.validationError(
+                        "删除工序未通过校验（1 条问题）",
+                        List.of(BusinessException.detail("operation_position", String.format(
+                                "部位价目矩阵的「%s × %s」格在删除过程中被改动，请刷新后重试",
+                                row.getLogicalName(), row.getPosition()))),
+                        "刷新页面后重试");
+            }
+            cascadeDeleted++;
+        }
+        return cascadeDeleted;
+    }
+
+    /**
+     * 删除工序的护栏①（活跃路线主线）/②（活跃规则）—— 两参版本与一键版本**共用同一份判据**
+     * （不许在某一处少判一条）。
+     *
+     * <p>文案一律用**逻辑名**（issue #4642）：它是 web 面唯一显示口径，库口径变体名不得上屏
+     * （前端 {@code variant-delete-reasons} 逐条渲染这些 message）。</p>
+     */
+    private List<ApiResponse.ErrorDetail> operationReferenceGuards(Long tenantId, String logicalName,
+                                                                   String variantName) {
         List<ApiResponse.ErrorDetail> details = new ArrayList<>();
         // ① 活跃路线主线（逻辑名或变体名命中；每条路线只报一次）
         for (ProductionRouteTemplate template : productionOperationQueryService.routeTemplates(tenantId)) {
@@ -474,40 +616,39 @@ public class ProductionOperationCommandService {
                     "工序「%s」被活跃规则「%s → %s」引用（目标工序或锚点）—— 先删或改那条规则，再删它",
                     logicalName, rule.getTriggerValue(), rule.getOperation())));
         }
-        // ③ 矩阵行（**遍历全部命中格**：帘头回落布帘变体 / 部位无关工序一格多部位）
-        Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
-        for (ProductionOperationPosition row : productionOperationQueryService.operationPositions(tenantId)) {
-            if (!Boolean.TRUE.equals(row.getApplicable())) {
-                continue;
-            }
-            if (!variantName.equals(productionOperationQueryService.variantNameOf(
-                    row.getLogicalName(), row.getPosition(), catalog))) {
-                continue;
-            }
-            details.add(BusinessException.detail("operation_position", String.format(
-                    "工序「%s」还挂在部位价目矩阵的「%s × %s」格上且该格是「做」—— 先在该部位设为「不做」，再删它",
-                    logicalName, row.getLogicalName(), row.getPosition())));
-        }
-        if (!details.isEmpty()) {
-            throw BusinessException.validationError(
-                    "删除工序未通过校验（" + details.size() + " 条问题）", details,
-                    "按每条理由处理：先改主线 / 先删改那条规则 / 先在对应部位设为不做");
-        }
-        // ⚠️ 必须**显式写列**（issue #4608），不得写成 `op.setDeleted(1); updateById(op);`：
-        // MP 全局逻辑删除会把逻辑删除字段从 updateById 的 SET 子句里**剔除** ⇒ deleted 永不落库，
-        // 而调用仍返回成功 = 删除静默 no-op（用户实测「提示成功但数据还在」）。
-        // 显式 .set(...) 绕过字段剔除，同时保住审计字段 updated_at（「谁在什么时候删的」的唯一证据）。
-        productionOperationMapper.update(null, new LambdaUpdateWrapper<ProductionOperation>()
-                .eq(ProductionOperation::getId, id)
-                .set(ProductionOperation::getDeleted, 1)
-                .set(ProductionOperation::getUpdatedAt, OffsetDateTime.now()));
-        log.info("软删工序: tenantId={}, operationId={}, name={}", tenantId, op.getId(), op.getName());
-        return result;
+        return details;
     }
 
     /** 规则里的工序名是否指向被删工序（逻辑名或变体名任一命中；主线/规则两处同一判据）。 */
     private static boolean hitsOperation(String value, String logicalName, String variantName) {
         return value != null && (value.equals(logicalName) || value.equals(variantName));
+    }
+
+    /**
+     * 该变体在矩阵里引用的**全部**格（issue #4665）。
+     *
+     * <p><b>为什么单独抽一个方法</b>：它是护栏③（格是「做」⇒ 拦）、一键摘格（把这些格设为不做）
+     * 与级联软删（把这些行删掉）的**同一份判据** —— 三处各写一遍必然漂移
+     * （一处改了另两处忘改 ⇒ 要么拦不住、要么摘不干净、要么删不干净）。
+     * 「遍历全部命中格」的口径也留在这里：{@code 帘头} 会回落 {@code 布帘} 变体
+     * （{@code 三边 × 帘头} 与 {@code 三边 × 布帘} 都指向 {@code 布三边}），部位无关的工序
+     * （{@code 外帘打卷}）更是**一格多部位** ⇒ 只看一格会留下悬空引用。</p>
+     *
+     * <p>⚠️ **不过滤 {@code applicable}**：级联软删要连「已经设为不做」的格一起删
+     * （否则用户把格设为不做再删工序 ⇒ 那一行照旧留在表格里 = 「删不干净」）；是否「算引用」
+     * 由调用方按 {@code applicable} 自行判断。</p>
+     */
+    private List<ProductionOperationPosition> matchingCells(Long tenantId, String variantName) {
+        Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
+        List<ProductionOperationPosition> cells = new ArrayList<>();
+        for (ProductionOperationPosition row : productionOperationQueryService.operationPositions(tenantId)) {
+            if (!variantName.equals(productionOperationQueryService.variantNameOf(
+                    row.getLogicalName(), row.getPosition(), catalog))) {
+                continue;
+            }
+            cells.add(row);
+        }
+        return cells;
     }
 
     /**

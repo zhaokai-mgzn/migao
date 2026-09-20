@@ -141,6 +141,26 @@
 //    锚点改叫「插在哪道工序之后」并自动填默认值。
 //    - 红证（改前实测，窄跑 `-t ㉗`）：10 failed（独立表/术语仍在、抽屉里没有「适用条件」一族）
 //      ⇒ 实现后 10/10 绿；全文件 132/132 绿。
+// ㉘ **删除工序卡死：一键「设为不做并删除」+ 让「做/不做」看得见**（issue #4665；用户原话
+//    「**无法删除，而且没有地方设置做于不做**」）：
+//    - **病根（两层）**：① 做/不做开关**存在但找不到** —— 它只藏在**主表格**每行的裸 `⇄` 图标里
+//      （仅 `title`/`aria-label` 提示），而商家此刻在**抽屉**里（弹框让他「先去设为不做」）⇒ 死路；
+//      ② 流程本身是坏设计 —— 删除的前置（把相关格设为不做）**系统完全可以自己做**，却拆成两步给商家；
+//    - **A 一键**：删除弹框给「**设为不做并删除**」（`variant-detach-and-delete-{id}`）⇒ **一次**请求
+//      `DELETE /operations/{id}/detach-and-delete`（**独立端点**；后端**同一事务**先摘格再删
+//      + 级联软删矩阵行）⇒ **没有**「第一步成功、第二步失败」的中间态；弹框**说清将发生什么**
+//      （哪几个格 + 历史报工不受影响）。
+//      ⚠️ **为什么是独立端点而不是给 `DELETE /{id}` 加查询参数**：`DELETE /{id}` 那条路径下另有
+//      一个既有软删写面（`tests/unit_ci_workflows/test_logic_delete_write_shape.py` 的锚点按
+//      **第一个名为 `delete` 的方法**取体，issue #4608 的显式写列守卫）—— 塞进同一方法会让护栏
+//      判据与守卫锚点纠缠（CI 实测红）；独立端点让两条路径各自可 grep、各自可单测；
+//    - **B 看得见**：抽屉里按**部位逐格**给 `做 / 不做` 控件（`drawer-applicable-{工序}-{部位}`，
+//      价并排渲染在 `drawer-price-{工序}-{部位}`）；主表格的 `⇄` 换成**有可见文字**的 `做` / `不做`
+//      （同一个 `ApplicableToggle`）—— 两处**共用一份**控件，不靠 hover 才知道它是什么；
+//    - **反向护栏（不得放宽）**：主线 / 规则两条对一键按钮**照样拦**（主线涉及车间顺序，必须人工确认）
+//      ⇒ 被拦时理由逐条就地展示、弹框不收摊、矩阵**不被动**（一格都不摘）；
+//    - 三态语义**不变**（`不做` / `未定价`（≠ ¥0.00） / `¥x.xx`）；`DELETE /operations/{id}` 不带参数时
+//      行为**一字不变**（矩阵格仍是硬护栏 —— 反向证明「护栏没被放宽」）。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -253,7 +273,9 @@ const POSITIONS = [
   { id: 'pos-三边-帘头', operation: '三边', position: '帘头', unit_price: null, applicable: false, ...NO_VARIANT },
   { id: 'pos-三边-布帘', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
   { id: 'pos-三边-纱帘', operation: '三边', position: '纱帘', unit_price: null, applicable: true, variant_operation_id: 'op-三边-纱', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
-  { id: 'pos-精裁-帘头', operation: '精裁', position: '帘头', unit_price: null, applicable: false, ...NO_VARIANT },
+  // `帘头` 回落复用 `布帘` 的变体（真值源 `variantNameOf` 的第 2 步）—— 夹具照真形态给
+  // `variant_operation_id`，否则这一格在抽屉里**不出现**（抽屉按 `variant_operation_id` 去重）。
+  { id: 'pos-精裁-帘头', operation: '精裁', position: '帘头', unit_price: null, applicable: false, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
   { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
   { id: 'pos-精裁-纱帘', operation: '精裁', position: '纱帘', unit_price: 6, applicable: true, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
   { id: 'pos-车被-帘头', operation: '车被', position: '帘头', unit_price: null, applicable: false, ...NO_VARIANT },
@@ -1128,6 +1150,24 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     )
   })
 
+  /**
+   * issue #4665 ③：主表格格子里的做/不做**不许只靠 hover/`title` 才知道它是什么**
+   * （改前是一个光秃秃的 `⇄`）⇒ 控件必须有**可见文字**，且三态语义不变。
+   */
+  it('#4665-D 主表格格子：做/不做**有可见文字**（改前只有裸 `⇄`），三态不变', async () => {
+    await renderOperations()
+
+    // `applicable=true` 的格：控件文字 = `做`
+    expect(screen.getByTestId('matrix-applicable-三边-布帘')).toHaveTextContent('做')
+    // `applicable=false` 的格：控件文字 = `不做`
+    expect(screen.getByTestId('matrix-applicable-三边-帘头')).toHaveTextContent('不做')
+    // 三态不混：`未定价`（做但没价）**不得**渲染成 ¥0.00
+    const cell = screen.getByTestId('matrix-cell-三边-纱帘')
+    expect(cell).toHaveAttribute('data-state', 'unpriced')
+    expect(cell).toHaveTextContent('未定价')
+    expect(cell).not.toHaveTextContent('¥0.00')
+  })
+
   it('⑰-⑦ 格内改价本地预检：负数 / 三位小数 ⇒ **不发请求**，就地给理由', async () => {
     await renderOperations()
 
@@ -1536,6 +1576,144 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await userEvent.click(screen.getByTestId('variant-delete-cancel-op-精裁-布'))
     expect(mockDeleteOperation).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.queryByTestId('variant-delete-modal')).toBeNull())
+  })
+
+  /**
+   * issue #4665 ①：**发现性失败** —— 做/不做开关只藏在主表格的 `⇄` 里，而商家此刻在抽屉里
+   * （弹框让他「先去设为不做」）⇒ 抽屉必须**直接**能看到并改做/不做。
+   *
+   * 红证（改前）：抽屉里没有 `drawer-applicable-*` 控件 ⇒ 本用例红（找不到 testid）。
+   */
+  it('#4665-A 抽屉里能**直接**看到并改「做 / 不做」（不再只有主表格的 ⇄）', async () => {
+    await openManage('精裁')
+    const row = screen.getByTestId('variant-row-op-精裁-布')
+    expect(row).toBeInTheDocument()
+
+    // 每个部位一格，且**文字可见**（不靠 hover/title 才知道是什么）
+    const cloth = screen.getByTestId('drawer-applicable-精裁-布帘')
+    expect(cloth).toHaveTextContent('做')
+    expect(cloth).toHaveAccessibleName('布帘 改成不做这道工序')
+
+    // 点「做」⇒ 改成不做：同一端点，body **只带** `{applicable:false}`
+    await userEvent.click(cloth)
+    await waitFor(() =>
+      expect(mockUpdateOperationPosition).toHaveBeenCalledWith('pos-精裁-布帘', { applicable: false }),
+    )
+    expect(Object.keys(mockUpdateOperationPosition.mock.calls[0][1] as object)).toEqual(['applicable'])
+
+    // 点「不做」⇒ 切回做（`{applicable:true}`）
+    mockUpdateOperationPosition.mockClear()
+    await userEvent.click(screen.getByTestId('drawer-applicable-精裁-帘头'))
+    await waitFor(() =>
+      expect(mockUpdateOperationPosition).toHaveBeenCalledWith('pos-精裁-帘头', { applicable: true }),
+    )
+    expect(Object.keys(mockUpdateOperationPosition.mock.calls[0][1] as object)).toEqual(['applicable'])
+  })
+
+  it('#4665-A2 抽屉的做/不做是**三态**：不做 / 未定价（≠ ¥0.00）/ ¥x.xx 各自可见', async () => {
+    await openManage('精裁')
+    // 控件文字 = 做/不做；**价**并排渲染（三态**不同形**）
+    expect(screen.getByTestId('drawer-applicable-精裁-帘头')).toHaveTextContent('不做')
+    expect(screen.getByTestId('drawer-applicable-精裁-布帘')).toHaveTextContent('做')
+    expect(screen.getByTestId('drawer-price-精裁-布帘')).toHaveTextContent('¥8.50')
+    expect(screen.getByTestId('drawer-price-精裁-纱帘')).toHaveTextContent('¥6.00')
+    // `不做` 的格**不报**一个价（不做 ≠ ¥0.00）
+    expect(screen.getByTestId('drawer-price-精裁-帘头')).toHaveTextContent('')
+  })
+
+  it('#4665-A3 「未定价」（做但没价）**不得**渲染成 ¥0.00（与 `不做`、真价三态不同形）', async () => {
+    await openManage('三边')
+    // 三边 × 纱帘：applicable=true 且 unit_price=null ⇒ 「未定价」（≠ ¥0.00）
+    const unpriced = screen.getByTestId('drawer-price-三边-纱帘')
+    expect(unpriced).toHaveTextContent('未定价')
+    expect(unpriced).not.toHaveTextContent('¥0.00')
+    // 同一抽屉里「做 + 真价」也在（三边 × 布帘 ¥1.20）⇒ 两种态同屏可辨
+    expect(screen.getByTestId('drawer-price-三边-布帘')).toHaveTextContent('¥1.20')
+    expect(screen.getByTestId('drawer-applicable-三边-布帘')).toHaveTextContent('做')
+  })
+
+  /**
+   * issue #4665 ②：删除的前置（把相关格设为不做）**系统自己做** —— 弹框给**一键**
+   * 「设为不做并删除」，把受影响的格设为 `applicable=false` 然后删工序（后端**一次事务**）。
+   *
+   * 红证（改前）：弹框里没有 `variant-detach-and-delete-*` ⇒ 本用例红；且改前只能手工两步。
+   */
+  it('#4665-B 一键「设为不做并删除」：`DELETE` 带 `detach_positions=true`，工序真被删', async () => {
+    await openManage('精裁')
+    await userEvent.click(screen.getByTestId('variant-delete-op-精裁-布'))
+    const modal = await screen.findByTestId('variant-delete-modal', {}, { timeout: 1500 })
+
+    // 文案要说清**将发生什么**（设为不做 + 历史报工不受影响）
+    expect(modal).toHaveTextContent('设为不做')
+    expect(modal).toHaveTextContent('历史报工不受影响')
+
+    // 一键按钮存在，且点击前**不发请求**
+    const oneClick = screen.getByTestId('variant-detach-and-delete-op-精裁-布')
+    expect(mockDeleteOperation).not.toHaveBeenCalled()
+    await userEvent.click(oneClick)
+
+    // 一次调用带上 `detach_positions`（原子：后端同一事务里先摘格再删）
+    await waitFor(() =>
+      expect(mockDeleteOperation).toHaveBeenCalledWith('op-精裁-布', { detachPositions: true }),
+    )
+    // 删除成功后弹框收摊（不静默留在半完成态）
+    await waitFor(() => expect(screen.queryByTestId('variant-delete-modal')).toBeNull())
+    await waitFor(() => expect(mockGetOperationPositions).toHaveBeenCalledTimes(2))
+  })
+
+  /**
+   * 反向护栏（issue #4665 明确要求）：**主线那一条不得被一键按钮绕过**。
+   *
+   * 主线涉及车间顺序，必须人工确认 —— 后端护栏①（活跃路线主线）对 `detach_positions=true`
+   * **照样拦**（本用例用真实后端语义的 422 打桩：理由里只有主线，没有矩阵格）。
+   * 一键按钮不得让工序消失，且理由必须**逐条就地**展示。
+   */
+  it('#4665-C 反向护栏：主线命中 ⇒ 一键「设为不做并删除」**也被拦**（工序不被删）', async () => {
+    mockDeleteOperation.mockReset().mockRejectedValueOnce(
+      guardError(['工序「精裁」还在活跃路线「窗帘工序路线（默认）」的主线里 —— 先改主线（把它从该路线去掉），再删它']),
+    )
+    await openManage('精裁')
+    await userEvent.click(screen.getByTestId('variant-delete-op-精裁-布'))
+    await userEvent.click(screen.getByTestId('variant-detach-and-delete-op-精裁-布'))
+
+    await waitFor(() =>
+      expect(mockDeleteOperation).toHaveBeenCalledWith('op-精裁-布', { detachPositions: true }),
+    )
+    // 主线理由**就地**展示（不吞成一句「删除失败」）
+    const reasons = await screen.findByTestId('variant-delete-reasons')
+    expect(reasons).toHaveTextContent('先改主线')
+    // 被拦 ⇒ 弹框仍在（不是静默半完成），且抽屉里的工序**还在**
+    expect(screen.getByTestId('variant-delete-modal')).toBeInTheDocument()
+    expect(screen.getByTestId('variant-row-op-精裁-布')).toBeInTheDocument()
+    // 矩阵**没有被偷偷改成不做**（护栏拦下时不许发生副作用）
+    expect(mockUpdateOperationPosition).not.toHaveBeenCalled()
+  })
+
+  /**
+   * issue #4665 C（用户实测追加「**依然删不干净**」）：删除后**表格里那一行必须消失**。
+   *
+   * <p>根因在后端：工序软删了、**矩阵行还在** ⇒ 工艺项表格（按矩阵读面成行）照旧显示它。
+   * 后端已在同一事务里级联软删矩阵行；本用例从**用户面**钉住结果 —— 删成功后重新拉矩阵，
+   * 那一行**不在**了（红证：改前 `matrix-row-精裁` 仍在）。</p>
+   */
+  it('#4665-C 一键删除后**表格里那一行消失**（级联软删矩阵行；改前「删成功但行还在」）', async () => {
+    // 读面序列：首次（渲染）返回全量；删除后的那次刷新 = 后端已级联软删 ⇒ **不含**「精裁」
+    mockGetOperationPositions
+      .mockReset()
+      .mockResolvedValueOnce(ok(POSITIONS))
+      .mockResolvedValue(ok(POSITIONS.filter((c) => c.operation !== '精裁')))
+    await openManage('精裁')
+    expect(screen.getByTestId('matrix-row-精裁')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId('variant-delete-op-精裁-布'))
+    await userEvent.click(screen.getByTestId('variant-detach-and-delete-op-精裁-布'))
+    await waitFor(() =>
+      expect(mockDeleteOperation).toHaveBeenCalledWith('op-精裁-布', { detachPositions: true }),
+    )
+    // 后端级联软删后，读面不再返回「精裁」的格 ⇒ 表格里那一行消失（红证：改前它还在）
+    await waitFor(() => expect(screen.queryByTestId('matrix-row-精裁')).toBeNull())
+    // 反向：别的行不受影响（不是「整张表被清空」）
+    expect(screen.getByTestId('matrix-row-三边')).toBeInTheDocument()
   })
 
   it('⑰-⑱ 文案：这一屏的价叫「计件单价（给工人）」+ 两本账一句话；不出现「加工费」「对客价」', async () => {

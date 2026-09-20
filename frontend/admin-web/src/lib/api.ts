@@ -511,8 +511,16 @@ export const productionApi = {
   // 工序**软删**（issue #4588；契约 #4587 ③）：`deleted=1`（不物理删 —— 历史报工仍引用它）。
   // 三条护栏**一次报全**（422 + `error.details[].message`：被活跃主线 / 活跃规则 / 矩阵格引用）；
   // 已软删 ⇒ 200 幂等 no-op。权限 processing:manage。
-  deleteOperation: (id: string | number) =>
-    request.delete<ApiResponse<{ id: string; deleted: boolean }>>(`/api/admin/production/operations/${id}`),
+  // ⚠️ `opts.detachPositions`（issue #4665）= 一键「设为不做并删除」，走**独立端点**
+  // `DELETE /operations/{id}/detach-and-delete`：后端**同一事务**里先把受影响的矩阵格设为不做
+  // （价清空）再软删工序 + **级联软删矩阵行**（删干净）⇒ 商家不用手工两步、也没有「第一步成功
+  // 第二步失败」的中间态。护栏①主线 / ②规则**照样拦**（主线涉及车间顺序，必须人工确认）。
+  deleteOperation: (id: string | number, opts?: { detachPositions?: boolean }) =>
+    request.delete<ApiResponse<{ id: string; deleted: boolean; detached_positions?: number; deleted_positions?: number }>>(
+      opts?.detachPositions
+        ? `/api/admin/production/operations/${id}/detach-and-delete`
+        : `/api/admin/production/operations/${id}`,
+    ),
 
   // ── 新路线模型只读面（issue #4500 = 母单 #4423 的 P2c；消费方 = P3 #4433）──
   // 两个端点**只读**（写面留 v1b）；顺序由服务端定（Java 侧显式比较器，环境无关）⇒ 前端不得重排。
