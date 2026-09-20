@@ -288,12 +288,23 @@ UA 只扮演了 C 端顾客 persona，B 端商家后台的浏览器操作旅程�
   `quantity 按计价方式（per_meter=米数 / per_set=1 / per_area=宽×高）`；
   ⚠️ **作用域限定（2026-09-15，issue #3683/#3672）：以上口径只适用 `order_create` 路径**
   （agent 把面积算进 `processing_info.processingItems[].quantity`）。
-  `processing_item_manage(action=calculate_price)` 是**另一套契约**：后端自己从
-  `dimensions` 算 `area=宽×高`，再 `unitPrice × area × quantity`
-  （`ProcessingItemService.java:248-254` + `:310-318`）——把「宽×高」写进该端点的 `quantity`
+  `processing_item_manage(action=calculate_price)` **曾**是另一套契约：后端自己从
+  `dimensions` 算 `area=宽×高`，再 `unitPrice × area × quantity`（真值源 =
+  `ProcessingItemService` 的**按计价方式算价分支**）——把「宽×高」写进该端点的 `quantity`
   会**必然双计**（实测：`dimensions` + `quantity=8` → ¥1920.00；正确 payload → ¥240.00）。
   该端点用 `width`/`height` 承载面积、`quantity` 作计件数。原表述无限定，已实际把一次
   per_area 归因引向「传 quantity=8.4 即可修」的错误修法；
+  ⚠️ **2026-09-21 更新（issue #4882，用户裁定「移除加工项单价和计价方式」）：该端点与其
+  per_area 契约已整体退场** —— `ProcessingItemController` 的 `POST /processing-items/calculate`
+  + `dto/PriceCalculateRequest|Response` + `ProcessingItemService` 的 `calculatePrice` /
+  `calculateArea` / `createPriceDetail` 全部删除，V101 迁移同时 DROP
+  `processing_items.pricing_method` / `unit_price`（价只在「加工费组合」上，R10）
+  ⇒ 上面这条「双计」判据**已无对象**，保留仅作历史留档（它解释了为什么 `quantity` 不该承载面积）。
+  ※ 引用纪律：本段原先引用的是 `ProcessingItemService` 的**裸行号**，随该分支删除而失效
+  ⇒ 已改为**符号锚点**（`migao-dev-flow` §16.7「引用纪律」；裸行号会随活跃文件漂移，
+  而 `ref-freshness` 判据对**越界行号**是**可证伪的失效引用** ⇒ 直接判红）。
+  ⚠️ 踩坑留痕：本次修这条时，初稿在本行**又把那个裸行号字面量抄了一遍**（想「举例说明禁忌」）
+  ⇒ 当场被判为新增漂移 —— 「举例说明禁忌 ≠ 自己可以犯」，与本仓 #4668 的教训同形。
 - 数据落库断言：create 类 payload 必须断言完整结构（如 `processing_item_configs` 含
   `customPrice=unit_price`、`unit=真实单位`），禁止只断"工具被调用"。
 - **写工具成功断言（`must_succeed`，issue #3361）**：期望里出现写工具（`order_create` /

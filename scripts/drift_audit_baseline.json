@@ -39,7 +39,6 @@
       "backend/admin-api/src/main/resources/db/migration/V45__widen_order_items_quantity_to_decimal.sql|acceptance-protocol.md#225|bare": 1,
       "backend/admin-api/src/main/resources/db/migration/V81__compensate_lost_v3_v4_backfill.sql|schema.sql#2456|bare": 1,
       "backend/admin-api/src/main/resources/db/migration/V88__retire_material_prep_and_fabric_position.sql|backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java#1242|bare": 1,
-      "docs/testing/acceptance-protocol.md|ProcessingItemService.java#248|bare": 1,
       "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#145|bare": 1,
       "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#173|bare": 1,
       "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#92|bare": 2,
@@ -83,7 +82,7 @@
   },
   "generated_at": "2026-09-20T02:41:35.666244+00:00",
   "policy_version": 1,
-  "reason": "#4708 加面（.sql/.mjs + 迁移目录）：受管面 ⇄ 扫描面的**类型对账**（regression-guard 的 ext-census）落地后，迁移文件里的裸行号引用首次进入判定面 ⇒ 新增 3 条存量，**全部**落在指纹守卫冻结的已发布迁移里（一字节都不可改）：V88__retire_material_prep_and_fabric_position.sql|ProcessingOrderService.java#1242|bare（本单来源：双 AI 交叉验证人工发现）、V45__widen_order_items_quantity_to_decimal.sql|acceptance-protocol.md#225|bare、V81__compensate_lost_v3_v4_backfill.sql|schema.sql#2456|bare。正确写法 = `路径:行号@<sha>`（限定值）或符号/文本锚点（见 docs/wiki/truth-source-contract.md 的 I1 节）。同批**净销账 5 条**（真修，非收窄）：scripts/mibao_coverage.py ×1、scripts/xiaobu_coverage.py ×1、tests/unit_ci_workflows/test_behavior_gate_reachability.py ×1、tests/unit_ci_workflows/test_migration_idempotency.py ×2 —— 裸行号改成文本锚点 ⇒ 58+3-5 = 56（净 -2，满足每 PR ≥1 条）",
+  "reason": "2026-09-21（issue #4882）：`ProcessingItemService` 的按计价方式算价分支（`calculatePrice`/`calculateArea`/`createPriceDetail`）随端点退场被删 ⇒ `docs/testing/acceptance-protocol.md` 里那条裸行号引用已失效，且该文档段已改判为**符号锚点** ⇒ `ref-freshness` 的该条豁免**已归零**，按「只许缩短」移除。",
   "regenerate_command": "python3 scripts/drift_audit.py --regen-baseline --reason '<理由>'",
   "schema": "migao.drift-audit-baseline/1"
 }
