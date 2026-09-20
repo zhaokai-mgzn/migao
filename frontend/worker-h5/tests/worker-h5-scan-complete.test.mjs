@@ -27,7 +27,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import { createApi, STORAGE_KEY } from '../src/api.mjs'
-import { createApp } from '../src/app.mjs'
+import { createApp, PENDING_REQUEST_KEY } from '../src/app.mjs'
 
 // 本页用 `setTimeout` 做「闲置登出」定时器（15 分钟）。生产里它由 `app.destroy()` 清掉，
 // 但**断言失败**的用例会在 destroy 之前抛 ⇒ 定时器留在事件循环 ⇒ `node --test` 不退出
@@ -235,10 +235,15 @@ const resolveOk = (data) => ({ status: 200, body: { success: true, data } })
 
 // ============================================================ 装配一个已登录的页面
 
-function bootPage({ doc, f, loggedIn = true }) {
-  const storage = memStorage(loggedIn ? { [STORAGE_KEY]: JSON.stringify(SESSION) } : {})
+/**
+ * 装配一个已登录的页面。
+ *
+ * `storage` 可注入 ⇒ 能让「同一台设备上的两次页面装载」共享同一份 localStorage
+ * （= 工人刷新页面：**新页面实例、`state` 全丢**，只有 storage 活下来）—— ⑧ 的判据靠它。
+ */
+function bootPage({ doc, f, loggedIn = true, storage = memStorage(loggedIn ? { [STORAGE_KEY]: JSON.stringify(SESSION) } : {}) }) {
   const api = createApi({ fetchImpl: f, storage, baseUrl: '' })
-  const app = createApp({ doc, api, location: 'https://app.migaozn.com/w/' })
+  const app = createApp({ doc, api, location: 'https://app.migaozn.com/w/', storage })
   app.dispatch({ type: 'worker', worker: loggedIn ? { workerName: '张三', workerNo: 'A017', idleMinutes: 15 } : null })
   return app
 }
@@ -549,4 +554,96 @@ test('🔴 静态红线：页面源码里**没有** /report 写入口（唯一�
   assert.ok(!/\/report/.test(code), '工人页不得再有 /report 写路径（它不带 token ⇒ 防呆④⑤ 不生效）')
   assert.ok(!/api\.report\(/.test(code), 'api.report 已下线（唯一写入口 = completeByScan）')
   assert.match(code, /\/api\/worker\/production\/scan\/complete/, '写入口必须是 scan/complete')
+})
+
+// ============================================================ ⑧ 幂等键跨刷新（issue #4814）
+
+/**
+ * 与 ③ 的分工：③ 判「**同一屏**重试复用同一个键」（内存里就够）；
+ * ⑧ 判「**刷新/重开页面**（`state` 全丢）后重扫同一张码，仍然复用同一个键」。
+ *
+ * 🔴 为什么必须有 ⑧：断网是车间常态（设计 §9.3 D5）。改前刷新后键就没了 ⇒ 服务端把重扫当成
+ * **新的一次报工**；而重扫时「待做工序」已推进到下一道 ⇒ 那一笔满额计件记在**没做的活**上
+ * （ProductionScanCompleteServiceTest 有对应的服务端读数：换键 ⇒ 第二行 work_log）。
+ */
+test('🔴 ⑧ 断网（响应丢失）后**刷新重扫**同一张码 ⇒ 复用同一个幂等键（服务端回放，绝不二次记账）', async () => {
+  // 同一台设备的 localStorage：`state` 会随刷新丢失，storage 不会
+  const storage = memStorage({ [STORAGE_KEY]: JSON.stringify(SESSION) })
+
+  // ── 第一次装载：解析成功；点【完成】时**传输层失败**（服务端到底落没落库，前端无从得知）
+  const doc1 = fakeDom()
+  const f1 = routeFetch({
+    '/api/worker/production/scan?': resolveOk(CLOTH_VIEW),
+    '/api/worker/production/scan/complete': () => { throw new TypeError('Failed to fetch') },
+  })
+  const app1 = bootPage({ doc: doc1, f: f1, storage })
+  await scan(doc1, 'tok-cloth')
+  await doc1.fire('wh5-report')
+
+  const firstPosts = f1.calls.filter((c) => c.method === 'POST')
+  assert.equal(firstPosts.length, 1, '点一次【完成】= 一次请求（页面不静默重试）')
+  const firstKey = firstPosts[0].headers['X-Client-Request-Id']
+  assert.ok(firstKey, '写请求必须带幂等键')
+  const saved = JSON.parse(storage.getItem(PENDING_REQUEST_KEY) ?? 'null')
+  assert.equal(saved?.requestId, firstKey, '🔴 未确认提交必须落盘（不落盘 ⇒ 刷新后无据可查、只能换新键）')
+  assert.equal(saved?.token, 'tok-cloth', '落盘的记录必须绑**这张码**')
+  app1.destroy()
+
+  // ── 第二次装载 = 工人刷新/重开页面：新页面实例、`state` 全丢（`__requestId` 随之消失）
+  const doc2 = fakeDom()
+  const f2 = routeFetch({
+    '/api/worker/production/scan?': resolveOk(CLOTH_VIEW),
+    '/api/worker/production/scan/complete': receipt({ replayed: true }),
+  })
+  const app2 = bootPage({ doc: doc2, f: f2, storage })
+  await scan(doc2, 'tok-cloth')
+  assert.match(doc2.html, /上次提交/, '重扫时必须告诉工人「重扫是安全的」（否则他不知道这一下会不会再记一笔）')
+
+  await doc2.fire('wh5-report')
+  const secondPosts = f2.calls.filter((c) => c.method === 'POST')
+  assert.equal(secondPosts.length, 1)
+  assert.equal(secondPosts[0].headers['X-Client-Request-Id'], firstKey,
+    '🔴 刷新/重开后重扫同一张码必须复用**同一个**键 —— 换新键 = 服务端当成新报工（多记一笔计件）')
+  assert.match(doc2.html, /没有新增计件/, '回执必须如实告诉工人这一笔没有新增计件')
+  app2.destroy()
+})
+
+test('🔴 ⑧ 成功之后**不得**复用旧键（复用 = 下一道被服务端回放掉 ⇒ 静默漏计件）', async () => {
+  const storage = memStorage({ [STORAGE_KEY]: JSON.stringify(SESSION) })
+  const doc = fakeDom()
+  const f = routeFetch({
+    '/api/worker/production/scan?': resolveOk(CLOTH_VIEW),
+    '/api/worker/production/scan/complete': receipt(),
+  })
+  const app = bootPage({ doc, f, storage })
+  await scan(doc, 'tok-cloth')
+  await doc.fire('wh5-report')   // 第一次：服务端已答复（成功）⇒ 这一笔有结论了
+  await doc.fire('wh5-report')   // 屏上已是回执给的「下一道」= 新的一笔
+
+  const keys = f.calls.filter((c) => c.method === 'POST').map((c) => c.headers['X-Client-Request-Id'])
+  assert.equal(keys.length, 2)
+  assert.notEqual(keys[0], keys[1],
+    '🔴 成功之后必须换新键（复用 ⇒ 下一道被回放成「已报过」= 工人的活白干）')
+  assert.equal(storage.getItem(PENDING_REQUEST_KEY), null, '服务端已答复 ⇒ 未确认记录必须清掉')
+  app.destroy()
+})
+
+test('🔴 ⑧ 共用 PAD：另一个工人不得复用上一个人的未确认键（否则本人的活被回放成「已报过」）', async () => {
+  const storage = memStorage({
+    [STORAGE_KEY]: JSON.stringify(SESSION), // 现在这台设备上是 w-1（张三）
+    [PENDING_REQUEST_KEY]: JSON.stringify({ token: 'tok-cloth', workerId: 'w-9', requestId: 'key-of-w-9' }),
+  })
+  const doc = fakeDom()
+  const f = routeFetch({
+    '/api/worker/production/scan?': resolveOk(CLOTH_VIEW),
+    '/api/worker/production/scan/complete': receipt(),
+  })
+  const app = bootPage({ doc, f, storage })
+  await scan(doc, 'tok-cloth')
+  await doc.fire('wh5-report')
+
+  const key = f.calls.find((c) => c.method === 'POST')?.headers['X-Client-Request-Id']
+  assert.notEqual(key, 'key-of-w-9',
+    '🔴 未确认记录必须绑**工人**：跨人复用的键会让第二个人的报工被回放成第一个人那次（漏记计件）')
+  app.destroy()
 })

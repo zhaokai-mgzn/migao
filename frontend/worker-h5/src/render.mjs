@@ -40,7 +40,7 @@ export function reduce(state, action) {
         ...state,
         view,
         selection: { setId: null, orderItemId: null },
-        notice: needsSelection ? '这是一张旧码：请先选择套号与部位' : null,
+        notice: needsSelection ? '这是一张旧码：请先选择套号与部位' : (action.notice ?? null),
         error: null,
         mode: needsSelection ? 'select' : 'main',
       }
