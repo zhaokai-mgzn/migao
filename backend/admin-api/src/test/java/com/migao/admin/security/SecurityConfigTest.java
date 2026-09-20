@@ -26,11 +26,14 @@ import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Bean;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.AopTestUtils;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -38,7 +41,9 @@ import java.util.List;
 import java.util.Locale;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -67,6 +72,21 @@ class SecurityConfigTest {
 
     @Autowired
     private ServiceTokenFilter serviceTokenFilter;
+
+    /**
+     * 工人会话链上的三个 bean（issue #4733 / #4770）：**必须是真的**（不得 @MockBean 顶替）。
+     *
+     * <p>理由见 {@link #contextLoads_workerSessionChainIsReallyWired()} —— 本类是全仓唯一的
+     * {@code @SpringBootTest} 全上下文测试，环必须在这里被照出来。</p>
+     */
+    @Autowired
+    private com.migao.admin.worker.WorkerSessionService workerSessionService;
+
+    @Autowired
+    private WorkerSessionFilter workerSessionFilter;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     /** Service Token 密钥：测试环境用固定值（生产从 SERVICE_TOKEN_SECRET 注入）。 */
     private static final String SERVICE_SECRET = "test-service-token";
@@ -239,8 +259,12 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.WorkerReportAuditMapper workerReportAuditMapper;
 
-    @MockBean
-    private com.migao.admin.worker.WorkerSessionService workerSessionService;
+    // 🔴 issue #4770（P0 启动期环）核清结论：此处**不得**出现 `@MockBean WorkerSessionService`。
+    // 它自 #4733 起把环上「workerSessionService → passwordEncoder」那条边切断 ⇒ 本类（全仓唯一的
+    // @SpringBootTest 全上下文测试）对
+    // `securityConfig → workerSessionFilter → workerSessionService → securityConfig`
+    // **完全不敏感** ⇒ 当时 2297 条单测全绿（历史值），而线上 admin-api 每次启动都崩（nginx 502）。
+    // 承重判据见 contextLoads_workerSessionChainIsReallyWired()。
     @MockBean
     private com.migao.admin.mapper.PermissionMapper permissionMapper;
     @MockBean
@@ -986,6 +1010,59 @@ class SecurityConfigTest {
             assertNull(type.getAnnotation(RequirePermission.class),
                     type.getSimpleName() + " 是 C 端/公开端点控制器：类级 @RequirePermission 会砍掉 C 端可达性"
                             + "（issue #4727 红线）；确需收窄请用**方法级**注解");
+        }
+    }
+
+    // ======================== 完整上下文加载：工人会话链不得成环（issue #4770，P0 热修）========================
+    // 线上形态（服务器实测 `docker logs migao-deploy-admin-api-1`）：
+    //   APPLICATION FAILED TO START — The dependencies of some of the beans in the application context form a cycle:
+    //   securityConfig → workerSessionFilter → workerSessionService → securityConfig
+    //   （`Requested bean is currently in creation`）⇒ admin-api 每次启动都崩 ⇒ nginx 502。
+    //
+    // 逐参数链（构造参数下标；@RequiredArgsConstructor 按字段声明顺序）：
+    //   SecurityConfig[2]=workerSessionFilter → WorkerSessionFilter[1]=workerSessionService
+    //   → WorkerSessionService[2]=passwordEncoder → **SecurityConfig 里的 @Bean passwordEncoder()** ⇒ 成环。
+    //
+    // 破环方式 = **结构性**：把 passwordEncoder @Bean 挪到 PasswordEncoderConfig ⇒ 依赖单向化
+    // （SecurityConfig → WorkerSessionFilter → WorkerSessionService → PasswordEncoderConfig）。
+
+    /**
+     * 上下文加载判据：工人会话链**真实装配**且**不成环**。
+     *
+     * <p><b>为什么本类此前没红</b>（#4770 要求核清并修，不是只加一条新测试）：本类曾
+     * {@code @MockBean WorkerSessionService} ⇒ 环上那条边被 mock 切断 ⇒ 环在本上下文里
+     * **根本不存在** ⇒ 上下文当然起得来。该 {@code @MockBean} 已删除。</p>
+     *
+     * <p><b>红证</b>：把 {@code PasswordEncoder} 的 @Bean 挪回 {@code SecurityConfig}
+     * ⇒ 本类**整个上下文起不来**（本类**全部**用例 error），报错与线上逐字同形
+     * （{@code form a cycle} / {@code Requested bean is currently in creation}）。</p>
+     */
+    @Test
+    @DisplayName("🔴 上下文加载 - 工人会话链真实装配且不成环（SecurityConfig→WorkerSessionFilter→WorkerSessionService→PasswordEncoder）")
+    void contextLoads_workerSessionChainIsReallyWired() {
+        // ① 环上三个 bean 必须是**真身**：任一被 @MockBean 顶替 ⇒ 环被切断 ⇒ 本判据失去承重能力 ⇒ 红。
+        //    这是「防旧漏检形态复发」的护栏（#4770 的漏检正是 @MockBean WorkerSessionService）。
+        for (Object bean : List.<Object>of(workerSessionService, workerSessionFilter, passwordEncoder)) {
+            assertFalse(mockingDetails(bean).isMock(),
+                    bean.getClass().getName() + " 被 mock 顶替 ⇒ 工人会话链的环被切断 ⇒ "
+                            + "本上下文加载判据不再承重（issue #4770 的漏检形态）");
+        }
+
+        // ② 承重判据：环上那条**回流边**真的由容器解析过 —— WorkerSessionService 持有的
+        //    PasswordEncoder 就是容器里那一个。（@Transactional ⇒ 先取目标对象再读私有字段；
+        //    显式落成 Object 局部变量：否则 ReflectionTestUtils.getField 会走 (Class,String) 重载。）
+        Object workerSessionServiceTarget = AopTestUtils.getTargetObject(workerSessionService);
+        assertSame(passwordEncoder,
+                ReflectionTestUtils.getField(workerSessionServiceTarget, "passwordEncoder"),
+                "WorkerSessionService 的 PasswordEncoder 必须来自容器 —— 这条边就是线上成环的那条边");
+
+        // ③ 结构性收口：环的**成因**不得复发 —— SecurityConfig 不得再声明 PasswordEncoder @Bean。
+        //    一旦挪回，本上下文立即启动失败（报错与线上同形），本断言是「挪回」的静态判据。
+        for (java.lang.reflect.Method method : SecurityConfig.class.getDeclaredMethods()) {
+            assertFalse(method.isAnnotationPresent(Bean.class)
+                            && PasswordEncoder.class.equals(method.getReturnType()),
+                    "SecurityConfig 不得声明 PasswordEncoder @Bean（issue #4770）：本类构造期依赖 "
+                            + "WorkerSessionFilter ⇒ 立即复现启动期环。它属于 PasswordEncoderConfig。");
         }
     }
 
