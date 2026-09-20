@@ -33,6 +33,7 @@ import re
 import types
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -285,9 +286,19 @@ def audit_reconcile(src: str) -> list:
         atxt = "\n".join(_step_text(s) for s in approve_steps)
         if "--head-branch" not in atxt:
             bad.append("兜底 approve 未限定 `--head-branch` ⇒ 可能误批准别人的 run（越权面）")
-        if "::error::" not in atxt or "exit 1" not in atxt:
-            bad.append("兜底 approve 缺 `::error::` + `exit 1` 的 fail-closed 出口 ⇒ 批准失败会静默"
+        # ⚠️ 判据必须**绑定到 approve 这条命令本身**：同一步骤里还有别的 fail-closed 出口
+        #    （读不到 pending.json / 没有 open PR / 陈旧）⇒ 只看「文本里存在 `::error::` + `exit 1`」
+        #    会被它们**骗绿** —— 摘掉 approve 自己的出口也照样通过 = **空断言**（反向红证
+        #    `approve_without_fail_closed` 就是钉这个）。故要求 `|| { … }` 落在 approve 命令的
+        #    3 行以内，再在**紧随其后**的块里找出口。
+        m = re.search(r"flaky_ledger\.py\s+approve(?:[^\n]*\n){0,2}[^\n]*\|\|\s*\{", atxt)
+        if not m:
+            bad.append("兜底 approve 缺 `|| { … }` 的 fail-closed 出口 ⇒ 批准失败会静默"
                        "（台账没 check 却像已放行）（红线）")
+        else:
+            tail = atxt[m.end():m.end() + 400]
+            if "::error::" not in tail or "exit 1" not in tail:
+                bad.append("兜底 approve 的 fail-closed 出口缺 `::error::` 或 `exit 1`（红线）")
 
     # ⑥ 不静默：无 open PR / 兜底后仍无 check / 分叉 —— 三条都要有可观测信号
     repair = "\n".join(_step_text(s) for s in steps if "ledger-drift" not in _step_text(s))
@@ -295,8 +306,12 @@ def audit_reconcile(src: str) -> list:
         bad.append("没有 `gh pr list … --head` 找台账 PR ⇒ 无法判定「有没有路径把台账推上 main」")
     if not re.search(r"::error::[^\n]*open PR", repair):
         bad.append("「分支领先 main 却**没有 open PR**」没有 fail-closed 出口（红线：这正是静默停在分支上的形态）")
-    if "STALE_MINUTES" not in repair:
-        bad.append("缺陈旧阈值 `STALE_MINUTES` ⇒ 无法区分「approve 的异步窗口」与「兜底没生效」")
+    # ⚠️ 阈值判据读 **job env**（不是「文本里提到过 STALE_MINUTES」）：后者会被报错文案里的
+    #    `${STALE_MINUTES}` 自己骗绿 —— 把阈值定义删掉也照样通过 = 空断言。
+    stale = str((job.get("env") or {}).get("STALE_MINUTES") or "")
+    if not stale.isdigit() or int(stale) <= 0:
+        bad.append(f"job env 缺正整数 `STALE_MINUTES`（实际 {stale!r}）⇒ 无法区分「approve 的异步"
+                   f"窗口」与「兜底没生效」")
     if not re.search(r"::error::[^\n]*STALE_MINUTES", repair):
         bad.append("缺「兜底后仍 0 check 且分支陈旧 ⇒ 红」的出口（红线：兜底失败必须可观测）")
     if not (re.search(r'\[ "\$CHECKS" = "0" \]', repair)
@@ -567,3 +582,86 @@ class TestExistingGuardrailsIntact:
         mutated = REAL_TRIAGE.replace('--head-branch "$BRANCH"', "", 1)
         assert mutated != REAL_TRIAGE, "注入锚点失效（先修本测试）"
         assert any("--head-branch" in v for v in audit_triage_guardrails(mutated))
+
+
+# ── 逐条判据的反向红证（#4825 验收判据：**每条判据都要会红**；不会红的判据 = 空断言） ────
+#
+# 上面的 class 各带若干条红证，但「覆盖率」本身就是本单的验收判据 ⇒ 这里用**表驱动**把
+# `audit_reconcile` / `audit_triage_guardrails` 的**每条违规出口**都钉一遍：一条判据一个变异，
+# 注入后必须命中该条（`expected` = 判据文案里的**稳定片段**，不是整句 —— 文案可以改，判据不许丢）。
+# 红证卫生（§19.1 元规则 ③）：判据读**内容**，每行注入前先自证 `mutated != src`（锚点漂了就红）。
+
+def _mutate(src: str, old: str, new: str = "", count: int = 1) -> str:
+    mutated = src.replace(old, new, count)
+    assert mutated != src, f"注入锚点失效（先修本测试）：{old!r}"
+    return mutated
+
+
+RECONCILE_RED_PROOFS = [
+    ("no_pull_request_trigger", "on:\n  pull_request:", "on:\n  x_pull_request:", "缺 `pull_request`"),
+    ("no_workflow_dispatch", "  workflow_dispatch:\n", "", "缺 `workflow_dispatch`"),
+    ("cron_not_minute_level", "*/20 * * * *", "0 3 * * 1", "分钟级兜底"),
+    ("pull_requests_permission_downgraded", "  pull-requests: write", "  pull-requests: read",
+     "pull-requests 必须 write"),
+    ("judge_step_id_renamed", "\n        id: drift\n", "\n        id: judge\n", "`id: drift*`"),
+    ("judge_invocation_renamed", "flaky_ledger.py ledger-drift \\\n",
+     "flaky_ledger.py judge-drift \\\n", "没有调用 `flaky_ledger.py ledger-drift` 的步骤"),
+    ("no_drift_repair_branch",
+     "        if: steps.preflight.outputs.ready == '1' && steps.drift.outputs.drift == '1'\n",
+     "        if: false\n", "有漂移"),
+    ("no_preflight_probe",
+     "if python3 .github/scripts/flaky_ledger.py ledger-drift --help >/dev/null 2>&1; then",
+     "if true; then", "缺「引导期」preflight 步骤"),
+    ("no_approve_reuse", "flaky_ledger.py approve \\\n", "flaky_ledger.py approve_old \\\n",
+     "没有调用 `flaky_ledger.py approve` 的步骤"),
+    ("approve_without_head_branch", '--head-branch "$LEDGER_BRANCH"', '--any-branch "$LEDGER_BRANCH"',
+     "未限定 `--head-branch`"),
+    ("approve_without_fail_closed",
+     '            --json-out /tmp/pending.json || {\n'
+     '            echo "::error::兜底 approve 失败 ⇒ 台账 PR 仍无 check、main 不增长'
+     '（fail-closed，不静默）"; exit 1; }',
+     '            --json-out /tmp/pending.json', "fail-closed 出口"),
+    ("no_pr_lookup_by_head", 'PR=$(gh pr list --head "$LEDGER_BRANCH" --state open --json number',
+     'PR=$(gh pr list --state open --json number', "`gh pr list … --head`"),
+    ("stale_threshold_env_removed", "      STALE_MINUTES: '15'\n", "", "STALE_MINUTES"),
+    ("divergence_signal_removed", 'echo "::error::台账分叉：', 'echo "⚠️ 台账分叉：', "分叉"),
+    ("fallback_pushes_branch", "          # ② 找台账 PR",
+     "          git push origin HEAD:main\n          # ② 找台账 PR", "`git push`"),
+]
+
+TRIAGE_RED_PROOFS = [
+    ("approve_step_removed", "python3 /tmp/flaky_ledger.py approve",
+     "python3 /tmp/flaky_ledger.py approve_old", "丢了 `flaky_ledger.py approve` 步骤"),
+    ("approve_not_python3", "python3 /tmp/flaky_ledger.py approve",
+     "bash /tmp/flaky_ledger.py approve", "未以 `python3 …flaky_ledger.py approve` 形态调用"),
+    ("approve_error_signal_removed", 'echo "::error::approve 台账 PR 的 action_required run 失败',
+     'echo "approve 台账 PR 的 action_required run 失败', "`::error::` 丢失"),
+    ("branch_filter_renamed", "&branch=$BRANCH&per_page=1", "&branch_name=$BRANCH&per_page=1",
+     "`branch=$BRANCH` 丢失"),
+    ("head_branch_silently_ignored", "&branch=$BRANCH&per_page=1",
+     "&branch=$BRANCH&head_branch=$BRANCH&per_page=1", "head_branch="),
+    ("mark_flaky_step_removed", "'mark_flaky'", "'mark_ok'", "丢了 `mark_flaky` 步骤"),
+    ("flaky_label_removed", '--add-label "flaky/rerun-green"', "", "flaky/rerun-green"),
+]
+
+
+class TestEveryReconcileRuleCanGoRed:
+    """兜底 workflow 的**每条**结构判据都有一条红证（删/弱化任一条 ⇒ 该行必红）。"""
+
+    @pytest.mark.parametrize("label,old,new,expected", RECONCILE_RED_PROOFS,
+                             ids=[row[0] for row in RECONCILE_RED_PROOFS])
+    def test_rule_goes_red(self, label, old, new, expected):
+        violations = audit_reconcile(_mutate(REAL_RECONCILE, old, new))
+        assert any(expected in v for v in violations), (
+            f"{label}：注入后期望违规含 {expected!r}，实际 {violations}")
+
+
+class TestEveryTriageGuardrailCanGoRed:
+    """`flaky-triage.yml` 的**每条**护栏锚点都有一条红证 —— 即「本单没削弱它们」的可执行证据。"""
+
+    @pytest.mark.parametrize("label,old,new,expected", TRIAGE_RED_PROOFS,
+                             ids=[row[0] for row in TRIAGE_RED_PROOFS])
+    def test_guardrail_goes_red(self, label, old, new, expected):
+        violations = audit_triage_guardrails(_mutate(REAL_TRIAGE, old, new))
+        assert any(expected in v for v in violations), (
+            f"{label}：注入后期望违规含 {expected!r}，实际 {violations}")
