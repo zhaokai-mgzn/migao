@@ -43,4 +43,5 @@ Wiki 页面是摘要，详细文档在：
 | 部署 | [docs/deployment/swas-migration-lessons.md](../deployment/swas-migration-lessons.md)（SWAS 踩坑）· [deployment-checklist.md](../deployment/deployment-checklist.md) |
 | API | [docs/api/api-reference.md](../api/api-reference.md) |
 | SQL | [docs/sql/schema.sql](../sql/schema.sql) |
+| **生产/工序术语真值源** | [docs/curtain-production-process-standard.md](../curtain-production-process-standard.md)（行业文档《成品窗帘生产流程及工作规范》逐字引文摘录 —— 界面第一层行业术语：裁床 / 车位 / 烫工及后整 / 质检 / 包装）· [curtain-production-rules.md](../curtain-production-rules.md)（生产/计件规则） |
 | 审计归档 | [docs/audit-2026-09/](../audit-2026-09/03-audit-archive-README.md)（03 批 = 2026-09-17：Skill 层 / Tool 层 / 评测体系 / 六机制 / 线上取证 + 评分卡）· [docs/audit-2026-08/](../audit-2026-08/01-docs-audit.md) |
