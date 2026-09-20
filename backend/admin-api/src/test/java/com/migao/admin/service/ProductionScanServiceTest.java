@@ -335,6 +335,105 @@ class ProductionScanServiceTest {
         assertThat(service.resolve(PO_NO, null, TENANT).get("granularity")).isEqualTo("order");
     }
 
+    // ============================================================ ②′ 旧码收口（issue #4794）
+
+    @Test
+    @DisplayName("🔴 旧码收口：选完套 + 部位 ⇒ 部位级视图（与**新码**同一份推断），needs_selection 清空")
+    void legacySelectionResolvesToSetPositionView() {
+        stubLegacySelectionScan();
+
+        Map<String, Object> result = service.resolve(OLD_CODE, null, SET_ID, ITEM_GAUZE, TENANT);
+
+        // 改前：set_id/order_item_id 无入参可给 ⇒ 恒 `granularity="order"`（D1：无路可走）
+        assertThat(result.get("granularity")).isEqualTo("set_position");
+        assertThat(result.get("set_no")).isEqualTo(SET_NO);
+        assertThat(result.get("processing_order_no")).isEqualTo(PO_NO);
+        assertThat(position(result).get("order_item_id")).isEqualTo(ITEM_GAUZE);
+        assertThat(result.get("needs_selection")).isEqualTo(List.of());
+        // 工序仍由**系统**推断（防呆⑤）：该部位 seq 最小的未完成者
+        assertThat(operation(result).get("operation_id")).isEqualTo("op-4");
+        assertThat(operation(result).get("determined_by")).isEqualTo("inferred");
+        assertThat(result.get("completed")).isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("🔴 旧码收口 + 防呆④：所选部位之外的工序（一键改）⇒ 422 OPERATION_NOT_IN_SCAN_TARGET")
+    void legacySelectionCrossPositionPickIsRefused() {
+        stubLegacySelectionScan();
+
+        assertThatThrownBy(() -> service.resolve(OLD_CODE, "op-1", SET_ID, ITEM_GAUZE, TENANT))
+                .isInstanceOfSatisfying(BusinessException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo("OPERATION_NOT_IN_SCAN_TARGET");
+                    assertThat(e.getHttpStatus()).isEqualTo(422);
+                });
+    }
+
+    @Test
+    @DisplayName("🔴 反向护栏：**新码**不读 setId/orderItemId（码已给出套 × 部位 ⇒ 对已有新码零影响）")
+    void newCodeIgnoresSelectionArguments() {
+        stubNewTokenScan(ITEM_CLOTH, standardOps());
+
+        // 硬塞一个**别的**套 + 别的部位 ⇒ 仍按码给的部位解析
+        Map<String, Object> result = service.resolve(NEW_CODE, null, "set-hacked", ITEM_GAUZE, TENANT);
+
+        assertThat(result.get("granularity")).isEqualTo("set_position");
+        assertThat(position(result).get("order_item_id")).isEqualTo(ITEM_CLOTH);
+        assertThat(result.get("set_no")).isEqualTo(SET_NO);
+        assertThat(operation(result).get("operation_id")).isEqualTo("op-2");
+    }
+
+    @Test
+    @DisplayName("🔴 旧码收口（越权面）：所选套不属于本次扫码的加工单 ⇒ 422，不按别人的单记账")
+    void selectionOutsideScannedOrderIsRefused() {
+        stubLegacySelectionScan();
+        when(orderSetMapper.selectById("set-other")).thenReturn(ProcessingOrderSet.builder()
+                .id("set-other").tenantId(TENANT).processingOrderId("po-other")
+                .setIndex(1).setNo("CSO-OTHER-001").deleted(0).build());
+
+        assertThatThrownBy(() -> service.resolve(OLD_CODE, null, "set-other", ITEM_CLOTH, TENANT))
+                .isInstanceOfSatisfying(BusinessException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo("SCAN_SELECTION_NOT_IN_ORDER");
+                    assertThat(e.getHttpStatus()).isEqualTo(422);
+                });
+    }
+
+    @Test
+    @DisplayName("🔴 旧码收口（越权面）：所选部位不在该套 ⇒ 422（不静默说「本套已完成」）")
+    void selectionPositionOutsideSetIsRefused() {
+        stubLegacySelectionScan();
+
+        assertThatThrownBy(() -> service.resolve(OLD_CODE, null, SET_ID, "oi-nope", TENANT))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("SCAN_SELECTION_NOT_IN_ORDER"));
+    }
+
+    @Test
+    @DisplayName("🔴 旧码收口：只给一半（缺部位）⇒ 仍是降级形态 needs_selection（不静默解析）")
+    void halfSelectionStillDegrades() {
+        stubLegacySelectionScan();
+
+        Map<String, Object> result = service.resolve(OLD_CODE, null, SET_ID, null, TENANT);
+
+        assertThat(result.get("granularity")).isEqualTo("order");
+        assertThat(result.get("needs_selection")).isEqualTo(List.of("set", "position"));
+        assertThat(result.get("set_no")).isNull();
+    }
+
+    @Test
+    @DisplayName("🔴 旧码收口：解析仍是**只读**（选完套/部位也不写库）")
+    void legacySelectionResolveIsReadOnly() {
+        stubLegacySelectionScan();
+
+        service.resolve(OLD_CODE, null, SET_ID, ITEM_GAUZE, TENANT);
+
+        verify(orderSetMapper, never()).insert(any(ProcessingOrderSet.class));
+        verify(orderSetMapper, never()).updateById(any(ProcessingOrderSet.class));
+        verify(positionOperationMapper, never()).insert(any(ProcessingPositionOperation.class));
+        verify(positionOperationMapper, never()).updateById(any(ProcessingPositionOperation.class));
+        verify(processingOrderMapper, never()).updateById(any(ProcessingOrder.class));
+        verify(orderMapper, never()).updateById(any(Order.class));
+    }
+
     @Test
     @DisplayName("五形态全不命中 ⇒ 404（既有行为保留）")
     void unknownCodeIsNotFound() {
@@ -411,8 +510,7 @@ class ProductionScanServiceTest {
     }
 
     /** 旧码（加工单级 qr_token）路径：新码未命中 ⇒ 走**真实**的四形态解析。 */
-    private void stubLegacyQrTokenScan() {
-        when(setPartTokenMapper.selectOne(any())).thenReturn(null);
+    private void stubLegacyQrTokenScan() {        when(setPartTokenMapper.selectOne(any())).thenReturn(null);
         when(orderMapper.selectById(OLD_CODE)).thenReturn(null);
         when(orderMapper.selectOne(any())).thenReturn(null);
         when(processingOrderMapper.selectOne(any())).thenReturn(processingOrder());
@@ -424,6 +522,12 @@ class ProductionScanServiceTest {
         when(positionOperationMapper.selectList(any())).thenReturn(List.of(
                 op("op-1", ITEM_CLOTH, "布帘", "布艺遮光帘A", 1, "精裁-布", "11", "0", FIRST_SET_ID),
                 op("op-4", ITEM_GAUZE, "纱帘", "纱帘B", 1, "精裁-纱", "8", "0", SET_ID)));
+    }
+
+    /** 旧码 + 工人选了（套, 部位）：该套的实例行就位（与 `selections` 清单**同一份**来源）。 */
+    private void stubLegacySelectionScan() {
+        stubLegacyQrTokenScan();
+        when(orderSetMapper.selectById(SET_ID)).thenReturn(set(SET_ID, SET_NO, 14, 0));
     }
 
     private ProcessingSetPartToken partToken(String orderItemId) {

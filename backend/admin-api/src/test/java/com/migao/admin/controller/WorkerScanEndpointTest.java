@@ -167,4 +167,29 @@ class WorkerScanEndpointTest {
 
         verify(productionScanService).resolve("tok-9", "op-7", TENANT);
     }
+
+    @Test
+    @DisplayName("🔴 旧码收口（#4794）：set_id + order_item_id 原样转给扩展重载；无选择 ⇒ 仍走 3 参签名")
+    void legacySelectionParamsAreForwarded() throws Exception {
+        when(workerSessionService.resolveIdentity("sess-1")).thenReturn(ZHANG);
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("granularity", ProductionScanService.GRANULARITY_SET_POSITION);
+        view.put("set_no", 14);
+        view.put("needs_selection", List.of());
+        when(productionScanService.resolve("JG20260920001", null, "set-14", "oi-1", TENANT))
+                .thenReturn(view);
+
+        mockMvc.perform(get("/api/worker/production/scan")
+                        .param("token", "JG20260920001")
+                        .param("set_id", "set-14")
+                        .param("order_item_id", "oi-1")
+                        .header(WorkerSessionService.SESSION_HEADER, "sess-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.granularity").value("set_position"))
+                .andExpect(jsonPath("$.data.needs_selection", hasSize(0)));
+
+        verify(productionScanService).resolve("JG20260920001", null, "set-14", "oi-1", TENANT);
+        // 反向护栏：带了选择就**不再**走 3 参签名（无选择那条路径一字不动，见上一个用例）
+        verify(productionScanService, never()).resolve(any(), any(), any());
+    }
 }

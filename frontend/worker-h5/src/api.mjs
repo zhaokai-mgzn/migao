@@ -144,11 +144,20 @@ export function createApi(opts = {}) {
     /**
      * 扫码解析 + 工序推断（消费切片① 的 `ProductionScanService`，**不在前端兜底**）。
      *
+     * 🔴 旧码收口（#4794）：`selection` 是**可选**入参，只在旧码（`granularity:"order"`）
+     * 「选完套 + 部位」后带上 ⇒ 服务端据此重新解析出部位级视图（工序仍由**服务端**推断）。
+     * 不带 ⇒ 与改前逐字一致（旧码仍是降级形态，新码一个字节都不变）。
+     *
      * @returns 一屏数据；旧码 ⇒ `granularity:"order"` + `needs_selection`（**页面必须强制选**）
      */
-    async resolveScan({ token, operationId }) {
+    async resolveScan({ token, operationId, selection }) {
       const qs = new URLSearchParams({ token })
       if (operationId) qs.set('operation_id', operationId)
+      // 🔴 只有「套 + 部位」**两个都选**才带（半截选择不带：服务端仍要求完整选择）
+      if (selection?.setId && selection?.orderItemId) {
+        qs.set('set_id', selection.setId)
+        qs.set('order_item_id', selection.orderItemId)
+      }
       return request(`/api/worker/production/scan?${qs.toString()}`)
     },
 
@@ -170,12 +179,15 @@ export function createApi(opts = {}) {
      * @param {string} p.token 码值（新码 ⇒ 套 × 部位由码给出）
      * @param {string} [p.operationId] 一键改：工人显式指定的工序（服务端校验**归属本次扫码部位**，
      *        不属于 ⇒ 422 —— 防呆④ 在服务端，不在前端）
+     * @param {object} [p.selection] 旧码收口（#4794）：工人从降级清单里选的 `{setId, orderItemId}`。
+     *        **只在旧码路径**由 `render.mjs` 的 `legacySelection()` 给出（新码恒 null ⇒ body 只带
+     *        token）。它**不**决定工序：工序仍由服务端推断（防呆⑤）。
      * @param {number} [p.qty] 省略 = 服务端取「剩余应做」（A 模式：做完扫一次 = 完工）
      * @param {string} [p.clientRequestId] 幂等键（**同一次提交必须复用同一个**）
      */
-    async completeByScan({ token, operationId, qty, qualifiedQty, workType, clientRequestId } = {}) {
+    async completeByScan({ token, operationId, qty, qualifiedQty, workType, selection, clientRequestId } = {}) {
       // 🔴 白名单式构造（**不是**把入参展开）：默认**只带 token** —— 调用方硬塞
-      // `unit_price` / `factor` / `worker_id` / `set_id` 也进不去请求体。
+      // `unit_price` / `factor` / `worker_id` / 顶层 `setId`/`orderItemId` 也进不去请求体。
       // 历史计件单价在**报工那一刻**由服务端固化（§3.6 W6 红线），前端永远不参与定价。
       if (!session?.sessionId) {
         const err = new Error('尚未登录工人身份，请先用工号 + PIN 登录')
@@ -184,6 +196,11 @@ export function createApi(opts = {}) {
       }
       const body = { token }
       if (operationId) body.operation_id = operationId
+      // 🔴 旧码收口（#4794）：只从**具名的** `selection` 通道取（顶层 setId/orderItemId 仍被忽略）
+      if (selection?.setId && selection?.orderItemId) {
+        body.set_id = selection.setId
+        body.order_item_id = selection.orderItemId
+      }
       if (qty !== undefined && qty !== null) body.qty = qty
       if (qualifiedQty !== undefined && qualifiedQty !== null) body.qualified_qty = qualifiedQty
       if (workType) body.work_type = workType
