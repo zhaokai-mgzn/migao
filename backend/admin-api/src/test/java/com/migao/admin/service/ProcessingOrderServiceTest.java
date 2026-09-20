@@ -42,6 +42,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -2622,6 +2623,106 @@ class ProcessingOrderServiceTest {
                 .containsExactlyInAnyOrder("布艺遮光帘A 米白", "遮光成品Y 米白");
         assertThat(positions).extracting(p -> p.get("order_item_id"))
                 .as("存量行如实透出 null（不编值）").containsOnlyNulls();
+    }
+
+    // ── ⭐ issue #4784：进度表读面的**套维**（消除与计件报表的口径分裂）────────────────
+    //
+    // 缺陷形态（#4725 的包核清时发现并如实登记）：读面 `buildPositions` 按 `order_item_id`
+    // 分组（= **部位**级，#4388 冻结契约），而前端 `ProductionProgressTable` 把**每个分组**
+    // 当「一套」渲染「第 N 套 / 共 M 套」⇒ 一樘「布 + 纱 + 帘头」在工序进度表上显示 **3 套**；
+    // 而 #4725 已把套维统一为「一樘窗 = 一套」（`craftLineId` 组）⇒
+    // **同一张单：计件报表说 1 套、工序进度表说 3 套**（静默不一致，没有任何东西会因此变红）。
+    //
+    // 修法（**只加不改**）：读面**追加** `set_no` 键，取值 = #4725 的**同一份**实现
+    // （`ProductionService.setKey`：V92 套号优先、无号回落樘窗组键 `craftLineId ?? itemId`）；
+    // 分组契约（`order_item_id`）与既有键**一字不动**。
+
+    /** 读面部位树里的**套键集合**（去重，首次出现序）。 */
+    private static Set<String> positionSetKeys(List<Map<String, Object>> positions) {
+        Set<String> keys = new LinkedHashSet<>();
+        positions.forEach(p -> keys.add(String.valueOf(p.get("set_no"))));
+        return keys;
+    }
+
+    /** 计件报表 `per_set` 段的套键集合（#4725 已落地的口径）。 */
+    @SuppressWarnings("unchecked")
+    private static Set<String> reportSetKeys(Map<String, Object> report) {
+        Set<String> keys = new LinkedHashSet<>();
+        for (Map<String, Object> row : (List<Map<String, Object>>) report.get("per_set")) {
+            keys.add(String.valueOf(row.get("set_no")));
+        }
+        return keys;
+    }
+
+    @Test
+    @DisplayName("#4784 一樘「布+纱+帘头」⇒ 进度表读面套键 == 计件报表 per_set == **1 套**（改前读面 = 3 个部位各算一套）")
+    void progressTableSetKeyAgreesWithPieceworkReport() {
+        // 同一张单、同一次生成：计件侧（#4725 已落地）与读面侧（本单）必须给**同一个**套键。
+        Map<String, Object> report = pieceworkFor(clothSheerValanceWindow());
+
+        List<Map<String, Object>> positions = readPositions();
+        // 前置自断言（**不是**被测行为）：这确实是「一樘窗含三个部位」的夹具 ——
+        // 旧口径（套 ≡ 部位 / 明细行）下这个数**就是**「套数」= 3，红证读数由此可复核。
+        assertThat(positions).as("前置：一樘窗 = 3 条明细行 = 3 个部位（旧口径据此算 3 套）").hasSize(3);
+
+        // ⭐ 被测断言（读面）：三个部位的套键必须**同一个** `win-1`。
+        // 改前该键不存在 ⇒ 这里得 "null" —— `containsExactly` 钉的是**值**（不是「恰好 1 个」那种恒真形态）。
+        assertThat(positionSetKeys(positions))
+                .as("读面套键 = 樘窗组键（`craftLineId` = win-1）；改前无该键 ⇒ 前端只能按部位数算成 3 套")
+                .containsExactly("win-1");
+
+        // ⭐ 判据 = **两侧同一份**（这才是「口径分裂」的直接判据 —— 只断言其中一侧是空断言）
+        assertThat(reportSetKeys(report)).as("计件报表侧（#4725）：一樘窗 = 一套").containsExactly("win-1");
+        assertThat(positionSetKeys(positions))
+                .as("同一张单：进度表读面与计件报表必须给同一套键（口径分裂 = 本单要治的病）")
+                .isEqualTo(reportSetKeys(report));
+
+        // 反向护栏：**部位级信息一字不丢** + 既有键**一字不动**（分组契约仍是 order_item_id）
+        assertThat(positions).extracting(p -> p.get("order_item_id"))
+                .as("分组契约（#4388 冻结）：仍是**按 order_item_id 的部位树**（3 个部位，未被并成 1 个）")
+                .containsExactlyInAnyOrder("item-1", "item-2", "item-3");
+        assertThat(positions).extracting(p -> p.get("position_name"))
+                .as("部位级信息不丢：三个部位的展示名逐个透出")
+                .containsExactlyInAnyOrder("布艺遮光帘A 米白", "纱帘A 米白", "帘头A 米白");
+        assertThat(positions).allSatisfy(p -> assertThat(p)
+                .as("既有键一字不动（只**追加** set_no）")
+                .containsKeys("position_name", "order_item_id", "position_kind", "operations", "set_no"));
+    }
+
+    @Test
+    @DisplayName("#4784 判别力：两樘**无 craftLineId** 的窗 ⇒ 读面套键 = 各行自成樘窗（2 个，不是 1 个常量）")
+    void windowsWithoutCraftLineEachOwnSet() {
+        Map<String, Object> report = pieceworkFor(sameNamedWindows());
+
+        assertThat(positionSetKeys(readPositions()))
+                .as("无 craftLineId ⇒ 回落本行 itemId（#4725 反向护栏同口径：各自成樘窗，不并组、不猜）")
+                .containsExactlyInAnyOrder("item-1", "item-2");
+        assertThat(reportSetKeys(report))
+                .as("计件报表侧同口径（两侧仍一致 ⇒ 本键不是常量）")
+                .containsExactlyInAnyOrder("item-1", "item-2");
+    }
+
+    @Test
+    @DisplayName("#4784 V92 套号优先：实例带 set_no ⇒ 读面套键 = **落库套号**（与 #4725 的 setKey 逐字同一份，不是组键）")
+    void readFaceSetKeyPrefersStoredSetNo() {
+        stubLibrary();
+        stubGenerate(clothSheerValanceWindow());
+        List<ProcessingPositionOperation> stored = new ArrayList<>();
+        when(positionOperationMapper.insert(any(ProcessingPositionOperation.class))).thenAnswer(inv -> {
+            ProcessingPositionOperation row = inv.getArgument(0);
+            row.setId("op-" + (stored.size() + 1));
+            // V92 回填形态（同一次写入 setId + setNo）；此处只钉**套号取值优先级**
+            row.setSetNo("JG-20260918-6914-001");
+            stored.add(row);
+            return 1;
+        });
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+        assertThat(results.get(0).isSuccess()).as("生成加工单必须成功（否则后续判据无意义）").isTrue();
+        lenient().when(positionOperationMapper.selectList(any())).thenReturn(stored);
+
+        assertThat(positionSetKeys(readPositions()))
+                .as("有套号用套号（V92 落库值），无号才回落樘窗组键 —— 与 #4725 setKey 逐字同一份")
+                .containsExactly("JG-20260918-6914-001");
     }
 
     /** 存量行（V69 之前生成的实例：没有 order_item_id / position_kind）。 */

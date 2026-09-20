@@ -713,6 +713,15 @@ export interface ProductionOperation {
 /** 按部位（布帘/纱帘/帘头…）分组的工序实例 */
 export interface ProductionPosition {
   position_name?: string | null
+  /**
+   * 樘窗（套）键（issue #4784）：与计件报表 `per_set` 的 `set_no` **同一份口径**
+   * （后端 `ProductionService.setKey`：V92 落库套号优先、无号回落樘窗组键
+   * `craftLineId ?? itemId`）—— 一樘「布 + 纱 + 帘头」= **1 套**。
+   *
+   * ⚠️ 它**不改变**分组契约（#4388 冻结：本列表仍按 `order_item_id` = **部位**分组）；
+   * 缺键（老数据 / 读面未升级）⇒ 消费方退回「每个部位自成一套」，不猜。
+   */
+  set_no?: string | null
   operations?: ProductionOperation[]
 }
 

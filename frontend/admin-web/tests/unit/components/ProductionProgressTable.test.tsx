@@ -216,7 +216,9 @@ describe('ProductionProgressTable', () => {
   // ── 套口径（issue #4686，用户裁定 2026-09-20「一樘窗 = 一套」）──
   // 分组粒度 = 一樘窗 = 一套；组头按行业口径显示「第 N 套 / 共 M 套」
   // （真值源 `docs/curtain-production-rules.md` 的「第 N 套/共 M 套」口径 —— 按该文本检索，不写行号）。
-  // 套号来源：读面已按 `order_item_id` 分组返回**有序**列表 ⇒ N = 该组在列表中的序号、M = 列表长度。
+  // 套号来源（issue #4784 改判）：读面**追加**的 `set_no`（= 计件报表 `per_set` **同一份口径**）
+  // ⇒ N = 该套的序号、M = 套数；缺键 ⇒ 退回「每个部位自成一套」（= 改前行为，不猜）。
+  // ⚠️ 下面这组夹具**刻意不带** `set_no` ⇒ 钉的正是那条退回路径（既有判据一字未动）。
 
   it('多窗订单：组头显示「第 N 套 / 共 M 套」，序号稳定唯一', () => {
     render(<ProductionProgressTable positions={positions} />)
@@ -305,5 +307,158 @@ describe('ProductionProgressTable 未定价（issue #4696）', () => {
     const zeroRow = screen.getByTestId('operation-row-op-zero')
     expect(within(zeroRow).queryByTestId('op-unit-price-unpriced')).not.toBeInTheDocument()
     expect(within(zeroRow).getByTestId('op-unit-price')).toHaveTextContent('¥0.00')
+  })
+})
+
+/**
+ * 套维口径分裂修复（issue #4784）—— 工序进度表与计件报表必须给**同一个**套数。
+ *
+ * 缺陷原形：读面 `ProductionService.buildPositions` 按 `order_item_id` 分组（= **部位**级，
+ * #4388 冻结契约），而本表把**每个分组**当「一套」渲染 ⇒ 一樘「布 + 纱 + 帘头」在工序进度表上
+ * 显示 **3 套**；而 #4725 已把套维统一为「一樘窗 = 一套」（`craftLineId` 组）⇒
+ * **同一张单：计件报表说 1 套、工序进度表说 3 套**（静默不一致，没有任何东西会因此变红）。
+ *
+ * 修法（**只加不改**）：读面**追加** `set_no` 键（= #4725 的 `setKey`：V92 套号优先、
+ * 无号回落樘窗组键 `craftLineId ?? itemId`），本表按它分组渲染「第 N 套 / 共 M 套」；
+ * 部位级信息（`position-group-<position_name>` 分组块 + 行内「逻辑名 · 部位」）一字不丢。
+ */
+describe('ProductionProgressTable 套维（issue #4784）', () => {
+  /** 一樘窗的三个部位（布帘 + 纱帘 + 帘头）—— 同一樘窗 ⇒ **同一个** `set_no`。 */
+  const oneWindowThreePositions: ProductionPosition[] = [
+    {
+      position_name: '布艺遮光帘A 米白',
+      set_no: 'win-1',
+      operations: [
+        {
+          id: 'w-1',
+          seq: 1,
+          operation: '精裁-布',
+          logical_name: '精裁',
+          position: '布帘',
+          group: '裁剪',
+          unit: '米',
+          qty: 12.3,
+          unit_price: 3,
+          status: 'pending',
+          done_qty: 0,
+        },
+      ],
+    },
+    {
+      position_name: '纱帘A 米白',
+      set_no: 'win-1',
+      operations: [
+        {
+          id: 'w-2',
+          seq: 1,
+          operation: '打孔-纱',
+          logical_name: '打孔',
+          position: '纱帘',
+          group: '车位',
+          unit: '孔',
+          qty: 24,
+          unit_price: 1.2,
+          status: 'pending',
+          done_qty: 0,
+        },
+      ],
+    },
+    {
+      position_name: '帘头A 米白',
+      set_no: 'win-1',
+      operations: [
+        {
+          id: 'w-3',
+          seq: 1,
+          operation: '帘头制作',
+          logical_name: '帘头制作',
+          position: '帘头',
+          group: '后道',
+          unit: '个',
+          qty: 1,
+          unit_price: 2,
+          status: 'pending',
+          done_qty: 0,
+        },
+      ],
+    },
+  ]
+
+  it('🔴 一樘「布+纱+帘头」（同一 set_no）⇒ 「第 1 套 / 共 1 套」（改前 = 第 N 套 / 共 **3** 套）', () => {
+    render(<ProductionProgressTable positions={oneWindowThreePositions} />)
+
+    // 改前实测：三个部位各得「第 1/2/3 套 / 共 3 套」⇒ 本断言必红（找不到「共 1 套」）
+    expect(screen.getByText('第 1 套 / 共 1 套')).toBeInTheDocument()
+    expect(screen.queryByText(/共 3 套/)).toBeNull()
+    // 套头**只渲染一次**（不是每个部位重复一遍 —— 那会读成「三套都叫第 1 套」）
+    expect(screen.getAllByText(/第 \d+ 套 \/ 共 \d+ 套/)).toHaveLength(1)
+  })
+
+  it('反向护栏：部位级信息不丢 —— 三个部位各自成块（position-group）且行内仍是「逻辑名 · 部位」', () => {
+    render(<ProductionProgressTable positions={oneWindowThreePositions} />)
+
+    expect(screen.getByTestId('position-group-布艺遮光帘A 米白')).toBeInTheDocument()
+    expect(screen.getByTestId('position-group-纱帘A 米白')).toBeInTheDocument()
+    expect(screen.getByTestId('position-group-帘头A 米白')).toBeInTheDocument()
+    expect(within(screen.getByTestId('operation-row-w-1')).getByText('精裁 · 布帘')).toBeInTheDocument()
+    expect(within(screen.getByTestId('operation-row-w-2')).getByText('打孔 · 纱帘')).toBeInTheDocument()
+    expect(within(screen.getByTestId('operation-row-w-3')).getByText('帘头制作 · 帘头')).toBeInTheDocument()
+  })
+
+  it('两樘窗（各含布 + 纱）⇒ 「第 1 套 / 共 2 套」+「第 2 套 / 共 2 套」（不并成 1 套、也不按部位拆成 4 套）', () => {
+    const [cloth, sheer] = oneWindowThreePositions
+    render(
+      <ProductionProgressTable
+        positions={[
+          cloth,
+          sheer,
+          {
+            ...cloth,
+            position_name: '布艺遮光帘B 米白',
+            set_no: 'win-2',
+            operations: [{ ...cloth.operations![0], id: 'w-4' }],
+          },
+          {
+            ...sheer,
+            position_name: '纱帘B 米白',
+            set_no: 'win-2',
+            operations: [{ ...sheer.operations![0], id: 'w-5' }],
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('第 1 套 / 共 2 套')).toBeInTheDocument()
+    expect(screen.getByText('第 2 套 / 共 2 套')).toBeInTheDocument()
+    expect(screen.getAllByText(/第 \d+ 套 \/ 共 \d+ 套/)).toHaveLength(2)
+  })
+
+  it('读面缺 set_no（老数据 / 读面未升级）⇒ 退回「每个部位自成一套」（= 改前行为，不猜）', () => {
+    render(
+      <ProductionProgressTable
+        positions={[
+          { ...oneWindowThreePositions[0], set_no: undefined },
+          { ...oneWindowThreePositions[1], set_no: undefined },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('第 1 套 / 共 2 套')).toBeInTheDocument()
+    expect(screen.getByText('第 2 套 / 共 2 套')).toBeInTheDocument()
+  })
+
+  it('某套的第一个部位块无工序 ⇒ 套头不随之消失（套头挂在**非空块**上）', () => {
+    render(
+      <ProductionProgressTable
+        positions={[
+          { position_name: '空块', set_no: 'win-1', operations: [] },
+          oneWindowThreePositions[0],
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('第 1 套 / 共 1 套')).toBeInTheDocument()
+    expect(screen.queryByTestId('position-group-空块')).toBeNull()
+    expect(screen.getByTestId('position-group-布艺遮光帘A 米白')).toBeInTheDocument()
   })
 })
