@@ -82,6 +82,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 加工费只有这一个算法（本类不再自己 Σ 加工项 —— 那正是「配了组合费用订单金额一分不变」的病根）。
      */
     private final ProcessingFeeCalculator processingFeeCalculator;
+    /**
+     * 加工费组合定价**写面**（issue #4872）：建单成功时把「人工改价」的组合同步回配置
+     * （{@code processing_fee_combinations} + 版本台账）。为什么不直接注 Mapper：版本台账
+     * ({@code appendVersion}) 是写面的既有机制，绕过去 = 改价无痕。
+     */
+    private final ProcessingFeeCombinationCommandService processingFeeCombinationCommandService;
 
     /**
      * 订单号序列号（线程安全）
@@ -483,6 +489,20 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             }
         }
 
+        // ── 建单同步回加工费组合配置（issue #4872）──
+        // 用户原话「当订单创建成功后，同步新增加工费组合&单价到加工费配置中」。
+        // 口径：只对 **fee_source=manual** 的行（= 组合未命中活跃价目 ∧ 本行给了正数 override）
+        // 按 `compositionKey` **同源口径**（取价结果原样带来的 key/items，不另拼一套）upsert
+        // 组合价 + 追加版本台账。幂等三态见 ProcessingFeeCombinationCommandService#upsertFromOrderOverride。
+        // 🔴 无 manual 行 ⇒ **零调用**（正常建单路径不多一次写库、不改任何既有金额）。
+        for (ProcessingFeeCalculator.Fee fee : itemFees) {
+            if (!ProcessingFeeCalculator.FEE_SOURCE_MANUAL.equals(fee.feeSource())) {
+                continue;
+            }
+            processingFeeCombinationCommandService.upsertFromOrderOverride(
+                    fee.compositionKey(), fee.items(), fee.unitPrice(), tenantId);
+        }
+
         // 优惠金额（默认 0）；若提供了实收款，校验 应收 - 优惠 ≈ 实收（容差 0.01）
         BigDecimal discountAmount = request.getDiscountAmount() != null ? request.getDiscountAmount() : BigDecimal.ZERO;
         if (discountAmount.compareTo(BigDecimal.ZERO) < 0) {
@@ -518,6 +538,16 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         order.setRemark(request.getRemark());
         // C 端数据隔离：绑定下单用户（可为空=游客/商户代录）
         order.setUserId(request.getUserId());
+        // 订单收货物流两列（issue #4872；用户原话「新增订单时收货信息中缺少用户的常用物流/快递以及常用公司」）：
+        // `orders.logistics_type` / `orders.logistics_company`（V100 迁移）。
+        // 🔴 **未传 ⇒ 不写**（MyBatis-Plus 默认策略下 null 字段不进 INSERT ⇒ 落列默认
+        // `logistics_type='express'` / `logistics_company=NULL`）—— **不猜**调用方的意图。
+        if (StringUtils.hasText(request.getLogisticsType())) {
+            order.setLogisticsType(request.getLogisticsType().trim());
+        }
+        if (StringUtils.hasText(request.getLogisticsCompany())) {
+            order.setLogisticsCompany(request.getLogisticsCompany().trim());
+        }
 
         // 保存订单
         orderMapper.insert(order);

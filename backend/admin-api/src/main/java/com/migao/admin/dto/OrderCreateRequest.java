@@ -38,6 +38,26 @@ public class OrderCreateRequest {
     private String customerAddress;
 
     /**
+     * 收货——物流类型（issue #4872）：{@code express} 快递 / {@code logistics} 物流专线
+     * （与 {@code order_logistics.logistics_type} V47 / #3984 同词表）。
+     *
+     * <p><b>未传 ⇒ 服务端不写该列</b>（落列默认 {@code 'express'}）—— **不猜**调用方的意图。
+     * 发货页优先读订单这两个字段，缺省回落客户档案
+     * （{@code customer_profiles.default_logistics_type} / {@code default_logistics_company}）。</p>
+     *
+     * <p>⚠️ 单侧字段（wire 契约）：ai-agent 的 {@code order_create} 工具 schema 目前不采集它
+     * ⇒ agent 路径不填、走列默认；登记见 {@code OrderDtoContractTest} 的
+     * {@code REGISTERED_SINGLE_SIDED_FIELDS}。</p>
+     */
+    private String logisticsType;
+
+    /**
+     * 收货——物流/快递公司（issue #4872）：如「顺丰」「四季安」。
+     * <b>未传 ⇒ 不写</b>（列可空），不填默认值、不猜。
+     */
+    private String logisticsCompany;
+
+    /**
      * 备注
      */
     private String remark;

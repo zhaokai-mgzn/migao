@@ -34,6 +34,18 @@ public class Order {
     private String customerAddress;
 
     /**
+     * 收货——物流类型（issue #4872；V100：{@code orders.logistics_type VARCHAR(16) DEFAULT 'express'}）：
+     * {@code express} 快递 / {@code logistics} 物流专线。NULL = 建单未传 ⇒ 由列默认承担。
+     */
+    private String logisticsType;
+
+    /**
+     * 收货——物流/快递公司（issue #4872；V100：{@code orders.logistics_company VARCHAR(128)}）。
+     * NULL = 建单未传（不猜）。
+     */
+    private String logisticsCompany;
+
+    /**
      * 下单用户 ID（users.id，C 端数据隔离依据；
      * 商户代下单可为空或商户员工 ID）
      */

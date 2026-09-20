@@ -200,6 +200,82 @@ public class ProcessingFeeCombinationCommandService {
         return queryService.combinationView(row);
     }
 
+    // ══════════════════════════════ 建单回写（issue #4872）══════════════════════════════
+
+    /**
+     * **建单同步回配置**（issue #4872；用户原话「当订单创建成功后，同步新增加工费组合&amp;单价到加工费配置中」）。
+     *
+     * <p>调用点 = {@code OrderService.createOrder} 成功路径的**同一事务内**，逐条处理
+     * {@code fee_source='manual'} 的行（= 组合未命中价目 ∧ 商家在订单里就地改价）。
+     * 组合键与 items 由**调用方**从取价结果原样带来 —— 即
+     * {@link #compositionKey} 的同源口径，本方法**不再自己拼第二套**。</p>
+     *
+     * <p><b>幂等三态</b>（重复建单不得产生第二行、也不得静默改掉商家的价）：</p>
+     * <ol>
+     *   <li>已有同 {@code composition_key} 的 <b>active</b> 行 ⇒ <b>不覆盖它的价</b>
+     *       （该行本该被取价命中；走到这里说明订单里的 override 与配置不一致，
+     *       保留商家既有价 = 不静默改价）；</li>
+     *   <li>已有 <b>disabled</b> 行 ⇒ 复活为 {@code active} 并写入本次的价（下架过的组合重新开卖）；</li>
+     *   <li>都不存在 ⇒ 新建一行（{@code status='active'}、{@code source='实证'}）。</li>
+     * </ol>
+     * 三种形态都走既有的 {@link #appendVersion} 追加版本台账（**不绕过** —— 加工费单价是订单金额的
+     * 直接输入，改价必须留痕）：①②都真的改了配置，③是新建。</p>
+     *
+     * @param compositionKey 归一化组合键（{@link #compositionKey} 的产物）
+     * @param items          该组合的规范化特征名有序列表（同上口径）
+     * @param unitPrice      本次订单里的人工改价（元/米；正数）
+     * @param tenantId       租户
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void upsertFromOrderOverride(String compositionKey, List<String> items,
+                                        BigDecimal unitPrice, Long tenantId) {
+        // 缺参 = 不予落库（宁可不写，也不写一行「半截」的组合）：调用方已保证仅 manual 行进来
+        if (!StringUtils.hasText(compositionKey) || unitPrice == null) {
+            return;
+        }
+        ProcessingFeeCombination existing = null;
+        for (ProcessingFeeCombination row : allCombinations(tenantId)) {
+            if (Objects.equals(row.getCompositionKey(), compositionKey)) {
+                existing = row;
+                break;
+            }
+        }
+        if (existing != null && "active".equals(existing.getStatus())) {
+            // 已有 active 行 ⇒ 不覆盖价（见方法注释 ①）；只记一条日志留痕，不做写操作
+            log.info("建单人工改价：组合已存在 active 行，不覆盖既有价（保持商家配置）: tenantId={}, key={}, orderPrice={}",
+                    tenantId, compositionKey, unitPrice);
+            return;
+        }
+        if (existing != null) {
+            existing.setStatus("active");
+            existing.setUnitPrice(unitPrice);
+            existing.setItems(items);
+            existing.setSource("实证");
+            existing.setUpdatedAt(OffsetDateTime.now());
+            combinationMapper.updateById(existing);
+            appendVersion(existing, tenantId);
+            log.info("建单人工改价：复活停用组合并写入订单价: tenantId={}, id={}, key={}, unitPrice={}",
+                    tenantId, existing.getId(), compositionKey, unitPrice);
+            return;
+        }
+        ProcessingFeeCombination row = ProcessingFeeCombination.builder()
+                .tenantId(tenantId)
+                .compositionKey(compositionKey)
+                .items(items)
+                .unitPrice(unitPrice)
+                .status("active")
+                .sortOrder(0)
+                .source("实证")
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .deleted(0)
+                .build();
+        combinationMapper.insert(row);
+        appendVersion(row, tenantId);
+        log.info("建单人工改价：新增加工费组合: tenantId={}, id={}, key={}, unitPrice={}",
+                tenantId, row.getId(), compositionKey, unitPrice);
+    }
+
     // ══════════════════════════════ 护栏 ══════════════════════════════
 
     /**
