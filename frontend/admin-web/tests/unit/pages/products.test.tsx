@@ -1,5 +1,6 @@
+// case_ids: PR-010
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -38,12 +39,15 @@ const mockGetProducts = vi.fn()
 const mockGetCategories = vi.fn()
 const mockDeleteProduct = vi.fn()
 const mockUpdateProductStatus = vi.fn()
+// issue #4783：导出链路（原测试**零覆盖** ⇒ 该页导出文件名无任何断言）
+const mockExportProducts = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   productApi: {
     getProducts: (...args: any[]) => mockGetProducts(...args),
     deleteProduct: (...args: any[]) => mockDeleteProduct(...args),
     updateProductStatus: (...args: any[]) => mockUpdateProductStatus(...args),
+    exportProducts: (...args: any[]) => mockExportProducts(...args),
   },
   categoryApi: {
     getCategories: (...args: any[]) => mockGetCategories(...args),
@@ -357,5 +361,135 @@ describe('ProductsPage', () => {
       expect(callArgs).toBeDefined()
       expect(callArgs.stockBelow).toBeUndefined()
     })
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// issue #4783：导出文件名用**本地日**（原 `new Date().toISOString().slice(0, 10)` = UTC 日）
+//
+// 缺陷：UTC+8 下每天 00:00~08:00（CST）这 8 小时里 UTC 日 = 前一天 ⇒ 文件名
+// `products_YYYY-MM-DD.xlsx` 的日期与商家认知不符（#4772 的「每月 1 日查上一个月」同族）。
+//
+// 判据形态（把「CST 的 8 小时窗口」在测试内复现 ⇒ CI 与开发机跑**同一条判定**、都有判别力）：
+// ① 本 describe 用 `vi.stubEnv('TZ', 'Asia/Shanghai')` 把**进程本地时区**钉成 UTC+8
+//    （实测有效：stub 后 `new Date('2026-10-01T00:30:00+08:00').getDate()` = 1、
+//    `getTimezoneOffset()` = -480）。**不这么做就没有判别力**：CI runner 是 **UTC**
+//    ⇒「UTC 日 == 本地日」⇒ 旧实现也会绿（#4774 的第一版红证就是这样被静默骗过的）。
+// ② 固定时刻取**显式 `+08:00` 偏移**（绝对时刻，与机器时区无关）= CST 2026-10-01 00:30，
+//    其 UTC 表示是 2026-09-30T16:30:00Z ⇒ **缺陷窗口正中**。
+// ③ 期望值 = **同一冻结时刻的本地日**（`expectedLocalDay(冻结时刻)`，与页面
+//    `formatLocalDate` 同源派生），**不是硬编码字符串** ⇒ 页面若回退成 UTC 日，两者立刻不等。
+// ④ **判别力护栏**：断言是**具体文件名**（`expect.stringMatching(/\d{4}-\d{2}-\d{2}/)` 这类
+//    恒真形态**不用**）；并显式断言「该时刻的 UTC 日 ≠ 本地日」以证明窗口真的被复现。
+// ═══════════════════════════════════════════════════════════════════════════
+
+// 与页面 `formatLocalDate` 同源派生（同样只用本地 getter）——期望值不得硬编码
+const expectedLocalDay = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+describe('导出文件名 = 本地日（issue #4783 红证）', () => {
+  const user = userEvent.setup()
+  // 被点击 `<a>` 的 download 值（= 实际文件名）。用**手动原型覆写**而非 `vi.spyOn`：
+  // 本文件有模块级 `vi.fn()` 替身，文件级 `vi.restoreAllMocks()` 会把它们清成 undefined
+  // （「替身已清空、组件仍挂载」窗口 ⇒ 随机红，issue #4773；守卫
+  // tests/unit_ci_workflows/test_restore_all_mocks_scope.py 的 R2）。原型方法在 afterEach 手动还原。
+  const originalAnchorClick = HTMLAnchorElement.prototype.click
+  let capturedFilename = ''
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetSearchParams()
+    mockGetProducts.mockResolvedValue({ data: { data: { items: mockProducts, total: 3 } } })
+    mockGetCategories.mockResolvedValue({ data: { data: [] } })
+    // 导出链路在 jsdom 下所需的浏览器 API（缺一则 handleExport 抛错、断言永远看不到文件名）
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:fake'),
+      revokeObjectURL: vi.fn(),
+    })
+    capturedFilename = ''
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      capturedFilename = this.download
+    }
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    HTMLAnchorElement.prototype.click = originalAnchorClick
+  })
+
+  /** 点「批量导出」并返回实际文件名；调用方负责 unmount（一次只允许一个页面实例在场） */
+  async function clickExportAndGetFilename(): Promise<{ filename: string; unmount: () => void }> {
+    mockExportProducts.mockClear()
+    capturedFilename = ''
+    mockExportProducts.mockResolvedValue({ data: new Blob(['xlsx']) })
+    const { unmount } = render(<ProductsPage />)
+    const [exportButton] = screen.getAllByRole('button', { name: '批量导出' })
+    await user.click(exportButton)
+    await waitFor(() => expect(mockExportProducts).toHaveBeenCalled())
+    await waitFor(() => expect(capturedFilename).not.toBe(''))
+    return { filename: capturedFilename, unmount }
+  }
+
+  it('🔴 CST 2026-10-01 00:30 ⇒ 文件名日期 = 该时刻的**本地日**（不是 UTC 日 2026-09-30）', async () => {
+    vi.stubEnv('TZ', 'Asia/Shanghai')
+    const instant = new Date('2026-10-01T00:30:00+08:00') // 绝对时刻，CI 跑 UTC 也是同一个 instant
+    vi.setSystemTime(instant)
+
+    const utcDay = instant.toISOString().slice(0, 10)
+    const localDay = expectedLocalDay(instant)
+    // 判别力前置自断言：此刻 UTC 日 ≠ 本地日（否则本用例无判别力、旧实现也会绿）
+    expect(utcDay).toBe('2026-09-30')
+    expect(localDay).toBe('2026-10-01')
+    expect(utcDay).not.toBe(localDay)
+
+    // 改前（页面用 UTC 日）此断言实测红：expected 'products_2026-10-01.xlsx' / received 'products_2026-09-30.xlsx'
+    const { filename, unmount } = await clickExportAndGetFilename()
+    expect(filename).toBe(`products_${localDay}.xlsx`)
+    unmount()
+  })
+
+  it('边界两侧：CST 07:59 与 08:01 都取**本地日**（文件名不得跟着 UTC 翻日）', async () => {
+    vi.stubEnv('TZ', 'Asia/Shanghai')
+    // 缺陷窗口 = CST 00:00~08:00（UTC 日落后一天）；UTC 翻日的**准确时刻** = CST 08:00
+    // ⇒ 两侧各取一点：07:59（窗口内，UTC 仍是 09-30）与 08:01（窗口外，UTC 已翻到 10-01）。
+    for (const cst of ['2026-10-01T07:59:00+08:00', '2026-10-01T08:01:00+08:00']) {
+      const instant = new Date(cst)
+      vi.setSystemTime(instant)
+      const localDay = expectedLocalDay(instant)
+      const utcDay = instant.toISOString().slice(0, 10)
+      expect(localDay).toBe('2026-10-01')
+      if (cst.includes('07:59')) {
+        // 判别力：窗口内 UTC 日 = 前一天 ⇒ 旧实现（UTC 日）在此必红
+        expect(utcDay).toBe('2026-09-30')
+        expect(utcDay).not.toBe(localDay)
+      } else {
+        // 窗口外：UTC 日与本地日恰好相同（旧实现在此**本来就绿** ⇒ 判别力来自上一点）
+        expect(utcDay).toBe('2026-10-01')
+      }
+      const { filename, unmount } = await clickExportAndGetFilename()
+      expect(filename).toBe('products_2026-10-01.xlsx')
+      unmount()
+    }
+  })
+
+  it('文件名格式与导出内容口径不变：仍是 products_YYYY-MM-DD.xlsx 且导出参数一字未动', async () => {
+    vi.stubEnv('TZ', 'Asia/Shanghai')
+    vi.setSystemTime(new Date('2026-10-05T14:20:00+08:00'))
+    const { filename, unmount } = await clickExportAndGetFilename()
+
+    expect(filename).toMatch(/^products_\d{4}-\d{2}-\d{2}\.xlsx$/)
+    expect(filename).toBe('products_2026-10-05.xlsx')
+    // 本单只改日期口径：导出请求参数（= 导出内容的口径）必须与改动前逐字一致
+    expect(mockExportProducts).toHaveBeenCalledWith({
+      productId: undefined,
+      name: undefined,
+      skuCode: undefined,
+      status: undefined,
+      createdFrom: undefined,
+      createdTo: undefined,
+    })
+    unmount()
   })
 })
