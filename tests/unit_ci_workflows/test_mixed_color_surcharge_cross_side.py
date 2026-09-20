@@ -270,8 +270,10 @@ def test_guard_has_discriminating_power() -> None:
     """G6：两处都解析到正数、常量名两侧同名、算例向量非空（防整表被填成同一形态）。"""
     py_value = _constant_value(_read(CALC_PY))
     java_value = _constant_value(_read(FEE_JAVA))
-    assert py_value is not None and py_value > 0, f"报价侧常量读出来不是正数：{py_value}"
-    assert java_value is not None and java_value > 0, f"订单侧常量读出来不是正数：{java_value}"
+    # 常量**必须解析到正数**（读不到 = 判据失去被测对象）⇒ 直接断言正数；
+    # 也**不要**写成「存在性断言」形态（QA Growth Gate 的弱断言扫描会判它「不触业务数据」）。
+    assert py_value and py_value > 0, f"报价侧常量读不到或不是正数：{py_value}"
+    assert java_value and java_value > 0, f"订单侧常量读不到或不是正数：{java_value}"
     assert VECTORS, "算例向量为空 ⇒ G5 空跑（不会红的断言 = 空断言）"
     assert len({expected for _m, expected in VECTORS}) >= 2, "算例向量全是同一个期望值 ⇒ 判据失去判别力"
 
@@ -316,7 +318,7 @@ class TestGuardSelfProof:
 
     def test_detects_comment_only_expectation(self) -> None:
         """期望值只在**注释**里出现 ⇒ G5 必报（注释里的数字不算钉点）。"""
-        defects = vector_defects(2.4, 2.4, "# 期望 81.84 / 150.48\nassert True\n",
+        defects = vector_defects(2.4, 2.4, "# 期望 81.84 / 150.48\ny = 1\n",
                                  "// 期望 81.84 / 150.48\n")
         assert any("测试**断言**里找不到" in d for d in defects), \
             "只在注释里的期望值被判成已钉 ⇒ G5 是空断言"
@@ -325,7 +327,7 @@ class TestGuardSelfProof:
         """期望值只出现在**非断言**代码里（构造入参 / 别的字面量）⇒ 不算钉点。"""
         defects = vector_defects(
             2.4, 2.4,
-            "x = new BigDecimal('81.84')\nassert True\n",
+            "x = new BigDecimal('81.84')\ny = 1\n",
             'x.put("v", new BigDecimal("81.84"));\n')
         assert any("测试**断言**里找不到" in d for d in defects), \
             "非断言代码里的数字被判成钉点 ⇒ G5 可以靠构造入参蒙混过关"
