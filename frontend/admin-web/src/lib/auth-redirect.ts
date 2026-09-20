@@ -9,8 +9,15 @@
  * 拦截器在 public route 也不强制跳转（避免循环）。
  */
 
-/** 公开路由（与 auth-guard.tsx 保持一致） */
-export const PUBLIC_ROUTES = ['/login', '/register', '/about', '/services', '/contact']
+/**
+ * 公开路由（无需登录即可访问；**单一源**，别处不得再抄一份）
+ *
+ * ⚠️ `/` 必须在内（issue #4903）：官网首页是匿名访客的落地页。缺它 ⇒ AuthProvider 把首页
+ * 当受保护页执行 initialize() → 无 cookie 时 401 → axios 拦截器强制跳 /login
+ * （生产实测：首页先渲染再被跳走）。放宽的只是首页/官网公开页，
+ * **受保护业务页的跳转一条不放宽**。
+ */
+export const PUBLIC_ROUTES = ['/', '/login', '/register', '/about', '/services', '/contact']
 
 /** 是否公开路由（无需认证即可访问；精确匹配 + 子路径前缀；容忍 query string） */
 export function isPublicRoute(pathname: string): boolean {
