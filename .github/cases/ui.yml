@@ -1641,7 +1641,7 @@ cases:
 
   - id: UI-049
     legacy_id: ""
-    title: "工艺项页·**两层布局**：【工序】= 一道工序一行的一口价表（按车间分组可折叠；**不再有部位列**）"
+    title: "工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）"
     domains:
       - ui
       - frontend
@@ -1656,12 +1656,12 @@ cases:
     user_inputs: []
     expectations: []
     data_checks:
-      - "判据 1·**两层**：工序层（容器 `operation-price-matrix`、表 `operation-workshop-table`；`scope='position'` 的逻辑工序，**一道逻辑工序一行**）与【打包发货】层（`delivery-section`，`scope='set'`）各自成区，互不混排；`scope='set'` 的工序**不得**出现在工序层的行里。**2026-09-21 改判（issue #4886 去部位化）**：改前工序层是「行 × 4 部位列 × 格」的矩阵，现在行 = 逻辑工序名、一屏**每道工序只有一行**（读面由 `ProductionOperationQueryService#collapseToLogical` 收敛，前端另按 `logical_name ?? operation` 去重兜住前后端各自上线的过渡期）⇒ **分区判据仍是既有 `scope`，不是「有没有部位格」**（`外帘打卷` 四格全 `applicable=false` 仍必须在场）。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx 的 B1/B2 + 「工序单价表：一道工序一行」组"
+      - "判据 1·🔴 **一屏只有一张表，且装**全部**工序**（2026-09-21 改判，配套 #4886 / #4913）：容器 `operation-price-matrix`、表 `operation-workshop-table`；行来自价目读面（`GET /operation-positions`），`scope='position'` 与 `scope='set'` **同表**，一道逻辑工序一行（读面由 `ProductionOperationQueryService#collapseToLogical` 收敛，前端另按 `logical_name ?? operation` 去重兜住前后端各自上线的过渡期）。🔴 **改判要点（用户裁定 ⇒ 判据面缩小，不是放宽）**：改前这条守的是「**两层**：`scope='set'` 的成员落【打包发货】独立区块（`delivery-section`）、**不得**出现在工序层的行里」—— 用户 2026-09-21 裁定「这里的表单也直接删，不需要了」⇒ 该区块**整块删除**，那 5 道 `scope='set'` 工序（`打包` / `外帘打卷` / `外帘装袋` / `外帘发货` / `裁剪-布`）**并回这唯一一张表**（它们本来就在 `matrixRows` 里、有 `id`、可改价，独立区块只是同一批工序的**第二个视图**）⇒「按既有 `scope` 分区」这条判据**失去对象**（不再有两个载体可分区，如实登记为判据面缩小）；**补位的反向护栏不放宽**：`queryAllByTestId(/^delivery-/)` 必须为空（同一概念不得留下第二个载体）。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx 的「B1 一张表装**全部**工序（用户裁定 2026-09-21：删【打包发货】独立区块 + 两个 tab 合并）」+「B2 「工序」区按车间分组可折叠」"
       - "判据 2·**按车间分组 + 可折叠**：组标题逐字为「<车间> · N 道」，点标题折叠/展开只影响该组（`matrix-workshop-<组>` / `matrix-workshop-toggle-<组>`）。证据：同文件 B3（**红证**：改前无分组 ⇒ `Unable to find an element by: [data-testid=\"matrix-workshop-toggle-裁剪\"]`，实测）"
       - "判据 3·**没有部位列**（2026-09-21 改判，issue #4886 去部位化）：工序层列头**逐字** = `['工序','单价','分组 · 单位 · 必完 · 操作']` —— 部位列（`布帘` / `纱帘` / `帘头` / **`布料`**）**一律不再存在**；单价格 `operation-price-<逻辑工序名>`，`data-state` ∈ `priced` / `unpriced` / `na`。**反向护栏（判据升级，不是放宽）**：改前这条守的是「`布料` 不得当第 4 个部位列、但读面那一格仍在（`variant_operation_id` 的载体 + V88 保命格）」—— 现在**列与格都没有了**，所以守的变成：`queryByTestId(/^matrix-cell-/)` / `queryByTestId(/^matrix-applicable-/)` / `queryByTestId(/^matrix-price-input-/)` **三者都必须为空**；而 `variant_operation_id` **仍必须由读面给出**（收敛**只选行、不回落** —— 收敛后那一行上的 `variant_operation_id` 是孤儿判据 #4614 与实例化的载体）⇒ 孤儿仍按**数据**判、不按**列**判，`裁剪` **不得**被点名成孤儿。证据：同文件 B4（改判后）+「同一逻辑名的多行**收敛为一行**：30 行（不是 120 行），列头只有「一个单价」」（**红证**：注入「读面删掉 `布料` 行」⇒ 收敛结果变化、`operation-price-*` 的态断言红）"
       - "**边界（如实登记）**：本用例只判 `jsdom` 可见结构；真实浏览器的 HTML 合法性与 CSS 布局由 UI-052 的**结构合法性断言**兜底，完整浏览器渲染仍**未采集**（见 issue #4721 的 P2-4 登记）。"
     skip_reason: "[backend-contract] 纯前端渲染（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行"
-    merge_log: "2026-09-19 新增（issue #4721 P1-1，补 #4677 的行为进用例库）：两层布局 = 【工序】按车间分组 + 列收窄到部位词表（`布料` 只退场于**列**、不退场于**数据**）。 ｜ 2026-09-21（issue #4883 用例库同步，配套 #4886 前端去部位化）：判据 3 由「列收窄到布帘/纱帘/帘头（`布料` 不当第 4 列、但读面那一格仍在）」**改判**为「**没有部位列**：列头逐字 = `['工序','单价','分组 · 单位 · 必完 · 操作']`，且 `matrix-cell-*` / `matrix-applicable-*` / `matrix-price-input-*` 三族 testid 一律为空」；判据 1 补两级容器与「一道工序一行」。判据 2（按车间分组可折叠）**一字未动**。"
+    merge_log: "2026-09-19 新增（issue #4721 P1-1，补 #4677 的行为进用例库）：两层布局 = 【工序】按车间分组 + 列收窄到部位词表（`布料` 只退场于**列**、不退场于**数据**）。 ｜ 2026-09-21（issue #4883 用例库同步，配套 #4886 前端去部位化）：判据 3 由「列收窄到布帘/纱帘/帘头（`布料` 不当第 4 列、但读面那一格仍在）」**改判**为「**没有部位列**：列头逐字 = `['工序','单价','分组 · 单位 · 必完 · 操作']`，且 `matrix-cell-*` / `matrix-applicable-*` / `matrix-price-input-*` 三族 testid 一律为空」；判据 1 补两级容器与「一道工序一行」。判据 2（按车间分组可折叠）**一字未动**。 ｜ 2026-09-21（issue #4921 用例库同步，配套 #4913）：判据 1 由「**两层**分区（`scope='set'` 落【打包发货】层、**不得**出现在工序层行里）」**改判**为「**一张表装全部工序** + `delivery-*` 一族 testid 一律为空」——用户裁定的原话是「这里的表单也直接删，不需要了」，两层分区**随区块删除失去判别对象**（如实登记为**判据面缩小**：能力被用户裁定删除 ⇒ 判据不再有对象），故「分区判据」退场、「不得留下第二个视图」这条**反向护栏**补位；标题同步去掉「两层布局」。判据 2（按车间分组可折叠）/ 判据 3（没有部位列 + 列头逐字 + 四族 testid 为空）与**边界**一字未动。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/production-routings.test.tsx"
@@ -1671,7 +1671,7 @@ cases:
 
   - id: UI-050
     legacy_id: ""
-    title: "工艺项页·【打包发货】层**一列价**（不是每部位一格）+ 零矩阵格的交付工序**仍有行 + `管理▸`**"
+    title: "工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序与路线 / 算料配置）+ **行为变更如实登记**（零价目行的工序不上表，由 `matrix-orphan-hint` 报数不静默）"
     domains:
       - ui
       - frontend
@@ -1680,18 +1680,20 @@ cases:
     tags:
       - ui
       - production-routing
-      - delivery-section
+      - operation-price-matrix
+      - orphan-visibility
       - admin-web
     truths_ref: []
     user_inputs: []
     expectations: []
     data_checks:
-      - "判据 1·**一列价**：`delivery-section` 里一行一价（`delivery-row-<工序>` / `delivery-price-<工序>`），**不得**按部位渲染 `matrix-cell-*`（`queryAllByTestId(/^matrix-cell-/)` 必须为空）—— 同一道交付工序在多个部位不同价时**不静默取第一个**，如实报出 `multiple_prices` + 计数。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx 的 B2/B7"
-      - "判据 2·**逐字取服务端**：行的 `price_state` 与 `price` **逐字**用 `GET /operation-layers` 的 `delivery` 段聚合值，前端**不重算**（服务端说 `priced`/`¥9.99` ⇒ 界面必须显示 `¥9.99`，哪怕矩阵格是别的值）。证据：同文件 B7-①/②/③"
-      - "判据 3·**零格的交付工序仍有行 + `管理▸`**（#4674 从根上避免的死路）：某道 `scope='set'` 工序在矩阵里一格都没有 ⇒ 仍有 `delivery-row-*` + `delivery-manage-*`，价态如实为 `no_applicable_position`（**不**假装成 0 元或未定价）。证据：同文件 B6-①"
-      - "判据 4·**三态语义不变**（反向护栏）：`不做` / `未定价` / `¥x.xx` 三者可区分；`未定价` **不得**显示成 `¥0.00`；真 0 元**照显示** `¥0.00`。证据：同文件 B5"
+      - "判据 1·🔴 **独立区块整块退场 + 交付工序并回唯一那张表**（2026-09-21 改判，配套 #4913）：用户裁定逐字「这里的表单也直接删，不需要了，然后把工艺路线的功能放置到这块区域，两个tab合并成一个」⇒【打包发货】层（原 `delivery-section`）与它那一族 testid（`delivery-row-*` / `delivery-price-*` / `delivery-manage-*` / `delivery-must-finish-*` / `delivery-empty`）**一律不得存在**（`queryAllByTestId(/^delivery-/)` 必须为空）；那 5 道 `scope='set'` 工序（`打包` / `外帘打卷` / `外帘装袋` / `外帘发货` / `裁剪-布`）改由唯一那张表承载 —— 行 `matrix-row-<工序>`、价 `operation-price-<工序>`（`data-state` ∈ `priced` / `unpriced` / `na`）、行尾 `matrix-must-finish-<工序>`、抽屉入口 `matrix-manage-<工序>`。**判据面缩小如实登记**：原「一列价 + 不得按部位渲染 `matrix-cell-*`」那一格**失去对象**（列与格已随 #4886 去部位化退场），其结构纪律仍由「整页不得出现 `matrix-cell-*` / `matrix-applicable-*` / `matrix-price-input-*`」这条反向护栏承担。证据：同文件「B1 一张表装**全部**工序（用户裁定 2026-09-21：删【打包发货】独立区块 + 两个 tab 合并）」+「B3 这张表 = **一道工序一个价**（列头恰三列 + 行尾单位/必完逐字取后端）」"
+      - "判据 2·**价与态逐字取价目读面，且不再有第二个来源**（2026-09-21 改判，配套 #4913）：唯一那张表的价态**逐字**由 `GET /operation-positions` 那一行算出（`cellState`，顶层函数、主表与单价格共用一份）：`applicable === false` ⇒ `na`（渲染逐字「不做」，`title` = 「「<工序>」当前配置为不做这道工序」）；否则 `unit_price == null` ⇒ `unpriced`（「未定价」，**绝不**回落工序库单价 —— 库行价是 `NOT NULL DEFAULT 0`，回落会把「未定价」变成真 ¥0.00）；否则 `priced` 显示 `¥x.xx`（**真 0 元照显示** `¥0.00`）。🔴 **事实订正（判据面缩小，纪律不放宽）**：改前这条守的是「行的 `price_state` / `price` 逐字用 `GET /operation-layers` 的 `delivery` 段聚合值、前端不重算」—— 独立区块删除后该端点在本页**零消费者**（随之退场：`deliveryAgg` / `layersError` 两个 state、`operationsRows` 的 `scope` 过滤、`deliveryOps` / `deliveryRows` 两块派生、以及那次请求），**端点本身未删**（仍是后端读面，见处理面用例 PG-039 / PG-054）。⇒ 「服务端聚合 vs 前端重算」这条漂移面就此消失；「逐字取读面、不前端重算」这条纪律**一字不放宽**，只是观测面从聚合段换成价目行。证据：同文件「B3 这张表 = **一道工序一个价**…」+「⑰-④ 三态可区分：`¥0.00` 是真价（≠「未定价」）、`未定价`、`不做`；未定价计数 = 待办数」"
+      - "判据 3·🔴 **行为变更如实登记：零价目行的工序不再出现在这张表**（2026-09-21 改判，配套 #4913）：表的行**只来自价目读面**（`operationsRows = matrixRows`）⇒ 「一格价目行都没有」的工序**不再有行**（改前由【打包发货】那道「**行不依赖矩阵格**」（issue #4729 / PG-054）兜底给行 —— 那条约束随区块一并退场）。**不静默（这是本条真正承重的一格）**：顶部仍由 `matrix-orphan-hint` **如实报数**（文案逐字 = `有 N 道工序还没有价目行（下表看不到）`，`title` 给可行动出路 = 刷新 / 补套行业模板 / 新增工序），且**不得**摆死路按钮（「接入部位价目」弹窗已随去部位化退场）。**边界（如实登记，不粉饰）**：前端测试目前只锁该提示的**缺失**态（同文件「㉕-② 反向护栏：已被矩阵格指向的工序**不算**孤儿（不提示）」断言 `matrix-orphan-hint` 为 null），**在场（报数）态无前端断言** ⇒ 这一格的证据只到「渲染分支存在 + 文案逐字取自源码（frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx 的 `matrix-orphan-hint` 分支）」，**运行期报数未采集**。"
+      - "判据 4·**三态语义不变**（反向护栏）：`不做` / `未定价` / `¥x.xx` 三者可区分；`未定价` **不得**显示成 `¥0.00`；真 0 元**照显示** `¥0.00`。证据：同文件 B5 **2026-09-21 改判（配套 #4913，只换观测面）**：三态的载体由 `delivery-price-*` 的 `data-price-state` 换成唯一那张表的 `operation-price-<工序>` 的 `data-state`（`priced` / `unpriced` / `na`）；三态语义与「未定价 ≠ ¥0.00」这条**一字不放宽**。证据：同文件「反向护栏 B5：三态语义**不变** —— `不做` ≠ `未定价` ≠ `¥0.00`；工序层照旧可区分」+「⑰-④ 三态可区分」。"
+      - "判据 5·🔴 **两个 tab（不是三个）+ 同屏**（2026-09-21 新增判据，配套 #4913）：`process-config-tabs` 里 `role=tab` 恰 **2** 个 —— `process-config-tab-process`（标签逐字 `工序与路线`，默认 `data-state=active`）与 `process-config-tab-calc`（标签逐字 `算料配置`）；`process-config-tab-operations` / `process-config-tab-routes` **一律不得存在**。合并后的判据是**同屏**：工序表（`operation-price-matrix`）与路线列表（`routings-total`）在**同一 tab 里同时在场**（不再是「切换互斥」），且工艺路线**就在原【打包发货】的位置**（文档序在工序表**之后**，`compareDocumentPosition` 可判）；切到「算料配置」才是真互斥（两者都不在）。⚠️ **登记口径**：这一格此前**任何用例都没承载**（工艺配置页的 tab 结构只活在前端测试里）⇒ 按「不新增用例」的口径落在本条（同一用户裁定、同一页面形态），**不是**新增用例、也不放宽带宽。证据：同文件「**两个 tab**（工序与路线 / 算料配置）且默认落前者；工序表与路线列表**同屏**（用户裁定合并后的形态）」+「切 tab **不丢状态**」。"
     skip_reason: "[backend-contract] 纯前端渲染（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行"
-    merge_log: "2026-09-19 新增（issue #4721 P1-1，补 #4677 的行为进用例库）：【打包发货】层由「按部位 4 格」改为**一列价**，且零矩阵格的交付工序不消失。 ｜ 2026-09-21（issue #4883 用例库同步，配套 #4886）：判据 1 追加事实订正 —— 反向护栏的覆盖面从「交付层不得按部位渲染」扩到**整页**（工序层同样不得再有 `matrix-cell-*` / `matrix-applicable-*` / `matrix-price-input-*`）；判据 2/3/4（逐字取服务端 / 零格仍有行 / 三态语义不变）**一字未动**。"
+    merge_log: "2026-09-19 新增（issue #4721 P1-1，补 #4677 的行为进用例库）：【打包发货】层由「按部位 4 格」改为**一列价**，且零矩阵格的交付工序不消失。 ｜ 2026-09-21（issue #4883 用例库同步，配套 #4886）：判据 1 追加事实订正 —— 反向护栏的覆盖面从「交付层不得按部位渲染」扩到**整页**（工序层同样不得再有 `matrix-cell-*` / `matrix-applicable-*` / `matrix-price-input-*`）；判据 2/3/4（逐字取服务端 / 零格仍有行 / 三态语义不变）**一字未动**。 ｜ 2026-09-21（issue #4921 用例库同步，配套 #4913，用户裁定逐字「这里的表单也直接删，不需要了，然后把工艺路线的功能放置到这块区域，两个tab合并成一个」）：① 判据 1 由「【打包发货】层**一列价**（`delivery-row-*` / `delivery-price-*`）+ 不得按部位渲染」**改判**为「**独立区块整块退场**（`delivery-*` 一族 testid 一律为空）+ 那 5 道 `scope='set'` 工序并回唯一那张表」；② 判据 2 的观测面由 `GET /operation-layers` 的 `delivery` 段聚合值**改判**为价目读面逐字（该端点在**本页**零消费者、**端点本身未删**，仍是后端读面）—— 判据面缩小、纪律不放宽；③ 判据 3 由「零矩阵格的交付工序**仍有行 + `管理▸`**」**改判**为**行为变更如实登记**：零价目行的工序不再上表，改由 `matrix-orphan-hint` 报数（不静默）+ 如实登记「在场态无前端断言」这一证据缺口；④ **新增判据 5**（两个 tab + 同屏）—— 原有任何用例都未承载这一格 ⇒ 落在本条页面形态面（不新增用例）。判据 4（三态语义不变）只换观测面、语义不放宽。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/production-routings.test.tsx"

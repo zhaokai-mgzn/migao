@@ -287,8 +287,45 @@ cases:
     data_checks:
       - "第8轮 product_id 来自第1-2轮上下文（同一商品，不重新问顾客）"
       - "全程无重复 product_search 查同一商品"
+    # ── burn-down 缴费（issue #4921，随 #4913 的用例库同步）────────────────────────
+    # 本用例命中的三条存量违规（`CASE-TRUST-NO-EFFECT-ASSERTION` / `CASE-TRUST-NO-PRECONDITION-ASSERTION` / `CASE-TRUST-NO-SELF-CLEAN`）在此**整条销账**
+    # `CASE-TRUST-NO-PRECONDITION-ASSERTION` / `CASE-TRUST-NO-SELF-CLEAN`）在此**整条销账**
+    # （metric=entries ⇒ 必须让该用例不再命中任何码）。三格各自说清真前置与「没放宽什么」：
+    # ① **效果层**（NO-EFFECT-ASSERTION）：改前只有 `expectations`（工具名 + args）——
+    #    那只证明「调用发生、参数给对」，工具返回 `success=false` 照样判绿（#3778 形态：
+    #    `must_succeed` 读的是 tool_result.success，与裸工具名期望是两件事）。
+    #    R8 的写动作是**改价** ⇒ 按 `args.action=update` 过滤取**那次调用自己的**成败
+    #    （issue #3681：同一轮里别的 action 成功不能顶替）；改价没真落库 ⇒ 红。
+    # ② **真前置**（NO-PRECONDITION-ASSERTION）：R8 按**名字**定位「第一款遮光窗帘」——
+    #    种子里该商品**恰好一件**是该轮可达的前提。有同名副本时 agent **正确地**反问
+    #    「要改哪一件」，十轮固定剧本就再也走不到 `product_manage`，报告上只表现为
+    #    `unmatched expectation` = 看起来像「agent 不干活」，归因全错（#3835 的形态）。
+    #    类型复用**已登记**的 `product_count_for_keyword`（计数口径与 `product_remove` /
+    #    `product_dedupe` 同一份 `_list_products_matching`，不另造第二套「怎么数商品」），
+    #    先例 = CH-019 / OR-014 / CR-001（同一 keyword、同一 `expect: 1`）。
+    #    `expect: 1` = 不得有同名副本；**有意不给 `max_growth`**（本用例**不创建**该商品，
+    #    「靶子还在不在」由该类型自带的 `min: 1` 下界承担；给了反而放宽 #4200 那条纪律）。
+    # ③ **自清理**（NO-SELF-CLEAN）：本用例写的是**共享夹具** `prod_eval_blackout` 的价（199）。
+    #    `product_attr` 当前**没有声明式复位类型**（`RESTORE_TYPES_BY_ATTR` 无对应项 ⇒ 本用例
+    #    一直在 tests/unit_ci_workflows/test_shared_fixture_write_restore.py 的
+    #    `REGISTERED_RESTORE_GAPS` 台账里，跟随 issue #4128）⇒ 只能走**弱证据**：声明
+    #    `namespaces`，与同样争用该商品的用例**自动互斥**（不再同窗口互相改写前置）。
+    #    ⚠️ **如实登记（不粉饰）**：`namespaces` 只保证并行互斥，**不解决重试前置等价**——
+    #    重试时价已是 199 ⇒ R8 的「改成 199」是**同值**操作，agent 正确拒绝执行 ⇒
+    #    该轮重试仍会红。这是 #3800 家族的**已知残留**，本单不修（要真修得先有 product_attr
+    #    的复位类型，见 #4128）；本条只把「首跑前置是否成立」变成**可判定**的声明。
+    # **断言面无放宽**：`user_inputs` / `expectations` / `data_checks` 一字未动，只增声明。
+    namespaces:
+      - "product_name:遮光窗帘"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
+    must_succeed:
+      - tool: product_manage
+        action: update
     skip_reason: ""
-    merge_log: "eval M010 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实对象（依赖排序/加工项个数的指代在别的栈上会指向别的东西或不存在）。2026-09-19（#4371 商品↔加工项解耦）：删除「给这款商品添加加工项 打孔」一轮 + 其答卡轮 + `expectations[product_processing_item_manage]` + `data_checks[第9轮加工项按名称解析…]` —— 商品不再持有加工项，该工具退场；长上下文/跨域回切/改价回查意图与其余断言原样未动。"
+    merge_log: "eval M010 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实对象（依赖排序/加工项个数的指代在别的栈上会指向别的东西或不存在）。2026-09-19（#4371 商品↔加工项解耦）：删除「给这款商品添加加工项 打孔」一轮 + 其答卡轮 + `expectations[product_processing_item_manage]` + `data_checks[第9轮加工项按名称解析…]` —— 商品不再持有加工项，该工具退场；长上下文/跨域回切/改价回查意图与其余断言原样未动。 ｜ 2026-09-21（issue #4921 的 burn-down 缴费，随 #4913 的用例库同步）：补 `must_succeed[product_manage(action=update)]`（效果层 —— 裸工具名期望只证「调用过」，改价 `success=false` 照样判绿）+ `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（真前置 —— 按名定位的那件商品在且唯一；有同名副本时 agent 会正确地反问，红却表现为「agent 不干活」）+ `namespaces[product_name:遮光窗帘]`（**弱证据**：并行互斥；`product_attr` 无声明式复位类型 ⇒ 「重试前置不等价」这条残留**如实登记**在用例注释里，跟随 #4128）。三条一起把 `CASE-TRUST-NO-EFFECT-ASSERTION` / `CASE-TRUST-NO-PRECONDITION-ASSERTION` / `CASE-TRUST-NO-SELF-CLEAN` **整条销账**；`user_inputs` / `expectations` / `data_checks` 一字未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
