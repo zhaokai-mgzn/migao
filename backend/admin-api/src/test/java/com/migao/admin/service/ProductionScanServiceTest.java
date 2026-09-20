@@ -1,4 +1,4 @@
-// case_ids: PG-018
+// case_ids: PG-018, PP-011
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -76,6 +76,13 @@ class ProductionScanServiceTest {
      */
     private static final String NEW_CODE = "new-scan-code-4698";
     private static final String OLD_CODE = "legacy-scan-code-4698";
+    /**
+     * 人可读短码（8 位 Crockford Base32，设计 {@code worker-h5-scan-and-report.md} §1.4）——
+     * 与 {@link #NEW_CODE} 是**同一行记录的两种表示**（token = 机器标识 / short_code = 人可读入口）。
+     */
+    private static final String SHORT_CODE = "0K3M9QP2";
+    /** 同一短码的**手输抄错形态**（小写 + 把 `0` 抄成 `O`）⇒ 归一化后必须命中同一行。 */
+    private static final String SHORT_CODE_TYPO = "ok3m9qp2";
 
     @Mock
     private ProcessingSetPartTokenMapper setPartTokenMapper;
@@ -492,6 +499,110 @@ class ProductionScanServiceTest {
         assertThat(stalled.get("threshold_source")).isEqualTo("default");
     }
 
+    // ============================================================ ④ 码值归一：短码 / 整条 URL（issue #4946）
+
+    @Test
+    @DisplayName("🔴 短码（8 位 Crockford）⇒ 与裸 token **逐键相同**的部位级视图（同一行的两种表示）")
+    void shortCodeResolvesToSameViewAsBareToken() {
+        stubNewTokenScan(ITEM_CLOTH, standardOps());
+        when(setPartTokenMapper.selectOne(any())).thenReturn(partTokenWithShortCode(ITEM_CLOTH));
+        Map<String, Object> byBareToken = service.resolve(NEW_CODE, null, TENANT);
+
+        // 短码形态：**只有** selectByShortCode 能命中（selectOne 恒 null ⇒ 裸 token 路径不成立，
+        // 否则这条判据会被「短码其实走了 token 路径」喂绿）
+        when(setPartTokenMapper.selectOne(any())).thenReturn(null);
+        when(setPartTokenMapper.selectByShortCode(SHORT_CODE)).thenReturn(partTokenWithShortCode(ITEM_CLOTH));
+        Map<String, Object> byShortCode = service.resolve(SHORT_CODE, null, TENANT);
+
+        assertThat(byShortCode).as("短码与裸 token 必须给出同一份视图").isEqualTo(byBareToken);
+        assertThat(byShortCode.get("granularity")).isEqualTo("set_position");
+        assertThat(position(byShortCode).get("order_item_id")).isEqualTo(ITEM_CLOTH);
+        assertThat(operation(byShortCode).get("operation_id")).isEqualTo("op-2");
+    }
+
+    @Test
+    @DisplayName("🔴 短码手输形态：Crockford 别名（O→0）+ 小写 ⇒ 复用既有归一化后命中同一行")
+    void shortCodeHandInputIsNormalizedBeforeLookup() {
+        stubNewTokenScan(ITEM_CLOTH, standardOps());
+        when(setPartTokenMapper.selectOne(any())).thenReturn(null);
+        when(setPartTokenMapper.selectByShortCode(SHORT_CODE)).thenReturn(partTokenWithShortCode(ITEM_CLOTH));
+
+        Map<String, Object> result = service.resolve(SHORT_CODE_TYPO, null, TENANT);
+
+        assertThat(result.get("granularity")).isEqualTo("set_position");
+        assertThat(position(result).get("order_item_id")).isEqualTo(ITEM_CLOTH);
+        verify(setPartTokenMapper).selectByShortCode(SHORT_CODE);
+    }
+
+    @Test
+    @DisplayName("🔴 整条印刷 URL：`/s/<短码>` 与 `/w/?t=<token>&tenant_id=…` 都能解析（小程序直传扫码原文）")
+    void printedUrlFormsResolve() {
+        stubNewTokenScan(ITEM_CLOTH, standardOps());
+        when(setPartTokenMapper.selectOne(any())).thenReturn(null);
+        when(setPartTokenMapper.selectByShortCode(SHORT_CODE)).thenReturn(partTokenWithShortCode(ITEM_CLOTH));
+
+        Map<String, Object> shortLink = service.resolve(
+                "https://app.migaozn.com/s/" + SHORT_CODE, null, TENANT);
+        assertThat(shortLink.get("granularity")).as("纸上的码 = 整条 HTTPS URL（设计 §1.2）")
+                .isEqualTo("set_position");
+        assertThat(position(shortLink).get("order_item_id")).isEqualTo(ITEM_CLOTH);
+
+        when(setPartTokenMapper.selectOne(any())).thenReturn(partToken(ITEM_CLOTH));
+        Map<String, Object> reportPage = service.resolve(
+                "https://app.migaozn.com/w/?t=" + NEW_CODE + "&tenant_id=3", null, TENANT);
+        assertThat(reportPage.get("granularity")).as("query 里的 t/token/code 先取出再解析")
+                .isEqualTo("set_position");
+        assertThat(position(reportPage).get("order_item_id")).isEqualTo(ITEM_CLOTH);
+
+        // hash 形态（`#t=`）：与前端 helper `parseScanInput` 的接受面**同一份口径**（不产第二份规则）
+        when(setPartTokenMapper.selectOne(any())).thenReturn(null);
+        when(setPartTokenMapper.selectByShortCode(SHORT_CODE)).thenReturn(partTokenWithShortCode(ITEM_CLOTH));
+        Map<String, Object> hashForm = service.resolve(
+                "https://app.migaozn.com/w/#t=" + SHORT_CODE, null, TENANT);
+        assertThat(hashForm.get("granularity")).isEqualTo("set_position");
+    }
+
+    @Test
+    @DisplayName("🔴 越权面：别的租户的短码 ⇒ **不解出**（跨租户查询 + fail-closed，回落既有四形态）")
+    void shortCodeOfAnotherTenantIsNotResolved() {
+        stubLegacyQrTokenScan();
+        when(setPartTokenMapper.selectByShortCode(SHORT_CODE)).thenReturn(
+                ProcessingSetPartToken.builder()
+                        .id("tok-other-tenant").tenantId(999L).processingOrderId(PO_ID)
+                        .setId(SET_ID).orderItemId(ITEM_GAUZE).positionKind("纱帘")
+                        .token(NEW_CODE).shortCode(SHORT_CODE).deleted(0)
+                        .build());
+
+        Map<String, Object> result = service.resolve(SHORT_CODE, null, TENANT);
+
+        verify(setPartTokenMapper).selectByShortCode(SHORT_CODE);
+        assertThat(result.get("granularity"))
+                .as("别人的码不得解析到本租户的部位 ⇒ 走既有降级路径（绝不按别人的单记账）")
+                .isEqualTo("order");
+        assertThat(result.get("position")).isNull();
+        assertThat(result.get("set_no")).isNull();
+    }
+
+    @Test
+    @DisplayName("🔴 撤销语义（设计 §1.3.1）：短码行在但 token 已置 NULL ⇒ 不解出（与裸 token 同款）")
+    void revokedShortCodeIsNotResolved() {
+        stubLegacyQrTokenScan();
+        when(setPartTokenMapper.selectByShortCode(SHORT_CODE)).thenReturn(
+                ProcessingSetPartToken.builder()
+                        .id("tok-revoked").tenantId(TENANT).processingOrderId(PO_ID)
+                        .setId(SET_ID).orderItemId(ITEM_CLOTH).positionKind("布帘")
+                        .token(null).shortCode(SHORT_CODE).deleted(0)
+                        .build());
+
+        Map<String, Object> result = service.resolve(SHORT_CODE, null, TENANT);
+
+        verify(setPartTokenMapper).selectByShortCode(SHORT_CODE);
+        assertThat(result.get("granularity"))
+                .as("撤销 = 置 NULL ⇒ 解析不到（作废的纸不得还能报工）")
+                .isEqualTo("order");
+        assertThat(result.get("position")).isNull();
+    }
+
     /** 标准一套：布帘 3 道（1 已完成 / 2 待做）+ 纱帘 1 道（已完成）+ 套级「外帘打卷」待做。 */
     private List<ProcessingPositionOperation> standardOps() {
         return List.of(
@@ -537,6 +648,13 @@ class ProductionScanServiceTest {
                 .positionKind(ITEM_CLOTH.equals(orderItemId) ? "布帘" : "纱帘")
                 .token(NEW_CODE).deleted(0)
                 .build();
+    }
+
+    /** 带**短码**的码行（同一行的两种表示：token + short_code，issue #4946）。 */
+    private ProcessingSetPartToken partTokenWithShortCode(String orderItemId) {
+        ProcessingSetPartToken row = partToken(orderItemId);
+        row.setShortCode(SHORT_CODE);
+        return row;
     }
 
     private ProcessingOrderSet set(String id, String setNo, int index, Integer deleted) {

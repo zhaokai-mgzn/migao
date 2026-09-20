@@ -5,11 +5,13 @@ import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.migao.admin.entity.ProcessingSetPartToken;
+import org.apache.ibatis.annotations.Update;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.List;
 
@@ -84,5 +86,42 @@ class ProcessingSetPartTokenMapperTest {
     @DisplayName("Mapper 继承 BaseMapper（CRUD 能力）")
     void mapperExtendsBaseMapper() {
         assertThat(BaseMapper.class.isAssignableFrom(ProcessingSetPartTokenMapper.class)).isTrue();
+    }
+
+    // ────────────────────────────────────────────── 撤销 / 重新发码（issue #4946 增补）
+
+    @Test
+    @DisplayName("🔴 revokeTokensByOrder — token 置 NULL（印刷品载体一起作废）+ **不碰 short_code** + 租户/软删守卫")
+    void revokeTokensByOrder_sqlShape() throws Exception {
+        Method method = ProcessingSetPartTokenMapper.class.getMethod(
+                "revokeTokensByOrder", String.class, Long.class, OffsetDateTime.class);
+        Update update = method.getAnnotation(Update.class);
+        assertThat(update).as("必须是原子 UPDATE（不是「读出来再逐行写」）").isNotNull();
+        String sql = String.join(" ", update.value());
+        assertThat(sql).startsWith("UPDATE processing_set_part_tokens");
+        assertThat(sql).contains("SET token = NULL");
+        assertThat(sql).as("撤销 = 这张纸作废，不换新 token（与 qr_token 撤销逐字同语义）")
+                .doesNotContain("token = #{");
+        assertThat(sql).as("🔴 短码必须留着（「哪一张纸」仍可辨识；/s/ 见 token 空 ⇒ 410）")
+                .doesNotContain("short_code");
+        assertThat(sql).contains("processing_order_id = #{processingOrderId}");
+        assertThat(sql).contains("tenant_id = #{tenantId}");
+        assertThat(sql).contains("deleted = 0");
+    }
+
+    @Test
+    @DisplayName("🔴 fillMissingToken — 只补 token IS NULL 的行（已有 token 一字不动）+ 不碰 short_code")
+    void fillMissingToken_sqlShape() throws Exception {
+        Method method = ProcessingSetPartTokenMapper.class.getMethod("fillMissingToken",
+                Long.class, String.class, String.class, String.class, OffsetDateTime.class);
+        Update update = method.getAnnotation(Update.class);
+        assertThat(update).isNotNull();
+        String sql = String.join(" ", update.value());
+        assertThat(sql).startsWith("UPDATE processing_set_part_tokens");
+        assertThat(sql).contains("SET token = #{token}");
+        assertThat(sql).as("🔴 撤销后的重新发码不许碰已有 token（已打印的纸不作废）")
+                .contains("AND token IS NULL");
+        assertThat(sql).as("短码不换（还是那张纸）").doesNotContain("short_code");
+        assertThat(sql).contains("deleted = 0");
     }
 }
