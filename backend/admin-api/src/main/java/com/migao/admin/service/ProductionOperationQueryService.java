@@ -104,14 +104,17 @@ public class ProductionOperationQueryService {
      * <p><b>不含**部位无关**的工序</b>（{@code 外帘打卷} / {@code 外帘装袋} / {@code 外帘发货} /
      * {@code 质检} / {@code 抱枕} / {@code 腰靠垫}）—— 三种部位同名，由
      * {@link #variantNameOf} 的裸名兜底覆盖，写进来只是把同一件事写三遍。</p>
+     *
+     * <p>🔴 <b>两张 builder 合成（issue #4777）</b>：{@link #variantNames()} = 35 条旧名对的
+     * **反向索引**（30 条，含 #4707 的 {@code 裁剪 × 布料} 回落）；{@link #headVariants(Map)}
+     * = **21 条帘头条目**（逐条显式写出）。为什么帘头**另起一段**而不是并进
+     * {@link #variantNames()}：后者被 {@code V97} 的守卫
+     * （{@code test_v97_variant_map_matches_production_code}）**逐条冻结**为 30 条字面量
+     * （它是已发布迁移的判据口径），而 {@code V97} 是**已发布迁移**（红线：不得改）
+     * ⇒ 帘头条目只能落在 {@code variant(...)} 之后的另一段里。两段**都在本文件内**、
+     * 都**逐条显式写出** ⇒ 不构成第二份口径。</p>
      */
-    private static final Map<String, Map<String, String>> VARIANT_NAMES = variantNames();
-
-    /** 帘头专属回落的目标部位（帘头历史上复用**布帘**变体，见 {@link #variantNameOf}）。 */
-    private static final String POSITION_CLOTH = "布帘";
-
-    /** 帘头（{@code 帘头×平幔} 路线逐字引用 {@code 精裁-布}/{@code 布三边}/{@code 定型-布}）。 */
-    private static final String POSITION_HEAD = "帘头";
+    private static final Map<String, Map<String, String>> VARIANT_NAMES = variantNamesWithCurtainHead();
 
     /**
      * **基线三部位**（布帘/纱帘/帘头；迁移 V71 的闭词表）—— 部位值域的**单一出处**。
@@ -419,18 +422,29 @@ public class ProductionOperationQueryService {
     /**
      * 逻辑工序名 + 部位 → **该租户库里的变体名**（{@link #VARIANT_NAMES} 的显式逆索引）。
      *
-     * <p>查找四步（顺序敏感）：</p>
+     * <p>查找三步（顺序敏感）：</p>
      * <ol>
-     *   <li>{@code (逻辑名, 部位)} 在逆索引里且**该变体真在库中** ⇒ 返回它；</li>
-     *   <li>部位是**帘头**且逆索引里有它的**布帘**变体 ⇒ 返回布帘变体（帘头历史上复用布帘变体：
-     *       V54 的 {@code 帘头×平幔} 路线逐字引用 {@code 精裁-布}/{@code 布三边}/{@code 定型-布}，
-     *       库中从来没有 {@code -帘} 变体；不回落 ⇒ 帘头路线在真库里**一道工序都解析不出来**）；</li>
+     *   <li>{@code (逻辑名, 部位)} 在逆索引里且**该变体真在库中** ⇒ 返回它。
+     *       ⚠️ 帘头格走的是逆索引里的**显式**帘头条目（{@link #headVariants(Map)}，
+     *       issue #4777）—— <b>改前</b>这里是一条**隐式规则**
+     *       （「部位 = 帘头 ⇒ 取 {@code VARIANT_NAMES[逻辑名][布帘]}」），
+     *       与「逻辑名 + 部位后缀」的字符串规则同一类东西，而本文件开头写明
+     *       「**必须是显式表，不许规则推导**」⇒ 本单把它换成显式表（**解析结果逐格不变**，
+     *       覆盖域由 {@code MainlineOperationReferenceTest} 双向钉住）；</li>
      *   <li>裸逻辑名在库中 ⇒ 返回裸名（{@code 外帘打卷} 这类**部位无关**的工序）；</li>
      *   <li>否则 {@code null}（**不猜**，由调用方 fail-closed 指名报缺）。</li>
      * </ol>
      *
      * <p>⚠️ <b>返回的变体名一律来自真值源表或裸逻辑名，且必须真在库中</b> ——
      * 任何「拼出来」的名字都会在库里落空，进而让实例化 fail-closed 或让工序错配。</p>
+     *
+     * <p>🔴 <b>不变式（issue #4777 的守卫）：矩阵里凡 {@code applicable = TRUE} 的格，
+     * 本方法必须解析得到一条库行</b> —— 解析不到 ⇒ {@code ProcessingOrderService.buildRoute}
+     * 把它记进 {@code missing_operations} ⇒ 该部位的单 **fail-closed 422**（商家配的价进不了单）。
+     * 守卫 = {@code MainlineOperationReferenceTest#everyApplicableMatrixCellResolvesToALibraryRow}
+     * （逐格，含帘头格）+ Python 侧
+     * {@code tests/unit_ci_workflows/test_v91_baseline_operations_backfill.py}
+     * 的 {@code test_canonical_matrix_applicable_cells_all_resolve_at_runtime}（同一判据的静态面）。</p>
      *
      * @param catalogByName 该租户工序库按名索引（{@link #operationsByName}）；
      *                      调用方一次取回、循环内复用（避免 N+1）
@@ -446,12 +460,6 @@ public class ProductionOperationQueryService {
             String variant = byPosition.get(position);
             if (variant != null && catalogByName.containsKey(variant)) {
                 return variant;
-            }
-            if (POSITION_HEAD.equals(position)) {
-                String cloth = byPosition.get(POSITION_CLOTH);
-                if (cloth != null && catalogByName.containsKey(cloth)) {
-                    return cloth;
-                }
             }
         }
         // 部位无关的工序（帘头制作 / 外帘打卷 / 外帘装袋 / 外帘发货 / 质检 / 抱枕 / 腰靠垫）
@@ -839,7 +847,7 @@ public class ProductionOperationQueryService {
         variant(names, "上车布", "纱帘", "上车布-纱");
         variant(names, "打孔", "纱帘", "打孔-纱");
         variant(names, "绑带", "纱帘", "绑带-纱");
-        // ── 帘头专属（1 条；其余工序复用布帘变体，见 variantNameOf 第 2 步）──
+        // ── 帘头专属（1 条；其余 21 道工序的帘头格走 `headVariants` 的显式条目）──
         variant(names, "帘头制作", "帘头", "帘头制作");
         // ── 布料（第 4 部位，issue #4707）──
         // `V88`（#4676）把布料主线从 `["配料","打包"]` 改成 **`["裁剪","打包"]`**，并显式种下
@@ -849,11 +857,24 @@ public class ProductionOperationQueryService {
         // ⇒ 返回 `null` ⇒ `裁剪` 进 `missing_operations` ⇒ **纯布料单 fail-closed 422**。
         // ⚠️ 这与「工序库为空」**正交**：**健康租户（1 号）也 422**（真库红证见 PR body）。
         // 修复 = 把 `裁剪 × 布料` 显式指到 `裁剪-布`（唯一承载「裁剪」元数据的库行：
-        // 分组=裁剪 / 单位=米 / scope=position）—— 与第 2 步「帘头复用布帘变体」**同款显式回落**，
+        // 分组=裁剪 / 单位=米 / scope=position）—— 与 `headVariants` 的帘头条目**同款显式回落**，
         // 逐条写出**不推导**（既有纪律：`布三边`/`布帘车被` 用规则推导会漏）。
         // ⚠️ 价**不**从这里取：矩阵格 `裁剪 × 布料` 的价（NULL = 未定价，V90）优先，
         //    本表只回答「是哪条库行」。
         variant(names, "裁剪", "布料", "裁剪-布");
+        // ⚠️ 返回**可变**表（issue #4777）：{@link #variantNamesWithCurtainHead()} 要在它之上
+        //    再叠加 {@link #headVariants(Map)} 的 21 条帘头条目，最后才 `Map.copyOf` 冻结。
+        //    ⚠️ 本方法的 `variant(...)` 调用集被 V97 的守卫**逐条冻结**为 30 条 —— 不得增删。
+        return names;
+    }
+
+    /**
+     * {@link #VARIANT_NAMES} 的合成入口：{@link #variantNames()}（30 条，被 V97 守卫冻结）
+     * + {@link #headVariants(Map)}（21 条帘头）。
+     */
+    private static Map<String, Map<String, String>> variantNamesWithCurtainHead() {
+        Map<String, Map<String, String>> names = variantNames();
+        headVariants(names);
         return Map.copyOf(names);
     }
 
@@ -862,5 +883,60 @@ public class ProductionOperationQueryService {
                                 String logicalName, String position, String variantName) {
         names.computeIfAbsent(logicalName, key -> new LinkedHashMap<>())
                 .put(position, variantName);
+    }
+
+    /**
+     * **帘头变体（21 条，逐条显式写出、不推导）** —— issue #4777。
+     *
+     * <p>帘头**没有自己的变体行**（库里从来没有 {@code -帘} 变体），历史上复用**布帘**那一列。
+     * 旧实现把这件事写成 {@link #variantNameOf} 里的一条**隐式规则**
+     * （「部位 = 帘头 ⇒ 取 {@code VARIANT_NAMES[逻辑名][布帘]}」）—— 与
+     * 「逻辑名 + 部位后缀」的字符串规则**同一类东西**，而本文件开头就写明
+     * 「**必须是显式表，不许规则推导**」（{@code 布三边} / {@code 布帘车被} 用规则推导会漏）。
+     * 本单把它换成显式表：{@code 帘头 × 精裁 → 精裁-布} 这类条目**逐条写出来**，
+     * 于是「删一条帘头条目 ⇒ 该帘头格解析不到 ⇒ 帘头单 fail-closed」这件事
+     * **第一次可被守卫抓住**（改前由隐式规则兜着，删哪条都不会红）。</p>
+     *
+     * <p>🔴 <b>覆盖域 = {@code VARIANT_NAMES} 里**有布帘条目**的全部逻辑名（21 个）</b>，
+     * <b>不是</b>只列「帘头 {@code applicable = TRUE}」的那 14 个：矩阵格
+     * {@code applicable = FALSE}（「该部位明确不做」）在**读面**（{@code GET /operation-positions}
+     * 的 {@code variant_operation_id} / {@code unit} / {@code group} / {@code scope} /
+     * {@code is_must_finish}）照样要解析出「落到工人端哪道工序」⇒ 少列一条 = 读面那 5 个键
+     * **静默变 null**（口径变更，不是本单要做的事）。
+     * 覆盖域由 {@code MainlineOperationReferenceTest#headVariantsCoverExactlyTheClothColumn}
+     * 双向钉住（少一条 / 多一条 / 值不同都红）。</p>
+     *
+     * <p>为什么**另起一段**而不是并进 {@link #variantNames()}：后者的
+     * {@code variant(...)} 调用集被 {@code V97} 的守卫
+     * （{@code test_v97_variant_map_matches_production_code}）**逐条冻结**为 30 条，
+     * 而 {@code V97} 是**已发布迁移**（红线：不得改、不得重生成指纹）⇒ 帘头条目只能落在
+     * 上面这个 {@code variant(...)} 写入器**之后**的另一段里
+     * （该守卫的解析半径 = {@code variantNames()} 方法体到 {@code private static void variant(} 为止）。</p>
+     *
+     * <p>帘头路线的出处：{@code 帘头×平幔} 路线（V54 / V71）逐字引用
+     * {@code 精裁-布} / {@code 布三边} / {@code 定型-布} —— 故帘头条目的值 = 该逻辑名的**布帘**变体。</p>
+     */
+    private static void headVariants(Map<String, Map<String, String>> names) {
+        variant(names, "精裁", "帘头", "精裁-布");
+        variant(names, "裁剪", "帘头", "裁剪-布");
+        variant(names, "三边", "帘头", "布三边");
+        variant(names, "韩褶", "帘头", "韩褶-布");
+        variant(names, "上车布", "帘头", "上车布-布");
+        variant(names, "打孔", "帘头", "打孔-布");
+        variant(names, "拼1次", "帘头", "拼1次-布");
+        variant(names, "拼2次", "帘头", "拼2次-布");
+        variant(names, "拼3次", "帘头", "拼3次-布");
+        variant(names, "花边", "帘头", "花边-布");
+        variant(names, "铅坠", "帘头", "铅坠-布");
+        variant(names, "接高", "帘头", "接高-布");
+        variant(names, "熨烫", "帘头", "熨烫-布");
+        variant(names, "定型", "帘头", "定型-布");
+        variant(names, "复烫", "帘头", "复烫-布");
+        variant(names, "车被", "帘头", "布帘车被");
+        variant(names, "绑带", "帘头", "绑带-布");
+        variant(names, "logo条", "帘头", "logo条-布");
+        variant(names, "立边", "帘头", "立边-布");
+        variant(names, "扣环", "帘头", "扣环-布");
+        variant(names, "防翘扣", "帘头", "防翘扣-布");
     }
 }
