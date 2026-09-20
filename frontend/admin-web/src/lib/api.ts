@@ -535,7 +535,8 @@ export const productionApi = {
 
   // ── 新路线模型只读面（issue #4500 = 母单 #4423 的 P2c；消费方 = P3 #4433）──
   // 两个端点**只读**（写面留 v1b）；顺序由服务端定（Java 侧显式比较器，环境无关）⇒ 前端不得重排。
-  // ① 工序单价表（issue #4886 起**一道工序一行、一个单价**）：`applicable=false` 的行 unit_price=null
+  // ① 工序单价表（issue #4886 起**一道工序一行、一个单价**；issue #4937/#4951 去部位化彻底版起
+  // `applicable` 退场 —— 读面该键恒 true、写面收到即 422 ⇒ 前端不持有该字段）。
   // issue #4588（契约 #4587 ①）：每行多出 `id`（写面寻址）+ 6 个变体元数据键（逻辑名↔变体名映射）。
   getOperationPositions: () =>
     request.get<ApiResponse<OperationPosition[]>>('/api/admin/production/operation-positions'),
@@ -547,9 +548,10 @@ export const productionApi = {
   getOperationLayers: () =>
     request.get<ApiResponse<OperationLayers>>('/api/admin/production/operation-layers'),
   // ①-b 工序单价**写面**（issue #4588；契约 #4587 ②；权限 processing:manage）：
-  // **部分更新** ⇒ body 只带变了的键（`{unit_price}`）；
-  // `applicable=false` ⇒ 后端把价强制落 NULL；`unit_price=null` = 改回**未定价**（≠ 0 元）；
-  // 校验失败 ⇒ 422 + `error.details[].message`（一次报全）。响应与 ① 的单行同构。
+  // **部分更新** ⇒ body 只带变了的键（#4937/O1 起**只收** `{unit_price}` —— `applicable` 已退场，
+  // 收到它一律 **422**「部位适用性已退场，不再受理该字段」，**拒绝**而非静默忽略）；
+  // `unit_price=null` = 改回**未定价**（≠ 0 元）；校验失败 ⇒ 422 + `error.details[].message`（一次报全）。
+  // 响应与 ① 的单行同构。
   updateOperationPosition: (id: string, data: OperationPositionUpdateParams) =>
     request.put<ApiResponse<OperationPosition>>(`/api/admin/production/operation-positions/${id}`, data),
   // ② 统一规则区：26 条（工艺 10 + 选项 16）—— 只含路线编排档（insert/remove），不含计件系数档

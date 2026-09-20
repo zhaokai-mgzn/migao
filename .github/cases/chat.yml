@@ -1805,13 +1805,44 @@ cases:
     expectations:
       - tool: customer_order_query
       - tool: product_search
+    # ── 前置自断言 + 效果层（issue #4939 的 case-trust burn-down 缴费）────────────────────────
+    # 本用例命中的两条存量违规（`metric=entries` ⇒ 必须**整条销账**，只收窄多码条目不算）：
+    #   ① CASE-TRUST-NO-PRECONDITION-ASSERTION  ② CASE-TRUST-FORBIDDEN-TEXT-SOLE
+    # 【真前置是什么】R1「帮我查一下我的订单」与 R2「算了，先看看你们有什么窗帘」是**同一条
+    #   在办语境的两半** —— R2 之所以是「顾客改主意」而不是「顾客要取消」，前提正是 R1 真的
+    #   查到了**该顾客的订单**（集合为空时 R2 的「算了」没有对象，本用例判的就不是它要判的
+    #   那件事，而红的表现只是 `unmatched expectation`，看起来像「小布不会查单」，归因全错）。
+    #   订单集合的不可变键 = 顾客手机号 `13800138000`（C 端种子 `xiaobu_eval_seed.sql` 的
+    #   `debug_customer_1` /「张三」/ `EVAL-ORD-0001`+`0002`）；取数走
+    #   `local_runner._probe_phone_order_count` → `GET /api/admin/orders?receiver=<手机号>`，
+    #   与 OR-006 / AS-003 / OR-012 同一部手机号、同一份「怎么数订单」的口径 —— 不另立第二份定义。
+    # 【为什么这么计数】**刻意不声明 `expect: <N>`**：该基线随栈组成而变（同栈并行建单用例实时
+    #   改写它），写死常量 = 依赖栈的恒红判据（反模式 CH-034，OR-006 / AS-003 / OR-012 同款）；
+    #   只用 runner 的**结构下界** `min: 1`（`_PRECONDITION_TYPES["order_count_for_phone"]["min"]`）
+    #   ⇒ 靶子被清零时必然触发，且不随栈漂移。类型 `order_count_for_phone` 是**既有已登记**类型
+    #   —— 本单**不新增 type、不改探针**（§13.3 的「新 type = 大活」整块不动）。
+    # 【效果层为什么是 `must_succeed[product_search]`】本用例的第二半危害是「**吞掉新诉求**」
+    #   （R2 整句被丢弃、没有 product_search）。`expectations` 里的裸工具名只证明「**调用过**」
+    #   —— 工具返回 `success=false` 也照样算过（「调用了 ≠ 成了」，#3778）。故效果层落在
+    #   `product_search` 的**成功**上：新诉求不仅要被接住，还要真的检索出来。这同时是规则 c
+    #   要求的「`forbidden_text` 不得单独承载判据」的那条**行为/效果层陪跑断言**。
+    # 【断言面一字未放宽】`user_inputs` / `expectations` / `forbidden_text` / `data_checks` /
+    #   `traces` / `skip_reason` **全部未动**，本单只加下面两格声明 —— 禁令与两条 data_checks
+    #   一字未改（禁令仍是主判据之一，只是不再**单独**承载）。
+    # 【本条不是 skip 用例】`skip_reason: ""` ⇒ 上面两格**进运行期**（与 AS-004 / OR-006 那两条
+    #   skip 用例不同 —— 它们的声明当前不生效）。
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
+    must_succeed:
+      - tool: product_search
     forbidden_text:
       - "已取消"
     data_checks:
       - "无在办流程时，「算了」只是顾客改主意，不得回复『已取消』（假状态变更）"
       - "同一句里的新诉求（看看有什么窗帘）必须被正常处理，不得整句丢弃"
     skip_reason: ""
-    merge_log: "2026-09-13 新增（issue #3367）：验收剧本 C-A2 沉淀（假取消 + 吞诉求）"
+    merge_log: "2026-09-13 新增（issue #3367）：验收剧本 C-A2 沉淀（假取消 + 吞诉求） ｜ 2026-09-21（issue #4939 的 case-trust burn-down 缴费）：补 **`precondition[order_count_for_phone: 13800138000]`**（真前置 = 该顾客的订单集合非空，否则 R2 的「算了」没有对象、红的表现像「小布不会查单」；沿用既有已登记类型，不新增 type）+ **`must_succeed[product_search]`**（效果层：「调用过 ≠ 成了」，把「新诉求必须真的被接住并检索出来」钉住，同时满足规则 c「`forbidden_text` 不得单独承载判据」）。`user_inputs` / `expectations` / `forbidden_text` / `data_checks` / `traces` / `skip_reason` **一字未动、无放宽**；本条 `skip_reason: \"\"` ⇒ 两格**进运行期**。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_graph_skills.py"
