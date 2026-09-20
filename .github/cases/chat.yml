@@ -425,7 +425,17 @@ cases:
       - ai-chat.context-memory
     user_inputs:
       - "__FORM__|{\"customer_name\":\"张三\",\"customer_phone\":\"13800138000\",\"customer_address\":\"杭州市西湖区\",\"quantity\":\"3\"}"
-    expectations: []
+    # ── Case Trust burn-down 缴费（本 PR 触碰 `cases/**` 的硬成本，见 .github/case-trust-baseline.json 的 burn_down）──
+    # 本条原命中 `CASE-TRUST-EMPTY-ASSERTION`：`expectations: []` 且 0 条机器计分型 data_checks
+    # ⇒ `scoring_assertion_count == 0`，而 runner 的 score 公式是 `passed/total if total > 0 else 1.0`
+    # ⇒ **恒绿**（agent 干不干、干成什么样都满分）。本用例的被测行为 = `__FORM__` 表单负载注入
+    # 本轮上下文后**本轮必须有产出**：表单已带齐下单四要素（姓名 / 手机号 / 地址 / 数量）⇒
+    # 落地形态只有三种（直接下单 / 确认卡 / 文本引导），任一都算「表单没被静默丢掉」；
+    # 三者皆无（无 tool_calls 且无 final_text，例如注入链路炸了）⇒ `unmatched expectation` 判红。
+    expectations:
+      # `direct_reply` = 该轮无 tool_calls 且有 final_text（runner 既有语义，见 local_runner 的匹配实现）；
+      # `order_create` / `interact` = 直接下单 / 出确认卡。
+      - tool: direct_reply or order_create or interact
     data_checks:
       - "表单字段注入本轮 LLM 上下文（不改写会话历史）"
       - "日志中手机号脱敏（138****8000）"

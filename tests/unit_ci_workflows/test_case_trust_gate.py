@@ -486,8 +486,9 @@ class TestBackendContractScoringChannel:
     def test_real_library_exemption_covers_exactly_the_evidence_chain_cases(self):
         """**库级**：豁免面 == 「真跑 + 零计分断言」用例里**有有效证据链**的那一部分。
 
-        等价于「判据只放过 `traces.tests` 计分通道那一类」——两边都非空 ⇒ 判据既不空转
-        （豁免面塌成 0）也不恒绿（真跑用例一条都不报）。
+        等价于「判据只放过 `traces.tests` 计分通道那一类」——豁免面非空 ⇒ 判据不空转。
+        非空转（「判据没被拆成恒绿」）由**注入式探针**保证，**不再**要求库里恰好还留着一条违规：
+        见下方 `assert` 的注释（issue #4798 改判）。
         """
         live = self._live()
         zero_scoring = {cid for cid, c in live.items() if tax.scoring_assertion_count(c) == 0}
@@ -504,8 +505,23 @@ class TestBackendContractScoringChannel:
             f"  多报（真跑用例被放过或豁免失效）：{sorted(hits - (zero_scoring - exempt))}\n"
             f"  漏报（豁免面过大）：{sorted((zero_scoring - exempt) - hits)}"
         )
-        assert hits, (
-            "全库已无任何 EMPTY-ASSERTION 命中 ⇒ 判据可能被改成恒绿（真护栏被拆）"
+        # ── 非空转判据（issue #4798 **改判**）────────────────────────────────────────
+        # 原写法是 `assert hits`（要求**库里**至少还留着一条命中）。它把两件相反的事
+        # **混成同一个读数**：「判据被拆成恒绿」与「存量违规真的清零」—— 而 burn-down
+        # 预算的**终点就是清零**（CH-009 是本库最后一条 EMPTY-ASSERTION，把它修成可失败
+        # 之后该断言必红，且红的原因恰恰是「债还清了」= 假红）。
+        # ⇒ 改判为**注入式探针**：判据的判别力不再依赖库里恰好有违规，
+        #    前提（库里有违规）消失也不会让它恒绿。库里清零时本测试**照常绿**。
+        # 红证：把 `tax.judge_case` 换成恒返回 `[]`（= 判据被拆）⇒ 本断言红。
+        probe = fixture_backend_contract_case(
+            skip_reason="",                        # 真跑（不进 traces.tests 豁免）
+            expectations=[],                       # 零计分断言
+            traces={"tests": [BC_TRACES_OK], "ci": [], "verifies": []},
+            user_inputs=["查一下订单"],              # 单轮（不触发「前置自断言」规则）
+        )
+        assert "CASE-TRUST-EMPTY-ASSERTION" in codes(
+            tax.judge_case(probe, catalog=_seed_catalog(), repo_root=REPO_ROOT)), (
+            "注入「真跑 + 零计分断言」合成用例却不再命中 EMPTY-ASSERTION ⇒ 判据已被改成恒绿"
         )
 
     def test_real_library_exempt_cases_report_no_runner_scoring_rule(self):

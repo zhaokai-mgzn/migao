@@ -1956,3 +1956,40 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # PG-055（issue #4798，P1）：部位价目矩阵**写面**不变式 ——
+  # 写完 `applicable=true` 的格必须解析得到变体工序（否则下单整单 422）。
+  - id: PG-055
+    legacy_id: ""
+    title: "部位价目矩阵写面不变式：写完 `applicable=true` 的格必须解析得到变体工序（否则加工单整单 422）"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - processing-order
+      - production-routing
+      - operation-positions
+      - write-guard
+      - fail-closed
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "success=false"
+      - "判据 1·🔴 **解析不到变体 ⇒ 422 + `error.details[0].field='applicable'` 且不落库**：`PUT /api/admin/production/operation-positions/{id}` 把某格设为「做」时，若 `variantNameOf(逻辑名, 部位, 活跃工序库)` 为 `null`（该部位在工序库里没有这道工序），必须 **422** —— 实例化侧 `ProcessingOrderService.buildRoute` 用的是**同一个** `variantNameOf`，解析不到就记进 `missing_operations` ⇒ 调用方 422 **整单中止**；写面放行 = 「商家配好了、下单必失败」。**红证（实测）**：把护栏判据注入成 `if (false)` 后跑 `./mvnw -o test -Dtest='ProductionOperationPositionCommandServiceTest,ProductionRoutingReadControllerTest'` 得 `Tests run: 35, Failures: 3`（`applicableTrueRejectedWhenVariantUnresolvable` / `priceOnlyChangeOnUnresolvableApplicableRowRejected` / `updateOperationPositionRejectsUnresolvableApplicable`，最后一条实读 `Status expected:<422> but was:<404>` = 请求已走到写库分支、`rows==0` 才 404）；还原后 35/35 绿。"
+      - "判据 2·**不变式覆盖「只改价」**：存量坏格（`applicable=true` 且解析不到变体）只改价也 422 —— 不留「改得动、用不了」的价。证据：`priceOnlyChangeOnUnresolvableApplicableRowRejected`"
+      - "判据 3·**设为「不做」永远放行**（解析不到变体时也放行）⇒ 永远给得出路、不造死路。证据：`applicableFalseAlwaysAllowedEvenWhenUnresolvable`"
+      - "判据 4·**反向护栏：判据不误伤可解析的格**（解析序三步各一条）：① 变体表命中（`三边 × 布帘` + 库里有 `布三边`）；② **帘头回落布帘变体**（`三边 × 帘头` + 库里只有 `布三边`）；③ **部位无关工序的裸逻辑名**（`质检 × 布帘` + 库里有 `质检`）。三条都必须 200 照旧放行 —— 判据与实例化侧**同一份** `variantNameOf`（不另抄映射表）。证据：`applicableTrueAllowedWhenVariantResolvable` / `applicableTrueAllowedWhenLintouFallsBackToClothVariant` / `applicableTrueAllowedForPositionIndependentOperation`"
+      - "判据 5·**文案用商家语言且不泄漏变体名**（#4642 口径）：`details[0].message` 含「三边 × 布帘」与「不做」，**不含**变体名 `布三边`。证据：`applicableTrueRejectedWhenVariantUnresolvable` 的 message 断言"
+      - "**边界（如实登记）**：① 本单**不改读面**（`GET /operation-positions` 仍整份呈现，理由见 #4672 的三条）；② **不清理任何数据**（#4672 / V97 已完成）；③ 不动 #4619（「缺格」与「不认识的名字」未区分）；④ 空工序库租户下本护栏会让矩阵写面 422 —— 该租户本来就实例化不了（路线解析先失败），文案给出路（先去工序库补这道工序），**未加「库为空就跳过护栏」的静默豁免**（那会制造第二份口径）。"
+    skip_reason: "[backend-contract] 后端写面契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPositionCommandServiceTest.java 与 backend/admin-api/src/test/java/com/migao/admin/controller/ProductionRoutingReadControllerTest.java 执行"
+    merge_log: "2026-09-20 新增（issue #4798，P1）。交付：`ProductionOperationPositionCommandService.update` 加**不变式** —— 结果态 `applicable=true` 的格必须 `variantNameOf(...) != null`，否则 422 + `details`（复用 `ProductionOperationQueryService` 的**同一份**判据，不另抄映射表）；`applicable=false` 一律放行。红证见判据 1（注入 `if (false)` ⇒ 3 条用例红；还原 ⇒ 35/35 绿）。同批修正两处既有测试夹具（`negativePriceRejectedWithDetails` / `tooManyDecimalsRejectedWithDetails` 补 `stubCatalog()`：它们只判价，新增的不变式会多报一条 detail）与 `ProductionRoutingReadControllerTest` 的构造接线（新增第 4 个构造参数）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPositionCommandServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/ProductionRoutingReadControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
