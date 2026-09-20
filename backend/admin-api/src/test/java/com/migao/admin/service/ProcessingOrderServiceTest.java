@@ -422,8 +422,10 @@ class ProcessingOrderServiceTest {
         info.put("colorName", colorName);
         info.put("sellingMethod", "散剪");
         info.put("doorWidth", "2.8米");
-        // 注意（issue #4299）：加工项**不带** pricingMethod ⇒ 米数映射判据不命中（也不得回落到
-        // sellingMethod）⇒ 本夹具的期望值不受判据更换影响；要断言命中请看 PG-025 的用例。
+        // ⚠️ issue #4882 起本夹具的加工项「不带 pricingMethod 键」= **新单形态 ⇒ 判据命中米类**
+        // （`isMeterBasedLine` 第 3 段；#4299 时是无键不命中，语义已翻转）。本夹具被大量用例共用，
+        // 而顶部共用的 `stubQty()` 是**与 calc_info 无关**的平行真值（米类恒 12.3）⇒ 那些用例的
+        // 期望值不受翻转影响；要断言 calc_info 本身请看下面 #4299/#4882 那一族用例。
         List<Map<String, Object>> procs = new ArrayList<>();
         Map<String, Object> p = new LinkedHashMap<>();
         p.put("id", "p1");
@@ -1093,7 +1095,7 @@ class ProcessingOrderServiceTest {
 
     /** calc_info 里的米数（判据不命中时先在此处红，报错直指「缺 fabric_meters」而不是 NumberFormat）。 */
     private static BigDecimal fabricMetersOf(Map<String, Object> calcInfo) {
-        assertThat(calcInfo).as("calc_info 必须带 fabric_meters（判据 = 加工项 pricingMethod=per_meter）")
+        assertThat(calcInfo).as("calc_info 必须带 fabric_meters（判据 = ProcessingOrderService.isMeterBasedLine）")
                 .containsKey("fabric_meters");
         return new BigDecimal(String.valueOf(calcInfo.get("fabric_meters")));
     }
@@ -1192,20 +1194,56 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("#4299 负例：有 processingItems 但无 pricingMethod 键（老数据形态）⇒ 不命中")
-    void processingItemsWithoutPricingMethodKeyDoNotMap() {
+    @DisplayName("#4882 语义翻转：processingItems **全无** pricingMethod 键（#4882 之后的新单形态）⇒ 判定为米类")
+    void processingItemsWithoutPricingMethodKeyAreMeterBased() {
+        // ⚠️ **语义翻转登记（issue #4882）**：本用例在 #4299 时名为
+        // `processingItemsWithoutPricingMethodKeyDoNotMap`，断言「无键 ⇒ 判据不命中 ⇒ 米类落 fallback 1」。
+        // 加工项目录删除 `pricing_method` 列后，下单入口**不再写该键** ⇒ 无键 = **新单形态**；
+        // 判据改为 `ProcessingOrderService.isMeterBasedLine` 的三段契约，**第 3 段 = 全无该键 ⇒ 米类**。
+        // 翻转的理由（有意取舍，不是遗漏）：
+        //   ① #3005 行业口径：行业加工费**按米计价**、辅料含在加工费中 ⇒ 有加工项即按米；
+        //   ② V83 目录 16 项历史上**全部** per_meter（`V83__seed_processing_item_catalog.sql`）；
+        //   ③ 不翻转的代价 = 米类工序落 `qty_source=fallback` 兜底 1 ⇒ 112 米的单做 1 米 ⇒ **假完工**
+        //      （#4208 红线）；翻转的代价只是「按订单行 quantity 当米数」。
+        // 仍**不**回落到 sellingMethod / products.pricing_type（它们不是数量口径的来源，#4299 实测）——
+        // 本用例里的 `sellingMethod=bulk_cut` 只是**干扰项**：翻转的依据是「有加工项且全无该键」，
+        // 不是售卖方式（判据取值的红证：把它改回 sellingMethod 口径 ⇒ 本断言立刻红）。
         OrderItem item = orderItemHanzhe("米白");   // 加工项无 pricingMethod 键
         @SuppressWarnings("unchecked")
         Map<String, Object> info = (Map<String, Object>) item.getProcessingInfo();
-        info.put("sellingMethod", "bulk_cut");      // 即便售卖方式是 bulk_cut，也不得据此判米数
+        info.put("sellingMethod", "bulk_cut");
 
         Map<String, Object> calcInfo = generateAndCaptureCalcInfo(item, true);
 
-        assertThat(calcInfo).as("没有 pricingMethod 键 ⇒ 判据不命中（不得回落到 sellingMethod 第二份口径）")
-                .doesNotContainKey("fabric_meters");
+        assertThat(fabricMetersOf(calcInfo))
+                .as("#4882 第 3 段：全无 pricingMethod 键 ⇒ 米类 ⇒ 订单行 quantity 即米数")
+                .isEqualByComparingTo(ORDER_QUANTITY);
         assertThat(capturedInstances()).filteredOn(instance -> "米".equals(instance.getUnit()))
                 .isNotEmpty()
-                .allSatisfy(instance -> assertThat(instance.getQtySource()).isEqualTo("fallback"));
+                .allSatisfy(instance -> assertThat(instance.getQtySource())
+                        .as("米类必须取 fabric_meters（fallback 1 = 112 米的单做 1 米 = 假完工）")
+                        .isEqualTo("fabric_meters"));
+    }
+
+    @Test
+    @DisplayName("#4882 第 2 段优先：混装（一项带键 per_sqm + 一项无键）⇒ 按**带键**的存量快照形态判，不冒充米数")
+    void mixedKeyedAndUnkeyedProcessingItemsDeferToExplicitKey() {
+        // 第 2 段（存量快照形态）与第 3 段（新单形态）在同一行混装时的边界：**带键优先**。
+        // 红证：把实现改成「任一项无键 ⇒ 米类」⇒ 本断言立刻红（会多出 fabric_meters）。
+        OrderItem item = orderItemHanzhe("米白");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) item.getProcessingInfo();
+        List<Map<String, Object>> procs = new ArrayList<>();
+        procs.add(Map.of("id", "p1", "name", "刺绣工艺", "pricingMethod", "per_sqm",
+                "unitPrice", 3.0, "quantity", 2, "unit", "米"));
+        procs.add(Map.of("id", "p2", "name", "打孔", "quantity", 2, "unit", "米"));
+        info.put("processingItems", procs);
+
+        Map<String, Object> calcInfo = generateAndCaptureCalcInfo(item, true);
+
+        assertThat(calcInfo)
+                .as("只要有**任一项**显式带 pricingMethod 键，就按存量快照形态判（全非 per_meter ⇒ 不命中）")
+                .doesNotContainKey("fabric_meters");
     }
 
     @Test

@@ -44,7 +44,7 @@
 | Agent 侧 | `customer_knowledge_skill` 零工具模式（LLM 通用知识 + 免责）；`knowledge_search/knowledge_manage` 工具未注册（RAG 禁用） | `customer_knowledge_skill.py`；`registry.py` |
 | 前端 | 知识库页：文档列表/上传/resync/删除/test-search/同步历史弹窗 | `frontend/admin-web/src/app/(dashboard)/knowledge/page.tsx` |
 | 种子数据 | `knowledge_base/curtain_faq/faq.md`、`products/product_catalog.md`、`size_guide/measurement_guide.md`（Markdown，未结构化） | `knowledge_base/` |
-| 相关领域 | 商品 SKU 矩阵 + 加工项（pricingMethod: per_meter/per_set/fixed/per_area，契约 §六）+ 租户 AI 配置（V10） | `CONTRACT-LEDGER.md` |
+| 相关领域 | 商品 SKU 矩阵 + 加工项（**#4882 后已无 pricingMethod**，只剩名称/分类/craftHint；价只在「加工费组合」上）+ 租户 AI 配置（V10） | `CONTRACT-LEDGER.md` |
 
 ## 三·五、旧知识库完全移除清单（替代边界，v1.1）
 
@@ -181,7 +181,7 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_status ON knowledge_candidat
 - 触发：① 商品创建/更新/上下架时同步派生（admin-api 内同步调用派生服务）；② 定时全量对账（补偿漏触发）。
 - 派生规则（v1 最小集）：
   - 每个上架商品生成知识卡片：标题「{商品名}多少钱/价格」，answer 模板引用 SKU 价格变量，`variables: {"skuPrices": ...}`；
-  - 每个加工项生成知识卡片：标题「{加工项名}怎么计价」，answer 按 pricingMethod 模板（per_meter/per_set/fixed/per_area）；
+  - 每个加工项生成知识卡片（⚠️ **#4882 后加工项已无 pricingMethod** ⇒「按计价方式生成 answer」这一形态失去对象，须改按「加工费组合」口径生成；本条为**待更新设计**，勿照旧实现）；
   - 租户 AI 配置（V10 表）生成「店铺配置」知识卡片（发货周期/售后说明，若字段存在）。
 - 运行时变量填充：检索命中含 `variables` 的知识卡片 → 用商品实时数据填充 → 保证与商品页一致（真值一致性）。
 - 派生知识卡片 `source_type=product/config`，**人工可改**；商品变更时重新生成该商品知识卡片（保留人工修订则跳过——v1 简化：商品知识卡片一律重新生成，人工修订知识卡片需改 source_type=manual）。

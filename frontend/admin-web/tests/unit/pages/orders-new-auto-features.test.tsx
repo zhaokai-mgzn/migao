@@ -271,7 +271,7 @@ beforeEach(() => {
     data: {
       data: {
         items: [
-          { id: 'pi1', name: '打孔加工', pricingMethod: 'per_meter', unitPrice: 5, unit: '米' },
+          { id: 'pi1', name: '打孔加工', unit: '米' },
         ],
       },
     },
@@ -415,11 +415,11 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
       data: {
         data: {
           items: [
-            { id: 'pi-02', name: '韩折', craftHint: '韩褶', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
-            { id: 'pi-06', name: '定型', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
-            { id: 'pi-14', name: '超高', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
-            { id: 'pi-15', name: '超宽', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
-            { id: 'pi-16', name: '倒幅', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+            { id: 'pi-02', name: '韩折', craftHint: '韩褶', unit: '米' },
+            { id: 'pi-06', name: '定型', unit: '米' },
+            { id: 'pi-14', name: '超高', unit: '米' },
+            { id: 'pi-15', name: '超宽', unit: '米' },
+            { id: 'pi-16', name: '倒幅', unit: '米' },
           ],
         },
       },

@@ -26,8 +26,6 @@ def sample_processing_items():
             "name": "打孔",
             "categoryId": "cat_punch",
             "categoryName": "穿挂",
-            "pricingMethod": "per_meter",
-            "unitPrice": 8.0,
             "unit": "米",
             "minQuantity": 0,
             "maxQuantity": 200,
@@ -42,8 +40,6 @@ def sample_processing_items():
             "name": "窗帘头",
             "categoryId": "cat_head",
             "categoryName": "造型",
-            "pricingMethod": "per_meter",
-            "unitPrice": 5.0,
             "unit": "米",
             "minQuantity": 1,
             "maxQuantity": 50,
@@ -80,9 +76,12 @@ class TestProcessingItemList:
         # PP-006（issue #3005 回滚）：不再透传每米数量密度
         assert "per_meter_quantity" not in result.data["items"][0]
         # 验证字段映射 camelCase -> snake_case
-        assert result.data["items"][0]["unit_price"] == 8.0
         assert result.data["items"][0]["category_name"] == "穿挂"
-        assert result.data["items"][0]["pricing_method"] == "per_meter"
+        assert result.data["items"][0]["unit"] == "米"
+        # issue #4882：加工项不再有单价与计价方式 ⇒ 查询结果里不得再出现这两个键
+        # （红证：字段没摘干净时本断言失败）
+        for key in ("unit_price", "pricing_method"):
+            assert key not in result.data["items"][0], f"加工项查询结果仍返回已删字段 {key}"
         assert result.data["page"] == 1
         assert result.data["size"] == 10
 

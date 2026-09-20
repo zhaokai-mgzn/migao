@@ -800,8 +800,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // 后端统一聚合加工项，并计算加工费 / 实收款（架构决策：费用计算全部在后端）
         // issue #4406：加工费 = Σ 各行**落库时算好的**加工费（组合价 × 加工费米数），不重算；
         // 同时把该行的加工费与可审计构成透出（行级 processingFee / processingFeeDetail）。
-        // ⚠️ `processingItems` 列表保持原样（**明细快照**：当时选了哪些加工项），
-        //    其 `amount` 仍是「加工项目录单价 × 数量」——**它不再是加工费口径**（加工费见 processingFee）。
+        // ⚠️ `processingItems` 列表保持原样（**明细快照**：当时选了哪些加工项）；
+        //    issue #4882 起快照不再有 `unitPrice` / `amount`（加工费口径**只有** processingFee 一处）。
         List<OrderDetailResponse.ProcessingItemBrief> aggregatedProcessing = new ArrayList<>();
         BigDecimal processingFee = BigDecimal.ZERO;
         for (int i = 0; i < items.size(); i++) {
@@ -885,8 +885,13 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     /**
      * 从订单明细的 processingInfo（JSON）中解析加工项列表。
      * processingInfo 格式来自前端创建订单时写入：
-     * { "processingFee": <number>, "processingItems": [ { id,name,unitPrice,quantity,unit } ] , ... }
+     * { "processingFee": <number>, "processingItems": [ { id,name,quantity,unit } ] , ... }
      * 解析失败/缺字段时返回空列表，确保不影响订单查询主流程。
+     *
+     * <p>issue #4882：加工项目录已删「单价」与「计价方式」（下单入口也不再写 {@code unitPrice}）
+     * ⇒ 本方法只回填 {@code id} / {@code name} / {@code quantity}。加工费**不**在这里取 ——
+     * 真值源 = {@code processing_info.processingFeeDetail}（{@code processing_fee_combinations} 落库值），
+     * 见 {@link #storedProcessingFee}。</p>
      *
      * issue #3340 验收实战：processingInfo 可能是 JSON **字符串**（自定义 @Select 查询不经过
      * JacksonTypeHandler），此处做兼容解析，避免"有加工项却被判无加工项"。
@@ -924,18 +929,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 brief.setId(id != null ? String.valueOf(id) : null);
                 Object name = entry.get("name");
                 brief.setName(name != null ? String.valueOf(name) : null);
-                BigDecimal unitPrice = toBigDecimal(entry.get("unitPrice"));
-                brief.setUnitPrice(unitPrice);
-                // issue #3666：必须走十进制解析——旧 toInteger() 把 per_area 的 8.4 截断成 8，
+                // issue #3666：必须走**十进制**解析——旧 toInteger() 把 per_area 的 8.4 截断成 8，
                 // 详情/列表按截断值重算加工费（30×8=240.00）与外层落库 processingFee（252.00）
-                // 自相矛盾。
+                // 自相矛盾。（issue #4882 起不再解析 unitPrice / amount：加工费只有 processingFee 一处口径。）
                 BigDecimal quantity = toBigDecimal(entry.get("quantity"));
                 brief.setQuantity(quantity);
-                BigDecimal amount = BigDecimal.ZERO;
-                if (unitPrice != null && quantity != null) {
-                    amount = unitPrice.multiply(quantity);
-                }
-                brief.setAmount(amount);
                 result.add(brief);
             }
             return result;

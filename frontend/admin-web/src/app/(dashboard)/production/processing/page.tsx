@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils'
 import type {
   FeeCombinationsResponse,
   FeeGaps,
-  PricingMethod,
   ProcessingCategory,
   ProcessingItem,
 } from '@/types'
@@ -60,32 +59,19 @@ import type {
  * 直达「加工费组合」—— 后端未定价提示里的链接（`ProcessingFeeCalculator`）指向的就是旧路径。
  */
 
-/** 弹窗内表单数据（加工项） */
+/**
+ * 弹窗内表单数据（加工项）。
+ *
+ * issue #4882（用户裁定）：加工项的**单价**与**计价方式**整体退场 —— 加工项本身不再持有价，
+ * 价只由「加工费组合」（元/米）决定 ⇒ 表单只留名称 / 加工分类 / 优惠。
+ */
 interface ItemForm {
   name: string
-  unitPrice: string
-  pricingMethod: PricingMethod | ''
   discount: string
   discountQty: string
   discountRate: string
   categoryId: string
 }
-
-/** 计价方式 → 单位映射 */
-const PRICING_UNIT_MAP: Record<string, string> = {
-  per_meter: '米',
-  per_set: '套',
-  fixed: '件',
-  per_area: '平方米',
-}
-
-/** 计价方式选项（行业加工费按米计价、辅料含在加工费中 → 无按个/每米数量，issue #3005） */
-const PRICING_METHOD_OPTIONS = [
-  { value: 'per_meter', label: '按购买米数计价（单价 × 米数）' },
-  { value: 'per_set', label: '按套计价（单价 × 套数）' },
-  { value: 'fixed', label: '固定一口价（不论尺寸/数量）' },
-  { value: 'per_area', label: '按面积计价（单价 × 宽 × 高 × 数量）' },
-]
 
 /** 优惠类型选项 */
 const DISCOUNT_OPTIONS = [
@@ -101,8 +87,6 @@ const QTY_OPTIONS = Array.from({ length: 98 }, (_, i) => ({
 
 const EMPTY_FORM: ItemForm = {
   name: '',
-  unitPrice: '',
-  pricingMethod: '',
   discount: '',
   discountQty: '2',
   discountRate: '',
@@ -249,8 +233,6 @@ function ProcessingContent() {
     setEditingId(item.id)
     setForm({
       name: item.name,
-      unitPrice: String(item.unitPrice ?? item.basePrice ?? ''),
-      pricingMethod: item.pricingMethod || 'per_meter',
       discount: '',
       discountQty: '2',
       discountRate: '',
@@ -276,19 +258,6 @@ function ProcessingContent() {
       errs.name = '请输入加工项名称'
     } else if (form.name.trim().length > 20) {
       errs.name = '名称不能超过20个字符'
-    }
-
-    const price = parseFloat(form.unitPrice)
-    if (!form.unitPrice.trim()) {
-      errs.unitPrice = '请输入加工项价格'
-    } else if (isNaN(price) || price < 0.1 || price > 999.99) {
-      errs.unitPrice = '价格范围 0.10 ~ 999.99'
-    } else if (form.unitPrice.includes('.') && form.unitPrice.split('.')[1]?.length > 2) {
-      errs.unitPrice = '最多2位小数'
-    }
-
-    if (!form.pricingMethod) {
-      errs.pricingMethod = '请选择计价方式'
     }
 
     if (!form.categoryId) {
@@ -331,13 +300,12 @@ function ProcessingContent() {
 
     setSaving(true)
     try {
-      const pricingMethod = form.pricingMethod as PricingMethod
       const payload = {
         name: form.name.trim(),
         categoryId: form.categoryId, // 用户显式选择（此前强取 categories[0] 且新租户为空 → 提交 'default' 报「加工分类不存在」）
-        pricingMethod,
-        unitPrice: parseFloat(form.unitPrice),
-        unit: PRICING_UNIT_MAP[pricingMethod] || '套',
+        // 单位恒为「米」（#4882）：加工费按米计价是行业口径（#3005），V83 目录 16 项全 per_meter；
+        // 计价方式既已整体退场，就没有第二个取值来源 —— 这里不留可变量，也不按计价方式查表。
+        unit: '米',
         status: 'active' as const,
       }
 
@@ -376,11 +344,6 @@ function ProcessingContent() {
       setDeleteConfirmOpen(false)
       setDeleteTargetId(null)
     }
-  }
-
-  const getPricingMethodLabel = (method: string) => {
-    const opt = PRICING_METHOD_OPTIONS.find((o) => o.value === method)
-    return opt?.label || method
   }
 
   const categoryNameOf = (item: ProcessingItem) =>
@@ -526,10 +489,6 @@ function ProcessingContent() {
             </div>
           </div>
 
-          <p className="px-4 pt-3 text-xs text-neutral-500">
-            加工项价格是下单时的加工费参考价；改价只影响新订单，历史订单按当时价。
-          </p>
-
           {itemsError ? (
             <div className="m-4 flex items-center gap-2 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               <AlertCircle className="h-4 w-4" />
@@ -543,19 +502,13 @@ function ProcessingContent() {
               <table className="mt-3 w-full border-collapse">
                 <thead>
                   <tr className="border-b border-neutral-200 bg-neutral-50/60">
-                    <th className="w-[26%] whitespace-nowrap px-4 py-3 text-left text-sm font-semibold text-neutral-900">
+                    <th className="w-[45%] whitespace-nowrap px-4 py-3 text-left text-sm font-semibold text-neutral-900">
                       加工项名称
                     </th>
-                    <th className="w-[12%] whitespace-nowrap px-4 py-3 text-left text-sm font-semibold text-neutral-900">
-                      加工项价格
-                    </th>
-                    <th className="w-[22%] whitespace-nowrap px-4 py-3 text-left text-sm font-semibold text-neutral-900">
-                      加工项计价方式
-                    </th>
-                    <th className="w-[14%] whitespace-nowrap px-4 py-3 text-left text-sm font-semibold text-neutral-900">
+                    <th className="w-[30%] whitespace-nowrap px-4 py-3 text-left text-sm font-semibold text-neutral-900">
                       加工分类
                     </th>
-                    <th className="w-[12%] whitespace-nowrap px-4 py-3 text-left text-sm font-semibold text-neutral-900">
+                    <th className="w-[25%] whitespace-nowrap px-4 py-3 text-left text-sm font-semibold text-neutral-900">
                       操作
                     </th>
                   </tr>
@@ -563,7 +516,7 @@ function ProcessingContent() {
                 <tbody>
                   {itemsLoading ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-12 text-center text-neutral-500">
+                      <td colSpan={3} className="px-4 py-12 text-center text-neutral-500">
                         <div className="flex items-center justify-center gap-2">
                           <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-600 border-t-transparent" />
                           加载中...
@@ -572,7 +525,7 @@ function ProcessingContent() {
                     </tr>
                   ) : items.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-12 text-center text-sm text-neutral-400">
+                      <td colSpan={3} className="px-4 py-12 text-center text-sm text-neutral-400">
                         <span data-testid="processing-items-empty">
                           暂无加工项 —— 点右上「新增加工项」建第一个（如 韩褶、打孔）
                           {categories.length === 0 && '；当前还没有加工分类，可在新增弹窗里直接创建'}
@@ -584,12 +537,6 @@ function ProcessingContent() {
                       <Fragment key={item.id}>
                         <tr className="border-b border-neutral-100 hover:bg-neutral-50/40" data-testid={`processing-item-${item.id}`}>
                           <td className="px-4 py-3 text-sm text-neutral-900">{item.name}</td>
-                          <td className="px-4 py-3 text-sm text-neutral-900">
-                            {Number(item.unitPrice ?? item.basePrice ?? 0).toFixed(2)}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-neutral-900">
-                            {getPricingMethodLabel(item.pricingMethod || '')}
-                          </td>
                           <td className="px-4 py-3 text-sm text-neutral-600">{categoryNameOf(item)}</td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3 whitespace-nowrap">
@@ -869,50 +816,6 @@ function ProcessingContent() {
               onChange={(e) => updateField('name', e.target.value)}
             />
             {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
-          </div>
-
-          {/* 加工项价格 */}
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-neutral-800">
-              加工项价格<span className="ml-0.5 text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              className={`h-9 w-full rounded border px-3 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
-                errors.unitPrice ? 'border-red-500' : 'border-neutral-300'
-              }`}
-              placeholder="请输入价格（0.10 ~ 999.99）"
-              step="0.01"
-              min="0.10"
-              max="999.99"
-              value={form.unitPrice}
-              onChange={(e) => updateField('unitPrice', e.target.value)}
-            />
-            {errors.unitPrice && <p className="mt-1 text-xs text-red-600">{errors.unitPrice}</p>}
-          </div>
-
-          {/* 计价方式 */}
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-neutral-800">
-              加工项计价方式<span className="ml-0.5 text-red-500">*</span>
-            </label>
-            <select
-              className={`h-9 w-full appearance-none rounded border bg-white px-3 pr-8 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
-                errors.pricingMethod ? 'border-red-500' : 'border-neutral-300'
-              }`}
-              value={form.pricingMethod}
-              onChange={(e) => updateField('pricingMethod', e.target.value as PricingMethod | '')}
-            >
-              <option value="" disabled>
-                请选择计价方式
-              </option>
-              {PRICING_METHOD_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            {errors.pricingMethod && <p className="mt-1 text-xs text-red-600">{errors.pricingMethod}</p>}
           </div>
 
           {/* 加工分类（必选：后端加工项强依赖加工分类，新租户从 0 需先建） */}

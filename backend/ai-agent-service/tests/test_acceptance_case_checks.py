@@ -772,15 +772,14 @@ class TestOutputVerifyActionScope:
              "tool_results": [{"tool": "processing_item_manage",
                                "result": {"success": True,
                                           "data": {"id": "pi_x", "name": "测试加工",
-                                                   "pricingMethod": "per_meter",
-                                                   "unitPrice": 8.0}}}]},
+                                                   "craftHint": "打孔"}}}]},
         ]
 
     def test_action_scoped_picks_target_payload(self):
         """声明 action → 取目标 action 的 payload（修复前会取到 R1 的 categories → 假红）。"""
         issues = lr.check_output_verify(self._results(), [{
             "tool": "processing_item_manage", "action": "create_processing_item",
-            "expect": {"name": "测试加工", "pricingMethod": "per_meter"},
+            "expect": {"name": "测试加工", "craftHint": "打孔"},
         }])
         assert issues == [], issues
 

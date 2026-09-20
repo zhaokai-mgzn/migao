@@ -4,6 +4,7 @@ package com.migao.admin.dto;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.dto.agent.AgentOrderCreateRequest;
+import com.migao.admin.entity.ProcessingItem;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -167,23 +168,36 @@ class OrderDtoContractTest {
                                 + "（#3621） → Python 更严：enum[bulk_cut,full_roll] 且本地拒绝变体"
                                 + " → 依据：收敛需**放宽 Python**（降唯一生产者安检）或给服务端加一套只对"
                                 + " Python 生效的注解（= 新的第二套定义），两者都被 issue 裁定排除"),
-                new DivergenceRow("D9 pricingMethod 枚举", "服务端读该键作米数判据、但不做枚举校验（单侧安全冗余）→ 登记不收敛", null,
-                        "Java：ProcessingOrderService.calcInfo **读** processingItems[].pricingMethod 作米数判据"
-                                + "（issue #4299：与字面 per_meter 等值比较），但**不做枚举校验**、不拒绝变体"
-                                + "（未知取值 ⇒ 判据不命中 ⇒ 落兜底 1 + qty_source=fallback）"
-                                + " → Python 更严：enum[per_meter,per_set,fixed,per_area] + 本地拒绝"
-                                + " → 依据：服务端只需「是不是 per_meter」这一个等值判断、不需要枚举成员全集"
-                                + " ⇒ 加注解=凭空发明校验；且注解会与算法脱节（判据只认 per_meter，注解却声明四个成员）"),
+                // D9 曾是「Python 更严（enum[per_meter,per_set,fixed,per_area] + 本地拒绝）」的登记项；
+                // issue #4882（用户裁定）把「加工项计价方式」整体删除 ⇒ **两侧都不再声明该键** ⇒ 已收敛。
+                // 收敛判据 = 两侧源码级事实（任何一侧重新加回该字段 ⇒ 本行红）。
+                new DivergenceRow("D9 pricingMethod 枚举",
+                        "#4882 后两侧都不再声明该键（加工项目录删列 + 工具 schema 删键）→ 收敛（退场）", () -> {
+                    assertThat(allFieldNames(ProcessingItem.class))
+                            .as("D9 收敛：Java 加工项目录实体不得再有 pricingMethod / unitPrice"
+                                    + "（#4882 用户裁定；重新加回 ⇒ 本行红）")
+                            .doesNotContain("pricingMethod", "unitPrice");
+                    assertThat(allFieldNames(ProcessingItemResponse.class))
+                            .as("D9 收敛：加工项响应 DTO 同上")
+                            .doesNotContain("pricingMethod", "unitPrice");
+                    assertThat(pythonProcessingItemKeys())
+                            .as("D9 收敛：Python（唯一生产者）也不再声明 pricingMethod / unitPrice；"
+                                    + "空集说明 schema 里 processingItems 已消失（静默失效 ⇒ 也必须红）")
+                            .contains("id", "name", "quantity")
+                            .doesNotContain("pricingMethod", "unitPrice");
+                }, null),
                 new DivergenceRow("D10 processingInfo 容器结构", "容器结构校验点在生产侧 → 登记不收敛", null,
                         "Java：Object 零结构约束（且兼容 JSON 字符串形态）"
                                 + " → Python：完整嵌套 schema → 依据：服务端只把 processingInfo 透传落库，"
                                 + "同一条内容在服务端没有算法消费其结构；把嵌套 schema 复制成 Java 注解="
                                 + "第二套定义（正是本单要消灭的形态）"),
                 new DivergenceRow("D11 processingItems[] 多出的键",
-                        "多出 unit/subtotal 被忽略（无害）→ 登记不收敛", null,
-                        "Java：消费 id/name/unitPrice/quantity + pricingMethod（#4299 起作米数判据）；Python 声明 7 键（多 unit/subtotal）"
-                                + " → 依据：多余键被服务端忽略（无害且向前兼容）；删它们=降低工具侧可读性，"
-                                + "加它们=服务端凭空约束（同 D9）"),
+                        "Python 多声明 unit（Java 的 ProcessingItemBrief 不回填它）→ 登记不收敛", null,
+                        "Java：消费 id/name/quantity（OrderDetailResponse.ProcessingItemBrief；#4882 起不再解析 unitPrice，"
+                                + "pricingMethod 只在**存量订单快照**上被读作米数判据）；"
+                                + "Python 声明 {id,name,quantity,unit}（多 unit）"
+                                + " → 依据：多余键被服务端忽略（无害且向前兼容）；删 unit=降低工具侧可读性"
+                                + "（它是加工数量单位），给 Java DTO 加 unit=服务端凭空约束（同 D9）"),
                 new DivergenceRow("D12 processingFee=Σ明细 自洽",
                         "两侧代码都不交叉校验（服务端按明细求和）→ 登记不收敛 + 跟单", null,
                         "Java：sumProcessingFee 只按 processingItems 求和，processingFee 字段不参与"
@@ -426,7 +440,7 @@ class OrderDtoContractTest {
     }
 
     /**
-     * issue #4089 清单里**刻意不收敛**的跨语言差异（D8~D12），键 = 矩阵行 code（逐字一致）。
+     * issue #4089 清单里**刻意不收敛**的跨语言差异（D8 / D10 / D11 / D12；D9 已随 #4882 收敛），键 = 矩阵行 code（逐字一致）。
      *
      * <p>为什么不收敛：这几处的"更严"一侧在 **Python 工具/技能层**（LLM 契约的提示性约束 +
      * 本地 fail-closed 校验），而服务端要么**不消费**该字段、要么**已归一化**、要么压根不做该
@@ -441,22 +455,17 @@ class OrderDtoContractTest {
                         + "（#3621） → Python 更严：enum[bulk_cut,full_roll] 且本地拒绝变体"
                         + " → 依据：收敛需**放宽 Python**（降唯一生产者安检）或给服务端加一套只对"
                         + " Python 生效的注解（= 新的第二套定义），两者都被 issue 裁定排除");
-        REGISTERED_DIVERGENCES.put("D9 pricingMethod 枚举",
-                "Java：ProcessingOrderService.calcInfo **读** processingItems[].pricingMethod 作米数判据"
-                        + "（issue #4299：与字面 per_meter 等值比较），但**不做枚举校验**、不拒绝变体"
-                        + "（未知取值 ⇒ 判据不命中 ⇒ 落兜底 1 + qty_source=fallback）"
-                        + " → Python 更严：enum[per_meter,per_set,fixed,per_area] + 本地拒绝"
-                        + " → 依据：服务端只需「是不是 per_meter」这一个等值判断、不需要枚举成员全集"
-                        + " ⇒ 加注解=凭空发明校验；且注解会与算法脱节（判据只认 per_meter，注解却声明四个成员）");
         REGISTERED_DIVERGENCES.put("D10 processingInfo 容器结构",
                 "Java：Object 零结构约束（且兼容 JSON 字符串形态）"
                         + " → Python：完整嵌套 schema → 依据：服务端只把 processingInfo 透传落库，"
                         + "同一条内容在服务端没有算法消费其结构；把嵌套 schema 复制成 Java 注解="
                         + "第二套定义（正是本单要消灭的形态）");
         REGISTERED_DIVERGENCES.put("D11 processingItems[] 多出的键",
-                "Java：消费 id/name/unitPrice/quantity + pricingMethod（#4299 起作米数判据）；Python 声明 7 键（多 unit/subtotal）"
-                        + " → 依据：多余键被服务端忽略（无害且向前兼容）；删它们=降低工具侧可读性，"
-                        + "加它们=服务端凭空约束（同 D9）");
+                "Java：消费 id/name/quantity（OrderDetailResponse.ProcessingItemBrief；#4882 起不再解析 unitPrice，"
+                        + "pricingMethod 只在**存量订单快照**上被读作米数判据）；"
+                        + "Python 声明 {id,name,quantity,unit}（多 unit）"
+                        + " → 依据：多余键被服务端忽略（无害且向前兼容）；删 unit=降低工具侧可读性"
+                        + "（它是加工数量单位），给 Java DTO 加 unit=服务端凭空约束（同 D9）");
         REGISTERED_DIVERGENCES.put("D12 processingFee=Σ明细 自洽",
                 "Java：sumProcessingFee 只按 processingItems 求和，processingFee 字段不参与"
                         + " → Python：工具描述要求自洽、代码不校验 → 依据：这是 issue 清单里的"
@@ -497,10 +506,19 @@ class OrderDtoContractTest {
                     .as("D8 复核：若 Python 侧开始接受变体，则『Python 更严』这条登记失效 → 本行红")
                     .isFalse();
             assertThat(pythonEnumAccepts("sellingMethod", "bulk_cut")).isTrue();
-            // D9：pricingMethod 白名单存在且 per_piece 不在其中（服务端只做「是不是 per_meter」的
-            // 等值判断、不做枚举校验 ⇒ 更严的一侧仍在 Python；#4299 起 Java 确实读该键，见 D9 登记）
-            assertThat(pythonEnumAccepts("pricingMethod", "per_piece")).isFalse();
-            assertThat(pythonEnumAccepts("pricingMethod", "per_meter")).isTrue();
+            // D9 复核（#4882 后 D9 **已收敛**，不再是登记项）：唯一生产者（Python）不再发 pricingMethod /
+            // unitPrice ⇒ 若 Python 重新声明它们，D9 的收敛判据与登记口径都要重写 ⇒ 本行红。
+            assertThat(pythonProcessingItemKeys())
+                    .as("D9 复核：Python 重新声明 pricingMethod / unitPrice ⇒ 收敛结论失效（本行红）")
+                    .doesNotContain("pricingMethod", "unitPrice");
+            // D11 复核：Python 声明的 processingItems[] 逐键 = {id,name,quantity,unit}（多 unit），
+            // 而 Java 的 ProcessingItemBrief 只有 {id,name,quantity} ⇒ 「多 unit」这条登记仍成立。
+            assertThat(pythonProcessingItemKeys())
+                    .as("D11 复核：Python 侧键集合变了（增删任一键）⇒ 登记文本需更新（本行红）")
+                    .containsExactlyInAnyOrder("id", "name", "quantity", "unit");
+            assertThat(allFieldNames(OrderDetailResponse.ProcessingItemBrief.class))
+                    .as("D11 复核：Java 侧不回填 unit ⇒ 登记里的「多 unit」仍成立")
+                    .containsExactlyInAnyOrder("id", "name", "quantity");
         }
 
         @Test
@@ -609,8 +627,8 @@ class OrderDtoContractTest {
                          "width": 2.8, "height": 3.0,
                          "processingInfo": {"colorName": "米白", "sellingMethod": "bulk_cut",
                            "doorWidth": "2.8米", "processingFee": 24.0,
-                           "processingItems": [{"id": "p1", "name": "打孔", "unitPrice": 8.0,
-                                                "quantity": 3.0, "pricingMethod": "per_set"}]}}
+                           "processingItems": [{"id": "p1", "name": "打孔",
+                                                "quantity": 3.0, "unit": "米"}]}}
                       ]
                     }
                     """;
@@ -640,8 +658,8 @@ class OrderDtoContractTest {
             item.setHeight(new BigDecimal("3"));
             item.setProcessingInfo(Map.of("sellingMethod", "bulk_cut", "doorWidth", "2.8米",
                     "colorName", "米白", "processingFee", new BigDecimal("24"),
-                    "processingItems", List.of(Map.of("id", "p1", "name", "打孔", "unitPrice",
-                            new BigDecimal("8"), "quantity", new BigDecimal("3")))));
+                    "processingItems", List.of(Map.of("id", "p1", "name", "打孔",
+                            "quantity", new BigDecimal("3"), "unit", "米"))));
             legal.setItems(List.of(item));
 
             assertThat(VALIDATOR.validate(legal))
@@ -872,6 +890,22 @@ class OrderDtoContractTest {
     }
 
     /**
+     * {@code order_create.py} 的 {@code processing_info.processingItems[]} 逐键（D9/D11 的原子复核）。
+     *
+     * <p>解析失败 ⇒ **断言红**（不静默降级为「读不到 ⇒ 空集 ⇒ 通过」）；空集由调用方显式断言
+     * （{@code contains(...)}）兜住「schema 里 processingItems 整体消失」的静默形态。</p>
+     */
+    private static Set<String> pythonProcessingItemKeys() {
+        try {
+            return keysOf(pythonSchema().path("properties").path("items").path("items")
+                    .path("properties").path("processing_info").path("properties")
+                    .path("processingItems").path("items").path("properties"));
+        } catch (IOException e) {
+            throw new AssertionError("解析 Python processingItems schema 失败", e);
+        }
+    }
+
+    /**
      * 抽 schema 的 CPython 脚本：用 {@code ast} 解析源码（语言自带的解析器），
      * 取模块级 class 里的 {@code parameters} 字面量后 {@code literal_eval} → JSON。
      */
@@ -897,7 +931,7 @@ class OrderDtoContractTest {
                     ? props.path("processingItems").path("items").path("properties").path(container)
                     : props.path(container);
             assertThat(enumNode.path("enum").isArray())
-                    .as("Python schema 里 %s 必须仍是 enum（否则 D8/D9 登记口径需更新）", container)
+                    .as("Python schema 里 %s 必须仍是 enum（否则 D8 登记口径需更新）", container)
                     .isTrue();
             for (JsonNode n : enumNode.path("enum")) {
                 if (n.asText().equals(value)) {

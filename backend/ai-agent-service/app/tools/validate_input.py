@@ -280,52 +280,28 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
         },
     },
     "processing_item_manage": {
-        # 契约对齐（issue #3566）：`ProcessingItemCreateRequest.java:19-43` 必填集为
-        # name(@NotBlank,@Size max=20) / categoryId(@NotBlank) / pricingMethod(@NotBlank)
-        # / unitPrice(@NotNull,@DecimalMin 0.10,@DecimalMax 999.99,@Digits(3,2))；
-        # 合法计价方式枚举见 `ProcessingItemService.java:297-302`（per_piece 非法）。
-        # 闸门校验的是工具对外参数名（`processing_item_manage.py`）：price → unitPrice。
-        # 旧规则只要求 name/category_id → 放行注定 422 的调用（agent 白跑一轮才失败）。
+        # 契约对齐（issue #3566 / #4882）：`ProcessingItemCreateRequest` 必填集已收缩为
+        # name(@NotBlank,@Size max=20) / categoryId(@NotBlank) —— 单价与计价方式字段
+        # （连同 0.10~999.99 区间与计价方式枚举）随 #4882 整体删除。
+        # 闸门只能校验**工具对外参数名**（`processing_item_manage.py`），不得再要求已删字段
+        # （留着就是拿不存在的键去判缺参 ⇒ 合法「新增加工项」被闸门 100% 拦下）。
         "create_processing_item": {
-            "required": ["name", "category_id", "pricing_method", "price"],
+            "required": ["name", "category_id"],
             "name": {"type": str, "min_len": 1, "max_len": 20, "label": "加工项名称"},
             "category_id": {"type": str, "min_len": 1, "label": "分类 ID"},
-            "pricing_method": {
-                "type": str,
-                "min_len": 1,
-                "label": "计价方式（仅 per_meter/per_set/fixed/per_area；per_piece 按个不支持）",
-                "enum": ["per_meter", "per_set", "fixed", "per_area"],
-            },
-            "price": {
-                "type": (int, float),
-                "min": 0.10,
-                "max": 999.99,
-                "label": "单价（元，0.10~999.99）",
-            },
             "description": {"type": str, "label": "描述"},
-            "unit": {"type": str, "label": "计量单位"},
+            "craft_hint": {"type": str, "max_len": 16, "label": "工艺声明（≤16 字）"},
         },
-        # 契约侧 `ProcessingItemUpdateRequest.java:19-43` 是全量替换语义（同样 @NotBlank
-        # name/categoryId/pricingMethod + @NotNull unitPrice），但工具 `_update_item()`
-        # 目前只发部分字段（PR #3555 遗留，另一包负责）。此处 required **既不放宽也不提前
-        # 收紧**（收紧会让 update 在工具修好前完全不可用），只对齐字段级约束：非法枚举/
-        # 越界单价在闸门即拒，不必等 422。
+        # `ProcessingItemUpdateRequest` 是全量替换语义（@NotBlank name/categoryId），
+        # 工具 `_update_item()` 走「GET 详情 → 覆盖 → PUT 全量」，故 required 只锁 item_id
+        # （其余必填由工具按详情回带 + 可行动提示兜底）。
+        # 单价/计价方式字段已随 issue #4882 删除 ⇒ 规则里不得再出现（留着会拒掉合法调用）。
         "update_item": {
             "required": ["item_id"],
             "item_id": {"type": str, "min_len": 1, "label": "加工项 ID"},
-            "pricing_method": {
-                "type": str,
-                "label": "计价方式（仅 per_meter/per_set/fixed/per_area；per_piece 按个不支持）",
-                "enum": ["per_meter", "per_set", "fixed", "per_area"],
-            },
-            "price": {
-                "type": (int, float),
-                "min": 0.10,
-                "max": 999.99,
-                "label": "单价（元，0.10~999.99）",
-            },
             "name": {"type": str, "min_len": 1, "max_len": 20, "label": "加工项名称"},
             "category_id": {"type": str, "min_len": 1, "label": "分类 ID"},
+            "craft_hint": {"type": str, "max_len": 16, "label": "工艺声明（≤16 字）"},
         },
         # 规则键必须与工具 action 同名：工具 action 是 `delete_item`
         # （`processing_item_manage.py:17` VALID_ACTIONS），旧键写 `delete` → 永不命中，
@@ -702,59 +678,11 @@ class ValidateInputTool(BaseTool):
                     "用户明确表示不需要规格时传空对象 {}）"
                 )
 
-        # 6. 下单加工费一致性兜底（issue #3521，与上面 #3052 同一理由：
-        #    prompt 指令会被 LLM 方差漏掉 → validate_input 必须是确定性闸门）。
-        #    服务端 OrderService.sumProcessingFee() 只按 `processingItems[i].unitPrice × quantity`
-        #    计总额（Java 侧 brief.amount 就是这两个字段相乘），**`processingFee` 字段不参与**。
-        #    两者不一致时：顾客在确认卡上看到的总额 ≠ 实际落库/收款金额（钱对不上）。
-        #    实证 CH-010 首跑签名 `总额 311.4 ≠ Σ小计71.4+加工费252.0=323.4`：
-        #      小计 71.4 = 3×23.8，落库 311.4 = 71.4 + 240（明细 30×8），
-        #      而声明的 processingFee = 252（把按面积的项另算成 30×8.4）—— 同一个订单两份数字。
-        #    为什么必须拦在**发确认卡之前**：卡上金额由模型按声明值渲染，落库由服务端按明细重算，
-        #    只有校验阶段能同时纠正两边（prompt 只写"必须相等"，方差下不足以兜住）。
-        #    只拦"声明了合计且与明细不符"；没写 processingItems 明细（老形态）不拦，避免误伤。
-        if target_tool == "order_create":
-            for idx, item in enumerate(params.get("items") or []):
-                if not isinstance(item, dict):
-                    continue
-                pinfo = item.get("processing_info")
-                if not isinstance(pinfo, dict):
-                    continue
-                raw_items = pinfo.get("processingItems")
-                if not isinstance(raw_items, list) or not raw_items:
-                    continue
-                detail_sum = 0.0
-                detail_ok = True
-                parts = []
-                for entry in raw_items:
-                    if not isinstance(entry, dict):
-                        detail_ok = False
-                        break
-                    try:
-                        up = float(entry.get("unitPrice"))
-                        qty = float(entry.get("quantity"))
-                    except (TypeError, ValueError):
-                        detail_ok = False
-                        break
-                    detail_sum += up * qty
-                    parts.append(f"{entry.get('name') or '?'} {up}×{qty}={round(up * qty, 2)}")
-                if not detail_ok:
-                    continue
-                declared = pinfo.get("processingFee")
-                if declared is None:
-                    continue
-                try:
-                    declared_f = float(declared)
-                except (TypeError, ValueError):
-                    continue
-                if abs(declared_f - detail_sum) > 0.01:
-                    issues.append(
-                        f"items[{idx}].processing_info.processingFee={declared_f} 与 "
-                        f"Σ加工项(unitPrice×quantity)={round(detail_sum, 2)} 不一致"
-                        f"（{'、'.join(parts)}）。服务端按明细计总额 → 不一致时顾客在确认卡上"
-                        f"看到的总额 ≠ 实际落库/收款金额（issue #3521）。"
-                        f"请把 processingFee 改成 {round(detail_sum, 2)} 后重新校验。"
-                    )
+        # 6. （issue #4882 删除）原「下单加工费一致性兜底」（issue #3521）：判据是
+        #    `processingFee == Σ(processingItems[i].unitPrice × quantity)`。
+        #    加工项单价随 #4882 从 DTO / 明细里整体删除 ⇒ 明细里再没有可相乘的单价，
+        #    该判据**已无从计算**（继续留着只会空转成假绿/或误判 detail_ok=False 静默跳过）。
+        #    故整条删除；加工费与订单金额的核对改由服务端口径 + `amount_verify` 承担。
 
         if issues:
             return ToolResult(

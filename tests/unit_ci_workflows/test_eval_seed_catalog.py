@@ -34,13 +34,13 @@
 | 判据 | 内容 |
 |---|---|
 | a | **无重名**：`V83 的 16 个名字` 与 `种子插入的名字` 的交集**恰好**是那 3 条带价夹具（且被 DELETE 覆盖）⇒ 并集无重复 |
-| b | 3 条带价夹具**在**且带价（8/12/10）、id 保留、`per_meter`/米/active/未删 |
+| b | 3 条带价夹具**在**且 `unit=米`、id 保留、active/未删、**且不再写已退场的两列** |
 | c | 种子**不**重复插 V83 已种的名字（那 13 项由 V83 提供；种子出现 `pi_eval_cat_*` 即红） |
 | d | `DELETE … pi-v83-%` 那行**在**且在 INSERT **之前**（去冲突机制没被删掉） |
 | e | V83 解析出的目录 == ERP 附件 16 项（V83 漂了而种子没跟 ⇒ 红） |
 
 ⚠️ **运行期那一半**（静态看不见 SQL 执行结果）落在种子的 `DO $$ … $$` 自检块里：
-真库跑完种子后 `GROUP BY tenant_id, name HAVING count(*)>1` 为空 + 3 项各恰好 1 行且带价；
+真库跑完种子后 `GROUP BY tenant_id, name HAVING count(*)>1` 为空 + 3 项各恰好 1 行且 unit=米；
 不成立即 `RAISE EXCEPTION`（fail-fast）。本文件按文本核该块**必须在**。
 
 ## 红证（`migao-acceptance`：不会红的断言 = 空断言）
@@ -94,7 +94,9 @@ EXPECTED_CATALOG = (
 )
 EXPECTED_HINTS = dict(EXPECTED_CATALOG)
 
-#: 评测种子**只**提供这 3 条带价夹具：名字 → (id, 单价)。id **保留**（引用面最小）。
+#: 评测种子**只**提供这 3 条目录夹具：名字 → (id, 历史单价)。id **保留**（引用面最小）。
+#: #4882 后加工项**已无价** ⇒ 这里的单价只作历史留档，**不再**是任何断言的接地真值
+#: （金额接地真值源 = 加工费组合，R10）；断言改用 `unit` / `status` / `craft_hint`。
 PRICED_FIXTURES = {"打孔": ("pi_eval_punch", 8.00),
                    "韩折": ("pi_eval_hem", 12.00),
                    "定型": ("pi_eval_iron", 10.00)}
@@ -359,17 +361,20 @@ def test_priced_fixtures_carry_their_prices_and_ids():
             assert record["id"] == item_id, (
                 f"{seed}/{name} 的 id={record['id']!r}，应为 {item_id!r} —— **id 保留**是"
                 "「只动 name、金额断言逐值不变」的前提（14+ 个文件按 id 引用）")
-            assert (record["pricing_method"], record["unit_price"], record["unit"]) == \
-                ("per_meter", price, "米"), (
-                f"{seed}/{name} 的计价口径漂了：{record['pricing_method']!r}/"
-                f"{record['unit_price']!r}/{record['unit']!r}，应为 per_meter/{price}/米")
+            # #4882（用户裁定）：加工项目录不再有单价与计价方式（V101 删列）⇒
+            # 本判据由「计价口径 per_meter/价/米」改判为「单位口径 + **禁写已退场列**」。
+            assert record["unit"] == "米", (
+                f"{seed}/{name} 的单位漂了：{record['unit']!r}，应为 米（加工数量单位）")
+            assert "pricing_method" not in record and "unit_price" not in record, (
+                f"{seed}/{name} 的 INSERT 仍在写已退场的列（pricing_method / unit_price，"
+                "issue #4882 的 V101 已删列）—— 真库会直接报 column does not exist")
             assert record["tenant_id"] == 1 and record["category_id"] == CATEGORY_ID, record
             assert record["status"] == "active" and record["deleted"] == 0, record
             assert record["craft_hint"] == EXPECTED_HINTS[name], (
                 f"{seed}/{name} 的 craft_hint={record['craft_hint']!r}，应为 {EXPECTED_HINTS[name]!r}")
-        assert not [r for r in rows.values() if r["pricing_method"] == "per_area"], (
-            f"{seed} 里还有 `per_area` 加工项 —— `刺绣工艺` 已按用户裁定真删，"
-            "且 ERP 目录 16 项全是 per_meter")
+        assert not [r for r in rows.values() if "pricing_method" in r], (
+            f"{seed} 里还有行在写 `pricing_method` —— 该列已随 issue #4882 删除"
+            "（`刺绣工艺` 的 per_area 更早已按用户裁定真删）")
 
 
 # ══════════════════════════ 判据 a：无重名（静态）══════════════════════════
@@ -423,14 +428,17 @@ def test_per_area_coverage_loss_is_registered():
 
 # ══════════════════════════ 红证：注入式自证 ══════════════════════════
 
-def _inject_price(text: str, item_id: str, new_price: str) -> str:
-    """把某条夹具行的 `unit_price` 改掉（该字段紧邻 `'米'` 单位字面量）。"""
-    pattern = (r"(\('" + re.escape(item_id) + r"',.*?)(\d+\.\d+)(,\s*'米')")
-    # ⚠️ 替换必须用 lambda：`r"\1" + "9.99" + r"\3"` 会拼成 `\19.99\3`，
-    # 正则把 `\19` 读成第 19 个捕获组 ⇒ `invalid group reference`（本判据自己踩过）。
-    injected, count = re.subn(pattern, lambda m: m.group(1) + new_price + m.group(3),
+def _inject_unit(text: str, item_id: str, new_unit: str) -> str:
+    """把某条夹具行的 `unit` 改掉。
+
+    2026-09-21（issue #4882）：原注入点是 `unit_price`，该列已随 #4882 删除（V101
+    `DROP COLUMN`）⇒ 注入点改到判据 b **现在**核的字段 `unit`（`'米'`）。
+    注入式自证的意义不变：判据必须读得出人为注入的漂移，否则它就是空断言。
+    """
+    pattern = r"(\('" + re.escape(item_id) + r"',.*?)'米'"
+    injected, count = re.subn(pattern, lambda m: m.group(1) + f"'{new_unit}'",
                               text, count=1, flags=re.S)
-    assert count == 1, f"注入失败：没定位到 {item_id} 的 unit_price"
+    assert count == 1, f"注入失败：没定位到 {item_id} 的 unit"
     return injected
 
 
@@ -445,8 +453,9 @@ def _append_row(text: str, record: dict) -> str:
     last = statements[-1]
     tail = re.search(r"\nON\s+CONFLICT\s*\(id\)\s*DO\s+NOTHING\s*;\s*$", last.group(0), re.I)
     assert tail, "注入失败：最后一段 processing_items INSERT 末尾不是 `ON CONFLICT (id) DO NOTHING;`"
+    # #4882：列清单已去掉 pricing_method / unit_price（13 列）
     values = [f"'{record['id']}'", "1", f"'{record['name']}'", f"'{CATEGORY_ID}'",
-              f"'{record['pricing_method']}'", str(record["unit_price"]), f"'{record['unit']}'",
+              f"'{record['unit']}'",
               "1", "999", "'注入行（红证）'", "NULL", "'[]'::jsonb", "TRUE", "'active'", "0"]
     row = "\n  (" + ", ".join(values) + ")"
     cut = last.start() + tail.start()
@@ -471,18 +480,18 @@ def test_parsers_detect_injected_drift():
         text = _seed_text(seed)
         base = seed_catalog(text)
         assert base == {name: EXPECTED_HINTS[name] for name in PRICED_FIXTURES}, \
-            f"{seed} 的起点不是那 3 条带价夹具：{sorted(base)}"
+            f"{seed} 的起点不是那 3 条目录夹具：{sorted(base)}"
 
         # ① 改名字（`打孔` → `打洞`）⇒ 读得出
         renamed = seed_catalog(text.replace("('pi_eval_punch', 1, '打孔'",
                                             "('pi_eval_punch', 1, '打洞'", 1))
         assert renamed != base and "打洞" in renamed, f"{seed}: 改名字读不出差异"
 
-        # ② 改价（8.00 → 9.99）⇒ 读得出（判据 b 不是空断言）
-        repriced = {r["name"]: r["unit_price"]
-                    for r in seed_rows(_inject_price(text, "pi_eval_punch", "9.99"))}
-        assert repriced["打孔"] == 9.99 != PRICED_FIXTURES["打孔"][1], \
-            f"{seed}: 改价读不出差异（{repriced['打孔']}）"
+        # ② 改单位（'米' → '套'）⇒ 读得出（判据 b 的「单位口径」不是空断言）
+        #    #4882：注入点由 `unit_price`（列已删）改到 `unit`。
+        unit_drift = {r["name"]: r["unit"]
+                      for r in seed_rows(_inject_unit(text, "pi_eval_punch", "套"))}
+        assert unit_drift["打孔"] == "套" != "米", f"{seed}: 改单位读不出差异"
 
         # ③ **删掉那行 DELETE** ⇒ 去冲突判据必须红（判据 d 不是空断言）
         assert deconflict_delete(text) is not None, f"{seed}: 起点就没有 DELETE"
@@ -493,8 +502,7 @@ def test_parsers_detect_injected_drift():
         # ④ **重新插一行 V83 已种的名字**（重演真库那个 32 行/重名形态）⇒ 判据 c 必须红
         for name in V83_ONLY[:3]:
             re_seeded = seed_catalog(_append_row(text, {
-                "id": f"pi_eval_cat_{name}", "name": name, "pricing_method": "per_meter",
-                "unit_price": 0, "unit": "米"}))
+                "id": f"pi_eval_cat_{name}", "name": name, "unit": "米"}))
             assert name in re_seeded, f"{seed}: 重新插 V83 已种的名字 {name} 读不出差异"
             assert set(re_seeded) & set(V83_ONLY), f"{seed}: 重名对没被读出来"
             assert set(re_seeded) != set(PRICED_FIXTURES), f"{seed}: 重名对没被读出来"
@@ -503,7 +511,7 @@ def test_parsers_detect_injected_drift():
         for index, old_name in enumerate(OLD_FABRICATED_NAMES, start=1):
             re_added = _catalog_or_none_on_fail(_append_row(text, {
                 "id": f"pi_eval_reinjected_{index:02d}", "name": old_name,
-                "pricing_method": "per_meter", "unit_price": 8, "unit": "米"}))
+                "unit": "米"}))
             if re_added is None or old_name not in re_added:
                 raise AssertionError(f"{seed}: 把旧编造名 {old_name} 加回来读不出差异")
 

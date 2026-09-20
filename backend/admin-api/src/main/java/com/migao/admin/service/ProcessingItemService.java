@@ -16,16 +16,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
  * 加工项服务类
- * 处理加工项的增删改查和价格计算
+ * 处理加工项的增删改查（issue #4882：计价方式与价格计算随加工项目录单价一并退场）
  */
 @Slf4j
 @Service
@@ -113,9 +110,6 @@ public class ProcessingItemService extends ServiceImpl<ProcessingItemMapper, Pro
         // 校验分类是否存在
         validateCategory(request.getCategoryId());
         
-        // 校验计价方式
-        validatePricingMethod(request.getPricingMethod());
-        
         // 创建加工项实体
         ProcessingItem item = new ProcessingItem();
         BeanUtils.copyProperties(request, item);
@@ -152,9 +146,6 @@ public class ProcessingItemService extends ServiceImpl<ProcessingItemMapper, Pro
         // 校验分类是否存在
         validateCategory(request.getCategoryId());
         
-        // 校验计价方式
-        validatePricingMethod(request.getPricingMethod());
-        
         // 更新加工项属性
         BeanUtils.copyProperties(request, item);
         item.setId(id);
@@ -189,82 +180,6 @@ public class ProcessingItemService extends ServiceImpl<ProcessingItemMapper, Pro
     }
 
     /**
-     * 计算价格
-     *
-     * @param request 价格计算请求
-     * @return 价格计算结果
-     */
-    public PriceCalculateResponse calculatePrice(PriceCalculateRequest request, Long tenantId) {
-        // 查询加工项
-        ProcessingItem item = processingItemMapper.selectById(request.getProcessingItemId());
-        if (item == null) {
-            throw BusinessException.notFound("加工项");
-        }
-        
-        // 数量由请求方直接给出（issue #3005 回滚 #2986）：per_meter 传面料米数，
-        // per_set/fixed/per_area 传 1 或实际计数值——不再有「每米数量」密度推导。
-        BigDecimal quantity = request.getQuantity();
-        
-        // 校验数量范围
-        if (item.getMinQuantity() != null && quantity.compareTo(BigDecimal.valueOf(item.getMinQuantity())) < 0) {
-            throw BusinessException.validationError("数量不能小于最小数量 " + item.getMinQuantity());
-        }
-        if (item.getMaxQuantity() != null && quantity.compareTo(BigDecimal.valueOf(item.getMaxQuantity())) > 0) {
-            throw BusinessException.validationError("数量不能大于最大数量 " + item.getMaxQuantity());
-        }
-        
-        // 根据计价方式计算价格
-        BigDecimal totalPrice;
-        List<PriceCalculateResponse.PriceDetail> details = new ArrayList<>();
-        
-        switch (item.getPricingMethod()) {
-            case "per_meter":
-                // 按米计价：单价 × 数量（米数）
-                totalPrice = item.getUnitPrice().multiply(quantity);
-                details.add(createPriceDetail("基础加工费", item.getUnitPrice(), quantity, totalPrice, "按米计价"));
-                break;
-                
-            case "per_set":
-                // 按套计价：单价 × 套数
-                totalPrice = item.getUnitPrice().multiply(quantity);
-                details.add(createPriceDetail("基础加工费", item.getUnitPrice(), quantity, totalPrice, "按套计价"));
-                break;
-                
-            case "fixed":
-                // 固定价
-                totalPrice = item.getUnitPrice();
-                details.add(createPriceDetail("固定加工费", item.getUnitPrice(), BigDecimal.ONE, totalPrice, "固定价格"));
-                break;
-                
-            case "per_area":
-                // 按面积计价：单价 × 面积（宽 × 高）
-                BigDecimal area = calculateArea(request.getDimensions());
-                totalPrice = item.getUnitPrice().multiply(area).multiply(quantity);
-                details.add(createPriceDetail("基础加工费", item.getUnitPrice(), area.multiply(quantity), totalPrice, 
-                        "按面积计价，面积=" + area + "平方米"));
-                break;
-                
-            default:
-                // 默认按件计价
-                totalPrice = item.getUnitPrice().multiply(quantity);
-                details.add(createPriceDetail("基础加工费", item.getUnitPrice(), quantity, totalPrice, "默认计价"));
-        }
-        
-        // 构建响应
-        PriceCalculateResponse response = new PriceCalculateResponse();
-        response.setProcessingItemId(item.getId());
-        response.setProcessingItemName(item.getName());
-        response.setPricingMethod(item.getPricingMethod());
-        response.setUnitPrice(item.getUnitPrice());
-        response.setQuantity(quantity);
-        response.setTotalPrice(totalPrice.setScale(2, RoundingMode.HALF_UP));
-        response.setProcessingDays(item.getProcessingDays());
-        response.setDetails(details);
-        
-        return response;
-    }
-
-    /**
      * 校验分类是否存在
      *
      * @param categoryId 分类ID
@@ -278,54 +193,6 @@ public class ProcessingItemService extends ServiceImpl<ProcessingItemMapper, Pro
         if (category == null) {
             throw BusinessException.validationError("加工分类不存在");
         }
-    }
-
-    /**
-     * 校验计价方式
-     *
-     * @param pricingMethod 计价方式
-     */
-    private void validatePricingMethod(String pricingMethod) {
-        List<String> validMethods = List.of("per_meter", "per_set", "fixed", "per_area");
-        if (!validMethods.contains(pricingMethod)) {
-            throw BusinessException.validationError("无效的计价方式，可选值：per_meter（按米计价）、per_set（按套计价）、fixed（固定价格）、per_area（按面积计价）");
-        }
-    }
-
-    /**
-     * 计算面积
-     *
-     * @param dimensions 尺寸（宽 x 高）
-     * @return 面积
-     */
-    private BigDecimal calculateArea(Map<String, BigDecimal> dimensions) {
-        if (dimensions == null || !dimensions.containsKey("width") || !dimensions.containsKey("height")) {
-            throw BusinessException.validationError("按面积计价需要提供 width 和 height 尺寸");
-        }
-        
-        BigDecimal width = dimensions.get("width");
-        BigDecimal height = dimensions.get("height");
-        
-        if (width == null || height == null || width.compareTo(BigDecimal.ZERO) <= 0 || height.compareTo(BigDecimal.ZERO) <= 0) {
-            throw BusinessException.validationError("尺寸必须大于 0");
-        }
-        
-        // 面积 = 宽 × 高（单位：平方米，假设输入是米）
-        return width.multiply(height);
-    }
-
-    /**
-     * 创建价格明细项
-     */
-    private PriceCalculateResponse.PriceDetail createPriceDetail(
-            String name, BigDecimal unitPrice, BigDecimal quantity, BigDecimal subtotal, String description) {
-        PriceCalculateResponse.PriceDetail detail = new PriceCalculateResponse.PriceDetail();
-        detail.setName(name);
-        detail.setUnitPrice(unitPrice);
-        detail.setQuantity(quantity);
-        detail.setSubtotal(subtotal.setScale(2, RoundingMode.HALF_UP));
-        detail.setDescription(description);
-        return detail;
     }
 
     /**

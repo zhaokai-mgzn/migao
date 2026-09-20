@@ -10,6 +10,16 @@
 依赖：第一波测试创建的分类、加工分类数据。如缺失会自动尝试创建或跳过。
 """
 
+# case_ids: PP-002, PP-009, PR-001, PR-002, CU-001, HR-004
+# 域映射（本文件是**跨域** HTTP 冒烟：一条文件覆盖多域，故按域逐条声明）：
+#   PP-002  加工项目录 / 分类 CRUD
+#   PP-009  `POST /api/admin/processing-items/calculate` **退场守卫**
+#           （issue #4882：加工项已无单价与计价方式 ⇒ 端点整体删除；真值实测 405，
+#            不是 404 —— 见 `ProcessingItemControllerTest.calculateEndpointIsGone`）
+#   PR-001 / PR-002  商品 CRUD
+#   CU-001           客户管理
+#   HR-004           员工账号管理
+
 import time
 import uuid
 
@@ -253,9 +263,8 @@ class TestProcessingItemAPI:
         payload = {
             "name": f"加工项-{suffix[:12]}",
             "categoryId": category_id,
-            "pricingMethod": "per_meter",
-            "unitPrice": 25.0,
-            "unit": "元/米",
+            # #4882：加工项已无 pricingMethod / unitPrice（V101 删列）
+            "unit": "米",
             "minQuantity": 1,
             "maxQuantity": 999,
             "description": "smoke test processing item",
@@ -288,50 +297,30 @@ class TestProcessingItemAPI:
         records = _extract_records(resp.json())
         assert isinstance(records, list), f"加工项列表返回非列表: {type(records)}"
 
-    def test_calculate_price(self, authed_admin_client: SmokeTestClient):
-        """POST /calculate 价格计算"""
-        category_id = _get_or_create_processing_category(authed_admin_client)
-        if not category_id:
-            pytest.skip("无可用加工分类")
+    def test_calculate_price_endpoint_is_gone(self, authed_admin_client: SmokeTestClient):
+        """POST /calculate 已随 issue #4882 退场 —— **退场守卫**（防回退锁）。
 
-        # 先创建一个加工项以提供可计算的 ID
-        create_resp = authed_admin_client.post("/api/admin/processing-items", json={
-            "name": f"计价-{_ts_suffix()[:12]}",
-            "categoryId": category_id,
-            "pricingMethod": "per_meter",
-            "unitPrice": 10.0,
-            "unit": "元/米",
-        })
-        if create_resp.status_code == 404:
-            pytest.skip("加工项创建接口不存在")
-        assert create_resp.status_code == 200, f"前置创建失败: {create_resp.text[:300]}"
-        item_id = _extract_data(create_resp.json()).get("id")
-        assert item_id
+        #4882（用户裁定）删掉了加工项目录的 `pricing_method` / `unit_price`（V101 迁移）
+        ⇒「按计价方式算价」失去输入，`ProcessingItemController` 的 `@PostMapping("/calculate")`
+        与 `dto/PriceCalculateRequest|Response.java` 一并删除。
 
-        try:
-            calc_resp = authed_admin_client.post(
-                "/api/admin/processing-items/calculate",
-                json={
-                    "processingItemId": item_id,
-                    "quantity": 5,
-                },
-            )
-            if calc_resp.status_code == 404:
-                pytest.skip("价格计算接口不存在")
-            assert calc_resp.status_code == 200, (
-                f"Calculate price failed: {calc_resp.status_code} {calc_resp.text[:300]}"
-            )
-            result = _extract_data(calc_resp.json())
-            # 价格字段名兼容 totalPrice / total / price
-            price_value = (
-                result.get("totalPrice")
-                or result.get("total")
-                or result.get("price")
-                or result.get("amount")
-            )
-            assert price_value is not None, f"计算结果无价格字段: {result}"
-        finally:
-            authed_admin_client.delete(f"/api/admin/processing-items/{item_id}")
+        ⚠️ **真值实测 = 405 Method Not Allowed，不是 404**：路径模式 `/{id}`（GET/PUT/DELETE）
+        仍然匹配 `/calculate`，Spring 对「路径命中、方法不命中」给 405。
+        旧写法 `if resp.status_code == 404: pytest.skip(...)` 在真值 405 下**永不 skip**、
+        随后 `assert == 200` 恒红；反过来若按 404 断言也恒红 —— 两种写法都错。
+        端点若被加回 ⇒ 200 ⇒ 本用例红。
+        证据：`ProcessingItemControllerTest.calculateEndpointIsGone`（MockMvc 实测 405）。
+        """
+        resp = authed_admin_client.post(
+            "/api/admin/processing-items/calculate",
+            json={"processingItemId": "pi-any", "quantity": 5},
+        )
+        assert resp.status_code == 405, (
+            "`POST /api/admin/processing-items/calculate` 应已随 issue #4882 退场"
+            f"（期望 405 Method Not Allowed，实测 {resp.status_code}）"
+            "—— 若为 200，说明端点被加回来了: "
+            f"{resp.text[:300]}"
+        )
 
     def test_delete_processing_item(self, authed_admin_client: SmokeTestClient):
         """DELETE 删除加工项"""
@@ -342,8 +331,7 @@ class TestProcessingItemAPI:
         create_resp = authed_admin_client.post("/api/admin/processing-items", json={
             "name": f"删除-{_ts_suffix()[:12]}",
             "categoryId": category_id,
-            "pricingMethod": "fixed",
-            "unitPrice": 1.0,
+            # #4882：加工项已无 pricingMethod / unitPrice（V101 删列）
         })
         if create_resp.status_code == 404:
             pytest.skip("加工项创建接口不存在")

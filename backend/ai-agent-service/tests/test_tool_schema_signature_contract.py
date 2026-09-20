@@ -135,11 +135,12 @@ def test_detector_catches_schema_without_signature():
 # ── ① 契约层（续）：description 点名的参数必须存在于 schema properties ──
 #
 # 回归（issue #3543 / acceptance/2026-09-14/replay-triage §2.3）：
-# processing_item_manage 的 description 写「调 processing_item_manage(action=create_processing_item,
+# processing_item_manage 的 description 曾写「调 processing_item_manage(action=create_processing_item,
 # name, category_id, pricing_method)」，但 parameters.properties 里**没有** pricing_method，
 # execute() 也不接收 → LLM 永远拿不到这个参数 → 创建请求缺 admin-api @NotBlank 的 pricingMethod
 # → Bean Validation 422「参数校验失败」→ B 端「新增加工项」完全不可用，且单测（只断言 categoryId）
 # 与评测用例（只断言"工具被调用过"）双双放过。
+# （issue #4882 后该参数换成 `craft_hint` —— 同一条判据继续生效：description 点名即须在 schema 里。）
 # 规则：description 中以「本工具名(关键字参数…)」形式点名的参数，必须都在 schema 里声明。
 
 _DOC_ARG_IDENT_RE = re.compile(r"^[a-z_][a-z0-9_]*$")

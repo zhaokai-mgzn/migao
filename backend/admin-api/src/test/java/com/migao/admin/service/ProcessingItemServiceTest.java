@@ -8,6 +8,15 @@ package com.migao.admin.service;
 // PP-006/OR-014（issue #3005，回滚 #2986）：行业加工费按米计价且辅料含在加工费中，
 // 加工项计价方式仅 per_meter/per_set/fixed/per_area——per_piece 与「每米数量」密度被移除，
 // calculatePrice 不再有 fabricMeters 密度推导，数量由请求方直接给出。
+// #4882（用户裁定，2026-09-21）：加工项目录**彻底删除**「计价方式」与「单价」两列 ⇒
+// 本文件里 `calculatePrice_*` 一族（含数量上下限校验 / 按面积尺寸 / createPriceDetail）
+// 与「per_piece / invalid_method 被拒绝」用例**整族退场**（不是删掉不管：对应的
+// `ProcessingItemService.validatePricingMethod` / `calculatePrice` / `calculateArea` /
+// `createPriceDetail` 与端点 `POST /api/admin/processing-items/calculate` 一并删除，
+// 行为面移交 `processing_fee_combinations` 组合价目；加工项目录不再承担计价）。
+// 补偿断言：`unit` 语义改为「加工数量单位」、默认由「元」改为「米」⇒ 新增
+// `createProcessingItem_UnitDefaultsToMeter`（改回「元」即红）。
+// PP-006 / OR-014 声明的「计价方式枚举」行为面随目录删列整体退场（用例库侧由 #4882 用例包处置）。
 
 import com.migao.admin.dto.*;
 import com.migao.admin.entity.ProcessingCategory;
@@ -76,9 +85,7 @@ class ProcessingItemServiceTest {
                 .tenantId(1L)
                 .name("打孔加工")
                 .categoryId("pcat-001")
-                .pricingMethod("per_meter")
-                .unitPrice(new BigDecimal("15.00"))
-                .unit("元/米")
+                .unit("米")
                 .minQuantity(1)
                 .maxQuantity(100)
                 .processingDays(3)
@@ -170,8 +177,6 @@ class ProcessingItemServiceTest {
         ProcessingItemCreateRequest request = new ProcessingItemCreateRequest();
         request.setName("新加工项");
         request.setCategoryId("pcat-001");
-        request.setPricingMethod("per_meter");
-        request.setUnitPrice(new BigDecimal("20.00"));
 
         when(processingCategoryMapper.selectById("pcat-001")).thenReturn(testCategory);
         when(processingItemMapper.insert(any(ProcessingItem.class))).thenAnswer(invocation -> {
@@ -184,8 +189,6 @@ class ProcessingItemServiceTest {
                 .id("pi-new")
                 .name("新加工项")
                 .categoryId("pcat-001")
-                .pricingMethod("per_meter")
-                .unitPrice(new BigDecimal("20.00"))
                 .status("active")
                 .build();
         when(processingItemMapper.selectById("pi-new")).thenReturn(savedItem);
@@ -207,8 +210,6 @@ class ProcessingItemServiceTest {
         ProcessingItemCreateRequest request = new ProcessingItemCreateRequest();
         request.setName("新加工项");
         request.setCategoryId("nonexistent");
-        request.setPricingMethod("per_meter");
-        request.setUnitPrice(new BigDecimal("20.00"));
 
         when(processingCategoryMapper.selectById("nonexistent")).thenReturn(null);
 
@@ -216,24 +217,6 @@ class ProcessingItemServiceTest {
         assertThatThrownBy(() -> processingItemService.createProcessingItem(request, 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("加工分类不存在");
-    }
-
-    @Test
-    @DisplayName("创建加工项失败 - 无效计价方式")
-    void createProcessingItem_InvalidPricingMethod() {
-        // given
-        ProcessingItemCreateRequest request = new ProcessingItemCreateRequest();
-        request.setName("新加工项");
-        request.setCategoryId("pcat-001");
-        request.setPricingMethod("invalid_method");
-        request.setUnitPrice(new BigDecimal("20.00"));
-
-        when(processingCategoryMapper.selectById("pcat-001")).thenReturn(testCategory);
-
-        // when & then
-        assertThatThrownBy(() -> processingItemService.createProcessingItem(request, 1L))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("无效的计价方式");
     }
 
     // ======================== 更新加工项测试 ========================
@@ -245,8 +228,6 @@ class ProcessingItemServiceTest {
         ProcessingItemUpdateRequest request = new ProcessingItemUpdateRequest();
         request.setName("更新后的加工项");
         request.setCategoryId("pcat-001");
-        request.setPricingMethod("per_meter");
-        request.setUnitPrice(new BigDecimal("25.00"));
 
         when(processingItemMapper.selectById("pi-001")).thenReturn(testItem);
         when(processingCategoryMapper.selectById("pcat-001")).thenReturn(testCategory);
@@ -257,8 +238,6 @@ class ProcessingItemServiceTest {
                 .id("pi-001")
                 .name("更新后的加工项")
                 .categoryId("pcat-001")
-                .pricingMethod("per_meter")
-                .unitPrice(new BigDecimal("25.00"))
                 .status("active")
                 .build();
         when(processingItemMapper.selectById("pi-001")).thenReturn(testItem).thenReturn(updatedItem);
@@ -278,7 +257,6 @@ class ProcessingItemServiceTest {
         ProcessingItemUpdateRequest request = new ProcessingItemUpdateRequest();
         request.setName("更新");
         request.setCategoryId("pcat-001");
-        request.setPricingMethod("per_meter");
 
         when(processingItemMapper.selectById("nonexistent")).thenReturn(null);
 
@@ -291,298 +269,28 @@ class ProcessingItemServiceTest {
                 });
     }
 
-    // ======================== 价格计算测试 ========================
-
     @Test
-    @DisplayName("价格计算 - 按米计价")
-    void calculatePrice_PerMeter() {
-        // given
-        PriceCalculateRequest request = new PriceCalculateRequest();
-        request.setProcessingItemId("pi-001");
-        request.setQuantity(new BigDecimal("5"));
-
-        when(processingItemMapper.selectById("pi-001")).thenReturn(testItem);
-
-        // when
-        PriceCalculateResponse result = processingItemService.calculatePrice(request, 1L);
-
-        // then
-        assertThat(result).isNotNull();
-        assertThat(result.getPricingMethod()).isEqualTo("per_meter");
-        assertThat(result.getTotalPrice()).isEqualByComparingTo(new BigDecimal("75.00"));
-        assertThat(result.getDetails()).hasSize(1);
-        assertThat(result.getDetails().get(0).getDescription()).contains("按米计价");
-    }
-
-    @Test
-    @DisplayName("价格计算 - 按套计价")
-    void calculatePrice_PerSet() {
-        // given
-        ProcessingItem perPieceItem = ProcessingItem.builder()
-                .id("pi-002")
-                .name("挂钩")
-                .pricingMethod("per_set")
-                .unitPrice(new BigDecimal("3.00"))
-                .minQuantity(1)
-                .maxQuantity(500)
-                .processingDays(1)
-                .build();
-
-        PriceCalculateRequest request = new PriceCalculateRequest();
-        request.setProcessingItemId("pi-002");
-        request.setQuantity(new BigDecimal("10"));
-
-        when(processingItemMapper.selectById("pi-002")).thenReturn(perPieceItem);
-
-        // when
-        PriceCalculateResponse result = processingItemService.calculatePrice(request, 1L);
-
-        // then
-        assertThat(result.getTotalPrice()).isEqualByComparingTo(new BigDecimal("30.00"));
-        assertThat(result.getDetails().get(0).getDescription()).contains("按套计价");
-    }
-
-    @Test
-    @DisplayName("价格计算 - 固定价格")
-    void calculatePrice_Fixed() {
-        // given
-        ProcessingItem fixedItem = ProcessingItem.builder()
-                .id("pi-003")
-                .name("安装服务")
-                .pricingMethod("fixed")
-                .unitPrice(new BigDecimal("200.00"))
-                .minQuantity(1)
-                .maxQuantity(1)
-                .processingDays(1)
-                .build();
-
-        PriceCalculateRequest request = new PriceCalculateRequest();
-        request.setProcessingItemId("pi-003");
-        request.setQuantity(new BigDecimal("1"));
-
-        when(processingItemMapper.selectById("pi-003")).thenReturn(fixedItem);
-
-        // when
-        PriceCalculateResponse result = processingItemService.calculatePrice(request, 1L);
-
-        // then
-        assertThat(result.getTotalPrice()).isEqualByComparingTo(new BigDecimal("200.00"));
-        assertThat(result.getDetails().get(0).getDescription()).contains("固定价格");
-    }
-
-    @Test
-    @DisplayName("价格计算 - 按面积计价")
-    void calculatePrice_PerArea() {
-        // given
-        ProcessingItem areaItem = ProcessingItem.builder()
-                .id("pi-004")
-                .name("面料裁剪")
-                .pricingMethod("per_area")
-                .unitPrice(new BigDecimal("50.00"))
-                .minQuantity(1)
-                .maxQuantity(100)
-                .processingDays(2)
-                .build();
-
-        PriceCalculateRequest request = new PriceCalculateRequest();
-        request.setProcessingItemId("pi-004");
-        request.setQuantity(new BigDecimal("2"));
-        request.setDimensions(Map.of("width", new BigDecimal("1.5"), "height", new BigDecimal("2.0")));
-
-        when(processingItemMapper.selectById("pi-004")).thenReturn(areaItem);
-
-        // when
-        PriceCalculateResponse result = processingItemService.calculatePrice(request, 1L);
-
-        // then
-        // 面积 = 1.5 * 2.0 = 3.0, 总价 = 50 * 3.0 * 2 = 300.00
-        assertThat(result.getTotalPrice()).isEqualByComparingTo(new BigDecimal("300.00"));
-        assertThat(result.getDetails().get(0).getDescription()).contains("按面积计价");
-    }
-
-    @Test
-    @DisplayName("价格计算 - 数量低于最小值")
-    void calculatePrice_BelowMinQuantity() {
-        // given
-        ProcessingItem item = ProcessingItem.builder()
-                .id("pi-005")
-                .name("加工项")
-                .pricingMethod("per_meter")
-                .unitPrice(new BigDecimal("10.00"))
-                .minQuantity(5)
-                .maxQuantity(100)
-                .build();
-
-        PriceCalculateRequest request = new PriceCalculateRequest();
-        request.setProcessingItemId("pi-005");
-        request.setQuantity(new BigDecimal("2"));
-
-        when(processingItemMapper.selectById("pi-005")).thenReturn(item);
-
-        // when & then
-        assertThatThrownBy(() -> processingItemService.calculatePrice(request, 1L))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("数量不能小于最小数量");
-    }
-
-    @Test
-    @DisplayName("价格计算 - 数量超过最大值")
-    void calculatePrice_AboveMaxQuantity() {
-        // given
-        PriceCalculateRequest request = new PriceCalculateRequest();
-        request.setProcessingItemId("pi-001");
-        request.setQuantity(new BigDecimal("200"));
-
-        when(processingItemMapper.selectById("pi-001")).thenReturn(testItem);
-
-        // when & then
-        assertThatThrownBy(() -> processingItemService.calculatePrice(request, 1L))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("数量不能大于最大数量");
-    }
-
-    @Test
-    @DisplayName("价格计算 - 加工项不存在")
-    void calculatePrice_ItemNotFound() {
-        // given
-        PriceCalculateRequest request = new PriceCalculateRequest();
-        request.setProcessingItemId("nonexistent");
-        request.setQuantity(new BigDecimal("1"));
-
-        when(processingItemMapper.selectById("nonexistent")).thenReturn(null);
-
-        // when & then
-        assertThatThrownBy(() -> processingItemService.calculatePrice(request, 1L))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> {
-                    BusinessException bex = (BusinessException) ex;
-                    assertThat(bex.getCode()).isEqualTo("NOT_FOUND");
-                });
-    }
-
-    @Test
-    @DisplayName("价格计算 - 按面积计价缺少尺寸参数")
-    void calculatePrice_PerArea_MissingDimensions() {
-        // given
-        ProcessingItem areaItem = ProcessingItem.builder()
-                .id("pi-006")
-                .name("面料裁剪")
-                .pricingMethod("per_area")
-                .unitPrice(new BigDecimal("50.00"))
-                .minQuantity(1)
-                .maxQuantity(100)
-                .build();
-
-        PriceCalculateRequest request = new PriceCalculateRequest();
-        request.setProcessingItemId("pi-006");
-        request.setQuantity(new BigDecimal("1"));
-        // 不设置 dimensions
-
-        when(processingItemMapper.selectById("pi-006")).thenReturn(areaItem);
-
-        // when & then
-        assertThatThrownBy(() -> processingItemService.calculatePrice(request, 1L))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("width");
-    }
-
-    // ======================== 计价方式回滚（PP-006 / OR-014，issue #3005） ========================
-    // 行业加工费按米计价、辅料含在加工费里 → per_piece 与「每米数量」密度已移除：
-    // per_piece 创建/更新被拒绝；calculatePrice 无密度推导（准用请求数量）。
-
-    @Test
-    @DisplayName("创建加工项 - per_piece 计价方式被拒绝")
-    void createProcessingItem_RejectPerPiece() {
-        // given
+    @DisplayName("#4882 建加工项：不传 unit ⇒ 默认「米」（加工数量单位，不再是计价单位「元」）")
+    void createProcessingItem_UnitDefaultsToMeter() {
+        // 红证：把 ProcessingItemCreateRequest.unit 的默认值改回 "元" ⇒ 本断言必红。
         ProcessingItemCreateRequest request = new ProcessingItemCreateRequest();
-        request.setName("打孔（罗马圈）");
+        request.setName("新加工项");
         request.setCategoryId("pcat-001");
-        request.setPricingMethod("per_piece");
-        request.setUnitPrice(new BigDecimal("1.50"));
+        assertThat(request.getUnit()).as("#4882：unit 语义 = 加工数量单位，默认米").isEqualTo("米");
 
         when(processingCategoryMapper.selectById("pcat-001")).thenReturn(testCategory);
+        when(processingItemMapper.insert(any(ProcessingItem.class))).thenAnswer(invocation -> {
+            ProcessingItem item = invocation.getArgument(0);
+            item.setId("pi-new");
+            return 1;
+        });
+        // getProcessingItemById 内部按 id 回查：实体 unit 必须与请求一致（不是恒定桩）
+        when(processingItemMapper.selectById("pi-new")).thenReturn(
+                ProcessingItem.builder().id("pi-new").name("新加工项").categoryId("pcat-001")
+                        .unit("米").status("active").build());
 
-        // when/then：per_piece 不再合法
-        assertThatThrownBy(() -> processingItemService.createProcessingItem(request, 1L))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("无效的计价方式");
-        verify(processingItemMapper, never()).insert(any(ProcessingItem.class));
-    }
+        ProcessingItemResponse result = processingItemService.createProcessingItem(request, 1L);
 
-    @Test
-    @DisplayName("更新加工项 - per_piece 计价方式被拒绝")
-    void updateProcessingItem_RejectPerPiece() {
-        // given
-        ProcessingItemUpdateRequest request = new ProcessingItemUpdateRequest();
-        request.setName("打孔（罗马圈）");
-        request.setCategoryId("pcat-001");
-        request.setPricingMethod("per_piece");
-        request.setUnitPrice(new BigDecimal("1.50"));
-
-        when(processingItemMapper.selectById("pi-001")).thenReturn(testItem);
-        when(processingCategoryMapper.selectById("pcat-001")).thenReturn(testCategory);
-
-        // when/then
-        assertThatThrownBy(() -> processingItemService.updateProcessingItem("pi-001", request, 1L))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("无效的计价方式");
-        verify(processingItemMapper, never()).updateById(any(ProcessingItem.class));
-    }
-
-    @Test
-    @DisplayName("价格计算 - per_meter 无密度推导，数量沿用请求值（面料米数）")
-    void calculatePrice_PerMeter_NoDensityDerivation() {
-        // given：打孔加工 8 元/米，面料 6.6 米 → 数量即面料米数 6.6
-        ProcessingItem perMeterItem = ProcessingItem.builder()
-                .id("pi-punch")
-                .name("打孔（罗马圈）")
-                .pricingMethod("per_meter")
-                .unitPrice(new BigDecimal("8.00"))
-                .minQuantity(1)
-                .maxQuantity(999)
-                .processingDays(1)
-                .build();
-
-        PriceCalculateRequest request = new PriceCalculateRequest();
-        request.setProcessingItemId("pi-punch");
-        request.setQuantity(new BigDecimal("6.6"));
-
-        when(processingItemMapper.selectById("pi-punch")).thenReturn(perMeterItem);
-
-        // when
-        PriceCalculateResponse result = processingItemService.calculatePrice(request, 1L);
-
-        // then：数量 = 面料米数，费用 = 8 × 6.6 = 52.8，无任何密度推导
-        assertThat(result.getQuantity()).isEqualByComparingTo(new BigDecimal("6.6"));
-        assertThat(result.getTotalPrice()).isEqualByComparingTo(new BigDecimal("52.80"));
-        assertThat(result.getDetails().get(0).getDescription()).contains("按米计价");
-    }
-
-    @Test
-    @DisplayName("价格计算 - fixed 计价：一件一口价，数量=1")
-    void calculatePrice_Fixed_SinglePrice() {
-        // given：固定价加工项
-        ProcessingItem fixedItem = ProcessingItem.builder()
-                .id("pi-fixed")
-                .name("帘头加工")
-                .pricingMethod("fixed")
-                .unitPrice(new BigDecimal("300.00"))
-                .minQuantity(1)
-                .maxQuantity(1)
-                .processingDays(1)
-                .build();
-
-        PriceCalculateRequest request = new PriceCalculateRequest();
-        request.setProcessingItemId("pi-fixed");
-        request.setQuantity(new BigDecimal("1"));
-
-        when(processingItemMapper.selectById("pi-fixed")).thenReturn(fixedItem);
-
-        // when
-        PriceCalculateResponse result = processingItemService.calculatePrice(request, 1L);
-
-        // then：一口价，不随数量变化
-        assertThat(result.getTotalPrice()).isEqualByComparingTo(new BigDecimal("300.00"));
-        assertThat(result.getDetails().get(0).getDescription()).contains("固定价格");
+        assertThat(result.getUnit()).as("落库/回显的加工数量单位 = 米").isEqualTo("米");
     }
 }

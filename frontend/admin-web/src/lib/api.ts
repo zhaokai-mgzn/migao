@@ -20,8 +20,6 @@ import type {
   ProcessingItemFormData,
   ProcessingCategory,
   ProcessingCategoryFormData,
-  ProcessingCalculateParams,
-  ProcessingCalculateResult,
   KnowledgeCard,
   KnowledgeCardListParams,
   KnowledgeCandidate,
@@ -208,6 +206,9 @@ export const categoryApi = {
 }
 
 // 加工项 API
+//
+// issue #4882（用户裁定）：加工项的单价 / 计价方式整体退场 ⇒ `POST /processing-items/calculate`
+// （`calculatePrice`）的调用面已不存在，随之删除（后端端点亦在本次下线）。
 export const processingItemApi = {
   getProcessingItems: (params?: ProcessingItemListParams) => 
     request.get<ApiResponse<PageResponse<ProcessingItem>>>('/api/admin/processing-items', { params }),
@@ -223,9 +224,6 @@ export const processingItemApi = {
   
   deleteProcessingItem: (id: string) => 
     request.delete<ApiResponse<void>>(`/api/admin/processing-items/${id}`),
-  
-  calculatePrice: (data: ProcessingCalculateParams) => 
-    request.post<ApiResponse<ProcessingCalculateResult>>('/api/admin/processing-items/calculate', data),
 }
 
 // 算料试算 API（issue #4434 · 前置 #4421）

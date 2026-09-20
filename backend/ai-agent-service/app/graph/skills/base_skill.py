@@ -1049,15 +1049,13 @@ def _plan_processing_items_rewrite(tool_results, messages) -> Optional[tuple]:
         if not oid:
             continue
         name = str(it.get("name") or "加工项")
-        price = it.get("unit_price")
-        if price is None:
-            price = it.get("unitPrice")
         unit = it.get("unit") or ""
         options.append({
-            "label": f"{name} ¥{price}/{unit}" if price is not None else name,
+            # ⚠️ 标签**不带价格**：加工项已无单价与计价方式（issue #4882）——
+            # 旧写法 `f"{name} ¥{price}/{unit}"` 在字段删除后会渲染出「¥None/米」，
+            # 卡上就出现了**编造的钱**（R5：禁止新增静默失效形态）。
+            "label": f"{name}（{unit}）" if unit else name,
             "value": f"{_PROC_ITEM_VALUE_PREFIX}{oid}",
-            "unitPrice": price,
-            "pricingMethod": it.get("pricing_method") or it.get("pricingMethod"),
         })
     if not options:
         return None

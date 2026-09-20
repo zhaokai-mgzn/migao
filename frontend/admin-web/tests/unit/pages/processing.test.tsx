@@ -26,7 +26,6 @@ vi.mock('@/lib/api', () => ({
     createProcessingItem: (...args: any[]) => mockCreateProcessingItem(...args),
     updateProcessingItem: vi.fn(),
     deleteProcessingItem: vi.fn(),
-    calculatePrice: vi.fn(),
   },
   processingCategoryApi: {
     getProcessingCategories: (...args: any[]) => mockGetProcessingCategories(...args),
@@ -68,10 +67,15 @@ vi.mock('@/components/ui', () => ({
 
 import ProcessingPage from '@/app/(dashboard)/production/processing/page'
 
+// ⚠️ 2026-09-21（#4882 用户裁定）：**加工项单价 / 加工项计价方式整体退场** —— 列表两列
+// （`加工项价格` / `加工项计价方式`）、表格上方价格说明、弹窗两个输入项、以及
+// `validate()` 的 unitPrice 三段校验与 pricingMethod 必选校验全部删除；提交 payload 不再带
+// `unitPrice` / `pricingMethod`，`unit` 恒为 `'米'`（加工费按米计价，#3005 行业口径）。
+// 本文件相应判据已改判为**反向断言 + payload 逐字相等**（旧形态加回来即红）。
 const mockItems = [
-  { id: '1', name: '打孔加工', unitPrice: 5, pricingMethod: 'per_meter' },
-  { id: '2', name: '挂钩加工', unitPrice: 3, pricingMethod: 'per_set' },
-  { id: '3', name: '韩式定型', unitPrice: 8, pricingMethod: 'per_meter' },
+  { id: '1', name: '打孔加工', unit: '米' },
+  { id: '2', name: '挂钩加工', unit: '米' },
+  { id: '3', name: '韩式定型', unit: '米' },
 ]
 
 const mockCategories = [{ id: 'cat1', name: '通用加工' }]
@@ -140,13 +144,19 @@ describe('ProcessingPage（issue #4490 合并后：/production/processing 的「
     })
   })
 
-  it('should render table headers', async () => {
+  it('should render table headers（#4882：价格 / 计价方式两列已退场）', async () => {
     render(<ProcessingPage />)
     await waitFor(() => {
       expect(screen.getByText('加工项名称')).toBeInTheDocument()
-      expect(screen.getByText('加工项价格')).toBeInTheDocument()
-      expect(screen.getByText('加工项计价方式')).toBeInTheDocument()
+      expect(screen.getByText('加工分类')).toBeInTheDocument()
     })
+    // 红证：把任一列加回表格即红（旧形态 = 5 列，含「加工项价格」「加工项计价方式」）
+    expect(screen.queryByText('加工项价格')).not.toBeInTheDocument()
+    expect(screen.queryByText('加工项计价方式')).not.toBeInTheDocument()
+    // 表格上方的价格说明句也整体删除
+    expect(
+      screen.queryByText(/加工项价格是下单时的加工费参考价/)
+    ).not.toBeInTheDocument()
   })
 
   it('should not show applicable product categories column (UI-026 已随 #4371 解耦退场)', async () => {
@@ -160,7 +170,7 @@ describe('ProcessingPage（issue #4490 合并后：/production/processing 的「
     expect(screen.queryByText('适用所有分类')).not.toBeInTheDocument()
   })
 
-  it('should not show per meter quantity input for any pricing method (PP-006 回滚)', async () => {
+  it('#4882：弹窗无价格 / 计价方式输入项，提交 payload 无 unitPrice/pricingMethod（PP-006 口径延伸）', async () => {
     const user = userEvent.setup()
     render(<ProcessingPage />)
     await waitFor(() => {
@@ -168,35 +178,34 @@ describe('ProcessingPage（issue #4490 合并后：/production/processing 的「
     })
     await user.click(screen.getByRole('button', { name: '新增加工项' }))
 
-    // 计价方式选项无 per_piece，仅 per_meter/per_set/fixed/per_area
-    const methodSelect = screen
-      .getAllByText('加工项计价方式')
-      .map((el) => el.closest('div')!.querySelector('select'))
-      .find(Boolean) as HTMLSelectElement
-    const optionValues = Array.from(methodSelect.querySelectorAll('option')).map((o) => o.value)
-    expect(optionValues).toContain('per_meter')
-    expect(optionValues).toContain('per_set')
-    expect(optionValues).toContain('fixed')
-    expect(optionValues).toContain('per_area')
-    expect(optionValues).not.toContain('per_piece')
+    // ① 表单：价格输入项与计价方式下拉整体退场（红证：把控件加回来即红）
+    expect(screen.queryByText('加工项价格')).not.toBeInTheDocument()
+    expect(screen.queryByText('加工项计价方式')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('请输入价格（0.10 ~ 999.99）')).not.toBeInTheDocument()
+    // 计价方式下拉退场 ⇒ 弹窗内只剩「加工分类」与「设置优惠」两个 select
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.querySelectorAll('select')).toHaveLength(2)
 
-    // 任意计价方式下都不出现「每米数量」输入
-    await user.selectOptions(methodSelect, 'per_meter')
+    // ② PP-006 原判据（无「每米数量」输入）仍成立
     expect(screen.queryByPlaceholderText('请输入每米数量（如 6）')).not.toBeInTheDocument()
     expect(screen.queryByText('每米数量（个/米）')).not.toBeInTheDocument()
-    await user.selectOptions(methodSelect, 'per_set')
-    expect(screen.queryByPlaceholderText('请输入每米数量（如 6）')).not.toBeInTheDocument()
 
-    // 填写表单并保存 → payload 不带 perMeterQuantity
+    // ③ 提交 payload：单价 / 计价方式键整体不落，单位恒为「米」
     await user.type(screen.getByPlaceholderText('请输入加工项名称（最多20个字符）'), '测试打孔')
-    await user.type(screen.getByPlaceholderText('请输入价格（0.10 ~ 999.99）'), '5')
     await user.click(screen.getByText('保存'))
     await waitFor(() => {
       expect(mockCreateProcessingItem).toHaveBeenCalledTimes(1)
     })
     const payload = mockCreateProcessingItem.mock.calls[0][0]
-    expect(payload.pricingMethod).toBe('per_set')
-    expect(payload.perMeterQuantity).toBeUndefined()
+    expect(payload).toEqual({
+      name: '测试打孔',
+      categoryId: 'cat1',
+      unit: '米',
+      status: 'active',
+    })
+    expect(payload).not.toHaveProperty('unitPrice')
+    expect(payload).not.toHaveProperty('pricingMethod')
+    expect(payload).not.toHaveProperty('perMeterQuantity')
   })
 
   it('should not render per meter quantity column in list (PP-006 回滚)', async () => {
@@ -207,8 +216,8 @@ describe('ProcessingPage（issue #4490 合并后：/production/processing 的「
     // 列表无「每米数量」列，也无「6 个/米」密度文本
     expect(screen.queryByText('每米数量')).not.toBeInTheDocument()
     expect(screen.queryByText('6 个/米')).not.toBeInTheDocument()
-    // 计价方式文本仍在（per_meter / per_set）
-    expect(screen.getAllByText(/按购买米数计价/).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText(/按套计价/)).toBeInTheDocument()
+    // #4882：计价方式文案整体退场（旧形态下这两句分别由两列渲染）
+    expect(screen.queryByText(/按购买米数计价/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/按套计价/)).not.toBeInTheDocument()
   })
 })

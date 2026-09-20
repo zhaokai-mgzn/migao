@@ -31,7 +31,6 @@ vi.mock('@/lib/api', () => ({
     createProcessingItem: vi.fn(),
     updateProcessingItem: vi.fn(),
     deleteProcessingItem: vi.fn(),
-    calculatePrice: vi.fn(),
   },
   processingCategoryApi: {
     getProcessingCategories: (...args: unknown[]) => mockGetProcessingCategories(...args),
@@ -65,8 +64,8 @@ const ok = (data: unknown) => ({ data: { success: true, data } })
 const ITEMS = {
   total: 2,
   items: [
-    { id: 'pi-1', name: '韩褶', categoryId: 'cat-1', categoryName: '窗帘加工', pricingMethod: 'per_meter', unitPrice: 1.2, unit: '米', status: 'active' },
-    { id: 'pi-2', name: '打孔', categoryId: 'cat-1', categoryName: '窗帘加工', pricingMethod: 'per_meter', unitPrice: 8, unit: '米', status: 'active' },
+    { id: 'pi-1', name: '韩褶', categoryId: 'cat-1', categoryName: '窗帘加工', unit: '米', status: 'active' },
+    { id: 'pi-2', name: '打孔', categoryId: 'cat-1', categoryName: '窗帘加工', unit: '米', status: 'active' },
   ],
 }
 

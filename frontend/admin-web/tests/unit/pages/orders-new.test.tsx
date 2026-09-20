@@ -48,11 +48,26 @@ const CALC_CONFIG_OK = {
   },
 }
 
+/**
+ * 加工费组合价目（stub）—— 元/米，键 = 组合键里的**加工项名**。
+ *
+ * #4882 后加工项没有单价，价只由「加工费组合」给出 ⇒ 桩必须按组合取价，不能再按加工项单价求和。
+ * 数值刻意与 #4882 之前逐项一致（打孔加工 5 / 韩式定型 3 / 帘头加工 50 元每米），
+ * 让本文件跟「加工项数量口径」有关的判据断言尽量少动。
+ */
+const FEE_UNIT_PRICE: Record<string, number> = {
+  打孔加工: 5,
+  韩式定型: 3,
+  帘头加工: 50,
+  // V83 种子形状的名字（#4566 起本文件多处用真名建目录：`打孔` / `韩折`）
+  打孔: 5,
+  韩折: 5,
+}
+
 vi.mock('@/lib/api', () => ({
   orderApi: {
     createOrder: (...args: any[]) => mockCreateOrder(...args),
-  },
-  productApi: {
+  },  productApi: {
     getProducts: (...args: any[]) => mockGetProducts(...args),
     getProduct: (...args: any[]) => mockGetProduct(...args),
   },
@@ -67,20 +82,24 @@ vi.mock('@/lib/api', () => ({
   // 试算自身的判据在 `orders-new-craft-calc.test.tsx`。
   craftCalcApi: { preview: () => new Promise(() => {}) },
   // 加工费计价预览（issue #4450）：本文件验的是樘窗绑组 / 配布边 / 加工项数量口径，
-  // 与「组合取价」正交 ⇒ 桩成一个**组合价 == Σ 加工项**的服务端
-  // （数值与旧口径逐值一致 ⇒ 这些判据的断言一字不用改；组合取价本身的判据在
-  //  `orders-new-fee-preview.test.tsx`）。**必须 resolve**：预览未就绪时页面会拦住提交。
+  // 与「组合取价」正交 ⇒ 桩成一个**按组合价目取价**的服务端。
+  // ⚠️ #4882：加工项**不再有单价**（`processingItems[]` 只剩 `{id,name,quantity,unit}`）
+  // ⇒ 桩**不能**再按 `Σ 加工项单价 × 数量` 求和（那会恒为 0，把本文件所有金额判据打成假红）。
+  // 新桩口径 = 真实口径：**组合单价（元/米） × 加工费米数**，组合价目按组合键里的加工项名给出。
+  // **必须 resolve**：预览未就绪时页面会拦住提交。
   feePreviewApi: {
     preview: (payload: any) => {
       const items = (payload?.items ?? []).map((it: any) => {
-        const details = it?.processingInfo?.processingItems ?? []
-        const fee = details.reduce(
-          (s: number, d: any) => s + (Number(d.unitPrice) || 0) * (Number(d.quantity) || 0),
+        const info = it?.processingInfo ?? {}
+        const meters = Number(info.processingMeters) || 0
+        const unit = ((info.processingItems ?? []) as Array<{ name?: string }>).reduce(
+          (s, d) => s + (FEE_UNIT_PRICE[d?.name ?? ''] || 0),
           0
         )
+        const fee = unit * meters
         return {
           processingFee: fee,
-          processingFeeDetail: { fee_source: 'matched', unit_price: 0, meters: 0, amount: fee },
+          processingFeeDetail: { fee_source: 'matched', unit_price: unit, meters, amount: fee },
         }
       })
       const processingFeeTotal = items.reduce((s: number, r: any) => s + r.processingFee, 0)
@@ -300,7 +319,7 @@ describe('NewOrderPage', () => {
       data: {
         data: {
           items: [
-            { id: 'pi1', name: '打孔加工', pricingMethod: 'per_meter', unitPrice: 5, unit: '米' },
+            { id: 'pi1', name: '打孔加工', unit: '米' },
           ],
         },
       },
@@ -309,7 +328,7 @@ describe('NewOrderPage', () => {
     render(<NewOrderPage />)
     await pickProduct('遮光窗帘')
 
-    // 勾选加工项：面料默认 1 米 → 数量 1 → 加工费 5
+    // 勾选加工项：面料默认 1 米 → 数量 1 → 加工费 5（组合价目 5 元/米 × 1 米）
     expandProcessing()
     fireEvent.click(await screen.findByRole('checkbox'))
     await waitFor(() => {
@@ -321,7 +340,7 @@ describe('NewOrderPage', () => {
     expect(procRow.querySelectorAll('input[type="number"]')).toHaveLength(0)
     expect(procRow.querySelectorAll('input')).toHaveLength(1)
 
-    // 面料米数 3 → 数量 3 → 加工费 5×3 = 15（数量联动重算）
+    // 面料米数 3 → 数量 3 → 加工费 5 × 3 = 15（数量联动重算）
     openWizardStep('尺寸与数量')
     const qtyInput = (await screen.findByText('用料米数')).closest('div')!.querySelector('input') as HTMLInputElement
     fireEvent.change(qtyInput, { target: { value: '3' } })
@@ -330,15 +349,18 @@ describe('NewOrderPage', () => {
     })
 
     // 提交时 processingItems.quantity = 面料米数 3
+    // ⚠️ #4882：快照收缩为 `{id, name, quantity, unit}` —— 单价 / 小计 / 计价方式**整体不落**
     await fillCustomerAndSubmit()
     await waitFor(() => {
       expect(mockCreateOrder).toHaveBeenCalled()
     })
     const payload = mockCreateOrder.mock.calls[0][0]
     const detail = payload.items[0].processingInfo.processingItems[0]
-    expect(detail.quantity).toBe(3)
-    expect(detail.unitPrice).toBe(5)
-    expect(detail.subtotal).toBe(15)
+    expect(detail).toEqual({ id: 'pi1', name: '打孔加工', quantity: 3, unit: '米' })
+    // 红证：旧形态带 `unitPrice` / `subtotal` / `pricingMethod` —— 加回来这几句即红
+    expect(detail).not.toHaveProperty('unitPrice')
+    expect(detail).not.toHaveProperty('subtotal')
+    expect(detail).not.toHaveProperty('pricingMethod')
   })
 
   it('per_meter：小数面料米数，单价×米数计加工费 (OR-014)', async () => {
@@ -352,7 +374,7 @@ describe('NewOrderPage', () => {
       data: {
         data: {
           items: [
-            { id: 'pi2', name: '韩式定型', pricingMethod: 'per_meter', unitPrice: 3, unit: '米' },
+            { id: 'pi2', name: '韩式定型', unit: '米' },
           ],
         },
       },
@@ -385,18 +407,20 @@ describe('NewOrderPage', () => {
     expect(payload.items[0].processingInfo.processingItems[0].quantity).toBe(2.5)
   })
 
-  it('per_set：数量=1，改面料米数也不变 (OR-014)', async () => {
+  it('#4882：加工项数量恒按面料米数派生（旧 per_set ⇒ 数量恒 1 的分叉已删除）(OR-014)', async () => {
     mockGetProducts.mockResolvedValue({
       data: { data: { items: [{ id: 'p3', name: '棉麻布', price: 60 }], total: 1 } },
     })
     mockGetProduct.mockResolvedValue({
       data: { data: { id: 'p3', name: '棉麻布', skus: [], price: 60 } },
     })
+    // 目录条目**刻意不给**计价方式（#4882 后 `processing_items` 已无该列）——
+    // 旧实现会因取不到 `per_meter` 而走 `return 1` 分支 ⇒ 数量恒 1（本用例的红证靶子）。
     mockGetProcessingItems.mockResolvedValue({
       data: {
         data: {
           items: [
-            { id: 'pi3', name: '帘头加工', pricingMethod: 'per_set', unitPrice: 50, unit: '套' },
+            { id: 'pi3', name: '帘头加工', unit: '米' },
           ],
         },
       },
@@ -407,25 +431,26 @@ describe('NewOrderPage', () => {
     expandProcessing()
     fireEvent.click(await screen.findByRole('checkbox'))
 
-    // per_set → 数量恒为 1 → 加工费 50
+    // 面料 1 米 → 数量 1 → 加工费 = 组合价目 50 元/米 × 1 米
     await waitFor(() => {
       expect(feeRowText()).toContain('¥50.00')
     })
 
+    // 面料 10 米 → 数量 10（**不再**恒为 1）⇒ 加工费 50 × 10 = 500
     openWizardStep('尺寸与数量')
     const qtyInput = (await screen.findByText('用料米数')).closest('div')!.querySelector('input') as HTMLInputElement
     fireEvent.change(qtyInput, { target: { value: '10' } })
     await waitFor(() => {
-      expect(feeRowText()).toContain('¥50.00')
+      expect(feeRowText()).toContain('¥500.00')
     })
 
-    // 提交时 quantity = 1
+    // 提交时 quantity = 面料米数 10（旧形态恒为 1 ⇒ 本句红）
     await fillCustomerAndSubmit()
     await waitFor(() => {
       expect(mockCreateOrder).toHaveBeenCalled()
     })
     const payload = mockCreateOrder.mock.calls[0][0]
-    expect(payload.items[0].processingInfo.processingItems[0].quantity).toBe(1)
+    expect(payload.items[0].processingInfo.processingItems[0].quantity).toBe(10)
   })
 
   // ===== 优惠金额/实收款 双向联动（页面级集成，真实 useOrderAmounts）=====
@@ -635,7 +660,8 @@ describe('NewOrderPage', () => {
       // ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：加工项不再随商品下发（商品 payload 已无
       // `supportsProcessing`/`processingItems`），改由**店铺级目录**提供 ⇒ 这里桩目录端点
       // （「双拼：加工项只挂主布行」那条判据需要一个可勾选的加工项）。
-      // 目录条目形状 = `ProcessingItem`（`unitPrice`/`unit`，无 `customPrice`/`finalPrice`）。
+      // 目录条目形状 = `ProcessingItem`（#4882 后只剩 `name`/`unit`/`craftHint`/`categoryId` 等，
+      // **无** `unitPrice` / `pricingMethod`，也无 `customPrice`/`finalPrice`）。
       // ⚠️ #4566：目录按 V83 种子形状给 —— 工艺项带 `craftHint`（`打孔`→打孔），
       // 以及手选特征「定型」（勾选态 = `isShaped`）。名字/工艺逐字 = V83 迁移。
       mockGetProcessingItems.mockResolvedValue({
@@ -646,11 +672,9 @@ describe('NewOrderPage', () => {
                 id: 'pi1',
                 name: '打孔',
                 craftHint: '打孔',
-                pricingMethod: 'per_meter',
-                unitPrice: 5,
                 unit: '米',
               },
-              { id: 'pi2', name: '定型', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+              { id: 'pi2', name: '定型', unit: '米' },
             ],
           },
         },
@@ -1006,11 +1030,9 @@ describe('NewOrderPage', () => {
                 id: 'pi1',
                 name: '韩折',
                 craftHint: '韩褶',
-                pricingMethod: 'per_meter',
-                unitPrice: 0,
                 unit: '米',
               },
-              { id: 'pi2', name: '定型', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+              { id: 'pi2', name: '定型', unit: '米' },
             ],
           },
         },
@@ -1256,13 +1278,13 @@ describe('NewOrderPage', () => {
   describe('#4566 工艺 / 定型从加工项派生', () => {
     /** 加工项目录（逐字 = `V83__seed_processing_item_catalog.sql` 的名字 / craftHint） */
     const V83_CATALOG = [
-      { id: 'pi-01', name: '打孔', craftHint: '打孔', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
-      { id: 'pi-02', name: '韩折', craftHint: '韩褶', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
-      { id: 'pi-06', name: '定型', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+      { id: 'pi-01', name: '打孔', craftHint: '打孔', unit: '米' },
+      { id: 'pi-02', name: '韩折', craftHint: '韩褶', unit: '米' },
+      { id: 'pi-06', name: '定型', unit: '米' },
       // 自动推导特征：**必须存在于目录**（商家配「加工费组合」要能选到），但不得出手选控件
-      { id: 'pi-14', name: '超高', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
-      { id: 'pi-15', name: '超宽', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
-      { id: 'pi-16', name: '倒幅', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+      { id: 'pi-14', name: '超高', unit: '米' },
+      { id: 'pi-15', name: '超宽', unit: '米' },
+      { id: 'pi-16', name: '倒幅', unit: '米' },
     ]
 
     const setup = async (items: unknown[] = V83_CATALOG) => {
@@ -1418,10 +1440,10 @@ describe('NewOrderPage', () => {
   describe('#4576 加工项分类导航 + 关键字搜索', () => {
     /** 加工项目录：**两个分类**（`加工费` / `安装服务`），工艺项带 `craftHint` */
     const CATEGORIZED_CATALOG = [
-      { id: 'pi-01', name: '打孔', craftHint: '打孔', categoryId: 'c1', categoryName: '加工费', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
-      { id: 'pi-02', name: '韩折', craftHint: '韩褶', categoryId: 'c1', categoryName: '加工费', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
-      { id: 'pi-06', name: '定型', categoryId: 'c1', categoryName: '加工费', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
-      { id: 'pi-20', name: '罗马杆安装', categoryId: 'c2', categoryName: '安装服务', pricingMethod: 'per_set', unitPrice: 0, unit: '套' },
+      { id: 'pi-01', name: '打孔', craftHint: '打孔', categoryId: 'c1', categoryName: '加工费', unit: '米' },
+      { id: 'pi-02', name: '韩折', craftHint: '韩褶', categoryId: 'c1', categoryName: '加工费', unit: '米' },
+      { id: 'pi-06', name: '定型', categoryId: 'c1', categoryName: '加工费', unit: '米' },
+      { id: 'pi-20', name: '罗马杆安装', categoryId: 'c2', categoryName: '安装服务', unit: '米' },
     ]
 
     const setup = async (items: unknown[] = CATEGORIZED_CATALOG) => {
@@ -1444,9 +1466,7 @@ describe('NewOrderPage', () => {
       name: `辅料${i}`,
       categoryId: 'c3',
       categoryName: '辅料',
-      pricingMethod: 'per_set',
-      unitPrice: 0,
-      unit: '套',
+      unit: '米',
     }))
     const SEARCHABLE_CATALOG = [...CATEGORIZED_CATALOG, ...FILLERS]
 
@@ -1475,8 +1495,8 @@ describe('NewOrderPage', () => {
 
     it('判据 1c：目录**没配分类** ⇒ 不渲染选择器、不报错，全部平铺（老租户目录）', async () => {
       await setup([
-        { id: 'pi-01', name: '打孔', craftHint: '打孔', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
-        { id: 'pi-06', name: '定型', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+        { id: 'pi-01', name: '打孔', craftHint: '打孔', unit: '米' },
+        { id: 'pi-06', name: '定型', unit: '米' },
       ])
       expect(screen.queryByTestId('processing-category-selector')).toBeNull()
       expect(visibleNames()).toEqual(['打孔', '定型'])
@@ -1564,9 +1584,9 @@ describe('NewOrderPage', () => {
     it('判据 7（回归）：自动推导特征仍**不在**手选控件里（分类目录下也一样）', async () => {
       await setup([
         ...CATEGORIZED_CATALOG,
-        { id: 'pi-14', name: '超高', categoryId: 'c1', categoryName: '加工费', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
-        { id: 'pi-15', name: '超宽', categoryId: 'c1', categoryName: '加工费', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
-        { id: 'pi-16', name: '倒幅', categoryId: 'c1', categoryName: '加工费', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+        { id: 'pi-14', name: '超高', categoryId: 'c1', categoryName: '加工费', unit: '米' },
+        { id: 'pi-15', name: '超宽', categoryId: 'c1', categoryName: '加工费', unit: '米' },
+        { id: 'pi-16', name: '倒幅', categoryId: 'c1', categoryName: '加工费', unit: '米' },
       ])
       expect(visibleNames()).toEqual(['打孔', '韩折', '定型'])
       for (const auto of ['超高', '超宽', '倒幅']) {
@@ -1799,7 +1819,7 @@ describe('NewOrderPage', () => {
         data: {
           data: {
             items: [
-              { id: 'pi2', name: '定型', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+              { id: 'pi2', name: '定型', unit: '米' },
             ],
           },
         },

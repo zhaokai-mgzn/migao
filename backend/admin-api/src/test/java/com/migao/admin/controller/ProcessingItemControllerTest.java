@@ -92,8 +92,6 @@ class ProcessingItemControllerTest extends BaseControllerTest {
         ProcessingItemCreateRequest req = new ProcessingItemCreateRequest();
         req.setName("锁边");
         req.setCategoryId("cat-1");
-        req.setPricingMethod("per_meter");
-        req.setUnitPrice(new java.math.BigDecimal("12.50"));
 
         mockMvc.perform(post(BASE)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -105,10 +103,27 @@ class ProcessingItemControllerTest extends BaseControllerTest {
     }
 
     @Test
+    @DisplayName("#4882 退场守卫：POST /processing-items/calculate 已无处理者（405，绝不是 200）")
+    void calculateEndpointIsGone() throws Exception {
+        // 判据形态 = HTTP 层，且**实测过真值**：删掉 `@PostMapping("/calculate")` 后，
+        // `POST /processing-items/calculate` 返回 **405 Method Not Allowed**（不是 404）——
+        // 因为路径模式 `/{id}`（GET/PUT/DELETE）仍然匹配 `/calculate`，Spring 对「路径命中、
+        // 方法不命中」给 405。故本用例断言的是**退场的判据**：该路径上**没有 POST 处理者**
+        // （405 ⇒ 请求永远进不到算价逻辑；若端点被加回 ⇒ 200 ⇒ 红）。
+        // ⚠️ 不要改成 404：那是**没跑过**的猜测（实测 405；写成 404 会让本用例恒红）。
+        // 红证（已实证）：把 `@PostMapping("/calculate")` 加回 controller（哪怕只 `ApiResponse.success()`）
+        // ⇒ 状态码 405 → 200 ⇒ 本用例红。
+        mockMvc.perform(post(BASE + "/calculate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"processingItemId\":\"pi-001\",\"quantity\":5}"))
+                .andExpect(status().isMethodNotAllowed());
+    }
+
+    @Test
     @DisplayName("POST 创建 - 缺少必填字段返回 422")
     void createProcessingItem_missingRequiredFields_422() throws Exception {
         ProcessingItemCreateRequest req = new ProcessingItemCreateRequest();
-        req.setName("锁边"); // 缺 categoryId / pricingMethod / unitPrice
+        req.setName("锁边"); // 缺 categoryId（@NotBlank；#4882 起 pricingMethod / unitPrice 已不存在）
 
         mockMvc.perform(post(BASE)
                         .contentType(MediaType.APPLICATION_JSON)

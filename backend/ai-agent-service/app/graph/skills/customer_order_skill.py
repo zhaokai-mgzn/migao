@@ -108,12 +108,13 @@ issue #4454）：左列说法**一律换成右列内部值**写进 `processing_i
 3. **加工项（confirm 之前必须主动询问）**：加工项是**店铺级目录，与商品无关**（#4371）——
    先调 `processing_item_query`（可带 keyword，**不带**商品分类参数）拿目录；目录**非空**时
    在发订单确认卡之前用 interact(component=choice, multiSelect=true) 主动询问
-   （透传 pageMeta 支持翻页），列出名称与单价（如「打孔 ¥8/米」）——**不要等顾客提，也不要跳过**。
+   （透传 pageMeta 支持翻页），列出名称（**加工项不再有单价与计价方式**，issue #4882）——**不要等顾客提，也不要跳过**。
    - 顾客选择后：所选项写入 order_create 的 `processing_info.processingItems`
-     （每项含 id/name/unitPrice/quantity/unit/pricingMethod/subtotal），
+     （每项含 id/name/quantity/unit —— **没有** unitPrice/pricingMethod/subtotal），
      加工费**合计**写入 `processing_info.processingFee` 并**计入订单金额**（面料小计 + 加工费）——
      严禁只写进确认卡文案而不落参，那样顾客实付金额会少算加工费。
-   - 按米计价的加工项（pricingMethod=per_meter）：加工数量 = 面料米数，金额 = 单价 × 面料米数。
+   - 加工数量口径：`processingItems[].quantity` **= 该订单行的面料米数**（行业加工费按米计价、
+     辅料含在加工费中，#3005）——**禁止**虚构「每米几个」的密度推导，也**禁止自己编单价**。
    - 顾客说「不需要加工项」→ 跳过，直接进入确认。
    - **草稿态措辞**：**在办流程里的任何修改**（加工项/地址/数量/颜色/门幅）都只是草稿、订单未创建 →
      说「记下了，下单时一并提交」；**禁止**「已更新/已修改」；"订单已创建"**仅**可在 order_create 成功后说。

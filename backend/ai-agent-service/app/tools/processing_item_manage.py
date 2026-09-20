@@ -1,8 +1,13 @@
 """
 AI 智能客服系统 - 加工项管理 Tool
 
-管理加工项写入操作，包括创建/更新/删除加工项、加工分类 CRUD、价格计算。
+管理加工项写入操作，包括创建/更新/删除加工项、加工分类 CRUD。
 与 processing_item_query（查询）互补，本工具负责写入操作。
+
+⚠️ issue #4882：`calculate_price`（POST /api/admin/processing-items/calculate）已随
+「加工项单价 + 计价方式」从 admin-api 一并退场（该端点算的就是 unitPrice × …）⇒
+本工具同步删除该 action（死 action 会指向恒 404 的端点；守卫见
+`tests/test_tools_processing_item_manage.py` 的 schema↔admin-api 端点一致性用例）。
 """
 
 from typing import Any, Dict, Optional
@@ -16,30 +21,22 @@ from app.utils.http_client import get_admin_api_client
 VALID_ACTIONS = {
     "create_processing_item", "update_item", "delete_item", "toggle_item_status",
     "list_categories", "create_category", "update_category", "delete_category",
-    "calculate_price",
 }
 
-# 计价方式 canonical 枚举（与 admin-api ProcessingItemService.validatePricingMethod
-# 及 ProcessingItemCreateRequest.pricingMethod 对齐；issue #3005 回滚后无 per_piece）
-VALID_PRICING_METHODS = {
-    "per_meter": "按米",
-    "per_set": "按套",
-    "fixed": "一口价",
-    "per_area": "按面积",
-}
+# 加工项**不再有单价与计价方式**（issue #4882）：admin-api 的
+# `ProcessingItemCreateRequest` / `ProcessingItemUpdateRequest` 已把
+# `pricingMethod` / `unitPrice` 两个字段**整体删除**（连带 0.10~999.99 价格区间与
+# 计价方式枚举校验一起退场）⇒ 加工项只需要 `name` + `categoryId`（`craftHint` 可选）。
 
 # admin-api `ProcessingItemUpdateRequest`（PUT /api/admin/processing-items/{id}）是
-# **全量替换**语义：name / categoryId / pricingMethod 为 @NotBlank、unitPrice 为 @NotNull
-# （另有 0.10~999.99 与最多 2 位小数约束），只发用户改动的那几个字段 → Bean Validation 失败
-# → GlobalExceptionHandler 返回 **422**（issue #3584）。
+# **全量替换**语义：name / categoryId 为 @NotBlank，只发用户改动的那几个字段
+# → Bean Validation 失败 → GlobalExceptionHandler 返回 **422**（issue #3584）。
 # 故本工具更新加工项一律「GET 详情 → 用户显式传入字段覆盖 → PUT 全量」，
 # 既保证必填齐全，也保证「只改一个字段」不会清空其它字段。
-ITEM_REQUIRED_FIELDS = ("name", "categoryId", "pricingMethod", "unitPrice")
+ITEM_REQUIRED_FIELDS = ("name", "categoryId")
 ITEM_REQUIRED_FIELD_LABELS = {
     "name": "name（加工项名称）",
     "categoryId": "categoryId（分类 ID，工具参数 category_id）",
-    "pricingMethod": "pricingMethod（计价方式，工具参数 pricing_method）",
-    "unitPrice": "unitPrice（单价，工具参数 price）",
 }
 # ⚠️ 2026-09-19（#4371 商品↔加工项解耦）：`applicableProductCategories`
 # （加工项的「适用商品分类」）**已从 admin-api 的 DTO/实体/schema 整体退场**
@@ -47,31 +44,32 @@ ITEM_REQUIRED_FIELD_LABELS = {
 # 留在白名单里的后果不是报错而是**静默**：Java 侧 `ProcessingItemUpdateRequest`
 # 已无该字段 ⇒ Spring 静默忽略 ⇒ 每次「GET 详情 → 覆盖 → PUT 全量」都会把它丢掉，
 # 而工具照样返回成功（工具审计 A4「下发 DTO 没有的键 = 无声丢数据」同型）。
+# `craftHint`（V78 / issue #4452：加工项**显式声明的工艺**）必须在回带白名单里 ——
+# PUT 是全量替换，GET 详情里读到的工艺声明若不回带就会**静默丢失**（工艺维一丢，
+# 该加工项就取不到工序路线）。回带的是**读回来的原值**，不猜、不推导。
 ITEM_CARRY_OVER_FIELDS = ITEM_REQUIRED_FIELDS + (
-    "unit", "minQuantity", "maxQuantity", "description", "options",
+    "unit", "craftHint", "minQuantity", "maxQuantity", "description", "options",
     "processingDays", "aiRecommended", "status",
 )
-UNIT_PRICE_MIN = 0.10
-UNIT_PRICE_MAX = 999.99
 
 
 class ProcessingItemManageTool(BaseTool):
     """加工项管理 Tool
 
-    管理加工项写入操作：创建/更新/删除加工项、加工分类 CRUD、价格计算。
+    管理加工项写入操作：创建/更新/删除加工项、加工分类 CRUD。
 
     使用场景：
     - 创建新的加工项（如打孔、窗帘头加工等）
-    - 更新加工项信息（价格、名称、描述等）
+    - 更新加工项信息（名称、分类、描述、工艺声明等）
     - 删除加工项
     - 管理加工分类（查看/创建/更新/删除）
-    - 计算加工项价格
     """
 
     name = "processing_item_manage"
     description = (
-        "【触发】写加工：用户说'新增加工项''修改加工''删除加工''加工分类管理''算加工价格'时调用。【前置】list_categories(查分类树,安全)。create/update/delete 需确认。【何时不用】仅查看加工项列表用 processing_item_query，不要混淆。【标注】WRITE|DESTRUCTIVE — list_categories安全,增删改需确认"
-        "【铁律】用户说'新增加工项'就是执行指令：调 processing_item_manage(action=create_processing_item, name, category_id, pricing_method)——计价方式仅 per_meter(按米)/per_set(按套)/fixed(一口价)/per_area(按面积)，per_piece(按个)非法必须拒绝并说明（PP-006 实拍：agent 误宣「新增不在功能范围」，实际 create_processing_item 就是新增能力）。"
+        "【触发】写加工：用户说'新增加工项''修改加工''删除加工''加工分类管理'时调用。【前置】list_categories(查分类树,安全)。create/update/delete 需确认。【何时不用】仅查看加工项列表用 processing_item_query，不要混淆。【标注】WRITE|DESTRUCTIVE — list_categories安全,增删改需确认"
+        "【铁律】用户说'新增加工项'就是执行指令：调 processing_item_manage(action=create_processing_item, name, category_id, craft_hint)——加工项**不再有单价与计价方式**（issue #4882 已从 admin-api 彻底删除），只需要 name + category_id（craft_hint 可选）"
+        "（PP-006 实拍：agent 误宣「新增不在功能范围」，实际 create_processing_item 就是新增能力）。"
         "【铁律】用户明确要求写操作（禁用/创建/调整/删除/上下架/重置等）时：先查必要信息拿真实 ID → 展示操作预览 + 确认卡 → 用户确认后立即调用写工具执行，禁止只查询/展示列表就停（HR-003/PP-006/PR-005 实拍：agent 只 list/query 不执行写工具判失败）。"
         "【铁律】delete_item 是软删除（记录标记 deleted=1，非物理移除）：删除成功后按名称/列表复查查不到该加工项是正常结果（删除已生效），"
         "禁止误报「删除未生效」或建议用户去后台手动删除；如需恢复告知用户联系管理员（#3885）。"
@@ -83,7 +81,7 @@ class ProcessingItemManageTool(BaseTool):
 
     read_only = False
     destructive = True   # 可删除加工项/分类
-    read_only_actions = {"list_categories", "calculate_price"}  # 只读/纯计算 action 免确认拦截
+    read_only_actions = {"list_categories"}  # 只读 action 免确认拦截
     idempotent = False   # 创建/删除非幂等
 
     parameters = {
@@ -95,12 +93,11 @@ class ProcessingItemManageTool(BaseTool):
                     "操作类型：create_processing_item（创建加工项）/ update_item（更新加工项）/ delete_item（删除加工项）"
                     "/ toggle_item_status（启用/停用加工项）"
                     "/ list_categories（分类列表）/ create_category（创建分类）/ update_category（更新分类）"
-                    "/ delete_category（删除分类）/ calculate_price（计算价格）"
+                    "/ delete_category（删除分类）"
                 ),
                 "enum": [
                     "create_processing_item", "update_item", "delete_item", "toggle_item_status",
                     "list_categories", "create_category", "update_category", "delete_category",
-                    "calculate_price",
                 ],
             },
             "item_id": {
@@ -121,55 +118,18 @@ class ProcessingItemManageTool(BaseTool):
                     "update_item/update_category 时可选——不传则沿用原名称）"
                 ),
             },
-            "price": {
-                "type": "number",
-                "description": (
-                    "单价（元，对应 admin-api 的 unitPrice；create_processing_item 时必填；"
-                    "update_item 时可选——不传则沿用该加工项原单价）。"
-                    "取值 0.10~999.99，最多 2 位小数"
-                ),
-            },
-            "pricing_method": {
+            "craft_hint": {
                 "type": "string",
+                "maxLength": 16,
                 "description": (
-                    "计价方式（create_processing_item 时必填；update_item 时可选——不传则沿用原计价方式）："
-                    "per_meter（按米）/ per_set（按套）"
-                    "/ fixed（一口价）/ per_area（按面积）。不支持 per_piece（按个）——"
-                    "行业加工费按米计价、辅料含在加工费中"
+                    "工艺声明（可选，≤16 字）：该加工项代表哪个工艺"
+                    "（韩褶/打孔/穿杆/平幔…），是加工单工序路线的**受控来源**。"
+                    "不要凭加工项**名字**猜工艺；不确定就不传（留空 = 没声明）"
                 ),
-                "enum": ["per_meter", "per_set", "fixed", "per_area"],
             },
             "description": {
                 "type": "string",
                 "description": "描述信息（可选，update_item 传入时覆盖原描述）",
-            },
-            "unit": {
-                "type": "string",
-                "description": "计量单位（create_processing_item/update_item 时可选）",
-            },
-            "processing_item_id": {
-                "type": "string",
-                "description": "加工项 ID（calculate_price 时必填）",
-            },
-            "quantity": {
-                "type": "number",
-                "description": (
-                    "数量（calculate_price 时必填；per_meter 传面料米数，per_set 传套数）。"
-                    "⚠️ per_area（按面积）：quantity 是**计件数**（同一尺寸做几件，默认 1），"
-                    "面积由 width×height 得出——禁止把宽×高写进 quantity（后端会再乘一次面积 → 双计）"
-                ),
-            },
-            "width": {
-                "type": "number",
-                # exclusiveMinimum 0 = 与后端同口径（ProcessingItemService.calculateArea
-                # 对 <=0 的尺寸抛「尺寸必须大于 0」），也是 #3622 的数值下限不变式要求。
-                "exclusiveMinimum": 0,
-                "description": "宽度（米，calculate_price 时按面积计价 per_area 必填；与 height 一起决定面积=宽×高，须大于 0）",
-            },
-            "height": {
-                "type": "number",
-                "exclusiveMinimum": 0,
-                "description": "高度（米，calculate_price 时按面积计价 per_area 必填；与 width 一起决定面积=宽×高，须大于 0）",
             },
             "status": {
                 "type": "string",
@@ -187,14 +147,8 @@ class ProcessingItemManageTool(BaseTool):
         item_id: Optional[str] = None,
         category_id: Optional[str] = None,
         name: Optional[str] = None,
-        price: Optional[float] = None,
-        pricing_method: Optional[str] = None,
+        craft_hint: Optional[str] = None,
         description: Optional[str] = None,
-        unit: Optional[str] = None,
-        processing_item_id: Optional[str] = None,
-        quantity: Optional[float] = None,
-        width: Optional[float] = None,
-        height: Optional[float] = None,
         status: Optional[str] = None,
     ) -> ToolResult:
         """执行加工项管理操作"""
@@ -219,10 +173,10 @@ class ProcessingItemManageTool(BaseTool):
         try:
             if action == "create_processing_item":
                 return await self._create_item(
-                    context, name, category_id, price, pricing_method, description, unit)
+                    context, name, category_id, craft_hint, description)
             elif action == "update_item":
                 return await self._update_item(
-                    context, item_id, name, category_id, price, pricing_method, description, unit)
+                    context, item_id, name, category_id, craft_hint, description)
             elif action == "delete_item":
                 return await self._delete_item(context, item_id)
             elif action == "toggle_item_status":
@@ -235,9 +189,6 @@ class ProcessingItemManageTool(BaseTool):
                 return await self._update_category(context, category_id, name, description)
             elif action == "delete_category":
                 return await self._delete_category(context, category_id)
-            elif action == "calculate_price":
-                return await self._calculate_price(
-                    context, processing_item_id, quantity, width, height)
             else:
                 return ToolResult(
                     success=False,
@@ -260,16 +211,14 @@ class ProcessingItemManageTool(BaseTool):
         context: ToolContext,
         name: Optional[str],
         category_id: Optional[str],
-        price: Optional[float],
-        pricing_method: Optional[str] = None,
+        craft_hint: Optional[str] = None,
         description: Optional[str] = None,
-        unit: Optional[str] = None,
     ) -> ToolResult:
         """创建加工项
 
-        请求体契约以 admin-api `ProcessingItemCreateRequest` 为准（issue #3543）：
-        `name` / `categoryId` / `pricingMethod`(@NotBlank) / `unitPrice`(@NotNull)，
-        其中工具/LLM 侧单价参数名为 `price` → **显式映射**到 `unitPrice`。
+        请求体契约以 admin-api `ProcessingItemCreateRequest` 为准（issue #3543 / #4882）：
+        必填只有 `name` / `categoryId`（均 @NotBlank）——**单价与计价方式已整体删除**；
+        `craftHint`（工艺声明，≤16 字）可选。
         """
         if not name:
             return ToolResult(
@@ -285,53 +234,21 @@ class ProcessingItemManageTool(BaseTool):
                 message="创建加工项时必须提供 category_id",
                 suggestion="缺少分类 category_id，请先用 processing_item_manage 的 list_categories 操作取到分类后重试",
             )
-        if price is None:
-            return ToolResult(
-                success=False,
-                error="缺少价格",
-                message="创建加工项时必须提供 price",
-                suggestion="缺少单价 price，请向用户确认加工项单价后重试",
-            )
-        if not pricing_method:
-            return ToolResult(
-                success=False,
-                error="缺少计价方式",
-                message="创建加工项时必须提供 pricing_method（计价方式）",
-                suggestion=(
-                    "请向用户确认计价方式，仅支持："
-                    "per_meter（按米）/ per_set（按套）/ fixed（一口价）/ per_area（按面积）"
-                ),
-            )
-        if pricing_method not in VALID_PRICING_METHODS:
-            options = " / ".join(f"{k}（{v}）" for k, v in VALID_PRICING_METHODS.items())
-            return ToolResult(
-                success=False,
-                error=f"不支持的计价方式: {pricing_method}",
-                message=(
-                    f"加工项计价方式仅支持：{options}；per_piece（按个）等其它计价方式不支持，"
-                    f"实际收到 {pricing_method!r}"
-                ),
-                suggestion=(
-                    "请向用户说明加工项只支持上述 4 种计价方式（行业加工费按米计价、辅料含在加工费中），"
-                    "请用户重新选择，不要自行改成其它计价方式"
-                ),
-            )
-
         json_data: Dict[str, Any] = {
             "name": name,
             "categoryId": category_id,
-            # 显式映射：admin-api DTO 字段名为 pricingMethod / unitPrice（无 price）
-            "pricingMethod": pricing_method,
-            "unitPrice": price,
+            # 单价/计价方式字段已随 #4882 从 DTO 删除；单位固定「米」——
+            # 行业加工费按米计价（issue #3005），不再由调用方传（避免展示口径漂移）。
+            "unit": "米",
         }
+        if craft_hint:
+            json_data["craftHint"] = craft_hint
         if description:
             json_data["description"] = description
-        if unit:
-            json_data["unit"] = unit
 
         logger.info(
             f"[processing-item-manage] CreateItem: name={name}, category_id={category_id}, "
-            f"price={price}, pricing_method={pricing_method} | tenant={context.tenant_id}"
+            f"craft_hint={craft_hint} | tenant={context.tenant_id}"
         )
 
         client = get_admin_api_client()
@@ -415,7 +332,7 @@ class ProcessingItemManageTool(BaseTool):
             return admin_api_failure(response,
                 error=error_msg,
                 message=f"{fail_prefix}：{error_msg}",
-                suggestion="请先读取该加工项详情，核对必填字段（名称/分类/计价方式/单价）是否齐全后再重试",
+                suggestion="请先读取该加工项详情，核对必填字段（名称/分类）是否齐全后再重试",
             )
 
         return ToolResult(
@@ -430,16 +347,13 @@ class ProcessingItemManageTool(BaseTool):
         item_id: Optional[str],
         name: Optional[str],
         category_id: Optional[str],
-        price: Optional[float],
-        pricing_method: Optional[str] = None,
+        craft_hint: Optional[str] = None,
         description: Optional[str] = None,
-        unit: Optional[str] = None,
     ) -> ToolResult:
         """更新加工项
 
-        请求体契约以 admin-api `ProcessingItemUpdateRequest` 为准（issue #3584）：
-        全量替换语义，`name`/`categoryId`/`pricingMethod`(@NotBlank) + `unitPrice`(@NotNull)
-        缺一即 422；工具/LLM 侧单价参数名为 `price` → **显式映射**到 `unitPrice`。
+        请求体契约以 admin-api `ProcessingItemUpdateRequest` 为准（issue #3584 / #4882）：
+        全量替换语义，必填只有 `name`/`categoryId`(@NotBlank)（**单价/计价方式字段已删除**）；
         未传的字段从 GET 详情继承（不传 ≠ 清空）。
         """
         if not item_id:
@@ -450,49 +364,22 @@ class ProcessingItemManageTool(BaseTool):
                 suggestion="缺少加工项 ID item_id，请先用 processing_item_query 查到该加工项后重试",
             )
 
-        if pricing_method is not None and pricing_method not in VALID_PRICING_METHODS:
-            options = " / ".join(f"{k}（{v}）" for k, v in VALID_PRICING_METHODS.items())
-            return ToolResult(
-                success=False,
-                error=f"不支持的计价方式: {pricing_method}",
-                message=(
-                    f"加工项计价方式仅支持：{options}；per_piece（按个）等其它计价方式不支持，"
-                    f"实际收到 {pricing_method!r}"
-                ),
-                suggestion="请向用户确认计价方式后重试，不要自行改成其它计价方式",
-            )
-
-        if price is not None and not (UNIT_PRICE_MIN <= price <= UNIT_PRICE_MAX):
-            return ToolResult(
-                success=False,
-                error="单价超出允许范围",
-                message=(
-                    f"加工项单价必须在 {UNIT_PRICE_MIN:.2f} ~ {UNIT_PRICE_MAX:.2f} 元之间"
-                    f"（最多 2 位小数），实际收到 {price}"
-                ),
-                suggestion="请向用户确认单价后重试",
-            )
-
         json_data: Dict[str, Any] = {}
         if name:
             json_data["name"] = name
         if category_id:
             json_data["categoryId"] = category_id
-        if price is not None:
-            json_data["unitPrice"] = price  # 显式映射：DTO 字段名为 unitPrice（无 price）
-        if pricing_method:
-            json_data["pricingMethod"] = pricing_method
+        if craft_hint:
+            json_data["craftHint"] = craft_hint
         if description:
             json_data["description"] = description
-        if unit:
-            json_data["unit"] = unit
 
         if not json_data:
             return ToolResult(
                 success=False,
                 error="缺少更新内容",
-                message="更新加工项时至少提供 name、category_id、price、pricing_method 或 description 之一",
-                suggestion="缺少更新内容，请让用户给出要修改的字段（名称/分类/单价/计价方式/描述）后重试",
+                message="更新加工项时至少提供 name、category_id、craft_hint 或 description 之一",
+                suggestion="缺少更新内容，请让用户给出要修改的字段（名称/分类/工艺声明/描述）后重试",
             )
 
         return await self._put_item_full(
@@ -737,90 +624,4 @@ class ProcessingItemManageTool(BaseTool):
             success=True,
             data={"category_id": category_id},
             message="加工分类已删除",
-        )
-
-    async def _calculate_price(
-        self,
-        context: ToolContext,
-        processing_item_id: Optional[str],
-        quantity: Optional[float],
-        width: Optional[float] = None,
-        height: Optional[float] = None,
-    ) -> ToolResult:
-        """计算加工项价格
-
-        ⚠️ 本端点（POST /api/admin/processing-items/calculate）与 `order_create` **不是同一套契约**
-        （issue #3672；契约差异的归因见 `acceptance/2026-09-15/agent-gap-triage/REPORT.md` §G4）：
-
-        - `order_create`：agent 自己把 per_area 的 `quantity` 算成「宽×高」放进
-          `processing_info`，后端只做 `unitPrice × quantity`；
-        - **本端点**：后端自己从请求体的 `dimensions` 算 `area = 宽×高`，再算
-          `totalPrice = unitPrice × area × quantity`（`ProcessingItemService.java:248-254`；
-          缺 width/height → `:310-318` 直接抛「按面积计价需要提供 width 和 height 尺寸」）。
-
-        ⇒ per_area 必须下发 `dimensions`，且 `quantity` 是**计件数**（同一尺寸做几件，缺省 1）。
-        把「宽×高」写进 quantity 会**双计**（30×8×8 = ¥1920，应为 ¥240）。
-        """
-        if not processing_item_id:
-            return ToolResult(
-                success=False,
-                error="缺少加工项 ID",
-                message="计算价格时必须提供 processing_item_id",
-                suggestion="缺少加工项 ID processing_item_id，请先用 processing_item_query 查到该加工项后重试",
-            )
-        if (width is None) != (height is None):
-            return ToolResult(
-                success=False,
-                error="尺寸不完整",
-                message="按面积计价需要同时提供宽度和高度（width 与 height，单位：米）",
-                suggestion="按面积计价必须同时给出宽和高，请向用户补齐缺失的一项（单位为米）后重试",
-            )
-
-        has_dimensions = width is not None and height is not None
-        if quantity is None:
-            if not has_dimensions:
-                return ToolResult(
-                    success=False,
-                    error="缺少数量",
-                    message="计算价格时必须提供 quantity",
-                    suggestion="缺少数量 quantity，请向用户确认计件数（同一尺寸做几件，默认 1）后重试",
-                )
-            # per_area：面积由 dimensions 承载，quantity 是计件数，缺省 1
-            quantity = 1
-
-        logger.info(
-            f"[processing-item-manage] CalculatePrice: item_id={processing_item_id}, "
-            f"quantity={quantity}, dimensions={width}x{height} | tenant={context.tenant_id}"
-        )
-
-        json_data: Dict[str, Any] = {
-            "processingItemId": processing_item_id,
-            "quantity": quantity,
-        }
-        if has_dimensions:
-            json_data["dimensions"] = {"width": width, "height": height}
-
-        client = get_admin_api_client()
-        response = await client.post(
-            "/api/admin/processing-items/calculate",
-            json_data=json_data,
-            tenant_id=context.tenant_id,
-            user_id=context.user_id,
-        )
-
-        if not response.get("success"):
-            error_msg = response.get("error", {}).get("message", "计算失败")
-            return admin_api_failure(response,
-                error=error_msg,
-                message=f"计算加工价格失败：{error_msg}",
-                suggestion="请先用 processing_item_query 核对计价方式与参数（按面积需宽×高、按米需长度）后再重试",
-            )
-
-        data = response.get("data", {})
-        total_price = data.get("totalPrice") or data.get("total_price", "")
-
-        return ToolResult(
-            success=True,
-            data=data,
-            message=f"加工价格计算结果：{total_price}",
         )

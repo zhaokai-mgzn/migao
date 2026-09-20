@@ -163,7 +163,7 @@ const stubApis = () => {
     data: {
       data: {
         items: [
-          { id: 'pi1', name: '韩式褶', unitPrice: 5, unit: '米', pricingMethod: 'per_meter' },
+          { id: 'pi1', name: '韩式褶', unit: '米' },
         ],
       },
     },
@@ -333,8 +333,8 @@ describe('下单页加工费计价预览接线（#4450）', () => {
       data: {
         data: {
           items: [
-            { id: 'pi1', name: '韩式褶', unitPrice: 5, unit: '米', pricingMethod: 'per_meter' },
-            { id: 'pi2', name: '加铅块', unitPrice: 3, unit: '项', pricingMethod: 'per_set' },
+            { id: 'pi1', name: '韩式褶', unit: '米' },
+            { id: 'pi2', name: '加铅块', unit: '米' },
           ],
         },
       },

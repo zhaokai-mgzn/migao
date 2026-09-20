@@ -249,9 +249,9 @@ CREATE TABLE processing_items (
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     name VARCHAR(128) NOT NULL,
     category_id VARCHAR(64) NOT NULL REFERENCES processing_categories(id),
-    pricing_method VARCHAR(32) NOT NULL,  -- per_meter / per_set / fixed / per_area（issue #3005 回滚：无 per_piece）
-    unit_price DECIMAL(10, 2) NOT NULL,
-    unit VARCHAR(16) DEFAULT '元',
+    -- issue #4882（用户裁定）：`pricing_method` / `unit_price` 两列已删除（V101 落迁移链；
+    -- 本文件是全新库 bootstrap，故直接是**终态**，不写这两列）。
+    unit VARCHAR(16) DEFAULT '米',   -- 加工数量单位（不再是「计价单位」）
     min_quantity INTEGER DEFAULT 1,
     max_quantity INTEGER DEFAULT 999,
     description TEXT,
@@ -2874,7 +2874,9 @@ CREATE INDEX IF NOT EXISTS idx_client_request_keys_tenant_created
 
 -- ── 加工项目录按 ERP 附件重建的终态种子（V83，用户裁定 2026-09-19）──
 -- 与 `V83__seed_processing_item_catalog.sql` **同口径**：按租户循环种「加工费」分类 + 16 项目录
--- （工艺项 5 / 手选特征·单项 8 / 自动推导特征 3），单价一律 0（价只在「加工费组合」上，R10）。
+-- （工艺项 5 / 手选特征·单项 8 / 自动推导特征 3）。
+-- issue #4882（用户裁定）后目录**已无** `pricing_method` / `unit_price` 两列（V101 删列）⇒
+-- 本文件作为**终态** bootstrap 不再写这两列（V83 的历史 INSERT 一字不动，它在迁移链里早于 V101）。
 -- 为什么必须同步（不是可选项）：本文件是**全新库的一次性 bootstrap**（该路径**不跑迁移链**）
 -- ⇒ 漏同步 ⇒ bootstrap 建库后下单页拿不到加工项目录（形态见 #3270）。
 -- 幂等：`NOT EXISTS` 按业务键去重（`processing_items` 无 `(tenant_id, name)` 唯一索引），
@@ -2889,14 +2891,12 @@ SELECT 'pc-v83-' || t.id || '-fee', t.id, '加工费', 10, 'active'
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO processing_items
-    (id, tenant_id, name, category_id, pricing_method, unit_price, unit,
+    (id, tenant_id, name, category_id, unit,
      description, craft_hint, status)
 SELECT 'pi-v83-' || t.id || '-' || v.seq,
        t.id,
        v.name,
        'pc-v83-' || t.id || '-fee',
-       'per_meter',
-       0,
        '米',
        v.description,
        v.craft_hint,

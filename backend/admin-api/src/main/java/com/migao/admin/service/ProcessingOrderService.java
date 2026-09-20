@@ -930,7 +930,8 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 算料输入（issue #4208 Java 接线；米数判据由 issue #4299 更正为**加工项** {@code pricingMethod}）。
+     * 算料输入（issue #4208 Java 接线；米数判据先由 issue #4299 更正为**加工项** {@code pricingMethod}，
+     * 再由 issue #4882 改为 {@link #isMeterBasedLine} 的**三段契约**）。
      *
      * <p><b>三层字段别混</b>（#4299 真库实测钉死，见 {@code acceptance/2026-09-18/4299-db-distribution/FINDINGS.md}）：</p>
      * <ul>
@@ -939,14 +940,23 @@ public class ProcessingOrderService {
      *       {@code 散剪(bulk_cut)} / {@code cut} / {@code 散剪（按米裁剪）} / 无）—— <b>不是数量口径的来源</b>；
      *       {@code per_meter} 在该字段里一次都没出现过 ⇒ 拿它当判据<b>永不命中</b>（#4299 的病根）。</li>
      *   <li>加工项 {@code pricingMethod} = <b>加工项计价方式</b>（{@code per_meter} / {@code per_set} /
-     *       {@code fixed} / {@code per_area}…）—— <b>订单行数量口径由它决定</b>，故它是本方法的判据字段
-     *       （可达面 68 条订单行里命中 67 条）。</li>
+     *       {@code fixed} / {@code per_area}…）—— <b>订单行数量口径由它决定</b>，故 #4299 起它是判据字段
+     *       （当时可达面 68 条订单行里命中 67 条）。⚠️ <b>#4882 起加工项目录已删该列</b> ⇒ 该键此后只可能
+     *       出现在**存量订单快照**里（新单不再写），新单按「有加工项即米类」判 —— 见 {@link #isMeterBasedLine}。</li>
      *   <li>{@code products.pricing_type} = <b>商品</b>计价方式 —— 与订单行口径<b>不是同一层</b>：
      *       实测按它会漏 18/68 条（11 条商品缺失/软删 + 6 条 {@code pricing_type=fixed} 而其加工项仍按米）。</li>
      * </ul>
      * <p>{@code per_meter} 与「按米」是<b>加工项计价方式</b>的词汇，历史上被误当成售卖方式词表 ——
      * 同族混淆见前端展示表（{@code OrderDetail.tsx} / {@code OrderItemList.tsx} 把 {@code per_meter: '按米'}
      * 放进了 {@code sellingMethod} 的映射表）。</p>
+     *
+     * <p><b>#4882 登记：目录已无计价方式 ⇒ 新单按「有加工项即米类」</b>。用户裁定彻底删除
+     * 「加工项单价」与「加工项计价方式」（{@code processing_items.pricing_method} / {@code unit_price} 两列），
+     * 故判据不能再依赖目录。**有意取舍**（不是遗漏）：<b>存量无键老数据</b>的判定由「不命中」翻转为
+     * 「命中米类」，理由 = #3005 行业口径（行业加工费按米计价、辅料含在加工费中）+ V83 目录 16 项
+     * 历史上**全部** {@code per_meter}；翻转的代价只是「按订单行 quantity 当米数」，而不翻转的代价是
+     * 米类工序兜底 1 ⇒ **假完工**（#4208 红线）。存量快照里**带** {@code pricingMethod} 键的行仍按原语义判
+     * —— 含真库那条 {@code per_sqm} 刺绣散剪单的负例，不得冒充米数。</p>
      *
      * <p><b>取值</b>：命中时取<b>订单行</b> {@code quantity}（{@code OrderItem.quantity} javadoc：per_meter=米数），
      * <b>不</b>取加工项自己的 {@code quantity} —— 实测订单行 {@code 7e6f2a1c…} 订单数量 112.00
@@ -967,8 +977,8 @@ public class ProcessingOrderService {
                 calc.put(key, value);
             }
         }
-        // ② 加工项里有 per_meter ⇒ 订单行数量即米数（键名映射；其它计价方式**不**冒充米数）
-        if (!calc.containsKey("fabric_meters") && hasPerMeterPricing(entry)) {
+        // ② 该订单行是米类（判据见 isMeterBasedLine 的三段契约）⇒ 订单行数量即米数
+        if (!calc.containsKey("fabric_meters") && isMeterBasedLine(entry)) {
             Object quantity = entry.get("quantity");
             if (quantity != null) {
                 calc.put("fabric_meters", quantity);
@@ -978,23 +988,43 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 订单行的加工项里是否有一项按米计价（{@code pricingMethod == "per_meter"}）。
+     * 该订单行是否是**米类**（{@code calc_info.fabric_meters} 取订单行 {@code quantity} 的判据）。
      *
-     * <p>只看该单**实际选的加工项**（键名驼峰 {@code pricingMethod}，两个下单入口都这么写），
-     * 不看售卖方式、也不看商品级 {@code pricing_type} —— 理由与实测数字见 {@link #calcInfo}。
-     * {@code processingItems} 缺失 / 非 List / 元素非 Map 一律视为**不命中**（老数据与脏数据形态，不猜）。</p>
+     * <p>判据按 issue #4882 的**三段契约**（逐条实现，勿简化）：</p>
+     * <ol>
+     *   <li>{@code processingItems} 缺失 / 非 {@code List} / 为空 ⇒ {@code false}（老数据与脏数据形态，不猜）；</li>
+     *   <li>若**任一项显式带 {@code pricingMethod} 键**（= 存量订单快照形态）：存在 {@code "per_meter"}
+     *       ⇒ {@code true}；所有带键项都不是 {@code "per_meter"} ⇒ {@code false}
+     *       —— <b>这条负例必须保住</b>：真库有一条刺绣工艺 {@code per_sqm} 的散剪单，
+     *       它的订单行 quantity 不是米数，不得冒充米数（#4299 实测，order_item {@code 286229cf…}）；</li>
+     *   <li>若**一项都不带 {@code pricingMethod} 键**（= #4882 之后的新单：加工项目录已无计价方式，
+     *       下单入口不再写该键）⇒ {@code true}（#3005 行业口径：行业加工费**按米计价**、辅料含在加工费中；
+     *       V83 目录 16 项历史上全部 {@code per_meter}）。</li>
+     * </ol>
+     *
+     * <p><b>有意取舍（登记，不是遗漏）</b>：第 3 段把**存量无键老数据**的判定由「不命中」翻转为
+     * 「命中米类」。方向是刻意的 —— 不翻转的后果是米类工序落 {@code qty_source=fallback} 兜底 1
+     * ⇒ 112 米的单做 1 米 ⇒ **假完工**（#4208 红线），翻转的后果只是「按订单行 quantity 当米数」。
+     * 详见 {@link #calcInfo}。</p>
+     *
+     * <p>不看售卖方式 {@code sellingMethod}、也不看商品级 {@code pricing_type} ——
+     * 理由与实测数字见 {@link #calcInfo}。</p>
      */
-    private static boolean hasPerMeterPricing(Map<String, Object> entry) {
+    private static boolean isMeterBasedLine(Map<String, Object> entry) {
         Object raw = entry.get("processingItems");
-        if (!(raw instanceof List<?> items)) {
-            return false;
+        if (!(raw instanceof List<?> items) || items.isEmpty()) {
+            return false;   // ① 缺失 / 非 List / 空
         }
+        boolean anyExplicitKey = false;
         for (Object item : items) {
-            if (item instanceof Map<?, ?> proc && "per_meter".equals(str(proc.get("pricingMethod")))) {
-                return true;
+            if (item instanceof Map<?, ?> proc && proc.containsKey("pricingMethod")) {
+                anyExplicitKey = true;                          // ② 存量快照形态
+                if ("per_meter".equals(str(proc.get("pricingMethod")))) {
+                    return true;
+                }
             }
         }
-        return false;
+        return !anyExplicitKey;                                 // ③ 全无该键 ⇒ 新单 ⇒ 米类
     }
 
     /**

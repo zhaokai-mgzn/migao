@@ -242,7 +242,6 @@ describe('搜索区域左对齐 — 无居中 CSS 类', () => {
           createProcessingItem: vi.fn(),
           updateProcessingItem: vi.fn(),
           deleteProcessingItem: vi.fn(),
-          calculatePrice: vi.fn(),
         },
         processingCategoryApi: { getProcessingCategories: vi.fn().mockResolvedValue({ data: { data: [] } }) },
         categoryApi: { getCategories: vi.fn().mockResolvedValue({ data: { data: [] } }) },

@@ -157,11 +157,11 @@ export const TEST_SUBCATEGORY = {
 // Processing Items
 // ────────────────────────────────────────────
 
+// #4882（用户裁定）：加工项目录不再有 `pricingMethod` / `unitPrice`（V101 删列 + DTO 去字段）
+// ⇒ 夹具只保留名称 / 分类 / 单位 / 状态。
 export const TEST_PROCESSING_ITEM = {
   name: '测试加工-韩式打褶定型',
   categoryId: 'proc_cat_test_001',
-  pricingMethod: 'per_meter' as const,
-  unitPrice: 35.00,
   unit: '米',
   status: 'active' as const,
   description: 'E2E测试用加工项，韩式定型打褶',
@@ -170,9 +170,7 @@ export const TEST_PROCESSING_ITEM = {
 
 export const TEST_PROCESSING_ITEM_UPDATE = {
   name: '测试加工-韩式打褶定型（升级版）',
-  unitPrice: 40.00,
   categoryId: 'proc_cat_test_001',
-  pricingMethod: 'per_meter' as const,
   status: 'active' as const,
 }
 

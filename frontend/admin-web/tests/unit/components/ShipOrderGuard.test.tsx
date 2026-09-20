@@ -62,7 +62,7 @@ const mockOrder = {
       amount: 3500,
     },
   ],
-  processingItems: [{ name: '打孔', unitPrice: 1, quantity: 2, amount: 2 }],
+  processingItems: [{ name: '打孔', quantity: 2 }],
 }
 
 const po = (status: string) => ({

@@ -40,10 +40,9 @@ _NUMERIC_PREFIX_PATTERN = re.compile(r"^[¥￥$]?\s*(?P<num>[+-]?\d+(?:\.\d+)?)"
 # - sellingMethod: `product_skus.selling_method` = bulk_cut(散剪) / full_roll(整卷)；
 #   `OrderService:1435` 回退匹配时按**字面** eq 比较 → 拼写变体静默匹配不到
 #   → 库存校验/销量统计静默丢失（#3621 同源）。
-# - pricingMethod: `ProcessingItemService:298` 只认 per_meter/per_set/fixed/per_area
-#   （per_piece 按个不支持，issue #3005）。
+# （原 `_PRICING_METHODS = ("per_meter", …)` 随 issue #4882 删除：加工项**不再有单价与
+#   计价方式** → `processingItems[]` 每项只剩 {id, name, quantity}(+unit)，无字段可枚举。）
 _SELLING_METHODS = ("bulk_cut", "full_roll")
-_PRICING_METHODS = ("per_meter", "per_set", "fixed", "per_area")
 
 # ── 工艺规格（craft spec）枚举闸门（issue #4346 包 1 / 设计文档 §4.2 · §4.8）────────
 # `processing_info` 是**整体透传**的（本工具不重拼字段）⇒ 新键不会丢；但**错值**会一路到
@@ -238,24 +237,21 @@ def _request_window_id(context: Optional[ToolContext] = None, *, op: str) -> str
 #   · 不取 subtotal/total：服务端本就按 `quantity×unitPrice`(+加工明细)重算
 #     （`createOrderForAgent`），纳入比对只会制造假红；
 #   · 不取地址/备注/尺寸：确认后补这些是**正常流程**，纳入比对 = 把合法输入拦掉（R2）；
-#   · 加工费按服务端口径（Σ unitPrice×quantity），不信模型声明的 processingFee。
+#   · 加工费取 `processing_info.processingFee`（#4882 后加工项已无单价，无法再按 Σ 明细算，
+#     见下方 `_entry_processing_fee` 的说明）。
 def _entry_processing_fee(entry: Any) -> float:
-    """单行加工费（服务端口径）：Σ processingItems[].unitPrice × quantity。"""
+    """单行加工费 —— `processing_info.processingFee` 的**声明值**（issue #4882 后的口径）。
+
+    改前这里是「Σ processingItems[].unitPrice × quantity」；加工项单价已随 #4882
+    整体删除 ⇒ 明细里再没有可相乘的单价，唯一可得的口径就是声明的加工费合计。
+    本函数只服务于「顾客确认过的事实 vs 本次要执行的事实」比对（issue #4037/F22）——
+    加工费一旦在顾客确认后变化，照样会被拦下（护栏语义不变，只是取值来源变了）。
+    """
     pinfo = entry.get("processing_info") if isinstance(entry, dict) else None
     if not isinstance(pinfo, dict):
         return 0.0
-    raw_items = pinfo.get("processingItems")
-    if not isinstance(raw_items, list):
-        return 0.0
-    total = 0.0
-    for it in raw_items:
-        if not isinstance(it, dict):
-            continue
-        up = OrderCreateTool._parse_positive_number(it.get("unitPrice"))
-        qty = OrderCreateTool._parse_positive_number(it.get("quantity"))
-        if up is not None and qty is not None:
-            total += up * qty
-    return round(total, 2)
+    declared = OrderCreateTool._parse_positive_number(pinfo.get("processingFee"))
+    return round(declared, 2) if declared is not None else 0.0
 
 
 def order_facts_of(payload: Any) -> str:
@@ -409,7 +405,7 @@ class OrderCreateTool(BaseTool):
         "**不要自己推算**。"
         "【铁律·加工项】加工项是**店铺级目录，与商品无关**（issue #4371）——**必须先调用 "
         "processing_item_query 拿目录**（可带 keyword，**不带**商品分类参数），"
-        "再调用 interact(component=choice, multiSelect=true) 主动询问顾客要不要加工项（列出名称与单价），"
+        "再调用 interact(component=choice, multiSelect=true) 主动询问顾客要不要加工项（列出名称），"
         "把所选写入 items[i].processing_info.processingItems、合计写入 processingFee 并计入金额；"
         "顾客说不需要可跳过；目录为空才可告知无可用加工项。"
         "**未询问就直接建单 = 漏收加工费 = 订单金额错误**，属禁止行为。"
@@ -420,15 +416,16 @@ class OrderCreateTool(BaseTool):
         # 实证：CH-010 首跑 `总额 311.4 ≠ Σ小计71.4+加工费252.0=323.4` —— 小计 71.4=3×23.8，
         #   落库总额 311.4=71.4+240（服务端按 processingItems 的 unitPrice×quantity 重算），
         #   而模型声明的 processingFee=252（把按面积的刺绣工艺算成 30×8.4）。同一个订单两份数字。
-        "【铁律·加工数量口径】processingItems[i].quantity 必须按 pricingMethod 推导，不许凭感觉："
-        "per_meter(按米)=面料米数；per_area(按面积)=门幅(米)×面料米数（㎡，**可为小数**，如 2.8×3=8.4）；"
-        "per_set(按套)=套数；fixed(一口价)=1（单价即该项总价）。"
+        "【铁律·加工数量口径】processingItems[i].quantity **必须 = 该订单行的面料米数**"
+        "（= items[i].quantity），不许凭感觉 —— **禁止虚构「每米几个」的密度推导**"
+        "（行业加工费按米计价、辅料（罗马圈/四爪钩等）含在加工费中，issue #3005）。"
         "items[i].quantity 是**订单数量**（驱动库存/销量），必须是**不小于 1 的数**"
-        "（口径 per_meter=米数、per_set=件数、per_area=宽×高；如 1、2.5、8.4），"
+        "（口径 = 面料米数，如 1、2.5、8.4），"
         "<1 会被本地拒绝——服务端库存/销量按**整数件**计，0.5 会被算成 0 件（不扣库存、销量 +0，"
         "订单却照样成交）。服务端按 DECIMAL(10,2) 保真落库，不得自行取整。"
-        "**processingFee 必须等于 Σ(processingItems[i].unitPrice × quantity)**（容差 0.01）——"
-        "服务端只按这个明细口径计总额，两处不一致时顾客在确认卡上看到的总额 ≠ 实际落库/收款金额。"
+        "**processingFee 必须等于本轮所选加工项的加工费合计**——加工项**不再有单价与计价方式**"
+        "（issue #4882），明细里没有可相乘的单价 ⇒ **禁止自己编「单价×数量」的算式写进 "
+        "processingItems**；漏算/算错加工费时顾客在确认卡上看到的总额 ≠ 实际落库/收款金额。"
         "【反例】跳过 SKU 选择直接下单；把 sellingMethod/doorWidth 平铺进 items；"
         "臆造规格键（如自己编 colorId/skuId）或只给颜色不给门幅就下单（服务端无法定位 SKU ⇒ 拒绝）；"
         "凭 product_search 列表断言'该商品无加工项'（加工项是店铺级目录，必须查 processing_item_query）。修改订单用 order_manage。WRITE"
@@ -486,8 +483,7 @@ class OrderCreateTool(BaseTool):
                                 "订单数量（必填，**不得小于 1**，可为小数；<1 会被本地拒绝）。"
                                 "为什么下限是 1（issue #3682）：服务端库存/销量按整数件计，"
                                 "数量 0.5 → 需求算成 0 件 → 不扣库存、销量 +0，订单却成交（账实不符）。"
-                                "口径按计价方式：per_meter=面料米数（如 2.5）；"
-                                "per_set=件数；per_area=宽×高（㎡，如 2.8×3=8.4）；fixed=1"
+                                "口径 = 面料米数（如 2.5）—— 顾客买 3 米就是 3"
                             ),
                         },
                         "unit_price": {
@@ -671,37 +667,29 @@ class OrderCreateTool(BaseTool):
                                 "processingFee": {
                                     "type": "number",
                                     "minimum": 0,
-                                    "description": "加工费合计（不得为负）= Σ(processingItems[i].unitPrice × quantity)",
+                                    "description": "加工费合计（不得为负）—— 加工项已无单价（issue #4882），禁止自己编单价×数量",
                                 },
                                 "processingItems": {
                                     "type": "array",
-                                    "description": "加工项列表",
+                                    "description": "加工项列表（每项 {id, name, quantity}；**不再有 unitPrice/pricingMethod/subtotal**，issue #4882）",
                                     "items": {
                                         "type": "object",
                                         "properties": {
                                             "id": {"type": "string"},
                                             "name": {"type": "string"},
-                                            "unitPrice": {"type": "number", "minimum": 0},
                                             "quantity": {
                                                 "type": "number",
                                                 # 刻意**不设 ≥1 下限**（issue #3682 边界裁定）：
-                                                # 加工数量不驱动库存/销量（只进 Σ unitPrice×quantity
-                                                # 的加工费数学），且 per_area 的面积可以合法 <1 ㎡
-                                                # （如 0.8×0.9=0.72 ㎡）——设 1 会误伤小面积加工单。
+                                                # 加工数量不驱动库存/销量，且面料米数可以合法 <1 米
+                                                # （如 0.72 米）——设 1 会误伤小面积/短料订单。
                                                 # 负值仍由 _validate_processing_info 拒绝（#3622）。
                                                 "minimum": 0,
                                                 "description": (
-                                                    "加工数量，按 pricingMethod 推导：per_meter=面料米数；"
-                                                    "per_area=宽×高（㎡，可为小数如 8.4，可小于 1）；per_set=套数；fixed=1"
+                                                    "加工数量 = **该订单行的面料米数**（= items[i].quantity）；"
+                                                    "禁止虚构「每米几个」的密度推导"
                                                 ),
                                             },
                                             "unit": {"type": "string"},
-                                            "pricingMethod": {
-                                                "type": "string",
-                                                "enum": ["per_meter", "per_set", "fixed", "per_area"],
-                                                "description": "计价方式，取 processing_item_query 返回的 pricing_method 原值：per_meter(按米)/per_set(按套)/fixed(一口价)/per_area(按面积)；per_piece(按个)不支持",
-                                            },
-                                            "subtotal": {"type": "number", "minimum": 0},
                                         },
                                     },
                                 },
@@ -749,10 +737,9 @@ class OrderCreateTool(BaseTool):
         0 数量产出 0 元明细；且 Agent 路径的 admin-api 入参（AgentOrderItem）
         **未做 Bean Validation**，等 HTTP 回来才拒绝等于白跑一轮且提示不可行动。
 
-        issue #3666 起**不再要求整数**：数量口径按计价方式（docs/testing/
-        acceptance-protocol.md:225）——per_meter=米数、per_set=1、per_area=宽×高（㎡）。
-        per_area 的合法面积就是小数（门幅 2.8m × 3m = 8.4 ㎡，刺绣工艺 30 元/㎡
-        → 252.00 元），旧实现"拒绝小数 + 服务端截断成整数"会少收 12.00 元；
+        issue #3666 起**不再要求整数**：数量口径 = **面料米数**（顾客买 2.5 米就是 2.5）——
+        口径源 = `docs/testing/acceptance-protocol.md` 的「数量 = 面料米数」。
+        旧实现"拒绝小数 + 服务端截断成整数"会让小数米数落库失真；
         服务端 `order_items.quantity` 已同步放宽为 DECIMAL(10,2)。
 
         issue #3682 把下限从「> 0」收紧为「≥ 1」：服务端 `OrderService` 对
@@ -763,7 +750,7 @@ class OrderCreateTool(BaseTool):
         放宽后**新可达**的静默漏扣。裁定（issue #3682 方案 A）：agent 路径订单数量下限 = 1，
         与 admin-web 新建订单页的 `min={1}` 同口径 —— 半米不再是「静默漏扣」而是**可行动提示**。
         注意：下限只加在**驱动库存的 `items[].quantity` 上**；加工数量
-        （`processingInfo.processingItems[].quantity`，per_area 可为 <1 ㎡）不设此下限。
+        （`processingInfo.processingItems[].quantity` = 该行面料米数，可为 <1 米）不设此下限。
         """
         value = OrderCreateTool._parse_positive_number(raw)
         if value is None:
@@ -775,9 +762,8 @@ class OrderCreateTool(BaseTool):
                     f"数量必须是**不小于 1 的数**（如 1、2.5、8.4），不要带单位或写成文字。"
                 ),
                 suggestion=(
-                    "请把 quantity 改成不小于 1 的数（按计价方式给数：per_meter 给米数如 2.5，"
-                    "per_area 给宽×高如 8.4，per_set/fixed 给 1；"
-                    "若同一商品有多个规格，请拆成多行而不是把数量写在一行里"
+                    "请把 quantity 改成不小于 1 的数（面料米数，如 2.5；"
+                    "若同一商品有多个规格，请拆成多行而不是把数量写在一行里）"
                 ),
             )
         if value < 1:
@@ -807,7 +793,7 @@ class OrderCreateTool(BaseTool):
                     )
                 ),
             )
-        # issue #3666：小数数量（≥1）是**合法**的（per_meter 米数如 2.5 / per_area 面积如 8.4）
+        # issue #3666：小数数量（≥1）是**合法**的（面料米数如 2.5 米）
         return None
 
     @staticmethod
@@ -884,12 +870,10 @@ class OrderCreateTool(BaseTool):
         """非负数值闸门（issue #3622）：负数/不可解析 → 本地拒绝（HTTP 之前 fail-fast）。
 
         覆盖面：`items[].width/height`（尺寸）、`processing_info.processingFee`、
-        `processing_info.processingItems[].quantity/unitPrice/subtotal`。
+        `processing_info.processingItems[].quantity`（单价/小计已随 issue #4882 删除）。
 
-        为什么在工具层拦：这些值直接进入金额/面积数学 —— 服务端
-        `OrderService.sumProcessingFee()`（:824-829）就是 Σ `unitPrice × quantity`
-        （`extractProcessingItems` :807-811 即这两字段相乘），**任一为负 → 负加工费**
-        直接加进 `totalAmount` 落库（:417）；负尺寸则让 per_area 计价算出负面积。
+        为什么在工具层拦：这些值直接进入金额/尺寸数学 —— `processingFee` 为负会把订单
+        总额拉低（顾客少付钱、财务对账对不上），负尺寸会让面积/算料得出负值。
         Agent 路径 DTO（`AgentOrderItem`）原先零约束注解、Controller 无 `@Valid` → 后端不拦。
         """
         value = OrderCreateTool._parse_positive_number(raw)
@@ -920,7 +904,7 @@ class OrderCreateTool(BaseTool):
     @staticmethod
     def _reject_invalid_enum(where: str, field_label: str, field_key: str, raw: Any,
                              legal: tuple, impact: str = "") -> Optional[ToolResult]:
-        """枚举闸门（issue #3622）：售卖方式/计价方式/工艺规格必须是**后端字面认得的**枚举值。
+        """枚举闸门（issue #3622）：售卖方式/工艺规格必须是**后端字面认得的**枚举值。
 
         刻意不做别名归一化（"散剪"→bulk_cut）：后端 `OrderService:1435` 是**按字面**
         eq 匹配 SKU 的，归一化会把"这个字段到底该传什么"的契约藏进工具层；而静默接受
@@ -940,13 +924,12 @@ class OrderCreateTool(BaseTool):
             return None
         if not isinstance(raw, str) and not isinstance(raw, bool) and raw in legal:
             return None
-        # 括号提示**按字段族**分流：只有售卖方式/计价方式才有各自的补充说明。
+        # 括号提示**按字段族**分流：只有售卖方式有自己的补充说明。
         # （原实现用「非 sellingMethod 即计价方式」的二分 ⇒ 给部位/工艺串上
-        #  「per_piece 按个不支持」这种**串味提示**，会误导 LLM 自愈方向。）
+        #  「per_piece 按个不支持」这种**串味提示**，会误导 LLM 自愈方向；
+        #  计价方式那一支已随 issue #4882 删除 —— 加工项不再有计价方式。）
         if field_key.endswith("sellingMethod"):
             hint = "（散剪=bulk_cut、整卷=full_roll）"
-        elif field_key.endswith("pricingMethod"):
-            hint = "（per_piece 按个不支持，issue #3005）"
         else:
             hint = ""
         # 本闸门只剩**字符串枚举**族（售卖方式/计价方式/工艺规格/取值来源）——
@@ -1070,9 +1053,9 @@ class OrderCreateTool(BaseTool):
                 error=f"{where}加工项格式错误",
                 message=(
                     f"{where}的 processing_info.processingItems 不是列表"
-                    f"（{type(raw_items).__name__}），服务端解析不出加工项与加工费。"
+                    f"（{type(raw_items).__name__}），服务端解析不出加工项。"
                 ),
-                suggestion="请把 processingItems 写成列表，每项为对象：{name, unitPrice, quantity, pricingMethod}",
+                suggestion="请把 processingItems 写成列表，每项为对象：{id, name, quantity}",
             )
         for j, entry in enumerate(raw_items):
             entry_where = f"{where}加工项第 {j + 1} 项"
@@ -1081,26 +1064,18 @@ class OrderCreateTool(BaseTool):
                     success=False,
                     error=f"{entry_where}格式错误",
                     message=(
-                        f"{entry_where}不是对象，服务端 `extractProcessingItems` 会跳过它"
-                        " → 该加工费被静默丢弃（顾客少收钱）。"
+                        f"{entry_where}不是对象，服务端解析加工项时会跳过它"
+                        " → 该加工项被静默丢弃。"
                     ),
-                    suggestion="请把每个加工项写成对象：{name, unitPrice, quantity, pricingMethod}",
+                    suggestion="请把每个加工项写成对象：{id, name, quantity}",
                 )
-            rejected = OrderCreateTool._reject_invalid_enum(
-                entry_where, "计价方式", "processingItems[].pricingMethod",
-                entry.get("pricingMethod"), _PRICING_METHODS)
-            if rejected is not None:
-                return rejected
-            for field_key, label, impact in (
-                ("quantity", "数量", "负数量的加工费是负数（服务端按 unitPrice × quantity 计费）"),
-                ("unitPrice", "单价", "负单价的加工费是负数（服务端按 unitPrice × quantity 计费）"),
-                ("subtotal", "小计", "负小计与加工费口径自相矛盾（确认卡金额与落库金额对不上）"),
-            ):
-                if entry.get(field_key) is None:
-                    continue
+            # 只校验**还存在的**字段：数量（= 该行面料米数）。单价/计价方式/小计已随
+            # issue #4882 从明细整体删除 —— 再校验它们就是校验不存在的键（空转假绿）。
+            if entry.get("quantity") is not None:
                 rejected = OrderCreateTool._reject_invalid_amount(
-                    entry_where, label, f"processingItems[].{field_key}",
-                    entry.get(field_key), impact)
+                    entry_where, "数量", "processingItems[].quantity",
+                    entry.get("quantity"),
+                    "负数量的加工项不成立（数量 = 该行面料米数，米数不能为负）")
                 if rejected is not None:
                     return rejected
         return None
@@ -1113,7 +1088,7 @@ class OrderCreateTool(BaseTool):
         unit_price（> 0）、subtotal（≥ 0 且 ≥ 数量×单价）。
         覆盖面（issue #3622，同族残留）：product_name 非空、width/height（≥ 0）、
         processing_info 的 sellingMethod 枚举 / processingFee（≥ 0）/
-        processingItems[].pricingMethod 枚举与 quantity/unitPrice/subtotal（≥ 0）。
+        processingItems[].quantity（≥ 0；单价/计价方式/小计已随 issue #4882 整体删除）。
         只做确定性判定（无 LLM、无网络），保证"注定失败的调用"不产生 HTTP 往返，
         也保证「闸门放行的值 = 服务端能接受的值」。
         """
@@ -1151,10 +1126,10 @@ class OrderCreateTool(BaseTool):
         )
         if rejected is not None:
             return rejected
-        # 尺寸（#3622，可选）：负尺寸 → per_area 负面积
+        # 尺寸（#3622，可选）：负尺寸 → 面积/算料为负值（订单尺寸不可信）
         for field, label, impact in (
-            ("width", "宽度", "负宽度会让按面积（per_area）计价算出负面积"),
-            ("height", "高度", "负高度会让按面积（per_area）计价算出负面积"),
+            ("width", "宽度", "负宽度会让尺寸/面积算出负值（订单尺寸不可信）"),
+            ("height", "高度", "负高度会让尺寸/面积算出负值（订单尺寸不可信）"),
         ):
             if item.get(field) is None:
                 continue

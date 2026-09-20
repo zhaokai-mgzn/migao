@@ -104,19 +104,16 @@ class TestOrderCreateValidation:
         )
         assert result.data.get("skipped") is not True
 
-class TestOrderCreateProcessingFeeConsistency:
-    """加工费必须与明细自洽 —— 确定性闸门（issue #3521）。
+class TestOrderCreateProcessingFeeGateRemoved:
+    """加工费一致性兜底**已随 issue #4882 删除**（原 issue #3521 的确定性闸门）。
 
-    为什么必须拦在**发确认卡之前**：确认卡上的金额由模型按自己声明的
-    `processingFee` 渲染，而落库金额由服务端按 `Σ processingItems.unitPrice × quantity`
-    重算（`OrderService.sumProcessingFee()`，`processingFee` 字段不参与）。两者不一致时
-    顾客看到的总额 ≠ 实际收款金额 —— 这是钱的问题，且 prompt 写了规则也会被 LLM 方差漏掉
-    （与 #3052 建品兜底同一理由：**validate_input 必须是确定性闸门**）。
+    为什么删：该闸门的判据是 `processingFee == Σ(processingItems[i].unitPrice × quantity)`，
+    而 `unitPrice` 随 #4882 从加工项明细整体删除 ⇒ 明细里再没有可相乘的单价，
+    判据**已无从计算**（留着只会空转成假绿：`detail_ok=False` 静默跳过 = 看着有门禁其实没有）。
+    加工费与订单金额的核对改由服务端口径 + `amount_verify` 承担。
 
-    实证（CH-010 首跑签名）：
-        amount_verify[order_create](R8): 总额 311.4 ≠ Σ小计71.4+加工费252.0=323.4
-      落库 311.4 = 71.4（3×23.8）+ 240（明细 30×8）；
-      而声明的 processingFee = 252（把按面积的项另算成 30×8.4）→ 差 12 元。
+    红证：① 若有人把 `unitPrice × quantity` 算式闸门加回 validate_input，第一条必红；
+    ② 若有人留着「已删字段」的校验残留（拿不存在的键判缺参），第二条必红。
     """
 
     def _params(self, fee, items):
@@ -130,49 +127,29 @@ class TestOrderCreateProcessingFeeConsistency:
             }],
         }
 
-    async def test_inconsistent_fee_is_blocked(self, tool, admin_tool_context):
-        """#3521 实况：明细 30×8=240，却声明 252 → 必须拦下并告知应改成 240"""
-        result = await tool.execute(
-            context=admin_tool_context,
-            target_tool="order_create",
-            target_action="create",
-            params=self._params(252.0, [{"name": "刺绣工艺", "unitPrice": 30, "quantity": 8}]),
-        )
-        assert result.success is False, "声明 252 而明细 240（差 12 元）必须拦住"
-        msg = result.message or ""
-        assert "252" in msg and "240" in msg, f"必须点明两个数字与应改的值: {msg}"
-        assert "processingFee" in msg, f"必须点名出问题的字段: {msg}"
+    def test_gate_has_no_unit_price_formula_check(self):
+        """validate_input 的**代码**里不得再有 Σ(processingItems[].unitPrice × quantity) 判据。
 
-    async def test_consistent_fee_passes(self, tool, admin_tool_context):
-        """声明值与明细一致（24 = 8×3）→ 通过"""
-        result = await tool.execute(
-            context=admin_tool_context,
-            target_tool="order_create",
-            target_action="create",
-            params=self._params(24.0, [{"name": "打孔", "unitPrice": 8, "quantity": 3}]),
-        )
-        assert result.success is True, result.message
+        只扫代码行（注释里保留「已删」的沿革说明是允许且必要的 —— R5：禁止静默移除）。
+        """
+        import inspect as _inspect
 
-    async def test_multi_item_fee_sum_passes(self, tool, admin_tool_context):
-        """多项明细：合计 == Σ 各项 → 通过（不因多项误判）"""
+        from app.tools import validate_input as vi
+
+        src = _inspect.getsource(vi)
+        code = "\n".join(l for l in src.split("\n") if not l.lstrip().startswith("#"))
+        assert "unitPrice" not in code, "已删字段 unitPrice 又出现在闸门代码里（issue #4882）"
+        assert "Σ加工项" not in code, "加工费一致性（Σ 明细）判据又回来了 —— 该算式已无从计算"
+
+    async def test_new_shape_processing_items_pass(self, tool, admin_tool_context):
+        """新形态明细 `{id, name, quantity}`（数量 = 面料米数）必须放行，不得被残留校验误伤。"""
         result = await tool.execute(
             context=admin_tool_context,
             target_tool="order_create",
             target_action="create",
-            params=self._params(54.0, [
-                {"name": "打孔", "unitPrice": 8, "quantity": 3},
-                {"name": "定型", "unitPrice": 10, "quantity": 3},
+            params=self._params(24.0, [
+                {"id": "pi-punch", "name": "打孔", "quantity": 3, "unit": "米"},
             ]),
-        )
-        assert result.success is True, result.message
-
-    async def test_no_items_detail_is_not_blocked(self, tool, admin_tool_context):
-        """老形态（只写 processingFee、无 processingItems 明细）不拦 —— 避免误伤"""
-        result = await tool.execute(
-            context=admin_tool_context,
-            target_tool="order_create",
-            target_action="create",
-            params=self._params(24.0, []),
         )
         assert result.success is True, result.message
 

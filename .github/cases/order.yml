@@ -767,7 +767,7 @@ cases:
 
   - id: OR-014
     legacy_id: ""
-    title: "下单加工项数量规则 - 按计价方式，无每米数量密度推导"
+    title: "下单加工项数量 = 面料米数（不再按计价方式派生），数量可见可对账"
     domains:
       - order
       - chat
@@ -894,18 +894,14 @@ cases:
         product_name: "遮光窗帘"
         checks: [unit_price, subtotal, total]
     data_checks:
-      # ⚠️ 口径**作用域限定**（2026-09-15，issue #3683 / #3672；旧表述无限定，已实际误导过修法）：
-      #   下面这条只适用于 **order_create 路径**（agent 自己把面积算进
-      #   `processing_info.processingItems[].quantity`）。
-      #   **`processing_item_manage(action=calculate_price)` 端点是另一套契约**：后端自己从
-      #   `dimensions` 算 `area=宽×高`，再 `unitPrice × area × quantity`（`ProcessingItemService.java:248-254`
-      #   + `:310-318`）⇒ 把「宽×高」写进该端点的 `quantity` 会**必然双计**
-      #   （实测：dimensions + quantity=8 → ¥1920.00；正确 payload → ¥240.00）。
-      #   该端点请用 `width`/`height` 承载面积、`quantity` 作计件数（见 #3672 / PP-009）。
-      - "加工项数量按计价方式确定（**仅 order_create 路径**；`calculate_price` 端点的 per_area 面积由 `dimensions.width/height` 承载、`quantity` 为计件数，见 #3672）：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高"
-      - "processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和"
-      - "订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导"
-      - "加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误"
+      # ⚠️ #4882（用户裁定）：加工项**不再有单价与计价方式** ⇒ 「按计价方式推导数量」这条口径
+      #    整体退场，数量恒 = 该订单行面料米数（#3005 行业口径：行业加工费按米计价、辅料含在
+      #    加工费中）；加工费也不再由「加工项单价 × 数量」得出（真值源 = 加工费组合）。
+      #    本用例的**内核**（数量必须可见、可对账、禁止虚构「每米几个」的密度推导）逐字保留。
+      - "加工项数量 = **该订单行面料米数**（issue #4882：计价方式退场后不再派生；#3005 行业口径——行业加工费按米计价、辅料含在加工费中）⇒ 如「打孔 × 3 米」⇒ `quantity=3`；禁止虚构「每米几个」的密度推导"
+      - "processing_info.processingItems 逐项含 `{id, name, quantity, unit}` —— `unitPrice` / `pricingMethod` / `subtotal` 三键已随 issue #4882 退场（订单快照不再承载加工项价与计价方式）"
+      - "订单确认/回复展示加工项含「名称 + 数量」（如『打孔 3 米』）—— 数量可见可对账"
+      - "加工费**不再**由「加工项单价 × 数量」得出：真值源是**加工费组合**（`processing_fee_combinations`，元/米 × 加工费米数）—— 加工项本身已无价（R10 / issue #4882）；把逐项单价 × 数量当加工费 = 口径错（该账已不存在）"
       - "C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。"
     pre_clean:
       # 去重只按关键词（#3538）：原先的 price 过滤条件（限 100 元）在独立栈
@@ -928,7 +924,7 @@ cases:
         source: "遮光窗帘"
         expect: 1
     skip_reason: ""
-    merge_log: "2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）；2026-09-15（issue #3835）补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`：本用例按名定位下单对象、`amount_verify` 也按名取接地真值，故「该名字唯一」是可判定的前置 —— 判定跑 run 34908262839 首跑 R1 `product_search(products=2)` + R2 把 PR-016 造的 ¥100 副本选成目标，6 轮被岔路吃掉。声明前置后这类污染折成 `precondition_not_applied(declared:product_count_for_keyword)`，不再伪装成「agent 不下单」；断言（expectations/must_succeed/amount_verify/data_checks）原样未动；2026-09-15（B 端免验证码产品变更，窄跑 34930597539）：四个「123456」轮去掉 `prefer_text: true` —— 该开关会让 harness 无视待答 confirm 卡、把「点确认」轮硬发成验证码文本，而 B 端代客下单已免短信验证码、落单前必须点击确认卡（order_create 在确认卡未被点击时返回 confirmation_required_card_not_clicked，窄跑 R9~R11 逐字复现）。去掉后按 runner 既有 `resolve_auto_respond` 语义：有待答卡就答卡（confirm→点击 confirmValue / form→回填客户信息），无卡且 C 端 customer 角色被索码时才发 123456 兜底（C 端仍需验证码，见 order_create `_needs_sms_verification` role==customer 分支）；断言（expectations/must_succeed/amount_verify/data_checks/precondition）原样未动；2026-09-18 **假红归因**（issue #4042，LLM 红例 run 35243351675 @67db87ae）：本例在 mibao 腿判红（`amount_verify: 单价 150 ≠ 商品库 168`）而 **xiaobu 腿同一条断言判绿**，差异不在 agent —— 同栈的 PR-021（输入「把遮光窗帘的米白色散剪规格改成 150 元」）把**共享夹具** `prod_eval_blackout` 的米白/散剪 SKU 价改成 150 且**无复位**，而本例 `amount_verify` 的接地真值取的是**商品级价**（168，`_fetch_product_price`）⇒ 按所选规格下单（150 = 该 SKU 库价，工具层接地闸门同样放行）反被判成「凭记忆报价」。两层修法：① 断言语义对齐工具闸门（真值按所选规格取 SKU 价，见本 PR 对 `local_runner.check_amount_verify` 的改动）；② 写方无复位属独立缺陷，另开单跟踪（本 PR 不改夹具写入方）"
+    merge_log: "2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1）；2026-09-14 校准（#3538）：pre_clean 去 price 过滤（关键词去重，原 price 过滤限 100 元、在种子遮光窗帘 ¥168 的独立栈上恒不匹配 = 没去重）；2026-09-15（issue #3835）补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`：本用例按名定位下单对象、`amount_verify` 也按名取接地真值，故「该名字唯一」是可判定的前置 —— 判定跑 run 34908262839 首跑 R1 `product_search(products=2)` + R2 把 PR-016 造的 ¥100 副本选成目标，6 轮被岔路吃掉。声明前置后这类污染折成 `precondition_not_applied(declared:product_count_for_keyword)`，不再伪装成「agent 不下单」；断言（expectations/must_succeed/amount_verify/data_checks）原样未动；2026-09-15（B 端免验证码产品变更，窄跑 34930597539）：四个「123456」轮去掉 `prefer_text: true` —— 该开关会让 harness 无视待答 confirm 卡、把「点确认」轮硬发成验证码文本，而 B 端代客下单已免短信验证码、落单前必须点击确认卡（order_create 在确认卡未被点击时返回 confirmation_required_card_not_clicked，窄跑 R9~R11 逐字复现）。去掉后按 runner 既有 `resolve_auto_respond` 语义：有待答卡就答卡（confirm→点击 confirmValue / form→回填客户信息），无卡且 C 端 customer 角色被索码时才发 123456 兜底（C 端仍需验证码，见 order_create `_needs_sms_verification` role==customer 分支）；断言（expectations/must_succeed/amount_verify/data_checks/precondition）原样未动；2026-09-18 **假红归因**（issue #4042，LLM 红例 run 35243351675 @67db87ae）：本例在 mibao 腿判红（`amount_verify: 单价 150 ≠ 商品库 168`）而 **xiaobu 腿同一条断言判绿**，差异不在 agent —— 同栈的 PR-021（输入「把遮光窗帘的米白色散剪规格改成 150 元」）把**共享夹具** `prod_eval_blackout` 的米白/散剪 SKU 价改成 150 且**无复位**，而本例 `amount_verify` 的接地真值取的是**商品级价**（168，`_fetch_product_price`）⇒ 按所选规格下单（150 = 该 SKU 库价，工具层接地闸门同样放行）反被判成「凭记忆报价」。两层修法：① 断言语义对齐工具闸门（真值按所选规格取 SKU 价，见本 PR 对 `local_runner.check_amount_verify` 的改动）；② 写方无复位属独立缺陷，另开单跟踪（本 PR 不改夹具写入方）**2026-09-21 改写（issue #4882，用户裁定「彻底删除加工项单价与计价方式」）**：加工项目录与订单快照都不再有 `unitPrice` / `pricingMethod` / `subtotal`（V101 删列 + `ProcessingOrderService.isMeterBasedLine` 判据改写），且 `processing_item_manage(action=calculate_price)` 端点与计价方式枚举一并退场 ⇒ 原 data_checks 里「按计价方式派生数量」「逐项含 pricingMethod」「加工费 = 单价 × 数量」三条口径**失去对象**。按「断言只增不减」原则改写为：数量 = 订单行面料米数；快照键族收缩为 `{id, name, quantity, unit}`；并**新增**一条「加工费真值源 = 加工费组合、不得把逐项单价×数量当加工费」的负向口径。本用例的**内核**（数量可见可对账、禁止虚构每米密度）与 expectations / must_succeed / amount_verify / pre_clean / precondition / user_inputs **一字未动**。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_order_create_processing_quantity.py"
@@ -1082,7 +1078,7 @@ cases:
       - tool: order_create
     data_checks:
       - "店铺加工项目录（processing_item_query）非空时，生成订单确认卡之前必须主动询问加工项（interact(choice, multiSelect=true) 展示，透传 pageMeta 支持翻页；目录为空则如实告知后继续）"
-      - "用户选择加工项后，order_create 的 processing_info.processingItems 含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee 计入 subtotal（金额=面料小计+加工费）"
+      - "用户选择加工项后，order_create 的 processing_info.processingItems 含 `{id, name, quantity, unit}`（#4882：`unitPrice` / `pricingMethod` / `subtotal` 三键已退场），加工数量 = 该行面料米数，processingFee 由**加工费组合**口径给出（金额 = 面料小计 + 加工费）"
       - "一次性提交『已选加工项：A、B』→ 解析全部名称，禁止只取第一个；用户说『不需要加工项』才跳过"
     order_before:
       - "interact[choice:processing_items] before interact[confirm]"
@@ -1205,8 +1201,8 @@ cases:
         checks: [unit_price, subtotal, total]
     data_checks:
       - "product_search 列表数据不含 colorId/skus，必须先调 product_detail 取详情"
-      - "加工项是**店铺级目录**（#4371 解耦：product_detail 不再返回 processing_items）⇒ 必须调 processing_item_query 拿目录，再在 confirm 之前用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「打孔 ¥8/米」）"
-      - "所选加工项写入 order_create 的 processing_info.processingItems（id/name/unitPrice/quantity/unit/pricingMethod/subtotal），合计写入 processingFee 且计入订单金额；按米计价项加工数量=面料米数"
+      - "加工项是**店铺级目录**（#4371 解耦：product_detail 不再返回 processing_items）⇒ 必须调 processing_item_query 拿目录，再在 confirm 之前用 interact(choice, multiSelect=true) 主动询问，列出名称与加工数量口径（**#4882 后加工项已无单价**，不得报「打孔 ¥8/米」这类逐项价）"
+      - "所选加工项写入 order_create 的 processing_info.processingItems（`{id, name, quantity, unit}`；**#4882 已去掉 `unitPrice` / `pricingMethod` / `subtotal`**），加工数量 = 该行面料米数，加工费按**加工费组合**合计并计入订单金额"
       - "顾客说「不需要加工项」可跳过；加工项确实为空时才告知无可用加工项"
       - "C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。"
     # 确认卡先行（issue #3414）：C 端下单**必须先发 confirm 卡展示明细**、顾客确认后才写单

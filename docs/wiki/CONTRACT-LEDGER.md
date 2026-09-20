@@ -111,7 +111,7 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 
 | 字段 | 后端 Java | 前端 TS | Agent Python | 备注 |
 |---|---|---|---|---|
-| 计价方式 | `pricingMethod`（ProcessingItem/Response/Create/Update，枚举 per_meter/per_set/fixed/per_area） | `PricingMethod` 同枚举 | `pricing_method`（tool 透传） | per_piece 创建/更新被 validatePricingMethod 拒绝 |
+| ~~计价方式~~ | ~~`pricingMethod`（ProcessingItem/Response/Create/Update）~~ —— **已于 #4882 退场**：加工项目录不再有计价方式（V101 `DROP COLUMN processing_items.pricing_method`；DTO/前端类型/Agent 工具参数/`validatePricingMethod` 一并删除） | 同左（类型已删） | 同左（参数已删） | 2026-09-21 #4882 —— 价只在「加工费组合」上（R10） |
 | 数量规则 | per_meter → 数量=面料米数；per_set/fixed → 1；per_area → 面积 | 同（deriveProcessingQty） | 同（order prompt） | B 端下单展示「名称+数量+金额」供对账，无数量输入框 |
 | 价格计算入参 | `quantity`（PriceCalculateRequest，per_meter 传面料米数） | — | `quantity` | fabricMeters 字段已删除，无密度推导 |
 | 数量类型（issue #3666） | `BigDecimal`（ProcessingItem/订单明细/订单列表/详情 DTO） | `number` | `number` | 全部为十进制、**禁止取整**；服务端 `OrderService.extractProcessingItems()` 走 `toBigDecimal()`（旧 `toInteger()` 把 per_area 8.4 截断成 8 → 列表/详情加工费与外层落库金额自相矛盾） |

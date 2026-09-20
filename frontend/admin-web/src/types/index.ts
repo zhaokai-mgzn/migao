@@ -237,19 +237,17 @@ export interface CategoryFormData {
 // 加工项状态
 export type ProcessingItemStatus = 'active' | 'inactive'
 
-// 加工项计价方式（行业加工费按米计价、辅料含在加工费中 → 无按个/每米数量，issue #3005）
-export type PricingMethod = 'per_meter' | 'per_set' | 'fixed' | 'per_area'
-
 // 加工项类型
+//
+// issue #4882（用户裁定）：加工项的**单价**（`unitPrice` 及 legacy 别名 `basePrice`）与
+// **计价方式**（`pricingMethod` / 独立的 `PricingMethod` 联合类型）整体退场 —— 加工项只是
+// 「有哪些加工服务」的目录，它的价由「加工费组合」（`processing_fee_combinations`，元/米）决定。
 export interface ProcessingItem {
   id: string
   name: string
   categoryId: string
   categoryName?: string
-  pricingMethod: PricingMethod
-  unitPrice: number
   unit: string
-  basePrice?: number // legacy alias for unitPrice
   status: ProcessingItemStatus
   /**
    * 该加工项**显式声明**的工艺（V78 的 `processing_items.craft_hint`，后端 `ProcessingItemResponse.craftHint`）。
@@ -275,12 +273,10 @@ export interface ProcessingItemListParams extends PageParams {
   categoryId?: string
 }
 
-// 加工项表单数据
+// 加工项表单数据（issue #4882：只提交名称 / 分类 / 单位；单价与计价方式已退场）
 export interface ProcessingItemFormData {
   name: string
   categoryId: string
-  pricingMethod: PricingMethod
-  unitPrice: number
   unit?: string
   status?: ProcessingItemStatus
   description?: string
@@ -304,21 +300,6 @@ export interface ProcessingCategoryFormData {
   name: string
   description?: string
   sort?: number
-}
-
-// 加工价格计算参数
-export interface ProcessingCalculateParams {
-  processingItemId: string
-  quantity: number
-  dimensions?: Record<string, number>
-  selectedOptions?: string[]
-  params?: Record<string, unknown>
-}
-
-// 加工价格计算结果
-export interface ProcessingCalculateResult {
-  price: number
-  details?: Record<string, unknown>
 }
 
 // ===== LLM WIKI 知识卡片（issue #3051，替代 RAG 文档模型）=====
@@ -533,13 +514,15 @@ export interface OrderItem {
   createdAt?: string
 }
 
-// 加工项
+// 加工项（订单级聚合快照）
+//
+// issue #4882：`unitPrice` 与 `amount` 一并删除 —— 后端 `OrderDetailResponse.ProcessingItemBrief`
+// 只剩 `id` / `name` / `quantity`（加工项目录已无单价；加工费的真值源是行级
+// `OrderItem.processingFee` = 组合价 × 加工费米数）。⚠️ 不要与**商品行**的 `unitPrice` / `subtotal` 混为一谈。
 export interface OrderProcessingItem {
   id?: string
   name: string                // 加工项名称（如"韩式打褶定型"、"打孔"）
-  unitPrice: number           // 单价（元/米）
   quantity: number            // 数量（米）
-  amount: number              // 金额 = unitPrice * quantity
 }
 
 // 订单备注
@@ -558,10 +541,11 @@ export interface LogisticsTrack {
 }
 
 // 加工单（issue #3340）
+// issue #4882：快照里的 `unitPrice` 同步退场（加工项不再有单价）—— 后端加工单
+// `ProcessingOrderResponse.ProcessingItemSnapshot` 一并删除该字段。名称 / 数量 / 单位保留。
 export interface ProcessingItemSnapshot {
   id?: string
   name: string
-  unitPrice?: number
   quantity?: number
   unit?: string
   options?: unknown

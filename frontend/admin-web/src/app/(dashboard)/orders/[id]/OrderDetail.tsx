@@ -40,16 +40,10 @@ function calcCountdown(deadline?: string): { h: number; m: number; s: number; ex
 }
 
 // 安全获取明细金额：后端未返回 amount 时依次回退到 subtotal 或 unitPrice*quantity
+// ⚠️ 只管**商品行**（`order_items` 自己的单价/小计）—— 与 #4882 退场的加工项明细无关。
 function getItemAmount(item: OrderItem): number {
   if (typeof item.amount === 'number' && !Number.isNaN(item.amount)) return item.amount
   if (typeof item.subtotal === 'number' && !Number.isNaN(item.subtotal)) return item.subtotal
-  const unit = typeof item.unitPrice === 'number' ? item.unitPrice : 0
-  const qty = typeof item.quantity === 'number' ? item.quantity : 0
-  return unit * qty
-}
-
-function getProcessingItemAmount(item: { amount?: number; unitPrice?: number; quantity?: number }): number {
-  if (typeof item.amount === 'number' && !Number.isNaN(item.amount)) return item.amount
   const unit = typeof item.unitPrice === 'number' ? item.unitPrice : 0
   const qty = typeof item.quantity === 'number' ? item.quantity : 0
   return unit * qty
@@ -219,10 +213,6 @@ export default function OrderDetailPage() {
   }
 
   const productGroups = useMemo(() => groupItems(order?.items), [order?.items])
-  const processingTotal = useMemo(
-    () => (order?.processingItems || []).reduce((sum, p) => sum + getProcessingItemAmount(p), 0),
-    [order?.processingItems]
-  )
 
   if (loading) {
     return (
@@ -298,11 +288,10 @@ export default function OrderDetailPage() {
       >
         <ProductTable groups={productGroups} />
 
-        {order.processingItems && order.processingItems.length > 0 && (
-          <div className="mt-5">
-            <ProcessingTable items={order.processingItems} total={processingTotal} />
-          </div>
-        )}
+        {/* 加工项表（加工项 | 单价 | 数量 | 金额 | 加工合计）已随 #4882 整表退场：
+            加工项不再有单价/计价方式，逐项金额列即无真值可言 ⇒ 不再渲染。
+            ⚠️ `order.processingItems` 本身**保留** —— 它是「含加工项」判定与发货守卫
+            （下方 `hasProcessing`）的判据源，不是展示物。 */}
 
         {/* 金额汇总：订单金额 / 优惠金额 / 已退款 / 实收款 — issue #672 */}
         <AmountSummary
@@ -738,52 +727,6 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
               </tr>
             ))
           )}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function ProcessingTable({
-  items,
-  total,
-}: {
-  items: NonNullable<Order['processingItems']>
-  total: number
-}) {
-  return (
-    <div className="overflow-x-auto rounded border border-neutral-200">
-      <table className="w-full text-sm">
-        <thead className="bg-neutral-50 text-neutral-600">
-          <tr>
-            <Th>加工项</Th>
-            <Th align="right">单价</Th>
-            <Th align="center">数量</Th>
-            <Th align="right">金额</Th>
-            <Th align="right">加工合计</Th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-neutral-100">
-          {items.map((item, idx) => (
-            <tr key={item.id || idx} className="hover:bg-neutral-50/50">
-              <Td>{item.name}</Td>
-              <Td align="right">{formatAmount(item.unitPrice)}</Td>
-              <Td align="center" className="text-primary-600 font-medium">
-                {item.quantity}
-              </Td>
-              <Td align="right" className="text-red-500 font-medium">
-                {formatAmount(getProcessingItemAmount(item))}
-              </Td>
-              {idx === 0 && (
-                <td
-                  rowSpan={items.length}
-                  className="px-3 py-3 text-right align-top border-l border-neutral-100 text-primary-600 font-semibold"
-                >
-                  {formatAmount(total)}
-                </td>
-              )}
-            </tr>
-          ))}
         </tbody>
       </table>
     </div>

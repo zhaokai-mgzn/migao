@@ -53,12 +53,14 @@ function getItemAmount(item: { amount?: number; subtotal?: number; unitPrice?: n
   return unit * qty
 }
 
-/** 加工项明细条目（processingInfo.processingItems 中的元素） */
+/**
+ * 加工项明细条目（`processingInfo.processingItems` 中的元素）。
+ *
+ * issue #4882（用户裁定 A）：订单列表「采购明细」列的**加工项明细块整块退场**
+ * （逐项的单价 / 数量 / 金额 / 算式不再渲染）⇒ 这里只留 `+ 加工费 X 元` 聚合兜底所需的金额键
+ * （#2916：列表接口不下发顶层 `processingFee` 时按明细求和）。
+ */
 interface ProcessingDetail {
-  id?: string
-  name?: string
-  unitPrice?: number
-  quantity?: number
   amount?: number
   subtotal?: number
 }
@@ -66,8 +68,10 @@ interface ProcessingDetail {
 /**
  * 单个订单明细项的加工费合计（#2916）。
  * 列表接口把加工信息嵌套在每个明细项的 processingInfo 内：
- * { processingFee: <该项加工费合计>, processingItems: [{id,name,unitPrice,quantity,subtotal}] }
- * 优先取 processingFee 字段，缺省时按加工项明细（amount/subtotal）求和兜底。
+ * `{ processingFee: <该项加工费合计>, processingItems: [{ name, amount, subtotal }] }`
+ * 优先取 `processingFee` 字段，缺省时按加工项明细（`amount` / `subtotal`）求和兜底。
+ *
+ * ⚠️ 逐项明细（单价 / 数量）自 #4882 起只用于**求和**，不再渲染成展示行。
  */
 function getItemProcessingFee(pi: Record<string, unknown> | undefined): number {
   if (!pi) return 0
@@ -78,15 +82,6 @@ function getItemProcessingFee(pi: Record<string, unknown> | undefined): number {
     const amt = Number(p?.amount ?? p?.subtotal ?? 0)
     return sum + (Number.isFinite(amt) ? amt : 0)
   }, 0)
-}
-
-/** 加工项明细金额：amount → subtotal → unitPrice*quantity 兜底 */
-function getProcessingDetailAmount(p: ProcessingDetail): number {
-  const amt = Number(p?.amount ?? p?.subtotal ?? 0)
-  if (Number.isFinite(amt) && amt > 0) return amt
-  const unit = Number(p?.unitPrice ?? 0)
-  const qty = Number(p?.quantity ?? 0)
-  return (Number.isFinite(unit) ? unit : 0) * (Number.isFinite(qty) ? qty : 0)
 }
 
 function ActionLink({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
@@ -280,7 +275,6 @@ export default function OrderTable({
                         // #2916: 加工信息嵌套在明细项 processingInfo 内（列表接口不下发顶层 processingItems）
                         const pi = item.processingInfo
                         const fee = getItemProcessingFee(pi)
-                        const procList = (Array.isArray(pi?.processingItems) ? pi.processingItems : []) as ProcessingDetail[]
                         return (
                           // 列表接口不下发 item.id（#2916）→ key 用 id 兜底序号，避免 React key 警告
                           <div key={item.id ?? `${order.id}-item-${itemIdx}`} className="space-y-0.5">
@@ -294,17 +288,10 @@ export default function OrderTable({
                                 <span className="text-neutral-400">{' + 加工费'}<span className="font-mono">{formatNumber(fee)}</span>元</span>
                               )}
                             </div>
-                            {procList.length > 0 && procList.map((proc, idx) => (
-                              <div
-                                key={proc.id || idx}
-                                className="text-amber-600 leading-tight text-xs"
-                              >
-                                <span className="font-medium">{proc.name}</span>
-                                {' × '}<span className="font-mono">{formatNumber(proc.unitPrice)}</span>元/米
-                                {' × '}<span className="font-mono">{formatNumber(proc.quantity)}</span>米
-                                {' = '}<span className="font-mono">{formatNumber(getProcessingDetailAmount(proc))}</span>元
-                              </div>
-                            ))}
+                            {/* 加工项逐项明细（`定型 0元/米 × 18.3米 = 0元` 一族）已随 #4882 整块退场
+                                （用户裁定 A：单价 / 数量 / 金额 / 算式都不再渲染）。
+                                ⚠️ 行尾 `+ 加工费 X 元` 聚合与商品行本身**保留** —— 前者由
+                                `getItemProcessingFee` 给出（`processingFee` 优先、明细求和兜底）。 */}
                           </div>
                         )
                       })}

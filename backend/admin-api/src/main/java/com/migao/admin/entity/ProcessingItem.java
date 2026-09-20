@@ -6,7 +6,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 /**
@@ -30,10 +29,10 @@ public class ProcessingItem {
 
     private String categoryId;
 
-    private String pricingMethod;
-
-    private BigDecimal unitPrice;
-
+    /**
+     * 加工数量单位（issue #4882）：语义 = 「**加工数量**的单位」，默认 {@code 米}
+     * —— 加工项目录已无单价与计价方式（用户裁定），它不再是「计价单位」。
+     */
     private String unit;
 
     private Integer minQuantity;

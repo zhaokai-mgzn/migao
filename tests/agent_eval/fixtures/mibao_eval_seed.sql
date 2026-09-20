@@ -78,7 +78,7 @@ WHERE pc.product_id = 'prod_eval_2699'
 --   （无 per_piece）；本项曾是「自定义价」与 `calculate_price` 的唯一 per_area 接地对象
 --   （`per_area` / 30.00 元/平方米）。
 
--- ── 2. 加工项：**只保留 3 条带价评测夹具**（ERP 目录 16 项一律由 V83 提供）──
+-- ── 2. 加工项：**只保留 3 条目录评测夹具**（ERP 目录 16 项一律由 V83 提供）──
 -- 背景（issue #4571/#4572）：用户提问「加工项的测试数据为嘛还未重建完」⇒ 真库实测发现
 --   **重名冲突**：ERP 加工项目录**已由 V83 迁移**为每个活跃租户种过 16 项（含 tenant 1）
 --   ⇒ 评测种子**不得再插一遍** —— 真库实测「种子插 16 行」会让每个名字**两行**
@@ -90,7 +90,7 @@ WHERE pc.product_id = 'prod_eval_2699'
 --   · **ERP 目录 16 项一律由 V83 提供**（产品口径不动：目录无价，R10）；
 --     其余 13 项（`韩定+S钩`/`穿杆`/`平幔`/`花边`/`扣环`/`接高`/`拼接`/`双眼皮`/`缎带`/
 --     `换货`/`超高`/`超宽`/`倒幅`）**不在本文件重复插入**。
---   · 评测种子**只保留 3 条带价夹具**（`打孔` ¥8/米 · `韩折` ¥12/米 · `定型` ¥10/米，
+--   · 评测种子**只保留 3 条目录夹具**（`打孔` ¥8/米 · `韩折` ¥12/米 · `定型` ¥10/米，
 --     id 仍是 `pi_eval_punch`/`pi_eval_hem`/`pi_eval_iron`）—— 评测夹具的职责是给 eval 断言
 --     提供**金额接地**（订单总额 / 加工费 / `calculate_price`），产品侧「目录无价」不适用于夹具；
 --     **id 保留** ⇒ 引用面最小（金额断言逐值不变：OR-014 的 528 = 168×3 + 8×3 等）。
@@ -105,20 +105,25 @@ WHERE pc.product_id = 'prod_eval_2699'
 --     **per_area 计价路径的评测覆盖随之移除**（逐处登记在各 case 的 `merge_log`）。
 --
 -- 守卫 = `tests/unit_ci_workflows/test_eval_seed_catalog.py`：判「种子**不**插入 V83 已种的
---   名字」+「3 条带价夹具在」+「`DELETE … pi-v83-%` 那行在且在 INSERT 之前」+「真库无重名」。
+--   名字」+「3 条目录夹具在」+「`DELETE … pi-v83-%` 那行在且在 INSERT 之前」+「真库无重名」。
 -- 幂等：`ON CONFLICT (id) DO NOTHING`（与本节既有写法一致）。
 DELETE FROM processing_items
  WHERE tenant_id = 1 AND name IN ('打孔', '韩折', '定型') AND id LIKE 'pi-v83-%';
+-- #4882（用户裁定）：加工项目录**不再有** `pricing_method` / `unit_price`（V101 已删列）⇒
+--   本夹具的 INSERT **不得**再写这两列（写了真库直接 `column does not exist`）。
+--   保留下来的 3 条（打孔 / 韩折 / 定型）职责改为：给按名字定位的用例提供**目录接地对象**
+--   （`unit='米'` / `status='active'` / `craft_hint`），**不再是金额接地** —— 加工项已无价，
+--   金额接地真值源是「加工费组合」（R10）。
 
 INSERT INTO processing_items
-  (id, tenant_id, name, category_id, pricing_method, unit_price, unit,
+  (id, tenant_id, name, category_id, unit,
    min_quantity, max_quantity, description, craft_hint, options, ai_recommended, status, deleted)
 VALUES
-  ('pi_eval_punch', 1, '打孔', 'pcat_eval_curtain', 'per_meter', 8.00, '米',
+  ('pi_eval_punch', 1, '打孔', 'pcat_eval_curtain', '米',
    1, 999, '顶部打孔（#4572 由「纳米圈打孔」改名到 ERP 逐字名；价格保留，同名 V83 行已删）', '打孔', '[]'::jsonb, TRUE, 'active', 0),
-  ('pi_eval_hem', 1, '韩折', 'pcat_eval_curtain', 'per_meter', 12.00, '米',
+  ('pi_eval_hem', 1, '韩折', 'pcat_eval_curtain', '米',
    1, 999, '韩式褶皱（#4572 由「韩式波浪折边」改名到 ERP 逐字名；价格保留，同名 V83 行已删）', '韩褶', '[]'::jsonb, TRUE, 'active', 0),
-  ('pi_eval_iron', 1, '定型', 'pcat_eval_curtain', 'per_meter', 10.00, '米',
+  ('pi_eval_iron', 1, '定型', 'pcat_eval_curtain', '米',
    1, 999, '高温定型加工（#4572 由「高温定型」改名到 ERP 逐字名；价格保留，同名 V83 行已删）', NULL, '[]'::jsonb, TRUE, 'active', 0)
 ON CONFLICT (id) DO NOTHING;
 
@@ -141,13 +146,13 @@ BEGIN
   END IF;
   SELECT count(*) INTO v_n FROM processing_items
    WHERE tenant_id = 1 AND deleted = 0
-     AND ((id = 'pi_eval_punch' AND name = '打孔' AND unit_price = 8.00)
-       OR (id = 'pi_eval_hem'   AND name = '韩折' AND unit_price = 12.00)
-       OR (id = 'pi_eval_iron'  AND name = '定型' AND unit_price = 10.00));
+     AND ((id = 'pi_eval_punch' AND name = '打孔' AND unit = '米')
+       OR (id = 'pi_eval_hem'   AND name = '韩折' AND unit = '米')
+       OR (id = 'pi_eval_iron'  AND name = '定型' AND unit = '米'));
   IF v_n <> 3 THEN
-    RAISE EXCEPTION '带价评测夹具不成立：应恰好 3 条（打孔 ¥8 / 韩折 ¥12 / 定型 ¥10），实为 %', v_n;
+    RAISE EXCEPTION '目录评测夹具不成立：应恰好 3 条（打孔 / 韩折 / 定型，均 unit=米），实为 %', v_n;
   END IF;
-  RAISE NOTICE '加工项目录去冲突核对: tenant1 重名=0 带价夹具=3/3';
+  RAISE NOTICE '加工项目录去冲突核对: tenant1 重名=0 目录夹具=3/3';
 END $$;
 
 
@@ -197,7 +202,7 @@ BEGIN
   -- ⇒ 不能再拿它当「目录非空」的读数）。前提口径不变：目录非空即会询问加工项（#4371 解耦后
   -- 加工项是店铺级目录，与商品是否绑过无关）。
   -- 目录 = **16 项**（#4572 裁定后：**V83 提供全部 16 项**，其中 `打孔`/`韩折`/`定型`
-  -- 三行被本种子的**带价夹具**替换 —— 故整表仍是 16 行）。
+  -- 三行被本种子的**目录夹具**替换 —— 故整表仍是 16 行）。
   SELECT count(*) INTO v_pi     FROM processing_items  WHERE tenant_id = 1 AND deleted = 0;
   SELECT count(*) INTO v_cust   FROM customer_profiles WHERE id = 'cust_eval_zhangsan';
   SELECT count(*) INTO v_emp    FROM agent_employees   WHERE id = 'emp_eval_wangwu' AND deleted = 0;

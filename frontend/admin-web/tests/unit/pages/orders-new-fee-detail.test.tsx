@@ -194,7 +194,7 @@ beforeEach(() => {
     data: {
       data: {
         items: [
-          { id: 'pi1', name: '打孔加工', pricingMethod: 'per_meter', unitPrice: 5, unit: '米' },
+          { id: 'pi1', name: '打孔加工', unit: '米' },
         ],
       },
     },

@@ -3,7 +3,9 @@
 // **已整条删除** —— 它们驱动的是「给**商品**增删加工项」（`product_processing_item_manage`），
 // 该能力随「商品不再持有加工项」退场（工具文件与注册行都删）。
 // 本 spec 行使的是**加工项目录 CRUD**（列表/新增/编辑/删除），对应仍在线且仍有用例的
-// `PP-002`（分类/目录查询）与 `PP-006`（计价方式 + 新增加工项），故声明改锚这两条。
+// `PP-002`（分类/目录查询）与 `PP-006`（新增加工项 => 只需名称 + 加工分类），故声明改锚这两条。
+// 2026-09-21（issue #4882，用户裁定「移除加工项单价和计价方式」）：本 spec 同步删除两列/两表单
+// 字段的断言，并**反向**加防回退锁（列/字段一旦被加回来即红）—— 断言只增不减。
 import { test, expect } from '../../fixtures'
 
 /**
@@ -12,13 +14,12 @@ import { test, expect } from '../../fixtures'
  * 验证加工项列表、新增/编辑弹窗、删除确认等完整 CRUD 流程。
  */
 
+// #4882：加工项目录已无 `pricingMethod` / `unitPrice`（V101 删列）⇒ mock 只留名称/分类/单位/状态。
 const MOCK_PROCESSING_ITEMS = [
   {
     id: 'proc_001',
     name: '韩式打褶定型',
     categoryId: 'cat_proc_001',
-    pricingMethod: 'per_meter',
-    unitPrice: 25.0,
     unit: '米',
     status: 'active',
   },
@@ -26,8 +27,6 @@ const MOCK_PROCESSING_ITEMS = [
     id: 'proc_002',
     name: '打孔',
     categoryId: 'cat_proc_001',
-    pricingMethod: 'per_meter',
-    unitPrice: 15.0,
     unit: '米',
     status: 'active',
   },
@@ -35,9 +34,7 @@ const MOCK_PROCESSING_ITEMS = [
     id: 'proc_003',
     name: '铅坠线',
     categoryId: 'cat_proc_001',
-    pricingMethod: 'per_piece',
-    unitPrice: 8.0,
-    unit: '套',
+    unit: '米',
     status: 'active',
   },
 ]
@@ -103,11 +100,14 @@ test.describe('加工项配置', () => {
     test('应渲染加工项列表表格', async ({ page }) => {
       const table = page.locator('table')
       await expect(table).toBeVisible()
-      // 验证表头
+      // 验证表头（#4882 后只剩 名称 / 加工分类 / 操作）
       await expect(table.getByText('加工项名称')).toBeVisible()
-      await expect(table.getByText('加工项价格')).toBeVisible()
-      await expect(table.getByText('加工项计价方式')).toBeVisible()
+      await expect(table.getByText('加工分类')).toBeVisible()
       await expect(table.getByText('操作')).toBeVisible()
+      // #4882 防回退锁（用户裁定）：这两列**必须不存在** —— 反向断言才能把「有人把列加回来」
+      // 也变成红（旧写法 `toBeVisible()` 在列被删后直接失败，但挡不住回归）。
+      await expect(table.getByText('加工项价格')).toHaveCount(0)
+      await expect(table.getByText('加工项计价方式')).toHaveCount(0)
     })
 
     test('应显示所有加工项数据', async ({ page }) => {
@@ -116,15 +116,16 @@ test.describe('加工项配置', () => {
       await expect(page.locator('table').getByText('铅坠线')).toBeVisible()
     })
 
-    test('应正确显示价格', async ({ page }) => {
-      await expect(page.getByText('25.00')).toBeVisible()
-      await expect(page.getByText('15.00')).toBeVisible()
-      await expect(page.getByText('8.00')).toBeVisible()
-    })
-
-    test('应正确显示计价方式', async ({ page }) => {
-      await expect(page.getByText('按购买米数计价').first()).toBeVisible()
-      await expect(page.getByText('按购买套数计价')).toBeVisible()
+    test('列表不展示单价与计价方式（加工项已无价，R10 / #4882）', async ({ page }) => {
+      const table = page.locator('table')
+      // 旧界面的逐项价与计价方式文案一律不得再出现
+      await expect(table.getByText('25.00')).toHaveCount(0)
+      await expect(table.getByText('15.00')).toHaveCount(0)
+      await expect(table.getByText('8.00')).toHaveCount(0)
+      await expect(table.getByText('按购买米数计价')).toHaveCount(0)
+      await expect(table.getByText('按购买套数计价')).toHaveCount(0)
+      // 删的是价与计价方式，不是目录本身 —— 名称仍在
+      await expect(table.getByText('韩式打褶定型')).toBeVisible()
     })
   })
 
@@ -134,13 +135,15 @@ test.describe('加工项配置', () => {
       await expect(page.getByText('新增加工项')).toBeVisible()
     })
 
-    test('弹窗应包含名称、价格、计价方式字段', async ({ page }) => {
+    test('弹窗只含名称 / 加工分类（单价与计价方式字段已退场，#4882）', async ({ page }) => {
       await page.getByRole('button', { name: /添加加工项/ }).click()
       // Scope to dialog to avoid strict mode with table headers
       const dialog = page.locator('.fixed.inset-0.z-50').last()
       await expect(dialog.getByText('加工项名称')).toBeVisible()
-      await expect(dialog.getByText('加工项价格')).toBeVisible()
-      await expect(dialog.getByText('加工项计价方式')).toBeVisible()
+      await expect(dialog.getByText('加工分类')).toBeVisible()
+      // 防回退锁：两个已退场的表单项不得再出现
+      await expect(dialog.getByText('加工项价格')).toHaveCount(0)
+      await expect(dialog.getByText('加工项计价方式')).toHaveCount(0)
     })
 
     test('名称为空提交应显示错误', async ({ page }) => {
@@ -150,36 +153,25 @@ test.describe('加工项配置', () => {
       await expect(page.getByText('请输入加工项名称')).toBeVisible()
     })
 
-    test('价格为空提交应显示错误', async ({ page }) => {
+    test('弹窗不再有价格输入框（#4882）', async ({ page }) => {
       await page.getByRole('button', { name: /添加加工项/ }).click()
       const dialog = page.locator('.fixed.inset-0.z-50').last()
-      await dialog.locator('input[type="text"]').fill('测试加工项')
-      await dialog.getByRole('button', { name: '保存' }).click()
-      await expect(page.getByText('请输入加工项价格')).toBeVisible()
+      await expect(dialog.locator('input[type="number"]')).toHaveCount(0)
     })
 
-    test('计价方式未选提交应显示错误', async ({ page }) => {
+    test('弹窗不再有计价方式选项（#4882）', async ({ page }) => {
       await page.getByRole('button', { name: /添加加工项/ }).click()
       const dialog = page.locator('.fixed.inset-0.z-50').last()
-      // 填写名称和价格
-      const inputs = dialog.locator('input')
-      await inputs.nth(0).fill('测试加工项')
-      await inputs.nth(1).fill('20.00')
-      await dialog.getByRole('button', { name: '保存' }).click()
-      // 验证红色错误文案出现（非 select 内的 option placeholder）
-      await expect(page.locator('p.text-red-600').filter({ hasText: '请选择计价方式' }).first()).toBeVisible()
+      await expect(dialog.locator('option', { hasText: '请选择计价方式' })).toHaveCount(0)
+      await expect(dialog.getByText('请选择计价方式')).toHaveCount(0)
     })
 
     test('完整填写后应成功创建', async ({ page }) => {
       await page.getByRole('button', { name: /添加加工项/ }).click()
       const dialog = page.locator('.fixed.inset-0.z-50').last()
 
-      // 填写名称
+      // 填写名称（#4882 后表单只剩名称 + 加工分类两个必填项，分类已默认选中第一个）
       await dialog.locator('input[type="text"]').fill('新加工项')
-      // 填写价格
-      await dialog.locator('input[type="number"]').fill('30.00')
-      // 选择计价方式
-      await dialog.locator('select').first().selectOption('per_meter')
 
       await dialog.getByRole('button', { name: '保存' }).click()
       // 成功后弹窗关闭
@@ -194,8 +186,8 @@ test.describe('加工项配置', () => {
     test('选择优惠类型应展开折扣配置', async ({ page }) => {
       await page.getByRole('button', { name: /添加加工项/ }).click()
       const dialog = page.locator('.fixed.inset-0.z-50').last()
-      // select 顺序：0=计价方式, 1=加工分类, 2=优惠
-      const discountSelect = dialog.locator('select').nth(2)
+      // select 顺序（#4882 去计价方式后）：0=加工分类, 1=优惠
+      const discountSelect = dialog.locator('select').nth(1)
       await discountSelect.selectOption('amount_off')
       // 应显示满X件选择和折扣力度输入
       await expect(dialog.getByText('折')).toBeVisible()
@@ -206,7 +198,7 @@ test.describe('加工项配置', () => {
       const dialog = page.locator('.fixed.inset-0.z-50').last()
       // 加工分类字段可见（P0 验证：此前该字段缺失，提交强取 categories[0]，新租户空列表时提交 'default' 报「加工分类不存在」）
       await expect(dialog.getByText('加工分类')).toBeVisible()
-      const categorySelect = dialog.locator('select').nth(1)
+      const categorySelect = dialog.locator('select').nth(0)
       await expect(categorySelect).toHaveValue('cat_proc_001')
       await expect(categorySelect.locator('option')).toContainText('窗帘加工')
     })
@@ -236,7 +228,7 @@ test.describe('加工项配置', () => {
       await dialog.getByPlaceholder('请输入加工分类名称，如：基础加工').fill('基础加工')
       await dialog.getByRole('button', { name: '创建' }).click()
       // 创建后分类 select 出现且选中新分类
-      const categorySelect = dialog.locator('select').nth(1)
+      const categorySelect = dialog.locator('select').nth(0)
       await expect(categorySelect).toBeVisible()
       await expect(categorySelect).toHaveValue('cat_new_001')
     })

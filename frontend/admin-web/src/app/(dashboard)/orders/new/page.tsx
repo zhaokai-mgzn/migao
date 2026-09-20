@@ -220,12 +220,16 @@ function decimalOrNull(raw: string): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null
 }
 
-// 加工项数量规则（issue #3005 回滚 #2986）：行业加工费按米计价、辅料含在加工费中，
-// 无 per_piece/每米数量密度——per_meter → 数量=面料米数；per_set/fixed/per_area → 1
-function deriveProcessingQty(pi: ProcessingItem, fabricMeters: number): number {
-  const method = pi.pricingMethod
-  if (method === 'per_meter') return Math.max(1, fabricMeters)
-  return 1
+/**
+ * 加工项数量规则（**#4882 后的口径**）：恒等于面料米数，下限 1。
+ *
+ * 沿革：#3005 回滚 #2986 时按 `pi.pricingMethod` 分叉（`per_meter` → 米数，`per_set`/`fixed`/
+ * `per_area` → 1）；**#4882（用户裁定）**把「加工项单价 / 计价方式」整体删除 ⇒ 分叉的判据字段
+ * 已不存在，且 V83 目录 16 项**全为** `per_meter`（#3005 行业口径：加工费按米计价、辅料含在
+ * 加工费中）⇒ 直接返回 `Math.max(1, fabricMeters)`，签名不再需要加工项。
+ */
+function deriveProcessingQty(fabricMeters: number): number {
+  return Math.max(1, fabricMeters)
 }
 
 /** 试算防抖（issue #4434）：连打宽高时只在停手后发一次请求 */
@@ -391,7 +395,7 @@ function withShapedDefault(
   if (prev?.selected === selected) return line.selectedProcessing
   return {
     ...line.selectedProcessing,
-    [item.id]: { selected, qty: prev?.qty ?? deriveProcessingQty(item, line.quantity) },
+    [item.id]: { selected, qty: prev?.qty ?? deriveProcessingQty(line.quantity) },
   }
 }
 
@@ -541,16 +545,13 @@ function processingDetailsOf(line: OrderLineItem): Array<Record<string, unknown>
     .map(([piId, v]) => {
       const pi = line.processingItems.find((p) => p.id === piId)
       if (!pi) return null
-      const unit = Number(pi.unitPrice) || 0
-      const qty = Math.max(1, Number(v.qty) || 1)
+      // issue #4882：快照收缩为 `{id, name, quantity, unit}` —— 单价 / 小计 / 计价方式整体不落
+      // （后端 `processing_items` 已无这些列；钱由「加工费组合」按 `[].name` 派生组合键取价）。
       return {
         id: pi.id,
         name: pi.name,
-        unitPrice: unit,
-        quantity: qty,
+        quantity: Math.max(1, Number(v.qty) || 1),
         unit: pi.unit,
-        pricingMethod: pi.pricingMethod,
-        subtotal: unit * qty,
       }
     })
     .filter(Boolean) as Array<Record<string, unknown>>
@@ -560,12 +561,11 @@ function processingDetailsOf(line: OrderLineItem): Array<Record<string, unknown>
   // ⇒ **组合加项 = 手选加工项 ∪ {超高, 超宽, 倒幅}**（设计 §5.3 特征集合）。
   // ⚠️ 本数组是组合键的真值源 ⇒ 这里**不得**出现 `processing_items` 目录（V83）里没有的名字：
   //    #4592 实测 `正幅` 就因此让**每张默认订单**的组合键永远匹配不到价（加工费恒 ¥0.00）。
-  // 它们**没有单价**（不在加工项目录里）：单价恒 0，钱由**组合价目**决定（R10 的前提）。
+  // 它们**没有单价**（不在加工项目录里）：钱由**组合价目**决定（R10 的前提）——
+  // ⚠️ #4882 后连加工项本身也不再有单价 ⇒ 这里更不该出现任何价格键（快照只留 name + quantity）。
   const derived = effectiveAutoFeaturesOf(line).map((feature) => ({
     name: feature.name,
-    unitPrice: 0,
     quantity: 1,
-    subtotal: 0,
   }))
 
   return [...handPicked, ...derived]
@@ -691,9 +691,9 @@ function requantifyProcessing(
   const next: Record<string, { selected: boolean; qty: number }> = { ...line.selectedProcessing }
   Object.entries(next).forEach(([piId, cfg]) => {
     if (!cfg.selected) return
-    const pi = line.processingItems.find((p) => p.id === piId)
-    if (!pi) return
-    next[piId] = { ...cfg, qty: deriveProcessingQty(pi, meters) }
+    // 目录里找不到该项（勾选后被停用/移除）⇒ 保持原数量，不凭空改（同 #4882 前的处置）
+    if (!line.processingItems.some((p) => p.id === piId)) return
+    next[piId] = { ...cfg, qty: deriveProcessingQty(meters) }
   })
   return next
 }
@@ -1276,7 +1276,7 @@ export default function NewOrderPage() {
     const nextSelected: Record<string, { selected: boolean; qty: number }> = {
       ...line.selectedProcessing,
       // 选中即按当前面料米数推导数量（per_meter=米数，其余=1）；取消勾选保留原值（issue #3005 回滚 #2986）
-      [pi.id]: { selected, qty: selected ? deriveProcessingQty(pi, line.quantity) : prev.qty },
+      [pi.id]: { selected, qty: selected ? deriveProcessingQty(line.quantity) : prev.qty },
     }
 
     // 工艺单值护栏：一张单只能有一个工艺声明

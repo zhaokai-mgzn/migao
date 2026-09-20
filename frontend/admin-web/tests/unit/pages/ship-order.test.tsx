@@ -18,6 +18,7 @@ const mockGetOrder = vi.fn()
 const mockUpdateLogistics = vi.fn()
 const mockUpdateOrderStatus = vi.fn()
 const mockGetCustomers = vi.fn()
+const mockProcessingOrderDetail = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   orderApi: {
@@ -28,6 +29,12 @@ vi.mock('@/lib/api', () => ({
   // 客户常用物流档案带出（issue #4419 / UI-047）
   customerApi: {
     getCustomers: (...args: any[]) => mockGetCustomers(...args),
+  },
+  // 加工单前置守卫（issue #3889）：本文件多数用例的订单**不含加工项** ⇒ 该 effect 短路、不会调用它。
+  // #4882 的用例给一个「已完成」的加工单，让含加工项订单能渲染出「商品信息」卡
+  // （否则会被守卫拦在阻断页 —— 那样「加工项表不存在」的断言就成了空跑）。
+  processingOrderApi: {
+    detail: (...args: any[]) => mockProcessingOrderDetail(...args),
   },
 }))
 
@@ -453,5 +460,37 @@ describe('ShipOrder', () => {
       expect(screen.getAllByRole('combobox')[0]).toHaveValue('四季安物流')
     })
     expect(screen.getByRole('radio', { name: '物流/专线' })).toBeChecked()
+  })
+
+  // ===== #4882：加工项表整表退场（与订单详情同款 A 方案）=====
+  it('#4882 含加工项订单：屏幕上的加工项表（加工项 | 单价 | 数量 | 金额 | 加工合计）不再渲染', async () => {
+    // 加工单已完成 ⇒ 守卫放行，发货表单与「商品信息」卡正常渲染
+    mockProcessingOrderDetail.mockResolvedValue({ data: { data: { status: 'completed' } } })
+    mockGetOrder.mockResolvedValue({
+      data: {
+        data: {
+          ...mockOrder,
+          hasProcessing: true,
+          items: [{ ...mockOrder.items[0], processingFee: 37.5 }],
+          // #4882：后端 `ProcessingItemBrief` 只剩 id / name / quantity
+          processingItems: [{ id: 'pr-1', name: '打孔', quantity: 12.5 }],
+        },
+      },
+    })
+    render(<ShipOrder />)
+
+    // 等发货表单落地（先确认没被守卫拦成阻断页 —— 否则下面的断言是空跑）
+    await screen.findAllByText('商品发货')
+    expect(screen.queryByText(/须先完成加工单后再发货/)).toBeNull()
+
+    // 红证：`加工合计` 是那张退场表**独有**的表头
+    // （保留下来的纸质发货单只有「加工费合计（元）：X」，没有「加工合计」）
+    // ⇒ 把 `ProcessingTable`（定义或使用）加回来即红
+    expect(screen.queryByText('加工合计')).toBeNull()
+
+    // 退场的是「表」，不是「含加工项」语义：纸质单据照旧印名称 / 米数 / 加工费合计（行级落库值）
+    expect(screen.getByText('加工费合计（元）：37.50')).toBeInTheDocument()
+    expect(screen.getByText('打孔')).toBeInTheDocument()
+    expect(screen.getByText('12.5')).toBeInTheDocument()
   })
 })

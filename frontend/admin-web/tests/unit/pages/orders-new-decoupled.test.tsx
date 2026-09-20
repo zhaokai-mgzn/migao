@@ -55,16 +55,17 @@ vi.mock('@/lib/api', () => ({
   },
   // 算料试算（#4434）：本文件验的是商品↔加工项解耦，与算料正交 ⇒ 停在「进行中」
   craftCalcApi: { preview: () => new Promise(() => {}) },
-  // 加工费计价预览（#4450）：同样正交 ⇒ 桩成「组合价 == Σ 加工项」的服务端
-  // （数值与旧口径一致 ⇒ 本文件断言不变）。**必须 resolve**：未就绪时页面会拦住提交。
+  // 加工费计价预览（#4450）：同样正交 ⇒ 桩成「组合价 5 元/米 × 加工费米数」的服务端。
+  // ⚠️ #4882：加工项**没有单价了** ⇒ 桩不能再按 `Σ 加工项单价 × 数量` 求和（会恒为 0，
+  // 把下面的 ¥5.00 判据打成假红）；改为按加工项数量（= 加工费米数）乘组合单价。
+  // **必须 resolve**：未就绪时页面会拦住提交。
   feePreviewApi: {
     preview: (payload: any) => {
+      const COMBO_UNIT_PRICE = 5 // 组合价目（元/米）—— 本桩唯一的价格真值
       const items = (payload?.items ?? []).map((it: any) => {
         const details = it?.processingInfo?.processingItems ?? []
-        const fee = details.reduce(
-          (s: number, d: any) => s + (Number(d.unitPrice) || 0) * (Number(d.quantity) || 0),
-          0
-        )
+        const fee =
+          details.reduce((s: number, d: any) => s + (Number(d.quantity) || 0), 0) * COMBO_UNIT_PRICE
         return { processingFee: fee, processingFeeDetail: { fee_source: 'matched', amount: fee } }
       })
       const processingFeeTotal = items.reduce((s: number, r: any) => s + r.processingFee, 0)
@@ -91,10 +92,10 @@ const productWithoutProcessing = {
   skus: [],
 }
 
-// 店铺级加工项目录
+// 店铺级加工项目录（#4882：无 `unitPrice` / `pricingMethod` —— 加工项只是可选服务目录）
 const shopCatalog = [
-  { id: 'pi1', name: '打孔加工', pricingMethod: 'per_meter', unitPrice: 5, unit: '米' },
-  { id: 'pi2', name: '韩式定型', pricingMethod: 'per_set', unitPrice: 8, unit: '套' },
+  { id: 'pi1', name: '打孔加工', unit: '米' },
+  { id: 'pi2', name: '韩式定型', unit: '米' },
 ]
 
 /** 展开向导③「加工项」步骤（issue #4511 手风琴；#4489 判据 3：默认收起） */

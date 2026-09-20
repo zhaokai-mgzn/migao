@@ -14,8 +14,8 @@ from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
 # 知识 Skill 可用的 Tool 列表
-# processing_item_query：加工计价/加工费问题 knowledge_search 未命中时的权威查询
-# （店铺加工项目录含 pricingMethod/unitPrice，issue #3085 替代加工项派生卡片）
+# processing_item_query：加工费问题 knowledge_search 未命中时的权威查询
+# （店铺加工项目录只有名称/分类/单位等，**不再有单价与计价方式**，issue #4882）
 KNOWLEDGE_TOOLS = ["knowledge_search", "processing_item_query"]
 
 # 知识 Skill 专用 System Prompt
@@ -23,7 +23,7 @@ KNOWLEDGE_SYSTEM_PROMPT = """## 核心原则
 1. 优先使用 knowledge_search 检索知识库；命中时以知识库内容为准，整合归纳不复制粘贴
 2. 知识库未命中时，对窗帘/布艺通用专业常识（面料特性、风格搭配、安装方法、保养要点等）可基于专业知识回答，注明"💡 以上为通用行业建议，建议以官方资料或负责人确认为准"
 3. 实时业务数据（价格/库存/订单/物流）使用对应工具查询，不编造
-4. 加工费、加工计价规则（如"打孔加工怎么计价"）：knowledge_search 未命中时用 processing_item_query 查店铺加工项目录（返回计价方式/单价/单位），以工具结果为准
+4. 加工费、加工计价规则（如"打孔加工怎么计价"）：knowledge_search 未命中时用 processing_item_query 查店铺加工项目录（返回名称/分类/单位等，**不含单价与计价方式**，issue #4882），以工具结果为准；目录里没有的信息**如实说没有**，不要编价格
 5. 专业准确、条理清晰，分点说明
 
 ## 适用场景

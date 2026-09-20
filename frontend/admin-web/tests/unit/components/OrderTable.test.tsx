@@ -124,10 +124,14 @@ describe('OrderTable', () => {
       expect(cellText).toMatch(/\+\s*加工费50元/)
     })
 
-    it('含加工项订单：逐项展示加工项明细（名称 × 单价元/米 × 数量米 = 金额元）', () => {
+    it('#4882：加工项明细块**整块退场**（不再渲染 名称 × 单价元/米 × 数量米 = 金额元）', () => {
       render(<OrderTable {...defaultProps} orders={[processingOrder]} />)
       const cellText = detailCell().textContent || ''
-      expect(cellText).toMatch(/打孔\s*×\s*10元\/米\s*×\s*5米\s*=\s*50元/)
+      // 红证：旧形态是「打孔 × 10元/米 × 5米 = 50元」——把明细块加回来这两句即红
+      expect(cellText).not.toMatch(/打孔\s*×\s*10元\/米/)
+      expect(cellText).not.toMatch(/元\/米/)
+      // 退场的是**逐项明细**，不是加工费本身：行尾 `+ 加工费50元` 聚合必须照旧
+      expect(cellText).toMatch(/\+\s*加工费50元/)
     })
 
     it('不含加工项订单：采购明细列不出现加工费字样', () => {
@@ -142,9 +146,8 @@ describe('OrderTable', () => {
           {
             ...mockOrder.items![0],
             processingInfo: {
-              processingItems: [
-                { id: 'pi-1', name: '定型', unitPrice: 8, quantity: 4, subtotal: 32 },
-              ],
+              // #4882：明细条目只剩金额键（`amount` / `subtotal`）—— 逐项单价 / 数量已不落库
+              processingItems: [{ id: 'pi-1', name: '定型', subtotal: 32 }],
             },
           },
         ],
