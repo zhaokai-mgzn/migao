@@ -173,20 +173,20 @@ const layersOf = (cells: any[]) => {
     vi.mocked(toast.error).mockClear()
   })
 
-  it('渲染真实数据：这一屏的价来自**部位价目矩阵**，部位/元数据在抽屉里（反 placeholder）', async () => {
+  it('渲染真实数据：这一屏的价来自**价目读面**，元数据在抽屉里（反 placeholder）', async () => {
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix-total')).toHaveTextContent('3'))
 
     // 价：矩阵格（唯一价载体）
-    expect(screen.getByTestId('matrix-cell-精裁-布帘')).toHaveTextContent('¥8.50')
-    expect(screen.getByTestId('matrix-cell-罗马帘-帘头')).toHaveTextContent('¥3.00')
+    expect(screen.getByTestId('operation-price-精裁')).toHaveTextContent('¥8.50')
+    expect(screen.getByTestId('operation-price-罗马帘')).toHaveTextContent('¥3.00')
     // issue #4622：矩阵行首**不再**显示变体名（改前这里断言的是 `matrix-variants-罗马帘` = `罗马帘-成型`）
     expect(screen.queryByTestId('matrix-variants-罗马帘')).toBeNull()
 
     // 抽屉：条目主标识 = **部位**（不是变体名）+ 分组·单位（逐字来自矩阵，不是发明出来的）
     await userEvent.click(screen.getByTestId('matrix-manage-罗马帘'))
     const row = screen.getByTestId('variant-row-103')
-    expect(row).toHaveTextContent('帘头')
+    expect(row).toHaveTextContent('罗马帘')
     expect(row).not.toHaveTextContent('罗马帘-成型')
     expect(row).toHaveTextContent('裁剪')
     expect(row).toHaveTextContent('件')
@@ -219,14 +219,14 @@ const layersOf = (cells: any[]) => {
     await openVariant('罗马帘')
 
     // 未点击前没有输入框
-    expect(screen.queryByTestId('matrix-price-input-罗马帘-帘头')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('operation-price-input-罗马帘')).not.toBeInTheDocument()
     await userEvent.click(screen.getByTestId('variant-source-103'))
     // #4588：徽标不再承担改价入口（一屏一张表 ⇒ 价只有一个载体）
-    expect(screen.queryByTestId('matrix-price-input-罗马帘-帘头')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('operation-price-input-罗马帘')).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByTestId('operations-manage-close'))
-    await userEvent.click(screen.getByTestId('matrix-price-edit-罗马帘-帘头'))
-    expect(screen.getByTestId('matrix-price-input-罗马帘-帘头')).toBeInTheDocument()
+    await userEvent.click(screen.getByTestId('operation-price-edit-罗马帘'))
+    expect(screen.getByTestId('operation-price-input-罗马帘')).toBeInTheDocument()
   })
 
   it('工艺路线区渲染**新模型**的真实数据（总名 + 默认徽标；默认徽标不得写死）', async () => {

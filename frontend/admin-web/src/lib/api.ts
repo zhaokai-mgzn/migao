@@ -535,19 +535,19 @@ export const productionApi = {
 
   // ── 新路线模型只读面（issue #4500 = 母单 #4423 的 P2c；消费方 = P3 #4433）──
   // 两个端点**只读**（写面留 v1b）；顺序由服务端定（Java 侧显式比较器，环境无关）⇒ 前端不得重排。
-  // ① 部位价目矩阵：84 格 = 28 逻辑工序 × 3 部位，`applicable=false` 的格 unit_price=null
+  // ① 工序单价表（issue #4886 起**一道工序一行、一个单价**）：`applicable=false` 的行 unit_price=null
   // issue #4588（契约 #4587 ①）：每行多出 `id`（写面寻址）+ 6 个变体元数据键（逻辑名↔变体名映射）。
   getOperationPositions: () =>
     request.get<ApiResponse<OperationPosition[]>>('/api/admin/production/operation-positions'),
   // ①-0 **两层分区**读面（issue #4677 = 设计 §4.1/§4.2；后端 #4676 已合并 `6908122bb`）：
   // 按**既有** `scope` 分区 —— `scope='set'` ⇒ `delivery`（打包发货：打包 / 外帘打卷 / 外帘装袋 /
-  // 外帘发货，**一列价**）；其余（`'position'` 或 `null`）⇒ `operations`（工序，按部位三列）。
+  // 外帘发货，**一列价**）；其余（`'position'` 或 `null`）⇒ `operations`（工序层，一道工序一行）。
   // ⚠️ 「一列价」是**服务端聚合的显式规则**（不静默取第一个、不回落工序库行价）⇒ 前端**不重算**：
   // 在 TS 侧再写一份聚合 = 第二份会漂的口径。
   getOperationLayers: () =>
     request.get<ApiResponse<OperationLayers>>('/api/admin/production/operation-layers'),
-  // ①-b 矩阵格**写面**（issue #4588；契约 #4587 ②；权限 processing:manage）：
-  // **部分更新** ⇒ body 只带变了的键（`{unit_price}` 或 `{applicable}`）；
+  // ①-b 工序单价**写面**（issue #4588；契约 #4587 ②；权限 processing:manage）：
+  // **部分更新** ⇒ body 只带变了的键（`{unit_price}`）；
   // `applicable=false` ⇒ 后端把价强制落 NULL；`unit_price=null` = 改回**未定价**（≠ 0 元）；
   // 校验失败 ⇒ 422 + `error.details[].message`（一次报全）。响应与 ① 的单行同构。
   updateOperationPosition: (id: string, data: OperationPositionUpdateParams) =>
@@ -596,6 +596,8 @@ export const productionApi = {
 
   // 新增工序（建新路线时必须有工序可选）
   // issue #4614：body 可带 `positions`（适用部位）⇒ 同一事务建出矩阵行，新工序**建完即可见**；
+  // ⚠️ issue #4886：「工艺配置」页（本批次）**已不再传 `positions`**（配置面不再有部位概念）——
+  // 新工序如何进价目表由配套后端负责（字段保留给其它调用方）。
   // 响应附 `created_positions` / `skipped_positions`（如实报数，前端 toast 照报，不自行推算）。
   createOperation: (data: RouteOperationCreateParams) =>
     request.post<ApiResponse<RouteOperationCreateResult>>('/api/admin/production/operations', data),
