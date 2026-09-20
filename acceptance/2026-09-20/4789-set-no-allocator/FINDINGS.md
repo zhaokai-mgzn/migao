@@ -160,3 +160,23 @@ git diff --name-only origin/main...HEAD | grep -c 'db/migration'   # ⇒ 0
 **能机械验的已验**（本目录 ①②）；**不能机械验的给可执行判据**：加工单生产明细页的二维码弹层
 内容 = 加工单号（前端纯函数 `QRCodeSVG value={po.processingOrderNo}`，零写请求）⇒ 扫该单号必然命中
 `resolveOrder` 的 `processing_order_no` 形态，其 `selections` 由上面已验证的 SQL 产出。
+
+## ⑥ CI（PR #4805，head `af0ffd850`）
+
+`gh pr checks 4805 --watch` **一次**跑完（零 `sleep` 轮询）：**全部 pass，0 fail**
+（admin-api unit tests / admin-web typecheck + unit tests / QA Growth Gate / Case Trust Gate /
+Case Contract / Case Coverage Gate / Drift Audit / UI Regression Check / E2E quality gate /
+ci workflow helper unit tests / ai-agent-service / bmini-app / mini-app / xiaobu H5 visual /
+Secret Scan / Danger Scan / Check Closes / LLM Sink Ledger）。
+`Enable auto-merge` 与 `Label needs-changes on any CI failure` 为 **skipping**（draft PR + 无失败 ⇒ 预期）。
+
+## ⑦ 自查（机械判据）
+
+```bash
+git diff --name-only origin/main...HEAD | grep -c 'db/migration'        # ⇒ 0（V92 一字不动）
+git diff --name-only origin/main...HEAD | grep -c 'frontend/'           # ⇒ 0
+git diff --name-only origin/main...HEAD | grep -c '\.agent-presets/'    # ⇒ 0
+git diff --name-only origin/main...HEAD | grep -c '\.github/workflows/' # ⇒ 0
+head -1 backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderSetAllocatorTest.java
+#   ⇒ // case_ids: PG-018（第 1 行、注释起始、只此一处）
+```
