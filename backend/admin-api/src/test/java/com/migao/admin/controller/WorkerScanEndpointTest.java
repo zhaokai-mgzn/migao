@@ -3,6 +3,7 @@ package com.migao.admin.controller;
 
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.config.TenantContext;
+import com.migao.admin.service.ProductionScanCompleteService;
 import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
 import com.migao.admin.worker.WorkerIdentity;
@@ -35,21 +36,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 工人端扫码解析端点（issue #4716 第一切片）—— **HTTP 层**的三条硬约束。
+ * 工人端扫码解析端点的 **旧码降级契约**（issue #4716 第一切片 / 设计 W9）—— **HTTP 层**判据。
  *
- * <p>为什么需要这个端点（实测缺口）：切片① 的解析面只挂在
- * {@code GET /api/admin/production/scan}，而 {@code /api/admin/**} 把 {@code worker} 放进
- * <b>拒绝集合</b>（#4727 / #4733）⇒ 工人没有任何解析入口，H5 报工页无从落地。</p>
+ * <p><b>与 {@link WorkerProductionControllerTest} 的分工（两处都保留，不是重复）</b>：
+ * 那边的 {@code scanRequiresWorkerSessionAndReusesResolve} 钉的是「无 session ⇒ 401 不进服务层」
+ * 与「复用同一份 resolve」；<b>本类</b>钉的是**降级形态本身**——
+ * {@code granularity="order"} + {@code needs_selection:["set","position"]} 且
+ * {@code set_no}/{@code set_index}/{@code position}/{@code operation}/{@code completed}
+ * 全为 {@code null}（「不知道就是不知道」）。这条是 H5 页面「绝不默认取第 1 套」的**上游判据**：
+ * 服务端若哪天偷偷回落到第 1 套，页面侧的一切兜底讨论都没意义 —— 故必须在 HTTP 层可红。</p>
  *
- * <p>锁三条（每条都能红）：</p>
- * <ol>
- *   <li><b>无工人 session ⇒ 401 且不进服务层</b>（与同类读面同款 fail-closed）；</li>
- *   <li>🔴 <b>旧码降级不默认取第 1 套</b>（W9）：服务端返回 {@code granularity="order"} +
- *       {@code needs_selection:["set","position"]} 且 {@code set_no}/{@code position}/
- *       {@code operation} 全为 {@code null} —— 本用例把「不知道就是不知道」钉在 HTTP 层，
- *       前端任何「取 selections[0]」的兜底都会与它冲突；</li>
- *   <li>token / operation_id 原样交给切片①（<b>不复制</b>推断逻辑）。</li>
- * </ol>
+ * <p>端点本体由切片② 落在 main（与切片① 的解析面同源）；本类只补**契约断言**，不改实现。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -64,6 +61,9 @@ class WorkerScanEndpointTest {
     private WorkerSessionService workerSessionService;
     @Mock
     private ProductionScanService productionScanService;
+    /** 切片② 的写入口依赖：本类只测读面契约，故只满足构造签名（**不**被调用）。 */
+    @Mock
+    private ProductionScanCompleteService productionScanCompleteService;
 
     private MockMvc mockMvc;
 
@@ -74,7 +74,8 @@ class WorkerScanEndpointTest {
     void setUp() {
         TenantContext.setTenantId(TENANT);
         WorkerProductionController controller =
-                new WorkerProductionController(productionService, workerSessionService, productionScanService);
+                new WorkerProductionController(productionService, workerSessionService, productionScanService,
+                        productionScanCompleteService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();

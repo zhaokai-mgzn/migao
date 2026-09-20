@@ -388,7 +388,7 @@ users (role='worker', permissions=[], worker_no=<工号>, password_hash=<PIN 的
 |---|---|---|
 | **HTTPS** | 必需（`getUserMedia` 与安全上下文都要求） | ✅ 已有（实测域名均 https） |
 | **稳定域名** | 复用 **`app.migaozn.com`**（已在用：C 端 H5 / 小程序合法域名 / nginx 已分流） | ✅ 已有 |
-| **ICP 备案** | 🔴 **必需**（微信对未备案/风险域名会**拦截或显示警告页** ⇒ 页面直接打不开） | ⚠️ **无法判定**（仓库内查不到备案状态，§8.2 U1） |
+| **ICP 备案** | **必需**（微信对未备案/风险域名会**拦截或显示警告页** ⇒ 页面直接打不开） | ✅ **已备案**（用户裁定，2026-09-20；原「无法判定」见 §8.2 U1 的改判） |
 | **域名稳定** | 与 §1.3「稳定短链」同一条要求 | 设计约束 |
 | **微信风控** | 避免诱导分享/外链跳转等被拦行为 | 设计约束 |
 
@@ -448,7 +448,7 @@ users (role='worker', permissions=[], worker_no=<工号>, password_hash=<PIN 的
 | # | 前提 | 今天有吗 | 谁负责 |
 |---|---|---|---|
 | 1 | HTTPS 域名 | ✅ | 已有 |
-| 2 | **ICP 备案** | ⚠️ **无法判定** | 运维（§8.2 U1） |
+| 2 | **ICP 备案** | ✅ **已备案**（用户裁定） | —（风险解除） |
 | 3 | 稳定短链 + 服务端重定向 | ❌ 待建（§1.3） | 本设计的落码单 |
 | 4 | 人可读短码 + 输码入口 | ❌ 待建（§1.4） | 同上 |
 | 5 | 响应式两断点 | ❌ 待建 | 前端 |
@@ -645,7 +645,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 
 | # | 无法判定的事 | 为什么判不了 | 需要什么才能判 |
 |---|---|---|---|
-| **U1** | **`app.migaozn.com` 的 ICP 备案状态** | 仓库内**查不到**备案信息（代码/配置/文档均无备案号或备案状态） | 运维/客户提供备案号与主体；**未备案 ⇒ 微信内会拦截，主路径直接失效**（裁定④ 的硬约束①） |
+| **U1** | ~~**`app.migaozn.com` 的 ICP 备案状态**~~ ✅ **已判定（用户裁定，2026-09-20）** | 仓库内**查不到**备案信息（代码/配置/文档均无备案号或备案状态） | ~~运维/客户提供备案号与主体；**未备案 ⇒ 微信内会拦截，主路径直接失效**~~ ⇒ **用户已答「已做过备案」** ⇒ **该前提成立，风险解除**（本文其余部分按「已备案」读） |
 | **U2** | **微信内置浏览器（X5 / WKWebView）对 `getUserMedia` 的当前实际支持度** | 属**运行时/设备/版本相关**行为，静态不可判定；且「历史性限制」不等于「今天不支持」 | 真机实测矩阵（iOS 微信 / Android 微信 / 各版本）；**本设计已按"可能不可用"设计降级**（§1.1 / §4.6），故不阻塞 |
 | **U3** | **扫码工具「只显示文本不跳转」的实际占比** | 依 App 而异，无仓库内数据 | 现场调研；**本设计已用 ④ 兜底**，故不阻塞 |
 | **U4** | **PAD 断点的具体数值（字号/按钮尺寸阈值）** | 属**人因工程**，需现场实测（工位距离、光照、戴手套与否） | 现场实测；本设计只给**下限建议**（§4.2） |
@@ -691,8 +691,13 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 ## 9. 落码状态（**第一切片**，issue #4716；落码单随本设计）
 
 > **本单是 H5 第一切片**：能扫码 + 能登录 + 能看懂 + 能报工。设计 §7.3 的 ①~⑤ 里，
-> 本切片只落 ⑤ 的**页面骨架 + 登录 + 扫码落地 + 报工**，并补 ② 缺的一个工人读面。
+> 本切片只落 ⑤ 的**页面骨架 + 登录 + 扫码落地 + 报工** + ④ 的 CORS 补头。
 > **本节是「已落码 / 未落码」的机械账**，不写"进行中"。
+>
+> 🔄 **口径订正（rebase 调和）**：本单最初自带一个工人端 `GET /scan`（当时工人确实没有任何解析入口）；
+> **切片②（PR #4769，merge `916378c3c`）随后在 main 上落了同一个端点** ⇒ 两边重复。
+> 调和结果：**`GET /scan` 以 main（切片②）为准，本单删掉自己那份重复实现**；
+> 本单只保留 **CORS 补头** 与页面，并**补该端点的旧码降级契约断言**（见 9.2 ⑦）。
 
 ### 9.1 落点决定：`frontend/worker-h5/`（**零依赖 + 零构建步骤**）
 
@@ -713,16 +718,16 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 | ④ | 工人登录：**工号 + PIN**（复用 #4733 的 `POST /api/worker/login`）+ session 落 `localStorage` + 后续请求带 `X-Worker-Session-Id` | `src/api.mjs` |
 | ⑤ | 共用 PAD 三条：页头常驻「当前工人」（取**服务端** `current-worker`）· 一步切换（**不丢扫码上下文**）· 闲置登出（定时器 + `visibilitychange` 双保险；401 ⇒ 回落未登录 + 清本地） | `src/app.mjs` |
 | ⑥ | 报工：调**已合并**的 `POST /api/worker/production/orders/{orderId}/operations/{operationId}/report`（#4733）+ `X-Client-Request-Id` 幂等键 | `src/api.mjs` |
-| ⑦ | 🆕 工人读面 `GET /api/worker/production/scan?token=…&operation_id=…` | `WorkerProductionController` |
+| ⑦ | 工人读面 `GET /api/worker/production/scan?token=…&operation_id=…` —— **端点本体属切片②（已在 main）**；本单**只消费**它，并补**旧码降级契约断言**（`set_no`/`position`/`operation`/`completed` 全 null + `needs_selection=["set","position"]`） | `WorkerScanEndpointTest`（断言） |
 | ⑧ | 🔴 CORS：`allowedHeaders` **追加 `X-Worker-Session-Id`**（#4733 登记的缺口；**只加这一个头，origin 白名单一字不动**） | `SecurityConfig` |
 
 ### 9.3 未落码 / 依赖（**照实登记**）
 
 | # | 项 | 状态 | 为什么 / 何时 |
 |---|---|---|---|
-| D1 | 🔴 **旧码「选完套+部位」之后的收口** | **未闭环** | 切片① 的 `resolve(token, operationId, tenantId)` 只接受 `token` —— **旧码没有部位级 token**（旧码是加工单级 `qr_token`）⇒ 选完套/部位后**没有可再解析的键**，页面停在"已选：第 N 套 · 部位"。**闭环需要在切片① 的解析契约上加 `set_id` + `order_item_id` 入参**（本单**不动**切片① 的冻结契约）⇒ 登记为切片① 的跟随单 |
+| D1 | 🔴 **旧码「选完套+部位」之后的收口** | **未闭环** | 切片① 的 `resolve(token, operationId, tenantId)` 只接受 `token` —— **旧码没有部位级 token**（旧码是加工单级 `qr_token`）⇒ 选完套/部位后**没有可再解析的键**，页面停在"已选：第 N 套 · 部位"。**闭环需要在切片① 的解析契约上加 `set_id` + `order_item_id` 入参**（本单**不动**切片① 的冻结契约）⇒ 登记为切片① 的跟随单。**复核（rebase 时实测）**：切片② 的 `resolve(token, operationId, tenantId)` 签名**未变**、`ProductionScanCompleteService` 也**不认** `set_id`/`order_item_id` ⇒ **该缺口仍开**（不是被切片② 顺手闭掉的） |
 | D2 | 稳定短链 `GET /s/{shortCode}`（302）+ `processing_set_part_tokens.short_code` 列（§1.3 / §1.4 / §7.1①②） | **未落码** | 属设计 §7.3 的 **①**，本切片不含。**今天码从哪来**：页面 `?t=<token>` 直接带 token（或手输），**不依赖短链** |
-| D3 | 切片② 的 `completeByScan` 原子事务（§5.2） | **未落码（另一单在写）** | 本切片消费的是**已合并**的既有报工端点（逐条推进 + 计件快照），**不是** §5.2 的一次事务闭环；切片② 落地后前端**无需改动**（同一端点形状） |
+| D3 | 切片② 的 `completeByScan` 原子事务（§5.2） | ✅ **已落码（PR #4769，merge `916378c3c`）** | 端点 = `POST /api/worker/production/scan/complete`（**main**）。⚠️ **本单前端仍走既有的 `/orders/{orderId}/operations/{operationId}/report`**（父会话明示「不扩大范围」）⇒ **改用 `scan/complete` 是跟随单**（它才是 §5.2 的一次事务闭环：按 `token` 定位部位 + 幂等 + 审计旁路） |
 | D4 | 微信网页授权（腿 B，§2.2） | **不做** | 服务层 501 占位 + 无公众号配置 ⇒ 按用户裁定「本单不做」 |
 | D5 | 离线队列（§4.4） | **未落码** | 复用口径（幂等键语义 / 业务拒绝不入队 / 上限 50）**已在 #4733 之外的 bmini-app**；H5 版需换存储后端 + 多标签锁（§8.4 R3）⇒ 跟随单。**本切片：断网 ⇒ 显式报错**（不静默丢单） |
 | D6 | 🔴 **CI 不跑 worker-h5 测试** | **如实登记** | `pr-check.yml` 的前端腿只对 `frontend/admin-web/` 变更触发（`working-directory: frontend/admin-web`）⇒ 本目录的测试**只在本地**跑（`./verify-all.sh frontend` / `full` 已接入）。**接 CI 需要改 `.github/workflows/**`**（本单**禁止**触碰，且本机 token 无 `workflow` scope）⇒ 登记为跟随单（新 job：`node --test frontend/worker-h5/tests/*.test.mjs`）。**不得**因此说"CI 已覆盖本页面" |
@@ -731,9 +736,28 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 
 | # | 前提 | 谁负责 |
 |---|---|---|
-| P1 | 🔴 **ICP 备案**：`app.migaozn.com` 未备案 ⇒ **微信内置浏览器会拦截** ⇒ 裁定④ 的「微信扫一扫是一等公民」**当场失效**（设计 §8.2 U1 的"最脆一环"） | **运维**（本单不解决） |
+| P1 | ✅ **ICP 备案：用户已答「已做过备案」⇒ 该风险解除**（原判「未备案 ⇒ 微信内拦截 ⇒ 裁定④ 失效」不再成立） | **已解除**（用户裁定） |
 | P2 | 静态文件落位：把 `frontend/worker-h5/` 的产物放到 `app.migaozn.com` 的静态根下的 `/w/`（与 C 端 H5 同一台 nginx） | 运维 / 部署 |
 | P3 | 页面与 `/api` **同源** ⇒ 无跨域；若将来改跨域部署，需把 origin 加进 `CORS_ALLOWED_ORIGINS` | 部署 |
+
+---
+
+## 10. 本单（#4716 落码第一切片）实际落地位置（**不复用 §9 行号**）
+
+> §9 写在本单 rebase 之前，行号会随 rebase 漂移 ⇒ **落码位置以本节 + `git diff` 为准**。
+
+| # | 落点 |
+|---|---|
+| 页面骨架 / 两断点 | `frontend/worker-h5/index.html` + `src/styles.css` |
+| 扫码入口解析 | `frontend/worker-h5/src/scan-input.mjs` |
+| 旧码降级 / 一屏渲染 / 报工闸 | `frontend/worker-h5/src/render.mjs` |
+| 登录 / session / 报工 API | `frontend/worker-h5/src/api.mjs` |
+| 装配 / 共用 PAD 三条 | `frontend/worker-h5/src/app.mjs` |
+| 页面测试（Node 内置 runner） | `frontend/worker-h5/tests/*.test.mjs` |
+| 🔴 CORS 补头 | `SecurityConfig.allowedHeaders`（+`X-Worker-Session-Id`） |
+| 旧码降级**契约断言** | `WorkerScanEndpointTest` |
+| CORS 预检断言 | `SecurityConfigTest#cors_PreflightAllowsWorkerSessionHeader` |
+| 本地验证接线 | `verify-all.sh`（三档各加一条 `worker-h5` 检查项） |
 
 ---
 
