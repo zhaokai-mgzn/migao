@@ -117,7 +117,10 @@ class ProductionScanCompleteServiceTest {
                 workLogMapper, orderMapper, orderItemMapper, clientRequestIdService);
         ProductionScanService scanService = new ProductionScanService(setPartTokenMapper, orderSetMapper,
                 processingOrderMapper, positionOperationMapper, orderItemMapper, operationQueryService,
-                productionService);
+                productionService,
+                // 卡点判据（切片 ③，issue #4776）：真实对象（只 mock Mapper），与生产装配同源
+                new ProductionStuckPointService(productionService, positionOperationMapper,
+                        orderSetMapper, 4.0));
         service = new ProductionScanCompleteService(scanService, productionService, clientRequestIdService);
 
         // 幂等占位：默认「首次」（claim=true）。重复提交的用例单独把它改成 false。

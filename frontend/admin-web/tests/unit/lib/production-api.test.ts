@@ -44,4 +44,17 @@ describe('productionApi 端点路径（issue #4240）', () => {
       '/api/admin/production/orders/order-uuid-1/instantiate',
     ])
   })
+
+  // 卡点报表（切片 ③，issue #4776）：⚠️ 它是**唯一**按**加工单 id**（不是订单 id）取的生产读面
+  // —— 报表口径是「按套 × 工序」，而套的归属是加工单。路径写错会静默变成「查全租户」
+  // （不报错、只是数字不对），故这里单独钉住两种形态。
+  it('getStuckPoints 打 GET /api/admin/production/stuck-points（按加工单 id；缺省 = 本租户全部）', async () => {
+    await productionApi.getStuckPoints('po-uuid-1')
+    await productionApi.getStuckPoints()
+
+    expect(mockGet.mock.calls.map((c) => c[0])).toEqual([
+      '/api/admin/production/stuck-points?processing_order_id=po-uuid-1',
+      '/api/admin/production/stuck-points',
+    ])
+  })
 })

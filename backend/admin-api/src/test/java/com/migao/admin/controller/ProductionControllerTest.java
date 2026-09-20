@@ -42,6 +42,7 @@ import com.migao.admin.service.ProductionInstanceRepricingService;
 import com.migao.admin.service.ProductionOperationQtyClient;
 import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
+import com.migao.admin.service.ProductionStuckPointService;
 import com.migao.admin.service.RoutingModelFixture;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
@@ -61,6 +62,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -200,9 +202,16 @@ class ProductionControllerTest {
                 "processingFeeCombinationCommandService", feeCommandService);
         // 扫码解析 + 工序推断（切片 ①，issue #4698）：同样字段注入 ⇒ 这里装配真实服务
         // （只 mock Mapper），端点契约（路径 / 参数名 / 信封）才有意义。
+        // 卡点判据（切片 ③，issue #4776）：同样是真实对象（只 mock Mapper）—— 报表与 stalled 键
+        // 的响应形状必须是前端消费的那一份（不复制第二份装配、不动既有 6 参构造）。
+        ProductionStuckPointService stuckPointService = new ProductionStuckPointService(
+                service, positionOperationMapper, orderSetMapper, 4.0);
         org.springframework.test.util.ReflectionTestUtils.setField(controller, "productionScanService",
                 new ProductionScanService(setPartTokenMapper, orderSetMapper, processingOrderMapper,
-                        positionOperationMapper, orderItemMapper, queryService, service));
+                        positionOperationMapper, orderItemMapper, queryService, service,
+                        stuckPointService));
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "productionStuckPointService",
+                stuckPointService);
         // 未定价实例补价（issue #4709 C）：与上面同款字段注入 —— 真实服务（只 mock Mapper），
         // 响应形态就是前端消费的那个 Map（不复制第二份装配、不动既有 6 参构造）。
         ProductionInstanceRepricingService repricingService = new ProductionInstanceRepricingService(
@@ -437,7 +446,61 @@ class ProductionControllerTest {
                 .andExpect(jsonPath("$.data.operation.operation_id").value("op-2"))
                 .andExpect(jsonPath("$.data.operation.determined_by").value("inferred"))
                 .andExpect(jsonPath("$.data.operation.rerouted").value(false))
+                // 卡点键（切片 ③，issue #4776；设计 §3.1 逐字）：op-1 已完成但 **done_at 为 NULL**
+                // （切片 ② 之前的存量行）⇒「上道几点完成」不可知 ⇒ **不判卡**（§6.3 p.done_at IS NOT NULL）；
+                // 三态照实给（state=not_started），不静默混成「未卡」
+                .andExpect(jsonPath("$.data.stalled.state").value("not_started"))
+                .andExpect(jsonPath("$.data.stalled.predecessor_done").value(true))
+                .andExpect(jsonPath("$.data.stalled.predecessor_done_at").value(nullValue()))
+                .andExpect(jsonPath("$.data.stalled.kind").value(nullValue()))
+                .andExpect(jsonPath("$.data.stalled.threshold_source").value("default"))
                 .andExpect(jsonPath("$.data.needs_selection").isEmpty());
+    }
+
+    @Test
+    @DisplayName("卡点报表（切片 ③）→ 200：A 模式只列「没开工」，附上道完成时刻/等了多久/阈值来源")
+    void stuckPointsReportsNotStartedOnly() throws Exception {
+        when(orderSetMapper.selectList(any())).thenReturn(List.of(ProcessingOrderSet.builder()
+                .id("set-14").tenantId(TENANT).processingOrderId(PO_ID)
+                .setIndex(14).setNo("CSO260915-02615-014").deleted(0).build()));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                scanOpDoneAt("op-1", 1, "精裁-布", OffsetDateTime.now().minusHours(6)),
+                scanOp("op-2", 2, "定型-布", "pending"),                 // 上道 6 小时前完成 ⇒ 卡
+                // 做了一半：**绝不**进卡点表（红证②的端点侧）；它也是 op-3 的立即前道（未完成）
+                halfDoneScanOp("op-half", 3, "三边-布"),
+                scanOp("op-3", 4, "复烫-布", "pending")));
+
+        mockMvc.perform(get("/api/admin/production/stuck-points")
+                        .param("processing_order_id", PO_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.mode").value("A"))
+                .andExpect(jsonPath("$.data.threshold_source").value("default"))
+                .andExpect(jsonPath("$.data.scope.processing_order_id").value(PO_ID))
+                .andExpect(jsonPath("$.data.states.not_started").value(2))
+                .andExpect(jsonPath("$.data.states.in_progress").value(1))
+                .andExpect(jsonPath("$.data.states.completed").value(1))
+                .andExpect(jsonPath("$.data.stuck_total").value(1))
+                .andExpect(jsonPath("$.data.stuck[0].kind").value("not_started"))
+                .andExpect(jsonPath("$.data.stuck[0].set_no").value("CSO260915-02615-014"))
+                .andExpect(jsonPath("$.data.stuck[0].operation.operation_id").value("op-2"))
+                .andExpect(jsonPath("$.data.stuck[0].operation.state").value("not_started"))
+                .andExpect(jsonPath("$.data.stuck[0].predecessor.operation_id").value("op-1"))
+                .andExpect(jsonPath("$.data.stuck[0].predecessor.done_at").exists());
+    }
+
+    /** 卡点报表夹具：已完成且**有 done_at** 的实例行（只有切片 ② 之后的新报工才会写它）。 */
+    private static ProcessingPositionOperation scanOpDoneAt(String id, int seq, String name,
+                                                           OffsetDateTime doneAt) {
+        ProcessingPositionOperation op = scanOp(id, seq, name, "done");
+        op.setDoneAt(doneAt);
+        return op;
+    }
+
+    /** 卡点报表夹具：**做了一半**（0 < done_qty < qty）—— 三态里的中间态。 */
+    private static ProcessingPositionOperation halfDoneScanOp(String id, int seq, String name) {
+        ProcessingPositionOperation op = scanOp(id, seq, name, "pending");
+        op.setDoneQty(new BigDecimal("6"));
+        return op;
     }
 
     @Test

@@ -813,6 +813,56 @@ export interface PieceworkSummary {
   unpriced?: UnpricedPiecework
 }
 
+/**
+ * 「卡在哪」卡点报表（issue #4776 = #4698 切片 ③；`GET /api/admin/production/stuck-points`）。
+ *
+ * 🔴 **A 模式只查「没开工」那一种**（设计 §6 裁定②-3）⇒ `stuck[].kind` 今天恒为 `not_started`；
+ * 「开了没完」（仅 C 模式）**不在本报表**。三态互斥且完备：`not_started`（从未报过工）/
+ * `in_progress`（`0 < done_qty < qty`）/ `completed`（`done_qty ≥ qty`）。
+ *
+ * ⚠️ `stalled_hours` 的起算点是**上道完成时刻**（`predecessor.done_at`），**不是** `updated_at`
+ * （后者会被任何更新污染 ⇒ 会静默给出错数，设计 §6.1 逐字点名）。`threshold_source` 恒为
+ * `default`（S3 全局兜底）—— **不得**在前端把它渲染成「业务标准工时」。
+ */
+export interface StuckPointsReport {
+  /** 判定模式：`A`（A 模式只查「没开工」那一种） */
+  mode?: string
+  /** 等开工多久算卡的阈值（小时）= S3 全局默认常量，可配 */
+  threshold_hours?: number
+  /** 阈值来源：`default`（S3 兜底）/ `history`（S1 历史中位数，**尚未落码**） */
+  threshold_source?: string
+  scope?: { processing_order_id?: string | null }
+  /** 三态计数（与报表同范围）—— 三态可区分、不混 */
+  states?: { not_started?: number; in_progress?: number; completed?: number }
+  stuck_total?: number
+  stuck?: StuckPointRow[]
+}
+
+/** 卡点报表的一行（按套 × 工序）。 */
+export interface StuckPointRow {
+  kind?: string
+  processing_order_id?: string
+  set_id?: string
+  set_no?: string | null
+  set_index?: number | null
+  position?: { order_item_id?: string | null; position_kind?: string | null; position_name?: string | null }
+  operation?: {
+    operation_id?: string
+    logical_name?: string | null
+    position?: string | null
+    seq?: number | null
+    unit?: string | null
+    qty?: number | null
+    done_qty?: number | null
+    state?: string
+  }
+  /** 立即前道（「上道几点完成」）—— `done_at` 是等待时长的**唯一**起算点 */
+  predecessor?: { operation_id?: string; logical_name?: string | null; seq?: number | null; done_at?: string | null }
+  stalled_hours?: number | null
+  threshold_hours?: number
+  threshold_source?: string
+}
+
 // ── 工序库 / 工艺路线 / 计件报表（issue #4203/#4204/#4205；后端 ProductionOperationQueryService）──
 
 /**

@@ -105,7 +105,11 @@ class ProductionScanServiceTest {
         productionService = new ProductionService(processingOrderMapper, positionOperationMapper,
                 workLogMapper, orderMapper, orderItemMapper, clientRequestIdService);
         service = new ProductionScanService(setPartTokenMapper, orderSetMapper, processingOrderMapper,
-                positionOperationMapper, orderItemMapper, operationQueryService, productionService);
+                positionOperationMapper, orderItemMapper, operationQueryService, productionService,
+                // 卡点判据（切片 ③，issue #4776）：真实对象（只 mock Mapper）——
+                // stalled 键的口径必须走**同一份**实现，mock 掉它等于把被测口径换成桩。
+                new ProductionStuckPointService(productionService, positionOperationMapper,
+                        orderSetMapper, 4.0));
         when(operationQueryService.operationsByName(TENANT)).thenReturn(catalog());
     }
 
@@ -369,6 +373,26 @@ class ProductionScanServiceTest {
 
     // ============================================================ 夹具
 
+    @Test
+    @DisplayName("§3.1 的 stalled 键（切片 ③，issue #4776）：上道完成时刻可知且等超阈值 ⇒ kind=not_started")
+    void stalledKeyIsEmittedWithCriterion() {
+        OffsetDateTime predecessorDoneAt = OffsetDateTime.now().minusHours(6);
+        stubNewTokenScan(ITEM_CLOTH, List.of(
+                op("op-1", ITEM_CLOTH, "布帘", "布艺遮光帘A", 1, "精裁-布", "11", "11", predecessorDoneAt),
+                op("op-2", ITEM_CLOTH, "布帘", "布艺遮光帘A", 2, "定型-布", "11", "0")));
+
+        Map<String, Object> result = service.resolve(NEW_CODE, null, TENANT);
+
+        Map<String, Object> stalled = stalled(result);
+        assertThat(stalled.get("kind")).isEqualTo(ProductionStuckPointService.KIND_NOT_STARTED);
+        assertThat(stalled.get("state")).isEqualTo(ProductionStuckPointService.STATE_NOT_STARTED);
+        assertThat(stalled.get("predecessor_operation_id")).isEqualTo("op-1");
+        assertThat(stalled.get("predecessor_done_at")).isEqualTo(predecessorDoneAt);
+        // 「卡了多久」= now - 前道 done_at（**不是** updated_at）
+        assertThat((Double) stalled.get("stalled_hours")).isGreaterThan(5.9);
+        assertThat(stalled.get("threshold_source")).isEqualTo("default");
+    }
+
     /** 标准一套：布帘 3 道（1 已完成 / 2 待做）+ 纱帘 1 道（已完成）+ 套级「外帘打卷」待做。 */
     private List<ProcessingPositionOperation> standardOps() {
         return List.of(
@@ -509,6 +533,12 @@ class ProductionScanServiceTest {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> position(Map<String, Object> result) {
         return (Map<String, Object>) result.get("position");
+    }
+
+    /** 一屏输出里的卡点键（切片 ③，issue #4776；设计 §3.1）。 */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> stalled(Map<String, Object> result) {
+        return (Map<String, Object>) result.get("stalled");
     }
 
     @SuppressWarnings("unchecked")

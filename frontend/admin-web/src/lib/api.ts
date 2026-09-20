@@ -41,6 +41,7 @@ import type {
   ProcessingOrderUpdateParams,
   ProductionOperations,
   PieceworkSummary,
+  StuckPointsReport,
   OperationsCatalog,
   RoutingsResponse,
   PieceworkReport,
@@ -482,6 +483,16 @@ export const productionApi = {
   // 加工单计件汇总（内部计件：合计 + 分人 + 分工序）
   getPiecework: (orderId: string) =>
     request.get<ApiResponse<PieceworkSummary>>(`/api/admin/production/orders/${orderId}/piecework`),
+
+  // 「卡在哪」卡点报表（切片 ③，issue #4776；只读；设计 §6）：
+  // **A 模式只查「没开工」那一种**（裁定②-3）；等待时长取**上道 done_at**（不用 updated_at）。
+  // 传 processingOrderId ⇒ 只看该加工单；缺省 = 本租户全部活跃加工单。
+  getStuckPoints: (processingOrderId?: string) =>
+    request.get<ApiResponse<StuckPointsReport>>(
+      processingOrderId
+        ? `/api/admin/production/stuck-points?processing_order_id=${encodeURIComponent(processingOrderId)}`
+        : '/api/admin/production/stuck-points',
+    ),
 
   // 工艺库 + 工艺路线（只读；工序库页数据源）
   getOperationsCatalog: () =>
