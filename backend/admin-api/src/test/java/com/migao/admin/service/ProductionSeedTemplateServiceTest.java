@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -287,6 +288,44 @@ class ProductionSeedTemplateServiceTest {
             verify(productionRoutingMapper, never()).insert(org.mockito.ArgumentMatchers.<ProductionRouting>any());
             verify(productionOptionRoutingMapper, never()).insert(org.mockito.ArgumentMatchers.<ProductionOptionRouting>any());
             verify(productionOptionFactorMapper, never()).insert(org.mockito.ArgumentMatchers.<ProductionOptionFactor>any());
+        }
+
+        @Test
+        @DisplayName("开租播种落库的 scope 逐行等于迁移链终态（issue #4715：外帘三道必须 set，落 position ⇒「布+纱」各付两次）")
+        void apply_seedsScopeMatchingMigrationChainTerminalState() {
+            wireOperationLibrary();
+
+            service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
+
+            ArgumentCaptor<ProductionOperation> opCaptor = ArgumentCaptor.forClass(ProductionOperation.class);
+            verify(productionOperationMapper, times(37)).insert(opCaptor.capture());
+            Map<String, String> seeded = opCaptor.getAllValues().stream()
+                    .collect(Collectors.toMap(ProductionOperation::getName, ProductionOperation::getScope,
+                            (a, b) -> a, LinkedHashMap::new));
+
+            // 🔴 本单的核心：`scope='set'` 的语义是「**一单一套一次，不按部位展开**」。
+            // 模板缺 `scope` ⇒ `planOperations` 的 `asText("position")` 兜底成**部位级**
+            // ⇒ 一樘「布帘 + 纱帘」订单里这三道**各实例化 2 次、各付两次**（#4408 双付家族）。
+            assertThat(seeded)
+                    .as("开租播种必须与 V67 ∪ V79 的迁移链终态**逐行同 scope** —— 分裂 ⇒ 同一道工序在"
+                            + "「开租租户」与「存量租户」上行为不同，且没有任何东西会因此变红")
+                    .containsEntry("外帘打卷", "set")
+                    .containsEntry("外帘装袋", "set")
+                    .containsEntry("外帘发货", "set")
+                    .containsEntry("打包", "set");
+            assertThat(seeded).hasSize(37);
+            assertThat(seeded.values())
+                    .as("scope 取值必须 ⊆ 闭词表 {position, set}（与写面校验同口径）")
+                    .allSatisfy(scope -> assertThat(scope).isIn("position", "set"));
+            // 反向护栏：部位级工序**不得**被误标成套级（多标 ⇒ 该道工序在「布+纱」单里少做一次 = 少发工资）
+            assertThat(seeded)
+                    .as("部位变体（布帘/纱帘各一道）必须仍是 position")
+                    .containsEntry("韩褶-布", "position")
+                    .containsEntry("韩褶-纱", "position");
+            assertThat(seeded.entrySet().stream().filter(e -> "set".equals(e.getValue()))
+                    .map(Map.Entry::getKey).sorted().toList())
+                    .as("终态套级集合 = V67 三道 + V79 的 打包（恰好这四个，漏标/多标都红）")
+                    .containsExactlyInAnyOrder("打包", "外帘打卷", "外帘装袋", "外帘发货");
         }
 
         @Test

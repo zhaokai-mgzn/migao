@@ -1,0 +1,24 @@
+psql: 错误: 连接到"pgm-bp1p7w92k81ob5to-pub.pg.rds.aliyuncs.com" (8.139.140.111)上的服务器，端口5432失败：Operation timed out
+	Is the server running on that host and accepting TCP/IP connections?
+
+
+=== ② 三道工序 scope × source（活跃租户，本单核心读数）===
+ tenant_id |   name   | scope |   source   | verdict 
+-----------+----------+-------+------------+---------
+         1 | 外帘发货 | set   | 占位待确认 | ok
+         1 | 外帘打卷 | set   | 占位待确认 | ok
+         1 | 外帘装袋 | set   | 占位待确认 | ok
+(3 行记录)
+
+=== ③ 汇总：活跃租户里 position / set 各多少行 ===
+ scope | rows | tenants 
+-------+------+---------
+ set   |    3 |       1
+(1 行记录)
+
+=== ④ source 分布（能否区分「播种 vs 商家自建」）===
+   source   | rows | tenants | id_prefixed 
+------------+------+---------+-------------
+ 占位待确认 |   33 |       3 |          33
+ 推算       |    5 |       1 |           5
+(2 行记录)
