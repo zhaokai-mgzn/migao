@@ -773,7 +773,7 @@ cases:
   # ==========================================================================
   - id: PG-042
     legacy_id: ""
-    title: "加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项；人工改价 ⇒ manual + 建单回写组合）"
+    title: "加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项）"
     domains:
       - processing
       - production
@@ -787,7 +787,6 @@ cases:
       - fee_source
       - unpriced
       - snapshot_priority
-      - manual_override
     truths_ref: []
     # `user_inputs` / `expectations` 留空 = 本条**不是 LLM 行为用例**（无 agent 轮次可跑）：
     # 判据全部由 `traces.tests` 的确定性 Java 测试执行（计分通道分流，形态同 PG-036 / PG-037 / PG-040）。
@@ -805,15 +804,12 @@ cases:
       - "判据 6·**改组合价 ⇒ 新单按新价；已生成订单一字不变**（R13 快照优先）：读面读 `processing_info.processingFeeDetail` 的落库值，**不重算** ⇒ 历史订单金额不随价目表漂移；存量单（接线前生成、无 detail）读 0 且不拿 Σ 加工项冒充。证据：OrderServiceTest「changingCombinationPriceLeavesExistingOrderUntouched」「readPathsReturnStoredFeeNotRecomputed」「legacyOrderWithoutStoredDetailReadsZero」（**注入**：读面改成重算 ⇒ 红，实测 98.40 vs 19.00）"
       - "判据 7·**加工费不带商品维度**（R15）：同一选配在任意商品上取到同一个组合价（#4371 解耦后组合费用表是店铺级）。证据：ProcessingFeeCalculatorTest「sameCompositionSamePriceOnAnyProduct」"
       - "判据 8·**两套账不互读**（R9）：对外加工费**不得**由 `production_operations.unit_price` / 加工项目录单价算出（那两处是给工人付的成本）。证据：ProcessingFeeCalculatorTest「processingFeeNeverDerivedFromOperationUnitPrice」（**注入**：让取价读工序/加工项单价 ⇒ 红）"
-      - "判据 9·**行级人工改价**（issue #4872，用户 2026-09-21 裁定「订单中加工费组合**未配置**的情况下，**允许更改该单价**」）：`processing_info.processingFeeOverride`（元/米）**仅当**该行组合**未命中**活跃价目 ∧ 组合键非空 ∧ override 是**正数**时被采用 ⇒ `fee_source='manual'`、`price_source='manual'`、`unit_price`=override、金额 = override × 加工费米数（已定价特殊选项照常计入）。**组合命中时一律忽略 override**（既有组合价一字不动 —— 改价不得成为绕过组合价的旁路）。非正数（0/负/非数值）**不算改价**（0 元改价与没改价在金额上不可区分 ⇒ 视为未改价，仍走 unpriced 且**显式可见**）。未命中 ∧ override ∧ **缺米数** ⇒ 仍 `unpriced`（与判据 5 同族：不凭 quantity 猜米数）。证据：ProcessingFeeCalculatorTest「manualOverrideOnUnmatchedCombinationUsesOverrideTimesMeters」「manualOverrideIsIgnoredWhenCombinationIsPriced」（**注入**：把 override 分支提到命中判定之前 ⇒ 红）「withoutOverrideUnmatchedCombinationKeepsUnpriced」「nonPositiveOverrideIsNotAManualPrice」「manualOverrideWithoutCompositionStaysUnpriced」「manualOverrideWithoutMetersStaysUnpriced」「manualOverrideStillChargesPricedSpecialOptions」"
-      - "判据 10·**建单同事务回写加工费组合**（issue #4872，用户裁定「当订单**创建成功后**，同步**新增加工费组合&单价**到加工费配置中」）：对每条 `fee_source='manual'` 的行，按 `compositionKey` **同源口径** upsert `processing_fee_combinations`（`status='active'`、`source='实证'`）+ 追加版本台账（走既有 `appendVersion`，**不绕过**）。幂等三态：已存在同键 **active** 行 ⇒ **不覆盖其价**；已存在 **disabled** 行 ⇒ **复活为 active 并写本次订单价**（V77 那批 92 行全部 disabled ⇒ 这是主路径）；都不存在 ⇒ 新建。**无 manual 行 ⇒ 零回写调用**（正常建单路径不多一次写库、金额一字不变）。证据：ProcessingFeeCombinationCommandServiceTest「upsertFromOrderCreatesCombinationAndVersionLedger」「upsertFromOrderNeverOverwritesActivePrice」「upsertFromOrderRevivesDisabledCombination」+ OrderServiceTest「createOrder_manualOverrideOnUnmatchedCombination」「createOrder_manualOverrideIgnoredWhenCombinationMatches」（**注入**：摘掉 `OrderService` 的回写循环 ⇒ 两条红）"
-      - "**未落地（如实登记）**：① 前端 `orders/new/page.tsx` 仍是本地自算（本单**只做后端**，PR #4424 正在改该文件）⇒ 页面显示 ≠ 落库（R10 未闭合）；② C 端 `curtain_calc.py` 的 `DEFAULT_PROCESSING_PRICE` 常量未降级为种子 ⇒ 报价单与订单的**双算**（R10 / 关联 #4118）未闭合；③ ~~`fee_source=manual`（人工改价通道）只定义未落码~~ ⇒ **2026-09-21 已落码**（issue #4872，见判据 9/10；`manual` 三态至此三态齐全）；④ ai-agent 侧 `order_create` 不声明 processingFee 的推广登记在关联 #4390（同上，#4872 仍未做）；⑤ **改价后「停用过的组合被复活」时，读面不保留停用前价的历史查询面**（版本台账有行，UI/端点未开）；⑥ `logisticsType` 值域（express/logistics）**未加校验**（只 trim 落库）。"
-    skip_reason: "[backend-contract] 后端契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCalculatorTest + ProcessingFeeCombinationCommandServiceTest + OrderServiceTest 执行"
-    merge_log: "2026-09-19 新增（issue #4406，P1；用户裁定「未定价组合 ⇒ 加工费 = 0（unpriced），直接切，不回落 Σ 加工项」）。**2026-09-19 改判（issue #4594 用户裁定）**：`fee_source=unpriced` 收窄为**只表达组合那半**（不再蕴含「行金额 = 0」）—— 已定价的特殊选项照常计入行金额；枚举取值不变、`amount` 语义不变。交付：ProcessingFeeCalculator（选配 → 归一化组合键 → 匹配 processing_fee_combinations → 单价 × 加工费米数）+ OrderService 接线（创建/列表/详情三条读面）+ processingFeeDetail 可审计构成随行落库 + fee_source 三态。**未做**：前端下单页改调服务端计价、C 端 DEFAULT_PROCESSING_PRICE 降级为种子（双算 R10 未闭合）、manual 改价通道、ai-agent 侧推广。 **2026-09-21 改判（issue #4872，用户裁定「未配置的组合允许改该单价」+「建单成功后同步新增加工费组合&单价到加工费配置中」）**：新增**判据 9**（行级 `processingFeeOverride` ⇒ `fee_source='manual'`，命中组合时**忽略** override —— 有红证）与**判据 10**（建单**同事务**回写 `processing_fee_combinations` + 版本台账，幂等三态：active 不覆盖 / disabled 复活 / 无则新建；无 manual 行零调用）；「未落地 ③」随之**销账**（manual 通道已落码）。判据 1~8 与 `expectations` 一字未动、断言只增不减。"
+      - "**未落地（如实登记）**：① 前端 `orders/new/page.tsx` 仍是本地自算（本单**只做后端**，PR #4424 正在改该文件）⇒ 页面显示 ≠ 落库（R10 未闭合）；② C 端 `curtain_calc.py` 的 `DEFAULT_PROCESSING_PRICE` 常量未降级为种子 ⇒ 报价单与订单的**双算**（R10 / 关联 #4118）未闭合；③ `fee_source=manual`（人工改价通道）只定义未落码；④ ai-agent 侧 `order_create` 不声明 processingFee 的推广登记在关联 #4390。"
+    skip_reason: "[backend-contract] 后端契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCalculatorTest + OrderServiceTest 执行"
+    merge_log: "2026-09-19 新增（issue #4406，P1；用户裁定「未定价组合 ⇒ 加工费 = 0（unpriced），直接切，不回落 Σ 加工项」）。**2026-09-19 改判（issue #4594 用户裁定）**：`fee_source=unpriced` 收窄为**只表达组合那半**（不再蕴含「行金额 = 0」）—— 已定价的特殊选项照常计入行金额；枚举取值不变、`amount` 语义不变。交付：ProcessingFeeCalculator（选配 → 归一化组合键 → 匹配 processing_fee_combinations → 单价 × 加工费米数）+ OrderService 接线（创建/列表/详情三条读面）+ processingFeeDetail 可审计构成随行落库 + fee_source 三态。**未做**：前端下单页改调服务端计价、C 端 DEFAULT_PROCESSING_PRICE 降级为种子（双算 R10 未闭合）、manual 改价通道、ai-agent 侧推广。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingFeeCalculatorTest.java"
-        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingFeeCombinationCommandServiceTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java"
       ci:
         - pr-check.yml
