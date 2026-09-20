@@ -19,6 +19,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -28,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.regex.Pattern;
 
 /**
  * 扫码解析 + 工序推断（切片 ①，issue #4698；设计 {@code docs/design/set-code-and-scan-loop.md} §2.3 / §2.6 / §3）。
@@ -104,6 +108,15 @@ public class ProductionScanService {
     /** 旧码降级形态必须由工人补齐的两个选择（设计 §2.6 逐字）。 */
     private static final List<String> DEGRADED_NEEDS_SELECTION = List.of("set", "position");
 
+    /**
+     * URL 里承载码值的键（**与前端 counterpart {@code frontend/worker-h5/src/scan-input.mjs} 的
+     * {@code CODE_KEYS} 同一份口径**：只认这三个，其它 query 参数一律不当码值）。
+     */
+    private static final List<String> SCAN_CODE_KEYS = List.of("t", "token", "code");
+
+    /** 「像 URL」= 含协议前缀（与前端 `parseScanInput` 的判据同形）。 */
+    private static final Pattern URL_PREFIX = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.\\-]*://");
+
     private final ProcessingSetPartTokenMapper setPartTokenMapper;
     private final ProcessingOrderSetMapper orderSetMapper;
     private final ProcessingOrderMapper processingOrderMapper;
@@ -130,8 +143,9 @@ public class ProductionScanService {
     /**
      * 扫码解析 + 工序推断（只读）。
      *
-     * @param token       码内容 / 手输号：新 token 优先，未命中回落既有四形态（qr_token →
-     *                    processing_order_no → order_no → order_id）
+     * @param token       码内容 / 手输号 / **整条印刷 URL**（issue #4946 归一，见
+     *                    {@link #normalizeScanKey}）：短码 / 新 token 优先，未命中回落既有四形态
+     *                    （qr_token → processing_order_no → order_no → order_id）
      * @param operationId 可选：工人「一键改」指定的工序（必须属于本次扫码的部位/套，否则 422）
      * @param tenantId    当前租户
      * @return 一屏所需数据（见类 javadoc）；旧码 ⇒ 降级形态 + {@code needs_selection}
@@ -169,9 +183,13 @@ public class ProductionScanService {
         if (!StringUtils.hasText(token)) {
             throw BusinessException.validationError("扫码内容不能为空");
         }
-        String key = token.trim();
+        String key = normalizeScanKey(token);
         // ① 新码优先（带套带部位）；未命中**只回落**，不并行写（设计 §2.6 双读一致性）
         ProcessingSetPartToken partToken = findPartToken(key, tenantId);
+        if (partToken == null) {
+            // ①′ 短码（V99，设计 §1.4）：印刷品写 `/s/<短码>` ⇒ **同一行记录的第二种表示**
+            partToken = findPartTokenByShortCode(key, tenantId);
+        }
         if (partToken != null) {
             // 🔴 新码**不读** setId/orderItemId：套 × 部位由码给出 ⇒ 契约扩展对已有新码零影响
             return setPositionView(partToken, operationId, tenantId);
@@ -191,6 +209,120 @@ public class ProductionScanService {
                 .eq(ProcessingSetPartToken::getTenantId, tenantId)
                 .eq(ProcessingSetPartToken::getDeleted, 0)
                 .last("LIMIT 1"));
+    }
+
+    /**
+     * 短码 ⇒ 承载行（V99 / issue #4946；设计 {@code docs/design/worker-h5-scan-and-report.md} §1.4）。
+     *
+     * <p><b>归一化只有一份</b>：直接调既有 {@link WorkerShortLinkService#normalize}（Crockford Base32
+     * 的字符集 / 长度 / 别名规则都在那里）—— 在扫描侧再写一份就是第二份口径（两处迟早不同）。</p>
+     *
+     * <p><b>跨租户查询 + fail-closed</b>：`selectByShortCode` 本身**绕过多租户拦截器**（短码全局唯一，
+     * `/s/{短码}` 无租户上下文 ⇒ 由短码解出租户）。扫描面**有**租户上下文 ⇒ 这里必须自己兜住三条：
+     * 租户不符（别人的码）／已撤销（`token IS NULL`，设计 §1.3.1：撤销 = 解析不到）／形态不合法
+     * —— 一律视同**未命中**，回落既有四形态（**绝不**按别人的单记账）。</p>
+     */
+    private ProcessingSetPartToken findPartTokenByShortCode(String key, Long tenantId) {
+        String code = WorkerShortLinkService.normalize(key);
+        if (code.isEmpty()) {
+            return null;
+        }
+        ProcessingSetPartToken row = setPartTokenMapper.selectByShortCode(code);
+        if (row == null || !tenantId.equals(row.getTenantId()) || !StringUtils.hasText(row.getToken())) {
+            return null;
+        }
+        return row;
+    }
+
+    /**
+     * 把「扫码结果 / 手输内容」归一成**码值**（issue #4946；设计
+     * {@code docs/design/worker-h5-scan-and-report.md} §1.4 逐字：接受 ① 短码 ② 裸 token
+     * ③ 加工单号 ④ 订单号）。
+     *
+     * <p><b>为什么归一必须在服务端</b>：印刷品上的码是**整条 HTTPS URL**（{@code https://app.migaozn.com/s/<短码>}），
+     * 而工人小程序（{@code frontend/bmini-app/src/pages/production/index/index.tsx} 的 {@code handleScan}）
+     * 把 {@code Taro.scanCode} 的**原文**直传本端点 ⇒ 不归一 ⇒ 小程序扫印刷码解析不出
+     * （纸面能力形同虚设）。服务端 owns the decision；前端 h5 那份 helper 只是同一份口径的镜像。</p>
+     *
+     * <p>逐条与 counterpart {@code frontend/worker-h5/src/scan-input.mjs::parseScanInput} 对齐：
+     * ① 不像 URL（无协议前缀、也不以 {@code /} 开头）⇒ **原样**当码值（裸 token / 加工单号 / 订单号
+     * 本身就是合法码值，= 手输兜底路径）；② 像 URL ⇒ 先取 query 的 {@code t} → {@code token} → {@code code}
+     * （**键序**优先，与 {@code searchParams.get} 同口径）；③ 再取 hash 里的同组键（部分短链实现把参数放 hash）；
+     * ④ 都没有 ⇒ 取**最后一段非空路径段**；它若正是路径名（{@code /w/} 或 {@code /s/}）⇒ 空串
+     * （没有码值，不硬编）。</p>
+     *
+     * <p>⚠️ 本方法**只取码值、不判形态**：短码 / 旧 token / 单号分别由 {@link #findPartToken}、
+     * {@link #findPartTokenByShortCode}、{@link ProductionService#resolveOrder} 判 —— 在这里再判一次
+     * 形态就是第二份口径。</p>
+     *
+     * @param raw 扫码结果（任意 HTTPS URL）或手输内容（短码 / 裸 token / 加工单号 / 订单号）
+     * @return 码值；无法取出（空 / 像 URL 但取不到码）⇒ 空串（调用方按未命中处理）
+     */
+    static String normalizeScanKey(String raw) {
+        String text = raw == null ? "" : raw.trim();
+        if (text.isEmpty() || (!URL_PREFIX.matcher(text).find() && !text.startsWith("/"))) {
+            return text;
+        }
+        URI uri;
+        try {
+            uri = URI.create(text);
+        } catch (IllegalArgumentException notUrl) {
+            return text; // 像 URL 但解析不了 ⇒ 原样当码值（不吞输入）
+        }
+        String fromQuery = codeParam(uri.getRawQuery());
+        if (fromQuery != null) {
+            return fromQuery;
+        }
+        String fromHash = codeParam(uri.getRawFragment());
+        if (fromHash != null) {
+            return fromHash;
+        }
+        String last = "";
+        String path = uri.getRawPath();
+        if (path != null) {
+            for (String segment : path.split("/")) {
+                if (!segment.isEmpty()) {
+                    last = segment;
+                }
+            }
+        }
+        return "w".equals(last) || "s".equals(last) ? "" : last;
+    }
+
+    /** 从 {@code k=v&…} 取出码值：键序 {@code t → token → code}（与前端同）；无 ⇒ {@code null}。 */
+    private static String codeParam(String encodedParams) {
+        if (encodedParams == null || encodedParams.isEmpty()) {
+            return null;
+        }
+        List<String[]> pairs = new ArrayList<>();
+        for (String pair : encodedParams.split("&")) {
+            int eq = pair.indexOf('=');
+            pairs.add(eq < 0
+                    ? new String[]{pair, ""}
+                    : new String[]{pair.substring(0, eq), pair.substring(eq + 1)});
+        }
+        for (String key : SCAN_CODE_KEYS) {
+            for (String[] pair : pairs) {
+                if (!key.equals(decode(pair[0]))) {
+                    continue;
+                }
+                String value = decode(pair[1]).trim();
+                if (!value.isEmpty()) {
+                    return value;
+                }
+                break; // 该键的**首个**参数为空 ⇒ 换下一个键（与 `searchParams.get` 同口径）
+            }
+        }
+        return null;
+    }
+
+    /** 百分号解码（query/hash 条形态；`+` 按表单口径解成空格 —— 与前端 `URLSearchParams` 同）。 */
+    private static String decode(String raw) {
+        try {
+            return URLDecoder.decode(raw, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException malformed) {
+            return raw; // 非法转义 ⇒ 用原文（不吞输入）
+        }
     }
 
     // ============================================================ 新码：套 × 部位 + 推断

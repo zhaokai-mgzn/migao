@@ -9,6 +9,7 @@ import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.ProcessingPositionOperation;
+import com.migao.admin.entity.ProcessingSetPartToken;
 import com.migao.admin.entity.ProductionWorkLog;
 import com.migao.admin.entity.WorkerReportAudit;
 import com.migao.admin.exception.BusinessException;
@@ -16,6 +17,7 @@ import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
+import com.migao.admin.mapper.ProcessingSetPartTokenMapper;
 import com.migao.admin.mapper.ProductionWorkLogMapper;
 import com.migao.admin.mapper.WorkerReportAuditMapper;
 import com.migao.admin.worker.WorkerIdentity;
@@ -155,7 +157,18 @@ public class ProductionService {
      * 字段注入理由同上。
      */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.migao.admin.mapper.ProcessingSetPartTokenMapper setPartTokenMapper;
+    private ProcessingSetPartTokenMapper setPartTokenMapper;
+
+    /**
+     * 印刷品上的码的稳定域名（issue #4946；设计 {@code docs/design/worker-h5-scan-and-report.md}
+     * §1.3：**不引新域名**，复用 {@code app.migaozn.com}）。
+     *
+     * <p>字段注入 + **内联默认值** —— 既有 10 处 {@code new ProductionService(...)} 不过 Spring
+     * ⇒ 取内联默认值（确定性），因此**不得**改成构造参数（会把那些装配全改一遍）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Value(
+            "${migao.worker.short-link-base-url:https://app.migaozn.com}")
+    private String shortLinkBaseUrl = "https://app.migaozn.com";
 
     // ============================================================ 实例化
 
@@ -356,9 +369,16 @@ public class ProductionService {
                             WorkerShortLinkService.allocateUnique(setPartTokenMapper), OffsetDateTime.now(),
                             OffsetDateTime.now(), 0));
             if (inserted == 0) {
-                // 行已存在（一部位一码复用）⇒ 只补 short_code 仍为 NULL 的存量行（issue #4865）。
+                // 行已存在（一部位一码复用）或**已撤销**（token IS NULL）⇒ 两条**只补缺列**的路径
+                // （都是条件更新 ⇒ 有值的行一字不动，已打印的纸不作废，不追溯单价/计件）：
+                // ① short_code 为 NULL 的存量行（V99 之前的行，issue #4865）；
+                // ② token 为 NULL 的**已撤销**行（issue #4946 增补）—— 语义与 ensureQrToken 逐字同款：
+                //    复用已有 token、只在缺失时生成新的。⚠️ 撤销后**没有 UI 入口**再触发本路径
+                //    （issue #4287 单独跟踪）：本单只保证**数据层可恢复**，不建入口。
                 setPartTokenMapper.fillMissingShortCode(tenantId, set.getId(), itemId,
                         WorkerShortLinkService.allocateUnique(setPartTokenMapper), OffsetDateTime.now());
+                setPartTokenMapper.fillMissingToken(tenantId, set.getId(), itemId,
+                        UUID.randomUUID().toString().replace("-", ""), OffsetDateTime.now());
             }
         }
     }
@@ -379,6 +399,13 @@ public class ProductionService {
      * <p>撤销 = 置空 {@code qr_token}：已打印的码立即失效（{@link #resolveOrder} 的 qr_token
      * 形态解析不到订单 ⇒ 扫码报工 404），再次 {@link #instantiate} 时由 {@link #ensureQrToken}
      * 重新生成新码。这是**安全相关写操作**（旧纸件作废），端点声明 {@code processing:manage}。</p>
+     *
+     * <p>🔴 <b>印刷品载体必须一起作废（issue #4946）</b>：打印出来的已经是**一部位一码**
+     * （{@code processing_set_part_tokens}）—— 只撤 {@code qr_token} ⇒ 界面说「已打印的旧码立即失效」
+     * 而每个部位码仍然可用，**这是一句假话**。故在**同一个事务**里再写一次
+     * （{@link ProcessingSetPartTokenMapper#revokeTokensByOrder}）：token 置 NULL、
+     * <b>不碰 {@code short_code}</b>（短码是「哪一张纸」，留着它这张纸仍可辨识；
+     * {@code GET /s/{短码}} 见 token 为空 ⇒ 410 Gone，设计 §1.3.1 逐字）。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> revokeQrToken(String orderId, Long tenantId) {
@@ -389,7 +416,12 @@ public class ProductionService {
                     "订单 " + order.getOrderNo() + " 尚无加工单，没有可撤销的二维码");
         }
         boolean revoked = processingOrderMapper.revokeQrToken(po.getId(), tenantId, OffsetDateTime.now()) > 0;
-        log.info("撤销加工单二维码: orderNo={}, po={}, revoked={}", order.getOrderNo(), po.getProcessingOrderNo(), revoked);
+        // 印刷品载体（一部位一码）：同一个事务里的第二次写。未接线（既有单测装配不过 Spring）⇒ 跳过。
+        int partCodes = setPartTokenMapper == null
+                ? 0
+                : setPartTokenMapper.revokeTokensByOrder(po.getId(), tenantId, OffsetDateTime.now());
+        log.info("撤销加工单二维码: orderNo={}, po={}, revoked={}, partCodes={}",
+                order.getOrderNo(), po.getProcessingOrderNo(), revoked, partCodes);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order_id", order.getId());
         result.put("qr_token", null);
@@ -534,7 +566,7 @@ public class ProductionService {
         // 樘窗组键（issue #4784）：**复用 #4725 的既有实现**（`windowGroupKeyByItemId` + `setKey`）
         // —— 套维口径只有一份；本参数只用于给每个部位**追加** `set_no`（不改分组）。
         result.put("positions", buildPositions(operations, workers, orderSpecByItemId(order, tenantId),
-                windowGroupKeyByItemId(order, tenantId)));
+                windowGroupKeyByItemId(order, tenantId), partTokensByItemId(po, tenantId)));
         result.put("progress", progressOf(operations));
         // 操作记录（issue #4347 §3.2）：**服务端**报工流水，不是本机缓存。
         // 工人端原来只显示本机 storage 里的报工（换设备就没了，也看不到别人做的工序）；
@@ -1804,11 +1836,17 @@ public class ProductionService {
      * —— 缺这个键它只能按**部位数**算套数 ⇒ 一樘「布 + 纱 + 帘头」显示 **3 套**，
      * 而计件报表 {@code per_set} 说 **1 套**（同一张单两个答案，且没有任何东西会变红）。
      * ⚠️ 分组、既有键名/含义/顺序**一字不动**；前端按「缺键 ⇒ 每个部位自成一套」退回。</p>
+     *
+     * <p>🔴 <b>只加不改（issue #4946）</b>：每个部位**追加**三键（键**恒在**，未知 ⇒ {@code null}）——
+     * {@code part_token} / {@code part_short_code} / {@code scan_url}（印刷品上二维码的内容）。
+     * 理由：生产按**单个商品行**推进，而任务卡此前只有加工单级 {@code qr_token}（一单一码）
+     * ⇒ 工人扫到的码指不出「哪个部位」。既有键与顶层 {@code qr_token} 一字不动。</p>
      */
     private List<Map<String, Object>> buildPositions(List<ProcessingPositionOperation> operations,
                                                      Map<String, List<String>> workersByOperation,
                                                      Map<String, Map<String, Object>> specByItemId,
-                                                     Map<String, String> windowGroupKeyByItemId) {
+                                                     Map<String, String> windowGroupKeyByItemId,
+                                                     Map<String, ProcessingSetPartToken> partTokensByItemId) {
         Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
         Map<String, ProcessingPositionOperation> headByKey = new LinkedHashMap<>();
         Set<String> seen = new HashSet<>();
@@ -1842,9 +1880,63 @@ public class ProductionService {
                 position.putAll(spec);
             }
             position.put("operations", grouped.get(key));
+            // 一部位一码（issue #4946）：该部位**自己**的码（`processing_set_part_tokens`，V92/V99）。
+            // 生产按**单个商品行**推进 ⇒ 加工单级 `qr_token` 指不出部位；三键**追加在末尾**、
+            // 键**恒在**（未知 ⇒ null），短码为空 ⇒ scan_url 为 null（**不编造**：没有可印刷的入口）。
+            ProcessingSetPartToken partToken = partTokensByItemId == null || head.getOrderItemId() == null
+                    ? null
+                    : partTokensByItemId.get(head.getOrderItemId());
+            position.put("part_token", partToken == null ? null : partToken.getToken());
+            position.put("part_short_code", partToken == null ? null : partToken.getShortCode());
+            position.put("scan_url", scanUrlOf(partToken));
             positions.add(position);
         }
         return positions;
+    }
+
+    /**
+     * 本加工单的**活**部位码行，按 {@code order_item_id} 索引（issue #4946）。
+     *
+     * <p><b>一次查询</b>（按部位逐个查 = N+1，#4304 同族：本读面既有的报工人/报工流水就是这条纪律）。
+     * 无加工单 / 未接线（既有 10 处 {@code new ProductionService(...)} 不过 Spring）⇒ 空索引
+     * ⇒ 读面三键齐在且为 {@code null}（**不编造**，也不崩）。</p>
+     */
+    private Map<String, ProcessingSetPartToken> partTokensByItemId(ProcessingOrder po, Long tenantId) {
+        if (po == null || setPartTokenMapper == null) {
+            return Map.of();
+        }
+        List<ProcessingSetPartToken> rows = setPartTokenMapper.selectList(
+                new LambdaQueryWrapper<ProcessingSetPartToken>()
+                        .eq(ProcessingSetPartToken::getProcessingOrderId, po.getId())
+                        .eq(ProcessingSetPartToken::getTenantId, tenantId)
+                        .eq(ProcessingSetPartToken::getDeleted, 0));
+        Map<String, ProcessingSetPartToken> byItemId = new LinkedHashMap<>();
+        for (ProcessingSetPartToken row : rows == null ? List.<ProcessingSetPartToken>of() : rows) {
+            if (StringUtils.hasText(row.getOrderItemId())) {
+                byItemId.putIfAbsent(row.getOrderItemId(), row);
+            }
+        }
+        return byItemId;
+    }
+
+    /**
+     * 印刷品上二维码的内容 = {@code {稳定域名}/s/{短码}}（issue #4946；设计 §1.2 / §1.3：
+     * 纸上的码**永不变**，服务端 302 换回报工页 ⇒ 换框架/改路径不让已打印的码失效）。
+     *
+     * <p>两个 {@code null} 条件都**不得编造**：① {@code short_code} 为空（未分配短码的存量行
+     * ⇒ 没有可印刷的入口）；② {@code token} 为空 = **已撤销**（设计 §1.3.1）⇒ 这张纸作废，
+     * {@code /s/{短码}} 只会 410 ⇒ 印出去就是**假码**（前端按缺键出占位，不画假码）。</p>
+     */
+    private String scanUrlOf(ProcessingSetPartToken row) {
+        if (row == null || !StringUtils.hasText(row.getToken()) || !StringUtils.hasText(row.getShortCode())) {
+            return null;
+        }
+        String code = row.getShortCode();
+        String base = shortLinkBaseUrl == null ? "" : shortLinkBaseUrl.trim();
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base + "/s/" + code;
     }
 
     /**

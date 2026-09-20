@@ -307,3 +307,65 @@ V71 的矩阵种子是 `routing.py` ↔ `V71` ↔ `docs/sql/schema.sql` **三源
 | O3 | 纱帘单 + 选项插入「纱帘无变体」的工序（如 `拼1次`）⇒ 变体解析 422 | 与去部位化正交的既有缺陷（§11.5） | 单独 issue；修法要在「补纱帘变体行」与「显式列回落」之间裁定 |
 | O4 | 矩阵物理行去部位（真删 120 → 30 行） | bootstrap 不跑迁移链 ⇒ 删种子行会造成终态分叉（§11.3） | 先把「种子源」从 V71 迁到一条**新增**迁移 + 同步 `schema.sql` 终态 + 三源守卫改指向新源 |
 
+---
+
+## 13. 第五轮：**彻底版**（2026-09-21，issue #4937 / #4951 —— 本节覆盖 §11 与 §12 的开放项）
+
+> **用户裁定逐字**：「我们移除了部位的设计，**不计成本的改**」（2026-09-21）。
+> 本节记录**落地形态**（#4951，分支基点 `7e53078a3`）与它**付出了什么代价、退休了哪些守卫**。
+> ⚠️ §11 是**当时的**交付形态（部位退场、`applicable` 保留），**已被本节覆盖**；
+> §12 开放项的 O1 / O2 / O4 **本批全部关闭**（O3 仍开，见 §13.5）。
+
+### 13.1 四件（本批实际交付）
+
+| # | 件 | 落点 | 形态 |
+|---|---|---|---|
+| **O1** | **适用性退场** | `V102__retire_applicability_flag.sql` + `ProductionOperationPositionCommandService` + `ProcessingOrderService` | 迁移抹掉该旗标，`V104` 把存活行一律置 `applicable = TRUE`；**写面只收 `{unit_price}`** —— body 里出现 `applicable` ⇒ **422 + 可行动 hint**（「部位适用性已退场，不再受理该字段」），**拒绝**而非静默忽略；与 `unit_price` 同传 ⇒ **整份拒绝**（价也不落库）。原「适用性过滤」在取价/实例化路径**整块删除** |
+| **O2** | **规则级 `position` 退场** | `V103__clear_route_rule_positions.sql` + 规则读取路径 | `production_route_rules.position` 全 `NULL`、**不再参与筛选**（键仍在读面契约里，配置面早就不暴露它） |
+| **O4** | **矩阵物理去部位** | `V104__deposition_matrix_collapse.sql` | `production_operation_positions` 塌缩为**每逻辑工序一行**（120 → 30），幸存行 `position := '通用'`（该列**仅作历史载体**）、`applicable := TRUE`；终态核验内置（存活行不得再有 `applicable IS NOT TRUE`） |
+| **P2** | **真值源去部位** | `backend/ai-agent-service/app/production/routing.py` + `V105__add_sheer_variant_operations.sql` | 真值源 `OPERATION_POSITION_PRICES` 去部位；**V105 补 4 行纱帘变体**（`熨烫-纱` / `定型-纱` / `复烫-纱` / `车被-纱`，单价逐字取对应 `-布` 变体）—— 否则纱帘单在 `variantNameOf` 处解析不到变体 ⇒ `missing_operations` ⇒ **一张纱帘单也建不出来** |
+
+### 13.2 连锁形态（取用侧与读面的终态）
+
+- **读面 `GET /operation-positions`**：10 键**一字不变**（`id` / `operation` / `position` / `unit_price` / `applicable` / `variant_operation_id` / `unit` / `group` / `scope` / `is_must_finish`）——
+  其中 `position` **恒 `通用`**、`applicable` **恒 `true`**。⇒ **两个键都还在契约里，但都**不再是配置概念**；web 面不得渲染它们。
+- **收敛规则**（`ProductionOperationQueryService#collapseToLogical`）：原「`applicable = TRUE` 优先 → 其中**布帘列**优先 → `position` 字典序 → `id` 升序」里的**前两条失去输入**，
+  剩下仍可判定的 = **`position` 字典序 → `id` 升序**（且 #4951 之后每个逻辑名本就只有一行）。前端 `pickConvergedCell` 同步收敛为同口径（**只选行、不回落**）。
+- **价源仍然不变**：价取自价目行，**没有**改读 `production_operations.unit_price`（那是 `NOT NULL DEFAULT 0` ⇒ 会把「未定价」静默变成 **¥0.00**，#4696 未复发）。
+- **`GET /operation-layers` 的 `delivery` 段**：**9 键契约不变**，但第 4 态 `no_applicable_position`（「一格『做』都没有」）**退场** —— 存活行 `applicable` 恒 `TRUE` ⇒ 该状态**不可达**，
+  零格与「一格未定价」**同判 `unpriced`**；`applicable_positions` **键保留但恒 `[]`**。
+
+### 13.3 退休了哪些守卫（**逐条留痕，不许静默删**）
+
+| 守卫 / 判据 | 处置 | 理由 |
+|---|---|---|
+| `ProductionRouteParityTest#skippingApplicabilityFilterWouldLeakClothOnlyOperationsIntoSheerRoute` | **退休**，由新判据取代（同文件有显式注释登记） | 它是「**别去掉 applicable 过滤**」的注入式守卫；用户裁定去掉 ⇒ **判据的前提消失**（不是"修好了所以删掉"） |
+| `ProductionOperationPositionCommandService` 的 `variantOperationOf`（#4798「结果态 `applicable=true` 必须解析得到变体」） | **退休**（源码内有显式注释） | 判据的**输入**（`applicable`）不复存在；「能解析出变体」这件事**下沉**到实例化侧 `ProcessingOrderService#buildRoute` 的 `missing_operations` **fail-closed** 兜底（指名报缺、整单中止） |
+| `ProductionRouteParityTest` 的「9 条老路线逐字重建」/「序列逐项不变」两条 | **按新口径重写** | 纱帘单**确实**多出 4 道（见 §13.4），旧期望已不是真值 |
+| `ProcessingOrderServiceTest` 的 **40 条**工序数期望 | **按新口径重写** | 同上 |
+| 用例库 `PG-055`（部位价目矩阵**写面**不变式） | **改判**（未退休、未静默删） | 主体改判为「写面**字段契约**」：只收 `unit_price`、`applicable` 收到即 422（含同传整份拒绝）、价的两态/留痕/校验逐条照旧，并显式登记能力已下沉到实例化侧兜底 |
+| 用例库 `PG-054` 判据 2 / `UI-049` 判据 3 / `UI-050` 判据 1·2·4 / `PP-014` 两处 | **改判**（判据面缩小、不放宽） | 三态 ⇒ 两态（`na` 不可达）/ 4 态 ⇒ 3 态 / 收敛规则事实订正；「未定价 ≠ ¥0.00」「真 0 元照显示」与各反向护栏**一字未动** |
+| 前端 `OperationPosition.applicable` / `OperationPositionUpdateParams.applicable` / `cellState` 的 `na` 分支 / 「不做」呈现 / `pickConvergedCell` 的两条平局规则 / `applicable_positions` 的逐部位用法 | **删除**（#4939） | 字段已退场且**恒真** ⇒ 判据没有输入、界面没有对象；反向断言「`na` / 『不做』不得出现」补位（**不是**放宽） |
+
+### 13.4 代价（**已发生**，逐条留痕）
+
+- 「**纱帘不做定型/复烫**」这条**部位级**约束消失 ⇒ 纱帘单**多做 4 道**（`熨烫` / `定型` / `复烫` / `车被`）。
+  **对账口径**：必须按「**多出的工序列表**」列，**不是**按单价前后（同一逻辑工序各部位单价逐字相同 ⇒ 按单价前后会全表相等 = **假对照**）。
+- 存量行的「**当年哪一格是 `applicable = FALSE`**」这一信息**被 V102 抹掉，不可回滚复原**（V104 的回滚注释里如实登记）。
+
+### 13.5 开放项收口（对照 §12）
+
+| # | 状态 |
+|---|---|
+| O1（去掉 `applicable` 过滤） | ✅ **已关闭**（本批；代价值已由用户裁定接受，见 §13.4） |
+| O2（去掉规则级 `position` 限定） | ✅ **已关闭**（本批 V103） |
+| O3（纱帘 + 选项插入「纱帘无变体」的工序 ⇒ 变体解析 422） | ⚠️ **仍开**（与去部位化正交的既有缺陷，需单独 issue；V105 只补了那 4 道，未覆盖该路径） |
+| O4（矩阵物理行去部位） | ✅ **已关闭**（本批 V104；终态核验内置） |
+
+### 13.6 仍开 / 如实登记（不粉饰）
+
+- **`applicable` 列本身仍在库里**（只是恒 `TRUE`）—— `DELETE /operations/{id}` 的**护栏③**与 `…/detach-and-delete`（一键「设为不做并删除」）**本批未退休、照旧可用**：
+  判据 `matchingCells × applicable` 里 applicable 恒真 ⇒ 实际退化为「该工序在价目表里还有存活行」；§11 O1 原先「一键端点随之退场」的**预期不成立**。
+- **前端仍写「设为不做」文案**：那是后端同一事务里的**内部动作**（把该列置 false），前端自 #4939 起**不持有**该字段、也不据此判路径。
+- **`position` 键仍留在两处读面契约里**（`operation-positions` 的 10 键 / `operation-layers` 的 `operations` 段同形）—— 值为 `通用`，
+  属**历史载体**；删键是独立的一次契约变更（会同时影响 `tests/unit_ci_workflows/test_routing_read_endpoints.py` 的冻结键集与多处测试），**本批不做**。

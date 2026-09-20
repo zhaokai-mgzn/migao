@@ -80,7 +80,32 @@ public class ProductionOperationQueryService {
      * {@code 精裁-布}/{@code 布三边}），而新结构（主线 / 规则表 / 部位价目）用**逻辑名**
      * （{@code 精裁}/{@code 三边}）。两侧要互相翻译，翻译表**只此一份**。</p>
      */
-    private static final Map<String, String> OPERATION_LOGICAL_NAMES = logicalNamePairs();
+    private static final Map<String, String> OPERATION_LOGICAL_NAMES = withSheerVariants(logicalNamePairs());
+
+    /**
+     * {@link #OPERATION_LOGICAL_NAMES} 的合成入口：{@link #logicalNamePairs()}（**35 条**，被
+     * {@code ProductionOperationQueryServiceTest#logicalNameTableMatchesTruthSource} 逐条冻结）
+     * + **4 条纱帘变体**（issue #4937）。
+     *
+     * <p>🔴 <b>为什么必须新增这 4 条</b>：{@code 熨烫 / 定型 / 复烫 / 车被} 原来被
+     * {@code applicable} 过滤挡在纱帘路线之外 ⇒ 库里从来没建过它们的纱帘变体；
+     * 本包把那条过滤整块删除 ⇒ 这 4 道会进纱帘路线，{@code normalizeOperationName} 若认不出
+     * 「{@code 熨烫-纱}」这种名字，实例化侧就会把它当成**商家自建工序**（原样返回）
+     * ⇒ 位次判据与缺工序判据同时失真。</p>
+     *
+     * <p>⚠️ <b>为什么另起一段而不是往 {@link #logicalNamePairs()} 里加</b>：那 35 条被
+     * {@code ProductionOperationQueryServiceTest#logicalNameTableMatchesTruthSource} 与
+     * {@code V97} 的守卫逐条冻结 ⇒ 与 {@code variantNames()} / {@code headVariants()} 同款，
+     * 新增条目只能落在冻结段之外的这一处。</p>
+     */
+    private static Map<String, String> withSheerVariants(Map<String, String> names) {
+        Map<String, String> out = new LinkedHashMap<>(names);
+        out.put("熨烫-纱", "熨烫");
+        out.put("定型-纱", "定型");
+        out.put("复烫-纱", "复烫");
+        out.put("车被-纱", "车被");
+        return Map.copyOf(out);
+    }
 
     /**
      * 逻辑工序名 → **该部位的变体名**（{@code production_operations.name} 的旧名）—— **显式逆索引**。
@@ -961,6 +986,7 @@ public class ProductionOperationQueryService {
     private static Map<String, Map<String, String>> variantNamesWithCurtainHead() {
         Map<String, Map<String, String>> names = variantNames();
         headVariants(names);
+        sheerVariants(names);
         return Map.copyOf(names);
     }
 
@@ -1024,5 +1050,29 @@ public class ProductionOperationQueryService {
         variant(names, "立边", "帘头", "立边-布");
         variant(names, "扣环", "帘头", "扣环-布");
         variant(names, "防翘扣", "帘头", "防翘扣-布");
+    }
+
+    /**
+     * **纱帘变体（4 条，逐条显式写出）** —— issue #4937（去部位化彻底版）。
+     *
+     * <p>🔴 <b>为什么必须新增这 4 条</b>：{@code 熨烫 / 定型 / 复烫 / 车被} 原来被
+     * {@code processing_operation_positions.applicable} 的过滤挡在**纱帘**路线之外
+     * （{@code 熨烫 × 纱帘} 在 V71 种子里是 {@code FALSE}）⇒ 库里从来没建过它们的纱帘变体。
+     * 本包把那条过滤**整块删除**（用户裁定「部位不再参与任何取价、取路、筛选、配置」，
+     * 母单 #4936）⇒ 这 4 道会进入纱帘路线的实例化路径，而 {@link #variantNameOf} 解析不到
+     * ⇒ {@code null} ⇒ **整张纱帘单 fail-closed（一张也建不出来）**。
+     * ⇒ 补齐变体行（{@code docs/sql/schema.sql} 的 {@code op-v54-31..34}，单价逐字取对应
+     * {@code -布} 变体 —— **不发明单价**）。</p>
+     *
+     * <p>⚠️ <b>为什么另起一段而不是并进 {@link #variantNames()}</b>：后者被 {@code V97} 的守卫
+     * （{@code test_v97_variant_map_matches_production_code}）**逐条冻结**为 30 条字面量，
+     * 而 {@code V97} 是**已发布迁移**（红线：不得改）⇒ 与 {@link #headVariants(Map)} 同款，
+     * 新增条目只能落在该守卫解析半径之外的这一段里。</p>
+     */
+    private static void sheerVariants(Map<String, Map<String, String>> names) {
+        variant(names, "熨烫", "纱帘", "熨烫-纱");
+        variant(names, "定型", "纱帘", "定型-纱");
+        variant(names, "复烫", "纱帘", "复烫-纱");
+        variant(names, "车被", "纱帘", "车被-纱");
     }
 }

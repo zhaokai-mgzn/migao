@@ -3,11 +3,16 @@
 // 本单（issue #4433 = 母单 #4423 的 P3）把它适配到**新路线模型**（P1 #4427 / P2 #4432 / P2b #4459 / P2c #4500）。
 //
 // 新模型下的用户面判据（#4433）：
-// ① **部位价目矩阵**（tab「工艺项」主区）：`GET /operation-positions` 的格数**整份**渲染（真实规模见 issue #4529：30 逻辑工序 × 4 部位 = 120 格；本文件用自己的夹具 28 × 3 判「不过滤」这一行为）
-//    **整份呈现** —— 同一道工序三个部位各自真实价与适用性；`applicable=false` 的行**不得被过滤**；
-//    服务端顺序（`(operation, position)`）**不得重排**；
-// ② 「**不做**」（`applicable=false`）与「**没定价**」（`applicable=true` 但 `unit_price=null`）
-//    在界面上**可区分**（同 `route_source` 的「静默 = 未知」纪律）；
+// ① **工序单价表**（tab「工序管理」主区）：价目读面的行**整份**渲染（真实规模见 issue #4529：
+//    30 逻辑工序 × 4 部位 = 120 格；issue #4886 起后端已收敛为**一道逻辑工序一行**，本文件仍用
+//    多行夹具（28 × 3 / 30 × 4）判「按逻辑名去重收敛」这一行为）；服务端顺序**不得重排**；
+// ② 价的两态「**有价**」（`¥x.xx`，真 0 元照显示）与「**未定价**」（`unit_price=null`；**绝不**
+//    回落工序库行价 ⇒ 不得成 `¥0.00`）在界面上**可区分**（同 `route_source` 的「静默 = 未知」纪律）。
+//    🔴 **2026-09-21 改判（配套 #4937 / #4951 去部位化彻底版）**：原第三态「**不做**」
+//    （`applicable=false`）**已退场** —— 存活价目行的 `applicable` 恒 `TRUE`，该字段也已从
+//    `OperationPosition` 类型退场（读面恒 true、写面收到即 **422**）⇒ 单价格 `data-state`
+//    收敛为 `priced` / `unpriced` **两态**，第三态 `na` **永不可达**。判据面缩小、**不放宽**
+//    （「未定价 ≠ ¥0.00」与「真 0 元照显示」一字未动，并补了「`na` / 「不做」不得出现」的反向断言）；
 // ③ **具名路线**：列表显示 `name` + **默认徽标** + 适用帘种 + 主线道数；**不再**出现「部位 × 工艺」标题；
 // ④ 危险操作**护栏就地展示**：删默认 ⇒ 拦；删最后一条 ⇒ 拦（后端也会 422，前端不许把理由吞成一句）；
 // ⑤ **改名只改 `name`**（对话框里**不出现**工序名/主线编辑）；
@@ -54,8 +59,8 @@
 //      （`POSITION_DOMAIN` 基线序 + 矩阵里出现的部位自动补齐）、行尾 = `分组 · 单位` + **必完标记**
 //      （issue #4610 改判，见 ㉑）+「管理▸」抽屉；
 //    - **原「工序库明细」折叠区取消**（`operations-catalog*` 一律不存在）⇒ 不再有两张平铺表；
-//    - 格内三态（有价 / 不做 / 未定价）**可区分**，`¥0.00` 是真价（≠「未定价」）；格内就地改价
-//      ⇒ `PUT /operation-positions/{id}` body **只带** `{unit_price}`；「不做 ⇄」⇒ 只带 `{applicable}`；
+//    - 单价格**两态**（有价 / 未定价）**可区分**，`¥0.00` 是真价（≠「未定价」）；就地改价
+//      ⇒ `PUT /operation-positions/{id}` body **只带** `{unit_price}`（#4937/O1 起**只收**这一个键）；
 //    - **「作用域」不得出现在主表**（用户 2026-09-19 追加裁定）—— 收进抽屉并用商家话解释；
 //      ⚠️ **同日改判（issue #4610）**：「必完标记还是得在这里展示」（完工门槛要一眼看得见）⇒
 //      主表行尾加**只读**必完标记（三态见 ㉑），维护面与作用域仍在抽屉里；
@@ -412,10 +417,13 @@ const NO_VARIANT = {  variant_operation_id: null,
 }
 
 /**
- * 部位价目矩阵（issue #4588 起每行带行 `id` + 变体元数据；契约 #4587 ①）。
+ * 价目读面夹具（issue #4588 起每行带行 `id` + 变体元数据；契约 #4587 ①）。
  * **服务端顺序** = `(operation, position)`（Java 自然序：三边 < 精裁 < 车被 < 韩褶）。
- * 四态齐备 —— ① 有价 ② **不做**（applicable=false ⇒ unit_price=null）
- * ③ **没定价**（applicable=true 但 unit_price=null）④ **真 0 元**（`车被`/`布帘` = 0 ⇒ 必须显示 `¥0.00`）。
+ * 价态齐备 —— ① 有价 ② **未定价**（`unit_price=null`）③ **真 0 元**（`车被`/`布帘` = 0 ⇒
+ * 必须显示 `¥0.00`，≠「未定价」）。
+ * ⚠️ **2026-09-21（#4937 / #4951）**：原「**不做**（`applicable=false`）」那一态**已退场** ——
+ * 本夹具随之不再带 `applicable`（该字段在 `OperationPosition` 类型里已不存在）。多行形态仍保留：
+ * 它同时是「按逻辑名去重收敛」的夹具（真读面在 #4951 后每逻辑工序**只有一行**、`position` 恒 `通用`）。
  *
  * 变体元数据三种形态齐备（判据不是「能渲染」，而是「不许静默取第一个」）：
  * - `三边`：两格变体同为 `车位 · 米` ⇒ 行尾取**公共值**；
@@ -424,25 +432,25 @@ const NO_VARIANT = {  variant_operation_id: null,
  * - `韩褶`：矩阵里查不到变体（6 键全 null）⇒ 行尾不发明元数据、抽屉给「没有变体」提示。
  */
 const POSITIONS = [
-  { id: 'pos-三边-帘头', operation: '三边', position: '帘头', unit_price: null, applicable: false, ...NO_VARIANT },
-  { id: 'pos-三边-布帘', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
-  { id: 'pos-三边-纱帘', operation: '三边', position: '纱帘', unit_price: null, applicable: true, variant_operation_id: 'op-三边-纱', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+  { id: 'pos-三边-帘头', operation: '三边', position: '帘头', unit_price: null, ...NO_VARIANT },
+  { id: 'pos-三边-布帘', operation: '三边', position: '布帘', unit_price: 1.2, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+  { id: 'pos-三边-纱帘', operation: '三边', position: '纱帘', unit_price: null, variant_operation_id: 'op-三边-纱', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
   // ⚠️ 真数据里一道工序**只属一个车间**（`group` 是库行元数据）。夹具里 `精裁` 两格分组不同
   // （裁剪 / 车位）是**故意**造的「不一致 ⇒ 逐个列出」形态（见 ⑰-②）；`三边` 两格同组 ⇒ 不冲突。
   // `帘头` 回落复用 `布帘` 的变体（真值源 `variantNameOf` 的第 2 步）—— 夹具照真形态给
   // `variant_operation_id`，否则这一格在抽屉里**不出现**（抽屉按 `variant_operation_id` 去重）。
-  { id: 'pos-精裁-帘头', operation: '精裁', position: '帘头', unit_price: null, applicable: false, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
-  { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
-  { id: 'pos-精裁-纱帘', operation: '精裁', position: '纱帘', unit_price: 6, applicable: true, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
-  { id: 'pos-车被-帘头', operation: '车被', position: '帘头', unit_price: null, applicable: false, ...NO_VARIANT },
-  { id: 'pos-车被-布帘', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'position', is_must_finish: true },
-  { id: 'pos-车被-纱帘', operation: '车被', position: '纱帘', unit_price: null, applicable: false, ...NO_VARIANT },
-  { id: 'pos-韩褶-布帘', operation: '韩褶', position: '布帘', unit_price: 2, applicable: true, ...NO_VARIANT },
+  { id: 'pos-精裁-帘头', operation: '精裁', position: '帘头', unit_price: null, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
+  { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 8.5, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
+  { id: 'pos-精裁-纱帘', operation: '精裁', position: '纱帘', unit_price: 6, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
+  { id: 'pos-车被-帘头', operation: '车被', position: '帘头', unit_price: null, ...NO_VARIANT },
+  { id: 'pos-车被-布帘', operation: '车被', position: '布帘', unit_price: 0, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'position', is_must_finish: true },
+  { id: 'pos-车被-纱帘', operation: '车被', position: '纱帘', unit_price: null, ...NO_VARIANT },
+  { id: 'pos-韩褶-布帘', operation: '韩褶', position: '布帘', unit_price: 2, ...NO_VARIANT },
   // 部位无关工序（`外帘打卷/装袋/发货`）**也是** 30 道逻辑工序之一（真值源
   // `routing.py::OPERATION_POSITION_PRICES`）⇒ 真数据里它有矩阵格。夹具里补上这一格是**必须**的：
   // issue #4622 补口① 起「主线里的工序是否存在」按**矩阵的逻辑工序名**判，夹具缺这格会让
   // `外帘装袋` 被误报「不存在」（真数据不会 —— 这正是夹具与真值的差异）。
-  { id: 'pos-外帘装袋-布帘', operation: '外帘装袋', position: '布帘', unit_price: 1.0, applicable: true, variant_operation_id: 'op-v54-04', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'pos-外帘装袋-布帘', operation: '外帘装袋', position: '布帘', unit_price: 1.0, variant_operation_id: 'op-v54-04', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
 ]
 
 /**
@@ -456,9 +464,11 @@ const POSITIONS = [
  * 现在的形态与真后端同源：交付行的**存在**只取决于工序库行的 `scope`，格只决定**价态**。</p>
  *
  * <p>⚠️ 聚合口径**逐条照抄后端** `ProductionRoutingReadService.deliveryView`（判据是**行为等价**）：
- * ① 有 `applicable=TRUE` 格价全同 ⇒ `priced`；② 有 `NULL` ⇒ `unpriced`（**未定价 ≠ ¥0.00**，
- * 且**不回落工序库行价**）；③ 不同 ⇒ `multiple_prices` + `different_price_count`
- * （**不静默取第一个**）；④ 一格「做」都没有（**含零格**）⇒ `no_applicable_position`。
+ * ① 有 `NULL` ⇒ `unpriced`（**未定价 ≠ ¥0.00**，且**不回落工序库行价**）；② 价全同 ⇒ `priced`；
+ * ③ 不同 ⇒ `multiple_prices` + `different_price_count`（**不静默取第一个**）。
+ * 🔴 **2026-09-21（#4951 去部位化彻底版）**：第 4 态 `no_applicable_position` **已退场**
+ * （存活行 `applicable` 恒 `TRUE` ⇒「一格『做』都没有」不再可达）⇒ **零格判 `unpriced`**；
+ * `applicable_positions` **键保留但恒 `[]`**（9 键契约不变 —— 部位维已退场）。
  * 行尾元数据缺格时回落工序库行（与后端 `firstNonNull(cells, key, library, key)` 同一顺序）。</p>
  *
  * <p>夹具里 `车被` 是**部位级**工序（真值源 `routing.py` 的 `布帘车被`，`scope='position'`），
@@ -487,17 +497,15 @@ const buildLayers = (cells: any[], libraryOps: any[] = []) => {
   const delivery = deliveryOps.map((operation) => {
     const group = cellsByOp.get(operation) ?? []
     const library = catalog.find((o) => String(o.name) === operation)
-    const applicable = group.filter((c) => c.applicable === true)
-    const prices = [...new Set(applicable.filter((c) => c.unit_price != null).map((c) => c.unit_price))]
-    const unpriced = applicable.some((c) => c.unit_price == null)
+    const prices = [...new Set(group.filter((c) => c.unit_price != null).map((c) => c.unit_price))]
+    const unpriced = group.some((c) => c.unit_price == null)
+    // 🔴 #4951：第四态 `no_applicable_position` 退场 ⇒ **零格判 `unpriced`**（不再有「没有适用部位」）
     const price_state =
-      applicable.length === 0
-        ? 'no_applicable_position'
-        : unpriced
-          ? 'unpriced'
-          : prices.length === 1
-            ? 'priced'
-            : 'multiple_prices'
+      unpriced || group.length === 0
+        ? 'unpriced'
+        : prices.length === 1
+          ? 'priced'
+          : 'multiple_prices'
     const first = (k: string) => group.find((c) => c[k] != null)?.[k] ?? library?.[k] ?? null
     return {
       operation,
@@ -508,7 +516,8 @@ const buildLayers = (cells: any[], libraryOps: any[] = []) => {
       price: price_state === 'priced' ? prices[0] : null,
       price_state,
       different_price_count: price_state === 'multiple_prices' ? prices.length : 0,
-      applicable_positions: applicable.map((c) => c.position),
+      // 键保留（9 键契约不变）但**恒 `[]`**（部位维已退场，见函数头注）
+      applicable_positions: [],
     }
   })
   return { operations, delivery }
@@ -703,7 +712,7 @@ const CATALOG_WITH_TEST22 = {
 /** 同上 + `测试22 × 布帘` 这一格：**格在、行在，但格没关联到这道工序**（`variant_operation_id = null`） */
 const POSITIONS_WITH_TEST22 = [
   ...POSITIONS,
-  { id: 'pos-测试22-布帘', operation: '测试22', position: '布帘', unit_price: 1, applicable: true, ...NO_VARIANT },
+  { id: 'pos-测试22-布帘', operation: '测试22', position: '布帘', unit_price: 1, ...NO_VARIANT },
 ]
 
 /**
@@ -713,7 +722,7 @@ const POSITIONS_WITH_TEST22 = [
  */
 const POSITIONS_TEST22_MISLINKED = [
   ...POSITIONS,
-  { id: 'pos-测试22-布帘', operation: '测试22', position: '布帘', unit_price: 1, applicable: true, variant_operation_id: 'op-别的工序', unit: '件', group: '其他', scope: 'position', is_must_finish: false },
+  { id: 'pos-测试22-布帘', operation: '测试22', position: '布帘', unit_price: 1, variant_operation_id: 'op-别的工序', unit: '件', group: '其他', scope: 'position', is_must_finish: false },
 ]
 
 /**
@@ -1289,13 +1298,13 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   it('⑳ 行尾必完标记：该工序必完 ⇒ `必完`；否则**不显示**（issue #4610；#4886 起收敛为布尔）', async () => {
     // 夹具刻意造出**部分部位**那一态（基座夹具里没有）：车被 布帘必完 / 纱帘**非**必完
     mockGetOperationPositions.setDefault([
-        { id: 'p1', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
-        { id: 'p2', operation: '三边', position: '纱帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-纱', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
-        { id: 'p3', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
-        { id: 'p4', operation: '精裁', position: '纱帘', unit_price: 6, applicable: true, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
-        { id: 'p5', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'position', is_must_finish: true },
-        { id: 'p6', operation: '车被', position: '纱帘', unit_price: null, applicable: true, variant_operation_id: 'op-车被-纱', unit: '件', group: '后道', scope: 'position', is_must_finish: false },
-        { id: 'p7', operation: '韩褶', position: '布帘', unit_price: 2, applicable: true, ...NO_VARIANT },
+        { id: 'p1', operation: '三边', position: '布帘', unit_price: 1.2, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+        { id: 'p2', operation: '三边', position: '纱帘', unit_price: 1.2, variant_operation_id: 'op-三边-纱', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+        { id: 'p3', operation: '精裁', position: '布帘', unit_price: 8.5, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
+        { id: 'p4', operation: '精裁', position: '纱帘', unit_price: 6, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
+        { id: 'p5', operation: '车被', position: '布帘', unit_price: 0, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'position', is_must_finish: true },
+        { id: 'p6', operation: '车被', position: '纱帘', unit_price: null, variant_operation_id: 'op-车被-纱', unit: '件', group: '后道', scope: 'position', is_must_finish: false },
+        { id: 'p7', operation: '韩褶', position: '布帘', unit_price: 2, ...NO_VARIANT },
     ])
     await renderOperations()
 
@@ -1335,11 +1344,10 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('operation-price-车被')).toHaveTextContent('¥0.00')
   })
 
-  it('⑰-④ 三态可区分：`¥0.00` 是真价（≠「未定价」）、`未定价`、`不做`；未定价计数 = 待办数', async () => {
+  it('⑰-④ 两态可区分：`¥0.00` 是真价（≠「未定价」）、`未定价`；第三态「不做」已随 #4951 退场（反向护栏）', async () => {
   mockGetOperationPositions.setDefault([
-  { id: 'p1', operation: '车被', position: '布帘', unit_price: 0, applicable: true, ...NO_VARIANT },
-  { id: 'p2', operation: '韩褶', position: '布帘', unit_price: null, applicable: true, ...NO_VARIANT },
-  { id: 'p3', operation: '三边', position: '布帘', unit_price: 1.2, applicable: false, ...NO_VARIANT },
+  { id: 'p1', operation: '车被', position: '通用', unit_price: 0, ...NO_VARIANT },
+  { id: 'p2', operation: '韩褶', position: '通用', unit_price: null, ...NO_VARIANT },
   ])
   await renderOperations()
 
@@ -1355,12 +1363,18 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   expect(unpriced).toHaveTextContent('未定价')
   expect(unpriced).not.toHaveTextContent('¥')
 
-  // ③ 「不做」是第三种形态（历史残留只读呈现，issue #4886 起没有适用性开关）
-  const na = screen.getByTestId('operation-price-三边')
-  expect(na).toHaveAttribute('data-state', 'na')
-  expect(na).toHaveTextContent('不做')
+  // ③ 🔴 反向护栏（2026-09-21 改判，配套 #4937 / #4951 去部位化彻底版）：存活价目行的
+  //    `applicable` **恒 `TRUE`** 且该字段已退场 ⇒ `na`（「不做」）永不可达。判据从
+  //    「三态可区分」收敛为「**恰两态** + 『不做』不得出现在任何单价格里」—— 判据面缩小
+  //    （旧第三态失去对象）、**不放宽**（`未定价 ≠ ¥0.00` 与「真 0 元照显示」两条一字未动）。
+  // ⚠️ 排除容器 `operation-price-matrix`（它没有 `data-state`）：只遍历**单价格**节点
+    for (const el of screen.getAllByTestId(/^operation-price-(?!matrix$)[^-]+$/)) {
+    expect(['priced', 'unpriced']).toContain(el.getAttribute('data-state'))
+    expect(el).not.toHaveTextContent('不做')
+  }
+  expect(screen.queryByTestId('operation-price-三边')).toBeNull()
 
-  // 待办计数只数「未定价」（真 0 元与「不做」都不算）
+  // 待办计数只数「未定价」（真 0 元不算；「不做」已不成态）
   expect(screen.getByTestId('matrix-unpriced-count')).toHaveTextContent('1')
   })
 
@@ -1795,7 +1809,9 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     // 前提自证（不是空跑）：这一格的关联键确实是 null（id 那把尺判「没有格」），而行键（名字）是 `测试22`
     const cell = POSITIONS_WITH_TEST22.find((c) => c.operation === '测试22')!
     expect(cell.variant_operation_id).toBeNull()
-    expect(cell.applicable).toBe(true)
+    // ⚠️ issue #4937/#4951：原来这里还断言 `cell.applicable === true` —— `applicable` 已退场
+    // （读面恒 true、写面收到即 422、类型里已无该字段）⇒ 该断言**失去对象**，删除（不是放宽：
+    // 它守的「这一行是『做』的」在新形态下由「行存在」本身表达）。
     // 后端那把尺（按名字）：普通删除 422
     beGuardByName()
     await openManage('测试22')
@@ -2304,11 +2320,11 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   it('㉖-⑧ 主线 chip 的「必完」按**价目行**判（issue #4886 起为布尔，判据落在收敛后那一行）', async () => {
     // 矩阵：精裁 两格都必完；车被 **部分部位**必完（布帘必完 / 纱帘不必完）；三边 都不必完
     mockGetOperationPositions.setDefault([
-        { id: 'p1', operation: '精裁', position: '布帘', unit_price: 8.5, applicable: true, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
-        { id: 'p2', operation: '精裁', position: '纱帘', unit_price: 6, applicable: true, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
-        { id: 'p3', operation: '车被', position: '布帘', unit_price: 0, applicable: true, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'position', is_must_finish: true },
-        { id: 'p4', operation: '车被', position: '纱帘', unit_price: 1, applicable: true, variant_operation_id: 'op-车被-纱', unit: '件', group: '后道', scope: 'position', is_must_finish: false },
-        { id: 'p5', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
+        { id: 'p1', operation: '精裁', position: '布帘', unit_price: 8.5, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
+        { id: 'p2', operation: '精裁', position: '纱帘', unit_price: 6, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
+        { id: 'p3', operation: '车被', position: '布帘', unit_price: 0, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'position', is_must_finish: true },
+        { id: 'p4', operation: '车被', position: '纱帘', unit_price: 1, variant_operation_id: 'op-车被-纱', unit: '件', group: '后道', scope: 'position', is_must_finish: false },
+        { id: 'p5', operation: '三边', position: '布帘', unit_price: 1.2, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
     ])
     mockGetRoutings.mockReset().mockResolvedValue(
       ok({
@@ -3006,12 +3022,13 @@ describe('算料配置 tab（issue #4528）', () => {
 })
 
 /**
- * 部位价目矩阵的**真实规模**夹具（issue #4529 / V79：30 逻辑工序 × **4** 部位 = **120** 格）。
+ * 部位价目矩阵的**历史规模**夹具（issue #4529 / V79：30 逻辑工序 × **4** 部位 = **120** 格）。
  *
- * ⚠️ issue #4886：配套后端会把它收敛成「一道工序一行」；本夹具**故意保留多行形态**
- * ⇒ 它同时是「前端能按逻辑工序名去重收敛」的**红证夹具**（收敛规则见 `convergeByLogicalName`）。
- * 服务端顺序 = `(operation, position)`；三态齐备：纱帘列 `applicable=false`（不做）/
- * 布料列 `unit_price=null`（做但未定价）/ 其余有价。
+ * ⚠️ issue #4886 / **#4951**：真读面已被后端 `collapseToLogical` 收敛为「一道逻辑工序**一行**」
+ * （部位维物理退场、幸存行 `position` 恒 `通用`）；本夹具**故意保留多行形态**
+ * ⇒ 它同时是「前端能按逻辑工序名去重收敛」的**红证夹具**（收敛规则见 `pickConvergedCell`）。
+ * 服务端顺序 = `(operation, position)`；**两态齐备**：布料列 `unit_price=null`（**未定价**）/ 其余有价。
+ * ⚠️ **不再有 `applicable`**（#4937 / O1 起该字段退场且恒 `TRUE`）—— 纱帘列不再是「不做」。
  */
 const MATRIX_120 = Array.from({ length: 30 }, (_, i) => `工序${i + 1}`).flatMap((operation, oi) =>
   ['布帘', '纱帘', '帘头', '布料'].map((position, pi) => ({
@@ -3019,7 +3036,6 @@ const MATRIX_120 = Array.from({ length: 30 }, (_, i) => `工序${i + 1}`).flatMa
     operation,
     position,
     unit_price: pi === 3 ? null : oi + pi,
-    applicable: pi !== 1,
   })),
 )
 
@@ -3046,11 +3062,14 @@ describe('工序单价表：一道工序一行（issue #4886 去部位化）', (
     expect(heads).toEqual(['工序', '单价', '分组 · 单位 · 必完 · 操作'])
   })
 
-  it('收敛规则：优先 `applicable=true`，其中优先 `布帘` ⇒ 取到的是**有价**的那一行（并保留其 id 作改价寻址）', async () => {
+  it('收敛规则：按 `position` 字典序 → `id` 升序（与后端 `collapseToLogical` 同口径）⇒ 保留其 id 作改价寻址', async () => {
     await renderOperations()
 
-    // 工序1 的四行：布帘价 0（做）/ 纱帘 applicable=false / 帘头价 2（做）/ 布料价 null（做）
-    // ⇒ 收敛选中 布帘 ⇒ 真 0 元（`¥0.00`，**不是**「未定价」）
+    // 工序1 的四行：布帘（价 0）/ 纱帘（价 1）/ 帘头（价 2）/ 布料（价 null）
+    // ⇒ 字典序取 `布帘` ⇒ 真 0 元（`¥0.00`，**不是**「未定价」）
+    // ⚠️ 2026-09-21 改判（配套 #4937 / #4951）：原平局规则「优先 `applicable=true` → 其中优先
+    // `布帘`」已退场（`applicable` 恒 `TRUE` 且字段退场；真数据里 `position` 恒 `通用`）——
+    // 判据面（选中哪一行 + 该行的 `id` 就是改价寻址键）**一字不放宽**，只是规则换成仍可判定的两条。
     const cell = screen.getByTestId('operation-price-工序1')
     expect(cell).toHaveAttribute('data-state', 'priced')
     expect(cell).toHaveTextContent('¥0.00')
@@ -3274,7 +3293,7 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
   }
   /** 接入后矩阵里多出来的那一格（`variant_operation_id` 指向孤儿 ⇒ 它不再是孤儿） */
   const ATTACHED_CELL = {
-    id: 'pos-测试22-布帘', operation: '测试22', position: '布帘', unit_price: 0.5, applicable: true,
+    id: 'pos-测试22-布帘', operation: '测试22', position: '布帘', unit_price: 0.5,
     variant_operation_id: 'op-test22', unit: '米', group: '其他',
     scope: 'position', is_must_finish: false,
   }
@@ -3314,30 +3333,30 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
  */
 const LAYER_CELLS = [
   // ── 工序层（`scope='position'`）：裁剪（裁床）/ 车位（缝制）/ 后整（烫工及后整）/ 质检 ──
-  { id: 'lc-1', operation: '精裁', position: '布帘', unit_price: 0.4, applicable: true, variant_operation_id: 'lop-精裁', unit: '米', group: '裁剪', scope: 'position', is_must_finish: true },
-  { id: 'lc-2', operation: '精裁', position: '纱帘', unit_price: 0.4, applicable: true, variant_operation_id: 'lop-精裁-纱', unit: '米', group: '裁剪', scope: 'position', is_must_finish: true },
-  { id: 'lc-3', operation: '精裁', position: '帘头', unit_price: 0.4, applicable: true, variant_operation_id: 'lop-精裁', unit: '米', group: '裁剪', scope: 'position', is_must_finish: true },
-  { id: 'lc-4', operation: '三边', position: '布帘', unit_price: 0.4, applicable: true, variant_operation_id: 'lop-三边', unit: '米', group: '车位', scope: 'position', is_must_finish: true },
-  { id: 'lc-5', operation: '三边', position: '纱帘', unit_price: 0.4, applicable: true, variant_operation_id: 'lop-三边-纱', unit: '米', group: '车位', scope: 'position', is_must_finish: true },
-  { id: 'lc-6', operation: '熨烫', position: '布帘', unit_price: 0.6, applicable: true, variant_operation_id: 'lop-熨烫', unit: '米', group: '后整', scope: 'position', is_must_finish: false },
-  { id: 'lc-7', operation: '质检', position: '布帘', unit_price: null, applicable: true, variant_operation_id: 'lop-质检', unit: '件', group: '质检', scope: 'position', is_must_finish: false },
+  { id: 'lc-1', operation: '精裁', position: '布帘', unit_price: 0.4, variant_operation_id: 'lop-精裁', unit: '米', group: '裁剪', scope: 'position', is_must_finish: true },
+  { id: 'lc-2', operation: '精裁', position: '纱帘', unit_price: 0.4, variant_operation_id: 'lop-精裁-纱', unit: '米', group: '裁剪', scope: 'position', is_must_finish: true },
+  { id: 'lc-3', operation: '精裁', position: '帘头', unit_price: 0.4, variant_operation_id: 'lop-精裁', unit: '米', group: '裁剪', scope: 'position', is_must_finish: true },
+  { id: 'lc-4', operation: '三边', position: '布帘', unit_price: 0.4, variant_operation_id: 'lop-三边', unit: '米', group: '车位', scope: 'position', is_must_finish: true },
+  { id: 'lc-5', operation: '三边', position: '纱帘', unit_price: 0.4, variant_operation_id: 'lop-三边-纱', unit: '米', group: '车位', scope: 'position', is_must_finish: true },
+  { id: 'lc-6', operation: '熨烫', position: '布帘', unit_price: 0.6, variant_operation_id: 'lop-熨烫', unit: '米', group: '后整', scope: 'position', is_must_finish: false },
+  { id: 'lc-7', operation: '质检', position: '布帘', unit_price: null, variant_operation_id: 'lop-质检', unit: '件', group: '质检', scope: 'position', is_must_finish: false },
   // ── 🔴 `裁剪 × 布料` **保命格**（V88 逐字保留：存量未实例化布料单补生成需要它）──
-  { id: 'lc-8', operation: '裁剪', position: '布料', unit_price: 7, applicable: true, variant_operation_id: 'lop-裁剪-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
+  { id: 'lc-8', operation: '裁剪', position: '布料', unit_price: 7, variant_operation_id: 'lop-裁剪-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
   // ── 交付层（`scope='set'`）：四道齐，一列价四态各一 ──
   // `打包`：4 个部位价全同 1.5 ⇒ `priced`
-  { id: 'lc-9', operation: '打包', position: '布帘', unit_price: 1.5, applicable: true, variant_operation_id: 'lop-打包', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
-  { id: 'lc-10', operation: '打包', position: '纱帘', unit_price: 1.5, applicable: true, variant_operation_id: 'lop-打包', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
-  { id: 'lc-11', operation: '打包', position: '帘头', unit_price: 1.5, applicable: true, variant_operation_id: 'lop-打包', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
-  { id: 'lc-12', operation: '打包', position: '布料', unit_price: 1.5, applicable: true, variant_operation_id: 'lop-打包', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
-  // `外帘打卷`：4 格全 `applicable=false` ⇒ `no_applicable_position`
-  { id: 'lc-13', operation: '外帘打卷', position: '布帘', unit_price: null, applicable: false, variant_operation_id: 'lop-外帘打卷', unit: '套', group: '后道', scope: 'set', is_must_finish: false },
-  { id: 'lc-14', operation: '外帘打卷', position: '纱帘', unit_price: null, applicable: false, variant_operation_id: 'lop-外帘打卷', unit: '套', group: '后道', scope: 'set', is_must_finish: false },
-  // `外帘装袋`：**未定价**（`applicable=true` + 价 `null`）⇒ `unpriced`（**≠ ¥0.00**）
-  { id: 'lc-15', operation: '外帘装袋', position: '布帘', unit_price: null, applicable: true, variant_operation_id: 'lop-外帘装袋', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
-  { id: 'lc-15b', operation: '外帘装袋', position: '纱帘', unit_price: null, applicable: true, variant_operation_id: 'lop-外帘装袋', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'lc-9', operation: '打包', position: '布帘', unit_price: 1.5, variant_operation_id: 'lop-打包', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'lc-10', operation: '打包', position: '纱帘', unit_price: 1.5, variant_operation_id: 'lop-打包', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'lc-11', operation: '打包', position: '帘头', unit_price: 1.5, variant_operation_id: 'lop-打包', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'lc-12', operation: '打包', position: '布料', unit_price: 1.5, variant_operation_id: 'lop-打包', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  // `外帘打卷`：4 格价全空 ⇒ 收敛后判 `unpriced`（#4951：第四态 `no_applicable_position` 已退场）
+  { id: 'lc-13', operation: '外帘打卷', position: '布帘', unit_price: null, variant_operation_id: 'lop-外帘打卷', unit: '套', group: '后道', scope: 'set', is_must_finish: false },
+  { id: 'lc-14', operation: '外帘打卷', position: '纱帘', unit_price: null, variant_operation_id: 'lop-外帘打卷', unit: '套', group: '后道', scope: 'set', is_must_finish: false },
+  // `外帘装袋`：**未定价**（价 `null`）⇒ `unpriced`（**≠ ¥0.00**）
+  { id: 'lc-15', operation: '外帘装袋', position: '布帘', unit_price: null, variant_operation_id: 'lop-外帘装袋', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'lc-15b', operation: '外帘装袋', position: '纱帘', unit_price: null, variant_operation_id: 'lop-外帘装袋', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
   // `外帘发货`：各部位不同价（1 / 2）⇒ `multiple_prices` + 计数（**不静默取第一个**）
-  { id: 'lc-16', operation: '外帘发货', position: '布帘', unit_price: 1, applicable: true, variant_operation_id: 'lop-外帘发货', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
-  { id: 'lc-17', operation: '外帘发货', position: '纱帘', unit_price: 2, applicable: true, variant_operation_id: 'lop-外帘发货', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'lc-16', operation: '外帘发货', position: '布帘', unit_price: 1, variant_operation_id: 'lop-外帘发货', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
+  { id: 'lc-17', operation: '外帘发货', position: '纱帘', unit_price: 2, variant_operation_id: 'lop-外帘发货', unit: '套', group: '后道', scope: 'set', is_must_finish: true },
 ]
 
 /** 缺 `布料工序路线`（工序库**非空**）—— §6 修法 A/B 的**红证形态** */
@@ -3447,10 +3466,10 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
 
   // ────────────────────── 反向护栏（三态语义不变 / 不静默取第一个） ──────────────────────
 
-  it('反向护栏 B5：三态语义**不变** —— `不做` ≠ `未定价` ≠ `¥0.00`；工序层照旧可区分', async () => {
+  it('反向护栏 B5：两态语义**不变** —— `未定价` ≠ `¥0.00`；`applicable` 退场后**恰两态**（`na` 不可达）', async () => {
     await renderOperations()
 
-    // `质检` 布帘：`applicable=true` + 价 null ⇒ 未定价（且**不含 ¥**）
+    // `质检` 布帘：价 null ⇒ 未定价（且**不含 ¥**）
     const unpriced = screen.getByTestId('operation-price-质检')
     expect(unpriced).toHaveAttribute('data-state', 'unpriced')
     expect(unpriced).toHaveTextContent('未定价')
@@ -3461,10 +3480,14 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(priced).toHaveAttribute('data-state', 'priced')
     expect(priced).toHaveTextContent('¥0.40')
 
-    // issue #4886：「做 / 不做」开关已随部位退场（一道工序一个价 ⇒ 没有第二个维度）——
-    // 三态里的 `不做` 只作**历史残留只读**呈现，页面上**不得**再有任何适用性开关
+    // issue #4886：适用性**开关**已随部位退场；issue #4937 / #4951：`applicable` **字段**本身也退场
+    // （读面恒 true、写面收到即 422）⇒ 页面不得再有任何适用性开关，且单价格**恰两态**
     expect(screen.queryByTestId(/^matrix-applicable-/)).toBeNull()
     expect(screen.queryByTestId(/^drawer-applicable-/)).toBeNull()
+    // ⚠️ 排除容器 `operation-price-matrix`（它没有 `data-state`）：只遍历**单价格**节点
+    for (const el of screen.getAllByTestId(/^operation-price-(?!matrix$)[^-]+$/)) {
+      expect(['priced', 'unpriced']).toContain(el.getAttribute('data-state'))
+    }
   })
 
 
@@ -3523,14 +3546,17 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(cell).not.toHaveTextContent('¥')
   })
 
-  it('反向护栏 B7-③：一格「做」都没有 ⇒ 如实显示**不做**（既不是「未定价」、也不是 ¥0）', async () => {
+  it('反向护栏 B7-③：幸存行价为空 ⇒ 如实显示**未定价**；「不做」这一态已随 #4937/#4951 退场（不得回归）', async () => {
     await renderOperations()
     const cell = screen.getByTestId('operation-price-外帘打卷')
 
-    // 收敛后该工序的幸存行 = 布帘格（`applicable=false`）⇒ 三态里的「不做」
-    expect(cell).toHaveAttribute('data-state', 'na')
-    expect(cell).toHaveTextContent('不做')
-    expect(cell).not.toHaveTextContent('未定价')
+    // 2026-09-21 改判（配套 #4937 / #4951）：原第四态 `no_applicable_position` 与单价格第三态
+    // `na`（「一格『做』都没有 ⇒ 不做」）的**输入已不存在**（`applicable` 恒 TRUE 且已退场）
+    // ⇒ 判据改判为「零价 ⇒ **未定价**」，并用**反向**断言钉住「不做」不得出现 ——
+    // 「未定价 ≠ ¥0.00」这条一字不放宽（`不做` 与 `¥` 都不得出现）。
+    expect(cell).toHaveAttribute('data-state', 'unpriced')
+    expect(cell).toHaveTextContent('未定价')
+    expect(cell).not.toHaveTextContent('不做')
     expect(cell).not.toHaveTextContent('¥')
   })
 

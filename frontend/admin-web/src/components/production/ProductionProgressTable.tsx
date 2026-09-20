@@ -50,7 +50,7 @@ function statusChip(status?: string | null): { label: string; tone: 'success' | 
 }
 
 /** 一个部位块 + 它所属的**套**（套头只在每套的第一个部位块上渲染一次）。 */
-interface SetPosition {
+export interface SetPosition {
   position: ProductionPosition
   /** 套序号（0 起；渲染时 +1） */
   setIndex: number
@@ -65,8 +65,11 @@ interface SetPosition {
  *
  * 口径 = 与计件报表 `per_set` **同一份**（后端 `ProductionService.setKey`，**不新造第二份**）。
  * 缺 `set_no`（老数据 / 读面未升级）⇒ 该部位**自成一套**（= 改前行为，逐字不变，不猜）。
+ *
+ * 🔴 **本函数是「第 N 套 / 共 M 套」的唯一实现**（issue #4949）：进度表与**洗水码纸面**都必须走它
+ * —— 两份实现迟早漂移，同一张单的屏幕与纸面会给出不同的套序/套数（而没有任何东西会变红）。
  */
-function groupBySet(positions: ProductionPosition[]): SetPosition[] {
+export function groupBySet(positions: ProductionPosition[]): SetPosition[] {
   const keys = positions.map((p, i) => p.set_no ?? `\u0000position-${i}`)
   const setOrder: string[] = []
   keys.forEach((key) => {

@@ -1,4 +1,4 @@
-// case_ids: PG-056
+// case_ids: PG-056, PP-011
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerIntercept
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
+import com.migao.admin.entity.ProcessingSetPartToken;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
@@ -292,6 +293,68 @@ class ProductionPartCodeRealMappingTest {
         }
     }
 
+    // ────────────────────────────────────────────── 判据 4：撤销必须覆盖印刷品载体（#4946 增补）
+
+    @Test
+    @DisplayName("🔴 撤销 ⇒ 部位码全作废（token/scan_url 为 null、short_code 一字不动）；重新实例化 ⇒ 发新 token")
+    void revokeInvalidatesPrintedPartCodesAndReInstantiateIssuesNewOnes() throws Exception {
+        ProductionService service = realProductionService();
+        service.instantiate(ORDER_ID, body(), tenantId);
+
+        Map<String, String> tokensBefore = partColumnByItem("token");
+        Map<String, String> codesBefore = partColumnByItem("short_code");
+        assertThat(tokensBefore).as("撤销前：一部位一码 ⇒ 3 个部位 3 个 token").hasSize(3)
+                .doesNotContainValue(null);
+        assertThat(codesBefore).as("可印刷的短码必须都在").hasSize(3).doesNotContainValue(null);
+
+        Map<String, Object> revoked = service.revokeQrToken(ORDER_ID, tenantId);
+        assertThat(revoked).as("既有撤销响应形状不变").containsEntry("revoked", true)
+                .containsEntry("qr_token", null);
+
+        // 真库（真 SQL）：token 全置空（同一个事务里的第二次写）；**short_code 一字不动**
+        Map<String, String> tokensAfterRevoke = partColumnByItem("token");
+        assertThat(tokensAfterRevoke).hasSize(3);
+        assertThat(tokensAfterRevoke.values())
+                .as("撤销必须覆盖印刷品载体 —— 只撤加工单级 qr_token 是一句假话")
+                .containsOnlyNulls();
+        assertThat(partColumnByItem("short_code")).as("短码是「哪一张纸」，不随撤销消失")
+                .isEqualTo(codesBefore);
+
+        // 读面（真 MyBatis + 真 SQL + 多租户拦截器）：token / scan_url 全 null，短码仍在
+        Map<String, Object> read = service.getOperations(ORDER_ID, tenantId);
+        for (Map.Entry<String, String> entry : codesBefore.entrySet()) {
+            assertThat(positionOf(read, entry.getKey()))
+                    .as("作废的码不得还能印刷（印出来只会得到 410）")
+                    .containsEntry("part_token", null)
+                    .containsEntry("scan_url", null)
+                    .containsEntry("part_short_code", entry.getValue());
+        }
+
+        // `/s/{短码}` ⇒ 410 的链路（端点级断言在 WorkerShortLinkControllerTest#revokedShortCodeIsGone，
+        // 这里只钉**数据层**那一环）：短码必须仍解析得到行，只是 token 为空 —— 否则撤销会被说成 404
+        for (String code : codesBefore.values()) {
+            ProcessingSetPartToken row = mapper(ProcessingSetPartTokenMapper.class).selectByShortCode(code);
+            assertThat(row).as("撤销后短码仍可解析（410 而不是「没这个码」）").isNotNull();
+            assertThat(row.getToken()).as("token 为空 ⇒ WorkerShortLinkController 走 410").isNull();
+        }
+
+        // 重新实例化 ⇒ 只补 token（数据层可恢复）；short_code 一字不动；新 token ≠ 被撤销的那个
+        service.instantiate(ORDER_ID, body(), tenantId);
+        Map<String, String> tokensAfterReissue = partColumnByItem("token");
+        assertThat(partColumnByItem("short_code")).as("重新发码不换短码（还是那张纸）").isEqualTo(codesBefore);
+        for (Map.Entry<String, String> entry : tokensBefore.entrySet()) {
+            assertThat(tokensAfterReissue.get(entry.getKey()))
+                    .as("被撤销的部位必须拿到新 token（≠ 作废的那个）")
+                    .isNotNull()
+                    .isNotEqualTo(entry.getValue());
+        }
+
+        // 重复实例化 ⇒ 已有 token 一字不动（已打印的纸不作废）
+        service.instantiate(ORDER_ID, body(), tenantId);
+        assertThat(partColumnByItem("token")).as("已有 token 的行在重复实例化时一字不动")
+                .isEqualTo(tokensAfterReissue);
+    }
+
     // ────────────────────────────────────────────── 夹具与工具
 
     private static ProductionService realProductionService() {
@@ -312,6 +375,32 @@ class ProductionPartCodeRealMappingTest {
 
     private static <T> T mapper(Class<T> type) {
         return session.getMapper(type);
+    }
+
+    /** 真库快照：`order_item_id → 该列值`（token 或 short_code）。 */
+    private static Map<String, String> partColumnByItem(String column) throws Exception {
+        Map<String, String> byItem = new LinkedHashMap<>();
+        try (Connection conn = dataSource.getConnection();
+             Statement st = conn.createStatement();
+             ResultSet rs = st.executeQuery("SELECT order_item_id, " + column
+                     + " FROM processing_set_part_tokens WHERE processing_order_id = '" + PO_ID
+                     + "' AND deleted = 0 ORDER BY order_item_id")) {
+            while (rs.next()) {
+                byItem.put(rs.getString(1), rs.getString(2));
+            }
+        }
+        return byItem;
+    }
+
+    /** 读面（`getOperations`）里某部位的视图。 */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> positionOf(Map<String, Object> result, String orderItemId) {
+        for (Map<String, Object> position : (List<Map<String, Object>>) result.get("positions")) {
+            if (orderItemId.equals(position.get("order_item_id"))) {
+                return position;
+            }
+        }
+        throw new AssertionError("部位未出现在读面里: " + orderItemId);
     }
 
     private static long count(Statement st, String sql) throws Exception {

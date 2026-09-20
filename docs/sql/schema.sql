@@ -2169,7 +2169,22 @@ VALUES
   -- （`配料` 会出现在新单实例里 = 设计 S6）。行**保留**（不删行）⇒ 留痕可审计、回滚可认领
   -- （同下方 `production_route_rules` 的系数档软删口径）。
   ('op-v79-01', 1, '配料', '后道', NULL, '米', 0, FALSE, FALSE, 36, 'active', 1),
-  ('op-v79-02', 1, '打包', '后道', NULL, '套', 0, FALSE, FALSE, 37, 'active', 0)
+  ('op-v79-02', 1, '打包', '后道', NULL, '套', 0, FALSE, FALSE, 37, 'active', 0),
+  -- ── issue #4937（去部位化彻底版）：补 **4 道纱帘变体**（`deleted = 0`）──
+  -- 病根：`buildRoute` 原来靠 `applicable` 过滤把 `熨烫/定型/复烫/车被` 从**纱帘**路线上滤掉；
+  -- 该过滤退场后，这 4 道会进入纱帘主线的实例化路径 —— 而工序库里**没有**它们的纱帘变体
+  -- ⇒ `variantNameOf` 返回 `null` ⇒ **整张纱帘单 fail-closed**（一张也建不出来）。
+  -- ⇒ 补齐变体行（单价逐字与对应 `-布` 变体相同 —— **不发明单价**；
+  --    分组/单位取对应 `-布` 变体的值：后道 / 米）。
+  -- ⚠️ 这 4 行**只**进 `production_operations`（工序库 = 「这道工序在哪个帘种上有变体」）——
+  --    **不进** `production_operation_positions` 的价目矩阵：矩阵已按 O4 塌缩为「一道逻辑工序一行」，
+  --    且价目行的键是**逻辑工序**（`熨烫`/`定型`/`复烫`/`车被` 都已有那一行）。
+  -- 核验 = `RoutingModelFixture`（Java 测试夹具的工序库行）与
+  -- `tests/test_production/test_route_model_v2.py`（Python 侧的实例化路径）两侧同口径。
+  ('op-v54-31', 1, '熨烫-纱', '后道', '纱帘', '米', 0.35, FALSE, FALSE, 38, 'active', 0),
+  ('op-v54-32', 1, '定型-纱', '后道', '纱帘', '米', 0.4, FALSE, FALSE, 39, 'active', 0),
+  ('op-v54-33', 1, '复烫-纱', '后道', '纱帘', '米', 0.35, FALSE, FALSE, 40, 'active', 0),
+  ('op-v54-34', 1, '车被-纱', '后道', '纱帘', '米', 0.4, FALSE, FALSE, 41, 'active', 0)
 ON CONFLICT (tenant_id, name) WHERE deleted = 0 DO NOTHING;
 
 -- 工艺路线模板种子（V54 的 6 条 + V58 的 3 条，issue #4246 的纱帘路线补齐）。
@@ -2256,107 +2271,116 @@ ON CONFLICT (id) DO NOTHING;
 -- 幂等：ON CONFLICT (id) DO NOTHING。
 -- ⚠️ 与旧种子段的关系：**纯增量** —— production_operations / production_routings 的种子只**追加**。
 --
--- 🔴🔴 **本段的 `deleted` 列写的是 V88（issue #4676）之后的终态**（issue #4690）🔴🔴
+-- 🔴🔴 **本段的 `position` / `applicable` / `deleted` 列写的是「去部位化彻底版」之后的终态**
+-- （issue #4937 = 母单 #4936；用户裁定 2026-09-21「我们移除了部位的设计，**不计成本的改**」）🔴🔴
 -- 本文件是**全新库的一次性 bootstrap**（docker-entrypoint-initdb.d），而该栈**不跑迁移链**
--- ⇒ 本文件必须**一次给全终态**：V79 的 120 行字面量里，凡 V88 软删的格在这里**直接种成 `deleted = 1`**。
--- 逐项对齐 V88（`V88__retire_material_prep_and_fabric_position.sql`）：
---   · ② `配料 × 4 部位`（opp-v79-29..32）      → `deleted = 1`
---   · ④ `裁剪 × 布料`（opp-v79-02）**保命格**   → `applicable = TRUE`（**存活**，不是退场）
---   · ⑤ 其余**布料格**（`position='布料'` ∧ logical ∉ {`裁剪`, `打包`}）= **27 格** → `deleted = 1`
---   · ⑦ `打包` 4 格（opp-v79-33..36）+ `scope='set'` → **一字不动**（`deleted = 0`）
---   ⇒ 存活 5 格 = 保命格 + `打包` 4 格；退场 31 格 = 4（②）+ 27（⑤）。
--- ⚠️ 若只改迁移不改本文件 ⇒ **新建库仍是旧口径**（布料主线 `配料→打包` / `配料` 工序在 / 36 格全活）
---    ⇒ 迁移库与新库**两套口径**（本仓最忌）。守卫 = `tests/unit_ci_workflows/test_public_ops_v88_migration.py`
---    的 `test_bootstrap_terminal_state_matches_v88` + `test_bootstrap_matches_migration_chain_terminal_state`
---    （**bootstrap 缺 V88 改写即红**，红证见该文件 `TestInjectedDrift`）。
+-- ⇒ 本文件必须**一次给全终态**。逐项对齐三条新迁移：
+--   · `V102__retire_applicability_flag.sql`  → 「已是 `TRUE`」的存活行写全 `updated_at`
+--     （⚠️ 它**不**把 `FALSE` 一刀切置 TRUE：那会抹掉 V104 选行所需的信号 ⇒
+--      `帘头制作` 的 ¥2.00 会被判成未定价，工人白干，见该文件头的「口径陷阱」）；
+--   · `V103__clear_route_rule_positions.sql` → 存活规则的 `position` 清空为 `NULL`
+--     （本段 `rr-v70-*` 的 26 行**字面量已写 NULL**；`rr-v93-*` 的 VALUES 段仍是 V71 口径的
+--      `'布帘'`，由 V103 在运行时清空 —— 那里保持与 V71 逐字同款，供三源收敛守卫比对）；
+--   · `V104__deposition_matrix_collapse.sql` → 每个 `(tenant_id, logical_name)` **只留一行**：
+--       幸存行 = 四档选行规则（适用行 → **布帘**列 → `position` 字典序 → `id` 升序）；
+--       幸存行写 `position = '通用'`（中性值；该列**仅作历史载体**）+ `applicable = TRUE`；
+--       其余 **90 行** `deleted = 1`（**软删**，不物理删 —— V86 的调价账仍按 `row_id` 指向它们）。
+--   ⇒ **存活 30 行**（每逻辑工序一行，部位维退场）+ **退场 90 行**；120 = 30 + 90（可机械核验）。
+-- ⚠️ **行数一字未减**（仍是 V71 ∪ V79 的 120 行字面量）：退场只靠显式 `deleted` 表达
+--    —— 直接删行会让「bootstrap ↔ 迁移链」的行集合不可比对（守卫只能退化成「只比对存活行」，
+--    漏掉「行整个消失」这一形态）。守卫 = `tests/unit_ci_workflows/test_deposition_total_migration.py`
+--    的 `test_bootstrap_matches_migration_chain_terminal_state`（真库跑三迁移 + 解析本文件逐值比对，
+--    红证见同文件 `test_v102_claim_is_observable_…`）。
+-- ⚠️ 若只改迁移不改本文件 ⇒ **新建库仍是旧口径**（120 行全活 / `position` 还是部位名）
+--    ⇒ 迁移库与新库**两套口径**（本仓最忌）。
 
 INSERT INTO production_operation_positions
     (id, tenant_id, logical_name, position, unit_price, applicable, status, deleted)
 VALUES
-  ('opp-v70-01', 1, '精裁', '布帘', 0.4, TRUE, 'active', 0),
-  ('opp-v70-02', 1, '精裁', '纱帘', 0.4, TRUE, 'active', 0),
-  ('opp-v70-03', 1, '精裁', '帘头', 0.4, TRUE, 'active', 0),
-  ('opp-v70-04', 1, '裁剪', '布帘', 0.4, TRUE, 'active', 0),
-  ('opp-v70-05', 1, '裁剪', '纱帘', 0.4, TRUE, 'active', 0),
-  ('opp-v70-06', 1, '裁剪', '帘头', 0.4, TRUE, 'active', 0),
-  ('opp-v70-07', 1, '三边', '布帘', 0.4, TRUE, 'active', 0),
-  ('opp-v70-08', 1, '三边', '纱帘', 0.4, TRUE, 'active', 0),
-  ('opp-v70-09', 1, '三边', '帘头', 0.4, TRUE, 'active', 0),
-  ('opp-v70-10', 1, '韩褶', '布帘', 0.4, TRUE, 'active', 0),
-  ('opp-v70-11', 1, '韩褶', '纱帘', 0.4, TRUE, 'active', 0),
-  ('opp-v70-12', 1, '韩褶', '帘头', 0.4, TRUE, 'active', 0),
-  ('opp-v70-13', 1, '上车布', '布帘', 0.5, TRUE, 'active', 0),
-  ('opp-v70-14', 1, '上车布', '纱帘', 0.5, TRUE, 'active', 0),
-  ('opp-v70-15', 1, '上车布', '帘头', NULL, FALSE, 'active', 0),
-  ('opp-v70-16', 1, '打孔', '布帘', 0.15, TRUE, 'active', 0),
-  ('opp-v70-17', 1, '打孔', '纱帘', 0.15, TRUE, 'active', 0),
-  ('opp-v70-18', 1, '打孔', '帘头', 0.15, TRUE, 'active', 0),
-  ('opp-v70-19', 1, '拼1次', '布帘', 0.8, TRUE, 'active', 0),
-  ('opp-v70-20', 1, '拼1次', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-21', 1, '拼1次', '帘头', NULL, FALSE, 'active', 0),
-  ('opp-v70-22', 1, '拼2次', '布帘', 1.2, TRUE, 'active', 0),
-  ('opp-v70-23', 1, '拼2次', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-24', 1, '拼2次', '帘头', NULL, FALSE, 'active', 0),
-  ('opp-v70-25', 1, '拼3次', '布帘', 1.6, TRUE, 'active', 0),
-  ('opp-v70-26', 1, '拼3次', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-27', 1, '拼3次', '帘头', NULL, FALSE, 'active', 0),
-  ('opp-v70-28', 1, '花边', '布帘', 0.6, TRUE, 'active', 0),
-  ('opp-v70-29', 1, '花边', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-30', 1, '花边', '帘头', NULL, FALSE, 'active', 0),
-  ('opp-v70-31', 1, '铅坠', '布帘', 0.3, TRUE, 'active', 0),
-  ('opp-v70-32', 1, '铅坠', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-33', 1, '铅坠', '帘头', NULL, FALSE, 'active', 0),
-  ('opp-v70-34', 1, '接高', '布帘', 1.0, TRUE, 'active', 0),
-  ('opp-v70-35', 1, '接高', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-36', 1, '接高', '帘头', NULL, FALSE, 'active', 0),
-  ('opp-v70-37', 1, '帘头制作', '布帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-38', 1, '帘头制作', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-39', 1, '帘头制作', '帘头', 2.0, TRUE, 'active', 0),
-  ('opp-v70-40', 1, '熨烫', '布帘', 0.35, TRUE, 'active', 0),
-  ('opp-v70-41', 1, '熨烫', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-42', 1, '熨烫', '帘头', NULL, FALSE, 'active', 0),
-  ('opp-v70-43', 1, '定型', '布帘', 0.4, TRUE, 'active', 0),
-  ('opp-v70-44', 1, '定型', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-45', 1, '定型', '帘头', 0.4, TRUE, 'active', 0),
-  ('opp-v70-46', 1, '复烫', '布帘', 0.35, TRUE, 'active', 0),
-  ('opp-v70-47', 1, '复烫', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-48', 1, '复烫', '帘头', NULL, FALSE, 'active', 0),
-  ('opp-v70-49', 1, '车被', '布帘', 0.4, TRUE, 'active', 0),
-  ('opp-v70-50', 1, '车被', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-51', 1, '车被', '帘头', NULL, FALSE, 'active', 0),
-  ('opp-v70-52', 1, '外帘打卷', '布帘', 1.0, TRUE, 'active', 0),
-  ('opp-v70-53', 1, '外帘打卷', '纱帘', 1.0, TRUE, 'active', 0),
-  ('opp-v70-54', 1, '外帘打卷', '帘头', 1.0, TRUE, 'active', 0),
-  ('opp-v70-55', 1, '外帘装袋', '布帘', 1.0, TRUE, 'active', 0),
-  ('opp-v70-56', 1, '外帘装袋', '纱帘', 1.0, TRUE, 'active', 0),
-  ('opp-v70-57', 1, '外帘装袋', '帘头', 1.0, TRUE, 'active', 0),
-  ('opp-v70-58', 1, '质检', '布帘', 1.5, TRUE, 'active', 0),
-  ('opp-v70-59', 1, '质检', '纱帘', 1.5, TRUE, 'active', 0),
-  ('opp-v70-60', 1, '质检', '帘头', 1.5, TRUE, 'active', 0),
-  ('opp-v70-61', 1, '外帘发货', '布帘', 1.0, TRUE, 'active', 0),
-  ('opp-v70-62', 1, '外帘发货', '纱帘', 1.0, TRUE, 'active', 0),
-  ('opp-v70-63', 1, '外帘发货', '帘头', 1.0, TRUE, 'active', 0),
-  ('opp-v70-64', 1, '绑带', '布帘', 0.5, TRUE, 'active', 0),
-  ('opp-v70-65', 1, '绑带', '纱帘', 0.5, TRUE, 'active', 0),
-  ('opp-v70-66', 1, '绑带', '帘头', NULL, FALSE, 'active', 0),
-  ('opp-v70-67', 1, '抱枕', '布帘', 2.0, TRUE, 'active', 0),
-  ('opp-v70-68', 1, '抱枕', '纱帘', 2.0, TRUE, 'active', 0),
-  ('opp-v70-69', 1, '抱枕', '帘头', 2.0, TRUE, 'active', 0),
-  ('opp-v70-70', 1, '腰靠垫', '布帘', 2.0, TRUE, 'active', 0),
-  ('opp-v70-71', 1, '腰靠垫', '纱帘', 2.0, TRUE, 'active', 0),
-  ('opp-v70-72', 1, '腰靠垫', '帘头', 2.0, TRUE, 'active', 0),
-  ('opp-v70-73', 1, 'logo条', '布帘', 0.6, TRUE, 'active', 0),
-  ('opp-v70-74', 1, 'logo条', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-75', 1, 'logo条', '帘头', NULL, FALSE, 'active', 0),
-  ('opp-v70-76', 1, '立边', '布帘', 0.5, TRUE, 'active', 0),
-  ('opp-v70-77', 1, '立边', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-78', 1, '立边', '帘头', NULL, FALSE, 'active', 0),
-  ('opp-v70-79', 1, '扣环', '布帘', 0.3, TRUE, 'active', 0),
-  ('opp-v70-80', 1, '扣环', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-81', 1, '扣环', '帘头', NULL, FALSE, 'active', 0),
-  ('opp-v70-82', 1, '防翘扣', '布帘', 0.2, TRUE, 'active', 0),
-  ('opp-v70-83', 1, '防翘扣', '纱帘', NULL, FALSE, 'active', 0),
-  ('opp-v70-84', 1, '防翘扣', '帘头', NULL, FALSE, 'active', 0),
+  ('opp-v70-01', 1, '精裁', '通用', 0.4, TRUE, 'active', 0),
+  ('opp-v70-02', 1, '精裁', '纱帘', 0.4, TRUE, 'active', 1),
+  ('opp-v70-03', 1, '精裁', '帘头', 0.4, TRUE, 'active', 1),
+  ('opp-v70-04', 1, '裁剪', '通用', 0.4, TRUE, 'active', 0),
+  ('opp-v70-05', 1, '裁剪', '纱帘', 0.4, TRUE, 'active', 1),
+  ('opp-v70-06', 1, '裁剪', '帘头', 0.4, TRUE, 'active', 1),
+  ('opp-v70-07', 1, '三边', '通用', 0.4, TRUE, 'active', 0),
+  ('opp-v70-08', 1, '三边', '纱帘', 0.4, TRUE, 'active', 1),
+  ('opp-v70-09', 1, '三边', '帘头', 0.4, TRUE, 'active', 1),
+  ('opp-v70-10', 1, '韩褶', '通用', 0.4, TRUE, 'active', 0),
+  ('opp-v70-11', 1, '韩褶', '纱帘', 0.4, TRUE, 'active', 1),
+  ('opp-v70-12', 1, '韩褶', '帘头', 0.4, TRUE, 'active', 1),
+  ('opp-v70-13', 1, '上车布', '通用', 0.5, TRUE, 'active', 0),
+  ('opp-v70-14', 1, '上车布', '纱帘', 0.5, TRUE, 'active', 1),
+  ('opp-v70-15', 1, '上车布', '帘头', NULL, FALSE, 'active', 1),
+  ('opp-v70-16', 1, '打孔', '通用', 0.15, TRUE, 'active', 0),
+  ('opp-v70-17', 1, '打孔', '纱帘', 0.15, TRUE, 'active', 1),
+  ('opp-v70-18', 1, '打孔', '帘头', 0.15, TRUE, 'active', 1),
+  ('opp-v70-19', 1, '拼1次', '通用', 0.8, TRUE, 'active', 0),
+  ('opp-v70-20', 1, '拼1次', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-21', 1, '拼1次', '帘头', NULL, FALSE, 'active', 1),
+  ('opp-v70-22', 1, '拼2次', '通用', 1.2, TRUE, 'active', 0),
+  ('opp-v70-23', 1, '拼2次', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-24', 1, '拼2次', '帘头', NULL, FALSE, 'active', 1),
+  ('opp-v70-25', 1, '拼3次', '通用', 1.6, TRUE, 'active', 0),
+  ('opp-v70-26', 1, '拼3次', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-27', 1, '拼3次', '帘头', NULL, FALSE, 'active', 1),
+  ('opp-v70-28', 1, '花边', '通用', 0.6, TRUE, 'active', 0),
+  ('opp-v70-29', 1, '花边', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-30', 1, '花边', '帘头', NULL, FALSE, 'active', 1),
+  ('opp-v70-31', 1, '铅坠', '通用', 0.3, TRUE, 'active', 0),
+  ('opp-v70-32', 1, '铅坠', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-33', 1, '铅坠', '帘头', NULL, FALSE, 'active', 1),
+  ('opp-v70-34', 1, '接高', '通用', 1.0, TRUE, 'active', 0),
+  ('opp-v70-35', 1, '接高', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-36', 1, '接高', '帘头', NULL, FALSE, 'active', 1),
+  ('opp-v70-37', 1, '帘头制作', '布帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-38', 1, '帘头制作', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-39', 1, '帘头制作', '通用', 2.0, TRUE, 'active', 0),
+  ('opp-v70-40', 1, '熨烫', '通用', 0.35, TRUE, 'active', 0),
+  ('opp-v70-41', 1, '熨烫', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-42', 1, '熨烫', '帘头', NULL, FALSE, 'active', 1),
+  ('opp-v70-43', 1, '定型', '通用', 0.4, TRUE, 'active', 0),
+  ('opp-v70-44', 1, '定型', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-45', 1, '定型', '帘头', 0.4, TRUE, 'active', 1),
+  ('opp-v70-46', 1, '复烫', '通用', 0.35, TRUE, 'active', 0),
+  ('opp-v70-47', 1, '复烫', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-48', 1, '复烫', '帘头', NULL, FALSE, 'active', 1),
+  ('opp-v70-49', 1, '车被', '通用', 0.4, TRUE, 'active', 0),
+  ('opp-v70-50', 1, '车被', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-51', 1, '车被', '帘头', NULL, FALSE, 'active', 1),
+  ('opp-v70-52', 1, '外帘打卷', '通用', 1.0, TRUE, 'active', 0),
+  ('opp-v70-53', 1, '外帘打卷', '纱帘', 1.0, TRUE, 'active', 1),
+  ('opp-v70-54', 1, '外帘打卷', '帘头', 1.0, TRUE, 'active', 1),
+  ('opp-v70-55', 1, '外帘装袋', '通用', 1.0, TRUE, 'active', 0),
+  ('opp-v70-56', 1, '外帘装袋', '纱帘', 1.0, TRUE, 'active', 1),
+  ('opp-v70-57', 1, '外帘装袋', '帘头', 1.0, TRUE, 'active', 1),
+  ('opp-v70-58', 1, '质检', '通用', 1.5, TRUE, 'active', 0),
+  ('opp-v70-59', 1, '质检', '纱帘', 1.5, TRUE, 'active', 1),
+  ('opp-v70-60', 1, '质检', '帘头', 1.5, TRUE, 'active', 1),
+  ('opp-v70-61', 1, '外帘发货', '通用', 1.0, TRUE, 'active', 0),
+  ('opp-v70-62', 1, '外帘发货', '纱帘', 1.0, TRUE, 'active', 1),
+  ('opp-v70-63', 1, '外帘发货', '帘头', 1.0, TRUE, 'active', 1),
+  ('opp-v70-64', 1, '绑带', '通用', 0.5, TRUE, 'active', 0),
+  ('opp-v70-65', 1, '绑带', '纱帘', 0.5, TRUE, 'active', 1),
+  ('opp-v70-66', 1, '绑带', '帘头', NULL, FALSE, 'active', 1),
+  ('opp-v70-67', 1, '抱枕', '通用', 2.0, TRUE, 'active', 0),
+  ('opp-v70-68', 1, '抱枕', '纱帘', 2.0, TRUE, 'active', 1),
+  ('opp-v70-69', 1, '抱枕', '帘头', 2.0, TRUE, 'active', 1),
+  ('opp-v70-70', 1, '腰靠垫', '通用', 2.0, TRUE, 'active', 0),
+  ('opp-v70-71', 1, '腰靠垫', '纱帘', 2.0, TRUE, 'active', 1),
+  ('opp-v70-72', 1, '腰靠垫', '帘头', 2.0, TRUE, 'active', 1),
+  ('opp-v70-73', 1, 'logo条', '通用', 0.6, TRUE, 'active', 0),
+  ('opp-v70-74', 1, 'logo条', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-75', 1, 'logo条', '帘头', NULL, FALSE, 'active', 1),
+  ('opp-v70-76', 1, '立边', '通用', 0.5, TRUE, 'active', 0),
+  ('opp-v70-77', 1, '立边', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-78', 1, '立边', '帘头', NULL, FALSE, 'active', 1),
+  ('opp-v70-79', 1, '扣环', '通用', 0.3, TRUE, 'active', 0),
+  ('opp-v70-80', 1, '扣环', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-81', 1, '扣环', '帘头', NULL, FALSE, 'active', 1),
+  ('opp-v70-82', 1, '防翘扣', '通用', 0.2, TRUE, 'active', 0),
+  ('opp-v70-83', 1, '防翘扣', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v70-84', 1, '防翘扣', '帘头', NULL, FALSE, 'active', 1),
   -- ── issue #4529（包 F）：第 4 个部位 `布料` 的 28 行（逐行显式 FALSE）+ 新增两道工序 ──
   -- 84 + 36 = **120 行**（30 逻辑工序 × 4 部位）。与 V79 逐行逐值同口径。
   ('opp-v79-01', 1, '精裁', '布料', NULL, FALSE, 'active', 1),
@@ -2364,7 +2388,7 @@ VALUES
   -- 依据：**未实例化**的存量布料单走「补生成工序」时会按**当前配置**重算 ⇒ 这一格退场会让
   -- 存量单静默少一道（`buildRoute` 查不到键 ⇒ 静默 `continue`，不报错）。
   -- 单价仍是 `NULL`（「适用但未定价」）⇒ 实例化时回落 `production_operations.unit_price`（`裁剪-布` = 0.4）。
-  ('opp-v79-02', 1, '裁剪', '布料', NULL, TRUE, 'active', 0),
+  ('opp-v79-02', 1, '裁剪', '布料', NULL, TRUE, 'active', 1),
   ('opp-v79-03', 1, '三边', '布料', NULL, FALSE, 'active', 1),
   ('opp-v79-04', 1, '韩褶', '布料', NULL, FALSE, 'active', 1),
   ('opp-v79-05', 1, '上车布', '布料', NULL, FALSE, 'active', 1),
@@ -2394,15 +2418,15 @@ VALUES
   -- 🔴 `配料 × 4 部位` 直接种成**软删态**（`deleted = 1`）：V88 ②（issue #4676）在迁移链上把
   -- `logical_name = '配料'` 的 4 格一并软删 ⇒ 本文件是终态（新建库不跑迁移链），必须与之一致。
   -- 行**保留**（不删行）= 留痕可审计 + 回滚可认领（同 `production_operations` 的 `配料` 行口径）。
-  ('opp-v79-29', 1, '配料', '布料', NULL, TRUE, 'active', 1),
+  ('opp-v79-29', 1, '配料', '通用', NULL, TRUE, 'active', 0),
   ('opp-v79-30', 1, '配料', '布帘', NULL, FALSE, 'active', 1),
   ('opp-v79-31', 1, '配料', '纱帘', NULL, FALSE, 'active', 1),
   ('opp-v79-32', 1, '配料', '帘头', NULL, FALSE, 'active', 1),
   -- `打包` 4 格（V88 ⑦ 一字不动：交付工序的格**绝不能用「删格」实现**）—— `deleted = 0` 显式写全。
-  ('opp-v79-33', 1, '打包', '布帘', NULL, TRUE, 'active', 0),
-  ('opp-v79-34', 1, '打包', '纱帘', NULL, TRUE, 'active', 0),
-  ('opp-v79-35', 1, '打包', '帘头', NULL, TRUE, 'active', 0),
-  ('opp-v79-36', 1, '打包', '布料', NULL, TRUE, 'active', 0)
+  ('opp-v79-33', 1, '打包', '通用', NULL, TRUE, 'active', 0),
+  ('opp-v79-34', 1, '打包', '纱帘', NULL, TRUE, 'active', 1),
+  ('opp-v79-35', 1, '打包', '帘头', NULL, TRUE, 'active', 1),
+  ('opp-v79-36', 1, '打包', '布料', NULL, TRUE, 'active', 1)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO production_route_templates
@@ -2429,7 +2453,7 @@ INSERT INTO production_route_rules
      operation, after_operation, priority, status)
 VALUES
   ('rr-v70-01', 1, 'craft', '韩褶', NULL, 'insert', '韩褶', '三边', 10, 'active'),
-  ('rr-v70-02', 1, 'craft', '韩褶', '布帘', 'insert', '上车布', '韩褶', 20, 'active'),
+  ('rr-v70-02', 1, 'craft', '韩褶', NULL, 'insert', '上车布', '韩褶', 20, 'active'),
   ('rr-v70-03', 1, 'craft', '打孔', NULL, 'insert', '打孔', '三边', 30, 'active'),
   ('rr-v70-04', 1, 'craft', '四爪钩', NULL, 'insert', '上车布', '三边', 40, 'active'),
   ('rr-v70-05', 1, 'craft', '四爪钩', NULL, 'remove', '定型', NULL, 50, 'active'),

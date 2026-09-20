@@ -1,5 +1,5 @@
 {
-  "_comment": "断言可信度门禁的**存量**违规清单（burn-down）。锚定 SHA 见 anchor_sha —— 计数是「该 SHA 上按 taxonomy 判出的存量违规」，**不是**『这些用例永远豁免』。`violations` 是**活账本**：每次门禁运行都对**全库**重算并逐条对账（#4031 全量对账）—— 记了却不再违规 ⇒ 阻塞要求移除；仍在违规却被删掉 ⇒ 阻塞（新增豁免）。\n\n⚠️ 2026-09-19（#4371 商品↔加工项解耦，本次，**相对 rebase 后的 origin/main**）：清单条目 **72→72（净 +0）**、违规码 **124→124（净 +0）**。\n  · 销账：`PR-014`/`PR-015`/`PR-020` 随解耦删除（整条清零）；`PR-011` 收窄；`OR-017`/`OR-018`/`OR-021`/`OR-022`/`OR-023`/`OR-024`/`OR-026`/`OR-028` 补 `namespaces[customer_phone:…]` 与 `precondition`（可判定前置，同 OR-016 先例）。\n  · ⚠️ 复盘：开发中一度在**落后 13 个提交的基点**上把「persona 判据未收紧」记为本单新增豁免并开了 #4391；rebase 后确认该收紧已由 **#4366** 落地 ⇒ 那批条目已全部撤掉，#4391 已关闭（not planned）。教训 = §2.2 **开工先 rebase**。  · 2026-09-21（#4883 用例库同步「工艺配置去部位化」+ case-trust burn-down 缴费，本次，相对 origin/main）：清单条目 **17→16（净 −1）**、违规码 **48→45（净 −3）**。\n  · 销账：`OR-006`（三条码**一次清空**：补 `namespaces[customer_phone:13800138000]` + `precondition[order_count_for_phone]`（复用既有已登记类型，不新增 type/探针）+ `must_succeed[order_manage]`；`user_inputs`/`expectations`/`data_checks`/`skip_reason` 一字未动）。\n  · 其余 16 条为**存量**，本单不动（先清 OR-*，剩 OR-007）。",
+  "_comment": "断言可信度门禁的**存量**违规清单（burn-down）。锚定 SHA 见 anchor_sha —— 计数是「该 SHA 上按 taxonomy 判出的存量违规」，**不是**『这些用例永远豁免』。`violations` 是**活账本**：每次门禁运行都对**全库**重算并逐条对账（#4031 全量对账）—— 记了却不再违规 ⇒ 阻塞要求移除；仍在违规却被删掉 ⇒ 阻塞（新增豁免）。\n\n⚠️ 2026-09-19（#4371 商品↔加工项解耦，本次，**相对 rebase 后的 origin/main**）：清单条目 **72→72（净 +0）**、违规码 **124→124（净 +0）**。\n  · 销账：`PR-014`/`PR-015`/`PR-020` 随解耦删除（整条清零）；`PR-011` 收窄；`OR-017`/`OR-018`/`OR-021`/`OR-022`/`OR-023`/`OR-024`/`OR-026`/`OR-028` 补 `namespaces[customer_phone:…]` 与 `precondition`（可判定前置，同 OR-016 先例）。\n  · ⚠️ 复盘：开发中一度在**落后 13 个提交的基点**上把「persona 判据未收紧」记为本单新增豁免并开了 #4391；rebase 后确认该收紧已由 **#4366** 落地 ⇒ 那批条目已全部撤掉，#4391 已关闭（not planned）。教训 = §2.2 **开工先 rebase**。  · 2026-09-21（#4883 用例库同步「工艺配置去部位化」+ case-trust burn-down 缴费，本次，相对 origin/main）：清单条目 **17→16（净 −1）**、违规码 **48→45（净 −3）**。\n  · 销账：`OR-006`（三条码**一次清空**：补 `namespaces[customer_phone:13800138000]` + `precondition[order_count_for_phone]`（复用既有已登记类型，不新增 type/探针）+ `must_succeed[order_manage]`；`user_inputs`/`expectations`/`data_checks`/`skip_reason` 一字未动）。\n  · 其余 16 条为**存量**，本单不动（先清 OR-*，剩 OR-007）。\n  · 2026-09-21（#4939 前端残留清理 + 用例库同步「去部位化彻底版」，配套 #4951；本次，相对 origin/main）：清单条目 **13→12（净 −1）**、违规码 **37→35（净 −2）**。\n  · 销账：`CH-033`（两条码**一次清空**：补 `precondition[order_count_for_phone: 13800138000]`（复用既有已登记类型，不新增 type/探针）+ `must_succeed[product_search]`（效果层：「调用过 ≠ 成了」，同时满足规则 c「`forbidden_text` 不得单独承载判据」）；`user_inputs`/`expectations`/`forbidden_text`/`data_checks`/`traces`/`skip_reason` 一字未动）。\n  · 其余 12 条为**存量**，本单不动（先清 OR-*，剩 OR-007）。",
   "_generated_by": "python3 .github/case_trust_gate.py --regen-baseline",
   "regenerate_command": "python3 .github/case_trust_gate.py --regen-baseline",
   "prune_command": "python3 .github/case_trust_gate.py --prune-baseline",
@@ -21,15 +21,15 @@
   },
   "anchor_sha": "44615b6c9be18d23709a92c0c7e027da259f0836",
   "case_total": 369,
-  "violation_case_count": 14,
+  "violation_case_count": 12,
   "rule_counts": {
     "CASE-TRUST-EMPTY-ASSERTION": 0,
-    "CASE-TRUST-NO-EFFECT-ASSERTION": 12,
-    "CASE-TRUST-NO-SELF-CLEAN": 12,
+    "CASE-TRUST-NO-EFFECT-ASSERTION": 11,
+    "CASE-TRUST-NO-SELF-CLEAN": 11,
     "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE": 0,
-    "CASE-TRUST-FORBIDDEN-TEXT-SOLE": 1,
+    "CASE-TRUST-FORBIDDEN-TEXT-SOLE": 0,
     "CASE-TRUST-VOLATILE-LOCATOR": 1,
-    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 14,
+    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 12,
     "CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH": 0,
     "CASE-TRUST-STALE-LINE-REF": 0,
     "CASE-TRUST-SINGLE-LEG-NO-PERSONA": 0
@@ -40,19 +40,6 @@
         "CASE-TRUST-NO-EFFECT-ASSERTION",
         "CASE-TRUST-NO-PRECONDITION-ASSERTION",
         "CASE-TRUST-NO-SELF-CLEAN"
-      ]
-    },
-    "CH-002": {
-      "codes": [
-        "CASE-TRUST-NO-EFFECT-ASSERTION",
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION",
-        "CASE-TRUST-NO-SELF-CLEAN"
-      ]
-    },
-    "CH-033": {
-      "codes": [
-        "CASE-TRUST-FORBIDDEN-TEXT-SOLE",
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
     },
     "CT-002": {

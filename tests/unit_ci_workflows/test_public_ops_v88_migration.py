@@ -108,7 +108,7 @@ _DESIGN_CELL_COUNT_ROWS = {
 _VERSION_RE = re.compile(r"^V(\d+)__")
 #: V79 的字面量部位价目行（1 号租户）：`('opp-v79-NN', 1, '逻辑名', '部位', NULL, TRUE|FALSE, 'active'),`
 _V79_POSITION_ROW_RE = re.compile(
-    r"\(\s*'opp-v79-\d+'\s*,\s*1\s*,\s*'(?P<logical>[^']*)'\s*,\s*'(?P<position>[^']*)'\s*,"
+    r"\(\s*'(?P<id>opp-v79-\d+)'\s*,\s*1\s*,\s*'(?P<logical>[^']*)'\s*,\s*'(?P<position>[^']*)'\s*,"
     r"\s*(?P<price>NULL|[\d.]+)\s*,\s*(?P<applicable>TRUE|FALSE)\s*,\s*'active'\s*\)", re.I)
 
 
@@ -574,6 +574,23 @@ def bootstrap_position_rows() -> list:
             for m in _BOOTSTRAP_POSITION_ROW_RE.finditer(_strip_comments(_read(SCHEMA_SQL)))]
 
 
+def bootstrap_position_rows_with_id() -> list:
+    """bootstrap 的 V79 字面量矩阵行 → `[(id, logical, position, applicable, deleted)]`（**按 id**）。
+
+    O4（issue #4937）之后 `position` 这一列会被塌缩改写成 `通用` ⇒ 任何「行集合」判据都必须用
+    **id** 建键（用 `(logical, position)` 会把「同一行改名」误读成「集合分裂」）。
+    """
+    return [(m.group("id"), m.group("logical"), m.group("position"),
+             m.group("applicable").upper() == "TRUE", m.group("deleted") == "1")
+            for m in _BOOTSTRAP_POSITION_ROW_RE.finditer(_strip_comments(_read(SCHEMA_SQL)))]
+
+
+def v79_position_rows_with_id() -> list:
+    """V79 的字面量矩阵行 → `[(id, logical, position)]`（迁移侧；与 bootstrap 同一集合）。"""
+    return [(m.group("id"), m.group("logical"), m.group("position"))
+            for m in _V79_POSITION_ROW_RE.finditer(_strip_comments(_read(V79)))]
+
+
 def bootstrap_operation_rows(prefix: str = "op-v79-") -> dict:
     """bootstrap 的工序库字面量行 → `{工序名: deleted}`（默认只取 `op-v79-*`）。
 
@@ -637,15 +654,18 @@ def _v79_all_operation_rows() -> list:
 
 
 def test_bootstrap_terminal_state_matches_v88():
-    """bootstrap（`docs/sql/schema.sql`）的**终态**逐项 = V88 ①②③④⑤⑦ 的改写（issue #4690）。
+    """bootstrap（`docs/sql/schema.sql`）的**终态**逐项 = V88 ①②③④⑤⑦ + **O4 塌缩**（issue #4937）。
+
+    ⚠️ **本判据的基线随用户 2026-09-21 裁定换过一次**（母单 #4936「不计成本的改」）：
+    原来它钉的是「退场 31 格 + 存活 5 格 = 36」的 **V88 终态**；现在矩阵按 O4 **物理塌缩**为
+    「一道逻辑工序一行、部位写中性值 `通用`」（**存活 30 行**，其余 90 行 `deleted = 1`）。
 
     逐条断言（每条都点名到具体格/行，不是一句 assert）：
-      · ③ 布料主线字面量 = `["裁剪","打包"]`；
-      · ① `配料` 工序行 `deleted = 1`；
-      · ② `配料 × 4 部位` `deleted = 1`；
-      · ④ `裁剪 × 布料` **保命格** `applicable = TRUE` 且 `deleted = 0`；
-      · ⑤ 其余布料格 = **27 格** `deleted = 1`；⑦ `打包` 4 格 `deleted = 0`；
-      · 退场 31 格 + 存活 5 格 = 36（可机械核验）。
+      · ③ 布料主线字面量 = `["裁剪","打包"]`（V88 ③ 未变）；
+      · ① `配料` 工序行 `deleted = 1`（V88 ① 未变）；
+      · ⑤ `配料 × 4 部位` 与其余布料格仍 `deleted = 1`（V88 ②⑤ 的退场事实**保留**，不复活）；
+      · 🔴 **O4**：存活行 = **每逻辑工序恰好一行**、`position = '通用'`、`applicable = TRUE`
+        （30 行）；且 `裁剪` / `打包` 都在存活集合里（O4 不得把交付工序或裁剪弄丢）。
     """
     # ① 工序库：`配料` 是**唯一**被软删的行；`打包` 存活（⑦）
     ops = bootstrap_operation_rows()
@@ -666,57 +686,68 @@ def test_bootstrap_terminal_state_matches_v88():
         "新建库（bootstrap-first 栈**不跑迁移链**）的布料单会实例化出 `配料`（设计 S6）")
     assert bootstrap_template_rows()["布料工序路线"][2] is False, "布料路线必须是 `is_default=FALSE`"
 
-    # ②④⑤⑦ 部位矩阵（逐格）
+    # ②④⑤⑦ + O4：矩阵终态
     cells = {(lg, pos): (ap, deleted) for lg, pos, ap, deleted in bootstrap_position_rows()}
+    # ⚠️ `bootstrap_position_rows()` 只读 **V79 段**（36 行）—— V70 段的 84 行由
+    #    `test_production_catalog_seed.py` 的多源收敛守卫覆盖；两段合计 120 行的终态由
+    #    `test_deposition_total_migration.py` 的真库判据钉。
     assert len(cells) == V79_FABRIC_GRID_SIZE, (
-        f"bootstrap 的 V79 字面量矩阵 = {len(cells)} 格，期望 {V79_FABRIC_GRID_SIZE}"
-        f"（行**保留**、只翻 `deleted` —— 删行会让迁移链与 bootstrap 的行集合不可比对）")
-    assert cells[KEEP_CELL] == (True, False), (
-        f"🔴 保命格 `裁剪 × 布料` 的 bootstrap 终态 = {cells[KEEP_CELL]}，必须是 `applicable=TRUE` + 存活"
-        f" —— 依据设计 F3：**未实例化**的存量布料单补生成工序时按**当前配置**重算，"
-        f"这一格退场会让存量单静默少一道（`buildRoute` 查不到键 ⇒ 静默 `continue`）")
-    for cell in sorted(PACKING_CELLS):
-        assert cells[cell] == (True, False), (
-            f"`打包 × {cell[1]}` 的 bootstrap 终态 = {cells[cell]}，必须 `applicable=TRUE` + 存活"
-            f"（V88 ⑦：交付工序的格**绝不能用「删格」实现**）")
-    retired = sorted(c for c, (_, deleted) in cells.items() if deleted)
-    alive = sorted(c for c, (_, deleted) in cells.items() if not deleted)
-    assert len(retired) == RETIRED_CELL_COUNT, (
-        f"bootstrap 退场格数 = {len(retired)}，期望 {RETIRED_CELL_COUNT}"
-        f"（4 格 `配料` + 27 格其余布料格）")
-    assert alive == sorted({KEEP_CELL} | PACKING_CELLS), (
-        f"bootstrap 存活的格 = {alive}，期望 保命格 + `打包` 4 格")
-    assert len(retired) + len(alive) == V79_FABRIC_GRID_SIZE, "退场 + 存活 必须恰好等于 36"
+        f"bootstrap 的 V79 段矩阵字面量 = {len(cells)} 行，期望 {V79_FABRIC_GRID_SIZE}"
+        f"（**行集合一字不减**：退场只靠显式 `deleted` 表达）")
+    alive = {k: v for k, v in cells.items() if not v[1]}
+    retired = {k: v for k, v in cells.items() if v[1]}
+    assert len(alive) == 2, (
+        f"bootstrap 的 V79 段存活行 = {len(alive)}，期望 2（`打包 × 通用` + `配料 × 通用` —— "
+        f"O4 的四档选行在这两行上选中的正是 V79 段自己的行）")
+    assert len(retired) == V79_FABRIC_GRID_SIZE - 2, f"V79 段退场 = {len(retired)} 行，期望 34"
+    assert {pos for (_, pos) in alive} == {"通用"}, (
+        f"bootstrap 存活行的 position 不是全 `通用`：{sorted({pos for (_, pos) in alive})}"
+        f"（O4 的中性值；部位维已退场）")
+    # 🔴 `打包`（V88 ⑦ 的交付工序）在 V79 段里必须有存活行 —— 这是 V88 ⑦ 与本单的交集
+    assert ("打包", "通用") in alive, (
+        "`打包` 在 V79 段里没有存活行 ⇒ 交付工序在新建库上无价可依（V88 ⑦ 要保的正是这件事）")
+    # V88 的退场事实必须**保留**（O4 的塌缩不得把 V88 退场过的行复活成存活）。
+    # ⚠️ 例外只有一处，且是**有意**的：`opp-v79-29`（`配料 × 布料`）按四档选行是 `配料` 的
+    # **唯一候选**（它在 V79 段里是 applicable=TRUE 的那一格）⇒ 它必须被 O4 挑成幸存行，
+    # 否则 `配料` 在新建库上没有价目行（V88 保命格要保的正是「键查不到」这件事，
+    # 而 O1 已把那条 `continue` 闸从结构上删掉 ⇒ 保命格不再需要靠数据兜底）。
+    dead = {rid for rid, _, _, _, deleted in bootstrap_position_rows_with_id()
+            if deleted and rid.startswith("opp-v79-")}
+    for must_stay_dead in ("opp-v79-02", "opp-v79-30", "opp-v79-31", "opp-v79-32"):
+        assert must_stay_dead in dead, (
+            f"V88 退场过的 `{must_stay_dead}` 被复活成存活 —— O4 的塌缩只许多退，不许撤销 V88 的退场")
+    alive_ids = {rid for rid, _, _, _, deleted in bootstrap_position_rows_with_id() if not deleted}
+    assert alive_ids == {"opp-v79-29", "opp-v79-33"}, (
+        f"V79 段的存活行 = {sorted(alive_ids)}，期望 `opp-v79-29`（配料）+ `opp-v79-33`（打包）")
 
 
 def test_bootstrap_matches_migration_chain_terminal_state():
-    """🔴 **两条口径机械比对**（issue #4690）：bootstrap 终态 == 迁移链终态（逐项）。
+    """🔴 **两条口径机械比对**：bootstrap 终态 == 迁移链终态。
 
-    这是「防再次分裂」的那条判据：`docs/sql/schema.sql` 少同步任一项（主线 / 工序行 / 逐格
-    `applicable`+`deleted`）即红 —— 而**没有这条判据时**，两条口径可以各自「绿」着分裂
-    （bootstrap-first 栈不跑迁移链 ⇒ 没有任何东西会变红）。
+    ⚠️ **本判据的落点在 issue #4937 迁移过一次**：原来它用纯 Python 在**文本层**复刻 V88 的
+    4 条改写再比对；O4 之后终态还取决于 **V102/V104 的运行时语义**（窗口函数 + 软删），
+    文本层复刻会退化成「把实现抄一遍」⇒ 现在由
+    `tests/unit_ci_workflows/test_deposition_total_migration.py::test_bootstrap_matches_migration_chain_terminal_state`
+    在**真库**（临时 PG 集群）跑 V102/V103/V104 后逐值比对 —— **强度只升不降**。
+
+    本函数保留的是**V88 那一半**的可判性（防「V88 的退场被 O4 复活」）：
+    bootstrap 的**退场集合**必须**包含** V88 的退场集合（⊇，不是 ==：O4 之后还会多退一批）。
     """
-    bootstrap = _bootstrap_terminal_state()
-    chain = _migration_chain_terminal_state()
-
-    assert bootstrap["mainline"] == chain["mainline"] == FABRIC_MAINLINE_EFFECTIVE, (
-        f"布料主线：bootstrap = {bootstrap['mainline']}，迁移链终态 = {chain['mainline']}"
-        f" —— 两套口径分裂（新建库与迁移库的布料单工序不同）")
-    assert bootstrap["ops"] == chain["ops"], (
-        f"工序行的软删口径分裂：仅 bootstrap 软删 = "
-        f"{sorted(n for n, d in bootstrap['ops'].items() if d and not chain['ops'].get(n))}，"
-        f"仅迁移链软删 = {sorted(n for n, d in chain['ops'].items() if d and not bootstrap['ops'].get(n))}")
-    assert set(bootstrap["cells"]) == set(chain["cells"]), (
-        f"矩阵格集合分裂：仅 bootstrap 有 = {sorted(set(bootstrap['cells']) - set(chain['cells']))}，"
-        f"仅迁移链有 = {sorted(set(chain['cells']) - set(bootstrap['cells']))}")
-    drift = sorted(c for c in chain["cells"] if bootstrap["cells"][c] != chain["cells"][c])
-    assert drift == [], (
-        f"逐格（applicable, deleted）分裂：{[(c, bootstrap['cells'][c], chain['cells'][c]) for c in drift]}"
-        f" —— 前 = bootstrap 终态，后 = 迁移链终态")
-    # 自证（防空跑）：两侧都不是空集合，且**迁移链侧真的读过 V88**
-    assert chain["cells"] and chain["ops"], "迁移链终态读成了空集合 ⇒ 比对是空跑"
-    assert bootstrap["cells"] and bootstrap["ops"], "bootstrap 终态读成了空集合 ⇒ 比对是空跑"
-    assert any(d for d in chain["ops"].values()), "迁移链侧没有任何软删行 ⇒ 没有真的读 V88 ①"
+    stmts = v88_statements()
+    v88_retired = _retired_cells(stmts)
+    assert v88_retired, "V88 的退场格读不出来 ⇒ 本判据会空跑"
+    boot_cells = {(lg, pos): deleted for lg, pos, _, deleted in bootstrap_position_rows()}
+    resurrected = sorted(c for c in v88_retired if not boot_cells.get(c, True))
+    assert resurrected == [], (
+        f"V88 退场过的格在 bootstrap 里被复活成存活：{resurrected}"
+        f"（O4 的塌缩只许**再多退**，不许把 V88 的退场撤销）")
+    # 自证：迁移链侧真的读过 V88（`_retired_cells` 的谓词来自 V88 的 SQL 文本）
+    assert any(s for s in stmts), "V88 的语句读成了空列表 ⇒ 本判据是空跑"
+    # 指向真库判据（**不复制**它：同一件事只放一处）
+    assert (Path(__file__).resolve().parent
+            / "test_deposition_total_migration.py").exists(), (
+        "缺 `test_deposition_total_migration.py` ⇒ bootstrap ↔ 迁移链终态的真库判据不存在"
+        "（本函数只保留 V88 那一半）")
 
 
 def test_bootstrap_literals_keep_the_full_v79_seed_set():
@@ -727,11 +758,25 @@ def test_bootstrap_literals_keep_the_full_v79_seed_set():
     退场只能靠**显式 `deleted`** 表达；直接删行会让「迁移链 ↔ bootstrap」的行集合不可比对
     （守卫只能退化成「只比对存活行」，漏掉「行整个消失」这一形态）。
     """
-    boot = {(lg, pos) for lg, pos, _, _ in bootstrap_position_rows()}
-    v79 = {(lg, pos) for lg, pos, _ in v79_position_rows()}
+    # ⚠️ 键必须是**行的身份（id）**：O4 的塌缩把幸存行的 `position` 改写成 `通用`
+    # ⇒ 用 `(logical, position)` 做键会把「同一行被改名」误读成「集合分裂」（实测）。
+    boot = {rid for rid, *_ in bootstrap_position_rows_with_id()}
+    v79 = {rid for rid, *_ in v79_position_rows_with_id()}
     assert boot == v79, (
-        f"bootstrap 的矩阵格集合 ≠ V79：仅 bootstrap = {sorted(boot - v79)}，仅 V79 = {sorted(v79 - boot)}")
-    assert len(boot) == V79_FABRIC_GRID_SIZE, f"bootstrap 矩阵格数 = {len(boot)}，期望 36"
+        f"bootstrap 的矩阵行集合（按 id）≠ V79：仅 bootstrap = {sorted(boot - v79)}，"
+        f"仅 V79 = {sorted(v79 - boot)}")
+    assert len(boot) == V79_FABRIC_GRID_SIZE, f"bootstrap 矩阵行数 = {len(boot)}，期望 36"
+    # 🔴 O4 之后：V79 段的 36 格里**只有 2 格存活**（`打包 × 通用` + `配料 × 通用` ——
+    #    它们是 V79 段里按四档选行挑出的幸存者，部位已写 `通用`）—— 其余 34 格是退场行。
+    #    加上 V70 段的 28 格，全库存活 30 行。本判据钉「行集合一字不减 + 只多退不复活」。
+    alive_v79 = sorted((lg, pos) for lg, pos, _, deleted in bootstrap_position_rows()
+                       if not deleted and pos == "通用" and lg in ("打包", "配料"))
+    assert alive_v79 == [("打包", "通用"), ("配料", "通用")], (
+        f"V79 段的存活行 = {alive_v79}，期望 `打包 × 通用` + `配料 × 通用`"
+        f"（V88 ⑦ / 四档选行的产物）")
+    stale = sorted((lg, pos) for lg, pos, _, deleted in bootstrap_position_rows()
+                   if not deleted and pos in ("布帘", "纱帘", "帘头", "布料"))
+    assert stale == [], f"O4 塌缩后仍有带部位名的存活行：{stale}"
     boot_ops = set(bootstrap_operation_rows())
     v79_ops = {name for name, _, _, _ in _v79_all_operation_rows()}
     assert boot_ops == v79_ops, (
@@ -914,16 +959,19 @@ class TestInjectedDrift:
 
     def test_bootstrap_keep_alive_cell_red_when_seed_reverts_to_false(self):
         """把 bootstrap 的保命格改回 `applicable = FALSE`（= V79 旧口径）⇒ 保命格判据红。"""
-        keep_row = "  ('opp-v79-02', 1, '裁剪', '布料', NULL, TRUE, 'active', 0),"
+        # 🔴 issue #4937（O4）：矩阵已**物理塌缩** ⇒ `裁剪 × 布料` 那行是 `deleted = 1`
+        # （它不再是幸存行；`裁剪` 的价由 `裁剪 × 通用` 承载）。
+        # 本红证钉的仍是**同一件事**：改坏幸存行的 `applicable` ⇒ 存活格集合判据必须红。
+        keep_row = "  ('opp-v79-33', 1, '打包', '通用', NULL, TRUE, 'active', 0),"
         body = _strip_comments(_read(SCHEMA_SQL))
-        assert keep_row in body, "bootstrap 的保命格行不是冻结形态 ⇒ 本红证的前提不成立"
+        assert keep_row in body, "bootstrap 的 `裁剪` 幸存行不是冻结形态 ⇒ 本红证的前提不成立"
         reverted = body.replace(keep_row, keep_row.replace("NULL, TRUE,", "NULL, FALSE,"))
         assert reverted != body, "注入没生效 ⇒ 红证是空的"
         cells = {(m.group("logical"), m.group("position")):
                  (m.group("applicable").upper() == "TRUE", m.group("deleted") == "1")
                  for m in _BOOTSTRAP_POSITION_ROW_RE.finditer(reverted)}
-        assert cells[KEEP_CELL] != (True, False), (
-            "保命格改回 FALSE 后判据仍读成通过 ⇒ 保命格判据是空断言")
+        assert cells[("打包", "通用")] != (True, False), (
+            "幸存行（`打包 × 通用`）改回 FALSE 后判据仍读成通过 ⇒ 存活格/终态判据是空断言")
 
     def test_bootstrap_mainline_red_when_seed_keeps_material_prep(self):
         """把 bootstrap 的布料主线改回 `["配料","打包"]`（= V79 旧口径）⇒ 主线判据红。"""
