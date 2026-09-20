@@ -116,6 +116,7 @@ import type {
   FinanceTransactionFormData,
   FinanceSummary,
   ReceivableReconciliationItem,
+  UnpricedRepricingResult,
 } from '@/types'
 import { FrontendToBackendStatus } from '@/types'
 

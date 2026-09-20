@@ -23,9 +23,14 @@ from pathlib import Path
 # 真值源：docs/sql/schema.sql + V49 迁移的外键链 ——
 #   orders ← order_items / order_logistics / processing_orders
 #   processing_orders ← processing_position_operations / production_work_logs
+#                       / production_instance_repricing_logs（V94，issue #4709）
+#   processing_position_operations ← production_instance_repricing_logs
 # ⚠️ 新增指向 orders / order_items / processing_orders 的外键时必须同步本表，
 #    否则 DELETE 父表时会被外键拦下（issue #4242：V49 加了两层，脚本没跟上 ⇒ 带加工单的订单删不掉）。
+#    护栏（**不写死表名**，schema 加一层就自动要求跟上）：tests/unit_ci_workflows/test_delete_orders_fk_order.py
 DELETE_PLAN = (
+    # 补价动作账（V94）引用**加工单**与**工序实例**两张父表 ⇒ 必须最先删
+    ("production_instance_repricing_logs", "processing_order_id", "po"),
     ("production_work_logs", "processing_order_id", "po"),
     ("processing_position_operations", "processing_order_id", "po"),
     ("processing_orders", "order_id", "order"),
@@ -34,6 +39,7 @@ DELETE_PLAN = (
     ("orders", "id", "order"),
 )
 TABLE_LABELS = {
+    "production_instance_repricing_logs": "补价动作账",
     "production_work_logs": "报工",
     "processing_position_operations": "工序实例",
     "processing_orders": "加工单",

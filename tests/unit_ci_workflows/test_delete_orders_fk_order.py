@@ -41,6 +41,10 @@ MIGRATIONS = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "resources" 
 # issue #4242 判据 1 的显式序列（前两级经加工单定位），末尾 `order_logistics` 是
 # schema 真值补出的第三层漏项（见报告「外键链核对表」）。
 EXPECTED_DELETE_ORDER = (
+    # V94（issue #4709）新增：补价动作账引用 **processing_orders** 与 **processing_position_operations**
+    # 两张父表 ⇒ 必须最先删（`test_plan_covers_every_table_referencing_orders` 会自动要求它出现；
+    # 本元组是 issue #4242 判据 1 的**显式序列**，故新增一层时同步在这里显式化）。
+    "production_instance_repricing_logs",
     "production_work_logs",
     "processing_position_operations",
     "processing_orders",
@@ -64,6 +68,7 @@ PO_ROWS = [{
 }]
 # dry-run 应报出的行数（= 实际将被删除的行数；由计划派生的 COUNT 查询取回）
 COUNTS = {
+    "production_instance_repricing_logs": 0,   # V94（issue #4709）：本夹具的订单未做过补价
     "production_work_logs": 1,
     "processing_position_operations": 11,
     "processing_orders": 1,
