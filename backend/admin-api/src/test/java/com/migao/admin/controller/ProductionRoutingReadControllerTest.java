@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-035, PG-053
+// case_ids: PG-018, PG-035, PG-053, PG-055
 package com.migao.admin.controller;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -175,7 +175,7 @@ class ProductionRoutingReadControllerTest {
         ReflectionTestUtils.setField(controller, "productionRoutingReadService", routingReadService);
         ReflectionTestUtils.setField(controller, "productionOperationPositionCommandService",
                 new ProductionOperationPositionCommandService(productionOperationPositionMapper,
-                        positionPriceVersionMapper, routingReadService));
+                        positionPriceVersionMapper, routingReadService, queryService));
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -499,6 +499,10 @@ class ProductionRoutingReadControllerTest {
                 .thenReturn(position("三边", "布帘", "0.40", true));
         when(productionOperationPositionMapper.updatePriceAndApplicable(
                 any(), any(), any(), any(), any())).thenReturn(1);
+        // 工序库有 `三边` 的布帘变体（issue #4798 起：写完 applicable=true 的格必须解析得到变体，
+        // 否则 422 —— 本用例只改价，行本来就是「做」，故必须让这一格可解析）
+        when(productionOperationMapper.selectList(any()))
+                .thenReturn(List.of(operation("op-busandbian", "布三边", "车位", "米", "0.40", "position")));
 
         mockMvc.perform(put("/api/admin/production/operation-positions/opp-三边-布帘")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -533,6 +537,25 @@ class ProductionRoutingReadControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"unit_price\":0.55}"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("🔴 PUT /operation-positions/{id}：该部位解析不到变体工序 ⇒ 设为「做」422（issue #4798）")
+    void updateOperationPositionRejectsUnresolvableApplicable() throws Exception {
+        // 工序库里**没有** `三边` 的任何变体 ⇒ 这一格设为「做」后，实例化必然把它记进
+        // missing_operations ⇒ 下单 422 整单中止。写面必须**同口径**拦下（改前：200 写库成功 = 红）
+        when(productionOperationPositionMapper.selectById("opp-三边-布帘"))
+                .thenReturn(position("三边", "布帘", null, false));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of());
+
+        mockMvc.perform(put("/api/admin/production/operation-positions/opp-三边-布帘")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"applicable\":true,\"unit_price\":0.50}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.details[0].field").value("applicable"));
+        verify(productionOperationPositionMapper, never()).updatePriceAndApplicable(
+                any(), any(), any(), any(), any());
     }
 
     @Test

@@ -61,6 +61,12 @@ public class ProductionOperationPositionCommandService {
     private final ProductionOperationPositionPriceVersionMapper priceVersionMapper;
     /** 响应形态 = ① 的单行同构（同一份 {@code positionView}，前端同一个类型渲染）。 */
     private final ProductionRoutingReadService productionRoutingReadService;
+    /**
+     * 工序库**读面**（issue #4798）：护栏判「这一格解析得到变体工序吗」必须复用
+     * {@link ProductionOperationQueryService#variantNameOf} 这**一份**解析口径 ——
+     * 另抄一份映射表 / 另写一处推导，漂移的那一份不会变红。
+     */
+    private final ProductionOperationQueryService productionOperationQueryService;
 
     /**
      * 矩阵格就地改价 / 改做不做（**部分更新**：只写 body 里出现的键）。
@@ -87,6 +93,17 @@ public class ProductionOperationPositionCommandService {
         }
         if (body != null && body.containsKey("unit_price")) {
             newPrice = price(body.get("unit_price"), details);
+        }
+        // ── 不变式（issue #4798）：写完**结果态** {@code applicable=true} 的格，必须能解析出变体工序 ──
+        // 否则实例化侧（`ProcessingOrderService.buildRoute` 的**同一个** `variantNameOf`）会把它记进
+        // `missing_operations` ⇒ 调用方 **422 整单中止**。写面放行这种配置 = 「商家配好了、下单必失败」
+        // —— 正是 #4707 的同款机制（当时只补了那一条显式回落），写面此前**没有**前置护栏。
+        // ⚠️ 只在**结果态**为 true 时判：`applicable=false` 一律放行 ⇒ 永远给得出路（不造死路）。
+        if (newApplicable && variantOperationOf(row, tenantId) == null) {
+            details.add(BusinessException.detail("applicable", String.format(
+                    "「%s × %s」在工序库里没有对应的工序 —— 设为「做」后加工单会因缺工序而生成失败；"
+                            + "请保持「不做」，或先在工序库补上这个部位的这道工序",
+                    row.getLogicalName(), row.getPosition())));
         }
         if (!details.isEmpty()) {
             // 违规**一次报全**（不是报第一条就返回）；失败一律不落库
@@ -118,6 +135,17 @@ public class ProductionOperationPositionCommandService {
                     previousPrice, newPrice);
         }
         return productionRoutingReadService.positionRowView(tenantId, row);
+    }
+
+    /**
+     * 该矩阵格解析到的**变体工序名**（{@code null} = 解析不到 ⇒ 实例化必然拒绝这一格）。
+     *
+     * <p>判据 = 实例化侧**同一个** {@link ProductionOperationQueryService#variantNameOf}
+     * （解析序：变体表 → 帘头回落布帘 → 裸逻辑名 → {@code null}）。不在这里另写映射表。</p>
+     */
+    private String variantOperationOf(ProductionOperationPosition row, Long tenantId) {
+        return productionOperationQueryService.variantNameOf(row.getLogicalName(), row.getPosition(),
+                productionOperationQueryService.operationsByName(tenantId));
     }
 
     /**

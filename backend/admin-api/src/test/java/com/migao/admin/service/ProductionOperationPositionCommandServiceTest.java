@@ -1,4 +1,4 @@
-// case_ids: PG-020, PG-039
+// case_ids: PG-020, PG-039, PG-055
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -56,6 +56,11 @@ import static org.mockito.Mockito.when;
  *       （去掉任一分支 ⇒ 对应用例红）；</li>
  *   <li><b>响应与读面单行同构</b>：10 键，含 {@code id}（写面寻址键）与 5 键变体元数据
  *       （issue #4622 去掉 {@code variant_name}；去掉整形复用 ⇒ 键集断言红）。</li>
+ *   <li><b>不变式：写完 {@code applicable=true} 的格必须解析得到变体工序</b>（issue #4798）：
+ *       判据 = 实例化侧**同一个** {@code variantNameOf}（解析序：变体表 → 帘头回落布帘 →
+ *       裸逻辑名 → {@code null}）；解析不到 ⇒ 422 + {@code details} 且**不落库**。
+ *       去掉护栏 ⇒ 写库成功（红），而 {@code ProcessingOrderService.buildRoute} 会把它记进
+ *       {@code missing_operations} ⇒ 下单 **422 整单中止**（「配好了、用不了」）。</li>
  * </ol>
  */
 @ExtendWith(MockitoExtension.class)
@@ -105,7 +110,8 @@ class ProductionOperationPositionCommandServiceTest {
         return new ProductionOperationPositionCommandService(productionOperationPositionMapper,
                 priceVersionMapper,
                 new ProductionRoutingReadService(productionOperationPositionMapper,
-                        productionRouteRuleMapper, queryService, processingItemMapper));
+                        productionRouteRuleMapper, queryService, processingItemMapper),
+                queryService);
     }
 
     // ── 夹具 ──
@@ -247,6 +253,7 @@ class ProductionOperationPositionCommandServiceTest {
     @Test
     @DisplayName("负价 ⇒ 422 + error.details（计件单价不能为负）且不落库")
     void negativePriceRejectedWithDetails() {
+        stubCatalog();   // 本用例只判价：让这一格可解析，避免 #4798 的不变式多报一条 detail
         when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", true, 0));
 
         assertThatThrownBy(() -> service().update(ROW_ID, body("unit_price", "-1"), TENANT))
@@ -265,6 +272,7 @@ class ProductionOperationPositionCommandServiceTest {
     @Test
     @DisplayName("超两位小数 ⇒ 422 + error.details（不接受静默四舍五入）且不落库")
     void tooManyDecimalsRejectedWithDetails() {
+        stubCatalog();   // 同 negativePriceRejectedWithDetails：本用例只判价
         when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", true, 0));
 
         assertThatThrownBy(() -> service().update(ROW_ID, body("unit_price", "0.555"), TENANT))
@@ -340,5 +348,117 @@ class ProductionOperationPositionCommandServiceTest {
         assertThat(result).doesNotContainKey("variant_name");
         assertThat(result.get("unit")).isEqualTo("米");
         assertThat(result.get("group")).isEqualTo("车位");
+    }
+
+    // ── 判据 5（issue #4798）：写面不得允许「实例化必然拒绝」的配置 ──
+    //
+    // 不变式：写完**结果态** applicable=true 的格，必须能解析出变体工序（`variantNameOf`）。
+    // 红证：去掉护栏后本组用例得「Expected BusinessException but nothing was thrown」（写库成功），
+    // 而实例化侧那条路径是 fail-closed 422（ProcessingOrderService 的既有用例覆盖）。
+
+    /** 工序库：**没有** `三边` 的任何变体（`布三边` 缺失）⇒ 该格解析不到变体。 */
+    private void stubCatalogWithoutSandbian() {
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                ProductionOperation.builder().id("op-zhijian").tenantId(TENANT).name("质检")
+                        .groupName("后道").unit("套").unitPrice(new BigDecimal("1.50"))
+                        .scope("position").isMustFinish(false).isStartMarker(false).sortOrder(2)
+                        .status("active").deleted(0).build()));
+    }
+
+    private ProductionOperationPosition rowAt(String logicalName, String position,
+                                              String price, boolean applicable) {
+        ProductionOperationPosition r = row(price, applicable, 0);
+        r.setId("opp-" + logicalName + "-" + position);
+        r.setLogicalName(logicalName);
+        r.setPosition(position);
+        return r;
+    }
+
+    @Test
+    @DisplayName("🔴 该部位解析不到变体工序 ⇒ 设为「做」被 422 拦下（改前写库成功 = 配好了却整单 422）")
+    void applicableTrueRejectedWhenVariantUnresolvable() {
+        stubCatalogWithoutSandbian();
+        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", false, 0));
+
+        assertThatThrownBy(() -> service().update(
+                ROW_ID, body("applicable", true, "unit_price", "0.50"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException ex = (BusinessException) e;
+                    assertThat(ex.getHttpStatus()).isEqualTo(422);
+                    assertThat(ex.getDetails()).singleElement().satisfies(d -> {
+                        assertThat(d.getField()).isEqualTo("applicable");
+                        // 商家语言 + 给出路；且**不泄漏**变体名（#4642：web 面只显示逻辑名）
+                        assertThat(d.getMessage()).contains("三边 × 布帘").contains("不做");
+                        assertThat(d.getMessage()).doesNotContain("布三边");
+                    });
+                });
+        verify(productionOperationPositionMapper, never()).updatePriceAndApplicable(
+                any(), any(), any(), any(), any());
+        verify(priceVersionMapper, never()).insert(any(ProductionOperationPositionPriceVersion.class));
+    }
+
+    @Test
+    @DisplayName("不变式含**只改价**：存量坏格（applicable=true 且解析不到变体）改价也被拦（不留「改得动、用不了」的价）")
+    void priceOnlyChangeOnUnresolvableApplicableRowRejected() {
+        stubCatalogWithoutSandbian();
+        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", true, 0));
+
+        assertThatThrownBy(() -> service().update(ROW_ID, body("unit_price", "0.55"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(422));
+        verify(productionOperationPositionMapper, never()).updatePriceAndApplicable(
+                any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("反向护栏：设为「不做」**永远放行**（解析不到变体时也放行 ⇒ 不造死路）")
+    void applicableFalseAlwaysAllowedEvenWhenUnresolvable() {
+        stubCatalogWithoutSandbian();
+        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", true, 0));
+        stubUpdateSucceeds();
+
+        Map<String, Object> result = service().update(ROW_ID, body("applicable", false), TENANT);
+
+        assertThat(result.get("applicable")).isEqualTo(false);
+        assertThat(result.get("unit_price")).as("不做 ⇒ 价强制落 NULL").isNull();
+    }
+
+    @Test
+    @DisplayName("反向护栏：解析得到变体 ⇒ 设为「做」照旧放行（行为一字不变）")
+    void applicableTrueAllowedWhenVariantResolvable() {
+        stubCatalog();
+        when(productionOperationPositionMapper.selectById(ROW_ID)).thenReturn(row("0.40", false, 0));
+        stubUpdateSucceeds();
+
+        Map<String, Object> result = service().update(ROW_ID, body("applicable", true), TENANT);
+
+        assertThat(result.get("applicable")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("反向护栏：**部位无关**工序（裸逻辑名在库里）⇒ 放行（`variantNameOf` 第 3 步）")
+    void applicableTrueAllowedForPositionIndependentOperation() {
+        stubCatalogWithoutSandbian();   // 库里只有 `质检`（裸逻辑名）
+        ProductionOperationPosition row = rowAt("质检", "布帘", null, false);
+        when(productionOperationPositionMapper.selectById(row.getId())).thenReturn(row);
+        stubUpdateSucceeds();
+
+        Map<String, Object> result = service().update(row.getId(), body("applicable", true), TENANT);
+
+        assertThat(result.get("applicable")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("反向护栏：**帘头回落布帘变体** ⇒ 放行（`variantNameOf` 第 2 步，判据与实例化同一份）")
+    void applicableTrueAllowedWhenLintouFallsBackToClothVariant() {
+        stubCatalog();   // 只有 `布三边`，没有帘头专属变体
+        ProductionOperationPosition row = rowAt("三边", "帘头", null, false);
+        when(productionOperationPositionMapper.selectById(row.getId())).thenReturn(row);
+        stubUpdateSucceeds();
+
+        Map<String, Object> result = service().update(row.getId(), body("applicable", true), TENANT);
+
+        assertThat(result.get("applicable")).isEqualTo(true);
     }
 }

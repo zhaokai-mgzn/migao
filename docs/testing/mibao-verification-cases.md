@@ -3234,7 +3234,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4525，设计 docs/design/processing-fee-and-option-pricing.md 包 A）。**2026-09-19 改判（issue #4594 用户裁定）**：判据 2 由「组合未命中 ⇒ 选项价不单独收」改判为「组合未定价 ⇒ **只有组合那半**记 0，已定价选项**照常计入**」（三个 unpriced 分支都先算 `specialOptions`）；影响面 = 组合没配价时订单金额变大。交付：V77 迁移（`production_route_rules.customer_unit_price NUMERIC(12,2)` + 92 行组合价 + 16 条选项价，均 `source='synthetic'`）+ ProductionRouteRule 实体字段 + ProcessingFeeCalculator 两层取价（组合 × 米数 + Σ 选项 × 1，新增 `special_options` / `special_options_total` 键，行金额 = 两者之和）+ schema.sql 终态 + e2e fixture 重建 + 合成数据生成器与守卫。**未做（如实登记）**：① 设计 §7 的「19 项」按代码事实落为 16 项（3 项无 option 规则行，见 data_checks 末条）；② 前端展示面（包 B）与 #4452 信号映射（包 C）不在本单；③ `fee_source=manual` 通道仍未落码。**2026-09-19 改判（用户裁定）**：新增 V82 —— 为**每个活跃租户**的 **16 条 `option` 规则行**初始化对客**元/套**单价（占位初始值，**会真的参与取价**；`customer_unit_price IS NULL` 守卫 ⇒ 不覆盖商家改价、重跑空转；非 option 行保持 NULL），推翻 V77 的「该列恒 NULL = 未定价」口径；schema.sql 同步同源终态。 ｜ tags: processing_fee, special_options, per_set, customer_unit_price, migration_v77, migration_v82, synthetic_seed
 
-## processing-order（47 case）
+## processing-order（48 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -3823,6 +3823,19 @@
 跳过: [backend-contract] 后端读面契约 + 前端页面结构（无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationLayersTest.java 与 frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行
 ```
 溯源: 2026-09-20 新增（issue #4729，P1；来源 = 独立验收报告 #4719 的 P1-2）。交付：`delivery` 段的**行来源**从矩阵格（`operationPositions()`）改为工序库 `scope='set'` 行（`operationsByName`，经 `normalizeOperationName` 归一），零格 ⇒ 仍出一行且价态 `no_applicable_position`；行尾元数据缺格时回落工序库行（**价绝不回落**）；`operations` 段 = 矩阵行里不属于交付集合的那些（两段并集 = 全集）；交付段顺序改按归一逻辑工序名。**红证（改前实测）**：`./mvnw -o test -Dtest=ProductionOperationLayersTest` 得 `Tests run: 10, Failures: 4`（`deliveryRowExistsWhenOperationHasNoMatrixCellsAtAll` / `deliveryRowSurvivesWhenOnlyOnePositionHasACell` / `deliverySectionIsOrderedByLogicalOperationName` / `layersPartitionByExistingScope`），其中零格那条的实读即 `[]` vs 三行；改后 10/10 绿。同批把「名不副实的用例改成正例」：DisplayName 写「甚至零格」的那条实际 stub 是「有格 + `applicable=false`」⇒ 拆成真形态 + 新增零格用例。 ｜ tags: processing-order, production-routing, operation-layers, delivery-section, scope
+
+### PG-055. 部位价目矩阵写面不变式：写完 `applicable=true` 的格必须解析得到变体工序（否则加工单整单 422） 🔵
+```
+数据: success=false
+数据: 判据 1·🔴 **解析不到变体 ⇒ 422 + `error.details[0].field='applicable'` 且不落库**：`PUT /api/admin/production/operation-positions/{id}` 把某格设为「做」时，若 `variantNameOf(逻辑名, 部位, 活跃工序库)` 为 `null`（该部位在工序库里没有这道工序），必须 **422** —— 实例化侧 `ProcessingOrderService.buildRoute` 用的是**同一个** `variantNameOf`，解析不到就记进 `missing_operations` ⇒ 调用方 422 **整单中止**；写面放行 = 「商家配好了、下单必失败」。**红证（实测）**：把护栏判据注入成 `if (false)` 后跑 `./mvnw -o test -Dtest='ProductionOperationPositionCommandServiceTest,ProductionRoutingReadControllerTest'` 得 `Tests run: 35, Failures: 3`（`applicableTrueRejectedWhenVariantUnresolvable` / `priceOnlyChangeOnUnresolvableApplicableRowRejected` / `updateOperationPositionRejectsUnresolvableApplicable`，最后一条实读 `Status expected:<422> but was:<404>` = 请求已走到写库分支、`rows==0` 才 404）；还原后 35/35 绿。
+数据: 判据 2·**不变式覆盖「只改价」**：存量坏格（`applicable=true` 且解析不到变体）只改价也 422 —— 不留「改得动、用不了」的价。证据：`priceOnlyChangeOnUnresolvableApplicableRowRejected`
+数据: 判据 3·**设为「不做」永远放行**（解析不到变体时也放行）⇒ 永远给得出路、不造死路。证据：`applicableFalseAlwaysAllowedEvenWhenUnresolvable`
+数据: 判据 4·**反向护栏：判据不误伤可解析的格**（解析序三步各一条）：① 变体表命中（`三边 × 布帘` + 库里有 `布三边`）；② **帘头回落布帘变体**（`三边 × 帘头` + 库里只有 `布三边`）；③ **部位无关工序的裸逻辑名**（`质检 × 布帘` + 库里有 `质检`）。三条都必须 200 照旧放行 —— 判据与实例化侧**同一份** `variantNameOf`（不另抄映射表）。证据：`applicableTrueAllowedWhenVariantResolvable` / `applicableTrueAllowedWhenLintouFallsBackToClothVariant` / `applicableTrueAllowedForPositionIndependentOperation`
+数据: 判据 5·**文案用商家语言且不泄漏变体名**（#4642 口径）：`details[0].message` 含「三边 × 布帘」与「不做」，**不含**变体名 `布三边`。证据：`applicableTrueRejectedWhenVariantUnresolvable` 的 message 断言
+数据: **边界（如实登记）**：① 本单**不改读面**（`GET /operation-positions` 仍整份呈现，理由见 #4672 的三条）；② **不清理任何数据**（#4672 / V97 已完成）；③ 不动 #4619（「缺格」与「不认识的名字」未区分）；④ 空工序库租户下本护栏会让矩阵写面 422 —— 该租户本来就实例化不了（路线解析先失败），文案给出路（先去工序库补这道工序），**未加「库为空就跳过护栏」的静默豁免**（那会制造第二份口径）。
+跳过: [backend-contract] 后端写面契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPositionCommandServiceTest.java 与 backend/admin-api/src/test/java/com/migao/admin/controller/ProductionRoutingReadControllerTest.java 执行
+```
+溯源: 2026-09-20 新增（issue #4798，P1）。交付：`ProductionOperationPositionCommandService.update` 加**不变式** —— 结果态 `applicable=true` 的格必须 `variantNameOf(...) != null`，否则 422 + `details`（复用 `ProductionOperationQueryService` 的**同一份**判据，不另抄映射表）；`applicable=false` 一律放行。红证见判据 1（注入 `if (false)` ⇒ 3 条用例红；还原 ⇒ 35/35 绿）。同批修正两处既有测试夹具（`negativePriceRejectedWithDetails` / `tooManyDecimalsRejectedWithDetails` 补 `stubCatalog()`：它们只判价，新增的不变式会多报一条 detail）与 `ProductionRoutingReadControllerTest` 的构造接线（新增第 4 个构造参数）。 ｜ tags: processing-order, production-routing, operation-positions, write-guard, fail-closed
 
 ## 商品域（21 case）
 
@@ -4971,8 +4984,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：362（活跃 155，跳过 207）
-- tier 分布：smoke 10 / normal 321 / adversarial 31
+- 用例总数：363（活跃 155，跳过 208）
+- tier 分布：smoke 10 / normal 322 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4991,7 +5004,7 @@
 - ontology：4
 - 订单域：41
 - 加工项域：13
-- processing-order：47
+- processing-order：48
 - 商品域：21
 - registry：1
 - 设置域：10
@@ -5082,6 +5095,7 @@
 - PG-052: 信号映射写面退役（POST/PUT/DELETE /route-signals 不可达，读面暂留）+ 异常订单清单可查
 - PG-053: 条件工序规则创建通用化 - trigger_kind 闭词表（craft/option/processing_item）+ 触发值词表校验 + 对客单价只属 option + 缺省 option 反向护栏 + 订单实例化真的插该工序
 - PG-054: 【打包发货】层的行不依赖矩阵格——零矩阵格 + `scope='set'` 的工序仍有行，价态 `no_applicable_position`
+- PG-055: 部位价目矩阵写面不变式：写完 `applicable=true` 的格必须解析得到变体工序（否则加工单整单 422）
 - PP-007: 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 米宝加工项 LLM 行为：per_meter 按米算价（calculate_price 透传 quantity，不双计）
