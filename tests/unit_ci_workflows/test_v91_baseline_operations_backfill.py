@@ -319,13 +319,22 @@ def test_never_seeds_the_retired_logical_name():
 
 
 def test_row_values_match_the_bootstrap_terminal(schema_sql):
-    """逐值比对：本迁移的每一行 vs `schema.sql` 的终态种子行（名称 → 9 个值）。"""
+    """逐值比对：本迁移的每一行 vs `schema.sql` 的终态种子行（名称 → 9 个值）。
+
+    ⚠️ **比对方向 = 本迁移 ⊆ bootstrap**（issue #4937 起）：V91 是**增量**迁移
+    （只种「空工序库租户的 36 行基线」），而 bootstrap 是**全库终态** ——
+    后续迁移（如 `V105__add_sheer_variant_operations.sql` 的 4 道纱帘变体）会在它之上再加行。
+    ⇒ 判据 = 「V91 种下的**每一行**在 bootstrap 里都存在且逐值相同」；反向（bootstrap 有而
+    V91 没有）**不是缺陷**，而是增量迁移的正常形态（改前写成 `==` 会在任何后续增量迁移后假红）。
+    **守卫强度不降**：V91 漏种一行 / 改一个值 ⇒ 红。
+    """
     expected = bootstrap_row_values(schema_sql)
     actual = {unquote(r["name"]): v91_row_values(r) for r in baseline_rows(migration_text())}
-    assert set(actual) == set(expected), (
-        f"名字集不一致：只在本迁移 {sorted(set(actual) - set(expected))} / "
-        f"只在 bootstrap {sorted(set(expected) - set(actual))}")
-    for name in sorted(expected):
+    missing = sorted(set(actual) - set(expected))
+    assert missing == [], (
+        f"V91 种的这些行在 bootstrap 终态里**不存在**：{missing}"
+        f"（bootstrap 缺行 = 新建库与迁移库口径分裂）")
+    for name in sorted(actual):
         assert actual[name] == expected[name], (
             f"工序 `{name}` 逐值不一致：\n  V91       = {actual[name]}\n  bootstrap = {expected[name]}")
 

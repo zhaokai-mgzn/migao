@@ -133,7 +133,10 @@ public class ProductionSeedTemplateService {
      */
     private static final String[][] CRAFT_RULES = {
             {"韩褶", "NULL", "insert", "韩褶", "三边"},
-            {"韩褶", "布帘", "insert", "上车布", "韩褶"},
+            // 🔴 issue #4937 / O2：规则级 `position` 已退场 ⇒ 开租播种一律 `NULL`
+            // （此前这里是 `"布帘"`，与 V71 的字面量同款；存量库由
+            //  `V103__clear_route_rule_positions.sql` 清空，新租户不能继续种旧口径）。
+            {"韩褶", "NULL", "insert", "上车布", "韩褶"},
             {"打孔", "NULL", "insert", "打孔", "三边"},
             {"四爪钩", "NULL", "insert", "上车布", "三边"},
             {"四爪钩", "NULL", "remove", "定型", "NULL"},

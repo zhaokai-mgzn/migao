@@ -491,6 +491,58 @@
       "status": "active",
       "source": "占位待确认",
       "scope": "set"
+    },
+    {
+      "id": "op-v56-01",
+      "name": "熨烫-纱",
+      "group": "后道",
+      "position": "纱帘",
+      "unit": "米",
+      "unit_price": 0.35,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 38,
+      "status": "active",
+      "source": "推算"
+    },
+    {
+      "id": "op-v56-02",
+      "name": "定型-纱",
+      "group": "后道",
+      "position": "纱帘",
+      "unit": "米",
+      "unit_price": 0.4,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 39,
+      "status": "active",
+      "source": "推算"
+    },
+    {
+      "id": "op-v56-03",
+      "name": "复烫-纱",
+      "group": "后道",
+      "position": "纱帘",
+      "unit": "米",
+      "unit_price": 0.35,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 40,
+      "status": "active",
+      "source": "推算"
+    },
+    {
+      "id": "op-v56-04",
+      "name": "车被-纱",
+      "group": "后道",
+      "position": "纱帘",
+      "unit": "米",
+      "unit_price": 0.4,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "sort_order": 41,
+      "status": "active",
+      "source": "推算"
     }
   ],
   "routings": [

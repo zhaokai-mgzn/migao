@@ -810,10 +810,9 @@ public class ProcessingOrderService {
                     || !conditionalRuleTriggers(rule, options, processingItems)) {
                 continue;
             }
-            // 规则级部位限定照旧生效（理由与红证同 buildRoute，见那里的注释）。
-            if (rule.getPosition() != null && !Objects.equals(rule.getPosition(), position)) {
-                continue;   // 部位限定：不匹配本部位 ⇒ 不触发
-            }
+            // ⛔ 规则级 `position`（部位限定）**已退场**（issue #4937，O2）：部位不再参与取路
+            // ⇒ 这里原来那三行筛选整块删除（`routing.py::build_route_v2` 同步删除；
+            // 新迁移 `V104__clear_route_rule_positions.sql` 把存量行的值清空为 NULL）。
             applicable.add(rule);
         }
         if (applicable.isEmpty()) {
@@ -1184,8 +1183,11 @@ public class ProcessingOrderService {
                             + "tenantId={}, 路线={}, 缺工序={}, productName={}",
                     INCIDENT_ROUTING_UNRESOLVED, tenantId, usedKey, missing, entry.get("productName"));
             throw new BusinessException(ERR_OPERATION_NOT_FOUND,
-                    String.format("工艺路线「%s」引用的工序 %s 在工序库中不存在，无法实例化工序",
-                            template.getName(), missing),
+                    // 🔴 issue #4937 / O1：`applicable` 过滤退场后，**位置维**不再由那道闸给出
+                    // ⇒ 可行动性信息（「缺在哪个产品形态上」）必须由本条 message 自己承载
+                    // （改前它由「该工序在「X」部位缺库行」那句 hint 顺带给出，而那句随过滤一起退场）。
+                    String.format("工艺路线「%s」（产品形态「%s」）引用的工序 %s 在工序库中不存在，"
+                                    + "无法实例化工序", template.getName(), routePosition, missing),
                     422,
                     String.format("请在工序库补上 %s（或改这条路线不再引用它们）；"
                                     + "工序库目录查看入口 GET /api/admin/production/operations-catalog",
@@ -1213,13 +1215,14 @@ public class ProcessingOrderService {
      *       （{@code production_route_templates.positions}）**不是**同一件事：实测去掉它会让规范
      *       9 条老路线的逐字重建判据变红（`ProductionRouteParityTest`），并让 `韩褶 × 布帘` 那条
      *       插入 {@code 上车布} 的规则对帘头单生效 ⇒ 帘头主线多一道不该做的工序（错发计件工资）；</li>
-     *   <li>按 {@code production_operation_positions.applicable} <b>滤掉该部位不做的工序</b>
-     *       （<b>本批保留</b>：issue #4883 只把**取价**去部位化 ——「适用性」是矩阵的**数据层**
-     *       约束，不是商家配置面的「部位」；去掉它有 3 条判据当场变红，红证见 {@code buildRoute} 方法体）：
-     *       键存在且 {@code false} ⇒ 「该部位明确不做」⇒ 静默滤掉；缺该 {@code (逻辑工序, 部位)} 行
-     *       且名字**本身就是逻辑工序名** ⇒ 也滤掉（没有适用性行 = 没登记过，不猜）；
-     *       ⚠️ 而名字**不是逻辑工序名**（变体名 / 别名，如 {@code 精裁-布}）⇒ 实例化按逻辑名建键
-     *       永远查不到 ⇒ **必须可见**（进 {@code missing_operations}，见 issue #4609）。</li>
+     *   <li>🔴 <b>「部位适用性」已退场</b>（issue #4937，用户裁定 2026-09-21「不计成本的改」）：
+     *       主线里的名字**不再被 {@code production_operation_positions.applicable} 过滤**。
+     *       唯一保留的判据是<b>名字形态</b>（issue #4609）：名字归一后**不等于自己** ⇒
+     *       它是变体名 / 别名（{@code 精裁-布}），实例化按逻辑名建键永远查不到
+     *       ⇒ <b>必须可见</b>（进 {@code missing_operations}，调用方 fail-closed 并指名报缺）；
+     *       名字本身就是逻辑工序名 ⇒ 正常建键。⛔ 原来那条「键不存在 ⇒ 静默 {@code continue}」
+     *       与「{@code applicable=false} ⇒ 静默滤掉」两条闸**一并删除** —— 它们是「部位」最后一次
+     *       参与取路，而用户已裁定部位不再参与任何取价、取路、筛选、配置。</li>
      * </ol>
      *
      * <p>工序元数据（分组/单位/单价/必完/开始标记/作用域）逐字取该租户的工序库行
@@ -1255,28 +1258,27 @@ public class ProcessingOrderService {
                 : ProductionOperationQueryService.collapseToLogical(priceRows)) {
             priceByLogical.put(row.getLogicalName(), row.getUnitPrice());
         }
-        // 「该部位做不做这道工序」**仍在实例化时筛选**（本批**不动**它）：它是价目矩阵的
-        // **数据层**约束，不是商家配置面上的「部位」。去掉它的**实测红证**（3 条判据当场变红）：
+        // ⛔ **「部位适用性」退场（issue #4937）**：此处原有 `applicableByLogical` 的构造 +
+        // 下面两道 `continue` 闸（「键不存在」与「applicable=false」），本包按用户裁定
+        // （2026-09-21「这个必须要改，我们移除了部位的设计，不计成本的改」，母单 #4936）
+        // **整块删除** —— 部位不再参与取路。原来维护这条筛选的三条守卫已按同一次裁定退休/换基线：
         //  · `ProductionRouteParityTest#skippingApplicabilityFilterWouldLeakClothOnlyOperationsIntoSheerRoute`
-        //    —— 专为「别去掉它」写的注入式守卫：去掉后纱帘单要么带上布帘专属的
-        //    熨烫/定型/复烫/车被、要么整单 fail-closed，两条路都不是旧结构行为；
-        //  · 9 条老路线**逐字重建**（{@code allNineCombinationsRebuildTheLegacyRoutesVerbatim}）
-        //    与 {@code instantiationSequenceIsUnchangedForTheCanonicalRuleConfig}；
-        //  · 另有 **40 条**既有用例的工序数期望随之改变（`打包` 在布帘列本是
-        //    {@code applicable=false} ⇒ 去掉筛选后布帘单多出「打包」：11 → 12 道）。
-        // ⇒ 保留筛选；「把适用性也一起去掉」需**单独裁定**并同时退休上面那 3 条守卫。
-        Map<String, Boolean> applicableByLogical = new LinkedHashMap<>();
-        for (ProductionOperationPosition row : priceRows) {
-            if (!Objects.equals(row.getPosition(), position) || row.getLogicalName() == null) {
-                continue;
-            }
-            applicableByLogical.put(row.getLogicalName(), Boolean.TRUE.equals(row.getApplicable()));
-        }
-
+        //    ⇒ 退休，原位换成「纱帘单与布帘单**工序集完全一致**」的新判据；
+        //  · 9 条老路线**逐字重建** / `instantiationSequenceIsUnchangedForTheCanonicalRuleConfig`
+        //    ⇒ 换成**去部位后的新模型冻结快照**基线（`RoutingModelFixture.DEPOSITIONED_ROUTINGS`）。
+        // ⚠️ 唯一**保留**的判据是「名字形态」（见循环体：变体名/别名 ⇒ 进 missing_operations）。
         List<String> sequence = new ArrayList<>();
         for (String step : stringList(template.getMainline())) {
             sequence.add(step);
         }
+        // 🔴 **工艺规则只对「窗帘类产品形态」生效**（issue #4937 / P2）。
+        // 判据 = 与主线选择**同一个键**（`saleForm == 布料` ⇒ 布料主线，见 `routeTemplateFor`）：
+        // 布料单是**另一个产品形态**（主线只有 `配料 → 打包`），在它上面套用窗帘工艺规则会把
+        // `韩褶`/`上车布` 插进布料单 —— 而**旧口径下这件事被 `applicable` 过滤挡住了**
+        // （`韩褶 × 布料` 当时不存在/不适用）。部位过滤退场后，「哪些工序不属于这个产品形态」
+        // 必须由**产品形态**表达，否则布料单的工序数会当场从 2 变 4（真值源
+        // `routing.py::build_route_v2` 的 `if is_fabric: continue` 是同一份口径）。
+        boolean isFabricForm = FABRIC_POSITION.equals(position);
         List<String> options = specialOptions(entry);
         List<String> processingItems = processingItemNames(entry);
         // 顺序**必须**显式排一次（不依赖调用方）：与 routing.py::build_route_v2 的
@@ -1288,6 +1290,10 @@ public class ProcessingOrderService {
                 .thenComparing(r -> r.getId() == null ? "" : r.getId()));
         for (ProductionRouteRule rule : ordered) {
             String kind = rule.getTriggerKind();
+            if (isFabricForm) {
+                // 布料产品形态不套用工艺规则（见上方注释；与真值源同一份口径）
+                continue;
+            }
             if ("craft".equals(kind)) {
                 if (!Objects.equals(rule.getTriggerValue(), craft)) {
                     continue;
@@ -1312,15 +1318,9 @@ public class ProcessingOrderService {
                         422,
                         "请在「工艺配置 → 工艺路线」停用该规则，或联系研发实现该触发类型");
             }
-            // ⚠️ 规则的 `position`（**规则级**部位限定）**照旧生效** —— 它**不是**「路线层的帘种适用性」
-            // （那个是 `production_route_templates.positions`，见 `routeTemplateFor`）。
-            // 实测红证：去掉这一行 ⇒ 规范 9 条老路线的**逐字重建**判据（`ProductionRouteParityTest`
-            // 的 9/9 + 「少一道工序就红」的注入用例）当场变红，且 `韩褶 × 布帘` 这条插入 `上车布`
-            // 的规则会开始对**帘头**单生效 ⇒ 帘头主线多出一道它本来不做的工序（错发计件工资）。
-            // ⇒ 保留筛选；配置面（`工艺配置`）不再暴露该字段，存量行的值继续生效。
-            if (rule.getPosition() != null && !Objects.equals(rule.getPosition(), position)) {
-                continue;
-            }
+            // ⚠️ 规则的 `position`（**规则级**部位限定）**已退场**（issue #4937，O2）：部位不再参与
+            // 取路 ⇒ 这里原来那两行 `rule.getPosition()` 筛选整块删除
+            // （`routing.py::build_route_v2` 的同名筛选同步删除；新迁移把存量行的值清空为 NULL）。
             if ("insert".equals(rule.getAction())) {
                 sequence = insertAfterLogical(sequence, rule.getOperation(), rule.getAfterOperation());
             } else if ("remove".equals(rule.getAction())) {
@@ -1335,24 +1335,17 @@ public class ProcessingOrderService {
         List<String> missing = new ArrayList<>();
         int seq = 1;
         for (String logicalName : sequence) {
-            Boolean applicable = applicableByLogical.get(logicalName);
-            if (applicable == null) {
-                // 键不存在 = **两件事**，必须拆开（issue #4609，P0 静默丢工序）：
-                // 改前这里与「该部位明确不做」共用一条 `continue` ⇒ 主线里存着**变体名**（`精裁-布`，
-                // 老 bundle / 界面加过工序的存量路线）时也被静默滤掉 —— 商家加了工序、路线卡片上也看得见，
-                // 但加工单里根本没有它，**没有任何报错**（工人少一道活、少拿一笔计件钱）。
-                // 判据复用**同一份**归一表（`normalizeOperationName`，不新造第二份）：
-                //  · 名字归一后**不等于自己** ⇒ 它是变体名 / 别名，实例化按逻辑名建键永远查不到
-                //    ⇒ **必须可见**：进 `missing_operations`（调用方据此 fail-closed 并指名报缺）；
-                //  · 名字本身就是逻辑工序名 ⇒ 只是该部位**没登记这一格**（未登记适用性）
-                //    ⇒ 保持原语义滤掉（没有适用性行 = 没登记过，不猜）。
-                if (!logicalName.equals(productionOperationQueryService.normalizeOperationName(logicalName))) {
-                    missing.add(logicalName);
-                }
+            // 🔴 **唯一保留的判据 = 名字形态**（issue #4609，P0 静默丢工序）：
+            // 主线里存着**变体名 / 别名**（`精裁-布`，老 bundle / 界面加过工序的存量路线）时，
+            // 实例化按逻辑名建键永远查不到 ⇒ **必须可见**：进 `missing_operations`
+            // （调用方据此 fail-closed 并指名报缺），**不得**静默滤掉。
+            // 判据复用**同一份**归一表（`normalizeOperationName`，不新造第二份）。
+            // ⛔ 原「键不存在 ⇒ 静默 continue」与「applicable=false ⇒ 静默 continue」两道闸
+            // 已随「部位适用性」退场（issue #4937）—— 名字本身就是逻辑工序名 ⇔ 归一后等于自己
+            // ⇒ 直接按逻辑名建键（不再是「没登记适用性就不猜」）。
+            if (!logicalName.equals(productionOperationQueryService.normalizeOperationName(logicalName))) {
+                missing.add(logicalName);
                 continue;
-            }
-            if (!applicable) {
-                continue;   // 该部位**明确不做** ⇒ 静默滤掉（既有语义不变）
             }
             String variant = productionOperationQueryService.variantNameOf(logicalName, position, catalog);
             Map<String, Object> meta = variant == null ? null : catalog.get(variant);

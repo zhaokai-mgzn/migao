@@ -470,9 +470,12 @@ def test_seed_service_craft_rules_match_truth_source():
         rule = ast.literal_eval(entry)
         if rule["trigger_kind"] != "craft":
             continue
+        # 🔴 issue #4937 / O2：规则级 `position` 已退场 ⇒ `routing.py` 的规则字典**没有**该键；
+        # 真值源侧一律按 `NULL` 参与比对（SQL 种子的终态也由 V103 清空）。
+        assert "position" not in rule, f"规则 `{entry}` 仍有 position 键 ⇒ O2 未完成"
         craft_rules.append((
             rule["trigger_value"],
-            "NULL" if rule["position"] is None else rule["position"],
+            "NULL",
             rule["action"],
             rule["operation"],
             "NULL" if rule["after_operation"] is None else rule["after_operation"],

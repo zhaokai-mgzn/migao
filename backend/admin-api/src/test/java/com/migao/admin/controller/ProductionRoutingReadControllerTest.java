@@ -175,7 +175,7 @@ class ProductionRoutingReadControllerTest {
         ReflectionTestUtils.setField(controller, "productionRoutingReadService", routingReadService);
         ReflectionTestUtils.setField(controller, "productionOperationPositionCommandService",
                 new ProductionOperationPositionCommandService(productionOperationPositionMapper,
-                        positionPriceVersionMapper, routingReadService, queryService));
+                        positionPriceVersionMapper, routingReadService));
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -517,10 +517,9 @@ class ProductionRoutingReadControllerTest {
     void updateOperationPositionEndpointSemantics() throws Exception {
         when(productionOperationPositionMapper.selectById("opp-三边-布帘"))
                 .thenReturn(position("三边", "布帘", "0.40", true));
-        when(productionOperationPositionMapper.updatePriceAndApplicable(
-                any(), any(), any(), any(), any())).thenReturn(1);
-        // 工序库有 `三边` 的布帘变体（issue #4798 起：写完 applicable=true 的格必须解析得到变体，
-        // 否则 422 —— 本用例只改价，行本来就是「做」，故必须让这一格可解析）
+        // 🔴 issue #4937 / O1：写面只写 `unit_price` 一列（`applicable` 退场）
+        when(productionOperationPositionMapper.updateUnitPrice(
+                any(), any(), any(), any())).thenReturn(1);
         when(productionOperationMapper.selectList(any()))
                 .thenReturn(List.of(operation("op-busandbian", "布三边", "车位", "米", "0.40", "position")));
 
@@ -535,13 +534,22 @@ class ProductionRoutingReadControllerTest {
                 .andExpect(jsonPath("$.data.length()").value(10));
         verify(positionPriceVersionMapper).insert(any(ProductionOperationPositionPriceVersion.class));
 
-        // 「明确不做」⇒ 价强制落 NULL（不报价），且仍留痕（价真的变了）
+        // 🔴 **旧断言退休（issue #4937 / O1）**：改前这里是「`applicable=false` ⇒ 价强制落 NULL」。
+        // `applicable` 整块退场后，收到该字段必须 **422 + 可行动 hint**（**拒绝**，不静默忽略）——
+        // 静默 no-op 会让调用方以为改成了「不做」，而那一格照旧参与实例化。
+        // ⚠️ 先清掉上一段的调用记录：下面那句 `verify(never())` 判的是**本段**「整份拒绝、价不落库」，
+        // 不清会把上一段合法改价的那次调用算进来（实测 NeverWantedButInvoked 假红）。
+        org.mockito.Mockito.clearInvocations(productionOperationPositionMapper);
         mockMvc.perform(put("/api/admin/production/operation-positions/opp-三边-布帘")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"applicable\":false}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.applicable").value(false))
-                .andExpect(jsonPath("$.data.unit_price").isEmpty());
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.details[0].field").value("applicable"))
+                .andExpect(jsonPath("$.error.details[0].message").value(
+                        org.hamcrest.Matchers.containsString("部位适用性已退场")));
+        verify(productionOperationPositionMapper, never()).updateUnitPrice(
+                any(), any(), any(), any());
 
         // 负价 / 超两位小数 ⇒ 422 + error.details 逐条
         for (String bad : new String[]{"-1", "0.555"}) {
@@ -560,10 +568,11 @@ class ProductionRoutingReadControllerTest {
     }
 
     @Test
-    @DisplayName("🔴 PUT /operation-positions/{id}：该部位解析不到变体工序 ⇒ 设为「做」422（issue #4798）")
-    void updateOperationPositionRejectsUnresolvableApplicable() throws Exception {
-        // 工序库里**没有** `三边` 的任何变体 ⇒ 这一格设为「做」后，实例化必然把它记进
-        // missing_operations ⇒ 下单 422 整单中止。写面必须**同口径**拦下（改前：200 写库成功 = 红）
+    @DisplayName("🔴 PUT /operation-positions/{id}（#4937 / O1）：收到 `applicable` ⇒ 422 + 可行动 hint（拒绝）")
+    void updateOperationPositionRejectsTheRetiredApplicableField() throws Exception {
+        // ⚠️ **本判据取代已退休的 `updateOperationPositionRejectsUnresolvableApplicable`**：
+        // 后者的护栏（#4798「写完 applicable=true 的格必须解析得到变体」）随 `applicable` 字段主体
+        // **一并退休**（判据的输入不复存在）；新判据 = **该字段一律被拒**（拒绝而非静默忽略）。
         when(productionOperationPositionMapper.selectById("opp-三边-布帘"))
                 .thenReturn(position("三边", "布帘", null, false));
         when(productionOperationMapper.selectList(any())).thenReturn(List.of());
@@ -573,9 +582,12 @@ class ProductionRoutingReadControllerTest {
                         .content("{\"applicable\":true,\"unit_price\":0.50}"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.error.details[0].field").value("applicable"));
-        verify(productionOperationPositionMapper, never()).updatePriceAndApplicable(
-                any(), any(), any(), any(), any());
+                .andExpect(jsonPath("$.error.details[0].field").value("applicable"))
+                .andExpect(jsonPath("$.error.details[0].message").value(
+                        org.hamcrest.Matchers.containsString("部位适用性已退场")));
+        // 🔴 关键：**整份拒绝** —— 同请求里的 `unit_price` 也不得落库（不留半完成态）
+        verify(productionOperationPositionMapper, never()).updateUnitPrice(
+                any(), any(), any(), any());
     }
 
     @Test

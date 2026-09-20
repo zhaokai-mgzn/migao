@@ -158,7 +158,7 @@ class ProductionSeedTemplateServiceTest {
             assertThat(curtain.getIndustry()).isEqualTo(IndustryCodes.CURTAIN);
             assertThat(curtain.getName()).contains("布艺");
             assertThat(curtain.getVersion()).isEqualTo(1);
-            assertThat(curtain.getOperationCount()).isEqualTo(37);
+            assertThat(curtain.getOperationCount()).isEqualTo(41);
             assertThat(curtain.getRoutingCount()).isEqualTo(9);
             assertThat(curtain.getOptionCount()).isEqualTo(16);
         }
@@ -205,11 +205,11 @@ class ProductionSeedTemplateServiceTest {
 
             assertThat(result.get("templateId")).isEqualTo("curtain");
             assertThat(result.get("applied")).isEqualTo(true);
-            assertThat(result.get("created_operations")).isEqualTo(37);
+            assertThat(result.get("created_operations")).isEqualTo(41);
             assertThat(result.get("skipped")).isEqualTo(0);
 
             ArgumentCaptor<ProductionOperation> opCaptor = ArgumentCaptor.forClass(ProductionOperation.class);
-            verify(productionOperationMapper, times(37)).insert(opCaptor.capture());
+            verify(productionOperationMapper, times(41)).insert(opCaptor.capture());
             // 每道工序都必须带 source（provenance 可见 = 本单的诚实性核心）
             assertThat(opCaptor.getAllValues())
                     .allSatisfy(op -> assertThat(op.getSource())
@@ -298,7 +298,7 @@ class ProductionSeedTemplateServiceTest {
             service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
 
             // ① 工序库落库的行**仍是库口径旧名**（`精裁-布`）—— 归一发生在派生侧，不改库（本单行为零变更）
-            assertThat(library).as("播种 37 道（35 旧名 + 配料/打包），库口径名一字不改").hasSize(37);
+            assertThat(library).as("播种 41 道（35 旧名 + 配料/打包 + issue #4937 的 4 道纱帘变体），库口径名一字不改").hasSize(41);
             assertThat(library.stream().map(ProductionOperation::getName).toList())
                     .as("库口径仍是旧名：归一不得顺手改写落库数据（改了 ⇒ 迁移链终态对不上）")
                     .contains("精裁-布", "布三边", "布帘车被");
@@ -353,7 +353,7 @@ class ProductionSeedTemplateServiceTest {
             service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
 
             ArgumentCaptor<ProductionOperation> opCaptor = ArgumentCaptor.forClass(ProductionOperation.class);
-            verify(productionOperationMapper, times(37)).insert(opCaptor.capture());
+            verify(productionOperationMapper, times(41)).insert(opCaptor.capture());
             Map<String, String> seeded = opCaptor.getAllValues().stream()
                     .collect(Collectors.toMap(ProductionOperation::getName, ProductionOperation::getScope,
                             (a, b) -> a, LinkedHashMap::new));
@@ -368,7 +368,7 @@ class ProductionSeedTemplateServiceTest {
                     .containsEntry("外帘装袋", "set")
                     .containsEntry("外帘发货", "set")
                     .containsEntry("打包", "set");
-            assertThat(seeded).hasSize(37);
+            assertThat(seeded).hasSize(41);
             assertThat(seeded.values())
                     .as("scope 取值必须 ⊆ 闭词表 {position, set}（与写面校验同口径）")
                     .allSatisfy(scope -> assertThat(scope).isIn("position", "set"));
@@ -427,7 +427,7 @@ class ProductionSeedTemplateServiceTest {
                     opCalls.getAndIncrement() == 0 ? List.of() : existingOperations());
 
             Map<String, Object> first = service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
-            assertThat(first.get("created_operations")).isEqualTo(37);
+            assertThat(first.get("created_operations")).isEqualTo(41);
             assertThat(first.get("created_routings")).as("恰两条基础路线（窗帘默认 + 布料，issue #4529）")
                     .isEqualTo(2);
             assertThat(first.get("created_crafts")).as("恰一条默认工艺").isEqualTo(1);
@@ -441,10 +441,10 @@ class ProductionSeedTemplateServiceTest {
             assertThat(second.get("created_positions")).as("第二次不得再插部位价目（幂等）").isEqualTo(0);
             assertThat(second.get("created_route_rules")).as("第二次不得再插规则（幂等）").isEqualTo(0);
             assertThat(second.get("skipped"))
-                    .as("第二次全部跳过：37 工序 + 2 路线模板（窗帘默认 + 布料，issue #4529）"
+                    .as("第二次全部跳过：41 工序 + 2 路线模板（窗帘默认 + 布料，issue #4529）"
                             + " + 16 选项映射 + 1 系数档")
-                    .isEqualTo(37 + 2 + 16 + 1);
-            verify(productionOperationMapper, times(37)).insert(any(ProductionOperation.class));
+                    .isEqualTo(41 + 2 + 16 + 1);
+            verify(productionOperationMapper, times(41)).insert(any(ProductionOperation.class));
             verify(productionRouteTemplateMapper, times(2)).insert(
                     org.mockito.ArgumentMatchers.<ProductionRouteTemplate>any());
             verify(productionCraftMapper, times(1)).insert(
@@ -468,7 +468,7 @@ class ProductionSeedTemplateServiceTest {
             assertThat(result.get("created_operations")).isEqualTo(0);
             assertThat(result.get("created_routings"))
                     .as("P2b：新结构里「路线」= 两条基础模板（窗帘默认 + 布料，issue #4529）").isEqualTo(2);
-            assertThat(result.get("skipped")).isEqualTo(37);
+            assertThat(result.get("skipped")).isEqualTo(41);
         }
 
         @Test
@@ -504,8 +504,8 @@ class ProductionSeedTemplateServiceTest {
                     .as("第二个租户套用必须同样成功 —— 撞主键的形态在这里变红")
                     .isEqualTo(true);
             assertThat(store.operationIdsOf(42L)).as("42 号租户落库工序数 = 模板工序数")
-                    .hasSize(37);
-            assertThat(store.operationIdsOf(77L)).hasSize(37);
+                    .hasSize(41);
+            assertThat(store.operationIdsOf(77L)).hasSize(41);
             assertThat(store.operationNamesOf(42L)).isEqualTo(templateOperationNames());
             assertThat(store.operationNamesOf(77L)).isEqualTo(templateOperationNames());
             assertThat(store.operationIdsOf(42L))
@@ -559,7 +559,7 @@ class ProductionSeedTemplateServiceTest {
             Map<String, Object> result = service.applyTemplate(TENANT, "布艺纺织");
 
             assertThat(result.get("applied")).isEqualTo(true);
-            assertThat(result.get("created_operations")).isEqualTo(37);
+            assertThat(result.get("created_operations")).isEqualTo(41);
         }
 
         @Test

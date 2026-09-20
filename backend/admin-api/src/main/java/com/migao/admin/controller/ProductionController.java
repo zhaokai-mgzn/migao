@@ -733,9 +733,13 @@ public class ProductionController {
      * 响应 {@code data} = {@code {operations:[10 键矩阵行], delivery:[9 键一列价行]}}。</p>
      *
      * <p>⚠️ <b>「一列价」是显式规则（设计 §4.5 方案 A），不是「删格」</b>：{@code delivery} 行的价
-     * 由该工序**所有 {@code applicable=TRUE} 格**的价聚合 —— 全同 ⇒ {@code priced}；有 {@code NULL}
+     * 由该工序**全部矩阵格**的价聚合 —— 全同 ⇒ {@code priced}；有 {@code NULL}（**含零格**）
      * ⇒ {@code unpriced}（**≠ ¥0.00**）；不同 ⇒ {@code multiple_prices} + {@code different_price_count}
      * （**不静默取第一个**）。删格会让交付工序在缺格的部位单里静默消失（少一道活、少一笔计件钱）。</p>
+     *
+     * <p>🔴 <b>issue #4937 / O1</b>：聚合**不再按 {@code applicable} 过滤**，且原第 4 态
+     * {@code no_applicable_position} <b>退场</b>（部位维已退场，「没有部位做」这句话不成立）
+     * ⇒ 零格判 {@code unpriced}。{@code applicable_positions} 键**保留**（9 键契约）但恒为 {@code []}。</p>
      *
      * <p>{@code operations} 段的每行与 {@code GET /operation-positions} **同形**（同一个
      * {@code positionView}）⇒ 前端同一份渲染代码；本端点只是**多给一层分区 + 一列价聚合**，
@@ -749,20 +753,24 @@ public class ProductionController {
     }
 
     /**
-     * 矩阵格**就地改价 / 改做不做**（issue #4587 ② = 母单 #4586 包A）
+     * 矩阵格**就地改价**（issue #4587 ② = 母单 #4586 包A；去部位化 = issue #4937 / O1）
      * PUT /api/admin/production/operation-positions/{id}
-     * body: {unit_price?: number|null, applicable?: boolean}
+     * body: {unit_price?: number|null}
      *
-     * <p><b>部分更新</b>：只写 body 里出现的键。三态（与 V71 列口径同款，不得发明第四态）：
-     * {@code applicable=false} ⇒ 价**强制落 NULL**（明确不做 ⇒ 不报价）；
-     * {@code applicable=true} + 价 null = 「**适用但未定价**」（合法，商家待办）；
-     * 显式 {@code unit_price=null} = 改回「**未定价**」（**≠ 0 元**）。</p>
+     * <p><b>部分更新</b>：只写 body 里出现的键。可写面**只剩 `unit_price`**：
+     * 显式 {@code unit_price=null} = 改回「**未定价**」（**≠ 0 元**）；数值 = 有价
+     * （{@code 0} 就是**有价 0 元**，与「未定价」在数据上可区分）。</p>
+     *
+     * <p>🔴 <b>{@code applicable} 已退场</b>（部位适用性，issue #4937 / O1）：body 里出现该字段
+     * ⇒ <b>422 + 可行动 hint</b>（「部位适用性已退场，不再受理该字段」），<b>拒绝</b>而**不静默忽略**
+     * —— 静默 no-op 会让调用方以为改成了「不做」，而那一格照旧参与实例化（工人按错工序拿钱，
+     * 且没有任何报错）。</p>
      *
      * <p><b>这一屏的价是给工人的「计件单价」</b>（报工工资 = 数量 × 计件单价），**不是对客加工费**
      * —— 对客那两本账在别处：基础加工费 = 加工项组合费用（元/米），特殊选项 =
      * {@code PUT /route-rules/{id}/customer-unit-price}（元/套）。三本账不得互读、不得混。</p>
      *
-     * <p>校验失败 ⇒ 422 + {@code error.details} 逐条（负价 / 超两位小数 / 非布尔）；
+     * <p>校验失败 ⇒ 422 + {@code error.details} 逐条（负价 / 超两位小数 / 含已退场字段）；
      * 行不存在 / 跨租户 / 已软删 ⇒ 404。价**真的变了**才同事务向 V86 账表追加一行（改价必须留痕）。
      * 响应与 {@code GET /operation-positions} 的**单行同构**（前端同一个类型渲染）。</p>
      */

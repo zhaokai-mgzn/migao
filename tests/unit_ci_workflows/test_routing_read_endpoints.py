@@ -140,7 +140,12 @@ def _rows(table: str, row_re: re.Pattern) -> list:
 
 
 def _position_seed_rows() -> dict:
-    """`{(逻辑工序, 部位): (单价|None, applicable, status)}`（V71 ∪ V79 的 120 行）。"""
+    """`{(逻辑工序, 部位): (单价|None, applicable, status)}`（V71 ∪ V79 的 **120 行字面量**）。
+
+    ⚠️ 键含部位维（**历史 120 行态的入口**）：issue #4937 之后**终态**是一道逻辑工序一行，
+    所以本函数只用于「字面量种子逐行可见性」这类仍需部位维的判据（见
+    `test_position_seed_is_visible_and_matches_truth_source`）。
+    """
     out = {}
     for m in _rows(POSITION_TABLE, _POSITION_ROW_RE):
         price = None if m.group("price").upper() == "NULL" else float(m.group("price"))
@@ -163,25 +168,48 @@ def _rule_seed_rows() -> dict:
 
 
 def _truth_positions() -> dict:
-    """`routing.py::OPERATION_POSITION_PRICES` → `{(逻辑工序, 部位): (单价|None, applicable)}`。"""
+    """`routing.py::OPERATION_POSITION_PRICES` → `{逻辑工序: (单价|None, applicable)}`（**终态单键**）。
+
+    🔴 issue #4937：真值源的价目表**只按逻辑工序**建索引（30 行）⇒ 本函数随之收敛为单键。
+    """
     sys.path.insert(0, str(ROUTING_PY_DIR))
     try:
         from app.production.routing import OPERATION_POSITION_PRICES
-        return {(logical, position): (
-                    None if cell["unit_price"] is None else float(cell["unit_price"]),
-                    bool(cell["applicable"]))
-                for logical, by_position in OPERATION_POSITION_PRICES.items()
-                for position, cell in by_position.items()}
+        return {logical: (None if cell["unit_price"] is None else float(cell["unit_price"]),
+                          bool(cell["applicable"]))
+                for logical, cell in OPERATION_POSITION_PRICES.items()}
     finally:
         sys.path.pop(0)
 
 
+def _collapse_seed_rows() -> dict:
+    """按**四档选行**把 120 行种子收敛为 `{逻辑工序: (价, 适用, status)}`（终态口径）。
+
+    档序 = ① `applicable` 优先 ② `布帘` 列优先 ③ `position` 字典序 ④ `id` 升序
+    （与 `ProductionOperationQueryService#collapseToLogical` / `V104` 同序）。
+    """
+    grouped: dict = {}
+    for key, value in _position_seed_rows().items():
+        grouped.setdefault(key[0], []).append((key[1], value))
+
+    def rank(item):
+        position, (price, applicable, status) = item
+        return (0 if applicable else 1, 0 if position == "布帘" else 1, position)
+
+    return {logical: sorted(items, key=rank)[0][1] for logical, items in grouped.items()}
+
+
 def _truth_rules() -> dict:
-    """`routing.py::ROUTE_RULES` → 与 `_rule_seed_rows` 同形的键（**不含** priority 之外的状态）。"""
+    """`routing.py::ROUTE_RULES` → 与 `_rule_seed_rows` 同形的键（**不含** `position`，issue #4937 / O2）。
+
+    规则级部位限定退场 ⇒ 真值源的规则字典不再有该键、SQL 侧一律 `NULL` ⇒ 比对键去掉该维。
+    """
     sys.path.insert(0, str(ROUTING_PY_DIR))
     try:
         from app.production.routing import ROUTE_RULES
-        return {(r["trigger_kind"], r["trigger_value"], r["position"], r["action"],
+        assert not any("position" in r for r in ROUTE_RULES), (
+            "`routing.py::ROUTE_RULES` 仍有 `position` 键 ⇒ O2 未完成（部位还在参与取路）")
+        return {(r["trigger_kind"], r["trigger_value"], r["action"],
                  r["operation"], r["after_operation"]): int(r["priority"]) for r in ROUTE_RULES}
     finally:
         sys.path.pop(0)
@@ -519,20 +547,23 @@ def test_position_seed_is_visible_and_matches_truth_source():
     两个半边合起来才是「端点输出 = 真值源」：① 值不漂移（改一格价目即红）；
     ② 没有任何一行被可见性过滤挡在端点之外（种成 `status='disabled'` 即红）。
     """
-    seed = _position_seed_rows()
-    assert len(seed) == 120, (
-        f"部位价目种子行数 = {len(seed)}，期望 120（30 逻辑工序 × 4 部位，issue #4529）—— "
+    raw_seed = _position_seed_rows()
+    assert len(raw_seed) == 120, (
+        f"部位价目**字面量**种子行数 = {len(raw_seed)}，期望 120（30 逻辑工序 × 4 部位）—— "
         f"行数不对时下面的逐值比对会退化成「比较两个残缺集合」"
     )
+    # 🔴 issue #4937：终态 = 一道逻辑工序一行（四档选行收敛）⇒ 与真值源按**单键**逐值比对
+    seed = _collapse_seed_rows()
     truth = _truth_positions()
-    assert len(truth) == 120, f"真值源 OPERATION_POSITION_PRICES 的格数 = {len(truth)}，期望 120"
+    assert len(seed) == 30, f"收敛后的价目行数 = {len(seed)}，期望 30（一道逻辑工序一行）"
+    assert len(truth) == 30, f"真值源 OPERATION_POSITION_PRICES 的行数 = {len(truth)}，期望 30"
     drifted = {key: (seed.get(key), truth.get(key)) for key in set(seed) | set(truth)
                if seed.get(key, (None, None, None))[:2] != truth.get(key)}
     assert not drifted, (
         f"这些格与真值源 `routing.py::OPERATION_POSITION_PRICES` 不一致（键 → (种子, 真值源)）：{drifted} "
         f"—— 两份口径漂移 ⇒ 商家看到的价目与实例化算的价不是同一个（改价直接变成工人工资）"
     )
-    invisible = {key: row[2] for key, row in seed.items() if row[2] != VISIBLE_STATUS}
+    invisible = {key: row[2] for key, row in raw_seed.items() if row[2] != VISIBLE_STATUS}
     assert not invisible, (
         f"这些种子行对端点**不可见**（status ≠ {VISIBLE_STATUS}）：{invisible} —— "
         f"真值源里有、前端看不见 = 静默少一格/少一条规则"
@@ -545,6 +576,8 @@ def test_rule_seed_is_visible_and_matches_truth_source():
     assert len(seed) == 26, (
         f"规则种子行数 = {len(seed)}，期望 26（工艺变体 10 + 特殊选项 16，母单 #4423 冻结数字）"
     )
+    # ⚠️ V103 的终态：存活规则的 `position` 一律清空 ⇒ 比对键去掉该维（迁移字面量仍是旧值）
+    seed = {(k[0], k[1], k[3], k[4], k[5]): v for k, v in seed.items()}
     truth = _truth_rules()
     assert len(truth) == 26, f"真值源 ROUTE_RULES 条数 = {len(truth)}，期望 26"
     drifted = {key: (seed.get(key), truth.get(key)) for key in set(seed) | set(truth)
@@ -554,7 +587,7 @@ def test_rule_seed_is_visible_and_matches_truth_source():
         f"漂移 ⇒ 商家在规则区看到的顺序/锚点与实际实例化不同（工序顺序错 = 车间按错顺序干）"
     )
     hidden = {key: row for key, row in seed.items()
-              if row[1] != VISIBLE_STATUS or key[3] not in ROUTE_ACTIONS}
+              if row[1] != VISIBLE_STATUS or key[2] not in ROUTE_ACTIONS}
     assert not hidden, (
         f"这些规则行对端点**不可见**（status ≠ {VISIBLE_STATUS} 或 action 不在 {ROUTE_ACTIONS}）："
         f"{hidden} —— 真值源里有、规则区看不见 = 静默少一条"

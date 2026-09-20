@@ -123,10 +123,14 @@ class ProcessingOrderServiceTest {
             {"复烫-布", "后道", "米", "0.35", "false", "false"},
             {"布帘车被", "后道", "米", "0.4", "false", "false"},
             {"外帘打卷", "后道", "套", "1.0", "false", "false"},
+            // 🔴 issue #4937 / O4：`打包` **在主线上的位置**（`外帘打卷` 与 `外帘装袋` 之间）。
+            // 旧口径下 `打包 × 布帘` 是 `applicable=FALSE` ⇒ 被过滤掉；过滤退场后它跟着主线进路线
+            // ⇒ 本夹具（= 真实实例序列的镜像）必须带上它，否则既有断言全部逐字不符。
+            {"打包", "后道", "套", "0.0", "false", "false"},
             {"外帘装袋", "后道", "套", "1.0", "true", "false"},
             {"外帘发货", "后道", "套", "1.0", "false", "false"}};
 
-    /** rt-v54-02 布帘×打孔 —— 10 道。 */
+    /** rt-v54-02 布帘×打孔 —— 11 道（10 道旧快照 + `打包`，见上）。 */
     private static final String[][] V54_BULIAN_DAKONG = {
             {"精裁-布", "裁剪", "米", "0.4", "false", "true"},
             {"布三边", "车位", "米", "0.4", "false", "false"},
@@ -136,18 +140,28 @@ class ProcessingOrderServiceTest {
             {"复烫-布", "后道", "米", "0.35", "false", "false"},
             {"布帘车被", "后道", "米", "0.4", "false", "false"},
             {"外帘打卷", "后道", "套", "1.0", "false", "false"},
+            {"打包", "后道", "套", "0.0", "false", "false"},
             {"外帘装袋", "后道", "套", "1.0", "true", "false"},
             {"外帘发货", "后道", "套", "1.0", "false", "false"}};
 
     /**
-     * rt-v58-01 纱帘×打孔 —— 6 道（V58 种子逐字）。与布帘路线**一道工序都不重合**
-     * ⇒ 「纱帘订单不得拿到布帘工序」这条判据（issue #4354 判据 A）的判别物。
+     * **纱帘×打孔**的实例序列 —— **11 道**（issue #4937 去部位化后的新基线）。
+     *
+     * <p>⚠️ **基线换代**：旧值是 V58 种子的 6 道（`精裁-纱/纱三边/打孔-纱/外帘打卷/外帘装袋/外帘发货`）。
+     * `applicable` 过滤退场后，纱帘路线也走**与布帘同一条工艺序列**（用户裁定「部位不再参与
+     * 任何取价、取路、筛选、配置」）⇒ 6 → 11 道（多出 `熨烫-纱/定型-纱/复烫-纱/车被-纱/打包`）。
+     * 变体名仍是纱帘专属的（`-纱`），这正是「同一工艺、不同帘种的工人端变体」。</p>
      */
     private static final String[][] V58_SHALU_DAKONG = {
             {"精裁-纱", "裁剪", "米", "0.4", "false", "true"},
             {"纱三边", "车位", "米", "0.4", "false", "false"},
             {"打孔-纱", "车位", "孔", "0.15", "false", "false"},
+            {"熨烫-纱", "后道", "米", "0.35", "false", "false"},
+            {"定型-纱", "后道", "米", "0.4", "false", "false"},
+            {"复烫-纱", "后道", "米", "0.35", "false", "false"},
+            {"车被-纱", "后道", "米", "0.4", "false", "false"},
             {"外帘打卷", "后道", "套", "1.0", "false", "false"},
+            {"打包", "后道", "套", "0.0", "false", "false"},
             {"外帘装袋", "后道", "套", "1.0", "true", "false"},
             {"外帘发货", "后道", "套", "1.0", "false", "false"}};
 
@@ -161,7 +175,10 @@ class ProcessingOrderServiceTest {
      * {@link #setLevelDedupFollowsLibraryScopeNotOperationNames()} 的注入法保证。</p>
      */
     private static final Set<String> SET_SCOPE_OPERATIONS =
-            Set.of("外帘打卷", "外帘装袋", "外帘发货");
+            // 🔴 issue #4937：`打包` 也是套级（`scope='set'`，V79）—— 原来它被 `applicable` 过滤
+            // 挡在布帘路线之外，本夹具里不需要它；过滤退场后它进路线 ⇒ 必须与库口径同步，
+            // 否则「部位级 / 套级」的分组会把它算错。
+            Set.of("外帘打卷", "外帘装袋", "外帘发货", "打包");
 
     /**
      * 信号映射表桩（V60，issue #4308）：**逐行抄自 V60 迁移的种子** ——
@@ -849,7 +866,7 @@ class ProcessingOrderServiceTest {
         verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length)).insert(opCaptor.capture());
         List<ProcessingPositionOperation> instances = opCaptor.getAllValues();
         assertThat(instances).extracting(ProcessingPositionOperation::getSeq)
-                .containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);
+                .containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
         for (int i = 0; i < V54_BULIAN_HANZHE.length; i++) {
             ProcessingPositionOperation instance = instances.get(i);
             String[] row = V54_BULIAN_HANZHE[i];
@@ -857,7 +874,13 @@ class ProcessingOrderServiceTest {
             assertThat(instance.getOperationName()).as(where + " 工序名").isEqualTo(row[0]);
             assertThat(instance.getGroupName()).as(where + " 分组").isEqualTo(row[1]);
             assertThat(instance.getUnit()).as(where + " 单位").isEqualTo(row[2]);
-            assertThat(instance.getUnitPrice()).as(where + " 单价").isEqualByComparingTo(row[3]);
+            if ("打包".equals(row[0])) {
+                // 🔴 issue #4937 / O4：`打包` 的**矩阵价是 NULL**（未定价 ≠ 0 元）
+                assertThat(instance.getUnitPrice())
+                        .as(where + " 单价（未定价 ⇒ null，不回落工序库行价）").isNull();
+            } else {
+                assertThat(instance.getUnitPrice()).as(where + " 单价").isEqualByComparingTo(row[3]);
+            }
             assertThat(instance.getIsMustFinish()).as(where + " 必完标记").isEqualTo(Boolean.valueOf(row[4]));
             assertThat(instance.getIsStartMarker()).as(where + " 开始标记").isEqualTo(Boolean.valueOf(row[5]));
             assertThat(instance.getPositionName()).as(where + " 部位").isEqualTo("布艺遮光帘A 米白");
@@ -868,8 +891,9 @@ class ProcessingOrderServiceTest {
         // 末道「外帘发货」（第 11 道）在库里是 false ⇒ 这一行就是「末道必完」临时口径的反证
         assertThat(instances).filteredOn(ProcessingPositionOperation::getIsMustFinish)
                 .extracting(ProcessingPositionOperation::getOperationName).containsExactly("外帘装袋");
-        assertThat(instances.get(10).getOperationName()).isEqualTo("外帘发货");
-        assertThat(instances.get(10).getIsMustFinish())
+        // 🔴 issue #4937 / O4：`打包` 进路线后位次后移一位 ⇒ `外帘发货` 在 index 11
+        assertThat(instances.get(11).getOperationName()).isEqualTo("外帘发货");
+        assertThat(instances.get(11).getIsMustFinish())
                 .as("末道工序不得被无条件标必完（is_must_finish 读库 = false）").isFalse();
 
         // ② 应做数量 = **算料引擎输出**（issue #4208 接线）：米类 12.3、折类 24、套类兜底 1
@@ -1303,10 +1327,10 @@ class ProcessingOrderServiceTest {
         // 位置：库路线 11 道 + 1 道条件工序；「拼1次-布」紧跟在「布三边」之后（seq 3）
         assertThat(instances).extracting(ProcessingPositionOperation::getOperationName)
                 .containsExactly("精裁-布", "布三边", "拼1次-布", "韩褶-布", "上车布-布", "熨烫-布",
-                        "定型-布", "复烫-布", "布帘车被", "外帘打卷", "外帘装袋", "外帘发货");
+                        "定型-布", "复烫-布", "布帘车被", "外帘打卷", "打包", "外帘装袋", "外帘发货");
         // seq 必须重排成 1..N（#4694 后 seq 只作页面排序 / 「下一道待做」派生依据；报工顺序闸门已删除）
         assertThat(instances).extracting(ProcessingPositionOperation::getSeq)
-                .containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
+                .containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13);
         // 条件工序的分组/单位/单价**逐字取工序库**（不猜、不补默认值）
         ProcessingPositionOperation inserted = instances.get(2);
         assertThat(inserted.getGroupName()).isEqualTo("车位");
@@ -1794,7 +1818,16 @@ class ProcessingOrderServiceTest {
             String[] row = V54_BULIAN_HANZHE[i];
             assertThat(instances.get(i).getOperationName()).isEqualTo(row[0]);
             assertThat(instances.get(i).getSeq()).as("序号 = 库路线原序 1..N").isEqualTo(i + 1);
-            assertThat(instances.get(i).getUnitPrice()).isEqualByComparingTo(row[3]);
+            // 🔴 issue #4937 / O4：`打包` 的**矩阵价是 NULL**（「未定价」，不是 0 元）
+            // —— 夹具里那一行的工序库价写 `0.0`（DDL `NOT NULL DEFAULT 0` 的产物），
+            // 实例侧必须落 `null`（`buildRoute` 不回落工序库行价，issue #4696 红线）。
+            if ("打包".equals(row[0])) {
+                assertThat(instances.get(i).getUnitPrice())
+                        .as("第 %d 道（打包）单价必须是 null（未定价 ≠ 0 元）", i + 1)
+                        .isNull();
+            } else {
+                assertThat(instances.get(i).getUnitPrice()).isEqualByComparingTo(row[3]);
+            }
             assertThat(instances.get(i).getFactor()).isEqualByComparingTo("1");
         }
     }
@@ -1894,30 +1927,34 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("#4609 反向护栏：「该部位明确不做」（applicable=false）仍**静默滤掉**，不得误报成 missing")
-    void notApplicableOperationsAreStillFilteredSilently() {
+    @DisplayName("🔴 新判据（#4937）：`帘头制作` **不再**被「部位适用性」滤掉 —— 它按主线照常落实例")
+    void curtainHeadOperationIsNoLongerFilteredByApplicability() {
+        // ⚠️ **本判据取代已退休的 `notApplicableOperationsAreStillFilteredSilently`**：
+        // 后者的判据是「`帘头制作 × 布帘` 是 applicable=false ⇒ 该道**静默滤掉**」——
+        // 用户 2026-09-21 裁定（母单 #4936「我们移除了部位的设计，不计成本的改」）把那条过滤
+        // **整块删除** ⇒ 旧判据的前提消失，**退休**。
+        // 新判据 = **同一份桩、相反的期望**：`帘头制作` 必须**出现在实例里**（部位不再参与取路）
+        // —— 守卫强度不降（它照样钉住「过滤真的退场了」，只是方向反过来）。
         stubLibrary();
-        // 规范 84 行价目里 `帘头制作 × 布帘` = applicable **false**（该部位明确不做）——
-        // 这不是错误：照常生成，只是该道不落实例（**不得** fail-closed、**不得**进 missing_operations）。
         when(productionOperationQueryService.operationPositions(TENANT))
                 .thenReturn(RoutingModelFixture.canonicalPositions84(TENANT));
-        ProductionRouteTemplate withNotApplicable = RoutingModelFixture.defaultTemplate(TENANT);
-        withNotApplicable.setMainline(new ArrayList<>(List.of("精裁", "帘头制作", "外帘装袋")));
-        lenient().when(productionOperationQueryService.defaultRouteTemplate(TENANT)).thenReturn(withNotApplicable);
-        when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString())).thenReturn(withNotApplicable);
+        ProductionRouteTemplate withCurtainHead = RoutingModelFixture.defaultTemplate(TENANT);
+        withCurtainHead.setMainline(new ArrayList<>(List.of("精裁", "帘头制作", "外帘装袋")));
+        lenient().when(productionOperationQueryService.defaultRouteTemplate(TENANT)).thenReturn(withCurtainHead);
+        when(productionOperationQueryService.routeTemplateFor(eq(TENANT), anyString())).thenReturn(withCurtainHead);
         stubGenerate(List.of(orderItemHanzhe("米白")));
         when(processingItemMapper.selectById("p1"))
                 .thenReturn(ProcessingItem.builder().id("p1").name("韩褶-布").unit("折").build());
 
         var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
 
-        assertThat(results.get(0).isSuccess()).as("「明确不做」不是错误：照常生成").isTrue();
+        assertThat(results.get(0).isSuccess()).as("主线里的工序都能解析 ⇒ 照常生成").isTrue();
         ArgumentCaptor<ProcessingPositionOperation> captor =
                 ArgumentCaptor.forClass(ProcessingPositionOperation.class);
         verify(positionOperationMapper, atLeastOnce()).insert(captor.capture());
         assertThat(captor.getAllValues()).extracting(ProcessingPositionOperation::getOperationName)
-                .as("该部位明确不做 ⇒ 该道不落实例（既有语义），且不 fail-closed")
-                .doesNotContain("帘头制作")
+                .as("`帘头制作` 必须落实例（部位适用性过滤已退场 ⇒ 主线里的每一道都实例化）")
+                .contains("帘头制作")
                 .contains("精裁-布");
     }
 
@@ -1997,7 +2034,7 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).getProcessingOrderNo()).startsWith("JG-");
         // 切库后工序来源不再是加工项名 ⇒「缺名称」只剩「少了一个派生信号」的含义，
         // 落默认路线（布帘×韩褶）而不是**静默跳过实例化**（旧行为会留下无工序、无 qr_token 的加工单）
-        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length))
+        verify(positionOperationMapper, times(12))
                 .insert(any(ProcessingPositionOperation.class));
     }
 
@@ -2026,7 +2063,7 @@ class ProcessingOrderServiceTest {
 
         ArgumentCaptor<ProcessingPositionOperation> opCaptor =
                 ArgumentCaptor.forClass(ProcessingPositionOperation.class);
-        verify(positionOperationMapper, times(V58_SHALU_DAKONG.length)).insert(opCaptor.capture());
+        verify(positionOperationMapper, times(V54_BULIAN_DAKONG.length)).insert(opCaptor.capture());
         List<String> instantiated = opCaptor.getAllValues().stream()
                 .map(ProcessingPositionOperation::getOperationName).toList();
         assertThat(instantiated).containsExactlyElementsOf(operationNames(V58_SHALU_DAKONG));
@@ -2070,7 +2107,7 @@ class ProcessingOrderServiceTest {
         var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isTrue();
-        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length))
+        verify(positionOperationMapper, times(12))
                 .insert(any(ProcessingPositionOperation.class));
     }
 
@@ -2151,7 +2188,7 @@ class ProcessingOrderServiceTest {
         ArgumentCaptor<List<Map<String, Object>>> reqCaptor = ArgumentCaptor.forClass(List.class);
         verify(productionOperationQtyClient).resolve(reqCaptor.capture());
         assertThat(reqCaptor.getValue()).hasSize(1);
-        verify(positionOperationMapper, times(V54_BULIAN_HANZHE.length))
+        verify(positionOperationMapper, times(12))
                 .insert(any(ProcessingPositionOperation.class));
     }
 
@@ -2179,7 +2216,9 @@ class ProcessingOrderServiceTest {
         // **不是**路线键」⇒ 套级**本就不该按部位重复**，故 17 不再是正确期望（设计文档 §5.2：修正后 14）。
         ArgumentCaptor<ProcessingPositionOperation> opCaptor =
                 ArgumentCaptor.forClass(ProcessingPositionOperation.class);
-        verify(positionOperationMapper, times(14)).insert(opCaptor.capture());
+        verify(positionOperationMapper, times(partLevelOperationNames(V54_BULIAN_HANZHE).size()
+                + setLevelOperationNames(V54_BULIAN_HANZHE).size()
+                + partLevelOperationNames(V58_SHALU_DAKONG).size())).insert(opCaptor.capture());
         List<String> expected = new ArrayList<>(partLevelOperationNames(V54_BULIAN_HANZHE));
         expected.addAll(setLevelOperationNames(V54_BULIAN_HANZHE));
         expected.addAll(partLevelOperationNames(V58_SHALU_DAKONG));
@@ -2240,7 +2279,9 @@ class ProcessingOrderServiceTest {
         List<ProcessingPositionOperation> instances = allInstances();
         assertThat(instances)
                 .as("部位级 8（布帘×韩褶）+ 3（纱帘×打孔）+ 套级 3（每樘窗一次）= 14（设计文档 §5.2）")
-                .hasSize(14);
+                .hasSize(partLevelOperationNames(V54_BULIAN_HANZHE).size()
+                        + setLevelOperationNames(V54_BULIAN_HANZHE).size()
+                        + partLevelOperationNames(V58_SHALU_DAKONG).size());
         assertThat(instanceCountOf(instances, "外帘打卷"))
                 .as("套级工序每樘窗一次（旧行为 2 次 ⇒ 打卷/装袋/发货各双付）").isEqualTo(1);
         assertThat(instanceCountOf(instances, "外帘装袋")).isEqualTo(1);
@@ -2264,7 +2305,8 @@ class ProcessingOrderServiceTest {
         realChainService().generate(List.of("order-001"), TENANT, "u1");
 
         List<ProcessingPositionOperation> instances = allInstances();
-        assertThat(instances).as("单行樘窗：套级工序挂在它自己身上 ⇒ 条数与去重前逐字一致").hasSize(11);
+        assertThat(instances).as("单行樘窗：套级工序挂在它自己身上 ⇒ 条数与去重前逐字一致")
+                .hasSize(V54_BULIAN_HANZHE.length);
         assertThat(instanceCountOf(instances, "外帘装袋")).isEqualTo(1);
     }
 
@@ -2283,7 +2325,8 @@ class ProcessingOrderServiceTest {
         realChainService().generate(List.of("order-001"), TENANT, "u1");
 
         List<ProcessingPositionOperation> instances = allInstances();
-        assertThat(instances).as("两樘独立窗 = 2 × 11 道（每樘各带自己的套级 3 道）").hasSize(22);
+        assertThat(instances).as("两樘独立窗 = 2 × 路线道数（每樘各带自己的套级工序）")
+                .hasSize(V54_BULIAN_HANZHE.length * 2);
         assertThat(instanceCountOf(instances, "外帘装袋"))
                 .as("去重必须**按樘窗组**：两樘窗各 1 行 ⇒ 2 行（全局去重会误吞第二樘的套级工序）")
                 .isEqualTo(2);
@@ -2633,7 +2676,11 @@ class ProcessingOrderServiceTest {
     void setLevelDedupSurvivesPositionIdentity() {
         List<ProcessingPositionOperation> stored = generateAndStore(clothPlusSheerWindow());
 
-        assertThat(stored).as("#4384 A2 的结论不得被定位键改动破坏").hasSize(14);
+        assertThat(stored).as("#4384 A2 的结论不得被定位键改动破坏（布帘路线 + 纱帘路线的部位级，"
+                + "套级各去重到 1：#4937 去部位化后 = 12 + 11 − 2×2 套级重复）")
+                .hasSize(partLevelOperationNames(V54_BULIAN_HANZHE).size()
+                        + setLevelOperationNames(V54_BULIAN_HANZHE).size()
+                        + partLevelOperationNames(V58_SHALU_DAKONG).size());
         assertThat(stored).filteredOn(r -> "外帘装袋".equals(r.getOperationName()))
                 .as("套级工序每樘窗一次（A2）").hasSize(1);
         assertThat(stored).extracting(ProcessingPositionOperation::getOrderItemId)
@@ -3542,7 +3589,7 @@ class ProcessingOrderServiceTest {
         assertThat(positions).hasSize(1);
         assertThat(positions.get(0).get("position_name")).isEqualTo("布艺遮光帘A 米白");
         List<Map<String, Object>> operations = (List<Map<String, Object>>) positions.get(0).get("operations");
-        assertThat(operations).hasSize(11);
+        assertThat(operations).hasSize(V54_BULIAN_HANZHE.length);
         assertThat(operations.get(0)).containsEntry("operation", "精裁-布")
                 .containsEntry("group", "裁剪").containsEntry("unit", "米")
                 .containsEntry("is_start_marker", true);
@@ -3555,9 +3602,11 @@ class ProcessingOrderServiceTest {
                 .as("折类 = 折数（走查实测的红证形态：韩褶-布 曾显示 3 折）")
                 .isEqualByComparingTo(CALC_PLEAT_COUNT);
         assertThat(operations.get(2).get("qty_source")).isEqualTo("pleat_count");
+        // 🔴 issue #4937 / O4：`打包` 进路线后**位次后移一位** —— `打包` 在 9、`外帘装袋` 在 10
         assertThat(operations.get(9).get("qty_source"))
                 .as("套类 = 引擎待补键 ⇒ 显式标注 fallback（不静默）").isEqualTo("fallback");
-        assertThat(operations.get(9)).containsEntry("operation", "外帘装袋")
+        assertThat(operations.get(9)).containsEntry("operation", "打包");
+        assertThat(operations.get(10)).containsEntry("operation", "外帘装袋")
                 .containsEntry("is_must_finish", true);
     }
 
@@ -3588,8 +3637,9 @@ class ProcessingOrderServiceTest {
                 .containsEntry("is_start_marker", true)
                 .containsEntry("logical_name", "精裁")
                 .containsEntry("position", "布帘");
-        // 部位无关工序（名字里没编部位）⇒ position 为空（界面只显示逻辑名，不拼「外帘装袋 · 布帘」）
-        assertThat(operations.get(9))
+        // 部位无关工序（名字里没编部位）⇒ position 为空（界面只显示逻辑名）
+        // ⚠️ issue #4937 / O4：`打包` 进路线后位次后移一位 ⇒ `外帘装袋` 在 index 10
+        assertThat(operations.get(10))
                 .containsEntry("operation", "外帘装袋")
                 .containsEntry("logical_name", "外帘装袋")
                 .containsEntry("position", null);
