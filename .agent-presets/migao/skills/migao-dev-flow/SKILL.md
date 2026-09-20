@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.39.0
+version: 1.40.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -155,7 +155,11 @@ description: MIGAO 项目开发提效流程固化 — 开发、验证、提交�
   native auto-merge 会在 CI 一绿时**秒合**，而它**只等必需检查、与你的本地时序无关** ⇒
   「先开 PR、后面再补 commit」这条路径**结构性不安全**（补的 commit 会**搁浅**：本地有、main 无、且无 PR 承接）。
   **两条等价的安全做法，任选其一**：① **改动全部 commit 完再开 PR**（推荐）；② 全程 **draft**，到最后一刻才 `gh pr ready`。
-  ⚠️ **已经 ready 了还要补 commit** ⇒ **必须先 disarm**（`gh pr merge <N> --disable-auto`，见 §3.3 —— `block/merge` 标签**拦不住已 arm 的**）并**确认 `state != MERGED`**。
+  ⚠️ **已经 ready 了还要补 commit** ⇒ **`--disable-auto` 不够**（v1.40 实测订正，2026-09-21 / **#4829** + **#4834**）：
+  `gh pr merge <N> --disable-auto` 只在「**此后不再 push**」的前提下有效 —— **一次 push 触发的 `synchronize`
+  就会让 `automerge.yml` 重新 arm**（实测：disarm 成功后 push ⇒ `Enable auto-merge` 重新通过 ⇒ CI 一绿即秒合，
+  再想 disarm 时已 `MERGED`）⇒ **唯一可靠控制是 draft**：**先 `gh pr ready --undo` 转回 draft**，补完 commit 再 `gh pr ready`。
+  （与同节「`block/merge` 标签**拦不住已 arm 的** auto-merge」同族；本条命中的是「disarm 就够了」这个**错误结论**。）
   **本会话统计（2026-09-20/21）**：该形态**被踩到 10 次**（多数经内容级核验**未真搁浅**，但**规则本身每次都被违反**）
   ⇒ **判定"是否真搁浅"只有内容级一条路**：`git show origin/main:<file>`（**不看 commit 可达性**，见 §17.3 三件事）。
 
@@ -1685,7 +1689,7 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
 **尚未接 CI required check** —— 现为人工 / 会话收尾时调用，**不会自动拦人**。
 ⚠️ **P7 只解决墙钟与往返，不解决「CI 本身 3-4 min」** —— 那不在本单内。
 
-## 版本沿革（v1.1 → v1.39.0）
+## 版本沿革（v1.1 → v1.40.0）
 
 > 本节由 **v1.21** 从 frontmatter `description` **逐字迁入**（条目文本未改，仅加列表符号并按版本排序）。
 > 背景：frontmatter `description` 是 YAML 纯标量，会在第一个「空白 + `#`」处**静默截断** ——
@@ -1996,3 +2000,16 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
   ② **#4668 补规则 G**：文档里写**裸 `文件名:行号`** 会被 Case Trust 判 `CASE-TRUST-STALE-LINE-REF`（**阻塞**）且**本地不复现** ⇒ 一律写**仓库相对全路径**（§2.2）。
   ③ **#4689 硬化反搁浅规则**：把「改动没全落完不要开 PR」从"经验条目"提为 §2.2 的**硬规则**，并登记本会话**10 次**踩到的统计
   （多数经内容级核验未真搁浅，但规则每次都被违反）⇒ 判定是否真搁浅**只有内容级一条路**（§17.3 三件事）。
+- v1.40.0（2026-09-21，**两条实测把"执行细节"订正到位** —— 都属于"照现行文本做会**静默失效**"的坑）：
+  ① **#4829 订正 §2.2 的 disarm 口径**：`gh pr merge --disable-auto` **不是可靠控制** —— push 触发的 `synchronize`
+  会让 `automerge.yml` **重新 arm**（实测链路：disarm 成功并确认 `autoMergeRequest=null` → push → 重新 arm
+  （CI 日志 `Enable auto-merge pass`）→ CI 一绿即秒合 → 再 disarm 时已 `MERGED`；同日 #4834 上复现同一机制，
+  `autoMergeRequest.enabledBy = app/github-actions`，**不是 PR 作者开的**）⇒ **唯一可靠控制是 draft**
+  （draft PR 无法被 auto-merge 合并）；已 ready 又必须补 commit ⇒ **`gh pr ready --undo` 转回 draft**，而非 disarm。
+  ② **#4834 补 gitleaks 判据形态**：`Secret Scan (gitleaks)` **按每个提交的 patch** 扫（findings 的 fingerprint
+  携带**出事那个 commit** 的 sha）⇒ **只追加一个"已改好"的提交不会转绿**（含问题字面量的提交**仍在 PR 区间内**）
+  ⇒ 必须让**那个提交不存在**：把分支改写成**单个干净提交**（`--force-with-lease`），并用 `git rev-parse HEAD^{tree}`
+  证明**改写前后树哈希一致**（= 内容一字未变，只是那个提交不存在）。
+  判据形态 = 「**凭据词 + `=` + ≥16 位值**」⇒ 修法是**按领域含义改名**（`TOKEN` → `PART_CODE`，与仓库既有
+  `ORDER_ID` / `PROD_ID` 同族）+ 换成一眼假的值；🔴 **不许**加 `.gitleaks.toml` / `.gitleaksignore` 去豁免
+  `*/test/*` —— 那是**削弱一条安全控制**换绿（本仓当前没有该文件，是有意的）。
