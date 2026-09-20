@@ -605,6 +605,70 @@ complete(set_no, order_item_id, [operation_id], [qty], worker, clientRequestId):
 > 🔴 **不许「统一」这两处的措辞**（统一到任一侧都是错的）；**也不要让读面去预告 409** ——
 > 读面塞 HTTP 语义会把「状态报告」与「写协议」耦合。§3.2 ③ 与上表原文**一律保留留档**。
 
+### 5.3.2 去重/幂等的真值面：`production_work_logs` **全库无 UNIQUE**（**有意**；issue #4845）
+
+> **来源**：issue #4845（来自 #4814 的源码级核实）。本节是**边界登记** —— 补的是
+> 「**去重没有 DB 兜底**」这一结构事实，**不改代码、不加约束/索引、不改已发布迁移**。
+> **引用纪律**：一律**符号引用**（类名#方法名 / 索引名 / 迁移文件名），**不写行号**。
+
+**① 结构事实（读源，可复算）**
+
+| 项 | 真值 |
+|---|---|
+| 建表迁移 | `backend/admin-api/src/main/resources/db/migration/V49__create_production_operations_and_work_logs.sql` |
+| 该表上的索引 | **两条，都不是唯一索引**：`idx_work_logs_po`（`processing_order_id, operation_id`，`WHERE deleted = 0`）/ `idx_work_logs_worker_date`（`tenant_id, worker_name, work_date`，`WHERE deleted = 0`） |
+| 全库 UNIQUE | **零命中** —— `backend/admin-api/src/main/resources/db/migration/` 全目录 + `docs/sql/schema.sql` 里**没有任何**指向该表的唯一索引 / 表内 `UNIQUE` 约束 / `ALTER TABLE … UNIQUE` |
+| UNIQUE 的实际去处 | `client_request_keys`（`(tenant_id, client_request_id)`）/ `processing_orders.qr_token` / `production_operations` / `production_routings` 等**别的**表 |
+
+复算（一条命令，**期望零输出**）：
+
+```bash
+grep -rniE "unique" backend/admin-api/src/main/resources/db/migration/ docs/sql/schema.sql | grep -i production_work_logs
+```
+
+判据已固化：`tests/unit_ci_workflows/test_work_logs_dedup_boundary.py`（C1 扫三种 UNIQUE 形态、
+C4 注入式自证 —— 将来给该表加唯一约束 ⇒ 该守卫红）。
+
+**② 为什么**不该**给该表加 UNIQUE（「有意不加」≠ 遗漏）**
+
+**分段完成**是合法业务形态：工人一次只做完一部分（如应做 11 米，先报 6 米），第二次把剩下的报完 ——
+**两次合法提交之和 = 应做数量** ⇒ 同一 `operation_id` 上必然出现**两行** `production_work_logs`。
+而扫码完成端点的数量缺省值就是「**剩余应做**」（`ProductionScanCompleteService#plannedRemaining`）
+⇒ **正常路径自己就会写多行**。加唯一约束 = 把合法写入判死。
+
+**③ 去重的真落点 = 三道应用层判据（DB 侧没有任何一层）**
+
+| # | 判据（符号引用） | 拦下的形态 | 拒绝码 |
+|---|---|---|---|
+| ① | `ProductionScanService#pending` 的 `.filter(op -> !productionService.isDone(op))`（`isDone` = `done_qty ≥ qty`） | 本套该部位**已无待做工序** | 409 `SET_ALREADY_COMPLETED` / 422 `NO_PENDING_OPERATION`（**零写入**） |
+| ② | `ProductionScanCompleteService#plannedRemaining`：`qty` 缺省时取「剩余应做」，`≤ 0` ⇒ 拒绝 | 推断读与记账前重读之间的**并发窗口**（该工序刚被报满） | 409 `OPERATION_ALREADY_ADVANCED` |
+| ③ | `ProductionService#assertWithinPlannedQty`（Σ合格 ≤ 应做；**拒绝不 clamp**）+ `ProcessingPositionOperationMapper#advanceDoneQtyIfUnchanged` 的 **CAS**（影响行数 0 ⇒ fail-closed） | 超报 / 并发丢更新 | 422 `REPORT_QTY_EXCEEDS_PLANNED` / 409 `OPERATION_ALREADY_ADVANCED` |
+
+> ⚠️ 这三条是**纵深防御**，不是「随便动一下就红」：只摘 ① 时判据仍绿；**同时**摘掉三条
+> ⇒ 换键请求当场写出第二行（#4814 的反向红证原文见 PR #4844 的 body）。
+> **承重证据**：`backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanCompleteServiceTest.java`
+> 的 `differentKeyAfterFullReportDoesNotWriteSecondRowForSameOperation` /
+> `differentKeyAfterFullReportRecordsNextOperationInFull` / `sameIdempotencyKeyReplaysWithoutSecondWrite`。
+
+**④ 边界（**已知**，不是「以为有」）**
+
+- 幂等键（`X-Client-Request-Id`）**不是**去重兜底 —— 它只覆盖「**同键**重放」；**键不同**时挡住重复的
+  是上表那三道**业务判据**。
+- **任何新增的写路径**（新端点 / 批处理 / 运维脚本 / 直连 SQL）都**不会**被数据库挡住 ⇒
+  必须复用同一份记账口径 `ProductionService#applyReport`（**唯一**一份记账实现：
+  「数量上限校验 → 写明细 → CAS 推进 → `done_at` → 完工判定」都在它里面）。
+- 该表的红线仍是「**明细不可变**」+ `docs/design/worker-scan-terminal.md` §7 的
+  「**不改** `production_work_logs`」⇒ 用「加约束」补兜底既无效（分段完成）又违约。
+
+**⑤ 幂等键自身的边界（跨刷新 / 换屏 / 换设备**会**换键）**
+
+键 = 请求头 `X-Client-Request-Id`，**由客户端生成**（`frontend/worker-h5/src/app.mjs` 的 `newRequestId`；
+服务端从不生成键），**只有内存一份**（`state.view.__requestId`）+ 一个**未确认提交**的
+`localStorage` 单槽（`PENDING_REQUEST_KEY`，issue #4814 起）⇒ 刷新 / 换屏 / 换设备 / 换浏览器
+**都可能换键**；只有「同屏重试」与「同一工人 + 同一张码 + 上次未获答复」才复用。逐条边界登记在
+`.github/cases/processing-order.yml` 的 `PG-018` 的「§5 防呆」判据旁 —— **该键不是稳定键，
+不得把它当去重兜底**。
+
 ### 5.4 自动计件（真值源 `:57` 后半句）
 
 | 项 | 设计 |
