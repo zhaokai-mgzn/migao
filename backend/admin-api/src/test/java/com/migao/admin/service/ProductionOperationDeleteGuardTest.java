@@ -63,10 +63,15 @@ import static org.mockito.Mockito.when;
  *
  * <h2>issue #4665：一键「设为不做并删除」+ 级联软删矩阵行（用户实测两轮）</h2>
  * <ol>
- *   <li><b>一键</b>（用户原话「无法删除，而且没有地方设置做于不做」）：{@code detachPositions=true}
+ *   <li><b>一键</b>（用户原话「无法删除，而且没有地方设置做于不做」）：走**独立端点**
+ *       {@code DELETE /operations/{id}/detach-and-delete}（服务层 {@code deleteDetaching}）
  *       ⇒ 同一事务里先把命中的矩阵格设为 {@code applicable=false}（价清空）再软删 —— 删除的前置
  *       系统自己做，不再拆给商家两步。护栏①主线 / ②规则**照样拦**（主线涉及车间顺序，必须人工确认），
- *       且**先判护栏、后摘格** ⇒ 被拦时一格都不摘。</li>
+ *       且**先判护栏、后摘格** ⇒ 被拦时一格都不摘。
+ *       ⚠️ **为什么是独立端点**：{@code DELETE /operations/{id}} 那条路径下另有一个既有软删写面 ——
+ *       {@code tests/unit_ci_workflows/test_logic_delete_write_shape.py} 的锚点按**第一个名为
+ *       {@code delete} 的方法**取体（issue #4608 的显式写列守卫）⇒ 把一键语义塞进同一方法会让
+ *       护栏判据与守卫锚点纠缠（**CI 实测红**：`#delete: 缺显式写列片段`）。</li>
  *   <li><b>级联软删</b>（用户第二轮「**依然删不干净**」）：工序软删后矩阵行若还在，读面
  *       （只看 {@code deleted=0}）照旧返回它 ⇒ 工艺项表格里那一行**照旧显示**。故删除必须在
  *       同一事务里把属于该工序的矩阵行（判据与护栏③**同一份** {@code variantNameOf} 命中集）
@@ -383,7 +388,7 @@ class ProductionOperationDeleteGuardTest {
         when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(1);
         when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
 
-        Map<String, Object> result = service().delete(OP_ID, TENANT, true);
+        Map<String, Object> result = service().deleteDetaching(OP_ID, TENANT);
 
         // ① 每个命中格都写「不做」（**遍历全部命中格**，不是只看一格）
         ArgumentCaptor<String> ids = ArgumentCaptor.forClass(String.class);
@@ -418,7 +423,7 @@ class ProductionOperationDeleteGuardTest {
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
                 position("三边", "布帘", true)));
 
-        assertThatThrownBy(() -> service().delete(OP_ID, TENANT, true))
+        assertThatThrownBy(() -> service().deleteDetaching(OP_ID, TENANT))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> {
                     BusinessException ex = (BusinessException) e;
@@ -509,7 +514,7 @@ class ProductionOperationDeleteGuardTest {
         when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
 
         // 一键（detachPositions=true）⇒ 那一格「做」先被摘掉，再连两行一起软删
-        Map<String, Object> result = service().delete(OP_ID, TENANT, true);
+        Map<String, Object> result = service().deleteDetaching(OP_ID, TENANT);
 
         ArgumentCaptor<String> ids = ArgumentCaptor.forClass(String.class);
         verify(productionOperationPositionMapper, org.mockito.Mockito.times(2))

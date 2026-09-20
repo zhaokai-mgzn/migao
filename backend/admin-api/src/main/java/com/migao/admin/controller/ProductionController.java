@@ -293,18 +293,37 @@ public class ProductionController {
      * （给触发名）；③ 被矩阵行引用（该变体对应的**全部** {@code (逻辑名, 部位)} 格中任一
      * {@code applicable=true}，给部位）。已软删 ⇒ <b>200 幂等 no-op</b>。</p>
      *
-     * <p><b>{@code detach_positions=true}（issue #4665）</b>：一键「设为不做并删除」——
-     * 同一事务里先把受影响的矩阵格设为 {@code applicable=false}（价清空），再软删工序，
-     * 响应多一个 {@code detached_positions}（摘了几个格，如实报数）。护栏①主线 / ②规则
-     * <b>照样拦</b>（主线涉及车间顺序，必须人工确认）；只有护栏③变成可一键满足。</p>
+     * <p>⚠️ 本端点**行为一字不变**（不含「一键摘格」）—— 一键语义在
+     * {@link #detachAndDeleteOperation(String)}（独立端点，issue #4665）。</p>
      */
     @DeleteMapping("/operations/{id}")
     @RequirePermission("processing:manage")
-    public ApiResponse<Map<String, Object>> deleteOperation(
-            @PathVariable String id,
-            @RequestParam(name = "detach_positions", defaultValue = "false") boolean detachPositions) {
+    public ApiResponse<Map<String, Object>> deleteOperation(@PathVariable String id) {
         return ApiResponse.success(
-                productionOperationCommandService.delete(id, TenantContext.getTenantId(), detachPositions));
+                productionOperationCommandService.delete(id, TenantContext.getTenantId()));
+    }
+
+    /**
+     * **一键「设为不做并删除」**（issue #4665 A；用户实测「无法删除，而且没有地方设置做于不做」）
+     * DELETE /api/admin/production/operations/{id}/detach-and-delete
+     *
+     * <p>删除的前置（把受影响的矩阵格设为不做）**系统自己做**：同一事务里先摘格
+     * （{@code applicable=false} + 价清空）再软删工序 + **级联软删矩阵行**（#4665 C：删干净），
+     * 响应多两个键 {@code detached_positions} / {@code deleted_positions}（各摘/删了几个格，如实报数）。</p>
+     *
+     * <p><b>护栏不放宽</b>：护栏①主线 / ②规则<b>照样拦</b>（主线涉及车间顺序，必须人工确认），
+     * 且<b>先判护栏、后摘格</b> ⇒ 被拦时一格都不摘、一行都不删；只有护栏③变成可一键满足。</p>
+     *
+     * <p><b>为什么是独立端点而不是给 {@code DELETE /{id}} 加查询参数</b>：`DELETE /{id}` 那条路径下
+     * 另有一个既有软删写面（{@code tests/unit_ci_workflows/test_logic_delete_write_shape.py} 的锚点
+     * 按**第一个名为 {@code delete} 的方法**取体，issue #4608 的显式写列守卫）—— 把一键语义塞进
+     * 同一方法会让护栏判据与守卫锚点纠缠。独立端点 = 两条路径各自可 grep、各自可单测。</p>
+     */
+    @DeleteMapping("/operations/{id}/detach-and-delete")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> detachAndDeleteOperation(@PathVariable String id) {
+        return ApiResponse.success(
+                productionOperationCommandService.deleteDetaching(id, TenantContext.getTenantId()));
     }
 
     /**

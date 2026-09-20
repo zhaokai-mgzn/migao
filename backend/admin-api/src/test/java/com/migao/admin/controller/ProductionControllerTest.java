@@ -1316,13 +1316,13 @@ class ProductionControllerTest {
     }
 
     /**
-     * issue #4665 A：`DELETE /operations/{id}?detach_positions=true` —— 一键「设为不做并删除」
-     * 的**原子**落点：后端**一次事务**里先把受影响的矩阵格设为不做，再软删工序。
+     * issue #4665 A：`DELETE /operations/{id}/detach-and-delete` —— 一键「设为不做并删除」
+     * 的**原子**落点：后端**一次事务**里先把受影响的矩阵格设为不做，再软删工序 + 级联软删矩阵行。
      *
-     * <p>红证（改前）：端点不接受该参数 ⇒ 矩阵格那一条护栏照旧 422（商家只能手工两步）。</p>
+     * <p>红证（改前）：该端点不存在 ⇒ 404；矩阵格那一条护栏照旧 422（商家只能手工两步）。</p>
      */
     @Test
-    @DisplayName("#4665 DELETE /operations/{id}?detach_positions=true ⇒ 一次事务摘格 + 删除（200）")
+    @DisplayName("#4665 DELETE /operations/{id}/detach-and-delete ⇒ 一次事务摘格 + 级联 + 删除（200）")
     void deleteOperationDetachesPositionsThenDeletes() throws Exception {
         when(productionOperationMapper.selectById("op-1"))
                 .thenReturn(operationRow("op-1", "布三边", "车位", "米", "0.40", 1));
@@ -1339,8 +1339,7 @@ class ProductionControllerTest {
         when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(1);
         when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
 
-        mockMvc.perform(delete("/api/admin/production/operations/op-1")
-                        .param("detach_positions", "true"))
+        mockMvc.perform(delete("/api/admin/production/operations/op-1/detach-and-delete"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.deleted").value(true))
                 .andExpect(jsonPath("$.data.detached_positions").value(1))
@@ -1418,11 +1417,11 @@ class ProductionControllerTest {
     }
 
     /**
-     * 反向护栏（issue #4665 明确要求）：主线命中时，带 {@code detach_positions=true} 的删除
+     * 反向护栏（issue #4665 明确要求）：主线命中时，一键端点
      * **也必须被拦**（主线涉及车间顺序，必须人工确认），且**一格都不许被摘**。
      */
     @Test
-    @DisplayName("#4665 反向护栏：主线命中 ⇒ 带 detach_positions=true **也被拦**（422，一格不摘）")
+    @DisplayName("#4665 反向护栏：主线命中 ⇒ 一键端点 **也被拦**（422，一格不摘）")
     void deleteOperationWithDetachStillRejectsMainlineReference() throws Exception {
         when(productionOperationMapper.selectById("op-1"))
                 .thenReturn(operationRow("op-1", "布三边", "车位", "米", "0.40", 1));
@@ -1440,8 +1439,7 @@ class ProductionControllerTest {
                         .unitPrice(new BigDecimal("0.40")).applicable(true).status("active").deleted(0)
                         .build()));
 
-        mockMvc.perform(delete("/api/admin/production/operations/op-1")
-                        .param("detach_positions", "true"))
+        mockMvc.perform(delete("/api/admin/production/operations/op-1/detach-and-delete"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.error.details[0].field").value("routing"))
                 .andExpect(jsonPath("$.error.details[0].message").value(
