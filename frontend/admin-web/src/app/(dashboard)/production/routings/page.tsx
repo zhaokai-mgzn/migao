@@ -212,7 +212,7 @@ const SOURCE_META: Record<ProductionSource, { label: string; className: string }
  */
 const SCOPE_META: Record<ProductionScope, { label: string; title: string }> = {
   position: { label: '部位级', title: '每部位一次（如布帘一道、纱帘一道）' },
-  set: { label: '套级', title: '每樘窗一次（一樘「布 + 纱」只做一次）' },
+  set: { label: '套级', title: '每套窗一次（一套「布 + 纱」只做一次）' },
 }
 const SCOPE_ORDER: ProductionScope[] = ['position', 'set']
 
@@ -2946,11 +2946,11 @@ export default function ProcessConfigPage() {
                    <div className="mb-3 flex flex-wrap items-baseline gap-2">
                      <h2 className="text-base font-medium text-neutral-900">【打包发货】</h2>
                      <span className="text-sm text-neutral-500">
-                       {deliveryRows.length} 道 · 每樘窗一次的交付活（一列价，元/套）
+                       {deliveryRows.length} 道 · 每套窗一次的交付活（一列价，元/套）
                      </span>
                    </div>
                    <p className="mb-3 text-xs text-neutral-500">
-                     这几道活<strong>不按部位分</strong>（一樘窗只做一次）⇒ 一个价。价格由各部位的设置
+                     这几道活<strong>不按部位分</strong>（一套窗只做一次）⇒ 一个价。价格由各部位的设置
                      聚合成一列：全部相同 ⇒ 显示该价；<span className="text-amber-700">未定价</span>
                      （≠ ¥0.00）；各部位不同价 ⇒ <strong>显式提示</strong>并引导到「管理▸」逐个改
                      （<strong>不静默取第一个</strong>）。
@@ -3956,9 +3956,9 @@ export default function ProcessConfigPage() {
         <div className="space-y-3 text-sm" data-testid="operations-manage-drawer">
           <p className="text-neutral-600">
             这道工序在<strong>各部位的设置</strong>（多个部位共用同一份设置时只列一条）。
-            分组与单位决定报工口径；<strong>作用域</strong>：套级 = 每樘窗只做一次；
+            分组与单位决定报工口径；<strong>作用域</strong>：套级 = 每套窗只做一次；
             <strong>必完</strong>：缺这道工序不能打包；<strong>部位级工序要每个部位都做完</strong>才算完
-            （套级每樘窗一次）。
+            （套级每套窗一次）。
           </p>
           {/* 抽屉层写面被拒：逐条理由就地展示（不吞成一句「操作失败」） */}
           {opLevelReasons && (
@@ -4162,7 +4162,7 @@ export default function ProcessConfigPage() {
                         </option>
                       ))}
                     </select>
-                    <span>套级 = 每樘窗只做一次（部位级 = 每个部位各做一次）</span>
+                    <span>套级 = 每套窗只做一次（部位级 = 每个部位各做一次）</span>
                   </div>
 
                   {/* 必完 + 一句解释 */}
