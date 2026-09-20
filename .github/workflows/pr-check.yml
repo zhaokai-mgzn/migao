@@ -68,7 +68,10 @@ jobs:
   ci-workflow-tests:
     name: ci workflow helper unit tests
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    # 2026-09-20 提升（#4793）：套件已涨到 ~178s（实测 job 172~174s），原上限 3 分钟（180s）
+    # 余量只剩 ~2s ⇒ runner 负载抖动即被自身 job 超时 CANCELLED（无任何断言失败、但 required check 卡合）。
+    # 改为 8 分钟：对当前 ~188s 有 2.5× 余量，与仓内其它 job 的 5~15 分钟一致。
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
