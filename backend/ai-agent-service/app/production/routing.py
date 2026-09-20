@@ -690,6 +690,73 @@ def _build_position_prices(rows: List[tuple]) -> Dict[str, Dict[str, Any]]:
 #: 部位价目 + 适用性矩阵（**30 道逻辑工序 × 4 部位 = 120 行**，逐行显式，不留隐式缺省）
 OPERATION_POSITION_PRICES: Dict[str, Dict[str, Any]] = _build_position_prices(_POSITION_PRICE_ROWS)
 
+#: 去部位化（issue #4883 / #4885）后**同一逻辑工序唯一那个价**的取行来源 —— 用户裁定「取布帘价」。
+#:
+#: ⚠️ 与 Java 侧 `ProductionOperationQueryService.COLLAPSE_PRICE_SOURCE_POSITION` **逐字同值**
+#: （由 `tests/test_production/test_position_collapse_mirror.py` 的跨语言判据钉住）：
+#: 两侧各自硬编码一个字面量而不比对，就是两份口径，漂移的那一份不会变红。
+COLLAPSE_PRICE_SOURCE_POSITION: str = "布帘"
+
+
+def collapse_to_logical(rows: Optional[List[tuple]] = None) -> Dict[str, Dict[str, Any]]:
+    """部位价目矩阵 → **一道逻辑工序一行、一个价**（Java `collapseToLogical` 的真值源镜像）。
+
+    矩阵的键是 `(逻辑工序, 部位)`；去部位化（issue #4883）后**部位不再参与取价**
+    ⇒ 同一 `逻辑工序` 的多行必须**收敛为一行**。收敛顺序（**完全确定**，不依赖输入序）：
+
+    1. `applicable is True` 的行优先 —— `False` = 当年「该部位明确不做」，其 `unit_price`
+       一律 `None` ⇒ 优先它会把**有价**的工序判成未定价（`帘头制作`：布帘格 `(None, False)`、
+       帘头格 `(2.0, True)` ⇒ 正确答案是 `帘头 / 2.0`，**不是**布帘格的 `None`）；
+    2. 其中 `position == COLLAPSE_PRICE_SOURCE_POSITION`（布帘）的行优先（用户裁定「取布帘价」）；
+    3. 再按 `position` 字典序、最后按**声明序**（= V71 种子的 id 序）—— 与 Java 的
+       `id` 升序末档对应。
+
+    🔴 **价只「选行」、绝不「回落」**（issue #4696）：幸存行的 `unit_price` 是 `None`
+    ⇒ 就是**未定价**，**不得**回落 `OPERATION_CATALOG` 的行价（那是 `NOT NULL DEFAULT 0`
+    ⇒ 回落把「未定价」变成「真 0 元」，工人白干且无人知道）。
+
+    ⚠️ **本函数与本模块其余部分一样，零运行时消费者**（`app/` 里只有 `app/api/internal.py`
+    消费 `qty_and_source`）：它存在是为了让 Java 那条收敛规则**有一份可比对的对侧** ——
+    否则同一条规则只有一份实现，改错了没有任何东西会红（同 `build_route_v2` ↔ Java `buildRoute`
+    的既有范式）。**不得**据此把它接进运行时（那会让同一条规则出现第二个消费口径）。
+
+    Args:
+        rows: `(逻辑工序, 部位, 单价|None, applicable)` 行；缺省 = 冻结的 `_POSITION_PRICE_ROWS`
+    Returns:
+        `{逻辑工序: {"position", "unit_price", "applicable"}}`（幸存行），按逻辑工序名升序
+    """
+    source = _POSITION_PRICE_ROWS if rows is None else rows
+    survivors: Dict[str, tuple] = {}
+    for index, row in enumerate(source):
+        logical = row[0]
+        current = survivors.get(logical)
+        if current is None or _beats_for_collapse(row, index, current[0], current[1]):
+            survivors[logical] = (row, index)
+    out: Dict[str, Dict[str, Any]] = {}
+    for logical in sorted(survivors):
+        row = survivors[logical][0]
+        out[logical] = {"position": row[1], "unit_price": row[2], "applicable": row[3]}
+    return out
+
+
+def _beats_for_collapse(candidate: tuple, candidate_index: int,
+                        current: tuple, current_index: int) -> bool:
+    """`candidate` 是否应取代 `current` —— `collapse_to_logical` 的三档顺序（与 Java 逐档对应）。
+
+    ⚠️ **档序是判据本身**，不是实现细节：把「布帘列优先」提到「适用行优先」**之前**
+    ⇒ `帘头制作` 会从 `帘头 / 2.0` 变成 `布帘 / None`（有价工序被判成未定价）。
+    `tests/test_production/test_position_collapse_mirror.py` 逐档钉住它。
+    """
+    if bool(candidate[3]) != bool(current[3]):
+        return bool(candidate[3])
+    is_source_position = candidate[1] == COLLAPSE_PRICE_SOURCE_POSITION
+    current_is_source_position = current[1] == COLLAPSE_PRICE_SOURCE_POSITION
+    if is_source_position != current_is_source_position:
+        return is_source_position
+    if candidate[1] != current[1]:
+        return candidate[1] < current[1]
+    return candidate_index < current_index
+
 #: 规则表 26 条（工艺变体 10 + 特殊选项 16）—— 「主线 + 规则」取代「9 条展开路线」
 #:
 #: 字段：`trigger_kind`（`craft`/`option`/`processing_item`；`shaped` 预留但无种子行）·
