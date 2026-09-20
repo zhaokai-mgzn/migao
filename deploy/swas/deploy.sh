@@ -163,6 +163,25 @@ report_rollback_point() {
 }
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# 2.5a 的状态变量（issue #4828）—— **必须在第 1 步覆盖配置文件之前读**。
+#
+# 运行中的 nginx 的上游色 == 「上一次成功 reload 时的配置文件内容」；而第 1 步**每次**都会把
+# canonical（正式色）配置抄进 `$NGINX_CONF` ⇒ 那之后就再也看不出「上一轮把流量留在了 green」。
+# ⇒ 残留切换快照只能在这里读（本单第一版把快照放在第 1 步之后 ⇒ 判据恒为「正式色」⇒ **死代码**）。
+#
+# 判据 = `$NGINX_CONF` **与它的上一版备份** `$NGINX_CONF_BAK` 里是否还有 `server <svc>-green:<端口>;`。
+# 为什么要连备份一起看：②.5「写回正式色」是「先写文件、再 reload」，若在两者之间被强杀，
+# **文件已是正式色而运行态仍指着 green**（green 容器还在，因为第 ③ 步没跑到）⇒ 只看文件会漏判，
+# 漏判的后果 = 下一轮把唯一还在服务的 green 容器删掉 ⇒ **全站所有域名同时 502**。
+# ⚠️ 备份会在每轮**干净收口**时被归一化成正式色（见 2.6 之后那段）⇒「备份里出现 green」专指「上一轮没走完」。
+# ══════════════════════════════════════════════════════════════════════════
+NGINX_CONF=${NGINX_CONF:-./nginx/nginx.conf}
+NGINX_CONF_BAK=${NGINX_CONF_BAK:-$NGINX_CONF.last-good}
+BG_PREV_GREEN=$(grep -hoE 'server[[:space:]]+[a-z0-9-]+-green:[0-9]+;' \
+                  "$NGINX_CONF" "$NGINX_CONF_BAK" 2>/dev/null \
+                | sed -E 's/^.*[[:space:]]+//; s/-green:.*$//' | sort -u | tr '\n' ' ' || true)
+
 echo "== 1. 同步 repo 内 canonical compose + nginx 配置 =="
 curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 15 --max-time 120 -o src.tar.gz https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main
 rm -rf src && mkdir -p src && tar xzf src.tar.gz -C src --strip-components=1
@@ -368,16 +387,213 @@ wait_healthy() {
   return 1
 }
 
+# ══════════════════════════════════════════════════════════════════════════
+# 2.5a nginx 上游切换（issue #4828）：把 #4785 如实登记的**成功路径残留窗口**打到 0
+#
+# 残留窗口的确切位置 = 下面循环的第 ② 步 `docker compose up -d --no-deps <svc>`：它走的是 compose 的
+# **替换**语义（停旧 → 删旧 → 建新 → 起新），而 nginx 在**启动/reload 时**解析并缓存上游 IP
+# （`proxy_pass http://admin-api:8080` 走 compose DNS 名）⇒ 从「旧容器已被删」到「正式容器健康 +
+# nginx reload 完成」这段时间里，nginx 指向的是**已经没人监听的上游** ⇒ **502**。
+# 真机实测这段 ≈ 容器重建 + JVM 启动（几十秒）；`wait_healthy` 跑在第 ② 步**之后** ⇒ 它只能**事后发现**，
+# 覆盖不了这段（这正是 #4785 登记「与改动前同量级、未变差」的那一段）。
+#
+# 本段把每个服务的上游抽成 nginx.conf 里的一个 `upstream` 块（**每服务恰好一行 `server`**），
+# 「切流量」= **就地改那一行**（正式色 ⇄ green 色），于是第 ② 步期间流量走在**已通过健康检查的 green** 上：
+#   ①.5 green 健康（判据 = 第 3 步那份 `wait_healthy`）⇒ 改一行 → `nginx -t` → reload ⇒ 流量到 green；
+#       ①.5 / ②.5 都只在 `BG_SWITCH_ON=1`（非应急开关 ∧ nginx 在跑）时执行 —— 其余情况一个字都不改配置。
+#   ②   替换正式容器（这段空档没有任何请求打在正式容器上）；
+#   ②.5 正式容器健康 ⇒ 改回正式色 → 校验 → reload ⇒ **才**在第 ③ 步删 green。
+# ⇒ **成功路径窗口 = 0**（前提：本段真的执行了 —— 见 ⓖ）。失败路径的窗口在 #4785 已是 0，本段**不碰**它：
+#    green 不健康 ⇒ 在第 ① 步就 `exit 1`，上游**一个字都没改**（下面 ①.5 在第 ① 步之后）。
+#
+# 🔴 写坏 nginx.conf = **全站所有域名同时挂**（#4785 当初不做这一步的理由）⇒ 逐条对消：
+#   ⓐ 只改**一行**：判据 = 该服务的可切上游行必须**恰好 1 行**，改不动/改多处 ⇒ **不切**（fail-closed）；
+#   ⓑ **先校验后落盘**：候选经 stdin 送进**正在运行的 nginx**，用 `nginx -t`（主配置 wrapper）解析候选
+#      ⇒ 候选不过 ⇒ **联机文件一字未改**（真机实证：指向不存在的 green 会被 `host not found in upstream` 拦住）；
+#   ⓒ 落盘用**原地改写**（`cat > 文件`，同 inode）—— `mv` / `sed -i` 会**换 inode** ⇒ 容器读到的还是旧文件
+#      **且不报错**（docs/wiki/CI-CD.md 的 bind mount 小节已更正这条）；
+#   ⓓ 落盘后**再** `nginx -t`（这次校验 nginx 真正会加载的那份文件）；reload 之前任何一步失败 ⇒ 就地写回
+#      `nginx.conf.last-good` ⇒ 不 reload ⇒ 仍在跑的 worker 继续服务，部署中止；
+#   ⓔ **可捕获的退出路径**：EXIT trap 若发现上游仍停在 green 色 ⇒ 写回正式色（正式容器不健康时
+#      **保持指向 green** 并保留该 green 容器继续服务）⇒ 不把「当前激活色」留给下一轮。
+#   ⓕ **不可捕获的退出路径**（SIGKILL / 强杀 ⇒ trap 根本不运行）：由**下一轮开头**的
+#      「残留切换收敛」兜底 —— 判据是**第 1 步之前**读的快照（`$NGINX_CONF` ∪ `$NGINX_CONF_BAK`
+#      里出现过的 `-green` 上游），因为第 1 步会把文件覆盖回正式色、事后无法再判。
+#      收敛 fail-closed：正式容器健康 ⇒ 强制 reload 收回正式色（**不能**走 `bg_switch_upstream`
+#      的「文件已等于目标 ⇒ 无需切换」短路 —— 那正是「不 reload、收不回来」的漏洞）；
+#      不健康 ⇒ **本轮不碰任何容器**、中止（green 继续服务，站点不挂），放行口 = `touch $BG_OFF_FILE`。
+#      ⚠️ 没有这一步，本段**自己**会引入一个比原窗口更糟的坏路径：nginx 还指着上一轮的 green 时，
+#         `rm -sf $BG_GREENS` 会把**唯一在服务的后端**删掉 ⇒ 全站所有域名同时 502。
+#   ⓖ **前提**：需要真有一个"在跑的 nginx"（判据 = 在该容器里跑 `nginx -t`）。首次部署时它尚未起、
+#      且此刻也起不来（canonical 配置的上游容器还不存在 ⇒ `host not found in upstream`）⇒
+#      跳过上游切换、走 #4785 原路径（nginx 由 2.6 起，那时正式容器已换好）。
+# ══════════════════════════════════════════════════════════════════════════
+# ⚠️ `NGINX_CONF` / `NGINX_CONF_BAK` 定义在脚本开头（**第 1 步之前** —— 残留切换快照必须先于
+#    第 1 步的配置覆盖读取），两个变量跟着一起上移，保持**唯一一份**定义。
+UPSTREAM_SERVICES="admin-api ai-agent admin-web"
+BG_SWITCHED=""
+# 上游目标容器名：正式色 = compose 服务名（与 docker-compose.yml 一致）；green 色 = `<服务>-green`
+upstream_host() {
+  case "$2" in
+    green) echo "$1-green" ;;
+    *)     echo "$1" ;;
+  esac
+}
+# 候选配置（**只算不写**）：把该服务在 upstream 块里的那一行 `server <容器名>:<端口>;` 换成目标色
+nginx_conf_candidate() {
+  sed -E "s|^([[:space:]]*server[[:space:]]+)[^[:space:]]*:$(svc_port "$1");$|\1$(upstream_host "$1" "$2"):$(svc_port "$1");|" "$NGINX_CONF"
+}
+# **先校验后落盘**：候选片段走 stdin 进正在运行的 nginx（不落联机路径），用 nginx 真身解析候选。
+# wrapper 只为给片段一个合法的 main 上下文（片段本身是 conf.d 片段，不能直接 `-c`）；
+# 解析会**真的做 DNS 解析** ⇒ 目标容器不存在时这里就会失败（正是我们要拦的形态）。
+nginx_conf_validate() {
+  docker compose exec -T nginx sh -c '{ echo "events { worker_connections 64; }"; echo "http {"; cat; echo "}"; } > /tmp/migao-nginx-candidate.conf && nginx -t -c /tmp/migao-nginx-candidate.conf'
+}
+# **就地改写**（同 inode）：不许用 `mv` / `sed -i`（换 inode ⇒ 容器读旧文件且不报错）
+nginx_conf_write_in_place() {
+  cat > "$NGINX_CONF"
+}
+# 把**运行中的** nginx 重新加载到当前文件内容：**不比较、不短路**。
+# 只用于「文件已是正式色、而运行态可能还指着 green」这种只有 reload 才能纠正的状态 ——
+# 在那种状态下 `bg_switch_upstream` 会走「文件已等于目标 ⇒ 无需切换」的短路（**不 reload** ⇒ 收不回来）。
+# 失败 ⇒ 保持现状（上一版配置仍在服务、旧 worker 继续跑），由调用方决定怎么处置。
+bg_reload_nginx() {
+  if ! docker compose exec -T nginx nginx -t >/dev/null 2>&1; then
+    echo "  ❌ 联机配置未通过 nginx -t ⇒ 不 reload（上一版配置仍在服务，旧 worker 继续跑）"
+    return 1
+  fi
+  if ! docker compose exec -T nginx nginx -s reload; then
+    echo "  ❌ nginx reload 失败 ⇒ 保持现状（上一版配置仍在服务，旧 worker 继续跑）"
+    return 1
+  fi
+  return 0
+}
+# 记账：仍停在 green 色的服务（EXIT trap 按它决定要不要写回）
+bg_mark_switched() {
+  local s out=""
+  for s in $BG_SWITCHED; do [ "$s" = "$1" ] || out="$out $s"; done
+  if [ "$2" = "green" ]; then out="$out $1"; fi
+  BG_SWITCHED="$out"
+}
+# 把某服务的上游切到目标色：0 = 上游已停在目标色（联机文件 = 目标色、nginx 已 reload）
+bg_switch_upstream() {
+  local svc=$1 color=$2 host port cand n_src n_dst
+  host=$(upstream_host "$svc" "$color")
+  port=$(svc_port "$svc")
+  if [ -z "$host" ] || [ -z "$port" ]; then
+    echo "  ❌ 未知服务 ${svc}（拿不到上游名/端口）"; return 1
+  fi
+  cand=$(nginx_conf_candidate "$svc" "$color") || { echo "  ❌ ${svc}: 生成候选配置失败"; return 1; }
+  # ⓐ 判据：该服务的可切上游行**恰好 1 行**，且候选把它改成了目标色
+  n_src=$(grep -cE "^[[:space:]]*server[[:space:]]+[^[:space:]]*:${port};$" "$NGINX_CONF" || true)
+  n_dst=$(printf '%s\n' "$cand" | grep -cE "^[[:space:]]*server[[:space:]]+${host}:${port};$" || true)
+  if [ "$n_src" != "1" ] || [ "$n_dst" != "1" ]; then
+    echo "  ❌ ${svc}: nginx.conf 里该服务的可切上游不是恰好 1 行（现状 ${n_src} / 目标 ${n_dst}）⇒ **不切**"
+    return 1
+  fi
+  if [ "$cand" = "$(cat "$NGINX_CONF")" ]; then
+    echo "  ℹ️  ${svc} 上游已在 ${host}:${port}（无需切换）"
+    bg_mark_switched "$svc" "$color"
+    return 0
+  fi
+  # ⓑ 先校验后落盘
+  if ! printf '%s\n' "$cand" | nginx_conf_validate; then
+    echo "  ❌ ${svc}: 候选配置未通过 nginx -t（**联机配置一字未改**）⇒ 不切上游"
+    return 1
+  fi
+  cp "$NGINX_CONF" "$NGINX_CONF_BAK"
+  printf '%s\n' "$cand" | nginx_conf_write_in_place
+  # ⓓ 落盘后再校验一次（这次校验的是 nginx 真正会加载的那份文件）
+  if ! docker compose exec -T nginx nginx -t; then
+    echo "  ❌ ${svc}: 落盘后 nginx -t 未通过 ⇒ 就地写回上一版（未 reload ⇒ 旧 worker 继续服务）"
+    cat "$NGINX_CONF_BAK" | nginx_conf_write_in_place
+    return 1
+  fi
+  if ! docker compose exec -T nginx nginx -s reload; then
+    echo "  ❌ ${svc}: nginx reload 失败 ⇒ 就地写回上一版（未生效 ⇒ 旧 worker 继续服务）"
+    cat "$NGINX_CONF_BAK" | nginx_conf_write_in_place
+    return 1
+  fi
+  echo "  ✅ ${svc} 上游已切到 ${host}:${port}（先校验后落盘 + nginx -t + 优雅 reload）"
+  bg_mark_switched "$svc" "$color"
+  return 0
+}
+# EXIT trap 用：**单次**探针（不重试）—— 收尾阶段不许再堵 100s（重试预算留给正式判据 wait_healthy）
+bg_official_healthy_now() {
+  ( HC_RETRIES=1 HC_INTERVAL_SECONDS=0 \
+      wait_healthy "$(svc_port "$1")" "$1" "$(svc_health_path "$1")" ) >/dev/null 2>&1
+}
+bg_restore_upstreams_at_exit() {
+  local svc
+  for svc in $BG_SWITCHED; do
+    [ -n "$svc" ] || continue
+    if bg_official_healthy_now "$svc"; then
+      bg_switch_upstream "$svc" official >/dev/null 2>&1 || true
+    else
+      echo "  ⚠️ ${svc} 正式容器此刻不健康 ⇒ **保持上游指向 green**（该 green 容器刻意不删，继续服务）"
+      echo "     ⇒ 下一轮部署开头的「残留切换收敛」会先把它写回正式色（判据见脚本开头的 $NGINX_CONF_BAK 快照）"
+    fi
+  done
+}
+# ⚠️ EXIT trap 只有一个（后设覆盖先设）：把开头的「只解锁」升级为「先写回正式色 + 再解锁」。
+#    开头那条 trap 仍是脚本前半段（本段之前）生效的那条，两条都保留。
+trap 'bg_restore_upstreams_at_exit; flock -u 9' EXIT
+
 echo "== 2.5 严格蓝绿预验证（新容器先起 + 健康检查通过再切流量）=="
 BG_VERIFIED=""
 BG_SKIP=0
+# 上游切换开关（#4828）：默认**关**；只有「非应急开关 ∧ nginx 在跑且联机配置可加载」才开。
+# 关着 = **一个字都不改** nginx.conf（完全走 #4785 的原路径）—— 不做「半开半关」的中间态。
+BG_SWITCH_ON=0
 if [ -f "$BG_OFF_FILE" ]; then
   BG_SKIP=1
   echo "  ⏭️  存在 $BG_OFF_FILE ⇒ **跳过蓝绿预验证**（回到 #4767 的「失败即回滚」兜底路径）"
   echo "      ⚠️ 本次新镜像**未被预验证**：失败时靠 CI 侧回滚兜底（窗口 ≈2-4min）"
+  echo "      ⚠️ 应急开关同时**关掉上游切换**（不切上游、不删 green）—— 与 #4785 的应急语义一致"
 else
   echo "  green 第二端口：admin-api=$BG_ADMIN_API_PORT ai-agent=$BG_AI_AGENT_PORT admin-web=$BG_ADMIN_WEB_PORT"
+  # ── ① 上游切换的**可行性**（#4828）：必须真有一个"在跑的 nginx"才动上游 ──
+  # 判据 = 直接在 nginx 容器里 `nginx -t`：一次同时证明「nginx 在跑」+「联机配置能加载」。
+  # 两条必需性（都是真实形态，不是假想）：
+  #   · **首次部署**（新环境还没有任何容器）：nginx 尚未起，且**此刻也起不来** —— canonical 配置
+  #     `proxy_pass http://migao_admin_api` 的上游容器都还不存在（`host not found in upstream`）；
+  #     此刻也确实**没有流量**可切（nginx 没在服务任何人）。
+  #   · nginx 未运行：站点本已不可用，「切流量」无从谈起。
+  # ⇒ 任一情形都**跳过上游切换**（走 #4785 原路径，nginx 仍由 2.6 起）；绝不半开半关。
+  BG_NGINX_UP=0
+  if docker compose exec -T nginx nginx -t >/dev/null 2>&1; then BG_NGINX_UP=1; fi
+  if [ "$BG_NGINX_UP" = "1" ]; then
+    BG_SWITCH_ON=1
+  else
+    echo "  ⏭️  nginx 未在跑（首次部署 / nginx 不可用）⇒ **跳过上游切换**（配置一字未改）"
+    echo "      此刻没有可切的流量；nginx 由 2.6 起（那时正式容器已换好）"
+  fi
+  # ── ② 残留切换收敛（#4828）：把**运行中的** nginx 从上一轮遗留的 green 上游收回正式色 ──
+  # 为什么必须做：运行中的 nginx 若仍指着某个 `<svc>-green`，紧接着那句 `rm -sf $BG_GREENS` 就会把
+  # **唯一还在服务的后端**删掉 ⇒ **全站所有域名同时 502**（比不做本单更糟）。
+  # 判据 = `$BG_PREV_GREEN`（**第 1 步之前**读的快照：文件 ∪ 上一版备份里出现过的 `-green` 上游）。
+  # 处置（fail-closed）：正式容器健康 ⇒ 强制 reload 收回正式色（用 `bg_reload_nginx`，**不能**走
+  # `bg_switch_upstream` 的「文件已等于目标 ⇒ 无需切换」短路 —— 那正是「不 reload、收不回来」的漏洞）；
+  # 正式容器不健康 ⇒ **本轮不碰任何容器**、中止（green 继续服务，站点不挂）。
+  if [ "$BG_SWITCH_ON" = "1" ] && [ -n "${BG_PREV_GREEN// /}" ]; then
+    echo "  ⚠️  上一轮把流量留在了 green 上：${BG_PREV_GREEN}（运行中的 nginx 仍可能指着它）"
+    for svc in $BG_PREV_GREEN; do
+      if ! bg_official_healthy_now "$svc"; then
+        echo "  ❌ ${svc} 的正式容器此刻不健康 ⇒ **本轮不碰任何容器**（green 继续服务，避免全站 502）"
+        echo "     处置：① 修好正式容器（docker compose up -d --no-deps ${svc}）后重跑；"
+        echo "           ② 或应急放行：touch $BG_OFF_FILE 后重跑（应急开关不切上游、不删 green）"
+        exit 1
+      fi
+    done
+    if ! bg_reload_nginx; then
+      echo "  ❌ 上游收不回正式色（reload 未生效）⇒ **本轮不碰任何容器**，人工介入"
+      exit 1
+    fi
+    echo "  ✅ 上游已收回正式色（${BG_PREV_GREEN}）⇒ 现在删残留 green 才是安全的"
+  fi
   # 残留清理：上一轮被强杀/超时会留下 green 容器（占着容器名与第二端口）⇒ 先删，保证本次能起。
+  # 🔴 前提：**上面 ② 的收敛已经跑过**（运行中的 nginx 已收回正式色）⇒ 此刻删 green 不会删掉
+  #     「唯一还在服务的后端」。收敛被跳过（nginx 未在跑）时也同样安全：那种状态没有在服务的 nginx。
   # 并发安全：flock 覆盖**整个**脚本（含本段）⇒ 不会与另一个部署抢；本段无需另加锁。
   # shellcheck disable=SC2086
   $BG_COMPOSE rm -sf $BG_GREENS >/dev/null 2>&1 || true
@@ -419,12 +635,35 @@ for svc in $UP_SERVICES; do
     echo "  ✅ $svc green 健康 ⇒ 新镜像已被证明能起，现在才替换正式容器"
   fi
 
+  # ── ①.5 切流量到 green（#4828）：green **已通过健康检查** ⇒ 只改一行上游 + 校验 + reload ──
+  #     这一步之后直到 ②.5，正式容器的替换**不会**造成任何 502（流量走在 green 上）。
+  #     ⚠️ 条件用 `BG_SWITCH_ON`（= 非应急开关 ∧ nginx 在跑 ⇒ 蕴含 `BG_SKIP=0`）：应急开关下没有
+  #        green 容器、nginx 未跑时切了也无意义 ⇒ 两种情况都必须**一个字都不改配置**。
+  if [ "$BG_SWITCH_ON" = "1" ]; then
+    if ! bg_switch_upstream "$svc" green; then
+      echo "  ❌ ${svc} 上游切不到 green（候选校验/改写失败）⇒ **旧容器保持不动、流量未切**，部署中止"
+      $BG_COMPOSE rm -sf "$GREEN" >/dev/null 2>&1 || true
+      exit 1
+    fi
+  fi
+
   # ── ② 切换：替换正式容器（走过蓝绿 ⇒ 该镜像刚刚已被证明能起）──
   docker compose up -d --no-deps "$svc"
   if ! wait_healthy "$(svc_port "$svc")" "$svc" "$GPATH"; then
     echo "  ❌ $svc 正式容器替换后健康检查未通过 ⇒ 中止"
     echo "     交给 CI 侧 #4767 的「失败即回滚」（回滚到 .last-good-tag）兜底"
+    echo "     上游交给 EXIT trap：正式容器不健康 ⇒ **保持指向 green**（该 green 不删，继续服务）"
     exit 1
+  fi
+
+  # ── ②.5 切回正式色（#4828）：正式容器**已健康** ⇒ reload 只把流量从 green 挪回正式容器（零 502）──
+  #     ⚠️ 必须在第 ③ 步「删 green」**之前**：否则删掉的是唯一还在服务的后端。
+  #     ⚠️ 与 ①.5 同条件（`BG_SWITCH_ON`）：不改配置 ⇒ 也就不会把上游留在 green 上。
+  if [ "$BG_SWITCH_ON" = "1" ]; then
+    if ! bg_switch_upstream "$svc" official; then
+      echo "  ❌ ${svc} 上游切不回正式色 ⇒ **保留 green 继续服务**（不删它），部署中止，人工介入"
+      exit 1
+    fi
   fi
 
   # ── ③ 正式容器接棒 ⇒ 删掉 green 探针（不长期占内存/端口）──
@@ -445,6 +684,15 @@ docker compose up -d --no-deps nginx
 # 用 **reload**（优雅：旧 worker 把在途请求做完再退）而不是 restart（硬重启 ⇒ 当场丢弃在途连接）；
 # reload 不可用/失败 ⇒ 回落 restart（= 改动前的行为，不引入新的坏路径）。
 docker compose exec -T nginx nginx -s reload || docker compose restart nginx
+
+# 收口归一化（#4828）：本轮上游已全部回到正式色 ⇒ 把上一版备份也写成正式色。
+# 目的 = 让「`$NGINX_CONF_BAK` 里出现 `-green`」**专指**「上一轮没走完」——下一轮开头的残留切换
+# 快照正是读它。不归一化的话快照每轮都为真 ⇒ 收敛段每轮都跑，而它「正式容器不健康即中止」的
+# fail-closed 分支会**误伤正常部署**（把不健康的非关键服务变成"部署被阻断"）。
+# ⚠️ 只在本轮确实把上游收回正式色时才写（`BG_SWITCHED` 非空 = 还有服务停在 green ⇒ 不写）。
+if [ "$BG_SWITCHED" = "" ] && [ -f "$NGINX_CONF" ]; then
+  cp "$NGINX_CONF" "$NGINX_CONF_BAK" 2>/dev/null || true
+fi
 
 # ══════════════════════════════════════════════════════════════════════════
 # 2.7 部署成功后：按**保留策略**清理（issue #4808 ①）——替换原来那句只清 dangling 的
