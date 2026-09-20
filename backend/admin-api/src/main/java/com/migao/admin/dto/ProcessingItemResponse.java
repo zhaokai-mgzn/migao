@@ -3,7 +3,6 @@ package com.migao.admin.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -35,17 +34,7 @@ public class ProcessingItemResponse {
     private String categoryName;
 
     /**
-     * 计价方式
-     */
-    private String pricingMethod;
-
-    /**
-     * 单价
-     */
-    private BigDecimal unitPrice;
-
-    /**
-     * 单位
+     * 加工数量单位（issue #4882）：语义 = 「**加工数量**的单位」，默认 {@code 米}。
      */
     private String unit;
 

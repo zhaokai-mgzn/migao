@@ -1815,8 +1815,7 @@ class ProductionControllerTest {
     void createProcessingFeeCombinationGuardFailureReturnsDetailsEnvelope() throws Exception {
         when(processingItemMapper.selectList(any())).thenReturn(List.of(
                 ProcessingItem.builder().id("pi-1").tenantId(TENANT).name("韩褶")
-                        .categoryId("cat-1").pricingMethod("per_meter")
-                        .unitPrice(new BigDecimal("8")).unit("米").status("active").deleted(0).build()));
+                        .categoryId("cat-1").unit("米").status("active").deleted(0).build()));
 
         mockMvc.perform(post("/api/admin/production/processing-fee-combinations")
                         .contentType("application/json")
@@ -1840,8 +1839,7 @@ class ProductionControllerTest {
     void createProcessingFeeCombinationDuplicateReturnsConflict() throws Exception {
         when(processingItemMapper.selectList(any())).thenReturn(List.of(
                 ProcessingItem.builder().id("pi-1").tenantId(TENANT).name("韩褶")
-                        .categoryId("cat-1").pricingMethod("per_meter")
-                        .unitPrice(new BigDecimal("8")).unit("米").status("active").deleted(0).build()));
+                        .categoryId("cat-1").unit("米").status("active").deleted(0).build()));
         when(processingFeeCombinationMapper.selectList(any())).thenReturn(List.of(
                 ProcessingFeeCombination.builder().id("c1").tenantId(TENANT)
                         .compositionKey("韩褶").unitPrice(new BigDecimal("12"))

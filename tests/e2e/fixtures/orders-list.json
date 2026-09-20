@@ -37,10 +37,7 @@
                   "id": "dce109a60fc30b2cc9cb3b70fe8dc8b1",
                   "name": "铅坠安装",
                   "unit": "米",
-                  "quantity": 1,
-                  "subtotal": 3,
-                  "unitPrice": 3,
-                  "pricingMethod": "per_meter"
+                  "quantity": 1
                 }
               ]
             }
@@ -103,10 +100,7 @@
                   "id": "2e04eb4d9950c6911d232290f02f3e0b",
                   "name": "魔术贴安装",
                   "unit": "米",
-                  "quantity": 3,
-                  "subtotal": 12,
-                  "unitPrice": 4,
-                  "pricingMethod": "per_meter"
+                  "quantity": 3
                 }
               ]
             }

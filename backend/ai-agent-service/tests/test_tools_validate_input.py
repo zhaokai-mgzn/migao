@@ -388,14 +388,12 @@ class TestValidateInputWriteToolAudit:
         assert result.success is True
 
     async def test_processing_item_create(self, tool, admin_tool_context):
-        # 契约对齐（issue #3566）：create 必填集 = name/category_id/pricing_method/price
-        # （ProcessingItemCreateRequest.java:19-43），原断言只传前两个 → 曾是「闸门过松」的
-        # 假绿（实际调用必 422）。
+        # 契约对齐（issue #3566 / #4882）：create 必填集 = name / category_id
+        # —— `pricingMethod` / `unitPrice` 已随 #4882 从 DTO 整体删除。
         result = await tool.execute(
             context=admin_tool_context, target_tool="processing_item_manage",
             target_action="create_processing_item",
-            params={"name": "刺绣", "category_id": "cat_1",
-                    "pricing_method": "per_meter", "price": 8},
+            params={"name": "刺绣", "category_id": "cat_1"},
         )
         assert result.success is True
 
@@ -437,23 +435,20 @@ class TestValidateInputWriteToolAudit:
 
 
 class TestProcessingItemCreateGateMatchesContract:
-    """闸门 vs 真实契约（issue #3566，case_ids: PP-006）
+    """闸门 vs 真实契约（issue #3566 / #4882，case_ids: PP-006）
 
-    真实契约（admin-api）：
-    - `ProcessingItemCreateRequest.java:19-21` name @NotBlank @Size(max=20)
-    - `:26-27` categoryId @NotBlank
-    - `:33-34` pricingMethod @NotBlank
-    - `:39-43` unitPrice @NotNull @DecimalMin(0.10) @DecimalMax(999.99) @Digits(3,2)
-    - `ProcessingItemService.java:297-302` 合法枚举 per_meter/per_set/fixed/per_area
-    - `ProcessingItemController.java:57` @Valid → 校验失败 422
+    真实契约（admin-api `ProcessingItemCreateRequest`）：
+    - name @NotBlank @Size(max=20)、categoryId @NotBlank —— **只有这两个必填**；
+    - issue #4882：`pricingMethod` / `unitPrice` 字段**整体删除**（连同 0.10~999.99
+      价格区间与 per_meter/per_set/fixed/per_area 枚举）⇒ 闸门不得再要求或校验它们。
+    - Controller @Valid → 校验失败 422。
 
-    闸门校验的是 ai-agent 工具对外参数名（`processing_item_manage.py:60-123`）：
-    name / category_id / pricing_method / price（price 显式映射 unitPrice）。
+    闸门校验的是 ai-agent 工具对外参数名（`app/tools/processing_item_manage.py`）：
+    name / category_id（可选 description / craft_hint）。
     """
 
-    # 合法基线：契约要求全部齐备
-    LEGAL = {"name": "测试加工", "category_id": "pcat_1",
-             "pricing_method": "per_meter", "price": 8}
+    # 合法基线：契约要求的全部（#4882 后 = 仅 name + category_id）
+    LEGAL = {"name": "测试加工", "category_id": "pcat_1"}
 
     async def test_legal_call_passes(self, tool, admin_tool_context):
         """防过严：契约合法的调用必须放行。"""
@@ -463,63 +458,30 @@ class TestProcessingItemCreateGateMatchesContract:
         )
         assert result.success is True, result.message
 
-    async def test_missing_pricing_method_blocked(self, tool, admin_tool_context):
-        """红→绿：缺 pricing_method 在调用写工具前被拦下，且提示可行动（含合法枚举）。"""
-        params = {k: v for k, v in self.LEGAL.items() if k != "pricing_method"}
+    async def test_gate_rules_no_longer_require_deleted_fields(self):
+        """红证：闸门规则里不得再有 pricing_method / price（issue #4882 已从 DTO 删除）。
+
+        改前形态：`required` = [name, category_id, pricing_method, price]（照 #3566 的旧契约抄）——
+        留着它就会把**合法**的「新增加工项」判成缺参、100% 拦在闸门（比 422 更糟：连请求都不发，
+        用户看不到任何服务端口径）。
+        """
+        from app.tools.validate_input import _VALIDATION_RULES
+        rule = _VALIDATION_RULES["processing_item_manage"]["create_processing_item"]
+        assert set(rule["required"]) == {"name", "category_id"}, (
+            f"闸门 required 集与 #4882 后的 DTO 不符：{sorted(rule['required'])}")
+        for key in ("pricing_method", "price"):
+            assert key not in rule, f"闸门仍在校验已删字段 {key}（issue #4882）"
+
+    async def test_missing_category_id_blocked(self, tool, admin_tool_context):
+        """红→绿：缺 category_id（@NotBlank）在调用写工具前被拦下，且提示可行动。"""
+        params = {k: v for k, v in self.LEGAL.items() if k != "category_id"}
         result = await tool.execute(
             context=admin_tool_context, target_tool="processing_item_manage",
             target_action="create_processing_item", params=params,
         )
         assert result.success is False
-        assert "pricing_method" in result.message
-        assert "计价方式" in result.message
-        for legal in ("per_meter", "per_set", "fixed", "per_area"):
-            assert legal in result.message, result.message
-        assert any("计价方式" in f for f in result.data["missing_fields"])
-
-    async def test_missing_price_blocked(self, tool, admin_tool_context):
-        """红→绿：缺 price（映射 admin-api unitPrice）同样前置拦下。"""
-        params = {k: v for k, v in self.LEGAL.items() if k != "price"}
-        result = await tool.execute(
-            context=admin_tool_context, target_tool="processing_item_manage",
-            target_action="create_processing_item", params=params,
-        )
-        assert result.success is False
-        assert "price" in result.message and "单价" in result.message
-        assert any("单价" in f for f in result.data["missing_fields"])
-
-    async def test_per_piece_rejected_with_legal_enum_hint(self, tool, admin_tool_context):
-        """per_piece（按个）在契约侧非法（issue #3005）→ 闸门拒绝并列出 4 个合法值。"""
-        result = await tool.execute(
-            context=admin_tool_context, target_tool="processing_item_manage",
-            target_action="create_processing_item",
-            params={**self.LEGAL, "pricing_method": "per_piece"},
-        )
-        assert result.success is False
-        assert "per_piece" in result.message
-        for legal in ("per_meter", "per_set", "fixed", "per_area"):
-            assert legal in result.message, result.message
-
-    @pytest.mark.parametrize("price", [0.05, 1000, -1])
-    async def test_price_out_of_contract_range_blocked(self, tool, admin_tool_context, price):
-        """@DecimalMin(0.10)/@DecimalMax(999.99)：越界 = 注定 422，闸门必须先拒绝。"""
-        result = await tool.execute(
-            context=admin_tool_context, target_tool="processing_item_manage",
-            target_action="create_processing_item",
-            params={**self.LEGAL, "price": price},
-        )
-        assert result.success is False
-        assert "单价" in result.message
-
-    async def test_price_boundaries_pass(self, tool, admin_tool_context):
-        """边界值合法（0.10 / 999.99）→ 放行，防闸门过严。"""
-        for price in (0.10, 999.99):
-            result = await tool.execute(
-                context=admin_tool_context, target_tool="processing_item_manage",
-                target_action="create_processing_item",
-                params={**self.LEGAL, "price": price},
-            )
-            assert result.success is True, (price, result.message)
+        assert "category_id" in result.message
+        assert any("分类" in f for f in result.data["missing_fields"])
 
     async def test_name_over_20_chars_blocked(self, tool, admin_tool_context):
         """@Size(max=20)：名称超长 = 注定 422。"""
@@ -547,8 +509,8 @@ class TestProcessingItemCreateGateMatchesContract:
         with patch("app.tools.processing_item_manage.get_admin_api_client",
                    return_value=mock_client):
             for params in (
-                # 旧闸门放行、但注定 422 的参数集（缺 pricing_method）
-                {"name": "测试加工", "category_id": "pcat_1", "price": 8},
+                # 缺 category_id（@NotBlank）→ 注定 422
+                {"name": "测试加工"},
                 # 契约完整 → 放行，写工具进入调用序
                 dict(self.LEGAL),
             ):

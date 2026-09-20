@@ -1327,8 +1327,7 @@ class TestProcessingItemsFallback:
         return HumanMessage(content=text)
 
     def test_rewrites_confirm_to_choice_when_items_unasked(self):
-        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0, "unit": "米",
-                  "pricingMethod": "per_meter"}]
+        items = [{"id": "pi1", "name": "打孔", "unit": "米"}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         plan = lr2._plan_processing_items_rewrite(
             [confirm], [self._user("帮我下单"), self._detail_msg(items)])
@@ -1341,7 +1340,7 @@ class TestProcessingItemsFallback:
         assert "打孔" in data["options"][0]["label"]
 
     def test_no_rewrite_when_processing_choice_already_emitted(self):
-        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
+        items = [{"id": "pi1", "name": "打孔"}]
         choice = self._result("interact", {"component": "choice", "multiSelect": True,
                                            "title": "加工项", "options": [{"value": "proc_item_pi1"}]})
         confirm = self._result("interact", {"component": "confirm", "fields": []})
@@ -1350,14 +1349,14 @@ class TestProcessingItemsFallback:
         assert plan is None, "已问过加工项 → 不得改写"
 
     def test_no_rewrite_when_user_declined(self):
-        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
+        items = [{"id": "pi1", "name": "打孔"}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         plan = lr2._plan_processing_items_rewrite(
             [confirm], [self._user("不需要加工项"), self._detail_msg(items)])
         assert plan is None, "顾客明确拒绝过 → 不得硬弹卡"
 
     def test_no_rewrite_without_confirm(self):
-        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
+        items = [{"id": "pi1", "name": "打孔"}]
         choice = self._result("interact", {"component": "choice", "title": "选颜色",
                                            "options": [{"value": "white"}]})
         plan = lr2._plan_processing_items_rewrite(
@@ -1372,8 +1371,8 @@ class TestProcessingItemsFallback:
 
     def test_rewrite_works_cross_turn(self):
         """processing_item_query 与 confirm 跨轮（OR-017 实测形态：R1 查目录、R2 发卡）"""
-        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0},
-                 {"id": "pi2", "name": "折边", "unitPrice": 12.0}]
+        items = [{"id": "pi1", "name": "打孔"},
+                 {"id": "pi2", "name": "折边"}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         plan = lr2._plan_processing_items_rewrite(
             [confirm], [self._user("确认下单"), self._detail_msg(items)])
@@ -1381,7 +1380,7 @@ class TestProcessingItemsFallback:
         assert len(plan[1]["options"]) == 2
 
     def test_options_capped(self):
-        items = [{"id": f"p{i}", "name": f"n{i}", "unitPrice": i} for i in range(20)]
+        items = [{"id": f"p{i}", "name": f"n{i}"} for i in range(20)]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         plan = lr2._plan_processing_items_rewrite(
             [confirm], [self._user("下单"), self._detail_msg(items)])
@@ -1395,7 +1394,7 @@ class TestProcessingItemsFallback:
         —— 同一件事问第二遍，顾客不得不再答一次才轮到「确认下单」（UA 判定"有条件通过"那条）。
         记账 `PROC_ITEMS_ASKED_KEY` 只在**发卡**时落笔，文本问答不在账上，故这里另立判据。
         """
-        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
+        items = [{"id": "pi1", "name": "打孔"}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         msgs = [self._user("你好，有什么推荐的吗？"), self._detail_msg(items),
                 self._user("打孔"), self._user("确认下单")]
@@ -1407,7 +1406,7 @@ class TestProcessingItemsFallback:
 
         fixture 里叫「打孔」，顾客口语常说「打孔」——只用全名匹配等于不匹配。
         """
-        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
+        items = [{"id": "pi1", "name": "打孔"}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         msgs = [self._detail_msg(items), self._user("要打孔加工"), self._user("确认下单")]
         assert lr2._plan_processing_items_rewrite([confirm], msgs) is None
@@ -1418,7 +1417,7 @@ class TestProcessingItemsFallback:
         旧判据 `_last_user_declined_processing` 只看**最近一条**用户消息 ——
         顾客拒绝后又说「确认下单」就漏了，卡照样弹出来。
         """
-        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
+        items = [{"id": "pi1", "name": "打孔"}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         msgs = [self._detail_msg(items), self._user("不需要加工项"), self._user("确认下单")]
         assert lr2._plan_processing_items_rewrite([confirm], msgs) is None
@@ -1429,7 +1428,7 @@ class TestProcessingItemsFallback:
         为什么必须保这条（OR-017 依赖）：业务铁律是"confirm 前必须把加工项摆出来"，
         顾客下单时顺口带上加工项 ≠ 已看过可选项/单价；那时仍应发卡或至少问一次。
         """
-        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
+        items = [{"id": "pi1", "name": "打孔"}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         msgs = [self._user("帮我下单，遮光窗帘 3 米，要打孔加工"), self._detail_msg(items),
                 self._user("确认下单")]
@@ -1438,14 +1437,14 @@ class TestProcessingItemsFallback:
 
     def test_rewrite_fires_when_user_text_unrelated(self):
         """detail 之后顾客只说了数量/确认，没提加工项 → 仍要问（不得因新判据漏问）。"""
-        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
+        items = [{"id": "pi1", "name": "打孔"}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         msgs = [self._detail_msg(items), self._user("数量 3 米"), self._user("确认下单")]
         assert lr2._plan_processing_items_rewrite([confirm], msgs) is not None
 
     def test_decline_detection_uses_last_user_message(self):
         """拒绝判定只看**最近一条**用户消息（更早的"不需要"不算）"""
-        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0}]
+        items = [{"id": "pi1", "name": "打孔"}]
         confirm = self._result("interact", {"component": "confirm", "fields": []})
         plan = lr2._plan_processing_items_rewrite(
             [confirm],
@@ -1461,8 +1460,7 @@ class TestProcessingItemsFallbackWiring:
 
         from langchain_core.messages import AIMessage as _AI
 
-        items = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0, "unit": "米",
-                  "pricingMethod": "per_meter"}]
+        items = [{"id": "pi1", "name": "打孔", "unit": "米"}]
 
         async def fake_execute(tool, args, ctx, state):
             if tool.name == "processing_item_query":
@@ -4559,8 +4557,7 @@ class TestProcessingItemsAskedPersistsCrossTurn:
     修法：把「加工项已问过」按**商品 id** 持久化到会话，跨轮生效；换商品（新 id）仍会正常再问。
     """
 
-    _ITEMS = [{"id": "pi1", "name": "打孔", "unitPrice": 8.0, "unit": "米",
-               "pricingMethod": "per_meter"}]
+    _ITEMS = [{"id": "pi1", "name": "打孔", "unit": "米"}]
 
     def _run(self, store_extra=None, product_id="prod_eval_summer"):
         import asyncio, json as _json

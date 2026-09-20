@@ -1,5 +1,6 @@
 package com.migao.admin.controller;
 
+// case_ids: PP-002
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
@@ -33,7 +34,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * 综合业务流程集成测试
- * 覆盖：分类管理、加工项 CRUD、价格计算、商品关联、文件上传
+ * 覆盖：分类管理、加工项 CRUD、商品关联、文件上传
+ * （issue #4882：加工项「价格计算」步骤随 `POST /processing-items/calculate` 端点一并退场）
  */
 @ExtendWith(MockitoExtension.class)
 class BusinessFlowIntegrationTest {
@@ -157,9 +159,7 @@ class BusinessFlowIntegrationTest {
         createdItem.setName("打孔加工");
         createdItem.setCategoryId("cat-001");
         createdItem.setCategoryName("窗帘");
-        createdItem.setPricingMethod("per_meter");
-        createdItem.setUnitPrice(new BigDecimal("15.00"));
-        createdItem.setUnit("元/米");
+        createdItem.setUnit("米");
         createdItem.setMinQuantity(1);
         createdItem.setMaxQuantity(100);
         createdItem.setProcessingDays(1);
@@ -173,8 +173,6 @@ class BusinessFlowIntegrationTest {
         ProcessingItemCreateRequest createRequest = new ProcessingItemCreateRequest();
         createRequest.setName("打孔加工");
         createRequest.setCategoryId("cat-001");
-        createRequest.setPricingMethod("per_meter");
-        createRequest.setUnitPrice(new BigDecimal("15.00"));
 
         // Step 1: 创建
         processingItemMockMvc.perform(post("/api/admin/processing-items")
@@ -183,8 +181,7 @@ class BusinessFlowIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value("pi-001"))
-                .andExpect(jsonPath("$.data.name").value("打孔加工"))
-                .andExpect(jsonPath("$.data.pricingMethod").value("per_meter"));
+                .andExpect(jsonPath("$.data.name").value("打孔加工"));
 
         // Step 2: 查询详情
         when(processingItemService.getProcessingItemById("pi-001", 1L)).thenReturn(createdItem);
@@ -199,8 +196,6 @@ class BusinessFlowIntegrationTest {
         updatedItem.setId("pi-001");
         updatedItem.setName("打孔加工-升级");
         updatedItem.setCategoryId("cat-001");
-        updatedItem.setPricingMethod("per_meter");
-        updatedItem.setUnitPrice(new BigDecimal("20.00"));
         updatedItem.setStatus("active");
 
         when(processingItemService.updateProcessingItem(eq("pi-001"), any(ProcessingItemUpdateRequest.class), eq(1L)))
@@ -209,15 +204,12 @@ class BusinessFlowIntegrationTest {
         ProcessingItemUpdateRequest updateRequest = new ProcessingItemUpdateRequest();
         updateRequest.setName("打孔加工-升级");
         updateRequest.setCategoryId("cat-001");
-        updateRequest.setPricingMethod("per_meter");
-        updateRequest.setUnitPrice(new BigDecimal("20.00"));
 
         processingItemMockMvc.perform(put("/api/admin/processing-items/pi-001")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(updateRequest)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.name").value("打孔加工-升级"))
-                .andExpect(jsonPath("$.data.unitPrice").value(20.00));
+                .andExpect(jsonPath("$.data.name").value("打孔加工-升级"));
 
         // Step 4: 删除
         doNothing().when(processingItemService).deleteProcessingItem("pi-001", 1L);
@@ -228,47 +220,6 @@ class BusinessFlowIntegrationTest {
                 .andExpect(jsonPath("$.success").value(true));
 
         verify(processingItemService).deleteProcessingItem("pi-001", 1L);
-    }
-
-    // ======================== 价格计算 ========================
-
-    @Test
-    @DisplayName("价格计算器 - 按米计价")
-    void testPriceCalculation() throws Exception {
-        // Given
-        PriceCalculateResponse calcResponse = new PriceCalculateResponse();
-        calcResponse.setProcessingItemId("pi-001");
-        calcResponse.setProcessingItemName("打孔加工");
-        calcResponse.setPricingMethod("per_meter");
-        calcResponse.setUnitPrice(new BigDecimal("15.00"));
-        calcResponse.setQuantity(new BigDecimal("5.0"));
-        calcResponse.setTotalPrice(new BigDecimal("75.00"));
-        calcResponse.setProcessingDays(1);
-
-        PriceCalculateResponse.PriceDetail detail = new PriceCalculateResponse.PriceDetail();
-        detail.setName("打孔加工");
-        detail.setUnitPrice(new BigDecimal("15.00"));
-        detail.setQuantity(new BigDecimal("5.0"));
-        detail.setSubtotal(new BigDecimal("75.00"));
-        calcResponse.setDetails(List.of(detail));
-
-        when(processingItemService.calculatePrice(any(PriceCalculateRequest.class), eq(1L)))
-                .thenReturn(calcResponse);
-
-        PriceCalculateRequest calcRequest = new PriceCalculateRequest();
-        calcRequest.setProcessingItemId("pi-001");
-        calcRequest.setQuantity(new BigDecimal("5.0"));
-
-        // When & Then
-        processingItemMockMvc.perform(post("/api/admin/processing-items/calculate")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(calcRequest)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.processingItemName").value("打孔加工"))
-                .andExpect(jsonPath("$.data.pricingMethod").value("per_meter"))
-                .andExpect(jsonPath("$.data.totalPrice").value(75.00))
-                .andExpect(jsonPath("$.data.details[0].subtotal").value(75.00));
     }
 
     // ======================== 商品关联分类和加工项 ========================

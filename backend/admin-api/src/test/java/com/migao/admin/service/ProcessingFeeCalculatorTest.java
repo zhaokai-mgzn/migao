@@ -274,19 +274,21 @@ class ProcessingFeeCalculatorTest {
     void processingFeeNeverDerivedFromOperationUnitPrice() {
         givenCombinations(combination("定型+打孔+韩褶", "8.00"));
 
-        // 注入法：`production_operations.unit_price`（内部计件单价）与加工项目录价都是
-        // 完全不同的数（¥99.99 / ¥9.50），若加工费走了任一处 ⇒ 金额 ≠ 8.00 × 10.00 ⇒ 红。
-        ProcessingItem operationLookalike = new ProcessingItem();
-        operationLookalike.setName("定型");
-        operationLookalike.setUnitPrice(new BigDecimal("99.99"));
+        // 注入法：`production_operations.unit_price`（内部计件单价）与加工费组合价是完全不同的数
+        // （¥99.99 vs ¥8.00），若加工费走了工序价 ⇒ 金额 ≠ 8.00 × 10.00 ⇒ 红。
+        // ⚠️ issue #4882（用户裁定）：加工项目录**已删** `unit_price` 列 ⇒ 旧版用
+        // `ProcessingItem.unitPrice`（¥9.50）当「第二套账」诱饵的写法不再可能，诱饵改为**注入的工序价**本身。
+        List<Map<String, Object>> injectedOperations =
+                List.of(Map.of("name", "定型-布", "unitPrice", new BigDecimal("99.99")));
         Map<String, Object> info = processingInfo(new BigDecimal("10.00"), "韩褶", "打孔", "定型");
-        info.put("productionOperations", List.of(Map.of("name", "定型-布", "unitPrice", new BigDecimal("99.99"))));
+        info.put("productionOperations", injectedOperations);
 
         ProcessingFeeCalculator.Fee fee = compute(info);
 
         assertThat(fee.amount()).isEqualByComparingTo("80.00");
         assertThat(fee.unitPrice()).isEqualByComparingTo("8.00");
-        assertThat(operationLookalike.getUnitPrice()).isEqualByComparingTo("99.99"); // 前置自断言：两套账的数确实不同
+        // 前置自断言：注入真生效（工序价 = ¥99.99，与组合价 8.00 不同）
+        assertThat(injectedOperations.get(0).get("unitPrice")).isEqualTo(new BigDecimal("99.99"));
     }
 
     // ══════════════════════════ 加工费米数（裁定 R-b）══════════════════════════

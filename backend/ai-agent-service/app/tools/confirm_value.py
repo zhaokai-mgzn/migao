@@ -45,7 +45,6 @@ _CONFIRM_FIELD_LABELS = {
     "unit": "单位",
     "sku_code": "货号",
     "stock_quantity": "库存",
-    "pricing_method": "计价方式",
 }
 
 

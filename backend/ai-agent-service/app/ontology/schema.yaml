@@ -527,16 +527,6 @@ objects:
         required: false
         source: "ProcessingItem.categoryId"
         description: 加工分类 ID
-      pricing_method:
-        type: string
-        required: false
-        source: "ProcessingItem.pricingMethod"
-        description: 计价方式（按米/按件等）
-      unit_price:
-        type: decimal
-        required: false
-        source: "ProcessingItem.unitPrice"
-        description: 单价
       unit:
         type: string
         required: false

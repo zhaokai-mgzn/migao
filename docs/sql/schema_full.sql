@@ -289,15 +289,14 @@ CREATE TABLE IF NOT EXISTS processing_categories (
     deleted INTEGER DEFAULT 0
 );
 
--- 加工项表：布艺行业核心，定义各加工服务的计价方式和选项
+-- 加工项表：布艺行业核心，定义各加工项及其加工选项
+-- issue #4882（用户裁定）：`pricing_method` / `unit_price` 两列已删除（迁移链由 V101 落）。
 CREATE TABLE IF NOT EXISTS processing_items (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     name VARCHAR(128) NOT NULL,
     category_id VARCHAR(64) NOT NULL REFERENCES processing_categories(id),
-    pricing_method VARCHAR(32) NOT NULL,
-    unit_price DECIMAL(10, 2) NOT NULL,
-    unit VARCHAR(16) DEFAULT '元',
+    unit VARCHAR(16) DEFAULT '米',   -- 加工数量单位（不再是「计价单位」）
     min_quantity INTEGER DEFAULT 1,
     max_quantity INTEGER DEFAULT 999,
     description TEXT,

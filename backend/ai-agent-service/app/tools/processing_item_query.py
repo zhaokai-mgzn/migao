@@ -23,7 +23,7 @@ from app.utils.http_client import get_admin_api_client
 class ProcessingItemQueryTool(BaseTool):
     """加工项查询 Tool
 
-    查询商家加工项目录（包含名称、分类、单价、单位、状态等）。
+    查询商家加工项目录（包含名称、分类、单位、状态等）。
 
     使用场景：
     - 同事询问"查看加工项列表"
@@ -34,7 +34,7 @@ class ProcessingItemQueryTool(BaseTool):
     name = "processing_item_query"
     description = (
         "查询店铺加工项目录（**店铺维度，与具体商品无关**，无商品/分类过滤）。"
-        "【触发】用户问'有哪些加工项''加工项列表/分类/单价/计价方式'时；"
+        "【触发】用户问'有哪些加工项''加工项列表/分类'时；"
         "或**向顾客提供加工项选择前**（建品与下单两条流程的唯一事实源，issue #4371："
         "加工项不再挂在商品上，必须先用本工具拿目录，再发 interact(choice, multiSelect=true)）。"
         "【参数】keyword/category_id/status 均可选；只取全部目录时传空参数。"
@@ -135,11 +135,11 @@ class ProcessingItemQueryTool(BaseTool):
                     )
                 item = self._format_item(response.get("data") or {})
                 item_name = item.get('name', '')
-                price_text = f"{item.get('unit_price')}元/{item.get('unit', '件')}" if item.get('unit_price') is not None else ""
                 return ToolResult(
                     success=True,
                     data={"item": item},
-                    message=f"已找到加工项「{item_name}」",                )
+                    message=f"已找到加工项「{item_name}」",
+                )
 
             # 列表查询
             params: Dict[str, Any] = {"page": page, "size": size}
@@ -261,8 +261,6 @@ class ProcessingItemQueryTool(BaseTool):
             "name": record.get("name"),
             "category_id": record.get("categoryId") or record.get("category_id"),
             "category_name": record.get("categoryName") or record.get("category_name"),
-            "pricing_method": record.get("pricingMethod") or record.get("pricing_method"),
-            "unit_price": record.get("unitPrice") or record.get("unit_price"),
             "unit": record.get("unit"),
             "min_quantity": record.get("minQuantity") or record.get("min_quantity"),
             "max_quantity": record.get("maxQuantity") or record.get("max_quantity"),

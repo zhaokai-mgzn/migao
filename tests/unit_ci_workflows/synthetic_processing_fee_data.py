@@ -259,11 +259,9 @@ def fixture_items() -> list:
             "name": name,
             "categoryId": "pc-feature-dict",
             "categoryName": "特征词典",
-            "pricingMethod": "per_meter",
             # 工艺声明（V78）：`None` = 商家没声明（**显式键**，口径见上「craftHint 缺失口径」）
             "craftHint": craft_hint,
-            # R10：特征词典**无价**（价格只在组合上存在）⇒ 0 + 下方 source 标 synthetic
-            "unitPrice": 0,
+            # #4882：加工项目录已无单价与计价方式（V101 删列）⇒ 本 fixture 不再产出这两键
             "unit": "米",
             "minQuantity": 1,
             "maxQuantity": 999,

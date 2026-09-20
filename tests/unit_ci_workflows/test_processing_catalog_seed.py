@@ -342,8 +342,12 @@ def test_fixture_matches_the_generator_and_the_catalog():
     assert {item["source"] for item in items} == {synthetic.SOURCE}
     assert fixture_catalog(document) == EXPECTED_HINTS, "fixture 的 (name, craftHint) ≠ ERP 附件目录"
     for item in items:
-        assert (item["pricingMethod"], item["unitPrice"], item["unit"]) == ("per_meter", 0, "米"), \
-            f"{item['name']} 的计价口径漂了（单位米 / 无价 / per_meter）"
+        # #4882（用户裁定）：加工项目录不再有单价与计价方式（V101 删列 + DTO 去字段）⇒
+        # 本判据由「per_meter / 0 / 米」改判为「单位口径 + **禁写已退场键**」（断言只增不减）。
+        assert item["unit"] == "米", \
+            f"{item['name']} 的单位漂了：{item['unit']!r}，应为 米（加工数量单位）"
+        assert "pricingMethod" not in item and "unitPrice" not in item, \
+            f"{item['name']} 仍带已退场的键（pricingMethod / unitPrice，issue #4882）"
 
 
 def test_fixture_has_no_stale_fabricated_entries():

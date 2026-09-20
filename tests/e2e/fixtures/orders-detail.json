@@ -29,10 +29,7 @@
               "id": "dce109a60fc30b2cc9cb3b70fe8dc8b1",
               "name": "铅坠安装",
               "unit": "米",
-              "quantity": 1,
-              "subtotal": 3,
-              "unitPrice": 3,
-              "pricingMethod": "per_meter"
+              "quantity": 1
             }
           ]
         },

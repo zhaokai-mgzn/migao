@@ -226,15 +226,18 @@ def test_sku_variant_without_spec_fabricated_price_rejected_with_library_prices(
 # ── ⑤ 加工项 customPrice 不属于 unit_price 校验域 ──
 
 def test_processing_item_custom_price_out_of_scope():
-    """unit_price 与库价一致（168），加工项含 customPrice → 放行（加工费不入本校验域）。"""
+    """unit_price 与库价一致（168），加工项含 customPrice → 放行（加工费不入本校验域）。
+
+    issue #4882：加工项明细已无 unitPrice/pricingMethod/subtotal（只剩 id/name/quantity/unit），
+    `customPrice` 仍是加工项侧字段 ⇒ 本用例继续锁「加工费域不误入 unit_price 接地校验域」。
+    """
     item = _item("遮光窗帘", 168.0, color="米白")
     item["processing_info"] = {
         "colorName": "米白",
         "processingFee": 24.0,
         "processingItems": [
-            {"id": "pi-punch", "name": "打孔（罗马圈）", "unitPrice": 8.0,
-             "quantity": 3, "unit": "米", "pricingMethod": "per_meter",
-             "subtotal": 24.0, "customPrice": 8.0},
+            {"id": "pi-punch", "name": "打孔（罗马圈）", "quantity": 3, "unit": "米",
+             "customPrice": 8.0},
         ],
     }
     result, post_called, _sent = _run_execute([item])

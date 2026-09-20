@@ -1,4 +1,9 @@
-"""ProcessingItemManageTool 单元测试 — 加工项/加工分类 CRUD + 价格计算。"""
+"""ProcessingItemManageTool 单元测试 — 加工项/加工分类 CRUD。
+
+issue #4882：加工项**不再有单价与计价方式**（DTO/实体/schema 三处整体删除）⇒
+本文件同步去掉 price/pricing_method 的夹具与断言，并把「不得下发已删键」钉成红证；
+`calculate_price` action 随 `POST /processing-items/calculate` 端点退场一并删除。
+"""
 # case_ids: PP-002, PP-006, PP-009, PR-017
 import ast
 import inspect
@@ -28,18 +33,19 @@ def mock_client():
     return client
 
 
-# ========== issue #3584：update_item 全量替换契约 ==========
-# admin-api `ProcessingItemUpdateRequest` 为**全量替换语义**（name/categoryId/pricingMethod
-# @NotBlank + unitPrice @NotNull），PUT 缺任一必填字段 → Bean Validation → 422。
-# 因此工具必须先 GET 详情 → merge → PUT 全量；「只改一个字段」不能把其它字段清空。
+# ========== issue #3584 / #4882：update_item 全量替换契约 ==========
+# admin-api `ProcessingItemUpdateRequest` 为**全量替换语义**（name/categoryId @NotBlank），
+# PUT 缺任一必填字段 → Bean Validation → 422。因此工具必须先 GET 详情 → merge → PUT 全量；
+# 「只改一个字段」不能把其它字段清空。
+# issue #4882：`pricingMethod` / `unitPrice` 已从 DTO 与实体整体删除 ⇒ 夹具同步去掉
+# （夹具里留着它们，「不得下发已删键」的红证就无从成立）。
 ITEM_DETAIL = {
     "id": "pi-1",
     "name": "打孔",
     "categoryId": "c1",
     "categoryName": "打孔加工",
-    "pricingMethod": "per_meter",
-    "unitPrice": 5.0,
     "unit": "米",
+    "craftHint": "打孔",
     "minQuantity": 1,
     "maxQuantity": 100,
     "description": "旧描述",
@@ -48,8 +54,10 @@ ITEM_DETAIL = {
     "aiRecommended": False,
     "status": "active",
 }
-# DTO 上的四个必填字段（缺一即 422）
-REQUIRED_DTO_FIELDS = ("name", "categoryId", "pricingMethod", "unitPrice")
+# DTO 上仅剩的必填字段（缺一即 422）
+REQUIRED_DTO_FIELDS = ("name", "categoryId")
+# issue #4882 已删字段：工具的**任何**请求体都不许再出现（下发已删键 = 契约漂移）
+REMOVED_PRICE_FIELDS = ("pricingMethod", "unitPrice", "price", "pricing_method")
 
 
 def _detail_response(data: dict = None):
@@ -162,83 +170,76 @@ class TestProcessingItemCreate:
     async def test_create_missing_fields(self, mock_get_client, tool, admin_tool_context, mock_client):
         mock_get_client.return_value = mock_client
         r1 = await tool.execute(
-            context=admin_tool_context, action="create_processing_item",
-            category_id="c1", price=5.0, pricing_method="per_meter")
+            context=admin_tool_context, action="create_processing_item", category_id="c1")
         assert r1.success is False and "缺少加工项名称" in r1.error
         r2 = await tool.execute(
-            context=admin_tool_context, action="create_processing_item",
-            name="打孔", price=5.0, pricing_method="per_meter")
+            context=admin_tool_context, action="create_processing_item", name="打孔")
         assert r2.success is False and "缺少分类 ID" in r2.error
-        r3 = await tool.execute(
-            context=admin_tool_context, action="create_processing_item",
-            name="打孔", category_id="c1", pricing_method="per_meter")
-        assert r3.success is False and "缺少价格" in r3.error
-        # issue #3543：pricing_method 是 admin-api @NotBlank 必填项，缺失必须本地拦下
-        r4 = await tool.execute(
-            context=admin_tool_context, action="create_processing_item",
-            name="打孔", category_id="c1", price=5.0)
-        assert r4.success is False and "缺少计价方式" in r4.error
+        # issue #4882：price / pricing_method 已整体删除 ⇒ 不再是「必填」，
+        # 缺它们**不该**被本地拦下（改前形态是 r3/r4 两条必填断言）。
+        # 唯一必填集 = name + category_id。
         mock_client.post.assert_not_called()
 
     @patch("app.tools.processing_item_manage.get_admin_api_client")
     async def test_create_success(self, mock_get_client, tool, admin_tool_context, mock_client):
-        """PP-006 / issue #3543：请求体必须含 pricingMethod + unitPrice，且显式映射 price→unitPrice。
+        """PP-006 / issue #4882：请求体只发 name + categoryId（+ 单位「米」），
+        且**不得**再出现任何单价/计价方式键。
 
-        admin-api `ProcessingItemCreateRequest` 契约（Java DTO 为准）：
-        `@NotBlank pricingMethod` + `@NotNull BigDecimal unitPrice` + `@NotBlank categoryId`。
-        旧实现只 POST `{name, categoryId, price}` → Bean Validation 422「参数校验失败」
-        → B 端「新增加工项」完全不可用（acceptance/2026-09-14/replay-triage §2.3）。
+        改前形态（issue #3543）：POST 必须带 pricingMethod + unitPrice（DTO @NotBlank/@NotNull）。
+        #4882 把这两个字段从 DTO 整体删除 ⇒ 再下发它们是「下发已删键」（静默无效/契约漂移），
+        而缺它们**不再是 422 的原因** —— 本用例把两侧都钉住。
         """
         mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "pi-new"}})
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
             context=admin_tool_context, action="create_processing_item", name="测试加工",
-            price=8.0, category_id="c1", pricing_method="per_meter")
+            category_id="c1", craft_hint="打孔")
         assert result.success is True
         assert result.data["id"] == "pi-new"
         assert mock_client.post.call_args[0][0] == "/api/admin/processing-items"
         json_data = mock_client.post.call_args[1]["json_data"]
         assert json_data["categoryId"] == "c1"
         assert json_data["name"] == "测试加工"
-        assert json_data["pricingMethod"] == "per_meter"
-        # 值正确：单价以 unitPrice（非 price）落请求体——显式映射，禁止依赖同名
-        assert json_data["unitPrice"] == 8.0
-        assert "price" not in json_data
+        assert json_data["craftHint"] == "打孔"
+        # 单位固定「米」（行业加工费按米计价，#3005），不再由调用方传
+        assert json_data["unit"] == "米"
+        for key in REMOVED_PRICE_FIELDS:
+            assert key not in json_data, f"请求体不得再下发已删字段 {key}（issue #4882）"
 
-    @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_create_rejects_unsupported_pricing_method(self, mock_get_client, tool, admin_tool_context, mock_client):
-        """计价方式 canonical 枚举（issue #3543 / #3005）：per_piece（按个）非法必须拒绝并说明。"""
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(
-            context=admin_tool_context, action="create_processing_item", name="测试加工",
-            category_id="c1", price=8.0, pricing_method="per_piece")
-        assert result.success is False
-        assert "计价方式" in result.error
-        # 「并说明」：错误信息须给出可选枚举，且点明 per_piece 不支持
-        assert "per_meter" in result.message and "per_area" in result.message
-        assert "per_piece" in result.message
-        mock_client.post.assert_not_called()
+    def test_schema_has_no_price_or_pricing_method_params(self, tool):
+        """schema 与 execute() 签名都不得再有 price / pricing_method（issue #4882 整体删除）。
 
-    def test_pricing_method_schema_declares_canonical_enum(self, tool):
-        """schema 必须声明 pricing_method（与 description 铁律所列参数一致），枚举无 per_piece。"""
+        红证：改前 `parameters.properties` 同时有这两个键（且 pricing_method 带四值枚举）；
+        谁把它们加回来（例如照旧 prompt 抄写），本用例红。
+        """
         props = tool.parameters["properties"]
-        assert "pricing_method" in props, "description 要求 LLM 传 pricing_method，schema 必须声明"
-        assert set(props["pricing_method"]["enum"]) == {"per_meter", "per_set", "fixed", "per_area"}
-        assert "per_piece" not in props["pricing_method"]["enum"]
+        for key in ("price", "pricing_method"):
+            assert key not in props, f"schema 仍声明已删参数 {key}（issue #4882）"
+        sig = inspect.signature(ProcessingItemManageTool.execute)
+        assert "price" not in sig.parameters, "execute() 仍接收 price —— 参数已随 #4882 删除"
+        assert "pricing_method" not in sig.parameters, "execute() 仍接收 pricing_method"
+
+    def test_craft_hint_schema_declared(self, tool):
+        """description 铁律点名的参数必须真在 schema 里（#3543 的老坑，这次的参数是 craft_hint）。"""
+        props = tool.parameters["properties"]
+        assert "craft_hint" in props, "description 点名 craft_hint，schema 必须声明"
+        assert props["craft_hint"]["maxLength"] == 16, "V78 craftHint 契约上限 16 字"
 
     @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_create_without_density_field(self, mock_get_client, tool, admin_tool_context, mock_client):
-        """PP-006（issue #3005 回滚）：create_item 不再支持 per_meter_quantity 透传"""
+    async def test_create_payload_carries_no_price_or_density_keys(self, mock_get_client, tool, admin_tool_context, mock_client):
+        """PP-006（issue #3005 回滚 + #4882）：create_item 既无 per_meter_quantity 密度透传，
+        也不再有单价/计价方式（驼峰与 snake 两种写法都不得出现）。"""
         mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "pi-new"}})
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
-            context=admin_tool_context, action="create_processing_item", name="打孔", price=8.0,
-            category_id="c1", pricing_method="per_meter")
+            context=admin_tool_context, action="create_processing_item", name="打孔",
+            category_id="c1")
         assert result.success is True
         json_data = mock_client.post.call_args[1]["json_data"]
-        assert json_data["unitPrice"] == 8.0
+        assert set(json_data) == {"name", "categoryId", "unit"}, (
+            f"请求体键集变了：{sorted(json_data)}（#4882 后只应发 name/categoryId/unit）")
         assert "perMeterQuantity" not in json_data
 
 
@@ -267,12 +268,13 @@ class TestProcessingItemUpdate:
     @patch("app.tools.processing_item_manage.get_admin_api_client")
     async def test_update_sends_all_required_fields_with_canonical_names(
             self, mock_get_client, tool, admin_tool_context, item_client):
-        """红→绿核心断言：PUT body 必须含 DTO **全部**必填字段，且单价字段名是 unitPrice（非 price）。"""
+        """红→绿核心断言：PUT body 必须含 DTO **全部**必填字段（name/categoryId），
+        且**不得**再出现已删的单价/计价方式键（issue #4882）。"""
         mock_get_client.return_value = item_client
 
         result = await tool.execute(
             context=admin_tool_context, action="update_item", item_id="pi-1",
-            name="打孔(更新)", price=6.0)
+            name="打孔(更新)")
 
         assert result.success is True, result.message
         # 先 GET 详情（merge 语义的必要证据），再 PUT 同一资源
@@ -284,9 +286,8 @@ class TestProcessingItemUpdate:
             assert field in body, f"PUT body 缺 DTO 必填字段 {field} → admin-api 必 422"
         assert body["name"] == "打孔(更新)"          # 用户显式传入 → 覆盖
         assert body["categoryId"] == "c1"            # 未传 → 保留原值（否则 @NotBlank 422）
-        assert body["pricingMethod"] == "per_meter"  # 未传 → 保留原值（否则 @NotBlank 422）
-        assert body["unitPrice"] == 6.0              # price → unitPrice 显式映射
-        assert "price" not in body, "DTO 无 price 字段，单价必须叫 unitPrice"
+        for key in REMOVED_PRICE_FIELDS:
+            assert key not in body, f"PUT body 不得再下发已删字段 {key}（issue #4882）"
 
     @patch("app.tools.processing_item_manage.get_admin_api_client")
     async def test_update_single_field_keeps_untouched_fields(
@@ -299,14 +300,13 @@ class TestProcessingItemUpdate:
         mock_get_client.return_value = item_client
 
         result = await tool.execute(
-            context=admin_tool_context, action="update_item", item_id="pi-1", price=9.5)
+            context=admin_tool_context, action="update_item", item_id="pi-1", craft_hint="韩褶")
 
         assert result.success is True, result.message
         body = _put_body(item_client)
-        assert body["unitPrice"] == 9.5
+        assert body["craftHint"] == "韩褶"            # 显式传入 → 覆盖
         assert body["name"] == ITEM_DETAIL["name"]
         assert body["categoryId"] == ITEM_DETAIL["categoryId"]
-        assert body["pricingMethod"] == ITEM_DETAIL["pricingMethod"]
         assert body["unit"] == ITEM_DETAIL["unit"]
         assert body["minQuantity"] == ITEM_DETAIL["minQuantity"]
         assert body["maxQuantity"] == ITEM_DETAIL["maxQuantity"]
@@ -320,65 +320,55 @@ class TestProcessingItemUpdate:
         assert body["status"] == ITEM_DETAIL["status"]
 
     @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_update_can_change_pricing_method(
+    async def test_update_can_change_name_and_category(
             self, mock_get_client, tool, admin_tool_context, item_client):
-        """pricing_method → pricingMethod（canonical 驼峰）透传。"""
+        """name / category_id → name / categoryId（canonical 驼峰）透传。"""
         mock_get_client.return_value = item_client
 
         result = await tool.execute(
             context=admin_tool_context, action="update_item", item_id="pi-1",
-            pricing_method="per_set")
+            name="打孔(新名)", category_id="c2")
 
         assert result.success is True, result.message
-        assert _put_body(item_client)["pricingMethod"] == "per_set"
-        assert "pricing_method" not in _put_body(item_client)
+        body = _put_body(item_client)
+        assert body["name"] == "打孔(新名)"
+        assert body["categoryId"] == "c2"
+        assert "category_id" not in body
 
     @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_update_rejects_illegal_pricing_method_locally(
+    async def test_update_carries_over_craft_hint_from_detail(
             self, mock_get_client, tool, admin_tool_context, item_client):
-        """非法枚举在本地（调 admin-api 之前）拒绝 + 列合法值（与 create_item 同口径）。"""
+        """PUT 是全量替换 ⇒ GET 详情里的 `craftHint` 必须回带，否则**静默清空**工艺声明
+        （工艺维一丢，该加工项就取不到工序路线 —— 与 `applicableProductCategories`
+        在 #4371 的形态同型：白名单漏一个键 = 静默丢一个字段）。
+
+        红证：把 `craftHint` 从 `ITEM_CARRY_OVER_FIELDS` 移除后本用例必红。
+        """
         mock_get_client.return_value = item_client
 
         result = await tool.execute(
-            context=admin_tool_context, action="update_item", item_id="pi-1",
-            pricing_method="per_piece")
+            context=admin_tool_context, action="update_item", item_id="pi-1", description="改描述")
 
-        assert result.success is False
-        assert "计价方式" in result.error
-        assert "per_meter" in result.message and "per_area" in result.message
-        assert "per_piece" in result.message
-        item_client.get.assert_not_called()
-        item_client.put.assert_not_called()
-
-    @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_update_rejects_price_out_of_dto_range_locally(
-            self, mock_get_client, tool, admin_tool_context, item_client):
-        """DTO @DecimalMin(0.10)/@DecimalMax(999.99) → 本地先拒，不发必 422 的请求。"""
-        mock_get_client.return_value = item_client
-
-        for bad_price in (0.05, 1000.0):
-            result = await tool.execute(
-                context=admin_tool_context, action="update_item", item_id="pi-1", price=bad_price)
-            assert result.success is False, f"price={bad_price} 应本地拒绝"
-            assert "单价" in result.error
-            assert "0.10" in result.message and "999.99" in result.message
-
-        item_client.put.assert_not_called()
+        assert result.success is True, result.message
+        body = _put_body(item_client)
+        assert body["description"] == "改描述"
+        assert body["craftHint"] == ITEM_DETAIL["craftHint"], (
+            "回带白名单漏了 craftHint ⇒ 全量 PUT 会静默清空工艺声明")
 
     @patch("app.tools.processing_item_manage.get_admin_api_client")
     async def test_update_rejects_when_detail_lacks_required_field(
             self, mock_get_client, tool, admin_tool_context, item_client):
         """存量数据缺必填（脏数据）→ 本地拒绝并指出缺哪个，而不是发出去吃 422。"""
         item_client.get = AsyncMock(return_value=_detail_response(
-            {"id": "pi-1", "name": "打孔", "unitPrice": 5.0}))  # 缺 categoryId/pricingMethod
+            {"id": "pi-1", "name": "打孔"}))  # 缺 categoryId（DTO @NotBlank）
         mock_get_client.return_value = item_client
 
         result = await tool.execute(
-            context=admin_tool_context, action="update_item", item_id="pi-1", price=6.0)
+            context=admin_tool_context, action="update_item", item_id="pi-1", description="改描述")
 
         assert result.success is False
         assert "必填字段" in result.error
-        assert "categoryId" in result.message and "pricingMethod" in result.message
+        assert "categoryId" in result.message
         item_client.put.assert_not_called()
 
     @patch("app.tools.processing_item_manage.get_admin_api_client")
@@ -390,7 +380,7 @@ class TestProcessingItemUpdate:
         mock_get_client.return_value = item_client
 
         result = await tool.execute(
-            context=admin_tool_context, action="update_item", item_id="pi-404", price=6.0)
+            context=admin_tool_context, action="update_item", item_id="pi-404", name="打孔")
 
         assert result.success is False
         assert "加工项不存在" in result.message
@@ -581,201 +571,3 @@ class TestProcessingCategories:
         result = await tool.execute(context=admin_tool_context, action="delete_category", category_id="pc-1")
         assert result.success is True
         assert mock_client.delete.call_args[0][0] == "/api/admin/processing-categories/pc-1"
-
-
-class TestProcessingCalculatePrice:
-    @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_calculate_missing_fields(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_get_client.return_value = mock_client
-        r1 = await tool.execute(context=admin_tool_context, action="calculate_price", quantity=2)
-        assert r1.success is False and "缺少加工项 ID" in r1.error
-        r2 = await tool.execute(context=admin_tool_context, action="calculate_price", processing_item_id="pi-1")
-        assert r2.success is False and "缺少数量" in r2.error
-        mock_client.post.assert_not_called()
-
-    @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_calculate_total_price_priority(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.post = AsyncMock(return_value={
-            "success": True, "data": {"totalPrice": 100, "total_price": 90},
-        })
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="calculate_price", processing_item_id="pi-1", quantity=2)
-        assert result.success is True
-        assert "100" in result.message
-        assert mock_client.post.call_args[0][0] == "/api/admin/processing-items/calculate"
-
-    @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_calculate_total_price_fallback(self, mock_get_client, tool, admin_tool_context, mock_client):
-        mock_client.post = AsyncMock(return_value={"success": True, "data": {"total_price": 90}})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="calculate_price", processing_item_id="pi-1", quantity=2)
-        assert result.success is True
-        assert "90" in result.message
-
-
-# =============================================================================
-# issue #3672：per_area（按面积计价）加工项价格计算 100% 走不通——工具层契约断裂
-# =============================================================================
-# 契约差异（本包已复核代码确认，与归因报告 §5.3 一致）：
-#   · `calculate_price` 端点（POST /api/admin/processing-items/calculate）：
-#     后端**自己**从请求体的 `dimensions` 算 area = 宽×高，再算
-#     `totalPrice = unitPrice × area × quantity`
-#     （ProcessingItemService.java:248-254；缺 width/height → :310-318 直接抛
-#      「按面积计价需要提供 width 和 height 尺寸」）。
-#     ⇒ 本端点下 `quantity` 是**计件数**（同一尺寸做几件；#3005 口径「per_area 传 1 或
-#       实际计数值」，ProcessingItemService.java:213-215）。
-#   · `order_create` 路径的「per_area → quantity = 宽×高」口径（
-#     acceptance-protocol.md:225 / order.yml:639）**只适用那条路径**：那条路径由 agent
-#     自己算好数量放进 processing_info，后端只做 `unitPrice × quantity`。
-#   ❌ 把该口径套到 calculate_price：dimensions 仍为 null → **照样抛错**；
-#      即使补了 dimensions，`quantity=面积` 会**双计**（30×8×8 = ¥1920，应为 ¥240）。
-#   ✅ 最小修法：schema/execute 补 `width`/`height` 并下发 `dimensions`，
-#      `quantity` 保持计件数语义（有尺寸但未传数量时缺省 1）。
-#
-# 口径取自后端实现（ProcessingItemService 的 per_area 分支：unitPrice × area × quantity）：
-# 30.00 元/平方米 × (3.2m × 2.5m = 8㎡) × 1 = ¥240.00。
-# ⚠️ 2026-09-19（issue #4572）：原注释称真值取自评测种子 `pi_eval_embroidery`（刺绣工艺，
-# per_area）—— 该夹具已按用户裁定**真删**（评测目录只保留 ERP 附件那 16 项，全 per_meter）
-# ⇒ 本文件改用**后端公式**作为真值来源（下面的常量是自足的测试夹具，不依赖种子）。
-# **per_area 计价路径的评测覆盖随该夹具删除而移除**（如实登记）。
-PER_AREA_ITEM_ID = "pi_eval_embroidery"
-PER_AREA_UNIT_PRICE = 30.00
-PER_AREA_WIDTH = 3.2
-PER_AREA_HEIGHT = 2.5
-PER_AREA_AREA = PER_AREA_WIDTH * PER_AREA_HEIGHT      # 8.0 ㎡
-
-
-class TestCalculatePricePerAreaDimensions:
-    """per_area 的尺寸通路：payload 带 dimensions，且面积不折进 quantity（不双计）。"""
-
-    def test_schema_exposes_width_and_height_for_per_area(self, tool):
-        """schema↔签名契约：模型必须能从上架的 schema 看到 width/height 参数。
-
-        模型看不见的参数等于不存在（本缺口的根因之一就是 schema 里没有尺寸参数）。
-        """
-        props = tool.parameters["properties"]
-        assert "width" in props, "per_area 需要尺寸，schema 必须暴露 width"
-        assert "height" in props, "per_area 需要尺寸，schema 必须暴露 height"
-        assert props["width"]["type"] == "number"
-        assert props["height"]["type"] == "number"
-        # 数值下限（#3622 的 L0 不变式 + 与后端同口径：calculateArea 对 <=0 抛「尺寸必须大于 0」）
-        assert props["width"]["exclusiveMinimum"] == 0
-        assert props["height"]["exclusiveMinimum"] == 0
-        blob = props["width"]["description"] + props["height"]["description"]
-        assert "per_area" in blob, "描述必须点明 per_area 需要尺寸（否则模型不会填）"
-        assert "面积" in blob
-        # quantity 的语义必须写清「per_area 是计件数、面积由 width/height 承载」，
-        # 否则模型会照 order_create 口径把面积写进 quantity → 双计。
-        qty_desc = props["quantity"]["description"]
-        assert "计件" in qty_desc and "per_area" in qty_desc
-
-    @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_per_area_payload_carries_dimensions_and_count(
-        self, mock_get_client, tool, admin_tool_context, mock_client
-    ):
-        """D1-1：per_area 调用必须下发 dimensions；quantity 是计件数（缺省 1）。
-
-        双计排除：按后端口径（unitPrice × area × quantity）用**工具实际下发的 payload**
-        复算，得 30 × 8 × 1 = ¥240.00；若把面积折进 quantity 则是 30 × 8 × 8 = ¥1920。
-        """
-        mock_client.post = AsyncMock(return_value={
-            "success": True, "data": {"totalPrice": 240.00, "pricingMethod": "per_area"},
-        })
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="calculate_price",
-            processing_item_id=PER_AREA_ITEM_ID, width=PER_AREA_WIDTH, height=PER_AREA_HEIGHT)
-
-        assert result.success is True
-        payload = mock_client.post.call_args[1]["json_data"]
-        assert payload["dimensions"] == {"width": PER_AREA_WIDTH, "height": PER_AREA_HEIGHT}
-        # 面积由 dimensions 承载 ⇒ quantity 是计件数，未传时缺省 1（不是宽×高）
-        assert payload["quantity"] == 1
-        assert payload["quantity"] != PER_AREA_AREA, "面积不得折进 quantity（会双计）"
-        # 用后端口径（unitPrice × area × quantity）复算工具下发的 payload
-        computed = PER_AREA_UNIT_PRICE * (
-            payload["dimensions"]["width"] * payload["dimensions"]["height"]) * payload["quantity"]
-        assert computed == 240.00, f"后端口径复算应为 ¥240.00，实际 ¥{computed}"
-        assert "240" in result.message
-
-    @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_per_area_quantity_is_piece_count_not_area(
-        self, mock_get_client, tool, admin_tool_context, mock_client
-    ):
-        """同一尺寸做 2 件：quantity=2 是**计件数**，面积仍只在 dimensions 里。"""
-        mock_client.post = AsyncMock(return_value={"success": True, "data": {"totalPrice": 480.00}})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="calculate_price",
-            processing_item_id=PER_AREA_ITEM_ID,
-            width=PER_AREA_WIDTH, height=PER_AREA_HEIGHT, quantity=2)
-
-        assert result.success is True
-        payload = mock_client.post.call_args[1]["json_data"]
-        assert payload["quantity"] == 2
-        assert payload["dimensions"] == {"width": PER_AREA_WIDTH, "height": PER_AREA_HEIGHT}
-        computed = PER_AREA_UNIT_PRICE * PER_AREA_AREA * payload["quantity"]
-        assert computed == 480.00
-
-    @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_partial_dimensions_fail_fast_without_http(
-        self, mock_get_client, tool, admin_tool_context, mock_client
-    ):
-        """D1-3（最省形态）：只给一半尺寸 → 本地 fail-fast，不发 HTTP。
-
-        不额外 GET 查计价方式（最少代码阶梯：后端话术已明确，多一次往返只换来同一句提示）。
-        """
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="calculate_price",
-            processing_item_id=PER_AREA_ITEM_ID, width=PER_AREA_WIDTH)
-
-        assert result.success is False
-        assert "width" in result.message and "height" in result.message
-        mock_client.post.assert_not_called()
-
-    @pytest.mark.parametrize("pricing_item,quantity", [
-        ("pi_eval_punch", 3),      # per_meter：quantity = 面料米数
-        ("pi-per-set", 2),         # per_set：quantity = 套数
-        ("pi-fixed", 1),           # fixed：后端算一口价
-    ])
-    @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_non_per_area_path_not_regressed(
-        self, mock_get_client, tool, admin_tool_context, mock_client, pricing_item, quantity
-    ):
-        """非 per_area 路径**不回归**：不带尺寸时不新增 dimensions 键，payload 与改前一致。"""
-        mock_client.post = AsyncMock(return_value={"success": True, "data": {"totalPrice": 24.0}})
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="calculate_price",
-            processing_item_id=pricing_item, quantity=quantity)
-
-        assert result.success is True
-        payload = mock_client.post.call_args[1]["json_data"]
-        assert payload == {"processingItemId": pricing_item, "quantity": quantity}
-        assert "dimensions" not in payload
-
-    @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_missing_quantity_still_required_without_dimensions(
-        self, mock_get_client, tool, admin_tool_context, mock_client
-    ):
-        """quantity 缺省 1 **只对带尺寸的调用生效**：不带尺寸仍必须显式给数量。
-
-        （否则 per_meter 漏传数量会被静默当 1 米 → 少算加工费。）
-        """
-        mock_get_client.return_value = mock_client
-
-        result = await tool.execute(
-            context=admin_tool_context, action="calculate_price", processing_item_id="pi_eval_punch")
-
-        assert result.success is False
-        assert "缺少数量" in result.error
-        mock_client.post.assert_not_called()

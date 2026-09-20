@@ -51,7 +51,7 @@
 ### 例5: 创建带加工项的订单（加工费必须计入）
 用户: "李女士 13800138000，买遮光窗帘 3 米，要定型加工，地址杭州西湖区"
 ```
-→ product_detail(遮光窗帘) → skus=[...]；processing_item_query() → 店铺目录=[{id:"pi_shape_high", name:"定型", unit_price:20, unit:"米", pricing_method:"per_meter"}, ...]
+→ product_detail(遮光窗帘) → skus=[...]；processing_item_query() → 店铺目录=[{id:"pi_shape_high", name:"定型", unit:"米"}, ...]
 → 用户确认 3 米 + 定型
 → order_create(
     customer_name="李女士", customer_phone="13800138000",
@@ -60,24 +60,24 @@
       subtotal=264 + 60 = 324,   # 面料小计 + 加工费，必须含加工费！
       processing_info={
         colorId=..., colorName=..., sellingMethod="bulk_cut", doorWidth="2.8米",
-        processingFee=60,  # 3米 × ¥20/米
-        processingItems=[{id:"pi_shape_high", name:"定型", unitPrice:20, quantity:3, unit:"米", pricingMethod:"per_meter", subtotal:60}]
+        processingFee=60,  # 加工费合计（加工项已无单价，金额取目录/服务端口径）
+        processingItems=[{id:"pi_shape_high", name:"定型", quantity:3, unit:"米"}]
       }
     }])
 → ✅ 订单已创建，总额 ¥324（面料 ¥264 + 加工费 ¥60）
 ```
-规则：用户要求加工时，**必须**把加工项填入 processing_info.processingItems 且 processingFee 计入 subtotal。按米计价的加工项加工数量 = 面料米数。
+规则：用户要求加工时，**必须**把加工项填入 processing_info.processingItems 且 processingFee 计入 subtotal。加工数量 **= 面料米数**。
 
-### 例5b: 按米计价加工项（数量=面料米数，辅料含在加工费中）
+### 例5b: 加工项（数量 = 面料米数，辅料含在加工费中）
 用户: "王先生 13900139000，遮光窗帘 3 米，要打孔加工"
 ```
-→ processing_item_query(keyword="打孔") → 目录=[{id:"pi-punch", name:"打孔（罗马圈）", unit_price:8, pricing_method:"per_meter"}]
-→ 加工费：8 元/米 × 3 米 = 24 元（罗马圈等辅料已含在按米加工费中）
+→ processing_item_query(keyword="打孔") → 目录=[{id:"pi-punch", name:"打孔（罗马圈）", unit:"米"}]
+→ 加工项已无单价/计价方式（issue #4882）⇒ 数量只填面料米数 3，不许自己编「单价×数量」
 → order_create(items=[{product_name:"遮光窗帘", quantity:3, unit_price:88, subtotal:288,
-    processing_info:{processingFee:24, processingItems:[{id:"pi-punch", name:"打孔（罗马圈）", unitPrice:8, quantity:3, pricingMethod:"per_meter", subtotal:24}]}}])
+    processing_info:{processingFee:24, processingItems:[{id:"pi-punch", name:"打孔（罗马圈）", quantity:3, unit:"米"}]}}])
 → ✅ 总额 ¥288（面料 ¥264 + 打孔加工 ¥24.00）
 ```
-规则：per_meter 数量 = 面料米数；per_set/fixed 数量 = 1；per_area 数量 = 宽×高。禁止「每米几个」的密度推导（辅料含在按米加工费中，issue #3005）。
+规则：`processingItems[].quantity` **= 该订单行的面料米数**（这单买 3 米就是 3）。禁止「每米几个」的密度推导（辅料含在按米加工费中，issue #3005）。
 
 ### 例6: 完成订单被拒（状态不符合）
 用户: "把 ORD-002 完成"

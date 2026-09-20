@@ -75,7 +75,7 @@ public class ProcessingOrderResponse {
         private BigDecimal height;
         private BigDecimal quantity;
         private String unit;
-        /** 加工项：含 id/name/unitPrice/quantity/unit/options（options 生成时从加工项目录补齐） */
+        /** 加工项：含 id/name/quantity/unit/options（options 生成时从加工项目录补齐；issue #4882 起快照不再有 unitPrice） */
         private List<ProcessingItemSnapshot> processingItems;
         /**
          * 下单勾选的**特殊选项**（issue #4230 v1a：订单侧新携带 {@code specialOptions: string[]}，
@@ -177,7 +177,6 @@ public class ProcessingOrderResponse {
     public static class ProcessingItemSnapshot {
         private String id;
         private String name;
-        private BigDecimal unitPrice;
         private BigDecimal quantity;
         private String unit;
         private Object options;

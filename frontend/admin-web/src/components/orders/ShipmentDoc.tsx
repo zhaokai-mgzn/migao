@@ -67,7 +67,11 @@ export default function ShipmentDoc({ order, logistics, shipperName, className }
 
   const totalQty = items.reduce((sum, it) => sum + (it.quantity || 0), 0)
   const totalAmount = items.reduce((sum, it) => sum + (it.amount || 0), 0)
-  const processingTotal = processingItems.reduce((sum, it) => sum + (it.amount || 0), 0)
+  // 加工费合计（元）：真值源 = **行级落库的 `processingFee`**（issue #4406：组合价 × 加工费米数）。
+  // ⚠️ 不得再按 `processingItems[].amount` 求和 —— issue #4882 起该字段已从后端
+  // `ProcessingItemBrief` 退场（只剩 id/name/quantity）⇒ 旧写法会让纸面恒印 0.00
+  // （「本来就不收加工费」与「算不出来」长得一样，属静默改钱的外观）。
+  const processingFeeTotal = items.reduce((sum, it) => sum + (it.processingFee || 0), 0)
 
   const shipper = (shipperName || logistics?.shipperName || '').trim()
   const company = (logistics?.logisticsCompany || '').trim()
@@ -180,31 +184,29 @@ export default function ShipmentDoc({ order, logistics, shipperName, className }
       {processingItems.length > 0 && (
         <>
           <SectionTitle>加工项</SectionTitle>
+          {/* issue #4882：**单价列退场** —— 数据源 `ProcessingItemBrief.unitPrice` 已从后端 DTO 删除
+              ⇒ 新单恒为空/0，逐项印价必然误导（与 R10「价只在组合上」同因）；逐项 `金额` 同因退场
+              （`amount` 亦随 DTO 删除，印出来只会是 0.00）。
+              **保留**「做了哪几项加工、各多少米」：送货单是给客户/仓库的**实物凭证**，这是它的核对价值。
+              加工费总额走行级落库 `processingFee` 汇总（不是逐项金额相加）。 */}
           <table className="w-full border-collapse mb-2">
             <thead>
               <tr>
                 <DocTh>加工项</DocTh>
-                <DocTh align="right">单价(元/米)</DocTh>
                 <DocTh align="right">数量(米)</DocTh>
-                <DocTh align="right">金额(元)</DocTh>
               </tr>
             </thead>
             <tbody>
               {processingItems.map((item, idx) => (
                 <tr key={item.id || idx}>
                   <DocTd>{item.name}</DocTd>
-                  <DocTd align="right">{formatAmount(item.unitPrice)}</DocTd>
                   <DocTd align="right">{formatQty(item.quantity)}</DocTd>
-                  <DocTd align="right">{formatAmount(item.amount)}</DocTd>
                 </tr>
               ))}
               <tr>
-                <td className="border border-neutral-400 px-2 py-1.5 text-right font-semibold" colSpan={3}>
-                  加工费合计
+                <td className="border border-neutral-400 px-2 py-1.5 text-right font-semibold" colSpan={2}>
+                  加工费合计（元）：{formatAmount(processingFeeTotal)}
                 </td>
-                <DocTd align="right" bold>
-                  {formatAmount(processingTotal)}
-                </DocTd>
               </tr>
             </tbody>
           </table>

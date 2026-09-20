@@ -1649,12 +1649,14 @@ async def _handle_page_request(
                         name = item.get("name", "")
                         price = item.get("unit_price") or item.get("unitPrice") or ""
                         unit = item.get("unit", "")
-                        desc_parts = []
-                        if price:
-                            desc_parts.append(f"¥{price}")
-                        if unit:
-                            desc_parts.append(f"/{unit}")
-                        desc = " ".join(desc_parts) if desc_parts else None
+                        # issue #4882：加工项目录**已无单价**（只剩名称/分类/单位）⇒ 无价时不渲染
+                        # 描述 —— 否则会拼出「/米」这种像缺价的残句（R5：禁止新增静默失效形态）。
+                        if price and unit:
+                            desc = f"¥{price}/{unit}"
+                        elif price:
+                            desc = f"¥{price}"
+                        else:
+                            desc = None
                         options.append({
                             "label": str(name),
                             "value": str(name),

@@ -109,9 +109,10 @@ issue #4454）：左列说法**一律换成右列内部值**写进 `processing_i
 
 - **数据来源**：**店铺级加工项目录** `processing_item_query`（#4371：加工项与商品解耦，product_detail **不再返回** processing_items），可带 keyword、**不带**商品分类参数。
 - **必须主动询问**：SKU/规格确认后、**生成订单确认卡之前**，先调 `processing_item_query` 拿目录，再用 interact(component=choice, multiSelect=true) 展示选择器（透传 pageMeta 支持翻页；**目录为空**才如实告知"暂无可用加工项"后继续）。**禁止不询问就直接弹订单确认卡**（sess_7f27137647e14b1e 实证）。
-- **一次性提交格式**：收到「已选加工项：A、B」→ 解析**全部**名称（禁止只认第一个），从目录匹配 id/unit_price/pricing_method 填入 `processing_info.processingItems` = `[{id, name, unitPrice, quantity, unit, pricingMethod, subtotal}]`，`processingFee` = Σ(`unitPrice × quantity`)。用户说"不需要加工项"才跳过。
+- **一次性提交格式**：收到「已选加工项：A、B」→ 解析**全部**名称（禁止只认第一个），从目录匹配 id/name 填入 `processing_info.processingItems` = `[{id, name, quantity, unit}]`，`processingFee` = 本轮所选加工项的加工费合计。用户说"不需要加工项"才跳过。
+  ⚠️ 加工项**不再有单价与计价方式**（issue #4882）：明细里**没有** `unitPrice` / `pricingMethod` / `subtotal` 这些键，**禁止自己编「单价×数量」的算式**（编出来就是伪造金额）。
 - **金额**：`subtotal` = 面料小计 + 加工费；漏算加工费 = 订单金额错误 = 严重缺陷。
-- **数量规则**：per_meter → 面料米数（打孔 8 元/米 × 3 米 = 24 元）；per_set/fixed → 1；per_area → 宽×高。**禁止虚构「每米几个」的密度推导**（加工费按米计价、辅料含在加工费中，#3005）。
+- **数量规则**：`quantity` **= 该订单行的面料米数**（这单买 3 米就是 3）。**禁止虚构「每米几个」的密度推导**（加工费按米计价、辅料含在加工费中，#3005）。
 
 ## 回复格式
 

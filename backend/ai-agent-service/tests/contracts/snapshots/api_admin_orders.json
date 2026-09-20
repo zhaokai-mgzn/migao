@@ -67,18 +67,14 @@
                   "name": "普通定型",
                   "unit": "米",
                   "quantity": 1,
-                  "subtotal": 6,
-                  "unitPrice": 6,
-                  "pricingMethod": "per_meter"
+                  "subtotal": 6
                 },
                 {
                   "id": "proc_item_hook_roman",
                   "name": "罗马杆环安装",
                   "unit": "个",
                   "quantity": 1,
-                  "subtotal": 3,
-                  "unitPrice": 3,
-                  "pricingMethod": "per_set"
+                  "subtotal": 3
                 }
               ]
             }

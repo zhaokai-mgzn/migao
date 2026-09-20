@@ -93,10 +93,14 @@ class TestFactsSnapshot:
         assert base == enriched, "非金额字段（地址/验证码/备注/尺寸）不该进入一致性事实"
 
     def test_facts_include_processing_fee(self):
-        """加工费是金额的一部分（服务端按 unitPrice×quantity 重算），必须进事实。"""
+        """加工费是金额的一部分，必须进一致性事实。
+
+        issue #4882：加工项**已无单价** ⇒ 加工费不再由 `Σ(unitPrice × quantity)` 推出，
+        真值源是 `processing_info.processingFee`（声明值）—— 本用例改锚该键，
+        语义不变：加工费变了 = 事实必须变（否则漏收/多收没人发现）。
+        """
         no_fee = _facts([_item()])
-        with_fee = _facts([_item(processing_info={
-            "processingItems": [{"name": "打孔", "unitPrice": 8, "quantity": 3}]})])
+        with_fee = _facts([_item(processing_info={"processingFee": 24.0})])
         assert no_fee != with_fee, "加工费变化未进入一致性事实（= 漏收/多收加工费无人发现）"
 
     def test_facts_empty_when_no_items(self):
@@ -128,8 +132,8 @@ class TestConsistencyGuard:
         assert err, "客户手机号与确认时不符却放行（订单会挂到别人名下）"
 
     def test_consistency_blocks_processing_fee_drift(self):
-        confirmed = _facts([_item(processing_info={
-            "processingItems": [{"name": "打孔", "unitPrice": 8, "quantity": 3}]})])
+        """确认时声明了加工费，落库时加工项/加工费被静默丢掉 ⇒ 必须拦（漏收加工费）。"""
+        confirmed = _facts([_item(processing_info={"processingFee": 24.0})])
         actual = {"customer_phone": "13800138000",
                   "items": [_item()]}  # 加工项被静默丢掉 = 漏收加工费
         assert order_confirmation_mismatch(actual, confirmed), "加工项被丢弃却放行"

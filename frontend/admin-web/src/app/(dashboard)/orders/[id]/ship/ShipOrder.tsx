@@ -202,10 +202,6 @@ export default function ShipOrder() {
   }, [logisticsCompany])
 
   const productGroups = useMemo(() => groupItems(order?.items), [order?.items])
-  const processingTotal = useMemo(
-    () => (order?.processingItems || []).reduce((sum, p) => sum + (p.amount || 0), 0),
-    [order?.processingItems]
-  )
 
   const handleSubmit = async () => {
     if (!order) return
@@ -343,11 +339,10 @@ export default function ShipOrder() {
         </div>
         <div className="px-6 py-5">
           <ProductTable groups={productGroups} />
-          {order.processingItems && order.processingItems.length > 0 && (
-            <div className="mt-5">
-              <ProcessingTable items={order.processingItems} total={processingTotal} />
-            </div>
-          )}
+          {/* 加工项表（加工项 | 单价 | 数量 | 金额 | 加工合计）已随 #4882 整表退场 ——
+              它与订单详情那张是同构副本，用户已裁定订单详情整表退场（A 方案）；
+              发货页留一张同构表 = 把删掉的表换个地方长回来。
+              ⚠️ `order.processingItems` 本身**保留**：下方发货守卫 `hasProcessing` 仍以它判「含加工项」。 */}
         </div>
       </div>
 
@@ -597,52 +592,6 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
               </tr>
             ))
           )}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function ProcessingTable({
-  items,
-  total,
-}: {
-  items: NonNullable<Order['processingItems']>
-  total: number
-}) {
-  return (
-    <div className="overflow-x-auto rounded border border-neutral-200">
-      <table className="w-full text-sm">
-        <thead className="bg-neutral-50 text-neutral-600">
-          <tr>
-            <Th>加工项</Th>
-            <Th align="right">单价(元/米)</Th>
-            <Th align="center">数量(米)</Th>
-            <Th align="right">金额(元)</Th>
-            <Th align="right">加工合计</Th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-neutral-100">
-          {items.map((item, idx) => (
-            <tr key={item.id || idx} className="hover:bg-neutral-50/50">
-              <Td>{item.name}</Td>
-              <Td align="right">{formatAmount(item.unitPrice)}</Td>
-              <Td align="center" className="text-primary-600 font-medium">
-                {item.quantity}
-              </Td>
-              <Td align="right" className="text-red-500 font-medium">
-                {formatAmount(item.amount)}
-              </Td>
-              {idx === 0 && (
-                <td
-                  rowSpan={items.length}
-                  className="px-3 py-3 text-right align-top border-l border-neutral-100 text-primary-600 font-semibold"
-                >
-                  {formatAmount(total)}
-                </td>
-              )}
-            </tr>
-          ))}
         </tbody>
       </table>
     </div>

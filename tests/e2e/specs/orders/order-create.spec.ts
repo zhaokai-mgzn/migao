@@ -39,7 +39,8 @@ test.describe('订单创建', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: PD }) })
     })
     await page.route(`**/api/admin/products/${PROD_ID}/processing-items*`, async (route) => {
-      const items = PCS.map((pc: any) => ({ id: pc.processingItemId, name: pc.processingItemName, unitPrice: pc.customPrice || 0, finalPrice: pc.customPrice || 0, unit: '米', pricingMethod: 'per_meter' }))
+      // #4882：加工项已无单价/计价方式 ⇒ 快照项只留 id/name/unit
+      const items = PCS.map((pc: any) => ({ id: pc.processingItemId, name: pc.processingItemName, unit: '米' }))
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: items }) })
     })
     await page.goto('/orders/new'); await expect(page.getByRole('heading', { name: '新增订单' })).toBeVisible({ timeout: 10_000 })

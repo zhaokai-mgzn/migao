@@ -92,8 +92,7 @@ class ProcessingFeeCombinationCommandServiceTest {
 
     private static ProcessingItem item(String name) {
         return ProcessingItem.builder().id("pi-" + name).tenantId(TENANT).name(name)
-                .categoryId("cat-1").pricingMethod("per_meter").unitPrice(new BigDecimal("8"))
-                .unit("米").status("active").deleted(0).build();
+                .categoryId("cat-1").unit("米").status("active").deleted(0).build();
     }
 
     /** 加工项目录：韩褶 / 打孔 / 定型 / 四爪钩（后者用于「引用不存在」的反例）。 */

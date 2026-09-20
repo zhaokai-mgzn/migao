@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 /**
  * 加工项管理控制器
- * 提供加工项 CRUD 和价格计算接口
+ * 提供加工项 CRUD 接口（issue #4882：`POST /calculate` 端点随加工项目录的计价方式与单价一并退场）
  */
 @Slf4j
 @RequirePermission("processing:manage")
@@ -87,18 +87,5 @@ public class ProcessingItemController {
         log.info("删除加工项: id={}, tenantId={}", id, tenantId);
         processingItemService.deleteProcessingItem(id, tenantId);
         return ApiResponse.success();
-    }
-
-    /**
-     * 价格计算
-     *
-     * POST /api/admin/processing-items/calculate
-     */
-    @PostMapping("/calculate")
-    public ApiResponse<PriceCalculateResponse> calculatePrice(@Valid @RequestBody PriceCalculateRequest request) {
-        Long tenantId = TenantContext.getTenantId();
-        log.info("计算加工项价格: processingItemId={}, quantity={}, tenantId={}", request.getProcessingItemId(), request.getQuantity(), tenantId);
-        PriceCalculateResponse result = processingItemService.calculatePrice(request, tenantId);
-        return ApiResponse.success(result);
     }
 }

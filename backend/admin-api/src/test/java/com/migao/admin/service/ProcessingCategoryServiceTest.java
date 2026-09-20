@@ -1,5 +1,6 @@
 package com.migao.admin.service;
 
+// case_ids: PP-002
 import com.migao.admin.dto.ProcessingCategoryCreateRequest;
 import com.migao.admin.dto.ProcessingCategoryResponse;
 import com.migao.admin.dto.ProcessingCategoryUpdateRequest;
@@ -59,8 +60,6 @@ class ProcessingCategoryServiceTest {
                 .tenantId(1L)
                 .categoryId("cat-001")
                 .name("标准裁剪")
-                .pricingMethod("by_meter")
-                .unitPrice(new java.math.BigDecimal("15.00"))
                 .unit("米")
                 .status("active")
                 .build();

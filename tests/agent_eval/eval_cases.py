@@ -3588,16 +3588,16 @@ _CASE_OR_013 = EvalCase(
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
-# ── OR-014 [NORMAL] 下单加工项数量规则 - 按计价方式，无每米数量密度推导（源: cases/order.yml）──
+# ── OR-014 [NORMAL] 下单加工项数量 = 面料米数（不再按计价方式派生），数量可见可对账（源: cases/order.yml）──
 _CASE_OR_014 = EvalCase(
     id='OR-014',
     legacy_id='',
-    title='下单加工项数量规则 - 按计价方式，无每米数量密度推导',
+    title='下单加工项数量 = 面料米数（不再按计价方式派生），数量可见可对账',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我下单，遮光窗帘 3 米，要打孔加工', {'auto_respond': {'fallback': '选有打孔的那件'}}, {'auto_respond': {'fallback': '不需要其他加工项'}}, {'auto_respond': {'fallback': '确认下单', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}}, {'auto_respond': {'fallback': '确认', 'form_values': {'customer_name': '张三', 'customer_phone': '13800138000', 'customer_address': '浙江省杭州市西湖区文三路1号1幢101室', 'color': '米白', 'colorName': '米白'}}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '123456'}}, {'auto_respond': {'fallback': '123456'}}],
     expectations=['order_create'],
-    data_checks=['加工项数量按计价方式确定（**仅 order_create 路径**；`calculate_price` 端点的 per_area 面积由 `dimensions.width/height` 承载、`quantity` 为计件数，见 #3672）：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高', 'processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和', '订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导', '加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
+    data_checks=['加工项数量 = **该订单行面料米数**（issue #4882：计价方式退场后不再派生；#3005 行业口径——行业加工费按米计价、辅料含在加工费中）⇒ 如「打孔 × 3 米」⇒ `quantity=3`；禁止虚构「每米几个」的密度推导', 'processing_info.processingItems 逐项含 `{id, name, quantity, unit}` —— `unitPrice` / `pricingMethod` / `subtotal` 三键已随 issue #4882 退场（订单快照不再承载加工项价与计价方式）', '订单确认/回复展示加工项含「名称 + 数量」（如『打孔 3 米』）—— 数量可见可对账', '加工费**不再**由「加工项单价 × 数量」得出：真值源是**加工费组合**（`processing_fee_combinations`，元/米 × 加工费米数）—— 加工项本身已无价（R10 / issue #4882）；把逐项单价 × 数量当加工费 = 口径错（该账已不存在）', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
     skip_reason='',
     tags=['order_create', 'processing_item', 'pricing'],
     persona='xiaobu',
@@ -3645,7 +3645,7 @@ _CASE_OR_016 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['给赵凯创建一个订单，2699系列雪尼尔窗帘面料，10米，散剪2.8米门幅，2699-03暖米色，手机13800138000', '不需要加工项', '确认下单', '确认'],
     expectations=['product_detail', 'interact(component=choice, multiSelect=True)', 'order_create'],
-    data_checks=['店铺加工项目录（processing_item_query）非空时，生成订单确认卡之前必须主动询问加工项（interact(choice, multiSelect=true) 展示，透传 pageMeta 支持翻页；目录为空则如实告知后继续）', '用户选择加工项后，order_create 的 processing_info.processingItems 含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee 计入 subtotal（金额=面料小计+加工费）', '一次性提交『已选加工项：A、B』→ 解析全部名称，禁止只取第一个；用户说『不需要加工项』才跳过'],
+    data_checks=['店铺加工项目录（processing_item_query）非空时，生成订单确认卡之前必须主动询问加工项（interact(choice, multiSelect=true) 展示，透传 pageMeta 支持翻页；目录为空则如实告知后继续）', '用户选择加工项后，order_create 的 processing_info.processingItems 含 `{id, name, quantity, unit}`（#4882：`unitPrice` / `pricingMethod` / `subtotal` 三键已退场），加工数量 = 该行面料米数，processingFee 由**加工费组合**口径给出（金额 = 面料小计 + 加工费）', '一次性提交『已选加工项：A、B』→ 解析全部名称，禁止只取第一个；用户说『不需要加工项』才跳过'],
     skip_reason='',
     tags=['order_create', 'processing_item', 'guided_flow'],
     persona='mibao',
@@ -3668,7 +3668,7 @@ _CASE_OR_017 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['我想买夏日清风窗帘，米白色，3米，门幅2.8米散剪', {'auto_respond': {'fallback': '我是张三，手机13800138000，地址杭州市西湖区文三路1号'}}, {'auto_select': True}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '123456', 'prefer_text': True}}, {'auto_respond': {'fallback': '确认'}}, {'auto_respond': {'fallback': '确认'}}],
     expectations=['product_search', 'product_detail', 'processing_item_query', 'interact(component=choice, multiSelect=True)', 'order_create'],
-    data_checks=['product_search 列表数据不含 colorId/skus，必须先调 product_detail 取详情', '加工项是**店铺级目录**（#4371 解耦：product_detail 不再返回 processing_items）⇒ 必须调 processing_item_query 拿目录，再在 confirm 之前用 interact(choice, multiSelect=true) 主动询问，列出名称与单价（如「打孔 ¥8/米」）', '所选加工项写入 order_create 的 processing_info.processingItems（id/name/unitPrice/quantity/unit/pricingMethod/subtotal），合计写入 processingFee 且计入订单金额；按米计价项加工数量=面料米数', '顾客说「不需要加工项」可跳过；加工项确实为空时才告知无可用加工项', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
+    data_checks=['product_search 列表数据不含 colorId/skus，必须先调 product_detail 取详情', '加工项是**店铺级目录**（#4371 解耦：product_detail 不再返回 processing_items）⇒ 必须调 processing_item_query 拿目录，再在 confirm 之前用 interact(choice, multiSelect=true) 主动询问，列出名称与加工数量口径（**#4882 后加工项已无单价**，不得报「打孔 ¥8/米」这类逐项价）', '所选加工项写入 order_create 的 processing_info.processingItems（`{id, name, quantity, unit}`；**#4882 已去掉 `unitPrice` / `pricingMethod` / `subtotal`**），加工数量 = 该行面料米数，加工费按**加工费组合**合计并计入订单金额', '顾客说「不需要加工项」可跳过；加工项确实为空时才告知无可用加工项', 'C 端下单是**两步**：确认订单信息后还需手机验证码（order_create 的 sms_code，customer 角色必填）。用例必须提供验证码这一轮，否则 AI 停在第 5 步「请提供验证码」，order_create 永不发生（run 34622425044 实证：R7 顾客回「确认」后无任何工具调用）。dev/CI 栈已设 SMS_BYPASS_CODE=123456，此处用该码走真实校验分支。'],
     skip_reason='',
     tags=['order_create', 'processing_item', 'guided_flow', 'xiaobu'],
     persona='xiaobu',
@@ -4661,7 +4661,7 @@ _CASE_PG_022 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=[],
     expectations=[],
-    data_checks=['success=true', '端到端判据（issue #4208 验收判据 5，**红证形态**）：新生成加工单的工序实例 `qty` = 算料引擎输出（**唯一真相源**）—— 走查实测的红证就是「韩褶-布 显示 3 折」（11 道工序全等于订单数量 3）⇒ **折/幅/套类 `qty` 不得等于订单行数量**；米类则**应当**等于订单行数量（该单的加工项按米计价时，订单行 `quantity` 就是米数 —— #4299 更正，见 PG-025）。逐值断言口径（**以 #4299 更正后的为准**）：米类 = 订单行 `quantity` 映射出的 `fabric_meters`（判据 = 加工项 `pricingMethod == per_meter`）、孔类 = `fabric_meters × 6`（`fabric_meters_x6`）、**折/幅/套类 = 兜底 1（`qty_source=fallback`）**。⚠️ 本条此前登记的「折类 24（`pleat_count`）」是**单测桩的平行真值**（夹具常量 12.3/24，**端点并不产出** `pleat_count` —— 订单侧从不落库折数）⇒ 与下方「已知缺口」自相矛盾，2026-09-18 随 #4299 更正。证据：ProcessingOrderServiceTest「generateTakesQtyFromCalcEngineNotFromOrderQuantity」（订单数量=2，断言 qty 逐条 ≠ 2）+「generateInstantiatesOperationsVerbatimFromOperationLibrary」（11 道逐条）+「derivePositionPayloadUsesOperationLibrary」（存量单补工序的派生路径同一份）', '客户端冻结契约（issue #4208 §② 冻结契约逐字）：全路径 `POST /api/internal/production/operation-qty`、鉴权头 `X-Service-Token`（复用**已有**配置键 `ai-agent.base-url` / `ai-agent.service-token`，**未新增配置键**）、请求体 `{positions:[{position_name, operations[], calc_info}]}`、响应外壳 `{success, data, requestId, timestamp}` 且 `data.positions[].{position_name, qty_by_operation, qty_source_by_operation}`。证据：ProductionOperationQtyClientTest「sendsFrozenContractAndParsesQtyVerbatim」（逐字段断言 URL / 头 / 请求体 / 解析值）', '**降级 = fail-closed**（本单要治的缺陷的反面）：算料服务不可达 / 未配置 service-token / 外壳 `success != true` / 响应条数与请求不符 / 端点漏答某道工序 ⇒ 一律 `BusinessException(code=PRODUCTION_OPERATION_QTY_UNAVAILABLE, httpStatus=422, suggestion=可行动)`，且**不落半成品**（加工单行、工序实例、订单状态三者都不动）。**绝不静默回退订单数量** —— 那正是 issue #4208 的病根。证据：ProductionOperationQtyClientTest 3 项（未配置 token 且不发请求 / 不可达 / success=false）+「responseShapeMismatchFailsClosed」+ ProcessingOrderServiceTest「generateFailsClosedWhenQtyServiceUnavailable」（断言 code/suggestion 且 insert/updateOrderStatus 零调用）', "`qty_source` 真落库（口径来源可观测，「兜底不静默」的唯一凭据）：实例表新增列 `processing_position_operations.qty_source`（V57 迁移，`ADD COLUMN IF NOT EXISTS`、**可空** —— 存量行 NULL = 本列引入前的旧实例，与 `fallback` 可区分），三源收敛 = 迁移列 ↔ Java 实体 `ProcessingPositionOperation.qtySource` ↔ 落库语句 `ProductionService.instantiate`（并进幂等签名，防配置漂移检测不到）。判据「米类 `qty_source != 'fallback'`、套类 `== 'fallback'`」由 ProcessingOrderServiceTest 的两条实例断言覆盖。证据：ProductionPositionOperationQtySourceMigrationTest 3 项 + ProductionControllerTest 的派生落库路径", '不落 0（真值源同族红线）：应做 0 ⇒ 报工的 `done_qty ≥ qty` 恒真 ⇒ 假完工。缺键兜底 1 由**端点**负责（客户端不自行补值 —— 防第二份兜底口径）。证据：ProductionOperationQtyClientTest「clientDoesNotInventFallbackValues」+ ProcessingOrderServiceTest 的 `isNotEqualByComparingTo(ZERO)` 断言', '`calc_info` 组装口径（**有仓内依据，不是第二份算料逻辑**）：订单行 `quantity` 的语义由**该单实际选的加工项计价方式**决定（`OrderItem.quantity` javadoc「per_meter=米数、per_set=1、per_area=宽×高」；前端 `deriveProcessingQty` 同口径）⇒ **判据 = 订单行的 `processingItems[]` 里存在 `pricingMethod == \\"per_meter\\"` 的项**，命中时把**订单行 `quantity`** 映射为 `fabric_meters`；其它计价方式**不**冒充米数；订单侧已存的算料键原样透传。**判据字段的实测依据（#4299，真库可达面 68 条订单行）**：加工项 `pricingMethod` 命中 67/68；**拒用 `sellingMethod`** —— 它是**售卖方式**（真库 11 个取值 `bulk_cut`/`散剪`/`full_roll`/`整卷`/… 里 `per_meter` 一次都没出现过 ⇒ 旧写法永不命中）；**拒用 `products.pricing_type`** —— 它是**商品**属性，与订单行口径不是同一层，实测漏 18/68（11 条商品缺失/软删 + 6 条 `pricing_type=fixed` 而其加工项仍按米）。取值必须用**订单行 `quantity`**、不得用加工项自己的 `quantity`（实测订单行 7e6f2a1c… 订单数量 112.00 而其 per_meter 加工项 quantity=1）。证据：ProcessingOrderServiceTest「calcInfoDoesNotInventFabricMetersForNonPerMeter」+ PG-025 的 6 条用例 + 上面端到端用例里的请求体断言', '**已知缺口（如实登记，非本条缺陷）**：订单侧**从不落库算料输出**（全仓零处写 `fabric_meters`/`pleat_count`）⇒「折 / 幅 / 套」类只能落**显式标注的兜底 1**（`qty_source=fallback`）；「孔」类因传了米数而行使命中端点的「每米 6 孔」估算分支（`fabric_meters_x6`）。因此 issue #4208 原始判据「韩褶-布 要变成真实折数」**本单达不到**，本单修对的是**米/孔**两列。真正的修法是**下单时把算料输出落库**，跟随项 = #4118（其标题原文即「实际褶倍算了就丢」）'],
+    data_checks=['success=true', '端到端判据（issue #4208 验收判据 5，**红证形态**）：新生成加工单的工序实例 `qty` = 算料引擎输出（**唯一真相源**）—— 走查实测的红证就是「韩褶-布 显示 3 折」（11 道工序全等于订单数量 3）⇒ **折/幅/套类 `qty` 不得等于订单行数量**；米类则**应当**等于订单行数量（该单的加工项按米计价时，订单行 `quantity` 就是米数 —— #4299 更正，见 PG-025）。逐值断言口径（**以 #4299 更正后的为准**）：米类 = 订单行 `quantity` 映射出的 `fabric_meters`（判据 = 有加工项即米类；存量快照仍按显式 `pricingMethod` 逐项判定，见 PG-025）、孔类 = `fabric_meters × 6`（`fabric_meters_x6`）、**折/幅/套类 = 兜底 1（`qty_source=fallback`）**。⚠️ 本条此前登记的「折类 24（`pleat_count`）」是**单测桩的平行真值**（夹具常量 12.3/24，**端点并不产出** `pleat_count` —— 订单侧从不落库折数）⇒ 与下方「已知缺口」自相矛盾，2026-09-18 随 #4299 更正。证据：ProcessingOrderServiceTest「generateTakesQtyFromCalcEngineNotFromOrderQuantity」（订单数量=2，断言 qty 逐条 ≠ 2）+「generateInstantiatesOperationsVerbatimFromOperationLibrary」（11 道逐条）+「derivePositionPayloadUsesOperationLibrary」（存量单补工序的派生路径同一份）', '客户端冻结契约（issue #4208 §② 冻结契约逐字）：全路径 `POST /api/internal/production/operation-qty`、鉴权头 `X-Service-Token`（复用**已有**配置键 `ai-agent.base-url` / `ai-agent.service-token`，**未新增配置键**）、请求体 `{positions:[{position_name, operations[], calc_info}]}`、响应外壳 `{success, data, requestId, timestamp}` 且 `data.positions[].{position_name, qty_by_operation, qty_source_by_operation}`。证据：ProductionOperationQtyClientTest「sendsFrozenContractAndParsesQtyVerbatim」（逐字段断言 URL / 头 / 请求体 / 解析值）', '**降级 = fail-closed**（本单要治的缺陷的反面）：算料服务不可达 / 未配置 service-token / 外壳 `success != true` / 响应条数与请求不符 / 端点漏答某道工序 ⇒ 一律 `BusinessException(code=PRODUCTION_OPERATION_QTY_UNAVAILABLE, httpStatus=422, suggestion=可行动)`，且**不落半成品**（加工单行、工序实例、订单状态三者都不动）。**绝不静默回退订单数量** —— 那正是 issue #4208 的病根。证据：ProductionOperationQtyClientTest 3 项（未配置 token 且不发请求 / 不可达 / success=false）+「responseShapeMismatchFailsClosed」+ ProcessingOrderServiceTest「generateFailsClosedWhenQtyServiceUnavailable」（断言 code/suggestion 且 insert/updateOrderStatus 零调用）', "`qty_source` 真落库（口径来源可观测，「兜底不静默」的唯一凭据）：实例表新增列 `processing_position_operations.qty_source`（V57 迁移，`ADD COLUMN IF NOT EXISTS`、**可空** —— 存量行 NULL = 本列引入前的旧实例，与 `fallback` 可区分），三源收敛 = 迁移列 ↔ Java 实体 `ProcessingPositionOperation.qtySource` ↔ 落库语句 `ProductionService.instantiate`（并进幂等签名，防配置漂移检测不到）。判据「米类 `qty_source != 'fallback'`、套类 `== 'fallback'`」由 ProcessingOrderServiceTest 的两条实例断言覆盖。证据：ProductionPositionOperationQtySourceMigrationTest 3 项 + ProductionControllerTest 的派生落库路径", '不落 0（真值源同族红线）：应做 0 ⇒ 报工的 `done_qty ≥ qty` 恒真 ⇒ 假完工。缺键兜底 1 由**端点**负责（客户端不自行补值 —— 防第二份兜底口径）。证据：ProductionOperationQtyClientTest「clientDoesNotInventFallbackValues」+ ProcessingOrderServiceTest 的 `isNotEqualByComparingTo(ZERO)` 断言', '`calc_info` 组装口径（**有仓内依据，不是第二份算料逻辑**）：订单行 `quantity` 的语义由**该单实际选的加工项计价方式**决定（`OrderItem.quantity` javadoc「per_meter=米数、per_set=1、per_area=宽×高」；前端 `deriveProcessingQty` 同口径）⇒ **判据（#4882 后为三段契约，见 PG-025 的 `isMeterBasedLine`）**：快照**显式带** `pricingMethod` 键的存量单按 `per_meter` 逐项判定（非 `per_meter` **不**冒充米数）；一项都不带该键的**新单**（#4882 起下单入口不再写它）⇒ **有加工项即米类**，把**订单行 `quantity`** 映射为 `fabric_meters`；订单侧已存的算料键原样透传。**判据字段的实测依据（#4299，真库可达面 68 条订单行）**：加工项 `pricingMethod` 命中 67/68；**拒用 `sellingMethod`** —— 它是**售卖方式**（真库 11 个取值 `bulk_cut`/`散剪`/`full_roll`/`整卷`/… 里 `per_meter` 一次都没出现过 ⇒ 旧写法永不命中）；**拒用 `products.pricing_type`** —— 它是**商品**属性，与订单行口径不是同一层，实测漏 18/68（11 条商品缺失/软删 + 6 条 `pricing_type=fixed` 而其加工项仍按米）。取值必须用**订单行 `quantity`**、不得用加工项自己的 `quantity`（实测订单行 7e6f2a1c… 订单数量 112.00 而其 per_meter 加工项 quantity=1）。证据：ProcessingOrderServiceTest「calcInfoDoesNotInventFabricMetersForNonPerMeter」+ PG-025 的 6 条用例 + 上面端到端用例里的请求体断言', '**已知缺口（如实登记，非本条缺陷）**：订单侧**从不落库算料输出**（全仓零处写 `fabric_meters`/`pleat_count`）⇒「折 / 幅 / 套」类只能落**显式标注的兜底 1**（`qty_source=fallback`）；「孔」类因传了米数而行使命中端点的「每米 6 孔」估算分支（`fabric_meters_x6`）。因此 issue #4208 原始判据「韩褶-布 要变成真实折数」**本单达不到**，本单修对的是**米/孔**两列。真正的修法是**下单时把算料输出落库**，跟随项 = #4118（其标题原文即「实际褶倍算了就丢」）'],
     skip_reason='[backend-contract] 后端契约用例（生成加工单是服务端写路径，无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionOperationQtyClientTest（客户端冻结契约 + fail-closed 四态）/ ProcessingOrderServiceTest（端到端 qty + calc_info 口径 + fail-closed 不落半成品）/ ProductionPositionOperationQtySourceMigrationTest（V57 迁移 ↔ 实体 ↔ 落库语句三源收敛）/ ProductionControllerTest（存量单补工序的派生路径）',
     tags=['processing-order', 'production-reporting', 'operation-qty', 'calc-engine'],
     persona='',
@@ -4688,17 +4688,17 @@ _CASE_PG_023 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-025 [NORMAL] 米数映射判据 = 加工项 pricingMethod（取值用订单行 quantity）——calc_info.fabric_meters 真库可达面命中 67/68（源: cases/processing-order.yml）──
+# ── PG-025 [NORMAL] 米数映射判据 = 有加工项即米类（新单）；存量快照仍尊重 pricingMethod 键（取值用订单行 quantity）（源: cases/processing-order.yml）──
 _CASE_PG_025 = EvalCase(
     id='PG-025',
     legacy_id='',
-    title='米数映射判据 = 加工项 pricingMethod（取值用订单行 quantity）——calc_info.fabric_meters 真库可达面命中 67/68',
+    title='米数映射判据 = 有加工项即米类（新单）；存量快照仍尊重 pricingMethod 键（取值用订单行 quantity）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=[],
     expectations=[],
-    data_checks=['success=true', '判据来源（真库可达面，**不是推理**）：`order_items` 共 784 行（`deleted=0`），其中带**非空** `processingItems`（= 能进 `buildSnapshot`/`calcInfo` 的可达面）**68** 行 —— 加工项 `pricingMethod == \\"per_meter\\"` 命中 **67/68**，唯一不命中的是 `per_sqm` 刺绣单（订单行 `286229cf…`，`sellingMethod=散剪`、无商品）。另外 716 行（`processing_info` 为 NULL 的 561 + 无 `processingItems` 数组的 2 + 空数组的 1 + 其它）**结构上永不进 `calcInfo`** ⇒「为 `(无)` 单独定义口径」的需求条数 = 0。证据：`acceptance/2026-09-18/4299-db-distribution/FINDINGS.md`（复跑 `./run.sh`，原始输出 `survey-output.txt` / `survey2-output.txt`）', '**红证形态**（修复前必红）：`sellingMethod = \\"bulk_cut\\"`（真库可达面最大类，52/68）+ `processingItems[0].pricingMethod = \\"per_meter\\"` + 订单行数量 2 ⇒ 请求体 `calc_info.fabric_meters == 2` 且米类工序实例 `qty_source != \\"fallback\\"`。旧判据（拿 `bulk_cut` 比 `{per_meter, 按米}` 词表）⇒ `calc_info` 为空 `{}`、米类落 `fallback 1`。证据：ProcessingOrderServiceTest「perMeterProcessingItemMapsOrderQuantityEvenWhenSellingMethodIsBulkCut」', '判据**只看加工项**、与售卖方式无关：`processing_info` 里**不放** `sellingMethod` 键（对齐实测 `(无)` 那 2 条可达订单行）⇒ 仍命中；`sellingMethod = \\"full_roll\\"`（整卷，实测 4 条）⇒ 仍命中（实测这 4 条整卷单的订单数量本就是米量级 3.00/3.00/3.00/112.00 ⇒「整卷数量是卷数会被误映射」的顾虑**实测不成立**）。证据：ProcessingOrderServiceTest「perMeterProcessingItemMapsEvenWithoutSellingMethod」+「perMeterProcessingItemMapsForFullRollToo」', '**防复发（本单最重要的断言）**：取值必须用**订单行 `quantity`**，不得用加工项的 `quantity` —— 实测订单行 `7e6f2a1c…` 订单数量 **112.00**，其 `per_meter` 加工项 `quantity` 被写成 **1**；订单行数量 112 + 加工项 `quantity=1` ⇒ 断言 `calc_info.fabric_meters == 112`（**不是 1**）。取加工项 quantity ⇒ 112 米的单得到「应做 1 米」⇒ 报工上限 1 ⇒ **假完工**（同族红线）。证据：ProcessingOrderServiceTest「fabricMetersComesFromOrderQuantityNotFromProcessingItemQuantity」', '负例·不得冒充米数：加工项全部非 `per_meter`（实测真值形态：单条加工项 `pricingMethod=\\"per_sqm\\"`、`name=\\"刺绣工艺\\"`、`sellingMethod=\\"散剪\\"`）⇒ `calc_info` **不含** `fabric_meters` 且米类工序实例 `qty_source == \\"fallback\\"`（端点缺键兜底 1，不静默）。老数据形态（有 `processingItems` 但项内**无** `pricingMethod` 键）同样不命中 —— 即便 `sellingMethod = \\"bulk_cut\\"` 也**不得**回落到第二份口径。证据：ProcessingOrderServiceTest「nonPerMeterProcessingItemDoesNotMapOrderQuantity」+「processingItemsWithoutPricingMethodKeyDoNotMap」', "**拒用字段的实测理由（防下一个人再混）**：① **拒用 `sellingMethod`** —— 它是**售卖方式**（真库 11 个取值：`bulk_cut`/`散剪`/`full_roll`/`整卷`/`散剪售卖`/`散剪按米`/`散剪·按米购买`/`散剪(bulk_cut)`/`cut`/`散剪（按米裁剪）`/无），`per_meter` 在其中一次都没出现过；`per_meter` 是**加工项计价方式**（`ProcessingItemService` 的 `per_meter/per_set/fixed/per_area`）的词汇，历史上被误当成售卖方式词表（同族混淆见前端展示表把 `per_meter: '按米'` 放进 `sellingMethod` 的映射表）。② **拒用 `products.pricing_type`** —— 它是**商品**属性，与订单行数量口径不是同一层：实测按它只命中 50/68，**漏 18 条**（11 条商品缺失/软删 + 6 条 `pricing_type=fixed` 而其订单行的加工项仍是 `per_meter`、订单数量仍是米数 + 1）。证据：ProcessingOrderServiceTest「calcInfoDoesNotInventFabricMetersForNonPerMeter」+ 本条的 6 条用例；代码注释见 `ProcessingOrderService.calcInfo` 的 javadoc", '端到端形态（issue #4299 判据 4）：真实栈建一张含 `per_meter` 加工项的 `bulk_cut` 单（数量 3）⇒ 生成加工单后米类工序 `qty=3`、`qty_source != \\"fallback\\"`。⚠️ **证据来源 = 主会话在真实栈上的端到端跑，本 PR 未执行**；单测层因 `productionOperationQtyClient` 是 **mock** ⇒ 只能证 `calc_info` 是否带 `fabric_meters`，**证不了**「米类 qty == 订单米数」那一环（形态边界见 FINDINGS §④）'],
-    skip_reason='[backend-contract] 后端契约用例（`calcInfo` 是服务端生成路径的纯 Java 逻辑，无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 ProcessingOrderServiceTest 的 6 条 PG-025 用例执行（真库取值命中 / 无 sellingMethod / 整卷 / 取值守卫 112 / per_sqm 负例 / 无 pricingMethod 键负例），且其中 5 条在修复前必红',
+    data_checks=['success=true', '判据来源（真库可达面，**不是推理**）：`order_items` 共 784 行（`deleted=0`），其中带**非空** `processingItems`（= 能进 `buildSnapshot`/`calcInfo` 的可达面）**68** 行 —— 存量快照里加工项 `pricingMethod == \\"per_meter\\"` 命中 **67/68**，唯一不命中的是 `per_sqm` 刺绣单（订单行 `286229cf…`，`sellingMethod=散剪`、无商品）。另外 716 行（`processing_info` 为 NULL 的 561 + 无 `processingItems` 数组的 2 + 空数组的 1 + 其它）**结构上永不进 `calcInfo`**。证据：`acceptance/2026-09-18/4299-db-distribution/FINDINGS.md`', '**#4882 后的三段判据（`ProcessingOrderService.isMeterBasedLine`）**：① `processingItems` 缺失 / 非 List / 空 ⇒ 不命中；② 任一项**显式带** `pricingMethod` 键（= 存量快照）⇒ 存在 `per_meter` 即命中，全部带键但无 `per_meter` ⇒ **不命中**（保住 `per_sqm` 刺绣单这条负例）；③ 一项都不带该键（= #4882 之后的新单，下单入口不再写它）⇒ **命中**（#3005 行业口径：加工费按米计价）。**有意取舍（显式登记，不静默）**：存量**无键**快照的判定由「不命中」翻转为「命中米类」', '**红证形态**（修复前必红）：`sellingMethod = \\"bulk_cut\\"`（真库可达面最大类，52/68）+ 快照带 `processingItems[0].pricingMethod = \\"per_meter\\"` + 订单行数量 2 ⇒ 请求体 `calc_info.fabric_meters == 2` 且米类工序实例 `qty_source != \\"fallback\\"`。旧判据（拿 `bulk_cut` 比 `{per_meter, 按米}` 词表）⇒ `calc_info` 为空 `{}`、米类落 `fallback 1`', '**#4882 新单红证**：快照 `processingItems` 里**一项都不带** `pricingMethod` 键（新单形态）+ 订单行数量 112 ⇒ `calc_info.fabric_meters == 112`。用旧实现（`hasPerMeterPricing` 只认显式 `per_meter`）跑**必红**（`calc_info` 为空 ⇒ 米类落 `fallback 1` ⇒ 报工上限 1 ⇒ **假完工**，issue #4208 红线）', '判据**只看加工项**、与售卖方式无关：`processing_info` 里**不放** `sellingMethod` 键（对齐实测 `(无)` 那 2 条可达订单行）⇒ 仍命中；`sellingMethod = \\"full_roll\\"`（整卷，实测 4 条）⇒ 仍命中', '**防复发（本单最重要的断言）**：取值必须用**订单行 `quantity`**，不得用加工项的 `quantity` —— 实测订单行 `7e6f2a1c…` 订单数量 **112.00**，其加工项 `quantity` 被写成 **1** ⇒ 断言 `calc_info.fabric_meters == 112`（**不是 1**）。取加工项 quantity ⇒ 112 米的单得到「应做 1 米」⇒ 报工上限 1 ⇒ **假完工**（同族红线）', '负例·不得冒充米数：存量快照里加工项全部非 `per_meter`（实测真值形态：单条加工项 `pricingMethod=\\"per_sqm\\"`、`name=\\"刺绣工艺\\"`、`sellingMethod=\\"散剪\\"`）⇒ `calc_info` **不含** `fabric_meters` 且米类工序实例 `qty_source == \\"fallback\\"`（端点缺键兜底 1，不静默）', '**拒用字段的实测理由（防下一个人再混）**：① **拒用 `sellingMethod`** —— 它是**售卖方式**（真库 11 个取值，`per_meter` 在其中一次都没出现过）；② **拒用 `products.pricing_type`** —— 它是**商品**属性，与订单行数量口径不是同一层（实测只命中 50/68，**漏 18 条**）', '端到端形态（issue #4299 判据 4）：真实栈建一张含加工项的 `bulk_cut` 单（数量 3）⇒ 生成加工单后米类工序 `qty=3`、`qty_source != \\"fallback\\"`。⚠️ **证据来源 = 主会话在真实栈上的端到端跑，本 PR 未执行**；单测层因 `productionOperationQtyClient` 是 **mock** ⇒ 只能证 `calc_info` 是否带 `fabric_meters`，**证不了**「米类 qty == 订单米数」那一环'],
+    skip_reason='[backend-contract] 后端契约用例（`calcInfo` 是服务端生成路径的纯 Java 逻辑，无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 ProcessingOrderServiceTest 执行（真库取值命中 / 无 sellingMethod / 整卷 / 取值守卫 112 / per_sqm 负例 / **#4882 新单无键 ⇒ 命中米类**），其中 5 条在 #4299 修复前必红、第 6 条在 #4882 旧实现下必红',
     tags=['processing-order', 'production-reporting', 'operation-qty', 'calc-engine', 'fabric-meters'],
     persona='',
     debug_user='',
@@ -5174,36 +5174,37 @@ _CASE_PP_002 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PP-006 [NORMAL] 加工项计价方式 - 按米/按套/一口价/按面积，无 per_piece 与每米数量（源: cases/processing.yml）──
+# ── PP-006 [NORMAL] 新增加工项只需名称+加工分类（不再有单价/计价方式），且必须真的调工具建出来（源: cases/processing.yml）──
 _CASE_PP_006 = EvalCase(
     id='PP-006',
     legacy_id='',
-    title='加工项计价方式 - 按米/按套/一口价/按面积，无 per_piece 与每米数量',
+    title='新增加工项只需名称+加工分类（不再有单价/计价方式），且必须真的调工具建出来',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['查询打孔加工的计价方式', '新增加工项，计价方式选按个', '名称叫测试加工，分类选窗帘加工（分类 ID：pcat_eval_curtain）', '计价方式按米，单价 8 元', '确认'],
+    user_inputs=['查询打孔加工', '新增加工项，名称叫测试加工，分类选窗帘加工（分类 ID：pcat_eval_curtain）', '确认'],
     expectations=['processing_item_query(keyword=打孔)', 'processing_item_manage(action=create_processing_item)'],
-    data_checks=['前置（precondition）：评测栈种子里加工项「打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`（8.00 元/米、status=active）、加工分类「窗帘加工」（`pcat_eval_curtain`）存在 —— 它们是 R1 的加工项查询与下面 `output_verify` 的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项或分类」，判红会伪装成「agent 不会建加工项」', 'processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）', '加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）', '商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）'],
+    data_checks=['前置（precondition）：评测栈种子里加工项「打孔」（`pi_eval_punch`）存在（status=active）、加工分类「窗帘加工」（`pcat_eval_curtain`）存在 —— 它们是 R1 的加工项查询与下面 `output_verify` 的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项或分类」，判红会伪装成「agent 不会建加工项」', '加工项目录**不再有单价与计价方式**（issue #4882，用户裁定；V101 迁移删列）：`POST/PUT /api/admin/processing-items` 的请求体只认 `name` + `categoryId`（+ 可选 `craftHint` / `description`），`pricingMethod` / `unitPrice` 两键已随 DTO 一并退场 —— 新增加工项不得要求用户补「计价方式」或「单价」', 'processing_item_query 响应条目无 pricing_method / unit_price / per_meter_quantity（计价方式与单价已退场；每米数量更早已回滚，issue #3005）', '商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）'],
     skip_reason='',
-    tags=['processing_item', 'pricing'],
+    tags=['processing_item', 'crud'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    forbidden_text=['请提供计价方式', '请选择计价方式', '请输入单价', '请提供单价', '暂不支持', '功能不存在', '没有这个功能'],
     must_succeed=[{'tool': 'processing_item_manage', 'action': 'create_processing_item'}],
-    output_verify=[{'tool': 'processing_item_manage', 'action': 'create_processing_item', 'expect': {'name': '测试加工', 'pricingMethod': 'per_meter'}}],
+    output_verify=[{'tool': 'processing_item_manage', 'action': 'create_processing_item', 'expect': {'name': '测试加工'}}],
 )
 
-# ── PP-007 [NORMAL] 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）（源: cases/processing.yml）──
+# ── PP-007 [NORMAL] 米宝加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）（源: cases/processing.yml）──
 _CASE_PP_007 = EvalCase(
     id='PP-007',
     legacy_id='',
-    title='米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）',
+    title='米宝加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['把加工项打孔的单价改成 9.5 元一米', {'repeat_until': {'tool_called': 'processing_item_manage', 'max': 3}, 'fallback': '确认'}, '再看下加工项打孔的单价和计价方式', {'repeat_until': {'tool_called': 'processing_item_query', 'max': 3}, 'fallback': '确认'}],
+    user_inputs=['把加工项打孔的描述改成顶部打孔工艺', {'repeat_until': {'tool_called': 'processing_item_manage', 'max': 3}, 'fallback': '确认'}, '再看下加工项打孔的描述', {'repeat_until': {'tool_called': 'processing_item_query', 'max': 3}, 'fallback': '确认'}],
     expectations=['processing_item_manage(action=update_item)', 'processing_item_query'],
-    data_checks=['前置（precondition）：评测栈种子里「打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`（8.00 元/米）—— 它是下面 `update_item` 回读断言的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项」，判红会伪装成「agent 不会改价」', '回读结果中 name 仍为「打孔」、pricingMethod 仍为 per_meter、status 仍为 active（未被清空）——只改 price 不得清空其它字段'],
+    data_checks=['前置（precondition）：评测栈种子里「打孔」（`pi_eval_punch`）存在且 `status=active`、`craft_hint=打孔` —— 它是下面 `update_item` 回读断言的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项」，判红会伪装成「agent 不会改」', '回读结果中 name 仍为「打孔」、craftHint 仍为「打孔」、status 仍为 active（未被清空）——只改 description 不得清空其它字段'],
     skip_reason='',
     tags=['processing_item', 'llm_behavior', 'tool_call', 'update'],
     persona='',
@@ -5211,9 +5212,9 @@ _CASE_PP_007 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '修改失败', '更新失败', '无法修改'],
-    required_args=[{'tool': 'processing_item_manage', 'fields': ['item_id', 'price']}],
+    required_args=[{'tool': 'processing_item_manage', 'fields': ['item_id', 'description']}],
     must_succeed=[{'tool': 'processing_item_manage', 'action': 'update_item'}],
-    output_verify=[{'tool': 'processing_item_manage', 'action': 'update_item', 'expect': {'unitPrice': 9.5, 'name': '打孔', 'pricingMethod': 'per_meter', 'status': 'active'}}],
+    output_verify=[{'tool': 'processing_item_manage', 'action': 'update_item', 'expect': {'description': '顶部打孔工艺', 'name': '打孔', 'craftHint': '打孔', 'status': 'active'}}],
 )
 
 # ── PP-008 [NORMAL] 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）（源: cases/processing.yml）──
@@ -5225,7 +5226,7 @@ _CASE_PP_008 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['把加工项打孔停用', {'repeat_until': {'tool_called': 'processing_item_manage', 'max': 3}, 'fallback': '确认'}],
     expectations=['processing_item_manage(action=toggle_item_status)'],
-    data_checks=['前置（precondition）：评测栈种子里加工项「打孔」（`pi_eval_punch`）存在且 `pricingMethod=per_meter`、`status=active`（8.00 元/米，`xiaobu_eval_seed.sql`）—— 它是 R1 停用指令与 `output_verify`（status=inactive）的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项」，判红会伪装成「agent 不会停用加工项」', 'status 目标值为 inactive（工具返回 `{item_id, status}` 可直接核对）；重复执行幂等（再停用一次仍是 inactive）'],
+    data_checks=['前置（precondition）：评测栈种子里加工项「打孔」（`pi_eval_punch`）存在且 `status=active`、`craft_hint=打孔`（`xiaobu_eval_seed.sql`；**#4882 后加工项目录已无 `pricingMethod` / `unitPrice`**，前置判据随之改锚 `status` / `craft_hint`）—— 它是 R1 停用指令与 `output_verify`（status=inactive）的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项」，判红会伪装成「agent 不会停用加工项」', 'status 目标值为 inactive（工具返回 `{item_id, status}` 可直接核对）；重复执行幂等（再停用一次仍是 inactive）'],
     skip_reason='',
     tags=['processing_item', 'llm_behavior', 'tool_call', 'toggle'],
     persona='',
@@ -5239,26 +5240,22 @@ _CASE_PP_008 = EvalCase(
     precondition=[{'type': 'processing_item_count_for_keyword', 'source': '打孔', 'expect': 1}],
 )
 
-# ── PP-009 [NORMAL] 米宝加工项 LLM 行为：per_meter 按米算价（calculate_price 透传 quantity，不双计）（源: cases/processing.yml）──
+# ── PP-009 [NORMAL] 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）（源: cases/processing.yml）──
 _CASE_PP_009 = EvalCase(
     id='PP-009',
     legacy_id='',
-    title='米宝加工项 LLM 行为：per_meter 按米算价（calculate_price 透传 quantity，不双计）',
+    title='加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['打孔按米算多少钱？3 米', {'repeat_until': {'tool_called': 'processing_item_manage', 'max': 2}, 'fallback': '用打孔算，3 米，帮我报个价'}],
-    expectations=['processing_item_manage(action=calculate_price)'],
-    data_checks=['per_meter 的 quantity 是**面料米数**（由请求方直接给出，issue #3005 回滚了「每米数量」密度推导）——写成 1 会少收（8.00 而非 24.00）', '本端点的契约与 order_create 不同：order_create 由 agent 自己算好数量放进 processing_info，后端只做 `unitPrice × quantity`；calculate_price 由后端按计价方式算（真值源 `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemService.java`）', '回复需给出金额 ¥24（8 元/米 × 3 米）并对得上用户给的数量', '前置（precondition）：评测栈种子里「打孔」（`pi_eval_punch`）存在、`pricingMethod=per_meter`、`unitPrice=8.00` 元/米 —— 它是 `output_verify.totalPrice=24.00` 的接地真值（success=true）；前置不成立时金额必然对不上，判红会伪装成「agent 算错米数」'],
-    skip_reason='',
-    tags=['processing_item', 'llm_behavior', 'tool_call', 'calculate_price', 'per_meter'],
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '**退场事实（本用例的判据）**：`POST /api/admin/processing-items/calculate` 不存在（`ProcessingItemController` 已无该 `@PostMapping`；`dto/PriceCalculateRequest.java` / `dto/PriceCalculateResponse.java` 两个文件已删除），`processing_item_manage` 工具**不再暴露** `calculate_price` action。v1 证据：`ProcessingItemControllerTest.calculateEndpointIsGone`（MockMvc 实测 **405 Method Not Allowed**，**不是 404** —— 路径模式 `/{id}` 仍匹配 `/calculate`，Spring 对「路径命中、方法不命中」给 405；写成 404 会恒红）+ `tests/smoke/test_08_business_extended.py::test_calculate_price_endpoint_is_gone`（活栈同款退场守卫）+ `test_tools_processing_item_manage.py`（action 集不含 `calculate_price`）', '**为什么退场**：加工项目录已无 `pricing_method` / `unit_price`（V101 `DROP COLUMN`）⇒ 后端「按计价方式算价」没有输入了；对客加工费的真值源是**加工费组合**（`processing_fee_combinations`，元/米），R10 / issue #4882', '**覆盖损失（如实登记，不粉饰）**：原用例覆盖的 `calculate_price` 的「尺寸通路 / `dimensions` 不双计」（issue #3672 的 per_area 双计缺陷）这一断言面**随端点删除而消失**；per_area 计价路径在 #4572 已因 `刺绣工艺` 夹具真删而移出评测覆盖，本单使其**彻底不再存在**。若将来恢复「非米类加工项」，需同时恢复端点与该用例、并新增显式标注为评测夹具的 per_area 项'],
+    skip_reason="[backend-contract] 端点与工具 action 已随 issue #4882 整体退场（`ProcessingItemController` 去 `@PostMapping('/calculate')` + 两个 DTO 删除 + `ProcessingItemService.calculatePrice` 删除 + 工具 action 删除）⇒ 断言由 Java 单测与工具签名契约测试执行，无 LLM 环节，不进 agent-eval 冒烟",
+    tags=['processing_item', 'backend_contract', 'removed_capability'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    forbidden_text=['无法计算', '暂不支持', '功能不存在', '计算失败'],
-    required_args=[{'tool': 'processing_item_manage', 'fields': ['processing_item_id', 'quantity']}],
-    must_succeed=[{'tool': 'processing_item_manage', 'action': 'calculate_price'}],
-    output_verify=[{'tool': 'processing_item_manage', 'action': 'calculate_price', 'expect': {'totalPrice': 24.0}}],
 )
 
 # ── PP-010 [NORMAL] 生产模块确定性核心 - 工艺路线实例化/计件/必完工序自动完工（单测覆盖）（源: cases/processing.yml）──

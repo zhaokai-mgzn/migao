@@ -68,7 +68,7 @@
 
 | 事实 | 证据 |
 |---|---|
-| `processing_items`（加工项目录）**无任何**指向 `production_operations` 的列或外键 | `docs/sql/schema.sql` 的 `CREATE TABLE processing_items`（列 = name/category_id/pricing_method/unit_price/unit/options/…） |
+| `processing_items`（加工项目录）**无任何**指向 `production_operations` 的列或外键 | `docs/sql/schema.sql` 的 `CREATE TABLE processing_items`（列 = name/category_id/unit/options/…；`pricing_method` / `unit_price` **已随 #4882 删除**） |
 | 实例化时工序来源 = **工序库**，不是加工项目录 | `ProcessingOrderService.instantiateOperations` javadoc 原文：「工序来源 = **工序库**，不再是加工项目录……旧的「工序 = 加工项名」路径已删除，取不到库数据时**显式失败**，不回退」 |
 | 商品侧挂的是**加工项**，不是工序 | ~~`product_processing_items`（商品 ↔ 加工项 + 专属价）~~ —— ⚠️ **该表已随 #4371 解耦 DROP**（`V66`，§0.1 / §9.4）；今天商品侧**不持有**加工项 |
 
@@ -593,7 +593,7 @@ order_items  —— **一行 = 一个部位（帘件）**          ← 裁定 R-
 | 层 | 表 / 面 | 状态 |
 |---|---|---|
 | 加工分类 | `processing_categories` | ✅ 有（表 + entity；`/processing` 页可一键建分类） |
-| 加工项目录 | `processing_items` | ✅ 有（`name` / `category_id` / `pricing_method` 四值 / `unit_price` / `unit` / `options` / `processing_days`）—— ⚠️ `applicable_product_categories` 列**已随 #4371 DROP**（`V66`，§0.1） |
+| 加工项目录 | `processing_items` | ✅ 有（`name` / `category_id` / `unit` / `options` / `processing_days`；`pricing_method` / `unit_price` **已随 #4882 DROP**）—— ⚠️ `applicable_product_categories` 列**已随 #4371 DROP**（`V66`，§0.1） |
 | 商品挂载 | ~~`product_processing_items`~~ | ❌ **已随 #4371 DROP**（`V66`，§0.1 / §9.4）—— 商品不再持有加工项，**不存在**商品专属价 `custom_price` |
 | **组合关系（可组合性）** | `processing_rules` | ⚠️ **表在、整表零代码引用**（连 entity 都没有）—— 已登记 **KNOWN-03**（`docs/audit-2026-09/02-self-consistency-scan.md` §3.1）；**至今仍未落码**（§0.1） |
 | **组合费用（价格）** | `processing_fee_combinations` | ✅ **已落**（`V68`，issue #4386，§0.1）：组合 + 版本账 + 管理面（含未定价组合缺口区） |

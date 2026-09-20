@@ -62,16 +62,16 @@ NUMERIC_BOUND_EXEMPTIONS = {
     "sku_update.price": "商品改价：price 无数值下限声明（负数价格可提交，属同类缺口，归 W 包）",
     "product_manage.price": "建品 price 无数值下限声明（负数价格可提交，归 W 包 product_*.py）",
     "product_update.price": "改品 price 无数值下限声明（负数价格可提交，归 W 包 product_*.py）",
-    # 归属：AC 包（加工项域，processing_item_manage.py 文件所有权），本包禁改 → 只报告
-    "processing_item_manage.price": "建/改加工项 price 无数值下限声明（归 AC 包）",
-    "processing_item_manage.quantity": "加工项 quantity 无数值下限声明（归 AC 包）",
+    # 原两条 `processing_item_manage.price` / `.quantity` 豁免已随 issue #4882 删除：
+    # 这两个**参数本身**已从工具 schema 移除（单价/计价方式/价格计算端点整体退场）
+    # ⇒ 豁免若留着，`test_exemptions_reference_existing_params` 会红（清单过期自证）。
 }
 
 # ── 枚举型参数豁免清单（#3622 新增同源锁）──
 # 扫描规则：写工具 schema 里**字段名**属于枚举语义注册表的参数，必须声明非空 `enum`。
 # 为什么用「字段名注册表」而不是「required + enum」：enum 型参数**没声明 enum 时无法
-# 从 schema 反推它是枚举**（信息缺失），而本次缺口（sellingMethod/pricingMethod）
-# 都是**可选嵌套**参数 —— 用 required 过滤会让锁对缺口完全空转（假锁）。
+# 从 schema 反推它是枚举**（信息缺失），而本次缺口（sellingMethod）是**可选嵌套**参数
+# —— 用 required 过滤会让锁对缺口完全空转（假锁）。
 ENUM_DECLARATION_EXEMPTIONS = {
     "sku_update.selling_method": (
         "归属 #3616/#3621（门幅/售卖方式口径包）：该包可能选别名归一化而非拒绝，"
@@ -86,7 +86,8 @@ _MONEY_QTY_SIZE_FIELD_NAMES = {
     "processingFee", "price", "amount", "width", "height",
 }
 # 枚举型字段名：拼写变体会静默落库（后端按字面比较/落 JSONB）→ 必须声明 `enum`。
-_ENUM_FIELD_NAMES = {"sellingMethod", "selling_method", "pricingMethod", "pricing_method"}
+# issue #4882：`pricingMethod` 字段已整体删除 ⇒ 从注册表移除（留着会让哨兵断言指向不存在的字段）。
+_ENUM_FIELD_NAMES = {"sellingMethod", "selling_method"}
 
 _NUMERIC_TYPES = {"integer", "number"}
 
@@ -301,17 +302,24 @@ def test_scan_actually_sees_order_create_processing_and_size_params():
         "order_create.items[].height",
         "order_create.items[].processing_info.processingFee",
         "order_create.items[].processing_info.processingItems[].quantity",
-        "order_create.items[].processing_info.processingItems[].unitPrice",
-        "order_create.items[].processing_info.processingItems[].subtotal",
     ):
         assert fqn in seen, f"扫描器没扫到 {fqn}（锁可能空转）"
+    # issue #4882：加工项单价/计价方式/小计已随字段删除退场 ⇒ 扫描器**不该**再看到它们
+    # （红证：谁把已删键塞回 schema，本断言立刻红）
+    for gone in (
+        "order_create.items[].processing_info.processingItems[].unitPrice",
+        "order_create.items[].processing_info.processingItems[].subtotal",
+        "order_create.items[].processing_info.processingItems[].pricingMethod",
+    ):
+        assert gone not in seen, f"已删字段 {gone} 又回到 schema（issue #4882）"
 
 
 def test_scan_actually_sees_order_create_enum_params():
-    """哨兵（枚举锁）：扫描器必须真的扫到 sellingMethod/pricingMethod"""
+    """哨兵（枚举锁）：扫描器必须真的扫到 sellingMethod；pricingMethod 已删（#4882）。"""
     seen = {fqn for fqn, _leaf, _spec, _required in _iter_all_params()}
     assert "order_create.items[].processing_info.sellingMethod" in seen
-    assert "order_create.items[].processing_info.processingItems[].pricingMethod" in seen
+    assert "order_create.items[].processing_info.processingItems[].pricingMethod" not in seen, (
+        "pricingMethod 是已删字段（issue #4882），不该再出现在 order_create schema 里")
 
 
 def test_exemptions_reference_existing_params():
@@ -564,18 +572,13 @@ class TestOrderCreateQuantityBounds:
         assert sent["items"][0]["quantity"] == pytest.approx(expected)
 
     @patch("app.tools.order_create.get_admin_api_client")
-    async def test_per_area_case_or028_fabric_3m_with_8_4_sqm_processing_still_passes(
+    async def test_or028_fabric_meters_quantity_with_processing_still_passes(
         self, mock_get_client, tool, agent_ctx
     ):
-        """**OR-028 防误伤证据**：面料 3 米（items[].quantity=3）+ 刺绣 per_area 8.4 ㎡
-        （processingItems[].quantity=8.4，加工费 30×8.4=252.00）。
+        """**OR-028 防误伤证据**：面料 3 米 + 加工项（数量 = 该行面料米数 3）照常下单。
 
-        这是「两条 quantity 口径不同」的实拍形态：
-        - `items[].quantity` = 面料米数 3（≥1，受本发明约束）；
-        - `processingItems[].quantity` = 面积 8.4 ㎡（**不设 ≥1 下限**，且必须保真不截断 —— 
-          截断成 8 会少收 12.00 元）。
-        若有人把 processingItems 也设成 minimum 1，本测试仍绿（8.4≥1）；真正防误伤的是下一条
-        `test_small_per_area_below_one_sqm_still_passes`（0.72 ㎡）。
+        issue #4882 后口径唯一：`processingItems[].quantity` = 该行面料米数；
+        加工项不含单价/计价方式 ⇒ 加工费由声明值承载（明细里没有可相乘的单价）。
         """
         mock_client = _ok_client(mock_get_client, price=23.80, name="2699系列雪尼尔窗帘面料")
         pinfo = {
@@ -583,9 +586,8 @@ class TestOrderCreateQuantityBounds:
             "sellingMethod": "bulk_cut",
             "doorWidth": "2.8米",
             "processingItems": [_processing_item(
-                id="pi-embroidery", name="刺绣工艺", unitPrice=30.0, quantity=8.4,
-                unit="㎡", pricingMethod="per_area", subtotal=252.0)],
-            "processingFee": 252.0,
+                id="pi-embroidery", name="刺绣工艺", quantity=3, unit="米")],
+            "processingFee": 24.0,
         }
 
         result = await tool.execute(
@@ -596,7 +598,7 @@ class TestOrderCreateQuantityBounds:
                 "product_name": "2699系列雪尼尔窗帘面料",
                 "quantity": 3,
                 "unit_price": 23.80,
-                "subtotal": 323.40,   # 71.40 面料 + 252.00 加工费
+                "subtotal": 95.40,   # 71.40 面料 + 24.00 加工费
                 "width": 2.8,
                 "height": 3.0,
                 "processing_info": pinfo,
@@ -606,28 +608,30 @@ class TestOrderCreateQuantityBounds:
         assert result.success is True, f"OR-028 形态被误拦：{result.error} {(result.message or '')}"
         sent = mock_client.post.await_args.kwargs["json_data"]
         assert sent["items"][0]["quantity"] == pytest.approx(3)
-        assert sent["items"][0]["processingInfo"]["processingItems"][0]["quantity"] \
-            == pytest.approx(8.4), "加工项面积 8.4 ㎡ 必须保真（截断成 8 → 少收 12.00 元）"
-        assert sent["items"][0]["processingInfo"]["processingFee"] == pytest.approx(252.0)
+        pi = sent["items"][0]["processingInfo"]
+        assert pi["processingItems"][0]["quantity"] == pytest.approx(3), (
+            "加工数量 = 该行面料米数 3")
+        assert pi["processingFee"] == pytest.approx(24.0)
+        for key in ("unitPrice", "pricingMethod", "subtotal"):
+            assert key not in pi["processingItems"][0], (
+                f"加工项明细不得再出现已删键 {key}（issue #4882）")
 
     @patch("app.tools.order_create.get_admin_api_client")
-    async def test_small_per_area_below_one_sqm_still_passes(
+    async def test_small_processing_quantity_below_one_still_passes(
         self, mock_get_client, tool, agent_ctx
     ):
         """**裁定边界（防误伤）**：`processingItems[].quantity` **不设 ≥1 下限**。
 
-        理由：加工数量**不驱动库存/销量**（只进 `Σ unitPrice×quantity` 的加工费数学），
-        而 per_area 的面积可以合法小于 1 ㎡（如 0.8m × 0.9m = 0.72 ㎡）。
-        若给它也设 `minimum: 1`，这类小面积加工单会被硬拒 = 误伤。
-        本测试锁住「0.72 ㎡ 加工项照旧下单且金额保真」，防止后人「顺手统一下限」。
+        理由：加工数量**不驱动库存/销量**，而短料加工可以合法小于 1 米
+        （如 0.72 米）。若给它也设 `minimum: 1`，这类小单会被硬拒 = 误伤。
+        本测试锁住「0.72 米加工项照旧下单」，防止后人「顺手统一下限」。
         """
         mock_client = _ok_client(mock_get_client)
         pinfo = {
             "colorName": "米白色",
             "sellingMethod": "bulk_cut",
             "processingItems": [_processing_item(
-                id="pi-embroidery", name="刺绣工艺", unitPrice=30.0, quantity=0.72,
-                unit="㎡", pricingMethod="per_area", subtotal=21.60)],
+                id="pi-trim", name="定型", quantity=0.72, unit="米")],
             "processingFee": 21.60,
         }
 
@@ -645,7 +649,7 @@ class TestOrderCreateQuantityBounds:
         )
 
         assert result.success is True, (
-            f"小面积（<1 ㎡）加工项被误拦 —— processingItems 不该有 ≥1 下限：{result.error}"
+            f"小于 1 米的加工数量被误拦 —— processingItems 不该有 ≥1 下限：{result.error}"
         )
         sent = mock_client.post.await_args.kwargs["json_data"]
         assert sent["items"][0]["processingInfo"]["processingItems"][0]["quantity"] \
@@ -874,16 +878,18 @@ class TestOrderCreateValidInputsStillPass:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _processing_item(**overrides):
-    entry = {
-        "id": "pi-1", "name": "打孔", "unitPrice": 8.0, "quantity": 3,
-        "unit": "米", "pricingMethod": "per_meter", "subtotal": 24.0,
-    }
+    """加工项明细（issue #4882 后的形态：`{id, name, quantity, unit}`）。
+
+    单价/计价方式/小计三个键已随 #4882 从明细整体删除 —— 夹具里留着它们，
+    就等于让「不得出现已删键」这类红证失去意义。
+    """
+    entry = {"id": "pi-1", "name": "打孔", "quantity": 3, "unit": "米"}
     entry.update(overrides)
     return entry
 
 
 def _items_with_processing(**processing_info_overrides):
-    """单行明细 + processing_info（默认合法：bulk_cut + 打孔 8×3）"""
+    """单行明细 + processing_info（默认合法：bulk_cut + 打孔，数量 = 面料米数 3）"""
     pinfo = {
         "colorName": "米白色",
         "sellingMethod": "bulk_cut",
@@ -996,11 +1002,13 @@ class TestOrderCreateDimensionBounds:
 
 
 class TestOrderCreateProcessingFeeAndItemBounds:
-    """processing_info.processingFee / processingItems[].quantity|unitPrice|subtotal 非负闸门
+    """processing_info.processingFee / processingItems[].quantity 的非负闸门
 
-    为什么这层最要紧：服务端 `OrderService.sumProcessingFee()`（:824-829）=
-    Σ `unitPrice × quantity`（`extractProcessingItems` :807-811 就是这两个字段相乘）
-    —— 任一为负 → **负加工费**直接加进 `totalAmount` 落库（第 417 行）。
+    为什么这层要紧：`processingFee` 为负会把订单总额拉低（顾客少付钱、对账对不上）；
+    加工数量为负则说明该行加工单不成立（数量 = 该行面料米数，米数不能为负）。
+
+    issue #4882：加工项 `unitPrice` / `subtotal` / `pricingMethod` 已从明细整体删除 ⇒
+    对它们的非负/枚举校验**同步删除**（再校验不存在的键 = 空转假绿）。
     """
 
     @pytest.mark.parametrize("bad_fee", [-1, -24.0, "-24"])
@@ -1036,16 +1044,14 @@ class TestOrderCreateProcessingFeeAndItemBounds:
 
     @pytest.mark.parametrize("patch_item", [
         {"quantity": -3},
-        {"unitPrice": -8},
-        {"quantity": -1, "unitPrice": -2},
-        {"subtotal": -24},
+        {"quantity": -1},
         {"quantity": "-3米"},
     ])
     @patch("app.tools.order_create.get_admin_api_client")
     async def test_negative_processing_item_value_rejected(
         self, mock_get_client, patch_item, tool, agent_ctx
     ):
-        """加工项数量/单价/小计为负 → 负加工费 → 本地拒绝（运行期闸门原先完全缺位）"""
+        """加工项数量为负 → 加工单不成立 → 本地拒绝（运行期闸门原先完全缺位）"""
         mock_client = AsyncMock()
         mock_get_client.return_value = mock_client
 
@@ -1061,7 +1067,6 @@ class TestOrderCreateProcessingFeeAndItemBounds:
 
     @pytest.mark.parametrize("patch_item", [
         {"quantity": "abc"},
-        {"unitPrice": "八元"},
     ])
     @patch("app.tools.order_create.get_admin_api_client")
     async def test_unparsable_processing_item_value_rejected(
@@ -1082,10 +1087,9 @@ class TestOrderCreateProcessingFeeAndItemBounds:
 
     @pytest.mark.parametrize("pinfo_overrides,label", [
         ({"processingFee": 0.0}, "0 加工费（顾客不要加工项）"),
-        ({"processingItems": [_processing_item(quantity=8.4, subtotal=67.2)], "processingFee": 67.2},
-         "per_area 小数加工数量 8.4（#3521 实测形态）"),
-        ({"processingItems": [_processing_item(unitPrice=0.0, subtotal=0.0)], "processingFee": 0.0},
-         "0 元加工项（赠品/免费项）"),
+        ({"processingItems": [_processing_item(quantity=0.72)], "processingFee": 21.6},
+         "小于 1 米的加工数量（裁定边界：不设 ≥1 下限）"),
+        ({"processingFee": 0.0}, "0 元加工费（赠品/免费项）"),
         ({"processingItems": []}, "无加工项明细（老形态）"),
         ({"sellingMethod": "full_roll"}, "整卷售卖方式"),
     ])
@@ -1093,7 +1097,7 @@ class TestOrderCreateProcessingFeeAndItemBounds:
     async def test_legal_processing_values_still_pass(
         self, mock_get_client, pinfo_overrides, label, tool, agent_ctx
     ):
-        """防过严：合法加工口径必须照旧通过（0 费用、小数数量、免费项、老形态）"""
+        """防过严：合法加工口径必须照旧通过（0 费用、小数数量、老形态）"""
         mock_client = _ok_client(mock_get_client)
 
         result = await tool.execute(
@@ -1139,13 +1143,13 @@ class TestOrderCreateProcessingFeeAndItemBounds:
 
 
 class TestOrderCreateEnumGuards:
-    """sellingMethod / pricingMethod 枚举闸门（拼写变体静默落库）
+    """sellingMethod 枚举闸门（拼写变体静默落库）
 
     后端口径（单一事实源）：
     - `sellingMethod`：`ProductSku.selling_method` = bulk_cut(散剪) / full_roll(整卷)；
       `OrderService:1435` 按**字面** eq 匹配 SKU → 变体静默不匹配（库存/销量静默丢失）。
-    - `pricingMethod`：`ProcessingItemService:298` 只认 per_meter/per_set/fixed/per_area
-      （per_piece 按个不支持，issue #3005）。
+    - issue #4882：`processingItems[].pricingMethod` 字段已整体删除 ⇒ 该枚举闸门
+      与其正/负用例一并删除（对不存在的键做成员比对 = 空转假绿）。
     """
 
     @pytest.mark.parametrize("bad", ["散剪", "整卷", "bulkCut", "bulk-cut", "BULK_CUT", "按米", "2.8米"])
@@ -1180,42 +1184,30 @@ class TestOrderCreateEnumGuards:
         sent = mock_client.post.await_args.kwargs["json_data"]
         assert sent["items"][0]["processingInfo"]["sellingMethod"] == good
 
-    @pytest.mark.parametrize("bad", ["per_piece", "perMeter", "per-meter", "按米", "perM", "", "平方米"])
     @patch("app.tools.order_create.get_admin_api_client")
-    async def test_invalid_pricing_method_rejected(self, mock_get_client, bad, tool, agent_ctx):
-        mock_client = AsyncMock()
-        mock_get_client.return_value = mock_client
+    async def test_legacy_pricing_method_no_longer_gated(self, mock_get_client, tool, agent_ctx):
+        """红证（issue #4882）：`pricingMethod` 已删除 ⇒ 该键**不再有任何本地枚举闸门**。
 
-        result = await tool.execute(
-            context=agent_ctx, customer_name="张三", customer_phone="13800138000",
-            items=_items_with_processing(
-                processingItems=[_processing_item(pricingMethod=bad)],
-            ),
-        )
-
-        assert result.success is False, f"计价方式 {bad!r} 不是合法枚举，必须本地拒绝"
-        assert "计价方式" in result.error
-        for legal in ("per_meter", "per_set", "fixed", "per_area"):
-            assert legal in result.suggestion, f"suggestion 必须点名 {legal}"
-        mock_client.post.assert_not_called()
-
-    @pytest.mark.parametrize("good", ["per_meter", "per_set", "fixed", "per_area"])
-    @patch("app.tools.order_create.get_admin_api_client")
-    async def test_canonical_pricing_method_passes(self, mock_get_client, good, tool, agent_ctx):
+        改前形态：`per_piece`/`perMeter`/空串 等非法值会被本地拒绝（`_PRICING_METHODS`）。
+        字段删除后工具不再认它（枚举闸门只服务 sellingMethod），故本用例断言
+        「不再因它被拦」——若有人把枚举闸门加回来，本用例红。
+        """
         mock_client = _ok_client(mock_get_client)
 
         result = await tool.execute(
             context=agent_ctx, customer_name="张三", customer_phone="13800138000",
             items=_items_with_processing(
-                processingItems=[_processing_item(pricingMethod=good)],
+                processingItems=[_processing_item(pricingMethod="per_piece")],
             ),
         )
 
-        assert result.success is True, f"合法计价方式 {good} 被误拦：{result.error}"
+        assert result.success is True, (
+            f"pricingMethod 已随 #4882 删除，不该再被本地闸门拦下：{result.error}")
+        assert mock_client.post.await_count == 1
 
     @patch("app.tools.order_create.get_admin_api_client")
     async def test_absent_enum_fields_still_pass(self, mock_get_client, tool, agent_ctx):
-        """售卖方式/计价方式是可选的（单 SKU 商品不一定有）→ 缺失不拦"""
+        """售卖方式是可选的（单 SKU 商品不一定有）→ 缺失不拦"""
         mock_client = _ok_client(mock_get_client)
 
         result = await tool.execute(
@@ -1308,13 +1300,14 @@ class TestOrderCreateParamGuardSchemaContract:
             "processing_info"]["properties"]
         entry_props = pi_props["processingItems"]["items"]["properties"]
         assert entry_props["quantity"]["minimum"] == 0
-        assert entry_props["unitPrice"]["minimum"] == 0
-        assert entry_props["subtotal"]["minimum"] == 0
+        # issue #4882：单价/小计已从明细删除 ⇒ schema 里不得再有它们（红证：加回来即红）
+        for gone in ("unitPrice", "subtotal", "pricingMethod"):
+            assert gone not in entry_props, f"加工项 schema 仍有已删键 {gone}（#4882）"
 
     def test_enum_declarations(self):
         pi_props = OrderCreateTool.parameters["properties"]["items"]["items"]["properties"][
             "processing_info"]["properties"]
         assert pi_props["sellingMethod"]["enum"] == ["bulk_cut", "full_roll"]
         entry_props = pi_props["processingItems"]["items"]["properties"]
-        assert entry_props["pricingMethod"]["enum"] == [
-            "per_meter", "per_set", "fixed", "per_area"]
+        assert "pricingMethod" not in entry_props, (
+            "pricingMethod 已随 issue #4882 删除，schema 不得再声明它的 enum")

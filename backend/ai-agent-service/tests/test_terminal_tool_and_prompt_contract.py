@@ -276,7 +276,7 @@ class TestProcessingDeclineVocabulary:
         assert _last_user_declined_processing(msgs) is True, "裸「不用」未判为拒绝"
         msgs_with_catalog = [
             ToolMessage(content='{"success": true, "data": {"items": '
-                                '[{"id": "pi1", "name": "打孔", "unit_price": 8.0}]}}',
+                                '[{"id": "pi1", "name": "打孔", "unit": "米"}]}}',
                         tool_call_id="d1", name="processing_item_query"),
             HumanMessage(content="不用"),
         ]
@@ -304,7 +304,7 @@ class TestProcessingDeclineVocabulary:
                    {"success": True, "data": {"component": "confirm", "fields": []}})
         catalog = ToolMessage(
             content='{"success": true, "data": {"items": '
-                    '[{"id": "pi1", "name": "打孔", "unit_price": 8.0, "unit": "米"}]}}',
+                    '[{"id": "pi1", "name": "打孔", "unit": "米"}]}}',
             tool_call_id="d1", name="processing_item_query")
         assert _plan_processing_items_rewrite(
             [confirm], [HumanMessage(content="帮我下单"), catalog, HumanMessage(content="不用")]
@@ -319,7 +319,7 @@ class TestProcessingDeclineVocabulary:
                    {"success": True, "data": {"component": "confirm", "fields": []}})
         catalog = ToolMessage(
             content='{"success": true, "data": {"items": '
-                    '[{"id": "pi1", "name": "打孔", "unit_price": 8.0, "unit": "米"}]}}',
+                    '[{"id": "pi1", "name": "打孔", "unit": "米"}]}}',
             tool_call_id="d1", name="processing_item_query")
         assert _plan_processing_items_rewrite(
             [confirm], [catalog, HumanMessage(content="确认下单")]

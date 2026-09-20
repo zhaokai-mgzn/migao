@@ -230,7 +230,13 @@ public class OrderDetailResponse {
     }
 
     /**
-     * 加工项简要响应 DTO
+     * 加工项简要响应 DTO（issue #4882：加工项目录已删「单价」与「计价方式」⇒ 本 DTO 不再有
+     * {@code unitPrice} / {@code amount}）。
+     *
+     * <p>保留 {@code id} / {@code name} / {@code quantity}：{@code OrderService.extractProcessingItems(...).isEmpty()}
+     * 与前端「含加工项」守卫仍要用 {@code size}；{@code quantity} 供加工单 / 报工侧复用。
+     * 加工费的真值源**不是**这里（它是 {@code processing_fee_combinations} 的组合价 × 加工费米数），
+     * 见 {@link OrderItemResponse#processingFee}。</p>
      */
     @Data
     public static class ProcessingItemBrief {
@@ -246,19 +252,10 @@ public class OrderDetailResponse {
         private String name;
 
         /**
-         * 单价
-         */
-        private BigDecimal unitPrice;
-
-        /**
-         * 数量（口径按计价方式：per_meter=米数 / per_set=1 / per_area=宽×高㎡，可为小数）
+         * 加工数量（可为小数；#4882 起加工项目录不再声明计价方式，行业口径按米，
+         * 单位见加工项目录 {@code unit}）
          */
         private BigDecimal quantity;
-
-        /**
-         * 金额 = unitPrice * quantity
-         */
-        private BigDecimal amount;
     }
 
     /**

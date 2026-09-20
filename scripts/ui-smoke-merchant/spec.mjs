@@ -381,24 +381,21 @@ async function processingJourney(page) {
     await page.fill('input[placeholder*="名称"], input[placeholder*="加工项"], input[id*="name"], input[name="name"]', uniq).catch(async () => {
       await page.locator('form input').first().fill(uniq)
     })
-    // 计价方式（per_meter 默认/选择）
-    const pricingSelect = page.locator('select').first()
-    await pricingSelect.selectOption({ label: /按购买米数计价/ }).catch(async () => {
-      const opt = page.locator('option', { hasText: '按购买米数计价' }).first()
-      await pricingSelect.selectOption({ index: await opt.evaluate(o => o.index).catch(() => 0) })
-    })
-    // 价格
-    const priceInput = page.locator('input[placeholder*="价格"], input[name="unitPrice"], input[type="number"]').first()
-    await priceInput.fill('15.5')
+    // 加工分类（#4882 起表单只剩「名称 + 加工分类」两个必填项，单价/计价方式两项已退场）
+    const categorySelect = page.locator('select').first()
+    await categorySelect.selectOption({ index: 1 }).catch(() => {})
     // 提交
     await page.getByRole('button', { name: /确 定|保存|提交|创建/ }).last().click()
     await page.waitForTimeout(1500)
-    // 结果可见：列表出现新建项（名称/价格）
+    // 结果可见：列表出现新建项
     const row = page.locator(`text=${uniq}`).first()
     await row.waitFor({ state: 'visible', timeout: 8000 })
     const rowText = await row.locator('xpath=ancestor::tr[1]').innerText().catch(() => '')
-    if (!/15\.5/.test(rowText)) recNote(h, '列表行未见价格 15.5，可能列名不同')
-    // 编辑：只改名（部分更新），价格应保留
+    // #4882 防回退锁：加工项列表**不得**再出现单价 / 计价方式
+    if (/单价|价格|计价方式/.test(rowText)) {
+      recNote(h, `加工项列表行仍含单价/计价方式（#4882 应已删除）：${rowText.slice(0, 120)}`)
+    }
+    // 编辑：只改名（部分更新），其它字段应保留
     await page.locator(`text=${uniq}`).first().click()
     await page.waitForTimeout(1000)
     const editBtn = page.getByRole('button', { name: /编辑/ }).first()
@@ -668,7 +665,7 @@ async function productionQrJourney(page) {
         productId: 'deff0be6c885cbf0469abe4f7b8da608', productName: '2699系列雪尼尔窗帘面料',
         quantity: 2, unitPrice: 23.8, subtotal: 47.6,
         processingInfo: { sellingMethod: 'bulk_cut', doorWidth: '2.8', processingFee: 15,
-          processingItems: [{ id: 'proc_item_1', name: '锁边', unitPrice: 7.5, quantity: 2, unit: '米', pricingMethod: 'per_meter', subtotal: 15 }] }
+          processingItems: [{ id: 'proc_item_1', name: '锁边', quantity: 2, unit: '米' }] }
       }],
     })
     const orderId = created?.data?.id
@@ -1145,7 +1142,7 @@ async function main() {
             productId: 'deff0be6c885cbf0469abe4f7b8da608', productName: '2699系列雪尼尔窗帘面料',
             quantity: 2, unitPrice: 23.8, subtotal: 47.6,
             processingInfo: { sellingMethod: 'bulk_cut', doorWidth: '2.8', processingFee: 15,
-              processingItems: [{ id: 'proc_item_1', name: '锁边', unitPrice: 7.5, quantity: 2, unit: '米', pricingMethod: 'per_meter', subtotal: 15 }] }
+              processingItems: [{ id: 'proc_item_1', name: '锁边', quantity: 2, unit: '米' }] }
           }],
         }),
       })

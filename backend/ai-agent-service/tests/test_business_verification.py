@@ -915,14 +915,12 @@ class TestEnumAlignment:
          {"pending", "processing", "resolved", "rejected", "closed"}),
         ("processing_item_manage", "action",
          {"create_processing_item", "update_item", "delete_item", "toggle_item_status",
-          "list_categories", "create_category", "update_category", "delete_category",
-          "calculate_price"}),
+          "list_categories", "create_category", "update_category", "delete_category"}),
         ("processing_item_manage", "status",
          {"active", "inactive"}),
-        # issue #3543：pricing_method 是 admin-api @NotBlank 必填项，枚举必须与
-        # ProcessingItemService.validatePricingMethod 严格一致（#3005 回滚后无 per_piece）
-        ("processing_item_manage", "pricing_method",
-         {"per_meter", "per_set", "fixed", "per_area"}),
+        # issue #4882：`pricing_method` 字段已从 admin-api 的 DTO/实体/schema 整体删除，
+        # `calculate_price` action 随 `POST /processing-items/calculate` 端点一并退场
+        # ⇒ 旧的 ("…","pricing_method",{per_meter,per_set,fixed,per_area}) 参数条目已删。
     ])
     def test_tool_enum_field_alignment(self, fresh_registry, tool_name, field, expected):
         """参数化验证：Tool.parameters.properties[field].enum 与 admin-api 定义严格对齐
@@ -930,7 +928,7 @@ class TestEnumAlignment:
         涵盖：
         - notification_manage 的 action / channel / status
         - after_sales_manage 的 action / ticket_type / status
-        - processing_item_manage 的 action / status / pricing_method
+        - processing_item_manage 的 action / status（#4882 起该域已无计价方式枚举）
         （#3081 已移除 quick_reply_manage）
         任何 enum 不对齐都会导致 LLM 生成被 admin-api 拒收的参数。
         """

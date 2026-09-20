@@ -119,28 +119,28 @@ INSERT INTO processing_categories (id, tenant_id, name, sort_order, status)
 SELECT 'pc-fold', :tenant_id, '褶皱工艺', 2, 'active'
 WHERE NOT EXISTS (SELECT 1 FROM processing_categories WHERE id = 'pc-fold' AND tenant_id = :tenant_id);
 
-INSERT INTO processing_items (id, tenant_id, name, category_id, pricing_method, unit_price, unit, description, processing_days, ai_recommended, status)
-SELECT 'pi-lock', :tenant_id, '锁边', 'pc-cut', 'per_meter', 5.00, '元', '布料锁边处理，防止毛边散线', 1, TRUE, 'active'
+INSERT INTO processing_items (id, tenant_id, name, category_id, unit, description, processing_days, ai_recommended, status)
+SELECT 'pi-lock', :tenant_id, '锁边', 'pc-cut', '米', '布料锁边处理，防止毛边散线', 1, TRUE, 'active'
 WHERE NOT EXISTS (SELECT 1 FROM processing_items WHERE id = 'pi-lock' AND tenant_id = :tenant_id);
 
-INSERT INTO processing_items (id, tenant_id, name, category_id, pricing_method, unit_price, unit, description, processing_days, ai_recommended, status)
-SELECT 'pi-punch', :tenant_id, '打孔（罗马圈）', 'pc-fold', 'per_meter', 8.00, '元', '打孔加工，适配罗马杆，每米约6个孔', 1, TRUE, 'active'
+INSERT INTO processing_items (id, tenant_id, name, category_id, unit, description, processing_days, ai_recommended, status)
+SELECT 'pi-punch', :tenant_id, '打孔（罗马圈）', 'pc-fold', '米', '打孔加工，适配罗马杆，每米约6个孔', 1, TRUE, 'active'
 WHERE NOT EXISTS (SELECT 1 FROM processing_items WHERE id = 'pi-punch' AND tenant_id = :tenant_id);
 
-INSERT INTO processing_items (id, tenant_id, name, category_id, pricing_method, unit_price, unit, description, processing_days, ai_recommended, status)
-SELECT 'pi-korean', :tenant_id, '韩式褶（S钩）', 'pc-fold', 'per_meter', 10.00, '元', '韩式固定褶，褶皱均匀饱满', 1, TRUE, 'active'
+INSERT INTO processing_items (id, tenant_id, name, category_id, unit, description, processing_days, ai_recommended, status)
+SELECT 'pi-korean', :tenant_id, '韩式褶（S钩）', 'pc-fold', '米', '韩式固定褶，褶皱均匀饱满', 1, TRUE, 'active'
 WHERE NOT EXISTS (SELECT 1 FROM processing_items WHERE id = 'pi-korean' AND tenant_id = :tenant_id);
 
-INSERT INTO processing_items (id, tenant_id, name, category_id, pricing_method, unit_price, unit, description, processing_days, ai_recommended, status)
-SELECT 'pi-hook', :tenant_id, '四爪钩（挂钩）', 'pc-fold', 'per_meter', 5.00, '元', '四爪钩式，含布带和钩子', 1, TRUE, 'active'
+INSERT INTO processing_items (id, tenant_id, name, category_id, unit, description, processing_days, ai_recommended, status)
+SELECT 'pi-hook', :tenant_id, '四爪钩（挂钩）', 'pc-fold', '米', '四爪钩式，含布带和钩子', 1, TRUE, 'active'
 WHERE NOT EXISTS (SELECT 1 FROM processing_items WHERE id = 'pi-hook' AND tenant_id = :tenant_id);
 
-INSERT INTO processing_items (id, tenant_id, name, category_id, pricing_method, unit_price, unit, description, processing_days, ai_recommended, status)
-SELECT 'pi-hem', :tenant_id, '折边（脚位）', 'pc-cut', 'per_meter', 10.00, '元', '下摆折边处理，8cm脚位+止口', 1, TRUE, 'active'
+INSERT INTO processing_items (id, tenant_id, name, category_id, unit, description, processing_days, ai_recommended, status)
+SELECT 'pi-hem', :tenant_id, '折边（脚位）', 'pc-cut', '米', '下摆折边处理，8cm脚位+止口', 1, TRUE, 'active'
 WHERE NOT EXISTS (SELECT 1 FROM processing_items WHERE id = 'pi-hem' AND tenant_id = :tenant_id);
 
-INSERT INTO processing_items (id, tenant_id, name, category_id, pricing_method, unit_price, unit, description, processing_days, ai_recommended, status)
-SELECT 'pi-trim', :tenant_id, '帘头加工', 'pc-fold', 'per_meter', 50.00, '元', '帘头造型加工（花边另计）', 2, TRUE, 'active'
+INSERT INTO processing_items (id, tenant_id, name, category_id, unit, description, processing_days, ai_recommended, status)
+SELECT 'pi-trim', :tenant_id, '帘头加工', 'pc-fold', '米', '帘头造型加工（花边另计）', 2, TRUE, 'active'
 WHERE NOT EXISTS (SELECT 1 FROM processing_items WHERE id = 'pi-trim' AND tenant_id = :tenant_id);
 
 -- 注：按个计价的 pi-punch-pc / pi-hook-pc 已随 issue #3005 回滚移除——
