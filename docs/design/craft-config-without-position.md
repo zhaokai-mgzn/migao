@@ -148,7 +148,7 @@ A（零行为变化，可先合） → B（改钱，必须最小心） → C（�
 | 包 | 动作 | 行为变化 |
 |---|---|---|
 | **A′ 真值源收敛（可选、可后置）** | `routing.py` 的 `_POSITION_PRICE_ROWS` **去部位维**（价不变）+ `schema.sql` 终态 + `test_production_catalog_seed.py` 期望 | **零**（v2 仍零消费者） |
-| **B Java 运行时去部位**（唯一改钱包） | `ProcessingOrderService.buildRoute`（第 1185 起）：① **取价改读工序库 `unit_price`**（值相等 ⇒ 不影响钱）；② **删掉 `applicableByLogical` 过滤**（第 1192-1276）⇒ 纱帘多做 4 道；③ `variantNameOf` 的调用可保留（名字仍要对上工序库行） | **改工钱**（多做的工序） |
+| **B Java 运行时去部位**（唯一改钱包） | `ProcessingOrderService.buildRoute`（`buildRoute`（`private Map<String, Object> buildRoute(...)`））：① **取价改读工序库 `unit_price`**（值相等 ⇒ 不影响钱）；② **删掉 `applicableByLogical` 过滤**（（符号锚点见相邻代码引用））⇒ 纱帘多做 4 道；③ `variantNameOf` 的调用可保留（名字仍要对上工序库行） | **改工钱**（多做的工序） |
 | **B 的桥接（解开死结用）** | `PUT /operation-positions/{id}` 改为**写穿**到 `production_operations.unit_price`（同一逻辑工序全部位同价 ⇒ 写一行即全生效） | 保住商家侧行为：页面改价**仍然生效** |
 | **C 前端重做** | 工艺项矩阵 → 工序列表一口价；路线 tab 去适用帘种 | 依赖 B |
 | **D 用例/文档** | 见 §8.1 D 行 | — |
@@ -164,14 +164,14 @@ C（把矩阵换成工序列表）随后做，只是**换个界面**，不再是
 
 ### 9.3 🔴 **B 不能只删过滤：必须与「工序库名塌缩」同批**（否则纱帘订单直接 422）
 
-实测 `ProcessingOrderService.buildRoute` 的实例化链（第 1253 起逐逻辑名走）：
+实测 `ProcessingOrderService.buildRoute` 的实例化链（`buildRoute` 的实例化循环里逐逻辑名走）：
 
 ```
 variantNameOf(logicalName, position, catalog)   // 逻辑名 × 部位 → 该租户工序库里的变体行
 meta == null  ⇒  missing.add(logicalName)       // 调用方据此 fail-closed
 ```
 
-⇒ **只删 `applicableByLogical` 过滤（第 1192 / 1257 / 1273-1275）而不改工序库命名**时：
+⇒ **只删 `applicableByLogical` 过滤（`applicableByLogical` 的构造 + 实例化循环里的两处 `continue`）而不改工序库命名**时：
 
 - 纱帘订单的序列里会出现 `定型` / `复烫` / `熨烫` / `车被`（原先被 `applicable=false` 滤掉）；
 - 而 `variantNameOf('定型', '纱帘', catalog)` 在工序库里**没有** `定型-纱` 这一行（纱帘过去不做它，从未建行）
@@ -183,6 +183,6 @@ meta == null  ⇒  missing.add(logicalName)       // 调用方据此 fail-closed
    ⚠️ 唯一键 `uk (tenant_id, name)` 会撞，**不是** UPDATE name；且 `裁剪-*` 与 `精裁-*` 是**两道不同逻辑名**，别合。
 2. **`buildRoute` 取变体改为按逻辑名直取**（塌缩后逻辑名即库名；`normalizeOperationName` 保留作存量兼容），
    并删除 `applicable` 过滤（不再有"该部位不做"）。
-3. **取价改读 `production_operations.unit_price`**（第 488 / 1162-1174 那两处）＋ §9.2 的 **`PUT` 写穿桥接**。
+3. **取价改读 `production_operations.unit_price`**（`buildRoute` 里读 `operationPositions` 的那一处取价）＋ §9.2 的 **`PUT` 写穿桥接**。
 
 ⇒ 这条也解释了为什么上一轮「先删过滤」的直觉是错的：**它不会多做工序，它会整单失败**。
