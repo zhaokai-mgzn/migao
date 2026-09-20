@@ -170,8 +170,10 @@
 //      「请核对各部位的适用性配置」是**死路指引**（页面上没有地方可核对）；
 //    - **A 抽屉层入口**（`operations-manage-disable` / `operations-manage-delete`）：渲染在**抽屉层**、
 //      **不依赖** `manageVariants` 是否为空（工序库那一行确实存在）⇒ 永远有路可走；
-//      删除走**既有** `DELETE /operations/{id}`（软删；#4671 的一键端点 `…/detach-and-delete`
-//      是**另一条**路径，本入口不用它）；
+//      ~~删除走**既有** `DELETE /operations/{id}`（软删；#4671 的一键端点 `…/detach-and-delete`
+//      是**另一条**路径，本入口不用它）~~ —— **已被 ㉚ / issue #4692 改判**：删除**路径**改由
+//      「与护栏③同一把尺（按名字）」定（有「做」的格 ⇒ 走 `…/detach-and-delete`）；
+//      旧口径（一律普通删除）正是用户第 3 次「仍然不能删除」的成因，**勿再照抄**；
 //    - **B 空态给出路**（`operations-manage-empty` 里）：说清**为什么**空 + **两个可点动作**
 //      （「接入部位…」复用 #4614 的孤儿接入流程、「删除这道工序」）—— 不再写「请核对配置」；
 //    - **C 两把尺对齐**：`variant_operation_id` 关联不上时**回退按逻辑名**认这道工序（与后端
@@ -182,6 +184,29 @@
 //      弹框不收摊、矩阵**一格都不动**）；无主线/规则引用 ⇒ 删除**成功**；
 //    - **红证（修复前实测，窄跑 `-t ㉙`）**：7 failed（`Unable to find an element by:
 //      [data-testid="operations-manage-disable"]` / `…-delete` / `…-unlinked-hint`）⇒ 实现后全文件 147/147 绿。
+// ㉚ **删除死路（第 3 次）：前后端判据必须同一把尺（按名字）**（issue #4692；用户原话
+//    「**仍然不能删除**」+ 截图：#4674 已部署后的新抽屉说「它在部位价目矩阵里有 2 个格，而这些格
+//    **都没有关联到它**」⇒ 点删除**仍然失败**）：
+//    - **病根 = 两把尺**：前端按格的 `variant_operation_id` 判「有没有格关联到它」（关联键为 null
+//      ⇒ 判「没有」⇒ 选**普通删除**）；后端护栏③（`ProductionOperationCommandService.matchingCells`
+//      + `variantNameOf`）按**名字**判（格 `logical_name = 测试22` ⇒ 命中 + `applicable=true` ⇒ 422）
+//      ⇒ 前端说能删、后端拒绝 ⇒ **必然失败**；
+//    - **修法（治本）**：删除**路径的选择不再看 `variant_operation_id`** —— 判据 `opDeleteBlockerCells`
+//      = 「本行（行键 = 逻辑工序名）里仍是「做」的格」：有 ⇒ `detachPositions: true`（#4671 的
+//      `…/detach-and-delete`，后端**同一事务**先设为不做 + 级联软删矩阵行 + 删除）；没有 ⇒ 才用普通软删。
+//      它与后端**同向**（按名字）且是后端命中集的**超集** ⇒ **fail-safe**（绝不会在后端会拦时选普通删除）；
+//      `variant_operation_id` 只留作**展示**（「这些格未关联到本工序」仍是有价值的信息）；
+//    - **A~E**：A 用户形态走 detach 且真删掉（**红证**：改前普通删除 ⇒ 护栏③ 422）；B 两把尺一致
+//      （注入「FE 按 id 判、BE 按名判」⇒ 必红：每一次删除都只能是 detach 那条路）；C 正文
+//      「删除这道工序」入口也走通（**没有**按名字命中的格 ⇒ 才用普通软删）；D 抽屉里**变体行**的删除
+//      入口不再死路（普通删除不渲染 —— 它只会 422）；E **护栏不放宽**（主线/规则对新路径照样拦、
+//      理由逐条、弹框不收摊、矩阵一格不动）。
+//    - **红证（修复前实测）**：把删除的路径判据临时改回「一律普通删除」（+ 变体弹框改回只看按 id 那把尺）
+//      后窄跑 `-t 4692` ⇒ **5 failed**（㉙-③ / A / B / D / E）—— B 的判词是
+//      `expected undefined to deeply equal { detachPositions: true }`（发出去的正是**不带参数**的普通删除，
+//      被护栏③打桩 422）；D 的判词是 `Unable to find an element by:
+//      [data-testid="variant-detach-and-delete-op-test22"]`（改前那条路根本没给出来）。
+//      C 是「**没有**按名字命中的格 ⇒ 才用普通软删」的回归锁（改前改后都绿，**不是**红证）。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -419,6 +444,25 @@ const guardError = (reasons: string[]) => ({
   },
   message: 'Request failed with status code 422',
 })
+
+/**
+ * **后端护栏③ 的等价打桩**（issue #4692）：判据 = **按名字** —— `测试22` 这一行里还有「做」的格
+ * ⇒ **普通删除必然 422**（`DELETE /operations/{id}`）；`detachPositions` 那条路（#4671 的
+ * `…/detach-and-delete`，后端同一事务里先设为不做再删）**能过**。
+ *
+ * <p>它就是「两把尺」里的**后端那把尺**（真实语义见 `ProductionOperationCommandService.matchingCells`
+ * —— 按 `variantNameOf` 解析，**从不看**格的 `variant_operation_id`）。前端改不动它 ⇒ 前端只能改自己的
+ * 路径选择；用它打桩，「前端按 id 判 ⇒ 必然 422」这件事在单测里才**真的会红**（不是纸面断言）。</p>
+ */
+const beGuardByName = () =>
+  mockDeleteOperation.mockImplementation(
+    async (_id: unknown, opts?: { detachPositions?: boolean }) => {
+      if (opts?.detachPositions) return ok({ id: 'op-test22', deleted: true, detached_positions: 1 })
+      throw guardError([
+        '工序「测试22」还挂在部位价目矩阵的「测试22 × 布帘」格上且该格是「做」—— 先在该部位设为「不做」，再删它',
+      ])
+    },
+  )
 
 /** 渲染并切到「工艺路线」tab（路线内容在第二个 tab，默认落在「工艺项」） */
 const renderOnRoutes = async () => {
@@ -1451,7 +1495,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(within(list).queryByTestId('orphan-row-op-v54-04')).toBeNull()
   })
 
-  it('㉙-③ 删除**成功**：无主线/规则引用 ⇒ 走既有 `DELETE /operations/{id}`（**红证**：改前无入口 ⇒ 根本发不出请求）', async () => {
+  it('㉙-③ 删除**成功**：按名字命中的格仍在「做」⇒ 走 detach-and-delete（**能过护栏③**那条路；#4692 改判）', async () => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
     mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
     await openManage('测试22')
@@ -1462,9 +1506,14 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(mockDeleteOperation).not.toHaveBeenCalled()
     await userEvent.click(screen.getByTestId('operations-manage-delete-confirm'))
 
-    // ⚠️ 走的是**既有** `DELETE /operations/{id}`（不带 `detachPositions`）——
-    // #4671 的一键端点 `…/detach-and-delete` 是**另一条**路径，本入口不用它
-    await waitFor(() => expect(mockDeleteOperation).toHaveBeenCalledWith('op-test22'))
+    // ⚠️ **#4692 改判**：本夹具的格 `variant_operation_id = null`（读面查不到变体）却**按名字**
+    // 命中 `测试22` 这一行且 `applicable=true` ⇒ 后端护栏③（按名字）**会拦普通删除**。
+    // 故本入口必须走 `detachPositions: true`（#4671 的 `…/detach-and-delete`，后端同一事务）。
+    // （改前这里断言的是**不带参数**的普通删除 —— 那条断言**编码了 bug**，是用户第 3 次「仍然不能删除」的成因；
+    //   它**不是**被放宽，而是被**改成对的那条路** + 新增 ㉚-A 的「护栏③等价打桩」红证。）
+    await waitFor(() =>
+      expect(mockDeleteOperation).toHaveBeenCalledWith('op-test22', { detachPositions: true }),
+    )
     // 刷新（不静默）
     await waitFor(() => expect(mockGetOperationPositions).toHaveBeenCalledTimes(2))
   })
@@ -1545,6 +1594,138 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('variant-delete-op-精裁-布')).toBeInTheDocument()
     // 有关联 ⇒ **不**提示「未关联」（不得无差别刷提示）
     expect(screen.queryByTestId('operations-manage-unlinked-hint')).toBeNull()
+  })
+
+  // ══════════ ㉚ 删除死路（**第 3 次**）：前后端判据必须**同一把尺（按名字）**（issue #4692） ══════════
+  // 用户实测（2026-09-20，逐字）：「**仍然不能删除**」（#4674 已部署后的新抽屉）。
+  // 病根 = **两把尺**：
+  //   前端按格的 `variant_operation_id` 判「有没有格关联到它」（那 2 个格的关联键是 null ⇒ 判「没有」
+  //   ⇒ 选**普通删除**）；后端护栏③（`ProductionOperationCommandService.matchingCells` + `variantNameOf`）
+  //   按**名字**判（那 2 个格 `logical_name = 测试22` ⇒ 命中 + `applicable=true` ⇒ **422 拦下**）
+  //   ⇒ 前端说能删、后端拒绝 ⇒ 点「删除」/「删除这道工序」**必然失败**。
+  // 修法（治本）：**删除路径的选择不再看 `variant_operation_id`** —— 判据与护栏③同一把尺
+  // （`opDeleteBlockerCells` = 本行仍是「做」的格）：有 ⇒ detach-and-delete（**能过**护栏③那条路），
+  // 没有 ⇒ 才用普通软删。`variant_operation_id` 只留作**展示**（「这些格未关联到本工序」）。
+
+  it('#4692-A 用户那个形态（格**按名字**命中、`variant_operation_id` 为 null）⇒ 走 `detachPositions: true` 且**真删掉**（**红证**：改前普通删除 ⇒ 护栏③ 422）', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    // 后端那把尺（按名字）：普通删除 422、detach 能过
+    beGuardByName()
+    await openManage('测试22')
+
+    await userEvent.click(screen.getByTestId('operations-manage-delete'))
+    const modal = await screen.findByTestId('operations-manage-delete-modal')
+    // 弹框**说清将发生什么**（设为不做 + 历史报工不受影响）—— 不再写「后端会拦下…」（那是走错路径的文案）
+    expect(modal).toHaveTextContent('设为不做')
+    expect(modal).toHaveTextContent('历史报工不受影响')
+    expect(modal).not.toHaveTextContent('后端会拦下')
+
+    await userEvent.click(screen.getByTestId('operations-manage-delete-confirm'))
+    // ① 走的是**能过护栏③**的那条路（断言请求参数）
+    await waitFor(() =>
+      expect(mockDeleteOperation).toHaveBeenCalledWith('op-test22', { detachPositions: true }),
+    )
+    // ② 工序**真被删**（弹框收摊 + 刷新）—— 不是「提示成功但还在」
+    await waitFor(() => expect(screen.queryByTestId('operations-manage-delete-modal')).toBeNull())
+    await waitFor(() => expect(mockGetOperationPositions).toHaveBeenCalledTimes(2))
+    // ③ **一次事务**：前端**不**自己逐个 PUT 矩阵格（那是两步、会留下「第一步成功第二步失败」的中间态）
+    expect(mockUpdateOperationPosition).not.toHaveBeenCalled()
+  })
+
+  it('#4692-B 两把尺一致：**前端不再按 `variant_operation_id` 选删除路径**（注入「FE 按 id 判、BE 按名判」⇒ 必红）', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    // 前提自证（不是空跑）：这一格的关联键确实是 null（id 那把尺判「没有格」），而行键（名字）是 `测试22`
+    const cell = POSITIONS_WITH_TEST22.find((c) => c.operation === '测试22')!
+    expect(cell.variant_operation_id).toBeNull()
+    expect(cell.applicable).toBe(true)
+    // 后端那把尺（按名字）：普通删除 422
+    beGuardByName()
+    await openManage('测试22')
+
+    await userEvent.click(screen.getByTestId('operations-manage-delete'))
+    await userEvent.click(await screen.findByTestId('operations-manage-delete-confirm'))
+    await waitFor(() => expect(mockDeleteOperation).toHaveBeenCalled())
+
+    // **判据 = 后端那把（按名字）**：发出去的**每一次**删除都只能是 detach 那条路
+    // （前端若仍按 id 尺判「没有格」⇒ 普通删除 ⇒ 上面那个打桩 422 ⇒ 本断言必红）
+    for (const call of mockDeleteOperation.mock.calls) {
+      expect(call[1]).toEqual({ detachPositions: true })
+    }
+  })
+
+  it('#4692-C 正文「删除这道工序」入口也走通：**没有任何按名字命中的格** ⇒ 才用普通软删（spec A 第 2 款）', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
+    mockGetOperationPositions
+      .mockReset()
+      .mockResolvedValueOnce(ok(POSITIONS_WITH_TEST22)) // 首次：这一行有格 ⇒ 抽屉能开
+      .mockResolvedValue(ok(POSITIONS)) // 之后：这一行的格没了 ⇒ 抽屉空（正文入口出现）
+    await openManage('测试22')
+    // 用抽屉层「停用」把读面刷成「这一行的格没了」（与 ㉙-② 同一手法）
+    await userEvent.click(screen.getByTestId('operations-manage-disable'))
+    await waitFor(() => expect(mockGetOperationPositions).toHaveBeenCalledTimes(2))
+
+    await screen.findByTestId('operations-manage-empty')
+    const entry = screen.getByTestId('operations-manage-delete-empty')
+    expect(entry).not.toBeDisabled()
+    await userEvent.click(entry)
+    expect(await screen.findByTestId('operations-manage-delete-modal')).toBeInTheDocument()
+    // 一格都没有 ⇒ **不**走 detach（护栏③天然满足）；这正是 spec A 的第 2 款
+    expect(screen.getByTestId('operations-manage-delete-nocells')).toBeInTheDocument()
+    await userEvent.click(screen.getByTestId('operations-manage-delete-confirm'))
+    await waitFor(() => expect(mockDeleteOperation).toHaveBeenCalledWith('op-test22'))
+    await waitFor(() => expect(mockGetOperationPositions).toHaveBeenCalledTimes(3))
+  })
+
+  it('#4692-D 抽屉里**变体行**的删除入口在用户形态下不再死路：只给「设为不做并删除」（普通删除不渲染 —— 它只会 422）', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    beGuardByName()
+    await openManage('测试22')
+
+    // 该格是按**逻辑名**回退认出来的（关联键为 null）⇒ 抽屉里照样有这一行
+    await userEvent.click(screen.getByTestId('variant-delete-op-test22'))
+    const modal = await screen.findByTestId('variant-delete-modal')
+    // 说清将发生什么（按**名字**那把尺：本行还有「做」的格）
+    expect(screen.getByTestId('variant-delete-cells-by-name')).toHaveTextContent('设为不做')
+    // 能过护栏③的那条路在；**普通删除不渲染**（按 id 那把尺它以为「没有格」，点了必然 422 = 死路）
+    expect(screen.getByTestId('variant-detach-and-delete-op-test22')).toBeInTheDocument()
+    expect(screen.queryByTestId('variant-delete-confirm-op-test22')).toBeNull()
+    expect(modal).toHaveTextContent('历史报工不受影响')
+
+    await userEvent.click(screen.getByTestId('variant-detach-and-delete-op-test22'))
+    await waitFor(() =>
+      expect(mockDeleteOperation).toHaveBeenCalledWith('op-test22', { detachPositions: true }),
+    )
+  })
+
+  it('#4692-E 护栏**不放宽**：仍挂在主线/规则 ⇒ 新路径（detach）**照样被拦**，理由逐条就地展示、矩阵一格不动', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    mockDeleteOperation
+      .mockReset()
+      .mockRejectedValueOnce(
+        guardError([
+          '工序「测试22」还在活跃路线「窗帘工序路线（默认）」的主线里 —— 先改主线（把它从该路线去掉），再删它',
+          '工序「测试22」被活跃规则「工艺 韩褶 → 测试22」引用（目标工序或锚点）—— 先删或改那条规则，再删它',
+        ]),
+      )
+    await openManage('测试22')
+
+    await userEvent.click(screen.getByTestId('operations-manage-delete'))
+    await userEvent.click(await screen.findByTestId('operations-manage-delete-confirm'))
+
+    // 走的仍是 detach 那条路（路径判据变了），但**护栏①/②一字未放宽** ⇒ 一样 422
+    await waitFor(() =>
+      expect(mockDeleteOperation).toHaveBeenCalledWith('op-test22', { detachPositions: true }),
+    )
+    const reasons = await screen.findByTestId('operations-manage-delete-reasons')
+    expect(reasons).toHaveTextContent('先改主线')
+    expect(reasons).toHaveTextContent('先删或改那条规则')
+    // 被拦 ⇒ 弹框**不收摊**（理由要看得见），且**没有**任何「摘格」发生（前端不自己去动矩阵）
+    expect(screen.getByTestId('operations-manage-delete-modal')).toBeInTheDocument()
+    expect(mockUpdateOperationPosition).not.toHaveBeenCalled()
   })
 
   it('⑰-⑬ 删除工序：**二次确认**后才发 `DELETE /operations/{id}`；护栏理由逐条就地展示', async () => {
