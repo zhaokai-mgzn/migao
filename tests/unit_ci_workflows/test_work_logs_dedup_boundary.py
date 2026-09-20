@@ -79,12 +79,10 @@ def _bare_table(token: str) -> str:
     return token.strip().strip('"`').split(".")[-1].lower()
 
 
-def _token_before(sql: str, pos: int, pattern: str) -> str:
-    """取 `pos` 之前最近的 `<pattern> <token>` 里的 token（用于读 `CONSTRAINT … UNIQUE` 的名字）。"""
-    m = None
-    for m in re.finditer(pattern, sql[:pos], re.I):
-        pass
-    return m.group(1) if m else ""
+def _last_match(sql: str, pattern: str) -> str:
+    """取 `sql` 里**最后一个**匹配的**捕获组 1**；无匹配 ⇒ 空串（调用方据此判红）。"""
+    found = re.findall(pattern, sql, re.I)
+    return found[-1] if found else ""
 
 
 def table_bodies(sql: str, table: str) -> list[str]:
@@ -158,7 +156,7 @@ def test_c1_scan_is_not_vacuous():
         (p for p in files if p.name.startswith("V49__create_production_operations_and_work_logs")),
         None,
     )
-    assert create_sql is not None, f"{TARGET_TABLE} 的建表迁移没被读到 ⇒ 扫描口径失效"
+    assert create_sql, f"{TARGET_TABLE} 的建表迁移没被读到 ⇒ 扫描口径失效"
     text = create_sql.read_text(encoding="utf8")
     assert table_bodies(text, TARGET_TABLE), (
         f"建表体没解析出来（{create_sql.name}）⇒ table_bodies 的口径失效 ⇒ C1 会空跑"
