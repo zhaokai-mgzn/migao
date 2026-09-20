@@ -931,7 +931,7 @@
 数据: 图片使用云 dev OSS 资产（vision 模型可抓取；picsum.photos 在 vision 供应商侧抓取失败会误报『图片分析暂时无法完成』）
 ```
 真值: ai-chat.route-actions
-溯源: issue #2884/#2887：线上会话 sess_806703a2dcca4059 澄清卡后发图崩溃（intent_router_node 对多模态 list content 调 .strip() 抛 AttributeError）修复后的真实验收用例；本机真实链路已实证 pre-fix 逐字复现 / 修复后正常走 vision ｜ tags: multimodal, image, regression, xiaobu, product
+溯源: issue #2884/#2887：线上会话 sess_806703a2dcca4059 澄清卡后发图崩溃（intent_router_node 对多模态 list content 调 .strip() 抛 AttributeError）修复后的真实验收用例；本机真实链路已实证 pre-fix 逐字复现 / 修复后正常走 vision ｜ 2026-09-21（#4828 的 case-trust burn-down 缴费，**整条销账**）：补 `precondition` 声明 —— 原条目只命中 CASE-TRUST-NO-PRECONDITION-ASSERTION；user_inputs / expectations / data_checks / truths_ref / traces **一字未动**（无放宽）。 ｜ tags: multimodal, image, regression, xiaobu, product
 
 ### CH-027. 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901） 🔵
 ```

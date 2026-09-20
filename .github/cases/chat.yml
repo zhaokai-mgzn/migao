@@ -1502,8 +1502,15 @@ cases:
     data_checks:
       - "最后一轮（发图轮）不得出现任何 error 事件；runner 最后一轮报错即判整个用例失败（防假验收：前面轮次命中 expectation 掩盖图片轮崩溃）"
       - "图片使用云 dev OSS 资产（vision 模型可抓取；picsum.photos 在 vision 供应商侧抓取失败会误报『图片分析暂时无法完成』）"
+    # 前置自断言（CASE-TRUST-NO-PRECONDITION-ASSERTION burn-down，口径同 CH-027 与 chat.yml
+    # 既有 `[backend-contract]` 形态）：本用例**跑在 agent-eval 栈**（`skip_reason` 为空）⇒ 前置 =
+    # ① 会话为**全新**（无历史轮次）—— R1「帮我看看」的澄清卡/文本引导不依赖任何存量会话状态；
+    # ② R2 的图片 URL 在 vision 供应商侧**可抓取**（云 dev OSS 资产，与上面第 2 条 data_check 同源）。
+    # 为什么必须写出来：②不成立时（资产被删/改权限）vision 链路会返回「图片分析暂时无法完成」，
+    # 与本用例要防的「agent 不干活」**同形** —— 不声明就无从区分「前置坏了」与「修复回退了」。
+    precondition: "会话为全新（无历史轮次）；R2 的图片 URL（云 dev OSS 资产 vision-acceptance/curtain-fabric-1.png）在 vision 供应商侧可抓取 —— 该资产被删除/改权限时表现为『图片分析暂时无法完成』（与 agent 不干活同形）"
     skip_reason: ""
-    merge_log: "issue #2884/#2887：线上会话 sess_806703a2dcca4059 澄清卡后发图崩溃（intent_router_node 对多模态 list content 调 .strip() 抛 AttributeError）修复后的真实验收用例；本机真实链路已实证 pre-fix 逐字复现 / 修复后正常走 vision"
+    merge_log: "issue #2884/#2887：线上会话 sess_806703a2dcca4059 澄清卡后发图崩溃（intent_router_node 对多模态 list content 调 .strip() 抛 AttributeError）修复后的真实验收用例；本机真实链路已实证 pre-fix 逐字复现 / 修复后正常走 vision ｜ 2026-09-21（#4828 的 case-trust burn-down 缴费，**整条销账**）：补 `precondition` 声明 —— 原条目只命中 CASE-TRUST-NO-PRECONDITION-ASSERTION；user_inputs / expectations / data_checks / truths_ref / traces **一字未动**（无放宽）。"
 
   - id: CH-027
     legacy_id: ""

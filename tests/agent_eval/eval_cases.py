@@ -1374,6 +1374,7 @@ _CASE_CH_026 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition='会话为全新（无历史轮次）；R2 的图片 URL（云 dev OSS 资产 vision-acceptance/curtain-fabric-1.png）在 vision 供应商侧可抓取 —— 该资产被删除/改权限时表现为『图片分析暂时无法完成』（与 agent 不干活同形）',
 )
 
 # ── CH-027 [NORMAL] 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）（源: cases/chat.yml）──
