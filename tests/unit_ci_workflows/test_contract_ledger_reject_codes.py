@@ -120,25 +120,36 @@ def _method_body(class_name: str, method_name: str) -> str:
     raise AssertionError(f"{class_name}#{method_name} 的花括号不配平（源码被截断？）")
 
 
-def _factory_statuses() -> dict[str, int]:
-    """`BusinessException` 的工厂方法 → 状态码（**读源**，不写死 422）。"""
+def _factories() -> tuple[dict[str, int], dict[str, tuple[str, ...]]]:
+    """`BusinessException` 的工厂方法 → (状态码, 它构造的码) —— **一次读源**（不写死 422）。
+
+    为什么读源而不写死：`validationError` 的 422 是**源码真值**，抄进测试就是第二份会漂的副本
+    （同 #4819 的「散文抄数值」）。源码结构变了 ⇒ 取不到 ⇒ **直接失败**，不静默放行。
+    """
     src = BUSINESS_EXCEPTION.read_text(encoding="utf8")
-    out: dict[str, int] = {}
+    statuses: dict[str, int] = {}
+    codes: dict[str, tuple[str, ...]] = {}
     for m in _FACTORY_BODY.finditer(src):
-        status = _FACTORY_STATUS.search(m.group("body"))
+        name, body = m.group("name"), m.group("body")
+        status = _FACTORY_STATUS.search(body)
         if status:
-            out[m.group("name")] = int(status.group(1))
-    assert out, (
-        "读不到 `BusinessException` 的工厂方法状态码映射（源码结构变了）—— "
-        "取不到真值 ⇒ 本守卫不得静默放行"
+            statuses[name] = int(status.group(1))
+        built = _CODE_LITERAL.findall(body)
+        if built:
+            codes[name] = tuple(built)
+    assert statuses and codes, (
+        "读不到 `BusinessException` 的工厂方法映射（源码结构变了）—— 取不到真值 ⇒ 本守卫不得静默放行"
     )
-    return out
+    return statuses, codes
+
+
+#: 工厂方法 → 状态码 / 它构造的码（**读源**，不写死）
+_FACTORY_STATUSES, _FACTORY_CODES = _factories()
 
 
 def _codes_thrown(class_name: str, method_name: str) -> dict[str, int]:
     """方法体里**实际抛出**的 `码 → 状态码`（字面量构造 + 工厂方法两种形态）。"""
     body = _method_body(class_name, method_name)
-    factories = _factory_statuses()
     out: dict[str, int] = {}
     for code in _CODE_LITERAL.findall(body):
         m = re.search(
@@ -150,27 +161,13 @@ def _codes_thrown(class_name: str, method_name: str) -> dict[str, int]:
         status = re.search(r",\s*(\d{3})\s*(?:,|\))", m.group("rest"))
         out[code] = int(status.group(1)) if status else 400  # 2 参构造 = 400（BusinessException 源码真值）
     for name in set(_CODE_FACTORY.findall(body)):
-        if name not in factories:
+        if name not in _FACTORY_STATUSES:
             continue  # 非「码工厂」（如 assertXxx 之类）不是抛出点
-        # 该工厂在本方法里抛的码：取方法体里出现的、与该工厂同名的码常量 —— 见 _FACTORY_CODES
-        for code in _FACTORY_CODES.get(name, ()):  # pragma: no cover - 由 _FACTORY_CODES 填
+        # 该工厂构造的码出现在本方法体里 ⇒ 本方法真的用它抛过
+        for code in _FACTORY_CODES.get(name, ()):
             if code in body:
-                out[code] = factories[name]
+                out[code] = _FACTORY_STATUSES[name]
     return out
-
-
-def _factory_codes() -> dict[str, tuple[str, ...]]:
-    """`BusinessException` 的工厂方法 → 它构造的码（**读源**：`new BusinessException("CODE", …)`）。"""
-    src = BUSINESS_EXCEPTION.read_text(encoding="utf8")
-    out: dict[str, tuple[str, ...]] = {}
-    for m in _FACTORY_BODY.finditer(src):
-        codes = _CODE_LITERAL.findall(m.group("body"))
-        if codes:
-            out[m.group("name")] = tuple(codes)
-    return out
-
-
-_FACTORY_CODES = _factory_codes()
 
 
 # ── 读账本（markdown）──────────────────────────────────────────────────────
