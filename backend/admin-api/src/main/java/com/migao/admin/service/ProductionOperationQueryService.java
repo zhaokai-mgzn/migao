@@ -847,7 +847,7 @@ public class ProductionOperationQueryService {
         variant(names, "上车布", "纱帘", "上车布-纱");
         variant(names, "打孔", "纱帘", "打孔-纱");
         variant(names, "绑带", "纱帘", "绑带-纱");
-        // ── 帘头专属（1 条；其余 21 道工序的帘头格走 `headVariants` 的显式条目）──
+        // ── 帘头专属（库里真有这一行；其余工序的帘头格走 `headVariants` 的显式条目）──
         variant(names, "帘头制作", "帘头", "帘头制作");
         // ── 布料（第 4 部位，issue #4707）──
         // `V88`（#4676）把布料主线从 `["配料","打包"]` 改成 **`["裁剪","打包"]`**，并显式种下
