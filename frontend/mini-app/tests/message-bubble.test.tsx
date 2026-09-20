@@ -27,11 +27,16 @@ jest.mock('../src/components/cards/OrderCard', () => {
 })
 
 describe('MessageBubble', () => {
+  // 冻结时钟：夹具 created_at 与断言都取自同一固定时刻，与真实时钟完全解耦（#4713）。
+  // 否则「模块加载时建夹具 + 若干秒后断言」会随机跨分钟边界 ⇒ 该用例约 10~15% 随机红
+  // （该文件整套实测 10.7s；本包 job「mini-app typecheck + unit tests」在 required 集合里）。
+  const FROZEN_NOW = new Date('2026-09-20T10:00:00')
+
   const baseMsg: Message = {
     id: 'm1',
     role: 'user',
     content: '你好',
-    created_at: new Date().toISOString(),
+    created_at: FROZEN_NOW.toISOString(),
   }
 
   it('应渲染用户消息内容', () => {
@@ -62,14 +67,37 @@ describe('MessageBubble', () => {
     expect(screen.queryByText('|')).toBeNull()
   })
 
-  it('应渲染时间戳', () => {
-    const now = new Date()
-    const hours = String(now.getHours()).padStart(2, '0')
-    const minutes = String(now.getMinutes()).padStart(2, '0')
-    const expectedTime = `${hours}:${minutes}`
+  // UI-013 / CH-032: 渲染的是**消息自己的时间戳**（不是"现在"）—— 期望值从 created_at 派生
+  it('应渲染时间戳（渲染的是消息自己的 created_at，不是当前时间）', () => {
+    jest.useFakeTimers()
+    jest.setSystemTime(FROZEN_NOW)
+    try {
+      const created = new Date(baseMsg.created_at)
+      const expectedTime =
+        `${String(created.getHours()).padStart(2, '0')}:` +
+        `${String(created.getMinutes()).padStart(2, '0')}`
 
-    render(<MessageBubble message={baseMsg} />)
-    expect(screen.getByText(expectedTime)).toBeTruthy()
+      render(<MessageBubble message={baseMsg} />)
+      expect(screen.getByText(expectedTime)).toBeTruthy()
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  // 反恒真护栏：断言锚在「消息时间戳」上时，消息时间戳本身若被换成别的时刻，渲染必须跟着变。
+  // 没有这条，「从 created_at 派生」的期望值会与渲染同源 ⇒ 判据可能退化成恒真（#4713）。
+  it('时间戳取自消息而非当前时间（消息时刻 ≠ 冻结的"现在"）', () => {
+    jest.useFakeTimers()
+    jest.setSystemTime(FROZEN_NOW)
+    try {
+      const msg: Message = { ...baseMsg, id: 'm-ts', created_at: '2026-09-20T08:07:00' }
+      render(<MessageBubble message={msg} />)
+
+      expect(screen.getByText('08:07')).toBeTruthy()
+      expect(screen.queryByText('10:00')).toBeNull()
+    } finally {
+      jest.useRealTimers()
+    }
   })
 
   // UI-017: 工具执行过程对客户隐藏（不渲染 tool_calls 指示器）
