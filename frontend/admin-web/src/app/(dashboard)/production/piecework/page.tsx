@@ -19,8 +19,19 @@ import type { PieceworkReport } from '@/types'
  * 真值源：docs/curtain-production-rules.md §4「工资报表 = 报工事件聚合（按人/按期/按单下钻）」。
  * 返工/报废不计件由后端聚合时排除，本页只做展示。
  */
+/**
+ * 默认期间 = **本地月**（issue #4772）。
+ *
+ * ⚠️ 不得写成 `new Date().toISOString().slice(0, 7)`（**UTC** 月）：在 UTC+8 的
+ * 每月 1 日 00:00~08:00（CST）这 8 小时里 UTC 月 = 上一个月 ⇒ 页面默认查上一个月。
+ * 口径证据（三条，来自 #4761 核清）：① 后端 `ProductionService.pieceworkSummary` 按
+ * `work_date`（`LocalDate`，**无时区**）∈ `[atDay(1), atEndOfMonth()]` 过滤；
+ * ② 后端 `application.yml` 的 `spring.jackson.time-zone: Asia/Shanghai`；
+ * ③ 同域财务页 `getCurrentPeriod()` 用 `getFullYear()/getMonth()`（本地月）。
+ */
 function currentPeriod(): string {
-  return new Date().toISOString().slice(0, 7)
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
 function formatMoney(value?: number): string {

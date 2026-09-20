@@ -23,28 +23,22 @@ import userEvent from '@testing-library/user-event'
 // ⇒ 语义结论：**本地月**。`toISOString().slice(0, 7)` 是 **UTC** 月，**不得**用作期望值：
 //    在 UTC+8 的每月 1 日 00:00~08:00 这 8 小时里，UTC 月 = 上一个月。
 //
-// ⚠️ 分叉登记（本单只动 `tests/**`，故**不改**被测页面）：页面
-//    `src/app/(dashboard)/production/piecework/page.tsx` 的 `currentPeriod()` **恰恰就是**
-//    `new Date().toISOString().slice(0, 7)`（UTC 月）⇒ 上面那 8 小时窗口里，页面默认查**上一个月**
-//    （用户本地已是新月份）⇒ **真实产品缺陷**，需另立产品缺陷单；本单已上报，不在此修。
-//
-// 因此本用例的期望值取「与页面**同一真值源**（冻结后的系统时钟）派生」，使判据**今天**可判定、
-// 且**任何时区**下都确定（月中时刻的 UTC 月 == 本地月，已在上方给出证据）。
-// ⚠️ 这里刻意**不**写成「本地月派生」：本单红线禁止改页面 ⇒ 页面仍是 UTC 月，写成本地月会让
-//    用例在那 8 小时窗口里**确定红**（那需要页面先修）。产品缺陷单修好后，本处应同步改本地月派生。
+// ✅ 分叉已收口（issue #4772）：页面的 `currentPeriod()` 原为 `new Date().toISOString().slice(0, 7)`
+//    （**UTC** 月）⇒ 上面那 8 小时窗口里页面默认查**上一个月**（用户本地已是新月份）= **真实产品缺陷**。
+//    已改为**本地月**（`getFullYear()/getMonth()`），故本文件期望值同步改为**本地月派生**。
+//    红证见文件末 `describe('默认期间 = 本地月（issue #4772 红证）')`：固定时刻取**显式 +08:00**
+//    偏移（不依赖跑测机器时区）⇒ 改前必红（`period=2026-09`）、改后绿（`2026-10`）。
 import { FROZEN_NOW } from '../helpers/frozen-clock'
 
 /**
  * 期望值 = 从**冻结后的系统时钟**派生的「当前月」（与页面同一真值源）。
  *
- * ⚠️ 为什么用 `toISOString().slice(0, 7)`（UTC 月）而不是本地月：**不是**认为 UTC 对，
- * 而是被测页面的 `currentPeriod()` 现在就是 UTC 月，而本单红线只动 `tests/**`。
- * 写成本地月 ⇒ 在 UTC+8 每月 1 日 00:00~08:00 这 8 小时里用例**确定红**（页面缺陷所致）。
- * 页面修成正确的**本地月**后，本函数应同步改成
- * `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`（见文件头分叉登记）。
+ * ⚠️ 用**本地月**而非 `toISOString().slice(0, 7)`（UTC 月）：后者在 UTC+8 的每月 1 日
+ * 00:00~08:00 这 8 小时里给出上一个月（口径证据见文件头三条）。派生口径与页面 `currentPeriod()`
+ * 逐字一致 —— 这正是本用例的判别力来源：页面若回退成 UTC 月，文件末的红证会立刻红。
  */
 function expectedPeriod(now: Date): string {
-  return now.toISOString().slice(0, 7)
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
 const mockGetPieceworkSummary = vi.fn()
@@ -273,5 +267,83 @@ describe('计件报表页 未定价可见（issue #4696）', () => {
       'href',
       '/production/routings',
     )
+  })
+})
+
+/**
+ * 默认期间 = **本地月**（issue #4772 红证）—— 页面 `currentPeriod()` 原为 UTC 月。
+ *
+ * 缺陷：`new Date().toISOString().slice(0, 7)` 取的是 **UTC** 月 ⇒ 在 UTC+8 下每月 1 日
+ * 00:00~08:00（CST）这 8 小时里，用户本地已是新月份、页面却默认查**上一个月**（报表空/少）。
+ *
+ * 判据形态（**把「CST 的 8 小时窗口」在测试内复现 ⇒ CI 与开发机**同一条判据、都有判别力**）：
+ * ① 本 describe 用 `vi.stubEnv('TZ', 'Asia/Shanghai')` 把**进程本地时区**钉成 UTC+8
+ *    （实测有效：stub 后 `new Date('…+08:00').getMonth()` 按 +0800 计算）——
+ *    否则 CI runner（**UTC**）上「UTC 月 == 本地月」⇒ 缺陷复现不出来（改前也会绿 = **无判别力**）。
+ * ② 固定时刻取**显式 `+08:00` 偏移**（`2026-10-01T00:30:00+08:00` ⇒ 绝对时刻
+ *    `2026-09-30T16:30:00Z`）= CST 月首 00:30、UTC 仍是上月末 16:30 ⇒ **缺陷窗口正中**。
+ * ③ 期望值 = **同一冻结时刻的本地月**（`expectedPeriod(冻结时刻)`），不是硬编码的 `'2026-10'`：
+ *    与页面 `currentPeriod()` 同源派生 ⇒ 页面若回退成 UTC 月，两者立刻不等（改前实测：
+ *    期望 `2026-10` / 实际 `2026-09`）。
+ * ④ **判别力护栏**：断言是**具体月份字符串**（`expect.any(String)` / `/\d{4}-\d{2}/` 这类恒真形态
+ *    **不用**）。
+ *
+ * 红证（实测，`TZ=UTC` 环境 + `origin/main` 的 UTC 月实现）：
+ * ```
+ * × 月首 00:30（CST）⇒ period = 该时刻的**本地月**，不是 UTC 月
+ *   expected "spy" to be called with arguments: [ { period: '2026-10', …(1) } ]
+ * -     "period": "2026-10",
+ * +     "period": "2026-09",
+ * Tests  1 failed | 15 passed (16)
+ * ```
+ */
+describe('默认期间 = 本地月（issue #4772 红证）', () => {
+  beforeEach(() => {
+    // 把「跑测机器的本地时区」钉成 UTC+8：CI（UTC）与开发机（CST）跑出**同一个**判定。
+    vi.stubEnv('TZ', 'Asia/Shanghai')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('🔴 月首 00:30（CST）⇒ period = 该时刻的**本地月**，不是 UTC 月', async () => {
+    // `+08:00` 显式偏移 = 绝对时刻，与机器时区无关（CI 跑 UTC 也是同一个 instant）
+    const instant = new Date('2026-10-01T00:30:00+08:00')
+    vi.setSystemTime(instant)
+    render(<PieceworkReportPage />)
+
+    const localMonth = expectedPeriod(instant)
+    // 本地时区已被 stub 成 UTC+8 ⇒ 本地月 = 2026-10、UTC 月 = 2026-09
+    // ⇒ 改前（页面用 UTC 月）此断言必红（实测见上方 describe 注释）
+    expect(localMonth).toBe('2026-10')
+    await waitFor(() => expect(mockGetPieceworkSummary).toHaveBeenCalled())
+    expect(mockGetPieceworkSummary).toHaveBeenCalledWith({ period: localMonth, worker_name: undefined })
+    expect(screen.getByTestId('piecework-period')).toHaveValue(localMonth)
+  })
+
+  it('月首边界两侧：CST 08:59 与 09:01 都取**本地月**（页面不得跟着 UTC 翻月）', async () => {
+    for (const cst of ['2026-10-01T08:59:00+08:00', '2026-10-01T09:01:00+08:00']) {
+      const instant = new Date(cst)
+      vi.setSystemTime(instant)
+      mockGetPieceworkSummary.mockClear()
+      const { unmount } = render(<PieceworkReportPage />)
+      await waitFor(() => expect(mockGetPieceworkSummary).toHaveBeenCalled())
+      expect(mockGetPieceworkSummary).toHaveBeenCalledWith({ period: expectedPeriod(instant), worker_name: undefined })
+      unmount()
+    }
+  })
+
+  it('默认期间与**本地**月一致（跑测机器任意时区都成立）', async () => {
+    // 无偏移的本地时刻构造 ⇒ 本地月在任何时区都是 2026-10（CST 与 UTC 同结论）；
+    // 若页面用 UTC 月，CST（UTC+8）下这条也红 —— 与上一条互为独立证据面。
+    const instant = new Date('2026-10-05T00:30:00')
+    vi.setSystemTime(instant)
+    render(<PieceworkReportPage />)
+
+    await waitFor(() => expect(mockGetPieceworkSummary).toHaveBeenCalled())
+    const localMonth = expectedPeriod(instant)
+    expect(localMonth).toBe('2026-10')
+    expect(mockGetPieceworkSummary).toHaveBeenCalledWith({ period: localMonth, worker_name: undefined })
   })
 })
