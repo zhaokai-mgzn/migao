@@ -33,6 +33,7 @@ import {
   METERS_SOURCE_FOLLOW,
   METERS_SOURCE_MANUAL,
   OPEN_COUNT_OPTIONS,
+  STANDARD_FULLNESS,
   STYLE_MIXED,
   bodyHasSheerLine,
   buildCraftSpec,
@@ -54,10 +55,12 @@ import { describeLogisticsProfile } from '@/lib/logistics'
 // （它们在目录里必须存在 —— 商家配「加工费组合」要能选到；但手选控件必须没有它们，判据 8）
 import {
   AUTO_FEATURE_NAMES,
+  detectAutoFeatureNotices,
   detectAutoFeatures,
   resolveDoorWidth,
   type AutoFeature,
   type AutoFeatureName,
+  type AutoFeatureNotice,
 } from '@/lib/craft-auto-features'
 // 费用明细的「加工 + 特殊选项」两半拆分（issue #4526 · 设计 §4.3 / 判据 5）——唯一实现
 import { buildFeeDetailDisplay } from '@/lib/order-fee-display'
@@ -367,6 +370,8 @@ function withShapedDefault(
  * `processingInfo.processingItems`（服务端的特征名唯一来源就是它），但**不计入手选计数**、
  * 也**不在手选列表里出 checkbox**（判据 8：手选项 ⇒ 红；由 `handPickableProcessingItems` 滤掉）。
  * ⚠️ `定型` 已**不在**本函数里（#4566）：它是手选加工项，其勾选态单独派生 `isShaped`。
+ * ⚠️ **本页是推导的单一真值**：判据一律走 `lib/craft-auto-features.ts`（#4662 起「超宽」含**褶倍**、
+ * 几何矛盾另走 {@link autoFeatureNoticesOf}）—— 本页**不得**出现第二份推导。
  */
 function autoFeaturesOf(line: OrderLineItem): AutoFeature[] {
   return detectAutoFeatures({
@@ -374,6 +379,30 @@ function autoFeaturesOf(line: OrderLineItem): AutoFeature[] {
     height: line.height,
     doorWidth: line.selectedSku?.doorWidth,
     cuttingMode: line.craft.cuttingMode,
+    // **褶倍**（issue #4662）—— 超宽判据 = `(宽 + SIDE_MARGIN) × 褶倍 > 门幅`（引擎的分幅条件）。
+    // 值 = **标准档倍数**：本页的算料请求把 `craft_tier` 钉死为 `standard`
+    // （`craft-calc-request.ts` 的 `CRAFT_CALC_TIER`）⇒ 引擎取到的 `N` 就是
+    // `DEFAULT_CRAFT_TIERS.standard.fullness`，即此处的 `STANDARD_FULLNESS`
+    // （**有守卫的副本**：`craft-calc-defaults.test.ts` 逐值读 Python 源比对，漂移即红）。
+    // ⚠️ **不拿「褶距」反推倍数**：引擎算分幅时**不读** `pleatSpacing`（它只按档位取倍数）⇒
+    // 反推会让「前端推算」与「引擎实际计算」脱钩（正是本单要消灭的那种不一致）。
+    fullness: STANDARD_FULLNESS,
+  })
+}
+
+/**
+ * 该行要**显式告知**商家的两件事（issue #4662）—— 与 {@link autoFeaturesOf} **同源同入参**：
+ * ① 褶倍缺失 ⇒ 未判超宽；② 加工类型与几何**矛盾** ⇒ 系统实际会按哪种算。
+ *
+ * ⚠️ 提示**不是特征**：不进组合键、不改推算（裁定 C 的前半句「以商家选的为准」）。
+ */
+function autoFeatureNoticesOf(line: OrderLineItem): AutoFeatureNotice[] {
+  return detectAutoFeatureNotices({
+    width: line.width,
+    height: line.height,
+    doorWidth: line.selectedSku?.doorWidth,
+    cuttingMode: line.craft.cuttingMode,
+    fullness: STANDARD_FULLNESS,
   })
 }
 
@@ -2913,6 +2942,8 @@ function LineItemBlock({
   const addableAutoFeatures = AUTO_FEATURE_NAMES.filter(
     (name) => !autoFeatureRows.some((row) => row.name === name)
   )
+  /** 系统识别**提示**（issue #4662）：缺褶倍 ⇒ 未判超宽 / 加工类型几何矛盾 ⇒ 系统实际按哪种算 */
+  const autoFeatureNotices = autoFeatureNoticesOf(line)
   /** 门幅（米）+ 是否走了缺省值（issue #4657：默认值必须在界面上看得出来） */
   const doorWidthValue = resolveDoorWidth(line.selectedSku?.doorWidth)
   const doorWidthFallback = !hasUsableDoorWidth(line.selectedSku?.doorWidth)
@@ -3189,6 +3220,19 @@ function LineItemBlock({
                       该 SKU 未提供门幅 ⇒ 按默认 {doorWidthValue} 米推算 —— 依据可能不准，请核对后再采纳
                     </p>
                   )}
+                  {/* **提示**（issue #4662）：① 缺褶倍 ⇒ 未判超宽（不猜、也不静默）；
+                      ② 加工类型与几何**矛盾** ⇒ 系统实际会按哪种算（与算料引擎的自动回落一致）。
+                      ⚠️ 提示**不改推算、不进组合键** —— 只把「前端推算」与「引擎实际计算」的
+                      不一致**摆到台面上**（用户 2026-09-20 裁定 C）。 */}
+                  {autoFeatureNotices.map((notice) => (
+                    <p
+                      key={notice.kind}
+                      data-testid={`auto-feature-notice-${notice.kind}`}
+                      className="mt-1 text-xs text-amber-700"
+                    >
+                      {notice.reason}
+                    </p>
+                  ))}
                   <ul className="mt-1.5 space-y-1">
                     {autoFeatureRows.map((row) => (
                       <li

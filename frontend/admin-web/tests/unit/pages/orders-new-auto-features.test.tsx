@@ -28,6 +28,13 @@
  * `定宽买高` ⇒ 只判超宽（+ 倒幅）。本文件原先有 5 条断言把「定高买宽 ⇒ 推超宽（+ 超高）」钉成期望值
  * （= 同一个 bug 的页面层镜像：多推的「超宽」会进加工费组合键 ⇒ 价算错）⇒ 逐条**改钉新真值**
  * （**不是放宽**：断言仍是 `getByText`/`toEqual` 精确形态，另加反向断言）。
+ *
+ * 🔴 issue #4662（**本文件已按新真值改钉 + 新增**）：①「超宽」判据**含褶倍**
+ * （`(宽 + SIDE_MARGIN) × 褶倍 > 门幅`，与算料引擎算分幅同源；页面的褶倍 = 页面钉死的
+ * `craft_tier='standard'` ⇒ `STANDARD_FULLNESS`）—— 韩褶大窗改前**不报**、改后报；
+ * ② 加工类型**几何矛盾**（商家选「定高买宽」而 `高 + 卷边 > 门幅`）⇒ ②系统识别块里
+ * **显式提示**「系统实际会按定宽买高算」（与算料引擎的自动回落一致；**不改变**推算，
+ * 提示**不进**加工费组合键）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
@@ -392,7 +399,10 @@ describe('#4657：推算结果可**采纳 / 不采纳** + 强制加（生效值�
     expect(within(block).getByText('倒幅')).toBeInTheDocument()
     expect(within(block).queryByText('超高')).toBeNull()
     // 落库组合键 = 生效值（超宽 + 倒幅；宽方向余量名 = 「左右余量」）
-    expect(within(block).getByText(/成品宽 6\.6 \+ 左右余量 0\.3 = 6\.9 米 > 门幅 2\.8 米/)).toBeInTheDocument()
+    // 🔴 #4662 改钉：判据含**褶倍**（与引擎算分幅同源）⇒ 依据里看得见「× 褶倍 2 = 13.8 米」
+    expect(
+      within(block).getByText(/成品宽 6\.6 \+ 左右余量 0\.3 = 6\.9 米 × 褶倍 2 = 13\.8 米 > 门幅 2\.8 米/)
+    ).toBeInTheDocument()
     expect(await submitAndGetProcessingNames()).toEqual(['超宽', '倒幅'])
   })
 
@@ -416,5 +426,65 @@ describe('#4657：推算结果可**采纳 / 不采纳** + 强制加（生效值�
     const names = await submitAndGetProcessingNames()
     expect(names).toEqual(['超高'])
     expect(names).not.toContain('正幅')
+  })
+})
+
+/**
+ * issue #4662（用户 2026-09-20 裁定 A + C）：
+ * ①「超宽」判据**含褶倍**（`(宽 + SIDE_MARGIN) × 褶倍 > 门幅`，与算料引擎算分幅同源）；
+ * ② 加工类型**几何矛盾** ⇒ 界面**显式提示**「系统实际会按哪种算」（与引擎的自动回落一致）。
+ *
+ * 红证（改前实测）：① 韩褶大窗（宽 1.5 × 褶倍 2.0 + 余量 0.3 = 3.6 > 门幅 2.8）—— 改前只比
+ * `1.5 + 0.3 = 1.8 ≤ 2.8` ⇒ ②系统识别块里**没有**「超宽」、落库组合键 = `['倒幅']`（该报不报 ⇒ 价算错）；
+ * ② 缺省档（定高买宽）+ 高 2.6 + 卷边 0.3 = 2.9 > 门幅 2.8 ⇒ 改前**零提示**（前端推算「超高」
+ * 与算料引擎实际按定宽买高算**静默不一致**）。
+ */
+describe('#4662 「超宽」含褶倍 + 加工类型几何矛盾显式提示（页面链路）', () => {
+  it('#4662 韩褶大窗：切「定宽买高」+ 宽 1.5 ⇒ 推「超宽」（依据里带褶倍）+ 落库组合键含它', async () => {
+    await setupLine({ doorWidth: '2.8米', width: '1.5', height: '2.6' })
+    openStep('工艺规格')
+    fireEvent.click(screen.getByRole('radio', { name: '定宽买高' }))
+
+    const block = screen.getByTestId('auto-detected-features')
+    await waitFor(() => expect(within(block).getByText('超宽')).toBeInTheDocument())
+    // 依据里看得见**褶倍与乘积**（改前文案只有「成品宽 + 左右余量」，看不出会不会分幅）
+    expect(
+      within(block).getByText(/成品宽 1\.5 \+ 左右余量 0\.3 = 1\.8 米 × 褶倍 2 = 3\.6 米 > 门幅 2\.8 米/)
+    ).toBeInTheDocument()
+    // 高 2.6 + 0.3 = 2.9 > 2.8 ⇒ 与商家选的档位**一致**（引擎也按定宽买高）⇒ 无矛盾提示
+    expect(screen.queryByTestId('auto-feature-notice-cutting-mode-conflict')).toBeNull()
+    expect(await submitAndGetProcessingNames()).toEqual(['超宽', '倒幅'])
+  })
+
+  it('#4662 几何矛盾：缺省「定高买宽」+ 高超门幅 ⇒ 显式提示「系统实际会按定宽买高算」', async () => {
+    await setupLine({ doorWidth: '2.8米' }) // 6.6 × 2.6 对 2.8 门幅：2.6 + 0.3 = 2.9 > 2.8
+    openStep('工艺规格')
+
+    const notice = screen.getByTestId('auto-feature-notice-cutting-mode-conflict')
+    expect(notice.textContent).toContain('系统实际会按定宽买高算')
+    // 依据说清（哪两个数比出来的）+ 门幅前提可见 —— 前端**不编**口径
+    expect(notice.textContent).toContain('成品高 2.6 + 上下卷边 0.3 = 2.9 米')
+    expect(notice.textContent).toContain('门幅 2.8 米')
+    // 推算仍**以商家选的为准**（裁定 C）：特征 = ['超高']，不冒出「超宽 / 倒幅」
+    expect(screen.getByTestId('auto-feature-超高')).toBeInTheDocument()
+    expect(screen.queryByTestId('auto-feature-超宽')).toBeNull()
+    expect(screen.queryByTestId('auto-feature-倒幅')).toBeNull()
+    // 提示**不进**加工费组合键（它不是特征；目录里没有的名字 = 加工费恒 ¥0.00 的 P0 教训）
+    expect(await submitAndGetProcessingNames()).toEqual(['超高'])
+  })
+
+  it('#4662 反向：切「定宽买高」+ 高不超门幅 ⇒ 提示「系统实际会按定高买宽算」', async () => {
+    await setupLine({ doorWidth: '2.8米', width: '1.5', height: '1.5' })
+    openStep('工艺规格')
+    fireEvent.click(screen.getByRole('radio', { name: '定宽买高' }))
+
+    const notice = await screen.findByTestId('auto-feature-notice-cutting-mode-conflict')
+    expect(notice.textContent).toContain('系统实际会按定高买宽算')
+  })
+
+  it('#4662 几何一致 ⇒ 无矛盾提示（不制造噪音）', async () => {
+    await setupLine({ doorWidth: '2.8米', width: '1.5', height: '1.5' }) // 缺省定高买宽 + 1.8 ≤ 2.8
+    openStep('工艺规格')
+    expect(screen.queryByTestId('auto-feature-notice-cutting-mode-conflict')).toBeNull()
   })
 })

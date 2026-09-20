@@ -11,8 +11,9 @@
  * 🔴 两个方向**各自**受门幅约束，取决于加工类型（issue #4661，用户 2026-09-20 裁定
  *    「定高买宽的话就不用算超宽，定宽买高就不用算超高」）：
  *      定高买宽 ⇒ **只判超高** = (成品高 + HEM_MARGIN)  > G   ← 宽按米买，无上限
- *      定宽买高 ⇒ **只判超宽** = (成品宽 + SIDE_MARGIN) > G   ← 分幅数按门幅算
+ *      定宽买高 ⇒ **只判超宽** = (成品宽 + SIDE_MARGIN) × **褶倍** > G  ← **分幅**判据（#4662）
  *      缺失/表外 ⇒ 两个都不判（保守，不猜朝向）
+ *      ⚠️ **褶倍缺失 / 非正 ⇒ 不判超宽**（#4662：不拿一个假褶倍去判价）+ 显式说明（不静默）
  * 余量常量（米，**算料引擎副本**，各自与真值源对齐、**不混用**）：
  *      SIDE_MARGIN = 0.3（左右覆盖余量，宽方向）  HEM_MARGIN = 0.3（上下卷边，高方向）
  * 倒幅 = (cuttingMode == 定宽买高)  ← 唯一推导，不设手选项
@@ -24,6 +25,11 @@
  * 红证（issue #4661，修复前实测）：① 定高买宽 + 窗宽超门幅 ⇒ 推了 `['超宽','超高']`；
  * ② 定宽买高 + 窗高超门幅 ⇒ 推了 `['超宽','超高','倒幅']`；③ 加工类型缺失 ⇒ 推了 `['超宽','超高']`。
  *
+ * 红证（issue #4662，修复前实测）：① **韩褶大窗**（宽 1.5 × 褶倍 2.0 + 左右余量 0.3 = 3.6 米 > 门幅 2.8）
+ * 改前只比 `1.5 + 0.3 = 1.8 ≤ 2.8` ⇒ **不报超宽**（该报不报 ⇒ 加工费组合键少一项）；
+ * ② **几何矛盾**（定高买宽 + 成品高 2.6 + 卷边 0.3 = 2.9 > 门幅 2.8）改前**零提示**
+ * ⇒ 前端推算（超高）与算料引擎实际计算（几何回落 ⇒ 定宽买高）**静默不一致**。
+ *
  * 红证（issue #4526，实现前）：`@/lib/craft-auto-features` 不存在 ⇒ import 即红（本文件不 mock，直接红在 import 上）。
  */
 import { describe, it, expect } from 'vitest'
@@ -33,6 +39,7 @@ import {
   AUTO_FEATURE_NAMES,
   HEM_MARGIN,
   SIDE_MARGIN,
+  detectAutoFeatureNotices,
   detectAutoFeatures,
   resolveDoorWidth,
 } from '@/lib/craft-auto-features'
@@ -88,6 +95,8 @@ describe('余量常量 —— 两个方向各自复用算料引擎的**对应**�
       height: 2.6,
       doorWidth: 2.8,
       cuttingMode: '定宽买高',
+      // #4662：超宽判据已含褶倍 ⇒ 不给褶倍就不判超宽（这条判据要能拿到 reason 必须给）
+      fullness: 2.0,
     })
     const wide = features.find((f) => f.name === '超宽')!.reason
     expect(wide).toContain(`左右余量 ${SIDE_MARGIN}`)
@@ -132,14 +141,17 @@ describe('超高 / 超宽 —— 与门幅比较，**按加工类型分流**（i
     expect(got).toEqual(['超高'])
   })
 
-  it('#4661 定宽买高 + 窗宽超门幅 ⇒ 推超宽（6.6+0.3=6.9 > 2.8）', () => {
-    expect(names({ width: 6.6, height: 1.0, doorWidth: 2.8, cuttingMode: '定宽买高' })).toContain('超宽')
+  // #4662：判据已含褶倍 ⇒ 调用方**必须**给褶倍（缺 ⇒ 不判超宽）；此处按标准档 2.0 倍。
+  it('#4661 定宽买高 + 窗宽超门幅 ⇒ 推超宽（(6.6+0.3)×2 = 13.8 > 2.8）', () => {
+    expect(
+      names({ width: 6.6, height: 1.0, doorWidth: 2.8, cuttingMode: '定宽买高', fullness: 2.0 })
+    ).toContain('超宽')
   })
 
   // 红证（issue #4661，修复前必红）：修复前推了 `['超宽','超高','倒幅']`。
   // 危害：定宽买高的高**按米买**（分幅数 × 高），不受门幅约束 ⇒ 推「超高」是凭空多一项加工费。
   it('#4661 定宽买高 + 窗高超门幅 ⇒ **不推超高**（高按米买；只有宽受门幅约束）', () => {
-    const got = names({ width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '定宽买高' })
+    const got = names({ width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '定宽买高', fullness: 2.0 })
     expect(got).not.toContain('超高')
     expect(got).toEqual(['超宽', '倒幅'])
   })
@@ -147,8 +159,11 @@ describe('超高 / 超宽 —— 与门幅比较，**按加工类型分流**（i
   it('两者**不互斥**：同一尺寸换加工类型 ⇒ 各自方向都判得出来（判据不因分流而失效）', () => {
     // 定高买宽：高 2.9 > 2.8 ⇒ 超高；宽不判（即便 6.9 > 2.8）
     expect(names({ width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '定高买宽' })).toEqual(['超高'])
-    // 定宽买高：宽 6.9 > 2.8 ⇒ 超宽（+ 倒幅）；高不判
-    expect(names({ width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '定宽买高' })).toEqual(['超宽', '倒幅'])
+    // 定宽买高：(6.6+0.3)×2 = 13.8 > 2.8 ⇒ 超宽（+ 倒幅）；高不判
+    expect(names({ width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '定宽买高', fullness: 2.0 })).toEqual([
+      '超宽',
+      '倒幅',
+    ])
   })
 
   it('两者**都为假** ⇒ 一个都不出现（1.5×1.5 对 2.8 门幅：1.8 / 1.8 都 ≤ 2.8）', () => {
@@ -159,8 +174,11 @@ describe('超高 / 超宽 —— 与门幅比较，**按加工类型分流**（i
     expect(names({ width: 1.5, height: 3.0, doorWidth: 2.8, cuttingMode: '定高买宽' })).toEqual(['超高'])
   })
 
-  it('只有超宽（1.5 高 × 3.0 宽 对 2.8 门幅：宽 3.3 > 2.8，高 1.8 ≤ 2.8）', () => {
-    expect(names({ width: 3.0, height: 1.5, doorWidth: 2.8, cuttingMode: '定宽买高' })).toEqual(['超宽', '倒幅'])
+  it('只有超宽（1.5 高 × 3.0 宽 对 2.8 门幅：(3.0+0.3)×2 = 6.6 > 2.8，高 1.8 ≤ 2.8）', () => {
+    expect(names({ width: 3.0, height: 1.5, doorWidth: 2.8, cuttingMode: '定宽买高', fullness: 2.0 })).toEqual([
+      '超宽',
+      '倒幅',
+    ])
   })
 
   it('窄幅布 1.4 门幅：同样的尺寸换门幅 ⇒ 判定跟着变（阈值真的在用门幅，不是写死常数）', () => {
@@ -178,11 +196,10 @@ describe('超高 / 超宽 —— 与门幅比较，**按加工类型分流**（i
   it('尺寸缺失 / 非正数 ⇒ **不猜**（那一维不判，绝不补默认尺寸）', () => {
     // 宽缺失 ⇒ 不判超宽（该方向本就只属定宽买高）；高那一维**独立**照判（2.6+0.3 > 2.8）
     expect(names({ width: null, height: 2.6, doorWidth: 2.8, cuttingMode: '定高买宽' })).toEqual(['超高'])
-    // 高缺失 ⇒ 不判超高；宽那一维照判（定宽买高：6.9 > 2.8）
-    expect(names({ width: 6.6, height: null, doorWidth: 2.8, cuttingMode: '定宽买高' })).toEqual([
-      '超宽',
-      '倒幅',
-    ])
+    // 高缺失 ⇒ 不判超高；宽那一维照判（定宽买高：(6.6+0.3)×2 = 13.8 > 2.8）
+    expect(
+      names({ width: 6.6, height: null, doorWidth: 2.8, cuttingMode: '定宽买高', fullness: 2.0 })
+    ).toEqual(['超宽', '倒幅'])
     // 非正数 = 没填（不当成「0 米宽」去判定）
     expect(names({ width: 0, height: 2.6, doorWidth: 2.8, cuttingMode: '定高买宽' })).toEqual(['超高'])
     expect(names({ width: Number.NaN, height: 2.6, doorWidth: 2.8, cuttingMode: '定高买宽' })).toEqual(['超高'])
@@ -200,15 +217,195 @@ describe('超高 / 超宽 —— 与门幅比较，**按加工类型分流**（i
     expect(names({ width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '' })).toEqual([])
   })
 
-  it('取整到毫米：reason 里不出现浮点长尾（6.8999999999999995）', () => {
+  it('取整到毫米：reason 里不出现浮点长尾（6.8999999999999995 / 13.799999999999999）', () => {
     const reason = detectAutoFeatures({
       width: 6.6,
       height: 1.0,
       doorWidth: 2.8,
       cuttingMode: '定宽买高',
+      fullness: 2.0,
     }).find((f) => f.name === '超宽')!.reason
     expect(reason).toContain('= 6.9 米')
+    expect(reason).toContain('= 13.8 米')
     expect(reason).not.toMatch(/\d\.\d{4,}/)
+  })
+})
+
+describe('#4662 「超宽」判据**含褶倍**（与算料引擎算分幅的口径一致）', () => {
+  /**
+   * 真值源（算料引擎 `curtain_calc.py` 的**定宽买高**分支）：
+   * `panels = math.ceil((window_width + cfg["side_margin"]) * fullness / fabric_width)`
+   * ⇒ 「要分幅」⟺ `(窗宽 + 左右余量) × 褶倍 > 门幅` —— **这才是真正多花钱的地方**
+   * （用户 2026-09-20 裁定 A：「超宽」要含褶倍）。
+   */
+  it('#4662 判据与引擎**同源**：定宽买高分支逐字就是 (宽 + side_margin) × fullness ÷ 门幅（漂移即红）', () => {
+    // 逐字读真值源（不是抄现值）：引擎改了分幅公式而前端不跟 ⇒ 本断言必红
+    expect(source).toContain(
+      'panels = math.ceil((window_width + cfg["side_margin"]) * fullness / fabric_width)'
+    )
+    // 定高可用条件（几何矛盾提示的依据）：`高 + HEM_MARGIN <= 门幅` ⇒ 定高买宽，否则回落定宽买高
+    expect(source).toContain('if window_height + HEM_MARGIN <= fabric_width:')
+  })
+
+  // 红证（issue #4662，修复前实测）：宽 1.5 × 褶倍 2.0 ⇒ 分幅 3.6 米 > 门幅 2.8 ⇒ **该报**；
+  // 而改前只比 `1.5 + 0.3 = 1.8 ≤ 2.8` ⇒ **不报**（韩褶大窗该报却不报 ⇒ 组合键少一项 ⇒ 价算错）。
+  // 下面第一行就是「改前判据」的自证（不是空断言：1.8 确实 ≤ 2.8 ⇒ 旧口径必然不报）。
+  it('#4662 韩褶大窗（1.5 宽 × 2.0 褶倍 + 0.3 余量 = 3.6 > 2.8）⇒ 推超宽', () => {
+    expect(1.5 + SIDE_MARGIN).toBeLessThanOrEqual(2.8) // 改前判据：不报（红证自证）
+    expect(
+      names({ width: 1.5, height: 2.6, doorWidth: 2.8, cuttingMode: '定宽买高', fullness: 2.0 })
+    ).toContain('超宽')
+  })
+
+  it('#4662 依据里看得见褶倍与乘积（商家要能核对「为什么判它超宽」）', () => {
+    const reason = detectAutoFeatures({
+      width: 1.5,
+      height: 2.6,
+      doorWidth: 2.8,
+      cuttingMode: '定宽买高',
+      fullness: 2.0,
+    }).find((f) => f.name === '超宽')!.reason
+    expect(reason).toContain('× 褶倍 2')
+    expect(reason).toContain('= 3.6 米 > 门幅 2.8 米')
+    expect(reason).not.toMatch(/\d\.\d{4,}/)
+  })
+
+  it('#4662 边界：乘积**恰好等于**门幅 ⇒ 不判超宽（严格大于 = 引擎的幅数只有 1 幅）', () => {
+    // (1.0 + 0.3) × 1.0 = 1.3 == 门幅 ⇒ ceil(1.3/1.3) = 1 幅 ⇒ 不分幅 ⇒ 不判
+    // （引擎实测：`calculate_fabric_meters(1.0, 2.6, 1.0, 1.3)` ⇒ `fixed_width` / 1 幅）
+    expect(
+      names({ width: 1.0, height: 1.5, doorWidth: 1.3, cuttingMode: '定宽买高', fullness: 1.0 })
+    ).toEqual(['倒幅'])
+  })
+
+  // 🔴 「与算料引擎逐项对齐」的**边界红证**（#4662 实测发现的脱钩）：
+  // 引擎 `panels = ceil((1.1 + 0.3) × 2.0 ÷ 2.8)` = ceil(2.8000000000000003 / 2.8) = **2 幅**
+  // （米数 5.8 而非 2.9 ⇒ 翻倍）。若判据**先取整到毫米再比**（2.8 > 2.8 = false）⇒ 判「不超宽」= 漏报。
+  // ⇒ 判据必须是**原始浮点**的乘积比较（与引擎同一表达式、同一浮点语义）。
+  it('#4662 浮点边界与引擎一致：宽 1.1 × 褶倍 2.0 ÷ 门幅 2.8 ⇒ 引擎 2 幅 ⇒ 判超宽（先取整会漏报）', () => {
+    const features = detectAutoFeatures({
+      width: 1.1,
+      height: 2.6,
+      doorWidth: 2.8,
+      cuttingMode: '定宽买高',
+      fullness: 2.0,
+    })
+    expect(features.map((f) => f.name)).toEqual(['超宽', '倒幅'])
+    // 依据要能**自证**：取整会把严格大于抹平 ⇒ 照实给全精度（否则文案是「2.8 米 > 门幅 2.8 米」）
+    expect(features.find((f) => f.name === '超宽')!.reason).toContain('= 2.8000000000000003 米 > 门幅 2.8 米')
+    // 反向自证：取整后的值确实「看不出」大于门幅 ⇒ 上面那条断言不是空断言
+    expect(Number(((1.1 + SIDE_MARGIN) * 2.0).toFixed(3))).toBeLessThanOrEqual(2.8)
+  })
+
+  // 口径（issue #4662）：褶倍缺失 / 非正 ⇒ **不判超宽**（不猜一个褶倍去判价），且**界面显式说明**。
+  it('#4662 褶倍缺失 / 非正数 ⇒ 不判超宽 + 显式提示「缺褶倍 ⇒ 未判超宽」', () => {
+    // 高 2.6 + 0.3 = 2.9 > 2.8 ⇒ 与「定宽买高」几何一致 ⇒ 只该出**缺褶倍**这一条提示
+    const noFullness = { width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '定宽买高' }
+    expect(names(noFullness)).toEqual(['倒幅'])
+    expect(detectAutoFeatureNotices(noFullness)).toEqual([
+      { kind: 'missing-fullness', reason: expect.stringContaining('缺褶倍 ⇒ 未判超宽') },
+    ])
+    for (const fullness of [null, undefined, 0, -2, Number.NaN]) {
+      expect(names({ ...noFullness, fullness })).toEqual(['倒幅'])
+    }
+  })
+
+  it('#4662 反向护栏：含褶倍**不改变**分流语义（定宽买高 ⇒ 超宽 + 倒幅，不出超高）', () => {
+    expect(
+      names({ width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '定宽买高', fullness: 2.0 })
+    ).toEqual(['超宽', '倒幅'])
+    // 定高买宽**不看**褶倍（宽按米买、无上限）⇒ 传了褶倍也不多出「超宽」
+    expect(
+      names({ width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '定高买宽', fullness: 2.0 })
+    ).toEqual(['超高'])
+  })
+
+  it('#4662 褶倍只进**宽**方向：高方向的依据仍是「上下卷边 HEM_MARGIN」（常量语义分方向不回退）', () => {
+    const tall = detectAutoFeatures({
+      width: 1.0,
+      height: 2.6,
+      doorWidth: 2.8,
+      cuttingMode: '定高买宽',
+      fullness: 2.0,
+    }).find((f) => f.name === '超高')!.reason
+    expect(tall).toContain(`上下卷边 ${HEM_MARGIN}`)
+    expect(tall).not.toContain('褶倍')
+  })
+})
+
+describe('#4662 加工类型**几何矛盾** ⇒ 显式提示（裁定 C：推算以商家选的为准，矛盾必须说出来）', () => {
+  /**
+   * 真值源（算料引擎 `curtain_calc.py`）：`if window_height + HEM_MARGIN <= fabric_width:` ⇒
+   * **定高买宽**，否则 **定宽买高 + 告警**（「成品高 … 超过门幅 … 的定高上限，已按定宽布（买高）计算」）。
+   * 引擎**不接收**商家的 `cuttingMode`（`calculate_fabric_meters` 按几何分支，`internal.py` 的入参里没有它）
+   * ⇒ 商家手选的档位与引擎实际算的档位**可能不一致**，本组就是那个不一致的判据 + 显式提示。
+   *
+   * 红证（issue #4662，修复前实测）：改前 `detectAutoFeatureNotices` **不存在**（import 即红）；
+   * 页面**零提示** ⇒ 商家以为按「定高买宽」做，引擎实际按「定宽买高」分幅 ⇒ 静默不一致。
+   */
+  it('#4662 定高买宽 + 高 + 卷边 > 门幅 ⇒ 提示「系统实际会按定宽买高算」', () => {
+    const notices = detectAutoFeatureNotices({
+      width: 6.6,
+      height: 2.6,
+      doorWidth: 2.8,
+      cuttingMode: '定高买宽',
+    })
+    expect(notices).toHaveLength(1)
+    expect(notices[0].kind).toBe('cutting-mode-conflict')
+    expect(notices[0].reason).toContain('系统实际会按定宽买高算')
+    // 依据说清（哪两个数比出来的）+ 门幅前提可见（前端**不编**口径）
+    expect(notices[0].reason).toContain('成品高 2.6 + 上下卷边 0.3 = 2.9 米')
+    expect(notices[0].reason).toContain('门幅 2.8 米')
+  })
+
+  it('#4662 提示**不改变推算**（以商家选的为准）：特征仍是「超高」，不冒出超宽/倒幅', () => {
+    const input = { width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '定高买宽' }
+    expect(names(input)).toEqual(['超高'])
+    expect(detectAutoFeatureNotices(input)).toHaveLength(1)
+    // 提示**不是特征** ⇒ 不得进 AUTO_FEATURE_NAMES（它进加工费组合键；目录里没有的名字 = 价恒 ¥0.00）
+    expect(AUTO_FEATURE_NAMES).toEqual(['超高', '超宽', '倒幅'])
+  })
+
+  it('#4662 反向也提示：定宽买高 + 高 + 卷边 ≤ 门幅 ⇒ 系统实际会按定高买宽算', () => {
+    const notices = detectAutoFeatureNotices({
+      width: 1.5,
+      height: 1.5,
+      doorWidth: 2.8,
+      cuttingMode: '定宽买高',
+      fullness: 2.0,
+    })
+    expect(notices.map((n) => n.kind)).toEqual(['cutting-mode-conflict'])
+    expect(notices[0].reason).toContain('系统实际会按定高买宽算')
+  })
+
+  it('#4662 几何一致 ⇒ **零提示**（不制造噪音；反向护栏，改前即绿）', () => {
+    // 定高买宽 + 高不超门幅；定宽买高 + 高超门幅 —— 两种「与几何一致」的档位
+    expect(
+      detectAutoFeatureNotices({ width: 1.5, height: 1.5, doorWidth: 2.8, cuttingMode: '定高买宽' })
+    ).toEqual([])
+    expect(
+      detectAutoFeatureNotices({
+        width: 6.6,
+        height: 2.6,
+        doorWidth: 2.8,
+        cuttingMode: '定宽买高',
+        fullness: 2.0,
+      })
+    ).toEqual([])
+    // 边界：高 + 卷边 **恰好等于**门幅 ⇒ 定高布仍可用（引擎 `<=`）⇒ 定高买宽一致
+    expect(
+      detectAutoFeatureNotices({ width: 1.0, height: 2.5, doorWidth: 2.8, cuttingMode: '定高买宽' })
+    ).toEqual([])
+  })
+
+  it('#4662 高缺失 / 加工类型缺失 ⇒ 不提示（没有依据就不下结论，不猜）', () => {
+    expect(
+      detectAutoFeatureNotices({ width: 6.6, height: null, doorWidth: 2.8, cuttingMode: '定高买宽' })
+    ).toEqual([])
+    expect(detectAutoFeatureNotices({ width: 6.6, height: 2.6, doorWidth: 2.8 })).toEqual([])
+    expect(
+      detectAutoFeatureNotices({ width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '斜着裁' })
+    ).toEqual([])
   })
 })
 
@@ -242,16 +439,18 @@ describe('倒幅 —— 由 cuttingMode 唯一推导（不设手选项）；正�
 
 describe('来源标注 —— `source=推算`（设计 §5.2：本条是推理非实证，不假装定论）', () => {
   it('每条自动特征都带来源「推算」+ 可读依据（哪两个数比出来的）', () => {
-    // 6.6×2.6 对 2.8 门幅：定宽买高 ⇒ 超宽（6.9 > 2.8）+ 倒幅（高不判 —— issue #4661）
+    // 6.6×2.6 对 2.8 门幅：定宽买高 ⇒ 超宽（(6.6+0.3)×2 = 13.8 > 2.8）+ 倒幅（高不判 —— #4661）
     const fixedWidth = detectAutoFeatures({
       width: 6.6,
       height: 2.6,
       doorWidth: 2.8,
       cuttingMode: '定宽买高',
+      fullness: 2.0,
     })
     expect(fixedWidth.map((f) => f.source)).toEqual(['推算', '推算'])
+    // #4662：依据里含**褶倍与乘积**（那才是「要分幅」的判据 —— 商家要能核对为什么判它超宽）
     expect(fixedWidth.find((f) => f.name === '超宽')?.reason).toBe(
-      '成品宽 6.6 + 左右余量 0.3 = 6.9 米 > 门幅 2.8 米'
+      '成品宽 6.6 + 左右余量 0.3 = 6.9 米 × 褶倍 2 = 13.8 米 > 门幅 2.8 米'
     )
     expect(fixedWidth.find((f) => f.name === '倒幅')?.reason).toBe('加工类型 = 定宽买高')
 
@@ -278,6 +477,7 @@ describe('自动特征不是可手选项（判据 8：手选项 ⇒ 红）', () 
       height: 2.6,
       doorWidth: 1.4,
       cuttingMode: '定宽买高',
+      fullness: 2.0,
     })
     expect(fixedWidth.map((f) => f.name)).toEqual(['超宽', '倒幅'])
     const fixedHeight = detectAutoFeatures({
