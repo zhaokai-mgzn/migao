@@ -291,6 +291,61 @@ class ProductionSeedTemplateServiceTest {
         }
 
         @Test
+        @DisplayName("🔴 播种归一 == 单一出处（issue #4637）：模板 JSON 里的旧名逐条经 ProductionOperationQueryService 静态入口归一")
+        void seedNormalizationMatchesSingleSource() {
+            List<ProductionOperation> library = wireOperationLibrary();
+
+            service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
+
+            // ① 工序库落库的行**仍是库口径旧名**（`精裁-布`）—— 归一发生在派生侧，不改库（本单行为零变更）
+            assertThat(library).as("播种 37 道（35 旧名 + 配料/打包），库口径名一字不改").hasSize(37);
+            assertThat(library.stream().map(ProductionOperation::getName).toList())
+                    .as("库口径仍是旧名：归一不得顺手改写落库数据（改了 ⇒ 迁移链终态对不上）")
+                    .contains("精裁-布", "布三边", "布帘车被");
+
+            // ② 规则表里的工序名/锚点必须是**逻辑名**，且逐条等于**单一出处**静态入口的输出
+            ArgumentCaptor<com.migao.admin.entity.ProductionRouteRule> ruleCaptor =
+                    ArgumentCaptor.forClass(com.migao.admin.entity.ProductionRouteRule.class);
+            verify(productionRouteRuleMapper, atLeastOnce()).insert(ruleCaptor.capture());
+            Set<String> ruleOperations = new LinkedHashSet<>();
+            ruleCaptor.getAllValues().forEach(r -> {
+                if (r.getOperation() != null) {
+                    ruleOperations.add(r.getOperation());
+                }
+                if (r.getAfterOperation() != null) {
+                    ruleOperations.add(r.getAfterOperation());
+                }
+            });
+            assertThat(ruleOperations)
+                    .as("规则工序名非空集（空集 ⇒ 本判据恒真 = 空断言；播种规则必带工序名）")
+                    .isNotEmpty();
+            assertThat(ruleOperations)
+                    .as("规则表里不得残留任何旧名（`精裁-布` / `布三边` 落进去 ⇒ 锚点在逻辑名序列里找不到）")
+                    .doesNotContain("精裁-布", "布三边", "布帘车被");
+
+            // ③ 逐条等价：模板 JSON 的 16 条 option_routings 的 (工序名, 锚点) 是**旧名**，
+            //    播种后落库的必须是**静态入口**对同一原值的输出（本类若再抄一份表 ⇒ 两侧分叉 ⇒ 红）
+            Map<String, String> expectedByOption = new LinkedHashMap<>();
+            templateJson().path("option_routings").forEach(node -> {
+                expectedByOption.put(node.path("option_name").asText(),
+                        ProductionOperationQueryService.logicalOperationName(
+                                node.path("operation_name").asText())
+                                + "|" + ProductionOperationQueryService.logicalOperationName(
+                                node.path("after_operation").asText()));
+            });
+            assertThat(expectedByOption).as("模板 JSON 的 option_routings 恰 16 条").hasSize(16);
+            Map<String, String> actualByOption = new LinkedHashMap<>();
+            ruleCaptor.getAllValues().stream()
+                    .filter(r -> "option".equals(r.getTriggerKind()) && "insert".equals(r.getAction()))
+                    .forEach(r -> actualByOption.put(r.getTriggerValue(),
+                            r.getOperation() + "|" + r.getAfterOperation()));
+            assertThat(actualByOption)
+                    .as("播种落库的规则（选项→工序名|锚点）== 静态入口对模板原值的输出 —— "
+                            + "两条路径的归一只许有一个实现（issue #4637）")
+                    .isEqualTo(expectedByOption);
+        }
+
+        @Test
         @DisplayName("开租播种落库的 scope 逐行等于迁移链终态（issue #4715：外帘三道必须 set，落 position ⇒「布+纱」各付两次）")
         void apply_seedsScopeMatchingMigrationChainTerminalState() {
             wireOperationLibrary();
