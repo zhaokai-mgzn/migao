@@ -20,14 +20,20 @@ import sys
 from pathlib import Path
 
 # 删除顺序 = 外键依赖拓扑（被引用表先于引用表），每级 = (表, 定位列, 键空间)。
-# 真值源：docs/sql/schema.sql + V49 迁移的外键链 ——
+# 真值源：docs/sql/schema.sql + V49 / V92 迁移的外键链 ——
 #   orders ← order_items / order_logistics / processing_orders
 #   processing_orders ← processing_position_operations / production_work_logs
+#                      / processing_order_sets / processing_set_part_tokens
+#   processing_order_sets ← processing_set_part_tokens（码行指向套行）
 # ⚠️ 新增指向 orders / order_items / processing_orders 的外键时必须同步本表，
-#    否则 DELETE 父表时会被外键拦下（issue #4242：V49 加了两层，脚本没跟上 ⇒ 带加工单的订单删不掉）。
+#    否则 DELETE 父表时会被外键拦下（issue #4242：V49 加了两层，脚本没跟上 ⇒ 带加工单的订单删不掉；
+#    issue #4698 切片 ⓪ 的 V92 又加了两层 = 套号载体 + 部位码载体，同款漏一处即删不掉）。
 DELETE_PLAN = (
     ("production_work_logs", "processing_order_id", "po"),
     ("processing_position_operations", "processing_order_id", "po"),
+    # ⚠️ 码行在套行**之前**（它引用 processing_order_sets.id）—— 顺序反了会被外键拦下
+    ("processing_set_part_tokens", "processing_order_id", "po"),
+    ("processing_order_sets", "processing_order_id", "po"),
     ("processing_orders", "order_id", "order"),
     ("order_items", "order_id", "order"),
     ("order_logistics", "order_id", "order"),
@@ -36,6 +42,8 @@ DELETE_PLAN = (
 TABLE_LABELS = {
     "production_work_logs": "报工",
     "processing_position_operations": "工序实例",
+    "processing_set_part_tokens": "部位码",
+    "processing_order_sets": "套号",
     "processing_orders": "加工单",
     "order_items": "订单明细",
     "order_logistics": "物流",
