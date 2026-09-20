@@ -89,8 +89,13 @@ export function createApp({ doc, api, location = globalThis.location }) {
       const pin = doc.getElementById('wh5-pin')?.value ?? ''
       try {
         const s = await api.login({ workerNo, pin, tenantId })
-        dispatch({ type: 'worker', worker: { workerName: s.workerName, workerNo: s.workerNo } })
-        state = { ...state, worker: { ...state.worker, idleMinutes: s.idleMinutes } }
+        // idleMinutes 一并进 state：前端定时器与服务端 `idle_expires_at` 用**同一个**数值
+        // （不是前端自己拍一个 15 分钟 —— 服务端可配 5~60，两处不一致就会出现
+        //  「前端还显示着工人、服务端已经 401」的错位）
+        dispatch({
+          type: 'worker',
+          worker: { workerName: s.workerName, workerNo: s.workerNo, idleMinutes: s.idleMinutes },
+        })
         armIdle()
         // 扫码落地：URL 里带码 ⇒ 登录后直接解析（一次扫码 = 1 步）
         const code = parseScanInput(href, href)
