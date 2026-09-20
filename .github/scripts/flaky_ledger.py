@@ -493,6 +493,64 @@ def fetch_bundle(repo: str, run_id: int) -> dict:
     return {"run": run, "jobs": jobs, "prior_jobs": prior_jobs}
 
 
+# ── #4804：批准被 GITHUB_TOKEN 抑制的台账 PR run（台账落 main 的唯一通路） ──────
+
+
+def runs_needing_approval(runs, workflows=None) -> list:
+    """**纯函数**：挑出「被 GITHUB_TOKEN 抑制、需显式 approve 才能跑」的 run id（升序）。
+
+    病根（#4804，实测）：本 workflow 用 `GITHUB_TOKEN` 建台账 PR ⇒ GitHub **抑制**该 PR
+    的 `pull_request` 事件所引发的 workflow ⇒ 那批 run 全部停在 `conclusion=action_required`
+    （**run 被创建了、但一个 job 都没有**，`check-runs` 为空）⇒ `gh pr checks` 报
+    「no checks reported」⇒ required 集合永远不满足 ⇒ `--auto` **永不触发** ⇒ 台账停在分支上。
+    （与「条件没满足」的区别：条件没满足时 run 会**真的跑**并给出结论；这里是**零 job**。）
+
+    判据只看**事实**：`event == pull_request` ∧ `conclusion == action_required`
+    ∧（给了 `workflows` 时）`name ∈ workflows`。
+
+    ⚠️ **为什么要 `workflows` 白名单**（越权面收敛）：同一分支上的 run 不止本 workflow 分流的
+    那几个 —— **实测**台账分支上还有 `Drift Audit (真相源契约)` / `PR Issue Link Check` /
+    `Deploy Reconcile (PR 对账补偿)`。批准**别的** workflow 的运行不属本机制职责。
+    白名单**由调用方传入**（单一事实源 = `TRIAGED_WORKFLOWS`），本函数不硬编码副本。
+
+    故意**不**按 `head_branch` 过滤 —— 过滤是调用方的事（本函数保持可单测的纯粹性），
+    且 run 一旦被批准，`run_attempt` 会 +1、`conclusion` 变 null ⇒ **天然幂等**（不会重复 approve）。
+    """
+    allowed = None if workflows is None else set(workflows)
+    out = []
+    for run in runs or []:
+        if not isinstance(run, dict):
+            continue
+        if run.get("event") != "pull_request":
+            continue
+        if run.get("conclusion") != "action_required":
+            continue
+        if allowed is not None and run.get("name") not in allowed:
+            continue
+        rid = run.get("id")
+        if isinstance(rid, int):
+            out.append(rid)
+    return sorted(out)
+
+
+def approve_runs(repo: str, run_ids) -> list:
+    """逐个 `POST …/actions/runs/{id}/approve`（走 `gh api`，`GH_TOKEN` 来自环境）。
+
+    需要 `actions: write`（本 workflow 已声明）。**fail-closed**：任一 approve 失败 ⇒
+    抛 `RuntimeError` ⇒ CLI 非零 ⇒ workflow 红（「批准没发出去」不许装成「已经放行」）。
+    """
+    failed = []
+    for rid in run_ids:
+        proc = subprocess.run(
+            ["gh", "api", "-X", "POST", f"repos/{repo}/actions/runs/{rid}/approve"],
+            capture_output=True, text=True)
+        if proc.returncode != 0:
+            failed.append((rid, (proc.stderr or proc.stdout or "").strip()[:200]))
+    if failed:
+        raise RuntimeError("；".join(f"run {rid}：{why}" for rid, why in failed))
+    return list(run_ids)
+
+
 # ── 报告（可见性：结论必须落在 PR / run summary 上，不许只在日志深处） ───────────
 
 
@@ -617,6 +675,12 @@ def main(argv=None) -> int:
     p.add_argument("--gh-output")
     p.add_argument("--json-out")
 
+    p = sub.add_parser("approve", help="批准被 GITHUB_TOKEN 抑制（action_required）的 PR run")
+    p.add_argument("--repo", required=True)
+    p.add_argument("--head-branch", required=True,
+                   help="只看该分支的 pull_request run（台账分支）")
+    p.add_argument("--json-out", help="写出被批准的 run id 列表（供复核/审计）")
+
     p = sub.add_parser("append", help="只追加 + 幂等地写入台账")
     p.add_argument("--ledger", default=str(LEDGER_PATH))
     p.add_argument("--entries", required=True)
@@ -659,6 +723,30 @@ def main(argv=None) -> int:
                 fh.write(f"kind={decision['kind'] or ''}\n")
                 fh.write(f"pr={decision['pr'] or ''}\n")
                 fh.write(f"entry_count={len(decision.get('entries') or [])}\n")
+        return 0
+
+    if args.cmd == "approve":
+        # ⚠️ 参数名是 **`branch=`**，不是 `head_branch=`（实测：`head_branch=` 被 API **静默忽略**
+        #    ⇒ 返回**全仓** 11867 个 run，而不是本分支的 13 个）。写错的失效形态 = 批准一堆无关 run。
+        listing = _gh_api(f"repos/{args.repo}/actions/runs"
+                          f"?event=pull_request&branch={args.head_branch}&per_page=100")
+        ids = runs_needing_approval(listing.get("workflow_runs") or [],
+                                    workflows=TRIAGED_WORKFLOWS)
+        if not ids:
+            print("✅ 无 `action_required` 的 pull_request run（无需 approve —— 可能已批准或已被正常触发）")
+            if args.json_out:
+                _write(args.json_out, json.dumps([], ensure_ascii=False))
+            return 0
+        print(f"🔓 待 approve 的 run {len(ids)} 个（被 GITHUB_TOKEN 抑制 ⇒ 无 job ⇒ 无 check）：{ids}")
+        try:
+            approve_runs(args.repo, ids)
+        except RuntimeError as exc:
+            print(f"⛔ approve 失败 ⇒ 台账 PR 仍无 check、`--auto` 仍不会触发（**不许静默**）：{exc}",
+                  file=sys.stderr)
+            return 1
+        print(f"✅ 已 approve {len(ids)} 个 run —— 它们将真正执行并产出 check-runs")
+        if args.json_out:
+            _write(args.json_out, json.dumps(ids, ensure_ascii=False))
         return 0
 
     if args.cmd == "append":

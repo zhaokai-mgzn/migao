@@ -15,7 +15,13 @@
    **恰好一处**且由 `action == 'rerun'` 独占；第二次仍红 ⇒ `confirmed_failure`，**不放行**；
 3. **绝不误判 infra**：cancelled / timed_out / startup_failure / 无 steps 的 job /
    只在「取代码 · 装依赖」步骤失败的 job ⇒ `skip` 或 `infra_suspect`，**不入 flaky**；
-4. **绝不重复记账**：幂等键 `(workflow, run_id, job)`；台账**只追加**、不写硬编码计数。
+4. **绝不重复记账**：幂等键 `(workflow, run_id, job)`；台账**只追加**、不写硬编码计数；
+5. **台账必须真的落 main**（**#4804**）：台账 PR 由 `GITHUB_TOKEN` 创建 ⇒ GitHub 抑制其
+   `pull_request` run（`action_required`、**零 job**、check-runs 为空）⇒ `gh pr checks` 报
+   「no checks reported」⇒ `--auto` **永不触发**。台账**直推 main 已被分支保护拒绝**
+   （实测 409「Changes must be made through a pull request. 12 of 12 required status checks
+   are expected.」）⇒ 唯一通路 = **自己 approve** 那批被抑制的 run（`actions: write`，
+   **不绕过 required 检查**）。摘掉 approve 步骤 ⇒ 本文件必红。
 
 红证卫生（照 §19.1 元规则 ③）
 ------------------------------
@@ -23,6 +29,7 @@
 mtime/size），且注入走 `str.replace` 的**内容变异** ⇒ 无缓存可污染（纯文本，不 import 变异体）。
 """
 import importlib.util
+import json
 import re
 from pathlib import Path
 
@@ -648,6 +655,35 @@ def audit_workflow(src: str) -> list:
     if not comment_steps:
         bad.append("没有 PR 评论步骤 ⇒ 结论只在日志深处，不满足「可见标注」")
 
+    # ── #4804：台账落 main 的**唯一通路**必须还在 ──────────────────────────────
+    # 病根：台账 PR 由 GITHUB_TOKEN 建 ⇒ GitHub 抑制其 `pull_request` run（零 job、
+    # `conclusion=action_required`、check-runs 为空）⇒ `gh pr checks` 报「no checks reported」
+    # ⇒ required 集合永不满足 ⇒ `--auto` 永不触发 ⇒ 台账停在分支上。
+    # 台账**直推 main 已被分支保护拒绝**（实测 409），故唯一通路 = 自己 approve 那批被抑制的
+    # run（`actions: write`）。摘掉它 ⇒ 回到「台账永远落不到 main」⇒ 必须红。
+    approve_steps = [s for s in steps
+                     if re.search(r"flaky_ledger\.py\s+approve\b", _step_text(s))]
+    if not approve_steps:
+        bad.append("没有调用 `flaky_ledger.py approve` 的步骤 ⇒ 台账 PR 的 run 永远停在 "
+                   "`action_required`（零 check）⇒ `--auto` 永不触发 ⇒ 台账落不到 main（#4804 红线）")
+    else:
+        approve_txt = "\n".join(_step_text(s) for s in approve_steps)
+        if "::error::" not in approve_txt:
+            bad.append("approve 步骤没有 `::error::` fail-closed 出口 ⇒ 批准失败会**静默**"
+                       "（台账没 check 却看起来已放行）（红线）")
+        if "--head-branch" not in approve_txt:
+            bad.append("approve 步骤未限定 `--head-branch` ⇒ 可能误批准**别人**的 run（越权面）")
+        # ⚠️ 分支过滤参数名必须是 `branch=`：实测 `head_branch=` 被 API **静默忽略**
+        #    （返回全仓 11867 个 run，而不是本分支的 13 个）⇒ 读数指向无关 run。
+        #    ⚠️ **只认命令行形态**（`&head_branch=`），不认注释/文案里的提及 —— 本文件同一 run 块的
+        #    **注释**里恰好写着 `` `head_branch=` 会被静默忽略 ``：子串判据会被自己的说明文案骗红
+        #    （这是本文件第三次踩「提及 ≠ 调用」：前两次 `--disable-auto`、`autoMergeRequest`）。
+        if "branch=$BRANCH" not in approve_txt:
+            bad.append("approve 步骤的分支过滤参数必须写成 `branch=`（`head_branch=` 会被 API "
+                       "静默忽略 ⇒ 读数指向全仓无关 run）")
+        if re.search(r"[?&]head_branch=", approve_txt):
+            bad.append("approve 步骤出现了 `&head_branch=` 查询参数（API 静默忽略该参数名，红线）")
+
     # ── fail-closed 复核：三个「可见性 / 落仓」动作都必须**能红** ──────────────────
     # 否则动作失败 = 静默（标不上却照常放行 / 记账没落仓却看起来成功）= 本仓库最贵的形态
     # （「绿了但没跑」）。判据只看**可执行正文**，注释与文案不算。
@@ -791,3 +827,170 @@ class TestWorkflowGuardRedProofs:
         mutated = REAL_WORKFLOW.replace("          set -o pipefail\n", "", 1)
         assert mutated != REAL_WORKFLOW, "注入锚点失效（先修本测试）"
         assert any("pipefail" in v for v in audit_workflow(mutated))
+
+    def test_inject_removing_ledger_pr_approval(self):
+        """摘掉 approve 步骤 ⇒ 台账 PR 的 run 永远 `action_required`（零 check）⇒ 守卫必红。"""
+        mutated = REAL_WORKFLOW.replace("flaky_ledger.py approve", "flaky_ledger.py approveX", 1)
+        assert mutated != REAL_WORKFLOW, "注入锚点失效（先修本测试）"
+        violations = audit_workflow(mutated)
+        assert any("approve" in v for v in violations), violations
+
+    def test_inject_removing_approve_fail_closed(self):
+        """摘掉 approve 的 fail-closed 出口 ⇒ 批准失败会静默（台账没 check 却像已放行）⇒ 必红。"""
+        mutated = REAL_WORKFLOW.replace(
+            'echo "::error::approve 台账 PR 的 action_required run 失败 ⇒ 台账 PR 仍无 check、'
+            'main 不增长（fail-closed）"; exit 1; }',
+            'echo "⚠️ approve 没发出去"; }', 1)
+        assert mutated != REAL_WORKFLOW, "注入锚点失效（先修本测试）"
+        assert any("fail-closed 出口" in v for v in audit_workflow(mutated))
+
+    def test_inject_wrong_branch_query_param(self):
+        """把 `&branch=$BRANCH` 改成 `&head_branch=$BRANCH` ⇒ API 静默忽略、读数指向全仓 ⇒ 必红。
+
+        ⚠️ 注释里**本来就有** `head_branch=` 这个字串（说明文案）—— 故判据只认 `[?&]head_branch=`
+        的命令行形态；本红证注入的正是命令行形态。
+        """
+        mutated = REAL_WORKFLOW.replace("&branch=$BRANCH&per_page=1",
+                                        "&head_branch=$BRANCH&per_page=1", 1)
+        assert mutated != REAL_WORKFLOW, "注入锚点失效（先修本测试）"
+        violations = audit_workflow(mutated)
+        assert any("head_branch" in v for v in violations), violations
+        # 变异体里 `branch=$BRANCH` 已不存在 ⇒ 两条判据中必有一条命中（本注入命中前一条）
+        assert any(("branch=$BRANCH" in v) or ("head_branch" in v) for v in violations), violations
+
+
+class TestLedgerPrApproval:
+    """#4804：被 `GITHUB_TOKEN` 抑制的台账 PR run（`action_required`）必须能被挑出并批准。
+
+    背景（**实测读数**，别再重新猜）：台账 PR #4775 由 `app/github-actions` 创建 ⇒ 其
+    `pull_request` run 全部 `conclusion=action_required`、**零 job**、check-runs 为空 ⇒
+    `gh pr checks 4775` 报「no checks reported」⇒ `--auto` 永不触发。
+    实测**批准 run 35493666161 后**，`gh pr checks 4775` 变成 **13 条 check**（required 逐条 pass）
+    ⇒ 「approve」是被证明有效的通路，故本类把它钉住。
+    """
+
+    @staticmethod
+    def _run(**kw):
+        base = {"id": 1, "event": "pull_request", "conclusion": "action_required",
+                "status": "completed", "head_branch": FL.LEDGER_BRANCH, "run_attempt": 1,
+                "name": FL.TRIAGED_WORKFLOWS[0]}
+        base.update(kw)
+        return base
+
+    def test_selects_suppressed_pull_request_runs(self):
+        runs = [self._run(id=7), self._run(id=3)]
+        assert FL.runs_needing_approval(runs) == [3, 7], "必须升序（确定性输出）"
+
+    def test_ignores_other_conclusions(self):
+        runs = [self._run(id=1, conclusion="success"),
+                self._run(id=2, conclusion="failure"),
+                self._run(id=3, conclusion=None, status="in_progress")]
+        assert FL.runs_needing_approval(runs) == [], "只有 action_required 才需要批准"
+
+    def test_ignores_non_pull_request_events(self):
+        """只批准 `pull_request` 事件：别的触发面（push/schedule）不归本机制管（越权面收敛）。"""
+        runs = [self._run(id=1, event="push"), self._run(id=2, event="workflow_run"),
+                self._run(id=3, event="schedule")]
+        assert FL.runs_needing_approval(runs) == []
+
+    def test_workflow_allowlist_narrows_the_approval_surface(self):
+        """**实测**：台账分支上还有 `Drift Audit` / `PR Issue Link Check` / `Deploy Reconcile`
+        的 `action_required` run —— 批准**别的** workflow 不属本机制职责 ⇒ 白名单必须真的过滤。"""
+        runs = [self._run(id=1, name="PR Check"),
+                self._run(id=2, name="Drift Audit (真相源契约)"),
+                self._run(id=3, name="Deploy Reconcile (PR 对账补偿)"),
+                self._run(id=4, name="PR Issue Link Check"),
+                self._run(id=5, name="Mini-App CI")]
+        assert FL.runs_needing_approval(runs, workflows=FL.TRIAGED_WORKFLOWS) == [1, 5]
+        # 不给白名单 ⇒ 退回「只看事实」口径（本函数不硬编码白名单副本）
+        assert FL.runs_needing_approval(runs) == [1, 2, 3, 4, 5]
+
+    def test_already_approved_run_is_not_selected_again(self):
+        """幂等：批准后 `conclusion` 变 null、`run_attempt` +1 ⇒ 不会被重复批准。"""
+        assert FL.runs_needing_approval([self._run(conclusion=None, status="queued",
+                                                   run_attempt=2)]) == []
+
+    def test_empty_and_malformed_input_is_not_silently_green(self):
+        """空/畸形输入 ⇒ 空集（**不是**「通过」）——调用方据空集报「无需 approve」。"""
+        assert FL.runs_needing_approval([]) == []
+        assert FL.runs_needing_approval(None) == []
+        assert FL.runs_needing_approval(["not-a-dict", 42]) == []
+        assert FL.runs_needing_approval([{"id": "7", "event": "pull_request",
+                                          "conclusion": "action_required"}]) == [], \
+            "id 不是整数 ⇒ 不猜（宁可不批准，不可批准错对象）"
+
+    def test_approve_runs_calls_the_rest_endpoint_per_run(self):
+        calls = []
+
+        class _Proc:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        def fake_run(cmd, **kw):
+            calls.append(cmd)
+            return _Proc()
+
+        original = FL.subprocess.run
+        FL.subprocess.run = fake_run
+        try:
+            assert FL.approve_runs("o/r", [11, 22]) == [11, 22]
+        finally:
+            FL.subprocess.run = original
+        assert calls == [["gh", "api", "-X", "POST", "repos/o/r/actions/runs/11/approve"],
+                         ["gh", "api", "-X", "POST", "repos/o/r/actions/runs/22/approve"]], calls
+
+    def test_approve_runs_is_fail_closed_on_api_error(self):
+        """approve 失败**必须**抛错（不许静默）—— 否则「台账没 check」会装成「已经放行」。"""
+        class _Proc:
+            returncode = 1
+            stdout = ""
+            stderr = "HTTP 403: Resource not accessible by integration"
+
+        def fake_run(cmd, **kw):
+            return _Proc()
+
+        original = FL.subprocess.run
+        FL.subprocess.run = fake_run
+        try:
+            try:
+                FL.approve_runs("o/r", [5])
+            except RuntimeError as exc:
+                assert "run 5" in str(exc) and "403" in str(exc)
+            else:  # pragma: no cover
+                raise AssertionError("approve 失败却未抛错 ⇒ fail-closed 缺失")
+        finally:
+            FL.subprocess.run = original
+
+    def test_approve_cli_returns_nonzero_when_approval_fails(self, monkeypatch, tmp_path):
+        """CLI 层同样 fail-closed（三态：0 正常 / 1 违规）——空集才是 0。"""
+        listing = {"workflow_runs": [self._run(id=99)]}
+        monkeypatch.setattr(FL, "_gh_api", lambda path: listing)
+
+        def boom(repo, ids):
+            raise RuntimeError("run 99：HTTP 403")
+
+        monkeypatch.setattr(FL, "approve_runs", boom)
+        assert FL.main(["approve", "--repo", "o/r", "--head-branch", FL.LEDGER_BRANCH]) == 1
+
+        monkeypatch.setattr(FL, "approve_runs", lambda repo, ids: list(ids))
+        out = tmp_path / "approved.json"
+        assert FL.main(["approve", "--repo", "o/r", "--head-branch", FL.LEDGER_BRANCH,
+                        "--json-out", str(out)]) == 0
+        assert json.loads(out.read_text(encoding="utf-8")) == [99]
+
+    def test_approve_cli_is_clean_when_nothing_is_suppressed(self, monkeypatch):
+        monkeypatch.setattr(FL, "_gh_api", lambda path: {"workflow_runs": []})
+        assert FL.main(["approve", "--repo", "o/r", "--head-branch", FL.LEDGER_BRANCH]) == 0
+
+    def test_approve_cli_queries_the_right_api_parameter(self, monkeypatch):
+        """**实测踩过的坑**：`/actions/runs` 的分支过滤参数是 **`branch=`**；写成 `head_branch=`
+        会被 API **静默忽略**（实测返回**全仓** 11867 个 run，而不是本分支的 13 个）
+        ⇒ 批准面从「本分支」扩到「全仓」= 越权 + 无意义调用。故把参数名钉死。"""
+        seen = []
+        monkeypatch.setattr(FL, "_gh_api", lambda path: seen.append(path) or {"workflow_runs": []})
+        assert FL.main(["approve", "--repo", "o/r", "--head-branch", FL.LEDGER_BRANCH]) == 0
+        assert len(seen) == 1
+        assert "branch=chore/flaky-ledger" in seen[0], seen
+        assert "head_branch=" not in seen[0], f"参数名写错会被 API 静默忽略：{seen[0]}"
+        assert "event=pull_request" in seen[0], seen
