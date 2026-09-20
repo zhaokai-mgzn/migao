@@ -2,11 +2,15 @@
 //
 // 工人端 H5 报工页 —— API 客户端（设计 #4716 §2.1 / §3.1~§3.3）。
 //
-// 三条纪律（每条都有对应断言，见 tests/worker-h5-api.test.mjs）：
+// 四条纪律（每条都有对应断言，见 tests/worker-h5-api.test.mjs）：
 //   ① 登录 = **工号 + PIN**（复用 #4733 的 `POST /api/worker/login`），**不依赖微信**（裁定③）；
 //   ② 🔴 身份只由服务端解：报工 body **不含** `worker_id`/`worker_name`，
 //      身份载体 = `X-Worker-Session-Id`（前端可被改，工资凭证不能信前端）；
-//   ③ 🔴 401 ⇒ **回落未登录 + 清本地缓存**（闲置超时/被切换后**绝不**静默重试或按上一个人记账）。
+//   ③ 🔴 401 ⇒ **回落未登录 + 清本地缓存**（闲置超时/被切换后**绝不**静默重试或按上一个人记账）；
+//   ④ 🔴 **唯一写入口 = `POST /api/worker/production/scan/complete`**（#4792）：它按 `token` 定位部位、
+//      由**服务端**推断工序。既有 `/orders/{orderId}/operations/{operationId}/report` 把
+//      `orderId` + `operationId` 写进 **URL** ⇒「哪道工序」由**客户端**定、且**不携带码** ⇒
+//      防呆④（非本部位码）/ 防呆⑤（工序必须确定）/ 一次事务 / `done_at` 在工人页**全都不生效**。
 //
 // 零依赖（不用 axios / 不用 Taro）：同一份 `.mjs` 直接给浏览器 `<script type="module">` 用，
 // 也给 `node --test` 用 ⇒ 无需构建步骤（最少代码阶梯：标准库 → 原生特性 → 已装依赖）。
@@ -155,29 +159,53 @@ export function createApi(opts = {}) {
     },
 
     /**
-     * 报工（**身份只来自 session**）。
+     * 扫码完成 —— **工人页唯一的写入口**（切片② 的 `POST /api/worker/production/scan/complete`）。
+     *
+     * 一次事务（明细 + CAS 推进 + `done_at` + 完工判定）+ 未确定工序拒绝记账（422，零写入）
+     * + 幂等（同键 ⇒ 回放首次结果，不重复计件）**都在服务端**：前端不做推断、不猜工序、不定数量。
      *
      * 🔴 无 session ⇒ **抛错且一个请求都不发**（fail-closed；未登录不能报工）。
+     *
+     * @param {object} p
+     * @param {string} p.token 码值（新码 ⇒ 套 × 部位由码给出）
+     * @param {string} [p.operationId] 一键改：工人显式指定的工序（服务端校验**归属本次扫码部位**，
+     *        不属于 ⇒ 422 —— 防呆④ 在服务端，不在前端）
+     * @param {number} [p.qty] 省略 = 服务端取「剩余应做」（A 模式：做完扫一次 = 完工）
+     * @param {string} [p.clientRequestId] 幂等键（**同一次提交必须复用同一个**）
      */
-    async report({ orderId, operationId, qty, qualifiedQty, workType = 'normal', clientRequestId }) {
-      // 🔴 白名单式构造（**不是**把入参展开）：body 只认这三个键 ——
-      // 调用方硬塞 `unit_price` / `factor` / `worker_id` 也进不去请求体。
+    async completeByScan({ token, operationId, qty, qualifiedQty, workType, clientRequestId } = {}) {
+      // 🔴 白名单式构造（**不是**把入参展开）：默认**只带 token** —— 调用方硬塞
+      // `unit_price` / `factor` / `worker_id` / `set_id` 也进不去请求体。
       // 历史计件单价在**报工那一刻**由服务端固化（§3.6 W6 红线），前端永远不参与定价。
       if (!session?.sessionId) {
         const err = new Error('尚未登录工人身份，请先用工号 + PIN 登录')
         err.code = SESSION_EXPIRED
         throw err
       }
-      const data = await request(
-        `/api/worker/production/orders/${encodeURIComponent(orderId)}/operations/${encodeURIComponent(operationId)}/report`,
-        {
-          method: 'POST',
-          // 刻意**不含** worker_id / worker_name：身份由 X-Worker-Session-Id 解（设计 §3.1）
-          body: { qty, qualified_qty: qualifiedQty, work_type: workType },
-          extraHeaders: clientRequestId ? { [CLIENT_REQUEST_ID_HEADER]: clientRequestId } : {},
-        },
-      )
-      return { operationId: data.operation_id, doneQty: data.done_qty, orderCompleted: data.order_completed }
+      const body = { token }
+      if (operationId) body.operation_id = operationId
+      if (qty !== undefined && qty !== null) body.qty = qty
+      if (qualifiedQty !== undefined && qualifiedQty !== null) body.qualified_qty = qualifiedQty
+      if (workType) body.work_type = workType
+      const data = await request('/api/worker/production/scan/complete', {
+        method: 'POST',
+        // 刻意**不含** worker_id / worker_name：身份由 X-Worker-Session-Id 解（设计 §3.1）
+        body,
+        extraHeaders: clientRequestId ? { [CLIENT_REQUEST_ID_HEADER]: clientRequestId } : {},
+      })
+      return {
+        operationId: data.operation_id,
+        doneQty: data.done_qty,
+        status: data.status,
+        orderCompleted: data.order_completed,
+        replayed: data.replayed === true,
+        // 切片② 追加的「一屏闭环回执」（`ProductionScanCompleteService.enrichNextOperation`）
+        setNo: data.set_no,
+        position: data.position,
+        setProgress: data.set_progress,
+        setCompleted: data.set_completed,
+        nextOperation: data.next_operation,
+      }
     },
   }
 }

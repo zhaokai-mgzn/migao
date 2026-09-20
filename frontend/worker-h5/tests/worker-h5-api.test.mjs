@@ -4,7 +4,9 @@
 //
 // 本文件锁三条（每条都能红）：
 //   ① 登录：工号 + PIN ⇒ `POST /api/worker/login`，session 落本地，后续请求带 `X-Worker-Session-Id`；
-//   ② 🔴 **未登录不得报工**：无 session 时 `report()` 必须**抛错且一个请求都不发**（红证：去掉该闸 ⇒ 必红）；
+//   ② 🔴 **未登录不得报工**：无 session 时 `completeByScan()` 必须**抛错且一个请求都不发**（红证：去掉该闸 ⇒ 必红）；
+//   ②′ 写入口 = `POST /api/worker/production/scan/complete`，**默认 body 只带 token**（#4792：
+//      哪道工序由系统定 ⇒ 防呆⑤；一键改才带 `operation_id` ⇒ 归属由服务端校验 ⇒ 防呆④）；
 //   ③ 401（session 过期/被切换）⇒ **回落未登录 + 清本地缓存**，绝不静默重试或按上一个人记账。
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -80,30 +82,54 @@ test('🔴 ② 未登录不得报工：无 session ⇒ 抛错且**一个请求�
   const api = createApi({ fetchImpl: f, storage: memStorage(), baseUrl: 'https://app.migaozn.com' })
 
   await assert.rejects(
-    () => api.report({ orderId: 'o-1', operationId: 'op-1', qty: 1, qualifiedQty: 1 }),
+    () => api.completeByScan({ token: 'tok-1' }),
     /登录/,
   )
   assert.equal(f.calls.length, 0, '未登录时报工必须 fail-closed，不得发出请求')
 })
 
-test('② 已登录报工：走工人路径 + 幂等键 + 身份**不进 body**', async () => {
+test('② 已登录报工：走工人路径 `scan/complete` + 幂等键 + 身份**不进 body**（默认只带 token）', async () => {
   const f = stubFetch([
     LOGIN_OK,
-    { status: 200, body: { success: true, data: { operation_id: 'op-1', done_qty: 1, order_completed: false } } },
+    {
+      status: 200,
+      body: {
+        success: true,
+        data: {
+          operation_id: 'op-1', done_qty: 11, status: 'done', order_completed: false,
+          set_no: 14, position: { order_item_id: 'oi-1', position_name: '布帘' }, set_completed: false,
+          next_operation: { operation_id: 'op-2', logical_name: '打卷' },
+        },
+      },
+    },
   ])
   const api = createApi({ fetchImpl: f, storage: memStorage(), baseUrl: 'https://app.migaozn.com' })
   await api.login({ workerNo: 'A017', pin: '1234' })
 
-  const r = await api.report({
-    orderId: 'o-1', operationId: 'op-1', qty: 11, qualifiedQty: 11,
-    workType: 'normal', clientRequestId: 'req-1',
-  })
+  const r = await api.completeByScan({ token: 'tok-1', clientRequestId: 'req-1' })
 
-  assert.equal(f.calls[1].url, 'https://app.migaozn.com/api/worker/production/orders/o-1/operations/op-1/report')
-  assert.deepEqual(f.calls[1].body, { qty: 11, qualified_qty: 11, work_type: 'normal' })
+  assert.equal(f.calls[1].url, 'https://app.migaozn.com/api/worker/production/scan/complete')
+  // 🔴 默认**只带 token**：URL 里没有 orderId/operationId ⇒ 哪道工序由**服务端**推断（防呆⑤），
+  // 数量由服务端取「剩余应做」（A 模式：做完扫一次 = 完工）
+  assert.deepEqual(f.calls[1].body, { token: 'tok-1' })
   assert.ok(!('worker_id' in f.calls[1].body), '工人路径的身份只来自 session，body 不得带 worker_id')
   assert.equal(f.calls[1].headers['X-Client-Request-Id'], 'req-1')
-  assert.equal(r.doneQty, 1)
+  assert.equal(r.doneQty, 11)
+  assert.equal(r.setNo, 14, '回执的套号必须透出来（一屏要用）')
+  assert.equal(r.nextOperation.operation_id, 'op-2', '回执的「下一道」必须透出来（接着做）')
+})
+
+test('② 一键改 / 显式数量：才带 operation_id / qty（默认路径一个都不带）', async () => {
+  const f = stubFetch([
+    LOGIN_OK,
+    { status: 200, body: { success: true, data: { operation_id: 'op-2', done_qty: 6 } } },
+  ])
+  const api = createApi({ fetchImpl: f, storage: memStorage(), baseUrl: '' })
+  await api.login({ workerNo: 'A017', pin: '1234' })
+
+  await api.completeByScan({ token: 'tok-1', operationId: 'op-2', qty: 6, qualifiedQty: 6, workType: 'rework' })
+
+  assert.deepEqual(f.calls[1].body, { token: 'tok-1', operation_id: 'op-2', qty: 6, qualified_qty: 6, work_type: 'rework' })
 })
 
 test('🔴 ③ 401（闲置超时 / 已被切换）⇒ 抛 SESSION_EXPIRED 且**清本地缓存**（不静默续期）', async () => {
@@ -152,24 +178,27 @@ test('currentWorker：页头「当前工人」取自**服务端**（不是前端
   assert.equal(w.workerName, '李四', '页头必须以服务端返回为准（PAD 共用时前端 state 不可信）')
 })
 
-test('🔴 红线：报工 body 绝不携带 unit_price / factor（历史计件单价一字不动，§3.6 W6）', async () => {
+test('🔴 红线：写请求 body 绝不携带 unit_price / factor / set_id / order_item_id（历史计件单价一字不动，§3.6 W6）', async () => {
   const f = stubFetch([
     LOGIN_OK,
-    { status: 200, body: { success: true, data: { operation_id: 'op-1', done_qty: 1, order_completed: false } } },
+    { status: 200, body: { success: true, data: { operation_id: 'op-2', done_qty: 11 } } },
   ])
   const api = createApi({ fetchImpl: f, storage: memStorage(), baseUrl: '' })
   await api.login({ workerNo: 'A017', pin: '1234' })
 
-  // 即便调用方硬塞这两个键，也不得进入请求体（服务端白名单只认 qty/qualified_qty/work_type）
-  await api.report({
-    orderId: 'o-1', operationId: 'op-1', qty: 11, qualifiedQty: 11,
-    unitPrice: 9.9, factor: 2, clientRequestId: 'req-2',
+  // 即便调用方硬塞这些键，也不得进入请求体（服务端白名单只认 token/operation_id/qty/qualified_qty/work_type）
+  await api.completeByScan({
+    token: 'tok-1', operationId: 'op-2', qty: 11, qualifiedQty: 11, workType: 'normal',
+    unitPrice: 9.9, factor: 2, setId: 'set-1', orderItemId: 'oi-1', clientRequestId: 'req-2',
   })
 
   const body = f.calls[1].body
-  assert.ok(!('unit_price' in body), '🔴 报工 body 不得携带 unit_price（历史计件单价是工资凭证）')
-  assert.ok(!('factor' in body), '🔴 报工 body 不得携带 factor')
-  assert.deepEqual(Object.keys(body).sort(), ['qty', 'qualified_qty', 'work_type'])
+  assert.ok(!('unit_price' in body), '🔴 写请求 body 不得携带 unit_price（历史计件单价是工资凭证）')
+  assert.ok(!('factor' in body), '🔴 写请求 body 不得携带 factor')
+  // 🔴 D1（#4792）：旧码收口需要切片① 契约扩展 ⇒ 本单**不**硬塞 set_id/order_item_id
+  assert.ok(!('set_id' in body), '本单不扩契约：body 不得出现 set_id')
+  assert.ok(!('order_item_id' in body), '本单不扩契约：body 不得出现 order_item_id')
+  assert.deepEqual(Object.keys(body).sort(), ['operation_id', 'qty', 'qualified_qty', 'token', 'work_type'])
 })
 
 test('🔴 红线：页面只读 unit_price 用于显示（未定价 ≠ 0），从不写它', async () => {

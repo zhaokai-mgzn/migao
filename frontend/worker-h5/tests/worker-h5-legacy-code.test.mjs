@@ -88,14 +88,14 @@ test('🔴 未登录时即使有解析结果也不得出现报工按钮（未登
   assert.ok(!/id="wh5-report"/.test(renderPage(s, s.view)), '未登录不得出现报工按钮')
 })
 
-test('🔴 未登录 + 有解析结果 ⇒ report() 仍被拒（页面闸不是唯一闸）', async () => {
+test('🔴 未登录 + 有解析结果 ⇒ completeByScan() 仍被拒（页面闸不是唯一闸）', async () => {
   const calls = []
   const api = createApi({
     fetchImpl: async (url) => { calls.push(url); return { ok: true, status: 200, json: async () => ({ success: true, data: {} }) } },
     storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
     baseUrl: '',
   })
-  await assert.rejects(() => api.report({ orderId: 'o-1', operationId: 'op-1', qty: 1, qualifiedQty: 1 }), /登录/)
+  await assert.rejects(() => api.completeByScan({ token: 'tok-1' }), /登录/)
   assert.equal(calls.length, 0)
 })
 
