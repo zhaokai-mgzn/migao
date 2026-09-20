@@ -985,6 +985,19 @@ public class ProcessingOrderService {
                 calc.put("fabric_meters", quantity);
             }
         }
+        // ③ 卖布行（`saleForm = 布料`，issue #4909）：按米卖布、行上**没有加工项** ⇒ ② 永不命中
+        //    （`isMeterBasedLine` 第 1 段对「processingItems 缺失」判 false），而这一行的部件维是
+        //    「布料」、走**布料基础路线**（V88 终态 `裁剪 → 打包`）⇒ 米类工序（裁剪）必须有米数。
+        //    缺这一步 ⇒ 端点按缺键兜底 1（`qty_source=fallback`，与「算料服务没答」不可区分）
+        //    ⇒ 10 米的布单只做 1 米、计件按 1 米算 —— 正是 #4208 红线要治的形态。
+        //    取法与 ② 同源（**订单行 quantity 即米数**），不新增第二份口径；数量 ≤ 0（脏数据）
+        //    时**不落键**：「绝不落 0」是端点的硬不变量（应做 0 ⇒ `done_qty ≥ qty` 恒真 ⇒ 假完工）。
+        if (!calc.containsKey("fabric_meters") && SALE_FORM_FABRIC.equals(str(entry.get("saleForm")))) {
+            Object quantity = entry.get("quantity");
+            if (quantity != null && new BigDecimal(String.valueOf(quantity)).signum() > 0) {
+                calc.put("fabric_meters", quantity);
+            }
+        }
         return calc;
     }
 
@@ -1820,7 +1833,11 @@ public class ProcessingOrderService {
             // 归一化：processingInfo 可能是 Map（BaseMapper 路径）或 JSON 字符串（自定义 @Select 路径）
             Map<String, Object> pi = normalizeProcessingInfo(item.getProcessingInfo());
             List<Map<String, Object>> procs = extractProcessingItems(pi);
-            if (procs.isEmpty()) {
+            // 卖布行（`saleForm = 布料`）**天然没有加工项**（按米卖布，不选加工项）⇒ 旧过滤把它整行丢掉，
+            // 于是 `buildPositionPayload` 的布料路线分支（`deriveRouteKey`，issue #4529）**永不执行**
+            // ⇒ 整件商品零工序（真库实证：加工单 JG-20260921-8237 缺「9231 遮光窗帘」的裁剪/打包，issue #4909）。
+            // 其余「无加工项」行仍按旧语义跳过（配件 / 赠品行不成部位，行为逐字不变）。
+            if (procs.isEmpty() && !SALE_FORM_FABRIC.equals(str(pi.get("saleForm")))) {
                 continue;
             }
             Map<String, Object> entry = new LinkedHashMap<>();
