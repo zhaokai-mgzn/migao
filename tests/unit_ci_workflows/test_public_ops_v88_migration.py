@@ -123,14 +123,25 @@ def _position_soft_delete_statements(stmts: list) -> list:
 # 迁移号 / 前置事实
 # ══════════════════════════════════════════════════════════════════════════════════════
 
-def test_v88_is_the_next_free_number_and_v79_is_untouched():
-    """V88 是当前**最大**迁移号，且 V79 仍在（未被删/改名）—— 已发布迁移只增不改（issue #4235）。"""
+def test_v88_exists_and_v79_is_untouched():
+    """V88 仍在（未被删/改名/改号），且 V79 仍在 —— 已发布迁移只增不改（issue #4235）。
+
+    <p>⚠️ <b>改判（issue #4696）</b>：原判据是 `max(versions) == 88`（写这条时 V88 恰好最新）。
+    后续单一旦新增迁移它就**必然**变红 —— 而它的本意是「<b>本单的迁移在不在</b> +
+    <b>已发布迁移有没有被动</b>」，不是「不许别人新增迁移」（原失败信息自己就是这么说的：
+    「后续单若新增 V89+，本判据会红」）。⇒ 判据改为 <b>`88 in versions`</b>：V88 被删/改名/改号
+    才红，新增 V90+ 不再误伤。</p>
+
+    <p>「已发布迁移只增不改」的**内容**判据由指纹账本
+    （`tests/unit_ci_workflows/migration_fingerprints.json` + `test_migration_immutability.py`）承担，
+    本文件不复制那份规则（两处各写一份必然漂移）。</p>
+    """
     names = sorted(p.name for p in MIGRATION_DIR.glob("V*.sql"))
     versions = [int(_VERSION_RE.match(n).group(1)) for n in names if _VERSION_RE.match(n)]
     assert V88.exists(), f"缺 {V88.name} —— 本单的迁移未落码"
-    assert max(versions) == 88, (
-        f"V88 不是最大迁移号（实测最大 = V{max(versions)}）—— "
-        f"后续单若新增 V89+，本判据会红，请把回滚迁移（V89）与「新增迁移」区分开"
+    assert 88 in versions, (
+        f"V88 不在迁移集里（实测最大 = V{max(versions)}）—— V88 被删/改名/改号了？"
+        f"已发布迁移只增不改（指纹守卫 + #4235）"
     )
     assert V79.exists(), "V79 被删/改名了 —— 已发布迁移不可改（指纹守卫 + #4235）"
     assert not (MIGRATION_DIR / "V89__rollback_material_prep_and_fabric_position.sql").exists(), (
