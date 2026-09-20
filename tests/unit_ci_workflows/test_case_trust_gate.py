@@ -1822,6 +1822,78 @@ class TestBurnDownBudget:
         assert any("未激活" in n for n in v["notes"]), v["notes"]
 
 
+# ── 陈旧条目探针（#4743：样本来源与**销账**解耦）─────────────────────────────────
+#
+# 病灶：本类守卫原先把样本取自**豁免账本**（「账本 ∩ `[backend-contract]` 用例」），
+# 而 `OB-005` 曾是账本里**唯一**一条该类条目 ⇒ 它被**合法销账**（真修好 ⇒
+# `--prune-baseline` 整条移除）后前提永不可满足 ⇒ `AssertionError` 把 CI 打红
+# —— 门禁把**真修复**当违规挡住（`migao-acceptance` 点名的形态；#4721 实测绕行 =
+# 改锚 `API-010` + 回退 `OB-005` 的 precondition）。
+# 修法：前提改为**可用样本**语义 —— 样本域 = **用例库**里的该类用例（与销账无关），
+# 账本里已记录的该类条目优先（保持原场景，改动最小）。
+
+STALE_PROBE_CODE = "CASE-TRUST-NO-EFFECT-ASSERTION"
+
+
+def _backend_contract_scored_case_ids() -> list[str]:
+    """样本域（**用例库**，与豁免账本解耦，#4743）：计分通道在 `traces.tests` 的
+    `[backend-contract]` 用例 id —— 命令自证 196 条（账本里只剩 1 条时也一样）。
+
+    为什么是这个域：门禁的计分通道分流（#4244）让 `CASE-TRUST-NO-EFFECT-ASSERTION`
+    对这类用例**恒不适用**（它们的计分通道是 `traces.tests`）⇒ 注入它必然造出
+    「已记录却不再命中」的陈旧条目 —— 正是守卫要证的形态。
+    """
+    from render_cases import load_case_dicts  # noqa: PLC0415（本文件已把 .github 加进 sys.path）
+    return sorted(
+        str(c["id"]) for c in load_case_dicts(str(REPO_ROOT / ".github" / "cases"))
+        if tax.backend_contract_scoring_channel(c, REPO_ROOT)
+    )
+
+
+def _pick_stale_entry_sample(ledger_ids, contract_ids: list[str]) -> str:
+    """选一条**可用样本**：账本里已记录的该类条目优先（原场景，改动最小）；
+    账本里没有 ⇒ 退到**用例库**里的该类用例（**前提不再依赖销账结果**）。
+
+    前提（**fail-closed**）= 用例库里至少有一条该类用例；不成立就抛断言（**红**）——
+    不得静默跳过（那会变成一条不会红的判据）。
+    """
+    assert contract_ids, (
+        "用例库里应至少有一条计分通道在 `traces.tests` 的 `[backend-contract]` 用例 —— "
+        "否则本用例的前提不成立（**红**，不得静默跳过：那会变成一条不会红的判据）"
+    )
+    recorded = sorted(set(ledger_ids) & set(contract_ids))
+    return recorded[0] if recorded else contract_ids[0]
+
+
+def _recompute_derived_readings(data: dict) -> None:
+    """把账本派生读数对齐 `violations`（= `--prune-baseline` 的写回口径）——
+    让夹具里**只剩**被注入的那一个缺陷（R2：判据要能分辨自己红在哪）。"""
+    agg: dict[str, int] = {}
+    for entry in data["violations"].values():
+        for code in entry.get("codes") or []:
+            agg[code] = agg.get(code, 0) + 1
+    data["rule_counts"] = {**{k: 0 for k in (data.get("rule_counts") or {})}, **agg}
+    data["violation_case_count"] = len(data["violations"])
+
+
+def _stale_entry_probe(tmp_path, data: dict, contract_ids: list[str]):
+    """把一条「记了却不再命中」的码注入**账本副本**，跑**真脚本** ⇒ 回 `(样本 id, 结果)`。
+
+    注入码对样本**恒不适用** ⇒ 无论账本里还剩几条该类条目、样本是否已在账本里，
+    都必然造出陈旧条目。派生读数同步重算 ⇒ 唯一的阻塞原因就是那条陈旧条目。
+    """
+    sample = _pick_stale_entry_sample(set(data["violations"]), contract_ids)
+    entry = data["violations"].setdefault(sample, {"codes": []})
+    entry["codes"] = sorted(set(entry.get("codes") or []) | {STALE_PROBE_CODE})
+    _recompute_derived_readings(data)
+    tmp = tmp_path / "baseline.json"
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    r = subprocess.run([sys.executable, str(GATE), "--base", "HEAD",
+                        "--baseline", str(tmp)],
+                       capture_output=True, text=True, cwd=str(REPO_ROOT))
+    return sample, r
+
+
 class TestGateScriptEndToEnd:
     """端到端红证：真跑脚本、真退出码（函数级绿 ≠ CI 绿）。"""
 
@@ -1837,39 +1909,80 @@ class TestGateScriptEndToEnd:
         fail-closed `exit 1`（stdout 为空）⇒ 断言「必须报出陈旧项」失败。
         本用例要证的是**账本对账**（与 diff 基准是谁无关），用 `HEAD` 既等价又不依赖浅克隆；
         真要判 `origin/main` 的那个 job（`case-trust-gate`）自己带 `fetch-depth: 0`。
+
+        ⚠️ **样本来源与销账解耦（#4743）**：样本域 = **用例库**里的该类用例（196 条，命令自证），
+        账本里已记录的该类条目优先。旧口径只从**账本**取样本 ⇒ 该类条目被**合法销账**后
+        前提永不可满足 ⇒ 合法修复把 CI 打红（#4721 实测：`OB-005` 是当时账本里唯一一条）。
         """
         data = json.loads(BASELINE.read_text(encoding="utf-8"))
-        # ⚠️ **动态选条目，不写死 ID**：原实现写死 `data["violations"]["PG-013"]` —— 而 PG-013
-        # 被**整条销账**后（实测 issue #4361：给它补 `precondition[order_count_for_phone]` ⇒
-        # 门禁按 `burn_down._how_to` 跑 `--prune-baseline` 移除该条）本用例即 `KeyError: 'PG-013'`
-        # ⇒ `ci workflow helper unit tests` 红 ⇒ 一个**合法的销账动作**把 CI 打红。
-        # 属 `migao-dev-flow` §19.2③ 的同族形态：**夹具里写死的标识符会腐烂**。
-        # 选 `[backend-contract]` 用例：其计分通道 = `traces.tests` ⇒ `CASE-TRUST-NO-EFFECT-ASSERTION`
-        # 对它**恒不适用**（门禁的计分通道分流，issue #4244）⇒ 注入该码必然造出
-        # 「已记录却不再命中」的陈旧条目 —— 正是本用例要证的形态（与基准是谁、条目是哪个无关）。
-        from render_cases import load_case_dicts  # noqa: PLC0415（本文件已把 .github 加进 sys.path）
-        contract_ids = {
-            c["id"] for c in load_case_dicts(str(REPO_ROOT / ".github" / "cases"))
-            if str(c.get("skip_reason") or "").startswith("[backend-contract]")
-        }
-        candidates = sorted(set(data["violations"]) & contract_ids)
-        assert candidates, (
-            "基线里应至少有一条 `[backend-contract]` 用例条目 —— 否则本用例的前提不成立"
-            "（不得静默跳过：那会变成一条不会红的判据）"
-        )
-        entry = data["violations"][candidates[0]]
-        entry["codes"] = sorted(set(entry["codes"]) | {"CASE-TRUST-NO-EFFECT-ASSERTION"})
-        tmp = tmp_path / "baseline.json"
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        r = subprocess.run([sys.executable, str(GATE), "--base", "HEAD",
-                            "--baseline", str(tmp)],
-                           capture_output=True, text=True, cwd=str(REPO_ROOT))
+        # ⚠️ **样本不写死 ID，也不从账本里取**（#4743）：原实现写死 `PG-013` ⇒ 它被**整条销账**
+        # 后（实测 issue #4361：给它补 `precondition[order_count_for_phone]` ⇒ 门禁按
+        # `burn_down._how_to` 跑 `--prune-baseline` 移除该条）本用例即 `KeyError: 'PG-013'`
+        # ⇒ 一个**合法的销账动作**把 CI 打红（`migao-dev-flow` §19.2③：夹具里写死的标识符会腐烂）；
+        # 改成「账本 ∩ 该类」后**同族复发**（#4721 实测）⇒ 现在样本域取自**用例库**。
+        sample, r = _stale_entry_probe(tmp_path, data, _backend_contract_scored_case_ids())
         assert r.returncode == 1, (
             f"陈旧条目未让脚本 exit 1（假绿）：\nstdout={r.stdout[-1500:]}\nstderr={r.stderr[-800:]}"
         )
         assert "全量对账" in r.stdout and "--prune-baseline" in r.stdout, (
             f"stdout={r.stdout[-1500:]}\nstderr={r.stderr[-800:]}"
         )
+        # 归因（R2：判据要能分辨自己红在哪）：上面两条**不足以**证明「红在陈旧条目上」——
+        # `全量对账` 是 `render_report` **无条件**打印的，`--prune-baseline` 也出现在派生读数提示里。
+        # ⇒ 必须钉住**陈旧段**，并钉住**被注入的那一条**。
+        assert "已不再违规" in r.stdout, (
+            f"未报出「已不再违规」（陈旧段缺失 ⇒ 上面的 exit 1 可能是别的阻塞原因顶替）：\n"
+            f"{r.stdout[-1500:]}"
+        )
+        stale_section = r.stdout.split("已不再违规", 1)[1]
+        assert sample in stale_section and STALE_PROBE_CODE in stale_section, (
+            f"陈旧段里没有注入的那一条（判据无法归因）：sample={sample} code={STALE_PROBE_CODE}\n"
+            f"{r.stdout[-1500:]}"
+        )
+
+    def test_stale_entry_probe_survives_retiring_the_last_backend_contract_entry(self, tmp_path):
+        """**红证（#4743）**：账本里该类条目被**合法销账** ⇒ 本守卫**不得**变红。
+
+        改前（前提 = 「账本 ∩ 该类」非空）：`OB-005` 曾是账本里**唯一**一条该类条目 ⇒
+        真修好它、按 `--prune-baseline` 销账 ⇒ 前提永不可满足 ⇒ `AssertionError` 把 CI 打红
+        （#4721 实测：首轮 CI 红，绕行 = 改锚 `API-010` + 回退 `OB-005` 的 precondition）。
+        改后（样本域 = 用例库）：与销账解耦 ⇒ 照常注入、照常报陈旧项。
+
+        ⚠️ 夹具只动**账本副本**（红线：不碰 `.github/cases/**` 与真账本）⇒ 被销账的用例在
+        **用例库**里仍然违规，报告里会多一条「未登记违规」；本用例证的是**陈旧项照常报出
+        且可归因**，那条噪声与判定无关（故断言钉在陈旧段上，而不是钉「退出码的唯一原因」）。
+        """
+        data = json.loads(BASELINE.read_text(encoding="utf-8"))
+        contract_ids = _backend_contract_scored_case_ids()
+        for cid in sorted(set(data["violations"]) & set(contract_ids)):
+            del data["violations"][cid]
+        _recompute_derived_readings(data)
+        assert not set(data["violations"]) & set(contract_ids), (
+            "夹具前提：账本副本里已无该类条目（这正是「最后一条被合法销账」之后的状态）"
+        )
+        sample, r = _stale_entry_probe(tmp_path, data, contract_ids)
+        assert r.returncode == 1, (
+            f"销账最后一条该类条目后守卫失灵（#4743 复发）：\n"
+            f"stdout={r.stdout[-1500:]}\nstderr={r.stderr[-800:]}"
+        )
+        assert "已不再违规" in r.stdout, f"{r.stdout[-1500:]}"
+        stale_section = r.stdout.split("已不再违规", 1)[1]
+        assert sample in stale_section and STALE_PROBE_CODE in stale_section, (
+            f"陈旧段里没有注入的那一条：sample={sample}\n{r.stdout[-1500:]}"
+        )
+
+    def test_stale_entry_probe_premise_is_fail_closed_when_no_sample_exists(self, tmp_path):
+        """反向护栏（#4743）：**前提真的不成立**（用例库里一条该类用例都没有）⇒ 仍须**红**。
+
+        构造的正是「无人处理」形态：没有 fallback、没有 `pytest.skip` —— 前提不成立就抛断言。
+        否则本守卫会退化成**恒绿**（`migao-acceptance`「空断言」：不会红的判据）；
+        故这里用 `pytest.raises` 钉住「它是**红**的」这一事实，而不是钉住「它跳过了」。
+        """
+        data = json.loads(BASELINE.read_text(encoding="utf-8"))
+        with pytest.raises(AssertionError, match="不得静默跳过"):
+            _pick_stale_entry_sample(set(data["violations"]), [])
+        with pytest.raises(AssertionError, match="不得静默跳过"):
+            _stale_entry_probe(tmp_path, data, [])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
