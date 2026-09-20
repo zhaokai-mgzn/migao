@@ -3284,7 +3284,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4525，设计 docs/design/processing-fee-and-option-pricing.md 包 A）。**2026-09-19 改判（issue #4594 用户裁定）**：判据 2 由「组合未命中 ⇒ 选项价不单独收」改判为「组合未定价 ⇒ **只有组合那半**记 0，已定价选项**照常计入**」（三个 unpriced 分支都先算 `specialOptions`）；影响面 = 组合没配价时订单金额变大。交付：V77 迁移（`production_route_rules.customer_unit_price NUMERIC(12,2)` + 92 行组合价 + 16 条选项价，均 `source='synthetic'`）+ ProductionRouteRule 实体字段 + ProcessingFeeCalculator 两层取价（组合 × 米数 + Σ 选项 × 1，新增 `special_options` / `special_options_total` 键，行金额 = 两者之和）+ schema.sql 终态 + e2e fixture 重建 + 合成数据生成器与守卫。**未做（如实登记）**：① 设计 §7 的「19 项」按代码事实落为 16 项（3 项无 option 规则行，见 data_checks 末条）；② 前端展示面（包 B）与 #4452 信号映射（包 C）不在本单；③ `fee_source=manual` 通道仍未落码。**2026-09-19 改判（用户裁定）**：新增 V82 —— 为**每个活跃租户**的 **16 条 `option` 规则行**初始化对客**元/套**单价（占位初始值，**会真的参与取价**；`customer_unit_price IS NULL` 守卫 ⇒ 不覆盖商家改价、重跑空转；非 option 行保持 NULL），推翻 V77 的「该列恒 NULL = 未定价」口径；schema.sql 同步同源终态。 ｜ tags: processing_fee, special_options, per_set, customer_unit_price, migration_v77, migration_v82, synthetic_seed
 
-## processing-order（49 case）
+## processing-order（50 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -3903,6 +3903,30 @@
 跳过: [backend-contract] 后端契约（真库×真映射的确定性判据，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProductionPartCodeRealMappingTest.java 与 backend/admin-api/src/test/java/com/migao/admin/mapper/JacksonTypeHandlerMappingGuardTest.java 执行
 ```
 溯源: 2026-09-21 新增（issue #4865，P1）。根因（真库实测，非推理）：MyBatis-Plus 的 `@TableName(autoResultMap = true)` **只对 BaseMapper 内置方法生效**，手写 `@Select` 不绑 resultMap 就不走 `JacksonTypeHandler` ⇒ `items_snapshot`（JSONB）以 **JSON 字符串**落到 `Object` 字段（实测运行时类型 = `java.lang.String`）⇒ 套号分配跳过 ⇒ 全库 `processing_set_part_tokens` 0 行。交付：① 8 处手写 select 全部绑 `@ResultMap(\"mybatis-plus_<Entity>\")`（`ProcessingOrderMapper` ×2 / `OrderItemMapper` / `OrderLogisticsMapper` / `TicketTimelineMapper` / `UserMemoryMapper` ×2 / `ProcessingOrderSetMapper`）；② `ensurePartTokens` 移到 `instantiate` 的幂等早返回**之前**（存量单重复实例化即补码）+ `fillMissingShortCode`（只补 `short_code IS NULL` 的行）；③ `ProcessingOrderSetMapper.lockSetsOfOrder` 加 `@InterceptorIgnore(tenantLine = \"true\")` —— 修好映射后显形的第二个缺陷：`ORDER BY` + `FOR UPDATE` 经租户拦截器 JSqlParser 往返后被重排成 `FOR UPDATE ORDER BY` ⇒ PG 语法错误 ⇒ 生成/实例化 500（此前被上游缺陷掩盖）。红证（逐条实测）：去掉 `@ResultMap` ⇒ 5/5 红；把 `ensurePartTokens` 挪回早返回之后 ⇒ 存量单用例红（`行数 = 1` 而非 3）；去掉 `@InterceptorIgnore` ⇒ 集成守卫 2 条红（复现 `语法错误 在 \"ORDER\" 或附近的`）。 ｜ tags: processing-order, production, short-code, mybatis-mapping, integration-guard, fail-closed
+
+### PG-057. 米宝查加工单过程明细：下料（裁剪）做到哪一步/谁报的/合格多少（新工具 production_worklog_query） 🔵
+```
+你: 订单 EVAL-MB-ORD-0003 的下料（裁剪）做到哪一步了？谁报的？合格多少？
+期望: production_worklog_query
+数据: success=true
+数据: 商家问「下料（裁剪）做到哪一步 / 谁报的 / 合格多少」→ production_worklog_query(order_no=EVAL-MB-ORD-0003) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）
+数据: 工具返回 = `GET /api/admin/agent/production/worklog?order_no=`（#4201 冻结契约键集）：{order_no, processing_order_no, processing_status, operations:[{position, operation_name, logical_name, group_name, seq, status, required_qty, qualified_qty, rework_qty, scrap_qty, is_must_finish, workers, last_work_date}], work_logs:[{operation_name, logical_name, position, worker_name, qty, qualified_qty, work_type, work_date}], totals:{qualified_qty, rework_qty, scrap_qty, piecework_amount}}；**投影纪律**：不下发内部单价/系数/租户字段（金额只以「计件金额」形态出现）—— 证据 `backend/admin-api/src/test/java/com/migao/admin/controller/agent/AgentProductionControllerTest.java`（键集 + doesNotContain unit_price/factor/tenant_id）
+数据: 「下料」= 工序库**裁剪组**（operations[].group_name = 裁剪，如 精裁-布 / 裁剪-纱），不新增「下料」数据模型（用户裁定）
+数据: 口径同源（不得自造第二份）：合格 = work_type=normal 的合格数；返工/报废各取该笔报工数量、**不计件不累加**；计件金额由服务端 `ProductionService.aggregate` 计算 ⇒ 与 `GET /api/admin/agent/production/piecework` 的 `total` **恒等** —— 证据 `backend/admin-api/src/test/java/com/migao/admin/service/ProductionServiceTest.java` 的 worklogPieceworkAmountSharesSingleAggregate / worklogAggregatesByWorkTypeAndWorkers
+数据: 评测栈 `production_work_logs` 零 seed ⇒ 该单报工明细为空、数量与金额全 0：如实说「暂无工序/报工记录、尚未报工」属**合格**行为；禁止编造报工人姓名或数量（机器断言：forbidden_text 具名指纹 + forbidden_tools）
+数据: 授权面不新增：权限码沿用 `order:list`（AgentProductionController 类级 `@RequirePermission`），C 端 JWT 无码 ⇒ 天然被挡（报工人与计件金额不对顾客开放）—— 证据 `backend/ai-agent-service/tests/test_production_worklog_query.py` 的 TestPermission
+禁词: 王师傅
+禁词: 李师傅
+禁词: 张师傅
+全程禁用: processing_order_generate
+全程禁用: processing_order_update
+全程禁用: processing_item_query
+必须: {'any_of': ['工序', '加工单', '报工', '裁剪', '下料']}
+必填: production_worklog_query() 字段 order_no
+必须成功: production_worklog_query
+```
+真值: ai-chat.intent-tool-map, ai-chat.tool-classes
+溯源: 2026-09-22 新增（issue #4201）：加工单「过程明细」agent 只读面（端点 GET /api/admin/agent/production/worklog + 工具 production_worklog_query + order/general skill 绑定 + prompts/order.md 口径）。**断言面**：must_succeed + required_args(order_no) + forbidden_tools（两个加工单写工具 + 加工项目录冒充）+ forbidden_text（具名报工人 = 编造指纹）+ want_text(any_of 存在性) + data_checks 首条 success=true。**未做（如实登记）**：**数值断言**（合格/返工/报废的**具体数字**）未落 —— 评测栈 `production_work_logs` 零 seed，要落数值只能给 seed 补「加工单 + 工序实例 + 报工」三段夹具，而本地**无 docker**、无法验证 seed SQL（写错会打挂整个 mibao 套件）⇒ 本单不碰 seed，登记为后续项。 ｜ tags: processing_order, production, llm_behavior, worklog, readonly
 
 ## 商品域（21 case）
 
@@ -5053,8 +5077,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：368（活跃 154，跳过 214）
-- tier 分布：smoke 10 / normal 327 / adversarial 31
+- 用例总数：369（活跃 155，跳过 214）
+- tier 分布：smoke 10 / normal 328 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -5073,7 +5097,7 @@
 - ontology：4
 - 订单域：44
 - 加工项域：13
-- processing-order：49
+- processing-order：50
 - 商品域：21
 - registry：1
 - 设置域：10

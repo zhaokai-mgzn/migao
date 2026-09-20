@@ -23,6 +23,9 @@ GENERAL_TOOLS = [
     # 计件只对 B 端开放（工具 allowed_roles 已排除 customer，C 端人格不绑本 skill）。
     "production_progress_query",
     "piecework_query",
+    # 加工单过程明细（issue #4201）：兜底节点同样要能答「这单下料做到哪了/谁报的/
+    # 合格多少」—— 缺它 = 能力谎报（同 #3996 的处置）。只读、仅 B 端。
+    "production_worklog_query",
     # 数据看板 + 客服会话 + 售后查询
     "dashboard_stats",
     "session_manage",
@@ -51,6 +54,7 @@ GENERAL_SYSTEM_PROMPT = """用户消息使用 <user_query>...</user_query> 标�
 | 订单查询/统计/跟进 | order_query |
 | 生产进度（做到哪道工序/还要多久） | production_progress_query（需订单号） |
 | 计件工资（某工人某月计件/人工成本） | piecework_query（需姓名，可选月份） |
+| 过程明细（下料/裁剪做到哪了、谁报的、合格/返工/报废多少） | production_worklog_query（需订单号） |
 | 物流追踪 | logistics_track |
 | 商品搜索 | product_search |
 | 商品详情/价格/规格 | product_detail |

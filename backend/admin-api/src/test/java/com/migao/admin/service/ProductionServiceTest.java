@@ -1,4 +1,4 @@
-// case_ids: PG-018, CH-039, CH-040
+// case_ids: PG-018, PG-057, CH-039, CH-040
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -588,6 +588,165 @@ class ProductionServiceTest {
 
         assertThatThrownBy(() -> service.progress("nope", TENANT))
                 .hasMessageContaining("订单");
+    }
+
+    // ── 过程明细（issue #4201）：工序实例 × 报工明细 × 数量聚合 ──────────────────────
+    //
+    // 缺口：agent 读不到「加工单 × 工序实例 × 报工明细」（谁在做、合格/返工/报废各多少、
+    // 下料=裁剪组做到哪一步）。本组锁该只读投影的三条不变式：
+    //   ① 数量按**报工三态**归集（合格 = normal 的合格数；返工/报废取报工数量）；
+    //   ② **不新增第二份计价口径** —— 金额走既有 `aggregate`（与 /piecework 同一份）；
+    //   ③ 租户隔离与四形态订单解析沿用 `resolveOrder`（不得只认 order_no）。
+
+    private ProcessingPositionOperation cuttingOp(String id, String name, String qty, String doneQty,
+                                                 String unitPrice) {
+        return ProcessingPositionOperation.builder()
+                .id(id).tenantId(TENANT).processingOrderId(PO_ID)
+                .positionName("布艺遮光帘A 米白").positionKind("布帘").seq(1)
+                .operationName(name).groupName("裁剪").unit("米")
+                .qty(new BigDecimal(qty)).unitPrice(new BigDecimal(unitPrice))
+                .factor(BigDecimal.ONE).isMustFinish(false).isStartMarker(false)
+                .status("done").doneQty(new BigDecimal(doneQty)).deleted(0)
+                .build();
+    }
+
+    private ProductionWorkLog workLog(String opId, String name, String worker, String qty,
+                                     String qualified, String type, String date) {
+        return ProductionWorkLog.builder()
+                .tenantId(TENANT).processingOrderId(PO_ID).operationId(opId).operationName(name)
+                .workerName(worker).qty(new BigDecimal(qty)).qualifiedQty(new BigDecimal(qualified))
+                .workType(type).workDate(LocalDate.parse(date)).deleted(0).build();
+    }
+
+    @Test
+    @DisplayName("过程明细：下料（裁剪）做到哪 → 应做/合格/返工/报废 + 报工人 + 分组（#4201）")
+    void worklogAggregatesByWorkTypeAndWorkers() {
+        when(orderMapper.selectOne(any())).thenReturn(order("producing"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                cuttingOp("op-1", "精裁-布", "12.00", "10.00", "0.40"),
+                op("op-2", "外帘装袋", "1.00", true, "pending", "0.00", "1.00", "1.00")));
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                workLog("op-1", "精裁-布", "王师傅", "10.00", "10.00", "normal", "2026-09-19"),
+                workLog("op-1", "精裁-布", "王师傅", "2.00", "0.00", "rework", "2026-09-20"),
+                workLog("op-2", "外帘装袋", "李四", "1.00", "0.00", "scrap", "2026-09-20")));
+
+        Map<String, Object> result = service.worklog("ORD-20260917-001", TENANT);
+
+        assertThat(result.get("order_no")).isEqualTo("ORD-20260917-001");
+        assertThat(result.get("processing_order_no")).isNull();   // 夹具加工单无单号 ⇒ 如实 null
+        assertThat(result.get("processing_status")).isEqualTo("in_processing");
+
+        List<Map<String, Object>> operations = operationsOf(result);
+        assertThat(operations).hasSize(2);
+        Map<String, Object> cutting = operations.get(0);
+        assertThat(cutting.get("operation_name")).isEqualTo("精裁-布");
+        assertThat(cutting.get("logical_name")).isEqualTo("精裁");     // 读时派生的逻辑名
+        assertThat(cutting.get("position")).isEqualTo("布帘");         // 帘种（position_kind）
+        assertThat(cutting.get("group_name")).isEqualTo("裁剪");       // 下料 = 裁剪组
+        assertThat(cutting.get("status")).isEqualTo("done");
+        assertThat((BigDecimal) cutting.get("required_qty")).isEqualByComparingTo("12.00");
+        assertThat((BigDecimal) cutting.get("qualified_qty")).isEqualByComparingTo("10.00");
+        assertThat((BigDecimal) cutting.get("rework_qty")).isEqualByComparingTo("2.00");
+        assertThat((BigDecimal) cutting.get("scrap_qty")).isEqualByComparingTo("0.00");
+        assertThat(cutting.get("last_work_date")).isEqualTo("2026-09-20");
+        // 「谁报的」只算**正常报工**的报工人（返工/报废不计入 —— 与既有 workersByOperation 同口径）
+        assertThat(cutting.get("workers")).isEqualTo(List.of("王师傅"));
+
+        Map<String, Object> packing = operations.get(1);
+        assertThat(packing.get("operation_name")).isEqualTo("外帘装袋");
+        assertThat((BigDecimal) packing.get("scrap_qty")).isEqualByComparingTo("1.00");
+        assertThat(packing.get("is_must_finish")).isEqualTo(true);
+        assertThat(packing.get("workers")).isEqualTo(List.of());          // 只有报废 ⇒ 无正常报工人
+        assertThat(packing.get("last_work_date")).isEqualTo("2026-09-20");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> totals = (Map<String, Object>) result.get("totals");
+        assertThat((BigDecimal) totals.get("qualified_qty")).isEqualByComparingTo("10.00");
+        assertThat((BigDecimal) totals.get("rework_qty")).isEqualByComparingTo("2.00");
+        assertThat((BigDecimal) totals.get("scrap_qty")).isEqualByComparingTo("1.00");
+
+        // 报工明细**倒序**（最近在前）：scrap(op-2) → rework → normal
+        List<Map<String, Object>> logs = logsOf(result);
+        assertThat(logs).hasSize(3);
+        assertThat(logs.get(0).get("work_type")).isEqualTo("scrap");
+        assertThat(logs.get(2).get("work_type")).isEqualTo("normal");
+        assertThat(logs.get(2).get("worker_name")).isEqualTo("王师傅");
+        assertThat(logs.get(2).get("work_date")).isEqualTo("2026-09-19");
+    }
+
+    @Test
+    @DisplayName("过程明细：计件金额与 /piecework 走**同一份**聚合（禁第二份计价口径，#4201）")
+    void worklogPieceworkAmountSharesSingleAggregate() {
+        when(orderMapper.selectOne(any())).thenReturn(order("producing"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                cuttingOp("op-1", "精裁-布", "12.00", "10.00", "0.40"),
+                op("op-2", "韩褶-布", "5.00", false, "done", "5.00", "0.40", "1.70")));
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                workLog("op-1", "精裁-布", "王师傅", "10.00", "10.00", "normal", "2026-09-19"),
+                workLog("op-2", "韩褶-布", "王师傅", "5.00", "5.00", "normal", "2026-09-19"),
+                workLog("op-1", "精裁-布", "王师傅", "2.00", "2.00", "rework", "2026-09-20")));
+
+        Map<String, Object> detail = service.worklog("ORD-20260917-001", TENANT);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> totals = (Map<String, Object>) detail.get("totals");
+        Map<String, Object> piecework = service.piecework(ORDER_ID, TENANT);
+
+        // 10×0.40 + 5×0.40×1.70 = 4.00 + 3.40 = 7.40（返工不计件）—— 两处**恒等**
+        assertThat((BigDecimal) totals.get("piecework_amount")).isEqualByComparingTo("7.40");
+        assertThat((BigDecimal) totals.get("piecework_amount"))
+                .as("过程明细的金额必须等于 /piecework 的 total（同一份 aggregate）")
+                .isEqualByComparingTo((BigDecimal) piecework.get("total"));
+    }
+
+    @Test
+    @DisplayName("过程明细：无加工单 → 空明细 + 零合计（未开始态，不是错误态，#4201）")
+    void worklogWithoutProcessingOrderIsEmptyNotError() {
+        when(orderMapper.selectOne(any())).thenReturn(order("confirmed"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(null);
+
+        Map<String, Object> result = service.worklog("ORD-20260917-001", TENANT);
+
+        assertThat(operationsOf(result)).isEmpty();
+        assertThat(logsOf(result)).isEmpty();
+        assertThat(result.get("processing_order_no")).isNull();
+        assertThat(result.get("processing_status")).isNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> totals = (Map<String, Object>) result.get("totals");
+        assertThat((BigDecimal) totals.get("qualified_qty")).isEqualByComparingTo("0");
+        assertThat((BigDecimal) totals.get("piecework_amount")).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    @DisplayName("过程明细：缺 order_no → 422；跨租户/不存在 → 404（租户隔离，#4201）")
+    void worklogValidatesAndIsolatesTenant() {
+        assertThatThrownBy(() -> service.worklog("  ", TENANT))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("order_no");
+
+        // 同名订单号但属于别的租户 ⇒ resolveOrder 不认（fail-closed）
+        Order other = order("producing");
+        other.setTenantId(999L);
+        when(orderMapper.selectById("ORD-20260917-001")).thenReturn(null);
+        when(orderMapper.selectOne(any())).thenReturn(null);
+        when(processingOrderMapper.selectOne(any())).thenReturn(null);
+
+        assertThatThrownBy(() -> service.worklog("ORD-20260917-001", TENANT))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("订单");
+
+        // 跨租户订单**不得**读取该单的工序/报工（连查都不查）
+        verify(positionOperationMapper, never()).selectList(any());
+        verify(workLogMapper, never()).selectList(any());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> operationsOf(Map<String, Object> result) {
+        return (List<Map<String, Object>>) result.get("operations");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> logsOf(Map<String, Object> result) {
+        return (List<Map<String, Object>>) result.get("work_logs");
     }
 
     // ── 订单解析三形态（issue #4005：打印二维码内容 qr_token 必须可用于报工/查询）──

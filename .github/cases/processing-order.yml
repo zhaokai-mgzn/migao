@@ -2041,3 +2041,90 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ==========================================================================
+  # PG-057（issue #4201）：加工单「过程明细」agent 只读面 —— B 端米宝
+  #
+  # 用户裁定：「下料就是加工单的加工环节，系统要跟踪工人的详细加工过程」。
+  # 缺口（本单前实测）：agent 只读面只有订单级进度（production_progress_query）与
+  # 按人×月计件（piecework_query），**读不到「加工单 × 工序实例 × 报工明细」**
+  # （谁在做 / 合格-返工-报废各多少 / 下料=裁剪组做到哪一步）。
+  # 本用例是新增工具 `production_worklog_query` 的**唯一**行为覆盖证据 ——
+  # Case Coverage Gate 对「注册了但零用例」判 uncovered 阻塞（#3555）。
+  #
+  # ⚠️ 断言设计（grounded，不靠措辞）：评测栈 `production_work_logs` **零 seed**
+  #   （`tests/agent_eval/fixtures/*.sql` 无 INSERT，核对口径同 PG-015 注释）⇒ 被点名的
+  #   种子订单**无论是否已被 PG-015 生成过加工单，报工明细必为空**、数量与金额全 0。
+  #   ⇒ 机器断言只钉「工具被调用 + **成功** + 带订单号 + 不得顺手写 + 不得编造具名报工人」；
+  #     **不**断言具体数量（那会随 PG-015 是否先跑而漂移 ⇒ 假红）。
+  # ==========================================================================
+  - id: PG-057
+    legacy_id: ""
+    title: "米宝查加工单过程明细：下料（裁剪）做到哪一步/谁报的/合格多少（新工具 production_worklog_query）"
+    domains:
+      - processing-order
+      - processing
+      - chat
+    persona: mibao
+    tier: normal
+    tags:
+      - processing_order
+      - production
+      - llm_behavior
+      - worklog
+      - readonly
+    truths_ref:
+      - ai-chat.intent-tool-map
+      - ai-chat.tool-classes
+    user_inputs:
+      - "订单 EVAL-MB-ORD-0003 的下料（裁剪）做到哪一步了？谁报的？合格多少？"
+    expectations:
+      - tool: production_worklog_query
+    must_succeed:
+      # 比 `success=true` 更强：调了 ≠ 成了（每次尝试的轮次 + 错误码进失败详情）
+      - tool: production_worklog_query
+    required_args:
+      # 订单号只能来自用户（工具 description 明写「禁止编造订单号」）
+      - tool: production_worklog_query
+        fields:
+          - order_no
+    forbidden_tools:
+      # 只读问句 ⇒ 不得顺手生成/流转加工单（写操作须用户明确指令 + 确认闸）
+      - processing_order_generate
+      - processing_order_update
+      # 不得用**加工项目录**冒充工序/报工明细（加工项 ≠ 工序实例；概念区分靶子同 PG-017）
+      - processing_item_query
+    forbidden_text:
+      # 该单零报工记录 ⇒ 任何**具名**报工人都是编造（「谁报的」最容易触发编个师傅姓名）。
+      # 只钉「姓氏 + 师傅」的具体形态，不钉「师傅」两字本身 ——
+      # 如实回答「还没有师傅报工」是**正确**行为，不得误伤。
+      - "王师傅"
+      - "李师傅"
+      - "张师傅"
+    want_text:
+      # 存在性断言（any_of：任一命中即过）—— 如实回答必落在其中一个词上（措辞发散，
+      # 故不用「逐词全中」形态）
+      - any_of:
+          - "工序"
+          - "加工单"
+          - "报工"
+          - "裁剪"
+          - "下料"
+    data_checks:
+      - "success=true"
+      - "商家问「下料（裁剪）做到哪一步 / 谁报的 / 合格多少」→ production_worklog_query(order_no=EVAL-MB-ORD-0003) 被调用且**成功**返回（must_succeed 断言 success=true，不是「工具名出现过」）"
+      - "工具返回 = `GET /api/admin/agent/production/worklog?order_no=`（#4201 冻结契约键集）：{order_no, processing_order_no, processing_status, operations:[{position, operation_name, logical_name, group_name, seq, status, required_qty, qualified_qty, rework_qty, scrap_qty, is_must_finish, workers, last_work_date}], work_logs:[{operation_name, logical_name, position, worker_name, qty, qualified_qty, work_type, work_date}], totals:{qualified_qty, rework_qty, scrap_qty, piecework_amount}}；**投影纪律**：不下发内部单价/系数/租户字段（金额只以「计件金额」形态出现）—— 证据 `backend/admin-api/src/test/java/com/migao/admin/controller/agent/AgentProductionControllerTest.java`（键集 + doesNotContain unit_price/factor/tenant_id）"
+      - "「下料」= 工序库**裁剪组**（operations[].group_name = 裁剪，如 精裁-布 / 裁剪-纱），不新增「下料」数据模型（用户裁定）"
+      - "口径同源（不得自造第二份）：合格 = work_type=normal 的合格数；返工/报废各取该笔报工数量、**不计件不累加**；计件金额由服务端 `ProductionService.aggregate` 计算 ⇒ 与 `GET /api/admin/agent/production/piecework` 的 `total` **恒等** —— 证据 `backend/admin-api/src/test/java/com/migao/admin/service/ProductionServiceTest.java` 的 worklogPieceworkAmountSharesSingleAggregate / worklogAggregatesByWorkTypeAndWorkers"
+      - "评测栈 `production_work_logs` 零 seed ⇒ 该单报工明细为空、数量与金额全 0：如实说「暂无工序/报工记录、尚未报工」属**合格**行为；禁止编造报工人姓名或数量（机器断言：forbidden_text 具名指纹 + forbidden_tools）"
+      - "授权面不新增：权限码沿用 `order:list`（AgentProductionController 类级 `@RequirePermission`），C 端 JWT 无码 ⇒ 天然被挡（报工人与计件金额不对顾客开放）—— 证据 `backend/ai-agent-service/tests/test_production_worklog_query.py` 的 TestPermission"
+    skip_reason: ""
+    merge_log: "2026-09-22 新增（issue #4201）：加工单「过程明细」agent 只读面（端点 GET /api/admin/agent/production/worklog + 工具 production_worklog_query + order/general skill 绑定 + prompts/order.md 口径）。**断言面**：must_succeed + required_args(order_no) + forbidden_tools（两个加工单写工具 + 加工项目录冒充）+ forbidden_text（具名报工人 = 编造指纹）+ want_text(any_of 存在性) + data_checks 首条 success=true。**未做（如实登记）**：**数值断言**（合格/返工/报废的**具体数字**）未落 —— 评测栈 `production_work_logs` 零 seed，要落数值只能给 seed 补「加工单 + 工序实例 + 报工」三段夹具，而本地**无 docker**、无法验证 seed SQL（写错会打挂整个 mibao 套件）⇒ 本单不碰 seed，登记为后续项。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_production_worklog_query.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/agent/AgentProductionControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

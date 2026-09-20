@@ -128,6 +128,7 @@ class TestSkillToolSubsets:
             "customer_manage",
             "production_progress_query",  # issue #3996
             "piecework_query",            # issue #3996（B 端专用，不对 C 端开放）
+            "production_worklog_query",   # issue #4201（B 端专用：过程明细含报工人/计件）
             "dashboard_stats",
             "session_manage",
             "after_sales_manage",

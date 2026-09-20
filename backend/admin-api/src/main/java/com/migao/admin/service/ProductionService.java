@@ -684,6 +684,138 @@ public class ProductionService {
         return result;
     }
 
+    /**
+     * 米宝加工单「过程明细」（冻结契约，issue #4201）：{order_no, processing_order_no,
+     * processing_status, operations:[...], work_logs:[...], totals:{...}}。
+     *
+     * <p>回答「下料（裁剪组）做到哪一步 / 谁报的 / 合格-返工-报废各多少」—— 用户裁定
+     * 「下料就是加工单的加工环节，系统要跟踪工人的详细加工过程」（下料 = 工序库**裁剪组**，
+     * 不新建数据模型）。</p>
+     *
+     * <p><b>投影纪律（类注释的「只透出精简字段」）</b>：明细面只给**数量与金额** ——
+     * 不下发内部单价（{@code unit_price}）/系数（{@code factor}）/租户字段（{@code tenant_id}）。
+     * 金额只以「计件金额」形态出现在 {@code totals}。</p>
+     *
+     * <p><b>数量口径（唯一一份）</b>：合格 = {@code work_type=normal} 的**合格数量**累加；
+     * 返工 / 报废各取该笔的**报工数量**（{@code qty}，那两类不累加合格数 —— V49 注释同源）。</p>
+     *
+     * <p><b>金额口径不新造</b>：计件金额走 {@link #aggregate} —— 与 per-order 计件
+     * （{@link #piecework}）/ 期间报表 / 工人计件**同一份**聚合 ⇒ 本端点的
+     * {@code totals.piecework_amount} 与 {@code /piecework} 的 {@code total} 恒等。</p>
+     *
+     * <p>订单解析与租户隔离沿用 {@link #resolveOrder}（四形态）——**不得只认 order_no**
+     * （#4007：agent 侧拿到的是内部 order_id，只认单号会 404）。无加工单 ⇒ 空明细 + 零合计的
+     * 「未开始」态，**不是**错误态。</p>
+     */
+    public Map<String, Object> worklog(String orderNo, Long tenantId) {
+        if (!StringUtils.hasText(orderNo)) {
+            throw BusinessException.validationError("order_no 不能为空");
+        }
+        Order order = resolveOrder(orderNo.trim(), tenantId);
+        ProcessingOrder po = processingOrderMapper.selectActiveByOrderId(order.getId(), tenantId);
+        List<ProcessingPositionOperation> operations = po == null
+                ? List.of()
+                : listOperations(po.getId(), tenantId);
+        // 一次取回报工明细再内存归集（按工序逐个查是 N+1，同 #4309 的取法）
+        List<ProductionWorkLog> logs = po == null ? List.of() : listWorkLogs(po.getId(), tenantId);
+
+        // ── 数量按报工三态归集（键 = 工序实例 id）──
+        Map<String, BigDecimal> qualifiedByOp = new LinkedHashMap<>();
+        Map<String, BigDecimal> reworkByOp = new LinkedHashMap<>();
+        Map<String, BigDecimal> scrapByOp = new LinkedHashMap<>();
+        Map<String, LocalDate> lastWorkDateByOp = new LinkedHashMap<>();
+        BigDecimal qualifiedTotal = BigDecimal.ZERO;
+        BigDecimal reworkTotal = BigDecimal.ZERO;
+        BigDecimal scrapTotal = BigDecimal.ZERO;
+        for (ProductionWorkLog logRow : logs) {
+            String key = logRow.getOperationId() == null ? "" : logRow.getOperationId();
+            String type = logRow.getWorkType();
+            if ("normal".equals(type)) {
+                BigDecimal qty = nz(logRow.getQualifiedQty());
+                qualifiedByOp.merge(key, qty, BigDecimal::add);
+                qualifiedTotal = qualifiedTotal.add(qty);
+            } else if ("rework".equals(type)) {
+                BigDecimal qty = nz(logRow.getQty());
+                reworkByOp.merge(key, qty, BigDecimal::add);
+                reworkTotal = reworkTotal.add(qty);
+            } else if ("scrap".equals(type)) {
+                BigDecimal qty = nz(logRow.getQty());
+                scrapByOp.merge(key, qty, BigDecimal::add);
+                scrapTotal = scrapTotal.add(qty);
+            }
+            if (logRow.getWorkDate() != null) {
+                LocalDate previous = lastWorkDateByOp.get(key);
+                if (previous == null || logRow.getWorkDate().isAfter(previous)) {
+                    lastWorkDateByOp.put(key, logRow.getWorkDate());
+                }
+            }
+        }
+
+        Map<String, ProcessingPositionOperation> instancesById = new HashMap<>();
+        for (ProcessingPositionOperation op : operations) {
+            instancesById.put(op.getId(), op);
+        }
+        // 计件金额 = 与 /piecework 同一份聚合（不新造第二份计价口径）
+        PieceworkTotals totals = aggregate(logs, instancesById::get, Map.of());
+        Map<String, List<String>> workers = workersByOperation(logs);
+
+        List<Map<String, Object>> operationRows = new ArrayList<>();
+        for (ProcessingPositionOperation op : operations) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("position", ProductionOperationQueryService.displayPosition(
+                    op.getOperationName(), op.getPositionKind()));
+            row.put("operation_name", op.getOperationName());
+            row.put("logical_name", ProductionOperationQueryService.logicalOperationName(op.getOperationName()));
+            row.put("group_name", op.getGroupName());
+            row.put("seq", op.getSeq());
+            row.put("status", op.getStatus() == null ? "pending" : op.getStatus());
+            row.put("required_qty", nz(op.getQty()));
+            row.put("qualified_qty", nz(qualifiedByOp.get(op.getId())));
+            row.put("rework_qty", nz(reworkByOp.get(op.getId())));
+            row.put("scrap_qty", nz(scrapByOp.get(op.getId())));
+            row.put("is_must_finish", Boolean.TRUE.equals(op.getIsMustFinish()));
+            row.put("workers", workers.getOrDefault(op.getId(), List.of()));
+            LocalDate lastWorkDate = lastWorkDateByOp.get(op.getId());
+            row.put("last_work_date", lastWorkDate == null ? null : lastWorkDate.toString());
+            operationRows.add(row);
+        }
+
+        Map<String, String> positionKindByName = positionKindByOperationName(operations);
+        List<Map<String, Object>> logRows = new ArrayList<>();
+        // 倒序（最近在前）：与工人端「操作记录」（{@link #workLogViews}）同一约定
+        for (int i = logs.size() - 1; i >= 0; i--) {
+            ProductionWorkLog logRow = logs.get(i);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("operation_name", logRow.getOperationName());
+            row.put("logical_name",
+                    ProductionOperationQueryService.logicalOperationName(logRow.getOperationName()));
+            row.put("position", ProductionOperationQueryService.displayPosition(
+                    logRow.getOperationName(), positionKindByName.get(logRow.getOperationName())));
+            row.put("worker_name", StringUtils.hasText(logRow.getWorkerName())
+                    ? logRow.getWorkerName() : UNSIGNED_WORKER);
+            row.put("qty", nz(logRow.getQty()));
+            row.put("qualified_qty", nz(logRow.getQualifiedQty()));
+            row.put("work_type", logRow.getWorkType());
+            row.put("work_date", logRow.getWorkDate() == null ? null : logRow.getWorkDate().toString());
+            logRows.add(row);
+        }
+
+        Map<String, Object> totalsView = new LinkedHashMap<>();
+        totalsView.put("qualified_qty", qualifiedTotal);
+        totalsView.put("rework_qty", reworkTotal);
+        totalsView.put("scrap_qty", scrapTotal);
+        totalsView.put("piecework_amount", money(totals.total()));
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("order_no", order.getOrderNo());
+        result.put("processing_order_no", po == null ? null : po.getProcessingOrderNo());
+        result.put("processing_status", po == null ? null : po.getStatus());
+        result.put("operations", operationRows);
+        result.put("work_logs", logRows);
+        result.put("totals", totalsView);
+        return result;
+    }
+
     // ============================================================ 报工
 
     /**
