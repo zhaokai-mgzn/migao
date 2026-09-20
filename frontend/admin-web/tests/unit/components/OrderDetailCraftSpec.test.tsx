@@ -151,6 +151,22 @@ describe('OrderDetail 商品明细展示工艺规格', () => {
     expect(within(spec).getByText('0.32米')).toBeInTheDocument()
   })
 
+  it('#4876 订单详情**同步显示**下单时录的「用料公式」与「档位」（与新增订单页表单字段同键同源）', async () => {
+    // 用户 2026-09-21 追加需求：「第三点需要在订单详情/新增订单页面同步增加表单字段」
+    // ⇒ 下单页那两个控件写的是 `processingInfo.formula` / `craftTier`，详情页按**同一份键**读回。
+    mockGetOrder.mockResolvedValue({
+      data: { data: orderWith({ formula: 'fullness', craftTier: 'economy' }) },
+    })
+
+    render(<OrderDetailPage />)
+
+    const spec = await screen.findByTestId('order-craft-spec')
+    expect(within(spec).getByText('用料公式')).toBeInTheDocument()
+    expect(within(spec).getByText('褶倍数公式（倍数法）')).toBeInTheDocument()
+    expect(within(spec).getByText('档位')).toBeInTheDocument()
+    expect(within(spec).getByText('经济工艺')).toBeInTheDocument()
+  })
+
   it('缺值不渲染：无工艺键 / null / 空串 ⇒ 无「工艺规格」块，且不出现 undefined/null/NaN', async () => {
     mockGetOrder.mockResolvedValue({
       data: { data: orderWith({ colorName: '米白', craft: null, openCount: null, style: '' }) },
