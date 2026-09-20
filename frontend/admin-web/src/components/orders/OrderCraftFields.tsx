@@ -88,6 +88,7 @@ import {
   CRAFT_CALC_TIER,
   craftCalcTierOptions,
   defaultCraftCalcFormula,
+  defaultCraftCalcTier,
 } from '@/lib/craft-calc-request'
 import type { CraftCalcConfig } from '@/types'
 
@@ -210,7 +211,8 @@ export default function OrderCraftFields({
   const uid = useId().replace(/:/g, '')
   const fieldId = (name: string) => `craft-${uid}-${name}`
 
-  /** 数字输入：空串 / 非法 ⇒ `null`（键不落库）；否则正有限数 */  const numberOrNull = (raw: string): number | null => {
+  /** 数字输入：空串 / 非法 ⇒ `null`（键不落库）；否则正有限数 */
+  const numberOrNull = (raw: string): number | null => {
     if (raw.trim() === '') return null
     const parsed = Number(raw)
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null
@@ -330,7 +332,11 @@ export default function OrderCraftFields({
           <ChipGroup
             label="档位"
             options={tierOptions}
-            value={value.craftTier ?? ''}
+            /* 生效档位（issue #4878 独立复核 P2）：公式 chips 显示的是**生效**值
+               （`effectiveFormula`），档位 chips 若显示 `value.craftTier ?? ''`，未选时
+               **一个都不选中**，而派生/请求/落库用的却是缺省档 ⇒「页面所见 = 请求 = 落库」
+               在缺省态不成立（商家看到"没选"，系统按标准档算了钱）。⇒ 同样显示生效值。 */
+            value={value.craftTier ?? defaultCraftCalcTier(calcConfig)}
             onChange={(next) => onChange({ craftTier: next })}
           />
           <p className="mt-1 text-xs text-neutral-400">

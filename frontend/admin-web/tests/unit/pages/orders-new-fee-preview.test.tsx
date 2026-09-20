@@ -322,6 +322,113 @@ describe('下单页加工费计价预览接线（#4450）', () => {
     await waitFor(() => expect(mockFeePreview).toHaveBeenCalled())
     expect(screen.queryByTestId('processing-fee-combinations')).toBeNull()
   })
+
+  // ── 独立复核（issue #4878）补的两条资金路径回归 ──────────────────────────────
+  // 两条都来自「不看规格」的独立复核（GLM-5.3-Flash）：P1「陈旧 override 会被当成新组合的价」
+  // 与 P1「改价后输入框消失 ⇒ 打错一个字就改不了」。**都是可注入式红证**（把修法退回去即红）。
+
+  it('#4878 P1：改加工项 ⇒ 组合键变 ⇒ **上一组合的人工改价被清掉**（不得给新组合定价）', async () => {
+    // 两个加工项，便于「换一个」而不至于把组合清空
+    mockGetProcessingItems.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            { id: 'pi1', name: '韩式褶', unitPrice: 5, unit: '米', pricingMethod: 'per_meter' },
+            { id: 'pi2', name: '加铅块', unitPrice: 3, unit: '项', pricingMethod: 'per_set' },
+          ],
+        },
+      },
+    })
+    mockFeePreview.mockResolvedValue(
+      feeUnpriced([{ composition: '布帘+韩褶', items: ['布帘', '韩褶'] }])
+    )
+    render(<NewOrderPage />)
+    fireEvent.click(await screen.findByText('点击搜索并选择商品'))
+    fireEvent.click(await screen.findByText('遮光窗帘'))
+    await screen.findByText('宽 (米)')
+    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    await waitFor(() => expect(inputOf('用料米数')).toHaveValue(13.3))
+    expandProcessing()
+    fireEvent.click(screen.getAllByRole('checkbox')[0])
+
+    const block = await screen.findByTestId('processing-fee-combinations')
+    fireEvent.change(within(block).getByTestId('fee-unit-price-override'), {
+      target: { value: '12.5' },
+    })
+    await waitFor(() =>
+      expect(
+        mockFeePreview.mock.calls.at(-1)![0].items[0].processingInfo.processingFeeOverride
+      ).toBe(12.5)
+    )
+
+    // 勾**另一个**加工项 ⇒ 组合键变（`布帘+韩褶` → 含「加铅块」的新组合）
+    // 红证：不清 override ⇒ 新组合的请求体里仍带着 12.5（给新组合静默定价）
+    fireEvent.click(screen.getAllByRole('checkbox')[1])
+    await waitFor(() => {
+      const last = mockFeePreview.mock.calls.at(-1)![0]
+      expect(last.items[0].processingInfo.processingFeeOverride).toBeUndefined()
+    })
+  })
+
+  it('#4878 P1：改价生效（预览转 manual）后**输入框仍在**（打错能改），改完随单提交新价', async () => {
+    const feeManual = (unitPrice: number) => ({
+      data: {
+        data: {
+          items: [
+            {
+              processingFee: unitPrice * 13.3,
+              processingFeeDetail: {
+                composition_key: '布帘+韩褶',
+                items: ['布帘', '韩褶'],
+                unit_price: unitPrice,
+                price_source: 'manual',
+                meters: 13.3,
+                meters_source: 'processingMeters',
+                fee_source: 'manual',
+                amount: unitPrice * 13.3,
+                special_options: [],
+                special_options_total: 0,
+                hint: null,
+              },
+            },
+          ],
+          processingFeeTotal: unitPrice * 13.3,
+        },
+      },
+    })
+    // 首轮预览 = 未定价（给入口）；改价之后服务端按 manual 回
+    mockFeePreview
+      .mockResolvedValueOnce(
+        feeUnpriced([{ composition: '布帘+韩褶', items: ['布帘', '韩褶'] }])
+      )
+      .mockResolvedValue(feeManual(12.5))
+
+    await setupLine()
+    const block = await screen.findByTestId('processing-fee-combinations')
+    fireEvent.change(within(block).getByTestId('fee-unit-price-override'), {
+      target: { value: '12.5' },
+    })
+
+    // 红证：若入口只在 `fee_source='unpriced'` 时渲染 ⇒ manual 一到，输入框消失、下面两条必红
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('processing-fee-combinations')).getByTestId(
+          'fee-unit-price-override'
+        )
+      ).toBeInTheDocument()
+    )
+    fireEvent.change(
+      within(screen.getByTestId('processing-fee-combinations')).getByTestId(
+        'fee-unit-price-override'
+      ),
+      { target: { value: '9.9' } }
+    )
+    await submit()
+    expect(
+      mockCreateOrder.mock.calls[0][0].items[0].processingInfo.processingFeeOverride
+    ).toBe(9.9)
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════

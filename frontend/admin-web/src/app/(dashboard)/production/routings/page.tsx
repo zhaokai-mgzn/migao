@@ -18,6 +18,7 @@ import { Button, Modal } from '@/components/ui'
 import { isErrorToastShown, toastRequestError } from '@/lib/api-error'
 import { productionApi } from '@/lib/api'
 import { craftCalcConfigGuardReasons, optionPriceGuardReasons, routingAdminGuardReasons, routingGuardReasons } from '@/lib/production-guard-reasons'
+import { CRAFT_CALC_FORMULA_LABELS } from '@/lib/craft-calc-request'
 import { cn } from '@/lib/utils'
 import type {
   CatalogOperation,
@@ -391,11 +392,14 @@ const CALC_SCALAR_FIELDS: { key: CalcScalarKey; label: string; hint: string }[] 
   { key: 'meters_rounding_step', label: '进位步长（米）', hint: '用料只向上进位，不截断、不四舍五入' },
 ]
 
-/** 兜底公式的可读文案（取值域由后端枚举给；这里只做展示映射） */
-const CALC_FORMULA_LABEL: Record<string, string> = {
-  pleat: '韩折公式（折数法）',
-  fullness: '褶倍数公式（倍数法）',
-}
+/**
+ * 兜底公式的可读文案（取值域由后端枚举给；这里只做展示映射）。
+ *
+ * ⚠️ **单一真值** = `@/lib/craft-calc-request` 的 `CRAFT_CALC_FORMULA_LABELS`（issue #4878 独立复核）：
+ * 本页原来自带一份**逐字相同、但没有任何守卫**的副本（下单页另有一份）⇒ 改一处忘一处就**静默分叉**
+ * （下单页显示「韩折公式（折数法）」、这里显示别的字）。⇒ 改为**直接复用同一张表**，不再各写一份。
+ */
+const CALC_FORMULA_LABEL: Record<string, string> = CRAFT_CALC_FORMULA_LABELS
 
 /**
  * 工艺档位的**显示名**（issue #4567 用户走查②：「英文改中文」）。

@@ -96,6 +96,14 @@ _CRAFT_SPEC_NUMBERS = (
 # 历史会话 / 商家配置 / 模型幻觉里的旧键（它们会一路落进订单列 ⇒「净删」只落在文档层）。
 _RETIRED_CRAFT_SPEC_KEYS = ("pleatSpacing", "pleat_spacing")
 
+# **agent 不得写**的行级人工改价键（issue #4878 独立复核 P1 补）。
+# 为什么必须挡：`processing_info` 是**整体透传**的 ⇒ 模型幻觉出一个正数 `processingFeeOverride`
+# 会被 admin-api 的 `ProcessingFeeCalculator` 采用（`fee_source='manual'`），并在建单同事务里
+# 经 `upsertFromOrderOverride` **写进该租户共享的加工费组合价目**（那条路径不跑
+# `createCombination` 的 validateItems 五道护栏）⇒ 一次幻觉 = 给全店留下一个假价目。
+# 人工改价是**商家在下单页**的专属动作（用户 2026-09-21 裁定的入口就在那一处），agent 不承担。
+_AGENT_FORBIDDEN_CRAFT_SPEC_KEYS = ("processingFeeOverride",)
+
 # 万能验证码 bypass（POC/测试阶段，对齐 admin-api 的 sms.bypass-code 机制）。
 # 空字符串 = 禁用 bypass（生产安全默认）。POC 部署时设置 SMS_BYPASS_CODE=123456 与 admin-api 对齐。
 SMS_BYPASS_CODE = os.getenv("SMS_BYPASS_CODE", "")
@@ -1547,7 +1555,7 @@ class OrderCreateTool(BaseTool):
             if isinstance(pinfo, dict):
                 # 退役键先丢（issue #4873）：在归一/校验**之前**清，保证旧键既不落库、
                 # 也不参与后续任何判定（canonical camelCase 与清单 id 两种写法都清）。
-                for _retired in _RETIRED_CRAFT_SPEC_KEYS:
+                for _retired in _RETIRED_CRAFT_SPEC_KEYS + _AGENT_FORBIDDEN_CRAFT_SPEC_KEYS:
                     pinfo.pop(_retired, None)
                 for _key, _value in to_craft_spec(pinfo, pinfo).items():
                     pinfo.setdefault(_key, _value)

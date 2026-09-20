@@ -233,6 +233,12 @@ public class ProcessingOrderService {
             "curtainType", "craft", "cuttingMode", "openCount", "isShaped", "pleatSpacing",
             "hasPattern", "patternRepeat", "style", "room", "batchNo",
             "componentRole", "craftLineId", "metersSource", "processingMeters",
+            // 用料公式 / 算料档位（issue #4874；**issue #4878 独立复核 P1 补进白名单**）：
+            // 下单页与 agent 都把它们写进 `processing_info`（写侧键），但**不加进本白名单就不会进快照**
+            // ⇒ 加工单看不出「这单按哪个公式/哪一档算的料」——而 `order-craft-fields.ts` 与
+            // `CONTRACT-LEDGER` 都已对外承诺「随单落库、加工单要能看出档位」。
+            // ⚠️ `pleatSpacing`（褶距）**保留**：写侧已退役，但存量单仍靠它回显（读侧容错）。
+            "formula", "craftTier",
             // 售卖形态（issue #4529）：`saleForm === '布料'` ⇒ 选**布料基础路线**（第 4 部位）。
             // 与「部位/工艺」同一载体（`processing_info` 顶层，订单侧下单时原样落库）——
             // 不进白名单 ⇒ 派生链读不到它 ⇒ 布料单永远落窗帘路线。

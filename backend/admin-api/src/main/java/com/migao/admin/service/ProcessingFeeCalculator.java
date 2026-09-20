@@ -496,7 +496,7 @@ public class ProcessingFeeCalculator {
                     return Fee.unpriced(compositionKey, normalizedItems, override, FEE_SOURCE_MANUAL,
                             null, null, specialOptions, mixedColor, windowKey,
                             joinHint(String.format("本行**人工改价** ¥%s/米，但本行**缺加工费米数** ⇒ "
-                                            + "**组合那半**按 0 计（未定价）。加工费米数 = 该樘窗主布行米数"
+                                            + "**组合那半**按 0 计（未定价）。加工费米数 = 该**套**主布行米数"
                                             + "（算料侧给出，键 `processingMeters`）⇒ 请补算料米数后重下单",
                                     override.toPlainString()), mixedHint));
                 }

@@ -229,7 +229,9 @@ def test_merged_defaults_never_yields_pleat_spacing():
     d = merged_defaults({})
     assert d["formula"] == "pleat"
     assert "pleat_spacing" not in d
-    assert "pleatSpacing" not in d.values()
+    # ⚠️ 查的是**键**（issue #4878 独立复核 P2）：原写 `not in d.values()` —— 值域里永远不会有
+    # 键名字符串 ⇒ 该断言**恒真**，名为「never yields pleat_spacing」却永不红（空断言）。
+    assert "pleatSpacing" not in d
 
 
 def test_craft_spec_never_emits_retired_pleat_spacing_keys():

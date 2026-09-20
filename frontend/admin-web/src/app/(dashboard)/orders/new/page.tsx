@@ -1259,6 +1259,11 @@ export default function NewOrderPage() {
 
     updateLineItem(line.id, {
       selectedProcessing: nextSelected,
+      // 加工项一变 ⇒ **组合键就变** ⇒ 上一组合的人工改价**必须清掉**（issue #4878 独立复核 P1）。
+      // 不清的后果：`buildLineProcessingInfo` 只按「有值」就把 override 写进 processingInfo
+      // ⇒ 商家为「组合 A」输的价会**静默给组合 B 定价**（后端按 manual 采用），
+      // 而 fee_source 翻 manual 后改价输入框消失 ⇒ 商家连"改过价"都看不见（错钱且无感）。
+      processingFeeOverride: null,
       // 手改过定型（勾或取消）⇒ 留痕，改帘体不再覆盖
       ...(pi.name === SHAPED_ITEM_NAME ? { shapedItemTouched: true } : {}),
     })
@@ -2522,7 +2527,7 @@ interface ProductGroup {
   selectedSku: OrderProductSku | null
   /** 售卖形态（issue #4493）：组级 —— 决定这一组下面出什么（布料 = 没有加工） */
   saleForm: SaleForm
-  /** 帘体（issue #4521）：组级 —— 布帘 / 纱帘 / 布帘+纱帘（决定用料来源与落库行数） */
+  /** 帘体（issue #4521；**issue #4874 收窄为两档**：`布帘` / `纱帘`，`布帘+纱帘` 已删除） */
   curtainBody: CurtainBody
   lines: OrderLineItem[]
 }
@@ -2540,7 +2545,7 @@ interface ProductGroupBlockProps {
   onSelectSku: (sku: OrderProductSku) => void
   /** 售卖形态（组级，issue #4493）：布料 / 成品帘 */
   onChangeSaleForm: (form: SaleForm) => void
-  /** 帘体（组级，issue #4521）：布帘 / 纱帘 / 布帘+纱帘 */
+  /** 帘体（组级，issue #4521；#4874 起只有 `布帘` / `纱帘` 两档） */
   onChangeCurtainBody: (body: CurtainBody) => void
   /** 删除整个商品组 */
   onRemoveGroup: () => void
@@ -3640,27 +3645,31 @@ function LineItemBlock({
                       {feeCombinationLabel}
                     </span>
                     <span className="text-neutral-400">单价</span>
-                    {feeIsUnpriced ? (
-                      canOverrideFee ? (
-                        <span className="inline-flex items-center gap-1">
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            data-testid="fee-unit-price-override"
-                            aria-label="改单价（元/米）"
-                            placeholder="元/米"
-                            value={line.processingFeeOverride ?? ''}
-                            onChange={(e) =>
-                              onProcessingFeeOverrideChange(decimalOrNull(e.target.value))
-                            }
-                            className="w-24 h-8 px-2 rounded border border-neutral-300 text-xs focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                          />
-                          <span className="text-neutral-500">元/米</span>
-                        </span>
-                      ) : (
-                        <span className="text-amber-600">未定价</span>
-                      )
+                    {/* 改单价入口的**两条准入**（缺一不可；issue #4878 独立复核 P1 补第二条）：
+                        ① 本行组合**未定价** ∧ 组合键非空（原本的唯一准入）；
+                        ② 本行**已经带着商家输入的 override** —— 改价后预览会返回 `fee_source='manual'`
+                           ⇒ `feeIsUnpriced` 变 false ⇒ 若只按 ① 渲染，输入框**当场消失**：
+                           商家打错一个字就再也改不了（唯一出路是把售卖形态切到布料再切回来，
+                           而那会连带清空尺寸/工艺）。⇒ **override 是商家输的，入口就一直在**。 */}
+                    {(feeIsUnpriced && canOverrideFee) || line.processingFeeOverride != null ? (
+                      <span className="inline-flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          data-testid="fee-unit-price-override"
+                          aria-label="改单价（元/米）"
+                          placeholder="元/米"
+                          value={line.processingFeeOverride ?? ''}
+                          onChange={(e) =>
+                            onProcessingFeeOverrideChange(decimalOrNull(e.target.value))
+                          }
+                          className="w-24 h-8 px-2 rounded border border-neutral-300 text-xs focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                        />
+                        <span className="text-neutral-500">元/米</span>
+                      </span>
+                    ) : feeIsUnpriced ? (
+                      <span className="text-amber-600">未定价</span>
                     ) : (
                       <span
                         data-testid="fee-unit-price"

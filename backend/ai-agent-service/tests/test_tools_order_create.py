@@ -555,6 +555,47 @@ class TestOrderCreatePayload:
         assert pi["curtainType"] == "布帘"      # 同一行的其它键照旧原样透传
 
     @patch("app.tools.order_create.get_admin_api_client")
+    async def test_agent_cannot_write_manual_fee_override(self, mock_get_client, tool, agent_ctx):
+        """**agent 不得写行级人工改价**（issue #4878 独立复核 P1 补的闸）。
+
+        为什么必须有这道闸：`processing_info` 是**整体透传**的 ⇒ 模型幻觉出一个正数
+        `processingFeeOverride` 会被 admin-api 的 `ProcessingFeeCalculator` 采用
+        （`fee_source='manual'`），并在建单**同事务**里经 `upsertFromOrderOverride`
+        写进**该租户共享的加工费组合价目**（那条路径不跑 `createCombination` 的护栏）
+        ⇒ 一次幻觉 = 给全店留下一个假价目。人工改价是商家在下单页的专属动作。
+
+        红证：把 `processingFeeOverride` 从 `_AGENT_FORBIDDEN_CRAFT_SPEC_KEYS` 拿掉 ⇒ 红。
+        """
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "o1"}})
+        _with_library(mock_client, 50.0, name="窗帘", pid="pid-1")
+        mock_get_client.return_value = mock_client
+
+        items = [{
+            "product_name": "窗帘",
+            "quantity": 3,
+            "unit_price": 50,
+            "subtotal": 150,
+            "product_id": "pid-1",
+            "processing_info": {
+                "curtainType": "布帘",
+                "processingMeters": 13.3,
+                "processingFeeOverride": 99.9,   # ← 幻觉改价：必须被丢弃
+            },
+        }]
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000", items=items,
+        )
+
+        assert result.success is True
+        pi = mock_client.post.call_args.kwargs["json_data"]["items"][0]["processingInfo"]
+        assert "processingFeeOverride" not in pi, (
+            "agent 写面未挡人工改价键 ⇒ 幻觉价会被后端采用并回写进租户共享价目配置"
+        )
+        assert pi["processingMeters"] == 13.3   # 同一行的其它键照旧原样透传
+
+    @patch("app.tools.order_create.get_admin_api_client")
     async def test_canonical_keys_win_over_checklist_aliases(self, mock_get_client, tool, agent_ctx):
         """同一事实两种写法同时出现 ⇒ **canonical 键优先**（清单别名不得盖掉显式值）。"""
         mock_client = AsyncMock()
