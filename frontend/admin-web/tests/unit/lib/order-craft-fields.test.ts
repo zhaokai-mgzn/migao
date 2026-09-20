@@ -319,6 +319,54 @@ describe('樘窗绑组（#4395）：同一樘窗的多条部位行 ⇒ 同一个
     })
   })
 
+  // ── ⭐ issue #4693：口径改判「一樘窗 = 一套」（作废 #4373「1 个窗帘商品 = 1 套」）──
+  //
+  // 现行口径（用户 2026-09-20 逐字裁定「**一樘窗 = 一套**」，设计文档
+  // `docs/design/position-instance-routing-model.md` §2.1.1）：**一套 = 一樘窗 = 一个
+  // `craftLineId` 组** —— 一个窗户的**全部部位**（布帘 + 纱帘 + 帘头）**合计一套**。
+  // 旧口径（#4373）把「套」钉在**明细行**上 ⇒ 同一樘窗的 3 条部位行会被算成 **3 套**。
+  it('#4693 一樘窗含全部部位（布帘 + 纱帘 + 帘头）= **1 套**（同一 craftLineId 组；旧口径 = 3 套）', () => {
+    const lines = [
+      { id: 'line-cloth', windowLabel: '客厅主窗', curtainType: '布帘' },
+      { id: 'line-sheer', windowLabel: '客厅主窗', curtainType: '纱帘' },
+      { id: 'line-valance', windowLabel: '客厅主窗', curtainType: '帘头' },
+    ]
+    // 前置自断言（**不是**被测行为）：该夹具确实是**三条明细行** ——
+    // 旧口径（套 ≡ 明细行）下这个数就是「套数」= 3，红证读数由此可复核。
+    expect(lines).toHaveLength(3)
+
+    const map = resolveWindowCraftLineIds(lines)
+    // 三行都绑到**同一个** craftLineId（代表行 = 主布行）
+    expect(map).toEqual({
+      'line-cloth': 'line-cloth',
+      'line-sheer': 'line-cloth',
+      'line-valance': 'line-cloth',
+    })
+    // ⭐ 套数 = 樘窗组数（**去重后的 craftLineId 取值个数**），不是明细行数
+    expect(new Set(Object.values(map)).size).toBe(1)
+  })
+
+  it('#4693 两樘窗（各含布 + 纱 + 帘头）= **2 套**（套数 = 窗数，不随部位数增长）', () => {
+    const map = resolveWindowCraftLineIds([
+      { id: 'a-cloth', windowLabel: '客厅主窗', curtainType: '布帘' },
+      { id: 'a-sheer', windowLabel: '客厅主窗', curtainType: '纱帘' },
+      { id: 'a-valance', windowLabel: '客厅主窗', curtainType: '帘头' },
+      { id: 'b-cloth', windowLabel: '次卧窗', curtainType: '布帘' },
+      { id: 'b-sheer', windowLabel: '次卧窗', curtainType: '纱帘' },
+      { id: 'b-valance', windowLabel: '次卧窗', curtainType: '帘头' },
+    ])
+    expect(Object.keys(map)).toHaveLength(6) // 前置自断言：6 条明细行（旧口径 = 6 套）
+    expect(new Set(Object.values(map)).size).toBe(2) // 新口径：2 樘窗 = 2 套
+  })
+
+  it('#4693 一樘窗只含布帘（单行）= **1 套**（边界：单部位窗不被多算）', () => {
+    // 单行樘窗不写 craftLineId（`resolveWindowCraftLineIds` 的口径 2）⇒ 消费端回落本行 itemId
+    // ⇒ 自成一组 = 1 套。本断言钉的是**套数**，不是「写不写该键」。
+    expect(resolveWindowCraftLineIds([
+      { id: 'line-cloth', windowLabel: '客厅主窗', curtainType: '布帘' },
+    ])).toEqual({})
+  })
+
   it('未填樘窗 ⇒ 一个键都不写（**存量语义不变**：缺省回落本行 itemId ⇒ 各自成组）', () => {
     expect(
       resolveWindowCraftLineIds([
