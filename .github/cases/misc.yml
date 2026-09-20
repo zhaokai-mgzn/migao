@@ -471,3 +471,35 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+
+  - id: MC-016
+    legacy_id: ""
+    title: "工人端 H5 静态落位 app.migaozn.com/w/（CI 自动发布 + 页面身份断言 + 静态根禁删）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - deploy
+      - worker-h5
+      - hosting
+    truths_ref: []
+    # ⚠️ 真值暂缺：部署接线（非 LLM/业务真值），由 tests/unit_ci_workflows/test_worker_h5_hosting.py 验证。
+    user_inputs:
+      - "frontend/worker-h5/ 变更合并到 main 后，CI 把 index.html + src/** 逐字发布到 app.migaozn.com 静态根下的 w/，并在发布后断言线上返回的是工人端 H5"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "发布目标限定在 <静态根>/w 子树；静态根（同时承载线上 C 端 H5）不得被任何 --delete/清空/rm -rf 触碰：远端输出自证 PARENT_INDEX_BEFORE_SHA256 == PARENT_INDEX_AFTER_SHA256，且沙箱行为测试断言父目录 index.html 逐字节不变"
+      - "发布后 GET https://app.migaozn.com/w/ 的 body 哈希 == 仓库 frontend/worker-h5/index.html（同样断言 /w/index.html 与 /w/src/app.mjs），body 含 src/app.mjs 且不含 TARO_ / 小布智能助手 —— 修复前 /w/ 已是 200 的 C 端页面，故 200 本身不是判据"
+      - "越界子目录（.. / . / 空 / /etc / a/b）必须拒绝且静态根零改动；连跑两次结果一致（幂等），w/ 子树内的陈旧文件被收敛"
+    skip_reason: "[backend-contract] 部署 workflow / 发布脚本由 pytest 单测 + 沙箱行为测试验证（tests/unit_ci_workflows/test_worker_h5_hosting.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-20 新增（issue #4837）：worker-h5 落位 app.migaozn.com/w/ —— CI 发布 + 身份断言 + 静态根禁删守卫（含注入式红证）"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_worker_h5_hosting.py"
+      ci:
+        - worker-h5-publish.yml
+        - worker-h5-tests.yml
+      verifies: []

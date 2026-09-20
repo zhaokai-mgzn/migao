@@ -3140,6 +3140,24 @@ _CASE_MC_015 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-016 [NORMAL] 工人端 H5 静态落位 app.migaozn.com/w/（CI 自动发布 + 页面身份断言 + 静态根禁删）（源: cases/misc.yml）──
+_CASE_MC_016 = EvalCase(
+    id='MC-016',
+    legacy_id='',
+    title='工人端 H5 静态落位 app.migaozn.com/w/（CI 自动发布 + 页面身份断言 + 静态根禁删）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['frontend/worker-h5/ 变更合并到 main 后，CI 把 index.html + src/** 逐字发布到 app.migaozn.com 静态根下的 w/，并在发布后断言线上返回的是工人端 H5'],
+    expectations=['direct_reply'],
+    data_checks=['发布目标限定在 <静态根>/w 子树；静态根（同时承载线上 C 端 H5）不得被任何 --delete/清空/rm -rf 触碰：远端输出自证 PARENT_INDEX_BEFORE_SHA256 == PARENT_INDEX_AFTER_SHA256，且沙箱行为测试断言父目录 index.html 逐字节不变', '发布后 GET https://app.migaozn.com/w/ 的 body 哈希 == 仓库 frontend/worker-h5/index.html（同样断言 /w/index.html 与 /w/src/app.mjs），body 含 src/app.mjs 且不含 TARO_ / 小布智能助手 —— 修复前 /w/ 已是 200 的 C 端页面，故 200 本身不是判据', '越界子目录（.. / . / 空 / /etc / a/b）必须拒绝且静态根零改动；连跑两次结果一致（幂等），w/ 子树内的陈旧文件被收敛'],
+    skip_reason='[backend-contract] 部署 workflow / 发布脚本由 pytest 单测 + 沙箱行为测试验证（tests/unit_ci_workflows/test_worker_h5_hosting.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'worker-h5', 'hosting'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -3228,6 +3246,7 @@ _CASE_OB_005 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端页面用例：前置 = `corporate-home` 页面源码与其单测同时存在、且被 vitest 正常收集（frontend/admin-web/tests/unit/pages/corporate-home.test.tsx）；前置由测试自身持有、不依赖共享夹具 ⇒ 前置不成立时（页面文件缺失/改名/选择器被摘）该单测直接红，不会表现成「agent 不干活」；agent-eval 栈不跑它',
 )
 
 # ── ON-001 [NORMAL] 本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象）（源: cases/ontology.yml）──
@@ -7122,6 +7141,7 @@ ALL_CASES = (
     _CASE_MC_013,
     _CASE_MC_014,
     _CASE_MC_015,
+    _CASE_MC_016,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
