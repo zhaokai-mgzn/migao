@@ -1509,6 +1509,15 @@ export interface Order {
   items?: OrderItem[]          // 商品明细
   processingItems?: OrderProcessingItem[]  // 加工项列表
   logistics?: LogisticsInfo    // 物流信息
+  /**
+   * **常用物流/快递**（issue #4874；后端 #4872 在 `orders` 上新增的两列，
+   * `OrderDetailResponse` 已透出）：`express` 快递 / `logistics` 物流专线。
+   * 建单时由下单页把客户档案带出的值随单落库 ⇒ 发货页据此**优先**带出（缺省才回落到
+   * 按收货手机号反查客户档案，见 `orders/[id]/ship/ShipOrder.tsx`）。
+   */
+  logisticsType?: string | null
+  /** **常用物流公司**（issue #4874；同上）：自由文本 */
+  logisticsCompany?: string | null
   statusHistory?: StatusHistory[]
   remarks?: OrderRemark[]      // 备注列表
   closeReason?: string         // 关闭原因
@@ -1539,6 +1548,13 @@ export interface OrderFormData {
   customerAddress?: string
   actualAmount?: number           // 实收款（用户输入的实际收款金额）
   discountAmount?: number         // 优惠金额（后端校验 应收-优惠≈实收，必须随单携带）
+  /**
+   * **常用物流/快递**（issue #4874 顶层新列，后端 #4872）：`express` 快递 / `logistics` 物流专线。
+   * 缺值不传 —— 「未指定」与「快递」是两个真值，写死默认值就是编造（#4419 同族口径）。
+   */
+  logisticsType?: string
+  /** **常用物流公司**（issue #4874 顶层新列）：自由文本（词表只是候选，允许自定义） */
+  logisticsCompany?: string
   remark?: string
   items: OrderItemFormData[]
 }
