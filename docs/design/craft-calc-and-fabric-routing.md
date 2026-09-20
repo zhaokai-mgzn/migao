@@ -173,6 +173,52 @@
 ⚠️ **后端今天完全不认 `saleForm`**（`grep -rn "saleForm" backend/` 零命中）⇒ 读 `saleForm` 是**新增行为**；
 **缺键的存量单不得改变既有行为**（回归不变量）。
 
+### 4.5 分幅公式（`panels`）**三条口径不一致**（issue #4760 核清，**未修**）
+
+**本节的公式串是实测读源的结论**（`backend/ai-agent-service/app/tools/curtain_calc.py`），
+不是提案；**代码改了本节必须同改**（机械判据 = `tests/unit_ci_workflows/test_panels_formula_split_audit.py`，
+它按本节这张表逐行复算，并断言「一致 / 不一致」列与实测相符）。
+
+**通路与调用方**（`panels` = 定宽买高时的分幅数，单位「幅」）：
+
+| 通路 | 入口 | 谁在调 | `panels` 口径（逐字读源） |
+|---|---|---|---|
+| **A 米宝下单通路** | `calculate_fabric_meters()` 定宽分支（`curtain_calc.py`） | `build_quote` 的**兜底分支**（`formula='pleat'` 且 `mounting != s_hook` 等未命中前两支时）⇒ `CurtainCalcTool` ⇒ 米宝/小布 Agent | `ceil((宽 + side_margin) × 褶倍 ÷ 门幅)` —— **含** `side_margin` |
+| **B1 试算通路（倍数法）** | `build_quote()` 的 `formula='fullness'` 分支 | 商家手工下单页（`orders/new` → `POST /api/admin/orders/craft-calc` → `internal.py::craft_calc`）；`craft='打孔'` 由 `resolve_craft_rule` 派生成此式 | `ceil(ceil_to_step(宽 × 褶倍, 0.1) ÷ 门幅)` —— **不含** `side_margin`，且**多一道 `ceil_to_step`** |
+| **B2 试算通路（折数法）** | `build_quote()` 的 `pleat_mode` 分支 | 同上（`craft='韩褶'` / 默认档） | `ceil(折数法总用料 ÷ 门幅)` —— **不含** `side_margin`（用料本身含余量 `margin_single/multi`，但那是**开数余量**，不是 `side_margin`） |
+
+**对照表**（门幅 `G = 2.8`、窗高 `H = 2.6` ⇒ `H + HEM_MARGIN(0.3) = 2.9 > 2.8`，
+两通路**都**落在定宽买高分支；`W` = 成品宽、`N` = 褶倍）：
+
+| 宽 `W` | 褶倍 `N` | A 米宝 `panels` | B1 试算 `panels` | 一致？ |
+|---|---|---|---|---|
+| 1.1 | 2.0 | 2 | 1 | ❌ 不一致 |
+| 1.2 | 2.0 | 2 | 1 | ❌ 不一致 |
+| 1.25 | 2.0 | 2 | 1 | ❌ 不一致 |
+| 1.3 | 2.0 | 2 | 1 | ❌ 不一致 |
+| 1.4 | 2.0 | 2 | 1 | ❌ 不一致 |
+| 1.45 | 1.8 | 2 | 1 | ❌ 不一致 |
+| 1.5 | 1.8 | 2 | 1 | ❌ 不一致 |
+| 1.5 | 2.0 | 2 | 2 | ✅ 一致 |
+| 2.0 | 1.5 | 2 | 2 | ✅ 一致 |
+| 3.0 | 2.0 | 3 | 3 | ✅ 一致 |
+| 4.0 | 2.0 | 4 | 3 | ❌ 不一致 |
+
+- 差 1 幅 ⇒ 米数差**整整一幅长**（`H + HEM_MARGIN` = 2.9 m/幅）⇒ 面料费 + 加工费**同幅变化**；
+- ⚠️ **与 #4746 无关**：本差异在 `curtain_calc.py` 内部（同一次调用、同一 `fabric_width` 入参）
+  ⇒ 门幅接线统一后**仍在**（#4746 已统一的是**前端**侧，未动引擎）；
+- ⚠️ **与「agent 默认值 vs 租户配置」偏差（§7 第 3 条）不同源**：本条是**同一个引擎、同一份配置**下的
+  两个函数口径不同，不靠「配置未注入 agent」解释。
+
+**口径真值源（谁对）**：`docs/curtain-fabric-quote-rules.md` §3 逐字写
+`幅数 P = ceil((W + 0.3) × N / G)`（0.3 = 左右各 15cm **覆盖余量**）⇒ **真值源站 A（含 `side_margin`）**；
+前端判据（`frontend/admin-web/src/lib/craft-auto-features.ts` 的 `(宽 + SIDE_MARGIN) × 褶倍 > 门幅`）
+亦与 A 同式。**B1/B2 漏 `side_margin` 是引擎内部不一致**，不是「粗估 vs 精算」的有意分工
+（两通路都产出进报价的**同一个** `fabric_meters`，无任何文档把它标为粗估）。
+
+🔴 **修法落在 `backend/ai-agent-service/**` ⇒ 本会话不动（用户裁定 #4652）** ⇒ 本单**只核清 + 登记**，
+**未改一个数值**；修法需**业务裁定**（改 B1/B2 会改商家页试算出来的钱）⇒ 见 issue #4760 与关联 PR body 的「待裁定」段。
+
 ---
 
 ## 5. 分包（文件所有权，零共享写路径）
@@ -247,3 +293,7 @@
    后者不在 `production_operations_source_check` 的枚举里）。
 8. **本包未做（照实登记）**：`docs/sql/schema.sql` 与 `routing.py` / V79 / Java 播种（共四源）已逐行收敛；
    **真实 LLM 评测未跑**（用户裁定「默认不自动验证」）⇒ agent 侧行为面未验（本包只动确定性层）。
+9. **分幅公式三条口径不一致（issue #4760，**未修**）**：`calculate_fabric_meters`（含 `side_margin`）vs
+   `build_quote` 的 `fullness` / `pleat` 两支（不含）⇒ 同一张单两个 `panels`。核清读数、真值源判定与
+   修法边界见 **§4.5**；修法需改 `backend/ai-agent-service/**` ⇒ 依赖 #4652（用户裁定本会话不动）
+   **且需业务裁定**（改试算口径 = 改商家看到的钱）⇒ 本单只登记，未改任何数值。
