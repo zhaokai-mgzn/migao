@@ -232,8 +232,8 @@ const layersOf = (cells: any[]) => {
   it('工艺路线区渲染**新模型**的真实数据（总名 + 默认徽标；默认徽标不得写死）', async () => {
     render(<ProcessConfigPage />)
     // issue #4482：路线内容在「工艺路线」tab 上（默认落在「工艺项」）
-    await waitFor(() => expect(screen.getByTestId('process-config-tab-routes')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-routes'))
+    await waitFor(() => expect(screen.getByTestId('process-config-tab-process')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-process'))
     await waitFor(() => expect(screen.getByTestId('routing-11')).toBeInTheDocument())
 
     // ⚠️ issue #4433（P2b #4459 之后）：路线 provenance 已不在契约里（`templateView` 无 source）

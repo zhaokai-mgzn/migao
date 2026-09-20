@@ -626,8 +626,8 @@ const beGuardByName = () =>
 /** 渲染并切到「工艺路线」tab（路线内容在第二个 tab，默认落在「工艺项」） */
 const renderOnRoutes = async () => {
   render(<ProcessConfigPage />)
-  await waitFor(() => expect(screen.getByTestId('process-config-tab-routes')).toBeInTheDocument())
-  await userEvent.click(screen.getByTestId('process-config-tab-routes'))
+  await waitFor(() => expect(screen.getByTestId('process-config-tab-process')).toBeInTheDocument())
+  await userEvent.click(screen.getByTestId('process-config-tab-process'))
 }
 
 /** 渲染并停在「工艺项」tab（默认 tab）；等到这一屏**唯一**的表就位 */
@@ -736,7 +736,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix-error')).toHaveTextContent('工序单价加载失败'))
     // 路线半边照常（切过去仍渲染真实数据）
-    await userEvent.click(screen.getByTestId('process-config-tab-routes'))
+    await userEvent.click(screen.getByTestId('process-config-tab-process'))
     await waitFor(() => expect(screen.getByTestId('routings-total')).toHaveTextContent('2'))
   })
 
@@ -756,8 +756,12 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(within(screen.getByTestId('routing-12')).queryByTestId('routing-default-12')).toBeNull()
 
 
-    // 旧形态退场：不再按 (部位 × 工艺) 渲染
-    expect(document.body.textContent ?? '').not.toContain('×')
+    // 旧形态退场：**路线区**不再按 (部位 × 工艺) 渲染、也不出现「适用帘种」。
+    // ⚠️ 判据收敛到路线区（`routings-list`）：合并成同屏之后，工序表的说明文案里有
+    // 「报工工资 = 数量 × 计件单价」这个乘号 ⇒ 整页 `not.toContain('×')` 已不是本判据的表达。
+    const routesPanel = screen.getByTestId('routings-list')
+    expect(routesPanel.textContent ?? '').not.toContain('×')
+    expect(routesPanel.textContent ?? '').not.toContain('适用帘种')
   })
 
   it('空壳口径：主线为空 ⇒ 「空壳 · 不可用」（正常路线不得被误标）', async () => {
@@ -970,7 +974,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(await screen.findByTestId('operation-condition-text-2')).toHaveTextContent('工艺 = 打孔 时不做')
 
     await userEvent.click(screen.getByTestId('operations-manage-close'))
-    await userEvent.click(screen.getByTestId('delivery-manage-外帘装袋'))
+    await userEvent.click(screen.getByTestId('matrix-manage-外帘装袋'))
     // ③ 特殊选项触发 · 无锚点 ⇒ 「追加到末尾」；取值**逐字**：拼2次（前端不得"纠正"成「拼两次」）
     expect(await screen.findByTestId('operation-condition-text-3')).toHaveTextContent(
       '特殊选项 = 拼2次 时插入（追加到末尾）',
@@ -2462,22 +2466,35 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('routing-draft-empty-13')).toHaveTextContent('从工序库选择')
   })
 
-  it('两个 tab 存在且默认落在「工艺项」；切换后内容互斥（不平铺）', async () => {
+  it('**两个 tab**（工序与路线 / 算料配置）且默认落前者；工序表与路线列表**同屏**（用户裁定合并后的形态）', async () => {
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('process-config-tabs')).toBeInTheDocument())
 
-    const opsTab = screen.getByTestId('process-config-tab-operations')
-    const routesTab = screen.getByTestId('process-config-tab-routes')
-    expect(opsTab).toHaveTextContent('工艺项')
-    expect(routesTab).toHaveTextContent('工艺路线')
-    expect(opsTab).toHaveAttribute('data-state', 'active')
-    expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument()
-    expect(screen.queryByTestId('routings-total')).not.toBeInTheDocument()
+    const tabs = screen.getByTestId('process-config-tabs')
+    expect(within(tabs).getAllByRole('tab')).toHaveLength(2)
+    const processTab = screen.getByTestId('process-config-tab-process')
+    const calcTab = screen.getByTestId('process-config-tab-calc')
+    expect(processTab).toHaveTextContent('工序与路线')
+    expect(calcTab).toHaveTextContent('算料配置')
+    expect(processTab).toHaveAttribute('data-state', 'active')
 
-    await userEvent.click(routesTab)
-    expect(routesTab).toHaveAttribute('data-state', 'active')
-    expect(screen.queryByTestId('operation-price-matrix')).not.toBeInTheDocument()
+    // 合并后的判据：**同一屏里两张都在**（改前是「切换互斥」）
+    expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument()
     expect(screen.getByTestId('routings-total')).toBeInTheDocument()
+    // 旧的独立区块与旧 tab 一律不存在
+    expect(screen.queryByTestId('delivery-section')).toBeNull()
+    expect(screen.queryByTestId('process-config-tab-operations')).toBeNull()
+    expect(screen.queryByTestId('process-config-tab-routes')).toBeNull()
+    // 工艺路线**就在原【打包发货】的位置**：文档序在工序表**之后**
+    const rel = screen.getByTestId('craft-operations-panel').compareDocumentPosition(
+      screen.getByTestId('routings-list'),
+    )
+    expect(rel & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // 切到「算料配置」⇒ 两者都不在（真正互斥的是这一对）
+    await userEvent.click(calcTab)
+    expect(screen.queryByTestId('operation-price-matrix')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('routings-total')).not.toBeInTheDocument()
   })
 
   it('切 tab **不丢状态**：在「工艺路线」编辑主线 → 切走 → 切回，draft 仍在', async () => {
@@ -2489,8 +2506,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await userEvent.click(screen.getByTestId('routing-add-11'))
     expect(screen.getByTestId('routing-draft-step-11-4')).toHaveTextContent('车被')
 
-    await userEvent.click(screen.getByTestId('process-config-tab-operations'))
-    await userEvent.click(screen.getByTestId('process-config-tab-routes'))
+    await userEvent.click(screen.getByTestId('process-config-tab-process'))
+    await userEvent.click(screen.getByTestId('process-config-tab-process'))
 
     // 注入：把 draft 改成随 tab 重置 ⇒ 红
     expect(screen.getByTestId('routing-draft-step-11-4')).toHaveTextContent('车被')
@@ -2503,7 +2520,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
     await waitFor(() => expect(screen.getByTestId('routings-error')).toHaveTextContent('工艺路线加载失败'))
     await userEvent.click(screen.getByTestId('routings-retry'))
-    await userEvent.click(await screen.findByTestId('process-config-tab-routes'))
+    await userEvent.click(await screen.findByTestId('process-config-tab-process'))
     await waitFor(() => expect(screen.getByTestId('routings-total')).toHaveTextContent('2'))
   })
 
@@ -2601,7 +2618,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(await screen.findByTestId('operation-condition-text-2')).toHaveTextContent('工艺 = 打孔 时不做')
 
     await userEvent.click(screen.getByTestId('operations-manage-close'))
-    await userEvent.click(screen.getByTestId('delivery-manage-外帘装袋'))
+    await userEvent.click(screen.getByTestId('matrix-manage-外帘装袋'))
     // 规则 3：option 拼2次 → insert 外帘装袋，无锚点 ⇒ 「追加到末尾」（**不得**渲染成「在「末尾」之后」）
     const text = screen.getByTestId('operation-condition-text-3').textContent ?? ''
     expect(text).toContain('特殊选项 = 拼2次 时插入')
@@ -2824,7 +2841,7 @@ describe('算料配置 tab（issue #4528）', () => {
     await userEvent.clear(input)
     await userEvent.type(input, '0.45')
 
-    await userEvent.click(screen.getByTestId('process-config-tab-routes'))
+    await userEvent.click(screen.getByTestId('process-config-tab-process'))
     await waitFor(() => expect(screen.getByTestId('routings-list')).toBeInTheDocument())
     await userEvent.click(screen.getByTestId('process-config-tab-calc'))
 
@@ -3191,7 +3208,7 @@ describe('「新增」对话框：工序 / 特殊选项 类型二选一（issue 
  * **`裁剪 × 布料` 保命格**在场（V88 逐字保留的那一格）。
  *
  * 红证（改前必红，逐条实测见 PR 描述）：
- * ① 交付环节**按部位 4 格**渲染（改后 = **一列价**）⇒ `delivery-row-*` / `delivery-price-*` 不存在；
+ * ① 交付环节**按部位 4 格**渲染（改后 = **一列价**）⇒ `matrix-row-*` / `operation-price-*` 不存在；
  * ② 工序层**没有**车间分组、不可折叠 ⇒ `matrix-workshop-*` 不存在；
  * ③ `布料` 当第 4 个部位列出来 ⇒ 列头含 `布料`、工序层 4 列；
  * ④ **布料单的 `裁剪` / `打包` 没有可见定价位置** ⇒ `fabric-sheet-*` 不存在（#4677 评论逐字的硬要求）；
@@ -3261,24 +3278,21 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
 
   // ────────────────────── 两层布局（B1 / B2 / B3 / B4） ──────────────────────
 
-  it('B1 两层分区：`scope=set` 的成员落【打包发货】，其余落【工序】—— 判据是**既有 `scope`**，不是「有没有矩阵格」', async () => {
+  it('B1 一张表装**全部**工序（用户裁定 2026-09-21：删【打包发货】独立区块 + 两个 tab 合并）', async () => {
     await renderOperations()
 
     // 【工序】：`scope='position'` 的四道（含**布料单**的 `裁剪`）
     const workshop = screen.getByTestId('operation-price-matrix')
-    for (const op of ['精裁', '三边', '熨烫', '质检', '裁剪']) {
+    for (const op of ['精裁', '三边', '熨烫', '质检', '裁剪', '打包', '外帘打卷', '外帘装袋', '外帘发货']) {
       expect(within(workshop).getByTestId(`matrix-row-${op}`)).toBeInTheDocument()
     }
-    // 【打包发货】：`scope='set'` 的四道 —— 判据换成「有没有矩阵格」时，`外帘打卷`
-    // （4 格全 `applicable=false`）会**整行消失**（#4674 形态）⇒ 它必须在场
-    const delivery = screen.getByTestId('delivery-section')
+    // 用户裁定 2026-09-21：原【打包发货】独立区块**整块删除**、两个 tab 合并为一屏 ⇒
+    // 判据换成「**所有工序都在这一张表里**」，且不再存在任何 `delivery-*` 节点（同一概念不再有第二个载体）
     for (const op of ['打包', '外帘打卷', '外帘装袋', '外帘发货']) {
-      expect(within(delivery).getByTestId(`delivery-row-${op}`)).toBeInTheDocument()
+      expect(within(workshop).getByTestId(`operation-price-${op}`)).toBeInTheDocument()
     }
-    // 两区**互斥**：交付环节不得再在工序层渲染一遍（改一次价要改两处）
-    for (const op of ['打包', '外帘打卷', '外帘装袋', '外帘发货']) {
-      expect(within(workshop).queryByTestId(`matrix-row-${op}`)).toBeNull()
-    }
+    expect(screen.queryByTestId('delivery-section')).toBeNull()
+    expect(screen.queryAllByTestId(/^delivery-/)).toHaveLength(0)
   })
 
   it('B2 「工序」区**按车间分组可折叠**（行业术语：裁剪（裁床）/ 车位（缝制）/ 后整（烫工及后整）/ 质检）；界面**不出现「槽位」**', async () => {
@@ -3310,27 +3324,27 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(screen.getByTestId('craft-operations-panel')).not.toHaveTextContent('槽位')
   })
 
-  it('B3 「打包发货」区 = **一列价** + 单位（元/套）+ 必完（红证：改前交付工序按 4 个部位渲染成 4 格）', async () => {
+  it('B3 这张表 = **一道工序一个价**（列头恰三列 + 行尾单位/必完逐字取后端）', async () => {
     await renderOperations()
-    const delivery = screen.getByTestId('delivery-section')
+    const delivery = screen.getByTestId('operation-price-matrix')
 
     // 列头**恰三列**（工序 / 单价 / 单位·必完·操作）—— 不是「工序 + 4 个部位」
     expect(within(delivery).getAllByRole('columnheader').map((c) => c.textContent)).toEqual([
       '工序',
       '单价',
-      '单位 · 必完 · 操作',
+      '分组 · 单位 · 必完 · 操作',
     ])
-    // 一行一价（不是每部位一格）
-    expect(within(delivery).getAllByTestId(/^delivery-row-/)).toHaveLength(4)
-    expect(within(delivery).getAllByTestId(/^delivery-price-/)).toHaveLength(4)
+    // 一道工序**恰好一个**价节点（改前是「一个部位一个格」）
+    expect(within(delivery).getAllByTestId(/^matrix-row-/).length)
+      .toBe(within(delivery).getAllByTestId(/^operation-price-[^-]+$/).length)
     expect(within(delivery).queryAllByTestId(/^matrix-cell-/)).toHaveLength(0)
 
-    expect(within(delivery).getByTestId('delivery-price-打包')).toHaveTextContent('¥1.50')
-    expect(within(delivery).getByTestId('delivery-price-打包')).toHaveTextContent('/套')
-    expect(within(delivery).getByTestId('delivery-must-finish-打包')).toHaveTextContent('必完')
-    // 单位元/套（行尾元数据逐字取后端）
-    expect(within(delivery).getByTestId('delivery-row-打包')).toHaveTextContent('后整（烫工及后整）')
-    expect(within(delivery).getByTestId('delivery-row-打包')).toHaveTextContent('套')
+    expect(within(delivery).getByTestId('operation-price-打包')).toHaveTextContent('¥1.50')
+    expect(within(delivery).getByTestId('matrix-must-finish-打包')).toHaveTextContent('必完')
+    // 单位（套）在**行尾元数据**列（改前那一列独立区块把 `/套` 拼进价格里；合并后归位到行尾）
+    expect(within(delivery).getByTestId('matrix-row-打包')).toHaveTextContent('套')
+    expect(within(delivery).getByTestId('matrix-row-打包')).toHaveTextContent('后道')
+    expect(within(delivery).getByTestId('matrix-row-打包')).toHaveTextContent('套')
   })
 
 
@@ -3356,151 +3370,6 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(screen.queryByTestId(/^drawer-applicable-/)).toBeNull()
   })
 
-  it('反向护栏 B7-①：一列价**未定价 ≠ ¥0.00**（改前回落工序库行价会把「未定价」变成真 0 元 ⇒ 工人白干）', async () => {
-    await renderOperations()
-    const cell = screen.getByTestId('delivery-price-外帘装袋')
-
-    expect(cell).toHaveAttribute('data-price-state', 'unpriced')
-    expect(cell).toHaveTextContent('未定价')
-    // **不得**渲染成 ¥0.00（与真 0 元在文本上也可区分）
-    expect(cell).not.toHaveTextContent('¥0.00')
-    expect(cell).not.toHaveTextContent('¥')
-  })
-
-
-  it('反向护栏 B7-③：一格「做」都没有 ⇒ 如实报出（`no_applicable_position`），不假装成 0 元或未定价', async () => {
-    await renderOperations()
-    const cell = screen.getByTestId('delivery-price-外帘打卷')
-
-    expect(cell).toHaveAttribute('data-price-state', 'no_applicable_position')
-    expect(cell).toHaveTextContent('未设置（没有可用的价）')
-    expect(cell).not.toHaveTextContent('未定价')
-    expect(cell).not.toHaveTextContent('¥')
-  })
-
-  // ────────────────────── #4674 从根上避免（四条约束） ──────────────────────
-
-  it('B6-① 交付环节的行**不依赖矩阵格**：某道交付工序一格都没有 ⇒ 仍有行 + `管理▸`（**吃真后端形状**，issue #4729）', async () => {
-    // 🔴 **不手造服务端行**（改前那条靠手造 `delivery:[{...}]` 才绿 —— 独立验收 #4677 的 P1-2）：
-    // 只把矩阵里的 `外帘装袋` 格**全部撤掉**，交付段由**工序库行**（`LAYER_DELIVERY_OPS`）给出
-    // ⇒ 真后端形态（`scope='set'` 的工序库行各一行、零格 ⇒ `no_applicable_position`）逐字复现。
-    // 红证：改前 `deliveryRows` 只认矩阵格 / 服务端手造行 ⇒ 这一行不存在 ⇒ `getByTestId` 必红。
-    const withoutCells = LAYER_CELLS.filter((c) => c.operation !== '外帘装袋')
-    mockGetOperationPositions.setDefault(withoutCells)
-    await renderOperations()
-
-    const delivery = screen.getByTestId('delivery-section')
-    expect(within(delivery).getByTestId('delivery-row-外帘装袋')).toBeInTheDocument()
-    expect(within(delivery).getByTestId('delivery-manage-外帘装袋')).toBeInTheDocument()
-    expect(within(delivery).getByTestId('delivery-price-外帘装袋')).toHaveAttribute(
-      'data-price-state',
-      'no_applicable_position',
-    )
-    // 单位 / 必完回落**工序库行**（零格行不是一排 `—`）
-    expect(within(delivery).getByTestId('delivery-row-外帘装袋')).toHaveTextContent('套')
-    expect(within(delivery).getByTestId('delivery-must-finish-外帘装袋')).toHaveTextContent('必完')
-    // 其余三道交付工序**照旧**（撤掉一格不得让别行消失）
-    for (const op of ['打包', '外帘打卷', '外帘发货']) {
-      expect(within(delivery).getByTestId(`delivery-row-${op}`)).toBeInTheDocument()
-    }
-  })
-
-  it('B6-② `管理▸` **在行上**（与矩阵格无关）；抽屉层「停用 / 删除」在 `manageVariants` 循环体**外** ⇒ 空态也有出路', async () => {
-    const withoutCells = LAYER_CELLS.filter((c) => c.operation !== '外帘装袋')
-    mockGetOperationPositions.setDefault(withoutCells)
-    await renderOperations()
-
-    // 行上的入口（不是「格上的入口」）
-    await userEvent.click(screen.getByTestId('delivery-manage-外帘装袋'))
-    await waitFor(() => expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument())
-
-    // 抽屉空态（`manageVariants.length === 0`）⇒ 停用 / 删除**照样在**（**红证**：改前只有「关闭」）
-    const disableBtn = screen.getByTestId('operations-manage-disable')
-    const deleteBtn = screen.getByTestId('operations-manage-delete')
-    expect(disableBtn).toBeInTheDocument()
-    expect(deleteBtn).toBeInTheDocument()
-    expect(screen.getByTestId('operations-manage-close')).toBeInTheDocument()
-    // 空态**给出路**（不是一句死路文案）
-    expect(screen.getByTestId('operations-manage-drawer')).not.toHaveTextContent('请核对各部位的适用性配置')
-
-    // ⚠️ 「**在**」≠「**可点**」（issue #4721 P2-2）：两处按钮都带
-    // `disabled={variantBusy || !manageOpEntry}` ⇒ 工序库读面查不到该逻辑名时它们**恒禁用**，
-    // 而改前只断言 `toBeInTheDocument()` ⇒ 按钮变成装饰也全绿。判据 = **disabled 为假 + 点击真的发请求**。
-    // 红证：把 `disabled` 改回 `true`（或让 `manageOpEntry` 为 null）⇒ 下面必红（实测见 PR 描述）。
-    expect(disableBtn).not.toBeDisabled()
-    expect(deleteBtn).not.toBeDisabled()
-    await userEvent.click(disableBtn)
-    await waitFor(() =>
-      expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-04', { status: 'inactive' }),
-    )
-    // 删除：二次确认弹框里点确认 ⇒ **真的**走删除（本行一格都没挂 ⇒ #4692 判据下的**普通软删**路径，
-    // 不带 `detachPositions`；「有格 ⇒ detach-and-delete」那条路径由既有 #4692 用例覆盖，不放宽）
-    await userEvent.click(deleteBtn)
-    await waitFor(() => expect(screen.getByTestId('operations-manage-delete-modal')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('operations-manage-delete-confirm'))
-    await waitFor(() => expect(mockDeleteOperation).toHaveBeenCalledWith('op-v54-04'))
-  })
-
-  // ────────────────────── P2-8 / P2-10（独立验收 #4677 的缺口，issue #4729 收口） ──────────────────────
-
-  it('🔴 P2-8 可证伪判据：`price_state` / `price` **逐字取自服务端、前端不重算**'
-    + '（服务端与格**故意不一致** ⇒ 必须显示服务端的值）', async () => {
-    // 构造「服务端与格不一致」：服务端说 `priced` + `¥9.99`，矩阵格说 `unpriced`。
-    // ⚠️ 这条**可证伪**：若前端改成「从格重算价态」（注入），它算出来是 `unpriced` ⇒ 本条必红。
-    // 改前的交付测试用 `buildLayers(夹具)`（与页面**同源**）⇒ 构造性相等，注入重算后仍全绿（假绿）。
-    mockGetOperationPositions.setDefault(LAYER_CELLS)
-    mockGetOperationLayers.mockResolvedValue(
-      ok({
-        operations: buildLayers(LAYER_CELLS, LAYER_DELIVERY_OPS).operations,
-        delivery: buildLayers(LAYER_CELLS, LAYER_DELIVERY_OPS).delivery.map((r) =>
-          r.operation === '外帘装袋'
-            ? { ...r, price: 9.99, price_state: 'priced', different_price_count: 0 }
-            : r,
-        ),
-      }),
-    )
-    await renderOperations()
-
-    const cell = screen.getByTestId('delivery-price-外帘装袋')
-    expect(cell).toHaveAttribute('data-price-state', 'priced')
-    expect(cell).toHaveTextContent('¥9.99')
-    // **不得**用格上的价态（`unpriced`）覆盖服务端的聚合值
-    expect(cell).not.toHaveTextContent('未定价')
-  })
-
-  it('🔴 P2-10 读面失败**显式报错**（不许静默降级成「未设置」—— 用假话代替报错）', async () => {
-    // 矩阵读面成功（有价）、两层分区读面**失败** ⇒ 不得把有价的交付工序渲染成
-    // `no_applicable_position`（「未设置（没有部位设为「做」）」）= 假话。
-    mockGetOperationPositions.setDefaultRejected(new Error('500'))
-    mockGetOperationLayers.mockRejectedValue(new Error('500'))
-    render(<ProcessConfigPage />)
-
-    const err = await screen.findByTestId('operation-layers-error')
-    expect(err).toHaveTextContent('加载失败')
-    // **不许**显示「未设置」/「没有部位设为「做」」这类假话（那是「没读到」伪装成「没配」）
-    expect(screen.getByTestId('delivery-section')).not.toHaveTextContent('未设置')
-    expect(screen.queryByTestId('delivery-empty')).toBeNull()
-  })
-
-  it('P2-10 反向护栏：读面**成功**（哪怕交付段为空）⇒ 不报错（**不把「读到了空」误报成「读失败」**）', async () => {
-    mockGetOperationPositions.setDefault(LAYER_CELLS)
-    mockGetOperationLayers.mockResolvedValue(ok({ operations: LAYER_CELLS, delivery: [] }))
-    await renderOperations()
-
-    expect(screen.queryByTestId('operation-layers-error')).toBeNull()
-    // 读面成功 ⇒ 不显示错误面；交付行由「格」兜底重建（**不猜价**：零格 ⇒ `no_applicable_position`）
-    expect(screen.getByTestId('delivery-section')).toBeInTheDocument()
-  })
-
-  it('P2-10 反向护栏：读面失败 ⇒ 交付区报错，而**工序层照常渲染**（不白屏、不影响其余区）', async () => {
-    mockGetOperationPositions.setDefault(LAYER_CELLS)
-    mockGetOperationLayers.mockRejectedValue(new Error('500'))
-    await renderOperations()
-
-    expect(screen.getByTestId('operation-layers-error')).toBeInTheDocument()
-    // 工序层（矩阵读面成功）照旧有行 —— 一个区挂了不拖垮另一个区
-    expect(screen.getByTestId('matrix-row-精裁')).toBeInTheDocument()
-  })
 
   // ────────────────────── 🔴 硬要求：布料单定价入口 ──────────────────────
 
@@ -3527,42 +3396,4 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(screen.queryByTestId('seed-templates')).toBeNull()
   })
 
-  it('§6-② 就绪度②从「**数条数**」改成「**两条基础路线是否齐**」并**点名**（**红证**：改前 `工艺路线 2 条` 就显示「已完成」）', async () => {
-    // 改前：`routeList.length = 1 > 0` 且无空壳 ⇒ **只数条数** ⇒ `data-state="done"`
-    mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS_WITHOUT_FABRIC))
-    await renderOperations()
-
-    const step = screen.getByTestId('readiness-step-routings')
-    // 改前：`工艺路线 2 条` + `data-state="done"`（只数条数 ⇒ 缺布料路线照样「已完成」）
-    expect(step).toHaveAttribute('data-state', 'todo')
-    expect(step).toHaveTextContent('基础路线 1/2 条')
-    expect(step).toHaveTextContent('缺 布料工序路线')
-    // 后果要说清（点名 + 为什么）
-    expect(step).toHaveTextContent('窗帘单与布料单各自的主线')
-  })
-
-  it('§6-② 反向护栏：两条基础路线齐 ⇒ 就绪度② `done`（不误报）', async () => {
-    mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS_WITH_BASE))
-    await renderOperations()
-
-    const step = screen.getByTestId('readiness-step-routings')
-    expect(step).toHaveAttribute('data-state', 'done')
-    expect(step).toHaveTextContent('基础路线 2/2 条')
-    expect(step).not.toHaveTextContent('缺 ')
-  })
-
-  // ────────────────────── 验收协议 v1.11 三问：端点**有调用点 + 入口可达** ──────────────────────
-
-  it('端点接入（验收协议 v1.11）：页面**真的调** `GET /operation-layers`（文件在 main ≠ 被触发）', async () => {
-    await renderOperations()
-    // 红证：改前 `operation-layers` **零前端调用点**（文件在 main、无人触发）⇒ 这条必红
-    expect(mockGetOperationLayers).toHaveBeenCalled()
-  })
-
-  it('端点接入（验收协议 v1.11）：入口可达 —— 打开「工艺项」tab（默认 tab）即触发，无需二次跳转', async () => {
-    render(<ProcessConfigPage />)
-    // 默认就落在「工艺项」tab ⇒ 首屏渲染即触发（不是藏在某个二级入口后面）
-    await waitFor(() => expect(screen.getByTestId('delivery-section')).toBeInTheDocument())
-    expect(mockGetOperationLayers).toHaveBeenCalledTimes(1)
-  })
 })
