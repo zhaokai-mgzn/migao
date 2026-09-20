@@ -65,6 +65,13 @@ POSITION_KEYS = ("id", "operation", "position", "unit_price", "applicable",
 RULE_KEYS = ("id", "trigger_kind", "trigger_value", "position", "action", "operation",
              "after_operation", "priority", "status", "customer_unit_price")
 
+#: 两层分区端点（issue #4676）的 `delivery` 段键集（逐字；9 键）。
+#: `price_state` 是**三态 + 一个退化态**的显式判据：`priced` / `unpriced`（**≠ ¥0.00**）/
+#: `multiple_prices`（+ `different_price_count`）/ `no_applicable_position`。
+#: `applicable_positions` = 参与取值的部位（前端渲染「各部位不同价（N 处）」）。
+DELIVERY_KEYS = ("operation", "scope", "unit", "group", "is_must_finish",
+                 "price", "price_state", "different_price_count", "applicable_positions")
+
 #: 本端点呈现的规则动作 = 路线编排（`insert`/`remove`）。`action='factor'`（V72 从旧
 #: `production_option_factors` 搬来的**计件系数档**）**不在本端点**：它没有 `after_operation` 语义、
 #: 也不属 P3「统一规则区」（#4433 §三 只描述插入/移除）—— 见服务类 javadoc 的口径说明。
@@ -252,6 +259,104 @@ def test_rule_view_keys_are_frozen_contract():
 # ══════════════════════════════════════════════════════════════════════════════════
 # 判据 2：只读新两表（旧规则表已退场，绝不读）
 # ══════════════════════════════════════════════════════════════════════════════════
+
+def _method_body(method: str) -> str:
+    """服务层某方法的**方法体**（含签名行，到方法结束的 `    }`）。"""
+    src = _java_code(SERVICE)
+    m = re.search(r"(private|public)[\s\S]{0,80}?\b" + method + r"\s*\([\s\S]*?\n    \}", src)
+    assert m, f"服务层找不到 {method} —— 两层分区/一列价必须收敛到**一处**实现"
+    return m.group(0)
+
+
+def test_operation_layers_endpoint_declares_manage_permission_and_tenant():
+    """判据 1e：`GET /operation-layers` 存在、权限 `processing:manage`、按 TenantContext 隔离。"""
+    body = _endpoint_body("/operation-layers")
+    assert '@RequirePermission("processing:manage")' in body, (
+        "两层分区端点缺方法级 `processing:manage` —— 类级是 `order:list`"
+        "（客服/销售/财务都有）⇒ 不覆盖 = 工序/交付分区与价目对所有岗位可见"
+    )
+    assert "TenantContext.getTenantId()" in body, "端点没有按 `TenantContext.getTenantId()` 隔离租户"
+
+
+def test_operation_layers_partitions_by_existing_scope():
+    """判据 1f：分区判据 = **既有** `scope`（`set` ⇒ delivery；其余含 `null` ⇒ operations）。
+
+    为什么守：判据换成「有没有矩阵格」⇒ 一道交付工序在某部位没有格时**整行消失**
+    （#4674 形态：表格里有、抽屉里空、无处可删）；换成新字段 ⇒ 引入第二套分区口径。
+    """
+    src = _java_code(SERVICE)
+    assert re.search(r'SCOPE_SET\s*=\s*"set"', src), (
+        "服务层没有 `SCOPE_SET = \"set\"` 常量 —— 分区判据必须是库里带出的既有 `scope`"
+    )
+    body = _method_body("operationLayers")
+    assert re.search(r'SCOPE_SET\.equals\(\s*row\.get\("scope"\)\s*\)', body), (
+        "分区没有按 `scope == 'set'` 判定（`scope` 缺省 ⇒ `operations` = 安全方向）"
+    )
+    assert "delivery" in body and "operations" in body, "分区没有产出 `operations` / `delivery` 两段"
+    assert not re.search(r'row\.get\("position"\)\s*==\s*null', body), (
+        "分区不得按「有没有矩阵格/部位」判定（那会让交付工序整行消失）"
+    )
+
+
+def test_delivery_price_rule_reads_only_matrix_cells():
+    """判据 1g 🔴：一列价**只**读矩阵格价，**不**回落工序库行价（设计 F1/F4 红线）。
+
+    · F1：「格不存在 ⇒ 静默滤掉」不是兜底 ⇒ 一列价绝不能用「删格」实现（读面不得写 `deleted`）；
+    · F4：`production_operations.unit_price` 是 `NOT NULL DEFAULT 0` ⇒ 一旦回落，
+      「未定价」会变成「真 0 元」（工人白干）⇒ 读面必须把两态分开。
+    """
+    body = _method_body("deliveryView")
+    assert re.search(r'cell\.get\("unit_price"\)', body), "一列价没有读矩阵格的 `unit_price`"
+    for forbidden in ("productionOperationMapper", "operationsByName", "production_operations"):
+        assert forbidden not in body, (
+            f"一列价读了 `{forbidden}` —— 工序库行价是 `NOT NULL DEFAULT 0`，"
+            f"回落会把「未定价」变成「真 ¥0.00」（设计 F4）"
+        )
+    assert '"unpriced"' in body, "一列价没有「未定价」态 ⇒ 未定价与 ¥0.00 不可区分"
+    assert '"multiple_prices"' in body, "一列价在各部位不同价时没有显式态（会静默取第一个）"
+    assert "different_price_count" in body, "一列价没有给出「不同价个数」（前端要渲染 N 处）"
+    assert "applicable" in body, "一列价没有按 `applicable=TRUE` 过滤（明确不做 ≠ 未定价）"
+    src = _java_code(SERVICE)
+    assert not re.search(r"\.delete\(|\.setDeleted\(", src), (
+        "只读服务里出现写操作 —— 一列价绝不能用「删格」实现（删格 ⇒ 该部位单静默少一道）"
+    )
+
+
+def test_delivery_view_keys_are_frozen_contract():
+    """判据 1h：`delivery` 段键集/键序 = 9 键（逐字）。"""
+    assert _view_keys("deliveryView") == DELIVERY_KEYS, (
+        f"`delivery` 段键集漂移：{DELIVERY_KEYS} —— 前端 #4677 的「打包发货」区按这些键渲染"
+        f"（`price_state` 是「未定价 ≠ ¥0.00」的机械判据，不得省略）"
+    )
+
+
+class TestInjectedDriftLayers:
+    """两层分区 / 一列价的注入式红证（**不会红的断言 = 空断言**）。"""
+
+    def test_partition_judgment_is_scope_not_cells(self):
+        """注入：把分区判据换成「有格即交付」⇒ 判据 1f 的正则读不出来（红）。"""
+        fake = ('private Map<String, Object> operationLayers(Long tenantId) {\n'
+                '        if (row.get("position") == null) { return null; }\n'
+                '        view.put("operations", null);\n'
+                '    }')
+        assert not re.search(r'SCOPE_SET\.equals\(\s*row\.get\("scope"\)\s*\)', fake), \
+            "换成按格分区后判据仍命中 ⇒ 判据 1f 是空断言"
+        assert re.search(r'row\.get\("position"\)\s*==\s*null', fake), \
+            "注入形态读不出来 ⇒ 判据 1f 的否定分支是空断言"
+
+    def test_price_fallback_is_detected(self):
+        """注入：一列价回落工序库行价 ⇒ 判据 1g 的禁用清单会命中（红）。"""
+        fake = ('private Map<String, Object> deliveryView(String op, List<Map<String, Object>> cells) {\n'
+                '        Object price = cell.get("unit_price");\n'
+                '        if (price == null) { price = productionOperationMapper.selectById(op); }\n'
+                '    }')
+        assert "productionOperationMapper" in fake, "注入形态读不出来 ⇒ 判据 1g 是空断言"
+
+    def test_delivery_keys_drift_is_detected(self):
+        """注入：删掉 `price_state` 键 ⇒ 键集判据红。"""
+        assert tuple(k for k in DELIVERY_KEYS if k != "price_state") != DELIVERY_KEYS, \
+            "键集常量不含 `price_state` ⇒ 判据 1h 是空断言"
+
 
 def test_reads_the_new_tables():
     """判据 2a：读面经**新两表**的 entity/mapper（不是「把旧读取点删掉了事」）。"""

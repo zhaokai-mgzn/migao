@@ -561,6 +561,30 @@ public class ProductionController {
     }
 
     /**
+     * 工艺项**两层分区**（issue #4676 = 设计 {@code docs/design/public-operations-and-craft-ui.md} §4.2）
+     * GET /api/admin/production/operation-layers
+     *
+     * <p>分区判据 = **既有** {@code scope}（**不新造概念**）：{@code scope='set'} ⇒ {@code delivery}
+     * （打包发货：打包 / 打卷 / 装袋 / 发货，**一列价**）；其余 ⇒ {@code operations}（工序，按部位）。
+     * 响应 {@code data} = {@code {operations:[10 键矩阵行], delivery:[9 键一列价行]}}。</p>
+     *
+     * <p>⚠️ <b>「一列价」是显式规则（设计 §4.5 方案 A），不是「删格」</b>：{@code delivery} 行的价
+     * 由该工序**所有 {@code applicable=TRUE} 格**的价聚合 —— 全同 ⇒ {@code priced}；有 {@code NULL}
+     * ⇒ {@code unpriced}（**≠ ¥0.00**）；不同 ⇒ {@code multiple_prices} + {@code different_price_count}
+     * （**不静默取第一个**）。删格会让交付工序在缺格的部位单里静默消失（少一道活、少一笔计件钱）。</p>
+     *
+     * <p>{@code operations} 段的每行与 {@code GET /operation-positions} **同形**（同一个
+     * {@code positionView}）⇒ 前端同一份渲染代码；本端点只是**多给一层分区 + 一列价聚合**，
+     * 不替代原端点（抽屉的 {@code PUT /operation-positions/{id}} 仍按格的 {@code id} 寻址）。</p>
+     */
+    @GetMapping("/operation-layers")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> operationLayers() {
+        return ApiResponse.success(
+                productionRoutingReadService.operationLayers(TenantContext.getTenantId()));
+    }
+
+    /**
      * 矩阵格**就地改价 / 改做不做**（issue #4587 ② = 母单 #4586 包A）
      * PUT /api/admin/production/operation-positions/{id}
      * body: {unit_price?: number|null, applicable?: boolean}

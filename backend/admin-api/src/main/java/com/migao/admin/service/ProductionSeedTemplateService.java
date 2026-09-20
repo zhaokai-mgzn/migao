@@ -97,8 +97,28 @@ public class ProductionSeedTemplateService {
     // ── 第 2 条基础路线：布料（issue #4529，包 F；用户裁定「每个租户默认两条基础工序路线」）──
     /** 第 4 个部位（布料单专用）—— 与 {@code routing.py::FABRIC_POSITION} 逐字同源。 */
     private static final String FABRIC_POSITION = "布料";
-    /** 布料主线（2 道）：`配料` → `打包` —— 与 {@code routing.py::FABRIC_MAINLINE_STEPS} 逐字同源。 */
-    private static final List<String> FABRIC_MAINLINE_STEPS = List.of("配料", "打包");
+    /**
+     * 布料主线（2 道）：`裁剪` → `打包` —— **V88（issue #4676）后的终态**。
+     *
+     * <p>用户裁定逐字：「布料单该用 **裁剪**」（#4673 评论；设计 F5 已把早期「`配料` 是公共工序」
+     * 改判掉）。迁移侧由 {@code V88__retire_material_prep_and_fabric_position.sql} 达成；
+     * 开租播种**不跑迁移链** ⇒ 必须在本类同步，否则 V88 之后注册的新租户仍会拿到
+     * `["配料","打包"]` ⇒ 新单实例里出现 `配料`（**停止条件 S6 红**）。</p>
+     *
+     * <p>⚠️ 与 {@code routing.py::FABRIC_MAINLINE_STEPS} 的**逐字同源关系已断**（该文件属
+     * ai-agent，不在 #4676 的改动面）—— 这是**照实登记的跨单依赖**，不是静默漂移：
+     * {@code tests/unit_ci_workflows/test_public_ops_v88_migration.py} 逐条钉住本常量的终态值。</p>
+     */
+    private static final List<String> FABRIC_MAINLINE_STEPS = List.of("裁剪", "打包");
+    /**
+     * V88（issue #4676）**退场**的逻辑工序：`配料`（行业里它对应「物料分配」，不在车间三段里）。
+     *
+     * <p>矩阵常量 {@link #CANONICAL_POSITION_PRICES} **一字不动**（它与
+     * {@code routing.py::_POSITION_PRICE_ROWS} 逐行同值、被守卫冻结）⇒ 退场只在播种这一层显式表达。</p>
+     */
+    private static final Set<String> RETIRED_LOGICAL_NAMES = Set.of("配料");
+    /** V88 的**保命格**：`裁剪 × 布料` 必须 `applicable=TRUE`（迁移侧 V88 ④ 的同款终态）。 */
+    private static final String FABRIC_KEEP_APPLICABLE_LOGICAL = "裁剪";
     /** 布料路线模板名（与 V79 / schema.sql 种子逐字一致）。 */
     private static final String FABRIC_ROUTE_TEMPLATE_NAME_DEFAULT = "布料工序路线";
 
@@ -478,12 +498,26 @@ public class ProductionSeedTemplateService {
             if (!available.contains(logical) || existing.contains(logical + "×" + position)) {
                 continue;
             }
+            // ── V88（issue #4676）的两处**显式终态覆盖** ────────────────────────────────────
+            // ① 退场工序（`配料`）不再播种。不覆盖的后果：新租户的工序库里留着 `配料`
+            //    且矩阵里 `配料 × 布料` 适用 ⇒ 一旦有人把它加回主线，新单实例里就会再出现
+            //    `配料`（停止条件 S6）。
+            if (RETIRED_LOGICAL_NAMES.contains(logical)) {
+                continue;
+            }
+            // ② **保命格** `裁剪 × 布料` 强制 `applicable=TRUE`。不覆盖的后果：布料主线已改成
+            //    `["裁剪","打包"]`，而矩阵里 `裁剪 × 布料` 仍是 `applicable=FALSE`
+            //    ⇒ `buildRoute` 静默滤掉 `裁剪` ⇒ **新租户的布料单只剩 `打包` 一道**
+            //    （停止条件 S1：布料单实例化工序数 ≠ 2）。
+            boolean applicable = Boolean.parseBoolean(row[3])
+                    || (FABRIC_KEEP_APPLICABLE_LOGICAL.equals(logical)
+                        && FABRIC_POSITION.equals(position));
             plan.add(ProductionOperationPosition.builder()
                     .tenantId(tenantId)
                     .logicalName(logical)
                     .position(position)
                     .unitPrice(row[2] == null ? null : new BigDecimal(row[2]))
-                    .applicable(Boolean.parseBoolean(row[3]))
+                    .applicable(applicable)
                     .status("active")
                     .createdAt(OffsetDateTime.now())
                     .updatedAt(OffsetDateTime.now())

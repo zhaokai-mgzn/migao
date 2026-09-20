@@ -11,11 +11,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 新路线模型的**只读**消费面（issue #4500 = 母单 #4423 的 P2c）：部位价目矩阵 + 规则区。
@@ -65,6 +68,12 @@ public class ProductionRoutingReadService {
 
     /** 本端点呈现的规则动作 = 路线编排（{@code insert} / {@code remove}）。 */
     private static final List<String> ROUTE_ACTIONS = List.of("insert", "remove");
+
+    /**
+     * **套级**作用域取值（{@code production_operations.scope}，V67 / issue #4384 A1）——
+     * 「每樘窗一次」。issue #4676 的**两层分区**判据就是它（设计 §4.2：用既有字段、不新造概念）。
+     */
+    private static final String SCOPE_SET = "set";
 
     private final ProductionOperationPositionMapper productionOperationPositionMapper;
     private final ProductionRouteRuleMapper productionRouteRuleMapper;
@@ -142,6 +151,122 @@ public class ProductionRoutingReadService {
             items.add(positionView(row, variantName(row, catalog), catalog));
         }
         return items;
+    }
+
+    /**
+     * **两层分区**（issue #4676 = 设计 {@code docs/design/public-operations-and-craft-ui.md} §3.2/§4.2）：
+     * 按**既有** {@code scope} 分区（**不新造概念**）——
+     * {@code scope='set'} ⇒ {@code delivery}（打包发货：打包 / 打卷 / 装袋 / 发货）；
+     * 其余（{@code 'position'} 或 {@code null}）⇒ {@code operations}（工序：裁剪 / 车位 / 后整 / 质检）。
+     *
+     * <p>⚠️ <b>分区判据是 {@code scope}，不是「有没有矩阵格」</b>：判据换成格 ⇒ 一道交付工序在
+     * 某部位没有格时会**整行消失**（#4674 形态：表格里有、抽屉里空、无处可删）。</p>
+     *
+     * <p><b>交付环节的「一列价」= 显式规则（设计 §4.5 方案 A），绝不用「删格」实现</b> ——
+     * 见 {@link #deliveryView}。删格会让该交付工序在缺格的部位单里**静默消失**
+     * （{@code ProcessingOrderService.buildRoute}：{@code applicable == null ⇒ continue}）
+     * ⇒ 少一道活、少一笔计件钱（设计 F1 红线）。</p>
+     *
+     * @return {@code {operations:[<10 键矩阵行，与 GET /operation-positions 同形>],
+     *         delivery:[<9 键一列价行>]}}；两段都按 {@code operation} 稳定序（复用
+     *         {@link #operationPositions} 的排序，**不另写一份**）
+     */
+    public Map<String, Object> operationLayers(Long tenantId) {
+        List<Map<String, Object>> rows = operationPositions(tenantId);
+        List<Map<String, Object>> operations = new ArrayList<>();
+        Map<String, List<Map<String, Object>>> deliveryCells = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            if (SCOPE_SET.equals(row.get("scope"))) {
+                deliveryCells.computeIfAbsent(String.valueOf(row.get("operation")), k -> new ArrayList<>())
+                        .add(row);
+            } else {
+                operations.add(row);
+            }
+        }
+        List<Map<String, Object>> delivery = new ArrayList<>();
+        for (Map.Entry<String, List<Map<String, Object>>> entry : deliveryCells.entrySet()) {
+            delivery.add(deliveryView(entry.getKey(), entry.getValue()));
+        }
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("operations", operations);
+        view.put("delivery", delivery);
+        return view;
+    }
+
+    /**
+     * 交付环节的**一列价**行（显式规则 = 设计 §4.5 方案 A：**保留矩阵格、在读面聚合成一列**）。
+     *
+     * <p>取值口径 = 该工序**所有 {@code applicable=TRUE} 格**的 {@code unit_price}，逐条规则：</p>
+     * <ol>
+     *   <li>全部相同 ⇒ {@code price_state="priced"} + {@code price=该价}；</li>
+     *   <li>有 {@code NULL} ⇒ {@code price_state="unpriced"} + {@code price=null}
+     *       —— <b>未定价 ≠ ¥0.00</b>，且**不得**回落工序库行价（设计 F4/U6：
+     *       {@code production_operations.unit_price} 是 {@code NOT NULL DEFAULT 0} ⇒
+     *       回落会把「未定价」变成「真 0 元」，工人白干）；</li>
+     *   <li>不相同 ⇒ {@code price_state="multiple_prices"} + {@code price=null} +
+     *       {@code different_price_count=不同价的个数}（**不静默取第一个**，设计 B7）；</li>
+     *   <li>一格 {@code applicable=TRUE} 都没有 ⇒ {@code price_state="no_applicable_position"}。</li>
+     * </ol>
+     *
+     * <p>⚠️ 本方法**只读矩阵格**（{@code production_operation_positions}），**不读**
+     * {@code production_operations.unit_price} —— 「工序库行价兜底」是**实例化路径**
+     * （{@code ProcessingOrderService.buildRoute}）的既有语义，其触发条件是
+     * 「格存在 + {@code applicable=TRUE} + 价 {@code NULL}」，且回落值是 **0**（设计 F4）。
+     * 本层不复制那条兜底：读面的「未定价」必须与「¥0.00」可区分。</p>
+     */
+    private Map<String, Object> deliveryView(String operation, List<Map<String, Object>> cells) {
+        Set<BigDecimal> prices = new LinkedHashSet<>();
+        List<String> applicablePositions = new ArrayList<>();
+        boolean unpriced = false;
+        for (Map<String, Object> cell : cells) {
+            if (!Boolean.TRUE.equals(cell.get("applicable"))) {
+                continue;
+            }
+            applicablePositions.add(String.valueOf(cell.get("position")));
+            Object price = cell.get("unit_price");
+            if (price == null) {
+                unpriced = true;
+            } else {
+                prices.add(new BigDecimal(String.valueOf(price)));
+            }
+        }
+        String priceState;
+        BigDecimal price = null;
+        if (applicablePositions.isEmpty()) {
+            priceState = "no_applicable_position";
+        } else if (unpriced) {
+            priceState = "unpriced";
+        } else if (prices.size() == 1) {
+            priceState = "priced";
+            price = prices.iterator().next();
+        } else {
+            priceState = "multiple_prices";
+        }
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("operation", operation);
+        view.put("scope", SCOPE_SET);
+        view.put("unit", firstNonNull(cells, "unit"));
+        view.put("group", firstNonNull(cells, "group"));
+        view.put("is_must_finish", firstNonNull(cells, "is_must_finish"));
+        view.put("price", price);
+        view.put("price_state", priceState);
+        view.put("different_price_count", "multiple_prices".equals(priceState) ? prices.size() : 0);
+        view.put("applicable_positions", applicablePositions);
+        return view;
+    }
+
+    /**
+     * 行尾元数据（{@code unit} / {@code group} / {@code is_must_finish}）取该工序**首个非 null** 的格。
+     *
+     * <p>各格不一致时逐个列出属**界面**口径（设计 §4.1 元素 5），不在本层发明第二套。</p>
+     */
+    private static Object firstNonNull(List<Map<String, Object>> cells, String key) {
+        for (Map<String, Object> cell : cells) {
+            if (cell.get(key) != null) {
+                return cell.get(key);
+            }
+        }
+        return null;
     }
 
     /**

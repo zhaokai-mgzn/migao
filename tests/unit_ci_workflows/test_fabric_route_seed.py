@@ -36,7 +36,14 @@ V79 = MIGRATION_DIR / "V79__seed_fabric_route_and_packing_operation.sql"
 
 DEFAULT_TEMPLATE_NAME = "窗帘工序路线（默认）"
 FABRIC_TEMPLATE_NAME = "布料工序路线"
-FABRIC_MAINLINE = ("配料", "打包")
+#: **bootstrap 字面量**（`docs/sql/schema.sql` 与 V79 的种子）：`配料 → 打包`。
+#: ⚠️ `docs/sql/schema.sql` 属 #4678（文档单）⇒ 本单**不改它**，bootstrap 字面量仍是这一对。
+FABRIC_MAINLINE_BOOTSTRAP = ("配料", "打包")
+#: **迁移链终态**（bootstrap 字面量 + V88 ③ 的 `配料` → `裁剪` 元素替换，issue #4676）：
+#: 用户裁定逐字「布料单该用 **裁剪**」（设计 F5 已改判掉早期的「配料是公共工序」）。
+FABRIC_MAINLINE_EFFECTIVE = ("裁剪", "打包")
+#: V88 迁移文件名（`配料` 退场 / 布料主线改写 / 保命格）。
+V88_NAME = "V88__retire_material_prep_and_fabric_position.sql"
 CURTAIN_MAINLINE = ("精裁", "三边", "熨烫", "定型", "复烫", "车被",
                     "外帘打卷", "打包", "外帘装袋", "外帘发货")
 
@@ -60,6 +67,27 @@ def _migration_sql() -> str:
 def _strip_comments(sql: str) -> str:
     """去 `--` 行注释 —— 守卫必须看**可执行 SQL**（注释里的字面量不是实现）。"""
     return "\n".join(line for line in sql.split("\n") if not line.lstrip().startswith("--"))
+
+
+def _v88_fabric_mainline_rewrite() -> dict:
+    """V88 ③ 的**元素替换表**（`配料` → `裁剪`）；V88 缺席 / 没有该替换 ⇒ 空表。
+
+    空表不是「恰好没有」——它是**红证形态**：迁移链终态会退回 `配料 → 打包`
+    （`test_terminal_mainline_red_when_v88_rewrite_is_absent` 自证这一点）。
+    """
+    path = MIGRATION_DIR / V88_NAME
+    if not path.exists():
+        return {}
+    body = _strip_comments(path.read_text(encoding="utf-8"))
+    if not re.search(r"""elem\s*=\s*'"配料"'\s*::jsonb\s+THEN\s+'"裁剪"'""", body):
+        return {}
+    return {"配料": "裁剪"}
+
+
+def effective_fabric_mainline(steps) -> tuple:
+    """迁移链**终态**的布料主线 = 字面量种子 + V88 ③ 的元素替换（同 V79 的手术式口径）。"""
+    rewrite = _v88_fabric_mainline_rewrite()
+    return tuple(rewrite.get(step, step) for step in steps)
 
 
 # ── 路线模板的 INSERT（字面量种子 vs 按租户派生回填）──
@@ -180,7 +208,15 @@ def test_schema_sql_terminal_state_has_both_routes():
         f"窗帘主线终态漂移：{curtain['mainline']}（应为 9 道 + 打包 = 10 道，打包在装袋之前）"
     )
     assert fabric["positions"] == ("布料",), f"布料路线的适用部位应为 [布料]：{fabric['positions']}"
-    assert fabric["mainline"] == FABRIC_MAINLINE, f"布料主线应为 配料 → 打包：{fabric['mainline']}"
+    assert fabric["mainline"] == FABRIC_MAINLINE_BOOTSTRAP, (
+        f"布料主线的 **bootstrap 字面量**应为 配料 → 打包：{fabric['mainline']}"
+        f"（`docs/sql/schema.sql` 属 #4678，本单不改它）"
+    )
+    assert effective_fabric_mainline(fabric["mainline"]) == FABRIC_MAINLINE_EFFECTIVE, (
+        f"布料主线的**迁移链终态**应为 裁剪 → 打包，实测 "
+        f"{effective_fabric_mainline(fabric['mainline'])} —— "
+        f"终态 = bootstrap 字面量 + V88 ③ 的 `配料` → `裁剪` 元素替换（issue #4676）"
+    )
     assert all(row["status"] == "active" for row in rows), "路线终态必须都是 active（否则端点不可见）"
 
 
@@ -254,6 +290,13 @@ def test_new_operations_are_seeded_for_every_tenant():
     assert re.search(r"\bNOT\s+EXISTS\b", joined, re.I), "按租户回填没有按业务唯一键去重（不幂等）"
     for name in ("配料", "打包"):
         assert f"'{name}'" in joined, f"按租户回填里没有 `{name}` ⇒ 部分租户缺这道工序"
+    # ── 迁移链**终态**（issue #4676）：V79 的字面量一字不动，`配料` 由 V88 ① 软删 ──
+    v88 = MIGRATION_DIR / V88_NAME
+    assert v88.exists(), f"缺 {V88_NAME} —— `配料` 的退场没有落码（新单实例里会再出现它）"
+    v88_body = _strip_comments(v88.read_text(encoding="utf-8"))
+    assert re.search(r"UPDATE\s+production_operations\s+o\s+SET\s+deleted\s*=\s*1", v88_body, re.I), \
+        "V88 没有软删 `production_operations` 的 `配料` 行"
+    assert re.search(r"o\.name\s*=\s*'配料'", v88_body), "V88 的工序行软删没有点名 `配料`"
 
 
 def test_new_operations_carry_unit_price_and_pending_provenance():
@@ -318,6 +361,16 @@ class TestInjectedDrift:
         merged = named_defaults(self._CURTAIN_ONLY)
         assert set(merged) != {DEFAULT_TEMPLATE_NAME, FABRIC_TEMPLATE_NAME}, \
             "缺布料路线读不出来 ⇒ 判据是空断言"
+
+    def test_terminal_mainline_red_when_v88_rewrite_is_absent(self):
+        """注入：V88 ③ 的元素替换缺席 ⇒ 迁移链终态退回 `配料 → 打包` ⇒ 终态判据红。"""
+        assert effective_fabric_mainline(FABRIC_MAINLINE_BOOTSTRAP) == FABRIC_MAINLINE_EFFECTIVE, \
+            "真实树上终态读不出来 ⇒ 终态判据是空断言"
+        without_v88 = tuple({}.get(step, step) for step in FABRIC_MAINLINE_BOOTSTRAP)
+        assert without_v88 != FABRIC_MAINLINE_EFFECTIVE, \
+            "缺 V88 改写时终态仍等于冻结值 ⇒ 终态判据是空断言"
+        assert _v88_fabric_mainline_rewrite() == {"配料": "裁剪"}, \
+            "V88 的 `配料` → `裁剪` 元素替换读不出来 ⇒ 终态判据是空断言"
 
     def test_literal_row_parser_reads_mainline_order(self):
         """终态解析器能读出主线**顺序**（改顺序/删一道 ⇒ 判据 5 红）。"""
