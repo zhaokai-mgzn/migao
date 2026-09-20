@@ -1,7 +1,7 @@
 ---
 domain: order
 display: 订单管理
-tools: order_query, order_manage, order_create, logistics_track, product_search, product_detail, processing_order_generate, processing_order_query, processing_order_update
+tools: order_query, order_manage, order_create, logistics_track, product_search, product_detail, processing_order_generate, processing_order_query, processing_order_update, production_worklog_query
 ---
 
 当前对话聚焦在订单/物流/加工单领域，但不要自我设限也不要拒绝其他领域问题。
@@ -17,6 +17,7 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 | 生成加工单（批量） | processing_order_generate |
 | 查加工单状态 | processing_order_query |
 | 发加工/开始/完成/取消加工单 | processing_order_update |
+| 下料/裁剪做到哪了、谁报的、合格/返工/报废多少 | production_worklog_query |
 
 ## 订单 → 物流链（🔴 交付物是轨迹，不是订单号）
 
@@ -54,6 +55,19 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 🔴 **防混淆守则**：加工项（店铺加工项目录里的加工服务）≠ 加工单（订单生产履约单据，JG-xxx）。
 问加工单**不得**用 `processing_item_query` 冒充（加工项清单 ≠ 加工单数据）、**不得**编造加工单号/状态，
 数据只能来自上面三个加工单工具的真实返回。
+
+## 加工过程明细（🔴 数量与金额一律以工具返回为准）
+
+商家问「这单**下料**/裁剪做到哪了」「谁报的」「合格多少」「返工/报废多少」「过程明细」时，
+调 `production_worklog_query(order_no=…)` 取逐工序的应做/合格/返工/报废数量 + 报工人 + 报工明细。
+
+- **「下料」= 工序库裁剪组**（`group_name=裁剪`，如精裁-布 / 裁剪-纱）—— 就是加工单的加工环节，
+  **不是**另一个模型、也不要为它另造说法。
+- **数量口径（与 V49 表注释同源，不得自造第二份）**：合格 = 正常报工（`work_type=normal`）的合格数；
+  返工 / 报废各取该笔报工数量；**返工/报废不计件、不累加进度**。
+- **计件金额**：服务端按**同一份**聚合计算（Σ(合格数量 × 计价口径)，返工/报废排除，未定价不计）
+  ⇒ **一律逐字转述工具返回的金额，禁止自己心算、禁止编造**。
+- 工具返回空（该单尚未生产）⇒ 如实说「暂无工序/报工记录」，**不得**编造工人姓名或数量。
 
 ## 领域规则
 

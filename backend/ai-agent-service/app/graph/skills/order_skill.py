@@ -18,6 +18,9 @@ ORDER_TOOLS = ["order_query", "order_manage", "order_create", "logistics_track",
     # 生产进度（issue #3996，M4-I）：商家问「这单做到哪道工序/还要多久」→
     # production_progress_query(order_no=…)。只读；缺号先用 order_query 取号。
     "production_progress_query",
+    # 加工单过程明细（issue #4201）：商家问「这单下料/裁剪做到哪了、谁报的、合格多少、
+    # 返工报废多少」→ production_worklog_query(order_no=…)。只读、仅 B 端。
+    "production_worklog_query",
     "validate_input",  # 写操作前置校验
     "interact",        # 交互卡片：多 SKU 规格 choice（prompts/order.md 强制要求）、下单前 confirm、表单 form
     # 店铺加工项目录（issue #4371：加工项与商品**解耦**）—— prompts/order.md 的「加工项」
@@ -39,7 +42,18 @@ ORDER_SYSTEM_PROMPT = """## 订单展示
 
 商家问「这单做到哪了/生产进度/还要多久/卡在哪道工序/排产了吗」时，调 production_progress_query(order_no=…)：
 拿到进度%、当前工序、待完工序、预计交期后再回答。缺订单号先用 order_query 查单取号，不要猜号；
-**转述必须来自工具返回**，工具查不到就如实说查不到，禁止编造进度或交期。"""
+**转述必须来自工具返回**，工具查不到就如实说查不到，禁止编造进度或交期。
+
+## 过程明细（下料/裁剪做到哪一步、谁报的、合格多少）
+
+商家问「这单**下料**/裁剪做到哪了」「谁报的」「合格多少」「返工/报废多少」「过程明细」时，
+调 production_worklog_query(order_no=…)：拿到逐工序的应做/合格/返工/报废数量 + 报工人 +
+报工明细后再回答。「下料」= 工序库**裁剪组**（`group_name=裁剪`，如 精裁-布 / 裁剪-纱），
+**不是**另一个模型，也**不要**为它另造说法。
+**数量口径（唯一一份，与 V49 表注释同源）**：合格 = 正常报工（work_type=normal）的合格数；
+返工/报废各取该笔报工数量；**返工/报废不计件、不累加进度**。
+**计件金额一律以工具返回为准**（服务端按同一份聚合计算），**禁止自行心算或编造金额**；
+工具返回为空（该单尚未生产）就如实说「暂无工序/报工记录」。"""
 
 ORDER_SKILL_CONFIG = SkillConfig(
     name="order",

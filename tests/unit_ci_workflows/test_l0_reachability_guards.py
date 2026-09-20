@@ -83,7 +83,8 @@ KNOWN_REGISTERED_TOOLS: frozenset[str] = frozenset({
     # 增删加工项）**已从注册表与工具文件删除** —— 商品不再持有加工项（加工项是店铺级目录）。
     # 本名单是「解析器没坏」的自证集合，工具删了就必须同步（这正是想要的摩擦）。
     "product_search", "product_update",
-    "production_progress_query", "role_manage", "session_manage", "settings_manage",
+    "production_progress_query", "production_worklog_query",
+    "role_manage", "session_manage", "settings_manage",
     "sku_update", "validate_input",
     # 收款二维码查询（issue #4085 第 1 项）：只读 ⇒ **不进** taxonomy 的 `WRITE_TOOLS`
     # （核过：那集合是「写用例必须有效果层断言」的判据源，read_only=True 的工具不该出现；

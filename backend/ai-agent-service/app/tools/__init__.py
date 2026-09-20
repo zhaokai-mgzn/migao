@@ -71,6 +71,7 @@ from app.tools.validate_input import ValidateInputTool
 from app.tools.curtain_calc import CurtainCalcTool
 from app.tools.production_progress_query import ProductionProgressQueryTool
 from app.tools.piecework_query import PieceworkQueryTool
+from app.tools.production_worklog_query import ProductionWorklogQueryTool
 from app.tools.payment_qrcode_query import PaymentQrcodeQueryTool
 
 __all__ = [
@@ -93,5 +94,6 @@ __all__ = [
     "ProductUpdateTool", "SkuUpdateTool",
     "InteractTool", "ValidateInputTool", "CurtainCalcTool",
     "ProductionProgressQueryTool", "PieceworkQueryTool",
+    "ProductionWorklogQueryTool",
     "PaymentQrcodeQueryTool",
 ]

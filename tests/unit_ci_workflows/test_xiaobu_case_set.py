@@ -60,6 +60,8 @@ MIBAO_ONLY_TOOLS = {
     "product_manage", "inventory_manage", "category_manage",
     "processing_item_manage", "notification_manage", "session_manage",
     "settings_manage", "logistics_track", "sku_update",
+    # 过程明细（issue #4201）：含报工人与计件金额（车间/工资面）⇒ B 端专属
+    "production_worklog_query",
 }
 
 

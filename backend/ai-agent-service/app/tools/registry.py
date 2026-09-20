@@ -548,6 +548,7 @@ def create_default_registry() -> ToolRegistry:
     - processing_item_manage: 加工项管理
     - production_progress_query: 生产进度查询（双端只读，issue #3996；按 persona 绑定见 skills/*_TOOLS）
     - piecework_query: 计件查询（仅 B 端，issue #3996；不对顾客开放）
+    - production_worklog_query: 加工单过程明细查询（仅 B 端，issue #4201；工序实例 + 报工明细）
     
     Returns:
         ToolRegistry: 配置好的注册器
@@ -600,6 +601,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.curtain_calc import CurtainCalcTool
     from app.tools.production_progress_query import ProductionProgressQueryTool
     from app.tools.piecework_query import PieceworkQueryTool
+    from app.tools.production_worklog_query import ProductionWorklogQueryTool
     from app.tools.payment_qrcode_query import PaymentQrcodeQueryTool
 
     registry = ToolRegistry()
@@ -650,6 +652,10 @@ def create_default_registry() -> ToolRegistry:
     # （生产进度：小布 customer_order + 米宝 order；计件：仅米宝 order/staff，不对顾客开放）。
     registry.register(ProductionProgressQueryTool())
     registry.register(PieceworkQueryTool())
+    # 加工单过程明细（issue #4201）：工序实例（做到哪一步）+ 报工明细（谁报的/合格-返工-报废）
+    # + 数量与计件合计。只读、仅 B 端（报工人与计件金额是车间/工资面）——
+    # 可达性由 persona 的 skill 工具集决定（米宝 order/general）。
+    registry.register(ProductionWorklogQueryTool())
     # 收款二维码查询（issue #4085 第 1 项，M3-F-3/#3990 的发射点）：只读、C 端专属
     # （allowed_roles=["customer"]），可达性仍由 persona 的 skill 工具集决定
     # （小布 customer_order；商家设置端走 SettingsController，不经 Agent）。

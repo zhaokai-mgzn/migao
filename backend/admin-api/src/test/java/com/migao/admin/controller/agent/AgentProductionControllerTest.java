@@ -1,4 +1,4 @@
-// case_ids: PG-018
+// case_ids: PG-018, PG-057
 package com.migao.admin.controller.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -246,6 +246,128 @@ class AgentProductionControllerTest {
         mockMvc.perform(get("/api/admin/agent/production/piecework")
                         .param("worker_name", "张三").param("period", "2026/09"))
                 .andExpect(status().isUnprocessableEntity());
+    }
+
+    // ── 过程明细（issue #4201）：工序实例 × 报工明细 × 数量聚合 ──────────────────────
+
+    private ProcessingPositionOperation cuttingOp(String id, int seq, String name, String qty,
+                                                 String doneQty, String unitPrice) {
+        return ProcessingPositionOperation.builder()
+                .id(id).tenantId(TENANT).processingOrderId(PO_ID)
+                .positionName("布艺遮光帘A 米白").positionKind("布帘").seq(seq)
+                .operationName(name).groupName("裁剪").unit("米")
+                .qty(new BigDecimal(qty)).unitPrice(new BigDecimal(unitPrice))
+                .factor(new BigDecimal("1.00"))
+                .isMustFinish(false).isStartMarker(false)
+                .status("done").doneQty(new BigDecimal(doneQty)).deleted(0)
+                .build();
+    }
+
+    private ProductionWorkLog log(String opId, String name, String worker, String qty,
+                                  String qualified, String type, String date) {
+        return ProductionWorkLog.builder()
+                .tenantId(TENANT).processingOrderId(PO_ID).operationId(opId).operationName(name)
+                .workerName(worker).qty(new BigDecimal(qty)).qualifiedQty(new BigDecimal(qualified))
+                .workType(type).workDate(LocalDate.parse(date)).deleted(0).build();
+    }
+
+    @Test
+    @DisplayName("GET /worklog → 冻结契约键集 + 下料（裁剪）做到哪/谁报的/合格-返工-报废各多少")
+    void worklogReturnsFrozenContract() throws Exception {
+        when(orderMapper.selectOne(any())).thenReturn(order());
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder());
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                cuttingOp("op-1", 1, "精裁-布", "12.00", "10.00", "0.40"),
+                op("op-2", 2, "外帘装袋", "1.00", true, "pending", "0.00", "1.00", "1.00")));
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                log("op-1", "精裁-布", "王师傅", "10.00", "10.00", "normal", "2026-09-19"),
+                log("op-1", "精裁-布", "王师傅", "2.00", "0.00", "rework", "2026-09-20")));
+
+        String body = mockMvc.perform(get("/api/admin/agent/production/worklog").param("order_no", ORDER_NO))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.order_no").value(ORDER_NO))
+                .andExpect(jsonPath("$.data.processing_order_no").value("JG-20260917-0001"))
+                .andExpect(jsonPath("$.data.processing_status").value("in_processing"))
+                // 行序 = listOperations 的行序（部位升序 → seq 升序），夹具里就是 [op-1, op-2]
+                .andExpect(jsonPath("$.data.operations[0].position").value("布帘"))
+                .andExpect(jsonPath("$.data.operations[0].operation_name").value("精裁-布"))
+                .andExpect(jsonPath("$.data.operations[0].logical_name").value("精裁"))
+                .andExpect(jsonPath("$.data.operations[0].group_name").value("裁剪"))
+                .andExpect(jsonPath("$.data.operations[0].required_qty").value(12.0))
+                .andExpect(jsonPath("$.data.operations[0].qualified_qty").value(10.0))
+                .andExpect(jsonPath("$.data.operations[0].rework_qty").value(2.0))
+                .andExpect(jsonPath("$.data.operations[0].scrap_qty").value(0.0))
+                .andExpect(jsonPath("$.data.operations[0].workers[0]").value("王师傅"))
+                .andExpect(jsonPath("$.data.operations[0].last_work_date").value("2026-09-20"))
+                // 报工明细**倒序**（最近在前，与工人端「操作记录」同一约定）
+                .andExpect(jsonPath("$.data.work_logs[0].work_type").value("rework"))
+                .andExpect(jsonPath("$.data.work_logs[1].work_type").value("normal"))
+                .andExpect(jsonPath("$.data.work_logs[1].worker_name").value("王师傅"))
+                .andExpect(jsonPath("$.data.totals.qualified_qty").value(10.0))
+                .andExpect(jsonPath("$.data.totals.rework_qty").value(2.0))
+                .andExpect(jsonPath("$.data.totals.scrap_qty").value(0.0))
+                // 计件金额与 /piecework 同一份聚合：10 × 0.40（返工 2 米不计件）
+                .andExpect(jsonPath("$.data.totals.piecework_amount").value(4.00))
+                .andReturn().getResponse().getContentAsString();
+
+        JsonNode data = objectMapper.readTree(body).path("data");
+        List<String> keys = new ArrayList<>();
+        data.fieldNames().forEachRemaining(keys::add);
+        assertThat(keys).as("冻结契约：字段名/数量不可改（并行包消费）").containsExactlyInAnyOrder(
+                "order_no", "processing_order_no", "processing_status",
+                "operations", "work_logs", "totals");
+
+        List<String> opKeys = new ArrayList<>();
+        data.path("operations").path(0).fieldNames().forEachRemaining(opKeys::add);
+        assertThat(opKeys).as("工序实例行键集冻结").containsExactlyInAnyOrder(
+                "position", "operation_name", "logical_name", "group_name", "seq", "status",
+                "required_qty", "qualified_qty", "rework_qty", "scrap_qty",
+                "is_must_finish", "workers", "last_work_date");
+
+        List<String> logKeys = new ArrayList<>();
+        data.path("work_logs").path(0).fieldNames().forEachRemaining(logKeys::add);
+        assertThat(logKeys).as("报工明细行键集冻结").containsExactlyInAnyOrder(
+                "operation_name", "logical_name", "position", "worker_name",
+                "qty", "qualified_qty", "work_type", "work_date");
+
+        List<String> totalKeys = new ArrayList<>();
+        data.path("totals").fieldNames().forEachRemaining(totalKeys::add);
+        assertThat(totalKeys).as("合计键集冻结").containsExactlyInAnyOrder(
+                "qualified_qty", "rework_qty", "scrap_qty", "piecework_amount");
+
+        // 投影纪律（类注释）：**不下发内部单价/系数/租户字段** —— 金额只以「计件金额」形态出现
+        assertThat(body).as("明细面不得出现内部单价/系数/租户字段")
+                .doesNotContain("unit_price").doesNotContain("factor")
+                .doesNotContain("tenant_id").doesNotContain("qty_source");
+    }
+
+    @Test
+    @DisplayName("GET /worklog → 无加工单：空明细 + 空合计（未开始态，不是错误态）")
+    void worklogWithoutProcessingOrderIsEmpty() throws Exception {
+        when(orderMapper.selectOne(any())).thenReturn(order());
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(null);
+
+        mockMvc.perform(get("/api/admin/agent/production/worklog").param("order_no", ORDER_NO))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.order_no").value(ORDER_NO))
+                .andExpect(jsonPath("$.data.processing_order_no").doesNotExist())
+                .andExpect(jsonPath("$.data.processing_status").doesNotExist())
+                .andExpect(jsonPath("$.data.operations").isEmpty())
+                .andExpect(jsonPath("$.data.work_logs").isEmpty())
+                .andExpect(jsonPath("$.data.totals.qualified_qty").value(0))
+                .andExpect(jsonPath("$.data.totals.piecework_amount").value(0.00));
+    }
+
+    @Test
+    @DisplayName("GET /worklog → 跨租户/不存在的订单 404（租户隔离沿用 resolveOrder）")
+    void worklogUnknownOrderNotFound() throws Exception {
+        when(orderMapper.selectOne(any())).thenReturn(null);
+
+        mockMvc.perform(get("/api/admin/agent/production/worklog").param("order_no", "NOPE"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false));
     }
 
     @Test
