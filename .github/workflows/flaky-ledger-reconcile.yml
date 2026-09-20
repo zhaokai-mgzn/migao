@@ -1,0 +1,149 @@
+name: Flaky Ledger Reconcile (台账落仓对账兜底)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# issue #4825 —— **独立兜底**：让「台账落 main」不再取决于 `flaky-triage.yml` 那一环还活着。
+#
+# 前提核实（本单实测，2026-09-20；读数见 PR body）：
+#   #4804 的修法（`flaky_ledger.py approve` 批准被 `GITHUB_TOKEN` 抑制的台账 PR run）
+#   **是 `flaky-triage.yml` 的一个步骤** ⇒ 该 workflow 一停（被禁用 / 语法坏 / `actions: write`
+#   丢失），台账就**静默**停在 `chore/flaky-ledger` 分支上：本文件不参与 required 集合，
+#   台账停在分支上**不会让任何 PR 变红**，也没有任何告警 —— 「没人会因为这件事变红」。
+#   ⚠️ 实测还发现**更近的一层**（已在本单修掉，见 `flaky-triage.yml` 步骤⑤ 注释）：
+#   即使 workflow 活着，`approve` 也在生产上**从未成功过一次**（步骤④ 把工作区切到台账分支
+#   ⇒ 跑的是分支的旧脚本 ⇒ `invalid choice: 'approve'`）⇒ 改前读数：分支 6 条 / main **0 条**、
+#   台账 PR #4775 OPEN、auto-merge **armed**、**0 个 check**，而 flaky-triage 状态 = `active`。
+#
+# 本 workflow 的形态**照抄 `deploy-reconcile.yml`**（本仓既有的「独立对账」先例）：
+#   · 判据是**状态级**的（台账分支是否领先 main），**不是**事件级 ⇒ 与 flaky-triage.yml 的
+#     `workflow_run` 触发面**不相交** ⇒ 一个停摆，另一个照常对账（不引入同一个单点）；
+#   · 触发面 = `pull_request [opened, reopened]`（实测可靠的近实时入口，仓库迭代不停）
+#     + `schedule '*/20'`（随机兜底：实测被 GitHub 节流到 2~5.5h，不可依赖但有比没有好）
+#     + `workflow_dispatch`（手动）；
+#   · **与既有路径不重复不打架（幂等）**：
+#     ① `approve` 只作用于 `conclusion=action_required` 的 run（批准后 `run_attempt`+1、
+#        `conclusion` 变 null ⇒ **天然不再命中**），且与 flaky-triage.yml 步骤⑤ **同一实现**
+#        （同脚本同参数 —— 判据只有一处，不复制规则）；
+#     ② `gh pr merge --auto` 是幂等 arm（已 arm 再 arm 无副作用）；
+#     ③ 无漂移 ⇒ **零动作**（不碰 PR、不 approve、不 push）。
+#   · **绝不削弱既有护栏**：本 workflow **只读**台账（`contents: read`：不写台账、不 push 分支、
+#     **不创建 PR** —— 建 PR 是 flaky-triage.yml 的职责，两个作者会打架）；
+#     `arm auto-merge` **≠ 放行** —— 台账 PR 仍要真的跑完 **required** 检查才可能合并
+#     （「只标注不自动放行」的语义一字未动）；不新增 secret、不放宽任何门禁。
+#   · **绝不静默降级**（本单的全部价值）：判据「无法判定」⇒ 步骤红（`exit 3`）；
+#     有漂移却**没有 open PR** ⇒ `::error::` + `exit 1`；兜底发出后仍 0 check、已无待批准 run、
+#     且分支 HEAD 已陈旧 ⇒ `::error::` + `exit 1`；main 有分支没有的条目（分叉）⇒ `::error::`。
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    types: [opened, reopened]
+    branches: [main]
+  schedule:
+    - cron: '*/20 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write        # approve 被抑制的 run（与 flaky-triage.yml 同一权限面；**不新增 secret**）
+  contents: read        # 只读台账分支：本 workflow **不写**台账、**不 push**、**不建 PR**
+  pull-requests: write  # 读台账 PR / arm auto-merge（不 approve 评审、不改标签）
+
+# 与 flaky-triage.yml 的 `flaky-triage-ledger` **不同组**：两者都只做幂等动作，不该互相排队/取消。
+concurrency:
+  group: flaky-ledger-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: Flaky Ledger Reconcile (台账领先 main ⇒ 补 approve + 补 arm)
+    # fork PR 的 `pull_request` token 是只读 ⇒ 对账必然失败（假红）；定时档仍覆盖全部情况。
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      LEDGER_BRANCH: chore/flaky-ledger
+      # 「陈旧」阈值：台账已推上分支、却这么久还落不到 main ⇒ 兜底真没生效（不是异步窗口）。
+      STALE_MINUTES: '15'
+    steps:
+      - name: Checkout（对账基线 = main；判据读 main 上的台账副本）
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 台账自检（fail-closed：台账不合规就不参与对账）
+        run: python3 .github/scripts/flaky_ledger.py selftest
+
+      - name: 对账判定（纯函数；**状态级** —— 台账分支是否领先 main）
+        id: drift
+        run: |
+          # ⚠️ `set -o pipefail` **必需**：本行接了 `tee`（写 job summary）。没有它时管道退出码
+          #    取 `tee` 的 0 ⇒ 判据失败（含 `exit 3` 无法判定）被吞掉 ⇒ `drift` 输出为空
+          #    ⇒ 所有 `if:` 全假 ⇒ **静默 no-op**（"兜底没生效"装成"没有漂移"）= 本单要治的形态。
+          set -o pipefail
+          python3 .github/scripts/flaky_ledger.py ledger-drift \
+            --branch "$LEDGER_BRANCH" --gh-output "$GITHUB_OUTPUT" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: 无漂移 ⇒ 零动作收工（幂等：不碰 PR、不 approve、不 push）
+        if: steps.drift.outputs.drift != '1'
+        run: echo "::notice::✅ 台账已与 main 同步（$LEDGER_BRANCH 不领先）—— 兜底零动作（#4825）"
+
+      - name: 分叉告警（main 有分支没有的条目 ⇒ 台账「只追加」语义被破坏）
+        if: steps.drift.outcome == 'success' && steps.drift.outputs.behind != '0'
+        run: |
+          echo "::error::台账分叉：main 上有 ${{ steps.drift.outputs.behind }} 条条目不在 $LEDGER_BRANCH 上 —— 台账语义是**只追加**（main 恒为分支的子集），正常不可能；查是否有人改写/回退过该分支"
+          exit 1
+
+      - name: 有漂移 ⇒ 补 approve（复用 #4804 的实现）+ 补 arm auto-merge
+        if: steps.drift.outputs.drift == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          AHEAD="${{ steps.drift.outputs.ahead }}"
+          AGE="${{ steps.drift.outputs.age_minutes }}"
+          # ① 补 approve —— 与 flaky-triage.yml 步骤⑤ **同一实现**（同脚本同参数，不复制规则）。
+          #    本 job 的工作区是 **main**（本 workflow 从不 checkout 台账分支）⇒ 跑的就是 main 的副本，
+          #    故不会踩 flaky-triage.yml 步骤④ 那个「切树后跑到分支旧副本」的坑。
+          python3 .github/scripts/flaky_ledger.py approve \
+            --repo "$GITHUB_REPOSITORY" --head-branch "$LEDGER_BRANCH" \
+            --json-out /tmp/pending.json || {
+            echo "::error::兜底 approve 失败 ⇒ 台账 PR 仍无 check、main 不增长（fail-closed，不静默）"; exit 1; }
+          PENDING=$(python3 -c "import json;print(len(json.load(open('/tmp/pending.json'))))") || {
+            echo "::error::读不到 approve 结果 ⇒ 无法判定兜底是否生效（fail-closed，不静默）"; exit 1; }
+          # ② 找台账 PR：**绝不新建**（建 PR 是 flaky-triage.yml 的职责 —— 两个作者会打架，
+          #    且 title/body 规则只应有一处）。分支领先 main 却**没有 open PR** ⇒ 没有任何路径
+          #    把它推上 main ⇒ 必须红（这正是「台账静默停在分支上」的确切形态）。
+          PR=$(gh pr list --head "$LEDGER_BRANCH" --state open --json number \
+                 --jq '.[0].number // empty' --repo "$GITHUB_REPOSITORY")
+          if [ -z "$PR" ]; then
+            echo "::error::台账分支领先 main（${AHEAD} 条未落仓）却**没有 open PR** ⇒ 无任何路径把它推上 main（台账停在分支上）。可行动：重跑 flaky-triage.yml（由它补建台账 PR）"
+            exit 1
+          fi
+          # ③ 补 arm auto-merge（幂等）。**不是放行**：台账 PR 仍要真的跑完 required 检查才可能合并。
+          gh pr merge "$PR" --auto --squash --repo "$GITHUB_REPOSITORY" 2>&1 \
+            || echo "ℹ️ arm 返回非零（可能已 arm / 或分支保护拒绝 arm）—— 非致命，由下一轮对账复核"
+          # ④ 可见读数（写 job summary；**不是**门禁 —— 运行与合并都是异步的）
+          CHECKS=$(gh pr checks "$PR" --json name --jq 'length' --repo "$GITHUB_REPOSITORY" 2>/dev/null || echo 0)
+          STATE=$(gh pr view "$PR" --json state,mergeStateStatus,autoMergeRequest \
+                    --jq '"state=\(.state) mergeStateStatus=\(.mergeStateStatus) autoMerge=\(if .autoMergeRequest then "armed" else "none" end)"' \
+                    --repo "$GITHUB_REPOSITORY" 2>&1)
+          {
+            echo "### 📒 flaky 台账落仓对账（#4825 兜底）"
+            echo ""
+            echo "- 台账分支领先 main：**${AHEAD}** 条（分支 HEAD ${AGE:-?} 分钟前）"
+            echo "- 台账 PR：#${PR} ${STATE}"
+            echo "- 可见 check 数：${CHECKS}（0 = 仍被抑制 ⇒ 台账落不到 main）"
+            echo "- 本轮 approve 的 run 数：${PENDING}"
+            echo ""
+            echo "兜底只补 **approve + arm**（**不放行**：required 检查仍是唯一闸）；无漂移时本 job 零动作。"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice::📒 台账对账：PR #$PR $STATE / check 数=$CHECKS / 本轮 approve=$PENDING"
+          # ⑤ **陈旧 = 兜底没生效** ⇒ 红（否则「台账停在分支上」又变回静默）。
+          #    三个条件缺一不可：0 个 check ∧ 已无待批准 run ∧ 分支 HEAD 已陈旧 ——
+          #    少了前两条就会在「approve 刚发出、check 还在产出」的异步窗口里**假红**。
+          if [ "$CHECKS" = "0" ] && [ "$PENDING" = "0" ] && [ "${AGE:-0}" -ge "$STALE_MINUTES" ]; then
+            echo "::error::兜底已发出但台账 PR 仍 **0 个 check**、已无待批准 run、且分支 HEAD 已 ${AGE} 分钟（≥${STALE_MINUTES}）⇒ 台账仍落不到 main（不再静默）"
+            exit 1
+          fi

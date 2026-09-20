@@ -253,6 +253,23 @@ jobs:
           echo "pr=$PR" >> "$GITHUB_OUTPUT"
           echo "::notice::📒 flaky 台账已追加并推送 $BRANCH（远端 ref 复核通过）—— PR #$PR 待批准后走 required 检查"
 
+      # ── ④b 取 **main** 上的判据脚本副本（#4825 实测根因：工作区已被步骤④ 切到台账分支）──
+      # ⚠️ **勿删、勿改回工作区那份**：步骤④ `git checkout -B "$BRANCH" FETCH_HEAD` 已把工作区
+      #    切到**台账分支** ⇒ 直接跑工作区里的 `.github/scripts/flaky_ledger.py`，执行的是
+      #    **台账分支的旧副本**（该分支 fork 自 #4804 之前的 main ⇒ **没有 `approve` 子命令**）
+      #    ⇒ 实测报 `error: argument cmd: invalid choice: 'approve'`。
+      #    后果 = **死锁**：要 approve 才能把台账落 main，而 approve 只存在于 main 的脚本里，
+      #    台账分支永远拿不到它 ⇒ 步骤⑤ 自上线起**从未成功过一次**（main 侧台账恒为 0 条）。
+      #    故本步骤显式从 `origin/main` 取副本；步骤⑤ 只允许用这个副本。
+      - name: ④b 取 main 上的判据脚本副本（#4825：工作区此时是台账分支，不是 main）
+        if: steps.decide.outputs.entry_count != '0'
+        run: |
+          set -uo pipefail
+          git show origin/main:.github/scripts/flaky_ledger.py > /tmp/flaky_ledger.py || {
+            echo "::error::取 origin/main 上的 flaky_ledger.py 失败 ⇒ 后续步骤无法执行（fail-closed，不静默）"; exit 1; }
+          [ -s /tmp/flaky_ledger.py ] || {
+            echo "::error::main 上的 flaky_ledger.py 是空文件 ⇒ 不许当「脚本没问题」继续（fail-closed）"; exit 1; }
+
       # ── ⑤ **#4804 关键一步**：批准被 GITHUB_TOKEN 抑制的台账 PR run ────────────
       # 不批准 ⇒ 那批 run 永远停在 `action_required`（零 job ⇒ 零 check-run）
       # ⇒ `gh pr checks` 报「no checks reported」⇒ required 永不满足 ⇒ `--auto` 永不触发
@@ -266,8 +283,11 @@ jobs:
         run: |
           set -uo pipefail
           BRANCH="chore/flaky-ledger"
+          # ⚠️ 用步骤④b 取的 **main 副本**：工作区此刻是台账分支（步骤④ 已切树）⇒ 若跑
+          #    工作区里的脚本，执行的是台账分支的旧副本（**没有 approve 子命令**，实测
+          #    `invalid choice: 'approve'`）⇒ 台账永远落不到 main（#4825 的实测根因）。
           # fail-closed：批准发不出去 ⇒ 红（否则「台账没 check」会装成「已经放行」）
-          python3 .github/scripts/flaky_ledger.py approve \
+          python3 /tmp/flaky_ledger.py approve \
             --repo "$GITHUB_REPOSITORY" --head-branch "$BRANCH" || {
             echo "::error::approve 台账 PR 的 action_required run 失败 ⇒ 台账 PR 仍无 check、main 不增长（fail-closed）"; exit 1; }
           # 批准是异步的（run_attempt 会 +1）；短窗复核，拿不到只打 notice（**不**把异步当失败）
