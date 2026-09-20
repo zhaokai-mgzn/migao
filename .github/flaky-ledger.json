@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "note": "CI 失败重跑分流台账（issue #4717）。凡被 `.github/workflows/flaky-triage.yml` 判为**终态**的失败 job，都在这里有且只有一条条目：kind=flaky = 首次失败、**重跑后通过**（随机波动，已打 `flaky/rerun-green` + `block/merge` 并 `gh pr merge --disable-auto` 卸下 auto-merge）；kind=confirmed_failure = **重跑仍失败**（确定性失败，不放行、不重跑第三次）；kind=infra_suspect = 取消/超时/基础设施/环境（含「取代码·装依赖」步骤失败）—— **不算 flaky**，仅登记。⚠️ **只追加、不修改**（幂等键 = `(workflow, run_id, job)`，同一次失败被重跑/重判多次只留一条）。⚠️ 本文件**不写任何计数/阈值**：条数一律现取（`python3 .github/scripts/flaky_ledger.py report`）—— 硬编码计数会随追加而腐烂（#4701/#4714/#4742 纪律），阈值同样留给消费方。机械入口：`selftest`（0=自洽 / 1=违规）、`report`（按 (workflow, job) 聚合，计数现取）、`reconcile`（三态对账 0/1：新事件未登记修复路径 / 重复计数 / 已修未销账——**未接 required 门禁**，是消费接口）。消费方（后续单）：同一 `job` 反复出现 `kind=flaky` ⇒ 按 `migao-acceptance`「随机红 = 归因层失效」开单修根因，而不是继续重跑。",
+  "_schema": {
+    "version": "台账版本（当前 1）",
+    "entries[].workflow": "workflow 的 `name`（如 `PR Check` / `Mini-App CI`）",
+    "entries[].job": "失败 job 的 `name`（required 检查的 context 通常就是它）",
+    "entries[].run_id": "**首次失败那次 run** 的 id（GitHub run id，整数；与重跑共用同一 run id，`run_attempt` 区分）",
+    "entries[].run_attempt": "判为终态时的尝试序号（本机制上限 2 = 首次 + 最多 1 次重跑）",
+    "entries[].run_url": "run 页面链接（可审计：点开即见两次尝试的原始日志）",
+    "entries[].pr": "PR 号（仅 PR 运行会入账）",
+    "entries[].head_sha": "被判定的提交 SHA（**内容级身份**，不用行号/分支名做身份）",
+    "entries[].head_branch": "分支名（仅供定位）",
+    "entries[].first_failure_step": "首次失败时**第一个失败步骤**的名字（空串 = runner 级失败，无步骤失败）",
+    "entries[].rerun_result": "success | failure | not_rerun",
+    "entries[].kind": "flaky | confirmed_failure | infra_suspect（无第四态；不确定一律偏 infra_suspect）",
+    "entries[].observed_at": "判定时刻（取 run 的 updated_at/created_at，ISO8601 UTC）",
+    "entries[].reason": "**可行动信息**：为什么判成这个 kind（非空；空串 = 违规）",
+    "entries[].remedy": "**可行动信息**：建议的修复路径（非空；空串 = 违规）——照 #4757 `time_flaky_baseline.json` 形态",
+    "entries[].status": "open | fixed（fixed 需配 `fixed_by`，否则 `reconcile` 判「销账不成立」）",
+    "entries[].follow_up": "跟踪单号（整数）或 null；CI 生成时为 null，由**分诊方**回填。`kind=flaky` 且 status=open 却没回填 ⇒ `reconcile` 判「新事件未登记修复路径」（红）",
+    "entries[].fixed_by": "仅 status=fixed 需要：修复凭据（PR / run / 用例），否则销账不成立",
+    "unimplemented": "**如实登记未机械化**的部分：① `follow_up` 的自动开单没做（CI 只写 null，靠分诊方回填）；② `reconcile` **未接 required 门禁**（消费接口，按需调用）；③ `flaky` 分类对「只在装依赖步骤失败」是 fail-safe 偏 infra（宁可漏标 flaky，不可把 infra 记成 flaky）——漏标是可补的，误记会污染台账本身。"
+  },
+  "entries": []
+}
