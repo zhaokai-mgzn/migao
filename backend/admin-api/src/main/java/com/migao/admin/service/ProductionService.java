@@ -1172,8 +1172,12 @@ public class ProductionService {
      * issue #4222）。四级都不中才 404。
      * 用字符串列名而非 Lambda 列名：Standalone MockMvc 单测环境没有 MyBatis-Plus TableInfo 缓存
      * （同本类既有的 UpdateWrapper 做法）。
+     *
+     * <p><b>包级可见</b>（切片 ①，issue #4698）：扫码解析（{@link ProductionScanService}）的
+     * 旧码回落必须走**同一份**四形态实现 —— 在扫描侧复制一份就是第二份口径，两处迟早不同。
+     * 四形态的**顺序与判据一字未动**（本单只放宽可见性）。</p>
      */
-    private Order resolveOrder(String key, Long tenantId) {
+    Order resolveOrder(String key, Long tenantId) {
         Order order = orderMapper.selectById(key);
         if (!isResolvable(order, tenantId)) {
             // ② order_no 兜底
@@ -1344,8 +1348,13 @@ public class ProductionService {
         return view;
     }
 
-    /** 进度：done 以「合格累计 ≥ 应做数量」判定（部分报工置 done 但不算完成）。 */
-    private Map<String, Object> progressOf(List<ProcessingPositionOperation> operations) {
+    /**
+     * 进度：done 以「合格累计 ≥ 应做数量」判定（部分报工置 done 但不算完成）。
+     *
+     * <p><b>包级可见</b>（切片 ①，issue #4698）：扫码解析的「本套进度」用**同一份**口径 ——
+     * 否则扫码页与加工单详情页会对同一套给出两个进度。</p>
+     */
+    Map<String, Object> progressOf(List<ProcessingPositionOperation> operations) {
         int total = operations.size();
         int done = 0;
         for (ProcessingPositionOperation op : operations) {
@@ -1360,7 +1369,14 @@ public class ProductionService {
         return progress;
     }
 
-    private boolean isDone(ProcessingPositionOperation op) {
+    /**
+     * 「这道工序做完没有」= 合格累计 ≥ 应做数量（**不是** {@code status == 'done'}：部分报工也置 done）。
+     *
+     * <p><b>包级可见</b>（切片 ①，issue #4698）：扫码解析的「下一道待做」用**同一份**判据 ——
+     * 设计 §3.2 字面的 {@code status <> 'done'} 会让「报了 6/11 米」的工序从默认建议里消失
+     * （见 {@link ProductionScanService} 的偏离登记）。</p>
+     */
+    boolean isDone(ProcessingPositionOperation op) {
         return nz(op.getDoneQty()).compareTo(nz(op.getQty())) >= 0;
     }
 
