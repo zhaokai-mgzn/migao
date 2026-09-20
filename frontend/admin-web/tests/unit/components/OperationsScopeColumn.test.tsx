@@ -107,13 +107,13 @@ const renderMatrix = async () => {
  * 打开某道工序的「管理▸」抽屉。
  *
  * ⚠️ issue #4677：一屏分两层 ⇒ 入口 testid 前缀按**分区**不同 —— 工序层 = `matrix-manage-*`，
- * 「打包发货」层 = `delivery-manage-*`（本文件的 `外帘打卷` 是**套级** ⇒ 落在后者）。
+ * 「打包发货」层 = `matrix-manage-*`（本文件的 `外帘打卷` 是**套级** ⇒ 落在后者）。
  * 两个前缀都试（找不到前者就找后者），**不把分区判据抄进测试**（那是实现的事）。
  */
 const openVariant = async (operation: string) => {
   await renderMatrix()
   const entry =
-    screen.queryByTestId(`matrix-manage-${operation}`) ?? screen.getByTestId(`delivery-manage-${operation}`)
+    screen.getByTestId(`matrix-manage-${operation}`)
   await userEvent.click(entry)
   await waitFor(() => expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument())
 }
@@ -196,7 +196,7 @@ const layersOf = (cells: any[]) => {
     await renderMatrix()
 
     // issue #4677：`外帘打卷` 是套级 ⇒ 入口在【打包发货】区
-    await userEvent.click(screen.getByTestId('delivery-manage-外帘打卷'))
+    await userEvent.click(screen.getByTestId('matrix-manage-外帘打卷'))
     expect(scopeControl('op-v54-24')).toHaveValue('set')
     expect(scopeControl('op-v54-24').selectedOptions[0]).toHaveTextContent('按套')
 

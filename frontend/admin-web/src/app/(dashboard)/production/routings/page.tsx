@@ -26,7 +26,6 @@ import type {
   CraftCalcConfigResponse,
   OperationPosition,
   OperationPositionUpdateParams,
-  OperationLayerDeliveryRow,
   OperationsCatalog,
   ProductionScope,
   ProductionSeedTemplate,
@@ -47,8 +46,7 @@ import type {
  *
  * | tab | 它回答的问题 | 主区 | 维护面 |
  * |---|---|---|---|
- * | **工艺项** | 「每道工序给**工人**多少钱？」 | **一张表**：行 = 一道逻辑工序、**一道工序一个单价**（就地可改）+ **必完标记**（issue #4610：完工门槛要一眼看得见） | 行尾 = `分组 · 单位` + 「管理▸」抽屉（分组 / 单位 / 作用域 / 必完 / 停用 / 删除） |
- * | **工艺路线** | 「订单按哪条主线走、什么时候插/删工序？」 | 具名路线（默认徽标 + 主线 + 改名/设默认/删除） | 每道工序在「工艺项」tab 的 `管理▸` 抽屉里有一节**适用条件**（人话；issue #4650 阶段 1 起**不再有**独立的「条件工序规则」表） |
+ * | **工序与路线**（用户裁定 2026-09-21：原「工艺项」+「工艺路线」两 tab **合并为一屏**） | 「每道工序给**工人**多少钱？」+「订单按哪条主线走、什么时候插/删工序？」 | **一张表**：行 = 一道逻辑工序、**一道工序一个单价**（就地可改）+ **必完标记**（issue #4610）；表**下同屏**是**具名路线**（默认徽标 + 主线 + 改名/设默认/删除） | 工序行尾 = `分组 · 单位` + 「管理▸」抽屉（分组 / 单位 / 作用域 / 必完 / 停用 / 删除，以及一节**适用条件**，人话；issue #4650 阶段 1 起**不再有**独立的「条件工序规则」表） |
  *
  * ## 为什么这一屏不再有「部位」（issue #4886，用户裁定）
  *
@@ -765,24 +763,23 @@ export default function ProcessConfigPage() {
   const [templates, setTemplates] = useState<ProductionSeedTemplate[]>([])
   const [matrix, setMatrix] = useState<OperationPosition[]>([])
   const [matrixError, setMatrixError] = useState('')
-  /**
-   * 「打包发货」层的**服务端聚合**（issue #4677）：`price_state` / `different_price_count` 逐字用它
-   * —— 前端**不重算**聚合（在 TS 侧再写一份 = 第二份会漂的口径，且「不静默取第一个」会退化成两边各判一次）。
-   */
-  const [deliveryAgg, setDeliveryAgg] = useState<OperationLayerDeliveryRow[]>([])
-  /**
-   * 两层分区读面（`GET /operation-layers`）**失败**的显式面（issue #4729 = 独立验收 #4677 的 P2-10）。
-   *
-   * ⚠️ 失败**必须显式报错**：静默置空 ⇒ 「服务端没给行」的兜底分支会把**有价**的交付工序
-   * 渲染成 `no_applicable_position`（「未设置」）—— 那是**用假话代替报错**
-   * （读面一挂，商家以为「没设置」，实际是没读到）。
-   */
-  const [layersError, setLayersError] = useState('')
+  // ⚠️ issue #4886 用户裁定（附线上截图）后，原来的「【打包发货】独立区块」**整块删除** ⇒
+  // 它的两个 state（服务端聚合 `deliveryAgg` + 读面失败面 `layersError`）与 `getOperationLayers`
+  // 那次请求**一并退场**：那 5 道 `scope='set'` 工序本来就有矩阵行与 `id`，并回唯一那张表即可，
+  // 再留一个「同一个概念的第二载体」就是第二份会漂的口径（同 #4650 阶段 1 的删法）。
   const [rules, setRules] = useState<RouteRule[]>([])
   const [rulesError, setRulesError] = useState('')
   const [loading, setLoading] = useState(true)
-  /** 三个 tab：`operations` 工艺项 / `routes` 工艺路线 / `calc` 算料配置。默认落在「工艺项」—— 依赖顺序上它在前。 */
-  const [tab, setTab] = useState<'operations' | 'routes' | 'calc'>('operations')
+  /**
+   * **两个 tab**：`process` 工序与路线 / `calc` 算料配置。默认落在前者（依赖顺序上它在前）。
+   *
+   * <p>用户裁定（2026-09-21，附线上截图）：「【打包发货】这里的表单也直接删，把工艺路线的功能放置到
+   * 这块区域，两个 tab 合并成一个」⇒ 原 `operations`（工艺项）与 `routes`（工艺路线）合为 `process`
+   * 一屏：上面是**唯一**那张「一道工序一个价」表（原【打包发货】那 5 道 `scope='set'` 工序
+   * **并回同一张表** —— 删掉那个独立区块**不减少任何定价入口**），原【打包发货】的位置改放
+   * **工艺路线**。</p>
+   */
+  const [tab, setTab] = useState<'process' | 'calc'>('process')
   /** 「添加工序」选择器（路线 tab 内）—— 工序库在另一个 tab，编辑器必须自带入口 */
   const [picked, setPicked] = useState('')
   const [error, setError] = useState('')
@@ -924,8 +921,8 @@ export default function ProcessConfigPage() {
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
-    // 六条只读端点互不依赖：任一条失败不得把整页吞掉（页面不白屏，失败处给可读提示）
-    const [routingsRes, catalogRes, templateRes, positionsRes, layersRes, rulesRes, ruleOptionsRes] =
+    // 五条只读端点互不依赖：任一条失败不得把整页吞掉（页面不白屏，失败处给可读提示）
+    const [routingsRes, catalogRes, templateRes, positionsRes, rulesRes, ruleOptionsRes] =
       await Promise.allSettled([
       productionApi.getRoutings(),
       productionApi.getOperationsCatalog(),
@@ -933,8 +930,6 @@ export default function ProcessConfigPage() {
       // ① 矩阵格（含 `id` ⇒ 抽屉写面寻址；`GET /operation-positions` 与分区读面的 `operations`
       //    段**同形**，本页只用它拿格 —— 分区与一列价由下面那条端点给，**不重算**）
       productionApi.getOperationPositions(),
-      // ② 两层分区读面（issue #4677；后端 #4676）：`operations` / `delivery` 两段 + 一列价聚合
-      productionApi.getOperationLayers(),
       productionApi.getRouteRules(),
       productionApi.getRouteRuleOptions(),
     ])
@@ -964,16 +959,6 @@ export default function ProcessConfigPage() {
     } else {
       setMatrix([])
       setMatrixError('工序单价加载失败，请稍后重试')
-    }
-    // 两层分区（issue #4677）：`operations` / `delivery` 两段 + 「打包发货」的一列价
-    // （`price_state` 逐字用服务端聚合 —— 前端不重算，见 §4.5 方案 A 的 3 条规则）
-    if (layersRes.status === 'fulfilled') {
-      setDeliveryAgg(layersRes.value.data?.data?.delivery ?? [])
-      setLayersError('')
-    } else {
-      // issue #4729（P2-10）：失败**不静默降级** —— 清空 + **显式报错**（不是「未设置」）
-      setDeliveryAgg([])
-      setLayersError('交付环节（打包发货）加载失败，请稍后重试')
     }
     if (rulesRes.status === 'fulfilled') {
       setRules(rulesRes.value.data?.data ?? [])
@@ -1109,19 +1094,6 @@ export default function ProcessConfigPage() {
   // ────────────────────────── 工艺项：两层（【工序】/【打包发货】）──────────────────────────
 
   /**
-   * **交付环节**（`scope='set'`）的工序名集合 —— 判据是**既有** `scope`（**不新造概念**）。
-   *
-   * ⚠️ **本集合只用于「从价目行里把交付环节摘出去」**（工序层成行），
-   * **不是**「打包发货层有哪些行」的判据 —— 那一层由**服务端 `delivery` 段**给行
-   * （后端按**工序库**的 `scope='set'` 行分区，**不看行**，issue #4729）。
-   * 在这里按行造行 = 零价目行的交付工序**整行消失**（#4674 形态：表格里有、抽屉里空、无处可删）。
-   */
-  const deliveryOps = useMemo(
-    () => new Set(matrix.filter((c) => c.scope === 'set').map((c) => c.operation)),
-    [matrix],
-  )
-
-  /**
    * 行 = **一道逻辑工序一个单价**（issue #4886）。
    *
    * ⚠️ 先按逻辑工序名**去重收敛**（{@link convergeByLogicalName}）—— 配套后端未上线时读面
@@ -1173,15 +1145,15 @@ export default function ProcessConfigPage() {
   )
 
   /**
-   * **第一层【工序】的行** = 矩阵行里**不属于**交付环节（`scope='set'`）的那些（issue #4677）。
+   * **表的行 = 全部矩阵行**（用户裁定 2026-09-21：「【打包发货】这里的表单也直接删」）。
    *
-   * ⚠️ 分区判据是 `scope`，**不是**「有没有矩阵格」—— 交付工序即使一格都没有，也在第二层有行
-   * （#4674 从根上避免的第 ① 条约束）。
+   * ⚠️ 原来按 `scope` 分成「工序层」+「【打包发货】层」两处渲染（issue #4677 的两层分区）；
+   * 用户裁定后**合并为一处** —— 那 5 道 `scope='set'` 工序（`打包` / `外帘打卷` / `外帘装袋` /
+   * `外帘发货` / `裁剪`）本来就在 `matrixRows` 里（有矩阵行、有 `id`、可改价），
+   * 独立区块只是同一批工序的**第二个视图** ⇒ 删掉它**不减少任何定价入口**，
+   * 而且消灭了「同一个概念两个载体」这条漂移面（同 #4650 阶段 1 的删法）。
    */
-  const operationsRows = useMemo(
-    () => matrixRows.filter((r) => !deliveryOps.has(r.operation)),
-    [matrixRows, deliveryOps],
-  )
+  const operationsRows = matrixRows
 
   /** 一行里出现过的元数据值（去重、保序、剔除空值）—— 「不许静默取第一个」的公共值口径 */
   const distinctMeta = (
@@ -1213,49 +1185,6 @@ export default function ProcessConfigPage() {
       .sort((a, b) => workshopRank(a.group) - workshopRank(b.group))
   }, [operationsRows])
 
-  /**
-   * 「打包发货」层的行（issue #4677）：**行的存在不依赖矩阵格** —— 两路来源合并：
-   *
-   * 1. 服务端分区读面的 `delivery` 段（**聚合价** + `applicable_positions`）—— 判据是**既有** `scope`；
-   * 2. 矩阵里 `scope='set'` 的格（**格的 `id`** 是抽屉写面的寻址键）。
-   *
-   * ⚠️ 只有第 2 路是不够的：一道交付工序**一个格都没有**时它就不在矩阵里，但它**仍是**交付环节的
-   * 成员 ⇒ 第 1 路保证它**照样有一行 + `管理▸`**（#4674 从根上避免的第 ① 条约束：判据换成
-   * 「有没有格」就会出现「表格里有 · 抽屉里空 · 无处可删」）。
-   *
-   * 🔴 第 1 路是**主**来源（issue #4729）：后端已改为按**工序库**的 `scope='set'` 行分区
-   * （**不看格**）⇒ 零矩阵格的交付工序**服务端必给行**（价态 `no_applicable_position`）。
-   * 第 2 路（从格重建）**只在「读面成功、但服务端没给这一行」时**可达 —— 它是兜底，
-   * **不是**分区判据。⚠️ 读面**失败**时不走这里（那会把「没读到」伪装成「没设置」）：
-   * 失败有**显式错误面**（{@link layersError} + `operation-layers-error`），见下方渲染。
-   */
-  const deliveryRows = useMemo(() => {
-    const byOp = new Map<string, OperationLayerDeliveryRow>()
-    deliveryAgg.forEach((r) => byOp.set(r.operation, r))
-    const cellsByOp = new Map<string, OperationPosition[]>()
-    matrix.forEach((c) => {
-      if (c.scope !== 'set') return
-      cellsByOp.set(c.operation, [...(cellsByOp.get(c.operation) ?? []), c])
-    })
-    cellsByOp.forEach((cells, operation) => {
-      if (byOp.has(operation)) return
-      // 服务端没给这一行（理论上不会）⇒ 从格上如实重建，**不猜价**（`no_applicable_position`）
-      const first = <K extends keyof OperationPosition>(k: K) =>
-        (cells.find((c) => c[k] != null)?.[k] ?? null) as OperationPosition[K]
-      byOp.set(operation, {
-        operation,
-        scope: 'set',
-        unit: first('unit') as string | null,
-        group: first('group') as string | null,
-        is_must_finish: first('is_must_finish') as boolean | null,
-        price: null,
-        price_state: 'no_applicable_position',
-        different_price_count: 0,
-        applicable_positions: cells.filter((c) => c.applicable === true).map((c) => c.position),
-      })
-    })
-    return [...byOp.values()].map((r) => ({ ...r, cells: cellsByOp.get(r.operation) ?? [] }))
-  }, [deliveryAgg, matrix])
 
   const visibleMatrixRows = useMemo(
     () => operationsRows.filter((r) => !q || r.operation.toLowerCase().includes(q)),
@@ -2433,12 +2362,12 @@ export default function ProcessConfigPage() {
             </div>
           )}
 
-          {/* ── 两个 tab：工艺项 / 工艺路线 ──
-              合并仍是**一个菜单入口、一个页面**；tab 切换**不丢状态**（编辑中的 draft 保留在 state 里）。 */}
+          {/* ── 两个 tab：工序与路线 / 算料配置 ──
+              issue #4886 用户裁定：原「工艺项」与「工艺路线」**合并为一屏**（路线就放在原【打包发货】的位置），
+              选项卡从三项收敛为两项；合并仍是**一个菜单入口、一个页面**，tab 切换**不丢状态**。 */}
           <div className="flex items-center gap-1 border-b border-neutral-200" role="tablist" data-testid="process-config-tabs">
             {([
-              { key: 'operations', label: '工艺项' },
-              { key: 'routes', label: '工艺路线' },
+              { key: 'process', label: '工序与路线' },
               { key: 'calc', label: '算料配置' },
             ] as const).map((t) => (
               <button
@@ -2468,7 +2397,7 @@ export default function ProcessConfigPage() {
                 「管理▸」抽屉 —— 同一个概念**只有一个载体**，改价只有一个入口（矩阵格）。
                 例外（用户改判）：**必完** 是完工门槛，除抽屉里的维护面外，行尾还要有**只读标记**
                 （issue #4610）；**作用域**仍只在抽屉里。 */}
-            {tab === 'operations' && (
+            {tab === 'process' && (
               <div className="space-y-4" data-testid="craft-operations-panel">
                 <section className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="operation-price-matrix">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -2647,124 +2576,6 @@ export default function ProcessConfigPage() {
                     </div>
                   )}
                 </section>
-                 {/* ══════════ 【打包发货】：`scope='set'` 的成员 —— **一列价** ══════════
-                     issue #4677 = 设计 §4.1/§4.5 方案 A：分区判据 = **既有** `scope`
-                     （**不新造概念**）；「一列价」是**服务端聚合的显式规则**（**不是删行** ——
-                     删行会让该工序在缺行的单据里静默消失 = 少一道活、少一笔计件钱）。
-                     ⚠️ **行的存在不依赖价目行**（#4674 从根上避免的第 ① 条约束）：即使某道交付
-                     工序一行价都没有，这里仍有一行 + `管理▸`（`no_applicable_position` 如实报出）。 */}
-                 <section className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="delivery-section">
-                   <div className="mb-3 flex flex-wrap items-baseline gap-2">
-                     <h2 className="text-base font-medium text-neutral-900">【打包发货】</h2>
-                     <span className="text-sm text-neutral-500">
-                       {deliveryRows.length} 道 · 每套窗一次的交付活（一列价，元/套）
-                     </span>
-                   </div>
-                   <p className="mb-3 text-xs text-neutral-500">
-                     这几道活<strong>每套窗只做一次</strong> ⇒ 一个价。价格逐字取服务端聚合：
-                     有价 ⇒ 显示该价；<span className="text-amber-700">未定价</span>（≠ ¥0.00）；
-                     有多个价不一致 ⇒ <strong>显式提示</strong>并引导到「管理▸」核对
-                     （<strong>不静默取第一个</strong>）。
-                   </p>
-                   {/* 🔴 issue #4729（P2-10）：读面**失败** ⇒ **显式报错**（不静默降级成「未设置」） */}
-                   {layersError ? (
-                     <p
-                       className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
-                       data-testid="operation-layers-error"
-                     >
-                       {layersError}
-                     </p>
-                   ) : deliveryRows.length === 0 ? (
-                     <p className="py-6 text-center text-sm text-neutral-400" data-testid="delivery-empty">
-                       暂无交付环节工序 —— 点右上「新增工序」建一道（作用域选「套级」），
-                       或用下方「补套行业模板」补齐（打包 / 外帘打卷 / 外帘装袋 / 外帘发货）
-                     </p>
-                   ) : (
-                     <div className="overflow-x-auto">
-                       <table className="w-full text-sm">
-                         <thead>
-                           <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
-                             <th className="py-2 pr-4 font-medium">工序</th>
-                             <th className="py-2 pr-4 font-medium">单价</th>
-                             <th className="py-2 pr-4 font-medium">单位 · 必完 · 操作</th>
-                           </tr>
-                         </thead>
-                         <tbody>
-                           {deliveryRows.map((row) => {
-                             const mustFinish = mustFinishOf(matrixRowCell(row.operation))
-                             return (
-                               <tr
-                                 key={row.operation}
-                                 className="border-b border-neutral-100 last:border-0"
-                                 data-testid={`delivery-row-${row.operation}`}
-                                 data-operation={row.operation}
-                               >
-                                 <td className="py-2.5 pr-4 align-top">
-                                   <div className="text-neutral-900">{row.operation}</div>
-                                 </td>
-                                 {/* 一列价：**逐字用服务端聚合**（`price_state` + `price`）
-                                     —— 前端不重算，也不静默取第一个 */}
-                                 <td
-                                   className={cn(
-                                     'py-2.5 pr-4 align-top',
-                                     row.price_state === 'priced' ? 'text-neutral-900' : 'text-amber-700',
-                                   )}
-                                   data-testid={`delivery-price-${row.operation}`}
-                                   data-price-state={row.price_state}
-                                   title={
-                                     row.price_state === 'unpriced'
-                                       ? '还没定价（≠ ¥0.00）'
-                                       : row.price_state === 'multiple_prices'
-                                         ? '有多行价不一致 —— 到「管理▸」核对'
-                                         : row.price_state === 'no_applicable_position'
-                                           ? '这道工序当前没有可用的价'
-                                           : undefined
-                                   }
-                                 >
-                                   {row.price_state === 'priced' ? (
-                                     <>
-                                       {money(row.price)}
-                                       <span className="ml-1 text-xs text-neutral-400">/{row.unit ?? '套'}</span>
-                                     </>
-                                   ) : row.price_state === 'unpriced' ? (
-                                     <>未定价 /{row.unit ?? '套'}</>
-                                     ) : row.price_state === 'multiple_prices' ? (
-                                       <>多行价不一致（{row.different_price_count} 处）</>
-                                     ) : (
-                                       <>未设置（没有可用的价）</>
-                                     )}
-                                 </td>
-                                 <td className="py-2.5 pr-4 align-top">
-                                   <div className="flex flex-wrap items-center gap-2">
-                                     <span className="text-xs text-neutral-500">
-                                       {row.group ? workshopLabel(row.group) : '—'} · {row.unit ?? '—'}
-                                     </span>
-                                     {/* 必完：价目行上有元数据就用它；**零价目行**回落服务端 `is_must_finish`
-                                         （issue #4729 —— 否则零行交付行的「必完」恒不显示，而库里那一行是 `true`）。 */}
-                                     {mustFinish || row.is_must_finish === true ? (
-                                       <span
-                                         className="text-xs text-amber-600"
-                                         data-testid={`delivery-must-finish-${row.operation}`}
-                                         title={mustFinishTitle()}
-                                       >
-                                         {mustFinishLabel()}
-                                       </span>
-                                     ) : null}
-                                     <ManageButton
-                                       operation={row.operation}
-                                       onOpen={openManageFor}
-                                       testIdPrefix="delivery-manage"
-                                     />
-                                   </div>
-                                 </td>
-                               </tr>
-                             )
-                           })}
-                         </tbody>
-                       </table>
-                     </div>
-                   )}
-                 </section>
 
 
               </div>
@@ -2776,7 +2587,7 @@ export default function ProcessConfigPage() {
                     **整块移除** —— 条件改为**挂在工序身上**（「工艺项」tab 的 `管理▸` 抽屉里一节
                     「适用条件」，人话）。后端 `GET/POST/DELETE /route-rules` 端点**保留**
                     （阶段 2 的 AI 入口与阶段 4 的承载收敛还要用），本阶段零迁移、实例化行为不变。 */}
-            {tab === 'routes' && (
+            {tab === 'process' && (
               <div className="space-y-4">
                 {/* 主区：具名路线（name + 默认徽标 + 主线 + 改名/设默认/删除） */}
                 <section className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="routings-list">
