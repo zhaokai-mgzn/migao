@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils'
 import { craftSpecLine, craftSpecRows } from '@/lib/craft-display'
 // 工序显示名的**唯一**口径（issue #4621）：逻辑名 · 部位 —— 纸面**不得**直接渲染变体名
 import { operationDisplayName } from '@/lib/operation-display'
+// 「第 N 套 / 共 M 套」的**唯一实现**（issue #4949）：与进度表**同一份**口径 —— 纸面与屏幕不得各算一套
+import { groupBySet } from './ProductionProgressTable'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
 
 /**
@@ -30,6 +32,14 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * 4. 二维码内容只放**该部位自己的** `scan_url ?? part_token`（token 化、可撤销），
  *    不放单号拼接串、不放加工单级 `qr_token`（issue #4946：粒度 = 商品行）。
  *    **缺码不画假码**：出占位框（工人按短码手输或找班长补码）。
+ * 5. 🔴 **纸面高度预算**（issue #4949，实测，勿随手加行）：60×30mm 减去上下各 1.2mm 内边距
+ *    ⇒ 可用 **27.6mm**。当前占用 = 行①（加工单号 + 第 N 套/共 M 套，**必须单行** 2.96mm）
+ *    + 行②（订单/客户/交期 2.54mm）+ `mt-[0.5mm]` + 行③ 右列（二维码 14.82mm + 「扫码报工」
+ *    2.54mm + 人可读短码 2.54mm = **19.89mm**）= **25.89mm，余量 1.7mm**。
+ *    ⚠️ 行① 一旦折行（两个长标识同排、无 `shrink-0`/`whitespace-nowrap`）就吃 **5.92mm**
+ *    ⇒ 越过预算 ⇒ `overflow:hidden` 会**静默裁掉纸面底部的人可读短码**（实测裁 1.25mm）——
+ *    而短码是设计里明写的**降级入口**（扫码工具读不出来时手输，见
+ *    `docs/design/worker-h5-scan-and-report.md` §1.4「不是可选项」）。加行/加字号前先算这笔账。
  */
 interface TaskCardPrintProps {
   processingOrderNo: string
@@ -56,16 +66,6 @@ const OPS_SUMMARY_LIMIT = 3
  * ⇒ 本地补一个读取口，用它把**快照行**与**部位**对齐（对不上 ⇒ 该张不出工艺摘要，不猜）。
  */
 type SnapshotItem = ProcessingOrderItem & { itemId?: string }
-
-/**
- * 「第 N 套 / 共 M 套」由**去重 `set_no`** 派生（不发明后端键；口径同 ProductionProgressTable.groupBySet）。
- * 缺 `set_no`（老数据 / 读面未升级）⇒ 该部位**自成一套**，不猜。
- */
-function setIndexOf(positions: ProductionPosition[], index: number): { no: number; count: number } {
-  const keys = positions.map((position, i) => position.set_no ?? `\u0000position-${i}`)
-  const order = keys.filter((key, i) => keys.indexOf(key) === i)
-  return { no: order.indexOf(keys[index]) + 1, count: order.length }
-}
 
 /** 工序摘要：`工序 11 道：精裁 · 布帘 → 三边 · 布帘 → 韩褶 · 布帘 …`（显示名只走 #4621 的唯一实现） */
 function opsSummary(position: ProductionPosition): string {
@@ -107,6 +107,8 @@ export default function TaskCardPrint({
   }
   // 0 个部位 ⇒ 仍出**一张**显式占位（明确「无商品/无码可打印」），而不是什么都不打
   const labels: (ProductionPosition | null)[] = list.length > 0 ? list : [null]
+  // 套序/套数走**与进度表同一份**实现（issue #4949）
+  const setViews = groupBySet(list)
 
   return createPortal(
     <div className={cn('task-card-print-area text-neutral-900', className)}>
@@ -133,9 +135,9 @@ export default function TaskCardPrint({
       `}</style>
 
       {labels.map((position, index) => {
-        const { no: setNo, count: setCount } = position
-          ? setIndexOf(list, index)
-          : { no: 1, count: 1 }
+        const setView = position ? setViews[index] : undefined
+        const setNo = setView ? setView.setIndex + 1 : 1
+        const setCount = setView ? setView.setCount : 1
         const qrValue = position ? (position.scan_url ?? position.part_token ?? null) : null
         const craft = craftSummary(position?.order_item_id ? itemsById.get(position.order_item_id) : undefined)
 
@@ -145,14 +147,23 @@ export default function TaskCardPrint({
             className="task-card-label flex flex-col justify-between"
             data-testid={`task-card-label-${index}`}
           >
-            {/* 加工单公共属性（**逐张**都在）：加工单号 + 套号（第 N 套 / 共 M 套 由去重 set_no 派生） */}
+            {/* 加工单公共属性（**逐张**都在）：加工单号 + 套序。
+                🔴 行①**必须单行**（issue #4949）：加工单号 `shrink-0` + 右span `whitespace-nowrap`
+                —— 折行会吃 2.96mm，把纸面底部的人可读短码挤出纸外（实测被裁 1.25mm）。
+                完整套号放不进行①（两个长标识同排 ⇒ 折行）⇒ 移到左列（那里有纵向余量，见下）。 */}
             <div className="flex items-baseline justify-between gap-[1mm]">
-              <span className="text-[7pt] font-bold tracking-wide" data-testid="task-card-no">
+              <span
+                className="shrink-0 whitespace-nowrap text-[7pt] font-bold tracking-wide"
+                data-testid="task-card-no"
+              >
                 {processingOrderNo}
               </span>
               {position && (
-                <span className="truncate text-neutral-600" data-testid={`task-card-label-set-no-${index}`}>
-                  {position.set_no || '—'} · 第 {setNo} 套 / 共 {setCount} 套
+                <span
+                  className="whitespace-nowrap text-neutral-600"
+                  data-testid={`task-card-label-set-no-${index}`}
+                >
+                  第 {setNo} 套 / 共 {setCount} 套
                 </span>
               )}
             </div>
@@ -184,6 +195,16 @@ export default function TaskCardPrint({
                         data-testid={`task-card-label-craft-${index}`}
                       >
                         {craft}
+                      </div>
+                    )}
+                    {/* 完整套号（issue #4949）：从行①搬进**左列** —— 左列实测只用 10.15mm/19.89mm
+                        （QR 列高才是纸面的约束），有纵向余量；而行① 放不下两个长标识。纸面标识一个不少。 */}
+                    {position.set_no && (
+                      <div
+                        className="truncate text-neutral-500"
+                        data-testid={`task-card-label-set-code-${index}`}
+                      >
+                        套号 {position.set_no}
                       </div>
                     )}
                   </>

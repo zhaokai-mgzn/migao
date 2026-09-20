@@ -41,6 +41,22 @@ vi.mock('@/lib/api', () => ({
     recordPrint: (...args: unknown[]) => mockRecordPrint(...args),
     revokeQrToken: (...args: unknown[]) => mockRevokeQrToken(...args),
     repriceUnpricedInstances: (...args: unknown[]) => mockRepriceUnpricedInstances(...args),
+    // issue #4949：本 mock 此前**缺** `getStuckPoints` ⇒ 页面调用时抛 TypeError 被 try/catch 吞掉
+    // （测试仍 PASS，但 stderr 一直有噪音，且「卡在哪」面板恒走错误分支 —— 假覆盖）。
+    // 补齐为**成功**值，让页面走真实渲染路径。
+    getStuckPoints: () =>
+      Promise.resolve({
+        data: {
+          data: {
+            mode: 'A',
+            threshold_hours: 4,
+            threshold_source: 'default',
+            states: { not_started: 0, in_progress: 0, completed: 0 },
+            stuck_total: 0,
+            stuck: [],
+          },
+        },
+      }),
   },
 }))
 
@@ -193,7 +209,9 @@ describe('加工单生产明细页', () => {
     await waitFor(() => expect(screen.getByTestId('operation-row-op-1')).toBeInTheDocument())
 
     // 本夹具 = 单窗订单 ⇒ 逐字「第 1 套 / 共 1 套」
-    expect(screen.getByText('第 1 套 / 共 1 套')).toBeInTheDocument()
+    // ⚠️ 必须**限定在进度表内**（issue #4949）：洗水码纸面（屏幕上 `display:none`）此后也印同一句话，
+    // 全页 `getByText` 会命中 2 个元素 ⇒ 误报「multiple elements found」。这里要钉的是**进度表组头**。
+    expect(within(screen.getByTestId('position-group-布帘')).getByText('第 1 套 / 共 1 套')).toBeInTheDocument()
 
     // 红证（改前实测）：组头逐字为「部位：布帘」⇒ 下面两条改前必红
     const group = screen.getByTestId('position-group-布帘')
@@ -401,6 +419,9 @@ describe('加工单生产明细页', () => {
     await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
     await userEvent.click(screen.getByTestId('production-revoke-button'))
     await screen.findByRole('dialog', { name: '撤销二维码' })
+    // issue #4949：撤销弹层**不得**再承诺页面上不存在的「重新生成二维码」入口（假承诺 ——
+    // 每个有工序实例的单撤销后都无从重新发码；真正的重新发码是 #4287 的独立任务）
+    expect(screen.getByTestId('production-revoke-reissue-gap')).toHaveTextContent('无法重新发码')
     await userEvent.click(screen.getByTestId('production-revoke-confirm'))
 
     // 生产端点一律走**订单 id**（不是加工单号），与既有 instantiate/print 同口径
