@@ -31,6 +31,15 @@ public class ProcessingPositionOperation {
     private String processingOrderId;
 
     /**
+     * 套归属（V92，issue #4698 切片 ⓪）：指向 {@code processing_order_sets.id}。
+     *
+     * <p><b>可空</b> = 本列引入前的存量实例行（与 {@link #orderItemId} 同款「留空不猜」；
+     * V92 回填只写 {@code order_item_id} 非空的行）。扫码解析的推断按它取「本套的全部工序」
+     * （切片 ①：部位级优先 → 套级回落，设计 §3.2）。</p>
+     */
+    private String setId;
+
+    /**
      * 部位**展示名** = 加工产物名[+色号]（如 {@code 布艺遮光帘A 米白}）—— **不是帘种**。
      *
      * <p>⚠️ 本条注释此前写「部位：布帘/纱帘/帘头/外帘」，**与实现相反**（issue #4621 改判）。
@@ -107,6 +116,14 @@ public class ProcessingPositionOperation {
 
     /** 合格累计数量（仅正常报工累加） */
     private BigDecimal doneQty;
+
+    /**
+     * 完成时刻（V92，issue #4698）：**A 模式唯一必需的新增时序列**（「做完扫一次 = 完工」）。
+     *
+     * <p>⚠️ 不得用 {@code updatedAt} 冒充 —— 它会被任何更新污染（设计 §12 D8）。
+     * 写入方是切片 ②（报工主闭环）；本切片（① 只读面）只读它来回答「本套何时完成」。</p>
+     */
+    private OffsetDateTime doneAt;
 
     private OffsetDateTime createdAt;
 
