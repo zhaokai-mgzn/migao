@@ -4,10 +4,14 @@ package com.migao.admin.security;
 import com.aliyun.oss.OSS;
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.controller.AuthController;
+import com.migao.admin.controller.CustomerAgentSessionController;
 import com.migao.admin.controller.ProductController;
+import com.migao.admin.controller.SmsController;
+import com.migao.admin.dto.AgentSessionDetailResponse;
 import com.migao.admin.dto.LoginRequest;
 import com.migao.admin.dto.LoginResponse;
 import com.migao.admin.dto.PageResponse;
+import com.migao.admin.entity.AgentMessage;
 import com.migao.admin.service.AuthService;
 import com.migao.admin.service.ProductService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,14 +28,20 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.Locale;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -123,6 +133,13 @@ class SecurityConfigTest {
 
     @MockBean
     private com.migao.admin.service.NotificationService notificationService;
+
+    // 通知规则 / 模板（issue #4727）：两个 controller 补了类级 system:manage ⇒ 正向对照需要服务桩
+    @MockBean
+    private com.migao.admin.service.NotificationRuleService notificationRuleService;
+
+    @MockBean
+    private com.migao.admin.service.NotificationTemplateService notificationTemplateService;
 
     @MockBean
     private com.migao.admin.service.OrderService orderService;
@@ -749,5 +766,220 @@ class SecurityConfigTest {
                     int status = result.getResponse().getStatus();
                     assert status != 401 : "刷新端点不应返回 401，实际返回: " + status;
                 });
+    }
+
+    // ======================== 权限注解面审计（issue #4727）========================
+    // 背景：#4727 逐 controller 核清「无 @RequirePermission」的面 ⇒ 只对**明确漏了**的租户级配置面补注解，
+    // 并为工人端预留拒绝集合（#4716 设计 C11）。**以下每条都是红证**：
+    // 把对应的注解 / ADMIN_API_REJECTED_ROLES 改动回退 ⇒ 该用例必红（改前实测输出见 PR body）。
+
+    @Test
+    @DisplayName("权限审计 - 商户员工无 system:manage 访问 /api/admin/permissions ⇒ 403（改前放行）")
+    void permissionAudit_permissions_withoutSystemManage_denied() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("dashboard:view"));
+
+        mockMvc.perform(get("/api/admin/permissions")
+                        .with(user("staff-p1").roles("OPERATOR")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("PERMISSION_DENIED"))
+                .andExpect(jsonPath("$.error.details[0].message").value("system:manage"));
+
+        // 承重判据（负向控制）：改前该端点放行到业务层 ⇒ 这条 verify 会红
+        verify(permissionService, never()).getAllPermissions();
+    }
+
+    @Test
+    @DisplayName("权限审计 - 商户员工持 system:manage 访问 /api/admin/permissions ⇒ 200（正向对照，未过度收窄）")
+    void permissionAudit_permissions_withSystemManage_allowed() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("system:manage"));
+        when(permissionService.getAllPermissions()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/permissions")
+                        .with(user("staff-p2").roles("OPERATOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @DisplayName("权限审计 - 商户员工无 system:manage 访问 /api/admin/notification-rules ⇒ 403（改前放行）")
+    void permissionAudit_notificationRules_withoutSystemManage_denied() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("dashboard:view"));
+
+        mockMvc.perform(get("/api/admin/notification-rules")
+                        .with(user("staff-n1").roles("OPERATOR")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.details[0].message").value("system:manage"));
+
+        verify(notificationRuleService, never()).queryRules(anyLong(), anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("权限审计 - 商户员工持 system:manage 访问 /api/admin/notification-rules ⇒ 200")
+    void permissionAudit_notificationRules_withSystemManage_allowed() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("system:manage"));
+        when(notificationRuleService.queryRules(anyLong(), anyLong(), any(), any()))
+                .thenReturn(PageResponse.<com.migao.admin.dto.NotificationRuleDTO>of(0L, 1L, 20L, List.of()));
+
+        mockMvc.perform(get("/api/admin/notification-rules")
+                        .with(user("staff-n2").roles("OPERATOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @DisplayName("权限审计 - 商户员工无 system:manage 访问 /api/admin/notification-templates ⇒ 403（改前放行）")
+    void permissionAudit_notificationTemplates_withoutSystemManage_denied() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("dashboard:view"));
+
+        mockMvc.perform(get("/api/admin/notification-templates")
+                        .with(user("staff-t1").roles("OPERATOR")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.details[0].message").value("system:manage"));
+
+        verify(notificationTemplateService, never()).queryTemplates(anyLong(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("权限审计 - 商户员工持 system:manage 访问 /api/admin/notification-templates ⇒ 200")
+    void permissionAudit_notificationTemplates_withSystemManage_allowed() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("system:manage"));
+        when(notificationTemplateService.queryTemplates(anyLong(), anyLong(), any()))
+                .thenReturn(PageResponse.<com.migao.admin.dto.NotificationTemplateDTO>of(0L, 1L, 20L, List.of()));
+
+        mockMvc.perform(get("/api/admin/notification-templates")
+                        .with(user("staff-t2").roles("OPERATOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    // ======================== 工人端拒绝集合预留（#4716 设计 C11 / issue #4727）========================
+
+    @Test
+    @DisplayName("权限审计 - worker 身份访问 /api/admin/** 一律 403（含此前无注解的 user/info 与 menus）")
+    void permissionAudit_workerRole_cannotEnterAdminApi() throws Exception {
+        // 承重两条：这两个端点在 #4727 之前**没有任何 @RequirePermission** ⇒
+        // 拒绝集合不含 worker 时它们会落到业务层并返回 200（本用例红）。
+        mockMvc.perform(get("/api/admin/user/info").with(user("worker-1").roles("WORKER")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/admin/menus").with(user("worker-1").roles("WORKER")))
+                .andExpect(status().isForbidden());
+        // 已有注解的端点：拒绝必须发生在**门禁**而不是业务层
+        mockMvc.perform(get("/api/admin/products").with(user("worker-1").roles("WORKER")))
+                .andExpect(status().isForbidden());
+
+        verify(roleService, never()).getUserPermissions(anyString());
+    }
+
+    // ======================== 反向护栏（issue #4727 红线）：C 端可达性一字不变 ========================
+    // 红线：误给 customer/agent 端点加 @RequirePermission = 线上故障（C 端能力被砍）。
+    // 每条都必须是「改前 200；误加注解 ⇒ 403 ⇒ 必红」。
+
+    @Test
+    @DisplayName("反向护栏 - customer 身份仍可达 /api/customer/agent-sessions/**（误加注解 ⇒ 必红）")
+    void reverseGuard_customerCanStillReachCustomerAgentSessions() throws Exception {
+        SecurityUser customer = securityUser("customer-1", 1L, "customer");
+        when(agentSessionService.getSessionByAiSessionId(eq("ai-1"), eq("customer-1")))
+                .thenReturn(AgentSessionDetailResponse.builder()
+                        .id("as-1").aiSessionId("ai-1").status("active").messages(List.of()).build());
+        when(agentSessionService.sendMessage(eq("as-1"), eq("customer"), eq("customer-1"), anyString(), anyBoolean()))
+                .thenReturn(AgentMessage.builder()
+                        .id("m-1").sessionId("as-1").senderType("customer").senderId("customer-1")
+                        .contentType("text").content("你好").build());
+
+        mockMvc.perform(get("/api/customer/agent-sessions/by-ai/ai-1")
+                        .with(authentication(authOf(customer))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value("as-1"));
+
+        mockMvc.perform(post("/api/customer/agent-sessions/as-1/messages")
+                        .with(authentication(authOf(customer)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"你好\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content").value("你好"));
+
+        // C 端路径**不得**进入权限码校验（误加注解 ⇒ 403 + 本断言红）
+        verify(roleService, never()).getUserPermissions(anyString());
+    }
+
+    @Test
+    @DisplayName("反向护栏 - customer/agent 身份仍可达 /api/auth/me（误加注解 ⇒ 必红）")
+    void reverseGuard_customerAndAgentCanStillReachAuthMe() throws Exception {
+        for (String role : List.of("customer", "agent")) {
+            mockMvc.perform(get("/api/auth/me")
+                            .with(authentication(authOf(securityUser(role + "-1", 1L, role)))))
+                    .andExpect(status().isOk());
+        }
+        verify(roleService, never()).getUserPermissions(anyString());
+    }
+
+    @Test
+    @DisplayName("反向护栏 - C 端驱动的内部服务路径仍可达：转人工站内信 + 写审计上报（误加注解 ⇒ 必红）")
+    void reverseGuard_customerDrivenInternalServicePathsStillWork() throws Exception {
+        // human_handoff（allowed_roles=["customer"]）与写审计上报都走 X-Service-Token + C 端 X-User-Id
+        when(userMapper.selectById("customer-9")).thenReturn(staffUser("customer-9", 1L, "customer", "active"));
+
+        mockMvc.perform(post("/api/admin/notifications")
+                        .header("X-Service-Token", SERVICE_SECRET)
+                        .header("X-Tenant-Id", "1")
+                        .header("X-User-Id", "customer-9")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"recipientId\":\"staff-1\",\"recipientType\":\"employee\",\"title\":\"转人工\",\"content\":\"有新工单\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/admin/agent/audit-logs")
+                        .header("X-Service-Token", SERVICE_SECRET)
+                        .header("X-Tenant-Id", "1")
+                        .header("X-User-Id", "customer-9")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"action\":\"create\",\"resourceType\":\"order\",\"toolName\":\"order_create\"}"))
+                .andExpect(status().isOk());
+
+        // C 端身份不引入细粒度查询（与 serviceToken_customerXUserId_keepsLegacyServiceBypass 同口径）
+        verify(roleService, never()).getUserPermissions(anyString());
+    }
+
+    @Test
+    @DisplayName("反向护栏 - 零权限商户员工仍可达 /api/admin/user/info 与 /api/admin/menus（误加注解 ⇒ 必红）")
+    void reverseGuard_zeroPermissionStaffCanStillReachSelfInfoAndMenuTree() throws Exception {
+        when(userMapper.selectById("staff-zero")).thenReturn(staffUser("staff-zero", 1L, "operator", "active"));
+        when(roleService.getUserRoleCodes("staff-zero")).thenReturn(List.of("operator"));
+        when(roleService.getUserPermissions("staff-zero")).thenReturn(List.of());
+
+        // 自助首屏：任何商户员工（哪怕零权限）都必须能拿到自己的角色/权限/菜单
+        mockMvc.perform(get("/api/admin/user/info")
+                        .with(authentication(authOf(securityUser("staff-zero", 1L, "operator")))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        // 权限码目录树：静态常量，是「员工管理」页勾选树的唯一来源
+        mockMvc.perform(get("/api/admin/menus")
+                        .with(authentication(authOf(securityUser("staff-zero", 1L, "operator")))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray());
+    }
+
+    @Test
+    @DisplayName("反向护栏 - C 端/公开端点控制器类级不得有 @RequirePermission（误加 ⇒ 必红）")
+    void reverseGuard_cEndControllersMustNotDeclareClassLevelPermission() {
+        for (Class<?> type : List.of(CustomerAgentSessionController.class, AuthController.class, SmsController.class)) {
+            assertNull(type.getAnnotation(RequirePermission.class),
+                    type.getSimpleName() + " 是 C 端/公开端点控制器：类级 @RequirePermission 会砍掉 C 端可达性"
+                            + "（issue #4727 红线）；确需收窄请用**方法级**注解");
+        }
+    }
+
+    /** 构造带业务身份的认证（C 端 customer/agent 的主体是 {@link SecurityUser}，不是 Spring 的 User）。 */
+    private static SecurityUser securityUser(String userId, Long tenantId, String... roles) {
+        List<String> roleList = List.of(roles);
+        List<SimpleGrantedAuthority> authorities = roleList.stream()
+                .map(r -> new SimpleGrantedAuthority("ROLE_" + r.toUpperCase(Locale.ROOT)))
+                .toList();
+        return new SecurityUser(userId, tenantId, userId, roleList, authorities);
+    }
+
+    private static Authentication authOf(SecurityUser securityUser) {
+        return new UsernamePasswordAuthenticationToken(
+                securityUser, null, securityUser.getAuthorities());
     }
 }

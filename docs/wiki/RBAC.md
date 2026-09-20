@@ -62,7 +62,7 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
   → 员工登录 (短信/JWT)
   → /api/auth/me 返回 permissions+menus → 前端侧边栏按权限过滤
   → 前端路由守卫(403 页) + 按钮级权限(employee:create 才可见新增/编辑/删除/禁用)
-  → 后端 SecurityConfig 门禁(/api/admin/** 仅商户员工角色, customer/agent 拒绝)
+  → 后端 SecurityConfig 门禁(/api/admin/** 仅商户员工角色, customer/agent/worker 拒绝)
   → @RequirePermission + PermissionInterceptor 按权限码 403
   → 米宝: ToolContext.permissions → employee_manage 按 employee:list/employee:create 放行
 ```
@@ -71,11 +71,66 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 
 | 层 | 机制 |
 |----|------|
-| 门禁 | `SecurityConfig.adminApiAuthorizationManager`：`/api/admin/**` 允许平台管理员/内部服务/商户员工角色；小程序/B2C 用户（customer/agent）一律 403 |
+| 门禁 | `SecurityConfig.adminApiAuthorizationManager`：`/api/admin/**` 允许平台管理员/内部服务/商户员工角色；**拒绝集合** `ADMIN_API_REJECTED_ROLES` = 小程序/B2C 用户（customer/agent）+ **工人端身份（worker，issue #4727 按 #4716 设计 C11 预留）** 一律 403 |
 | Controller | `@RequirePermission("模块:操作")` + `PermissionInterceptor` AOP 切面（方法级 + 类级）；平台管理员(super_admin) 直通。内部服务(service) **不再无条件直通**：service token 请求带 `X-User-Id` 且该用户解析为**同租户商户员工**（role ∉ {customer, agent}）时，改以该员工的真实角色进入 `PermissionInterceptor` 做细粒度强控（#4105，`ServiceTokenFilter`）；无 `X-User-Id` / C 端顾客 / 非本租户 / 查库异常时**保持原直通语义**（零回归）。403 响应保留所需权限码并附可执行 suggestion（`GlobalExceptionHandler` + `SecurityConfig.accessDeniedHandler` 同构） |
 | Service | MyBatis 拦截器自动注入 `WHERE tenant_id = ?` |
 | AI Tool | `required_permissions`（与 admin-api 权限目录**同源**）+ 工具内按 action 二次校验（如 `employee_manage`：查询需 employee:list，写操作需 employee:create）。覆盖范围随 #4106 铺开：此前仅 `employee_manage` 声明，其余工具只有 `allowed_roles` 角色粗筛 |
 | 前端 | `lib/permission.ts usePermission()`：菜单过滤 + `(dashboard)/layout.tsx` 路由守卫 + 员工页按钮级权限 |
+
+## `/api/admin/**` 放行策略现状（issue #4727 实测，2026-09-20）
+
+`SecurityConfig.securityFilterChain()` 把 `/api/admin/**` 交给 `adminApiAuthorizationManager`（**唯一门禁**），
+其余路径落到 `.anyRequest().authenticated()`。逐分支：
+
+| 分支 | 身份 | 判定 | 依据 |
+|---|---|---|---|
+| ① 放行 | `admin` / `super_admin` / `service` | 直接进入 | `adminApiAuthorizationManager`（平台管理员与内部服务拥有全部权限） |
+| ② 拒绝 | `customer` / `agent` / **`worker`**（常量 `ADMIN_API_REJECTED_ROLES`） | **403** | 垂直越权防护（#4105）；`worker` 由 issue #4727 按 #4716 设计 C11 预留 |
+| ③ 放行进入 | 其余**一切**角色（**含零权限的自定义岗位**） | 进入，**能否访问由 `@RequirePermission` 决定** | 商户员工（岗位码是开放集合，无法用白名单穷举） |
+| ④ 未认证 | 无 token / 匿名 | **401** | `authenticationEntryPoint` |
+
+- `/api/auth/**` 里在 `permitAll()` 名单内的（`admin/login`、`mini/login`、`bmini/login`、`h5/authorize`、`h5/callback`、`refresh`、`sms/**`、`register`）**完全公开**；
+  其余 `/api/auth/**`（`me`/`logout`/`mini/bind-phone`）只需**任意已认证身份**（含 C 端）—— 它们是自助端点，**不得**加权限码。
+- `/api/customer/**`（C 端人工会话）与 `/api/super-admin/**`（`checkSuperAdminPermission()` 显式校验 `super_admin`）**都不走本门禁**。
+- ⚠️ **分支 ③ 的含义：没有 `@RequirePermission` 的端点 = 对所有商户员工开放**（含零权限岗位）——
+  这就是 issue #4727 的审计对象。
+- ⚠️ **未把 `worker` 加进 `ServiceTokenFilter.C_END_ROLES`**（有意不做）：那里的语义是「C 端角色」，
+  加进去会让持 `X-User-Id=工人` 的内部服务调用**回退成 `service` 身份**⇒ 反而**旁路**掉细粒度校验（更宽）。
+  现状下 worker 经 service token 也会被解析成真实角色 `worker` ⇒ 落在上面的分支 ② 被 403。
+
+## 权限注解面审计（issue #4727，2026-09-20 实测）
+
+审计口径：扫描 `backend/admin-api/src/main/java/com/migao/admin/controller/**`（**含 `agent/` 子目录**）全部端点，
+按「方法级注解优先、其次类级」解析每个端点的**生效权限码**。
+
+**完全没有 `@RequirePermission` 的 controller：11 个** = 顶层 10 个 + `agent/` 子目录 1 个。
+（issue #4727 正文与 #4716 设计附录 A7 写的「10 个」只扫了顶层 `controller/*.java`、未含子目录 —— 口径差异，非事实冲突。）
+
+| # | controller | 端点 | 现状 | 结论 | 依据 |
+|---|---|---|---|---|---|
+| 1 | `AdminPermissionController` | `GET /api/admin/permissions` | 无注解 | ✅ **补 `system:manage`** | 权限目录：唯一前端调用方「岗位权限」页已要求 `system:manage`；唯一 ai-agent 调用方 `role_manage` 工具的 `required_permissions` 本就是 `["system:manage"]` ⇒ **零回归**。且该端点带**写副作用**（`ensureFullPermissionCatalog` 懒补种） |
+| 2 | `NotificationRuleController` | `GET/POST/PUT/DELETE /api/admin/notification-rules` | 无注解 | ✅ **补类级 `system:manage`** | 租户级通知配置（含写面），与「租户设置」同族；前端与 ai-agent **零调用**（仅单测命中）⇒ 零回归 |
+| 3 | `NotificationTemplateController` | `GET/POST/PUT/DELETE /api/admin/notification-templates` | 无注解 | ✅ **补类级 `system:manage`** | 同上 |
+| 4 | `NotificationController` | `GET /notifications`、`GET /unread-count`、`PUT /{id}/read`、`PUT /read-all`、`DELETE /{id}` | 无注解 | ⬜ **该放行** | **自助**端点：收件人一律取 `SecurityContext` 的当前 `userId`（不接受 body 注入）⇒ 无跨用户读写；通知中心**无前端路由守卫**（全员可见）⇒ 加码会砍掉所有岗位的通知铃铛 |
+| 5 | `NotificationController` | `POST /api/admin/notifications` | 无注解 | ⚠️ **本轮不改（登记为分叉）** | 语义上是「管理员手动发送」的**租户级写面**（收件人由 body 指定），但 ai-agent 的 `notification_manage`（`allowed_roles=["admin","agent","tenant_admin","operator"]`、**未声明** `required_permissions`）与 `human_handoff`（C 端）都在调它 ⇒ 单方面补 `system:manage` 会**砍掉 operator 经米宝发通知**的既有能力。正解 = 注解 **与** ai-agent 侧 `required_permissions` **同 PR** 落地（#4727 禁改 ai-agent） |
+| 6 | `MenuController` | `GET /api/admin/menus` | 无注解 | ⬜ **该放行** | 内容是**静态常量**（`MENU_TREE` 硬编码权限码目录，不读任何租户/业务数据），且每个已认证员工本来就能从 `/api/auth/me` 拿到 `permissions`/`menus`；唯一调用方「员工管理」页（守卫 `employee:list`）的勾选树依赖它 |
+| 7 | `UserController` | `GET /api/admin/user/info` | 无注解 | ⬜ **该放行** | **自助**首屏：只返回**自己**的角色/权限/菜单，是侧边栏与前端路由守卫的数据源；任何权限码都会让无该码的员工登录后白屏 |
+| 8 | `AuthController` | 10 个 `/api/auth/**` 端点 | 无注解 | ⬜ **该放行** | 公开登录/OAuth/refresh（`permitAll`）+ 自助 `me`/`logout`/`mini/bind-phone`（C 端能力，**加码 = 线上故障**） |
+| 9 | `SmsController` | `POST /api/auth/sms/send` | 无注解 | ⬜ **该放行** | 公开端点（`/api/auth/sms/**` 在 `permitAll` 名单），登录前置 |
+| 10 | `RegistrationController` | `POST /api/auth/register`；`GET/PUT /api/super-admin/registrations/**` | 无注解 | ⬜ **该放行** | 注册面公开；超管面**不在 `/api/admin/**`**，已由 `checkSuperAdminPermission()` 显式校验 `super_admin`（`@RequirePermission` 对 `super_admin` 是直通，加了也无效） |
+| 11 | `agent/AgentAuditLogController` | `POST /api/admin/agent/audit-logs` | 无注解 | ⬜ **该放行** | 内部服务**取证上报**面：ai-agent 每次写工具调用都带 `X-User-Id` 上报；加码会让**受限岗位员工**的写操作审计被 403 ⇒ **取证缺口**（`audit_logs` 是取证材料，宁可放行不可丢） |
+
+**部分覆盖（有注解但只覆盖一部分端点）—— 逐条结论**：
+
+| controller | 未覆盖端点 | 结论 | 依据 |
+|---|---|---|---|
+| `AdminRoleController` | `GET /roles`、`GET /roles/all`、`GET /roles/{id}` | ⬜ **该放行**（读面） | `/roles/all` 是「员工管理」页**岗位下拉**的数据源（`employeeApi.loadPositions()`），持 `employee:create` 的员工必须能读；写面（POST/PUT/DELETE）已是 `system:manage` |
+| `SettingsController` | `PUT /api/admin/settings/password` | ⬜ **该放行** | 自助改密：只改**当前认证用户**自己的密码 |
+| `agent/AgentPaymentController` | `GET /api/admin/agent/payment-qrcodes` | ⬜ **该放行** | 米宝收款码读面（会话内展示给客户），与类级 `order:list` 同族的读口径 |
+
+> **残余风险（照实登记，本轮不修）**：分支 ③ + 上表第 6/7 行意味着**零权限的商户员工**仍能读
+> `/api/admin/menus`（静态目录）与自己的 `/api/admin/user/info`。二者都不含跨用户/租户数据，
+> 且与 `/api/auth/me` 已返回的信息同源 ⇒ 判定为**可接受**；不为此加码（加码会砍掉自助首屏与员工页勾选树）。
 
 ## 服务间调用的授权边界（ai-agent → admin-api，issue #4105）
 
