@@ -73,6 +73,9 @@ public class ProductionOperationCommandService {
     /**
      * 更新工序（部分更新：只写 body 里出现的字段；未出现的字段保持原值）。
      *
+     * <p><b>不支持改名</b>（issue #4641）：body 里**出现** {@code name} 一律 422 + 逐条理由
+     * （见 {@link #rejectNameFieldOnUpdate}）—— 加护栏之前它是**静默忽略**（200 且库里一字未改）。</p>
+     *
      * @param body 可含 unit_price / is_must_finish / is_start_marker / status / unit /
      *             group_name / sort_order / scope（scope = 部位级 position / 套级 set，issue #4384 A1）
      * @return 更新后的工序（形态 = {@link ProductionOperationQueryService#operationView}，与目录项同构）
@@ -83,6 +86,7 @@ public class ProductionOperationCommandService {
         if (op == null || !tenantId.equals(op.getTenantId()) || !Integer.valueOf(0).equals(op.getDeleted())) {
             throw BusinessException.notFound("工序");
         }
+        rejectNameFieldOnUpdate(body);
         // 改价前的单价必须先留存：下面 op 会被就地改成新值（用于响应），改完再比就恒等 ⇒ 版本账永空
         BigDecimal previousPrice = nz(op.getUnitPrice());
         // 只带变更字段的部分实体（updateById 忽略 null ⇒ 不在 body 里的列一律不碰）
@@ -706,6 +710,39 @@ public class ProductionOperationCommandService {
                         "工序名不要带部位后缀（`-布` / `-纱` / `-帘`）；部位在下方勾选 —— "
                                 + "名字与部位是两件事，带部位的名字会让同一道工序在库里存成两名")),
                 "把名字改成不带部位的逻辑工序名（如「三边」），部位在下方勾选");
+    }
+
+    /**
+     * 更新路径**拒绝 {@code name} 字段**（issue #4641：写面入参护栏不只在新增路径）。
+     *
+     * <p>本端点（{@code PUT /operations/{id}}）**不支持改名**：{@code name} 不在可写字段集里
+     * （见 {@code update} 的 javadoc 与 {@code ProductionOperationUpdateParams}）。在加本护栏之前，
+     * body 里带 {@code name} 是**静默忽略** —— 返回 200、库里一字未改。两个后果都不好：
+     * ① 调用方以为改成功了（**静默**，本会话红线）；
+     * ② 想落旧形态名字的调用方以为「写进去了」（实际没有），真正的失败原因（改名不支持）
+     * 永远不会被说出来。</p>
+     *
+     * <p>⇒ 只要 body 里**出现** {@code name} 就 422 + 逐条理由（{@code error.details}），
+     * 与新增路径同一信封。**判据取「出现即拒」而不是「与现值不同才拒」**：后者对
+     * 「把名字原样回传」的调用方留了一个静默接受的洞，而「改名一律不支持」这句话对两种输入都成立
+     * —— 口径更简单、且不会让同一字段的处置依赖库里的现值。</p>
+     *
+     * <p><b>本护栏不改任何既有行为</b>：web 侧统一出口
+     * （{@code frontend/admin-web/src/lib/api.ts} 的 {@code updateOperation}）的类型
+     * {@code ProductionOperationUpdateParams} 里**没有** {@code name}；「新增」的
+     * {@link #create} 路径上旧形态名字仍由 {@link #rejectVariantOperationName} 拒。</p>
+     */
+    private static void rejectNameFieldOnUpdate(Map<String, Object> body) {
+        if (body == null || !body.containsKey("name")) {
+            return;
+        }
+        throw BusinessException.validationError(
+                "工序名不支持修改",
+                List.of(new ApiResponse.ErrorDetail("name",
+                        "更新工序不能改 name：本端点不支持改名（name 是工序库唯一索引与矩阵/路线引用的入口名）"
+                                + "；要换名字请新建一道工序，旧的那道用删除端点软删")),
+                "去掉 body 里的 name（可写字段：unit_price / unit / group_name / status / scope / "
+                        + "sort_order / is_must_finish / is_start_marker / positions）");
     }
 
     private static BigDecimal nz(BigDecimal value) {
