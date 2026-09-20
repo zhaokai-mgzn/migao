@@ -292,12 +292,19 @@ public class ProductionController {
      * ② 被活跃 {@code production_route_rules} 的 {@code operation}/{@code after_operation} 命中
      * （给触发名）；③ 被矩阵行引用（该变体对应的**全部** {@code (逻辑名, 部位)} 格中任一
      * {@code applicable=true}，给部位）。已软删 ⇒ <b>200 幂等 no-op</b>。</p>
+     *
+     * <p><b>{@code detach_positions=true}（issue #4665）</b>：一键「设为不做并删除」——
+     * 同一事务里先把受影响的矩阵格设为 {@code applicable=false}（价清空），再软删工序，
+     * 响应多一个 {@code detached_positions}（摘了几个格，如实报数）。护栏①主线 / ②规则
+     * <b>照样拦</b>（主线涉及车间顺序，必须人工确认）；只有护栏③变成可一键满足。</p>
      */
     @DeleteMapping("/operations/{id}")
     @RequirePermission("processing:manage")
-    public ApiResponse<Map<String, Object>> deleteOperation(@PathVariable String id) {
+    public ApiResponse<Map<String, Object>> deleteOperation(
+            @PathVariable String id,
+            @RequestParam(name = "detach_positions", defaultValue = "false") boolean detachPositions) {
         return ApiResponse.success(
-                productionOperationCommandService.delete(id, TenantContext.getTenantId()));
+                productionOperationCommandService.delete(id, TenantContext.getTenantId(), detachPositions));
     }
 
     /**
