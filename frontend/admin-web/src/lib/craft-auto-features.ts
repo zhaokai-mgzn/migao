@@ -42,7 +42,31 @@ export const SIDE_MARGIN = 0.3
  */
 export const HEM_MARGIN = 0.3
 
-/** 门幅缺省值（米）—— SKU 未携带 `doorWidth` 时的行业常态 */
+/**
+ * **门幅缺省值**（米）—— SKU 未携带 `doorWidth` 时本页按它推算。
+ *
+ * 🔴 **它不是前端自己编的数**（issue #4746）：缺省口径 = **算料引擎的默认门幅**
+ * （`curtain_calc.build_quote(fabric_width: float = 2.8)`，米宝下单通路不传门幅时的值）
+ * —— 逐值锚定见守卫 `tests/unit/lib/craft-auto-features.test.ts`（改一处必红）。
+ *
+ * ## 门幅三处口径（issue #4746，**核清后的结论**）
+ *
+ * | 口径 | 值 | 来源 | 谁在读 |
+ * |---|---|---|---|
+ * | 商品/SKU 门幅（**权威**） | 商品可配（种子 2.8；窄幅布 1.4） | 商品 `doorWidths` ⇒ `product_skus.door_width` | 本页判定（{@link resolveDoorWidth}）、SKU 定位 / 加工费组合键 |
+ * | 前端**缺省**门幅 | {@link DEFAULT_DOOR_WIDTH} = 2.8 | 算料引擎默认门幅（`build_quote` 的 `fabric_width` 默认值） | SKU 未携带门幅时的判定 |
+ * | 引擎**端点**门幅 | 3.2 | `backend/ai-agent-service/app/api/internal.py::_FABRIC_WIDTH`（**硬编码**） | 商家手工下单页**试算通路** |
+ *
+ * ⚠️ **口径分裂（照实登记）**：引擎端点那个 3.2 的注释写着「商家手工下单页当前没有门幅字段」
+ * —— **已过期**（商家侧有门幅：商品 `doorWidths` ⇒ `product_skus.door_width` ⇒ 下单页
+ * `SKU.doorWidth`）。⇒ 同一张单：本页按 SKU 门幅（缺省 2.8）判「超宽/超高」并**进加工费组合键**，
+ * 引擎按 3.2 算分幅 ⇒ **可能不一致**（组合键与实际算料对不上 ⇒ 报价/加工费对不上）。
+ *
+ * **权威 = SKU/商品门幅**（设计 §3.2「门幅 G = SKU.doorWidth（缺省 2.8 米）」+ 商家可配）；
+ * 引擎侧改为**接收**该值是**分叉 #4652**（本单**不动 ai-agent**）。⇒ 本文件**刻意不抄** 3.2
+ * （抄一份 = 第二份会漂移的口径，同族 #4656）：守卫
+ * `tests/unit_ci_workflows/test_fabric_width_truth_source.py`（前端出现该值字面量即红）。
+ */
 export const DEFAULT_DOOR_WIDTH = 2.8
 
 /**
@@ -263,6 +287,11 @@ export interface AutoFeatureNotice {
  *    ⚠️ 引擎**不接收**商家的 `cuttingMode`（`calculate_fabric_meters` 按几何分支，`internal.py`
  *    的算料入参里没有该键）⇒ 两者**可能不一致** ⇒ 不一致时必须说出来，否则「前端推算」与
  *    「引擎实际计算」**静默不一致**（商家以为按定高买宽做，实际按定宽买高分幅）。
+ *    🔴 **但「引擎实际会按哪种算」这句话在 issue #4746 下说过头了**：引擎的 `fabric_width` 是
+ *    `internal.py::_FABRIC_WIDTH` **硬编码 3.2**（不是本 SKU 门幅）⇒ 拿本 SKU 门幅算出来的
+ *    「系统实际会按 X 算」**可能说错**。⇒ 前提句只声明「**本页按本 SKU 门幅判**」（与
+ *    {@link detectAutoFeatures} 同源），并**显式登记**「引擎试算门幅尚未接线」（分叉 #4652）；
+ *    真正把两边合一要在 ai-agent 侧接线（本单不动）。
  *
  * ⚠️ 两条提示都**不改变推算**：特征仍按商家选的 `cuttingMode` 分流（裁定 C 的前半句）。
  * ⚠️ 依据缺失（高未知 / 加工类型缺失或表外）⇒ **不提示**（没有依据就不下结论，不猜）。
@@ -294,7 +323,13 @@ export function detectAutoFeatureNotices(input: AutoFeatureInput): AutoFeatureNo
         reason:
           `加工类型选了「${mode}」，但成品高 ${height} + 上下卷边 ${HEM_MARGIN} = ` +
           `${metersForReason(height + HEM_MARGIN, doorWidth)} 米 ${overHeight ? '超过' : '未超过'}本 SKU 门幅 ${doorWidth} 米` +
-          `（算料引擎按此判几何、不读商家选的加工类型）⇒ 系统实际会按${actualMode}算`,
+          // 🔴 issue #4746：**不再**声称「算料引擎按此判几何」—— 引擎按 `internal.py::_FABRIC_WIDTH`
+          // 硬编码 3.2 试算，那句是对**引擎行为**的无据断言（前提句会说错 ⇒ 商家按提示做的决定是错的）。
+          // 改后只声明**本页**按本 SKU 门幅判（判据仍是引擎的同一条几何分支），并把「引擎试算门幅
+          // 尚未接线」显式登记出来（分叉 #4652）—— 前提句由本函数入参的**同一个门幅**导出，不自编。
+          `（判据 = 算料引擎的几何分支「高 + 卷边 vs 门幅」，不读商家选的加工类型；本页按本 SKU 门幅判）` +
+          `⇒ 按本 SKU 门幅口径，系统实际会按${actualMode}算` +
+          `（⚠️ 引擎试算门幅尚未按本 SKU 门幅接线 —— #4746 / 待 #4652 ⇒ 引擎实际结果可能不同）`,
       })
     }
   }

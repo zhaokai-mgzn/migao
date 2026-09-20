@@ -37,6 +37,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   AUTO_FEATURE_NAMES,
+  DEFAULT_DOOR_WIDTH,
   HEM_MARGIN,
   SIDE_MARGIN,
   detectAutoFeatureNotices,
@@ -74,6 +75,21 @@ function pyConst(name: string): number {
 /** 判定结果的**名字清单**（判据只关心「识别出了什么」，不关心展示文案） */
 const names = (input: Parameters<typeof detectAutoFeatures>[0]) =>
   detectAutoFeatures(input).map((f) => f.name)
+
+/**
+ * 从 Python 源里取**函数签名**里的数值默认值（如
+ * `def build_quote(…, fabric_width: float = 2.8, …)` 的 `2.8`）。
+ * 取不到 ⇒ 直接失败（本守卫必须能读到真值，**不静默跳过**）。
+ */
+function pySignatureDefault(funcName: string, param: string): number {
+  const start = source.indexOf(`def ${funcName}(`)
+  if (start < 0) throw new Error(`curtain_calc.py 里找不到函数 ${funcName}（本守卫必须能读到真值）`)
+  const m = source
+    .slice(start, start + 4000)
+    .match(new RegExp(`\\b${param}\\s*:\\s*\\w+\\s*=\\s*([0-9.]+)`))
+  if (!m) throw new Error(`curtain_calc.py 的 ${funcName} 签名里找不到 ${param} 的默认值`)
+  return Number(m[1])
+}
 
 describe('余量常量 —— 两个方向各自复用算料引擎的**对应**常量（不新造数、也不混用）', () => {
   it('SIDE_MARGIN（宽方向）= curtain_calc.SIDE_MARGIN（逐值比对，漂移即红）', () => {
@@ -125,6 +141,89 @@ describe('门幅解析（SKU.doorWidth，缺省 2.8 米；窄幅布 1.4）', () 
     expect(resolveDoorWidth('')).toBe(2.8)
     expect(resolveDoorWidth('加宽')).toBe(2.8)
     expect(resolveDoorWidth('0')).toBe(2.8)
+  })
+})
+
+/**
+ * issue #4746 —— **门幅真值源**（本仓「副本必须有同步守卫」纪律，同族 #4656）。三处口径：
+ *
+ * | 口径 | 值 | 来源 | 谁在读 |
+ * |---|---|---|---|
+ * | 商品/SKU 门幅（**权威**） | 商品可配（种子 2.8；窄幅布 1.4） | 商品 `doorWidths` ⇒ `product_skus.door_width` | 本页判定（`resolveDoorWidth`）、SKU 定位 / 加工费组合键 |
+ * | 前端**缺省**门幅 | 2.8 | 算料引擎默认门幅 `curtain_calc.build_quote(fabric_width: float = 2.8)` | SKU 未携带门幅时的判定 |
+ * | 引擎**端点**门幅 | 3.2 | `backend/ai-agent-service/app/api/internal.py::_FABRIC_WIDTH`（**硬编码**，注释「商家手工下单页当前没有门幅字段」**已过期**） | 商家手工下单页试算通路 |
+ *
+ * ⇒ **权威 = SKU/商品门幅**（设计 §3.2「门幅 G = SKU.doorWidth（缺省 2.8 米）」+ 商家可配）；
+ * 引擎端点的 3.2 是**分裂源**（「超宽」进加工费组合键 ⇒ 两边算不同 ⇒ 报价/加工费对不上）。
+ * 引擎侧改为**接收**该值 = **分叉 #4652**（本单不动 ai-agent）⇒ 前端**刻意不抄** 3.2
+ * （守卫 = `tests/unit_ci_workflows/test_fabric_width_truth_source.py`：前端出现该值字面量即红）。
+ *
+ * 红证（issue #4746，改前实测）：① 前端缺省 2.8 与算料引擎默认门幅**无任何机械关联**
+ * （改任一处都不会有东西变红）⇒ 把缺省改成 2.6 时下面第一条断言必红；
+ * ② 几何矛盾提示当时写「（算料引擎按此判几何、不读商家选的加工类型）」—— 对**引擎行为**的
+ * **无据断言**（引擎按 `_FABRIC_WIDTH` = 3.2 算）⇒ 同源 / 不谎报两条断言必红。
+ */
+describe('#4746 门幅真值源（缺省副本逐值锚定算料引擎默认门幅；判定与提示同源）', () => {
+  it('DEFAULT_DOOR_WIDTH = curtain_calc.build_quote 的 fabric_width 默认（逐值，改一处必红）', () => {
+    expect(DEFAULT_DOOR_WIDTH).toBe(pySignatureDefault('build_quote', 'fabric_width'))
+  })
+
+  // 注入式红证（issue #4746）：判据必须**两边都敏感**（只比一边相等不算判据）。
+  it('#4746 红证（注入）：改 Python 默认门幅 / 改前端缺省 ⇒ 判据为假', () => {
+    const tie = (pySrc: string, tsValue: number) => {
+      const m = pySrc
+        .slice(pySrc.indexOf('def build_quote('))
+        .match(/fabric_width\s*:\s*\w+\s*=\s*([0-9.]+)/)
+      return m !== null && Number(m[1]) === tsValue
+    }
+    expect(tie(source, DEFAULT_DOOR_WIDTH)).toBe(true)
+    // ① 引擎默认门幅漂移（2.8 → 3.0）⇒ 判据为假（前端缺省不会跟着变，必须人工对齐）
+    expect(tie(source.replace('fabric_width: float = 2.8', 'fabric_width: float = 3.0'), DEFAULT_DOOR_WIDTH)).toBe(
+      false
+    )
+    // ② 前端缺省漂移（2.8 → 2.6）⇒ 判据为假
+    expect(tie(source, 2.6)).toBe(false)
+  })
+
+  it('#4746 判定与提示**同源**：几何矛盾提示里的门幅 = 该行 SKU 门幅（写死任一个数都必红）', () => {
+    for (const [raw, value] of [
+      ['2.8米', 2.8],
+      ['1.4米', 1.4],
+      ['3.2米', 3.2],
+    ] as const) {
+      const notice = detectAutoFeatureNotices({
+        width: 1.0,
+        height: 3.0, // 3.0 + 0.3 = 3.3 > 三个门幅都成立 ⇒ 三种门幅都能拿到矛盾提示
+        doorWidth: raw,
+        cuttingMode: '定高买宽',
+      }).find((n) => n.kind === 'cutting-mode-conflict')!
+      expect(notice.reason).toContain(`本 SKU 门幅 ${value} 米`)
+      expect(notice.reason).toContain(`本 SKU 门幅 ${resolveDoorWidth(raw)} 米`)
+    }
+  })
+
+  it('#4746 SKU 未携带门幅 ⇒ 提示里的门幅 = DEFAULT_DOOR_WIDTH（缺省不是「不判定」）', () => {
+    const notice = detectAutoFeatureNotices({
+      width: 1.0,
+      height: 3.0,
+      cuttingMode: '定高买宽',
+    }).find((n) => n.kind === 'cutting-mode-conflict')!
+    expect(notice.reason).toContain(`本 SKU 门幅 ${DEFAULT_DOOR_WIDTH} 米`)
+  })
+
+  // 红证（issue #4746，改前必红）：改前文案断言「算料引擎按此判几何」= 对引擎行为的无据断言
+  // （引擎按 `internal.py::_FABRIC_WIDTH` = 3.2 试算）⇒ 商家按提示做的决定可能是错的。
+  // 改后：只声明**本页按本 SKU 门幅**判，并显式登记「引擎试算门幅尚未接线」（#4652）。
+  it('#4746 提示不再声称「引擎按本 SKU 门幅判几何」+ 显式登记引擎试算门幅未接线（改前必红）', () => {
+    const notice = detectAutoFeatureNotices({
+      width: 1.0,
+      height: 3.0,
+      doorWidth: '2.8米',
+      cuttingMode: '定高买宽',
+    }).find((n) => n.kind === 'cutting-mode-conflict')!
+    expect(notice.reason).not.toContain('算料引擎按此判几何')
+    expect(notice.reason).toContain('引擎试算门幅尚未按本 SKU 门幅接线')
+    expect(notice.reason).toContain('#4746')
   })
 })
 
