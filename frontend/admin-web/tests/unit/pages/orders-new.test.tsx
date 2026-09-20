@@ -1262,8 +1262,10 @@ describe('NewOrderPage', () => {
       // ⚠️ issue #4658：该块已从 ③加工项 移到 **②工艺规格** ⇒ 先展开②再断言（手风琴会卸载未展开步骤）
       expandCraft()
       const block = screen.getByTestId('auto-detected-features')
-      expect(within(block).getByText('超宽')).toBeInTheDocument()
+      // 🔴 issue #4661 改钉：缺省 `cuttingMode` = 定高买宽 ⇒ 只判**超高**（宽按米买、无上限）
+      // （改前这里断言「超宽 + 超高」两条都在 = 错口径在本文件的镜像；题眼「不出手选控件」不变）
       expect(within(block).getByText('超高')).toBeInTheDocument()
+      expect(within(block).queryByText('超宽')).toBeNull()
       expect(block.querySelectorAll('input')).toHaveLength(0)
     })
 
@@ -1520,7 +1522,9 @@ describe('NewOrderPage', () => {
       // ⚠️ issue #4658：该块已从 ③加工项 移到 **②工艺规格** ⇒ 先展开②再断言
       expandCraft()
       const block = screen.getByTestId('auto-detected-features')
-      expect(within(block).getByText('超宽')).toBeInTheDocument()
+      // 🔴 issue #4661 改钉：缺省档（定高买宽）只出「超高」（同判据 1；题眼「不出手选控件」不变）
+      expect(within(block).getByText('超高')).toBeInTheDocument()
+      expect(within(block).queryByText('超宽')).toBeNull()
       expect(block.querySelectorAll('input')).toHaveLength(0)
     })
 

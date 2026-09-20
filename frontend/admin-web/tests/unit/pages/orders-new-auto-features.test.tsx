@@ -22,6 +22,12 @@
  * - ③加工项区**有**该块（`stepSection('加工项')` 内能查到 `auto-detected-features`）⇒ ①必红；
  * - ②工艺规格区**无**该块、`reason` 只在 `title` 属性里（正文无依据文案）⇒ ②必红；
  * - 无 `size-auto-badge-*` / `auto-feature-reject-*` / `auto-feature-add-*` ⇒ ③④必红。
+ *
+ * 🔴 issue #4661（**本文件已按新真值改钉**）：**超宽/超高按加工类型分流** ——
+ * 页面默认档 `cuttingMode` = `定高买宽`（`DEFAULT_CUTTING_MODE`）⇒ **只判超高**（宽按米买、无上限），
+ * `定宽买高` ⇒ 只判超宽（+ 倒幅）。本文件原先有 5 条断言把「定高买宽 ⇒ 推超宽（+ 超高）」钉成期望值
+ * （= 同一个 bug 的页面层镜像：多推的「超宽」会进加工费组合键 ⇒ 价算错）⇒ 逐条**改钉新真值**
+ * （**不是放宽**：断言仍是 `getByText`/`toEqual` 精确形态，另加反向断言）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
@@ -91,7 +97,11 @@ const inputOf = (label: string, idx = 0) =>
     .getAllByText(label)
     .map((el) => el.closest('div')!.querySelector('input') as HTMLInputElement)[idx]
 
-/** 选商品（SKU 可带门幅）→ 填宽高（默认门幅缺省 2.8 ⇒ 6.6×2.6 识别出超宽 + 超高） */
+/**
+ * 选商品（SKU 可带门幅）→ 填宽高。
+ * ⚠️ issue #4661：缺省 `cuttingMode` = `定高买宽` ⇒ 6.6×2.6 对 2.8 门幅只识别出**超高**
+ * （`2.6 + 0.3 = 2.9 > 2.8`）；「超宽」要 `定宽买高`（或强制加）才会出现。
+ */
 async function setupLine(opts: { doorWidth?: string; width?: string; height?: string } = {}) {
   const { doorWidth, width = '6.6', height = '2.6' } = opts
   mockGetProducts.mockResolvedValue({
@@ -171,22 +181,24 @@ describe('#4658：系统识别块在②工艺规格（不在③加工项）+ 逐
     openStep('工艺规格')
 
     const block = within(stepSection('工艺规格')).getByTestId('auto-detected-features')
-    expect(within(block).getByText('超宽')).toBeInTheDocument()
+    // 🔴 #4661 改钉：缺省档 = 定高买宽 ⇒ **只**出「超高」（改前这里断言「超宽 + 超高」两条都在）
     expect(within(block).getByText('超高')).toBeInTheDocument()
+    expect(within(block).queryByText('超宽')).toBeNull()
     // 照实标注：推理非实证（设计 §5.2）—— **每条**特征都带来源标注
     const chips = block.querySelectorAll('span[title]')
-    expect(chips.length).toBeGreaterThanOrEqual(2)
+    expect(chips.length).toBeGreaterThanOrEqual(1)
     for (const chip of Array.from(chips)) {
       expect(chip.textContent).toContain('（推算）')
       expect(chip.getAttribute('title')).toBeTruthy()
     }
     // 🔴 #4658 的核心：**正文里**逐条给依据（旧实现只在 `title` 属性里 ⇒ 商家看不见判定过程）
+    // 🔴 #4661 改钉：余量按方向分开命名（宽 = 左右余量 / 高 = 上下卷边）—— 改前两条都写「卷边」
     expect(
-      within(block).getByText(/成品宽 6\.6 \+ 卷边 0\.3 = 6\.9 米 > 门幅 2\.8 米/)
+      within(block).getByText(/成品高 2\.6 \+ 上下卷边 0\.3 = 2\.9 米 > 门幅 2\.8 米/)
     ).toBeInTheDocument()
-    expect(
-      within(block).getByText(/成品高 2\.6 \+ 卷边 0\.3 = 2\.9 米 > 门幅 2\.8 米/)
-    ).toBeInTheDocument()
+    // 「超宽」在定高买宽下**不推算** ⇒ 它没有 reason 行；它只能被**强制加**（见 #4657 组）
+    // ⚠️ 用**完整依据文案**做否定断言（不能只写 `/成品宽/` —— 那是 `+ 超宽` 强制加按钮的子串）
+    expect(within(block).queryByText(/成品宽 6\.6 \+ 左右余量 0\.3/)).toBeNull()
     // 覆盖控件是**按钮**，不是勾选框（判据 8 不放宽）
     expect(block.querySelectorAll('input')).toHaveLength(0)
   })
@@ -203,17 +215,19 @@ describe('#4658：系统识别块在②工艺规格（不在③加工项）+ 逐
     expect(within(section).queryByText(/推算/)).toBeNull()
   })
 
-  it('#4658 ①尺寸行旁的就地徽标：有超宽时出现，不超时消失', async () => {
+  // 🔴 #4661 改钉：缺省档（定高买宽）**不推超宽** ⇒ 徽标只有「超高」；
+  // 改前这条断言「超宽 + 超高 两个徽标都在」（= 错口径在徽标面的镜像）。
+  it('#4658 ①尺寸行旁的就地徽标：有识别结果时出现，不超时消失', async () => {
     await setupLine()
-    expect(await screen.findByTestId('size-auto-badge-超宽')).toBeInTheDocument()
-    expect(screen.getByTestId('size-auto-badge-超高')).toBeInTheDocument()
+    expect(await screen.findByTestId('size-auto-badge-超高')).toBeInTheDocument()
+    expect(screen.queryByTestId('size-auto-badge-超宽')).toBeNull()
 
     openStep('尺寸与数量')
     fireEvent.change(inputOf('宽 (米)'), { target: { value: '1.5' } })
     fireEvent.change(inputOf('高 (米)'), { target: { value: '1.5' } })
 
-    await waitFor(() => expect(screen.queryByTestId('size-auto-badge-超宽')).toBeNull())
-    expect(screen.queryByTestId('size-auto-badge-超高')).toBeNull()
+    await waitFor(() => expect(screen.queryByTestId('size-auto-badge-超高')).toBeNull())
+    expect(screen.queryByTestId('size-auto-badge-超宽')).toBeNull()
   })
 
   it('#4657 门幅走了**默认值** ⇒ 界面看得出来（②标出 + ①徽标提示）', async () => {
@@ -236,7 +250,8 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
     await setupLine()
     openStep('工艺规格')
     const block = screen.getByTestId('auto-detected-features')
-    expect(within(block).getByText('超宽')).toBeInTheDocument()
+    // 🔴 #4661 改钉：缺省档（定高买宽）推的是「超高」，不是「超宽」
+    expect(within(block).getByText('超高')).toBeInTheDocument()
 
     openStep('尺寸与数量')
     fireEvent.change(inputOf('宽 (米)'), { target: { value: '1.5' } })
@@ -307,59 +322,78 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
     for (const auto of ['超高', '超宽', '倒幅']) {
       expect(screen.queryByRole('checkbox', { name: auto })).toBeNull()
     }
-    // 推导结果照旧**只读可见**（6.6×2.6 对缺省门幅 2.8 ⇒ 超宽 + 超高），块内无任何输入控件
+    // 推导结果照旧**只读可见**；🔴 #4661 改钉：缺省档（定高买宽）只出「超高」
+    // （改前这里断言「超宽 + 超高」两条都在 = 错口径的页面层镜像），块内无任何输入控件
     openStep('工艺规格')
     const block = screen.getByTestId('auto-detected-features')
-    expect(within(block).getByText('超宽')).toBeInTheDocument()
     expect(within(block).getByText('超高')).toBeInTheDocument()
+    expect(within(block).queryByText('超宽')).toBeNull()
     expect(block.querySelectorAll('input')).toHaveLength(0)
   })
 })
 
 describe('#4657：推算结果可**采纳 / 不采纳** + 强制加（生效值唯一 ⇒ 组合键）', () => {
-  it('#4657 不采纳「超宽」⇒ 留痕「已忽略系统推算（依据：…）」且组合键里**不再含**它', async () => {
+  it('#4657 不采纳「超高」⇒ 留痕「已忽略系统推算（依据：…）」且组合键里**不再含**它', async () => {
     await setupLine({ doorWidth: '2.8米' })
     openStep('工艺规格')
 
     // 红证（实现前）：无 `auto-feature-reject-*` 控件 ⇒ 本条必红
-    fireEvent.click(screen.getByTestId('auto-feature-reject-超宽'))
+    // 🔴 #4661 改钉：缺省档（定高买宽）推的是「超高」⇒ 裁决对象随之改为「超高」
+    fireEvent.click(screen.getByTestId('auto-feature-reject-超高'))
 
     // 留痕：行上看得见「已忽略系统推算」+ **原推算依据**（谁改的、原判据是什么）
-    const rejected = await screen.findByTestId('auto-feature-rejected-超宽')
+    const rejected = await screen.findByTestId('auto-feature-rejected-超高')
     expect(rejected.textContent).toContain('已忽略系统推算')
-    expect(rejected.textContent).toContain('成品宽 6.6 + 卷边 0.3 = 6.9 米 > 门幅 2.8 米')
-    // ① 徽标 = **生效值** ⇒ 超宽消失、超高仍在
-    expect(screen.queryByTestId('size-auto-badge-超宽')).toBeNull()
-    expect(screen.getByTestId('size-auto-badge-超高')).toBeInTheDocument()
-    // 落库的组合键 = 生效值（唯一口径：界面与 payload 不会各说各话）
-    expect(await submitAndGetProcessingNames()).toEqual(['超高'])
+    // 🔴 #4661 改钉：高方向余量名 = 「上下卷边」（改前写「卷边」）
+    expect(rejected.textContent).toContain('成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米')
+    // ① 徽标 = **生效值** ⇒ 超高消失
+    expect(screen.queryByTestId('size-auto-badge-超高')).toBeNull()
+    // 落库的组合键 = 生效值（唯一口径：界面与 payload 不会各说各话）⇒ 一条都不剩
+    expect(await submitAndGetProcessingNames()).toEqual([])
   })
 
   it('#4657 不采纳后「采纳」⇒ 生效值回来（裁决可逆，不是单向开关）', async () => {
     await setupLine({ doorWidth: '2.8米' })
     openStep('工艺规格')
 
-    fireEvent.click(screen.getByTestId('auto-feature-reject-超宽'))
-    await screen.findByTestId('auto-feature-rejected-超宽')
-    fireEvent.click(screen.getByTestId('auto-feature-adopt-超宽'))
+    fireEvent.click(screen.getByTestId('auto-feature-reject-超高'))
+    await screen.findByTestId('auto-feature-rejected-超高')
+    fireEvent.click(screen.getByTestId('auto-feature-adopt-超高'))
 
-    await waitFor(() => expect(screen.queryByTestId('auto-feature-rejected-超宽')).toBeNull())
-    expect(screen.getByTestId('size-auto-badge-超宽')).toBeInTheDocument()
-    expect(await submitAndGetProcessingNames()).toEqual(['超宽', '超高'])
+    await waitFor(() => expect(screen.queryByTestId('auto-feature-rejected-超高')).toBeNull())
+    expect(screen.getByTestId('size-auto-badge-超高')).toBeInTheDocument()
+    expect(await submitAndGetProcessingNames()).toEqual(['超高'])
   })
 
   it('#4657 系统**没推**也能**强制加**（如门幅数据缺失漏判）⇒ 组合键含它 + 留痕「手动加」', async () => {
     await setupLine({ doorWidth: '2.8米' })
     openStep('工艺规格')
 
-    // 红证（实现前）：无 `auto-feature-add-*` 路径 ⇒ 本条必红
-    fireEvent.click(screen.getByTestId('auto-feature-add-倒幅'))
+    // 🔴 #4661 改钉：缺省档（定高买宽）**不推超宽** ⇒ 「超宽」正是「系统没推也能强制加」的真实场景
+    // （改前它是被推算出来的，本用例测不到「强制加」这条路径）
+    fireEvent.click(screen.getByTestId('auto-feature-add-超宽'))
 
-    const manual = await screen.findByTestId('auto-feature-manual-倒幅')
+    const manual = await screen.findByTestId('auto-feature-manual-超宽')
     expect(manual.textContent).toContain('手动加（系统未推算）')
-    expect(screen.getByTestId('size-auto-badge-倒幅')).toBeInTheDocument()
+    expect(screen.getByTestId('size-auto-badge-超宽')).toBeInTheDocument()
     // 生效值 = 推算 ∪ 强制加（顺序 = 推算在前；组合键归一化另有唯一实现）
-    expect(await submitAndGetProcessingNames()).toEqual(['超宽', '超高', '倒幅'])
+    expect(await submitAndGetProcessingNames()).toEqual(['超高', '超宽'])
+  })
+
+  // 🔴 #4661 新增：把「分流」本身钉在页面链路上 —— 加工类型选 `定宽买高` ⇒ 只判**超宽**（+ 倒幅）、
+  // 且**不判超高**（改前页面不把 cuttingMode 分流当回事 ⇒ 这条必红）。
+  it('#4661 加工类型选「定宽买高」⇒ 系统识别出「超宽 + 倒幅」，**不**出「超高」', async () => {
+    await setupLine({ doorWidth: '2.8米' })
+    openStep('工艺规格')
+    fireEvent.click(screen.getByRole('radio', { name: '定宽买高' }))
+
+    const block = screen.getByTestId('auto-detected-features')
+    await waitFor(() => expect(within(block).getByText('超宽')).toBeInTheDocument())
+    expect(within(block).getByText('倒幅')).toBeInTheDocument()
+    expect(within(block).queryByText('超高')).toBeNull()
+    // 落库组合键 = 生效值（超宽 + 倒幅；宽方向余量名 = 「左右余量」）
+    expect(within(block).getByText(/成品宽 6\.6 \+ 左右余量 0\.3 = 6\.9 米 > 门幅 2\.8 米/)).toBeInTheDocument()
+    expect(await submitAndGetProcessingNames()).toEqual(['超宽', '倒幅'])
   })
 
   /**
@@ -369,13 +403,18 @@ describe('#4657：推算结果可**采纳 / 不采纳** + 强制加（生效值�
    * ⇒ 组合价永远匹配不到 ⇒ 加工费恒 ¥0.00。
    *
    * 红证（修复前必红）：修复前这里得到 `['超宽','超高','正幅']`（默认档 = 定高买宽）。
+   *
+   * 🔴 issue #4661：默认档（定高买宽）只判**高**方向 ⇒ 落库加项 = `['超高']`
+   * （改前是 `['超宽','超高']` —— 多出的「超宽」正是错口径进组合键 ⇒ 价算错）。
+   * 判据改钉新真值（**不是放宽**）：`toEqual` 仍是**精确**断言（不是 `toContain`/`not.toContain` 兜底），
+   * 且下面那条「不得含 `正幅`」（#4592 的 P0 护栏）**一字未动**。
    */
-  it('#4592 默认「定高买宽」订单落库的组合加项 = {超宽, 超高}，**不含「正幅」**', async () => {
+  it('#4592 默认「定高买宽」订单落库的组合加项 = {超高}，**不含「正幅」**', async () => {
     // 带门幅 ⇒ setupLine 会连颜色 + 规格一起选上（缺颜色会被页面校验拦在提交前）
     await setupLine({ doorWidth: '2.8米' })
 
     const names = await submitAndGetProcessingNames()
-    expect(names).toEqual(['超宽', '超高'])
+    expect(names).toEqual(['超高'])
     expect(names).not.toContain('正幅')
   })
 })
