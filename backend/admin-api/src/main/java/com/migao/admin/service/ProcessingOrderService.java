@@ -1171,10 +1171,16 @@ public class ProcessingOrderService {
      * 库中缺该变体、或主线里出现**不认识的名字** ⇒ 登记进 {@code missing_operations}
      * （由调用方 fail-closed，**不猜默认值**，也**不静默丢**）。</p>
      *
-     * <p>单价取 {@code production_operation_positions.unit_price}（该部位价目），
-     * 而不是工序库行的价 —— 新结构里价目是**按部位**的（P1 实证当前两侧逐字相同；
-     * 分化后以价目表为准）。价目为 {@code null} 而 {@code applicable=true}（「没定价」）⇒
-     * 退回工序库行价，避免把已定价的工序实例算成 0 元。</p>
+     * <p><b>单价 = 该部位价目矩阵格</b>（{@code production_operation_positions.unit_price}），
+     * <b>逐字带出、绝不回落</b>（issue #4696，P1）：格价 {@code NULL} = <b>未定价</b> ⇒
+     * 实例快照落 {@code NULL}（不是 0）。</p>
+     *
+     * <p>⚠️ 改前这里回落「工序库行价」（{@code production_operations.unit_price}，V49 DDL 是
+     * {@code NOT NULL DEFAULT 0}）⇒ 布料单的 `配料`/`打包`（矩阵格 NULL）落库 <b>0 元</b> ⇒
+     * 报工即按 0 计件（<b>工人白干且无人知道</b>），而 V88 的读面
+     * （{@code GET /operation-layers}）**不回落**、判 {@code unpriced}、界面显示「未定价」
+     * ⇒ 两处口径不一致，且「没定价」与「价本来就是 0」不可区分。
+     * 现在两侧**同口径**：格价 NULL ⇒ 未定价（落 {@code NULL}）；格价 0 ⇒ <b>有价 0 元</b>。</p>
      */
     private Map<String, Object> buildRoute(ProductionRouteTemplate template, String position, String craft,
                                            Map<String, Object> entry,
@@ -1282,8 +1288,11 @@ public class ProcessingOrderService {
             step.put("position", ProductionOperationQueryService.displayPosition(variant, position));
             step.put("group", meta.get("group"));
             step.put("unit", meta.get("unit"));
-            BigDecimal price = priceByLogical.get(logicalName);
-            step.put("unit_price", price == null ? meta.get("unit_price") : price);
+            // 🔴 未定价（格价 NULL）**不得**回落工序库行价（issue #4696，P1）：工序库行价是
+            // `NOT NULL DEFAULT 0` ⇒ 回落就把「未定价」变成「真 0 元」（工人白干且无人知道），
+            // 且与「显式定价 0 元」不可区分。读面（V88 `GET /operation-layers`）不回落 ⇒
+            // 实例化侧必须同口径：格价 NULL ⇒ 落 NULL（未定价），格价 0 ⇒ 有价 0 元。
+            step.put("unit_price", priceByLogical.get(logicalName));
             step.put("is_must_finish", meta.get("is_must_finish"));
             step.put("is_start_marker", meta.get("is_start_marker"));
             step.put("scope", meta.get("scope"));

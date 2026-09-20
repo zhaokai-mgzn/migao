@@ -5,6 +5,8 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import { chipToneClasses } from '@/lib/status-chip'
 // 工序显示名的**唯一**口径（issue #4621）：逻辑名 · 部位 —— 本表**不得**直接渲染变体名
 import { operationDisplayName } from '@/lib/operation-display'
+import { PRICING_ENTRY_HREF } from '@/components/production/UnpricedNotice'
+import Link from 'next/link'
 import type { ProductionPosition } from '@/types'
 
 /**
@@ -109,8 +111,27 @@ export default function ProductionProgressTable({ positions, className }: Produc
                           <td className="px-4 py-3 text-neutral-900 whitespace-nowrap" data-testid="op-qty">
                             {formatQty(op.qty, op.unit)}
                           </td>
+                          {/* 未定价 ≠ ¥0.00（V90，issue #4696）：`unit_price` 为 null（或显式
+                              `price_state='unpriced'`）⇒ 显示「未定价」+ 定价入口，**不得**折成 ¥0.00
+                              （折 0 ⇒ 与「定价为 0 元」同形 ⇒ 商家看不出工人干了活拿不到钱）。 */}
                           <td className="px-4 py-3 text-neutral-600 whitespace-nowrap" data-testid="op-unit-price">
-                            {formatPrice(op.unit_price)}
+                            {op.price_state === 'unpriced' || op.unit_price == null ? (
+                              <span
+                                className="inline-flex items-center gap-2 text-amber-700"
+                                data-testid="op-unit-price-unpriced"
+                              >
+                                未定价
+                                <Link
+                                  href={PRICING_ENTRY_HREF}
+                                  data-testid="op-unit-price-pricing-link"
+                                  className="rounded border border-amber-400 bg-white px-1.5 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                                >
+                                  去定价
+                                </Link>
+                              </span>
+                            ) : (
+                              formatPrice(op.unit_price)
+                            )}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap" data-testid="op-status">
                             <StatusBadge label={chip.label} color={chipToneClasses[chip.tone]} dot />

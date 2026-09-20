@@ -243,3 +243,67 @@ describe('ProductionProgressTable', () => {
     expect(within(screen.getByTestId('position-group-纱帘')).getByText('纱帘')).toBeInTheDocument()
   })
 })
+
+/**
+ * 未定价显式可见（issue #4696，P1）—— 加工单**工序进度**面的红证。
+ *
+ * 缺陷原形：后端把 `unit_price` 用 `nz()` 折成 0 ⇒ 界面显示「¥0.00」，
+ * 与「定价为 0 元」同形 ⇒ 商家看不出「这道工序还没定价、工人干了拿不到钱」。
+ */
+describe('ProductionProgressTable 未定价（issue #4696）', () => {
+  const unpricedPositions: ProductionPosition[] = [
+    {
+      position_name: '布料',
+      operations: [
+        {
+          id: 'op-unpriced',
+          seq: 1,
+          operation: '配料',
+          logical_name: '配料',
+          position: '布料',
+          group: '后道',
+          unit: '米',
+          qty: 10,
+          unit_price: null,
+          price_state: 'unpriced',
+          status: 'pending',
+          done_qty: 0,
+        },
+        {
+          id: 'op-zero',
+          seq: 2,
+          operation: '打包',
+          logical_name: '打包',
+          position: '布料',
+          group: '后道',
+          unit: '套',
+          qty: 2,
+          unit_price: 0,
+          price_state: 'priced',
+          status: 'pending',
+          done_qty: 0,
+        },
+      ],
+    },
+  ]
+
+  it('🔴 未定价 ⇒ 显示「未定价」+ 定价入口，**不得**折成 ¥0.00', () => {
+    render(<ProductionProgressTable positions={unpricedPositions} />)
+
+    const row = screen.getByTestId('operation-row-op-unpriced')
+    expect(within(row).getByTestId('op-unit-price-unpriced')).toHaveTextContent('未定价')
+    expect(within(row).getByTestId('op-unit-price')).not.toHaveTextContent('¥0.00')
+    expect(within(row).getByTestId('op-unit-price-pricing-link')).toHaveAttribute(
+      'href',
+      '/production/routings',
+    )
+  })
+
+  it('反向护栏：显式**定价 0 元** ⇒ 渲染 ¥0.00（**不是**「未定价」，两态可区分）', () => {
+    render(<ProductionProgressTable positions={unpricedPositions} />)
+
+    const zeroRow = screen.getByTestId('operation-row-op-zero')
+    expect(within(zeroRow).queryByTestId('op-unit-price-unpriced')).not.toBeInTheDocument()
+    expect(within(zeroRow).getByTestId('op-unit-price')).toHaveTextContent('¥0.00')
+  })
+})

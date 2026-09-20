@@ -61,6 +61,17 @@ public class ProductionWorkLog {
     /** 计件系数快照（issue #4351，V61）——与 {@link #unitPrice} 同一次报工写入、同一口径。 */
     private BigDecimal factor;
 
+    /**
+     * 计件单价三态标记（V90，issue #4696）：{@code priced} = 有价（含显式定价 0 元）；
+     * {@code unpriced} = <b>未定价</b>（{@link #unitPrice} 为 {@code NULL}）⇒ 聚合**不得**按 0 计件，
+     * 报表必须显式可见 + 给定价入口。
+     *
+     * <p>为什么不能复用 {@code unitPrice IS NULL}：V61 已把该形态占用为「本列引入之前的存量报工」
+     * （聚合按实例回查兜底，历史金额一字不动）⇒ 未定价必须**显式标记**。
+     * 存量行该列为 {@code NULL} = 本列引入前，走既有回查路径。</p>
+     */
+    private String priceState;
+
     /** 报工三态：normal 正常 / rework 返工 / scrap 报废 */
     private String workType;
 

@@ -1064,7 +1064,10 @@ CREATE TABLE IF NOT EXISTS processing_position_operations (
     unit VARCHAR(16),
     qty NUMERIC(12,2) NOT NULL DEFAULT 0,            -- 应做数量（算料引擎输出）
     qty_source VARCHAR(32),                          -- 应做数量的口径来源（V57，issue #4208）：键名=算料输出 / <键名>_x6=每米6孔估算 / fallback=真兜底1
-    unit_price NUMERIC(10,2) NOT NULL DEFAULT 0,     -- 实例快照单价
+    -- 实例快照单价（V90，issue #4696）：NULL = **未定价**（≠ 0 元，0 是显式定价为 0 元）。
+    -- 实例化侧**不得**回落工序库行价（production_operations.unit_price 是 NOT NULL DEFAULT 0
+    -- ⇒ 回落会把「未定价」变成「真 0 元」，工人白干且无人知道）。
+    unit_price NUMERIC(10,2),
     factor NUMERIC(6,2) NOT NULL DEFAULT 1,          -- 特殊选项计件系数（一分为二 ×1.7，ERP 名；issue #4389）
     is_must_finish BOOLEAN NOT NULL DEFAULT FALSE,
     is_start_marker BOOLEAN NOT NULL DEFAULT FALSE,
@@ -1098,6 +1101,10 @@ CREATE TABLE IF NOT EXISTS production_work_logs (
     -- NULL = 本列引入之前的存量报工（聚合按实例回查兜底）。
     unit_price NUMERIC(10,2),
     factor NUMERIC(10,2),
+    -- 计件单价三态标记（V90，issue #4696）：priced=有价（含显式定价 0 元）；
+    -- unpriced=**未定价**（unit_price 为 NULL）⇒ 聚合**不得**按 0 计件，报表必须显式可见 + 给定价入口；
+    -- NULL = 本列引入之前的存量行（V61 口径按实例回查兜底，历史金额一字不动）。
+    price_state VARCHAR(16),
     work_type VARCHAR(16) NOT NULL DEFAULT 'normal', -- 报工三态：normal/rework/scrap
     work_date DATE NOT NULL DEFAULT CURRENT_DATE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -1116,6 +1123,8 @@ COMMENT ON TABLE processing_position_operations IS '工序实例：加工单×�
 COMMENT ON TABLE production_work_logs IS '报工记录（明细不可变）：报工三态 normal/rework/scrap；计件 = Σ(合格数量×**报工自己的单价快照**×**系数快照**)，排除返工/报废；单工序一人制；快照见 V61（issue #4351）';
 COMMENT ON COLUMN production_work_logs.unit_price IS '计件单价快照（元/单位，V61，issue #4351）：报工那一刻从工序实例写入；聚合只读本列 ⇒ 重新实例化软删旧实例不影响历史报工的钱；NULL=本列引入前的存量行（按实例回查兜底）';
 COMMENT ON COLUMN production_work_logs.factor IS '计件系数快照（V61，issue #4351）：与 unit_price 同一次报工写入、同一口径；NULL=存量行';
+COMMENT ON COLUMN production_work_logs.price_state IS '计件单价三态标记（V90，issue #4696）：priced=有价（含显式定价 0 元）；unpriced=未定价（unit_price 为 NULL，聚合不得按 0 计件）；NULL=本列引入前的存量行';
+COMMENT ON COLUMN processing_position_operations.unit_price IS '实例快照单价（元/单位）：NULL=未定价（≠ 0 元，0 是显式定价为 0 元）；实例化侧不得回落工序库行价（V90，issue #4696）';
 
 -- 工序计件单价版本（V55，issue #4204）：当前价 = 最新版本行；实例单价仍是生成时快照。
 -- 迁移链同款见 backend/admin-api/src/main/resources/db/migration/V55__create_production_operation_price_versions.sql
