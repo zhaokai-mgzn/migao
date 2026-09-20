@@ -1084,7 +1084,7 @@ _CASE_CH_012 = EvalCase(
     order_before=['interact[confirm] before aftersale_create'],
     required_args=[{'tool': 'aftersale_create', 'fields': ['order_id']}],
     must_succeed=[{'tool': 'aftersale_create'}],
-    namespaces=['order_no:EVAL-ORD-0002'],
+    namespaces=['customer_phone:13800138000'],
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 

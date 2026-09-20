@@ -686,7 +686,7 @@ cases:
       - type: order_count_for_phone
         source: "13800138000"
     namespaces:
-      - "order_no:EVAL-ORD-0002"
+      - "customer_phone:13800138000"
     expectations:
       - tool: customer_order_query
       - tool: interact
