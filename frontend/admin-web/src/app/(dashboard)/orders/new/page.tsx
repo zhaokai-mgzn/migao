@@ -104,6 +104,16 @@ interface OrderLineItem {
   selectedColorId: string | null
   selectedSku: OrderProductSku | null
   /**
+   * **这个 SKU 是「规则自动选中」还是「客服手选」**（issue #4899）。
+   *
+   * 为什么必须有这一位：门幅规则的产品行为是「**不覆盖客服的手选**」——但**自动选中**若也算
+   * 「已选」，规则就永远不再重算 ⇒ 尺寸 / 加工类型一变，页面会停在**旧门幅**上
+   * （用户 2026-09-21 人工验证：「无法通过工艺&加工项选配反选最优的门幅 SKU」）。
+   * ⇒ 自动选中的一律**可被规则改选**，手选的一律**不被覆盖**（只提示可换最优）。
+   * ⚠️ 只活在**行状态**里，不进订单 payload。
+   */
+  skuAutoSelected: boolean
+  /**
    * 售卖形态（issue #4493）——**商品组级**属性：同一块布按米卖还是做成帘。
    * 存在行上、由组级处理器在组内同步（与颜色 / 门幅同一机制）。
    */
@@ -418,9 +428,10 @@ function withShapedDefault(
  * 该颜色的**默认选中 SKU**（issue #4877 裁定 C：**规则驱动默认选中**）。
  *
  * ① 只有一个 SKU ⇒ 直接选它（既有行为，与门幅规则无关）；
- * ② 多个门幅 ⇒ 交给**门幅规则** `resolveCutPlan`（可行集取最小门幅 / 定宽买高取分幅最少），
- *    **且该门幅在本颜色下唯一对应一个 SKU** 时才自动选中 —— 多个 SKU 同门幅（如散剪/整卷）
- *    ⇒ 售卖方式该由客服选，系统**不替他猜**；
+ * ② 多个门幅 ⇒ 交给**门幅规则** `resolveCutPlan`（可行集取最小门幅 / 定宽买高取分幅最少）；
+ *    **同一最优门幅下有多个 SKU**（散剪/整卷）时也要选出一个**默认**（issue #4899：
+ *    有库存优先 → 单价低者优先 → 按 id 稳定）—— 什么都不选会让界面谎报「门幅未维护」；
+ *    该默认是**自动选中**（`skuAutoSelected`）⇒ 客服一点即改、规则也会随输入变化重算；
  * ③ 规则不可判定（缺尺寸 / 缺加工类型 / 门幅未维护）⇒ **不自动选**（不猜）。
  *
  * ⚠️ 调用点只有「换颜色」（那里本来就会重置 `selectedSku`）⇒ **不会覆盖客服已手选的门幅**。
@@ -440,7 +451,19 @@ function pickAutoSkuForColor(
   })
   if (plan.state !== 'single_panel') return null
   const exact = skusOfColor.filter((sku) => parseDoorWidth(sku.doorWidth) === plan.doorWidth)
-  return exact.length === 1 ? exact[0] : null
+  if (exact.length === 0) return null
+  if (exact.length === 1) return exact[0]
+  // **同一最优门幅下有多个 SKU**（散剪/整卷）⇒ 也必须选出一个**默认**（issue #4899）：
+  // 什么都不选 = 界面显示「门幅未维护」（误导：不是没维护，是没选到）+ 客服无从下手。
+  // 平局口径（可解释、可覆盖）：**有库存优先 → 单价低者优先 → 按 id 稳定**。
+  // 它是**自动选中**（`skuAutoSelected=true`）⇒ 客服一点即改，规则也会随输入变化重算。
+  const [best] = [...exact].sort(
+    (a, b) =>
+      Number(Number(b.stock ?? 0) > 0) - Number(Number(a.stock ?? 0) > 0) ||
+      Number(a.price ?? 0) - Number(b.price ?? 0) ||
+      String(a.id).localeCompare(String(b.id))
+  )
+  return best ?? null
 }
 
 function autoFeaturesOf(line: OrderLineItem): AutoFeature[] {
@@ -736,6 +759,7 @@ function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
     productLoading: false,
     selectedColorId: null,
     selectedSku: null,
+    skuAutoSelected: false,
     saleForm: SALE_FORM_FINISHED,
     // 帘体默认「布帘」（issue #4521）：不带纱帘的普通窗帘 = 绝大多数场景
     curtainBody: CURTAIN_BODY_CLOTH,
@@ -1040,19 +1064,29 @@ export default function NewOrderPage() {
     patchGroup(groupId, {
       selectedColorId: colorId,
       selectedSku: autoSku,
+      skuAutoSelected: Boolean(autoSku),
       ...(autoSku ? { unitPrice: Number(autoSku.price) } : {}),
     })
   }
 
   /** 门幅 / 售卖方式（**组级**）：同上；并把「高」默认成门幅（仅定高买宽，可改） */
-  const handleSelectSkuForGroup = (groupId: string, sku: OrderProductSku) => {
+  const handleSelectSkuForGroup = (
+    groupId: string,
+    sku: OrderProductSku,
+    source: 'auto' | 'manual' = 'manual'
+  ) => {
     const sample = lineItems.find((l) => l.groupId === groupId)
     const isFixedHeight = (sample?.craft.cuttingMode ?? DEFAULT_CUTTING_MODE) === DEFAULT_CUTTING_MODE
     const defaultHeight = isFixedHeight ? heightFromDoorWidth(sku.doorWidth) : null
     setLineItems((prev) =>
       prev.map((it) => {
         if (it.groupId !== groupId) return it
-        const next: OrderLineItem = { ...it, selectedSku: sku, unitPrice: Number(sku.price) || 0 }
+        const next: OrderLineItem = {
+          ...it,
+          selectedSku: sku,
+          unitPrice: Number(sku.price) || 0,
+          skuAutoSelected: source === 'auto',
+        }
         // 只在「还没填高」时补默认值 —— 商家填过的值不覆盖（同「手改留痕」纪律）
         if (defaultHeight !== null && it.height === null) next.height = defaultHeight
         return next
@@ -1068,11 +1102,14 @@ export default function NewOrderPage() {
    */
   const autoSelectSkuByRuleForGroup = (groupId: string, patch: Partial<OrderLineItem>) => {
     const sample = lineItems.find((l) => l.groupId === groupId)
-    if (!sample || sample.selectedSku) return
+    if (!sample) return
+    // **客服手选过 ⇒ 不覆盖**（只提示可换最优，用户裁定）；**规则自己选的 ⇒ 要能重算**（issue #4899）
+    if (sample.selectedSku && !sample.skuAutoSelected) return
     const next = { ...sample, ...patch }
     const skusOfColor = (next.product?.skus ?? []).filter((s) => s.colorId === next.selectedColorId)
     const sku = pickAutoSkuForColor(next, skusOfColor)
-    if (sku) handleSelectSkuForGroup(groupId, sku)
+    // 规则解没变 ⇒ 不动作（避免无谓 setState 与单价抖动）
+    if (sku && sku.id !== sample.selectedSku?.id) handleSelectSkuForGroup(groupId, sku, 'auto')
   }
 
   /**
@@ -1247,6 +1284,7 @@ export default function NewOrderPage() {
     updateLineItem(line.id, {
       selectedColorId: colorId,
       selectedSku: autoSku,
+      skuAutoSelected: Boolean(autoSku),
       unitPrice: autoSku ? Number(autoSku.price) : line.unitPrice,
     })
   }
@@ -3114,14 +3152,25 @@ function LineItemBlock({
     (name) => !autoFeatureRows.some((row) => row.name === name)
   )
   /** 系统识别**提示**（issue #4662）：缺褶倍 ⇒ 未判超宽 / 加工类型几何矛盾 ⇒ 系统实际按哪种算 */
-  const autoFeatureNotices = autoFeatureNoticesOf(line)
+  /**
+   * 系统识别**提示**（issue #4662）：缺褶倍 ⇒ 未判超宽 / 加工类型几何矛盾 ⇒ 系统实际按哪种算。
+   * ⚠️ issue #4899：**「还没选规格」≠「门幅未维护」** —— 没有选中 SKU 时摘掉 `missing-door-width`
+   * （那是「未选规格」，提交闸门另有明确报错），否则界面会谎报「该 SKU 未维护门幅」。
+   */
+  const autoFeatureNotices = autoFeatureNoticesOf(line).filter(
+    (notice) => !(line.selectedSku === null && notice.kind === 'missing-door-width')
+  )
   /**
    * 门幅（issue #4877）：**已无缺省门幅** —— 解析不到 ⇒ `null` ⇒ 界面显式说「无法判定」。
    * 旧行为「按默认 2.8 米推算」= 本单要替换掉的错误做法（真单实测：门幅 2.8/3.2 之差会让
    * 同一张单得出「需接高」与「单幅可做」两种相反结论）。
    */
   const selectedDoorWidth = parseDoorWidth(line.selectedSku?.doorWidth)
-  const doorWidthMissing = selectedDoorWidth === null
+  /**
+   * 「**SKU 未维护门幅**」——必须**先有一个选中的 SKU**（issue #4899）：
+   * 否则「还没选规格」会被显示成「门幅未维护」（误导：不是没维护，是根本还没选）。
+   */
+  const doorWidthMissing = line.selectedSku !== null && selectedDoorWidth === null
   /**
    * **门幅规则**（issue #4877）：候选 = 本行该颜色的 SKU 门幅；解 = 可行集取最小门幅 /
    * 定宽买高取分幅最少。所选门幅**不可行** ⇒ `infeasible`（需接高，强告警）；
@@ -3436,6 +3485,15 @@ function LineItemBlock({
                   <div className="text-xs font-medium text-neutral-600">
                     系统识别（按成品宽高与门幅推算，不可手选；可采纳 / 不采纳）
                   </div>
+                  {/* issue #4899：规则**判不了**时要显式说明「缺什么就动不了」，不许静默什么都不做
+                      （用户实测「无法反选门幅」的一种形态 = 尺寸没填、页面却一言不发） */}
+                  {!line.selectedSku &&
+                    doorWidthChoice.plan.state === 'undecidable' &&
+                    doorWidthChoice.plan.code === 'missing-size' && (
+                      <p data-testid="door-width-need-size" className="mt-1 text-xs text-neutral-500">
+                        填完成品宽高后，系统会按规则自动选最优门幅（可行集里最小门幅 / 定宽买高分幅最少）
+                      </p>
+                    )}
                   {doorWidthMissing && (
                     <p data-testid="door-width-missing" className="mt-1 text-xs text-amber-600">
                       该 SKU 未维护门幅 ⇒ **超高 / 超宽都判不了**（系统不按缺省门幅推算）—— 请先补商品门幅
