@@ -465,6 +465,12 @@ describe('#4662 「超宽」含褶倍 + 加工类型几何矛盾显式提示（�
     // 依据说清（哪两个数比出来的）+ 门幅前提可见 —— 前端**不编**口径
     expect(notice.textContent).toContain('成品高 2.6 + 上下卷边 0.3 = 2.9 米')
     expect(notice.textContent).toContain('门幅 2.8 米')
+    // 🔴 issue #4746：提示**不再**声称「算料引擎按此判几何」—— 引擎按 `internal.py::_FABRIC_WIDTH`
+    // 硬编码 3.2 试算，那句是**无据断言**（商家按提示做的决定可能是错的）；改后只声明「按本 SKU
+    // 门幅口径」并**显式登记**引擎试算门幅尚未接线（分叉 #4652）。红证：改前这两条必红。
+    expect(notice.textContent).not.toContain('算料引擎按此判几何')
+    expect(notice.textContent).toContain('引擎试算门幅尚未按本 SKU 门幅接线')
+    expect(notice.textContent).toContain('#4746')
     // 推算仍**以商家选的为准**（裁定 C）：特征 = ['超高']，不冒出「超宽 / 倒幅」
     expect(screen.getByTestId('auto-feature-超高')).toBeInTheDocument()
     expect(screen.queryByTestId('auto-feature-超宽')).toBeNull()
