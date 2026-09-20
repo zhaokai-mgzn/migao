@@ -5,16 +5,17 @@
 
 `production_route_signals` 的种子（V60 段）**排在租户种子（V40 段）之前** ⇒
 `psql -v ON_ERROR_STOP=1 -f docs/sql/schema.sql` 在
-`production_route_signals_tenant_id_fkey` 上**中止**：
+`production_route_signals_tenant_id_fkey` 上**中止**。中止点 = V60 段
+（段首 `-- 信号种子（tenant_id=1；`，本文件用 `_SIGNAL_BLOCK` 按**文本锚点**定位它）
+里的 `INSERT INTO production_route_signals … ON CONFLICT DO NOTHING;`，报错原文：
 
-    psql:docs/sql/schema.sql:1484: ERROR:  insert or update on table
-      "production_route_signals" violates foreign key constraint
-      "production_route_signals_tenant_id_fkey"
+    ERROR:  insert or update on table "production_route_signals"
+            violates foreign key constraint "production_route_signals_tenant_id_fkey"
     描述:  Key (tenant_id)=(1) is not present in table "tenants".
     EXIT=3
 
 而 `deploy/docker-compose.yml` 正把该文件挂成
-`docker-entrypoint-initdb.d/001_schema.sql`（该文件第 31 行），postgres 官方 entrypoint 用
+`docker-entrypoint-initdb.d/001_schema.sql`（该文件 `volumes:` 段里的挂载项），postgres 官方 entrypoint 用
 `psql -v ON_ERROR_STOP=1` 执行 initdb 脚本 ⇒ **本地/CI docker 栈建库中止**（新开发者走的那条路）。
 
 ⚠️ **隐蔽点**：判据若用 `ON_ERROR_STOP=0` 跑全文 ⇒ **错误被吞掉**、脚本「看起来成功」
