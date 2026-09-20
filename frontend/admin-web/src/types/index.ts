@@ -744,8 +744,8 @@ export interface ProductionProgress {
  * - `unpriced` **未定价**（矩阵格 `NULL`）⇒ 单价为 `null`、**不得**按 0 计件，界面必须显示
  *   「未定价」并给出定价入口（否则工人白干且无人知道）。
  *
- * 与读面（`GET /operation-layers`）的 `price_state` **同一份词表**（`multiple_prices` /
- * `no_applicable_position` 是读面聚合专有，实例化侧按本部位单格取值，不会出现）。
+ * 与读面（`GET /operation-layers`）的 `price_state` **同一份词表**（`multiple_prices` 是读面聚合专有，
+ * 实例化侧按本行单值取值，不会出现；`no_applicable_position` 已随 #4951 去部位化彻底版退场）。
  */
 export type PriceState = 'priced' | 'unpriced'
 
@@ -1037,29 +1037,38 @@ export interface RoutingCreateParams {
 //    前端**不得**重排（重排会与服务端口径分叉）。
 
 /**
- * 部位价目一格：一道**逻辑工序** × 一个**部位** = 一个单价 + 一个适用性。
+ * 价目一行：**一道逻辑工序 = 一个单价**（issue #4937 / #4951 去部位化彻底版之后的终态）。
  *
  * ⚠️ `operation` 是**逻辑工序名**（`精裁` / `三边`），**不是** `production_operations.name`
  * （那边仍是旧名 `精裁-布` / `布三边`）—— 取错会让矩阵退化成「一行一道旧工序」。
- * `applicable=false` ⇒ `unit_price=null`（**明确不做**与「没定价」可区分）。
+ *
+ * ⚠️ `position` **键仍在读面契约里**（`GET /operation-positions` 仍是 10 键）但值**恒 `通用`**
+ * —— 部位维已随 #4951 **物理退场**（`production_operation_positions` 每逻辑工序**一行**、
+ * V102/V104 后存活行的 `applicable` 恒 `TRUE`、`production_route_rules.position` 全 `NULL`
+ * 且不再参与筛选）⇒ 它**不再是配置概念**，web 面**不得渲染**它（不把「通用」这种东西给商家看）。
+ *
+ * 🔴 **没有 `applicable`**（issue #4937 / O1）：部位适用性已退场 —— 读面该键恒 `true`（已无语义），
+ * 写面收到它一律 **422**（「部位适用性已退场，不再受理该字段」，**拒绝**而非静默忽略）
+ * ⇒ 前端**不持有、不发送、不判断**该字段。
+ * 价的**两态**照旧：`unit_price = null` ⇒ **未定价**（**≠ ¥0.00**）；有值 ⇒ 有价（`0` 就是真 0 元）。
  *
  * `id` + 后 5 键是 issue #4588（契约 #4587 ①）新增的**写面寻址 + 逻辑名↔变体工序映射**：
- * - `id` = 本矩阵行（`production_operation_positions.id`）—— 格内改价 / 改做不做用它寻址
+ * - `id` = 本行（`production_operation_positions.id`）—— 就地改价用它寻址
  *   （`PUT /operation-positions/{id}`）；
- * - 后 5 键 = 该格**实际落到工人端**的那道工序的元数据，由后端
+ * - 后 5 键 = 该行**实际落到工人端**的那道工序的元数据，由后端
  *   `ProductionOperationQueryService.variantNameOf` 推导（**前端不得另写一份推导**）；
  *   查不到 ⇒ 5 键**全 `null`**（静默 = 未知，不发明元数据）。
  * ⚠️ **没有 `variant_name`**（issue #4622）：变体名（`布三边` / `精裁-布`）是**当前**工序库的旧名，
- *   web 面只用**一套工序名** = 逻辑工序名（`operation`）+ 部位（`position`）⇒ 后端响应里已去掉该键
+ *   web 面只用**一套工序名** = 逻辑工序名（`operation`）⇒ 后端响应里已去掉该键
  *   （键在响应里就仍是 web 可见的旧口径）；逻辑名 ↔ 变体的**寻址**用 `variant_operation_id`。
  */
 export interface OperationPosition {
-  /** 矩阵行标识（`PUT /operation-positions/{id}` 的 `{id}`） */
+  /** 行标识（`PUT /operation-positions/{id}` 的 `{id}`） */
   id?: string | null
   operation: string
+  /** 部位维已退场（值恒 `通用`）—— 键仍在读面契约里，web 面**不得渲染** */
   position: string
   unit_price?: number | null
-  applicable?: boolean | null
   /** 该格对应的 `production_operations.id`（工人扫码端那道工序；抽屉的 `PUT/DELETE` 按它寻址） */
   variant_operation_id?: string | null
   /** 变体的单位（米/折/件/套） */
@@ -1075,29 +1084,36 @@ export interface OperationPosition {
 /**
  * `PUT /api/admin/production/operation-positions/{id}` 的 body（issue #4588；契约 #4587 ②）。
  *
- * **部分更新** —— 只写 body 里出现的键（前端因此必须「只带变了的那个键」）：
- * - `applicable=false` ⇒ 后端把 `unit_price` **强制落 NULL**（明确不做 ⇒ 不报价）；
- * - `applicable=true` + `unit_price=null` ⇒ **「适用但未定价」**（合法状态，商家待办）；
- * - `unit_price: null` ⇒ 改回**未定价**（**≠ 0 元**；0 是「定价为 0」这个真值）。
+ * 🔴 **只剩一个键**（issue #4937 / O1 去部位化彻底版）：`{unit_price}`。
+ * `applicable` **已退场** —— body 里出现它 ⇒ 后端 **422 + 可行动理由**
+ * （「部位适用性已退场，不再受理该字段」），**拒绝**而**不静默忽略**
+ * （静默 no-op 会让调用方以为改成了「不做」，而那行照旧参与实例化 ⇒ 工人按错工序拿钱且无报错）。
+ * ⇒ **本类型不得再长出 `applicable`**（写面契约由后端 `ProductionOperationPositionCommandService` 冻结）。
+ *
+ * `unit_price: null` ⇒ 改回**未定价**（**≠ 0 元**；0 是「定价为 0」这个真值）。
  */
 export interface OperationPositionUpdateParams {
   unit_price?: number | null
-  applicable?: boolean
 }
 
 /**
- * 工艺项**两层分区**里「打包发货」层的一行（issue #4677 = 设计
+ * `GET /operation-layers` 的「打包发货」段一行（issue #4677 = 设计
  * `docs/design/public-operations-and-craft-ui.md` §4.1/§4.5 方案 A；契约 #4676）。
  *
- * 分区判据 = **既有** `scope`（`scope='set'` ⇒ 本层；**不新造概念**）。本层的「一列价」是
- * 服务端按该工序**全部 `applicable=TRUE` 格**聚合出来的**显式规则**（**不是删格**）：
+ * 分区判据 = **既有** `scope`（`scope='set'` ⇒ 本段；**不新造概念**）。本段的「一列价」是
+ * 服务端按该工序**全部存活行**聚合出来的**显式规则**（**不是删行**）：
  *
- * - `priced` ⇒ 各格价全同，`price` = 那个价；
- * - `unpriced` ⇒ 有格没定价，`price = null` —— **未定价 ≠ ¥0.00**（回落工序库行价会把
- *   「未定价」变成真 0 元，工人白干）；
- * - `multiple_prices` ⇒ 各格价不同，`price = null` + `different_price_count`
- *   （**不静默取第一个**）；
- * - `no_applicable_position` ⇒ 一格「做」都没有。
+ * - `priced` ⇒ 各行价全同，`price` = 那个价；
+ * - `unpriced` ⇒ 有行没定价（**含零行** —— #4951 后零格也判这一态），`price = null`
+ *   —— **未定价 ≠ ¥0.00**（回落工序库行价会把「未定价」变成真 0 元，工人白干）；
+ * - `multiple_prices` ⇒ 各行价不同，`price = null` + `different_price_count`
+ *   （**不静默取第一个**）。
+ *
+ * ⚠️ **四态 ⇒ 三态**（issue #4937 / #4951 去部位化彻底版）：第 4 态 `no_applicable_position`
+ * （「一格『做』都没有」）**已退场** —— 存活价目行的 `applicable` 恒 `TRUE` ⇒「一格『做』都没有」
+ * 这个状态**不可达**；零格行落 `unpriced`。
+ * ⚠️ **键集一字不变（仍是 9 键）**：`applicable_positions` **键保留**但**恒 `[]`** ——
+ * 部位维已退场，前端**不得**据它渲染任何逐部位控件。
  */
 export interface OperationLayerDeliveryRow {
   operation: string
@@ -1106,9 +1122,9 @@ export interface OperationLayerDeliveryRow {
   group?: string | null
   is_must_finish?: boolean | null
   price?: number | null
-  price_state: 'priced' | 'unpriced' | 'multiple_prices' | 'no_applicable_position'
+  price_state: 'priced' | 'unpriced' | 'multiple_prices'
   different_price_count: number
-  /** 该工序**仍是「做」**的部位（抽屉的做/不做逐格控件按它渲染） */
+  /** 部位维已退场 ⇒ **恒 `[]`**（键保留 = 9 键契约不变；前端**不得**据此渲染） */
   applicable_positions: string[]
 }
 
@@ -1170,7 +1186,11 @@ export interface RouteRule {
   trigger_kind?: string | null
   /** 触发键取值 —— **与 ERP 名逐字一致**（#4389 join key 纪律：前端不得拼写或"纠正"） */
   trigger_value?: string | null
-  /** 部位限定；`null` = 不限部位 */
+  /**
+   * 部位限定；`null` = 不限部位。
+   * ⚠️ **规则级部位已退场**（issue #4937 / #4951）：`production_route_rules.position`
+   * **全 `NULL` 且不再参与筛选** —— 键仍在读面契约里，前端**不得**据它渲染或过滤。
+   */
   position?: string | null
   action?: string | null
   /** 目标工序（逻辑名）—— issue #4643 起写面落库前归一、读面返回前同样归一（存量行兜底） */

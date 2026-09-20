@@ -98,7 +98,7 @@ import type {
  *   GET    /api/admin/production/routings                 POST /routings   body {name, mainline?, positions?, is_default?}
  *   PUT    /api/admin/production/routings/{id}            DELETE /routings/{id}      （部分更新 {name?, is_default?, mainline?, positions?, status?}）
  *   GET    /api/admin/production/operation-positions      GET  /route-rules
- *   PUT    /api/admin/production/operation-positions/{id}  （#4588 矩阵格写面：部分更新 {unit_price?} / {applicable?}）
+ *   PUT    /api/admin/production/operation-positions/{id}  （#4588 矩阵行写面；🔴 #4937/O1 起 body **只收** {unit_price?} —— `applicable` 已退场，收到即 422）
  *   POST   /api/admin/production/route-rules              （#4650 阶段 1：**条件的唯一创建写面**，被抽屉的「添加条件」复用）
  *   DELETE /api/admin/production/operations/{id}          （#4588 工序软删：三条护栏一次报全）
  *   DELETE /api/admin/production/route-rules/{id}         （#4588 规则软删：无硬护栏；#4650 起从抽屉里删一条条件）
@@ -130,23 +130,25 @@ const logicalNameOf = (cell: OperationPosition): string =>
   (cell as OperationPosition & { logical_name?: string | null }).logical_name ?? cell.operation
 
 /**
- * 收敛的**平局优先部位**（issue #4886）—— ⚠️ 这是**兼容用的 tie-breaker，不是配置概念**：
- * 它**不参与任何界面文案**，只用来在「同一逻辑名仍有多行」时与后端「取原基线价」的取舍对齐，
- * 保证两边选出**同一行**（选错行 = `PUT /operation-positions/{id}` 改的是另一个价）。
- */
-const CONVERGE_PREFERRED_POSITION = '布帘'
-
-/**
  * 同一逻辑名多行时的**收敛选择**（规则逐字见 {@link convergeByLogicalName}）：
- * ① 优先 `applicable === true`；② 其中优先 {@link CONVERGE_PREFERRED_POSITION}；
- * ③ 再按 `position` 字典序取首个（**不静默取「第一个出现的」**—— 那会随服务端排序漂移）。
+ * 按 `position` 字典序 → `id` 升序取首个 —— 与后端
+ * `ProductionOperationQueryService#collapseToLogical` 的**同一把尺**，保证两边选出**同一行**
+ * （选错行 = `PUT /operation-positions/{id}` 改的是另一个价）。
+ *
+ * 🔴 **两条旧平局规则已退场**（issue #4937 / #4951 去部位化彻底版，如实登记为**判据面缩小**）：
+ * ① 「优先 `applicable === true`」—— 存活行的 `applicable` **恒 `TRUE`**、该字段已从
+ *    {@link OperationPosition} 退场（写面收到它即 422）⇒ 判据的输入不复存在；
+ * ② 「其中优先 `布帘`」—— `position` 现在**恒 `通用`**（部位维物理退场）⇒ 没有可优先的列。
+ * 留下这一条**不是放宽**：它仍是**完全确定**的（字典序 + `id`，不依赖 DB 返回序），且 #4951 之后
+ * 同一逻辑名本就只有一行（收敛是过渡期兜底，选行结果唯一）。
  */
 const pickConvergedCell = (group: OperationPosition[]): OperationPosition => {
-  const applicable = group.filter((c) => c.applicable === true)
-  const pool = applicable.length > 0 ? applicable : group
-  const preferred = pool.find((c) => c.position === CONVERGE_PREFERRED_POSITION)
-  if (preferred) return preferred
-  return [...pool].sort((a, b) => a.position.localeCompare(b.position))[0]
+  if (group.length === 1) return group[0]
+  return [...group].sort(
+    (a, b) =>
+      (a.position ?? '').localeCompare(b.position ?? '') ||
+      String(a.id ?? '').localeCompare(String(b.id ?? '')),
+  )[0]
 }
 
 /**
@@ -537,11 +539,13 @@ must_finish: boolean | null
 /**
  * 工序**单价格**（issue #4886）：一屏一张表里该工序的**唯一一个价** —— 就地可改。
  *
- * 三态**互斥**且可区分（既有判据，重做时不许丢）：
+ * **两态**互斥且可区分（#4951 去部位化彻底版起由三态收敛为两态）：
  * - `priced` ⇒ `¥x.xx`（`0` 是**真价**，照显示 `¥0.00` —— ≠「未定价」）；
- * - `unpriced` ⇒ 「未定价」（`unit_price = null`，是**待办**、不是 0 元；**绝不**回落工序库单价）；
- * - `na` ⇒ 「不做」（`applicable = false` 的历史残留形态，**只读**呈现 —— 做/不做开关已随
- *   「一道工序一个价」退场）。
+ * - `unpriced` ⇒ 「未定价」（`unit_price = null`，是**待办**、不是 0 元；**绝不**回落工序库单价）。
+ *
+ * 🔴 **第三态 `na`（「不做」）已退场**（issue #4937 / #4951）：V102/V104 之后存活价目行的
+ * `applicable` **恒 `TRUE`** ⇒「不做」**不可达**，本组件不再有这一分支 —— `applicable` 也不再是
+ * {@link OperationPosition} 的字段（写面收到它即 **422**）。「未定价 ≠ ¥0.00」这条**一字不放宽**。
  *
  * 写动作**一个端点、一个 body**：改价 ⇒ `PUT /operation-positions/{id}` `{unit_price}`
  * （清空 = `null` = 改回未定价）。失败理由**就地逐条**展示
@@ -577,19 +581,13 @@ function OperationPriceCell({
       data-testid={`operation-price-${operation}`}
       data-state={state}
       title={
-        state === 'na'
-          ? `「${operation}」当前配置为不做这道工序`
-          : state === 'unpriced'
-            ? `「${operation}」还没定价（≠ ¥0.00）`
-            : `「${operation}」计件单价（给工人） ${money(cell?.unit_price)}`
+        state === 'unpriced'
+          ? `「${operation}」还没定价（≠ ¥0.00）`
+          : `「${operation}」计件单价（给工人） ${money(cell?.unit_price)}`
       }
-      className={cn(
-        state === 'na' ? 'text-neutral-400' : state === 'unpriced' ? 'text-amber-700' : 'text-neutral-900',
-      )}
+      className={cn(state === 'unpriced' ? 'text-amber-700' : 'text-neutral-900')}
     >
-      {state === 'na' ? (
-        <span>不做</span>
-      ) : editing ? (
+      {editing ? (
         <span className="flex items-center gap-1.5">
           <input
             value={draft}
@@ -716,12 +714,15 @@ interface VariantView {
 }
 
 /**
- * 一道工序的三态：明确不做（`applicable=false`）/ 没定价 / 有价 —— 三态**不同形**
- * （`null` 价**绝不**渲染成 `¥0.00`）。顶层函数（不闭包）⇒ 单价格组件也能用同一份判据。
+ * 一道工序的**两态**：没定价 / 有价 —— 两态**不同形**（`null` 价**绝不**渲染成 `¥0.00`）。
+ * 顶层函数（不闭包）⇒ 单价格组件也能用同一份判据。
+ *
+ * 🔴 原第三态 `na`（`applicable=false` ⇒「不做」）已随 **#4951 去部位化彻底版**退场：
+ * 存活价目行的 `applicable` 恒 `TRUE`（V102/V104）⇒ 该态**不可达**，不再有 `na` 分支。
+ * ⚠️ `unit_price=null ⇒ unpriced` 这条**一字不放宽**（未定价 ≠ ¥0.00；回落库行价会让工人白干）。
  */
-const cellState = (cell?: OperationPosition | null): 'na' | 'unpriced' | 'priced' => {
+const cellState = (cell?: OperationPosition | null): 'unpriced' | 'priced' => {
   if (!cell) return 'unpriced'
-  if (cell.applicable === false) return 'na'
   return cell.unit_price == null ? 'unpriced' : 'priced'
 }
 
@@ -1100,7 +1101,8 @@ export default function ProcessConfigPage() {
    * 可能仍返回同一逻辑名的多行；收敛后每行恰好持有**那一行**（`cell`），`cells` 只为既有
    * 「按行取元数据」的调用点保留同形（单元素 Map）。
    * **保持服务端顺序**（`Map` 插入序 = 首次出现顺序），前端**不重排**。
-   * ⚠️ **不过滤** `applicable=false` 的行 —— 「明确不做」与「没定价」必须在界面上可区分。
+   * ⚠️ 不再有「过滤掉不做的那一行」这件事（#4951：`applicable` 已退场且恒 `TRUE`）——
+   * 价目读面给几行就收敛成几行，「不做」在这一屏**不是一种状态**。
    */
   const matrixRows = useMemo<MatrixRow[]>(
     () =>
@@ -1212,7 +1214,8 @@ export default function ProcessConfigPage() {
     `${group === '' ? '未分组' : workshopLabel(group)} · ${count} 道`
 
   /**
-   * 未定价工序数（**待办计数**：还没定价；「不做」不算、真 0 元不算）。
+   * 未定价工序数（**待办计数**：还没定价；真 0 元不算）。#4951 之后也不再有「不做」可排除
+   * —— 那一态不可达（`applicable` 恒 `TRUE` 且已从类型退场）。
    * ⚠️ 按**收敛后的行**数（一屏一行一道工序）—— 直接数 `matrix` 会把同一道工序的多行重复计数。
    */
   const unpricedCount = useMemo(
@@ -1337,11 +1340,14 @@ export default function ProcessConfigPage() {
    *
    * <p>{@code variant_operation_id} 仍用于**展示**（「这些行未关联到本工序」是有价值的信息），
    * 但**不得**再作为「能否删 / 走哪条路」的判据（issue #4692 的硬要求）。</p>
+   *
+   * <p>⚠️ **2026-09-21（#4951 去部位化彻底版，判据面缩小、不放宽）**：`applicable` 已从
+   * {@link OperationPosition} 退场且**恒 `TRUE`** ⇒「仍是『做』的行」= **本行的全部价目行**
+   * （后端护栏③仍在，判据是 {@code matchingCells} × {@code applicable}）。前端口径随之从
+   * 「过滤出做着的行」收敛为「有几行就有几个 blocker」—— 原先被排除的 {@code applicable=false}
+   * 行在新形态下**不存在**；若真出现也一律走 detach（对后端护栏③而言是**安全方向**）。</p>
    */
-  const opDeleteBlockerCells = useMemo(
-    () => manageOpCells.filter((c) => c.applicable !== false),
-    [manageOpCells],
-  )
+  const opDeleteBlockerCells = useMemo(() => manageOpCells, [manageOpCells])
 
   /**
    * 该逻辑工序的设置行（issue #4674 C：`variant_operation_id` 关联不上时**回退按逻辑名**
@@ -1413,7 +1419,9 @@ export default function ProcessConfigPage() {
   )
   /**
    * 删除弹框要「一键设为不做」的行（issue #4665）：判据与**后端护栏③同源** ——
-   * 该变体对应的价目行里 `applicable=true` 的那些。
+   * 该变体对应的价目行里「做着的」那些。
+   * ⚠️ **2026-09-21（#4951）**：`applicable` 已退场且恒 `TRUE` ⇒ 这里不再能（也不必）
+   * 过滤「不做」的行 —— 命中的行**全部**是后端护栏③会拦的那些（前端**不持有** `applicable`）。
    *
    * <p>前端只用它来**如实说清将发生什么**（「将把这 N 行设为不做，然后删除该工序」）——
    * **判据以后端为准**：真正的摘行在后端同一事务里按同一判据做（前端不发明第二份口径，
@@ -1423,7 +1431,7 @@ export default function ProcessConfigPage() {
     if (!deleteOpTarget) return []
     const cells: OperationPosition[] = []
     manageRow?.cells.forEach((c) => {
-      if (c.variant_operation_id === deleteOpTarget.id && c.applicable !== false) cells.push(c)
+      if (c.variant_operation_id === deleteOpTarget.id) cells.push(c)
     })
     return cells
   }, [deleteOpTarget, manageRow])
@@ -2016,8 +2024,9 @@ export default function ProcessConfigPage() {
   /**
    * **一键「设为不做并删除」**（issue #4665 A；用户实测「无法删除，而且没有地方设置做于不做」）。
    *
-   * <p>把删除的前置（把受影响的矩阵格设为不做）**交给系统自己做** —— 后端**一次事务**：
-   * 先摘格（{@code applicable=false}）再软删工序，并**级联软删矩阵行**（删干净，见 issue #4665 C）。
+   * <p>把删除的前置（把受影响的价目行设为不做）**交给系统自己做** —— 后端**一次事务**：
+   * 先摘行（后端内部把 {@code applicable} 置 false —— #4951 后前端**不持有**该字段）再软删工序，
+   * 并**级联软删矩阵行**（删干净，见 issue #4665 C）。
    * 前端只发**一次**请求（`?detach_positions=true`）⇒ **没有**「第一步成功、第二步失败」的中间态。</p>
    *
    * <p>⚠️ **护栏不放宽**：主线 / 规则两条由后端照旧拦（主线涉及车间顺序，必须人工确认）⇒
@@ -3398,8 +3407,10 @@ export default function ProcessConfigPage() {
                     </p>
                   ) : (
                     <>
-                    {/* issue #4886：「做 / 不做」开关随旧配置面一起退场（一道工序一个价 ⇒ 没有第二个维度）。
-                        价与三态在主表的**单价格**里（`operation-price-*`），这里只维护元数据。 */}
+                    {/* issue #4886：「做 / 不做」开关随旧配置面一起退场（一道工序一个价 ⇒ 没有第二个维度）；
+                        issue #4951 去部位化彻底版：`applicable` 已退场（恒 TRUE，写面收到即 422）
+                        ⇒ 价只剩**两态**（有价 / 未定价），全部在主表的**单价格**里
+                        （`operation-price-*` 的 `data-state`），这里只维护元数据。 */}
 
                   {/* 分组 · 单位：就地改（`PUT /operations/{id}` 部分更新） */}
                   <div className="mt-2 flex flex-wrap items-center gap-2">
