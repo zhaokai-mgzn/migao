@@ -18,6 +18,26 @@ const STATUS_OPTIONS: { value: '' | ProductStatus; label: string }[] = [
   { value: 'draft', label: '草稿' },
 ]
 
+/**
+ * 把 Date 格式化为**本地日** `YYYY-MM-DD`（issue #4783）。
+ *
+ * ⚠️ 不得写成 `new Date().toISOString().slice(0, 10)`（**UTC** 日）：在 UTC+8 的每天
+ * 00:00~08:00（CST）这 8 小时里 UTC 日 = 前一天 ⇒ 导出文件名 `products_YYYY-MM-DD.xlsx`
+ * 的日期与商家认知不符（与 #4772 的「每月 1 日查上一个月」同一根因族）。
+ * 口径 = 本地日（正确参照物：同仓 `finance/page.tsx` / `orders/page.tsx` 的私有 `formatDate`，
+ * 与 `production/piecework/page.tsx` 的本地月 #4774 同口径）。
+ *
+ * 未抽公共函数的原因：仓内**没有**本地日期工具，`formatDate` 在 finance/orders 两页各自私有
+ * 且用途不同（`<input type="date">` 取值）；为一个文件名抽公共模块属过度建设（同 #4774 的处置），
+ * 故就地最小实现。
+ */
+function formatLocalDate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 type BatchAction = 'on_shelf' | 'off_shelf' | 'delete'
 
 interface SingleConfirm {
@@ -279,7 +299,7 @@ export default function ProductsPage() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `products_${new Date().toISOString().slice(0, 10)}.xlsx`
+      a.download = `products_${formatLocalDate(new Date())}.xlsx`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
