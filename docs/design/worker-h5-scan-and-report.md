@@ -725,6 +725,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 | D3 | 切片② 的 `completeByScan` 原子事务（§5.2） | **未落码（另一单在写）** | 本切片消费的是**已合并**的既有报工端点（逐条推进 + 计件快照），**不是** §5.2 的一次事务闭环；切片② 落地后前端**无需改动**（同一端点形状） |
 | D4 | 微信网页授权（腿 B，§2.2） | **不做** | 服务层 501 占位 + 无公众号配置 ⇒ 按用户裁定「本单不做」 |
 | D5 | 离线队列（§4.4） | **未落码** | 复用口径（幂等键语义 / 业务拒绝不入队 / 上限 50）**已在 #4733 之外的 bmini-app**；H5 版需换存储后端 + 多标签锁（§8.4 R3）⇒ 跟随单。**本切片：断网 ⇒ 显式报错**（不静默丢单） |
+| D6 | 🔴 **CI 不跑 worker-h5 测试** | **如实登记** | `pr-check.yml` 的前端腿只对 `frontend/admin-web/` 变更触发（`working-directory: frontend/admin-web`）⇒ 本目录的测试**只在本地**跑（`./verify-all.sh frontend` / `full` 已接入）。**接 CI 需要改 `.github/workflows/**`**（本单**禁止**触碰，且本机 token 无 `workflow` scope）⇒ 登记为跟随单（新 job：`node --test frontend/worker-h5/tests/*.test.mjs`）。**不得**因此说"CI 已覆盖本页面" |
 
 ### 9.4 工程前提（**前提，不是本单能解的**）
 
