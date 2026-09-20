@@ -103,6 +103,7 @@
     "V102__retire_applicability_flag.sql": "sha256:5d08948dcfe1f539d5a559e56dd06a889ce5423bc1ef5fd81e36ee0667a9710f",
     "V103__clear_route_rule_positions.sql": "sha256:ef99ec0e0eacace78f666cb54fa260367b2b1a27eea26f4f313604b69e4958c7",
     "V104__deposition_matrix_collapse.sql": "sha256:3ca31f04162f3572b11e3c1a888fea6993d0c2c6c48aee43d881e1c07e4941d2",
-    "V105__add_sheer_variant_operations.sql": "sha256:9a844b50e7fcd8a72324d684e36f8cbdaf1a937d354783edbd3bf999f71ca33a"
+    "V105__add_sheer_variant_operations.sql": "sha256:9a844b50e7fcd8a72324d684e36f8cbdaf1a937d354783edbd3bf999f71ca33a",
+    "V106__backfill_sheer_variant_operations.sql": "sha256:104d052a9b177a68a07eeec95bd555c6ef9a15ef7bc2fe4d787ecb7a95728857"
   }
 }

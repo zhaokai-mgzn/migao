@@ -39,6 +39,7 @@ V102 = MIGRATION_DIR / "V102__retire_applicability_flag.sql"
 V103 = MIGRATION_DIR / "V103__clear_route_rule_positions.sql"
 V104 = MIGRATION_DIR / "V104__deposition_matrix_collapse.sql"
 V105 = MIGRATION_DIR / "V105__add_sheer_variant_operations.sql"
+V106 = MIGRATION_DIR / "V106__backfill_sheer_variant_operations.sql"
 SCHEMA_SQL = REPO / "docs/sql/schema.sql"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
 #: 选行规则的**同一份**字面量（Java 侧常量；跨语言判据按源码解析，不靠人抄）。
@@ -63,13 +64,13 @@ def _strip_comments(sql: str) -> str:
 # ══════════════════════════ ① 存在性 / 版本号 / 账本 ══════════════════════════
 
 def test_three_migrations_exist_and_versions_are_unique():
-    for path in (V102, V103, V104, V105):
+    for path in (V102, V103, V104, V105, V106):
         assert path.exists(), f"缺少迁移文件：{path.name}"
     versions = [int(re.match(r"^V(\d+)__", p.name).group(1))
                 for p in MIGRATION_DIR.glob("V*.sql") if re.match(r"^V(\d+)__", p.name)]
-    for want in (102, 103, 104, 105):
+    for want in (102, 103, 104, 105, 106):
         assert versions.count(want) == 1, f"V{want} 版本号重复"
-    assert max(versions) >= 105, f"V105 不是最大版本号（当前最大 V{max(versions)}）"
+    assert max(versions) >= 106, f"V106 不是最大版本号（当前最大 V{max(versions)}）"
 
 
 def test_published_migrations_are_untouched():
@@ -85,7 +86,7 @@ def test_published_migrations_are_untouched():
         assert name in ledger, f"已发布迁移 {name} 的指纹不在账本里（账本被改过？）"
 
 
-@pytest.mark.parametrize("path", [V102, V103, V104, V105])
+@pytest.mark.parametrize("path", [V102, V103, V104, V105, V106])
 def test_new_migrations_are_registered_in_the_fingerprint_ledger(path):
     ledger = json.loads(_read(LEDGER))["migrations"]
     assert path.name in ledger, (
@@ -174,7 +175,7 @@ def test_v104_shares_one_materialised_survivor_set_between_write_and_reconciliat
         "物化结果只被引用了一处 ⇒ 写语句/对账没有真正共享它")
 
 
-@pytest.mark.parametrize("path", [V102, V103, V104, V105])
+@pytest.mark.parametrize("path", [V102, V103, V104, V105, V106])
 def test_new_migrations_are_explicitly_transactional(path):
     body = _read(path)
     assert re.search(r"^BEGIN;", body, re.M), f"{path.name} 缺显式 `BEGIN;`"
@@ -195,7 +196,7 @@ def test_new_migrations_loop_over_tenants_not_a_literal_tenant(path):
     assert "tenant_id = 1" not in body, f"{path.name} 被写死成 1 号租户"
 
 
-@pytest.mark.parametrize("path", [V102, V103, V104, V105])
+@pytest.mark.parametrize("path", [V102, V103, V104, V105, V106])
 def test_new_migrations_document_the_rollback(path):
     body = _read(path)
     assert "回滚 SQL" in body, f"{path.name} 缺「回滚 SQL」段（本仓迁移的硬要求）"
@@ -647,6 +648,10 @@ def test_bootstrap_matches_migration_chain_terminal_state(psql):
                           "WHERE deleted = 1 AND tenant_id = 1;").splitlines() if l.strip()}
 
     boot_alive, boot_deleted = _schema_terminal_state(schema)
+    # ⚠️ 从**矩阵段**的存活行里剔除「工序库新增的变体」（`*纱` 一族不带 `-`，是 issue #4937 的
+    # 4 道纱帘变体，落在 schema.sql 的**工序库**段里；它们**不在价目矩阵里**）。
+    # 不剔会把「矩阵终态 30 行」误判成 34（实测）。
+    boot_alive = {k: v for k, v in boot_alive.items() if "-" not in k}
     # ⚠️ 形态归一：schema.sql 写的是**字面量**（`0.4` / `TRUE`），真库回读是
     # `NUMERIC(10,2)` 的定标形式（`0.40`）与 psql 的小写布尔（`true`）—— 不归一会让
     # 「同一份数据两种书写」被误判成漂移（本仓最忌的假红）。
@@ -669,15 +674,20 @@ def test_bootstrap_matches_migration_chain_terminal_state(psql):
         f"存活**逻辑工序集合**分裂：仅迁移链有 = {sorted(set(chain_alive) - set(boot_alive))}，"
         f"仅 bootstrap 有 = {sorted(set(boot_alive) - set(chain_alive))}")
     assert len(chain_alive) == 30, f"迁移链终态的存活逻辑工序 = {len(chain_alive)}，期望 30"
+    assert len(chain_deleted) == 30, (
+        f"迁移链终态被软删的逻辑工序 = {len(chain_deleted)}，期望 30（120 行 = 30 逻辑工序 × 4 部位）")
     drift = {k: (boot_alive[k], chain_alive[k]) for k in chain_alive if boot_alive[k] != chain_alive[k]}
     assert drift == {}, (
         f"逐逻辑工序（价/适用/部位）分裂（前 = bootstrap，后 = 迁移链）：{drift}")
     assert {v[2] for v in chain_alive.values()} == {"通用"}, (
         f"迁移链终态的存活行 position 不是全 `通用`：{sorted({v[2] for v in chain_alive.values()})}")
-    # 软删侧的**行数**逐租户一致（每逻辑工序 3 行退场：纱帘/帘头/布料 —— 除非该逻辑工序本就少数部位）
-    assert len(chain_deleted) > 0 and set(chain_deleted) <= set(boot_deleted) | set(chain_alive), (
-        "迁移链软删的逻辑工序集合不合理 ⇒ 判据空跑")
-    assert len(chain_alive) + 90 == 120, "存活 30 + 退场 90 必须 = 120（可机械核验）"
+    # 软删侧：30 个逻辑工序 × 3 个非幸存部位 = **90 行**退场（与 120 行态可机械核验）
+    deleted_rows = psql("SELECT count(*) FROM production_operation_positions WHERE deleted = 1;").strip()
+    assert deleted_rows == "90", f"退场行 = {deleted_rows}，期望 90（120 − 30）"
+    assert set(chain_deleted) == set(chain_alive), (
+        f"软删逻辑工序集合 ≠ 存活集合：仅软删 = {sorted(set(chain_deleted) - set(chain_alive))}，"
+        f"仅存活 = {sorted(set(chain_alive) - set(chain_deleted))}")
+    assert len(chain_alive) + int(deleted_rows) == 120, "存活 30 + 退场 90 必须 = 120（可机械核验）"
     # ── 真库读数（PR 证据直接引这段输出） ──
     print("[#4937 真库 · schema.sql 120 行字面量跑 V102/V103/V104]")
     print(f"  存活 = {len(chain_alive)} 行 / 退场 = "
@@ -775,55 +785,263 @@ def test_v102_claim_is_observable_and_v104_requires_a_clean_applicable_column(ps
         f"（落到布帘列）—— 说明该档在承重；反过来也证明正常口径下的 `2.00` 不是碰巧")
 
 
-# ══════════════════════════ V105（4 道纱帘变体）的真库判据 ══════════════════════════
+# ══════════ V105（1 号租户字面量）+ V106（**按租户循环 backfill**）的真库判据 ══════════
+#
+# 🔴 本段的**多租户夹具**是 issue #4937 的承重判据之一（本条是 review 指出的真缺口）：
+# V105 的初稿是字面量 `VALUES`（只种 1 号租户）⇒ **存量非 1 号租户拿不到这 4 行**
+# ⇒ `applicable` 过滤退场后它们的纱帘单**必然** fail-closed 422（= 把下单能力打掉）。
+# ⇒ 夹具造 **3 个租户**覆盖三种形态：① `-布` 齐 ⇒ 补 4 行；② 没有 `-布` ⇒ **一行都不插**
+# （不无中生有）；③ **只有 1 个 `-布`**（部分）⇒ 也**不插**（闸门是「4 个 `-布` 齐全」）。
 
-def test_v105_adds_the_four_sheer_variants_and_is_idempotent(psql):
-    """真库：V105 补 4 道纱帘变体；跑两遍净效果相同；单价逐字取对应 `-布` 变体。
+#: 3 个租户：1 = `-布` 齐（应补 4 行）；2 = 空工序库（一行不插）；3 = 只有 1 个 `-布`（不插）
+_V105_MULTI_TENANT_SEED = """
+INSERT INTO tenants (id) VALUES (1), (2), (3);
+-- 1 号租户：4 个 `-布` 变体齐全 ⇒ V105 必须补 4 行
+INSERT INTO production_operations (id, tenant_id, name, group_name, unit, unit_price) VALUES
+    ('t1-bu-1', 1, '熨烫-布', '后道', '米', 0.35),
+    ('t1-bu-2', 1, '定型-布', '后道', '米', 0.40),
+    ('t1-bu-3', 1, '复烫-布', '后道', '米', 0.35),
+    ('t1-bu-4', 1, '布帘车被', '后道', '米', 0.40);
+-- 3 号租户：只有 1 个 `-布`（**部分**）⇒ 闸门①不成立 ⇒ 一行都不插
+INSERT INTO production_operations (id, tenant_id, name, group_name, unit, unit_price) VALUES
+    ('t3-bu-1', 3, '熨烫-布', '后道', '米', 0.35);
+"""
 
-    🔴 **为什么必须有这条判据**：`applicable` 过滤退场后，`熨烫/定型/复烫/车被` 会进纱帘路线，
-    而库里没有它们的纱帘变体 ⇒ `variantNameOf` 返回 null ⇒ **整张纱帘单 422 建不出来**。
-    本判据钉「补上了没」+「幂等」+「价没发明」三件事。
+
+def _sheer_rows(psql, tenant_id: int) -> list:
+    out = psql("SELECT id || '|' || name || '|' || unit_price::text || '|' || position || '|' || scope "
+               f"FROM production_operations WHERE tenant_id = {tenant_id} "
+               "AND name IN ('熨烫-纱','定型-纱','复烫-纱','车被-纱') ORDER BY id;")
+    return [line for line in out.splitlines() if line.strip()]
+
+
+def test_v105_backfills_every_tenant_that_has_the_cloth_variants(psql):
+    """真库（**多租户**）：`-布` 齐的租户拿到 4 行；空库 / 部分库租户**一行都不插**；两遍幂等。
+
+    红证（本判据要挡的形态）：把 V105 改回字面量 `VALUES`（只种 1 号租户）⇒
+    2/3 号租户的期望不变（本来就 0），但**若夹具里那个「`-布` 齐」的租户不是 1 号**
+    ⇒ 断言 `tenant_id = 1` 的那条会红。为让这条红证**真的可执行**，
+    下面另有一条 `test_v105_is_not_scoped_to_tenant_one` 专钉「非 1 号租户也要被覆盖」。
     """
-    _seed(psql)
-    # 4 道 `-布` 变体（单价来源；V105 的 4 行必须逐字取它们）
+    psql(_DDL)
+    psql(_V105_MULTI_TENANT_SEED)
+
+    for path in (V105, V106):
+        psql(_as_runner_would(_read(path)))
+    first = {t: _sheer_rows(psql, t) for t in (1, 2, 3)}
+    for path in (V105, V106):                 # 第二遍（幂等）
+        psql(_as_runner_would(_read(path)))
+    second = {t: _sheer_rows(psql, t) for t in (1, 2, 3)}
+
+    print("[#4937 真库 · V105 多租户读数]")
+    for t in (1, 2, 3):
+        print(f"  tenant_id={t} 的 4 个 -纱 变体 = {first[t]}")
+
+    assert first == second, (
+        f"V105 **不幂等**：第二遍改了净效果\n  第一遍：{first}\n  第二遍：{second}")
+    assert len(first[1]) == 4, f"1 号租户（4 个 -布 齐）应补 4 行，实际 {first[1]}"
+    assert [r.split("|")[1] for r in first[1]] == ["熨烫-纱", "定型-纱", "复烫-纱", "车被-纱"], first[1]
+    assert [r.split("|")[2] for r in first[1]] == ["0.35", "0.40", "0.35", "0.40"], (
+        f"单价必须逐字取对应 `-布` 变体（不发明单价）：{first[1]}")
+    assert {r.split("|")[3] for r in first[1]} == {"纱帘"}, f"部位必须是纱帘：{first[1]}"
+    assert {r.split("|")[4] for r in first[1]} == {"position"}, f"scope 必须是 position：{first[1]}"
+    assert first[2] == [], (
+        f"2 号租户（**空工序库**）被插了行 ⇒ 无中生有（工序库从未种过的租户必须整块跳过，"
+        f"交给 V91）：{first[2]}")
+    assert first[3] == [], (
+        f"3 号租户（**只有 1 个 `-布`**）被插了行 ⇒ 闸门①（4 个 `-布` 齐全）没生效：{first[3]}")
+    # id 命名规则：自带租户段（不得复用 1 号租户的 id）
+    # 1 号租户的 4 行来自 **V105**（字面量种子，id = `op-v56-06..09` —— 与 V56 同族命名）；
+    # 非 1 号租户来自 **V106**（backfill，id = `op-v106-<tenant_id>-<序号>`）。
+    assert sorted(r.split("|")[0] for r in first[1]) == [
+        "op-v56-06", "op-v56-07", "op-v56-08", "op-v56-09"], (
+        f"1 号租户的行应来自 V105 的字面量种子（`op-v56-06..09`）：{first[1]}")
+
+
+def test_v105_is_not_scoped_to_tenant_one(psql):
+    """🔴 **红证（可执行）**：让 **2 号租户**成为「`-布` 齐」的那一个 ⇒ 它必须被补上。
+
+    这条专钉初稿的缺陷形态（字面量 `VALUES` 只种 1 号租户）：
+    把「`-布` 齐」的租户从 1 号换成 2 号，字面量写法会**一行都不补**（2 号租户的纱帘单照样 422）
+    ⇒ 本判据当场红。
+    """
+    psql(_DDL)
+    # ⚠️ 必须同时有 1 号租户：V105 的**字面量种子**种 `tenant_id = 1`（外键约束），
+    # 而本用例要证的是「**2 号租户**也被 V106 覆盖」。
+    psql("INSERT INTO tenants (id) VALUES (1), (2);")
     psql("INSERT INTO production_operations (id, tenant_id, name, group_name, unit, unit_price) VALUES "
-         "('op-bu-1', 1, '熨烫-布', '后道', '米', 0.35), "
-         "('op-bu-2', 1, '定型-布', '后道', '米', 0.40), "
-         "('op-bu-3', 1, '复烫-布', '后道', '米', 0.35), "
-         "('op-bu-4', 1, '布帘车被', '后道', '米', 0.40);")
+         "('t2-bu-1', 2, '熨烫-布', '后道', '米', 0.35), "
+         "('t2-bu-2', 2, '定型-布', '后道', '米', 0.40), "
+         "('t2-bu-3', 2, '复烫-布', '后道', '米', 0.35), "
+         "('t2-bu-4', 2, '布帘车被', '后道', '米', 0.40);")
 
-    before = psql("SELECT count(*) FROM production_operations WHERE tenant_id = 1;").strip()
-    psql(_as_runner_would(_read(V105)))
-    after_first = psql("SELECT count(*) FROM production_operations WHERE tenant_id = 1;").strip()
-    psql(_as_runner_would(_read(V105)))       # 第二遍（幂等）
-    after_second = psql("SELECT count(*) FROM production_operations WHERE tenant_id = 1;").strip()
-
-    assert int(after_first) == int(before) + 4, (
-        f"V105 应补 4 行（{before} → {before}+4），实际到 {after_first}")
-    assert after_first == after_second, (
-        f"V105 **不幂等**：第二遍改了行数\n  第一遍后：{after_first}\n  第二遍后：{after_second}")
-    rows = psql("SELECT name || '|' || unit_price::text || '|' || position || '|' || scope "
-                "FROM production_operations WHERE id LIKE 'op-v56-0%' AND id > 'op-v56-05' "
-                "ORDER BY id;")
-    parsed = [l.split("|") for l in rows.splitlines() if l.strip()]
-    assert len(parsed) == 4, f"V105 的 4 行没落库：{parsed}"
-    assert [r[0] for r in parsed] == ["熨烫-纱", "定型-纱", "复烫-纱", "车被-纱"], parsed
-    assert [r[1] for r in parsed] == ["0.35", "0.40", "0.35", "0.40"], (
-        f"单价必须逐字取对应 `-布` 变体（不发明单价）：{parsed}")
-    assert {r[2] for r in parsed} == {"纱帘"}, f"部位必须是纱帘：{parsed}"
-    assert {r[3] for r in parsed} == {"position"}, f"scope 必须是 position：{parsed}"
+    for path in (V105, V106):
+        psql(_as_runner_would(_read(path)))
+    rows = _sheer_rows(psql, 2)
+    print(f"[#4937 真库 · V105+V106 非 1 号租户读数] tenant_id=2 的 4 个 -纱 变体 = {rows}")
+    assert len(rows) == 4, (
+        f"**非 1 号租户**没被 backfill（只补 tenant_id = 1 的写法会让它一行都不插）"
+        f"⇒ 该租户的纱帘单会 422 整单中止：{rows}")
+    assert all(r.startswith("op-v106-2-") for r in rows), f"id 未自带租户段：{rows}"
 
 
 def test_v105_reconciliation_blocks_a_missing_row(psql):
-    """红证（真库）：**跳过 V105 的 INSERT**（只跑对账）⇒ `RAISE EXCEPTION` ⇒ 整份回滚。"""
-    _seed(psql)
-    sql = _read(V105)
-    # 注入 = 让 INSERT 一条也落不进去：把 4 行 name 之一改成对账 CTE **认不出**的名字
-    # （等价于「写语句写岔了」⇒ 对账必须当场抛）
-    injected = sql.replace("('op-v56-06', 1, '熨烫-纱'", "('op-v56-06', 1, '熨烫-纱X'", 1)
-    assert injected != sql, "注入没生效 ⇒ 本红证是空断言"
+    """红证（真库）：注入「只补 1 个租户」（让 2 号租户的闸门①恒假）⇒ 对账 `RAISE EXCEPTION`。
+
+    注入形态 = 把闸门①的 `= 4` 改成 `= 5`（**任何租户都拿不到行**）⇒ 1 号租户
+    「有 4 个 `-布` 但 0 个 `-纱`」⇒ 对账必须当场抛 + 整份回滚。
+    """
+    psql(_DDL)
+    psql(_V105_MULTI_TENANT_SEED)
+    before = psql("SELECT count(*) FROM production_operations;").strip()
+
+    sql = _read(V106)
+    injected = sql.replace("AND s.name IN ('熨烫-布', '定型-布', '复烫-布', '布帘车被')) = 4",
+                           "AND s.name IN ('熨烫-布', '定型-布', '复烫-布', '布帘车被')) = 5", 1)
     assert injected != sql, "注入没生效 ⇒ 本红证是空断言"
     proc = psql.raw(_as_runner_would(injected))
     assert proc.returncode != 0, (
-        f"4 行没插进去时对账竟通过了 ⇒ 终止条件是空断言\nstderr={proc.stderr}")
+        f"该补的租户一行没补时对账竟通过了 ⇒ 数量对账是空断言\nstderr={proc.stderr}")
     assert "数量对账失败" in proc.stderr, f"拦下的不是对账判据：{proc.stderr[:400]}"
+    assert psql("SELECT count(*) FROM production_operations;").strip() == before, (
+        "对账抛异常后工序库行数却变了 ⇒ 没有回滚（半完成态）")
+
+
+def test_v105_reconciliation_detects_a_partial_backfill(psql):
+    """红证（真库）：**部分补种**（只补 1 道）⇒ 对账必须红（「四元组计数」判据的判别力）。
+
+    这条钉的是对账**判据本身**的形态：若写成「4 个 name 分开查（各 ≥1）」，只补 1 道时
+    有 1 个 name 命中、其余 3 个不命中 ⇒ 仍会红；但若写成「`count(*) > 0`」就会**漏报**。
+    本判据用「只让 `seq = 1` 那一行插进去」的注入证明当前判据抓得住部分补种。
+    """
+    psql(_DDL)
+    psql(_V105_MULTI_TENANT_SEED)
+    sql = _read(V106)
+    # 注入：把 CROSS JOIN 的派生表裁到只剩 1 行（模拟「部分补种」）
+    injected = sql.replace("      UNION ALL SELECT '定型-纱', 0.40::numeric, 39, 2\n"
+                           "      UNION ALL SELECT '复烫-纱', 0.35::numeric, 40, 3\n"
+                           "      UNION ALL SELECT '车被-纱', 0.40::numeric, 41, 4\n", "", 1)
+    assert injected != sql, "注入没生效 ⇒ 本红证是空断言"
+    proc = psql.raw(_as_runner_would(injected))
+    assert proc.returncode != 0, (
+        f"只补 1 道时对账竟通过了 ⇒ 判据对「部分补种」无判别力\nstderr={proc.stderr}")
+    assert "数量对账失败" in proc.stderr, f"拦下的不是对账判据：{proc.stderr[:400]}"
+    assert _sheer_rows(psql, 1) == [], "对账抛异常后却留下了半完成态（1 号租户被补了 1 道）"
+
+
+def test_v105_never_resurrects_a_soft_deleted_variant(psql):
+    """红线（真库）：商家**软删过** `熨烫-纱` ⇒ 本迁移**永不把它复活**（`deleted` 保持 1）。
+
+    形态：1 号租户 4 个 `-布` 齐 + 一条**已软删**的 `熨烫-纱`（商家删的）。
+    闸门②只数 `deleted = 0`（= 0）⇒ 本迁移会补 4 行（其中 `熨烫-纱` 是新行）；
+    **商家那一行一字不动**（`deleted` 仍是 1、`id` 不变）。
+    """
+    psql(_DDL)
+    psql("INSERT INTO tenants (id) VALUES (1);")
+    psql("INSERT INTO production_operations (id, tenant_id, name, group_name, unit, unit_price, deleted) VALUES "
+         "('t1-bu-1', 1, '熨烫-布', '后道', '米', 0.35, 0), "
+         "('t1-bu-2', 1, '定型-布', '后道', '米', 0.40, 0), "
+         "('t1-bu-3', 1, '复烫-布', '后道', '米', 0.35, 0), "
+         "('t1-bu-4', 1, '布帘车被', '后道', '米', 0.40, 0), "
+         "('t1-merchant-deleted', 1, '熨烫-纱', '后道', '米', 0.35, 1);")
+
+    for path in (V105, V106):
+        psql(_as_runner_would(_read(path)))
+    rows = _sheer_rows(psql, 1)
+    print(f"[#4937 真库 · V105+V106 软删红线] 存活 = {rows}")
+    assert len(rows) == 4, f"闸门②（只数 deleted = 0）应生效 ⇒ 补 4 行，实际 {rows}"
+    assert all(r.startswith("op-v106-1-") for r in rows) or all(r.startswith("op-v56-0") for r in rows), (
+        f"1 号租户的行 id 不对（V105 的 `op-v56-06..09` 或 V106 的 `op-v106-1-N`）：{rows}")
+    # 🔴 商家那一行**一字不动**（未复活）
+    survived = psql("SELECT id || '|' || deleted::text FROM production_operations "
+                    "WHERE id = 't1-merchant-deleted';").strip()
+    assert survived == "t1-merchant-deleted|1", (
+        f"商家软删的那一行被改动了（应保持 id 不变、deleted = 1）：{survived}")
+    # 幂等 + 该租户历史上 2 行 `熨烫-纱`（1 软删 + 1 存活）
+    for path in (V105, V106):
+        psql(_as_runner_would(_read(path)))
+    total = psql("SELECT count(*) FROM production_operations WHERE tenant_id = 1 "
+                 "AND name = '熨烫-纱';").strip()
+    assert total == "2", f"第二遍不该再插（历史软删 1 行 + 本次 1 行 = 2），实际 {total}"
+
+
+def test_v105_fails_loud_when_only_one_variant_is_missing(psql):
+    """已知边界（**真库红证，照实登记**）：某租户「3 行在 + 1 行被软删」⇒ 对账**整份回滚**。
+
+    这是本文件**有意**的取舍（见 V105 文件头的「已知边界」）：
+    `NOT EXISTS` 永不写已存在的行、也永不复活软删行 ⇒ 那一行**补不上** ⇒
+    让对账 fail-loud（红在下一次 `verify-all`），而**不是**把该租户留成「纱帘单恒 422」的死状态。
+    补那一行的正确做法 = 新开一条单行 `NOT EXISTS` 迁移（不碰软删行），**不在本文件射程内**。
+    """
+    psql(_DDL)
+    psql("INSERT INTO tenants (id) VALUES (1);")
+    psql("INSERT INTO production_operations (id, tenant_id, name, group_name, unit, unit_price, deleted) VALUES "
+         "('t1-bu-1', 1, '熨烫-布', '后道', '米', 0.35, 0), "
+         "('t1-bu-2', 1, '定型-布', '后道', '米', 0.40, 0), "
+         "('t1-bu-3', 1, '复烫-布', '后道', '米', 0.35, 0), "
+         "('t1-bu-4', 1, '布帘车被', '后道', '米', 0.40, 0), "
+         "('t1-1', 1, '熨烫-纱', '后道', '米', 0.35, 0), "
+         "('t1-2', 1, '定型-纱', '后道', '米', 0.40, 0), "
+         "('t1-3', 1, '复烫-纱', '后道', '米', 0.35, 0), "
+         "('t1-4', 1, '车被-纱', '后道', '米', 0.40, 1);")
+    before = psql("SELECT count(*) FROM production_operations;").strip()
+
+    proc = psql.raw(_as_runner_would(_read(V106)))
+    print(f"[#4937 真库 · V106 已知边界] 回滚 = {proc.returncode != 0}"
+          f"；stderr 含对账 = {'数量对账失败' in proc.stderr}")
+    assert proc.returncode != 0, (
+        "「3 行在 + 1 行软删」时本迁移静默跳过（不插也不抛）⇒ 该租户的纱帘单会**恒 422** "
+        "而没有任何东西变红（正是本单要治的形态）")
+    assert "数量对账失败" in proc.stderr, f"拦下的不是对账判据：{proc.stderr[:400]}"
+    assert psql("SELECT count(*) FROM production_operations;").strip() == before, (
+        "对账抛异常后工序库行数却变了 ⇒ 没有回滚（半完成态）")
+
+
+# ══════════════════════════ 注入式红证：bootstrap 终态的判据不是空断言 ══════════════════════════
+
+def _schema_alive_matrix_rows(schema: str) -> list:
+    """`schema.sql` 矩阵字面量里的**存活行**（`deleted = 0`）→ `[(id, logical, position, price)]`。
+
+    ⚠️ 与 `_parse_schema_matrix` **同一份行形态**（红证要在**改坏后的文本**上跑同一个解析器，
+    所以不能复用真库读数）。
+    """
+    out = []
+    pattern = re.compile(
+        r"\(\s*'(?P<id>opp-v(?:70|79)-\d+)'\s*,\s*1\s*,\s*'(?P<lg>[^']*)'\s*,\s*'(?P<pos>[^']*)'\s*,"
+        r"\s*(?P<price>NULL|[\d.]+)\s*,\s*(?P<ap>TRUE|FALSE)\s*,\s*"
+        r"(?:'active'\s*,\s*)?(?P<del>\d+)\s*\)")
+    for m in pattern.finditer(schema):
+        if m.group("del") == "0":
+            out.append((m.group("id"), m.group("lg"), m.group("pos"), m.group("price")))
+    return out
+
+
+
+def test_collapsed_matrix_judgement_detects_a_resurrected_cell():
+    """红证（静态）：把一行**已软删**的矩阵格改成存活 ⇒ 存活行数判据必红。
+
+    钉的是 `test_bootstrap_matches_migration_chain_terminal_state` 的**判别力**：
+    那条判据断言「bootstrap 的存活行 = 30 且逻辑工序集合 == `routing.py` 价目键集」——
+    本红证证明「复活一格」这个漂移**真的**会被照出来，不是恒真的空断言。
+    """
+    schema = _read(SCHEMA_SQL)
+    alive = _schema_alive_matrix_rows(schema)
+    assert len(alive) == 30, f"bootstrap 的存活矩阵行 = {len(alive)}，期望 30（红证前提不成立）"
+    resigned = {r[1] for r in alive}
+    assert len(resigned) == 30, "存活行应恰好 30 个逻辑工序（一工序一行）"
+
+    # 复活一格：找一条**已软删**的矩阵行，把它的 `deleted` 由 1 改成 0（逐字节替换，
+    # 不用正则 —— 行形态里有 8 列，正则容易在引号/逗号上失手）
+    dead = re.search(r"  \('(opp-v(?:70|79)-\d+)', 1, '([^']*)', '([^']*)', (?:NULL|[\d.]+), "
+                     r"(?:TRUE|FALSE), 'active', 1\),", schema)
+    assert dead, "bootstrap 里找不到任何已软删的矩阵行 ⇒ 红证前提不成立"
+    row_text = dead.group(0)
+    injected = schema.replace(row_text, row_text.replace("'active', 1)", "'active', 0)"), 1)
+    assert injected != schema, "注入没生效 ⇒ 本红证是空断言"
+
+    after = _schema_alive_matrix_rows(injected)
+    assert len(after) == 31, (
+        f"复活一格后存活行数 = {len(after)}（期望 31）⇒ 存活行数判据对「复活」无判别力")
+    assert {r[1] for r in after} == resigned, (
+        "复活同一逻辑工序的另一格 ⇒ 逻辑工序集合不变（判据的判别力落在**行数**上，"
+        "不是集合上）—— 这正是本判据要说明的边界")
