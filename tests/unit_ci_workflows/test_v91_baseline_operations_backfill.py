@@ -601,8 +601,10 @@ def test_v91_is_load_bearing_in_the_migration_chain_aggregate():
 # （矩阵格 `applicable = FALSE` 的格会在取变体之前被静默滤掉 ⇒ 逐部位判会**假红**）。
 # **逐格**口径因此落在这里：解析 Java 侧**真值常量**（`variantNames()` 的逆索引 +
 # `ProductionSeedTemplateService.CANONICAL_POSITION_PRICES` 的规范矩阵），按运行时
-# `variantNameOf` 的**四步**逐格复算 ⇒ 任一格「适用但解析不出」即红。
+# `variantNameOf` 的**三步**逐格复算 ⇒ 任一格「适用但解析不出」即红。
 # ⚠️ 这不是「第二份口径」：两份表都是**从 Java 源码文本解析**的，不是手抄。
+# ⚠️ `#4777` 起 `variantNameOf` 是**三步**（帘头不再走隐式回落，改走显式帘头条目
+# `headVariants()`）—— 本镜像**同步**去掉了那一步，见 `runtime_resolve` 的 docstring。
 
 QUERY_SERVICE = REPO / (
     "backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationQueryService.java")
@@ -643,14 +645,20 @@ def canonical_matrix() -> list[tuple[str, str, bool]]:
 
 
 def runtime_resolve(logical: str, position: str, variants: dict, library: set[str]):
-    """`ProductionOperationQueryService.variantNameOf` 的四步（**同一顺序**）。"""
+    """`ProductionOperationQueryService.variantNameOf` 的三步（**同一顺序**；issue #4777 起）。
+
+    ⚠️ **改前这里是四步**：第 2 步是「部位 = 帘头 ⇒ 取 `variants[(逻辑名, '布帘')]`」的
+    **隐式规则**。`#4777` 把那条规则换成**显式**帘头条目（Java 侧 `headVariants()`）
+    ⇒ 本镜像**同步去掉那一步**：帘头格现在与别的部位走**同一条**路径
+    （`variants` 里查得到就查得到）。于是「删一条帘头条目 ⇒ 该格解析不到」
+    **第一次可被本判据抓住**（改前被隐式规则兜着，删哪条都不红 = 判据对帘头恒真）。
+
+    镜像必须逐字同步：Java 有隐式回落而这里没有 ⇒ 本判据**比生产更严** ⇒ 假红；
+    反过来（生产没有、这里有）⇒ **空断言**。
+    """
     variant = variants.get((logical, position))
     if variant is not None and variant in library:
         return variant
-    if position == "帘头":
-        cloth = variants.get((logical, "布帘"))
-        if cloth is not None and cloth in library:
-            return cloth
     return logical if logical in library else None
 
 
@@ -677,6 +685,46 @@ def test_canonical_matrix_covers_the_mainline_positions():
     positions = {position for _logical, position, applicable in canonical_matrix() if applicable}
     assert {"布帘", "纱帘", "帘头", FABRIC_POSITION} <= positions, (
         f"规范矩阵缺部位：{sorted({'布帘', '纱帘', '帘头', FABRIC_POSITION} - positions)}")
+
+
+def test_head_variants_cover_exactly_the_cloth_column():
+    """issue #4777：帘头条目的覆盖域**恰等于**「有布帘条目的逻辑名」（21 个）—— 少一条 / 多一条都红。
+
+    为什么必须**逐格等价**：改前帘头格靠 `variantNameOf` 的**隐式规则**（取布帘那一列）解析，
+    本单把它换成**显式表** ⇒ 覆盖域必须**一字不变**：
+
+    * 少一条 ⇒ 该帘头格解析不到 ⇒ `applicable = TRUE` 时**整单 422**、
+      `applicable = FALSE` 时读面 5 键（`variant_operation_id` / `unit` / `group` / `scope` /
+      `is_must_finish`）**静默变 null**；
+    * 多一条 ⇒ 凭空发明一条库行寻址（本仓最忌）。
+    """
+    variants = runtime_variant_map()
+    cloth = {logical: variant for (logical, position), variant in variants.items()
+             if position == "布帘"}
+    head = {logical: variant for (logical, position), variant in variants.items()
+            if position == "帘头"}
+    assert cloth, "解析不到布帘列 ⇒ 判据会空跑"
+    assert head, "解析不到帘头列 ⇒ 判据会空跑（#4777 的显式表没落码）"
+    # `帘头制作` 是**帘头专属**工序（库里真有这一行，不是复用布帘变体）⇒ 单独一个键。
+    assert set(head) - {"帘头制作"} == set(cloth), (
+        f"帘头覆盖域必须恰等于布帘列：多 {sorted(set(head) - {'帘头制作'} - set(cloth))} / "
+        f"少 {sorted(set(cloth) - set(head))}")
+    for logical, variant in cloth.items():
+        assert head[logical] == variant, (
+            f"`帘头 × {logical}` 必须指到它的布帘变体 `{variant}`，实际 `{head[logical]}`"
+            "（帘头没有自己的变体行，库中从来没有 `-帘` 变体）")
+
+
+def test_head_variants_are_reachable_for_every_applicable_curtain_head_cell(schema_sql):
+    """口径自证：上一条不是**空跑** —— 规范矩阵里帘头格确实有 `applicable = TRUE` 的那些。"""
+    head_cells = [logical for logical, position, applicable in canonical_matrix()
+                  if applicable and position == "帘头" and logical not in RETIRED_LOGICAL_NAMES]
+    assert head_cells, "规范矩阵里一个「帘头 applicable=TRUE」格都没有 ⇒ 逐格判据对帘头是空跑"
+    library = set(bootstrap_row_values(schema_sql))
+    variants = runtime_variant_map()
+    for logical in head_cells:
+        assert runtime_resolve(logical, "帘头", variants, library) is not None, (
+            f"帘头格 `{logical} × 帘头` 适用却解析不到库行 ⇒ 帘头单 fail-closed 422")
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
@@ -767,6 +815,41 @@ class TestInjectedDrift:
         assert runtime_resolve("精裁", "布帘", variants, library) is None
         assert runtime_resolve("精裁", "布帘", variants,
                                library | {"精裁-布"}) == "精裁-布"
+
+    def test_dropping_a_head_variant_entry_makes_the_cell_guard_red(self, schema_sql):
+        """**#4777 的红证**：注入「删一条帘头条目」⇒ 逐格判据**必红**（证明它不是恒真）。
+
+        ⚠️ 这正是**改前做不到**的那一步：改前帘头格由 `variantNameOf` 的**隐式规则**
+        （「部位 = 帘头 ⇒ 取布帘那一列」）兜着 ⇒ 删掉任何帘头条目都**不会红**，
+        于是「凡 `applicable = TRUE` 的格必须解析得到」这条判据对帘头**恒真**（空断言）。
+        改成显式表后，条目本身**承重**。
+        """
+        variants = dict(runtime_variant_map())
+        library = set(bootstrap_row_values(schema_sql))
+        assert runtime_resolve("三边", "帘头", variants, library) == "布三边", (
+            "健康态：`三边 × 帘头` 必须解析到 `布三边`（帘头复用布帘变体）")
+        assert ("三边", "帘头") in variants, "解析不到该条目 ⇒ 注入无法构造"
+        variants.pop(("三边", "帘头"))
+        assert runtime_resolve("三边", "帘头", variants, library) is None, (
+            "摘掉帘头条目后仍解析得出 ⇒ 判据是空断言（改前正是这个形态）")
+        unresolved = sorted({f"{logical}×{position}" for logical, position, applicable
+                             in canonical_matrix()
+                             if applicable and logical not in RETIRED_LOGICAL_NAMES
+                             and runtime_resolve(logical, position, variants, library) is None})
+        assert unresolved == ["三边×帘头"], (
+            f"逐格判据必须**点名报出**注入的那一格且只报它，实际 {unresolved}")
+
+    def test_dropping_the_whole_head_column_makes_every_curtain_head_cell_red(self, schema_sql):
+        """把**整列**帘头条目摘掉 ⇒ 全部「帘头 applicable=TRUE」格一起红（判据覆盖到每一格）。"""
+        variants = {k: v for k, v in runtime_variant_map().items() if k[1] != "帘头"}
+        library = set(bootstrap_row_values(schema_sql))
+        unresolved = sorted({logical for logical, position, applicable in canonical_matrix()
+                             if applicable and position == "帘头"
+                             and logical not in RETIRED_LOGICAL_NAMES
+                             and runtime_resolve(logical, position, variants, library) is None})
+        assert unresolved, "整列摘掉后一格都不红 ⇒ 逐格判据对帘头是空跑"
+        assert "帘头制作" not in unresolved, (
+            "`帘头制作` 是**帘头专属**工序（不走帘头复用列）⇒ 摘掉帘头复用列不该波及它")
 
     def test_variant_map_parser_detects_injected_drift(self):
         """解析器自证：`variant(...)` 行的形态变了 ⇒ 解析结果跟着变。"""

@@ -7,11 +7,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -42,8 +48,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 的迁移链终态、与 `schema.sql` 的 bootstrap 终态逐项一致，三源收敛由
  * `test_production_catalog_seed.py` 守）⇒ 在 Java 侧读它，等于用**真值源的库行集**喂运行时解析。
  *
- * <h3>⚠️ 本类的边界（如实登记）</h3>
- * 它守「**解析得出来**」（fail-closed 的第一层），**不**守「矩阵格是否 `applicable`」
+ * <h3>⚠️ 本类的边界（如实登记；issue #4777 起扩了一格）</h3>
+ * 它守「**解析得出来**」（fail-closed 的第一层）：①② 按**主线**判（每道至少在一个适用部位上可解析），
+ * ⑤（#4777 新增）按**矩阵格**判（凡 `applicable = TRUE` 的 `(逻辑名, 部位)` 都必须解析得到）。
+ * 它**不**守「矩阵格的 `applicable` **取值**该是 TRUE 还是 FALSE」
  * （那是 `V88` ④ / `V89` ② 与 `ProductionSeedTemplateService.FABRIC_KEEP_APPLICABLE_LOGICAL`
  * 的范围，由 Python 侧静态判据守）。两条一起才等于「实例化真的出得来 N 道」。
  */
@@ -73,6 +81,25 @@ class MainlineOperationReferenceTest {
 
     /** `V88`（#4676）退场的逻辑工序 —— **不得**出现在任何主线里。 */
     private static final List<String> RETIRED_LOGICAL_NAMES = List.of("配料");
+
+    /** `V88` ④ 的**保命格**（`ProductionSeedTemplateService.FABRIC_KEEP_APPLICABLE_LOGICAL`）。 */
+    private static final String FABRIC_KEEP_APPLICABLE_LOGICAL = "裁剪";
+
+    /** 帘头（{@code 帘头×平幔} 路线逐字引用 {@code 精裁-布}/{@code 布三边}/{@code 定型-布}）。 */
+    private static final String CURTAIN_HEAD_POSITION = "帘头";
+
+    /**
+     * `ProductionSeedTemplateService` 的源码（**规范矩阵** {@code CANONICAL_POSITION_PRICES} 的出处）。
+     *
+     * <p>⚠️ 相对路径按 Maven 的 CWD（= {@code backend/admin-api}）解析 —— 与本类既有的
+     * {@code ProductionOperationQueryServiceTest#ROUTING_PY} 同款（那里是 {@code ../ai-agent-service/…}）。</p>
+     */
+    private static final Path SEED_SERVICE = Path.of(
+            "src", "main", "java", "com", "migao", "admin", "service", "ProductionSeedTemplateService.java");
+
+    /** 规范矩阵行：{@code {"精裁", "布帘", "0.4", "true"},}。 */
+    private static final Pattern MATRIX_ROW = Pattern.compile(
+            "\\{\\s*\"([^\"]+)\"\\s*,\\s*\"([^\"]+)\"\\s*,\\s*(?:null|\"[^\"]*\")\\s*,\\s*\"(true|false)\"\\s*\\}");
 
     /** 运行时解析入口（`variantNameOf` 只读静态逆索引 + 传入目录 ⇒ 其余依赖可为 null）。 */
     private static ProductionOperationQueryService service() {
@@ -258,5 +285,168 @@ class MainlineOperationReferenceTest {
         assertThat(dangling)
                 .as("空工序库 = 真库实测的租户 20/21 形态 ⇒ 每一道都解析不出来（这才是 422 的成因）")
                 .containsExactlyElementsOf(CURTAIN_MAINLINE);
+    }
+
+    // ══════════════════════════ ⑤ 逐格判据：`applicable = TRUE` 的格必须解析得到（issue #4777）═
+    //
+    // 与 ①② 的分工：①② 按**主线**判（「每道至少在一个适用部位上可解析」），本段按**矩阵格**判
+    // （「凡 applicable=TRUE 的 (逻辑名, 部位) 都必须解析得到」）—— 判据口径与
+    // `ProcessingOrderService.buildRoute` 的 `missing_operations` **逐字同源**：
+    // 只有 applicable=TRUE 的格会走到 `variantNameOf`，解析不到 ⇒ 该部位的单 fail-closed 422。
+    //
+    // 🔴 issue #4777 的来历（**独立复核后的口径，与 issue 原文不同，照实登记**）：
+    // issue 原文断言「`VARIANT_NAMES` 缺帘头条目 ⇒ 商家给 `× 帘头` 配了价也永远解析不到」。
+    // 复核（本文件 + 真库）**否证了「解析不到」这一半**：改前 `variantNameOf` 里有一条
+    // **隐式规则**（「部位 = 帘头 ⇒ 取 `VARIANT_NAMES[逻辑名][布帘]`」）⇒ 帘头格**一直解析得到**
+    // 布帘变体（故商家配的价**从未**被丢弃 —— 真库 `三边 × 帘头` ¥0.10 照常进单）。
+    // 但那条规则让本段判据对帘头**恒真**（删任何帘头条目都不会红）—— #4777 因此把隐式规则
+    // 换成**显式**帘头条目（`ProductionOperationQueryService.headVariants`）：
+    // 解析结果逐格不变，而「删一条帘头条目 ⇒ 必红」第一次成立。
+
+    /** 规范矩阵里**适用**的 (逻辑名, 部位) —— **从源码文本解析**（不手抄第二份矩阵）。 */
+    private static List<String[]> applicableMatrixCells() {
+        String text;
+        try {
+            text = Files.readString(SEED_SERVICE);
+        } catch (IOException e) {
+            throw new IllegalStateException("读不到 " + SEED_SERVICE, e);
+        }
+        // ⚠️ 锚点必须带 `= {`：裸 `CANONICAL_POSITION_PRICES` 会先命中**类头的 javadoc 引用**
+        //    （`{@link #CANONICAL_POSITION_PRICES}`）⇒ 切出空段 ⇒ 判据静默空跑（本单实测踩过）。
+        int decl = text.indexOf("CANONICAL_POSITION_PRICES = {");
+        assertThat(decl).as("找不到 `CANONICAL_POSITION_PRICES` 的声明 ⇒ 判据会空跑").isNotNegative();
+        int end = text.indexOf("\n    };", decl);
+        assertThat(end).as("找不到 `CANONICAL_POSITION_PRICES` 的结尾 ⇒ 判据会空跑").isNotNegative();
+        Matcher matcher = MATRIX_ROW.matcher(text.substring(decl, end));
+        List<String[]> cells = new ArrayList<>();
+        while (matcher.find()) {
+            String logical = matcher.group(1);
+            String position = matcher.group(2);
+            // `V88` ④ 保命格：`裁剪 × 布料` 由 `planPositions` **强制** TRUE（常量里是 false）
+            boolean applicable = "true".equals(matcher.group(3))
+                    || (FABRIC_KEEP_APPLICABLE_LOGICAL.equals(logical) && FABRIC_POSITION.equals(position));
+            if (applicable && !RETIRED_LOGICAL_NAMES.contains(logical)) {
+                cells.add(new String[]{logical, position});
+            }
+        }
+        assertThat(cells).as("解析不到任何「适用」格 ⇒ 判据会空跑").isNotEmpty();
+        return cells;
+    }
+
+    /** 逆索引**本体**（反射读 `ProductionOperationQueryService.VARIANT_NAMES`，不解析源码文本）。 */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Map<String, String>> variantNames() {
+        try {
+            Field field = ProductionOperationQueryService.class.getDeclaredField("VARIANT_NAMES");
+            field.setAccessible(true);
+            return (Map<String, Map<String, String>>) field.get(null);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("反射读不到 `VARIANT_NAMES` ⇒ 判据会空跑", e);
+        }
+    }
+
+    @Test
+    @DisplayName("PG-018 逐格判据（issue #4777）：规范矩阵里每个 applicable=TRUE 的格都必须解析到一条库行")
+    void everyApplicableMatrixCellResolvesToALibraryRow() {
+        Map<String, Map<String, Object>> catalog = catalog();
+        List<String> unresolved = new ArrayList<>();
+        for (String[] cell : applicableMatrixCells()) {
+            if (service().variantNameOf(cell[0], cell[1], catalog) == null) {
+                unresolved.add(cell[0] + "×" + cell[1]);
+            }
+        }
+        assertThat(unresolved)
+                .as("矩阵格「适用但运行时解析不出库行」⇒ 该部位的单实例化 fail-closed 422"
+                        + "（#4707 的 `裁剪 × 布料`、#4777 的帘头格都是这个形态）")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("PG-018 口径自证：上一条对**帘头**不是空跑（帘头 applicable 格逐条在射程内）")
+    void theCellLevelGuardReallyCoversTheCurtainHeadCells() {
+        List<String> headCells = new ArrayList<>();
+        for (String[] cell : applicableMatrixCells()) {
+            if (CURTAIN_HEAD_POSITION.equals(cell[1])) {
+                headCells.add(cell[0]);
+            }
+        }
+        assertThat(headCells)
+                .as("规范矩阵里一个帘头 applicable 格都没有 ⇒ 逐格判据对帘头是空跑（#4777 的守卫位不存在）")
+                .isNotEmpty();
+        // issue #4777 的取证格（真库带商家显式价的那些）
+        assertThat(headCells).contains("精裁", "三边", "定型", "帘头制作");
+    }
+
+    @Test
+    @DisplayName("PG-018 帘头条目覆盖域（issue #4777）：恰等于「有布帘条目的逻辑名」，且逐条指到布帘变体")
+    void headVariantsCoverExactlyTheClothColumn() {
+        Map<String, Map<String, String>> names = variantNames();
+        Map<String, String> head = new LinkedHashMap<>();
+        Map<String, String> cloth = new LinkedHashMap<>();
+        for (Map.Entry<String, Map<String, String>> entry : names.entrySet()) {
+            String headVariant = entry.getValue().get(CURTAIN_HEAD_POSITION);
+            String clothVariant = entry.getValue().get("布帘");
+            if (headVariant != null) {
+                head.put(entry.getKey(), headVariant);
+            }
+            if (clothVariant != null) {
+                cloth.put(entry.getKey(), clothVariant);
+            }
+        }
+        assertThat(cloth).as("逆索引里没有布帘列 ⇒ 判据会空跑").isNotEmpty();
+        // `帘头制作` 是帘头**专属**工序（库里真有这一行，不是复用布帘变体）⇒ 单独一个键
+        head.remove("帘头制作");
+        assertThat(head.keySet())
+                .as("帘头覆盖域必须恰等于布帘列（21 个）：少一条 ⇒ 该帘头格解析不到；多一条 ⇒ 凭空发明库行")
+                .containsExactlyInAnyOrderElementsOf(cloth.keySet());
+        assertThat(head)
+                .as("帘头格必须指到它的布帘变体（帘头没有自己的变体行：库中从来没有 `-帘` 变体）")
+                .isEqualTo(cloth);
+    }
+
+    @Test
+    @DisplayName("PG-018 红证（issue #4777）：摘掉一条帘头条目 ⇒ 逐格判据必红（证明它不是恒真）")
+    void droppingACurtainHeadEntryMakesTheCellLevelGuardRed() {
+        Map<String, Map<String, Object>> catalog = catalog();
+        assertThat(service().variantNameOf("三边", CURTAIN_HEAD_POSITION, catalog))
+                .as("健康态：`三边 × 帘头` 解析到 `布三边`").isEqualTo("布三边");
+
+        Map<String, String> byPosition = variantNames().get("三边");
+        assertThat(byPosition).as("逆索引里没有 `三边` ⇒ 注入无法构造").isNotNull();
+        String saved = byPosition.get(CURTAIN_HEAD_POSITION);
+        assertThat(saved).as("`三边` 没有帘头条目 ⇒ 注入无法构造（#4777 的修复没落码）").isNotNull();
+        byPosition.remove(CURTAIN_HEAD_POSITION);
+        try {
+            assertThat(service().variantNameOf("三边", CURTAIN_HEAD_POSITION, catalog))
+                    .as("摘掉帘头条目后必须解析不到 ⇒ 逐格判据抓的是真行为"
+                            + "（改前由「帘头回落布帘」的隐式规则兜着 ⇒ 删哪条都不红 = 空断言）")
+                    .isNull();
+            List<String> unresolved = new ArrayList<>();
+            for (String[] cell : applicableMatrixCells()) {
+                if (service().variantNameOf(cell[0], cell[1], catalog) == null) {
+                    unresolved.add(cell[0] + "×" + cell[1]);
+                }
+            }
+            assertThat(unresolved)
+                    .as("逐格判据必须**点名报出**注入的那一格且只报它")
+                    .containsExactly("三边×帘头");
+        } finally {
+            // ⚠️ **必须在 finally 里还原**：`VARIANT_NAMES` 是 static、全 JVM 共享（surefire 同 fork 复用）
+            byPosition.put(CURTAIN_HEAD_POSITION, saved);
+        }
+        assertThat(service().variantNameOf("三边", CURTAIN_HEAD_POSITION, catalog))
+                .as("还原后必须恢复 ⇒ 否则污染同 JVM 的其它测试类").isEqualTo("布三边");
+    }
+
+    @Test
+    @DisplayName("PG-018 红证：库里摘掉 `布三边` ⇒ 帘头格（与布帘格）一起红，且红是定位到 `三边` 这一道")
+    void droppingTheClothLibraryRowMakesTheCurtainHeadCellRed() {
+        Map<String, Map<String, Object>> broken = new LinkedHashMap<>(catalog());
+        broken.remove("布三边");
+        assertThat(service().variantNameOf("三边", CURTAIN_HEAD_POSITION, broken)).isNull();
+        assertThat(service().variantNameOf("三边", "布帘", broken)).isNull();
+        assertThat(service().variantNameOf("定型", CURTAIN_HEAD_POSITION, broken))
+                .as("反证：其余帘头格不受影响 ⇒ 红是定位到 `三边` 这一道的，不是整体崩")
+                .isEqualTo("定型-布");
     }
 }
