@@ -125,9 +125,6 @@ public class ProductionSeedTemplateService {
     /** 规范工艺词表（默认工艺的候选序；与 V72 迁移的 {@code unnest(ARRAY[...])} 逐字一致）。 */
     private static final List<String> CRAFT_VOCABULARY = List.of("韩褶", "打孔", "四爪钩", "穿杆", "平幔");
 
-    /** 旧工序名 → 逻辑工序名（35 条；与 {@code routing.py::OPERATION_LOGICAL_NAMES} 逐字同源）。 */
-    private static final Map<String, String> LOGICAL_NAMES = logicalNames();
-
     /**
      * 规范工艺变体规则（10 条）：{@code {trigger_value, position|NULL, action, operation, after|NULL}}。
      *
@@ -298,47 +295,6 @@ public class ProductionSeedTemplateService {
             {"打包", "帘头", null, "true"},
             {"打包", "布料", null, "true"},
     };
-
-    /** 旧工序名 → 逻辑工序名（逐条写出；{@code 布三边}/{@code 布帘车被} 这类不规则名用规则推导会漏）。 */
-    private static Map<String, String> logicalNames() {
-        Map<String, String> names = new java.util.LinkedHashMap<>();
-        names.put("精裁-布", "精裁");
-        names.put("精裁-纱", "精裁");
-        names.put("裁剪-布", "裁剪");
-        names.put("裁剪-纱", "裁剪");
-        names.put("布三边", "三边");
-        names.put("纱三边", "三边");
-        names.put("韩褶-布", "韩褶");
-        names.put("韩褶-纱", "韩褶");
-        names.put("上车布-布", "上车布");
-        names.put("上车布-纱", "上车布");
-        names.put("打孔-布", "打孔");
-        names.put("打孔-纱", "打孔");
-        names.put("拼1次-布", "拼1次");
-        names.put("拼2次-布", "拼2次");
-        names.put("拼3次-布", "拼3次");
-        names.put("花边-布", "花边");
-        names.put("铅坠-布", "铅坠");
-        names.put("接高-布", "接高");
-        names.put("帘头制作", "帘头制作");
-        names.put("熨烫-布", "熨烫");
-        names.put("定型-布", "定型");
-        names.put("复烫-布", "复烫");
-        names.put("布帘车被", "车被");
-        names.put("外帘打卷", "外帘打卷");
-        names.put("外帘装袋", "外帘装袋");
-        names.put("质检", "质检");
-        names.put("外帘发货", "外帘发货");
-        names.put("绑带-布", "绑带");
-        names.put("抱枕", "抱枕");
-        names.put("腰靠垫", "腰靠垫");
-        names.put("绑带-纱", "绑带");
-        names.put("logo条-布", "logo条");
-        names.put("立边-布", "立边");
-        names.put("扣环-布", "扣环");
-        names.put("防翘扣-布", "防翘扣");
-        return Map.copyOf(names);
-    }
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -724,15 +680,23 @@ public class ProductionSeedTemplateService {
     }
 
     /**
-     * 旧工序名 → 逻辑工序名（与真值源 {@code routing.py::OPERATION_LOGICAL_NAMES} 同源；
-     * 未登记的名字原样返回）。
+     * 旧工序名 → 逻辑工序名（**复用单一出处**，未登记的名字原样返回）。
      *
-     * <p>⚠️ 这是本类**唯一**的归一实现；与 {@code ProductionOperationQueryService} 的那一份
-     * 同源由 {@code ProductionOperationQueryServiceTest#logicalNameTableMatchesTruthSource} 守
-     * （本类只播种，不参与运行时实例化 ⇒ 不构成「第二份怎么展开路线」的实现）。</p>
+     * <p>🔴 issue #4637：本类曾自带一份 35 条的副本表（{@code LOGICAL_NAMES}），与
+     * {@link ProductionOperationQueryService} 的那一份并存 —— 两份**逐条同值**，但**改一份不改另一份
+     * 不会让任何东西变红**（既有双向比对判据只读运行时归一的行为）⇒ 播种出来的规则/主线锚点名字
+     * 会与运行期口径**静默分叉**。现改为直接引用 {@link ProductionOperationQueryService#logicalOperationName}
+     * 这个**静态入口**（同一份表；调用方无需注入该服务 ⇒ 播种路径不新增依赖，也没有循环依赖）。</p>
+     *
+     * <p>同款先例：{@code ProductionService} 的读面派生（#4621）也走这个静态入口，而不是另抄一份表。</p>
+     *
+     * <p>漂移护栏（两道，都不复制映射表）：① 生产 Java 里不得再出现第二份表 ——
+     * {@code tests/unit_ci_workflows/test_logical_name_single_source_guard.py}（含注入自证）；
+     * ② 本路径的行为等价（播种规则里的工序名 == 静态入口的输出）——
+     * {@code ProductionSeedTemplateServiceTest#seedNormalizationMatchesSingleSource}。</p>
      */
     private static String logicalName(String operationName) {
-        return LOGICAL_NAMES.getOrDefault(operationName, operationName);
+        return ProductionOperationQueryService.logicalOperationName(operationName);
     }
 
     // ══════════════════════ 计划（只读现状 → 算出该插哪些） ══════════════════════
