@@ -389,6 +389,10 @@ infer_next(set, scanned_order_item_id):
   return NONE   # ⇒ 响应 "本套已完成"（含完成时间），不报错
 ```
 
+> 📌 **`return NONE` 那句「不报错」描述的是读面**（本端点 `GET` 的职责 = **报告状态**）；
+> **写面**（`POST /api/worker/production/scan/complete`）在**同一状态**上会抛 **409 `SET_ALREADY_COMPLETED`**
+> —— 两面语义不同、**不许「统一」**（统一到任一侧都是错的）。不变量与判据见 **§5.3.1**。
+
 **为什么必须有 ②（否则闭环会死锁）**：实测 F11/F12 —— 一樘窗「布 + 纱」时，
 `外帘打卷 / 装袋 / 发货` 只落在**主布行**那一个部位上。
 工人做完**纱帘**部位的所有活，拿纱帘的码再扫 ⇒ 按 ① 会得到「无工序可做」，
@@ -585,11 +589,19 @@ complete(set_no, order_item_id, [operation_id], [qty], worker, clientRequestId):
 | `SET_ALREADY_COMPLETED` | **409** | `ProductionScanCompleteService#doComplete`：`scan.get("operation") == null` **且** `Boolean.TRUE.equals(scan.get("completed"))` ⇒ 该套**全部工序实例**都已 `done_qty ≥ qty`（`completed` 键由 `ProductionScanService` 的 `setPositionView` 落 = `chosen == null`）⇒ **本次未记账** | 同上 + HTTP **409** | `ProductionScanCompleteServiceTest#alreadyCompletedSetIsRejectedWithoutWriting`（**本单补 `code` / `httpStatus` 断言**） | ❌ **账本未登记该码**（只登记了**读面响应键** `completed`）⇒ **本单只登记，不代账本裁定** |
 | `OPERATION_ALREADY_ADVANCED` | **409** | **两个落点、同一个码**：<br>**(a) 并发推进**：`ProductionService#applyScanComplete` 里 CAS `ProcessingPositionOperationMapper#advanceDoneQtyIfUnchanged` **影响行数 0** ⇒ fail-closed（= F14），**绝不静默覆盖别人的报工**；<br>**(b) 推断之后被报满**：`ProductionScanCompleteService#doComplete` 在 `qty` 缺省时算出 `plannedRemaining(op) ≤ 0`（`ProductionScanService#resolve` 读到的工序与记账前 `ProductionService#requireActiveOperation` 重读之间出现并发窗口） | 同上 + HTTP **409** | (a) `ProductionScanCompleteServiceTest#midFailureReleasesPlaceholderAndDoesNotSnapshot`（**本单补 `code` / `httpStatus` 断言**）；<br>(b) `ProductionScanCompleteServiceTest#operationFilledBetweenResolveAndChargeIsRejected`（**本单补**：`selectList` 读到「未完成 6/11 米」而 `selectById` 重读到「已报满 11/11」= 并发窗口的**可执行形态**） | ❌ **账本未登记该码**（`docs/design/worker-h5-scan-and-report.md` 有登记：CAS 影响行数 0 ⇒ 409 `OPERATION_ALREADY_ADVANCED`） |
 
-> 🔴 **只登记、不裁定（交主会话）**：**§3.2 ③ 的伪码逐字写「返回 "本套已完成"（含完成时间），不报错」**
-> —— 那是**读面**（`GET /api/worker/production/scan` 的响应键 `completed` + `completed_at`）的口径；
-> **写面**（`POST /api/worker/production/scan/complete`）在**推断零道 + 本套全完成**时抛 **409**。
-> 两个端点两种口径**并存**，措辞是否要改（例如在读面也预告「再报会 409」）**本单不裁定** ——
-> 差异登记见 §16.2。
+> 🔴 **读面 / 写面：不是「两种口径」，是同一状态在两个面上的正确表现**（主会话 2026-09-21 就 #4810 裁定）：
+> **§3.2 ③ 的伪码逐字写「返回 "本套已完成"（含完成时间），不报错」—— 那句话描述的是读面**
+> （`GET /api/worker/production/scan` 的响应键 `completed` + `completed_at`），职责 = **报告状态**；
+> **写面**（`POST /api/worker/production/scan/complete`）在**推断零道 + 本套全完成**时抛
+> **409 `SET_ALREADY_COMPLETED`**，职责 = **拒绝一个空操作写**（用显式错误码而不是静默成功，
+> 正是本设计的「不静默」纪律）。
+> **不变量（跨两面，落码必须保持）**：
+>
+> > **`completed = true` ⇒ 对该套的下一次 `POST /api/worker/production/scan/complete`
+> > 必然返回 409 `SET_ALREADY_COMPLETED`。**
+>
+> 🔴 **不许「统一」这两处的措辞**（统一到任一侧都是错的）；**也不要让读面去预告 409** ——
+> 读面塞 HTTP 语义会把「状态报告」与「写协议」耦合。§3.2 ③ 与上表原文**一律保留留档**。
 
 ### 5.4 自动计件（真值源 `:57` 后半句）
 
@@ -1076,7 +1088,7 @@ git show origin/main:tests/unit_ci_workflows/migration_fingerprints.json | pytho
 > 🔴 **本节的纪律**：**只登记，不裁定谁对** —— 每条只写「设计写了什么 / 代码里是什么 / 差在哪」，
 > **处置留给主会话**。
 > **#4791（原单）**只改了 §5.3 ④ 的两处措辞（主会话已裁定的那两处），其余一律不动。
-> **#4810（本单，主会话已裁定「补设计」）**只动 §16.2 / §16.4 两表 + 把 B 组三条码的判据补在
+> **#4810（本单，主会话已裁定「补设计」）**只动 §3.2 ③ 的一行指针 + §16.2 / §16.4 两表 + 把 B 组三条码的判据补在
 > **§5.3.1**（判据本体在 §5.3.1，本节的表只登记「差异 + 处置」）；
 > §1 / §14 ⓪.5（PR #4833 刚改判）与其余各节**一字不动**。
 > 复算口径 = `grep` 本文的 `SCREAMING_CASE` 标识符 × `grep` 代码里的实际错误码（双向）。
@@ -1102,7 +1114,7 @@ git show origin/main:tests/unit_ci_workflows/migration_fingerprints.json | pytho
 | 代码实际 | 落点（**逐字读源**，符号引用） | 原状态（#4791 登记，**留档**） | #4810 处置 |
 |---|---|---|---|
 | `SCAN_NEEDS_SELECTION`（422） | `ProductionScanCompleteService#doComplete`：`ProductionScanService.GRANULARITY_ORDER` 命中（旧码降级 ⇒ **不默认取第 1 套**） | ❌ **本文零提及**（§2.6 只写了「必须让工人选部位」，**没给判据名**） | ✅ **已补判据**（§5.3.1）；**账本已登记**（口径一致 ⇒ **不改账本**） |
-| `SET_ALREADY_COMPLETED`（409） | `ProductionScanCompleteService#doComplete`：`scan.get("operation") == null` 且 `completed` 为真（本套工序都已完成 ⇒ 零写入） | ❌ **本文零提及**（§3.2 ③ 只写「返回『本套已完成』，不报错」——**与「409 拒绝」是两种口径**） | ✅ **已补判据**（§5.3.1，含 409/422 分界）；⚠️ **账本未登记该码** ⇒ 本单**只登记、不代账本裁定**；§3.2 ③ 的**读面**口径保留，差异在 §5.3.1 登记 |
+| `SET_ALREADY_COMPLETED`（409） | `ProductionScanCompleteService#doComplete`：`scan.get("operation") == null` 且 `completed` 为真（本套工序都已完成 ⇒ 零写入） | ❌ **本文零提及**（§3.2 ③ 只写「返回『本套已完成』，不报错」——**与「409 拒绝」是两种口径**） | ✅ **已补判据**（§5.3.1，含 409/422 分界 + **读面/写面不变量**）；⚠️ **账本未登记该码** ⇒ 本单**只登记、不代账本裁定**（主会话另开单）；§3.2 ③ 的**读面**原文**保留留档**，两面关系与不变量见 §5.3.1（主会话 2026-09-21 裁定：**不是冲突，不许统一**） |
 | `OPERATION_ALREADY_ADVANCED`（409） | `ProductionScanCompleteService#doComplete`（`plannedRemaining(op) ≤ 0`）+ `ProductionService`（CAS 影响行数 0 ⇒ fail-closed）**两个落点** | ❌ **本文零提及**（F14 只写「影响行数 0 = 被并发推进 ⇒ fail-closed」，**没给判据名**；`docs/design/worker-h5-scan-and-report.md` 有登记） | ✅ **已补判据**（§5.3.1）；⚠️ **账本未登记该码**；**两个落点均已补承重测试**（(a) CAS / (b) 并发窗口，**本单补**） |
 
 ### 16.3 非错误码的判据 / 口径（**SCREAMING_CASE 全量扫描的其余命中，逐条交代**）
@@ -1132,4 +1144,5 @@ git show origin/main:tests/unit_ci_workflows/migration_fingerprints.json | pytho
 | 5 | §12 D9 的 422 判据 | ✅ 已落码（`OPERATION_NOT_IN_SCAN_TARGET`，含测试） | ✅ 一致（判据名见 §16.1） |
 
 > 🔴 **本节不含裁定**：上表 ⚠️ / 🔴 各行**都未在本单修改**（#4791 只动 §5.3 ④ 的两处，即 16.1 的 `CODE_POSITION_MISMATCH` 行与 16.4 的第 1 行）；
-> **#4810 只动 16.2 的三行 + 16.4 第 2 行的指针**（判据本体落 **§5.3.1**，**不含任何业务裁定**）。
+> **#4810 只动 16.2 的三行 + 16.4 第 2 行的指针 + §3.2 ③ 的一行指针**（判据本体落 **§5.3.1**）；
+> 其中**唯一一处裁定**是主会话 2026-09-21 给的**读面/写面不变量**（§5.3.1 —— **那是主会话的裁定，不是本单自裁**）。
