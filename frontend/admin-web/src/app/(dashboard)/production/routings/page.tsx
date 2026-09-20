@@ -1248,6 +1248,28 @@ export default function ProcessConfigPage() {
   )
 
   /**
+   * **删除路径的唯一判据 = 与后端护栏③同一把尺（按名字）**（issue #4692，治本）。
+   *
+   * <p>后端护栏③（{@code ProductionOperationCommandService.matchingCells} + {@code applicable}）
+   * 按**名字**判「这道工序还挂不挂在部位价目矩阵上」—— 它**从不看**格的
+   * {@code variant_operation_id}。前端若拿 {@code variant_operation_id} 当「有没有格 / 能不能删 /
+   * 走哪条删除路径」的判据，就会出现**前端说能删、后端 422 拦下**：用户第 3 次报的删除死路
+   * （格按名字命中、关联键却是 {@code null}）就是这么来的。</p>
+   *
+   * <p>判据 = **本行（行键 = 逻辑工序名）里仍是「做」的格**。它与后端**同向**（按名字），且是后端
+   * 命中集的**超集**（后端按 {@code variantNameOf} 解析出的变体，其逻辑名必然是行键；解析不出时
+   * 后端也不命中）⇒ **fail-safe**：前端**绝不会**在后端会拦时选「普通删除」，最坏只是多走一次
+   * 能过的 detach-and-delete（后端摘 0 格）。</p>
+   *
+   * <p>{@code variant_operation_id} 仍用于**展示**（「这些格未关联到本工序」是有价值的信息），
+   * 但**不得**再作为「能否删 / 走哪条路」的判据（issue #4692 的硬要求）。</p>
+   */
+  const opDeleteBlockerCells = useMemo(
+    () => manageOpCells.filter((c) => c.applicable !== false),
+    [manageOpCells],
+  )
+
+  /**
    * 接入弹窗要列出的工序（issue #4674 B）：抽屉空态点「接入部位…」时**只列这一道**
    * （商家此刻就在它身上 —— 让他回整份孤儿清单里再找一遍是同一类死路）；
    * 顶部「N 道工序还没接部位」那个入口仍列**全部**孤儿。
@@ -2039,16 +2061,31 @@ export default function ProcessConfigPage() {
   }
 
   /**
-   * 删除工序（**走既有** `DELETE /operations/{id}` 软删端点；#4671 的一键摘格端点是**另一条**路径，
-   * 本入口**不用**它 —— 用户实测的形态是「矩阵里查不到它的格」，护栏③天然满足 ⇒ 直接可删）。
-   * 三条护栏（被活跃主线 / 活跃规则 / 矩阵格引用）由后端**一次报全** ⇒ 逐条就地展示，**不放宽**。
+   * 删除工序（**抽屉层**入口：底部「删除」与正文「删除这道工序」**共用这一个函数**，issue #4674 A）。
+   *
+   * <p><b>路径判据 = {@link opDeleteBlockerCells}（与后端护栏③同一把尺：按名字，issue #4692）</b>：
+   * 本行还有「做」的格 ⇒ 走 #4671 的 **detach-and-delete**（后端**同一事务**里先把这些格设为不做、
+   * 级联软删矩阵行、再软删工序 —— 这条**能过**护栏③）；一格都没挂（或都已是「不做」）⇒ 才走普通软删。</p>
+   *
+   * <p>⚠️ 改前这里**一律**走普通删除，而「有没有格」是按 {@code variant_operation_id} 判的 ⇒ 用户那个
+   * 形态（格按名字命中、关联键为 {@code null}）必然被后端护栏③ 422 拦下 = **第 3 次「仍然不能删除」**。
+   * 路径选择从此**不再看** {@code variant_operation_id}。</p>
+   *
+   * <p>⚠️ **护栏①主线 / ②规则不放宽**：两条路都被后端照旧拦（主线涉及车间顺序，必须人工确认）⇒
+   * 失败理由**逐条**就地展示、弹框不收摊、页面不刷新（不留半完成态）。</p>
    */
   const removeOpByName = async (op: CatalogOperation) => {
     setVariantBusy(true)
     setOpLevelReasons(null)
     try {
-      await productionApi.deleteOperation(String(op.id))
-      toast.success(`已删除工序「${op.name}」`)
+      if (opDeleteBlockerCells.length > 0) {
+        // 走能过护栏③的那条路（#4671 的端点）：一次请求、后端一次事务
+        await productionApi.deleteOperation(String(op.id), { detachPositions: true })
+        toast.success(`已设为不做并删除工序「${op.name}」`)
+      } else {
+        await productionApi.deleteOperation(String(op.id))
+        toast.success(`已删除工序「${op.name}」`)
+      }
       setConfirmDeleteOpByName(null)
       await load()
     } catch (e) {
@@ -3293,8 +3330,10 @@ export default function ProcessConfigPage() {
              改前这两件事**只**挂在「各部位的设置」**行内** ⇒ `manageVariants` 为空时只剩一句
              死路文案 + 一个「关闭」（正是用户截图的形态：「这条测试数据已经没有办法删除了，无删除入口」）。
              写面**复用既有端点**：停用 = `PUT /operations/{id}` 的 `status`；删除 = `DELETE /operations/{id}`（软删）。
-             ⚠️ #4671 的一键「设为不做并删除」是**另一条**路径（`…/detach-and-delete`），本入口**不用**它
-             —— 本入口针对的形态是「矩阵里查不到它的格」，护栏③天然满足 ⇒ 直接可删；
+             ⚠️ 删除的**路径**由 {@link opDeleteBlockerCells} 定（与后端护栏③**同一把尺：按名字**，issue #4692）：
+             本行还有「做」的格 ⇒ 走 #4671 的 `…/detach-and-delete`（设为不做 + 级联软删矩阵行 + 删除，一次事务）；
+             一格都没挂 ⇒ 才走普通软删。**改前一律走普通删除**（按 `variant_operation_id` 判「没有格」）
+             ⇒ 用户那个形态（格按名字命中、关联键为 null）必然 422 = 第 3 次「仍然不能删除」；
              仍挂在主线/规则 ⇒ 后端照旧 422，理由逐条就地展示（**不放宽**）。 */
           <div className="flex w-full flex-wrap items-center gap-2">
             <Button
@@ -4191,6 +4230,24 @@ export default function ProcessConfigPage() {
                 )}
               </p>
             )}
+            {/* issue #4692：**两把尺**的另一个落点 —— 格的 `variant_operation_id` 关联不上（读面查不到变体）
+                时，上面那条（按 id 取格）会**空**，弹框就只剩「确认删除」⇒ 普通删除必被护栏③（**按名字**）
+                422 拦下 = 同一类死路。判据改用**与护栏③同一把尺**（`opDeleteBlockerCells`：本行仍是「做」的格）
+                ⇒ 走能过护栏的 detach-and-delete；**普通删除按钮此时不渲染**（它只会 422，不摆死路）。 */}
+            {deleteOpCells.length === 0 && opDeleteBlockerCells.length > 0 && (
+              <p
+                className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800"
+                data-testid="variant-delete-cells-by-name"
+              >
+                「{manageOp}」这一行在部位价目矩阵里的
+                <strong className="mx-1">
+                  {opDeleteBlockerCells.map((c) => c.position).join(' / ')}
+                </strong>
+                格还是「做」。点下面的<strong className="mx-1">设为不做并删除</strong>
+                ：系统会把挡着它删不掉的那些格<strong>设为不做</strong>，然后删除该工序（一次完成，
+                不留半成品）；<strong>历史报工不受影响</strong>。
+              </p>
+            )}
             {variantReasons && (
               <ul className="space-y-0.5 text-xs text-red-600" data-testid="variant-delete-reasons">
                 {variantReasons.items.map((r, i) => (
@@ -4207,7 +4264,7 @@ export default function ProcessConfigPage() {
               >
                 取消
               </Button>
-              {deleteOpCells.length > 0 && (
+              {(deleteOpCells.length > 0 || opDeleteBlockerCells.length > 0) && (
                 <Button
                   variant="secondary"
                   loading={variantBusy}
@@ -4217,14 +4274,19 @@ export default function ProcessConfigPage() {
                   设为不做并删除
                 </Button>
               )}
-              <Button
-                variant="danger"
-                loading={variantBusy}
-                data-testid={`variant-delete-confirm-${deleteOpTarget.id}`}
-                onClick={() => void removeVariant(deleteOpTarget)}
-              >
-                确认删除
-              </Button>
+              {/* 普通删除只在**不会被护栏③拦下**时给出：本行没有「做」的格，**或**按 id 那把尺仍能指到
+                  本变体的格（既有的「先看清再删」形态 —— 此时弹框已把两条路都摆出来）。issue #4692：
+                  **关联键为 null 而按名字命中**时它只会 422，故不渲染（不摆死路）。 */}
+              {(opDeleteBlockerCells.length === 0 || deleteOpCells.length > 0) && (
+                <Button
+                  variant="danger"
+                  loading={variantBusy}
+                  data-testid={`variant-delete-confirm-${deleteOpTarget.id}`}
+                  onClick={() => void removeVariant(deleteOpTarget)}
+                >
+                  确认删除
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -4233,7 +4295,7 @@ export default function ProcessConfigPage() {
       {/* 删除**工序**（抽屉层那处，issue #4674 A）的二次确认：目标 = **工序库那一行**（按逻辑名寻址），
           **与矩阵格是否关联得上无关** —— 改前这里根本没有入口（`manageVariants` 为空 ⇒ 弹框不渲染）。
           形态与上面那条**同一套**（同一页面不留两套形态，issue #4617 的裁定照旧）；
-          删的是**哪一道工序**写在第一句；矩阵格逐格如实报出（含**未关联**的格 —— 后端护栏③照样拦它们）；
+          删的是**哪一道工序**写在第一句；矩阵格逐格如实报出（含**未关联**的格 —— 后端护栏③按名字照样算它们）；
           失败理由**逐条**就地展示，弹框**不收摊**（#4617 纪律）。 */}
       <Modal
         open={deleteOpByNameTarget !== null}
@@ -4264,6 +4326,28 @@ export default function ProcessConfigPage() {
               >
                 这道工序<strong>没有挂任何部位价目格</strong> ⇒ 删除不会有格需要摘。
               </p>
+            ) : opDeleteBlockerCells.length > 0 ? (
+              /* issue #4692：判据与后端护栏③**同一把尺（按名字）** —— 有「做」的格 ⇒ 走
+                 detach-and-delete（设为不做 + 级联软删矩阵行 + 删除，后端**一次事务**）。
+                 文案**说清将发生什么**（改前这里写「后端会拦下并告诉你先在哪一格设为不做」——
+                 而本入口**不会**被拦，那句话是改前那条走错路径留下的死路文案）。 */
+              <p
+                className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800"
+                data-testid="operations-manage-delete-cells"
+              >
+                它在部位价目矩阵里有
+                <strong className="mx-1">
+                  {deleteOpByNameCells.map((c) => c.position).join(' / ')}
+                </strong>
+                共 {deleteOpByNameCells.length} 个格，其中
+                <strong className="mx-1">
+                  {opDeleteBlockerCells.map((c) => c.position).join(' / ')}
+                </strong>
+                还是「做」。点「确认删除」：系统会把这
+                <strong className="mx-1">{opDeleteBlockerCells.length}</strong>
+                个格<strong>设为不做</strong>，然后删除这道工序（一次完成，不留半成品）；
+                <strong>历史报工不受影响</strong>（报工按当时的工序快照）。
+              </p>
             ) : (
               <p
                 className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800"
@@ -4273,20 +4357,8 @@ export default function ProcessConfigPage() {
                 <strong className="mx-1">
                   {deleteOpByNameCells.map((c) => c.position).join(' / ')}
                 </strong>
-                共 {deleteOpByNameCells.length} 个格
-                {deleteOpByNameCells.filter((c) => c.applicable !== false).length > 0 && (
-                  <>
-                    ，其中
-                    <strong className="mx-1">
-                      {deleteOpByNameCells
-                        .filter((c) => c.applicable !== false)
-                        .map((c) => c.position)
-                        .join(' / ')}
-                    </strong>
-                    还是「做」⇒ 后端会拦下并告诉你先在哪一格设为不做
-                  </>
-                )}
-                。删完这道工序，它的格会一起清掉。
+                共 {deleteOpByNameCells.length} 个格，且都已经是「不做」⇒ 删除时这些格会一起清掉；
+                <strong>历史报工不受影响</strong>。
               </p>
             )}
             {opLevelReasons && (
