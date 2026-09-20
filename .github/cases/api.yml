@@ -270,8 +270,9 @@ cases:
     data_checks:
       - "mock 登录成功返回 accessToken + user"
       - "登录参数 tenantId(camelCase) 与后端一致"
+    precondition: "本用例是 [backend-contract] 的**接口契约**用例（不进 agent-eval 冒烟）：前置 = 部署的 `wechat.mini.appid` **未配置** ⇒ `POST /api/auth/mini/login` 走 **mock 模式**（两轮 `user_inputs` 是对**同一个接口**的两条断言，不是两次会话）。该前置由 `frontend/mini-app/tests/auth.test.ts` 在 mock 下直接构造并断言 ⇒ 前置不成立（appid 被配上、mock 分支被摘掉）时单测直接红，不会表现为「agent 不干活」"
     skip_reason: ""
-    merge_log: "POC mock 登录集成测试新增"
+    merge_log: "POC mock 登录集成测试新增；2026-09-20（issue #4721）补**声明层前置自断言**（`precondition` 散文形态，与 UI-019/CH-018/CH-027 同款）：本用例是 2 轮 `user_inputs` 的 [backend-contract] 接口契约用例，前置（mock 模式）由单测自建 ⇒ 补上后 Case Trust 的 `CASE-TRUST-NO-PRECONDITION-ASSERTION` 整条销账（断言内容一字未改）"
     traces:
       tests:
         - "frontend/mini-app/tests/auth.test.ts"

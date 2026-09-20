@@ -35,11 +35,6 @@
     "CASE-TRUST-SINGLE-LEG-NO-PERSONA": 0
   },
   "violations": {
-    "API-010": {
-      "codes": [
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
-      ]
-    },
     "AS-006": {
       "codes": [
         "CASE-TRUST-NO-EFFECT-ASSERTION",
@@ -179,6 +174,11 @@
         "CASE-TRUST-NO-EFFECT-ASSERTION",
         "CASE-TRUST-NO-PRECONDITION-ASSERTION",
         "CASE-TRUST-NO-SELF-CLEAN"
+      ]
+    },
+    "OB-005": {
+      "codes": [
+        "CASE-TRUST-NO-PRECONDITION-ASSERTION"
       ]
     },
     "OR-006": {

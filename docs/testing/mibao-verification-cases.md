@@ -305,7 +305,7 @@
 数据: 登录参数 tenantId(camelCase) 与后端一致
 ```
 真值: auth-sms.bypass
-溯源: POC mock 登录集成测试新增 ｜ tags: login, mock
+溯源: POC mock 登录集成测试新增；2026-09-20（issue #4721）补**声明层前置自断言**（`precondition` 散文形态，与 UI-019/CH-018/CH-027 同款）：本用例是 2 轮 `user_inputs` 的 [backend-contract] 接口契约用例，前置（mock 模式）由单测自建 ⇒ 补上后 Case Trust 的 `CASE-TRUST-NO-PRECONDITION-ASSERTION` 整条销账（断言内容一字未改） ｜ tags: login, mock
 
 ### API-013. 知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051） 🔵
 ```
@@ -2197,7 +2197,7 @@
 跳过: [backend-contract] 由前端单测验证（corporate-home.test.tsx），非 LLM 冒烟
 ```
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
-溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787）；2026-09-19（issue #4721）补**声明层前置自断言**（`precondition` 散文形态，与 UI-019/CH-018 同款）：本用例是 3 轮 `user_inputs` 的 [backend-contract] 纯前端渲染用例，前置由单测自建、不依赖共享夹具 —— 补上后 Case Trust 的 `CASE-TRUST-NO-PRECONDITION-ASSERTION` 整条销账（断言内容一字未改） ｜ tags: homepage, compliance, gb47746
+溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787） ｜ tags: homepage, compliance, gb47746
 
 ## ontology（4 case）
 

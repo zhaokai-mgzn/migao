@@ -505,6 +505,7 @@ _CASE_API_010 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 的**接口契约**用例（不进 agent-eval 冒烟）：前置 = 部署的 `wechat.mini.appid` **未配置** ⇒ `POST /api/auth/mini/login` 走 **mock 模式**（两轮 `user_inputs` 是对**同一个接口**的两条断言，不是两次会话）。该前置由 `frontend/mini-app/tests/auth.test.ts` 在 mock 下直接构造并断言 ⇒ 前置不成立（appid 被配上、mock 分支被摘掉）时单测直接红，不会表现为「agent 不干活」',
 )
 
 # ── API-013 [NORMAL] 知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051）（源: cases/api.yml）──
@@ -3223,7 +3224,6 @@ _CASE_OB_005 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    precondition='本用例是 [backend-contract] 纯前端渲染用例：前置（`corporate-home` 页源码含 GB/T 47746-2026 区块与 4 个能力点 + 页脚免责小字）由单测自建（frontend/admin-web/tests/unit/pages/corporate-home.test.tsx 直接读该页源码断言），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它（`skip_reason` 已登记）',
 )
 
 # ── ON-001 [NORMAL] 本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象）（源: cases/ontology.yml）──
