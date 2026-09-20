@@ -20,8 +20,26 @@ jobs:
   agent-eval:
     name: Mibao Agent Eval (normal, manual)
     runs-on: ubuntu-latest
-    # normal tier（约 47 条真实 LLM 多轮），smoke 由 PR gate 承担、adversarial 由每周任务承担
-    timeout-minutes: 60
+    # normal tier（真实 LLM 多轮；条数随用例库增长 —— 2026-09-20 实测 70 条，
+    # 旧注释写的「约 47 条」已漂移），smoke 由 PR gate 承担、adversarial 由每周任务承担
+    #
+    # ── 超时预算（issue #4800，2026-09-20）────────────────────────────────────
+    # 读数（`gh api .../actions/runs/<run>/jobs` 的 job 墙钟 = completed_at - started_at，
+    # 当前配置的全部 3 次 run 都采到）：34800764957=2891s · 34287690363=2735s ·
+    # 34244577084=2895s（48.2m）⇒ 旧上限 60m(3600s) 只剩 ~705s 余量（1.24×）。
+    # 本 job 跑**真实 LLM**，被自身 job 超时杀掉 = 真红 + 白烧一次全量 LLM 成本
+    # （与 #4262「不要白白消耗成本」裁定相悖）。
+    # 为什么不先「降耗时」（#4800 要求先核清能不能降）：
+    #   · 耗时构成 = **100% 真实 LLM 用例串行执行** —— 2881s 里 2881s 是 70 条用例首尾
+    #     相接（中位 25s / 最长单条 214s），无空转等待、无 502 重试等待 ⇒ 没有"无谓等待"可省；
+    #   · 唯一显著杠杆 = 用例级并发（`EVAL_CONCURRENCY`）：按本 run 逐条耗时做 LPT 模拟，
+    #     并发 6 的墙钟下界 ≈482s（省 ~83%）。但本 workflow 打的是**共享环境**，并发写同一套
+    #     共享数据正是下方分片注释排除的形态；且本单不许派发评测 ⇒ 无法验证调度变更不引入
+    #     假红（"没测"≠"没问题"）⇒ 登记为后续单（前置 = 每次跑完即销毁的隔离栈），本单不改；
+    #   · 节流等待（`EVAL_ROUND_SLEEP`/`EVAL_CASE_SLEEP` 默认 0.5/1.0）合计 ~146s（5%），
+    #     **低于 run 间波动**（2735~2895s，跨度 160s）⇒ 不可测量的纸面优化，不改。
+    # 故取 #4800 候选①：抬上限 60m → 90m（与 post-deploy-eval 的 90m 一致，对最大读数 1.87×）。
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
 
