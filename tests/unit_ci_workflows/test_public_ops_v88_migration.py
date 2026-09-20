@@ -28,6 +28,15 @@
 ⇒ 直接触发本单自己的 **S1**。⇒ 以 ⑦ + S1 + F1 为准：退场 **31** 格（36 − 1 − 4），保留 **5** 格。
 本文件把这条算术**逐格断言**（`test_⑤_retires_31_cells_not_35`），红证见 `TestInjectedDrift`。
 
+⚠️ **文档层已就地订正（issue #4701 P2-2）**：设计稿 §5.2 ⑤ / §5.6 ⑤ / §8.3 F6 三处的
+「35 格」已改成 **31 格**并附「口径订正」注（含历史留档：原写 35、为什么改）。
+本文件把这三处**逐处钉死**（`test_design_doc_retired_cell_count_is_31`）⇒ 设计稿回退到 35 必红。
+
+⚠️ **注释层的自检计数不再作为判据（issue #4701 P2-1）**：V88 头注释的 `grep -c` 自检计数
+（自称 `production_operation_positions` = 2 / 三张快照表 = 0）被**自己的注释块**撑大（全文实测 10 / 5）
+⇒ 本文件的判据一律按 `_strip_comments` 后的**可执行 SQL** 计数（`test_selfcheck_comment_counts_do_not_drift`）。
+V88/V89 的注释被指纹账本冻结（改它 = 破坏「已发布迁移不可改」）⇒ 存量豁免**从账本派生**且只许缩短。
+
 ## 为什么这些判据必须落在**迁移文本**上（而不是「跑一遍库看结果」）
 
 仓库**没有 testcontainers**（V87 迁移头逐字登记）⇒ 表内容判据只能落成静态判据 + 真库核查记录。
@@ -43,6 +52,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -54,6 +64,9 @@ SEED_SERVICE = REPO / ("backend/admin-api/src/main/java/com/migao/admin/service/
                        "ProductionSeedTemplateService.java")
 #: **bootstrap 终态**（`docker-entrypoint-initdb.d` 用的建库脚本；该栈**不跑迁移链** ⇒ issue #4690）。
 SCHEMA_SQL = REPO / "docs/sql/schema.sql"
+#: 设计稿（#4675）：§5.2 ⑤ / §5.6 ⑤ / §8.3 F6 的「退场格数」是**文档层**口径，
+#: 必须与 V88 终态一致（issue #4701 P2-2 —— 设计稿原写 35 格，V88 落 31）。
+DESIGN_DOC = REPO / "docs/design/public-operations-and-craft-ui.md"
 
 POSITION_TABLE = "production_operation_positions"
 #: 红线：三张**快照**表（全名，不许简写）。
@@ -72,6 +85,26 @@ V79_FABRIC_GRID_SIZE = 36
 #: ⑤ + ② 实际退场的格数 = 36 − 1（保命格）− 4（⑦ 的 `打包` 格）。
 RETIRED_CELL_COUNT = 31
 
+#: 已发布迁移的**内容指纹账本**（sha256）：注释也被逐字节冻结 ⇒ 注释里的自检计数**改不动**
+#: （issue #4701 P2-1；#4235 的「已发布迁移不可改」）。
+FINGERPRINT_LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
+#: 迁移头注释里的「自检计数」形态：`grep -c … # ⇒ <数字>` —— 在**自己所在文件**上跑**全文** grep。
+_DRIFTING_SELFCHECK_RE = re.compile(r"grep\s+-c\b[^\n]*#\s*⇒\s*\d")
+#: 存量豁免（**只许缩短**，issue #4701 P2-1）：这两份文件的注释已被指纹冻结 ⇒ 只能在守卫层收口。
+_FROZEN_SELFCHECK_CLAIMS = {
+    "V88__retire_material_prep_and_fabric_position.sql":
+        "自称 `production_operation_positions` 命中 = 2 / 三张快照表 ⇒ 0；**全文**实测 **10 / 5**"
+        "（其中 3 处是可执行 DML 目标，其余在注释/回滚示例块内）",
+    "V89__backfill_fabric_seed_for_existing_tenants.sql":
+        "自称三张快照表 ⇒ 0；**全文**实测 **5**（全部在注释块内）",
+}
+#: 设计稿里三处**承重**的「退场格数」行 ⇒ `(行首标记, 行内必含)`，供 `_design_cell_count_lines` 定位。
+_DESIGN_CELL_COUNT_ROWS = {
+    "§5.2 ⑤": ("| ⑤ |", "软删"),
+    "§5.6 ⑤": ("| ⑤ |", "复原"),
+    "§8.3 F6": ("| **F6** |", ""),
+}
+
 _VERSION_RE = re.compile(r"^V(\d+)__")
 #: V79 的字面量部位价目行（1 号租户）：`('opp-v79-NN', 1, '逻辑名', '部位', NULL, TRUE|FALSE, 'active'),`
 _V79_POSITION_ROW_RE = re.compile(
@@ -81,6 +114,26 @@ _V79_POSITION_ROW_RE = re.compile(
 
 def _read(path: Path) -> str:
     return Path(path).read_text(encoding="utf-8")
+
+
+def _frozen_migration_names() -> set:
+    """`migration_fingerprints.json` 的冻结清单（**派生**，不手写白名单）。"""
+    return set(json.loads(FINGERPRINT_LEDGER.read_text(encoding="utf-8"))["migrations"])
+
+
+def _drifting_selfcheck_offenders(texts: dict) -> set:
+    """注释里写了「在自己所在文件上跑 `grep -c`」的迁移名（形态见 `_DRIFTING_SELFCHECK_RE`）。"""
+    return {name for name, text in texts.items() if _DRIFTING_SELFCHECK_RE.search(text)}
+
+
+def _design_cell_count_lines(text: str) -> dict:
+    """设计稿里三处承重的「退场格数」行原文 ⇒ `{标签: 行}`（缺行 = 键缺失 ⇒ 判据红）。"""
+    out = {}
+    for line in text.split("\n"):
+        for label, (prefix, needle) in _DESIGN_CELL_COUNT_ROWS.items():
+            if line.startswith(prefix) and needle in line:
+                out[label] = line
+    return out
 
 
 def _strip_comments(sql: str) -> str:
@@ -159,7 +212,12 @@ def test_v88_targets_only_configuration_tables():
 
 
 def test_red_line_never_touches_snapshot_tables():
-    """🔴 红线：三张**快照**表在 V88 里**零命中**（含注释剥离后的可执行 SQL 与全文两处）。"""
+    """🔴 红线：三张**快照**表在 V88 里**零命中**。
+
+    ⚠️ **口径 = 剥注释后的可执行 SQL**（`_strip_comments`）—— 本判据原 docstring 写「与全文两处」，
+    但**全文 grep 不是判据**（且它必然非零：红线说明 / 回滚示例里就写着这些表名）⇒ 已订正。
+    这正是 issue #4701 P2-1 记的形态：V88 头注释把「全文 grep」当核验命令，计数被注释块撑大（自称 0，实测 5）。
+    """
     executable = _strip_comments(_read(V88))
     hits = {t: len(re.findall(re.escape(t), executable)) for t in SNAPSHOT_TABLES}
     assert hits == {t: 0 for t in SNAPSHOT_TABLES}, (
@@ -727,6 +785,56 @@ def test_canonical_matrix_constant_is_not_edited():
 
 
 # ══════════════════════════════════════════════════════════════════════════════════════
+# 注释层 / 文档层的口径（issue #4701 的 P2-1 + P2-2）
+# ══════════════════════════════════════════════════════════════════════════════════════
+
+def test_selfcheck_comment_counts_do_not_drift():
+    """🔴 P2-1（issue #4701）：迁移头注释**不得**再写「在自己所在文件上跑 `grep -c`」的自检计数。
+
+    形态（实测）：V88 注释自称 `production_operation_positions` 命中 = **2**、三张快照表 ⇒ **0**，
+    而**全文** `grep -c` 实测 = **10 / 5** —— 注释块自己就含这些表名（红线说明 + 回滚示例）
+    ⇒ 计数被自己的注释撑大，读者按注释复核会误判「迁移写错表」。
+    正确口径 = **剥注释后的可执行 SQL**（`_strip_comments`，与本文件其它判据同源）。
+
+    ⚠️ V88/V89 已发布且被 `migration_fingerprints.json` **逐字节冻结**（含注释）⇒ 改注释 =
+    破坏「已发布迁移不可改」（#4235）⇒ 本项只能在**守卫层**收口：存量豁免**从账本派生**
+    （不手写白名单）且**只许缩短**。
+    """
+    texts = {p.name: _read(p) for p in MIGRATION_DIR.glob("V*.sql")}
+    frozen = _frozen_migration_names()
+    offenders = _drifting_selfcheck_offenders(texts)
+    assert offenders <= frozen, (
+        f"这些**未冻结**迁移的注释里写了会漂移的自检计数 {sorted(offenders - frozen)} —— "
+        f"`grep -c` 在**自己所在文件**上跑**全文**，注释块会撑大计数（#4701 P2-1）："
+        f"请改成「剥注释后可执行 SQL 的口径」或直接引用守卫名"
+    )
+    assert offenders == set(_FROZEN_SELFCHECK_CLAIMS), (
+        f"存量豁免与实测不符：实测 {sorted(offenders)} / 登记 {sorted(_FROZEN_SELFCHECK_CLAIMS)}"
+        f" —— 该清单**只许缩短**（修好的删掉；新增的必须先冻结才允许登记）"
+    )
+
+
+def test_design_doc_retired_cell_count_is_31():
+    """🔴 P2-2（issue #4701）：设计稿的退场格数必须 = V88 终态 **31**（不是原写的 35 格）。
+
+    为什么是 31（主会话裁定 + 真库红证）：`36 − 1（`裁剪 × 布料` 保命格）− 4（`打包` 格）= 31`。
+    原写 35 = `36 − 1` **含** `打包 × 布料` 一格，与**同一份设计**的 ⑦「`打包` 4 格不动」
+    不能同时成立 —— 删掉它 ⇒ `buildRoute` 的适用性矩阵查不到键 ⇒ 静默 `continue`
+    ⇒ 布料单**只剩 1 道**（真库红证：注入 `NOT IN ('裁剪')` ⇒ 退场 32 / 存活 4 / 实例工序数 **1**；
+    正确版 **2**）⇒ 触发 §5.7 的 S1。
+    """
+    claims = _design_cell_count_lines(_read(DESIGN_DOC))
+    assert set(claims) == set(_DESIGN_CELL_COUNT_ROWS), (
+        f"设计稿的承重行没找全：{sorted(claims)} —— 期望 {sorted(_DESIGN_CELL_COUNT_ROWS)}"
+    )
+    stale = {label: line for label, line in claims.items() if f"{RETIRED_CELL_COUNT} 格" not in line}
+    assert not stale, (
+        f"设计稿的退场格数与 V88 终态（{RETIRED_CELL_COUNT} 格）不一致：{stale} —— "
+        f"35 格含 `打包 × 布料`，删它会触发 S1（布料单少一道）"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════
 # 红证（注入式自证：每条判据都能被对应的破坏形态打红）
 # ══════════════════════════════════════════════════════════════════════════════════════
 
@@ -744,9 +852,21 @@ class TestInjectedDrift:
             "删掉保命格后 S1 读不出来 ⇒ S1 是空断言"
 
     def test_s1_red_when_mainline_rewrite_is_dropped(self):
-        """③ 被删 ⇒ 主线仍是 `配料`，S1/S6 同时红。"""
+        """③ 被删 ⇒ 主线仍是 `配料`（旧口径），而 ⑤ 已把 `配料 × 布料` 退场 ⇒ **S1 + S6 同时红**。
+
+        ⚠️ 本判据原写 `assert _s1_violations(broken) == [] or True`（= **恒真空断言**，issue #4701 P2-5）：
+        `or True` 让这一行**永远不会红**，而它旁边的注释「主线仍 2 道 ⇒ S1 不一定红」**也是错的** ——
+        实测：主线仍 2 道（`配料 → 打包`）但 `配料 × 布料` 已被 ⑤ 退场 ⇒ S1 报
+        「`配料 × 布料` 没有存活且 applicable 的格」。⇒ 改成**有判别力**的三条断言。
+        """
         broken = _drop(v88_statements(), "elem = '\"配料\"'::jsonb")
-        assert _s1_violations(broken) == [] or True  # 主线仍 2 道（配料+打包）⇒ S1 不一定红
+        assert _fabric_mainline_after_v88(broken) == (RETIRED_LOGICAL, "打包"), (
+            "注入没生效（③ 仍在）⇒ 本红证是空的：期望删掉 ③ 后主线仍是**旧口径** `配料 → 打包`"
+        )
+        assert _s1_violations(broken), (
+            "删掉 ③ 后 S1 必须红（主线仍是 `配料`，而 ⑤ 已退场 `配料 × 布料` ⇒ 布料单少一道）"
+            " ⇒ S1 读不出来即判据是空断言"
+        )
         assert _s6_violations(broken), "删掉主线改写后 S6 读不出来 ⇒ S6 是空断言"
 
     def test_s4_red_when_packing_is_included_in_the_delete_predicate(self):
@@ -834,4 +954,32 @@ class TestInjectedDrift:
         assert any(not re.search(r"\b(?:o|p|rt)\.deleted\s*=\s*0\b", s)
                    for s in _soft_delete_statements(broken)), (
             "去掉幂等守卫后判据读不出来 ⇒ 幂等判据是空断言"
+        )
+
+    # ── 注释层 / 文档层（issue #4701 的 P2-1 / P2-2）：注入 ⇒ 对应判据必红 ──
+
+    def test_selfcheck_count_guard_red_when_a_new_migration_claims_a_count(self):
+        """把「在自己身上跑 `grep -c`」的计数写进一份**未冻结**迁移 ⇒ P2-1 判据必红。"""
+        texts = {p.name: _read(p) for p in MIGRATION_DIR.glob("V*.sql")}
+        frozen = _frozen_migration_names()
+        assert _drifting_selfcheck_offenders(texts) <= frozen, "改前判据应为绿 ⇒ 本红证的前提不成立"
+        injected = dict(texts)
+        injected["V999__injected.sql"] = (
+            "-- 核验：\n--   grep -c \"production_operation_positions\" V999__*.sql   # ⇒ 2\nSELECT 1;\n"
+        )
+        assert _drifting_selfcheck_offenders(injected) - frozen == {"V999__injected.sql"}, (
+            "把自检计数写进未冻结迁移后判据读不出来 ⇒ P2-1 判据是空断言"
+        )
+
+    def test_design_doc_guard_red_when_it_says_35_cells(self):
+        """把设计稿的 ⑤/F6 改回 **35 格** ⇒ P2-2 判据必红。"""
+        text = _read(DESIGN_DOC)
+        assert not [label for label, line in _design_cell_count_lines(text).items()
+                    if "35 格" in line], "改前设计稿的承重行已含 35 格 ⇒ 本红证的前提不成立"
+        reverted = text.replace(f"{RETIRED_CELL_COUNT} 格", "35 格")
+        assert reverted != text, "注入没生效 ⇒ 红证是空的"
+        stale = [label for label, line in _design_cell_count_lines(reverted).items()
+                 if f"{RETIRED_CELL_COUNT} 格" not in line]
+        assert set(stale) == set(_DESIGN_CELL_COUNT_ROWS), (
+            "把设计稿改回 35 格后判据仍读成通过 ⇒ P2-2 判据是空断言"
         )
