@@ -127,18 +127,26 @@ def _position_soft_delete_statements(stmts: list) -> list:
 # 迁移号 / 前置事实
 # ══════════════════════════════════════════════════════════════════════════════════════
 
-def test_v88_is_the_next_free_number_and_v79_is_untouched():
-    """V88 是当前**最大**迁移号，且 V79 仍在（未被删/改名）—— 已发布迁移只增不改（issue #4235）。"""
+def test_v88_is_present_and_published_migrations_are_append_only():
+    """V88 仍在（未被删/改名），且**已发布迁移只增不改**（issue #4235）—— 号数前进本身不是违规。
+
+    ⚠️ **本判据原写 `max(versions) == 88`**（「V88 是当前最大迁移号」）—— 那是
+    `migao-acceptance` 点名的**自毁式真值主张**：它断言「仓库当下恰好长这样」，
+    **下一个新增迁移一到就必红**，而且报错文案指向**错误行动**（「请把回滚迁移与新增迁移区分开」，
+    真实原因只是「有更新的迁移了」）。本单（#4685，新增 V89）按 parent 裁定改成**不自毁**的形态：
+      · `88 in versions` —— V88 **存在**（迁移链没被截断/改名）；
+      · V79/V88 的**逐字节冻结**由 `migration_fingerprints.json` 的 sha256 账本单独守
+        （`test_migration_immutability.py`），本文件**不重复主张**「它们没被改」；
+      · **没有** V88 的回滚迁移文件（回滚 SQL 只登记在 V88 的注释里，不落码）。
+    ⚠️ **不是放宽**：三条断言各自可红（删/改名 V88 ⇒ 红；删 V79 ⇒ 红；落一个回滚迁移 ⇒ 红）。
+    """
     names = sorted(p.name for p in MIGRATION_DIR.glob("V*.sql"))
     versions = [int(_VERSION_RE.match(n).group(1)) for n in names if _VERSION_RE.match(n)]
-    assert V88.exists(), f"缺 {V88.name} —— 本单的迁移未落码"
-    assert max(versions) == 88, (
-        f"V88 不是最大迁移号（实测最大 = V{max(versions)}）—— "
-        f"后续单若新增 V89+，本判据会红，请把回滚迁移（V89）与「新增迁移」区分开"
-    )
+    assert V88.exists(), f"缺 {V88.name} —— V88 的迁移未落码"
+    assert 88 in versions, f"迁移链里没有 V88（实测版本号 = {sorted(versions)}）—— 被删/改名了？"
     assert V79.exists(), "V79 被删/改名了 —— 已发布迁移不可改（指纹守卫 + #4235）"
-    assert not (MIGRATION_DIR / "V89__rollback_material_prep_and_fabric_position.sql").exists(), (
-        "回滚是**新迁移 V89**，但**不在本单**（issue #4676 只登记回滚 SQL 于 V88 注释）"
+    assert not any(re.search(r"__rollback_material_prep_and_fabric_position\.sql$", n) for n in names), (
+        "V88 的回滚**只登记在 V88 的注释里**、不落码（issue #4676）—— 出现该回滚迁移文件即红"
     )
 
 
