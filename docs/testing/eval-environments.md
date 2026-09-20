@@ -116,7 +116,10 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
 | `post-deploy-eval.yml` | ✅ **已改**（#3587） | 文件级新增 `concurrency: { group: eval-stack-global, cancel-in-progress: false }` | 部署后全量回归全局串行，不再与其它评测抢栈 |
 | `agent-behavior-eval.yml` | ✅ **已退出槽位**（#4034，2026-09-17） | 评测 job 已**整体删除** ⇒ 本 workflow 不再起栈、不再占用 `eval-stack-global`（文件级 group 仍按 PR，`cancel-in-progress: true`，只管那个秒级 map job） | 少一个占槽位者；槽位语义回到「谁真起栈谁进」 |
 | `xiaobu-acceptance.yml` | ⏳ 待改（另包） | 文件级（第 86-88 行）**保持不变**；在 `xiaobu-acceptance` job（第 125 行 `xiaobu-acceptance:` 下、`timeout-minutes` 之后）新增 job 级 `concurrency: { group: eval-stack-global, cancel-in-progress: false }` | PR 级取消语义**完全保留**（新 push 仍能立刻杀掉排队中的旧 run —— 它还没起栈，杀掉最省）；真正起栈的 job 进入全局槽位，**同一时刻仓库内只有一套评测栈在构建** |
-| `agent-eval.yml` | ✅ **新进槽位**（#4821，2026-09-21） | job 级新增 `concurrency: { group: eval-stack-global, cancel-in-progress: false }`（该 workflow 无 PR 触发 ⇒ 不需要文件级的两层结构） | 它从"打共享云环境"改为**每次跑完即销毁的独立栈**（见 §3.9）⇒ 仍是「谁真起栈谁进槽位」，故必须与另两处同槽位，否则又是并发建栈 |
+
+> ℹ️ **`agent-eval.yml` 有意**不在**本表（#4821 裁定，见 §3.9）**：它**不打独立栈**（打的是
+> **已部署**的云测试环境，是该环境上唯一的 normal 全量入口）⇒ 按「谁真起栈谁进槽位」，
+> 它**不应**占用 `eval-stack-global`；同时它**有意保持严格串行**（共享环境不可安全并发）。
 
 **为什么 xiaobu 的改法与其他两个不同（关键取舍，别抄错）**：
 `xiaobu-acceptance.yml` 的文件级 `cancel-in-progress: true` 是**PR 迭代**的必需品
@@ -336,61 +339,92 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
   ③ `#3608` 的教训**保留**：将来若要恢复自动验收，必须用对 `GITHUB_TOKEN` 抑制免疫的
      触发源（`pull_request_target: [opened, reopened]`），否则 bot 合并 100% 不触发。
 
-### 3.9 决策记录：`agent-eval` 从「共享环境严格串行」改为「独立栈 + 用例级并发」（#4821，2026-09-21）
+### 3.9 决策记录：`agent-eval` **保持「打已部署环境 + 严格串行」**（#4821 核清后的结论，2026-09-21）
 
-- **病灶（实测，非推断）**：`agent-eval.yml` 的 normal 档**打共享云环境**
-  （`ai-api.migaozn.com` / `api.migaozn.com`）且**未设 `EVAL_CONCURRENCY`** ⇒ runner
-  `--concurrency` 缺省回落 1 = **严格串行**。既有 run `34800764957` 的逐条
-  `⏱ <ID> start=` 时间戳：70 条首尾相接 **2873s**，而该 job 墙钟 2891s
+> **一句话**：#4821 的假设「耗时严格串行 ⇒ 唯一杠杆是并发 ⇒ 前置 = 隔离栈」**前半成立、后半被推翻** ——
+> 本入口的耗时**不是可白省的钱，而是一层覆盖面的价格**：`agent-eval.yml` 是**唯一**跑在
+> 「**部署出去的那一份**」上的 normal 全量入口。故**不改环境语义、不开并发**；要不要为了省钱
+> 砍掉/搬走这一层，属**覆盖面变更** ⇒ 开成业务裁定项（关联 issue #4824），**本单不裁定**。
+
+- **① 病灶与串行机制（实测，非推断）**：本 workflow 的 normal 档打**已部署**云测试环境
+  （`ai-api.migaozn.com` / `api.migaozn.com`）且**未设 `EVAL_CONCURRENCY`** ⇒ runner 的
+  `--concurrency`（`tests/agent_eval/local_runner.py`）缺省回落 1 = **严格串行**。既有 run
+  `34800764957` 的逐条 `⏱ <ID> start=` 时间戳：70 条首尾相接 **2873s**，而该 job 墙钟 2891s
   ⇒ **99.4% 的墙钟就是用例执行，零重叠、零空转**（issue 引用的 2882s 同源）。
-  ⇒ 没有"无谓等待"可省，唯一杠杆是用例级并发。
-- **为什么不能直接在共享环境上开并发**：normal 档含建品/下单/改客户等**写用例**；
-  并发写同一套共享 dev 库会互相污染（假失败）并加速污染 dev 库。**假失败的实际后果**
-  已查实：本 workflow 的失败步骤会按同标题去重守卫建
-  `[Agent Eval] 米宝冒烟评测失败 — <date>` issue（`flaky-triage.yml` 的 `workflow_run`
-  白名单**不含**它 ⇒ 不会被自动重跑兜住，只会污染 issue 台账、被读成真失败）。
-- **落地（before → after）**：
+  ⇒ 「没有无谓等待可省」成立，**但**「唯一杠杆是并发」这句只在**隔离栈**上成立（见 ②）。
+- **② premise 修正：「并发 6 省 83%」不成立**。那个 LPT 估算**没把隔离串行算进去**。
+  用同一 run 的逐条耗时代入本仓 `serialize_seconds`（含隔离语义）：可比子集（当 run 实测 ∩
+  当前用例库 = 63 条）实测串行 **2873s** → 并发 6 下界 **1215s（≈58%）**。
+  下界 = `max(并行道/k, 最长单条, 串行道Σ)`，而"会写共享资源"的用例（命名空间撞车 +
+  `id_reuse`/`update`/`full_lifecycle` + 声明 `pre_clean`，可比子集里 20 条）**必须独占、互不重叠**，
+  其耗时合计 **1215s ≈ 42% 墙钟** ⇒ **这一块与并发度无关**；并发 >8 之后并行道已短于串行道 ⇒ 再加无用。
+  ⚠️ 该读数是**推演**（既有 run 逐条耗时 + 本仓代价模型），**不是实测**；且历史耗时来自
+  2026-09-14 的 70 条，而当前 mibao normal 已是 83 条（20 条无历史耗时）⇒ 偏差方向为**低估**。
+- **③ 🔴 为什么本入口**不能**改成隔离栈（覆盖面论点，本单的实质结论）**：
+  同族另两个评测入口（`post-deploy-eval.yml` / `xiaobu-acceptance.yml`）的评测步骤
+  **都打本地临时栈**（`http://localhost:8001` + `Start local stack` 起 compose）⇒
+  「**部署出去的那一份**」的 normal 全量**只有 `agent-eval.yml` 在跑**（已部署环境的
+  *健康*冒烟另有 `smoke-test.yml`：它由 deploy-* 以 `workflow_call` 调用、打 `$AI_AGENT_URL/health`，
+  但那**不是**行为回归）。
+  把它改成隔离栈 ⇒ **既丢掉这一层、又变成 `post-deploy-eval` mibao 腿的同构副本**
+  （同档、同一用例源、同 persona、同临时栈）= **净减一层覆盖面 + 重复付费** ✗。
+  ⇒ 维护者裁定（2026-09-21）：**不改环境语义**；「是否砍/搬这一层」→ **业务裁定**（关联 #4824）。
+- **④ 为什么共享环境上不能开并发**：normal 档含建品/下单/改客户等**写用例**，并发写同一套共享
+  dev 库会互相污染（假失败）并加速污染 dev 库。**假失败的实际后果已查实**：本 workflow 的失败
+  步骤会按同标题去重守卫建 `[Agent Eval] 米宝冒烟评测失败 — <date>` issue，而
+  `flaky-triage.yml` 的 `workflow_run.workflows` 白名单（`PR Check` / `Mini-App CI` /
+  `AI Agent Service Unit Tests` / `Bmini-App CI`）**不含**本 workflow ⇒ 假失败**不会被自动重跑
+  兜住**，直接落进 issue 台账、被读成真失败。
+  ⇒ 本入口**保持严格串行**（`EVAL_CONCURRENCY` 有意不设）。
+- **⑤ 登记但**不实现**的下一步假设：降本的正解可能是「换时机」而非「换环境」**。
+  #4262 的逐字裁定是「**不要自动进行验证，都是重复的验证，白白消耗成本**」
+  「**手动集中跑一次即可**」⇒ 与「把本入口改为**按需/集中触发**」同向，且这条
+  **不缩减"跑什么、判什么"，只改"何时跑"** ⇒ 代价与收益都比"换环境"小得多。
+  ⚠️ **本单不动触发面**（仍仅 `workflow_dispatch`），仅登记该假设供裁定。
+- **⑥ 未真跑 / 边界（照实登记，§19.1）**：**并发下的"假失败 0"读数本单未实测**（成本纪律 #4262
+  禁止自动派发真实 LLM 评测）⇒ 本单只给零成本结构性证明与 ② 的推演，**不得**读成"已验证"；
+  起栈固定成本与 LLM 调用成本本单**未做任何优化**。
+- **⑦ 守卫（均有注入式红证）**：`tests/unit_ci_workflows/test_agent_eval_deployed_env_lock.py`
+  —— 锁 ① 打已部署环境（不许悄悄改成本地栈）② 覆盖面不收窄 ③ 共享环境不开并发
+  ④ 栈机件 ⇔ 家族登记（不许"半改造"）⑤ 非内置 secrets 引用只增不免审
+  ⑥ 仍仅手动触发 ⑦ 本结论留痕 ⑧ 分道不丢用例 ⑨ runner 缺省并发仍回落 1。
 
-  | 项 | before | after |
-  |---|---|---|
-  | 环境 | 共享云环境（`ai-api.migaozn.com`） | **每次跑完即销毁的本地 compose 栈**（PG + Redis + admin-api + ai-agent，`down -v` 起、Teardown `if: always()` 拆） |
-  | 种子 | 无（用共享库既有数据） | 单一源 `scripts/eval_stack_seed.sh --persona <同一表达式>`（#3563 口径） |
-  | 并发 | 未设 `EVAL_CONCURRENCY` ⇒ runner 缺省 1（严格串行） | `EVAL_CONCURRENCY: ${{ inputs.concurrency || '6' }}`（**可配、可一键回退**：`-f concurrency=1`） |
-  | 槽位 | 无（不起栈） | job 级 `eval-stack-global`（与另两处同槽位，`cancel-in-progress: false`） |
-  | 用例集 | `normal --cases .github/cases` | **同一条命令**（无 `--case-ids` / `--shard`） |
+#### 3.9.1 若将来要启用隔离模式：一次集中实测怎么做（**当前未实测，勿读成结论**）
 
-- **⚠️ 耗时读数：只给「既有 run 真实数据 + 明确标注的推演」，不给"实测"**
-  （#4262：本单**未派发**任何真实 LLM 评测）：
-  同一可比子集（当 run 实测 ∩ 当前用例库 = 63 条）实测串行 **2873s**；
-  代入本仓 `serialize_seconds` 代价模型（含**隔离语义**）算并发 6 的下界 **1215s**
-  ⇒ 推演**≈58%**，**不是** issue 估算的 83%。
-  **为什么达不到 83%**：`serialize_seconds` 的墙钟 = `max(并行道/k, 最长单条, 串行道Σ)`，
-  而"会写共享资源"的用例（命名空间撞车 17 条 + `id_reuse`/`update`/`full_lifecycle` +
-  声明 `pre_clean`，实测 20 条）**必须独占、互不重叠**，其耗时合计 **1215s ≈ 42% 的墙钟**
-  —— 这一块**与并发度无关**，是硬下限。并发 >8 之后并行道已短于最长单条 ⇒ 再加无用。
-  再往下压只能靠**用例资产侧**改造（拆掉争用的全局命名空间），属另一类工作，未在本单做。
-- **等价性（哪些行为在并发下与串行等价，为什么）**：① 用例集同一条命令（选题函数不吃
-  并发参数，AST 判据）；② 分道不丢用例（`parallel ∪ serial == 全量`，真实用例库上逐
-  persona 判定）；③ 单条用例的管线不变（`pre_clean → 逐次尝试 → post_clean`，其中
-  `pre_clean`/复位/`post_clean` 走**独占写位**）；④ 声明了共享资源的用例进**独占串行道**
-  （#3781/#3835 的隔离机制，L0 锁在
-  `tests/unit_ci_workflows/test_eval_namespace_isolation.py` /
-  `test_eval_product_name_pollution.py`）；⑤ 判定口径不变（本 workflow 仍用 runner 退出码，
-  `completion_verdict` 那套未动）。
-- **未真跑 / 边界（照实登记，§19.1）**：
-  ① **并发下的"假失败 0"读数本单未实测**（成本纪律 #4262 禁止自动派发）——
-     本单只给零成本结构性证明与上述推演，**不得**读成"已验证并发无假失败"；
-  ② `agent-eval` 的 normal 全量用例集与 `post-deploy-eval` 的 **mibao 腿同构**
-     （同档、同一用例源、同 persona）；改造后两者的差别只剩**被测环境**
-     （本 workflow 现在测的是本地栈，与 post-deploy-eval 的 mibao 腿逐字节同类）
-     ⇒ **"是否还要保留这条手动入口"属覆盖面/业务裁定**（#4821 明列"减少评测轮数需业务
-     裁定"），本单**不做**该取舍，仅登记；
-  ③ 起栈固定成本（3.4~13min，取决于 buildx 缓存命中）**不受并发影响**，
-     本单未对它做任何优化。
-- **守卫（均有注入式红证）**：`tests/unit_ci_workflows/test_agent_eval_stack_isolation.py`
-  （隔离目标 / 可回退开关 / 覆盖面不收窄 / 分道不丢用例 / 种子与 runner persona 同源 /
-  跑完即销毁 / 槽位 / 仅手动触发）+ 该 workflow 已并入
-  `test_eval_stack_seed_parity.py` 的 `EVAL_WORKFLOWS` / `EVAL_JOB` / `PERSONA_SOURCE`。
+```bash
+# 前提：#4262 成本纪律 —— 只在"需要读数"时手动集中跑一次，不自动派发；两条腿各一次。
+# ① 对照腿（串行基线）：把并发压到 1
+gh workflow run <isolated-mode-workflow>.yml -f concurrency=1 -f persona=mibao
+# ② 实验腿（并发 6）：同 SHA、同用例集、同 persona，只有并发度不同
+gh workflow run <isolated-mode-workflow>.yml -f concurrency=6 -f persona=mibao
+# ③ 读数（**只看这三个字段 + 用例结论集合**）：
+#    · artifact「eval-summary-<persona>.json」的 run_key.executed_count（条数必须相同）
+#    · 同文件的 completion.ok / failed 用例 ID 集合（两次的**失败集合**必须一致）
+#    · job 墙钟（gh api .../actions/runs/<run>/jobs 的 completed_at - started_at）
+# ④ 离线复算（零成本，可随时重放）：用实验腿日志的逐条 `⏱ <ID> start=` 耗时代入
+#    tests/agent_eval/local_runner.py 的 serialize_seconds，与实测墙钟比对；
+#    两者背离 ⇒ 说明串行道被并行道压住的程度与模型假设不同，先查这个再谈提速。
+```
+
+#### 3.9.2 分诊：并发假失败 vs **隔离不足**（否则会把隔离缺陷当业务缺陷修）
+
+按顺序四步，**每一步都有可执行判据**（零 LLM 的部分先用起来）：
+
+1. **先判"是否同一用例在串行下也红"**：取该失败用例 ID，用 `-f case_ids=<ID>` 在**串行**
+   （`concurrency=1`）下复验。串行仍红 ⇒ **不是并发问题**，走业务/用例资产归因，**停止**本分诊。
+2. **再判"是否撞上了没被声明覆盖的共享资源"**：看失败用例与**同时段**其他用例是否写了同一个
+   全局命名空间（员工姓名 / 客户手机号 / 商品名 / 分类名 / 加工项名）。判据形态 = 该用例的
+   `namespaces` 声明是否与写方的声明**有交集**；**无交集却被改写** ⇒ 属于
+   `tests/unit_ci_workflows/test_eval_product_name_pollution.py` 记的"**单一声明者 = 零隔离**"形态
+   ⇒ **隔离不足**，治法是把**写方**改成不写共享名（不是调小并发）。
+3. **看 summary 的桶，不要只看红**：`precondition_not_applied(declared:…)` 族 ⇒ 前置没被应用，
+   **该用例红/绿不可归因于 agent**（`case_asset_failures` 桶）；`blocked` 与 `failed` 是两件事
+   （见 §16.7 的两组阻塞条目口径）。把它们算成"业务缺陷"是本条要防的误判。
+4. **最后才谈波动**：同一用例在同并发度下**重跑**从红转绿、且首跑指纹在**跨 run 台账**
+   （`AGENT_EVAL_FLAKE_LOG` artifact）里**复发** ⇒ 按波动处理；**只出现一次**才可暂判 `llm-noise`。
+   ⚠️ 「重试到过」**不许**用来掩盖隔离缺陷 —— 第 2 步一旦命中，必须先修写方。
+
+
 
 
 ## 四、与米高研发模式的衔接

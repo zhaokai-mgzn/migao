@@ -73,17 +73,9 @@ SEED_SCRIPT = REPO_ROOT / "scripts" / "eval_stack_seed.sh"
 #   `TestExcludedWorkflowHasNoStackMachinery` 断言该文件里**一件栈机件都没有**
 #   （零种子单一源调用 / 零 docker compose / 零 local_runner / 零 `id: eval` 步骤）。
 #   把 LLM job 加回来 ⇒ 那条守卫先红 ⇒ 本集合必须同步加回，本 family 的判据一个都不会少。
-# ★ 2026-09-21 加回 `agent-eval.yml`（issue #4821）：它**开始自己起栈**了 ——
-#   改造前它打**共享云环境**（`ai-api.migaozn.com` / `api.migaozn.com`）且未设
-#   `EVAL_CONCURRENCY`（runner 默认 1 = 严格串行，实测 2873s / 70 条零重叠）。隔离栈 +
-#   用例级并发落地后它就是本 family 的成员（白名单语义 =「谁起栈谁登记」⇒ 种子单一源 /
-#   旋钮同值 / 单 persona / 种子先于评测四条判据**逐条适用**，一条都不豁免）。
-#   反向变异：把它移出本集合、却留着它的栈机件 ⇒ 那些判据不再覆盖它（= 拿白名单当藏身处，
-#   §19.1 元规则禁止）。
 EVAL_WORKFLOWS = (
     "xiaobu-acceptance.yml",
     "post-deploy-eval.yml",
-    "agent-eval.yml",
 )
 SEED_STEP_NAME = "Seed 评测业务数据"
 # 单一源调用形态：`bash scripts/eval_stack_seed.sh --persona <表达式>`
@@ -325,10 +317,6 @@ class TestNoMixedPersonaStack:
     PERSONA_SOURCE = {
         "post-deploy-eval.yml": "matrix.persona",
         "xiaobu-acceptance.yml": "github.event.inputs.persona",
-        # `agent-eval.yml`（#4821）：单值 dispatch 输入（它没有 persona matrix、没有分片）。
-        # 与 runner 的 `PERSONA` **同一表达式** —— 该同源不变量另有专门判据
-        # （`test_agent_eval_stack_isolation.py` 的 `audit_persona_same_source`）。
-        "agent-eval.yml": "github.event.inputs.persona",
     }
 
     @staticmethod
@@ -456,9 +444,7 @@ class TestEvalConcurrencySlot:
     `agent-behavior-eval.yml` 的 `behavior-eval` job（job 级槽位 `eval-stack-global-<persona>`）
     已随该 job **整体删除** —— 该 workflow 现在只有纯静态 `map` job，不起栈 ⇒ **不再占评测槽位**
     （它仍保留**文件级**按 PR 取消：那省的是 runner 分钟数，与槽位无关）。
-    ★ 2026-09-21 **再由两处变三处**（issue #4821）：`agent-eval.yml` 开始**自己起栈**
-    （隔离栈 + 用例级并发），故 `xiaobu-acceptance.yml`（job 级）、`post-deploy-eval.yml`
-    （文件级）、`agent-eval.yml`（job 级）**三处持有同一槽位名**。
+    仍持有槽位的是 `xiaobu-acceptance.yml`（job 级）与 `post-deploy-eval.yml`（文件级）。
     """
 
     GROUP = "eval-stack-global"
@@ -469,10 +455,6 @@ class TestEvalConcurrencySlot:
     #    不是为了让测试变绿 —— 起栈的 job 一旦回来，本表的判据必须把它重新覆盖。
     EVAL_JOB = {
         "xiaobu-acceptance.yml": "xiaobu-acceptance",
-        # `agent-eval.yml`（#4821）：它现在自己起栈 ⇒ 同样必须进全局槽位。
-        # 单 job + 单 persona，故槽位挂在 job 级、不带 persona 后缀（同一时刻该 workflow
-        # 至多一条腿，不存在"自己挤掉自己 pending 腿"的问题）。
-        "agent-eval.yml": "agent-eval",
     }
 
     @pytest.mark.parametrize("workflow", ("xiaobu-acceptance.yml", "agent-behavior-eval.yml"))
@@ -562,11 +544,10 @@ class TestEvalConcurrencySlot:
         )
 
     def test_both_slot_holders_share_the_same_slot_name(self):
-        """**各处**槽位持有者用**同一个**槽位名 —— 只读断言，不改它。
+        """两处槽位持有者用**同一个**槽位名 —— 只读断言，不改它。
 
         `post-deploy-eval` 是**文件级**槽位（它没有 PR 触发，不存在 PR 迭代问题），
-        故它的文件级 group 就等于共享槽位名；`xiaobu-acceptance` 与 `agent-eval`（#4821）
-        是 job 级。
+        故它的文件级 group 就等于共享槽位名；`xiaobu-acceptance` 是 job 级。
         （第三个持有者 `agent-behavior-eval` 的 `eval-stack-global-<persona>` 已随
         `behavior-eval` job 删除 —— 带 persona 后缀的槽位名自此只应出现在沿革里。）
         """

@@ -2,10 +2,6 @@ name: Agent Eval (米宝能力评测)
 permissions:
   contents: read
   issues: write  # 失败建 issue 必需（#3497，修复 #3270 同款次生 bug：缺此权限失败通知静默）
-  # `actions: write`（#4821）：本 workflow 现在自起独立栈，镜像构建走 buildx
-  # `--cache-to type=gha` —— 缺这个 scope 时缓存**导出**会失败（#3426 的形态：
-  # 缓存从未写入却没有任何东西变红），每次 run 都退化为全量重建（栈 3.4min → 13min）。
-  actions: write
 
 on:
   # 2026-08-29：取消每日 normal 定时评测（成本高、信号为 LLM 波动为主，按需手动触发即可）。
@@ -16,19 +12,6 @@ on:
   #     ② 「对抗评测由 agent-eval-adversarial.yml 每周跑」——仍成立（定时档保留）。
   #   判定用途的唯一入口 = `post-deploy-eval.yml`（档位矩阵见该文件头部）。
   workflow_dispatch:
-    inputs:
-      concurrency:
-        description: '用例级并发度（1 = 串行，即 #4821 改造前的行为 —— 出问题时的回退开关；默认 6，与同族独立栈口径同值）'
-        required: false
-        default: '6'
-      persona:
-        description: '评测 persona（默认 mibao = 本 workflow 的历史语义；一个栈只服务一个 persona，口径见 scripts/eval_stack_seed.sh）'
-        required: false
-        default: mibao
-        type: choice
-        options:
-          - mibao
-          - xiaobu
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -40,39 +23,47 @@ jobs:
     # normal tier（真实 LLM 多轮；条数随用例库增长 —— 2026-09-20 实测 70 条，
     # 旧注释写的「约 47 条」已漂移），smoke 由 PR gate 承担、adversarial 由每周任务承担
     #
-    # ── 全局评测槽位（#4821）──────────────────────────────────────────────────
-    # 本 job 现在**自己起一套 docker 栈**（PG + Redis + admin-api + ai-agent），
-    # 故必须与 `post-deploy-eval.yml` / `xiaobu-acceptance.yml` 共用同一个槽位名：
-    # 同一时刻仓库内只有一套评测栈在构建（实测并发建栈把栈启动从 3.4min 抬到 12min，
-    # 见 docs/testing/eval-environments.md §3.3）。`cancel-in-progress: false` ——
-    # 评测 job 的产物就是结论本身，取消在跑的一条 = 白烧一次全量 LLM 且零结论（#3526）。
-    concurrency:
-      group: eval-stack-global
-      cancel-in-progress: false
-    #
     # ── 超时预算（issue #4800，2026-09-20）────────────────────────────────────
     # 读数（`gh api .../actions/runs/<run>/jobs` 的 job 墙钟 = completed_at - started_at，
-    # 当时配置的全部 3 次 run 都采到）：34800764957=2891s · 34287690363=2735s ·
+    # 当前配置的全部 3 次 run 都采到）：34800764957=2891s · 34287690363=2735s ·
     # 34244577084=2895s（48.2m）⇒ 旧上限 60m(3600s) 只剩 ~705s 余量（1.24×）。
     # 本 job 跑**真实 LLM**，被自身 job 超时杀掉 = 真红 + 白烧一次全量 LLM 成本
     # （与 #4262「不要白白消耗成本」裁定相悖）。
-    # 为什么当时不先「降耗时」：耗时构成 = **100% 真实 LLM 用例串行执行** —— 2881s 里
-    # 2881s 是 70 条用例首尾相接（中位 25s / 最长单条 214s），无空转等待、无 502 重试
-    # 等待 ⇒ 没有"无谓等待"可省；唯一显著杠杆 = 用例级并发（`EVAL_CONCURRENCY`）。
-    # ⇒ #4800 先取候选①：抬上限 60m → 90m（与 post-deploy-eval 的 90m 一致）。
-    # ── 并发落地（issue #4821，本提交）──────────────────────────────────────────
-    # 前置（#4800 判定「不满足」的那一条）= **每次跑完即销毁的隔离栈** —— 本提交把它补上：
-    #   · 起栈手法**平移**两个已落地先例（`post-deploy-eval.yml` / `xiaobu-acceptance.yml`
-    #     的 `Start local stack` 步骤，issue #3426/#3526 已验证），种子走**单一源**
-    #     `scripts/eval_stack_seed.sh`（#3563），故本栈与其它 workflow 上同 persona 的栈
-    #     同构（这是"标准考场"与"并发结果可归因"的前提）；
-    #   · 于是 `agent-eval` 不再打共享环境（`ai-api.migaozn.com` / `api.migaozn.com`），
-    #     `EVAL_CONCURRENCY` 才敢打开：**改造前**打共享 dev 库、`EVAL_CONCURRENCY` 未设
-    #     ⇒ runner 默认 1 = **严格串行**（实测墙钟 2735~2895s、零重叠零空转）。
-    # ⚠️ 未真跑登记（成本纪律 #4262：不自动派发真实 LLM 评测）：并发下的"假失败 0"
-    #    读数**本单未实测**，只做了零成本静态推演与 L0 守卫
-    #    （tests/unit_ci_workflows/test_agent_eval_stack_isolation.py）。判据与未测项
-    #    逐条写在该文件与 PR body，不在此处声称"已验证"。
+    # 为什么不先「降耗时」（#4800 要求先核清能不能降）：
+    #   · 耗时构成 = **100% 真实 LLM 用例串行执行** —— 2881s 里 2881s 是 70 条用例首尾
+    #     相接（中位 25s / 最长单条 214s），无空转等待、无 502 重试等待 ⇒ 没有"无谓等待"可省；
+    #   · 唯一显著杠杆 = 用例级并发（`EVAL_CONCURRENCY`）：按本 run 逐条耗时做 LPT 模拟，
+    #     并发 6 的墙钟下界 ≈482s（省 ~83%）。但本 workflow 打的是**共享环境**，并发写同一套
+    #     共享数据正是下方分片注释排除的形态；且本单不许派发评测 ⇒ 无法验证调度变更不引入
+    #     假红（"没测"≠"没问题"）⇒ 登记为后续单（前置 = 每次跑完即销毁的隔离栈），本单不改；
+    #   · 节流等待（`EVAL_ROUND_SLEEP`/`EVAL_CASE_SLEEP` 默认 0.5/1.0）合计 ~146s（5%），
+    #     **低于 run 间波动**（2735~2895s，跨度 160s）⇒ 不可测量的纸面优化，不改。
+    # 故取 #4800 候选①：抬上限 60m → 90m（与 post-deploy-eval 的 90m 一致，对最大读数 1.87×）。
+    #
+    # ── #4821 核实结论（2026-09-21，**结论 = 本 workflow 不改环境语义**）──────────
+    # #4800 登记的那个"后续单"（前置 = 隔离栈）就是 issue #4821。它核清后**不做**改造，理由：
+    #   ① 上面那句「并发 6 下界 ≈482s（省 ~83%）」**已被证伪**：该估算没把**隔离串行**算进去。
+    #      用本 workflow 既有 run `34800764957` 的逐条 `⏱ <ID> start=` 耗时代入
+    #      `tests/agent_eval/local_runner.py` 的 `serialize_seconds`（含隔离语义），可比子集
+    #      的下界是 **2873s → 1215s（≈58%）**，且下界由**独占串行道**顶着（声明了命名空间撞车 /
+    #      `id_reuse`/`update`/`full_lifecycle` / `pre_clean` 的用例必须互不重叠，其耗时合计
+    #      ≈42% 墙钟 ⇒ **与并发度无关**）。并发 >8 之后再加无用。**未真跑**（#4262 未派发评测）。
+    #   ② **本 workflow 的耗时不是可白省的钱，而是一层覆盖面的价格**：本文件的 `AI_API_URL` /
+    #      `ADMIN_API_URL` 指向**已部署**的云测试环境（`ai-api.migaozn.com` / `api.migaozn.com`），
+    #      而同族另两个评测入口（`post-deploy-eval.yml` / `xiaobu-acceptance.yml`）跑的
+    #      **都是本地临时栈**（`http://localhost:8001` + `Start local stack`）。
+    #      ⇒ 「**部署出去的那一份**」的 normal 全量，**只有本入口在跑**。
+    #      把它改成隔离栈 = 既丢掉这一层、又变成 post-deploy-eval mibao 腿的同构副本
+    #      （净减覆盖 + 重复付费）⇒ 维护者裁定**不改**（覆盖面变更需业务裁定，见 #4824）。
+    #   ③ 但**共享环境不可安全并发**（normal 档含建品/下单/改客户等写用例，并发写同一套共享
+    #      dev 库既互相污染又加速污染；假失败会经下方失败步骤落进 issue 台账，且
+    #      `flaky-triage.yml` 的 `workflow_run` 白名单**不含**本 workflow ⇒ 不会被自动重跑兜住）
+    #      ⇒ 本入口**保持严格串行**，`EVAL_CONCURRENCY` 有意**不设**（runner 缺省 1）。
+    #   ④ 由此登记（**本单不实现**）的下一步假设：降本的正解可能是「**换时机**」而非「换环境」——
+    #      #4262 逐字裁定「不要自动进行验证……手动集中跑一次即可」与本入口「按需/集中触发」同向，
+    #      且**不缩减"跑什么、判什么"，只改"何时跑"**。触发面**本单不动**，留给裁定。
+    # 口径全文与守卫锚点：`docs/testing/eval-environments.md` §3.9；L0 锁
+    # `tests/unit_ci_workflows/test_agent_eval_deployed_env_lock.py`。
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
@@ -81,223 +72,25 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Set up Buildx（镜像层缓存，issue #3361 / #3526）
-        # 下方构建段**显式**调 `docker buildx build`（`--cache-to type=gha`），故本步是硬依赖。
-        uses: docker/setup-buildx-action@v3
+      - name: Install deps
+        run: pip install httpx
 
-      - name: "Export dev RS256 keys for stack (issue #3270)"
-        # admin-api 镜像内没有 rsa/private.pem（被 .gitignore 刻意排除），
-        # 故用仓库已入库的**测试**密钥对，以 PEM 内容注入（多行值走 GITHUB_ENV 传递）。
-        run: |
-          KEY_DIR=backend/admin-api/src/test/resources/rsa
-          test -f "$KEY_DIR/private.pem" || { echo "::error::缺少测试密钥 $KEY_DIR/private.pem"; exit 1; }
-          test -f "$KEY_DIR/public.pem"  || { echo "::error::缺少测试密钥 $KEY_DIR/public.pem"; exit 1; }
-          {
-            echo "JWT_PRIVATE_KEY_PEM<<__PEM_EOF__"
-            cat "$KEY_DIR/private.pem"
-            echo "__PEM_EOF__"
-            echo "JWT_PUBLIC_KEY_PEM<<__PEM_EOF__"
-            cat "$KEY_DIR/public.pem"
-            echo "__PEM_EOF__"
-          } >> "$GITHUB_ENV"
-          # ai-agent 用 JWT_PUBLIC_KEY 校验 admin-api 签发的 RS256 token；
-          # 它在 config.py 里是必填项（非 DEBUG 校验），且 compose 里默认空串 →
-          # 不注入会报「生产环境必须设置以下环境变量：JWT_PUBLIC_KEY」。
-          PUB_ONELINE=$(tr -d '\n' < "$KEY_DIR/public.pem")
-          echo "JWT_PUBLIC_KEY=$PUB_ONELINE" >> "$GITHUB_ENV"
-          echo "✅ 已导出 dev RS256 密钥（PEM 内容 + 公钥）"
-
-      - name: "评测并发槽位说明（防「排队」被误读成「停滞/坏了」）"
-        run: |
-          {
-            echo "── 评测并发槽位：group=eval-stack-global（1 running + rest queued）──"
-            echo "本 job **自己起一套独立 docker 栈**（PG + Redis + admin-api + ai-agent），"
-            echo "故与 post-deploy-eval / xiaobu-acceptance 共用同一槽位："
-            echo "同一时刻仓库内只有一套评测栈在构建（并发建栈会把栈启动从 3.4min 抬到 12min）。"
-            echo "⇒ 显示 **排队（queued）**：不是停滞或损坏，是槽位被别的评测占用，等它跑完即开始。"
-            echo "⇒ 显示 **取消（cancelled）**：本 run 未评测、**不构成结论**（不判失败、不建 issue）。"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: "Start local stack (docker-compose: PG + Redis + admin-api + ai-agent DEBUG)"
-        id: stack
-        # ── #4821：本 workflow 的隔离栈（每次跑完即销毁）──
-        # 为什么必须隔离才能开并发（而不是"顺手把并发调大"）：
-        # 改造前本 job 打**共享环境**（ai-api.migaozn.com / api.migaozn.com），而 normal 档
-        # 含建品/下单/改客户等**写用例** —— 并发写同一套共享数据「既互相污染（用例假失败）
-        # 又加速污染 dev 库」。假失败会直接落进失败建 issue 的去重守卫（同标题
-        # `[Agent Eval] 米宝冒烟评测失败 — <date>`），把"噪音与真失败同形"引回来。
-        # ⇒ 唯一正解是**每次跑起一套全新栈、跑完即销毁**（同其它两个评测 workflow）。
-        env:
-          # ⚠️ deploy/docker-compose.yml 里 DEV_SERVICE_TOKEN 是 required 无默认值
-          # （``${DEV_SERVICE_TOKEN:?...}``）——缺它 compose 直接插值失败，栈根本起不来。
-          DEV_SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
-          # RS256 密钥由上一步注入 GITHUB_ENV（issue #3270）
-          PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
-          PRIMARY_MODEL: deepseek-flash
-          DASHVECTOR_API_KEY: ci-dummy
-          DASHVECTOR_ENDPOINT: https://ci-dummy.dashvector.cn-hangzhou.aliyuncs.com
-          DASHVECTOR_COLLECTION: ci
-          DEBUG: 'true'
-        run: |
-          # ── 确定性数据库（issue #3270）──
-          # 标准考场要求**全新库**：历史运行残留的旧 schema 与迁移链不匹配
-          # （实测 platform_admins 不存在 / V28 JSON 语法错）→ 迁移失败、建会话 500。
-          # runner 上本无卷，这行是 no-op；保留它是为了"任何执行环境都从零开始"的确定性。
-          docker compose -f deploy/docker-compose.yml down -v 2>&1 | tail -3 || true
-          echo "── 已清空旧卷（fresh DB）──"
-          # ⚠️ set -o pipefail 是必须的：否则 `... up --wait ... 2>&1 | tail -20`
-          # 的退出码取自管道最后一个命令（tail 永远成功）→ compose 失败被吞成
-          # step success → 后续失败处理看不到真因（2026-09-11 实证，issue #3270 假绿）。
-          set -o pipefail
-          # DEBUG=true（见上 env）：供 X-Debug-Role 路由；fail-closed 保护不受影响。
-          # ── 镜像构建：buildx + GHA 层缓存（平移 post-deploy-eval 的已验证写法，#3426/#3526）──
-          #   · 用显式 tag + 覆盖文件把 compose 指向这些镜像，避免依赖 compose 的默认
-          #     命名规则（v1 `_` / v2 `-` 差异）；缓存命中时 ~1min；
-          #   · **失败必须回落** `docker compose up --build`（无缓存路径）—— 缓存服务是
-          #     尽力而为的优化，绝不能因为缓存抖动把评测挡在门外（宁可慢，不可漏）；
-          #   · 构建输出**留档**并回显命中情况：否则"缓存有没有生效 / 是否回落"只能反推
-          #     （#3426 的教训是这个静默吃了半个月）。
-          # ⚠️ PIP_INDEX_URL：Dockerfile 默认用阿里云镜像（国内开发快），但 GitHub runner
-          #    在境外 —— 实测镜像内 pip 走阿里云 632s（~160 kB/s），同一份 requirements 用
-          #    默认 PyPI 只 23s。栈步骤 13.1min 里 10.5min 就是这一项（#3426 实测）。
-          BUILD_T0=$SECONDS
-          echo "── 镜像构建开始 ts=${BUILD_T0}s（预期路径: buildx + type=gha cache）──"
-          cat > /tmp/compose-images.yml <<'YAML'
-          services:
-            admin-api:
-              image: migao-eval-admin-api
-            ai-agent-service:
-              image: migao-eval-ai-agent-service
-          YAML
-          TAG_ADMIN=migao-eval-admin-api
-          TAG_AGENT=migao-eval-ai-agent-service
-          # scope 显式带 workflow 名：GHA 缓存按 scope 分区，与其它评测 workflow 分开可避免
-          # 互相淘汰对方的层（层本身兼容，但缓存容量有限，分区减少抖动）。
-          build_cached() {
-            local scope="$1" tag="$2" ctx="$3" df="$4"; shift 4
-            docker buildx build \
-              --cache-from "type=gha,scope=${scope}" \
-              --cache-to "type=gha,scope=${scope},mode=max" \
-              --build-arg BUILDKIT_INLINE_CACHE=1 \
-              "$@" \
-              -t "$tag" -f "$df" "$ctx" --load
-          }
-          # ⚠️ 两条腿分开判：否则"admin-api 挂了"与"ai-agent 挂了"在日志里长得一模一样，
-          #    归因还得人肉猜。
-          BUILD_OK=true
-          BUILD_FAILED_LEG=""
-          if build_cached agenteval-admin-api "$TAG_ADMIN" \
-               backend/admin-api backend/admin-api/Dockerfile \
-               > /tmp/buildx-admin.log 2>&1; then
-            echo "── buildx 期望路径: admin-api 腿 OK ──"
-          else
-            BUILD_OK=false
-            BUILD_FAILED_LEG="admin-api"
-          fi
-          if build_cached agenteval-ai-agent "$TAG_AGENT" \
-               backend/ai-agent-service backend/ai-agent-service/Dockerfile \
-               --build-arg PIP_INDEX_URL=https://pypi.org/simple \
-               > /tmp/buildx-agent.log 2>&1; then
-            echo "── buildx 期望路径: ai-agent 腿 OK ──"
-          else
-            BUILD_OK=false
-            BUILD_FAILED_LEG="${BUILD_FAILED_LEG:+${BUILD_FAILED_LEG},}ai-agent"
-          fi
-          if [ "$BUILD_OK" = "true" ]; then
-            echo "✅ 镜像构建完成（buildx + GHA cache，未回落）"
-            echo "── 构建判定行: 路径=buildx+gha-cache 回落=否 耗时=$((SECONDS-BUILD_T0))s ──"
-            # CACHED 行数 = 复用的层数；命中 0 层 = 缓存没起作用（与"回落"是两种不同故障，
-            # 必须能一眼区分：回落看下面 else 分支的告警，命中 0 看这个计数）。
-            for lg in /tmp/buildx-admin.log /tmp/buildx-agent.log; do
-              echo "── $(basename "$lg"): CACHED 层数=$(grep -c 'CACHED' "$lg" || true) ──"
-            done
-            # cache manifest 行 = 缓存真的被导入/导出（#3426：没有它=缓存从未写入）
-            echo "── buildx 缓存活动 ──"
-            grep -ihE "importing cache manifest|exporting cache|cache manifest" \
-              /tmp/buildx-admin.log /tmp/buildx-agent.log | head -6 || \
-              echo "（无 cache manifest 行 —— 缓存未生效，检查 actions: write / scope）"
-            docker compose -f deploy/docker-compose.yml -f /tmp/compose-images.yml up -d --wait \
-              --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
-          else
-            echo "── 构建判定行: 路径=回落compose-up--build 回落=是 失败腿=${BUILD_FAILED_LEG} 耗时=$((SECONDS-BUILD_T0))s ──"
-            echo "::warning:: ⚠️ buildx 缓存构建失败（失败腿 ${BUILD_FAILED_LEG}）→ 回落 docker compose up --build（无缓存路径）"
-            echo "── 回落前 buildx 输出尾部（归因用：证明是缓存问题而非代码问题）──"
-            tail -25 /tmp/buildx-admin.log 2>/dev/null || true
-            tail -25 /tmp/buildx-agent.log 2>/dev/null || true
-            docker compose -f deploy/docker-compose.yml up -d --build --wait \
-              --wait-timeout 300 postgres redis admin-api ai-agent-service 2>&1 | tail -20
-          fi
-          echo "── 栈步骤总耗时 $(($SECONDS-BUILD_T0))s（构建 + 起容器 + healthcheck）──"
-
-      - name: "Seed 评测业务数据（C 端 #3270 + B 端 #3496/#3511）"
-        # 全新 bootstrap 空库下，agent 搜不到商品 → 反复重试 product_search →
-        # 从不进入 product_detail（依赖数据的用例必然失败，且行为本身合理）。
-        # 注入最小业务数据：商品/颜色/SKU/加工项/加工项关联（幂等，可重复执行）。
-        #
-        # ★ 口径**单一实现**（issue #3563，本步骤**只能**调用它）：规则
-        #   （xiaobu=仅 C 端种子 / mibao=C 端+B 端）在 `scripts/eval_stack_seed.sh` 里，
-        #   与 post-deploy-eval / xiaobu-acceptance **共用同一份** —— 禁止在此内联 fixture。
-        #   一个栈恰装一个 persona 的种子 ⇒ 本栈与其它 workflow 上同 persona 的栈同构
-        #   （"标准考场"的前提，也是并发下结果可归因的前提）。
-        #   静态锁：tests/unit_ci_workflows/test_eval_stack_seed_parity.py（L0）。
-        env:
-          DEV_SERVICE_TOKEN: diagnostics-only-placeholder
-        run: |
-          bash scripts/eval_stack_seed.sh --persona "${{ github.event.inputs.persona || 'mibao' }}"
-
-      - name: Install eval runner deps
-        # 依赖分两类（issue #3270 实测逐层暴露）：
-        # 1) eval runner（local_runner.py）只需 httpx + pytest 系（--timeout/--reruns）
-        # 2) real E2E 跑的是 ai-agent 自己的测试套件，其 conftest 依赖 jwt/fastapi 等
-        #    → 必须装 ai-agent requirements，否则 ModuleNotFoundError: No module named 'jwt'
-        run: |
-          pip install -q httpx pytest pytest-timeout pytest-rerunfailures
-          pip install -q -r backend/ai-agent-service/requirements.txt
-
+      # ⚠️ 不能像 C 端那样分片（issue #3361）：本 workflow 打的是**共享环境**
+      # （ai-api.migaozn.com / api.migaozn.com），而 normal 档含建品/下单/改客户等
+      # 写用例 —— N 片并发 = N 个 job 同时写同一套共享数据，既互相污染（用例假失败）
+      # 又加速污染 dev 库。要分片必须先有**每次跑完即销毁的隔离栈**（C 端那样
+      # docker-compose 起 PG/admin-api/ai-agent），属基建改造，不在本提交内做。
       - name: Run normal eval (真实 LLM 回归，按需)
-        # ── 覆盖面不变量（issue #4821：并发只改"同时跑几条"，不改"跑什么/判什么"）──
-        # 本步骤**不得**出现 `--case-ids` / `--shard` / 非 normal 档：用例集恒为
-        #   「normal 档 ∩ 该 persona 可执行集」（改造前后**同一条命令**，条数不写死 ——
-        #   用例库是活资产，数字会漂；要读数就现查，别把当前条数抄进注释）。
-        # `EVAL_CONCURRENCY` 只在 runner 内决定**分道并发**，不参与选题
-        #   （守卫：tests/unit_ci_workflows/test_agent_eval_stack_isolation.py）。
         env:
-          # 隔离栈（#4821）：不再打共享环境 —— 这两个地址是 compose 起的本地容器
-          AI_API_URL: http://localhost:8001
-          ADMIN_API_URL: http://localhost:8080
-          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
-          # persona 与上方注种子**同一表达式**（必须同源：种子装 mibao、runner 跑 xiaobu
-          # = 拿错栈跑，正是 #3563 的 0 分形态）
-          PERSONA: ${{ github.event.inputs.persona || 'mibao' }}
+          AI_API_URL: https://ai-api.migaozn.com
+          ADMIN_API_URL: https://api.migaozn.com
+          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
-          # ── 唯一杠杆：用例级并发（issue #4821）──
-          # 默认 6：与同族两个**独立栈** workflow 同值（post-deploy-eval / xiaobu-acceptance
-          # 的 `concurrency` 默认皆 6），且同一套栈上跑的正是**同一批 normal 用例**。
-          # 回退开关：`-f concurrency=1` ⇒ 逐字节回到改造前的串行调度（runner 侧
-          # `ConcurrencyGate` 在 concurrency<=1 时走原串行路径）。缺省回落也是 1
-          # （runner `--concurrency` 默认读 `EVAL_CONCURRENCY`，未设即 1）—— 即"配置丢失"
-          # 的失效形态是**变慢**，不是"静默开并发"。
-          EVAL_CONCURRENCY: ${{ github.event.inputs.concurrency || '6' }}
-          # 固定节流等待调到与同族一致（#3417：墙钟几乎全在真实 LLM 往返上；
-          # #3563 的旋钮同值锁要求三路一致：0.2 / 0.3）
-          EVAL_ROUND_SLEEP: "0.2"
-          EVAL_CASE_SLEEP: "0.3"
-          # 全量逐轮轨迹：**通过**的写用例也要看工具结果 ——「工具被调用」≠「落库成功」
-          AGENT_EVAL_TRACE_ALL: "1"
           # 波动台账（#3505 汇聚）：flake ledger 落盘 + artifact 上传，供高波动用例
           # 治理（§14.3）跨 run 汇总；否则台账随 runner 销毁、只能翻日志。
           AGENT_EVAL_FLAKE_LOG: agent-eval-flakes.json
         run: python tests/agent_eval/local_runner.py normal --cases .github/cases
-
-      - name: "Teardown local stack（跑完即销毁 —— 隔离栈的必要组成，issue #4821）"
-        # 为什么必须显式销毁：本 workflow 的隔离承诺是"**每次跑完即销毁**"（#4821 前置）。
-        # `if: always()` —— 评测失败/被跳过时同样要拆，否则残留容器会占着 runner 的
-        # Docker 资源，并让"下一次跑是不是干净栈"变成不可判定。
-        if: always()
-        run: |
-          docker compose -f deploy/docker-compose.yml down -v 2>&1 | tail -5 || true
-          echo "── 已销毁本地栈与数据卷（fresh DB 承诺：下一次 run 从零开始）──"
 
       - name: Upload flake ledger（波动台账汇聚，#3505）
         if: always() && hashFiles('agent-eval-flakes.json') != ''
