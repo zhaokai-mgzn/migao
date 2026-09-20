@@ -986,6 +986,53 @@ def test_injection_forced_reload_gains_short_circuit_goes_red():
     assert judge_upstream_switch_rails(injected), "bg_reload_nginx 出现短路逻辑后没红"
 
 
+def test_injection_convergence_without_health_gate_goes_red():
+    """注入㉗：收敛去掉「正式容器此刻健康吗」的判据 ⇒ 必红（不健康时收回正式色 = 当场 502）。"""
+    injected = _inject(read_deploy_sh(), 'if ! bg_official_healthy_now "$svc"; then', "if false; then")
+    assert judge_upstream_switch_rails(injected), "收敛去掉健康判据后没红"
+
+
+def test_injection_convergence_without_switch_gate_goes_red():
+    """注入㉘：收敛去掉 `BG_SWITCH_ON` 的门 ⇒ 必红（nginx 未在跑时也会去收敛、判正式容器）。"""
+    injected = _inject(
+        read_deploy_sh(),
+        'if [ "$BG_SWITCH_ON" = "1" ] && [ -n "${BG_PREV_GREEN// /}" ]; then',
+        'if [ -n "${BG_PREV_GREEN// /}" ]; then',
+    )
+    assert judge_upstream_switch_rails(injected), "收敛去掉执行开关后没红"
+
+
+def test_injection_forced_reload_without_nginx_t_goes_red():
+    """注入㉙：`bg_reload_nginx` 丢掉 reload 前的 `nginx -t` ⇒ 必红（坏配置会当场把 worker 换掉）。"""
+    injected = _inject(
+        read_deploy_sh(),
+        "  if ! docker compose exec -T nginx nginx -t >/dev/null 2>&1; then\n"
+        '    echo "  ❌ 联机配置未通过 nginx -t ⇒ 不 reload（上一版配置仍在服务，旧 worker 继续跑）"\n'
+        "    return 1\n"
+        "  fi\n",
+        "",
+    )
+    body = function_body(injected, "bg_reload_nginx")
+    assert "nginx -s reload" in body and "nginx -t" not in body, f"注入没生效（空跑）：{body!r}"
+    assert judge_upstream_switch_rails(injected), "强制 reload 丢掉 nginx -t 后没红"
+
+
+def test_injection_normalization_moved_before_nginx_reload_goes_red():
+    """注入㉚：把收口归一化挪到 §2.6 的 nginx reload **之前** ⇒ 必红（那时上游还没全部收口）。"""
+    text = read_deploy_sh()
+    norm = (
+        'if [ "$BG_SWITCHED" = "" ] && [ -f "$NGINX_CONF" ]; then\n'
+        '  cp "$NGINX_CONF" "$NGINX_CONF_BAK" 2>/dev/null || true\n'
+        "fi\n"
+    )
+    anchor = "docker compose exec -T nginx nginx -s reload || docker compose restart nginx\n"
+    assert norm in text and anchor in text, "反空跑锚点：找不到归一化语句 / §2.6 reload 行"
+    cut = text.replace(norm, "", 1)
+    injected = cut.replace(anchor, norm + anchor, 1)
+    assert injected != text, "注入没有改变文本（空跑）"
+    assert judge_upstream_switch_rails(injected), "归一化挪到 reload 之前后没红"
+
+
 def test_injection_exit_trap_removed_goes_red():
     """注入⑱：EXIT trap 改回「只解锁」⇒ 必红（可捕获的退出路径会把上游留在 green）。"""
     injected = _inject(
@@ -1472,6 +1519,24 @@ def test_exec_residual_convergence_has_discriminative_power(tmp_path):
         "去掉收敛段后居然仍在删 green 之前 reload（判据无判别力）:\n"
         + "\n".join(lines[: i_first_rm + 1])
     )
+
+
+def test_exec_failclosed_gate_has_discriminative_power(tmp_path):
+    """🔴 反向红证（判别力）：去掉收敛的健康判据 ⇒ **同一次注入下**必然去动容器 / 删 green。
+
+    这一条证明 `test_exec_residual_green_with_unhealthy_official_touches_nothing` **不是空断言**：
+    同一份桩、同一份预置运行态 + 同一份「正式容器不健康」注入，去掉判据后行为**确实**变坏
+    （不再中止，直接往下走并删 green）。
+    """
+    injected = _inject(read_deploy_sh(), 'if ! bg_official_healthy_now "$svc"; then', "if false; then")
+    assert judge_upstream_switch_rails(injected), "反空跑锚点：去掉健康判据后静态判据没红（判据已过期）"
+    proc, log = _run(tmp_path, injected, hc={8080: 503}, pre_nginx_conf=_conf_with_green())
+    assert proc.returncode != 0, proc.stdout
+    lines = [ln for ln in log.splitlines() if ln.strip()]
+    assert any("rm -sf" in ln for ln in lines), (
+        "去掉健康判据后居然还是没动任何容器（判据无判别力）:\n" + "\n".join(lines)
+    )
+    assert "不碰任何容器" not in proc.stdout, proc.stdout
 
 
 def test_exec_without_running_nginx_skips_upstream_switch(tmp_path):
