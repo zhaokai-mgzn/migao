@@ -429,6 +429,18 @@ def psql(tmp_path):
         shutil.rmtree(sockdir, ignore_errors=True)
 
 
+#: 把迁移包进**一个事务**执行 —— 复现 `MigrationRunner` 的 `jdbc.execute(整份文件)` 语义
+#: （PG 对多语句字符串隐式包一个事务）。`psql -f` 默认**逐条 autocommit** ⇒ 不包则停止条件
+#: 抛异常时 MERGE 已提交、**不回滚**，判据就不是生产路径的语义。
+#: ⚠️ V97 文件内另有自己的 `BEGIN; … COMMIT;`（#4758 合入版本）⇒ 外层再包一层会得到
+#: PG 的 `WARNING: there is already a transaction in progress`（**不是错误**，无害）。
+_TX = "BEGIN;\n{body}\nCOMMIT;\n"
+
+
+def _as_runner_would(sql: str) -> str:
+    return _TX.format(body=sql)
+
+
 def _seed(run) -> None:
     run(_DDL + _SEED)
 
@@ -458,9 +470,9 @@ def test_v97_cleanup_is_idempotent_and_hits_exactly_the_orphans(psql):
     before = _matrix_ids(psql)
     assert "orphan-1:0" in before and "orphan-2:0" in before, "红证前提不成立：种子里的孤儿行没落库"
 
-    psql(sql)  # 第一次
+    psql(_as_runner_would(sql))  # 第一次
     after_first = _matrix_ids(psql)
-    psql(sql)  # 第二次（幂等）
+    psql(_as_runner_would(sql))  # 第二次（幂等）
     after_second = _matrix_ids(psql)
 
     assert after_first == after_second, (
@@ -485,7 +497,7 @@ def test_v97_leaves_history_byte_identical(psql):
     before = {t: _fingerprint(psql, t, cols) for t, cols in _HISTORY_TABLES.items()}
     assert all(v for v in before.values()), f"改前指纹取不到（判据会空跑）：{before}"
 
-    psql(MIGRATION.read_text(encoding="utf-8"))
+    psql(_as_runner_would(MIGRATION.read_text(encoding="utf-8")))
 
     after = {t: _fingerprint(psql, t, cols) for t, cols in _HISTORY_TABLES.items()}
     assert after == before, (
@@ -514,7 +526,7 @@ def test_v97_reconciliation_blocks_a_partial_write(psql):
     sql = MIGRATION.read_text(encoding="utf-8")
     injected = sql.replace(") src\n", "  LIMIT 1\n) src\n", 1)
     assert injected != sql, "注入「漏删」没生效 ⇒ 本红证是空断言"
-    proc = psql.raw(injected)
+    proc = psql.raw(_as_runner_would(injected))
     assert proc.returncode != 0, (
         "写语句漏删时对账竟未拦下 ⇒ 停止条件是空断言\n"
         f"stdout={proc.stdout}\nstderr={proc.stderr}")
@@ -532,7 +544,7 @@ def test_v97_loosened_predicate_over_deletes_the_never_registered_cells(psql):
     上一条 `test_v97_reconciliation_blocks_a_partial_write` 覆盖「写语句漏删」那一半。
     """
     _seed(psql)
-    psql(_loosen_predicate(MIGRATION.read_text(encoding="utf-8")))
+    psql(_as_runner_would(_loosen_predicate(MIGRATION.read_text(encoding="utf-8"))))
     ids = _matrix_ids(psql)
     for victim in ("never-1:1", "never-2:1", "never-3:1"):
         assert victim in ids, (
