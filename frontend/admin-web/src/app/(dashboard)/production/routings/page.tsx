@@ -807,18 +807,24 @@ export default function ProcessConfigPage() {
   const [editingVariantId, setEditingVariantId] = useState<string | null>(null)
   const [variantDraft, setVariantDraft] = useState({ group_name: '', unit: '' })
   const [variantBusy, setVariantBusy] = useState(false)
-  /** 删除工序的二次确认目标（`null` = 没有行在确认态） */
-  const [confirmDeleteOpId, setConfirmDeleteOpId] = useState<string | null>(null)
+  /**
+   * 逐行写面（分组 / 单位 / 作用域 / 必完）被拒的**逐条**理由 —— 渲染在抽屉顶部
+   * （`data-testid="variant-reasons"`）。
+   * ⚠️ issue #4947：改前它**唯一**的渲染点在逐行那一套删除弹框里（弹框不打开就看不见 = 静默）；
+   * 那套弹框随去重退场后，这里成为它唯一的渲染点（写面失败**不得静默**）。
+   * 与 footer 写面的 `opLevelReasons` **分开**：两处触发源不同。
+   */
   const [variantReasons, setVariantReasons] = useState<{ id: string; items: string[] } | null>(null)
   /**
-   * 抽屉**层**的删除二次确认（issue #4674 A）—— 目标是**工序库那一行**（按逻辑名寻址），
-   * **不依赖**矩阵格是否关联得上。与上面那条（按变体 id）并存：两条入口、**同一个** `DELETE /operations/{id}`。
+   * 抽屉**层**的删除二次确认（issue #4674 A）—— 目标是**抽屉当前展示的那一行**
+   * （issue #4947 统一口径，见 `manageTargetOp`），**不依赖**矩阵格是否关联得上。
+   * **只有这一条入口**（逐行那条已随 #4947 去重退场），写面仍是同一个 `DELETE /operations/{id}`。
    */
   const [confirmDeleteOpByName, setConfirmDeleteOpByName] = useState<string | null>(null)
   /**
-   * 抽屉**层**写面（停用 / 删除）被拒时的理由 —— 与逐行的 `variantReasons` **分开**：
-   * 两者渲染在**不同位置**（逐行在那一行的删除弹框里、抽屉层在抽屉顶部），共用一份会让
-   * 「逐行删除失败」在抽屉顶部多出一条**错位**的理由条。
+   * 抽屉**层**写面（停用 / 删除）被拒时的理由 —— 与逐行写面的 `variantReasons` **分开**：
+   * 两者的触发源不同（逐行 = `submitVariant` 的写面、抽屉层 = footer 的停用 / 删除），
+   * 共用一份会让「逐行保存失败」在抽屉顶部多出一条**错位**的理由条。
    */
   const [opLevelReasons, setOpLevelReasons] = useState<string[] | null>(null)
 
@@ -1405,6 +1411,21 @@ export default function ProcessConfigPage() {
    */
   const manageUnlinked = useMemo(() => manageVariants.filter((v) => v.unlinked), [manageVariants])
   /**
+   * 抽屉层「停用 / 删除」**作用于哪一行**（issue #4947 统一口径）= **抽屉当前展示的那一行**。
+   *
+   * <p>判据 = 抽屉里**第一个非 `foreign` 变体**对应的工序库行（`libraryById.get(v.id)`）：
+   * `foreign` 的行是「价目行指向别处」的形态（它的写面本就不该给 —— 对它 PUT/DELETE 就是改另一道工序），
+   * 而**价目读面指到的那一行**才是用户在抽屉里看见、也以为自己在操作的那道工序。</p>
+   *
+   * <p>⚠️ 回退只在**读面没给 id / 库里查不到那一行**时生效：按**逻辑名取首行**（`manageOpEntry.op`）。
+   * 同名多行（`布三边` / `纱三边` 归一后同名）时它与读面指到的行**不是同一行** —— 改前 footer
+   * 就是拿那把尺寻址 ⇒ 「看见 A、动的是 B」（issue #4947 的实质修复）。</p>
+   */
+  const manageTargetOp = useMemo(() => {
+    const v = manageVariants.find((x) => !x.foreign)
+    return (v ? libraryById.get(v.id) ?? null : null) ?? manageOpEntry?.op ?? null
+  }, [manageVariants, libraryById, manageOpEntry])
+  /**
    * 删除二次确认弹框的目标（issue #4617）—— 弹框必须写清**删的是哪一条**：
    * 就地展开的确认在长表格里既易误点、又看不清删的是哪一行（用户裁定的病根）。
    * 目标从当前渲染的那份列表里取（取不到 ⇒ 弹框不渲染，**不猜**）。
@@ -1413,36 +1434,21 @@ export default function ProcessConfigPage() {
     () => rules.find((r) => r.id === confirmDeleteRuleId) ?? null,
     [rules, confirmDeleteRuleId],
   )
-  const deleteOpTarget = useMemo(
-    () => manageVariants.find((v) => v.id === confirmDeleteOpId) ?? null,
-    [manageVariants, confirmDeleteOpId],
-  )
   /**
-   * 删除弹框要「一键设为不做」的行（issue #4665）：判据与**后端护栏③同源** ——
-   * 该变体对应的价目行里「做着的」那些。
-   * ⚠️ **2026-09-21（#4951）**：`applicable` 已退场且恒 `TRUE` ⇒ 这里不再能（也不必）
-   * 过滤「不做」的行 —— 命中的行**全部**是后端护栏③会拦的那些（前端**不持有** `applicable`）。
+   * 抽屉**层**删除二次确认的目标（issue #4674 A；**issue #4947 统一口径**）：
+   * 目标是**抽屉当前展示的那一行**（见 `manageTargetOp`），与矩阵格是否关联得上**无关**
+   * ⇒ 「行在 · 抽屉空」时照样有删除入口（改前只有「关闭」）。
    *
-   * <p>前端只用它来**如实说清将发生什么**（「将把这 N 行设为不做，然后删除该工序」）——
-   * **判据以后端为准**：真正的摘行在后端同一事务里按同一判据做（前端不发明第二份口径，
-   * 也不自己去逐个 PUT：那是两步、会留下「第一步成功、第二步失败」的中间态）。</p>
-   */
-  const deleteOpCells = useMemo(() => {
-    if (!deleteOpTarget) return []
-    const cells: OperationPosition[] = []
-    manageRow?.cells.forEach((c) => {
-      if (c.variant_operation_id === deleteOpTarget.id) cells.push(c)
-    })
-    return cells
-  }, [deleteOpTarget, manageRow])
-
-  /**
-   * 抽屉**层**删除二次确认的目标（issue #4674 A）：**工序库那一行**（按逻辑名寻址），
-   * 与矩阵格是否关联得上**无关** ⇒ 「行在 · 抽屉空」时照样有删除入口（改前只有「关闭」）。
+   * <p>⚠️ issue #4947 改前这里按**逻辑名的首行**（`fallbackOpByName`）寻址 —— 同名多行
+   * （`布三边` / `纱三边`）时会删掉**另一行**（footer 说 A、读面指 B）。
+   * `candidates`（同名库行数）照旧如实报出，让「删的是哪一行」可解释。</p>
    */
   const deleteOpByNameTarget = useMemo(
-    () => (confirmDeleteOpByName ? fallbackOpByName.get(confirmDeleteOpByName) ?? null : null),
-    [confirmDeleteOpByName, fallbackOpByName],
+    () =>
+      confirmDeleteOpByName && manageTargetOp
+        ? { op: manageTargetOp, candidates: manageOpEntry?.candidates ?? 1 }
+        : null,
+    [confirmDeleteOpByName, manageTargetOp, manageOpEntry],
   )
   /**
    * 抽屉层删除弹框要如实报出的行（issue #4674）：**按行键取全部行**（与后端 `matchingCells` 同域）
@@ -1918,7 +1924,6 @@ export default function ProcessConfigPage() {
   const openManageFor = (operation: string) => {
     setManageOp(operation)
     setEditingVariantId(null)
-    setConfirmDeleteOpId(null)
     setConfirmDeleteOpByName(null)
     setVariantReasons(null)
     setOpLevelReasons(null)
@@ -2001,63 +2006,17 @@ export default function ProcessConfigPage() {
     }
   }
 
-  /**
-   * 删除工序（**软删**，契约 #4587 ③）：二次确认后发 `DELETE /operations/{id}`。
-   * 三条护栏（被活跃主线 / 活跃规则 / 矩阵格引用）由后端**一次报全** ⇒ 逐条就地展示。
-   */
-  const removeVariant = async (variant: VariantView) => {
-    setVariantBusy(true)
-    setVariantReasons(null)
-    try {
-      await productionApi.deleteOperation(variant.id)
-      toast.success(`已删除工序「${manageOp ?? ''}」`)
-      setConfirmDeleteOpId(null)
-      await load()
-    } catch (e) {
-      setVariantReasons({ id: variant.id, items: routingAdminGuardReasons(e) })
-      if (!isErrorToastShown(e)) toast.error('删除失败')
-    } finally {
-      setVariantBusy(false)
-    }
-  }
-
-  /**
-   * **一键「设为不做并删除」**（issue #4665 A；用户实测「无法删除，而且没有地方设置做于不做」）。
-   *
-   * <p>把删除的前置（把受影响的价目行设为不做）**交给系统自己做** —— 后端**一次事务**：
-   * 先摘行（后端内部把 {@code applicable} 置 false —— #4951 后前端**不持有**该字段）再软删工序，
-   * 并**级联软删矩阵行**（删干净，见 issue #4665 C）。
-   * 前端只发**一次**请求（`?detach_positions=true`）⇒ **没有**「第一步成功、第二步失败」的中间态。</p>
-   *
-   * <p>⚠️ **护栏不放宽**：主线 / 规则两条由后端照旧拦（主线涉及车间顺序，必须人工确认）⇒
-   * 失败理由**逐条就地**展示、弹框不收摊、页面不刷新（不留半完成态）。</p>
-   */
-  const removeVariantDetaching = async (variant: VariantView) => {
-    setVariantBusy(true)
-    setVariantReasons(null)
-    try {
-      await productionApi.deleteOperation(variant.id, { detachPositions: true })
-      toast.success(`已设为不做并删除工序「${manageOp ?? ''}」`)
-      setConfirmDeleteOpId(null)
-      await load()
-    } catch (e) {
-      setVariantReasons({ id: variant.id, items: routingAdminGuardReasons(e) })
-      if (!isErrorToastShown(e)) toast.error('删除失败')
-    } finally {
-      setVariantBusy(false)
-    }
-  }
-
   // ────────────── 抽屉**层**的工序入口（issue #4674：与矩阵格是否关联得上无关） ──────────────
 
   /**
-   * 打开抽屉层的删除二次确认。目标 = **工序库那一行**（按逻辑名寻址，`fallbackOpByName`）。
+   * 打开抽屉层的删除二次确认。目标 = **抽屉当前展示的那一行**（issue #4947 统一口径：
+   * `manageTargetOp`，即价目读面指到的那道变体所对应的库行；查不到才回落按逻辑名的首行）。
    * 查不到库行 ⇒ 就地报出**为什么**（不静默、不假装可删）—— 那种情况下没有可寻址的工序行，
    * 删除必然打不中对象（这正是「先看清楚再动手」）。
    */
   const openDeleteOpByName = () => {
     if (!manageOp) return
-    if (!manageOpEntry) {
+    if (!manageTargetOp) {
       setOpLevelReasons([
         `「${manageOp}」在工序库里查不到对应的工序行，无法删除 —— 请点右上「刷新」重试；` +
           '若仍查不到，它可能已被别的会话删除',
@@ -3291,14 +3250,17 @@ export default function ProcessConfigPage() {
            * 本行还有「做」的行 ⇒ 走 #4671 的 `…/detach-and-delete`（设为不做 + 级联软删价目行 + 删除，一次事务）；
            * 一行都没挂 ⇒ 才走普通软删。**改前一律走普通删除**（按 `variant_operation_id` 判「没有行」）
            * ⇒ 用户那个形态（行按名字命中、关联键为 null）必然 422 = 第 3 次「仍然不能删除」；
-           * 仍挂在主线/规则 ⇒ 后端照旧 422，理由逐条就地展示（**不放宽**）。 */
+           * 仍挂在主线/规则 ⇒ 后端照旧 422，理由逐条就地展示（**不放宽**）。
+           * **issue #4947**：逐行那一对「停用 / 删除」与这里**逐字重复**（同一屏两个「删除」）⇒ 已整对退场，
+           * 停用/删除**只**有这一处入口；这两颗按钮**作用于抽屉当前展示的那一行**（`manageTargetOp`，
+           * 不是按逻辑名的首行 —— 同名多行时两者**不是同一行**）。 */
           <div className="flex w-full flex-wrap items-center gap-2">
             <Button
               size="sm"
               variant="secondary"
               data-testid="operations-manage-disable"
-              disabled={variantBusy || !manageOpEntry}
-              onClick={() => manageOpEntry && void disableOpByName(manageOpEntry.op)}
+              disabled={variantBusy || !manageTargetOp}
+              onClick={() => manageTargetOp && void disableOpByName(manageTargetOp)}
             >
               停用
             </Button>
@@ -3306,11 +3268,13 @@ export default function ProcessConfigPage() {
               size="sm"
               variant="secondary"
               data-testid="operations-manage-delete"
-              disabled={variantBusy || !manageOpEntry}
+              disabled={variantBusy || !manageTargetOp}
               onClick={openDeleteOpByName}
             >
               删除
             </Button>
+            {/* issue #4947：这句提示原本在**逐行**那一对旁边（随那一对退场）—— 信息不许丢 ⇒ 搬到「删除」旁 */}
+            <span className="text-xs text-neutral-400">删除后历史报工不受影响</span>
             <Button
               variant="secondary"
               className="ml-auto"
@@ -3331,6 +3295,17 @@ export default function ProcessConfigPage() {
           {opLevelReasons && (
             <ul className="space-y-0.5 text-xs text-red-600" data-testid="operations-manage-op-reasons">
               {opLevelReasons.map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
+          )}
+          {/* **逐行**写面（分组 / 单位 / 作用域 / 必完）被拒：同样**逐条**就地展示（写面失败不得静默）。
+              ⚠️ 与上面那条**分开**渲染 —— 触发源不同（这里是 `submitVariant`，上面是 footer 的停用 / 删除），
+              合成一条会让商家误判「是谁失败了」。#4947 把逐行那一套删除弹框去重退场后，
+              这里（`variant-reasons`）就是这份理由**唯一**的渲染点。 */}
+          {variantReasons && (
+            <ul className="space-y-0.5 text-xs text-red-600" data-testid="variant-reasons">
+              {variantReasons.items.map((r, i) => (
                 <li key={i}>{r}</li>
               ))}
             </ul>
@@ -3508,30 +3483,9 @@ export default function ProcessConfigPage() {
                     <span>必完 · 缺这道工序不能打包</span>
                   </label>
 
-                  {/* 停用（`PUT /operations/{id}` 的 status）/ 删除（`DELETE /operations/{id}`，二次确认） */}
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      data-testid={`variant-disable-${v.id}`}
-                      disabled={variantBusy}
-                      onClick={() => void submitVariant(v.id, { status: 'inactive' })}
-                    >
-                      停用
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      data-testid={`variant-delete-${v.id}`}
-                      onClick={() => {
-                        setConfirmDeleteOpId(v.id)
-                        setVariantReasons(null)
-                      }}
-                    >
-                      删除
-                    </Button>
-                    <span className="text-xs text-neutral-400">删除后历史报工不受影响</span>
-                  </div>
+                  {/* issue #4947：逐行的「停用 / 删除」原本在这一行 —— 与抽屉 footer 那一对**逐字重复**
+                      （同一屏两个「删除」就是用户报的形态）⇒ 整对退场，写面只剩 footer 那一处；
+                      那句「删除后历史报工不受影响」搬到了 footer 的「删除」旁边（信息不丢）。 */}
                     </>
                   )}
                 </div>
@@ -4003,98 +3957,11 @@ export default function ProcessConfigPage() {
         )}
       </Modal>
 
-      {/* 删除**工序**（抽屉里那处）的二次确认（issue #4617）：与上一条同一套弹框形态 ——
-          同一页面留两套形态就是下一个「交互需要优化」。 */}
-      <Modal
-        open={deleteOpTarget !== null}
-        onClose={() => !variantBusy && setConfirmDeleteOpId(null)}
-        title="删除工序"
-        footer={null}
-      >
-        {deleteOpTarget && (
-          <div data-testid="variant-delete-modal" data-variant={deleteOpTarget.id} className="space-y-3 text-sm">
-            <p className="text-neutral-600">
-              {/* 主标识 = **逻辑工序名**（issue #4622 / #4886：变体名不上界面） */}
-              将删除工序<strong className="mx-1">「{manageOp}」</strong>。
-            </p>
-            <p className="text-neutral-500">
-              删除后它不再出现在工序库与工序单价表里，新加工单不会再生成这道工序；
-              <strong>历史报工不受影响</strong>（报工按当时的工序快照）。
-            </p>
-            {/* 一键「设为不做并删除」（issue #4665 A）：把删除的前置交给系统自己做，并**说清将发生什么**。
-                改前：弹框让他「先设为『不做』再删它」，而做/不做开关藏在主表格的裸 `⇄` 里、
-                抽屉里没有 ⇒ 用户实测「无法删除，而且没有地方设置做于不做」。 */}
-            {deleteOpCells.length > 0 && (
-              <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
-                这道工序还有 {deleteOpCells.length} 行价目是「做」。点下面的
-                <strong className="mx-1">设为不做并删除</strong>
-                ：系统会<strong>先把这些行设为不做</strong>，然后删除该工序（一次完成，
-                不留半成品）；<strong>历史报工不受影响</strong>。
-              </p>
-            )}
-            {/* issue #4692：**两把尺**的另一个落点 —— 行的 `variant_operation_id` 关联不上（读面查不到变体）
-                时，上面那条（按 id 取行）会**空**，弹框就只剩「确认删除」⇒ 普通删除必被护栏③（**按名字**）
-                422 拦下 = 同一类死路。判据改用**与护栏③同一把尺**（`opDeleteBlockerCells`：本行仍是「做」的行）
-                ⇒ 走能过护栏的 detach-and-delete；**普通删除按钮此时不渲染**（它只会 422，不摆死路）。 */}
-            {deleteOpCells.length === 0 && opDeleteBlockerCells.length > 0 && (
-              <p
-                className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800"
-                data-testid="variant-delete-cells-by-name"
-              >
-                「{manageOp}」还有
-                <strong className="mx-1">{opDeleteBlockerCells.length}</strong>
-                行价目是「做」。点下面的<strong className="mx-1">设为不做并删除</strong>
-                ：系统会把挡着它删不掉的那些行<strong>设为不做</strong>，然后删除该工序（一次完成，
-                不留半成品）；<strong>历史报工不受影响</strong>。
-              </p>
-            )}
-            {variantReasons && (
-              <ul className="space-y-0.5 text-xs text-red-600" data-testid="variant-delete-reasons">
-                {variantReasons.items.map((r, i) => (
-                  <li key={i}>{r}</li>
-                ))}
-              </ul>
-            )}
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                disabled={variantBusy}
-                data-testid={`variant-delete-cancel-${deleteOpTarget.id}`}
-                onClick={() => setConfirmDeleteOpId(null)}
-              >
-                取消
-              </Button>
-              {(deleteOpCells.length > 0 || opDeleteBlockerCells.length > 0) && (
-                <Button
-                  variant="secondary"
-                  loading={variantBusy}
-                  data-testid={`variant-detach-and-delete-${deleteOpTarget.id}`}
-                  onClick={() => void removeVariantDetaching(deleteOpTarget)}
-                >
-                  设为不做并删除
-                </Button>
-              )}
-              {/* 普通删除只在**不会被护栏③拦下**时给出：本行没有「做」的格，**或**按 id 那把尺仍能指到
-                  本变体的格（既有的「先看清再删」形态 —— 此时弹框已把两条路都摆出来）。issue #4692：
-                  **关联键为 null 而按名字命中**时它只会 422，故不渲染（不摆死路）。 */}
-              {(opDeleteBlockerCells.length === 0 || deleteOpCells.length > 0) && (
-                <Button
-                  variant="danger"
-                  loading={variantBusy}
-                  data-testid={`variant-delete-confirm-${deleteOpTarget.id}`}
-                  onClick={() => void removeVariant(deleteOpTarget)}
-                >
-                  确认删除
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* 删除**工序**（抽屉层那处，issue #4674 A）的二次确认：目标 = **工序库那一行**（按逻辑名寻址），
-          **与价目行是否关联得上无关** —— 改前这里根本没有入口（`manageVariants` 为空 ⇒ 弹框不渲染）。
-          形态与上面那条**同一套**（同一页面不留两套形态，issue #4617 的裁定照旧）；
+      {/* 删除**工序**（抽屉层那处，issue #4674 A）的二次确认：目标 = **抽屉当前展示的那一行**
+          （issue #4947 统一口径），**与价目行是否关联得上无关** —— 改前这里根本没有入口
+          （`manageVariants` 为空 ⇒ 弹框不渲染）。
+          形态与页面里其它删除弹框**同一套**（同一页面不留两套形态，issue #4617 的裁定照旧；
+          #4947 起「工序删除」**只剩这一套**）；
           删的是**哪一道工序**写在第一句；价目行逐行如实报出（含**未关联**的行 —— 后端护栏③按名字照样算它们）；
           失败理由**逐条**就地展示，弹框**不收摊**（#4617 纪律）。 */}
       <Modal

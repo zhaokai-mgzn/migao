@@ -299,11 +299,40 @@ cases:
         args:
           action: update_status
           status: resolved
+    # ── 前置自断言 + 自清理 + 效果层（issue #4947 的 case-trust burn-down 缴费）─────────────
+    # 本用例命中的三条存量违规（`metric=entries` ⇒ 必须**整条销账**，只收窄多码条目不算）：
+    #   ① CASE-TRUST-NO-PRECONDITION-ASSERTION  ② CASE-TRUST-NO-SELF-CLEAN  ③ CASE-TRUST-NO-EFFECT-ASSERTION
+    # 【真前置是什么】本用例判的是**工单 `AS-20260701-0002` 的完结联动**（`update_status → resolved`
+    #   之后按商品 `allow_return_restock` 决定是否回补库存）—— 没有这张工单，「完结」这件事根本没有对象，
+    #   红的表现只会是 `unmatched expectation`（看起来像「米宝不会完结工单」，归因全错）。同族先例 =
+    #   同文件 AS-004（同 `after_sales_manage.update_status` 写法、同两条声明类型，工单号换成它自己那张）。
+    #   ⚠️ 术语同源：类型 `aftersales_ticket_count_for_ticket_no` 是 `local_runner._PRECONDITION_TYPES` 里
+    #   **既有已登记**的类型（不新增 type、不改探针）；`expect: 1` = 「点名工单在 `after_sales_tickets` 里
+    #   恰一条」，与 AS-004 的口径逐字一致。
+    # 【为什么也声明 `pre_clean`】重试等价性：首跑完结后工单不再是待处理态，重试时的前置与首跑**不等价**
+    #   （#3800 的形态）。`aftersales_ticket_prepare` 与 AS-004 同一个**既有**清理类型（把点名工单复位回
+    #   待处理）；⚠️ 工单当前不在评测栈里时它只回一条「无工单需复位」而**不中断**评测 —— 所以它**不能**
+    #   代替上面的 `precondition`：两条断言各管一件事（「复位动作跑了」≠「工单真的在」）。
+    # 【效果层为什么是 `must_succeed[after_sales_manage]`】`expectations` 里的裸工具名只证明「**调用过**」
+    #   —— 工具返回 `success=false` 也照样算过（「调用了 ≠ 成了」，#3778）。本用例判的「回不回补库存」以
+    #   **完结真的成功**为前提 ⇒ 效果层落在 `after_sales_manage` 的成功上（同 FN-001 的 `must_succeed`）。
+    # 【断言面一字未放宽】`user_inputs` / `expectations` / `data_checks` / `skip_reason` / `traces`
+    #   **全部未动**，只加下面三格声明。⚠️ 本条 `skip_reason` 非空（依赖生产期固定工单）⇒ 三格**当前不进
+    #   运行期**（同 OR-006 那类 skip 用例的先例）；它们的作用是：一旦按 `skip_reason` 里写的方向把它重构为
+    #   自包含（先建工单再完结）并取消 skip，前置 / 自清理 / 效果层**已经在位**，不会再退回静默。
+    pre_clean:
+      - type: aftersales_ticket_prepare
+    precondition:
+      - type: aftersales_ticket_count_for_ticket_no
+        source: "AS-20260701-0002"
+        expect: 1
+    must_succeed:
+      - tool: after_sales_manage
     data_checks:
       - "refund/return 工单 resolved 时：订单全部商品 allow_return_restock=true 才恢复 SKU 库存；任一商品为 false 则整单不回补（窗帘定制退货不可再售）"
       - "allow_return_restock 默认 false；米宝不得在售后完成后默认引导恢复库存/重新上架"
     skip_reason: "依赖生产不存在的固定测试工单 AS-20260701-0002（评测数据脱节）——回补库存逻辑已由 admin-api 单测覆盖（AfterSalesTicketServiceTest），LLM 行为待重构为自包含（先建工单再完结）"
-    merge_log: "issue #2991 新增：售后完结库存联动按商品开关收敛，窗帘行业定制退货不可再售"
+    merge_log: "issue #2991 新增：售后完结库存联动按商品开关收敛，窗帘行业定制退货不可再售 ｜ 2026-09-21（issue #4947 的 case-trust burn-down 缴费）：补 **`precondition[aftersales_ticket_count_for_ticket_no: AS-20260701-0002, expect: 1]`**（真前置 = 点名工单存在，否则「完结」没有对象、红的表现像「米宝不会完结工单」）+ **`pre_clean[aftersales_ticket_prepare]`**（重试前置等价性，同 AS-004）+ **`must_succeed[after_sales_manage]`**（效果层：「调用了 ≠ 成了」，#3778）—— 三格**全部复用既有已登记类型**，不新增 type、不改探针；`user_inputs` / `expectations` / `data_checks` / `skip_reason` / `traces` **一字未动、无放宽**。本条 `skip_reason` 非空 ⇒ 三格当前不进运行期（先例：OR-006 那类 skip 用例）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/AfterSalesTicketServiceTest.java"

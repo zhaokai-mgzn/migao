@@ -76,10 +76,12 @@
 期望: after_sales_manage(action=update_status, status=resolved)
 数据: refund/return 工单 resolved 时：订单全部商品 allow_return_restock=true 才恢复 SKU 库存；任一商品为 false 则整单不回补（窗帘定制退货不可再售）
 数据: allow_return_restock 默认 false；米宝不得在售后完成后默认引导恢复库存/重新上架
+清理: aftersales_ticket_prepare
+必须成功: after_sales_manage
 跳过: 依赖生产不存在的固定测试工单 AS-20260701-0002（评测数据脱节）——回补库存逻辑已由 admin-api 单测覆盖（AfterSalesTicketServiceTest），LLM 行为待重构为自包含（先建工单再完结）
 ```
 真值: aftersales-flow.return-restock-switch
-溯源: issue #2991 新增：售后完结库存联动按商品开关收敛，窗帘行业定制退货不可再售 ｜ tags: update, status, cross_skill
+溯源: issue #2991 新增：售后完结库存联动按商品开关收敛，窗帘行业定制退货不可再售 ｜ 2026-09-21（issue #4947 的 case-trust burn-down 缴费）：补 **`precondition[aftersales_ticket_count_for_ticket_no: AS-20260701-0002, expect: 1]`**（真前置 = 点名工单存在，否则「完结」没有对象、红的表现像「米宝不会完结工单」）+ **`pre_clean[aftersales_ticket_prepare]`**（重试前置等价性，同 AS-004）+ **`must_succeed[after_sales_manage]`**（效果层：「调用了 ≠ 成了」，#3778）—— 三格**全部复用既有已登记类型**，不新增 type、不改探针；`user_inputs` / `expectations` / `data_checks` / `skip_reason` / `traces` **一字未动、无放宽**。本条 `skip_reason` 非空 ⇒ 三格当前不进运行期（先例：OR-006 那类 skip 用例）。 ｜ tags: update, status, cross_skill
 
 ### AS-007. 换货选目标商品后必须确认加工项（before 生成换货工单确认卡） 🔵
 ```
@@ -5006,8 +5008,8 @@
 数据: 判据 2·**取消 ⇒ 不发请求**，弹框关闭。证据：production-routings.test.tsx「⑲-②」
 数据: 判据 3·**删除中按钮禁用**（防重复提交）：确认按钮 loading 态禁用、取消按钮同时禁用；重复点击不会再发第二次请求。证据：production-routings.test.tsx「⑲-③」（`toBeDisabled()` + 二次点击后调用次数仍为 1）
 数据: 判据 4·**失败理由逐条在弹框里就地展示**（**不许**吞成一句「删除失败」）：后端 422 的 `error.details[].message` 逐条渲染（`route-rule-delete-reasons`），失败后弹框仍在（理由要看得见）。证据：production-routings.test.tsx「⑲-④」
-数据: 判据 5·**工序删除（抽屉那处）同一套弹框**（同一页面不留两套形态）：点抽屉里的「删除」⇒ `variant-delete-modal`，写清删的是哪一道变体（名字 + 覆盖部位）；取消不发请求。证据：production-routings.test.tsx「⑲-⑤」（**红证**：改前无弹框 ⇒ `Unable to find an element by: [data-testid=\"variant-delete-modal\"]`，实测）
-数据: 判据 6·**不动删除的后端语义与护栏**（#4608 刚修好：显式写列 + `updated_at` 推进 + 护栏一字不动）：`DELETE /route-rules/{id}` 与 `DELETE /operations/{id}` 的端点、请求体、响应形态、护栏判据**逐字未动**（本单只改二次确认的**形态**）。既有删除断言（`variant-delete-reasons` / `route-rule-delete-reasons` 的逐条理由）一条未放宽。证据：ProductionRoutingReadControllerTest「DELETE /route-rules/{id} ⇒ 200 软删 {id,deleted:true}；不存在/已软删 ⇒ 404」未改 + production-routings.test.tsx 的既有 ⑰-⑯/⑰-⑰ 用例保留
+数据: 判据 5·**工序删除同一套弹框**（同一页面不留两套形态；#4947 起入口**只剩**抽屉 footer 那一处）：点抽屉 footer 的「删除」⇒ `operations-manage-delete-modal`，写清删的是**哪一道工序**（逻辑工序名 —— 变体名不上界面，issue #4622/#4886）；取消不发请求。证据：production-routings.test.tsx「⑲-⑤」（#4617 当时的**红证**：改前无弹框 ⇒ `Unable to find an element by: [data-testid=\"variant-delete-modal\"]`，实测；#4947 把逐行那一套弹框去重退场后该 testid 已不存在，判据随之落在 footer 路径上）
+数据: 判据 6·**不动删除的后端语义与护栏**（#4608 刚修好：显式写列 + `updated_at` 推进 + 护栏一字不动）：`DELETE /route-rules/{id}` 与 `DELETE /operations/{id}` 的端点、请求体、响应形态、护栏判据**逐字未动**（本单只改二次确认的**形态**）。既有删除断言（逐条理由）一条未放宽：工序删除那条的**现状**渲染点是 `operations-manage-delete-reasons`（#4947 前是逐行弹框里的 `variant-delete-reasons`，该弹框已去重退场），规则删除那条仍是 `route-rule-delete-reasons`。证据：ProductionRoutingReadControllerTest「DELETE /route-rules/{id} ⇒ 200 软删 {id,deleted:true}；不存在/已软删 ⇒ 404」未改 + production-routings.test.tsx 的既有 ⑰-⑬/⑰-⑯/⑰-⑰ 用例保留
 数据: **边界（如实登记）**：本单**不动** `routings/page.tsx` 里 #4613（条件工序规则常驻展开）/ #4615（页头「新增工序」入口）涉及的外壳与按钮 —— 那两处由已合入的 #4618 落地，本单只在其之上改删除确认形态。
 跳过: [backend-contract] 纯前端交互（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行
 ```
