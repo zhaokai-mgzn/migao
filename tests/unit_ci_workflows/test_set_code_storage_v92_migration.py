@@ -39,6 +39,7 @@ C 模式三列**零消费者**；`granularity` 降级形态是**响应字段**�
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -370,8 +371,19 @@ def test_migration_exists_and_registered_in_the_ledger():
         f"`test_migration_immutability` 会判红（重生成：python3 tests/unit_ci_workflows/"
         f"test_migration_immutability.py --write-ledger）"
     )
-    # 只新增一条（不许动别的条目 —— 改已发布迁移 = 存量环境永远拿不到）
-    assert len(ledger) == 89, f"账本条目数变了（{len(ledger)} ≠ 89）⇒ 本单只应**新增** 1 条"
+    # ⚠️ 此处原有 `assert len(ledger) == 89`（「本单只应**新增** 1 条」）—— 它是**全局计数**，
+    # 任何**别的**包新增迁移都会把它判红（issue #4709 的 V94 实测：`90 ≠ 89` ⇒ 与本包无关的 PR 红，
+    # 且 #4714 的 V93 会再撞一次）。判据本意 = 「本单的迁移在不在账本里 + **已发布迁移有没有被动**」：
+    #   · 前者 = 上面的在场断言；
+    #   · 后者 = **逐字节指纹**（`test_migration_immutability.py::test_registered_migrations_are_byte_identical`
+    #     + `test_ledger_covers_every_migration_on_disk`），本文件**不复制**那份规则。
+    # ⇒ 换成**不写死数字**的等价判据：账本登记值必须等于本文件**当前内容**的 sha256
+    #   （比"在场"更强：既证登记了、也证登记的是**这一份**内容；同 #4696 对
+    #    `test_public_ops_v88_migration.py` 的 `max(versions) == 88` 的处置）。
+    assert ledger[MIGRATION.name] == "sha256:" + hashlib.sha256(MIGRATION.read_bytes()).hexdigest(), (
+        f"`{MIGRATION.name}` 的账本指纹与文件**当前内容**不符 ⇒ 已发布迁移被改过"
+        f"（改已发布迁移 = `MigrationRunner` 按文件名整份跳过 ⇒ 存量环境永远拿不到）"
+    )
 
 
 def test_carriers_and_unique_keys_match_the_design():

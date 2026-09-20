@@ -47,6 +47,10 @@ export default function ProcessingOrderProductionPage() {
   const [revoking, setRevoking] = useState(false)
   const [revokeError, setRevokeError] = useState('')
   const [revokedNotice, setRevokedNotice] = useState('')
+  // 未定价实例补价（issue #4709 C）：状态 + 结果反馈（补了几道 / 还有几道没定价）
+  const [repricing, setRepricing] = useState(false)
+  const [repriceError, setRepriceError] = useState('')
+  const [repriceNotice, setRepriceNotice] = useState('')
   // 生成二维码（测试用，issue #4726，A 档）：把**加工单号**画成纯文本码供端到端联调。
   // **纯前端渲染 + 零写请求**（不碰 qr_token，不调任何端点）。
   const [testQrOpen, setTestQrOpen] = useState(false)
@@ -116,6 +120,37 @@ export default function ProcessingOrderProductionPage() {
       setInstantiateError('补生成工序失败，请稍后重试')
     } finally {
       setInstantiating(false)
+    }
+  }
+
+  /**
+   * 按当前价重算未定价工序实例（issue #4709 C）—— 商家视角的真问题：
+   * 商家在「工艺配置 → 工艺路线」的部位价目矩阵里补了价，而**已实例化**的旧单快照仍是
+   * `NULL`（未定价）⇒ 工人那批活的钱**算不出来**。重新实例化**不是**可用路径
+   * （签名把 `null` 与 `0` 视为同形 ⇒ 不触发；`null → 非 0` 触发但会软删重插 + 报工进度清零）。
+   * 端点只补 `NULL`、已有价（含显式定价 0 元）一律不动、报工进度不清零；写面 ⇒ 按同码显隐。
+   */
+  const handleReprice = async () => {
+    if (!po?.orderId) return
+    setRepricing(true)
+    setRepriceError('')
+    setRepriceNotice('')
+    try {
+      const res = await productionApi.repriceUnpricedInstances(po.orderId)
+      const data = res.data?.data
+      const filled = data?.filled ?? 0
+      const still = data?.still_unpriced ?? 0
+      setRepriceNotice(
+        still > 0
+          ? `已补 ${filled} 道工序的单价；仍有 ${still} 道未定价 —— 请先去部位价目矩阵定价`
+          : `已按当前价补齐 ${filled} 道未定价工序，之后的报工按补上的单价计件`,
+      )
+      await load()
+    } catch (e) {
+      console.error(e)
+      setRepriceError('重算未定价工序失败，请稍后重试')
+    } finally {
+      setRepricing(false)
     }
   }
 
@@ -190,6 +225,19 @@ export default function ProcessingOrderProductionPage() {
   // 工序还在但码没了 = 刚撤销过 ⇒ 任务卡占位文案不得再指向本页不存在的「补生成工序」
   const qrPlaceholderHint =
     positionCount > 0 && !operations?.qr_token ? '二维码已撤销（旧码已失效）' : undefined
+  // 未定价工序实例（issue #4709 C）：有未定价实例 ⇒ 给「按当前价重算」入口。
+  // 没有这个入口时，商家定价后**已实例化的旧单**永远算不出钱（且界面只说「未定价」、不给动作）。
+  // 判据与后端同口径（V90 三态）：`price_state === 'unpriced'` 或单价为 null ⇒ 未定价；
+  // **价 0 不算未定价**（显式定价 0 元，是有价）。
+  const unpricedCount = (operations?.positions ?? []).reduce(
+    (sum, set) =>
+      sum +
+      (set.operations ?? []).filter((op) => op.price_state === 'unpriced' || op.unit_price == null)
+        .length,
+    0,
+  )
+  // 写面端点方法级 processing:manage ⇒ 入口同码显隐（无权限角色不该看到按钮却 403）
+  const canReprice = hasPermission('processing:manage') && unpricedCount > 0
   // 路线来源提示（issue #4307 交付物 2 / #4308 P1「静默回落」的用户侧可观测面）：
   // 四态 —— default 全不命中 / partial 只命中一维 / missing_route 两维命中但库里没路线。
   const routeNotice = routeSourceNotice(po?.routeSource, po?.routeKey, po?.routeRequestedKey)
@@ -371,7 +419,40 @@ export default function ProcessingOrderProductionPage() {
                   补生成工序
                 </Button>
               )}
+              {/* 未定价实例的显式补价入口（issue #4709 C）：商家在矩阵里补了价之后，
+                  已实例化的旧单必须**有动作可做**，否则工人那批活的钱算不出来。
+                  只补 NULL、已有价（含显式定价 0 元）一律不动、报工进度不清零。 */}
+              {canReprice && (
+                <Button
+                  size="sm"
+                  disabled={repricing}
+                  loading={repricing}
+                  data-testid="production-reprice-button"
+                  onClick={handleReprice}
+                >
+                  {!repricing && <RefreshCw className="w-4 h-4 mr-1.5" />}
+                  按当前价重算未定价（{unpricedCount} 道）
+                </Button>
+              )}
             </div>
+            {repriceError && (
+              <p
+                className="mb-3 flex items-center gap-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
+                data-testid="production-reprice-error"
+              >
+                <AlertCircle className="w-4 h-4" />
+                {repriceError}
+              </p>
+            )}
+            {repriceNotice && (
+              <p
+                className="mb-3 flex items-center gap-2 rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700"
+                data-testid="production-reprice-notice"
+              >
+                <RefreshCw className="w-4 h-4" />
+                {repriceNotice}
+              </p>
+            )}
             {instantiateError && (
               <p
                 className="mb-3 flex items-center gap-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"

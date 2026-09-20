@@ -117,6 +117,7 @@ import type {
   FinanceTransactionFormData,
   FinanceSummary,
   ReceivableReconciliationItem,
+  UnpricedRepricingResult,
 } from '@/types'
 import { FrontendToBackendStatus } from '@/types'
 
@@ -653,6 +654,21 @@ export const productionApi = {
   recordPrint: (orderId: string) =>
     request.post<ApiResponse<{ order_id?: string; processing_order_no?: string; print_count?: number }>>(
       `/api/admin/production/orders/${orderId}/print`,
+    ),
+
+  // 按当前价重算未定价工序实例（issue #4709 C）：只补 `unit_price IS NULL` 的实例行，
+  // 已有价（含显式定价 0 元）一律不动、报工进度不清零；返回 batch_id 供回滚。
+  // 注意：方法级 processing:manage（写面），与同类只读端点的类级 order:list 不同口径。
+  repriceUnpricedInstances: (orderId: string) =>
+    request.post<ApiResponse<UnpricedRepricingResult>>(
+      `/api/admin/production/orders/${orderId}/repricing`,
+      {},
+    ),
+
+  // 回滚一次补价动作（只还原本批补上的行；商家自己定的价不在账本里 ⇒ 永不被回滚）
+  rollbackRepricing: (batchId: string) =>
+    request.post<ApiResponse<{ batch_id?: string; reverted?: number; skipped?: number; hint?: string }>>(
+      `/api/admin/production/repricing/${batchId}/rollback`,
     ),
 }
 
