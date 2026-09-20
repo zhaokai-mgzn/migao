@@ -175,8 +175,9 @@ cases:
       - "corporate-home page.tsx 含 GB/T 47746-2026 区块（标准号、4 能力点、免责小字）"
       - "文案不含「认证/通过检测/备案」误导词"
       - "corporate-home.test.tsx 断言标准号与能力点渲染（无快照/无新 icon）"
+    precondition: "本用例是 [backend-contract] 纯前端渲染用例：前置（`corporate-home` 页源码含 GB/T 47746-2026 区块与 4 个能力点 + 页脚免责小字）由单测自建（frontend/admin-web/tests/unit/pages/corporate-home.test.tsx 直接读该页源码断言），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它（`skip_reason` 已登记）"
     skip_reason: "[backend-contract] 由前端单测验证（corporate-home.test.tsx），非 LLM 冒烟"
-    merge_log: "2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787）"
+    merge_log: "2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787）；2026-09-19（issue #4721）补**声明层前置自断言**（`precondition` 散文形态，与 UI-019/CH-018 同款）：本用例是 3 轮 `user_inputs` 的 [backend-contract] 纯前端渲染用例，前置由单测自建、不依赖共享夹具 —— 补上后 Case Trust 的 `CASE-TRUST-NO-PRECONDITION-ASSERTION` 整条销账（断言内容一字未改）"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/corporate-home.test.tsx"

@@ -2197,7 +2197,7 @@
 跳过: [backend-contract] 由前端单测验证（corporate-home.test.tsx），非 LLM 冒烟
 ```
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
-溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787） ｜ tags: homepage, compliance, gb47746
+溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787）；2026-09-19（issue #4721）补**声明层前置自断言**（`precondition` 散文形态，与 UI-019/CH-018 同款）：本用例是 3 轮 `user_inputs` 的 [backend-contract] 纯前端渲染用例，前置由单测自建、不依赖共享夹具 —— 补上后 Case Trust 的 `CASE-TRUST-NO-PRECONDITION-ASSERTION` 整条销账（断言内容一字未改） ｜ tags: homepage, compliance, gb47746
 
 ## ontology（4 case）
 
@@ -4269,7 +4269,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（46 case）
+## ui（50 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -4883,6 +4883,46 @@
 ```
 溯源: 2026-09-19 新增（issue #4617，P2·交互）。交付：规则删除与工序删除的二次确认由**就地展开**改为**弹框**（与「删除工艺路线」同一形态），弹框写清删的是哪一条 + 影响、删除中禁用按钮、失败理由逐条就地展示；后端删除语义与护栏一字未动。 ｜ tags: ui, production-routing, route-rules, confirm-modal, admin-web
 
+### UI-049. 工艺项页·**两层布局**：【工序】按车间分组（可折叠，收窄到布帘/纱帘/帘头，**不含**布料） 🔵
+```
+数据: 判据 1·**两层**：工序层（`operation-price-matrix`，`scope='position'` 的逻辑工序）与【打包发货】层（`delivery-section`，`scope='set'`）各自成区，互不混排；`scope='set'` 的工序**不得**出现在工序层的行里。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx 的 B1/B2
+数据: 判据 2·**按车间分组 + 可折叠**：组标题逐字为「<车间> · N 道」，点标题折叠/展开只影响该组（`matrix-workshop-<组>` / `matrix-workshop-toggle-<组>`）。证据：同文件 B3（**红证**：改前无分组 ⇒ `Unable to find an element by: [data-testid=\"matrix-workshop-toggle-裁剪\"]`，实测）
+数据: 判据 3·**列收窄**：工序层列头**逐字** = `['工序','布帘','纱帘','帘头','元数据 / 操作']` —— `布料` **不得**当第 4 个部位列出来；同时**读面数据里那一格仍在**（`variant_operation_id` 的载体 + V88 保命格）：【布料单】小区照旧渲染它（`matrix-cell-裁剪-布料` 有价），孤儿判据（#4614）按**数据**判、不按**列**判 ⇒ `裁剪` **不得**被点名成孤儿。证据：同文件 B4（**红证**：注入「读面删掉 `布料` 格」⇒ `Unable to find an element by: [data-testid=\"matrix-cell-裁剪-布料\"]`，实测）
+数据: **边界（如实登记）**：本用例只判 `jsdom` 可见结构；真实浏览器的 HTML 合法性与 CSS 布局由 UI-052 的**结构合法性断言**兜底，完整浏览器渲染仍**未采集**（见 issue #4721 的 P2-4 登记）。
+跳过: [backend-contract] 纯前端渲染（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行
+```
+溯源: 2026-09-19 新增（issue #4721 P1-1，补 #4677 的行为进用例库）：两层布局 = 【工序】按车间分组 + 列收窄到部位词表（`布料` 只退场于**列**、不退场于**数据**）。 ｜ tags: ui, production-routing, operation-price-matrix, admin-web
+
+### UI-050. 工艺项页·【打包发货】层**一列价**（不是每部位一格）+ 零矩阵格的交付工序**仍有行 + `管理▸`** 🔵
+```
+数据: 判据 1·**一列价**：`delivery-section` 里一行一价（`delivery-row-<工序>` / `delivery-price-<工序>`），**不得**按部位渲染 `matrix-cell-*`（`queryAllByTestId(/^matrix-cell-/)` 必须为空）—— 同一道交付工序在多个部位不同价时**不静默取第一个**，如实报出 `multiple_prices` + 计数。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx 的 B2/B7
+数据: 判据 2·**逐字取服务端**：行的 `price_state` 与 `price` **逐字**用 `GET /operation-layers` 的 `delivery` 段聚合值，前端**不重算**（服务端说 `priced`/`¥9.99` ⇒ 界面必须显示 `¥9.99`，哪怕矩阵格是别的值）。证据：同文件 B7-①/②/③
+数据: 判据 3·**零格的交付工序仍有行 + `管理▸`**（#4674 从根上避免的死路）：某道 `scope='set'` 工序在矩阵里一格都没有 ⇒ 仍有 `delivery-row-*` + `delivery-manage-*`，价态如实为 `no_applicable_position`（**不**假装成 0 元或未定价）。证据：同文件 B6-①
+数据: 判据 4·**三态语义不变**（反向护栏）：`不做` / `未定价` / `¥x.xx` 三者可区分；`未定价` **不得**显示成 `¥0.00`；真 0 元**照显示** `¥0.00`。证据：同文件 B5
+跳过: [backend-contract] 纯前端渲染（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行
+```
+溯源: 2026-09-19 新增（issue #4721 P1-1，补 #4677 的行为进用例库）：【打包发货】层由「按部位 4 格」改为**一列价**，且零矩阵格的交付工序不消失。 ｜ tags: ui, production-routing, delivery-section, admin-web
+
+### UI-051. 工艺项页·🔴 【布料单】定价入口（`裁剪` + `打包` **两格各有写面**）+ 非法 DOM 嵌套（`<td>` 嵌 `<td>`）已消除 🔵
+```
+数据: 判据 1·**入口不依赖「布料」列**：`fabric-sheet-section` 里 `裁剪` 与 `打包` **各一行、一列价**（`fabric-sheet-row-裁剪` / `fabric-sheet-row-打包`），而工序层的列里**没有** `布料`。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx 的「🔴 硬要求」
+数据: 判据 2·**两格各有读面**：`裁剪 × 布料`（`¥7.00`）与 `打包 × 布料`（`¥1.50`）都在本区可见且 `data-state='priced'`。证据：同上 + 「🔴 硬要求·另一格写面」
+数据: 判据 3·🔴 **两格各有写面**（硬要求写的是「`裁剪` **与** `打包`」）：两格**各自**点铅笔 → 输入 → 保存 ⇒ `PUT /operation-positions/{id}`，`id` 分别为 `lc-8` / `lc-12`，body **只带** `{unit_price}`（不夹带 `applicable` 等）。证据：同文件两条写面用例（**红证**：把编辑入口改成 `disabled` ⇒ `Unable to find an element by: [data-testid=\"matrix-price-input-打包-布料\"]`，实测）
+数据: 判据 4·**格不存在 ⇒ 给出路**：`× 布料` 那一格缺失时，**两道工序各有一份**「没有「<工序> × 布料」这一格」+ 两个可点动作（`fabric-sheet-attach-*` 接入部位 / `fabric-sheet-seed-*` 补套行业模板），**不写**页面里没有的指引（如「请核对各部位的适用性配置」）。证据：同文件「🔴 硬要求·空态给出路」
+数据: 判据 5·**结构合法**（issue #4721 P2-1）：小区那一格**不得**渲染成 `<td>` 且其**直接父元素**不得是 `<td>`（`<td>` 嵌 `<td>` 是非法 DOM ⇒ 浏览器隐式闭合/重排、`jsdom` 不纠错 ⇒ 假绿）；同时工序层那一格**仍是** `<td>`。证据：同文件「🔴 硬要求」的结构合法性断言（**红证**：去掉 `as=\"div\"` ⇒ `expected 'TD' to be 'DIV'`，实测）
+跳过: [backend-contract] 纯前端交互（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行
+```
+溯源: 2026-09-19 新增（issue #4721 P1-1/P2-1/P2-7，补 #4677 的行为进用例库）：【布料单】定价入口读写 `裁剪 × 布料` 与 `打包 × 布料` **两格**；小区内层改 `div` 消除非法 DOM 嵌套。 ｜ tags: ui, production-routing, fabric-sheet, admin-web
+
+### UI-052. 工艺项页·**种子自愈**：就绪度按「两条基础路线是否齐」判 + 缺 `布料工序路线` 时补套入口**缺失即显示**（幂等） 🔵
+```
+数据: 判据 1·**就绪度②判据换源**：不再「数路线条数」（改前 `工艺路线 2 条` 就显示「已完成」），而是**两条基础路线是否齐**（`窗帘工序路线（默认）` + `布料工序路线`）并**点名**缺哪条。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx 的 §6-②（**红证**：改前 `data-state` 仍是 `done`，实测）
+数据: 判据 2·**缺失即显示**（幂等）：工序库**非空**但缺 `布料工序路线` ⇒ 补套入口（`seed-templates`）**仍可见**（改前判据是 `!operationsReady` ⇒ 工序库非空时被隐藏）；两条基础路线**齐** ⇒ 入口**不显示**（不是常驻噪音）。证据：同文件 §6-① 与 §6-① 反向护栏
+数据: 判据 3·**补套动作真的落到服务端**：点 `seed-template-apply-curtain` ⇒ 调 `applySeedTemplate`，已存在的条目自动跳过（幂等，不重复造）。证据：同文件 §6 的补套用例
+跳过: [backend-contract] 纯前端渲染 + 既有端点透传（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行
+```
+溯源: 2026-09-19 新增（issue #4721 P1-1，补 #4677 的行为进用例库）：就绪度判据由「数条数」改为「点名缺哪条」；补套入口由「工序库为空才显示」改为「缺失即显示」。 ｜ tags: ui, production-routing, seed-template, admin-web
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -4912,8 +4952,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：357（活跃 155，跳过 202）
-- tier 分布：smoke 10 / normal 316 / adversarial 31
+- 用例总数：361（活跃 155，跳过 206）
+- tier 分布：smoke 10 / normal 320 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -4937,7 +4977,7 @@
 - registry：1
 - 设置域：10
 - token-refresh：4
-- ui：46
+- ui：50
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -5031,4 +5071,8 @@
 - PG-042: 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项）
 - PG-043: 特殊选项按套计价（包 A）- route_rules 加对客单价列 + 加工费 = 组合价×米数 + Σ(选项价×套数) + 92 行合成价目
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
+- UI-049: 工艺项页·**两层布局**：【工序】按车间分组（可折叠，收窄到布帘/纱帘/帘头，**不含**布料）
+- UI-050: 工艺项页·【打包发货】层**一列价**（不是每部位一格）+ 零矩阵格的交付工序**仍有行 + `管理▸`**
+- UI-051: 工艺项页·🔴 【布料单】定价入口（`裁剪` + `打包` **两格各有写面**）+ 非法 DOM 嵌套（`<td>` 嵌 `<td>`）已消除
+- UI-052: 工艺项页·**种子自愈**：就绪度按「两条基础路线是否齐」判 + 缺 `布料工序路线` 时补套入口**缺失即显示**（幂等）
 

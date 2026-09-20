@@ -617,6 +617,7 @@ function PositionCell({
   draft,
   busy,
   reasons,
+  as = 'td',
   onStartEdit,
   onDraftChange,
   onSave,
@@ -629,6 +630,13 @@ function PositionCell({
   draft: string
   busy: boolean
   reasons: string[]
+  /**
+   * 根元素（issue #4721 P2-1）。缺省 `td` = 主表的**格**；`div` 供**已经在 `<td>` 里**的
+   * 复用点（【布料单】小区）—— `<td>` 嵌 `<td>` 是**非法 DOM**，浏览器会按 HTML 解析规则
+   * 隐式闭合/重排（`jsdom` 不做纠错 ⇒ 单测绿而真实渲染可能不同 = 假绿）。
+   * 只换根元素：三态 / `data-testid` / 写面**一字不动**。
+   */
+  as?: 'td' | 'div'
   onStartEdit: () => void
   onDraftChange: (v: string) => void
   onSave: () => void
@@ -637,8 +645,9 @@ function PositionCell({
 }) {
   const key = `${cell.operation}-${cell.position}`
   const hasPrice = state === 'priced'
+  const Root = as
   return (
-    <td
+    <Root
       data-testid={`matrix-cell-${key}`}
       data-state={state}
       title={
@@ -649,7 +658,9 @@ function PositionCell({
             : `${cell.position}「${cell.operation}」计件单价（给工人） ${money(cell.unit_price)}`
       }
       className={cn(
-        'py-2.5 pr-4 align-top',
+        'py-2.5 pr-4',
+        // `align-top` 是**表格格**的对齐属性 ⇒ 只在 `td` 上加（`div` 上无意义）
+        as === 'td' && 'align-top',
         state === 'na' ? 'text-neutral-400' : state === 'unpriced' ? 'text-amber-700' : 'text-neutral-900',
       )}
     >
@@ -732,7 +743,7 @@ function PositionCell({
           {hasPrice ? '清空 = 改回未定价（≠ 0 元）' : '填 0 表示真 0 元；清空 = 未定价'}
         </span>
       )}
-    </td>
+    </Root>
   )
 }
 
@@ -3090,7 +3101,13 @@ export default function ProcessConfigPage() {
                                  {r.cell ? (
                                    /* 复用主表**同一个** `PositionCell`（同一个三态口径、同一个写面
                                       `PUT /operation-positions/{id}`、同一份本地预检）⇒ 不发明第二份改价交互 */
+                                   /* ⚠️ **根元素必须是 `div`**（issue #4721 P2-1）：本区这一层已经是
+                                      `<td>`，而 `PositionCell` 缺省根元素也是 `<td>` ⇒ `<td>` 嵌 `<td>`
+                                      是**非法 DOM**（浏览器按 HTML 解析规则隐式闭合/重排 ⇒ 真实渲染与
+                                      `jsdom` 里的断言可能不同）。⇒ 传 `as="div"`；三态 / `data-testid` /
+                                      写面**一字不动**。 */
                                    <PositionCell
+                                     as="div"
                                      cell={r.cell}
                                      state={r.state}
                                      editing={cellEditing === fabricKey}

@@ -1,4 +1,4 @@
-// case_ids: PG-020, PG-034, PG-053, PP-014, OR-041, UI-048
+// case_ids: PG-020, PG-034, PG-053, PP-014, OR-041, UI-048, UI-049, UI-050, UI-051, UI-052
 // PG-020（issue #4203 / #4204）+ PP-014（issue #4307）**合并后**的单页用户面（issue #4416），
 // 本单（issue #4433 = 母单 #4423 的 P3）把它适配到**新路线模型**（P1 #4427 / P2 #4432 / P2b #4459 / P2c #4500）。
 //
@@ -3919,9 +3919,23 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
       '元数据 / 操作',
     ])
     expect(within(workshop).queryByTestId('matrix-cell-裁剪-布料')).toBeNull()
-    // ⚠️ **不得**把 `布料` 从读面响应里删掉：它是 `variant_operation_id` 的载体，
-    // 也是 V88 的保命格 ⇒ 它只在**列**里退场，在**数据**里一字不动
-    expect(LAYER_CELLS.some((c) => c.position === '布料' && c.operation === '裁剪')).toBe(true)
+
+    // ⚠️ **不得**把 `布料` 从**读面数据**里删掉：它是 `variant_operation_id` 的载体，
+    // 也是 V88 的保命格 ⇒ 它只在**列**里退场，在**数据**里一字不动。
+    // ⚠️ 判据必须是**页面消费那份数据的可观察结果**（issue #4721 P2-3）：
+    // 改前这里是 `expect(LAYER_CELLS.some(...)).toBe(true)` —— 真值取自**测试自己的夹具常量**、
+    // 与被测行为无关 ⇒ **页面怎么改都恒真**（空断言）。红证：注入「读面删掉 `布料` 格」
+    // ⇒ 下面两条必红（实测见 PR 描述）。
+    // ① 保命格仍被页面消费（读面价 + 写面 id 都还在）：【布料单】小区那一格照旧渲染。
+    const fabric = screen.getByTestId('fabric-sheet-section')
+    expect(within(fabric).getByTestId('matrix-cell-裁剪-布料')).toHaveTextContent('¥7.00')
+    // ② 孤儿判据（#4614）按**数据**判、不按**列**判：`布料` 列退场**不得**把 `裁剪` 误判成孤儿。
+    //   （真形态：`lc-8.variant_operation_id = 'lop-裁剪-布'` 正被引用 ⇒ 工序库里那条**不是**孤儿。）
+    //   ⚠️ 本夹具的工序库用**库名口径**（`裁剪-布`，见文件上方 `CATALOG` 注释）⇒ 孤儿提示照旧出现
+    //   （`有 4 道工序还没接部位`）——判据**不是**「提示消失」，而是「**被引用的那道不在名单里**」。
+    const orphanHint = screen.getByTestId('matrix-orphan-hint')
+    expect(orphanHint).toHaveTextContent('有 4 道工序还没接部位')
+    expect(orphanHint).not.toHaveTextContent('裁剪')
   })
 
   // ────────────────────── 反向护栏（三态语义不变 / 不静默取第一个） ──────────────────────
@@ -4018,11 +4032,30 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     await waitFor(() => expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument())
 
     // 抽屉空态（`manageVariants.length === 0`）⇒ 停用 / 删除**照样在**（**红证**：改前只有「关闭」）
-    expect(screen.getByTestId('operations-manage-disable')).toBeInTheDocument()
-    expect(screen.getByTestId('operations-manage-delete')).toBeInTheDocument()
+    const disableBtn = screen.getByTestId('operations-manage-disable')
+    const deleteBtn = screen.getByTestId('operations-manage-delete')
+    expect(disableBtn).toBeInTheDocument()
+    expect(deleteBtn).toBeInTheDocument()
     expect(screen.getByTestId('operations-manage-close')).toBeInTheDocument()
     // 空态**给出路**（不是一句死路文案）
     expect(screen.getByTestId('operations-manage-drawer')).not.toHaveTextContent('请核对各部位的适用性配置')
+
+    // ⚠️ 「**在**」≠「**可点**」（issue #4721 P2-2）：两处按钮都带
+    // `disabled={variantBusy || !manageOpEntry}` ⇒ 工序库读面查不到该逻辑名时它们**恒禁用**，
+    // 而改前只断言 `toBeInTheDocument()` ⇒ 按钮变成装饰也全绿。判据 = **disabled 为假 + 点击真的发请求**。
+    // 红证：把 `disabled` 改回 `true`（或让 `manageOpEntry` 为 null）⇒ 下面必红（实测见 PR 描述）。
+    expect(disableBtn).not.toBeDisabled()
+    expect(deleteBtn).not.toBeDisabled()
+    await userEvent.click(disableBtn)
+    await waitFor(() =>
+      expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-04', { status: 'inactive' }),
+    )
+    // 删除：二次确认弹框里点确认 ⇒ **真的**走删除（本行一格都没挂 ⇒ #4692 判据下的**普通软删**路径，
+    // 不带 `detachPositions`；「有格 ⇒ detach-and-delete」那条路径由既有 #4692 用例覆盖，不放宽）
+    await userEvent.click(deleteBtn)
+    await waitFor(() => expect(screen.getByTestId('operations-manage-delete-modal')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('operations-manage-delete-confirm'))
+    await waitFor(() => expect(mockDeleteOperation).toHaveBeenCalledWith('op-v54-04'))
   })
 
   // ────────────────────── P2-8 / P2-10（独立验收 #4677 的缺口，issue #4729 收口） ──────────────────────
@@ -4106,7 +4139,22 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(within(fabric).getByTestId('matrix-cell-裁剪-布料')).toHaveAttribute('data-state', 'priced')
     expect(within(fabric).getByTestId('matrix-cell-裁剪-布料')).toHaveTextContent('¥7.00')
 
-    // ③ `打包 × 布料`（¥1.50）同样在这里可见（改前只有「打包 × 4 部位」四格）
+    // ② **结构合法**（issue #4721 P2-1）：`<td>` 嵌 `<td>` 是**非法 DOM** —— 浏览器会按 HTML
+    //   解析规则隐式闭合/重排（`jsdom` 不纠错 ⇒ 单测绿而真实渲染可能不同 = 假绿）。
+    //   ⇒ 判据 = ① 小区那一格**不是** `td`；② 它的**直接父元素**是 `td`（非法嵌套的确切形态
+    //            是 `<td><td>…</td></td>`）；③ 行外壳仍是 `TR`、主表那一格**仍是** `td`。
+    //   红证：把 `as="div"` 去掉（改回 `<td>` 包装）⇒ ① 必红（实测 `expected 'TD' to be 'DIV'`）。
+    const fabricCell = within(fabric).getByTestId('matrix-cell-裁剪-布料')
+    expect(fabricCell.tagName).toBe('DIV')
+    // ⚠️ 判据不能写成 `closest('td') === null`：本区的**外层**就是合法的 `<td>`
+    // （`<td>工序</td><td>单价</td>`），`closest` 必然命中它 ⇒ 那样写是**恒假断言**。
+    // 非法嵌套的确切形态 = **直接父元素**是 `td`（改前：`<td><td>…</td></td>`）。
+    expect(fabricCell.parentElement?.tagName).toBe('TD')
+    expect(within(fabric).getByTestId('fabric-sheet-row-裁剪').tagName).toBe('TR')
+    // ③ 主表（工序层）那一格仍在 `td` 上 —— 列收窄只把 `布料` 列退场，不改变格的元素形态
+    expect(within(workshop).getByTestId('matrix-cell-裁剪-布帘').tagName).toBe('TD')
+
+    // ④ `打包 × 布料`（¥1.50）同样在这里可见（改前只有「打包 × 4 部位」四格）
     expect(within(fabric).getByTestId('matrix-cell-打包-布料')).toHaveTextContent('¥1.50')
 
     // ④ **可写**：就地改价 ⇒ 走既有 `PUT /operation-positions/{id}`，body **只带** `{unit_price}`
@@ -4121,15 +4169,44 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(Object.keys(mockUpdateOperationPosition.mock.calls[0][1] as object)).toEqual(['unit_price'])
   })
 
+  it('🔴 硬要求·另一格写面：`打包 × 布料`（`lc-12`）**同样可写**（issue #4721 P2-7）', async () => {
+    // 硬要求是「`裁剪` **与** `打包`」两格都能读写，而改前只对 `裁剪 × 布料` 做了写断言
+    // （`打包 × 布料` 只有**读**断言，`grep -n "'lc-12'"` 零命中写面）⇒ 「测试绿」被读成
+    // 「两格都测过」。本条把验收探针（报告 §3.1）正式落进用例库。
+    // 红证：把该格的写面断掉（不渲染 `PositionCell` / 不发 PUT）⇒ 下面必红（实测见 PR 描述）。
+    await renderOperations()
+    const fabric = screen.getByTestId('fabric-sheet-section')
+
+    await userEvent.click(within(fabric).getAllByTestId('matrix-price-edit-打包-布料')[0])
+    const packInput = within(fabric).getAllByTestId('matrix-price-input-打包-布料')[0]
+    await userEvent.clear(packInput)
+    await userEvent.type(packInput, '2.25')
+    await userEvent.click(within(fabric).getAllByTestId('matrix-price-save-打包-布料')[0])
+    await waitFor(() =>
+      expect(mockUpdateOperationPosition).toHaveBeenCalledWith('lc-12', { unit_price: 2.25 }),
+    )
+    // body **只带** `{unit_price}`（不夹带 `applicable` / 别的字段）
+    expect(Object.keys(mockUpdateOperationPosition.mock.calls[0][1] as object)).toEqual(['unit_price'])
+  })
+
   it('🔴 硬要求·空态给出路：`× 布料` 那一格缺失 ⇒ 两个可点动作（接入部位 / 补套行业模板），**不写**页面里没有的指引', async () => {
     // 格不存在（该租户矩阵里没有 `裁剪 × 布料`）⇒ 本区必须给出路（#4674 从根上避免的第 ④ 条约束）。
     // 同时让「补套行业模板」入口在场（缺 `布料工序路线`）—— 否则第二个动作无处可去。
     mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS_WITHOUT_FABRIC))
-    mockGetOperationPositions.setDefault(LAYER_CELLS.filter((c) => c.id !== 'lc-8'))
+    // 两格**都**缺（issue #4721 P2-7 附：改前只覆盖 `裁剪`）⇒ 两道工序各有一份「给出路」。
+    mockGetOperationPositions.setDefault(
+      LAYER_CELLS.filter((c) => c.id !== 'lc-8' && c.id !== 'lc-12'),
+    )
     await renderOperations()
 
     const fabric = screen.getByTestId('fabric-sheet-section')
     const missing = within(fabric).getByTestId('fabric-sheet-missing-裁剪')
+    // `打包 × 布料` 那一格缺失 ⇒ 同一份出路（红证：改前只渲染 `裁剪` 的缺失态 ⇒ 下面必红）
+    expect(within(fabric).getByTestId('fabric-sheet-missing-打包')).toHaveTextContent(
+      '没有「打包 × 布料」这一格',
+    )
+    expect(within(fabric).getByTestId('fabric-sheet-attach-打包')).toBeInTheDocument()
+    expect(within(fabric).queryByTestId('matrix-cell-打包-布料')).toBeNull()
     expect(missing).toHaveTextContent('没有「裁剪 × 布料」这一格')
     // 旧死路文案**不得**出现（页面里没有「各部位的适用性配置」这种东西可核对）
     expect(missing).not.toHaveTextContent('请核对各部位的适用性配置')
