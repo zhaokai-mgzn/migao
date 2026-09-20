@@ -12,13 +12,115 @@
 > **① 固化的是「模型与物理约束」，不是「那 29 行清单」**；**② 锚点应当「派生」，不是「搬运」。**
 >
 > ## 引用约定
-> 代码/迁移引用一律用**符号锚点**（常量名 / 函数名 / 表名 / 列名）；确需给行号处**写仓库相对全路径 + `path:NNN`**
-> 并在同行带 `@<sha>` 出处（`origin/main` 会随合并前移 ⇒ 裸行号会失效）。
-> 本文基准：`origin/main` @ `4a8e23bf4`（`git rev-parse origin/main`）。
+> 代码/迁移引用一律用**符号锚点**（常量名 / 函数名 / 表名 / 列名）；确需给行号处**写仓库相对全路径 + `path:NNN`**。
+> 本文基准：`origin/main` @ `4a8e23bf4`（`git rev-parse origin/main`）—— **行号是这一刻的读数**，`origin/main` 前移后会漂。
+> 两条**本文件实际遵守**的引用纪律：
+> ① ⚠️ **禁用裸文件名引用**（即只写 `routing.py` 这种 basename 再跟行号）：CI 的 `Case Trust Gate` 的 `path` 解析器对
+> 「同名多副本」解析失败并判 **`CASE-TRUST-STALE-LINE-REF`（阻塞）** —— 本文件第一版就踩过（3 条红）；
+> ② 引用**旁边**不要紧跟反引号包裹的符号名（会被判「行号漂移」，非阻塞但会留噪音）——
+> 要写符号就让它真的在那一行附近。
+> ℹ️ `docs/design/**` 在 `scripts/drift_audit.py` 里属 **`REF_SURFACE_EXEMPT`**（设计调研类，
+> 行号本来就该陈旧）⇒ 本文件**不受** drift-audit 的 `path:NNN` 新鲜度判定；但**仍受** Case Trust Gate 的规则 G。
 >
 > ## 范围（不做的事，先划清）
 > - 本单**不实施**：没有迁移、没有新表、没有引擎代码、没有 AI 改动；阶段 2/3（AI 说一句 / AI 解释）已登记 #4652，本单只写「它们必须建立在什么语义上」；
 > - 本单**不发明业务**：凡模型推不出来的，一律进「待裁定项」（§5.3 / §8），**不猜、不静默丢**。
+
+---
+
+## 0.1 ⚠️ 现状真值源的**三条实测事实**（本设计的**前提**，先立住再谈设计）
+
+> 这三条**改变「现状真值源」的口径**，因此放在 §0 之前。全部**自己复现**（命令 + 输出 + 行号见下）。
+
+### F4 · `routing.py::ROUTE_RULES` **不是运行时真值源**（它是设计真值源 / 种子）
+
+```bash
+git grep -n "ROUTE_RULES" origin/main -- backend/admin-api/src/main/java
+# → 4 处命中，**全是注释**：
+#   ProcessingOrderService.java:1198        // `sorted(ROUTE_RULES, key=priority)` 逐字同口径
+#   ProductionSeedTemplateService.java:114  「与 {@code routing.py::ROUTE_RULES} 的 craft 部分逐条同源」
+#   ProductionSeedTemplateService.java:134  「被守卫钉为「≡ V71 的 26 行字面量种子」」
+#   ProductionSeedTemplateService.java:583  「与 routing.py::ROUTE_RULES 的 craft 部分逐条同源」
+# ⇒ **没有一处是代码**
+```
+
+**运行时真正生效的**是**库表** `production_route_rules`，读它的是
+`backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:796` `insertConditionalOperations`
+（调用点 `:556`）：
+
+```bash
+git grep -n "insertConditionalOperations" origin/main -- backend/admin-api/src/main/java
+# → ProcessingOrderService.java:556（调用）/ :796（定义）
+```
+
+| 概念 | 载体 | 角色 |
+|---|---|---|
+| **设计真值源 / 种子** | `backend/ai-agent-service/app/production/routing.py:708` `ROUTE_RULES` | 被守卫钉为「≡ V71 的 26 行字面量种子」；`build_route_v2` **零生产消费者** |
+| **运行时真值源** | 库表 `production_route_rules`（`docs/sql/schema.sql:910` `production_route_rules`） | `insertConditionalOperations` 读它 ⇒ **真正决定工序清单的是它** |
+
+⇒ **准确表述**：`routing.py::ROUTE_RULES` 是**设计真值源 / 种子**；**运行时真值源是库表**。
+**两者不可混为一谈** —— 本文 §5 的「逐条映射」映射的是**两份的并集**
+（`ROUTE_RULES` 26 条 ≡ V71 种子 ≡ 1 号租户的 `production_route_rules` 行；`V84` 3 条**只在库表**，
+`ROUTE_RULES` 里**没有**）⇒ §5 的 29 条**同时覆盖**设计真值源与运行时真值源。
+
+### F5 · 规则语义有**三份实现**（但**去重语义并非三份不同** —— 见反证）
+
+| # | 实现 | 位置 | 生产消费者 | 载体 / 触发键 |
+|---|---|---|---|---|
+| 1 | `build_route_v2`（Python） | `backend/ai-agent-service/app/production/routing.py:783` `build_route_v2` | **零**（`git grep -n "build_route_v2" origin/main -- backend/ai-agent-service/app` 只命中 `routing.py` 自己的注释与定义） | `list[str]` / `craft` + `options` |
+| 2 | `buildRoute`（Java） | `backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java:1175` `buildRoute` | **有**（`:1125` 调用） | `list[str]`（逻辑名）/ `craft` + `options` |
+| 3 | `insertConditionalOperations`（Java） | 同文件 `:796` | **有**（`:556` 调用） | `list[Map]`（工序对象）/ `craft` + `options` + **`processingItems`** |
+
+#### ⚠️ **反证（照实登记，不迁就转述）**
+
+转述称「`buildRoute`（**不去重**）」——**实测不符**：
+
+```bash
+git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java | grep -n "removeIf"
+# → 544（定型开关）/ 842（insertConditionalOperations 的取代）/ 1237（remove 动作）/ 1325（insertAfterLogical 的取代）
+```
+
+`buildRoute` 的 `insert` 路径走 `insertAfterLogical`（`:1324`），其**第一行**就是
+`route.removeIf(op -> Objects.equals(op, operation))`（`:1325`）⇒ **它去重**。
+同族地，`build_route_v2` 的 `_insert_after`（`backend/ai-agent-service/app/production/routing.py:355` `_insert_after`）
+第一行也是 `route = [op for op in route if op != operation]` ⇒ **它也去重**。
+
+⇒ **实测结论（与转述不同）**：**三份实现都做「取代」去重**。真正的差异**不在去重**，而在：
+
+| 真实差异 | 证据 |
+|---|---|
+| **① 载体不同**：Python `list[str]` / `buildRoute` `list[str]`（逻辑名）/ `insertConditionalOperations` `list[Map]`（工序对象） | `:1175` vs `:796` 的签名 |
+| **② 触发键来源不同**：`insertConditionalOperations` 多一条 `processingItems` | `:556` 传参 vs `build_route_v2` 入参 |
+| **③ 过滤时机不同**：`insertConditionalOperations` 插入时同时判部位限定与锚点可用性；`buildRoute` 先构造 `sequence` 再统一滤适用性 | `:808` 附近 vs `:1234` 附近 |
+| **④ `buildRoute` 的 docstring 自称「唯一 Java 实现」—— 与实测不符**（还有 `insertConditionalOperations` 在做同类事） | `:1149` 逐字「本方法是「怎么展开路线」的**唯一** Java 实现」 |
+
+⇒ **对槽位模型的意义（阶段 4 的**第一步**，不是迁移）**：**先把三份语义收敛成一份**（§7.4）。
+理由：槽位模型的派生算法只能对齐**一个**运行时行为；今天有**两份 Java 实现**在生产路径上
+（`:1125` 的 `buildRoute` 与 `:556` 的 `insertConditionalOperations`），
+**收敛前做迁移 = 迁移到一个没有唯一基准的目标**。
+
+### F6 · `production_route_rules` **零版本账**
+
+```bash
+git grep -n "production_route_rules" origin/main -- docs/sql/schema.sql | grep -i version
+# → 无命中（只有列定义与约束）
+git grep -n "production_routing_versions" origin/main -- docs/sql/schema.sql
+# → docs/sql/schema.sql:1239（挂 routing_id → production_route_templates，**不是规则表**）
+```
+
+⇒ **回滚方案不能假设"能回到某个历史版本的规则表"**（§5.5 R1 已据此改写）。
+
+### F4/F5/F6 的**同族文档**（避免重复造轮子）
+
+`docs/design/ai-craft-config.md`（已合入 main，issue #4650 的 AI 层设计）**已经登记过**同族的 F4/F5
+（该文件 §8.3 的事实表）。**本文与它的分工**：
+
+| 文档 | 负责 |
+|---|---|
+| `docs/design/ai-craft-config.md` | **AI 层**（概念移除 / 对话式改条件 / 可解释 / 承载收敛的阶段编排） |
+| **本文** | **槽位模型 + 锚点派生**（L1 物理偏序 / L2 映射 / 派生算法 / 29 条逐条映射 / 版本化 / 报工校验） |
+
+⇒ **本文不重复它的阶段编排**；两处若冲突，**以本文 §7 的判据为准并回改它**（§7.4 已给出改判点）。
 
 ---
 
@@ -770,8 +872,12 @@ LEGACY_CRAFT = {
 
 **迁移（阶段 4，本文只给草案）**：
 
+> **⚠️ 第 0 步不是迁移**：见 §0.1 F5 / §7.4 —— **先把三份规则语义收敛成一份**，
+> 否则「迁移到什么」没有唯一基准。
+
 | 步 | 动作 | 幂等要求 |
 |---|---|---|
+| **M0** | **语义收敛**：三份实现（§0.1 F5）收敛成**一份**运行时语义（**独立可合并**，不动数据） | 收敛后两端对同一配置**逐字同结果**（§3.6 S1~S10） |
 | M1 | 新增**槽位定义表**（`production_operation_slots`：`slot_key` / `slot_order` / `capacity` / `tenant_id`） | `CREATE TABLE IF NOT EXISTS` + `ON CONFLICT (id) DO NOTHING`（`MigrationRunner` 要求所有迁移可重复执行） |
 | M2 | 新增**槽成员表**（`production_slot_members`：`slot_key` / `operation` / `member_order` / `source`） | 同上 |
 | M3 | 新增**租户例外表**（`production_slot_overrides`） | 同上 |
@@ -784,6 +890,7 @@ LEGACY_CRAFT = {
 | 步 | 动作 |
 |---|---|
 | R1 | 派生引擎切回读 `production_route_rules`（**规则表一字未动** ⇒ 切回即回滚） |
+| **R1′** | ⚠️ **但"切回"≠"回到某个历史版本"** —— `production_route_rules` **零版本账**（§0.1 F6：`docs/sql/schema.sql:1239` 的 `production_routing_versions` 挂在**模板**上，不挂规则表）。⇒ 回滚的**唯一可用基准 = V71/V76/V84 的种子字面量**（`ROUTE_RULES` ≡ V71 的 26 行；V84 的 3 行在 `backend/admin-api/src/main/resources/db/migration/V84__seed_processing_item_route_rules.sql`）＋**商家自建行的现值**（无历史，只能取当下）。**两条可选**：① 阶段 4 之前**先补规则版本账**（新迁移）；② 接受"回滚 = 用种子重建 + 商家自建行按当下值保留"，并把该限制**写进回滚演练的验收判据**（**本文推荐 ②**，因为 ① 会把本单范围扩到"给规则表加版本账"） |
 | R2 | 新表**保留但不读**（`DROP` 留待确认零消费者后独立迁移 —— 与 `docs/design/operation-name-unification.md` §6 N2「软删不 DROP」同口径） |
 | R3 | `processing_orders` 的两列**保留**（`NULL` 无害；`DROP COLUMN` 会挡住再回滚） |
 
@@ -796,6 +903,8 @@ LEGACY_CRAFT = {
 | H3 | 出现**静默**行为（警告列表非空但流程继续） | 本文的立论就是"不许静默"（§1.3③）⇒ 静默 = 本单失败 |
 | H4 | 租户例外**违反 L1 偏序**且未被 fail-closed 拒绝 | 例外机制失控 ⇒ 等于造了第二张规则表 |
 | H5 | 两端（Python 真值源 / Java 实例化）派生结果**不一致** | 今天的双源裂缝（§3.4）不得被放大 |
+| **H7** | **M0 未完成就进 M1** | 三份语义（§0.1 F5）没收敛 ⇒ 迁移到没有唯一基准的目标（**本单最硬的前置**） |
+| **H8** | 回滚演练**假设**「能取回规则表的历史版本」 | 该能力**不存在**（§0.1 F6 / R1′）⇒ 演练必须在**没有历史版本**的前提下走通 |
 | H6 | 商家面出现「原来能存的规则现在存不了」（回归） | 同 `docs/design/operation-name-unification.md` §5 P1 停止条件同款 |
 
 ---
@@ -904,6 +1013,25 @@ Q1/Q2/Q3 发现偏差
 **出厂种子可以迁到槽位模型；商家自建规则迁到哪？**（它们是"例外"，但形态是 `(trigger, operation, anchor)` 三元组，
 与 L4 的"槽覆盖"不同构）⇒ **本文列为待裁定 A11**，阶段 4 开工前必须裁掉。
 
+### 7.4 阶段 4 的**第一步**是「语义收敛」，不是迁移（本文的判断与理由）
+
+另一份设计（`docs/design/ai-craft-config.md`）建议的编排是
+**阶段 1（已合并）→ 阶段 3（可解释，含 `reason`）→ 阶段 2（AI 对话式）→ 阶段 4（承载收敛）**，
+并主张「阶段 4 第一步不是迁移，而是**把三份规则语义收敛成一份**」。
+
+**本文的判断（逐分项）**：
+
+| 分项 | 本文结论 | 理由 |
+|---|---|---|
+| **阶段 3 先于阶段 2** | ✅ **同意** | 确认卡要显示「将发生的变化」，其**可信来源**只能是**后端结构化理由**（#4650 明文「解释必须来自真值源…AI 不许编造」）。阶段 2 若先落地，确认卡只能显示 AI 自己生成的文案 ⇒ **自己给自己出题**（无可校验的真值）。本文 §3.1 的 `Reason` 就是给阶段 3 用的载体 |
+| **阶段 4 第一步 = 语义收敛** | ✅ **同意，且本文给出更硬的理由** | §0.1 F5：今天有**两份 Java 实现**在生产路径上（`:1125` 的 `buildRoute` 与 `:556` 的 `insertConditionalOperations`）。派生算法只能对齐**一个**运行时行为 ⇒ **收敛前迁移 = 迁移到没有唯一基准的目标**。本文 §5.5 已落成 **M0**，并加停止条件 **H7**（M0 未完成就进 M1 ⇒ 停） |
+| 「阶段 4 必须多带一列「插入锚点」」（#4650 原文） | ❌ **不同意**（§7.2 已论证） | 该结论建立在「载体 = 工序侧的条件」这个前提上；本模型换掉了那个前提（位置由**槽序**推出）⇒ 锚点**派生**而非搬运。**前提变了，结论随之改判** |
+| 阶段 2/3 的**语义** | ⚠️ **本文补充一条硬要求** | 解释/建议**必须建立在槽位/派生语义上**（§7.1 的四行对照）—— 沿用锚点语义等于把 §1.3 的三条代价**交给 LLM 承担** |
+
+**分工与冲突处理**：**阶段编排的权威在 `docs/design/ai-craft-config.md`**（AI 层设计）；
+本文只对「槽位/派生语义」这一层给判据。**两者冲突时以本文 §7.1/§7.2 的语义要求为准**，
+并回改 `ai-craft-config.md`（**本文不代改**：它是另一单的交付物；本单 docs-only、只新增 1 个文件）。
+
 ---
 
 ## 8. 不做什么 / 无法判定项 / 与假设不符的事实
@@ -957,6 +1085,9 @@ Q1/Q2/Q3 发现偏差
 | **F10** | — | ⚠️ `质检` 是 `ROUTE_MAINLINE`（**仅文档用途、不落库**）的占位，**无规则行、无矩阵价**以外的载体 | §2.1 ★ / A5 |
 | **F11** | — | ⚠️ 真值源里**已有**槽位语义（`ROUTE_MAINLINE` 第 3 位字面量 `⟪工艺槽位⟫` + `V71:228` 的列注释定义），但它**没有消费方**（`git grep "ROUTE_MAINLINE\b"` 只命中定义行）⇒ **槽位语义只活在注释里**，落库时被扁平化掉 | **§1.0**：本设计的定性 = **恢复**而非引入；引用面 **12 处**、可枚举 |
 | **F12** | — | ⚠️ `backend/admin-api/src/test/java/com/migao/admin/service/RoutingModelFixture.java:48` `mainline` 注释写「9 道」，其 `mainline()` 实际返回 **10 道** | 同族数字腐烂；**不在本单修**（测试文件） |
+| **F13** | （隐含）`routing.py::ROUTE_RULES` 是**运行时**真值源 | ⚠️ **它是设计真值源 / 种子**；Java 侧 4 处 `ROUTE_RULES` 命中**全是注释**，运行时读的是**库表** `production_route_rules`（`ProcessingOrderService.java:796` `insertConditionalOperations`） | **§0.1 F4**：本文 §5 的 29 条**同时覆盖**两份（`V84` 3 条只在库表） |
+| **F14** | （隐含）规则语义只有一份实现；且「`buildRoute` 不去重」 | ⚠️ **三份实现**（`build_route_v2` / `buildRoute` / `insertConditionalOperations`）；**但「不去重」不成立** —— `buildRoute` 经 `insertAfterLogical` 的 `route.removeIf`（`:1325`）**去重**，`build_route_v2` 的 `_insert_after` **也去重**（`backend/ai-agent-service/app/production/routing.py` 的 `_insert_after`）⇒ **三份都做「取代」**；真实差异在**载体 / 触发键 / 过滤时机**，外加 `buildRoute` docstring 自称「唯一 Java 实现」**与实测不符** | **§0.1 F5**（含反证）；阶段 4 **M0 = 语义收敛**、停止条件 **H7** |
+| **F15** | （隐含）回滚能回到某个历史版本的规则表 | ⚠️ `production_route_rules` **零版本账**（`production_routing_versions` 挂在**模板**上，`docs/sql/schema.sql:1239`） | **§0.1 F6 / §5.5 R1′**：回滚基准 = V71/V76/V84 的**种子字面量** + 商家自建行的**当下值**；停止条件 **H8** |
 
 ---
 
@@ -1102,6 +1233,35 @@ git show origin/main:backend/ai-agent-service/app/production/routing.py | sed -n
 git rev-parse origin/main                      # 4a8e23bf4
 git show origin/main:docs/wiki/INDEX.md | grep -c "docs/design/"   # 0 ⇒ 不加索引行
 ls backend/admin-api/src/main/resources/db/migration/ | sort -V | tail -1   # 最大迁移号（新迁移从它 +1）
+```
+
+### A.8 **§0.1 的三条现状事实**（F4 / F5 / F6）
+
+```bash
+# ── F4：ROUTE_RULES 不是运行时真值源（Java 侧 4 处全是注释）──
+git grep -n "ROUTE_RULES" origin/main -- backend/admin-api/src/main/java
+# → ProcessingOrderService.java:1198 / ProductionSeedTemplateService.java:114 / :134 / :583（全注释）
+git grep -n "insertConditionalOperations" origin/main -- backend/admin-api/src/main/java
+# → ProcessingOrderService.java:556（调用）/ :796（定义）—— 它读的是**库表** production_route_rules
+git grep -n "build_route_v2" origin/main -- backend/ai-agent-service/app
+# → 只命中 routing.py 自己的注释与 :783 定义 ⇒ **零生产消费者**
+
+# ── F5：三份实现 + 「不去重」的反证 ──
+git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java | grep -n "removeIf"
+# → 544 / 842 / 1237 / 1325（:1325 是 insertAfterLogical 的「取代」；:842 是 insertConditionalOperations 的「取代」）
+git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java | sed -n '1149p'
+# → * <p>⚠️ <b>本方法是「怎么展开路线」的**唯一** Java 实现</b>，且必须与真值源
+git show origin/main:backend/ai-agent-service/app/production/routing.py | sed -n '355p'
+# → def _insert_after(route: List[str], operation: str, after: str) -> List[str]:   （其首行即 removeIf 等价物）
+
+# ── F6：规则表零版本账 ──
+git grep -n "production_route_rules" origin/main -- docs/sql/schema.sql | grep -i version   # → 无命中
+git grep -n "production_routing_versions" origin/main -- docs/sql/schema.sql
+# → docs/sql/schema.sql:1239（挂 routing_id → production_route_templates，**不是规则表**）
+
+# ── 同族文档（AI 层）──
+git log --oneline -2 origin/main -- docs/design/ai-craft-config.md
+# → ca8b7cdfe（#4655 跟随 PR）/ 0d0562cd3（#4650 AI 化工艺配置实施设计）
 ```
 
 ---
