@@ -4,6 +4,7 @@ import com.migao.admin.entity.OrderItem;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Select;
 
 import java.time.OffsetDateTime;
@@ -12,6 +13,11 @@ import java.util.Map;
 
 /**
  * 订单明细 Mapper 接口
+ *
+ * <p>🔴 手写 {@code @Select} 必须显式绑 autoResultMap（口径与判据见
+ * {@code ProcessingOrderMapper} 的类注释 / {@code JacksonTypeHandlerMappingGuardTest}）——
+ * 否则 {@code processing_info}（JSONB）以 JSON 字符串落到 {@code Object} 字段上，
+ * {@code instanceof Map} 判据静默为假（issue #3340 实测过、issue #4865 是同一根因的复发）。</p>
  */
 @Mapper
 public interface OrderItemMapper extends BaseMapper<OrderItem> {
@@ -19,6 +25,7 @@ public interface OrderItemMapper extends BaseMapper<OrderItem> {
     /**
      * 根据订单 ID 查询订单明细列表
      */
+    @ResultMap("mybatis-plus_OrderItem")
     @Select("SELECT * FROM order_items WHERE order_id = #{orderId} AND tenant_id = #{tenantId} AND deleted = 0")
     List<OrderItem> selectByOrderId(@Param("orderId") String orderId, @Param("tenantId") Long tenantId);
 
