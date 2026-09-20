@@ -86,7 +86,12 @@ interface RawSpecialOption {
   sets: number
   amount: number
   priced: boolean
-  billing?: string
+  billing: string
+}
+
+/** 计价口径（`billing` 缺席 ⇒ `per_set` —— 存量单当时全是按套收的，不发明第三种口径） */
+function billingOf(value: unknown): string {
+  return typeof value === 'string' && value !== '' ? value : BILLING_PER_SET
 }
 
 /** 解析 `special_options[]`（脏数据不猜：无名 / 非对象一律丢弃） */
@@ -109,10 +114,7 @@ function parseSpecialOptions(value: unknown): RawSpecialOption[] {
       amount: finiteOr(entry.amount, unitPrice === null ? 0 : unitPrice * sets),
       priced,
       // `billing` 缺席 ⇒ `per_set`（存量单：那时确实全是按套收的 —— 不发明第三种口径）
-      billing:
-        typeof entry.billing === 'string' && entry.billing !== ''
-          ? entry.billing
-          : BILLING_PER_SET,
+      billing: billingOf(entry.billing),
     })
   }
   return rows
