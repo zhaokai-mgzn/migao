@@ -800,7 +800,8 @@ public class ProductionOperationQueryService {
 
     /**
      * {@link #VARIANT_NAMES} 的构造：**35 条旧名 ↔ 逻辑名对的反向索引**（真值源
-     * {@code routing.py::_LOGICAL_NAME_PAIRS}，逐条一一对应）。
+     * {@code routing.py::_LOGICAL_NAME_PAIRS}，逐条一一对应），另加 **1 条部位回落**
+     * （{@code 裁剪 × 布料} → {@code 裁剪-布}，issue #4707：布料主线 V88 后引用 `裁剪`）。
      *
      * <p>逐条显式写出（**不推导**）：{@code 布三边}（无 {@code -} 分隔）、{@code 布帘车被}
      * （{@code 布帘} 前缀）用规则推导会漏 —— 实测「逻辑名 + 部位后缀」对这两道得到的
@@ -840,6 +841,19 @@ public class ProductionOperationQueryService {
         variant(names, "绑带", "纱帘", "绑带-纱");
         // ── 帘头专属（1 条；其余工序复用布帘变体，见 variantNameOf 第 2 步）──
         variant(names, "帘头制作", "帘头", "帘头制作");
+        // ── 布料（第 4 部位，issue #4707）──
+        // `V88`（#4676）把布料主线从 `["配料","打包"]` 改成 **`["裁剪","打包"]`**，并显式种下
+        // **保命格** `裁剪 × 布料`（`applicable = TRUE`，`V88` ④）。但保命格只过了 `buildRoute`
+        // 的**第一道闸**（`applicableByLogical` 查得到键）；**第二道闸** `variantNameOf` 仍要
+        // 「逻辑名 × 部位 → 该租户库里的变体名」——而 `裁剪` 的变体表里**只有 布帘 / 纱帘**
+        // ⇒ 返回 `null` ⇒ `裁剪` 进 `missing_operations` ⇒ **纯布料单 fail-closed 422**。
+        // ⚠️ 这与「工序库为空」**正交**：**健康租户（1 号）也 422**（真库红证见 PR body）。
+        // 修复 = 把 `裁剪 × 布料` 显式指到 `裁剪-布`（唯一承载「裁剪」元数据的库行：
+        // 分组=裁剪 / 单位=米 / scope=position）—— 与第 2 步「帘头复用布帘变体」**同款显式回落**，
+        // 逐条写出**不推导**（既有纪律：`布三边`/`布帘车被` 用规则推导会漏）。
+        // ⚠️ 价**不**从这里取：矩阵格 `裁剪 × 布料` 的价（NULL = 未定价，V90）优先，
+        //    本表只回答「是哪条库行」。
+        variant(names, "裁剪", "布料", "裁剪-布");
         return Map.copyOf(names);
     }
 
