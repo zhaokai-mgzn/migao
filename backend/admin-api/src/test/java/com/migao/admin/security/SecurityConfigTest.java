@@ -312,6 +312,14 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.CraftCalcConfigMapper craftCalcConfigMapper;
 
+    // 未定价实例补价动作账（issue #4709 C，V94）。**同族坑第 5 次**：新增 Mapper 必须在此
+    // `@MockBean` 顶替 —— 它是 ProductionInstanceRepricingService（→ ProductionController 的
+    // 字段注入依赖）的构造参数，未 mock ⇒ 上下文起不来 ⇒ 本类 26 条安全用例连坐全 error
+    // 「Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required」（实测）。
+    // 双向守卫 = tests/unit_ci_workflows/test_security_config_mapper_mocks.py。
+    @MockBean
+    private com.migao.admin.mapper.ProductionInstanceRepricingLogMapper productionInstanceRepricingLogMapper;
+
     // 加工费组合定价（issue #4386，V68）：组合表 + 版本账 + 读面要用的订单行 Mapper。同族坑第 3 次
     // —— 漏任何一个 ⇒ ProcessingFeeQueryService / ProcessingFeeCombinationCommandService
     // 的构造依赖建不出来 ⇒ 本类全 error「Property 'sqlSessionTemplate' are required」。

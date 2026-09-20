@@ -44,4 +44,48 @@ public interface ProcessingPositionOperationMapper extends BaseMapper<Processing
                                   @Param("expectedStatus") String expectedStatus,
                                   @Param("doneQty") BigDecimal doneQty,
                                   @Param("updatedAt") OffsetDateTime updatedAt);
+
+    /**
+     * 未定价实例的**显式补价**（issue #4709 C）：只把 {@code unit_price IS NULL} 的行补成给定价。
+     *
+     * <p>🔴 红线 ① 由**谓词**机械保证（不靠调用方自觉）：{@code AND unit_price IS NULL} ⇒
+     * 已有价的行（{@code > 0} 或 {@code 0}）**永远**匹配不到 —— 并发下「商家刚在矩阵里定的价」
+     * 也不会被本次补价覆盖（影响行数 0 = 没补，调用方据此不记账）。</p>
+     *
+     * <p>🔴 红线 ②④ 由 **SET 子句**机械保证：只写 {@code unit_price} 与 {@code updated_at} ——
+     * <b>绝不</b>出现 {@code done_qty} / {@code status} / {@code factor}（补价不是报工，
+     * 不得清零或推进任何生产进度，也不得动计件系数）。</p>
+     *
+     * @return 1 = 本行本次被补价；0 = 该行已有价 / 已软删 / 跨租户（调用方据此决定是否记账）
+     */
+    @Update("UPDATE processing_position_operations SET unit_price = #{unitPrice}, "
+            + "updated_at = #{updatedAt} "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0 "
+            + "AND unit_price IS NULL")
+    int fillUnpricedUnitPrice(@Param("id") String id,
+                              @Param("tenantId") Long tenantId,
+                              @Param("unitPrice") BigDecimal unitPrice,
+                              @Param("updatedAt") OffsetDateTime updatedAt);
+
+    /**
+     * 补价动作的**按行回滚**（issue #4709 C）：把该行还原成未定价（{@code unit_price = NULL}）。
+     *
+     * <p>🔴 谓词 {@code AND unit_price = #{expectedUnitPrice}} 是「不覆盖后续改动」的保证：
+     * 只还原**当前值仍等于账本记录的那次补价**的行 —— 之后被别的动作改过、或已被重新实例化
+     * （{@code deleted = 1}）的行一律不碰。{@code expectedUnitPrice} 来自账本，故商家自己定的价
+     * （不在账本里）**永远**匹配不到。</p>
+     *
+     * <p>🔴 同样只写 {@code unit_price} 与 {@code updated_at}：{@code factor} / {@code done_qty} /
+     * {@code status} / 报工历史一字不动（红线 ②④）。</p>
+     *
+     * @return 1 = 本行已还原；0 = 当前值不是账本记录的补价 / 已软删 / 跨租户（幂等空操作）
+     */
+    @Update("UPDATE processing_position_operations SET unit_price = NULL, "
+            + "updated_at = #{updatedAt} "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0 "
+            + "AND unit_price = #{expectedUnitPrice}")
+    int revertFilledUnitPrice(@Param("id") String id,
+                              @Param("tenantId") Long tenantId,
+                              @Param("expectedUnitPrice") BigDecimal expectedUnitPrice,
+                              @Param("updatedAt") OffsetDateTime updatedAt);
 }

@@ -760,6 +760,27 @@ export interface UnpricedPiecework {
   hint?: string
 }
 
+/**
+ * 未定价实例的**显式补价**结果（issue #4709 C）
+ *
+ * `POST /api/admin/production/orders/{orderId}/repricing`：只把 `unit_price IS NULL` 的实例行
+ * 补成**当前矩阵价**（已有价含显式定价 0 元一律不动、报工进度不清零）。`filled` = 本次补上的
+ * 实例行数；`already_priced` = 已有价而未动的行数（红线的可观测面）；`still_unpriced` =
+ * 补价后矩阵格仍为空的工序数（需先去矩阵定价）；`batch_id` = 留痕批次（`filled=0` 时为 null），
+ * 可交给 `POST /production/repricing/{batchId}/rollback` 撤销。
+ */
+export interface UnpricedRepricingResult {
+  order_id?: string
+  processing_order_id?: string | null
+  batch_id?: string | null
+  filled: number
+  already_priced: number
+  still_unpriced: number
+  filled_operations?: UnpricedPieceworkRow[]
+  still_unpriced_operations?: UnpricedPieceworkRow[]
+  hint?: string
+}
+
 /** GET /api/admin/production/orders/{orderId}/operations */
 export interface ProductionOperations {
   order_id?: string

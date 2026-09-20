@@ -36,6 +36,7 @@ import com.migao.admin.service.ProductionRoutingCommandService;
 import com.migao.admin.service.ProcessingFeeCombinationCommandService;
 import com.migao.admin.service.ProcessingFeeQueryService;
 import com.migao.admin.service.ProductionOperationQueryService;
+import com.migao.admin.service.ProductionInstanceRepricingService;
 import com.migao.admin.service.ProductionOperationQtyClient;
 import com.migao.admin.service.ProductionService;
 import com.migao.admin.service.RoutingModelFixture;
@@ -144,6 +145,9 @@ class ProductionControllerTest {
     private com.migao.admin.mapper.ProcessingFeeCombinationVersionMapper processingFeeCombinationVersionMapper;
     @Mock
     private OrderService orderService;
+    /** 未定价实例补价动作账（V94，issue #4709 C）。 */
+    @Mock
+    private com.migao.admin.mapper.ProductionInstanceRepricingLogMapper repricingLogMapper;
     /** 应做数量来源（issue #4208 接线）：存量单补工序的派生路径与 generate 路径同一份，故也要打桩。 */
     @Mock
     private ProductionOperationQtyClient operationQtyClient;
@@ -186,6 +190,13 @@ class ProductionControllerTest {
                 "processingFeeQueryService", feeQueryService);
         org.springframework.test.util.ReflectionTestUtils.setField(controller,
                 "processingFeeCombinationCommandService", feeCommandService);
+        // 未定价实例补价（issue #4709 C）：与上面同款字段注入 —— 真实服务（只 mock Mapper），
+        // 响应形态就是前端消费的那个 Map（不复制第二份装配、不动既有 6 参构造）。
+        ProductionInstanceRepricingService repricingService = new ProductionInstanceRepricingService(
+                orderMapper, processingOrderMapper, positionOperationMapper, queryService,
+                repricingLogMapper);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller,
+                "productionInstanceRepricingService", repricingService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -1729,6 +1740,100 @@ class ProductionControllerTest {
                 "disableProcessingFeeCombination", String.class);
 
         for (Method method : List.of(create, update, disable)) {
+            RequirePermission annotation = method.getAnnotation(RequirePermission.class);
+            assertThat(annotation).as("%s 必须声明方法级权限", method.getName()).isNotNull();
+            assertThat(annotation.value()).isEqualTo("processing:manage");
+        }
+    }
+
+    // ══════════════════ 未定价实例的显式补价路径（issue #4709 C）══════════════════
+
+    /** 一道**未定价**工序实例（{@code unit_price = null} + 帘种，供矩阵格查价）。 */
+    private ProcessingPositionOperation unpricedOp(String id, int seq, String name, String positionKind) {
+        return ProcessingPositionOperation.builder()
+                .id(id).tenantId(TENANT).processingOrderId(PO_ID)
+                .positionName("遮光布料X").positionKind(positionKind).seq(seq)
+                .operationName(name).groupName("后道").unit("米")
+                .qty(new BigDecimal("10.00")).unitPrice(null).factor(new BigDecimal("1.00"))
+                .isMustFinish(false).isStartMarker(false)
+                .status("pending").doneQty(BigDecimal.ZERO).deleted(0)
+                .build();
+    }
+
+    /** 部位价目矩阵格（{@code price = null} = 未定价）。 */
+    private ProductionOperationPosition priceCell(String logicalName, String position, String price) {
+        return ProductionOperationPosition.builder()
+                .id("cell-" + position + "-" + logicalName).tenantId(TENANT)
+                .logicalName(logicalName).position(position)
+                .unitPrice(price == null ? null : new BigDecimal(price))
+                .applicable(true).status("active").deleted(0)
+                .build();
+    }
+
+    /** 红证（改前）：端点不存在 ⇒ 本用例得 `Status expected:<200> but was:<404>`。 */
+    @Test
+    @DisplayName("#4709 POST /orders/{orderId}/repricing ⇒ 只补 NULL 的实例行（已有价的行不写）")
+    void repriceUnpricedInstancesEndpointIsRegistered() throws Exception {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder("tok123"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                unpricedOp("op-unpriced", 1, "打包", "布料"),
+                op("op-priced", 2, "精裁-布", "10.00", false, "done", "10.00")));
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                priceCell("打包", "布料", "1.20"),
+                priceCell("裁剪", "布料", null)));
+        when(positionOperationMapper.fillUnpricedUnitPrice(any(), any(), any(), any())).thenReturn(1);
+
+        mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/repricing"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.filled").value(1))
+                .andExpect(jsonPath("$.data.already_priced").value(1))
+                .andExpect(jsonPath("$.data.batch_id").isNotEmpty())
+                .andExpect(jsonPath("$.data.filled_operations[0].operation").value("打包"))
+                .andExpect(jsonPath("$.data.filled_operations[0].unit_price").value(1.20))
+                .andExpect(jsonPath("$.data.hint").isNotEmpty());
+
+        // 红线①（信封层）：只对未定价那行调用补价，已有价的行一次都不写
+        verify(positionOperationMapper, times(1))
+                .fillUnpricedUnitPrice(eq("op-unpriced"), eq(TENANT), eq(new BigDecimal("1.20")), any());
+        verify(positionOperationMapper, never())
+                .fillUnpricedUnitPrice(eq("op-priced"), any(), any(), any());
+    }
+
+    /** 红证（改前）：端点不存在 ⇒ 本用例得 404。 */
+    @Test
+    @DisplayName("#4709 POST /repricing/{batchId}/rollback ⇒ 按账本回滚（只还原本批补的价）")
+    void rollbackRepricingEndpointIsRegistered() throws Exception {
+        com.migao.admin.entity.ProductionInstanceRepricingLog row =
+                com.migao.admin.entity.ProductionInstanceRepricingLog.builder()
+                        .id("log-1").tenantId(TENANT).batchId("batch-1").processingOrderId(PO_ID)
+                        .positionOperationId("op-unpriced").newUnitPrice(new BigDecimal("1.20"))
+                        .deleted(0).build();
+        when(repricingLogMapper.selectList(any())).thenReturn(List.of(row));
+        when(positionOperationMapper.revertFilledUnitPrice(any(), any(), any(), any())).thenReturn(1);
+        when(repricingLogMapper.markRolledBack(any(), any(), any())).thenReturn(1);
+
+        mockMvc.perform(post("/api/admin/production/repricing/batch-1/rollback"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.batch_id").value("batch-1"))
+                .andExpect(jsonPath("$.data.reverted").value(1))
+                .andExpect(jsonPath("$.data.skipped").value(0));
+
+        verify(positionOperationMapper, times(1))
+                .revertFilledUnitPrice(eq("op-unpriced"), eq(TENANT), eq(new BigDecimal("1.20")), any());
+        verify(repricingLogMapper, times(1)).markRolledBack(eq("log-1"), eq(TENANT), any());
+    }
+
+    @Test
+    @DisplayName("#4709 补价/回滚端点权限 = 方法级 processing:manage（写面，不是类级 order:list）")
+    void repricingEndpointsRequireProcessingManage() throws Exception {
+        Method reprice = ProductionController.class.getMethod(
+                "repriceUnpricedInstances", String.class);
+        Method rollback = ProductionController.class.getMethod(
+                "rollbackRepricing", String.class);
+
+        for (Method method : List.of(reprice, rollback)) {
             RequirePermission annotation = method.getAnnotation(RequirePermission.class);
             assertThat(annotation).as("%s 必须声明方法级权限", method.getName()).isNotNull();
             assertThat(annotation.value()).isEqualTo("processing:manage");

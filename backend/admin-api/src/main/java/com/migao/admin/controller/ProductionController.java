@@ -9,6 +9,7 @@ import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
 import com.migao.admin.service.ProductionOperationPositionCommandService;
 import com.migao.admin.service.ProductionOperationQueryService;
+import com.migao.admin.service.ProductionInstanceRepricingService;
 import com.migao.admin.service.ProcessingFeeCombinationCommandService;
 import com.migao.admin.service.ProcessingFeeQueryService;
 import com.migao.admin.service.ProductionRoutingCommandService;
@@ -91,6 +92,16 @@ public class ProductionController {
      */
     @org.springframework.beans.factory.annotation.Autowired
     private ProductionOperationPositionCommandService productionOperationPositionCommandService;
+
+    /**
+     * 未定价实例的**显式补价路径**（issue #4709 C）：只补 {@code NULL}、已有价一律不动、进度不清零。
+     *
+     * <p>同上面几个字段的理由用字段注入：本类构造签名被 {@code ProductionControllerTest} 的
+     * standaloneSetup 显式装配（6 个参数），加构造参数会把既有测试的装配全改一遍 ——
+     * 而本单的改动面**不应**扩到那里（同 #4308 的「不复制第二份装配」口径）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    private ProductionInstanceRepricingService productionInstanceRepricingService;
 
     /**
      * 实例化工序 + 生成加工单二维码 token
@@ -244,6 +255,51 @@ public class ProductionController {
             @RequestParam(name = "worker_name", required = false) String workerName) {
         return ApiResponse.success(productionService.pieceworkSummary(
                 period, workerName, TenantContext.getTenantId()));
+    }
+
+    /**
+     * <b>按当前价重算未定价工序实例</b>（显式补价路径，issue #4709 C，P1）
+     * POST /api/admin/production/orders/{orderId}/repricing
+     *
+     * <p><b>为什么需要它</b>：商家在部位价目矩阵里补了价，而**已实例化**的旧单快照仍是
+     * {@code NULL}（未定价）⇒ 工人那批活的钱算不出来；重新实例化**不是**可用路径
+     * （{@code null} 与 {@code 0} 同签名 ⇒ 不触发；{@code null → 非 0} 触发但会软删重插 +
+     * 报工进度清零）。</p>
+     *
+     * <p><b>口径（三条红线，逐条由 SQL 谓词/SET 子句机械保证）</b>：
+     * ① <b>只补 {@code NULL}</b> —— {@code unit_price > 0} 或 {@code = 0}（显式定价 0 元）的行
+     * **一律不动**（谓词 {@code AND unit_price IS NULL}）；② <b>不碰报工进度与系数</b> ——
+     * {@code done_qty} / {@code status} / {@code factor} 不在 SET 子句里；③ <b>不碰历史报工</b> ——
+     * {@code production_work_logs} 的 {@code unit_price} / {@code factor} 一字不动。
+     * 只影响**之后的**报工（金额在报工那一刻固化，不追溯）。</p>
+     *
+     * <p>响应：{@code {order_id, processing_order_id, batch_id, filled, already_priced,
+     * still_unpriced, filled_operations:[{operation,logical_name,position,unit_price}],
+     * still_unpriced_operations:[...], hint}}。{@code batch_id} = 本次动作的留痕批次
+     * （{@code filled=0} 时为 {@code null}），可交给回滚端点撤销。**幂等**：重复调用第二次
+     * {@code filled=0}，不产生新账行。</p>
+     */
+    @PostMapping("/orders/{orderId}/repricing")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> repriceUnpricedInstances(@PathVariable String orderId) {
+        return ApiResponse.success(productionInstanceRepricingService
+                .repriceUnpricedInstances(orderId, TenantContext.getTenantId()));
+    }
+
+    /**
+     * 回滚一次补价动作（issue #4709 C）
+     * POST /api/admin/production/repricing/{batchId}/rollback
+     *
+     * <p>把该批次补上的实例行还原成「未定价」（{@code unit_price = NULL}）。判据**只来自账本**
+     * （这正是留痕的必要性）：逐行 CAS「当前值 == 账本记录的那次补价」⇒ 商家自己定的价、
+     * 之后被改过或已重新实例化的行**永远**不被回滚。**幂等**：重复回滚 ⇒ {@code reverted=0}。
+     * 响应 {@code {batch_id, reverted, skipped, hint}}。</p>
+     */
+    @PostMapping("/repricing/{batchId}/rollback")
+    @RequirePermission("processing:manage")
+    public ApiResponse<Map<String, Object>> rollbackRepricing(@PathVariable String batchId) {
+        return ApiResponse.success(productionInstanceRepricingService
+                .rollback(batchId, TenantContext.getTenantId()));
     }
 
     // ══════════════════════════ 工序库 / 工艺路线（只读消费者，issue #4116 P0-2）══════════════════════════

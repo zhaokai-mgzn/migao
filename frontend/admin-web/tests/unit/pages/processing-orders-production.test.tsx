@@ -21,6 +21,7 @@ const mockGetPiecework = vi.fn()
 const mockInstantiate = vi.fn()
 const mockRecordPrint = vi.fn()
 const mockRevokeQrToken = vi.fn()
+const mockRepriceUnpricedInstances = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   processingOrderApi: {
@@ -32,6 +33,7 @@ vi.mock('@/lib/api', () => ({
     instantiate: (...args: unknown[]) => mockInstantiate(...args),
     recordPrint: (...args: unknown[]) => mockRecordPrint(...args),
     revokeQrToken: (...args: unknown[]) => mockRevokeQrToken(...args),
+    repriceUnpricedInstances: (...args: unknown[]) => mockRepriceUnpricedInstances(...args),
   },
 }))
 
@@ -118,6 +120,9 @@ describe('加工单生产明细页', () => {
     mockInstantiate.mockReset().mockResolvedValue(ok({ qr_token: 'qr-token-abc123', operation_count: 2 }))
     mockRecordPrint.mockReset().mockResolvedValue(ok({ print_count: 1 }))
     mockRevokeQrToken.mockReset().mockResolvedValue(ok({ order_id: 'order-uuid-1', qr_token: null, revoked: true }))
+    mockRepriceUnpricedInstances.mockReset().mockResolvedValue(
+      ok({ filled: 1, already_priced: 1, still_unpriced: 0, batch_id: 'batch-1' }),
+    )
   })
 
   it('渲染头部信息：加工单号/订单号/状态/交期 + 进度百分比', async () => {
@@ -170,8 +175,12 @@ describe('加工单生产明细页', () => {
 
     await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
 
-    // 任务卡随页面挂载（屏幕隐藏、打印显形），二维码内容是 qr_token
-    expect(screen.getByTestId('task-card-qr')).toBeInTheDocument()
+    // 任务卡随页面挂载（屏幕隐藏、打印显形），二维码内容是 qr_token。
+    // ⚠️ 必须**等元素**而不是假设它已在场（issue #4709 顺带修，全量跑实测偶发）：
+    // 任务卡依赖 `getOrderOperations` 的解析（qr_token 来自它），而上一行的
+    // `production-header` 来自**另一个** promise（`processingOrderApi.detail`）⇒
+    // 只等 header 会在高负载（全量并行跑）下偶发拿不到二维码（同 §15.1「等元素而非定长 sleep」）。
+    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('production-print-button'))
     expect(printSpy).toHaveBeenCalledTimes(1)
@@ -476,5 +485,94 @@ describe('加工单生产明细页 — 路线来源提示（PP-014）', () => {
     expect(screen.queryByTestId('production-route-default')).not.toBeInTheDocument()
     expect(screen.queryByTestId('production-route-partial')).not.toBeInTheDocument()
     expect(screen.queryByTestId('production-route-missing_route')).not.toBeInTheDocument()
+  })
+
+  // ── 未定价实例的显式补价入口（issue #4709 C）──
+  // 红证（改前）：页面上**没有任何入口**能补价 —— 商家在部位价目矩阵里补了价，而**已实例化**的
+  // 旧单快照仍是 `null`（未定价）⇒ 工人那批活的钱算不出来；重新实例化不是可用路径
+  // （`null` 与 `0` 同签名 ⇒ 不触发；`null → 非 0` 触发但会软删重插 + 报工进度清零）。
+  const OPERATIONS_UNPRICED = {
+    ...OPERATIONS,
+    positions: [
+      {
+        position_name: '遮光布料X',
+        operations: [
+          {
+            id: 'op-u1',
+            seq: 1,
+            operation: '打包',
+            position: '布料',
+            group: '后道',
+            unit: '米',
+            qty: 10,
+            unit_price: null,
+            price_state: 'unpriced',
+            status: 'pending',
+            done_qty: 0,
+          },
+          {
+            id: 'op-p1',
+            seq: 2,
+            operation: '精裁-布',
+            group: '裁剪',
+            unit: '套',
+            qty: 2,
+            unit_price: 8.5,
+            price_state: 'priced',
+            status: 'done',
+            done_qty: 2,
+          },
+        ],
+      },
+    ],
+  }
+
+  it('有未定价工序实例 ⇒ 出现「按当前价重算」入口，点击调端点并给出可见反馈', async () => {
+    mockGetOrderOperations.mockReset().mockResolvedValue(ok(OPERATIONS_UNPRICED))
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('production-reprice-button')).toBeInTheDocument())
+    // 只数**未定价**那道（价 0 / 有价都不算未定价）
+    expect(screen.getByTestId('production-reprice-button')).toHaveTextContent('1 道')
+
+    await userEvent.click(screen.getByTestId('production-reprice-button'))
+
+    await waitFor(() => expect(mockRepriceUnpricedInstances).toHaveBeenCalledWith('order-uuid-1'))
+    await waitFor(() =>
+      expect(screen.getByTestId('production-reprice-notice')).toHaveTextContent('已按当前价补齐 1 道'),
+    )
+  })
+
+  it('矩阵格仍为空（still_unpriced > 0）⇒ 反馈说清「还有几道没定价」，不只报成功', async () => {
+    mockGetOrderOperations.mockReset().mockResolvedValue(ok(OPERATIONS_UNPRICED))
+    mockRepriceUnpricedInstances.mockResolvedValue(
+      ok({ filled: 0, already_priced: 1, still_unpriced: 1, batch_id: null }),
+    )
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('production-reprice-button')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('production-reprice-button'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('production-reprice-notice')).toHaveTextContent('仍有 1 道未定价'),
+    )
+  })
+
+  it('边界：无未定价实例 ⇒ 入口不出现（不制造噪音）', async () => {
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
+    expect(screen.queryByTestId('production-reprice-button')).not.toBeInTheDocument()
+  })
+
+  it('边界：无 processing:manage ⇒ 入口不出现（写面端点方法级权限，避免按钮可见却 403）', async () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: 'u-2', name: '客服小王', roles: ['customer_service'], permissions: ['order:list'] },
+    })
+    mockGetOrderOperations.mockReset().mockResolvedValue(ok(OPERATIONS_UNPRICED))
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
+    expect(screen.queryByTestId('production-reprice-button')).not.toBeInTheDocument()
   })
 })
