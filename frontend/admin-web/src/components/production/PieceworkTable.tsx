@@ -1,6 +1,7 @@
 'use client'
 
 import { operationDisplayName } from '@/lib/operation-display'
+import UnpricedNotice from '@/components/production/UnpricedNotice'
 import type { PieceworkSummary } from '@/types'
 
 /**
@@ -27,8 +28,12 @@ export default function PieceworkTable({ summary, className }: PieceworkTablePro
   const perOperation = summary?.per_operation ?? []
   const perWorker = Object.entries(summary?.per_worker ?? {})
   const total = summary?.total ?? 0
+  // 未定价块（V90，issue #4696）：**必须参与空态判定** —— 只有未定价报工的单子里
+  // `per_operation`/`per_worker`/`total` 全是空的，若只看它们就会渲染「暂无计件数据」，
+  // 把「干了活但没定价、一分钱没有」这句话彻底藏起来（正是本 issue 要治的静默形态）。
+  const hasUnpriced = (summary?.unpriced?.operations ?? []).length > 0
 
-  if (perOperation.length === 0 && perWorker.length === 0 && !total) {
+  if (perOperation.length === 0 && perWorker.length === 0 && !total && !hasUnpriced) {
     return (
       <div className={className} data-testid="piecework-empty">
         <p className="py-8 text-center text-sm text-neutral-400">暂无计件数据</p>
@@ -38,6 +43,7 @@ export default function PieceworkTable({ summary, className }: PieceworkTablePro
 
   return (
     <div className={className}>
+      <UnpricedNotice unpriced={summary?.unpriced} className="mb-4" />
       <div className="mb-4 flex items-baseline gap-2">
         <span className="text-sm text-neutral-500">计件合计</span>
         <span className="text-xl font-semibold text-neutral-900" data-testid="piecework-total">

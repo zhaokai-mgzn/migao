@@ -63,6 +63,23 @@ public class ProductionService {
     public static final Set<String> WORK_TYPES = Set.of("normal", "rework", "scrap");
 
     /**
+     * 计件单价三态标记（V90，issue #4696）：与读面（{@code ProductionRoutingReadService} 的
+     * {@code price_state}）**同一份词表** —— 实例化侧、报工快照、工序进度读面、计件报表四处同口径。
+     *
+     * <p>{@code priced} = 有价（<b>含显式定价 0 元</b>）；{@code unpriced} = <b>未定价</b>
+     * （单价 {@code NULL}）⇒ 聚合**不得**按 0 计件，报表必须显式可见 + 给定价入口。
+     * 存量报工行的该列为 {@code NULL} = 本列引入前（V61 口径按实例回查兜底，历史金额一字不动）。</p>
+     */
+    public static final String PRICE_STATE_PRICED = "priced";
+    public static final String PRICE_STATE_UNPRICED = "unpriced";
+
+    /** 未定价的可行动提示（指向定价入口；前端据 `hint` 渲染跳转）。 */
+    private static final String UNPRICED_HINT =
+            "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」"
+                    + "的部位价目矩阵中为对应「工序 × 部位」格填入单价（路径 /production/routings）；"
+                    + "未定价期间工人可照常报工，但不会产生计件金额。";
+
+    /**
      * 报工端点标识（幂等诊断用：同键跨端点复用会在 {@code client_request_keys.endpoint} 留证）。
      * 与 Controller 的路径逐字一致 —— 改动路径必须同改此处，否则诊断列表会指错端点。
      */
@@ -253,7 +270,9 @@ public class ProductionService {
                         str(op.get("group")),
                         str(op.get("unit")),
                         bd(op.get("qty"), BigDecimal.ZERO),
-                        bd(op.get("unit_price"), BigDecimal.ZERO),
+                        // 未定价（payload 里 unit_price 为 null）必须**原样保留**（issue #4696，P1）：
+                        // 折成 0 ⇒ 实例快照 0 元 ⇒ 报工即按 0 计件，且与「显式定价 0 元」不可区分。
+                        bd(op.get("unit_price"), null),
                         // `factor` 列**保留**但自 #4589 起无人写它：实例化 payload 不再带该键
                         // （ProcessingOrderService 已删 applyFactors）⇒ 恒取默认 1。历史实例的
                         // 旧值原样留着（那是当时工资的证据），签名比较也照旧参与 ⇒ 不回溯。
@@ -624,6 +643,10 @@ public class ProductionService {
                 // 会软删旧实例并重插，回查实例会让工人已做的活的钱静默消失。
                 // 系数快照**不再写**（issue #4589）：计件 = 数量 × 单价，系数已从算法退场。
                 .unitPrice(op.getUnitPrice())
+                // 三态标记（V90，issue #4696）：未定价（实例单价 NULL）在报工那一刻**固化**为
+                // `unpriced` —— 报工表的 `unit_price IS NULL` 在 V61 已被占用为「本列引入前的存量行」，
+                // 不能复用 ⇒ 只能显式标记。聚合据此**不按 0 计件**，并在报表上显式可见。
+                .priceState(op.getUnitPrice() == null ? PRICE_STATE_UNPRICED : PRICE_STATE_PRICED)
                 .workType(workType)
                 .workDate(LocalDate.now())
                 .createdAt(OffsetDateTime.now())
@@ -795,6 +818,8 @@ public class ProductionService {
         // 各维合计恒等于 total（判据：下钻合计 === 总额）。
         result.put("per_position", amountAndQtyRows(totals.positionAmount(), totals.positionQty(), "position_name"));
         result.put("per_set", amountAndQtyRows(totals.setAmount(), totals.setQty(), "order_item_id"));
+        // 未定价可见（issue #4696）：只加键，既有键名/含义/顺序一字不动
+        result.put("unpriced", unpricedBlock(totals.unpricedQty()));
         return result;
     }
 
@@ -840,6 +865,8 @@ public class ProductionService {
         // ⇒ 报表里某维合计 = 该维在各单上的贡献之和（不会出现两套口径漂移）。
         result.put("per_position", amountAndQtyRows(totals.positionAmount(), totals.positionQty(), "position_name"));
         result.put("per_set", amountAndQtyRows(totals.setAmount(), totals.setQty(), "order_item_id"));
+        // 未定价可见（issue #4696）：与 per-order 汇总**同一份聚合** ⇒ 两处恒等（不会两套口径漂移）
+        result.put("unpriced", unpricedBlock(totals.unpricedQty()));
         return result;
     }
 
@@ -889,6 +916,9 @@ public class ProductionService {
         Map<String, BigDecimal> positionQty = new LinkedHashMap<>();
         Map<String, BigDecimal> setAmount = new LinkedHashMap<>();
         Map<String, BigDecimal> setQty = new LinkedHashMap<>();
+        // 未定价维度（issue #4696，P1）：未定价的报工**不进金额**（更不得按 0 计入），
+        // 但数量必须被记下来 ⇒ 报表才能说清「哪道工序干了多少活、多少钱没算」。
+        Map<String, BigDecimal> unpricedQty = new LinkedHashMap<>();
         BigDecimal total = BigDecimal.ZERO;
         for (ProductionWorkLog log : logs) {
             if (!"normal".equals(log.getWorkType())) {
@@ -898,6 +928,25 @@ public class ProductionService {
             ProcessingPositionOperation op = operationLookup.apply(log.getOperationId());
             if (!hasSnapshot && op == null) {
                 continue; // 既无快照、实例又真的不存在（脏数据）→ 该笔不可计价，跳过而不是抛错
+            }
+            // 工序名 = 展示字段：优先报工自身的快照（报工时已落库），缺失时回查实例。
+            // **提前算**：未定价分支也要用它（否则未定价清单里只剩一个「未命名工序」）。
+            String operation = StringUtils.hasText(log.getOperationName())
+                    ? log.getOperationName()
+                    : (op == null ? null : op.getOperationName());
+            if (!StringUtils.hasText(operation)) {
+                operation = "未命名工序";
+            }
+            // 🔴 未定价 ≠ 0 元（issue #4696，P1）：三态判定与实例化侧/读面**同一词表**。
+            // 判据两路（都必要）：
+            //  ① 报工快照显式标记 `unpriced`（V90 起的新报工 —— 在报工那一刻固化，重新实例化改不了它）；
+            //  ② 存量报工无标记（V61 前的行）而回查到的实例单价为 NULL（V90 起的未定价实例）
+            //     ⇒ 同样判未定价。**不按 0 计件**，改记进 unpriced 维度。
+            boolean unpriced = PRICE_STATE_UNPRICED.equals(log.getPriceState())
+                    || (!hasSnapshot && op.getUnitPrice() == null);
+            if (unpriced) {
+                unpricedQty.merge(operation, nz(log.getQualifiedQty()), BigDecimal::add);
+                continue;
             }
             BigDecimal unitPrice = hasSnapshot ? log.getUnitPrice() : op.getUnitPrice();
             // 系数取**当时快照**（issue #4604，用户裁定 B：不追溯）—— 有单价快照时读报工自己的
@@ -910,13 +959,6 @@ public class ProductionService {
                     .multiply(nz(unitPrice))
                     .multiply(factor));
             String worker = StringUtils.hasText(log.getWorkerName()) ? log.getWorkerName() : "未分配";
-            // 工序名 = 展示字段：优先报工自身的快照（报工时已落库），缺失时回查实例
-            String operation = StringUtils.hasText(log.getOperationName())
-                    ? log.getOperationName()
-                    : (op == null ? null : op.getOperationName());
-            if (!StringUtils.hasText(operation)) {
-                operation = "未命名工序";
-            }
             // 部位维度：实例的 position_name（展示名）；无实例 ⇒ 「未知部位」（不猜、不跳过）
             String position = op == null || !StringUtils.hasText(op.getPositionName())
                     ? "未知部位" : op.getPositionName();
@@ -934,7 +976,7 @@ public class ProductionService {
             total = total.add(amount);
         }
         return new PieceworkTotals(total, workerAmount, workerQty, operationAmount, operationQty,
-                positionAmount, positionQty, setAmount, setQty);
+                positionAmount, positionQty, setAmount, setQty, unpricedQty);
     }
 
     /** 聚合中间态（金额已逐笔取整；qty 为该维度的合格数量合计）。 */
@@ -946,7 +988,40 @@ public class ProductionService {
                                    Map<String, BigDecimal> positionAmount,
                                    Map<String, BigDecimal> positionQty,
                                    Map<String, BigDecimal> setAmount,
-                                   Map<String, BigDecimal> setQty) {
+                                   Map<String, BigDecimal> setQty,
+                                   /** 未定价工序 → 合格数量合计（issue #4696：**不进**任何金额维度）。 */
+                                   Map<String, BigDecimal> unpricedQty) {
+    }
+
+    /**
+     * 未定价块（issue #4696，P1）—— 计件面的**显式可见**载体。
+     *
+     * <p>为什么必须有它：未定价此前只活在**读面徽标**上（`GET /operation-layers` 的
+     * `price_state`），而**真正算钱的地方**（报工聚合 / 计件报表）把它静默折成 0 元
+     * ⇒ 工人白干、商家看不出。本块给三件事：<b>数量</b>（干了多少活）、
+     * <b>逐条工序</b>（该给哪道工序定价）、<b>可行动 hint</b>（定价入口）。</p>
+     *
+     * <p>键的**在场性恒定**（零条未定价也给空块）⇒ 前端不必为「有没有这个键」写分支，
+     * 与 `per_position` / `per_set` 的空态口径一致。</p>
+     */
+    private static Map<String, Object> unpricedBlock(Map<String, BigDecimal> unpricedQty) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        BigDecimal qtyTotal = BigDecimal.ZERO;
+        for (Map.Entry<String, BigDecimal> entry : unpricedQty.entrySet()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            // ⚠️ `operation` = 工人端快照名（变体名）：既有口径一字不动；界面用
+            // `logical_name` + `position` 渲染（issue #4621 / #4630 同一份读时派生）。
+            row.put("operation", entry.getKey());
+            row.put("logical_name", ProductionOperationQueryService.logicalOperationName(entry.getKey()));
+            row.put("qty", nz(entry.getValue()));
+            rows.add(row);
+            qtyTotal = qtyTotal.add(nz(entry.getValue()));
+        }
+        Map<String, Object> block = new LinkedHashMap<>();
+        block.put("qty", qtyTotal);
+        block.put("operations", rows);
+        block.put("hint", UNPRICED_HINT);
+        return block;
     }
 
     /** {name: amount, qty} 行列表（保留首次出现顺序 = work_date 升序，报表可复现）。 */
@@ -1108,6 +1183,8 @@ public class ProductionService {
         // 空态也带齐下钻维度：键的**在场性**恒定 ⇒ 前端不必为「有没有这个键」写分支
         result.put("per_position", List.of());
         result.put("per_set", List.of());
+        // 空态也带齐 unpriced（issue #4696）：键的在场性恒定，前端不必写分支
+        result.put("unpriced", unpricedBlock(new LinkedHashMap<>()));
         return result;
     }
 
@@ -1278,7 +1355,10 @@ public class ProductionService {
         view.put("unit", op.getUnit());
         view.put("qty", nz(op.getQty()));
         view.put("qty_source", op.getQtySource());
-        view.put("unit_price", nz(op.getUnitPrice()));
+        // 未定价（NULL）**不得**折成 0（issue #4696，P1）：折 0 ⇒ 界面显示「¥0.00」，
+        // 与「定价为 0 元」不可区分 ⇒ 商家看不出「这道工序还没定价、工人干了拿不到钱」。
+        view.put("unit_price", op.getUnitPrice());
+        view.put("price_state", op.getUnitPrice() == null ? PRICE_STATE_UNPRICED : PRICE_STATE_PRICED);
         // 不再返回 `factor`（issue #4589）：系数已从算法退场，回传会让界面显示一个
         // 「有值却不算钱」的数（新的静默不一致）。DB 列与历史快照保留，只是不上读面。
         view.put("is_must_finish", Boolean.TRUE.equals(op.getIsMustFinish()));

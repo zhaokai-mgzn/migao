@@ -192,3 +192,39 @@ describe('计件工资报表页 /production/piecework', () => {
   })
 
 })
+
+/**
+ * 未定价显式可见（issue #4696，P1）—— **计件报表页**的红证。
+ *
+ * 缺陷原形：只有未定价报工的期间里 `total`/`per_worker`/`per_operation` 全空 ⇒
+ * 页面渲染「该期间暂无计件数据」，把「干了活但没定价、一分钱没有」彻底藏起来。
+ */
+describe('计件报表页 未定价可见（issue #4696）', () => {
+  it('🔴 只有未定价报工 ⇒ **不得**渲染空态，必须显示未定价 + 定价入口', async () => {
+    mockGetPieceworkSummary.mockResolvedValue(
+      ok({
+        period: '2026-09',
+        total: 0,
+        per_worker: [],
+        per_operation: [],
+        per_position: [],
+        per_set: [],
+        unpriced: {
+          qty: 5,
+          operations: [{ operation: '配料', logical_name: '配料', position: '布料', qty: 5 }],
+          hint: '以下工序未定价',
+        },
+      }),
+    )
+    render(<PieceworkReportPage />)
+    await waitFor(() => expect(mockGetPieceworkSummary).toHaveBeenCalled())
+
+    expect(screen.queryByTestId('piecework-empty')).not.toBeInTheDocument()
+    expect(screen.getByTestId('piecework-unpriced')).toBeInTheDocument()
+    expect(screen.getByTestId('piecework-unpriced-0')).toHaveTextContent('未定价')
+    expect(screen.getByTestId('piecework-unpriced-pricing-link')).toHaveAttribute(
+      'href',
+      '/production/routings',
+    )
+  })
+})

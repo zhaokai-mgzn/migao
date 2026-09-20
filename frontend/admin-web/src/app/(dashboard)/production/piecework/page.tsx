@@ -6,6 +6,7 @@ import { Button } from '@/components/ui'
 import { productionApi } from '@/lib/api'
 // 工序显示名的**唯一**口径（issue #4621）：逻辑名 · 部位 —— 本页**不得**直接渲染变体名
 import { operationDisplayName } from '@/lib/operation-display'
+import UnpricedNotice from '@/components/production/UnpricedNotice'
 import { cn } from '@/lib/utils'
 import type { PieceworkReport } from '@/types'
 
@@ -66,7 +67,13 @@ export default function PieceworkReportPage() {
   // 下钻两维（issue #4347 §3.2）：与按人/按工序**同一份后端聚合** ⇒ 各维合计 = total
   const perPosition = report?.per_position ?? []
   const perSet = report?.per_set ?? []
-  const isEmpty = !loading && !error && (report?.total ?? 0) === 0 && perWorker.length === 0 && perOperation.length === 0
+  // 未定价块（V90，issue #4696）：**必须参与空态判定** —— 只有未定价报工的期间里
+  // total/per_worker/per_operation 全空，若只看它们就渲染「该期间暂无计件数据」，
+  // 把「干了活但没定价、一分钱没有」藏起来（正是本 issue 要治的静默形态）。
+  const hasUnpriced = (report?.unpriced?.operations ?? []).length > 0
+  const isEmpty =
+    !loading && !error && (report?.total ?? 0) === 0 && perWorker.length === 0 &&
+    perOperation.length === 0 && !hasUnpriced
 
   return (
     <div className="p-6 space-y-4">
@@ -157,6 +164,10 @@ export default function PieceworkReportPage() {
               </span>
             </div>
           </div>
+
+          {/* 未定价显式可见（V90，issue #4696）：未定价的报工不进合计，必须在这里说清楚
+              「哪道工序、干了多少、多少钱没算」并给出定价入口 —— 不能只在读面徽标上。 */}
+          <UnpricedNotice unpriced={report?.unpriced} />
 
           {/* 按工人 / 按工序 两档 */}
           <div className="rounded-lg border border-neutral-200 bg-white">

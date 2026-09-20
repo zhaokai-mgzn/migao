@@ -682,7 +682,17 @@ export interface ProductionOperation {
   unit?: string | null
   /** 应做数量 */
   qty?: number
-  unit_price?: number
+  /**
+   * 实例快照单价（元/单位）；`null` = **未定价**（V90，issue #4696）——
+   * 与「定价为 0 元」（`0`）**必须可区分**：界面不得把 null 折成 ¥0.00。
+   */
+  unit_price?: number | null
+  /**
+   * 单价三态（V90，issue #4696）：`priced` = 有价（含显式定价 0 元）；
+   * `unpriced` = **未定价**（单价为 null）⇒ 界面显示「未定价」+ 定价入口。
+   * 老实例（本键引入前）缺省 ⇒ 按 `unit_price == null` 兜底判定（安全方向）。
+   */
+  price_state?: PriceState | null
   // 计件系数（`factor`）**不再下发**（issue #4589）：计件工资 = 数量 × 计件单价，
   // 系数已从算法与读面退场 —— 保留字段只会让界面显示一个「有值却不算钱」的数。
   /** 必完工序：完成才可打包（完工门槛） */
@@ -710,6 +720,44 @@ export interface ProductionProgress {
   total?: number
   done?: number
   percent?: number
+}
+
+/**
+ * 计件单价三态（V90，issue #4696；后端闭词表，前端只消费、不发明取值）：
+ * - `priced`   有价（**含显式定价 0 元** —— 0 是定价，不是「没定价」）；
+ * - `unpriced` **未定价**（矩阵格 `NULL`）⇒ 单价为 `null`、**不得**按 0 计件，界面必须显示
+ *   「未定价」并给出定价入口（否则工人白干且无人知道）。
+ *
+ * 与读面（`GET /operation-layers`）的 `price_state` **同一份词表**（`multiple_prices` /
+ * `no_applicable_position` 是读面聚合专有，实例化侧按本部位单格取值，不会出现）。
+ */
+export type PriceState = 'priced' | 'unpriced'
+
+/**
+ * 未定价块（V90，issue #4696）：计件面（per-order 汇总 / 期间报表）的**显式可见**载体。
+ *
+ * 为什么必须有它：未定价此前只活在**读面徽标**上，而真正算钱的地方把它静默折成 0 元
+ * ⇒ 工人白干、商家看不出。`qty` = 未定价工序的合格数量合计（**未计入任何金额**）；
+ * `operations` = 逐条工序（该给哪道定价）；`hint` = 可行动提示（指向定价入口）。
+ */
+export interface UnpricedPieceworkRow {
+  /**
+   * ⚠️ **工人端快照名**（变体名，如 `精裁-布`）：其它消费者仍要读它 ⇒ 保留；
+   * **web 界面不得直接渲染该键**（issue #4621/#4630）—— 界面用 `operationDisplayName()` 渲染。
+   */
+  operation: string
+  /** 逻辑工序名（后端读时派生）；老数据可能缺 ⇒ helper 退回 `operation` 原文 */
+  logical_name?: string | null
+  /** 部位（如 `布帘`）；部位无关工序 / 老数据为空 ⇒ 只显示逻辑名 */
+  position?: string | null
+  /** 未定价工序的合格数量（**未计入任何金额**） */
+  qty: number
+}
+
+export interface UnpricedPiecework {
+  qty: number
+  operations: UnpricedPieceworkRow[]
+  hint?: string
 }
 
 /** GET /api/admin/production/orders/{orderId}/operations */
@@ -740,6 +788,8 @@ export interface PieceworkSummary {
   /** 分人金额：工人姓名 → 金额 */
   per_worker?: Record<string, number>
   per_operation?: PieceworkOperationAmount[]
+  /** 未定价块（V90，issue #4696）：键的在场性恒定（零条未定价也给空块） */
+  unpriced?: UnpricedPiecework
 }
 
 // ── 工序库 / 工艺路线 / 计件报表（issue #4203/#4204/#4205；后端 ProductionOperationQueryService）──
@@ -1271,6 +1321,8 @@ export interface PieceworkReport {
   per_position?: PieceworkDrillDownRow[]
   /** 按套下钻（`order_item_id` = 樘窗/套的订单行） */
   per_set?: PieceworkDrillDownRow[]
+  /** 未定价块（V90，issue #4696）：与 per-order 汇总**同一份聚合** ⇒ 两处恒等 */
+  unpriced?: UnpricedPiecework
 }
 
 /** 工序可写字段（PUT /api/admin/production/operations/{id}，issue #4204；scope 见 #4384 A1） */

@@ -370,6 +370,91 @@ class ProcessingOrderRouteSourceTest {
                 .containsExactly("配料", "打包");
     }
 
+    /** 本次生成落库的工序实例（按落库顺序）—— 落库**值**的判据只能从捕获的实体上取。 */
+    private List<com.migao.admin.entity.ProcessingPositionOperation> instanceOperations() {
+        ArgumentCaptor<com.migao.admin.entity.ProcessingPositionOperation> captor =
+                ArgumentCaptor.forClass(com.migao.admin.entity.ProcessingPositionOperation.class);
+        org.mockito.Mockito.verify(positionOperationMapper, org.mockito.Mockito.atLeastOnce())
+                .insert(captor.capture());
+        return captor.getAllValues();
+    }
+
+    /**
+     * 🔴 <b>红证①（issue #4696）：未定价 ≠ 0 元 —— 落库的实例快照必须是 {@code NULL}，不是 0。</b>
+     *
+     * <p>夹具事实：布料单的 `配料`/`打包` 矩阵格价逐字是 {@code NULL}（`canonicalPositions`
+     * 的「适用但未定价」形态，与 V79 ② 的种子同值），而这两道工序的**工序库行价**逐字是 {@code 0.0}
+     * （{@code FABRIC_OPERATIONS}，与 V79 ① 的 {@code unit_price = 0} 同值）。</p>
+     *
+     * <p>改前：{@code buildRoute} 回落工序库行价 ⇒ 落库 {@code unit_price = 0} ⇒
+     * 报工即按 <b>0 元</b> 计件（工人白干），而读面显示「未定价」——两处口径不一致且无人可见。
+     * 本断言就是那条红线的机械形态：<b>落库值必须是 NULL</b>。</p>
+     */
+    @Test
+    @DisplayName("PG-039 未定价 ⇒ 落库实例单价 = NULL（**不得**回落工序库行价 0 元，issue #4696）")
+    void unpricedFabricRoutePersistsNullUnitPriceNotZero() {
+        stubRoutings();
+        stubGenerate(List.of(itemWithSaleForm("item-1", "遮光布料X", "配料", "布料")));
+
+        var results = service().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        List<com.migao.admin.entity.ProcessingPositionOperation> ops = instanceOperations();
+        assertThat(ops).extracting(com.migao.admin.entity.ProcessingPositionOperation::getOperationName)
+                .as("布料单两道工序（缺一道 ⇒ 判据无从谈起）").containsExactly("配料", "打包");
+        assertThat(ops).allSatisfy(op -> assertThat(op.getUnitPrice())
+                .as("工序「%s」的矩阵价是 NULL ⇒ 实例快照必须为 null（未定价）；"
+                        + "回落工序库行价（夹具里逐字 0.0）⇒ 计件 0 元且与「定价 0」不可区分",
+                        op.getOperationName())
+                .isNull());
+    }
+
+    /**
+     * 反向护栏（issue #4696）：把同一格**显式定价为 0 元** ⇒ 落库 {@code 0}，
+     * 与「未定价」（{@code NULL}）**可区分**。两者同形 ⇒ 本条或上一条必红。
+     */
+    @Test
+    @DisplayName("PG-039 反向护栏：显式定价 0 元 ⇒ 落库 0（≠ 未定价的 NULL，issue #4696）")
+    void explicitlyZeroPricedFabricRoutePersistsZero() {
+        stubRoutings();
+        // ⚠️ 顺序：`stubGenerate` 自己会重桩 `operationPositions` ⇒ 覆盖必须放在它**之后**
+        stubGenerate(List.of(itemWithSaleForm("item-1", "遮光布料X", "配料", "布料")));
+        lenient().when(productionOperationQueryService.operationPositions(TENANT))
+                .thenReturn(zeroPricedFabricPositions());
+
+        service().generate(List.of("order-001"), TENANT, "u1");
+
+        List<com.migao.admin.entity.ProcessingPositionOperation> ops = instanceOperations();
+        assertThat(ops).extracting(com.migao.admin.entity.ProcessingPositionOperation::getOperationName)
+                .containsExactly("配料", "打包");
+        // 只把 `配料`×`布料` 改成 0：`打包` 仍 NULL ⇒ 同一批实例里两态共存且可区分
+        assertThat(ops).filteredOn(op -> "配料".equals(op.getOperationName()))
+                .allSatisfy(op -> assertThat(op.getUnitPrice())
+                        .as("定价为 0 元 = **有价** ⇒ 落 0；若与未定价同形（都 null）⇒ 红")
+                        .isNotNull().isEqualByComparingTo(BigDecimal.ZERO));
+        assertThat(ops).filteredOn(op -> "打包".equals(op.getOperationName()))
+                .allSatisfy(op -> assertThat(op.getUnitPrice())
+                        .as("同一次实例化里另一道仍是未定价 ⇒ 两态可区分")
+                        .isNull());
+    }
+
+    /** 布料两格价目：`配料` 显式 0 元、`打包` 仍未定价（NULL）。 */
+    private static List<com.migao.admin.entity.ProductionOperationPosition> zeroPricedFabricPositions() {
+        List<com.migao.admin.entity.ProductionOperationPosition> rows = new ArrayList<>();
+        for (com.migao.admin.entity.ProductionOperationPosition row
+                : RoutingModelFixture.canonicalPositions(TENANT)) {
+            boolean fabricZero = RoutingModelFixture.FABRIC_POSITION.equals(row.getPosition())
+                    && "配料".equals(row.getLogicalName());
+            rows.add(com.migao.admin.entity.ProductionOperationPosition.builder()
+                    .id(row.getId()).tenantId(row.getTenantId())
+                    .logicalName(row.getLogicalName()).position(row.getPosition())
+                    .unitPrice(fabricZero ? BigDecimal.ZERO : row.getUnitPrice())
+                    .applicable(row.getApplicable()).status(row.getStatus()).deleted(row.getDeleted())
+                    .build());
+        }
+        return rows;
+    }
+
     @Test
     @DisplayName("PG-039 回归：缺 saleForm / saleForm=成品帘 ⇒ 与改前**逐字相同**（判据 5）")
     void missingOrFinishedSaleFormKeepsTheLegacyDerivation() {

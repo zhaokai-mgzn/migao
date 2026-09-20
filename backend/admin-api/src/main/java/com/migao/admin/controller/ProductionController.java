@@ -98,6 +98,10 @@ public class ProductionController {
      * body: {"positions":[{"position_name":"布帘","operations":[{seq,operation,group,unit,qty,
      *        unit_price,factor,is_must_finish,is_start_marker}]}]}
      *
+     * <p>⚠️ {@code unit_price} 为 {@code null}（或缺键）= <b>未定价</b>（V90，issue #4696）⇒
+     * 实例快照落 {@code NULL}（**不折 0 元**）；{@code 0} 是<b>显式定价为 0 元</b>，仍是有价。
+     * 服务端派生路径（{@code derivePositionPayload}）同样**不回落**工序库行价。</p>
+     *
      * <p><b>positions 可选</b>（issue #4202）：缺省/空数组 ⇒ 服务端**按订单派生**
      * （复用生成加工单的工序库路线解析，见 {@link ProcessingOrderService#derivePositionPayload}）。
      * 存量单（生成于「生成即实例化」之前，工序实例与 qr_token 双空）由此获得恢复路径；
@@ -208,6 +212,12 @@ public class ProductionController {
     /**
      * 加工单计件汇总（内部计件工资，per 工序；与对外加工费两套账分离）
      * GET /api/admin/production/orders/{orderId}/piecework
+     *
+     * <p><b>未定价显式可见</b>（V90，issue #4696）：响应追加 {@code unpriced}
+     * （{@code {qty, operations:[{operation,logical_name,qty}], hint}}）——
+     * <b>未定价 ≠ ¥0.00</b>：未定价工序的报工**不进** {@code total}（更不得按 0 计件），
+     * 但数量与工序名必须列出来，并给可行动 hint（定价入口）。
+     * 既有键名/含义/顺序一字不动（只加键）。</p>
      */
     @GetMapping("/orders/{orderId}/piecework")
     public ApiResponse<Map<String, Object>> piecework(@PathVariable String orderId) {
@@ -219,9 +229,13 @@ public class ProductionController {
      * GET /api/admin/production/piecework/summary?period=YYYY-MM[&worker_name=]
      *
      * <p>返回 {@code {period,total,per_worker:[{worker_name,amount,qty}],
-     * per_operation:[{operation,amount,qty}]}}；聚合算法与 per-order 计件**同一份**
-     * （{@code ProductionService.aggregate}）。{@code period} 在服务层校验（缺失/非法 ⇒ 422
+     * per_operation:[{operation,amount,qty}], unpriced:{qty,operations,hint}}}；聚合算法与
+     * per-order 计件**同一份**（{@code ProductionService.aggregate}）⇒ 两处的 {@code unpriced}
+     * 块恒等（不会两套口径漂移）。{@code period} 在服务层校验（缺失/非法 ⇒ 422
      * 可行动错误，而不是 400 参数缺失）。</p>
+     *
+     * <p><b>未定价显式可见</b>（V90，issue #4696）：见 {@link #piecework(String)} ——
+     * 未定价的报工不进 {@code total}，但必须在报表上列出来 + 给定价入口。</p>
      */
     @GetMapping("/piecework/summary")
     @RequirePermission("processing:manage")

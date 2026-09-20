@@ -137,3 +137,60 @@ describe('PieceworkTable', () => {
     expect(code).not.toMatch(/item\.operation/)
   })
 })
+
+/**
+ * 未定价显式可见（issue #4696，P1）—— 红证② 的前端半边。
+ *
+ * 缺陷原形：未定价的报工在**算钱的地方**被静默折成 0 元，界面只在**读面徽标**上说「未定价」
+ * ⇒ 工人白干且无人知道，且「没定价」与「价本来就是 0」不可区分。
+ */
+describe('PieceworkTable 未定价显式可见（issue #4696）', () => {
+  const onlyUnpriced: PieceworkSummary = {
+    total: 0,
+    per_worker: {},
+    per_operation: [],
+    unpriced: {
+      qty: 5,
+      operations: [{ operation: '配料', logical_name: '配料', position: '布料', qty: 5 }],
+      hint: '以下工序未定价',
+    },
+  }
+
+  it('🔴 只有未定价报工 ⇒ **不得**渲染「暂无计件数据」，必须显示未定价 + 定价入口', () => {
+    render(<PieceworkTable summary={onlyUnpriced} />)
+
+    expect(
+      screen.queryByTestId('piecework-empty'),
+      '未定价的单子里 per_operation/per_worker/total 全空 —— 只看它们会把「干了活没定价」藏起来',
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId('piecework-unpriced')).toBeInTheDocument()
+    expect(screen.getByTestId('piecework-unpriced-0')).toHaveTextContent('配料')
+    expect(screen.getByTestId('piecework-unpriced-0')).toHaveTextContent('未定价')
+    expect(screen.getByTestId('piecework-unpriced-detail')).toHaveTextContent('5')
+    expect(screen.getByTestId('piecework-unpriced-pricing-link')).toHaveAttribute(
+      'href',
+      '/production/routings',
+    )
+  })
+
+  it('反向护栏：**价 0** 的工序照常渲染 ¥0.00 且**不出现**未定价块（两态可区分）', () => {
+    render(
+      <PieceworkTable
+        summary={{
+          total: 0,
+          per_worker: {},
+          per_operation: [{ operation: '配料', amount: 0 }],
+          unpriced: { qty: 0, operations: [] },
+        }}
+      />,
+    )
+
+    expect(screen.queryByTestId('piecework-unpriced')).not.toBeInTheDocument()
+    expect(screen.getByTestId('piecework-operation-amount')).toHaveTextContent('¥0.00')
+  })
+
+  it('零条未定价 ⇒ 不制造噪音（未定价块不渲染）', () => {
+    render(<PieceworkTable summary={summary} />)
+    expect(screen.queryByTestId('piecework-unpriced')).not.toBeInTheDocument()
+  })
+})
