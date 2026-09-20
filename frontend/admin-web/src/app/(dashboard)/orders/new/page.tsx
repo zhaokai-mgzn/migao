@@ -2407,6 +2407,55 @@ interface ProductGroupBlockProps {
 
 
 /**
+ * **可折叠头部**（issue #4679）—— 折叠开关的**唯一实现**：`button` 语义 + `aria-expanded`
+ * + chevron（键盘可达：回车 / 空格都触发）。两处使用者共用它 —— **向导步骤**（#4511）与
+ * **商品卡组头**（#4679）；用户口径「别新造一套折叠组件」。
+ *
+ * - `trailing`：**始终**渲染的右侧内容（组头的金额）；
+ * - `summary`：**仅收起时**渲染的摘要（向导步骤的已选结果 / 组头的尺寸·米数）
+ *   —— 收起 ≠ 看不出这是哪一行。
+ */
+function CollapsibleHeader({
+  open,
+  onToggle,
+  className = '',
+  summary,
+  trailing,
+  children,
+}: {
+  open: boolean
+  onToggle: () => void
+  className?: string
+  /** 收起时显示的摘要 */
+  summary?: React.ReactNode
+  /** 始终显示的右侧内容 */
+  trailing?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className={`flex items-center gap-2 text-left ${className}`}
+    >
+      {children}
+      <span className="ml-auto flex items-center gap-1.5 min-w-0">
+        {!open && summary && (
+          <span className="text-xs text-neutral-500 truncate">{summary}</span>
+        )}
+        {trailing}
+        {open ? (
+          <ChevronDown className="w-4 h-4 text-neutral-400 shrink-0" />
+        ) : (
+          <ChevronRight className="w-4 h-4 text-neutral-400 shrink-0" />
+        )}
+      </span>
+    </button>
+  )
+}
+
+/**
  * **向导步骤**（issue #4511，用户口径「加个由上到下的向导，参考苹果商店的购买商品选配」）。
  *
  * 三条形态约定：
@@ -2438,11 +2487,11 @@ function WizardStep({
 }) {
   return (
     <div className="border-t border-neutral-100 first:border-t-0">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="w-full flex items-center gap-2 py-2.5 text-left"
+      <CollapsibleHeader
+        open={open}
+        onToggle={onToggle}
+        className="w-full py-2.5"
+        summary={summary}
       >
         <span
           className={
@@ -2454,17 +2503,7 @@ function WizardStep({
         </span>
         <span className="text-sm font-medium text-neutral-700 shrink-0">{title}</span>
         {badges}
-        <span className="ml-auto flex items-center gap-1.5 min-w-0">
-          {!open && summary && (
-            <span className="text-xs text-neutral-500 truncate">{summary}</span>
-          )}
-          {open ? (
-            <ChevronDown className="w-4 h-4 text-neutral-400 shrink-0" />
-          ) : (
-            <ChevronRight className="w-4 h-4 text-neutral-400 shrink-0" />
-          )}
-        </span>
-      </button>
+      </CollapsibleHeader>
       {open && <div className="pb-4">{children}</div>}
     </div>
   )
@@ -2500,6 +2539,12 @@ function ProductGroupBlock({
   onChangeQty,
   onChangePrice,
 }: ProductGroupBlockProps) {
+  /**
+   * **整卡折叠态**（issue #4679，用户原话「这里加个可折叠的交互」）—— 组头整行是开关。
+   * **默认展开**（不改现有默认行为）；状态落在**本组件** ⇒ 多商品时各卡独立、互不影响。
+   * 与卡体内四步手风琴（#4511）正交：那是「哪一步展开」，这是「整卡展开」。
+   */
+  const [open, setOpen] = useState(true)
   const colorOptions = useMemo(() => uniqueColors(group.product?.skus), [group.product])
   const skuOptions = useMemo(() => {
     if (!group.product?.skus || group.selectedColorId == null) return []
@@ -2515,6 +2560,13 @@ function ProductGroupBlock({
     (s, l) => s + (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0),
     0
   )
+  /** 收起时组头仍要能看出「这是哪一行」（#4679 判据 5）：顺手带出尺寸 / 米数 */
+  const collapsedSummary = [
+    first.width && first.height ? `${first.width} × ${first.height} m` : null,
+    first.quantity ? `${first.quantity} 米` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
   // **空商品组**（issue #4508，用户实测反馈「进入新增商品页面不应该有个默认商品 1」）：
   // 还没选商品 ⇒ **只渲染「选择商品」入口**，不渲染组壳（组头序号/商品名/N 个部位/金额、
@@ -2544,9 +2596,21 @@ function ProductGroupBlock({
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white">
-      {/* 组头 = **商品基础属性**（一组一份，部位共用） */}
-      <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-neutral-100 bg-neutral-50/60 rounded-t-xl">
-        <div className="flex items-center gap-2 min-w-0">
+      {/* 组头 = **商品基础属性**（一组一份）+ **整卡折叠开关**（issue #4679）：
+          点组头整行 ⇒ 收起/展开卡片体。「删除」是开关的**兄弟节点**（不在 `<button>` 内）
+          ⇒ 点删除只删、不被折叠吞掉；收起后它仍可用（不随卡片体卸载）。 */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-neutral-100 bg-neutral-50/60 rounded-t-xl">
+        <CollapsibleHeader
+          open={open}
+          onToggle={() => setOpen(!open)}
+          className="flex-1 min-w-0"
+          summary={collapsedSummary}
+          trailing={
+            <span className="text-sm font-semibold text-neutral-900 shrink-0">
+              {formatAmount(groupAmount)}
+            </span>
+          }
+        >
           <span className="inline-flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-primary-600 text-white text-xs font-semibold">
             {index + 1}
           </span>
@@ -2558,24 +2622,20 @@ function ProductGroupBlock({
           <span className="text-xs text-neutral-400 shrink-0">
             {group.saleForm === SALE_FORM_FABRIC ? '布料' : group.curtainBody}
           </span>
-        </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <span className="text-sm font-semibold text-neutral-900">
-            {formatAmount(groupAmount)}
-          </span>
-          {canRemove && (
-            <button
-              type="button"
-              onClick={onRemoveGroup}
-              className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-red-600 transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              删除
-            </button>
-          )}
-        </div>
+        </CollapsibleHeader>
+        {canRemove && (
+          <button
+            type="button"
+            onClick={onRemoveGroup}
+            className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-red-600 transition-colors shrink-0"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            删除
+          </button>
+        )}
       </div>
 
+      {open && (
       <div className="p-4">
         {/* 商品选择 */}
         <div className="mb-4">
@@ -2799,6 +2859,7 @@ function ProductGroupBlock({
           <div className="space-y-3">{renderPosition(group.lines[0])}</div>
         )}
       </div>
+      )}
     </div>
   )
 }
