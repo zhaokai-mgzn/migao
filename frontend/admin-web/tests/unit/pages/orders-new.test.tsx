@@ -1561,4 +1561,165 @@ describe('NewOrderPage', () => {
       expect(screen.getByText('已选 1 项')).toBeInTheDocument()
     })
   })
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // issue #4679（用户原话「**这里加个可折叠的交互**」，截图 = 「商品信息」下第 1 个
+  // 商品卡组头那行 `① 商品名 色号 帘体 ¥金额 删除`）：**组头整行变成折叠开关**，
+  // 点击 ⇒ 收起/展开**整张卡的卡片体**。复用 `WizardStep` 的模式（`button` +
+  // `aria-expanded` + chevron，单一实现 = 页面里的 `CollapsibleHeader`）。
+  //
+  // 与卡**体内**既有的四步手风琴（#4511）**正交**：那是「哪一步展开」，这是「整卡展开」。
+  // ══════════════════════════════════════════════════════════════════════════
+  describe('#4679 商品卡组头可折叠（点头部收起/展开整卡）', () => {
+    /**
+     * 组头折叠开关：可访问名以「**序号 + 商品名**」开头。
+     * 红证（改前实测）：组头是静态 `div` ⇒ 这里抛
+     * `Unable to find an element with the role "button"`。
+     */
+    const headerToggle = (index: number, name: string) =>
+      screen.getByRole('button', { name: new RegExp(`^${index} ${name}`) })
+    /**
+     * 卡片体存在判据 = 体内**向导步骤**开关的数量（整卡收起 ⇒ 体内一切都不渲染）。
+     * 用 `^\\d+ ${title}`（不是 `^1 `）⇒ 对任意组序都成立。
+     */
+    const bodyStepCount = (title: string) =>
+      screen.queryAllByRole('button', { name: new RegExp(`^\\d+ ${title}`) }).length
+    const deleteButtons = () => screen.getAllByRole('button', { name: /删除/ })
+
+    const mockTwoProducts = () => {
+      mockGetProducts.mockResolvedValue({
+        data: {
+          data: {
+            items: [
+              { id: 'p1', name: '遮光窗帘', price: 100 },
+              { id: 'p2', name: '雪尼尔窗帘', price: 200 },
+            ],
+            total: 2,
+          },
+        },
+      })
+      mockGetProduct.mockImplementation((id: string) =>
+        Promise.resolve({
+          data: {
+            data: {
+              id,
+              name: id === 'p1' ? '遮光窗帘' : '雪尼尔窗帘',
+              skus: [],
+              price: id === 'p1' ? 100 : 200,
+            },
+          },
+        })
+      )
+    }
+
+    /** 选商品 → 等**组头**出现（组头落地 = 商品详情已写回） */
+    const pick = async (index: number, name: string) => {
+      fireEvent.click(await screen.findByText('点击搜索并选择商品'))
+      fireEvent.click(await screen.findByText(name))
+      await waitFor(() => expect(headerToggle(index, name)).toBeInTheDocument())
+    }
+    const pickFirst = (name: string) => pick(1, name)
+    /** 多商品：点「添加商品」→ 给新组（组 2）选商品 */
+    const pickSecond = async (name: string) => {
+      fireEvent.click(screen.getByRole('button', { name: /添加商品/ }))
+      await pick(2, name)
+    }
+    /** 填宽/高（Label 无 `htmlFor` ⇒ 按 label 文本定位其容器里的 input） */
+    const fillSize = (w: string, h: string) => {
+      const pick1 = (label: string) =>
+        screen
+          .getAllByText(label)
+          .map((el) => el.closest('div')!.querySelector('input') as HTMLInputElement)
+      fireEvent.change(pick1('宽 (米)')[0], { target: { value: w } })
+      fireEvent.change(pick1('高 (米)')[0], { target: { value: h } })
+    }
+
+    it('判据 1：**默认展开**（aria-expanded=true + 卡片体在）—— 改前默认行为不变', async () => {
+      mockTwoProducts()
+      render(<NewOrderPage />)
+      await pickFirst('遮光窗帘')
+      expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'true')
+      expect(bodyStepCount('尺寸与数量')).toBe(1)
+    })
+
+    it('判据 2（红证）：点头部 ⇒ **整卡收起**（aria-expanded=false + 体内 ①~④ 全不渲染）；再点 ⇒ 展开', async () => {
+      mockTwoProducts()
+      render(<NewOrderPage />)
+      await pickFirst('遮光窗帘')
+      // 红证（改前）：组头不可点 ⇒ 本行 `getByRole('button', …)` 直接抛错，判据 2 必红。
+      expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'true')
+
+      fireEvent.click(headerToggle(1, '遮光窗帘'))
+      expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'false')
+      for (const title of ['尺寸与数量', '工艺规格', '加工项', '特殊选项']) {
+        expect(bodyStepCount(title)).toBe(0)
+      }
+      // 收起 ≠ 看不出是哪一行：商品名 / 帘体 / 金额仍留在组头
+      const collapsed = headerToggle(1, '遮光窗帘')
+      expect(within(collapsed).getByText('遮光窗帘')).toBeInTheDocument()
+      expect(within(collapsed).getByText('布帘')).toBeInTheDocument()
+      expect(collapsed.textContent).toContain('¥')
+
+      fireEvent.click(headerToggle(1, '遮光窗帘'))
+      expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'true')
+      expect(bodyStepCount('尺寸与数量')).toBe(1)
+    })
+
+    it('判据 3：收起时组头**带出尺寸与米数摘要**（用户口径「顺手带出更好」）', async () => {
+      mockTwoProducts()
+      render(<NewOrderPage />)
+      await pickFirst('遮光窗帘')
+      fillSize('6.6', '2.6')
+      fireEvent.click(headerToggle(1, '遮光窗帘'))
+      expect(within(headerToggle(1, '遮光窗帘')).getByText('6.6 × 2.6 m · 1 米')).toBeInTheDocument()
+      // 展开态**不重复**渲染该摘要（它只在收起时出现）
+      fireEvent.click(headerToggle(1, '遮光窗帘'))
+      expect(screen.queryByText('6.6 × 2.6 m · 1 米')).toBeNull()
+    })
+
+    it('判据 4：多商品**各卡独立**折叠（收起第 1 张不影响第 2 张）', async () => {
+      mockTwoProducts()
+      render(<NewOrderPage />)
+      await pickFirst('遮光窗帘')
+      await pickSecond('雪尼尔窗帘')
+      expect(screen.getByText('共 2 个商品')).toBeInTheDocument()
+      expect(bodyStepCount('尺寸与数量')).toBe(2)
+
+      fireEvent.click(headerToggle(1, '遮光窗帘'))
+      expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'false')
+      expect(headerToggle(2, '雪尼尔窗帘')).toHaveAttribute('aria-expanded', 'true')
+      expect(bodyStepCount('尺寸与数量')).toBe(1) // 只剩第 2 张的体
+
+      // 反向：再收起第 2 张 ⇒ 两张都收起；展开第 1 张 ⇒ 第 2 张仍收起（不是全局开关）
+      fireEvent.click(headerToggle(2, '雪尼尔窗帘'))
+      expect(bodyStepCount('尺寸与数量')).toBe(0)
+      fireEvent.click(headerToggle(1, '遮光窗帘'))
+      expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'true')
+      expect(headerToggle(2, '雪尼尔窗帘')).toHaveAttribute('aria-expanded', 'false')
+      expect(bodyStepCount('尺寸与数量')).toBe(1)
+    })
+
+    it('判据 5（反向护栏）：点「删除」⇒ **只删**、不触发折叠；收起态下删除仍可用', async () => {
+      mockTwoProducts()
+      render(<NewOrderPage />)
+      await pickFirst('遮光窗帘')
+      await pickSecond('雪尼尔窗帘')
+
+      // 结构性护栏：删除按钮**不是**折叠开关的后代
+      // （嵌套 `<button>` 会让点删除连带触发折叠 —— 正是「被折叠开关吞掉」的形态）
+      expect(headerToggle(1, '遮光窗帘').contains(deleteButtons()[0])).toBe(false)
+      expect(deleteButtons()).toHaveLength(2)
+
+      // 收起第 2 张 ⇒ 它自己的「删除」仍在（没被折叠吞掉、也不随卡片体卸载）
+      fireEvent.click(headerToggle(2, '雪尼尔窗帘'))
+      expect(headerToggle(2, '雪尼尔窗帘')).toHaveAttribute('aria-expanded', 'false')
+      expect(deleteButtons()).toHaveLength(2)
+
+      // 点第 2 张的「删除」⇒ 只删第 2 组；第 1 组的展开态**未被动过**（点击未冒泡成折叠）
+      fireEvent.click(deleteButtons()[1])
+      expect(screen.queryByRole('button', { name: /雪尼尔窗帘/ })).toBeNull()
+      expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'true')
+      expect(bodyStepCount('尺寸与数量')).toBe(1)
+    })
+  })
 })
