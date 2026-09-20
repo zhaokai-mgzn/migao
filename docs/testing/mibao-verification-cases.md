@@ -638,6 +638,7 @@
 ### CH-009. interact form 表单提交注入上下文（__FORM__ 协议） 🔵
 ```
 你: __FORM__|{\"customer_name\":\"张三\",\"customer_phone\":\"13800138000\",\"customer_address\":\"杭州市西湖区\",\"quantity\":\"3\"}
+期望: direct_reply or order_create or interact
 数据: 表单字段注入本轮 LLM 上下文（不改写会话历史）
 数据: 日志中手机号脱敏（138****8000）
 数据: payload 超限/非法 JSON 回退为普通文本处理
