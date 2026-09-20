@@ -1,0 +1,128 @@
+-- 补种「单价版本账缺失」的活跃工序的初始版本行（issue #4741，P1 静默缺失·**同族不同表**）。
+--
+-- ## 一句话
+-- `V55__create_production_operation_price_versions.sql` 的回填是**按 `production_operations` 派生**的
+-- （`'pv-' || o.id` + `NOT EXISTS` 守卫）⇒ 它执行那一刻**工序库里没有行**的租户/工序**整批静默跳过**
+-- ⇒ 这些工序**没有版本账** ⇒ 「**当前价 = 最新版本行**」（V55 的冻结契约）对它们不成立
+-- ⇒ **历史定价 / 版本化单价的回溯能力缺失**（不是 422、不报错 ⇒ **静默**）。
+--
+-- ## 为什么 `V55` 修不了这件事（必须另开新迁移）
+-- `MigrationRunner` 的台账 `schema_migrations` 按**文件名**记账、已应用的文件**整份跳过**
+-- ⇒ 重跑 V55 永远不会发生；而 V55 执行时缺失的那些工序是**在 V55 之后**才进库的：
+--   · **V91**（issue #4707）为「从未种过基线工序」的租户补 36 道 ⇒ 这些行在 V55 之后；
+--   · **V79 / V89**（#4529 / #4685）为存量租户补 `打包` ⇒ 同样在 V55 之后，且**当时没补账**。
+-- ⇒ 只能新增迁移补（改 V55 只对全新库生效、存量环境永远拿不到，issue #4235；V55 另被
+-- `tests/unit_ci_workflows/migration_fingerprints.json` 逐字节冻结）。
+--
+-- ## 真库实测（2026-09-21，PG 18.3 / 阿里云 RDS `ai_customer_service`）
+-- | 租户 | `production_operations`（活跃） | `production_operation_price_versions`（活跃） | 活跃工序缺账 | 判定 |
+-- |---|---|---|---|---|
+-- | 1 词元通达 | 36 | 41 | **1**（`打包`，V79 补种未补账） | 部分缺失 |
+-- | 20 米高POC演示布艺 | 36 | **0** | **36** | 整批静默跳过 |
+-- | 21 POC彩排5605 | 36 | **0** | **36** | 整批静默跳过 |
+-- 全库应补 **73** 行（= 1 + 36 + 36）。租户 1 的 41 行里 1 行挂在**软删工序**`配料`上
+-- （V88 退场、账行留痕）⇒ 与「活跃工序 35 道有账 + 1 道无账」自洽。
+-- ⚠️ 本迁移**不只是为 20/21 两户**：`打包` 这一道在**健康租户**上同样缺账 —— 它是同一条根因
+-- （**V55 之后进库的工序没有补账**）在健康租户上的显形，故闸门是**逐工序**的、不是逐租户的。
+--
+-- ## 派生口径（**逐字照 V55**，不许改）
+-- V55 的回填语句逐字为：
+--   `INSERT INTO production_operation_price_versions (id, tenant_id, operation_id, unit_price, created_at)`
+--   `SELECT 'pv-' || o.id, o.tenant_id, o.id, o.unit_price, NOW() FROM production_operations o`
+--   `WHERE o.deleted = 0 AND NOT EXISTS (SELECT 1 FROM production_operation_price_versions v`
+--   `WHERE v.operation_id = o.id AND v.deleted = 0) ON CONFLICT (id) DO NOTHING;`
+-- 逐项核清（列 / 默认值 / 守卫）：
+--   · **列** = `(id, tenant_id, operation_id, unit_price, created_at)`（**显式写列**）；
+--   · **id** = 派生键（V55 = `'pv-' || o.id`；本迁移 = `'pv-v96-' || o.id`，见「回滚」节）；
+--   · **unit_price** = `production_operations.unit_price`（`NOT NULL DEFAULT 0`，**不发明价**：
+--     账行如实记当前价，`0` = 定价 0 元、不是「未定价」—— 后者的口径在**矩阵格**表
+--     `production_operation_position_price_versions.unit_price`（V86，可空））；
+--   · **created_at** = `NOW()`（默认 `NOW()`；照 V55 显式写）；
+--   · **守卫** = 逐工序 `NOT EXISTS` + `ON CONFLICT (id) DO NOTHING`。
+--
+-- ## 闸门：**逐工序**（**刻意不带存在性护栏** —— 那正是缺陷成因，与 #4714 同款判断）
+-- V72 ⑤ / V84 的缺陷形态是**存在性护栏**（`EXISTS (SELECT 1 FROM production_operations …)`：
+-- 被派生表为空 ⇒ 整批跳过）。本迁移的**唯一**守卫是**目标表**上的逐工序去重（V55 同款），
+-- **不含**任何「该租户工序库是否非空」「该租户是否已有账」的租户级闸门 ——
+-- 带那种闸门 = 本缺陷原地复发（工序库为空 / 账本为空 ⇒ 整块静默跳过）。
+-- 谓词 = 该工序**从未有过任何版本行**（**含软删行**）：
+--   · **含软删行**是承重的（V91 同款判断）：有过账行 ⇒ 说明**记过账** ⇒ 本迁移不碰它
+--     ⇒ **不复活商家删掉的版本行**（真库实测该口径与 `deleted = 0` 口径**同为 73 行**，
+--     即本仓现存数据上「账行全软删的活跃工序」= **0** 道 ⇒ 严格口径零代价）；
+--   · **不是**「按 id 前缀认领」（`pv-op-v91-%`）：开租播种（`ProductionSeedTemplateService`）
+--     与商家自建工序落的是 UUID id ⇒ 按 id 判会漏掉它们（与 V91 的取舍同因）。
+--
+-- ## 不覆盖商家已改（红线）
+-- 本文件**没有任何** `UPDATE` / `DELETE`：唯一的写语句是 `INSERT … SELECT … WHERE NOT EXISTS`。
+-- 商家改过价 ⇒ 写面（`ProductionOperationCommandService`）**同事务**追加过版本行 ⇒ 该工序有账
+-- ⇒ 本迁移不碰它（连 `unit_price` 都不读回）。商家软删过版本行 ⇒ 同上（含软删行也算「有账」）。
+--
+-- ## 幂等（`MigrationRunner` 硬要求所有迁移可重复执行）
+-- ① 逐工序 `NOT EXISTS`（**含软删行**）⇒ 已补过的工序整行跳过；
+-- ② `ON CONFLICT (id) DO NOTHING` 兜底 —— 本迁移 id 按 `'pv-v96-' || o.id` 派生，商家改名 /
+--    软删后重跑时槽位 id 仍被那行占着 ⇒ 收敛成**无操作**（语义：**账只记一次**）。
+-- ⇒ 第二次执行匹配 0 行、净效果相同。
+--
+-- ## 🔴 类型显式（**V79 的真库事故教训**）
+-- `unit_price` 显式 `::numeric` —— 本语句的取值源 `production_operations.unit_price` 本身是
+-- `NUMERIC(10,2) NOT NULL`（无 NULL、无 `JOIN (VALUES …)` 的整列推断风险），但**仍然显式**：
+-- 口径与 V89 / V91 / V93 一致，且防止将来把取值源改成可空表达式时静默复发 V79 的推断坑
+-- （`text → numeric` 不是赋值转换 ⇒ 整文件单事务回滚、`schema_migrations` 里该版本永久缺席）。
+--
+-- ## 停止条件（出现任一条即停手，不回滚本迁移、另开单）
+-- S1 补种后仍有活跃工序**没有活跃版本行**（核法：逐工序比对
+--    `production_operations WHERE deleted=0` 与 `production_operation_price_versions WHERE deleted=0`，
+--    应 **0** 条差集）；
+-- S2 补种后某活跃工序的**活跃版本行数 > 1 且新增行本不是本迁移插的**（说明闸门漏了 ⇒ 造出
+--    「最新版本行」歧义 ⇒ 立即停手）；
+-- S3 三张快照表任一被写入（核法：`git grep` 本文件应零命中
+--    `processing_orders` / `processing_position_operations` / `production_work_logs`）；
+-- S4 商家已改过的价被覆盖（核法：改前记 `(operation_id)` → 活跃版本行数 + 最新行 `unit_price`，
+--    重跑后逐行比对，应**逐行相同**）；
+-- S5 重复执行净效果不同（核法：跑两遍，逐表 `count(*)` + 全行指纹一致）；
+-- S6 🔴 **V91 未合入**而本迁移先上 ⇒ 工序库仍空、账自然也是空 ⇒ 本迁移**静默空跑**
+--    （**正是本单要治的形态**）⇒ **两单必须 V91 先（或同批）**。V91 已在 main
+--    （`V91__backfill_baseline_operations_for_empty_catalogs.sql`）⇒ 本条是**回归护栏**：
+--    若 V91 被回滚 / 摘除，本迁移必须一并停手。
+--
+-- ## 回滚（**新迁移，不删 V96**；语义 = 撤掉本次补种的行）
+-- ```sql
+-- -- V97__rollback_operation_price_versions_backfill.sql（本单只登记，不落码）
+-- DELETE FROM production_operation_price_versions WHERE id LIKE 'pv-v96-%';
+-- ```
+-- ⚠️ 只删**本迁移的 id 前缀** `pv-v96-`；**不碰** `pv-`（V55）/ `pv-v56-*`（V56 的 5 道）
+-- 与商家改价产生的行（写面追加的行 id 由 `ProductionOperationCommandService` 生成）。
+-- ⚠️ 回滚**不能复原**的东西（如实登记）：本迁移生效期间**已发生**的改价照旧留在账上
+-- （那些行不是本前缀）⇒ 回滚的语义是「让**缺账**回到缺账」，**不是**「抹掉这段时间的调价史」。
+--
+-- ## 🔴 红线：三张快照表**一字不动**（本文件的 DML 只碰 1 张**配置**表）
+--   · `processing_orders.items_snapshot`（加工单快照）
+--   · `processing_position_operations`（工序实例快照；⚠️ 与 `production_operation_positions`
+--     **名字极像**，本文件**两张都不写**）
+--   · `production_work_logs.unit_price` / `factor`（报工快照；历史工资不回溯）
+-- 本表（`production_operation_price_versions`）是**配置面**的账 —— 改价**不回溯**既有实例与历史报工
+-- （`processing_position_operations.unit_price` 是生成时快照，V49 注释），故补账**不改变任何历史金额**。
+--
+-- ## bootstrap 同步（`docs/sql/schema.sql` **已经是终态，本单不叠加派生语句**）
+-- 该路径**不跑迁移链**（docker-entrypoint-initdb.d）⇒ 必须自带终态。实测：schema.sql 的
+-- 单价版本回填段（`-- 单价版本回填（V55，issue #4204）`）**位于所有 `production_operations`
+-- 写语句之后**（工序种子在前、`UPDATE production_operations` 段也在其前，其后只有 SELECT 读面）
+-- ⇒ bootstrap 建库后**每条活跃工序都有账**（本机临时集群真跑 schema.sql：36 道活跃工序 /
+-- 36 行账 / 差集 **0**；`打包` 亦有账 0.00）。
+-- ⇒ 本单**只加一段指针注释**，不复制派生语句（复制 = 多一份会漂移的口径）。
+-- 「三处一致」的守卫 = `tests/unit_ci_workflows/test_v96_operation_price_versions_backfill.py`
+-- （迁移链终态 ↔ bootstrap 终态（真跑 schema.sql）↔ 从 `production_operations` **现场派生**，
+-- **不写死数字**）。
+
+INSERT INTO production_operation_price_versions
+    (id, tenant_id, operation_id, unit_price, created_at)
+SELECT 'pv-v96-' || o.id, o.tenant_id, o.id, o.unit_price::numeric, NOW()
+  FROM production_operations o
+ WHERE o.deleted = 0
+   -- 逐工序幂等 + 不复活软删：该工序**任何**版本行（含软删行）存在 ⇒ 判定为「已记过账」⇒ 跳过。
+   -- 🔴 **本迁移刻意不带租户级 / 工序库级的存在性护栏**（V72 ⑤ / V84 的 `EXISTS (production_operations …)`）
+   --    —— 那道护栏正是本缺陷的成因（被派生面为空 ⇒ 整批静默跳过）。唯一的守卫是**目标表**上的逐工序去重。
+   AND NOT EXISTS (
+       SELECT 1 FROM production_operation_price_versions v
+        WHERE v.operation_id = o.id)
+ON CONFLICT (id) DO NOTHING;
