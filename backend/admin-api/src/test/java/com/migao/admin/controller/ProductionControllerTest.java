@@ -543,7 +543,7 @@ class ProductionControllerTest {
         verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
     }
 
-    // ── §5 防呆的 HTTP 层（issue #4116 P0-3）：请求头透传 / 越站 422 / 超上限 422 / 软删 404 ──
+    // ── §5 防呆的 HTTP 层（issue #4116 P0-3）：请求头透传 / 越站已删（#4694，改判为放行）/ 超上限 422 / 软删 404 ──
 
     @Test
     @DisplayName("§5-1 幂等：X-Client-Request-Id 透传到服务层（不同指纹 ⇒ 服务层不被误报成重复）")
@@ -597,25 +597,34 @@ class ProductionControllerTest {
     }
 
     @Test
-    @DisplayName("§5-2 越站：前道未完成 ⇒ 422 + suggestion（不落明细、不推进）")
-    void reportRejectedWhenPredecessorNotDone() throws Exception {
+    @DisplayName("§5-2 越站闸门已删除（#4694 用户裁定）：前道未完成报后续工序 ⇒ 200 正常记账（不再 422）")
+    void reportAllowedWhenPredecessorNotDone() throws Exception {
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
         when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder("tok123"));
         when(positionOperationMapper.selectById("op-2"))
                 .thenReturn(op("op-2", 2, "布帘车被", "10.00", false, "pending", "0.00"));
+        // 前道 seq=1「精裁-布」只报了 4/10（未完成）—— 改前这条夹具会让报工 422，改后必须放行
         when(positionOperationMapper.selectList(any())).thenReturn(List.of(
                 op("op-1", 1, "精裁-布", "10.00", false, "done", "4.00"),
                 op("op-2", 2, "布帘车被", "10.00", false, "pending", "0.00")));
+        when(workLogMapper.insert(any(ProductionWorkLog.class))).thenReturn(1);
 
+        // 改钉（**≠ 放宽**）：期望从「422 + 尚未完成 + 请先报工完成」改成「200 + 推进」——
+        // 判据对象不变（前道未完成时报后续工序），是用户裁定改了期望；其余断言强度不降。
         mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/operations/op-2/report")
                         .contentType("application/json")
                         .content("{\"worker_name\":\"张师傅\",\"qty\":10,\"qualified_qty\":10,\"work_type\":\"normal\"}"))
-                .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.error.message", containsString("尚未完成")))
-                .andExpect(jsonPath("$.suggestion", containsString("请先报工完成")));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.operation_id").value("op-2"))
+                .andExpect(jsonPath("$.data.done_qty").value(10.0))
+                .andExpect(jsonPath("$.data.status").value("done"));
 
-        verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
+        ArgumentCaptor<ProductionWorkLog> logCaptor = ArgumentCaptor.forClass(ProductionWorkLog.class);
+        verify(workLogMapper).insert(logCaptor.capture());
+        // 按**实际做的工序**记账，且计件金额按数量 × 报工那刻的单价快照
+        assertThat(logCaptor.getValue().getOperationId()).isEqualTo("op-2");
+        assertThat(logCaptor.getValue().getQualifiedQty()).isEqualByComparingTo("10.00");
     }
 
     @Test
