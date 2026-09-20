@@ -161,6 +161,27 @@
 //      ⇒ 被拦时理由逐条就地展示、弹框不收摊、矩阵**不被动**（一格都不摘）；
 //    - 三态语义**不变**（`不做` / `未定价`（≠ ¥0.00） / `¥x.xx`）；`DELETE /operations/{id}` 不带参数时
 //      行为**一字不变**（矩阵格仍是硬护栏 —— 反向证明「护栏没被放宽」）。
+// ㉙ **抽屉死路：矩阵格关联不上时也必须能停用/删除**（issue #4674；用户原话
+//    「**这条测试数据已经没有办法删除了，无删除入口**」+ 截图：抽屉只有一句死路文案 + 一个「关闭」，
+//    而主表格里 `测试22` 那一行**还在**）：
+//    - **病根（三条）**：① 停用/删除**挂在「各部位的设置」行内**（`manageVariants` 为空 ⇒ 没有入口）；
+//      ② **两把尺**：表格按**逻辑名**成行、抽屉按 `variant_operation_id` 找格（该键 NULL / 指向别处
+//      ⇒ 抽屉静默空，而后端护栏③按 `variantNameOf` 照样认得出这道工序）；③ 空态文案
+//      「请核对各部位的适用性配置」是**死路指引**（页面上没有地方可核对）；
+//    - **A 抽屉层入口**（`operations-manage-disable` / `operations-manage-delete`）：渲染在**抽屉层**、
+//      **不依赖** `manageVariants` 是否为空（工序库那一行确实存在）⇒ 永远有路可走；
+//      删除走**既有** `DELETE /operations/{id}`（软删；#4671 的一键端点 `…/detach-and-delete`
+//      是**另一条**路径，本入口不用它）；
+//    - **B 空态给出路**（`operations-manage-empty` 里）：说清**为什么**空 + **两个可点动作**
+//      （「接入部位…」复用 #4614 的孤儿接入流程、「删除这道工序」）—— 不再写「请核对配置」；
+//    - **C 两把尺对齐**：`variant_operation_id` 关联不上时**回退按逻辑名**认这道工序（与后端
+//      `variantNameOf` 同一口径），并**显式提示** `operations-manage-unlinked-hint`
+//      「这些格没有关联到它」；指向**别处**的格只如实报出（`variant-foreign-*`）、**不给写面**
+//      （对它 PUT/DELETE 就是改另一道工序）—— **不许只改文案掩盖不一致**；
+//    - **反向护栏（不得放宽）**：主线 / 规则两条对抽屉层删除**照样拦**（422 ⇒ 理由逐条就地展示、
+//      弹框不收摊、矩阵**一格都不动**）；无主线/规则引用 ⇒ 删除**成功**；
+//    - **红证（修复前实测，窄跑 `-t ㉙`）**：7 failed（`Unable to find an element by:
+//      [data-testid="operations-manage-disable"]` / `…-delete` / `…-unlinked-hint`）⇒ 实现后全文件 147/147 绿。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -430,6 +451,47 @@ const openConditions = async (operation: string) => {
   await openManage(operation)
   return screen.findByTestId('operation-conditions')
 }
+
+/**
+ * **用户实测的死路夹具**（issue #4674；用户原话「**这条测试数据已经没有办法删除了，无删除入口**」）：
+ * 表格里**有** `测试22` 这一行（矩阵里有逻辑名 = `测试22` 的格），而抽屉里**空** ——
+ * 因为格的 `variant_operation_id` **未指向**该工序（NULL）。
+ * ⇒ 「行在 · 抽屉空 · 无处可删」：抽屉层原先只有「关闭」（正是截图形态）。
+ *
+ * 这是**真形态**、不是人造边界：`variant_operation_id` 由后端 `variantNameOf` 按
+ * `(逻辑名, 部位)` 反查**当前**工序库得出 —— 查不到（如库里没有该变体）⇒ 5 键**全 null**
+ * （见契约 #4587 ① 的 `NO_VARIANT`）。
+ */
+const CATALOG_WITH_TEST22 = {
+  total: 6,
+  groups: [
+    ...CATALOG.groups,
+    {
+      group: '其他',
+      operations: [
+        { id: 'op-test22', name: '测试22', group: '其他', position: '布帘', scope: 'position', unit: '件', unit_price: 1, is_must_finish: false, is_start_marker: false },
+        // 形态② 的对手方：`测试22` 的格**指向**它（指向别处）—— 它必须在库里，`foreign` 才成立
+        { id: 'op-别的工序', name: '别的工序', group: '其他', position: '布帘', scope: 'position', unit: '件', unit_price: 1, is_must_finish: false, is_start_marker: false },
+      ],
+    },
+  ],
+}
+
+/** 同上 + `测试22 × 布帘` 这一格：**格在、行在，但格没关联到这道工序**（`variant_operation_id = null`） */
+const POSITIONS_WITH_TEST22 = [
+  ...POSITIONS,
+  { id: 'pos-测试22-布帘', operation: '测试22', position: '布帘', unit_price: 1, applicable: true, ...NO_VARIANT },
+]
+
+/**
+ * **两把尺不一致**的形态（issue #4674 C）：`测试22` 的格里**有** `variant_operation_id`，
+ * 但它指向**别的**工序（`op-别的工序`）⇒ 原先那几格在抽屉里**根本不出现**（静默空）。
+ * 抽屉必须**显式提示**「这些格未关联到本工序」，而不是假装没有。
+ */
+const POSITIONS_TEST22_MISLINKED = [
+  ...POSITIONS,
+  { id: 'pos-测试22-布帘', operation: '测试22', position: '布帘', unit_price: 1, applicable: true, variant_operation_id: 'op-别的工序', unit: '件', group: '其他', scope: 'position', is_must_finish: false },
+]
 
 describe('工艺配置页 /production/routings（新路线模型，issue #4433 = 母单 #4423 的 P3）', () => {
   beforeEach(() => {
@@ -1321,14 +1383,168 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(drawer).toHaveTextContent('部位级工序要每个部位都做完')
   })
 
-  it('⑰-⑫ 抽屉：该逻辑工序查不到任何设置（6 键全 null）⇒ 可读提示，不空白、不发明数据', async () => {
+  it('⑰-⑫ 抽屉：该逻辑工序查不到任何设置（6 键全 null 且库里查不到）⇒ 可读提示 + 两个出路，不空白、不发明数据', async () => {
     await openManage('韩褶')
     expect(screen.queryByTestId(/^variant-row-/)).toBeNull()
     const empty = screen.getByTestId('operations-manage-empty')
-    expect(empty).toHaveTextContent('还没有设置')
+    // issue #4674 B：空态不再是一句死路文案 —— 说清**为什么**空 + 给**两个可点动作**
+    expect(empty).toHaveTextContent('都没有关联到它')
+    expect(empty).not.toHaveTextContent('请核对各部位的适用性配置')
+    expect(screen.getByTestId('operations-manage-attach')).toBeInTheDocument()
+    expect(screen.getByTestId('operations-manage-delete-empty')).toBeInTheDocument()
     // issue #4622：提示也用商家语言（不得再写「变体 / 工人端」这类内部术语）
     expect(empty).not.toHaveTextContent('变体')
     expect(empty).not.toHaveTextContent('工人端')
+  })
+
+  // ══════════════ ㉙ 抽屉死路：矩阵格关联不上时也必须有「停用 / 删除」入口（issue #4674） ══════════════
+  // 用户实测（截图 + 原话）：「这条测试数据已经没有办法删除了，无删除入口」——
+  // 抽屉「『测试22』在各部位的设置」只有一句死路文案 + 一个「关闭」，而主表格里那一行**还在**。
+  // 病根三条：① 停用/删除**挂在「各部位的设置」行内** ⇒ `manageVariants` 为空就没有入口；
+  // ② 表格按**逻辑名**成行、抽屉按 `variant_operation_id` 找格（**两把尺**）；
+  // ③ 空态文案「请核对各部位的适用性配置」是**死路指引**（页面上没有地方可核对）。
+
+  it('㉙-① 抽屉层「停用 / 删除」**不依赖**矩阵格：格关联不上时照样有入口（**红证**：改前只有「关闭」）', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    await openManage('测试22')
+
+    // 抽屉层入口**与矩阵格无关** —— 库里那一行在，入口就在
+    expect(screen.getByTestId('operations-manage-disable')).toBeInTheDocument()
+    expect(screen.getByTestId('operations-manage-delete')).toBeInTheDocument()
+    // 「关闭」仍在，但不再是**唯一**（改前 footer 里只有它 —— 正是用户截图的形态）
+    expect(screen.getByTestId('operations-manage-close')).toBeInTheDocument()
+    // 该格是按**逻辑名**回退认出来的 ⇒ 提示在（不静默）
+    expect(screen.getByTestId('operations-manage-unlinked-hint')).toBeInTheDocument()
+  })
+
+  it('㉙-② 空态给两个可点动作（接入部位 / 删除这道工序）且说清**为什么空**（**红证**：改前只有死路文案）', async () => {
+    // 空态的**真形态**（用户截图那一屏）= 表格里**有**这一行、抽屉里**一行设置都没有**。
+    // 复现路径 = 抽屉开着时读面变空（`load()` 后这一行的格没了）—— 这正是「行在 · 抽屉空」。
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
+    mockGetOperationPositions
+      .mockReset()
+      .mockResolvedValueOnce(ok(POSITIONS_WITH_TEST22)) // 首次：这一行有格 ⇒ 抽屉能开
+      .mockResolvedValue(ok(POSITIONS)) // 之后：这一行的格没了 ⇒ 抽屉空
+    await openManage('测试22')
+    // 抽屉层的「停用」走既有写面 + `load()` ⇒ 用它把读面刷成「这一行的格没了」
+    await userEvent.click(screen.getByTestId('operations-manage-disable'))
+    await waitFor(() => expect(mockGetOperationPositions).toHaveBeenCalledTimes(2))
+
+    const empty = await screen.findByTestId('operations-manage-empty')
+    // 说清**为什么**空（不再是「请核对各部位的适用性配置」这种死路指引）
+    expect(empty).toHaveTextContent('测试22')
+    expect(empty).toHaveTextContent('工序库')
+    expect(empty).toHaveTextContent('还没有任何格')
+    expect(empty).not.toHaveTextContent('请核对各部位的适用性配置')
+    // 两个可点动作（**都可点** —— 库里那一行在，就有事可做）
+    expect(screen.getByTestId('operations-manage-attach')).not.toBeDisabled()
+    expect(screen.getByTestId('operations-manage-delete-empty')).not.toBeDisabled()
+    // 抽屉层「停用 / 删除」在空态下**也**在（不依赖有没有行）
+    expect(screen.getByTestId('operations-manage-disable')).toBeInTheDocument()
+    expect(screen.getByTestId('operations-manage-delete')).toBeInTheDocument()
+
+    // 「接入部位…」复用 #4614 的接入弹窗，且**只列这一道**（不让商家回整份孤儿清单里再找）
+    await userEvent.click(screen.getByTestId('operations-manage-attach'))
+    const list = await screen.findByTestId('orphan-attach-list')
+    expect(within(list).getByTestId('orphan-row-op-test22')).toBeInTheDocument()
+    expect(within(list).queryByTestId('orphan-row-op-v54-04')).toBeNull()
+  })
+
+  it('㉙-③ 删除**成功**：无主线/规则引用 ⇒ 走既有 `DELETE /operations/{id}`（**红证**：改前无入口 ⇒ 根本发不出请求）', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    await openManage('测试22')
+
+    await userEvent.click(screen.getByTestId('operations-manage-delete'))
+    // 二次确认：弹框先出现、**未**发请求
+    expect(await screen.findByTestId('operations-manage-delete-modal')).toBeInTheDocument()
+    expect(mockDeleteOperation).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByTestId('operations-manage-delete-confirm'))
+
+    // ⚠️ 走的是**既有** `DELETE /operations/{id}`（不带 `detachPositions`）——
+    // #4671 的一键端点 `…/detach-and-delete` 是**另一条**路径，本入口不用它
+    await waitFor(() => expect(mockDeleteOperation).toHaveBeenCalledWith('op-test22'))
+    // 刷新（不静默）
+    await waitFor(() => expect(mockGetOperationPositions).toHaveBeenCalledTimes(2))
+  })
+
+  it('㉙-④ 反向护栏**不放宽**：仍挂在主线/规则 ⇒ 删除被拦，理由**逐条**就地展示', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    mockDeleteOperation
+      .mockReset()
+      .mockRejectedValueOnce(
+        guardError([
+          '被活跃路线「窗帘工序路线（默认）」引用，请先改主线',
+          '被活跃规则「工艺 韩褶」引用，请先删改那条规则',
+        ]),
+      )
+    await openManage('测试22')
+
+    await userEvent.click(screen.getByTestId('operations-manage-delete'))
+    await userEvent.click(await screen.findByTestId('operations-manage-delete-confirm'))
+
+    const reasons = await screen.findByTestId('operations-manage-delete-reasons')
+    expect(reasons).toHaveTextContent('请先改主线')
+    expect(reasons).toHaveTextContent('请先删改那条规则')
+    // 被拦 ⇒ 弹框**不收摊**（理由要看得见）
+    expect(screen.getByTestId('operations-manage-delete-modal')).toBeInTheDocument()
+    // 且**没有**任何「摘格」发生（前端不自己去动矩阵 —— 一格都没写）
+    expect(mockUpdateOperationPosition).not.toHaveBeenCalled()
+  })
+
+  it('㉙-⑤ 口径对齐：`variant_operation_id` 关联不上 ⇒ 抽屉**显式提示**「未关联到本工序」（**红证**：改前静默空）', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_TEST22_MISLINKED))
+    await openManage('测试22')
+
+    // 提示在（改前**静默空** —— 那几格在抽屉里根本不出现）
+    const hint = screen.getByTestId('operations-manage-unlinked-hint')
+    expect(hint).toHaveTextContent('没有关联到它')
+    expect(hint).toHaveTextContent('布帘')
+    // 格自带 `variant_operation_id` 且指向**别的**工序 ⇒ 只如实报出、**不给写面**
+    // （对它 PUT/DELETE 就是改另一道工序 —— 那正是「两把尺不一致」要暴露的东西）
+    expect(screen.getByTestId('variant-row-op-别的工序')).toHaveTextContent('布帘')
+    expect(screen.getByTestId('variant-foreign-op-别的工序')).toBeInTheDocument()
+    expect(screen.queryByTestId('variant-delete-op-别的工序')).toBeNull()
+    expect(screen.queryByTestId('variant-disable-op-别的工序')).toBeNull()
+  })
+
+  it('㉙-⑥ 抽屉层「停用」走既有 `PUT /operations/{id}` 的 `status`（与逐行停用同一写面）', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    await openManage('测试22')
+
+    await userEvent.click(screen.getByTestId('operations-manage-disable'))
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-test22', { status: 'inactive' }))
+  })
+
+  it('㉙-⑦ 抽屉层写面被拒：理由**逐条**就地展示（不吞成一句「操作失败」）', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
+    mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS_WITH_TEST22))
+    mockUpdateOperation
+      .mockReset()
+      .mockRejectedValueOnce(guardError(['被活跃路线「窗帘工序路线（默认）」引用，不能停用']))
+    await openManage('测试22')
+
+    await userEvent.click(screen.getByTestId('operations-manage-disable'))
+    const reasons = await screen.findByTestId('operations-manage-op-reasons')
+    expect(reasons).toHaveTextContent('不能停用')
+  })
+
+  it('㉙-⑧ 回归：有关联的工序（`精裁`）**照样**有抽屉层入口 + 逐行入口**一个都没少**（既有断言不放宽）', async () => {
+    await openManage('精裁')
+
+    // 抽屉层入口在（新增）
+    expect(screen.getByTestId('operations-manage-disable')).toBeInTheDocument()
+    expect(screen.getByTestId('operations-manage-delete')).toBeInTheDocument()
+    // 逐行入口**逐条仍在**（既有能力不减）
+    expect(screen.getByTestId('variant-row-op-精裁-布')).toBeInTheDocument()
+    expect(screen.getByTestId('variant-disable-op-精裁-布')).toBeInTheDocument()
+    expect(screen.getByTestId('variant-delete-op-精裁-布')).toBeInTheDocument()
+    // 有关联 ⇒ **不**提示「未关联」（不得无差别刷提示）
+    expect(screen.queryByTestId('operations-manage-unlinked-hint')).toBeNull()
   })
 
   it('⑰-⑬ 删除工序：**二次确认**后才发 `DELETE /operations/{id}`；护栏理由逐条就地展示', async () => {

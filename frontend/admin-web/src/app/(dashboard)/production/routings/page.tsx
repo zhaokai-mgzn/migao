@@ -666,6 +666,20 @@ interface VariantView {
   positions: string[]
   /** 工序库里的 provenance；查不到 ⇒ `null` ⇒ **不渲染徽标**（静默 = 未知） */
   source: ProductionSource | null
+  /**
+   * 本条目是**按逻辑名回退**认出来的（issue #4674 C）：它服务的格 `variant_operation_id`
+   * **未指向**该工序（NULL / 指向别处）⇒ 读面给不出变体 id，而**后端判据**（`variantNameOf`
+   * 按 `(逻辑名, 部位)` 反查）认得出它 ⇒ 两把尺不一致。
+   * ⇒ 前端**照样认**（与后端同一份口径、不静默空）但**显式提示**「这些格未关联到本工序」，
+   * 并把「接入部位 / 删除工序」两个出路摆在抽屉层（**不许只改文案掩盖不一致**）。
+   */
+  unlinked: boolean
+  /**
+   * **指向别处**的格（issue #4674 C 的形态②）：格自带的 `variant_operation_id` 与
+   * 「按逻辑名认出来的那道工序」**不是同一个** ⇒ 这一格属于**别的**工序。
+   * 这种行**只如实报出、不给写面**（对它 PUT/DELETE 就是改另一道工序）。
+   */
+  foreign?: boolean
 }
 
 /**
@@ -732,6 +746,17 @@ export default function ProcessConfigPage() {
   /** 删除工序的二次确认目标（`null` = 没有行在确认态） */
   const [confirmDeleteOpId, setConfirmDeleteOpId] = useState<string | null>(null)
   const [variantReasons, setVariantReasons] = useState<{ id: string; items: string[] } | null>(null)
+  /**
+   * 抽屉**层**的删除二次确认（issue #4674 A）—— 目标是**工序库那一行**（按逻辑名寻址），
+   * **不依赖**矩阵格是否关联得上。与上面那条（按变体 id）并存：两条入口、**同一个** `DELETE /operations/{id}`。
+   */
+  const [confirmDeleteOpByName, setConfirmDeleteOpByName] = useState<string | null>(null)
+  /**
+   * 抽屉**层**写面（停用 / 删除）被拒时的理由 —— 与逐行的 `variantReasons` **分开**：
+   * 两者渲染在**不同位置**（逐行在那一行的删除弹框里、抽屉层在抽屉顶部），共用一份会让
+   * 「逐行删除失败」在抽屉顶部多出一条**错位**的理由条。
+   */
+  const [opLevelReasons, setOpLevelReasons] = useState<string[] | null>(null)
 
   // ── 一条条件的删除（issue #4588；契约 #4587 ④；issue #4617 改弹框）──
   const [confirmDeleteRuleId, setConfirmDeleteRuleId] = useState<number | null>(null)
@@ -1160,31 +1185,54 @@ export default function ProcessConfigPage() {
     [matrixRows],
   )
 
-  /** 该逻辑工序在各部位的设置行（按 `variant_operation_id` 去重；矩阵列序 = 部位顺序） */
-  const variantsOf = useCallback(
-    (row: { cells: Map<string, OperationPosition> }): VariantView[] => {
-      const byId = new Map<string, VariantView>()
-      row.cells.forEach((c) => {
-        const id = c.variant_operation_id
-        if (!id) return
-        const existing = byId.get(id)
-        if (existing) {
-          if (!existing.positions.includes(c.position)) existing.positions.push(c.position)
-          return
-        }
-        byId.set(id, {
-          id,
-          group: c.group ?? null,
-          unit: c.unit ?? null,
-          scope: c.scope === 'set' ? 'set' : 'position',
-          is_must_finish: !!c.is_must_finish,
-          positions: [c.position],
-          source: libraryById.get(id)?.source ?? null,
-        })
-      })
-      return [...byId.values()]
-    },
-    [libraryById],
+  /**
+   * **抽屉的「部位列表」与表格成行的口径必须对齐**（issue #4674 C，治本）。
+   *
+   * <p>表格按**逻辑名**成行（`matrixRows` 的键 = `GET /operation-positions` 的 `operation`），
+   * 而抽屉原先**只**按格的 `variant_operation_id` 找变体 ⇒ 该键为 NULL / 指向别处时抽屉**静默空**
+   * （「行在 · 抽屉空 · 无处可删」，用户实测的**死路**）。</p>
+   *
+   * <p>回退判据 = **工序库按逻辑名查到的那一行**（`libraryByName` 的键 = 读时归一后的逻辑名，
+   * 与矩阵行键同源）—— 与后端 `variantNameOf` 的裸名兜底同一份口径：读面查不到变体（5 键全 null）
+   * 时，后端仍按 `(逻辑名, 部位)` 认得出这道工序（护栏③就是这么判的）⇒ 前端**不得**判得比后端严。</p>
+   *
+   * <p>⚠️ 同名多行（`精裁-布` / `精裁-纱` 归一后同名）**不静默取第一个**：取**排序稳定**的首行
+   * （服务端顺序）并如实报出候选数，让「到底是哪条库行」可解释（与 `metaText` 同纪律）。</p>
+   */
+  const fallbackOpByName = useMemo(() => {
+    const m = new Map<string, { op: CatalogOperation; candidates: number }>()
+    libraryOps.forEach((op) => {
+      const cur = m.get(op.name)
+      if (cur) {
+        cur.candidates += 1
+        return
+      }
+      m.set(op.name, { op, candidates: 1 })
+    })
+    return m
+  }, [libraryOps])
+
+  /**
+   * 同一**逻辑名**下的**全部**库行 id（issue #4674 C 的「属于本工序」判据）。
+   *
+   * <p>⚠️ **必须按集合判、不能只比首行**：同一道逻辑工序在库里有**多行**（`韩褶-布` / `韩褶-纱`
+   * 归一后同名，矩阵按 `(逻辑名, 部位)` 各自指到不同那行）⇒ 只比首行会把**合法的**格误判成
+   * 「指向别处」而抽掉它的写面（那才是真的判错）。</p>
+   */
+  const idsByName = useMemo(() => {
+    const m = new Map<string, Set<string>>()
+    libraryOps.forEach((op) => {
+      const set = m.get(op.name) ?? new Set<string>()
+      set.add(String(op.id))
+      m.set(op.name, set)
+    })
+    return m
+  }, [libraryOps])
+
+  /** 抽屉里那道工序对应的**工序库那一行**（issue #4674：抽屉层入口靠它寻址，不靠矩阵格） */
+  const manageOpEntry = useMemo(
+    () => (manageOp ? fallbackOpByName.get(manageOp) ?? null : null),
+    [fallbackOpByName, manageOp],
   )
 
   /** 抽屉当前展示的设置行（按 `manageOp` 找到那一行） */
@@ -1192,7 +1240,85 @@ export default function ProcessConfigPage() {
     () => matrixRows.find((r) => r.operation === manageOp) ?? null,
     [matrixRows, manageOp],
   )
+
+  /** 该逻辑工序在矩阵里的**全部格**（与后端 `matchingCells` 同域：按行键取，不看格的关联键） */
+  const manageOpCells = useMemo(
+    () => (manageRow ? [...manageRow.cells.values()] : []),
+    [manageRow],
+  )
+
+  /**
+   * 接入弹窗要列出的工序（issue #4674 B）：抽屉空态点「接入部位…」时**只列这一道**
+   * （商家此刻就在它身上 —— 让他回整份孤儿清单里再找一遍是同一类死路）；
+   * 顶部「N 道工序还没接部位」那个入口仍列**全部**孤儿。
+   */
+  const orphanListOps = useMemo(() => {
+    if (!manageOpEntry) return orphanOps
+    const id = String(manageOpEntry.op.id)
+    return Object.prototype.hasOwnProperty.call(orphanPicks, id) ? [manageOpEntry.op] : orphanOps
+  }, [manageOpEntry, orphanOps, orphanPicks])
+
+  /**
+   * 该逻辑工序在各部位的设置行（issue #4674 C：`variant_operation_id` 关联不上时**回退按逻辑名**
+   * 认同一道工序，并打上 `unlinked` 标记 ⇒ 界面**显式提示**，不再静默空）。
+   * 矩阵列序 = 部位顺序。
+   *
+   * <p>⚠️ 回退**只在读面没给 id 时**生效（`null` / 缺键）：格的 `variant_operation_id` **非空**就说明
+   * 它指向**那道**工序 —— 指向别的工序的格**不属于**这一行，不得按名字硬拽进来
+   * （那不是「对齐口径」，是**把别人的格算到这道工序头上**）。</p>
+   */
+  const variantsOf = useCallback(
+    (row: { operation: string; cells: Map<string, OperationPosition> }): VariantView[] => {
+      const byId = new Map<string, VariantView>()
+      // 「按逻辑名认出来的那道工序」—— 与后端 `variantNameOf` 的裸名兜底同一份口径
+      const byName = fallbackOpByName.get(row.operation)?.op ?? null
+      // 「属于本工序」的库行 id 集合（同名多行都算 —— 见 `idsByName`）
+      const ownIds = idsByName.get(row.operation) ?? null
+      row.cells.forEach((c) => {
+        const explicit = c.variant_operation_id
+        // 回退：读面给不出变体 id ⇒ 按**逻辑名**在工序库里认这道工序
+        const fallback = explicit ? null : byName
+        const id = explicit ?? (fallback ? String(fallback.id) : null)
+        if (!id) return
+        // 两把尺不一致的**两种形态**都算「未关联到本工序」：
+        // ① 格没给 id（读面查不到变体）⇒ 靠逻辑名认出来；
+        // ② 格给了 id 但它**不是**按逻辑名认出来的那道工序 ⇒ 该格指向别处（既有的悬空引用形态）。
+        const entry = libraryById.get(id)
+        // 形态②：格指向的那道工序**在库里查得到**，却**不属于**本逻辑名下的任何一行
+        // ⇒ 这一格属于**别的**工序（只如实报出、不给写面：对它 PUT/DELETE 就是改另一道工序）。
+        const foreign = !!explicit && entry != null && ownIds != null && !ownIds.has(String(explicit))
+        // 「未关联到本工序」= 靠逻辑名认出来的（没给 id）+ 指向别处的
+        const unlinked = !explicit || foreign
+        const existing = byId.get(id)
+        if (existing) {
+          if (!existing.positions.includes(c.position)) existing.positions.push(c.position)
+          return
+        }
+        byId.set(id, {
+          id,
+          group: (fallback?.group ?? c.group) ?? null,
+          unit: (fallback?.unit ?? c.unit) ?? null,
+          scope: fallback?.scope === 'set' || c.scope === 'set' ? 'set' : 'position',
+          is_must_finish: fallback ? !!fallback.is_must_finish : !!c.is_must_finish,
+          positions: [c.position],
+          source: entry?.source ?? fallback?.source ?? null,
+          unlinked,
+          foreign,
+        })
+      })
+      return [...byId.values()]
+    },
+    [fallbackOpByName, idsByName, libraryById],
+  )
+
   const manageVariants = useMemo(() => (manageRow ? variantsOf(manageRow) : []), [manageRow, variantsOf])
+  /**
+   * 抽屉里**有**设置行、但其中有格**没关联到本工序**（issue #4674 C）—— 两种形态都算：
+   * ① 格没给 `variant_operation_id`（读面查不到变体）⇒ 按逻辑名认出来；
+   * ② 格给了 id 但**指向别处**（`foreign`）。
+   * 两把尺不一致时**显式提示**（改前是静默按变体 id 找不到 ⇒ 那几格在抽屉里根本不出现）。
+   */
+  const manageUnlinked = useMemo(() => manageVariants.filter((v) => v.unlinked), [manageVariants])
   /**
    * 删除二次确认弹框的目标（issue #4617）—— 弹框必须写清**删的是哪一条**：
    * 就地展开的确认在长表格里既易误点、又看不清删的是哪一行（用户裁定的病根）。
@@ -1222,6 +1348,24 @@ export default function ProcessConfigPage() {
     })
     return cells
   }, [deleteOpTarget, manageRow])
+
+  /**
+   * 抽屉**层**删除二次确认的目标（issue #4674 A）：**工序库那一行**（按逻辑名寻址），
+   * 与矩阵格是否关联得上**无关** ⇒ 「行在 · 抽屉空」时照样有删除入口（改前只有「关闭」）。
+   */
+  const deleteOpByNameTarget = useMemo(
+    () => (confirmDeleteOpByName ? fallbackOpByName.get(confirmDeleteOpByName) ?? null : null),
+    [confirmDeleteOpByName, fallbackOpByName],
+  )
+  /**
+   * 抽屉层删除弹框要如实报出的格（issue #4674）：**按行键取全部格**（与后端 `matchingCells` 同域）
+   * —— 关联不上的格**也在内**（后端护栏③照样拦它们）。`applicable=false` 的格单独标出，
+   * 因为那几格**不拦**（#4665 C 的判据）。
+   */
+  const deleteOpByNameCells = useMemo(
+    () => (deleteOpByNameTarget ? manageOpCells : []),
+    [deleteOpByNameTarget, manageOpCells],
+  )
 
   // ────────────────────────── 就绪度（先后依赖显性化） ──────────────────────────
 
@@ -1743,6 +1887,8 @@ export default function ProcessConfigPage() {
     setManageOp(null)
     setConditionFormOpen(false)
     setConditionReasons([])
+    setConfirmDeleteOpByName(null)
+    setOpLevelReasons(null)
   }
 
   // ────────────────────────── 矩阵格写面（issue #4588；契约 #4587 ②） ──────────────────────────
@@ -1870,6 +2016,79 @@ export default function ProcessConfigPage() {
     } finally {
       setVariantBusy(false)
     }
+  }
+
+  // ────────────── 抽屉**层**的工序入口（issue #4674：与矩阵格是否关联得上无关） ──────────────
+
+  /**
+   * 打开抽屉层的删除二次确认。目标 = **工序库那一行**（按逻辑名寻址，`fallbackOpByName`）。
+   * 查不到库行 ⇒ 就地报出**为什么**（不静默、不假装可删）—— 那种情况下没有可寻址的工序行，
+   * 删除必然打不中对象（这正是「先看清楚再动手」）。
+   */
+  const openDeleteOpByName = () => {
+    if (!manageOp) return
+    if (!manageOpEntry) {
+      setOpLevelReasons([
+        `「${manageOp}」在工序库里查不到对应的工序行，无法删除 —— 请点右上「刷新」重试；` +
+          '若仍查不到，它可能已被别的会话删除',
+      ])
+      return
+    }
+    setConfirmDeleteOpByName(manageOp)
+    setOpLevelReasons(null)
+  }
+
+  /**
+   * 删除工序（**走既有** `DELETE /operations/{id}` 软删端点；#4671 的一键摘格端点是**另一条**路径，
+   * 本入口**不用**它 —— 用户实测的形态是「矩阵里查不到它的格」，护栏③天然满足 ⇒ 直接可删）。
+   * 三条护栏（被活跃主线 / 活跃规则 / 矩阵格引用）由后端**一次报全** ⇒ 逐条就地展示，**不放宽**。
+   */
+  const removeOpByName = async (op: CatalogOperation) => {
+    setVariantBusy(true)
+    setOpLevelReasons(null)
+    try {
+      await productionApi.deleteOperation(String(op.id))
+      toast.success(`已删除工序「${op.name}」`)
+      setConfirmDeleteOpByName(null)
+      await load()
+    } catch (e) {
+      setOpLevelReasons(routingAdminGuardReasons(e))
+      if (!isErrorToastShown(e)) toast.error('删除失败')
+    } finally {
+      setVariantBusy(false)
+    }
+  }
+
+  /**
+   * 停用工序（既有 `PUT /operations/{id}` 的 `status`，与逐行「停用」同一写面）。
+   * 与删除同样**不依赖**矩阵格 ⇒ 抽屉里任何形态下都有一条可走的路。
+   */
+  const disableOpByName = async (op: CatalogOperation) => {
+    setVariantBusy(true)
+    setOpLevelReasons(null)
+    try {
+      await productionApi.updateOperation(op.id, { status: 'inactive' })
+      toast.success(`已停用工序「${op.name}」`)
+      await load()
+    } catch (e) {
+      setOpLevelReasons(routingAdminGuardReasons(e))
+      if (!isErrorToastShown(e)) toast.error('停用失败')
+    } finally {
+      setVariantBusy(false)
+    }
+  }
+
+  /**
+   * 抽屉空态的第一个出路（issue #4674 B）：**给这道工序接入部位**（补矩阵行）。
+   * 复用 #4614 **已有**的孤儿接入流程（同一弹窗、同一端点 `PUT /operations/{id}` 带 `positions`），
+   * 只是把候选**收敛到这一道**（商家此刻就在它身上，不该让他在整份孤儿清单里再找一遍）。
+   */
+  const openAttachForCurrentOp = () => {
+    if (!manageOpEntry) return
+    const id = String(manageOpEntry.op.id)
+    setOrphanPicks({ [id]: POSITION_DOMAIN })
+    setOrphanReasons([])
+    setOrphanOpen(true)
   }
 
   // ────────────────────────── 条件工序规则删除（issue #4588；契约 #4587 ④） ──────────────────────────
@@ -2313,7 +2532,9 @@ export default function ProcessConfigPage() {
                                         setManageOp(row.operation)
                                         setEditingVariantId(null)
                                         setConfirmDeleteOpId(null)
+                                        setConfirmDeleteOpByName(null)
                                         setVariantReasons(null)
+                                        setOpLevelReasons(null)
                                       }}
                                       title="管理这道工序在各部位的设置：分组 / 单位 / 作用域 / 必完 / 停用 / 删除"
                                       className="rounded px-1.5 py-0.5 text-xs text-primary-700 hover:bg-neutral-100"
@@ -3067,9 +3288,42 @@ export default function ProcessConfigPage() {
         title={manageOp ? `「${manageOp}」在各部位的设置` : ''}
         width={760}
         footer={
-          <Button variant="secondary" data-testid="operations-manage-close" onClick={closeManage}>
-            关闭
-          </Button>
+          /* **抽屉层**的工序入口（issue #4674 A）：与**矩阵格是否关联得上无关** ——
+             工序库那一行确实存在，就永远有「停用 / 删除」可走。
+             改前这两件事**只**挂在「各部位的设置」**行内** ⇒ `manageVariants` 为空时只剩一句
+             死路文案 + 一个「关闭」（正是用户截图的形态：「这条测试数据已经没有办法删除了，无删除入口」）。
+             写面**复用既有端点**：停用 = `PUT /operations/{id}` 的 `status`；删除 = `DELETE /operations/{id}`（软删）。
+             ⚠️ #4671 的一键「设为不做并删除」是**另一条**路径（`…/detach-and-delete`），本入口**不用**它
+             —— 本入口针对的形态是「矩阵里查不到它的格」，护栏③天然满足 ⇒ 直接可删；
+             仍挂在主线/规则 ⇒ 后端照旧 422，理由逐条就地展示（**不放宽**）。 */
+          <div className="flex w-full flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              data-testid="operations-manage-disable"
+              disabled={variantBusy || !manageOpEntry}
+              onClick={() => manageOpEntry && void disableOpByName(manageOpEntry.op)}
+            >
+              停用
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              data-testid="operations-manage-delete"
+              disabled={variantBusy || !manageOpEntry}
+              onClick={openDeleteOpByName}
+            >
+              删除
+            </Button>
+            <Button
+              variant="secondary"
+              className="ml-auto"
+              data-testid="operations-manage-close"
+              onClick={closeManage}
+            >
+              关闭
+            </Button>
+          </div>
         }
       >
         <div className="space-y-3 text-sm" data-testid="operations-manage-drawer">
@@ -3079,20 +3333,92 @@ export default function ProcessConfigPage() {
             <strong>必完</strong>：缺这道工序不能打包；<strong>部位级工序要每个部位都做完</strong>才算完
             （套级每樘窗一次）。
           </p>
+          {/* 抽屉层写面被拒：逐条理由就地展示（不吞成一句「操作失败」） */}
+          {opLevelReasons && (
+            <ul className="space-y-0.5 text-xs text-red-600" data-testid="operations-manage-op-reasons">
+              {opLevelReasons.map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
+          )}
           {manageVariants.length === 0 ? (
-            <p className="py-6 text-center text-sm text-neutral-400" data-testid="operations-manage-empty">
-              这道工序在各部位还没有设置（矩阵里查不到它的格）—— 请核对各部位的适用性配置。
-            </p>
+            /* 空态**必须给出路**（issue #4674 B）：说清**为什么**空 + 给**两个可点动作**。
+               改前只有一句「请核对各部位的适用性配置」—— 而页面上**没有地方**可核对（死路指引）。 */
+            <div className="py-4 text-center" data-testid="operations-manage-empty">
+              <p className="text-sm text-neutral-500">
+                「{manageOp}」在<strong>工序库</strong>里有这一行，但它在部位价目矩阵里
+                {manageOpCells.length > 0 ? (
+                  <>有 {manageOpCells.length} 个格，而这些格<strong>都没有关联到它</strong></>
+                ) : (
+                  <><strong>还没有任何格</strong></>
+                )}
+                ⇒ 它现在不出现在加工单里，也没法定价。
+              </p>
+              <p className="mt-1 text-xs text-neutral-400">
+                两条路都行：给它接入要做的部位（补上矩阵格，之后可就地定价），或者把这道工序删掉。
+              </p>
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                <Button
+                  size="sm"
+                  data-testid="operations-manage-attach"
+                  disabled={variantBusy || !manageOpEntry}
+                  onClick={openAttachForCurrentOp}
+                >
+                  接入部位…
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  data-testid="operations-manage-delete-empty"
+                  disabled={variantBusy || !manageOpEntry}
+                  onClick={openDeleteOpByName}
+                >
+                  删除这道工序
+                </Button>
+              </div>
+            </div>
           ) : (
             <div className="divide-y divide-neutral-100">
+              {/* 两把尺不一致时**显式提示**（issue #4674 C）：这些格没关联到本工序，
+                  是按逻辑名认出来的 —— 不静默、不假装一致。 */}
+              {manageUnlinked.length > 0 && (
+                <p
+                  className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800"
+                  data-testid="operations-manage-unlinked-hint"
+                >
+                  ⚠️ 这道工序在
+                  <strong className="mx-1">
+                    {manageUnlinked.flatMap((v) => v.positions).join(' / ')}
+                  </strong>
+                  的格<strong>没有关联到它</strong>（矩阵里那些格指向的不是这道工序）。
+                  点底部<strong className="mx-1">删除</strong>可直接删掉这道工序。
+                </p>
+              )}
               {manageVariants.map((v) => (
                 <div key={v.id} className="py-3" data-testid={`variant-row-${v.id}`}>
                   <div className="flex flex-wrap items-center gap-2">
                     {/* 主标识 = **部位集合**（issue #4622）—— 一个变体可能服务多个部位，变体名不上界面 */}
                     <span className="font-medium text-neutral-900">{v.positions.join(' / ')}</span>
                     {v.source && <SourceBadge source={v.source} testId={`variant-source-${v.id}`} />}
+                    {v.foreign && (
+                      <span
+                        className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700"
+                        data-testid={`variant-foreign-${v.id}`}
+                      >
+                        这些格指向的不是这道工序
+                      </span>
+                    )}
                   </div>
 
+                  {/* **指向别处**的格（issue #4674 C 的形态②）：只**如实报出**、**不给**写面 ——
+                      对它 PUT/DELETE 就是改另一道工序（正是「两把尺不一致」要暴露、不是要掩盖的东西）。 */}
+                  {v.foreign ? (
+                    <p className="mt-2 text-xs text-neutral-500">
+                      矩阵里这几格关联到的是另一道工序 ⇒ 这里不提供设置；请到那道工序的抽屉里改，
+                      或点底部「删除」把本工序删掉。
+                    </p>
+                  ) : (
+                    <>
                   {/* **做 / 不做**（issue #4665）：用户实测「无法删除，而且没有地方设置做于不做」——
                       删除弹框让他「先去设为不做」，而做/不做此前**只**藏在主表格的裸 `⇄` 里，
                       商家此刻正在这个抽屉里 ⇒ 死路。这里按**部位逐格**给显式控件（与主表格**同一个**
@@ -3246,6 +3572,8 @@ export default function ProcessConfigPage() {
                     </Button>
                     <span className="text-xs text-neutral-400">删除后历史报工不受影响</span>
                   </div>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
@@ -3720,7 +4048,7 @@ export default function ProcessConfigPage() {
             已有部位价目行<strong>不会被改动</strong>（已定的价保留原价）；想跳过某道工序，把它的部位全部取消勾选即可。
           </p>
           <ul className="space-y-3" data-testid="orphan-attach-list">
-            {orphanOps.map((op) => (
+            {orphanListOps.map((op) => (
               <li
                 key={String(op.id)}
                 className="rounded border border-neutral-200 px-3 py-2"
@@ -3890,6 +4218,97 @@ export default function ProcessConfigPage() {
                 loading={variantBusy}
                 data-testid={`variant-delete-confirm-${deleteOpTarget.id}`}
                 onClick={() => void removeVariant(deleteOpTarget)}
+              >
+                确认删除
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* 删除**工序**（抽屉层那处，issue #4674 A）的二次确认：目标 = **工序库那一行**（按逻辑名寻址），
+          **与矩阵格是否关联得上无关** —— 改前这里根本没有入口（`manageVariants` 为空 ⇒ 弹框不渲染）。
+          形态与上面那条**同一套**（同一页面不留两套形态，issue #4617 的裁定照旧）；
+          删的是**哪一道工序**写在第一句；矩阵格逐格如实报出（含**未关联**的格 —— 后端护栏③照样拦它们）；
+          失败理由**逐条**就地展示，弹框**不收摊**（#4617 纪律）。 */}
+      <Modal
+        open={deleteOpByNameTarget !== null}
+        onClose={() => !variantBusy && setConfirmDeleteOpByName(null)}
+        title="删除工序"
+        footer={null}
+      >
+        {deleteOpByNameTarget && (
+          <div
+            data-testid="operations-manage-delete-modal"
+            data-operation={deleteOpByNameTarget.op.name}
+            className="space-y-3 text-sm"
+          >
+            <p className="text-neutral-600">
+              将删除工序<strong className="mx-1">「{deleteOpByNameTarget.op.name}」</strong>
+              （{deleteOpByNameTarget.candidates > 1
+                ? `工序库里有 ${deleteOpByNameTarget.candidates} 行同名，删除的是其中一行`
+                : '工序库里的这一行'}）。
+            </p>
+            <p className="text-neutral-500">
+              删除后它不再出现在工序库与部位价目里，新加工单不会再生成这道工序；
+              <strong>历史报工不受影响</strong>（报工按当时的工序快照）。
+            </p>
+            {deleteOpByNameCells.length === 0 ? (
+              <p
+                className="rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-neutral-600"
+                data-testid="operations-manage-delete-nocells"
+              >
+                这道工序<strong>没有挂任何部位价目格</strong> ⇒ 删除不会有格需要摘。
+              </p>
+            ) : (
+              <p
+                className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800"
+                data-testid="operations-manage-delete-cells"
+              >
+                它在部位价目矩阵里有
+                <strong className="mx-1">
+                  {deleteOpByNameCells.map((c) => c.position).join(' / ')}
+                </strong>
+                共 {deleteOpByNameCells.length} 个格
+                {deleteOpByNameCells.filter((c) => c.applicable !== false).length > 0 && (
+                  <>
+                    ，其中
+                    <strong className="mx-1">
+                      {deleteOpByNameCells
+                        .filter((c) => c.applicable !== false)
+                        .map((c) => c.position)
+                        .join(' / ')}
+                    </strong>
+                    还是「做」⇒ 后端会拦下并告诉你先在哪一格设为不做
+                  </>
+                )}
+                。删完这道工序，它的格会一起清掉。
+              </p>
+            )}
+            {opLevelReasons && (
+              <ul className="space-y-0.5 text-xs text-red-600" data-testid="operations-manage-delete-reasons">
+                {opLevelReasons.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                disabled={variantBusy}
+                data-testid="operations-manage-delete-cancel"
+                onClick={() => {
+                  setConfirmDeleteOpByName(null)
+                  setOpLevelReasons(null)
+                }}
+              >
+                取消
+              </Button>
+              <Button
+                variant="danger"
+                loading={variantBusy}
+                data-testid="operations-manage-delete-confirm"
+                onClick={() => void removeOpByName(deleteOpByNameTarget.op)}
               >
                 确认删除
               </Button>
