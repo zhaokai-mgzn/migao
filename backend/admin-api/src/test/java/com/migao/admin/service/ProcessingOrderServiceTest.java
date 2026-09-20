@@ -656,6 +656,30 @@ class ProcessingOrderServiceTest {
     }
 
     /**
+     * **一樘窗含全部部位** = 布帘 + 纱帘 + 帘头（**三条明细行**，同 `craftLineId` = `win-1`）。
+     *
+     * <p>⭐ issue #4693（口径改判「**一樘窗 = 一套**」，设计文档 §2.1.1）：这**一樘窗 = 1 套**
+     * —— 不是 3 套。旧口径（#4373「1 个窗帘商品 = 1 套」⇒ 套 ≡ 明细行）下它是 **3 套**。</p>
+     *
+     * <p>判别物 = **套级工序**（`scope='set'`，外帘打卷/装袋/发货，每樘窗一次）：一行明细 = 一套
+     * ⇒ 旧口径下这三道各出现 **3 次**（每部位一遍、计件三付）；一樘窗 = 一套 ⇒ 各 **1 次**。</p>
+     */
+    private List<OrderItem> clothSheerValanceWindow() {
+        OrderItem cloth = processedItemWithSpec("item-1", "布艺遮光帘A", "米白",
+                List.of(Map.of("id", "p1", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("curtainType", "布帘", "craft", "韩褶",
+                        "componentRole", "主布", "craftLineId", "win-1"));
+        OrderItem sheer = processedItemWithSpec("item-2", "纱帘A", "米白",
+                List.of(Map.of("id", "p2", "name", "打孔-纱", "unitPrice", 3.0, "quantity", 2, "unit", "孔")),
+                spec("curtainType", "纱帘", "craft", "打孔",
+                        "componentRole", "纱", "craftLineId", "win-1"));
+        OrderItem valance = processedItemWithSpec("item-3", "帘头A", "米白",
+                List.of(Map.of("id", "p3", "name", "帘头制作", "unitPrice", 2.0, "quantity", 1, "unit", "个")),
+                spec("curtainType", "帘头", "craft", "韩褶", "craftLineId", "win-1"));
+        return List.of(cloth, sheer, valance);
+    }
+
+    /**
      * **注入式对照**（issue #4387 判据 3 的红证形态）：与 {@link #colorBlockWindow()} 逐字相同，
      * 只把配布边行的 `componentRole` **去掉**（= 角色缺省视为主布，见 {@code isEdgeRow}）。
      *
@@ -1241,7 +1265,7 @@ class ProcessingOrderServiceTest {
         assertThat(instances).extracting(ProcessingPositionOperation::getOperationName)
                 .containsExactly("精裁-布", "布三边", "拼1次-布", "韩褶-布", "上车布-布", "熨烫-布",
                         "定型-布", "复烫-布", "布帘车被", "外帘打卷", "外帘装袋", "外帘发货");
-        // seq 必须重排成 1..N（报工越站防呆取「seq 最大的前道」⇒ 序号重复/断档 = 越站校验错）
+        // seq 必须重排成 1..N（#4694 后 seq 只作页面排序 / 「下一道待做」派生依据；报工顺序闸门已删除）
         assertThat(instances).extracting(ProcessingPositionOperation::getSeq)
                 .containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
         // 条件工序的分组/单位/单价**逐字取工序库**（不猜、不补默认值）
@@ -2246,6 +2270,98 @@ class ProcessingOrderServiceTest {
                 .as("库里说 position ⇒ 按部位各出一次（2）—— 硬编码工序名的实现会在这里假绿")
                 .isEqualTo(2);
         assertThat(instanceCountOf(instances, "外帘打卷")).as("其余仍是 set ⇒ 仍去重").isEqualTo(1);
+    }
+
+    // ── ⭐ issue #4693：口径改判「一樘窗 = 一套」（作废 #4373「1 个窗帘商品 = 1 套」）──────
+    //
+    // 用户裁定（2026-09-20，逐字）：「A. **一樘窗 = 一套**（零售常态）」。
+    // 现行口径（设计文档 `docs/design/position-instance-routing-model.md` §2.1.1）：
+    //   **一套 = 一樘窗 = 一个 `craftLineId` 组** —— 一个窗户的**全部部位**
+    //   （布帘 + 纱帘 + 帘头）**合计一套**；一条 `order_items` 行仍是一个**部位**（R-a 不变）。
+    // 旧口径（#4373）把「套」钉在**明细行**上 ⇒ 同一樘窗的 3 条部位行 = **3 套**（已作废）。
+    //
+    // 判别物 = **套级工序**（`scope='set'`，每樘窗一次）：它**按樘窗组**实例化
+    // （`ProcessingOrderService.setLevelKeeperItemIds`）⇒ 各出现 1 次 = 1 套。
+
+    @Test
+    @DisplayName("#4693 一樘窗含全部部位（布帘+纱帘+帘头）= **3 个部位、1 套**"
+            + "（套级工序各 1 道 —— 旧口径「套 ≡ 明细行」下是 3 道 / 3 套）")
+    void oneWindowWithAllPositionsIsExactlyOneSet() {
+        stubLibrary();
+        stubGenerate(clothSheerValanceWindow());
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        // 前置自断言（**不是**被测行为）：这确实是「一樘窗含全部部位」的**三行**夹具 ——
+        // 旧口径（套 ≡ 明细行）下这个数就是「套数」= 3，红证读数由此可复核。
+        ArgumentCaptor<List<Map<String, Object>>> reqCaptor = ArgumentCaptor.forClass(List.class);
+        verify(productionOperationQtyClient).resolve(reqCaptor.capture());
+        assertThat(reqCaptor.getValue())
+                .as("前置：一樘窗 = 3 条明细行 = 3 个部位（旧口径据此算 3 套）")
+                .hasSize(3);
+        assertThat(reqCaptor.getValue()).extracting(p -> p.get("position_name"))
+                .containsExactly("布艺遮光帘A 米白", "纱帘A 米白", "帘头A 米白");
+
+        List<ProcessingPositionOperation> instances = allInstances();
+
+        // ⭐ 被测断言：**一樘窗 = 一套** ⇒ 套级工序各恰好 1 道（旧口径 = 各 3 道）
+        assertThat(instanceCountOf(instances, "外帘打卷"))
+                .as("一樘窗（含全部部位）= 1 套 ⇒ 套级「外帘打卷」恰好 1 道；"
+                        + "旧口径「套 ≡ 明细行」= 3 道（每部位一遍 ⇒ 打卷/装袋/发货各三付）")
+                .isEqualTo(1);
+        assertThat(instanceCountOf(instances, "外帘装袋")).as("同上：一樘窗 = 1 套").isEqualTo(1);
+        assertThat(instanceCountOf(instances, "外帘发货")).as("同上：一樘窗 = 1 套").isEqualTo(1);
+        assertThat(instances).filteredOn(i -> SET_SCOPE_OPERATIONS.contains(i.getOperationName()))
+                .as("套级工序全部挂**樘窗代表行（主布行）**的部位名下 ⇒ 一樘窗只有一处套级归属")
+                .isNotEmpty()
+                .allSatisfy(i -> assertThat(i.getPositionName()).isEqualTo("布艺遮光帘A 米白"));
+
+        // 反向：**部位**仍各成一条（一樘窗 ≠ 一个部位）—— 「1 套」不得退化成「合并部位」
+        assertThat(instances).extracting(ProcessingPositionOperation::getPositionName)
+                .as("3 个部位各自都有自己的工序实例（合并部位 ⇒ 这条红）")
+                .contains("布艺遮光帘A 米白", "纱帘A 米白", "帘头A 米白");
+    }
+
+    @Test
+    @DisplayName("#4693 边界：多樘窗（各含全部部位）⇒ **各 1 套**（总套数 = 窗数，不随部位数增长）")
+    void eachWindowIsExactlyOneSetRegardlessOfPositionCount() {
+        stubLibrary();
+        OrderItem clothA = processedItemWithSpec("item-1", "布艺遮光帘A", "米白",
+                List.of(Map.of("id", "p1", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("curtainType", "布帘", "craft", "韩褶", "componentRole", "主布", "craftLineId", "win-1"));
+        OrderItem sheerA = processedItemWithSpec("item-2", "纱帘A", "米白",
+                List.of(Map.of("id", "p2", "name", "打孔-纱", "unitPrice", 3.0, "quantity", 2, "unit", "孔")),
+                spec("curtainType", "纱帘", "craft", "打孔", "componentRole", "纱", "craftLineId", "win-1"));
+        OrderItem clothB = processedItemWithSpec("item-3", "布艺遮光帘B", "米白",
+                List.of(Map.of("id", "p3", "name", "韩褶-布", "unitPrice", 3.0, "quantity", 2, "unit", "折")),
+                spec("curtainType", "布帘", "craft", "韩褶", "componentRole", "主布", "craftLineId", "win-2"));
+        OrderItem sheerB = processedItemWithSpec("item-4", "纱帘B", "米白",
+                List.of(Map.of("id", "p4", "name", "打孔-纱", "unitPrice", 3.0, "quantity", 2, "unit", "孔")),
+                spec("curtainType", "纱帘", "craft", "打孔", "componentRole", "纱", "craftLineId", "win-2"));
+        stubGenerate(List.of(clothA, sheerA, clothB, sheerB));
+
+        realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        List<ProcessingPositionOperation> instances = allInstances();
+        assertThat(instanceCountOf(instances, "外帘装袋"))
+                .as("两樘窗（各含布+纱）= **2 套** ⇒ 套级「外帘装袋」2 道；"
+                        + "旧口径「套 ≡ 明细行」= 4 道 / 4 套")
+                .isEqualTo(2);
+        assertThat(instanceCountOf(instances, "外帘打卷")).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("#4693 边界：一樘窗只含布帘（单行）= **1 套**（单部位窗不被多算、也不被少算）")
+    void singlePositionWindowIsOneSet() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemHanzhe("米白")));
+
+        realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        List<ProcessingPositionOperation> instances = allInstances();
+        assertThat(instanceCountOf(instances, "外帘打卷")).as("单行樘窗 = 1 套").isEqualTo(1);
+        assertThat(instanceCountOf(instances, "外帘装袋")).as("单行樘窗 = 1 套").isEqualTo(1);
     }
 
     /**

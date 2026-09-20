@@ -984,8 +984,9 @@ cases:
       - "意图不明确（纯图/口语短句）时：先给出 2-4 个候选意图（找同款/识别面料/算料/查订单/建品），不直接执行写操作"
       - "候选意图用简短大白话列出，可用 interact(choice) 卡片点选"
       - "已识别字段不重复反问，不编造图片中不存在的信息"
+    precondition: "本用例是 [backend-contract]（agent-eval 栈无发图能力，不跑它）：前置 = 多模态 system prompt 的 VISION_CLARIFY_GUIDE 注入点仍在（backend/ai-agent-service 的 base_skill 多模态注入）且纯图/口语短句走的仍是「先澄清后动作」分支；前置由单测自建并断言（test_graph_skills.py::TestVisionClarifyGuide / test_vision_integration.py），注入点被摘或分支被改即单测直接红 ⇒ 前置不成立时不会表现成「agent 不干活」"
     skip_reason: "[backend-contract] 纯图澄清注入由 pytest 单测验证（test_graph_skills.py::TestVisionClarifyGuide，mock LLM 断言 system prompt），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟"
-    merge_log: "issue #2777 Phase 1：VISION_CLARIFY_GUIDE + base_skill 多模态注入（澄清能力强化）"
+    merge_log: "issue #2777 Phase 1：VISION_CLARIFY_GUIDE + base_skill 多模态注入（澄清能力强化）；2026-09-20（issue #4694 的 Case Trust burn-down 缴费，与本单行为改动无关）：补声明层 `precondition`（原条目命中 CASE-TRUST-NO-PRECONDITION-ASSERTION 整条销账）—— 断言内容一字未改，补的是**前置可见性**"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_graph_skills.py"

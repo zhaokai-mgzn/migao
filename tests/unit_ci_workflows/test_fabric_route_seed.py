@@ -36,12 +36,15 @@ V79 = MIGRATION_DIR / "V79__seed_fabric_route_and_packing_operation.sql"
 
 DEFAULT_TEMPLATE_NAME = "窗帘工序路线（默认）"
 FABRIC_TEMPLATE_NAME = "布料工序路线"
-#: **bootstrap 字面量**（`docs/sql/schema.sql` 与 V79 的种子）：`配料 → 打包`。
-#: ⚠️ `docs/sql/schema.sql` 属 #4678（文档单）⇒ 本单**不改它**，bootstrap 字面量仍是这一对。
-FABRIC_MAINLINE_BOOTSTRAP = ("配料", "打包")
+#: **bootstrap 字面量**（`docs/sql/schema.sql` 的种子）—— 自 issue #4690 起**已是终态**
+#: `裁剪 → 打包`（该文件是「新建库一次性 bootstrap」，`docker-entrypoint-initdb.d` 栈**不跑迁移链**
+#: ⇒ 它必须一次给全终态；V88 只改迁移 ⇒ 不同步就是「迁移库与新库两套口径」）。
+FABRIC_MAINLINE_BOOTSTRAP = ("裁剪", "打包")
 #: **迁移链终态**（bootstrap 字面量 + V88 ③ 的 `配料` → `裁剪` 元素替换，issue #4676）：
 #: 用户裁定逐字「布料单该用 **裁剪**」（设计 F5 已改判掉早期的「配料是公共工序」）。
 FABRIC_MAINLINE_EFFECTIVE = ("裁剪", "打包")
+#: V88 ①/② 退场的逻辑工序名（`配料`）。
+RETIRED_LOGICAL = "配料"
 #: V88 迁移文件名（`配料` 退场 / 布料主线改写 / 保命格）。
 V88_NAME = "V88__retire_material_prep_and_fabric_position.sql"
 CURTAIN_MAINLINE = ("精裁", "三边", "熨烫", "定型", "复烫", "车被",
@@ -209,8 +212,8 @@ def test_schema_sql_terminal_state_has_both_routes():
     )
     assert fabric["positions"] == ("布料",), f"布料路线的适用部位应为 [布料]：{fabric['positions']}"
     assert fabric["mainline"] == FABRIC_MAINLINE_BOOTSTRAP, (
-        f"布料主线的 **bootstrap 字面量**应为 配料 → 打包：{fabric['mainline']}"
-        f"（`docs/sql/schema.sql` 属 #4678，本单不改它）"
+        f"布料主线的 **bootstrap 字面量**应为 裁剪 → 打包（issue #4690 起 bootstrap 即终态）："
+        f"{fabric['mainline']} —— 旧口径 `配料 → 打包` 会让新建库的布料单实例化出 `配料`（设计 S6）"
     )
     assert effective_fabric_mainline(fabric["mainline"]) == FABRIC_MAINLINE_EFFECTIVE, (
         f"布料主线的**迁移链终态**应为 裁剪 → 打包，实测 "
@@ -363,10 +366,18 @@ class TestInjectedDrift:
             "缺布料路线读不出来 ⇒ 判据是空断言"
 
     def test_terminal_mainline_red_when_v88_rewrite_is_absent(self):
-        """注入：V88 ③ 的元素替换缺席 ⇒ 迁移链终态退回 `配料 → 打包` ⇒ 终态判据红。"""
+        """注入：V88 ③ 的元素替换缺席 ⇒ 迁移链终态退回 `配料 → 打包` ⇒ 终态判据红。
+
+        ⚠️ 注入用的**旧口径**（V79 的 `配料 → 打包`）**必须独立于** `FABRIC_MAINLINE_BOOTSTRAP`
+        —— 后者自 issue #4690 起**已是终态**（`裁剪 → 打包`）⇒ 拿它当注入源会让本红证退化成
+        「终态 == 终态」的恒真断言（**红证自己失效**，本文件的第一次改写就踩到了）。
+        """
         assert effective_fabric_mainline(FABRIC_MAINLINE_BOOTSTRAP) == FABRIC_MAINLINE_EFFECTIVE, \
             "真实树上终态读不出来 ⇒ 终态判据是空断言"
-        without_v88 = tuple({}.get(step, step) for step in FABRIC_MAINLINE_BOOTSTRAP)
+        legacy_v79_mainline = (RETIRED_LOGICAL, "打包")
+        assert legacy_v79_mainline != FABRIC_MAINLINE_EFFECTIVE, \
+            "旧口径与终态相同 ⇒ 本红证的前提不成立（注入不会改变任何东西）"
+        without_v88 = tuple({}.get(step, step) for step in legacy_v79_mainline)
         assert without_v88 != FABRIC_MAINLINE_EFFECTIVE, \
             "缺 V88 改写时终态仍等于冻结值 ⇒ 终态判据是空断言"
         assert _v88_fabric_mainline_rewrite() == {"配料": "裁剪"}, \

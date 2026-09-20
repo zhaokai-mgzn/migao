@@ -853,12 +853,15 @@ class ProductionServiceTest {
         verify(workLogMapper, times(1)).selectList(any());
     }
 
-    // ══════════════════════════ §5 四项防呆（issue #4116 P0-3）══════════════════════════
+    // ══════════════════════════ §5 防呆（issue #4116 P0-3；② 越站已于 #4694 删除）══════════════════════════
     //
     // 病灶（逐项一次真实误报工的形态）：
     //   ① 重复报工：工人连点两次 / 网络重试 ⇒ 同一笔报工落两条明细、done_qty 翻倍（原代码
     //      `doneQty = doneQty.add(qualifiedQty)` 无条件累加，且前端无 in-flight 锁）；
-    //   ② 越站：前道未完成也能报后续工序 ⇒ 工序顺序失控、必完判定提前全绿 ⇒ 假完工；
+    //   ② 越站（**已删除**，issue #4694，用户逐字裁定「这个不需要管理，因为现实生产过程中工人
+    //      会自动推进，系统就无需管理生产顺序」）：原为「前道未完成不得报后续工序 ⇒ 422」，
+    //      现改为**顺序不拦**（跳站按实际工序正常记账）。⚠️ 删的是**顺序闸门**，不是**工序确定性**：
+    //      「这次扫的是哪道工序必须确定」仍是硬约束（无 operationId ⇒ 拒，见下方 #4694 专测）。
     //   ③ 超上限：报工数量无上界 ⇒ done_qty 可超过应做数量（进度百分比 >100、计件虚高）；
     //   ④ 非本部位：软删实例（工艺变更后重新实例化留下的旧行）仍可被报工 ⇒ 进度记到废弃实例上。
     //
@@ -912,27 +915,48 @@ class ProductionServiceTest {
     }
 
     @Test
-    @DisplayName("§5-2 越站：同部位前道未完成 ⇒ 422 + 可行动 suggestion，不落明细、不推进")
-    void reportRejectedWhenPredecessorOperationNotDone() {
+    @DisplayName("§5-2 越站闸门已删除（#4694 用户裁定）：同部位前道未完成 ⇒ 跳站报后续工序**正常记账**（不再 422）")
+    void reportAllowedWhenPredecessorOperationNotDone() {
         when(positionOperationMapper.selectById("op-2"))
                 .thenReturn(positionOp("op-2", "布帘", 2, "布帘车被", "10.00", "0.00", "pending", false, 0));
-        // 报工前快照：同部位 seq=1「精裁-布」只报了 4/10（未完成）
+        // 报工前快照：同部位 seq=1「精裁-布」只报了 4/10（未完成）—— **这条夹具是红证的关键**：
+        // 改前它让本用例 422（OPERATION_SEQUENCE_VIOLATION），改后必须放行；
+        // 删闸门后 selectList 只被「必完判定」消费（本桩不再参与拦截，但保留了「前道未完成」的现场）。
         when(positionOperationMapper.selectList(any())).thenReturn(List.of(
                 positionOp("op-1", "布帘", 1, "精裁-布", "10.00", "4.00", "done", true, 0),
                 positionOp("op-2", "布帘", 2, "布帘车被", "10.00", "0.00", "pending", false, 0)));
 
-        assertThatThrownBy(() -> report("op-2", reportBody("10", "10", "normal")))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("精裁-布")
-                .hasMessageContaining("尚未完成")
-                .as("可行动 suggestion：先报工完成前道工序")
-                .extracting(e -> ((BusinessException) e).getSuggestion())
-                .asString()
-                .contains("请先报工完成");
+        Map<String, Object> result = report("op-2", reportBody("10", "10", "normal"));
 
-        verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
-        verify(positionOperationMapper, never())
-                .advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any());
+        // 改钉（**≠ 放宽**）：改前这条期望 422 +「请先报工完成前道工序」suggestion；改后期望「正常记账」——
+        // 判据对象是同一条行为（前道未完成时报后续工序），只是**用户裁定**把期望从「拦」改成「放行」；
+        // 断言强度不降（仍逐项钉住落明细 / 推进 / 按实际工序记账 / 快照单价）。
+        assertThat((BigDecimal) result.get("done_qty")).isEqualByComparingTo("10.00");
+        assertThat(result.get("status")).isEqualTo("done");
+        ArgumentCaptor<ProductionWorkLog> logCaptor = ArgumentCaptor.forClass(ProductionWorkLog.class);
+        verify(workLogMapper).insert(logCaptor.capture());
+        verify(positionOperationMapper).advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any());
+        // 按**实际做的工序**记账（不是「被拦掉」也不是「记到前道」）
+        assertThat(logCaptor.getValue().getOperationId()).isEqualTo("op-2");
+        assertThat(logCaptor.getValue().getOperationName()).isEqualTo("布帘车被");
+        // 计件口径不受顺序影响：合格数量 × 报工那刻的单价快照（10 × 0.40）
+        assertThat(logCaptor.getValue().getQualifiedQty()).isEqualByComparingTo("10.00");
+        assertThat(logCaptor.getValue().getUnitPrice()).isEqualByComparingTo("0.40");
+    }
+
+    @Test
+    @DisplayName("§5-5 工序必须确定（#4694 硬约束）：operationId 缺失/空白 ⇒ 拒绝记账，不落明细、不推进")
+    void reportRejectedWhenOperationNotDetermined() {
+        for (String undetermined : new String[]{null, "", "   "}) {
+            org.mockito.Mockito.clearInvocations(workLogMapper, positionOperationMapper);
+            assertThatThrownBy(() -> report(undetermined, reportBody("1", "1", "normal")))
+                    .isInstanceOf(BusinessException.class)
+                    .as("工序未确定却记账 = 计件记错工序 ⇒ 发错工资（用户裁定②-2 的硬约束）")
+                    .hasMessageContaining("工序未确定");
+            verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
+            verify(positionOperationMapper, never())
+                    .advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any());
+        }
     }
 
     @Test
@@ -952,7 +976,7 @@ class ProductionServiceTest {
     }
 
     @Test
-    @DisplayName("§5-2 返工/报废不受顺序门禁（如实记录现场不得被拦）")
+    @DisplayName("§5-2 返工/报废只记账不推进（#4694 后顺序已无门禁，本行为不变）")
     void reworkAndScrapAreNotBlockedBySequenceGate() {
         when(positionOperationMapper.selectById("op-2"))
                 .thenReturn(positionOp("op-2", "布帘", 2, "布帘车被", "10.00", "0.00", "pending", false, 0));

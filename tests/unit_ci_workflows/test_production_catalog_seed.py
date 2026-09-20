@@ -194,16 +194,33 @@ def _split_fields(row: str):
     return fields
 
 
+def declared_columns(sql: str, table: str) -> tuple:
+    """从 `INSERT INTO <table> (列清单) …` **读出**该源声明的列序（读不到 ⇒ 返回 `()`）。
+
+    为什么读而不是写死（issue #4690）：`docs/sql/schema.sql`（bootstrap）是**终态**种子，它对
+    「V88 退场」的表达是**显式写 `deleted` 列**（行保留、翻标记）⇒ 列数比迁移侧多一列。
+    把列清单写死会让「bootstrap 多写一列」被读成「列序漂移」（**假红**），而把 `deleted` 从
+    两侧都删掉又会丢掉「bootstrap 到底种成什么态」的可判性 ⇒ 只能按源文本取值。
+    """
+    match = re.search(r"INSERT\s+INTO\s+" + table + r"\s*\(([^)]*)\)", sql, re.I)
+    if not match:
+        return ()
+    return tuple(c.strip() for c in match.group(1).split(",") if c.strip())
+
+
 def parse_seed(sql: str, table: str, columns):
     """解析 `INSERT INTO <table> ... VALUES ...` 段 → [{列: 原始字面量}]。
 
     只认**第一条**该表的 INSERT（每个源文件各只有一条种子语句）。
+    列清单优先取源文本里声明的（`declared_columns`），读不到才回落调用方给的 `columns`
+    —— 回落是给**注入式夹具**（临时字符串，没有列清单）用的。
     """
     match = re.search(
         r"INSERT\s+INTO\s+" + table + r"\b[^;]*?VALUES(.*?)(?:ON\s+CONFLICT|;)",
         sql, re.S | re.I)
     if not match:
         return []
+    columns = declared_columns(sql, table) or columns
     rows = []
     for raw in _split_rows(match.group(1)):
         fields = _split_fields(raw)
@@ -685,19 +702,70 @@ def test_template_drift_is_detected(template_json):
 
 
 def test_every_seed_source_contributes_to_the_aggregate(seed_sqls):
-    """多源自证：**每个**种子源的工序都被聚合读到（含 V56 的 5 道新工序）。
+    """多源自证：**每个**种子源的工序都被聚合读到（含 V56 的 5 道新工序 / V89 的按租户回填）。
 
     反例（本测试要挡的形态）：聚合退化成只读 V54 ⇒ V56 从未被行使 ⇒ #4230 的新工序
     既不在守卫射程内、又不会被任何断言照出来。
+
+    ⚠️ **两种源形态分流**（issue #4685；与 `values_sources_for` 对 P2/V72 的分流同口径）：
+    · **字面量源**（语句里有 `VALUES`）⇒ 必须 `parse_seed` 出行（原判据**不变**）；
+    · **派生回填源**（`INSERT INTO production_operations … SELECT … FROM tenants`，无 `VALUES`）
+      —— 行不在字面量里，它的贡献在「**按租户循环 + 幂等去重**」这个**形态**里 ⇒ 判据落在形态上。
+      不给这条分流，会把合规的派生迁移判「未解析到任何工序行」（**假红**）—— 而假红比没有守卫更糟
+      （会被人直接关掉，本文件自己的口径）。判据**不是放宽**：派生源多背两条形态断言，而
+      `catalog_rows`（三源收敛的比对射程）本来就 `parse_seed` 不出派生源的行、不受影响。
     """
     per_source = {name: {key_of(r) for r in parse_seed(sql, "production_operations", OP_COLUMNS)}
                   for name, sql in seed_sqls}
     for name, names in per_source.items():
-        assert names, f"{name} 未解析到任何工序行（该源等于没被读）"
+        if names:
+            continue                      # 字面量源：原判据（必须解析出行）
+        stmt = re.search(r"INSERT\s+INTO\s+production_operations\b[\s\S]*?;",
+                         dict(seed_sqls)[name], re.I)
+        assert stmt, (
+            f"{name} 既没解析到任何工序行（无 `VALUES`）、又找不到工序 INSERT 语句 ⇒ 该源等于没被读")
+        violations = derived_operation_source_violations(stmt.group(0))
+        assert violations == [], f"{name} 的派生回填形态违规：{violations}"
     assert len(per_source) >= 2, "工序库种子只剩一个源（#4230 的多源口径失效）"
     assert {"绑带-纱", "logo条-布", "立边-布", "扣环-布", "防翘扣-布"} <= \
         per_source["V56__seed_special_option_operations.sql"], (
         "#4230 的 5 道新工序必须由 V56 贡献（少一个 ⇒ 实例化取不到工序 ⇒ fail-closed）")
+
+
+def derived_operation_source_violations(stmt: str) -> list:
+    """**派生回填源**（`INSERT INTO production_operations … SELECT … FROM tenants`，无 `VALUES`）
+    的形态违规清单 —— 空 = 合规。
+
+    为什么判「形态」而不是「行」：派生源的行由**运行时**的 `tenants` 表决定，静态文本里没有行
+    （`parse_seed` 只吃 `VALUES`）。它的贡献全在「按租户循环 + 幂等去重」这个形态里
+    ⇒ 判据只能落在形态上（issue #4685）。纯函数 ⇒ 注入式自证见
+    `test_derived_operation_source_guard_is_load_bearing`。
+    """
+    out = []
+    if not re.search(r"\bFROM\s+tenants\b", stmt, re.I):
+        out.append("没有按租户循环（缺 `FROM tenants`）⇒ 存量租户拿不到工序 ⇒ 全量建单 422")
+    if not re.search(r"\bNOT\s+EXISTS\b", stmt, re.I):
+        out.append("没有按业务唯一键 `NOT EXISTS` 去重 ⇒ 不幂等（`MigrationRunner` 要求可重复执行）")
+    return out
+
+
+def test_derived_operation_source_guard_is_load_bearing():
+    """自证（issue #4685）：派生回填源的**形态**判据真会红（两向各一例）—— 不是空断言。"""
+    good = ("INSERT INTO production_operations (id, tenant_id, name)\n"
+            "SELECT 'op-x-' || t.id, t.id, '打包'\n"
+            "  FROM tenants t\n"
+            " WHERE t.deleted = 0\n"
+            "   AND NOT EXISTS (SELECT 1 FROM production_operations e WHERE e.tenant_id = t.id)\n"
+            "ON CONFLICT (id) DO NOTHING")
+    assert derived_operation_source_violations(good) == [], "合规形态读不出来 ⇒ 判据是空跑"
+    without_loop = good.replace("FROM tenants t", "FROM (SELECT 1 AS id) t")
+    assert without_loop != good, "注入未生效（`FROM tenants` 没命中）"
+    assert derived_operation_source_violations(without_loop) == [
+        "没有按租户循环（缺 `FROM tenants`）⇒ 存量租户拿不到工序 ⇒ 全量建单 422"]
+    without_guard = good.replace("NOT EXISTS", "TRUE OR EXISTS")
+    assert without_guard != good, "注入未生效（`NOT EXISTS` 没命中）"
+    assert derived_operation_source_violations(without_guard) == [
+        "没有按业务唯一键 `NOT EXISTS` 去重 ⇒ 不幂等（`MigrationRunner` 要求可重复执行）"]
 
 
 def test_every_routing_source_contributes_to_the_aggregate(routing_sqls):
@@ -1243,7 +1311,59 @@ def test_position_prices_converge_across_three_sources(schema_sql):
     assert len(truth) == 120, f"真值源的部位价目不是 120 行（30 × 4）：{len(truth)}"
     assert len(migration) == 120, f"迁移侧的部位价目不是 120 行：{len(migration)}"
     assert migration == truth, f"部位价目：迁移侧 ≠ routing.py：{_diff_keys(migration, truth)}"
-    assert bootstrap == truth, f"部位价目：schema.sql 终态 ≠ routing.py：{_diff_keys(bootstrap, truth)}"
+    # ⚠️ bootstrap 是**终态**（issue #4690）：V88 退场的格在库里**行保留 + `deleted = 1`**
+    # ⇒ 与真值源的可比口径 = 「**存活格**逐值相等 + 退场格**恰好**是 V88 那一组」。
+    # 直接拿全部 120 格比真值源会「拿终态比旧口径」（苹果比橘子），且会漏掉「该退的没退」。
+    bootstrap_alive, bootstrap_retired = _split_by_deleted(schema_sql)
+    retired = _v88_retired_cells()
+    assert set(bootstrap_alive) | bootstrap_retired == set(truth), (
+        f"bootstrap 的格集合 ≠ routing.py 的 120 格：仅 bootstrap 有 = "
+        f"{sorted((set(bootstrap_alive) | bootstrap_retired) - set(truth))}，仅真值源有 = "
+        f"{sorted(set(truth) - (set(bootstrap_alive) | bootstrap_retired))}")
+    # 存活格逐值相等；**保命格是唯一有意例外**：V88 ④ 把 `裁剪 × 布料` 翻成 `applicable=TRUE`
+    # （真值源仍是 V79 的 FALSE —— 它属 ai-agent，本单红线不改）⇒ 单列出来比对，不放进「逐值相等」里。
+    keep_cell = ("裁剪", "布料")
+    assert bootstrap_alive.get(keep_cell, (None, None, None))[1] is True, (
+        f"bootstrap 的保命格 {keep_cell} 不是 `applicable=TRUE`：{bootstrap_alive.get(keep_cell)}"
+        f" —— 依据设计 F3（存量未实例化布料单会按当前配置重算）")
+    without_keep = {k: v for k, v in bootstrap_alive.items() if k != keep_cell}
+    truth_without_keep = {k: v for k, v in truth.items()
+                          if k != keep_cell and k not in retired}
+    assert without_keep == truth_without_keep, (
+        f"部位价目（bootstrap **存活**格）≠ routing.py："
+        f"{_diff_keys(without_keep, truth_without_keep)} —— 价目/适用性/状态任一漂移即红")
+    assert bootstrap_retired == retired, (
+        f"bootstrap 退场的格 ≠ V88 的退场集合：仅 bootstrap 退 = "
+        f"{sorted(bootstrap_retired - retired)}，仅 V88 退 = {sorted(retired - bootstrap_retired)}")
+
+
+def _split_by_deleted(sql: str) -> tuple:
+    """`schema.sql` 的矩阵行 → `(存活格 dict, 退场格集合)`（按显式 `deleted` 列分流）。
+
+    为什么按**格**分流而不是按行删掉：bootstrap 与迁移链的**行集合必须相同**（否则
+    「行整个消失」这一形态不可判）⇒ 退场只能靠 `deleted` 表达。
+    """
+    rows = parse_seed(sql, "production_operation_positions", POSITION_PRICE_COLUMNS)
+    alive, retired = {}, set()
+    for row in rows:
+        key = (normalize_value(row["logical_name"]), normalize_value(row["position"]))
+        if normalize_value(row.get("deleted", "0")) == "1":
+            retired.add(key)
+        else:
+            alive[key] = _price_rows([row])[key]
+    return alive, retired
+
+
+def _v88_retired_cells() -> set:
+    """V88 退场的格（② `配料 × 4 部位` + ⑤ 其余布料格）—— **从 V88 的谓词读**，不硬编码。"""
+    v88 = MIGRATION_DIR / "V88__retire_material_prep_and_fabric_position.sql"
+    body = sql_code(v88.read_text(encoding="utf-8"))
+    retired_logical = re.search(r"logical_name\s*=\s*'([^']*)'", body)
+    excluded = re.search(r"logical_name\s+NOT\s+IN\s*\(([^)]*)\)", body)
+    assert retired_logical and excluded, "V88 的退场谓词读不出来 ⇒ 本判据的前提不成立"
+    banned = set(re.findall(r"'([^']*)'", excluded.group(1)))
+    return {(lg, pos) for lg, pos in position_price_rows_multi(POSITION_SEED_SQLS)
+            if lg == retired_logical.group(1) or (pos == "布料" and lg not in banned)}
 
 
 def test_route_template_converges_across_three_sources(schema_sql):
@@ -1272,8 +1392,26 @@ def test_route_template_converges_across_three_sources(schema_sql):
         f"具名路线（迁移链终态 = 字面量 + V79 的打包插入）≠ routing.py："
         f"{_with_packing_on_default_route(migration)} ≠ {truth}"
     )
-    assert route_template_rows(schema_sql) == truth, \
+    # ⚠️ 真值源（`routing.py`）的布料主线仍是旧口径 `配料 → 打包`（它属 ai-agent，本单**红线不改**）
+    # ⇒ 把 bootstrap 的**终态**（issue #4690 起 `裁剪 → 打包`）按 V88 ③ 的等价改写**升到真值源口径**再比。
+    # 不这样做就会「拿终态比旧口径」（苹果比橘子）；真正的终态一致性由
+    # `test_public_ops_v88_migration.py::test_bootstrap_matches_migration_chain_terminal_state` 钉。
+    assert _as_truth_caliber(route_template_rows(schema_sql)) == truth, \
         "具名路线：schema.sql 终态 ≠ routing.py（bootstrap 库与迁移库路线不同）"
+
+
+def _as_truth_caliber(rows: list) -> list:
+    """把 bootstrap 的路线**终态**折回真值源口径：布料主线的 `裁剪` → `配料`（V88 ③ 的逆）。
+
+    只动**布料路线**（`is_default = False` 且 `positions == ("布料",)`）⇒ 窗帘默认路线一字不动。
+    """
+    out = []
+    for row in rows:
+        if row["is_default"] or row["positions"] != ("布料",):
+            out.append(row)
+            continue
+        out.append({**row, "mainline": tuple("配料" if s == "裁剪" else s for s in row["mainline"])})
+    return out
 
 
 def _with_packing_on_default_route(rows: list) -> list:

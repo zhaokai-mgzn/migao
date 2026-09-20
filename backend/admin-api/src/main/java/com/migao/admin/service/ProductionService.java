@@ -29,14 +29,12 @@ import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -514,24 +512,29 @@ public class ProductionService {
     // ============================================================ 报工
 
     /**
-     * 扫码报工：幂等占位 → 四项防呆 →（落报工明细 → 原子推进 done_qty → 必完全绿则加工单置 completed）。
+     * 扫码报工：幂等占位 → 防呆 →（落报工明细 → 原子推进 done_qty → 必完全绿则加工单置 completed）。
      *
-     * <p><b>§5 四项防呆（issue #4116，逐项对应一次真实误报工的形态）：</b></p>
+     * <p><b>§5 防呆（issue #4116；原「四项」中的 ② 越站已于 issue #4694 按用户裁定删除）：</b></p>
      * <ol>
      *   <li><b>重复报工幂等</b>（{@code X-Client-Request-Id} 同键 ⇒ 不执行、回放首次结果）：
      *       工人连点两次 / 网络重试 ⇒ 同一笔报工落两条明细、{@code done_qty} 翻倍。
      *       复用既有 {@link ClientRequestIdService}（与下单/建工单**同一套**实现与同一张表）。
      *       接线放在本方法（Controller 只透传请求头）：本方法**不加** {@code @Transactional}，
      *       占位与快照的提交边界才是既有的「先占位 → 执行 → 落快照」同款（见方法内注释）。</li>
-     *   <li><b>越站</b>（前道未完成不得报后续工序）：判据来自既有语义 —— 工序实例的
-     *       {@code seq}（部位内顺序，V49 注释）+ {@link #isDone}（{@code done_qty ≥ qty}）；
-     *       {@code is_start_marker} 只影响订单状态推进，**不参与**顺序判据（避免第二套口径）。</li>
      *   <li><b>数量上限</b>（{@code done_qty + 本次合格数 ≤ qty}）：见方法内注释（选择**拒绝**的理由）。</li>
      *   <li><b>非本部位</b>（报工必须落在该加工单**实际存在且活跃**的工序实例上）：
      *       {@code selectById} 命中后按 tenant_id / deleted=0（fail-closed，含 NULL）/ 加工单归属三重校验，
      *       三重任一不成立即 404；且此处**只**认库里的实例 id —— 请求体里的工序名不参与定位，
      *       无法凭空造出工序名。</li>
+     *   <li><b>工序必须确定</b>（{@code operationId} 缺失/空白 ⇒ 拒绝记账）：用户裁定②-2 的**硬约束**
+     *       「这次扫的是哪道工序必须确定，否则计件会记错工序 ⇒ 发错工资」。见 {@link #doReport} 开头的判据。</li>
      * </ol>
+     *
+     * <p><b>② 越站（原「前道未完成不得报后续工序」）已删除</b>（issue #4694）。用户逐字裁定：
+     * 「是否允许跳站？这个不需要管理，因为现实生产过程中工人会自动推进，系统就无需管理生产顺序」
+     * ⇒ 报工**不再**按 {@code seq} 校验前道是否完成；{@code seq} 此后只用于页面/分组排序。
+     * 冲突登记：{@code docs/design/set-code-and-scan-loop.md} C9。
+     * ⚠️ 删的是**顺序闸门**，不是工序确定性 —— 后者见上面第 4 条。</p>
      *
      * <p>并发（不同键/无键的并发请求）：由 {@code advanceDoneQtyIfUnchanged} 的 CAS 谓词关闭
      * 丢更新窗口（见该 Mapper 方法注释），影响行数 0 ⇒ fail-closed 而不是静默覆盖。</p>
@@ -556,7 +559,7 @@ public class ProductionService {
             clientRequestIdService.complete(tenantId, clientRequestId, result);
             return result;
         } catch (RuntimeException e) {
-            // ④ 执行失败（校验/越站/超上限/串行冲突/DB 错误）⇒ 释放占位：否则一次失败就把该键
+            // ④ 执行失败（校验/超上限/串行冲突/DB 错误）⇒ 释放占位：否则一次失败就把该键
             //    永久占死，工人改用同键重试（小程序重试）会被误判为「重复」而永远进不来
             clientRequestIdService.discard(tenantId, clientRequestId);
             throw e; // 原样抛出，不吞（失败必须对工人可见）
@@ -590,6 +593,13 @@ public class ProductionService {
      */
     private Map<String, Object> doReport(String orderId, String operationId,
                                          Map<String, Object> body, Long tenantId) {
+        // 防呆⑤ 工序必须确定（用户裁定②-2 的硬约束，issue #4694）：本次扫的是**哪道**工序必须明确 ——
+        // 工序未确定却记账 = 计件记错工序 ⇒ 发错工资。删的是**顺序闸门**，本条**不放宽**：
+        // 这里不提供「默认取下一道待做」之类的推断（那是扫码闭环落码单的事），缺 id 直接拒绝。
+        if (!StringUtils.hasText(operationId)) {
+            throw BusinessException.validationError(
+                    "报工必须指定工序（operationId 缺失或空白）—— 工序未确定不得记账，否则计件会记错工序");
+        }
         Order order = resolveOrder(orderId, tenantId);
         ProcessingOrder po = processingOrderMapper.selectActiveByOrderId(order.getId(), tenantId);
         if (po == null) {
@@ -620,12 +630,11 @@ public class ProductionService {
         if (qualifiedQty.signum() < 0) {
             throw BusinessException.validationError("qualified_qty 不能为负");
         }
-        // 报工前的实例快照（越站判据必须看**报工前**的状态，不能看自己这次的结果）
-        List<ProcessingPositionOperation> before = listOperations(po.getId(), tenantId);
         boolean advances = "normal".equals(workType) && qualifiedQty.signum() > 0;
 
         if (advances) {
-            assertPredecessorsDone(op, before);
+            // 顺序**不拦**（issue #4694，用户裁定「系统无需管理生产顺序」）：此处**不再**有
+            // 「前道未完成 ⇒ 422」的闸门，工人做哪道都按实际工序正常记账。
             assertWithinPlannedQty(op, qualifiedQty);
         }
 
@@ -697,41 +706,6 @@ public class ProductionService {
         // 键名为**冻结契约**（bmini 扫工页 productionService.ts 消费），语义 = 加工单完工（生产完成）
         result.put("order_completed", productionCompleted);
         return result;
-    }
-
-    /**
-     * 防呆② 越站：前道工序未完成（{@code done_qty < qty}）时不得报后续工序。
-     *
-     * <p>为什么用「立即前道」而不是「全部前道」：{@code seq} 保证顺序，若立即前道已完成，
-     * 则它之前的所有工序在**同一不变式**下也已完成（每次报工都过本闸门）——
-     * 逐条遍历是同一判据的冗余形式，取「seq 最大且小于本工序」的那一条即可。
-     * 与 {@code listOperations} 的既有排序（部位名 / seq）同口径：同部位内比较。</p>
-     *
-     * <p>仅约束**推进型**报工（normal 且合格数 &gt; 0）：返工/报废（rework/scrap）是
-     * 「如实记录现场」而非推进生产，把它们拦在顺序门外会逼工人不记录 —— 那是更坏的失效。</p>
-     */
-    private void assertPredecessorsDone(ProcessingPositionOperation op,
-                                        List<ProcessingPositionOperation> before) {
-        int seq = op.getSeq() == null ? 0 : op.getSeq();
-        if (seq <= 0) {
-            return; // 无序号（脏数据）⇒ 无顺序可判，不误伤
-        }
-        ProcessingPositionOperation predecessor = before.stream()
-                .filter(prev -> !Objects.equals(prev.getId(), op.getId()))
-                .filter(prev -> Objects.equals(prev.getPositionName(), op.getPositionName()))
-                .filter(prev -> prev.getSeq() != null && prev.getSeq() > 0 && prev.getSeq() < seq)
-                .max(Comparator.comparingInt(ProcessingPositionOperation::getSeq))
-                .orElse(null);
-        if (predecessor != null && !isDone(predecessor)) {
-            throw new BusinessException("OPERATION_SEQUENCE_VIOLATION",
-                    "前道工序「" + predecessor.getOperationName() + "」尚未完成"
-                            + "（已报 " + nz(predecessor.getDoneQty()).stripTrailingZeros().toPlainString()
-                            + "/" + nz(predecessor.getQty()).stripTrailingZeros().toPlainString() + "），"
-                            + "不能越过它报「" + op.getOperationName() + "」",
-                    422,
-                    "请先报工完成「" + predecessor.getOperationName() + "」（本部位第 "
-                            + predecessor.getSeq() + " 道工序），再回来报「" + op.getOperationName() + "」");
-        }
     }
 
     /**

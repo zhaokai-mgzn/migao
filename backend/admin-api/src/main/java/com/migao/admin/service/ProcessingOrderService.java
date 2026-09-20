@@ -886,9 +886,13 @@ public class ProcessingOrderService {
      * 重排部位内序号（1..N）。
      *
      * <p>为什么必须重排：库路线的 seq 只覆盖**基准**工序，条件工序插进来后原序号会重复/断档；
-     * 而 {@code seq} 是报工「越站」防呆（{@code assertPredecessorsDone} 取「seq 最大的前道」）
-     * 与页面排序的**唯一**顺序依据 ⇒ 序号错 = 越站校验错。真值源同款：
+     * 而 {@code seq} 是页面排序与「默认给下一道待做」派生的**唯一**顺序依据 ⇒ 序号重复/断档 =
+     * 顺序显示/派生错。真值源同款：
      * {@code routing.py::instance_operations} 在插完条件工序后 `enumerate(route, start=1)`。</p>
+     *
+     * <p>⚠️ 改判（issue #4694，2026-09-20）：seq **不再是**报工顺序闸门的判据 —— 用户裁定
+     * 「系统无需管理生产顺序」，原 {@code ProductionService.assertPredecessorsDone} 已删除
+     * （报工不再按 seq 校验前道是否完成）。</p>
      *
      * <p>无特殊选项时结果与库路线逐值相同（路线 seq 本来就是 1..N）⇒ 不回归。</p>
      */

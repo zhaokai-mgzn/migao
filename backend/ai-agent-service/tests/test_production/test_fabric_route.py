@@ -1,4 +1,6 @@
 # case_ids: PG-018, PG-035, PG-039
+# （issue #4690 只把 `schema.sql` 的**终态**同步到 V88、并接上两条口径的比对守卫；
+#   本文件既有用例的**契约未变** ⇒ 不新增用例 ID，也不改判已有用例。）
 """布料基础路线（第 4 个部位）+ 「打包」工序（issue #4529，包 F）—— 真值源判据。
 
 ## 本文件判什么
@@ -306,7 +308,7 @@ def _literal_position_rows(sql: str) -> list:
             continue   # 派生回填（V72/V79 的按租户循环）不算字面量种子
         rows.extend(re.findall(
             r"\(\s*'([^']*)'\s*,\s*1\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*(NULL|[\d.]+)\s*,"
-            r"\s*(TRUE|FALSE)\s*,\s*'([^']*)'\s*\)", stmt))
+            r"\s*(TRUE|FALSE)\s*,\s*'([^']*)'\s*(?:,\s*[01]\s*)?\)", stmt))
     return rows
 
 
@@ -326,11 +328,28 @@ def test_v79_completes_the_matrix_to_120_rows_with_36_new_cells():
 
 
 def test_schema_sql_terminal_state_carries_all_120_cells():
-    """bootstrap 终态（`schema.sql`）必须一次给全 120 格（新建库不跑迁移链）。"""
-    rows = _literal_position_rows(SCHEMA.read_text(encoding="utf-8"))
+    """bootstrap 终态（`schema.sql`）必须一次给全 120 格（新建库不跑迁移链）。
+
+    ⚠️ issue #4690 起该文件是 **V88 之后的终态**：`配料 × 4 部位` 与其余布料格**行保留**但
+    `deleted = 1`（V88 ②⑤ 的软删口径），`裁剪 × 布料` 是 `applicable=TRUE` 的**保命格**（V88 ④）
+    ⇒ 行集合仍是 **120**（本判据）；「退场/保命格」的逐格口径由
+    `tests/unit_ci_workflows/test_public_ops_v88_migration.py::test_bootstrap_matches_migration_chain_terminal_state`
+    钉（两侧机械比对）。本判据只保证「新建库不缺格 ⇒ `build_route_v2` 不 KeyError」。
+    """
+    schema = SCHEMA.read_text(encoding="utf-8")
+    rows = _literal_position_rows(schema)
     assert len(rows) == 120, (
         f"schema.sql 的价目终态应为 120 格，实测 {len(rows)} —— 只写迁移 = 新建库缺 36 格 "
         f"⇒ `build_route_v2` KeyError（同 #3270 形态）"
+    )
+    # V88 终态的存在性自证（否则「120 格」这一读数可能来自**旧口径**的 120 格 —— 形似而神不似）
+    assert re.search(r"'opp-v79-29'[\s\S]{0,80}?'active',\s*1\s*\)", schema), (
+        "schema.sql 的 `配料 × 布料` 格不是软删态（`deleted = 1`）—— V88 ② 的终态没被同步"
+        "（`docker-entrypoint-initdb.d` 栈**不跑迁移链** ⇒ 新建库会留着活跃的 `配料`）"
+    )
+    assert re.search(r"'opp-v79-02'[\s\S]{0,80}?NULL,\s*TRUE,\s*'active',\s*0\s*\)", schema), (
+        "schema.sql 的 `裁剪 × 布料` **保命格**不是 `applicable=TRUE` —— V88 ④ 的终态没被同步"
+        "（存量未实例化布料单补生成工序会静默少一道，设计 F3）"
     )
 
 

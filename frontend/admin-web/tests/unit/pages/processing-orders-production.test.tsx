@@ -145,6 +145,25 @@ describe('加工单生产明细页', () => {
     expect(screen.getByTestId('piecework-total')).toHaveTextContent('¥17.00')
   })
 
+  // ── 套口径（issue #4686，用户裁定 2026-09-20「一樘窗 = 一套」）──
+  // 「工序进度」区块的分组**不是**「部位」（部位 = 布帘/纱帘/帘头，读面键 = `position_kind`），
+  // 而是**套**（一樘窗 = 一套）；组头按行业口径显示「第 N 套 / 共 M 套」
+  // （真值源 `docs/curtain-production-rules.md` 的「第 N 套/共 M 套」口径 —— 按该文本检索，不写行号）。
+  it('工序进度按「套」分组：组头显示「第 1 套 / 共 1 套」，不再把一樘窗称作「部位」', async () => {
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('operation-row-op-1')).toBeInTheDocument())
+
+    // 本夹具 = 单窗订单 ⇒ 逐字「第 1 套 / 共 1 套」
+    expect(screen.getByText('第 1 套 / 共 1 套')).toBeInTheDocument()
+
+    // 红证（改前实测）：组头逐字为「部位：布帘」⇒ 下面两条改前必红
+    const group = screen.getByTestId('position-group-布帘')
+    expect(within(group).queryByText(/部位/)).toBeNull()
+    // 保留可识别信息：这一套是**哪一樘窗**（position_name 作副标题，不再当「部位」标签）
+    expect(within(group).getByText('布帘')).toBeInTheDocument()
+  })
+
   it('「打印任务卡」按钮调用 window.print（任务卡含二维码）', async () => {
     const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
     render(<ProductionDetailPage />)
