@@ -100,6 +100,10 @@ NON_TABLE = {
 
 def _referenced_tables(sql: str) -> set:
     sql = _strip_comments(sql)
+    # ⚠️ `IS [NOT] DISTINCT FROM` 是**比较运算符**，不是 `FROM` 子句（issue #4676 实测：
+    # `applicable IS DISTINCT FROM TRUE` 被下面的 `FROM` 正则读成「表 `true`」⇒ 对**合规迁移**
+    # 判红 = 假红，而假红比没有守卫更糟 —— 会被人直接关掉）。先把它整体抹平再扫描。
+    sql = re.sub(r"\bIS\s+(?:NOT\s+)?DISTINCT\s+FROM\b", " ", sql, flags=re.I)
     pats = [
         r"\bUPDATE\s+([a-z_][a-z0-9_]*)",
         r"\bINSERT\s+INTO\s+([a-z_][a-z0-9_]*)",
@@ -253,6 +257,24 @@ def test_genuinely_missing_column_is_still_caught():
         "引用了既不在终态 schema、也不是本文件 ADD 出来的列 ⇒ 必须判红"
         "（否则这条守卫就是摆设 —— V74 首版那个缺陷会静默通过）"
     )
+
+
+def test_distinct_from_operator_is_not_read_as_a_table():
+    """③ **比较运算符不得被读成 `FROM` 子句**（issue #4676 实测的假红形态）。
+
+    `applicable IS DISTINCT FROM TRUE` 是**幂等守卫**的常用写法（「与目标值不同才写」），
+    而 `_referenced_tables` 的 `FROM\\s+(\\w+)` 正则会把它读成「表 `true`」⇒ 对**合规迁移**判红。
+    假红比没有守卫更糟（本文件自己的口径：会被人直接关掉）⇒ 先抹平 `IS [NOT] DISTINCT FROM` 再扫描。
+
+    自证（红证形态）：去掉那条 `re.sub` ⇒ 本用例立刻变红（`true` 出现在结果里）。
+    """
+    assert _referenced_tables(
+        "UPDATE production_operation_positions p SET applicable = TRUE "
+        "WHERE p.applicable IS DISTINCT FROM TRUE;") == {"production_operation_positions"}, (
+        "`IS DISTINCT FROM TRUE` 被读成了表 `true` ⇒ 合规迁移会被误判"
+    )
+    assert _referenced_tables("SELECT 1 FROM t WHERE a IS NOT DISTINCT FROM NULL") == {"t"}, \
+        "`IS NOT DISTINCT FROM` 同样必须被抹平"
 
 
 # ── 判据 5：迁移**必须至少含一条可执行语句**（issue #4543）─────────────────────

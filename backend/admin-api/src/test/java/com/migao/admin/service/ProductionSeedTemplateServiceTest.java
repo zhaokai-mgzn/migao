@@ -243,9 +243,34 @@ class ProductionSeedTemplateServiceTest {
             assertThat(craftCaptor.getValue().getIsDefault())
                     .as("恰一条默认工艺（缺 craft 的订单取它；不得写死常量）").isTrue();
 
-            // 部位价目：规范矩阵 ∩ 该租户工序库（30 逻辑工序 × 4 部位 = 120 行，issue #4529）
-            verify(productionOperationPositionMapper, times(120))
-                    .insert(org.mockito.ArgumentMatchers.any(com.migao.admin.entity.ProductionOperationPosition.class));
+            // 部位价目：规范矩阵 ∩ 该租户工序库 —— **116 行**（issue #4676 改判）。
+            // 改前 120（30 逻辑工序 × 4 部位，issue #4529）；V88 让 `配料` 退场
+            // ⇒ 开租播种也不再种 `配料 × 4 部位` 这 4 行（120 − 4 = 116）。
+            // ⚠️ 规范矩阵常量 `CANONICAL_POSITION_PRICES` **仍是 120 行**（与
+            // `routing.py::_POSITION_PRICE_ROWS` 逐行同值、被
+            // `test_routing_model_p2_consumers.py::test_seed_service_canonical_matrix_matches_truth_source`
+            // 冻结）⇒ 退场只在**播种这一层**显式过滤，不改常量。本判据是**计数**，不是放宽：
+            // 少/多一行都红（`times(116)` 是精确匹配）。
+            ArgumentCaptor<com.migao.admin.entity.ProductionOperationPosition> positionCaptor =
+                    ArgumentCaptor.forClass(com.migao.admin.entity.ProductionOperationPosition.class);
+            verify(productionOperationPositionMapper, times(116)).insert(positionCaptor.capture());
+            List<com.migao.admin.entity.ProductionOperationPosition> seededPositions =
+                    positionCaptor.getAllValues();
+            assertThat(seededPositions.stream()
+                    .map(com.migao.admin.entity.ProductionOperationPosition::getLogicalName).distinct()
+                    .toList())
+                    .as("退场工序 `配料` 不得出现在开租播种的矩阵里（issue #4676；S6 的活路径）")
+                    .doesNotContain("配料");
+            assertThat(seededPositions.stream()
+                    .filter(p -> "裁剪".equals(p.getLogicalName()) && "布料".equals(p.getPosition()))
+                    .map(com.migao.admin.entity.ProductionOperationPosition::getApplicable).toList())
+                    .as("保命格 `裁剪 × 布料` 必须 `applicable=TRUE`（否则新租户的布料单只剩 `打包` ⇒ S1）")
+                    .containsExactly(true);
+            assertThat(seededPositions.stream()
+                    .filter(p -> "打包".equals(p.getLogicalName()))
+                    .map(com.migao.admin.entity.ProductionOperationPosition::getPosition).toList())
+                    .as("`打包` 的 4 格一格不少（交付工序绝不能用「删格」处理，issue #4676 ⑦）")
+                    .containsExactlyInAnyOrder("布帘", "布料", "纱帘", "帘头");
             // 规则表：工艺变体 10 + 特殊选项 16 + 加工项触发 3（issue #4577）+ 计件系数档 1 = 30
             // （逐条按该租户工序库过滤）
             ArgumentCaptor<com.migao.admin.entity.ProductionRouteRule> ruleCaptor =
