@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.38.1
+version: 1.39.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -129,12 +129,35 @@ description: MIGAO 项目开发提效流程固化 — 开发、验证、提交�
   它**只** resolve「未解决 + bot + `isOutdated`」，**人类线程永不自动 resolve**
   （`required_conversation_resolution` 对**人类**评审线程是有价值的护栏 —— **不要**关掉它）。
   workflow 级自动化 (a)/(b) 因本机 token **无 `workflow` scope** 属**保留类**（不改任何 workflow）。
-- **报告型判据「判红不拦合并」**（v1.35 / **#4248**）：native auto-merge 只看分支保护的 **required 集合**，
-  `Drift Audit (真相源契约)` / `Case Trust Gate (断言可信度)` 等**报告型**判据不在其中 ⇒ **判红照旧合并**，
-  而 PR 页面上红/绿与 required 判据**长得一样** ⇒ 极易被读成「绿 = 可以合」（实证：关联 #4214 的 `Drift Audit` = fail 而该 PR 仍 MERGED；#4266 / #4267 / #4271 同款复发）。
+- **「哪些判据拦合并」必须现查，不许凭名字猜**（v1.39 修正，2026-09-21 / **#4634** + **#4248**）：
+  native auto-merge 只看分支保护的 **required 集合** ⇒ **不在其中的判据判红照旧合并**，而 PR 页面上红/绿
+  与 required 判据**长得一样** ⇒ 极易被读成「绿 = 可以合」（实证：关联 #4214 的 `Drift Audit` = fail 而该 PR 仍 MERGED；#4266 / #4267 / #4271 同款复发）。
+  🔴 **v1.35 的原文把清单写错了**（它把 `Case Trust Gate` 与 `Drift Audit` 并列为「报告型、不拦合并」）——
+  2026-09-21 实测（`gh api repos/<owner>/<repo>/branches/main/protection --jq '.required_status_checks.contexts[]'`）：
+  **`Case Trust Gate (断言可信度)` / `QA Growth Gate` / `Case Coverage Gate` / `Case Contract (truths_ref)` 都在 required 集合里 ⇒ 它们判红 = 卡合并**；
+  而 `Drift Audit (真相源契约)` **不在** ⇒ 它判红仍会合（这就是 #4248 现象本身）。
+  ⇒ **教训：清单会漂移，判据不许硬编码**（v1.35 的错就是"把当时观察到的两个名字一起归类"）——
+  **唯一权威 = 下面 ① 的元判据命令，每次现查**。
   ① **元判据（裸判据差集）** = `python3 scripts/merge_gate.py --required-diff` —— required 集合 vs「**实际存在且会判红**」的 job 集合的**差集**（**反推、不硬编码**；数字用命令自证，**不写死**）；
   ② **判红落闸** = `python3 scripts/merge_gate.py --check <PR> --apply-label`（**默认同时 disarm** —— 见 §3.3）；
   三态 `0/1/3`（`3` = 无法判定，**不得当 `0` 读**），**默认只读**（dry-run）。
+- **文档里写裸 `文件名:行号` 会被 Case Trust 规则 G 判红，且本地不复现**（v1.39 新增，2026-09-21 / **#4668**）：
+  `Case Trust Gate` 的规则 **G** 对**裸文件名引用**（= **裸文件名 + 冒号 + 行号**，而非仓库相对全路径）判 **`CASE-TRUST-STALE-LINE-REF`**（**阻塞**），
+  要求写成**仓库相对全路径**（如 `backend/ai-agent-service/app/production/routing.py`）。
+  🔴 **但行号一律不要写**（无论裸名还是全路径）—— 活跃文件的裸行号几分钟就失效，drift 面 `ref-freshness` 同样判红
+  ⇒ **改用符号 / 文本锚点**（函数名、类名、可检索文本；见 §16.7『引用纪律』）。
+  ⚠️ **本条的教训就是本单自己**：v1.39 的初稿在这里**举了两个带行号的例子** ⇒ `Drift Audit` + `Case Trust Gate` **同时判红**（"举例说明禁忌" ≠ "自己可以犯"）。
+  ⚠️ **两条陷阱**：① **本地自查不一定复现**（`python3 .github/case_trust_gate.py --base origin/main` 可能不报，
+  疑似与 CI 的 `fetch-depth` / 引用新鲜度判定面有关）⇒ **本地"绿"不能当结论**；
+  ② 该 job **在 required 集合里**（见上条）⇒ **它红就是卡合并**，不是"报告型"。
+  ⇒ **规避**：写引用时**一律给仓库相对全路径**（顺带满足 drift 面的引用纪律，见 §16.7）。
+- 🔴 **硬规则：改动没全落完，不要开 PR**（v1.39 硬化，2026-09-21 / **#4689**）：
+  native auto-merge 会在 CI 一绿时**秒合**，而它**只等必需检查、与你的本地时序无关** ⇒
+  「先开 PR、后面再补 commit」这条路径**结构性不安全**（补的 commit 会**搁浅**：本地有、main 无、且无 PR 承接）。
+  **两条等价的安全做法，任选其一**：① **改动全部 commit 完再开 PR**（推荐）；② 全程 **draft**，到最后一刻才 `gh pr ready`。
+  ⚠️ **已经 ready 了还要补 commit** ⇒ **必须先 disarm**（`gh pr merge <N> --disable-auto`，见 §3.3 —— `block/merge` 标签**拦不住已 arm 的**）并**确认 `state != MERGED`**。
+  **本会话统计（2026-09-20/21）**：该形态**被踩到 10 次**（多数经内容级核验**未真搁浅**，但**规则本身每次都被违反**）
+  ⇒ **判定"是否真搁浅"只有内容级一条路**：`git show origin/main:<file>`（**不看 commit 可达性**，见 §17.3 三件事）。
 
 ### 2.3 多会话并发规范（v1.3 新增，2026-09-04 实战固化：多 DSH 会话并行踩脚治理）
 
@@ -1662,7 +1685,7 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
 **尚未接 CI required check** —— 现为人工 / 会话收尾时调用，**不会自动拦人**。
 ⚠️ **P7 只解决墙钟与往返，不解决「CI 本身 3-4 min」** —— 那不在本单内。
 
-## 版本沿革（v1.1 → v1.38.1）
+## 版本沿革（v1.1 → v1.39.0）
 
 > 本节由 **v1.21** 从 frontmatter `description` **逐字迁入**（条目文本未改，仅加列表符号并按版本排序）。
 > 背景：frontmatter `description` 是 YAML 纯标量，会在第一个「空白 + `#`」处**静默截断** ——
@@ -1966,3 +1989,10 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
   ② 基线里的**存量**条目（**历史值**：`# case_ids:` 落在第 71 行被 block 的实证）补 `HISTORY_MARK`
   ⇒ 该条从基线**销账**（burn-down 净销账 1 条，达标）。
   **顺带登记（不在本单修）**：`BARE_LINE` 可被 markdown 加粗**静默绕过** —— 判据那一格是**可绕过的**。
+- v1.39.0（2026-09-21，三单合并收口 —— **都在改同一件事：把"凭名字/凭印象"换成"现查"**）：
+  ① **#4634 修正过期清单**：v1.35 的「报告型判据」条目把 `Case Trust Gate` 与 `Drift Audit` **并列**成"不在 required 集合" ✗ ——
+  实测（`branches/main/protection` 的 `required_status_checks.contexts[]`）**`Case Trust Gate` / `QA Growth Gate` / `Case Coverage Gate` / `Case Contract` 都在 required 里 ⇒ 判红 = 卡合并**；
+  `Drift Audit` **不在**（它才是 #4248 现象的主角）。⇒ **教训：清单会漂移，判据不许硬编码** —— 唯一权威 = `merge_gate.py --required-diff` **每次现查**（§2.2）。
+  ② **#4668 补规则 G**：文档里写**裸 `文件名:行号`** 会被 Case Trust 判 `CASE-TRUST-STALE-LINE-REF`（**阻塞**）且**本地不复现** ⇒ 一律写**仓库相对全路径**（§2.2）。
+  ③ **#4689 硬化反搁浅规则**：把「改动没全落完不要开 PR」从"经验条目"提为 §2.2 的**硬规则**，并登记本会话**10 次**踩到的统计
+  （多数经内容级核验未真搁浅，但规则每次都被违反）⇒ 判定是否真搁浅**只有内容级一条路**（§17.3 三件事）。
