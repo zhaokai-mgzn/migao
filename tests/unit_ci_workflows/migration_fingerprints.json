@@ -94,6 +94,7 @@
     "V93__backfill_route_rules_for_empty_catalogs.sql": "sha256:9a03ed37a5c247c44109d8df87792ce50e9f48e42c8bb70e5e05c69aca6cab1c",
     "V94__create_instance_repricing_logs.sql": "sha256:eb13555e67790188c624bebb6163e72ee0934d2e6506142208be7b88398df099",
     "V95__correct_seeded_set_scope_for_existing_tenants.sql": "sha256:65565436e5cde06b04bf69f787a86e82419f184e1a78d7888787af2f672b62f5",
+    "V96__backfill_operation_price_versions.sql": "sha256:5e7ef34e450ee82affdebb36c1cdfcf90d950792bb13ab57e964d41215519368",
     "V98__create_worker_sessions_and_worker_no.sql": "sha256:ad7580afc72ad21c7b63046e21d97e8f721157be33c0bffb51316edc5c7aaa10"
   }
 }

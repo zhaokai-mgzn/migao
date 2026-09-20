@@ -2213,6 +2213,12 @@ WHERE source IS NULL
 
 -- 单价版本回填（V55，issue #4204）：每条活跃工序一行初始版本 ⇒ 「当前价 = 最新版本行」对存量数据成立。
 -- 必须放在工序库种子**之后**；幂等（已有版本行的工序跳过 + ON CONFLICT 兜底）。
+-- ⚠️ **本段必须留在所有 `production_operations` 写语句之后**（issue #4741）：迁移链上
+-- V55 派生**之后**才进库的工序（V79/V89 的 `打包`、V91 的 36 道基线工序）在迁移侧由
+-- `V96__backfill_operation_price_versions.sql` 补账；本文件是 bootstrap **终态**（不跑迁移链）
+-- ⇒ 只要本段在最后，bootstrap 建出的库就**已经是终态**，**不再复制一份派生语句**
+-- （复制 = 多一份会漂移的口径）。守卫 = tests/unit_ci_workflows/test_v96_operation_price_versions_backfill.py
+-- （顺序判据 + 真跑本文件核「活跃工序缺账 = 0」）。
 INSERT INTO production_operation_price_versions (id, tenant_id, operation_id, unit_price, created_at)
 SELECT 'pv-' || o.id, o.tenant_id, o.id, o.unit_price, NOW()
 FROM production_operations o
