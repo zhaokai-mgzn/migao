@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import { orderApi, productApi, customerApi, processingItemApi, craftCalcApi, feePreviewApi, type CraftCalcResult, type CraftCalcParams, type FeePreviewResult } from '@/lib/api'
+import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, feePreviewApi, type CraftCalcResult, type CraftCalcParams, type FeePreviewResult, type FeePreviewRow } from '@/lib/api'
 import { resolveImageUrl } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
 import { Button, Card, Input, Modal } from '@/components/ui'
@@ -17,14 +17,17 @@ import {
   // 与配布边米数来源的 `METERS_SOURCE_MANUAL` 同值（都是「人工指定」）但**是另一个字段**
   // ⇒ 别名进来，避免两个来源的常量在同一文件里撞名（tsc 会直接报 duplicate identifier）。
   METERS_SOURCE_MANUAL as LINE_METERS_SOURCE_MANUAL,
+  CRAFT_CALC_FORMULA_PLEAT,
   craftCalcErrorText,
   craftCalcParamsOf,
   craftCalcSignature,
+  defaultCraftCalcFormula,
+  defaultCraftCalcTier,
+  effectiveCraftCalcFormula,
   isAutoCalcUnavailable,
 } from '@/lib/craft-calc-request'
 import {
   COMPONENT_ROLE_EDGE,
-  CURTAIN_BODY_BOTH,
   CURTAIN_BODY_CLOTH,
   CURTAIN_BODY_OPTIONS,
   CURTAIN_BODY_SHEER,
@@ -35,18 +38,17 @@ import {
   OPEN_COUNT_OPTIONS,
   STANDARD_FULLNESS,
   STYLE_MIXED,
-  bodyHasSheerLine,
   buildCraftSpec,
   buildEdgeLineCraftSpec,
   buildMainLineGroupKeys,
-  buildSheerLineCraftSpec,
   createDefaultCraftSpec,
   curtainTypeOfBody,
   defaultIsShapedForBody,
   type CraftSpecInput,
   type CurtainBody,
 } from '@/lib/order-craft-fields'
-import { describeLogisticsProfile } from '@/lib/logistics'
+// 常用物流/快递（issue #4874）：词表唯一真值在 `lib/logistics.ts`，**不另造**一份候选
+import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
 // D6 自动识别（issue #4526 · 设计 §5.1/§5.2）：超高/超宽 = 宽高 vs 门幅；倒幅 = cuttingMode 推导
 // ⚠️ #4592：`定高买宽`（= 正幅，缺省档）**不推导** —— 正幅不在加工项目录（V83）里，
 //    推它会让默认订单的组合键永远匹配不到价（加工费恒 ¥0.00）
@@ -68,7 +70,7 @@ import { judgeDoorWidthChoice, resolveCutPlan } from '@/lib/door-width-plan'
 // 费用明细的「加工 + 特殊选项」两半拆分（issue #4526 · 设计 §4.3 / 判据 5）——唯一实现
 import { buildFeeDetailDisplay } from '@/lib/order-fee-display'
 // #4371：加工项类型改为**店铺级目录**的 `ProcessingItem`（旧 `ProductProcessingItem` 已随解耦删除）
-import type { Product, ProcessingItem, OrderItemFormData, Customer } from '@/types'
+import type { Product, ProcessingItem, OrderItemFormData, Customer, CraftCalcConfig } from '@/types'
 
 interface OrderProductSku {
   id: string
@@ -108,9 +110,9 @@ interface OrderLineItem {
   saleForm: SaleForm
   /**
    * **帘体**（issue #4521）—— 用户口径四类购买情况里的前三类：
-   * `布帘`（用料按韩折公式算）/ `纱帘`（**买多少填多少，不算料**）/ `布帘+纱帘`（两条明细行）。
+   * `布帘` / `纱帘` —— **两者用料算法完全一致**（2026-09-21 用户裁定，见 `lib/craft-calc-request.ts`）。
    *
-   * **组级**（与 `saleForm` 同一机制、组内同步）：一个商品组 = 一樘帘 —— 改帘体不该只改一半
+   * **组级**（与 `saleForm` 同一机制、组内同步）：一个商品组 = 一套帘 —— 改帘体不该只改一半
    * （主布行按公式算了料、纱帘行还留着）。
    */
   curtainBody: CurtainBody
@@ -120,7 +122,7 @@ interface OrderLineItem {
    * 成品宽 / 高（米，**部位级**）—— issue #4420，用户 2026-09-19 裁定「宽高必填」。
    *
    * ⚠️ 归属层级：`position-instance-routing-model.md` §5.9.2 已裁定宽高是**部位级**
-   * （一樘「布 + 纱」的布帘与纱帘高度常不同，共用一行宽高必有一个部位的高度是错的）。
+   * （一套「布 + 纱」的布帘与纱帘高度常不同，共用一行宽高必有一个部位的高度是错的）。
    * 本页一行 = 一个部位（裁定 R-a）⇒ 行级即部位级，语义一致。
    */
   width: number | null
@@ -139,23 +141,30 @@ interface OrderLineItem {
   manualAutoFeatures?: string[]
   /** 工艺规格录入（issue #4375 §4.2/§4.5）—— 未填的键不落库；三条默认档见 createDefaultCraftSpec */
   craft: CraftSpecInput
-  // ── 「樘窗」输入已移除（issue #4486，用户裁定「我感觉不需要」）──
-  // 代价已如实登记：商家手工路径不再能跨行绑樘窗 ⇒ 布 + 纱会算成 2 樘窗 ⇒ 套级工序
-  // （外帘打卷/装袋/发货）各实例化 2 次（计件工资双付，约 ¥3/樘）。见 issue #4486。
+  // ── 「套窗」输入已移除（issue #4486，用户裁定「我感觉不需要」）──
+  // 代价已如实登记：商家手工路径不再能跨行绑套窗 ⇒ 布 + 纱会算成 2 套窗 ⇒ 套级工序
+  // （外帘打卷/装袋/发货）各实例化 2 次（计件工资双付，约 ¥3/套）。见 issue #4486。
   // ⚠️ **底层机制保留**：`lib/order-craft-fields.ts` 的 `resolveWindowCraftLineIds` /
   // `buildWindowGroupKey` 与消费端 `ProcessingOrderService` 一字未动（API / Agent 仍可写该键）；
   // 且 **`craftLineId` 仍用于配布边配对**（§4.8 主布行 + 配布边行），见 `buildLineProcessingInfo`。
-  /** 配布边米数（§4.8）；`null` = 未改过 ⇒ 跟随主布米数 */
+  /**
+   * 配布边米数（§4.8）；`null` = 未改过 ⇒ 跟随主布米数
+   */
   edgeMeters: number | null
   /** 配布边单价；`null` = 未填 ⇒ 不生成配布边明细行（后端单价必须 > 0，不凭空造价） */
   edgeUnitPrice: number | null
   /**
-   * 纱帘米数（issue #4521）；`null` = 未改过 ⇒ 跟随主布米数。
-   * 只有帘体含**纱帘明细行**（`bodyHasSheerLine` = 布帘+纱帘）时有意义。
+   * **加工费就地改单价**（issue #4874，用户 2026-09-21：「订单中加工费组合**未配置**的情况下，
+   * **允许更改该单价**」）—— 元/米，`null` = 没改过。
+   *
+   * 只在「`fee_source='unpriced'` **且组合键非空**」时可填；填了就：
+   * ① 立刻以该价重发 `feePreview`（页面金额跟着变）② 随建单写进
+   * `processingInfo.processingFeeOverride`（后端 #4872 采用后 `fee_source='manual'`，
+   * 并在建单成功后同步进「加工费组合」配置）。
+   *
+   * ⚠️ 组合键为空（缺选配信息）⇒ **不给**改单价入口：没有 key 可同步，改了也无处落地。
    */
-  sheerMeters: number | null
-  /** 纱帘单价；`null` = 未填 ⇒ 不生成纱帘明细行（后端单价必须 > 0，不凭空造价） */
-  sheerUnitPrice: number | null
+  processingFeeOverride: number | null
   /**
    * 商家**手改过**打开方式（issue #4493 的宽→开数联动）——落在**行状态**里，
    * 不放组件内 state（收起/展开重挂不丢）。手改过 ⇒ 改宽**不得覆盖**。
@@ -274,6 +283,17 @@ function unpricedCombinationLabel(
 }
 
 /**
+ * `fee_source` 三态的可读**来源**（issue #4874「加工费组合」明细块的「来源」列）——
+ * 值域与后端 `ProcessingFeeCalculator.FEE_SOURCE_*` **逐字一致**
+ * （`matched` 组合价目 / `manual` 手动改价 / `unpriced` 未定价）；未知值**原样显示**（不吞、不猜）。
+ */
+const FEE_SOURCE_LABELS: Record<string, string> = {
+  matched: '组合价目',
+  manual: '手动改价',
+  unpriced: '未定价',
+}
+
+/**
  * 「定型」加工项名（**V83 目录逐字**）—— 它的勾选态就是 `isShaped` 的真值来源（issue #4566）。
  *
  * 用户 2026-09-19 裁定：「工艺规格中的**工艺，定型**，对花我觉得**直接通过加工项来勾选**，
@@ -332,9 +352,23 @@ function isShapedFromItems(line: OrderLineItem): boolean | undefined {
  *
  * `craft` / `isShaped` 的真值来源已从「工艺规格控件」搬到**加工项**（#4566）⇒ 读侧一律走本函数。
  * ⚠️ `lib/craft-calc-request.ts` **不得**再加第二份派生逻辑（同一真值两处推导 = 页面显示 ≠ 落库）。
+ *
+ * issue #4874：**用料公式 / 档位**在这里解析成**落库真值**（两者同族，要么都落、要么都不落）——
+ * 公式 = `effectiveCraftCalcFormula`（**显式选择 ⇒ 工艺推导 ⇒ 算料配置兜底**；
+ * 配置取不到 ⇒ 常量 `pleat`）——⚠️ 必须先工艺推导：否则「打孔 ⇒ 倍数法」（#4527）会被
+ * 配置兜底顶掉（页面按韩折口径发请求、后端按打孔口径算）；
+ * 档位 = `line.craft.craftTier ?? defaultCraftCalcTier(配置.tiers)`（**落在配置里真实存在的档位键上**）。
+ * 两者都是**读面取值**（前端不持有档位/公式真值）⇒ 页面显示 / 试算请求 / 落库三者同一份。
  */
-function derivedCraftSpec(line: OrderLineItem): CraftSpecInput {
-  return { ...line.craft, craft: craftFromItems(line), isShaped: isShapedFromItems(line) }
+function derivedCraftSpec(line: OrderLineItem, calcConfig: CraftCalcConfig | null): CraftSpecInput {
+  const craft = craftFromItems(line)
+  return {
+    ...line.craft,
+    craft,
+    isShaped: isShapedFromItems(line),
+    formula: effectiveCraftCalcFormula({ formula: line.craft.formula, craft }, calcConfig),
+    craftTier: line.craft.craftTier ?? defaultCraftCalcTier(calcConfig),
+  }
 }
 
 /**
@@ -547,7 +581,10 @@ function processingDetailsOf(line: OrderLineItem): Array<Record<string, unknown>
  * ⚠️ **不含 `processingFee`**：它由服务端取价结果决定（写进来就是循环依赖）；
  * 提交时由调用方补上服务端返回的那个数。
  */
-function buildLineProcessingInfo(line: OrderLineItem): Record<string, unknown> | undefined {
+function buildLineProcessingInfo(
+  line: OrderLineItem,
+  calcConfig: CraftCalcConfig | null
+): Record<string, unknown> | undefined {
   const sku = line.selectedSku
   const colorName = uniqueColors(line.product?.skus).find(
     (c) => c.id === line.selectedColorId
@@ -556,7 +593,7 @@ function buildLineProcessingInfo(line: OrderLineItem): Record<string, unknown> |
 
   // 工艺规格落库（issue #4375 §4.2/§4.5）：只落用户真填了的键（缺值不写）。
   // 拼色（双拼）时主布行额外绑组（§4.8）：componentRole=主布 + craftLineId。
-  // ⚠️ **樘窗跨行分组已移除**（issue #4486，用户裁定）：不再写 `buildWindowGroupKey`。
+  // ⚠️ **套窗跨行分组已移除**（issue #4486，用户裁定）：不再写 `buildWindowGroupKey`。
   //    但 **`craftLineId` 自指仍保留** —— 它是 §4.8「配布边行被主布行吸收」的配对键
   //    （消费端 `isAbsorbedEdgeRow` 按组键判定），删了配布边行会独立成部位。
   // **布料单无加工**（issue #4493，用户裁定）：不写任何工艺规格、不写加工项。
@@ -564,11 +601,11 @@ function buildLineProcessingInfo(line: OrderLineItem): Record<string, unknown> |
   //   （`ProcessingOrderService` 以「无加工项」拦），与既有链路零冲突。
   const isFabric = line.saleForm === SALE_FORM_FABRIC
   const edgePrice = isFabric ? null : edgeUnitPriceOf(line)
-  const sheerPrice = isFabric ? null : sheerUnitPriceOf(line)
-  // **有同行件**（配布边 / 纱帘）时主布行才写绑组键（issue #4521 把纱帘纳入同一口径）：
+  // **有同行件**（配布边）时主布行才写绑组键：
   // 两行必须共用**同一个客户端行标识**，否则消费端 `craftGroupKey` 按各自 `itemId` 成组
-  // ⇒ 一樘帘被算成两樘 ⇒ 套级工序（外帘打卷/装袋/发货）实例化两次、计件双付（#4395 的病根）。
-  const isPaired = edgePrice !== null || sheerPrice !== null
+  // ⇒ 一套帘被算成两套 ⇒ 套级工序（外帘打卷/装袋/发货）实例化两次、计件双付（#4395 的病根）。
+  // ⚠️ issue #4874：`布帘+纱帘` 那一档（第二条纱帘明细行）已整体删除 ⇒ 这里只剩配布边一种同行件。
+  const isPaired = edgePrice !== null
   // 部位（issue #4521）：主帘缺省即布帘 ⇒ **不写**；只有「只买纱帘」显式写 `curtainType=纱帘`
   // （它是**另一个部位** —— 不写就会被下游当成布帘，取到错的工序路线）。
   const curtainType = isFabric ? undefined : curtainTypeOfBody(line.curtainBody)
@@ -576,7 +613,7 @@ function buildLineProcessingInfo(line: OrderLineItem): Record<string, unknown> |
     ? {}
     : {
         // `craft` / `isShaped` 由**加工项**派生（#4566）⇒ 走唯一派生点，不读 `line.craft` 的那两个键
-        ...buildCraftSpec(derivedCraftSpec(line)),
+        ...buildCraftSpec(derivedCraftSpec(line, calcConfig)),
         ...(curtainType ? { curtainType } : {}),
         ...(isPaired ? buildMainLineGroupKeys(line.id) : {}),
       }
@@ -607,7 +644,7 @@ function buildLineProcessingInfo(line: OrderLineItem): Record<string, unknown> |
     ...mainSpec,
   }
 
-  // 加工费米数（裁定 R-b：= 该樘窗**主布行**米数）+ 算料输出（#4273：输入与输出都要落）。
+  // 加工费米数（裁定 R-b：= 该套窗**主布行**米数）+ 算料输出（#4273：输入与输出都要落）。
   // ⚠️ `ProcessingFeeCalculator.METER_KEYS = (processingMeters, fabric_meters)` ——
   //    一个都不写 ⇒ 服务端判「缺加工费米数」⇒ 加工费按 0 计（#4450 实证的第二处缺口）。
   const meters = Number(line.quantity)
@@ -620,6 +657,12 @@ function buildLineProcessingInfo(line: OrderLineItem): Record<string, unknown> |
   // **无试算结果 ⇒ 不写该键**（写空串会让详情页多出一行空值）。
   const formulaText = line.calc?.formula_text
   if (typeof formulaText === 'string' && formulaText.trim() !== '') info.formulaText = formulaText
+
+  // **加工费就地改单价**（issue #4874）：只在「未定价 **且组合键非空**」时有值（页面侧的入口
+  // 也只在这时出现）—— 组合键为空时改了也无处同步（后端的 key 就是它）。
+  // ⚠️ 它与 `processingItems` **同一份构造** ⇒ 试算（`feePreview`）与提交看到的是同一个价。
+  const override = Number(line.processingFeeOverride)
+  if (Number.isFinite(override) && override > 0) info.processingFeeOverride = override
 
   return info
 }
@@ -702,15 +745,17 @@ function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
     height: null,
     processingItems: [],
     selectedProcessing: {},
-    // 默认档（issue #4420/#4493/#4521）：加工类型「定高买宽」/ 款式「单色」/ 褶距 0.125 /
-    // 是否对花「否」—— 都是**商家看得见的真值**。
+    // 默认档（issue #4420/#4493/#4521）：加工类型「定高买宽」/ 款式「单色」/ 是否对花「否」
+    // —— 都是**商家看得见的真值**。
+    // ⚠️ #4874：**褶距已整体移除**（连常量一起）；**用料公式 / 档位**的缺省不写在这里
+    // （它们是**读面取值** —— 公式取算料配置 `default_formula`、档位取 `tiers` 的键，
+    //   由页面侧 `derivedCraftSpec` 解析 ⇒ 这里不持有第二份真值）。
     // ⚠️ #4566：`craft` / `isShaped` **不在**这里 —— 它们由**加工项**派生
     // （工艺 = 勾选的工艺项的 `craftHint`；定型 = 「定型」加工项的勾选态），前端不补默认。
     craft: createDefaultCraftSpec(),
     edgeMeters: null,
     edgeUnitPrice: null,
-    sheerMeters: null,
-    sheerUnitPrice: null,
+    processingFeeOverride: null,
     openCountTouched: false,
     shapedItemTouched: false,
     metersSource: METERS_SOURCE_FORMULA,
@@ -724,42 +769,43 @@ function createEmptyLineItem(groupId: string = genId()): OrderLineItem {
  *
  * 为什么移除：用户口径是「**尺寸数量 / 工艺规格 / 加工项 / 特殊选项都跟着商品基础属性走**，
  * 部位只决定商品实际用料米数」—— 既然只有一个可变的「用料米数」，就没有第二个部位行可加：
- * 一个商品组 = 一樘帘，需要纱帘时由**帘体**（`curtainBody`）表达，而不是再加一行。
+ * 一个商品组 = 一套帘，需要纱帘时由**帘体**（`curtainBody`）表达，而不是再加一行。
  * 落库仍可能是**两条**明细行（主布行 + 纱帘行），但那由帘体派生，不需要商家手工加行。
  */
 
 /**
- * 纱帘**明细行**是否成立（issue #4521）：帘体 = **布帘+纱帘**（组合态）**且**填了纱帘单价。
+ * ~~纱帘**明细行**是否成立~~ —— **整族已删除**（issue #4874，用户 2026-09-21：
+ * 「订单需要**移除布帘+纱帘的选项**」）：`sheerUnitPriceOf` / `sheerMetersOf` /
+ * 第二条纱帘明细行 / 费用明细「纱帘」行 / 提交校验里的纱帘单价必填**全部退场**
+ * （`布帘+纱帘` 档已从 `CURTAIN_BODY_OPTIONS` 移除 ⇒ 这些函数不再有调用点）。
  *
- * ⚠️ 「只买纱帘」不走这里：那一行本身就是纱帘（单价 = 该行 `unitPrice`），再生成一条 = 凭空多一行。
- *
- * 与配布边同一口径（`edgeUnitPriceOf`）：后端 `unitPrice` 带 `@Positive`（必须 > 0）
- * ⇒ 不填价就不生成行，**不凭空造价**。
+ * 需要「布 + 纱」时：一个商品组勾**帘体 = 布帘**、另一个商品组勾**帘体 = 纱帘**
+ * —— 后者那一行**本身就是**纱帘（`curtainType=纱帘`，按该行 `unitPrice` 计价），
+ * 部位语义（`CURTAIN_TYPE_SHEER`）一字未动。
  */
-function sheerUnitPriceOf(line: OrderLineItem): number | null {
-  if (!bodyHasSheerLine(line.curtainBody)) return null
-  return line.sheerUnitPrice != null && line.sheerUnitPrice > 0 ? line.sheerUnitPrice : null
-}
-
-/** 纱帘米数：默认 = 主布米数（= 该行数量），可编辑（「买多少就是多少」是商家给定值） */
-function sheerMetersOf(line: OrderLineItem): number {
-  return line.sheerMeters ?? (Number(line.quantity) || 0)
-}
 
 /**
- * 算料试算的入参（**唯一装配点**）：`craftCalcParamsOf` 需要**部位**判「纱帘不算料」
- * （issue #4521），而部位在行上是从帘体派生的 ⇒ 在这里派生一次，两处调用共用。
+ * 算料试算的入参（**唯一装配点**）：部位在行上是从帘体派生的 ⇒ 在这里派生一次，两处调用共用。
+ * ⚠️ **2026-09-21 用户裁定（口径反转）**：纱帘与布帘**用料算法完全一致** ⇒ 部位**不再**决定
+ * 「算不算料」（原 #4521 的纱帘 fail-closed 已删）；这里仍带 `curtainType` 是因为它要自描述
+ * **部位**（工序路线的索引键），与用料算法无关。
  *
  * ⚠️ #4566：`craft` 传**派生后**的规格（`craftFromItems` / `isShapedFromItems`）——
  * `craftCalcParamsOf` 读的是 `line.craft.craft`，若这里传原始值，试算会按「未指定工艺」
  * 或旧默认工艺算 ⇒ **页面显示 ≠ 落库**（工艺 → 公式/悬挂方式的分支取错）。
+ *
+ * ⚠️ #4874：**用料公式 / 档位**同样从派生规格带出（`formula` / `craftTier`）——
+ * 公式进 `formula`、档位进 `craft_tier`，并且档位**同源落库**（`processingInfo.craftTier`）。
  */
-function calcInputOf(line: OrderLineItem) {
+function calcInputOf(line: OrderLineItem, calcConfig: CraftCalcConfig | null) {
+  const craft = derivedCraftSpec(line, calcConfig)
   return {
     width: line.width,
     height: line.height,
-    craft: derivedCraftSpec(line),
+    craft,
     curtainType: curtainTypeOfBody(line.curtainBody),
+    formula: craft.formula,
+    craftTier: craft.craftTier,
   }
 }
 
@@ -805,8 +851,16 @@ export default function NewOrderPage() {
   const [customerKeyword, setCustomerKeyword] = useState('')
   const [customerResults, setCustomerResults] = useState<Customer[]>([])
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false)
-  /** 选中客户的常用物流档案（只读提示，issue #4419；发货页按同一档案带出方式/公司） */
-  const [pickedLogisticsHint, setPickedLogisticsHint] = useState('')
+  /**
+   * **常用物流/快递**与**常用物流公司**（issue #4874，用户 2026-09-21：「新增订单时**收货信息**中
+   * 缺少用户的常用物流/快递以及常用公司，选择客户后要默认带出」）—— 两个**可编辑**控件，
+   * 选客户时按客户档案带出（`Customer.defaultLogisticsType` / `defaultLogisticsCompany`）。
+   *
+   * 缺省 `''` = **未指定**：**不编造**默认值（客户没录过常用物流时渲染成「快递」看起来像已配置），
+   * 提交时缺值不写（`logisticsType` / `logisticsCompany` 是顶层可选字段）。
+   */
+  const [logisticsType, setLogisticsType] = useState('')
+  const [logisticsCompany, setLogisticsCompany] = useState('')
 
   // 表单错误
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -815,6 +869,16 @@ export default function NewOrderPage() {
   // issue #4371：加工项与商品解耦 —— 目录只加载一次，商品选择不再过滤/触发加工项请求
   const [processingCatalog, setProcessingCatalog] = useState<ProcessingItem[]>([])
   const [processingCatalogLoading, setProcessingCatalogLoading] = useState(false)
+
+  /**
+   * **算料配置**（issue #4874）—— 与「工艺配置 → 算料配置」**同源**：公式名与档位一律从
+   * `GET /api/admin/production/craft-calc-config` 读，**前端不写死第二份**。
+   *
+   * ⚠️ 加载失败**不阻断录入**：页面对 `null` 的处理 = 公式走 `defaultCraftCalcFormula(null)`
+   * （`pleat`）+ 档位走 `defaultCraftCalcTier(null)`（`standard`），并在界面上**显式提示**
+   * 「配置未加载」——静默按缺省走 = 商家以为按自己配的口径算（算错钱且无人知道）。
+   */
+  const [calcConfig, setCalcConfig] = useState<CraftCalcConfig | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -847,6 +911,28 @@ export default function NewOrderPage() {
       })
     )
   }, [processingCatalog, processingCatalogLoading])
+
+  /**
+   * **算料配置**加载（issue #4874）—— 只加载一次，失败**只提示不阻断**（`calcConfig` 保持 `null`
+   * ⇒ 页面按缺省口径走 + 显式提示）。旧请求返回时不再写状态（`cancelled`）⇒ 不会用过期配置覆盖。
+   */
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await productionApi.getCraftCalcConfig()
+        if (cancelled) return
+        setCalcConfig(res.data?.data?.config ?? null)
+      } catch (e) {
+        // 读不到 ⇒ 保持 `null`（页面按缺省口径走 + 「工艺规格」里显式提示配置未加载）
+        if (!cancelled) setCalcConfig(null)
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // ===== 行项更新工具 =====
   const updateLineItem = useCallback(
@@ -903,15 +989,18 @@ export default function NewOrderPage() {
   }
 
   /**
-   * **帘体**（**组级**，issue #4521）：一个商品组 = 一樘帘 ⇒ 组内同步。
+   * **帘体**（**组级**，issue #4521）：一个商品组 = 一套帘 ⇒ 组内同步。
    *
-   * 三条口径：
+   * 两条口径：
    * 1. **是否定型默认跟着帘体走**（真值源 §10 布帘是 / 纱帘否）—— 但**只在商家没手改过时**
    *    （`shapedItemTouched` 落在行状态里，同 `openCountTouched` 的纪律：手改过的值只能显式改回）。
    *    ⚠️ issue #4566：它现在写的是「定型」**加工项**的勾选态（`withShapedDefault`），
    *    不再是工艺规格里的字段（字段已随裁定退场）；
-   * 2. **用料来源**：纱帘 = 商家给定（`人工指定`，且不发算料请求）；布帘 = 回到公式计算；
-   * 3. 切到纱帘时清掉上一次的算料结果/错误（纱帘不算料，留着旧公式串会骗人）。
+   * 2. **用料来源**：两种帘体**同一条**算料链路 ⇒ 一律回到「公式计算」
+   *    （`人工指定` 只能由商家手改数量进入，见 `handleLineQtyChange`）。
+   *
+   * ⚠️ **2026-09-21 用户裁定（口径反转）**：原第 3 条边界「切到纱帘就清掉算料结果/错误
+   * （纱帘不算料）」**已退场** —— 纱帘不再是不算料的特例 ⇒ 不得因为切帘体而丢弃/跳过算料结果。
    */
   const handleCurtainBodyChange = (groupId: string, body: CurtainBody) => {
     setLineItems((prev) =>
@@ -920,14 +1009,11 @@ export default function NewOrderPage() {
         const next: OrderLineItem = {
           ...it,
           curtainBody: body,
-          metersSource:
-            body === CURTAIN_BODY_SHEER ? LINE_METERS_SOURCE_MANUAL : METERS_SOURCE_FORMULA,
-        }
-        if (body === CURTAIN_BODY_SHEER) {
-          next.calc = null
-          next.calcError = null
+          // 纱帘与布帘**同一算法**（2026-09-21 裁定）⇒ 切帘体后一律回到「公式计算」
+          metersSource: METERS_SOURCE_FORMULA,
         }
         // 定型默认随帘体（#4566）：写「定型」加工项的勾选态，商家手改过则不覆盖
+        // （⚠️ 与用料算法无关，不动）
         next.selectedProcessing = withShapedDefault(next)
         return next
       })
@@ -1011,10 +1097,10 @@ export default function NewOrderPage() {
         calc: null,
         calcError: null,
         metersSource: METERS_SOURCE_FORMULA,
-        // 布料单没有帘体/纱帘（issue #4521）：清掉纱帘选配，避免切回成品帘时凭空多一条纱帘行
+        // 布料单没有帘体（issue #4521）：切回成品帘时从「布帘」重新开始。
+        // ⚠️ issue #4874：`布帘+纱帘` 档已删除 ⇒ 不再需要清「纱帘米数 / 纱帘单价」
         curtainBody: CURTAIN_BODY_CLOTH,
-        sheerMeters: null,
-        sheerUnitPrice: null,
+        processingFeeOverride: null,
       }
       const next = prev.filter((l) => l.groupId !== groupId)
       next.splice(at, 0, kept)
@@ -1096,7 +1182,10 @@ export default function NewOrderPage() {
     if (name) setCustomerName(name)
     if (phone) setCustomerPhone(phone)
     if (address) setCustomerAddress(address)
-    setPickedLogisticsHint(describeLogisticsProfile(c.defaultLogisticsType, c.defaultLogisticsCompany))
+    // 常用物流（issue #4874）：按**客户档案**带出，**可改**。档案没录 ⇒ 置空（未指定），
+    // 不编造「快递」默认值、也不把上一个客户的档案留在界面上。
+    setLogisticsType(c.defaultLogisticsType ?? '')
+    setLogisticsCompany(c.defaultLogisticsCompany ?? '')
     setCustomerModalOpen(false)
     setCustomerKeyword('')
     setCustomerResults([])
@@ -1207,6 +1296,11 @@ export default function NewOrderPage() {
 
     updateLineItem(line.id, {
       selectedProcessing: nextSelected,
+      // 加工项一变 ⇒ **组合键就变** ⇒ 上一组合的人工改价**必须清掉**（issue #4878 独立复核 P1）。
+      // 不清的后果：`buildLineProcessingInfo` 只按「有值」就把 override 写进 processingInfo
+      // ⇒ 商家为「组合 A」输的价会**静默给组合 B 定价**（后端按 manual 采用），
+      // 而 fee_source 翻 manual 后改价输入框消失 ⇒ 商家连"改过价"都看不见（错钱且无感）。
+      processingFeeOverride: null,
       // 手改过定型（勾或取消）⇒ 留痕，改帘体不再覆盖
       ...(pi.name === SHAPED_ITEM_NAME ? { shapedItemTouched: true } : {}),
     })
@@ -1241,16 +1335,19 @@ export default function NewOrderPage() {
   const calcSignature = useMemo(
     () =>
       lineItems
-        .map((l) => `${l.id}:${l.metersSource}:${craftCalcSignature(craftCalcParamsOf(calcInputOf(l)))}`)
+        .map(
+          (l) =>
+            `${l.id}:${l.metersSource}:${craftCalcSignature(craftCalcParamsOf(calcInputOf(l, calcConfig)))}`
+        )
         .join(';'),
-    [lineItems]
+    [lineItems, calcConfig]
   )
 
   useEffect(() => {
     const targets: Array<{ id: string; params: CraftCalcParams }> = []
     for (const line of lineItems) {
       if (line.metersSource !== METERS_SOURCE_FORMULA) continue
-      const params = craftCalcParamsOf(calcInputOf(line))
+      const params = craftCalcParamsOf(calcInputOf(line, calcConfig))
       if (params) targets.push({ id: line.id, params })
     }
     if (targets.length === 0) return
@@ -1344,10 +1441,10 @@ export default function NewOrderPage() {
   const feePreviewPayload = useMemo(
     () => ({
       items: pricedLines.map((l) => ({
-        processingInfo: buildLineProcessingInfo(l),
+        processingInfo: buildLineProcessingInfo(l, calcConfig),
       })),
     }),
-    [pricedLines]
+    [pricedLines, calcConfig]
   )
 
   /** 行 id → 取价行下标（`pricedLines` 与 `feePreview.items` 同序） */
@@ -1404,7 +1501,7 @@ export default function NewOrderPage() {
    *
    * 组合名与**行名**（商品名 + 帘体）都取自既有真值：名字 = `items.join(' + ')`
    * （与「加工费组合」页同一写法，见 {@link unpricedCombinationLabel}）；
-   * 行名 = 费用明细里已有的「商品名」（一个商品组 = 一樘帘 ⇒ 同组同名，去重后即「哪些行」）。
+   * 行名 = 费用明细里已有的「商品名」（一个商品组 = 一套帘 ⇒ 同组同名，去重后即「哪些行」）。
    * 同一组合命中多行 ⇒ **合并计数**（「布帘 + 韩褶（2 行）」）；多个组合 ⇒ 逐条列。
    */
   const unpricedGroups = useMemo(() => {
@@ -1453,7 +1550,6 @@ export default function NewOrderPage() {
   const totals = useMemo(() => {
     let productSubtotal = 0
     let edgeSubtotal = 0
-    let sheerSubtotal = 0
 
     lineItems.forEach((item) => {
       if (!item.product) return
@@ -1465,12 +1561,9 @@ export default function NewOrderPage() {
       if (edgePrice !== null) {
         edgeSubtotal += edgeMetersOf(item) * edgePrice
       }
-      // 纱帘（issue #4521）：也是一条**独立面料明细行** ⇒ 金额必须计入订单总额，
-      // 否则后端「应收 - 优惠 ≈ 实收」校验会拒单。
-      const sheerPrice = sheerUnitPriceOf(item)
-      if (sheerPrice !== null) {
-        sheerSubtotal += sheerMetersOf(item) * sheerPrice
-      }
+      // ⚠️ issue #4874：`布帘+纱帘` 那一族（含 `totals.sheerSubtotal` 与费用明细「纱帘」行）
+      // 已**整体删除** —— 需要纱帘时它是**独立商品组**的一行（走本函数的商品小计），
+      // 不再由主布行派生。
     })
 
     // 加工费 = **服务端取价结果**（issue #4450）。
@@ -1481,9 +1574,8 @@ export default function NewOrderPage() {
     return {
       productSubtotal,
       edgeSubtotal,
-      sheerSubtotal,
       processingFee,
-      total: productSubtotal + edgeSubtotal + sheerSubtotal + processingFee,
+      total: productSubtotal + edgeSubtotal + processingFee,
     }
   }, [lineItems, feePreview])
 
@@ -1562,14 +1654,8 @@ export default function NewOrderPage() {
       if (line.unitPrice == null || line.unitPrice <= 0) {
         e[`${prefix}_unitPrice`] = '单价须大于 0'
       }
-      // 带纱帘 ⇒ 纱帘单价必填（issue #4521）。为什么这里**不**沿用配布边的「不填不生成」：
-      // 配布边是款式=拼色的**副产物**，而帘体是商家**显式选**的 —— 显式选了「布帘+纱帘」
-      // 却静默丢掉纱帘行 = 交付一张与商家所见不符的错单（比拦住提交危险得多）。
-      if (line.saleForm !== SALE_FORM_FABRIC && bodyHasSheerLine(line.curtainBody)) {
-        if (!(Number(line.sheerUnitPrice) > 0)) {
-          e[`${prefix}_sheerUnitPrice`] = `第 ${idx + 1} 个商品的纱帘单价须大于 0（或把帘体改回「布帘」）`
-        }
-      }
+      // ⚠️ issue #4874：原「带纱帘 ⇒ 纱帘单价必填」的校验已随 `布帘+纱帘` 档**整体删除**
+      // （帘体不再有该档；独立纱帘组那一行的单价由既有的「单价须大于 0」兜住）。
     })
 
     if (!customerName.trim()) e.customerName = '请输入收货人姓名'
@@ -1588,7 +1674,7 @@ export default function NewOrderPage() {
       return
     }
 
-    // 樘窗跨行分组已移除（issue #4486）；`craftLineId` 仍由 `buildLineProcessingInfo`
+    // 套窗跨行分组已移除（issue #4486）；`craftLineId` 仍由 `buildLineProcessingInfo`
     // 按**本行自指**写入，供 §4.8 配布边行被主布行吸收（不是跨行分组）。
     const items: OrderItemFormData[] = pricedLines.flatMap((line, lineIndex) => {
       // 加工费 = **服务端取价结果**（issue #4450）：页面显示 === 落库。
@@ -1596,7 +1682,7 @@ export default function NewOrderPage() {
       const lineFee = Number(feePreview?.items[lineIndex]?.processingFee) || 0
 
       // `processingInfo` 由**同一个** `buildLineProcessingInfo` 构造（预览也是它）
-      const baseInfo = buildLineProcessingInfo(line)
+      const baseInfo = buildLineProcessingInfo(line, calcConfig)
       const productSub = (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)
       const edgePrice = edgeUnitPriceOf(line)
       const pairKey = line.id
@@ -1621,12 +1707,12 @@ export default function NewOrderPage() {
         } as OrderItemFormData,
       ]
 
-      // 配布边行（§4.8 一樘窗 = 主布行 + 配布边行）：
-      // - **不携带工艺规格**（折数/开数/幅数是一樘窗的属性 ⇒ 两行都带会让工序与计件翻倍）
+      // 配布边行（§4.8 一套窗 = 主布行 + 配布边行）：
+      // - **不携带工艺规格**（折数/开数/幅数是一套窗的属性 ⇒ 两行都带会让工序与计件翻倍）
       // - **不挂加工项**（硬约束：加工费只挂主布行）
       // - **不关联主布商品**（后端按 productId 聚合库存/销量 ⇒ 复用会双扣库存、双计销量）
-      // - **绑组键与所在樘窗同一个**（issue #4395）：配布边行与主布行同属一樘窗 ⇒ 用 `pairKey`
-      //   而不是本行自指（主布行被并进别的樘窗时，自指会把配布边行丢在组外）
+      // - **绑组键与所在套窗同一个**（issue #4395）：配布边行与主布行同属一套窗 ⇒ 用 `pairKey`
+      //   而不是本行自指（主布行被并进别的套窗时，自指会把配布边行丢在组外）
       if (edgePrice !== null) {
         const sku = line.selectedSku
         const colorName = uniqueColors(line.product!.skus).find(
@@ -1650,43 +1736,9 @@ export default function NewOrderPage() {
         } as OrderItemFormData)
       }
 
-      // 纱帘行（issue #4521）：与主布行**同一樘帘**（同 `craftLineId`）、携带**同一份工艺规格**
-      // —— 纱帘是**另一个部位**（工序路线按 `纱帘×工艺` 取 ⇒ 不带规格会被当成布帘），
-      // 这与配布边行「刻意不带规格」正好相反（配布边不是部位，带了会让工序与计件翻倍）。
-      // - **不挂加工项**（硬约束：加工费只挂主布行）
-      // - **不关联主布商品**（后端按 productId 聚合库存/销量 ⇒ 复用会双扣库存、双计销量）
-      // - 宽 / 高与主布行**同一份**：尺寸数量是商品组级属性（用户口径）⇒ 一樘帘共用
-      const sheerPrice = sheerUnitPriceOf(line)
-      if (sheerPrice !== null) {
-        const sku = line.selectedSku
-        const colorName = uniqueColors(line.product!.skus).find(
-          (c) => c.id === line.selectedColorId
-        )?.name
-        const sheerMeters = sheerMetersOf(line)
-        rows.push({
-          productName: CURTAIN_TYPE_SHEER,
-          quantity: sheerMeters,
-          unitPrice: sheerPrice,
-          subtotal: sheerMeters * sheerPrice,
-          width: Number(line.width),
-          height: Number(line.height),
-          processingInfo: {
-            saleForm: SALE_FORM_FINISHED,
-            colorName,
-            skuCode: sku?.skuCode,
-            doorWidth: sku?.doorWidth,
-            ...buildSheerLineCraftSpec(
-              pairKey,
-              // 与主布行**同一份**工艺规格（含 #4566 从加工项派生的 craft / isShaped）
-              buildCraftSpec(derivedCraftSpec(line)),
-              line.sheerMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
-            ),
-            // 纱帘用料米数 = 商家给定值（「买多少就是多少」）⇒ 落 `fabric_meters`，
-            // 让加工单的「应做数量」拿到真值（#4273 同口径）。
-            fabric_meters: sheerMeters,
-          },
-        } as OrderItemFormData)
-      }
+      // ⚠️ issue #4874：原「纱帘行」（`布帘+纱帘` 档的第二条明细行，携带同一份工艺规格、
+      // 同 `craftLineId`）已**整体删除** —— 该档不再存在。纱帘若要单独成行，走**独立商品组**
+      // （帘体 = 纱帘 ⇒ 该行显式写 `curtainType=纱帘`，部位语义与工序路线一字未动）。
 
       return rows
     })
@@ -1706,6 +1758,10 @@ export default function NewOrderPage() {
         actualAmount: actual,
         // 后端校验 应收 - 优惠 ≈ 实收（容差 0.01），必须随单携带，否则实收≠应收会被拒
         discountAmount: discountNumber,
+        // **常用物流/快递 + 常用物流公司**（issue #4874）随建单落 `orders` 两列（后端 #4872）。
+        // 缺值**不写**（`undefined`）——「未指定」与「快递」是两个真值，写死默认值 = 编造。
+        logisticsType: logisticsType || undefined,
+        logisticsCompany: logisticsCompany.trim() || undefined,
         remark: finalRemark || undefined,
         items,
       })
@@ -1815,9 +1871,15 @@ export default function NewOrderPage() {
                         onEdgeUnitPriceChange={(p) =>
                           updateLineItem(line.id, { edgeUnitPrice: p })
                         }
-                        onSheerMetersChange={(m) => updateLineItem(line.id, { sheerMeters: m })}
-                        onSheerUnitPriceChange={(p) =>
-                          updateLineItem(line.id, { sheerUnitPrice: p })
+                        // 加工费组合明细（issue #4874）：取价行（未定价 ⇒ 可就地改单价）
+                        feeRow={
+                          feeIndexByLineId.get(line.id) === undefined
+                            ? null
+                            : feePreview?.items[feeIndexByLineId.get(line.id)!] ?? null
+                        }
+                        calcConfig={calcConfig}
+                        onProcessingFeeOverrideChange={(p) =>
+                          updateLineItem(line.id, { processingFeeOverride: p })
                         }
                       />
                     )}
@@ -1880,12 +1942,59 @@ export default function NewOrderPage() {
                   required
                 />
               </div>
-              {/* 选中客户的常用物流档案（只读提示，issue #4419）：发货时按同一档案带出方式/公司 */}
-              {pickedLogisticsHint && (
-                <p className="mt-2 text-xs text-neutral-400" data-testid="picked-logistics-hint">
-                  常用物流：{pickedLogisticsHint}
-                </p>
-              )}
+              {/* **常用物流 / 快递** + **常用物流公司**（issue #4874，用户 2026-09-21：
+                  「新增订单时收货信息中缺少用户的常用物流/快递以及常用公司，选择客户后要默认带出」）
+                  —— 两个**可编辑**控件（词表唯一真值 = `lib/logistics.ts`），选客户时按档案带出，
+                  随建单提交顶层 `logisticsType` / `logisticsCompany`（后端 #4872 落 `orders` 两列）。
+                  ⚠️ 原先那条**只读**提示 `picked-logistics-hint` 已删除（不留两份口径）。 */}
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label
+                    htmlFor="order-logistics-type"
+                    className="block text-sm font-medium text-neutral-700 mb-1.5"
+                  >
+                    常用物流/快递
+                  </label>
+                  <select
+                    id="order-logistics-type"
+                    data-testid="order-logistics-type"
+                    value={logisticsType}
+                    onChange={(e) => setLogisticsType(e.target.value)}
+                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  >
+                    {/* 「未指定」是真值：客户没录过常用物流时**不编造**「快递」（#4419 口径） */}
+                    <option value="">未指定</option>
+                    {LOGISTICS_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label
+                    htmlFor="order-logistics-company"
+                    className="block text-sm font-medium text-neutral-700 mb-1.5"
+                  >
+                    常用物流公司
+                  </label>
+                  {/* 候选来自 `LOGISTICS_COMPANIES`，但**允许自定义**（词表只是候选，不是白名单） */}
+                  <input
+                    id="order-logistics-company"
+                    data-testid="order-logistics-company"
+                    list="order-logistics-company-options"
+                    placeholder="如 四季安物流"
+                    value={logisticsCompany}
+                    onChange={(e) => setLogisticsCompany(e.target.value)}
+                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  />
+                  <datalist id="order-logistics-company-options">
+                    {LOGISTICS_COMPANIES.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
               <div className="mt-4">
                 <label className="block text-sm font-medium text-neutral-700 mb-1.5">备注</label>
                 <textarea
@@ -2065,7 +2174,7 @@ export default function NewOrderPage() {
                                   />
                                 ) : null
                               })}
-                            {/* 配布边逐行（§4.8 一樘窗 = 主布行 + 配布边行） */}
+                            {/* 配布边逐行（§4.8 一套窗 = 主布行 + 配布边行） */}
                             {group.lines.map((line) => {
                               const p = edgeUnitPriceOf(line)
                               if (p === null) return null
@@ -2079,20 +2188,9 @@ export default function NewOrderPage() {
                                 />
                               )
                             })}
-                            {/* 纱帘（issue #4521）：与配布边同构的独立面料行 —— 米数 × 单价 */}
-                            {group.lines.map((line) => {
-                              const p = sheerUnitPriceOf(line)
-                              if (p === null) return null
-                              const m = sheerMetersOf(line)
-                              return (
-                                <CostRow
-                                  key={`s_${line.id}`}
-                                  label="纱帘"
-                                  expr={`${m} 米 × ${formatAmount(p)}/米`}
-                                  amount={m * p}
-                                />
-                              )
-                            })}
+                            {/* ⚠️ issue #4874：原「纱帘」逐行（`布帘+纱帘` 档派生的第二条面料行）
+                                已整体删除 —— 该档不再存在，需要纱帘时它是独立商品组的一行
+                                （并入上面的「商品」金额，不再单列）。 */}
                           </div>
                         </div>
                       )
@@ -2105,9 +2203,7 @@ export default function NewOrderPage() {
                 {totals.edgeSubtotal > 0 && (
                   <Row label="配布边" value={formatAmount(totals.edgeSubtotal)} />
                 )}
-                {totals.sheerSubtotal > 0 && (
-                  <Row label="纱帘" value={formatAmount(totals.sheerSubtotal)} />
-                )}
+                {/* ⚠️ issue #4874：`totals.sheerSubtotal` 与「纱帘」汇总行已整体删除 */}
                 <Row
                   label="加工费"
                   value={formatAmount(totals.processingFee)}
@@ -2395,9 +2491,15 @@ interface LineItemBlockProps {
   onAutoFeatureDecision: (name: string, decision: AutoFeatureDecision) => void
   onEdgeMetersChange: (meters: number | null) => void
   onEdgeUnitPriceChange: (price: number | null) => void
-  /** 纱帘米数 / 单价（issue #4521）—— 帘体含纱帘时才有意义 */
-  onSheerMetersChange: (meters: number | null) => void
-  onSheerUnitPriceChange: (price: number | null) => void
+  /**
+   * 该行的**加工费取价行**（issue #4874）：`feePreview.items[i]`（服务端组合取价结果）。
+   * `null` = 该行还没取价（无商品 / 未就绪）⇒ 「加工费组合」明细块不渲染。
+   */
+  feeRow: FeePreviewRow | null
+  /** 租户算料配置（issue #4874）：公式缺省 + 档位 chips 的值域与文案都取自它 */
+  calcConfig: CraftCalcConfig | null
+  /** 「改单价」（元/米，issue #4874）：`null` = 清空（回到未改过） */
+  onProcessingFeeOverrideChange: (price: number | null) => void
 }
 
 
@@ -2471,7 +2573,7 @@ interface ProductGroup {
   selectedSku: OrderProductSku | null
   /** 售卖形态（issue #4493）：组级 —— 决定这一组下面出什么（布料 = 没有加工） */
   saleForm: SaleForm
-  /** 帘体（issue #4521）：组级 —— 布帘 / 纱帘 / 布帘+纱帘（决定用料来源与落库行数） */
+  /** 帘体（issue #4521；**issue #4874 收窄为两档**：`布帘` / `纱帘`，`布帘+纱帘` 已删除） */
   curtainBody: CurtainBody
   lines: OrderLineItem[]
 }
@@ -2489,11 +2591,11 @@ interface ProductGroupBlockProps {
   onSelectSku: (sku: OrderProductSku) => void
   /** 售卖形态（组级，issue #4493）：布料 / 成品帘 */
   onChangeSaleForm: (form: SaleForm) => void
-  /** 帘体（组级，issue #4521）：布帘 / 纱帘 / 布帘+纱帘 */
+  /** 帘体（组级，issue #4521；#4874 起只有 `布帘` / `纱帘` 两档） */
   onChangeCurtainBody: (body: CurtainBody) => void
   /** 删除整个商品组 */
   onRemoveGroup: () => void
-  /** 渲染本组这一樘帘（由页面传入，保证 props 装配只有一处） */
+  /** 渲染本组这一套帘（由页面传入，保证 props 装配只有一处） */
   renderPosition: (line: OrderLineItem) => React.ReactNode
   /** 布料行（无部位）的 米数 / 单价 回调（issue #4493） */
   onChangeQty: (lineId: string, qty: number) => void
@@ -2581,7 +2683,10 @@ function WizardStep({
   children: React.ReactNode
 }) {
   return (
-    <div className="border-t border-neutral-100 first:border-t-0">
+    <div
+      className="border-t border-neutral-100 first:border-t-0"
+      data-testid={`wizard-step-${step}`}
+    >
       <CollapsibleHeader
         open={open}
         onToggle={onToggle}
@@ -2605,18 +2710,23 @@ function WizardStep({
 }
 
 /**
- * **商品组**（issue #4485；issue #4521 起 = **一樘帘**）：一块布（同商品 / 同色 / 同门幅）
+ * **商品组**（issue #4485；issue #4521 起 = **一套帘**）：一块布（同商品 / 同色 / 同门幅）
  * 下渲染**一份** ①尺寸与数量 ②工艺规格 ③加工项 ④特殊选项。
+ *
+ * ⚠️ issue #4874（用户 2026-09-21 需求批次）—— 下单页**两步化**：区块 1 = 尺寸与数量 + 工艺规格、
+ * 区块 2 = 加工项 + 特殊选项（原四段手风琴的序号 / 摘要 / 展开态全部按新结构走）；
+ * 「布帘+纱帘」档整族删除；「加工项」区块新增**加工费组合明细块**（可就地改未定价单价）；
+ * 收货信息补**常用物流/快递 + 常用物流公司**两个可编辑控件；收货信息里的「套窗」等术语统一为「套 / 帘」。
  *
  * 用户 2026-09-19 口径：「新增部位应该在**已选择的商品下**去新增，现在像是两个商品，
  * 商品的**基础属性应该共用**」→ 随后进一步裁定「**移除部位功能，其实完全不需要**」：
- * 一个商品组 = 一樘帘，需要纱帘时改**帘体**（`curtainBody`），而不是再加一行。
+ * 一个商品组 = 一套帘，需要纱帘时改**帘体**（`curtainBody`），而不是再加一行。
  *
  * 为什么这样切：裁定 **R-a**「一行 `order_items` = 一个部位」是**落库**口径，与展示无关
  * —— 旧实现把落库口径直接当成了 UI 结构（复制一行 = 复制整张商品卡）⇒ 同一商品的两个部位
  * 看起来像两个商品、颜色与门幅还要各选一遍。
  *
- * 本组件只负责**商品基础属性**（选择商品 / 颜色 / 门幅·售卖方式 / 售卖形态 / 帘体）与那一樘帘的排布；
+ * 本组件只负责**商品基础属性**（选择商品 / 颜色 / 门幅·售卖方式 / 售卖形态 / 帘体）与那一套帘的排布；
  * 组内改颜色、门幅、售卖形态或帘体 ⇒ **组内所有行同步**（它们是同一块布的属性）。
  */
 function ProductGroupBlock({
@@ -2893,9 +3003,11 @@ function ProductGroupBlock({
           </div>
         )}
 
-        {/* **帘体**（issue #4521，用户口径的四类购买情况）——**商品组级**，与售卖形态同层：
-            它决定「用料怎么来」（布帘按韩折公式算；纱帘**买多少填多少**）与「落库几行」
-            （含纱帘 ⇒ 主布行 + 纱帘行；只买纱帘 ⇒ 一行 `curtainType=纱帘`）。
+        {/* **帘体**（issue #4521；#4874 收窄为两档）——**商品组级**，与售卖形态同层：
+            它决定这条明细行的**部位**（`curtainType`：布帘缺省不写 / 纱帘显式写 —— 工序路线的
+            索引键）与**落库几行**（各一行；「布 + 纱」= 两个商品组）。
+            ⚠️ **用料算法与帘体无关**（2026-09-21 用户裁定：纱帘与布帘**完全一致**）——
+            两种帘体走同一条算料链路，这里不再有「哪种不算料」的分支。
             取代了原来的「部位」字段与「新增部位」按钮 —— 那两者让商家能选出**自相矛盾**的组合。 */}
         {group.product && group.saleForm !== SALE_FORM_FABRIC && (
           <div className="mb-4">
@@ -2923,19 +3035,11 @@ function ProductGroupBlock({
               })}
             </div>
             <p className="mt-1.5 text-xs text-neutral-400">
-              {group.curtainBody === CURTAIN_BODY_SHEER
-                ? '纱帘：买多少填多少（不自动算料）'
-                : group.curtainBody === CURTAIN_BODY_BOTH
-                  ? '布帘 + 纱帘：主布按韩折公式算料，纱帘填实际米数 —— 提交后是两条明细行'
-                  : '布帘：按韩折公式自动算用料米数'}
+              {/* ⚠️ issue #4874：「布帘+纱帘」档已整体移除 ⇒ 这里不再有那一档的说明文案。
+                  ⚠️ 2026-09-21 口径反转：**两种帘体用料算法完全一致** ⇒ 说明文案不再分叉
+                  （原「纱帘：买多少填多少（不自动算料）」已删除）。 */}
+              按所选用料公式自动算用料米数（布帘 / 纱帘同一算法）
             </p>
-            {/* 纱帘单价缺失的提示（issue #4521）：**常显**（不塞进可收起的步骤里 —— 否则
-                商家只知道「提交失败」却找不到该改哪里）；它就该长在「帘体」这个选择旁边。 */}
-            {errors[`line_${group.lines[0].id}_sheerUnitPrice`] && (
-              <p className="mt-1.5 text-sm text-red-600">
-                {errors[`line_${group.lines[0].id}_sheerUnitPrice`]}
-              </p>
-            )}
           </div>
         )}
 
@@ -2948,7 +3052,7 @@ function ProductGroupBlock({
             onChangePrice={(v) => onChangePrice(group.lines[0].id, v)}
           />
         ) : (
-          /* 一樘帘（issue #4521）：一个商品组 = 一樘帘 ⇒ 只渲染**一份** ①~④。
+          /* 一套帘（issue #4521）：一个商品组 = 一套帘 ⇒ 只渲染**一份** ①~④。
              「新增部位」已移除（用户裁定「移除部位功能，其实完全不需要」）——
              需要纱帘时改**帘体**，不是再加一行。 */
           <div className="space-y-3">{renderPosition(group.lines[0])}</div>
@@ -2973,8 +3077,9 @@ function LineItemBlock({
   onAutoFeatureDecision,
   onEdgeMetersChange,
   onEdgeUnitPriceChange,
-  onSheerMetersChange,
-  onSheerUnitPriceChange,
+  feeRow,
+  calcConfig,
+  onProcessingFeeOverrideChange,
 }: LineItemBlockProps) {
   /** 当前展开的**向导步骤**（issue #4511 手风琴）：1 尺寸与数量 / 2 工艺规格 / 3 加工项 / 4 特殊选项 */
   const [openStep, setOpenStep] = useState(1)
@@ -3087,6 +3192,46 @@ function LineItemBlock({
   const isFabricLine = line.saleForm === SALE_FORM_FABRIC
 
   /**
+   * **加工费取价明细**（issue #4874）—— 键名冻结于后端 `ProcessingFeeCalculator.detail`：
+   * `composition`（归一化组合键）/ `items`（展示用加工项名，与「加工费组合」页同源）/
+   * `unit_price` / `fee_source`（`matched` / `manual` / `unpriced`）。
+   */
+  const feeDetail = feeRow?.processingFeeDetail as
+    | {
+        fee_source?: unknown
+        composition?: unknown
+        items?: unknown
+        unit_price?: unknown
+      }
+    | undefined
+  /** 组合键（**空 = 缺选配信息**）——「改单价」入口的准入条件之一（没有 key 就没法同步） */
+  const feeCompositionKey =
+    typeof feeDetail?.composition === 'string' ? feeDetail.composition.trim() : ''
+  const feeSource = typeof feeDetail?.fee_source === 'string' ? feeDetail.fee_source : ''
+  const feeIsUnpriced = feeSource === 'unpriced'
+  /** 组合名：`items.join(' + ')`（与「加工费组合」页逐字同源）；缺值按口径回落，不留空 */
+  const feeItems = Array.isArray(feeDetail?.items)
+    ? feeDetail.items.filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+    : []
+  const feeCombinationLabel =
+    feeItems.length > 0
+      ? feeItems.join(' + ')
+      : feeCompositionKey !== ''
+        ? feeCompositionKey
+        : // 未定价 **且**两边都空 = 缺选配信息（既有文案，一字不改）；已定价行缺 items 才是「—」
+          feeIsUnpriced
+          ? UNPRICED_NO_COMPOSITION
+          : '—'
+  const feeUnitPrice = Number(feeDetail?.unit_price)
+  /** 未定价 **且组合键非空** ⇒ 可就地改单价 */
+  const canOverrideFee = feeIsUnpriced && feeCompositionKey !== ''
+  /**
+   * 该行**有没有任何选配**（手选加工项 ∪ 自动识别特征）—— 没有 ⇒ 组合键必然为空，
+   * 「加工费组合」块整块不渲染（无组合可展示、也无价可改），与「缺选配信息」是两回事。
+   */
+  const hasAnyProcessingSelection = processingDetailsOf(line).length > 0
+
+  /**
    * ① 尺寸行旁的**就地徽标**（issue #4658）—— 生效特征名 + （门幅走了默认值时的）提示。
    *
    * 与 ②「系统识别」块**读同一份** `autoFeatures`（同一 `detectAutoFeatures` 推导 ⇒
@@ -3143,18 +3288,20 @@ function LineItemBlock({
           「卡片收起」也随之取消：四个**手风琴步骤**本身就是密度控制（#4511）。 */}
       <div className="p-4">
 
-            {/* ① 尺寸与数量 */}
+            {/* ① **尺寸与数量 · 工艺规格**（issue #4874 两步化：区块 1 = 尺寸与数量 + 工艺规格）
+                —— 用户 2026-09-21：「尺寸数量+工艺规格合并到一个区块」。
+                序号/摘要/展开态按新结构走：摘要同时带出尺寸米数单价**与**工艺规格的合并结果。 */}
             <WizardStep
               step={1}
-              title="尺寸与数量"
+              title="尺寸与数量 · 工艺规格"
               badges={sizeAutoBadges}
-              summary={`${summarySize} · ${line.quantity} 米 · ${formatAmount(Number(line.unitPrice) || 0)}/米`}
+              summary={`${summarySize} · ${line.quantity} 米 · ${formatAmount(Number(line.unitPrice) || 0)}/米 · ${summarySpec || '按行业默认'}`}
               {...stepProps(1)}
             >
             {/* 尺寸与数量（issue #4420 分区①）：宽 / 高 必填 + 数量 / 单价 */}
             <div className="pt-3 border-t border-neutral-100">
               <p className="mb-3 text-xs text-neutral-400">
-                宽 / 高按成品尺寸填，单位米 —— **一樘帘共用一份尺寸**（主布与纱帘同宽同高）
+                宽 / 高按成品尺寸填，单位米 —— <strong>一套帘共用一份尺寸</strong>（同一商品组内主布与纱帘同宽同高）
               </p>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
@@ -3186,7 +3333,7 @@ function LineItemBlock({
                 <div>
                   {/* label = 「用料米数」（issue #4598）：这个输入框的值**就是加工费米数**
                       （`info.processingMeters = line.quantity`，加工费 = 组合单价 × 它），
-                      而它的值本身由算料写回（`fabric_meters`）—— 叫「数量」会被商家读成「买几樘」。
+                      而它的值本身由算料写回（`fabric_meters`）—— 叫「数量」会被商家读成「买几套」。
                       ⚠️ 布料行（`FabricRow`）**不改**：布料按 `sellingMethod` 卖布，不是同一个业务。 */}
                   <Label required>用料米数</Label>
                   <input
@@ -3211,13 +3358,10 @@ function LineItemBlock({
                   {/* issue #4598：把口径写在旁边 —— 商家一眼对得上加工费是按哪个数算的 */}
                   <p className="mt-1 text-xs text-neutral-400">= 加工费米数</p>
                   {/* 算料来源与公式（issue #4434）—— 公式串**原样渲染后端产出**，前端不自拼。
-                      ⚠️ 纱帘（issue #4521）：**买多少就是多少**，没有公式可恢复 ⇒ 只报口径，
-                      不给「恢复按公式计算」按钮（点了也没有公式可算）。 */}
-                  {line.curtainBody === CURTAIN_BODY_SHEER ? (
-                    <p className="mt-1 text-xs text-neutral-500">
-                      纱帘按实际买多少填，不自动算料
-                    </p>
-                  ) : line.metersSource === LINE_METERS_SOURCE_MANUAL ? (
+                      ⚠️ 2026-09-21 口径反转：纱帘与布帘**用料算法完全一致** ⇒ 原「纱帘按实际买多少填，
+                      不自动算料 / 没有公式可恢复」的专属分支已删除（两种帘体走同一条渲染路径：
+                      公式串 /「人工指定 + 恢复按公式计算」/ 算料错误提示一律一视同仁）。 */}
+                  {line.metersSource === LINE_METERS_SOURCE_MANUAL ? (
                     <p className="mt-1 text-xs text-amber-600">
                       人工指定
                       <button
@@ -3240,8 +3384,7 @@ function LineItemBlock({
                     !line.calcError &&
                     Number(line.width) > 0 &&
                     Number(line.height) > 0 &&
-                    line.curtainBody !== CURTAIN_BODY_SHEER &&
-                    isAutoCalcUnavailable(calcInputOf(line)) && (
+                    isAutoCalcUnavailable(calcInputOf(line, calcConfig)) && (
                       <p className="mt-1 text-xs text-amber-600">
                         该工艺无自动算料，请手填米数
                       </p>
@@ -3262,29 +3405,19 @@ function LineItemBlock({
               </div>
             </div>
 
-            </WizardStep>
-
-            {/* ② 工艺规格（§4.2 字段表 A + §4.8 双拼） */}
-            <WizardStep
-              step={2}
-              title="工艺规格"
-              summary={summarySpec || '按行业默认'}
-              {...stepProps(2)}
-            >
-              <OrderCraftFields
-                value={line.craft}
-                onChange={onChangeCraft}
-                mainMeters={line.quantity}
-                sheer={bodyHasSheerLine(line.curtainBody)}
-                sheerMeters={line.sheerMeters}
-                onSheerMetersChange={onSheerMetersChange}
-                sheerUnitPrice={line.sheerUnitPrice}
-                onSheerUnitPriceChange={onSheerUnitPriceChange}
-                edgeMeters={line.edgeMeters}
-                onEdgeMetersChange={onEdgeMetersChange}
-                edgeUnitPrice={line.edgeUnitPrice}
-                onEdgeUnitPriceChange={onEdgeUnitPriceChange}
-              />
+              {/* 工艺规格（原 ②，已并入区块 1）—— §4.2 字段表 A + §4.8 双拼 */}
+              <div className="pt-4 mt-4 border-t border-neutral-100">
+                <OrderCraftFields
+                  value={derivedCraftSpec(line, calcConfig)}
+                  onChange={onChangeCraft}
+                  mainMeters={line.quantity}
+                  calcConfig={calcConfig}
+                  pleatCount={line.calc?.pleat_count ?? null}
+                  edgeMeters={line.edgeMeters}
+                  onEdgeMetersChange={onEdgeMetersChange}
+                  edgeUnitPrice={line.edgeUnitPrice}
+                  onEdgeUnitPriceChange={onEdgeUnitPriceChange}
+                />
 
               {/* **系统识别**（issue #4658：从 ③加工项 移到 ②工艺规格）—— 为什么归这里：
                   它由「成品宽/高 + SKU 门幅」推出、产出进**加工费组合键** ⇒ 属**规格/报价**语义；
@@ -3428,19 +3561,25 @@ function LineItemBlock({
                   )}
                 </div>
               )}
+              </div>
             </WizardStep>
 
-            {/* ③ 加工项 */}
+            {/* ② **加工项 · 特殊选项**（issue #4874 两步化：区块 2 = 加工项 + 特殊选项）
+                —— 用户 2026-09-21：「另外两个（加工项 + 特殊选项）合并」。 */}
             <WizardStep
-              step={3}
-              title="加工项"
+              step={2}
+              title="加工项 · 特殊选项"
               summary={
                 // #4576：摘要里带上**工艺**（哪一项），不再让商家回头数；计数口径不变（仍只数**手选**项）
-                selectedProcessingCount > 0
+                // #4874：并入 ④特殊选项 ⇒ 摘要合并（未选特殊选项时不出现那一段，不留「· 特殊选项 0 项」噪音）
+                (selectedProcessingCount > 0
                   ? `已选 ${selectedProcessingCount} 项${lineCraft ? ` · 工艺：${lineCraft}` : ''}`
-                  : '未选'
+                  : '未选') +
+                ((line.craft.specialOptions ?? []).length > 0
+                  ? `${selectedProcessingCount > 0 ? ' · ' : ''}特殊选项 ${(line.craft.specialOptions ?? []).length} 项`
+                  : '')
               }
-              {...stepProps(3)}
+              {...stepProps(2)}
             >
               {processingLoading ? (
                 <div className="text-sm text-neutral-400 py-2">加工项加载中…</div>
@@ -3571,19 +3710,88 @@ function LineItemBlock({
                       且**不可手选、与勾选无联动** ⇒ 现渲染在 ②工艺规格（`auto-detected-features`）。 */}
                 </div>
               )}
-            </WizardStep>
 
-            {/* ④ 特殊选项（issue #4511：从工艺规格里**抽出来**，与 ②③ 平级） */}
-            <WizardStep
-              step={4}
-              title="特殊选项"
-              summary={(line.craft.specialOptions ?? []).length > 0 ? `已选 ${(line.craft.specialOptions ?? []).length} 项` : '未选'}
-              {...stepProps(4)}
-            >
-              <OrderExtraOptions
-                value={line.craft.specialOptions}
-                onChange={(next) => onChangeCraft({ specialOptions: next })}
-              />
+              {/* ===== **加工费组合**明细块（issue #4874）=====
+                  用户 2026-09-21：「订单中加工费组合**未配置**的情况下，**允许更改该单价**，
+                  并且在**加工项下面添加具体的组合名**」。
+                  逐行 = 组合名（`feeDetail.items.join(' + ')`，与「加工费组合」页**逐字同源**）
+                  + 单价（元/米）+ 来源 + 操作；单价与来源**只读**，未定价行给「改单价」输入。
+                  ⚠️ 改完立刻以该价**重发 `feePreview`**（同一份 `buildLineProcessingInfo` ⇒ 页面金额
+                  与提交口径一致），并以 `processingInfo.processingFeeOverride` 随建单提交（后端 #4872）。 */}
+              {hasAnyProcessingSelection && (
+                <div
+                  data-testid="processing-fee-combinations"
+                  className="mt-3 rounded border border-neutral-200 bg-neutral-50/60 px-3 py-2"
+                >
+                  <div className="text-xs font-medium text-neutral-600">加工费组合</div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+                    <span data-testid="fee-combination-name" className="text-neutral-700">
+                      {feeCombinationLabel}
+                    </span>
+                    <span className="text-neutral-400">单价</span>
+                    {/* 改单价入口的**两条准入**（缺一不可；issue #4878 独立复核 P1 补第二条）：
+                        ① 本行组合**未定价** ∧ 组合键非空（原本的唯一准入）；
+                        ② 本行**已经带着商家输入的 override** —— 改价后预览会返回 `fee_source='manual'`
+                           ⇒ `feeIsUnpriced` 变 false ⇒ 若只按 ① 渲染，输入框**当场消失**：
+                           商家打错一个字就再也改不了（唯一出路是把售卖形态切到布料再切回来，
+                           而那会连带清空尺寸/工艺）。⇒ **override 是商家输的，入口就一直在**。 */}
+                    {(feeIsUnpriced && canOverrideFee) || line.processingFeeOverride != null ? (
+                      <span className="inline-flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          data-testid="fee-unit-price-override"
+                          aria-label="改单价（元/米）"
+                          placeholder="元/米"
+                          value={line.processingFeeOverride ?? ''}
+                          onChange={(e) =>
+                            onProcessingFeeOverrideChange(decimalOrNull(e.target.value))
+                          }
+                          className="w-24 h-8 px-2 rounded border border-neutral-300 text-xs focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                        />
+                        <span className="text-neutral-500">元/米</span>
+                      </span>
+                    ) : feeIsUnpriced ? (
+                      <span className="text-amber-600">未定价</span>
+                    ) : (
+                      <span
+                        data-testid="fee-unit-price"
+                        className="text-neutral-700 tabular-nums"
+                      >
+                        {Number.isFinite(feeUnitPrice) ? `${formatAmount(feeUnitPrice)}/米` : '—'}
+                      </span>
+                    )}
+                    <span className="text-neutral-400">
+                      来源：
+                      {feeSource !== '' ? FEE_SOURCE_LABELS[feeSource] ?? feeSource : '—'}
+                    </span>
+                    {/* 缺选配信息（组合键为空）⇒ **不给**改单价入口：没有 key 可同步 */}
+                    {feeIsUnpriced && !canOverrideFee && (
+                      <span data-testid="fee-combination-no-composition" className="text-amber-600">
+                        缺选配信息 ⇒ 没有组合键可同步，无法就地改单价
+                      </span>
+                    )}
+                    {/* 定价入口（与页面既有告警同一路径；已定价行无需它） */}
+                    {feeIsUnpriced && (
+                      <Link
+                        href={PRICING_ENTRY}
+                        className="text-primary-600 underline underline-offset-2 hover:text-primary-700"
+                      >
+                        去「加工费组合」定价
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 特殊选项（原向导 ④，已并入区块 2）—— issue #4511：从工艺规格里抽出来，与加工项平级 */}
+              <div className="pt-4 mt-4 border-t border-neutral-100">
+                <OrderExtraOptions
+                  value={line.craft.specialOptions}
+                  onChange={(next) => onChangeCraft({ specialOptions: next })}
+                />
+              </div>
             </WizardStep>
 
       </div>

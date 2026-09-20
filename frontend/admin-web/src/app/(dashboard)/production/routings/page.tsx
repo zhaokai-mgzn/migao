@@ -18,6 +18,7 @@ import { Button, Modal } from '@/components/ui'
 import { isErrorToastShown, toastRequestError } from '@/lib/api-error'
 import { productionApi } from '@/lib/api'
 import { craftCalcConfigGuardReasons, optionPriceGuardReasons, routingAdminGuardReasons, routingGuardReasons } from '@/lib/production-guard-reasons'
+import { CRAFT_CALC_FORMULA_LABELS } from '@/lib/craft-calc-request'
 import { cn } from '@/lib/utils'
 import type {
   CatalogOperation,
@@ -212,7 +213,7 @@ const SOURCE_META: Record<ProductionSource, { label: string; className: string }
  */
 const SCOPE_META: Record<ProductionScope, { label: string; title: string }> = {
   position: { label: '部位级', title: '每部位一次（如布帘一道、纱帘一道）' },
-  set: { label: '套级', title: '每樘窗一次（一樘「布 + 纱」只做一次）' },
+  set: { label: '套级', title: '每套窗一次（一套「布 + 纱」只做一次）' },
 }
 const SCOPE_ORDER: ProductionScope[] = ['position', 'set']
 
@@ -391,11 +392,14 @@ const CALC_SCALAR_FIELDS: { key: CalcScalarKey; label: string; hint: string }[] 
   { key: 'meters_rounding_step', label: '进位步长（米）', hint: '用料只向上进位，不截断、不四舍五入' },
 ]
 
-/** 兜底公式的可读文案（取值域由后端枚举给；这里只做展示映射） */
-const CALC_FORMULA_LABEL: Record<string, string> = {
-  pleat: '韩折公式（折数法）',
-  fullness: '褶倍数公式（倍数法）',
-}
+/**
+ * 兜底公式的可读文案（取值域由后端枚举给；这里只做展示映射）。
+ *
+ * ⚠️ **单一真值** = `@/lib/craft-calc-request` 的 `CRAFT_CALC_FORMULA_LABELS`（issue #4878 独立复核）：
+ * 本页原来自带一份**逐字相同、但没有任何守卫**的副本（下单页另有一份）⇒ 改一处忘一处就**静默分叉**
+ * （下单页显示「韩折公式（折数法）」、这里显示别的字）。⇒ 改为**直接复用同一张表**，不再各写一份。
+ */
+const CALC_FORMULA_LABEL: Record<string, string> = CRAFT_CALC_FORMULA_LABELS
 
 /**
  * 工艺档位的**显示名**（issue #4567 用户走查②：「英文改中文」）。
@@ -2946,11 +2950,11 @@ export default function ProcessConfigPage() {
                    <div className="mb-3 flex flex-wrap items-baseline gap-2">
                      <h2 className="text-base font-medium text-neutral-900">【打包发货】</h2>
                      <span className="text-sm text-neutral-500">
-                       {deliveryRows.length} 道 · 每樘窗一次的交付活（一列价，元/套）
+                       {deliveryRows.length} 道 · 每套窗一次的交付活（一列价，元/套）
                      </span>
                    </div>
                    <p className="mb-3 text-xs text-neutral-500">
-                     这几道活<strong>不按部位分</strong>（一樘窗只做一次）⇒ 一个价。价格由各部位的设置
+                     这几道活<strong>不按部位分</strong>（一套窗只做一次）⇒ 一个价。价格由各部位的设置
                      聚合成一列：全部相同 ⇒ 显示该价；<span className="text-amber-700">未定价</span>
                      （≠ ¥0.00）；各部位不同价 ⇒ <strong>显式提示</strong>并引导到「管理▸」逐个改
                      （<strong>不静默取第一个</strong>）。
@@ -3956,9 +3960,9 @@ export default function ProcessConfigPage() {
         <div className="space-y-3 text-sm" data-testid="operations-manage-drawer">
           <p className="text-neutral-600">
             这道工序在<strong>各部位的设置</strong>（多个部位共用同一份设置时只列一条）。
-            分组与单位决定报工口径；<strong>作用域</strong>：套级 = 每樘窗只做一次；
+            分组与单位决定报工口径；<strong>作用域</strong>：套级 = 每套窗只做一次；
             <strong>必完</strong>：缺这道工序不能打包；<strong>部位级工序要每个部位都做完</strong>才算完
-            （套级每樘窗一次）。
+            （套级每套窗一次）。
           </p>
           {/* 抽屉层写面被拒：逐条理由就地展示（不吞成一句「操作失败」） */}
           {opLevelReasons && (
@@ -4162,7 +4166,7 @@ export default function ProcessConfigPage() {
                         </option>
                       ))}
                     </select>
-                    <span>套级 = 每樘窗只做一次（部位级 = 每个部位各做一次）</span>
+                    <span>套级 = 每套窗只做一次（部位级 = 每个部位各做一次）</span>
                   </div>
 
                   {/* 必完 + 一句解释 */}

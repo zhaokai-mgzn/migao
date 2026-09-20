@@ -435,4 +435,102 @@ class ProcessingFeeCombinationCommandServiceTest {
         return OrderItem.builder().id("oi-" + String.join("-", names)).tenantId(TENANT)
                 .orderId("o1").processingInfo(Map.of("processingItems", items)).build();
     }
+
+    // ══════════════════════════ 建单回写（issue #4872）══════════════════════════
+    //   调用点 = OrderService.createOrder 成功路径的同一事务内，逐条处理 `fee_source=manual` 的行。
+    //   本段锚**幂等三态**与**版本台账不绕过**（取价侧的判据见 ProcessingFeeCalculatorTest）。
+
+    private void givenExistingCombinations(ProcessingFeeCombination... rows) {
+        when(combinationMapper.selectList(any())).thenReturn(List.of(rows));
+    }
+
+    @Test
+    @DisplayName("#4872·库里没有该组合 ⇒ 新建一行（active / source=实证 / 价 = 订单改价）+ 追加版本台账")
+    void upsertFromOrderCreatesCombinationAndVersionLedger() {
+        givenExistingCombinations();
+
+        service.upsertFromOrderOverride("打孔+韩褶", List.of("打孔", "韩褶"),
+                new BigDecimal("12.50"), TENANT);
+
+        ArgumentCaptor<ProcessingFeeCombination> row = ArgumentCaptor.forClass(ProcessingFeeCombination.class);
+        verify(combinationMapper).insert(row.capture());
+        assertThat(row.getValue().getTenantId()).isEqualTo(TENANT);
+        assertThat(row.getValue().getCompositionKey()).isEqualTo("打孔+韩褶");
+        assertThat(row.getValue().getItems()).isEqualTo(List.of("打孔", "韩褶"));
+        assertThat(row.getValue().getUnitPrice()).isEqualByComparingTo("12.50");
+        assertThat(row.getValue().getStatus()).isEqualTo("active");
+        assertThat(row.getValue().getSource()).isEqualTo("实证");
+        assertThat(row.getValue().getDeleted()).isZero();
+        verify(combinationMapper, never()).updateById(any(ProcessingFeeCombination.class));
+
+        // 版本台账**不绕过**（加工费单价是订单金额的直接输入，改价必须留痕）
+        ArgumentCaptor<ProcessingFeeCombinationVersion> version =
+                ArgumentCaptor.forClass(ProcessingFeeCombinationVersion.class);
+        verify(versionMapper).insert(version.capture());
+        assertThat(version.getValue().getCompositionKey()).isEqualTo("打孔+韩褶");
+        assertThat(version.getValue().getUnitPrice()).isEqualByComparingTo("12.50");
+        assertThat(version.getValue().getStatus()).isEqualTo("active");
+        assertThat(version.getValue().getTenantId()).isEqualTo(TENANT);
+    }
+
+    @Test
+    @DisplayName("#4872 幂等·已有同组合的 **active** 行 ⇒ 不覆盖它的价、不写任何行（该行本该命中）")
+    void upsertFromOrderNeverOverwritesActivePrice() {
+        givenExistingCombinations(combination("c1", "打孔+韩褶", "8.00"));
+
+        service.upsertFromOrderOverride("打孔+韩褶", List.of("打孔", "韩褶"),
+                new BigDecimal("12.50"), TENANT);
+
+        verify(combinationMapper, never()).insert(any(ProcessingFeeCombination.class));
+        verify(combinationMapper, never()).updateById(any(ProcessingFeeCombination.class));
+        verify(versionMapper, never()).insert(any(ProcessingFeeCombinationVersion.class));
+    }
+
+    @Test
+    @DisplayName("#4872 幂等·已有 **disabled** 行 ⇒ 复活为 active 并写本次订单价 + 追加版本台账")
+    void upsertFromOrderRevivesDisabledRow() {
+        ProcessingFeeCombination disabled = combination("c1", "打孔+韩褶", "8.00");
+        disabled.setStatus("disabled");
+        givenExistingCombinations(disabled);
+
+        service.upsertFromOrderOverride("打孔+韩褶", List.of("打孔", "韩褶"),
+                new BigDecimal("12.50"), TENANT);
+
+        verify(combinationMapper, never()).insert(any(ProcessingFeeCombination.class));
+        ArgumentCaptor<ProcessingFeeCombination> updated = ArgumentCaptor.forClass(ProcessingFeeCombination.class);
+        verify(combinationMapper).updateById(updated.capture());
+        assertThat(updated.getValue().getId()).isEqualTo("c1");
+        assertThat(updated.getValue().getStatus()).isEqualTo("active");
+        assertThat(updated.getValue().getUnitPrice()).isEqualByComparingTo("12.50");
+        assertThat(updated.getValue().getSource()).isEqualTo("实证");
+        assertThat(updated.getValue().getUpdatedAt()).isNotNull();
+        verify(versionMapper).insert(any(ProcessingFeeCombinationVersion.class));
+    }
+
+    @Test
+    @DisplayName("#4872 幂等·连下两单（同组合同价）⇒ 只新建一行、只一条版本账（第二次落 active 分支）")
+    void repeatedOrdersNeverCreateSecondRow() {
+        // 第一次下单：库里还没有该组合 ⇒ 新建
+        givenExistingCombinations();
+        service.upsertFromOrderOverride("打孔+韩褶", List.of("打孔", "韩褶"),
+                new BigDecimal("12.50"), TENANT);
+        // 第二次下单：第一次建出来的行已在库（active）⇒ 不再新建
+        givenExistingCombinations(combination("c1", "打孔+韩褶", "12.50"));
+        service.upsertFromOrderOverride("打孔+韩褶", List.of("打孔", "韩褶"),
+                new BigDecimal("12.50"), TENANT);
+
+        verify(combinationMapper).insert(any(ProcessingFeeCombination.class));   // = times(1)
+        verify(versionMapper).insert(any(ProcessingFeeCombinationVersion.class));
+    }
+
+    @Test
+    @DisplayName("#4872 护栏·组合键空 / 单价 null ⇒ 不落库（宁可不写，也不写一行「半截」组合）")
+    void upsertFromOrderRejectsIncompleteInput() {
+        service.upsertFromOrderOverride("  ", List.of("打孔"), new BigDecimal("12.50"), TENANT);
+        service.upsertFromOrderOverride("打孔", List.of("打孔"), null, TENANT);
+
+        verify(combinationMapper, never()).insert(any(ProcessingFeeCombination.class));
+        verify(combinationMapper, never()).updateById(any(ProcessingFeeCombination.class));
+        verify(versionMapper, never()).insert(any(ProcessingFeeCombinationVersion.class));
+    }
 }

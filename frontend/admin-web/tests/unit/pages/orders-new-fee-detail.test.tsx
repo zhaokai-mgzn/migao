@@ -16,7 +16,7 @@
  * ② 页面不读 `special_options` ⇒ 特殊选项行不出现 ⇒ 判据 ④ 红。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
 const mockCreateOrder = vi.fn()
 const mockGetProducts = vi.fn()
@@ -36,6 +36,28 @@ vi.mock('@/lib/api', () => ({
   // 算料试算与「费用明细展示」正交 ⇒ 停在进行中（避免改写数量污染判据）
   craftCalcApi: { preview: () => new Promise(() => {}) },
   feePreviewApi: { preview: (...a: unknown[]) => mockFeePreview(...a) },
+  // **算料配置读面**（issue #4874）：公式缺省 + 档位 chips 的值域/文案都来自它 ⇒ 挂载即请求
+  productionApi: {
+    getCraftCalcConfig: () =>
+      Promise.resolve({
+        data: {
+          data: {
+            source: 'default',
+            config: {
+              per_fold_single: 0.25,
+              per_fold_mixed_times: {},
+              margin_single: 0.3,
+              margin_multi: 0.3,
+              min_fullness: 1.5,
+              tiers: { standard: { fullness: 2.0, label: '标准档' } },
+              default_formula: 'pleat',
+              side_margin: 0.15,
+              meters_rounding_step: 0.1,
+            },
+          },
+        },
+      }),
+  },
 }))
 
 vi.mock('next/link', () => ({
@@ -150,8 +172,13 @@ const parseAmount = (text: string): number => {
  * CostRow 的 DOM：`<div flex>` → `<span>（<span>label</span><span>expr</span>）</span>` + `<span>金额</span>`
  * ⇒ 从 label 往上一层拿到「左侧 span」，再上一层才是含金额的行容器。
  */
+/** 费用明细卡片（issue #4874：「特殊选项」选择器与「加工项」同处区块 2 ⇒ 同名文本会重名，
+ * 断言必须限定在费用明细卡片内，否则会误命中**选择器**里的同名选项） */
+const feeCard = (): HTMLElement =>
+  screen.getByText('费用明细').closest('div')!.parentElement as HTMLElement
+
 const costRowAmount = (label: string): number => {
-  const row = screen.getByText(label).parentElement!.parentElement!
+  const row = within(feeCard()).getByText(label).parentElement!.parentElement!
   return parseAmount(row.lastElementChild!.textContent || '')
 }
 
@@ -202,7 +229,7 @@ describe('R2：费用明细出现特殊选项行，且合计 === 订单金额（
     await setupLine()
 
     // 特殊选项行（label = 选项名，不是「加工」）：算式 + 金额
-    const optionRow = screen.getByText('加铅块').parentElement!.parentElement!
+    const optionRow = within(feeCard()).getByText('加铅块').parentElement!.parentElement!
     expect(optionRow.textContent).toContain('¥6.00/套 × 1 套')
     expect(costRowAmount('加铅块')).toBe(6)
   })
@@ -227,7 +254,7 @@ describe('R2：费用明细出现特殊选项行，且合计 === 订单金额（
     mockFeePreview.mockResolvedValue(feeWithUnpricedOption())
     await setupLine()
 
-    const optionRow = screen.getByText('加铅块').parentElement!.parentElement!
+    const optionRow = within(feeCard()).getByText('加铅块').parentElement!.parentElement!
     expect(optionRow.textContent).toContain('未定价（按 0 计）')
     // 未定价按 0 计 ⇒ 订单金额仍等于逐行之和（不静默改数）
     expect(parseAmount(orderAmountText())).toBe(
@@ -258,7 +285,8 @@ describe('R2：费用明细出现特殊选项行，且合计 === 订单金额（
     })
     await setupLine()
 
-    expect(screen.queryByText('加铅块')).toBeNull()
+    // ⚠️ 限定在费用明细卡片内：区块 2 的「特殊选项」选择器里**照常**有「加铅块」按钮（那是录入控件）
+    expect(within(feeCard()).queryByText('加铅块')).toBeNull()
     expect(costRowAmount('加工')).toBe(10)
     expect(parseAmount(orderAmountText())).toBe(costRowAmount('商品') + 10)
   })

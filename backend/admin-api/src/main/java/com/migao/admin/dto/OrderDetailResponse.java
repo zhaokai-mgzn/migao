@@ -58,6 +58,21 @@ public class OrderDetailResponse {
     private String customerAddress;
 
     /**
+     * 收货——物流类型（issue #4872；{@code orders.logistics_type}，V100）：
+     * {@code express} 快递 / {@code logistics} 物流专线。
+     *
+     * <p>发货页据此**优先读订单**（缺省回落客户档案 {@code customer_profiles.default_logistics_type}）
+     * —— 订单是「这一单实际约定的收货方式」，客户档案只是默认值。</p>
+     */
+    private String logisticsType;
+
+    /**
+     * 收货——物流/快递公司（issue #4872；{@code orders.logistics_company}，V100）。
+     * 建单未传 = null（发货页回落客户档案的常用公司）。
+     */
+    private String logisticsCompany;
+
+    /**
      * 总金额（商品小计 + 加工费）
      */
     private BigDecimal totalAmount;

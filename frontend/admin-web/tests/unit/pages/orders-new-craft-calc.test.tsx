@@ -14,7 +14,7 @@
  * ④ 参数不全 ⇒ **不发请求**（不得用默认窗宽猜一个米数）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
 const mockCreateOrder = vi.fn()
 const mockGetProducts = vi.fn()
@@ -22,6 +22,8 @@ const mockGetProduct = vi.fn()
 const mockGetProcessingItems = vi.fn()
 const mockGetCustomers = vi.fn()
 const mockCraftCalcPreview = vi.fn()
+/** 算料配置读面（issue #4874）——「配置读不到 ⇒ 显式提示」那条判据要能把它切成失败 */
+const mockGetCraftCalcConfig = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   orderApi: { createOrder: (...a: unknown[]) => mockCreateOrder(...a) },
@@ -32,6 +34,11 @@ vi.mock('@/lib/api', () => ({
   processingItemApi: { getProcessingItems: (...a: unknown[]) => mockGetProcessingItems(...a) },
   customerApi: { getCustomers: (...a: unknown[]) => mockGetCustomers(...a) },
   craftCalcApi: { preview: (...a: unknown[]) => mockCraftCalcPreview(...a) },
+  // **算料配置读面**（issue #4874）：用料公式缺省 + 档位 chips 的值域/文案都来自它
+  // （`GET /api/admin/production/craft-calc-config`）⇒ 页面挂载即请求。
+  productionApi: {
+    getCraftCalcConfig: (...a: unknown[]) => mockGetCraftCalcConfig(...a),
+  },
   // 加工费计价预览（issue #4450）：本文件验的是**算料试算**接线，与加工费取价正交
   // ⇒ 桩成「无加工项 ⇒ 加工费 0」的服务端（本文件各用例都没选加工项）。
   // **必须 resolve**：预览未就绪时页面会拦住提交。
@@ -57,6 +64,32 @@ vi.mock('next/link', () => ({
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 import NewOrderPage from '@/app/(dashboard)/orders/new/page'
+
+/**
+ * 算料配置读面桩（issue #4874）——档位**值域与文案都取自这里**（页面不写死档位真值）。
+ * `label` 刻意与键名不同字，便于断言「chips 文案确实来自配置」。
+ */
+const CALC_CONFIG_OK = {
+  data: {
+    data: {
+      source: 'stored',
+      config: {
+        per_fold_single: 0.25,
+        per_fold_mixed_times: {},
+        margin_single: 0.3,
+        margin_multi: 0.3,
+        min_fullness: 1.5,
+        tiers: {
+          standard: { fullness: 2.0, label: '标准档（2.0倍）' },
+          economy: { fullness: 1.8, label: '经济档（1.8倍）' },
+        },
+        default_formula: 'pleat',
+        side_margin: 0.15,
+        meters_rounding_step: 0.1,
+      },
+    },
+  },
+}
 
 /** 52 折双开 / 标准档 2.0 的算料结果（真值源 §8 算例口径） */
 const CALC_OK = {
@@ -116,6 +149,7 @@ describe('下单页算料试算接线（#4434）', () => {
     })
     mockGetProcessingItems.mockResolvedValue({ data: { data: { items: [] } } })
     mockCraftCalcPreview.mockResolvedValue(CALC_OK)
+    mockGetCraftCalcConfig.mockResolvedValue(CALC_CONFIG_OK)
   })
 
   it('判据 1（红证）：宽高齐全 ⇒ 试算并预填数量 + 展示后端公式串（修复前数量恒为手填 1）', async () => {
@@ -340,6 +374,124 @@ describe('下单页算料试算接线（#4434）', () => {
       const info = mockCreateOrder.mock.calls[0][0].items[0].processingInfo
       // 键**整个缺席**（不是空串、也不是值为 undefined 的键）⇒ 详情页不会多出一行空值
       expect(Object.keys(info)).not.toContain('formulaText')
+    })
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════
+// issue #4874（用户 2026-09-21）：「**加上用料公式字段**，如果选择韩折公式，那就自动算出折数，
+// 如果选择的是褶倍数公式，那就展示是经济档还是标准档，这里需要**和工艺配置的算料配置保持一致**」
+//
+// ⇒ 值域与文案**一律从算料配置读面取**（`GET /api/admin/production/craft-calc-config`），
+// 档位进算料请求 `craft_tier` **并且**落库 `processingInfo.craftTier`（不再钉死 `standard`）。
+// ══════════════════════════════════════════════════════════════════════════
+describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」同源）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetProducts.mockResolvedValue({
+      data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
+    })
+    mockGetProduct.mockResolvedValue({
+      data: { data: { id: 'p1', name: '遮光窗帘', skus: [], price: 100 } },
+    })
+    mockGetProcessingItems.mockResolvedValue({ data: { data: { items: [] } } })
+    mockCraftCalcPreview.mockResolvedValue(CALC_OK)
+    mockGetCraftCalcConfig.mockResolvedValue(CALC_CONFIG_OK)
+  })
+
+  /** 展开**区块 1**（尺寸与数量 · 工艺规格）—— issue #4874 两步化后的新锚点 */
+  const openStep1 = () => {
+    const btn = screen.getAllByRole('button', { name: /^\d+ 尺寸与数量/ })[0]
+    if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
+  }
+  const formulaRadio = (name: string) =>
+    within(screen.getByRole('radiogroup', { name: '用料公式' })).getByRole('radio', { name })
+
+  it('判据 1（红证）：缺省公式 = 算料配置的 `default_formula`，且选韩折公式 ⇒ 展示**自动算出的折数**', async () => {
+    render(<NewOrderPage />)
+    await pickProduct()
+    openStep1()
+    // 红证（改前）：页面既没有「用料公式」控件，也没有折数展示块 ⇒ 下面两行必红
+    expect(formulaRadio('韩折公式（折数法）')).toHaveAttribute('aria-checked', 'true')
+    // 试算还没发（宽高未填）⇒ 折数是「—」：**不编数**
+    expect(within(screen.getByTestId('craft-pleat-count')).getByText('—')).toBeInTheDocument()
+
+    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    // 试算回来（`pleat_count: 52`）⇒ 折数展示**照抄响应**（页面不自己算折数）
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('craft-pleat-count')).getByText('52')
+      ).toBeInTheDocument()
+    )
+    expect(mockCraftCalcPreview.mock.calls[0][0]).toMatchObject({
+      formula: 'pleat',
+      // 缺省档 = 配置里**真实存在**的档位键（fixture 里 standard 在 ⇒ 用它）
+      craft_tier: 'standard',
+    })
+  })
+
+  it('判据 2（红证）：选褶倍数公式 ⇒ 出现档位 chips，文案逐字 = 算料配置 `tiers[*].label`', async () => {
+    render(<NewOrderPage />)
+    await pickProduct()
+    openStep1()
+    fireEvent.click(formulaRadio('褶倍数公式（倍数法）'))
+
+    const tiers = await screen.findByTestId('craft-tier-options')
+    // fixture label 与键名不同字（`标准档（2.0倍）` ≠ `standard`）⇒ 页面写死中文档位名必红
+    expect(
+      within(tiers)
+        .getAllByRole('radio')
+        .map((r) => r.textContent)
+    ).toEqual(['标准档（2.0倍）', '经济档（1.8倍）'])
+    // 折数块只在韩折公式下出现
+    expect(screen.queryByTestId('craft-pleat-count')).toBeNull()
+  })
+
+  it('判据 3（红证）：改档位 ⇒ 算料请求 `craft_tier` 与落库 `processingInfo.craftTier` 都是所选档', async () => {
+    render(<NewOrderPage />)
+    await pickProduct()
+    openStep1()
+    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(formulaRadio('褶倍数公式（倍数法）'))
+    fireEvent.click(
+      within(await screen.findByTestId('craft-tier-options')).getByRole('radio', {
+        name: '经济档（1.8倍）',
+      })
+    )
+    // 签名变化（formula / craft_tier 都进了签名）⇒ 必须重发试算，且带上所选档
+    await waitFor(() => {
+      const params = mockCraftCalcPreview.mock.calls.map((c) => c[0])
+      expect(params.some((p) => p.formula === 'fullness' && p.craft_tier === 'economy')).toBe(true)
+    })
+
+    await submitOrder()
+    await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+    // 落库同源（改前 `craft_tier` 钉死 standard、`craftTier` 键根本不存在）
+    expect(mockCreateOrder.mock.calls[0][0].items[0].processingInfo.craftTier).toBe('economy')
+  })
+
+  it('判据 4（不静默·红证）：算料配置读不到 ⇒ 按缺省（pleat + standard）走 **且显式提示**', async () => {
+    mockGetCraftCalcConfig.mockRejectedValue(new Error('boom'))
+    render(<NewOrderPage />)
+    await pickProduct()
+    // 红证：改前没有这个提示元素（配置读不到时页面**静默**按钉死的档位算）
+    expect(await screen.findByTestId('craft-calc-config-missing')).toBeInTheDocument()
+    openStep1()
+    // 公式值域与引擎常量同源（不依赖配置）⇒ chips 仍在；档位值域取不到 ⇒ 不渲染 chips
+    expect(formulaRadio('韩折公式（折数法）')).toHaveAttribute('aria-checked', 'true')
+    expect(screen.queryByTestId('craft-tier-options')).toBeNull()
+
+    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalled())
+    // 不阻断录入：试算照发，缺省档 = 常量 `standard`
+    expect(mockCraftCalcPreview.mock.calls.at(-1)![0]).toMatchObject({
+      craft_tier: 'standard',
+      formula: 'pleat',
     })
   })
 })

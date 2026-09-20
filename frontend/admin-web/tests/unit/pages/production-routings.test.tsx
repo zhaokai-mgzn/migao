@@ -1494,7 +1494,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
     // 作用域：闭词表两档 + 一句商家看得懂的解释
     expect(screen.getByTestId('variant-scope-op-车被')).toHaveValue('position')
-    expect(row).toHaveTextContent('每樘窗只做一次')
+    expect(row).toHaveTextContent('每套窗只做一次')
     // 必完：勾选态 + 一句解释（issue #4610 追加：解释要能回答「多部位时判谁」）
     expect(screen.getByTestId('variant-must-finish-op-车被')).toBeChecked()
     expect(row).toHaveTextContent('必完 · 缺这道工序不能打包（部位级：每个部位都要做完）')

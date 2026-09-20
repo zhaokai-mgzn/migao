@@ -2,12 +2,14 @@
 // 原声明 `OR-009, UI-038` 是**借用式**（issue #4431 B7 核实并替换）：OR-009 是下单全流程、
 // UI-038 是「新增订单表单选择已有客户回填收货信息」—— 两条都不覆盖本文件被测行为（算料试算纯函数）。
 // 改用 **OR-036**（本 PR 新增，判据即本文件 + orders-new-craft-calc.test.tsx）。
-// OR-038（issue #4521 新增）：**纱帘不算料**（「买多少就是多少」）这条 fail-closed。
+// OR-038（issue #4521 新增；**2026-09-21 口径反转**）：纱帘用料 —— 原「纱帘不算料（买多少
+// 就是多少）」这条 fail-closed 已**作废并删除**；现行真值 = **纱帘与布帘用料算法完全一致**
+// （同一公式 / 同一档位 / 同一次试算链路），判据见本文件的 `口径反转` 组。
 /**
  * 下单页算料试算的**纯函数半边**（issue #4434 · 前置 #4421）。
  *
- * 判据聚焦四条 fail-closed：**参数不全不发请求** / **纱帘不算料** / **非韩褶不发请求** /
- * **失败不给估算值**。
+ * 判据聚焦三条 fail-closed：**参数不全不发请求** / **无自动算料口径的工艺不发请求** /
+ * **失败不给估算值**；外加 **2026-09-21 口径反转**：纱帘与布帘**同参同算**。
  * 红证（实现前）：`@/lib/craft-calc-request` 不存在 ⇒ import 即红。
  */
 import { describe, expect, it } from 'vitest'
@@ -124,24 +126,46 @@ describe('craftCalcParamsOf — 凑齐入参才发请求（fail-closed）', () =
     expect(craftCalcParamsOf(line({ craft: {} }))).not.toBeNull()
   })
 
-  // issue #4521（用户裁定「**纱帘不需要算用料米数，买多少就是多少**」）：
-  // 纱帘发了试算请求 ⇒ 商家手填的米数会被公式值**静默改回**（错单且无人知道）。
-  it('#4521 纱帘 ⇒ null（买多少就是多少，**不得**发试算请求）', () => {
+  // ── ⚠️ 2026-09-21 用户裁定（**口径反转**）────────────────────────────────────
+  // 用户原话：「订单中选择纱帘时，**用料算法和布帘的用料算法完全一致**，之前给的信息是错误的」
+  // ⇒ 原 #4521「纱帘不需要算用料米数，买多少就是多少 / 纱帘不算料」**作废**。
+  // 下面三条判据是原判据的**反向改判**（**不是删断言**）：
+  // ① 纱帘 ⇒ 与布帘**同一入参**（照常试算）；② 纱帘 ≠「无自动算料」；
+  // ③ 部位键**仍带**（它是工序路线的索引键）但**不再**影响算不算料。
+  // 注入式红证：把 `craftCalcParamsOf` / `isAutoCalcUnavailable` 里的
+  // `if (line.curtainType === CURTAIN_TYPE_SHEER) …` 两行加回去 ⇒ 本组必红。
+  it('2026-09-21 反转：纱帘 ⇒ **照常试算**，且入参与布帘**逐值一致**（只是部位不同）', () => {
+    const sheer = craftCalcParamsOf(
+      line({ curtainType: CURTAIN_TYPE_SHEER, craft: { craft: '韩褶' } })
+    )
+    const cloth = craftCalcParamsOf(line({ craft: { craft: '韩褶' } }))
+    expect(sheer).not.toBeNull()
+    expect(cloth).not.toBeNull()
+    // 部位不进算料入参（`CraftCalcParams` 无该键）⇒ 两者的算料入参必须**完全相同**
+    expect(sheer).toEqual(cloth)
+  })
+
+  it('2026-09-21 反转：`isAutoCalcUnavailable(纱帘)` = false（纱帘不再被当成「无自动算料」）', () => {
+    expect(isAutoCalcUnavailable(line({ curtainType: CURTAIN_TYPE_SHEER }))).toBe(false)
     expect(
-      craftCalcParamsOf(line({ curtainType: CURTAIN_TYPE_SHEER, craft: { craft: '韩褶' } }))
-    ).toBeNull()
-  })
-
-  it('#4521 主帘（部位缺省 / 布帘）⇒ 照常试算（红证：不得把「不写部位」也一起挡掉）', () => {
-    expect(craftCalcParamsOf(line({ craft: { craft: '韩褶' } }))).not.toBeNull()
-  })
-
-  it('#4521 isAutoCalcUnavailable：纱帘恒为「无自动算料」（页面据此提示手填米数）', () => {
-    expect(isAutoCalcUnavailable(line({ curtainType: CURTAIN_TYPE_SHEER }))).toBe(true)
+      isAutoCalcUnavailable(line({ curtainType: CURTAIN_TYPE_SHEER, craft: { craft: '韩褶' } }))
+    ).toBe(false)
+    // 真正的「无自动算料」判据不变：工艺无算料口径 ⇒ true（与部位无关）
     expect(isAutoCalcUnavailable(line({ craft: { craft: '韩褶' } }))).toBe(false)
     // issue #4527 追加裁定后：**打孔有自动算料口径**（倍数法）⇒ 不再是「无自动算料」
     expect(isAutoCalcUnavailable(line({ craft: { craft: '打孔' } }))).toBe(false)
     expect(isAutoCalcUnavailable(line({ craft: { craft: '四爪钩' } }))).toBe(true)
+    // 纱帘 + 无算料口径的工艺 ⇒ 仍按**工艺**判 true（部位不再是开关）
+    expect(
+      isAutoCalcUnavailable(line({ curtainType: CURTAIN_TYPE_SHEER, craft: { craft: '四爪钩' } }))
+    ).toBe(true)
+  })
+
+  it('2026-09-21 反转：参数不全时纱帘与布帘**同样**不发请求（fail-closed 与部位无关）', () => {
+    for (const curtainType of [undefined, CURTAIN_TYPE_SHEER]) {
+      expect(craftCalcParamsOf(line({ curtainType, craft: {}, width: null }))).toBeNull()
+      expect(craftCalcParamsOf(line({ curtainType, craft: {}, height: null }))).toBeNull()
+    }
   })
 })
 

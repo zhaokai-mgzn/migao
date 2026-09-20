@@ -31,6 +31,28 @@ vi.mock('@/lib/api', () => ({
   customerApi: {
     getCustomers: (...args: any[]) => mockGetCustomers(...args),
   },
+  // **算料配置读面**（issue #4874）：公式缺省 + 档位 chips 的值域/文案都来自它 ⇒ 挂载即请求
+  productionApi: {
+    getCraftCalcConfig: () =>
+      Promise.resolve({
+        data: {
+          data: {
+            source: 'default',
+            config: {
+              per_fold_single: 0.25,
+              per_fold_mixed_times: {},
+              margin_single: 0.3,
+              margin_multi: 0.3,
+              min_fullness: 1.5,
+              tiers: { standard: { fullness: 2.0, label: '标准档' } },
+              default_formula: 'pleat',
+              side_margin: 0.15,
+              meters_rounding_step: 0.1,
+            },
+          },
+        },
+      }),
+  },
   // 算料试算（#4434）：本文件验的是商品↔加工项解耦，与算料正交 ⇒ 停在「进行中」
   craftCalcApi: { preview: () => new Promise(() => {}) },
   // 加工费计价预览（#4450）：同样正交 ⇒ 桩成「组合价 == Σ 加工项」的服务端

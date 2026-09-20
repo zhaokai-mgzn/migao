@@ -50,11 +50,24 @@
  * 「相当于参考款式一样，在工艺规格中增加一个纱帘选项，如果**带纱帘就像配布边一样，
  * 让用户输入米数和单价**」。
  *
- * ① **部位字段整体移除** —— 主帘缺省即布帘；纱帘由页面侧的**帘体**选择 + 纱帘行承载；
- * ② **纱帘子块**（`sheer`）= 与「双拼·配布边」逐字同构：米数（默认 = 主布米数，可改，带来源）
- *    + 单价（不填不生成纱帘明细行 —— 后端单价必须 > 0，不凭空造价）；
+ * ① **部位字段整体移除** —— 主帘缺省即布帘；纱帘由页面侧的**帘体**选择承载；
+ * ② ~~**纱帘子块**（`sheer`）~~ —— **已随 `布帘+纱帘` 档一并删除**（issue #4874）；
  * ③ 「是否定型」的行业默认**改由帘体结构决定**（`defaultIsShapedForBody`）—— 同一份真值源；
  *    #4566 后它落到「定型」加工项的**默认勾选态**上（页面侧 `withShapedDefault`）。
+ *
+ * ── issue #4874（用户 2026-09-21 需求批次）────────────────────────────────────
+ *
+ * ① **褶距控件整体删除**（「移除订单的工艺规格中的褶距字段」）—— `pleatSpacing` 连同
+ *    `DEFAULT_PLEAT_SPACING` / `buildCraftSpec` 的写键一起退场；存量单的**读侧**仍容错。
+ * ② **新增「用料公式」chips**（`pleat` 韩折公式·折数法 / `fullness` 褶倍数公式·倍数法）：
+ *    - 选 `pleat` ⇒ 展示**自动算出的折数**（试算响应 `pleat_count`；没结果展示「—」，
+ *      **不许编数**）；
+ *    - 选 `fullness` ⇒ 展示**档位 chips**（经济档 / 标准档）——值域 = 算料配置 `tiers` 的**键**、
+ *      文案取 `tiers[key].label`（**读面取值**，前端不写死档位真值）。档位进算料请求的
+ *      `craft_tier`，并落库 `processingInfo.craftTier`（不再钉死 `standard`）。
+ * ③ **配置加载失败不阻断录入**：按缺省（韩折公式 + 标准档）走，并**显式提示**配置未加载
+ *    （静默按缺省走 = 商家以为按自己配的口径算）。
+ * ④ **纱帘子块删除**（帘体已无「布帘+纱帘」档）。
  */
 
 import { useId } from 'react'
@@ -67,6 +80,17 @@ import {
   STYLE_OPTIONS,
   type CraftSpecInput,
 } from '@/lib/order-craft-fields'
+// 用料公式 / 档位（issue #4874）：值域与文案都取自**算料配置读面**（不在本组件里写死第二份）
+import {
+  CRAFT_CALC_FORMULA_LABELS,
+  CRAFT_CALC_FORMULA_PLEAT,
+  CRAFT_CALC_FORMULAS,
+  CRAFT_CALC_TIER,
+  craftCalcTierOptions,
+  defaultCraftCalcFormula,
+  defaultCraftCalcTier,
+} from '@/lib/craft-calc-request'
+import type { CraftCalcConfig } from '@/types'
 
 const LABEL_CLASS = 'block text-sm font-medium text-neutral-700 mb-1.5'
 
@@ -151,16 +175,20 @@ export interface OrderCraftFieldsProps {
   value: CraftSpecInput
   /** 局部更新（只合并传入的键） */
   onChange: (patch: Partial<CraftSpecInput>) => void
-  /** 主布米数（= 该行数量）；纱帘 / 配布边米数的默认值都取它 */
+  /** 主布米数（= 该行数量）；配布边米数的默认值取它 */
   mainMeters: number
-  /** 帘体是否含纱帘（issue #4521）—— 含 ⇒ 出「纱帘米数 / 纱帘单价」子块 */
-  sheer: boolean
-  /** 纱帘米数；`null` = 未改过（跟随主布米数） */
-  sheerMeters: number | null
-  onSheerMetersChange: (meters: number | null) => void
-  /** 纱帘单价；`null` = 未填（不生成纱帘明细行 —— 后端单价必须 > 0，不凭空造价） */
-  sheerUnitPrice: number | null
-  onSheerUnitPriceChange: (price: number | null) => void
+  /**
+   * 租户**算料配置**（issue #4874）—— 读面 `productionApi.getCraftCalcConfig()`
+   * （`GET /api/admin/production/craft-calc-config`）。档位 chips 的**值域**（`tiers` 的键）
+   * 与**文案**（`tiers[key].label`）都取自它 ⇒ 前端不持有第二份档位真值。
+   * `null` = 配置未加载 ⇒ 不渲染档位 chips，只出**显式提示**（不静默）。
+   */
+  calcConfig: CraftCalcConfig | null
+  /**
+   * 最近一次算料试算的**折数**（响应 `pleat_count`）；`null` = 还没结果 ⇒ 展示「—」，
+   * **不许编数**（编一个折数 = 第二份算料逻辑）。
+   */
+  pleatCount: number | null
   /** 配布边米数；`null` = 未改过（跟随主布） */
   edgeMeters: number | null
   onEdgeMetersChange: (meters: number | null) => void
@@ -173,11 +201,8 @@ export default function OrderCraftFields({
   value,
   onChange,
   mainMeters,
-  sheer,
-  sheerMeters,
-  onSheerMetersChange,
-  sheerUnitPrice,
-  onSheerUnitPriceChange,
+  calcConfig,
+  pleatCount,
   edgeMeters,
   onEdgeMetersChange,
   edgeUnitPrice,
@@ -199,8 +224,18 @@ export default function OrderCraftFields({
   const isMixed = value.style === STYLE_MIXED
   const edgeSource = edgeMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
   const effectiveEdgeMeters = edgeMeters ?? (Number(mainMeters) || 0)
-  const sheerSource = sheerMeters === null ? METERS_SOURCE_FOLLOW : METERS_SOURCE_MANUAL
-  const effectiveSheerMeters = sheerMeters ?? (Number(mainMeters) || 0)
+
+  /** 公式 chips 的候选（值域 = `CRAFT_CALC_FORMULAS`，与算料引擎逐字同源；文案只有一份） */
+  const formulaOptions: ReadonlyArray<ChipOption<string>> = CRAFT_CALC_FORMULAS.map((formula) => ({
+    value: formula,
+    label: CRAFT_CALC_FORMULA_LABELS[formula] ?? formula,
+  }))
+  /** 档位候选 = **算料配置** `tiers` 的键（值）+ `label`（文案）；配置未加载 ⇒ 空 */
+  const tierOptions = craftCalcTierOptions(calcConfig)
+  /** 生效公式 = 商家选的 ⇒ 算料配置的兜底 ⇒ 常量兜底（与页面侧同一份解析函数） */
+  const effectiveFormula = value.formula ?? defaultCraftCalcFormula(calcConfig)
+  /** 配置未加载（含读取失败）—— 显式提示，不静默按缺省走 */
+  const calcConfigMissing = calcConfig === null
 
   return (
     <div>
@@ -208,7 +243,7 @@ export default function OrderCraftFields({
           （页面侧的折叠头 + 这里的标题）。标题与序号由页面侧的**向导步骤**统一提供，
           本组件只负责 8 个字段本体。 */}
       <p className="mb-3 text-xs text-neutral-400">
-        加工类型默认「定高买宽」、款式默认「单色」、褶距按标准档 2.0 倍自动算 —— 都可改；
+        加工类型默认「定高买宽」、款式默认「单色」—— 都可改；
         <span className="text-neutral-500">工艺与定型请在「加工项」里勾选</span>
       </p>
 
@@ -240,21 +275,16 @@ export default function OrderCraftFields({
           onChange={(next) => onChange({ style: next })}
         />
 
-        <div>
-          <label htmlFor={fieldId('pleatSpacing')} className={LABEL_CLASS}>
-            褶距
-          </label>
-          <input
-            id={fieldId('pleatSpacing')}
-            type="number"
-            min={0}
-            step={0.01}
-            placeholder="米，如 0.1"
-            value={value.pleatSpacing ?? ''}
-            onChange={(e) => onChange({ pleatSpacing: numberOrNull(e.target.value) ?? undefined })}
-            className={inputClass}
-          />
-        </div>
+        {/* **用料公式**（issue #4874，用户 2026-09-21：「加上用料公式字段，如果选择韩折公式，
+            那就自动算出折数，如果选择的是褶倍数公式，那就展示是经济档还是标准档」）。
+            ⚠️ 原「褶距」number 输入框**已删除**（同一批需求：「移除订单的工艺规格中的褶距字段」）
+            —— 留一个可录键 = 与算料引擎的档位口径打架（引擎算分幅时**不读**褶距，只按档位取倍数）。 */}
+        <ChipGroup
+          label="用料公式"
+          options={formulaOptions}
+          value={effectiveFormula}
+          onChange={(next) => onChange({ formula: next })}
+        />
 
         <ChipGroup
           label="是否对花"
@@ -283,52 +313,46 @@ export default function OrderCraftFields({
         )}
       </div>
 
-      {/* **纱帘**（issue #4521，用户口径「在工艺规格中增加一个纱帘选项，如果带纱帘就像
-          配布边一样，让用户输入米数和单价」）—— 与下面的「双拼·配布边」**逐字同构**：
-          米数（默认 = 主布米数，可改，带来源留痕）+ 单价（不填不生成纱帘明细行）。
-          ⚠️ 纱帘**不算料**（「买多少就是多少」）：这里不给「恢复按公式计算」，页面侧也不发试算。 */}
-      {sheer && (
-        <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50/60 p-3">
-          <div className="text-sm font-medium text-neutral-700 mb-2">
-            纱帘（一樘帘 = 主布行 + 纱帘行）
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor={fieldId('sheerMeters')} className={LABEL_CLASS}>
-                纱帘米数
-              </label>
-              <input
-                id={fieldId('sheerMeters')}
-                type="number"
-                min={0}
-                step={0.01}
-                value={effectiveSheerMeters}
-                onChange={(e) => onSheerMetersChange(numberOrNull(e.target.value))}
-                className={inputClass}
-              />
-              <p className="mt-1 text-xs text-neutral-400">默认 = 主布米数，可编辑</p>
-              <p className="mt-0.5 text-xs text-neutral-500">纱帘米数来源：{sheerSource}</p>
-            </div>
-            <div>
-              <label htmlFor={fieldId('sheerUnitPrice')} className={LABEL_CLASS}>
-                纱帘单价
-              </label>
-              <input
-                id={fieldId('sheerUnitPrice')}
-                type="number"
-                min={0}
-                step={0.01}
-                placeholder="¥ / 米"
-                value={sheerUnitPrice ?? ''}
-                onChange={(e) => onSheerUnitPriceChange(numberOrNull(e.target.value))}
-                className={inputClass}
-              />
-              <p className="mt-1 text-xs text-neutral-400">
-                填写后才会生成纱帘明细行（纱帘按米计价，买多少就是多少）
-              </p>
-            </div>
-          </div>
+      {/* **折数 / 档位**（issue #4874）—— 与「用料公式」chips 联动：
+          `pleat`（韩折公式）⇒ 展示**自动算出的折数**（试算响应 `pleat_count`）；
+          `fullness`（褶倍数公式）⇒ 展示**档位 chips**（值域与文案都取算料配置）。 */}
+      {effectiveFormula === CRAFT_CALC_FORMULA_PLEAT && (
+        <div className="mt-3" data-testid="craft-pleat-count">
+          <span className={LABEL_CLASS}>自动算出的折数</span>
+          <span className="text-sm font-medium text-neutral-900 tabular-nums">
+            {/* 没结果就是「—」：**不编数**（编一个折数 = 第二份算料逻辑） */}
+            {typeof pleatCount === 'number' && Number.isFinite(pleatCount) ? pleatCount : '—'}
+          </span>
+          <span className="ml-1.5 text-xs text-neutral-400">（按韩折公式试算得出，改宽高即重算）</span>
         </div>
+      )}
+
+      {effectiveFormula !== CRAFT_CALC_FORMULA_PLEAT && tierOptions.length > 0 && (
+        <div className="mt-3" data-testid="craft-tier-options">
+          <ChipGroup
+            label="档位"
+            options={tierOptions}
+            /* 生效档位（issue #4878 独立复核 P2）：公式 chips 显示的是**生效**值
+               （`effectiveFormula`），档位 chips 若显示 `value.craftTier ?? ''`，未选时
+               **一个都不选中**，而派生/请求/落库用的却是缺省档 ⇒「页面所见 = 请求 = 落库」
+               在缺省态不成立（商家看到"没选"，系统按标准档算了钱）。⇒ 同样显示生效值。 */
+            value={value.craftTier ?? defaultCraftCalcTier(calcConfig)}
+            onChange={(next) => onChange({ craftTier: next })}
+          />
+          <p className="mt-1 text-xs text-neutral-400">
+            档位来自「工艺配置 → 算料配置」的档位表（可增删），随单落库
+          </p>
+        </div>
+      )}
+
+      {/* **配置未加载**（issue #4874）：不阻断录入，但**不许静默** —— 商家必须知道
+          现在按的是缺省口径（配置读不到时档位可选值也无从展示）。 */}
+      {calcConfigMissing && (
+        <p data-testid="craft-calc-config-missing" className="mt-3 text-xs text-amber-600">
+          算料配置未加载（「工艺配置 → 算料配置」读取失败）—— 本次按缺省口径试算：
+          {CRAFT_CALC_FORMULA_LABELS[CRAFT_CALC_FORMULA_PLEAT] ?? CRAFT_CALC_FORMULA_PLEAT}
+          + 档位 {CRAFT_CALC_TIER}；档位可选值需配置加载后才能展示
+        </p>
       )}
 
       {/* 双拼（拼色）：配布边是**一条独立面料明细行**（§4.8） */}

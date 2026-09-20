@@ -88,8 +88,21 @@ public class ProcessingFeeCalculator {
     /** {@code fee_source} 三态（设计 §5.7.5 ②；与工序侧 {@code route_source} 四态同族）。 */
     public static final String FEE_SOURCE_MATCHED = "matched";
     public static final String FEE_SOURCE_UNPRICED = "unpriced";
-    /** 人工改价（商家在单笔订单上改价，必须留痕）—— 通道**未落码**（本包只接线自动取价）。 */
+    /**
+     * 人工改价（商家在单笔订单上改价，必须留痕）—— issue #4872 起**已落码**
+     * （此前全仓只有声明，取价侧**从不产出** {@code manual}）。
+     *
+     * <p>采用条件（三条**同时**成立，缺一不采用）：① 该行组合**未命中**活跃价目；
+     * ② 组合键非空；③ {@code processing_info.processingFeeOverride} 是**正数**。
+     * **命中组合时一律忽略 override**（既有组合价一字不动 —— 改价通道不得成为绕过组合价的旁路）。</p>
+     */
     public static final String FEE_SOURCE_MANUAL = "manual";
+
+    /**
+     * 行级**人工改价**单价键（元/米）：{@code items[].processingInfo.processingFeeOverride}
+     * （与 {@code processingMeters} / {@code specialOptions} 同层）。
+     */
+    static final String OVERRIDE_KEY = "processingFeeOverride";
 
     /** 加工费米数的键族（唯一生产者 = 算料侧 {@code curtain_calc}；键名与加工单白名单逐字一致）。 */
     private static final List<String> METER_KEYS = List.of("processingMeters", "fabric_meters");
@@ -280,6 +293,27 @@ public class ProcessingFeeCalculator {
                     hint);
         }
 
+        /**
+         * **人工改价**那半（issue #4872）：组合**未命中**活跃价目，商家在订单里就地改价。
+         *
+         * <p>与 {@link #matched} 同一把尺子：金额 = 单价 × 加工费米数（{@link #money} 去尾零）；
+         * {@code unit_price} = override、{@code price_source='manual'}、{@code fee_source='manual'}
+         * ⇒ 读面能回答「这个价是谁定的」（detail 键名与既有分支**逐字一致**：只填值，不加键）。</p>
+         */
+        static Fee manual(String compositionKey, List<String> items, BigDecimal unitPrice,
+                          BigDecimal meters, String metersSource, List<SpecialOption> specialOptions,
+                          MixedColor mixedColor, String setKey, String hint) {
+            BigDecimal amount = money(unitPrice.multiply(meters));
+            BigDecimal optionsTotal = money(optionsTotal(specialOptions));
+            return new Fee(amount, FEE_SOURCE_MANUAL, compositionKey, items, null,
+                    unitPrice, FEE_SOURCE_MANUAL, meters, metersSource, specialOptions, optionsTotal,
+                    mixedColor,
+                    detail(compositionKey, items, null, unitPrice, FEE_SOURCE_MANUAL, meters,
+                            metersSource, FEE_SOURCE_MANUAL, amount, specialOptions, optionsTotal,
+                            mixedColor, setKey, hint),
+                    hint);
+        }
+
         /** Σ 选项价（未定价项按 0 计 —— 它们已在 {@code priced:false} 上显式可见）。 */
         private static BigDecimal optionsTotal(List<SpecialOption> specialOptions) {
             BigDecimal total = BigDecimal.ZERO;
@@ -449,16 +483,34 @@ public class ProcessingFeeCalculator {
                     joinHint("本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。"
                             + "若这单本该有加工费，请确认下单时是否漏选了加工项", mixedHint));
         }
+        List<String> normalizedItems = ProcessingFeeQueryService.itemsOf(compositionKey);
         ProcessingFeeCombination row = priced == null ? null : priced.get(compositionKey);
         if (row == null || row.getUnitPrice() == null) {
-            return Fee.unpriced(compositionKey, ProcessingFeeQueryService.itemsOf(compositionKey),
+            // ── 行级人工改价（issue #4872）────────────────────────────────────────────
+            // 商家在**未定价**的行上就地改价：本行按 override 收，且建单时同步回「加工费组合」配置
+            // （见 OrderService.createOrder 的同事务 upsert）。命中组合时走不到这里 ⇒ override 被忽略。
+            BigDecimal override = overridePrice(processingInfo);
+            if (override != null) {
+                if (meters == null) {
+                    // 改价也是「单价 × 米数」⇒ 缺米数同样算不出来（**不凭 quantity 猜**，同 matched 分支）
+                    return Fee.unpriced(compositionKey, normalizedItems, override, FEE_SOURCE_MANUAL,
+                            null, null, specialOptions, mixedColor, windowKey,
+                            joinHint(String.format("本行**人工改价** ¥%s/米，但本行**缺加工费米数** ⇒ "
+                                            + "**组合那半**按 0 计（未定价）。加工费米数 = 该**套**主布行米数"
+                                            + "（算料侧给出，键 `processingMeters`）⇒ 请补算料米数后重下单",
+                                    override.toPlainString()), mixedHint));
+                }
+                return Fee.manual(compositionKey, normalizedItems, override, meters, metersSource,
+                        specialOptions, mixedColor, windowKey,
+                        joinHint(unpricedOptionsHint(specialOptions), mixedHint));
+            }
+            return Fee.unpriced(compositionKey, normalizedItems,
                     null, null, meters, metersSource, specialOptions, mixedColor, windowKey,
                     joinHint(String.format("选配组合「%s」在「加工费组合」里没有价 ⇒ 本行**组合那半**按 0 计（未定价），"
                                     + "**不套任何默认价**。请去「加工费管理」(%s) 为该组合定价，"
                                     + "或确认这些加工项不该组合收费",
                             compositionKey, PRICING_ENTRY), mixedHint));
         }
-        List<String> normalizedItems = ProcessingFeeQueryService.itemsOf(compositionKey);
         if (meters == null) {
             return Fee.unpriced(compositionKey, normalizedItems, row.getUnitPrice(), row.getSource(),
                     null, null, specialOptions, mixedColor, windowKey,
@@ -809,6 +861,20 @@ public class ProcessingFeeCalculator {
             }
         }
         return byName;
+    }
+
+    /**
+     * 行级**人工改价**单价（元/米）：{@code processing_info.processingFeeOverride}（issue #4872）。
+     *
+     * <p>只认**正数**：缺键 / 非数值 / {@code ≤ 0} 一律返回 {@code null}（= 没有改价）。
+     * 为什么 0 与负数不算改价：「0 元改价」与「没改价」在金额上不可区分，而前者会把一行加工费
+     * **静默算成 0**（同 #4308「静默回落」纪律：静默 = 算错钱且无人知道）⇒ 视为未改价，
+     * 走既有的 {@code unpriced} 路径（金额 0 + 可行动提示，**显式可见**）。</p>
+     */
+    private static BigDecimal overridePrice(Object processingInfo) {
+        Map<String, Object> info = asMap(processingInfo);
+        BigDecimal value = info == null ? null : decimal(info.get(OVERRIDE_KEY));
+        return value != null && value.compareTo(BigDecimal.ZERO) > 0 ? value : null;
     }
 
     /** 加工费米数（= 主布行米数）：{@code processingMeters} 优先，兼容 {@code fabric_meters}。 */

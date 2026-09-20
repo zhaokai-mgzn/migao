@@ -39,6 +39,28 @@ vi.mock('@/lib/api', () => ({
   customerApi: { getCustomers: (...a: unknown[]) => mockGetCustomers(...a) },
   craftCalcApi: { preview: (...a: unknown[]) => mockCraftCalcPreview(...a) },
   feePreviewApi: { preview: (...a: unknown[]) => mockFeePreview(...a) },
+  // **算料配置读面**（issue #4874）：公式缺省 + 档位 chips 的值域/文案都来自它 ⇒ 挂载即请求
+  productionApi: {
+    getCraftCalcConfig: () =>
+      Promise.resolve({
+        data: {
+          data: {
+            source: 'default',
+            config: {
+              per_fold_single: 0.25,
+              per_fold_mixed_times: {},
+              margin_single: 0.3,
+              margin_multi: 0.3,
+              min_fullness: 1.5,
+              tiers: { standard: { fullness: 2.0, label: '标准档' } },
+              default_formula: 'pleat',
+              side_margin: 0.15,
+              meters_rounding_step: 0.1,
+            },
+          },
+        },
+      }),
+  },
 }))
 
 vi.mock('next/link', () => ({
@@ -92,7 +114,7 @@ const feeMatched = (amount = 133) => ({
   },
 })
 
-/** 展开向导③「加工项」步骤（issue #4511 手风琴；#4489 判据 3：默认收起） */
+/** 展开向导**区块 2**「加工项 · 特殊选项」（issue #4874 两步化；#4489 判据 3：默认收起） */
 const expandProcessing = () => {
   const btn = screen.getAllByRole('button', { name: /^\d+ 加工项/ })[0]
   if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
@@ -205,8 +227,7 @@ describe('下单页加工费计价预览接线（#4450）', () => {
     expect(mockCreateOrder).not.toHaveBeenCalled()
   })
 
-  it('判据 6：未定价 ⇒ 显式提示「未定价」，且页面金额 = 服务端值（0），不是本地 Σ', async () => {
-    mockFeePreview.mockResolvedValue({
+  it('判据 6：未定价 ⇒ 显式提示「未定价」，且页面金额 = 服务端值（0），不是本地 Σ', async () => {    mockFeePreview.mockResolvedValue({
       data: {
         data: {
           items: [
@@ -230,6 +251,183 @@ describe('下单页加工费计价预览接线（#4450）', () => {
     await waitFor(() => expect(screen.getByText(/有 1 行加工费未定价/)).toBeInTheDocument())
     // 页面不得显示本地 Σ（66.50）
     expect(screen.queryByText('¥66.50')).toBeNull()
+  })
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // issue #4874：加工项区块里的「加工费组合」明细块 + 未定价行**就地改单价**
+  //
+  // 用户 2026-09-21：「订单中加工费组合**未配置**的情况下，**允许更改该单价**，并且在
+  // **加工项下面添加具体的组合名**」。改价必须：① 立刻以该价**重发 `feePreview`**（页面金额跟着变）；
+  // ② 以 `processingInfo.processingFeeOverride` **随建单提交**（后端 #4872 采用后 = `manual`）。
+  // ══════════════════════════════════════════════════════════════════════════
+
+  it('#4874 未定价行出现「改单价」输入 ⇒ 改价后 **feePreview 请求体**带 processingFeeOverride', async () => {
+    mockFeePreview.mockResolvedValue(
+      feeUnpriced([{ composition: '布帘+韩褶', items: ['布帘', '韩褶'] }])
+    )
+    await setupLine()
+
+    // 加工项区块里**列出具体组合名**（`items.join(' + ')`，与「加工费组合」页逐字同源）
+    const block = await screen.findByTestId('processing-fee-combinations')
+    expect(within(block).getByTestId('fee-combination-name')).toHaveTextContent('布帘 + 韩褶')
+    // 未定价 ⇒ 来源列显式标「未定价」（不渲染 ¥0.00 —— 仓库硬纪律）
+    expect(within(block).getByText(/未定价/)).toBeInTheDocument()
+
+    const override = within(block).getByTestId('fee-unit-price-override') as HTMLInputElement
+    fireEvent.change(override, { target: { value: '12.5' } })
+
+    // ① 立刻以该价重发 feePreview（300ms 防抖后）——「试算与提交必须看到同一份选配」
+    await waitFor(() => {
+      const last = mockFeePreview.mock.calls.at(-1)![0]
+      expect(last.items[0].processingInfo.processingFeeOverride).toBe(12.5)
+    })
+    // ② 随建单提交同一份（后端据此把该组合记成 manual 并同步进加工费组合配置）
+    await submit()
+    await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+    expect(
+      mockCreateOrder.mock.calls[0][0].items[0].processingInfo.processingFeeOverride
+    ).toBe(12.5)
+  })
+
+  it('#4874 组合键为空（缺选配信息）⇒ **不给**改单价入口（没有 key 可同步），保持既有提示', async () => {
+    mockFeePreview.mockResolvedValue(feeUnpriced([{ composition: '', items: [] }]))
+    await setupLine()
+
+    const block = await screen.findByTestId('processing-fee-combinations')
+    // 组合名照旧点明「缺选配信息」（既有文案，一字不改）
+    expect(within(block).getByTestId('fee-combination-name')).toHaveTextContent(
+      '没有可匹配的组合（缺选配信息）'
+    )
+    // 红证：若实现无条件渲染改单价输入（不判组合键），下面两条必红
+    expect(within(block).queryByTestId('fee-unit-price-override')).toBeNull()
+    expect(within(block).getByTestId('fee-combination-no-composition')).toBeInTheDocument()
+  })
+
+  it('#4874 已定价行 ⇒ 单价**只读**（无改单价入口），且保留去「加工费组合」的定价入口', async () => {
+    await setupLine() // stub = feeMatched()：fee_source=matched、unit_price=10
+    const block = await screen.findByTestId('processing-fee-combinations')
+    expect(within(block).getByTestId('fee-unit-price')).toHaveTextContent('¥10.00/米')
+    expect(within(block).queryByTestId('fee-unit-price-override')).toBeNull()
+    // 已定价 ⇒ 不再需要「去定价」入口（那正是「未定价」才要做的事）
+    expect(within(block).queryByRole('link', { name: /加工费组合/ })).toBeNull()
+  })
+
+  it('#4874 没有选配任何加工项（也未触发自动识别）⇒ 整块不渲染（无组合可展示、也无价可改）', async () => {
+    render(<NewOrderPage />)
+    fireEvent.click(await screen.findByText('点击搜索并选择商品'))
+    fireEvent.click(await screen.findByText('遮光窗帘'))
+    await screen.findByText('宽 (米)')
+    // 刻意**不填宽高**（自动识别特征以宽高为输入）也**不勾**加工项 ⇒ 组合键为空
+    expandProcessing()
+    await waitFor(() => expect(mockFeePreview).toHaveBeenCalled())
+    expect(screen.queryByTestId('processing-fee-combinations')).toBeNull()
+  })
+
+  // ── 独立复核（issue #4878）补的两条资金路径回归 ──────────────────────────────
+  // 两条都来自「不看规格」的独立复核（GLM-5.3-Flash）：P1「陈旧 override 会被当成新组合的价」
+  // 与 P1「改价后输入框消失 ⇒ 打错一个字就改不了」。**都是可注入式红证**（把修法退回去即红）。
+
+  it('#4878 P1：改加工项 ⇒ 组合键变 ⇒ **上一组合的人工改价被清掉**（不得给新组合定价）', async () => {
+    // 两个加工项，便于「换一个」而不至于把组合清空
+    mockGetProcessingItems.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            { id: 'pi1', name: '韩式褶', unitPrice: 5, unit: '米', pricingMethod: 'per_meter' },
+            { id: 'pi2', name: '加铅块', unitPrice: 3, unit: '项', pricingMethod: 'per_set' },
+          ],
+        },
+      },
+    })
+    mockFeePreview.mockResolvedValue(
+      feeUnpriced([{ composition: '布帘+韩褶', items: ['布帘', '韩褶'] }])
+    )
+    render(<NewOrderPage />)
+    fireEvent.click(await screen.findByText('点击搜索并选择商品'))
+    fireEvent.click(await screen.findByText('遮光窗帘'))
+    await screen.findByText('宽 (米)')
+    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    await waitFor(() => expect(inputOf('用料米数')).toHaveValue(13.3))
+    expandProcessing()
+    fireEvent.click(screen.getAllByRole('checkbox')[0])
+
+    const block = await screen.findByTestId('processing-fee-combinations')
+    fireEvent.change(within(block).getByTestId('fee-unit-price-override'), {
+      target: { value: '12.5' },
+    })
+    await waitFor(() =>
+      expect(
+        mockFeePreview.mock.calls.at(-1)![0].items[0].processingInfo.processingFeeOverride
+      ).toBe(12.5)
+    )
+
+    // 勾**另一个**加工项 ⇒ 组合键变（`布帘+韩褶` → 含「加铅块」的新组合）
+    // 红证：不清 override ⇒ 新组合的请求体里仍带着 12.5（给新组合静默定价）
+    fireEvent.click(screen.getAllByRole('checkbox')[1])
+    await waitFor(() => {
+      const last = mockFeePreview.mock.calls.at(-1)![0]
+      expect(last.items[0].processingInfo.processingFeeOverride).toBeUndefined()
+    })
+  })
+
+  it('#4878 P1：改价生效（预览转 manual）后**输入框仍在**（打错能改），改完随单提交新价', async () => {
+    const feeManual = (unitPrice: number) => ({
+      data: {
+        data: {
+          items: [
+            {
+              processingFee: unitPrice * 13.3,
+              processingFeeDetail: {
+                composition_key: '布帘+韩褶',
+                items: ['布帘', '韩褶'],
+                unit_price: unitPrice,
+                price_source: 'manual',
+                meters: 13.3,
+                meters_source: 'processingMeters',
+                fee_source: 'manual',
+                amount: unitPrice * 13.3,
+                special_options: [],
+                special_options_total: 0,
+                hint: null,
+              },
+            },
+          ],
+          processingFeeTotal: unitPrice * 13.3,
+        },
+      },
+    })
+    // 首轮预览 = 未定价（给入口）；改价之后服务端按 manual 回
+    mockFeePreview
+      .mockResolvedValueOnce(
+        feeUnpriced([{ composition: '布帘+韩褶', items: ['布帘', '韩褶'] }])
+      )
+      .mockResolvedValue(feeManual(12.5))
+
+    await setupLine()
+    const block = await screen.findByTestId('processing-fee-combinations')
+    fireEvent.change(within(block).getByTestId('fee-unit-price-override'), {
+      target: { value: '12.5' },
+    })
+
+    // 红证：若入口只在 `fee_source='unpriced'` 时渲染 ⇒ manual 一到，输入框消失、下面两条必红
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('processing-fee-combinations')).getByTestId(
+          'fee-unit-price-override'
+        )
+      ).toBeInTheDocument()
+    )
+    fireEvent.change(
+      within(screen.getByTestId('processing-fee-combinations')).getByTestId(
+        'fee-unit-price-override'
+      ),
+      { target: { value: '9.9' } }
+    )
+    await submit()
+    expect(
+      mockCreateOrder.mock.calls[0][0].items[0].processingInfo.processingFeeOverride
+    ).toBe(9.9)
   })
 })
 
@@ -293,6 +491,10 @@ const feeUnpriced = (rows: Array<{ composition: string; items: string[] }>) => (
  */
 const findUnpricedAlert = () => screen.findByTestId('unpriced-fee-alert', {}, { timeout: 2000 })
 
+/** 费用明细卡片（issue #4874：录入控件与明细行会同名 ⇒ 明细断言一律限定在卡片内） */
+const feeCard = (): HTMLElement =>
+  screen.getByText('费用明细').closest('div')!.parentElement as HTMLElement
+
 /** 再加一个商品组并选中商品（「添加商品」→ 新组的「点击搜索并选择商品」→ 弹窗里选） */
 const addGroupWithProduct = async () => {
   fireEvent.click(screen.getByText('添加商品'))
@@ -318,10 +520,13 @@ describe('#4590 未定价告警点名具体加工项组合', () => {
     // 「未定价」不得渲染成 ¥0.00（仓库硬纪律）
     expect(alert.textContent).not.toContain('¥0.00')
     // 一键直达「加工费组合」定价面：href 必须等于**后端** `PRICING_ENTRY`（不另写一个路径）
-    expect(screen.getByRole('link', { name: /加工费组合/ })).toHaveAttribute(
-      'href',
-      backendPricingEntry()
-    )
+    // ⚠️ issue #4874：加工项区块**新增**了同一入口（未定价行的操作列）⇒ 现在有多处，
+    // 断言从 `getByRole`（唯一）改为「**每一处**都指向后端同源路径」（比原来更强，不是放宽）。
+    const pricingLinks = screen.getAllByRole('link', { name: /加工费组合/ })
+    expect(pricingLinks.length).toBeGreaterThanOrEqual(2)
+    for (const link of pricingLinks) {
+      expect(link).toHaveAttribute('href', backendPricingEntry())
+    }
   })
 
   it('费用明细**行内**也标出是哪个组合未定价（行级可判，不必回看告警）', async () => {
@@ -443,10 +648,10 @@ describe('#4594 组合未定价时已定价的特殊选项照常计入', () => {
     expect(alert.textContent).toContain('组合那半按 0 计')
     expect(alert.textContent).toContain('已定价的特殊选项照常计入')
     expect(alert.textContent).toContain('¥3.00')
-    expect(screen.getByRole('link', { name: /加工费组合/ })).toHaveAttribute(
-      'href',
-      backendPricingEntry()
-    )
+    // ⚠️ issue #4874：加工项区块也加了同一入口 ⇒ 每一处都指向后端同源路径（比唯一断言更强）
+    const links = screen.getAllByRole('link', { name: /加工费组合/ })
+    expect(links.length).toBeGreaterThanOrEqual(2)
+    for (const link of links) expect(link).toHaveAttribute('href', backendPricingEntry())
   })
 
   it('费用明细逐行之和 === 订单金额（选项那半真的进了总额，不再是 0）', async () => {
@@ -455,11 +660,12 @@ describe('#4594 组合未定价时已定价的特殊选项照常计入', () => {
     await findUnpricedAlert()
 
     // 商品 13.3 米 × ¥100 = 1330 + 特殊选项 ¥3.00（组合那半 0）⇒ 订单金额 1333.00
-    const optionRow = screen.getByText('扣环').parentElement!.parentElement!
+    // ⚠️ 限定在费用明细卡片内：区块 2 的「特殊选项」选择器里也有「扣环」按钮（录入控件）
+    const optionRow = within(feeCard()).getByText('扣环').parentElement!.parentElement!
     expect(optionRow.textContent).toContain('¥1.50/套 × 2 套')
     expect(screen.getByText('订单金额').parentElement!.textContent).toContain('¥1,333.00')
     // 未定价**不得**渲染成 ¥0.00（仓库硬纪律）—— 组合那半那格显示的是「组合未定价…」而不是金额
-    const feeRow = screen.getByText('加工').parentElement!.parentElement!
+    const feeRow = within(feeCard()).getByText('加工').parentElement!.parentElement!
     expect(feeRow.textContent).toContain('组合未定价')
     expect(feeRow.textContent).not.toContain('¥0.00')
   })
@@ -469,7 +675,7 @@ describe('#4594 组合未定价时已定价的特殊选项照常计入', () => {
     await setupLine()
     await findUnpricedAlert()
 
-    const row = screen.getByText('加工').parentElement!.parentElement!
+    const row = within(feeCard()).getByText('加工').parentElement!.parentElement!
     expect(row.textContent).toContain('组合未定价（组合那半按 0 计）')
     expect(row.textContent).toContain('布帘 + 韩褶')
     expect(row.textContent).toContain('特殊选项照计 ¥3.00')

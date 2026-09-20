@@ -31,33 +31,28 @@ export const CURTAIN_TYPE_CLOTH = '布帘'
 export const CURTAIN_TYPE_SHEER = '纱帘'
 
 /**
- * **帘体**（issue #4521）—— 用户口径的四类购买情况里的前三类：
+ * **帘体**（issue #4521；issue #4874 收窄）—— 用户口径的购买情况里的前两类：
  *
  * | 帘体 | 落库形态 | 用料 |
  * |---|---|---|
- * | `布帘` | 一条明细行（部位缺省 = 布帘） | **按韩折公式算**（算料引擎试算预填，可改） |
- * | `纱帘` | 一条明细行（`curtainType=纱帘`） | **商家手填**（「买多少就是多少」，不算料） |
- * | `布帘+纱帘` | **两条**明细行：主布行 + 纱帘行（同 `craftLineId`） | 主布算料；纱帘手填 |
+ * | `布帘` | 一条明细行（部位缺省 = 布帘） | **按公式算**（算料引擎试算预填，可改） |
+ * | `纱帘` | 一条明细行（`curtainType=纱帘`） | **与布帘完全相同的算法**（算料引擎试算预填，可改）<br>⚠️ 2026-09-21 用户裁定：「订单中选择纱帘时，用料算法和布帘的用料算法完全一致」—— 原「买多少就是多少 / 不算料」作废 |
  *
- * 第四类「布料」不在本枚举里 —— 它是 `SaleForm`（售卖形态）的另一档，整组无加工。
+ * ⚠️ **`布帘+纱帘` 档已整体移除**（issue #4874，用户 2026-09-21 需求批次第 2 条
+ * 「订单需要**移除布帘+纱帘的选项**」）：它那一**整族**派生（`bodyHasSheerLine` /
+ * 纱帘米数 / 纱帘单价 / 第二条纱帘明细行 / 费用明细「纱帘」行 / `totals.sheerSubtotal` /
+ * 提交校验里的纱帘单价必填）**一并删除，不留半截死代码**。
+ * 「布 + 纱」这一购买形态仍可达：一个商品组勾**帘体 = 布帘**（主布行）、另一个商品组勾
+ * **帘体 = 纱帘**（独立一行 `curtainType=纱帘`，按该行 `unitPrice` 计价）。
+ *
+ * 最后一类「布料」不在本枚举里 —— 它是 `SaleForm`（售卖形态）的另一档，整组无加工。
  */
-export const CURTAIN_BODY_OPTIONS = ['布帘', '纱帘', '布帘+纱帘'] as const
+export const CURTAIN_BODY_OPTIONS = ['布帘', '纱帘'] as const
 
 export type CurtainBody = (typeof CURTAIN_BODY_OPTIONS)[number]
 
 export const CURTAIN_BODY_CLOTH = '布帘'
 export const CURTAIN_BODY_SHEER = '纱帘'
-export const CURTAIN_BODY_BOTH = '布帘+纱帘'
-
-/**
- * 该帘体是否**组合**（布帘 + 纱帘）—— 唯一会额外生成一条**纱帘明细行**的帘体。
- *
- * ⚠️ 与「含纱帘」区分：`只买纱帘` 也含纱帘，但那一行**本身就是**纱帘（单价 = 该行单价），
- * 不再出「纱帘米数 / 纱帘单价」子块、也不额外生成行 —— 否则会凭空多出第三条明细行。
- */
-export function bodyHasSheerLine(body: CurtainBody): boolean {
-  return body === CURTAIN_BODY_BOTH
-}
 
 /**
  * 该帘体在主帘行上的**部位**（写侧）：只有「只买纱帘」显式写；
@@ -144,18 +139,6 @@ export const PLEAT_FABRIC_PER_FOLD = 0.25
 export const STANDARD_FULLNESS = 2.0
 
 /**
- * 默认褶距（米）= 每折吃布 ÷ 标准档倍数 = 0.25 ÷ 2.0 = **0.125**（12.5cm）。
- *
- * 用户 2026-09-19 裁定：「褶距**随倍数自动算**（可改）」。
- * 公式来源：真值源 §8「每折吃布 0.25 米（折距 10cm ≈ 2.5 倍褶）」⇒ 褶距 = 0.25 ÷ 倍数。
- *
- * ⚠️ 已知真值冲突（照实登记，待裁定）：引导清单 `curtain_checklist.py` 给 `pleat_spacing`
- * 的行业默认是 **0.1m（=2.5 倍）**，与本处 0.125（=2.0 倍）差 25%。两者不能同时是默认 ——
- * 本处以**用户选定的标准档 2.0 倍**为准（自洽），清单那处待单独收口。
- */
-export const DEFAULT_PLEAT_SPACING = PLEAT_FABRIC_PER_FOLD / STANDARD_FULLNESS
-
-/**
  * 是否对花默认「否」—— 真值源 §1 下单行要素实证（ERP 订单录入页：「是否对花: **不对花**」）。
  * 三态里的「未指定」仍是独立真值，只是**默认**给「否」（商家看得见、可改）。
  */
@@ -180,7 +163,6 @@ export function createDefaultCraftSpec(): CraftSpecInput {
   return {
     cuttingMode: DEFAULT_CUTTING_MODE,
     style: DEFAULT_STYLE,
-    pleatSpacing: DEFAULT_PLEAT_SPACING,
     hasPattern: DEFAULT_HAS_PATTERN,
   }
 }
@@ -238,8 +220,33 @@ export interface CraftSpecInput {
   openCount?: number
   /** 是否定型（#4566：由「定型」加工项的勾选态派生；目录无该项 ⇒ `undefined`） */
   isShaped?: boolean
-  /** 褶距（米） */
-  pleatSpacing?: number
+  /**
+   * **用料公式**（issue #4874，用户 2026-09-21：「加上用料公式字段，如果选择韩折公式，
+   * 那就自动算出折数，如果选择的是褶倍数公式，那就展示是经济档还是标准档」）：
+   * `pleat` 韩折公式（折数法）/ `fullness` 褶倍数公式（倍数法）。
+   *
+   * ⚠️ 值域 = `lib/craft-calc-request.ts` 的 `CRAFT_CALC_FORMULAS`（与算料引擎
+   * `curtain_calc.FORMULA_LABELS` 同源，由 `craft-calc-formula-sync.test.ts` 逐值守）——
+   * 本文件**不重抄**公式名，也不持有中文标签真值。
+   *
+   * ⚠️ **落库**（与 `craftTier` 同族，两者要么都落、要么都不落）：`buildCraftSpec` 写进
+   * `processingInfo.formula`（camelCase，缺值不写）。它是**褶距字段的替换位** ——
+   * 褶距原本是落库的写侧键（`order_items.pleat_spacing` + `processingInfo.pleatSpacing`）
+   * ⇒ 新字段若不落库，订单行就不再自描述「这单按哪个公式算的料」，只能靠人读 `formulaText`
+   * 那段散文串反推（本仓明令禁止「从散文里猜语义」）。
+   * ⚠️ **不新增 DB 列**（`OrderLineCraftFields.materialize` 不映射它）：它进 `processingInfo`
+   * JSONB，不进加工单快照白名单 —— 折数 / 米数由算料输出键承担
+   * （契约登记：`docs/wiki/CONTRACT-LEDGER.md` 的「下单行要素」行）。
+   */
+  formula?: string
+  /**
+   * **算料档位**（issue #4874）—— 键 = 算料配置 `tiers` 的键（`standard` / `economy` …），
+   * 文案取 `tiers[key].label`（**读面取值**，前端不写死档位真值）。
+   *
+   * 与 `formula` 的区别：档位**必须落库**（`buildCraftSpec` 写 `processingInfo.craftTier`）——
+   * 加工单要能看出这单按哪个档位算的料。**不再钉死 `standard`**（#4874 改判）。
+   */
+  craftTier?: string
   /** 是否对花：`true` 是 / `false` 否 / `undefined` 未指定（**本表单唯一的三态字段**） */
   hasPattern?: boolean
   /** 花距（米）—— 仅「是否对花 = 是」时有意义 */
@@ -285,8 +292,14 @@ export function buildCraftSpec(input: CraftSpecInput): Record<string, unknown> {
   // 显式布尔（含 false）才是真值；undefined = 未指定 ⇒ 不写
   if (typeof input.isShaped === 'boolean') spec.isShaped = input.isShaped
 
-  const pleatSpacing = positive(input.pleatSpacing)
-  if (pleatSpacing !== null) spec.pleatSpacing = pleatSpacing
+  // ⚠️ 褶距**已整体移除**（issue #4874，用户 2026-09-21：「移除订单的工艺规格中的褶距字段」）：
+  // 本函数不再写 `pleatSpacing`，`CraftSpecInput` 也不再有该键 —— 存量单的**读侧**仍容错
+  // （`craft-display.ts` 照旧能渲染老单里的该键，缺值不渲染、不炸）。
+  const formula = text(input.formula)
+  if (formula !== null) spec.formula = formula
+
+  const craftTier = text(input.craftTier)
+  if (craftTier !== null) spec.craftTier = craftTier
 
   if (typeof input.hasPattern === 'boolean') spec.hasPattern = input.hasPattern
 
@@ -339,32 +352,7 @@ export function buildEdgeLineCraftSpec(
   }
 }
 
-/**
- * **纱帘行**的工艺键（issue #4521）：`curtainType=纱帘` + 与主布行**同一份工艺规格** +
- * 同 `craftLineId`（同一樘帘）+ 用料来源。
- *
- * 与配布边行的**关键区别**（刻意不同，别照抄 `buildEdgeLineCraftSpec`）：
- * - 纱帘**是另一个部位**（自己的工序路线：纱帘×韩褶）⇒ **必须携带工艺规格**；
- *   配布边不是部位（同一扇窗的一块布）⇒ 刻意不带，否则工序与计件翻倍。
- * - 纱帘行的用料由商家给定（「买多少就是多少」）⇒ 走 `metersSource` 留痕，不写算料输出。
- *
- * `saleForm` 也显式写：纱帘行**不挂加工项**（加工费只挂主布行），而读侧对存量单的兜底是
- * 「无加工项 ⇒ 布料」（#4493）⇒ 不写会被读成布料单。
- */
-export function buildSheerLineCraftSpec(
-  mainLineId: string,
-  spec: Record<string, unknown>,
-  metersSource: string
-): Record<string, unknown> {
-  return {
-    ...spec,
-    curtainType: CURTAIN_TYPE_SHEER,
-    craftLineId: mainLineId,
-    metersSource,
-  }
-}
-
-// ── 樘窗绑组（issue #4395）：一樘窗的多条**部位行**写同一个 `craftLineId` ──────────
+// ── 套绑组（issue #4395）：一樘窗的多条**部位行**写同一个 `craftLineId` ──────────
 //
 // 病根（#4387 的「未做」项）：下单页**只在拼色时**写 `craftLineId` ⇒ 顾客下「布 + 纱」
 // （两条明细行、都不带该键）⇒ 消费端 `ProcessingOrderService.craftGroupKey` 回落到各自 `itemId`
