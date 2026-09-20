@@ -477,7 +477,23 @@ git ls-tree --name-only origin/main backend/admin-api/src/main/resources/db/migr
 
 ### 5.6 回滚
 
-**回滚 = 新迁移 `V89__rollback_…`（不删 V88）** —— 已发布迁移不可改（§5.1）。
+**回滚 = 新迁移 `<落码时现取的自由号>__rollback_…`（不删 V88）** —— 已发布迁移不可改（§5.1）。
+⚠️ **迁移号一律现取、不写死**（原写 `V89` ⇒ **该号已被别人占用**；**口径订正**见下）。
+
+```bash
+# 复算「下一个自由号」（**本文不写死任何号**）
+git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/migration/ \
+  | grep -oE 'V[0-9]+' | sort -t V -k2 -n -u | tail -1    # → 当前迁移头号（现读数：V94）
+git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/migration/ | grep -c 'V93'   # → 0 ⇒ 该号当前空闲
+```
+
+> 🔴 **口径订正（issue #4731，2026-09-20）：本文原写回滚 = `V89__rollback_…`，现改为「现取、不写死」。**
+> **① 当时基线**：迁移头 = **`V87`**（`V87__retire_factor_route_rules.sql`）、`grep -c V88` = **0** ⇒
+> 顺推「本次迁移 = `V88`、回滚 = `V89`」（**原措辞保留在上一段**）。
+> **② 后来变了**：`V89` 已被 `V89__backfill_fabric_seed_for_existing_tenants.sql` 占用（**不是**本设计的回滚），
+> 其后 `V90` / `V91` / `V92` / `V94` 相继被占 ⇒ **`V89` 这个号不再属于本设计**。
+> **③ 故结论改为**：回滚迁移号**落码时现取**（复算命令见上），**不写死**。
+> ⚠️ **事故现场后果（为什么这不是洁癖）**：写死一个**别人的**迁移号 ⇒ 出事时按文档**找不到回滚脚本**。
 
 | # | 回滚动作 |
 |---|---|
@@ -817,7 +833,7 @@ python3 .github/case_trust_gate.py --base origin/main
 | B11 | `打包` 在**任一**部位单里**不消失**（一樘「布+纱」⇒ 恰好 1 行，套级去重） | 红证：删掉 `打包` 的非布帘格 ⇒ 纱帘/帘头单丢工序（§3.4） |
 | B12 | `#4670` ① 补套入口在**工序库非空但缺基础路线**时**可见** | 改前：`!operationsReady` 才显示 ⇒ 不可见 |
 | B13 | `#4670` ② 就绪度② 缺基础路线时**点名** | 改前：只显示条数、仍「已完成」 |
-| B14 | 迁移**可回滚**（V89）+ §5.7 的 6 条停止条件**可执行** | —— |
+| B14 | 迁移**可回滚**（回滚迁移号**落码时现取、不写死** —— 原写 `V89`，该号已被 `V89__backfill_fabric_seed_for_existing_tenants.sql` 占用 ⇒ **口径订正**见 §5.6）+ §5.7 的 6 条停止条件**可执行** | —— |
 | B15 | `./verify-all.sh gate` / `./check-ui-regression.sh` 通过（跨模块加 `./contract-check.sh`） | —— |
 | B16 | 新增/修改的测试文件头部有 `# case_ids:` | 否则 `QA Growth Gate` block |
 

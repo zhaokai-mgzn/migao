@@ -19,6 +19,13 @@
 > **本单只出设计**：先设计，再动数据。所有「现状」结论均为**实测**（复算命令见 §15）；
 > 无法判定的进 §9，不替业务决定的进 §8。
 >
+> 🔴 **口径订正（issue #4731，2026-09-20）**：本文的**数据层已由 #4698 切片⓪ 落码**（`V92`），
+> 故 **§1.2 的 F1 / F16 / F17、§4.4、§8 A3 / A9、§11.1 / §11.2 / §11.4、§13、§14、§15**
+> 的对应结论已**逐处改判**（**原文措辞一律保留为历史留档**）—— 逐处说明见 **§1.2 表后注**
+> 与 **§11.1 / §11.4 的「口径订正」注**。
+> ⚠️ **仍然成立**：A 模式的**功能面**（扫码解析 / 工序推断 / 完成主闭环 / 卡点报表 / 防呆④⑤）**尚未落码** ——
+> 切片⓪ 只落**数据层**（边界逐条登记在 `tests/unit_ci_workflows/test_set_code_storage_v92_migration.py`）。
+>
 > **配套真值源**：[curtain-production-rules.md](../curtain-production-rules.md) ·
 > [curtain-production-process-standard.md](../curtain-production-process-standard.md) ·
 > [worker-scan-terminal.md](worker-scan-terminal.md) ·
@@ -74,11 +81,11 @@
 | 后道 | **烫工及后整**（+ 质检 + 包装） | 「**不可缺少的辅助工序**」「**质检贯穿全过程**」「**包装是最后一道工序**」 |
 | 其他 | （无对应） | 配套软装件 |
 
-### 1.2 现状（**全部实测**，命令见 §15）
+### 1.2 现状（**全部实测**，命令见 §15；⚠️ **F1 / F16 / F17 已因 `V92` 落码过期 ⇒ 见表后「口径订正」**）
 
 | # | 事实 | 读数 |
 |---|---|---|
-| F1 | **`set_no` / `套号` 在代码侧零命中** | `git grep -n "set_no\|套号" origin/main` ⇒ 命中全在 `docs/`（`curtain-production-rules.md` / `domain-model-review-sales-production-finance.md` / `order-craft-spec-design.md` / `worker-scan-terminal.md`）⇒ **代码 / 迁移零命中** |
+| F1 | ~~**`set_no` / `套号` 在代码侧零命中**~~ ⇒ ✅ **已落码**（**口径订正**，见表后注） | **基线读数**：`git grep -n "set_no\|套号" origin/main` ⇒ 命中全在 `docs/`（`curtain-production-rules.md` / `domain-model-review-sales-production-finance.md` / `order-craft-spec-design.md` / `worker-scan-terminal.md`）⇒ **代码 / 迁移零命中**。<br>✅ **现读数**：#4698 切片⓪（PR #4722，2026-09-20）落 `backend/admin-api/src/main/resources/db/migration/V92__add_processing_order_sets_and_scan_loop.sql` ⇒ `processing_order_sets.set_no` 与 `processing_position_operations.set_no` **均已建**（复算命令见 §15）⇒ **代码侧不再零命中** |
 | F2 | **码粒度 = 加工单级** | `V49__create_production_operations_and_work_logs.sql`：`ALTER TABLE processing_orders ADD COLUMN IF NOT EXISTS qr_token VARCHAR(64)` + 唯一索引 `uk_processing_orders_qr_token` ⇒ **一单一个 token** |
 | F3 | **撤销 = 置空 `qr_token`** | `backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java` 的 `revokeQrToken`：`UPDATE processing_orders SET qr_token = NULL …`；注释逐字「置 NULL 而不是换一个新 token：撤销的语义是「这张纸作废」」 |
 | F4 | **报工端点必须显式给 `operationId`** | `backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java` 的 `report`：`@PostMapping("/orders/{orderId}/operations/{operationId}/report")` ⇒ **工序在 URL 路径里**，系统不推断 |
@@ -93,9 +100,24 @@
 | F13 | **计件快照在报工行** | `docs/sql/schema.sql` 的 `production_work_logs.unit_price` / `factor`（V61）注释逐字：「报工那一刻从工序实例写入 ⇒ 聚合只读本行，**永不回查实例**」 |
 | F14 | **报工推进是 CAS 原子** | `backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingPositionOperationMapper.java` 的 `advanceDoneQtyIfUnchanged`：`UPDATE … SET done_qty=#{doneQty}, status='done' WHERE … AND done_qty=#{expectedDoneQty} AND status=#{expectedStatus} AND done_qty < #{doneQty}` ⇒ 影响行数 0 = 被并发推进 ⇒ fail-closed |
 | F15 | **幂等键 = `X-Client-Request-Id`** | `ProductionService.report`：「先占位 → 执行 → 落快照」；失败释放占位 ⇒ 同键重试可进 |
-| F16 | **迁移头号 = V88（已占用）** | `…/db/migration/` 取最大号 ⇒ `V88`（`V88__retire_material_prep_and_fabric_position.sql`）；`grep -c V89` ⇒ **0** ⇒ **本设计的迁移号 = `V89`** |
-| F17 | **迁移指纹守卫覆盖 86 条已发布迁移** | `tests/unit_ci_workflows/migration_fingerprints.json` 的 `migrations` 键 86 条，末三条 `V86__…` / `V87__…` / `V88__…` ⇒ **已发布迁移不可改** |
+| F16 | ~~**迁移头号 = V88（已占用）** ⇒ 本设计的迁移号 = `V89`~~ ⇒ ✅ **本设计的数据层已落码（= `V92`）**（**口径订正**，见表后注） | **基线读数**：`…/db/migration/` 取最大号 ⇒ `V88`（`V88__retire_material_prep_and_fabric_position.sql`）；`grep -c V89` ⇒ **0** ⇒ 当时判「本设计的迁移号 = `V89`」。<br>✅ **现读数**：`V89` 已被 `V89__backfill_fabric_seed_for_existing_tenants.sql` 占用、`V90` 已被 `V90__unpriced_is_not_zero.sql` 占用；本设计的数据层由 **#4698 切片⓪** 落在 `backend/admin-api/src/main/resources/db/migration/V92__add_processing_order_sets_and_scan_loop.sql`（PR #4722，merge `d295097bb`，2026-09-20）。⇒ **「迁移号现取、不写死」原则保留**：后续切片的新迁移号一律落码时现取（复算命令见 §11.1 / §15） |
+| F17 | **迁移指纹守卫覆盖全部已发布迁移**（⚠️ **条数现取，本文不写死**） | **基线读数**：`tests/unit_ci_workflows/migration_fingerprints.json` 的 `migrations` 键 **86 条**，末三条 `V86__…` / `V87__…` / `V88__…`。<br>⚠️ **该计数会随每次新增迁移漂移**（照 issue #4701 的纪律：注释 / 文档里**不得写会漂移的硬编码计数**）⇒ **现读数用命令取**（见 §15）：`git show origin/main:tests/unit_ci_workflows/migration_fingerprints.json \| python3 -c "import json,sys; print(len(json.load(sys.stdin)['migrations']))"`。<br>**结论不变**：**已发布迁移不可改**（改旧迁移 = 指纹红 + 只对全新库生效 ⇒ 存量环境「CI 绿、功能静默缺失」，issue #4235） |
 | F18 | **报工推进**不校验**部位归属**（防呆④今天形式上是空的） | `ProductionService.doReport` 的活跃性判据只校验「租户 / `deleted=0` / 归属加工单」三重 ⇒ 传**别的部位**的 `operationId` + 本单 `orderId` 会被**放行**（因为**码里没有部位**）⇒ §5.3 ④ |
+
+> 🔴 **口径订正（issue #4731，2026-09-20）：F1 / F16 / F17 三条的结论已过期 —— 原因是「迁移头前进」+「切片⓪ 落码」。**
+> **① 当时基线**（本文定稿时）：`origin/main` 迁移头 = **`V88`**、`grep -c V89` = **0**、
+> `set_no` / `套号` 在 `backend/**` `tests/**` **零命中**、`migration_fingerprints.json` **86 条**（末三条 V86/V87/V88）。
+> **② 后来变了**：`#4698 切片⓪`（PR #4722，merge `d295097bb`，2026-09-20）落
+> `backend/admin-api/src/main/resources/db/migration/V92__add_processing_order_sets_and_scan_loop.sql`
+> —— 建 `processing_order_sets` + `processing_set_part_tokens`（含 `uk_set_part_tokens_token` / `uk_set_part_tokens_part`）
+> + 给 `processing_position_operations` 加 **6 列**（`set_id` / `set_no` / **`done_at`** / `worker_id` / `worker_name` / `started_at`），
+> **与 §11.2 逐条一致**；同时 `V89` 被 `V89__backfill_fabric_seed_for_existing_tenants.sql` 占用、
+> `V90` 被 `V90__unpriced_is_not_zero.sql` 占用 ⇒ **本文原推的 `V89` 号已不属于本设计**。
+> **③ 故结论改为**：F1 = ✅ **已落码**；F16 = ✅ **数据层已落（`V92`）**，后续迁移号**现取、不写死**；
+> F17 = **条数改为「现取」**（**不写死**），结论「已发布迁移不可改」**不变**。
+> ⚠️ **原文措辞一字未删**（上表 F1 / F16 / F17 的原判断保留在 ~~删除线~~ 与「基线读数」里）——
+> 这是 `docs/design/public-operations-and-craft-ui.md` §5.2 表后「口径订正」注的**同款写法**。
+> 判据锚点（已落码的机械钉死）= `tests/unit_ci_workflows/test_set_code_storage_v92_migration.py`。
 
 ### 1.3 现状 ⇒ 用户问题的直接回答
 
@@ -282,7 +304,7 @@ allocate_set_index(processing_order_id):
 
 | 问题 | 回答 |
 |---|---|
-| **兼容 / 失效 / 双读？** | **双读（新码优先）**，**不是**失效。`V89` **不碰** `processing_orders.qr_token`（已有打印件不作废 —— 作废会让车间手里的纸全部变废纸，代价不可接受） |
+| **兼容 / 失效 / 双读？** | **双读（新码优先）**，**不是**失效。`V92`（#4698 切片⓪，**已落码**）**不碰** `processing_orders.qr_token`（已有打印件不作废 —— 作废会让车间手里的纸全部变废纸，代价不可接受）〔原写 `V89` ⇒ **口径订正**见 §11.1〕 |
 | **解析顺序** | **① 新 token（`processing_set_part_tokens.token`，带套带部位）→ ② 旧 `qr_token`（加工单级）→ ③ `processing_order_no`（手输）→ ④ `order_no` → ⑤ 内部 `order_id`**；②~⑤ 是 `resolveOrder` 的**既有四形态，一字不动** |
 | **旧码命中后的行为** | 返回**降级形态**：`{granularity: "order", set_no: null, position: null, …}` + `needs_selection: ["set", "position"]` + **可选清单**（该单的套 × 部位）⇒ 工人**选一次**部位（比今天「选部位 + 选工序 + 填数量」少两步） |
 | **旧码何时自然退场** | ① 撤销（`revokeQrToken`，既有端点）⇒ 置 NULL ⇒ 立即失效；② 重新打印（打印入口按新形态出码）；③ **不设截止日强制失效**（强制失效会打断在产单） |
@@ -471,8 +493,8 @@ infer_next(set, scanned_order_item_id):
 | **`in_progress` 的语义（C 模式）** | **纯观测**（「谁在做」），**不是**互斥锁 ⇒ 不引入「已被别人认领 ⇒ 两条出路（接替 / 跳站）」那套交互（**与裁定②-2 的「不拦」冲突，故不采纳**） |
 | **数据落点** | `status` 取值域扩一条 `in_progress`；列 `worker_id` / `worker_name` / `started_at`（**全部可空**） |
 | **C 模式解锁的判据** | §6.1 **②「开了没完」**（`in_progress` + `started_at` 距今 > 阈值）⇒ 「谁在做、卡了多久」 |
-| **落地顺序** | **A 先落、C 后加**；C 的列在 `V89` 一次性建好（**建列 ≠ 建功能**：不写消费者 = 零行为变化），开关与交互**另单** |
-| **事件留痕（可选）** | `processing_operation_claims`（只追加：`claim` / `release` / `complete`）—— **仅 C 模式需要**；A 模式**不写**。⚠️ 本设计**建议 `V89` 不建这张表**（YAGNI：A 模式零消费者），C 模式另立迁移 |
+| **落地顺序** | **A 先落、C 后加**；C 的列在 `V92` 一次性建好（**建列 ≠ 建功能**：不写消费者 = 零行为变化），开关与交互**另单**〔原写 `V89` ⇒ **口径订正**见 §11.1〕 |
+| **事件留痕（可选）** | `processing_operation_claims`（只追加：`claim` / `release` / `complete`）—— **仅 C 模式需要**；A 模式**不写**。⚠️ 本设计**建议 `V92` 不建这张表**（YAGNI：A 模式零消费者），C 模式另立迁移。✅ **已按建议落地**：`V92` **未建**该表〔原写 `V89` ⇒ **口径订正**见 §11.1〕 |
 
 ---
 
@@ -676,13 +698,13 @@ git grep -niE "标准工时|standard_hours|std_hours" origin/main
 |---|---|---|---|
 | **A1** | **旧码的降级交互**（裁定②-1 已定「一部位一码」，但**存量旧码只到加工单级**） | ① 扫旧码 ⇒ 强制选部位（§2.6）② 旧码直接失效要求重打 | **①**：强制失效会打断在产单（§2.6） |
 | **A2** | **A 模式的卡点阈值 `T_wait` 从哪来**（**标准工时全仓没有**，F8） | S1 历史中位数 / S2 工序库填 `standard_hours` / S3 全局默认常量 | **S1 ?? S3**，响应带 `threshold_source`；⚠️ A 模式无 `started_at` ⇒ S1 口径更粗（§6.4 边界①） |
-| **A3** | **C 模式（开工选扫）是否要做、何时做** | ① 不做 ② 现在做（可选开关）③ 将来做 | **③ 将来做**（裁定②-3：C 只作**预留**）。`V89` 建列（**零行为变化**），开关与交互**另单** |
+| **A3** | **C 模式（开工选扫）是否要做、何时做** | ① 不做 ② 现在做（可选开关）③ 将来做 | **③ 将来做**（裁定②-3：C 只作**预留**）。`V92`（**已落码**）建列（**零行为变化**），开关与交互**另单**〔原写 `V89` ⇒ **口径订正**见 §11.1〕 |
 | **A4** | **数量上限的「合理损耗」** | ① 0 容差（现状）② 允许配置损耗率 | **②**（真值源 `:56` 逐字写了「+合理损耗」，现状是 0 ⇒ 与真值源有差）；但**不得**静默 clamp |
 | **A5** | **发货 / 点交是否按套** | ① 按单（现状）② 按套 | 需业务：工程单「22 套分 3 车发」是真实场景；本设计**只保证套号可被引用** |
 | **A6** | **首工序触发的是「加工单」还是「订单」进生产中**；`generated` 能否直达 `in_processing` | 见 §7.3 | 按 #4117 同族落**加工单** `in_processing`；`generated` 直达需裁定 |
 | **A7** | **一樘窗 = 一套 与 #4373「一个窗帘商品 = 1 套」冲突** | 见 §10 C4 | **以本单（#4687）为准**（用户 2026-09-20 裁定「一樘窗 = 一套」）；~~**需要一份显式改判**（否则 #4373 的验收判据仍按旧口径）~~ ⇒ ✅ **已交付：issue #4693** —— 改判落在 `docs/design/position-instance-routing-model.md` **§2.1.1**（就地改判 + 依据三样齐全 + 历史留档 + 可执行断言） |
 | **A8** | **旧码是否设强制失效日** | ① 不设（自然退场）② 设截止日 | **①**：强制失效会打断在产单；撤销端点（既有）已提供「立即作废」的手动出路 |
-| **A9** | **`processing_operation_claims`（认领事件表）现在建不建** | ① 不建（C 模式另立迁移）② `V89` 一起建 | **①**（YAGNI：A 模式零消费者；「最少代码」阶梯） |
+| **A9** | **`processing_operation_claims`（认领事件表）现在建不建** | ① 不建（C 模式另立迁移）② `V92` 一起建〔原写 `V89`〕 | **①**（YAGNI：A 模式零消费者；「最少代码」阶梯）⇒ ✅ **已按 ① 落地**：`V92` **未建**该表 |
 
 ---
 
@@ -725,15 +747,27 @@ git grep -niE "标准工时|standard_hours|std_hours" origin/main
 
 ```bash
 git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/migration/ \
-  | grep -o 'V[0-9]*' | sort -t V -k2 -n | tail -1     # → V88
-git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/migration/ | grep -c 'V89'   # → 0
+  | grep -o 'V[0-9]*' | sort -t V -k2 -n | tail -1     # → 迁移头号（**现取**，本文不写死）
+git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/migration/ | grep -E 'V89|V90|V92'
 ```
 
-⇒ **本次迁移 = `V89__add_processing_order_sets_and_scan_loop.sql`**（新文件）。
-⚠️ **已发布迁移不可改**（F17 实测：`migration_fingerprints.json` 覆盖 86 条，含 `V88`；改旧迁移 = 指纹红 +
-只对全新库生效 ⇒ 存量环境「CI 绿、功能静默缺失」，issue #4235）。
+⇒ ~~**本次迁移 = `V89__add_processing_order_sets_and_scan_loop.sql`**（新文件）。~~
+✅ **本设计的数据层已落码**：**#4698 切片⓪**（PR #4722，merge `d295097bb`，2026-09-20）落
+`backend/admin-api/src/main/resources/db/migration/V92__add_processing_order_sets_and_scan_loop.sql`
+—— 与 §11.2 逐条一致（2 表 + 4 唯一键 + 实例 6 列含 `done_at`）。
+⚠️ **后续切片（§14 的 ①~⑤）的新迁移号一律「落码时现取、不写死」** —— 迁移头会随任何人的 PR 前进。
 
-### 11.2 `V89` 改什么（逐条 + 幂等要求）
+> 🔴 **口径订正（issue #4731，2026-09-20）：本文原写「本次迁移 = `V89`」，现改为「数据层已落 `V92`」。**
+> **① 当时基线**：`origin/main` 迁移头 = `V88`、`grep -c V89` = **0** ⇒ 顺推「本设计的迁移号 = `V89`」
+> （**原措辞保留在上一段删除线里**）。
+> **② 后来变了**：`V89` 被 `V89__backfill_fabric_seed_for_existing_tenants.sql` 占用、
+> `V90` 被 `V90__unpriced_is_not_zero.sql` 占用；本设计的数据层由 #4698 切片⓪ 落在 **`V92`**。
+> **③ 故结论改为**：本设计数据层 = **`V92`（已落码）**，后续切片**落码时现取**。
+> ⚠️ **仍然成立**：**已发布迁移不可改** —— F17 的指纹守卫（条数**现取，不写死**）；
+> 改旧迁移 = 指纹红 + 只对全新库生效 ⇒ 存量环境「CI 绿、功能静默缺失」，issue #4235。
+> 落码判据锚点 = `tests/unit_ci_workflows/test_set_code_storage_v92_migration.py`。
+
+### 11.2 `V92` 改了什么（**已落码**；逐条 + 幂等要求）
 
 | # | 动作 | 目标 | 幂等要求 |
 |---|---|---|---|
@@ -747,7 +781,13 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 | ⑧ | **不建** `processing_operation_claims`（§8 A9 建议 ①，YAGNI） | —— | C 模式另立迁移 |
 | ⑨ | **不碰** `processing_orders.qr_token` / `production_work_logs` | —— | **红线**（§2.6 / C6） |
 | ⑩ | **同步 bootstrap 终态** `docs/sql/schema.sql` | 新建库路径**不跑迁移链**（既有逐字警告：「只写迁移 = 新建库无该列」，同 #3270 形态） | 手工同步终态 |
-| ⑪ | 登记迁移指纹 | `tests/unit_ci_workflows/migration_fingerprints.json` | 追加 `V89__…` 的 `sha256` |
+| ⑪ | 登记迁移指纹 | `tests/unit_ci_workflows/migration_fingerprints.json` | 追加 `V92__…` 的 `sha256`〔原写 `V89__…` ⇒ **口径订正**见 §11.1〕 |
+
+> ✅ **落码核对（2026-09-20，#4698 切片⓪ / PR #4722）**：上表 ①~⑪ **逐条已落** ——
+> 其中 ⑧「**不建** `processing_operation_claims`」= 按 §8 A9 建议 ① 落地。
+> 机械判据（六件事逐条 + 注入式红证）= `tests/unit_ci_workflows/test_set_code_storage_v92_migration.py`。
+> ⚠️ **本表描述的是「数据层」**：⑨ 的两条红线（**不碰** `processing_orders.qr_token` /
+> `production_work_logs`）与「C 模式三列零消费者」都在该测试里**双向钉死**（该出现的出现、不该出现的零命中）。
 
 ### 11.3 回填的确定性与边界
 
@@ -787,7 +827,27 @@ for each tenant (FROM tenants WHERE deleted = 0):          -- 既有 V79 同款�
 
 ### 11.4 回滚
 
-**回滚 = 新迁移 `V90__rollback_processing_order_sets_and_scan_loop.sql`（不删 `V89`）** —— 已发布迁移不可改（§11.1）。
+**回滚 = 新迁移 `<落码时现取的自由号>__rollback_processing_order_sets_and_scan_loop.sql`（不删 `V92`）**
+—— 已发布迁移不可改（§11.1）。⚠️ **迁移号一律现取、不写死**（原写 `V90` ⇒ **该号已被占用**；**口径订正**见下）。
+
+```bash
+# 复算「下一个自由号」（**本文不写死任何号**）
+git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/migration/ \
+  | grep -oE 'V[0-9]+' | sort -t V -k2 -n -u | tail -1    # → 当前迁移头号（现读数：V94）
+git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/migration/ | grep -c 'V93'   # → 0 ⇒ 该号当前空闲
+```
+
+⚠️ **落码单已把该号钉成常量**（**符号锚点，不写死数字**）：
+`tests/unit_ci_workflows/test_set_code_storage_v92_migration.py` 的 `ROLLBACK_NAME`
+（**只登记、不落码** —— 落码即会被 `MigrationRunner` 当场执行 ⇒ 把本迁移立刻撤销；与 V88 / V89 同款处置）。
+⚠️ **取号前必须重跑上面的命令**：空号会被任何人的 PR 占掉 —— **本设计自己的 `V89` 就是这么丢的**。
+
+> 🔴 **口径订正（issue #4731，2026-09-20）：本文原写回滚 = `V90__rollback_…`，现改为「现取、不写死」。**
+> **① 当时基线**：迁移头 = `V88` ⇒ 顺推「本设计 = `V89`、回滚 = `V90`」（**原措辞保留在上一段**）。
+> **② 后来变了**：`V89` 被 `V89__backfill_fabric_seed_for_existing_tenants.sql` 占用、
+> `V90` 被 `V90__unpriced_is_not_zero.sql` 占用 —— **两个号都不再属于本设计**（本设计的迁移号最终是 `V92`）。
+> **③ 故结论改为**：回滚迁移号**落码时现取**（复算命令见上），**不写死**。
+> ⚠️ **事故现场后果（为什么这不是洁癖）**：写死一个**别人的**迁移号 ⇒ 出事时按文档**找不到回滚脚本**。
 
 | # | 回滚动作 | 说明 |
 |---|---|---|
@@ -845,7 +905,7 @@ issue #4687 的 10 条要求 ⇒ 本文落点：
 - ❌ **不改 `processing_orders.qr_token` 的既有语义**（撤销 = 置 NULL，逐字保留）。
 - ❌ **不改 `report` 端点**（含**不加** `@Transactional` —— §4.2）。
 - ❌ **不做「必须按序」的拦截**（**裁定②-2**；含**删除**既有越站闸门，§5.3 ② / C9）。
-- ❌ **不为 C 模式阻断 A 的落地**（**裁定②-3**；`V89` 只建列，零行为变化）。
+- ❌ **不为 C 模式阻断 A 的落地**（**裁定②-3**；`V92` 只建列，零行为变化〔原写 `V89` ⇒ **口径订正**见 §11.1〕）。
 - ❌ **不做「一码多部位」为默认形态**（**裁定②-1**；只保留旧码降级时的**选择**能力，§2.6）。
 - ❌ **不落「组合单」跨套视图**（C5，另立单）。
 - ❌ **不落按套发货单**（§8 A5 待裁定）。
@@ -861,7 +921,8 @@ issue #4687 的 10 条要求 ⇒ 本文落点：
 ## 14. 落地顺序（建议，供下一单切分）
 
 ```
-V89（数据层：两张新表 + 六列 + 回填；C 模式列一并建好但零消费者）
+V92（数据层：两张新表 + 六列 + 回填；C 模式列一并建好但零消费者）  ✅ **已落码**
+     （#4698 切片⓪ / PR #4722，merge `d295097bb`，2026-09-20；原写 `V89` ⇒ **口径订正**见 §11.1）
    │
    ├─① 扫码解析 + 推断算法（§3）          ← 只读面，可独立验收（D3/D4）
    ├─② 完成（§4.2 事务入口 + 防呆④补全 + 删越站闸门）← **主闭环**（D5/D6/D7/D9）
@@ -882,8 +943,8 @@ V89（数据层：两张新表 + 六列 + 回填；C 模式列一并建好但零
 cd <migao repo>
 git fetch origin main -q
 
-# F1 套号零命中（代码侧）
-git grep -n "set_no\|套号" origin/main
+# F1 套号零命中（代码侧）—— ⚠️ **基线读数**；**现读数已非零**（`V92` 已落码 ⇒ 见 §1.2 F1）
+git grep -n "set_no\|套号" origin/main -- 'backend/**' 'tests/**'
 # F2 码粒度 = 加工单级
 git grep -n "qr_token" origin/main -- '*.java' '*.sql'
 # F5/F6 工序实例无 started_at / worker_id / done_at，status 只有两态
@@ -896,7 +957,8 @@ git grep -n "isStartMarker" origin/main -- '*.java'
 git grep -n "craftLineId" origin/main -- '*.java'
 # F18 防呆④今天形式上是空的（只校验租户/软删/归属加工单）
 git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java | grep -n "doReport" -A 20
-# F16/F17 迁移头号与指纹覆盖
+# F16/F17 迁移头号与指纹覆盖 —— ⚠️ 两者都是「**现取**」读数：迁移头号与指纹条数
+#   都会随新增迁移前进 ⇒ 本文**不写死**（F17 的原写「86 条」只作基线留档）
 git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/migration/ | grep -o 'V[0-9]*' | sort -t V -k2 -n | tail -1
 git show origin/main:tests/unit_ci_workflows/migration_fingerprints.json | python3 -c "import json,sys; print(len(json.load(sys.stdin)['migrations']))"
 ```
