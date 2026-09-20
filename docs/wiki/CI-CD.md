@@ -285,3 +285,59 @@ Issue 创建（CONTRACT_JSON 含 business_truths + cases 引用）→ 自动生�
   （无确认时的行为与补通道前**逐字相同**）。
 - 判定逻辑在 `danger_scan.py` 的 `parse_delete_acks()` 纯函数里（**不在 YAML 字符串里**）——
   首版把判据写成脚本文本匹配，红证实测"不红"（空断言），故改挂到纯函数上。
+
+## 部署后「线上一致性对账」（issue #4858）
+
+> **本节为追加**（不改上面任何段落 —— `deploy/swas/deploy.sh` 正由 #4828 改动）。
+> 腿 = `.github/workflows/post-deploy-reconcile.yml`（**独立 workflow**，定时 `17 */6 * * *` + `workflow_dispatch`）
+> → `deploy/scripts/post-deploy-reconcile.sh`（判定）→ `deploy/swas/reconcile-read-remote.sh`（**只读**远端读取体）。
+> 守卫 = `tests/unit_ci_workflows/test_post_deploy_reconcile.py`（删任一条判据即红）。
+
+### 它治什么（三种「线上与 main 不一致」，两种此前**没有任何机制会发现**）
+
+| 形态 | 实测 | 加本腿之前 | 本腿的判据 |
+|---|---|---|---|
+| ① 静默回退：旧 run 被 flock 排队到新 run 之后执行 ⇒ 服务回退到旧 tag | 三服务全被回退；run success + 健康检查全 200 + 脚本自称成功 = **三重绿零告警** | #4854 的「不许往回走」闸门已拦住**发生**；**事后**仍无人核对线上是哪个 commit | 容器侧「在跑 tag 是该服务最近一次改动的**祖先**」⇒ 不一致 |
+| ② 静默跳过：某服务镜像拉取失败 ⇒ 远端 `⚠️ 跳过该服务`，整次部署仍报成功 | `sha-56c8c51` 那次跳过 ai-agent/admin-web（**那次合理**）；若某模块改了、镜像却没建 ⇒ 跳过 = **静默不交付** | ❌ 无 | 同上（祖先关系即「线上缺该服务最近一次改动」）+ 降级判据（镜像存在性 + 自上次成功部署以来有无改动） |
+| ③ 静态副本滞后：发布腿按**路径过滤**触发 ⇒ 改动不在该路径就不跑 | 线上 `/w/src/app.mjs` 一度是旧副本，缺计件幂等修复 | ❌ 无 | 线上 `https://app.migaozn.com/w/<rel>` 的 body 哈希 vs `origin/main:frontend/worker-h5/<rel>`（**排除 `tests/**`**，与发布脚本口径一致） |
+
+### 与 `deploy-reconcile.yml` 的**分工**（两条腿判据不同、互不替代）
+
+- `deploy-reconcile.yml`：看 **main HEAD 的镜像在不在** + 「自上次成功部署起该服务有无改动」⇒ **补部署**（会写）。
+- 本腿：看**线上实际在跑什么**（容器真身 tag + 线上静态副本逐文件哈希）⇒ **只出声，不写**（不 dispatch 任何部署）。
+
+### 怎么读（每个判定一行依据 + 一行总结）
+
+```
+· [容器/admin-api] 一致：线上在跑 `sha-122cbac` 是该服务最近一次改动 `backend/admin-api` 的提交
+  `f362d3f9c` 的**后代**（依据：提交图 `merge-base --is-ancestor f362d3f9c 122cbac` = 真）
+· [静态/src/app.mjs] 一致：`https://app.migaozn.com/w/src/app.mjs` HTTP=200 · 线上哈希 `830976ae…` == `origin/main:…`
+**结论**：一致=9 · 不一致=0 · 判不出=0
+```
+
+⚠️ **判据形态为什么是「提交图祖先关系」而不是「tag 字符串相等」**：部署 tag 取 `sha-${GITHUB_SHA::7}`
+= **main HEAD**（各 deploy workflow 的 `Resolve image tag`），而「该有的」是**最后一个改该服务路径的提交**
+⇒ HEAD 是 docs/ci 提交时两者**天然不等**（实测：admin-api 在跑 `sha-122cbac`，该服务最近一次改动是
+`f362d3f9c`）。按相等判会把**常态**误报成不一致 ⇒ 判据失去判别力。
+
+### 退出码 / fail-open 的代价（**如实登记**）
+
+| 结果 | 行为 |
+|---|---|
+| 无确认的不一致（含**全部判不出**） | `exit 0`（fail-open，不阻塞）+ 判不出逐条 `::warning::` |
+| 有**确认的**不一致（真的少交付了） | `exit 1`（run 红）+ `::error::` |
+| 对账腿自身跑不起来（缺文件/无真值源/通道失败） | 判不出 + `::warning::`；**0 判定**时额外 `::warning::`（「没跑」不许长得像「通过」） |
+
+**代价（已知并接受）**：判不出走 fail-open ⇒ 只读通道/公网整体不可用时，本腿**不会**阻塞任何东西，
+只会出声；「判不出」与「一致」在报告里**分开计数**，但**没有任何自动机制**会在长期判不出时升级为红。
+
+### 上真机后怎么验证（**可执行判据**）
+
+```bash
+# ① 手动对账（只读，秒级）：期望结尾 `一致=N · 不一致=0 · 判不出=0`
+gh workflow run post-deploy-reconcile.yml --ref main && gh run watch
+# ② 本地同一条码路（只读；需本机 aliyun CLI 已配置）
+bash deploy/scripts/post-deploy-reconcile.sh
+# ③ 红证：把线上 `/w/` 的某个文件改旧（或等发布腿真的没跑）⇒ 期望 exit 1 + `[静态/…] **不一致**`
+#    （不要用「改 deploy.sh」演练 —— 那会真的动线上）
+```

@@ -1,0 +1,95 @@
+name: Post-Deploy Reconcile (线上一致性对账)
+
+# ── 为什么需要这条腿（issue #4858）──────────────────────────────────────────────
+# 本会话暴露的「线上与 main 不一致」有三种形态，其中**两种至今没有任何机制会出声**：
+#   ① 静默回退：为旧 commit 创建的 run 被 flock 排队到新 run 之后执行 ⇒ 服务被回退到旧 tag。
+#      **#4854 的「不许往回走」闸门已拦住「发生」**，但**事后**仍无人核对线上到底是哪个 commit。
+#   ② 静默跳过：某服务镜像拉取失败 ⇒ 远端 `⚠️ 跳过该服务`，而整次部署**仍报成功**
+#      （实测 `sha-56c8c51` 那次跳过 ai-agent / admin-web —— 那次**合理**；但**若某模块改了、
+#      镜像却没建**，跳过就是**静默不交付**）。**此前没有任何机制会发现**。
+#   ③ 静态副本滞后：发布腿按**路径过滤**触发 ⇒ 改动不在该路径里就不跑
+#      （实测线上 `/w/src/app.mjs` 一度是旧副本，缺计件幂等修复）。**此前没有任何机制会发现**。
+#
+# 与 `deploy-reconcile.yml` 的**分工**（两条腿判据不同、互不替代）：
+#   · `deploy-reconcile.yml`：看 **main HEAD 的镜像在不在** + 「自上次成功部署起该服务有无改动」
+#     ⇒ **补部署**（会写：dispatch 部署）。它**从不看运行中的容器实际是哪个 tag**。
+#   · 本腿：看**线上实际在跑什么**（容器真身 tag + 线上静态副本逐文件哈希）⇒ **只出声，不写**。
+#     本腿**不 dispatch 任何部署** ⇒ 不改 `deploy-reconcile.yml` 的断路器与漂移判据一字，
+#     也不碰 `deploy/swas/deploy.sh`（另一单 #4828 正在改它）。
+#
+# ── 为什么不加 `pull_request` 触发 ──
+# 本腿读的是**线上真身**（SWAS 容器 + 公网静态根），与某个 PR 的 diff 无因果关系
+# （同 `deploy-reconcile.yml` 对 PR 事件的处理口径）。触发面 = 定时 + 手动。
+# 也因此**没有 required check 悬空**的问题（workflow 级 `paths` 是 required check 卡
+# "Waiting" 的已知形态，见 docs/wiki/CI-CD.md 的「变更门控」说明）。
+on:
+  # 每 6 小时（:17 —— 避开 deploy-reconcile 的 */20 与各 deploy 腿的 */20，错开排队）
+  schedule:
+    - cron: '17 */6 * * *'
+  # 人工对账 / 排障入口（合并后 main 上的版本才可 dispatch）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read   # 降级判据要 `gh run list` 查各 deploy workflow 的成功部署记录（只读）
+
+# 与 deploy-* 同口径：对账不取消进行中的对账（两个并发对账会让「谁读到的是最终态」不可判定）
+concurrency:
+  group: post-deploy-reconcile
+  cancel-in-progress: false
+
+env:
+  # 与 deploy-frontend.yml / deploy-admin-api.yml 同一台 SWAS 实例（测试环境）—— **不引新 secret**
+  SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
+  SWAS_REGION: cn-hangzhou
+  ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
+  ACR_NAMESPACE: ai-customer-service
+
+jobs:
+  reconcile:
+    name: 线上一致性对账（容器实际 tag / 静态副本）
+    runs-on: ubuntu-latest
+    # 硬超时兜底（同 #4767 ① 的口径）：脚本被卡死时由 GitHub 终止 run ⇒ run 进终态。
+    # 正常耗时 = 1 次只读云调用（秒级）+ 6 个静态文件 HTTP 读（秒级）⇒ 20min 远高于实测。
+    timeout-minutes: 20
+    steps:
+      # ⚠️ `fetch-depth: 0` **必须**：容器侧的判据是「在跑 tag vs 该服务最近一次改动其代码路径的
+      # main 提交」的**提交图祖先关系**（`git merge-base --is-ancestor`）⇒ 浅克隆里对象不可达
+      # ⇒ 判据退化成 compare API 兜底（匿名 60 次/小时/IP，会限流 ⇒ 判不出）。
+      # 代价：拉全历史（本仓 pack ≈226MiB，实测约 +30s）。**不要**把它改回 1。
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Install Aliyun CLI
+        run: |
+          curl -fsSL --retry 3 --retry-delay 3 https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o /tmp/aliyun.tgz
+          file /tmp/aliyun.tgz | grep -q "gzip compressed data"
+          tar xzf /tmp/aliyun.tgz -C /tmp
+          sudo mv /tmp/aliyun /usr/local/bin/
+          aliyun plugin install --names aliyun-cli-swas-open >/dev/null 2>&1 || true
+          aliyun version
+
+      # ACR 登录只为「该提交的镜像存不存在」这条**降级判据**的只读查询（`docker manifest inspect`）；
+      # 复用既有 secret，**不引新 secret**。登录失败**不阻断对账**（`|| true`）——
+      # 脚本把「查不到镜像存在性」判成判不出 + `::warning::`（**不**当「不存在」用）。
+      # ⚠️ 刻意**不用** `continue-on-error:`：那是「这一步失败了也当成功」的门禁削弱形态，
+      #    本腿的判据必须由脚本自己显式区分「判不出 / 不一致」。
+      - name: Docker login ACR
+        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin || true
+
+      # ⚠️ 本步**不加 `continue-on-error`**：确认的不一致必须让 run **红**（那是「真的少交付了」）；
+      #    判不出走脚本内的 fail-open（exit 0 + `::warning::`）。两种形态在脚本里显式分开。
+      # 判据对象 = `deploy/scripts/post-deploy-reconcile.sh`（只读：远端只跑查询类命令，
+      # 见 `deploy/swas/reconcile-read-remote.sh` 的只读红线）。
+      # 守卫：`tests/unit_ci_workflows/test_post_deploy_reconcile.py`（删任一条判据即红）。
+      - name: Reconcile (容器实际 tag + 静态副本逐文件哈希)
+        env:
+          AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          # 降级判据要查各 deploy workflow 的成功部署记录（`gh run list` 在 Actions 环境需显式 token）
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          aliyun configure set --access-key-id "$AK" --access-key-secret "$SK" --region "${{ env.SWAS_REGION }}" >/dev/null
+          bash deploy/scripts/post-deploy-reconcile.sh
