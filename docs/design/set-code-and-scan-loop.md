@@ -999,7 +999,7 @@ git show origin/main:tests/unit_ci_workflows/migration_fingerprints.json | pytho
 | `NO_PENDING_OPERATION` | §3.3 / §5.3 ⑤ | `ProductionScanCompleteService` 抛 422 | ✅ 一致 |
 | `REPORT_QTY_EXCEEDS_PLANNED` | §5.3 ③ | `ProductionService.assertWithinPlannedQty` 抛 422 | ✅ 一致 |
 | `OPERATION_SEQUENCE_VIOLATION` | §5.3 ② / §10 C9 / §12 D6 | **代码已删除**（#4694 删 `assertPredecessorsDone`）；仅剩测试注释里的历史引用 | ✅ **一致**（本文已按 #4694 改判为「越站 ⇒ 放行」） |
-| `CODE_POSITION_MISMATCH` | ~~§5.3 ④~~ | **代码 0 处**（全仓仅本文 1 处） | 🔴 **设计写了、代码从未实现** ⇒ **本单已统一到 `OPERATION_NOT_IN_SCAN_TARGET`** |
+| `CODE_POSITION_MISMATCH` | ~~§5.3 ④~~ | **代码 0 处**（本单改动**前**实测：`origin/main` 全仓**仅本文 1 处**，代码 0 处；改动**后**本文仅剩**留档 / 曾用名注**里的引用） | 🔴 **设计写了、代码从未实现** ⇒ **本单已统一到 `OPERATION_NOT_IN_SCAN_TARGET`** |
 
 ### 16.2 反向差异（**代码已落码、本文未登记** —— 如实登记，本单不改）
 
