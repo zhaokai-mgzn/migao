@@ -186,7 +186,15 @@ describe('加工单生产明细页', () => {
     await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('production-print-button'))
-    expect(printSpy).toHaveBeenCalledTimes(1)
+
+    // issue #4717：断言的对象本身就必须是**被等待的可观察条件**（#4414 口径 ——
+    // 「把同步断言并进同一个 waitFor，等的是『调用发生』这件事本身」）。
+    //
+    // 改前形态 = `await waitFor(A)` 之后紧跟 `expect(B)` 的**同步**断言 ⇒ A 与 B 由不同
+    // commit 产出时就是竞态。本用例的 A（`task-card-qr`）来自 `TaskCardPrint` 的
+    // **被动副作用**（portal + `if (!mounted) return null`，见 components/production/TaskCardPrint.tsx）
+    // ⇒ 它比页头晚一次 commit；全量并行（负载高）下那次刷新被拖后 ⇒ 窗口变宽 ⇒ 偶发红。
+    await waitFor(() => expect(printSpy).toHaveBeenCalledTimes(1))
 
     printSpy.mockRestore()
   })
@@ -199,7 +207,10 @@ describe('加工单生产明细页', () => {
     await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
     await userEvent.click(screen.getByTestId('production-print-button'))
 
-    // 先调计数端点（不 await 结果），再打印
+    // 先调计数端点（不 await 结果），再打印。
+    // 这里的**同步**断言是**因果成立**的（#4717 同族自查）：`handlePrint` 里
+    // `recordPrint(...)` 与 `window.print()` 是**同一段同步代码**（前者不 await）⇒
+    // 「recordPrint 已被调用」一旦成立，`window.print()` 必已发生，不存在跨 commit 窗口。
     await waitFor(() => expect(mockRecordPrint).toHaveBeenCalledWith('order-uuid-1'))
     expect(printSpy).toHaveBeenCalledTimes(1)
 
