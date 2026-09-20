@@ -500,7 +500,7 @@ complete(set_no, order_item_id, [operation_id], [qty], worker, clientRequestId):
 | # | 真值源原文 | 断言形态（可执行） | 现状 | 本设计处置 |
 |---|---|---|---|---|
 | ① | 「**幂等**（重复扫提示已报）」 | `X-Client-Request-Id` 同键 ⇒ 不执行 + 回放首次结果 + `replayed=true`（F15 逐字复用）。**扫描**是只读 ⇒ 天然幂等 | ✅ 已落码（`report`） | **新端点复用同一机制**（不新造） |
-| ② | 「**越站提示**（非本工序）」 | ⚠️ **改判**：**不再拦截**，改为**推断时自然避开**（默认给「下一道待做」）+ 改道时**只提示不阻断** | ✅ 已落码为 **422 拒绝**（`assertPredecessorsDone`） | 🔴 **行为变化（放宽）**：裁定②-2 逐字「不做「必须按序」的拦截」。**落码时须同时删除/绕过该闸门**并**登记**为放宽（§10 C9） |
+| ② | 「**越站提示**（非本工序）」 | ⚠️ **改判**：**不再拦截**，改为**推断时自然避开**（默认给「下一道待做」）+ 改道时**只提示不阻断** | ✅ **闸门已删除**（issue #4694，2026-09-20）：原「422 拒绝」（`assertPredecessorsDone`）整条删除 ⇒ 顺序**不拦**（跳站按实际工序正常记账） | ✅ **已落码**（#4694）：删除该闸门 + 既有 422 断言**改钉**为「放行」+ 登记为放宽（§10 C9）。**本设计只剩增量**：推断时自然避开 + 只提示不阻断 |
 | ③ | 「**数量上限校验**（≤应做数量+合理损耗）」 | `done_qty + 本次合格数 <= qty`，否则 422 `REPORT_QTY_EXCEEDS_PLANNED`（**拒绝不 clamp**） | ✅ 已落码（`assertWithinPlannedQty`） | 无（**「合理损耗」当前实现为 0 容差** ⇒ 待裁定 §8 A4） |
 | ④ | 「**非本部位码提示**」 | **断言**：`op.order_item_id == token.order_item_id`（**码给的身份 vs 工序实例的身份**），不等 ⇒ 422 `CODE_POSITION_MISMATCH` + 指名 | ⚠️ **F18：今天形式上是空的**（码无部位 ⇒ 只能校验「属于本加工单」） | ✅ **本设计的核心增量**：码带部位 ⇒ 这条防呆**才真正成立** |
 | **⑤（本设计新增）** | **裁定②-2 的硬约束** | **断言**：写 `production_work_logs` 前 `operation_id` **唯一确定**；否则 422 `OPERATION_AMBIGUOUS` / `NO_PENDING_OPERATION` 且**不记账**（红证见 §3.3） | ❌ **今天不存在**（端点在 URL 里强制给了 `operationId`，**没有「不确定」这个态**） | ✅ 新增（**因为 A 模式把「选工序」交给了系统**） |
@@ -709,7 +709,7 @@ git grep -niE "标准工时|standard_hours|std_hours" origin/main
 | **C6** | **`worker-scan-terminal.md` §7 红线「不改 `production_work_logs`」** | 同上 §7 | **本设计遵守**（按套下钻走实例快照，§5.4） |
 | **C7** | **V69 的「存量行留空」策略**被本设计**第二次复用**（`set_id` / `set_no` 可空） | `backend/admin-api/src/main/resources/db/migration/V69__add_position_identity_to_position_operations.sql` | **同款处置**（留空 + 读面兜底）⇒ 一致性保持；**不**引入第二种存量兼容范式 |
 | **C8** | **`report` 端点刻意不加 `@Transactional`**，而「完成」要落三处 | `backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java` 的 `report` javadoc | **不改 `report`**；**新增**事务化的扫码完成入口，幂等占位在外层（§4.2 方案 A） |
-| **C9** | 🔴 **越站防呆今天会 422 拒绝**（`assertPredecessorsDone`），与**裁定②-2「不拦生产顺序」直接冲突** | 同上 | **必须删除 / 绕过该闸门**（§5.3 ②）；**登记为放宽型行为变化** + 既有断言（422 `OPERATION_SEQUENCE_VIOLATION`）**需同步改判** |
+| **C9** | 🔴 **越站防呆原为 422 拒绝**（`assertPredecessorsDone`），与**裁定②-2「不拦生产顺序」直接冲突** | 同上 | ✅ **已落码**（issue #4694，2026-09-20）：闸门**已删除**（`assertPredecessorsDone` 整条删除，不留死代码），既有 422 `OPERATION_SEQUENCE_VIOLATION` 断言**已改钉**为「越站 ⇒ 放行」，并登记为**放宽型行为变化**（§5.3 ②）。本设计继承该口径，**不得**再加回顺序闸门 |
 | **C10** | **防呆④「非本部位码」今天形式上是空的**（F18：码无部位 ⇒ 只能校验「属于本加工单」） | 同上 `doReport` 的三重校验 | **本设计补全**（码带部位 ⇒ 相等断言）；登记为**收紧型行为变化**（§5.3 ④） |
 | **C11** | **本设计**新增**一条防呆（⑤ 工序必须确定）**，真值源 `:56` 只写了四条 | 真值源 `docs/curtain-production-rules.md` `:56` | **显式登记为「真值源四条 + 裁定②-2 的硬约束」**，不假装它是真值源原文 |
 

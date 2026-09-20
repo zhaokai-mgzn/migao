@@ -1241,7 +1241,7 @@ class ProcessingOrderServiceTest {
         assertThat(instances).extracting(ProcessingPositionOperation::getOperationName)
                 .containsExactly("精裁-布", "布三边", "拼1次-布", "韩褶-布", "上车布-布", "熨烫-布",
                         "定型-布", "复烫-布", "布帘车被", "外帘打卷", "外帘装袋", "外帘发货");
-        // seq 必须重排成 1..N（报工越站防呆取「seq 最大的前道」⇒ 序号重复/断档 = 越站校验错）
+        // seq 必须重排成 1..N（#4694 后 seq 只作页面排序 / 「下一道待做」派生依据；报工顺序闸门已删除）
         assertThat(instances).extracting(ProcessingPositionOperation::getSeq)
                 .containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
         // 条件工序的分组/单位/单价**逐字取工序库**（不猜、不补默认值）
