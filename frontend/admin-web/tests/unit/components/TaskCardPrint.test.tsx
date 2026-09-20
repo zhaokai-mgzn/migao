@@ -117,12 +117,25 @@ describe('TaskCardPrint（洗水码 60mm×30mm，issue #4946）', () => {
       expect(label).toHaveTextContent(DELIVERY)
     })
 
-    // 套号（set_no）+「第 N 套 / 共 M 套」由**去重 set_no** 派生（布帘/纱帘同套、帘头第 2 套）
-    expect(screen.getByTestId('task-card-label-set-no-0')).toHaveTextContent(`${PROCESSING_ORDER_NO}-001`)
+    // 套序走**与进度表同一份**实现（issue #4949）：`第 N 套 / 共 M 套`（布帘/纱帘同套、帘头第 2 套）
     expect(screen.getByTestId('task-card-label-set-no-0')).toHaveTextContent('第 1 套 / 共 2 套')
     expect(screen.getByTestId('task-card-label-set-no-1')).toHaveTextContent('第 1 套 / 共 2 套')
-    expect(screen.getByTestId('task-card-label-set-no-2')).toHaveTextContent(`${PROCESSING_ORDER_NO}-002`)
     expect(screen.getByTestId('task-card-label-set-no-2')).toHaveTextContent('第 2 套 / 共 2 套')
+    // 套序**不给完整套号**（那是行①放不下的长标识）—— 防「又把它塞回行①」的复发
+    expect(screen.getByTestId('task-card-label-set-no-0')).not.toHaveTextContent(`${PROCESSING_ORDER_NO}-001`)
+
+    // 完整套号仍**在纸面上**（issue #4949：从行①搬进左列，纸面标识一个不少）
+    expect(screen.getByTestId('task-card-label-set-code-0')).toHaveTextContent(`${PROCESSING_ORDER_NO}-001`)
+    expect(screen.getByTestId('task-card-label-set-code-2')).toHaveTextContent(`${PROCESSING_ORDER_NO}-002`)
+
+    // 🔴 纸面高度预算守卫（issue #4949，实测）：行① **必须单行** —— 折行会吃掉 2.96mm，
+    // 把纸面底部的**人可读短码**挤出纸外（`overflow:hidden` 静默裁掉 1.25mm），
+    // 而短码是扫码读不出时的**手输降级入口**（设计 §1.4「不是可选项」）。
+    // jsdom 不做布局 ⇒ 这里钉**机制**（去掉任一 class ⇒ 本断言必红）：
+    const label0 = screen.getByTestId('task-card-label-0')
+    expect(within(label0).getByTestId('task-card-no').className).toContain('shrink-0')
+    expect(within(label0).getByTestId('task-card-no').className).toContain('whitespace-nowrap')
+    expect(within(label0).getByTestId('task-card-label-set-no-0').className).toContain('whitespace-nowrap')
 
     // 每张自己的部位/商品名（这一张是给哪一件的纸面凭证）
     expect(screen.getByTestId('task-card-label-position-0')).toHaveTextContent('布艺遮光帘A（米白）')

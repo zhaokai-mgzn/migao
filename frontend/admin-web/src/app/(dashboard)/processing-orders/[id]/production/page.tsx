@@ -730,7 +730,15 @@ export default function ProcessingOrderProductionPage() {
               </p>
               <p className="text-neutral-500">
                 撤销后<span className="font-medium text-neutral-900">已打印的二维码立即失效</span>
-                （工人扫旧码报工将失败），需要继续报工时请重新生成二维码。
+                （工人扫旧码报工将失败）—— 包括每张洗水码上的**部位码**。
+              </p>
+              {/* issue #4949：这句话此前承诺「需要继续报工时请重新生成二维码」，而页面上**没有**该入口
+                  （「补生成工序」只在 0 部位时渲染；真正的「重新发码」是 #4287 的独立设计任务 ——
+                  直接复用 instantiate 在工艺签名变化时会软删实例并清零报工 ⇒ 连带清掉计件工资）
+                  ⇒ 去掉假承诺，改为如实说明，让商家在撤销**之前**就知道代价。 */}
+              <p className="text-neutral-500" data-testid="production-revoke-reissue-gap">
+                撤销后本页<span className="font-medium text-neutral-900">无法重新发码</span>
+                （当前版本没有该入口），请确认纸面已作废再撤销。
               </p>
               {revokeError && (
                 <p
