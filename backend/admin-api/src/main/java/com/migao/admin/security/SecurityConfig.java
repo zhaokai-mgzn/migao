@@ -21,7 +21,6 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
@@ -118,10 +117,12 @@ public class SecurityConfig {
      * 配置安全过滤链
      *
      * @param http HttpSecurity
+     * @param passwordEncoder 密码编码器（BCrypt）—— bean 见 {@code PasswordEncoderConfig}（issue #4770）
      * @return SecurityFilterChain
      */
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, PasswordEncoder passwordEncoder)
+            throws Exception {
         http
                 // 安全头
                 .headers(headers -> headers
@@ -195,7 +196,7 @@ public class SecurityConfig {
                 .addFilterAfter(workerSessionFilter, JwtAuthenticationFilter.class)
 
                 // 配置认证提供者
-                .authenticationProvider(authenticationProvider())
+                .authenticationProvider(authenticationProvider(passwordEncoder))
 
                 // 配置异常处理：未认证请求返回 401 而非 403
                 .exceptionHandling(ex -> ex
@@ -272,13 +273,22 @@ public class SecurityConfig {
     /**
      * 配置认证提供者
      *
+     * <p>🔴 <b>issue #4770（P0 启动期环）</b>：{@code PasswordEncoder} 由**方法参数**注入 ——
+     * 它的 {@code @Bean} 已挪到 {@link com.migao.admin.config.PasswordEncoderConfig}。
+     * 原先声明在本类里，而本类在**构造期**依赖 {@code WorkerSessionFilter}
+     * → {@code WorkerSessionService} → {@code PasswordEncoder} ⇒ 成环：
+     * {@code securityConfig → workerSessionFilter → workerSessionService → securityConfig}
+     * ⇒ admin-api **每次启动都崩**（{@code Requested bean is currently in creation}）⇒ nginx 502。
+     * <b>不要把它挪回本类</b>（判据见 {@code SecurityConfigTest} 的上下文加载用例）。</p>
+     *
+     * @param passwordEncoder 密码编码器（BCrypt；bean 见 {@code PasswordEncoderConfig}）
      * @return AuthenticationProvider
      */
     @Bean
-    public AuthenticationProvider authenticationProvider() {
+    public AuthenticationProvider authenticationProvider(PasswordEncoder passwordEncoder) {
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
         authProvider.setUserDetailsService(userDetailsService);
-        authProvider.setPasswordEncoder(passwordEncoder());
+        authProvider.setPasswordEncoder(passwordEncoder);
         return authProvider;
     }
 
@@ -291,16 +301,6 @@ public class SecurityConfig {
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
-    }
-
-    /**
-     * 配置密码编码器（BCrypt）
-     *
-     * @return PasswordEncoder
-     */
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
     }
 
     /**
