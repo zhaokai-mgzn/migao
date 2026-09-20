@@ -981,8 +981,9 @@ public class ProductionService {
         }
 
         Map<String, ProcessingPositionOperation> instancesById = activeOperationsById(tenantId);
-        PieceworkTotals totals = aggregate(list(wrapper), instancesById::get,
-                windowGroupKeyByItemId(instancesById.values(), tenantId));
+        List<ProductionWorkLog> logs = list(wrapper);
+        PieceworkTotals totals = aggregate(logs, instancesById::get,
+                windowGroupKeyByItemId(logs, instancesById, tenantId));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("period", month.toString());
@@ -1163,15 +1164,18 @@ public class ProductionService {
     }
 
     /**
-     * 樘窗组键（按已加载的工序实例所指的明细行）—— 期间报表路径用。
+     * 樘窗组键（期间报表路径）：只查**本期报工真正引用到的**明细行。
      *
-     * <p>只查**被引用到的**那些明细行（`id IN (…)`），不整表扫；一条都没引用到 ⇒ 不查库。</p>
+     * <p>⚠️ **范围必须由本期报工界定**，不能拿「本租户全部活跃实例」去收集（那会把
+     * 别的月份的明细行也拉进 `IN (…)`，大租户上是一条无界查询）。一条都没引用到 ⇒ 不查库。</p>
      */
     private Map<String, String> windowGroupKeyByItemId(
-            java.util.Collection<ProcessingPositionOperation> operations, Long tenantId) {
+            List<ProductionWorkLog> logs,
+            Map<String, ProcessingPositionOperation> instancesById, Long tenantId) {
         Set<String> itemIds = new LinkedHashSet<>();
-        for (ProcessingPositionOperation op : operations) {
-            if (StringUtils.hasText(op.getOrderItemId())) {
+        for (ProductionWorkLog log : logs) {
+            ProcessingPositionOperation op = instancesById.get(log.getOperationId());
+            if (op != null && StringUtils.hasText(op.getOrderItemId())) {
                 itemIds.add(op.getOrderItemId());
             }
         }
