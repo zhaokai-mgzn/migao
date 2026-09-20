@@ -3396,4 +3396,123 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(screen.queryByTestId('seed-templates')).toBeNull()
   })
 
+
+  it('B6-① **行为变更（如实登记）**：零价目行的工序**不再出现在这张表**；孤儿提示必须在场且报数（不许静默消失）', async () => {
+    // 表的行**只来自价目读面**（用户裁定删掉【打包发货】那道「行不依赖矩阵格」的兜底区块）。
+    // ⚠️ 这是**行为变更**：一格价目行都没有的工序**没有行、也没有定价入口** —— 如实登记，不粉饰。
+    // 判据的承重点是「**不许静默**」：孤儿提示必须在场并报出数量（改前该提示只在缺失态被断言过）。
+    const withoutCells = LAYER_CELLS.filter((c) => c.operation !== '外帘装袋')
+    mockGetOperationPositions.setDefault(withoutCells)
+    await renderOperations()
+
+    expect(screen.queryByTestId('matrix-row-外帘装袋')).toBeNull()
+    expect(screen.queryByTestId('operation-price-外帘装袋')).toBeNull()
+    const hint = screen.getByTestId('matrix-orphan-hint')
+    expect(hint).toHaveTextContent(/有 \d+ 道工序还没有价目行/)
+    expect(hint).toHaveTextContent('下表看不到')
+    // 其余工序**照旧**（撤掉一道不得让别行消失）
+    for (const op of ['打包', '外帘打卷', '外帘发货', '精裁']) {
+      expect(screen.getByTestId(`matrix-row-${op}`)).toBeInTheDocument()
+    }
+  })
+
+  it('反向护栏 B7-①：**未定价 ≠ ¥0.00**（改前回落工序库行价会把「未定价」变成真 0 元 ⇒ 工人白干）', async () => {
+    await renderOperations()
+    const cell = screen.getByTestId('operation-price-外帘装袋')
+
+    expect(cell).toHaveAttribute('data-state', 'unpriced')
+    expect(cell).toHaveTextContent('未定价')
+    expect(cell).not.toHaveTextContent('¥0.00')
+    expect(cell).not.toHaveTextContent('¥')
+  })
+
+  it('反向护栏 B7-③：一格「做」都没有 ⇒ 如实显示**不做**（既不是「未定价」、也不是 ¥0）', async () => {
+    await renderOperations()
+    const cell = screen.getByTestId('operation-price-外帘打卷')
+
+    // 收敛后该工序的幸存行 = 布帘格（`applicable=false`）⇒ 三态里的「不做」
+    expect(cell).toHaveAttribute('data-state', 'na')
+    expect(cell).toHaveTextContent('不做')
+    expect(cell).not.toHaveTextContent('未定价')
+    expect(cell).not.toHaveTextContent('¥')
+  })
+
+  it('B6-② `管理▸` **在行上**（不是格上）；抽屉层「停用 / 删除」在 `manageVariants` 循环体**外**', async () => {
+    await renderOperations()
+
+    // 行上的入口（不是「格上的入口」）
+    await userEvent.click(screen.getByTestId('matrix-manage-外帘装袋'))
+    await waitFor(() => expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument())
+
+    // 抽屉空态（`manageVariants.length === 0`）⇒ 停用 / 删除**照样在**（**红证**：改前只有「关闭」）
+    const disableBtn = screen.getByTestId('operations-manage-disable')
+    const deleteBtn = screen.getByTestId('operations-manage-delete')
+    expect(disableBtn).toBeInTheDocument()
+    expect(deleteBtn).toBeInTheDocument()
+    expect(screen.getByTestId('operations-manage-close')).toBeInTheDocument()
+    // 空态**给出路**（不是一句死路文案）
+    expect(screen.getByTestId('operations-manage-drawer')).not.toHaveTextContent('请核对各部位的适用性配置')
+
+    // ⚠️ 「**在**」≠「**可点**」（issue #4721 P2-2）：两处按钮都带
+    // `disabled={variantBusy || !manageOpEntry}` ⇒ 工序库读面查不到该逻辑名时它们**恒禁用**，
+    // 而改前只断言 `toBeInTheDocument()` ⇒ 按钮变成装饰也全绿。判据 = **disabled 为假 + 点击真的发请求**。
+    // 红证：把 `disabled` 改回 `true`（或让 `manageOpEntry` 为 null）⇒ 下面必红（实测见 PR 描述）。
+    expect(disableBtn).not.toBeDisabled()
+    expect(deleteBtn).not.toBeDisabled()
+    await userEvent.click(disableBtn)
+    await waitFor(() =>
+      expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-04', { status: 'inactive' }),
+    )
+    // 删除：二次确认弹框里点确认 ⇒ **真的**走删除。
+    // 🔴 #4913 合并后本行**有价目行**（改前该夹具把它摘空了）⇒ 走的是 #4692 的
+    // **`detach-and-delete`** 路径（`{detachPositions: true}`，先摘格再软删）——
+    // 这是**更强**的判据：它证明「有格」这条分支真的接到了按钮上（改前那条断言的是零格的普通软删分支）。
+    await userEvent.click(deleteBtn)
+    await waitFor(() => expect(screen.getByTestId('operations-manage-delete-modal')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('operations-manage-delete-confirm'))
+    await waitFor(() =>
+      expect(mockDeleteOperation).toHaveBeenCalledWith('op-v54-04', { detachPositions: true }),
+    )
+  })
+
+  it('🔴 B6-③ **行为变更的锋利边界（如实登记）**：零价目行的工序在本页**连停用/删除入口都没有**', async () => {
+    // 用户裁定删掉【打包发货】那道「行不依赖矩阵格」的兜底区块后，本页进抽屉的唯一入口 = 表行上的
+    // `管理▸`；而表的行**只来自价目读面** ⇒ 零价目行的工序**在这张表里既不能定价、也不能停用/删除**
+    // （改前它在【打包发货】层还有一行 + `管理▸`）。唯一出路 = 「新增工序」重建 / 补套行业模板。
+    // ⚠️ 本断言把这条**边界**钉住，避免它退化成「没人知道为什么某道工序消失了」。
+    const withoutCells = LAYER_CELLS.filter((c) => c.operation !== '外帘装袋')
+    mockGetOperationPositions.setDefault(withoutCells)
+    await renderOperations()
+
+    expect(screen.queryByTestId('matrix-row-外帘装袋')).toBeNull()
+    expect(screen.queryByTestId('matrix-manage-外帘装袋')).toBeNull()
+    // 不静默：孤儿提示如实报数（这是这条边界**唯一**的可见面）
+    expect(screen.getByTestId('matrix-orphan-hint')).toBeInTheDocument()
+  })
+
+
+  it('§6-② 就绪度②从「**数条数**」改成「**两条基础路线是否齐**」并**点名**（**红证**：改前 `工艺路线 2 条` 就显示「已完成」）', async () => {
+    // 改前：`routeList.length = 1 > 0` 且无空壳 ⇒ **只数条数** ⇒ `data-state="done"`
+    mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS_WITHOUT_FABRIC))
+    await renderOperations()
+
+    const step = screen.getByTestId('readiness-step-routings')
+    // 改前：`工艺路线 2 条` + `data-state="done"`（只数条数 ⇒ 缺布料路线照样「已完成」）
+    expect(step).toHaveAttribute('data-state', 'todo')
+    expect(step).toHaveTextContent('基础路线 1/2 条')
+    expect(step).toHaveTextContent('缺 布料工序路线')
+    // 后果要说清（点名 + 为什么）
+    expect(step).toHaveTextContent('窗帘单与布料单各自的主线')
+  })
+
+
+  it('§6-② 反向护栏：两条基础路线齐 ⇒ 就绪度② `done`（不误报）', async () => {
+    mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS_WITH_BASE))
+    await renderOperations()
+
+    const step = screen.getByTestId('readiness-step-routings')
+    expect(step).toHaveAttribute('data-state', 'done')
+    expect(step).toHaveTextContent('基础路线 2/2 条')
+    expect(step).not.toHaveTextContent('缺 ')
+  })
 })
