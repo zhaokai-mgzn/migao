@@ -46,10 +46,13 @@
 
 `test_v96_*` 用 `initdb`/`pg_ctl`/`psql` 起**临时集群**真跑迁移 —— 静态文本判据不够
 （V83 的教训：文本守卫全绿而真库整份回滚）。
-⚠️ bootstrap 那一格**真跑 schema.sql**：该文件当前在 `production_route_signals` 的 FK 上
-有一条**既有**建库顺序缺陷（租户种子在它之后）⇒ 用 `ON_ERROR_STOP=0` 跑完全文，并断言
-**承运面（`production_operation*`）零 ERROR** + 目标段落**真的跑到了**（活跃工序数 > 0）——
+⚠️ bootstrap 那一格**真跑 schema.sql**，且用 **`ON_ERROR_STOP=1`**（与
+`docker-entrypoint-initdb.d` 的 entrypoint 同款）：该文件原在 `production_route_signals`
+的 FK 上有一条**建库顺序缺陷**（租户种子在它之后）⇒ **issue #4762 已修**，宽松兜底
+（`ON_ERROR_STOP=0` —— 它会**吞掉错误**：越序时 psql 仍 exit=0、脚本「看起来成功」）随之**取消**。
+仍断言**承运面（`production_operation*`）零 ERROR** + 目标段落**真的跑到了**（活跃工序数 > 0）——
 **不把「没跑到」读成「没问题」**（否则差集恒 0 = 空断言）。
+顺序缺陷本身由 `test_schema_bootstrap_order.py` 守（静态全表扫描 + 真库 exit 0 + 零 ERROR）。
 """
 from __future__ import annotations
 
@@ -333,7 +336,7 @@ def _free_port() -> int:
 
 
 class _Pg:
-    """临时集群句柄：`sql()` 严格跑（ON_ERROR_STOP=1）；`loose_file()` 宽松跑整份文件。"""
+    """临时集群句柄：`sql()` 严格跑单条；`strict_file()` 严格跑整份文件（`ON_ERROR_STOP=1`）。"""
 
     def __init__(self, sockdir, port):
         self.sockdir, self.port = sockdir, port
@@ -346,12 +349,19 @@ class _Pg:
         assert proc.returncode == 0, f"psql 失败：\n{proc.stdout}\n{proc.stderr}"
         return proc.stdout
 
-    def loose_file(self, path: Path) -> str:
-        """宽松跑（`ON_ERROR_STOP=0`）：schema.sql 有一条**既有**建库顺序缺陷（见模块 docstring）。"""
+    def strict_file(self, path: Path) -> str:
+        """**严格**跑整份文件（`ON_ERROR_STOP=1`）—— 与 docker entrypoint 执行 initdb 脚本同款。
+
+        issue #4762 起 schema.sql 的建库顺序缺陷已修 ⇒ 不再有 `ON_ERROR_STOP=0` 的宽松兜底
+        （那正是**吞掉错误**的原因：越序时 psql 仍 exit=0、脚本「看起来成功」）。
+        """
         proc = subprocess.run(
             ["psql", "-h", str(self.sockdir), "-p", str(self.port), "-U", "postgres",
-             "-d", "postgres", "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=0", "-f", str(path)],
+             "-d", "postgres", "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1", "-f", str(path)],
             text=True, capture_output=True)
+        assert proc.returncode == 0, (
+            f"`ON_ERROR_STOP=1` 跑 {path.name} 非零退出（exit={proc.returncode}）"
+            f"⇒ docker-entrypoint-initdb.d 栈会建库中止：\n{proc.stdout}\n{proc.stderr}")
         return proc.stdout + proc.stderr
 
 
@@ -637,11 +647,12 @@ def test_v96_leaves_snapshot_tables_untouched(pg):
 def test_bootstrap_schema_sql_terminal_state_matches_derived_truth(pg):
     """bootstrap 那一格**真跑一遍**：`docs/sql/schema.sql` 建出的库，活跃工序缺账 = **0**。
 
-    ⚠️ schema.sql 有一条**既有**建库顺序缺陷（`production_route_signals` 的种子在租户种子之前）
-    ⇒ 用 `ON_ERROR_STOP=0` 跑完全文；但**承运面零 ERROR** 与「目标段落真的跑到了」两件都断言
-    —— **不把「没跑到」读成「没问题」**（否则差集恒 0 = 空断言）。
+    ⚠️ 用 **`ON_ERROR_STOP=1`** 跑全文（与 `docker-entrypoint-initdb.d` 的 entrypoint 同款）：
+    建库顺序缺陷（`production_route_signals` 的种子在租户种子之前）已由 **issue #4762** 修掉
+    ⇒ 宽松兜底（`ON_ERROR_STOP=0`）**取消** —— 那会**吞掉错误**、把「中止」读成「成功」。
+    仍断言**承运面零 ERROR** 与「目标段落真的跑到了」两件 —— **不把「没跑到」读成「没问题」**。
     """
-    out = pg.loose_file(SCHEMA)
+    out = pg.strict_file(SCHEMA)
     errors = [l for l in out.splitlines() if "错误:" in l or "ERROR:" in l]
     carrier_errors = [l for l in errors if "production_operation" in l]
     assert carrier_errors == [], f"schema.sql 的承运面报错：{carrier_errors}"
