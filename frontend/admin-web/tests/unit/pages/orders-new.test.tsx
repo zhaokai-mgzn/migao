@@ -19,6 +19,34 @@ const mockGetProducts = vi.fn()
 const mockGetProduct = vi.fn()
 const mockGetProcessingItems = vi.fn()
 const mockGetCustomers = vi.fn()
+/** 算料配置读面（issue #4874）——「配置未加载 ⇒ 显式提示」那条判据要能把它切成失败 */
+const mockGetCraftCalcConfig = vi.fn()
+
+/**
+ * 算料配置桩（issue #4874）：用料公式缺省（`pleat`）与档位值域/文案都取自它。
+ * 档位 label 刻意与键名不同字 ⇒ 页面写死一套中文档位名必红。
+ */
+const CALC_CONFIG_OK = {
+  data: {
+    data: {
+      source: 'stored',
+      config: {
+        per_fold_single: 0.25,
+        per_fold_mixed_times: {},
+        margin_single: 0.3,
+        margin_multi: 0.3,
+        min_fullness: 1.5,
+        tiers: {
+          standard: { fullness: 2.0, label: '标准档（2.0倍）' },
+          economy: { fullness: 1.8, label: '经济档（1.8倍）' },
+        },
+        default_formula: 'pleat',
+        side_margin: 0.15,
+        meters_rounding_step: 0.1,
+      },
+    },
+  },
+}
 
 vi.mock('@/lib/api', () => ({
   orderApi: {
@@ -59,6 +87,10 @@ vi.mock('@/lib/api', () => ({
       return Promise.resolve({ data: { data: { items, processingFeeTotal } } })
     },
   },
+  // **算料配置读面**（issue #4874）：用料公式缺省 + 档位 chips 的值域/文案都来自它 ⇒ 挂载即请求
+  productionApi: {
+    getCraftCalcConfig: (...args: any[]) => mockGetCraftCalcConfig(...args),
+  },
 }))
 
 // useOrderAmounts 使用真实实现（纯状态 hook，无外部依赖）：
@@ -85,6 +117,8 @@ describe('NewOrderPage', () => {
     })
     // 加工项目录（店铺级）：默认空目录，需要加工项的用例自行覆盖
     mockGetProcessingItems.mockResolvedValue({ data: { data: { items: [] } } })
+    // 算料配置（issue #4874）：默认给「标准档 + 经济档」两档，公式缺省 = pleat
+    mockGetCraftCalcConfig.mockResolvedValue(CALC_CONFIG_OK)
   })
 
   it('should render page title', async () => {
@@ -216,16 +250,20 @@ describe('NewOrderPage', () => {
   /** 展开工艺规格里的「特殊选项」区（issue #4420：默认收起） */
   /**
    * 展开向导某一步（issue #4511 手风琴：展开一步自动收起同级其它）。
-   * 步骤标题：① 尺寸与数量 ② 工艺规格 ③ 加工项 ④ 特殊选项。
+   * ⚠️ issue #4874 **两步化**：区块 1 = 「尺寸与数量 · 工艺规格」、区块 2 = 「加工项 · 特殊选项」
+   * ⇒ 原四段锚点（尺寸与数量 / 工艺规格 / 加工项 / 特殊选项）合并为两个，
+   * 本文件各判据的锚点随之改成**新结构的等价锚点**（工艺规格并进区块 1、特殊选项并进区块 2）。
    */
   const openWizardStep = (title: string, idx = 0) => {
     const btns = screen.getAllByRole('button', { name: new RegExp(`^\\d+ ${title}`) })
     const btn = btns[idx]
     if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
   }
-  const expandCraft = (idx = 0) => openWizardStep('工艺规格', idx)
+  /** 区块 1（尺寸与数量 + 工艺规格） */
+  const expandCraft = (idx = 0) => openWizardStep('尺寸与数量', idx)
+  /** 区块 2（加工项 + 特殊选项） */
   const expandProcessing = (idx = 0) => openWizardStep('加工项', idx)
-  const expandSpecial = (idx = 0) => openWizardStep('特殊选项', idx)
+  const expandSpecial = (idx = 0) => openWizardStep('加工项', idx)
 
   /**
    * chips 字段一击即中（issue #4489 判据 1）：按 `radiogroup` 名 + 选项名点击。
@@ -514,8 +552,10 @@ describe('NewOrderPage', () => {
     })
 
     // issue #4419：客户档案录了默认收货地址/常用物流时，**优先**用档案值（逐字带出，
-    // 不拼接省市区、不用昵称顶替收货人姓名），并提示常用物流。
-    it('客户档案有默认收货信息时优先带出（逐字），并提示常用物流（#4419）', async () => {
+    // 不拼接省市区、不用昵称顶替收货人姓名），并带出常用物流两控。
+    // ⚠️ issue #4874：原先那条**只读**提示 `picked-logistics-hint` 已删除（不留两份口径），
+    // 换成「常用物流/快递」+「常用物流公司」两个**可编辑**控件（词表 = `lib/logistics.ts`）。
+    it('客户档案有默认收货信息时优先带出（逐字），并带出常用物流两控（#4419/#4874）', async () => {
       mockGetCustomers.mockResolvedValue({
         data: {
           data: {
@@ -545,16 +585,24 @@ describe('NewOrderPage', () => {
         expect(screen.getByPlaceholderText('请输入 11 位手机号')).toHaveValue('13600136000')
         expect(screen.getByPlaceholderText('请输入详细收货地址')).toHaveValue('浙江省杭州市余杭区文一西路969号3号仓')
       })
-      expect(screen.getByTestId('picked-logistics-hint')).toHaveTextContent('常用物流：物流/专线 · 四季安物流')
+      // 两个控件都由客户档案带出（且**可改** —— 不是只读提示）
+      await waitFor(() => {
+        expect(screen.getByTestId('order-logistics-type')).toHaveValue('logistics')
+        expect(screen.getByTestId('order-logistics-company')).toHaveValue('四季安物流')
+      })
+      expect(screen.queryByTestId('picked-logistics-hint')).not.toBeInTheDocument()
     })
 
-    it('客户档案没录常用物流时不显示提示（不得编造「快递」默认值，#4419）', async () => {
+    it('客户档案没录常用物流 ⇒ 两控**不编造默认值**（未指定 / 空），#4419/#4874', async () => {
       render(<NewOrderPage />)
       fireEvent.click(await screen.findByRole('button', { name: /选择客户/ }))
       fireEvent.click(await screen.findByText('张老板'))
       await waitFor(() => {
         expect(screen.getByPlaceholderText('请输入收货人姓名')).toHaveValue('张老板')
       })
+      // 「未指定」与「快递」是两个真值：没录过 ⇒ 空（**不**渲染成「快递」看起来像已配置）
+      expect(screen.getByTestId('order-logistics-type')).toHaveValue('')
+      expect(screen.getByTestId('order-logistics-company')).toHaveValue('')
       expect(screen.queryByTestId('picked-logistics-hint')).not.toBeInTheDocument()
     })
 
@@ -639,7 +687,6 @@ describe('NewOrderPage', () => {
       pickChip('打开方式', '双开')
       expandCraft()
       pickChip('款式', '单色')
-      fireEvent.change(field('褶距'), { target: { value: '0.1' } })
       expandCraft()
       pickChip('是否对花', '是')
       fireEvent.change(field('花距'), { target: { value: '0.6' } })
@@ -664,7 +711,11 @@ describe('NewOrderPage', () => {
         openCount: 2,
         isShaped: false,
         style: '单色',
-        pleatSpacing: 0.1,
+        // ⚠️ issue #4874：**褶距已整体移除**；替换位 = **用料公式**（落库 `processingInfo.formula`）
+        // + 算料档位 `craftTier`（两者同族，要么都落、要么都不落）。
+        // 本用例勾了「打孔」⇒ 公式按工艺推导 = 倍数法（`fullness`，issue #4527）
+        formula: 'fullness',
+        craftTier: 'standard',
         hasPattern: true,
         patternRepeat: 0.6,
         specialOptions: ['加铅块', '拼2次'],
@@ -690,7 +741,11 @@ describe('NewOrderPage', () => {
         // issue #4521：部位默认 = 布帘 ⇒ **不写**（下游 `DEFAULT_CURTAIN_TYPE` 缺省即此值）
         cuttingMode: '定高买宽',
         style: '单色',
-        pleatSpacing: 0.125,
+        // ⚠️ issue #4874：**褶距键已整体退场**（写侧不再落 `pleatSpacing`）；
+        // 取而代之的是**用料公式 / 档位** —— 两者都是**商家在表单上看得见的真值**
+        // （chips 显示缺省公式 + 档位），按同一纪律必须落库。
+        formula: 'pleat',
+        craftTier: 'standard',
         hasPattern: false,
         // issue #4521 + #4566：定型默认（布帘 ⇒ 是）现在体现在「定型」**加工项的勾选态**上
         // ⇒ 仍是商家看得见的真值，照旧落库
@@ -709,6 +764,8 @@ describe('NewOrderPage', () => {
         'componentRole',
         'craftLineId',
         'metersSource',
+        // #4874：褶距的写键**整个退场**（不是"缺值不写"——它连键都不该存在）
+        'pleatSpacing',
       ]) {
         expect(info).not.toHaveProperty(key)
       }
@@ -996,7 +1053,7 @@ describe('NewOrderPage', () => {
       expect(item.height).toBe(2.6)
     })
 
-    it('判据 3：三条默认档随单落库（加工类型定高买宽 / 款式单色 / 褶距 0.125）', async () => {
+    it('判据 3：四条默认档随单落库（加工类型定高买宽 / 款式单色 / 用料公式 pleat / 算料档位 standard）', async () => {
       await setupCurtain()
       await fillCustomerAndSubmit()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
@@ -1004,7 +1061,10 @@ describe('NewOrderPage', () => {
       expect(mockCreateOrder.mock.calls[0][0].items[0].processingInfo).toMatchObject({
         cuttingMode: '定高买宽',
         style: '单色',
-        pleatSpacing: 0.125,
+        // ⚠️ issue #4874：褶距默认档（0.125）**已随字段退场**；替换位 = **用料公式 + 算料档位**
+        // （两者都是商家在 chips 上看得见的真值 ⇒ 按既有纪律必须落库）
+        formula: 'pleat',
+        craftTier: 'standard',
       })
     })
 
@@ -1018,7 +1078,14 @@ describe('NewOrderPage', () => {
           .map((r) => r.textContent)
       expect(checked('加工类型')).toEqual(['定高买宽'])
       expect(checked('款式')).toEqual(['单色'])
-      expect((screen.getByLabelText('褶距') as HTMLInputElement).value).toBe('0.125')
+      // ⚠️ issue #4874：**褶距控件与默认值都退场**（红证：改前这里有 `褶距` 输入框、值为 0.125）
+      expect(screen.queryByLabelText('褶距')).toBeNull()
+      expect(screen.queryByText('褶距')).toBeNull()
+      // 替换位 = **用料公式 chips**（默认 = 算料配置的 `default_formula` = pleat）+ **折数展示**
+      expect(checked('用料公式')).toEqual(['韩折公式（折数法）'])
+      expect(
+        within(screen.getByTestId('craft-pleat-count')).getByText('—')
+      ).toBeInTheDocument()
       expect(checked('是否对花')).toEqual(['否'])
       // issue #4521：部位换成**帘体**（组级 chips），默认「布帘」
       expect(checked('帘体')).toEqual(['布帘'])
@@ -1035,11 +1102,13 @@ describe('NewOrderPage', () => {
       )
     })
 
-    // ── issue #4521：四类购买情况（布帘 / 布帘+纱帘 / 只买纱帘 / 布料）──────────────
+    // ── issue #4521：购买情况（布帘 / 只买纱帘 / 布料；`布帘+纱帘` 档已随 #4874 删除）──────
     //
-    // 用户口径：「用户可能购买**带纱帘的窗帘，不带纱帘的窗帘和只买纱帘，还有布料**，这四种情况，
-    // **布帘需要算用料米数，纱帘不需要算用料米数，买多少就是多少**，如果买带纱帘的窗帘就要把
-    // 两种组合起来」+「**移除部位功能，其实完全不需要**」。
+    // 原用户口径：「用户可能购买**带纱帘的窗帘，不带纱帘的窗帘和只买纱帘，还有布料**……
+    // **布帘需要算用料米数，纱帘不需要算用料米数，买多少就是多少**」+「**移除部位功能**」。
+    // ⚠️ **2026-09-21 口径反转**（用户新增裁定「订单中选择纱帘时，**用料算法和布帘的用料算法
+    // 完全一致**，之前给的信息是错误的」）⇒「纱帘不需要算用料米数」那一半**作废**：本组判据
+    // 里与「纱帘不算料」相关的断言已改判为**同参同算**（见判据 9）。
     const pickBody = (body: string) => {
       fireEvent.click(
         within(screen.getByRole('radiogroup', { name: '帘体' })).getByRole('radio', { name: body })
@@ -1054,94 +1123,77 @@ describe('NewOrderPage', () => {
       fireEvent.click(screen.getByRole('checkbox', { name }))
     }
 
-    it('判据 5（#4521 红证）：**没有**「新增部位」入口；一个商品组只渲染**一份** ①~④', async () => {
+    it('判据 5（#4521/#4874 红证）：**没有**「新增部位」入口；一个商品组只渲染**一份**区块 1 + 区块 2', async () => {
       await setupCurtain()
       expect(screen.queryByRole('button', { name: /新增部位/ })).toBeNull()
-      // 四个步骤各只有一份（红证：修复前「新增部位」会让它们翻倍）
+      // ⚠️ issue #4874 **两步化**：四段手风琴合并为两段
+      // （红证：改前这里有 4 个 WizardStep / 4 个序号按钮）
+      expect(screen.getAllByTestId(/^wizard-step-/)).toHaveLength(2)
       expect(screen.getAllByRole('button', { name: /^1 尺寸与数量/ })).toHaveLength(1)
-      expect(screen.getAllByRole('button', { name: /^2 工艺规格/ })).toHaveLength(1)
-      expect(screen.getAllByRole('button', { name: /^3 加工项/ })).toHaveLength(1)
-      expect(screen.getAllByRole('button', { name: /^4 特殊选项/ })).toHaveLength(1)
+      expect(screen.getAllByRole('button', { name: /^2 加工项/ })).toHaveLength(1)
+      expect(screen.queryByRole('button', { name: /^3 / })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^4 / })).toBeNull()
       // 行头（「部位 N」+ 行内「删除」）整体移除：删除只保留在**组头**一处
       expect(screen.queryByText(/^部位 \d+$/)).toBeNull()
     })
 
-    it('判据 6（#4521）：帘体 = 布帘+纱帘 ⇒ 出纱帘米数/单价，提交**两条**明细行（同樘帘）', async () => {
+    it('判据 6（#4874 改判·红证）：帘体**没有**「布帘+纱帘」档，且**不再**渲染纱帘米数/单价子块', async () => {
       await setupCurtain()
       fillSize(0, '6.6', '2.6')
-      pickBody('布帘+纱帘')
-      // #4566：工艺从加工项派生 ⇒ 勾「韩折」（ERP 名）⇒ 两行都落 `craft='韩褶'`（craftHint）
-      toggleProcessingItem('韩折')
+      // ① 帘体 chips 只剩 布帘 / 纱帘（红证：改前第三个 chip 是「布帘+纱帘」）
+      const bodies = within(screen.getByRole('radiogroup', { name: '帘体' }))
+        .getAllByRole('radio')
+        .map((r) => r.textContent)
+      expect(bodies).toEqual(['布帘', '纱帘'])
+      expect(screen.queryByRole('radio', { name: '布帘+纱帘' })).toBeNull()
+      // ② 工艺规格里**不再有**纱帘米数 / 纱帘单价子块（红证：改前选中该档就出这两个输入框）
       expandCraft()
-      // 米数默认 = 主布米数（1 米），可改
-      expect((field('纱帘米数') as HTMLInputElement).value).toBe('1')
-      fireEvent.change(field('纱帘米数'), { target: { value: '4' } })
-      fireEvent.change(field('纱帘单价'), { target: { value: '30' } })
-
+      expect(screen.queryByLabelText('纱帘米数')).toBeNull()
+      expect(screen.queryByLabelText('纱帘单价')).toBeNull()
+      // ③ 提交只出**一条**明细行（改前 = 主布行 + 纱帘行两条）
       await fillCustomerAndSubmit()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
-
       const items = mockCreateOrder.mock.calls[0][0].items
-      expect(items).toHaveLength(2)
-      const [main, sheer] = items
-      // 主布行：部位缺省即布帘 ⇒ **不写** curtainType（下游 DEFAULT_CURTAIN_TYPE 兜底）
-      expect(main.processingInfo.curtainType).toBeUndefined()
-      expect(main.productName).toBe('遮光窗帘')
-      // 纱帘行：显式写部位 + 与主布行同樘帘 + 不挂加工项 + 不关联主布商品
-      expect(sheer.productName).toBe('纱帘')
-      expect(sheer.quantity).toBe(4)
-      expect(sheer.unitPrice).toBe(30)
-      expect(sheer.processingInfo.curtainType).toBe('纱帘')
-      // 纱帘是**另一个部位** ⇒ 必须带同一份工艺规格（否则取错路线）
-      expect(sheer.processingInfo.craft).toBe('韩褶')
-      expect(sheer.processingInfo.craftLineId).toBe(main.processingInfo.craftLineId)
-      expect(main.processingInfo.craftLineId).toBeTruthy()
-      expect(sheer.processingInfo.fabric_meters).toBe(4)
-      expect(sheer.processingInfo.metersSource).toBe('人工指定')
-      expect(sheer.processingInfo.processingItems).toBeUndefined()
-      expect(sheer.processingInfo.processingFee).toBeUndefined()
-      expect(sheer.productId).toBeUndefined()
-      // 宽 / 高与主布行同一份（尺寸数量是商品组级属性）
-      expect(sheer.width).toBe(6.6)
-      expect(sheer.height).toBe(2.6)
+      expect(items).toHaveLength(1)
+      expect(items[0].productName).toBe('遮光窗帘')
+      expect(items[0].processingInfo.curtainType).toBeUndefined()
     })
 
-    it('判据 7（#4521）：纱帘金额计入订单总额（否则后端「应收 - 优惠 ≈ 实收」会拒单）', async () => {
+    it('判据 7（#4874 改判）：纱帘**不再由主布行派生** —— 费用明细里没有「纱帘」汇总行', async () => {
       await setupCurtain() // 主布 ¥100/米 × 1 米
-      pickBody('布帘+纱帘')
-      expandCraft()
-      fireEvent.change(field('纱帘单价'), { target: { value: '30' } }) // 米数默认 1
-      await waitFor(() => {
-        expect(screen.getByText('订单金额').closest('div')!.textContent).toContain('¥130.00')
-      })
+      pickBody('纱帘')
       await fillCustomerAndSubmit()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
-      expect(mockCreateOrder.mock.calls[0][0].actualAmount).toBe(130)
+      // 改前：`totals.sheerSubtotal > 0` ⇒ 费用汇总里多一行「纱帘」
+      const feeCard = screen.getByText('费用明细').closest('div')!.parentElement as HTMLElement
+      expect(within(feeCard).queryByText('纱帘')).toBeNull()
+      expect(mockCreateOrder.mock.calls[0][0].actualAmount).toBe(100)
     })
 
-    it('判据 8（#4521）：带纱帘但没填纱帘单价 ⇒ **提交被拦**（不得静默丢掉纱帘行）', async () => {
+    it('判据 8（#4874 改判）：**不再有**「纱帘单价须大于 0」校验（该档与那族校验一起退场）', async () => {
       await setupCurtain()
       fillSize(0, '6.6', '2.6')
-      pickBody('布帘+纱帘')
       await fillCustomerAndSubmit()
-      await waitFor(() => {
-        expect(screen.getByText(/纱帘单价须大于 0/)).toBeInTheDocument()
-      })
-      expect(mockCreateOrder).not.toHaveBeenCalled()
+      await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+      // 改前：帘体 = 布帘+纱帘 且没填纱帘单价 ⇒ 提交被拦 + 报「纱帘单价须大于 0」
+      expect(screen.queryByText(/纱帘单价须大于 0/)).toBeNull()
     })
 
-    it('判据 9（#4521）：只买纱帘 ⇒ 一行且 `curtainType=纱帘`；用料**手填**（不算料、无公式）', async () => {
+    it('判据 9（#4521；**2026-09-21 口径反转**）：只买纱帘 ⇒ 一行且 `curtainType=纱帘`；用料走**与布帘完全一致**的算料链路', async () => {
       await setupCurtain()
       pickBody('纱帘')
       fillSize(0, '6.6', '2.6')
       openWizardStep('尺寸与数量')
-      expect(screen.getByText('纱帘按实际买多少填，不自动算料')).toBeInTheDocument()
-      // 没有「恢复按公式计算」入口（纱帘根本没有公式可恢复）
-      expect(screen.queryByText('恢复按公式计算')).toBeNull()
+      // 反转（用户 2026-09-21：「订单中选择纱帘时，**用料算法和布帘的用料算法完全一致**」）：
+      // ① 原「纱帘按实际买多少填，不自动算料」的专属提示**已删除**（红证：改前它就在这）
+      expect(screen.queryByText('纱帘按实际买多少填，不自动算料')).toBeNull()
       const qtyInput = (await screen.findByText('用料米数'))
         .closest('div')!
         .querySelector('input') as HTMLInputElement
       fireEvent.change(qtyInput, { target: { value: '5' } })
+      // ② 手改米数 ⇒ 与布帘**同一套**「人工指定 + 恢复按公式计算」通道
+      // （红证：改前纱帘走的是「不算料」分支 ⇒ 该按钮根本不出现）
+      expect(screen.getByText('恢复按公式计算')).toBeInTheDocument()
 
       await fillCustomerAndSubmit()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
@@ -1162,7 +1214,7 @@ describe('NewOrderPage', () => {
       )
       expect(screen.queryByRole('radiogroup', { name: '帘体' })).toBeNull()
       expect(screen.queryByRole('button', { name: /^1 尺寸与数量/ })).toBeNull()
-      expect(screen.queryByRole('button', { name: /^2 工艺规格/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^2 加工项/ })).toBeNull()
     })
 
     it('判据 11（#4598）：帘行米数输入框 label = 「用料米数」（它就是加工费米数）；布料行仍是「数量」', async () => {
@@ -1400,9 +1452,9 @@ describe('NewOrderPage', () => {
     const visibleNames = () =>
       screen.getAllByRole('checkbox').map((b) => b.getAttribute('aria-label'))
     const searchBox = () => screen.getByTestId('processing-search')
-    /** 收起③ ⇒ 摘要（`已选 N 项 · 工艺：X`）可见 */
+    /** 收起区块 2 ⇒ 摘要（`已选 N 项 · 工艺：X`）可见 */
     const collapseProcessing = () =>
-      fireEvent.click(screen.getAllByRole('button', { name: /^3 加工项/ })[0])
+      fireEvent.click(screen.getAllByRole('button', { name: /^2 加工项/ })[0])
 
     it('判据 1a：多分类 ⇒ 渲染分类选择器（每个分类一个 chip，带 data-testid）', async () => {
       await setup()
@@ -1651,7 +1703,7 @@ describe('NewOrderPage', () => {
 
       fireEvent.click(headerToggle(1, '遮光窗帘'))
       expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'false')
-      for (const title of ['尺寸与数量', '工艺规格', '加工项', '特殊选项']) {
+      for (const title of ['尺寸与数量', '加工项']) {
         expect(bodyStepCount(title)).toBe(0)
       }
       // 收起 ≠ 看不出是哪一行：商品名 / 帘体 / 金额仍留在组头
@@ -1720,6 +1772,205 @@ describe('NewOrderPage', () => {
       expect(screen.queryByRole('button', { name: /雪尼尔窗帘/ })).toBeNull()
       expect(headerToggle(1, '遮光窗帘')).toHaveAttribute('aria-expanded', 'true')
       expect(bodyStepCount('尺寸与数量')).toBe(1)
+    })
+  })
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // issue #4874（用户 2026-09-21 需求批次）：两步化 + 用料公式/档位 + 收货物流两控
+  //
+  // 用户原话切分：④「尺寸数量到特殊选项我们要**简化为两步**搞定，我建议**尺寸数量+工艺规格
+  // 合并到一个区块**，**另外两个**（加工项 + 特殊选项）**合并**」；⑤「新增订单时**收货信息**中
+  // 缺少用户的**常用物流/快递**以及**常用公司**，选择客户后要**默认带出**」；
+  // ⑥「**加上用料公式字段**……**和工艺配置的算料配置保持一致**」。
+  // ══════════════════════════════════════════════════════════════════════════
+  describe('#4874 两步化 / 用料公式与档位 / 收货物流两控', () => {
+    const setupCurtain = async () => {
+      mockGetProducts.mockResolvedValue({
+        data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
+      })
+      mockGetProduct.mockResolvedValue({
+        data: { data: { id: 'p1', name: '遮光窗帘', skus: [], price: 100 } },
+      })
+      mockGetProcessingItems.mockResolvedValue({
+        data: {
+          data: {
+            items: [
+              { id: 'pi2', name: '定型', pricingMethod: 'per_meter', unitPrice: 0, unit: '米' },
+            ],
+          },
+        },
+      })
+      render(<NewOrderPage />)
+      await pickProduct('遮光窗帘')
+      await screen.findByText('宽 (米)')
+    }
+    /** 收货信息里的两个物流控件（issue #4874；**可编辑**，不是只读提示） */
+    const logisticsType = () => screen.getByTestId('order-logistics-type') as HTMLSelectElement
+    const logisticsCompany = () => screen.getByTestId('order-logistics-company') as HTMLInputElement
+    const formulaRadio = (name: string) =>
+      within(screen.getByRole('radiogroup', { name: '用料公式' })).getByRole('radio', { name })
+    const pickCustomer = async (name: string) => {
+      fireEvent.click(await screen.findByRole('button', { name: /选择客户/ }))
+      fireEvent.click(await screen.findByText(name))
+      await waitFor(() =>
+        expect(screen.getByPlaceholderText('请输入收货人姓名')).toHaveValue(name)
+      )
+    }
+
+    it('判据 ①（红证）：**只有两个**步骤区块，标题即新结构（改前四段：尺寸/工艺规格/加工项/特殊选项）', async () => {
+      await setupCurtain()
+      // 红证：改前 `getAllByTestId(/^wizard-step-/)` = 4（四段手风琴）
+      expect(screen.getAllByTestId(/^wizard-step-/)).toHaveLength(2)
+      expect(screen.getByRole('button', { name: /^1 尺寸与数量 · 工艺规格/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^2 加工项 · 特殊选项/ })).toBeInTheDocument()
+      // 反向断言：改前第 3/4 段的序号锚点不再存在
+      expect(screen.queryByRole('button', { name: /^3 / })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^4 / })).toBeNull()
+      // 原四段的**内容**都还在（只是换了归属）：尺寸 / 工艺规格 / 加工项 / 特殊选项
+      openWizardStep('尺寸与数量')
+      expect(screen.getByText('用料米数')).toBeInTheDocument()
+      expect(screen.getByRole('radiogroup', { name: '加工类型' })).toBeInTheDocument()
+      openWizardStep('加工项')
+      // 区块 2 里**同时**有「加工项」（手选 checkbox）与「特殊选项」（19 项 = 原④段的内容）
+      expect(screen.getByRole('checkbox', { name: '定型' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '加铅块' })).toBeInTheDocument()
+    })
+
+    it('判据 ⑤（红证）：选韩折公式 ⇒ 展示**自动算出的折数**；本文件试算桩永不返回 ⇒ 「—」（不编数）', async () => {
+      await setupCurtain()
+      openWizardStep('尺寸与数量')
+      // 默认公式 = 算料配置 `default_formula`（pleat）⇒ chips 选中「韩折公式（折数法）」
+      expect(formulaRadio('韩折公式（折数法）')).toHaveAttribute('aria-checked', 'true')
+      // 红证：改前页面**没有**用料公式控件、也没有折数展示块 ⇒ 下面这行必红
+      expect(
+        within(screen.getByTestId('craft-pleat-count')).getByText('—')
+      ).toBeInTheDocument()
+    })
+
+    it('判据 ⑤b（红证）：选褶倍数公式 ⇒ 出现档位 chips，文案**逐字取自算料配置** tiers[*].label', async () => {
+      await setupCurtain()
+      openWizardStep('尺寸与数量')
+      fireEvent.click(formulaRadio('褶倍数公式（倍数法）'))
+      const tiers = screen.getByTestId('craft-tier-options')
+      // fixture 的 label 与键名不同字（`标准档（2.0倍）` ≠ `standard`）⇒ 页面写死一套中文档位名必红
+      expect(
+        within(tiers)
+          .getAllByRole('radio')
+          .map((r) => r.textContent)
+      ).toEqual(['标准档（2.0倍）', '经济档（1.8倍）'])
+      // 折数块只在韩折公式下出现
+      expect(screen.queryByTestId('craft-pleat-count')).toBeNull()
+    })
+
+    it('判据 ⑤c（红证）：档位**进落库**（`processingInfo.craftTier` 不再钉死 standard）', async () => {
+      await setupCurtain()
+      fillSize(0, '6.6', '2.6')
+      openWizardStep('尺寸与数量')
+      fireEvent.click(formulaRadio('褶倍数公式（倍数法）'))
+      fireEvent.click(
+        within(screen.getByTestId('craft-tier-options')).getByRole('radio', {
+          name: '经济档（1.8倍）',
+        })
+      )
+
+      await fillCustomerAndSubmit()
+      await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+      const info = mockCreateOrder.mock.calls[0][0].items[0].processingInfo
+      // 红证：改前 `craft_tier` 被钉死 standard、processingInfo 里**根本没有** craftTier 键
+      expect(info.craftTier).toBe('economy')
+      expect(info.formula).toBe('fullness')
+    })
+
+    it('判据 ③（不静默）：算料配置读不到 ⇒ 显式提示「配置未加载」+ 按缺省（韩折公式 + 标准档）走', async () => {
+      mockGetCraftCalcConfig.mockRejectedValue(new Error('boom'))
+      await setupCurtain()
+      // 显式提示（红证：改前没有这个提示元素 —— 配置读不到时页面**静默**按钉死的档位算）
+      expect(await screen.findByTestId('craft-calc-config-missing')).toBeInTheDocument()
+      openWizardStep('尺寸与数量')
+      // 公式值域不依赖配置（常量与引擎同源）⇒ chips 仍在，缺省 = pleat
+      expect(formulaRadio('韩折公式（折数法）')).toHaveAttribute('aria-checked', 'true')
+      // 档位**值域取不到** ⇒ 不渲染档位 chips（编一套 = 第二份档位真值）
+      expect(screen.queryByTestId('craft-tier-options')).toBeNull()
+
+      fillSize(0, '6.6', '2.6')
+      await fillCustomerAndSubmit()
+      await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+      const info = mockCreateOrder.mock.calls[0][0].items[0].processingInfo
+      expect(info.formula).toBe('pleat')
+      expect(info.craftTier).toBe('standard')
+    })
+
+    it('判据 ④（红证）：选客户 ⇒ 「常用物流/快递」「常用物流公司」被带出、可改，且**随建单提交**', async () => {
+      await setupCurtain()
+      fillSize(0, '6.6', '2.6')
+      mockGetCustomers.mockResolvedValue({
+        data: {
+          data: {
+            items: [
+              {
+                id: 'c9',
+                wechatNickname: '王老板',
+                phone: '13700137000',
+                defaultReceiverName: '王老板',
+                defaultReceiverPhone: '13700137000',
+                defaultReceiverAddress: '杭州市余杭区文一西路 969 号',
+                defaultLogisticsType: 'logistics',
+                defaultLogisticsCompany: '四季安物流',
+              },
+            ],
+            total: 1,
+          },
+        },
+      })
+      await pickCustomer('王老板')
+
+      // 带出（红证：改前这里是**只读**提示 `picked-logistics-hint`，没有可编辑控件）
+      expect(logisticsType()).toHaveValue('logistics')
+      expect(logisticsCompany()).toHaveValue('四季安物流')
+      expect(screen.queryByTestId('picked-logistics-hint')).not.toBeInTheDocument()
+
+      // **可改**（词表只是候选，允许自定义）
+      fireEvent.change(logisticsCompany(), { target: { value: '顺丰速运' } })
+
+      await fillCustomerAndSubmit()
+      await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+      const payload = mockCreateOrder.mock.calls[0][0]
+      // 顶层两列随建单落库（后端 #4872）
+      expect(payload.logisticsType).toBe('logistics')
+      expect(payload.logisticsCompany).toBe('顺丰速运')
+    })
+
+    it('判据 ④b：客户没录常用物流 ⇒ 两控为空（未指定），提交**不编造**默认值', async () => {
+      await setupCurtain()
+      fillSize(0, '6.6', '2.6')
+      mockGetCustomers.mockResolvedValue({
+        data: {
+          data: {
+            items: [
+              {
+                id: 'c8',
+                wechatNickname: '李经理',
+                phone: '13900139002',
+                defaultReceiverName: '李经理',
+                defaultReceiverPhone: '13900139002',
+                defaultReceiverAddress: '苏州市姑苏区',
+              },
+            ],
+            total: 1,
+          },
+        },
+      })
+      await pickCustomer('李经理')
+
+      expect(logisticsType()).toHaveValue('')
+      expect(logisticsCompany()).toHaveValue('')
+
+      await fillCustomerAndSubmit()
+      await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+      const payload = mockCreateOrder.mock.calls[0][0]
+      // 「未指定」与「快递」是两个真值 ⇒ 缺值**不写**（不是写死 express）
+      expect(payload.logisticsType).toBeUndefined()
+      expect(payload.logisticsCompany).toBeUndefined()
     })
   })
 })

@@ -1,13 +1,12 @@
 // case_ids: OR-035, OR-038
 // 原声明 `OR-009, UI-038` 是**借用式**（issue #4431 B7 核实并替换）：OR-009 是下单全流程、
 // UI-038 是「新增订单表单选择已有客户回填收货信息」—— 两条都不覆盖本文件被测行为（录入控件）。
-// 改用 **OR-035**（本 PR 新增，判据即本文件 + order-craft-fields.test.ts + craft-calc-defaults.test.ts）。
-// OR-038（issue #4521 新增）：**移除部位字段** + **纱帘子块**（与配布边逐字同构）。
+// 改用 **OR-035**（工艺规格写侧录入，判据即本文件 + order-craft-fields.test.ts + craft-calc-defaults.test.ts）。
+// OR-038（issue #4521 新增②、issue #4874 改判）：**移除部位字段** + 帘体两档（`布帘+纱帘` 已删除）。
 /**
  * 下单页工艺规格**录入控件**（issue #4375 包 4b · 设计文档 §4.6 入口 2）。
  *
- * 判据聚焦「录入 → 回调」的确定性行为（缺值不写、显式「否」是真值、拼色才出配布边、
- * 带纱帘才出纱帘米数/单价）。
+ * 判据聚焦「录入 → 回调」的确定性行为（缺值不写、显式「否」是真值、拼色才出配布边）。
  *
  * ── issue #4489：下拉 → chips（一击即中）──────────────────────────────────────
  * **断言强度不降**：原先逐字比对 `options.map(o => o.value)` 的判据，改为逐字比对
@@ -15,41 +14,63 @@
  * 原先 `fireEvent.change(select, {value})` 的判据，改为**一次点击** chip 后断言 patch
  * （点击即选中 —— 这正是「一击即中」，比「展开→选」两步更强）。
  *
- * ── issue #4521：**移除「部位」** + 纱帘子块 ──────────────────────────────────
- * ① 「部位」chips 整体消失（红证：修复前 `getByRole('radiogroup', {name:'部位'})` 存在）；
- * ② 「是否定型」的行业默认改由**帘体**结构决定（页面侧写回）；
- * ③ 新增**纱帘子块**判据：`sheer=false` 不出现；`sheer=true` 出「纱帘米数 / 纱帘单价」，
- *    米数默认 = 主布米数、可改、带来源留痕 —— 与「配布边」逐字同构。
- *
  * ── issue #4566：**「工艺」与「是否定型」搬出本组件**（用户 2026-09-19 裁定）──────────
- * 「工艺规格中的**工艺，定型**，对花我觉得**直接通过加工项来勾选**，其他保留」⇒
  * ① 两个 radiogroup 消失（红证：修复前 `name='工艺'` / `name='是否定型'` 存在），
  *    本文件原有 6 条判据随之改判/搬迁（**不是删断言**：真值源与判据在 `orders-new.test.tsx`
  *    的 #4566 组里以**加工项**为承载重新断言 —— 派生、单值护栏、默认勾选、无该项不报错）；
  * ② 三态只剩「是否对花」（三段语义一字不动）。
+ *
+ * ── issue #4874（用户 2026-09-21 需求批次）─────────────────────────────────────
+ * ① **褶距控件整体删除**（「移除订单的工艺规格中的褶距字段」）⇒ 本文件原「褶距输入 ⇒ pleatSpacing
+ *    数字 / 清空 ⇒ undefined」与「默认档里褶距 0.125 可见可改」两条判据**改判为反向断言**
+ *    （控件不存在），**不是删断言**：写侧的键退场判据在 `lib/order-craft-fields.test.ts` 的 #4874 组。
+ * ② **新增「用料公式」chips**（`pleat` / `fullness`）+ **折数展示 / 档位 chips**：
+ *    值域 = `lib/craft-calc-request.ts` 的 `CRAFT_CALC_FORMULAS`；档位的**值域与文案都取自
+ *    算料配置**（`tiers` 的键 / `tiers[key].label`）—— 本文件用**与键名不同字**的 label 做红证。
+ * ③ **纱帘子块整体删除**（`布帘+纱帘` 档已移除）⇒ 原「含纱帘才出纱帘米数/单价」一族判据改判为
+ *    反向断言（该子块与 `sheer*` props 都不存在）。
  */
 import { useState } from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import OrderCraftFields from '@/components/orders/OrderCraftFields'
-import { SPECIAL_OPTIONS, type CraftSpecInput } from '@/lib/order-craft-fields'
+import type { CraftSpecInput } from '@/lib/order-craft-fields'
+import type { CraftCalcConfig } from '@/types'
+
+/**
+ * 算料配置桩（issue #4874）——档位 chips 的**值域**（`tiers` 的键）与**文案**（`tiers[key].label`）
+ * 都只能来自这里。label 刻意与键名不同字（`标准档（2.0倍）` ≠ `standard`）：
+ * 组件若自己写死一套中文档位名，断言必红。
+ */
+const CALC_CONFIG: CraftCalcConfig = {
+  per_fold_single: 0.25,
+  per_fold_mixed_times: { '1': 0.65, '2': 1.2 },
+  margin_single: 0.3,
+  margin_multi: 0.3,
+  min_fullness: 1.5,
+  tiers: {
+    standard: { fullness: 2.0, label: '标准档（2.0倍）' },
+    economy: { fullness: 1.8, label: '经济档（1.8倍）' },
+  },
+  default_formula: 'pleat',
+  side_margin: 0.15,
+  meters_rounding_step: 0.1,
+}
 
 /** 受控包装：模拟页面用 useState 持有 value，便于断言累积后的值 */
 function Harness({
   initial = {},
   mainMeters = 3,
-  sheer = false,
-  sheerMeters = null,
-  sheerUnitPrice = null,
+  calcConfig = CALC_CONFIG,
+  pleatCount = null,
   edgeMeters = null,
   edgeUnitPrice = null,
   onChangeSpy,
 }: {
   initial?: CraftSpecInput
   mainMeters?: number
-  sheer?: boolean
-  sheerMeters?: number | null
-  sheerUnitPrice?: number | null
+  calcConfig?: CraftCalcConfig | null
+  pleatCount?: number | null
   edgeMeters?: number | null
   edgeUnitPrice?: number | null
   onChangeSpy?: (patch: Partial<CraftSpecInput>) => void
@@ -57,8 +78,6 @@ function Harness({
   const [value, setValue] = useState<CraftSpecInput>(initial)
   const [edge, setEdge] = useState<number | null>(edgeMeters)
   const [price, setPrice] = useState<number | null>(edgeUnitPrice)
-  const [sMeters, setSMeters] = useState<number | null>(sheerMeters)
-  const [sPrice, setSPrice] = useState<number | null>(sheerUnitPrice)
   return (
     <OrderCraftFields
       value={value}
@@ -67,11 +86,8 @@ function Harness({
         setValue((prev) => ({ ...prev, ...patch }))
       }}
       mainMeters={mainMeters}
-      sheer={sheer}
-      sheerMeters={sMeters}
-      onSheerMetersChange={setSMeters}
-      sheerUnitPrice={sPrice}
-      onSheerUnitPriceChange={setSPrice}
+      calcConfig={calcConfig}
+      pleatCount={pleatCount}
       edgeMeters={edge}
       onEdgeMetersChange={setEdge}
       edgeUnitPrice={price}
@@ -93,13 +109,82 @@ const chipLabels = (group: string) =>
     .map((el) => el.textContent)
 
 describe('OrderCraftFields', () => {
-  it('渲染 §4.2 保留的工艺控件（加工类型/打开方式/款式/褶距/是否对花）', () => {
+  it('渲染保留的工艺控件（加工类型/打开方式/款式/用料公式/是否对花）', () => {
     render(<Harness />)
-    // 枚举字段 = chips 组（一击即中）；褶距仍是数值输入
-    for (const name of ['加工类型', '打开方式', '款式', '是否对花']) {
+    // 枚举字段 = chips 组（一击即中）；本组件已无任何数值输入框（褶距已移除，见 #4874 判据）
+    for (const name of ['加工类型', '打开方式', '款式', '用料公式', '是否对花']) {
       expect(chipGroup(name)).toBeInTheDocument()
     }
-    expect(screen.getByLabelText('褶距')).toBeInTheDocument()
+  })
+
+  // ── issue #4874 ①：褶距控件整体退场（用户 2026-09-21「移除订单的工艺规格中的褶距字段」）──
+  // 红证（改前）：本组件有一个「褶距」number 输入框（`getByLabelText('褶距')` 命中），
+  // 且 `onChange` 会 patch `{ pleatSpacing: … }` ⇒ 本判据两条断言必红。
+  it('#4874 **不再有**「褶距」控件（红证：改前有 `褶距` number 输入框）', () => {
+    render(<Harness />)
+    expect(screen.queryByLabelText('褶距')).toBeNull()
+    expect(screen.queryByText('褶距')).toBeNull()
+  })
+
+  // ── issue #4874 ②：用料公式 chips（值域与算料引擎同源，文案只有一份）────────────────
+  it('#4874 用料公式 chips 逐字 = 韩折公式（折数法）/ 褶倍数公式（倍数法）', () => {
+    render(<Harness />)
+    expect(chipLabels('用料公式')).toEqual(['韩折公式（折数法）', '褶倍数公式（倍数法）'])
+  })
+
+  it('#4874 选用料公式 ⇒ onChange 收到 `formula`（值域 = pleat / fullness）', () => {
+    const spy = vi.fn()
+    render(<Harness onChangeSpy={spy} />)
+    fireEvent.click(chip('用料公式', '褶倍数公式（倍数法）'))
+    expect(spy).toHaveBeenCalledWith({ formula: 'fullness' })
+  })
+
+  // ── issue #4874 ③：选韩折公式 ⇒ 展示**自动算出的折数**（试算响应 `pleat_count`）──────
+  // 没结果展示「—」：**不编数**（编一个折数 = 第二份算料逻辑）。默认公式 = 算料配置的
+  // `default_formula`（本 fixture = pleat）⇒ 块默认就在。
+  it('#4874 韩折公式 ⇒ 展示折数（有结果显数字；无结果显示「—」，不编数）', () => {
+    const { unmount } = render(<Harness pleatCount={52} />)
+    expect(within(screen.getByTestId('craft-pleat-count')).getByText('52')).toBeInTheDocument()
+    unmount()
+
+    render(<Harness pleatCount={null} />)
+    expect(within(screen.getByTestId('craft-pleat-count')).getByText('—')).toBeInTheDocument()
+  })
+
+  it('#4874 选褶倍数公式 ⇒ **不**展示折数块，改为展示档位 chips', () => {
+    render(<Harness pleatCount={52} />)
+    fireEvent.click(chip('用料公式', '褶倍数公式（倍数法）'))
+    expect(screen.queryByTestId('craft-pleat-count')).toBeNull()
+    expect(screen.getByTestId('craft-tier-options')).toBeInTheDocument()
+  })
+
+  // ── issue #4874 ④⑤：档位 = 算料配置 `tiers` 的键（值）+ `label`（文案）───────────────
+  it('#4874 档位 chips 值域与文案**逐字取自算料配置**（红证：写死一套中文档位名 ⇒ 必红）', () => {
+    render(<Harness initial={{ formula: 'fullness' }} />)
+    const group = chipGroup('档位')
+    expect(
+      within(group)
+        .getAllByRole('radio')
+        .map((r) => r.textContent)
+    ).toEqual(['标准档（2.0倍）', '经济档（1.8倍）'])
+  })
+
+  it('#4874 选档位 ⇒ onChange 收到 `craftTier`（键 = 配置的阶位键，不是文案）', () => {
+    const spy = vi.fn()
+    render(<Harness initial={{ formula: 'fullness' }} onChangeSpy={spy} />)
+    fireEvent.click(chip('档位', '经济档（1.8倍）'))
+    expect(spy).toHaveBeenCalledWith({ craftTier: 'economy' })
+  })
+
+  // ── issue #4874 ⑥：配置加载失败 ⇒ 按缺省走 + **显式提示**（不静默、不阻断录入）────────
+  it('#4874 算料配置未加载 ⇒ 显式提示 + 不渲染档位 chips + 其余控件照常可用', () => {
+    render(<Harness calcConfig={null} initial={{ formula: 'fullness' }} />)
+    expect(screen.getByTestId('craft-calc-config-missing')).toBeInTheDocument()
+    // 档位**值域无从得知** ⇒ 不渲染 chips（编一套 = 第二份档位真值）
+    expect(screen.queryByTestId('craft-tier-options')).toBeNull()
+    expect(screen.queryByRole('radiogroup', { name: '档位' })).toBeNull()
+    // 录入不被阻断：其余 chips 照常可用
+    expect(chipGroup('款式')).toBeInTheDocument()
   })
 
   // issue #4566 红证（用户 2026-09-19 裁定「工艺规格中的**工艺，定型**，对花我觉得**直接通过
@@ -122,6 +207,16 @@ describe('OrderCraftFields', () => {
     expect(screen.queryByRole('radio', { name: '帘头' })).toBeNull()
   })
 
+  // ── issue #4874 ③（纱帘侧）：纱帘子块整体删除（`布帘+纱帘` 档已移除）────────────────
+  // 红证（改前）：`sheer=true` 时本组件渲染「纱帘米数 / 纱帘单价」两个输入框 ⇒ 必红。
+  // 「纱帘仍是一条独立明细行」的真值由**独立商品组**（帘体 = 纱帘）承载，不在本组件里。
+  it('#4874 **不再有**纱帘米数 / 纱帘单价子块（红证：改前 `sheer` 为真时两个输入框存在）', () => {
+    render(<Harness />)
+    expect(screen.queryByLabelText('纱帘米数')).toBeNull()
+    expect(screen.queryByLabelText('纱帘单价')).toBeNull()
+    expect(screen.queryByText(/纱帘米数来源/)).toBeNull()
+  })
+
   // issue #4489 判据「枚举字段全部可见且**一击可选**」：
   // 红证 = 修复前是 `<select>`（无 radiogroup/radio 角色）⇒ 本判据必红；
   // 且「一击」是实质断言：**一次点击**即 `aria-checked=true`，不需要先「展开」。
@@ -133,7 +228,6 @@ describe('OrderCraftFields', () => {
     expect(chip('加工类型', '未指定')).toHaveAttribute('aria-checked', 'false')
   })
 
-  // 19 项特殊选项的判据已迁到 `OrderSpecialOptions.test.tsx`（issue #4511 组件抽离）。
   it('加工类型 / 款式 chips 的候选逐字 = 定高买宽·定宽买高 / 单色·拼色', () => {
     render(<Harness />)
     expect(chipLabels('加工类型')).toEqual(['未指定', '定高买宽', '定宽买高'])
@@ -185,15 +279,6 @@ describe('OrderCraftFields', () => {
     fireEvent.click(chip('是否对花', '否'))
     expect(chip('是否对花', '否')).toHaveAttribute('aria-checked', 'true')
     expect(chip('是否对花', '未指定')).toHaveAttribute('aria-checked', 'false')
-  })
-
-  it('褶距输入 ⇒ pleatSpacing 数字；清空 ⇒ undefined', () => {
-    const spy = vi.fn()
-    render(<Harness onChangeSpy={spy} />)
-    fireEvent.change(inputByName('褶距'), { target: { value: '0.1' } })
-    expect(spy).toHaveBeenCalledWith({ pleatSpacing: 0.1 })
-    fireEvent.change(inputByName('褶距'), { target: { value: '' } })
-    expect(spy).toHaveBeenCalledWith({ pleatSpacing: undefined })
   })
 
   it('花距输入框只在「是否对花 = 是」时出现', () => {
@@ -252,44 +337,4 @@ describe('OrderCraftFields', () => {
   // 均随裁定作废（控件已不在本组件里）——真值源与判据一字未丢，只是**换了承载控件**：
   // 工艺 = 加工项的 `craftHint`（`orders-new.test.tsx` 的 #4566 组 + `craft-auto-features`），
   // 定型 = 加工项「定型」的勾选态（同处），纯函数半边在 `order-craft-fields.test.ts`。
-
-  // ── issue #4521：纱帘子块（用户口径「带纱帘就像配布边一样，让用户输入米数和单价」）────
-  it('#4521 帘体不含纱帘 ⇒ 不出现纱帘录入', () => {
-    render(<Harness sheer={false} />)
-    expect(screen.queryByLabelText('纱帘米数')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('纱帘单价')).not.toBeInTheDocument()
-  })
-
-  it('#4521 帘体含纱帘 ⇒ 出现纱帘米数（默认显示主布米数）与纱帘单价', () => {
-    render(<Harness sheer mainMeters={3} />)
-    expect(inputByName('纱帘米数')).toHaveValue(3)
-    expect(inputByName('纱帘单价')).toHaveValue(null)
-    expect(screen.getByText(/默认 = 主布米数/)).toBeInTheDocument()
-  })
-
-  it('#4521 纱帘米数可编辑 ⇒ 回调收到新米数', () => {
-    render(<Harness sheer mainMeters={3} />)
-    fireEvent.change(inputByName('纱帘米数'), { target: { value: '4.5' } })
-    expect(inputByName('纱帘米数')).toHaveValue(4.5)
-  })
-
-  it('#4521 纱帘米数来源：未改过「跟随主布」/ 改过「人工指定」/ 清空回到跟随', () => {
-    render(<Harness sheer mainMeters={3} />)
-    expect(screen.getByText('纱帘米数来源：跟随主布')).toBeInTheDocument()
-    fireEvent.change(inputByName('纱帘米数'), { target: { value: '4.5' } })
-    expect(screen.getByText('纱帘米数来源：人工指定')).toBeInTheDocument()
-    fireEvent.change(inputByName('纱帘米数'), { target: { value: '' } })
-    expect(screen.getByText('纱帘米数来源：跟随主布')).toBeInTheDocument()
-    expect(inputByName('纱帘米数')).toHaveValue(3)
-  })
-
-  it('#4521 纱帘与配布边**互不串**：只带纱帘时配布边不出现，反之亦然', () => {
-    const { unmount } = render(<Harness sheer mainMeters={3} />)
-    expect(screen.queryByLabelText('配布边米数')).not.toBeInTheDocument()
-    unmount()
-    render(<Harness mainMeters={3} />)
-    fireEvent.click(chip('款式', '拼色'))
-    expect(screen.queryByLabelText('纱帘米数')).not.toBeInTheDocument()
-    expect(inputByName('配布边米数')).toHaveValue(3)
-  })
 })

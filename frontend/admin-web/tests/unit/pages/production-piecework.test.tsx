@@ -209,7 +209,7 @@ describe('计件工资报表页 /production/piecework', () => {
 
     const panel = screen.getByTestId('piecework-by-set')
     // 表头不得再把一樘窗称作「订单行」（旧口径文字钉）
-    expect(within(panel).getByText('套（樘窗）')).toBeInTheDocument()
+    expect(within(panel).getByText('套')).toBeInTheDocument()
     expect(within(panel).queryByText('套（订单行）')).not.toBeInTheDocument()
     expect(within(panel).getByText('JG-20260918-6914-001')).toBeInTheDocument()
     expect(within(panel).getByText('JG-20260918-6914-002')).toBeInTheDocument()
