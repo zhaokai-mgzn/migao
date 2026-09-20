@@ -580,7 +580,7 @@ public class ProductionService {
         // ① 先占位：同键重复请求**不执行**（不落明细、不累加、不推进完工判定）
         if (!clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_REPORT)) {
             // ② 回放首次成功结果；无快照（占位在飞/已失败）⇒ replay fail-closed 抛错，不返回空结果
-            Map<String, Object> replayed = replayReport(tenantId, clientRequestId);
+            Map<String, Object> replayed = replayFirstResult(tenantId, clientRequestId);
             log.info("[报工幂等] 同键重复请求：跳过执行，回放首次结果 tenantId={}, operationId={}",
                     tenantId, operationId);
             return replayed;
@@ -607,9 +607,13 @@ public class ProductionService {
      *
      * <p>回放内容 = 首次那份快照（{@code done_qty}/{@code status} 是**首次执行时**的取值）：
      * 幂等的定义就是「同键拿到同一结果」，不得用当前库值替换（那会让两次响应不同 ⇒ 非幂等）。</p>
+     *
+     * <p><b>包级可见</b>（切片 ②，issue #4698）：扫码完成入口
+     * （{@link ProductionScanCompleteService}）复用**同一份**回放口径 —— 在那边再写一份
+     * 「读快照 + 打 replayed 标记」就是第二份幂等实现（两处迟早不同）。</p>
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private Map<String, Object> replayReport(Long tenantId, String clientRequestId) {
+    Map<String, Object> replayFirstResult(Long tenantId, String clientRequestId) {
         Optional<Map> stale = clientRequestIdService.replay(tenantId, clientRequestId, Map.class);
         Map<String, Object> snapshot = (Map<String, Object>) stale.orElseThrow(
                 () -> new BusinessException("REQUEST_IN_PROGRESS",
@@ -623,33 +627,24 @@ public class ProductionService {
 
     /**
      * 报工主体（占位成功后才执行；**不加** {@code @Transactional} —— 见 {@link #report} 的接线注释）。
+     *
+     * <p>本方法只做「订单/工序定位 + 解析期校验 + 请求体解析」；落库主体是 {@link #applyReport}
+     * （切片 ② 起被扫码完成入口复用 —— 记账口径**只有一份**）。</p>
      */
     private Map<String, Object> doReport(String orderId, String operationId,
                                          Map<String, Object> body, Long tenantId,
                                          WorkerIdentity workerIdentity) {
         // 防呆⑤ 工序必须确定（用户裁定②-2 的硬约束，issue #4694）：本次扫的是**哪道**工序必须明确 ——
         // 工序未确定却记账 = 计件记错工序 ⇒ 发错工资。删的是**顺序闸门**，本条**不放宽**：
-        // 这里不提供「默认取下一道待做」之类的推断（那是扫码闭环落码单的事），缺 id 直接拒绝。
+        // 商家/旧调用方这条路径**不**提供「默认取下一道待做」的推断（推断是扫码闭环入口的事，
+        // 见 {@link ProductionScanCompleteService}），缺 id 直接拒绝。
         if (!StringUtils.hasText(operationId)) {
             throw BusinessException.validationError(
                     "报工必须指定工序（operationId 缺失或空白）—— 工序未确定不得记账，否则计件会记错工序");
         }
         Order order = resolveOrder(orderId, tenantId);
-        ProcessingOrder po = processingOrderMapper.selectActiveByOrderId(order.getId(), tenantId);
-        if (po == null) {
-            throw BusinessException.validationError(
-                    "订单 " + order.getOrderNo() + " 尚无加工单，无法报工");
-        }
-        // 防呆④ 非本部位：活跃性判据用 `deleted=0` 的**正向**相等（fail-closed）——
-        // 旧写法 `Integer.valueOf(1).equals(deleted)` 在 deleted 为 NULL 时判为「未软删」而放行，
-        // 而软删实例（工艺变更后重新实例化，V49 `deleted INTEGER DEFAULT 0` 可空）
-        // 正是**不该**再被报工的那批（进度会记到废弃实例上，工件永远做不完）。
-        ProcessingPositionOperation op = positionOperationMapper.selectById(operationId);
-        if (op == null || !tenantId.equals(op.getTenantId())
-                || !Integer.valueOf(0).equals(op.getDeleted())
-                || !po.getId().equals(op.getProcessingOrderId())) {
-            throw BusinessException.notFound("工序");
-        }
+        ProcessingOrder po = requireActiveProcessingOrder(order, tenantId);
+        ProcessingPositionOperation op = requireActiveOperation(po.getId(), operationId, tenantId);
 
         String workType = str(body == null ? null : body.get("work_type"), "normal");
         if (!WORK_TYPES.contains(workType)) {
@@ -659,19 +654,11 @@ public class ProductionService {
         if (qty == null || qty.signum() <= 0) {
             throw BusinessException.validationError("qty 必须大于 0");
         }
-        Object rawQualified = body.get("qualified_qty");
+        Object rawQualified = body == null ? null : body.get("qualified_qty");
         BigDecimal qualifiedQty = rawQualified == null ? qty : bd(rawQualified, qty);
         if (qualifiedQty.signum() < 0) {
             throw BusinessException.validationError("qualified_qty 不能为负");
         }
-        boolean advances = "normal".equals(workType) && qualifiedQty.signum() > 0;
-
-        if (advances) {
-            // 顺序**不拦**（issue #4694，用户裁定「系统无需管理生产顺序」）：此处**不再**有
-            // 「前道未完成 ⇒ 422」的闸门，工人做哪道都按实际工序正常记账。
-            assertWithinPlannedQty(op, qualifiedQty);
-        }
-
         // 🔴 身份**由服务端解**（issue #4733 / 设计 #4716 W1）：workerIdentity 来自工人 session
         // （X-Worker-Session-Id）时，body 里的 worker_id/worker_name **一律忽略** ——
         // 前端可被改，而 production_work_logs.worker_id 是**工资凭证**（计件归属的唯一根）。
@@ -680,6 +667,96 @@ public class ProductionService {
         WorkerIdentity identity = workerIdentity != null
                 ? workerIdentity
                 : WorkerIdentity.fromClientBody(str(body.get("worker_id")), str(body.get("worker_name")));
+        return applyReport(order, po, op, qty, qualifiedQty, workType, identity, tenantId);
+    }
+
+    /**
+     * 订单 → 活跃加工单（fail-closed：无活跃加工单 ⇒ 422，不是静默按订单报工）。
+     *
+     * <p>包级可见（切片 ②）：扫码完成入口用**同一份**定位（不复制一份「找活跃加工单」的判据）。</p>
+     */
+    ProcessingOrder requireActiveProcessingOrder(Order order, Long tenantId) {
+        ProcessingOrder po = processingOrderMapper.selectActiveByOrderId(order.getId(), tenantId);
+        if (po == null) {
+            throw BusinessException.validationError(
+                    "订单 " + order.getOrderNo() + " 尚无加工单，无法报工");
+        }
+        return po;
+    }
+
+    /**
+     * 定位**活跃**工序实例（防呆④ 的落地判据）。
+     *
+     * <p>活跃性判据用 `deleted=0` 的**正向**相等（fail-closed）—— 旧写法
+     * `Integer.valueOf(1).equals(deleted)` 在 deleted 为 NULL 时判为「未软删」而放行，
+     * 而软删实例（工艺变更后重新实例化，V49 `deleted INTEGER DEFAULT 0` 可空）
+     * 正是**不该**再被报工的那批（进度会记到废弃实例上，工件永远做不完）。
+     * 三重校验：同租户 + 未软删 + 属于本加工单。</p>
+     *
+     * <p>包级可见（切片 ②）：扫码完成入口用**同一份**判据 —— 扫码侧「工序确定」只是**推断**，
+     * 真正决定写哪一行的仍是这里的实例校验。</p>
+     */
+    ProcessingPositionOperation requireActiveOperation(String processingOrderId, String operationId,
+                                                       Long tenantId) {
+        ProcessingPositionOperation op = positionOperationMapper.selectById(operationId);
+        if (op == null || !tenantId.equals(op.getTenantId())
+                || !Integer.valueOf(0).equals(op.getDeleted())
+                || !processingOrderId.equals(op.getProcessingOrderId())) {
+            throw BusinessException.notFound("工序");
+        }
+        return op;
+    }
+
+    /**
+     * 扫码完成（切片 ②，issue #4698）的**事务边界**（设计 §4.2 方案 A）。
+     *
+     * <p>🔴 <b>为什么必须单独一个 public 方法</b>：{@code @Transactional} 只在**跨 bean 调用**时
+     * 经 Spring 代理生效。本方法**只**被 {@link ProductionScanCompleteService} 调用（不同 bean）⇒
+     * 代理生效，下面三处写入<b>同生共死</b>：</p>
+     * <ol>
+     *   <li>{@code production_work_logs} 报工明细（计件凭证）；</li>
+     *   <li>CAS 推进 {@code done_qty} / {@code status} + {@code done_at}（A 模式完工时刻）；</li>
+     *   <li>必完工序全绿 ⇒ 加工单 {@code completed}。</li>
+     * </ol>
+     * 任一步抛错 ⇒ 整体回滚（**零残留**：不会出现「明细落了一条、进度没推进」这种对不上账的行）。
+     *
+     * <p>⚠️ <b>{@link #report} 的事务边界**刻意不同**</b>（设计 §4.2 明写「不改 report」）：
+     * 它走 {@code this.applyReport(...)}（**自调用** ⇒ 本注解对它无效），保持既有「先占位 → 执行 →
+     * 落快照」的非事务语义逐字不变。两条路径共用**同一份记账实现**（{@link #applyReport}），
+     * 差别只在事务边界与「工序怎么定」。</p>
+     *
+     * <p>幂等占位（{@code X-Client-Request-Id}）在调用方**外层**（与 {@link #report} 同款：
+     * 占位必须独立提交，否则事务回滚会把占位一起回滚 ⇒ 同键重试会被当成首次而重复记账）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> applyScanComplete(Order order, ProcessingOrder po, ProcessingPositionOperation op,
+                                                 BigDecimal qty, BigDecimal qualifiedQty, String workType,
+                                                 WorkerIdentity identity, Long tenantId) {
+        return applyReport(order, po, op, qty, qualifiedQty, workType, identity, tenantId);
+    }
+
+    /**
+     * 报工落库主体（**唯一**一份记账口径，切片 ② 起被 {@link #doReport} 与
+     * {@link #applyScanComplete} 共用）：数量上限校验 → 写 {@code production_work_logs}
+     * （数量 × 快照单价 + 价态）→ 身份快照 / 旁路账 → CAS 推进 {@code done_qty} / {@code status}
+     * → **{@code done_at}**（真正做完才落笔）→ 必完工序全绿 ⇒ 加工单 {@code completed}。
+     *
+     * <p><b>两条路径的差别只有两处</b>（记账判据一字不差）：① 事务边界（扫码完成有，report 没有）；
+     * ② 工序怎么定（扫码 = 系统推断 + 一键改；report = 调用方显式给 operationId）。</p>
+     *
+     * @param identity 身份来源**由调用方决定**（工人 session = 权威；无 session 的商家侧 = 显式
+     *                 {@code fromClientBody} 降级）。非 null（调用方已兜底）。
+     */
+    private Map<String, Object> applyReport(Order order, ProcessingOrder po, ProcessingPositionOperation op,
+                                            BigDecimal qty, BigDecimal qualifiedQty, String workType,
+                                            WorkerIdentity identity, Long tenantId) {
+        boolean advances = "normal".equals(workType) && qualifiedQty.signum() > 0;
+
+        if (advances) {
+            // 顺序**不拦**（issue #4694，用户裁定「系统无需管理生产顺序」）：此处**不再**有
+            // 「前道未完成 ⇒ 422」的闸门，工人做哪道都按实际工序正常记账。
+            assertWithinPlannedQty(op, qualifiedQty);
+        }
 
         ProductionWorkLog workLog = ProductionWorkLog.builder()
                 .tenantId(tenantId)
@@ -707,7 +784,7 @@ public class ProductionService {
         workLogMapper.insert(workLog);
 
         // 每笔计件留身份快照（W4）：工序实例的 worker_id/worker_name 与报工行**同源**
-        // （设计 V92 已预留这两列；此处是 A 模式首次写入 —— 单独 UPDATE，不动 CAS 的 SET 子句）。
+        // （设计 V92 已预留这两列；单独 UPDATE，不动 CAS 的 SET 子句）。
         if (identity.workerId() != null || identity.workerName() != null) {
             positionOperationMapper.recordReporter(op.getId(), tenantId, identity.workerId(),
                     identity.workerName(), OffsetDateTime.now());
@@ -746,6 +823,13 @@ public class ProductionService {
                         409,
                         "请下拉刷新本加工单工序进度后再确认是否仍需报工；"
                                 + "若这是本人刚提交的报工，说明已成功，无需重报");
+            }
+            // 完工时刻（V92 `done_at`，切片 ② / 设计 §4.3）：**真正做完**（done_qty ≥ 应做）才落笔
+            // —— A 模式「做完扫一次 = 完工」的完成时刻，也是切片 ③ 卡点判据的唯一来源。
+            // 部分报工（6/11 米）**不**落：那不是完工时刻（既有偏离：部分报工也把 status 置 done）。
+            // 幂等在 SQL（`COALESCE(done_at, …)`：只有第一次落笔生效 ⇒ 同键重放 / 二次完成不改写）。
+            if (isDoneQty(doneQty, op.getQty())) {
+                positionOperationMapper.recordCompletionIfDone(op.getId(), tenantId, OffsetDateTime.now());
             }
         }
 
@@ -1449,7 +1533,15 @@ public class ProductionService {
      * （见 {@link ProductionScanService} 的偏离登记）。</p>
      */
     boolean isDone(ProcessingPositionOperation op) {
-        return nz(op.getDoneQty()).compareTo(nz(op.getQty())) >= 0;
+        return isDoneQty(op.getDoneQty(), op.getQty());
+    }
+
+    /**
+     * 「做完没有」的数量判据（**唯一**一份）：工序实例判据（{@link #isDone}）与扫码完成落
+     * {@code done_at} 的条件共用它 —— 两处各写一遍迟早不同（「完工」与「完成时刻」必须同口径）。
+     */
+    private static boolean isDoneQty(BigDecimal doneQty, BigDecimal qty) {
+        return nz(doneQty).compareTo(nz(qty)) >= 0;
     }
 
     private static BigDecimal nz(BigDecimal value) {
@@ -1460,7 +1552,14 @@ public class ProductionService {
         return nz(value).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private static String str(Object value) {
+    /**
+     * 请求体取文本（空白 ⇒ null）。
+     *
+     * <p><b>包级可见</b>（切片 ②）：扫码完成入口
+     * （{@link ProductionScanCompleteService}）用**同一份**取值口径 —— 两边各写一份
+     * 「怎么读 body」迟早不同（`""` vs null、`"  "` vs 有值）。</p>
+     */
+    static String str(Object value) {
         if (value == null) {
             return null;
         }
@@ -1468,7 +1567,7 @@ public class ProductionService {
         return text.isEmpty() ? null : text;
     }
 
-    private static String str(Object value, String defaultValue) {
+    static String str(Object value, String defaultValue) {
         String text = str(value);
         return text == null ? defaultValue : text;
     }
@@ -1477,7 +1576,8 @@ public class ProductionService {
         return Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
     }
 
-    private static BigDecimal bd(Object value, BigDecimal defaultValue) {
+    /** 请求体取数量（包级可见理由同 {@link #str(Object)}）。 */
+    static BigDecimal bd(Object value, BigDecimal defaultValue) {
         if (value == null) {
             return defaultValue;
         }

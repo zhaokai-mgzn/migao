@@ -3,6 +3,8 @@ package com.migao.admin.controller;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.service.ClientRequestIdService;
+import com.migao.admin.service.ProductionScanCompleteService;
+import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
 import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.worker.WorkerSessionService;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -46,6 +49,10 @@ public class WorkerProductionController {
 
     private final ProductionService productionService;
     private final WorkerSessionService workerSessionService;
+    /** 扫码解析 + 工序推断（切片 ① 的**同一份**只读实现，工人路径与商家路径共用一个类）。 */
+    private final ProductionScanService productionScanService;
+    /** 扫码报工主闭环（切片 ②）：一次事务记账 + 未确定工序拒绝记账 + A 模式 {@code done_at}。 */
+    private final ProductionScanCompleteService productionScanCompleteService;
 
     /**
      * 工人扫工页读面：加工单工序树 + 进度。
@@ -91,6 +98,63 @@ public class WorkerProductionController {
         }
         return ApiResponse.success(productionService.report(
                 orderId, operationId, body, TenantContext.getTenantId(), clientRequestId, identity));
+    }
+
+    /**
+     * 工人扫码解析 + 工序推断（**只读**，切片 ① / 设计 §2.3 / §2.6 / §3；切片 ② 接线）。
+     *
+     * <p>GET /api/worker/production/scan?token=…&amp;operation_id=…</p>
+     *
+     * <p><b>为什么工人端也要一个</b>：切片 ① 的 {@code /api/admin/production/scan} 工人在门禁处
+     * 到不了（{@code ADMIN_API_REJECTED_ROLES} 含 {@code worker}）⇒ A 模式「扫码 ⇒ 一屏」在工人端
+     * 需要同一条读面。实现**逐字复用** {@link ProductionScanService#resolve}（不新造第二套响应形状
+     * —— 商家端与工人端看到的推断结果逐字同源）。</p>
+     *
+     * <p>无有效工人 session ⇒ 401（fail-closed，与 {@code operations} 同款）。</p>
+     */
+    @GetMapping("/scan")
+    public ApiResponse<Map<String, Object>> scan(
+            @RequestParam(name = "token") String token,
+            @RequestParam(name = "operation_id", required = false) String operationId,
+            @RequestHeader(value = WorkerSessionService.SESSION_HEADER, required = false) String sessionId) {
+        requireWorker(sessionId);
+        return ApiResponse.success(productionScanService.resolve(
+                token, operationId, TenantContext.getTenantId()));
+    }
+
+    /**
+     * 工人扫码**完成**（A 模式闭环的唯一写入口，切片 ② / 设计 §4 / §5）。
+     *
+     * <p>POST /api/worker/production/scan/complete</p>
+     *
+     * <p>body：{@code token}（必填）+ 可选 {@code operation_id}（一键改）/ {@code qty} /
+     * {@code qualified_qty} / {@code work_type}。数量缺省 = 剩余应做。</p>
+     *
+     * <p>🔴 身份**只**来自 {@code X-Worker-Session-Id}：body 里的 {@code worker_id} /
+     * {@code worker_name} **一个字节都不读**（计件归属 = 工资凭证，见 issue #4733）。
+     * 无 session ⇒ 401，**不**降级到 body 口径。</p>
+     *
+     * <p>幂等：请求头 {@code X-Client-Request-Id}（与既有报工同一套实现/同一张表）；
+     * 同键重复 ⇒ 不重复计件、回放首次结果（{@code replayed:true}）。</p>
+     */
+    @PostMapping("/scan/complete")
+    public ApiResponse<Map<String, Object>> completeByScan(
+            @RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader(value = WorkerSessionService.SESSION_HEADER, required = false) String sessionId,
+            @RequestHeader(value = ClientRequestIdService.HEADER, required = false) String clientRequestId) {
+        WorkerIdentity identity = requireWorker(sessionId);
+        return ApiResponse.success(productionScanCompleteService.complete(
+                body, TenantContext.getTenantId(), clientRequestId, identity));
+    }
+
+    /** 有效工人 session 或 401（fail-closed 的**唯一**一处判据：工人路径上「谁」没有第二条来源）。 */
+    private WorkerIdentity requireWorker(String sessionId) {
+        WorkerIdentity identity = workerSessionService.resolveIdentity(sessionId);
+        if (identity == null) {
+            throw com.migao.admin.exception.BusinessException.authFailed(
+                    "尚未登录工人身份，请先用工号 + PIN 登录");
+        }
+        return identity;
     }
 
     /**

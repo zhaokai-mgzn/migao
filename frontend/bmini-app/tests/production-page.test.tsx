@@ -46,6 +46,9 @@ jest.mock('../src/services/productionService', () => ({
   // 若一并 mock 掉会拿到 undefined ⇒ 点「完成报工」直接抛错
   ...jest.requireActual('../src/services/productionService'),
   getOrderOperations: jest.fn(),
+  // 扫码主闭环（切片 ②）：本文件只测既有逐道报工链路 ⇒ 默认返回 undefined ⇒ 页面回落既有形态
+  scanResolve: jest.fn(),
+  completeByScan: jest.fn(),
   reportOperation: jest.fn(),
   shipOrder: jest.fn(),
   getOrderPiecework: jest.fn(),

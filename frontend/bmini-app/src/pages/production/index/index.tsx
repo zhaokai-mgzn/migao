@@ -3,17 +3,21 @@ import { View, Text, Button, Input, ScrollView } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useAuthStore } from '../../../store/authStore'
 import {
+  completeByScan,
   getOrderOperations,
   getOrderPiecework,
   newReportRequestId,
   reportInFlightLock,
   reportOperation,
+  scanResolve,
   shipOrder,
   type OrderOperations,
   type PieceworkSummary,
   type ProductionOperation,
   type ProductionPosition,
   type ReportPayload,
+  type ScanOperationView,
+  type ScanResolveResult,
   type WorkLogRow,
 } from '../../../services/productionService'
 import { WorkerBar } from '../../../components/WorkerBar'
@@ -97,6 +101,29 @@ function remainingQty(operation: ProductionOperation): number {
   return remaining > 0 ? remaining : 0
 }
 
+/**
+ * 工序显示名（与既有工序列表/后端 `operationView` 同口径：逻辑名 · 部位）。
+ * 缺键**不补默认值**（不猜），全缺时退化成「工序」。
+ */
+function operationLabel(operation: {
+  logical_name?: string | null
+  position?: string | null
+}): string {
+  return [operation.logical_name, operation.position].filter(Boolean).join(' · ') || '工序'
+}
+
+/** 按 id 在本单工序列表里找该工序（A 模式离线兜底要用它的 `done_qty` 算剩余数量）。 */
+function findOperation(
+  detail: OrderOperations | null,
+  operationId: string,
+): ProductionOperation | undefined {
+  for (const position of detail?.positions || []) {
+    const found = position.operations.find((item) => item.id === operationId)
+    if (found) return found
+  }
+  return undefined
+}
+
 /** 该工序的累计计件金额（服务端 `piecework.per_operation` 按工序名给；没有则不展示） */
 function pieceworkOf(summary: PieceworkSummary | null, operationName: string): number | null {
   const found = summary?.per_operation?.find((item) => item.operation === operationName)
@@ -176,6 +203,15 @@ export default function ProductionPage() {
   const [pendingCount, setPendingCount] = useState(0)
   /** 当前离线态（本次展示的是本机缓存的待做清单，不是服务端真值） */
   const [offline, setOffline] = useState(false)
+  /**
+   * A 模式一屏（切片 ②）：扫新码后的「工序 + 应做数量 + 【完成】」。
+   *
+   * <p>设计 §4.1：一次扫码 = 1 步 —— 找到哪一樘窗/哪个部位/该做哪一道都由**码 + 系统推断**给出；
+   * 唯一的额外交互是「不是这道？改」（只在需要时才点）。`null` = 没有在屏的一屏。</p>
+   */
+  const [scanScreen, setScanScreen] = useState<{ token: string; view: ScanResolveResult } | null>(
+    null,
+  )
   /** 深链只处理一次（避免 React 严格模式/重复挂载时重复请求） */
   const launchedRef = useRef(false)
 
@@ -246,11 +282,44 @@ export default function ProductionPage() {
     if (orderId) void loadOrder(orderId)
   }, [loadOrder])
 
-  /** 扫一扫（失败/无相机时走手输单号兜底） */
+  /**
+   * 扫一扫（切片 ② A 模式接线；失败/无相机时走手输单号兜底）。
+   *
+   * <p>三级优先（与后端「新码优先，未命中只回落」逐字同序）：</p>
+   * <ol>
+   *   <li><b>新码</b>（套 × 部位）⇒ 出 **A 模式一屏**（工序 + 应做数量 + 【完成】），
+   *       同时把本单工序/进度/明细拉到屏下方；</li>
+   *   <li><b>旧码</b>（加工单级）⇒ 显式提示「必须选部位」并带出本单工序
+   *       —— 🔴 绝不默认取第 1 套（默认 = 把进度/计件记到错的窗上）；</li>
+   *   <li>其余（码里带加工单号/单号本身）⇒ 既有形态，逐道报工。</li>
+   * </ol>
+   */
   const handleScan = useCallback(async () => {
     try {
       const res = await Taro.scanCode({ scanType: ['qrCode'] })
-      const orderId = parseOrderIdFromQr(res?.result || '')
+      const raw = String(res?.result || '').trim()
+      if (!raw) {
+        Taro.showToast({ title: '无法识别该二维码，请手动输入单号', icon: 'none' })
+        return
+      }
+      const scan = await scanResolve(raw)
+      if (scan?.success && scan.data) {
+        const view = scan.data
+        if (view.granularity === 'set_position') {
+          setScanScreen({ token: raw, view })
+          setError('')
+          if (view.order_id) await loadOrder(view.order_id)
+          return
+        }
+        if (view.order_id) {
+          // 旧码只到加工单级 ⇒ 部位**必须**由工人选（绝不默认取第 1 套）。用 toast 提示而不是
+          // setError：loadOrder 自己也会写 error（单号不存在等），两处都写 error 会互相覆盖。
+          Taro.showToast({ title: '旧码不含套号/部位：请选择部位后报工', icon: 'none' })
+          await loadOrder(view.order_id)
+          return
+        }
+      }
+      const orderId = parseOrderIdFromQr(raw)
       if (!orderId) {
         Taro.showToast({ title: '无法识别该二维码，请手动输入单号', icon: 'none' })
         return
@@ -349,6 +418,102 @@ export default function ProductionPage() {
     [detail, user, qtyInputs, loadOrder],
   )
 
+  /**
+   * A 模式【完成】（切片 ② / 设计 §4.1）：一屏上的工序 ⇒ 一次事务（明细 + CAS + done_at + 完工）。
+   *
+   * <p>数量**不传**（服务端缺省取「剩余应做」——「报工只确认，不手工心算」）；
+   * 身份**不传**（服务端从工人 session 解）；幂等键随请求头走，重试复用它。</p>
+   *
+   * <p>弱网降级：**复用既有补传队列**（幂等键入队，补传复用 ⇒ 不会重复计件），补传走既有
+   * {@code /report} 端点 —— 两条路径共用服务端**同一份**记账核（含 done_at），效果等价。</p>
+   */
+  const handleScanComplete = useCallback(async () => {
+    if (!scanScreen) return
+    const { token, view } = scanScreen
+    const operation = view.operation
+    // 未确定工序 ⇒ 屏上根本不渲染【完成】（见 JSX）⇒ 这里再兜一道，绝不带 null 去报工
+    if (!operation) return
+    const orderId = view.order_id
+    // 本机展示/离线补传要用的数量：优先按本单工序列表算剩余（= 服务端缺省口径），列表还没到时退回应做
+    const known = findOperation(detail, operation.operation_id)
+    const qty = known ? remainingQty(known) : Number(operation.qty || 0)
+    // in-flight 锁（issue #4116 §5-1）：连点第二次直接丢弃 —— 不发第二个请求
+    if (!reportInFlightLock.tryAcquire()) return
+    const requestId = newReportRequestId()
+    setReportingId(operation.operation_id)
+    setError('')
+    try {
+      const res = await completeByScan(token, operation.operation_id, requestId)
+      if (!res.success) {
+        if (res.offline) {
+          const payload: ReportPayload = { qty, qualified_qty: qty, work_type: 'normal' }
+          enqueuePendingReport({
+            requestId,
+            orderId,
+            operationId: operation.operation_id,
+            operationName: operationLabel(operation),
+            unit: operation.unit || '',
+            payload,
+            createdAt: Date.now(),
+          })
+          setPendingCount(listPendingReports().length)
+          setError(`${res.message}——已存入本机待补传队列，联网后自动补传（不会重复计件）`)
+          return
+        }
+        setError(res.message || '报工失败，请重试')
+        return
+      }
+      appendWorkLog(orderId, {
+        requestId,
+        // 展示名取**服务端回执**（请求体不含身份，服务端才知道这笔记到了谁头上）
+        worker_name: res.data?.worker_name || '未署名',
+        operation: operationLabel(operation),
+        qty,
+        unit: operation.unit || '',
+        createdAt: Date.now(),
+      })
+      setWorkLogs(listWorkLogs(orderId))
+      if (res.data?.order_completed) setOrderCompleted(true)
+      // 一屏闭环（设计 §4.1 ⑥）：服务端给了「下一道」⇒ 就地换到屏上（工人不用重新扫码）；
+      // 本套做完 ⇒ 收屏。刷新本单进度/明细与「下一道」同源，避免屏上/列表两处口径不一致。
+      const next = res.data?.next_operation
+      setScanScreen(
+        next
+          ? {
+              token,
+              view: {
+                ...view,
+                operation: next,
+                alternatives: [],
+                set_progress: res.data?.set_progress ?? view.set_progress,
+                completed: res.data?.set_completed ?? false,
+              },
+            }
+          : null,
+      )
+      await loadOrder(orderId)
+    } finally {
+      // 任何出口（成功/失败/抛错）都必须解锁，否则一次网络异常会把按钮永久锁死
+      reportInFlightLock.release()
+      setReportingId(null)
+    }
+  }, [scanScreen, detail, loadOrder])
+
+  /** 「不是这道？改」（设计 §3.3）：显式指定工序 ⇒ **服务端**校验它属于本次扫码的部位/套 */
+  const handlePickAlternative = useCallback(
+    async (operationId: string) => {
+      if (!scanScreen) return
+      const res = await scanResolve(scanScreen.token, operationId)
+      if (res.success && res.data) {
+        setScanScreen({ token: scanScreen.token, view: res.data })
+        setError('')
+        return
+      }
+      setError(res.message || '该工序不可选，请重新扫码')
+    },
+    [scanScreen],
+  )
+
   /** 服务端是否给了操作记录（决定标题口径：全单流水 vs 本机兜底） */
   const serverLogsAvailable = (detail?.work_logs?.length ?? 0) > 0
   const displayLogs = toDisplayLogs(detail?.work_logs, workLogs)
@@ -430,6 +595,64 @@ export default function ProductionPage() {
       {error !== '' && (
         <View className='production-error'>
           <Text className='production-error__text'>{error}</Text>
+        </View>
+      )}
+
+      {/* A 模式一屏（切片 ② / 设计 §4.1）：工序 + 应做数量 ⇒【完成】；「不是这道？改」只在需要时点 */}
+      {scanScreen && (
+        <View className='production-scan-screen'>
+          <Text className='production-scan-screen__title'>
+            {[scanScreen.view.set_no, scanScreen.view.position?.position_name]
+              .filter(Boolean)
+              .join(' · ')}
+          </Text>
+          {scanScreen.view.operation ? (
+            <View className='production-scan-screen__body'>
+              <Text className='production-scan-screen__operation'>
+                {`${operationLabel(scanScreen.view.operation)} · 应做 ${formatQty(
+                  scanScreen.view.operation.qty,
+                )}${scanScreen.view.operation.unit || ''}`}
+              </Text>
+              {scanScreen.view.operation.rerouted && (
+                <Text className='production-scan-screen__note'>
+                  {`本部位已做完，系统换到套级工序（承载部位：${
+                    scanScreen.view.operation.carrier?.position_name || '见任务卡'
+                  }）`}
+                </Text>
+              )}
+              {/* 未定价 ≠ 0（issue #4696）：显式标注，可照常完工但不产生计件金额 */}
+              {scanScreen.view.operation.unit_price === null && (
+                <Text className='production-scan-screen__note'>
+                  该工序未定价（≠ ¥0.00）：可照常完工，但不产生计件金额
+                </Text>
+              )}
+              <Button
+                className='production-scan-screen__btn'
+                disabled={reportingId !== null}
+                onClick={handleScanComplete}
+              >
+                {reportingId === scanScreen.view.operation.operation_id ? '报工中…' : '完成'}
+              </Button>
+              {scanScreen.view.alternatives.length > 0 && (
+                <View className='production-scan-screen__alts'>
+                  <Text className='production-scan-screen__alts-title'>不是这道？改</Text>
+                  {scanScreen.view.alternatives.map((alternative) => (
+                    <Text
+                      key={alternative.operation_id}
+                      className='production-scan-screen__alt'
+                      onClick={() => handlePickAlternative(alternative.operation_id)}
+                    >
+                      {`${operationLabel(alternative)} · ${formatQty(alternative.qty)}${
+                        alternative.unit || ''
+                      }`}
+                    </Text>
+                  ))}
+                </View>
+              )}
+            </View>
+          ) : (
+            <Text className='production-scan-screen__note'>本套工序都已完成，无需再报工</Text>
+          )}
         </View>
       )}
 
