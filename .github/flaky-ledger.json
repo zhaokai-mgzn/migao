@@ -148,6 +148,24 @@
       "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
       "status": "open",
       "follow_up": null
+    },
+    {
+      "workflow": "PR Check",
+      "job": "admin-web typecheck + unit tests",
+      "run_id": 35505944070,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/35505944070",
+      "pr": 4860,
+      "head_sha": "51cef6d0bed14b7923bea4d9489121791559dcd1",
+      "head_branch": "feat/4855-mixed-color-surcharge",
+      "first_failure_step": "TypeScript type check",
+      "rerun_result": "failure",
+      "kind": "confirmed_failure",
+      "observed_at": "2026-09-20T10:50:11Z",
+      "reason": "同一 commit **两次都失败** ⇒ 确定性失败（已用「第二次真实结果」排除 flaky）",
+      "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
+      "status": "open",
+      "follow_up": null
     }
   ]
 }
