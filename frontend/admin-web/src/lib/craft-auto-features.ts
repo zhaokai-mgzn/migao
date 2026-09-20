@@ -93,6 +93,21 @@ function roundMeters(value: number): number {
 }
 
 /**
+ * 判定文案里的米数：取整到毫米；**只有「取整把严格大于抹平了」这一种情况**才照实给全精度
+ * （如 `(1.1 + 0.3) × 2 = 2.8000000000000003`）—— 否则商家看到的是
+ * 「2.8 米 > 门幅 2.8 米」这种**自相矛盾的依据**（判据要能自证）。
+ *
+ * ⚠️ 判据本身**不做取整**（与算料引擎一致，见 {@link detectAutoFeatures}）：引擎的分幅条件是
+ * `ceil((宽 + side_margin) × 褶倍 ÷ 门幅) ≥ 2`，即**原始浮点**的 `乘积 > 门幅`
+ * —— 实测 `宽 1.1 × 褶倍 2.0 ÷ 门幅 2.8`：引擎 `panels = 2`（米数翻倍），
+ * 而「先取整到毫米再比」会判「不超宽」⇒ **漏报**（正是本单要消灭的那种脱钩）。
+ */
+function metersForReason(value: number, doorWidth: number): number | string {
+  const rounded = roundMeters(value)
+  return rounded > doorWidth || value <= doorWidth ? rounded : String(value)
+}
+
+/**
  * 门幅（米）—— 解析 SKU 的 `doorWidth`（可带单位，如 `2.8米`）。
  * 缺席 / 不可解析 / 非正数 ⇒ {@link DEFAULT_DOOR_WIDTH}（不判成 0，也不「不判定」）。
  */
@@ -117,10 +132,18 @@ export interface AutoFeatureInput {
    * ⚠️ 缺失 / 表外取值 ⇒ **超宽与超高都不判**（保守，不猜朝向；`倒幅` 亦不推导）。
    */
   cuttingMode?: string
-  // ⚠️ 待引入（**不在本单**，另单）：`fullness`（褶倍）—— 用户已裁定「超宽」应与算料引擎
-  // 算分幅的口径一致（`(窗宽 + SIDE_MARGIN) × 褶倍 > 门幅`）。本对象是**可选字段集合** ⇒
-  // 加 `fullness?: number | null` 属**加字段、不改现有字段语义**，调用方只需多传一个键。
-  // 本单**刻意不实现**（签名与判据同时冻结，避免与在跑的页面包撞车）。
+  /**
+   * **褶倍（倍数）**—— 宽方向**分幅**的乘数（issue #4662，用户 2026-09-20 裁定 A）。
+   *
+   * 与算料引擎 `curtain_calc.py` 的定宽买高分支
+   * `panels = math.ceil((window_width + cfg["side_margin"]) * fullness / fabric_width)`
+   * 里的 `fullness` **同一个数**：判据 = `(宽 + SIDE_MARGIN) × 褶倍 > 门幅`
+   * （**这才是真正多花钱的地方** —— 分幅）。
+   *
+   * ⚠️ 缺失 / 非正数 ⇒ **不判超宽**（不猜：宁可漏判并在界面说明，也不拿一个假褶倍去判价）；
+   * 「为什么没判」由 {@link detectAutoFeatureNotices} 给出（界面可见，不静默）。
+   */
+  fullness?: number | null
 }
 
 /** 加工类型 `定高买宽` —— **高**方向受门幅约束（**宽**按米买、无上限）⇒ 只判 `超高` */
@@ -143,8 +166,17 @@ const CUTTING_MODE_FIXED_WIDTH = '定宽买高'
  * | `cuttingMode` | 判超宽 | 判超高 | 判倒幅 |
  * |---|---|---|---|
  * | `定高买宽` | ❌ | ✅（`高 + HEM_MARGIN > 门幅`）| ❌ |
- * | `定宽买高` | ✅（`宽 + SIDE_MARGIN > 门幅`）| ❌ | ✅ |
+ * | `定宽买高` | ✅（`(宽 + SIDE_MARGIN) × 褶倍 > 门幅`；**褶倍缺失 ⇒ 不判**）| ❌ | ✅ |
  * | 缺失 / 表外取值 | ❌ | ❌ | ❌（保守：**不猜**朝向）|
+ *
+ * ⚠️ **「超宽」判据含褶倍**（issue #4662，用户 2026-09-20 裁定 A「含褶倍，与算料引擎一致」）：
+ * 只比 `宽 + SIDE_MARGIN > 门幅` 会**漏报韩褶大窗**（1.5 宽 × 2.0 倍 = 3.6 米要分 2 幅，
+ * 而 1.8 ≤ 2.8 判「不超宽」）—— 分幅才是多花钱的地方。褶倍缺失 / 非正 ⇒ **不判超宽**
+ * （不猜），并由 {@link detectAutoFeatureNotices} 显式说明。
+ *
+ * ⚠️ **几何矛盾**（商家选的档位 vs 引擎按几何实际算的档位）不在本函数里 —— 见
+ * {@link detectAutoFeatureNotices}：推算**以商家选的为准**（用户 2026-09-20 裁定 C），
+ * 矛盾只**提示**、不改变推算结果。
  *
  * ⚠️ **常量按方向分开**：宽方向用 {@link SIDE_MARGIN}（左右覆盖余量）、高方向用
  * {@link HEM_MARGIN}（上下卷边）—— 今天同值 0.3、**语义不同**，不得混用。
@@ -164,23 +196,36 @@ export function detectAutoFeatures(input: AutoFeatureInput): AutoFeature[] {
   // 加工类型缺失 / 表外取值 ⇒ 两个方向**都不判**（保守，不猜）；`倒幅` 亦不推导。
   if (mode !== CUTTING_MODE_FIXED_HEIGHT && mode !== CUTTING_MODE_FIXED_WIDTH) return features
 
-  // 宽方向（只属 `定宽买高`）：余量 = 左右覆盖余量 `SIDE_MARGIN`（与真值源分幅数公式同常量）
+  // 宽方向（只属 `定宽买高`）：判据 = 算料引擎的**分幅**条件
+  // `ceil((宽 + side_margin) × 褶倍 ÷ 门幅) ≥ 2` ⟺ `(宽 + side_margin) × 褶倍 > 门幅`（#4662）。
+  // 余量 = 左右覆盖余量 `SIDE_MARGIN`（与真值源分幅数公式同常量）；褶倍缺失 ⇒ 不判（不猜）。
   const width = positiveNumber(input.width)
-  if (mode === CUTTING_MODE_FIXED_WIDTH && width !== null && roundMeters(width + SIDE_MARGIN) > doorWidth) {
+  const fullness = positiveNumber(input.fullness)
+  if (
+    mode === CUTTING_MODE_FIXED_WIDTH &&
+    width !== null &&
+    fullness !== null &&
+    // ⚠️ **不取整**：与引擎逐字同源（`ceil(乘积 ÷ 门幅) ≥ 2` ⟺ 原始浮点的 `乘积 > 门幅`）
+    (width + SIDE_MARGIN) * fullness > doorWidth
+  ) {
     features.push({
       name: '超宽',
       source: '推算',
-      reason: `成品宽 ${width} + 左右余量 ${SIDE_MARGIN} = ${roundMeters(width + SIDE_MARGIN)} 米 > 门幅 ${doorWidth} 米`,
+      reason:
+        `成品宽 ${width} + 左右余量 ${SIDE_MARGIN} = ${roundMeters(width + SIDE_MARGIN)} 米` +
+        ` × 褶倍 ${fullness} = ${metersForReason((width + SIDE_MARGIN) * fullness, doorWidth)} 米 > 门幅 ${doorWidth} 米`,
     })
   }
 
   // 高方向（只属 `定高买宽`）：余量 = 上下卷边 `HEM_MARGIN`（与真值源可用条件同常量）
+  // ⚠️ **不取整**：引擎的定高可用条件是 `window_height + HEM_MARGIN <= fabric_width`（原始浮点）——
+  // 取整会让「成品高 2.5001」这类输入在前端判「不超高」而引擎实际回落定宽（静默不一致）。
   const height = positiveNumber(input.height)
-  if (mode === CUTTING_MODE_FIXED_HEIGHT && height !== null && roundMeters(height + HEM_MARGIN) > doorWidth) {
+  if (mode === CUTTING_MODE_FIXED_HEIGHT && height !== null && height + HEM_MARGIN > doorWidth) {
     features.push({
       name: '超高',
       source: '推算',
-      reason: `成品高 ${height} + 上下卷边 ${HEM_MARGIN} = ${roundMeters(height + HEM_MARGIN)} 米 > 门幅 ${doorWidth} 米`,
+      reason: `成品高 ${height} + 上下卷边 ${HEM_MARGIN} = ${metersForReason(height + HEM_MARGIN, doorWidth)} 米 > 门幅 ${doorWidth} 米`,
     })
   }
 
@@ -193,5 +238,67 @@ export function detectAutoFeatures(input: AutoFeatureInput): AutoFeature[] {
   }
 
   return features
+}
+
+/**
+ * 系统识别的**提示**（issue #4662）—— 只说明「**为什么没判**」或「**系统实际会按哪种算**」，
+ * **不是特征**：不进 `AUTO_FEATURE_NAMES`、不进加工费组合键、不影响
+ * {@link detectAutoFeatures} 的推算结果（组合键只能含 `processing_items` 目录里有的名字 —— #4592 的 P0）。
+ */
+export interface AutoFeatureNotice {
+  kind: 'missing-fullness' | 'cutting-mode-conflict'
+  /** 可读依据（哪两个数比出来的 + 前提）。口径一律来自算料引擎的同款判据，**前端不编** */
+  reason: string
+}
+
+/**
+ * 该行需要**显式告知商家**的两件事（issue #4662）—— 纯函数，与 {@link detectAutoFeatures} 同源同入参。
+ *
+ * ① `missing-fullness`：**褶倍缺失 ⇒ 未判超宽**（用户裁定 A 的口径）。不猜一个褶倍去判价，
+ *    但也**不静默** —— 商家看得见「这里本该判、因为缺褶倍没判」。
+ * ② `cutting-mode-conflict`：**几何矛盾**（用户 2026-09-20 裁定 C「以商家选的为准，
+ *    几何矛盾时显式提示」）。真值源 = 算料引擎 `curtain_calc.py` 的**几何分支**：
+ *    `if window_height + HEM_MARGIN <= fabric_width:` ⇒ 定高买宽，否则 ⇒ 定宽买高 + 告警
+ *    （「成品高 … 超过门幅 … 的定高上限，已按定宽布（买高）计算」）。
+ *    ⚠️ 引擎**不接收**商家的 `cuttingMode`（`calculate_fabric_meters` 按几何分支，`internal.py`
+ *    的算料入参里没有该键）⇒ 两者**可能不一致** ⇒ 不一致时必须说出来，否则「前端推算」与
+ *    「引擎实际计算」**静默不一致**（商家以为按定高买宽做，实际按定宽买高分幅）。
+ *
+ * ⚠️ 两条提示都**不改变推算**：特征仍按商家选的 `cuttingMode` 分流（裁定 C 的前半句）。
+ * ⚠️ 依据缺失（高未知 / 加工类型缺失或表外）⇒ **不提示**（没有依据就不下结论，不猜）。
+ */
+export function detectAutoFeatureNotices(input: AutoFeatureInput): AutoFeatureNotice[] {
+  const notices: AutoFeatureNotice[] = []
+  const mode = input.cuttingMode
+  if (mode !== CUTTING_MODE_FIXED_HEIGHT && mode !== CUTTING_MODE_FIXED_WIDTH) return notices
+
+  const doorWidth = resolveDoorWidth(input.doorWidth)
+  const width = positiveNumber(input.width)
+  const height = positiveNumber(input.height)
+
+  // ① 缺褶倍 ⇒ 未判超宽（只在「该方向真的受门幅约束」且宽已知时才说得通）
+  if (mode === CUTTING_MODE_FIXED_WIDTH && width !== null && positiveNumber(input.fullness) === null) {
+    notices.push({
+      kind: 'missing-fullness',
+      reason: `缺褶倍 ⇒ 未判超宽（成品宽 ${width} + 左右余量 ${SIDE_MARGIN} 是否要分幅取决于褶倍，不猜）`,
+    })
+  }
+
+  // ② 几何矛盾：引擎按「高 + 上下卷边 vs 门幅」**唯一**决定实际档位（与上面 `超高` 同一条判据）
+  if (height !== null) {
+    const overHeight = height + HEM_MARGIN > doorWidth
+    const actualMode = overHeight ? CUTTING_MODE_FIXED_WIDTH : CUTTING_MODE_FIXED_HEIGHT
+    if (actualMode !== mode) {
+      notices.push({
+        kind: 'cutting-mode-conflict',
+        reason:
+          `加工类型选了「${mode}」，但成品高 ${height} + 上下卷边 ${HEM_MARGIN} = ` +
+          `${metersForReason(height + HEM_MARGIN, doorWidth)} 米 ${overHeight ? '超过' : '未超过'}本 SKU 门幅 ${doorWidth} 米` +
+          `（算料引擎按此判几何、不读商家选的加工类型）⇒ 系统实际会按${actualMode}算`,
+      })
+    }
+  }
+
+  return notices
 }
 
