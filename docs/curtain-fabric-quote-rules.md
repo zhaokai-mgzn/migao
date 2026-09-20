@@ -8,6 +8,35 @@
 > （§7 算例逐值锚定：改本文任一个数、或改代码口径，该用例都变红）。**文档承诺但代码不读的条目一律按【背】标注**
 > 或明确写「未落码 · 待裁定」（issue #4118 ③）。
 
+## 0. 数值常量清单（**规范公式只写符号，不写数**）
+
+> **本节是本文里「数值」的唯一落点**：§3 等规范性小节的公式**只引用下面的符号**（如 `SIDE_MARGIN`），
+> **不再把数抄进散文** —— 抄一份 = 第二个真值源，引擎改了常量它不会跟着变，而**没有任何东西会红**
+> （issue #4819：本节之前的 §3 就是这种形态）。
+>
+> **值列是当前快照，不是真值本身** —— 真值 = `backend/ai-agent-service/app/tools/curtain_calc.py` 里的常量定义。
+> 漂移守卫 = `tests/unit_ci_workflows/test_prose_constant_drift_guard.py`：
+> 它**读代码里的常量**与下表逐值比对，并断言 §3 的公式行里**不再出现这些常量的数值字面量**。
+
+| 符号（§3 等公式引用它） | 引擎常量定义 | 语义 | 当前值 |
+|---|---|---|---|
+| `SIDE_MARGIN` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `SIDE_MARGIN` | 定高布左右覆盖余量合计（各 15cm） | 0.3 |
+| `HEM_MARGIN` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `HEM_MARGIN` | 定宽布上下卷边合计（脚位+止口） | 0.3 |
+| `ROMAN_SIDE` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `ROMAN_SIDE` | 罗马帘包边余量 | 0.2 |
+| `ROD_EXTENSION` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `ROD_EXTENSION` | 罗马杆两端伸出合计（每端 15~20cm） | 0.4 |
+| `PLEAT_FABRIC_PER_FOLD` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `PLEAT_FABRIC_PER_FOLD` | 韩折每折吃布（**单色**口径） | 0.25 |
+| `MARGIN_SINGLE` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `MARGIN_SINGLE` | 韩折单开余量（两侧包边各 10cm） | 0.2 |
+| `MARGIN_MULTI` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `MARGIN_MULTI` | 韩折对开/四开余量 | 0.3 |
+| `MIN_FULLNESS` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `MIN_FULLNESS` | 褶皱倍数下限（行业红线） | 1.5 |
+| `EYELET_TAPE_PRICE` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `EYELET_TAPE_PRICE` | 孔带单价（元/米） | 8.0 |
+| `ROD_PRICE` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `ROD_PRICE` | 罗马杆单价（元/米） | 25.0 |
+| `TIEBACK_PRICE` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `TIEBACK_PRICE` | 绑带单价（元/对） | 15.0 |
+| `INSTALL_PRICE` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `INSTALL_PRICE` | 安装单价（元/米，按杆长） | 18.0 |
+
+⚠️ **本节只登记「公式里会被引用的标量常量」**。字典型常量（`DEFAULT_FULLNESS` / `DEFAULT_PROCESSING_PRICE` /
+`DEFAULT_CRAFT_TIERS`）与拼色系数表（`MIXED_COLOR_PER_FOLD_BY_TIMES`）的散文副本仍散在 §1 / §5 / §8 / §10，
+属**已登记未收口**（issue #4819 报告的分叉项，本单不改其数值）。
+
 ## 1. 褶皱倍数 N
 - 通用：【标】家用帘身常规最佳 2 倍；最低 1.5 倍（低于 1.5 影响美观）；省料可 1.8~1.9 倍。效果：倍数越高褶皱越深越饱满（1.5 平直简约 / 2 标准 / 2.5~3 豪华）。
 - 分款式：【标】打孔帘（罗马圈/眼环）1.8~2 倍，默认 2；韩式褶（S 钩/调节钩）2~2.5 倍，默认 2；四爪钩/普通挂钩 1.5~2 倍，默认 2；罗马帘/卷帘/百叶帘 1 倍（硬质折叠无褶皱，按窗宽+包边）。【背·未落码】厚重面料（绒/雪尼尔）可降至 1.8~2 倍 —— 工具无面料克重入参，降倍只能由调用方显式传 `fullness`（issue #4118 ③）。
@@ -20,15 +49,20 @@
   （门幅由调用方按实际面料传入 `fabric_width`；本工具不替顾客挑面料——「选型建议」属展示性背景知识。）
 
 ## 3. 用布量精确公式
-定义：W=窗宽(m)，H=窗高(m)，N=褶皱倍数，G=门幅(m)。
-- 定高布（买宽）：`M = (W + 0.3) × N`（0.3 = 左右各 15cm 覆盖余量；【背·未落码】"下限可只按 W×N" 这一省料变体未落码 —— 代码恒 +0.3）。约束：成品高 ≤ G−0.3（2.8m 定高上限成品高约 2.5~2.6m），超限改用定宽布。
-- 定宽布（买高）：`幅数 P = ceil((W + 0.3) × N / G)`（向上取整）；`每幅长 L = H + 0.3~0.4`（上下卷边+损耗）；`M = P × L`。对花：每幅加 ≤1 个花距，`L = H + 0.3~0.4 + 花距`（或按花距整数倍对齐 —— 代码只加**恰好 1 个**花距，未做整数倍对齐）。
-- 罗马帘：`M = (W + 0.2) × (H + 0.3)`（包边）；【背·未落码】卷帘/百叶帘：M ≈ 窗宽×高，无褶皱倍率 —— 代码 `mounting` 枚举只有 eyelet/s_hook/hook/roman，卷帘/百叶**无计算分支**（`DEFAULT_FULLNESS` 那行的「卷帘/百叶帘」只是注释文字，见 issue #4118 ③）。
+
+定义：W=窗宽(m)，H=窗高(m)，N=褶皱倍数，G=门幅(m)。**公式里的余量一律写符号名，数值见 §0**（不写数 ⇒ 不会漂移）。
+
+- 定高布（买宽）：`M = (W + SIDE_MARGIN) × N`（`SIDE_MARGIN` = 左右各 15cm 覆盖余量；【背·未落码】"下限可只按 W×N" 这一省料变体未落码 —— 代码恒加 `SIDE_MARGIN`）。约束：成品高 ≤ G − `HEM_MARGIN`（2.8m 定高上限成品高约 2.5~2.6m），超限改用定宽布。
+- 定宽布（买高）：`幅数 P = ceil((W + SIDE_MARGIN) × N / G)`（向上取整）；`每幅长 L = H + HEM_MARGIN`（上下卷边+损耗；行业明细含缝边/止口拆分，见 §4）；`M = P × L`。对花：每幅加 ≤1 个花距，`L = H + HEM_MARGIN + 花距`（或按花距整数倍对齐 —— 代码只加**恰好 1 个**花距，未做整数倍对齐）。
+- 罗马帘：`M = (W + ROMAN_SIDE) × (H + HEM_MARGIN)`（`ROMAN_SIDE` = 包边）；【背·未落码】卷帘/百叶帘：M ≈ 窗宽×高，无褶皱倍率 —— 代码 `mounting` 枚举只有 eyelet/s_hook/hook/roman，卷帘/百叶**无计算分支**（`DEFAULT_FULLNESS` 那行的「卷帘/百叶帘」只是注释文字，见 issue #4118 ③）。
 - 规则：幅数一律向上取整；【背·未落码】单幅不足须拼幅、拼幅处花型左右对称 —— 代码只有 `math.ceil` 取幅数，无拼幅对位逻辑；对花损耗 ≈ 拼幅数 × 花距。
+
+> **本文与 §0 的分工（issue #4819）**：§0 管**数值**（只此一处，且有守卫逐值比对代码常量）；本节管**公式形态**
+> （只写符号）。改任一常量 ⇒ 只改代码与 §0，**本节一个字都不用动**；本节若出现数值字面量，守卫即判红。
 
 ## 4. 损耗与余量
 - 【标】缝边/卷边：侧边止口每边 2~3cm；脚位 8cm + 止口 2cm；上下卷边合计 0.3~0.4m（下限 0.24m）。
-  代码消费的是**合计值**（定高布侧边合计 0.3m / 定宽布上下卷边 0.3m / 罗马帘包边 0.2m），明细拆分（2~3cm / 8cm）【背】未落码。
+  代码消费的是**合计值**（定高布侧边合计 = `SIDE_MARGIN` / 定宽布上下卷边 = `HEM_MARGIN` / 罗马帘包边 = `ROMAN_SIDE`，数值见 §0），明细拆分（2~3cm / 8cm）【背】未落码。
 - 【背·未落码】【标】成品定位：下摆离地 1~3cm、离顶 1~15cm；半高帘高 = 窗框高 + 20~30cm —— 计算侧零消费
   （`app/clarification/curtain_checklist.py` 仅在引导问题的 note 里提「离地默认 1~3cm」；「离顶」「半高帘」全仓零命中）；
   AI 报价的窗高由顾客/商家给。
@@ -52,7 +86,7 @@
 
 ## 6. 辅料计价
 【默】罗马杆（明轨）15~30 元/米（实木/铝合金）；布带/孔带 5~15 元/米；绑带 10~20 元/对；杆长 = 窗宽 + 0.3~0.4m（两端各伸出 15~20cm）。
-代码已落地的默认单价（`app/tools/curtain_calc.py`，打孔帘默认辅料 = 这三项）：孔带 **8 元/米**、罗马杆 **25 元/米**、绑带 **15 元/对**；杆长 = 窗宽 + **0.4m**。
+代码已落地的默认单价（`app/tools/curtain_calc.py`，打孔帘默认辅料 = 这三项）：孔带 = `EYELET_TAPE_PRICE`、罗马杆 = `ROD_PRICE`、绑带 = `TIEBACK_PRICE`（数值见 §0）；杆长 = 窗宽 + `ROD_EXTENSION`（两端各伸出 15~20cm，见 §0）。
 【背】轨道（暗轨）6~50 元/米、电动轨道约 160 元/米；四爪钩约 15 元/大包（约百个）；S 钩/调节钩 0.3~1 元/个；花边 5~15 元/米；铅坠/铅线 2~5 元/米。
 【背】按个/按对辅料的价格（罗马圈 1~2 元/个等）**不参与推导**：顾客显式要买时，数量与单价由顾客给（见 §5、§7 第 7 条）。
 
