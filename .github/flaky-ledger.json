@@ -22,5 +22,24 @@
     "entries[].fixed_by": "仅 status=fixed 需要：修复凭据（PR / run / 用例），否则销账不成立",
     "unimplemented": "**如实登记未机械化**的部分：① `follow_up` 的自动开单没做（CI 只写 null，靠分诊方回填）；② `reconcile` **未接 required 门禁**（消费接口，按需调用）；③ `flaky` 分类对「只在装依赖步骤失败」是 fail-safe 偏 infra（宁可漏标 flaky，不可把 infra 记成 flaky）——漏标是可补的，误记会污染台账本身。"
   },
-  "entries": []
+  "entries": [
+    {
+      "workflow": "PR Check",
+      "job": "admin-web typecheck + unit tests",
+      "run_id": 35492314829,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/35492314829",
+      "pr": 4774,
+      "head_sha": "9293a257faddea84e100e483eb85a8db66aed950",
+      "head_branch": "fix/piecework-utc-month-4772",
+      "first_failure_step": "Run unit tests",
+      "rerun_result": "failure",
+      "kind": "confirmed_failure",
+      "observed_at": "2026-09-20T05:48:02Z",
+      "reason": "同一 commit **两次都失败** ⇒ 确定性失败（已用「第二次真实结果」排除 flaky）",
+      "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
+      "status": "open",
+      "follow_up": null
+    }
+  ]
 }
