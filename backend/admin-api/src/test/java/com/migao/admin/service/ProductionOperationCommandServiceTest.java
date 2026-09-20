@@ -477,18 +477,26 @@ class ProductionOperationCommandServiceTest {
     }
 
     @Test
-    @DisplayName("#4614 反向护栏：不带 positions ⇒ 一个矩阵行都不建、响应不出现新键（老调用方一字不变）")
-    void createWithoutPositionsKeepsLegacyBehaviour() {
+    @DisplayName("去部位化（#4883）：不带 positions ⇒ **仍建那一行**价目行（否则新工序在「工艺项」表里无处可见）")
+    void createWithoutPositionsStillCreatesTheSinglePriceRow() {
         when(productionOperationMapper.selectCount(any())).thenReturn(0L);
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
 
         Map<String, Object> result = service().create(Map.of(
                 "name", "罗马帘穿杆", "unit_price", 0.6), TENANT);
 
-        verify(productionOperationPositionMapper, never()).insert(any(ProductionOperationPosition.class));
-        verify(productionOperationPositionMapper, never()).selectList(any());
-        assertThat(result)
-                .as("不给 positions = 今天的行为：只建工序库行，响应形态一字不变")
-                .doesNotContainKeys("created_positions", "skipped_positions");
+        // 改判（issue #4883）：前端去部位化后**不再传** `positions` ⇒ 省略时若不建行，
+        // 新工序在「工艺项」表（只按价目行渲染）里无处可见、连定价入口都没有 ⇒ #4614 当场复发。
+        ArgumentCaptor<ProductionOperationPosition> rows =
+                ArgumentCaptor.forClass(ProductionOperationPosition.class);
+        verify(productionOperationPositionMapper, times(1)).insert(rows.capture());
+        assertThat(rows.getValue().getPosition())
+                .as("兜底值 = 收敛的「取价来源列」常量（与读面/实例化收敛同一出处，不新造第二个）")
+                .isEqualTo("布帘");
+        assertThat(rows.getValue().getUnitPrice()).isEqualByComparingTo("0.60");
+        assertThat(rows.getValue().getApplicable()).isTrue();
+        assertThat(result.get("created_positions")).isEqualTo(1);
+        assertThat(result.get("skipped_positions")).isEqualTo(0);
     }
 
     @Test
@@ -573,9 +581,26 @@ class ProductionOperationCommandServiceTest {
     }
 
     @Test
-    @DisplayName("#4614 反向护栏：PUT 不带 positions ⇒ 不碰矩阵、响应不出现新键（既有部分更新一字不变）")
-    void updateWithoutPositionsKeepsLegacyBehaviour() {
+    @DisplayName("去部位化（#4883）：PUT 不带 positions（active 工序）⇒ 补建那一行价目行（存量孤儿自愈）")
+    void updateWithoutPositionsEnsuresTheSinglePriceRow() {
         when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
+        when(productionOperationMapper.updateById(any(ProductionOperation.class))).thenReturn(1);
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> view = service().update("op-v54-07", Map.of("unit_price", "0.55"), TENANT);
+
+        ArgumentCaptor<ProductionOperationPosition> rows =
+                ArgumentCaptor.forClass(ProductionOperationPosition.class);
+        verify(productionOperationPositionMapper, times(1)).insert(rows.capture());
+        assertThat(rows.getValue().getPosition()).isEqualTo("布帘");
+        assertThat(view.get("created_positions")).isEqualTo(1);
+        assertThat(view.get("skipped_positions")).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("去部位化（#4883）**不越界**：停用工序不带 positions ⇒ 不建行（读面看不见的行 = 「接了但没生效」）")
+    void updateWithoutPositionsOnDisabledOperationLeavesTheMatrixAlone() {
+        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "disabled"));
         when(productionOperationMapper.updateById(any(ProductionOperation.class))).thenReturn(1);
 
         Map<String, Object> view = service().update("op-v54-07", Map.of("unit_price", "0.55"), TENANT);
