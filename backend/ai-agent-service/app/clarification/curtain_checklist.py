@@ -35,8 +35,14 @@ CHECKLIST: List[Dict[str, Any]] = [
      "default": "韩褶", "note": "韩褶/打孔/四爪钩/穿杆"},
     {"id": "is_shaped", "label": "定型", "ui": "choice", "default_src": "industry",
      "default_rule": "curtain_type", "note": "布帘默认是/纱帘默认否/帘头是（面料红线：真丝等不耐高温须不定型）"},
-    {"id": "pleat_spacing", "label": "褶距", "ui": "form", "default_src": "industry",
-     "default": 0.1, "note": "韩褶默认 10cm"},
+    # 用料公式（issue #4873，用户 2026-09-21 需求）：**替换**退役的褶距问项 ——
+    # 原话「移除订单的工艺规格中的褶距字段，同时加上用料公式字段；如果选择韩折公式，
+    # 那就自动算出折数，如果选择的是褶倍数公式，那就展示是经济档还是标准档」。
+    # industry 默认 = `pleat`（韩折公式）；值域 = 算料引擎 `curtain_calc.FORMULA_LABELS`
+    # 的键（pleat 折数法 / fullness 倍数法）。算料档位（`craftTier`）**不进清单**：
+    # 它由**算料配置**决定，不是顾客的回答项。
+    {"id": "formula", "label": "用料公式", "ui": "choice", "default_src": "industry",
+     "default": "pleat", "note": "韩折公式（折数法，自动算折数）/ 褶倍数公式（倍数法，按档位算）"},
     # 是否对花（issue #4362，S1）：此前只作为 `fabric` 的 note 一笔带过 ⇒ **没人问、也没处落库**。
     # 真值源 §1 把它列为下单行要素（实证 `是否对花: 不对花`）；定宽买高时每幅加一个花距。
     {"id": "has_pattern", "label": "是否对花", "ui": "choice", "default_src": "none",
@@ -63,7 +69,7 @@ CHECKLIST_TO_CRAFT_SPEC: Dict[str, str] = {
     "craft": "craft",
     "open_count": "openCount",
     "is_shaped": "isShaped",
-    "pleat_spacing": "pleatSpacing",
+    "formula": "formula",
     "has_pattern": "hasPattern",
     "window_type": "corner",
 }

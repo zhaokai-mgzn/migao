@@ -423,7 +423,7 @@ class TestOrderCreatePayload:
     async def test_payload_carries_order_line_craft_spec_keys(self, mock_get_client, tool, agent_ctx):
         """下单行要素必须**真的**发到服务端（issue #4362，S1）。
 
-        判据：真值源 §1 的 11 个要素里，此前只有 3 个有 schema 声明 ⇒ 加工类型/开数/褶距/对花/转角
+        判据：真值源 §1 的 11 个要素里，此前只有 3 个有 schema 声明 ⇒ 加工类型/开数/用料公式/对花/转角
         **无处可写**；`processing_info` 是整体透传的 ⇒ 只要模型填了、schema 认了，就必须原样上行
         （服务端 `OrderLineCraftFields.materialize` 再把它落到 `order_items` 的列上）。
         """
@@ -441,7 +441,8 @@ class TestOrderCreatePayload:
             "processing_info": {
                 "colorName": "米白", "sellingMethod": "bulk_cut",
                 "curtainType": "纱帘", "craft": "打孔", "openCount": 4,
-                "cuttingMode": "定高买宽", "isShaped": False, "pleatSpacing": 0.1,
+                "cuttingMode": "定高买宽", "isShaped": False,
+                "formula": "pleat", "craftTier": "economy",
                 "hasPattern": False, "corner": "转角",
                 "pleat_count": 48, "fullness": 2.0, "fullness_actual": 1.86,
             },
@@ -458,7 +459,10 @@ class TestOrderCreatePayload:
         assert pi["openCount"] == 4
         assert pi["cuttingMode"] == "定高买宽"
         assert pi["isShaped"] is False
-        assert pi["pleatSpacing"] == 0.1
+        # 用料公式 + 算料档位（issue #4873）：原样进 processing_info（写面只透传，不推导/不补默认）
+        assert pi["formula"] == "pleat"
+        assert pi["craftTier"] == "economy"
+        assert "pleatSpacing" not in pi, "退役的褶距键不得再上行（净删，不留死键）"
         assert pi["hasPattern"] is False
         assert pi["corner"] == "转角"
         assert pi["pleat_count"] == 48
@@ -489,7 +493,7 @@ class TestOrderCreatePayload:
                 "sellingMethod": "bulk_cut",
                 # 清单 id（snake_case，C 端小布的词汇）
                 "curtain_type": "纱帘", "open_count": 4, "is_shaped": False,
-                "pleat_spacing": 0.1, "has_pattern": True, "window_type": "转角",
+                "formula": "fullness", "has_pattern": True, "window_type": "转角",
             },
         }]
 
@@ -502,11 +506,53 @@ class TestOrderCreatePayload:
         assert pi["curtainType"] == "纱帘"
         assert pi["openCount"] == 4
         assert pi["isShaped"] is False
-        assert pi["pleatSpacing"] == 0.1
+        assert pi["formula"] == "fullness"
         assert pi["hasPattern"] is True
         assert pi["corner"] == "转角"
+        # 退役键（issue #4873）：canonical 与清单 id 两种写法都不得再产出
+        assert "pleatSpacing" not in pi and "pleat_spacing" not in pi
         # 归一**不覆盖**已给 canonical 键的值（只做键改名，不做业务推导）
         assert pi["sellingMethod"] == "bulk_cut"
+
+    @patch("app.tools.order_create.get_admin_api_client")
+    async def test_retired_pleat_spacing_key_is_dropped(self, mock_get_client, tool, agent_ctx):
+        """**退役键 = 净删**：`pleatSpacing` / `pleat_spacing` 即使传进来也必须被丢弃（issue #4873）。
+
+        需求（用户 2026-09-21）：「移除订单的工艺规格中的褶距字段」。若只在 schema / 提示词 / 清单
+        里删、写面照旧透传，则**历史会话、商家默认值、模型幻觉**里的旧键仍会一路落进订单列 ——
+        「净删」就只落在文档层（库里继续出现死键）。
+
+        红证：去掉 `execute` 里的退役键清除（或把 `pleatSpacing` 放回 schema / 清单映射）
+        ⇒ 该键随 `processing_info` **整体透传**上行 ⇒ 本断言红。
+        """
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "o1"}})
+        _with_library(mock_client, 50.0, name="窗帘", pid="pid-1")
+        mock_get_client.return_value = mock_client
+
+        items = [{
+            "product_name": "窗帘",
+            "quantity": 3,
+            "unit_price": 50,
+            "subtotal": 150,
+            "product_id": "pid-1",
+            "processing_info": {
+                "sellingMethod": "bulk_cut",
+                "curtainType": "布帘",
+                "pleatSpacing": 0.1,      # 退役键（camelCase，历史会话/商家配置形态）
+                "pleat_spacing": 0.12,    # 退役键（清单 id 形态）
+            },
+        }]
+
+        result = await tool.execute(
+            context=agent_ctx, customer_name="张三", customer_phone="13800138000", items=items,
+        )
+
+        assert result.success is True
+        pi = mock_client.post.call_args.kwargs["json_data"]["items"][0]["processingInfo"]
+        assert "pleatSpacing" not in pi, "退役键（camelCase）未被丢弃 ⇒ 会落进订单列"
+        assert "pleat_spacing" not in pi, "退役键（清单 id 形态）未被丢弃"
+        assert pi["curtainType"] == "布帘"      # 同一行的其它键照旧原样透传
 
     @patch("app.tools.order_create.get_admin_api_client")
     async def test_canonical_keys_win_over_checklist_aliases(self, mock_get_client, tool, agent_ctx):

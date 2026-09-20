@@ -89,9 +89,12 @@ _CALC_OUTPUT_LABELS = (
 )
 # 工艺规格数值键 → 字段标签（同上）。
 _CRAFT_SPEC_NUMBERS = (
-    ("pleatSpacing", "褶距"),
     ("patternRepeat", "花距"),
 )
+# 退役的工艺规格键（issue #4873）：`pleatSpacing`（褶距）已从 schema / 提示词 / 引导清单**净删**，
+# 但写面必须**显式丢弃**仍传进来的旧键 —— `processing_info` 是**整体透传**的，只删声明挡不住
+# 历史会话 / 商家配置 / 模型幻觉里的旧键（它们会一路落进订单列 ⇒「净删」只落在文档层）。
+_RETIRED_CRAFT_SPEC_KEYS = ("pleatSpacing", "pleat_spacing")
 
 # 万能验证码 bypass（POC/测试阶段，对齐 admin-api 的 sms.bypass-code 机制）。
 # 空字符串 = 禁用 bypass（生产安全默认）。POC 部署时设置 SMS_BYPASS_CODE=123456 与 admin-api 对齐。
@@ -365,7 +368,9 @@ class OrderCreateTool(BaseTool):
         "curtainType（部位：布帘/纱帘/帘头）、craft（安装工艺：韩褶/打孔/穿杆/平幔 —— "
         "**与 mounting 是两层，不要互相推导**）、isShaped（是否定型）、style（单色/拼色）、"
         "cuttingMode（加工类型：定高买宽/定宽买高）、openCount（打开方式开数：**正整数** 1/2/3/4 …，不是固定枚举）、"
-        "pleatSpacing（褶距，米）、hasPattern + patternRepeat（是否对花 + 花距，米）、"
+        "formula（用料公式：pleat 韩折公式·折数法 / fullness 褶倍数公式·倍数法 —— "
+        "**与算料配置同源，不要自己按 craft 推导**）、craftTier（算料档位键：standard 标准档 / "
+        "economy 经济档；**不要补默认档**）、hasPattern + patternRepeat（是否对花 + 花距，米）、"
         "corner（转角形态，取自清单「窗型」：平开/落地/飘窗/转角/L窗）、"
         "specialOptions（下单勾选的特殊选项，如 拼1次/加铅块/加花边/抱枕/布绑带）。"
         "**枚举必须逐字一致**（「韩式褶」非法，应为「韩褶」）—— 错值会让加工单取到**错误工序路线**。"
@@ -565,7 +570,7 @@ class OrderCreateTool(BaseTool):
                                     "description": "加工费米数（= **主布行**米数，配布边米数不参与）。由算料给出，**不要自己推算**",
                                 },
                                 # ── 工艺规格补全（issue #4374 包 4a / 设计文档 §4.2）────────────
-                                # 包 1（#4346）只声明了 9 个键 ⇒ 加工类型/打开方式/褶距/对花既不在
+                                # 包 1（#4346）只声明了 9 个键 ⇒ 加工类型/打开方式/用料公式/对花既不在
                                 # schema、也不在「必带」指令里 ⇒ LLM 大概率不写 ⇒ 订单/加工单面看不到。
                                 "cuttingMode": {
                                     "type": "string",
@@ -579,10 +584,20 @@ class OrderCreateTool(BaseTool):
                                     "minimum": 1,
                                     "description": "打开方式开数：**正整数** 1 单开 / 2 双开 / 3 三开 / 4 四开 …（引导清单已采集；不是固定枚举，issue #4430）。折数整除校验与算料余量按它走；顾客没说 ⇒ 不填",
                                 },
-                                "pleatSpacing": {
-                                    "type": "number",
-                                    "minimum": 0,
-                                    "description": "褶距（米，引导清单已采集，默认 0.1）。用于折数/褶距换算与可行性校验",
+                                # 用料公式 + 算料档位（issue #4873，用户 2026-09-21 需求）：
+                                # 「移除订单工艺规格中的褶距字段，加上用料公式字段……这里需要和
+                                # 工艺配置的算料配置保持一致」⇒ 值域**逐字等于**算料引擎的
+                                # `curtain_calc.FORMULA_LABELS` 键 / `DEFAULT_CRAFT_TIERS` 键
+                                # （另写一份写死的清单 = 漂移源）。写面**只透传**：不推导、不补默认值。
+                                "formula": {
+                                    "type": "string",
+                                    "enum": ["pleat", "fullness"],
+                                    "description": "用料公式：pleat=韩折公式（折数法）/ fullness=褶倍数公式（倍数法），与算料配置的 default_formula 同域。**不要按 craft 自行推导**；顾客没说 ⇒ 不填",
+                                },
+                                "craftTier": {
+                                    "type": "string",
+                                    "enum": ["standard", "economy"],
+                                    "description": "算料配置的档位键：standard=标准档 / economy=经济档（褶倍数公式下向顾客展示的档位）。**不要补默认档**；顾客没说 ⇒ 不填",
                                 },
                                 "hasPattern": {
                                     "type": "boolean",
@@ -1518,7 +1533,8 @@ class OrderCreateTool(BaseTool):
             )
 
         # ── 引导清单字段归一（issue #4362，S1）：C 端小布按**清单 id**（snake_case：
-        # curtain_type / open_count / is_shaped / pleat_spacing / has_pattern / window_type）
+        # curtain_type / open_count / is_shaped / formula / has_pattern / window_type ——
+        # 褶距 `pleat_spacing` 已退役，issue #4873）
         # 采集的工艺参数，直接放进 processing_info 时在此**归一**为工艺规格键（camelCase）。
         # 映射的**唯一实现**在 app/clarification/curtain_checklist.py::to_craft_spec
         # （Java 侧 OrderLineCraftFields 的写/读面按同一套键名走 ⇒ 不写第二份映射）。
@@ -1529,6 +1545,10 @@ class OrderCreateTool(BaseTool):
                 continue
             pinfo = item.get("processing_info")
             if isinstance(pinfo, dict):
+                # 退役键先丢（issue #4873）：在归一/校验**之前**清，保证旧键既不落库、
+                # 也不参与后续任何判定（canonical camelCase 与清单 id 两种写法都清）。
+                for _retired in _RETIRED_CRAFT_SPEC_KEYS:
+                    pinfo.pop(_retired, None)
                 for _key, _value in to_craft_spec(pinfo, pinfo).items():
                     pinfo.setdefault(_key, _value)
 
