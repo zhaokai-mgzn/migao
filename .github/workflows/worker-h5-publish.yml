@@ -1,0 +1,89 @@
+name: Publish worker-h5 (app.migaozn.com/w/)
+
+# ── 为什么需要这条腿（issue #4837）──────────────────────────────────────────────
+# `frontend/worker-h5/`（工人端 H5）是**零依赖 + 零构建**的纯 ESM 目录，但**没有任何对外落地面**：
+#   · `deploy-frontend.yml` 只构建 `frontend/admin-web`（admin-web 镜像 → merchant.migaozn.com）；
+#   · `mini-app.yml` 的 `xiaobu-h5-visual` 只 `npm run build:h5` 做视觉回归，**不发布**；
+#   · `grep -rn '/opt/migao-deploy' .github/workflows/` = **0 命中**。
+# 而 `app.migaozn.com` 的静态根（nginx `root` = `/opt/migao-deploy/h5`）**同时承载线上 C 端 H5**
+# ⇒ 稳定短链 302 到 `/w/` 时，`location /` 的 `try_files $uri $uri/ /index.html` **静默回落**：
+# **HTTP 200 + C 端 Taro H5**（不是 404 ⇒ 监控不红）。本 workflow 把 `/w/` 真正发布上去，
+# 并在发布后**断言页面身份**（`deploy/scripts/worker-h5-verify-served.sh`）——
+# 因为「200」在修复前就已经是恒真的（空断言，见 issue 的验收反例要求）。
+#
+# ── 为什么**不改 nginx**（最少代码阶梯：能不改就不改）──
+# 发布到 `<静态根>/w/` 之后，现有 `location /` 的 `try_files $uri $uri/ /index.html` 已能
+# 命中 `w/index.html`（`$uri/` → 目录存在 → 走 `index index.html`），
+# 子资源 `/w/src/*.mjs`、`/w/src/styles.css` 也由同一个 `location /` 直出 ⇒ **`deploy/swas/nginx.conf` 零改动**。
+#
+# ── 为什么是**新 workflow** 而不是往 deploy-frontend.yml 里加一步 ──
+# `deploy-frontend.yml` 的 workflow 级 `paths` 只认 `frontend/admin-web/**`，而 admin-web 的
+# 构建+部署是分钟级重活；把 worker-h5 变更并进去会让每次改工人端页面都重建 admin-web 镜像并
+# 重新部署商家端（**无关的线上影响**）。独立 workflow = 独立 check 名 + 独立路径面
+# （先例 = `worker-h5-tests.yml`，见 docs/wiki/CI-CD.md 的「变更门控」例外说明）。
+#
+# ⚠️ 触发面只有 `push: main` 与 `workflow_dispatch` —— **刻意不加 `pull_request`**：
+#    这条腿写的是**线上静态根**，PR 分流内容不该有机会落上去。
+#    也因此不存在「required check 卡在 Waiting」的问题（那是 `pull_request` + workflow 级 `paths` 的形态）。
+on:
+  push:
+    branches: [main]
+    paths:
+      # 被测发布物本身（改了页面不发布 ⇒ 线上落后，本单要治的形态）
+      - 'frontend/worker-h5/**'
+      # 发布链路自身：改了任何一环都要重跑，否则「改坏了没有证据」
+      - 'deploy/swas/h5-publish-remote.sh'
+      - 'deploy/scripts/swas-h5-publish-ci.sh'
+      - 'deploy/scripts/worker-h5-verify-served.sh'
+      - '.github/workflows/worker-h5-publish.yml'
+  # 人工补发/排障入口（合并后 main 上的版本才可 dispatch）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 与 deploy-* 同口径：不取消进行中的发布（两个并发发布会让「谁最后落地」不可判定）
+concurrency:
+  group: worker-h5-publish
+  cancel-in-progress: false
+
+env:
+  # 与 deploy-frontend.yml / deploy-admin-api.yml 同一台 SWAS 实例（测试环境）
+  SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
+  SWAS_REGION: cn-hangzhou
+  # 静态根（= deploy/swas/nginx.conf 里 app.migaozn.com 的 root）；**只收敛其 w/ 子树**
+  H5_STATIC_ROOT: /opt/migao-deploy/h5
+  H5_SUBDIR: w
+
+jobs:
+  publish:
+    name: publish worker-h5 → /w/ + identity assertions
+    runs-on: ubuntu-latest
+    # 发布本身是秒级（curl 拉 tar.gz + 拷文件），给足 runner 排队/慢启动余量即可
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # ⚠️ 本步的两个脚本是 `tests/unit_ci_workflows/test_worker_h5_hosting.py` 的**判据对象**
+      #    （发布步骤是否存在 / 目标是否限定在 h5/w/ 子树 / 触发面是否含 frontend/worker-h5/**）——
+      #    删掉或放宽这条腿会让那组断言变红。
+      - name: Install Aliyun CLI
+        run: |
+          curl -fsSL --retry 3 --retry-delay 3 https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o /tmp/aliyun.tgz
+          file /tmp/aliyun.tgz | grep -q "gzip compressed data"
+          tar xzf /tmp/aliyun.tgz -C /tmp
+          sudo mv /tmp/aliyun /usr/local/bin/
+          aliyun plugin install --names aliyun-cli-swas-open >/dev/null 2>&1 || true
+          aliyun version
+
+      - name: Publish worker-h5 to SWAS (静态根下的 w/ 子树)
+        env:
+          AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+        run: |
+          bash deploy/scripts/swas-h5-publish-ci.sh \
+            "${{ env.SWAS_INSTANCE_ID }}" "${{ env.SWAS_REGION }}" "$AK" "$SK" "$GITHUB_SHA"
+
+      # 发布后身份断言（**不是**「200 就算过」—— 修复前 /w/ 就是 200 的 C 端页面）
+      - name: Assert served page identity (线上确实是工人端 H5)
+        run: bash deploy/scripts/worker-h5-verify-served.sh https://app.migaozn.com

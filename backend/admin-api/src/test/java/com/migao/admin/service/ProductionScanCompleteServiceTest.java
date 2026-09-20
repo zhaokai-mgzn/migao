@@ -43,7 +43,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -262,7 +264,31 @@ class ProductionScanCompleteServiceTest {
 
         assertThatThrownBy(() -> service.complete(body(TOKEN), TENANT, "key-1", WORKER))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("没有可报的工序");
+                .hasMessageContaining("没有可报的工序")
+                // 🔴 契约面（issue #4810）：`@DisplayName` 只是**文案**，不是断言 —— 码与状态码在这里钉死
+                // （设计 §5.3.1「拒绝码 = 契约面」）。红证：把源码里的 409 改成别的值 ⇒ 本断言红。
+                .hasFieldOrPropertyWithValue("code", "SET_ALREADY_COMPLETED")
+                .hasFieldOrPropertyWithValue("httpStatus", 409);
+
+        assertNothingWritten();
+    }
+
+    @Test
+    @DisplayName("🔴 推断之后被报满（并发窗口）⇒ 409 OPERATION_ALREADY_ADVANCED，且零写入")
+    void operationFilledBetweenResolveAndChargeIsRejected() {
+        // 并发窗口的可执行形态（issue #4810 补，对应设计 §5.3.1 的落点 (b)）：
+        // **推断读**（`selectList`，走 `ProductionScanService#listSetOperations`）看到「未完成 6/11 米」
+        // ⇒ 工序确定；而**记账前重读**（`selectById`，走 `ProductionService#requireActiveOperation`）
+        // 同一行已被别人报满 11/11 ⇒ `plannedRemaining(op) ≤ 0` ⇒ 必须拒绝，绝不记一笔 0 米的账。
+        stubPending(op(OP_CLOTH, ITEM_CLOTH, 1, "精裁-布", "11", "6", new BigDecimal("3.50")));
+        when(positionOperationMapper.selectById(OP_CLOTH))
+                .thenReturn(op(OP_CLOTH, ITEM_CLOTH, 1, "精裁-布", "11", "11", new BigDecimal("3.50")));
+
+        assertThatThrownBy(() -> service.complete(body(TOKEN), TENANT, "key-1", WORKER))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已报满")
+                .hasFieldOrPropertyWithValue("code", "OPERATION_ALREADY_ADVANCED")
+                .hasFieldOrPropertyWithValue("httpStatus", 409);
 
         assertNothingWritten();
     }
@@ -276,7 +302,10 @@ class ProductionScanCompleteServiceTest {
 
         assertThatThrownBy(() -> service.complete(body(OLD_CODE), TENANT, "key-1", WORKER))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("旧码");
+                .hasMessageContaining("旧码")
+                // 🔴 契约面（issue #4810）：码 + 状态码逐字钉住（设计 §5.3.1）；账本逐字同款
+                .hasFieldOrPropertyWithValue("code", "SCAN_NEEDS_SELECTION")
+                .hasFieldOrPropertyWithValue("httpStatus", 422);
 
         assertNothingWritten();
     }
@@ -316,7 +345,10 @@ class ProductionScanCompleteServiceTest {
 
         assertThatThrownBy(() -> service.complete(payload, TENANT, "key-1", WORKER))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("旧码");
+                .hasMessageContaining("旧码")
+                // 🔴 只选一半 ⇒ **仍**是 422 `SCAN_NEEDS_SELECTION`（不是另一条码）：两个键都非空才走选择路径
+                .hasFieldOrPropertyWithValue("code", "SCAN_NEEDS_SELECTION")
+                .hasFieldOrPropertyWithValue("httpStatus", 422);
 
         assertNothingWritten();
     }
@@ -491,7 +523,11 @@ class ProductionScanCompleteServiceTest {
 
         assertThatThrownBy(() -> service.complete(body(TOKEN), TENANT, "key-1", WORKER))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("刚被另一次报工推进");
+                .hasMessageContaining("刚被另一次报工推进")
+                // 🔴 契约面（issue #4810）：CAS 影响行数 0 ⇒ 409 `OPERATION_ALREADY_ADVANCED`
+                // （设计 §5.3.1 的落点 (a)）。红证：把源码里的 409 改成别的值 ⇒ 本断言红。
+                .hasFieldOrPropertyWithValue("code", "OPERATION_ALREADY_ADVANCED")
+                .hasFieldOrPropertyWithValue("httpStatus", 409);
 
         // 失败 ⇒ 释放占位（否则一次失败把键永久占死）；且**不得**落结果快照（否则同键重试被回放成「成功」）
         verify(clientRequestIdService).discard(TENANT, "key-1");
@@ -529,6 +565,94 @@ class ProductionScanCompleteServiceTest {
         assertThat(result).containsKey("next_operation");
         assertThat(result.get("next_operation")).isNull();
         verify(clientRequestIdService).complete(eq(TENANT), eq("key-1"), any());
+    }
+
+    // ============================================================ ⑥ 幂等键的**边界**（issue #4814 核清）
+
+    /**
+     * 键**不同**（= 工人刷新/换屏后重扫）时，服务端**不会**把**同一道工序**再记一次。
+     *
+     * <p>挡住它的**不是**幂等键（键换了，`claim` 会放行）而是业务判据：{@code ProductionScanService.pending()}
+     * 滤掉 {@code done_qty ≥ qty} 的工序（{@code ProductionService.isDone}）⇒ 本套已无待做工序 ⇒
+     * 409 {@code SET_ALREADY_COMPLETED}，一个字节都不写（<b>零写入</b>由断言钉死）。</p>
+     */
+    @Test
+    @DisplayName("🔴 换键重扫（刷新后）同一道工序**不会**二次记账：推断已无待做工序 ⇒ 409 + 零写入")
+    void differentKeyAfterFullReportDoesNotWriteSecondRowForSameOperation() {
+        ProcessingPositionOperation cloth =
+                op(OP_CLOTH, ITEM_CLOTH, 1, "精裁-布", "11", "0", new BigDecimal("3.50"));
+        stubPending(cloth);
+
+        service.complete(body(TOKEN), TENANT, "key-first", WORKER);
+        // 这一次报工已提交 ⇒ 下一请求读到的是库里的值（桩按真实提交结果同步，不是"假装没发生"）
+        cloth.setDoneQty(new BigDecimal("11"));
+        cloth.setStatus("done");
+
+        assertThatThrownBy(() -> service.complete(body(TOKEN), TENANT, "key-second", WORKER))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("工序都已完成");
+
+        // 🔴 判据：换键**不会**换来第二行报工明细（计件凭证与进度都只有一个字节的写入）
+        verify(workLogMapper, times(1)).insert(any(ProductionWorkLog.class));
+        verify(positionOperationMapper, times(1))
+                .advanceDoneQtyIfUnchanged(any(), any(), any(), any(), any(), any());
+        verify(clientRequestIdService).discard(TENANT, "key-second");
+    }
+
+    /**
+     * 键**不同**时**会**多记一笔 —— 但落在**下一道待做工序**上且**满额**（默认数量 = 剩余应做）。
+     *
+     * <p>这是「换键重扫 ⇒ 多给一笔钱」的**确切形态**（issue #4814 的读数）：不是同一道工序被记两遍，
+     * 而是重扫时「待做工序」已推进到下一道 ⇒ 工人再点一次【完成】，系统的下一道就被整笔记上。
+     * 服务端无法分辨「工人真做了下一道」与「上一次答复丢了、他在重试」（A 模式零额外交互的代价）
+     * ⇒ 这一半必须由**客户端复用同一个幂等键**来关闭（见 worker-h5 的 ⑧ 与 app.mjs 的未确认提交落盘）。</p>
+     */
+    @Test
+    @DisplayName("🔴 换键重扫 ⇒ 第二行 work_log 落在**下一道**工序且满额（#4814 的「多记一笔」读数）")
+    void differentKeyAfterFullReportRecordsNextOperationInFull() {
+        ProcessingPositionOperation op1 =
+                op(OP_CLOTH, ITEM_CLOTH, 1, "精裁-布", "11", "0", new BigDecimal("3.50"));
+        ProcessingPositionOperation op2 =
+                op("op-cloth-2", ITEM_CLOTH, 2, "打卷", "11", "0", new BigDecimal("2.00"));
+        stubPending(List.of(op1, op2));
+        when(positionOperationMapper.selectById("op-cloth-2")).thenReturn(op2);
+
+        service.complete(body(TOKEN), TENANT, "key-first", WORKER);
+        op1.setDoneQty(new BigDecimal("11"));
+        op1.setStatus("done");
+
+        // 换键（= 刷新后重扫）：服务端**没有**把它当成重复请求，而是推进到下一道并满额记账
+        service.complete(body(TOKEN), TENANT, "key-second", WORKER);
+
+        ArgumentCaptor<ProductionWorkLog> captor = ArgumentCaptor.forClass(ProductionWorkLog.class);
+        verify(workLogMapper, times(2)).insert(captor.capture());
+        List<ProductionWorkLog> logs = captor.getAllValues();
+        assertThat(logs.get(0).getOperationId()).isEqualTo(OP_CLOTH);
+        assertThat(logs.get(1).getOperationId()).isEqualTo("op-cloth-2");
+        assertThat(logs.get(1).getQualifiedQty()).isEqualByComparingTo("11");
+        assertThat(logs.get(1).getUnitPrice()).isEqualByComparingTo("2.00");
+    }
+
+    /**
+     * 结果快照写失败时**不得**释放占位（占位被释放 ⇒ 同键重试被当成**首次** ⇒ 再记一笔）。
+     *
+     * <p>此时报工**已经提交**（明细 + CAS 都已发生，事务已结束），只是「回放用的快照」没落下
+     * ⇒ 释放占位等于把一条已生效的报工重新开放执行。<b>fail-closed 才对</b>：让同键请求报错，
+     * 由 {@code ClientRequestIdService} 的 30 分钟陈旧占位回收自愈。</p>
+     */
+    @Test
+    @DisplayName("🔴 快照写失败（报工已提交）⇒ **不得**释放幂等占位（释放 = 同键重试被当首次 ⇒ 再记一笔）")
+    void snapshotFailureKeepsPlaceholder() {
+        stubPending(Set_OP_CLOTH_DONE_0);
+        doThrow(BusinessException.validationError("快照序列化失败"))
+                .when(clientRequestIdService).complete(any(), any(), any());
+
+        assertThatThrownBy(() -> service.complete(body(TOKEN), TENANT, "key-1", WORKER))
+                .isInstanceOf(BusinessException.class);
+
+        // 报工已落库（不是「没执行」）⇒ 占位必须留着
+        verify(workLogMapper, times(1)).insert(any(ProductionWorkLog.class));
+        verify(clientRequestIdService, never()).discard(eq(TENANT), eq("key-1"));
     }
 
     // ============================================================ 夹具

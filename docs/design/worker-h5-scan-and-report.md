@@ -747,7 +747,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 | # | 前提 | 谁负责 |
 |---|---|---|
 | P1 | ✅ **ICP 备案：用户已答「已做过备案」⇒ 该风险解除**（原判「未备案 ⇒ 微信内拦截 ⇒ 裁定④ 失效」不再成立） | **已解除**（用户裁定） |
-| P2 | 静态文件落位：把 `frontend/worker-h5/` 的产物放到 `app.migaozn.com` 的静态根下的 `/w/`（与 C 端 H5 同一台 nginx） | 运维 / 部署 |
+| P2 | 静态文件落位：把 `frontend/worker-h5/` 的产物放到 `app.migaozn.com` 的静态根下的 `/w/`（与 C 端 H5 同一台 nginx） | ✅ **已落码**（issue #4837 / PR #4847）：CI 腿 `.github/workflows/worker-h5-publish.yml` 把 `index.html` + `src/**` **逐字**发布到 `<静态根>/w/`（零构建、不引 npm build），发布后由 `deploy/scripts/worker-h5-verify-served.sh` 断言线上 `/w/` 的 body 哈希 == 仓库文件且不含 C 端标识 —— **nginx 零改动**（现有 `location /` 的 `try_files` 已能命中 `w/index.html`） |
 | P3 | 页面与 `/api` **同源** ⇒ 无跨域；若将来改跨域部署，需把 origin 加进 `CORS_ALLOWED_ORIGINS` | 部署 |
 
 ---

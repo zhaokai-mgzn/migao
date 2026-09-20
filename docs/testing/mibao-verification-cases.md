@@ -1961,7 +1961,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## misc（15 case）
+## misc（16 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -2136,6 +2136,17 @@
 真值: misc.extract-and-save
 溯源: issue #2815：C 端长期记忆系统 — 合规 API（个保法查询权/删除权） ｜ tags: memory, compliance, privacy
 
+### MC-016. 工人端 H5 静态落位 app.migaozn.com/w/（CI 自动发布 + 页面身份断言 + 静态根禁删） 🔵
+```
+你: frontend/worker-h5/ 变更合并到 main 后，CI 把 index.html + src/** 逐字发布到 app.migaozn.com 静态根下的 w/，并在发布后断言线上返回的是工人端 H5
+期望: direct_reply
+数据: 发布目标限定在 <静态根>/w 子树；静态根（同时承载线上 C 端 H5）不得被任何 --delete/清空/rm -rf 触碰：远端输出自证 PARENT_INDEX_BEFORE_SHA256 == PARENT_INDEX_AFTER_SHA256，且沙箱行为测试断言父目录 index.html 逐字节不变
+数据: 发布后 GET https://app.migaozn.com/w/ 的 body 哈希 == 仓库 frontend/worker-h5/index.html（同样断言 /w/index.html 与 /w/src/app.mjs），body 含 src/app.mjs 且不含 TARO_ / 小布智能助手 —— 修复前 /w/ 已是 200 的 C 端页面，故 200 本身不是判据
+数据: 越界子目录（.. / . / 空 / /etc / a/b）必须拒绝且静态根零改动；连跑两次结果一致（幂等），w/ 子树内的陈旧文件被收敛
+跳过: [backend-contract] 部署 workflow / 发布脚本由 pytest 单测 + 沙箱行为测试验证（tests/unit_ci_workflows/test_worker_h5_hosting.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-20 新增（issue #4837）：worker-h5 落位 app.migaozn.com/w/ —— CI 发布 + 身份断言 + 静态根禁删守卫（含注入式红证） ｜ tags: ci, deploy, worker-h5, hosting
+
 ## onboarding（5 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
@@ -2200,7 +2211,7 @@
 跳过: [backend-contract] 由前端单测验证（corporate-home.test.tsx），非 LLM 冒烟
 ```
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
-溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787） ｜ tags: homepage, compliance, gb47746
+溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787）。2026-09-20（issue #4837 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition（本用例 3 组 user_inputs 实际是**同一页面**的三组断言、非多轮会话，此前被判 CASE-TRUST-NO-PRECONDITION-ASSERTION）——断言面（user_inputs / expectations / data_checks / traces）原样未动、无放宽 ｜ tags: homepage, compliance, gb47746
 
 ## ontology（4 case）
 
@@ -4986,8 +4997,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：363（活跃 155，跳过 208）
-- tier 分布：smoke 10 / normal 322 / adversarial 31
+- 用例总数：364（活跃 155，跳过 209）
+- tier 分布：smoke 10 / normal 323 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -5001,7 +5012,7 @@
 - finance：4
 - 人事域：10
 - knowledge：7
-- misc：15
+- misc：16
 - onboarding：5
 - ontology：4
 - 订单域：41
@@ -5041,6 +5052,7 @@
 - KN-004: 米宝知识问答 - 加工计价规则走 processing_item_query 工具（加工项派生卡片已移除）
 - KN-008: 知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
+- MC-016: 工人端 H5 静态落位 app.migaozn.com/w/（CI 自动发布 + 页面身份断言 + 静态根禁删）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
 - OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫

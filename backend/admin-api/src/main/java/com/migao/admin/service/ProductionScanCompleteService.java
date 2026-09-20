@@ -85,17 +85,21 @@ public class ProductionScanCompleteService {
             log.info("[扫码完成幂等] 同键重复请求：跳过执行，回放首次结果 tenantId={}", tenantId);
             return replayed;
         }
+        Map<String, Object> result;
         try {
-            Map<String, Object> result = doComplete(body, tenantId, identity);
-            // 落结果快照（同键后续请求回放它）。放在 try 之外：快照写失败时**不得**释放占位
-            // —— 报工已经落库，宁可让同键请求 fail-closed 报错，也不能退化成「再报一次」
-            clientRequestIdService.complete(tenantId, clientRequestId, result);
-            return result;
+            result = doComplete(body, tenantId, identity);
         } catch (RuntimeException e) {
             // 执行失败（校验/推断不确定/超上限/并发冲突/DB 错误）⇒ 释放占位，同 report 的取舍
             clientRequestIdService.discard(tenantId, clientRequestId);
             throw e;
         }
+        // 落结果快照（同键后续请求回放它）——**在 try 之外**：快照写失败时**不得**释放占位
+        // —— 报工已经落库，宁可让同键请求 fail-closed 报错（30 分钟后由陈旧占位回收自愈），
+        // 也不能把一条已生效的报工重新开放执行（释放占位 ⇒ 同键重试被当成首次 ⇒ 再记一笔）。
+        // issue #4814：本行原先落在 try 内 ⇒ 快照写失败会走 catch 的 discard，与上面这句以及
+        // 类注释的「失败 ⇒ 释放占位」相冲突；按**记账已生效**这一事实收口到 fail-closed。
+        clientRequestIdService.complete(tenantId, clientRequestId, result);
+        return result;
     }
 
     /** 解析 → 工序确定性校验 → 事务记账 → 回执（占位成功后才执行）。 */
