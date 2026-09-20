@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth'
 
-const publicRoutes = ['/login', '/register', '/about', '/services', '/contact']
+// 注：公开路由清单只在 lib/auth-redirect.ts 维护（PUBLIC_ROUTES 单一源）。
+// 这里若再抄一份（历史上抄过一份且从未被使用），漏配时不会有任何东西变红 ——
+// issue #4903 的「首页漏配」正是从这种双份清单里长出来的。
 const protectedRoutePrefixes = [
   '/dashboard', '/products', '/processing', '/knowledge', '/settings',
   '/orders', '/chat', '/customers', '/employees', '/roles',
