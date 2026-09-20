@@ -33,6 +33,7 @@
 执行式红证**不联网、不碰真实云、不写共享 `/tmp`**（CLI 安装块的两处 `/tmp/aliyun*` 在沙箱副本里改指临时目录，
 与 `test_swas_deploy_ci_bootstrap.py` 的既有手法一致）。
 """
+import copy
 import json
 import os
 import re
@@ -609,20 +610,46 @@ def check_reconcile_baseline(text: str) -> None:
 
 
 def check_reconcile_breaker(text: str) -> None:
-    assert re.search(r"gh run list --workflow \"deploy-\$\{SVC_WF\[\$svc\]\}\.yml\"", text), (
-        "断路器必须查对应 deploy workflow 的 run 历史（`gh run list --workflow deploy-<x>.yml`）"
+    assert re.search(r'gh run list --workflow "\$wf" --branch main --limit 30', text), (
+        "断路器必须查对应 deploy workflow 的 run 历史"
+        "（`gh run list --workflow \"$wf\" --branch main --limit 30`；`$wf` 由逐服务调用传入）"
     )
     assert "--json headSha,conclusion" in text, "断路器必须按 `headSha,conclusion` 取数"
-    assert re.search(r'select\(\.headSha == \\"\$\{HEAD_SHA\}\\"\)', text), (
+    # issue #4827：断路器的判据必须是**被部署的那个 commit** = **main HEAD**。
+    # dispatch 出去后 deploy 构建的 tag 是 `sha-${GITHUB_SHA::7}`（各 deploy workflow 的
+    # `Resolve image tag`）⇒ 「被部署的 commit」就是 main HEAD；换成 CODE_SHA（最后一个改代码
+    # 的 commit）会去查一个 dispatch **永远构建不出来**的 tag ⇒ 断路器结构性永不触发
+    # （那不是加固，是把 #4767 的护栏废掉）。
+    assert '--arg s "$HEAD_SHA"' in text, (
+        "断路器的 head_sha 判据必须绑定 **main HEAD**（`--arg s \"$HEAD_SHA\"`）"
+    )
+    assert "select(.headSha == $s)" in text, (
         "断路器必须只匹配**同一个 head_sha**（不是「最近一次失败」这种模糊判据）"
     )
-    assert re.search(r'\[ "\$LAST" = "failure" \]', text), "断路器必须以 `conclusion == failure` 为唯一触发条件"
-    assert re.search(r'\[\[? "\$LAST" = "failure" \]\]?; then', text) and "continue" in text, (
-        "断路器命中后必须 `continue`（跳过该服务的补部署）"
+    assert "CODE_SHA" not in text, (
+        "断路器/镜像基准又出现了 `CODE_SHA`：dispatch 只会构建 `sha-<main HEAD>`，"
+        "按「最后一个改代码的 commit」判缺失 ⇒ 那个 tag 永远建不出来 ⇒ 每个后续 docs 提交"
+        "都重复 dispatch（3 服务全量重建重部署：502 窗口 + 覆盖回滚，issue #4827）"
     )
-    # ⚠️ `--jq` 的参数里带**转义引号**（`\"${HEAD_SHA}\"`）⇒ 不能用 `[^"]*`（会在第一个 `\"` 处截断）
-    assert re.search(r'--jq "[^\n]*2>/dev/null \|\| echo ""', text), (
-        "断路器必须 **fail-open**：查询失败 ⇒ 取空串 ⇒ 照旧补部署（本检查出错绝不停掉对账）"
+    assert re.search(r'\[ "\$last" = "failure" \]; then', text), (
+        "断路器必须以 `conclusion == failure` 为唯一触发条件"
+    )
+    m = re.search(r'if \[ "\$last" = "failure" \]; then(.*?)\n\s*fi\n', text, re.S)
+    assert m, "断路器的 `if [ \"$last\" = failure ]` 分支结构变了（判据已过期）"
+    branch = m.group(1)
+    # 命中分支里只允许出现「人工重跑」提示（`echo`），**不许**真的 dispatch
+    dispatch_calls = [
+        ln.strip() for ln in branch.splitlines()
+        if "gh workflow run" in ln and not ln.strip().startswith("echo")
+    ]
+    assert "SKIPPED=$((SKIPPED + 1))" in branch and not dispatch_calls, (
+        "断路器命中后必须**跳过该服务的补部署**（命中分支里不许出现真的 `gh workflow run`）"
+    )
+    assert '2>/dev/null || echo "[]"' in text, (
+        "断路器必须 **fail-open**：`gh run list` 查询失败 ⇒ 取空列表（本检查出错绝不停掉对账）"
+    )
+    assert '// ""' in text, (
+        "断路器必须 **fail-open**：无记录 / 结论非 failure（含 cancelled）⇒ 取空串 ⇒ 照旧补部署"
     )
 
 
@@ -647,12 +674,20 @@ def test_reconcile_baseline_criterion_has_discriminating_power():
 
 
 def test_reconcile_breaker_criterion_has_discriminating_power():
-    """(b) 反向红证：把断路器整段注入掉 ⇒ 判据必红。"""
+    """(b) 反向红证：把 head_sha 判据换成「任意 run」⇒ 判据必红（模糊判据会误跳过）。"""
     real = reconcile_run()
     check_reconcile_breaker(real)
-    start = real.index("LAST=$(gh run list")
-    end = real.index("IMAGE=", start)
-    broken = real[:start] + real[end:]
+    broken = real.replace("select(.headSha == $s)", "select(true)")
+    assert broken != real, "注入未生效（判据自证）"
+    with pytest.raises(AssertionError):
+        check_reconcile_breaker(broken)
+
+
+def test_reconcile_breaker_baseline_criterion_has_discriminating_power():
+    """(b) 反向红证：把基准退回 `CODE_SHA` ⇒ 判据必红（会查一个永不存在的 tag）。"""
+    real = reconcile_run()
+    check_reconcile_breaker(real)
+    broken = real.replace('--arg s "$HEAD_SHA"', '--arg s "$CODE_SHA"')
     assert broken != real, "注入未生效（判据自证）"
     with pytest.raises(AssertionError):
         check_reconcile_breaker(broken)
@@ -667,3 +702,319 @@ def test_reconcile_keeps_its_safety_gates():
         f"{RECONCILE} 的 permissions 被改动"
     )
     assert "continue-on-error" not in job, f"{RECONCILE} 出现 `continue-on-error`（削弱门禁）"
+
+# ══════════════════════════════════════════════════════════════════════════
+# 六、「兜底静默失效」（issue #4827）：对账**不许有任何静默短路**，判定必须可观测
+#
+# 事故（2026-09-20 07:32:04 run 35497126164，`workflow_dispatch`，main HEAD `593504de9`）：
+# 报 **success 且零 dispatch**，而 3 个提交之前、5 分钟前的 `634b53f90`（fix(api) #4641）
+# 的镜像**一个都没构建**（部署触发被吞）。
+#
+# 🔴 **真根因不是「HEAD 恰好是 docs 提交」，而是结构性永远跳过**：旧 step
+# `Schedule code-change check` 的判据是
+#   `if git log --oneline -10 --name-only origin/main | grep -qE "…"; then CODE_CHANGED=1; fi`
+# 而 GitHub 的 `shell: bash` 本身就是 `bash --noprofile --norc -e -o pipefail`（该 step 另
+# 声明了 `set -euo pipefail`）⇒ `grep -q` 首个命中即退出并关闭管道 ⇒ `git log` 死于
+# **SIGPIPE(141)** ⇒ **pipefail 把整条管道的状态取为 141** ⇒ `if` 取**假**分支 ⇒
+# `CODE_CHANGED` **恒为 0**（本地逐字复现 40/40 全 0；去掉 pipefail 同一条命令转 1；
+# 直接读管道状态 = 141）⇒ 写 `SKIP_RECONCILE=1` ⇒ `Reconcile deploys` 被
+# `if: env.SKIP_RECONCILE != '1'` **整步跳过** ⇒ **每一次** schedule/workflow_dispatch
+# 对账都是 success + 零动作 —— 这才是「本会话 4 次全 success、每次都要人手动
+# `gh workflow run`」的机制。
+# （issue 原文猜的「HEAD 无代码改动」是**假结论**：`593504de9` 往前 10 个提交里有 24 个
+#  代码路径文件。执行式复现见 `tests/unit_ci_workflows/test_reconcile_no_silent_skip.py`。）
+#
+# 「静默」有三个来源，本节逐个钉死，**每条都带反向红证**（防空断言）：
+#   ⓐ 短路（`SKIP_RECONCILE` / step 的 `if:`）⇒ 整步不跑却报 success；
+#   ⓑ `pipefail` + `grep -q` 陷阱（**产生** ⓐ 的机制）⇒ 连机制一起钉；
+#   ⓒ 「跑了但没说为什么没动」⇒ 每个判定分支都要 echo + 落 `$GITHUB_STEP_SUMMARY`。
+# ══════════════════════════════════════════════════════════════════════════
+
+# 镜像名 → deploy workflow（真值源；`check_reconcile_paths_match_deploy_triggers` 据此反查）
+SVC_TO_DEPLOY_WORKFLOW = {
+    "admin-api": "deploy-admin-api.yml",
+    "ai-agent-service": "deploy-ai-agent-service.yml",
+    "admin-web": "deploy-frontend.yml",
+}
+
+
+def reconcile_job() -> dict:
+    doc = yaml.safe_load((WORKFLOWS_DIR / RECONCILE).read_text(encoding="utf-8"))
+    return doc["jobs"]["reconcile"]
+
+
+def reconcile_steps() -> list:
+    return reconcile_job()["steps"]
+
+
+def workflow_text() -> str:
+    return (WORKFLOWS_DIR / RECONCILE).read_text(encoding="utf-8")
+
+
+def non_comment_lines(text: str) -> str:
+    """只保留**可执行**行（丢掉整行注释）——注释里解释旧机制不算「用了它」。"""
+    return "\n".join(
+        ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")
+    )
+
+
+def check_reconcile_has_no_short_circuit(steps: list, whole: str) -> None:
+    """ⓐ 对账 step 不得被任何短路跳过；那个跳过标记的**概念**必须整体从可执行行里消失。"""
+    reconcile = [s for s in steps if s.get("name") == RECONCILE_STEP]
+    assert reconcile, f"反空跑锚点：找不到 step `{RECONCILE_STEP}`"
+    assert reconcile[0].get("if") is None, (
+        f"对账 step 又带 `if:`（{reconcile[0].get('if')!r}）—— 条件短路会让它**不跑却报 success**"
+        "（issue #4827：兜底没兜住，且是静默的）"
+    )
+    code = non_comment_lines(whole)
+    assert "SKIP_RECONCILE" not in code, (
+        "workflow 的可执行行里又出现短路标记：标记一回来，「静默 success」就会跟着回来（issue #4827）"
+    )
+    assert "gh pr view" not in code, (
+        "又出现 PR 文件表 path 过滤：对账跑的是 **main HEAD**，与「触发它的那个 PR 是不是纯"
+        "文档」无关（issue #4827）"
+    )
+
+
+# `pipefail` 环境下不许把 `grep -q` 放管道里当条件（SIGPIPE ⇒ 恒假分支）
+# ⚠️ 不能只匹配 `-q`：真实写法是 `grep -qE "…"`（组合旗标）⇒ 认「旗标簇里含 q」。
+GREP_FLAG_CLUSTER = re.compile(r"\bgrep\s+(?:-[A-Za-z]+\s+)*-([A-Za-z]+)")
+
+
+def grep_q_as_pipe_consumer(body: str):
+    """返回「把 `grep -q…` 当**管道消费者**」的那一行（没有则 None）。"""
+    for line in body.splitlines():
+        for m in GREP_FLAG_CLUSTER.finditer(line):
+            if "|" not in line[: m.start()]:
+                continue  # 该 grep 之前没有管道 ⇒ 不是消费者
+            if "q" in m.group(1).lower():
+                return line.strip()
+    return None
+
+
+def check_reconcile_no_pipefail_grep_q_trap(steps: list) -> None:
+    """ⓑ `-o pipefail` + `grep -q` 早退 ⇒ 生产者 SIGPIPE(141) ⇒ `if` 恒取假分支（真根因）。"""
+    for s in steps:
+        line = grep_q_as_pipe_consumer(non_comment_lines(s.get("run", "") or ""))
+        assert line is None, (
+            f"step `{s.get('name')}` 里出现 `… | grep -q …`：GitHub 的 `shell: bash` 带 "
+            "`-eo pipefail`，`grep -q` 早退会把生产者的 SIGPIPE(141) 变成整条管道的退出码 ⇒ "
+            f"`if` 恒取假分支（#4827 的真根因）→ {line!r}"
+        )
+
+
+def check_reconcile_image_baseline_is_main_head(text: str) -> None:
+    """镜像基准必须是 **main HEAD**：dispatch 出去构建的 tag 就是 `sha-<main HEAD>`。"""
+    assert re.search(r'^\s*local image="[^\n]*:sha-\$\{HEAD7\}"$', text, re.M), (
+        "镜像名必须由 `HEAD7`（= main HEAD 前 7 位）派生；`CODE7`/`CODE_SHA` 那种「最后一个"
+        "改代码的 commit」永远建不出对应 tag ⇒ 每个后续 docs 提交都重复 dispatch"
+        "（3 服务全量重建重部署 = #3235 的 502 窗口 + #4767 ③ 的覆盖回滚风险）"
+    )
+    assert "CODE_SHA" not in text and "CODE7" not in text, "又出现 `CODE_SHA`/`CODE7` 基准（issue #4827）"
+    assert "git rev-list" not in text, (
+        "又用 `git rev-list -1 HEAD -- <paths>` 当基准：depth=1 浅克隆下它对 docs HEAD 返回空 "
+        "⇒ 退化成裸 HEAD，等于没改（issue #4827）"
+    )
+
+
+def check_reconcile_drift_criterion(text: str) -> None:
+    """有没有东西要部署，必须由**漂移判据**决定（自上次成功部署 P 起有无代码改动）。"""
+    assert re.search(
+        r"^\s*p=\$\(printf .*select\(\.conclusion == \"success\"\).*headSha", text, re.M
+    ), (
+        "缺「上次成功部署的 commit」的取数（`conclusion == \"success\"` 的最新 run 的 headSha）"
+        "—— 没有它，「docs 提交不空转 dispatch」就无从判定（issue #4827 / #3235）"
+    )
+    assert re.search(r'^\s*drift=\$\(git log --oneline -1 "\$\{p\}\.\.HEAD" -- "\$\{pathspec\[@\]\}"', text, re.M), (
+        "缺漂移判据本体：`git log --oneline -1 \"${p}..HEAD\" -- \"${pathspec[@]}\"`（空 = 无漂移）"
+    )
+    assert 'pathspec=( "$svc_path" )' in text, "缺少按服务取代码路径的 pathspec 组装"
+    assert "declare -A" not in text, (
+        "对账正文用了 bash4 关联数组（`declare -A`）：macOS 自带 bash 3.2 跑不起来 ⇒ "
+        "执行式守护测试退化成 CI-only（改用函数参数，见 step 内的注释）"
+    )
+    # ✅ `git log` 的输出只进**命令替换**（不是 `| grep -q`）⇒ 不触发 ⓑ 的陷阱
+    assert "GIT_FAIL" not in text and "?git-failed" in text, (
+        "git 判不了时必须走 fail-open（`?git-failed` ⇒ 按兜底补部署 + ::warning::），不许静默放过"
+    )
+    # `fetch-depth: 0` 是漂移判据的**前提**（P 必须可达）
+    checkout = [s for s in reconcile_steps() if str(s.get("uses", "")).startswith("actions/checkout")]
+    assert checkout, f"{RECONCILE} 里找不到 actions/checkout"
+    assert checkout[0].get("with", {}).get("fetch-depth") == 0, (
+        "checkout 必须 `fetch-depth: 0`：depth=1 时 P 不可达 ⇒ `git log P..HEAD` 报错 ⇒ "
+        "判据退化成「每次都判有改动」⇒ 每个 docs 提交都空转 dispatch（issue #4827）"
+    )
+
+
+# 逐服务调用的形态：`reconcile_one <svc> <deploy workflow> <代码路径> <排除项或 "">`
+RECONCILE_CALL = re.compile(r'^reconcile_one\s+(\S+)\s+(\S+)\s+(\S+)\s+(?:"([^"]*)"|(\S+))\s*$', re.M)
+
+
+def parse_reconcile_calls(text: str) -> dict:
+    """解析逐服务调用行（`declare -A` 已被排除 ⇒ 函数参数就是唯一真值）。"""
+    calls = {}
+    for m in RECONCILE_CALL.finditer(text):
+        svc, wf, path, excl_q, excl_b = m.groups()
+        assert svc not in calls, f"`reconcile_one {svc}` 出现了两次（判据已过期）"
+        calls[svc] = {"wf": wf, "path": path, "excl": excl_q if excl_q is not None else excl_b}
+    assert len(calls) == 3, f"必须逐服务调用 3 次 → 实得 {sorted(calls)}"
+    return calls
+
+
+def check_reconcile_paths_match_deploy_triggers(text: str) -> None:
+    """逐服务代码路径必须与各自 deploy workflow 的 `on.push.paths` **逐字对齐**。
+
+    这是本单最容易悄悄写错的地方（原稿的 `apps`/`packages` 根本不是任何 deploy 的触发路径），
+    所以判据**反查真值源**（deploy workflow 的 `on.push.paths`），不写死常量。
+    """
+    calls = parse_reconcile_calls(text)
+    assert set(calls) == set(SVC_TO_DEPLOY_WORKFLOW), f"服务集合不符：{sorted(calls)}"
+    for svc, wf in SVC_TO_DEPLOY_WORKFLOW.items():
+        assert calls[svc]["wf"] == wf, f"{svc} 的 deploy workflow 应为 `{wf}`（实得 {calls[svc]['wf']!r}）"
+        assert (WORKFLOWS_DIR / wf).is_file(), f"反空跑锚点：{wf} 不存在（判据已过期）"
+        doc = yaml.safe_load((WORKFLOWS_DIR / wf).read_text(encoding="utf-8"))
+        # ⚠️ YAML 1.1 里裸 `on` 会被解析成布尔 True（PyYAML 已知坑）⇒ 两种键都试
+        on = doc.get("on")
+        if on is None:
+            on = doc.get(True)
+        assert isinstance(on, dict) and "push" in on, f"{wf} 的 `on.push` 结构变了（判据已过期）"
+        paths = [str(p) for p in on["push"]["paths"]]
+        includes = [p for p in paths if not p.startswith("!")]
+        excludes = [p.lstrip("!") for p in paths if p.startswith("!")]
+        assert includes, f"反空跑锚点：{wf} 没有 `on.push.paths` 正向项"
+        assert calls[svc]["path"] in [p.split("/**")[0] for p in includes], (
+            f"reconcile 里 {svc} 的代码路径 {calls[svc]['path']!r} 与 `{wf}` 的 on.push.paths "
+            f"{includes} 不一致（path 对齐错 ⇒ 要么漏补真漂移，要么空转 dispatch）"
+        )
+        for ex in excludes:
+            prefix = ex.split("/**")[0]
+            assert calls[svc]["excl"] == f":(exclude){prefix}", (
+                f"`{wf}` 的排除项 {prefix!r} 没在 reconcile 里体现（实得 {calls[svc]['excl']!r}）"
+            )
+
+
+def check_reconcile_decision_is_observable(text: str) -> None:
+    """ⓒ 每个判定分支都必须把**依据**写进 `$GITHUB_STEP_SUMMARY`（不许静默 success）。"""
+    assert "GITHUB_STEP_SUMMARY" in text, "对账结论没落 job summary ⇒ 后来人看不出它为什么没动"
+    for branch, needle in (
+        ("断路器命中", "⛔ ${svc}：main HEAD ${HEAD7} 的部署**已失败过**"),
+        ("镜像已存在", "✅ ${svc} 镜像 ${image} 已存在"),
+        ("无漂移", "✅ ${svc}：自上次成功部署 ${p:0:7} 起"),
+        ("镜像缺失→dispatch", "⚠️ ${svc} 镜像 ${image} 缺失且 HEAD 的代码状态未部署"),
+    ):
+        assert needle in text, f"缺少「{branch}」分支的日志（判据已过期？）"
+    assert text.count('>> "$SUMMARY"') >= 6, (
+        "落 summary 的次数不足：表头 + 4 类判定依据（断路器/镜像已存在/无漂移/dispatch）+ 结论"
+        "都要写（issue #4827）"
+    )
+    assert "**结论**：dispatch=${MISSING}" in text, "缺结论行（dispatch=/无漂移=/断路器跳过=/判定失败=）"
+    assert "::notice::" in text and "::warning::" in text, (
+        "无 dispatch 时要有 `::notice::` 总判定、判据不可用时要 `::warning::` —— 都要显式出声"
+    )
+
+
+def test_reconcile_has_no_silent_short_circuit():
+    """ⓐ 对账不得被任何短路跳过（事故 35497126164 的形态）。"""
+    check_reconcile_has_no_short_circuit(reconcile_steps(), workflow_text())
+
+
+def test_reconcile_has_no_pipefail_grep_q_trap():
+    """ⓑ `-o pipefail` + `grep -q` 陷阱不得复现（事故 35497126164 的**真根因**）。"""
+    check_reconcile_no_pipefail_grep_q_trap(reconcile_steps())
+
+
+def test_reconcile_image_baseline_is_main_head():
+    """镜像判定基准 = main HEAD（不是「最后一个改代码的 commit」）。"""
+    check_reconcile_image_baseline_is_main_head(reconcile_run())
+
+
+def test_reconcile_uses_drift_criterion_not_commit_count():
+    """「要不要补部署」由漂移判据（自上次成功部署起有无代码改动）决定，不是「最近 10 个提交」。"""
+    check_reconcile_drift_criterion(reconcile_run())
+
+
+def test_reconcile_paths_align_with_deploy_triggers():
+    """逐服务代码路径与各 deploy workflow 的 `on.push.paths` 逐字对齐（反查真值源）。"""
+    check_reconcile_paths_match_deploy_triggers(reconcile_run())
+
+
+def test_reconcile_decision_is_observable_in_summary():
+    """ⓒ 不 dispatch 时必须显式说明依据并落 summary（不许静默 success）。"""
+    check_reconcile_decision_is_observable(reconcile_run())
+
+
+# ── 反向红证（每条判据都必须会红，否则是空断言）─────────────────────────────
+
+def test_reconcile_short_circuit_criterion_has_discriminating_power():
+    """ⓐ 反向红证：把 `SKIP_RECONCILE` 短路注入回对账 step ⇒ 判据必红。"""
+    steps, whole = reconcile_steps(), workflow_text()
+    check_reconcile_has_no_short_circuit(steps, whole)  # 前提：真文本先绿
+    idx = next(i for i, s in enumerate(steps) if s.get("name") == RECONCILE_STEP)
+    broken = copy.deepcopy(steps)
+    broken[idx]["if"] = "env.SKIP_RECONCILE != '1'"
+    assert broken != steps, "注入未生效（判据自证）"
+    with pytest.raises(AssertionError):
+        check_reconcile_has_no_short_circuit(broken, whole)
+    # 短路标记本身也要有判别力（把写入语句注入回文本）
+    with pytest.raises(AssertionError):
+        check_reconcile_has_no_short_circuit(steps, whole + '\necho "SKIP_RECONCILE=1" >> "$GITHUB_ENV"\n')
+
+
+def test_reconcile_pipefail_grep_q_criterion_has_discriminating_power():
+    """ⓑ 反向红证：把 `git log … | grep -q` 注回 ⇒ 判据必红（并证明该写法确实恒假）。"""
+    steps = reconcile_steps()
+    check_reconcile_no_pipefail_grep_q_trap(steps)
+    broken = copy.deepcopy(steps)
+    body_step = next(s for s in broken if s.get("name") == RECONCILE_STEP)
+    body_step["run"] = body_step["run"] + (
+        '\nCODE_CHANGED=0\n'
+        'if git log --oneline -10 --name-only HEAD | grep -qE "^(backend/admin-api)/"; then\n'
+        '  CODE_CHANGED=1\n'
+        'fi\n'
+    )
+    assert broken != steps, "注入未生效（判据自证）"
+    with pytest.raises(AssertionError):
+        check_reconcile_no_pipefail_grep_q_trap(broken)
+
+
+def test_reconcile_baseline_criterion_has_discriminating_power():
+    """反向红证：把镜像基准退回 `CODE7` ⇒ 判据必红。"""
+    real = reconcile_run()
+    check_reconcile_image_baseline_is_main_head(real)
+    broken = real.replace(':sha-${HEAD7}"', ':sha-${CODE7}"')
+    assert broken != real, "注入未生效（判据自证）"
+    with pytest.raises(AssertionError):
+        check_reconcile_image_baseline_is_main_head(broken)
+
+
+def test_reconcile_drift_criterion_has_discriminating_power():
+    """反向红证：删掉漂移判据（`git log P..HEAD`）⇒ 判据必红。"""
+    real = reconcile_run()
+    check_reconcile_drift_criterion(real)
+    broken = real.replace('drift=$(git log --oneline -1 "${p}..HEAD"', 'drift=$(true')
+    assert broken != real, "注入未生效（判据自证）"
+    with pytest.raises(AssertionError):
+        check_reconcile_drift_criterion(broken)
+
+
+def test_reconcile_path_alignment_criterion_has_discriminating_power():
+    """反向红证：把 admin-web 的路径写成原稿的 `frontend`（过宽）⇒ 判据必红。"""
+    real = reconcile_run()
+    check_reconcile_paths_match_deploy_triggers(real)
+    broken = real.replace(
+        "reconcile_one admin-web deploy-frontend.yml frontend/admin-web",
+        "reconcile_one admin-web deploy-frontend.yml frontend",
+    )
+    assert broken != real, "注入未生效（判据自证）"
+    with pytest.raises(AssertionError):
+        check_reconcile_paths_match_deploy_triggers(broken)
+
+
+def test_reconcile_observability_criterion_has_discriminating_power():
+    """ⓒ 反向红证：把落 summary 的语句全去掉 ⇒ 判据必红。"""
+    real = reconcile_run()
+    check_reconcile_decision_is_observable(real)
+    broken = real.replace('>> "$SUMMARY"', '>> /dev/null')
+    assert broken != real, "注入未生效（判据自证）"
+    with pytest.raises(AssertionError):
+        check_reconcile_decision_is_observable(broken)

@@ -1,17 +1,48 @@
-# 部署补偿对账（issue #3113 v3）：auto-merge 合并后的部署触发链路排查结论——
-# 自 2026-09-05 启用原生 auto-merge 起（9/5 08:01Z 为最后一条 push 事件 run，
-# verify-trigger closed 验证 08:41Z 后 0 run），push 与 pull_request closed 事件
-# 不再触发任何 Actions workflow；schedule 随机节流（同 '*/20' 配置，close-linked-issues
-# 09:59Z 触发而 deploy-frontend 06:36Z 后零触发）；仅 pull_request opened/synchronize、
-# issues、issue_comment、workflow_dispatch 可靠。
+# 部署补偿对账（issue #3113 v3 / #2947 / #4767 / #4827）
 #
-# v3 触发源（可靠事件组合，任一路径都会对账）：
-#   1. pull_request opened/reopened（新 PR 打开必触发——PR Check 依赖它，已被证明可靠；
-#      仓库迭代不停，每次新 PR 都会对账一次 main HEAD，接近实时）
+# 触发源（可靠事件组合，任一路径都会对账）：
+#   1. pull_request opened/reopened（新 PR 打开必触发——PR Check 依赖它，已被证明可靠）
 #   2. schedule '*/20'（随机兜底，不可靠但有比没有好）
 #   3. workflow_dispatch（手动）
-# 对账逻辑不变：checkout main（PR 事件时 GITHUB_SHA 是 PR head，必须切到 main 取 HEAD）
-# → 三服务 sha-<main-head7> 镜像缺失 → gh workflow run dispatch 对应 deploy。
+# 对账逻辑：checkout main（PR 事件时 GITHUB_SHA 是 PR head，必须切到 main 取 HEAD）
+# → 逐服务判定「main HEAD 的代码状态是否已部署」→ 未部署则 gh workflow run dispatch 对应 deploy。
+# 实测提醒（2026-09-20）：近 15 次 deploy-*.yml run **全是 workflow_dispatch**（零 push、零
+# schedule）⇒ 部署腿的主触发实际已失效，本对账是唯一兜底。
+#
+# ── v5（issue #4827：「兜底静默失效」根治）─────────────────────────────────────
+# 事故：run 35497126164（2026-09-20 07:32:04，`workflow_dispatch`，main HEAD 593504de9）
+# 报 **success 且零 dispatch**，而 3 个提交之前、5 分钟前的 634b53f90（fix(api) #4641）
+# 的镜像一个都没构建（部署触发被吞）。
+# **真因不是「HEAD 恰好是 docs 提交」，而是结构性永远跳过**：旧 step
+# `Schedule code-change check` 的判据是
+#   `if git log --oneline -10 --name-only origin/main | grep -qE "…"; then CODE_CHANGED=1; fi`
+# 而 GitHub 的 `shell: bash` 是 `bash --noprofile --norc -e -o pipefail`（该 step 另有
+# `set -euo pipefail`）⇒ `grep -q` 首个命中即退出并关闭管道 ⇒ `git log` 死于
+# **SIGPIPE(141)** ⇒ **pipefail 把整条管道的状态取为 141** ⇒ `if` 取**假**分支 ⇒
+# 「最近提交含代码改动」**恒为 0** ⇒ 写下那个跳过标记 ⇒ `Reconcile deploys` 被
+# `if: env.SKIP 那个标记 != '1'` **整步跳过** ⇒ 每次 schedule/dispatch 对账都是
+# success + 零动作（本地逐字复现：40/40 全 0）。
+# 修法（**不再有任何「短路」概念**）：
+#   ① **删掉两条 path 预过滤**（PR 文件表过滤 + 上面的 git-log 过滤）。PR 自己的文件表
+#      与 main HEAD 的部署状态本就无关；而它们正是静默失效的载体。
+#      `Reconcile deploys` 不再带 `if:` ⇒ 结构上不存在「跳过对账」这条路。
+#   ② 判定基准回到 **main HEAD**（`sha-<head7>`）：dispatch 出去后 deploy 构建的 tag 就是
+#      `sha-${GITHUB_SHA::7}` = main HEAD（见各 deploy workflow 的 `Resolve image tag`）
+#      ⇒ 能让「按镜像判缺失」**收敛**的基准只有 main HEAD。若改用「最后一个改代码的
+#      commit」，那个 tag 永远建不出来 ⇒ 每个后续 docs 提交都会重复 dispatch
+#      （3 服务全量重建重部署 = #3235 的 502 窗口 + #4767 ③ 的覆盖回滚风险）。
+#   ③ 「有没有东西要部署」改用**漂移判据**（这才是 #3235 防 502 窗口的本意；原文案
+#      「最近 10 个提交」只是它的粗糙近似）：自该服务**上次成功部署的 commit** 起，
+#      该服务的代码路径（真值源 = 各 deploy workflow 的 `on.push.paths`）有无改动。
+#      无改动 ⇒ HEAD 的代码状态与线上已部署的一致 ⇒ 不补 ⇒ docs/ci/case 提交不会空转。
+#   ④ 每个分支的**判定依据**都 echo + 落 `$GITHUB_STEP_SUMMARY`，末尾给结论行 +
+#      `::notice::`/`::warning::` ⇒ 不再出现「success 但看不出它为什么没动」。
+# 断路器（issue #4767 ③）**语义逐字保留**：同一 `headSha == main HEAD` 最近一次结论为
+# `failure` ⇒ 跳过；**fail-open**（查询失败 / 无记录 / 结论非 failure，含 cancelled）
+# ⇒ 照旧补部署。
+# 已知 residual（如实登记，不粉饰）：若 C 的部署**已 failure**、其后又有 docs 提交 H，
+# 断路器按 `headSha == H` 查不到记录 ⇒ 会把含 C 的 HEAD 再部署一次。本次**不扩断路器**
+# （扩它=改 #4767 语义）；「回滚点被覆盖」的风险另由 #4808 治。
 #
 # 与原 deploy 工作流关系：本补偿是兜底；deploy-*.yml 的 push+paths 主触发（已失效）
 # 与 schedule 对账保留不动。
@@ -39,67 +70,31 @@ jobs:
       ACR_NAMESPACE: ai-customer-service
     steps:
       # 对账基于 main HEAD（PR opened/reopened 事件的 GITHUB_SHA 是 PR head，需切 main）
+      # ⚠️ `fetch-depth: 0` **必须**（issue #4827）：漂移判据要问「自上次成功部署起该服务
+      # 代码有无改动」= `git log <P>..HEAD -- <paths>`；depth=1 浅克隆里 P 不可达 ⇒ git 报错
+      # ⇒ 判据退化成「每次都判有改动」⇒ 每个 docs 提交都空转 dispatch。
+      # 代价：拉全历史（本仓 pack ≈226MiB，实测约 +30s）。**不要**把它改回 1 —— 改了等于
+      # 把这个坑原样复现（唯一替代是改用 GitHub compare API，但那有 300 文件截断的假阴性面）。
       - uses: actions/checkout@v7
         with:
           ref: main
+          fetch-depth: 0
 
       - name: Docker login ACR
         run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
 
-      # 三个服务：路径（仅用于日志提示）+ 镜像名
-      # GH_TOKEN 必须显式注入：gh CLI 在 Actions 环境检测到 GITHUB_ACTIONS 时强制要求
-      # 显式 GH_TOKEN（否则报 "To use GitHub CLI in a GitHub Actions workflow..." 并退出）
-      - name: PR path filter (docs/tests/cases 不触发部署)
-        if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          FILES=$(gh pr view "$PR_NUMBER" --json files --jq '.files[].path' 2>/dev/null || echo "")
-          echo "📂 PR #$PR_NUMBER 改动文件:"
-          echo "$FILES" | head -30
-          CODE_PATHS=("backend/admin-api" "backend/ai-agent-service" "frontend" "apps" "packages")
-          CODE_CHANGED=0
-          for f in $FILES; do
-            for cp in "${CODE_PATHS[@]}"; do
-              if [[ "$f" == "$cp/"* ]]; then
-                CODE_CHANGED=1
-                break
-              fi
-            done
-          done
-          if [ "$CODE_CHANGED" -eq 0 ]; then
-            echo "✅ 纯文档/测试/case 改动——跳过部署对账（防 502 窗口，Round 60 根治）"
-            # 写 marker 供下一步跳过
-            echo "SKIP_RECONCILE=1" >> "$GITHUB_ENV"
-          else
-            echo "✅ 含代码改动，继续对账"
-            echo "SKIP_RECONCILE=0" >> "$GITHUB_ENV"
-          fi
-
-      - name: Schedule code-change check (schedule/dispatch 兜底也做 path 过滤)
-        if: github.event_name != 'pull_request'
-        shell: bash
-        run: |
-          set -euo pipefail
-          # 检查 main HEAD 最近 10 个提交是否含代码路径改动——纯 docs/tests/cases
-          # 提交不触发部署（防 502 窗口，Round 64 补全 schedule 兜底）
-          CODE_CHANGED=0
-          if git log --oneline -10 --name-only origin/main 2>/dev/null | grep -qE "^(backend/admin-api|backend/ai-agent-service|frontend|apps|packages)/"; then
-            CODE_CHANGED=1
-          fi
-          echo "🔍 schedule 检查：最近提交含代码改动=$CODE_CHANGED"
-          if [ "$CODE_CHANGED" -eq 0 ]; then
-            echo "✅ 最近提交无代码改动——跳过部署对账（防 502 窗口）"
-            echo "SKIP_RECONCILE=1" >> "$GITHUB_ENV"
-          fi
-
+      # ⚠️ 本 step **没有** `if:`，也不再有任何 path 预过滤（issue #4827）：改前它带
+      # `if: env.<跳过标记> != '1'`，而那个标记由两个 path 过滤写入（PR 文件表 /
+      # `git log | grep -q` 的 SIGPIPE 陷阱）⇒ docs/ci 提交的 HEAD 会把**整个对账**跳过
+      # （含「更早的代码提交镜像缺失」）⇒ run 报 success 但零 dispatch。
+      # ⚠️ 本 step 内**禁止**「`git … | grep -q` 当 `if` 条件」这类写法：本 workflow 的 shell
+      # 带 `-o pipefail`，而 `grep -q` 早退会把生产者的 SIGPIPE(141) 变成整条管道的退出码
+      # ⇒ `if` 恒取假分支（这就是 #4827 的真根因；`tests/unit_ci_workflows/` 有持久守卫）。
+      # ⚠️ 也**不要**用 bash4 关联数组（`declare -A`）：macOS 自带 bash 3.2 跑不起来 ⇒
+      # 执行式守护测试会退化成 CI-only。故逐服务参数走**函数参数**。
       - name: Reconcile deploys
-        if: env.SKIP_RECONCILE != '1'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}   # gh CLI 在 Actions 环境强制要求显式 GH_TOKEN
         shell: bash
         run: |
           set -euo pipefail
@@ -107,43 +102,106 @@ jobs:
           # `GITHUB_SHA` 在 `pull_request` 事件下是 PR 的 **merge commit**（**不是** main HEAD）⇒
           # 拿它算 `sha-<7>` 时镜像**永远不存在** ⇒ 每个 PR opened 都重新 dispatch 三条部署 ——
           # 这正是事故里「对账补偿反复重新触发部署 ⇒ 覆盖手工回滚（实测 2 次）」的机制。
-          # checkout 步骤已经是 `ref: main` ⇒ 直接取 HEAD；schedule / dispatch 事件下它与
-          # `GITHUB_SHA` 等价（行为不变，只有 PR 事件下不再空转 dispatch）。
+          # checkout 步骤已经是 `ref: main` ⇒ 直接取 HEAD。
           HEAD_SHA=$(git rev-parse HEAD)
           HEAD7="${HEAD_SHA::7}"
-          MISSING=0
-          SKIPPED=0
-          # 镜像名 → deploy workflow 文件名（镜像名与 workflow 名不对应，如 admin-web → deploy-frontend）
-          declare -A SVC_WF=( [admin-api]=admin-api [ai-agent-service]=ai-agent-service [admin-web]=frontend )
-          for svc in admin-api ai-agent-service admin-web; do
-            # ── 断路器（issue #4767 ③）：这个 commit 的部署**已经失败过** ⇒ 不再自动补部署 ──
+          SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
+          MISSING=0; NODRIFT=0; SKIPPED=0; UNKNOWN=0
+          {
+            echo "## Deploy Reconcile 判定（issue #4827）"
+            echo ""
+            echo "- 事件：\`${GITHUB_EVENT_NAME}\` · 对账基准（main HEAD）：\`${HEAD7}\`"
+            echo ""
+            echo "| 服务 | 判定依据 | 动作 |"
+            echo "|---|---|---|"
+          } >> "$SUMMARY"
+          echo "🧭 对账基准：main HEAD=${HEAD7}（事件 ${GITHUB_EVENT_NAME}）"
+
+          # 单服务对账。$1=服务名 $2=deploy workflow $3=该服务的代码路径 $4=额外 pathspec（排除项，可空）
+          reconcile_one() {
+            local svc="$1" wf="$2" svc_path="$3" excl="$4"
+            local image="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${svc}:sha-${HEAD7}"
+            local runs last p drift reason
+            local -a pathspec
+            # ── 断路器（issue #4767 ③，语义逐字保留）：这个 commit 的部署**已经失败过** ⇒ 不再自动补部署 ──
             # 反复重试同一个坏 commit 会把「已回滚到上一个可用镜像」的环境**再打挂一次**。
             # **fail-open**：查询失败 / 无记录 / 结论不是 failure（含 in_progress、cancelled）⇒
             # 一律照旧补部署 —— 本检查自己出错**绝不**停掉对账。
-            LAST=$(gh run list --workflow "deploy-${SVC_WF[$svc]}.yml" --branch main --limit 30 \
-                     --json headSha,conclusion \
-                     --jq "[.[] | select(.headSha == \"${HEAD_SHA}\")][0].conclusion // \"\"" 2>/dev/null || echo "")
-            if [ "$LAST" = "failure" ]; then
+            runs=$(gh run list --workflow "$wf" --branch main --limit 30 \
+                     --json headSha,conclusion 2>/dev/null || echo "[]")
+            last=$(printf '%s' "$runs" | jq -r --arg s "$HEAD_SHA" \
+                     '[.[] | select(.headSha == $s)][0].conclusion // ""' 2>/dev/null || echo "")
+            if [ "$last" = "failure" ]; then
               echo "⛔ ${svc}：main HEAD ${HEAD7} 的部署**已失败过**（conclusion=failure）——跳过自动补部署。"
               echo "   理由：自动重试同一个坏 commit 会覆盖手工回滚（issue #4767 ③）。人工确认后重跑："
-              echo "   gh workflow run deploy-${SVC_WF[$svc]}.yml --ref main"
+              echo "   gh workflow run ${wf} --ref main"
+              echo "| ${svc} | ⛔ 断路器：\`${HEAD7}\` 的部署已 failure（conclusion=failure） | **不补部署**（fail-open；人工确认后重跑） |" >> "$SUMMARY"
               SKIPPED=$((SKIPPED + 1))
-              continue
+              return 0
             fi
-            IMAGE="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${svc}:sha-${HEAD7}"
-            if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
-              echo "✅ ${svc} 镜像 ${IMAGE} 已存在——HEAD ${HEAD7} 已构建，跳过"
+            # ── 判据 ①：HEAD 的镜像已存在 ⇒ HEAD 这个 commit 已构建过（无漂移）
+            if docker manifest inspect "$image" >/dev/null 2>&1; then
+              echo "✅ ${svc} 镜像 ${image} 已存在——main HEAD ${HEAD7} 已构建，无漂移"
+              echo "| ${svc} | ✅ 镜像已存在：\`${image}\` | **不补部署** |" >> "$SUMMARY"
+              NODRIFT=$((NODRIFT + 1))
+              return 0
+            fi
+            # ── 判据 ②（issue #4827，承接 #3235 防 502 窗口的本意）：自**上次成功部署**的
+            # commit 起，该服务的代码路径有无改动；无改动 ⇒ HEAD 的代码状态与线上已部署的
+            # 一致 ⇒ 不补。取不到基准 / git 判不了 ⇒ **fail-open**（按兜底补部署 + warning）。
+            p=$(printf '%s' "$runs" | jq -r '[.[] | select(.conclusion == "success")][0].headSha // ""' 2>/dev/null || echo "")
+            drift="?no-baseline"
+            if [ -n "$p" ]; then
+              pathspec=( "$svc_path" )
+              if [ -n "$excl" ]; then pathspec+=( "$excl" ); fi
+              drift=$(git log --oneline -1 "${p}..HEAD" -- "${pathspec[@]}" 2>/dev/null) || drift="?git-failed"
+            fi
+            if [ -n "$p" ] && [ -z "$drift" ]; then
+              echo "✅ ${svc}：自上次成功部署 ${p:0:7} 起 ${svc_path} 无代码改动 ⇒ 无漂移（HEAD 的代码已在线上）"
+              echo "| ${svc} | ✅ 无漂移：自 \`${p:0:7}\`（上次成功部署）起 \`${svc_path}\` 无代码改动 | **不补部署** |" >> "$SUMMARY"
+              NODRIFT=$((NODRIFT + 1))
+              return 0
+            fi
+            # ── 兜底 dispatch：HEAD 无镜像，且自基准起该服务有代码改动（或判据不可用）
+            if [ "$drift" = "?no-baseline" ]; then
+              reason="取不到该服务的成功部署记录（fail-open：按兜底处理）"
+              UNKNOWN=$((UNKNOWN + 1))
+              echo "::warning::${svc}：${reason}"
+            elif [ "$drift" = "?git-failed" ]; then
+              reason="git 无法判定 ${p:0:7}..${HEAD7} 的改动（fail-open：按兜底处理）"
+              UNKNOWN=$((UNKNOWN + 1))
+              echo "::warning::${svc}：${reason}"
             else
-              echo "⚠️ ${svc} 镜像 ${IMAGE} 缺失——该 commit 的部署触发被吞（快速合并/schedule 未跑），dispatch 补部署"
-              gh workflow run "deploy-${SVC_WF[$svc]}.yml" --ref main --repo "$GITHUB_REPOSITORY"
-              MISSING=$((MISSING + 1))
+              reason="自 ${p:0:7}（上次成功部署）起 ${svc_path} 有代码改动（${drift%% *}）"
             fi
-          done
+            echo "⚠️ ${svc} 镜像 ${image} 缺失且 HEAD 的代码状态未部署——${reason} ⇒ dispatch 补部署"
+            gh workflow run "$wf" --ref main --repo "$GITHUB_REPOSITORY"
+            echo "| ${svc} | ⚠️ 镜像缺失 + ${reason} | **已 dispatch 补部署**（\`${wf}\`） |" >> "$SUMMARY"
+            MISSING=$((MISSING + 1))
+            return 0
+          }
+
+          # 逐服务（代码路径 = 各自 workflow 的 `on.push.paths` 真值源；有动态对齐守卫）
+          reconcile_one admin-api deploy-admin-api.yml backend/admin-api ""
+          reconcile_one ai-agent-service deploy-ai-agent-service.yml backend/ai-agent-service ":(exclude)backend/ai-agent-service/tests"
+          reconcile_one admin-web deploy-frontend.yml frontend/admin-web ""
+
           if [ "$SKIPPED" -gt 0 ]; then
             echo "⛔ ${SKIPPED} 个服务被断路器跳过（该 commit 的部署已失败）—— 不自动重试坏 commit"
           fi
           if [ "$MISSING" -gt 0 ]; then
             echo "🎯 补部署 dispatch 完成：${MISSING} 个服务（对应 deploy-*.yml 将构建并部署 sha-${HEAD7}）"
-          elif [ "$SKIPPED" -eq 0 ]; then
-            echo "✅ 全部服务镜像已存在，无补部署"
+          fi
+          {
+            echo ""
+            echo "**结论**：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}"
+            echo ""
+            echo "> 没有任何 dispatch 时，上表逐服务给出**判定依据**（镜像名 / 上次成功部署的 commit /"
+            echo "> 断路器结论）——不再出现「run 报 success 但看不出它为什么没动」（issue #4827）。"
+          } >> "$SUMMARY"
+          echo "🧭 结论：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED} · 判定失败=${UNKNOWN}"
+          if [ "$UNKNOWN" -gt 0 ]; then
+            echo "::warning::Deploy Reconcile：${UNKNOWN} 个服务判据不可用——已按 fail-open 兜底补部署，请人工确认"
+          else
+            echo "::notice::Deploy Reconcile 判定完成：dispatch=${MISSING} · 无漂移=${NODRIFT} · 断路器跳过=${SKIPPED}（基准 main HEAD=${HEAD7}）"
           fi
