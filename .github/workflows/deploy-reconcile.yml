@@ -103,11 +103,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          HEAD7="${GITHUB_SHA::7}"
+          # 对账基准 = **checkout 出来的 main HEAD**（issue #4767）：
+          # `GITHUB_SHA` 在 `pull_request` 事件下是 PR 的 **merge commit**（**不是** main HEAD）⇒
+          # 拿它算 `sha-<7>` 时镜像**永远不存在** ⇒ 每个 PR opened 都重新 dispatch 三条部署 ——
+          # 这正是事故里「对账补偿反复重新触发部署 ⇒ 覆盖手工回滚（实测 2 次）」的机制。
+          # checkout 步骤已经是 `ref: main` ⇒ 直接取 HEAD；schedule / dispatch 事件下它与
+          # `GITHUB_SHA` 等价（行为不变，只有 PR 事件下不再空转 dispatch）。
+          HEAD_SHA=$(git rev-parse HEAD)
+          HEAD7="${HEAD_SHA::7}"
           MISSING=0
+          SKIPPED=0
           # 镜像名 → deploy workflow 文件名（镜像名与 workflow 名不对应，如 admin-web → deploy-frontend）
           declare -A SVC_WF=( [admin-api]=admin-api [ai-agent-service]=ai-agent-service [admin-web]=frontend )
           for svc in admin-api ai-agent-service admin-web; do
+            # ── 断路器（issue #4767 ③）：这个 commit 的部署**已经失败过** ⇒ 不再自动补部署 ──
+            # 反复重试同一个坏 commit 会把「已回滚到上一个可用镜像」的环境**再打挂一次**。
+            # **fail-open**：查询失败 / 无记录 / 结论不是 failure（含 in_progress、cancelled）⇒
+            # 一律照旧补部署 —— 本检查自己出错**绝不**停掉对账。
+            LAST=$(gh run list --workflow "deploy-${SVC_WF[$svc]}.yml" --branch main --limit 30 \
+                     --json headSha,conclusion \
+                     --jq "[.[] | select(.headSha == \"${HEAD_SHA}\")][0].conclusion // \"\"" 2>/dev/null || echo "")
+            if [ "$LAST" = "failure" ]; then
+              echo "⛔ ${svc}：main HEAD ${HEAD7} 的部署**已失败过**（conclusion=failure）——跳过自动补部署。"
+              echo "   理由：自动重试同一个坏 commit 会覆盖手工回滚（issue #4767 ③）。人工确认后重跑："
+              echo "   gh workflow run deploy-${SVC_WF[$svc]}.yml --ref main"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
             IMAGE="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${svc}:sha-${HEAD7}"
             if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
               echo "✅ ${svc} 镜像 ${IMAGE} 已存在——HEAD ${HEAD7} 已构建，跳过"
@@ -117,8 +139,11 @@ jobs:
               MISSING=$((MISSING + 1))
             fi
           done
+          if [ "$SKIPPED" -gt 0 ]; then
+            echo "⛔ ${SKIPPED} 个服务被断路器跳过（该 commit 的部署已失败）—— 不自动重试坏 commit"
+          fi
           if [ "$MISSING" -gt 0 ]; then
             echo "🎯 补部署 dispatch 完成：${MISSING} 个服务（对应 deploy-*.yml 将构建并部署 sha-${HEAD7}）"
-          else
+          elif [ "$SKIPPED" -eq 0 ]; then
             echo "✅ 全部服务镜像已存在，无补部署"
           fi
