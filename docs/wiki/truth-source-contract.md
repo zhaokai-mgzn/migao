@@ -233,7 +233,22 @@ git -C "$R" status --porcelain                                 # 必须为空
 | `hardcoded-count` | I1 | 受管引用面 `~?N 条` 命中 **63 处**，绝大多数为叙事/历史语境，**无零误红判据**（无法区分"断言当下条数"与"复述历史读数"）；#3787 第 4 条即此族 | 用例库给出机器可读的条数声明位，或这类句子改成"以 X 为单一事实源"的无数字写法 |
 | `section-pointer-semantic` | I1 | 章节号存在性可判（`16.5` 确实存在），但"该不该指 16.5 而不是 16.7"要读语义；#3787 第 1/2 条即此族 | 引用写成**带章节标题**的锚（`§16.7「派发后」`），把存在性判定升级为标题命中 |
 | `runtime-fencing` | I1/I3 | 实装点在 `tests/agent_eval/local_runner.py`，**由另一任务包落地**；本包按边界不碰 runner | runner 侧把 §3.2 的四项指纹写进 `run_key`；前置失败走 fail-closed 分支 |
-| `world-selfbuilt-namespace` | I3 | 289 条用例只有 **19 条**声明 `namespaces`；"哪些用例算写用例"本身无零误红判据（读/写由工具实现决定，不在用例声明里）⇒ 当前只作**活指标** | 用例 schema 补"写工具清单"，或 runner 导出每轮的写工具事件 |
+| `world-selfbuilt-namespace` | I3 | ~~289 条用例只有 **19 条**声明 `namespaces`~~ ⇒ 🔴 **现取、不写死**（原读数 = **基线读数**，见下「口径订正」注）：用例总数与「声明 `namespaces` 的条数」都随用例库增长而变；"哪些用例算写用例"本身无零误红判据（读/写由工具实现决定，不在用例声明里）⇒ 当前只作**活指标**（核法 = 下条命令） | 用例 schema 补"写工具清单"，或 runner 导出每轮的写工具事件 |
+
+> 🔴 **口径订正（issue #4751，2026-09-20）**：本行原写「**289 条用例只有 19 条**声明 `namespaces`」。
+> **① 当时基线**：= **289 / 19**（原措辞保留在上一行的删除线里）。**② 后来变了**：用例库增长
+> ⇒ 两个数**都**过期（实测：总数 **361**、声明 `namespaces` 的 **47** 条）。
+> **③ 故改为 Z**：**不写死**，改为**现取 + 复算命令**：
+>
+> ```bash
+> python3 -c "import sys;sys.path.insert(0,'.github');from render_cases import load_case_dicts;d=load_case_dicts('.github/cases');print('用例总数',len(d),'声明 namespaces 的条数',sum(1 for c in d if c.get('namespaces')))"
+> ```
+>
+> ⚠️ 同族的**硬编码现值还有一处**（`scripts/drift_audit.py` 的 `world-selfbuilt-namespace` 条目里
+> 逐字写着「289 条用例里只有 **19 条**声明 `namespaces`」）—— **本单不改它**（docs-only，
+> 且它与本页是两份副本）；已在关联 PR body **登记**为同族发现。
+> 口径提示：本行的「声明 `namespaces`」= **列表非空**（不是「出现 `namespaces:` 字样」——
+> `*.yml` 里有大量**注释**在解释「为什么**有意不**声明它」，按字面 grep 会多算）。
 | `sync-copy-landing` | I1 | §4 的**兑现/撤回**要改 `docs/wiki/DEV-FLOW.md` 正文，该文件正被别的包改（相撞风险） | 一个后续小单：渲染脚本（兑现）或页头措辞改写（撤回），二者取一 |
 
 ---
