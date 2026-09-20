@@ -226,6 +226,49 @@ cases:
       - "确认支付，标记为生产中"
       - "发货，物流顺丰 SF1234567890"
       - "客户确认收货了，标记完成"
+    # ── 前置自断言 + 自清理 + 效果层（issue #4883 的 case-trust burn-down 缴费）────────────
+    # 本用例命中的三条存量违规（`metric=entries` ⇒ 必须**整条销账**，只收窄多码条目不算）：
+    #   ① CASE-TRUST-NO-PRECONDITION-ASSERTION  ② CASE-TRUST-NO-SELF-CLEAN
+    #   ③ CASE-TRUST-NO-EFFECT-ASSERTION
+    # 【真前置是什么】R1「查一下最近一笔待付款订单的状态」用**相对指代**（"最近一笔"）在
+    #   **订单集合**里取值 —— 集合为空 ⇒ `order_query` 无从命中 ⇒ 后面三条写动作全部落空，
+    #   而报告上只表现为 `unmatched expectation`（看起来像「agent 不会走状态机」，归因全错，
+    #   正是本规则 `why` 写的那个形态）。集合的不可变键 = 客户手机号 `13800138000`
+    #   （B 端种子里张三名下 EVAL-MB-ORD-0001 / 0002 / 0005）；
+    #   取数走 `local_runner._probe_phone_order_count` → `GET /api/admin/orders?receiver=<手机号>`，
+    #   与 AS-003 / OR-012 同一部手机号、同一份"怎么数订单"的口径 —— **不另立第二份定义**（§18）。
+    # 【为什么这么计数】**刻意不声明 `expect: <N>`**：该基线随栈组成而变（B 端种子 + 同栈并行
+    #   建单用例），写死常量 = 依赖栈的恒红判据（反模式 CH-034，AS-003 / OR-012 同款）。
+    #   声明层只用 runner 的**结构下界** `min: 1`（`_PRECONDITION_TYPES["order_count_for_phone"]["min"]`）：
+    #   靶子被清零时必然触发，且不随栈漂移。类型 `order_count_for_phone` 是**既有已登记**类型
+    #   —— 本单**不新增 type、不改探针**（§13.3 的"新 type = 大活"整块不动）。
+    # 【自清理为什么只到 `namespaces`】（照实写，不粉饰）：`pre_clean` 的五个已落地类型
+    #   （product_remove / product_dedupe / employee_reactivate / aftersales_ticket_prepare /
+    #   customer_tag_remove）里**没有"把订单复位"这一档**，而本用例的指代对象**就是订单集合**
+    #   （"最近一笔"），同栈并行建单用例（OR-016 / CR-001 / CH-010 / OR-008 / OR-009 / OR-015 /
+    #   CR-003 …）实时改写它 ⇒ 声明 `namespaces` 与它们**自动互斥**（AS-003 #3781 / OR-012 先例，
+    #   不另立口径）。这是 taxonomy **明确列出的弱证据档**：只保证并行互斥、**不解决重试前置** ——
+    #   故如实登记在此，不当成强修复。
+    # 【效果层为什么是 `must_succeed`】本用例是**全流转**（confirm_payment → producing →
+    #   shipped → completed），每一步都**必须真的成功** —— 「调用了 ≠ 成了」（#3778）在这里
+    #   正是关键：`expectations` 只证明 `order_manage` 被调用过，调完返回 success=false 也照样算过。
+    #   落库侧 `db_verify` **无可用 fetcher**（现有 fetcher：order_phone / order_items /
+    #   processing_order / employee / employee_absent / after_sales_ticket / product_by_name
+    #   —— 没有"按单号读 status"这一档），故效果层落在 `must_succeed`。
+    # 【断言面一字未放宽】`user_inputs` / `expectations` / `data_checks` / `skip_reason` **全部未动**，
+    #   本单只加下面三格声明。
+    # ⚠️ **如实登记（不粉饰）**：本条仍是 **skip 用例**（缺"可从 pending 走到底的测试订单"，
+    #   理由见 `skip_reason`）⇒ 这三格**当前不进运行期**。它们是把这个用例的**真前置 + 真效果**
+    #   在**声明层**钉住（解 skip 的那一刻即生效、且此后不会静默退化），
+    #   **不是**运行期行为修复 —— 本单的判定依据是"缺陷本身被修掉"（前置有了可判定断言、
+    #   写效果有了 success 断言、并行互斥有了声明），而不是"账面少了一行"。
+    namespaces:
+      - "customer_phone:13800138000"
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
+    must_succeed:
+      - tool: order_manage
     expectations:
       # 修正（issue #3702）：原声明 `args.action: detail` 是**该工具不存在的取值** ——
       # `order_query` 的 action 枚举真值 = `list / statistics / follow_status_stats`

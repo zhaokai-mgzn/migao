@@ -1641,7 +1641,7 @@ cases:
 
   - id: UI-049
     legacy_id: ""
-    title: "工艺项页·**两层布局**：【工序】按车间分组（可折叠，收窄到布帘/纱帘/帘头，**不含**布料）"
+    title: "工艺项页·**两层布局**：【工序】= 一道工序一行的一口价表（按车间分组可折叠；**不再有部位列**）"
     domains:
       - ui
       - frontend
@@ -1656,12 +1656,12 @@ cases:
     user_inputs: []
     expectations: []
     data_checks:
-      - "判据 1·**两层**：工序层（`operation-price-matrix`，`scope='position'` 的逻辑工序）与【打包发货】层（`delivery-section`，`scope='set'`）各自成区，互不混排；`scope='set'` 的工序**不得**出现在工序层的行里。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx 的 B1/B2"
+      - "判据 1·**两层**：工序层（容器 `operation-price-matrix`、表 `operation-workshop-table`；`scope='position'` 的逻辑工序，**一道逻辑工序一行**）与【打包发货】层（`delivery-section`，`scope='set'`）各自成区，互不混排；`scope='set'` 的工序**不得**出现在工序层的行里。**2026-09-21 改判（issue #4886 去部位化）**：改前工序层是「行 × 4 部位列 × 格」的矩阵，现在行 = 逻辑工序名、一屏**每道工序只有一行**（读面由 `ProductionOperationQueryService#collapseToLogical` 收敛，前端另按 `logical_name ?? operation` 去重兜住前后端各自上线的过渡期）⇒ **分区判据仍是既有 `scope`，不是「有没有部位格」**（`外帘打卷` 四格全 `applicable=false` 仍必须在场）。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx 的 B1/B2 + 「工序单价表：一道工序一行」组"
       - "判据 2·**按车间分组 + 可折叠**：组标题逐字为「<车间> · N 道」，点标题折叠/展开只影响该组（`matrix-workshop-<组>` / `matrix-workshop-toggle-<组>`）。证据：同文件 B3（**红证**：改前无分组 ⇒ `Unable to find an element by: [data-testid=\"matrix-workshop-toggle-裁剪\"]`，实测）"
-      - "判据 3·**列收窄**：工序层列头**逐字** = `['工序','布帘','纱帘','帘头','元数据 / 操作']` —— `布料` **不得**当第 4 个部位列出来；同时**读面数据里那一格仍在**（`variant_operation_id` 的载体 + V88 保命格）：【布料单】小区照旧渲染它（`matrix-cell-裁剪-布料` 有价），孤儿判据（#4614）按**数据**判、不按**列**判 ⇒ `裁剪` **不得**被点名成孤儿。证据：同文件 B4（**红证**：注入「读面删掉 `布料` 格」⇒ `Unable to find an element by: [data-testid=\"matrix-cell-裁剪-布料\"]`，实测）"
+      - "判据 3·**没有部位列**（2026-09-21 改判，issue #4886 去部位化）：工序层列头**逐字** = `['工序','单价','分组 · 单位 · 必完 · 操作']` —— 部位列（`布帘` / `纱帘` / `帘头` / **`布料`**）**一律不再存在**；单价格 `operation-price-<逻辑工序名>`，`data-state` ∈ `priced` / `unpriced` / `na`。**反向护栏（判据升级，不是放宽）**：改前这条守的是「`布料` 不得当第 4 个部位列、但读面那一格仍在（`variant_operation_id` 的载体 + V88 保命格）」—— 现在**列与格都没有了**，所以守的变成：`queryByTestId(/^matrix-cell-/)` / `queryByTestId(/^matrix-applicable-/)` / `queryByTestId(/^matrix-price-input-/)` **三者都必须为空**；而 `variant_operation_id` **仍必须由读面给出**（收敛**只选行、不回落** —— 收敛后那一行上的 `variant_operation_id` 是孤儿判据 #4614 与实例化的载体）⇒ 孤儿仍按**数据**判、不按**列**判，`裁剪` **不得**被点名成孤儿。证据：同文件 B4（改判后）+「同一逻辑名的多行**收敛为一行**：30 行（不是 120 行），列头只有「一个单价」」（**红证**：注入「读面删掉 `布料` 行」⇒ 收敛结果变化、`operation-price-*` 的态断言红）"
       - "**边界（如实登记）**：本用例只判 `jsdom` 可见结构；真实浏览器的 HTML 合法性与 CSS 布局由 UI-052 的**结构合法性断言**兜底，完整浏览器渲染仍**未采集**（见 issue #4721 的 P2-4 登记）。"
     skip_reason: "[backend-contract] 纯前端渲染（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行"
-    merge_log: "2026-09-19 新增（issue #4721 P1-1，补 #4677 的行为进用例库）：两层布局 = 【工序】按车间分组 + 列收窄到部位词表（`布料` 只退场于**列**、不退场于**数据**）。"
+    merge_log: "2026-09-19 新增（issue #4721 P1-1，补 #4677 的行为进用例库）：两层布局 = 【工序】按车间分组 + 列收窄到部位词表（`布料` 只退场于**列**、不退场于**数据**）。 ｜ 2026-09-21（issue #4883 用例库同步，配套 #4886 前端去部位化）：判据 3 由「列收窄到布帘/纱帘/帘头（`布料` 不当第 4 列、但读面那一格仍在）」**改判**为「**没有部位列**：列头逐字 = `['工序','单价','分组 · 单位 · 必完 · 操作']`，且 `matrix-cell-*` / `matrix-applicable-*` / `matrix-price-input-*` 三族 testid 一律为空」；判据 1 补两级容器与「一道工序一行」。判据 2（按车间分组可折叠）**一字未动**。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/production-routings.test.tsx"
@@ -1691,7 +1691,7 @@ cases:
       - "判据 3·**零格的交付工序仍有行 + `管理▸`**（#4674 从根上避免的死路）：某道 `scope='set'` 工序在矩阵里一格都没有 ⇒ 仍有 `delivery-row-*` + `delivery-manage-*`，价态如实为 `no_applicable_position`（**不**假装成 0 元或未定价）。证据：同文件 B6-①"
       - "判据 4·**三态语义不变**（反向护栏）：`不做` / `未定价` / `¥x.xx` 三者可区分；`未定价` **不得**显示成 `¥0.00`；真 0 元**照显示** `¥0.00`。证据：同文件 B5"
     skip_reason: "[backend-contract] 纯前端渲染（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行"
-    merge_log: "2026-09-19 新增（issue #4721 P1-1，补 #4677 的行为进用例库）：【打包发货】层由「按部位 4 格」改为**一列价**，且零矩阵格的交付工序不消失。"
+    merge_log: "2026-09-19 新增（issue #4721 P1-1，补 #4677 的行为进用例库）：【打包发货】层由「按部位 4 格」改为**一列价**，且零矩阵格的交付工序不消失。 ｜ 2026-09-21（issue #4883 用例库同步，配套 #4886）：判据 1 追加事实订正 —— 反向护栏的覆盖面从「交付层不得按部位渲染」扩到**整页**（工序层同样不得再有 `matrix-cell-*` / `matrix-applicable-*` / `matrix-price-input-*`）；判据 2/3/4（逐字取服务端 / 零格仍有行 / 三态语义不变）**一字未动**。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/production-routings.test.tsx"
@@ -1701,7 +1701,7 @@ cases:
 
   - id: UI-051
     legacy_id: ""
-    title: "工艺项页·🔴 【布料单】定价入口（`裁剪` + `打包` **两格各有写面**）+ 非法 DOM 嵌套（`<td>` 嵌 `<td>`）已消除"
+    title: "工艺项页·🔴 **一口价写面**（`operation-price-<工序>` 就地改价，寻址 = 收敛后那一行的 `id`）+ 旧【布料单】定价区/两格写面**已随去部位化退场**"
     domains:
       - ui
       - frontend
@@ -1710,19 +1710,19 @@ cases:
     tags:
       - ui
       - production-routing
-      - fabric-sheet
+      - operation-price
       - admin-web
     truths_ref: []
     user_inputs: []
     expectations: []
     data_checks:
-      - "判据 1·**入口不依赖「布料」列**：`fabric-sheet-section` 里 `裁剪` 与 `打包` **各一行、一列价**（`fabric-sheet-row-裁剪` / `fabric-sheet-row-打包`），而工序层的列里**没有** `布料`。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx 的「🔴 硬要求」"
-      - "判据 2·**两格各有读面**：`裁剪 × 布料`（`¥7.00`）与 `打包 × 布料`（`¥1.50`）都在本区可见且 `data-state='priced'`。证据：同上 + 「🔴 硬要求·另一格写面」"
-      - "判据 3·🔴 **两格各有写面**（硬要求写的是「`裁剪` **与** `打包`」）：两格**各自**点铅笔 → 输入 → 保存 ⇒ `PUT /operation-positions/{id}`，`id` 分别为 `lc-8` / `lc-12`，body **只带** `{unit_price}`（不夹带 `applicable` 等）。证据：同文件两条写面用例（**红证**：把编辑入口改成 `disabled` ⇒ `Unable to find an element by: [data-testid=\"matrix-price-input-打包-布料\"]`，实测）"
-      - "判据 4·**格不存在 ⇒ 给出路**：`× 布料` 那一格缺失时，**两道工序各有一份**「没有「<工序> × 布料」这一格」+ 两个可点动作（`fabric-sheet-attach-*` 接入部位 / `fabric-sheet-seed-*` 补套行业模板），**不写**页面里没有的指引（如「请核对各部位的适用性配置」）。证据：同文件「🔴 硬要求·空态给出路」"
-      - "判据 5·**结构合法**（issue #4721 P2-1）：小区那一格**不得**渲染成 `<td>` 且其**直接父元素**不得是 `<td>`（`<td>` 嵌 `<td>` 是非法 DOM ⇒ 浏览器隐式闭合/重排、`jsdom` 不纠错 ⇒ 假绿）；同时工序层那一格**仍是** `<td>`。证据：同文件「🔴 硬要求」的结构合法性断言（**红证**：去掉 `as=\"div\"` ⇒ `expected 'TD' to be 'DIV'`，实测）"
+      - "判据 1·**写面入口 = 工序单价表上的单价格**（2026-09-21 改判，issue #4886 去部位化）：在 `operation-workshop-table` 的某一行点 `operation-price-edit-<逻辑工序>` → 填 `operation-price-input-<逻辑工序>` → `operation-price-save-<逻辑工序>` ⇒ 发 `PUT /api/admin/production/operation-positions/{id}`，body **只带** `{unit_price}`（不夹带 `applicable` 等）。改前这一格写的是【布料单】小区里 `裁剪` / `打包` 两行（`fabric-sheet-section` / `fabric-sheet-row-*`）—— 该区已整区退场，判据**改判到主表**、不放宽（仍要求「明确、可见的位置 + 就地改价 + body 恰好一个键」）。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx「收敛规则：优先 `applicable=true`…」（**红证**：把编辑入口改成 `disabled` ⇒ `Unable to find an element by: [data-testid=\"operation-price-edit-工序1\"]`）"
+      - "判据 2·**改价寻址 = 收敛后那一行的 `id`**（2026-09-21 改判，issue #4886）：读面**可能仍返回同一逻辑名的多行**（前后端各自上线的过渡期）⇒ 前端按 `logical_name ?? operation` 收敛，并**保留收敛后那一行的 `id`**；断言 = 改 `工序1` 的价时发的是**那一行**的 id（夹具里 `mp-工序1-布帘`，不是 `mp-工序1-帘头` / `-布料`）—— 选错行 = 改了另一个价。证据：同文件「收敛规则」用例的 `toHaveBeenCalledWith('mp-工序1-布帘', { unit_price: 3.5 })`"
+      - "判据 3·🔴 **旧两格写面已不存在**（2026-09-21 改判，issue #4886 去部位化）：`fabric-sheet-section` 与 `fabric-sheet-*` 整区退场（用户裁定：一道工序一个价后它与主表重复）；`matrix-price-input-打包-布料` / `matrix-price-input-裁剪-布料`（原 `id` = `lc-8` / `lc-12`）**一律不得存在**。**反向护栏**（这是本条改判后真正承重的一格）：`queryByTestId(/^fabric-sheet-/)` 与 `queryByTestId(/^matrix-price-input-/)` 都必须为空 —— 「布料单」这条**专用定价旁路**不得以任何形态复活（复活 = 同一个价有两个写面）。证据：同文件「同一逻辑名的多行收敛为一行」的 testid 反向断言组"
+      - "判据 4·**旧「格缺失给出路」整格退场**（2026-09-21 改判，issue #4886）：改前「`× 布料` 这一格缺失 ⇒ 两道工序各给出「接入部位」+「补套行业模板」两个可点动作」（`fabric-sheet-attach-*` / `fabric-sheet-seed-*`）—— 部位维度退场后**不再有「某一格缺失」这个状态**，该区的两个动作随之消失。**保留不放宽的判据**：① 存量孤儿仍**如实可见**（只读提示 `matrix-orphan-hint`，文案 = `有 N 道工序还没有价目行（下表看不到）`，`title` 给可行动出路）；② 页面**不得**摆死路（无出路的可点按钮）—— 「接入部位价目」弹窗已退场，故不得留下指向它的残留入口。证据：同文件的 `matrix-orphan-hint` 在场/缺失两态"
+      - "判据 5·**结构合法（issue #4721 P2-1）—— 改判为「结构性不可达」**（2026-09-21，issue #4886）：改前那条守的是「【布料单】小区那一格不得渲染成 `<td>` 且其父元素不得是 `<td>`」（`<td>` 嵌 `<td>` 是非法 DOM）；现在该小区**整区退场** ⇒ 非法嵌套**结构性不再可能**（不再有嵌套小区可断言），故本条判据改为：**该区与它的结构断言随能力一并退场**，且页面不得以任何其它形态把「单价格」渲染成嵌套 `<td>`。⚠️ 照实登记：这是一条**判据面缩小**（能力被用户裁定删除 ⇒ 判据失去对象），**不是**放宽——同一份结构纪律仍由工序层的表结构（`operation-workshop-table` 三列）承担。"
     skip_reason: "[backend-contract] 纯前端交互（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行"
-    merge_log: "2026-09-19 新增（issue #4721 P1-1/P2-1/P2-7，补 #4677 的行为进用例库）：【布料单】定价入口读写 `裁剪 × 布料` 与 `打包 × 布料` **两格**；小区内层改 `div` 消除非法 DOM 嵌套。"
+    merge_log: "2026-09-19 新增（issue #4721 P1-1/P2-1/P2-7，补 #4677 的行为进用例库）：【布料单】定价入口读写 `裁剪 × 布料` 与 `打包 × 布料` **两格**；小区内层改 `div` 消除非法 DOM 嵌套。 ｜ 2026-09-21（issue #4883 用例库同步，配套 #4886 去部位化）：**【布料单】定价区（`fabric-sheet-section`）与两格写面（`lc-8` / `lc-12`、`matrix-price-input-打包-布料`）已随去部位化整区退场**（用户裁定：一道工序一个价后与主表重复）⇒ 本条改判为「一口价写面 + 旧区消失的反向护栏」：写面判据落在单价格 `operation-price-<工序>`（edit/input/save ⇒ `PUT /operation-positions/{id}`，body 只带 `{unit_price}`），寻址 = 收敛后那一行的 `id`；原「格不存在 ⇒ 给出路」与「结构合法（td 嵌 td）」两格判据随该区一并退场（能力被删 ⇒ 判据失去对象，如实登记为判据面缩小）；「未定价不得渲染成 ¥0.00」与「孤儿仍按数据判」两条**保留不放宽**。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/production-routings.test.tsx"
