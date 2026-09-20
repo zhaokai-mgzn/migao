@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, ArrowLeft, Printer, RefreshCw, ShieldOff, Wrench } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Copy, Printer, QrCode, RefreshCw, ShieldOff, Wrench } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import { Button, Modal } from '@/components/ui'
 import StatusBadge from '@/components/ui/StatusBadge'
 import { cn } from '@/lib/utils'
@@ -50,6 +51,10 @@ export default function ProcessingOrderProductionPage() {
   const [repricing, setRepricing] = useState(false)
   const [repriceError, setRepriceError] = useState('')
   const [repriceNotice, setRepriceNotice] = useState('')
+  // 生成二维码（测试用，issue #4726，A 档）：把**加工单号**画成纯文本码供端到端联调。
+  // **纯前端渲染 + 零写请求**（不碰 qr_token，不调任何端点）。
+  const [testQrOpen, setTestQrOpen] = useState(false)
+  const [testQrCopied, setTestQrCopied] = useState(false)
 
   const load = useCallback(async () => {
     if (!id) return
@@ -179,6 +184,31 @@ export default function ProcessingOrderProductionPage() {
     }
   }
 
+  /**
+   * 生成二维码（测试用，issue #4726，A 档 = 加工单号纯文本码）。
+   *
+   * 用户诉求（2026-09-20）：「加个按钮生成二维码，这样就能串联起来扫码生产&计件，主要是用来测试」。
+   * 串联链路 = 屏幕出码 → 任意扫码工具读到**加工单号** → 工人在 bmini 报工页
+   * （frontend/bmini-app/src/pages/production/index）**手动输入**单号 → 报工 → 计件。
+   *
+   * ⚠️ 与「打印任务卡」的码**不是同一个**：任务卡印的是后端 `qr_token`（token 化、可撤销，扫码报工的
+   * 权威入口）；本按钮是**纯前端**把加工单号画成码 —— 只读、不写库、既不生成也不撤销 token。
+   * ⚠️ 限制：工人端**无登录** ⇒ 计件归属靠 worker_id/worker_name，可能落「未署名」或商家账号
+   * ⇒ 发工资对不上人（#4716 解决）；A 档**不是**「扫一下就进」，B 档小程序码才是。
+   */
+  const openTestQr = () => {
+    setTestQrCopied(false)
+    setTestQrOpen(true)
+  }
+
+  /** 复制单号（工人粘进 bmini 报工页的单号输入框）；剪贴板不可用只记日志，不阻断弹层。 */
+  const copyTestQrNo = () => {
+    navigator.clipboard
+      .writeText(po?.processingOrderNo ?? '')
+      .then(() => setTestQrCopied(true))
+      .catch((e) => console.error('Clipboard write failed:', e))
+  }
+
   const progress = operations?.progress
   const percent = Math.min(100, Math.max(0, Math.round(Number(progress?.percent ?? 0))))
   const doneCount = progress?.done ?? 0
@@ -189,6 +219,9 @@ export default function ProcessingOrderProductionPage() {
   const showInstantiate = !operationsError && positionCount === 0 && po?.status !== 'cancelled'
   // 撤销入口：有可撤销的码 + 持有 processing:manage（客服/销售/财务看不到，避免按钮可见却 403）
   const canRevoke = hasPermission('processing:manage') && !!operations?.qr_token
+  // 生成二维码（测试用，issue #4726）：与「撤销二维码」同级显隐（同为 processing:manage 口径，
+  // 避免无权限角色看到按钮却 403；本入口本身不调端点，但保持同一码以免口径分叉）
+  const canTestQr = hasPermission('processing:manage')
   // 工序还在但码没了 = 刚撤销过 ⇒ 任务卡占位文案不得再指向本页不存在的「补生成工序」
   const qrPlaceholderHint =
     positionCount > 0 && !operations?.qr_token ? '二维码已撤销（旧码已失效）' : undefined
@@ -264,6 +297,17 @@ export default function ProcessingOrderProductionPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {canTestQr && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    data-testid="production-test-qr-button"
+                    onClick={openTestQr}
+                  >
+                    <QrCode className="w-4 h-4 mr-1.5" />
+                    生成二维码（测试用）
+                  </Button>
+                )}
                 {canRevoke && (
                   <Button
                     variant="danger"
@@ -447,6 +491,59 @@ export default function ProcessingOrderProductionPage() {
             // 工艺规格真值来源 = 加工单快照明细（issue #4355 / 设计文档 §4.9 ③）
             items={po.items}
           />
+
+          {/* 生成二维码（测试用，issue #4726）：A 档 = 加工单号纯文本码（只读、零写请求） */}
+          <Modal
+            open={testQrOpen}
+            onClose={() => setTestQrOpen(false)}
+            title="生成二维码（测试用）"
+            footer={
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  data-testid="production-test-qr-close"
+                  onClick={() => setTestQrOpen(false)}
+                >
+                  关闭
+                </Button>
+                <Button data-testid="production-test-qr-copy" onClick={copyTestQrNo}>
+                  <Copy className="w-4 h-4 mr-1.5" />
+                  {testQrCopied ? '已复制' : '复制单号'}
+                </Button>
+              </div>
+            }
+          >
+            <div className="space-y-3 text-sm">
+              <p
+                className="flex items-start gap-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800"
+                data-testid="production-test-qr-notice"
+              >
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  <span className="font-medium">测试用</span>：二维码内容 = 加工单号（纯文本），
+                  工人扫码后需在报工页<span className="font-medium">手动输入</span>单号，
+                  不是「扫一下就进」。
+                </span>
+              </p>
+              <div className="flex flex-col items-center gap-2">
+                <QRCodeSVG
+                  value={po.processingOrderNo}
+                  size={180}
+                  level="M"
+                  title={po.processingOrderNo}
+                  data-testid="production-test-qr-code"
+                  className="border border-neutral-300 p-1"
+                />
+                <p className="font-medium text-neutral-900" data-testid="production-test-qr-order-no">
+                  {po.processingOrderNo}
+                </p>
+              </div>
+              <p className="text-xs text-neutral-500">
+                本码只读生成：不写入、不撤销任何数据，与任务卡的报工码（qr_token）互不影响。
+                计件归属仍按工人署名（工人端暂无登录），发工资前请核对报工人。
+              </p>
+            </div>
+          </Modal>
 
           {/* 撤销二维码二次确认（issue #4240）：确认后才发请求 */}
           <Modal
