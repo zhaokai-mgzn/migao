@@ -870,4 +870,159 @@ class ProcessingFeeCalculatorTest {
         assertThat(storedNew.mixedColor().options()).containsExactly("拼1次");
         assertThat(storedNew.lineAmount()).isEqualByComparingTo("422.84");
     }
+
+    // ══════════════════════════ issue #4872：行级人工改价 ══════════════════════════
+    //   判据（issue 冻结口径）：
+    //     ① 组合**未命中** ∧ 组合键非空 ∧ override 是**正数** ⇒ 采用：fee_source='manual'、
+    //        unit_price=override、金额 = override × 加工费米数；
+    //     ② 组合**命中** ⇒ **必须忽略** override（既有组合价一字不动）；
+    //     ③ 无 override 且未命中 ⇒ 与现状**逐字不变**（仍 unpriced、组合那半记 0、不回落 Σ 加工项）。
+    //   🔴 红证：把 `overridePrice` 的采用分支去掉（或让它同时作用于命中分支）⇒ ①②两条必红。
+
+    /** 往选配里加一条行级人工改价（元/米）。 */
+    private static Map<String, Object> withOverride(Map<String, Object> info, Object override) {
+        info.put("processingFeeOverride", override);
+        return info;
+    }
+
+    @Test
+    @DisplayName("#4872 判据 ①·组合**未命中** + override ⇒ fee_source=manual + 金额 = override × 米数")
+    void manualOverrideOnUnmatchedCombinationUsesOverrideTimesMeters() {
+        // 库里只有别的组合的价 ⇒ 本行（韩褶+打孔）未命中
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+
+        ProcessingFeeCalculator.Fee fee = compute(withOverride(
+                processingInfo(new BigDecimal("12.30"), "韩褶", "打孔"), new BigDecimal("12.50")));
+
+        // 12.50 × 12.30 = 153.75（**不是** Σ 加工项 9.50×2×2 = 38.00，也**不是**未定价 0）
+        assertThat(fee.amount()).isEqualByComparingTo("153.75");
+        assertThat(fee.amount()).isNotEqualByComparingTo("0");
+        assertThat(fee.feeSource()).isEqualTo(ProcessingFeeCalculator.FEE_SOURCE_MANUAL);
+        assertThat(fee.unitPrice()).isEqualByComparingTo("12.50");
+        // 单价来源也要能回答「这个价是谁定的」（detail 键名不变，只填值）
+        assertThat(fee.priceSource()).isEqualTo("manual");
+        assertThat(fee.meters()).isEqualByComparingTo("12.30");
+        assertThat(fee.metersSource()).isEqualTo("processingMeters");
+        assertThat(fee.matchedRuleId()).isNull();
+        assertThat(fee.lineAmount()).isEqualByComparingTo("153.75");
+        // `items` 是**规范化**特征名有序列表（与组合键同源口径）
+        assertThat(fee.compositionKey()).isEqualTo("打孔+韩褶");
+        assertThat(fee.items()).containsExactly("打孔", "韩褶");
+        assertThat(fee.detail())
+                .containsEntry("composition", "打孔+韩褶")
+                .containsEntry("items", List.of("打孔", "韩褶"))
+                .containsEntry("matched_rule_id", null)
+                .containsEntry("unit_price", new BigDecimal("12.50"))
+                .containsEntry("price_source", "manual")
+                .containsEntry("meters", new BigDecimal("12.30"))
+                .containsEntry("meters_source", "processingMeters")
+                .containsEntry("fee_source", "manual")
+                .containsEntry("amount", new BigDecimal("153.75"));
+    }
+
+    @Test
+    @DisplayName("#4872 判据 ①·override 是**字符串/浮点**形态（wire 形态）同样取到（不因类型退化成 unpriced）")
+    void manualOverrideAcceptsWireShapes() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+
+        ProcessingFeeCalculator.Fee fee = compute(withOverride(
+                processingInfo(new BigDecimal("10.00"), "韩褶"), "12.50"));
+
+        assertThat(fee.feeSource()).isEqualTo(ProcessingFeeCalculator.FEE_SOURCE_MANUAL);
+        assertThat(fee.amount()).isEqualByComparingTo("125.00");
+    }
+
+    @Test
+    @DisplayName("#4872 判据 ②·组合**命中** ⇒ override 被**忽略**（既有组合价一字不动）—— 红证")
+    void manualOverrideIsIgnoredWhenCombinationIsPriced() {
+        givenCombinations(combination("打孔+韩褶", "8.00"));
+
+        ProcessingFeeCalculator.Fee fee = compute(withOverride(
+                processingInfo(new BigDecimal("12.30"), "韩褶", "打孔"), new BigDecimal("12.50")));
+
+        // 仍按组合价 8.00 × 12.30 = 98.40；**不是** override × 米数 153.75、也不是 manual
+        assertThat(fee.feeSource()).isEqualTo(ProcessingFeeCalculator.FEE_SOURCE_MATCHED);
+        assertThat(fee.unitPrice()).isEqualByComparingTo("8.00");
+        assertThat(fee.priceSource()).isEqualTo("实证");
+        assertThat(fee.amount()).isEqualByComparingTo("98.40");
+        assertThat(fee.amount()).isNotEqualByComparingTo("153.75");
+        assertThat(fee.matchedRuleId()).isEqualTo("combo-打孔+韩褶");
+        assertThat(fee.detail()).containsEntry("fee_source", "matched")
+                .containsEntry("unit_price", new BigDecimal("8.00"))
+                .containsEntry("amount", new BigDecimal("98.40"));
+    }
+
+    @Test
+    @DisplayName("#4872 判据 ③·**无** override + 未命中 ⇒ 与现状逐字不变（仍 unpriced、组合那半 0、不回落 Σ 加工项）")
+    void withoutOverrideUnmatchedCombinationKeepsUnpriced() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+
+        ProcessingFeeCalculator.Fee fee = compute(processingInfo(new BigDecimal("12.30"), "韩褶", "打孔"));
+
+        assertThat(fee.feeSource()).isEqualTo(ProcessingFeeCalculator.FEE_SOURCE_UNPRICED);
+        assertThat(fee.amount()).isEqualByComparingTo("0");
+        assertThat(fee.unitPrice()).isNull();
+        assertThat(fee.hint()).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("#4872·非正数 override（0 / 负数 / 非数值）**不算改价** ⇒ 仍走 unpriced（0 元改价 = 静默归零，不许）")
+    void nonPositiveOverrideIsNotAManualPrice() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+
+        for (Object override : List.of(BigDecimal.ZERO, new BigDecimal("-5.00"), "abc", "")) {
+            ProcessingFeeCalculator.Fee fee = compute(withOverride(
+                    processingInfo(new BigDecimal("12.30"), "韩褶", "打孔"), override));
+            assertThat(fee.feeSource())
+                    .as("override=%s 不得被当成人改价（0/负数/非数值一律 = 没改价）", override)
+                    .isEqualTo(ProcessingFeeCalculator.FEE_SOURCE_UNPRICED);
+            assertThat(fee.amount()).isEqualByComparingTo("0");
+            assertThat(fee.hint()).isNotBlank();
+        }
+    }
+
+    @Test
+    @DisplayName("#4872·**空组合**（没选加工项）+ override ⇒ 仍 unpriced（组合键非空是采用的前置条件）")
+    void manualOverrideWithoutCompositionStaysUnpriced() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+
+        ProcessingFeeCalculator.Fee fee = compute(withOverride(
+                processingInfo(new BigDecimal("12.30")), new BigDecimal("12.50")));
+
+        assertThat(fee.compositionKey()).isEmpty();
+        assertThat(fee.feeSource()).isEqualTo(ProcessingFeeCalculator.FEE_SOURCE_UNPRICED);
+        assertThat(fee.amount()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    @DisplayName("#4872·未命中 + override 但**缺米数** ⇒ unpriced（改价也是单价×米数，不凭 quantity 猜）")
+    void manualOverrideWithoutMetersStaysUnpriced() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+
+        ProcessingFeeCalculator.Fee fee = compute(withOverride(
+                processingInfo(null, "韩褶", "打孔"), new BigDecimal("12.50")));
+
+        assertThat(fee.feeSource()).isEqualTo(ProcessingFeeCalculator.FEE_SOURCE_UNPRICED);
+        assertThat(fee.amount()).isEqualByComparingTo("0");
+        // 不静默：改价意图与缺的因子都要看得见
+        assertThat(fee.unitPrice()).isEqualByComparingTo("12.50");
+        assertThat(fee.detail()).containsEntry("price_source", "manual");
+        assertThat(fee.hint()).contains("人工改价").contains("缺加工费米数");
+    }
+
+    @Test
+    @DisplayName("#4872·人工改价那半与**已定价特殊选项**正交：行金额 = override × 米数 + Σ 选项价")
+    void manualOverrideStillChargesPricedSpecialOptions() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+        givenOptionRules(optionRule("加铅块", "6.00"));
+
+        Map<String, Object> info = processingInfo(new BigDecimal("12.30"), "韩褶", "打孔");
+        info.put("specialOptions", List.of("加铅块"));
+
+        ProcessingFeeCalculator.Fee fee = compute(withOverride(info, new BigDecimal("12.50")));
+
+        assertThat(fee.amount()).isEqualByComparingTo("153.75");
+        assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("6.00");
+        assertThat(fee.lineAmount()).isEqualByComparingTo("159.75");
+    }
 }

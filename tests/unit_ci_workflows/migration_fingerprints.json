@@ -97,6 +97,7 @@
     "V96__backfill_operation_price_versions.sql": "sha256:5e7ef34e450ee82affdebb36c1cdfcf90d950792bb13ab57e964d41215519368",
     "V97__soft_delete_orphan_operation_positions.sql": "sha256:da3ee780d84a419636860ec9da60df95c2d1595138d33b7697045466b37f5243",
     "V98__create_worker_sessions_and_worker_no.sql": "sha256:ad7580afc72ad21c7b63046e21d97e8f721157be33c0bffb51316edc5c7aaa10",
-    "V99__add_short_code_to_set_part_tokens.sql": "sha256:617a7efcd9818649eab0f467e5a743922704ec051a2e6bbfd2f76ee63bad5220"
+    "V99__add_short_code_to_set_part_tokens.sql": "sha256:617a7efcd9818649eab0f467e5a743922704ec051a2e6bbfd2f76ee63bad5220",
+    "V100__add_order_logistics_columns.sql": "sha256:1ac6420a0a6ae18139f1259452947fb940e9b08ba7624a8a286822585f549331"
   }
 }

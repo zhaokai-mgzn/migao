@@ -143,12 +143,31 @@ export default function ShipOrder() {
     }
   }, [order, shippable])
 
-  // 客户常用物流档案（issue #4419）：按订单收货手机号反查客户档案，带出常用物流方式/公司。
-  // 「带出」是增强而非门禁：查不到客户 / 请求失败一律静默保持默认值，绝不阻断发货。
+  /**
+   * 订单自带的**常用物流两列**（issue #4874；后端 #4872 在 `orders` 上新增，
+   * 下单页选客户时带出并随建单落库）—— 空串/null = 订单没记这一半。
+   */
+  const orderLogisticsType = (order?.logisticsType ?? '').trim()
+  const orderLogisticsCompany = (order?.logisticsCompany ?? '').trim()
+
+  // ① **订单值优先**（issue #4874，用户 2026-09-21：「订单需要……收货信息缺常用物流/快递以及常用公司，
+  // 选择客户后要默认带出」）：订单上已经记了这单该用哪家承运商 ⇒ 直接用它，**不回查**客户档案。
+  // 用户已手动改过（`logisticsTouched`）⇒ 任何来源都不覆盖（手改留痕，与发货人预填同一口径）。
+  useEffect(() => {
+    if (logisticsTouched) return
+    if (orderLogisticsType) setLogisticsType(orderLogisticsType)
+    if (orderLogisticsCompany) setLogisticsCompany(orderLogisticsCompany)
+  }, [orderLogisticsType, orderLogisticsCompany, logisticsTouched])
+
+  // ② 订单**没记**的那一半 ⇒ 回落既有的「按订单收货手机号反查客户档案」逻辑（issue #4419）。
+  // ⚠️ 既有兜底**不删、不改成门禁**：存量单（建单早于 #4872）订单上两列必为空 ⇒ 只能反查；
+  // 反查失败/查不到客户一律静默保持当前值，绝不阻断发货。
   // 用户已手动改过物流字段（logisticsTouched）则不再覆盖 —— 与发货人预填同一口径。
   useEffect(() => {
     const phone = order?.customerPhone
     if (!phone || logisticsTouched) return
+    // 订单两半都齐 ⇒ 无需反查（订单值就是权威来源）
+    if (orderLogisticsType && orderLogisticsCompany) return
     let cancelled = false
     customerApi
       .getCustomers({ keyword: phone, page: 1, size: 5 })
@@ -162,8 +181,10 @@ export default function ShipOrder() {
           (c) => c.phone === phone || c.defaultReceiverPhone === phone
         )
         if (!hit) return
-        if (hit.defaultLogisticsType) setLogisticsType(hit.defaultLogisticsType)
-        if (hit.defaultLogisticsCompany) setLogisticsCompany(hit.defaultLogisticsCompany)
+        // 只补**订单没记**的那一半（订单有值时不覆盖 —— 这正是「订单优先」的落点）
+        if (hit.defaultLogisticsType && !orderLogisticsType) setLogisticsType(hit.defaultLogisticsType)
+        if (hit.defaultLogisticsCompany && !orderLogisticsCompany)
+          setLogisticsCompany(hit.defaultLogisticsCompany)
       })
       .catch(() => {
         /* 带出失败不影响发货（默认值仍在） */
@@ -171,7 +192,7 @@ export default function ShipOrder() {
     return () => {
       cancelled = true
     }
-  }, [order?.customerPhone, logisticsTouched])
+  }, [order?.customerPhone, logisticsTouched, orderLogisticsType, orderLogisticsCompany])
 
   // 常用公司可能是预置列表之外的自定义承运商 ⇒ 补进下拉，否则 select 显示不出已存值
   const logisticsCompanyOptions = useMemo(() => {

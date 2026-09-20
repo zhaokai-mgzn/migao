@@ -146,4 +146,75 @@ test.describe('订单创建', () => {
       expect(payload.actualAmount).toBe(100)
     })
   })
+
+  /**
+   * 下单页重构的真浏览器走查（issue #4874 / #4875；migao-dev-flow §15.2「真实浏览器旅程验证」）。
+   *
+   * 为什么必须有这一层：§15 的三条纪律里，**页面结构/信息层次**类判据在 vitest/jsdom 里只能验「组件树
+   * 渲染了什么」，验不了「用户在真页面上看到的是这一个」（#3070 的 5 个 UI 问题全是这么漏过去的）。
+   * 本组断言只依赖**结构**（标题/档位/控件名与几何），不依赖任何未 mock 的后端端点 ⇒ 在无 Java 后端的
+   * E2E 栈里同样稳定。
+   */
+  test.describe('两步化 + 帘体档位 + 用料公式 + 收货物流控件（issue #4874/#4875）', () => {
+    test.beforeEach(async ({ page }) => {
+      await page.getByText('点击搜索并选择商品').click()
+      await page.locator('.fixed.inset-0.z-50').last().getByText(PROD_NAME).first().click()
+      await expect(page.getByTestId('wizard-step-1')).toBeVisible({ timeout: 10_000 })
+    })
+
+    test('订单项录入只有两个步骤区块（原四段手风琴已合并）', async ({ page }) => {
+      await expect(page.getByTestId('wizard-step-1')).toBeVisible()
+      await expect(page.getByTestId('wizard-step-2')).toBeVisible()
+      // 反向断言：原 ③④ 两个步骤号**不得**再出现（合并 = 真的合并，不是并存）
+      await expect(page.getByTestId('wizard-step-3')).toHaveCount(0)
+      await expect(page.getByTestId('wizard-step-4')).toHaveCount(0)
+      await expect(page.getByTestId('wizard-step-1')).toContainText('尺寸与数量 · 工艺规格')
+      await expect(page.getByTestId('wizard-step-2')).toContainText('加工项 · 特殊选项')
+    })
+
+    test('帘体只剩「布帘 / 纱帘」两档（「布帘+纱帘」已移除）', async ({ page }) => {
+      const body = page.getByRole('radiogroup', { name: '帘体' })
+      await expect(body.getByRole('radio', { name: '布帘', exact: true })).toBeVisible()
+      await expect(body.getByRole('radio', { name: '纱帘', exact: true })).toBeVisible()
+      await expect(page.getByRole('radio', { name: '布帘+纱帘' })).toHaveCount(0)
+    })
+
+    test('工艺规格：用料公式在、褶距已移除（步骤 1 默认展开）', async ({ page }) => {
+      await expect(page.getByRole('radio', { name: '韩折公式（折数法）' })).toBeVisible()
+      await expect(page.getByRole('radio', { name: '褶倍数公式（倍数法）' })).toBeVisible()
+      // 反向断言：褶距控件与文案都不得再出现（#4874 第 7 条）
+      await expect(page.getByLabel('褶距')).toHaveCount(0)
+      await expect(page.getByText('褶距', { exact: true })).toHaveCount(0)
+    })
+
+    test('收货信息含「常用物流/快递」与「常用物流公司」两个控件', async ({ page }) => {
+      await expect(page.getByLabel('常用物流/快递')).toBeVisible()
+      await expect(page.getByLabel('常用物流公司')).toBeVisible()
+      // 「未指定」是真值：客户档案没录时不编造「快递」（#4419 口径）
+      await expect(page.getByTestId('order-logistics-type')).toHaveValue('')
+    })
+
+    test('布局遮挡探针：米宝 FAB 与「提交订单」无重叠（§15.3）', async ({ page }) => {
+      // 场景 B：内容不足一屏 —— 展开两个步骤后仍不得让 FAB 压住主操作
+      await page.getByTestId('wizard-step-2').getByRole('button').first().click()
+      await expect(page.getByRole('button', { name: '提交订单' })).toBeVisible()
+
+      const overlap = await page.evaluate(() => {
+        const pick = (sel: string) => document.querySelector(sel)?.getBoundingClientRect() ?? null
+        const fab = pick('button[title="打开米宝"]')
+        const submit = [...document.querySelectorAll('button')].find(
+          (b) => (b.textContent || '').trim() === '提交订单',
+        )
+        const box = submit?.getBoundingClientRect() ?? null
+        if (!fab || !box) return null
+        const x = Math.max(0, Math.min(fab.right, box.right) - Math.max(fab.left, box.left))
+        const y = Math.max(0, Math.min(fab.bottom, box.bottom) - Math.max(fab.top, box.top))
+        return { x, y }
+      })
+      // 无 FAB（如该构建未挂载）⇒ `null`：**不假装通过**，显式跳过并留下痕迹
+      test.skip(overlap === null, '本页未挂载米宝 FAB（title="打开米宝" 找不到）⇒ 无遮挡面可判')
+      expect(overlap).not.toBeNull()
+      expect(overlap!.x === 0 || overlap!.y === 0).toBe(true)
+    })
+  })
 })

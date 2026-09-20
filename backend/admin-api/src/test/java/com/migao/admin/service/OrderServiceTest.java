@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: OR-006, FN-001, OR-001, PG-003, PG-009, PG-010
+// case_ids: OR-006, FN-001, OR-001, PG-003, PG-009, PG-010, PG-042, OR-023
 
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.migao.admin.config.TenantContext;
@@ -103,6 +103,13 @@ class OrderServiceTest {
     private com.migao.admin.mapper.ProductionRouteRuleMapper routeRuleMapper;
 
     private ProcessingFeeCalculator processingFeeCalculator;
+
+    /**
+     * 建单回写加工费组合（issue #4872）：只断言「谁发射、发射了几次、带了什么参数」——
+     * 幂等三态与版本台账的判据在 {@link ProcessingFeeCombinationCommandServiceTest}。
+     */
+    @Mock
+    private ProcessingFeeCombinationCommandService processingFeeCombinationCommandService;
 
     private Order testOrder;
     private OrderItem testOrderItem;
@@ -2539,5 +2546,160 @@ class OrderServiceTest {
         assertThatThrownBy(() -> orderService.shipWithLogistics("order-001", "SF1", "顺丰"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("仅已确认/生产中/已发货");
+    }
+
+    // ================================================================
+    // 行级人工改价 + 建单回写配置（issue #4872，case_ids: PG-042）
+    //   取价算法本身的判据（manual / 命中忽略 override / unpriced 不变）见 ProcessingFeeCalculatorTest；
+    //   幂等三态与版本台账见 ProcessingFeeCombinationCommandServiceTest；
+    //   本段断言的是**接线**：金额进总额、构成落库、回写被发射/不被发射。
+    // ================================================================
+
+    @Test
+    @DisplayName("#4872·未命中组合 + override ⇒ 落库 fee_source=manual + 金额 = override × 米数 + 同事务回写配置")
+    void createOrder_manualOverrideOnUnmatchedCombination() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("curtainType", "布帘");
+        info.put("processingMeters", new BigDecimal("12.30"));
+        // 未命中：库里只有「定型+打孔+韩褶」的价，本行选配「打孔」
+        // Σ 加工项口径会算出 9.50 × 2 = 19.00 —— 注入法：若回落到它，金额断言即红
+        info.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔",
+                "unitPrice", new BigDecimal("9.50"), "quantity", new BigDecimal("2"))));
+        info.put("processingFeeOverride", new BigDecimal("12.50"));
+
+        givenPricedCombinations("定型+打孔+韩褶", "8.00");
+
+        OrderCreateRequest request = createOrderRequestWithFee(info);
+        orderService.createOrder(request, 1L);
+
+        // 总额 = 商品 599.00 + 人工改价 12.50 × 12.30 = 153.75 ⇒ 752.75（未定价 0 ⇒ 599.00 ⇒ 红）
+        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).insert(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getTotalAmount()).isEqualByComparingTo("752.75");
+        assertThat(orderCaptor.getValue().getTotalAmount()).isNotEqualByComparingTo("599.00");
+
+        ArgumentCaptor<OrderItem> itemCaptor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(itemCaptor.capture());
+        assertThat(feeDetailOf(itemCaptor.getValue().getProcessingInfo()))
+                .containsEntry("composition", "打孔")
+                .containsEntry("fee_source", "manual")
+                .containsEntry("unit_price", new BigDecimal("12.50"))
+                .containsEntry("price_source", "manual")
+                .containsEntry("meters", new BigDecimal("12.30"))
+                .containsEntry("amount", new BigDecimal("153.75"));
+
+        // 同事务回写：组合键 / 规范化 items / 订单价 —— 全部来自**取价结果**（同源口径，不另拼一套）
+        verify(processingFeeCombinationCommandService).upsertFromOrderOverride(
+                "打孔", List.of("打孔"), new BigDecimal("12.50"), 1L);
+    }
+
+    @Test
+    @DisplayName("#4872 判据②·组合**命中** + override ⇒ override 被忽略（金额不变）、**不回写配置**")
+    void createOrder_manualOverrideIgnoredWhenCombinationMatches() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("processingMeters", new BigDecimal("12.30"));
+        info.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔",
+                "unitPrice", new BigDecimal("9.50"), "quantity", new BigDecimal("2"))));
+        info.put("processingFeeOverride", new BigDecimal("12.50"));
+
+        givenPricedCombinations("打孔", "8.00");
+
+        OrderCreateRequest request = createOrderRequestWithFee(info);
+        orderService.createOrder(request, 1L);
+
+        // 仍按组合价 8.00 × 12.30 = 98.40 ⇒ 总额 697.40（采用 override ⇒ 752.75 ⇒ 红）
+        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).insert(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getTotalAmount()).isEqualByComparingTo("697.40");
+        assertThat(orderCaptor.getValue().getTotalAmount()).isNotEqualByComparingTo("752.75");
+
+        ArgumentCaptor<OrderItem> itemCaptor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(itemCaptor.capture());
+        assertThat(feeDetailOf(itemCaptor.getValue().getProcessingInfo()))
+                .containsEntry("fee_source", "matched")
+                .containsEntry("unit_price", new BigDecimal("8.00"));
+
+        // 命中 ⇒ 不该动配置（覆盖既有组合价 = 改价通道成了绕过组合价的旁路）
+        verify(processingFeeCombinationCommandService, never())
+                .upsertFromOrderOverride(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("#4872 回归·无 override 且未命中 ⇒ 金额与落库构成与现状**逐字不变**，且**零回写调用**")
+    void createOrder_withoutOverrideKeepsLegacyBehaviourAndSkipsSync() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("processingMeters", new BigDecimal("12.30"));
+        info.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔",
+                "unitPrice", new BigDecimal("9.50"), "quantity", new BigDecimal("2"))));
+
+        givenPricedCombinations("定型+打孔+韩褶", "8.00");
+
+        OrderCreateRequest request = createOrderRequestWithFee(info);
+        orderService.createOrder(request, 1L);
+
+        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).insert(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getTotalAmount()).isEqualByComparingTo("599.00");
+
+        ArgumentCaptor<OrderItem> itemCaptor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(itemCaptor.capture());
+        Map<String, Object> detail = feeDetailOf(itemCaptor.getValue().getProcessingInfo());
+        assertThat(detail).containsEntry("fee_source", "unpriced").containsEntry("amount", BigDecimal.ZERO);
+        assertThat(detail.get("unit_price")).isNull();
+        assertThat(String.valueOf(detail.get("hint"))).isNotBlank();
+
+        // 正常建单路径**不多一次写库**（零调用）
+        verify(processingFeeCombinationCommandService, never())
+                .upsertFromOrderOverride(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("#4872·建单带 logisticsType/logisticsCompany ⇒ 落 orders 两列（去首尾空格）")
+    void createOrder_persistsLogisticsColumns() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("processingMeters", new BigDecimal("12.30"));
+        info.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔")));
+
+        OrderCreateRequest request = createOrderRequestWithFee(info);
+        request.setLogisticsType(" logistics ");
+        request.setLogisticsCompany(" 四季安 ");
+
+        orderService.createOrder(request, 1L);
+
+        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).insert(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getLogisticsType()).isEqualTo("logistics");
+        assertThat(orderCaptor.getValue().getLogisticsCompany()).isEqualTo("四季安");
+    }
+
+    @Test
+    @DisplayName("#4872·未传 logisticsType/logisticsCompany ⇒ **不写**（null 不进 INSERT ⇒ 落列默认，不猜）")
+    void createOrder_leavesLogisticsColumnsUnsetWhenNotProvided() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("processingMeters", new BigDecimal("12.30"));
+        info.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔")));
+
+        OrderCreateRequest request = createOrderRequestWithFee(info);
+        orderService.createOrder(request, 1L);
+
+        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).insert(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getLogisticsType()).isNull();
+        assertThat(orderCaptor.getValue().getLogisticsCompany()).isNull();
+    }
+
+    @Test
+    @DisplayName("#4872·详情读面透出订单两列（发货页优先读订单、缺省回落客户档案）")
+    void orderDetailExposesLogisticsColumns() {
+        testOrder.setLogisticsType("logistics");
+        testOrder.setLogisticsCompany("四季安");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of());
+
+        OrderDetailResponse detail = orderService.getOrderById("order-001");
+
+        assertThat(detail.getLogisticsType()).isEqualTo("logistics");
+        assertThat(detail.getLogisticsCompany()).isEqualTo("四季安");
     }
 }

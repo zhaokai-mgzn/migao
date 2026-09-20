@@ -672,6 +672,9 @@ CREATE TABLE orders (
     follow_status VARCHAR(20) DEFAULT 'pending',    -- 跟进状态: pending/following/completed
     -- 来自 V20260901__add_order_user_id.sql
     user_id VARCHAR(64),                            -- 下单用户ID（users.id，C 端数据隔离依据）
+    -- 来自 V100__add_order_logistics_columns.sql（issue #4872）
+    logistics_type VARCHAR(16),                     -- 收货物流类型：express 快递 / logistics 物流专线（与 order_logistics.logistics_type 同词表）；NULL = 建单未传（不猜，与下单页「未指定」同口径）
+    logistics_company VARCHAR(128),                 -- 收货物流/快递公司；NULL = 建单未传（不猜）
     remark TEXT,                                     -- 备注
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

@@ -136,7 +136,9 @@ class StockLedgerTest {
                 new ObjectMapper(), notificationService, processingOrderMapper, userService,
                 clientRequestIdService, stockLedgerService,
                 // issue #4406：加工费取价点（本类不涉及加工费口径 ⇒ 空价目表 ⇒ 未定价 0）
-                new ProcessingFeeCalculator(processingFeeCombinationMapper, routeRuleMapper));
+                new ProcessingFeeCalculator(processingFeeCombinationMapper, routeRuleMapper),
+                // issue #4872：建单回写加工费组合（本类零 manual 行 ⇒ 该路径不可达；给 mock，不留 null 依赖）
+                org.mockito.Mockito.mock(ProcessingFeeCombinationCommandService.class));
         afterSalesTicketService = new AfterSalesTicketService(afterSalesTicketMapper, orderMapper,
                 orderItemMapper, productMapper, ticketTimelineMapper, financeService, orderService,
                 new ObjectMapper(), notificationService, stockLedgerService);

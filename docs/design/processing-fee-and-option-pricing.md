@@ -139,6 +139,38 @@ fee(行) = comboUnitPrice(元/米) × processingMeters        // 既有 #4406 �
   **该选项在 `special_options[]` 里 `priced:false` + 计 0**，并给**可行动 hint**（指向定价入口）。
   ⇒ 「未定价」有两层，**都必须在 detail 里可判**，不许静默。
 
+### 4.2.1 人工改价（行级 override）与「建单回写组合价目」（2026-09-21 用户裁定，issue #4872 / #4874）
+
+> 用户原话：「订单中加工费组合**未配置**的情况下，**允许更改该单价**，并且在**加工项下面添加具体的组合名**」；
+> 「当订单**创建成功后**，同步**新增加工费组合&单价**到加工费配置中」。
+
+背景：V77 的 92 行合成组合价目**全部 `status='disabled'`**（§1 已登记「组合价目等 ERP 导出后再做」）
+⇒ 今天**任何订单都取不到组合价**。本次给商家一条**自建价目**的通路（不是回落、不是默认价）。
+
+```
+fee(行) = processingFeeOverride(元/米) × processingMeters   // 仅当组合未命中 ∧ override 为正数
+```
+
+- **采用条件（唯一）**：该行组合**未命中**活跃价目（`pricedCombinations` 查不到 `composition_key`）
+  **且**组合键非空 **且** `processingInfo.processingFeeOverride` 是正数 ⇒ 记 `fee_source='manual'`、
+  `unit_price` = override、`amount` = override × 米数、`price_source` = `manual`。
+- **命中时忽略 override**（既有组合价不受影响）—— 「商家改了价但取价还是命中价」是**静默错价**，
+  故命中一律不采 override（有红证）。
+- **无 override 且未命中** ⇒ 与改前**逐字不变**：`unpriced`、组合那半 0、不回落 Σ 加工项。
+- **缺米数** ⇒ 仍是 `unpriced`（override 也救不回来：米数是另一个因子，不猜）。
+
+**建单成功后的回写**（同一事务内）：对每条 `fee_source='manual'` 的行
+`upsert processing_fee_combinations`（`composition_key` 走 `ProcessingFeeCombinationCommandService.compositionKey`
+**同源口径**、`items` = 规范化特征名、`unit_price` = override、`status='active'`、`source='实证'`
++ 追加版本台账）：
+- 已存在同键 **active** 行 ⇒ **不覆盖它的价**（该行本该命中，走到 override 说明是历史/竞态）；
+- 已存在同键 **disabled** 行 ⇒ **复活为 active 并写新价**（V77 那批正是 disabled ⇒ 这是主路径）；
+- 都不存在 ⇒ 新建。
+
+⇒ 商家的「这一单收多少」与「配置里这个组合多少钱」从此**同一份真值**，不会各说各话。
+⚠️ **缺选配信息（组合键为空）⇒ 不给改单价入口**：没有 key 就没有可同步的对象，
+界面如实报「没有可匹配的组合（缺选配信息）」，不假装能定价。
+
 ### 4.3 `processingFeeDetail` 契约（web 消费，**新增键只加不改**）
 
 ```jsonc

@@ -408,6 +408,15 @@ class OrderDtoContractTest {
                 "下单用户 ID：**只有 Java 侧**有（C 端数据隔离绑定真实用户）；ai-agent 工具不传它 —— "
                         + "服务端由 ServiceTokenFilter 从请求头 X-User-Id 透传并**覆盖**客户端传值，"
                         + "故它在 agent 的 wire 上是死字段（登记见 issue #4089 清单 §2）");
+        REGISTERED_SINGLE_SIDED_FIELDS.put("logisticsType",
+                "订单收货——物流类型（issue #4872）：**只有 Java 侧**有人工下单表单采集它"
+                        + "（`express` 快递 / `logistics` 物流专线，与 order_logistics.logistics_type 同词表）；"
+                        + "ai-agent 的 order_create 工具 schema 不声明它 ⇒ agent 路径不填，服务端**未传就不写**"
+                        + "（落列默认 express），发货页缺省回落客户档案 default_logistics_type");
+        REGISTERED_SINGLE_SIDED_FIELDS.put("logisticsCompany",
+                "订单收货——物流/快递公司（issue #4872）：**只有 Java 侧**有人工下单表单采集它；"
+                        + "ai-agent 工具 schema 不声明 ⇒ agent 路径不填，服务端**未传就不写**（列可空、不猜），"
+                        + "发货页缺省回落客户档案 default_logistics_company");
         REGISTERED_SINGLE_SIDED_FIELDS.put("sms_code",
                 "短信验证码：**只有 ai-agent 工具侧**有这道闸（customer 角色下单前必须过 SMS，"
                         + "见 order_create._verify_sms_code）；服务端 DTO 没有这个概念，"
