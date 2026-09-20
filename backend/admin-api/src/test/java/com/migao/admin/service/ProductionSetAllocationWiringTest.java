@@ -130,9 +130,16 @@ class ProductionSetAllocationWiringTest {
             assertThat(t.setId()).isEqualTo("set-1");
             assertThat(t.token()).as("32 位 UUID 去横线（与既有 qr_token 同格式）").hasSize(32);
             assertThat(t.token()).doesNotContain("-");
+            // 稳定短链（V99 / issue #4802）：短码与 token **同一次插入**（同一行的两种表示）
+            assertThat(t.shortCode()).as("短码必须是 8 位 Crockford Base32").hasSize(8);
+            assertThat(t.shortCode()).as("短码不得含易混字符 I/L/O/U")
+                    .matches("[0-9ABCDEFGHJKMNPQRSTVWXYZ]{8}");
         });
         assertThat(tokens.getAllValues()).extracting(PartTokenRow::orderItemId)
                 .containsExactlyInAnyOrder("i-1", "i-2", "i-3");
+        assertThat(tokens.getAllValues()).extracting(PartTokenRow::shortCode)
+                .as("同一批的 3 个部位短码必须互不相同（碰撞重试生效；全同 = 判据恒真的坏实现）")
+                .doesNotHaveDuplicates();
     }
 
     @Test

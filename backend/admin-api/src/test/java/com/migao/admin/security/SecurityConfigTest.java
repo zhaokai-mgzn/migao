@@ -819,8 +819,56 @@ class SecurityConfigTest {
                         containsString("X-Worker-Session-Id")));
     }
 
-    // ======================== 刷新 Token 公开端点测试 ========================
+    /**
+     * 🔴 稳定短链 {@code GET /s/{短码}} 必须是**公开入口**（issue #4802；设计 #4716 §1.3 / §7.2）。
+     *
+     * <p><b>为什么这条必须有</b>：印刷品上的码对**任何**持码人等价（扫码工具/系统相机/手输 URL），
+     * 而它落在 {@code anyRequest().authenticated()} 上 ⇒ 未登录访问只会拿到 **401**，
+     * 短链**等于没用**（扫码工具显示「未认证」而不是报工页）。</p>
+     *
+     * <p><b>判据形态</b>：未认证请求能**到达控制器**（⇒ 未知短码得 404，而不是 401）。
+     * 本用例只钉「没被 401 拦下」这一半；**302 那一半**由紧随其后的
+     * {@link #shortLinkRedirectsThroughSecurityChain()}（同一条安全链 + 真实控制器）钉，
+     * 另有 {@code WorkerShortLinkControllerTest} 钉 404 / 410 / 归一化等分支。</p>
+     *
+     * <p><b>红证</b>：改前（{@code origin/main}）该路径不在 {@code permitAll} 且无路由
+     * ⇒ 实测 **401**（不是 404）⇒ 本用例必红。</p>
+     */
+    @Test
+    @DisplayName("公开端点 - 稳定短链 /s/{短码} 无需认证（改前 401 ⇒ 必红）")
+    void shortLinkIsPublic() throws Exception {
+        mockMvc.perform(get("/s/7K3M9QP2"))
+                .andExpect(status().isNotFound());
+    }
 
+    /**
+     * 🔴 全链路（安全过滤链 + 路由 + 控制器 + 服务）：有效短码 ⇒ **302** + {@code Location}。
+     *
+     * <p><b>与上一条的分工</b>：上一条只钉「未登录不会被 401 拦下」（⇒ 404 而不是 401）；
+     * 本条钉「过了安全链之后真的出 302」。两条合起来才覆盖硬要求
+     * 「标准 HTTPS URL + **服务端** 302」—— 前端 JS 跳转**不可能**产出 302 状态行。</p>
+     *
+     * <p>走的是**真实**控制器 + 真实 {@code WorkerShortLinkService}（本类的
+     * {@code processingSetPartTokenMapper} 是 {@code @MockBean}）⇒ 归一化 / 装配口径
+     * 都是生产那一份，不是测试里另写的一套。</p>
+     */
+    @Test
+    @DisplayName("🔴 公开短链全链路：有效短码 ⇒ 302 + Location（服务端跳转，不是前端 JS）")
+    void shortLinkRedirectsThroughSecurityChain() throws Exception {
+        String shortCode = "4T7Y2BQ9";
+        String partCode = "fake-part-code-fixture-4802";
+        when(processingSetPartTokenMapper.selectByShortCode(shortCode))
+                .thenReturn(com.migao.admin.entity.ProcessingSetPartToken.builder()
+                        .id("t-1").tenantId(7L).token(partCode).shortCode(shortCode).deleted(0).build());
+
+        mockMvc.perform(get("/s/" + shortCode))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "/w/?t=" + partCode + "&tenant_id=7"))
+                // 不泄露身份/权限：302 的响应体为空
+                .andExpect(content().string(""));
+    }
+
+    // ======================== 刷新 Token 公开端点测试 ========================
     @Test
     @DisplayName("公开端点 - Token 刷新接口无需认证")
     void publicEndpoint_RefreshToken() throws Exception {

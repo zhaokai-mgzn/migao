@@ -1131,6 +1131,7 @@ CREATE TABLE IF NOT EXISTS processing_set_part_tokens (
     order_item_id VARCHAR(36) NOT NULL,              -- 部位行（一部位一码）
     position_kind VARCHAR(16),
     token VARCHAR(64),                               -- 32 位 UUID 去横线；撤销 = 置 NULL（不换新 token）
+    short_code CHAR(8),                              -- 人可读短码（V99，issue #4802）：8 位 Crockford Base32、随机、全局唯一；印刷品写 /s/<短码>
     print_count INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -1141,6 +1142,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_set_part_tokens_token
     WHERE deleted = 0;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_set_part_tokens_part
     ON processing_set_part_tokens (tenant_id, set_id, order_item_id)
+    WHERE deleted = 0;
+-- 短码全局唯一（V99，issue #4802）：`/s/<短码>` 那一跳**没有**租户上下文 ⇒ 跨租户也必须唯一
+CREATE UNIQUE INDEX IF NOT EXISTS uk_set_part_tokens_short_code
+    ON processing_set_part_tokens (short_code)
     WHERE deleted = 0;
 
 -- 工人登录态（V98，issue #4733）：报工身份的**唯一根** —— 服务端从本表解 worker_id/worker_name，
@@ -1238,6 +1243,7 @@ COMMENT ON COLUMN processing_order_sets.position_item_ids IS '本套包含的部
 COMMENT ON COLUMN processing_order_sets.deleted IS '软删（软删 ≠ 释放号）：被删的窗不回收序号，新窗取 MAX(set_index)+1（设计 §2.4 规则 1）';
 COMMENT ON TABLE processing_set_part_tokens IS '部位码载体（V92，issue #4698 / 设计 §2.3）：一部位一码（一樘窗 ≤3~4 码）。载体是 token（与 processing_orders.qr_token 同格式），工序不进码';
 COMMENT ON COLUMN processing_set_part_tokens.token IS '码 token（32 位 UUID 去横线）。撤销 = 置 NULL（与 ProcessingOrderMapper.revokeQrToken 逐字同语义：这张纸作废，不换新 token）';
+COMMENT ON COLUMN processing_set_part_tokens.short_code IS '人可读短码（V99，issue #4802）：8 位 Crockford Base32（0-9 + A-Z 去掉 I/L/O/U），随机、全局唯一。印刷品写 https://<稳定域名>/s/<短码>，服务端 302 换回 token（同一行的两种表示）。NULL = 尚未分配（存量行）';
 COMMENT ON COLUMN processing_set_part_tokens.print_count IS '打印次数（原子自增 COALESCE(print_count,0)+1；多人同时打印不丢计数）';
 COMMENT ON COLUMN processing_position_operations.set_id IS '套归属（V92，issue #4698）：指向 processing_order_sets.id。可空 = 存量行（与 V69 的 order_item_id 同款「留空不猜」）';
 COMMENT ON COLUMN processing_position_operations.set_no IS '套号快照（V92，issue #4698）：与 set_id 同一次回填写入；可空（存量行）。用途：扫码归属校验 + 计件按套下钻（零改动 production_work_logs）';

@@ -449,8 +449,8 @@ users (role='worker', permissions=[], worker_no=<工号>, password_hash=<PIN 的
 |---|---|---|---|
 | 1 | HTTPS 域名 | ✅ | 已有 |
 | 2 | **ICP 备案** | ✅ **已备案**（用户裁定） | —（风险解除） |
-| 3 | 稳定短链 + 服务端重定向 | ❌ 待建（§1.3） | 本设计的落码单 |
-| 4 | 人可读短码 + 输码入口 | ❌ 待建（§1.4） | 同上 |
+| 3 | 稳定短链 + 服务端重定向 | ✅ **已落（issue #4802）** | 已落码：`GET /s/{短码}` ⇒ 服务端 **302** 到 `/w/?t=<token>&tenant_id=<id>`（§1.3） |
+| 4 | 人可读短码 + 输码入口 | ✅ **已落**（短码 = issue #4802；输码入口 = issue #4765） | 已落码：**8 位 Crockford Base32**（避开 `0/O`、`1/I/L`），与 `token` 同行两种表示（§1.4） |
 | 5 | 响应式两断点 | ❌ 待建 | 前端 |
 | 6 | 零 `wx.*` | 设计约束 | 前端 |
 | 7 | 弱网/离线（复用口径） | ✅ 口径已有（bmini-app）；H5 需换存储实现 | 前端 |
@@ -601,7 +601,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 ```
 #4687 切片⓪（V92：processing_order_sets + processing_set_part_tokens；**已落** = PR #4722）
    │   ← ✅ **顺序约束已解除**（C4 口径订正：载体表已在 main，本设计可直接追加）
-   ├─① 短链 + 短码 + /s/{code}（§1.3 / §1.4）        ← 只读面 + 一张表加列
+   ├─① 短链 + 短码 + /s/{code}（§1.3 / §1.4）        ← ✅ **已落（issue #4802）**：V99 加列 + `WorkerShortLinkController`（302）
    ├─② 工人身份 + 登录两条腿 + /api/worker/**（§2）   ← 与 ① 同包（都要 users.worker_no）
    ├─③ 会话 / 归属 / 超时（§3.1~3.4）                ← 与 ② 同包
    ├─④ 纠错留痕（§3.5 / §3.6）                      ← 管理端，独立
@@ -726,7 +726,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 | # | 项 | 状态 | 为什么 / 何时 |
 |---|---|---|---|
 | D1 | 🔴 **旧码「选完套+部位」之后的收口** | ✅ **已闭环（issue #4794）** | 契约扩展（**只加不改**）：`ProductionScanService.resolve(token, operationId, setId, orderItemId, tenantId)` 重载 + `GET /api/worker/production/scan?…&set_id=&order_item_id=` + `POST …/scan/complete` body 可选 `set_id`/`order_item_id` ⇒ 服务端按**同一份**推断口径重新解析出部位级视图（工序仍由**系统**推断 = 防呆⑤）。3 参 `resolve` 与「无选择 ⇒ `granularity="order"` + `needs_selection`」**逐字不变**；**新码路径不读**这两个入参。旧码端到端 = 扫码 ⇒ 选套 ⇒ 选部位 ⇒ **报工成功**（一次事务），实测输出见 PR #4794 |
-| D2 | 稳定短链 `GET /s/{shortCode}`（302）+ `processing_set_part_tokens.short_code` 列（§1.3 / §1.4 / §7.1①②） | **未落码** | 属设计 §7.3 的 **①**，本切片不含。**今天码从哪来**：页面 `?t=<token>` 直接带 token（或手输），**不依赖短链** |
+| D2 | 稳定短链 `GET /s/{shortCode}`（302）+ `processing_set_part_tokens.short_code` 列（§1.3 / §1.4 / §7.1①②） | ✅ **已落码（issue #4802，V99）** | **落点取舍** = **admin-api 控制器**（`WorkerShortLinkController` + `WorkerShortLinkService`）：短码 ⇒ token 要**查库** ⇒ nginx / 静态页做不到；且用户裁定③「任意扫一扫工具都能用」⇒ 必须**服务端 302**（前端 JS 跳转对只认服务端跳转的扫码工具是白屏）。nginx 只承担**转发**（`deploy/swas/nginx.conf` 的 `location /s/` ⇒ admin-api）。<br>**核清结论**（谁生成 / 何时 / 与 `set_no` 的关系）：**谁生成** = `ProductionService.ensurePartTokens`（在**实例化**时与 token **同一次插入**分配，不在打印时）；**何时** = 首次实例化 ⇒ 重复实例化走 `ON CONFLICT … DO NOTHING` ⇒ **复用同一短码**（幂等，已打印的纸不作废）；**与 `set_no` 的关系** = **无关** —— 套号是「第几樘窗」（一单内有业务含义、有序、可读），短码是「哪一张纸」（**随机**、全局唯一、不可枚举）。一套 ≤3~4 部位 ⇒ ≤3~4 个短码。<br>短码 = **8 位 Crockford Base32**（`0-9` + `A-Z` 去掉 `I/L/O/U`）+ 全局唯一（部分唯一索引 `uk_set_part_tokens_short_code`）；手输归一化 = 去空白 + 大写 + 解码别名 `O→0`、`I/L→1`（生成面从不产出 `O/I/L` ⇒ 不造歧义）。未知短码 ⇒ **404**；已撤销（`token` 置 NULL）⇒ **410**（不静默回落、不换新码）。<br>⚠️ **存量行不回填**（V99 只加列，`short_code` 可空）；**打印面落码是跟随单**（要印的行必须有 `short_code`，否则印出来的码打不开）。⚠️ 本单**不扩**切片① 的冻结契约（`token` 解析语义一字未动；`/s/` **只**认短码，喂 token ⇒ 404） |
 | D3 | 切片② 的 `completeByScan` 原子事务（§5.2） | ✅ **已落码（PR #4769，merge `916378c3c`）** | 端点 = `POST /api/worker/production/scan/complete`（**main**）。⚠️ **本单前端仍走既有的 `/orders/{orderId}/operations/{operationId}/report`**（父会话明示「不扩大范围」）⇒ **改用 `scan/complete` 是跟随单**（它才是 §5.2 的一次事务闭环：按 `token` 定位部位 + 幂等 + 审计旁路）<br>✅ **该跟随单已闭环（issue #4792，PR #4801，merge `dcf11898f`）**：工人页写入口已改成 `POST /api/worker/production/scan/complete`（见 `frontend/worker-h5/src/api.mjs`），页面**不再**调用 `/orders/{orderId}/operations/{operationId}/report`；防呆④⑤ 因此**在工人页真实闭环里生效**（改动前后对照见 `frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs` 的注释） |
 | D4 | 微信网页授权（腿 B，§2.2） | **不做** | 服务层 501 占位 + 无公众号配置 ⇒ 按用户裁定「本单不做」 |
 | D5 | 离线队列（§4.4） | **未落码** | 复用口径（幂等键语义 / 业务拒绝不入队 / 上限 50）**已在 #4733 之外的 bmini-app**；H5 版需换存储后端 + 多标签锁（§8.4 R3）⇒ 跟随单。**本切片：断网 ⇒ 显式报错**（不静默丢单） |

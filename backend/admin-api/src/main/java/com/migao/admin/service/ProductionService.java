@@ -315,6 +315,12 @@ public class ProductionService {
      * <p><b>一部位一码 + 复用不换码</b>：{@code uk_set_part_tokens_part (tenant_id, set_id, order_item_id)}
      * 是唯一键 ⇒ 同一部位重复打印/重复实例化**复用同一 token**（已打印的纸不作废）。
      * 插入走 {@code ON CONFLICT … DO NOTHING}（幂等），冲突目标带索引谓词 {@code WHERE deleted = 0}。</p>
+     *
+     * <p><b>人可读短码（V99 / issue #4802，设计 §1.4）与 token 同一次插入</b>：印刷品写
+     * {@code /s/<短码>}（8 位、抄得准），服务端 302 换回 token。**同一行两种表示**，
+     * 与 {@code set_no}（套号）无关 —— 短码是随机的「哪一张纸」，套号是「第几樘窗」。
+     * 分配前查重（{@link WorkerShortLinkService#allocateUnique}）⇒ 不静默造重码；
+     * 因走 {@code DO NOTHING}，重复实例化**复用同一短码**（已打印的纸不作废）。</p>
      */
     private void ensurePartTokens(ProcessingOrder po, List<OpSpec> specs,
                                   Map<String, ProcessingOrderSet> setByGroup,
@@ -335,7 +341,8 @@ public class ProductionService {
             setPartTokenMapper.insertIgnoreConflict(new com.migao.admin.mapper.ProcessingSetPartTokenMapper
                     .PartTokenRow(UUID.randomUUID().toString().replace("-", ""), tenantId, po.getId(),
                     set.getId(), itemId, spec.positionKind(),
-                    UUID.randomUUID().toString().replace("-", ""), OffsetDateTime.now(),
+                    UUID.randomUUID().toString().replace("-", ""),
+                    WorkerShortLinkService.allocateUnique(setPartTokenMapper), OffsetDateTime.now(),
                     OffsetDateTime.now(), 0));
         }
     }
