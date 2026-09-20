@@ -171,6 +171,17 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- H2（test）：工人端「真租户拦截器 + 真会话行」集成守卫的内存库（issue #4864）。
+             ⚠️ 只用于测试，**不**进任何运行期 classpath；生产/本地仍是 PostgreSQL。
+             `MODE=PostgreSQL` 让 MyBatis-Plus 的租户拦截器（JSqlParser 改写 SQL 文本）与
+             `TIMESTAMP WITH TIME ZONE` 的映射与生产同形 —— 被测机制（拦截器 + TenantContext）
+             与库引擎无关，守卫因此可在 CI 无 DB 服务的条件下**确定性地**跑（.github/workflows/pr-check.yml
+             的 admin-api-test 只有 `./mvnw test`，没有 postgres service）。 -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
