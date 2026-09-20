@@ -3050,17 +3050,21 @@ class ProcessingOrderServiceTest {
         when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
 
+        // 交期用**相对日期**（issue #4911）：写死 `LocalDate.of(2026, 9, 20)` 会被「发加工交期不得早于今天」
+        // （#3901）在**第二天**判红 —— 测试对墙钟敏感 = 定时炸弹（本地 CST 2026-09-21 实测红；
+        // CI 用 UTC ⇒ 只是晚 8 小时红）。本用例要断言的是「交期**原样落库**」，不是某个具体日历日。
+        LocalDate deliveryDate = LocalDate.now().plusDays(3);
         ProcessingOrderUpdateRequest issue = new ProcessingOrderUpdateRequest();
         issue.setAction("issue");
         issue.setProcessor("朝阳加工厂");
-        issue.setExpectedDeliveryDate(LocalDate.of(2026, 9, 20));
+        issue.setExpectedDeliveryDate(deliveryDate);
         processingOrderService.updateStatus("po-1", issue, TENANT, "u1");
 
         ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
         verify(processingOrderMapper).updateById(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo("issued");
         assertThat(captor.getValue().getProcessor()).isEqualTo("朝阳加工厂");
-        assertThat(captor.getValue().getExpectedDeliveryDate()).isEqualTo(LocalDate.of(2026, 9, 20));
+        assertThat(captor.getValue().getExpectedDeliveryDate()).isEqualTo(deliveryDate);
         assertThat(captor.getValue().getIssuedAt()).isNotNull();
 
         // 订单联动（issue #4305，用户裁定「发加工 = 订单进入生产中」）：**发加工**才推进
