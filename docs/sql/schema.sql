@@ -2849,6 +2849,66 @@ SELECT 'pi-v83-' || t.id || '-' || v.seq,
         WHERE e.tenant_id = t.id AND e.name = v.name AND e.deleted = 0)
 ON CONFLICT (id) DO NOTHING;
 
+-- ── 出厂规则**不带工序库护栏**的按租户重放（V93，issue #4714）──
+-- 上面 V72 ⑤ / V84 两条回填都带 `EXISTS (production_operations …)` 护栏 ⇒ 工序库为空的租户
+-- **整批规则被静默跳过**（真库实测：租户 20/21 = 0 行）⇒ 韩褶/打孔/四爪钩/穿杆/平幔/特殊选项的
+-- 工序静默不出现 = 少一道活、少一笔计件钱且不报错。本段 = 那 29 条出厂规则（V71 的 26 + V84 的 3）
+-- 的**按租户重放**，**不带护栏**；工序库由 V91（issue #4707）补。
+-- 本文件是 bootstrap **终态**（该路径**不跑迁移链**）⇒ 必须自带这一段，否则 bootstrap 建库后
+-- 空工序库租户仍然一条规则都没有（形状同 #3270：迁移链不在该栈运行）。
+-- 与 `V93__backfill_route_rules_for_empty_catalogs.sql` 逐值同款；防漂移 =
+-- tests/unit_ci_workflows/test_v93_route_rules_backfill.py（迁移 ↔ 本文件 ↔ V71∪V84 三处逐值）。
+-- ⚠️ `position` **必须显式落**（`韩褶 × 布帘` 那条是 `布帘`，其余 NULL）—— 本表唯一键含
+-- `COALESCE(position,'')`，丢掉它会让 1 号租户（V71 已种 `布帘` 版）**多出一条重复规则**（实测 30 ≠ 29）。
+-- 幂等：`NOT EXISTS` 业务键去重（1 号租户已被 V71/V84 种过 ⇒ 整块跳过）+ `ON CONFLICT (id) DO NOTHING`。
+INSERT INTO production_route_rules
+    (id, tenant_id, trigger_kind, trigger_value, position, action,
+     operation, after_operation, priority, status)
+SELECT 'rr-v93-' || t.id || '-' || r.rid, t.id, r.trigger_kind, r.trigger_value,
+       r.position, r.action, r.operation, r.after_operation, r.priority, 'active'
+  FROM tenants t
+  JOIN (VALUES
+      ('01', 'craft', '韩褶',   NULL::varchar, 'insert', '韩褶',     '三边',  10::integer),
+      ('02', 'craft', '韩褶',   '布帘'::varchar, 'insert', '上车布', '韩褶',  20::integer),
+      ('03', 'craft', '打孔',   NULL::varchar, 'insert', '打孔',     '三边',  30::integer),
+      ('04', 'craft', '四爪钩', NULL::varchar, 'insert', '上车布',   '三边',  40::integer),
+      ('05', 'craft', '四爪钩', NULL::varchar, 'remove', '定型',     NULL::varchar, 50::integer),
+      ('06', 'craft', '四爪钩', NULL::varchar, 'remove', '复烫',     NULL::varchar, 60::integer),
+      ('07', 'craft', '穿杆',   NULL::varchar, 'remove', '定型',     NULL::varchar, 70::integer),
+      ('08', 'craft', '穿杆',   NULL::varchar, 'remove', '复烫',     NULL::varchar, 80::integer),
+      ('09', 'craft', '平幔',   NULL::varchar, 'insert', '帘头制作', '三边',  90::integer),
+      ('10', 'craft', '平幔',   NULL::varchar, 'remove', '复烫',     NULL::varchar, 100::integer),
+      ('11', 'option', '拼1次',      NULL::varchar, 'insert', '拼1次',     '三边', 110::integer),
+      ('12', 'option', '拼2次',      NULL::varchar, 'insert', '拼2次',     '三边', 120::integer),
+      ('13', 'option', '拼3次',      NULL::varchar, 'insert', '拼3次',     '三边', 130::integer),
+      ('14', 'option', '加花边',     NULL::varchar, 'insert', '花边',      '三边', 140::integer),
+      ('15', 'option', '加铅块',     NULL::varchar, 'insert', '铅坠',      '三边', 150::integer),
+      ('16', 'option', '接高',       NULL::varchar, 'insert', '接高',      '精裁', 160::integer),
+      ('17', 'option', '双眼皮接高', NULL::varchar, 'insert', '接高',      '精裁', 170::integer),
+      ('18', 'option', '余料做绑带', NULL::varchar, 'insert', '绑带',      '车被', 180::integer),
+      ('19', 'option', '布绑带',     NULL::varchar, 'insert', '绑带',      '车被', 190::integer),
+      ('20', 'option', '余料做帘头', NULL::varchar, 'insert', '帘头制作',  '三边', 200::integer),
+      ('21', 'option', '抱枕',       NULL::varchar, 'insert', '抱枕',      '外帘打卷', 210::integer),
+      ('22', 'option', '纱绑带',     NULL::varchar, 'insert', '绑带',      '车被', 220::integer),
+      ('23', 'option', '加logo条',   NULL::varchar, 'insert', 'logo条',    '三边', 230::integer),
+      ('24', 'option', '加立边',     NULL::varchar, 'insert', '立边',      '三边', 240::integer),
+      ('25', 'option', '扣环',       NULL::varchar, 'insert', '扣环',      '三边', 250::integer),
+      ('26', 'option', '防翘扣',     NULL::varchar, 'insert', '防翘扣',    '三边', 260::integer),
+      ('27', 'processing_item', '花边', NULL::varchar, 'insert', '花边', '三边', 270::integer),
+      ('28', 'processing_item', '扣环', NULL::varchar, 'insert', '扣环', '三边', 280::integer),
+      ('29', 'processing_item', '接高', NULL::varchar, 'insert', '接高', '精裁', 290::integer)
+  ) AS r(rid, trigger_kind, trigger_value, position, action, operation, after_operation, priority)
+    ON TRUE
+ WHERE t.deleted = 0
+   AND NOT EXISTS (
+       SELECT 1 FROM production_route_rules e
+        WHERE e.tenant_id = t.id AND e.deleted = 0
+          AND e.trigger_kind = r.trigger_kind AND e.trigger_value = r.trigger_value
+          AND COALESCE(e.position, '') = COALESCE(r.position, '')
+          AND e.action = r.action
+          AND COALESCE(e.operation, '') = COALESCE(r.operation, ''))
+ON CONFLICT (id) DO NOTHING;
+
 -- ================================================
 -- END OF SCHEMA
 -- ================================================

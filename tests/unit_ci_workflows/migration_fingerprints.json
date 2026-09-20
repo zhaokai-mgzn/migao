@@ -90,6 +90,7 @@
     "V89__backfill_fabric_seed_for_existing_tenants.sql": "sha256:a307cf2e94b1edfcd3af5b0bff53ea61b3916d383962ac2756520660dc66f408",
     "V90__unpriced_is_not_zero.sql": "sha256:691c8544870b9c2935240dc65b804a1fc1008f865040b4f42a9077111085f30a",
     "V92__add_processing_order_sets_and_scan_loop.sql": "sha256:8357af4370acb873487fc3f2d47e209ca1f7d7b66821d3f436473c6bd27bfda8",
+    "V93__backfill_route_rules_for_empty_catalogs.sql": "sha256:9a03ed37a5c247c44109d8df87792ce50e9f48e42c8bb70e5e05c69aca6cab1c",
     "V94__create_instance_repricing_logs.sql": "sha256:eb13555e67790188c624bebb6163e72ee0934d2e6506142208be7b88398df099"
   }
 }
