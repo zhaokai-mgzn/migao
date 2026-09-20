@@ -310,6 +310,15 @@ describe('#4662 「超宽」判据**含褶倍**（与算料引擎算分幅的口
     }
   })
 
+  // 褶倍是**自变量**（不是「把阈值调大」）：同一宽高换褶倍 ⇒ 判定跟着变。
+  // 引擎读数（`calculate_fabric_meters(1.5, 2.6, N, 2.8)`）：N=1.5 ⇒ 2.7 ⇒ 1 幅（不超宽）；
+  // N=2.0 ⇒ 3.6 ⇒ 2 幅（超宽）。1.5+0.3=1.8 ≤ 2.8 ⇒ **旧判据两个都不报** ⇒ 本条是 #4662 的语义红证。
+  it('#4662 褶倍是自变量：1.5 倍（2.7 ≤ 2.8）不判超宽；2.0 倍（3.6 > 2.8）判超宽', () => {
+    const base = { width: 1.5, height: 2.6, doorWidth: 2.8, cuttingMode: '定宽买高' as const }
+    expect(names({ ...base, fullness: 1.5 })).toEqual(['倒幅'])
+    expect(names({ ...base, fullness: 2.0 })).toEqual(['超宽', '倒幅'])
+  })
+
   it('#4662 反向护栏：含褶倍**不改变**分流语义（定宽买高 ⇒ 超宽 + 倒幅，不出超高）', () => {
     expect(
       names({ width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '定宽买高', fullness: 2.0 })
