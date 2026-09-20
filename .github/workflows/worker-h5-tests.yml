@@ -31,6 +31,20 @@ name: Worker H5 Tests
 # ⚠️ 防回退锁：`tests/unit_ci_workflows/test_worker_h5_ci_wiring.py`
 #    （删掉 `node --test` 步 / 去掉 paths / 加 `continue-on-error` ⇒ 必红）。
 
+# ── ⚠️ 与仓库既有 CI 纪律的关系（`docs/wiki/CI-CD.md`「变更门控」）──────────────
+# 该纪律写着「**不要改回 workflow 级 `paths` 过滤** —— required check 会卡在 "Waiting"
+# 永不报告」，并给它留了一个例外：**信息性（非 required）check** 可以用 workflow 级
+# `paths`（先例 = `agent-behavior-eval.yml` 只门控零 LLM 的映射 job，#3653/#4034）。
+# 本腿**正是那个例外**：它是**非 required 的信息性 check**（新 check 名，未进分支保护的
+# required 集合）⇒ 不会出现「required check 悬空永不报告」。
+#
+# 🔴 **提升为 required 的前置条件（硬约束，不是建议）**：
+# 若将来要把本 check 提升为 required，**必须先删掉下面 workflow 级的 `paths:`**，
+# 改成仓库既有的 **job 内 diff 门控**（`git diff --name-only origin/main...HEAD` +
+# `GITHUB_OUTPUT`，见 pr-check.yml 的 `Detect admin-web changes` 步）——
+# 否则 required check 会在不命中 paths 的 PR 上**卡在 "Waiting" 永不报告**，
+# 形态 =「没有任何检查会变红，但 PR 合不了」（本仓 #4231 同族）。
+# **先改门控，再改分支保护。**
 on:
   pull_request:
     branches: [main]
