@@ -717,7 +717,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 | ③ | 🔴 旧码降级：`granularity="order"` ⇒ **进「选套 + 选部位」态**，`set_no`/`position`/`operation` 一律 null，**绝不默认取第 1 套**；部位按钮**只在选了套之后**出现 | `src/render.mjs`（`reduce` / `canReport`） |
 | ④ | 工人登录：**工号 + PIN**（复用 #4733 的 `POST /api/worker/login`）+ session 落 `localStorage` + 后续请求带 `X-Worker-Session-Id` | `src/api.mjs` |
 | ⑤ | 共用 PAD 三条：页头常驻「当前工人」（取**服务端** `current-worker`）· 一步切换（**不丢扫码上下文**）· 闲置登出（定时器 + `visibilitychange` 双保险；401 ⇒ 回落未登录 + 清本地） | `src/app.mjs` |
-| ⑥ | 报工：调**已合并**的 `POST /api/worker/production/orders/{orderId}/operations/{operationId}/report`（#4733）+ `X-Client-Request-Id` 幂等键 | `src/api.mjs` |
+| ⑥ | 报工：调**已合并**的 `POST /api/worker/production/orders/{orderId}/operations/{operationId}/report`（#4733）+ `X-Client-Request-Id` 幂等键<br>✅ **本行已被后续 PR 超越（issue #4792，PR #4801，merge `dcf11898f`）**：工人页**唯一写入口**现为 `POST /api/worker/production/scan/complete`，页面**不再**调用 `/report`（口径订正见 §9.3 D3） | `src/api.mjs` |
 | ⑦ | 工人读面 `GET /api/worker/production/scan?token=…&operation_id=…` —— **端点本体属切片②（已在 main）**；本单**只消费**它，并补**旧码降级契约断言**（`set_no`/`position`/`operation`/`completed` 全 null + `needs_selection=["set","position"]`） | `WorkerScanEndpointTest`（断言） |
 | ⑧ | 🔴 CORS：`allowedHeaders` **追加 `X-Worker-Session-Id`**（#4733 登记的缺口；**只加这一个头，origin 白名单一字不动**） | `SecurityConfig` |
 
@@ -727,10 +727,20 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 |---|---|---|---|
 | D1 | 🔴 **旧码「选完套+部位」之后的收口** | ✅ **已闭环（issue #4794）** | 契约扩展（**只加不改**）：`ProductionScanService.resolve(token, operationId, setId, orderItemId, tenantId)` 重载 + `GET /api/worker/production/scan?…&set_id=&order_item_id=` + `POST …/scan/complete` body 可选 `set_id`/`order_item_id` ⇒ 服务端按**同一份**推断口径重新解析出部位级视图（工序仍由**系统**推断 = 防呆⑤）。3 参 `resolve` 与「无选择 ⇒ `granularity="order"` + `needs_selection`」**逐字不变**；**新码路径不读**这两个入参。旧码端到端 = 扫码 ⇒ 选套 ⇒ 选部位 ⇒ **报工成功**（一次事务），实测输出见 PR #4794 |
 | D2 | 稳定短链 `GET /s/{shortCode}`（302）+ `processing_set_part_tokens.short_code` 列（§1.3 / §1.4 / §7.1①②） | **未落码** | 属设计 §7.3 的 **①**，本切片不含。**今天码从哪来**：页面 `?t=<token>` 直接带 token（或手输），**不依赖短链** |
-| D3 | 切片② 的 `completeByScan` 原子事务（§5.2） | ✅ **已落码（PR #4769，merge `916378c3c`）** | 端点 = `POST /api/worker/production/scan/complete`（**main**）。⚠️ **本单前端仍走既有的 `/orders/{orderId}/operations/{operationId}/report`**（父会话明示「不扩大范围」）⇒ **改用 `scan/complete` 是跟随单**（它才是 §5.2 的一次事务闭环：按 `token` 定位部位 + 幂等 + 审计旁路） |
+| D3 | 切片② 的 `completeByScan` 原子事务（§5.2） | ✅ **已落码（PR #4769，merge `916378c3c`）** | 端点 = `POST /api/worker/production/scan/complete`（**main**）。⚠️ **本单前端仍走既有的 `/orders/{orderId}/operations/{operationId}/report`**（父会话明示「不扩大范围」）⇒ **改用 `scan/complete` 是跟随单**（它才是 §5.2 的一次事务闭环：按 `token` 定位部位 + 幂等 + 审计旁路）<br>✅ **该跟随单已闭环（issue #4792，PR #4801，merge `dcf11898f`）**：工人页写入口已改成 `POST /api/worker/production/scan/complete`（见 `frontend/worker-h5/src/api.mjs`），页面**不再**调用 `/orders/{orderId}/operations/{operationId}/report`；防呆④⑤ 因此**在工人页真实闭环里生效**（改动前后对照见 `frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs` 的注释） |
 | D4 | 微信网页授权（腿 B，§2.2） | **不做** | 服务层 501 占位 + 无公众号配置 ⇒ 按用户裁定「本单不做」 |
 | D5 | 离线队列（§4.4） | **未落码** | 复用口径（幂等键语义 / 业务拒绝不入队 / 上限 50）**已在 #4733 之外的 bmini-app**；H5 版需换存储后端 + 多标签锁（§8.4 R3）⇒ 跟随单。**本切片：断网 ⇒ 显式报错**（不静默丢单） |
-| D6 | 🔴 **CI 不跑 worker-h5 测试** | **如实登记** | `pr-check.yml` 的前端腿只对 `frontend/admin-web/` 变更触发（`working-directory: frontend/admin-web`）⇒ 本目录的测试**只在本地**跑（`./verify-all.sh frontend` / `full` 已接入）。**接 CI 需要改 `.github/workflows/**`**（本单**禁止**触碰，且本机 token 无 `workflow` scope）⇒ 登记为跟随单（新 job：`node --test frontend/worker-h5/tests/*.test.mjs`）。**不得**因此说"CI 已覆盖本页面" |
+| D6 | 🔴 **CI 不跑 worker-h5 测试** | ✅ **已闭环（issue #4786，PR #4788，merge `588e1757e`）** | 跟随单已落：新增 `.github/workflows/worker-h5-tests.yml`（job 名逐字 = `worker-h5 unit tests (node --test)`，跑 `node --test frontend/worker-h5/tests/*.test.mjs`，触发面 = `frontend/worker-h5/**` + 本 workflow 自身），防回退锁 = `tests/unit_ci_workflows/test_worker_h5_ci_wiring.py`。<br>⚠️ **该 job 不拦合并**：`python3 scripts/merge_gate.py --required-diff` 把它列在「会判红但不拦合并」的裸判据里（分支保护的 required 集合里**没有**它）⇒ 它是**信息性 check**，判红照旧合并（workflow 头注释自述的同一条口径）。提升为 required 的前置条件（先删 workflow 级 `paths:`、改 job 内 diff 门控）登记在该 workflow 注释里。<br>⚠️ 原措辞的**红线保留**（判红 ≠ 覆盖）：**不得**据此说"CI 已覆盖本页面" —— 它只覆盖 `frontend/worker-h5/tests/` 的 `*.test.mjs`，页面**部署面**（§9.4 P2/P3）仍不在任何 CI 腿里。<br><s>原文（历史留档）：`pr-check.yml` 的前端腿只对 `frontend/admin-web/` 变更触发（`working-directory: frontend/admin-web`）⇒ 本目录的测试**只在本地**跑（`./verify-all.sh frontend` / `full` 已接入）。**接 CI 需要改 `.github/workflows/**`**（本单**禁止**触碰，且本机 token 无 `workflow` scope）⇒ 登记为跟随单（新 job：`node --test frontend/worker-h5/tests/*.test.mjs`）。**不得**因此说"CI 已覆盖本页面"</s> |
+
+> 🔴 **口径订正（issue #4826，2026-09-21）：D3 的「跟随单」与 D6 的「CI 不跑」两条结论已过期** ——
+> **原文措辞一字未删**（上表 D6 的原文留在 ~~删除线~~ 里、D3 的原文留在「⚠️」句里），改判只**追加**「何时由谁闭环」。
+> **D6**：#4786 已由 PR #4788（merge `588e1757e`）落码 —— `.github/workflows/worker-h5-tests.yml` +
+> job `worker-h5 unit tests (node --test)`；「是否 required」**按元判据现查、不凭名字猜**：
+> `python3 scripts/merge_gate.py --required-diff` ⇒ 本 job 出现在「裸判据（会判红但不拦合并）」清单里。
+> 提升为 required 的前置条件（先改门控再改分支保护）已写在该 workflow 注释里，**本单不改 workflow**。
+> **D3**：跟随单 #4792 已由 PR #4801（merge `dcf11898f`）落码 —— 工人页写入口改成 `scan/complete`。
+> **同款写法**（先例）：本表 D1 的「✅ 已闭环（issue #4794）」、以及
+> `docs/design/set-code-and-scan-loop.md` §1.2 表后的「口径订正」注。
 
 ### 9.4 工程前提（**前提，不是本单能解的**）
 
