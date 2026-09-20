@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.time.OffsetDateTime;
 
@@ -40,6 +41,31 @@ public interface ProcessingSetPartTokenMapper extends BaseMapper<ProcessingSetPa
             ON CONFLICT (tenant_id, set_id, order_item_id) WHERE deleted = 0 DO NOTHING
             """)
     int insertIgnoreConflict(@Param("t") PartTokenRow t);
+
+    /**
+     * 给**已存在**的码行补短码（存量单补码，issue #4865）：**只补 {@code short_code IS NULL} 的行**。
+     *
+     * <p><b>为什么需要它</b>：{@link #insertIgnoreConflict} 走 {@code ON CONFLICT DO NOTHING}
+     * ⇒ 行已存在时**整行不碰**（这是「已打印的纸不作废」的实现）—— 但 V99 的注释预告了另一形态：
+     * 「本次之前已写入的 token 行保持 NULL」（有 token、无短码）。那种行既不会被插入、
+     * 也不会被 DO NOTHING 修好 ⇒ 必须有一条**只补该列**的路径，否则「要印的行必须有 short_code」不成立。</p>
+     *
+     * <p>🔴 三条红线（逐条落在 SQL 上）：① {@code AND short_code IS NULL} ⇒ **已有短码的行一字不动**；
+     * ② 只写 {@code short_code} + {@code updated_at} ⇒ **不碰 token**（码不换）**不碰任何单价/计件列**（不追溯）；
+     * ③ {@code deleted = 0} ⇒ 不动软删行。</p>
+     *
+     * @return 受影响行数（0 = 该行不存在 / 已有短码 / 已软删 ⇒ 调用方无需重试）
+     */
+    @Update("""
+            UPDATE processing_set_part_tokens
+               SET short_code = #{shortCode}, updated_at = #{updatedAt}
+             WHERE tenant_id = #{tenantId} AND set_id = #{setId} AND order_item_id = #{orderItemId}
+               AND deleted = 0 AND short_code IS NULL
+            """)
+    int fillMissingShortCode(@Param("tenantId") Long tenantId, @Param("setId") String setId,
+                             @Param("orderItemId") String orderItemId,
+                             @Param("shortCode") String shortCode,
+                             @Param("updatedAt") OffsetDateTime updatedAt);
 
     /**
      * 按短码取承载行（稳定短链 {@code GET /s/{shortCode}} 的唯一读面，issue #4802 / V99）。

@@ -1,0 +1,111 @@
+═══ ① 一次性 PostgreSQL 16（端口 54505）+ docs/sql/schema.sql（bootstrap 终态）═══
+psql:/Users/guangzhen.zk/ai native/migao-wt/4865-short-code-mapping/docs/sql/schema.sql:821: 注意:  关系 "production_operations" 的 约束"production_operations_source_check" 不存在
+psql:/Users/guangzhen.zk/ai native/migao-wt/4865-short-code-mapping/docs/sql/schema.sql:864: 注意:  关系 "production_routings" 的 约束"production_routings_source_check" 不存在
+psql:/Users/guangzhen.zk/ai native/migao-wt/4865-short-code-mapping/docs/sql/schema.sql:952: 注意:  关系 "production_route_rules" 的 约束"production_route_rules_operation_required_check" 不存在
+psql:/Users/guangzhen.zk/ai native/migao-wt/4865-short-code-mapping/docs/sql/schema.sql:956: 注意:  关系 "production_route_rules" 的 约束"production_route_rules_factor_present_check" 不存在
+psql:/Users/guangzhen.zk/ai native/migao-wt/4865-short-code-mapping/docs/sql/schema.sql:2825: 注意:  关系 "audit_logs" 的列 "tool_name" 已经存在，跳过
+psql:/Users/guangzhen.zk/ai native/migao-wt/4865-short-code-mapping/docs/sql/schema.sql:2845: 注意:  关系 "user_memories" 的列 "agent_type" 已经存在，跳过
+   ✅ 建库 + 夹具完成（用户 13900004865 / 订单 acc-fix4865-order / 3 个部位行）
+
+═══ ② 起 admin-api（:8081，连这个一次性库）+ nginx 替身（:8080）═══
+   · 算料引擎端点桩（:54506）= 直接加载本仓 routing.py::qty_and_source（非第二份算料逻辑）
+   ✅ admin-api 就绪（:8081）；nginx 替身就绪（:8080）
+
+═══ ③ 真实登录（POST /api/auth/sms/login；不手搓 JWT）═══
+   ✅ 登录成功（accessToken 长度 692，tenantId=1）
+
+═══ ④ U1：generate → instantiate ⇒ 真 short_code ═══
+   generate 响应：{"success":true,"data":[{"orderRef":"acc-fix4865-order","success":true,"processingOrderNo":"JG-20260920-9205"}],"requestId":"req_9cadb9eb184f4642","timestamp":1789903114}
+   instantiate 响应：{"success":true,"data":{"qr_token":"b950d567…(masked)","operation_count":19},"requestId":"req_88f3d2fa6cd24973","timestamp":1789903114}
+   ── 算料桩收到的请求（形状核对）──
+   REQ {"positions":[{"position_name":"布帘","order_item_id":"acc-fix4865-i1","operations":["精裁-布","布三边","韩褶-布","上车布-布","熨烫-布","定型-布","复烫-布","布帘车被","外帘打卷","打包","外帘装袋","外帘发货"],"calc_info":{"fabric_meters":3.20}},{"position_name":"纱帘","order_item_id":"acc-fix4865-i2","operations":["精裁-纱","纱三边","韩褶-纱"],"calc_info":{"fabric_meters":3.20}},{"position_name":"帘头","order_item_id":"acc-fix4865-i3","operations":["精裁-布","布三边","帘头制作","定型-布"],"calc_info":{}}]}
+   REQ {"positions":[{"position_name":"布帘","order_item_id":"acc-fix4865-i1","operations":["精裁-布","布三边","韩褶-布","上车布-布","熨烫-布","定型-布","复烫-布","布帘车被","外帘打卷","打包","外帘装袋","外帘发货"],"calc_info":{"fabric_meters":3.20}},{"position_name":"纱帘","order_item_id":"acc-fix4865-i2","operations":["精裁-纱","纱三边","韩褶-纱"],"calc_info":{"fabric_meters":3.20}},{"position_name":"帘头","order_item_id":"acc-fix4865-i3","operations":["精裁-布","布三边","帘头制作","定型-布"],"calc_info":{}}]}
+   HEADERS {'Accept': 'text/plain, application/json, application/*+json, */*', 'Content-Type': 'application/json', 'X-Service-Token': 'acc4865stub', 'User-Agent': 'Java/21.0.12', 'Host': '127.0.0.1:54506', 'Connection': 'keep-alive', 'Transfer-Encoding': 'chunked'}
+   REQ {"positions":[{"position_name":"布帘","order_item_id":"acc-fix4865-i1","operations":["精裁-布","布三边","韩褶-布","上车布-布","熨烫-布","定型-布","复烫-布","布帘车被","外帘打卷","打包","外帘装袋","外帘发货"],"calc_info":{"fabric_meters":3.20}},{"position_name":"纱帘","order_item_id":"acc-fix4865-i2","operations":["精裁-纱","纱三边","韩褶-纱"],"calc_info":{"fabric_meters":3.20}},{"position_name":"帘头","order_item_id":"acc-fix4865-i3","operations":["精裁-布","布三边","帘头制作","定型-布"],"calc_info":{}}]}
+   HEADERS {'Accept': 'text/plain, application/json, application/*+json, */*', 'Content-Type': 'application/json', 'X-Service-Token': 'acc4865stub', 'User-Agent': 'Java/21.0.12', 'Host': '127.0.0.1:54506', 'Connection': 'keep-alive', 'Transfer-Encoding': 'chunked'}
+   REQ {"positions":[{"position_name":"布帘","order_item_id":"acc-fix4865-i1","operations":["精裁-布","布三边","韩褶-布","上车布-布","熨烫-布","定型-布","复烫-布","布帘车被","外帘打卷","打包","外帘装袋","外帘发货"],"calc_info":{"fabric_meters":3.20}},{"position_name":"纱帘","order_item_id":"acc-fix4865-i2","operations":["精裁-纱","纱三边","韩褶-纱"],"calc_info":{"fabric_meters":3.20}},{"position_name":"帘头","order_item_id":"acc-fix4865-i3","operations":["精裁-布","布三边","帘头制作","定型-布"],"calc_info":{}}]}
+   ── 失败 SQL 原文（若有）──
+   ── admin-api 日志里的异常（若有）──
+   435:2026-09-20 19:18:31.807 [main] ERROR c.migao.admin.config.MigrationRunner - ❌ 迁移失败（已跳过，继续执行其余迁移）: V72__switch_routing_model_consumers.sql
+   436:org.springframework.jdbc.BadSqlGrammarException: StatementCallback; bad SQL grammar [-- 工序路线模型重构 **P2：切消费路径**（issue #4432 = 母单 #4423 的 P2/3）
+   817:	at org.springframework.jdbc.support.SQLStateSQLExceptionTranslator.doTranslate(SQLStateSQLExceptionTranslator.java:112)
+   818:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java:107)
+   819:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java:116)
+   820:	at org.springframework.jdbc.core.JdbcTemplate.translateException(JdbcTemplate.java:1548)
+   826:	at org.springframework.util.function.ThrowingConsumer$1.acceptWithException(ThrowingConsumer.java:82)
+   845:Caused by: org.postgresql.util.PSQLException: 错误: 字段 f.sort_order 不存在
+   864:2026-09-20 19:18:31.809 [main] ERROR c.migao.admin.config.MigrationRunner - ❌ 迁移失败（已跳过，继续执行其余迁移）: V74__backfill_legacy_special_option_names.sql
+   865:org.springframework.jdbc.BadSqlGrammarException: StatementCallback; bad SQL grammar [-- 特殊选项**旧名存量回填**（issue #4399；上游 = #4389 / PR #4396 的「未做项」）
+   971:	at org.springframework.jdbc.support.SQLStateSQLExceptionTranslator.doTranslate(SQLStateSQLExceptionTranslator.java:112)
+   972:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java:107)
+   973:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java:116)
+   974:	at org.springframework.jdbc.core.JdbcTemplate.translateException(JdbcTemplate.java:1548)
+   980:	at org.springframework.util.function.ThrowingConsumer$1.acceptWithException(ThrowingConsumer.java:82)
+   999:Caused by: org.postgresql.util.PSQLException: 错误: 字段 "processing_info" 不存在
+   1024:2026-09-20 19:18:31.822 [main] ERROR c.migao.admin.config.MigrationRunner - ❌ 迁移失败（已跳过，继续执行其余迁移）: V79__seed_fabric_route_and_packing_operation.sql
+   1025:org.springframework.dao.DuplicateKeyException: StatementCallback; SQL [-- 布料基础路线 + 「打包」工序（issue #4529，包 F；用户裁定 2026-09-19）
+   1305:	at org.springframework.jdbc.support.SQLStateSQLExceptionTranslator.doTranslate(SQLStateSQLExceptionTranslator.java:116)
+   1306:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java:107)
+   1307:	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java:116)
+   1308:	at org.springframework.jdbc.core.JdbcTemplate.translateException(JdbcTemplate.java:1548)
+   1314:	at org.springframework.util.function.ThrowingConsumer$1.acceptWithException(ThrowingConsumer.java:82)
+   1333:Caused by: org.postgresql.util.PSQLException: 错误: 重复键违反唯一约束"production_operations_pkey"
+   1390:2026-09-20 19:18:31.846 [main] ERROR c.migao.admin.config.MigrationRunner - ❌ 本次有 6 条迁移失败，schema 可能与代码不一致（请立即修复并在修复后重跑）：[V33__add_processing_item_per_meter_quantity.sql, V34__rollback_processing_item_per_meter_quantity.sql, V41__align_bootstrap_schema_missing_columns.sql, V72__switch_routing_model_consumers.sql, V74__backfill_legacy_special_option_names.sql, V79__seed_fabric_route_and_packing_operation.sql]
+   ── 库内实况（部位码 / 短码）──
+ token_rows | with_short_code 
+------------+-----------------
+          3 |               3
+(1 行记录)
+
+   ✅ U1 绿：真 short_code = SEGP72RT（对应 token = e25adfaa…(masked)）
+
+═══ ⑤ U2：curl -D - /s/<真短码> ⇒ 302 + Location ═══
+   HTTP/1.1 302 Found
+   Server: BaseHTTP/0.6 Python/3.11.15
+   Date: Sun, 20 Sep 2026 11:18:35 GMT
+   Vary: Origin
+   Vary: Access-Control-Request-Method
+   Vary: Access-Control-Request-Headers
+   Location: /w/?t=e25adfaa…(masked)&tenant_id=1
+   X-Content-Type-Options: nosniff
+   X-XSS-Protection: 0
+   Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+   Pragma: no-cache
+   Expires: 0
+   X-Frame-Options: DENY
+   Date: Sun, 20 Sep 2026 11:18:35 GMT
+   Content-Length: 0
+   
+   ✅ U2 绿：302 + Location: /w/?t=e25adfaa…(masked)&tenant_id=1
+   ✅ Location 形态 = /w/?t=<token>（相对路径，同源落地）
+
+═══ ⑥ U6：curl -L ⇒ 200 且落地 body 哈希 == origin/main 的 frontend/worker-h5/index.html ═══
+   落地 status = 200
+   落地 body sha256      = f19e5bd1d8b4d970ac291ffbc9bcdfd56fa2bacd29f80c188115dcd9d9a51d03
+   origin/main 同名文件  = f19e5bd1d8b4d970ac291ffbc9bcdfd56fa2bacd29f80c188115dcd9d9a51d03
+   ✅ U6 绿：落地页 == origin/main 的 frontend/worker-h5/index.html（逐字节）
+
+═══ ⑦ 真短码的**只读枚举**：字符集 + 长度 ═══
+   短码 = SEGP72RT；长度 = 8；非法字符 = （无）
+   ✅ 长度 8 + 字符集 = Crockford Base32 去 I/L/O/U
+
+═══ ⑧ 临时实体清点（跑完随一次性库消失；此处为**离开前**的实况）═══
+         t         | count 
+-------------------+-------
+ users             |     1
+ orders            |     1
+ order_items       |     3
+ processing_orders |     1
+(4 行记录)
+
+
+════ 结论：U1 / U2 / U6 全绿 ════
+./run.sh: line 48: 12913 Terminated: 15          python3 "$HERE/qty_stub.py" "$QTY_PORT" "$ROOT" > "$QTY_LOG" 2>&1  (wd: ~/ai native/migao-wt/4865-short-code-mapping/acceptance/2026-09-21/4865-part-code-mapping)
+./run.sh: line 48: 12945 Terminated: 15          python3 "$HERE/serve.py" "$WEB_PORT" "$API_PORT" "$ROOT/frontend/worker-h5" > "$WEB_LOG" 2>&1
+── 残留复查（本剧本留下的东西）──
+临时工作目录（含一次性 PG 数据目录、日志）：/tmp/acc4865.QGOAHo —— 删除
+✅ PG :54505 已停
+✅ 端口 8081 已释放
+✅ 端口 8080 已释放
+✅ 端口 54506 已释放
+✅ 库内 acc-fix4865-* 实体随临时集群一并消失（从未写入共享/生产库）

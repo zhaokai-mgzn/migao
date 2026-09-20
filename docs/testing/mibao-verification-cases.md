@@ -1141,9 +1141,10 @@
 数据: Context 注入包含 product_ids
 清理: product_dedupe(product_keyword=遮光窗帘)
 必填: order_create() 字段 items[].processing_info.sellingMethod, items[].processing_info.doorWidth
+必须成功: order_create
 ```
 真值: id-resolve.no-fabricate, ai-chat.context-memory
-溯源: eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配）。2026-09-15 校准（结论档 run 34841029062 实证）：③ 补 2 轮收尾答卡轮——5 轮预算里末轮恰好是 agent **发**确认卡那一轮，没有轮次去点卡 → order_create 必不执行（断言本身合理，不得放宽），照 OR-015（#3544 §2）先例 ｜ tags: cross_skill, context_share
+溯源: eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配）。2026-09-15 校准（结论档 run 34841029062 实证）：③ 补 2 轮收尾答卡轮——5 轮预算里末轮恰好是 agent **发**确认卡那一轮，没有轮次去点卡 → order_create 必不执行（断言本身合理，不得放宽），照 OR-015（#3544 §2）先例。2026-09-21（burn-down 缴费，随 #4865 的用例面改动）：补效果层断言 `must_succeed[order_create]`（裸工具名期望只证「调用过」）+ 前置自断言 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（按名选品 + 同关键词 pre_clean ⇒ 唯一性是可判定前置；同 OR-015/OR-014/OR-029 先例）⇒ 整条销账（`CASE-TRUST-NO-EFFECT-ASSERTION` + `CASE-TRUST-NO-PRECONDITION-ASSERTION`）。user_inputs / expectations / required_args / data_checks / pre_clean / namespaces 一字未动（断言只增不减）。 ｜ tags: cross_skill, context_share
 
 ### CR-002. 对抗性 - 3 个 Skill 连续切换 🔴
 ```
@@ -3248,7 +3249,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4525，设计 docs/design/processing-fee-and-option-pricing.md 包 A）。**2026-09-19 改判（issue #4594 用户裁定）**：判据 2 由「组合未命中 ⇒ 选项价不单独收」改判为「组合未定价 ⇒ **只有组合那半**记 0，已定价选项**照常计入**」（三个 unpriced 分支都先算 `specialOptions`）；影响面 = 组合没配价时订单金额变大。交付：V77 迁移（`production_route_rules.customer_unit_price NUMERIC(12,2)` + 92 行组合价 + 16 条选项价，均 `source='synthetic'`）+ ProductionRouteRule 实体字段 + ProcessingFeeCalculator 两层取价（组合 × 米数 + Σ 选项 × 1，新增 `special_options` / `special_options_total` 键，行金额 = 两者之和）+ schema.sql 终态 + e2e fixture 重建 + 合成数据生成器与守卫。**未做（如实登记）**：① 设计 §7 的「19 项」按代码事实落为 16 项（3 项无 option 规则行，见 data_checks 末条）；② 前端展示面（包 B）与 #4452 信号映射（包 C）不在本单；③ `fee_source=manual` 通道仍未落码。**2026-09-19 改判（用户裁定）**：新增 V82 —— 为**每个活跃租户**的 **16 条 `option` 规则行**初始化对客**元/套**单价（占位初始值，**会真的参与取价**；`customer_unit_price IS NULL` 守卫 ⇒ 不覆盖商家改价、重跑空转；非 option 行保持 NULL），推翻 V77 的「该列恒 NULL = 未定价」口径；schema.sql 同步同源终态。 ｜ tags: processing_fee, special_options, per_set, customer_unit_price, migration_v77, migration_v82, synthetic_seed
 
-## processing-order（48 case）
+## processing-order（49 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -3851,6 +3852,20 @@
 跳过: [backend-contract] 后端写面契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPositionCommandServiceTest.java 与 backend/admin-api/src/test/java/com/migao/admin/controller/ProductionRoutingReadControllerTest.java 执行
 ```
 溯源: 2026-09-20 新增（issue #4798，P1）。交付：`ProductionOperationPositionCommandService.update` 加**不变式** —— 结果态 `applicable=true` 的格必须 `variantNameOf(...) != null`，否则 422 + `details`（复用 `ProductionOperationQueryService` 的**同一份**判据，不另抄映射表）；`applicable=false` 一律放行。红证见判据 1（注入 `if (false)` ⇒ 3 条用例红；还原 ⇒ 35/35 绿）。同批修正两处既有测试夹具（`negativePriceRejectedWithDetails` / `tooManyDecimalsRejectedWithDetails` 补 `stubCatalog()`：它们只判价，新增的不变式会多报一条 detail）与 `ProductionRoutingReadControllerTest` 的构造接线（新增第 4 个构造参数）。 ｜ tags: processing-order, production-routing, operation-positions, write-guard, fail-closed
+
+### PG-056. 正常实例化必须产出部位码/短码（真库×真映射）：JSONB 快照必须过 JacksonTypeHandler；存量单重复实例化即补码且已打印的码不失效 🔵
+```
+数据: success=true
+数据: 判据 1·🔴 **手写 `@Select` 必须真的走 `JacksonTypeHandler`**（真 PG + 真 `MybatisConfiguration` + 真 mapper）：`ProcessingOrderMapper.selectActiveByOrderId` / `selectByKeyword` 取回的 `itemsSnapshot` 运行时类型必须是 `java.util.List`（实测缺陷态为 `java.lang.String` ⇒ `ProductionService.ensureSetsFor` 把**非空**快照判成空 ⇒ 套号分配整段跳过 ⇒ 部位码/短码永不产出）。证据：`backend/admin-api/src/test/java/com/migao/admin/service/ProductionPartCodeRealMappingTest.java`
+数据: 判据 2·**类级不变量（不需数据库，CI 恒跑）**：凡「返回带 `@TableField(typeHandler = JacksonTypeHandler.class)` 字段的实体」的 statement，其真实 `ResultMap` 必须挂上该处理器 —— 违规则报 `statement → 属性`。证据：`backend/admin-api/src/test/java/com/migao/admin/mapper/JacksonTypeHandlerMappingGuardTest.java`
+数据: 判据 3·🔴 **实例化后 `processing_set_part_tokens` 有行且 `short_code` 非空**（本单的核心交付判据）：一樘窗 3 个部位 ⇒ 3 行、3 个非空短码，且短码长度 = 8、字符集 = Crockford Base32 去 `I/L/O/U`。证据：`ProductionPartCodeRealMappingTest.instantiateWritesPartTokensWithShortCode`
+数据: 判据 4·**存量单补码路径可达**：已实例化且工序配置未变的单（走 `instantiate` 的**幂等早返回**路径）再次实例化 ⇒ 缺失的码行被补出（`ensurePartTokens` 必须在早返回**之前**调用）。证据：`ProductionPartCodeRealMappingTest.reInstantiateBackfillsCodesForLegacyOrderWithoutInvalidatingPrintedCodes`
+数据: 判据 5·**已打印的码不失效 / 不追溯**：补码只作用于缺失行与 `short_code IS NULL` 的行（`ON CONFLICT … DO NOTHING` + `AND short_code IS NULL`）⇒ 既有行的 `token` / `short_code` 逐字节不变；不触碰任何单价/计件列。证据：同判据 4 的用例
+数据: 判据 6·**多租户拦截器在场时 SQL 仍可执行**（`FOR UPDATE` + `ORDER BY` 会被 JSqlParser 往返重排 ⇒ 语法错误，故该语句须显式豁免租户拦截器；租户隔离由 WHERE 里的显式 `tenant_id = #{tenantId}` 承担）。证据：`ProductionPartCodeRealMappingTest`（其配置挂真 `TenantLineInnerInterceptor`）
+数据: **边界（如实登记）**：① 端到端 HTTP 剧本（generate → instantiate → 真短码 → `GET /s/<短码>` 302 → `curl -L` 落地 body 哈希 == `origin/main` 的 `frontend/worker-h5/index.html`）跑在**本机自建等价栈**（一次性 PG + 本仓 admin-api + 同源静态替身），因为本机到云 dev RDS 不可达；② 工人端 `/api/worker/**` 未在本单验证（受 #4864 阻断）。
+跳过: [backend-contract] 后端契约（真库×真映射的确定性判据，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProductionPartCodeRealMappingTest.java 与 backend/admin-api/src/test/java/com/migao/admin/mapper/JacksonTypeHandlerMappingGuardTest.java 执行
+```
+溯源: 2026-09-21 新增（issue #4865，P1）。根因（真库实测，非推理）：MyBatis-Plus 的 `@TableName(autoResultMap = true)` **只对 BaseMapper 内置方法生效**，手写 `@Select` 不绑 resultMap 就不走 `JacksonTypeHandler` ⇒ `items_snapshot`（JSONB）以 **JSON 字符串**落到 `Object` 字段（实测运行时类型 = `java.lang.String`）⇒ 套号分配跳过 ⇒ 全库 `processing_set_part_tokens` 0 行。交付：① 8 处手写 select 全部绑 `@ResultMap("mybatis-plus_<Entity>")`（`ProcessingOrderMapper` ×2 / `OrderItemMapper` / `OrderLogisticsMapper` / `TicketTimelineMapper` / `UserMemoryMapper` ×2 / `ProcessingOrderSetMapper`）；② `ensurePartTokens` 移到 `instantiate` 的幂等早返回**之前**（存量单重复实例化即补码）+ `fillMissingShortCode`（只补 `short_code IS NULL` 的行）；③ `ProcessingOrderSetMapper.lockSetsOfOrder` 加 `@InterceptorIgnore(tenantLine = "true")` —— 修好映射后显形的第二个缺陷：`ORDER BY` + `FOR UPDATE` 经租户拦截器 JSqlParser 往返后被重排成 `FOR UPDATE ORDER BY` ⇒ PG 语法错误 ⇒ 生成/实例化 500（此前被上游缺陷掩盖）。红证（逐条实测）：去掉 `@ResultMap` ⇒ 5/5 红；把 `ensurePartTokens` 挪回早返回之后 ⇒ 存量单用例红（`行数 = 1` 而非 3）；去掉 `@InterceptorIgnore` ⇒ 集成守卫 2 条红（复现 `语法错误 在 "ORDER" 或附近的`）。 ｜ tags: processing-order, production, short-code, mybatis-mapping, integration-guard, fail-closed
 
 ## 商品域（21 case）
 
@@ -4999,8 +5014,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：364（活跃 155，跳过 209）
-- tier 分布：smoke 10 / normal 323 / adversarial 31
+- 用例总数：365（活跃 155，跳过 210）
+- tier 分布：smoke 10 / normal 324 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -5019,7 +5034,7 @@
 - ontology：4
 - 订单域：41
 - 加工项域：13
-- processing-order：48
+- processing-order：49
 - 商品域：21
 - registry：1
 - 设置域：10
@@ -5112,6 +5127,7 @@
 - PG-053: 条件工序规则创建通用化 - trigger_kind 闭词表（craft/option/processing_item）+ 触发值词表校验 + 对客单价只属 option + 缺省 option 反向护栏 + 订单实例化真的插该工序
 - PG-054: 【打包发货】层的行不依赖矩阵格——零矩阵格 + `scope='set'` 的工序仍有行，价态 `no_applicable_position`
 - PG-055: 部位价目矩阵写面不变式：写完 `applicable=true` 的格必须解析得到变体工序（否则加工单整单 422）
+- PG-056: 正常实例化必须产出部位码/短码（真库×真映射）：JSONB 快照必须过 JacksonTypeHandler；存量单重复实例化即补码且已打印的码不失效
 - PP-007: 米宝加工项 LLM 行为：只改单价不清空其它字段（部分更新语义）
 - PP-008: 米宝加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 米宝加工项 LLM 行为：per_meter 按米算价（calculate_price 透传 quantity，不双计）

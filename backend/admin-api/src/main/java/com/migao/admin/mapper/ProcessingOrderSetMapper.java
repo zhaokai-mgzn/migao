@@ -2,9 +2,11 @@ package com.migao.admin.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.migao.admin.entity.ProcessingOrderSet;
+import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
@@ -13,6 +15,10 @@ import java.util.List;
  * 套号载体 Mapper（V92，切片 ⓪ / issue #4698）：一单 × 一套 = 一行。
  * 切片 ① 只读（解析时按 {@code set_id} 取套号做归属校验与响应）；
  * 切片 ⓪.5（issue #4789）新增**唯一写方** {@link #insertIgnoreConflict}。
+ *
+ * <p>🔴 手写 {@code @Select} 必须显式绑 autoResultMap（口径与判据见
+ * {@code ProcessingOrderMapper} 类注释 / {@code JacksonTypeHandlerMappingGuardTest}）——
+ * {@code ProcessingOrderSet.positionItemIds} 是 JSONB（JacksonTypeHandler）。</p>
  */
 @Mapper
 public interface ProcessingOrderSetMapper extends BaseMapper<ProcessingOrderSet> {
@@ -31,8 +37,22 @@ public interface ProcessingOrderSetMapper extends BaseMapper<ProcessingOrderSet>
      * <p>⚠️ 锁**该单的已有套行**（不是加工单行）：分配语义的作用域就是「该单的号池」，
      * 且不依赖 {@code processing_orders} 的列形态（该表的读取口径不因本单而变）。</p>
      *
+     * <p>🔴 <b>{@code @InterceptorIgnore(tenantLine = "true")} 是必须的（issue #4865 实测）</b>：
+     * 本语句同时含 {@code ORDER BY} 与 {@code FOR UPDATE}，多租户拦截器会把 SQL 交给 JSqlParser
+     * **解析再序列化**（并追加 {@code AND tenant_id = ?}），而该往返把 {@code FOR UPDATE} 重排到
+     * {@code ORDER BY} **之前** ⇒ 实际执行的是
+     * {@code … AND deleted = 0 AND tenant_id = 1 FOR UPDATE ORDER BY set_index}
+     * ⇒ PG 报 {@code 语法错误 在 "ORDER" 或附近的} ⇒ 生成/实例化 500。</p>
+     *
+     * <p>这个缺陷此前被 #4865 的**上游缺陷**掩盖（快照反序列化坏 ⇒ {@code ensureSetsFor} 在读快照时
+     * 就 return 了，根本走不到分配器）；修好映射后它立刻显形。禁用该拦截器**不削弱租户隔离**：
+     * WHERE 里的 {@code tenant_id = #{tenantId}} 是**显式**条件（拦截器追加的那一份是冗余的），
+     * 与 {@code ProcessingSetPartTokenMapper.selectByShortCode} 的处置同款。</p>
+     *
      * @return 被锁住的套行（首次分配 ⇒ 空集，此时锁的是该单号池的**间隙**）
      */
+    @ResultMap("mybatis-plus_ProcessingOrderSet")
+    @InterceptorIgnore(tenantLine = "true")
     @Select("""
             SELECT id, tenant_id, processing_order_id, set_index, set_no, craft_line_id, deleted
               FROM processing_order_sets

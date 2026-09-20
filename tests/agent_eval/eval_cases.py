@@ -1660,8 +1660,10 @@ _CASE_CR_001 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'order_create', 'fields': ['items[].processing_info.sellingMethod', 'items[].processing_info.doorWidth']}],
+    must_succeed=[{'tool': 'order_create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── CR-002 [ADVERSARIAL] 对抗性 - 3 个 Skill 连续切换（源: cases/cross.yml）──
@@ -5081,6 +5083,24 @@ _CASE_PG_055 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-056 [NORMAL] 正常实例化必须产出部位码/短码（真库×真映射）：JSONB 快照必须过 JacksonTypeHandler；存量单重复实例化即补码且已打印的码不失效（源: cases/processing-order.yml）──
+_CASE_PG_056 = EvalCase(
+    id='PG-056',
+    legacy_id='',
+    title='正常实例化必须产出部位码/短码（真库×真映射）：JSONB 快照必须过 JacksonTypeHandler；存量单重复实例化即补码且已打印的码不失效',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '判据 1·🔴 **手写 `@Select` 必须真的走 `JacksonTypeHandler`**（真 PG + 真 `MybatisConfiguration` + 真 mapper）：`ProcessingOrderMapper.selectActiveByOrderId` / `selectByKeyword` 取回的 `itemsSnapshot` 运行时类型必须是 `java.util.List`（实测缺陷态为 `java.lang.String` ⇒ `ProductionService.ensureSetsFor` 把**非空**快照判成空 ⇒ 套号分配整段跳过 ⇒ 部位码/短码永不产出）。证据：`backend/admin-api/src/test/java/com/migao/admin/service/ProductionPartCodeRealMappingTest.java`', '判据 2·**类级不变量（不需数据库，CI 恒跑）**：凡「返回带 `@TableField(typeHandler = JacksonTypeHandler.class)` 字段的实体」的 statement，其真实 `ResultMap` 必须挂上该处理器 —— 违规则报 `statement → 属性`。证据：`backend/admin-api/src/test/java/com/migao/admin/mapper/JacksonTypeHandlerMappingGuardTest.java`', '判据 3·🔴 **实例化后 `processing_set_part_tokens` 有行且 `short_code` 非空**（本单的核心交付判据）：一樘窗 3 个部位 ⇒ 3 行、3 个非空短码，且短码长度 = 8、字符集 = Crockford Base32 去 `I/L/O/U`。证据：`ProductionPartCodeRealMappingTest.instantiateWritesPartTokensWithShortCode`', '判据 4·**存量单补码路径可达**：已实例化且工序配置未变的单（走 `instantiate` 的**幂等早返回**路径）再次实例化 ⇒ 缺失的码行被补出（`ensurePartTokens` 必须在早返回**之前**调用）。证据：`ProductionPartCodeRealMappingTest.reInstantiateBackfillsCodesForLegacyOrderWithoutInvalidatingPrintedCodes`', '判据 5·**已打印的码不失效 / 不追溯**：补码只作用于缺失行与 `short_code IS NULL` 的行（`ON CONFLICT … DO NOTHING` + `AND short_code IS NULL`）⇒ 既有行的 `token` / `short_code` 逐字节不变；不触碰任何单价/计件列。证据：同判据 4 的用例', '判据 6·**多租户拦截器在场时 SQL 仍可执行**（`FOR UPDATE` + `ORDER BY` 会被 JSqlParser 往返重排 ⇒ 语法错误，故该语句须显式豁免租户拦截器；租户隔离由 WHERE 里的显式 `tenant_id = #{tenantId}` 承担）。证据：`ProductionPartCodeRealMappingTest`（其配置挂真 `TenantLineInnerInterceptor`）', '**边界（如实登记）**：① 端到端 HTTP 剧本（generate → instantiate → 真短码 → `GET /s/<短码>` 302 → `curl -L` 落地 body 哈希 == `origin/main` 的 `frontend/worker-h5/index.html`）跑在**本机自建等价栈**（一次性 PG + 本仓 admin-api + 同源静态替身），因为本机到云 dev RDS 不可达；② 工人端 `/api/worker/**` 未在本单验证（受 #4864 阻断）。'],
+    skip_reason='[backend-contract] 后端契约（真库×真映射的确定性判据，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProductionPartCodeRealMappingTest.java 与 backend/admin-api/src/test/java/com/migao/admin/mapper/JacksonTypeHandlerMappingGuardTest.java 执行',
+    tags=['processing-order', 'production', 'short-code', 'mybatis-mapping', 'integration-guard', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PP-002 [NORMAL] 加工项分类列表（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -7242,6 +7262,7 @@ ALL_CASES = (
     _CASE_PG_053,
     _CASE_PG_054,
     _CASE_PG_055,
+    _CASE_PG_056,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,

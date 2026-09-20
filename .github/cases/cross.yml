@@ -49,6 +49,21 @@ cases:
     expectations:
       - tool: product_detail
       - tool: order_create
+    # 效果层断言（burn-down 缴费，2026-09-21；先例 = OR-008 / OR-009 / OR-016 的
+    # `must_succeed[order_create]`）：裸工具名期望只证明「调用过」—— 工具返回
+    # `success=false` 也照样通过（#3778「调用了 ≠ 成了」）。
+    must_succeed:
+      - tool: order_create
+    # 前置自断言（同一次 burn-down 缴费）：本用例按**名字**选品（「查一下遮光窗帘」），
+    # 且 `pre_clean` 已按同一关键词 `product_dedupe` ⇒ 「该名字在种子栈里唯一」是它真正依赖、
+    # **只读**的前置。类型用**已实现**的 `product_count_for_keyword`（口径与 product_remove /
+    # product_dedupe 同一份实现），与 OR-015 逐字同形（`expect: 1`）。
+    # ⚠️ 有意**不**声明 `order_count_for_phone: 13800138000`：本用例自己就会给该号码建单
+    # ⇒ 那是一条注定红的护栏（同 order.yml 里「不声明 order_count_for_phone」的先例判断）。
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
     required_args:
       - tool: order_create
         fields:
@@ -64,7 +79,7 @@ cases:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
     skip_reason: ""
-    merge_log: "eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配）。2026-09-15 校准（结论档 run 34841029062 实证）：③ 补 2 轮收尾答卡轮——5 轮预算里末轮恰好是 agent **发**确认卡那一轮，没有轮次去点卡 → order_create 必不执行（断言本身合理，不得放宽），照 OR-015（#3544 §2）先例"
+    merge_log: "eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配）。2026-09-15 校准（结论档 run 34841029062 实证）：③ 补 2 轮收尾答卡轮——5 轮预算里末轮恰好是 agent **发**确认卡那一轮，没有轮次去点卡 → order_create 必不执行（断言本身合理，不得放宽），照 OR-015（#3544 §2）先例。2026-09-21（burn-down 缴费，随 #4865 的用例面改动）：补效果层断言 `must_succeed[order_create]`（裸工具名期望只证「调用过」）+ 前置自断言 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（按名选品 + 同关键词 pre_clean ⇒ 唯一性是可判定前置；同 OR-015/OR-014/OR-029 先例）⇒ 整条销账（`CASE-TRUST-NO-EFFECT-ASSERTION` + `CASE-TRUST-NO-PRECONDITION-ASSERTION`）。user_inputs / expectations / required_args / data_checks / pre_clean / namespaces 一字未动（断言只增不减）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.migao.admin.entity.ProcessingOrder;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
@@ -12,20 +13,43 @@ import java.util.List;
 
 /**
  * 加工单 Mapper（issue #3340）
+ *
+ * <p>🔴 <b>手写 {@code @Select} 必须显式绑 MyBatis-Plus 的 autoResultMap</b>
+ * （{@code @ResultMap("mybatis-plus_ProcessingOrder")}）：{@code @TableName(autoResultMap = true)}
+ * 只对 BaseMapper 的内置方法生效 —— **手写 SQL 不绑就不走 {@code JacksonTypeHandler}** ⇒
+ * {@code items_snapshot}（JSONB）以 **JSON 字符串**落到 {@code Object itemsSnapshot} 上 ⇒
+ * 所有 {@code instanceof List} 判据静默为假。</p>
+ *
+ * <p><b>实测代价（issue #4865）</b>：{@code ProductionService.ensureSetsFor} 因此把**非空**快照判成空
+ * ⇒ 套号分配整段跳过 ⇒ 部位码/短码**永不产出**（实测全库 {@code processing_set_part_tokens} 0 行）。</p>
+ *
+ * <p><b>同形态的历史事故</b>：{@code ProcessingOrderService.loadOrderItems} 的 javadoc 逐字记录过
+ * issue #3340 的同一件事（{@code order_items.processing_info} 以 JSON 字符串返回 ⇒ buildSnapshot 恒空）
+ * —— 当时的处置是**改调用方走 BaseMapper + 加 {@code instanceof String} 归一化兜底**，
+ * 映射本身没修、也没有守卫 ⇒ 同一根因在 {@link #selectActiveByOrderId} 上原样复发。
+ * 本单改为**修映射**（绑 resultMap），并把不变量钉在
+ * {@code com.migao.admin.mapper.JacksonTypeHandlerMappingGuardTest}（真 MyBatis 映射级；注入一处违规即红）。</p>
  */
 @Mapper
 public interface ProcessingOrderMapper extends BaseMapper<ProcessingOrder> {
 
     /**
      * 订单当前的活跃加工单（非取消态，租户隔离由 TenantLineInnerInterceptor 注入）
+     *
+     * <p>⚠️ {@code @ResultMap} 是**判据的一部分**，不是可选优化（见类注释）。</p>
      */
+    @ResultMap("mybatis-plus_ProcessingOrder")
     @Select("SELECT * FROM processing_orders WHERE order_id = #{orderId} AND tenant_id = #{tenantId} " +
             "AND deleted = 0 AND status IN ('generated','issued','in_processing','completed') LIMIT 1")
     ProcessingOrder selectActiveByOrderId(@Param("orderId") String orderId, @Param("tenantId") Long tenantId);
 
     /**
      * 按加工单号/订单号/订单UUID 解析加工单（租户隔离）
+     *
+     * <p>⚠️ 与 {@link #selectActiveByOrderId} 同款：{@code po.*} 同样打 {@code items_snapshot}，
+     * 不绑 resultMap 就同样静默返回字符串（同一文件两处，缺一不可）。</p>
      */
+    @ResultMap("mybatis-plus_ProcessingOrder")
     @Select("SELECT po.* FROM processing_orders po " +
             "LEFT JOIN orders o ON po.order_id = o.id " +
             "WHERE po.tenant_id = #{tenantId} AND po.deleted = 0 " +

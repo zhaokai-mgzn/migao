@@ -188,6 +188,13 @@ public class ProductionService {
         Map<String, ProcessingOrderSet> setByGroup = ensureSetsFor(po, specs, tenantId);
         Map<String, String> itemGroupKey = itemIdToGroupKey(po, specs);
         String qrToken = ensureQrToken(po);
+        // 部位码（一部位一码，设计 §2.3）：**必须在幂等早返回之前**（issue #4865）——
+        // 存量单（已实例化且工序配置未变）走下面的早返回，而落在早返回**之后**的调用永远跑不到
+        // ⇒ 那批单**没有任何补码路径**（实测：全库 processing_set_part_tokens 0 行）。
+        // 幂等由 mapper 承担：新行 `ON CONFLICT DO NOTHING`；已存在的行**只补 short_code IS NULL**
+        // ⇒ 已有短码的行一字不动（已打印的纸不作废）。位置在写实例行之前：与码的生成顺序无关
+        // （码只依赖 specs + 套号），但能让「早返回」与「首次实例化」两条路径共用同一处调用。
+        ensurePartTokens(po, specs, setByGroup, itemGroupKey, tenantId);
 
         // 幂等：配置与已有活跃实例一致 ⇒ 一行都不碰（重复调用不得重插行/不得清零报工进度）
         List<ProcessingPositionOperation> existing = listOperations(po.getId(), tenantId);
@@ -241,9 +248,6 @@ public class ProductionService {
                     .deleted(0)
                     .build());
         }
-        // 部位码（一部位一码，设计 §2.3）：**分配出套号之后**同事务生成 —— 码内容 = 单号 + 套号 + 部位。
-        // 同一部位重复打印**复用同一 token**（不换码）⇒ 已存在的行一行不碰（uk_set_part_tokens_part）。
-        ensurePartTokens(po, specs, setByGroup, itemGroupKey, tenantId);
         log.info("实例化工序: po={}, orderId={}, operations={}, qrToken={}",
                 po.getProcessingOrderNo(), order.getId(), specs.size(), qrToken);
         return instantiateResult(qrToken, specs.size());
@@ -321,6 +325,12 @@ public class ProductionService {
      * 与 {@code set_no}（套号）无关 —— 短码是随机的「哪一张纸」，套号是「第几樘窗」。
      * 分配前查重（{@link WorkerShortLinkService#allocateUnique}）⇒ 不静默造重码；
      * 因走 {@code DO NOTHING}，重复实例化**复用同一短码**（已打印的纸不作废）。</p>
+     *
+     * <p><b>存量单补码（issue #4865）</b>：本方法在 {@code instantiate} 的**幂等早返回之前**被调用
+     * ⇒ 已实例化的存量单**再次实例化即可补码**（不必等工序配置变化）。两条补码判据：
+     * ① 缺失的行 ⇒ 新插（token + short_code 同插）；② 已存在但 {@code short_code IS NULL} 的行
+     * （V99 注释预告的形态）⇒ **只补这一列**（{@code WHERE … AND short_code IS NULL}），
+     * 已有短码的行一字不动 ⇒ **已打印的码不失效**；本方法**不触碰**任何单价/计件列（不追溯）。</p>
      */
     private void ensurePartTokens(ProcessingOrder po, List<OpSpec> specs,
                                   Map<String, ProcessingOrderSet> setByGroup,
@@ -338,12 +348,18 @@ public class ProductionService {
             if (set == null) {
                 continue; // 归不到套 ⇒ 不猜（该部位码无从拼出「单号+套号+部位」）
             }
-            setPartTokenMapper.insertIgnoreConflict(new com.migao.admin.mapper.ProcessingSetPartTokenMapper
-                    .PartTokenRow(UUID.randomUUID().toString().replace("-", ""), tenantId, po.getId(),
-                    set.getId(), itemId, spec.positionKind(),
-                    UUID.randomUUID().toString().replace("-", ""),
-                    WorkerShortLinkService.allocateUnique(setPartTokenMapper), OffsetDateTime.now(),
-                    OffsetDateTime.now(), 0));
+            int inserted = setPartTokenMapper.insertIgnoreConflict(
+                    new com.migao.admin.mapper.ProcessingSetPartTokenMapper
+                            .PartTokenRow(UUID.randomUUID().toString().replace("-", ""), tenantId, po.getId(),
+                            set.getId(), itemId, spec.positionKind(),
+                            UUID.randomUUID().toString().replace("-", ""),
+                            WorkerShortLinkService.allocateUnique(setPartTokenMapper), OffsetDateTime.now(),
+                            OffsetDateTime.now(), 0));
+            if (inserted == 0) {
+                // 行已存在（一部位一码复用）⇒ 只补 short_code 仍为 NULL 的存量行（issue #4865）。
+                setPartTokenMapper.fillMissingShortCode(tenantId, set.getId(), itemId,
+                        WorkerShortLinkService.allocateUnique(setPartTokenMapper), OffsetDateTime.now());
+            }
         }
     }
 
