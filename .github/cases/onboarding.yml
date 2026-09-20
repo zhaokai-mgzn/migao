@@ -176,7 +176,8 @@ cases:
       - "文案不含「认证/通过检测/备案」误导词"
       - "corporate-home.test.tsx 断言标准号与能力点渲染（无快照/无新 icon）"
     skip_reason: "[backend-contract] 由前端单测验证（corporate-home.test.tsx），非 LLM 冒烟"
-    merge_log: "2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787）"
+    precondition: "本用例是 [backend-contract] 纯前端页面用例：前置 = `corporate-home` 页面源码与其单测同时存在、且被 vitest 正常收集（frontend/admin-web/tests/unit/pages/corporate-home.test.tsx）；前置由测试自身持有、不依赖共享夹具 ⇒ 前置不成立时（页面文件缺失/改名/选择器被摘）该单测直接红，不会表现成「agent 不干活」；agent-eval 栈不跑它"
+    merge_log: "2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787）。2026-09-20（issue #4837 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition（本用例 3 组 user_inputs 实际是**同一页面**的三组断言、非多轮会话，此前被判 CASE-TRUST-NO-PRECONDITION-ASSERTION）——断言面（user_inputs / expectations / data_checks / traces）原样未动、无放宽"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/corporate-home.test.tsx"
