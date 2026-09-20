@@ -241,7 +241,7 @@ describe('OrderItemList', () => {
       expect(screen.getByText('是否定型').parentElement?.textContent).toContain('是')
     })
 
-    it('渲染算料口径：总褶数/折数（每片）/褶距/幅数/褶倍/米数/是否对花/花距', () => {
+    it('渲染算料口径：总褶数/折数（每片）/幅数/褶倍/米数/是否对花/花距 —— ⚠️ #4876 起**不再渲染「褶距」**', () => {
       render(
         <OrderItemList
           items={[
@@ -264,7 +264,9 @@ describe('OrderItemList', () => {
       )
       expect(screen.getByText('52')).toBeInTheDocument()
       expect(screen.getByText('26')).toBeInTheDocument()
-      expect(screen.getByText('0.1米')).toBeInTheDocument()
+      // ⚠️ #4876：载荷里仍带 `pleatSpacing: 0.1`，而展示行已删 ⇒ 断言**它不再被渲染**
+      expect(screen.queryByText('褶距')).toBeNull()
+      expect(screen.queryByText('0.1米')).toBeNull()
       expect(screen.getByText('4')).toBeInTheDocument()
       expect(screen.getByText('2 倍')).toBeInTheDocument()
       expect(screen.getByText('1.86 倍')).toBeInTheDocument()

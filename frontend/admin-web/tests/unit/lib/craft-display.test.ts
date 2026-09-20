@@ -59,7 +59,7 @@ const rowValue = (rows: ReturnType<typeof craftSpecRows>, label: string) =>
   rows.find((row) => row.label === label)?.value
 
 describe('craftSpecRows — 订单/快照层（camelCase）', () => {
-  it('按 §4.9 表渲染全部 18 个字段（第 18 = 算料公式，issue #4546）', () => {
+  it('按 §4.9 表渲染全部 17 个字段（#4876 起「褶距」行整体删除；第 18 = 算料公式，issue #4546）', () => {
     const rows = craftSpecRows(orderCraftSpec)
     expect(rows.map((row) => row.label)).toEqual([
       '部位',
@@ -71,7 +71,6 @@ describe('craftSpecRows — 订单/快照层（camelCase）', () => {
       '特殊选项',
       '总褶数',
       '折数（每片）',
-      '褶距',
       '幅数',
       '理论褶倍',
       '实际褶倍',
@@ -81,6 +80,17 @@ describe('craftSpecRows — 订单/快照层（camelCase）', () => {
       '是否对花',
       '花距',
     ])
+  })
+
+  it('#4876 判据：「褶距」行**整体退场**（用户 2026-09-21：「应该直接删除这个字段，要做就做干净」）', () => {
+    // 前因：写侧早在 #4874 就不产出该键，展示面当时**有意保留**（缺值不渲染 ⇒ 存量单仍能看到）。
+    // 用户随后裁定「做干净」⇒ 连展示行一起删：**存量单也不再显示褶距**（口子彻底关上，
+    // 不再留一条只对历史数据生效的渲染分支）。
+    // 🔴 红证：把 `{ label: '褶距', keys: ['pleatSpacing', 'pleat_spacing'], format: meters }`
+    // 那一行加回 `CRAFT_SPEC_FIELDS`（三份都加）⇒ 本断言红。
+    expect(rowValue(craftSpecRows({ pleatSpacing: 0.1 }), '褶距')).toBeUndefined()
+    expect(rowValue(craftSpecRows({ pleat_spacing: 0.12 }), '褶距')).toBeUndefined()
+    expect(craftSpecRows(orderCraftSpec).map((row) => row.label)).not.toContain('褶距')
   })
 
   it('#4546 判据：算料公式**两个别名都登记** ⇒ C 端（snake_case 数据）也渲染该行', () => {
@@ -96,7 +106,6 @@ describe('craftSpecRows — 订单/快照层（camelCase）', () => {
     const rows = craftSpecRows(orderCraftSpec)
     expect(rowValue(rows, '是否定型')).toBe('是')
     expect(rowValue(rows, '是否对花')).toBe('是')
-    expect(rowValue(rows, '褶距')).toBe('0.1米')
     expect(rowValue(rows, '花距')).toBe('0.32米')
     expect(rowValue(rows, '面料米数')).toBe('13.3米')
     expect(rowValue(rows, '加工费米数')).toBe('13.3米')
@@ -126,7 +135,6 @@ describe('craftSpecRows — 报价单（curtain_calc 输出，snake_case）', ()
     expect(rowValue(rows, '打开方式')).toBe('四开')
     expect(rowValue(rows, '是否定型')).toBe('否')
     expect(rowValue(rows, '特殊选项')).toBe('罗马圈')
-    expect(rowValue(rows, '褶距')).toBe('0.12米')
     expect(rowValue(rows, '实际褶倍')).toBe('1.7 倍')
   })
 
@@ -204,7 +212,9 @@ describe('craftSpecRows — 缺值不渲染（§4.9 硬约束 2）', () => {
   })
 
   it('数字以字符串承载时仍按数字口径格式化（JSON 边界容错）', () => {
-    expect(rowValue(craftSpecRows({ pleatSpacing: '0.1' }), '褶距')).toBe('0.1米')
+    // ⚠️ #4876：原来用 `pleatSpacing` 举例，该行已整体删除 ⇒ 换成同为「米数」口径的 `patternRepeat`
+    // （判据本身不变：字符串承载的数字仍按数字格式化）。
+    expect(rowValue(craftSpecRows({ patternRepeat: '0.32' }), '花距')).toBe('0.32米')
     expect(rowValue(craftSpecRows({ openCount: '2' }), '打开方式')).toBe('双开')
   })
 })

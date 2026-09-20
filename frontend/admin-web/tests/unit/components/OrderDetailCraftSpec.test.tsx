@@ -115,7 +115,7 @@ describe('OrderDetail 商品明细展示工艺规格', () => {
     expect(screen.getByText(/门幅2\.8米/)).toBeInTheDocument()
   })
 
-  it('渲染算料口径：总褶数/折数（每片）/褶距/幅数/褶倍/米数/是否对花/花距（§4.9 ②）', async () => {
+  it('渲染算料口径：总褶数/折数（每片）/幅数/褶倍/米数/是否对花/花距（§4.9 ②）—— ⚠️ #4876 起**不再渲染「褶距」**', async () => {
     mockGetOrder.mockResolvedValue({
       data: {
         data: orderWith({
@@ -138,7 +138,10 @@ describe('OrderDetail 商品明细展示工艺规格', () => {
     const spec = await screen.findByTestId('order-craft-spec')
     expect(within(spec).getByText('52')).toBeInTheDocument()
     expect(within(spec).getByText('26')).toBeInTheDocument()
-    expect(within(spec).getByText('0.1米')).toBeInTheDocument()
+    // ⚠️ #4876：载荷里**仍带着** `pleatSpacing: 0.1`（存量单形态），而展示行已整体删除
+    // ⇒ 这里断言的是**它不再被渲染**（反向断言比"删掉夹具字段"更强：证明残留数据也不会漏出来）。
+    expect(within(spec).queryByText('褶距')).toBeNull()
+    expect(within(spec).queryByText('0.1米')).toBeNull()
     expect(within(spec).getByText('4')).toBeInTheDocument()
     expect(within(spec).getByText('2 倍')).toBeInTheDocument()
     expect(within(spec).getByText('1.86 倍')).toBeInTheDocument()

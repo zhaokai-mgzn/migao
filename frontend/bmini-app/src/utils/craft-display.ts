@@ -135,7 +135,6 @@ const CRAFT_SPEC_FIELDS: CraftSpecField[] = [
   { label: '特殊选项', keys: ['specialOptions', 'special_options'], format: optionList },
   { label: '总褶数', keys: ['pleatCount', 'pleat_count'], format: plainText },
   { label: '折数（每片）', keys: ['perPanelPleats', 'per_panel_pleats'], format: plainText },
-  { label: '褶距', keys: ['pleatSpacing', 'pleat_spacing'], format: meters },
   { label: '幅数', keys: ['panels'], format: plainText },
   { label: '理论褶倍', keys: ['fullness'], format: times },
   { label: '实际褶倍', keys: ['fullnessActual', 'fullness_actual'], format: times },
