@@ -1362,11 +1362,12 @@ export interface PieceworkReportOperationAmount {
  * 下钻维度行（issue #4347 §3.2 / 真值源 §4 的下钻链：部位 → 套）。
  *
  * <p>后端由**同一份聚合**产出（与按人/按工序同源）⇒ 各维合计恒等于 total。
- * 键名两维不同：部位用 `position_name`，套用 `order_item_id`。</p>
+ * 键名两维不同：部位用 `position_name`，套用 `set_no`（#4725：套 = **樘窗**（`craftLineId` 组），
+ * 不是订单行 —— 键名此前叫 `order_item_id`，把「套」谎称成「订单行」）。</p>
  */
 export interface PieceworkDrillDownRow {
   position_name?: string
-  order_item_id?: string
+  set_no?: string
   amount: number
   qty: number
 }
@@ -1379,7 +1380,7 @@ export interface PieceworkReport {
   per_operation: PieceworkReportOperationAmount[]
   /** 按部位下钻（真值源 §4 下钻链） */
   per_position?: PieceworkDrillDownRow[]
-  /** 按套下钻（`order_item_id` = 樘窗/套的订单行） */
+  /** 按套下钻（`set_no` = 樘窗/套的**套号**；无号时 = 樘窗组键，issue #4725） */
   per_set?: PieceworkDrillDownRow[]
   /** 未定价块（V90，issue #4696）：与 per-order 汇总**同一份聚合** ⇒ 两处恒等 */
   unpriced?: UnpricedPiecework

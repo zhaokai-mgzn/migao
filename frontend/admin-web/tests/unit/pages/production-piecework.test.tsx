@@ -68,9 +68,10 @@ const REPORT = {
     { position_name: '布艺遮光帘A 米白', amount: 83.45, qty: 211 },
     { position_name: '纱帘B 本白', amount: 40, qty: 100 },
   ],
+  // 套维（#4725 用户裁定「一樘窗 = 一套」）：键 = **套号**（V92 `set_no`），不是订单行
   per_set: [
-    { order_item_id: 'item-A', amount: 83.45, qty: 211 },
-    { order_item_id: 'item-B', amount: 40, qty: 100 },
+    { set_no: 'JG-20260918-6914-001', amount: 83.45, qty: 211 },
+    { set_no: 'JG-20260918-6914-002', amount: 40, qty: 100 },
   ],
 }
 
@@ -200,15 +201,21 @@ describe('计件工资报表页 /production/piecework', () => {
     expect(within(panel).getByText('¥40.00')).toBeInTheDocument()
   })
 
-  it('按套下钻：渲染订单行（order_item_id）行 + 金额/数量', async () => {
+  it('按套下钻：渲染**套（樘窗组）**行 + 金额/数量（#4725：套 = 樘窗，不是订单行）', async () => {
     render(<PieceworkReportPage />)
     await waitFor(() => expect(mockGetPieceworkSummary).toHaveBeenCalled())
 
     await userEvent.click(screen.getByTestId('piecework-tab-set'))
 
     const panel = screen.getByTestId('piecework-by-set')
-    expect(within(panel).getByText('item-A')).toBeInTheDocument()
-    expect(within(panel).getByText('item-B')).toBeInTheDocument()
+    // 表头不得再把一樘窗称作「订单行」（旧口径文字钉）
+    expect(within(panel).getByText('套（樘窗）')).toBeInTheDocument()
+    expect(within(panel).queryByText('套（订单行）')).not.toBeInTheDocument()
+    expect(within(panel).getByText('JG-20260918-6914-001')).toBeInTheDocument()
+    expect(within(panel).getByText('JG-20260918-6914-002')).toBeInTheDocument()
+    // 金额仍是**真实读数**（反 placeholder）
+    expect(within(panel).getByText('¥83.45')).toBeInTheDocument()
+    expect(within(panel).getByText('¥40.00')).toBeInTheDocument()
   })
 
   it('下钻红证：缺 per_position / per_set ⇒ 该档显式「无数据」，不崩不静默', async () => {

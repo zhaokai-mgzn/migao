@@ -245,17 +245,18 @@ export default function PieceworkReportPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
-                      <th className="pl-5 pr-4 py-3 font-medium">{tab === 'position' ? '部位' : '套（订单行）'}</th>
+                      <th className="pl-5 pr-4 py-3 font-medium">{tab === 'position' ? '部位' : '套（樘窗）'}</th>
                       <th className="px-4 py-3 font-medium">计件数量</th>
                       <th className="px-4 py-3 font-medium">金额</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(tab === 'position' ? perPosition : perSet).map((row) => {
-                      // 键名两维不同：部位用 position_name，套用 order_item_id
+                      // 键名两维不同：部位用 position_name，套用 set_no
+                      // （#4725 用户裁定「一樘窗 = 一套」：套 = 樘窗（craftLineId 组），**不是**订单行）
                       const key = tab === 'position'
                         ? (row.position_name ?? '')
-                        : (row.order_item_id ?? '')
+                        : (row.set_no ?? '')
                       return (
                         <tr
                           key={key}

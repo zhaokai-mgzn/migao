@@ -40,6 +40,17 @@ public class ProcessingPositionOperation {
     private String setId;
 
     /**
+     * 套号快照（V92，issue #4698 切片 ⓪）：{@code {加工单号}-{3 位 set_index}}，与 {@link #setId}
+     * **同一次回填写入**。
+     *
+     * <p><b>可空</b>（同 {@code setId}）。V92 的列注释逐字写了它的用途：
+     * 「扫码归属校验 + **计件按套下钻**（零改动 {@code production_work_logs}）」。
+     * 计件/工资报表的**套维度**按它取（#4725 用户裁定「一樘窗 = 一套」）；无号时按
+     * {@code craftLineId} 樘窗组键回落（见 {@code ProductionService.setKey}）。</p>
+     */
+    private String setNo;
+
+    /**
      * 部位**展示名** = 加工产物名[+色号]（如 {@code 布艺遮光帘A 米白}）—— **不是帘种**。
      *
      * <p>⚠️ 本条注释此前写「部位：布帘/纱帘/帘头/外帘」，**与实现相反**（issue #4621 改判）。

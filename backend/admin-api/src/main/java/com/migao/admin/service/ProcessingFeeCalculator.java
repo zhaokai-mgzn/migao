@@ -12,9 +12,11 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 加工费**消费面**（V68 表的取价点；issue #4406 P1 + #4525 包 A；用户裁定 2026-09-19）。
@@ -25,7 +27,9 @@ import java.util.Map;
  * 新口径（#4525 起两层账）：
  * <pre>
  * 行加工费 = 组合价(元/米) × 加工费米数  +  Σ 选中特殊选项( 单价(元/套) × 套数 )
- *            套数 = 1（用户裁定 R8：「1 套 = 1 个订单行」）
+ *            套数 = 该选项在**本行所属樘窗**里的计费套数（用户裁定 R8；2026-09-20 / #4725 改判：
+ *                   「1 套 = 1 樘窗 = 一个 craftLineId 组」，不再是「1 套 = 1 个订单行」）
+ *                   ⇒ **同一樘窗内同名选项只收一次**：承接那一行 = 1，同樘窗其它行 = 0（仍列出、金额 0）
  * </pre>
  *
  * <h2>口径（用户裁定，不得自行放宽）</h2>
@@ -111,13 +115,15 @@ public class ProcessingFeeCalculator {
     // ══════════════════════════════ 对外结果 ══════════════════════════════
 
     /**
-     * 一个**选中特殊选项**的取价结果（设计 §4.3；R5 + R8「1 套 = 1 个订单行」）。
+     * 一个**选中特殊选项**的取价结果（设计 §4.3；R5 + R8「1 套 = 1 樘窗（`craftLineId` 组）」，#4725）。
      *
      * @param name      选项名（**逐字 = {@code processing_info.specialOptions[]} 的元素**
      *                  = {@code production_route_rules.trigger_value}；它是 join key，不得改写）
      * @param unitPrice 该选项的**对客元/套**单价；未定价 = {@code null}（**≠ 0**）
-     * @param sets      套数 = **恒 1**（用户裁定 R8：「1 套 = 1 个订单行」）
-     * @param amount    {@code unitPrice × sets}；未定价 = 0
+     * @param sets      **本行**该选项的计费套数：一樘窗（`craftLineId` 组）内同名选项只收一次 ⇒
+     *                  承接那一行 = 1、同樘窗其它行 = **0**（选项仍列出、金额 0 —— **不静默吞掉**）；
+     *                  无 {@code craftLineId} 的行**各自成樘窗** ⇒ 每行各 1
+     * @param amount    {@code unitPrice × sets}；未定价 / 非承接行 = 0
      * @param priced    是否已定价（{@code false} = 库里 {@code customer_unit_price IS NULL}）
      *                  ⇒ 取价侧**显式可见**，绝不静默按 0 收
      */
@@ -166,7 +172,7 @@ public class ProcessingFeeCalculator {
 
         static Fee unpriced(String compositionKey, List<String> items, BigDecimal unitPrice,
                             String priceSource, BigDecimal meters, String metersSource,
-                            List<SpecialOption> specialOptions, String hint) {
+                            List<SpecialOption> specialOptions, String setKey, String hint) {
             // 组合那半没有价 ⇒ **只有那一半**记 0；选项那半**照常计入**（用户裁定 2026-09-19 /
             // issue #4594：选项是按套的独立一笔账，与组合是否定价、米数是否齐全无关）。
             // `lineAmount()` = 0 + Σ 选项价 ⇒ 订单金额/试算合计都走它，不另拼一份口径。
@@ -174,13 +180,14 @@ public class ProcessingFeeCalculator {
             return new Fee(BigDecimal.ZERO, FEE_SOURCE_UNPRICED, compositionKey, items, null,
                     unitPrice, priceSource, meters, metersSource, specialOptions, optionsTotal,
                     detail(compositionKey, items, null, unitPrice, priceSource, meters, metersSource,
-                            FEE_SOURCE_UNPRICED, BigDecimal.ZERO, specialOptions, optionsTotal, hint),
+                            FEE_SOURCE_UNPRICED, BigDecimal.ZERO, specialOptions, optionsTotal, setKey, hint),
                     hint);
         }
 
         static Fee matched(String compositionKey, List<String> items, String matchedRuleId,
                            BigDecimal unitPrice, String priceSource, BigDecimal meters,
-                           String metersSource, List<SpecialOption> specialOptions, String hint) {
+                           String metersSource, List<SpecialOption> specialOptions, String setKey,
+                           String hint) {
             // 金额按**人类可读刻度**落 detail（`8.00 × 12.30` 的裸乘积是 `98.4000`）：
             // detail 是给人与对账看的，尾随零不是信息；订单金额本身仍是精确值。
             // ⚠️ 不得用裸 `stripTrailingZeros()`：它会把 80.00 变成 `8E+1`（科学计数法进 JSON）
@@ -190,7 +197,8 @@ public class ProcessingFeeCalculator {
             return new Fee(amount, FEE_SOURCE_MATCHED, compositionKey, items, matchedRuleId,
                     unitPrice, priceSource, meters, metersSource, specialOptions, optionsTotal,
                     detail(compositionKey, items, matchedRuleId, unitPrice, priceSource, meters,
-                            metersSource, FEE_SOURCE_MATCHED, amount, specialOptions, optionsTotal, hint),
+                            metersSource, FEE_SOURCE_MATCHED, amount, specialOptions, optionsTotal,
+                            setKey, hint),
                     hint);
         }
 
@@ -209,7 +217,7 @@ public class ProcessingFeeCalculator {
                                                   String priceSource, BigDecimal meters,
                                                   String metersSource, String feeSource,
                                                   BigDecimal amount, List<SpecialOption> specialOptions,
-                                                  BigDecimal specialOptionsTotal, String hint) {
+                                                  BigDecimal specialOptionsTotal, String setKey, String hint) {
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("composition", compositionKey);
             detail.put("items", items);
@@ -224,6 +232,10 @@ public class ProcessingFeeCalculator {
             detail.put("special_options", optionDetails(specialOptions));
             detail.put("special_options_total", specialOptionsTotal);
             detail.put("hint", hint);
+            // ── #4725 新增（**只加不改**：既有 13 个键的语义与键名一字未动）──
+            // 樘窗组键（`craftLineId`，缺省 `#<行下标>`）：套身份**可审计** ——
+            // 同樘窗的多行在 detail 里 `set_key` 相同（这正是「一樘窗 = 一套」的读面凭据）。
+            detail.put("set_key", setKey);
             return detail;
         }
 
@@ -267,11 +279,30 @@ public class ProcessingFeeCalculator {
     public List<Fee> feesFor(List<?> processingInfos, Long tenantId) {
         Map<String, ProcessingFeeCombination> priced = pricedCombinations(tenantId);
         Map<String, BigDecimal> optionPrices = optionPrices(tenantId);
+        List<?> infos = processingInfos == null ? List.of() : processingInfos;
+        // #4725（用户裁定「一樘窗 = 一套」）：**同一樘窗（`craftLineId` 组）内的同名选项只收一次**。
+        // 旧口径逐行各收一次 ⇒ 一樘「布 + 纱」两行都选「加铅块」时，**1 套被收成 2 套**。
+        // `charged` 记「（樘窗组键, 选项名）」⇒ 只有**第一个**选它的那行承接（顺序确定 ⇒ 两次生成逐值相同）。
+        Set<String> charged = new HashSet<>();
         List<Fee> fees = new ArrayList<>();
-        for (Object info : processingInfos == null ? List.<Object>of() : processingInfos) {
-            fees.add(feeFor(info, priced, optionPrices));
+        for (int i = 0; i < infos.size(); i++) {
+            fees.add(feeFor(infos.get(i), priced, optionPrices, charged, windowKey(infos.get(i), i)));
         }
         return fees;
+    }
+
+    /**
+     * 樘窗组键（#4725）：{@code processing_info.craftLineId} 优先；缺省 ⇒ **本行自成樘窗**。
+     *
+     * <p>缺省用 {@code "#" + 行下标}（此刻明细行还没有 id —— 见 {@code OrderService.createOrder}）；
+     * 两个不同下标天然不等 ⇒ 没有 {@code craftLineId} 的行**各自成樘窗**（与
+     * {@code ProcessingOrderService.craftGroupKey} 的「缺省回落本行 itemId」**同一份口径**）。</p>
+     */
+    static String windowKey(Object processingInfo, int index) {
+        Map<String, Object> info = asMap(processingInfo);
+        Object raw = info == null ? null : info.get("craftLineId");
+        String craftLineId = raw == null ? null : String.valueOf(raw).trim();
+        return craftLineId == null || craftLineId.isEmpty() ? "#" + index : craftLineId;
     }
 
     /**
@@ -296,22 +327,35 @@ public class ProcessingFeeCalculator {
      */
     public static Fee feeFor(Object processingInfo, Map<String, ProcessingFeeCombination> priced,
                              Map<String, BigDecimal> optionPrices) {
+        // 单行调用 = 该行自成樘窗 ⇒ 选项各收一次（与 #4725 之前逐值相同）
+        return feeFor(processingInfo, priced, optionPrices, new HashSet<>(), windowKey(processingInfo, 0));
+    }
+
+    /**
+     * 单行取价（带**樘窗去重状态**，#4725）。
+     *
+     * @param charged   已承接的「（樘窗组键, 选项名）」集合（{@link #feesFor} 跨行共享）——
+     *                  同一樘窗内同名选项**只有第一行承接**，其余行列出但计 0（不静默）
+     * @param windowKey 本行的樘窗组键（见 {@link #windowKey}）
+     */
+    static Fee feeFor(Object processingInfo, Map<String, ProcessingFeeCombination> priced,
+                      Map<String, BigDecimal> optionPrices, Set<String> charged, String windowKey) {
         List<String> items = ProcessingFeeQueryService.featureNames(processingInfo);
         String compositionKey = ProcessingFeeCombinationCommandService.compositionKey(items);
         BigDecimal meters = meters(processingInfo);
         String metersSource = meters == null ? null : metersSource(processingInfo);
         // 选项那半**先算**（issue #4594）：它是按套的独立一笔账 ⇒ 组合那半走哪条分支都不影响它
-        List<SpecialOption> specialOptions = specialOptions(processingInfo, optionPrices);
+        List<SpecialOption> specialOptions = specialOptions(processingInfo, optionPrices, charged, windowKey);
         if (compositionKey.isEmpty()) {
             return Fee.unpriced(compositionKey, List.of(), null, null, meters, metersSource,
-                    specialOptions,
+                    specialOptions, windowKey,
                     "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。"
                             + "若这单本该有加工费，请确认下单时是否漏选了加工项");
         }
         ProcessingFeeCombination row = priced == null ? null : priced.get(compositionKey);
         if (row == null || row.getUnitPrice() == null) {
             return Fee.unpriced(compositionKey, ProcessingFeeQueryService.itemsOf(compositionKey),
-                    null, null, meters, metersSource, specialOptions,
+                    null, null, meters, metersSource, specialOptions, windowKey,
                     String.format("选配组合「%s」在「加工费组合」里没有价 ⇒ 本行**组合那半**按 0 计（未定价），"
                                     + "**不套任何默认价**。请去「加工费管理」(%s) 为该组合定价，"
                                     + "或确认这些加工项不该组合收费",
@@ -320,14 +364,14 @@ public class ProcessingFeeCalculator {
         List<String> normalizedItems = ProcessingFeeQueryService.itemsOf(compositionKey);
         if (meters == null) {
             return Fee.unpriced(compositionKey, normalizedItems, row.getUnitPrice(), row.getSource(),
-                    null, null, specialOptions,
+                    null, null, specialOptions, windowKey,
                     String.format("选配组合「%s」已定价 ¥%s/米，但本行**缺加工费米数** ⇒ **组合那半**按 0 计。"
                                     + "加工费米数 = 该樘窗主布行米数（算料侧给出，键 `processingMeters`）"
                                     + "⇒ 请补算料米数后重下单",
                             compositionKey, row.getUnitPrice().toPlainString()));
         }
         return Fee.matched(compositionKey, normalizedItems, row.getId(), row.getUnitPrice(),
-                row.getSource(), meters, metersSource, specialOptions,
+                row.getSource(), meters, metersSource, specialOptions, windowKey,
                 unpricedOptionsHint(specialOptions));
     }
 
@@ -340,14 +384,29 @@ public class ProcessingFeeCalculator {
      */
     static List<SpecialOption> specialOptions(Object processingInfo,
                                               Map<String, BigDecimal> optionPrices) {
+        // 单行调用 = 该行自成樘窗（选项各收一次）
+        return specialOptions(processingInfo, optionPrices, new HashSet<>(), windowKey(processingInfo, 0));
+    }
+
+    /**
+     * 选中特殊选项的逐项取价（带**樘窗去重**，#4725）。
+     *
+     * <p>「一樘窗 = 一套」（用户裁定 2026-09-20）：同一樘窗（{@code craftLineId} 组）里**同名选项
+     * 只收一次** —— 承接的那一行 {@code sets = 1}，同樘窗其它行 {@code sets = 0} 且金额 0
+     * （**选项照列**：名称 / 单价 / 定价态可见 ⇒ 不静默吞掉商家的选择）。</p>
+     */
+    static List<SpecialOption> specialOptions(Object processingInfo, Map<String, BigDecimal> optionPrices,
+                                              Set<String> charged, String windowKey) {
         List<String> names = specialOptionNames(processingInfo);
         List<SpecialOption> options = new ArrayList<>();
         for (String name : names) {
             // 精确相等匹配（**不得**用 contains：错一个字 ⇒ 静默少收/多收钱）
             BigDecimal unitPrice = optionPrices == null ? null : optionPrices.get(name);
             boolean priced = unitPrice != null;
-            options.add(new SpecialOption(name, unitPrice, 1,
-                    priced ? unitPrice : BigDecimal.ZERO, priced));
+            // 承接判据 = 「（樘窗组键, 选项名）」首次出现；同樘窗内重复 ⇒ 本行不承接（sets 0、金额 0）
+            boolean chargedHere = charged.add(windowKey + '\u0000' + name);
+            options.add(new SpecialOption(name, unitPrice, chargedHere ? 1 : 0,
+                    priced && chargedHere ? unitPrice : BigDecimal.ZERO, priced));
         }
         // 按**全名**的 Unicode 码点升序（`String` 自然序 = UTF-16 码元序；本域全是 BMP 字符
         // ⇒ 与码点序逐值一致）—— 与 `compositionKey` 的 `TreeSet<String>` **同源**，不自造第二种口径。
