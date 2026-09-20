@@ -4,6 +4,9 @@ package com.migao.admin.controller;
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.service.ClientRequestIdService;
+import com.migao.admin.service.ProductionScanCompleteService;
+import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
 import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.worker.WorkerSessionService;
@@ -61,6 +64,10 @@ class WorkerProductionControllerTest {
     private ProductionService productionService;
     @Mock
     private WorkerSessionService workerSessionService;
+    @Mock
+    private ProductionScanService productionScanService;
+    @Mock
+    private ProductionScanCompleteService productionScanCompleteService;
 
     private MockMvc mockMvc;
 
@@ -71,7 +78,8 @@ class WorkerProductionControllerTest {
     void setUp() {
         TenantContext.setTenantId(TENANT);
         WorkerProductionController controller =
-                new WorkerProductionController(productionService, workerSessionService);
+                new WorkerProductionController(productionService, workerSessionService,
+                        productionScanService, productionScanCompleteService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -177,5 +185,52 @@ class WorkerProductionControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"qty\":1,\"qualified_qty\":1,\"work_type\":\"normal\"}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("扫码解析（工人路径，切片 ②）：无 session ⇒ 401；有 session ⇒ 复用同一份 resolve")
+    void scanRequiresWorkerSessionAndReusesResolve() throws Exception {
+        when(workerSessionService.resolveIdentity(any())).thenReturn(null);
+        mockMvc.perform(get("/api/worker/production/scan").param("token", "t-1"))
+                .andExpect(status().isUnauthorized());
+        verify(productionScanService, never()).resolve(any(), any(), any());
+
+        when(workerSessionService.resolveIdentity("sess-1")).thenReturn(ZHANG);
+        when(productionScanService.resolve("t-1", null, TENANT))
+                .thenReturn(Map.of("granularity", "set_position", "set_no", "CSO-001"));
+        mockMvc.perform(get("/api/worker/production/scan").param("token", "t-1")
+                        .header(WorkerSessionService.SESSION_HEADER, "sess-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.set_no").value("CSO-001"));
+    }
+
+    @Test
+    @DisplayName("🔴 扫码完成：无 session ⇒ 401 不进服务层；有 session ⇒ 传下去的是 **server_session** 身份")
+    void completeByScanPassesServerResolvedIdentity() throws Exception {
+        when(workerSessionService.resolveIdentity(any())).thenReturn(null);
+        mockMvc.perform(post("/api/worker/production/scan/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"t-1\",\"worker_id\":\"worker-li\",\"worker_name\":\"李四\"}"))
+                .andExpect(status().isUnauthorized());
+        verify(productionScanCompleteService, never()).complete(any(), any(), any(), any());
+
+        when(workerSessionService.resolveIdentity("sess-1")).thenReturn(ZHANG);
+        when(productionScanCompleteService.complete(any(), eq(TENANT), eq("key-1"), any()))
+                .thenReturn(Map.of("operation_id", "op-1", "done_qty", 11, "identity_source",
+                        WorkerIdentity.SOURCE_SERVER_SESSION));
+        mockMvc.perform(post("/api/worker/production/scan/complete")
+                        .header(WorkerSessionService.SESSION_HEADER, "sess-1")
+                        .header(ClientRequestIdService.HEADER, "key-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"t-1\",\"worker_id\":\"worker-li\",\"worker_name\":\"李四\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.identity_source").value(WorkerIdentity.SOURCE_SERVER_SESSION));
+
+        ArgumentCaptor<WorkerIdentity> captor = ArgumentCaptor.forClass(WorkerIdentity.class);
+        verify(productionScanCompleteService).complete(any(), eq(TENANT), eq("key-1"), captor.capture());
+        assertThat(captor.getValue().workerId())
+                .as("HTTP 层传下去的必须是登录者（body 里的 worker-li 不参与）")
+                .isEqualTo("worker-zhang");
+        assertThat(captor.getValue().source()).isEqualTo(WorkerIdentity.SOURCE_SERVER_SESSION);
     }
 }

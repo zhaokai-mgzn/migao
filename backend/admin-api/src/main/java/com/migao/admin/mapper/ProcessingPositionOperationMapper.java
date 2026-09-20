@@ -46,6 +46,32 @@ public interface ProcessingPositionOperationMapper extends BaseMapper<Processing
                                   @Param("updatedAt") OffsetDateTime updatedAt);
 
     /**
+     * 完工时刻快照（V92 列 {@code done_at}，切片 ② / issue #4698；设计 §4.3 / §5.2）。
+     *
+     * <p><b>A 模式</b>（「做完扫一次 = 完工」）的唯一必需新时序列：卡点判据（切片 ③）读它算
+     * 「上道几点完成、等了多久」。🔴 语义 = <b>本道真正做完的那一刻</b>（{@code done_qty ≥ qty}，
+     * 与 {@code ProductionService.isDone} 同口径）—— <b>不</b>用 {@code updated_at} 冒充
+     * （它会被任何后续更新污染：改单价 / 补报身份 / 重排都会写它 ⇒「完成时刻」静默漂移）。</p>
+     *
+     * <p><b>幂等由 SQL 机械保证</b>（不靠调用方自觉）：{@code COALESCE(done_at, #{doneAt})} ——
+     * 只有第一次落笔生效，同键重放 / 二次完成 / 并发重复调用都**不会**改写已记下的完成时刻。
+     * 谓词 {@code done_qty >= qty} 保证「部分报工（6/11 米）」<b>不</b>落 {@code done_at}：
+     * 部分报工也把 {@code status} 置 {@code done}（既有偏离），但没做完就不是完工时刻。</p>
+     *
+     * <p>🔴 只写 {@code done_at} 一列：{@code done_qty} / {@code status} 由
+     * {@link #advanceDoneQtyIfUnchanged} 的 CAS 独占，{@code unit_price} / {@code factor} /
+     * 报工历史是工资凭证（红线）—— 本语句**绝不**出现它们。</p>
+     *
+     * @return 1 = 本次落笔（或已由前一次落笔，COALESCE 空操作）；0 = 未做完 / 已软删 / 跨租户
+     */
+    @Update("UPDATE processing_position_operations SET done_at = COALESCE(done_at, #{doneAt}) "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0 "
+            + "AND COALESCE(done_qty, 0) >= COALESCE(qty, 0)")
+    int recordCompletionIfDone(@Param("id") String id,
+                               @Param("tenantId") Long tenantId,
+                               @Param("doneAt") OffsetDateTime doneAt);
+
+    /**
      * 报工身份快照（V98，issue #4733）：把「谁报的」写进工序实例（V92 预留的
      * {@code worker_id}/{@code worker_name}），与 {@code production_work_logs} 的那两列**同源**。
      *

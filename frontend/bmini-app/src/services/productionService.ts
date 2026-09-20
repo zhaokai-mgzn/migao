@@ -127,6 +127,79 @@ export interface ReportResult {
 }
 
 /**
+ * 扫码解析结果（切片 ① 只读面 → 切片 ② 接线；设计 §2.3 / §2.6 / §3）。
+ *
+ * <p>与服务端 `ProductionScanService.resolve` 的响应**逐字同源**（商家端 `GET /api/admin/production/scan`
+ * 与工人端 `GET /api/worker/production/scan` 是同一份实现 ⇒ 一个类型够用，不新造第二套形状）。</p>
+ */
+export interface ScanPositionView {
+  order_item_id: string
+  position_kind?: string | null
+  position_name?: string | null
+}
+
+/** 一屏上的「这次报哪一道」（切片 ② 的 A 模式：系统推断 + 一键改）。 */
+export interface ScanOperationView {
+  operation_id: string
+  logical_name?: string | null
+  position?: string | null
+  group_name?: string | null
+  unit?: string | null
+  /** 应做数量（**不是**剩余：剩余 = qty − 已报，由服务端在缺省时算） */
+  qty: number
+  /** null = **未定价**（≠ 0 元，issue #4696）：可照常完工，但不产生计件金额 */
+  unit_price: number | null
+  seq?: number | null
+  status?: string | null
+  /** inferred = 系统推断的下一道；picked = 工人一键改 */
+  determined_by?: 'inferred' | 'picked' | null
+  /** true = 本部位已做完，系统换到了**套级**工序（打卷/装袋/发货） */
+  rerouted?: boolean
+  /** 套级回落时的承载部位（工人知道去哪做） */
+  carrier?: ScanPositionView | null
+}
+
+/** 一键改的候选（与默认项同一层级） */
+export interface ScanAlternativeView {
+  operation_id: string
+  logical_name?: string | null
+  position?: string | null
+  seq?: number | null
+  qty: number
+  unit?: string | null
+}
+
+export interface ScanResolveResult {
+  /** set_position = 新码（套 × 部位，部位由码给出）；order = 旧码降级（**必须**选套 + 选部位） */
+  granularity: 'set_position' | 'order'
+  order_id: string
+  processing_order_no?: string | null
+  set_no?: string | null
+  set_index?: number | null
+  position?: ScanPositionView | null
+  /** 推断出的工序；null = 未确定（无待做 / 本套已完成）⇒ **服务端拒绝记账** */
+  operation: ScanOperationView | null
+  alternatives: ScanAlternativeView[]
+  set_progress?: ProductionProgress | null
+  /** null = **未知**（旧码降级判不出是哪一套），不是 false */
+  completed?: boolean | null
+  completed_at?: string | null
+  /** 非空 = 旧码降级，必须由工人补齐（绝不默认取第 1 套） */
+  needs_selection: string[]
+}
+
+/** POST /scan/complete 的 data：既有报工结果 + 一屏闭环（套号/部位/进度/下一道） */
+export interface ScanCompleteResult extends ReportResult {
+  set_no?: string | null
+  position?: ScanPositionView | null
+  rerouted?: boolean
+  set_progress?: ProductionProgress | null
+  set_completed?: boolean | null
+  /** 下一道待做工序；null = 未知（尽力而为：缺它**不影响**本次报工已成功） */
+  next_operation?: ScanOperationView | null
+}
+
+/**
  * 后端业务响应：success=false 时 message 为可展示文案
  * （兼容 {message} 与 {error:{message}} 两种后端错误形态）
  */
@@ -230,6 +303,79 @@ export async function reportOperation(
       // 工人身份到不了管理后台。身份随 `X-Worker-Session-Id` 走，**不在 body 里**。
       `/api/worker/production/orders/${encodeURIComponent(orderId)}/operations/${encodeURIComponent(operationId)}/report`,
       payload,
+      {
+        baseURL: API_BASE_URL,
+        headers: {
+          [CLIENT_REQUEST_ID_HEADER]: requestId || newReportRequestId(),
+          ...workerSessionHeaders(),
+        },
+      },
+    )
+    return toResponse(res, '报工失败，请重试')
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error?.data?.message || error?.message || '报工失败，请重试',
+      // 无 HTTP 状态码 = 传输层失败（断网/超时）；有状态码 = 服务端已答复（业务拒绝）
+      offline: !error?.statusCode,
+    }
+  }
+}
+
+/**
+ * 扫码解析 + 工序推断（**只读**，切片 ① 的实现；切片 ② 在工人端接线）。
+ *
+ * <p>🔴 新码优先：命中 {@code processing_set_part_tokens} ⇒ 返回（套，部位）+ 系统推断的下一道
+ * 待做工序（部位由**码**给出，工人不选）；未命中只**回落**既有四形态（旧码 ⇒
+ * {@code granularity="order"} + {@code needs_selection}，**绝不默认取第 1 套**）。</p>
+ *
+ * <p>工人路径：工人身份随 `X-Worker-Session-Id` 走（`/api/admin/**` 工人到不了）。</p>
+ *
+ * @param operationId 可选 = 工人「一键改」显式指定（必须属于本次扫码的部位/套，否则 422）
+ */
+export async function scanResolve(
+  token: string,
+  operationId?: string,
+): Promise<ProductionResponse<ScanResolveResult>> {
+  try {
+    const query = operationId ? `&operation_id=${encodeURIComponent(operationId)}` : ''
+    const res = await get<ProductionResponse<ScanResolveResult>>(
+      `/api/worker/production/scan?token=${encodeURIComponent(token)}${query}`,
+      { baseURL: API_BASE_URL, headers: workerSessionHeaders() },
+    )
+    return toResponse(res, '无法识别该二维码，请手动输入单号')
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error?.data?.message || error?.message || '无法识别该二维码，请手动输入单号',
+      offline: !error?.statusCode,
+    }
+  }
+}
+
+/**
+ * 扫码**完成**（A 模式闭环的唯一写入口，切片 ② / 设计 §4 / §5）。
+ *
+ * <p>「做完扫一次 = 完工」：请求只带码 + 工序（系统推断或一键改），**不带数量**
+ * —— 数量缺省由服务端取「剩余应做」（零额外交互）。要改数量请用既有工序列表里的
+ * 「完成报工」（同一条记账核，见 `ProductionService.applyReport`）。</p>
+ *
+ * <p>服务端一次事务做四件事：防呆 → 工序确定性校验（**未确定 ⇒ 拒绝记账**）→ 写报工明细（数量 ×
+ * 快照单价 + 价态）→ CAS 推进 `done_qty`/`status` + `done_at`（A 模式完工时刻）→ 必完全绿则加工单完工。
+ * 身份由服务端从工人 session 解（body 里传 `worker_id` 无效）。</p>
+ *
+ * <p>幂等：每次调用生成一个幂等键随请求头发出（重试复用同一个键 ⇒ 服务端不重复计件）；
+ * **连点**由调用方的 {@link reportInFlightLock} 拦。</p>
+ */
+export async function completeByScan(
+  token: string,
+  operationId: string,
+  requestId?: string,
+): Promise<ProductionResponse<ScanCompleteResult>> {
+  try {
+    const res = await post<ProductionResponse<ScanCompleteResult>>(
+      '/api/worker/production/scan/complete',
+      { token, operation_id: operationId },
       {
         baseURL: API_BASE_URL,
         headers: {
@@ -362,4 +508,4 @@ export async function shipOrder(
   }
 }
 
-export default { getOrderOperations, getOrderPiecework, reportOperation, shipOrder }
+export default { getOrderOperations, getOrderPiecework, reportOperation, shipOrder, scanResolve, completeByScan }
