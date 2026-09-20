@@ -114,6 +114,22 @@ probe_ready() {
         return 1
       fi
       ;;
+    worker-h5-node-tests)
+      # 工人端 H5（issue #4716）：**零依赖**纯 ES module + Node 内置 test runner
+      # ⇒ 探针只探 node 本身（没有 node_modules 可探，也不需要）。
+      # ⚠️ 不用 npx：与 admin-web 同款教训 —— 无本地依赖时 npx 会去 npm 拉同名包（假绿）。
+      if ! command -v node >/dev/null 2>&1; then
+        READY_MISSING="缺 node（工人端 H5 测试用 Node 内置 test runner，无 node_modules 依赖）"
+        READY_HINT="安装 Node 18+（实测 CI 用 node 20；本机 v24）"
+        return 1
+      fi
+      if ! node --test --test-reporter=dot --test-only /dev/null >/dev/null 2>&1 && \
+         ! node --help 2>&1 | grep -q -- '--test'; then
+        READY_MISSING="node 不支持 --test（需 Node 18+）"
+        READY_HINT="升级 Node 到 18+"
+        return 1
+      fi
+      ;;
     admin-api)
       if [ ! -x "$ROOT/backend/admin-api/mvnw" ]; then
         READY_MISSING="缺 $ROOT/backend/admin-api/mvnw（仓库自带；缺失说明工作区被破坏）"
@@ -404,6 +420,7 @@ case "$MODE" in
     report_env ai-agent "ai-agent 单测"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
     report_env admin-web-vitest "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
     report_env admin-web-tsc "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
+    report_env worker-h5-node-tests "worker-h5 页面测试（Node 内置 runner）" bash -c "cd '$ROOT' && node --test frontend/worker-h5/tests/\*.test.mjs"
     report "QA Growth Gate 预检"  gate_check
     report "UI 回退检测"        bash -c "cd '$ROOT' && ./check-ui-regression.sh"
     # 与 CI 的 Case Coverage Gate 同一脚本同一参数（判据单一实现在 scripts/case_coverage.py）
@@ -415,6 +432,7 @@ case "$MODE" in
     report_env ai-agent "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest $AI_AGENT_TESTS"
     report_env admin-web-vitest "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
     report_env admin-web-tsc "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
+    report_env worker-h5-node-tests "worker-h5 页面测试（Node 内置 runner）" bash -c "cd '$ROOT' && node --test frontend/worker-h5/tests/\*.test.mjs"
     report "QA Growth Gate 预检"  gate_check
     report "UI 回退检测"        bash -c "cd '$ROOT' && ./check-ui-regression.sh"
     # 与 CI 的 Case Coverage Gate 同一脚本同一参数（判据单一实现在 scripts/case_coverage.py）
@@ -423,6 +441,7 @@ case "$MODE" in
   frontend)
     report_env admin-web-vitest "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
     report_env admin-web-tsc "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
+    report_env worker-h5-node-tests "worker-h5 页面测试（Node 内置 runner）" bash -c "cd '$ROOT' && node --test frontend/worker-h5/tests/\*.test.mjs"
     ;;
   backend)
     report_env admin-api "admin-api 全量"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test"
