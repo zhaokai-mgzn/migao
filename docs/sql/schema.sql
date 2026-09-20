@@ -1465,35 +1465,6 @@ CREATE INDEX IF NOT EXISTS idx_processing_fee_combination_versions_combination
 COMMENT ON TABLE processing_fee_combination_versions IS
     '加工费组合定价版本账（V68，issue #4386）：单价真的变了才追加一行（同值重复提交是幂等空操作）；当前价 = 最新版本行';
 
--- 信号种子（tenant_id=1；**逐条**抄自迁移前的 ProcessingOrderService 两张常量关键字表：
--- 3 帘种 + 7 工艺 = 10 行。顺序即语义：「帘头」在帘种表最前（防「帘头纱」被判纱帘）、
--- 在工艺表最后（工艺侧兜底）⇒ 不得为好看重排。）
-INSERT INTO production_route_signals
-    (id, tenant_id, signal, curtain_type, craft, priority, status)
-VALUES
-  ('sig-v60-01', 1, '帘头', '帘头', NULL,   1, 'active'),
-  ('sig-v60-02', 1, '纱',   '纱帘', NULL,   2, 'active'),
-  ('sig-v60-03', 1, '布',   '布帘', NULL,   3, 'active'),
-  ('sig-v60-04', 1, '韩褶', NULL,   '韩褶',  1, 'active'),
-  ('sig-v60-05', 1, '打孔', NULL,   '打孔',  2, 'active'),
-  ('sig-v60-06', 1, '四爪钩', NULL, '四爪钩', 3, 'active'),
-  ('sig-v60-07', 1, '四叉钩', NULL, '四爪钩', 4, 'active'),
-  ('sig-v60-08', 1, '穿杆', NULL,   '穿杆',  5, 'active'),
-  ('sig-v60-09', 1, '平幔', NULL,   '平幔',  6, 'active'),
-  ('sig-v60-10', 1, '帘头', NULL,   '平幔',  7, 'active')
-ON CONFLICT DO NOTHING;
-
--- 信号映射层的终态修正（V63，issue #4362 阶段 1 ② / issue #4365 裁定）：
--- 「四爪钩/四叉钩」是**加工项（配件）**，工艺（安装工艺＝打褶/悬挂方式）**单值** ⇒ 这两行指向
--- **主线工艺**（韩褶），不再是独立路线键。上面那段 V60 种子**一字不动**（它是迁移前的常量表快照，
--- 由 ProductionRouteSignalMigrationTest 判据 1 钉住）⇒ 终态 = 「V60 种子 + 本 UPDATE」，
--- 与迁移链在存量库上的结果**逐行等价**（bootstrap 只写 schema.sql 的部署形态也拿到同一终态）。
-UPDATE production_route_signals
-   SET craft = '韩褶'
- WHERE signal IN ('四爪钩', '四叉钩')
-   AND craft = '四爪钩'
-   AND deleted = 0;
-
 -- ================================================
 -- 9.6 智能每日经营简报（issue #3468，V44 迁移）
 -- ================================================
@@ -2089,6 +2060,45 @@ INSERT INTO roles (id, tenant_id, name, code, description, status) VALUES
   ('role_customer_service', 1, '客服', 'customer_service', '客服工作台权限', 'active'),
   ('role_super_admin', 1, '超级管理员', 'super_admin', '平台级超管权限', 'active')
   ON CONFLICT (id) DO NOTHING;
+
+-- ⚠️ 本段（V60 信号种子 + V63 终态修正）**必须排在租户种子之后**（issue #4762）。
+-- 它引用 `production_route_signals_tenant_id_fkey → tenants(id)`；本文件曾把它放在第 9 节
+-- （`processing_fee_combination_versions` 之后），那时租户种子还没跑 ⇒ `ON_ERROR_STOP=1`
+-- 下建库**在这里中止**（`docker-entrypoint-initdb.d/001_schema.sql` 正是该模式：entrypoint 带
+-- `-v ON_ERROR_STOP=1`，而 `deploy/docker-compose.yml` 把本文件挂成该 initdb 脚本）
+-- ⇒ 本地/CI docker 栈建库中止。守卫：tests/unit_ci_workflows/test_schema_bootstrap_order.py
+-- （机械判据 = `ON_ERROR_STOP=1` 跑全文 exit 0 + 零 ERROR + 本段落真跑到）。
+-- ⚠️ 本段**只调顺序、内容一字未改**；`UPDATE` 必须紧随 `INSERT`（它的 WHERE 命中的正是
+-- `INSERT` 刚种下的 `四爪钩/四叉钩` 两行，分开 = 终态漂移）。
+
+-- 信号种子（tenant_id=1；**逐条**抄自迁移前的 ProcessingOrderService 两张常量关键字表：
+-- 3 帘种 + 7 工艺 = 10 行。顺序即语义：「帘头」在帘种表最前（防「帘头纱」被判纱帘）、
+-- 在工艺表最后（工艺侧兜底）⇒ 不得为好看重排。）
+INSERT INTO production_route_signals
+    (id, tenant_id, signal, curtain_type, craft, priority, status)
+VALUES
+  ('sig-v60-01', 1, '帘头', '帘头', NULL,   1, 'active'),
+  ('sig-v60-02', 1, '纱',   '纱帘', NULL,   2, 'active'),
+  ('sig-v60-03', 1, '布',   '布帘', NULL,   3, 'active'),
+  ('sig-v60-04', 1, '韩褶', NULL,   '韩褶',  1, 'active'),
+  ('sig-v60-05', 1, '打孔', NULL,   '打孔',  2, 'active'),
+  ('sig-v60-06', 1, '四爪钩', NULL, '四爪钩', 3, 'active'),
+  ('sig-v60-07', 1, '四叉钩', NULL, '四爪钩', 4, 'active'),
+  ('sig-v60-08', 1, '穿杆', NULL,   '穿杆',  5, 'active'),
+  ('sig-v60-09', 1, '平幔', NULL,   '平幔',  6, 'active'),
+  ('sig-v60-10', 1, '帘头', NULL,   '平幔',  7, 'active')
+ON CONFLICT DO NOTHING;
+
+-- 信号映射层的终态修正（V63，issue #4362 阶段 1 ② / issue #4365 裁定）：
+-- 「四爪钩/四叉钩」是**加工项（配件）**，工艺（安装工艺＝打褶/悬挂方式）**单值** ⇒ 这两行指向
+-- **主线工艺**（韩褶），不再是独立路线键。上面那段 V60 种子**一字不动**（它是迁移前的常量表快照，
+-- 由 ProductionRouteSignalMigrationTest 判据 1 钉住）⇒ 终态 = 「V60 种子 + 本 UPDATE」，
+-- 与迁移链在存量库上的结果**逐行等价**（bootstrap 只写 schema.sql 的部署形态也拿到同一终态）。
+UPDATE production_route_signals
+   SET craft = '韩褶'
+ WHERE signal IN ('四爪钩', '四叉钩')
+   AND craft = '四爪钩'
+   AND deleted = 0;
 
 -- ================================================
 -- 工序库 / 工艺路线模板种子（V54，issue #4116 P0-2）
