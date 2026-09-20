@@ -1516,8 +1516,18 @@ cases:
     data_checks:
       - "最后一轮（发图轮）不得出现任何 error 事件；runner 最后一轮报错即判整个用例失败（防假验收：前面轮次命中 expectation 掩盖图片轮崩溃）"
       - "图片使用云 dev OSS 资产（vision 模型可抓取；picsum.photos 在 vision 供应商侧抓取失败会误报『图片分析暂时无法完成』）"
+    # ── 声明层前置自断言（issue #4876；形态与 API-010 / UI-019 / CH-018 / CH-027 同款）──
+    # 本用例是**两轮**用例（`needs_precondition_assertion` 判定 ≥2 轮必须有），而它真正的前置
+    # **不在**评测栈里、也不由用例自建，而是**外部资产可被抓取**：
+    # 第二轮依赖的图片托管在云 dev OSS 上，**本机可抓取**只是「vision 供应商也能抓到」的
+    # **必要不充分**条件（供应商侧的网络/鉴权不在本仓可观测范围）。
+    # 为什么不给它写一个 `_PRECONDITION_TYPES` 里的计数型探针：那六种 type 全是
+    # 「订单/商品/员工/加工项/工单/权限」的**栈内**靶子，套在「外部 URL 可达」上会造出一条
+    # **语义不符**的判据（判据与被测行为无关 = 空断言，本仓反复复发的形态）。
+    # ⇒ 如实声明，并写清**前置不成立时的错误表现**（会伪装成「线上 AttributeError 未修复」）。
+    precondition: "本用例第二轮依赖的图片资产 https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png 可被抓取（本机可达是其必要不充分条件；vision 供应商侧能否抓取不在本仓可观测范围）。前置不成立时，失败表现为「图片分析暂时无法完成 / 末轮 error」，与它真正要守的「澄清卡后发图崩溃（AttributeError）已修」**同名不同因** —— 此时该用例的红**不可归因于 agent**。"
     skip_reason: ""
-    merge_log: "issue #2884/#2887：线上会话 sess_806703a2dcca4059 澄清卡后发图崩溃（intent_router_node 对多模态 list content 调 .strip() 抛 AttributeError）修复后的真实验收用例；本机真实链路已实证 pre-fix 逐字复现 / 修复后正常走 vision"
+    merge_log: "issue #2884/#2887：线上会话 sess_806703a2dcca4059 澄清卡后发图崩溃（intent_router_node 对多模态 list content 调 .strip() 抛 AttributeError）修复后的真实验收用例；本机真实链路已实证 pre-fix 逐字复现 / 修复后正常走 vision。2026-09-21（issue #4876）：补**声明层前置自断言**（`precondition`，形态与 API-010/UI-019/CH-018/CH-027 同款）—— 本用例两轮但**从未声明过前置**，Case Trust 的 `CASE-TRUST-NO-PRECONDITION-ASSERTION` 因此长期挂着；声明内容是它真实的**外部资产依赖**（不是补一条能过的空话）。断言与 user_inputs 一字未改。"
 
   - id: CH-027
     legacy_id: ""
@@ -1931,8 +1941,9 @@ cases:
       - "默认三层合成：客户记忆 > 商家配置 > 行业标准（布帘默认定型/纱帘默认不定型、≤2.2m 单开/>2.2m 双开）"
       - "矛盾拦截：4.6m 单开→建议双开、折数不可整除自动调整、倍数<1.5 拒绝、打孔不按折数"
       - "每轮追问 ≤3 项；超过 3 轮转复尺/人工"
-    skip_reason: "[backend-contract] 澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（backend/ai-agent-service/tests/test_clarification/test_curtain_checklist.py，18 项），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）"
-    merge_log: "2026-09-17 新增（issue #3986）：M3-E 窗帘下单澄清清单引擎覆盖登记，单测覆盖。2026-09-18（issue #4120）**证据链修复**：原 traces.tests 指向不存在的 tests/test_curtain_checklist.py，且测试文件名为 curtain_checklist.py（不匹配 python_files = test_*.py）⇒ **永不被 pytest 收集**、18 个 def test_ 一个都没跑过 ⇒ 本条用例的机器证据为**零**而没有任何东西会变红。修法：文件改名 test_curtain_checklist.py（pytest tests/ -q 实测 18 passed）+ traces.tests 指向真实路径；并新增 L0 守卫 tests/unit_ci_workflows/test_eval_evidence_chain.py 锁死「traces 引用必须存在」与「以单测覆盖为由 skip 的文件必须真被收集」（同批修掉存量 11 条幽灵 traces.tests + 7 条幽灵 traces.ci）；断言未动"
+      - "**用料公式问项（issue #4873 / #4876）**：引导清单的问项 `pleat_spacing`（褶距，industry 默认 0.1）**已退役**，由 `formula`（**用料公式**，industry 默认 `pleat` = 韩折公式）取代 —— 值域 = 算料引擎 `curtain_calc.FORMULA_LABELS` 的键（`pleat` / `fullness`）；`to_craft_spec` 不再映射 `pleatSpacing`（`pleat_spacing` / `pleatSpacing` 两种写法即使传进来也**不产出**该键）。红证：把问项改回 `pleat_spacing` ⇒ `test_merged_defaults_never_yields_pleat_spacing` 与 `test_craft_spec_never_emits_retired_pleat_spacing_keys` 红。"
+    skip_reason: "[backend-contract] 澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（backend/ai-agent-service/tests/test_clarification/test_curtain_checklist.py，**28 项** —— ⚠️ 原写「18 项」，该计数在 #4873/#4876 之前就已腐烂；2026-09-21 用 `--collect-only -q | grep -c '::'` 实测为 28），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）"
+    merge_log: "2026-09-17 新增（issue #3986）：M3-E 窗帘下单澄清清单引擎覆盖登记，单测覆盖。2026-09-18（issue #4120）**证据链修复**：原 traces.tests 指向不存在的 tests/test_curtain_checklist.py，且测试文件名为 curtain_checklist.py（不匹配 python_files = test_*.py）⇒ **永不被 pytest 收集**、18 个 def test_ 一个都没跑过 ⇒ 本条用例的机器证据为**零**而没有任何东西会变红。修法：文件改名 test_curtain_checklist.py（pytest tests/ -q 实测 18 passed）+ traces.tests 指向真实路径；并新增 L0 守卫 tests/unit_ci_workflows/test_eval_evidence_chain.py 锁死「traces 引用必须存在」与「以单测覆盖为由 skip 的文件必须真被收集」（同批修掉存量 11 条幽灵 traces.tests + 7 条幽灵 traces.ci）；断言未动 2026-09-21（issue #4876）：① `skip_reason` 里的单测计数「18 项」→**实测 28 项**（该数字与 #4120 修的那一刻就已不符，属「注释里的数字会腐烂」家族）；② 新增一条判定「用料公式问项」（#4873 把 `pleat_spacing` 换成 `formula`）——**唯一映射点** `CHECKLIST_TO_CRAFT_SPEC` 随之改指 `formula`。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_clarification/test_curtain_checklist.py"
