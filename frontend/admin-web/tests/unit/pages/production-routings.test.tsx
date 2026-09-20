@@ -234,6 +234,22 @@
 //      （`delivery-section` / `matrix-workshop-toggle-裁剪` / `fabric-sheet-section` / `seed-templates`
 //      均 `Unable to find an element`；就绪度② `data-state` 仍是 `done`；`getOperationLayers` 恒未被调用）
 //      ⇒ 实现后全文件 170/170 绿。
+// ㉜ **抽屉去重：逐行那一对「停用 / 删除」退场 + footer 目标行统一**（issue #4947；用户裁定
+//    「抽屉里每行的停用/删除按钮和底部的重复了」）：
+//    - **删什么**：抽屉正文每一行里那一对 `variant-disable-{id}` / `variant-delete-{id}` **整对退场**
+//      （连同 `variant-delete-modal` 那一套弹框与 `variant-delete-reasons`）—— 同一屏两个「删除」
+//      正是用户报的形态；**保留** footer 的 `operations-manage-disable` / `operations-manage-delete`
+//      与空态的 `operations-manage-delete-empty`（#4674 B 要求空态给两个出路，本单不动它）；
+//    - **信息不许丢**：行内那句「删除后历史报工不受影响」**搬到 footer 的「删除」旁边**；
+//    - **目标行统一**（本单的实质修复）：footer 的停用/删除按**抽屉当前展示的那一行**
+//      （`manageTargetOp` = 第一个非 `foreign` 变体对应的库行；查不到才回落 `manageOpEntry.op`）
+//      寻址 —— 改前按**逻辑名的首行**（`fallbackOpByName`）寻址，同名多行（`布三边` / `纱三边`）
+//      时会「看见 A、动的是 B」；判据见 #4947-②（读面指 `op-b` ⇒ 必须动 `op-b`、不得动首行 `op-a`）；
+//    - **用例迁移（不留指向已删 testid 的死判据）**：驱动逐行路径的用例全部改走 footer
+//      （⑰-⑩ / ㉖-④ / ⑰-⑬ / ⑰-⑮ / ⑲-⑤ / #4665-C ×2）；**删除**三条与 footer 用例逐字重复的：
+//      ⑰-⑭（⇒ ㉙-③ 同场景：detach 删除 + 刷新）、#4665-B（⇒ ㉙-③ + #4692-A：一次请求 + 弹框说清后果）、
+//      #4692-D（⇒ #4692-A 同夹具同形态、断言更强）；㉙-⑧ 改判为 **#4947-①**（逐行入口**已退场**，
+//      不再断言「一个都没少」—— 那条断言随本单**反转**）。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -694,6 +710,51 @@ const POSITIONS_WITH_TEST22 = [
 const POSITIONS_TEST22_MISLINKED = [
   ...POSITIONS,
   { id: 'pos-测试22-布帘', operation: '测试22', position: '布帘', unit_price: 1, applicable: true, variant_operation_id: 'op-别的工序', unit: '件', group: '其他', scope: 'position', is_must_finish: false },
+]
+
+/**
+ * **真形态**工序库夹具（issue #4642 读面归一：`name` = **逻辑工序名**，库口径原名走 `library_name`）
+ * —— issue #4947 的「抽屉层目标行」口径必须在真形态下驱动。
+ *
+ * <p>为什么不能沿用上面那份 `CATALOG`（库口径旧名 `精裁-布` / `韩褶-布`）：抽屉层「停用 / 删除」
+ * 按**逻辑名**寻址（`fallbackOpByName`）⇒ 在旧名夹具下这些工序的 footer 入口**恒禁用**
+ * （`!manageOpEntry`），根本驱动不了写面。旧名那份留着给不关心写面的用例（如 ⑰-⑫ 的空态）。</p>
+ *
+ * <p>🔴 `三边` 是**同名两行**的形态（`布三边` = `op-a` / `纱三边` = `op-b`）：按逻辑名取到的
+ * **首行**与价目读面**指到的那一行**不是同一行 —— 这正是 issue #4947 要治的「两把尺」。</p>
+ */
+const LOGICAL_CATALOG = {
+  total: 4,
+  groups: [
+    {
+      group: '裁剪',
+      operations: [
+        { id: 'op-精裁-布', library_name: '精裁-布', name: '精裁', group: '裁剪', position: '布帘', scope: 'position', unit: '套', unit_price: 8.5, is_must_finish: true, is_start_marker: true, source: '占位待确认' },
+      ],
+    },
+    {
+      group: '车位',
+      operations: [
+        { id: 'op-a', library_name: '布三边', name: '三边', group: '车位', position: '布帘', scope: 'position', unit: '米', unit_price: 1.2, is_must_finish: false, is_start_marker: false },
+        { id: 'op-b', library_name: '纱三边', name: '三边', group: '车位', position: '纱帘', scope: 'position', unit: '米', unit_price: 1.2, is_must_finish: false, is_start_marker: false },
+      ],
+    },
+    {
+      group: '后道',
+      operations: [
+        { id: 'op-车被', library_name: '车被-布', name: '车被', group: '后道', position: '布帘', scope: 'position', unit: '件', unit_price: 0, is_must_finish: true, is_start_marker: false },
+      ],
+    },
+  ],
+}
+
+/**
+ * issue #4947 的**口径夹具**：逻辑名 `三边` 在工序库里有**两行**（`布三边` = `op-a` /
+ * `纱三边` = `op-b`），而**价目读面**（`GET /operation-positions`；#4886 起一道工序一行）
+ * 指到的是**第二行** `op-b` ⇒ 「按逻辑名的首行」与「抽屉当前展示的那一行」**不是同一行**。
+ */
+const POSITIONS_READFACE_OP_B = [
+  { id: 'pos-三边-布帘', operation: '三边', position: '布帘', unit_price: 1.2, applicable: true, variant_operation_id: 'op-b', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
 ]
 
 describe('工艺配置页 /production/routings（新路线模型，issue #4433 = 母单 #4423 的 P3）', () => {
@@ -1368,6 +1429,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   })
 
   it('⑰-⑩ 「管理▸」抽屉：条目带 分组·单位·作用域·必完 + 商家话解释；改档各只带自己的字段', async () => {
+    // issue #4947：抽屉层写面按**逻辑名**寻址（真形态）⇒ 用真形态夹具驱动
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(LOGICAL_CATALOG))
     await openManage('车被')
     const row = screen.getByTestId('variant-row-op-车被')
     // issue #4622 / #4886：条目主标识 = **逻辑工序名**（不是变体名，也不再是部位）
@@ -1392,14 +1455,17 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await userEvent.click(screen.getByTestId('variant-must-finish-op-车被'))
     await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-车被', { is_must_finish: false }))
 
-    // 停用走既有写面（`PUT /operations/{id}` 的 `status`）
-    await userEvent.click(screen.getByTestId('variant-disable-op-车被'))
+    // 停用走既有写面（`PUT /operations/{id}` 的 `status`）—— issue #4947：入口已**统一到抽屉 footer**
+    // （逐行那一对与 footer 重复 ⇒ 去重退场；判据见 #4947-①）
+    await userEvent.click(screen.getByTestId('operations-manage-disable'))
     await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-车被', { status: 'inactive' }))
   })
 
 
 
   it('㉖-④ 能力不减（反向护栏）：改分组 / 单位 / 作用域 / 必完 / 停用 / 删除 **六项逐条仍可用**', async () => {
+    // issue #4947：停用/删除的入口统一到 footer ⇒ 用**真形态**夹具（footer 按逻辑名寻址）
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(LOGICAL_CATALOG))
     await openManage('车被')
     const id = 'op-车被'
 
@@ -1417,19 +1483,23 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     )
     expect(Object.keys(mockUpdateOperation.mock.calls[0][1] as object)).toEqual(['group_name', 'unit'])
 
-    // ③ 改作用域 / ④ 改必完 / ⑤ 停用：各只带自己的字段（`PUT /operations/{id}`）
+    // ③ 改作用域 / ④ 改必完：各只带自己的字段（`PUT /operations/{id}`）
     await userEvent.selectOptions(screen.getByTestId(`variant-scope-${id}`), 'position')
     await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith(id, { scope: 'position' }))
     await userEvent.click(screen.getByTestId(`variant-must-finish-${id}`))
     await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith(id, { is_must_finish: false }))
-    await userEvent.click(screen.getByTestId(`variant-disable-${id}`))
+    // ⑤ 停用 / ⑥ 删除：入口已**统一到抽屉 footer**（issue #4947：逐行那一对与 footer 重复 ⇒ 退场）
+    await userEvent.click(screen.getByTestId('operations-manage-disable'))
     await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith(id, { status: 'inactive' }))
 
     // ⑥ 删除：二次确认后才发 `DELETE /operations/{id}`（逐条护栏理由的就地展示见 ⑰-⑬）
-    await userEvent.click(screen.getByTestId(`variant-delete-${id}`))
+    await userEvent.click(screen.getByTestId('operations-manage-delete'))
     expect(mockDeleteOperation).not.toHaveBeenCalled()
-    await userEvent.click(screen.getByTestId(`variant-delete-confirm-${id}`))
-    await waitFor(() => expect(mockDeleteOperation).toHaveBeenCalledWith(id))
+    await userEvent.click(await screen.findByTestId('operations-manage-delete-confirm'))
+    // ⚠️ 本行还有「做」的价目行 ⇒ 走 #4692 的 detach 那条路（与后端护栏③同一把尺）
+    await waitFor(() =>
+      expect(mockDeleteOperation).toHaveBeenCalledWith(id, { detachPositions: true }),
+    )
   })
 
   it('㉖-⑤ 抽屉标题/说明改成商家语言：以**逻辑工序名**为主标识，不出现「变体 / 工人扫码时看到的工序」', async () => {
@@ -1574,8 +1644,11 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     // ⚠️ issue #4886：条目主标识 = **逻辑工序名**（抽屉当前那道），不再是部位集合
     expect(screen.getByTestId('variant-row-op-别的工序')).toHaveTextContent('测试22')
     expect(screen.getByTestId('variant-foreign-op-别的工序')).toBeInTheDocument()
+    // issue #4947：逐行那一对「停用 / 删除」**整对退场** ⇒ 任何一行都不会再有它；
+    // 判据换成「这条 foreign 行**一个写面都没有**」（去重不得顺手把 foreign 的护栏也删掉）
     expect(screen.queryByTestId('variant-delete-op-别的工序')).toBeNull()
     expect(screen.queryByTestId('variant-disable-op-别的工序')).toBeNull()
+    expect(screen.queryByTestId('variant-meta-edit-op-别的工序')).toBeNull()
   })
 
   it('㉙-⑥ 抽屉层「停用」走既有 `PUT /operations/{id}` 的 `status`（与逐行停用同一写面）', async () => {
@@ -1600,18 +1673,58 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(reasons).toHaveTextContent('不能停用')
   })
 
-  it('㉙-⑧ 回归：有关联的工序（`精裁`）**照样**有抽屉层入口 + 逐行入口**一个都没少**（既有断言不放宽）', async () => {
+  it('#4947-① 抽屉层「停用 / 删除」**只剩 footer 那一对**：逐行那一对已按 #4947 去重退场（重复入口不许回来）', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(LOGICAL_CATALOG))
     await openManage('精裁')
 
-    // 抽屉层入口在（新增）
+    // 抽屉层入口**仍在**（能力不减：入口只是从「行内」统一到 footer）
     expect(screen.getByTestId('operations-manage-disable')).toBeInTheDocument()
     expect(screen.getByTestId('operations-manage-delete')).toBeInTheDocument()
-    // 逐行入口**逐条仍在**（既有能力不减）
+    // 行还在（去重不得把正文那一行一起删掉）
     expect(screen.getByTestId('variant-row-op-精裁-布')).toBeInTheDocument()
-    expect(screen.getByTestId('variant-disable-op-精裁-布')).toBeInTheDocument()
-    expect(screen.getByTestId('variant-delete-op-精裁-布')).toBeInTheDocument()
+    // 🔴 逐行那一对**已退场**（与 footer 逐字重复：同一屏两个「删除」正是用户报的形态）
+    expect(screen.queryByTestId('variant-disable-op-精裁-布')).toBeNull()
+    expect(screen.queryByTestId('variant-delete-op-精裁-布')).toBeNull()
+    // 信息**不许丢**：那句提示搬到了 footer 的「删除」旁边
+    expect(screen.getByTestId('operations-manage-delete').parentElement).toHaveTextContent(
+      '删除后历史报工不受影响',
+    )
     // 有关联 ⇒ **不**提示「未关联」（不得无差别刷提示）
     expect(screen.queryByTestId('operations-manage-unlinked-hint')).toBeNull()
+  })
+
+  it('#4947-② footer 的「停用 / 删除」作用于**抽屉当前展示的那一行**：读面指 `op-b` ⇒ 动的就是 `op-b`（不是按逻辑名取的首行 `op-a`）', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(LOGICAL_CATALOG))
+    mockGetOperationPositions.setDefault(POSITIONS_READFACE_OP_B)
+
+    // 前提自证（不是空跑）：同名两行里**首行**是 `op-a`（按名字取的那把尺），而**读面**指到的是 `op-b`
+    const rows = LOGICAL_CATALOG.groups
+      .flatMap((g) => g.operations)
+      .filter((o) => o.name === '三边')
+    expect(rows.map((o) => o.id)).toEqual(['op-a', 'op-b'])
+    expect(rows[0].library_name).toBe('布三边')
+    expect(POSITIONS_READFACE_OP_B[0].variant_operation_id).toBe('op-b')
+
+    await openManage('三边')
+    // 抽屉展示的正是读面指到的那一行
+    expect(screen.getByTestId('variant-row-op-b')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId('operations-manage-disable'))
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-b', { status: 'inactive' }))
+    // 反向：**不得**动按逻辑名取的首行（改前那条「两把尺」：footer 说 A、读面指 B）
+    expect(mockUpdateOperation).not.toHaveBeenCalledWith('op-a', expect.anything())
+
+    // 删除也按**读面那一行**寻址（弹框与请求落在同一行上）
+    await userEvent.click(screen.getByTestId('operations-manage-delete'))
+    expect(await screen.findByTestId('operations-manage-delete-modal')).toHaveAttribute(
+      'data-operation',
+      '三边',
+    )
+    await userEvent.click(screen.getByTestId('operations-manage-delete-confirm'))
+    await waitFor(() =>
+      expect(mockDeleteOperation).toHaveBeenCalledWith('op-b', { detachPositions: true }),
+    )
+    expect(mockDeleteOperation).not.toHaveBeenCalledWith('op-a', expect.anything())
   })
 
   // ══════════ ㉚ 删除死路（**第 3 次**）：前后端判据必须**同一把尺（按名字）**（issue #4692） ══════════
@@ -1695,28 +1808,6 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await waitFor(() => expect(mockGetOperationPositions).toHaveBeenCalledTimes(3))
   })
 
-  it('#4692-D 抽屉里**变体行**的删除入口在用户形态下不再死路：只给「设为不做并删除」（普通删除不渲染 —— 它只会 422）', async () => {
-    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
-    mockGetOperationPositions.setDefault(POSITIONS_WITH_TEST22)
-    beGuardByName()
-    await openManage('测试22')
-
-    // 该格是按**逻辑名**回退认出来的（关联键为 null）⇒ 抽屉里照样有这一行
-    await userEvent.click(screen.getByTestId('variant-delete-op-test22'))
-    const modal = await screen.findByTestId('variant-delete-modal')
-    // 说清将发生什么（按**名字**那把尺：本行还有「做」的格）
-    expect(screen.getByTestId('variant-delete-cells-by-name')).toHaveTextContent('设为不做')
-    // 能过护栏③的那条路在；**普通删除不渲染**（按 id 那把尺它以为「没有格」，点了必然 422 = 死路）
-    expect(screen.getByTestId('variant-detach-and-delete-op-test22')).toBeInTheDocument()
-    expect(screen.queryByTestId('variant-delete-confirm-op-test22')).toBeNull()
-    expect(modal).toHaveTextContent('历史报工不受影响')
-
-    await userEvent.click(screen.getByTestId('variant-detach-and-delete-op-test22'))
-    await waitFor(() =>
-      expect(mockDeleteOperation).toHaveBeenCalledWith('op-test22', { detachPositions: true }),
-    )
-  })
-
   it('#4692-E 护栏**不放宽**：仍挂在主线/规则 ⇒ 新路径（detach）**照样被拦**，理由逐条就地展示、矩阵一格不动', async () => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG_WITH_TEST22))
     mockGetOperationPositions.setDefault(POSITIONS_WITH_TEST22)
@@ -1745,39 +1836,35 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(mockUpdateOperationPosition).not.toHaveBeenCalled()
   })
 
-  it('⑰-⑬ 删除工序：**二次确认**后才发 `DELETE /operations/{id}`；护栏理由逐条就地展示', async () => {
+  it('⑰-⑬ 删除工序：**二次确认**后才发 `DELETE /operations/{id}`；护栏理由逐条就地展示（入口 = 抽屉 footer，#4947）', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(LOGICAL_CATALOG))
     mockDeleteOperation
       .mockReset()
       .mockRejectedValueOnce(guardError(['被活跃路线「窗帘工序路线（默认）」引用，请先改主线', '该部位仍是「做」，请先设为不做']))
     await openManage('精裁')
 
-    await userEvent.click(screen.getByTestId('variant-delete-op-精裁-布'))
-    // 二次确认：只是展开确认，**未**发请求
+    await userEvent.click(screen.getByTestId('operations-manage-delete'))
+    // 二次确认：弹框先出现，**未**发请求
     expect(mockDeleteOperation).not.toHaveBeenCalled()
-    await userEvent.click(screen.getByTestId('variant-delete-confirm-op-精裁-布'))
+    await userEvent.click(await screen.findByTestId('operations-manage-delete-confirm'))
 
-    await waitFor(() => expect(mockDeleteOperation).toHaveBeenCalledWith('op-精裁-布'))
-    const reasons = await screen.findByTestId('variant-delete-reasons')
+    // 本行还有「做」的价目行 ⇒ 走 #4692 的 detach 那条路（能过护栏③）
+    await waitFor(() =>
+      expect(mockDeleteOperation).toHaveBeenCalledWith('op-精裁-布', { detachPositions: true }),
+    )
+    const reasons = await screen.findByTestId('operations-manage-delete-reasons')
     expect(reasons).toHaveTextContent('请先改主线')
     expect(reasons).toHaveTextContent('请先设为不做')
   })
 
-  it('⑰-⑭ 删除工序（成功）：确认后 DELETE + 刷新（不静默）', async () => {
-    await openManage('精裁')
-    await userEvent.click(screen.getByTestId('variant-delete-op-精裁-布'))
-    await userEvent.click(screen.getByTestId('variant-delete-confirm-op-精裁-布'))
-
-    await waitFor(() => expect(mockDeleteOperation).toHaveBeenCalledWith('op-精裁-布'))
-    await waitFor(() => expect(mockGetOperationPositions).toHaveBeenCalledTimes(2))
-  })
-
   it('⑰-⑮ 删除工序：确认框可取消 —— 取消后不发 DELETE', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(LOGICAL_CATALOG))
     await openManage('精裁')
-    await userEvent.click(screen.getByTestId('variant-delete-op-精裁-布'))
-    await userEvent.click(screen.getByTestId('variant-delete-cancel-op-精裁-布'))
+    await userEvent.click(screen.getByTestId('operations-manage-delete'))
+    await userEvent.click(await screen.findByTestId('operations-manage-delete-cancel'))
 
     expect(mockDeleteOperation).not.toHaveBeenCalled()
-    expect(screen.queryByTestId('variant-delete-confirm-op-精裁-布')).toBeNull()
+    await waitFor(() => expect(screen.queryByTestId('operations-manage-delete-modal')).toBeNull())
   })
 
   it('⑰-⑯ 适用条件：删除（二次确认后 `DELETE /route-rules/{id}`）', async () => {
@@ -1975,21 +2062,22 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   })
 
   it('⑲-⑤ 工序删除（抽屉那处）**同一套弹框**：弹框写清删的是哪一道', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(LOGICAL_CATALOG))
     await openManage('精裁')
 
-    await userEvent.click(screen.getByTestId('variant-delete-op-精裁-布'))
+    await userEvent.click(screen.getByTestId('operations-manage-delete'))
 
-    const modal = await screen.findByTestId('variant-delete-modal', {}, { timeout: 1500 })
-    // 主标识 = **逻辑工序名**（issue #4622 / #4886 —— 改前这里断言的是变体名 `精裁-布`）
+    const modal = await screen.findByTestId('operations-manage-delete-modal', {}, { timeout: 1500 })
+    // 主标识 = **逻辑工序名**（issue #4622 / #4886 —— 变体名不上界面）
     expect(modal).toHaveTextContent('「精裁」')
     expect(modal).not.toHaveTextContent('精裁-布')
-    expect(modal).toHaveAttribute('data-variant', 'op-精裁-布')
+    expect(modal).toHaveAttribute('data-operation', '精裁')
     expect(mockDeleteOperation).not.toHaveBeenCalled()
 
     // 取消 ⇒ 不发请求
-    await userEvent.click(screen.getByTestId('variant-delete-cancel-op-精裁-布'))
+    await userEvent.click(screen.getByTestId('operations-manage-delete-cancel'))
     expect(mockDeleteOperation).not.toHaveBeenCalled()
-    await waitFor(() => expect(screen.queryByTestId('variant-delete-modal')).toBeNull())
+    await waitFor(() => expect(screen.queryByTestId('operations-manage-delete-modal')).toBeNull())
   })
 
   /**
@@ -2002,33 +2090,12 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
 
   /**
-   * issue #4665 ②：删除的前置（把相关格设为不做）**系统自己做** —— 弹框给**一键**
-   * 「设为不做并删除」，把受影响的格设为 `applicable=false` 然后删工序（后端**一次事务**）。
-   *
-   * 红证（改前）：弹框里没有 `variant-detach-and-delete-*` ⇒ 本用例红；且改前只能手工两步。
+   * issue #4665 ②（**issue #4947 去重**）：原本这里还有一条 `#4665-B`「一键『设为不做并删除』」
+   * 用例 —— 它驱动的是**逐行**的 `variant-detach-and-delete-*`，而那一整条路径已随 #4947 退场。
+   * 该场景**未被丢弃**：`㉙-③`（同夹具：二次确认 → `{detachPositions:true}` → 刷新）与
+   * `#4692-A`（弹框说清后果「设为不做」「历史报工不受影响」+ 关弹框 + 一次事务、不逐个 PUT 矩阵）
+   * 逐条覆盖了它。
    */
-  it('#4665-B 一键「设为不做并删除」：`DELETE` 带 `detach_positions=true`，工序真被删', async () => {
-    await openManage('精裁')
-    await userEvent.click(screen.getByTestId('variant-delete-op-精裁-布'))
-    const modal = await screen.findByTestId('variant-delete-modal', {}, { timeout: 1500 })
-
-    // 文案要说清**将发生什么**（设为不做 + 历史报工不受影响）
-    expect(modal).toHaveTextContent('设为不做')
-    expect(modal).toHaveTextContent('历史报工不受影响')
-
-    // 一键按钮存在，且点击前**不发请求**
-    const oneClick = screen.getByTestId('variant-detach-and-delete-op-精裁-布')
-    expect(mockDeleteOperation).not.toHaveBeenCalled()
-    await userEvent.click(oneClick)
-
-    // 一次调用带上 `detach_positions`（原子：后端同一事务里先摘格再删）
-    await waitFor(() =>
-      expect(mockDeleteOperation).toHaveBeenCalledWith('op-精裁-布', { detachPositions: true }),
-    )
-    // 删除成功后弹框收摊（不静默留在半完成态）
-    await waitFor(() => expect(screen.queryByTestId('variant-delete-modal')).toBeNull())
-    await waitFor(() => expect(mockGetOperationPositions).toHaveBeenCalledTimes(2))
-  })
 
   /**
    * 反向护栏（issue #4665 明确要求）：**主线那一条不得被一键按钮绕过**。
@@ -2036,23 +2103,27 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
    * 主线涉及车间顺序，必须人工确认 —— 后端护栏①（活跃路线主线）对 `detach_positions=true`
    * **照样拦**（本用例用真实后端语义的 422 打桩：理由里只有主线，没有矩阵格）。
    * 一键按钮不得让工序消失，且理由必须**逐条就地**展示。
+   *
+   * ⚠️ issue #4947：入口 = 抽屉 footer 的「删除」（**确认删除** 在背后选 detach 那条路）；
+   * `data-testid` 随之从 `variant-detach-and-delete-*` 换成 `operations-manage-delete-*`。
    */
   it('#4665-C 反向护栏：主线命中 ⇒ 一键「设为不做并删除」**也被拦**（工序不被删）', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(LOGICAL_CATALOG))
     mockDeleteOperation.mockReset().mockRejectedValueOnce(
       guardError(['工序「精裁」还在活跃路线「窗帘工序路线（默认）」的主线里 —— 先改主线（把它从该路线去掉），再删它']),
     )
     await openManage('精裁')
-    await userEvent.click(screen.getByTestId('variant-delete-op-精裁-布'))
-    await userEvent.click(screen.getByTestId('variant-detach-and-delete-op-精裁-布'))
+    await userEvent.click(screen.getByTestId('operations-manage-delete'))
+    await userEvent.click(await screen.findByTestId('operations-manage-delete-confirm'))
 
     await waitFor(() =>
       expect(mockDeleteOperation).toHaveBeenCalledWith('op-精裁-布', { detachPositions: true }),
     )
     // 主线理由**就地**展示（不吞成一句「删除失败」）
-    const reasons = await screen.findByTestId('variant-delete-reasons')
+    const reasons = await screen.findByTestId('operations-manage-delete-reasons')
     expect(reasons).toHaveTextContent('先改主线')
     // 被拦 ⇒ 弹框仍在（不是静默半完成），且抽屉里的工序**还在**
-    expect(screen.getByTestId('variant-delete-modal')).toBeInTheDocument()
+    expect(screen.getByTestId('operations-manage-delete-modal')).toBeInTheDocument()
     expect(screen.getByTestId('variant-row-op-精裁-布')).toBeInTheDocument()
     // 矩阵**没有被偷偷改成不做**（护栏拦下时不许发生副作用）
     expect(mockUpdateOperationPosition).not.toHaveBeenCalled()
@@ -2066,6 +2137,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
    * 那一行**不在**了（红证：改前 `matrix-row-精裁` 仍在）。</p>
    */
   it('#4665-C 一键删除后**表格里那一行消失**（级联软删矩阵行；改前「删成功但行还在」）', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(LOGICAL_CATALOG))
     // 读面序列：首次（渲染）返回全量；删除后的那次刷新 = 后端已级联软删 ⇒ **不含**「精裁」
     mockGetOperationPositions
       .setDefault(POSITIONS.filter((c) => c.operation !== '精裁'))
@@ -2073,8 +2145,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await openManage('精裁')
     expect(screen.getByTestId('matrix-row-精裁')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByTestId('variant-delete-op-精裁-布'))
-    await userEvent.click(screen.getByTestId('variant-detach-and-delete-op-精裁-布'))
+    await userEvent.click(screen.getByTestId('operations-manage-delete'))
+    await userEvent.click(await screen.findByTestId('operations-manage-delete-confirm'))
     await waitFor(() =>
       expect(mockDeleteOperation).toHaveBeenCalledWith('op-精裁-布', { detachPositions: true }),
     )
