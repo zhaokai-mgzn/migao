@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<!-- 工人端 H5 报工页（issue #4716 第一切片）—— 手机 / PAD 两断点，不依赖任何微信 API，无构建步骤。
+     部署：静态文件直出（与 C 端 H5 同一台 nginx）；页面与 /api 同源 ⇒ 无跨域。
+     零依赖：不引框架/扫码 SDK（裁定③ + 最少代码阶梯）。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="format-detection" content="telephone=no" />
+  <title>工人报工</title>
+  <link rel="stylesheet" href="./src/styles.css" />
+</head>
+<body>
+  <main id="worker-h5-root" class="wh5-root"></main>
+  <script type="module" src="./src/app.mjs"></script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+/* case_ids: PG-018, BM-006, DF-017 */
+/* 工人端 H5 报工页样式（issue #4716 §4.2 两断点）。
+   手机（<768px）：单手可操作、触控目标 ≥44px、【完成】底部固定。
+   PAD（≥768px）：**远距离可点** —— 主按钮 ≥88px、正文 ≥20px、一屏放下「工序 + 应做数量 + 完成」。
+   两断点由**纯 CSS** 做（无 JS 宽度分支）⇒ 同一份 HTML 在手机/PAD 都对。 */
+
+:root {
+  --wh5-bg: #0f172a;
+  --wh5-card: #ffffff;
+  --wh5-ink: #1e293b;
+  --wh5-muted: #64748b;
+  --wh5-brand: #0f766e;
+  --wh5-warn: #b45309;
+  --wh5-danger: #b91c1c;
+  --wh5-line: #e2e8f0;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background: #f1f5f9;
+  color: var(--wh5-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+  font-size: 16px;
+}
+
+.wh5-root { display: block; padding: 12px; max-width: 1200px; margin: 0 auto; }
+
+/* ---- 页头：当前工人常驻 + 一步切换（共用 PAD，设计 §3.1 / §3.2） ---- */
+.wh5-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px 12px;
+  border-bottom: 1px solid var(--wh5-line);
+  margin-bottom: 12px;
+}
+.wh5-worker { flex: 1 1 auto; font-weight: 600; font-size: 16px; }
+.wh5-ghost {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--wh5-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--wh5-ink);
+  font-size: 15px;
+}
+
+/* ---- 卡片 ---- */
+.wh5-card {
+  background: var(--wh5-card);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .08);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 16px;
+}
+.wh5-title { margin: 0; font-size: 20px; }
+.wh5-sub { margin: 0; color: var(--wh5-muted); font-size: 14px; line-height: 1.5; }
+.wh5-label { display: flex; flex-direction: column; gap: 6px; font-size: 15px; color: var(--wh5-muted); }
+.wh5-input {
+  min-height: 48px;
+  padding: 10px 12px;
+  font-size: 18px;
+  border: 1px solid var(--wh5-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--wh5-ink);
+}
+
+/* ---- 主按钮（唯一的记账动作入口） ---- */
+.wh5-primary {
+  min-height: 44px;
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  background: var(--wh5-brand);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .2em;
+  cursor: pointer;
+}
+
+/* ---- 一屏内容 ---- */
+.wh5-set { font-size: 22px; font-weight: 700; }
+.wh5-op { font-size: 20px; font-weight: 600; }
+.wh5-qty { font-size: 20px; }
+.wh5-price-row { color: var(--wh5-muted); font-size: 15px; }
+.wh5-unpriced { color: var(--wh5-warn); font-weight: 700; }
+.wh5-price { color: var(--wh5-muted); }
+.wh5-notice { margin: 0; color: var(--wh5-brand); font-size: 15px; }
+.wh5-error { margin: 0; color: var(--wh5-danger); font-size: 15px; }
+.wh5-done { margin: 0; color: var(--wh5-brand); font-weight: 700; }
+.wh5-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.wh5-group-label { color: var(--wh5-muted); font-size: 15px; }
+.wh5-choice {
+  min-height: 48px;
+  min-width: 88px;
+  padding: 0 14px;
+  border: 1px solid var(--wh5-line);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 17px;
+}
+.wh5-choice.is-on { border-color: var(--wh5-brand); background: #ccfbf1; font-weight: 700; }
+.wh5-alts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--wh5-muted); font-size: 15px; }
+.wh5-alt {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px dashed var(--wh5-line);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 16px;
+}
+
+/* ---- PAD 断点（≥768px）：远距离可点（设计 §4.2 的下限建议） ---- */
+@media (min-width: 768px) {
+  .wh5-root { padding: 24px; }
+  .wh5-card {
+    font-size: 20px;
+  }
+  .wh5-card {
+    padding: 28px;
+    gap: 20px;
+  }
+  .wh5-worker { font-size: 24px; }
+  .wh5-title { font-size: 28px; }
+  .wh5-sub { font-size: 18px; }
+  .wh5-input { min-height: 64px; font-size: 24px; }
+  .wh5-primary {
+    height: 88px;
+    font-size: 28px;
+  }
+  .wh5-set { font-size: 30px; }
+  .wh5-op { font-size: 26px; }
+  .wh5-qty { font-size: 26px; }
+  .wh5-choice { min-height: 72px; min-width: 140px; font-size: 22px; }
+  .wh5-alt { min-height: 64px; font-size: 20px; }
+  .wh5-ghost { min-height: 64px; font-size: 20px; }
+}
