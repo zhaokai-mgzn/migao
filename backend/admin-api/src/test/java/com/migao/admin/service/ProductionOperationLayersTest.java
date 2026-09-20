@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-035, PG-039
+// case_ids: PG-018, PG-035, PG-039, PG-054
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;

@@ -921,10 +921,11 @@ cases:
       - "口径一致性（#4205 验收判据 2，**红证判据**）：同一批报工下「per-order 合计 == 报表 total」—— 两者共用**同一份**聚合（ProductionService.aggregate：Σ(合格数量 × 实例快照单价 × 系数)，返工/报废排除），禁止复制第二套算法。实例缺失（软删）的报工在两处**同一判据**下都不计价（都取「活跃实例」，否则同一笔报工在两套端点数值不等）。红证：ProductionPieceworkSummaryTest「summaryTotalEqualsPerOrderTotal」（7.40 == 7.40 且 per_worker 金额逐项相等）+「softDeletedInstanceIsNotCountedInEitherEndpoint」"
       - "走查实测单可复现（#4205 验收判据 1）：加工单 JG-20260918-6914 的 1 条报工（「走查工人」精裁-布 3 米 × ¥0.40）⇒ per_worker 含该工人且金额 = 1.20。红证：ProductionPieceworkSummaryTest「walkthroughOrderIsReproducible」（对 dev 库实测数据形态的确定性复现；真实库对账由走查收尾执行）"
       - "返工/报废不计件 + 期间边界（#4205 验收判据 3）：rework/scrap 不进 per_worker/per_operation/total（与既有 per-order 口径同一份逻辑）；period 边界压在 SQL（work_date >= 当月首日 且 <= 当月末日，含端点）。证据：ProductionPieceworkSummaryTest「periodBoundaryAndOptionalWorkerFilter」（捕获 wrapper 断言 SQL 段含 work_date/worker_name 且绑定参数含 2026-09-01/2026-09-30）+「summaryTotalEqualsPerOrderTotal」里的 rework 负例"
+      - "🔴 **未定价 ≠ 0**（issue #4696，2026-09-20 补漏；报表与 per-order 计件面**共用同一份聚合**，本条只加不改）：未定价报工（`production_work_logs.unit_price IS NULL` 且 `price_state='unpriced'`）**不进** `total`、**不进** `per_worker[].amount`、**不进** `per_operation[].amount`，且**不得按 0 计入**（改前静默折 0 ⇒ 商家看到的是「有金额」而不是「算不出钱」）；同时响应**新增** `unpriced: {qty, operations:[{operation, logical_name, qty}], hint}` 显式报出「哪几道工序未定价」+ 定价入口（`/production/routings`）。**三态可区分**是硬判据：`unpriced`（NULL ⇒ 不计）≠ `priced` 且价 0（**计入**，金额 0.00）≠ `priced` 且价 > 0（计入）。⚠️ 红线：`production_work_logs.unit_price` / `price_state` 是**报工那一刻固化的快照**，历史值一字不动，重新实例化也改不了它。证据：UnpricedPieceworkReportTest（改前 `unpriced` 键**根本不存在** ⇒ 红）+ UnpricedNotZeroTest「pricedZeroIsDistinguishableFromUnpriced」（注入「把 NULL 折成 0」⇒ 红）"
       - "菜单同构（#4203 验收判据 2 的后端半边，与 #4205 同批；**2026-09-19 issue #4307/#4357 同步修正过期描述**）：MenuController 静态权限树与 AuthService.buildMenusByPermissions 同步新增「生产管理」节点 —— **四**子节点：生产看板 /production、工序库 /production/operations、工艺路线 /production/routings（#4307 新增第 4 项）、计件工资 /production/piecework，权限码统一 processing:manage；侧边栏组 key = production-center（沿用 product-center/trade-center 约定，与前端 config/menu.ts 的 MenuGroup.key 对齐）；无 processing:manage 权限时整组不出现。证据：MenuControllerTest（DOM 真值逐字段断言：组 label/四子节点 label/四子节点 code）+ AuthServiceTest 2 项（有权限出现且路径逐条相等 / 无权限整组隐藏）。注：后端菜单树与前端 menu.ts 的**同构目前只靠两侧各自的测试维持**（前端真实侧边栏只读 config/menu.ts，不消费服务端菜单）——该漂移面另单登记，不在本条判据内。"
       - "冻结契约不可改（防回归）：既有 per-order 计件 GET /api/admin/production/orders/{orderId}/piecework 的响应形状不变（{total, per_worker:{工人:金额}, per_operation:[{operation,amount}]}），agent 侧 GET /api/admin/agent/production/piecework 的键集 {worker_name,period,total,details:[{operation,qty,amount}]} 不变 —— 共用聚合的重构不得改这两个形状（PG-018 的既有断言继续守护）。2026-09-20（issue #4621）：agent 侧 `details` 与报表 `per_operation` 各自**追加** `logical_name` + `position`（**只加不改**，既有键集逐字未动、既有断言继续绿）"
     skip_reason: "[backend-contract] 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionPieceworkSummaryTest（报表语义 + 口径一致性 + 走查数据复现）/ ProductionControllerTest（MockMvc 端点契约 + 参数校验）/ MenuControllerTest 与 AuthServiceTest（菜单同构 + 权限门控）"
-    merge_log: "2026-09-18 新增（issue #4205，P1）+ 同批的菜单后端半边（#4203）：计件工资报表从「只有 per-order 汇总」变成按人/按期两级报表，且与 per-order 共用同一份聚合函数（验收判据要求两者对同一张单数值相等）。红证（修复前实测）：ProductionControllerTest 三条报表用例得 `Status expected:<200> but was:<404>`（端点不存在）、period 缺失用例得 `expected:<422> but was:<404>`；MenuControllerTest 得 `$.data.length() expected:<9> but was:<8>` 且 `$.data[?(@.code=='production')]` 无值；AuthServiceTest 得「菜单缺少「生产管理」组：[dashboard, product-center, notifications]」。修复后全绿。实现：ProductionService.pieceworkSummary + aggregate（per-order/报表/工人计件三处共用金额算法）+ parsePeriod（报表必填、工人计件可选，共用一份校验）+ ProductionController.pieceworkSummary（查询参数逐字 worker_name）+ 菜单两处同构。不做（如实登记）：按单下钻的多级联动 UI、工资发放/审批流。2026-09-20（issue #4621）：报表「按工序」档前端改为渲染 `逻辑名 · 部位`（`operation` 变体名不再进界面/`data-testid`），后端 `per_operation` 追加 `logical_name` + `position`；traces 补前端页测试"
+    merge_log: "2026-09-18 新增（issue #4205，P1）+ 同批的菜单后端半边（#4203）：计件工资报表从「只有 per-order 汇总」变成按人/按期两级报表，且与 per-order 共用同一份聚合函数（验收判据要求两者对同一张单数值相等）。红证（修复前实测）：ProductionControllerTest 三条报表用例得 `Status expected:<200> but was:<404>`（端点不存在）、period 缺失用例得 `expected:<422> but was:<404>`；MenuControllerTest 得 `$.data.length() expected:<9> but was:<8>` 且 `$.data[?(@.code=='production')]` 无值；AuthServiceTest 得「菜单缺少「生产管理」组：[dashboard, product-center, notifications]」。修复后全绿。实现：ProductionService.pieceworkSummary + aggregate（per-order/报表/工人计件三处共用金额算法）+ parsePeriod（报表必填、工人计件可选，共用一份校验）+ ProductionController.pieceworkSummary（查询参数逐字 worker_name）+ 菜单两处同构。不做（如实登记）：按单下钻的多级联动 UI、工资发放/审批流。2026-09-20（issue #4621）：报表「按工序」档前端改为渲染 `逻辑名 · 部位`（`operation` 变体名不再进界面/`data-testid`），后端 `per_operation` 追加 `logical_name` + `position`；traces 补前端页测试。2026-09-20（issue #4696，用例库补漏）：本报表面此前**完全没登记** #4696 的「未定价 ≠ 0」（`unpriced` 块 / 不进 total / 与定价 0 可区分）⇒ 追加一条 data_check（**只加不改**：既有 7 条与 expectations 一字未动），traces 补 UnpricedNotZeroTest + UnpricedPieceworkReportTest 两个证据面"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionPieceworkSummaryTest.java"
@@ -932,6 +933,8 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/controller/ProductionControllerTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/MenuControllerTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/AuthServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/UnpricedNotZeroTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/UnpricedPieceworkReportTest.java"
       ci:
         - pr-check.yml
       verifies: []
@@ -1610,15 +1613,17 @@ cases:
       - "判据 2·读面逐字取库：`ProductionOperationQueryService.findRouting` 返回的每道工序带 `scope`，与 `group`/`unit`/`unit_price` 同级（`operationMetaView` 一处整形，路线步骤与条件工序共用）。**注入法**：把库行的 `scope` 值改一个 ⇒ 断言跟着变（写死常量/不读库即红）。证据：ProductionOperationQueryServiceTest「findRoutingCarriesScopeVerbatimFromLibrary」+「findRoutingScopeFollowsTheLibraryRow」"
       - "判据 3·写面可配 + 取值校验：`ProductionOperationCommandService` 的 `update`（PUT /operations/{id}）与 `create`（POST /operations）都接受 `scope`，口径与 `unit`/`unit_price`/`position` 相同（部分更新：未出现的字段不碰）；只允许 `position` / `set`，非法值 ⇒ 422 可读理由（`scope 仅支持 position/set`，照 `status 仅支持 active/disabled` 既有错误形状）。**注入法**：去掉取值校验 ⇒ 非法值落库 ⇒ 断言红。证据：ProductionOperationCommandServiceTest「updateSetsScope」「updateRejectsInvalidScope」「createDefaultsScopeToPosition」「createRejectsInvalidScope」"
       - "判据 4·前端可见可改（issue #4416 后页面位置：工序库半边 = 「工艺配置」`/production/routings` 的**左栏**；旧 `/production/operations` 已重定向）渲染「作用域」列，逐行显示 部位级/套级，且可就地改为另一档（`PUT /operations/{id}` body 带 `scope`）。**注入法**：不渲染该列 ⇒ 断言红（找不到列头/找不到该行的 scope 控件）。证据：frontend/admin-web/tests/unit/components/OperationsScopeColumn.test.tsx"
+      - "判据 5·**`scope` 是「行来源」的唯一判据**（issue #4729，2026-09-20 补漏；本条只加不改）：`GET /operation-layers` 的 `delivery` 段**按工序库 `production_operations` 的 `scope='set'` 行分区**，**不看矩阵格** —— 判据与 PG-054 同源，本条只登记「作用域列是那套分区的取值来源」。证据：ProductionOperationLayersTest「layersPartitionByExistingScope」"
       - "**红证（实现前实测，本机）**：① `ProductionOperationScopeMigrationTest` 因 V67 文件不存在而红（判据 1 无列 ⇒ 红）；② `ProductionOperationQueryServiceTest` 的 scope 断言得 `expected \"set\" but was null`（读面不返回 scope）；③ `ProductionOperationCommandServiceTest` 的非法值用例得「没有异常抛出」（写面零校验）；④ `OperationsScopeColumn.test.tsx` 得找不到「作用域」列头。"
       - "**未做（如实登记，避免把半截当完整交付）**：① **不做 A2** —— **不改** `ProcessingOrderService.buildPositionPayload`（套级工序按 `craftLineId` 组去重）；A2 依赖包 D（#4387 布行与纱行同组）先合，且与 D 同文件 ⇒ 本包不交付「套级去重生效」（A2 未落地时去重无从谈起，硬写 = 空断言）；② **不改** `backend/ai-agent-service/**`（用户裁定「Agent 层面先别碰」，缺口登记在 #4390）。"
     skip_reason: "[backend-contract] 后端契约 + 前端页面结构用例（迁移/表结构/服务层/页面渲染，无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProductionOperationScopeMigrationTest + ProductionOperationQueryServiceTest + ProductionOperationCommandServiceTest + frontend/admin-web/tests/unit/components/OperationsScopeColumn.test.tsx 执行"
-    merge_log: "2026-09-19 新增（issue #4384 A1，P0）。用户裁定：套级工序先按「每樘窗一次」实现，打卷是否每帘一次留成可配。实现：V67 迁移（scope 列 + 列注释 + 幂等回填 三道外帘工序 = set；bootstrap 终态同步；指纹登记 migration_fingerprints.json）+ ProductionOperation.scope + 读面 operationView/operationMetaView 带 scope + 写面 update/create 可配且取值校验 + 前端工序库页「作用域」列可就地改。**未做**：A2（ProcessingOrderService 套级去重，等包 D #4387）与 Agent 侧（#4390）。"
+    merge_log: "2026-09-19 新增（issue #4384 A1，P0）。用户裁定：套级工序先按「每樘窗一次」实现，打卷是否每帘一次留成可配。实现：V67 迁移（scope 列 + 列注释 + 幂等回填 三道外帘工序 = set；bootstrap 终态同步；指纹登记 migration_fingerprints.json）+ ProductionOperation.scope + 读面 operationView/operationMetaView 带 scope + 写面 update/create 可配且取值校验 + 前端工序库页「作用域」列可就地改。**未做**：A2（ProcessingOrderService 套级去重，等包 D #4387）与 Agent 侧（#4390）。2026-09-20（issue #4729，用例库补漏）：`scope` 在 #4729 之后**同时是 `delivery` 段的行来源判据**（改前行来源 = 矩阵格 ⇒ 零格的套级工序在【打包发货】层一行都没有）⇒ 追加判据 5 + traces 补 ProductionOperationLayersTest；既有四条判据与 expectations 一字未动"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/migration/ProductionOperationScopeMigrationTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationQueryServiceTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationCommandServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationLayersTest.java"
         - "frontend/admin-web/tests/unit/components/OperationsScopeColumn.test.tsx"
       ci:
         - pr-check.yml
@@ -1892,6 +1897,61 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionRoutingCommandServiceOptionCreateTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/ProductionRoutingReadControllerTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
+        - "frontend/admin-web/tests/unit/pages/production-routings.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # PG-054（issue #4729，P1）：【打包发货】层的**行不依赖矩阵格** —— 零矩阵格 + `scope='set'`
+  # 的工序仍有一行，价态 `no_applicable_position`。
+  #
+  # 病根（线上可见的 P1 死路，来源 = 独立验收报告 #4719 的 P1-2）：`GET /operation-layers` 的
+  # `delivery` 段**行来源是矩阵行**（`operationPositions()` 只读
+  # `production_operation_positions`，按**格**的 `scope` 分组）⇒ 一道 `scope='set'` 但
+  # **一格都没有**的工序在【打包发货】层**一行都没有**（无行 / 无 `管理▸` / 抽屉打不开）。
+  # 设计要求（#4675 §7 第 7 条 / #4677 四条约束）逐字：「**第二层的行不依赖矩阵格**」——
+  # 改前**只在渲染层成立**（前端手造行时才成立），后端读面并不成立。
+  #
+  # ⚠️ 与 UI-050 的分工：UI-050 判**前端**在真后端形状下「有行 + 管理▸ + 抽屉不空」；
+  # 本条判**后端读面**的分区判据本身（行来源 = 工序库 `scope` 行，不是矩阵格）—— 两条各有一半，
+  # 改前两条**各自**可红（前端红在 `delivery-row-*` 找不到，后端红在 `delivery` 段为空）。
+  # ==========================================================================
+  - id: PG-054
+    legacy_id: ""
+    title: "【打包发货】层的行不依赖矩阵格——零矩阵格 + `scope='set'` 的工序仍有行，价态 `no_applicable_position`"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - processing-order
+      - production-routing
+      - operation-layers
+      - delivery-section
+      - scope
+    truths_ref: []
+    # `user_inputs` / `expectations` 留空 = 本条**不是 LLM 行为用例**（无 agent 轮次可跑）：
+    # 判据全部由 `traces.tests` 的确定性测试执行（计分通道分流，形态同 PG-039 / PG-053）。
+    # ⚠️ **不写** `expectations[].tool`：那会让本条被判成「写类用例」而被要求声明自清理
+    # （`pre_clean` / `namespaces`），而它**根本不经 runner 执行**（门禁 R4 禁止新增豁免）。
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "success=true"
+      - "判据 1·🔴 **行来源 = 工序库 `scope` 行，不是矩阵格**（本条的**核心判据**）：`GET /api/admin/production/operation-layers` 的 `delivery` 段，其成员 = `production_operations` 里 `scope='set'` 的活跃行（经**既有** `normalizeOperationName` 归一为逻辑工序名，与矩阵行键**同一把尺**），**不**由 `production_operation_positions` 的格决定。⇒ 矩阵里**只有**部位级工序的格（三道套级工序 `打包` / `外帘打卷` / `外帘装袋` **一格都没有**）时，`delivery` 段仍**各有一行**。**红证（改前实测，本机）**：把服务实现换回 `origin/main` 版本再跑 `ProductionOperationLayersTest`，`deliveryRowExistsWhenOperationHasNoMatrixCellsAtAll` 得 `Expecting actual: [] to contain exactly (and in same order): [\"外帘打卷\", \"外帘装袋\", \"打包\"]` —— 即**零格 ⇒ 一行都没有**（P1 死路的确切形态）。证据：ProductionOperationLayersTest「deliveryRowExistsWhenOperationHasNoMatrixCellsAtAll」"
+      - "判据 2·**零格的价态 = `no_applicable_position`**（4 态之一，**语义一字不改**）：零格行必须给 `price_state='no_applicable_position'` + `price=null` + `different_price_count=0` + `applicable_positions=[]` —— **不得**假装成 `unpriced`（未定价 ≠ 没有适用部位）、**更不得**假装成 `¥0.00`（那会让工人白干且账目不可复核）。判别性：注入「零格行回落工序库行价」（`production_operations.unit_price` 是 `NOT NULL DEFAULT 0`）⇒ 该断言得 `expected: \"no_applicable_position\" but was: \"priced\"` ⇒ 红。证据：同上（逐字段断言 `price_state` / `price` / `different_price_count` / `applicable_positions`）"
+      - "判据 3·**行尾元数据回落工序库行**（否则零格行是「一排 `—`」）：`unit` / `group` / `scope` 取自 `production_operations` 的同一行（零格行也得是 `unit='套'` / `group='后道'` / `scope='set'`）；⚠️ **价绝不回落**（库行价 `NOT NULL DEFAULT 0` ⇒ 回落会把「没有适用部位」变成「真 ¥0.00」，设计 F4）。证据：同上（`row.get(\"unit\")` / `row.get(\"group\")` / `row.get(\"scope\")` 逐字段）"
+      - "判据 4·**两段并集 = 全集，不重不漏**（反向护栏）：`operations` 段 = 矩阵行里**不属于**交付工序集合的那些（`scope=null` 的安全方向仍落工序层）；零格交付工序**不得**同时出现在 `operations` 段 —— 否则同一道工序在两个区各渲染一次（商家看到两行、改价改到哪一行不确定）。证据：同上（`layers.get(\"operations\")` 恰好只含 `裁剪`）"
+      - "判据 5·**交付段顺序不依赖 DB collation**：交付段顺序 = **归一后的逻辑工序名**升序（`Map.Entry.comparingByKey()`），与矩阵行键同一把尺 —— 改前按 `(operation, position)` 插入序，同一份数据在不同 collation 的库上顺序不同 ⇒ 断言漂移。证据：ProductionOperationLayersTest「deliverySectionIsOrderedByLogicalOperationName」（**红证**：改前得 `[]` vs 期望三行有序）"
+      - "判据 6·**前端消费这份形状**（同一 goal 的用户面，与 UI-050 同一份断言面，本条只做指针不重复判据）：零格交付工序在【打包发货】层有 `delivery-row-<工序>` + `delivery-manage-<工序>`（入口在**行上**，与矩阵格无关），抽屉「停用 / 删除 / 关闭」渲染在 `manageVariants` 循环体**外** ⇒ 空态**给出路**（`not.toHaveTextContent('请核对各部位的适用性配置')`）；读面失败时**显式报错**（`operation-layers-error`），**不静默降级**成「未设置（没有部位设为「做」）」。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx 的 B6-① 与 P2-10 两条"
+      - "**边界（如实登记）**：① 读面**只加不改** —— `delivery` 段**仍是 9 键**（键集 / 键序 / 4 态一字未动），**无新增键**（该端点此前在 `docs/wiki/CONTRACT-LEDGER.md` 里**没有条目**，#4729 补了一行含行来源与 9 键冻结判据的指针）；② 本单**无 DDL / 无迁移**（判据 = 既有 `scope`，不新造概念、不新增字段）；③ `priced` / `unpriced`（**未定价 ≠ ¥0.00**）/ `multiple_prices`（+`different_price_count`，**不静默取第一个**）三态语义一字不改 —— 本单只改**行来源**。"
+    skip_reason: "[backend-contract] 后端读面契约 + 前端页面结构（无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationLayersTest.java 与 frontend/admin-web/tests/unit/pages/production-routings.test.tsx 执行"
+    merge_log: "2026-09-20 新增（issue #4729，P1；来源 = 独立验收报告 #4719 的 P1-2）。交付：`delivery` 段的**行来源**从矩阵格（`operationPositions()`）改为工序库 `scope='set'` 行（`operationsByName`，经 `normalizeOperationName` 归一），零格 ⇒ 仍出一行且价态 `no_applicable_position`；行尾元数据缺格时回落工序库行（**价绝不回落**）；`operations` 段 = 矩阵行里不属于交付集合的那些（两段并集 = 全集）；交付段顺序改按归一逻辑工序名。**红证（改前实测）**：`./mvnw -o test -Dtest=ProductionOperationLayersTest` 得 `Tests run: 10, Failures: 4`（`deliveryRowExistsWhenOperationHasNoMatrixCellsAtAll` / `deliveryRowSurvivesWhenOnlyOnePositionHasACell` / `deliverySectionIsOrderedByLogicalOperationName` / `layersPartitionByExistingScope`），其中零格那条的实读即 `[]` vs 三行；改后 10/10 绿。同批把「名不副实的用例改成正例」：DisplayName 写「甚至零格」的那条实际 stub 是「有格 + `applicable=false`」⇒ 拆成真形态 + 新增零格用例。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationLayersTest.java"
         - "frontend/admin-web/tests/unit/pages/production-routings.test.tsx"
       ci:
         - pr-check.yml
