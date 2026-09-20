@@ -53,6 +53,14 @@ class ProductionOperationScopeMigrationTest {
     private static final String MIGRATION_V79 =
             "backend/admin-api/src/main/resources/db/migration/"
                     + "V79__seed_fabric_route_and_packing_operation.sql";
+    /**
+     * V95（issue #4715）：**存量纠正** —— 把「开租播种来源」错落成 {@code position} 的三道套级工序
+     * 改回 {@code set}（只改播种来源，不覆盖商家自建）。它点名的是**同一个冻结集合**，
+     * 故并入迁移链的并集判据（集合不变、覆盖更严）。
+     */
+    private static final String MIGRATION_V95 =
+            "backend/admin-api/src/main/resources/db/migration/"
+                    + "V95__correct_seeded_set_scope_for_existing_tenants.sql";
     private static final String SCHEMA = "docs/sql/schema.sql";
     private static final String SEED_V54 =
             "backend/admin-api/src/main/resources/db/migration/V54__seed_production_operations.sql";
@@ -97,10 +105,25 @@ class ProductionOperationScopeMigrationTest {
     // ══════════════════════ 解析器（纯函数，便于注入式自证） ══════════════════════
 
     private static final Pattern SET_SCOPE_UPDATE = Pattern.compile(
-            "UPDATE\\s+production_operations\\s+SET\\s+scope\\s*=\\s*'set'\\s+WHERE\\s+name\\s+IN\\s*\\(([^)]*)\\)",
+            "UPDATE\\s+production_operations\\s+SET\\s+scope\\s*=\\s*'set'(?:\\s*,\\s*\\w+\\s*=\\s*[^,]+)?\\s+WHERE\\s+name\\s+IN\\s*\\(([^)]*)\\)",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
-    /** 从 `UPDATE ... SET scope='set' WHERE name IN (...)` 里取出被标成套级的工序名（**冻结集合的机械代理**）。 */
+    /**
+     * 迁移文本 → **可执行 SQL**（剥掉 `--` 行注释）。判据只看 DML：本仓的迁移注释里**故意**写
+     * 回滚 SQL 与核验命令（那是文档），不剥注释会让「正文」与「注释里的示例」互相冒充。
+     */
+    static String dmlOf(String sql) {
+        return sql.replaceAll("(?m)--.*$", "");
+    }
+
+    /**
+     * 从 {@code UPDATE ... SET scope='set'[, updated_at=...] WHERE name IN (...)} 里取出被标成套级的
+     * 工序名（**冻结集合的机械代理**）。
+     *
+     * <p>⚠️ 目标侧允许**多列赋值**（issue #4715 的 V95 显式写 {@code scope} + {@code updated_at}
+     * 两列 —— 本仓「显式写列」纪律）⇒ 正则必须在 {@code 'set'} 之后容忍 {@code , <其它列>}，
+     * 否则 V95 的语句读不到（静默空集 = 判据失效；实测初版即踩）。</p>
+     */
     static List<String> setScopeOperationNames(String sql) {
         Matcher matcher = SET_SCOPE_UPDATE.matcher(sql);
         if (!matcher.find()) {
@@ -230,12 +253,18 @@ class ProductionOperationScopeMigrationTest {
                 .as("bootstrap 终态的回填必须与迁移**逐字同集合**（V67 三道 + V79 的 打包）"
                         + "—— 两份口径漂移 ⇒ 新建库与存量库不一致")
                 .containsExactlyElementsOf(TERMINAL_SET_SCOPE_OPERATIONS);
-        // 另一侧：迁移链（V67 ∪ V79）的并集也必须等于同一冻结集合（不写死单源）
-        List<String> migrationSet = new ArrayList<>(setScopeOperationNames(read(MIGRATION)));
-        migrationSet.addAll(setScopeOperationNames(read(MIGRATION_V79)));
-        assertThat(migrationSet)
-                .as("迁移链（V67 ∪ V79）的套级集合 ≠ 冻结终态 ⇒ bootstrap 与存量库会不一致")
-                .containsExactlyElementsOf(TERMINAL_SET_SCOPE_OPERATIONS);
+        // 另一侧：迁移链（V67 ∪ V79 ∪ V95）的并集也必须等于同一冻结集合（不写死单源）。
+        // ⚠️ 一律先剥 `--` 注释（`dmlOf`）：V95 的注释里**故意**给出回滚 SQL，它会与本迁移正文
+        // 一起被正则读到 ⇒ 三道会被读两遍（`containsExactlyElementsOf` 判「多出 3 个元素」）。
+        List<String> migrationSet = new ArrayList<>(setScopeOperationNames(dmlOf(read(MIGRATION))));
+        migrationSet.addAll(setScopeOperationNames(dmlOf(read(MIGRATION_V79))));
+        migrationSet.addAll(setScopeOperationNames(dmlOf(read(MIGRATION_V95))));
+        // ⚠️ 并集里**每个版本都会重复点名同一集合**（V67 三道、V79 打包、V95 又三道 —— 纠正迁移
+        // 有意点名同一个冻结集合）⇒ 断言只判**集合相等**（`containsExactlyInAnyOrderElementsOf`），
+        // 不能判序列（`containsExactlyElementsOf` 会把「同集合被两个迁移各写一遍」读成「多出 3 个元素」）。
+        assertThat(new LinkedHashSet<>(migrationSet))
+                .as("迁移链（V67 ∪ V79 ∪ V95）的套级集合 ≠ 冻结终态 ⇒ bootstrap 与存量库会不一致")
+                .containsExactlyInAnyOrderElementsOf(TERMINAL_SET_SCOPE_OPERATIONS);
     }
 
     @Test
@@ -251,7 +280,56 @@ class ProductionOperationScopeMigrationTest {
         }
     }
 
-    // ══════════════════════ ④ 注入式自证（防「不会红的断言」） ══════════════════════
+    // ══════════════════════ ④ V95 存量纠正（issue #4715） ══════════════════════
+
+    @Test
+    @DisplayName("判据 2a：V95 只改这三道、只改「播种来源」、且以 `scope='position'` 为幂等守卫")
+    void v95CorrectsOnlySeededRowsAndIsIdempotent() throws Exception {
+        // ⚠️ 判据只看**可执行 DML**（剥掉 `--` 注释）：本迁移的注释里**故意**给出回滚 SQL
+        // （`SET scope = 'position' ... AND scope = 'set'`）—— 那是文档，不剥注释会让
+        // 「幂等守卫」与「回滚语句」互相冒充（实测：初版把回滚注释读成了正文）。
+        String dml = dmlOf(read(MIGRATION_V95));
+
+        assertThat(setScopeOperationNames(dml))
+                .as("V95 点名的必须是**同一个冻结集合**（三道外帘）—— 多一道 ⇒ 误改部位级工序")
+                .containsExactlyElementsOf(SET_SCOPE_OPERATIONS);
+        assertThat(dml)
+                .as("必须按 `source` 限定「播种来源」—— 不限定 ⇒ 覆盖商家自建（红线）")
+                .contains("source IN ('占位待确认', '推算')");
+        assertThat(dml)
+                .as("幂等守卫：`AND scope = 'position'` ⇒ 第二次执行匹配 0 行、净效果相同")
+                .contains("scope = 'position'");
+        assertThat(dml)
+                .as("显式写列（scope + updated_at）—— 不隐式改写其它列（计件口径列一字不动）")
+                .contains("SET scope = 'set'")
+                .contains("updated_at = NOW()");
+        assertThat(dml)
+                .as("判据必须**按 source 限定**（而不是靠 `source IS NULL` 之类反向条件）")
+                .doesNotContain("source IS NULL");
+    }
+
+    @Test
+    @DisplayName("判据 2b：V95 不碰报工/计件历史值（三张快照表名在**可执行 DML** 里零命中）")
+    void v95NeverTouchesHistoricalPieceworkValues() throws Exception {
+        // ⚠️ 只看**可执行 SQL**（剥掉 `--` 注释）：本迁移的注释里**故意**写着「三张表一字不动」并
+        // 给出核验命令（`grep -c "production_work_logs\|..." ⇒ 0`）—— 那是文档。判据要咬的是 DML。
+        String dml = dmlOf(read(MIGRATION_V95));
+
+        assertThat(dml)
+                .as("红线：报工快照 `unit_price` / `factor` 与两张实例/订单快照表一字不动 —— "
+                        + "本迁移的 DML 只碰 `production_operations.scope`")
+                .doesNotContain("production_work_logs")
+                .doesNotContain("processing_position_operations")
+                .doesNotContain("processing_orders");
+        assertThat(dml)
+                .as("DML 里只允许出现一张表：production_operations")
+                .contains("UPDATE production_operations");
+        assertThat(assignedScopeLiterals(dml))
+                .as("V95 赋给 scope 的字面量必须 ⊆ {position, set}")
+                .isSubsetOf(SCOPE_VOCABULARY);
+    }
+
+    // ══════════════════════ ⑤ 注入式自证（防「不会红的断言」） ══════════════════════
 
     @Test
     @DisplayName("自证：解析器能识别漂移（多一道 / 少一道 / 改名都红）")

@@ -316,7 +316,8 @@
       "is_start_marker": false,
       "sort_order": 24,
       "status": "active",
-      "source": "占位待确认"
+      "source": "占位待确认",
+      "scope": "set"
     },
     {
       "id": "op-v54-25",
@@ -329,7 +330,8 @@
       "is_start_marker": false,
       "sort_order": 25,
       "status": "active",
-      "source": "占位待确认"
+      "source": "占位待确认",
+      "scope": "set"
     },
     {
       "id": "op-v54-26",
@@ -355,7 +357,8 @@
       "is_start_marker": false,
       "sort_order": 27,
       "status": "active",
-      "source": "占位待确认"
+      "source": "占位待确认",
+      "scope": "set"
     },
     {
       "id": "op-v54-28",

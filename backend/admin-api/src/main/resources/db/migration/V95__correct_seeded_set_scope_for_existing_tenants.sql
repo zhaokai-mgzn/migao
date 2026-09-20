@@ -1,0 +1,102 @@
+-- 存量纠正：把「开租播种来源」错落成 `position` 的三道套级工序改回 `set`（issue #4715，P1 涉钱）
+--
+-- ## 一句话
+-- `production-templates/curtain/seed.json`（**开租播种**的唯一载体）里 37 行只有 `配料` / `打包`
+-- 写了 `scope`，而 `ProductionSeedTemplateService.planOperations` 用
+-- `node.path("scope").asText("position")` 兜底 ⇒ **外帘打卷 / 外帘装袋 / 外帘发货** 在
+-- **开租租户**上落 `position`（部位级）；而**迁移链**（V67 回填）与 **bootstrap**
+-- （`docs/sql/schema.sql`）都落 `set`（套级）⇒ 三处口径分裂。
+--
+-- ## 危害（为什么是 P1：双付 = 多发钱）
+-- `scope='set'` 的语义 = 「**一单一套一次，不按部位展开**」；落成 `position` ⇒ 按部位实例化
+-- ⇒ 一樘「布帘 + 纱帘」订单里这三道**各实例化 2 次**（`unit='套'`、`qty=1`、各 ¥1.0）
+-- ⇒ **各付两次**（#4408 双付家族；真值源 `docs/curtain-production-rules.md` §8：
+-- 「**外帘**是加工单打印行部位，**不是**路线键」）。
+--
+-- ## 本迁移做什么（只有一件）
+-- 把**播种来源**、且**当前仍是 `position`** 的这三道工序行改成 `scope = 'set'`，
+-- 使存量库回到与 V67 / bootstrap / 模板同一个终态。
+-- 模板侧的根因修复（给这三道补 `scope: "set"`）在同一 PR 内 —— 两处都改才算闭环：
+-- 只改模板 ⇒ 存量租户仍是错值；只改迁移 ⇒ 新开租户仍落错值（同 #4235 的形态）。
+--
+-- ## 🔴 不覆盖商家自建（判据：`source` 列）
+-- `production_operations.source`（V62，issue #4361）是**唯一**能区分「播种来源」与「商家自建」的
+-- 既有字段，其口径由 V62 的列注释冻结：
+--   · 非空（`占位待确认` / `推算`）= 播种来源（V54/V56 按 **id 前缀**回填 + 开租播种逐行取模板标注）；
+--   · **`NULL` = 来源未知（商家自建/历史行）** —— 注释明文「不许读成『占位待确认』」。
+-- 真库实测（2026-09-20，云 dev 库 `ai_customer_service`）：活跃行 38 条（33 `占位待确认` +
+-- 5 `推算`）、**`source IS NULL` 0 条** ⇒ 判据可用且不误伤（复跑见
+-- `acceptance/2026-09-20/4715-tenant-scope-double-pay/`）。
+-- 商家在工序库页把某道工序改回「部位级」（写面 `ProductionOperationCommandService.scope` 允许）
+-- 时**不写 `source`** ⇒ 其 `source` 保持非空 —— 这类「商家有意改成 position」的行会被本迁移改回
+-- `set`。**这是有意的口径选择，照实登记**：`scope='set'` 的语义是数据正确性（一单一套一次），
+-- 而 #4408 家族的错误方向是**多发钱**（少做一道 ≠ 少发，多做一道 = 多发）⇒ 默认回到安全侧；
+-- 真要按部位计件的商家可在工序库页再改回（写面已支持）。
+--
+-- ## 🔴 红线：不碰报工/计件历史值
+-- 本文件**只**写 `production_operations.scope` + `updated_at`。三张快照表一字不动：
+--   · `production_work_logs`（报工快照 `unit_price` / `factor`）
+--   · `processing_position_operations`（工序实例快照）
+--   · `processing_orders.items_snapshot`（加工单快照）
+-- ⇒ 历史工资不回溯，**只影响新单**。机械核验：本文件的**可执行 SQL**（剥掉 `--` 注释后）里，
+-- 上述三张快照表名**一次都不出现** —— 判据由
+-- `ProductionOperationScopeMigrationTest#v95NeverTouchesHistoricalPieceworkValues` 落码
+-- （不在注释里写「在自己所在文件上跑 grep -c」的自检计数：注释块会撑大全文计数，见 #4701 P2-1）。
+--
+-- ## 幂等（`MigrationRunner` 硬要求所有迁移可重复执行）
+-- `AND scope = 'position'` 是幂等守卫：第二次执行匹配 0 行、净效果相同。
+-- 目标值 `'set'` 已是终态时整条语句是语义空操作。
+--
+-- ## 回滚（保留于注释；按需手工执行）
+-- ```sql
+-- -- 只把「播种来源」的这三道改回部位级（与 V95 同判据；不碰商家自建）
+-- UPDATE production_operations
+--    SET scope = 'position', updated_at = NOW()
+--  WHERE name IN ('外帘打卷', '外帘装袋', '外帘发货')
+--    AND source IN ('占位待确认', '推算')
+--    AND scope = 'set';
+-- ```
+-- ⚠️ **回滚不能复原的东西（如实登记）**：本迁移生效期间**新建**的加工单已按 `set`（每樘窗一次）
+-- 实例化 ⇒ 回滚后这些单的**实例快照不会自动变回**（`processing_position_operations` 是本文件的
+-- 红线外表，一字未动）。回滚的语义是「让**新单**回到旧行为」，**不是**「让历史单回到旧行为」。
+--
+-- ## 停止条件（出现任一条即停手，不回滚本迁移、另开单）
+-- S1 「布帘 + 纱帘」订单里这三道任一出现 **> 1** 次（说明套级去重没生效，去查
+--    `ProcessingOrderService` 的 `scope` 消费路径，**不是**本迁移）；
+-- S2 商家自建行（`source IS NULL`）的 `scope` 被本迁移改写（核法：改前记
+--    `(tenant_id, name) → scope`，重跑后逐行比对，`source IS NULL` 的行必须一字不动）；
+-- S3 三道在某个活跃租户的工序库里**消失**（软删）—— 交付环节少一道 ⇒ 少发工资；
+-- S4 重复执行净效果不同（核法：跑两遍，逐表 `count(*)` + 全行指纹一致）；
+-- S5 `production_work_logs` 的 `unit_price` / `factor` 任一变化（红线，无条件停）。
+--
+-- ## 迁移号
+-- `ls backend/admin-api/src/main/resources/db/migration | tail` **现取** ⇒ **V95**
+-- （V91 = #4707 / V92 = #4698-⓪ / V93 = #4714 / V94 = #4709-C 已预留）。
+-- 若 push 时 V95 已被占 ⇒ 用下一个空闲号并在 PR body 说明。
+--
+-- ## 与真值源的收敛判据（防第二份口径漂移）
+-- 本文件落的终态 = `seed.json` 的 `scope` 标注 = 迁移链（V67 ∪ V79）终态 = `schema.sql`
+-- bootstrap 终态，四处**逐项同值**。静态守卫（**按内容发现**作用域回填迁移，不写死版本号）：
+--   · `backend/admin-api/src/test/java/com/migao/admin/migration/ProductionOperationScopeTemplateTest.java`
+--     （三处口径一致 + 开租模板逐行显式声明 + 注入式自证）
+--   · `ProductionOperationScopeMigrationTest`（V67 ∪ V79 的迁移文本 + bootstrap 逐字）
+--   · `ProductionSeedTemplateServiceTest.apply_seedsScopeMatchingMigrationChainTerminalState`
+--     （开租播种**真落库**的 scope）
+
+-- ══════════════════════════════════════════════════════════════════════════════════════
+-- 存量纠正：播种来源 ∧ 仍是 position ∧ 恰这三道 ⇒ 改回 set
+-- ══════════════════════════════════════════════════════════════════════════════════════
+-- 逐条说明：
+--   · `name IN (...)` —— **只改这三道**（冻结集合；`配料` 是部位级、`打包` 早已是 `set`，
+--     两者都不在本集合里 ⇒ 一字不动）；
+--   · `source IN ('占位待确认','推算')` —— **只改播种来源**（V62 冻结口径；`NULL` = 商家自建/
+--     历史行 ⇒ 不覆盖）；
+--   · `scope = 'position'` —— 幂等守卫（已是 `set` 的行整条跳过，第二次执行 0 行）；
+--   · 显式写列（`scope` + `updated_at`）—— 不写 `SET (scope) = ...` 之类的隐式形态，也不碰
+--     任何其它列（`unit_price` 等计件口径列一字不动）。
+UPDATE production_operations
+   SET scope = 'set',
+       updated_at = NOW()
+ WHERE name IN ('外帘打卷', '外帘装袋', '外帘发货')
+   AND source IN ('占位待确认', '推算')
+   AND scope = 'position';
