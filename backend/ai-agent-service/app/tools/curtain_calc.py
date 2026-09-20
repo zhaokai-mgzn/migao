@@ -103,6 +103,22 @@ def mixed_times(option: str) -> Optional[int]:
     m = _MIXED_TIMES_RE.fullmatch(option or "")
     return int(m.group(1)) if m else None
 
+
+# ── 拼色**报价加价**（用户 2026-09-21 裁定；真值源 `docs/curtain-fabric-quote-rules.md` §10 / §11）──
+# 逐字裁定（经 issue #4848）：「**拼色计价规则就是拼色款另加 2.4 元/米 先按这个算吧**」。
+#
+# ⚠️ **与上面的 `MIXED_COLOR_PER_FOLD_BY_TIMES` 是两件事，别搅在一起**：
+#   · 那张表 = 拼色**用料**（米/折，0.65 / 1.2）⇒ 改的是**米数**（已落码、正确，本包不动）；
+#   · 本常量 = 拼色**计价**（元/米）⇒ 改的是**钱**（本包落码）。
+#   旧措辞把纸表那一行记成「拼色**计价** = 按折加价（0.65 / 1.2 ≈ 0.6 元/折）」是**误记** ——
+#   错的是**单位/形态**（把「米/折」记成了「元/折」），**不是**「拼色计价不存在」。
+#
+# 口径（本仓语境下的确切算法）：`款式=拼色` ⇒ **该款面料米数**（`build_quote` 的 `meters`，
+# 含余量、已按拼次口径算出）× 本单价，**另立一行加价**（不改面料/加工/辅料单价 ⇒ 不双算）。
+# 「按折数折算」= 本单价是「每折加价」按**单色每折吃布**（`per_fold_single`）折算成元/米的形态：
+#   `0.6 元/折 ÷ 0.25 米/折 = 2.4 元/米`（真值源 §10 的误记更正段 + issue #4341 第 1 项的换算）。
+MIXED_COLOR_SURCHARGE_PER_METER = 2.4   # 拼色款报价加价（元/米；按该款面料米数计）
+
 # ── 工艺档位（【默】商家可配；每档 = 名义倍数 → 折数规则）──
 DEFAULT_CRAFT_TIERS: Dict[str, Dict[str, Any]] = {
     "standard": {"fullness": 2.0, "label": "标准工艺"},
@@ -596,6 +612,9 @@ def build_quote(
         craft_tier: 工艺档位（standard / economy；与 pleat_count 二选一）
         accessories: **顾客显式**要单独买的辅料（如罗马圈）：[{"name","quantity","unit_price"}...]。
                      不给 ⇒ 一个都不加（**不按米数推导**，issue #4118 / #3005）
+        style: 款式（**单色/拼色**，真值源 §10）。传 `拼色` ⇒ 报价**另加**拼色加价
+               （`MIXED_COLOR_SURCHARGE_PER_METER` 元/米 × 该款面料米数，用户 2026-09-21 裁定）；
+               不传 ⇒ **不判断款式、不计该加价**（既有调用逐值不变）。本函数**不从别处猜款式**。
         formula: 用料**计算方法**（issue #4527，用户 2026-09-19 裁定）：`'pleat'`（韩折公式＝折数法，
                  **默认**）｜`'fullness'`（褶倍数公式＝倍数法）。缺省 ⇒ 配置的 `default_formula`。
         config: 算料公式配置（商家可自定义；issue #4527）。None ⇒ `DEFAULT_CRAFT_CALC_CONFIG`
@@ -603,8 +622,8 @@ def build_quote(
 
     Returns:
         报价字典：fabric_meters / processing_meters / fabric_cost / processing_cost /
-        accessory_cost / install_cost / total / breakdown / formula / formula_used /
-        formula_text / warning / fullness
+        accessory_cost / install_cost / mixed_color_surcharge / total / breakdown / formula /
+        formula_used / formula_text / warning / fullness
         （折数法时另含 pleat_count / per_panel_pleats / open_count / margin / per_fold /
         source / craft_tier 以及 fullness_actual）
         （**仅定宽买高**时另含 `panels` 幅数：定高买宽按宽买米、幅数无定义 ⇒ **键缺席**，
@@ -757,6 +776,14 @@ def build_quote(
                 "如需标准档请传 craft_tier 或 pleat_count。"
             )
 
+    # 拼色**报价加价**（用户 2026-09-21 裁定，真值源 §10/§11）：`款式=拼色` ⇒ 该款**面料米数** × 单价。
+    # ⚠️ 只在 `style == 拼色` 时计（**显式入参触发**）⇒ 不传 `style` 的既有调用/历史报价**逐值不变**
+    # （这正是「不追溯」的机制：新规则只对裁定生效后**新产生**的计算生效）。
+    # ⚠️ 加价**另立一行**，不改面料/加工/辅料任一单价（改单价 = 双算 + 动既有契约）。
+    mixed_color_surcharge = (
+        meters * MIXED_COLOR_SURCHARGE_PER_METER if style == STYLE_MIXED else 0.0
+    )
+
     # 面料费
     fabric_cost = meters * fabric_price
 
@@ -787,11 +814,17 @@ def build_quote(
     # 安装费（按杆长）
     install_cost = rod_length * INSTALL_PRICE
 
-    total = fabric_cost + processing_cost + accessory_cost + install_cost
+    total = fabric_cost + processing_cost + accessory_cost + install_cost + mixed_color_surcharge
 
     breakdown = [
         {"name": "面料", "detail": f"{meters:.2f}米 × ¥{fabric_price}/米", "cost": round(fabric_cost, 2)},
         {"name": "加工费", "detail": f"{meters:.2f}米 × ¥{processing_price}/米", "cost": round(processing_cost, 2)},
+        # 拼色加价行：**单色款不出现在 breakdown 里**（单色报价单逐值不变 ⇒ 回归不变量）
+        *([{
+            "name": "拼色加价",
+            "detail": f"{meters:.2f}米 × ¥{MIXED_COLOR_SURCHARGE_PER_METER}/米",
+            "cost": round(mixed_color_surcharge, 2),
+        }] if mixed_color_surcharge else []),
         *accessory_breakdown,
         {"name": "安装费", "detail": f"{rod_length:.2f}米 × ¥{INSTALL_PRICE}/米", "cost": round(install_cost, 2)},
     ]
@@ -819,6 +852,8 @@ def build_quote(
         "processing_cost": round(processing_cost, 2),
         "accessory_cost": round(accessory_cost, 2),
         "install_cost": round(install_cost, 2),
+        # 拼色加价（用户 2026-09-21 裁定）：**键恒在**，单色款 = 0.0（不发明数字：0 = 本单没有这一笔）。
+        "mixed_color_surcharge": round(mixed_color_surcharge, 2),
         "total": round(total, 2),
         "breakdown": breakdown,
         # ── 公式选择与可读公式串（issue #4527）──────────────────────────────────
@@ -1016,7 +1051,12 @@ class CurtainCalcTool(BaseTool):
             },
             "style": {
                 "type": "string",
-                "description": "款式（引导清单/顾客选择）：单色/拼色",
+                "description": (
+                    "款式（引导清单/顾客选择）：单色/拼色。"
+                    "传「拼色」时报价**另加拼色加价**（用户 2026-09-21 裁定，真值源 §10：元/米 × 该款面料米数）"
+                    "—— 加价由本工具算进 `total` 并单列 `mixed_color_surcharge`/`breakdown`，"
+                    "**不要**自己心算或另加一笔（重复加价 = 多收钱）"
+                ),
                 "enum": ["单色", "拼色"],
             },
             "special_options": {
@@ -1130,7 +1170,11 @@ class CurtainCalcTool(BaseTool):
                 summary=(
                     f"算料结果：{quote['fabric_meters']}米，总价¥{quote['total']} "
                     f"（面料¥{quote['fabric_cost']}+加工¥{quote['processing_cost']}"
-                    f"+辅料¥{quote['accessory_cost']}+安装¥{quote['install_cost']}）"
+                    f"+辅料¥{quote['accessory_cost']}+安装¥{quote['install_cost']}"
+                    # 拼色加价：**只在真的收了这一笔时**才进括号（单色款 summary 一字不变）
+                    + (f"+拼色加价¥{quote['mixed_color_surcharge']}"
+                       if quote["mixed_color_surcharge"] else "")
+                    + "）"
                 ),
                 message=(
                     f"算料完成：共需面料 {quote['fabric_meters']} 米，总价 ¥{quote['total']}"

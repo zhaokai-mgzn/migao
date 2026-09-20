@@ -1042,3 +1042,130 @@ class TestPanelsOutput:
         )
         assert result.success is True
         assert result.data["panels"] == math.ceil((3.0 + 0.3) * 2.0 / 2.8)
+
+
+# ══════════════════════════════════════════════
+# 拼色**报价加价**（用户 2026-09-21 裁定，issue #4855；真值源 §10 / §11）
+#
+# 裁定逐字（经 issue #4848）：「**拼色计价规则就是拼色款另加 2.4 元/米 先按这个算吧**」。
+# 口径 = `款式=拼色` ⇒ **该款面料米数** × `MIXED_COLOR_SURCHARGE_PER_METER`（元/米），**另立一行**加价
+# （不改面料/加工/辅料任一单价 ⇒ 不双算）。
+#
+# ⚠️ 与「拼色**用料**每折 0.65 / 1.2 米」是**两件事**（别搅在一起）：那是**米数**（已落码、本包不动），
+#    本类判的是**钱**；旧措辞「拼色计价 = 0.65/1.2 元/折」错在**单位/形态**，不是「拼色计价不存在」。
+# ⚠️ **不追溯**：加价只由**显式** `style='拼色'` 触发 ⇒ 不传 `style` 的既有调用（历史报价重放）
+#    逐值不变；且算料引擎里没有任何写面（`production_work_logs.unit_price` / `factor` 是冻结契约）。
+# ══════════════════════════════════════════════
+
+
+class TestMixedColorSurcharge:
+    """拼色款另加 `MIXED_COLOR_SURCHARGE_PER_METER` 元/米（元/米 × 该款面料米数）。"""
+
+    #: §10 拼色用料段的同一扇窗（6.6m 窗 / 双开 / 标准档 / 3.2m 门幅 ⇒ 52 折、定高买宽）
+    DOUBLE_6_6 = dict(window_width=6.6, window_height=2.6, mounting="s_hook",
+                      fabric_width=3.2, fabric_price=30.0, open_count=2,
+                      craft_tier="standard")
+
+    def test_sec10_case_52_folds_single_mix(self):
+        """算例（§10）：52 折双开 · 拼1次 ⇒ 用料 34.1 米 ⇒ 加价 34.1 × 2.4 = 81.84 元。"""
+        q = build_quote(style="拼色", special_options=["拼1次"], **self.DOUBLE_6_6)
+        assert q["per_fold"] == 0.65, "拼色**用料**系数（0.65 米/折）不得被本包改动"
+        assert q["fabric_meters"] == 34.1
+        assert q["mixed_color_surcharge"] == 81.84
+        # 总价 = 面料 1023.0 + 加工 341.0 + 安装 126.0 + 拼色加价 81.84（韩褶无默认辅料）
+        assert q["total"] == 1571.84
+
+    def test_sec10_case_52_folds_double_mix(self):
+        """算例（§10）：52 折双开 · 拼2次 ⇒ 用料 62.7 米 ⇒ 加价 62.7 × 2.4 = 150.48 元。"""
+        q = build_quote(style="拼色", special_options=["拼2次"], **self.DOUBLE_6_6)
+        assert q["fabric_meters"] == 62.7
+        assert q["mixed_color_surcharge"] == 150.48
+        assert q["total"] == 2784.48
+
+    def test_surcharge_is_a_separate_line_not_a_unit_price_bump(self):
+        """加价**另立一行**：面料/加工行金额仍 = 米数 × **原**单价（改单价 = 双算 + 动既有契约）。"""
+        q = build_quote(style="拼色", special_options=["拼1次"], **self.DOUBLE_6_6)
+        rows = {b["name"]: b["cost"] for b in q["breakdown"]}
+        assert rows["面料"] == round(34.1 * 30.0, 2), "面料行被加了价（应另立一行，不改单价）"
+        assert rows["加工费"] == round(34.1 * 10.0, 2), "加工费行被加了价（应另立一行）"
+        assert rows["拼色加价"] == 81.84
+        assert rows["安装费"] == round((6.6 + 0.4) * 18.0, 2)
+
+    def test_breakdown_rows_sum_to_total(self):
+        """明细行之和 = 总价（加价行必须**真的进总价**，不许只显示不收费）。"""
+        q = build_quote(style="拼色", special_options=["拼2次"], **self.DOUBLE_6_6)
+        assert round(sum(b["cost"] for b in q["breakdown"]), 2) == q["total"] == 2784.48
+
+    def test_single_color_quote_is_unchanged(self):
+        """**单色款不受影响**（回归）：§7 算例逐值不变、明细无加价行、加价键 = 0.0。"""
+        q = build_quote(window_width=3.0, window_height=2.7, mounting="eyelet",
+                        fabric_width=3.0, fabric_price=30.0)
+        assert q["fabric_meters"] == 6.6
+        assert q["total"] == 464.8                      # §7 算例（改前既有值，逐值不变）
+        assert q["mixed_color_surcharge"] == 0.0
+        assert [b["name"] for b in q["breakdown"]] == [
+            "面料", "加工费", "孔带", "罗马杆", "绑带", "安装费",
+        ], "单色款的明细行一字不得变（加价行只属于拼色款）"
+
+    def test_explicit_single_color_style_equals_no_style(self):
+        """显式 `style='单色'` 与不传 `style` ⇒ **金额面逐值相同**（含 total / breakdown）。
+
+        （`style` 键本身是**原样回显**，两单当然不同 ⇒ 只比金额面；回显口径见 `TestCraftSpecOutput`。）
+        """
+        single = build_quote(style="单色", **self.DOUBLE_6_6)
+        implicit = build_quote(**self.DOUBLE_6_6)
+        for key in ("fabric_meters", "processing_meters", "fabric_cost", "processing_cost",
+                    "accessory_cost", "install_cost", "mixed_color_surcharge", "total", "breakdown"):
+            assert single[key] == implicit[key], f"{key} 在「显式单色」与「不传 style」之间不一致"
+
+    def test_not_retroactive_legacy_signatures_are_value_identical(self):
+        """**不追溯**（行为判据）：不传 `style` 的历史调用签名逐值不变 ⇒ 重放历史报价得同一批数。"""
+        # §7 算例（打孔 / 6.6 米 / 464.8 元）
+        sec7 = build_quote(window_width=3.0, window_height=2.7, mounting="eyelet",
+                           fabric_width=3.0, fabric_price=30.0)
+        # §10 用料段的标准档 / 经济档（52 折 13.3 米 / 46 折 11.8 米）
+        standard = build_quote(**self.DOUBLE_6_6)
+        economy = build_quote(**{**self.DOUBLE_6_6, "craft_tier": "economy"})
+        # §11 折数法本体（48 折双开 ⇒ 12.3 米）
+        assert (sec7["fabric_meters"], sec7["total"]) == (6.6, 464.8)
+        assert (standard["pleat_count"], standard["fabric_meters"], standard["total"]) == (52, 13.3, 658.0)
+        assert (economy["pleat_count"], economy["fabric_meters"], economy["total"]) == (46, 11.8, 598.0)
+        assert calculate_fabric_by_pleats(48, open_count=2)[0] == 12.3
+        for q in (sec7, standard, economy):
+            assert q["mixed_color_surcharge"] == 0.0, (
+                "不传 style 的调用被计了拼色加价 ⇒ 追溯改历史报价（违约）"
+            )
+
+    def test_engine_has_no_write_path_to_frozen_piecework_columns(self):
+        """**不追溯**（结构性判据）：算料引擎不得出现计件/结算写面的符号（冻结契约）。"""
+        src = Path(curtain_calc_module.__file__).read_text(encoding="utf-8")
+        for symbol in ("production_work_logs", "factor", "UPDATE ", "INSERT INTO"):
+            assert symbol not in src, (
+                f"算料引擎里出现 `{symbol}` —— 报价加价**不得**回写/重算历史单价"
+                "（`production_work_logs.unit_price` / `factor` 是冻结契约）"
+            )
+
+    def test_truth_source_records_the_ruling(self):
+        """真值源必须登记本裁定 + #4341 的改判，且**用符号引用**（不抄第二份数值）。"""
+        doc = QUOTE_RULES_DOC.read_text(encoding="utf-8")
+        assert "拼色计价：已裁定（用户 2026-09-21" in doc, "§10 未登记 2026-09-21 的拼色计价裁定"
+        assert "已由本裁定回答" in doc, "§10 未把 #4341 第 1 项改判为「已裁：元/米」"
+        assert "MIXED_COLOR_SURCHARGE_PER_METER" in doc, "真值源必须用符号引用（数值只留 §0 一处）"
+        assert "拼色计价**（元/折）仍属" not in doc, "旧的「拼色计价仍待裁定」措辞复活了（改判被回退）"
+
+    async def test_execute_summary_states_the_surcharge_for_mixed_only(self, sample_tool_context):
+        """Tool 层：拼色款的 summary 必须**说出**这一笔（否则模型会把总价解释错）。"""
+        from app.tools.curtain_calc import CurtainCalcTool
+
+        tool = CurtainCalcTool()
+        mixed = await tool.execute(
+            context=sample_tool_context, style="拼色", special_options=["拼1次"],
+            **self.DOUBLE_6_6,
+        )
+        assert mixed.success is True
+        assert mixed.data["mixed_color_surcharge"] == 81.84
+        assert "拼色加价¥81.84" in mixed.summary
+
+        single = await tool.execute(context=sample_tool_context, **self.DOUBLE_6_6)
+        assert "拼色加价" not in single.summary, "单色款的 summary 一字不得变"
+        assert single.data["mixed_color_surcharge"] == 0.0
