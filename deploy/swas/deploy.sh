@@ -618,4 +618,14 @@ if [ "$HC_FAILED" = "1" ]; then
   echo "❌ 健康检查失败，部署中止。排查：cd /opt/migao-deploy && docker compose logs <服务>"
   exit 1
 fi
+# ── 迁移结果可观测（issue #4936 实测教训）────────────────────────────────────────
+# `MigrationRunner` 的语义是「**单条失败只跳过这一条**、继续跑后面的」，且**不参与健康判定**
+# ⇒ 整批迁移失败时**部署照样全绿**（实测 2026-09-20：V102~V106 在云测试环境静默未生效，
+# 而蓝绿预验证、正式健康检查、Post-Deploy Smoke 全过 —— 只有读库/翻容器日志才能发现）。
+# 这里把 admin-api 最近 200 行里的**迁移行**打进本次部署日志：它是「迁移到底跑没跑」的
+# **唯一可见面**（本脚本 stdout 会回流到 CI 日志）。`grep` 无命中不算失败（可能未重启容器）。
+echo "== 4. admin-api 迁移结果（MigrationRunner 事实 —— 静默迁移失败的唯一可见面）=="
+docker compose logs --tail=200 admin-api 2>&1 | grep -aE "MigrationRunner|迁移" \
+  || echo "  （最近 200 行里没有迁移行：容器可能未重启，或日志已被轮转）"
+
 echo "== deploy.sh 完成（耗时主要取决于镜像拉取） =="
