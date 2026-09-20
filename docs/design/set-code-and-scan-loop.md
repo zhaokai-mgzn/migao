@@ -562,6 +562,35 @@ complete(set_no, order_item_id, [operation_id], [qty], worker, clientRequestId):
 > 两者都是**用户裁定 / 真值源的直接结果**，但**必须显式写进落码单的验收判据**，
 > 否则既有测试（断言 422 `OPERATION_SEQUENCE_VIOLATION`）会红而无人知道原因。
 
+### 5.3.1 拒绝码 = 契约面（三条，**本单补判据**；来源 = #4791 §16.2 的**反向差异**清单）
+
+> **来源与纪律**：issue #4810（**#4791 清单 B 组**：**代码已落码、本文零提及**的三条拒绝码）。
+> 本小节**只补判据** —— 不改代码、不改契约账本、不替业务裁定。
+> ⚠️ **测试的 `@DisplayName` 只是文案，不是断言**：这三条码的 `code` / `httpStatus` 在补判据**之前**
+> **只在 `ProductionScanCompleteServiceTest` 的 `@DisplayName` 里被提过**，把源码里的状态码改成别的值
+> **不会变红** ⇒ 本单同时把它们补成**真断言**（`code` + `httpStatus` 逐字钉住，见「承重证据」列）。
+> **引用纪律**：一律 **符号引用**（类名 + 方法名 + 常量名），**不写行号**（行号会漂移）。
+> 同族的另外两条 422（`OPERATION_AMBIGUOUS` / `NO_PENDING_OPERATION`）已在 §5.3 ⑤ 与 §16.1 登记，**不重复**。
+
+**409 与 422 的语义分界**（核清，不得混用；两条都出自 `ProductionScanCompleteService#doComplete`）：
+
+| HTTP | 语义 | 这三条里的含义 | 调用方该怎么办 |
+|---|---|---|---|
+| **422** | **请求语义 / 前置条件不成立** —— `token` 本身**不足以**定位「要报哪一樘窗的哪个部位」⇒ **同样的请求重试永远同一结果** | `SCAN_NEEDS_SELECTION` | 必须先**改变输入**：带 `set_id` + `order_item_id` 重发，或重新打印带套 × 部位的新任务卡 |
+| **409** | **状态冲突 / 并发** —— 请求本身合法，但**目标状态已不在可执行的位置** | `SET_ALREADY_COMPLETED` / `OPERATION_ALREADY_ADVANCED` | **先刷新读面**再判断是否仍需报工；⚠️ `OPERATION_ALREADY_ADVANCED` 也可能是「本人刚提交成功」⇒ **不得盲目重试**（同键重试会回放首次结果，异键重试可能把一次报工记两遍） |
+
+| 判据名（= 响应 `error.code`，**逐字冻结**） | HTTP | 触发条件（**逐字读源**：符号引用） | 响应体 | 承重证据 | `docs/wiki/CONTRACT-LEDGER.md` |
+|---|---|---|---|---|---|
+| `SCAN_NEEDS_SELECTION` | **422** | `ProductionScanCompleteService#doComplete`：`ProductionScanService.GRANULARITY_ORDER.equals(scan.get("granularity"))` ⇒ 解析落到**旧码降级形态**（新 `processing_set_part_tokens` 未命中、回落既有四形态）。⚠️ **选择键只给一半**（`set_id` / `order_item_id` 缺一）**同样落到这里** —— `ProductionScanService#resolve` 只在**两个键都非空**时才走 `legacySelectionView`，否则走 `degradedView` | `{success:false, error:{code,message}, suggestion}` + HTTP **422**（`GlobalExceptionHandler#handleBusinessException` 按 `BusinessException.httpStatus` 回） | `ProductionScanCompleteServiceTest#legacyCodeIsRejectedWithoutPickingFirstSet` + `#legacyCodeWithPartialSelectionIsStillRejected`（**本单补 `code` / `httpStatus` 断言**） | ✅ **已登记**（「工人端扫码完成」行逐字：「都不给 ⇒ 旧码仍 **422 `SCAN_NEEDS_SELECTION`**」）⇒ 设计与账本**口径一致** |
+| `SET_ALREADY_COMPLETED` | **409** | `ProductionScanCompleteService#doComplete`：`scan.get("operation") == null` **且** `Boolean.TRUE.equals(scan.get("completed"))` ⇒ 该套**全部工序实例**都已 `done_qty ≥ qty`（`completed` 键由 `ProductionScanService` 的 `setPositionView` 落 = `chosen == null`）⇒ **本次未记账** | 同上 + HTTP **409** | `ProductionScanCompleteServiceTest#alreadyCompletedSetIsRejectedWithoutWriting`（**本单补 `code` / `httpStatus` 断言**） | ❌ **账本未登记该码**（只登记了**读面响应键** `completed`）⇒ **本单只登记，不代账本裁定** |
+| `OPERATION_ALREADY_ADVANCED` | **409** | **两个落点、同一个码**：<br>**(a) 并发推进**：`ProductionService#applyScanComplete` 里 CAS `ProcessingPositionOperationMapper#advanceDoneQtyIfUnchanged` **影响行数 0** ⇒ fail-closed（= F14），**绝不静默覆盖别人的报工**；<br>**(b) 推断之后被报满**：`ProductionScanCompleteService#doComplete` 在 `qty` 缺省时算出 `plannedRemaining(op) ≤ 0`（`ProductionScanService#resolve` 读到的工序与记账前 `ProductionService#requireActiveOperation` 重读之间出现并发窗口） | 同上 + HTTP **409** | (a) `ProductionScanCompleteServiceTest#midFailureReleasesPlaceholderAndDoesNotSnapshot`（**本单补 `code` / `httpStatus` 断言**）；<br>(b) `ProductionScanCompleteServiceTest#operationFilledBetweenResolveAndChargeIsRejected`（**本单补**：`selectList` 读到「未完成 6/11 米」而 `selectById` 重读到「已报满 11/11」= 并发窗口的**可执行形态**） | ❌ **账本未登记该码**（`docs/design/worker-h5-scan-and-report.md` 有登记：CAS 影响行数 0 ⇒ 409 `OPERATION_ALREADY_ADVANCED`） |
+
+> 🔴 **只登记、不裁定（交主会话）**：**§3.2 ③ 的伪码逐字写「返回 "本套已完成"（含完成时间），不报错」**
+> —— 那是**读面**（`GET /api/worker/production/scan` 的响应键 `completed` + `completed_at`）的口径；
+> **写面**（`POST /api/worker/production/scan/complete`）在**推断零道 + 本套全完成**时抛 **409**。
+> 两个端点两种口径**并存**，措辞是否要改（例如在读面也预告「再报会 409」）**本单不裁定** ——
+> 差异登记见 §16.2。
+
 ### 5.4 自动计件（真值源 `:57` 后半句）
 
 | 项 | 设计 |
@@ -1045,7 +1074,11 @@ git show origin/main:tests/unit_ci_workflows/migration_fingerprints.json | pytho
 > **来源**：issue #4791（#4698 切片④ 核清）第 2 项要求 —— 顺带全文扫一遍本文的判据名 / 口径，
 > 与 `origin/main` 的**实际代码**对照，**给清单**。
 > 🔴 **本节的纪律**：**只登记，不裁定谁对** —— 每条只写「设计写了什么 / 代码里是什么 / 差在哪」，
-> **处置留给主会话**。本单**只改了 §5.3 ④ 的两处措辞**（主会话已裁定的那两处），其余**一律不动**。
+> **处置留给主会话**。
+> **#4791（原单）**只改了 §5.3 ④ 的两处措辞（主会话已裁定的那两处），其余一律不动。
+> **#4810（本单，主会话已裁定「补设计」）**只动 §16.2 / §16.4 两表 + 把 B 组三条码的判据补在
+> **§5.3.1**（判据本体在 §5.3.1，本节的表只登记「差异 + 处置」）；
+> §1 / §14 ⓪.5（PR #4833 刚改判）与其余各节**一字不动**。
 > 复算口径 = `grep` 本文的 `SCREAMING_CASE` 标识符 × `grep` 代码里的实际错误码（双向）。
 
 ### 16.1 错误码 / 判据名对照（本文写到的每一个）
@@ -1059,13 +1092,18 @@ git show origin/main:tests/unit_ci_workflows/migration_fingerprints.json | pytho
 | `OPERATION_SEQUENCE_VIOLATION` | §5.3 ② / §10 C9 / §12 D6 | **代码已删除**（#4694 删 `assertPredecessorsDone`）；仅剩测试注释里的历史引用 | ✅ **一致**（本文已按 #4694 改判为「越站 ⇒ 放行」） |
 | `CODE_POSITION_MISMATCH` | ~~§5.3 ④~~ | **代码 0 处**（本单改动**前**实测：`origin/main` 全仓**仅本文 1 处**，代码 0 处；改动**后**本文仅剩**留档 / 曾用名注**里的引用） | 🔴 **设计写了、代码从未实现** ⇒ **本单已统一到 `OPERATION_NOT_IN_SCAN_TARGET`** |
 
-### 16.2 反向差异（**代码已落码、本文未登记** —— 如实登记，本单不改）
+### 16.2 反向差异（**代码已落码、本文未登记** —— #4791 登记；**#4810 已补判据** ⇒ 判据本体在 §5.3.1）
 
-| 代码实际 | 落点 | 本文状态 |
-|---|---|---|
-| `SCAN_NEEDS_SELECTION`（422） | `ProductionScanCompleteService`（旧码降级 ⇒ 不默认取第 1 套） | ❌ **本文零提及**（§2.6 只写了「必须让工人选部位」，**没给判据名**） |
-| `SET_ALREADY_COMPLETED`（409） | 同上（本套工序都已完成 ⇒ 零写入） | ❌ **本文零提及**（§3.2 ③ 只写「返回『本套已完成』，不报错」——**与「409 拒绝」是两种口径**） |
-| `OPERATION_ALREADY_ADVANCED`（409） | 同上 + `ProductionService`（CAS 影响行数 0 ⇒ fail-closed） | ❌ **本文零提及**（F14 只写「影响行数 0 = 被并发推进 ⇒ fail-closed」，**没给判据名**；`worker-h5-scan-and-report.md` 有登记） |
+> **状态随 #4810 更新**：三条码逐条核清后**判据补在 §5.3.1**，并把 `code` / `httpStatus`
+> 补成 `ProductionScanCompleteServiceTest` 的**真断言**（改前只有 `@DisplayName` 提过码名，**不会红**）。
+> ⚠️ 下表「原状态」列是 **#4791 的原文，一字未删**（历史留档）；处置看「#4810 处置」列。
+> ⚠️ **数值以 §5.3.1 为准**，本表不另立一份。
+
+| 代码实际 | 落点（**逐字读源**，符号引用） | 原状态（#4791 登记，**留档**） | #4810 处置 |
+|---|---|---|---|
+| `SCAN_NEEDS_SELECTION`（422） | `ProductionScanCompleteService#doComplete`：`ProductionScanService.GRANULARITY_ORDER` 命中（旧码降级 ⇒ **不默认取第 1 套**） | ❌ **本文零提及**（§2.6 只写了「必须让工人选部位」，**没给判据名**） | ✅ **已补判据**（§5.3.1）；**账本已登记**（口径一致 ⇒ **不改账本**） |
+| `SET_ALREADY_COMPLETED`（409） | `ProductionScanCompleteService#doComplete`：`scan.get("operation") == null` 且 `completed` 为真（本套工序都已完成 ⇒ 零写入） | ❌ **本文零提及**（§3.2 ③ 只写「返回『本套已完成』，不报错」——**与「409 拒绝」是两种口径**） | ✅ **已补判据**（§5.3.1，含 409/422 分界）；⚠️ **账本未登记该码** ⇒ 本单**只登记、不代账本裁定**；§3.2 ③ 的**读面**口径保留，差异在 §5.3.1 登记 |
+| `OPERATION_ALREADY_ADVANCED`（409） | `ProductionScanCompleteService#doComplete`（`plannedRemaining(op) ≤ 0`）+ `ProductionService`（CAS 影响行数 0 ⇒ fail-closed）**两个落点** | ❌ **本文零提及**（F14 只写「影响行数 0 = 被并发推进 ⇒ fail-closed」，**没给判据名**；`docs/design/worker-h5-scan-and-report.md` 有登记） | ✅ **已补判据**（§5.3.1）；⚠️ **账本未登记该码**；**两个落点均已补承重测试**（(a) CAS / (b) 并发窗口，**本单补**） |
 
 ### 16.3 非错误码的判据 / 口径（**SCREAMING_CASE 全量扫描的其余命中，逐条交代**）
 
@@ -1088,9 +1126,10 @@ git show origin/main:tests/unit_ci_workflows/migration_fingerprints.json | pytho
 | # | 本文写的 | 代码实际 | 状态 |
 |---|---|---|---|
 | 1 | §5.3 ④：`op.order_item_id == token.order_item_id`（**字面等式**） | **候选集成员资格**（部位级 ∪ 套级回落） | 🔴 **字面实现会打断 §3.2 ② 套级回落（D4 防死锁）** ⇒ **本单已改为「候选集成员资格」** |
-| 2 | §6.4 / §8 A2：`threshold_source ∈ {history, default}`（`T = S1 ?? S3`） | **恒为 `default`**（S3）—— `history` 只出现在注释里，**S1 未落码** | ⚠️ **设计写了、代码没有**（代码自述「S1 落码后才会出现 `history`」）⇒ **只登记** |
+| 2 | §6.4 / §8 A2：`threshold_source ∈ {history, default}`（`T = S1 ?? S3`） | **恒为 `default`**（S3）—— `history` 只出现在注释里（`ProductionStuckPointService` 的 `THRESHOLD_SOURCE_DEFAULT` 是**唯一实际取值**），**S1 未落码** | ⚠️ **设计写了、代码没有**（代码自述「S1 落码后才会出现 `history`」）⇒ **只登记**；**#4810 核清（只补指针、不裁定）**：本条**已**是**待裁定**项 —— 判据在 **§8 A2**（S1/S2/S3 三选一，设计建议 `S1 ?? S3`）+ **§6.4** 的三方案表；⚠️ **「代码恒为 `default`」是事实登记，不等于业务已裁定**（§8 A2 仍待用户裁定，本单**不替业务决定**） |
 | 3 | §6.1 ②：「开了没完」（`in_progress` + `started_at`） | **未落码**（仅 C 模式，`V92` 只建列） | ✅ **设计已自述为「C 模式预留」**（§4.4 / §8 A3）—— 非缺陷 |
 | 4 | §6.1 ③ / ④：附加两种卡法（「必完不一致」「正常在产」） | 落码的 `stalled.kind` 只有 `not_started` 一种 | ⚠️ **设计写了、代码没有**（③④ 原文标为「附加，免费」）⇒ **只登记** |
 | 5 | §12 D9 的 422 判据 | ✅ 已落码（`OPERATION_NOT_IN_SCAN_TARGET`，含测试） | ✅ 一致（判据名见 §16.1） |
 
-> 🔴 **本节不含裁定**：上表 ⚠️ / 🔴 各行**都未在本单修改**（本单只动 §5.3 ④ 的两处，即 16.1 的 `CODE_POSITION_MISMATCH` 行与 16.4 的第 1 行）。
+> 🔴 **本节不含裁定**：上表 ⚠️ / 🔴 各行**都未在本单修改**（#4791 只动 §5.3 ④ 的两处，即 16.1 的 `CODE_POSITION_MISMATCH` 行与 16.4 的第 1 行）；
+> **#4810 只动 16.2 的三行 + 16.4 第 2 行的指针**（判据本体落 **§5.3.1**，**不含任何业务裁定**）。

@@ -262,7 +262,31 @@ class ProductionScanCompleteServiceTest {
 
         assertThatThrownBy(() -> service.complete(body(TOKEN), TENANT, "key-1", WORKER))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("没有可报的工序");
+                .hasMessageContaining("没有可报的工序")
+                // 🔴 契约面（issue #4810）：`@DisplayName` 只是**文案**，不是断言 —— 码与状态码在这里钉死
+                // （设计 §5.3.1「拒绝码 = 契约面」）。红证：把源码里的 409 改成别的值 ⇒ 本断言红。
+                .hasFieldOrPropertyWithValue("code", "SET_ALREADY_COMPLETED")
+                .hasFieldOrPropertyWithValue("httpStatus", 409);
+
+        assertNothingWritten();
+    }
+
+    @Test
+    @DisplayName("🔴 推断之后被报满（并发窗口）⇒ 409 OPERATION_ALREADY_ADVANCED，且零写入")
+    void operationFilledBetweenResolveAndChargeIsRejected() {
+        // 并发窗口的可执行形态（issue #4810 补，对应设计 §5.3.1 的落点 (b)）：
+        // **推断读**（`selectList`，走 `ProductionScanService#listSetOperations`）看到「未完成 6/11 米」
+        // ⇒ 工序确定；而**记账前重读**（`selectById`，走 `ProductionService#requireActiveOperation`）
+        // 同一行已被别人报满 11/11 ⇒ `plannedRemaining(op) ≤ 0` ⇒ 必须拒绝，绝不记一笔 0 米的账。
+        stubPending(op(OP_CLOTH, ITEM_CLOTH, 1, "精裁-布", "11", "6", new BigDecimal("3.50")));
+        when(positionOperationMapper.selectById(OP_CLOTH))
+                .thenReturn(op(OP_CLOTH, ITEM_CLOTH, 1, "精裁-布", "11", "11", new BigDecimal("3.50")));
+
+        assertThatThrownBy(() -> service.complete(body(TOKEN), TENANT, "key-1", WORKER))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已报满")
+                .hasFieldOrPropertyWithValue("code", "OPERATION_ALREADY_ADVANCED")
+                .hasFieldOrPropertyWithValue("httpStatus", 409);
 
         assertNothingWritten();
     }
@@ -276,7 +300,10 @@ class ProductionScanCompleteServiceTest {
 
         assertThatThrownBy(() -> service.complete(body(OLD_CODE), TENANT, "key-1", WORKER))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("旧码");
+                .hasMessageContaining("旧码")
+                // 🔴 契约面（issue #4810）：码 + 状态码逐字钉住（设计 §5.3.1）；账本逐字同款
+                .hasFieldOrPropertyWithValue("code", "SCAN_NEEDS_SELECTION")
+                .hasFieldOrPropertyWithValue("httpStatus", 422);
 
         assertNothingWritten();
     }
@@ -316,7 +343,10 @@ class ProductionScanCompleteServiceTest {
 
         assertThatThrownBy(() -> service.complete(payload, TENANT, "key-1", WORKER))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("旧码");
+                .hasMessageContaining("旧码")
+                // 🔴 只选一半 ⇒ **仍**是 422 `SCAN_NEEDS_SELECTION`（不是另一条码）：两个键都非空才走选择路径
+                .hasFieldOrPropertyWithValue("code", "SCAN_NEEDS_SELECTION")
+                .hasFieldOrPropertyWithValue("httpStatus", 422);
 
         assertNothingWritten();
     }
@@ -491,7 +521,11 @@ class ProductionScanCompleteServiceTest {
 
         assertThatThrownBy(() -> service.complete(body(TOKEN), TENANT, "key-1", WORKER))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("刚被另一次报工推进");
+                .hasMessageContaining("刚被另一次报工推进")
+                // 🔴 契约面（issue #4810）：CAS 影响行数 0 ⇒ 409 `OPERATION_ALREADY_ADVANCED`
+                // （设计 §5.3.1 的落点 (a)）。红证：把源码里的 409 改成别的值 ⇒ 本断言红。
+                .hasFieldOrPropertyWithValue("code", "OPERATION_ALREADY_ADVANCED")
+                .hasFieldOrPropertyWithValue("httpStatus", 409);
 
         // 失败 ⇒ 释放占位（否则一次失败把键永久占死）；且**不得**落结果快照（否则同键重试被回放成「成功」）
         verify(clientRequestIdService).discard(TENANT, "key-1");
