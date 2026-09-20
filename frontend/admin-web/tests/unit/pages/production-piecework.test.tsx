@@ -3,9 +3,49 @@
 // 消费 GET /api/admin/production/piecework/summary?period=YYYY-MM[&worker_name=]，
 // 按期间（月份选择）+ 按工人 / 按工序两档展示；默认期间 = 当前月（不空查）。
 // 反 placeholder：断言必须落到**真实金额/数量**，不能只断言页面存在。
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+
+// ── 冻结墙钟（issue #4761，形态 A「用墙钟造期望值」）──────────────────────────
+// 病根：期望值取自**断言时刻**的墙钟，页面取**渲染时刻**的墙钟 —— 两个时刻各自算「当前月」，
+// 跨月/跨日边界必红（落在 required 的 `admin-web typecheck + unit tests` 里 ⇒ 随机卡任何前端 PR）。
+// 修法：把系统时钟冻结在一个**远离月/日边界**的时刻，期望值与页面同刻派生。
+//
+// ⚠️ 冻结走独立模块 `../helpers/frozen-clock`（导入期夹具）：`import` 声明会被提升，
+//    写在文件里「先 `useFakeTimers()` 后 `import Page`」**不成立**（实测，见夹具注释）。
+//
+// 「月」的**时区口径 = 本地月**（issue #4761 的结论，证据三条）：
+//   ① 后端 `ProductionService.pieceworkSummary` 用 `work_date`（`LocalDate`，**无时区**）
+//      ∈ `[month.atDay(1), month.atEndOfMonth()]` 过滤 ⇒ `period` 指的是「那一天所在的那个月」；
+//   ② 后端 `application.yml` 的 `spring.jackson.time-zone: Asia/Shanghai`（同一份文件）；
+//   ③ 同域的财务页默认期间 `getCurrentPeriod()` 用 `getFullYear()/getMonth()`（**本地**月）。
+// ⇒ 语义结论：**本地月**。`toISOString().slice(0, 7)` 是 **UTC** 月，**不得**用作期望值：
+//    在 UTC+8 的每月 1 日 00:00~08:00 这 8 小时里，UTC 月 = 上一个月。
+//
+// ⚠️ 分叉登记（本单只动 `tests/**`，故**不改**被测页面）：页面
+//    `src/app/(dashboard)/production/piecework/page.tsx` 的 `currentPeriod()` **恰恰就是**
+//    `new Date().toISOString().slice(0, 7)`（UTC 月）⇒ 上面那 8 小时窗口里，页面默认查**上一个月**
+//    （用户本地已是新月份）⇒ **真实产品缺陷**，需另立产品缺陷单；本单已上报，不在此修。
+//
+// 因此本用例的期望值取「与页面**同一真值源**（冻结后的系统时钟）派生」，使判据**今天**可判定、
+// 且**任何时区**下都确定（月中时刻的 UTC 月 == 本地月，已在上方给出证据）。
+// ⚠️ 这里刻意**不**写成「本地月派生」：本单红线禁止改页面 ⇒ 页面仍是 UTC 月，写成本地月会让
+//    用例在那 8 小时窗口里**确定红**（那需要页面先修）。产品缺陷单修好后，本处应同步改本地月派生。
+import { FROZEN_NOW } from '../helpers/frozen-clock'
+
+/**
+ * 期望值 = 从**冻结后的系统时钟**派生的「当前月」（与页面同一真值源）。
+ *
+ * ⚠️ 为什么用 `toISOString().slice(0, 7)`（UTC 月）而不是本地月：**不是**认为 UTC 对，
+ * 而是被测页面的 `currentPeriod()` 现在就是 UTC 月，而本单红线只动 `tests/**`。
+ * 写成本地月 ⇒ 在 UTC+8 每月 1 日 00:00~08:00 这 8 小时里用例**确定红**（页面缺陷所致）。
+ * 页面修成正确的**本地月**后，本函数应同步改成
+ * `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`（见文件头分叉登记）。
+ */
+function expectedPeriod(now: Date): string {
+  return now.toISOString().slice(0, 7)
+}
 
 const mockGetPieceworkSummary = vi.fn()
 
@@ -44,11 +84,18 @@ const ok = (data: unknown) => ({ data: { success: true, data } })
 
 describe('计件工资报表页 /production/piecework', () => {
   beforeEach(() => {
+    vi.setSystemTime(FROZEN_NOW) // 每条用例都回到同一冻结时刻
     mockGetPieceworkSummary.mockReset().mockResolvedValue(ok(REPORT))
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('默认期间 = 当前月（YYYY-MM），首屏即查（不空查）', async () => {
-    const expected = new Date().toISOString().slice(0, 7)
+    // 期望值从**与页面同一真值源**（冻结后的系统时钟）派生 —— 不再是「断言时刻的墙钟」，
+    // 故渲染/断言之间不可能跨月（改前形态：`new Date().toISOString().slice(0, 7)` 各自取时钟）。
+    const expected = expectedPeriod(FROZEN_NOW)
     render(<PieceworkReportPage />)
 
     await waitFor(() => expect(mockGetPieceworkSummary).toHaveBeenCalled())

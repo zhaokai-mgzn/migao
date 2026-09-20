@@ -316,11 +316,41 @@ def test_repo_ledger_is_well_formed():
     """仓库里那份账本本身要合规，且每条豁免都带 `remedy`（可行动，不是「永久豁免」）。"""
     ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
     assert mod.validate_ledger(ledger) == []
-    entries = ledger["entries"]
-    assert entries, "账本为空 ⇒ 上面那条「零新增命中」的读数没有存量对照，说明扫描面可能已失效"
-    for key, meta in entries.items():
+    for key, meta in ledger["entries"].items():
         assert meta.get("remedy", "").strip(), f"{key} 缺 remedy（豁免必须可行动）"
         assert meta.get("follow_up", "").strip(), f"{key} 缺 follow_up"
+
+
+def test_scan_surface_still_has_discriminating_power():
+    """**扫描面仍会判红**的自证（注入式红证）—— 账本清空后，「0 命中」必须有对照。
+
+    issue #4761 把账本里最后 3 条（共 12 处命中）**销账** ⇒ `entries` 合法地变成**空**。
+    旧版本文件用「`assert entries`（账本非空）」来防「扫描面失效导致 0 命中是假的」——
+    那是**错的不变式**：账本的设计契约就是「只许缩短」（`_when_to_regen` 明写「修好了就删掉该条目」），
+    全部修完 ⇒ 必然为空，这条断言会把**修完**判成红（正是本单踩到的形态）。
+
+    改为**正向注入式红证**：把守卫自己文档里的红样本喂给 `scan_text()`，证明判据仍在判红；
+    再对**真实仓库**断言「新命中 / 增长 / 残留」三态全空。⇒ 比「账本非空」**更强**：
+    后者只证明账本里有字，前者证明**判据本身还会红**。
+    """
+    # ① 判据自证：期望值取自墙钟 ⇒ 必须判红（样本出自本守卫模块 docstring 的红样本）
+    red_sample = """
+  it('默认期间 = 当前月', async () => {
+    const expected = new Date().toISOString().slice(0, 7)
+    expect(mockGet).toHaveBeenCalledWith({ period: expected })
+  })
+"""
+    hits = mod.scan_text(red_sample, "sample.test.tsx")
+    assert hits, "扫描面已失效：注入的墙钟期望值样本没有被判红"
+    assert [h.symbol for h in hits] == ["expected"], hits
+
+    # ② 真实仓库：销账后应无任何命中（新 / 增长 / 残留 三态全空）
+    findings, files = mod.scan_repo(ROOT)
+    assert files, "扫描面为空 ⇒ 判据在空跑（0 命中会是假的）"
+    result = mod.reconcile(findings, json.loads(LEDGER.read_text(encoding="utf-8")))
+    assert result.new == [] and result.grown == [] and result.stale == [], (
+        f"销账后仍有残留：new={result.new} grown={result.grown} stale={result.stale}"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
