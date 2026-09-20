@@ -21,7 +21,7 @@
 ## ⚠️ 射程说明（前向生效，不追溯已发布迁移）
 
 本测试**只对「新增/未发布迁移」生效**，理由是仓库护栏优先级：
-`.github/danger_scan.py:87-100` 把「已发布迁移只增不改」定为铁律，且 Danger Scan 是 main 的
+`.github/danger_scan.py` 把「已发布迁移只增不改」定为铁律，且 Danger Scan 是 main 的
 9 项 `required_status_checks` 之一 ⇒ **已发布迁移在流程上不可修**。
 若本测试对存量 offenders 直接报红，会卡死每一个 PR（包括无关 PR）却给不出可执行的修复路径。
 故采用仓库既有的「**显式登记 + 理由**」范式（同 `qa-exemptions` / 用例覆盖存量豁免清单）：
@@ -33,7 +33,7 @@
 
 | 迁移 | 处数 | kind | 真库实测错误 |
 |---|---|---|---|
-| `V44__create_daily_briefings.sql` | 1 | `create-policy-not-guarded` | 策略 "tenant_isolation_daily_briefings" 已经存在（`schema.sql:1211-1213` 已建同名策略） |
+| `V44__create_daily_briefings.sql` | 1 | `create-policy-not-guarded` | 策略 "tenant_isolation_daily_briefings" 已经存在（`schema.sql` 里已建同名策略） |
 | `V37__rename_knowledge_entries_to_cards.sql` | 4 | `rename-not-guarded` | 关系 "knowledge_cards" 已经存在（表改名）+ 关系 "idx_knowledge_cards_tenant" 已经存在（索引改名） |
 | `V42__reconcile_knowledge_table_name.sql` | 3 | `rename-not-guarded` | 关系 "idx_knowledge_cards_tenant" 已经存在（干净 bootstrap 顺序下靠上面 DO 块的 `DROP TABLE` 连带删源索引而**侥幸**不报错） |
 

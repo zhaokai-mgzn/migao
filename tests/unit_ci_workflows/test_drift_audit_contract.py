@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -454,6 +455,77 @@ def test_ref_freshness_allows_sha_qualified(tmp_path):
     })
     rc, out, rep = run(repo, "--check", "--only", "ref-freshness", "--stale-scope", "none")
     assert rc == 0 and check_of(rep, "ref-freshness")["status"] == "ok", out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ⑤-2 扫描面（`exts`）自身的护栏（#4708）
+#
+# 病根：`exts` 表漏一类文件 ⇒ **那一整类永久免检，且没有任何东西会变红**。实证 = `.sql` 不在表里
+# ⇒ V88 迁移文件头里那条无 `@<sha>` 的引用是**双 AI 交叉验证**时才被人工发现的（不是被审计抓到的）。
+#
+# ⚠️ 夹具里的引用字面量必须**拼出来**：本文件自己就在受管引用面里（`tests/unit_ci_workflows/**`），
+# 直接写 `路径:行号` 会被模式扫描当成残留引用（dev-flow §18.1；同本文件顶部的 `_PY` / `_NOWHERE`）。
+# ─────────────────────────────────────────────────────────────────────────────
+_MIG_DIR = "backend/admin-api/src/main/resources/db/migration/"
+_SQL_REF = "scripts/fixture_surface" + ".py" + ":" + "1"
+
+
+def _drift_module():
+    """按**路径**加载被测脚本（`dataclass` 要求模块在 `sys.modules` 里可达）。"""
+    spec = importlib.util.spec_from_file_location("drift_audit_scan_face_under_test", DRIFT)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["drift_audit_scan_face_under_test"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_migration_sql_is_scanned_bare_ref_red_sha_qualified_green(tmp_path):
+    """红证 + **反向护栏**：迁移 `.sql` 在扫描面内（#4708）。
+
+    · 红证：迁移文件里一条**无 `@<sha>`** 的 `路径:行号` ⇒ 必被抓到
+      （改前 `.sql` 不在扫描面 ⇒ 整类免检，V88 就是这么漏掉的）；
+    · 反向护栏：**带 `@<sha>`** 的同款引用**不得**被判红 —— 否则会误伤合规迁移。
+    """
+    repo = mk_repo(tmp_path, {
+        f"{_MIG_DIR}V1__fixture_bare.sql": f"-- 见 `{_SQL_REF}` 的实现（无 @sha）\n",
+        f"{_MIG_DIR}V2__fixture_qualified.sql": f"-- 见 `{_SQL_REF}@d0724892` 的实现\n",
+    }, surface_seed=True)
+    rc, out, rep = run(repo, "--check", "--only", "ref-freshness", "--stale-scope", "none")
+    chk = check_of(rep, "ref-freshness")
+    details = " || ".join(f["detail"] for f in chk["findings"])
+    assert rc == 1, out
+    assert "V1__fixture_bare.sql" in details and "无 `@<sha>` 限定" in details, details
+    assert "V2__fixture_qualified.sql" not in details, (
+        f"带 `@<sha>` 限定的引用被误判 ⇒ 会误伤合规迁移：{details}")
+
+
+def test_scan_ext_face_is_pinned_and_census_reds_when_an_ext_is_dropped():
+    """守卫钉住扫描面（#4708 第 3 条）：漏一类 ⇒ **必红**，不靠人记得更新表。
+
+    ① **直接钉**：`.sql` 必须在 `SCAN_EXTS` 内（把它去掉 ⇒ 本断言红）；
+    ② **反推对账**：受管面里真实存在的类型必须 ∈ 扫描面 ∪ 有意不判（当前树 ⇒ 0 条命中）；
+    ③ **注入红证**：把 `.sql` 从扫描面拿掉 ⇒ 同一棵树上对账**必红**
+      （证明 ② 不是空断言 —— 判据与"现实里真有什么"对账，而不是与记忆对账）。
+    """
+    mod = _drift_module()
+    assert ".sql" in mod.SCAN_EXTS, (
+        "`.sql` 不在扫描面内 ⇒ 迁移文件里的裸行号/移动靶引用**整类永久免检**（#4708 的形态）")
+
+    def census_findings():
+        audit = mod.Audit(REPO_ROOT, base="origin/main", offline=True)
+        return [f.key for f in mod.check_regression_guard(audit).findings
+                if f.key.startswith("ext-not-scanned|")]
+
+    assert not census_findings(), (
+        f"受管面里有文件类型既没被扫描、也没登记『有意不判』的理由：{census_findings()}")
+    original = mod.SCAN_EXTS
+    mod.SCAN_EXTS = tuple(e for e in original if e != ".sql")
+    try:
+        dropped = census_findings()
+    finally:
+        mod.SCAN_EXTS = original
+    assert "ext-not-scanned|.sql" in dropped, (
+        f"把 `.sql` 从扫描面拿掉却没红 ⇒ 这条守卫是空断言（改前形态会原样复发）：{dropped}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
