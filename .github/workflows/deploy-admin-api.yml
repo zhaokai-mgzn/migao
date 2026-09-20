@@ -35,6 +35,10 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    # 硬超时兜底（issue #4767 ①）：脚本被卡死时由 GitHub 终止 run ⇒ run 进**终态** ⇒
+    # `deploy-admin-api` 的 concurrency 组释放。事故里挂住的 run 占锁 20+ 分钟 ⇒ 后续 main 的部署全被挡住。
+    # 45min 远高于实测正常 job（≈5-11min）⇒ 不误杀正常构建；真正的部署阶段上界在脚本里（15min/次尝试）。
+    timeout-minutes: 45
     # 部署对账输出（issue #2947）：schedule 触发时若镜像已存在则 skip=true（本轮未部署）
     outputs:
       deployed: ${{ steps.sync.outputs.skip }}
