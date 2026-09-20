@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
+import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProductionWorkLog;
 import com.migao.admin.entity.WorkerReportAudit;
@@ -130,6 +131,32 @@ public class ProductionService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private WorkerReportAuditMapper workerReportAuditMapper;
 
+    /**
+     * 套号分配器（切片 ⓪.5，issue #4789）：**新单**的套号由它落库（此前只有 V92 的存量回填在写）。
+     *
+     * <p>与上面 {@link #workerReportAuditMapper} 同款用**字段注入**：本类的构造签名被既有测试
+     * （{@code ProductionServiceTest} 等 15 个文件的 21 处 {@code new ProductionService(…)}）直接装配，
+     * 加构造参数会把它们的装配全改一遍 —— 而本单的改动面**不应**扩到既有测试。Spring 生产装配下
+     * 该依赖一定非 null（同包 {@code @Service}）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ProcessingOrderSetAllocator orderSetAllocator;
+
+    /**
+     * 套行读面（切片 ⓪.5，issue #4789）：把实例行落 {@code set_id}/{@code set_no}（V92 六列中的两列）。
+     * 字段注入理由同上。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.migao.admin.mapper.ProcessingOrderSetMapper orderSetMapper;
+
+    /**
+     * 部位码载体（切片 ⓪.5，issue #4789）：一部位一码的**写方** —— 此前全仓零写方 ⇒
+     * 新码形态（{@code processing_set_part_tokens}）永远不出现，工人扫「部位码」无从谈起。
+     * 字段注入理由同上。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.migao.admin.mapper.ProcessingSetPartTokenMapper setPartTokenMapper;
+
     // ============================================================ 实例化
 
     /**
@@ -154,6 +181,12 @@ public class ProductionService {
                     "订单 " + order.getOrderNo() + " 尚无加工单，请先生成加工单再实例化工序");
         }
         List<OpSpec> specs = parseSpecs(positions);
+        // 套号分配（切片 ⓪.5，issue #4789）：**在任何码之前** —— 码/token 编码的是 set_no，
+        // 没有套号就没有码（这正是 #4725 实测登记的缺口：新单无 set_no ⇒ 二维码按钮对新单是空的）。
+        // 幂等/并发/不追溯见 ProcessingOrderSetAllocator（已有套行 ⇒ 整段跳过 ⇒ 历史单一行不碰）。
+        // 位置在 ensureQrToken 之前：>999 的显式拒绝必须发生在**写任何东西之前**（不留半成品）。
+        Map<String, ProcessingOrderSet> setByGroup = ensureSetsFor(po, specs, tenantId);
+        Map<String, String> itemGroupKey = itemIdToGroupKey(po, specs);
         String qrToken = ensureQrToken(po);
 
         // 幂等：配置与已有活跃实例一致 ⇒ 一行都不碰（重复调用不得重插行/不得清零报工进度）
@@ -178,6 +211,9 @@ public class ProductionService {
         }
 
         for (OpSpec spec : specs) {
+            // 套归属 = 该部位行所属樘窗组的套（`itemId → 组键 → 套` 逐级查；查不到 ⇒ 留空不猜）
+            ProcessingOrderSet set = spec.orderItemId() == null
+                    ? null : setByGroup.get(itemGroupKey.get(spec.orderItemId()));
             positionOperationMapper.insert(ProcessingPositionOperation.builder()
                     .tenantId(tenantId)
                     .processingOrderId(po.getId())
@@ -195,6 +231,9 @@ public class ProductionService {
                     .qtySource(spec.qtySource())
                     .isMustFinish(spec.mustFinish())
                     .isStartMarker(spec.startMarker())
+                    // 套归属快照（V92 六列中的 set_id / set_no；设计 §2.2「实例快照，不靠 join」）
+                    .setId(set == null ? null : set.getId())
+                    .setNo(set == null ? null : set.getSetNo())
                     .status("pending")
                     .doneQty(BigDecimal.ZERO)
                     .createdAt(OffsetDateTime.now())
@@ -202,9 +241,103 @@ public class ProductionService {
                     .deleted(0)
                     .build());
         }
+        // 部位码（一部位一码，设计 §2.3）：**分配出套号之后**同事务生成 —— 码内容 = 单号 + 套号 + 部位。
+        // 同一部位重复打印**复用同一 token**（不换码）⇒ 已存在的行一行不碰（uk_set_part_tokens_part）。
+        ensurePartTokens(po, specs, setByGroup, itemGroupKey, tenantId);
         log.info("实例化工序: po={}, orderId={}, operations={}, qrToken={}",
                 po.getProcessingOrderNo(), order.getId(), specs.size(), qrToken);
         return instantiateResult(qrToken, specs.size());
+    }
+
+    /**
+     * 套号分配（切片 ⓪.5，issue #4789）：**唯一输入 = 加工单快照**（固化真相，与 V92 回填同源）。
+     *
+     * <p>调用方拿到的是 {@code 组键 → 套行} 的映射，用于把实例行落 {@code set_id}/{@code set_no}。</p>
+     *
+     * <p><b>为什么由 {@code instantiate} 触发（而不是订单创建 / 首次生成码）</b>：见设计 §14.1 的
+     * 取舍表 —— ① 实例化是**已有的**「订单 → 生产凭据」动作（#4116「生成即实例化」已在该路径上）；
+     * ② 此刻加工单号已定（套号由它拼出）；③「订单创建时」还没有加工单号；④「首次生成码时」会把
+     * 分配藏进只读端点（{@code /scan}）⇒ 只读面写库，且号序依赖扫码顺序（不可复现）。</p>
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, ProcessingOrderSet> ensureSetsFor(ProcessingOrder po, List<OpSpec> specs,
+                                                          Long tenantId) {
+        if (orderSetAllocator == null || orderSetMapper == null) {
+            return Map.of();
+        }
+        Object raw = po.getItemsSnapshot();
+        List<Map<String, Object>> snapshot = raw instanceof List<?> list
+                ? (List<Map<String, Object>>) list : List.of();
+        if (snapshot.isEmpty()) {
+            log.warn("套号分配跳过（加工单快照为空）: po={}", po.getProcessingOrderNo());
+            return Map.of();
+        }
+        List<ProcessingOrderSet> sets = orderSetAllocator.ensureSets(po, snapshot, tenantId);
+        Map<String, ProcessingOrderSet> byGroup = new LinkedHashMap<>();
+        for (ProcessingOrderSet set : sets) {
+            if (set.getCraftLineId() != null) {
+                byGroup.put(set.getCraftLineId(), set);
+            }
+        }
+        return byGroup;
+    }
+
+    /**
+     * 部位行 id → 樘窗组键（{@code craftLineId ?? itemId}）。
+     *
+     * <p>判据 = **该部位行所属订单行**的 {@code processing_info.craftLineId}（与
+     * {@code ProcessingOrderService.craftGroupKey} / V92 回填 / {@link #windowGroupKeys} **同一份口径**）。
+     * 只查本单**真正引用到**的明细行（与 {@code windowGroupKeyByItemId(logs,…)} 同款「范围由引用界定」）。</p>
+     */
+    private Map<String, String> itemIdToGroupKey(ProcessingOrder po, List<OpSpec> specs) {
+        Set<String> itemIds = new LinkedHashSet<>();
+        for (OpSpec spec : specs) {
+            if (StringUtils.hasText(spec.orderItemId())) {
+                itemIds.add(spec.orderItemId());
+            }
+        }
+        if (itemIds.isEmpty()) {
+            return Map.of();
+        }
+        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getTenantId, po.getTenantId())
+                .eq(OrderItem::getDeleted, 0)
+                .in(OrderItem::getId, itemIds));
+        return windowGroupKeys(items);
+    }
+
+    /**
+     * 部位码（一部位一码，设计 §2.3）：**分配出套号之后**同事务生成。
+     *
+     * <p>码内容 = 单号 + 套号 + 部位（token 化）；**工序不进码**（工艺一改全车间重打）。
+     * token = 32 位 UUID 去横线（与既有 {@code qr_token} 同格式）。</p>
+     *
+     * <p><b>一部位一码 + 复用不换码</b>：{@code uk_set_part_tokens_part (tenant_id, set_id, order_item_id)}
+     * 是唯一键 ⇒ 同一部位重复打印/重复实例化**复用同一 token**（已打印的纸不作废）。
+     * 插入走 {@code ON CONFLICT … DO NOTHING}（幂等），冲突目标带索引谓词 {@code WHERE deleted = 0}。</p>
+     */
+    private void ensurePartTokens(ProcessingOrder po, List<OpSpec> specs,
+                                  Map<String, ProcessingOrderSet> setByGroup,
+                                  Map<String, String> itemGroupKey, Long tenantId) {
+        if (setPartTokenMapper == null) {
+            return;
+        }
+        Set<String> done = new LinkedHashSet<>();
+        for (OpSpec spec : specs) {
+            String itemId = spec.orderItemId();
+            if (itemId == null || !done.add(itemId)) {
+                continue; // 同一部位多道工序 ⇒ 只一码（一部位一码）
+            }
+            ProcessingOrderSet set = setByGroup.get(itemGroupKey.get(itemId));
+            if (set == null) {
+                continue; // 归不到套 ⇒ 不猜（该部位码无从拼出「单号+套号+部位」）
+            }
+            setPartTokenMapper.insertIgnoreConflict(new com.migao.admin.mapper.ProcessingSetPartTokenMapper
+                    .PartTokenRow(UUID.randomUUID().toString().replace("-", ""), tenantId, po.getId(),
+                    set.getId(), itemId, spec.positionKind(),
+                    UUID.randomUUID().toString().replace("-", ""), OffsetDateTime.now(),
+                    OffsetDateTime.now(), 0));
+        }
     }
 
     /** 复用已有 token（已打印的码不失效）；缺失时生成 32 位 token 并落库。 */
