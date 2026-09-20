@@ -625,7 +625,7 @@ fi
 # 这里把 admin-api 最近 200 行里的**迁移行**打进本次部署日志：它是「迁移到底跑没跑」的
 # **唯一可见面**（本脚本 stdout 会回流到 CI 日志）。`grep` 无命中不算失败（可能未重启容器）。
 echo "== 4. admin-api 迁移结果（MigrationRunner 事实 —— 静默迁移失败的唯一可见面）=="
-docker compose logs --tail=200 admin-api 2>&1 | grep -aE "MigrationRunner|迁移" \
-  || echo "  （最近 200 行里没有迁移行：容器可能未重启，或日志已被轮转）"
+docker compose logs --tail=1500 admin-api 2>&1 | grep -aE "MigrationRunner|迁移|PSQLException|Caused by|ERROR: " \
+  || echo "  （最近 1500 行里没有迁移行：容器可能未重启，或日志已被轮转）"
 
 echo "== deploy.sh 完成（耗时主要取决于镜像拉取） =="
