@@ -74,6 +74,11 @@ REF_SURFACE = (
     ".github/workflows/",
     ".agent-presets/",
     "scripts/",
+    # 迁移文件**最常引用代码位置**（#4708 实证：V88 的文件头就引用了一个 Java 服务方法），
+    # 而它们此前整类不在判定面内 ⇒ 那里的裸行号引用永久免检。**加面不是加豁免**：
+    # 已发布迁移被 `migration_fingerprints.json` 指纹守卫冻结（不可改）⇒ 其中查出的存量
+    # 逐条进 burn-down 基线（见基线 JSON 的 `reason`），**新增**迁移照常 fail-closed。
+    "backend/admin-api/src/main/resources/db/migration/",
 )
 REF_SURFACE_EXEMPT = (
     "docs/audit-",            # 月度审计快照
@@ -86,6 +91,23 @@ DERIVED_VIEWS = (
     "docs/testing/mibao-verification-cases.md",
     "tests/agent_eval/eval_cases.py",
 )
+
+# ── 扫描面：受管引用面里**哪些文件类型**会被判定 ───────────────────────────────
+# ⚠️ **漏一类 = 那一类永久免检，而且没有任何东西会变红**（#4708 的确切形态：`.sql` 不在这张
+# 表里 ⇒ 迁移文件里的裸行号/移动靶引用**整类**不在判定面内，是**双 AI 交叉验证**时才被
+# 人工发现的）。所以这张表不许靠人记得更新 —— 由 `check_regression_guard` 的 `ext-census`
+# 判据**与受管面里真实存在的类型对账**（反推、不硬编码）：
+#   受管面里出现的每个扩展名必须 ∈ `SCAN_EXTS` ∪ `SCAN_EXT_NOT_JUDGED`，否则红。
+# `.mjs` 与已判的 `.js` 同族（ESM 孪生）—— 同一次对账把它一并纳入。
+SCAN_EXTS = (".md", ".yml", ".yaml", ".py", ".sh", ".ts", ".tsx", ".js", ".mjs", ".sql")
+# 受管面里**有意不判**的类型：每一条都必须写清「为什么它不是契约引用载体」。
+# 新增一类 = 在这里登记（`ext-census` 会逼你选：进扫描面，或在这里给出理由）。
+SCAN_EXT_NOT_JUDGED = {
+    "": "无扩展名的点文件（`.gitignore` 一类）：配置，不是引用载体",
+    ".json": "数据/账本文件（漂移基线、迁移指纹账本）：内容由脚本读写；且基线 JSON 自身"
+             "承载引用字面量（`reason` / `_note` 里会写到被判过的引用）⇒ 纳入判定等于"
+             "**判据读自己的豁免清单**（自指）",
+}
 
 SKILLS_DIR = ".agent-presets/migao/skills"
 DEV_FLOW_SKILL = ".agent-presets/migao/skills/migao-dev-flow/SKILL.md"
@@ -575,8 +597,7 @@ def _in_surface(rel: str) -> bool:
 
 
 def _iter_surface_files(a: Audit) -> list[str]:
-    exts = (".md", ".yml", ".yaml", ".py", ".sh", ".ts", ".tsx", ".js")
-    return [f for f in a.tracked() if _in_surface(f) and f.endswith(exts)]
+    return [f for f in a.tracked() if _in_surface(f) and f.endswith(SCAN_EXTS)]
 
 
 def check_refs(a: Audit) -> CheckResult:
@@ -897,9 +918,37 @@ def check_heartbeat(a: Audit) -> CheckResult:
 # ═══════════════════════════════════════════════════════════════════════════
 # C7 退化守卫（meta：护栏自身纳入 L0）
 # ═══════════════════════════════════════════════════════════════════════════
+def _surface_ext_census(a: Audit) -> dict[str, int]:
+    """受管引用面里**真实存在**的文件类型 → 文件数（反推，不硬编码）。
+
+    这是「扫描面漏一类」这条缺陷的判据源：表（`SCAN_EXTS`）与**现实**（仓库里真有什么）
+    对账，而不是与人对表的记忆对账。
+    """
+    out: dict[str, int] = {}
+    for f in a.tracked():
+        if not _in_surface(f):
+            continue
+        ext = os.path.splitext(f)[1]
+        out[ext] = out.get(ext, 0) + 1
+    return out
+
+
 def check_regression_guard(a: Audit) -> CheckResult:
     r = CheckResult("regression-guard")
     r.evaluated = len(CHECKS)
+    # 扫描面 ⇄ 受管面的**类型对账**（#4708）：受管面里有一类文件没被扫描 ⇒ 整类永久免检。
+    census = _surface_ext_census(a)
+    for ext, n in sorted(census.items()):
+        if ext in SCAN_EXTS or ext in SCAN_EXT_NOT_JUDGED:
+            continue
+        r.findings.append(Finding(
+            f"ext-not-scanned|{ext or '<无扩展名>'}",
+            f"受管引用面里有 {n} 个 `{ext or '无扩展名'}` 文件，但它**不在扫描面**里 ⇒ 这一整类"
+            f"文件里的裸行号/移动靶引用**永久免检**（#4708 的确切形态：`.sql` 漏了 ⇒ 迁移里的"
+            f"无 `@<sha>` 引用整类不被判）。处置二选一：加进 `SCAN_EXTS`（并补红证），或在"
+            f"`SCAN_EXT_NOT_JUDGED` 里登记**理由**（为什么它不是契约引用载体）"))
+    r.notes.append("受管面文件类型：" + str(
+        {(k or "<无扩展名>"): v for k, v in sorted(census.items())}))
     if not CHECKS:
         r.status = "error"
         r.error = "判据集合为空 —— 审计退化成了空跑"
@@ -998,8 +1047,10 @@ CHECKS: list[Check] = [
         id="regression-guard", invariant="meta",
         title="退化守卫（护栏自身）",
         judgment="判据集合不得为空；每条判据必须写清判定方式与违反后的处置；每条判据的判定面不得为 0；"
-                 "基线清单不得含『已不再漂移』的条目。**任一 ⇒ 红。**",
-        remedy="补回判据 / 补 `judgment`+`remedy` / 删掉基线里已归零的条目（`--regen-baseline`）。",
+                 "受管引用面里**真实存在**的文件类型必须都在扫描面内（或在『有意不判』表里登记理由）"
+                 "—— 漏一类 = 那一类永久免检（#4708 的形态）。**任一 ⇒ 红。**",
+        remedy="补回判据 / 补 `judgment`+`remedy` / 新类型加进 `SCAN_EXTS`（并补红证）"
+               "或在 `SCAN_EXT_NOT_JUDGED` 里登记理由 / 删掉基线里已归零的条目（`--regen-baseline`）。",
         fn=check_regression_guard, min_evaluated=1,
     ),
 ]
