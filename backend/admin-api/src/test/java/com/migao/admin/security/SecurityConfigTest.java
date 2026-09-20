@@ -797,6 +797,28 @@ class SecurityConfigTest {
                 .andExpect(header().exists("Access-Control-Allow-Origin"));
     }
 
+    /**
+     * 🔴 工人端 H5 的预检必须放行 {@code X-Worker-Session-Id}（issue #4716；缺口由 #4733 登记）。
+     *
+     * <p><b>为什么这条必须有</b>：{@code allowedHeaders} 是**逐项白名单** —— 少一个头，
+     * 浏览器预检就不放行它，真实请求**根本发不出去**（前端只看到 CORS 报错，看不出病因）。
+     * 症状是「工人登录成功，之后所有请求全 401」，而服务端日志里连请求都没有。</p>
+     *
+     * <p><b>红证形态</b>：把 {@code allowedHeaders} 里的 {@code "X-Worker-Session-Id"} 去掉
+     * ⇒ 本用例必红（改前实测输出见 PR body）。</p>
+     */
+    @Test
+    @DisplayName("CORS - 工人登录态头 X-Worker-Session-Id 必须被预检放行（去掉该头 ⇒ 必红）")
+    void cors_PreflightAllowsWorkerSessionHeader() throws Exception {
+        mockMvc.perform(options("/api/worker/production/scan")
+                        .header("Origin", "http://localhost:3000")
+                        .header("Access-Control-Request-Method", "GET")
+                        .header("Access-Control-Request-Headers", "X-Worker-Session-Id,Content-Type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Headers",
+                        containsString("X-Worker-Session-Id")));
+    }
+
     // ======================== 刷新 Token 公开端点测试 ========================
 
     @Test

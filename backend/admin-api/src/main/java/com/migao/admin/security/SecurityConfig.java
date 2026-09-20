@@ -97,6 +97,11 @@ public class SecurityConfig {
             ));
         }
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+        // ⚠️ 本清单是**逐项白名单**：漏一个头 ⇒ 浏览器预检（OPTIONS）不放行该头 ⇒
+        // 真实请求根本发不出去（前端只看到 CORS 报错，看不出是「少了一个头」）。
+        // 工人端 H5（issue #4716）的登录态载体是 `X-Worker-Session-Id`（#4733 登记的本处缺口）：
+        // **不加它 ⇒ 工人登录成功后所有请求被预检拦掉**（现象 = 「登录了但全 401」）。
+        // 只加这一个头；origin 白名单**一字不动**（放宽 origin 才是越权面）。
         config.setAllowedHeaders(List.of(
                 "Content-Type",
                 "Authorization",
@@ -104,7 +109,8 @@ public class SecurityConfig {
                 "X-Tenant-Id",
                 "X-Request-Timestamp",
                 "X-Request-Nonce",
-                "X-Request-Id"
+                "X-Request-Id",
+                "X-Worker-Session-Id"
         ));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
