@@ -16,8 +16,8 @@ import lombok.NoArgsConstructor;
  * 撤销语义与既有 {@code processing_orders.qr_token} **逐字同款**：{@code UPDATE … SET token = NULL}。</p>
  *
  * <p>与既有 {@code qr_token} 的关系（设计 §2.6）：**双读、新码优先**；旧码继续有效（不碰、不设强制失效日）。
- * 本实体只映射**解析用到的列**（{@code token} / 归属三键 / 部位种类）；{@code print_count} 等打印面列
- * 本切片无消费者 ⇒ 不映射（需要时按迁移列补）。</p>
+ * 本实体只映射**解析用到的列**（{@code token} / {@code short_code} / 归属三键 / 部位种类）；
+ * {@code print_count} 等打印面列本切片无消费者 ⇒ 不映射（需要时按迁移列补）。</p>
  */
 @Data
 @Builder
@@ -44,6 +44,15 @@ public class ProcessingSetPartToken {
 
     /** 码本体（32 位 UUID 去横线，与既有 {@code qr_token} 同格式）；{@code NULL} = 已撤销。 */
     private String token;
+
+    /**
+     * 人可读短码（V99，issue #4802；8 位 Crockford Base32，随机、全局唯一）。
+     *
+     * <p>与 {@link #token} 是**同一行的两种表示**：{@code token} = 机器标识、
+     * {@code shortCode} = 印在纸上的可抄入口（{@code /s/<短码>} ⇒ 服务端 302 换回 token）。
+     * {@code NULL} = 尚未分配（本次之前的存量行；V99 不回填）。</p>
+     */
+    private String shortCode;
 
     private Integer deleted;
 }
