@@ -130,16 +130,42 @@ cases:
       - type: employee_reactivate
         employee_name: "王五"
         employee_phone: "13700137000"
+    # ── 声明层前置自断言（Case Trust 规则 f，2026-09-20 issue #4709-A 的 burn-down 缴费）──
+    # 本用例是「多轮 + 写期望」用例 ⇒ 必须对自己的**前置**给出可判定断言。前置 =「种子里
+    # `13700137000` 名下**有**那位员工，且它只有一条」—— 本用例的全部行为（`employee_manage`
+    # 的 `toggle_status`）都以它为靶子：目标不在位 ⇒ 红的表现是 `unmatched expectation`
+    # （看起来像「agent 不会停用员工」，归因全错，正是规则 f 要治的形态，实证 PG-013/CU-003）。
+    # `source` = **数字归一的不可变键**（手机号），与 `pre_clean.employee_reactivate` 的定位
+    # 口径**同一份**（`_norm_phone` + `/api/admin/users`），不另造第二套「怎么数员工」的定义。
+    # ⚠️ 刻意**不**声明 `expect: <N>`：基线随栈组成而变（含并行用例），写死会制造**假红**
+    # （先例 = 紧邻的 OR-012，同款依赖、同款治法）。漂移判据 `after - before > max_growth`
+    # （缺省 0）在本用例上不会被自己踩红：本用例的写动作是 **toggle_status（改 status）**，
+    # 不增删员工 ⇒ 计数不变（这正是 `employee_count_for_phone` 计**条数**、不把 status 计入
+    # 口径的理由）。断言面（`user_inputs` / `expectations` / `data_checks` / `pre_clean` /
+    # `namespaces`）**一字未动、无放宽**。
+    precondition:
+      - type: employee_count_for_phone
+        source: "13700137000"
     expectations:
       - tool: employee_manage
         args:
           action: toggle_status
           status: disabled
+    # ── 效果层断言（Case Trust 规则 a2，2026-09-20 issue #4709-A 的 burn-down 缴费）──
+    # 「调用了 ≠ 成了」（#3778）：上面的 `expectations` 只证明 `employee_manage` 被调用且
+    # args 给对 —— 工具返回 `success=false`（停用失败 / 无权限 / 目标不在位）也照样通过。
+    # `must_succeed` 读的是 `tool_result.success`（#3361 起的写/关键工具成功断言），
+    # 停用失败 ⇒ 判红。⚠️ `action` 必填：`employee_manage` 是**多 action 工具**
+    # （create/update/toggle_status/list/...），缺 action 会按**工具名**取首个成功 payload
+    # ⇒ 可能核到别的 action 的返回（假红/假绿双面，同 FN-001 的 `finance_api` 口径）。
+    must_succeed:
+      - tool: employee_manage
+        action: toggle_status
     data_checks:
       - "二次确认后停用"
       - "目标是手机号 13700137000 的种子员工（debug_employee_wangwu），不是任何同名账号"
     skip_reason: ""
-    merge_log: "verification 5.3 独有；2026-09-15（issue #3781）根治假红：① `user_inputs` 改为**手机号显式指代**（#3568 范式，同 HR-008）；② `namespaces` 声明 employee_name:王五 / employee_phone:13700137000（与 HR-002 自动串行）；③ `pre_clean.employee_reactivate` 补 `employee_phone` 精确定位（旧实现只按姓名 `next(...)` 取第一条 ⇒ 命中 HR-002 的同名产物）并改为命中多条时全恢复 —— 病灶铁证：真实 run 34856561459 里 HR-003 的 `employee_manage(list)` 返回 `users=2 total=2`"
+    merge_log: "verification 5.3 独有；2026-09-15（issue #3781）根治假红：① `user_inputs` 改为**手机号显式指代**（#3568 范式，同 HR-008）；② `namespaces` 声明 employee_name:王五 / employee_phone:13700137000（与 HR-002 自动串行）；③ `pre_clean.employee_reactivate` 补 `employee_phone` 精确定位（旧实现只按姓名 `next(...)` 取第一条 ⇒ 命中 HR-002 的同名产物）并改为命中多条时全恢复 —— 病灶铁证：真实 run 34856561459 里 HR-003 的 `employee_manage(list)` 返回 `users=2 total=2`。2026-09-20（issue #4709-A 的 burn-down 缴费，metric=entries ⇒ 必须**整条**销账）：本用例此前命中两条存量违规 —— `CASE-TRUST-NO-EFFECT-ASSERTION`（有写期望却无任何效果层断言）与 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（多轮 + 写期望却无可判定前置）⇒ ① 补**效果层** `must_succeed[employee_manage(action=toggle_status)]`（停用失败即红，「调用了 ≠ 成了」）；② 补**声明层** `precondition[employee_count_for_phone: 13700137000]`（不写 `expect`，同 OR-012/OR-025 口径）。两条合起来 ⇒ 该用例**不再命中任何码**、整条销账，清单条目随之删除（`--prune-baseline`，只删不加）。断言面（`user_inputs` / `expectations` / `data_checks` / `pre_clean` / `namespaces`）**一字未动、无放宽、无删减**。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_employee_manage.py"
