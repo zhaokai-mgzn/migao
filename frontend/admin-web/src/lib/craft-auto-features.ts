@@ -140,14 +140,25 @@ function metersForReason(value: number, doorWidth: number): number | string {
 }
 
 /**
- * 门幅（米）—— 解析 SKU 的 `doorWidth`（可带单位，如 `2.8米`）。
- * 缺席 / 不可解析 / 非正数 ⇒ {@link DEFAULT_DOOR_WIDTH}（不判成 0，也不「不判定」）。
+ * 门幅解析 —— 解析 SKU 的 `doorWidth`（可带单位，如 `2.8米`）。
+ * 缺席 / 不可解析 / 非正数 ⇒ `null`（**不默认成任何值**）。
+ *
+ * ⚠️ **门幅选择规则必须用本函数**（`door-width-plan.ts`）：缺失 = **不可判定** ——
+ * 「静默按缺省 2.8 推算」正是 issue #4877 要替换掉的错误做法。
+ */
+export function parseDoorWidth(doorWidth: unknown): number | null {
+  if (doorWidth === null || doorWidth === undefined) return null
+  const match = String(doorWidth).match(/(\d+(?:\.\d+)?)/)
+  if (!match) return null
+  return positiveNumber(match[1])
+}
+
+/**
+ * 门幅（米）—— **保留「缺省 {@link DEFAULT_DOOR_WIDTH}」的旧语义**（存量调用方 = 自动识别）；
+ * 内部走 {@link parseDoorWidth}，**解析只有一份**。
  */
 export function resolveDoorWidth(doorWidth: unknown): number {
-  if (doorWidth === null || doorWidth === undefined) return DEFAULT_DOOR_WIDTH
-  const match = String(doorWidth).match(/(\d+(?:\.\d+)?)/)
-  if (!match) return DEFAULT_DOOR_WIDTH
-  return positiveNumber(match[1]) ?? DEFAULT_DOOR_WIDTH
+  return parseDoorWidth(doorWidth) ?? DEFAULT_DOOR_WIDTH
 }
 
 /** 一条自动识别特征入参（尺寸一律米；`doorWidth` 给原始值，本函数负责解析） */
@@ -179,9 +190,9 @@ export interface AutoFeatureInput {
 }
 
 /** 加工类型 `定高买宽` —— **高**方向受门幅约束（**宽**按米买、无上限）⇒ 只判 `超高` */
-const CUTTING_MODE_FIXED_HEIGHT = '定高买宽'
+export const CUTTING_MODE_FIXED_HEIGHT = '定高买宽'
 /** 加工类型 `定宽买高` —— **宽**方向受门幅约束（分幅数 = `(宽+余量)×褶倍 ÷ 门幅`）⇒ 只判 `超宽` */
-const CUTTING_MODE_FIXED_WIDTH = '定宽买高'
+export const CUTTING_MODE_FIXED_WIDTH = '定宽买高'
 
 /**
  * 自动识别（设计 §5.2 冻结规则；issue #4661 按加工类型分流）—— 纯函数，**不读任何全局状态**。
