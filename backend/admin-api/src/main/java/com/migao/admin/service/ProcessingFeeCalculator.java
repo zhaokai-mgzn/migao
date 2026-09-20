@@ -103,6 +103,47 @@ public class ProcessingFeeCalculator {
      */
     private static final String TRIGGER_KIND_OPTION = "option";
 
+    /**
+     * 拼色**报价加价**单价（元/米）—— 用户 2026-09-21 裁定逐字：
+     * 「拼色计价规则就是拼色款另加 2.4 元/米 先按这个算吧」＋「**两处都按 2.4 元/米（订单侧撤掉元/套）**」。
+     *
+     * <p>⚠️ 这是**跨语言副本**：真值源 = ai-agent 算料引擎
+     * {@code backend/ai-agent-service/app/tools/curtain_calc.py} 的 {@code MIXED_COLOR_SURCHARGE_PER_METER}
+     * （真值源文档 §0 登记）。两侧**必须逐值相等**，由
+     * {@code tests/unit_ci_workflows/test_mixed_color_surcharge_cross_side.py} 逐值读源比对（漂移即红）——
+     * 「报价侧与订单侧同源同价」是本裁定的硬要求（只改一侧 ⇒ 顾客看到的价 ≠ 下单收的价）。</p>
+     */
+    static final BigDecimal MIXED_COLOR_SURCHARGE_PER_METER = new BigDecimal("2.4");
+
+    /** 款式取值（**逐字** = 算料引擎 {@code curtain_calc.STYLE_MIXED} / 前端 {@code STYLE_OPTIONS}）。 */
+    static final String STYLE_MIXED = "拼色";
+
+    /**
+     * **改按元/米计**的拼次选项（用户 2026-09-21 裁定：订单侧**撤掉**这几项的**元/套**计费）。
+     *
+     * <p>为什么写「选项名」而不是从库里读：选项名是**冻结的 join key**（与
+     * {@code production_route_rules.trigger_value} / 前端 {@code SPECIAL_OPTIONS} 逐字一致）；
+     * 而 V82 种子那笔元/套价（{@code customer_unit_price}）**已发布、不可改**（issue #4235）⇒
+     * 在**取价口径层**停止使用它（库里那一列照旧保留 —— 改数据要新迁移，本包不动数据面）。
+     * 库里那笔价仍在明细里**可见**（{@code special_options[]} 不再列它；改由拼色加价那半体现）。</p>
+     *
+     * <p>⚠️ 纸表**未登记** {@code 拼3次} 的用料系数（算料侧 fail-closed）⇒ 它**不在**本集合里、
+     * 仍按元/套计 —— 见 PR 的未实现项登记。</p>
+     */
+    static final Set<String> PER_METER_MIXED_OPTIONS = Set.of("拼1次", "拼2次");
+
+    /**
+     * 拼色加价的**米数键族** = **该款面料米数**（与报价侧 {@code build_quote.fabric_meters} 同源）。
+     *
+     * <p>⚠️ 与 {@link #METER_KEYS}（加工费米数 = 主布行米数）**刻意分开**：那是「组合那半」的因子，
+     * 本键族是**面料**口径（真值源 §6.1：{@code fabric_meters} = Σ 面料行米数）。单面料行时两者同值。</p>
+     */
+    private static final List<String> MIXED_COLOR_METER_KEYS =
+            List.of("fabric_meters", "processingMeters", "meters");
+
+    /** 樘窗级去重键（#4725「一樘窗 = 一套」同口径：拼色加价**一樘窗只收一次**）。 */
+    private static final String MIXED_COLOR_CHARGE_KEY = "\u0000mixed-color-surcharge";
+
     /** JSON 字符串形态的 {@code processing_info} 解析（自定义 {@code @Select} 路径不经 TypeHandler）。 */
     private static final com.fasterxml.jackson.databind.ObjectMapper JSON =
             new com.fasterxml.jackson.databind.ObjectMapper();
@@ -119,16 +160,43 @@ public class ProcessingFeeCalculator {
      *
      * @param name      选项名（**逐字 = {@code processing_info.specialOptions[]} 的元素**
      *                  = {@code production_route_rules.trigger_value}；它是 join key，不得改写）
-     * @param unitPrice 该选项的**对客元/套**单价；未定价 = {@code null}（**≠ 0**）
+     * @param unitPrice 该选项的**对客元/套**单价；未定价 = {@code null}（**≠ 0**）；
+     *                  {@code billing=per_meter} 时它是**库里那笔价的原值**（仅供审计，不再被取价使用）
      * @param sets      **本行**该选项的计费套数：一樘窗（`craftLineId` 组）内同名选项只收一次 ⇒
      *                  承接那一行 = 1、同樘窗其它行 = **0**（选项仍列出、金额 0 —— **不静默吞掉**）；
      *                  无 {@code craftLineId} 的行**各自成樘窗** ⇒ 每行各 1
-     * @param amount    {@code unitPrice × sets}；未定价 / 非承接行 = 0
+     * @param amount    {@code unitPrice × sets}；未定价 / 非承接行 / **改按元/米计** = 0
      * @param priced    是否已定价（{@code false} = 库里 {@code customer_unit_price IS NULL}）
      *                  ⇒ 取价侧**显式可见**，绝不静默按 0 收
+     * @param billing   **计价口径**三态（#4855 新增；{@link #BILLING_PER_SET} /
+     *                  {@link #BILLING_PER_METER} / {@link #BILLING_UNPRICED}）——
+     *                  {@code per_meter} = 该选项**改按元/米计**（拼色加价那半），**不是**「未定价」
      */
     public record SpecialOption(String name, BigDecimal unitPrice, int sets,
-                               BigDecimal amount, boolean priced) {
+                               BigDecimal amount, boolean priced, String billing) {
+    }
+
+    /** 计价口径：按**元/套**计（既有 15 项特殊选项）。 */
+    public static final String BILLING_PER_SET = "per_set";
+    /** 计价口径：按**元/米**计（拼1次 / 拼2次 —— 用户 2026-09-21 裁定，走拼色加价那半）。 */
+    public static final String BILLING_PER_METER = "per_meter";
+    /** 计价口径：**未定价**（库里 `customer_unit_price IS NULL`）⇒ 计 0 + 可行动提示（不静默）。 */
+    public static final String BILLING_UNPRICED = "unpriced";
+
+    /**
+     * 拼色加价的取价结果（用户 2026-09-21 裁定）—— **可审计**：金额 / 命中的拼次选项 / 米数 / 米数来源。
+     *
+     * @param surcharge   加价金额（元）= 单价 × 米数；不适用 / 缺米数 = 0（**≠ null**）
+     * @param options     本行选中的**改按元/米计**的拼次选项（审计：它们在 {@code special_options} 里
+     *                    以 {@code billing=per_meter} 列出，金额 0 —— 与这里同一份名单）
+     * @param meters      加价基数（**该款面料米数**）；不适用 / 缺 = null（与 0 区分）
+     * @param metersSource 米数取自哪个键（不许静默）
+     */
+    public record MixedColor(BigDecimal surcharge, List<String> options,
+                             BigDecimal meters, String metersSource) {
+
+        /** 不适用（非拼色款 / 非承接行）：金额 0、无基数 —— **不是**「算不出来」。 */
+        public static final MixedColor NONE = new MixedColor(BigDecimal.ZERO, List.of(), null, null);
     }
 
     /**
@@ -141,8 +209,12 @@ public class ProcessingFeeCalculator {
      * @param unitPrice           命中的组合单价（元/米）；未命中 = null
      * @param meters              加工费米数（= 该樘窗主布行米数）；缺 = null
      * @param specialOptions      选中特殊选项的逐项取价（**按选项名 Unicode 码点升序**，确定性）；
-     *                            组合未定价时**同样取价**（选项与组合是否定价无关，issue #4594）
+     *                            组合未定价时**同样取价**（选项与组合是否定价无关，issue #4594）；
+     *                            ⚠️ **改按元/米计**的拼次选项（{@link #PER_METER_MIXED_OPTIONS}）
+     *                            不在其中（它们走 {@code mixedColor}）
      * @param specialOptionsTotal Σ 选项价（元）；没选 = 0
+     * @param mixedColor          **拼色加价**（用户 2026-09-21 裁定：拼色款另加 2.4 元/米）；
+     *                            非拼色款 = {@link MixedColor#NONE}（金额 0）
      * @param detail              可审计构成（落 {@code processing_info.processingFeeDetail}，原样透传）
      * @param hint                未定价 / 缺米数时的**可行动**提示；命中且齐全 = null
      */
@@ -150,19 +222,21 @@ public class ProcessingFeeCalculator {
                       List<String> items, String matchedRuleId, BigDecimal unitPrice,
                       String priceSource, BigDecimal meters, String metersSource,
                       List<SpecialOption> specialOptions, BigDecimal specialOptionsTotal,
+                      MixedColor mixedColor,
                       Map<String, Object> detail, String hint) {
 
         /**
-         * **行加工费** = 组合那半 + Σ 选项价（设计 §4.3：「唯一进订单金额的数」）。
+         * **行加工费** = 组合那半 + Σ 选项价 + **拼色加价**（设计 §4.3：「唯一进订单金额的数」）。
          *
          * <p>{@code amount} 只记组合那半（与 #4406 的既有语义/键名**一字不改**），
          * 行金额由本方法合成 ⇒ 订单金额 / 试算合计都走这里，**不另拼一份口径**。</p>
          *
          * <p>⚠️ {@code fee_source='unpriced'}（组合那半 0）**不蕴含**行金额 0 ——
-         * 已定价的特殊选项照常计入（用户裁定 2026-09-19 / issue #4594）。</p>
+         * 已定价的特殊选项与拼色加价照常计入（用户裁定 2026-09-19 / issue #4594）。</p>
          */
         public BigDecimal lineAmount() {
-            return nz(amount).add(nz(specialOptionsTotal));
+            return nz(amount).add(nz(specialOptionsTotal))
+                    .add(nz(mixedColor == null ? null : mixedColor.surcharge()));
         }
 
         /** 选项价合计（非空时才有值；空 = 0，不是 null —— 调用方不必判空）。 */
@@ -172,22 +246,25 @@ public class ProcessingFeeCalculator {
 
         static Fee unpriced(String compositionKey, List<String> items, BigDecimal unitPrice,
                             String priceSource, BigDecimal meters, String metersSource,
-                            List<SpecialOption> specialOptions, String setKey, String hint) {
-            // 组合那半没有价 ⇒ **只有那一半**记 0；选项那半**照常计入**（用户裁定 2026-09-19 /
+                            List<SpecialOption> specialOptions, MixedColor mixedColor, String setKey,
+                            String hint) {
+            // 组合那半没有价 ⇒ **只有那一半**记 0；选项那半与拼色加价**照常计入**（用户裁定 2026-09-19 /
             // issue #4594：选项是按套的独立一笔账，与组合是否定价、米数是否齐全无关）。
-            // `lineAmount()` = 0 + Σ 选项价 ⇒ 订单金额/试算合计都走它，不另拼一份口径。
+            // `lineAmount()` = 0 + Σ 选项价 + 拼色加价 ⇒ 订单金额/试算合计都走它，不另拼一份口径。
             BigDecimal optionsTotal = money(optionsTotal(specialOptions));
             return new Fee(BigDecimal.ZERO, FEE_SOURCE_UNPRICED, compositionKey, items, null,
                     unitPrice, priceSource, meters, metersSource, specialOptions, optionsTotal,
+                    mixedColor,
                     detail(compositionKey, items, null, unitPrice, priceSource, meters, metersSource,
-                            FEE_SOURCE_UNPRICED, BigDecimal.ZERO, specialOptions, optionsTotal, setKey, hint),
+                            FEE_SOURCE_UNPRICED, BigDecimal.ZERO, specialOptions, optionsTotal,
+                            mixedColor, setKey, hint),
                     hint);
         }
 
         static Fee matched(String compositionKey, List<String> items, String matchedRuleId,
                            BigDecimal unitPrice, String priceSource, BigDecimal meters,
-                           String metersSource, List<SpecialOption> specialOptions, String setKey,
-                           String hint) {
+                           String metersSource, List<SpecialOption> specialOptions,
+                           MixedColor mixedColor, String setKey, String hint) {
             // 金额按**人类可读刻度**落 detail（`8.00 × 12.30` 的裸乘积是 `98.4000`）：
             // detail 是给人与对账看的，尾随零不是信息；订单金额本身仍是精确值。
             // ⚠️ 不得用裸 `stripTrailingZeros()`：它会把 80.00 变成 `8E+1`（科学计数法进 JSON）
@@ -196,9 +273,10 @@ public class ProcessingFeeCalculator {
             BigDecimal optionsTotal = money(optionsTotal(specialOptions));
             return new Fee(amount, FEE_SOURCE_MATCHED, compositionKey, items, matchedRuleId,
                     unitPrice, priceSource, meters, metersSource, specialOptions, optionsTotal,
+                    mixedColor,
                     detail(compositionKey, items, matchedRuleId, unitPrice, priceSource, meters,
                             metersSource, FEE_SOURCE_MATCHED, amount, specialOptions, optionsTotal,
-                            setKey, hint),
+                            mixedColor, setKey, hint),
                     hint);
         }
 
@@ -217,7 +295,8 @@ public class ProcessingFeeCalculator {
                                                   String priceSource, BigDecimal meters,
                                                   String metersSource, String feeSource,
                                                   BigDecimal amount, List<SpecialOption> specialOptions,
-                                                  BigDecimal specialOptionsTotal, String setKey, String hint) {
+                                                  BigDecimal specialOptionsTotal, MixedColor mixedColor,
+                                                  String setKey, String hint) {
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("composition", compositionKey);
             detail.put("items", items);
@@ -236,6 +315,15 @@ public class ProcessingFeeCalculator {
             // 樘窗组键（`craftLineId`，缺省 `#<行下标>`）：套身份**可审计** ——
             // 同樘窗的多行在 detail 里 `set_key` 相同（这正是「一樘窗 = 一套」的读面凭据）。
             detail.put("set_key", setKey);
+            // ── #4855 新增（**只加不改**：既有 14 个键的语义与键名一字未动）──
+            // 拼色加价（用户 2026-09-21 裁定「两处都按 2.4 元/米」）：金额 / 单价 / 基数米数 /
+            // 米数来源 / 命中的拼次选项 —— 前端据 `mixed_color_surcharge` 单列一行（判据 5 的三半）。
+            MixedColor mc = mixedColor == null ? MixedColor.NONE : mixedColor;
+            detail.put("mixed_color_surcharge", mc.surcharge());
+            detail.put("mixed_color_surcharge_per_meter", MIXED_COLOR_SURCHARGE_PER_METER);
+            detail.put("mixed_color_options", mc.options());
+            detail.put("mixed_color_meters", mc.meters());
+            detail.put("mixed_color_meters_source", mc.metersSource());
             return detail;
         }
 
@@ -249,6 +337,9 @@ public class ProcessingFeeCalculator {
                 row.put("sets", option.sets());
                 row.put("amount", option.amount());
                 row.put("priced", option.priced());
+                // ── #4855 新增（**只加不改**：既有 5 个键的语义与键名一字未动）──
+                // 计价口径三态：`per_set`（元/套）/ `per_meter`（元/米，拼色加价那半）/ `unpriced`。
+                row.put("billing", option.billing());
                 rows.add(row);
             }
             return rows;
@@ -257,8 +348,11 @@ public class ProcessingFeeCalculator {
         /**
          * 金额刻度：去尾随零、**保留至少 2 位小数**、禁止科学计数法（{@code 80.00} 不得变 {@code 8E+1}）。
          * 值不变（{@code compareTo} 相等），只是形态可读（人看 detail / 前端按 number 解析）。
+         *
+         * <p>包内可见（不是 private）：拼色加价那半（{@link ProcessingFeeCalculator#mixedColor}）
+         * 与这里**同一把尺子**（两处各写一份取整 = 同一张单两种尾数）。</p>
          */
-        private static BigDecimal money(BigDecimal value) {
+        static BigDecimal money(BigDecimal value) {
             if (value == null) {
                 return null;
             }
@@ -346,33 +440,140 @@ public class ProcessingFeeCalculator {
         String metersSource = meters == null ? null : metersSource(processingInfo);
         // 选项那半**先算**（issue #4594）：它是按套的独立一笔账 ⇒ 组合那半走哪条分支都不影响它
         List<SpecialOption> specialOptions = specialOptions(processingInfo, optionPrices, charged, windowKey);
+        // 拼色加价那半**也先算**（#4855，同一理由：它是独立一笔账，与组合是否定价无关）
+        MixedColor mixedColor = mixedColor(processingInfo, charged, windowKey);
+        String mixedHint = mixedColorHint(processingInfo, mixedColor, meters);
         if (compositionKey.isEmpty()) {
             return Fee.unpriced(compositionKey, List.of(), null, null, meters, metersSource,
-                    specialOptions, windowKey,
-                    "本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。"
-                            + "若这单本该有加工费，请确认下单时是否漏选了加工项");
+                    specialOptions, mixedColor, windowKey,
+                    joinHint("本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费（加工费按选配组合收）。"
+                            + "若这单本该有加工费，请确认下单时是否漏选了加工项", mixedHint));
         }
         ProcessingFeeCombination row = priced == null ? null : priced.get(compositionKey);
         if (row == null || row.getUnitPrice() == null) {
             return Fee.unpriced(compositionKey, ProcessingFeeQueryService.itemsOf(compositionKey),
-                    null, null, meters, metersSource, specialOptions, windowKey,
-                    String.format("选配组合「%s」在「加工费组合」里没有价 ⇒ 本行**组合那半**按 0 计（未定价），"
+                    null, null, meters, metersSource, specialOptions, mixedColor, windowKey,
+                    joinHint(String.format("选配组合「%s」在「加工费组合」里没有价 ⇒ 本行**组合那半**按 0 计（未定价），"
                                     + "**不套任何默认价**。请去「加工费管理」(%s) 为该组合定价，"
                                     + "或确认这些加工项不该组合收费",
-                            compositionKey, PRICING_ENTRY));
+                            compositionKey, PRICING_ENTRY), mixedHint));
         }
         List<String> normalizedItems = ProcessingFeeQueryService.itemsOf(compositionKey);
         if (meters == null) {
             return Fee.unpriced(compositionKey, normalizedItems, row.getUnitPrice(), row.getSource(),
-                    null, null, specialOptions, windowKey,
-                    String.format("选配组合「%s」已定价 ¥%s/米，但本行**缺加工费米数** ⇒ **组合那半**按 0 计。"
+                    null, null, specialOptions, mixedColor, windowKey,
+                    joinHint(String.format("选配组合「%s」已定价 ¥%s/米，但本行**缺加工费米数** ⇒ **组合那半**按 0 计。"
                                     + "加工费米数 = 该樘窗主布行米数（算料侧给出，键 `processingMeters`）"
                                     + "⇒ 请补算料米数后重下单",
-                            compositionKey, row.getUnitPrice().toPlainString()));
+                            compositionKey, row.getUnitPrice().toPlainString()), mixedHint));
         }
         return Fee.matched(compositionKey, normalizedItems, row.getId(), row.getUnitPrice(),
-                row.getSource(), meters, metersSource, specialOptions, windowKey,
-                unpricedOptionsHint(specialOptions));
+                row.getSource(), meters, metersSource, specialOptions, mixedColor, windowKey,
+                joinHint(unpricedOptionsHint(specialOptions), mixedHint));
+    }
+
+    /** 两条提示拼接（空串 / null 不参与；**不吞**任何一条）。 */
+    private static String joinHint(String first, String second) {
+        if (first == null || first.isBlank()) {
+            return second == null || second.isBlank() ? null : second;
+        }
+        return second == null || second.isBlank() ? first : first + " " + second;
+    }
+
+    /**
+     * **拼色加价**那半（用户 2026-09-21 裁定：拼色款另加 {@link #MIXED_COLOR_SURCHARGE_PER_METER} 元/米）。
+     *
+     * <p>三条口径（与报价侧 {@code curtain_calc.build_quote} 逐条对齐 —— 这是「同源同价」的落点）：</p>
+     * <ol>
+     *   <li><b>只看款式</b>：{@code processing_info.style == 拼色}（与报价侧 `style` 入参同一键、同一值域）；
+     *       非拼色款 ⇒ 不适用（金额 0，**不是**「算不出来」）；</li>
+     *   <li><b>基数 = 该款面料米数</b>（{@link #MIXED_COLOR_METER_KEYS}，优先 {@code fabric_meters}，
+     *       与报价侧 {@code build_quote.fabric_meters} 同源）；<b>缺米数 ⇒ 0 + 显式 hint</b>（不猜米数）；</li>
+     *   <li><b>一樘窗只收一次</b>（与 #4725「一樘窗 = 一套」同口径）：报价侧一扇窗一次报价 ⇒
+     *       订单侧同一 {@code craftLineId} 组只由**第一行**承接（否则「布 + 纱」两行会各收一次 = 多收）。</li>
+     * </ol>
+     */
+    static MixedColor mixedColor(Object processingInfo, Set<String> charged, String windowKey) {
+        List<String> options = perMeterMixedOptions(processingInfo);
+        if (!STYLE_MIXED.equals(style(processingInfo))) {
+            return MixedColor.NONE;
+        }
+        if (charged != null && !charged.add(windowKey + MIXED_COLOR_CHARGE_KEY)) {
+            // 同樘窗已有承接行 ⇒ 本行不承接（加价 0；承接行在 detail 里可见，不静默）
+            return new MixedColor(BigDecimal.ZERO, options, null, null);
+        }
+        BigDecimal meters = mixedColorMeters(processingInfo);
+        if (meters == null) {
+            return new MixedColor(BigDecimal.ZERO, options, null, null);
+        }
+        return new MixedColor(Fee.money(MIXED_COLOR_SURCHARGE_PER_METER.multiply(meters)),
+                options, meters, mixedColorMetersSource(processingInfo));
+    }
+
+    /**
+     * 拼色加价的**可行动**提示：款式=拼色但**缺面料米数** ⇒ 显式说明（不猜米数、不静默按 0 收）。
+     *
+     * <p>与「组合那半缺米数」的提示**同族**（缺因子 ⇒ 只把该半记 0 + 说清补什么）。</p>
+     */
+    private static String mixedColorHint(Object processingInfo, MixedColor mixedColor, BigDecimal meters) {
+        if (!STYLE_MIXED.equals(style(processingInfo)) || meters != null) {
+            return null;
+        }
+        return String.format("本行款式=拼色，但**缺面料米数**（键 %s）⇒ **拼色加价**（¥%s/米）按 0 计、"
+                        + "**不猜米数**。请补算料米数后重下单",
+                MIXED_COLOR_METER_KEYS, MIXED_COLOR_SURCHARGE_PER_METER.toPlainString());
+    }
+
+    /** 款式（{@code processing_info.style}；缺失 / 空 ⇒ null = 不判断款式）。 */
+    private static String style(Object processingInfo) {
+        Map<String, Object> info = asMap(processingInfo);
+        Object raw = info == null ? null : info.get("style");
+        String value = raw == null ? null : String.valueOf(raw).trim();
+        return value == null || value.isEmpty() ? null : value;
+    }
+
+    /**
+     * 本行选中的**改按元/米计**的拼次选项（{@link #PER_METER_MIXED_OPTIONS}；审计用）。
+     *
+     * <p>精确相等匹配（**不得**用 {@code contains}：错一个字 ⇒ 静默少收/多收钱，同族 #4389）。</p>
+     */
+    static List<String> perMeterMixedOptions(Object processingInfo) {
+        List<String> hit = new ArrayList<>();
+        for (String name : specialOptionNames(processingInfo)) {
+            if (PER_METER_MIXED_OPTIONS.contains(name)) {
+                hit.add(name);
+            }
+        }
+        return hit;
+    }
+
+    /** 拼色加价的**基数米数**（该款面料米数）：{@link #MIXED_COLOR_METER_KEYS} 逐键取第一个可解析值。 */
+    private static BigDecimal mixedColorMeters(Object processingInfo) {
+        Map<String, Object> info = asMap(processingInfo);
+        if (info == null) {
+            return null;
+        }
+        for (String key : MIXED_COLOR_METER_KEYS) {
+            BigDecimal value = decimal(info.get(key));
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    /** 加价基数取自哪个键（可审计：与工序实例 `qty_source` 同族，不许静默）。 */
+    private static String mixedColorMetersSource(Object processingInfo) {
+        Map<String, Object> info = asMap(processingInfo);
+        if (info == null) {
+            return null;
+        }
+        for (String key : MIXED_COLOR_METER_KEYS) {
+            if (decimal(info.get(key)) != null) {
+                return key;
+            }
+        }
+        return null;
     }
 
     /**
@@ -400,13 +601,24 @@ public class ProcessingFeeCalculator {
         List<String> names = specialOptionNames(processingInfo);
         List<SpecialOption> options = new ArrayList<>();
         for (String name : names) {
+            // ⚠️ **改按元/米计**的拼次选项（#4855，用户 2026-09-21 裁定「订单侧撤掉元/套」）：
+            // 仍**照列**（金额 0、`billing=per_meter`、`priced=true`）—— 商家勾的选择**不静默吞掉**；
+            // 但它**不走按套那半**（走了就是同一件事收两笔 = 双算），改由 `mixedColor`（元/米 × 面料米数）计。
+            // 🔴 **不是**「未定价」：库里那笔 `customer_unit_price` **一字未动**（V82 已发布、不可改），
+            //    本选项也**不会**进「未定价」提示（`priced=true` ⇒ `unpricedOptionsHint` 不收它）。
+            if (PER_METER_MIXED_OPTIONS.contains(name)) {
+                BigDecimal listed = optionPrices == null ? null : optionPrices.get(name);
+                options.add(new SpecialOption(name, listed, 1, BigDecimal.ZERO, true, BILLING_PER_METER));
+                continue;
+            }
             // 精确相等匹配（**不得**用 contains：错一个字 ⇒ 静默少收/多收钱）
             BigDecimal unitPrice = optionPrices == null ? null : optionPrices.get(name);
             boolean priced = unitPrice != null;
             // 承接判据 = 「（樘窗组键, 选项名）」首次出现；同樘窗内重复 ⇒ 本行不承接（sets 0、金额 0）
             boolean chargedHere = charged.add(windowKey + '\u0000' + name);
             options.add(new SpecialOption(name, unitPrice, chargedHere ? 1 : 0,
-                    priced && chargedHere ? unitPrice : BigDecimal.ZERO, priced));
+                    priced && chargedHere ? unitPrice : BigDecimal.ZERO, priced,
+                    priced ? BILLING_PER_SET : BILLING_UNPRICED));
         }
         // 按**全名**的 Unicode 码点升序（`String` 自然序 = UTF-16 码元序；本域全是 BMP 字符
         // ⇒ 与码点序逐值一致）—— 与 `compositionKey` 的 `TreeSet<String>` **同源**，不自造第二种口径。
@@ -481,6 +693,7 @@ public class ProcessingFeeCalculator {
                 text(detailMap.get("meters_source")),
                 storedOptions(detailMap.get("special_options")),
                 decimal(detailMap.get("special_options_total")),
+                storedMixedColor(detailMap),
                 detailMap, text(detailMap.get("hint")));
     }
 
@@ -504,9 +717,34 @@ public class ProcessingFeeCalculator {
                     decimal(row.get("unit_price")),
                     row.get("sets") instanceof Number number ? number.intValue() : 1,
                     decimal(row.get("amount")),
-                    Boolean.TRUE.equals(row.get("priced"))));
+                    Boolean.TRUE.equals(row.get("priced")),
+                    // 存量单（#4855 之前落库）没有 `billing` 键 ⇒ 按当时的**唯一**口径「元/套」读
+                    // （那时确实全是按套收的；补一个别的默认值就是给历史单编口径）。
+                    row.get("billing") == null ? BILLING_PER_SET : String.valueOf(row.get("billing"))));
         }
         return options;
+    }
+
+    /**
+     * 落库的拼色加价（**读面与写面同源**：键名只有 {@code detail(...)} 一处定义）。
+     *
+     * <p>存量单（#4855 之前生成）没有 {@code mixed_color_surcharge} 键 ⇒ 返回
+     * {@link MixedColor#NONE}（金额 0）—— 当时确实没有这一笔，**不是**「漏读」，也**不重算**
+     * （R13：已生成订单一字不变）。</p>
+     */
+    private static MixedColor storedMixedColor(Map<String, Object> detailMap) {
+        if (!detailMap.containsKey("mixed_color_surcharge")) {
+            return MixedColor.NONE;
+        }
+        return new MixedColor(
+                nzStatic(decimal(detailMap.get("mixed_color_surcharge"))),
+                stringList(detailMap.get("mixed_color_options")),
+                decimal(detailMap.get("mixed_color_meters")),
+                text(detailMap.get("mixed_color_meters_source")));
+    }
+
+    private static BigDecimal nzStatic(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
     }
 
     /**

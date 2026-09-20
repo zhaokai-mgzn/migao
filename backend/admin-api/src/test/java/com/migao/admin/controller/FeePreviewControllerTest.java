@@ -83,7 +83,7 @@ class FeePreviewControllerTest extends BaseControllerTest {
         return new ProcessingFeeCalculator.Fee(
                 new BigDecimal("133.00"), "matched", "韩式褶", List.of("韩式褶"), "rule-1",
                 new BigDecimal("10.00"), "manual", new BigDecimal("13.3"), "processingMeters",
-                options, optionsTotal, detail, null);
+                options, optionsTotal, ProcessingFeeCalculator.MixedColor.NONE, detail, null);
     }
 
     private static ProcessingFeeCalculator.Fee unpriced() {
@@ -99,7 +99,7 @@ class FeePreviewControllerTest extends BaseControllerTest {
         return new ProcessingFeeCalculator.Fee(
                 BigDecimal.ZERO, "unpriced", "韩式褶", List.of("韩式褶"), null,
                 null, null, new BigDecimal("13.3"), "processingMeters",
-                List.of(), BigDecimal.ZERO, detail,
+                List.of(), BigDecimal.ZERO, ProcessingFeeCalculator.MixedColor.NONE, detail,
                 "该组合未定价，请到加工费组合里配置");
     }
 
@@ -125,8 +125,9 @@ class FeePreviewControllerTest extends BaseControllerTest {
     void passesSpecialOptionsThroughWithLineAmount() throws Exception {
         List<ProcessingFeeCalculator.SpecialOption> options = List.of(
                 new ProcessingFeeCalculator.SpecialOption("加铅块", new BigDecimal("6.00"), 1,
-                        new BigDecimal("6.00"), true),
-                new ProcessingFeeCalculator.SpecialOption("接高", null, 1, BigDecimal.ZERO, false));
+                        new BigDecimal("6.00"), true, ProcessingFeeCalculator.BILLING_PER_SET),
+                new ProcessingFeeCalculator.SpecialOption("接高", null, 1, BigDecimal.ZERO, false,
+                        ProcessingFeeCalculator.BILLING_UNPRICED));
         when(calculator.feesFor(any(), any()))
                 .thenReturn(List.of(matchedWithOptions(options, new BigDecimal("6.00"))));
 
