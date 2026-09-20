@@ -688,6 +688,54 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 
 ---
 
+## 9. 落码状态（**第一切片**，issue #4716；落码单随本设计）
+
+> **本单是 H5 第一切片**：能扫码 + 能登录 + 能看懂 + 能报工。设计 §7.3 的 ①~⑤ 里，
+> 本切片只落 ⑤ 的**页面骨架 + 登录 + 扫码落地 + 报工**，并补 ② 缺的一个工人读面。
+> **本节是「已落码 / 未落码」的机械账**，不写"进行中"。
+
+### 9.1 落点决定：`frontend/worker-h5/`（**零依赖 + 零构建步骤**）
+
+| 候选 | 取舍 |
+|---|---|
+| ✅ **新建 `frontend/worker-h5/`**（本单采用） | 纯 ES module（`.mjs`）+ HTML + CSS，浏览器 `<script type="module">` **直接加载**；测试用 **Node 内置 `--test`**（零新依赖、零 `npm ci`）⇒ **无新构建腿、无新部署腿**（静态直出） |
+| ❌ 挂 `frontend/admin-web/` 下 | 商家端域名 + 商家鉴权面，工人 H5 挂进去语义混淆；且 `frontend/admin-web/**` 属 #4746 的改动面 |
+| ❌ 挂 `frontend/bmini-app` / `mini-app`（Taro H5） | **Taro H5 运行时自带 `wx.*` 适配层** ⇒ 与裁定③「页面零 `wx.*`」冲突；且 `frontend/bmini-app/**` 属 #4698 切片② 的改动面 |
+| ❌ 新引 Vite / Next | 新构建腿 + 新依赖，与「最少代码阶梯」冲突；本页面**没有**需要打包的东西 |
+
+### 9.2 已落码
+
+| # | 内容 | 落点 |
+|---|---|---|
+| ① | H5 页面骨架（手机 <768px / PAD ≥768px 两断点；PAD 主按钮 **88px**、正文 **20px**；手机触控 ≥44px） | `frontend/worker-h5/index.html` + `src/styles.css` |
+| ② | 扫码落地：URL 取码（`?t=` / `?token=` / `?code=` / `#t=` / `/s/<短码>` 路径段）+ **手输短码兜底**；前端**不判码的形态**（判形态是服务端 `resolveOrder` 的职责） | `src/scan-input.mjs` |
+| ③ | 🔴 旧码降级：`granularity="order"` ⇒ **进「选套 + 选部位」态**，`set_no`/`position`/`operation` 一律 null，**绝不默认取第 1 套**；部位按钮**只在选了套之后**出现 | `src/render.mjs`（`reduce` / `canReport`） |
+| ④ | 工人登录：**工号 + PIN**（复用 #4733 的 `POST /api/worker/login`）+ session 落 `localStorage` + 后续请求带 `X-Worker-Session-Id` | `src/api.mjs` |
+| ⑤ | 共用 PAD 三条：页头常驻「当前工人」（取**服务端** `current-worker`）· 一步切换（**不丢扫码上下文**）· 闲置登出（定时器 + `visibilitychange` 双保险；401 ⇒ 回落未登录 + 清本地） | `src/app.mjs` |
+| ⑥ | 报工：调**已合并**的 `POST /api/worker/production/orders/{orderId}/operations/{operationId}/report`（#4733）+ `X-Client-Request-Id` 幂等键 | `src/api.mjs` |
+| ⑦ | 🆕 工人读面 `GET /api/worker/production/scan?token=…&operation_id=…` | `WorkerProductionController` |
+| ⑧ | 🔴 CORS：`allowedHeaders` **追加 `X-Worker-Session-Id`**（#4733 登记的缺口；**只加这一个头，origin 白名单一字不动**） | `SecurityConfig` |
+
+### 9.3 未落码 / 依赖（**照实登记**）
+
+| # | 项 | 状态 | 为什么 / 何时 |
+|---|---|---|---|
+| D1 | 🔴 **旧码「选完套+部位」之后的收口** | **未闭环** | 切片① 的 `resolve(token, operationId, tenantId)` 只接受 `token` —— **旧码没有部位级 token**（旧码是加工单级 `qr_token`）⇒ 选完套/部位后**没有可再解析的键**，页面停在"已选：第 N 套 · 部位"。**闭环需要在切片① 的解析契约上加 `set_id` + `order_item_id` 入参**（本单**不动**切片① 的冻结契约）⇒ 登记为切片① 的跟随单 |
+| D2 | 稳定短链 `GET /s/{shortCode}`（302）+ `processing_set_part_tokens.short_code` 列（§1.3 / §1.4 / §7.1①②） | **未落码** | 属设计 §7.3 的 **①**，本切片不含。**今天码从哪来**：页面 `?t=<token>` 直接带 token（或手输），**不依赖短链** |
+| D3 | 切片② 的 `completeByScan` 原子事务（§5.2） | **未落码（另一单在写）** | 本切片消费的是**已合并**的既有报工端点（逐条推进 + 计件快照），**不是** §5.2 的一次事务闭环；切片② 落地后前端**无需改动**（同一端点形状） |
+| D4 | 微信网页授权（腿 B，§2.2） | **不做** | 服务层 501 占位 + 无公众号配置 ⇒ 按用户裁定「本单不做」 |
+| D5 | 离线队列（§4.4） | **未落码** | 复用口径（幂等键语义 / 业务拒绝不入队 / 上限 50）**已在 #4733 之外的 bmini-app**；H5 版需换存储后端 + 多标签锁（§8.4 R3）⇒ 跟随单。**本切片：断网 ⇒ 显式报错**（不静默丢单） |
+
+### 9.4 工程前提（**前提，不是本单能解的**）
+
+| # | 前提 | 谁负责 |
+|---|---|---|
+| P1 | 🔴 **ICP 备案**：`app.migaozn.com` 未备案 ⇒ **微信内置浏览器会拦截** ⇒ 裁定④ 的「微信扫一扫是一等公民」**当场失效**（设计 §8.2 U1 的"最脆一环"） | **运维**（本单不解决） |
+| P2 | 静态文件落位：把 `frontend/worker-h5/` 的产物放到 `app.migaozn.com` 的静态根下的 `/w/`（与 C 端 H5 同一台 nginx） | 运维 / 部署 |
+| P3 | 页面与 `/api` **同源** ⇒ 无跨域；若将来改跨域部署，需把 origin 加进 `CORS_ALLOWED_ORIGINS` | 部署 |
+
+---
+
 ## 附录 A：所有实测命令与数字
 
 > 全部命令在 `docs/worker-h5-scan-4716` 工作区执行，基线 = `origin/main` @ `9462c7e18`。
