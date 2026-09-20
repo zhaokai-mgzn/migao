@@ -12,9 +12,9 @@
  * 2. **键名 camelCase**（§4.5）：订单/快照层与 Java 侧一致。
  */
 import { describe, it, expect } from 'vitest'
+import * as orderCraftFields from '@/lib/order-craft-fields'
 import {
   CRAFT_OPTIONS,
-  CURTAIN_BODY_BOTH,
   CURTAIN_BODY_CLOTH,
   CURTAIN_BODY_OPTIONS,
   CURTAIN_BODY_SHEER,
@@ -26,11 +26,9 @@ import {
   OPEN_COUNT_OPTIONS,
   SPECIAL_OPTIONS,
   STYLE_OPTIONS,
-  bodyHasSheerLine,
   buildCraftSpec,
   buildEdgeLineCraftSpec,
   buildMainLineGroupKeys,
-  buildSheerLineCraftSpec,
   buildWindowGroupKey,
   curtainTypeOfBody,
   defaultIsShapedForBody,
@@ -95,7 +93,8 @@ describe('buildCraftSpec：缺值不写', () => {
         cuttingMode: '定高买宽',
         openCount: 2,
         isShaped: false,
-        pleatSpacing: 0.1,
+        formula: 'fullness',
+        craftTier: 'standard',
         hasPattern: true,
         patternRepeat: 0.6,
         style: '拼色',
@@ -106,7 +105,8 @@ describe('buildCraftSpec：缺值不写', () => {
       cuttingMode: '定高买宽',
       openCount: 2,
       isShaped: false,
-      pleatSpacing: 0.1,
+      formula: 'fullness',
+      craftTier: 'standard',
       hasPattern: true,
       patternRepeat: 0.6,
       style: '拼色',
@@ -142,14 +142,12 @@ describe('buildCraftSpec：缺值不写', () => {
     expect(
       buildCraftSpec({
         openCount: 0,
-        pleatSpacing: 0,
         patternRepeat: 0,
       })
     ).toEqual({})
     expect(
       buildCraftSpec({
         openCount: Number.NaN,
-        pleatSpacing: Number.POSITIVE_INFINITY,
       })
     ).toEqual({})
   })
@@ -177,66 +175,83 @@ describe('buildCraftSpec：缺值不写', () => {
   })
 })
 
-// ── 帘体（issue #4521）：四类购买情况里的前三类 ──────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+// issue #4874（用户 2026-09-21 需求批次）
+//
+// ① **褶距字段整体移除**：「移除订单的工艺规格中的褶距字段」—— 写侧键 / 输入框 / 展示行全删
+//    （存量单的**读侧**仍容错，`craft-display.ts` 照旧能渲染老单里的该键）。
+// ② **补上「用料公式」字段**：「同时加上用料公式字段」—— 它与 `craftTier` 是**同一族**
+//    （算料输入），两者**都落库**到 `processingInfo`（camelCase，缺值不写）。
+//
+// 红证（注入式）：把 `buildCraftSpec` 里 `spec.formula = formula` 那两行删掉 ⇒ 判据 ② 必红；
+// 把 `pleatSpacing` 的写键加回来 ⇒ 判据 ① 的反向断言（模块导出清单）必红。
+// ══════════════════════════════════════════════════════════════════════════
+describe('#4874 用料公式 / 算料档位落库 + 褶距整体退场', () => {
+  it('① 褶距写侧键整体退场：模块**不再导出** pleatSpacing 相关符号（红证：改前四个都在）', () => {
+    // 反向断言取**模块导出清单**（不是文档措辞）：符号真被删干净才为绿
+    for (const gone of [
+      'DEFAULT_PLEAT_SPACING',
+      'CURTAIN_BODY_BOTH',
+      'bodyHasSheerLine',
+      'buildSheerLineCraftSpec',
+    ]) {
+      expect(Object.keys(orderCraftFields)).not.toContain(gone)
+    }
+    // `CraftSpecInput` 不再有 pleatSpacing 键（传进去也不落库）
+    expect(buildCraftSpec({ pleatSpacing: 0.125 } as never)).toEqual({})
+  })
+
+  it('② 填了用料公式 ⇒ 落库 processingInfo.formula（camelCase；与 craftTier 同族）', () => {
+    expect(buildCraftSpec({ formula: 'fullness' })).toEqual({ formula: 'fullness' })
+    expect(buildCraftSpec({ formula: 'pleat', craftTier: 'economy' })).toEqual({
+      formula: 'pleat',
+      craftTier: 'economy',
+    })
+  })
+
+  it('② 没填 ⇒ 该键**整个缺席**（缺值不写：不写空串、不写 undefined 键）', () => {
+    expect(buildCraftSpec({})).not.toHaveProperty('formula')
+    expect(buildCraftSpec({ formula: '   ' })).toEqual({})
+    expect(buildCraftSpec({ craftTier: '' })).toEqual({})
+  })
+})
+
+// ── 帘体（issue #4521；issue #4874 收窄为两类）────────────────────────────────
 //
 // 用户口径：「用户可能购买**带纱帘的窗帘，不带纱帘的窗帘和只买纱帘，还有布料**，这四种情况，
-// **布帘需要算用料米数，纱帘不需要算用料米数，买多少就是多少**，如果买带纱帘的窗帘就要
-// 把两种组合起来」。本组判据钉住「帘体 → 部位 / 用料来源 / 是否定型默认」的纯函数半边。
-describe('#4521 帘体：布帘 / 纱帘 / 布帘+纱帘', () => {
-  it('帘体清单逐字 = 布帘 / 纱帘 / 布帘+纱帘（第四类「布料」是售卖形态，不在帘体里）', () => {
-    expect(CURTAIN_BODY_OPTIONS).toEqual(['布帘', '纱帘', '布帘+纱帘'])
+// **布帘需要算用料米数，纱帘不需要算用料米数，买多少就是多少**」。
+// 本组判据钉住「帘体 → 部位 / 用料来源 / 是否定型默认」的纯函数半边。
+//
+// ⚠️ issue #4874（用户 2026-09-21「订单需要**移除布帘+纱帘的选项**」）：`布帘+纱帘` 档与它那一
+// 整族派生（`bodyHasSheerLine` / 纱帘米数 / 纱帘单价 / 第二条纱帘明细行 / `buildSheerLineCraftSpec`）
+// **已整体删除** ⇒ 原「bodyHasSheerLine 只有该档为真」「纱帘行 = 同一份工艺规格 + 同 craftLineId」
+// 「纱帘行不冒充配布边」三条判据**改判为反向断言**（「那族符号都不存在」），**不是删断言**：
+// 见上面 `#4874 用料公式 / 算料档位落库 + 褶距整体退场` 组的模块导出清单判据
+// （`Object.keys(orderCraftFields)` 不含 `bodyHasSheerLine` / `buildSheerLineCraftSpec`）。
+// 「纱帘仍是一条独立明细行」这一真值**没有消失**：它由**独立商品组**（帘体 = 纱帘）承载，
+// 该行的 `curtainType=纱帘` 由 `curtainTypeOfBody` 写（见下一条）。
+describe('#4521/#4874 帘体：布帘 / 纱帘（`布帘+纱帘` 档已移除）', () => {
+  it('帘体清单逐字 = 布帘 / 纱帘；**不再有**「布帘+纱帘」档（第四类「布料」是售卖形态）', () => {
+    expect(CURTAIN_BODY_OPTIONS).toEqual(['布帘', '纱帘'])
+    expect(CURTAIN_BODY_OPTIONS).not.toContain('布帘+纱帘')
   })
 
-  it('bodyHasSheerLine：**只有「布帘+纱帘」**额外生成纱帘明细行（只买纱帘的那行本身就是纱帘）', () => {
-    expect(bodyHasSheerLine(CURTAIN_BODY_CLOTH)).toBe(false)
-    expect(bodyHasSheerLine(CURTAIN_BODY_SHEER)).toBe(false)
-    expect(bodyHasSheerLine(CURTAIN_BODY_BOTH)).toBe(true)
-  })
-
-  it('curtainTypeOfBody：**只有「只买纱帘」显式写部位**；主帘（布帘 / 布帘+纱帘）不写', () => {
+  it('curtainTypeOfBody：**只有「只买纱帘」显式写部位**；布帘不写', () => {
     expect(curtainTypeOfBody(CURTAIN_BODY_SHEER)).toBe(CURTAIN_TYPE_SHEER)
     expect(curtainTypeOfBody(CURTAIN_BODY_CLOTH)).toBeUndefined()
-    expect(curtainTypeOfBody(CURTAIN_BODY_BOTH)).toBeUndefined()
   })
 
   it('defaultIsShapedForBody：布帘默认「是」、纱帘默认「否」（真值源 §10）', () => {
     expect(defaultIsShapedForBody(CURTAIN_BODY_CLOTH)).toBe(true)
-    expect(defaultIsShapedForBody(CURTAIN_BODY_BOTH)).toBe(true)
     expect(defaultIsShapedForBody(CURTAIN_BODY_SHEER)).toBe(false)
   })
 
-  it('纱帘行 = 部位纱帘 + **同一份工艺规格** + 同 craftLineId + 用料来源', () => {
-    const spec = { craft: '韩褶', cuttingMode: '定高买宽', openCount: 4, isShaped: true }
-    expect(buildSheerLineCraftSpec('line-main', spec, METERS_SOURCE_FOLLOW)).toEqual({
-      craft: '韩褶',
-      cuttingMode: '定高买宽',
-      openCount: 4,
-      isShaped: true,
-      curtainType: '纱帘',
-      craftLineId: 'line-main',
-      metersSource: '跟随主布',
-    })
-    expect(
-      buildSheerLineCraftSpec('line-main', spec, METERS_SOURCE_MANUAL).metersSource
-    ).toBe('人工指定')
-  })
-
-  // 与配布边行**刻意相反**：纱帘是**另一个部位**（自己的工序路线：纱帘×韩褶）⇒ 必须带规格；
-  // 配布边不是部位（同一扇窗的一块布）⇒ 带了会让工序与计件翻倍。两条判据互为红证。
-  it('纱帘行**必须**带工艺规格（与配布边行刻意相反：纱帘是另一个部位）', () => {
-    const sheer = buildSheerLineCraftSpec('line-main', { craft: '韩褶' }, METERS_SOURCE_FOLLOW)
-    const edge = buildEdgeLineCraftSpec('line-main', METERS_SOURCE_FOLLOW)
-    expect(sheer).toHaveProperty('craft', '韩褶')
-    expect(edge).not.toHaveProperty('craft')
-    // 两行的组键相同（同一樘帘），但部位/角色不同
-    expect(sheer.craftLineId).toBe(edge.craftLineId)
-    expect(sheer.curtainType).toBe('纱帘')
-    expect(edge).not.toHaveProperty('curtainType')
-  })
-
   it('纱帘行不冒充配布边（componentRole 不写 —— 纱帘既不是主布也不是配布边）', () => {
-    const sheer = buildSheerLineCraftSpec('line-main', {}, METERS_SOURCE_FOLLOW)
+    // 纱帘行由**独立商品组**（帘体 = 纱帘）承载：`buildCraftSpec` 只写工艺规格，
+    // 不写 `componentRole`（那是**配布边**的专有键，见 `buildEdgeLineCraftSpec`）
+    const sheer = buildCraftSpec({ craft: '韩褶' })
     expect(sheer).not.toHaveProperty('componentRole')
+    expect(buildEdgeLineCraftSpec('item-1', METERS_SOURCE_FOLLOW).componentRole).toBe('配布边')
   })
 })
 

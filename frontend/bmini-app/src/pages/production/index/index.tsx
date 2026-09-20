@@ -206,7 +206,7 @@ export default function ProductionPage() {
   /**
    * A 模式一屏（切片 ②）：扫新码后的「工序 + 应做数量 + 【完成】」。
    *
-   * <p>设计 §4.1：一次扫码 = 1 步 —— 找到哪一樘窗/哪个部位/该做哪一道都由**码 + 系统推断**给出；
+   * <p>设计 §4.1：一次扫码 = 1 步 —— 找到哪一套窗/哪个部位/该做哪一道都由**码 + 系统推断**给出；
    * 唯一的额外交互是「不是这道？改」（只在需要时才点）。`null` = 没有在屏的一屏。</p>
    */
   const [scanScreen, setScanScreen] = useState<{ token: string; view: ScanResolveResult } | null>(

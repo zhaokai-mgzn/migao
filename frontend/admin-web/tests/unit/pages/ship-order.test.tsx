@@ -387,4 +387,71 @@ describe('ShipOrder', () => {
       expect.objectContaining({ logisticsType: 'logistics' })
     )
   })
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 订单上的常用物流两列**优先**（issue #4874；后端 #4872 建单落库）
+  //
+  // 改动前：发货页只按订单收货手机号反查**客户档案**（#4419）。订单自己已经记了承运商
+  // （下单页选客户时带出并落库）⇒ 应以订单为准；客户档案反查**保留**为
+  // 「存量单 / 订单没记这一半」的兜底（**不删、不改成门禁**）。
+  // ══════════════════════════════════════════════════════════════════════════
+  it('#4874 订单两列有值 ⇒ 用订单值（**不**被客户档案反查覆盖）', async () => {
+    // 注入式红证：让客户档案给出**另一组**值（快递 + 顺丰速运）。
+    // 若实现把来源顺序调反（先档案、或档案无条件覆盖），界面会显示 顺丰速运 / 快递 ⇒ 本判据红。
+    mockGetOrder.mockResolvedValue({
+      data: {
+        data: { ...mockOrder, logisticsType: 'logistics', logisticsCompany: '四季安物流' },
+      },
+    })
+    mockGetCustomers.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            {
+              id: 'c-hit',
+              phone: '13900139000',
+              defaultLogisticsType: 'express',
+              defaultLogisticsCompany: '顺丰速运',
+            },
+          ],
+          total: 1,
+        },
+      },
+    })
+    render(<ShipOrder />)
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('combobox')[0]).toHaveValue('四季安物流')
+    })
+    expect(screen.getByRole('radio', { name: '物流/专线' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: '快递' })).not.toBeChecked()
+    // 订单两半都齐 ⇒ **不发**反查请求（订单值就是权威来源）
+    expect(mockGetCustomers).not.toHaveBeenCalled()
+  })
+
+  it('#4874 订单两列都缺（存量单）⇒ 回落客户档案反查（既有兜底不退化）', async () => {
+    // mockOrder 本身没有 logisticsType / logisticsCompany（= 建单早于 #4872 的存量单）
+    mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder } } })
+    mockGetCustomers.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            {
+              id: 'c-hit',
+              phone: '13900139000',
+              defaultLogisticsType: 'logistics',
+              defaultLogisticsCompany: '四季安物流',
+            },
+          ],
+          total: 1,
+        },
+      },
+    })
+    render(<ShipOrder />)
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('combobox')[0]).toHaveValue('四季安物流')
+    })
+    expect(screen.getByRole('radio', { name: '物流/专线' })).toBeChecked()
+  })
 })

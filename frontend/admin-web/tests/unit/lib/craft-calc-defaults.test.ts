@@ -18,7 +18,6 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   DEFAULT_CUTTING_MODE,
-  DEFAULT_PLEAT_SPACING,
   DEFAULT_STYLE,
   PLEAT_FABRIC_PER_FOLD,
   STANDARD_FULLNESS,
@@ -52,13 +51,13 @@ describe('下单页默认档与算料引擎常量同步（issue #4420）', () =>
     expect(STANDARD_FULLNESS).toBe(Number(m[1]))
   })
 
-  it('默认褶距 = 每折吃布 ÷ 标准档倍数（用户 2026-09-19 裁定：褶距随倍数自动算）', () => {
-    expect(DEFAULT_PLEAT_SPACING).toBeCloseTo(PLEAT_FABRIC_PER_FOLD / STANDARD_FULLNESS, 10)
-    // 2.0 倍 ⇒ 0.125 米（12.5cm）。若有人把倍数改成 2.5（=清单那处 0.1m 口径）此处必红。
-    expect(DEFAULT_PLEAT_SPACING).toBe(0.125)
-  })
+  // ⚠️ issue #4874：原「默认褶距 = 每折吃布 ÷ 标准档倍数（0.125）」判据**随字段退场**
+  // （用户 2026-09-21「移除订单的工艺规格中的褶距字段」）——`DEFAULT_PLEAT_SPACING` 已从
+  // `lib/order-craft-fields.ts` **删除**（模块导出清单的反向断言见 `order-craft-fields.test.ts`
+  // 的 `#4874` 组）。这里保留的仍是**有守卫的**算料常量（每折吃布 / 标准档倍数）——
+  // 它们是引擎侧真值的前端副本，**没有**随褶距退场（§4662 的超宽判据仍读 `STANDARD_FULLNESS`）。
 
-  it('默认值 = 用户裁定的档（加工类型定高买宽 / 款式单色 / 褶距 0.125 / 对花否）', () => {
+  it('默认值 = 用户裁定的档（加工类型定高买宽 / 款式单色 / 对花否）', () => {
     expect(DEFAULT_CUTTING_MODE).toBe('定高买宽')
     expect(DEFAULT_STYLE).toBe('单色')
     // issue #4521：**部位不再进默认档**（主帘缺省即布帘）。
@@ -66,14 +65,19 @@ describe('下单页默认档与算料引擎常量同步（issue #4420）', () =>
     // 「工艺规格中的**工艺，定型**……直接通过加工项来勾选」⇒ 它们由**加工项**派生
     // （工艺 = 勾选的工艺项的 `craftHint`；定型 = 「定型」加工项的勾选态）。
     // 前端**不得**再补一份默认工艺/默认定型 —— 那正是让 ERP「工艺+特征」组合名匹配不上的口径。
+    // issue #4874：**褶距已整体移除**；`formula` / `craftTier` **不进**本默认档 ——
+    // 它们是**读面取值**（公式取算料配置的 `default_formula`、档位取 `tiers` 的键，
+    // 由页面侧 `derivedCraftSpec` 解析后经 `buildCraftSpec` 落库），前端不持有第二份真值。
     expect(createDefaultCraftSpec()).toEqual({
       cuttingMode: '定高买宽',
       style: '单色',
-      pleatSpacing: 0.125,
       hasPattern: false,
     })
     expect(createDefaultCraftSpec()).not.toHaveProperty('craft')
     expect(createDefaultCraftSpec()).not.toHaveProperty('isShaped')
+    expect(createDefaultCraftSpec()).not.toHaveProperty('pleatSpacing')
+    expect(createDefaultCraftSpec()).not.toHaveProperty('formula')
+    expect(createDefaultCraftSpec()).not.toHaveProperty('craftTier')
   })
 
   it('默认值是**真值**：经 buildCraftSpec 后各键都落库（不是被「缺值不写」吞掉）', () => {
@@ -81,7 +85,6 @@ describe('下单页默认档与算料引擎常量同步（issue #4420）', () =>
     expect(spec).toEqual({
       cuttingMode: '定高买宽',
       style: '单色',
-      pleatSpacing: 0.125,
       hasPattern: false,
     })
     // 部位**不在**默认档里（issue #4521）：写它 = 给主帘留一条被标成纱帘的口子
@@ -89,6 +92,8 @@ describe('下单页默认档与算料引擎常量同步（issue #4420）', () =>
     // #4566：工艺 / 定型同样不在（真值来源是加工项，不是本默认档）
     expect(spec).not.toHaveProperty('craft')
     expect(spec).not.toHaveProperty('isShaped')
+    // #4874：褶距的**写键整个退场**（存量单读侧仍容错，但新单不再落这个键）
+    expect(spec).not.toHaveProperty('pleatSpacing')
   })
 
   it('默认档与库侧枚举逐字一致（错一个字下游取不到路线）', () => {
