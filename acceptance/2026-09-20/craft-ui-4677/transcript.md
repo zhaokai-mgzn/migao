@@ -121,7 +121,7 @@ PR #4710 的 `statusCheckRollup` 全绿，但该 rollup 的 run `35484666211`（
       productionApi.getOperationLayers(),
 ```
 
-`page.tsx:1012-1018`（消费）：
+`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:1012-1018`（消费）：
 
 ```
     // 两层分区（issue #4677）：`operations` / `delivery` 两段 + 「打包发货」的一列价
@@ -136,11 +136,11 @@ PR #4710 的 `statusCheckRollup` 全绿，但该 rollup 的 run `35484666211`（
     request.get<ApiResponse<OperationLayers>>('/api/admin/production/operation-layers'),
 ```
 
-入口可达：`page.tsx:2668` 的 tab 定义里 `{ key: 'operations', label: '工艺项' }` 是**默认 tab**（`useState` 初值）；`craft-operations-panel` 在 `tab === 'operations'` 分支内 ⇒ **首屏即触发**，无需二次跳转。
+入口可达：`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:2668` 的 tab 定义里 `{ key: 'operations', label: '工艺项' }` 是**默认 tab**（`useState` 初值）；`craft-operations-panel` 在 `tab === 'operations'` 分支内 ⇒ **首屏即触发**，无需二次跳转。
 
 ### R2.2 有无测试钉住
 
-`production-routings.test.tsx:4105-4116`：
+`frontend/admin-web/tests/unit/pages/production-routings.test.tsx:4105-4116`：
 
 ```
   it('端点接入（验收协议 v1.11）：页面**真的调** `GET /operation-layers`（文件在 main ≠ 被触发）', async () => {
@@ -276,7 +276,7 @@ RESULT INJ11-indrawerloop INJECT_NOOP
 
 ### R3.2 一处**空断言**（恒真）的实测定位 —— B4 里的夹具自证
 
-`production-routings.test.tsx:3893-3910`（B4 用例尾部）：
+`frontend/admin-web/tests/unit/pages/production-routings.test.tsx:3893-3910`（B4 用例尾部）：
 
 ```
     expect(within(workshop).queryByTestId('matrix-cell-裁剪-布料')).toBeNull()
@@ -318,7 +318,7 @@ RESULT INJ11-indrawerloop INJECT_NOOP
 
 ### R4.1 验收探针：抽屉空态「删除」按钮是否 **enabled**（补强 B6-②）
 
-B6-② 只断言 `toBeInTheDocument()`（元素存在）。**存在 ≠ 可点** —— 抽屉 footer 的两个按钮带 `disabled={variantBusy || !manageOpEntry}`（`page.tsx:3873/3882`）。若 `manageOpEntry` 为 null，"出路"就只是**装饰**。故独立加一条探针：
+B6-② 只断言 `toBeInTheDocument()`（元素存在）。**存在 ≠ 可点** —— 抽屉 footer 的两个按钮带 `disabled={variantBusy || !manageOpEntry}`（`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:3873/3882`）。若 `manageOpEntry` 为 null，"出路"就只是**装饰**。故独立加一条探针：
 
 ```ts
     // 验收探针：空态删除入口**真的可点**吗（enabled）？还是只是渲染出来但 disabled？
@@ -334,7 +334,7 @@ $ npx vitest run tests/unit/pages/production-routings.test.tsx -t "B6-②"
 
 ⇒ **enabled 成立**（`manageOpEntry` 在该夹具下非 null）。探针跑完已 `git checkout --` 还原测试文件（`git status` 为空）。
 
-> ⚠️ 归因强度：这是**存在性 + 值级**证据（该夹具下按钮 enabled）。它**不**等于"任何数据形态下都可删" —— 若工序库读面（`operations-catalog`）查不到该逻辑名，`manageOpEntry` 为 null ⇒ 按钮 disabled 且只报一句理由（`openDeleteOpByName` 的 `if (!manageOpEntry)` 分支，`page.tsx:2337-2342`）。该分支**有**就地理由（不是死路），但**无测试钉住**（见报告 §5-P2-2）。
+> ⚠️ 归因强度：这是**存在性 + 值级**证据（该夹具下按钮 enabled）。它**不**等于"任何数据形态下都可删" —— 若工序库读面（`operations-catalog`）查不到该逻辑名，`manageOpEntry` 为 null ⇒ 按钮 disabled 且只报一句理由（`openDeleteOpByName` 的 `if (!manageOpEntry)` 分支，`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:2337-2342`）。该分支**有**就地理由（不是死路），但**无测试钉住**（见报告 §5-P2-2）。
 
 ---
 
@@ -392,7 +392,7 @@ $ shasum -a 256 page.tsx
 | 6 | `matrixColumnsOf` → `return [...present]` | `B4` | **1 failed** `expected [...'布料'...] to deeply equal [...]` |
 
 复核另发现（主验收初判漏判，已采纳）：
-- **`deliveryOps` 注释漂移**：`page.tsx:1152-1158` 注释称「取自服务端的分区读面（`delivery` 段）」，实现 `:1159-1162` 却是 `new Set(matrix.filter(c => c.scope === 'set').map(c => c.operation))` ⇒ 按**矩阵格**取。
+- **`deliveryOps` 注释漂移**：`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:1152-1158` 注释称「取自服务端的分区读面（`delivery` 段）」，实现 `:1159-1162` 却是 `new Set(matrix.filter(c => c.scope === 'set').map(c => c.operation))` ⇒ 按**矩阵格**取。
 - **`operation-layers` 失败无错误面**：`:1018` 失败静默置空 ⇒ 前端兜底把**有价**工序渲染成 `no_applicable_position`（「未设置（没有部位设为「做」）」）= 假话代替报错。
 - **假红陷阱**：`-t "#4677"` 会匹配 describe 外的 `判据③ 改判（#4677）`（`:3091`），该用例依赖其它 describe 留下的 mock 状态 ⇒ 过滤跑必然 `Test timed out in 5000ms`（**假红**，全量跑绿）。
 - **`<td>` 嵌套的影响边界**（比主验收更精确）：页面是 `'use client'` 且内容被 `2552 {!loading && !error && (…)}` 门控 ⇒ **SSR 首屏不含该 HTML**，故**不会**触发浏览器解析器多出一列；影响限于客户端渲染（浏览器给内层 `td` 套匿名 table、`py-2.5 pr-4` 双份 ⇒ 布料单单价列的内边距/列宽/对齐与同表其它列不一致）。
@@ -481,7 +481,7 @@ $ git status --porcelain
 
 ⇒ **服务端 `delivery` 段只给出 `[打包]`**，零格的 `外帘装袋`/`外帘打卷` 一行都没有 ⇒ **D6① 端到端不成立**（改判 P15 + 新增 **P1-2**）。
 根因锚点：`ProductionRoutingReadService.operationLayers`（`:174-185`）遍历 `operationPositions(tenantId)`（`:138-154`，`productionOperationPositionMapper.selectList` = **只读矩阵表**）。
-「为什么交付测试没抓到」：前端 `B6-①`（`:3950-3974`）**手造**服务端 delivery 行（`:3958-3967`），其注释（`:3952-3953`）声称「真后端按 `production_operations` 行分区、不看格」**与实现不符**；后端 `ProductionOperationLayersTest:228-246` 的 DisplayName 写「甚至零格」，stub 却是 `position("外帘装袋","布帘",null,false)` = **有格 + `applicable=false`**。
+「为什么交付测试没抓到」：前端 `B6-①`（`:3950-3974`）**手造**服务端 delivery 行（`:3958-3967`），其注释（`:3952-3953`）声称「真后端按 `production_operations` 行分区、不看格」**与实现不符**；后端 `backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationLayersTest.java:228-246` 的 DisplayName 写「甚至零格」，stub 却是 `position("外帘装袋","布帘",null,false)` = **有格 + `applicable=false`**。
 
 ---
 
@@ -578,7 +578,7 @@ OPEN   | [P0·真库缺陷·第二层根因] 租户 20/21 的 production_operati
 | **基线快照晚于被测事件（v1.5）** | R4.1 的探针断言是"当前状态"型（`not.toBeDisabled()`），无"等新增/等变化"比较 ⇒ 无基线取晚问题 |
 | **重放未复现前置条件（v1.7）** | R4.1 探针**显式复现了前置条件**（该夹具下 `manageVariants.length === 0`，即 #4674 的空态）并给出观测值（按钮 enabled）；未复现前置条件的场景（J18 加工单实例化）**不写结论** |
 | **测试自建产物路径（v1.8）** | 未使用任何"按名拼产物路径"的断言；`vitest`/`shasum` 的路径全部直接取自被测文件真实路径 |
-| **注释漂移（v1.4）** | 关键注释（`page.tsx:136-193` 的 `POSITION_DOMAIN`/`matrixColumnsOf`/`FABRIC_SHEET_*`；`:1310-1369` 的 `deliveryRows`/`fabricSheetRows`）**逐条与实现同源核对**，未发现与代码不符的断言性注释 |
+| **注释漂移（v1.4）** | 关键注释（`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:136-193` 的 `POSITION_DOMAIN`/`matrixColumnsOf`/`FABRIC_SHEET_*`；`:1310-1369` 的 `deliveryRows`/`fabricSheetRows`）**逐条与实现同源核对**，未发现与代码不符的断言性注释 |
 | **真值主张（自毁式）** | 本次**未**产出任何"断言仓库当下恰有该缺陷"的判据 |
 | **过渡帧/滞后帧（v1.4）** | 无截图/快照类证据被引用 |
 | **假红** | 每条"期望红"的注入都同时满足"注入生效（指纹变化）∧ 目标用例真的失败"；另有 INJ14/INJ13 两个方向性对照确认 B4 红在**渲染断言**而非恒真断言 |

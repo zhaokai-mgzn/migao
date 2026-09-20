@@ -29,28 +29,28 @@
 
 | # | 验收点 | 层 | 判定 | 证据引用 |
 |---|---|---|---|---|
-| P1 | 页面**真的调** `GET /operation-layers`（改前零调用点 = 上轮 P0-1） | L1 | ✅ 成立 | `production-routings.test.tsx:4105`；红证 R3-INJ1（`Tests 2 failed`） |
+| P1 | 页面**真的调** `GET /operation-layers`（改前零调用点 = 上轮 P0-1） | L1 | ✅ 成立 | `frontend/admin-web/tests/unit/pages/production-routings.test.tsx:4105`；红证 R3-INJ1（`Tests 2 failed`） |
 | P2 | 入口可达：默认 tab「工艺项」首屏即触发（无二次跳转） | L1 | ✅ 成立 | `:4111`（`toHaveBeenCalledTimes(1)`）；红证 R3-INJ1 |
 | P3 | 【工序】层按**车间分组可折叠**（裁剪（裁床）/ 车位（缝制）/ 后整（烫工及后整）/ 质检） | L1 | ✅ 成立 | `:3822` B2；红证 R3-INJ5 |
 | P4 | 列**收窄**到 布帘/纱帘/帘头（**不含** 布料） | L1 | ✅ 成立 | `:3874` B4（列头逐字 `['工序','布帘','纱帘','帘头','元数据 / 操作']`）；红证 R3-INJ2 |
 | P5 | 界面**不出现**「槽位」这类发明词 | L1 | ✅ 成立 | `:3849`（`expect(getByTestId('craft-operations-panel')).not.toHaveTextContent('槽位')`） |
 | P6 | 【打包发货】层 = `scope='set'` 成员**一列价**（一行一价，非 4 格） | L1 | ✅ 成立 | `:3851` B3（`getAllByRole('columnheader')` 恰三列；`getAllByTestId(/^matrix-cell-/)` = 0） |
-| P7 | `price_state` **逐字用服务端聚合**（4 态），前端**不重算** | L1 | ✅ 成立（**交付测试不可证伪，验收补红证**） | `page.tsx:2961-2983`（`data-price-state={row.price_state}` + 4 分支只读该键）；红证 §3-INJ8/9/10 + **§3.2 补口红证**；缺口见 P2-8 |
+| P7 | `price_state` **逐字用服务端聚合**（4 态），前端**不重算** | L1 | ✅ 成立（**交付测试不可证伪，验收补红证**） | `frontend/admin-web/src/app/(dashboard)/production/routings/frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:2961-2983`（`data-price-state={row.price_state}` + 4 分支只读该键）；红证 §3-INJ8/9/10 + **§3.2 补口红证**；缺口见 P2-8 |
 | P8 | `unpriced` **≠ ¥0.00** | L1 | ✅ 成立 | `:3914` B7-①（`not.toHaveTextContent('¥')`）；红证 R3-INJ8 |
 | P9 | `multiple_prices` **不静默取第一个** + 计数 | L1 | ✅ 成立 | `:3925` B7-②（`各部位不同价（2 处）`，两个价都不显示）；红证 R3-INJ9 |
 | P10 | `no_applicable_position` 如实报出（不假装成 0 元/未定价） | L1 | ✅ 成立 | `:3938` B7-③；红证 R3-INJ10 |
-| P11 | 🔴 **【布料单】小区存在**，`裁剪`+`打包` 各一行一列价 | L1 | ✅ 成立 | `page.tsx:3020` `data-testid="fabric-sheet-section"`；`:3044` `fabric-sheet-row-{裁剪,打包}`；红证 R3-INJ3 |
+| P11 | 🔴 **【布料单】小区存在**，`裁剪`+`打包` 各一行一列价 | L1 | ✅ 成立 | `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:3020` `data-testid="fabric-sheet-section"`；`:3044` `fabric-sheet-row-{裁剪,打包}`；红证 R3-INJ3 |
 | P12 | 🔴 能**读写** `裁剪 × 布料`（`PUT /operation-positions/lc-8`，body **恰为** `{unit_price}`） | L1 | ✅ 成立 | `:4002`（`:4032` `expect(Object.keys(call[1])).toEqual(['unit_price'])`） |
 | P12b | 🔴 能**读写** `打包 × 布料`（`PUT /operation-positions/lc-12`） | L1 | ✅ 成立（**交付测试未覆盖，验收探针实测**） | **验收探针**（§3.1）：`toHaveBeenCalledWith('lc-12', { unit_price: 2.25 })` → `Tests 1 passed`；交付测试里 `lc-12` 零命中（见 P2-7） |
 | P13 | 🔴 **不依赖矩阵里有「布料」列**（列收窄后仍可定价） | L1 | ✅ 成立 | `:4005`（`within(workshop).queryByTestId('matrix-cell-裁剪-布料')` **为 null** 的前提下，`within(fabric)` 里该格 `priced` ¥7.00） |
 | P14 | 格缺失时**空态给出路**（两个**可点**动作，无页面里没有的指引） | L1 | ✅ 成立 | `:4035`（`fabric-sheet-attach-*` 真开 `orphan-attach-list`；`fabric-sheet-seed-*` 真到 `seed-template-apply-curtain`；`not.toHaveTextContent('请核对各部位的适用性配置')`） |
 | P15 | #4674-① 第二层的行**不依赖矩阵格**（一格都没有 ⇒ 仍有行 + `管理▸`） | L1 | ⚠️ **仅前端渲染层成立；端到端不成立** | `:3950` B6-①（但**手造**服务端行）；后端实测 `PROBE delivery operations = [打包]`（§3.3）⇒ 见 **P1-2** |
-| P16 | #4674-② `管理▸` **在行上** | L1 | ✅ 成立 | `page.tsx:591-607` `ManageButton`，`:2894`（工序层行尾）/ `:2999`（打包发货层行尾）/ `:3107`（布料单行尾） |
-| P17 | #4674-③ 停用/删除渲染在 `manageVariants.map(...)` **循环体外** | L1 | ✅ 成立 | `page.tsx:3913-3990`（`manageVariants.length === 0 ? 空态 : <div>…map…</div>`，`:3967` 是 `manageVariants.map(...)`），`footer` 在 `:3857-3891`（`operations-manage-disable` `:3872` / `-delete` `:3881` / `-close` `:3890`，**循环体之外**）；红证 R3-INJ11 |
-| P18 | #4674-④ 空态**给出路**且**可点**（enabled，非只渲染） | L1 | ✅ 成立 | `page.tsx:3916-3947`（两个 `Button` + 解释「为什么空」）；**验收探针** `not.toBeDisabled()` → `Tests 1 passed`（R4.1） |
-| P19 | 就绪度② 改成「**两条基础路线是否齐**」并**点名** | L1 | ✅ 成立 | `page.tsx:1661-1670`（`BASE_ROUTE_NAMES` + `missingBaseRoutes` + `routingsReady`）；`:2575-2584`（`基础路线 1/2 条 · 缺 布料工序路线`）；红证 R3-INJ6 |
-| P20 | 补套入口改成「**缺失即显示**」（幂等） | L1 | ✅ 成立 | `page.tsx:2617`（`(!operationsReady \|\| missingBaseRoutes.length > 0) &&`）；反向护栏 `:4072`；红证 R3-INJ7 |
-| P21 | #4692 删除路径**不回退**（判据按名字 + `detachPositions: true`） | L1 | ✅ 成立 | `page.tsx:1520-1522`（`opDeleteBlockerCells` 按行键）+ `:2366-2372`；测试 `:1742 #4692-A` … `:1830/#4692-E`；红证 R3-INJ12（`Tests 4 failed \| 2 passed`） |
+| P16 | #4674-② `管理▸` **在行上** | L1 | ✅ 成立 | `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:591-607` `ManageButton`，`:2894`（工序层行尾）/ `:2999`（打包发货层行尾）/ `:3107`（布料单行尾） |
+| P17 | #4674-③ 停用/删除渲染在 `manageVariants.map(...)` **循环体外** | L1 | ✅ 成立 | `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:3913-3990`（`manageVariants.length === 0 ? 空态 : <div>…map…</div>`，`:3967` 是 `manageVariants.map(...)`），`footer` 在 `:3857-3891`（`operations-manage-disable` `:3872` / `-delete` `:3881` / `-close` `:3890`，**循环体之外**）；红证 R3-INJ11 |
+| P18 | #4674-④ 空态**给出路**且**可点**（enabled，非只渲染） | L1 | ✅ 成立 | `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:3916-3947`（两个 `Button` + 解释「为什么空」）；**验收探针** `not.toBeDisabled()` → `Tests 1 passed`（R4.1） |
+| P19 | 就绪度② 改成「**两条基础路线是否齐**」并**点名** | L1 | ✅ 成立 | `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:1661-1670`（`BASE_ROUTE_NAMES` + `missingBaseRoutes` + `routingsReady`）；`:2575-2584`（`基础路线 1/2 条 · 缺 布料工序路线`）；红证 R3-INJ6 |
+| P20 | 补套入口改成「**缺失即显示**」（幂等） | L1 | ✅ 成立 | `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:2617`（`(!operationsReady \|\| missingBaseRoutes.length > 0) &&`）；反向护栏 `:4072`；红证 R3-INJ7 |
+| P21 | #4692 删除路径**不回退**（判据按名字 + `detachPositions: true`） | L1 | ✅ 成立 | `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:1520-1522`（`opDeleteBlockerCells` 按行键）+ `:2366-2372`；测试 `:1742 #4692-A` … `:1830/#4692-E`；红证 R3-INJ12（`Tests 4 failed \| 2 passed`） |
 | P22 | #4665 / #4671 / #4650 阶段 1 / #4614 **原样保留** | L1 | ✅ 成立（**注**：#4614 的「读面那一格仍在」无断言，见 P2-3） | 全量 `npx vitest run` = **2395 passed / 1 skipped**（含这四单的既有断言，**未放宽**）；`check-ui-regression.sh` exit 0 |
 | P23 | 否决方案①（工序库行价）的理由成立 | L1 | ✅ 成立 | `V49__create_production_operations_and_work_logs.sql:15` 逐字 `unit_price NUMERIC(10,2) NOT NULL DEFAULT 0` |
 | P24 | 界面在**真实浏览器**里渲染正确（HTML 合法 / 布局） | L2 | ❌ **未达成** | 唯一产出 `<td>` 嵌 `<td>` 的非法嵌套（见 §5-P2-1）；PR 门禁的 Playwright quality specs（`pr-check.yml:187`）**不含** routings 页（`grep -rln "routings\|工艺项" tests/e2e/` 零命中） |
@@ -66,7 +66,7 @@
 
 | 界面文案（逐字引用） | 信息准确 | 给出口 | 不编造 | 判定 |
 |---|---|---|---|---|
-| `【打包发货】` / `这几道活不按部位分（一樘窗只做一次）⇒ 一个价`（`page.tsx:2914/2919`） | ✅ | — | ✅ | 通过 |
+| `【打包发货】` / `这几道活不按部位分（一樘窗只做一次）⇒ 一个价`（`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:2914/2919`） | ✅ | — | ✅ | 通过 |
 | `未定价` + `title="有部位还没定价（≠ ¥0.00）"`（`:2961/2964`） | ✅ | — | ✅ | 通过（**不把未定价说成 0 元**） |
 | `各部位不同价（{N} 处）` + `title="各部位不同价 —— 到「管理▸」里逐个部位看"`（`:2979/2966`） | ✅ | ✅ 指名「管理▸」 | ✅ | 通过（**不静默取第一个**） |
 | `未设置（没有部位设为「做」）`（`:2982`） | ✅ | — | ✅ | 通过 |
@@ -85,7 +85,7 @@
 
 **A1【工序】层：按车间分组可折叠 + 列收窄到 布帘/纱帘/帘头（不含布料）** —— ✅ **成立**
 
-- 分组取值：`page.tsx:1295-1312` `workshopGroups`（`key = distinctMeta(row, c => c.group).join(' / ') || ''`，认不出的组照原样追加）；
+- 分组取值：`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:1295-1312` `workshopGroups`（`key = distinctMeta(row, c => c.group).join(' / ') || ''`，认不出的组照原样追加）；
   折叠：`:2796-2810`（`aria-expanded={openWorkshops[...] !== false}` + `▸/▾`），渲染门在 `:2813`。
 - 列收窄：`:179-182` `matrixColumnsOf` = `POSITION_DOMAIN.filter(p => present.has(p))`，`POSITION_DOMAIN = ['布帘','纱帘','帘头']`（`:136`）。
 - **红证**：INJ5（折叠条件恒真）⇒ `B2` 红；INJ2（`return [...present]`）⇒ `B4` 红。
@@ -93,16 +93,16 @@
 
 **A2【打包发货】层：`scope='set'` 成员一列价，逐字用服务端 4 态（前端不重算）** —— ✅ **成立**
 
-- 分区判据：`page.tsx:1265-1268` `operationsRows = matrixRows.filter(r => !deliveryOps.has(r.operation))`；`deliveryRows`（`:1317-1349`）= 服务端 `delivery` 段 ∪ 矩阵里 `scope==='set'` 的格。
+- 分区判据：`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:1265-1268` `operationsRows = matrixRows.filter(r => !deliveryOps.has(r.operation))`；`deliveryRows`（`:1317-1349`）= 服务端 `delivery` 段 ∪ 矩阵里 `scope==='set'` 的格。
 - **逐字用服务端**：`:2961-2983` 渲染分支**只读** `row.price_state`；`data-price-state={row.price_state}` 逐字透出。
-- **前端不重算（代码层成立，但交付测试**无红证**）**：全仓 grep `price_state` 只有 3 处（`types/index.ts:1022` 类型、`page.tsx:2961/2964/2966/2979/2982` 读、`:1337` 的**兜底行**构造）—— 代码里**没有**按格价自行聚合的逻辑。
+- **前端不重算（代码层成立，但交付测试**无红证**）**：全仓 grep `price_state` 只有 3 处（`frontend/admin-web/src/types/index.ts:1022` 类型、`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:2961/2964/2966/2979/2982` 读、`:1337` 的**兜底行**构造）—— 代码里**没有**按格价自行聚合的逻辑。
   ⚠️ **但交付测试证伪不了这条**：测试的 `buildLayers(夹具)`（`:423-459`）从**同一份夹具格**推导服务端 `delivery` 段 ⇒ 服务端值与前端重算值**构造性相等**。复核 agent 注入「前端忽略 `price_state` 自行重算」⇒ **`B7-①/②/③` 全绿**（3 passed）。
   ⇒ 本次验收**独立补了一条可证伪的红证**（§3.2）：让服务端 `price_state='priced'/price=9.99` 与矩阵格 `unpriced` **故意不一致** ⇒ 页面必须显示 `¥9.99`；注入「前端重算」后该断言**必红**（实测）。⇒ **"逐字取自服务端"成立**（值级证据），但**交付测试未钉住**（P2-8）。
 - ⚠️ **登记一处非"逐字"路径**：`:1330-1345`（`:1337` 是固定值），服务端**没有**给这一行时，前端从格上重建一行并**固定** `price_state: 'no_applicable_position'`（不猜价）。真实后端 `operationLayers` 对每个有 `scope='set'` 格的工序**必然**给行（`ProductionRoutingReadService.java:178-188`）⇒ 该分支**只在服务端漏行时**可达；`B6-①` 的夹具正是这种"服务端给了行"的形态。⇒ 归因强度：**存在性级**（代码存在该分支），**不构成"前端重算价态"**，但**未逐字**，如实登记。
 
 ### B. 🔴 硬要求
 
-**B1 该小区真的存在** —— ✅ **成立**：`page.tsx:3020` `<section … data-testid="fabric-sheet-section">`，标题逐字 `【布料单】`（`:3023`）、副标题 `裁剪 + 打包 · 一列价（布料单按此价）`（`:3024`）。
+**B1 该小区真的存在** —— ✅ **成立**：`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:3020` `<section … data-testid="fabric-sheet-section">`，标题逐字 `【布料单】`（`:3023`）、副标题 `裁剪 + 打包 · 一列价（布料单按此价）`（`:3024`）。
 
 **B2 能读写 `裁剪 × 布料` / `打包 × 布料` 两格** —— ✅ **成立**
 
@@ -127,7 +127,7 @@
 
 | 三问 | 答案 | 锚点 |
 |---|---|---|
-| **谁发射** | `page.tsx:989` `productionApi.getOperationLayers(),`（在 `load()` 的 `Promise.allSettled` 内） | `:986-992` |
+| **谁发射** | `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:989` `productionApi.getOperationLayers(),`（在 `load()` 的 `Promise.allSettled` 内） | `:986-992` |
 | **哪个入口可达** | 「工艺项」tab = **默认 tab**（`:2668` `{ key: 'operations', label: '工艺项' }`），面板 `:2700` `craft-operations-panel` 在 `tab === 'operations'` 分支 ⇒ **首屏即触发** | `:2668` / `:2700` |
 | **有无测试钉住** | 有，2 条：`:4105`（`toHaveBeenCalled()`）+ `:4111`（`toHaveBeenCalledTimes(1)`） | `:4105-4116` |
 
@@ -292,7 +292,7 @@ issue 硬要求逐字是「给布料单的 `裁剪` **与** `打包` 定价」�
 | 状态 | 实测 |
 |---|---|
 | ① 交付源码（未注入） | `✓ 171 tests \| 170 skipped` → **`Tests 1 passed`** ⇒ 页面**逐字用服务端值** |
-| ② 注入「前端重算」（`page.tsx:1317` 起 `recompute(...)`） | `× 【验收探针】…` → **`Tests 1 failed`**（`toHaveTextContent('¥9.99')` 失败）⇒ **该断言会红** |
+| ② 注入「前端重算」（`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:1317` 起 `recompute(...)`） | `× 【验收探针】…` → **`Tests 1 failed`**（`toHaveTextContent('¥9.99')` 失败）⇒ **该断言会红** |
 | ③ 还原 | `shasum page.tsx` 回到 `0176604778…a003e9`；`git status` 干净 |
 
 ⇒ **A2「前端不重算」成立**（代码层 + 值级红证），**但交付测试未钉住** ⇒ 单列 **P2-8**。
@@ -330,7 +330,7 @@ PROBE delivery operations = [打包]
 
 **为什么交付测试没抓到**（复核 agent 独立发现 + 本次核实）：
 - 前端 `B6-①`（`:3950-3974`）用 `mockGetOperationLayers.mockResolvedValue(ok({… delivery:[…, {operation:'外帘装袋', price_state:'no_applicable_position', …}]}))` **手造**了服务端行；其注释（`:3952-3953`）声称「真后端的**分区读面**仍会给出这一行（它按 `production_operations` 的行分区，**不看格**）」—— **与实现不符**（`operationLayers` 按 `operationPositions()` 即矩阵行分区）。
-- 后端 `ProductionOperationLayersTest:228-246` 的 `@DisplayName` 写「只剩一格（**甚至零格**）时仍有 delivery 行」，但 stub 是 `position("外帘装袋", "布帘", null, false)` = **有格、只是 `applicable=false`** ⇒ **零格从未被构造**。
+- 后端 `backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationLayersTest.java:228-246` 的 `@DisplayName` 写「只剩一格（**甚至零格**）时仍有 delivery 行」，但 stub 是 `position("外帘装袋", "布帘", null, false)` = **有格、只是 `applicable=false`** ⇒ **零格从未被构造**。
 
 ---
 
@@ -345,7 +345,7 @@ PROBE delivery operations = [打包]
 
 ### P1-1 · 新行为未进用例库（`migao-dev-flow` §14）
 
-- **证据**：`grep -rn "4677\|4676" .github/cases/` **零命中**（`grep -rln "4677" .github/cases/ | wc -l` = 0）。测试文件头部 `// case_ids: PG-020, PG-034, PG-053, PP-014, OR-041, UI-048`（`production-routings.test.tsx:1`）**全部是既有 case**，`QA Growth Gate` 因此通过。
+- **证据**：`grep -rn "4677\|4676" .github/cases/` **零命中**（`grep -rln "4677" .github/cases/ | wc -l` = 0）。测试文件头部 `// case_ids: PG-020, PG-034, PG-053, PP-014, OR-041, UI-048`（`frontend/admin-web/tests/unit/pages/production-routings.test.tsx:1`）**全部是既有 case**，`QA Growth Gate` 因此通过。
 - **归因**：**流程/资产缺口**（非产品缺陷）。用例库是"被迭代喂养的活资产"，缺触发时机就会与现实脱节。
 - **修复方向**：为本次行为补 `.github/cases/**`（如 `PG-0xx`）—— 断言必须可执行（`order_before` / `forbidden_text` / `required_args` / `db_verify`），并跑 `render_cases.py` 提交生成物。
 
@@ -365,19 +365,19 @@ PROBE delivery operations = [打包]
 
 ### P2-9 · `deliveryOps` 注释与实现不符（注释漂移）
 
-- **证据**：`page.tsx:1152-1158` 注释逐字「取自服务端的分区读面（`delivery` 段），**不是**「有没有矩阵格」」「`scope='set'` 的工序**恒有**一行 + `管理▸`」；而实现 `:1159-1162` 是 `new Set(matrix.filter(c => c.scope === 'set').map(c => c.operation))` —— **就是**按矩阵格取。且「恒有一行」在零格形态下为假（P1-2）。
+- **证据**：`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:1152-1158` 注释逐字「取自服务端的分区读面（`delivery` 段），**不是**「有没有矩阵格」」「`scope='set'` 的工序**恒有**一行 + `管理▸`」；而实现 `:1159-1162` 是 `new Set(matrix.filter(c => c.scope === 'set').map(c => c.operation))` —— **就是**按矩阵格取。且「恒有一行」在零格形态下为假（P1-2）。
 - **归因（机制级）**：`migao-acceptance`「注释漂移 = 假绿来源」形态 —— 读注释的人会据此认为 ① 已达成。
 - **修复方向**：改注释与实现同源；`deliveryOps` 若可改为消费服务端 `delivery` 段则一并改（并配红证）。
 
 ### P2-10 · `GET /operation-layers` 失败**无错误面** ⇒ 用假话代替报错
 
-- **证据**：`page.tsx:1018` `setDeliveryAgg(layersRes.status === 'fulfilled' ? … : [])` —— 失败时静默置空；对比矩阵失败有 `matrixError` + `operation-price-matrix-error`（`:2764`）。此时前端兜底（`:1330-1345`）把**有价**的 `scope='set'` 工序渲染成 `no_applicable_position` ⇒ 界面显示「**未设置（没有部位设为「做」）**」= **假话**。测试无覆盖。
+- **证据**：`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:1018` `setDeliveryAgg(layersRes.status === 'fulfilled' ? … : [])` —— 失败时静默置空；对比矩阵失败有 `matrixError` + `operation-price-matrix-error`（`:2764`）。此时前端兜底（`:1330-1345`）把**有价**的 `scope='set'` 工序渲染成 `no_applicable_position` ⇒ 界面显示「**未设置（没有部位设为「做」）**」= **假话**。测试无覆盖。
 - **归因（存在性级）**：**错误面缺口**（与 #4696「未定价 ≠ 0」同一族：界面不许把"读不到"说成"没配置"）。参照同页既有纪律：`catalogError` 显示「工序库 **读取失败**（≠ 没配）」（`:2565` 附近）—— 本端点**没有**对应处置。
 - **修复方向**：加 `layersError` 状态 + 就地报错（不拿 `no_applicable_position` 顶替），并补红证。
 
 ### P2-1 · 【布料单】小区渲染出 `<td>` 嵌 `<td>` 的非法 DOM 嵌套
 
-- **证据**：`page.tsx:3056-3071` —— `<td className="py-2.5 pr-4 align-top">` 内直接放 `PositionCell`；而 `PositionCell` 的根节点就是 `<td data-testid={\`matrix-cell-${key}\`}>`（`:640-642`）。实测 React 警告（stderr 逐字，**每个渲染该小区的用例都打一次**）：
+- **证据**：`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:3056-3071` —— `<td className="py-2.5 pr-4 align-top">` 内直接放 `PositionCell`；而 `PositionCell` 的根节点就是 `<td data-testid={\`matrix-cell-${key}\`}>`（`:640-642`）。实测 React 警告（stderr 逐字，**每个渲染该小区的用例都打一次**）：
 
   ```
   Warning: validateDOMNesting(...): <td> cannot appear as a child of <td>.
@@ -388,18 +388,18 @@ PROBE delivery operations = [打包]
   ```
 
   `grep -c validateDOMNesting`（单跑 `production-routings.test.tsx`）= 1。
-- **归因（存在性级）**：**结构性缺陷**，归属本次交付（`fabric-sheet-section` 是 #4677 新增，`page.tsx:3020` 起）。`jsdom` 不做 HTML 纠错 ⇒ 单测绿；**真实浏览器**会按 HTML 解析规则隐式闭合/重排表格（**布局后果未采集** ⇒ 不夸大）。
+- **归因（存在性级）**：**结构性缺陷**，归属本次交付（`fabric-sheet-section` 是 #4677 新增，`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:3020` 起）。`jsdom` 不做 HTML 纠错 ⇒ 单测绿；**真实浏览器**会按 HTML 解析规则隐式闭合/重排表格（**布局后果未采集** ⇒ 不夸大）。
 - **修复方向**：把小区那格的 `PositionCell` 包进合法容器（如让 `PositionCell` 支持 `as="div"`，或该格改用一个非 `<td>` 的包装），并补一条**可执行**断言钉住 HTML 合法性（例：`expect(within(fabric).getByTestId('matrix-cell-裁剪-布料').closest('td')?.parentElement?.tagName).toBe('TR')`，或加 `console.error` 监听断言"无 validateDOMNesting 警告"）。**该断言需自带红证**。
 
 ### P2-2 · 抽屉空态「停用/删除」只有"存在"断言，无"可点"断言
 
-- **证据**：`production-routings.test.tsx:3995-3997` 只断言 `toBeInTheDocument()`；而按钮带 `disabled={variantBusy || !manageOpEntry}`（`page.tsx:3873/3882`）。若工序库读面查不到该逻辑名 ⇒ `manageOpEntry` 为 null ⇒ 按钮 disabled，只报一句理由（`page.tsx:2337-2342`，该分支**有**就地理由、**无**测试钉住）。
+- **证据**：`frontend/admin-web/tests/unit/pages/production-routings.test.tsx:3995-3997` 只断言 `toBeInTheDocument()`；而按钮带 `disabled={variantBusy || !manageOpEntry}`（`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:3873/3882`）。若工序库读面查不到该逻辑名 ⇒ `manageOpEntry` 为 null ⇒ 按钮 disabled，只报一句理由（`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:2337-2342`，该分支**有**就地理由、**无**测试钉住）。
 - **归因（值级）**：**断言强度不足**（存在性 ≠ 可点）。本次验收用探针**实测该夹具下 enabled**（R4.1，`Tests 1 passed`）⇒ 当前夹具**不构成**产品缺陷；但"任何数据形态下都可删"**未证**。
 - **修复方向**：把探针（`not.toBeDisabled()`）正式落进 `B6-②`；并为 `!manageOpEntry` 分支补一条断言（就地理由可见、不静默）。
 
 ### P2-3 · `B4` 内一条**恒真空断言** + 一处真实风险无断言
 
-- **证据**：`production-routings.test.tsx:3888` `expect(LAYER_CELLS.some((c) => c.position === '布料' && c.operation === '裁剪')).toBe(true)` —— 真值取自**测试自己的夹具常量**，与被测行为无关 ⇒ 按 `migao-acceptance`「空断言（恒绿）」，**页面怎么改都恒真**。
+- **证据**：`frontend/admin-web/tests/unit/pages/production-routings.test.tsx:3888` `expect(LAYER_CELLS.some((c) => c.position === '布料' && c.operation === '裁剪')).toBe(true)` —— 真值取自**测试自己的夹具常量**，与被测行为无关 ⇒ 按 `migao-acceptance`「空断言（恒绿）」，**页面怎么改都恒真**。
 - **定位实测**：INJ13/INJ14（列只留 `布料` / 列返回 `[]`）都让 `B4` 红，但红的是**前面**的渲染断言（`getAllByRole('columnheader')` / `queryByTestId(...).toBeNull()`）⇒ `B4` 整体有效，**仅最后一条是空的**。
 - **同时登记缺口**：设计 §4.3 要求「**不得**把 `布料` 从**读面响应**里删掉」（它是 `variant_operation_id` 的载体 + V88 保命格），而**没有任何断言**钉住"页面消费的读面数据里 `布料` 那格仍在"（现有断言只自证夹具）。
 - **修复方向**：删掉该恒真断言，换成对**页面数据/渲染**的断言（例：断言 `matrixColumns` 不含 `布料` 的同时，断言页面仍把该格的 `id` 用于写面 —— 即 `fabric-sheet-row-裁剪` 里的 `PositionCell` 存在，或断言 `orphanOps` 判据未把 `裁剪` 误判为孤儿）。
@@ -415,7 +415,7 @@ PROBE delivery operations = [打包]
 - **证据**：静态侧成立 —— `ProductionSeedTemplateService.java:112` `FABRIC_MAINLINE_STEPS = List.of("裁剪", "打包")`；`tests/unit_ci_workflows/test_fabric_route_seed.py:45` `FABRIC_MAINLINE_EFFECTIVE = ("裁剪", "打包")`。**活库未采集**（本会话无活库/无浏览器/活环境鉴权 401）。
 - **归因**：**证据不足**。缺的是：活库上对某租户的布料单跑一次实例化，读 `processing_position_operations` 逐行 diff（附录 B8/B9/B10 的判据）。
 - **附带登记（跨服务口径不一致，**不归属本次交付**）**：`backend/ai-agent-service/app/production/routing.py:465` 仍是 `FABRIC_MAINLINE_STEPS: List[str] = ["配料", "打包"]`，且 `backend/ai-agent-service/tests/test_production/test_fabric_route.py:98` 断言 `== ["配料","打包"]`；而 Java/迁移链终态已是 `["裁剪","打包"]`。
-  **影响面判定（存在性级）**：`routing.py:448` 逐字注释「**`build_route_v2` 今天是零消费者**：Java 实例化仍读旧 `production_routings`（P2 才切）」⇒ **今天不产生用户可见影响**；`routing.py` **不在本 PR 的改动面**（`git show --name-only efa59d98a` 无该文件）⇒ 归属 **#4676 的迁移面**，登记为**待观察项**（P2 切换时必须同步，否则 Python 会算出 `配料`）。
+  **影响面判定（存在性级）**：`backend/ai-agent-service/app/production/routing.py:448` 逐字注释「**`build_route_v2` 今天是零消费者**：Java 实例化仍读旧 `production_routings`（P2 才切）」⇒ **今天不产生用户可见影响**；`routing.py` **不在本 PR 的改动面**（`git show --name-only efa59d98a` 无该文件）⇒ 归属 **#4676 的迁移面**，登记为**待观察项**（P2 切换时必须同步，否则 Python 会算出 `配料`）。
 
 ### P2-7 · 硬要求的「两格」只有一格有写面断言
 
@@ -459,13 +459,13 @@ PROBE delivery operations = [打包]
 | **重放未复现缺陷前置条件（v1.7）** | R4.1 探针**显式复现** #4674 的前置（`manageVariants.length === 0`）并给观测值（按钮 enabled）；**未复现前置的 J18/P25 不写结论**（写"证据不足"）。 |
 | **测试自建产物路径（v1.8）** | 未使用任何"按名拼产物路径"断言；`vitest`/`shasum` 的路径全部直接取自被测文件真实路径；未依赖 locale/`TMPDIR`/`TZ` 影响命名的量。 |
 | **证据过渡帧/滞后帧（v1.4）** | 未引用任何截图/快照/导出物作为证据。 |
-| **注释漂移（v1.4）** | 关键注释（`page.tsx:136-196` 常量区、`:1310-1396` 聚合区、`:2318-2372` 删除路径）逐条与实现同源核对；发现 1 处**跨文件口径不一致**（`routing.py:465` 的 `["配料","打包"]` vs Java 的 `["裁剪","打包"]`），已登记为 P2-5 待观察项（该文件**不在**本 PR 改动面）。 |
+| **注释漂移（v1.4）** | 关键注释（`frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx:136-196` 常量区、`:1310-1396` 聚合区、`:2318-2372` 删除路径）逐条与实现同源核对；发现 1 处**跨文件口径不一致**（`backend/ai-agent-service/app/production/routing.py:465` 的 `["配料","打包"]` vs Java 的 `["裁剪","打包"]`），已登记为 P2-5 待观察项（该文件**不在**本 PR 改动面）。 |
 | **真值主张（自毁式断言）** | 本次**未**产出任何"断言仓库当下恰有该缺陷"的判据。 |
-| **覆盖了但其实没测到（假绿）** | ① **后端「零格仍有 delivery 行」从未被构造**：`ProductionOperationLayersTest:232-234` 的 DisplayName 写「甚至零格」，stub 却是「有格 + `applicable=false`」；② **前端 `B6-①` 手造服务端行**（`:3958-3967`），其注释声称的后端分区口径与实现不符。两条合起来让 D6① 看起来有覆盖 —— 本次用**后端探针**（§3.3）把它测出来了，改判 P15 + 新增 P1-2 |
+| **覆盖了但其实没测到（假绿）** | ① **后端「零格仍有 delivery 行」从未被构造**：`backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationLayersTest.java:232-234` 的 DisplayName 写「甚至零格」，stub 却是「有格 + `applicable=false`」；② **前端 `B6-①` 手造服务端行**（`:3958-3967`），其注释声称的后端分区口径与实现不符。两条合起来让 D6① 看起来有覆盖 —— 本次用**后端探针**（§3.3）把它测出来了，改判 P15 + 新增 P1-2 |
 | **断言不可证伪** | `B7` 组「逐字取自服务端」因 `buildLayers(夹具)` 与页面同源而构造性相等 ⇒ 复核 agent 注入「前端重算」后 **3 passed 全绿**。本次补 §3.2 可证伪红证（服务端与格故意不一致）⇒ 成立，缺口登记 P2-8 |
 | **假红（测试写法陷阱）** | 复核 agent 发现：`-t "#4677"` 会额外匹配 describe 外的 `判据③ 改判（#4677）`（`:3091`），该用例只在自己的 describe 里 `setDefault` 矩阵、依赖其它 describe 留下的 mock 状态 ⇒ 被过滤时必然 `Test timed out in 5000ms`（**假红**；全量跑绿）。本次验收全程用 `-t "B6-②"` / `-t "v1.11"` 这类**精确片段**规避 |
 | **断言覆盖窄于声明** | issue 硬要求是「`裁剪` **与** `打包`」，交付测试只对 `裁剪` 做了写断言 ⇒ 单列 P2-7，并用**验收探针**独立补测 `打包 × 布料`（实测可写）——没有把「测试绿」读成「两格都测过」 |
-| **恒真空断言** | **实测定位到 1 条**（`production-routings.test.tsx:3888`）并单列 P2-3；用 INJ13/INJ14 的方向性对照确认它**不是** `B4` 变红的来源。 |
+| **恒真空断言** | **实测定位到 1 条**（`frontend/admin-web/tests/unit/pages/production-routings.test.tsx:3888`）并单列 P2-3；用 INJ13/INJ14 的方向性对照确认它**不是** `B4` 变红的来源。 |
 | **假红** | 每条"期望红"的注入都同时满足"注入生效（指纹变化）∧ 目标用例真的失败"；`check-ui-regression.sh` / `tsc --noEmit` / 全量 vitest 在**未注入**状态下均绿 ⇒ 无"环境噪声被当红"。 |
 | **活环境测量窗口（v1.9）** | **完全回避**：本次不对活环境下任何判定（R6 已核部署事实，未测活环境）。 |
 
