@@ -26,7 +26,7 @@ B 端米宝评测覆盖体检（issue #3555）—— C 端 `xiaobu_coverage.py` 
   · 断言了两端注册表都没有的工具（拼错/已删除）；
   · 工具 0 用例；**已覆盖但没有任何正向用例**；
   · 工具集解析低于下界（防体检静默失效：解析不到工具 = 假绿）。
-"仅 1 条用例"（厚度不足）**只报告不阻塞** —— 与 verify-all.sh:66-68 的活指标设计意图一致。
+"仅 1 条用例"（厚度不足）**只报告不阻塞** —— 与 `verify-all.sh` 的「活指标」设计意图一致。
 """
 import argparse
 import sys
@@ -145,7 +145,7 @@ def render_text(rep, cases, by_tier) -> str:
         for t in rep.thin_tools:
             out.append(f"  ⚠️  {t:32} {tool_label(PERSONA, t):24} 仅 {', '.join(rep.cases[t])}")
         out.append("")
-        out.append("  说明：厚度不足是随迭代收敛的活指标（verify-all.sh:66-68 的设计意图：")
+        out.append("  说明：厚度不足是随迭代收敛的活指标（`verify-all.sh` 的「活指标」设计意图：")
         out.append("  不硬编码缺口阈值制造返工式门禁）—— 报告它，不拦它。")
     if rep.exempt:
         out.append("")

@@ -143,7 +143,7 @@ def _render_thin(out, rep) -> None:
         for t in rep.thin_tools:
             out.append(f"  ⚠️  {t:26} {tool_label(PERSONA, t):22} 仅 {', '.join(rep.cases[t])}")
         out.append("")
-        out.append("  说明：厚度不足是**随迭代收敛的活指标**（verify-all.sh:66-68 的设计意图：")
+        out.append("  说明：厚度不足是**随迭代收敛的活指标**（`verify-all.sh` 的「活指标」设计意图：")
         out.append("  不硬编码缺口阈值制造返工式门禁）—— 报告它，但不拦它。")
         out.append("  补用例触发条件见 migao-dev-flow §14.5。")
     if rep.uncovered:

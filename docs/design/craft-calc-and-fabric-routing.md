@@ -189,9 +189,15 @@
 > ⇒ **不是工序**）。**实施单 = issue #4676**（迁移 **V88**，改 `FABRIC_MAINLINE_STEPS`
 > `["配料","打包"]` → `["裁剪","打包"]`；存量加工单/报工快照**一字不动**）。
 > 术语真值源：`docs/curtain-production-process-standard.md`。
-> ⚠️ **照实登记**：V88 合入前**代码事实仍是** `["配料","打包"]`
-> （`backend/ai-agent-service/app/production/routing.py` 的 `FABRIC_MAINLINE_STEPS`）
-> ⇒ 本判据在 V88 合入前跑**会红**，这是**已知且有意**的：本表钉的是**目标口径**，不是当下代码。
+> ⚠️ **照实登记（issue #4701 的 P1，2026-09-20 复核）**：V88 **已合入**，但**真值源仍是旧口径**
+> `["配料","打包"]`（`backend/ai-agent-service/app/production/routing.py` 的 `FABRIC_MAINLINE_STEPS`；
+> `_POSITION_PRICE_ROWS` 的 `裁剪 × 布料` 仍为 `FALSE`）⇒ 本判据**至今仍会红**，这是**已知且有意**的：
+> 本表钉的是**目标口径**，不是当下代码。
+> ⚠️ **钉住它的测试也是「过期裁定」**：`backend/ai-agent-service/tests/test_production/test_fabric_route.py`
+> 的断言文案把 `配料` 称「**裁定**」，而 #4673 恰恰**改判**为 `裁剪`
+> ⇒ ai-agent 排期时必须**连同该测试一起改判**（文案改成「已被 #4673 改判为 `裁剪`」）并同步 `seed.json`。
+> **本会话不动工**（用户裁定 #4652）⇒ 本单**只登记**，登记处见
+> `docs/design/set-code-and-scan-loop.md` §10 的 **C12**。
 > 上游依据：`docs/design/public-operations-and-craft-ui.md` §7.4 已把此处登记为「**该文档需要回改**」的冲突点。
 
 ---
