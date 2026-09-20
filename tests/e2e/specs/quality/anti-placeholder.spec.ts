@@ -34,7 +34,11 @@ const PAGES = [
   { name: '员工列表', path: '/employees', rowSelector: 'tbody tr, [data-testid="data-table"] > div', columns: { '员工名称': 'td:nth-child(2)' }, fixture: employeesFixture, api: '**/api/admin/users*' },
   { name: '分类列表', path: '/categories', rowSelector: 'tbody tr', columns: { '分类名称': 'td:nth-child(2)' }, fixture: categoriesFixture, api: '**/api/admin/categories*' },
   // issue #4490：加工项管理并入 /production/processing（默认 tab「加工项」）；旧 /processing 已重定向（#4542 菜单名「加工项管理」）
-  { name: '加工项列表', path: '/production/processing', rowSelector: 'tbody tr', columns: { '加工项名称': 'td:nth-child(2)' }, fixture: processingFixture, api: '**/api/admin/processing-items*' },
+  // 2026-09-21（issue #4882）：表头删掉「加工项价格」「加工项计价方式」两列 ⇒
+  // 列序变为 加工项名称(1) | 加工分类(2) | 操作(3)。原 `td:nth-child(2)` 是**去列前**
+  // 的价格列（标签写「加工项名称」与实际列**本就不符**，只是两者都非占位符才没暴露）
+  // ⇒ 修正为第 1 列，让「标签 ↔ 实际列」对齐。
+  { name: '加工项列表', path: '/production/processing', rowSelector: 'tbody tr', columns: { '加工项名称': 'td:nth-child(1)' }, fixture: processingFixture, api: '**/api/admin/processing-items*' },
   { name: '知识库列表', path: '/knowledge', rowSelector: 'tbody tr', columns: { '文档名称': 'td:nth-child(2)' }, fixture: knowledgeFixture, api: '**/api/admin/knowledge/documents*' },
 ]
 

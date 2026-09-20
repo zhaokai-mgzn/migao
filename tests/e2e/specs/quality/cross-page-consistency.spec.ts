@@ -78,10 +78,20 @@ test.describe('售后列表 ↔ 详情', () => {
 })
 
 test.describe('加工项列表 ↔ 详情', () => {
-  test('name 和 unitPrice 字段存在', async () => {
+  // 2026-09-21（issue #4882，用户裁定「移除加工项单价和计价方式」）：
+  // `tests/e2e/fixtures/processing-list.json` 是**生成物**（`synthetic_processing_fee_data.py
+  // --write-fixture`），随 V101 删列一并去掉 `pricingMethod` / `unitPrice`。
+  // 原断言 `expect(first.unitPrice).toBeDefined()` 因此**必红**（本文件是 #4882 的**回退漏网**：
+  // 生产者/夹具都改了，消费者断言没跟）。改判为「单位口径 + 防回退锁」，断言只增不减。
+  test('name / unit 字段存在，且不再有 unitPrice / pricingMethod（#4882）', async () => {
     const first = firstItem(processingFixture)
     if (!first?.id) { console.log('[skip]'); return }
     expect(first.name).toBeDefined()
-    expect(first.unitPrice).toBeDefined()
+    // `unit` 保留：加工项仍有「加工数量单位」（V101 把默认值由「元」改为「米」）
+    expect(first.unit).toBeDefined()
+    // 防回退锁：两个已退场的键一旦被加回来即红（与 admin-web 单测、
+    // `tests/e2e/specs/catalog/processing.spec.ts`、`scripts/ui-smoke-merchant/spec.mjs` 同口径）
+    expect(first.unitPrice).toBeUndefined()
+    expect(first.pricingMethod).toBeUndefined()
   })
 })
