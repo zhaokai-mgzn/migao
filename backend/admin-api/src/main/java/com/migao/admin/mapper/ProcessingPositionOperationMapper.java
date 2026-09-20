@@ -46,6 +46,26 @@ public interface ProcessingPositionOperationMapper extends BaseMapper<Processing
                                   @Param("updatedAt") OffsetDateTime updatedAt);
 
     /**
+     * 报工身份快照（V98，issue #4733）：把「谁报的」写进工序实例（V92 预留的
+     * {@code worker_id}/{@code worker_name}），与 {@code production_work_logs} 的那两列**同源**。
+     *
+     * <p>🔴 只写 {@code worker_id} / {@code worker_name} / {@code updated_at} —— <b>绝不</b>出现
+     * {@code done_qty} / {@code status} / {@code unit_price} / {@code factor}：进度推进由
+     * {@link #advanceDoneQtyIfUnchanged} 的 CAS 独占，单价/系数是工资凭证快照（红线）。
+     * 单独一条 UPDATE 而不是并进 CAS，是为了**不动** CAS 的谓词与 SET 子句（并发语义一字不改）。</p>
+     *
+     * @return 1 = 已写入；0 = 工序不存在/已软删/跨租户（幂等空操作，不影响报工主流程）
+     */
+    @Update("UPDATE processing_position_operations SET worker_id = #{workerId}, "
+            + "worker_name = #{workerName}, updated_at = #{updatedAt} "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0")
+    int recordReporter(@Param("id") String id,
+                       @Param("tenantId") Long tenantId,
+                       @Param("workerId") String workerId,
+                       @Param("workerName") String workerName,
+                       @Param("updatedAt") OffsetDateTime updatedAt);
+
+    /**
      * 未定价实例的**显式补价**（issue #4709 C）：只把 {@code unit_price IS NULL} 的行补成给定价。
      *
      * <p>🔴 红线 ① 由**谓词**机械保证（不靠调用方自觉）：{@code AND unit_price IS NULL} ⇒

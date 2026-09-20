@@ -158,7 +158,8 @@ describe('ProductionPage（工人扫码报工）', () => {
     mockShip.mockResolvedValue({ success: true, data: { order_id: ORDER_ID, status: 'shipped' } })
     mockReport.mockResolvedValue({
       success: true,
-      data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false },
+      // worker_name 由**服务端**回执（issue #4733）：身份已不在请求体里 ⇒ 本机明细的展示名取服务端值
+      data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false, worker_name: '张师傅' },
     })
   })
 
@@ -244,8 +245,8 @@ describe('ProductionPage（工人扫码报工）', () => {
         ORDER_ID,
         'op2',
         {
-          worker_id: 'u1',
-          worker_name: '张师傅',
+          // 身份**不在请求体里**（issue #4733）：服务端从工人 session 解身份 ——
+          // 旧契约的 worker_id/worker_name 已移除，传它们 = 计件记错人的根因
           qty: 11,
           qualified_qty: 11,
           work_type: 'normal',
@@ -359,7 +360,7 @@ describe('ProductionPage 完成数量可编辑（issue #4206 判据 1）', () =>
     mockPiecework.mockResolvedValue({ success: true, data: { total: 0, per_worker: {}, per_operation: [] } })
     mockReport.mockResolvedValue({
       success: true,
-      data: { operation_id: 'op2', done_qty: 8, status: 'done', order_completed: false },
+      data: { operation_id: 'op2', done_qty: 8, status: 'done', order_completed: false, worker_name: '张师傅' },
     })
   })
 
@@ -389,8 +390,6 @@ describe('ProductionPage 完成数量可编辑（issue #4206 判据 1）', () =>
         ORDER_ID,
         'op2',
         {
-          worker_id: 'u1',
-          worker_name: '张师傅',
           qty: 8,
           qualified_qty: 8,
           work_type: 'normal',
@@ -465,7 +464,8 @@ describe('ProductionPage 计件累计与报工明细（issue #4206 判据 3）',
     })
     mockReport.mockResolvedValue({
       success: true,
-      data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false },
+      // worker_name 由**服务端**回执（issue #4733）：身份已不在请求体里 ⇒ 本机明细的展示名取服务端值
+      data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false, worker_name: '张师傅' },
     })
   })
 
@@ -513,7 +513,8 @@ describe('ProductionPage 深链带参直达（issue #4206 判据 4）', () => {
     mockPiecework.mockResolvedValue({ success: true, data: { total: 0, per_worker: {}, per_operation: [] } })
     mockReport.mockResolvedValue({
       success: true,
-      data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false },
+      // worker_name 由**服务端**回执（issue #4733）：身份已不在请求体里 ⇒ 本机明细的展示名取服务端值
+      data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false, worker_name: '张师傅' },
     })
   })
 

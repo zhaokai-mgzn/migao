@@ -3,6 +3,7 @@ package com.migao.admin.controller;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.service.ProcessingOrderService;
@@ -255,8 +256,22 @@ public class ProductionController {
             @PathVariable String operationId,
             @RequestBody(required = false) Map<String, Object> body,
             @RequestHeader(value = ClientRequestIdService.HEADER, required = false) String clientRequestId) {
+        // 商家侧报工（issue #4733）：**显式**沿用既有 body 口径 —— 来源被标注为 client_body 并落
+        // worker_report_audits。取舍：本单不改变商家侧既有行为（逐条断言见 ProductionServiceTest），
+        // 但「谁都能填」这件事从此在数据上**可见**，不再静默。工人身份请走 /api/worker/**（服务端解）。
         return ApiResponse.success(productionService.report(
-                orderId, operationId, body, TenantContext.getTenantId(), clientRequestId));
+                orderId, operationId, body, TenantContext.getTenantId(), clientRequestId,
+                WorkerIdentity.fromClientBody(
+                        asText(body, "worker_id"), asText(body, "worker_name"))));
+    }
+
+    /** body 取文本（商家侧报工身份口径，与 ProductionService.str 同语义：空白 ⇒ null）。 */
+    private static String asText(Map<String, Object> body, String key) {
+        if (body == null || body.get(key) == null) {
+            return null;
+        }
+        String value = String.valueOf(body.get(key));
+        return value.isBlank() ? null : value;
     }
 
     /**

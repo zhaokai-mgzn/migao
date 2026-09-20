@@ -16,6 +16,7 @@ import {
   type ReportPayload,
   type WorkLogRow,
 } from '../../../services/productionService'
+import { WorkerBar } from '../../../components/WorkerBar'
 import { parseOrderIdFromQr, resolveOrderIdFromParams } from '../../../utils/productionQr'
 import {
   appendWorkLog,
@@ -290,9 +291,9 @@ export default function ProductionPage() {
       // 复位；此处**不做**兜底复位 —— 兜底会掩盖「上一次报工没走完 finally」的真实缺陷。
       if (!reportInFlightLock.tryAcquire()) return
       const requestId = newReportRequestId()
+      // 🔴 身份**不在请求体里**（issue #4733）：worker_id/worker_name 已从契约移除，
+      // 服务端从工人 session（X-Worker-Session-Id）解身份 —— 前端传什么都不影响「这笔活记到谁头上」。
       const payload: ReportPayload = {
-        worker_id: user?.id || '',
-        worker_name: user?.nickname || '',
         qty,
         qualified_qty: qty,
         work_type: 'normal',
@@ -322,7 +323,9 @@ export default function ProductionPage() {
         }
         appendWorkLog(orderId, {
           requestId,
-          worker_name: payload.worker_name,
+          // 本机缓存里的展示名取**服务端回执**（res.data.worker_name）而不是请求体：
+          // 请求体已不含身份，而服务端才知道这笔到底记到了谁头上
+          worker_name: res.data?.worker_name || '未署名',
           operation: operation.operation,
           qty,
           unit: operation.unit,

@@ -20,7 +20,7 @@
  */
 import Taro from '@tarojs/taro'
 import { reportOperation } from '../services/productionService'
-import type { OrderOperations, ReportPayload } from '../services/productionService'
+import type { OrderOperations, ReportPayload, ReportResult } from '../services/productionService'
 
 /** storage 键（前缀区分命名空间，便于运维一眼看出是报工降级数据） */
 const ORDER_CACHE_PREFIX = 'production:order-cache:'
@@ -153,7 +153,9 @@ export async function flushPendingReports(send: SendReport = reportOperation): P
       sent.push(item)
       appendWorkLog(item.orderId, {
         requestId: item.requestId,
-        worker_name: item.payload.worker_name,
+        // 🔴 身份已不在请求体里（issue #4733）：本机缓存的展示名取**服务端回执** ——
+        // 服务端才知道这笔到底记到了谁头上（前端拼一个名字等于把工资凭证交给客户端）
+        worker_name: res.data?.worker_name || '未署名',
         operation: item.operationName,
         qty: item.payload.qty,
         unit: item.unit,

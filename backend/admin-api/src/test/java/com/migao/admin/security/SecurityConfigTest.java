@@ -228,6 +228,19 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.OrderMapper orderMapper;
     @MockBean
     private com.migao.admin.mapper.ProcessingOrderMapper processingOrderMapper;
+
+    // 工人登录态（issue #4733）：WorkerSessionFilter 依赖这两个 bean，
+    // 缺任一 ⇒ 本测试的 Spring 上下文起不来（本文件既有口径：Mapper 一律 @MockBean 顶替）
+    @MockBean
+    private com.migao.admin.mapper.WorkerSessionMapper workerSessionMapper;
+
+    // 报工身份旁路账 Mapper（issue #4733）：MyBatis-Plus 自动扫描到的 Mapper，本上下文无
+    // sqlSessionFactory（MybatisPlusAutoConfiguration 已排除），按本文件既有口径 @MockBean 顶替
+    @MockBean
+    private com.migao.admin.mapper.WorkerReportAuditMapper workerReportAuditMapper;
+
+    @MockBean
+    private com.migao.admin.worker.WorkerSessionService workerSessionService;
     @MockBean
     private com.migao.admin.mapper.PermissionMapper permissionMapper;
     @MockBean

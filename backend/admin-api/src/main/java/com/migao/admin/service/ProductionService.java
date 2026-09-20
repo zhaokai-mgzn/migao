@@ -9,12 +9,15 @@ import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProductionWorkLog;
+import com.migao.admin.entity.WorkerReportAudit;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
 import com.migao.admin.mapper.ProductionWorkLogMapper;
+import com.migao.admin.mapper.WorkerReportAuditMapper;
+import com.migao.admin.worker.WorkerIdentity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -113,6 +116,19 @@ public class ProductionService {
      */
     private final OrderItemMapper orderItemMapper;
     private final ClientRequestIdService clientRequestIdService;
+
+    /**
+     * 报工身份旁路账（V98，issue #4733，**只追加**）：一次报工动作 1:1 一行。
+     *
+     * <p>为什么不是给 {@code production_work_logs} 加列：那是冻结契约 + 红线（设计 §3.4 /
+     * {@code worker-scan-terminal.md} §7 逐字「不改 {@code production_work_logs}」）。</p>
+     *
+     * <p>为什么用字段注入而不是构造参数：本类的构造签名被既有测试（{@code ProductionServiceTest}
+     * 等 6 个文件）直接 {@code new} 装配，加参数会把它们的装配全改一遍 —— 而本单的改动面
+     * **不应**扩到既有测试。Spring 生产装配下它一定非 null（同包 {@code @Mapper}）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private WorkerReportAuditMapper workerReportAuditMapper;
 
     // ============================================================ 实例化
 
@@ -544,6 +560,23 @@ public class ProductionService {
     public Map<String, Object> report(String orderId, String operationId,
                                       Map<String, Object> body, Long tenantId,
                                       String clientRequestId) {
+        // 兼容重载：既有调用方（商家侧控制器/单测）显式走 body 口径，来源被标注为 client_body
+        return report(orderId, operationId, body, tenantId, clientRequestId,
+                WorkerIdentity.fromClientBody(str(body == null ? null : body.get("worker_id")),
+                        str(body == null ? null : body.get("worker_name"))));
+    }
+
+    /**
+     * 报工（**身份显式传入**的形态，issue #4733）。
+     *
+     * <p>{@code workerIdentity} 由调用方决定来源：工人路径传
+     * {@link WorkerIdentity#SOURCE_SERVER_SESSION}（服务端从工人 session 解出，**body 同名字段被忽略**）；
+     * 商家路径传 {@link WorkerIdentity#fromClientBody}（既有口径，来源被显式标注）。</p>
+     */
+    public Map<String, Object> report(String orderId, String operationId,
+                                      Map<String, Object> body, Long tenantId,
+                                      String clientRequestId,
+                                      WorkerIdentity workerIdentity) {
         // ① 先占位：同键重复请求**不执行**（不落明细、不累加、不推进完工判定）
         if (!clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_REPORT)) {
             // ② 回放首次成功结果；无快照（占位在飞/已失败）⇒ replay fail-closed 抛错，不返回空结果
@@ -553,7 +586,7 @@ public class ProductionService {
             return replayed;
         }
         try {
-            Map<String, Object> result = doReport(orderId, operationId, body, tenantId);
+            Map<String, Object> result = doReport(orderId, operationId, body, tenantId, workerIdentity);
             // ③ 落结果快照（同键后续请求回放它）。放在 try 之外：快照写失败时**不得**释放占位
             //    —— 报工已经落库，宁可让同键请求 fail-closed 报错，也不能退化成「再报一次」
             clientRequestIdService.complete(tenantId, clientRequestId, result);
@@ -592,7 +625,8 @@ public class ProductionService {
      * 报工主体（占位成功后才执行；**不加** {@code @Transactional} —— 见 {@link #report} 的接线注释）。
      */
     private Map<String, Object> doReport(String orderId, String operationId,
-                                         Map<String, Object> body, Long tenantId) {
+                                         Map<String, Object> body, Long tenantId,
+                                         WorkerIdentity workerIdentity) {
         // 防呆⑤ 工序必须确定（用户裁定②-2 的硬约束，issue #4694）：本次扫的是**哪道**工序必须明确 ——
         // 工序未确定却记账 = 计件记错工序 ⇒ 发错工资。删的是**顺序闸门**，本条**不放宽**：
         // 这里不提供「默认取下一道待做」之类的推断（那是扫码闭环落码单的事），缺 id 直接拒绝。
@@ -638,13 +672,22 @@ public class ProductionService {
             assertWithinPlannedQty(op, qualifiedQty);
         }
 
-        workLogMapper.insert(ProductionWorkLog.builder()
+        // 🔴 身份**由服务端解**（issue #4733 / 设计 #4716 W1）：workerIdentity 来自工人 session
+        // （X-Worker-Session-Id）时，body 里的 worker_id/worker_name **一律忽略** ——
+        // 前端可被改，而 production_work_logs.worker_id 是**工资凭证**（计件归属的唯一根）。
+        // 无工人 session（商家侧报工）⇒ 调用方**显式**构造 fromClientBody（来源被标注并落旁路账），
+        // 不再是「静默沿用谁都能填」。
+        WorkerIdentity identity = workerIdentity != null
+                ? workerIdentity
+                : WorkerIdentity.fromClientBody(str(body.get("worker_id")), str(body.get("worker_name")));
+
+        ProductionWorkLog workLog = ProductionWorkLog.builder()
                 .tenantId(tenantId)
                 .processingOrderId(po.getId())
                 .operationId(op.getId())
                 .operationName(op.getOperationName())
-                .workerId(str(body.get("worker_id")))
-                .workerName(str(body.get("worker_name")))
+                .workerId(identity.workerId())
+                .workerName(identity.workerName())
                 .qty(qty)
                 .qualifiedQty(qualifiedQty)
                 // 计件金额在**报工这一刻固化**（issue #4351，P0）：单价从工序实例取一次
@@ -660,7 +703,31 @@ public class ProductionService {
                 .workDate(LocalDate.now())
                 .createdAt(OffsetDateTime.now())
                 .deleted(0)
-                .build());
+                .build();
+        workLogMapper.insert(workLog);
+
+        // 每笔计件留身份快照（W4）：工序实例的 worker_id/worker_name 与报工行**同源**
+        // （设计 V92 已预留这两列；此处是 A 模式首次写入 —— 单独 UPDATE，不动 CAS 的 SET 子句）。
+        if (identity.workerId() != null || identity.workerName() != null) {
+            positionOperationMapper.recordReporter(op.getId(), tenantId, identity.workerId(),
+                    identity.workerName(), OffsetDateTime.now());
+        }
+        // 旁路账：谁做的 / 由哪个设备会话 / 身份来源（server_session 权威 vs client_body 显式降级）
+        // 手工装配的单测里该 mapper 为 null（Spring 生产装配下恒非 null）⇒ 显式跳过而不是 NPE
+        if (workerReportAuditMapper != null) {
+            workerReportAuditMapper.insert(WorkerReportAudit.builder()
+                    .tenantId(tenantId)
+                    .processingOrderId(po.getId())
+                    .workLogId(workLog.getId())
+                    .operationId(op.getId())
+                    .workerId(identity.workerId())
+                    .workerName(identity.workerName())
+                    .workerSessionId(identity.sessionId())
+                    .identitySource(identity.source())
+                    .createdAt(OffsetDateTime.now())
+                    .deleted(0)
+                    .build());
+        }
 
         BigDecimal doneQty = nz(op.getDoneQty());
         String status = op.getStatus() == null ? "pending" : op.getStatus();
@@ -705,6 +772,11 @@ public class ProductionService {
         result.put("status", status);
         // 键名为**冻结契约**（bmini 扫工页 productionService.ts 消费），语义 = 加工单完工（生产完成）
         result.put("order_completed", productionCompleted);
+        // 只加键（既有键名/顺序一字不动）：本次这笔报工的身份来源 + 记到谁头上 ——
+        // 前端据此显示「已记到：张三」，也让人一眼看出「这笔是不是服务端解的身份」。
+        result.put("worker_id", identity.workerId());
+        result.put("worker_name", identity.workerName());
+        result.put("identity_source", identity.source());
         return result;
     }
 

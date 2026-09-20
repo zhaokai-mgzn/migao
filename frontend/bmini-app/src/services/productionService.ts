@@ -10,6 +10,7 @@
 
 import { get, post } from '../utils/request'
 import { API_BASE_URL } from '../utils/constants'
+import { workerSessionHeaders } from '../utils/workerSession'
 
 /** 工序实例（契约 1：positions[].operations[]） */
 export interface ProductionOperation {
@@ -96,21 +97,31 @@ export interface OrderOperations {
   work_logs?: WorkLogRow[]
 }
 
-/** 报工请求体（契约 2；work_type: normal 正常 / rework 返工 / scrap 报废） */
+/**
+ * 报工请求体（work_type: normal 正常 / rework 返工 / scrap 报废）。
+ *
+ * <p>🔴 <b>身份不在这里</b>（issue #4733）：`worker_id`/`worker_name` **已从契约移除** ——
+ * 报工身份由服务端从工人 session（`X-Worker-Session-Id`）解出，前端传什么都不影响归属。
+ * 旧版本传 `worker_id: user?.id`（商家账号 id）是**计件记错人**的根因：工人扫码端今天
+ * 走的是商家会话，谁都能改。</p>
+ */
 export interface ReportPayload {
-  worker_id: string
-  worker_name: string
   qty: number
   qualified_qty: number
   work_type: 'normal' | 'rework' | 'scrap'
 }
 
-/** POST .../report 的 data（契约 2） */
+/** POST .../report 的 data（契约 2 + issue #4733 只加键） */
 export interface ReportResult {
   operation_id: string
   done_qty: number
   status: string
   order_completed: boolean
+  /** 本笔记到谁头上（**服务端解**，前端只展示） */
+  worker_id?: string | null
+  worker_name?: string | null
+  /** server_session = 服务端解的身份；client_body = 无工人 session 的显式降级（商家侧） */
+  identity_source?: 'server_session' | 'client_body'
   /** 服务端回放标记（issue #4116 §5-1）：true = 本次**没有**新落库（同幂等键重复到达） */
   replayed?: boolean
 }
@@ -186,6 +197,14 @@ export class ReportInFlightLock {
   }
 }
 
+/** 报工发送签名（在线报工与离线补传**共用同一份**实现 —— 两处各写一份必然漂移） */
+export type ReportSender = (
+  orderId: string,
+  operationId: string,
+  payload: ReportPayload,
+  requestId?: string,
+) => Promise<ProductionResponse<ReportResult>>
+
 /** 报工在飞锁实例（页面级单例：报工页同时只服务一个加工单） */
 export const reportInFlightLock = new ReportInFlightLock()
 
@@ -207,11 +226,16 @@ export async function reportOperation(
 ): Promise<ProductionResponse<ReportResult>> {
   try {
     const res = await post<ProductionResponse<ReportResult>>(
-      `/api/admin/production/orders/${encodeURIComponent(orderId)}/operations/${encodeURIComponent(operationId)}/report`,
+      // 🔴 工人路径（issue #4733）：`/api/worker/**` —— 与 `/api/admin/**` 彻底分离，
+      // 工人身份到不了管理后台。身份随 `X-Worker-Session-Id` 走，**不在 body 里**。
+      `/api/worker/production/orders/${encodeURIComponent(orderId)}/operations/${encodeURIComponent(operationId)}/report`,
       payload,
       {
         baseURL: API_BASE_URL,
-        headers: { [CLIENT_REQUEST_ID_HEADER]: requestId || newReportRequestId() },
+        headers: {
+          [CLIENT_REQUEST_ID_HEADER]: requestId || newReportRequestId(),
+          ...workerSessionHeaders(),
+        },
       },
     )
     return toResponse(res, '报工失败，请重试')
@@ -236,7 +260,31 @@ function toResponse<T>(res: ProductionResponse<T> | undefined, fallback: string)
 }
 
 /**
- * 拉取加工单工序列表 + 进度（扫码/手输单号后调用）
+ * 拉取加工单工序列表 + 进度（**工人路径**，扫码/手输单号后调用）。
+ *
+ * <p>与 {@link getOrderOperations}（商家路径）读的是**同一份服务端读面**
+ * （`ProductionService.getOperations`）⇒ 响应形状逐字同源，不新造第二套。</p>
+ */
+export async function getWorkerOrderOperations(
+  orderId: string,
+): Promise<ProductionResponse<OrderOperations>> {
+  try {
+    const res = await get<ProductionResponse<OrderOperations>>(
+      `/api/worker/production/orders/${encodeURIComponent(orderId)}/operations`,
+      { baseURL: API_BASE_URL, headers: workerSessionHeaders() },
+    )
+    return toResponse(res, '未找到该加工单，请确认单号')
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error?.data?.message || error?.message || '加载工序失败，请重试',
+      offline: !error?.statusCode,
+    }
+  }
+}
+
+/**
+ * 拉取加工单工序列表 + 进度（**商家路径**；管理后台/既有调用方使用）
  */
 export async function getOrderOperations(
   orderId: string,
