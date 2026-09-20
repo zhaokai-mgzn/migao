@@ -436,10 +436,13 @@ def judge_switch_sequence(deploy_text: str) -> list:
     · 切到 green **之前**：green 必须已过 `wait_healthy`（切流量前先证明新容器健康）；
     · 切回正式色 **之前**：正式容器必须已过 `wait_healthy`（切回去之前先证明它能服务）；
     · 删 green **之前**：上游必须已切回正式色（否则删的是唯一在服务的后端）；
-    · 两个切换都必须被 `BG_SKIP=0` 包住（应急开关下没有 green，切换必然失败）；
+    · 两个切换都必须被 `BG_SWITCH_ON=1` 包住（`BG_SWITCH_ON=1` 蕴含 `BG_SKIP=0`：应急开关下没有
+      green、nginx 未在跑时切了也无意义 ⇒ 两种情况都必须**一个字都不改配置**）；
     · EXIT trap 必须把上游写回正式色（正式容器不健康时**保持指向 green 且不删它**）；
-    · 残留切换自愈必须排在「删残留 green」**之前**（SIGKILL 之后先删 green = 唯一后端消失）；
-    · 先校验后落盘（候选 stdin → `nginx -t`），落盘后**再** `nginx -t` 一次。
+    · 先校验后落盘（候选 stdin → `nginx -t`），落盘后**再** `nginx -t` 一次；落盘后任何一步失败
+      都必须**就地写回上一版备份**；
+    · 「残留切换收敛」不在这里判 —— 见 `judge_upstream_switch_rails`（它是本单第二版新增的一整组
+      不变量：快照时机 / 文件∪备份 / 顺序 / fail-closed / 强制 reload / 可行性前提 / 收口归一化）。
     """
     v = []
     # ⚠️ 锚点必须**唯一**：`bg_switch_upstream "$svc" official` 在脚本里出现 3 次（EXIT trap / 残留自愈 /
