@@ -17,7 +17,7 @@ issue #4843 单独登记）。危害与 #4819 的「散文抄数值」同族：�
 |---|---|---|
 | C1 | 账本行的**码集** == 该行落点方法**实际抛出的码集**（双向：账本多的码 / 源码多出来的码都红） | 从账本行删掉 `SET_ALREADY_COMPLETED` ⇒ 红（源码仍抛它）；源码删掉一个码而账本留着 ⇒ 红 |
 | C2 | 账本声明的**状态码** == 源码真值（`BusinessException` 字面量构造的第 3 参 / 工厂方法 `validationError` 的 422） | 把账本的 `409 \`SET_ALREADY_COMPLETED\`` 改成 `422` ⇒ 红 |
-| C3 | **判别力下界（反恒真）**：落点方法必须**真的**存在、必须**真的**抛过码、账本行必须**真的**登记过码；且 `SCAN_NEEDS_SELECTION` / `SET_ALREADY_COMPLETED` / `OPERATION_ALREADY_ADVANCED` 三条**各自**都要在账本行里带状态码出现 | 删掉账本那一行 ⇒ 红；把方法体清空 ⇒ 红 |
+| C3 | **判别力下界（反恒真）**：落点方法必须**真的**存在、必须**真的**抛过码（`test_guard_has_teeth`）；账本行锚点必须**真的**命中（`TestGuardSelfProof::test_c3_anchor_drift_fails_loudly`）；且 `SCAN_NEEDS_SELECTION` / `SET_ALREADY_COMPLETED` / `OPERATION_ALREADY_ADVANCED` 三条**各自**都要在账本行里带状态码出现（`test_each_verified_code_is_declared_with_its_status`） | 账本行被删/改名 ⇒ `_row` 断言失败（不静默空跑）；方法体清空 ⇒ `test_guard_has_teeth` 红 |
 | C4 | **注入式自证**：C1/C2 的判定函数在**构造的**缺陷载荷上必须报错；同一载荷不注入 ⇒ 通过 | 见 `TestGuardSelfProof`（证明主测试的绿不是空跑） |
 | C5 | **已核但有意不入账本的码要显式登记**：`NO_PENDING_OPERATION` 是同方法的第 4 个码，但当前实现下 `scan.get("operation") == null` 只有两个可达形态（旧码降级 ⇒ 更早的 `SCAN_NEEDS_SELECTION`；本套已完成 ⇒ `SET_ALREADY_COMPLETED`）⇒ 它**结构性不可达**，故不入账本。本守卫要求它在 `KNOWN_UNLEDGERED` 里**写明理由**（源码里悄悄新增第 4 条可达码 ⇒ 红，逼人重新核实） | 见 `test_no_pending_operation_is_declared_unreachable` |
 
