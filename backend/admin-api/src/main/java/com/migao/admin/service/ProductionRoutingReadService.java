@@ -154,7 +154,8 @@ public class ProductionRoutingReadService {
     }
 
     /**
-     * **两层分区**（issue #4676 = 设计 {@code docs/design/public-operations-and-craft-ui.md} §3.2/§4.2）：
+     * **两层分区**（issue #4676 = 设计 {@code docs/design/public-operations-and-craft-ui.md} §3.2/§4.2；
+     * 行来源修正 = issue #4729）：
      * 按**既有** {@code scope} 分区（**不新造概念**）——
      * {@code scope='set'} ⇒ {@code delivery}（打包发货：打包 / 打卷 / 装袋 / 发货）；
      * 其余（{@code 'position'} 或 {@code null}）⇒ {@code operations}（工序：裁剪 / 车位 / 后整 / 质检）。
@@ -162,31 +163,56 @@ public class ProductionRoutingReadService {
      * <p>⚠️ <b>分区判据是 {@code scope}，不是「有没有矩阵格」</b>：判据换成格 ⇒ 一道交付工序在
      * 某部位没有格时会**整行消失**（#4674 形态：表格里有、抽屉里空、无处可删）。</p>
      *
+     * <p>🔴 <b>{@code delivery} 段的行来源 = 工序库的 {@code scope='set'} 行
+     * （{@code production_operations}），<u>不是</u>矩阵行</b>（issue #4729 修正；独立验收 #4677 的 P1-2）：
+     * 原实现遍历 {@link #operationPositions}（**只读矩阵表**）⇒ <b>零矩阵格</b>的套级工序在
+     * {@code delivery} 段<b>一行都没有</b>（实测 {@code PROBE delivery operations = [打包]}）⇒
+     * 该形态下【打包发货】层无行、无 {@code 管理▸}、抽屉打不开。设计要求（#4675 §7 第 7 条 /
+     * #4677 四条约束）是「<b>第二层的行不依赖矩阵格</b>」—— 现状只在渲染层成立（前端手造行时才成立）。
+     * 零格 ⇒ <b>仍有一行</b>，价态给 {@code no_applicable_position}（4 态之一，语义一字不改）。</p>
+     *
+     * <p>两段的<b>并集是全集</b>：{@code operations} = 矩阵行里<b>不属于</b>交付工序集合的那些
+     * （含 {@code scope=null} 的安全方向 —— 变体查不到 ⇒ 落工序层，不落交付层）。</p>
+     *
      * <p><b>交付环节的「一列价」= 显式规则（设计 §4.5 方案 A），绝不用「删格」实现</b> ——
      * 见 {@link #deliveryView}。删格会让该交付工序在缺格的部位单里**静默消失**
      * （{@code ProcessingOrderService.buildRoute}：{@code applicable == null ⇒ continue}）
      * ⇒ 少一道活、少一笔计件钱（设计 F1 红线）。</p>
      *
      * @return {@code {operations:[<10 键矩阵行，与 GET /operation-positions 同形>],
-     *         delivery:[<9 键一列价行>]}}；两段都按 {@code operation} 稳定序（复用
-     *         {@link #operationPositions} 的排序，**不另写一份**）
+     *         delivery:[<9 键一列价行>]}}；两段都按 {@code operation} 稳定序（工序层复用
+     *         {@link #operationPositions} 的排序；交付层按**归一后的逻辑工序名**排 —— 与矩阵行键
+     *         同一把尺，不依赖 DB collation）
      */
     public Map<String, Object> operationLayers(Long tenantId) {
         List<Map<String, Object>> rows = operationPositions(tenantId);
+        // 交付工序集合 = **工序库**的 `scope='set'` 行（归一为逻辑名 —— 与矩阵行键同一把尺）。
+        // 一次取回、循环内复用（与 operationPositions 同一份目录读面，避免 N+1）。
+        Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
+        Map<String, Map<String, Object>> deliveryCatalog = new LinkedHashMap<>();
+        for (Map.Entry<String, Map<String, Object>> entry : catalog.entrySet()) {
+            if (SCOPE_SET.equals(entry.getValue().get("scope"))) {
+                deliveryCatalog.put(productionOperationQueryService.normalizeOperationName(entry.getKey()),
+                        entry.getValue());
+            }
+        }
+        // 矩阵格按**逻辑工序名**归拢（与上面同一把尺）；不属于交付工序集合的格落 `operations`
+        Map<String, List<Map<String, Object>>> cellsByOperation = new LinkedHashMap<>();
         List<Map<String, Object>> operations = new ArrayList<>();
-        Map<String, List<Map<String, Object>>> deliveryCells = new LinkedHashMap<>();
         for (Map<String, Object> row : rows) {
-            if (SCOPE_SET.equals(row.get("scope"))) {
-                deliveryCells.computeIfAbsent(String.valueOf(row.get("operation")), k -> new ArrayList<>())
-                        .add(row);
+            String operation = String.valueOf(row.get("operation"));
+            if (deliveryCatalog.containsKey(operation)) {
+                cellsByOperation.computeIfAbsent(operation, k -> new ArrayList<>()).add(row);
             } else {
                 operations.add(row);
             }
         }
         List<Map<String, Object>> delivery = new ArrayList<>();
-        for (Map.Entry<String, List<Map<String, Object>>> entry : deliveryCells.entrySet()) {
-            delivery.add(deliveryView(entry.getKey(), entry.getValue()));
-        }
+        deliveryCatalog.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> delivery.add(deliveryView(entry.getKey(),
+                        cellsByOperation.getOrDefault(entry.getKey(), new ArrayList<>()),
+                        entry.getValue())));
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("operations", operations);
         view.put("delivery", delivery);
@@ -208,13 +234,22 @@ public class ProductionRoutingReadService {
      *   <li>一格 {@code applicable=TRUE} 都没有 ⇒ {@code price_state="no_applicable_position"}。</li>
      * </ol>
      *
-     * <p>⚠️ 本方法**只读矩阵格**（{@code production_operation_positions}），**不读**
+     * <p>⚠️ 本方法**只读矩阵格**（{@code production_operation_positions}）的**价**，**不读**
      * {@code production_operations.unit_price} —— 「工序库行价兜底」是**实例化路径**
      * （{@code ProcessingOrderService.buildRoute}）的既有语义，其触发条件是
      * 「格存在 + {@code applicable=TRUE} + 价 {@code NULL}」，且回落值是 **0**（设计 F4）。
      * 本层不复制那条兜底：读面的「未定价」必须与「¥0.00」可区分。</p>
+     *
+     * <p><b>零格（{@code cells} 为空）是正当形态</b>（issue #4729）：行由工序库给出（见
+     * {@link #operationLayers}），该工序可能一个矩阵格都没有 ⇒ 仍出 9 键行、价态
+     * {@code no_applicable_position}；行尾元数据（单位 / 分组 / 必完）回落**工序库行**
+     * （{@code library}）—— 那是工序自身的元数据，不是价（价**绝不**回落，见上）。</p>
+     *
+     * @param library 该工序的工序库元数据（{@code scope='set'} 那一行）；格里的元数据优先，
+     *                缺格时用它兜底（否则零格行的「单位 / 必完」全空 = 界面上多一列 `—`）
      */
-    private Map<String, Object> deliveryView(String operation, List<Map<String, Object>> cells) {
+    private Map<String, Object> deliveryView(String operation, List<Map<String, Object>> cells,
+                                            Map<String, Object> library) {
         Set<BigDecimal> prices = new LinkedHashSet<>();
         List<String> applicablePositions = new ArrayList<>();
         boolean unpriced = false;
@@ -245,9 +280,9 @@ public class ProductionRoutingReadService {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("operation", operation);
         view.put("scope", SCOPE_SET);
-        view.put("unit", firstNonNull(cells, "unit"));
-        view.put("group", firstNonNull(cells, "group"));
-        view.put("is_must_finish", firstNonNull(cells, "is_must_finish"));
+        view.put("unit", firstNonNull(cells, "unit", library, "unit"));
+        view.put("group", firstNonNull(cells, "group", library, "group"));
+        view.put("is_must_finish", firstNonNull(cells, "is_must_finish", library, "is_must_finish"));
         view.put("price", price);
         view.put("price_state", priceState);
         view.put("different_price_count", "multiple_prices".equals(priceState) ? prices.size() : 0);
@@ -256,17 +291,19 @@ public class ProductionRoutingReadService {
     }
 
     /**
-     * 行尾元数据（{@code unit} / {@code group} / {@code is_must_finish}）取该工序**首个非 null** 的格。
+     * 行尾元数据（{@code unit} / {@code group} / {@code is_must_finish}）取该工序**首个非 null** 的格；
+     * 一格都没有（或格上全 null）⇒ 回落**工序库行**（issue #4729：零格行也要有单位 / 必完）。
      *
      * <p>各格不一致时逐个列出属**界面**口径（设计 §4.1 元素 5），不在本层发明第二套。</p>
      */
-    private static Object firstNonNull(List<Map<String, Object>> cells, String key) {
+    private static Object firstNonNull(List<Map<String, Object>> cells, String key,
+                                       Map<String, Object> library, String libraryKey) {
         for (Map<String, Object> cell : cells) {
             if (cell.get(key) != null) {
                 return cell.get(key);
             }
         }
-        return null;
+        return library == null ? null : library.get(libraryKey);
     }
 
     /**
