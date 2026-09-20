@@ -88,6 +88,7 @@
     "V87__retire_factor_route_rules.sql": "sha256:f750b59dcca99723f38330779375df79f85589d931f92831b0c3ae6db572eed4",
     "V88__retire_material_prep_and_fabric_position.sql": "sha256:133f2a83ad3bac078e62feddfe765ac1f82ab327f0de3d28f2eaac99385010a6",
     "V89__backfill_fabric_seed_for_existing_tenants.sql": "sha256:a307cf2e94b1edfcd3af5b0bff53ea61b3916d383962ac2756520660dc66f408",
-    "V90__unpriced_is_not_zero.sql": "sha256:691c8544870b9c2935240dc65b804a1fc1008f865040b4f42a9077111085f30a"
+    "V90__unpriced_is_not_zero.sql": "sha256:691c8544870b9c2935240dc65b804a1fc1008f865040b4f42a9077111085f30a",
+    "V92__add_processing_order_sets_and_scan_loop.sql": "sha256:8357af4370acb873487fc3f2d47e209ca1f7d7b66821d3f436473c6bd27bfda8"
   }
 }
