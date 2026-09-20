@@ -186,3 +186,48 @@ meta == null  ⇒  missing.add(logicalName)       // 调用方据此 fail-closed
 3. **取价改读 `production_operations.unit_price`**（`buildRoute` 里读 `operationPositions` 的那一处取价）＋ §9.2 的 **`PUT` 写穿桥接**。
 
 ⇒ 这条也解释了为什么上一轮「先删过滤」的直觉是错的：**它不会多做工序，它会整单失败**。
+
+---
+
+## 10. 🔴 B 的隐藏依赖（2026-09-21 第三轮实测）：**「未定价」这一个真值只活在矩阵里**
+
+盘点 B 的取价改写时，`ProcessingOrderService.buildRoute` 的 step 装配处有一段**判据级注释**（逐字）：
+
+> 🔴 未定价（格价 NULL）**不得**回落工序库行价（issue #4696，P1）：工序库行价是 `NOT NULL DEFAULT 0`
+> ⇒ 回落就把「未定价」变成「真 0 元」（工人白干且无人知道），且与「显式定价 0 元」不可区分。
+
+`docs/sql/schema.sql` 亦印证：`production_operations.unit_price NUMERIC(10,2) **NOT NULL DEFAULT 0**`。
+
+⇒ **「未定价」这个状态只存在于 `production_operation_positions.unit_price IS NULL`**。
+而本单要做的恰恰是**让矩阵退场** ⇒ 若不先把 NULL 语义搬到工序库侧，
+B 会把**每一道未定价工序静默算成 0 元**（工人白干、且与「显式 0 元」不可区分）——
+**正是 #4696 修好的形态，换个地方复发**。这是本单**最危险的一格**，比"多做 4 道工序"严重得多。
+
+### 10.1 修订后的 B 第 ③ 件（拆成两步，缺一即静默归零）
+
+**③a 迁移（新迁移，不可改 V71）**
+1. `ALTER TABLE production_operations ALTER COLUMN unit_price DROP NOT NULL;`
+   （让「未定价」在工序库侧**可表达**；`DROP NOT NULL` 是**放宽**约束，不动既有数据）
+2. 把矩阵里**布帘格的 `NULL`**（= 该工序未定价）**（回）填**为工序库对应行的 `NULL`。
+   ⚠️ 这一步要 `logical_name ↔ production_operations.name` 的映射，**不许自己切后缀**：
+   `裁剪-*` 与 `精裁-*` 是**两道不同逻辑名**；映射的**唯一出处** = `routing.py::_LOGICAL_NAME_PAIRS` /
+   `ProductionOperationQueryService.VARIANT_NAMES`（两者有双向守卫）。迁移里内联这张表时，
+   **必须同时加一条守卫**（否则它成为第三份会漂的映射）。
+3. **幂等**：`NULL → NULL` 重复执行净效果相同；不得把「显式 0 元」写成 NULL（那是反向错误：
+   把"定价 0 元"变成"没定价"）。
+
+**③b 代码**：取价 = 工序库 `unit_price`，**NULL 保持 NULL**（未定价仍显式可见、仍进 `unpriced` 提示），
+**不得**用 `getOrDefault(..., ZERO)` 之类的兜底 —— 那正是 ③a 要防的静默归零。
+
+### 10.2 一句话总结三次订正（给下一个执行者）
+
+| 直觉做法 | 实测结论 |
+|---|---|
+| 「价目塌缩 = 搬数值」 | ❌ 各部位价**本来就相同** ⇒ 数值几乎不用搬；**真正要搬的是 NULL 语义（未定价）** |
+| 「删掉 `applicable` 过滤就完事」 | ❌ 纱帘序列里的 `定型` 在工序库**没有** `定型-纱` 行 ⇒ `variantNameOf` 返回 null ⇒ **整单 422** |
+| 「直接把取价改读工序库」 | ❌ 工序库 `unit_price` 是 `NOT NULL DEFAULT 0` ⇒ **每道未定价工序静默变 0 元（工人白干）** |
+
+⇒ B 的最小正确形态 = **① 工序库可表达 NULL（迁移）＋ NULL 语义回填** ＋
+**② 变体解析按逻辑名回落**（消 422） ＋ **③ 取价改读工序库且不兜底** ＋
+**④ `PUT /operation-positions/{id}` 写穿**（保住商家侧改价仍然生效，解开 B/C 互锁）。
+**四件同批**，缺任意一件都会以「静默」的方式出错（归零 / 422 / 改价不生效），而不是报错。
