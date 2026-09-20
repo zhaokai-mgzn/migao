@@ -2,7 +2,11 @@
 AI 智能客服系统 - 窗帘算料报价 Tool
 
 面向小布（C 端客服）的窗帘用布量计算与报价工具。
-纯计算（确定性公式），不调用 admin-api。
+**纯计算**（确定性公式）+ 唯一一处外部读取：**本租户的算料口径**（issue #4922）——
+`GET /api/admin/production/craft-calc-config`（缺行 ⇒ 不传 `config`；服务端答复了却读不通 ⇒
+fail-closed；服务端不可达 ⇒ 显式降级 + 留痕，见 `load_tenant_craft_calc_config`）。
+**口径零自造**：本模块不持有第二份算料参数默认值表（唯一默认值 = `DEFAULT_CRAFT_CALC_CONFIG`，
+服务端缺行时由引擎自己用它，不从这里发过去）。
 
 真值来源：docs/curtain-fabric-quote-rules.md（行业标准值 + 经验默认值）。
 
@@ -38,9 +42,11 @@ import re
 from types import MappingProxyType
 from typing import Any, Dict, List, Optional
 
+import httpx
 from loguru import logger
 
-from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.tools.base import BaseTool, ToolContext, ToolResult, admin_api_failure
+from app.utils.http_client import get_admin_api_client
 
 
 # ── 悬挂方式 → 褶皱倍数默认值（【标】行业标准）──
@@ -916,11 +922,134 @@ def calculate_multi_position(positions: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+# ── 本租户算料口径的取用（issue #4922）──────────────────────────────────────────
+# 真值源 = `craft_calc_configs`（商家在「工艺配置 → 算料配置」改），读面 =
+# admin-api `GET /api/admin/production/craft-calc-config`（**同一份实现**：默认值/校验的唯一出处
+# 仍是本模块的 `DEFAULT_CRAFT_CALC_CONFIG` 与 `resolve_craft_calc_config`）。
+#
+# 口径**零自造**（硬红线）：本模块只有这一处取配置，取值只可能来自
+#   ① 服务端返回的**本租户**配置；② 缺行 / 服务端不可达 ⇒ **不传 config**
+#      （引擎用 `DEFAULT_CRAFT_CALC_CONFIG`；不可达那一族另挂显式 warning + `config_source` 留痕）。
+# 与服务端下单路径 `CraftCalcClient#withTenantConfig`（`selectActiveByTenant` → 非空才加 `config` 键）
+# 逐字同口径 —— 两条入口必须是同一个米数，否则就是本单要消灭的「同一张单两个答案」。
+#: admin-api 的租户算料配置读面（`CraftCalcConfigController`，类级 `@RequirePermission("processing:manage")`）。
+TENANT_CRAFT_CALC_CONFIG_PATH = "/api/admin/production/craft-calc-config"
+#: 服务端 `data.source` 的两个取值（`CraftCalcConfigService.SOURCE_STORED` / `SOURCE_DEFAULT`）。
+_SERVER_SOURCE_STORED = "stored"
+_SERVER_SOURCE_DEFAULT = "default"
+#: `ToolResult.data.config_source` 取值：**取配置这件事必须可观测**（不留痕 = 静默回落默认值）。
+CONFIG_SOURCE_TENANT = "tenant"                    # 用了本租户配置行
+CONFIG_SOURCE_DEFAULT_NO_ROW = "default(no_row)"   # 服务端明确回答：本租户没有配置行
+#: 服务端**没答复**（不可达 / 熔断）⇒ 只能用引擎默认口径 —— 必须配 `warning` 显式告知，不许静默。
+CONFIG_SOURCE_DEFAULT_FETCH_FAILED = "default(fetch_failed)"
+#: 降级时随报价单回给模型/商家的**显式**告知（同 `OrderCraftFields` 的「算料配置未加载」amber 提示口径）。
+CONFIG_FETCH_FAILED_NOTE = (
+    "未能读取本租户的算料口径（算料配置服务不可达）——本次按引擎默认口径试算，"
+    "米数可能与下单页/服务端不一致；请稍后重试后再以本租户口径为准。"
+)
+#: `AdminApiClient` 熔断时的错误码（连调用都不发 ⇒ 与「不可达」同族）。
+_CIRCUIT_OPEN_CODE = "CIRCUIT_OPEN"
+
+
+class CraftCalcConfigUnavailable(RuntimeError):
+    """**服务端答复了**但口径读不通（失败信封 / 5xx / 形状漂移 / 配置不可归一）—— fail-closed。
+
+    「服务端**没答复**」（`httpx.TransportError` / 熔断）**不**走这里：那条路是显式降级 + 留痕
+    （见 `load_tenant_craft_calc_config`），因为此刻 admin-api 整体不可用 ⇒ 服务端下单路径同样不可用
+    （`CraftCalcClient` 对端不可达是 422 fail-closed）⇒ 不存在「米宝一个数、落库另一个数」的窗口。
+
+    `response` 非空 = 服务端给了**失败信封**（`success != true`，如 403/422，由 `AdminApiClient`
+    整份透传）⇒ 调用方交给 `admin_api_failure`（**唯一映射点**）：权限拒绝据此拿到
+    `PERMISSION_DENIED`（∈ 非重试集合）+ 可行动话术 = **终态**，不会被 `_self_correct_retry`
+    拿去换参数重放（issue #4103 的 P0 形态）。形状漂移（`success=true` 但内容不对）**不**走它 ——
+    那种响应里没有 `error.code` 可映射，按通用 fail-closed 处理。
+    """
+
+    def __init__(self, reason: str, *, response: Optional[Dict[str, Any]] = None):
+        super().__init__(reason)
+        self.response = response
+
+
+def _normalize_server_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """线上配置（JSON ⇒ `per_fold_mixed_times` 的键恒为**字符串**）→ 引擎入参。
+
+    **复用唯一实现**：`app/api/internal.py` 的 `_normalize_craft_calc_config`（服务端经
+    `CraftCalcClient` 走的正是它）。在本模块再写一份 = 第二份规范化口径，两边漂移时
+    「商家改了拼色系数却算不出料 / 少算用料」不会有任何东西变红。
+    延迟导入：`app.api.internal` 在模块级 import 本模块 ⇒ 模块级反向 import 成环。
+    """
+    from app.api.internal import _normalize_craft_calc_config  # 延迟导入避环（单一实现）
+    return dict(_normalize_craft_calc_config(config) or {})
+
+
+async def load_tenant_craft_calc_config(
+    tenant_id: int, user_id: Optional[str] = None,
+) -> tuple[Optional[Dict[str, Any]], str]:
+    """读本租户算料口径 → `(config, config_source)`；**本租户没有配置行 ⇒ `(None, 'default(no_row)')`**。
+
+    Args:
+        tenant_id: 租户 id（`ToolContext.tenant_id`）。
+        user_id: 调用方用户 id。**照传**（与 `processing_item_query` 等同族工具同形）：
+            admin-api 的 `ServiceTokenFilter` 据此把**本租户商户员工**挂真实角色
+            （`service` 旁路失效 ⇒ `@RequirePermission` 真正生效）；C 端顾客 / 查不到的用户行
+            / 跨租户一律回退内部服务身份（既有行为，逐字不变）。
+
+    Returns:
+        `(config, config_source)`：`config=None` ⇒ 调用方**不得**传 `config` 给引擎。
+        `config_source` 三态：`tenant`（本租户配置行）/ `default(no_row)`（服务端明确说没有行）/
+        `default(fetch_failed)`（服务端没答 ⇒ 用引擎默认口径，**必须**配显式告警）。
+
+    Raises:
+        CraftCalcConfigUnavailable: **服务端答复了**却读不通（失败信封 / 5xx / 形状漂移 / 配置不可归一）
+            ⇒ **fail-closed**：绝不按默认口径算钱（那正是 #4922 要消灭的形态）。
+            ⚠️ 「服务端没答」（`httpx.TransportError` / 熔断）**不**抛 —— 显式降级 + 留痕（理由见函数内注释）。
+    """
+    api = get_admin_api_client()
+    try:
+        response = await api.get(
+            TENANT_CRAFT_CALC_CONFIG_PATH, tenant_id=tenant_id, user_id=user_id)
+    except httpx.TransportError as e:
+        # 服务端**没答复**（DNS / 连接被拒 / 超时）⇒ 显式降级 + 留痕（`execute` 会挂显式 warning）。
+        # 为什么这里不 fail-closed：此刻 admin-api 整体不可用 ⇒ 服务端下单路径同样不可用
+        # （`CraftCalcClient` 对端不可达 = 422 fail-closed）⇒「米宝一个数、落库另一个数」不可能落地；
+        # 而把纯计算工具整条拦下，只会让商家/顾客连估算都拿不到（且离线/单测环境 admin-api 恒不可达）。
+        logger.error(
+            f"[curtain-calc] 算料口径端点不可达，降级用引擎默认口径: tenant={tenant_id} err={e}")
+        return None, CONFIG_SOURCE_DEFAULT_FETCH_FAILED
+    except Exception as e:  # 服务端答复了但读不通（5xx = HTTPStatusError / 响应非 JSON）⇒ fail-closed
+        raise CraftCalcConfigUnavailable(
+            f"算料配置端点答复不可用（{type(e).__name__}: {e}）") from e
+    error_info = response.get("error") if isinstance(response, dict) else None
+    if isinstance(error_info, dict) and error_info.get("code") == _CIRCUIT_OPEN_CODE:
+        # 熔断 = `AdminApiClient` 已判定该端点不可用（连调用都不发）⇒ 与「不可达」同族（降级 + 留痕）
+        logger.error(f"[curtain-calc] 算料口径端点熔断，降级用引擎默认口径: tenant={tenant_id}")
+        return None, CONFIG_SOURCE_DEFAULT_FETCH_FAILED
+    if not isinstance(response, dict) or not response.get("success"):
+        raise CraftCalcConfigUnavailable("算料配置端点返回失败（success != true）", response=response)
+    data = response.get("data") if isinstance(response.get("data"), dict) else {}
+    source = data.get("source")
+    # 缺行：服务端**明确**回答「本租户没有配置行」⇒ 不传 config（零回归，与 CraftCalcClient 同口径）。
+    # ⚠️ 不消费此时响应里的 `config`（那是引擎默认值）——把默认值显式发过去 = 在 Python 侧锚死一份会漂的默认值。
+    if source == _SERVER_SOURCE_DEFAULT:
+        return None, CONFIG_SOURCE_DEFAULT_NO_ROW
+    config = data.get("config")
+    if source != _SERVER_SOURCE_STORED or not isinstance(config, dict) or not config:
+        # 形状漂移（`success=true` 但内容不对）⇒ 通用 fail-closed：这类响应里没有 `error.code`，
+        # 交给 `admin_api_failure` 只会得到一份没有码/没有出路的失败（= 模型原地重试）。
+        raise CraftCalcConfigUnavailable(
+            f"算料配置端点响应形状不对（source={source!r} / config={type(config).__name__}）")
+    try:
+        return _normalize_server_config(config), CONFIG_SOURCE_TENANT
+    except ValueError as e:  # 服务端配置不可用（键不可归一）⇒ 同样 fail-closed，不静默回退默认值
+        raise CraftCalcConfigUnavailable(f"算料配置不可用：{e}") from e
+
+
 class CurtainCalcTool(BaseTool):
     """窗帘算料报价 Tool
 
     根据窗户尺寸 + 悬挂方式 + 面料信息，计算用布量与报价。
-    纯计算（read_only），不修改任何数据。
+    纯计算（read_only），不修改任何数据；**唯一外部读取** = 本租户算料口径
+    （issue #4922：`GET /api/admin/production/craft-calc-config`，缺行 ⇒ 不传 `config`）。
     """
 
     name = "curtain_calc"
@@ -1135,6 +1264,37 @@ class CurtainCalcTool(BaseTool):
                 suggestion="请先调用 product_detail 或 product_search 查询该商品的面料单价（元/米），拿到真实单价后再重新计算报价",
             )
 
+        # 本租户算料口径（issue #4922）：口径**零自造** —— 只来自服务端返回值。
+        # 三条口径（与服务端下单路径 `CraftCalcClient` 同族）：
+        #   ① 缺行 ⇒ 不传 config（引擎默认，逐字同口径 = 零回归）；
+        #   ② **服务端答复了**却读不通（4xx/5xx/形状漂移）⇒ **fail-closed**（不算料 + 可行动话术）；
+        #   ③ **服务端没答**（不可达/熔断）⇒ 显式降级 + 留痕（`config_source` + 报价单 warning 明说）。
+        try:
+            config, config_source = await load_tenant_craft_calc_config(
+                context.tenant_id, context.user_id)
+        except CraftCalcConfigUnavailable as e:
+            logger.error(
+                f"[curtain-calc] 算料口径不可用: tenant={context.tenant_id} err={e}")
+            if e.response is not None:
+                # 服务端给了失败响应（4xx）⇒ 走唯一映射点：权限拒绝 = 终态 + 可行动话术（issue #4103）
+                return admin_api_failure(
+                    e.response,
+                    error="算料口径不可用",
+                    message="读取本租户的算料口径失败，为避免按错误口径报价，本次不报价",
+                    suggestion=(
+                        "请稍后重试；若持续失败，请让管理员在「角色管理 → 岗位权限」"
+                        "为该账号开通「加工管理」权限（本租户算料口径的读面权限）后重新报价"),
+                )
+            return ToolResult(
+                success=False,
+                error="算料口径不可用",
+                error_code="CRAFT_CALC_CONFIG_UNAVAILABLE",
+                message="读取本租户的算料口径失败，为避免按错误口径报价，本次不报价",
+                suggestion=(
+                    "请确认 admin-api 服务正常后重试。本工具必须按本租户"
+                    "「工艺配置 → 算料配置」的口径算料，系统不会用引擎默认口径顶替。"),
+            )
+
         try:
             quote = build_quote(
                 window_width=float(window_width),
@@ -1155,18 +1315,27 @@ class CurtainCalcTool(BaseTool):
                 is_shaped=is_shaped,
                 style=style,
                 special_options=special_options,
+                config=config,
             )
 
             logger.info(
                 f"[curtain-calc] quote: W={window_width} H={window_height} "
                 f"mounting={mounting} fullness={quote['fullness']} "
                 f"meters={quote['fabric_meters']} total={quote['total']} "
-                f"formula={quote['formula_used']} | tenant={context.tenant_id}"
+                f"formula={quote['formula_used']} config_source={config_source} "
+                f"| tenant={context.tenant_id}"
             )
+
+            # `config_source` = 本次用的是哪一份口径（`tenant` / `default(no_row)` /
+            # `default(fetch_failed)`）—— 留痕，不静默。
+            data = {**quote, "config_source": config_source}
+            if config_source == CONFIG_SOURCE_DEFAULT_FETCH_FAILED:
+                # 显式降级：**明说**本次不是本租户口径（不静默回落 —— 同 `OrderCraftFields` 的 amber 提示）
+                data["warning"] = " ".join(w for w in [quote["warning"], CONFIG_FETCH_FAILED_NOTE] if w)
 
             return ToolResult(
                 success=True,
-                data=quote,
+                data=data,
                 summary=(
                     f"算料结果：{quote['fabric_meters']}米，总价¥{quote['total']} "
                     f"（面料¥{quote['fabric_cost']}+加工¥{quote['processing_cost']}"
