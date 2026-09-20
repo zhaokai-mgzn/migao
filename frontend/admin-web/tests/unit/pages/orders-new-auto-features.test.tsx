@@ -170,6 +170,81 @@ async function setupLine(opts: { doorWidth?: string; width?: string; height?: st
   fireEvent.change(inputOf('高 (米)'), { target: { value: height } })
 }
 
+/**
+ * 选商品（**同一颜色下有多个门幅 SKU**）→ 选颜色（**不点门幅**，交给门幅规则）→ 填宽高。
+ *
+ * issue #4877 裁定 C：多门幅时页面应按规则**自动选中**最省的那个门幅（可行集里最小门幅 /
+ * 定宽买高取分幅最少）；客服仍可改（改了只提示、不覆盖）。
+ */
+async function setupLineMultiDoorWidth(opts: {
+  widths: string[]
+  width?: string
+  height?: string
+}): Promise<void> {
+  const { widths, width = '3.0', height = '2.75' } = opts
+  mockGetProducts.mockResolvedValue({
+    data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
+  })
+  mockGetProduct.mockResolvedValue({
+    data: {
+      data: {
+        id: 'p1',
+        name: '遮光窗帘',
+        price: 100,
+        skus: widths.map((w, i) => ({
+          id: `sku${i}`,
+          colorId: 'c1',
+          colorName: '米白',
+          doorWidth: w,
+          price: 100,
+          sellingMethod: 'bulk_cut',
+        })),
+      },
+    },
+  })
+  render(<NewOrderPage />)
+  fireEvent.click(await screen.findByText('点击搜索并选择商品'))
+  fireEvent.click(await screen.findByText('遮光窗帘'))
+  await screen.findByText('宽 (米)')
+  // **只选颜色**：门幅留给规则自动选（issue #4877 裁定 C）
+  fireEvent.click(await screen.findByRole('button', { name: '米白' }))
+  openStep('尺寸与数量')
+  fireEvent.change(inputOf('宽 (米)'), { target: { value: width } })
+  fireEvent.change(inputOf('高 (米)'), { target: { value: height } })
+}
+
+describe('#4877 门幅规则接线（裁定 C：规则驱动默认选中 + 非最优提示 + 需接高告警）', () => {
+  it('多门幅 {2.8, 3.2} + 成品高 2.75 ⇒ 自动选中 **3.2**（否则 2.8 会判「需接高」/ 没选则「未维护」）', async () => {
+    await setupLineMultiDoorWidth({ widths: ['2.8米', '3.2米'], width: '3.0', height: '2.75' })
+    openStep('尺寸与数量')
+    // 3.2 才做得下单幅（2.75 + 0.3 = 3.05 ≤ 3.2）⇒ 既不该报「需接高」，也不该是「门幅未维护」
+    expect(screen.queryByTestId('door-width-needs-splice')).toBeNull()
+    expect(screen.queryByTestId('door-width-missing')).toBeNull()
+    expect(screen.queryByTestId('size-door-width-missing')).toBeNull()
+  })
+
+  it('客服选了**非最省**门幅（可行但更宽）⇒ 提示可换最优（**不改**客服的选择）', async () => {
+    // 成品高 2.4 ⇒ 2.8 可行且是最小可行门幅 = 规则解 ⇒ 自动选中 2.8、**无**提示
+    await setupLineMultiDoorWidth({ widths: ['2.8米', '3.2米'], width: '3.0', height: '2.4' })
+    openStep('尺寸与数量')
+    expect(screen.queryByTestId('door-width-suboptimal')).toBeNull()
+
+    // 客服改成 3.2（仍可行，但不是规则解）⇒ 提示可选 2.8；选择**不被自动改回**
+    fireEvent.click(await screen.findByText('3.2米'))
+    const tip = await screen.findByTestId('door-width-suboptimal')
+    expect(tip.textContent).toContain('2.8 米门幅')
+    expect(screen.queryByTestId('door-width-needs-splice')).toBeNull()
+  })
+
+  it('所选门幅**单幅做不出**（成品高 2.75 对 2.8 门幅）⇒ 显式「需接高」强告警（缺口 0.25 米）', async () => {
+    await setupLineMultiDoorWidth({ widths: ['2.8米'], width: '3.0', height: '2.75' })
+    openStep('尺寸与数量')
+    const warn = await screen.findByTestId('door-width-needs-splice')
+    expect(warn.textContent).toContain('需接高')
+    expect(warn.textContent).toContain('0.25')
+  })
+})
+
 /** 填客户信息 → 提交 → 取**落库**的组合键加项（`processingInfo.processingItems[].name`） */
 async function submitAndGetProcessingNames(): Promise<string[]> {
   fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
@@ -206,7 +281,9 @@ beforeEach(() => {
 
 describe('#4658：系统识别块在②工艺规格（不在③加工项）+ 逐条依据 + 尺寸行徽标', () => {
   it('#4658 ②工艺规格里出现「系统识别」，且**逐条**显示判定依据（reason 文案，不是只有名字）', async () => {
-    await setupLine()
+    // 🔴 issue #4877：门幅**必须显式**（已无缺省门幅）—— 不传门幅 = 不判，断言无据可依
+    await setupLine({ doorWidth: '2.8米' })
+    // #4878（origin/main）：系统识别块位置 = ①尺寸与数量
     openStep('尺寸与数量')
 
     const block = within(stepSection('尺寸与数量')).getByTestId('auto-detected-features')
@@ -247,7 +324,7 @@ describe('#4658：系统识别块在②工艺规格（不在③加工项）+ 逐
   // 🔴 #4661 改钉：缺省档（定高买宽）**不推超宽** ⇒ 徽标只有「超高」；
   // 改前这条断言「超宽 + 超高 两个徽标都在」（= 错口径在徽标面的镜像）。
   it('#4658 ①尺寸行旁的就地徽标：有识别结果时出现，不超时消失', async () => {
-    await setupLine()
+    await setupLine({ doorWidth: '2.8米' })
     expect(await screen.findByTestId('size-auto-badge-超高')).toBeInTheDocument()
     expect(screen.queryByTestId('size-auto-badge-超宽')).toBeNull()
 
@@ -259,24 +336,31 @@ describe('#4658：系统识别块在②工艺规格（不在③加工项）+ 逐
     expect(screen.queryByTestId('size-auto-badge-超宽')).toBeNull()
   })
 
-  it('#4657 门幅走了**默认值** ⇒ 界面看得出来（②标出 + ①徽标提示）', async () => {
-    await setupLine() // 无 doorWidth ⇒ 默认 2.8
-    expect(screen.getByTestId('size-door-width-fallback')).toBeInTheDocument()
+  // 🔴 issue #4877 改判：**缺省门幅已删除** —— 未维护门幅不再「按 2.8 推算」，而是**不判** + 显式告知。
+  // 红证（改前实测）：本用例改前断言 `size-door-width-fallback` / `door-width-fallback`
+  // （文案「按默认 2.8 米推算」）—— 那正是本单要替换掉的错误做法。
+  it('#4877 SKU 未维护门幅 ⇒ **不判**：显式告知 + 徽标，且**不再有**「按默认门幅推算」', async () => {
+    await setupLine() // 无 doorWidth = SKU 未维护门幅
+    expect(screen.getByTestId('size-door-width-missing')).toBeInTheDocument()
     openStep('尺寸与数量')
-    expect(screen.getByTestId('door-width-fallback')).toBeInTheDocument()
+    expect(screen.getByTestId('door-width-missing')).toBeInTheDocument()
+    expect(screen.queryByTestId('door-width-fallback')).toBeNull()
+    // 不判 ⇒ 一条识别特征都没有（旧行为会按缺省门幅推出「超高」）
+    expect(within(screen.getByTestId('auto-detected-features')).queryByText('超高')).toBeNull()
   })
 
-  it('#4657 SKU 真的给了门幅 ⇒ **不谎报**成默认值（反向护栏）', async () => {
+  it('#4877 SKU 真的给了门幅 ⇒ **不谎报**成「未维护」（反向护栏）', async () => {
     await setupLine({ doorWidth: '2.8米' })
-    expect(screen.queryByTestId('size-door-width-fallback')).toBeNull()
+    expect(screen.queryByTestId('size-door-width-missing')).toBeNull()
     openStep('尺寸与数量')
-    expect(screen.queryByTestId('door-width-fallback')).toBeNull()
+    expect(screen.queryByTestId('door-width-missing')).toBeNull()
   })
 })
 
 describe('D6：自动识别结果只读可见（判据 8）', () => {
   it('改宽高 ⇒ 识别结果跟着变（不是写死的展示文案）', async () => {
-    await setupLine()
+    // 🔴 issue #4877：门幅必须显式（无缺省门幅）—— 缺门幅时一条都不判，本用例将失去对照物
+    await setupLine({ doorWidth: '2.8米' })
     openStep('尺寸与数量')
     const block = screen.getByTestId('auto-detected-features')
     // 🔴 #4661 改钉：缺省档（定高买宽）推的是「超高」，不是「超宽」
@@ -295,7 +379,7 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
     // 红证（修复前必红）：修复前这里恒有「正幅」，而「正幅」不在加工项目录里 ⇒
     // 默认订单的组合键永远匹配不到价 ⇒ 加工费恒 ¥0.00。
     expect(screen.queryByText('正幅')).toBeNull()
-    // 块**仍在**（#4657 要能「强制加」+ 门幅默认值要可见）—— 但一条识别行都没有
+    // 块**仍在**（要能「强制加」+ 门幅未维护时要能看见）—— 但一条识别行都没有
     const blockAfter = screen.getByTestId('auto-detected-features')
     expect(within(blockAfter).queryByText('超宽')).toBeNull()
     expect(within(blockAfter).queryByText('超高')).toBeNull()
@@ -340,7 +424,7 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
         },
       },
     })
-    await setupLine()
+    await setupLine({ doorWidth: '2.8米' })
 
     // ③加工项：手选列表 = 目录 − 自动推导特征（红证：修复前这里会出现 5 个 checkbox）
     openStep('加工项')

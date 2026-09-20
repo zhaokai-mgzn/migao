@@ -1310,15 +1310,17 @@ describe('NewOrderPage', () => {
       for (const auto of ['超高', '超宽', '倒幅']) {
         expect(screen.queryByRole('checkbox', { name: auto })).toBeNull()
       }
-      // 推导结果照旧**只读可见**（来源「推算」），且块内没有任何输入控件
+      // 该块**只读**、块内无任何输入控件（题眼 =「自动推导特征不出手选控件」，与门幅无关）
       // ⚠️ issue #4658：该块已从 ③加工项 移到 **②工艺规格** ⇒ 先展开②再断言（手风琴会卸载未展开步骤）
       expandCraft()
       const block = screen.getByTestId('auto-detected-features')
-      // 🔴 issue #4661 改钉：缺省 `cuttingMode` = 定高买宽 ⇒ 只判**超高**（宽按米买、无上限）
-      // （改前这里断言「超宽 + 超高」两条都在 = 错口径在本文件的镜像；题眼「不出手选控件」不变）
-      expect(within(block).getByText('超高')).toBeInTheDocument()
-      expect(within(block).queryByText('超宽')).toBeNull()
       expect(block.querySelectorAll('input')).toHaveLength(0)
+      // 🔴 issue #4877 改钉：本 fixture 的商品**没有 SKU**（`skus: []`）⇒ 门幅未知 ⇒ **一条特征都不判**
+      // （旧口径按缺省门幅 2.8 推出「超高」= 本单要替换掉的「静默按缺省门幅推算」）。
+      // 「有门幅时逐条推导 + 逐条给依据」由 `orders-new-auto-features.test.tsx` 的带门幅 fixture 覆盖。
+      expect(within(block).queryByText('超高')).toBeNull()
+      expect(within(block).queryByText('超宽')).toBeNull()
+      expect(within(block).getByText(/系统未识别出特征/)).toBeInTheDocument()
     })
 
     it('判据 2：勾「韩折」⇒ 落库 `processingItems[].name` 含「韩折」且 `craft=「韩褶」`（**派生**，不是页面选的）', async () => {
@@ -1570,14 +1572,16 @@ describe('NewOrderPage', () => {
       for (const auto of ['超高', '超宽', '倒幅']) {
         expect(screen.queryByRole('checkbox', { name: auto })).toBeNull()
       }
-      // 推导结果照旧**只读可见**，且块内无任何输入控件
+      // 该块**只读**、块内无任何输入控件（题眼 =「自动推导特征不出手选控件」，与门幅无关）
       // ⚠️ issue #4658：该块已从 ③加工项 移到 **②工艺规格** ⇒ 先展开②再断言
       expandCraft()
       const block = screen.getByTestId('auto-detected-features')
-      // 🔴 issue #4661 改钉：缺省档（定高买宽）只出「超高」（同判据 1；题眼「不出手选控件」不变）
-      expect(within(block).getByText('超高')).toBeInTheDocument()
-      expect(within(block).queryByText('超宽')).toBeNull()
       expect(block.querySelectorAll('input')).toHaveLength(0)
+      // 🔴 issue #4877 改钉：本 fixture 的商品没有 SKU ⇒ 门幅未知 ⇒ **一条特征都不判**（同判据 1；
+      // 旧口径按缺省门幅 2.8 推出「超高」= 要替换掉的「静默按缺省门幅推算」）。
+      expect(within(block).queryByText('超高')).toBeNull()
+      expect(within(block).queryByText('超宽')).toBeNull()
+      expect(within(block).getByText(/系统未识别出特征/)).toBeInTheDocument()
     })
 
     it('判据 8a：项数 ≤ 8 ⇒ **不出现**搜索框（项少时搜索是噪音）', async () => {

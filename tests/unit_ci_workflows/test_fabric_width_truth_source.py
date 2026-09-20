@@ -2,12 +2,11 @@
 
 ## 为什么需要这条（本单的静默失效形态）
 
-门幅在仓里有**三处口径**（#4746 三处口径表，逐值读源见本文件判据）：
+门幅在仓里有**两处口径**（#4877 改判：**前端「缺省门幅」已删除** —— 旧三处口径表的前端缺省那一行作废）：
 
 | 口径 | 值 | 来源 | 谁在读 |
 |---|---|---|---|
-| 商品/SKU 门幅（**权威**） | 商品可配（种子 2.8；窄幅布 1.4） | 商品 `doorWidths` ⇒ `product_skus.door_width` | 下单页判定 `resolveDoorWidth()`、SKU 定位 / 加工费组合键 |
-| 前端**缺省**门幅 | 2.8 | 算料引擎默认门幅（`curtain_calc.build_quote(fabric_width: float = 2.8)`） | SKU 未携带门幅时的判定（逐值守卫在 `craft-auto-features.test.ts`） |
+| 商品/SKU 门幅（**权威**） | 商品可配（种子 2.8；窄幅布 1.4） | 商品 `doorWidths` ⇒ `product_skus.door_width` | 下单页判定 `parseDoorWidth()` / 规则 `resolveCutPlan()`、SKU 定位 / 加工费组合键 |
 | 引擎**端点**门幅 | 3.2 | `backend/ai-agent-service/app/api/internal.py::_FABRIC_WIDTH`（**硬编码**，其注释「商家手工下单页当前没有门幅字段」**已过期**） | 商家手工下单页试算通路 |
 
 ⇒ 同一张单：前端按 SKU 门幅判「超宽/超高」（**进加工费组合键**），引擎按 3.2 算分幅
@@ -20,13 +19,16 @@
 
 1. 前端门幅真值源模块 `lib/craft-auto-features.ts`（**去注释后**）不得出现引擎端点硬编码门幅值的
    **字面量** —— 值从 `internal.py::_FABRIC_WIDTH` 读出，**不写死**（引擎改了值，抄进前端即红）；
-2. 门幅的**取值点唯一**：`detectAutoFeatures` / `detectAutoFeatureNotices`（lib）与下单页都必须经
-   `resolveDoorWidth()` 取门幅（任一处再写一份门幅解析 ⇒ 红）。
+2. 门幅的**取值点唯一**：`detectAutoFeatures` / `detectAutoFeatureNotices`（lib）、规则
+   `door-width-plan.ts`、下单页都必须经 `parseDoorWidth()` 取门幅（任一处再写一份门幅解析 ⇒ 红）；
+3. **反向守卫**（#4877）：缺省门幅**不得**回来（`DEFAULT_DOOR_WIDTH` / `resolveDoorWidth` 出现即红）
+   —— 解析不到 ⇒ 判定面**不判**并显式告知（`missing-door-width`）、规则面 `undecidable`。
 
 ## 红证（注入式，逐条可注入）
 
 - 在 `craft-auto-features.ts` 里加 `const ENGINE_TRIAL_WIDTH = 3.2` ⇒ 判据 1 红；
-- 把 `detectAutoFeatureNotices` 里的 `resolveDoorWidth(input.doorWidth)` 换成写死的 `2.8` ⇒ 判据 2 红。
+- 把 `detectAutoFeatureNotices` 里的 `parseDoorWidth(input.doorWidth)` 换成写死的 `2.8` ⇒ 判据 2 红；
+- 把缺省门幅写回去（`export const DEFAULT_DOOR_WIDTH = 2.8` / 解析回退到默认值）⇒ 判据 3 红。
 
 ⚠️ **本守卫不检查 ai-agent 侧**（分叉 #4652 未接线）—— 引擎端点何时改为**接收** SKU 门幅，
 由 #4652 收口；届时前端把该值随试算请求发出（今天发 = 静默无效：`CraftCalcRequest` 里没有该键）。
@@ -41,6 +43,7 @@ REPO = Path(__file__).resolve().parent.parent.parent
 INTERNAL_PY = REPO / "backend/ai-agent-service/app/api/internal.py"
 LIB_TS = REPO / "frontend/admin-web/src/lib/craft-auto-features.ts"
 PAGE_TSX = REPO / "frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx"
+PLAN_TS = REPO / "frontend/admin-web/src/lib/door-width-plan.ts"
 
 
 def _strip_comments(text: str) -> str:
@@ -76,21 +79,31 @@ def test_frontend_does_not_copy_engine_endpoint_fabric_width():
     assert not hits, (
         f"{LIB_TS.name} 里出现引擎端点硬编码门幅 {value} 的字面量（位置 {hits}）："
         "门幅的权威是 **SKU/商品门幅**（引擎侧接线 = 分叉 #4652）；前端再抄一份 = 第二份会漂移的口径"
-        "（issue #4746 / 同族 #4656）。缺省口径请用 DEFAULT_DOOR_WIDTH（它逐值锚定算料引擎默认门幅）。"
+        "（issue #4746 / 同族 #4656）。解析不到的处置 = **不判**（issue #4877 已删除前端缺省门幅）。"
     )
 
 
 def test_door_width_has_single_value_source():
-    """判据 2：门幅取值点唯一 —— 推导与提示都经 `resolveDoorWidth()`，页面不自解析门幅数值。"""
+    """判据 2/3：门幅解析点唯一（经 `parseDoorWidth()`）+ **缺省门幅不得回来**。
+
+    ⚠️ issue #4877 改判：前端**不再持有缺省门幅**（`DEFAULT_DOOR_WIDTH` / `resolveDoorWidth` 已删除）
+    —— SKU 未携带门幅 ⇒ `parseDoorWidth()` 返回 `None` ⇒ 判定面**不判**并在界面显式告知
+    （`missing-door-width`）、规则面（`door-width-plan.ts::resolveCutPlan`）返回 `undecidable`。
+    旧口径「静默按缺省门幅判超高/超宽」= 要替换掉的错误做法。
+    """
     lib = LIB_TS.read_text(encoding="utf8")
     for func_name in ("detectAutoFeatures", "detectAutoFeatureNotices"):
         body = _exported_body(lib, func_name)
-        assert "resolveDoorWidth(" in body, (
-            f"{func_name} 没有经 `resolveDoorWidth()` 取门幅 —— 门幅的第二份解析 = 与判定/提示脱钩"
-            "（issue #4746：提示文案的前提句必须与判定**同源**）"
+        assert "parseDoorWidth(" in body, (
+            f"{func_name} 没有经 `parseDoorWidth()` 取门幅 —— 门幅的第二份解析 = 与判定/提示脱钩"
+            "（issue #4746：提示文案的前提句必须与判定**同源**；issue #4877：解析不到 ⇒ 不判）"
         )
-    page = PAGE_TSX.read_text(encoding="utf8")
-    assert "resolveDoorWidth(" in page, (
-        "下单页没有经 `resolveDoorWidth()` 取门幅 —— 页面自行解析门幅数值 = 第二份口径"
-        "（issue #4746）"
+    for path in (PLAN_TS, PAGE_TSX):
+        assert "parseDoorWidth(" in path.read_text(encoding="utf8"), (
+            f"{path.name} 没有经 `parseDoorWidth()` 取门幅 —— 页面/规则自解析门幅数值 = 第二份口径"
+            "（issue #4746 / #4877）"
+        )
+    assert "DEFAULT_DOOR_WIDTH" not in lib and "resolveDoorWidth" not in lib, (
+        "缺省门幅又回来了（`DEFAULT_DOOR_WIDTH` / `resolveDoorWidth`）—— issue #4877 已改判："
+        "解析不到 ⇒ 不判（`missing-door-width`）+ 规则面 `undecidable`，不得回退任何默认门幅"
     )
