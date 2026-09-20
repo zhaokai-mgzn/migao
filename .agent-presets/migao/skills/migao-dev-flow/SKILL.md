@@ -142,8 +142,11 @@ description: MIGAO 项目开发提效流程固化 — 开发、验证、提交�
   ② **判红落闸** = `python3 scripts/merge_gate.py --check <PR> --apply-label`（**默认同时 disarm** —— 见 §3.3）；
   三态 `0/1/3`（`3` = 无法判定，**不得当 `0` 读**），**默认只读**（dry-run）。
 - **文档里写裸 `文件名:行号` 会被 Case Trust 规则 G 判红，且本地不复现**（v1.39 新增，2026-09-21 / **#4668**）：
-  `Case Trust Gate` 的规则 **G** 对**裸文件名引用**（形如 `routing.py:355`）判 **`CASE-TRUST-STALE-LINE-REF`**（**阻塞**），
-  要求写成**仓库相对全路径**（如 `backend/ai-agent-service/app/production/routing.py:355`）。
+  `Case Trust Gate` 的规则 **G** 对**裸文件名引用**（= **裸文件名 + 冒号 + 行号**，而非仓库相对全路径）判 **`CASE-TRUST-STALE-LINE-REF`**（**阻塞**），
+  要求写成**仓库相对全路径**（如 `backend/ai-agent-service/app/production/routing.py`）。
+  🔴 **但行号一律不要写**（无论裸名还是全路径）—— 活跃文件的裸行号几分钟就失效，drift 面 `ref-freshness` 同样判红
+  ⇒ **改用符号 / 文本锚点**（函数名、类名、可检索文本；见 §16.7『引用纪律』）。
+  ⚠️ **本条的教训就是本单自己**：v1.39 的初稿在这里**举了两个带行号的例子** ⇒ `Drift Audit` + `Case Trust Gate` **同时判红**（"举例说明禁忌" ≠ "自己可以犯"）。
   ⚠️ **两条陷阱**：① **本地自查不一定复现**（`python3 .github/case_trust_gate.py --base origin/main` 可能不报，
   疑似与 CI 的 `fetch-depth` / 引用新鲜度判定面有关）⇒ **本地"绿"不能当结论**；
   ② 该 job **在 required 集合里**（见上条）⇒ **它红就是卡合并**，不是"报告型"。
