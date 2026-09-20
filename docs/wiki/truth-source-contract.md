@@ -45,6 +45,20 @@
 | I1-d | 派生文档**自称**是某权威源的副本时，它声明的版本必须等于权威源当前 `version:`；声明的权威源路径必须存在；副本不得有权威源没有的章节 | 见 §4「同步副本」——**兑现或撤回**，二选一 | `sync-copy` |
 | I1-e | 报告的 `(base, cases_fingerprint, policy_version)` 三元组随每次审计落盘（JSON 报告头部） | 运行期护栏把它写进 `run_key`（见 §3.2） | `drift_audit.py` 报告头 |
 
+**受管引用面（`ref-freshness` 的判定范围）**：`docs/wiki/`、`docs/testing/`、`tests/unit_ci_workflows/`、
+`.github/workflows/`、`.agent-presets/`、`scripts/`、`backend/admin-api/src/main/resources/db/migration/`
+（迁移文件最常引用代码位置 —— `#4708` 的缺口正在这里）。点时效快照面（`acceptance/`、`docs/audit-`、
+`docs/design/`）**有意排除**：那里的行号是当时的读数。
+
+⚠️ **文件类型面由 `regression-guard` 的 `ext-census` 判据守着**（`#4708`）：受管面里**真实存在**的每个
+扩展名必须 ∈ 扫描面（`SCAN_EXTS`）或**显式登记**的「有意不判」表（`SCAN_EXT_NOT_JUDGED`，逐条写理由）。
+漏一类 = 那一类**永久免检**，而且**没有任何东西会变红**（`.sql` 就漏了很久，是双 AI 交叉验证时才被
+**人工**发现的，不是被审计抓到的）。新增一类文件 ⇒ 二选一：进扫描面（并补红证），或登记理由。
+
+**已发布迁移里的存量引用（不可修）**：迁移文件被 `migration_fingerprints.json` 指纹守卫冻结
+⇒ 其中查出的存量引用（如 `V88` 文件头那处）**只登记不修** —— 逐条进 burn-down 基线并在 `reason` 里
+写明理由与**正确写法**；正确写法仍是 `路径:行号@<sha>`（限定值）或符号/文本锚点。**新增**迁移照常 fail-closed。
+
 ### I2 身份不可变
 
 **含义**：被测对象用**不可变标识**（`order_no` / `phone` / `id` / **用例自建唯一名**）；

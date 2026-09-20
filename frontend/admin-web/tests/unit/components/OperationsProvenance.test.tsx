@@ -26,6 +26,8 @@ const mockGetRoutingGaps = vi.fn()
 const mockGetRouteSignals = vi.fn()
 // issue #4433（P3）：该页新增两条只读面 —— 部位价目矩阵 / 条件工序规则
 const mockGetOperationPositions = vi.fn()
+// issue #4677：两层分区读面（页面同时读 `operation-positions` 与 `operation-layers`）
+const mockGetOperationLayers = vi.fn()
 const mockGetRouteRules = vi.fn()
 // issue #4616：规则创建弹窗的触发值取值域（工艺词表 + 加工项目录）
 const mockGetRouteRuleOptions = vi.fn()
@@ -44,6 +46,7 @@ vi.mock('@/lib/api', () => ({
     getRoutingGaps: (...args: unknown[]) => mockGetRoutingGaps(...args),
     getRouteSignals: (...args: unknown[]) => mockGetRouteSignals(...args),
     getOperationPositions: (...args: unknown[]) => mockGetOperationPositions(...args),
+    getOperationLayers: (...args: unknown[]) => mockGetOperationLayers(...args),
     getRouteRules: (...args: unknown[]) => mockGetRouteRules(...args),
     getRouteRuleOptions: (...args: unknown[]) => mockGetRouteRuleOptions(...args),
     updateOperationPosition: (...args: unknown[]) => mockUpdateOperationPosition(...args),
@@ -115,7 +118,52 @@ describe('工序 provenance 徽标 + 一键套用行业模板（issue #4363；#4
     mockApplySeedTemplate.mockReset().mockResolvedValue(ok(APPLY_RESULT))
     mockGetRoutingGaps.mockReset().mockResolvedValue(ok({ unrouted_operations: [], signal_keys_without_route: [] }))
     mockGetRouteSignals.mockReset().mockResolvedValue(ok({ total: 0, signals: [] }))
+
+/**
+ * `getOperationLayers` 的替身（issue #4677）：页面读**两个**端点 ——
+ * ① `GET /operation-positions`（拿格的 `id` ⇒ 抽屉写面寻址）与 ② `GET /operation-layers`
+ * （两层分区 + 「打包发货」一列价聚合）。两者必须是**同一份**数据 ⇒ 这里从 `POSITIONS`
+ * **按既有 `scope` 分区**（口径照抄后端 `ProductionRoutingReadService.deliveryView`）。
+ */
+const layersOf = (cells: any[]) => {
+  const deliveryCells = new Map<string, any[]>()
+  const operations: any[] = []
+  for (const c of cells) {
+    if (c.scope === 'set') deliveryCells.set(c.operation, [...(deliveryCells.get(c.operation) ?? []), c])
+    else operations.push(c)
+  }
+  const delivery = [...deliveryCells.entries()].map(([operation, group]) => {
+    const applicable = group.filter((c) => c.applicable === true)
+    const prices = [...new Set(applicable.filter((c) => c.unit_price != null).map((c) => c.unit_price))]
+    const unpriced = applicable.some((c) => c.unit_price == null)
+    const price_state =
+      applicable.length === 0
+        ? 'no_applicable_position'
+        : unpriced
+          ? 'unpriced'
+          : prices.length === 1
+            ? 'priced'
+            : 'multiple_prices'
+    const first = (k: string) => group.find((c) => c[k] != null)?.[k] ?? null
+    return {
+      operation,
+      scope: 'set',
+      unit: first('unit'),
+      group: first('group'),
+      is_must_finish: first('is_must_finish'),
+      price: price_state === 'priced' ? prices[0] : null,
+      price_state,
+      different_price_count: price_state === 'multiple_prices' ? prices.length : 0,
+      applicable_positions: applicable.map((c) => c.position),
+    }
+  })
+  return { operations, delivery }
+}
+
     mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS))
+    // (issue #4677) 分区读面与矩阵夹具**同源** —— 一处换、两处同步
+    mockGetOperationLayers.mockReset().mockResolvedValue(ok(layersOf(POSITIONS)))
+
     mockGetRouteRules.mockReset().mockResolvedValue(ok([]))
     mockGetRouteRuleOptions.mockReset().mockResolvedValue(ok({ crafts: [], processing_items: [] }))
     mockUpdateOperationPosition.mockReset().mockResolvedValue(ok({ id: 'pos-罗马帘-帘头' }))
@@ -242,6 +290,19 @@ describe('工序 provenance 徽标 + 一键套用行业模板（issue #4363；#4
   })
 
   it('工序库非空 ⇒ **不渲染**行业模板卡（开租已自动套用，不该让用户手动点）', async () => {
+    // ⚠️ issue #4677（设计 §6 修法 A）**改判**：入口判据从「工序库为空」变成「**缺失即显示**」
+    // （工序库为空 ∨ 两条基础路线不齐）⇒ 这条用例的前提必须是**两条基础路线齐**
+    // （否则它测的就不是「工序库非空」这件事，而是「缺布料路线」）。
+    // 判据本身**不放宽**：什么都不缺 ⇒ 不给一个点了也没用的入口。
+    mockGetRoutings.mockReset().mockResolvedValue(
+      ok({
+        total: 2,
+        routings: [
+          ...ROUTINGS.routings,
+          { id: 13, name: '布料工序路线', is_default: false, positions: ['布料'], mainline: ['裁剪', '打包'], status: 'active' },
+        ],
+      }),
+    )
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('matrix-row-精裁')).toBeInTheDocument())
     expect(screen.queryByTestId('seed-templates')).not.toBeInTheDocument()

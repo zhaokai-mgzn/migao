@@ -40,6 +40,10 @@ MIGRATIONS = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "resources" 
 
 # issue #4242 判据 1 的显式序列（前两级经加工单定位），末尾 `order_logistics` 是
 # schema 真值补出的第三层漏项（见报告「外键链核对表」）。
+# ⚠️ **本序列必须随 `docs/sql/schema.sql` 的外键链一起长**（本文件的
+# `test_plan_covers_every_table_referencing_orders` 就是从 schema 反推闭包来守它的）：
+# issue #4698 切片 ⓪ 的 V92 新增两层 —— `processing_set_part_tokens`（码行，引用套行）必须排在
+# `processing_order_sets` **之前**，两者都在 `processing_orders` 之前。
 EXPECTED_DELETE_ORDER = (
     # V94（issue #4709）新增：补价动作账引用 **processing_orders** 与 **processing_position_operations**
     # 两张父表 ⇒ 必须最先删（`test_plan_covers_every_table_referencing_orders` 会自动要求它出现；
@@ -47,6 +51,8 @@ EXPECTED_DELETE_ORDER = (
     "production_instance_repricing_logs",
     "production_work_logs",
     "processing_position_operations",
+    "processing_set_part_tokens",
+    "processing_order_sets",
     "processing_orders",
     "order_items",
     "order_logistics",
