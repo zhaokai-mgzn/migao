@@ -48,8 +48,8 @@ push main / push tag v*（路径过滤）→ CI 测试/构建镜像推 ACR（tag
   → 服务器执行 /opt/migao-deploy/deploy.sh <IMAGE_TAG>（先自愈式同步最新 deploy.sh）：
      1. docker login ACR（服务器需凭据拉私有镜像）
      2. docker compose pull（拉 CI 预构建镜像，不做源码构建）
-     3. docker compose up -d --no-deps
-     4. restart nginx + 健康检查 8080/8000/3001
+     3. 严格蓝绿（#4785）：逐服务「先起 green 探针（第二端口）→ 健康检查通过 → **才**替换正式容器」
+     4. nginx 优雅 reload（失败回落 restart）+ 健康检查 8080/8000/3001
   → CI 轮询 DescribeInvocationResult 至 Success
   → smoke-test.yml post-deploy 冒烟（api.migaozn.com / ai-api.migaozn.com）
 ```
@@ -95,7 +95,65 @@ gh workflow run deploy-admin-api.yml -f image_tag=<上一个可用 tag>
 | 部署阶段**硬超时** | `deploy/scripts/swas-deploy-ci.sh`（`SWAS_DEPLOY_TIMEOUT_SECONDS`，默认 900s / 次尝试） | 超时即 `exit 1`（不再无限轮询把 run 钉在 `in_progress`）；每次 aliyun CLI 调用另有 60s 上界（`SWAS_CLI_TIMEOUT_SECONDS`） |
 | **job 级**硬超时 | 三个 deploy workflow 的 `build-and-deploy`（`timeout-minutes: 45`） | 脚本整体卡死时由 GitHub 终止 run ⇒ run 进终态 ⇒ **锁一定释放** |
 | 失败**不留坏状态** | `swas-deploy-ci.sh` | 失败**自动重试 1 次** → 仍失败**回滚到 `.last-good-tag`（上一个可用镜像）** → 回滚也不行 ⇒ `::error::` 显式告警 |
+| 严格蓝绿（**内层**兜底） | `deploy/swas/deploy.sh`（#4785） | 新容器先起 → 健康检查通过 → **才**切流量；不通过 ⇒ **旧容器一动不动**（**失败窗口 = 0**）⇒ 坏镜像**永远碰不到**旧容器（外层回滚仍保留，见下） |
 | 对账**断路器** | `deploy-reconcile.yml` | 同一 `head_sha` 的部署**已失败过** ⇒ 不再自动补部署（防止反复重试坏 commit、覆盖手工回滚）；fail-open |
+
+### 严格蓝绿（issue #4785）：新容器先起 → 健康检查通过 → 再切流量
+
+**改动前**的替换语义是 compose 的「**停旧 → 删旧 → 建新 → 起新**」（不是滚动、更不是蓝绿）——
+新镜像起不来时**旧容器已经走了**，这就是 2026-09-21 事故把 admin-api 打成 502 的那一步。
+现在 `deploy.sh` 对每个待更新服务走四步：
+
+```
+① 先起 green 探针（新容器名 + 第二端口 18080/18000/13001，**旧容器完全不动**）
+② 用与第 3 步**同一份**判据健康检查 green → 失败 ⇒ 删 green、exit 1，**旧容器一动不动**（失败窗口 = 0）
+③ 通过才 `docker compose up -d --no-deps <服务>`（替换正式容器）
+④ 正式容器健康后删 green；最后 nginx **优雅 reload**（失败回落 restart）
+```
+
+- **为什么用「第二端口」而不是 nginx upstream 切换**：`nginx.conf` 里 `proxy_pass http://admin-api:8080`
+  走 compose DNS 名，nginx 在**启动/reload 时**解析并缓存上游 IP；改 `nginx.conf` 写坏 =
+  **全站所有域名同时挂**（部署链最贵的一种事故）⇒ 本单不碰它。
+  **残留窗口（如实登记，不粉饰）**：**失败路径窗口 = 0**；**成功路径**仍有「替换正式容器 + 启动 + reload」的
+  **秒级**窗口 —— 与改动前**同量级、未变差**，且此刻镜像已被证明能起。
+- **内存前提**：green 与旧容器**并存** ⇒ 部署前预检 `MemAvailable ≥ 2048MB`（最重服务 mem_limit 1536m + 512m 余量）；
+  不足 ⇒ **中止部署**（fail-closed，旧容器不动、环境不受影响）。
+- **green 探针 `restart: "no"`**：探针崩了不许自愈复活（`unless-stopped` 会让它在 docker 重启后
+  被拉起来、占着第二端口并让下一次部署撞名字/端口）。
+- **逐服务串行** ⇒ 内存峰值只多**一个**容器（不是三个）。
+
+#### 改坏了怎么回退（**一条命令**）
+
+```bash
+# ① 最快放行口（不改代码、不必等 CI）：跳过蓝绿预验证，回到 #4767 的「失败即回滚」路径
+ssh <swas> 'touch /opt/migao-deploy/.blue-green-off'
+# ② 彻底回退（本单的代码改动）：revert 合入提交，走正常 PR 重跑部署
+git revert <本 PR 的 merge sha>
+# ③ 环境已不可用：手工回滚到上一个可用镜像 tag（同上面「卡住 / 失败时的恢复步骤」④）
+gh workflow run deploy-admin-api.yml -f image_tag=<上一个可用 tag>
+```
+
+⚠️ **放行口只跳过「预验证」，不跳过更新本身** —— 否则 `.blue-green-off` 会静默变成「本次不部署」
+（最恶劣的静默失效）。守卫 `test_exec_escape_hatch_skips_blue_green` 钉住这一点；放行后输出里会明写
+「本次新镜像**未被预验证**」。
+
+#### 上真机后怎么验证（**可执行判据**）
+
+```bash
+# ① 看 green 的「出现 → 消失」顺序（在 job summary 的远端输出里；CI 日志会被截断）
+#    期望：up -d --no-deps <svc>-green → <svc>-green OK (200) → up -d --no-deps <svc> → rm -sf <svc>-green
+# ② 红证（推一个坏镜像）：让新镜像起不来，观察 admin-api 是否**始终在服务**
+curl -s -o /dev/null -w '%{http_code}\n' https://api.migaozn.com/          # 期望：非 502（旧容器仍在服务）
+ssh <swas> 'docker ps --format "{{.Names}}\t{{.Status}}" | grep admin-api'  # 期望：旧容器未被替换
+```
+
+#### ⚠️ 通用坑：bind mount 的**单文件**必须原地改写（`mv` 会换 inode）
+
+`nginx.conf` 是以 `./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro` 的**单文件** bind mount 进容器的。
+单文件挂载绑定的是**创建时的 inode**：在宿主上用 `mv`/`cp` 覆盖会**换 inode** ⇒ 容器里读到的仍是**旧文件**
+（**且不报错** —— 静默失效）。要改就用**原地改写**（`sed -i` / `cat > 文件 <<'EOF'`），
+改完 `docker compose exec -T nginx nginx -s reload`。
+`deploy.sh` 里的 `cp src/deploy/swas/nginx.conf ./nginx/nginx.conf` 是**原地截断+写入** ⇒ 不换 inode ✓。
 
 ### 远端输出在哪看（**排查真因的第一步**）
 
