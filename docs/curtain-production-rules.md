@@ -57,6 +57,7 @@
 - 【标】一次扫码同时干两件事：**推进工序进度 + 记录个人计件**。
 - 【默】弱网降级：扫码页缓存待做清单，离线报工补传。
 - 【标】操作记录 = 报工明细（实证：`蒋雪云-定型 11.00`、`李红梅-韩褶 11.00`… 带时间戳）。
+- 【标】**报工明细去重不靠 DB 唯一约束**（边界登记，issue #4845）：`production_work_logs` **全库零 UNIQUE**（建表迁移只有两条**非唯一**索引，`backend/admin-api/src/main/resources/db/migration/V49__create_production_operations_and_work_logs.sql`；全库迁移 + `docs/sql/schema.sql` 对该表无任何唯一索引/约束）—— **这是有意的**：**分段完成**（同一工序两次合法提交之和 = 应做数量）本来就是**合法的多行**，加唯一约束会把合法写入判死。⇒ 幂等/去重**全靠应用层判据**（三道判据的落点、红证与复算命令见 `docs/design/set-code-and-scan-loop.md` §5.3.2）。
 
 ## 6. 物流（客户常用物流/快递）
 
