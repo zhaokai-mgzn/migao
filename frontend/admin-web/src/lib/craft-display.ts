@@ -123,6 +123,56 @@ interface CraftSpecField {
   format: Formatter
 }
 
+/**
+ * **用料公式**的可读文案（issue #4876 追加需求：「订单详情 / 新增订单页面同步增加表单字段」）。
+ *
+ * ⚠️ 这是**三端唯一一份**（admin-web / mini-app / bmini-app 逐字同源，由
+ * `tests/unit_ci_workflows/test_craft_display_same_source.py` 的 C1 锁死）；
+ * admin-web 下单页 chips 用的 `CRAFT_CALC_FORMULA_LABELS` **就是本表**
+ * （`lib/craft-calc-request.ts` 直接 re-export ⇒ **不存在第二份会漂移的文案**）。
+ *
+ * ⚠️ **键**与算料引擎 `curtain_calc.FORMULA_LABELS` 逐字一致（有守卫）；**文案**是展示层的富化形态
+ * （用户 2026-09-21 截图口径：「韩折公式（折数法）」），引擎那份是短名（「韩折公式」）—— 两者**键同文案不同**，有意的。
+ */
+export const FORMULA_LABELS: Record<string, string> = {
+  pleat: '韩折公式（折数法）',
+  fullness: '褶倍数公式（倍数法）',
+}
+
+/**
+ * **算料档位**（`craftTier`）的展示**兜底**文案。
+ *
+ * ⚠️ **权威 = 「工艺配置 → 算料配置」的 `tiers[key].label`**（租户可增删/改名，例如把
+ * 「标准工艺」改成「标准档」）；而**订单只存键、不存当时的 label** ⇒ 本表是**兜底**：
+ * 键已登记时给一个可读名，**未登记一律如实回显原键**（不编、不吞）。
+ * ⇒ 与配置文案不同字是**允许**的（本表不冒充权威）；**键集**必须与引擎
+ * `DEFAULT_CRAFT_TIERS` 一致（守卫 = `craft-calc-defaults.test.ts` 逐值读 `curtain_calc.py`）。
+ */
+export const TIER_LABELS: Record<string, string> = {
+  standard: '标准工艺',
+  economy: '经济工艺',
+}
+
+/**
+ * 用料公式：登记键 → 可读文案；未登记 ⇒ **如实回显原值**。
+ *
+ * ⚠️ 与 `cuttingMode` 的 fail-closed **刻意不同**：那里的未知值是**引擎内部代号**
+ * （`fixed_height_pleats`），漏给顾客是事故；这里的值是**商家自己配的键**
+ * （档位可增删），回显原键至少可核对，静默吞掉反而让人以为"没设过"。
+ */
+function formula(value: unknown): string | null {
+  const text = plainText(value)
+  if (text === null) return null
+  return FORMULA_LABELS[text] ?? text
+}
+
+/** 算料档位：与 {@link formula} 同口径（登记键 → 兜底可读名；未登记 ⇒ 如实回显原键） */
+function craftTier(value: unknown): string | null {
+  const text = plainText(value)
+  if (text === null) return null
+  return TIER_LABELS[text] ?? text
+}
+
 /** §4.9「各面应展示的字段」表 —— 顺序即渲染顺序 */
 const CRAFT_SPEC_FIELDS: CraftSpecField[] = [
   { label: '部位', keys: ['curtainType', 'curtain_type'], format: plainText },
@@ -132,6 +182,11 @@ const CRAFT_SPEC_FIELDS: CraftSpecField[] = [
   { label: '打开方式', keys: ['openCount', 'open_count'], format: openCount },
   { label: '是否定型', keys: ['isShaped', 'is_shaped'], format: yesNo },
   { label: '款式', keys: ['style'], format: plainText },
+  // 用料公式 / 算料档位（issue #4876 追加需求）：**与下单页表单字段同键同源** ——
+  // 下单页那两个控件写的就是 `processingInfo.formula` / `craftTier`，这里按同一份 keys 读回，
+  // 于是订单详情 / 加工单块 / 任务卡 / C 端报价卡**四处同步显示**（§4.9「一份 spec，三处渲染」）。
+  { label: '用料公式', keys: ['formula'], format: formula },
+  { label: '档位', keys: ['craftTier', 'craft_tier'], format: craftTier },
   { label: '特殊选项', keys: ['specialOptions', 'special_options'], format: optionList },
   { label: '总褶数', keys: ['pleatCount', 'pleat_count'], format: plainText },
   { label: '折数（每片）', keys: ['perPanelPleats', 'per_panel_pleats'], format: plainText },

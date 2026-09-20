@@ -55,11 +55,13 @@ export const CRAFT_CALC_FORMULAS = [
  *
  * ⚠️ 键 = {@link CRAFT_CALC_FORMULAS}（值域与算料引擎 `curtain_calc.FORMULA_LABELS` 同源，
  * 由 `craft-calc-formula-sync.test.ts` 逐值守）；本映射**只做展示**，不引入新取值。
+ *
+ * ⚠️ **issue #4876 起：它就是 `lib/craft-display.ts` 的 {@link FORMULA_LABELS}**（**直接 re-export**）。
+ * 理由：订单详情/加工单/任务卡/C 端报价卡的**展示行**也要显示用料公式，而 `craft-display.ts`
+ * 是**三端逐字同源**的那一份 —— 若这里再留一份字面量，同一个字段就有了**两份会漂移的文案**
+ * （本仓反复复发的形态）。⇒ 单一定义在 `craft-display.ts`，本处只做别名导出（消费方无需改 import）。
  */
-export const CRAFT_CALC_FORMULA_LABELS: Record<string, string> = {
-  [CRAFT_CALC_FORMULA_PLEAT]: '韩折公式（折数法）',
-  [CRAFT_CALC_FORMULA_FULLNESS]: '褶倍数公式（倍数法）',
-}
+export { FORMULA_LABELS as CRAFT_CALC_FORMULA_LABELS } from './craft-display'
 
 
 /**

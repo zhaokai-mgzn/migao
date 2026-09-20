@@ -673,6 +673,20 @@ cases:
       - "我要退上次买的那单，订单号 EVAL-ORD-0002"
       - "质量问题"
       - "确认申请"
+    # issue #4877（**case-trust burn-down 缴费**：本 PR 动了用例库 ⇒ 预算要求净消减 1 条存量条目）：
+    # ① 前置自断言（`CASE-TRUST-NO-PRECONDITION-ASSERTION`）：本用例点名 fixture 订单
+    #    `EVAL-ORD-0002`（已发货、可退）⇒ 真前置 = **该手机号名下确实有订单**（订单不在时
+    #    失败长相是「售后能力不行」，归因全错）。计数口径只给下界、**刻意不给精确 `expect`**
+    #    （精确值会被同跑的下单用例漂移 ⇒ 恒红，CH-034 登记的反模式）。
+    # ② 自清理声明（`CASE-TRUST-NO-SELF-CLEAN`）：本用例创建的是**服务端生成单号**的售后单
+    #    ⇒ 无法按不可变键做 `pre_clean`（规则 b2 会判「靶子解析不到」，AS-004 那种点名工单的
+    #    形态在这里不成立），故按**弱形式**声明 `namespaces`：既给并行互斥，又把依赖的
+    #    不可变键（订单号）显式化。
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
+    namespaces:
+      - "customer_phone:13800138000"
     expectations:
       - tool: customer_order_query
       - tool: interact

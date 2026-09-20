@@ -42,11 +42,20 @@ COPIES: tuple[str, ...] = (
 AUTO_FEATURES_MODULE = "frontend/admin-web/src/lib/craft-auto-features.ts"
 
 #: 专属模块**必须**导出的核心符号（**非空锚点**：防止模块被清空后 C2 空跑通过）
+#: ⚠️ 2026-09-21（issue #4877 门幅落地）**同步改名**：门幅**缺省口径已删除** ——
+#: `resolveDoorWidth` / `DEFAULT_DOOR_WIDTH` 退场，唯一解析入口改为 `parseDoorWidth`
+#: （解析不到 ⇒ `None` ⇒ 判定面**不判**、规则面 `undecidable`；反向守卫在
+#: `tests/unit_ci_workflows/test_fabric_width_truth_source.py` 判据 3 与
+#: `frontend/admin-web/tests/unit/lib/craft-auto-features.test.ts`）。
+#: 锚点只换名、不缩水：仍覆盖「识别推导 + 门幅解析 + 两个方向余量常量 + 加工类型常量」。
 CORE_EXPORTS: tuple[str, ...] = (
     "detectAutoFeatures",
-    "resolveDoorWidth",
+    "detectAutoFeatureNotices",
+    "parseDoorWidth",
+    "SIDE_MARGIN",
     "HEM_MARGIN",
-    "DEFAULT_DOOR_WIDTH",
+    "CUTTING_MODE_FIXED_HEIGHT",
+    "CUTTING_MODE_FIXED_WIDTH",
 )
 
 #: 从专属模块源码里**动态**取导出符号名 —— **刻意不硬编码名单**（issue #4531 加固）：
