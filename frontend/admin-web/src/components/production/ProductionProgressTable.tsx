@@ -14,12 +14,17 @@ import type { ProductionPosition } from '@/types'
  *
  * 按**套**（一樘窗 = 一套，issue #4686 用户裁定 2026-09-20）分组展示加工单的工序实例：工序名 /
  * 分组 / 应做数量+单位 / 单价 / 状态 / 已完成数量 / 报工人。组头按行业口径标 **第 N 套 / 共 M 套**
- * （真值源 `docs/curtain-production-rules.md` 的「**第 N 套/共 M 套**」口径 —— 按该文本检索，不写行号）：
- * 读面已按 `order_item_id`
- * （= 一樘窗）分组返回**有序**列表（`ProductionService.buildPositions`）⇒ N = 该组在列表中的序号、
- * M = 列表长度，前端不另起一套口径。
- * ⚠️ 这里的分组**不是「部位」**（部位 = 布帘/纱帘/帘头，读面键 = `position_kind`）；`position_name`
- * 是**展示名**（加工产物名[+色号]），降为副标题 —— 它回答的是「这一套是哪一樘窗」。
+ * （真值源 `docs/curtain-production-rules.md` 的「**第 N 套/共 M 套**」口径 —— 按该文本检索，不写行号）。
+ *
+ * ⚠️ **套键取自读面追加的 `set_no` 键**（issue #4784）：读面 `ProductionService.buildPositions`
+ * 返回的列表仍按 `order_item_id` = **部位**分组（#4388 冻结契约 —— 它**不是**套），
+ * 它**追加**的 `set_no` 才是套键（= 计件报表 `per_set` 的**同一份口径**：V92 套号优先、
+ * 无号回落樘窗组键 `craftLineId ?? itemId`）⇒ N = 该套在分组序列中的序号、M = 套数。
+ * 🔴 改前本表**把每个部位块当一个「套」**（只数列表长度）⇒ 一樘「布 + 纱 + 帘头」显示 **3 套**，
+ * 而同一张单的计件报表说 **1 套**（同一系统两个答案，且没有任何东西会因此变红）。
+ * 缺 `set_no`（老数据 / 读面未升级）⇒ 退回「每个部位自成一套」（= 改前行为，不猜）。
+ * ⚠️ 套分组**不是「部位」**（部位 = 布帘/纱帘/帘头，读面键 = `position_kind`）；`position_name`
+ * 是**展示名**（加工产物名[+色号]），降为部位块副标题 —— 它回答的是「这一块是哪一件帘」。
  * 必完工序（is_must_finish，「此工序必须完成才可打包」）加「必完」badge —— 商家据此看进度、
  * 工人据此知道哪道不能漏（真值源：docs/curtain-production-rules.md §2 工序库）。
  * 应做数量由算料引擎给出、报工只确认（§3），故此处只读展示、不做手工计算。
@@ -44,12 +49,44 @@ function statusChip(status?: string | null): { label: string; tone: 'success' | 
   return status === 'done' ? { label: '已完成', tone: 'success' } : { label: '待做', tone: 'neutral' }
 }
 
-export default function ProductionProgressTable({ positions, className }: ProductionProgressTableProps) {
-  // 套口径（issue #4686）：读面按 `order_item_id`（一樘窗 = 一套）分组返回**有序**列表
-  // ⇒ 套号 / 套数直接由该列表派生（N = 序号、M = 列表长度），不在前端另数一遍。
-  const sets = positions ?? []
+/** 一个部位块 + 它所属的**套**（套头只在每套的第一个部位块上渲染一次）。 */
+interface SetPosition {
+  position: ProductionPosition
+  /** 套序号（0 起；渲染时 +1） */
+  setIndex: number
+  /** 套数 = 不同套键的个数 */
+  setCount: number
+  /** 是否该套的第一个部位块（⇒ 由它渲染套头，避免同一套重复三遍） */
+  firstOfSet: boolean
+}
 
-  if (sets.every((s) => (s.operations ?? []).length === 0)) {
+/**
+ * 按**套键**（读面 `set_no`）把部位列表分组（issue #4784）。
+ *
+ * 口径 = 与计件报表 `per_set` **同一份**（后端 `ProductionService.setKey`，**不新造第二份**）。
+ * 缺 `set_no`（老数据 / 读面未升级）⇒ 该部位**自成一套**（= 改前行为，逐字不变，不猜）。
+ */
+function groupBySet(positions: ProductionPosition[]): SetPosition[] {
+  const keys = positions.map((p, i) => p.set_no ?? `\u0000position-${i}`)
+  const setOrder: string[] = []
+  keys.forEach((key) => {
+    if (!setOrder.includes(key)) setOrder.push(key)
+  })
+  return positions.map((position, i) => ({
+    position,
+    setIndex: setOrder.indexOf(keys[i]),
+    setCount: setOrder.length,
+    firstOfSet: keys.indexOf(keys[i]) === i,
+  }))
+}
+
+export default function ProductionProgressTable({ positions, className }: ProductionProgressTableProps) {
+  // 套口径（issue #4784）：按读面的 `set_no`（樘窗组键）分组 —— **不再**按部位块个数当套数
+  // （那正是「一樘布+纱+帘头 = 3 套」的口径分裂来源）。
+  // 无工序的部位块先滤掉：否则「该套的第一个块恰好是空块」时套头会连块一起消失。
+  const blocks = groupBySet((positions ?? []).filter((p) => (p.operations ?? []).length > 0))
+
+  if (blocks.length === 0) {
     return (
       <div className={className} data-testid="production-progress-empty">
         <p className="py-8 text-center text-sm text-neutral-400">暂无工序数据</p>
@@ -60,17 +97,20 @@ export default function ProductionProgressTable({ positions, className }: Produc
   return (
     <div className={className}>
       <div className="space-y-6">
-        {sets.map((set, setIndex) => {
-          const operations = set.operations ?? []
-          if (operations.length === 0) return null
-          const name = set.position_name || ''
+        {blocks.map(({ position, setIndex, setCount, firstOfSet }, blockIndex) => {
+          const operations = position.operations ?? []
+          const name = position.position_name || ''
           return (
-            <div key={`${name}-${setIndex}`} data-testid={`position-group-${name}`}>
+            <div key={`${name}-${blockIndex}`} data-testid={`position-group-${name}`}>
               <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <span className="text-sm font-medium text-neutral-900">
-                  第 {setIndex + 1} 套 / 共 {sets.length} 套
-                </span>
-                {/* 副标题 = 这一套是**哪一樘窗**（加工产物名[+色号]）；它不是「部位」 */}
+                {/* 套头**每套只渲染一次**（issue #4784）：同一套的每个部位块都重复一遍，
+                    会被读成「三套都叫第 1 套」 */}
+                {firstOfSet && (
+                  <span className="text-sm font-medium text-neutral-900">
+                    第 {setIndex + 1} 套 / 共 {setCount} 套
+                  </span>
+                )}
+                {/* 副标题 = 这一块是**哪一件帘**（加工产物名[+色号]）；它不是「部位」 */}
                 {name && <span className="text-xs text-neutral-500">{name}</span>}
                 <span className="text-xs text-neutral-400">{operations.length} 道工序</span>
               </div>

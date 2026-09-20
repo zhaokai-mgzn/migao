@@ -375,7 +375,10 @@ public class ProductionService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order_id", order.getId());
         result.put("qr_token", po == null ? null : po.getQrToken());
-        result.put("positions", buildPositions(operations, workers, orderSpecByItemId(order, tenantId)));
+        // 樘窗组键（issue #4784）：**复用 #4725 的既有实现**（`windowGroupKeyByItemId` + `setKey`）
+        // —— 套维口径只有一份；本参数只用于给每个部位**追加** `set_no`（不改分组）。
+        result.put("positions", buildPositions(operations, workers, orderSpecByItemId(order, tenantId),
+                windowGroupKeyByItemId(order, tenantId)));
         result.put("progress", progressOf(operations));
         // 操作记录（issue #4347 §3.2）：**服务端**报工流水，不是本机缓存。
         // 工人端原来只显示本机 storage 里的报工（换设备就没了，也看不到别人做的工序）；
@@ -1505,10 +1508,19 @@ public class ProductionService {
      *
      * <p>⚠️ <b>存量单兼容</b>：V69 之前生成的实例行没有 {@code order_item_id}
      * ⇒ 回落 {@code position_name} 分组 ⇒ **读面行为逐字不变**（不猜、不编值）。</p>
+     *
+     * <p>🔴 <b>只加不改（issue #4784）</b>：本方法**追加**一个 {@code set_no} 键 = **樘窗（套）键**
+     * —— 取值 = {@link #setKey}（#4725 的**同一份**实现：V92 套号优先、无号回落樘窗组键
+     * {@code craftLineId ?? itemId}）。理由：分组契约仍是 {@code order_item_id}（= **部位**级，
+     * #4388 冻结，其它消费面在用），但**前端进度表**要按「一樘窗 = 一套」渲染「第 N 套 / 共 M 套」
+     * —— 缺这个键它只能按**部位数**算套数 ⇒ 一樘「布 + 纱 + 帘头」显示 **3 套**，
+     * 而计件报表 {@code per_set} 说 **1 套**（同一张单两个答案，且没有任何东西会变红）。
+     * ⚠️ 分组、既有键名/含义/顺序**一字不动**；前端按「缺键 ⇒ 每个部位自成一套」退回。</p>
      */
     private List<Map<String, Object>> buildPositions(List<ProcessingPositionOperation> operations,
                                                      Map<String, List<String>> workersByOperation,
-                                                     Map<String, Map<String, Object>> specByItemId) {
+                                                     Map<String, Map<String, Object>> specByItemId,
+                                                     Map<String, String> windowGroupKeyByItemId) {
         Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
         Map<String, ProcessingPositionOperation> headByKey = new LinkedHashMap<>();
         Set<String> seen = new HashSet<>();
@@ -1529,6 +1541,10 @@ public class ProductionService {
             // 行标识（issue #4388）：前端据此区分**同名**部位；存量行如实 null（不编值）
             position.put("order_item_id", head.getOrderItemId());
             position.put("position_kind", head.getPositionKind());
+            // 樘窗（套）键（issue #4784，**只加不改**）：与计件报表 `per_set` 的 `set_no` **同一份口径**
+            // —— 逐字复用 #4725 的 `setKey`（套号优先、无号回落樘窗组键 `craftLineId ?? itemId`），
+            // **不新造第二份套键口径**。分组契约（`order_item_id`）与既有键一字不动。
+            position.put("set_no", setKey(head, windowGroupKeyByItemId));
             // 规格可见面（issue #4459 §3.1）：工人要能核对自己做的是哪一件 —— 宽高/工艺/加工类型/
             // 褶倍/部位定型/用料。**逐字取订单行**（缺键就缺，不补默认值）；订单行已不在（脏数据）
             // ⇒ 一个键都不加，前端按缺键渲染（不冒充已知）。
