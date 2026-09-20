@@ -807,8 +807,11 @@ export default function ProcessConfigPage() {
   const [variantDraft, setVariantDraft] = useState({ group_name: '', unit: '' })
   const [variantBusy, setVariantBusy] = useState(false)
   /**
-   * 逐行写面（分组 / 单位 / 作用域 / 必完）被拒的**逐条**理由。
-   * ⚠️ issue #4947 起它**只**由 `submitVariant` 写入（逐行那一套删除弹框已随去重退场）。
+   * 逐行写面（分组 / 单位 / 作用域 / 必完）被拒的**逐条**理由 —— 渲染在抽屉顶部
+   * （`data-testid="variant-reasons"`）。
+   * ⚠️ issue #4947：改前它**唯一**的渲染点在逐行那一套删除弹框里（弹框不打开就看不见 = 静默）；
+   * 那套弹框随去重退场后，这里成为它唯一的渲染点（写面失败**不得静默**）。
+   * 与 footer 写面的 `opLevelReasons` **分开**：两处触发源不同。
    */
   const [variantReasons, setVariantReasons] = useState<{ id: string; items: string[] } | null>(null)
   /**
@@ -3286,6 +3289,17 @@ export default function ProcessConfigPage() {
           {opLevelReasons && (
             <ul className="space-y-0.5 text-xs text-red-600" data-testid="operations-manage-op-reasons">
               {opLevelReasons.map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
+          )}
+          {/* **逐行**写面（分组 / 单位 / 作用域 / 必完）被拒：同样**逐条**就地展示（写面失败不得静默）。
+              ⚠️ 与上面那条**分开**渲染 —— 触发源不同（这里是 `submitVariant`，上面是 footer 的停用 / 删除），
+              合成一条会让商家误判「是谁失败了」。#4947 把逐行那一套删除弹框去重退场后，
+              这里（`variant-reasons`）就是这份理由**唯一**的渲染点。 */}
+          {variantReasons && (
+            <ul className="space-y-0.5 text-xs text-red-600" data-testid="variant-reasons">
+              {variantReasons.items.map((r, i) => (
                 <li key={i}>{r}</li>
               ))}
             </ul>

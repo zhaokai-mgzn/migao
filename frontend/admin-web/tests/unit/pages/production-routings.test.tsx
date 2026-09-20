@@ -245,6 +245,10 @@
 //      （`manageTargetOp` = 第一个非 `foreign` 变体对应的库行；查不到才回落 `manageOpEntry.op`）
 //      寻址 —— 改前按**逻辑名的首行**（`fallbackOpByName`）寻址，同名多行（`布三边` / `纱三边`）
 //      时会「看见 A、动的是 B」；判据见 #4947-②（读面指 `op-b` ⇒ 必须动 `op-b`、不得动首行 `op-a`）；
+//    - **写面失败不得静默（本单收口）**：改前 `variantReasons`（逐行写面被拒的理由）**唯一**的渲染点
+//      就在那套被删的弹框里 ⇒ 删除会让它变成**只写不读**。现在它在抽屉顶部有一个渲染点
+//      `variant-reasons`（与 footer 写面的 `operations-manage-op-reasons` **分开**：两处触发源不同），
+//      判据 = **#4947-③**（`PUT /operations/{id}` 被拒 ⇒ 理由逐条上屏，且不得渲染成 footer 那条）；
 //    - **用例迁移（不留指向已删 testid 的死判据）**：驱动逐行路径的用例全部改走 footer
 //      （⑰-⑩ / ㉖-④ / ⑰-⑬ / ⑰-⑮ / ⑲-⑤ / #4665-C ×2）；**删除**三条与 footer 用例逐字重复的：
 //      ⑰-⑭（⇒ ㉙-③ 同场景：detach 删除 + 刷新）、#4665-B（⇒ ㉙-③ + #4692-A：一次请求 + 弹框说清后果）、
@@ -1725,6 +1729,27 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
       expect(mockDeleteOperation).toHaveBeenCalledWith('op-b', { detachPositions: true }),
     )
     expect(mockDeleteOperation).not.toHaveBeenCalledWith('op-a', expect.anything())
+  })
+
+  it('#4947-③ 逐行写面（分组 / 单位）被拒 ⇒ 理由**逐条**在抽屉里上屏（`variant-reasons`），且**不是** footer 那条 `operations-manage-op-reasons`', async () => {
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(LOGICAL_CATALOG))
+    mockUpdateOperation
+      .mockReset()
+      .mockRejectedValueOnce(guardError(['分组名称最长 8 个字', '单位必须是 米/套/件/个/折 之一']))
+    await openManage('精裁')
+
+    await userEvent.click(screen.getByTestId('variant-meta-edit-op-精裁-布'))
+    const groupInput = screen.getByTestId('variant-group-input-op-精裁-布')
+    await userEvent.clear(groupInput)
+    await userEvent.type(groupInput, '后道后道后道')
+    await userEvent.click(screen.getByTestId('variant-meta-save-op-精裁-布'))
+
+    // 写面失败**不得静默**（红证：改前逐行那一套弹框退场后，这份状态**没有渲染点**）
+    const reasons = await screen.findByTestId('variant-reasons')
+    expect(reasons).toHaveTextContent('分组名称最长 8 个字')
+    expect(reasons).toHaveTextContent('单位必须是')
+    // 两处触发源**不同**（逐行写面 vs footer 的停用/删除）⇒ 不得合成同一条理由条（错位会让商家误判是谁失败）
+    expect(screen.queryByTestId('operations-manage-op-reasons')).toBeNull()
   })
 
   // ══════════ ㉚ 删除死路（**第 3 次**）：前后端判据必须**同一把尺（按名字）**（issue #4692） ══════════
