@@ -685,19 +685,70 @@ def test_template_drift_is_detected(template_json):
 
 
 def test_every_seed_source_contributes_to_the_aggregate(seed_sqls):
-    """多源自证：**每个**种子源的工序都被聚合读到（含 V56 的 5 道新工序）。
+    """多源自证：**每个**种子源的工序都被聚合读到（含 V56 的 5 道新工序 / V89 的按租户回填）。
 
     反例（本测试要挡的形态）：聚合退化成只读 V54 ⇒ V56 从未被行使 ⇒ #4230 的新工序
     既不在守卫射程内、又不会被任何断言照出来。
+
+    ⚠️ **两种源形态分流**（issue #4685；与 `values_sources_for` 对 P2/V72 的分流同口径）：
+    · **字面量源**（语句里有 `VALUES`）⇒ 必须 `parse_seed` 出行（原判据**不变**）；
+    · **派生回填源**（`INSERT INTO production_operations … SELECT … FROM tenants`，无 `VALUES`）
+      —— 行不在字面量里，它的贡献在「**按租户循环 + 幂等去重**」这个**形态**里 ⇒ 判据落在形态上。
+      不给这条分流，会把合规的派生迁移判「未解析到任何工序行」（**假红**）—— 而假红比没有守卫更糟
+      （会被人直接关掉，本文件自己的口径）。判据**不是放宽**：派生源多背两条形态断言，而
+      `catalog_rows`（三源收敛的比对射程）本来就 `parse_seed` 不出派生源的行、不受影响。
     """
     per_source = {name: {key_of(r) for r in parse_seed(sql, "production_operations", OP_COLUMNS)}
                   for name, sql in seed_sqls}
     for name, names in per_source.items():
-        assert names, f"{name} 未解析到任何工序行（该源等于没被读）"
+        if names:
+            continue                      # 字面量源：原判据（必须解析出行）
+        stmt = re.search(r"INSERT\s+INTO\s+production_operations\b[\s\S]*?;",
+                         dict(seed_sqls)[name], re.I)
+        assert stmt, (
+            f"{name} 既没解析到任何工序行（无 `VALUES`）、又找不到工序 INSERT 语句 ⇒ 该源等于没被读")
+        violations = derived_operation_source_violations(stmt.group(0))
+        assert violations == [], f"{name} 的派生回填形态违规：{violations}"
     assert len(per_source) >= 2, "工序库种子只剩一个源（#4230 的多源口径失效）"
     assert {"绑带-纱", "logo条-布", "立边-布", "扣环-布", "防翘扣-布"} <= \
         per_source["V56__seed_special_option_operations.sql"], (
         "#4230 的 5 道新工序必须由 V56 贡献（少一个 ⇒ 实例化取不到工序 ⇒ fail-closed）")
+
+
+def derived_operation_source_violations(stmt: str) -> list:
+    """**派生回填源**（`INSERT INTO production_operations … SELECT … FROM tenants`，无 `VALUES`）
+    的形态违规清单 —— 空 = 合规。
+
+    为什么判「形态」而不是「行」：派生源的行由**运行时**的 `tenants` 表决定，静态文本里没有行
+    （`parse_seed` 只吃 `VALUES`）。它的贡献全在「按租户循环 + 幂等去重」这个形态里
+    ⇒ 判据只能落在形态上（issue #4685）。纯函数 ⇒ 注入式自证见
+    `test_derived_operation_source_guard_is_load_bearing`。
+    """
+    out = []
+    if not re.search(r"\bFROM\s+tenants\b", stmt, re.I):
+        out.append("没有按租户循环（缺 `FROM tenants`）⇒ 存量租户拿不到工序 ⇒ 全量建单 422")
+    if not re.search(r"\bNOT\s+EXISTS\b", stmt, re.I):
+        out.append("没有按业务唯一键 `NOT EXISTS` 去重 ⇒ 不幂等（`MigrationRunner` 要求可重复执行）")
+    return out
+
+
+def test_derived_operation_source_guard_is_load_bearing():
+    """自证（issue #4685）：派生回填源的**形态**判据真会红（两向各一例）—— 不是空断言。"""
+    good = ("INSERT INTO production_operations (id, tenant_id, name)\n"
+            "SELECT 'op-x-' || t.id, t.id, '打包'\n"
+            "  FROM tenants t\n"
+            " WHERE t.deleted = 0\n"
+            "   AND NOT EXISTS (SELECT 1 FROM production_operations e WHERE e.tenant_id = t.id)\n"
+            "ON CONFLICT (id) DO NOTHING")
+    assert derived_operation_source_violations(good) == [], "合规形态读不出来 ⇒ 判据是空跑"
+    without_loop = good.replace("FROM tenants t", "FROM (SELECT 1 AS id) t")
+    assert without_loop != good, "注入未生效（`FROM tenants` 没命中）"
+    assert derived_operation_source_violations(without_loop) == [
+        "没有按租户循环（缺 `FROM tenants`）⇒ 存量租户拿不到工序 ⇒ 全量建单 422"]
+    without_guard = good.replace("NOT EXISTS", "TRUE OR EXISTS")
+    assert without_guard != good, "注入未生效（`NOT EXISTS` 没命中）"
+    assert derived_operation_source_violations(without_guard) == [
+        "没有按业务唯一键 `NOT EXISTS` 去重 ⇒ 不幂等（`MigrationRunner` 要求可重复执行）"]
 
 
 def test_every_routing_source_contributes_to_the_aggregate(routing_sqls):
