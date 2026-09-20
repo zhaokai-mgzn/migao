@@ -64,6 +64,53 @@ push main / push tag v*（路径过滤）→ CI 测试/构建镜像推 ACR（tag
 
 生产发布：`deploy-prod.yml`（Environment 审批 + 指定版本），详见 [production-deployment.md](../deployment/production-deployment.md)。回滚见 [rollback.md](../deployment/rollback.md)。
 
+## 部署故障恢复手册（2026-09-21 云测试环境事故复盘后固化，issue #4767）
+
+### 并发锁的行为（**"main 前进却无新部署"的真因**）
+
+三个部署 job 各有一个 concurrency 组（`deploy-admin-api` / `deploy-frontend` / `deploy-ai-agent-service`，
+`cancel-in-progress: false`）。**锁由 run 的终态（success / failure / cancelled）释放** ——
+run 卡在 `in_progress` 时会**一直占着它**，后续 main 的部署**全被挡住**。
+2026-09-21 实测：两条腿在 `ca724257e` 失败后挂住 `in_progress` 20+ 分钟（`updated` 冻在同一分钟），
+之后 push 不再产生任何部署 —— 而**没有任何检查会因此变红**。
+
+### 卡住 / 失败时的恢复步骤
+
+```bash
+# ① 找卡住的 run
+gh run list --workflow=deploy-admin-api.yml --limit 5
+# ② 清掉并发锁（不必等它自己结束）
+gh run cancel <run-id>
+# ③ 同 SHA 重跑，恢复推进
+gh run rerun <run-id> --failed
+# ④ 环境已不可用时，手工回滚到上一个可用镜像 tag
+gh workflow run deploy-admin-api.yml -f image_tag=<上一个可用 tag>
+```
+
+### 自动化的四条兜底（#4767 落地）
+
+| 机制 | 位置 | 行为 |
+|---|---|---|
+| 部署阶段**硬超时** | `deploy/scripts/swas-deploy-ci.sh`（`SWAS_DEPLOY_TIMEOUT_SECONDS`，默认 900s / 次尝试） | 超时即 `exit 1`（不再无限轮询把 run 钉在 `in_progress`）；每次 aliyun CLI 调用另有 60s 上界（`SWAS_CLI_TIMEOUT_SECONDS`） |
+| **job 级**硬超时 | 三个 deploy workflow 的 `build-and-deploy`（`timeout-minutes: 45`） | 脚本整体卡死时由 GitHub 终止 run ⇒ run 进终态 ⇒ **锁一定释放** |
+| 失败**不留坏状态** | `swas-deploy-ci.sh` | 失败**自动重试 1 次** → 仍失败**回滚到 `.last-good-tag`（上一个可用镜像）** → 回滚也不行 ⇒ `::error::` 显式告警 |
+| 对账**断路器** | `deploy-reconcile.yml` | 同一 `head_sha` 的部署**已失败过** ⇒ 不再自动补部署（防止反复重试坏 commit、覆盖手工回滚）；fail-open |
+
+### 远端输出在哪看（**排查真因的第一步**）
+
+`deploy.sh` 的输出在 SWAS API 里是 **base64**（`InvocationResult.Output`）。
+workflow 现在**解码后**打印，并把**完整**输出写进该 job 的 **Summary**（CI 日志会被截断，summary 不会）。
+⇒ **排查先看 job summary**，不要对着 base64 猜（事故里就是这么耗掉大量时间的）。
+
+### 远端 `flock` 与"超时强杀"的关系
+
+远端 `deploy/swas/deploy.sh` 用 `/tmp/migao-deploy.lock` + `flock` 串行化并发部署，
+并有 `trap 'flock -u 9' EXIT`。**`flock(2)` 的锁挂在「打开文件描述」上**：进程以**任何方式**终止
+（含 `SIGKILL`）时内核都会关闭 fd 并释放锁 ⇒ **不会留下陈旧锁**（trap 只是显式解锁的锦上添花）。
+⚠️ 但要注意：**CI 侧的硬超时不会终止远端进程** —— `RunCommand --timeout 3600` 仍在跑，
+锁仍被它持有（下一个部署最多等 600s 后失败退出）。这就是**超时路径不做自动回滚**的原因
+（此刻回滚只会与它抢锁）；超时走"显式告警 + 本手册"。
+
 ## 验收流水线
 
 ```
