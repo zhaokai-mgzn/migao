@@ -340,7 +340,9 @@ class ProcessingFeeCalculatorTest {
         assertThat(fee.amount()).isEqualByComparingTo("98.40");
         assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("8.50");
         assertThat(fee.lineAmount()).isEqualByComparingTo("106.90");
-        // 逐项可核对（每项 = 单价 × 套数，套数恒 1 —— R8「1 套 = 1 个订单行」）
+        // 逐项可核对（每项 = 单价 × 计费套数；本行自成樘窗 ⇒ 套数 1 —— R8 改判 #4725：
+        // 「1 套 = 1 樘窗（craftLineId 组）」；同樘窗其它行的同名选项 sets=0，见
+        // sameOptionInOneWindowIsChargedOncePerWindow）
         assertThat(fee.specialOptions()).hasSize(2);
         for (ProcessingFeeCalculator.SpecialOption option : fee.specialOptions()) {
             assertThat(option.sets()).isEqualTo(1);
@@ -360,10 +362,64 @@ class ProcessingFeeCalculatorTest {
         assertThat(rows.get(0).get("amount")).isEqualTo(new BigDecimal("6.00"));
     }
 
+    // ══════════════════ #4725（用户裁定「一樘窗 = 一套」）：套数按**樘窗组**计 ══════════════════
+
+    @Test
+    @DisplayName("#4725 一樘窗 = 一套：同樘窗（craftLineId）两行都选「加铅块」⇒ 该樘窗**只收一次**（旧口径 = 两次）")
+    void sameOptionInOneWindowIsChargedOncePerWindow() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+        givenOptionRules(optionRule("加铅块", "6.00"));
+
+        // 一樘窗的两条部位行（布帘 + 纱帘），同 `craftLineId` ⇒ **同一套**
+        Map<String, Object> cloth = processingInfo(new BigDecimal("12.30"), "韩褶", "打孔", "定型");
+        cloth.put("craftLineId", "win-1");
+        cloth.put("specialOptions", List.of("加铅块"));
+        Map<String, Object> sheer = processingInfo(null, "打孔");
+        sheer.put("craftLineId", "win-1");
+        sheer.put("specialOptions", List.of("加铅块"));
+
+        List<ProcessingFeeCalculator.Fee> fees = calculator.feesFor(List.of(cloth, sheer), TENANT);
+
+        // 一樘窗 = 一套 ⇒ 该樘窗的「加铅块」（¥6.00/套）只收 ¥6.00 一次
+        assertThat(fees.get(0).specialOptionsTotal()).isEqualByComparingTo("6.00");
+        assertThat(fees.get(1).specialOptionsTotal())
+                .as("旧口径（每行各按 1 套收）⇒ 6.00 ⇒ 必红").isEqualByComparingTo("0");
+        // **不静默**：第二行照旧列出该选项（名称 / 单价 / 定价态可见），只是本行计费套数 = 0
+        assertThat(fees.get(1).specialOptions()).singleElement().satisfies(option -> {
+            assertThat(option.name()).isEqualTo("加铅块");
+            assertThat(option.sets()).isZero();
+            assertThat(option.amount()).isEqualByComparingTo("0");
+            assertThat(option.priced()).isTrue();
+            assertThat(option.unitPrice()).isEqualByComparingTo("6.00");
+        });
+        // 套身份可审计：两行同属一樘窗 ⇒ **同一个** `set_key`
+        assertThat(fees.get(0).detail()).containsEntry("set_key", "win-1");
+        assertThat(fees.get(1).detail()).containsEntry("set_key", "win-1");
+    }
+
+    @Test
+    @DisplayName("#4725 反向护栏：无 craftLineId 的两行 ⇒ 各自成樘窗 ⇒ 各收一次（与改前逐分相同）")
+    void linesWithoutCraftLineIdAreTheirOwnWindows() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+        givenOptionRules(optionRule("加铅块", "6.00"));
+
+        Map<String, Object> first = processingInfo(new BigDecimal("12.30"), "韩褶", "打孔", "定型");
+        first.put("specialOptions", List.of("加铅块"));
+        Map<String, Object> second = processingInfo(new BigDecimal("1.00"), "韩褶", "打孔", "定型");
+        second.put("specialOptions", List.of("加铅块"));
+
+        List<ProcessingFeeCalculator.Fee> fees = calculator.feesFor(List.of(first, second), TENANT);
+
+        // 8.00×12.30 + 6.00 = 104.40；8.00×1.00 + 6.00 = 14.00（两樘窗各一套，逐值 = 改前）
+        assertThat(fees.get(0).specialOptionsTotal()).isEqualByComparingTo("6.00");
+        assertThat(fees.get(1).specialOptionsTotal()).isEqualByComparingTo("6.00");
+        assertThat(fees.get(0).lineAmount()).isEqualByComparingTo("104.40");
+        assertThat(fees.get(1).lineAmount()).isEqualByComparingTo("14.00");
+    }
+
     @Test
     @DisplayName("判据 1·选项名按 **全名 Unicode 码点升序**（与书写顺序无关，两次生成逐值相同）")
-    void specialOptionsAreSortedByCodePoint() {
-        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+    void specialOptionsAreSortedByCodePoint() {        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
         // ⚠️ 判据必须用**首字符相同**的两个选项，否则「只比第一位」的实现也能通过
         // （实证：`接高`(U+63A5) 与 `加铅块`(U+52A0) 首字符不同 ⇒ 首字符比较同样得
         //  「加铅块, 接高」⇒ 那是**非判别性**判据 = 空断言）。

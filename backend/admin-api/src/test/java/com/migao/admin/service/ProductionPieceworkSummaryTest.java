@@ -5,6 +5,7 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.Order;
+import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProductionWorkLog;
@@ -387,6 +388,38 @@ class ProductionPieceworkSummaryTest {
                 .status("done").doneQty(new BigDecimal("3")).deleted(0).build();
     }
 
+    /** 带 **V92 套号快照**（`processing_position_operations.set_no`）的工序实例。 */
+    private ProcessingPositionOperation opAtWithSet(String id, String operationName, String positionName,
+                                                    String orderItemId, String setNo, String unitPrice) {
+        return ProcessingPositionOperation.builder()
+                .id(id).tenantId(TENANT).processingOrderId(PO_ID)
+                .positionName(positionName).orderItemId(orderItemId).positionKind("布帘").setNo(setNo)
+                .seq(1).operationName(operationName).groupName("裁剪").unit("米")
+                .qty(new BigDecimal("12.30")).unitPrice(new BigDecimal(unitPrice))
+                .factor(BigDecimal.ONE).isMustFinish(false).isStartMarker(true)
+                .status("done").doneQty(new BigDecimal("3")).deleted(0).build();
+    }
+
+    /**
+     * 订单明细行 —— 樘窗组键的唯一载体 = `processing_info.craftLineId`。
+     *
+     * <p>组键口径与 `ProcessingOrderService.craftGroupKey` / V92 回填**同一份**：
+     * `craftLineId` 优先，缺省 ⇒ 本行 `itemId`（各行自成一组）。</p>
+     */
+    private static OrderItem orderItem(String id, String craftLineId) {
+        Map<String, Object> info = new java.util.LinkedHashMap<>();
+        if (craftLineId != null) {
+            info.put("craftLineId", craftLineId);
+        }
+        OrderItem item = new OrderItem();
+        item.setId(id);
+        item.setTenantId(TENANT);
+        item.setOrderId(ORDER_ID);
+        item.setProcessingInfo(info);
+        item.setDeleted(0);
+        return item;
+    }
+
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> rowsOf(Map<String, Object> report, String key) {
         return (List<Map<String, Object>>) report.get(key);
@@ -439,8 +472,9 @@ class ProductionPieceworkSummaryTest {
         assertThat(cloth).isEqualByComparingTo("6.72");
 
         // 套维逐值：item-A = 6.72；item-B = 2.00
+        // （#4725：无 `craftLineId` 的两行 ⇒ **各自成樘窗** ⇒ 套键回落本行 itemId，逐值与改前相同）
         BigDecimal setA = perSet.stream()
-                .filter(row -> "item-A".equals(row.get("order_item_id")))
+                .filter(row -> "item-A".equals(row.get("set_no")))
                 .map(row -> (BigDecimal) row.get("amount")).findFirst().orElseThrow();
         assertThat(setA).isEqualByComparingTo("6.72");
     }
@@ -463,7 +497,7 @@ class ProductionPieceworkSummaryTest {
                     assertThat((BigDecimal) row.get("amount")).isEqualByComparingTo("1.20");
                 });
         assertThat(rowsOf(report, "per_set")).singleElement()
-                .satisfies(row -> assertThat(row.get("order_item_id")).isEqualTo("未知套"));
+                .satisfies(row -> assertThat(row.get("set_no")).isEqualTo("未知套"));
         assertThat(sumAmount(rowsOf(report, "per_position")))
                 .as("定位不到的报工也必须计入下钻合计 —— 否则合计 < 总额")
                 .isEqualByComparingTo(total);
@@ -483,7 +517,70 @@ class ProductionPieceworkSummaryTest {
         assertThat(rowsOf(perOrder, "per_position")).singleElement()
                 .satisfies(row -> assertThat(row.get("position_name")).isEqualTo("布艺遮光帘A 米白"));
         assertThat(rowsOf(perOrder, "per_set")).singleElement()
-                .satisfies(row -> assertThat(row.get("order_item_id")).isEqualTo("item-A"));
+                .satisfies(row -> assertThat(row.get("set_no")).isEqualTo("item-A"));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════
+    // #4725（用户裁定「一樘窗 = 一套」）：套维度 = **樘窗组**，不是订单行
+    // ══════════════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("#4725 一樘窗（布帘 + 纱帘 + 帘头，同 craftLineId）= **1 套**（改前 = 3 行「套」）")
+    void oneWindowWithAllPartsIsExactlyOneSet() {
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                snapshotLog("op-1", "精裁-布", "张三", "10", "0.40", "1.00", LocalDate.of(2026, 9, 18)),
+                snapshotLog("op-2", "精裁-纱", "张三", "5", "0.40", "1.00", LocalDate.of(2026, 9, 18)),
+                snapshotLog("op-3", "精裁-帘头", "张三", "2", "0.40", "1.00", LocalDate.of(2026, 9, 18))));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                opAt("op-1", "精裁-布", "布艺遮光帘A 米白", "item-1", "0.40"),
+                opAt("op-2", "精裁-纱", "纱帘B 本白", "item-2", "0.40"),
+                opAt("op-3", "精裁-帘头", "帘头C 米白", "item-3", "0.40")));
+        // 三条明细行同 `craftLineId = win-1` ⇒ **一个樘窗**（V92 回填同口径）
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(
+                orderItem("item-1", "win-1"), orderItem("item-2", "win-1"), orderItem("item-3", "win-1")));
+
+        Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
+
+        // 红证（改前）：套维 = 3 行（item-1 / item-2 / item-3）⇒ 下面两条断言必红
+        assertThat(rowsOf(report, "per_set"))
+                .as("一樘窗 = 一套 ⇒ 套维只能有 1 行（旧口径 = 3 行）").singleElement()
+                .satisfies(row -> assertThat(row.get("set_no")).isEqualTo("win-1"));
+        assertThat(sumAmount(rowsOf(report, "per_set")))
+                .as("套维合计仍必须 === 总额（口径变了，可核对性不变）")
+                .isEqualByComparingTo((BigDecimal) report.get("total"));
+    }
+
+    @Test
+    @DisplayName("#4725 两樘窗（各含布 + 纱）= **2 套**（不把不同樘窗并成一套）")
+    void twoWindowsAreTwoSets() {
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                snapshotLog("op-1", "精裁-布", "张三", "10", "0.40", "1.00", LocalDate.of(2026, 9, 18)),
+                snapshotLog("op-2", "精裁-纱", "张三", "5", "0.40", "1.00", LocalDate.of(2026, 9, 18))));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                opAt("op-1", "精裁-布", "布艺遮光帘A 米白", "item-1", "0.40"),
+                opAt("op-2", "精裁-纱", "纱帘B 本白", "item-2", "0.40")));
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(
+                orderItem("item-1", "win-1"), orderItem("item-2", "win-2")));
+
+        Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
+
+        assertThat(rowsOf(report, "per_set")).extracting(row -> row.get("set_no"))
+                .containsExactlyInAnyOrder("win-1", "win-2");
+    }
+
+    @Test
+    @DisplayName("#4725 V92 套号优先：实例带 `set_no` ⇒ 套维显示**落库套号**（不是组键）")
+    void storedSetNoWinsOverWindowGroupKey() {
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                snapshotLog("op-1", "精裁-布", "张三", "10", "0.40", "1.00", LocalDate.of(2026, 9, 18))));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                opAtWithSet("op-1", "精裁-布", "布艺遮光帘A 米白", "item-1",
+                        "JG-20260918-6914-001", "0.40")));
+
+        Map<String, Object> report = service.pieceworkSummary("2026-09", null, TENANT);
+
+        assertThat(rowsOf(report, "per_set")).singleElement()
+                .satisfies(row -> assertThat(row.get("set_no")).isEqualTo("JG-20260918-6914-001"));
     }
 
     @Test

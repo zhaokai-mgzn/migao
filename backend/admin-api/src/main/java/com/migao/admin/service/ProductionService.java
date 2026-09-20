@@ -932,7 +932,8 @@ public class ProductionService {
             byId.put(op.getId(), op);
         }
 
-        PieceworkTotals totals = aggregate(listWorkLogs(po.getId(), tenantId), byId::get);
+        PieceworkTotals totals = aggregate(listWorkLogs(po.getId(), tenantId), byId::get,
+                windowGroupKeyByItemId(order, tenantId));
 
         Map<String, Object> perWorkerRounded = new LinkedHashMap<>();
         totals.workerAmount().forEach((worker, amount) -> perWorkerRounded.put(worker, money(amount)));
@@ -947,7 +948,7 @@ public class ProductionService {
         // 下钻维度（真值源 §4 的下钻链：部位 → 套）。**同一份聚合**产出 ⇒
         // 各维合计恒等于 total（判据：下钻合计 === 总额）。
         result.put("per_position", amountAndQtyRows(totals.positionAmount(), totals.positionQty(), "position_name"));
-        result.put("per_set", amountAndQtyRows(totals.setAmount(), totals.setQty(), "order_item_id"));
+        result.put("per_set", amountAndQtyRows(totals.setAmount(), totals.setQty(), "set_no"));
         // 未定价可见（issue #4696）：只加键，既有键名/含义/顺序一字不动
         result.put("unpriced", unpricedBlock(totals.unpricedQty()));
         return result;
@@ -980,7 +981,8 @@ public class ProductionService {
         }
 
         Map<String, ProcessingPositionOperation> instancesById = activeOperationsById(tenantId);
-        PieceworkTotals totals = aggregate(list(wrapper), instancesById::get);
+        PieceworkTotals totals = aggregate(list(wrapper), instancesById::get,
+                windowGroupKeyByItemId(instancesById.values(), tenantId));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("period", month.toString());
@@ -994,7 +996,7 @@ public class ProductionService {
         // 下钻维度（真值源 §4：「按人/按期/按单下钻」+ 部位 / 套）。与 per-order 汇总**同一份聚合**
         // ⇒ 报表里某维合计 = 该维在各单上的贡献之和（不会出现两套口径漂移）。
         result.put("per_position", amountAndQtyRows(totals.positionAmount(), totals.positionQty(), "position_name"));
-        result.put("per_set", amountAndQtyRows(totals.setAmount(), totals.setQty(), "order_item_id"));
+        result.put("per_set", amountAndQtyRows(totals.setAmount(), totals.setQty(), "set_no"));
         // 未定价可见（issue #4696）：与 per-order 汇总**同一份聚合** ⇒ 两处恒等（不会两套口径漂移）
         result.put("unpriced", unpricedBlock(totals.unpricedQty()));
         return result;
@@ -1031,9 +1033,12 @@ public class ProductionService {
      *
      * @param operationLookup 工序实例查找（per-order 用「该加工单的活跃实例」，报表用「本租户活跃实例」；
      *                        两处都必须是**活跃**实例，否则同一笔报工在两套端点下取值不同）
+     * @param windowGroupKeyByItemId 樘窗组键（`order_item_id` → `craftLineId ?? itemId`）——
+     *                        **套维度**（#4725 用户裁定「一樘窗 = 一套」）的回落来源，见 {@link #setKey}
      */
     private PieceworkTotals aggregate(List<ProductionWorkLog> logs,
-                                      java.util.function.Function<String, ProcessingPositionOperation> operationLookup) {
+                                      java.util.function.Function<String, ProcessingPositionOperation> operationLookup,
+                                      Map<String, String> windowGroupKeyByItemId) {
         Map<String, BigDecimal> workerAmount = new LinkedHashMap<>();
         Map<String, BigDecimal> workerQty = new LinkedHashMap<>();
         Map<String, BigDecimal> operationAmount = new LinkedHashMap<>();
@@ -1092,9 +1097,11 @@ public class ProductionService {
             // 部位维度：实例的 position_name（展示名）；无实例 ⇒ 「未知部位」（不猜、不跳过）
             String position = op == null || !StringUtils.hasText(op.getPositionName())
                     ? "未知部位" : op.getPositionName();
-            // 套维度：实例的 order_item_id 即该樘窗/套的订单行（V69 / issue #4388 主定位键）
-            String set = op == null || !StringUtils.hasText(op.getOrderItemId())
-                    ? "未知套" : op.getOrderItemId();
+            // 套维度（#4725 用户裁定「一樘窗 = 一套 = 一个 craftLineId 组」）：V92 落库套号优先，
+            // 无号 ⇒ **樘窗组键**（`craftLineId ?? itemId`，与 ProcessingOrderService.craftGroupKey
+            // 及 V92 回填**同一份口径**）。旧口径取 `order_item_id`（= 部位行）
+            // ⇒ 一樘「布 + 纱 + 帘头」出 **3 行「套」**（§2.1.1 已登记的偏离）。
+            String set = setKey(op, windowGroupKeyByItemId);
             workerAmount.merge(worker, amount, BigDecimal::add);
             workerQty.merge(worker, nz(log.getQualifiedQty()), BigDecimal::add);
             operationAmount.merge(operation, amount, BigDecimal::add);
@@ -1109,8 +1116,90 @@ public class ProductionService {
                 positionAmount, positionQty, setAmount, setQty, unpricedQty);
     }
 
-    /** 聚合中间态（金额已逐笔取整；qty 为该维度的合格数量合计）。 */
-    private record PieceworkTotals(BigDecimal total,
+    /** 定位不到套时的占位（与「未知部位」同族：**不猜、不跳过** —— 跳过会让下钻合计 ≠ 总额）。 */
+    private static final String UNKNOWN_SET = "未知套";
+
+    /**
+     * 套键（#4725，用户裁定 2026-09-20「**一樘窗 = 一套**」= 一个 {@code craftLineId} 组）。
+     *
+     * <p>三级取键（前两级都**只读既有快照** ⇒ 零改动 {@code production_work_logs}，
+     * 与 V92 列注释「计件按套下钻」同口径）：</p>
+     * <ol>
+     *   <li>V92 落库**套号** {@code set_no}（用户裁定「套号要落库」⇒ **有号用号**）；</li>
+     *   <li>**樘窗组键** = {@code craftLineId ?? 本行 itemId}（与 {@link ProcessingOrderService} 的
+     *       {@code craftGroupKey} 及 V92 回填**同一份口径**）⇒ 一樘「布 + 纱 + 帘头」= **1 套**
+     *       （旧口径取 {@code order_item_id} ⇒ 3 套）；</li>
+     *   <li>回落本行 {@code order_item_id}（组键查不到时最保守：退化成「按行」但**不丢信息**）；
+     *       再缺 ⇒ {@link #UNKNOWN_SET}。</li>
+     * </ol>
+     *
+     * <p>⚠️ **为何不能只认 ①**：{@code processing_order_sets} 目前只有 V92 的**存量回填**在写
+     * （新单的套号分配器尚未落码，见 {@code set-code-and-scan-loop.md} §14 的切片 ①~⑤）⇒
+     * 只认 ① 会让**新单**整单并成一个「无套号」桶（比旧口径更错）。② 正是补这个缺口的那一级。</p>
+     */
+    private static String setKey(ProcessingPositionOperation op,
+                                 Map<String, String> windowGroupKeyByItemId) {
+        if (op == null) {
+            return UNKNOWN_SET;
+        }
+        if (StringUtils.hasText(op.getSetNo())) {
+            return op.getSetNo();
+        }
+        String itemId = op.getOrderItemId();
+        String group = itemId == null || windowGroupKeyByItemId == null
+                ? null : windowGroupKeyByItemId.get(itemId);
+        if (StringUtils.hasText(group)) {
+            return group;
+        }
+        return StringUtils.hasText(itemId) ? itemId : UNKNOWN_SET;
+    }
+
+    /** 樘窗组键（按该订单的全部明细行）—— per-order 计件路径用。 */
+    private Map<String, String> windowGroupKeyByItemId(Order order, Long tenantId) {
+        return windowGroupKeys(orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getOrderId, order.getId())
+                .eq(OrderItem::getTenantId, tenantId)
+                .eq(OrderItem::getDeleted, 0)));
+    }
+
+    /**
+     * 樘窗组键（按已加载的工序实例所指的明细行）—— 期间报表路径用。
+     *
+     * <p>只查**被引用到的**那些明细行（`id IN (…)`），不整表扫；一条都没引用到 ⇒ 不查库。</p>
+     */
+    private Map<String, String> windowGroupKeyByItemId(
+            java.util.Collection<ProcessingPositionOperation> operations, Long tenantId) {
+        Set<String> itemIds = new LinkedHashSet<>();
+        for (ProcessingPositionOperation op : operations) {
+            if (StringUtils.hasText(op.getOrderItemId())) {
+                itemIds.add(op.getOrderItemId());
+            }
+        }
+        if (itemIds.isEmpty()) {
+            return Map.of();
+        }
+        return windowGroupKeys(orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getTenantId, tenantId)
+                .eq(OrderItem::getDeleted, 0)
+                .in(OrderItem::getId, itemIds)));
+    }
+
+    /**
+     * 明细行 → 樘窗组键。口径 = {@code processing_info.craftLineId} 优先，缺省回落**本行 id**
+     * （两个不同行的 id 天然不等 ⇒ 没有 {@code craftLineId} 的行**各自成樘窗**，不并组、不猜）。
+     */
+    private static Map<String, String> windowGroupKeys(List<OrderItem> items) {
+        Map<String, String> byId = new LinkedHashMap<>();
+        for (OrderItem item : items == null ? List.<OrderItem>of() : items) {
+            Map<String, Object> info = OrderLineCraftFields.normalize(item.getProcessingInfo());
+            Object craftLineId = info == null ? null : info.get("craftLineId");
+            String group = craftLineId == null ? null : String.valueOf(craftLineId).trim();
+            byId.put(item.getId(), StringUtils.hasText(group) ? group : item.getId());
+        }
+        return byId;
+    }
+
+    /** 聚合中间态（金额已逐笔取整；qty 为该维度的合格数量合计）。 */    private record PieceworkTotals(BigDecimal total,
                                    Map<String, BigDecimal> workerAmount,
                                    Map<String, BigDecimal> workerQty,
                                    Map<String, BigDecimal> operationAmount,
@@ -1266,7 +1355,7 @@ public class ProductionService {
                 positionKindByName.putIfAbsent(op.getOperationName(), op.getPositionKind());
             }
             return op;
-        });
+        }, Map.of());
 
         List<Map<String, Object>> details =
                 operationPieceworkRows(totals.operationAmount(), totals.operationQty(), positionKindByName);
