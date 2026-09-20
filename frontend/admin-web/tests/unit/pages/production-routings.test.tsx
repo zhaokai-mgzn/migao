@@ -269,7 +269,9 @@ const makePositionsSpy = () => {
     current = ok(v)
     // ⚠️ **不要** `mockReset()` 分区读面：那会连**实现**一起清掉 ⇒ 页面 await 到 `undefined`
     // ⇒ `templateRes.value.data` 抛未处理拒绝（假红）。`mockResolvedValue` 是替换而非清除实现。
-    mockGetOperationLayers.mockResolvedValue(ok(buildLayers(v as any[])))
+    // 🔴 issue #4729：交付行来自**工序库**（`scope='set'` 的行），不是矩阵格 ⇒ 打桩必须同源
+    // （否则零矩阵格的交付工序在这份替身里**不存在**，掩盖真后端的缺口）。
+    mockGetOperationLayers.mockResolvedValue(ok(buildLayers(v as any[], LAYER_DELIVERY_OPS)))
     spy.mockClear()
     return spy
   }
@@ -364,9 +366,25 @@ const CATALOG = {
   ],
 }
 
+/**
+ * **工序库的交付环节行**（`production_operations` 里 `scope='set'` 的四道）—— issue #4729。
+ *
+ * <p>🔴 这是 `delivery` 段的**行来源**（真后端 `ProductionRoutingReadService.operationLayers`
+ * 按工序库行分区，**不看矩阵格**）⇒ 替身必须带上它，否则「零矩阵格仍有行」这条判据在测试里
+ * **不可能被构造**（原打桩只按格造行，掩盖了真后端的缺口 = 独立验收 #4677 的 P1-2）。</p>
+ *
+ * <p>`unit` / `group` / `is_must_finish` 与矩阵格夹具（{@link LAYER_CELLS}）逐字一致
+ * —— 真数据里它们是**同一行工序**的元数据，格上的值就是从这行带出来的。</p>
+ */
+const LAYER_DELIVERY_OPS = [
+  { id: 'lop-打包', name: '打包', group: '后道', unit: '套', scope: 'set', is_must_finish: true },
+  { id: 'lop-外帘打卷', name: '外帘打卷', group: '后道', unit: '套', scope: 'set', is_must_finish: false },
+  { id: 'lop-外帘装袋', name: '外帘装袋', group: '后道', unit: '套', scope: 'set', is_must_finish: true },
+  { id: 'lop-外帘发货', name: '外帘发货', group: '后道', unit: '套', scope: 'set', is_must_finish: true },
+]
+
 /** 查不到变体 ⇒ 契约 #4587 ① 的 6 个新键**全 null**（不是空串、不是 0） */
-const NO_VARIANT = {
-  variant_operation_id: null,
+const NO_VARIANT = {  variant_operation_id: null,
   unit: null,
   group: null,
   scope: null,
@@ -408,29 +426,47 @@ const POSITIONS = [
 ]
 
 /**
- * **两层分区读面的等价打桩**（issue #4677；契约 #4676）：把一份矩阵格按**既有** `scope` 切成
- * `operations`（其余，含 `null`）与 `delivery`（`scope='set'`，**聚合成一列价**）。
+ * **两层分区读面的等价打桩**（issue #4677；契约 #4676；**行来源修正 = issue #4729**）：
+ * 复现**真后端**的两段 —— `operations` = 矩阵行里不属于交付工序集合的那些；
+ * `delivery` = **工序库**里 `scope='set'` 的行（**不是**矩阵行！）各一行、聚合成一列价。
+ *
+ * <p>🔴 **为什么必须按工序库给行**（issue #4729 = 独立验收 #4677 的 P1-2）：原打桩只按矩阵格
+ * 造 `delivery` 行 ⇒ 它**掩盖**了真后端的缺口（`ProductionRoutingReadService.operationLayers`
+ * 当时遍历 `operationPositions()` = 只读矩阵表 ⇒ 零矩阵格的套级工序在 `delivery` 段一行都没有）。
+ * 现在的形态与真后端同源：交付行的**存在**只取决于工序库行的 `scope`，格只决定**价态**。</p>
  *
  * <p>⚠️ 聚合口径**逐条照抄后端** `ProductionRoutingReadService.deliveryView`（判据是**行为等价**）：
  * ① 有 `applicable=TRUE` 格价全同 ⇒ `priced`；② 有 `NULL` ⇒ `unpriced`（**未定价 ≠ ¥0.00**，
  * 且**不回落工序库行价**）；③ 不同 ⇒ `multiple_prices` + `different_price_count`
- * （**不静默取第一个**）；④ 一格「做」都没有 ⇒ `no_applicable_position`。</p>
+ * （**不静默取第一个**）；④ 一格「做」都没有（**含零格**）⇒ `no_applicable_position`。
+ * 行尾元数据缺格时回落工序库行（与后端 `firstNonNull(cells, key, library, key)` 同一顺序）。</p>
  *
  * <p>夹具里 `车被` 是**部位级**工序（真值源 `routing.py` 的 `布帘车被`，`scope='position'`），
  * `外帘装袋` / `打包` 是**套级**（V79 的 `SET scope='set'`）⇒ 分区后：工序层 = 三边 / 精裁 / 车被 /
- * 韩褶，交付层 = 外帘装袋。</p>
+ * 韩褶，交付层 = 工序库里 `scope='set'` 的那几道。</p>
+ *
+ * @param cells 矩阵格（`GET /operation-positions` 的响应）
+ * @param libraryOps 工序库行（`scope` 是**行**上的属性；缺省 = 从 `cells` 里取 `scope='set'`
+ *                   的那些工序名 —— 只为兼容不关心交付层的旧用例）
  */
-const buildLayers = (cells: any[]) => {
-  const deliveryCells = new Map<string, any[]>()
+const buildLayers = (cells: any[], libraryOps: any[] = []) => {
+  // 交付工序集合 = 工序库的 `scope='set'` 行（**不看格**）；缺省兜底见上
+  const catalog = libraryOps.length > 0
+    ? libraryOps
+    : cells.filter((c) => c.scope === 'set').map((c) => ({ name: c.operation, scope: 'set' }))
+  const deliveryOps = catalog.filter((o) => o.scope === 'set').map((o) => String(o.name))
+  const cellsByOp = new Map<string, any[]>()
   const operations: any[] = []
   for (const c of cells) {
-    if (c.scope === 'set') {
-      deliveryCells.set(c.operation, [...(deliveryCells.get(c.operation) ?? []), c])
+    if (deliveryOps.includes(c.operation)) {
+      cellsByOp.set(c.operation, [...(cellsByOp.get(c.operation) ?? []), c])
     } else {
       operations.push(c)
     }
   }
-  const delivery = [...deliveryCells.entries()].map(([operation, group]) => {
+  const delivery = deliveryOps.map((operation) => {
+    const group = cellsByOp.get(operation) ?? []
+    const library = catalog.find((o) => String(o.name) === operation)
     const applicable = group.filter((c) => c.applicable === true)
     const prices = [...new Set(applicable.filter((c) => c.unit_price != null).map((c) => c.unit_price))]
     const unpriced = applicable.some((c) => c.unit_price == null)
@@ -442,7 +478,7 @@ const buildLayers = (cells: any[]) => {
           : prices.length === 1
             ? 'priced'
             : 'multiple_prices'
-    const first = (k: string) => group.find((c) => c[k] != null)?.[k] ?? null
+    const first = (k: string) => group.find((c) => c[k] != null)?.[k] ?? library?.[k] ?? null
     return {
       operation,
       scope: 'set',
@@ -3947,21 +3983,13 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
 
   // ────────────────────── #4674 从根上避免（四条约束） ──────────────────────
 
-  it('B6-① 交付环节的行**不依赖矩阵格**：某道交付工序一格都没有 ⇒ 仍有行 + `管理▸`（**红证**：改前 #4674 死路）', async () => {
-    // 交付工序 `外帘装袋` 的格**全部**不在矩阵里（真形态：矩阵读面按租户，某部位一格没配）。
-    // ⚠️ 真后端的**分区读面**仍会给出这一行（它按 `production_operations` 的行分区，**不看格**）
-    // ⇒ 分区读面用 `setLayersDefault` 覆写成「有这一行、但 `no_applicable_position`」。
+  it('B6-① 交付环节的行**不依赖矩阵格**：某道交付工序一格都没有 ⇒ 仍有行 + `管理▸`（**吃真后端形状**，issue #4729）', async () => {
+    // 🔴 **不手造服务端行**（改前那条靠手造 `delivery:[{...}]` 才绿 —— 独立验收 #4677 的 P1-2）：
+    // 只把矩阵里的 `外帘装袋` 格**全部撤掉**，交付段由**工序库行**（`LAYER_DELIVERY_OPS`）给出
+    // ⇒ 真后端形态（`scope='set'` 的工序库行各一行、零格 ⇒ `no_applicable_position`）逐字复现。
+    // 红证：改前 `deliveryRows` 只认矩阵格 / 服务端手造行 ⇒ 这一行不存在 ⇒ `getByTestId` 必红。
     const withoutCells = LAYER_CELLS.filter((c) => c.operation !== '外帘装袋')
     mockGetOperationPositions.setDefault(withoutCells)
-    mockGetOperationLayers.mockResolvedValue(
-      ok({
-        operations: withoutCells,
-        delivery: [
-          ...buildLayers(LAYER_CELLS).delivery.filter((r) => r.operation !== '外帘装袋'),
-          { operation: '外帘装袋', scope: 'set', unit: '套', group: '后道', is_must_finish: true, price: null, price_state: 'no_applicable_position', different_price_count: 0, applicable_positions: [] },
-        ],
-      }),
-    )
     await renderOperations()
 
     const delivery = screen.getByTestId('delivery-section')
@@ -3971,20 +3999,18 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
       'data-price-state',
       'no_applicable_position',
     )
+    // 单位 / 必完回落**工序库行**（零格行不是一排 `—`）
+    expect(within(delivery).getByTestId('delivery-row-外帘装袋')).toHaveTextContent('套')
+    expect(within(delivery).getByTestId('delivery-must-finish-外帘装袋')).toHaveTextContent('必完')
+    // 其余三道交付工序**照旧**（撤掉一格不得让别行消失）
+    for (const op of ['打包', '外帘打卷', '外帘发货']) {
+      expect(within(delivery).getByTestId(`delivery-row-${op}`)).toBeInTheDocument()
+    }
   })
 
   it('B6-② `管理▸` **在行上**（与矩阵格无关）；抽屉层「停用 / 删除」在 `manageVariants` 循环体**外** ⇒ 空态也有出路', async () => {
     const withoutCells = LAYER_CELLS.filter((c) => c.operation !== '外帘装袋')
     mockGetOperationPositions.setDefault(withoutCells)
-    mockGetOperationLayers.mockResolvedValue(
-      ok({
-        operations: withoutCells,
-        delivery: [
-          ...buildLayers(LAYER_CELLS).delivery.filter((r) => r.operation !== '外帘装袋'),
-          { operation: '外帘装袋', scope: 'set', unit: '套', group: '后道', is_must_finish: true, price: null, price_state: 'no_applicable_position', different_price_count: 0, applicable_positions: [] },
-        ],
-      }),
-    )
     await renderOperations()
 
     // 行上的入口（不是「格上的入口」）
@@ -3995,6 +4021,69 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(screen.getByTestId('operations-manage-disable')).toBeInTheDocument()
     expect(screen.getByTestId('operations-manage-delete')).toBeInTheDocument()
     expect(screen.getByTestId('operations-manage-close')).toBeInTheDocument()
+    // 空态**给出路**（不是一句死路文案）
+    expect(screen.getByTestId('operations-manage-drawer')).not.toHaveTextContent('请核对各部位的适用性配置')
+  })
+
+  // ────────────────────── P2-8 / P2-10（独立验收 #4677 的缺口，issue #4729 收口） ──────────────────────
+
+  it('🔴 P2-8 可证伪判据：`price_state` / `price` **逐字取自服务端、前端不重算**'
+    + '（服务端与格**故意不一致** ⇒ 必须显示服务端的值）', async () => {
+    // 构造「服务端与格不一致」：服务端说 `priced` + `¥9.99`，矩阵格说 `unpriced`。
+    // ⚠️ 这条**可证伪**：若前端改成「从格重算价态」（注入），它算出来是 `unpriced` ⇒ 本条必红。
+    // 改前的交付测试用 `buildLayers(夹具)`（与页面**同源**）⇒ 构造性相等，注入重算后仍全绿（假绿）。
+    mockGetOperationPositions.setDefault(LAYER_CELLS)
+    mockGetOperationLayers.mockResolvedValue(
+      ok({
+        operations: buildLayers(LAYER_CELLS, LAYER_DELIVERY_OPS).operations,
+        delivery: buildLayers(LAYER_CELLS, LAYER_DELIVERY_OPS).delivery.map((r) =>
+          r.operation === '外帘装袋'
+            ? { ...r, price: 9.99, price_state: 'priced', different_price_count: 0 }
+            : r,
+        ),
+      }),
+    )
+    await renderOperations()
+
+    const cell = screen.getByTestId('delivery-price-外帘装袋')
+    expect(cell).toHaveAttribute('data-price-state', 'priced')
+    expect(cell).toHaveTextContent('¥9.99')
+    // **不得**用格上的价态（`unpriced`）覆盖服务端的聚合值
+    expect(cell).not.toHaveTextContent('未定价')
+  })
+
+  it('🔴 P2-10 读面失败**显式报错**（不许静默降级成「未设置」—— 用假话代替报错）', async () => {
+    // 矩阵读面成功（有价）、两层分区读面**失败** ⇒ 不得把有价的交付工序渲染成
+    // `no_applicable_position`（「未设置（没有部位设为「做」）」）= 假话。
+    mockGetOperationPositions.setDefaultRejected(new Error('500'))
+    mockGetOperationLayers.mockRejectedValue(new Error('500'))
+    render(<ProcessConfigPage />)
+
+    const err = await screen.findByTestId('operation-layers-error')
+    expect(err).toHaveTextContent('加载失败')
+    // **不许**显示「未设置」/「没有部位设为「做」」这类假话（那是「没读到」伪装成「没配」）
+    expect(screen.getByTestId('delivery-section')).not.toHaveTextContent('未设置')
+    expect(screen.queryByTestId('delivery-empty')).toBeNull()
+  })
+
+  it('P2-10 反向护栏：读面**成功**（哪怕交付段为空）⇒ 不报错（**不把「读到了空」误报成「读失败」**）', async () => {
+    mockGetOperationPositions.setDefault(LAYER_CELLS)
+    mockGetOperationLayers.mockResolvedValue(ok({ operations: LAYER_CELLS, delivery: [] }))
+    await renderOperations()
+
+    expect(screen.queryByTestId('operation-layers-error')).toBeNull()
+    // 读面成功 ⇒ 不显示错误面；交付行由「格」兜底重建（**不猜价**：零格 ⇒ `no_applicable_position`）
+    expect(screen.getByTestId('delivery-section')).toBeInTheDocument()
+  })
+
+  it('P2-10 反向护栏：读面失败 ⇒ 交付区报错，而**工序层照常渲染**（不白屏、不影响其余区）', async () => {
+    mockGetOperationPositions.setDefault(LAYER_CELLS)
+    mockGetOperationLayers.mockRejectedValue(new Error('500'))
+    await renderOperations()
+
+    expect(screen.getByTestId('operation-layers-error')).toBeInTheDocument()
+    // 工序层（矩阵读面成功）照旧有行 —— 一个区挂了不拖垮另一个区
+    expect(screen.getByTestId('matrix-row-精裁')).toBeInTheDocument()
   })
 
   // ────────────────────── 🔴 硬要求：布料单定价入口 ──────────────────────

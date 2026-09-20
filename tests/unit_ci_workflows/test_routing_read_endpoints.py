@@ -283,18 +283,46 @@ def test_operation_layers_partitions_by_existing_scope():
 
     为什么守：判据换成「有没有矩阵格」⇒ 一道交付工序在某部位没有格时**整行消失**
     （#4674 形态：表格里有、抽屉里空、无处可删）；换成新字段 ⇒ 引入第二套分区口径。
+
+    ⚠️ **本判据的形态在 issue #4729 随实现改钉**（不是放宽）：行来源已从「矩阵行」改为
+    「工序库行」（见判据 1f′），故被比较的对象由 `row.get("scope")` 变为
+    `entry.getValue().get("scope")` —— 判据本体仍是「**`SCOPE_SET` 常量**在 `operationLayers`
+    里对 `scope` 键做相等判定」，且**仍在 `operationLayers` 内**（没被挪走/没换新概念）。
     """
     src = _java_code(SERVICE)
     assert re.search(r'SCOPE_SET\s*=\s*"set"', src), (
         "服务层没有 `SCOPE_SET = \"set\"` 常量 —— 分区判据必须是库里带出的既有 `scope`"
     )
     body = _method_body("operationLayers")
-    assert re.search(r'SCOPE_SET\.equals\(\s*row\.get\("scope"\)\s*\)', body), (
+    assert re.search(r'SCOPE_SET\.equals\([\s\S]{0,60}?get\("scope"\)\s*\)', body), (
         "分区没有按 `scope == 'set'` 判定（`scope` 缺省 ⇒ `operations` = 安全方向）"
     )
     assert "delivery" in body and "operations" in body, "分区没有产出 `operations` / `delivery` 两段"
     assert not re.search(r'row\.get\("position"\)\s*==\s*null', body), (
         "分区不得按「有没有矩阵格/部位」判定（那会让交付工序整行消失）"
+    )
+
+
+def test_delivery_rows_come_from_operation_library_not_matrix_cells():
+    """判据 1f′ 🔴：`delivery` 段的**行来源 = 工序库**的 `scope='set'` 行（issue #4729）。
+
+    为什么守（独立验收 #4677 的 P1-2，实测 `PROBE delivery operations = [打包]`）：
+    原实现遍历 `operationPositions()`（**只读矩阵表**）⇒ **零矩阵格**的套级工序在 `delivery` 段
+    **一行都没有** ⇒ 该形态下【打包发货】层无行、无 `管理▸`、抽屉打不开。设计要求
+    （#4675 §7 第 7 条 / #4677 四条约束）是「**第二层的行不依赖矩阵格**」。
+
+    红证：把行来源改回「只遍历矩阵行」（删掉 `operationsByName` 这一路）⇒ 本条红。
+    """
+    body = _method_body("operationLayers")
+    assert "operationsByName" in body, (
+        "`delivery` 段没有从**工序库**取行 —— 零矩阵格的套级工序会整行消失"
+        "（#4674 形态：表格里有、抽屉里空、无处可删）"
+    )
+    assert re.search(r'cellsByOperation\s*\.\s*getOrDefault\s*\(', body), (
+        "`delivery` 段没有「零格 ⇒ 空格列表」的显式路径 ⇒ 零格工序仍会消失"
+    )
+    assert re.search(r'SCOPE_SET\.equals\(\s*entry\.getValue\(\)\.get\("scope"\)\s*\)', body), (
+        "行来源没有按工序库行的 `scope == 'set'` 判定（判据必须是既有 `scope`，不新造概念）"
     )
 
 
@@ -351,6 +379,18 @@ class TestInjectedDriftLayers:
                 '        if (price == null) { price = productionOperationMapper.selectById(op); }\n'
                 '    }')
         assert "productionOperationMapper" in fake, "注入形态读不出来 ⇒ 判据 1g 是空断言"
+
+    def test_delivery_rows_drift_is_detected(self):
+        """注入：把行来源改回「只遍历矩阵行」⇒ 判据 1f′ 命中（红）。"""
+        fake = ('public Map<String, Object> operationLayers(Long tenantId) {\n'
+                '        List<Map<String, Object>> rows = operationPositions(tenantId);\n'
+                '        for (Map<String, Object> row : rows) {\n'
+                '            if (SCOPE_SET.equals(row.get("scope"))) { view.put("delivery", row); }\n'
+                '        }\n'
+                '    }')
+        assert "operationsByName" not in fake, "注入形态读不出来 ⇒ 判据 1f′ 是空断言"
+        assert not re.search(r'cellsByOperation\s*\.\s*getOrDefault\s*\(', fake), \
+            "注入形态读不出来 ⇒ 判据 1f′ 的「零格显式路径」分支是空断言"
 
     def test_delivery_keys_drift_is_detected(self):
         """注入：删掉 `price_state` 键 ⇒ 键集判据红。"""

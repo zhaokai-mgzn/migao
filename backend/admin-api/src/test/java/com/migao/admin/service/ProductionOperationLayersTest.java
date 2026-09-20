@@ -44,8 +44,11 @@ import static org.mockito.Mockito.when;
  *       （<b>未定价 ≠ ¥0.00</b>，**不回落工序库行价** —— 设计 F4：工序库行价是 {@code NOT NULL DEFAULT 0}）；</li>
  *   <li><b>各部位不同价 ⇒ 不静默取第一个</b>（{@code multiple_prices} + {@code different_price_count}，
  *       设计 B7）；</li>
- *   <li><b>交付行的存活与矩阵格数无关</b>（只剩一格仍是 delivery 行）—— 设计 F1 红线：一列价**不得**用
- *       「删格」实现（删格 ⇒ 该部位单里静默消失 ⇒ 少一道活、少一笔计件钱）；</li>
+ *   <li><b>交付行的存活与矩阵格数无关</b>（只剩一格仍是 delivery 行；**零格也有行**，价态
+ *       {@code no_applicable_position}）—— 设计 F1 红线：一列价**不得**用「删格」实现
+ *       （删格 ⇒ 该部位单里静默消失 ⇒ 少一道活、少一笔计件钱）。🔴 **行来源 = 工序库的
+ *       {@code scope='set'} 行，不是矩阵行**（issue #4729 修正 = 独立验收 #4677 的 P1-2：
+ *       改前遍历 {@code operationPositions()} 只读矩阵表 ⇒ 零格工序在 delivery 段一行都没有）；</li>
  *   <li><b>键集/键序冻结</b>：{@code operations} 段与 {@code GET /operation-positions} 同形（10 键），
  *       {@code delivery} 段 9 键。</li>
  * </ol>
@@ -138,10 +141,11 @@ class ProductionOperationLayersTest {
         Map<String, Object> layers = service().operationLayers(TENANT);
 
         assertThat(layers.keySet()).containsExactly("operations", "delivery");
-        // 顺序 = 复用 `operationPositions` 的 `(operation, position)` 稳定序（中文按码位比较，
-        // 与环境 collation 无关）：`外帘打卷` < `打包`。
+        // 交付段 = 工序库里 `scope='set'` 的**三道**（含**零矩阵格**的 `外帘装袋` —— issue #4729），
+        // 顺序 = 归一后的逻辑工序名（与矩阵行键同一把尺；中文按码位比较，与环境 collation 无关）：
+        // `外帘打卷`（卷 U+5377）< `外帘装袋`（袋 U+888B）< `打包`。
         assertThat((List<Map<String, Object>>) layers.get("delivery"))
-                .extracting(r -> r.get("operation")).containsExactly("外帘打卷", "打包");
+                .extracting(r -> r.get("operation")).containsExactly("外帘打卷", "外帘装袋", "打包");
         assertThat((List<Map<String, Object>>) layers.get("operations"))
                 .extracting(r -> r.get("operation") + "/" + r.get("position"))
                 .containsExactly("裁剪/布料");
@@ -226,7 +230,7 @@ class ProductionOperationLayersTest {
     // ── 判据 4：交付行的存活与矩阵格数无关（F1 红线）──
 
     @Test
-    @DisplayName("🔴 F1：交付工序只剩一格（甚至零格）时**仍有 delivery 行** —— 一列价绝不用「删格」实现")
+    @DisplayName("🔴 F1：交付工序只剩一格（另一道**一格都没有**）时**仍有 delivery 行** —— 一列价绝不用「删格」实现")
     void deliveryRowSurvivesWhenOnlyOnePositionHasACell() {
         stubPackingCatalog();
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
@@ -236,11 +240,82 @@ class ProductionOperationLayersTest {
         Map<String, Object> layers = service().operationLayers(TENANT);
 
         assertThat((List<Map<String, Object>>) layers.get("delivery"))
-                .extracting(r -> r.get("operation")).containsExactly("外帘装袋", "打包");
+                .extracting(r -> r.get("operation")).containsExactly("外帘打卷", "外帘装袋", "打包");
         // 零个适用格也**不消失**（只是 `no_applicable_position`）—— 换成「按格分区」这里会少一行。
         Map<String, Object> empty = deliveryRow(layers, "外帘装袋");
         assertThat(empty.get("price_state")).isEqualTo("no_applicable_position");
         assertThat(empty.get("applicable_positions")).isEqualTo(List.of());
+    }
+
+    // ── 判据 4′：🔴 **真·零矩阵格**（issue #4729 = 独立验收 #4677 的 P1-2）──
+
+    @Test
+    @DisplayName("🔴 零矩阵格：`scope='set'` 的工序**一个格都没有** ⇒ 仍有 delivery 行 + "
+            + "`no_applicable_position`（**行来源 = 工序库，不是矩阵行**）")
+    void deliveryRowExistsWhenOperationHasNoMatrixCellsAtAll() {
+        stubPackingCatalog();
+        // 矩阵里**只有**部位级工序的格：三道套级工序（打包 / 外帘打卷 / 外帘装袋）**一格都没有**。
+        // 改前（行来源 = `operationPositions()` = 只读矩阵表）⇒ delivery 段**一行都没有**（红证）。
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("裁剪", "布料", "7.00", true)));
+
+        Map<String, Object> layers = service().operationLayers(TENANT);
+
+        // 零格工序**照样各有一行**（判据是工序库行的 `scope`，不是「有没有格」）
+        assertThat((List<Map<String, Object>>) layers.get("delivery"))
+                .extracting(r -> r.get("operation")).containsExactly("外帘打卷", "外帘装袋", "打包");
+        // 零格 ⇒ 4 态之一 `no_applicable_position`（**语义一字不改**：不假装 ¥0.00、不假装未定价）
+        for (String operation : List.of("打包", "外帘打卷", "外帘装袋")) {
+            Map<String, Object> row = deliveryRow(layers, operation);
+            assertThat(row.get("price_state")).isEqualTo("no_applicable_position");
+            assertThat(row.get("price")).isNull();
+            assertThat(row.get("different_price_count")).isEqualTo(0);
+            assertThat(row.get("applicable_positions")).isEqualTo(List.of());
+            // 行尾元数据回落**工序库行**（否则零格行的单位 / 分组全空 = 界面上多一列 `—`）
+            assertThat(row.get("unit")).isEqualTo("套");
+            assertThat(row.get("group")).isEqualTo("后道");
+            assertThat(row.get("scope")).isEqualTo("set");
+        }
+        // 零格工序**不得**同时出现在 `operations` 段（两段并集 = 全集，不重不漏）
+        assertThat((List<Map<String, Object>>) layers.get("operations"))
+                .extracting(r -> r.get("operation")).containsExactly("裁剪");
+    }
+
+    @Test
+    @DisplayName("套级工序的格仍在 ⇒ 该格**参与**一列价聚合；非套级格落 `operations` 段（两段不重不漏）")
+    void deliveryCellsStillFeedTheAggregate() {
+        stubPackingCatalog();
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("裁剪", "布料", "7.00", true),
+                position("打包", "布帘", "1.50", true)));
+
+        Map<String, Object> layers = service().operationLayers(TENANT);
+
+        assertThat((List<Map<String, Object>>) layers.get("operations"))
+                .extracting(r -> r.get("operation")).containsExactly("裁剪");
+        Map<String, Object> packing = deliveryRow(layers, "打包");
+        assertThat(packing.get("price_state")).isEqualTo("priced");
+        assertThat(packing.get("price")).isEqualTo(new BigDecimal("1.50"));
+        assertThat(packing.get("applicable_positions")).isEqualTo(List.of("布帘"));
+    }
+
+    @Test
+    @DisplayName("交付段顺序 = **归一后的逻辑工序名**（不依赖 DB collation / 与矩阵行键同一把尺）")
+    void deliverySectionIsOrderedByLogicalOperationName() {
+        stubPackingCatalog();
+        // 格故意给**乱序**（矩阵读面自己会排序）⇒ 交付段顺序只由工序名定
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("打包", "纱帘", "1.50", true),
+                position("打包", "布帘", "1.50", true),
+                position("外帘打卷", "布帘", "1.00", true)));
+
+        Map<String, Object> layers = service().operationLayers(TENANT);
+
+        assertThat((List<Map<String, Object>>) layers.get("delivery"))
+                .extracting(r -> r.get("operation")).containsExactly("外帘打卷", "外帘装袋", "打包");
+        // 行内 `applicable_positions` 仍是矩阵读面的 `(operation, position)` 稳定序
+        assertThat(deliveryRow(layers, "打包").get("applicable_positions"))
+                .isEqualTo(List.of("布帘", "纱帘"));
     }
 
     // ── 判据 5：与既有端点同形 ──
@@ -256,8 +331,10 @@ class ProductionOperationLayersTest {
         ProductionRoutingReadService service = service();
         Map<String, Object> layers = service.operationLayers(TENANT);
 
+        // ⚠️ 期望值按**交付工序名集合**（`scope='set'` 的工序库行）过滤 —— **不是**按格的 `scope`：
+        // 格上查不到变体时 `scope=null`（安全方向 ⇒ 落工序层），两把尺在这里必须一致。
         List<Map<String, Object>> expected = service.operationPositions(TENANT).stream()
-                .filter(r -> !"set".equals(r.get("scope"))).toList();
+                .filter(r -> !List.of("打包", "外帘打卷", "外帘装袋").contains(r.get("operation"))).toList();
         assertThat(expected).hasSize(1);
         assertThat((List<Map<String, Object>>) layers.get("operations")).isEqualTo(expected);
     }

@@ -810,6 +810,14 @@ export default function ProcessConfigPage() {
    * —— 前端**不重算**聚合（在 TS 侧再写一份 = 第二份会漂的口径，且「不静默取第一个」会退化成两边各判一次）。
    */
   const [deliveryAgg, setDeliveryAgg] = useState<OperationLayerDeliveryRow[]>([])
+  /**
+   * 两层分区读面（`GET /operation-layers`）**失败**的显式面（issue #4729 = 独立验收 #4677 的 P2-10）。
+   *
+   * ⚠️ 失败**必须显式报错**：静默置空 ⇒ 「服务端没给行」的兜底分支会把**有价**的交付工序
+   * 渲染成 `no_applicable_position`（「未设置（没有部位设为「做」）」）—— 那是**用假话代替报错**
+   * （读面一挂，商家以为「没设置」，实际是没读到）。
+   */
+  const [layersError, setLayersError] = useState('')
   const [rules, setRules] = useState<RouteRule[]>([])
   const [rulesError, setRulesError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -1015,7 +1023,14 @@ export default function ProcessConfigPage() {
     }
     // 两层分区（issue #4677）：`operations` / `delivery` 两段 + 「打包发货」的一列价
     // （`price_state` 逐字用服务端聚合 —— 前端不重算，见 §4.5 方案 A 的 3 条规则）
-    setDeliveryAgg(layersRes.status === 'fulfilled' ? layersRes.value.data?.data?.delivery ?? [] : [])
+    if (layersRes.status === 'fulfilled') {
+      setDeliveryAgg(layersRes.value.data?.data?.delivery ?? [])
+      setLayersError('')
+    } else {
+      // issue #4729（P2-10）：失败**不静默降级** —— 清空 + **显式报错**（不是「未设置」）
+      setDeliveryAgg([])
+      setLayersError('交付环节（打包发货）加载失败，请稍后重试')
+    }
     if (rulesRes.status === 'fulfilled') {
       setRules(rulesRes.value.data?.data ?? [])
       setRulesError('')
@@ -1150,11 +1165,12 @@ export default function ProcessConfigPage() {
   // ────────────────────────── 工艺项：两层（【工序】/【打包发货】）──────────────────────────
 
   /**
-   * **交付环节**（`scope='set'`）的工序名集合 —— 判据是**既有** `scope`（**不新造概念**），
-   * 取自服务端的分区读面（`delivery` 段），**不是**「有没有矩阵格」。
+   * **交付环节**（`scope='set'`）的工序名集合 —— 判据是**既有** `scope`（**不新造概念**）。
    *
-   * ⚠️ 判据换成格 ⇒ 一道交付工序在某部位没有格时会**整行消失**（#4674 形态：表格里有、
-   * 抽屉里空、无处可删）；反之，`scope='set'` 的工序**恒有**一行 + `管理▸`。
+   * ⚠️ **本集合只用于「从矩阵行里把交付格摘出去」**（列收窄 / 工序层成行），
+   * **不是**「打包发货层有哪些行」的判据 —— 那一层由**服务端 `delivery` 段**给行
+   * （后端按**工序库**的 `scope='set'` 行分区，**不看格**，issue #4729）。
+   * 在这里按格造行 = 零矩阵格的交付工序**整行消失**（#4674 形态：表格里有、抽屉里空、无处可删）。
    */
   const deliveryOps = useMemo(
     () => new Set(matrix.filter((c) => c.scope === 'set').map((c) => c.operation)),
@@ -1311,8 +1327,14 @@ export default function ProcessConfigPage() {
    * 2. 矩阵里 `scope='set'` 的格（**格的 `id`** 是抽屉写面的寻址键）。
    *
    * ⚠️ 只有第 2 路是不够的：一道交付工序**一个格都没有**时它就不在矩阵里，但它**仍是**交付环节的
-   * 成员（后端按 `production_operations` 的行分区）⇒ 第 1 路保证它**照样有一行 + `管理▸`**
-   * （#4674 从根上避免的第 ① 条约束：判据换成「有没有格」就会出现「表格里有 · 抽屉里空 · 无处可删」）。
+   * 成员 ⇒ 第 1 路保证它**照样有一行 + `管理▸`**（#4674 从根上避免的第 ① 条约束：判据换成
+   * 「有没有格」就会出现「表格里有 · 抽屉里空 · 无处可删」）。
+   *
+   * 🔴 第 1 路是**主**来源（issue #4729）：后端已改为按**工序库**的 `scope='set'` 行分区
+   * （**不看格**）⇒ 零矩阵格的交付工序**服务端必给行**（价态 `no_applicable_position`）。
+   * 第 2 路（从格重建）**只在「读面成功、但服务端没给这一行」时**可达 —— 它是兜底，
+   * **不是**分区判据。⚠️ 读面**失败**时不走这里（那会把「没读到」伪装成「没设置」）：
+   * 失败有**显式错误面**（{@link layersError} + `operation-layers-error`），见下方渲染。
    */
   const deliveryRows = useMemo(() => {
     const byOp = new Map<string, OperationLayerDeliveryRow>()
@@ -2922,7 +2944,15 @@ export default function ProcessConfigPage() {
                      （≠ ¥0.00）；各部位不同价 ⇒ <strong>显式提示</strong>并引导到「管理▸」逐个改
                      （<strong>不静默取第一个</strong>）。
                    </p>
-                   {deliveryRows.length === 0 ? (
+                   {/* 🔴 issue #4729（P2-10）：读面**失败** ⇒ **显式报错**（不静默降级成「未设置」） */}
+                   {layersError ? (
+                     <p
+                       className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
+                       data-testid="operation-layers-error"
+                     >
+                       {layersError}
+                     </p>
+                   ) : deliveryRows.length === 0 ? (
                      <p className="py-6 text-center text-sm text-neutral-400" data-testid="delivery-empty">
                        暂无交付环节工序 —— 点右上「新增工序」建一道（作用域选「套级」），
                        或用下方「补套行业模板」补齐（打包 / 外帘打卷 / 外帘装袋 / 外帘发货）
@@ -2987,7 +3017,10 @@ export default function ProcessConfigPage() {
                                      <span className="text-xs text-neutral-500">
                                        {row.group ? workshopLabel(row.group) : '—'} · {row.unit ?? '—'}
                                      </span>
-                                     {mustFinish && (
+                                     {/* 必完：格上有元数据就按格聚合（部分部位 / 全部位）；
+                                         **零格行**回落服务端 `is_must_finish`（issue #4729 —— 否则
+                                         零格交付行的「必完」恒不显示，而库里那一行是 `true`）。 */}
+                                     {mustFinish ? (
                                        <span
                                          className="text-xs text-amber-600"
                                          data-testid={`delivery-must-finish-${row.operation}`}
@@ -2995,7 +3028,15 @@ export default function ProcessConfigPage() {
                                        >
                                          {mustFinishLabel(mustFinish)}
                                        </span>
-                                     )}
+                                     ) : row.is_must_finish === true ? (
+                                       <span
+                                         className="text-xs text-amber-600"
+                                         data-testid={`delivery-must-finish-${row.operation}`}
+                                         title="必完：缺这道工序不能打包（工序库行的作用域为套级）"
+                                       >
+                                         必完
+                                       </span>
+                                     ) : null}
                                      <ManageButton
                                        operation={row.operation}
                                        onOpen={openManageFor}
