@@ -430,6 +430,10 @@ public class ProductionController {
      * （**每樘窗一次**）。用户裁定「套级先按每樘窗一次实现，打卷是否每帘一次**留成可配**」
      * ⇒ 这一档由本端点开放给商家改；取值校验在服务层（闭词表，非法值 422 + 可读理由）。</p>
      *
+     * <p><b>{@code name} 不在可写字段里</b>（issue #4641）：body 里出现 {@code name} ⇒ **422 +
+     * {@code error.details} 逐条**，而**不是**静默忽略 —— 本端点不支持改名（工序名是工序库唯一索引
+     * 与矩阵/路线引用的入口名），静默忽略会让调用方以为改成功了。</p>
+     *
      * <p>改价同一事务写两处：{@code production_operations.unit_price}（新单实例化取值源）
      * + {@code production_operation_price_versions} 追加一行（当前价 = 最新版本行）。
      * 实例快照 {@code processing_position_operations.unit_price} **不动**：调价只影响新报工，

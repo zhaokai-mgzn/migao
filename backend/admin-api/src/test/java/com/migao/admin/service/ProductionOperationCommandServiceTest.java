@@ -138,10 +138,57 @@ class ProductionOperationCommandServiceTest {
         assertThat((BigDecimal) view.get("unit_price")).isEqualByComparingTo("0.40");
     }
 
+    // ══════════════════ 写面入参护栏：更新路径的 name（issue #4641）══════════════════
+    //
+    // 新增路径的旧形态护栏（`rejectVariantOperationName`）由 #4642 落码、#4647 补边界；
+    // 本组补的是**同一条不变量的另一半**：`PUT /operations/{id}` 在加护栏之前对 body 里的 `name`
+    // **静默忽略**（200 + 库里一字未改）—— 调用方以为改名成功/以为旧形态名字落库了，而真正的
+    // 原因（本端点不支持改名）永远不会被说出来（**静默**，本会话红线）。
+    // 护栏 = 「body 里出现 name 即 422 + 逐条理由」，不改任何既有可写字段的行为。
+
+    @Test
+    @DisplayName("#4641 更新工序带 name（旧形态 `布三边`）⇒ 422 + error.details，且一个字段都不落库")
+    void updateRejectsNameFieldWithLegacyFormValue() {
+        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
+
+        assertThatThrownBy(() -> service().update("op-v54-07",
+                Map.of("name", "布三边", "unit_price", "0.55"), TENANT))
+                .as("改前实测：静默忽略 name、按 0.55 改价返回 200（红证见 PR body）")
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException be = (BusinessException) e;
+                    assertThat(be.getHttpStatus()).isEqualTo(422);
+                    assertThat(be.getMessage()).as("摘要说清「改名不支持」").contains("不支持修改");
+                    assertThat(be.getDetails()).as("逐条理由（与新增路径同一信封）").hasSize(1);
+                    assertThat(be.getDetails().get(0).getField()).isEqualTo("name");
+                    assertThat(be.getDetails().get(0).getMessage())
+                            .as("理由必须可行动：说清本端点不支持改名，而不是只说「非法」")
+                            .contains("不支持改名");
+                });
+        // 校验先于写入：连**同一请求里合法的** unit_price 都不许落库（半成品写比不写更坏）
+        verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
+        verify(priceVersionMapper, never()).insert(any(ProductionOperationPriceVersion.class));
+    }
+
+    @Test
+    @DisplayName("#4641 反向护栏：不带 name 的合法部分更新照常生效（护栏不得误伤既有可写字段）")
+    void updateWithoutNameStillWorks() {
+        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
+        when(productionOperationMapper.updateById(any(ProductionOperation.class))).thenReturn(1);
+        when(priceVersionMapper.insert(any(ProductionOperationPriceVersion.class))).thenReturn(1);
+
+        service().update("op-v54-07", Map.of("group_name", "后道", "unit_price", "0.55"), TENANT);
+
+        ArgumentCaptor<ProductionOperation> updated = ArgumentCaptor.forClass(ProductionOperation.class);
+        verify(productionOperationMapper).updateById(updated.capture());
+        assertThat(updated.getValue().getGroupName()).as("合法字段照常落库").isEqualTo("后道");
+        assertThat(updated.getValue().getUnitPrice()).isEqualByComparingTo("0.55");
+        verify(priceVersionMapper, times(1)).insert(any(ProductionOperationPriceVersion.class));
+    }
+
     @Test
     @DisplayName("非单价字段的部分更新：停用/单位/分组/排序/必完标记，未给的字段不写")
-    void partialUpdateOfNonPriceFields() {
-        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
+    void partialUpdateOfNonPriceFields() {        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
         when(productionOperationMapper.updateById(any(ProductionOperation.class))).thenReturn(1);
 
         Map<String, Object> view = service().update("op-v54-07", Map.of(
