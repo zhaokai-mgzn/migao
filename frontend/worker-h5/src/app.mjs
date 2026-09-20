@@ -12,7 +12,7 @@
 
 import { createApi, SESSION_EXPIRED } from './api.mjs'
 import { parseScanInput, tenantIdFromLocation } from './scan-input.mjs'
-import { initialState, reduce, renderPage } from './render.mjs'
+import { afterComplete, doneNotice, initialState, reduce, renderPage } from './render.mjs'
 
 /** 造一个「本机唯一」的幂等键（补传必须复用同一个键 ⇒ 绝不能在重发时重新生成）。 */
 function newRequestId() {
@@ -130,15 +130,20 @@ export function createApp({ doc, api, location = globalThis.location }) {
     on('wh5-report', async () => {
       const v = state.view
       if (!v?.operation?.operation_id) return
+      // 🔴 幂等键**同一屏复用**（重试 = 服务端回放首次结果，绝不重复计件）；成功换屏 ⇒ 换新键。
+      // 刻意**不**每次点击都新造一个：那样「第一次其实成功了、响应丢了，工人再点一次」= 第二笔报工。
+      const clientRequestId = v.__requestId ?? newRequestId()
+      state = { ...state, view: { ...v, __requestId: clientRequestId } }
       try {
-        const r = await api.report({
-          orderId: v.order_id,
-          operationId: v.operation.operation_id,
-          qty: v.operation.qty,
-          qualifiedQty: v.operation.qty,
-          clientRequestId: newRequestId(),
+        const r = await api.completeByScan({
+          token: v.__token,
+          // 只有「一键改」（工人显式指定）才带 operation_id：归属由**服务端**校验（防呆④）。
+          // 默认路径**只带 token** ⇒ 哪道工序由**系统**定（防呆⑤），数量由服务端取「剩余应做」。
+          operationId: v.operation.determined_by === 'picked' ? v.operation.operation_id : undefined,
+          clientRequestId,
         })
-        dispatch({ type: 'notice', notice: r.orderCompleted ? '本单已完工 🎉' : '已报工' })
+        // 回执驱动下一屏：接着做下一道 / 本套完工（`afterComplete` 丢掉 __requestId ⇒ 下一笔换新键）
+        dispatch({ type: 'completed', view: afterComplete(state.view, r), notice: doneNotice(r) })
       } catch (e) {
         fail(e)
       }

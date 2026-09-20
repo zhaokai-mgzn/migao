@@ -65,6 +65,12 @@ import static org.mockito.Mockito.when;
  *       {@code unit_price=null}（**不是** 0）—— 写死 {@code priced}/折 0 ⇒ 红；</li>
  *   <li><b>计件归属取 body</b>：body 里塞 {@code worker_id=冒领} ⇒ 落库仍是 session 解出的工人
  *       （issue #4733 的复核，本切片**不**新开第二条身份来源）—— 改成读 body ⇒ 红。</li>
+ *   <li><b>「改前真写了 {@code work_logs}」</b>（#4792 的**承重证据**）：旧写入口
+ *       {@link ProductionService#report}（= 工人页改前走的
+ *       {@code /orders/{orderId}/operations/{operationId}/report}）**不接收码**、
+ *       只按 {@code (orderId, operationId)} 定位 ⇒ 拿布帘的码去报纱帘的工序**照样落库**
+ *       —— 这就是「防呆④ 在工人页不生效」的实测形态；改成
+ *       {@link ProductionScanCompleteService#complete}（按 token 定位部位）后才 422。</li>
  * </ol>
  */
 @ExtendWith(MockitoExtension.class)
@@ -284,6 +290,36 @@ class ProductionScanCompleteServiceTest {
                 .hasMessageContaining("不属于本次扫码的部位");
 
         assertNothingWritten();
+    }
+
+    @Test
+    @DisplayName("🔴 承重证据（改前真写了 work_logs）：旧写入口 `/report` 无部位判据 —— 拿布帘的码报纱帘的工序照样落库")
+    void legacyReportPathAcceptsCrossPositionAndWritesWorkLog() {
+        // 同一组夹具：布帘（扫到的码指向它）+ 纱帘（另**一道**工序，属**另一个**部位）
+        stubPending(List.of(
+                op(OP_CLOTH, ITEM_CLOTH, 1, "精裁-布", "11", "0", new BigDecimal("3.50")),
+                op(OP_GAUZE, ITEM_GAUZE, 1, "精裁-纱", "8", "0", new BigDecimal("2.00"))));
+
+        // 旧入口（工人页改前走的那条）：URL 里显式给 orderId + operationId（**纱帘**那道），
+        // 🔴 **不带任何码** ⇒ 服务端无从判定「这次扫的是哪个部位」，防呆④ 在这条路径上**不存在**。
+        Map<String, Object> legacyBody = body(TOKEN);
+        legacyBody.put("qty", new BigDecimal("8"));
+        legacyBody.put("qualified_qty", new BigDecimal("8"));
+        legacyBody.put("work_type", "normal");
+
+        Map<String, Object> result = productionService.report(
+                ORDER_ID, OP_GAUZE, legacyBody, TENANT, "key-legacy", WORKER);
+
+        // 真的写进去了：明细落的是**纱帘**那道（不是扫到的布帘），计件归属 = session 解的工人
+        ProductionWorkLog log = capturedWorkLog();
+        assertThat(log.getOperationId()).isEqualTo(OP_GAUZE);
+        assertThat(log.getQualifiedQty()).isEqualByComparingTo("8");
+        assertThat(log.getUnitPrice()).isEqualByComparingTo("2.00");
+        assertThat(log.getWorkerId()).isEqualTo("w-1");
+        assertThat(result.get("done_qty")).isEqualTo(new BigDecimal("8"));
+
+        // 对照（同一个文件里紧邻的 crossPositionPickIsRejected）：改走 scan/complete ⇒ 422 + 零写入
+        // ⇒ 两条合起来才是「工人页改走 scan/complete 才让防呆④ 生效」的完整证据链。
     }
 
     // ============================================================ ③ 幂等：同键不重复计件
