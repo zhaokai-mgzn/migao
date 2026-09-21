@@ -317,6 +317,10 @@ describe('TaskCardPrint（洗水码 竖版 30mm×60mm 单列，issue #4964）', 
     expect(screen.getByTestId('task-card-label-remark-0')).toHaveTextContent('加logo条')
     expect(screen.getByTestId('task-card-label-remark-0')).toHaveTextContent('防翘扣')
     expect(screen.getByTestId('task-card-label-formula-0')).toHaveTextContent('韩褶公式')
+    // 🔴 算料公式必须给到 **3 行**（渲染实拍实测）：公式串 ≈21.7em，27.6mm 宽下要 3 行才装得下；
+    // clamp 到 2 行会把末端的 `= 13.3米`（**结果**）切掉 ⇒ 纸面成「… = …」（改回 2 ⇒ 本条必红）
+    expect(screen.getByTestId('task-card-label-formula-0').className).toContain('line-clamp-3')
+    expect(screen.getByTestId('task-card-label-formula-0').className).not.toContain('line-clamp-2')
 
     // item-2 没有快照行 ⇒ 第 2 张不出色号/用料/宽高/加工方式/备注/公式（缺值不渲染，不猜）
     expect(screen.queryByTestId('task-card-label-color-1')).toBeNull()

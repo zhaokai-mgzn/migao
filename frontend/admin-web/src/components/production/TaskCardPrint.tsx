@@ -234,8 +234,13 @@ export default function TaskCardPrint({
                       备注 {remark}
                     </div>
                   )}
+                  {/* 算料公式（用户字段裁定里的「备注（工艺备注 / 算料公式）」）：
+                      形态 = `韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米` ≈ 21.7em
+                      ⇒ 27.6mm 宽（≈13em/行）下要 **3 行**才装得下；**clamp 到 2 行会把末端的
+                      `= 13.3米`（结果）切掉**，纸面成了「… = …」（渲染实拍实测，issue #4964）。
+                      实测余量够 3 行（最坏高度那张正文 2 行时到 40.19mm，QR 行起于 46.9mm）。 */}
                   {formula && (
-                    <div className="line-clamp-2 text-neutral-600" data-testid={`task-card-label-formula-${index}`}>
+                    <div className="line-clamp-3 text-neutral-600" data-testid={`task-card-label-formula-${index}`}>
                       {formula}
                     </div>
                   )}
