@@ -141,8 +141,8 @@ async def test_narrow_only_candidate_also_rotates(monkeypatch):
     # 红证（实测）：`execute` 里 `fabric_widths=fabric_widths,` 变异成 `=None,` ⇒ 本断言红
     # （`cutting_mode` → `定高买宽`、`door_width` → 3.2、`fabric_meters` → 6.0）。
     # ⚠️ 米数锚点 **9.15 → 9.2**（issue #5084 改钉）：3 幅 × 3.05 = 9.15 是**未进位**值，
-    #    声明口径（docs/curtain-fabric-quote-rules.md §8「一律向上进位到 0.1」）⇒ ceil(9.15, 0.1) = 9.2。
-    #    原断言 = 缺陷证据（进位规则只覆盖 2/5 路径）；本处只改期望值，判定结构（幅数/门幅）一字未动。
+    #    声明口径 = 真值源 `docs/curtain-fabric-quote-rules.md` §8「一律向上进位到 0.1」
+    #    ⇒ 期望值取进位后的值（算例对照见本 PR「改钉清单」）；判定结构（幅数 / 门幅）一字未动。
     result = await _run(monkeypatch, window_height=2.75, fabric_width=3.2, fabric_widths=[2.8])
     assert result.data["cutting_mode"] == cc.CUTTING_MODE_FIXED_WIDTH
     assert result.data["door_width"] == 2.8
@@ -156,7 +156,8 @@ async def test_narrow_only_candidate_also_rotates(monkeypatch):
 
 async def test_without_candidates_single_width_behaviour_is_unchanged(monkeypatch):
     # 不传候选集 ⇒ 既有单一门幅口径：3.05 > 2.8 ⇒ 倒幅（与 #5013 之前逐值一致）
-    # 米数 9.2 = ceil(3 幅 × 3.05 = 9.15, 0.1)（issue #5084 改钉 —— 原锚点 9.15 是未进位值）
+    # 米数已按 #5084 改钉为进位后的值（旧锚点 = 未进位的缺陷证据）—— 声明口径 = 真值源
+    # `docs/curtain-fabric-quote-rules.md` §8「一律向上进位到 0.1」；算例对照见本 PR「改钉清单」。
     result = await _run(monkeypatch, window_height=2.75, fabric_width=2.8)
     assert result.data["door_width"] == 2.8
     assert result.data["cutting_mode"] == cc.CUTTING_MODE_FIXED_WIDTH

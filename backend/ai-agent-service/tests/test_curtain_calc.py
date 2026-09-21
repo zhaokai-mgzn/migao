@@ -1334,6 +1334,35 @@ class TestMetersRoundingSingleGate:
                     " —— 同一份报价内部不自洽"
                 )
 
+    def test_already_rounded_paths_are_idempotent_under_the_gate(self):
+        """**幂等守卫**：已各自进位的两支（褶数法 / 显式 `formula='fullness'`）逐值不得变。
+
+        唯一出口的前提是 `ceil_to_step` 对**已是步长整数倍**的米数恒等 —— 否则「收敛」会变成
+        「二次进位 = 改钱」。值级锚点 = 改前实测（`origin/main`）：客户自报 48 折双开 12.3 米、
+        6.6 双开标准档 52 折 13.3 米、5.5 双开 2.0 倍 11.0 米（ERP 锚点 `CSO260915-02615`）。
+        红证 = 把这两支的进位改成非幂等形态（如进位后再加一步）⇒ 本断言红。
+        """
+        already_rounded = (
+            ("48 折双开（客户自报褶数）",
+             dict(window_width=6.6, window_height=2.6, mounting="s_hook", fabric_width=3.2,
+                  pleat_count=48, open_count=2, source="customer_quoted", fabric_price=23.8), 12.3),
+            ("6.6 双开标准档（52 折）",
+             dict(window_width=6.6, window_height=2.6, mounting="s_hook", fabric_width=3.2,
+                  open_count=2, craft_tier="standard", fabric_price=30.0), 13.3),
+            ("5.5 双开 2.0 倍（ERP 锚点）",
+             dict(window_width=5.5, window_height=2.5, mounting="s_hook", fabric_width=3.2,
+                  open_count=2, craft_tier="standard", formula="fullness", fabric_price=30.0), 11.0),
+        )
+        for label, kwargs, meters in already_rounded:
+            q = build_quote(**kwargs)
+            assert q["fabric_meters"] == meters, (
+                f"{label}：唯一出口对已进位的米数必须**恒等**（幂等），期望 {meters} 米，"
+                f"实际 {q['fabric_meters']} 米 —— 收敛变成了二次进位（改钱）"
+            )
+            assert q["fabric_cost"] == round(meters * kwargs["fabric_price"], 2), (
+                f"{label}：面料费必须 = 未变的米数 × 单价"
+            )
+
     def test_mixed_color_surcharge_uses_the_same_rounded_meters(self):
         """拼色加价（元/米 × 该款面料米数）必须与 `fabric_meters` **同源同一变量**。
 
