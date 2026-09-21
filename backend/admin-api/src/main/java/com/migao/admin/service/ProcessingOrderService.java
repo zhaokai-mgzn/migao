@@ -55,7 +55,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * 生成加工单时的工序实例化读**工序库的新结构**：
  * {@code production_route_templates}（具名主线）+ {@code production_route_rules}（工艺/选项触发的
  * 增删与计件系数）+ {@code production_operation_positions}（部位价目与适用性）
- * + {@code production_operations}（分组/单位/必完标记/作用域），经
+ * + {@code production_operations}（分组/单位/作用域；「必完标记」自 issue #4961 起不再参与实例化与完工判定），经
  * {@link ProductionOperationQueryService} 的新读面读出。
  * 加工项目录（快照的 {@code processingItems}）**不再是**工序真值源。
  * 取不到路线模板/工序 ⇒ fail-closed 中止生成（{@link #ERR_ROUTING_NOT_FOUND} /
@@ -432,10 +432,9 @@ public class ProcessingOrderService {
      * 命中即止；两类信号全不命中 ⇒ 该租户的**默认路线模板**（见 {@link #deriveRouteKey}
      * 与 {@link #resolveRoute}）。</p>
      *
-     * <p><b>`is_must_finish` / `is_start_marker` 读库</b>：取 `production_operations` 的同名列
-     * （V54 种子只把「外帘装袋」标为必完）。此前实例化用「每部位**末道**工序必完」的临时口径
-     * （#4131）—— 那是"库里没有种子"时代的占位，与新口径是两套语义，已删除（末道「外帘发货」
-     * 在库里 `is_must_finish=false`）。</p>
+     * <p><b>`is_start_marker` 读库</b>：取 `production_operations` 的同名列。
+     * 🔴 `is_must_finish`（必完）**已退场**（#4961，用户裁定 2026-09-21「完工 = 全部工序全绿」）：
+     * 实例化 payload **不再带该键**（列保留为历史载体），完工判据改看「全部实例完成」。</p>
      */
     private void instantiateOperations(Order order, ProcessingOrder po,
                                        List<Map<String, Object>> positions, Long tenantId) {
@@ -529,11 +528,12 @@ public class ProcessingOrderService {
                 // 显示名派生键**从路线步骤逐字带出**（不在此另推一份 ⇒ 不会与路线读面漂移）
                 operation.put("logical_name", step.get("logical_name"));
                 operation.put("position", step.get("position"));
-                // 分组/单位/单价/必完/开始标记**逐字取库**（不猜、不补默认值）
+                // 分组/单位/单价/开始标记**逐字取库**（不猜、不补默认值）。
+                // 🔴 `is_must_finish` **不再带出**（#4961）：概念已退场 ⇒ payload 里去掉该键
+                // （实例化侧 parseSpecs 也不再读它；列保留为历史载体，见 V107 迁移）。
                 operation.put("group", step.get("group"));
                 operation.put("unit", step.get("unit"));
                 operation.put("unit_price", step.get("unit_price"));
-                operation.put("is_must_finish", step.get("is_must_finish"));
                 operation.put("is_start_marker", step.get("is_start_marker"));
                 operations.add(operation);
             }
@@ -812,7 +812,8 @@ public class ProcessingOrderService {
             }
             // ⛔ 规则级 `position`（部位限定）**已退场**（issue #4937，O2）：部位不再参与取路
             // ⇒ 这里原来那三行筛选整块删除（`routing.py::build_route_v2` 同步删除；
-            // 新迁移 `V104__clear_route_rule_positions.sql` 把存量行的值清空为 NULL）。
+            // 新迁移 `backend/admin-api/src/main/resources/db/migration/V103__clear_route_rule_positions.sql`
+            // 把存量行的值清空为 NULL）。
             applicable.add(rule);
         }
         if (applicable.isEmpty()) {
@@ -1367,7 +1368,8 @@ public class ProcessingOrderService {
             // 且与「显式定价 0 元」不可区分。读面（V88 `GET /operation-layers`）不回落 ⇒
             // 实例化侧必须同口径：格价 NULL ⇒ 落 NULL（未定价），格价 0 ⇒ 有价 0 元。
             step.put("unit_price", priceByLogical.get(logicalName));
-            step.put("is_must_finish", meta.get("is_must_finish"));
+            // 🔴 `is_must_finish` **不再带出**（#4961）：路线步骤里去掉该键 ⇒ 实例化 payload 也没有它
+            // （`buildPositionPayload` 逐字从中带出；列保留为历史载体）。
             step.put("is_start_marker", meta.get("is_start_marker"));
             step.put("scope", meta.get("scope"));
             steps.add(step);

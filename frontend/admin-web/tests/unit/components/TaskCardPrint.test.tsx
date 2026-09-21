@@ -51,7 +51,7 @@ const positions: ProductionPosition[] = [
     operations: [
       // `operation` = 工人端快照名（变体名，如 `精裁-布`）：界面**不得**渲染（issue #4621）
       { id: 'op-1', seq: 1, operation: '精裁-布', logical_name: '精裁', position: '布帘', unit: '套', qty: 2, status: 'pending', done_qty: 0 },
-      { id: 'op-2', seq: 2, operation: '外帘装袋', logical_name: '外帘装袋', unit: '件', qty: 2, is_must_finish: true, status: 'pending', done_qty: 0 },
+      { id: 'op-2', seq: 2, operation: '外帘装袋', logical_name: '外帘装袋', unit: '件', qty: 2, status: 'pending', done_qty: 0 },
     ],
   },
   {

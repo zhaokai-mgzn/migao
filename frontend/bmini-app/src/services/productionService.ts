@@ -23,6 +23,12 @@ export interface ProductionOperation {
   unit_price: number
   // 计件系数（`factor`）**不再下发**（issue #4589）：计件工资 = 数量 × 计件单价，
   // 系数已从算法与读面退场（服务端不再返回该键 ⇒ 声明留着就是过期契约）。
+  /**
+   * 必完工序（缺这道工序不能打包）—— **读面契约键，保留**：后端读面照旧返回它
+   * （`backend/admin-api/src/test/java/com/migao/admin/controller/ProductionControllerTest.java`
+   * 断言 `positions[0].operations[*].is_must_finish`），且本仓 bmini 测试夹具仍在构造该键。
+   * ⚠️ issue #4961 退场的是商家**写面与渲染点**（工人端从未渲染它），不是读面声明。
+   */
   is_must_finish: boolean
   is_start_marker: boolean
   status: string

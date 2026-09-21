@@ -365,6 +365,9 @@ cases:
     # / `-NO-SELF-CLEAN`）都是「写用例缺声明」，修法见 `.github/assertion_taxonomy.py`。
     # 【为什么**不**写 `order_before: order_query before order_manage`】（上段已述）：runner 的
     #   时序断言要求后件是**成功**调用 ⇒ 与「取消失败也应如实说明」自相矛盾。
+    #   ⚠️ 本块口径在集成时按 **#4969（issue #4966）** 那版收口：先生种子里 `EVAL-MB-ORD-0002`
+    #   的状态是 `confirmed`（`tests/agent_eval/fixtures/mibao_eval_seed.sql` 的复位语句逐字可核）
+    #   ⇒ 取消**成功**是可判定的期望（旧注释里「最新订单可能是 shipped」是过时真值，已删）。
     # 【效果层 = `must_succeed`】「调用了 ≠ 成了」（#3778）：`expectations` 只证明
     #   `order_manage(action=cancel)` 被调用过，返回 success=false 也照样计分通过。
     #   本用例按「**最近这笔订单**」指代解析（种子栈里 张三 `13800138000` 名下最新的

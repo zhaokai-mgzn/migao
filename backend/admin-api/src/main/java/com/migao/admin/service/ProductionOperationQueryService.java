@@ -820,7 +820,9 @@ public class ProductionOperationQueryService {
         view.put("scope", op.getScope());
         view.put("unit", op.getUnit());
         view.put("unit_price", nz(op.getUnitPrice()));
-        view.put("is_must_finish", Boolean.TRUE.equals(op.getIsMustFinish()));
+        // 🔴 历史载体，**恒 false**（#4961）：`is_must_finish` 已退场（完工口径 = 全部活跃工序实例完成），
+        // 键保留只为不破冻结契约（工序目录/工艺项读面的既有消费者按固定键集取值）。
+        view.put("is_must_finish", false);
         view.put("is_start_marker", Boolean.TRUE.equals(op.getIsStartMarker()));
         // provenance（V62，issue #4361）：单价是占位值/行业推算值这件事必须**在界面上可见**
         // （用户裁定：「照铺，但 provenance 必须可见，不许静默」）。NULL = 来源未知，不冒充已知。
@@ -839,7 +841,8 @@ public class ProductionOperationQueryService {
         view.put("group", op == null ? null : op.getGroupName());
         view.put("unit", op == null ? null : op.getUnit());
         view.put("unit_price", op == null ? null : nz(op.getUnitPrice()));
-        view.put("is_must_finish", op != null && Boolean.TRUE.equals(op.getIsMustFinish()));
+        // 🔴 历史载体，**恒 false**（#4961）：概念退场，键保留（路线步骤/实例化 payload 的键集契约）。
+        view.put("is_must_finish", false);
         view.put("is_start_marker", op != null && Boolean.TRUE.equals(op.getIsStartMarker()));
         // 作用域（V67，issue #4384 A1）：实例化侧据此带出「部位级 / 套级」。
         // 库中缺该工序（op == null）⇒ null，**不猜默认值** —— 猜出来的 scope 会让 A2 静默去重。

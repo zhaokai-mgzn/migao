@@ -340,11 +340,46 @@ def test_row_values_match_the_bootstrap_terminal(schema_sql):
 
 
 def v91_row_values(row: dict) -> tuple:
+    """V91 行的逐值口径（**不含** `is_must_finish`，见 `test_must_finish_history_versus_terminal`）。
+
+    ⚠️ 退场列（issue #4961）：V91 是**已发布迁移**（指纹逐字节冻结）⇒ 它种下的
+    `外帘装袋 = TRUE` 是**历史事实、不可改**；而 bootstrap 侧是**终态** ⇒ 一律 `FALSE`。
+    两侧**合法地**不同 ⇒ 把该列留在本元组里只会「永久假红或改成恒真」，
+    故它退出逐值比对，改由独立判据双向钉住（历史值 / 终态 FALSE）。
+    """
     return (unquote(row["group_name"]), none_or(row["position"]), unquote(row["unit"]),
             num(row["unit_price"]),
-            row["is_must_finish"].strip().upper().startswith("TRUE"),
             row["is_start_marker"].strip().upper().startswith("TRUE"),
             int(row["sort_order"]), unquote(row["source"]), unquote(row["scope"]))
+
+
+def bootstrap_must_finish(schema_sql: str) -> dict:
+    """`schema.sql` 工序库种子的 `is_must_finish` 单列（名称 → bool；配 `_true_names` 用）。"""
+    columns, form, chunk = operation_inserts(schema_sql)[0]
+    assert form == "VALUES"
+    idx = {c: i for i, c in enumerate(columns)}
+    out = {}
+    for raw in re.findall(r"\(([^()]*)\)", chunk):
+        fields = split_fields(raw)
+        if len(fields) != len(columns):
+            continue
+        name = unquote(fields[idx["name"]])
+        if name in RETIRED_LOGICAL_NAMES:
+            continue
+        out[name] = fields[idx["is_must_finish"]].strip().upper().startswith("TRUE")
+    assert out, "`schema.sql` 里解析不到工序库种子行 ⇒ 本判据会空跑"
+    return out
+
+
+def v91_must_finish(sql: str) -> dict:
+    """`V91` 基线清单的 `is_must_finish` 单列（名称 → bool）。"""
+    return {unquote(r["name"]): r["is_must_finish"].strip().upper().startswith("TRUE")
+            for r in baseline_rows(sql)}
+
+
+def _true_names(flags: dict) -> list:
+    """`{工序名: bool}` → 为 True 的工序名（升序）。纯函数 ⇒ 可用注入式夹具证明判据会红。"""
+    return sorted(name for name, flag in flags.items() if flag)
 
 
 def bootstrap_row_values(schema_sql: str) -> dict:
@@ -371,11 +406,42 @@ def bootstrap_row_values(schema_sql: str) -> dict:
         scope = "set" if name in ("外帘打卷", "外帘装袋", "外帘发货", "打包") else "position"
         rows[name] = (unquote(fields[idx["group_name"]]), none_or(fields[idx["position"]]),
                       unquote(fields[idx["unit"]]), num(fields[idx["unit_price"]]),
-                      fields[idx["is_must_finish"]].strip().upper().startswith("TRUE"),
                       fields[idx["is_start_marker"]].strip().upper().startswith("TRUE"),
                       int(fields[idx["sort_order"]]), source, scope)
     assert rows, "`schema.sql` 里解析不到 production_operations 的种子行（守卫会空跑）"
     return rows
+
+
+def test_must_finish_history_versus_terminal(schema_sql):
+    """🔴 issue #4961（必完概念整体退场）：`is_must_finish` 两侧的真值各钉一条。
+
+    该列已退出 `v91_row_values` / `bootstrap_row_values` 的逐值比对（两侧**合法地**不同）：
+      · **V91（已发布迁移，指纹逐字节冻结）**：历史值里 `TRUE` 的**只有 `外帘装袋`**
+        （沿 V54 的历史口径；改它 = 改历史，已发布迁移不可改）；
+      · **bootstrap（`docs/sql/schema.sql`，终态）**：存活行一律 `FALSE`
+        （它不跑迁移链 ⇒ 必须自己就是终态，否则新建库落在旧口径）。
+    迁移链上存量行由 `backend/admin-api/src/main/resources/db/migration/V107__retire_must_finish_flag.sql`
+    收敛为 `FALSE`（真库判据见 `tests/unit_ci_workflows/test_must_finish_retire_migration.py`）。
+    """
+    v91_true = _true_names(v91_must_finish(migration_text()))
+    assert v91_true == ["外帘装袋"], (
+        f"V91 基线里 `is_must_finish = TRUE` 的行 = {v91_true}，期望恰好 `外帘装袋`"
+        f"（冻结的历史口径）")
+    boot_true = _true_names(bootstrap_must_finish(schema_sql))
+    assert boot_true == [], (
+        f"bootstrap（schema.sql）仍有存活工序 `is_must_finish = TRUE`：{boot_true} —— "
+        f"它不跑迁移链 ⇒ 必须自己就是终态（#4961）")
+
+
+def test_must_finish_judgements_detect_injected_drift():
+    """注入式自证：上面两条判据**都能红**（否则它们只是恒真的装饰）。"""
+    assert _true_names({"外帘装袋": True, "精裁-布": False}) == ["外帘装袋"], (
+        "纯函数口径不对 ⇒ 下面两条注入证不成立")
+    # ① 冻结历史值被改（多一道工序被标必完）⇒ 「只有 外帘装袋」红
+    assert _true_names({"外帘装袋": True, "韩褶-布": True}) == ["外帘装袋", "韩褶-布"]
+    # ② 终态源仍有 TRUE 行 ⇒ 「终态一律 FALSE」红
+    assert _true_names({"外帘装袋": True}) != [], (
+        "「终态一律 FALSE」判据对注入的 TRUE 行无判别力 ⇒ 它是空断言")
 
 
 def test_row_values_match_the_open_tenant_seed(seed_json):

@@ -225,11 +225,15 @@ NON_PIECEWORK_OPTIONS = frozenset({"余料带回-布", "余料带回-纱"})
 # `NON_PIECEWORK_OPTIONS`）⇒ 它**不落进静默黑洞**（`.get(opt) → None` 那种）。
 PENDING_CUSTOMER_CONFIRMATION_OPTIONS = frozenset({"余料带回"})
 
-# 必完工序 / 生产开始标记（默认；商家可配「此工序必须完成才可打包」）
-# ⚠️ 去同词两义（issue #4529）：本行的「打包」指**后道打包环节**（状态机口径：
-# 必完工序全绿 ⇒ 才能报工打包 ⇒ 打包完成 ⇒ 生产完成），**不是** V79 新增的**工序名** `打包`。
-# 两者恰好同词：`打包` 是工序名后，本集合的语义必须按「该工序的**前置门槛**」读。
-MUST_FINISH_OPS = {"外帘装袋"}   # 门槛工序（截图「此工序必须完成才可打包」的「打包」= 后道环节）
+# 生产开始标记（默认；商家可配）
+#
+# 🔴 `MUST_FINISH_OPS`（必完工序 / 门槛工序 `{"外帘装袋"}`）**已退场**（issue #4961，
+# 用户裁定 2026-09-21「完工 = 全部工序全绿」）：加工单完工判据不再是「必完工序全绿」，
+# 而是「**全部**工序实例完成」（见 app/production/piecework.py 的 `is_production_done`
+# 与 Java 侧 `ProductionService#allInstancesDone`）⇒ 工序实例**不再带 `is_must_finish` 键**，
+# 本集合已删除（删集合而不是「留着不用」：留着的集合会被下一次「顺手读一下」复活旧口径）。
+# ⚠️ 去同词两义的历史记录保留（issue #4529）：旧口径的「打包」指**后道打包环节**，
+# **不是** V79 新增的**工序名** `打包` —— 该歧义随本集合退场一并消失。
 START_MARKER_OPS = {"精裁-布", "精裁-纱"}  # 首工序触发订单进入生产中
 
 
@@ -414,16 +418,19 @@ def instance_operations(
     position: Dict[str, Any],
     calc_info: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
-    """实例化工序（应做数量=引擎输出 + 单价 + 必完/开始标记）。
+    """实例化工序（应做数量=引擎输出 + 单价 + 开始标记）。
 
     Args:
         position: {curtain_type, craft, is_shaped, special_options, open_count}
         calc_info: 算料引擎输出（`curtain_calc.build_quote` 的返回，键见 METER_KEYS/FOLD_KEYS 等；
                    缺 `panels`/`set_count`/`holes` 时按 _qty_for 的兜底口径处理，不落 0）
     Returns: 工序实例列表 [{seq, operation, group, unit, qty, unit_price,
-             is_must_finish, is_start_marker, qty_source}]
+             is_start_marker, qty_source}]
 
     实例**不再带 `factor` 键**（issue #4589）：系数已从算法退场。
+    实例**不再带 `is_must_finish` 键**（issue #4961）：必完工序概念已退场，完工判据 =
+    **全部**工序实例完成（与 Java 侧 `ProcessingOrderService.buildPositionPayload` 同口径 ——
+    两侧都必须不带该键，否则口径再次分叉）。
     """
     route = build_routing(position)
 
@@ -437,7 +444,6 @@ def instance_operations(
             "unit": meta["unit"],
             "qty": _qty_for(operation, calc_info),
             "unit_price": meta["unit_price"],
-            "is_must_finish": operation in MUST_FINISH_OPS,
             "is_start_marker": operation in START_MARKER_OPS,
             "qty_source": calc_info.get("source", "formula"),
         })

@@ -804,7 +804,7 @@ CREATE TABLE IF NOT EXISTS production_operations (
     position VARCHAR(16),                            -- 部位：布帘/纱帘/帘头/外帘（空=通用）
     unit VARCHAR(16) NOT NULL DEFAULT '米',           -- 计件单位：米/折/幅/孔/套/个
     unit_price NUMERIC(10,2) NOT NULL DEFAULT 0,     -- 计件单价（元/单位）
-    is_must_finish BOOLEAN NOT NULL DEFAULT FALSE,   -- 必完工序：全绿才可打包 → 订单自动完工
+    is_must_finish BOOLEAN NOT NULL DEFAULT FALSE,   -- 历史载体：必完概念已退场（#4961：完工 = 全部工序全绿），值恒 FALSE
     is_start_marker BOOLEAN NOT NULL DEFAULT FALSE,  -- 生产开始标记
     sort_order INT NOT NULL DEFAULT 0,
     status VARCHAR(16) NOT NULL DEFAULT 'active',
@@ -1078,7 +1078,7 @@ CREATE TABLE IF NOT EXISTS processing_position_operations (
     -- ⇒ 回落会把「未定价」变成「真 0 元」，工人白干且无人知道）。
     unit_price NUMERIC(10,2),
     factor NUMERIC(6,2) NOT NULL DEFAULT 1,          -- 特殊选项计件系数（一分为二 ×1.7，ERP 名；issue #4389）
-    is_must_finish BOOLEAN NOT NULL DEFAULT FALSE,
+    is_must_finish BOOLEAN NOT NULL DEFAULT FALSE,   -- 历史载体：必完概念已退场（#4961）；实例快照一律不写该列
     is_start_marker BOOLEAN NOT NULL DEFAULT FALSE,
     status VARCHAR(16) NOT NULL DEFAULT 'pending',   -- pending 待做 / in_progress 进行中（C 模式预留，V92）/ done 已报工
     done_qty NUMERIC(12,2) NOT NULL DEFAULT 0,       -- 合格累计数量（返工/报废不累加）
@@ -2117,6 +2117,13 @@ UPDATE production_route_signals
 -- 迁移链的种子在新建库上并不存在（同第 11 节 bootstrap 对齐段的既有教训）。
 -- 内容与 V54__seed_production_operations.sql 逐字同口径；三源漂移由测试守
 -- （tests/unit_ci_workflows/test_production_catalog_seed.py：V54 ∪ V56 ↔ 本文件 ↔ routing.py 比对）。
+-- 🔴 **`is_must_finish` 是唯一的有意分歧列**（issue #4961「必完概念退场」）：冻结的 V54 种子仍留着
+-- 历史的 `外帘装袋 = TRUE`（已发布迁移不可改），而**本文件是终态** ⇒ 该列一律 `FALSE`
+-- （与迁移链终态一致：存量库由 V107__retire_must_finish_flag.sql 收敛为 FALSE）。
+-- 该列已退出跨源逐值比对，改由两条显式判据钉住（冻结种子的历史值 / 终态三源一律 FALSE），
+-- 见 tests/unit_ci_workflows/test_production_catalog_seed.py
+-- 的 `test_frozen_seed_must_finish_is_the_recorded_history` 与
+-- `test_must_finish_is_false_in_every_terminal_source`。
 -- 末 5 行（op-v56-*）来自 V56__seed_special_option_operations.sql（issue #4230 特殊选项 A′ 类新增工序）；
 -- 本文件是**终态**（全新库一次性 bootstrap）⇒ 两个迁移的内容在此合并且**按 sort_order 连续**，
 -- 迁移侧则由 V54（1..30）+ V56（31..35）两段拼成 —— 守卫按**名称 → 值**比对，不依赖行序。
@@ -2149,7 +2156,7 @@ VALUES
   ('op-v54-22', 1, '复烫-布', '后道', '布帘', '米', 0.35, FALSE, FALSE, 22, 'active', 0),
   ('op-v54-23', 1, '布帘车被', '后道', NULL, '米', 0.4, FALSE, FALSE, 23, 'active', 0),
   ('op-v54-24', 1, '外帘打卷', '后道', '外帘', '套', 1.0, FALSE, FALSE, 24, 'active', 0),
-  ('op-v54-25', 1, '外帘装袋', '后道', '外帘', '套', 1.0, TRUE, FALSE, 25, 'active', 0),
+  ('op-v54-25', 1, '外帘装袋', '后道', '外帘', '套', 1.0, FALSE, FALSE, 25, 'active', 0),
   ('op-v54-26', 1, '质检', '后道', NULL, '套', 1.5, FALSE, FALSE, 26, 'active', 0),
   ('op-v54-27', 1, '外帘发货', '后道', '外帘', '套', 1.0, FALSE, FALSE, 27, 'active', 0),
   ('op-v54-28', 1, '绑带-布', '其他', '布帘', '套', 0.5, FALSE, FALSE, 28, 'active', 0),

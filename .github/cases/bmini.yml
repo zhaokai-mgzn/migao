@@ -178,9 +178,9 @@ cases:
     data_checks:
       - "二维码容错解析 order_id：裸单号 / migao://production/<id> / 带 query 的 URL 三种形态可解析，非法输入返回 null 且不发请求"
       - "报工请求体逐字为冻结契约字段（worker_id/worker_name/qty/qualified_qty/work_type=normal），qty 默认=该工序应做数量"
-      - "报工失败（success=false）展示后端 message 且不清空工序列表；order_completed=true → 页面显示「✅ 订单生产完成」"
+      - "报工失败（success=false）展示后端 message 且不清空工序列表；order_completed=true → 页面显示「✅ 订单生产完成」（⚠️ **2026-09-21 订正（issue #4961）**：`order_completed` 的服务端口径 = **该加工单全部活跃工序实例**合格报工满应做数量，**不再**是「必完工序全绿」；`is_must_finish` 键读面保留、值恒 false，工人端**零消费**）"
     skip_reason: "[backend-contract] 纯前端单元测试（bmini-app tests/production-page.test.tsx + production-qr.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-17 新增（issue #3997 M4-G-3）：消费 M4-G-2 冻结契约 GET/POST /api/admin/production/orders/{orderId}/operations[/{operationId}/report]；truths_ref 用 frontend-fix.no-api-change（本包不改后端 API；生产/扫码域暂无专属真值 key）"
+    merge_log: "2026-09-17 新增（issue #3997 M4-G-3）：消费 M4-G-2 冻结契约 GET/POST /api/admin/production/orders/{orderId}/operations[/{operationId}/report]；truths_ref 用 frontend-fix.no-api-change（本包不改后端 API；生产/扫码域暂无专属真值 key） ｜ 2026-09-21（issue #4961 用例库同步，配套 feat/4960-4961-integration）：第 3 条 data_check 补口径订正 —— 「✅ 订单生产完成」的触发键 `order_completed` 服务端改判为「**全部活跃工序实例报满**」（不再是「必完工序全绿」），页面渲染条件（`isCompleted`，同一门禁也决定「发货」入口是否出现）**一字未动**。⚠️ **按用例库纪律，`user_inputs` 一字未动**：其中「必完工序全绿显示「✅ 订单生产完成」」这句是 #4961 之前的工人口径描述，**保留原文**（改判说明只写在 data_checks / merge_log 里，不改 `user_inputs`）；`expectations` / `skip_reason` / `traces` 同样未动。**判据一格不放宽**。"
     traces:
       tests:
         - "frontend/bmini-app/tests/production-page.test.tsx"

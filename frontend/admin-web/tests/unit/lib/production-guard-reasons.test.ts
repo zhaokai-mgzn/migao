@@ -36,12 +36,12 @@ describe('探针：真实后端信封（路线页口径）', () => {
     const got = routingGuardReasons(
       realEnvelope([
         { field: 'operations', message: '路线不能为空' },
-        { field: 'must_finish', message: '至少要有一道必完工序' },
+        { field: 'operations', message: '主线中引用的工序「三边」在工序库里不存在' },
       ]),
     )
     expect(got).toHaveLength(2)
     expect(got[0]).toContain('路线不能为空')
-    expect(got[1]).toContain('至少要有一道必完工序')
+    expect(got[1]).toContain('工序「三边」在工序库里不存在')
     // 关键性质：不得退化成 axios 的通用文案（旧形状读不到理由时就是这个形态）
     expect(got.join('|')).not.toContain('Request failed with status code')
   })
@@ -56,12 +56,24 @@ describe('探针：真实后端信封（路线页口径）', () => {
     expect(got.join('|')).not.toContain('Request failed with status code')
   })
 
-  it('路线护栏文案带领域前缀（重复 / 缺必完 / 权限），识别不了的原样透出', () => {
+  it('路线护栏文案带领域前缀（重复 / 工序不存在 / 权限），识别不了的原样透出', () => {
     expect(describeRoutingGuard('工序重复')).toContain('工序重复')
-    expect(describeRoutingGuard('缺少必完工序')).toContain('缺少必完工序')
+    expect(describeRoutingGuard('主线中的工序「三边」不存在')).toContain('工序不存在')
     expect(describeRoutingGuard('没有权限')).toContain('没有工艺路线管理权限')
     expect(describeRoutingGuard('别的理由')).toBe('别的理由')
     expect(describeRoutingGuard('')).toBe('保存失败')
+  })
+
+  it('#4961-⑥（**改判**）「缺少必完工序」前缀**已删除**：后端护栏 4 退场 ⇒ 该分支不可达（死代码）', () => {
+    // 本文件原先自述的**死亡条件** = 「后端护栏 4 与本文件同时被判据移除」，**已满足**（issue #4961）：
+    // `ProductionRoutingCommandService.validateMainline` 删掉「至少 1 道必完工序」（五条 ⇒ 四条），
+    // 后端测试已改判为「#4961 护栏 4 **退场**：一道必完工序都没有 ⇒ 照常保存成功」。
+    // ⇒ 判据取「**前缀不再被套上** + 理由原文**一字不吞**」（移除类判据 = 改前存在、断言不存在）。
+    const raw = '主线中至少要有 1 道必完工序：必完工序全绿是加工单完工判定的唯一依据，一道都没有 ⇒ 这张单永远完不了工'
+    const got = describeRoutingGuard(raw)
+    expect(got).not.toContain('缺少必完工序：')   // 前缀整条退场（改前这里是 `缺少必完工序：${raw}`）
+    expect(got).toContain('必完工序')            // 反 placeholder：后端理由本身逐字透出，没被吞成通用文案
+    expect(got).not.toBe('保存失败')
   })
 })
 

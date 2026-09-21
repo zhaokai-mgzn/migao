@@ -679,7 +679,14 @@ export interface ProductionOperation {
   price_state?: PriceState | null
   // 计件系数（`factor`）**不再下发**（issue #4589）：计件工资 = 数量 × 计件单价，
   // 系数已从算法与读面退场 —— 保留字段只会让界面显示一个「有值却不算钱」的数。
-  /** 必完工序：完成才可打包（完工门槛） */
+  /**
+   * 必完工序（完成才可打包）—— **读面契约键，保留**。
+   *
+   * ⚠️ issue #4961 退场的是商家**渲染点**（本进度表的「必完」badge 与配置面），
+   * **不是读面声明**：后端读面照旧返回该键
+   * （`backend/admin-api/src/test/java/com/migao/admin/controller/ProductionControllerTest.java`
+   * 断言 `positions[0].operations[1].is_must_finish`）。删声明是**超出「只删商家写面」**的动作。
+   */
   is_must_finish?: boolean
   /** 标记生产开始的首工序 */
   is_start_marker?: boolean
@@ -927,7 +934,10 @@ export interface CatalogOperation {
   /** 单位：米/套/件/个/折 */
   unit?: string | null
   unit_price: number
-  /** 此工序必须完成才可打包（完工门槛） */
+  /**
+   * 此工序必须完成才可打包（完工门槛）—— **读面契约键，保留**（理由同 `ProductionOperation`）。
+   * ⚠️ issue #4961：商家面已无任何渲染点消费它（配置项与标记一并退场），但读面照旧返回该键。
+   */
   is_must_finish: boolean
   /** 标记生产开始的首工序 */
   is_start_marker: boolean
@@ -1075,9 +1085,19 @@ export interface OperationPosition {
   unit?: string | null
   /** 变体的分组（裁剪/车位/后道/其他） */
   group?: string | null
-  /** 变体的作用域（V67 闭词表） */
+  /**
+   * 变体的作用域（V67 闭词表）——**读面契约键，保留**（issue #4960 只删商家**写面**：
+   * 抽屉里那个 `variant-scope-*` 控件退场，DB 取值与后端实例化口径一字不动）。
+   * ⚠️ 前端**不得**据它渲染任何配置控件（本页已零消费者）。
+   */
   scope?: ProductionScope | null
-  /** 变体是否必完（缺这道工序不能打包） */
+  /**
+   * 变体是否必完（缺这道工序不能打包）—— **读面契约键，保留**（理由同 `scope`）：
+   * issue #4961 退场的是商家**写面与渲染点**，`POSITION_KEYS` 的键集是**冻结判据**
+   * （`tests/unit_ci_workflows/test_routing_read_endpoints.py`），一字不动。
+   * ⚠️ 本接口**不是** `POSITION_KEYS` 的逐键镜像：`applicable` 早在 #4951 就已从**前端类型**
+   * 退场（既有形态，非本包）—— 这里的判据是「**已被此前的包删过的键不回补、本包不新增删**」。
+   */
   is_must_finish?: boolean | null
 }
 
@@ -1112,8 +1132,10 @@ export interface OperationPositionUpdateParams {
  * ⚠️ **四态 ⇒ 三态**（issue #4937 / #4951 去部位化彻底版）：第 4 态 `no_applicable_position`
  * （「一格『做』都没有」）**已退场** —— 存活价目行的 `applicable` 恒 `TRUE` ⇒「一格『做』都没有」
  * 这个状态**不可达**；零格行落 `unpriced`。
- * ⚠️ **键集一字不变（仍是 9 键）**：`applicable_positions` **键保留**但**恒 `[]`** ——
- * 部位维已退场，前端**不得**据它渲染任何逐部位控件。
+ * ⚠️ **键集一字不变（仍是 9 键 = `DELIVERY_KEYS`）**：`applicable_positions` **键保留**但**恒 `[]`**
+ * —— 部位维已退场，前端**不得**据它渲染任何逐部位控件。
+ * 🔴 **issue #4961 只删商家渲染点，不减声明**：`is_must_finish` **保留**（冻结判据见
+ * `tests/unit_ci_workflows/test_routing_read_endpoints.py`）—— 前端已零消费者，读面照旧返回该键。
  */
 export interface OperationLayerDeliveryRow {
   operation: string
@@ -1124,7 +1146,7 @@ export interface OperationLayerDeliveryRow {
   price?: number | null
   price_state: 'priced' | 'unpriced' | 'multiple_prices'
   different_price_count: number
-  /** 部位维已退场 ⇒ **恒 `[]`**（键保留 = 9 键契约不变；前端**不得**据此渲染） */
+  /** 部位维已退场 ⇒ **恒 `[]`**（键保留；前端**不得**据此渲染） */
   applicable_positions: string[]
 }
 
@@ -1266,7 +1288,7 @@ export interface RouteRuleTriggerOptions {
 /**
  * 路线写端点失败时的响应体（护栏理由）—— 后端**真实**信封（issue #4308「冻结补遗 ②」）：
  * `{success:false, error:{code, message, details:[{field, message}]}, suggestion}`。
- * - `error.details[].message`：**逐条**护栏理由（空序列 / 工序不存在 / 重复 / 缺必完工序）—— **主口径**；
+ * - `error.details[].message`：**逐条**护栏理由（空主线 / 工序不在库 / 重复；🔴「缺必完工序」已随 issue #4961 退场）—— **主口径**；
  * - `error.message`：一句话摘要 —— 仅在 `details` 缺失时退化使用；
  * - `field`：违规维度（如 `operations[2]` / `must_finish`），**只用于定位，不展示给商家**。
  *
@@ -1472,10 +1494,17 @@ export interface PieceworkReport {
   unpriced?: UnpricedPiecework
 }
 
-/** 工序可写字段（PUT /api/admin/production/operations/{id}，issue #4204；scope 见 #4384 A1） */
+/**
+ * 工序可写字段（PUT /api/admin/production/operations/{id}，issue #4204；scope 见 #4384 A1）。
+ *
+ * ⚠️ **退场的是「可写键」，不是「读面键」**（issue #4960 / #4961 的同一口径）：
+ * `is_must_finish` 从**本写面类型**删除（商家面不再有「必完」这个配置项 ⇒ 写了没人发），
+ * 但它在**各自读面类型**上**一律保留**（见 `ProductionOperation` / `CatalogOperation` /
+ * `OperationPosition` / `OperationLayerDeliveryRow`）—— 读面契约键一字不动。
+ * `scope` **可写键保留**：它仍是后端契约键，且本包只删商家写面（本仓当前无调用点发它）。
+ */
 export interface ProductionOperationUpdateParams {
   unit_price?: number
-  is_must_finish?: boolean
   is_start_marker?: boolean
   status?: string
   unit?: string

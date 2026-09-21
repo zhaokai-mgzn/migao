@@ -1,22 +1,24 @@
 // case_ids: PG-039
-// PG-039（issue #4384 A1，前端半边）：工序「作用域」档位（部位级 / 套级）**可见且可就地改**
-// （`PUT /api/admin/production/operations/{id}` body 带 scope）。
+// PG-039（issue #4384 A1）的**前端半边**，2026-09-21 **改判**（issue #4960，用户裁定原文）：
+//   「下发加工的时候仍然要实例化，这种情况仍然得保留作用域，所以不能直接删，作用域得换一种叫法，
+//     现在很难理解」＋「要么还是移除作用域，生成工序实例时，显示为 工序名+布/纱？」
+// ⇒ **只删商家写面**：抽屉里的 `variant-scope-*` 控件与那句解释一起退场；
+//   **语义与 DB 取值（`position` / `set`）一字不动** —— 后端 `production_operations.scope`
+//   仍是实例化的唯一来源，本页只是**不再让商家改它**。
+//   （实例显示名走 `frontend/admin-web/src/lib/operation-display.ts` 的 `operationDisplayName`。）
 //
-// ⚠️ issue #4588（母单 #4586 包 B；契约 #4587）**改了承载形态**：原来这一列在「工序库明细」折叠次区，
-// 现在收进「工艺项」单表的行尾「管理▸」抽屉（用户 2026-09-19 追加裁定：「作用域 · 必完 完全不知道干嘛的，
-// 也可以移除」⇒ 移除的是**主表显示**，不是语义/入口）⇒ 判据落在抽屉里，并**反向断言主表不出现「作用域」**。
-// 作用域取值来源也随之明确：**变体元数据**（矩阵每格的 `scope`，契约 #4587 ①），不是工序库列表那一列。
+// 判据（**移除**类 ⇒ 红证形态 = 「改前**存在**，断言它**不存在**」，不是「找不到元素」）：
+//   ① 抽屉里**没有** `variant-scope-*`（不是禁用、不是隐藏）；
+//   ② 抽屉说明句不再出现「作用域 / 按套 / 按件」（商家不需要这个概念）；
+//   ③ 这一屏的写请求**不带** `scope` 键（退场的是**用户动作**，不是请求契约）；
+//   ④ 维护面其余各项**一个都没少**（分组 / 单位 / 停用 / 删除）。
 //
-// 为什么这条判据承重（真值源 docs/curtain-production-rules.md §8）：**外帘**是加工单打印行部位、
+// 为什么这条判据仍承重（真值源 docs/curtain-production-rules.md §8）：**外帘**是加工单打印行部位、
 // **不是**路线键，但 V54/V58 种子把 外帘打卷/外帘装袋/外帘发货 逐条写进每一条部位路线（含纱帘）
-// ⇒ 一樘「布 + 纱」时这 3 道各实例化 2 次 ⇒ 各 ¥1.0 双付。用户裁定（2026-09-19）：
-// 「套级工序先按**每樘窗一次**实现，打卷是否每帘一次**留成可配**」
-// ⇒ 「留成可配」的落码形态就是抽屉里这个控件：商家能看见、能改。
-//
-// 反 placeholder：断言渲染出**真实取值**（套级/部位级逐个不同），不是只断言控件存在；
-// 且写路径必须真发出 `{ scope }`（只断言「按钮可点」= 空断言）。
+// ⇒ 一樘「布 + 纱」时这 3 道各实例化 2 次 ⇒ 各 ¥1.0 双付。「每樘窗一次」这件事**仍在**
+// （DB 值 `scope='set'`），变的只是它**不再是一个商家配置项**。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const mockGetOperationsCatalog = vi.fn()
@@ -29,7 +31,9 @@ const mockGetRoutingGaps = vi.fn()
 const mockGetRouteSignals = vi.fn()
 // issue #4433（P3）：该页新增两条只读面 —— 部位价目矩阵 / 条件工序规则
 const mockGetOperationPositions = vi.fn()
-// issue #4677：两层分区读面（页面同时读 `operation-positions` 与 `operation-layers`）
+// issue #4677 的 `operation-layers` 读面：本文件的判据不涉及「打包发货」聚合 ⇒ 恒给空段。
+// ⚠️ 该读面在**本页**并非零消费者（`production-routings.test.tsx` 的 B3 用 `operation-price-打包`
+// 判它的聚合口径）—— 这里只是本文件不需要那份夹具（原 `layersOf()` 手工聚合器随之删除）。
 const mockGetOperationLayers = vi.fn()
 const mockGetRouteRules = vi.fn()
 // issue #4616：规则创建弹窗的触发值取值域（工艺词表 + 加工项目录）
@@ -61,118 +65,58 @@ vi.mock('@/lib/api', () => ({
 import { toast } from 'sonner'
 import ProcessConfigPage from '@/app/(dashboard)/production/routings/page'
 
-/** 工序库（只用于 provenance 徽标；作用域**不再**从这里取） */
+/** 工序库（只用于 provenance 徽标与分组/单位写面的**库行**） */
 const CATALOG = {
   total: 2,
   groups: [
     {
       group: '裁剪',
       operations: [
-        { id: 'op-v54-01', name: '精裁-布', group: '裁剪', position: '布帘', unit: '米', unit_price: 0.4, is_must_finish: false, is_start_marker: true, scope: 'position' },
+        { id: 'op-v54-01', name: '精裁-布', group: '裁剪', position: '布帘', unit: '米', unit_price: 0.4, is_start_marker: true, scope: 'position' },
       ],
     },
     {
       group: '后道',
       operations: [
-        { id: 'op-v54-24', name: '外帘打卷', group: '后道', position: '外帘', unit: '套', unit_price: 1, is_must_finish: false, is_start_marker: false, scope: 'set' },
+        { id: 'op-v54-24', name: '外帘打卷', group: '后道', position: '外帘', unit: '套', unit_price: 1, is_start_marker: false, scope: 'set' },
       ],
     },
   ],
 }
 
 /**
- * 部位价目矩阵（契约 #4587 ①）：每格的 6 个变体元数据键里带 `scope` —— 抽屉的作用域就是它。
- * 两档齐备且**不同**：外帘打卷 = 套级（每樘窗一次）；精裁-布 = 部位级。
+ * 价目读面的行（契约 #4587 ①）：`scope` 仍是**服务端契约键**（本页不再据此渲染任何控件）。
+ * ⚠️ `外帘打卷` 这一行的 DB 值仍是 `set`（「每樘窗一次」这件事**没变**）—— 变的只是
+ * 商家面不再有可以改它的控件。
  */
 const POSITIONS = [
-  { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 0.4, applicable: true, variant_operation_id: 'op-v54-01', unit: '米', group: '裁剪', scope: 'position', is_must_finish: false },
-  { id: 'pos-外帘打卷-布帘', operation: '外帘打卷', position: '布帘', unit_price: 1, applicable: true, variant_operation_id: 'op-v54-24', unit: '套', group: '后道', scope: 'set', is_must_finish: false },
+  { id: 'pos-精裁-布帘', operation: '精裁', position: '布帘', unit_price: 0.4, variant_operation_id: 'op-v54-01', unit: '米', group: '裁剪', scope: 'position' },
+  { id: 'pos-外帘打卷-布帘', operation: '外帘打卷', position: '布帘', unit_price: 1, variant_operation_id: 'op-v54-24', unit: '套', group: '后道', scope: 'set' },
 ]
 
 const ROUTINGS = { total: 0, routings: [] }
 
 const ok = (data: unknown) => ({ data: { success: true, data } })
 
-/** 抽屉里某变体的「作用域」控件（select）—— 当前值即矩阵里那一档，改它就是改档。 */
-const scopeControl = (id: string | number) =>
-  screen.getByTestId(`variant-scope-${id}`) as HTMLSelectElement
-
-const renderMatrix = async () => {
+/** 打开某道工序的「管理▸」抽屉（分组 / 单位 / 停用 / 删除 的**唯一**入口） */
+const openVariant = async (operation: string) => {
   render(<ProcessConfigPage />)
   await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-}
-
-/** 打开某逻辑工序的「管理▸」抽屉（作用域 / 必完 的**唯一**入口，issue #4588） */
-/**
- * 打开某道工序的「管理▸」抽屉。
- *
- * ⚠️ issue #4677：一屏分两层 ⇒ 入口 testid 前缀按**分区**不同 —— 工序层 = `matrix-manage-*`，
- * 「打包发货」层 = `matrix-manage-*`（本文件的 `外帘打卷` 是**套级** ⇒ 落在后者）。
- * 两个前缀都试（找不到前者就找后者），**不把分区判据抄进测试**（那是实现的事）。
- */
-const openVariant = async (operation: string) => {
-  await renderMatrix()
-  const entry =
-    screen.getByTestId(`matrix-manage-${operation}`)
-  await userEvent.click(entry)
+  await userEvent.click(screen.getByTestId(`matrix-manage-${operation}`))
   await waitFor(() => expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument())
 }
 
-describe('工序「作用域」档位（issue #4384 A1；#4588 收进行抽屉）', () => {
+describe('工序「作用域」写面退场（issue #4960；原 #4384 A1 / #4588 收进抽屉）', () => {
   beforeEach(() => {
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(CATALOG))
     mockGetRoutings.mockReset().mockResolvedValue(ok(ROUTINGS))
-    mockUpdateOperation.mockReset().mockResolvedValue(ok({ id: 'op-v54-24', scope: 'position' }))
+    mockUpdateOperation.mockReset().mockResolvedValue(ok({ id: 'op-v54-24' }))
     mockGetSeedTemplates.mockReset().mockResolvedValue(ok([]))
     mockApplySeedTemplate.mockReset()
     mockGetRoutingGaps.mockReset().mockResolvedValue(ok({ unrouted_operations: [], signal_keys_without_route: [] }))
     mockGetRouteSignals.mockReset().mockResolvedValue(ok({ total: 0, signals: [] }))
-
-/**
- * `getOperationLayers` 的替身（issue #4677）：页面读**两个**端点 ——
- * ① `GET /operation-positions`（拿格的 `id` ⇒ 抽屉写面寻址）与 ② `GET /operation-layers`
- * （两层分区 + 「打包发货」一列价聚合）。两者必须是**同一份**数据 ⇒ 这里从 `POSITIONS`
- * **按既有 `scope` 分区**（口径照抄后端 `ProductionRoutingReadService.deliveryView`）。
- */
-const layersOf = (cells: any[]) => {
-  const deliveryCells = new Map<string, any[]>()
-  const operations: any[] = []
-  for (const c of cells) {
-    if (c.scope === 'set') deliveryCells.set(c.operation, [...(deliveryCells.get(c.operation) ?? []), c])
-    else operations.push(c)
-  }
-  const delivery = [...deliveryCells.entries()].map(([operation, group]) => {
-    const applicable = group.filter((c) => c.applicable === true)
-    const prices = [...new Set(applicable.filter((c) => c.unit_price != null).map((c) => c.unit_price))]
-    const unpriced = applicable.some((c) => c.unit_price == null)
-    const price_state =
-      applicable.length === 0
-        ? 'no_applicable_position'
-        : unpriced
-          ? 'unpriced'
-          : prices.length === 1
-            ? 'priced'
-            : 'multiple_prices'
-    const first = (k: string) => group.find((c) => c[k] != null)?.[k] ?? null
-    return {
-      operation,
-      scope: 'set',
-      unit: first('unit'),
-      group: first('group'),
-      is_must_finish: first('is_must_finish'),
-      price: price_state === 'priced' ? prices[0] : null,
-      price_state,
-      different_price_count: price_state === 'multiple_prices' ? prices.length : 0,
-      applicable_positions: applicable.map((c) => c.position),
-    }
-  })
-  return { operations, delivery }
-}
-
     mockGetOperationPositions.mockReset().mockResolvedValue(ok(POSITIONS))
-    // (issue #4677) 分区读面与矩阵夹具**同源** —— 一处换、两处同步
-    mockGetOperationLayers.mockReset().mockResolvedValue(ok(layersOf(POSITIONS)))
-
+    mockGetOperationLayers.mockReset().mockResolvedValue(ok({ operations: [], delivery: [] }))
     mockGetRouteRules.mockReset().mockResolvedValue(ok([]))
     mockGetRouteRuleOptions.mockReset().mockResolvedValue(ok({ crafts: [], processing_items: [] }))
     mockUpdateOperationPosition.mockReset().mockResolvedValue(ok({ id: 'pos-精裁-布帘' }))
@@ -182,62 +126,44 @@ const layersOf = (cells: any[]) => {
     vi.mocked(toast.error).mockClear()
   })
 
-  it('判据 4a：作用域入口在**抽屉**里；主表**不出现**「作用域」（用户 2026-09-19 裁定）', async () => {
+  it('#4960-② 抽屉里没有 `variant-scope-*`，说明句也不再解释「作用域 / 按套 / 按件」', async () => {
     await openVariant('外帘打卷')
+
+    // 改前的事实：这里有一个 `<select data-testid="variant-scope-op-v54-24" value="set">`
+    //（两档选项「按套 / 按件」）＋ 一句「按套 = 每套窗只做一次；按件 = 每件各做一次」。
+    expect(document.body.querySelector('[data-testid^="variant-scope-"]')).toBeNull()
 
     const drawer = screen.getByTestId('operations-manage-drawer')
-    // 红证（形态改造前）：`variant-scope-*` 不存在（当时这一列在已取消的「工序库明细」折叠区里）
-    expect(within(drawer).getByTestId('variant-scope-op-v54-24')).toBeInTheDocument()
-    // 反向断言：收进抽屉 = 主表里没有这个词（只断言「抽屉里有」会漏掉「两处都显示」）
-    expect(within(screen.getByTestId('craft-operations-panel')).queryByText('作用域')).toBeNull()
+    expect(drawer).not.toHaveTextContent('作用域')
+    // ⚠️ 只断言**作用域专属**的措辞：抽屉的「适用条件」一节里「特殊选项按套收费（元/套）」
+    // 说的是**计价**（另一本账），不能拿光秃秃的「按套」当判据。
+    expect(drawer).not.toHaveTextContent('每套窗只做一次')
+    expect(drawer).not.toHaveTextContent('按件')
+    // 抽屉本身照旧（移除的是一项配置，不是整块维护面）
+    expect(drawer).toHaveTextContent('外帘打卷')
   })
 
-  it('判据 4b：逐行渲染**真实取值**（外帘打卷 = 按套；精裁 = 按件）', async () => {
-    await renderMatrix()
-
-    // issue #4677：`外帘打卷` 是套级 ⇒ 入口在【打包发货】区
-    await userEvent.click(screen.getByTestId('matrix-manage-外帘打卷'))
-    expect(scopeControl('op-v54-24')).toHaveValue('set')
-    expect(scopeControl('op-v54-24').selectedOptions[0]).toHaveTextContent('按套')
-
-    await userEvent.click(screen.getByTestId('operations-manage-close'))
-    await userEvent.click(screen.getByTestId('matrix-manage-精裁'))
-
-    // 同一屏里必须与套级**区分开**（一律渲染成同一档 = 这个控件没有信息量）
-    expect(scopeControl('op-v54-01')).toHaveValue('position')
-    expect(scopeControl('op-v54-01').selectedOptions[0]).toHaveTextContent('按件')
-  })
-
-  it('判据 4c：可就地改档 —— 套级改回部位级 ⇒ PUT 只提交 { scope }（不带单价等无关字段）', async () => {
+  it('#4960-③ 写面只剩 分组 / 单位 / 停用 / 删除，且写请求里**没有** `scope` 键', async () => {
     await openVariant('外帘打卷')
 
-    await userEvent.selectOptions(scopeControl('op-v54-24'), 'position')
-
+    // 分组 · 单位：铅笔 → 保存 ⇒ body 恰为 `{group_name, unit}`（不含 scope）
+    await userEvent.click(screen.getByTestId('variant-meta-edit-op-v54-24'))
+    await userEvent.click(screen.getByTestId('variant-meta-save-op-v54-24'))
     await waitFor(() =>
-      expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-24', { scope: 'position' }),
+      expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-24', { group_name: '后道', unit: '套' }),
     )
-    // 只提交 scope（部分更新口径）：顺手带上 unit_price 会把并发改动覆盖回去
-    expect(mockUpdateOperation.mock.calls[0][1]).toEqual({ scope: 'position' })
-    await waitFor(() => expect(vi.mocked(toast.success)).toHaveBeenCalled())
-  })
+    expect(Object.keys(mockUpdateOperation.mock.calls[0][1] as object)).toEqual(['group_name', 'unit'])
 
-  it('判据 4d：可双向改 —— 部位级改成套级 ⇒ PUT { scope: "set" }', async () => {
-    await openVariant('精裁')
+    // 停用 / 删除：入口在抽屉 footer（issue #4947：逐行那一对与 footer 逐字重复 ⇒ 退场）
+    await userEvent.click(screen.getByTestId('operations-manage-disable'))
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-24', { status: 'inactive' }))
 
-    await userEvent.selectOptions(scopeControl('op-v54-01'), 'set')
+    // 删除入口仍在（二次确认那一套见 production-routings.test.tsx ⑰-⑬）
+    expect(screen.getByTestId('operations-manage-delete')).toBeInTheDocument()
 
-    await waitFor(() =>
-      expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-01', { scope: 'set' }),
-    )
-  })
-
-  it('判据 4e：写失败不假装成功（报错且不弹成功 toast）', async () => {
-    mockUpdateOperation.mockRejectedValueOnce(new Error('boom'))
-    await openVariant('外帘打卷')
-
-    await userEvent.selectOptions(scopeControl('op-v54-24'), 'position')
-
-    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled())
-    expect(vi.mocked(toast.success)).not.toHaveBeenCalled()
+    // 全量反向断言：**没有任何**写请求带 `scope` 键
+    for (const call of mockUpdateOperation.mock.calls) {
+      expect(Object.keys(call[1] as object)).not.toContain('scope')
+    }
   })
 })

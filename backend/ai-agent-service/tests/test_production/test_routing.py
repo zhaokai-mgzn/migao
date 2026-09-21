@@ -75,7 +75,12 @@ def test_instance_operations_qty_from_calc():
     assert by_op["精裁-布"]["qty"] == 12.3
     assert by_op["外帘装袋"]["qty"] == 1
     assert by_op["精裁-布"]["is_start_marker"] is True
-    assert by_op["外帘装袋"]["is_must_finish"] is True
+    # 🔴 #4961 改判（用户裁定 2026-09-21「完工 = 全部工序全绿」）：`is_must_finish` **已退场** ⇒
+    # 工序实例**不再带该键**（原断言是 `by_op["外帘装袋"]["is_must_finish"] is True`，改后 KeyError）。
+    # 判据反向收紧：从「该键为 True」变成「该键**不存在**」——留着一个恒 False 的键会让下游
+    # 「顺手读一下」复活旧口径（`piecework.is_production_done` 曾因此退化成恒判 True）。
+    assert "is_must_finish" not in by_op["外帘装袋"]
+    assert all("is_must_finish" not in i for i in insts)
     assert by_op["韩褶-布"]["qty_source"] == "formula"
 
 
