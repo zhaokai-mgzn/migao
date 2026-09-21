@@ -19,15 +19,17 @@
 
 1. 前端门幅真值源模块 `lib/craft-auto-features.ts`（**去注释后**）不得出现引擎端点硬编码门幅值的
    **字面量** —— 值从 `internal.py::_FABRIC_WIDTH` 读出，**不写死**（引擎改了值，抄进前端即红）；
-2. 门幅的**取值点唯一**：`detectAutoFeatures` / `detectAutoFeatureNotices`（lib）、规则
-   `door-width-plan.ts`、下单页都必须经 `parseDoorWidth()` 取门幅（任一处再写一份门幅解析 ⇒ 红）；
+2. 门幅的**取值点唯一**：规则 `door-width-plan.ts`、下单页都必须经 `parseDoorWidth()` 取门幅
+   （任一处再写一份门幅解析 ⇒ 红）。⚠️ issue #5035 起前端本地判定/提示实现
+   （`detectAutoFeatures` / `detectAutoFeatureNotices`）**已删除**（判定 #5019 / 提示 #5036 /
+   算例 #5043 包 2a 都搬到服务端）⇒ 取值点只剩规则面与下单页；**另加死亡条件**（判据 4）钉住它们不得回来；
 3. **反向守卫**（#4877）：缺省门幅**不得**回来（`DEFAULT_DOOR_WIDTH` / `resolveDoorWidth` 出现即红）
    —— 解析不到 ⇒ 判定面**不判**并显式告知（`missing-door-width`）、规则面 `undecidable`。
 
 ## 红证（注入式，逐条可注入）
 
 - 在 `craft-auto-features.ts` 里加 `const ENGINE_TRIAL_WIDTH = 3.2` ⇒ 判据 1 红；
-- 把 `detectAutoFeatureNotices` 里的 `parseDoorWidth(input.doorWidth)` 换成写死的 `2.8` ⇒ 判据 2 红；
+- 把 `door-width-plan.ts` 里的 `parseDoorWidth(...)` 换成写死的 `2.8` ⇒ 判据 2 红（⚠️ issue #5035：原先举的 `detectAutoFeatureNotices` 已退场，红证必须指向**还在的**取值点）；
 - 把缺省门幅写回去（`export const DEFAULT_DOOR_WIDTH = 2.8` / 解析回退到默认值）⇒ 判据 3 红。
 
 ⚠️ **本守卫不检查 ai-agent 侧**（分叉 #4652 未接线）—— 引擎端点何时改为**接收** SKU 门幅，
@@ -92,12 +94,9 @@ def test_door_width_has_single_value_source():
     旧口径「静默按缺省门幅判超高/超宽」= 要替换掉的错误做法。
     """
     lib = LIB_TS.read_text(encoding="utf8")
-    for func_name in ("detectAutoFeatures",):
-        body = _exported_body(lib, func_name)
-        assert "parseDoorWidth(" in body, (
-            f"{func_name} 没有经 `parseDoorWidth()` 取门幅 —— 门幅的第二份解析 = 与判定/提示脱钩"
-            "（issue #4746：提示文案的前提句必须与判定**同源**；issue #4877：解析不到 ⇒ 不判）"
-        )
+    # ⚠️ issue #5035：原先这里遍历 `detectAutoFeatures` / `detectAutoFeatureNotices` 的导出体
+    # —— 那两个函数**已随实现删除**（判定/提示/算例都搬到服务端），故本循环退场；
+    # **判据强度不放宽**：另加判据 4（死亡条件）钉住它们不得回到前端。
     for path in (PLAN_TS, PAGE_TSX):
         assert "parseDoorWidth(" in path.read_text(encoding="utf8"), (
             f"{path.name} 没有经 `parseDoorWidth()` 取门幅 —— 页面/规则自解析门幅数值 = 第二份口径"
@@ -107,3 +106,11 @@ def test_door_width_has_single_value_source():
         "缺省门幅又回来了（`DEFAULT_DOOR_WIDTH` / `resolveDoorWidth`）—— issue #4877 已改判："
         "解析不到 ⇒ 不判（`missing-door-width`）+ 规则面 `undecidable`，不得回退任何默认门幅"
     )
+    # 判据 4（**死亡条件**，issue #5035）：前端本地判定/提示实现**已删除** ——
+    # 一旦被重新导出，就说明「前端又持了一份与租户配置脱钩的第二份判据」（§17.3 ④ 的形态：
+    # 判据要能证明旧做法**没有回来**）。
+    for gone in ("detectAutoFeatures", "detectAutoFeatureNotices"):
+        assert f"export function {gone}" not in lib and f"export const {gone}" not in lib, (
+            f"`{gone}` 又回到了前端 —— issue #5019 / #5036 已把判定与提示搬到服务端；"
+            "前端再持一份 = 第二份口径（与租户配置脱钩，商家改过配置后两边会算出不同的键）"
+        )
