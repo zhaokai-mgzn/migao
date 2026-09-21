@@ -67,6 +67,20 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
     expect(screen.getByTestId('glossary-term-接高')).toHaveTextContent('待查明')
   })
 
+  it('特殊选项组：六个勾选项各一条（工序/锚点来自真值源；一分为二 无工序）', () => {
+    render(<CraftCalcGlossary config={CONFIG} />)
+    for (const name of ['拼1次', '拼2次', '拼3次', '接高', '双眼皮接高', '一分为二']) {
+      // 注入：漏渲染任一项 ⇒ 红
+      expect(screen.getByTestId(`glossary-option-${name}`)).toBeInTheDocument()
+    }
+    // 注入：给「一分为二」编一道工序 ⇒ 第一条红；删掉「待查明」⇒ 第二条红
+    expect(screen.getByTestId('glossary-option-一分为二')).toHaveTextContent('不加工序')
+    expect(screen.getByTestId('glossary-option-双眼皮接高')).toHaveTextContent('待查明')
+    // 「接高」两组都有 ⇒ 锚点必须分开（否则跳错条目）
+    expect(screen.getByTestId('glossary-term-接高')).toBeInTheDocument()
+    expect(screen.getByTestId('glossary-option-接高')).toBeInTheDocument()
+  })
+
   it('说明区块可键盘展开（原生 details，无自定义开关）', () => {
     const { container } = render(<CraftCalcGlossary config={CONFIG} />)
     const details = container.querySelectorAll('details')

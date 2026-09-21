@@ -27,6 +27,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { AUTO_FEATURE_NAMES, detectAutoFeatures } from '@/lib/craft-auto-features'
+import { SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
 import {
   AUTO_FEATURE_TERMS,
   CALC_PARAM_COPY,
@@ -34,9 +35,11 @@ import {
   GLOSSARY_EXAMPLE,
   GLOSSARY_FORMULAS,
   MANUAL_FEATURE_TERMS,
+  SPECIAL_OPTION_TERMS,
   TERM_FAMILY,
   buildAutoFeatureExamples,
   glossaryAnchorOf,
+  glossaryOptionAnchorOf,
   glossaryTermAnchorOf,
 } from '@/lib/craft-calc-glossary'
 import type { CraftCalcConfig } from '@/types'
@@ -223,5 +226,151 @@ describe('算料配置页·口径与术语说明（issue #4975）', () => {
     // 算例用的门幅必须**明说**「随商品而变」+「没有缺省门幅」，否则它会被读成缺省门幅
     const terms = [...AUTO_FEATURE_TERMS].map((t) => `${t.criterion ?? ''}${t.boundary ?? ''}`).join('')
     expect(terms).toContain('没有缺省门幅')
+  })
+})
+
+// ────────────────────────── 特殊选项术语（issue #4986） ──────────────────────────
+
+/** 工序路线真值源：`SPECIAL_OPTION_ROUTINGS` = 特殊选项 → 条件工序的**唯一**映射 */
+const ROUTING_SRC = resolve(__dirname, '../../../../../backend/ai-agent-service/app/production/routing.py')
+const routingSrc = readFileSync(ROUTING_SRC, 'utf8')
+
+/** 从真值源里取「特殊选项 → 条件工序 + 锚点」（读源，不写死任何一条） */
+function routingEntries(): Record<string, { operation: string; after: string }> {
+  const block = routingSrc.match(/SPECIAL_OPTION_ROUTINGS[^=]*=\s*\{([\s\S]*?)\n\}/)
+  if (!block) throw new Error('routing.py 里找不到 SPECIAL_OPTION_ROUTINGS（真值源取不到）')
+  const out: Record<string, { operation: string; after: string }> = {}
+  for (const m of block[1].matchAll(/"([^"]+)":\s*\{"operation":\s*"([^"]+)",\s*"after":\s*"([^"]+)"\}/g)) {
+    out[m[1]] = { operation: m[2], after: m[3] }
+  }
+  return out
+}
+
+describe('特殊选项术语（issue #4986）', () => {
+  /**
+   * 剔除文案里的**标识符**（选项名 / 工序名 / 锚点工序名）—— 它们本身可能含数字
+   * （`拼1次-布`），但那不是「写死了数值」。判据 6 的扫描面 = 剔除后的**剩余文本**。
+   */
+  function withoutIdentifiers(text: string): string {
+    let out = text
+    for (const id of SPECIAL_OPTION_TERMS.flatMap((t) => [t.name, t.operation ?? '', t.after ?? ''])) {
+      if (id !== '') out = out.split(id).join('')
+    }
+    return out
+  }
+
+  /**
+   * 变体名 → **逻辑名**（`拼1次-布` ⇒ `拼1次`）。
+   *
+   * 真值源 `SPECIAL_OPTION_ROUTINGS` 给的是**变体名**（按部位派生），而前端**只许写逻辑名**
+   * （硬编码变体名 = 把部位写死）—— 守卫 `tests/unit_ci_workflows/test_op_name_registry_guard.py`
+   * 判据① 直接判红（本模块第一版就是被它抓到的）。
+   */
+  function logicalOf(name: string): string {
+    return name.split('-')[0]
+  }
+
+  it('判据 1：六个术语逐字取自真实特殊选项清单（清单改名/删项 ⇒ 红）', () => {
+    const missing = SPECIAL_OPTION_TERMS.map((t) => t.name).filter(
+      (n) => !(SPECIAL_OPTIONS as readonly string[]).includes(n)
+    )
+    // 注入：把「一分为二」从 SPECIAL_OPTIONS 删掉（或说明里写错一个字）⇒ 红
+    expect(missing).toEqual([])
+    // 用户点名的就是这六个（多一个/少一个 ⇒ 红）
+    expect(SPECIAL_OPTION_TERMS.map((t) => t.name)).toEqual([
+      '拼1次',
+      '拼2次',
+      '拼3次',
+      '接高',
+      '双眼皮接高',
+      '一分为二',
+    ])
+  })
+
+  it('判据 2：说明里的工序映射与 routing.py 逐值一致（**逻辑名**；改一处必红）', () => {
+    const entries = routingEntries()
+    for (const term of SPECIAL_OPTION_TERMS) {
+      if (term.operation === null) {
+        // 不加工序的选项**不得**出现在映射表里（否则说明与实现相反）
+        expect(Object.keys(entries)).not.toContain(term.name)
+        continue
+      }
+      // 注入：把「接高」的锚点从 精裁 改成 布三边 ⇒ 下面两条红
+      expect(term.operation).toBe(logicalOf(entries[term.name].operation))
+      expect(term.after).toBe(logicalOf(entries[term.name].after))
+    }
+  })
+
+  it('判据 2b：说明里**不得出现变体名**（部位后缀 `-布` / `-纱` / `-帘头` / `-布料`）', () => {
+    // 与 Python 守卫 test_op_name_registry_guard.py 判据① 同口径（前端源码全域扫描）——
+    // 本模块第一版把「拼1次-布」写进说明，正是被那条守卫抓到的。
+    const offenders = SPECIAL_OPTION_TERMS.flatMap((t) => [
+      t.operation ?? '',
+      t.after ?? '',
+      t.definition,
+      t.impact,
+      t.boundary ?? '',
+    ]).filter((s) => /-(布|纱|帘头|布料)/.test(s))
+    expect(offenders).toEqual([])
+  })
+
+  it('判据 3：拼3次写明「用料系数未登记 ⇒ 不插值、不静默退回单色」', () => {
+    const t = SPECIAL_OPTION_TERMS.find((x) => x.name === '拼3次')
+    if (!t) throw new Error('特殊选项术语里缺「拼3次」')
+    const text = `${t.impact}${t.boundary ?? ''}`
+    // 注入：把这段边界删掉 ⇒ 红（商家会以为拼3次与拼2次一样有系数）
+    expect(text).toContain('未登记')
+    expect(text).toContain('不插值')
+  })
+
+  it('判据 4：双眼皮接高 = 与「接高」同一道工序 + 含义待查明', () => {
+    const a = SPECIAL_OPTION_TERMS.find((x) => x.name === '接高')
+    const b = SPECIAL_OPTION_TERMS.find((x) => x.name === '双眼皮接高')
+    if (!a || !b) throw new Error('特殊选项术语里缺「接高」或「双眼皮接高」')
+    // 注入：给「双眼皮接高」编一道自己的工序 ⇒ 红（真值源里它映射到同一道）
+    expect(b.operation).toBe(a.operation)
+    expect(b.after).toBe(a.after)
+    // 含义未查明 ⇒ 照实写，不凭字面推
+    expect(b.boundary ?? '').toContain('待查明')
+  })
+
+  it('判据 5：一分为二 = 不加工序 / 只有历史计件系数（三层写清）', () => {
+    const t = SPECIAL_OPTION_TERMS.find((x) => x.name === '一分为二')
+    if (!t) throw new Error('特殊选项术语里缺「一分为二」')
+    // 注入：给它写一道工序 / 加上「用料」层 ⇒ 红
+    expect(t.operation).toBeNull()
+    expect(t.layers).toEqual(['计件'])
+    // 自 #4589 起零消费（新报工不乘、历史快照仍乘）—— 不写这句会让商家以为现在还乘系数
+    expect(`${t.definition}${t.impact}${t.boundary ?? ''}`).toContain('零消费')
+  })
+
+  it('判据 6：文案里不出现**数值**（沿用 #4975 的纪律）', () => {
+    // ⚠️ 选项名 / 工序名**本身**含数字（`拼1次-布`）—— 它们是**标识符**、不是数值
+    // ⇒ 扫描前先剔除全部标识符（否则是**误红**：把正确的工序名判成"写死了数字"）
+    const offenders = SPECIAL_OPTION_TERMS.flatMap((t) =>
+      [t.definition, t.impact, t.boundary ?? ''].map(withoutIdentifiers)
+    ).filter((s) => /[0-9]/.test(s))
+    expect(offenders).toEqual([])
+  })
+
+  it('判据 6b：数值扫描**非空转**（注入一个数值 ⇒ 必须被抓到）', () => {
+    // 红证卫生（本仓纪律）：断言要能红 —— 把 0.65 这类**数值**写进文案即命中
+    expect(/[0-9]/.test(withoutIdentifiers('拼色每折吃布 0.65 米'))).toBe(true)
+    // 反向：合法文案（只含标识符）不得被误判
+    expect(/[0-9]/.test(withoutIdentifiers('插条件工序「拼1次-布」'))).toBe(false)
+  })
+
+  it('判据 7：每个术语至少影响一层（不许出现「什么都不影响」的说明）', () => {
+    for (const t of SPECIAL_OPTION_TERMS) {
+      expect(t.layers.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('判据 8：锚点走**独立命名空间**（「接高」两组都有 ⇒ 不能共用 id）', () => {
+    const anchors = SPECIAL_OPTION_TERMS.map((t) => glossaryOptionAnchorOf(t.name))
+    expect(new Set(anchors).size).toBe(anchors.length)
+    // 注入：把特殊选项也挂到 `glossary-term-*` ⇒ 与「手选特征」组的「接高」抢同一个 DOM id ⇒ 红
+    const manual = MANUAL_FEATURE_TERMS.map((t) => glossaryTermAnchorOf(t.name))
+    expect(anchors.filter((a) => manual.includes(a))).toEqual([])
   })
 })

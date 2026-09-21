@@ -18,9 +18,11 @@ import {
   CALC_SCALAR_KEYS,
   GLOSSARY_FORMULAS,
   MANUAL_FEATURE_TERMS,
+  SPECIAL_OPTION_TERMS,
   TERM_FAMILY,
   buildAutoFeatureExamples,
   glossaryAnchorOf,
+  glossaryOptionAnchorOf,
   glossaryTermAnchorOf,
   type GlossaryTerm,
 } from '@/lib/craft-calc-glossary'
@@ -33,16 +35,19 @@ function valueOf(config: CraftCalcConfig, key: string): string {
   return '—'
 }
 
-/** 一条术语（自动推算 / 手选 / 近义词族共用同一形态） */
-function TermBlock({ term }: { term: GlossaryTerm }) {
+/** 一条术语（自动推算 / 手选 / 近义词族 / 特殊选项共用同一形态） */
+function TermBlock({ term, anchor, meta }: { term: GlossaryTerm; anchor?: string; meta?: string }) {
+  // 锚点与 testid 同源（`anchor` 缺省 = 术语组命名空间；特殊选项组传自己的命名空间）
+  const id = anchor ?? glossaryTermAnchorOf(term.name)
   return (
     <div
-      id={glossaryTermAnchorOf(term.name)}
-      data-testid={`glossary-term-${term.name}`}
+      id={id}
+      data-testid={id}
       className="space-y-0.5 border-b border-neutral-100 py-2 last:border-b-0"
     >
       <p className="font-medium text-neutral-800">{term.name}</p>
       <p className="text-neutral-600">{term.definition}</p>
+      {meta !== undefined && <p className="text-neutral-500">{meta}</p>}
       {term.criterion !== undefined && (
         <p className="text-neutral-500">判定：{term.criterion}</p>
       )}
@@ -151,6 +156,28 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
         <div className="mt-1">
           {TERM_FAMILY.map((term) => (
             <TermBlock key={term.name} term={term} />
+          ))}
+        </div>
+
+        {/* 特殊选项（issue #4986）：下单页勾选区里被点名的那六项 —— 它们影响的层各不相同
+            （用料 / 工序 / 对客价 / 计件），所以与上面三组分开列 */}
+        <h3 className="mt-4 text-sm font-medium text-neutral-700">特殊选项（下单时勾选）</h3>
+        <p className="mt-1 text-xs text-neutral-500">
+          这六项影响的东西**各不相同** —— 有的改用料、有的加一道工序、有的只影响计件历史口径。
+          工序映射逐值取自生产真值源（不是这里自己编的）。
+        </p>
+        <div className="mt-1">
+          {SPECIAL_OPTION_TERMS.map((term) => (
+            <TermBlock
+              key={term.name}
+              term={term}
+              anchor={glossaryOptionAnchorOf(term.name)}
+              meta={
+                term.operation === null
+                  ? '不加工序'
+                  : `插工序「${term.operation}」（在「${term.after}」之后）`
+              }
+            />
           ))}
         </div>
       </details>
