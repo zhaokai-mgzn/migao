@@ -66,8 +66,16 @@ public class CraftCalcConfig {
     /** 兜底公式：{@code pleat} 韩褶公式（褶数法）/ {@code fullness} 褶倍数公式（倍数法） */
     private String defaultFormula;
 
-    /** 定宽买高上下卷边（米）；引擎默认 0.3 */
+    /**
+     * **宽方向**左右覆盖余量（米，两侧各 15cm）；引擎默认 0.3（= 常量 {@code SIDE_MARGIN}）。
+     *
+     * <p>⚠️ 它是**宽**方向的量，别与高方向那个（{@link #hemMargin}）混用 —— issue #4940 的口径订正。
+     * 同一处漂移曾在页面 hint / TS 类型注释 / 引擎配置字典注释 / **本文件**各写了一遍。</p>
+     */
     private BigDecimal sideMargin;
+
+    /** **高方向**上下卷边合计（米；脚位+止口）；引擎默认 0.3（= 常量 {@code HEM_MARGIN}，issue #4976 包 1b） */
+    private BigDecimal hemMargin;
 
     /** 用料向上进位步长（米）；引擎默认 0.1 */
     private BigDecimal metersRoundingStep;
@@ -98,6 +106,7 @@ public class CraftCalcConfig {
         config.put("tiers", tiers);
         config.put("default_formula", defaultFormula);
         config.put("side_margin", sideMargin);
+        config.put("hem_margin", hemMargin);
         config.put("meters_rounding_step", metersRoundingStep);
         return config;
     }

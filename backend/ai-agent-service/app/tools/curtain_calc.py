@@ -196,13 +196,14 @@ DEFAULT_CRAFT_CALC_CONFIG: MappingProxyType = MappingProxyType({
     "tiers": {k: dict(v) for k, v in DEFAULT_CRAFT_TIERS.items()},
     "default_formula": FORMULA_PLEAT,                          # 默认公式 = 韩褶公式
     "side_margin": SIDE_MARGIN,                                # 宽方向左右覆盖余量合计（各 15cm）
+    "hem_margin": HEM_MARGIN,                                  # 高方向上下卷边合计（脚位+止口，issue #4976 包 1b）
     "meters_rounding_step": 0.1,                               # 用料米数**向上进位**步长（米）
 })
 
 #: 配置里必须是**正数**的键（0/负数 ⇒ 显式报错，不静默回退默认值）
 _POSITIVE_CONFIG_KEYS = (
     "per_fold_single", "margin_single", "margin_multi",
-    "min_fullness", "side_margin", "meters_rounding_step",
+    "min_fullness", "side_margin", "hem_margin", "meters_rounding_step",
 )
 
 
@@ -488,6 +489,8 @@ def aggregate_by_fabric(positions: List[Dict[str, Any]]) -> Dict[str, float]:
 #   定宽买高 ⇒ 只判**超宽**（= 引擎真实的分幅条件）+ **倒幅**
 #   缺省 / 表外取值 ⇒ **都不判**（保守：不猜朝向）
 # 常量的唯一落点仍是上面那两行（`SIDE_MARGIN` / `HEM_MARGIN`）—— 本段不新造第二个数。
+# ⚠️ 两个常量同时是**配置键的默认值**（`side_margin` / `hem_margin`，issue #4976 包 1b）：
+# 引擎函数体里一律读 `cfg[...]`，常量只出现在配置字典那一行。
 
 #: 加工类型 `定高买宽` —— **高**方向受门幅约束 ⇒ 只判 `超高`
 CUTTING_MODE_FIXED_HEIGHT = "定高买宽"
@@ -560,14 +563,14 @@ def detect_auto_features(
             "source": "推算",
             "reason": f"加工类型 = {CUTTING_MODE_FIXED_WIDTH}",
         })
-    elif window_height + HEM_MARGIN > fabric_width:
+    elif window_height + cfg["hem_margin"] > fabric_width:
         # 定高买宽：只有**高**受门幅约束（`成品高 + 上下卷边 > 门幅` ⇒ 定高买宽不可行）
         features.append({
             "name": "超高",
             "source": "推算",
             "reason": (
-                f"成品高 {window_height} + 上下卷边 {HEM_MARGIN} = "
-                f"{_meters_for_reason(window_height + HEM_MARGIN, fabric_width)} 米"
+                f"成品高 {window_height} + 上下卷边 {cfg['hem_margin']} = "
+                f"{_meters_for_reason(window_height + cfg['hem_margin'], fabric_width)} 米"
                 f" > 门幅 {fabric_width} 米"
             ),
         })
@@ -604,18 +607,18 @@ def calculate_fabric_meters(
     cfg = config or DEFAULT_CRAFT_CALC_CONFIG
     # 罗马帘：无褶皱倍率，按包边计算
     if mounting == "roman":
-        meters = (window_width + ROMAN_SIDE) * (window_height + HEM_MARGIN)
+        meters = (window_width + ROMAN_SIDE) * (window_height + cfg["hem_margin"])
         return meters, "roman_panel", ""
 
     # 定高布可用条件：成品高 + 卷边 ≤ 门幅（2.8m 定高上限成品高约 2.5m）
-    if window_height + HEM_MARGIN <= fabric_width:
+    if window_height + cfg["hem_margin"] <= fabric_width:
         # 定高买宽：M = (W + 0.3) × N（逐片表达同值：每片宽 × N × 开数 —— 与开数无关，issue #4527 判据 5）
         meters = (window_width + cfg["side_margin"]) * fullness
         return meters, "fixed_height", ""
 
     # 定宽买高：幅数向上取整，每幅长 = 窗高 + 卷边（+ 对花花距）
     panels = math.ceil((window_width + cfg["side_margin"]) * fullness / fabric_width)
-    panel_length = window_height + HEM_MARGIN
+    panel_length = window_height + cfg["hem_margin"]
     if has_pattern:
         panel_length += pattern_repeat
     meters = panels * panel_length
@@ -788,9 +791,9 @@ def build_quote(
         meters, _pp_meters, _pp_width = _per_panel_fullness_meters(
             window_width, open_count, N, cfg)
         formula_used = "fixed_height_fullness"
-        if window_height + HEM_MARGIN > fabric_width:
+        if window_height + cfg["hem_margin"] > fabric_width:
             panels = math.ceil(meters / fabric_width)
-            meters = panels * (window_height + HEM_MARGIN + (pattern_repeat if has_pattern else 0.0))
+            meters = panels * (window_height + cfg["hem_margin"] + (pattern_repeat if has_pattern else 0.0))
             formula_used = "fixed_width_fullness"
             warning = (
                 f"成品高 {window_height:.2f}m 超过门幅 {fabric_width:.2f}m 的定高上限，"
@@ -828,9 +831,9 @@ def build_quote(
             if gap:
                 warning += f"（{gap} 的用料系数纸表未登记，需先裁定）"
         formula_used = "fixed_height_pleats"
-        if window_height + HEM_MARGIN > fabric_width:
+        if window_height + cfg["hem_margin"] > fabric_width:
             panels = math.ceil(meters / fabric_width)
-            meters = panels * (window_height + HEM_MARGIN + (pattern_repeat if has_pattern else 0.0))
+            meters = panels * (window_height + cfg["hem_margin"] + (pattern_repeat if has_pattern else 0.0))
             formula_used = "fixed_width_pleats"
             warning = (warning + " " if warning else "") + (
                 f"成品高 {window_height:.2f}m 超过门幅 {fabric_width:.2f}m 的定高上限，"

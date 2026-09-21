@@ -54,6 +54,7 @@ const CALC_CONFIG: CraftCalcConfig = {
   },
   default_formula: 'pleat',
   side_margin: 0.15,
+  hem_margin: 0.3,
   meters_rounding_step: 0.1,
 }
 

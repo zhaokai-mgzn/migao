@@ -35,7 +35,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 ENGINE = REPO / "backend/ai-agent-service/app/tools/curtain_calc.py"
-MIGRATION = REPO / "backend/admin-api/src/main/resources/db/migration/V80__create_craft_calc_configs.sql"
+MIGRATIONS_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
+#: 建表迁移 —— ⚠️ 它**不是**配置列的唯一来源（增量列走新迁移，见 `_migration_config_columns`）
+MIGRATION = MIGRATIONS_DIR / "V80__create_craft_calc_configs.sql"
 SCHEMA = REPO / "docs/sql/schema.sql"
 ENTITY = REPO / "backend/admin-api/src/main/java/com/migao/admin/entity/CraftCalcConfig.java"
 SERVICE = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/CraftCalcConfigService.java"
@@ -66,6 +68,25 @@ def _create_table_columns(sql: str, table: str) -> set:
     return cols
 
 
+#: 配置列可以**分多次迁移**长出：已发布迁移不可改（`MigrationRunner` 按文件名整份跳过 ⇒
+#: 改旧文件只对全新库生效，issue #4235）⇒ 新增配置键**必然**落在新迁移里。
+_ALTER_COLUMN_RE = re.compile(
+    r"ALTER\s+TABLE\s+craft_calc_configs\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)", re.I)
+
+
+def _migration_config_columns() -> set:
+    """**迁移链**给出的配置列 = 建表迁移的列 ∪ 后续 `ALTER TABLE … ADD COLUMN` 的列。
+
+    为什么不只看建表迁移（旧口径）：把来源写死成 `V80` ⇒ 一加键守卫就红，逼人改判据
+    （而「改判据」等于自己给自己发通行证）—— 本仓反复踩过的形态。
+    ⇒ 按**内容**聚合（同族先例：种子守卫按集合聚合，不再写死 V54）。
+    """
+    cols = _create_table_columns(MIGRATION.read_text(encoding="utf-8"), "craft_calc_configs")
+    for path in sorted(MIGRATIONS_DIR.glob("V*.sql")):
+        cols |= {n.lower() for n in _ALTER_COLUMN_RE.findall(path.read_text(encoding="utf-8"))}
+    return cols - STRUCTURAL_COLUMNS
+
+
 def _engine_config_keys() -> list:
     """引擎 `DEFAULT_CRAFT_CALC_CONFIG` 的键（**真值源**；按源码顺序）。"""
     src = ENGINE.read_text(encoding="utf-8")
@@ -91,18 +112,25 @@ def _java_entity_config_fields() -> set:
 
 
 def test_engine_key_set_is_non_trivial():
-    """自检：解析真的拿到了键（否则下面全是空跑 = 假绿）。"""
+    """自检：解析真的拿到了键（否则下面全是空跑 = 假绿）。
+
+    ⚠️ **不写死条数**：旧版写死「恰好 9 个」（#4528 时的读数）⇒ 加一个配置键就得改判据，
+    而判据一改就等于自己给自己发通行证。⇒ 只断言解析面非空 + 两个锚点键在；
+    条数由**真值源**（引擎配置字典）说了算，其余各源与它逐键对齐。
+    """
     keys = _engine_config_keys()
-    assert len(keys) == 9, f"引擎配置键应为 9 个（issue #4528 契约），实测 {keys}"
+    assert len(keys) >= 9, f"引擎配置键解析异常（只拿到 {keys}）"
     assert "per_fold_single" in keys and "meters_rounding_step" in keys
 
 
 def test_migration_columns_match_engine_keys():
-    """判据 2：迁移 V80 的配置列 == 引擎配置键（逐键，不多不少）。"""
-    sql = MIGRATION.read_text(encoding="utf-8")
-    cols = _create_table_columns(sql, "craft_calc_configs") - STRUCTURAL_COLUMNS
+    """判据 2：**迁移链**的配置列 == 引擎配置键（逐键，不多不少）。
+
+    来源 = 建表迁移 ∪ 后续 ALTER 迁移（见 `_migration_config_columns` 的理由）。
+    """
+    cols = _migration_config_columns()
     assert cols == set(_engine_config_keys()), (
-        f"V80 列与引擎配置键不一致：多 {sorted(cols - set(_engine_config_keys()))} / "
+        f"迁移链列与引擎配置键不一致：多 {sorted(cols - set(_engine_config_keys()))} / "
         f"少 {sorted(set(_engine_config_keys()) - cols)}"
     )
 
@@ -198,3 +226,53 @@ def test_migration_is_idempotent_and_does_not_seed():
     assert not re.search(r"INSERT\s+INTO\s+craft_calc_configs", code, re.I), (
         "迁移里出现了种子 INSERT —— 本包口径是「缺行 = 用引擎默认值」，不做开租播种"
     )
+
+
+def test_java_to_config_map_matches_engine_keys():
+    """判据 4b：实体 `toConfigMap()` 的键集 == 引擎配置键（**发往引擎的那一份**）。
+
+    红证：只加实体字段与 `CONFIG_KEYS`、忘了 `toConfigMap` ⇒ 商家改的值**发不出去**
+    （引擎回落默认值、界面却显示改过了）⇒ 本断言红。
+
+    ⚠️ **这条判据此前不存在**（#4528 只钉了 `CONFIG_KEYS`）⇒ 上面那种漏法不会被任何门禁抓到。
+    """
+    src = ENTITY.read_text(encoding="utf-8")
+    m = re.search(r"toConfigMap\(\)\s*\{(.*?)\n    \}", src, re.S)
+    assert m, "实体里找不到 toConfigMap()（改名？那是本判据的定位锚点）"
+    keys = re.findall(r'config\.put\("(\w+)"', m.group(1))
+    assert keys == _engine_config_keys(), (
+        f"toConfigMap 的键与引擎配置键不一致（顺序也须一致）：{keys} vs {_engine_config_keys()}"
+    )
+
+
+def test_java_entity_side_margin_comment_is_not_the_old_drift():
+    """判据 4c：实体里 `sideMargin` 的注释不得再写「上下卷边」（issue #4940 的第 4 处）。
+
+    同一处漂移曾在页面 hint / TS 类型注释 / 引擎配置字典注释 / **Java 实体**各写一遍
+    ⇒ 语义面也要有守卫（只看键集的判据照不到「同名不同义」）。
+    红证：把注释改回「定宽买高上下卷边」⇒ 红。
+    """
+    src = ENTITY.read_text(encoding="utf-8")
+    m = re.search(r"(/\*\*.*?\*/)\s*private\s+BigDecimal\s+sideMargin;", src, re.S)
+    assert m, "实体里找不到 sideMargin 字段（含其 javadoc）"
+    comment = m.group(1)
+    assert "左右" in comment, "sideMargin 的注释必须写明它是**宽方向左右覆盖余量**"
+    assert "上下卷边" not in comment, "sideMargin 的注释不得说「上下卷边」（那是 hemMargin）"
+
+
+def test_alter_migrations_are_idempotent():
+    """判据 8b：后续 ALTER 迁移必须幂等（`ADD COLUMN IF NOT EXISTS`）。
+
+    红证：写成裸 `ADD COLUMN` ⇒ 重复执行报错（`MigrationRunner` 硬要求所有迁移可重复执行）。
+    """
+    for path in sorted(MIGRATIONS_DIR.glob("V*.sql")):
+        code = "\n".join(
+            line for line in path.read_text(encoding="utf-8").split("\n")
+            if not line.strip().startswith("--")
+        )
+        for m in re.finditer(
+            r"ALTER\s+TABLE\s+craft_calc_configs\s+ADD\s+COLUMN\s+([^;]*);", code, re.I
+        ):
+            assert "IF NOT EXISTS" in m.group(1).upper(), (
+                f"{path.name} 的 ADD COLUMN 不是幂等的（缺 IF NOT EXISTS）：{m.group(0)}"
+            )

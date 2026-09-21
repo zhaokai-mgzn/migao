@@ -65,6 +65,7 @@ class CraftCalcConfigServiceTest {
                 "economy", new LinkedHashMap<>(Map.of("fullness", 1.8, "label", "经济工艺")))));
         body.put("default_formula", "pleat");
         body.put("side_margin", 0.3);
+        body.put("hem_margin", 0.3);
         body.put("meters_rounding_step", 0.1);
         return body;
     }

@@ -33,6 +33,7 @@ export const CALC_SCALAR_KEYS = [
   'margin_multi',
   'min_fullness',
   'side_margin',
+  'hem_margin',
   'meters_rounding_step',
 ] as const
 
@@ -85,6 +86,11 @@ export const CALC_PARAM_COPY: Record<string, CalcParamCopy> = {
     label: '左右覆盖余量（米）',
     hint: '宽方向：两侧覆盖余量 —— 定高买宽按宽买米时加它，定宽买高按它算分幅',
     impact: '**宽方向**的覆盖余量（引擎 `SIDE_MARGIN`）：定高买宽时加在用料里，定宽买高时进分幅判据',
+  },
+  hem_margin: {
+    label: '上下卷边（米）',
+    hint: '高方向：定宽买高每幅的上下卷边（脚位 + 止口）—— 超高的判据也用它',
+    impact: '**高方向**的卷边量（引擎 `HEM_MARGIN`）：定高可行性、定宽买高每幅长、罗马帘、超高判定都用它',
   },
   meters_rounding_step: {
     label: '进位步长（米）',

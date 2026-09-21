@@ -213,9 +213,19 @@ def write_ledger(path: Path = LEDGER) -> int:
                 print(f"  · {label}：{names}", file=sys.stderr)
         return 1
     added = report["unregistered"]
+    # ⚠️ **保住手工维护的顶层键**（如 `_comment` = 一次性改动的正当性说明）。
+    # 旧实现从零重建 payload ⇒ 一条 `--write-ledger` 就把它**静默删掉**，
+    # 而「正当性必须落在账本里」的判据（`test_deposition_total_migration.py`）会因此判红
+    # —— 本单实测踩到（issue #4976 包 1b：加一条 V110 顺手把 `_comment` 抹了）。
+    # ⇒ 除 `note` / `migrations`（本函数自己生成）外的顶层键**原样带过去**。
+    preserved = {}
+    if path.exists():
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        preserved = {k: v for k, v in raw.items() if k not in ("note", "migrations")}
     payload = {
         "note": ("已发布迁移的内容指纹账本（issue #4235）。"
                  f"新增迁移后跑：{LEDGER_REGEN_CMD}（只新增条目，不覆盖已登记指纹）"),
+        **preserved,
         "migrations": {name: on_disk[name] for name in sorted(on_disk, key=version_key)},
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
