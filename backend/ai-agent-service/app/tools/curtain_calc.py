@@ -698,6 +698,108 @@ def detect_auto_feature_notices(
     return notices
 
 
+#: 门幅规则的**四态裁决**（issue #5043 包 2b）—— 与前端 `door-width-plan.ts::judgeDoorWidthChoice`
+#: **逐条对齐**（前端退场后这里是唯一实现）。
+DOOR_WIDTH_VERDICT_OPTIMAL = "optimal"
+DOOR_WIDTH_VERDICT_SUBOPTIMAL = "suboptimal"
+DOOR_WIDTH_VERDICT_INFEASIBLE = "infeasible"
+DOOR_WIDTH_VERDICT_UNKNOWN = "unknown"
+
+
+def judge_door_width_choice(
+    plan: Dict[str, Any],
+    *,
+    window_height: Optional[float] = None,
+    selected_door_width: Optional[float] = None,
+    selected_panels: Optional[int] = None,
+    allowance: float = 0.0,
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """客服所选门幅 ⇒ 相对**规则解**的判定与建议（issue #5043 包 2b）。
+
+    三条边界（与前端同款，**一字不放宽**）：
+    ① **未选 ⇒ `unknown`**（不提示「最优」—— 没有可比对象）；
+    ② **所选门幅不可行 ⇒ `infeasible`**（比「非最优」更强：先告警「需接高」，再给规则解）；
+    ③ **并列最优不提示**：定宽买高下**分幅数相同 = 米数相同** ⇒ 判 `optimal`（挑哪个门幅是
+       库存/单价的事，系统不 nag）。
+
+    Args:
+        plan: `build_quote(..., fabric_widths=[...])` 的返回值（含 `door_width` / `cutting_mode` /
+            `splice` / `panels`）—— **规则解由它给**，本函数**不重算规则**。
+        window_height: 成品高（米）；定高买宽下判「所选门幅单幅做不做得出」用
+        selected_door_width: 客服所选门幅（米）；缺 / 非正 ⇒ `unknown`
+        selected_panels: **所选门幅**的分幅数（由调用方用**同一份口径**算出；定宽买高裁决用）
+        allowance: 门幅有效余量（米）
+        config: 算料配置（读 `hem_margin`；**不新造第二份常量**）
+
+    Returns:
+        `{"verdict": <四态之一>, "suggestion": <可执行建议 | None>}`
+    """
+    cfg = resolve_craft_calc_config(config)
+    hem_margin = cfg["hem_margin"]
+    selected = (
+        float(selected_door_width)
+        if isinstance(selected_door_width, (int, float))
+        and not isinstance(selected_door_width, bool)
+        and selected_door_width > 0
+        else None
+    )
+    if selected is None:
+        return {"verdict": DOOR_WIDTH_VERDICT_UNKNOWN, "suggestion": None}
+
+    allow = max(float(allowance or 0.0), 0.0)
+    selected_eff = round(selected - allow, 3)
+    door_width = plan.get("door_width")
+
+    if plan.get("splice"):
+        return {
+            "verdict": DOOR_WIDTH_VERDICT_INFEASIBLE,
+            "suggestion": (
+                f"所选 {_num(selected)} 米门幅单幅做不出成品高 —— 本单**没有任何门幅**能单幅做成"
+                "（规则解同此结论，需接高）"
+            ),
+        }
+    if door_width == selected:
+        return {"verdict": DOOR_WIDTH_VERDICT_OPTIMAL, "suggestion": None}
+
+    if plan.get("cutting_mode") == CUTTING_MODE_FIXED_HEIGHT:
+        if window_height is None:
+            return {"verdict": DOOR_WIDTH_VERDICT_UNKNOWN, "suggestion": None}
+        need_height = round(float(window_height) + hem_margin, 3)
+        if need_height > selected_eff:
+            return {
+                "verdict": DOOR_WIDTH_VERDICT_INFEASIBLE,
+                "suggestion": (
+                    f"所选 {_num(selected)} 米门幅单幅做不出（成品高 {_num(window_height)} + 上下卷边 "
+                    f"{_num(hem_margin)} = {_num(need_height)} 米，缺口 "
+                    f"{_num(round(need_height - selected_eff, 3))} 米 ⇒ **需接高**）；"
+                    f"规则解 = {_num(door_width)} 米门幅"
+                ),
+            }
+        return {
+            "verdict": DOOR_WIDTH_VERDICT_SUBOPTIMAL,
+            "suggestion": (
+                f"规则解是 {_num(door_width)} 米门幅（可行集里最小：成品高 {_num(window_height)} + "
+                f"上下卷边 {_num(hem_margin)} = {_num(need_height)} 米 ≤ {_num(door_width)} 米）"
+                "—— 换它可少占宽幅布（宽幅布留给真正超高的窗）"
+            ),
+        }
+
+    rule_panels = plan.get("panels")
+    if not isinstance(rule_panels, int) or not isinstance(selected_panels, int):
+        return {"verdict": DOOR_WIDTH_VERDICT_UNKNOWN, "suggestion": None}
+    if selected_panels <= rule_panels:
+        return {"verdict": DOOR_WIDTH_VERDICT_OPTIMAL, "suggestion": None}
+    per_panel = round((float(window_height) if window_height is not None else 0.0) + hem_margin, 3)
+    return {
+        "verdict": DOOR_WIDTH_VERDICT_SUBOPTIMAL,
+        "suggestion": (
+            f"所选 {_num(selected)} 米门幅要 {selected_panels} 幅；规则解 {_num(door_width)} 米只要 "
+            f"{rule_panels} 幅（少 {selected_panels - rule_panels} 幅 × 每幅 {_num(per_panel)} 米用料）"
+        ),
+    }
+
+
 #: **人工覆盖**值：接高 —— ⚠️ 它**不是** `cuttingMode` 的取值（ERP 加工类型只有上面两项）：
 #: 它 = 「定高买宽 + 接高工序」。故本值只作 `resolve_fabric_plan` 的**入参**；
 #: 返回值里 `cutting_mode` 恒为前两者之一，另带 `splice` 布尔 —— 不发明第三个加工类型值。
@@ -1323,6 +1425,10 @@ def build_quote(
         "cutting_mode": plan_state["cutting_mode"] or cutting_mode,
         "splice": plan_state["splice"],
         "door_width_reason": plan_state["reason"],
+        # 幅数（issue #5043 包 2b，**加性**）：定宽买高 ⇒ 分幅数；其余 ⇒ `None`
+        # （键恒在；既有调用读到的既有键**逐值不变**）。局部变量 `panels` 本就存在
+        # （`_resolve_plan` 的返回值 / 定宽买高的复算），此处只是**如实暴露**它。
+        "panels": panels,
         "auto_features": detect_auto_features(
             window_width=window_width,
             window_height=window_height,
