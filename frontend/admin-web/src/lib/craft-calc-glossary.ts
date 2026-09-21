@@ -201,6 +201,91 @@ export const TERM_FAMILY: GlossaryTerm[] = [
   },
 ]
 
+/**
+ * **特殊选项**（下单页「特殊选项」勾选区里的六项 —— issue #4986）。
+ *
+ * 用户 2026-09-21：「特殊选项里面被选中的 6 个术语也加进去」。
+ *
+ * 🔴 这六项**不在同一层**（商家最容易搞混的正是这一点）：
+ *
+ * | 术语 | 影响用料 | 影响工序 | 影响对客价 | 影响计件 |
+ * |---|---|---|---|---|
+ * | 拼1次 / 拼2次 | ✅ 每折吃布按拼次取系数 | ✅ 插条件工序 | ✅ 按套 | — |
+ * | 拼3次 | ⚠️ **纸表未登记系数** ⇒ 拼色时算料直接拒绝 | ✅ 插条件工序 | ✅ 按套 | — |
+ * | 接高 | ❌ 不改米数 | ✅ 插条件工序 | ✅ 按套 | — |
+ * | 双眼皮接高 | ❌ | ✅ **与「接高」同一道工序** | ✅ 按套 | — |
+ * | 一分为二 | ❌ | ❌ **不加工序** | ❌ 按设计未定价 | ⚠️ 只有**历史**系数档 |
+ *
+ * ⚠️ **工序映射逐值取自真值源** `backend/ai-agent-service/app/production/routing.py` 的
+ * `SPECIAL_OPTION_ROUTINGS`（由守卫读源比对，改一处必红）—— 本模块**不**自己定义映射。
+ */
+export interface SpecialOptionTerm extends GlossaryTerm {
+  /** 勾选后插哪道**条件工序**（逐字取自真值源）；`null` = **不加工序** */
+  operation: string | null
+  /** 插在哪个锚点工序之后；`null` = 不加工序 */
+  after: string | null
+  /** 影响哪些层（判据用：**至少一层**，不许出现「什么都不影响」的说明） */
+  layers: Array<'用料' | '工序' | '对客价' | '计件'>
+}
+
+/** 用户点名的六项特殊选项（顺序即页面顺序，与下单页勾选区一致） */
+export const SPECIAL_OPTION_TERMS: SpecialOptionTerm[] = [
+  {
+    name: '拼1次',
+    operation: '拼1次-布',
+    after: '布三边',
+    layers: ['用料', '工序'],
+    definition: '拼色时的一条拼接缝（口语「拼一次」）—— 它是**特殊选项**，勾了才生效',
+    impact: '① 进用料：款式为拼色时，每折吃布按拼次取系数；② 插一道条件工序「拼1次-布」（在「布三边」之后）',
+    boundary: '选项名是**匹配键**：库里改名而这里不跟 ⇒ 工序不加、用料系数也取不到（不是静默少一道，是算料直接拒绝）',
+  },
+  {
+    name: '拼2次',
+    operation: '拼2次-布',
+    after: '布三边',
+    layers: ['用料', '工序'],
+    definition: '拼色的两条拼接缝（口语「双拼色」）',
+    impact: '与拼1次同理：进用料系数（按拼次取）+ 插条件工序「拼2次-布」（在「布三边」之后）',
+    boundary: '拼次是**数字**、选项名只是载体：登记了系数的是拼1次与拼2次两档，别的拼次见「拼3次」',
+  },
+  {
+    name: '拼3次',
+    operation: '拼3次-布',
+    after: '布三边',
+    layers: ['工序'],
+    definition: '拼色的三条拼接缝',
+    impact: '插条件工序「拼3次-布」（在「布三边」之后）；**用料系数纸表未登记**',
+    boundary: '拼色 + 拼3次 时算料**直接拒绝**（**不插值**、也不静默退回单色）—— 纸表只登记了两档，缺依据就不猜',
+  },
+  {
+    name: '接高',
+    operation: '接高-布',
+    after: '精裁-布',
+    layers: ['工序', '对客价'],
+    definition: '成品高度不够时接一段布补高，按明细行归属（主布接高 / 配布边接高）',
+    impact: '插条件工序「接高-布」（在「精裁-布」之后）+ 对客按套计价；**不改用料米数**',
+    boundary: '「接高」作为**加工项**勾选时只进加工费组合键、**不插工序**（加工项与特殊选项是两条路）',
+  },
+  {
+    name: '双眼皮接高',
+    operation: '接高-布',
+    after: '精裁-布',
+    layers: ['工序', '对客价'],
+    definition: 'ERP 的另一个接高勾选项',
+    impact: '与「接高」**同一道工序**（「接高-布」，同锚点「精裁-布」）+ 对客按套计价',
+    boundary: '含义**待查明**（客户亦不明）⇒ 系统不凭字面推；勾它与勾「接高」在工序与价格上等价',
+  },
+  {
+    name: '一分为二',
+    operation: null,
+    after: null,
+    layers: ['计件'],
+    definition: '把一个部件一分为二（对客价按设计**未定价**）',
+    impact: '**不加工序**；只有一条**历史计件系数**档 —— 自系数口径退场后**零消费**（新报工不乘、历史报工按当时快照仍乘）',
+    boundary: '⇒ 勾它今天**不改变**订单金额、也不改变加工单工序数（与「接高」「拼N次」的差别就在这）',
+  },
+]
+
 /** 公式说明（**只写符号**，不写数 —— 数值由真值渲染） */
 export const GLOSSARY_FORMULAS: { name: string; formula: string; note: string }[] = [
   {
@@ -293,4 +378,15 @@ export function glossaryAnchorOf(key: string): string {
 /** 术语名 → 说明区块里该条的锚点 id */
 export function glossaryTermAnchorOf(name: string): string {
   return `glossary-term-${name}`
+}
+
+/**
+ * 特殊选项名 → 说明区块里该条的锚点 id（**独立命名空间**）。
+ *
+ * ⚠️ 必须分开：`接高` 在「手选特征」与「特殊选项」两组里都有 —— 共用 `glossary-term-*`
+ * 会让两个条目抢同一个 DOM id（锚点跳错、HTML 非法）。守卫
+ * `tests/unit/lib/craft-calc-glossary.test.ts` 的判据 8 钉住这一点。
+ */
+export function glossaryOptionAnchorOf(name: string): string {
+  return `glossary-option-${name}`
 }
