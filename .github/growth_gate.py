@@ -15,6 +15,7 @@ QA Growth Gate — 数据驱动的事前测试覆盖门禁（G1 修复）
 """
 import argparse
 import ast
+import datetime
 import fnmatch
 import glob as _glob
 import json
@@ -509,10 +510,18 @@ def coverage_gate_from_report(report_path, coverage_type, source_roots, threshol
 
 
 # ── G4: 弱断言检测（防"凑数测试"过门禁）──
-
+#
+# 存在性/缺失性两条模式的**口径收窄**（2026-09-21 / issue #5083 的一条：正则误报真断言）：
+# 只命中「**整个断言表达式就是这一个比较**」的形态（= 不触业务数据的空断言）；
+# 带布尔续接（`or` / `and`）的复合表达式是**真断言**，此前被判弱断言属**假红**——
+# 本地实测 5 处 `… is None or …`（如 backend/ai-agent-service/tests/contracts/test_contract_api.py、
+# tests/smoke/test_05_tenant.py）+ 6 处 `… is not None and …`
+# （如 backend/ai-agent-service/tests/test_graph_skills.py）全部被误报。
+# ⚠️ **不是删表**：裸形态（`assert x is None` / `assert x is not None`）仍逐条检出，
+# 带尾随断言消息 / 行尾注释的也仍检出（表达式没变，只是多了消息参数/注释）。
 _WEAK_PATTERNS = [
-    re.compile(r"assert\s+\w+\s+is\s+not\s+None"),
-    re.compile(r"assert\s+\w+\s+is\s+None"),
+    re.compile(r"assert\s+\w+\s+is\s+not\s+None(?!\s+(?:or|and)\b)"),
+    re.compile(r"assert\s+\w+\s+is\s+None(?!\s+(?:or|and)\b)"),
     re.compile(r"assert\s+True\b"),
     re.compile(r"assert\s+False\b"),
     re.compile(r"assertTrue\s*\(\s*true\s*,"),
@@ -522,11 +531,35 @@ _WEAK_PATTERNS = [
     re.compile(r"^\s*pass\s*$"),
 ]
 
+# TS/TSX 侧形态（issue #5080 盲区①）：`.ts`/`.tsx` 属 `_is_test_file` 覆盖面、本来就会被
+# 收进扫描集，但模式表原先只有 Python 形态 ⇒ 命中率**恒为 0**（TS 侧零判据 = 完全不可见）。
+# **入表集合按全仓实测判别力决定**（本仓当前树实测：`toBeDefined` 38 处 / 21 个测试文件、
+# `not.toBeNull` 35 处 / 16 个、`toBeTruthy` 500 处 / 60 个）：
+#   · 入表：`toBeDefined` / `not.toBeNull` —— 只证明「东西在」（存在性/非空性），
+#     与 Python 侧的 `is not None` 同族，全仓**无**假阳性形态；
+#   · **有意不入表**：`toBeTruthy` —— 500 处里 424 处作用在 testing-library 的
+#     `getBy*`/`findBy*` 返回值上（该 getter 未命中即抛 ⇒ 断言恒真、属**更弱**），但余下
+#     76 处作用在 `querySelector` / `includes` / 位掩码等**真断言**上 ⇒ 文本层一刀切会认下
+#     76 处假红，判别力不足。取舍钉在 tests/unit_ci_workflows/test_weak_assert_blindspots.py。
+_TS_WEAK_PATTERNS = [
+    re.compile(r"expect\s*\(.*\)\s*\.toBeDefined\s*\(\s*\)"),
+    re.compile(r"expect\s*\(.*\)\s*\.not\.toBeNull\s*\(\s*\)"),
+]
+
+
+def _weak_patterns_for(test_file):
+    """按扩展名取模式集：TS 专属形态**只**对 .ts/.tsx 生效（不施加到 Python 文件）。"""
+    patterns = list(_WEAK_PATTERNS)
+    if str(test_file).endswith((".ts", ".tsx")):
+        patterns += _TS_WEAK_PATTERNS
+    return patterns
+
 
 def find_weak_asserts(test_file):
     """扫描测试文件的弱断言（不触业务数据的存在性/恒真断言 + 空 pass）。
 
     返回 [{line_no, line, reason}]。弱断言无法证明功能正确，属「凑数」。
+    TS/TSX 文件额外套用 `_TS_WEAK_PATTERNS`（issue #5080 盲区①）。
     读文件失败/路径不存在/编码异常 → 抛 ValueError（fail-closed：门禁依赖的
     扫描不可空转，「路径不可读」绝不允许退化成「0 处弱断言」放行，见 issue #3631）。
     """
@@ -535,16 +568,179 @@ def find_weak_asserts(test_file):
         text = Path(test_file).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as e:
         raise ValueError(f"无法读取测试文件 {test_file}（{e.__class__.__name__}）") from e
+    patterns = _weak_patterns_for(test_file)
     for no, line in enumerate(text.split("\n"), 1):
         stripped = line.strip()
         if not stripped:
             continue
-        for pat in _WEAK_PATTERNS:
+        for pat in patterns:
             if pat.search(stripped):
                 weak.append({"line_no": no, "line": stripped,
                              "reason": "弱断言（不触业务数据）"})
                 break
     return weak
+
+
+# ── G4b: 存量弱断言锚点账本（issue #5080 盲区②：只扫新增 ⇒ 存量永久免疫）──
+#
+# 口径 = 「**新增文件 fail-closed**（不变：CI 与本地都只把新增文件喂给 `--check-weak`）
+#          + **存量只许非增**（本节）」。**不做一次性全量清账**：存量三位数处逐条清偿不现实，
+# 但必须给它一个**可缩短的载体** —— 锚点快照明细 + `history`（范式同
+# `.github/skip-exemption-baseline.json`，不另造一套）。
+# 判据（fail-closed）：某文件当前处数 **>** 锚点 ⇒ 红；文件不在锚点里却有处数（新增文件
+# / 新入账）⇒ 红；**少于**锚点 ⇒ 放行（净缩是唯一合法方向）。账本缺失/损坏 ⇒ rc 2。
+WEAK_BASELINE_DEFAULT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "weak-assert-baseline.json")
+
+# 全仓扫描跳过的目录（依赖/构建产物）。只决定「扫哪些路径」，不改「是不是测试文件」的判定
+# —— 那句判定仍走 `_is_test_file` 单一事实源（issue #4077）。
+_WEAK_SCAN_SKIP_DIRS = {".git", "node_modules", ".next", "dist", "build", "coverage",
+                        "htmlcov", ".venv", "venv", "__pycache__", ".pytest_cache",
+                        "out", ".turbo"}
+
+
+def iter_repo_test_files(repo_root="."):
+    """全仓测试文件（相对路径，排序稳定）。判定唯一事实源 = `_is_test_file`。"""
+    for dirpath, dirnames, filenames in os.walk(repo_root):
+        dirnames[:] = sorted(d for d in dirnames if d not in _WEAK_SCAN_SKIP_DIRS)
+        for name in sorted(filenames):
+            rel = os.path.relpath(os.path.join(dirpath, name), repo_root)
+            if _is_test_file(rel):
+                yield rel
+
+
+def scan_repo_weak_asserts(repo_root="."):
+    """全仓弱断言实测 → {相对路径: 处数}（只收 > 0 的文件）。
+
+    读文件失败/编码异常 → 抛 ValueError（fail-closed：账本依赖的扫描不可空转，见 issue #3631）。
+    """
+    counts = {}
+    for rel in iter_repo_test_files(repo_root):
+        n = len(find_weak_asserts(os.path.join(repo_root, rel)))
+        if n > 0:
+            counts[rel] = n
+    return counts
+
+
+def load_weak_baseline(path):
+    """→ (anchored_counts, meta, error)。error 非空 = 账本缺失/损坏（fail-closed 依据）。"""
+    if not path or not os.path.exists(path):
+        return {}, {}, f"弱断言锚点账本不存在: {path}"
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        return {}, {}, f"弱断言锚点账本解析失败 {path}（{e.__class__.__name__}）"
+    if not isinstance(data, dict):
+        return {}, {}, f"弱断言锚点账本非对象: {path}"
+    counts = data.get("legacy_weak_counts")
+    if not isinstance(counts, dict) or not counts:
+        return {}, {}, f"弱断言锚点账本 legacy_weak_counts 缺失/为空: {path}"
+    if not all(isinstance(v, int) and v > 0 for v in counts.values()):
+        return {}, {}, f"弱断言锚点账本的处数必须为正整数: {path}"
+    if not all(_is_test_file(k) for k in counts):
+        return {}, {}, f"弱断言锚点账本的键必须是测试文件（同 _is_test_file）: {path}"
+    total = sum(counts.values())
+    if data.get("weak_total") != total:
+        return {}, {}, f"弱断言锚点账本 weak_total({data.get('weak_total')}) != 明细合计({total}): {path}"
+    history = data.get("history") or []
+    if not history or history[-1].get("weak_total") != total:
+        return {}, {}, f"弱断言锚点账本 history 缺失或末行总量不符: {path}"
+    if not re.fullmatch(r"[0-9a-f]{40}", str(data.get("anchor_sha", ""))):
+        return {}, {}, f"弱断言锚点账本 anchor_sha 非法: {path}"
+    return counts, data, ""
+
+
+def weak_baseline_diff(counts, anchored):
+    """纯函数：相对锚点的**增长**（含新入账文件）→ [(path, cur, base)]，base=None 表示新文件。"""
+    return [(p, c, anchored.get(p)) for p, c in sorted(counts.items())
+            if c > anchored.get(p, 0)]
+
+
+def check_weak_baseline(repo_root=".", baseline_path=None):
+    """存量弱断言锚点检查（issue #5080 盲区②）→ (rc, report_lines, counts)。
+
+    rc：0 = 不增长（净缩放行）/ 1 = 有增长或新入账 / 2 = 账本缺失损坏或扫描失败（fail-closed）。
+    """
+    baseline_path = baseline_path or WEAK_BASELINE_DEFAULT
+    anchored, _, err = load_weak_baseline(baseline_path)
+    if err:
+        lines = [f"::error:: {err}",
+                 "❌ 存量弱断言锚点不可用即门禁失败（fail-closed）：账本缺失/损坏 ≠ 无存量弱断言"]
+        for ln in lines:
+            print(ln, file=sys.stderr)
+        return 2, lines, {}
+    try:
+        counts = scan_repo_weak_asserts(repo_root)
+    except ValueError as e:
+        lines = [f"::error:: {e}",
+                 "❌ 全仓弱断言扫描失败即门禁失败（fail-closed）：扫描不可空转（见 issue #3631）"]
+        for ln in lines:
+            print(ln, file=sys.stderr)
+        return 2, lines, {}
+    growth = weak_baseline_diff(counts, anchored)
+    if growth:
+        lines = [f"❌ 弱断言只许非增：{len(growth)} 个文件越过锚点"
+                 f"（锚点 {sum(anchored.values())} 处 → 当前 {sum(counts.values())} 处）"]
+        for p, cur, base in growth:
+            kind = "新增入账 —— 新文件一律 fail-closed" if base is None else f"存量增长 {base} → {cur}"
+            lines.append(f"  · {p}: {cur} 处（{kind}）")
+        lines.append("  处置：把弱断言改成触业务数据的断言（不得靠改账本洗白："
+                     "重锚定只接受净缩，见 --write-weak-baseline）")
+        for ln in lines:
+            print(ln)
+        return 1, lines, counts
+    saved = sum(anchored.values()) - sum(counts.values())
+    lines = [f"✅ 存量弱断言不增长：锚点 {sum(anchored.values())} 处 / 当前 {sum(counts.values())} 处"
+             f"（净缩 {saved} 处；账本 {baseline_path}）"]
+    for ln in lines:
+        print(ln)
+    return 0, lines, counts
+
+
+def _head_sha(repo_root="."):
+    """当前 HEAD（取不到 → 空串，调用方回退到旧值）。"""
+    try:
+        r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_root,
+                           capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    sha = (r.stdout or "").strip()
+    return sha if re.fullmatch(r"[0-9a-f]{40}", sha) else ""
+
+
+def write_weak_baseline(repo_root=".", baseline_path=None):
+    """重锚定（**只许缩**）→ (rc, report_lines, counts)。
+
+    任一文件增长/新入账 ⇒ **拒绝**（rc 1，不得用改账本洗白新增弱断言）；
+    否则写回明细 + 追加 `history` 一行（只许非增）。账本缺失/损坏 ⇒ rc 2。
+    """
+    baseline_path = baseline_path or WEAK_BASELINE_DEFAULT
+    _, data, err = load_weak_baseline(baseline_path)
+    if err:
+        print(f"::error:: {err}", file=sys.stderr)
+        return 2, [err], {}
+    rc, lines, counts = check_weak_baseline(repo_root, baseline_path)
+    if rc != 0:
+        print("❌ 重锚定被拒：账本只接受净缩（增长/新入账必须先把弱断言改掉）", file=sys.stderr)
+        return rc, lines, counts
+    old_total = data.get("weak_total")
+    new_total = sum(counts.values())
+    data["legacy_weak_counts"] = counts
+    data["weak_total"] = new_total
+    data["anchor_sha"] = _head_sha(repo_root) or data.get("anchor_sha")
+    data["anchored_at"] = datetime.date.today().isoformat()
+    data.setdefault("history", []).append({
+        "anchored_at": data["anchored_at"], "anchor_sha": data["anchor_sha"],
+        "weak_total": new_total, "note": f"重锚定（只许缩）：{old_total} → {new_total}",
+    })
+    with open(baseline_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    lines = list(lines) + [f"✅ 已重锚定 {baseline_path}：{old_total} → {new_total} 处"]
+    for ln in lines:
+        print(ln)
+    return 0, lines, counts
 
 
 # ── 加载 + CLI ──
@@ -706,9 +902,26 @@ def main(argv=None):
     parser.add_argument("--new-tests-only", action="store_true",
                         help="配合 --check-weak：先按 _is_test_file 过滤掉非测试文件再扫"
                              "（调用方可能把候选文件与源文件混在一起传进来，见 issue #4077）")
+    parser.add_argument("--check-weak-baseline", action="store_true",
+                        help="全仓扫描弱断言并与锚点账本比对（存量只许非增、新文件 fail-closed，"
+                             "见 issue #5080）；有增长退 1，账本缺失/损坏退 2（fail-closed）")
+    parser.add_argument("--write-weak-baseline", action="store_true",
+                        help="重锚定弱断言账本（**只许缩**：有增长即拒绝，见 --check-weak-baseline）")
+    parser.add_argument("--weak-baseline", default=None,
+                        help=f"锚点账本路径（默认 {WEAK_BASELINE_DEFAULT}）")
     parser.add_argument("--check-cases",
                         help="用例库目录（cases/*.yml）——启用 G5 用例追溯链：测试文件 ↔ 行为用例")
     args = parser.parse_args(argv)
+
+    if args.check_weak_baseline or args.write_weak_baseline:
+        # 存量锚点（issue #5080 盲区②）：`--check-weak` 只扫**新增**文件 ⇒ 存量永久免疫、
+        # 没有燃尽出口；本分支给存量一个「只许非增」的机械载体。
+        path = args.weak_baseline or WEAK_BASELINE_DEFAULT
+        if args.write_weak_baseline:
+            rc, _, _ = write_weak_baseline(args.repo_root, path)
+        else:
+            rc, _, _ = check_weak_baseline(args.repo_root, path)
+        return rc
 
     if args.check_weak:
         if not args.files:
@@ -737,7 +950,10 @@ def main(argv=None):
                 print(f"::error:: {e}", file=sys.stderr)
                 print("❌ --check-weak 扫描失败即门禁失败（fail-closed）："
                       "文件不存在/不可读/编码异常 ≠ 无弱断言，见 issue #3631", file=sys.stderr)
-                return 1
+                # 退出码 2（区别于「扫到了弱断言」的 1）：与本节规则源退化（tech-stack.yml
+                # 缺失/规则为空 ⇒ return 2）同一 fail-closed 口径 —— 「扫描没跑成」与
+                # 「跑成了且有发现」必须可区分。
+                return 2
             print(f"📄 {tf}: {len(weak)} 处弱断言")
             for w in weak:
                 print(f"  L{w['line_no']}: {w['line']}")
