@@ -46,8 +46,21 @@
  *
  * 红证（改前实测）：`cuttingMode: undefined` ⇒ 改前一律 `undecidable`（`missing-cutting-mode`）
  * ⇒ 判据 1~3 与 5 全红；`effectiveCuttingMode` 改前**不存在** ⇒ 取到 `undefined` ⇒ 判据 1/2/5 红。
+ *
+ * ## issue #5038 改判：分幅数改**毫米整数**除法（与引擎同式）
+ *
+ * 用户/issue 实测的分叉：总用料**恰为门幅整数倍**时，浮点 `ceil(need / g_eff)` 会多算 1 幅
+ * （`(1.1 + 0.3) × 2 = 2.8000000000000003` ⇒ 浮点 2 幅 / 引擎 1 幅），而幅数进 `(panels, 门幅)`
+ * 双键排序 ⇒ 还会**翻转选中的门幅**。修法 = 与引擎 `-(-_mm(total) // max(1, _mm(ge)))` 同式的
+ * 毫米整数除法 + 候选过滤补成引擎同式（`g_eff ≤ 0` 剔除，全剔除 ⇒ fail-closed）。
+ *
+ * 红证（改前实测，本文件新增的 golden 组）：`W=1.1 / 门幅 2.8 / 褶倍 2` 改前 `panels === 2`（真值 1）；
+ * `W=3.9 / [2.8]` 改前 4（真值 3）；`W=1.1 / [1.4]` 改前 3（真值 2）；`W=3.9 / [1.4]` 改前 7（真值 6）；
+ * `[2.8, 3.2]` 改前选中 **3.2**（真值 2.8）；`allowance ≥ 门幅` 改前**不报** `undecidable`（出 `Infinity`/垃圾幅数）。
  */
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import { resolveCutPlan, judgeDoorWidthChoice } from '@/lib/door-width-plan'
 import { HEM_MARGIN, SIDE_MARGIN } from '@/lib/craft-auto-features'
@@ -441,5 +454,142 @@ describe('客服所选门幅 ⇒ 相对规则解的提示 judgeDoorWidthChoice�
     )
     expect(judged.verdict).toBe('optimal')
     expect(judged.suggestion).toBeNull()
+  })
+})
+
+// ── 跨语言 golden 算例表（issue #5038）：分幅数必须与引擎**逐值相等** ──────────────
+/**
+ * 共享 golden 算例表 = `tests/fixtures/panels-cross-language-golden.json`（**三侧共读**同一份输入与期望值）：
+ * ① **引擎腿**（跑真引擎）`backend/ai-agent-service/tests/test_curtain_calc_fabric_plan.py`；
+ * ② **静态腿** `tests/unit_ci_workflows/test_panels_cross_language_algorithm_guard.py`
+ *    （照源复算 + 钉 TS 源码里**不再出现浮点直除形态**）；
+ * ③ **本文件**（跑真 TS）。
+ *
+ * 三侧任一漂移即红 ⇒ 这才是「TS 与引擎 panels 逐值相等」的**可执行**判据
+ * （改前只有常量级守卫 `test_hem_margin_cross_language_drift.py`，它覆盖不到算法）。
+ *
+ * ⚠️ 本表只钉**取整口径**（浮点 vs 毫米整数）；A 通路与 B1/B2 的 `side_margin` 差异是**另一件事**，
+ * 登记在 `docs/design/craft-calc-and-fabric-routing.md` §4.5（issue #4760），不在本组范围。
+ */
+interface GoldenCase {
+  id: string
+  why: string
+  width: number
+  height: number
+  fullness: number
+  allowance: number
+  candidates: number[]
+  expected: {
+    state: 'single_panel' | 'undecidable'
+    panelsPerCandidate?: number[]
+    chosenDoorWidth?: number
+    chosenPanels?: number
+  }
+}
+
+const GOLDEN = JSON.parse(
+  readFileSync(
+    resolve(__dirname, '../../../../../tests/fixtures/panels-cross-language-golden.json'),
+    'utf8'
+  )
+) as { cases: GoldenCase[] }
+
+describe('跨语言 golden 算例表：分幅数与引擎逐值相等（issue #5038）', () => {
+  it('算例表非空、候选已升序去重（两侧按下标对齐 ⇒ 前提必须成立）', () => {
+    expect(GOLDEN.cases.length).toBeGreaterThanOrEqual(10)
+    for (const c of GOLDEN.cases) {
+      expect(c.candidates, c.id).toEqual([...c.candidates].sort((a, b) => a - b))
+      expect(new Set(c.candidates).size, c.id).toBe(c.candidates.length)
+    }
+  })
+
+  for (const c of GOLDEN.cases) {
+    it(`${c.id}：${c.why}`, () => {
+      const plan = resolveCutPlan({
+        width: c.width,
+        height: c.height,
+        fullness: c.fullness,
+        cuttingMode: '定宽买高',
+        candidates: c.candidates,
+        allowance: c.allowance,
+      })
+      if (c.expected.state === 'undecidable') {
+        // 候选全被有效余量剔除 ⇒ 与引擎同为 fail-closed（改前出 `Infinity` / 负幅数被兜成 1 幅 ⇒ 红）
+        expect(plan.state).toBe('undecidable')
+        expect(plan.state === 'undecidable' && plan.code).toBe('no-door-width')
+        return
+      }
+      expect(plan.state).toBe('single_panel')
+      if (plan.state !== 'single_panel') throw new Error('unreachable')
+      expect(plan.doorWidth).toBe(c.expected.chosenDoorWidth)
+      expect(plan.panels).toBe(c.expected.chosenPanels)
+      // 逐候选幅数（与引擎腿同口径）：单候选调用一次即可测得
+      c.candidates.forEach((doorWidth, i) => {
+        const one = resolveCutPlan({
+          width: c.width,
+          height: c.height,
+          fullness: c.fullness,
+          cuttingMode: '定宽买高',
+          candidates: [doorWidth],
+          allowance: c.allowance,
+        })
+        expect(one.state === 'single_panel' && one.panels, `${c.id} 门幅 ${doorWidth}`).toBe(
+          c.expected.panelsPerCandidate?.[i]
+        )
+      })
+    })
+  }
+
+  it('判据 5：`allowance ≥ 门幅` ⇒ `undecidable`（改前 `Math.ceil(need / 0) = Infinity` 静默产出垃圾）', () => {
+    const zero = resolveCutPlan({
+      width: 1.1,
+      height: 3.0,
+      fullness: 2,
+      cuttingMode: '定宽买高',
+      candidates: [2.8],
+      allowance: 2.8,
+    })
+    expect(zero.state).toBe('undecidable')
+    expect(zero.state === 'undecidable' && zero.code).toBe('no-door-width')
+    // 负有效门幅同样 fail-closed（改前 `Math.max(1, ceil(need / 负数)) = 1` 幅 = 垃圾）
+    expect(
+      resolveCutPlan({
+        width: 1.1,
+        height: 3.0,
+        fullness: 2,
+        cuttingMode: '定宽买高',
+        candidates: [2.8],
+        allowance: 3.0,
+      }).state
+    ).toBe('undecidable')
+    // 反向护栏：余量**小于**门幅时不得误剔（把过滤写成 `≥` 或写成恒真 ⇒ 红）
+    expect(
+      resolveCutPlan({
+        width: 1.1,
+        height: 3.0,
+        fullness: 2,
+        cuttingMode: '定宽买高',
+        candidates: [2.8],
+        allowance: 2.79,
+      }).state
+    ).toBe('single_panel')
+  })
+
+  it('判定同步：`judgeDoorWidthChoice` 的「所选门幅要几幅」也走毫米整数除法（改前多报 1 幅）', () => {
+    // 所选 1.4（不在候选集里）：真值 ceil(2800 / 1400) = 2 幅；浮点 ceil(2.8000000000000003 / 1.4) = 3 幅
+    const judged = judgeDoorWidthChoice(
+      {
+        width: 1.1,
+        height: 3.0,
+        fullness: 2,
+        cuttingMode: '定宽买高',
+        candidates: [2.8, 3.2],
+      },
+      1.4
+    )
+    expect(judged.plan.state === 'single_panel' && judged.plan.panels).toBe(1)
+    expect(judged.verdict).toBe('suboptimal')
+    expect(judged.suggestion).toContain('少 1 幅')
+    expect(judged.suggestion).not.toContain('少 2 幅')
   })
 })

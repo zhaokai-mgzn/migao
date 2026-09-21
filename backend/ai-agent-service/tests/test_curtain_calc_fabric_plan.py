@@ -1,4 +1,4 @@
-# case_ids: CH-042
+# case_ids: CH-042, OR-040
 """门幅与加工类型的**自动选择**单元测试（issue #5013）。
 
 口径真值源：`docs/design/door-width-auto-selection.md`（§4 判据表 1~7，每条都能**单独**变红）。
@@ -7,7 +7,19 @@
 
 算例公共参数（真单回归形态）：成品宽 3.0 / 2 倍褶 ⇒ **定高买宽用料 T = (3.0 + 0.3) × 2 = 6.6 米**
 （本单不改用料公式 ⇒ `T` 由调用方算好传入，测试直接给 6.6）。
+
+## issue #5038：文件末尾的 `TestCrossLanguagePanelsGolden`（**引擎腿**）
+
+分幅数（`panels`）在 admin-web 有一份**副本**（`frontend/admin-web/src/lib/door-width-plan.ts`）：
+改前用**浮点** `Math.ceil`、引擎用**毫米整数**除法 ⇒ 总用料恰为门幅整数倍时前端**多算 1 幅**
+（`W=1.1` / 门幅 `2.8` / 褶倍 `2` ⇒ 浮点 2 幅 / 引擎 1 幅），并可能**翻转选中的门幅**。
+本类读**共享 golden 算例表**（`tests/fixtures/panels-cross-language-golden.json`）逐值比对 ——
+与静态腿（`tests/unit_ci_workflows/test_panels_cross_language_algorithm_guard.py`）、
+前端腿（`frontend/admin-web/tests/unit/lib/door-width-plan.test.ts`）**共读同一张表**。
 """
+import json
+from pathlib import Path
+
 import pytest
 
 from app.tools.curtain_calc import (
@@ -15,6 +27,7 @@ from app.tools.curtain_calc import (
     CUTTING_MODE_FIXED_WIDTH,
     CUTTING_MODE_SPLICE,
     build_quote,
+    resolve_craft_calc_config,
     resolve_fabric_plan,
 )
 
@@ -240,3 +253,90 @@ class TestBuildQuoteWiring:
         assert q["splice"] is False
         # 既有口径：3.05 > 2.8 ⇒ 倒幅 ceil(6.6 / 2.8) = 3 幅 × 3.05 米 = 9.15 米
         assert q["fabric_meters"] == pytest.approx(9.15)
+
+
+# ── 跨语言 golden 算例表（issue #5038）：引擎 `panels` == admin-web 副本逐值 ──
+#: 共享表（**三腿共读**：本类 + 静态腿 + 前端腿）—— 路径从 `__file__` 推（不写死绝对路径）
+GOLDEN_JSON = Path(__file__).resolve().parents[3] / "tests/fixtures/panels-cross-language-golden.json"
+
+
+class TestCrossLanguagePanelsGolden:
+    """同一组输入下，引擎 `panels` 必须与共享 golden 表**逐值相等**（issue #5038）。
+
+    红证：① **前端腿**改回浮点 `Math.ceil` ⇒ `boundary-2.8-single` 在前端腿红（引擎腿一直是 1 幅）；
+    ② 把**引擎**那行改回浮点（`math.ceil(total / ge)`）⇒ 本类 `boundary-2.8-single` /
+    `boundary-1.4-*` 红（表里钉的是毫米整数结果），且静态腿 C1（源形态）同时红。
+    """
+
+    @staticmethod
+    def _cases() -> list[dict]:
+        assert GOLDEN_JSON.is_file(), (
+            f"共享算例表不存在：{GOLDEN_JSON} —— 跨语言判据会空跑（fail-closed，不得静默通过）"
+        )
+        cases = json.loads(GOLDEN_JSON.read_text(encoding="utf8"))["cases"]
+        assert cases, "共享算例表为空 —— 判据会空跑（fail-closed）"
+        return cases
+
+    def test_per_candidate_panels_match_golden(self):
+        """逐候选（单候选调用一次）的分幅数与表逐值相等。"""
+        cfg = resolve_craft_calc_config(None)
+        for case in self._cases():
+            if case["expected"]["state"] != "single_panel":
+                continue
+            need = (case["width"] + cfg["side_margin"]) * case["fullness"]
+            for i, door_width in enumerate(case["candidates"]):
+                p = resolve_fabric_plan(
+                    window_height=case["height"],
+                    fixed_height_meters=need,
+                    door_widths=[door_width],
+                    allowance=case["allowance"],
+                    cutting_mode=CUTTING_MODE_FIXED_WIDTH,
+                )
+                assert p["panels"] == case["expected"]["panelsPerCandidate"][i], (
+                    f"{case['id']}：门幅 {door_width} 的引擎幅数 {p['panels']} ≠ "
+                    f"共享表 {case['expected']['panelsPerCandidate'][i]}（`need = {need!r}`）—— "
+                    "两侧分幅口径已分叉（浮点 vs 毫米整数）"
+                )
+
+    def test_chosen_door_width_and_panels_match_golden(self):
+        """整候选集的**选中门幅 + 选中幅数**与表逐值相等（双键排序也在判据内）。"""
+        cfg = resolve_craft_calc_config(None)
+        for case in self._cases():
+            if case["expected"]["state"] != "single_panel":
+                continue
+            need = (case["width"] + cfg["side_margin"]) * case["fullness"]
+            p = resolve_fabric_plan(
+                window_height=case["height"],
+                fixed_height_meters=need,
+                door_widths=list(case["candidates"]),
+                allowance=case["allowance"],
+                cutting_mode=CUTTING_MODE_FIXED_WIDTH,
+            )
+            assert p["door_width"] == case["expected"]["chosenDoorWidth"], (
+                f"{case['id']}：选中门幅 {p['door_width']} ≠ 共享表 "
+                f"{case['expected']['chosenDoorWidth']} —— 分幅数的取整口径漂移会**翻转**双键排序"
+            )
+            assert p["panels"] == case["expected"]["chosenPanels"], (
+                f"{case['id']}：选中幅数 {p['panels']} ≠ 共享表 {case['expected']['chosenPanels']}"
+            )
+
+    def test_all_candidates_filtered_by_allowance_fails_closed(self):
+        """候选被有效余量全剔除 ⇒ **抛 ValueError**（与 TS 侧 `undecidable` 同一条口径）。"""
+        cfg = resolve_craft_calc_config(None)
+        checked = 0
+        for case in self._cases():
+            if case["expected"]["state"] != "undecidable":
+                continue
+            checked += 1
+            need = (case["width"] + cfg["side_margin"]) * case["fullness"]
+            with pytest.raises(ValueError):
+                resolve_fabric_plan(
+                    window_height=case["height"],
+                    fixed_height_meters=need,
+                    door_widths=list(case["candidates"]),
+                    allowance=case["allowance"],
+                    cutting_mode=CUTTING_MODE_FIXED_WIDTH,
+                )
+        assert checked > 0, (
+            "共享表里没有「候选全被剔除」的算例 ⇒ 本条会空跑（fail-closed 那一面无人钉）"
+        )
