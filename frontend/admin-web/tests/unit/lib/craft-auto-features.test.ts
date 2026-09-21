@@ -13,7 +13,8 @@
  * ⇒ 前端的本地判定实现 `detectAutoFeatures` **已无人调用**，随本单（#5035）删除。
  * 本模块**只保留**「不是判定」的那三件事：
  * 1. **门幅解析** `parseDoorWidth()`（#4877：**没有缺省门幅** —— 解析不到 ⇒ `null` ⇒ 不判）；
- * 2. **余量常量副本** `HEM_MARGIN`（高方向；宽方向余量已按 issue #5030 整体退场）；
+ * 2. **余量常量副本**：**已全部退场**（`SIDE_MARGIN` 随 #5030、`HEM_MARGIN` 随 #5043 包 2b）
+ *    ⇒ 本文件只留**反向守卫**（它们**不得**回来；真值源在引擎侧，见下）；
  *    跨语言漂移守卫见下）+ 加工类型常量；
  * 3. **自动推导特征名清单** `AUTO_FEATURE_NAMES`（必须与 `processing_items` 目录（V83）**逐值对齐**，
  *    否则组合键永远匹配不到价 ⇒ 加工费恒 ¥0.00 —— issue #4592 的 P0）。
@@ -22,7 +23,7 @@
  *
  * | # | 判据 | 红证 |
  * |---|---|---|
- * | 1 | `HEM_MARGIN` 与引擎 `curtain_calc.py` **逐值相等**（宽方向余量已退场 ⇒ 反向守卫见下） | 改 Python 侧该常量 ⇒ 红 |
+ * | 1 | **前端不得持有余量常量副本**（`HEM_MARGIN` 已随 #5043 包 2b 删除），且引擎侧真值仍在 | 把 `export const HEM_MARGIN` 加回前端 ⇒ 红；删掉引擎侧定义 ⇒ 红 |
  * | 2 | `parseDoorWidth()` 缺失 / 不可解析 / 非正 ⇒ `null`（**不得回退任何缺省门幅**） | 回退到 2.8 ⇒ 红 |
  * | 3 | `DEFAULT_DOOR_WIDTH` / `resolveDoorWidth` **不得**回到本模块（反向守卫） | 把缺省门幅加回来 ⇒ 红 |
  * | 4 | 引擎「定宽买高」分幅公式**逐字**是 `math.ceil(window_width * fullness / fabric_width)`（**无宽方向余量**，issue #5030） | 引擎改公式而前端不跟 ⇒ 红 |
@@ -35,11 +36,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import {
-  AUTO_FEATURE_NAMES,
-  HEM_MARGIN,
-  parseDoorWidth,
-} from '@/lib/craft-auto-features'
+import { AUTO_FEATURE_NAMES, parseDoorWidth } from '@/lib/craft-auto-features'
 
 /** 算料引擎源（真值源）：`backend/ai-agent-service/app/tools/curtain_calc.py` */
 const CALC_SRC = resolve(
@@ -71,7 +68,7 @@ function pyConst(name: string): number {
 /** 前端门幅库源（反向守卫用）：`frontend/admin-web/src/lib/craft-auto-features.ts` */
 const LIB_SRC = resolve(__dirname, '../../../src/lib/craft-auto-features.ts')
 
-describe('余量常量 —— **只有高方向有**（宽方向的「左右覆盖余量」已整体退场）', () => {
+describe('余量常量 —— **前端已无副本**（规则面迁服务端后的反向守卫）', () => {
   // 🔴 issue #5030 改判（用户 2026-09-21 裁定）：订单宽高 = **窗户宽高** ⇒ 成品宽 = 净窗宽、
   // 成品高 = 净窗高；宽度用料 = `窗宽 × 褶倍`（**不再另加左右覆盖余量**）。
   // ⇒ 原判据「SIDE_MARGIN（宽方向）= curtain_calc.SIDE_MARGIN（逐值比对）」的前提**已消失**
@@ -85,8 +82,17 @@ describe('余量常量 —— **只有高方向有**（宽方向的「左右覆�
     expect(lib).not.toContain('export const SIDE_MARGIN')
   })
 
-  it('HEM_MARGIN（高方向）= curtain_calc.HEM_MARGIN（逐值比对，漂移即红）', () => {
-    expect(HEM_MARGIN).toBe(pyConst('HEM_MARGIN'))
+  // 🔴 issue #5043 包 2b 改判（用户 2026-09-21 裁定「规则面迁服务端」）：`HEM_MARGIN` 的
+  // **前端副本已删除**（唯一消费者 `lib/door-width-plan.ts` 退场，规则由服务端给）
+  // ⇒ 原判据「前端副本逐值等于引擎」的前提**已消失**。改成**同强度的反向守卫 + 引擎侧存活**：
+  // ① 前端库**不得**再定义这个常量（副本回来 ⇒ 红）；
+  // ② 引擎侧的定义必须**仍然存在且为正**（真值源被删 ⇒ 红 —— 否则「不许有副本」会退化成
+  //    「两边都没有」的假绿）。
+  it('#5043 余量常量：前端**不得再持有副本**，且引擎侧真值仍在（反向守卫 + 存活）', () => {
+    const lib = readFileSync(LIB_SRC, 'utf8')
+    expect(lib).not.toContain('export const HEM_MARGIN')
+    expect(source).toMatch(/^HEM_MARGIN\s*=/m)
+    expect(pyConst('HEM_MARGIN')).toBeGreaterThan(0)
   })
 
 })

@@ -368,6 +368,69 @@ export const autoFeaturesApi = {
     request.post<ApiResponse<AutoFeaturesResult>>('/api/admin/orders/auto-features', params),
 }
 
+/** 门幅规则**只读**请求（issue #5043 包 2b）—— 前端 `door-width-plan.ts` 的口径搬到服务端。 */
+export interface DoorWidthPlanParams {
+  /** 成品宽（米） */
+  width: number
+  /** 成品高（米）；缺 ⇒ 服务端返回 `undecidable: missing-size`（不猜朝向） */
+  height?: number
+  /** 候选门幅（米，来自该颜色的 SKU）；**先经 `parseDoorWidth` 归一**（服务端只收数字） */
+  door_widths: number[]
+  /** 加工类型（`定高买宽` / `定宽买高`）；缺 ⇒ 服务端**自动推导** */
+  cutting_mode?: string
+  /** **客服所选**门幅（米）；裁决用 */
+  selected_door_width?: number
+  /** 门幅**有效余量**（米） */
+  allowance?: number
+  open_count?: number
+  mounting?: string
+  fullness?: number
+  craft?: string
+  craft_tier?: string
+  pleat_count?: number
+  formula?: string
+  has_pattern?: boolean
+  pattern_repeat?: number
+}
+
+/**
+ * 门幅规则**结果**（issue #5043 包 2b）—— 规则解 + 四态裁决。
+ *
+ * ⚠️ **规则解与幅数由引擎给**（`build_quote(..., fabric_widths=...)` → `resolve_fabric_plan`）——
+ * 前端**不再本地算**（迁移前本地那份「恒按倍数法」的分子与引擎实测差 0.65 米）。
+ */
+export interface DoorWidthPlanResult {
+  /** `single_panel`（单幅可做）/ `needs_splice`（需接高）/ `undecidable`（判不了） */
+  state: 'single_panel' | 'needs_splice' | 'undecidable'
+  /** `undecidable` 的原因：`no-door-width` / `missing-size` / `missing-cutting-mode`；其余 ⇒ `''` */
+  code: string
+  /** **实际据以求解**的加工类型（缺省入参 ⇒ 服务端自动推导的那一档） */
+  effective_cutting_mode: string | null
+  /** 选中的**标称**门幅（米） */
+  door_width: number | null
+  /** 定宽买高 ⇒ 分幅数；定高买宽 ⇒ `null`（**幅数无定义**，不发明数字） */
+  panels: number | null
+  splice: boolean
+  /** 四态裁决：`optimal` / `suboptimal` / `infeasible` / `unknown` */
+  verdict: 'optimal' | 'suboptimal' | 'infeasible' | 'unknown'
+  /** 可执行建议（`suboptimal` / `infeasible` 时非空；其余 ⇒ `null`） */
+  suggestion: string | null
+  /** 规则解的可读依据（引擎给，前端不编） */
+  reason: string
+}
+
+export const doorWidthPlanApi = {
+  /**
+   * 门幅规则（**只读**：不算钱、不落库）—— issue #5043 包 2b。
+   *
+   * ⚠️ 与 `craftCalcApi` **分开**是有意的：规则要在**发试算请求之前**用（靠它决定选哪个 SKU/门幅），
+   * 而试算请求本身要带门幅 ⇒ 鸡生蛋；且 **四爪钩 / 穿杆 / 平幔** 不发试算请求
+   * （用户 2026-09-21 裁定：这三类工艺**不影响用料和门幅**）⇒ 规则面不能挂在试算上。
+   */
+  preview: (params: DoorWidthPlanParams) =>
+    request.post<ApiResponse<DoorWidthPlanResult>>('/api/admin/orders/door-width-plan', params),
+}
+
 /**
  * 加工费计价**预览**（issue #4450 · 前置 #4406）。
  *

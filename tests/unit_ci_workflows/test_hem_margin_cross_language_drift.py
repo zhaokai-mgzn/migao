@@ -141,17 +141,35 @@ def _lib_source() -> str:
 
 # ── C1 / C2'：两侧逐值相等（高方向各自跟自己的引擎常量）+ 宽方向余量不得复活 ──────
 
-def test_margins_equal_engine_truth() -> None:
-    """C1：前端余量常量 == 引擎**同名**常量（逐值读源，不写死）。"""
-    calc, lib = _calc_source(), _lib_source()
+def test_frontend_no_longer_holds_margin_copies() -> None:
+    """（**issue #5043 包 2b 改判**）前端**不得再持有余量常量副本** —— 规则面已迁服务端。
+
+    迁移前本文件钉的是「前端副本与引擎**逐值相等** + 注释引文逐字一致 + 副本真的被消费」。
+    用户 2026-09-21 裁定「规则面迁服务端」后，副本的唯一消费者
+    `frontend/admin-web/src/lib/door-width-plan.ts` **已删除**，`HEM_MARGIN` 随之下线
+    （`SIDE_MARGIN` 更早已按 issue #5030 退场）⇒ 三条判据的前提**全部消失**。
+    本判据把它们合并升级为**同强度的死亡条件 + 引擎侧存活**：
+
+    ① **前端任何源文件**都不得再定义这些常量（副本回来 ⇒ 红 —— 第二份会与租户配置脱钩）；
+    ② **引擎侧**的定义必须仍然存在且为正（真值源被删 ⇒ 红 —— 否则「不许有副本」会退化成
+       「两边都没有」的假绿）。
+
+    红证：在 `frontend/admin-web/src/lib/craft-auto-features.ts` 里加回
+    `export const HEM_MARGIN = 0.3` ⇒ 红；删掉 `curtain_calc.py` 的 `HEM_MARGIN = 0.3` ⇒ 红。
+    """
+    calc = CALC_PY.read_text(encoding="utf8")
     for name in MARGINS:
-        engine, frontend = _py_value(calc, name), _ts_value(lib, name)
-        assert engine > 0, f"引擎 {name} 读出来不是正数（{engine}）—— 解析口径变了，请同步本守卫"
-        assert frontend == engine, (
-            f"跨语言常量漂移：{name} 前端 = {frontend} / 引擎 = {engine}。"
-            "「超高」进加工费组合键 ⇒ 这处漂移 = 静默算错价；"
-            "改哪边都要改另一边（前端值不得单独改）"
-        )
+        assert _py_value(calc, name) > 0, f"引擎侧 {name} 不在了 / 不是正数 ⇒ 真值源缺失（红）"
+    offenders: list[str] = []
+    for path in sorted((REPO_ROOT / "frontend/admin-web/src").rglob("*.ts")):
+        src = path.read_text(encoding="utf8")
+        for name in MARGINS:
+            if f"export const {name}" in src:
+                offenders.append(f"{path.relative_to(REPO_ROOT)} → export const {name}")
+    assert not offenders, (
+        "前端又出现了余量常量副本（规则面已迁服务端 ⇒ 副本会与**租户配置**脱钩）："
+        + "; ".join(offenders)
+    )
 
 
 def test_side_margin_does_not_come_back_in_frontend() -> None:
@@ -175,55 +193,10 @@ def test_side_margin_does_not_come_back_in_frontend() -> None:
 
 # ── C3：前端注释引用的引擎行逐字一致（值 + 语义注释）──────────────────────────
 
-def test_frontend_comment_quotes_engine_line_verbatim() -> None:
-    """C3：注释里的引文也是**副本** —— 引擎改了值或语义，引文不得静默说谎。"""
-    calc, lib = _calc_source(), _lib_source()
-    for name in MARGINS:
-        quoted, engine_line = _normalize(_quoted_engine_line(lib, name)), _normalize(_py_line(calc, name))
-        assert quoted == engine_line, (
-            f"{name} 的注释引文已腐烂：\n  前端注释 = {quoted!r}\n  引擎真值 = {engine_line!r}\n"
-            "（引擎改了值或语义注释 ⇒ 请同步 craft-auto-features.ts 里那一行引文）"
-        )
+# ⚠️ 原「注释引文逐字一致」（C3）与「副本必须被消费」（C4）**已随 issue #5043 包 2b 退场** ——
+# 两者的主体（前端副本常量及其消费点 `door-width-plan.ts`）都不存在了；
+# 「前端不得再持有副本」由上面的 `test_frontend_no_longer_holds_margin_copies`（死亡条件）钉住。
 
-
-# ── C4：判别力下界（反恒真 / 防「声明了但判定处内联」）────────────────────────
-
-def test_frontend_actually_consumes_margins_and_has_no_second_literal() -> None:
-    """C4：常量必须被**消费**，且代码里不得出现第二份同值字面量（否则改常量判定不跟）。
-
-    ⚠️ issue #5035 改判（**消费点搬家，判据不放宽**）：原先消费点在**声明文件内部**
-    （`craft-auto-features.ts` 的 `detectAutoFeatures` / `detectAutoFeatureNotices`）——
-    那两个实现已随「判定（#5019）/ 提示（#5036）/ 算例（#5043 包 2a）搬到服务端」**删除**
-    ⇒ 消费点只剩**规则面**（`door-width-plan.ts` 的 `resolveCutPlan` / `judgeDoorWidthChoice`）。
-    故判据改为「声明处 + **前端消费点**（可在别的模块，常量本就是 `export` 的）合计 > 1」；
-    **仍**要求声明文件内不得出现第二份同值字面量（那才是本条真正要防的「内联副本」）。
-    """
-    calc, lib = _calc_source(), _lib_source()
-    code = _strip_comments(lib)
-    plan_code = _strip_comments(PLAN_TS.read_text(encoding="utf8"))
-
-    for name in MARGINS:
-        # 声明处（lib）1 处 + 消费点（lib 内或规则面）≥1 处
-        assert code.count(name) + plan_code.count(name) > 1, (
-            f"{name} 在前端代码里只出现在声明处（无消费点）—— "
-            "要么判定处被内联成字面量（常量改了判定不跟），要么该常量已成死码"
-        )
-
-    # 引擎余量值在前端代码里**恰好**出现在同名常量的声明处（`MARGINS` 里每个名字 1 处；
-    # issue #5030 后只剩高方向 `HEM_MARGIN` ⇒ 期望恰 1 处 `0.3`）
-    by_value: dict[float, list[str]] = {}
-    for name in MARGINS:
-        by_value.setdefault(_py_value(calc, name), []).append(name)
-    literals = _float_literals(code)
-    for value, names in by_value.items():
-        assert literals.count(value) == len(names), (
-            f"前端代码里与引擎余量同值的字面量 {value} 出现 {literals.count(value)} 次，"
-            f"但声明处只应有 {len(names)} 处（{names}）—— "
-            "多出来的是**第二份副本**（内联字面量）：改引擎/改常量时它不会跟着变 ⇒ 静默漂移"
-        )
-
-
-# ── C5：注释引用的守卫文件真的存在且真的读源（引文不得腐烂）──────────────────
 
 def test_cited_frontend_guard_exists_and_reads_source() -> None:
     """C5：前端注释里点名了守卫文件 —— 那个文件必须真的存在，且真的**读 Python 源**。"""

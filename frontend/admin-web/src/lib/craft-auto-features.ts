@@ -29,18 +29,6 @@
  * 成品宽 = 净窗宽 ⇒ 超宽判据 = `窗宽 × 褶倍 > 门幅`。原先的 `SIDE_MARGIN = 0.3`
  * （左右覆盖余量）与配置键 `side_margin` **一并退场**，不得以任何名字复活。
  */
-/**
- * **高方向**卷边（米）= 算料引擎 `curtain_calc.py` 的 `HEM_MARGIN`
- * （`HEM_MARGIN = 0.3  # 定宽布：上下卷边合计（脚位+止口）`）—— 本文件是**副本**。
- *
- * ⚠️ 它**只**用于**高**方向（`超高`）—— **宽方向没有余量**（issue #5030）。
- *
- * 🔴 **本副本有守卫**（issue #4656 收口，**漂移会被拦**）：常量值与上面那行引文（值 + 语义注释）
- * 都由守卫逐值读 Python 源比对 ——
- * `tests/unit/lib/craft-auto-features.test.ts`（前端腿，漂移即红）+
- * `tests/unit_ci_workflows/test_hem_margin_cross_language_drift.py`（Python 腿，独立 job）。
- */
-export const HEM_MARGIN = 0.3
 
 /**
  * ## 门幅口径（issue #4877 **改判：前端不再持有「缺省门幅」**）

@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, autoFeaturesApi, feePreviewApi, type AutoFeaturesParams, type AutoFeaturesResult, type CraftCalcResult, type CraftCalcParams, type FeePreviewResult, type FeePreviewRow } from '@/lib/api'
+import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, autoFeaturesApi, doorWidthPlanApi, feePreviewApi, type AutoFeaturesParams, type AutoFeaturesResult, type CraftCalcResult, type CraftCalcParams, type DoorWidthPlanParams, type DoorWidthPlanResult, type FeePreviewResult, type FeePreviewRow } from '@/lib/api'
 import { resolveImageUrl } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
 import { Button, Card, Input, Modal } from '@/components/ui'
@@ -62,9 +62,10 @@ import {
   type AutoFeatureName,
   type AutoFeatureNotice,
 } from '@/lib/craft-auto-features'
-// 门幅选择规则（issue #4877，用户 2026-09-21 裁定）：**可行 / 不可行 + 哪个最省**
+// 门幅选择规则（issue #4877 → **issue #5043 包 2b 起由服务端给**）：**可行 / 不可行 + 哪个最省**
 // —— 定高买宽取可行集里最小门幅、定宽买高取分幅最少；所有门幅都不满足 ⇒ 必然走接高。
-import { judgeDoorWidthChoice, resolveCutPlan } from '@/lib/door-width-plan'
+// ⚠️ 前端本地实现（`@/lib/door-width-plan`）**已退场**：它与引擎 `resolve_fabric_plan` 不是同一条规则
+// （实测：韩褶下门幅 3.2 时引擎 1 幅 / 前端 2 幅）⇒ 规则面一律走 `doorWidthPlanApi`。
 // 费用明细的「加工 + 特殊选项」两半拆分（issue #4526 · 设计 §4.3 / 判据 5）——唯一实现
 import { buildFeeDetailDisplay } from '@/lib/order-fee-display'
 // #4371：加工项类型改为**店铺级目录**的 `ProcessingItem`（旧 `ProductProcessingItem` 已随解耦删除）
@@ -203,6 +204,13 @@ interface OrderLineItem {
   autoFeatures?: AutoFeaturesResult | null
   /** 判定失败原因（行内显式提示；**不放行提交** —— 组合键少一项 = 钱会错） */
   autoFeaturesError?: string | null
+  /**
+   * 最近一次**门幅规则**结果（issue #5043 包 2b）—— 规则来自**服务端**（前端 `door-width-plan.ts` 退场）。
+   * `undefined` / `null` = **还没算** ⇒ {@link cuttingModeOf} 返回 `undefined`（**不猜朝向**）。
+   */
+  doorWidthPlan?: DoorWidthPlanResult | null
+  /** 规则失败原因（行内显式提示；**不回落任何本地规则**） */
+  doorWidthPlanError?: string | null
 }
 
 const sellingMethodLabel: Record<string, string> = {
@@ -397,7 +405,7 @@ function derivedCraftSpec(line: OrderLineItem, calcConfig: CraftCalcConfig | nul
  * 该行**实际据以算料 / 落库**的加工类型（issue #5020）—— 页面侧**唯一**读加工类型的入口。
  *
  * - 客服**显式选过**（`line.craft.cuttingMode` 有值）⇒ **逐字返回**（人工覆盖优先，规则永不改判）；
- * - **未指定**（`undefined` / 空串）⇒ 返回**门幅规则推导出的那一档**（`resolveCutPlan` 的
+ * - **未指定**（`undefined` / 空串）⇒ 返回**门幅规则推导出的那一档**（**服务端** `doorWidthPlanApi` 的
  *   `effectiveCuttingMode`：定高买宽可行 ⇒ 定高买宽；否则 ⇒ 定宽买高/倒幅）⇒ 加工类型 chips
  *   **自动选中**，且**一点即改**（点一下就把显式值写回 `craft.cuttingMode`，从此不再自动推导）；
  * - 规则判不了（缺尺寸 / 缺门幅 / 表外）⇒ `undefined`（chips 停在「未指定」，**不猜**）。
@@ -410,17 +418,9 @@ function derivedCraftSpec(line: OrderLineItem, calcConfig: CraftCalcConfig | nul
 function cuttingModeOf(line: OrderLineItem): string | undefined {
   const explicit = line.craft.cuttingMode
   if (explicit) return explicit
-  const plan = resolveCutPlan({
-    width: line.width,
-    height: line.height,
-    // **不传** `cuttingMode`：这里要的正是「缺失 ⇒ 自动推导」那条路径
-    candidates: (line.product?.skus ?? [])
-      .filter((sku) => sku.colorId === line.selectedColorId)
-      .map((sku) => sku.doorWidth),
-    fullness: STANDARD_FULLNESS,
-    openCount: line.craft.openCount,
-  })
-  return plan.state === 'undecidable' ? undefined : plan.effectiveCuttingMode
+  // **门幅规则**（**服务端**，issue #5043 包 2b）：缺省 ⇒ 用服务端自动推导出的那一档。
+  // 规则还没到 / 判不了（缺尺寸 / 缺门幅 / 表外）⇒ `undefined`（chips 停在「未指定」，**不猜**）。
+  return line.doorWidthPlan?.effective_cutting_mode ?? undefined
 }
 
 /**
@@ -466,7 +466,7 @@ function withShapedDefault(
  * 该颜色的**默认选中 SKU**（issue #4877 裁定 C：**规则驱动默认选中**）。
  *
  * ① 只有一个 SKU ⇒ 直接选它（既有行为，与门幅规则无关）；
- * ② 多个门幅 ⇒ 交给**门幅规则** `resolveCutPlan`（可行集取最小门幅 / 定宽买高取分幅最少）；
+ * ② 多个门幅 ⇒ 交给**门幅规则**（**服务端** `doorWidthPlanApi`：可行集取最小门幅 / 定宽买高取分幅最少）；
  *    **同一最优门幅下有多个 SKU**（散剪/整卷）时也要选出一个**默认**（issue #4899 + #5014：
  *    **散剪（`bulk_cut`）优先** → 有库存优先 → 单价低者优先 → 按 id 稳定）—— 什么都不选会让界面谎报「门幅未维护」；
  *    该默认是**自动选中**（`skuAutoSelected`）⇒ 客服一点即改、规则也会随输入变化重算；
@@ -479,16 +479,12 @@ function pickAutoSkuForColor(
   skusOfColor: OrderProductSku[]
 ): OrderProductSku | null {
   if (skusOfColor.length === 1) return skusOfColor[0]
-  const plan = resolveCutPlan({
-    width: line.width,
-    height: line.height,
-    cuttingMode: line.craft.cuttingMode,
-    candidates: skusOfColor.map((sku) => sku.doorWidth),
-    fullness: STANDARD_FULLNESS,
-    openCount: line.craft.openCount,
-  })
-  if (plan.state !== 'single_panel') return null
-  const exact = skusOfColor.filter((sku) => parseDoorWidth(sku.doorWidth) === plan.doorWidth)
+  // **门幅规则**（**服务端**，issue #5043 包 2b）：规则解的门幅由服务端给 —— 前端**不再本地算**。
+  // 规则还没到 / 判不了（缺尺寸 / 缺门幅 / 多门幅但规则不可判定）⇒ `null`（不猜）；
+  // 规则到达后由规则 effect 补默认（见 `doorWidthSignature` 那个 effect 的写回）。
+  const plan = line.doorWidthPlan
+  if (!plan || plan.state !== 'single_panel' || plan.door_width === null) return null
+  const exact = skusOfColor.filter((sku) => parseDoorWidth(sku.doorWidth) === plan.door_width)
   if (exact.length === 0) return null
   if (exact.length === 1) return exact[0]
   // **同一最优门幅下有多个 SKU**（散剪/整卷）⇒ 也必须选出一个**默认**（issue #4899）：
@@ -552,6 +548,49 @@ function autoFeatureParamsOf(line: OrderLineItem): AutoFeaturesParams | null {
 function autoFeatureParamsSignature(params: AutoFeaturesParams | null): string {
   if (params === null) return ''
   return [params.width, params.height, params.fabric_width ?? '', params.cutting_mode ?? ''].join('|')
+}
+
+/**
+ * 门幅规则的**入参**（issue #5043 包 2b）—— `null` = 宽高没填齐 / 该颜色没有可用门幅 ⇒ 不发请求。
+ *
+ * ⚠️ **只传「客服显式选的」加工类型**：**不能**传 {@link cuttingModeOf} —— 那一档正是本请求要
+ * 算出来的东西（用它当入参 = 自激 + 循环依赖）。
+ */
+function doorWidthParamsOf(line: OrderLineItem): DoorWidthPlanParams | null {
+  const width = Number(line.width)
+  const height = Number(line.height)
+  if (!Number.isFinite(width) || width <= 0) return null
+  if (!Number.isFinite(height) || height <= 0) return null
+  const doorWidths = (line.product?.skus ?? [])
+    .filter((sku) => sku.colorId === line.selectedColorId)
+    .map((sku) => parseDoorWidth(sku.doorWidth))
+    .filter((g): g is number => g !== null)
+  if (doorWidths.length === 0) return null
+  const params: DoorWidthPlanParams = {
+    width,
+    height,
+    door_widths: doorWidths,
+    open_count: line.craft.openCount,
+    fullness: STANDARD_FULLNESS,
+  }
+  if (line.craft.cuttingMode) params.cutting_mode = line.craft.cuttingMode
+  const selected = parseDoorWidth(line.selectedSku?.doorWidth)
+  if (selected !== null) params.selected_door_width = selected
+  return params
+}
+
+/** 规则入参签名：**只含入参**（结果写回行状态 ⇒ 用它当依赖会自激成请求风暴） */
+function doorWidthParamsSignature(params: DoorWidthPlanParams | null): string {
+  if (params === null) return ''
+  return [
+    params.width,
+    params.height,
+    params.door_widths.join(','),
+    params.cutting_mode ?? '',
+    params.selected_door_width ?? '',
+    params.open_count ?? '',
+    params.fullness ?? '',
+  ].join('|')
 }
 
 /**
@@ -1575,6 +1614,72 @@ export default function NewOrderPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFeatureSignature])
+
+  // ===== 门幅规则（issue #5043 包 2b：规则移到服务端）=====
+  //
+  // 与上面两个 effect **同形态**（防抖 + 取消 + 只按入参签名触发）。
+  // ⚠️ **必须在试算之前拿到**：`cuttingModeOf` 读本结果 ⇒ 它会进 `calcSignature` ⇒ 规则落行后
+  // 试算会带着**正确**的加工类型再算一次（这正是「规则与试算同源」要的时序）。
+  const doorWidthSignature = useMemo(
+    () =>
+      lineItems
+        .map((l) => `${l.id}:${doorWidthParamsSignature(doorWidthParamsOf(l))}`)
+        .join(';'),
+    [lineItems]
+  )
+
+  useEffect(() => {
+    const targets: Array<{ id: string; params: DoorWidthPlanParams }> = []
+    for (const line of lineItems) {
+      const params = doorWidthParamsOf(line)
+      if (params) targets.push({ id: line.id, params })
+    }
+    if (targets.length === 0) return
+
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      const results: Array<{ id: string; data: DoorWidthPlanResult | null; error: string | null }> =
+        await Promise.all(
+          targets.map(async ({ id, params }) => {
+            try {
+              const res = await doorWidthPlanApi.preview(params)
+              return { id, data: res.data?.data ?? null, error: null }
+            } catch (e) {
+              return { id, data: null, error: craftCalcErrorText(e) }
+            }
+          })
+        )
+      if (cancelled) return
+      setLineItems((prev) =>
+        prev.map((it) => {
+          const hit = results.find((r) => r.id === it.id)
+          if (!hit) return it
+          const withPlan: OrderLineItem = { ...it, doorWidthPlan: hit.data, doorWidthPlanError: hit.error }
+          // 规则**不产生米数** ⇒ 只写规则字段 + （规则到了才做得了的）**默认 SKU 补选**。
+          if (!hit.data || hit.data.state !== 'single_panel') return withPlan
+          // 只在「还没选」或「上次也是规则自动选的」时补 —— 客服手选过就**不覆盖**（同「手改留痕」纪律）
+          if (withPlan.selectedSku !== null && !withPlan.skuAutoSelected) return withPlan
+          const skusOfColor = (withPlan.product?.skus ?? []).filter(
+            (sku) => sku.colorId === withPlan.selectedColorId
+          )
+          const autoSku = pickAutoSkuForColor(withPlan, skusOfColor)
+          if (!autoSku) return withPlan
+          return {
+            ...withPlan,
+            selectedSku: autoSku,
+            unitPrice: Number(autoSku.price) || 0,
+            skuAutoSelected: true,
+          }
+        })
+      )
+    }, CRAFT_CALC_DEBOUNCE_MS)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doorWidthSignature])
 
   // ===== 加工费计价预览（issue #4450 · 前置 #4406）=====
   //
@@ -3321,22 +3426,31 @@ function LineItemBlock({
    * 定宽买高取分幅最少。所选门幅**不可行** ⇒ `infeasible`（需接高，强告警）；
    * **非最优** ⇒ `suboptimal`（提示可换最省门幅 —— 只提示，**不改客服的选择**）。
    */
-  const doorWidthChoice = judgeDoorWidthChoice(
-    {
-      width: line.width,
-      height: line.height,
-      // ⚠️ issue #5020：传**派生后**的加工类型（`cuttingModeOf`）—— 「未指定」时是规则自动推导
-      // 的那一档 ⇒ 提示/告警（suboptimal / infeasible）与自动选中的加工类型**同一口径**；
-      // 客服显式选过 ⇒ 逐字回带（人工覆盖优先，规则不改判）。
-      cuttingMode: cuttingModeOf(line),
-      candidates: (line.product?.skus ?? [])
-        .filter((sku) => sku.colorId === line.selectedColorId)
-        .map((sku) => sku.doorWidth),
-      fullness: STANDARD_FULLNESS,
-      openCount: line.craft.openCount,
+  /**
+   * **门幅规则**（issue #5043 包 2b，**服务端**）：规则解 + 四态裁决都由 `doorWidthPlanApi` 给 ——
+   * 前端 `@/lib/door-width-plan` 已退场（它与引擎 `resolve_fabric_plan` 不是同一条规则）。
+   * 还没到 / 判不了 ⇒ `undecidable` + `unknown`（**不提示最优** —— 没有可比对象）。
+   */
+  const doorWidthChoice = {
+    plan: {
+      state: (line.doorWidthPlan?.state ?? 'undecidable') as
+        | 'single_panel'
+        | 'needs_splice'
+        | 'undecidable',
+      // 规则还没到 ⇒ 按**输入完整性**给原因（这**不是**口径判断，只是「连问都问不了」）：
+      // 宽高没填齐 ⇒ `missing-size`；该颜色没有可用门幅 ⇒ `no-door-width`。
+      code: line.doorWidthPlan
+        ? line.doorWidthPlan.code
+        : !Number.isFinite(Number(line.width)) ||
+            Number(line.width) <= 0 ||
+            !Number.isFinite(Number(line.height)) ||
+            Number(line.height) <= 0
+          ? 'missing-size'
+          : 'no-door-width',
     },
-    selectedDoorWidth
-  )
+    verdict: line.doorWidthPlan?.verdict ?? 'unknown',
+    suggestion: line.doorWidthPlan?.suggestion ?? null,
+  }
   /**
    * 手选加工项（issue #4566）—— 滤掉**自动推导特征**（超高/超宽/倒幅）。
    * 它们在目录里**必须存在**（商家配「加工费组合」要能选到），但**不得**出现在手选控件里

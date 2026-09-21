@@ -46,7 +46,7 @@
 | C3 | **判定面**（引擎 `detect_auto_features`，issue #5035 起判定已迁服务端）的超宽判据 == 分幅条件的**布尔形态**（`product = window_width * fullness`，**无任何余量**） | 引擎改回 `(window_width + side_margin) * fullness > fabric_width` ⇒ 红 |
 | C4 | **对照表逐行可复算**（≥6 组）：引擎 A 与 `build_quote` 复算**逐组相等**，且「一致？」列与实测相符 | 任一组 panels 改一个数 ⇒ 红 |
 | C5 | **反向守卫**：引擎 / 前端 / TS 类型 / Java 实体 / Java 服务 / `schema.sql` / 真值源 §3 公式行里**再出现** `side_margin`/`SIDE_MARGIN` ⇒ 红 | 把常量或配置键加回任一源 ⇒ 红 |
-| C6 | **通路 C 已登记**（issue #5038）：§4.5「通路与调用方」表里有通路 C 行、口径串逐字在文档里，且**前端源码实测**确为毫米整数式（无浮点直除） | 删掉通路 C 行 ⇒ 红；把 `door-width-plan.ts` 改回浮点 `Math.ceil(need / g_eff)` ⇒ 红 |
+| ~~通路 C~~ | ~~第 4 份副本（前端 `door-width-plan.ts`）已登记~~ —— **已退场**（**issue #5043 包 2b**：规则面迁服务端、该模块删除）⇒ 本审计只剩 **A / B1 / B2 三方**；「前端不得再持有规则 / 余量副本」改由 `tests/unit_ci_workflows/test_fabric_width_truth_source.py` 与 `tests/unit_ci_workflows/test_hem_margin_cross_language_drift.py` 的反向守卫钉住 | — |
 
 ⚠️ **本守卫不 import 被测引擎**：`app` 包的导入期需要完整 `.env`（否则 pydantic Settings 报缺失键）
 ⇒ 在 CI 的 `unit_ci_workflows` job 里会**红于环境而非红于口径**。故这里**照源里的公式复算**
@@ -65,7 +65,6 @@ CALC_PY = REPO_ROOT / "backend/ai-agent-service/app/tools/curtain_calc.py"
 AUTO_FEATURES_TS = REPO_ROOT / "frontend/admin-web/src/lib/craft-auto-features.ts"
 TRUTH_DOC = REPO_ROOT / "docs/curtain-fabric-quote-rules.md"
 #: 通路 C（第 4 份 `panels` 副本，issue #5038）—— 前端门幅规则的落点
-PLAN_TS = REPO_ROOT / "frontend/admin-web/src/lib/door-width-plan.ts"
 #: §4.5 所在的设计文档（C6 判「通路 C 已登记」的读源）
 DESIGN_DOC = REPO_ROOT / "docs/design/craft-calc-and-fabric-routing.md"
 
@@ -104,8 +103,6 @@ TABLE: tuple[tuple[float, float, float, int], ...] = (
     (1.45, 1.8, 2.8, 1),
 )
 #: 通路 C 在 §4.5「通路与调用方」表里的**行锚点**与**口径串**（C6：登记与代码自洽）
-PATH_C_ANCHOR = "C 下单页门幅规则（前端副本）"
-PATH_C_FORMULA = "ceil_mm(窗宽 × 褶倍 ÷ 门幅有效值)"
 
 #: 引擎源码里的分幅表达式（**逐字**；A 通路与 `build_quote` 的复算各一处）
 ENGINE_PANELS_RE = re.compile(r"math\.ceil\(\s*window_width\s*\*\s*(\w+)\s*/\s*fabric_width\s*\)")
@@ -324,27 +321,3 @@ class TestPanelsFormulaSplitAudit:
                 + "\n  ".join(leaked)
             )
 
-    def test_c6_path_c_is_registered_and_matches_source(self):
-        """C6：**第 4 份副本（通路 C）已登记**，且登记的口径与前端源码**实测**相符（issue #5038）。
-
-        红证：① 删掉 §4.5「通路与调用方」表里的通路 C 行 ⇒ 红；
-             ② 把 `door-width-plan.ts` 的分幅改回浮点 `Math.ceil(need / g_eff)` ⇒ 红
-                （登记说「毫米整数」而源码是浮点 = 文档静默说谎）。
-        """
-        text = _read(DESIGN_DOC)
-        assert PATH_C_ANCHOR in text, (
-            "§4.5 的「通路与调用方」表里找不到通路 C（前端副本 `door-width-plan.ts`）—— "
-            "第 4 份 `panels` 实现**未登记**（本审计的口径就是「登记与代码自洽」）⇒ 红"
-        )
-        assert PATH_C_FORMULA in text, (
-            f"通路 C 的登记口径串「{PATH_C_FORMULA}」不在文档里 ⇒ 登记形态漂移（本审计看不见它）"
-        )
-        src = _read(PLAN_TS)
-        assert re.search(r"Math\.round\(\s*\w+\s*\*\s*1000\s*\)", src) and "Math.ceil(toMillimeters(" in src, (
-            "通路 C 的登记说它是**毫米整数**除法，但前端源码里找不到该形态"
-            "（`Math.round(x * 1000)` / `Math.ceil(toMillimeters(` 不见）—— 登记与代码已脱钩"
-            "（改回浮点 ⇒ 总用料恰为门幅整数倍时多算 1 幅）⇒ 红"
-        )
-        assert not re.search(r"Math\.ceil\(\s*\w+\s*/\s*\w+\.effectiveDoorWidth\s*\)", src), (
-            "前端源码里又出现**浮点直除**形态 —— 与 §4.5 登记的「毫米整数」不符 ⇒ 红"
-        )
