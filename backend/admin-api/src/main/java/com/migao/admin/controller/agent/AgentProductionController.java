@@ -31,6 +31,8 @@ import java.util.Map;
  *                    work_type, work_date}],
  *        totals:{qualified_qty, rework_qty, scrap_qty, piecework_amount}}
  * 只透出精简字段（不含内部单价/系数/租户字段）。
+ * ⚠️ `operations[].is_must_finish` 是**历史载体键**，自 #4961 起**恒 false**（「必完工序」已退场；
+ * 键保留只为不破既有消费者的键集）—— 真实完工口径 = 全部活跃工序实例完成，看 `progress.done == total`。
  * worklog 的量/额口径：合格 = work_type=normal 的合格数；返工/报废各取**报工数量**；
  * 计件金额走与 /piecework **同一份**聚合（`ProductionService.aggregate`）⇒ 两处恒等。
  * work_logs 为**倒序**（最近在前），与工人端「操作记录」同一约定。

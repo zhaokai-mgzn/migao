@@ -659,12 +659,19 @@ public class ProductionRoutingCommandService {
 
     /**
      * 主线护栏（**唯一一份**：新建与改主线共用）。违规**一次报全**，每条带
-     * {@code field}（{@code mainline} / {@code mainline[i]} / {@code must_finish}）。
+     * {@code field}（{@code mainline} / {@code mainline[i]}）。
      *
      * <p><b>输入口径（issue #4609）</b>：调用方落库前已把每一项按
      * {@link ProductionOperationQueryService#normalizeOperationName} **归一为逻辑名**
      * （见 {@link #normalizeMainline}）⇒ 本方法只面对**逻辑名**，存在性也按逻辑名判
      * （{@link #logicalOperationExistsIn}：库里有同名裸行，或库里有任一变体归一后等于它）。</p>
+     *
+     * <p>🔴 <b>#4961：护栏从五条减为四条</b> —— 「主线中至少要有 1 道必完工序」那条**已退场**。
+     * 它的前提是「必完工序全绿 = 加工单完工判据」，而该口径已按用户裁定（2026-09-21
+     * 「完工 = 全部工序全绿」）换成「**全部**活跃工序实例完成」⇒ 主线里有几道 `is_must_finish`
+     * 与之**无关**（该列已退化为历史载体、值恒 false，见新迁移 V107），保留这条护栏只会把
+     * 合法路线拒在门外。剩下四条一字不动：主线非空 / 工序名非空 / 同一逻辑工序不得重复 /
+     * 工序必须存在且活跃。</p>
      */
     private void validateMainline(List<String> mainline, Long tenantId) {
         List<ApiResponse.ErrorDetail> details = new ArrayList<>();
@@ -673,7 +680,6 @@ public class ProductionRoutingCommandService {
         }
         Map<String, ProductionOperation> library = activeOperationsByName(tenantId);
         Set<String> seen = new LinkedHashSet<>();
-        boolean anyMustFinish = false;
         for (int i = 0; i < mainline.size(); i++) {
             String name = mainline.get(i);
             String field = "mainline[" + i + "]";
@@ -711,15 +717,8 @@ public class ProductionRoutingCommandService {
                         String.format("工序「%s」在工序库中不存在或已停用：请先在「工序库」新增该工序，或从库里已有的工序里选", name)));
                 continue;
             }
-            if (op != null && Boolean.TRUE.equals(op.getIsMustFinish())) {
-                anyMustFinish = true;
-            }
-        }
-        if (!mainline.isEmpty() && !anyMustFinish && details.isEmpty()) {
-            // 只有当主线本身合法时才单独报这条（否则用户会同时看到「工序不存在」与「缺少必完工序」，
-            // 而后者在前者修好前根本无从判断 —— 那才是噪音）
-            details.add(BusinessException.detail("must_finish",
-                    "主线中至少要有 1 道必完工序：必完工序全绿是加工单完工判定的唯一依据，一道都没有 ⇒ 这张单永远完不了工"));
+            // 🔴 原来这里还有一段「累计 anyMustFinish」+ 循环后的「至少 1 道必完工序」护栏 ——
+            // 已随 #4961 删除（完工口径换成「全部工序全绿」⇒ 该护栏失去前提，见方法 javadoc）。
         }
         if (!details.isEmpty()) {
             throw BusinessException.validationError(

@@ -415,7 +415,10 @@ class ProductionControllerTest {
                 .andExpect(jsonPath("$.data.positions[0].position_name").value("布帘"))
                 .andExpect(jsonPath("$.data.positions[0].operations[0].operation").value("精裁-布"))
                 .andExpect(jsonPath("$.data.positions[0].operations[0].is_must_finish").value(false))
-                .andExpect(jsonPath("$.data.positions[0].operations[1].is_must_finish").value(true))
+                // 🔴 #4961：键**保留**（冻结键集）但值**恒 false** —— 改前这一行断言 `true`
+                // （「外帘装袋」是库里唯一标了必完的工序）。`value(false)` 同时钉住「键必须在」
+                // （路径不存在 ⇒ jsonPath 取不到值 ⇒ 断言红）。
+                .andExpect(jsonPath("$.data.positions[0].operations[1].is_must_finish").value(false))
                 .andExpect(jsonPath("$.data.positions[0].operations[1].done_qty").value(0.0))
                 .andExpect(jsonPath("$.data.progress.total").value(2))
                 .andExpect(jsonPath("$.data.progress.done").value(1))
@@ -1097,7 +1100,10 @@ class ProductionControllerTest {
         assertThat(inserted.get(0).getQty()).isEqualByComparingTo("2");
         // 🔴 issue #4937 / O4：`打包` 进路线后位次后移一位
         assertThat(inserted.get(11).getOperationName()).isEqualTo("外帘发货");
-        assertThat(inserted.get(10).getIsMustFinish()).isTrue();
+        // 🔴 #4961（必完概念退场）：实例**不再写** `is_must_finish`（列保留为历史载体）
+        // —— 改前这里断言 `.isTrue()`（index 10 = 「外帘装袋」，库里唯一标了必完的工序）。
+        assertThat(inserted.get(10).getIsMustFinish())
+                .as("实例化不再写必完列（#4961）").isNull();
     }
 
     @Test

@@ -727,7 +727,9 @@ public class ProductionSeedTemplateService {
                     .position(node.path("position").isNull() ? null : node.path("position").asText())
                     .unit(node.path("unit").asText("米"))
                     .unitPrice(new BigDecimal(node.path("unit_price").asText("0")))
-                    .isMustFinish(node.path("is_must_finish").asBoolean(false))
+                    // 🔴 `is_must_finish` **已退场**（#4961）：模板 JSON 里不再有该键，开租播种恒 false
+                    // （列保留为历史载体；完工口径 = 全部活跃工序实例完成）。
+                    .isMustFinish(false)
                     .isStartMarker(node.path("is_start_marker").asBoolean(false))
                     .sortOrder(node.path("sort_order").asInt(0))
                     .status(node.path("status").asText("active"))

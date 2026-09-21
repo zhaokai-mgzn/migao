@@ -74,9 +74,10 @@ public class ProductionOperationCommandService {
      * 更新工序（部分更新：只写 body 里出现的字段；未出现的字段保持原值）。
      *
      * <p><b>不支持改名</b>（issue #4641）：body 里**出现** {@code name} 一律 422 + 逐条理由
-     * （见 {@link #rejectNameFieldOnUpdate}）—— 加护栏之前它是**静默忽略**（200 且库里一字未改）。</p>
+     * （见 {@link #rejectNameFieldOnUpdate}）—— 加护栏之前它是**静默忽略**（200 且库里一字未改）。
+     * 同理，{@code is_must_finish} 已退场（#4961）⇒ 出现即 422（见 {@link #rejectMustFinishField}）。</p>
      *
-     * @param body 可含 unit_price / is_must_finish / is_start_marker / status / unit /
+     * @param body 可含 unit_price / is_start_marker / status / unit /
      *             group_name / sort_order / scope（scope = 部位级 position / 套级 set，issue #4384 A1）
      * @return 更新后的工序（形态 = {@link ProductionOperationQueryService#operationView}，与目录项同构）
      */
@@ -87,6 +88,7 @@ public class ProductionOperationCommandService {
             throw BusinessException.notFound("工序");
         }
         rejectNameFieldOnUpdate(body);
+        rejectMustFinishField(body);
         // 改价前的单价必须先留存：下面 op 会被就地改成新值（用于响应），改完再比就恒等 ⇒ 版本账永空
         BigDecimal previousPrice = nz(op.getUnitPrice());
         // 只带变更字段的部分实体（updateById 忽略 null ⇒ 不在 body 里的列一律不碰）
@@ -133,11 +135,6 @@ public class ProductionOperationCommandService {
                 int sortOrder = decimal(body.get("sort_order"), "sort_order").intValue();
                 partial.setSortOrder(sortOrder);
                 op.setSortOrder(sortOrder);
-            }
-            if (body.containsKey("is_must_finish")) {
-                boolean mustFinish = bool(body.get("is_must_finish"), "is_must_finish");
-                partial.setIsMustFinish(mustFinish);
-                op.setIsMustFinish(mustFinish);
             }
             if (body.containsKey("is_start_marker")) {
                 boolean startMarker = bool(body.get("is_start_marker"), "is_start_marker");
@@ -224,6 +221,7 @@ public class ProductionOperationCommandService {
      */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> create(Map<String, Object> body, Long tenantId) {
+        rejectMustFinishField(body);
         String name = requiredText(body == null ? null : body.get("name"), "name");
         BigDecimal unitPrice = decimal(body.get("unit_price"), "unit_price");
         if (unitPrice.signum() < 0) {
@@ -271,8 +269,9 @@ public class ProductionOperationCommandService {
                 .scope(body.containsKey("scope") ? scope(body.get("scope")) : DEFAULT_SCOPE)
                 .unit(body.containsKey("unit") ? requiredText(body.get("unit"), "unit") : "米")
                 .unitPrice(unitPrice)
-                .isMustFinish(body.containsKey("is_must_finish")
-                        && bool(body.get("is_must_finish"), "is_must_finish"))
+                // 🔴 `is_must_finish` **已退场**（issue #4961）：列保留（历史载体），新工序恒 false，
+                // 写面收到该字段一律 422（见 rejectMustFinishField）—— 不静默落库。
+                .isMustFinish(false)
                 .isStartMarker(body.containsKey("is_start_marker")
                         && bool(body.get("is_start_marker"), "is_start_marker"))
                 .sortOrder(body.containsKey("sort_order")
@@ -753,7 +752,36 @@ public class ProductionOperationCommandService {
                         "更新工序不能改 name：本端点不支持改名（name 是工序库唯一索引与矩阵/路线引用的入口名）"
                                 + "；要换名字请新建一道工序，旧的那道用删除端点软删")),
                 "去掉 body 里的 name（可写字段：unit_price / unit / group_name / status / scope / "
-                        + "sort_order / is_must_finish / is_start_marker / positions）");
+                        + "sort_order / is_start_marker / positions）");
+    }
+
+    /**
+     * 写面**拒绝 {@code is_must_finish}**（issue #4961，用户裁定 2026-09-21「完工 = 全部工序全绿」）。
+     *
+     * <p>口径与 {@code applicable} 的退场**同形**（见
+     * {@code ProductionOperationPositionCommandService.update}）：<b>出现即拒</b>（422 +
+     * {@code error.details:[{field,message}]} + 可行动 suggestion），**不静默忽略**。</p>
+     *
+     * <p><b>为什么必须拒而不是静默吞掉</b>：该列对加工单完工判定**已无语义**（判据换成
+     * 「全部活跃实例完成」，列退化为历史载体、值恒 false）⇒ 静默接受会让调用方以为
+     * 「这道工序设成必完了」（界面/脚本据此以为完工门槛已生效，而库里一字未改、判定也不看它）
+     * —— 那正是本仓最忌的静默 no-op。判据取「出现即拒」（不是「与现值不同才拒」）：
+     * 后者对「把旧值原样回传」的调用方留了一个静默接受的洞。</p>
+     *
+     * <p><b>新增与更新两条路径共用本方法</b>：两处各写一份文案迟早漂移（同一字段两种说法）。</p>
+     */
+    private static void rejectMustFinishField(Map<String, Object> body) {
+        if (body == null || !body.containsKey("is_must_finish")) {
+            return;
+        }
+        throw BusinessException.validationError(
+                "is_must_finish 已退场，不再受理该字段",
+                List.of(new ApiResponse.ErrorDetail("is_must_finish",
+                        "「必完工序」已退场（issue #4961）：加工单完工口径 = **全部**活跃工序实例完成"
+                                + "（done_qty ≥ qty），不再有「必完工序全绿」这一档 ⇒ 工序库不再承载该开关；"
+                                + "请去掉 body 里的 is_must_finish")),
+                "去掉 body 里的 is_must_finish（可写字段：unit_price / unit / group_name / status / "
+                        + "scope / sort_order / is_start_marker / positions）");
     }
 
     private static BigDecimal nz(BigDecimal value) {

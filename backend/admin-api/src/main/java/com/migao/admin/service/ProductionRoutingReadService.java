@@ -287,7 +287,11 @@ public class ProductionRoutingReadService {
         view.put("scope", SCOPE_SET);
         view.put("unit", firstNonNull(cells, "unit", library, "unit"));
         view.put("group", firstNonNull(cells, "group", library, "group"));
-        view.put("is_must_finish", firstNonNull(cells, "is_must_finish", library, "is_must_finish"));
+        // 🔴 历史载体，**恒 false**（#4961）：`is_must_finish` 已退场 ⇒ 读面**不再回落**格/库里的值
+        // （回落会把历史数据里残留的 `TRUE` 原样送回商家屏）。键保留：
+        // `tests/unit_ci_workflows/test_routing_read_endpoints.py` 的 `DELIVERY_KEYS` 逐字冻结；
+        // 真实完工口径 = 全部活跃工序实例完成。
+        view.put("is_must_finish", false);
         view.put("price", price);
         view.put("price_state", priceState);
         view.put("different_price_count", "multiple_prices".equals(priceState) ? prices.size() : 0);
@@ -298,8 +302,10 @@ public class ProductionRoutingReadService {
     }
 
     /**
-     * 行尾元数据（{@code unit} / {@code group} / {@code is_must_finish}）取该工序**首个非 null** 的格；
-     * 一格都没有（或格上全 null）⇒ 回落**工序库行**（issue #4729：零格行也要有单位 / 必完）。
+     * 行尾元数据（{@code unit} / {@code group}）取该工序**首个非 null** 的格；
+     * 一格都没有（或格上全 null）⇒ 回落**工序库行**（issue #4729：零格行也要有单位）。
+     *
+     * <p>🔴 `is_must_finish` **不再走本方法**（#4961）：概念已退场，读面值恒 false（见调用点）。</p>
      *
      * <p>各格不一致时逐个列出属**界面**口径（设计 §4.1 元素 5），不在本层发明第二套。</p>
      */
@@ -394,7 +400,9 @@ public class ProductionRoutingReadService {
         view.put("unit", variant == null ? null : variant.get("unit"));
         view.put("group", variant == null ? null : variant.get("group"));
         view.put("scope", variant == null ? null : variant.get("scope"));
-        view.put("is_must_finish", variant == null ? null : variant.get("is_must_finish"));
+        // 🔴 历史载体（#4961）：概念已退场 ⇒ 变体存在时恒 false；变体不存在时保持既有 `null` 形态
+        // （`ProductionRoutingReadServiceTest` 的 `isNull()` 判据不改口径）。
+        view.put("is_must_finish", variant == null ? null : false);
         return view;
     }
 

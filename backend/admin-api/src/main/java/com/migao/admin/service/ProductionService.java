@@ -49,14 +49,17 @@ import java.util.stream.Collectors;
 /**
  * 生产报工服务（issue #3995，M4-G-2）
  *
- * 工序实例化（扫码报工入口 + 加工单二维码 token）→ 扫码报工推进进度 → 必完工序全绿自动完工
+ * 工序实例化（扫码报工入口 + 加工单二维码 token）→ 扫码报工推进进度 → 全部工序完成自动完工
  * → 计件（Σ 合格数量 × 单价 × 系数，单工序一人制）。
  *
  * 真值源：docs/curtain-production-rules.md §2 工序库 / §4 计件 / §5 扫码报工闭环；
  * 确定性核心语义与 ai-agent-service app/production/{routing,piecework}.py（M4-G-1，issue #3993）一致：
  * 报工三态 normal/rework/scrap —— 返工/报废既不累加进度也不计件；
- * 必完工序（is_must_finish）全绿（done_qty ≥ qty）→ **加工单置 completed**（issue #4117：
+ * **全部**活跃工序实例完成（{@code done_qty ≥ qty}）→ **加工单置 completed**（issue #4117：
  * 订单留在 producing，见 {@link #report} 的完工语义 —— 写订单 completed 会让发货链断掉）。
+ *
+ * <p>🔴 #4961（用户裁定 2026-09-21「完工 = 全部工序全绿」）：`is_must_finish`（必完工序）
+ * 概念**已退场** —— 列保留为历史载体（值恒 false），判据只看「每道实例做完没有」。</p>
  */
 @Slf4j
 @Service
@@ -249,7 +252,9 @@ public class ProductionService {
                     .unitPrice(spec.unitPrice())
                     .factor(spec.factor())
                     .qtySource(spec.qtySource())
-                    .isMustFinish(spec.mustFinish())
+                    // 🔴 `is_must_finish` 列**保留但不写**（#4961，同 `factor` 的退场形态）：
+                    // 工序实例不再带「必完」语义 —— 完工判据已换成「全部实例完成」（见 allInstancesDone）。
+                    // 不写 ⇒ MyBatis-Plus 的 NOT_NULL 策略把该列从 INSERT 里剔除 ⇒ 走 DDL 默认 FALSE。
                     .isStartMarker(spec.startMarker())
                     // 套归属快照（V92 六列中的 set_id / set_no；设计 §2.2「实例快照，不靠 join」）
                     .setId(set == null ? null : set.getId())
@@ -480,7 +485,8 @@ public class ProductionService {
                         // 旧值原样留着（那是当时工资的证据），签名比较也照旧参与 ⇒ 不回溯。
                         bd(op.get("factor"), BigDecimal.ONE),
                         str(op.get("qty_source")),
-                        flag(op.get("is_must_finish")),
+                        // 🔴 `is_must_finish` 已退场（#4961）：payload 里即便还带该键也**不读**
+                        // （历史调用方不受影响，但不落库、不进幂等签名）。同 `applicable` 的退场形态。
                         flag(op.get("is_start_marker"))));
                 seq++;
             }
@@ -488,7 +494,7 @@ public class ProductionService {
         return specs;
     }
 
-    /** 已落库实例 → 同一归一化形态（幂等比较用）。 */
+    /** 已落库实例 → 同一归一化形态（幂等比较用）。`is_must_finish` **不进签名**（#4961：概念已退场）。 */
     private List<OpSpec> specsOf(List<ProcessingPositionOperation> operations) {
         List<OpSpec> specs = new ArrayList<>();
         for (ProcessingPositionOperation op : operations) {
@@ -497,7 +503,7 @@ public class ProductionService {
                     op.getSeq() == null ? 0 : op.getSeq(),
                     op.getOperationName(), op.getGroupName(), op.getUnit(),
                     op.getQty(), op.getUnitPrice(), op.getFactor(), op.getQtySource(),
-                    Boolean.TRUE.equals(op.getIsMustFinish()), Boolean.TRUE.equals(op.getIsStartMarker())));
+                    Boolean.TRUE.equals(op.getIsStartMarker())));
         }
         return specs;
     }
@@ -527,13 +533,13 @@ public class ProductionService {
     private record OpSpec(String positionName, String orderItemId, String positionKind,
                           int seq, String operationName, String groupName, String unit,
                           BigDecimal qty, BigDecimal unitPrice, BigDecimal factor, String qtySource,
-                          boolean mustFinish, boolean startMarker) {
+                          boolean startMarker) {
 
         String signature() {
             return String.join("\u0001",
                     orDash(positionName), String.valueOf(seq), orDash(operationName), orDash(groupName),
                     orDash(unit), num(qty), num(unitPrice), num(factor), orDash(qtySource),
-                    String.valueOf(mustFinish), String.valueOf(startMarker));
+                    String.valueOf(startMarker));
         }
 
         private static String orDash(String value) {
@@ -805,7 +811,10 @@ public class ProductionService {
             row.put("qualified_qty", nz(qualifiedByOp.get(op.getId())));
             row.put("rework_qty", nz(reworkByOp.get(op.getId())));
             row.put("scrap_qty", nz(scrapByOp.get(op.getId())));
-            row.put("is_must_finish", Boolean.TRUE.equals(op.getIsMustFinish()));
+            // 🔴 历史载体，**恒 false**（#4961）：`is_must_finish` 概念已退场，键保留只为不破冻结契约
+            // （`test_production_worklog_query.py` 的键集守卫 + 工人端/agent 的既有消费者）。
+            // 真实完工口径 = 「**全部**活跃工序实例完成」，见 allInstancesDone。
+            row.put("is_must_finish", false);
             row.put("workers", workers.getOrDefault(op.getId(), List.of()));
             LocalDate lastWorkDate = lastWorkDateByOp.get(op.getId());
             row.put("last_work_date", lastWorkDate == null ? null : lastWorkDate.toString());
@@ -1062,7 +1071,7 @@ public class ProductionService {
      * 报工落库主体（**唯一**一份记账口径，切片 ② 起被 {@link #doReport} 与
      * {@link #applyScanComplete} 共用）：数量上限校验 → 写 {@code production_work_logs}
      * （数量 × 快照单价 + 价态）→ 身份快照 / 旁路账 → CAS 推进 {@code done_qty} / {@code status}
-     * → **{@code done_at}**（真正做完才落笔）→ 必完工序全绿 ⇒ 加工单 {@code completed}。
+     * → **{@code done_at}**（真正做完才落笔）→ **全部工序完成** ⇒ 加工单 {@code completed}（#4961）。
      *
      * <p><b>两条路径的差别只有两处</b>（记账判据一字不差）：① 事务边界（扫码完成有，report 没有）；
      * ② 工序怎么定（扫码 = 系统推断 + 一键改；report = 调用方显式给 operationId）。</p>
@@ -1157,7 +1166,7 @@ public class ProductionService {
         }
 
         boolean productionCompleted = false;
-        if (advances && isMustFinishAllDone(po.getId(), tenantId)) {
+        if (advances && allInstancesDone(po.getId(), tenantId)) {
             // 完工 = **加工单**置 completed（issue #4117），**不是**订单状态推进：
             // ① 订单状态机（OrderService.STATUS_TRANSITIONS）不设 producing→completed，
             //    且 completed 是终态（无任何后继）⇒ 旧实现用裸 UpdateWrapper 直写订单 completed，
@@ -1166,10 +1175,11 @@ public class ProductionService {
             //    status='completed'（processingOrderMapper.countCompletedByOrderId），
             //    而 shipOrderIfApplicable 只在订单为 confirmed/producing 时流转
             //    ⇒ 加工单置 completed、订单留在 producing，发货链才通。
+            // 判定口径（#4961）= **全部**活跃实例完成，不再看 `is_must_finish`（见 allInstancesDone）。
             int rows = processingOrderMapper.markCompletedIfActive(po.getId(), tenantId, OffsetDateTime.now());
             productionCompleted = rows > 0;
             if (productionCompleted) {
-                log.info("必完工序全绿，加工单完工: orderNo={}, po={}", order.getOrderNo(), po.getProcessingOrderNo());
+                log.info("全部工序完成，加工单完工: orderNo={}, po={}", order.getOrderNo(), po.getProcessingOrderNo());
             }
         }
 
@@ -1224,10 +1234,22 @@ public class ProductionService {
                         + "若实际应做数量就是这么多，请先由管理员在工艺路线/工序实例上修正应做数量，再报工");
     }
 
-    /** 必完工序全绿判定（与 M4-G-1 piecework.is_production_done 同口径：无必完工序时判定为真）。 */
-    private boolean isMustFinishAllDone(String processingOrderId, Long tenantId) {
+    /**
+     * 完工判定（**唯一**一份，与 M4-G-1 {@code piecework.is_production_done} 同口径）：
+     * **全部**活跃工序实例都完成（{@code done_qty ≥ qty}）⇒ 加工单可置 {@code completed}。
+     *
+     * <p>🔴 <b>#4961「完工 = 全部工序全绿」</b>（用户裁定 2026-09-21）：本方法此前只看
+     * {@code is_must_finish} 工序（「必完工序全绿」）—— 那个概念已**退场**（列保留为历史载体、
+     * 值恒 false，见新迁移 V107 与 {@code docs/curtain-production-rules.md} §2/§5）。
+     * 判据 = 既有 {@link #isDone}，不新造第二份数量口径。</p>
+     *
+     * <p><b>已接受的代价（不粉饰）</b>：{@code order_completed} 比改前**更晚**翻转 ——
+     * 只要还有**任何**一道工序没做完（含此前不参与判定的非必完工序），就不算完工
+     * ⇒ 工人端「✅ 订单生产完成」与发货入口相应延后。</p>
+     */
+    private boolean allInstancesDone(String processingOrderId, Long tenantId) {
         for (ProcessingPositionOperation op : listOperations(processingOrderId, tenantId)) {
-            if (Boolean.TRUE.equals(op.getIsMustFinish()) && !isDone(op)) {
+            if (!isDone(op)) {
                 return false;
             }
         }
@@ -1984,7 +2006,9 @@ public class ProductionService {
         view.put("price_state", op.getUnitPrice() == null ? PRICE_STATE_UNPRICED : PRICE_STATE_PRICED);
         // 不再返回 `factor`（issue #4589）：系数已从算法退场，回传会让界面显示一个
         // 「有值却不算钱」的数（新的静默不一致）。DB 列与历史快照保留，只是不上读面。
-        view.put("is_must_finish", Boolean.TRUE.equals(op.getIsMustFinish()));
+        // 🔴 历史载体，**恒 false**（#4961）：概念退场，键保留（冻结契约：扫工页/后台详情按固定键集消费）。
+        // 真实完工口径 =「**全部**活跃工序实例完成」（{@link #allInstancesDone}），不再有「必完工序」。
+        view.put("is_must_finish", false);
         view.put("is_start_marker", Boolean.TRUE.equals(op.getIsStartMarker()));
         view.put("status", op.getStatus() == null ? "pending" : op.getStatus());
         view.put("done_qty", nz(op.getDoneQty()));

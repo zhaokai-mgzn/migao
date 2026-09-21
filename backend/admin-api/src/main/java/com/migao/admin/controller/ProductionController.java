@@ -130,7 +130,9 @@ public class ProductionController {
      * 实例化工序 + 生成加工单二维码 token
      * POST /api/admin/production/orders/{orderId}/instantiate
      * body: {"positions":[{"position_name":"布帘","operations":[{seq,operation,group,unit,qty,
-     *        unit_price,factor,is_must_finish,is_start_marker}]}]}
+     *        unit_price,factor,is_start_marker}]}]}
+     * （🔴 `is_must_finish` **已退场**（#4961）：服务端派生路径不再带该键；payload 里残留的该键
+     * 被**忽略且不落库** —— 实例列保留为历史载体。）
      *
      * <p>⚠️ {@code unit_price} 为 {@code null}（或缺键）= <b>未定价</b>（V90，issue #4696）⇒
      * 实例快照落 {@code NULL}（**不折 0 元**）；{@code 0} 是<b>显式定价为 0 元</b>，仍是有价。
@@ -395,7 +397,7 @@ public class ProductionController {
     // ══════════════════════════ 工序库 / 工艺路线（只读消费者，issue #4116 P0-2）══════════════════════════
 
     /**
-     * 工序库（按分组/排序的工序目录，含计件单价与必完/开始标记）
+     * 工序库（按分组/排序的工序目录，含计件单价与开始标记；{@code is_must_finish} 键**保留但恒 false**，#4961）
      * GET /api/admin/production/operations-catalog
      */
     @GetMapping("/operations-catalog")
@@ -423,7 +425,7 @@ public class ProductionController {
     /**
      * 更新工序（商家改单价/停用/排序的唯一入口）
      * PUT /api/admin/production/operations/{id}
-     * body: {unit_price?, is_must_finish?, is_start_marker?, status?, unit?, group_name?, sort_order?,
+     * body: {unit_price?, is_start_marker?, status?, unit?, group_name?, sort_order?,
      *        scope?}
      *
      * <p>{@code scope}（V67，issue #4384 A1）= 工序作用域：{@code position} 部位级 / {@code set} 套级
@@ -432,7 +434,9 @@ public class ProductionController {
      *
      * <p><b>{@code name} 不在可写字段里</b>（issue #4641）：body 里出现 {@code name} ⇒ **422 +
      * {@code error.details} 逐条**，而**不是**静默忽略 —— 本端点不支持改名（工序名是工序库唯一索引
-     * 与矩阵/路线引用的入口名），静默忽略会让调用方以为改成功了。</p>
+     * 与矩阵/路线引用的入口名），静默忽略会让调用方以为改成功了。
+     * 同款口径：{@code is_must_finish} **已退场**（#4961）⇒ 出现即 **422 + 可行动 hint**
+     * （恒 false 的列，接受它只会让调用方以为「设上了必完」）。</p>
      *
      * <p>改价同一事务写两处：{@code production_operations.unit_price}（新单实例化取值源）
      * + {@code production_operation_price_versions} 追加一行（当前价 = 最新版本行）。
@@ -493,8 +497,9 @@ public class ProductionController {
     /**
      * 新增工序（issue #4308 交付物 4：商家建自己的路线前必须能先建工序）
      * POST /api/admin/production/operations
-     * body: {name, group_name?, unit?, unit_price, position?, is_must_finish?, is_start_marker?, sort_order?,
+     * body: {name, group_name?, unit?, unit_price, position?, is_start_marker?, sort_order?,
      *        scope?}
+     * （🔴 `is_must_finish` **不在可写字段里**（#4961）：带上它 ⇒ **422 + 可行动 hint**，不静默忽略。）
      *
      * <p>{@code scope} 缺省 = {@code position}（部位级，与 V67 列默认值同口径）——
      * **不默认 set**：默认套级会把商家新建的每道工序都静默去重（issue #4384 A1）。</p>
@@ -537,7 +542,8 @@ public class ProductionController {
      * <b>改名只改 {@code name}</b>（不给 mainline 就不动序列）/ <b>{@code is_default} 恰一条</b>
      * （置 true 时同事务把既有默认降级）/ <b>{@code is_default:false} ⇒ 422</b>
      * （取消默认 ⇒ 该租户零默认 ⇒ 建单全 fail-closed）/ <b>停用默认路线 ⇒ 422</b> /
-     * 主线护栏（空主线拒 / 引用工序库中不存在的工序拒 / 重复工序拒 / 至少一道必完工序）/
+     * 主线护栏（#4961 起**四条**：空主线拒 / 引用工序库中不存在的工序拒 / 重复工序拒 /
+     * 工序名非空。“至少一道必完工序”已于 #4961 退场 —— 完工口径换成「全部工序全绿」）/
      * 序列真的变了才落版本账（{@code production_routing_versions}）。
      * 失败统一 **HTTP 422 + {@code error.details:[{field,message}]} 逐条理由**（一次报全）。</p>
      */

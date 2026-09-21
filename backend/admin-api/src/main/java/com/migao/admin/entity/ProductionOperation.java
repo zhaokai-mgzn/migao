@@ -60,7 +60,15 @@ public class ProductionOperation {
     /** 计件单价（元/单位） */
     private BigDecimal unitPrice;
 
-    /** 必完工序：全绿才可打包 → 加工单置 completed（生产完工；订单状态不动，issue #4117） */
+    /**
+     * 🔴 <b>历史载体（#4961），值恒 {@code false}，无消费者</b>。
+     *
+     * <p>「必完工序」概念已退场（用户裁定 2026-09-21「完工 = 全部工序全绿」）：加工单完工判据
+     * = **全部**活跃工序实例完成（`ProductionService#allInstancesDone`），与主线里有没有这道工序
+     * **无关**。列保留（不删列）：历史数据与冻结读面契约仍带该键；写面收到该字段一律 422
+     * （`ProductionOperationCommandService#rejectMustFinishField`），读面恒返回 false，
+     * 存量行由新迁移 V107 收敛为 FALSE。</p>
+     */
     private Boolean isMustFinish;
 
     /** 生产开始标记：该工序报工即视为进入生产中 */
