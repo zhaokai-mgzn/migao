@@ -16,13 +16,16 @@ import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 import java.sql.SQLTransientConnectionException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -63,6 +66,14 @@ import java.util.stream.Collectors;
  * 长期后果是**真失败与永久噪音同形** → 归因层失效（本仓库自认的最大失败模式）。
  * ⇒ 命中该集合者降级为 INFO、并在汇总行**单独计数**；**未命中的真失败照旧 ERROR + 非零计数**。
  * 决不静默：只有已诊断的存量降级。该集合与 Python 侧登记表的对应关系由 L0 测试锁死（见其注释）。
+ *
+ * ⚠️ **两条护栏（issue #4991）** —— 「命中文件名即降级」会把**同一文件的新病灶**一起吞掉
+ * （本仓最大的失败模式：真失败与永久噪音同形、归因层失效）。故：
+ *   1. **登记必须有据**：每条必须写明**目标态由谁达成**（`schema.sql` 或补偿迁移裸版本号 `V&lt;n&gt;`），
+ *      由 L0 测试核该补偿迁移**真实存在于迁移链**且**晚于**被补偿者。
+ *   2. **判定按「文件名 + 错误签名」**：签名 = `&lt;SQLSTATE&gt;` 或 `&lt;SQLSTATE&gt;:&lt;标识符子串&gt;`，
+ *      子串一律取**标识符**（约束名/列名）—— PG 文案随 `lc_messages` 本地化，标识符不随语言变。
+ *      在册但错因不符 ⇒ **按真失败处理**（ERROR + 真失败计数 + 日志点名「错因与登记不符」）。
  *
  * 使用 ObjectProvider 延迟获取 JdbcTemplate，确保在无 DataSource 的测试
  * 上下文中（如 SecurityConfigTest）不会因缺少 Bean 而启动失败。
@@ -171,7 +182,7 @@ public class MigrationRunner implements CommandLineRunner {
                 Comparator.nullsLast(MIGRATION_ORDER)));
         List<String> applied = getAppliedMigrations(jdbc);
 
-        List<String> failed = new ArrayList<>();
+        List<Failure> failed = new ArrayList<>();
         for (Resource r : resources) {
             String filename = r.getFilename();
             if (filename == null) continue;
@@ -194,10 +205,17 @@ public class MigrationRunner implements CommandLineRunner {
                 // 实测（issue #3270）：V28 失败后整链中断，V29–V41 与 V5–V9 全未执行，
                 // 于是 orders.actual_amount 等列永远缺失、admin-api 500、
                 // 评测被熔断污染，而日志里只有一行 ERROR，没人发现。
-                failed.add(filename);
-                if (isKnownBenignLegacy(filename)) {
+                failed.add(new Failure(filename, e));
+                BenignLegacy benign = KNOWN_BENIGN_LEGACY.get(filename);
+                if (benign != null && matchesAnySignature(e, benign.signatures())) {
                     log.info("ℹ️ 迁移失败（已知存量非幂等，目标态已达成，无需修复）: {} — {}",
-                            filename, KNOWN_BENIGN_LEGACY.get(filename));
+                            filename, benign.reason());
+                } else if (benign != null) {
+                    // 护栏②（issue #4991）：在册但**错因不符** ⇒ 按真失败处理。
+                    log.error("❌ 迁移失败（已跳过，继续执行其余迁移）—— ⚠️ 该文件在「已知存量非幂等」"
+                                    + "登记册里，但本次错因与登记的签名 {} 不符 ⇒ **按真失败处理**，"
+                                    + "请核这是不是新病灶: {}",
+                            benign.signatures(), filename, e);
                 } else {
                     log.error("❌ 迁移失败（已跳过，继续执行其余迁移）: {}", filename, e);
                 }
@@ -205,10 +223,10 @@ public class MigrationRunner implements CommandLineRunner {
         }
         reportFailures(failed);
         // 落可观测状态（issue #4517）—— 供 /actuator/health 的 details 暴露
-        List<String> benign = failed.stream().filter(MigrationRunner::isKnownBenignLegacy).toList();
-        this.lastFailed = List.copyOf(failed);
-        this.lastFailedBenignCount = benign.size();
-        this.lastFailedRealCount = failed.size() - benign.size();
+        long benignCount = failed.stream().filter(MigrationRunner::isBenign).count();
+        this.lastFailed = failed.stream().map(Failure::filename).toList();
+        this.lastFailedBenignCount = (int) benignCount;
+        this.lastFailedRealCount = failed.size() - (int) benignCount;
         this.lastSkippedByLedger = applied.size();
     }
 
@@ -222,7 +240,7 @@ public class MigrationRunner implements CommandLineRunner {
         return lastFailedRealCount;
     }
 
-    /** 最近一轮失败里属**已知存量非幂等**的条数（目标态已由 schema.sql 达成，重跑亦复现）。 */
+    /** 最近一轮失败里属**已知存量非幂等**的条数（目标态已达成，重跑亦复现；见 #3714 / #4991）。 */
     public int getLastFailedBenignCount() {
         return lastFailedBenignCount;
     }
@@ -290,19 +308,21 @@ public class MigrationRunner implements CommandLineRunner {
      * 本次失败的汇总行 —— **真失败与已知存量分开计数、分开级别**（issue #3714）。
      *
      * ⚠️ 为什么必须分开（本仓库核心痛点是「归因层是最大失败模式」）：bootstrap-first 评测栈
-     * 上这 3 条存量迁移**每次起栈必失败**，若一律打 ERROR + 「请立即修复并在修复后重跑」——
+     * 上在册的存量迁移**每次起栈必失败**，若一律打 ERROR + 「请立即修复并在修复后重跑」——
      * 那是一句**必然为假**的行动指令（无物可修、重跑必复现）→ 告警疲劳 → 真 schema 不一致
      * 与永久噪音**长得一模一样**，真失败被淹没。
      *
      * ⚠️ 决不静默：未知失败照旧 ERROR + 非零计数 + 行动指令；只有**已诊断的存量**降级。
      */
-    private void reportFailures(List<String> failed) {
-        List<String> benign = failed.stream().filter(MigrationRunner::isKnownBenignLegacy).toList();
-        List<String> real = failed.stream().filter(f -> !isKnownBenignLegacy(f)).toList();
+    private void reportFailures(List<Failure> failed) {
+        List<String> benign = failed.stream().filter(MigrationRunner::isBenign)
+                .map(Failure::filename).toList();
+        List<String> real = failed.stream().filter(f -> !isBenign(f))
+                .map(Failure::filename).toList();
 
         if (!benign.isEmpty()) {
-            log.info("ℹ️ 本次有 {} 条迁移失败属**已知存量非幂等**（目标态已由 docs/sql/schema.sql 引导"
-                            + "达成，无需修复、重跑亦会复现；见 #3615/#3714）：{}",
+            log.info("ℹ️ 本次有 {} 条迁移失败属**已知存量非幂等**（目标态已达成 —— 由 docs/sql/schema.sql "
+                            + "引导或由登记的补偿迁移补齐；无需修复、重跑亦会复现；见 #3615/#3714 / #4991）：{}",
                     benign.size(), benign);
         }
         if (!real.isEmpty()) {
@@ -314,43 +334,134 @@ public class MigrationRunner implements CommandLineRunner {
     // ── 已知良性存量迁移（单一事实源，与 Python 侧同测；见下）──
 
     /**
-     * 已诊断的**历史非幂等**迁移 → 理由。命中即降级为 INFO 并单独计数，**不**触发
-     * 「请立即修复并在修复后重跑」。
+     * 一条**已诊断的存量失败**的完整判据（issue #4991 起）。
      *
-     * 为什么这 3 条是良性的（不是「猜」）：bootstrap-first 库由
-     * `docker-entrypoint-initdb.d/001_schema.sql`（即 `docs/sql/schema.sql`）建出**终态**，
-     * 逐条比对确认它已覆盖这 3 条迁移的全部业务对象（`daily_briefings` 表/索引/RLS 策略、
-     * `tenants.briefing_enabled`/`briefing_generate_time`、`knowledge_cards` 终态 + 3 索引），
-     * 失败真因是 `ALTER ... IF EXISTS` **只守卫源对象、不守卫目标**、以及裸 `CREATE POLICY`
-     * （PG 不支持 `CREATE POLICY IF NOT EXISTS`）—— 即「目标已存在」而非「对象缺失」。
-     * 代价仅为噪音 + `schema_migrations` 账本失真（40/42），**无表/列缺失**。
+     * @param terminalStateBy 目标态**由谁达成**：`schema.sql`（bootstrap 终态）或裸版本号 `V<n>`
+     *                        （补偿迁移）。⚠️ **只写裸版本号、绝不写完整文件名** —— Python 侧解析器
+     *                        把标记区间内所有 `V{n}__x.sql` 形态的字面量当作**键**，写进字段/理由会让
+     *                        键集合虚假膨胀（解析器对此 fail-closed）。
+     * @param signatures      **期望错误签名**，形如 `<SQLSTATE>` 或 `<SQLSTATE>:<标识符子串>`；
+     *                        **至少一条**（空 = 退化成「只按文件名降级」，护栏②失效）。
+     *                        子串一律取**标识符**（约束名 / 列名）—— PG 的文案随 `lc_messages`
+     *                        本地化（`已经存在` / `does not exist`），标识符不随语言变。
+     * @param reason          人读理由（含 issue 号与证据）。
+     */
+    record BenignLegacy(String terminalStateBy, List<String> signatures, String reason) {}
+
+    /** 一轮里的一条失败：文件名 + 原始异常（签名判定要用原始异常，不能只留文件名）。 */
+    record Failure(String filename, Throwable cause) {}
+
+    /**
+     * 已诊断的**历史非幂等 / 已补偿**迁移 → 判据（目标态由谁达成 + 期望错误签名 + 理由）。
      *
-     * ⚠️ **单一事实源（#3701 教训：同一判据两份实现 ⇒ 必然漂移）**：本集合的**键集合**必须与
-     * `tests/unit_ci_workflows/test_migration_idempotency.py::LEGACY_UNGUARDED` **完全相等**，
-     * 由该文件的 `TestKnownBenignSetSingleSourceOfTruth`（L0，秒级零依赖）锁死 ——
-     * 多一条 = 真失败被当噪音吞掉；少一条 = 哨兵兜底失效。两边必须**同步增删**。
+     * <p>命中 = **文件名在册 ∧ 失败原因与登记的签名相符**（两条都要，缺一即护栏失效）。命中即降级
+     * 为 INFO 并单独计数，**不**触发「请立即修复并在修复后重跑」。</p>
      *
-     * ⚠️ **本集合只能变短**：一旦用新迁移补齐（或存量被裁决豁免后修好），
-     * 两边同时销账；陈旧登记由 Python 侧 `test_legacy_registry_matches_reality`（:313 语义）报红。
-     * **新增迁移一律不得进本表**（前向防护：新迁移必须自带幂等守卫）。
+     * <p>为什么这些是良性的（**逐条有据，不是「猜」**）：</p>
+     * <ul>
+     *   <li>`V37`/`V42`/`V44`（#3615/#3714）：bootstrap-first 库由 `docs/sql/schema.sql` 建出**终态**，
+     *       失败真因是「目标已存在」而非「对象缺失」（`ALTER ... IF EXISTS` 只守卫源对象；
+     *       PG 不支持 `CREATE POLICY IF NOT EXISTS`）。</li>
+     *   <li>`V74`（#4501）：载体①打在不存在的列上（`processing_info` 在 `order_items`，不在 `orders`）
+     *       ⇒ 整份单事务回滚；目标态由**补偿迁移 `V75`** 达成。</li>
+     *   <li>`V72`（#4514）：引用不存在的列 `f.sort_order` ⇒ 整份回滚；目标态由**补偿迁移 `V76`** 达成。</li>
+     *   <li>`V79`（#4685）：按租户派生块的 `unit_price` 整列 NULL 被推断成 `text` ⇒ 整份回滚
+     *       （bootstrap 路径上则是 `production_operations_pkey` 重复 —— `op-v79-01` 在 schema.sql 里
+     *       是 `deleted = 1`，部分唯一索引不覆盖它）；目标态由**补偿迁移 `V89`** 达成。</li>
+     *   <li>`V40`：`ON CONFLICT (id)` 没覆盖 `roles` 的 `(tenant_id, code)` 唯一键 ⇒ 种子行已存在时报
+     *       重复键（bootstrap 路径上它**反而成功**，因 schema.sql 种的是同一批 id）。</li>
+     * </ul>
      *
-     * ⚠️ 解析契约（勿改形状）：常量下方那对 `MIGAO_BENIGN_LEGACY_*` 起止标记之间的**字符串字面量**
-     * 会被 L0 测试按 `V{n}__desc.sql` 形态提取为键 ⇒ 键必须写成 `"文件名", "理由"` 成对出现。
-     * 该标记在**全文件内必须恰好各出现一次**（本注释不能写出标记原文，否则计数为 2 → 测试 fail-closed 报红）。
+     * <p>⚠️ 为什么**不修**这 4 条（#4991 的用户裁定）：它们都是**已发布**迁移（`V72`/`V74`/`V79` 另被
+     * `tests/unit_ci_workflows/migration_fingerprints.json` 逐字节 sha256 冻结），且目标态**已由
+     * 补偿迁移达成**；重写 = 走 `/danger-ack rewrite-migration` + 重算账本 + 重跑全链，收益近零、
+     * 且与 `V75`/`V76`/`V89` 逻辑重复。</p>
+     *
+     * <p>⚠️ **单一事实源（#3701 教训：同一判据两份实现 ⇒ 必然漂移）**：本表是唯一权威，
+     * Python 侧 `tests/unit_ci_workflows/test_migration_idempotency.py::BENIGN_LEGACY_FAILURES`
+     * **只镜像键集合**（内容一律从本文件解析），由该文件的 `TestKnownBenignLegacyRegistry`
+     * （L0，秒级零依赖）锁死 —— 多一条 = 真失败被当噪音吞掉；少一条 = 哨兵兜底失效。
+     * 两边必须**同步增删**。</p>
+     *
+     * <p>⚠️ **本集合只能变短**：一旦某条被新迁移补齐 / 存量被裁决修好，两边同时销账。
+     * **新增迁移一律不得进本表**（前向防护：新迁移必须自带幂等守卫）。</p>
+     *
+     * <p>⚠️ 解析契约（勿改形状）：`MIGAO_BENIGN_LEGACY_*` 起止标记之间，每条必须写成
+     * `"&lt;文件名&gt;", new BenignLegacy("&lt;目标态由谁达成&gt;", List.of("&lt;签名&gt;"…), "&lt;理由&gt;")`。
+     * 该标记在**全文件内必须恰好各出现一次**（本注释不能写出标记原文，否则计数为 2 → 测试 fail-closed 报红）。</p>
      */
     // MIGAO_BENIGN_LEGACY_BEGIN
-    static final Map<String, String> KNOWN_BENIGN_LEGACY = Map.of(
-            "V37__rename_knowledge_entries_to_cards.sql",
-            "表/索引改名目标已存在（ALTER ... IF EXISTS 只守卫源）；终态由 schema.sql 引导达成（见 #3615/#3714）",
-            "V42__reconcile_knowledge_table_name.sql",
-            "索引改名目标已存在（干净 bootstrap 顺序下靠 V37 的 DROP TABLE 连带删源索引而侥幸通过）；终态已达成（见 #3615/#3714）",
-            "V44__create_daily_briefings.sql",
-            "裸 CREATE POLICY，而 schema.sql:1212 已建同名策略 tenant_isolation_daily_briefings（PG 不支持 CREATE POLICY IF NOT EXISTS）；终态已达成（见 #3615/#3714）");
+    static final Map<String, BenignLegacy> KNOWN_BENIGN_LEGACY = Map.ofEntries(
+            Map.entry("V37__rename_knowledge_entries_to_cards.sql",
+                    new BenignLegacy("schema.sql", List.of("42P07:knowledge_cards"),
+                            "表/索引改名目标已存在（ALTER ... IF EXISTS 只守卫源）；终态由 schema.sql 引导达成（见 #3615/#3714）")),
+            Map.entry("V42__reconcile_knowledge_table_name.sql",
+                    new BenignLegacy("schema.sql", List.of("42P07:idx_knowledge_cards_tenant"),
+                            "索引改名目标已存在（干净 bootstrap 顺序下靠 V37 的 DROP TABLE 连带删源索引而侥幸通过）；终态已达成（见 #3615/#3714）")),
+            Map.entry("V44__create_daily_briefings.sql",
+                    new BenignLegacy("schema.sql", List.of("42710:tenant_isolation_daily_briefings"),
+                            "裸 CREATE POLICY，而 schema.sql 已建同名策略 tenant_isolation_daily_briefings（PG 不支持 CREATE POLICY IF NOT EXISTS）；终态已达成（见 #3615/#3714）")),
+            Map.entry("V40__seed_default_tenant_and_roles.sql",
+                    new BenignLegacy("schema.sql", List.of("23505:roles_tenant_id_code_key"),
+                            "ON CONFLICT (id) 没覆盖 roles 的 (tenant_id, code) 唯一键 ⇒ 种子行已存在时报重复键；终态 = tenant 1 + 四岗角色，schema.sql 已种同一批（见 #4991）")),
+            Map.entry("V72__switch_routing_model_consumers.sql",
+                    new BenignLegacy("V76", List.of("42703:f.sort_order"),
+                            "引用不存在的列 f.sort_order（production_option_factors 自 V59 建表起就没有该列）⇒ 整份回滚；目标态由补偿迁移 V76 达成（见 #4514）")),
+            Map.entry("V74__backfill_legacy_special_option_names.sql",
+                    new BenignLegacy("V75", List.of("42703:processing_info"),
+                            "载体①打在不存在的列上（processing_info 在 order_items，不在 orders）⇒ 整份回滚；目标态由补偿迁移 V75 达成（见 #4501）")),
+            Map.entry("V79__seed_fabric_route_and_packing_operation.sql",
+                    new BenignLegacy("V89", List.of("42804:unit_price", "23505:production_operations_pkey"),
+                            "按租户派生块的 unit_price 整列 NULL 被推断成 text ⇒ 整份回滚；bootstrap 路径上是 op-v79-01 的 pkey 重复（schema.sql 里它是软删态，部分唯一索引不覆盖）⇒ 目标态由补偿迁移 V89 达成（见 #4685）")));
     // MIGAO_BENIGN_LEGACY_END
 
-    /** 是否为已诊断的存量非幂等迁移（唯一实现点，`reportFailures` 与本类日志共用）。 */
-    static boolean isKnownBenignLegacy(String filename) {
-        return filename != null && KNOWN_BENIGN_LEGACY.containsKey(filename);
+    /** 是否为**已诊断的存量失败**（文件名在册 ∧ 错因与登记签名相符）—— 唯一实现点（#4991 护栏②）。 */
+    static boolean isKnownBenignLegacy(String filename, Throwable cause) {
+        BenignLegacy benign = filename == null ? null : KNOWN_BENIGN_LEGACY.get(filename);
+        return benign != null && matchesAnySignature(cause, benign.signatures());
+    }
+
+    /** 一轮失败里该条是否良性（`reportFailures` 与可观测计数共用）。 */
+    private static boolean isBenign(Failure failure) {
+        return isKnownBenignLegacy(failure.filename(), failure.cause());
+    }
+
+    /**
+     * 失败原因链是否命中任一条期望签名（issue #4991 护栏②）。
+     *
+     * <p>判据取**整条 cause 链**（驱动层异常总被 Spring 包一层：`BadSqlGrammarException` →
+     * `PSQLException`）：SQLSTATE 收集自链上所有 `SQLException`，文本取链上全部 message 拼接。</p>
+     *
+     * <p>签名 `"&lt;SQLSTATE&gt;"` 只比 state；`"&lt;SQLSTATE&gt;:&lt;子串&gt;"` 还要文本含该子串。
+     * **空签名列表一律不命中**（防「退化成只按文件名降级」）。</p>
+     */
+    static boolean matchesAnySignature(Throwable cause, List<String> signatures) {
+        if (cause == null || signatures == null || signatures.isEmpty()) {
+            return false;
+        }
+        Set<String> states = new HashSet<>();
+        StringBuilder text = new StringBuilder();
+        for (Throwable t = cause; t != null; t = t.getCause()) {
+            if (t instanceof SQLException se && se.getSQLState() != null) {
+                states.add(se.getSQLState());
+            }
+            if (t.getMessage() != null) {
+                text.append(t.getMessage()).append('\n');
+            }
+            if (t.getCause() == t) {
+                break;
+            }
+        }
+        String haystack = text.toString();
+        for (String signature : signatures) {
+            int colon = signature.indexOf(':');
+            String state = colon < 0 ? signature : signature.substring(0, colon);
+            String needle = colon < 0 ? "" : signature.substring(colon + 1);
+            if (states.contains(state) && (needle.isEmpty() || haystack.contains(needle))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ── 版本号排序（单一事实源，测试也用同一比较器）──

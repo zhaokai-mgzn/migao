@@ -19,12 +19,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourcePatternResolver;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -65,7 +68,26 @@ class MigrationRunnerLegacyNoiseTest {
     private static final String V37 = "V37__rename_knowledge_entries_to_cards.sql";
     private static final String V42 = "V42__reconcile_knowledge_table_name.sql";
     private static final String V44 = "V44__create_daily_briefings.sql";
+    private static final String V40 = "V40__seed_default_tenant_and_roles.sql";
+    private static final String V72 = "V72__switch_routing_model_consumers.sql";
+    private static final String V74 = "V74__backfill_legacy_special_option_names.sql";
+    private static final String V79 = "V79__seed_fabric_route_and_packing_operation.sql";
     private static final String V99 = "V99__injected_unknown_failure.sql";
+
+    /**
+     * 真库实测的失败形态（`SQLSTATE|message`）—— 取自本地真 PG（`scripts/migration_chain_repro.py`
+     * 同一路径）与云 dev 部署日志。**消息里的标识符不随 `lc_messages` 变**（中文/英文两种文案都含它），
+     * 故 `KNOWN_BENIGN_LEGACY` 的签名一律锚在标识符上。
+     */
+    private static final Map<String, String> REAL_ERRORS = Map.ofEntries(
+            Map.entry(V37, "42P07|关系 \"knowledge_cards\" 已经存在"),
+            Map.entry(V42, "42P07|关系 \"idx_knowledge_cards_tenant\" 已经存在"),
+            Map.entry(V44, "42710|用于表\"daily_briefings\"的策略\"tenant_isolation_daily_briefings\"已经存在"),
+            Map.entry(V40, "23505|duplicate key value violates unique constraint \"roles_tenant_id_code_key\""),
+            Map.entry(V72, "42703|字段 f.sort_order 不存在"),
+            Map.entry(V74, "42703|字段 \"processing_info\" 不存在"),
+            Map.entry(V79, "23505|重复键违反唯一约束\"production_operations_pkey\""),
+            Map.entry(V99, "42601|syntax error at or near \"boom\""));
 
     /** 旧实现的汇总行（必然为假的行动指令）——出现在真失败里才对，出现在已知存量里就是回归。 */
     private static final String FALSE_INSTRUCTION = "请立即修复并在修复后重跑";
@@ -190,6 +212,79 @@ class MigrationRunnerLegacyNoiseTest {
                         && formatted(e).contains("已知存量非幂等"));
     }
 
+    // ── 用例 4：已补偿的 4 条存量全失败 → 一并降级（issue #4991）──
+
+    @Test
+    @DisplayName("已补偿的 4 条存量（V40/V72/V74/V79）失败 → INFO 降级 + benign 4 / 真失败 0（#4991）")
+    void compensatedLegacyFailuresAreDowngradedToo() throws Exception {
+        givenMigrationsFailing(V40, V72, V74, V79);
+
+        MigrationRunner runner = newRunner();
+        runner.run();
+
+        assertThat(appender.list)
+                .as("4 条目标态均已达成（V75/V76/V89 补偿 + schema.sql 种子）⇒ 不得打 ERROR")
+                .noneMatch(e -> e.getLevel() == Level.ERROR);
+        assertThat(appender.list)
+                .as("汇总行应报已知存量 4 条")
+                .anyMatch(e -> formatted(e).contains("本次有 4 条迁移失败属")
+                        && formatted(e).contains("已知存量非幂等"));
+        assertThat(runner.getLastFailedBenignCount()).as("4 条全部计入 benign").isEqualTo(4);
+        assertThat(runner.getLastFailedRealCount()).as("真失败 0 条").isZero();
+        assertThat(runner.getLastFailedMigrations()).containsExactlyInAnyOrder(V40, V72, V74, V79);
+    }
+
+    // ── 用例 5：V79 的**两种**真库形态都命中（一条目多签名）──
+
+    @Test
+    @DisplayName("V79 云 dev 形态（numeric/text 不匹配，42804）也命中登记签名（#4991）")
+    void v79MatchesCloudDevSignatureToo() throws Exception {
+        givenMigrationsFailingWith(Map.of(V79,
+                "42804|column \"unit_price\" is of type numeric but expression is of type text"), V79);
+
+        MigrationRunner runner = newRunner();
+        runner.run();
+
+        assertThat(appender.list)
+                .as("V79 在 bootstrap 上是 23505、在云 dev 上是 42804 —— 两种形态都属已诊断存量")
+                .noneMatch(e -> e.getLevel() == Level.ERROR);
+        assertThat(runner.getLastFailedBenignCount()).isEqualTo(1);
+    }
+
+    // ── 用例 6：护栏②红证 —— 在册文件换了错因 ⇒ 不降级 ──
+
+    @Test
+    @DisplayName("护栏②红证：在册文件换错因 ⇒ 不降级、仍 ERROR + 计入真失败（#4991）")
+    void registeredFileWithUnexpectedCauseIsNotDowngraded() throws Exception {
+        // V72 在册签名 = `42703:f.sort_order`；注入**同 SQLSTATE、不同列名**的错因 ⇒ 必须按真失败处理
+        givenMigrationsFailingWith(Map.of(V72, "42703|字段 some_other_column 不存在"), V72);
+
+        MigrationRunner runner = newRunner();
+        runner.run();
+
+        assertThat(appender.list)
+                .as("错因与登记签名不符 ⇒ 必须按真失败处理（否则同一文件的新病灶会被静默吞掉）")
+                .anyMatch(e -> e.getLevel() == Level.ERROR
+                        && formatted(e).contains(V72)
+                        && formatted(e).contains("错因与登记的签名"));
+        assertThat(runner.getLastFailedRealCount()).as("真失败 1 条").isEqualTo(1);
+        assertThat(runner.getLastFailedBenignCount()).as("不得计入 benign").isZero();
+    }
+
+    @Test
+    @DisplayName("护栏②红证：SQLSTATE 不符（子串相同）也不得降级（#4991）")
+    void registeredFileWithWrongSqlstateIsNotDowngraded() throws Exception {
+        // 子串 `f.sort_order` 仍在，但 SQLSTATE 换成 42P01 ⇒ 判据必须按 **state + 子串** 双条件
+        givenMigrationsFailingWith(Map.of(V72, "42P01|字段 f.sort_order 不存在"), V72);
+
+        MigrationRunner runner = newRunner();
+        runner.run();
+
+        assertThat(runner.getLastFailedRealCount())
+                .as("只比子串不比 SQLSTATE ⇒ 这条会假绿（判据被自己的文案喂绿）")
+                .isEqualTo(1);
+    }
+
     // ── 夹具 ──
 
     private MigrationRunner newRunner() {
@@ -207,15 +302,24 @@ class MigrationRunnerLegacyNoiseTest {
     }
 
     /**
-     * 造 N 条迁移资源，并让 `jdbc.execute` 对其中列出的文件名抛出真实形态的失败
-     * （「关系/策略已经存在」—— bootstrap-first 库上 V37/V42/V44 的真库错误原文）。
+     * 造 N 条迁移资源，并让 `jdbc.execute` 对其中列出的文件名抛出**真库形态**的失败。
      *
      * 设计：SQL 文本里带 `-- <文件名>` 注记 ⇒ mock 的 Answer 能按文件名分辨该抛谁；
-     * 已登记为存量（{@code isKnownBenignLegacy}）与非存量用**同一**抛错逻辑 ——
-     * 两者差别**只在文件名是否在集合里**（正是被测行为），不由夹具预先决定。
+     * 已登记为存量（{@code KNOWN_BENIGN_LEGACY}）与非存量用**同一**抛错逻辑 ——
+     * 两者差别**只在「文件名在册 ∧ 错因签名相符」**（正是被测行为），不由夹具预先决定。
      * `schema_migrations` 查询返回空 ⇒ 所有迁移都进入执行分支。
+     *
+     * ⚠️ 抛的是**真库形态**：`BadSqlGrammarException` 包 `SQLException(message, sqlstate)` ——
+     * 因为 #4991 的护栏②按 **SQLSTATE + 标识符**判签名，抛裸 `RuntimeException` 会让该分支
+     * 测不到（夹具与被测行为脱节 = 空跑）。SQLSTATE 与消息取自真库实测（见 {@link #REAL_ERRORS}）。
      */
     private void givenMigrationsFailing(String... failingNames) throws Exception {
+        givenMigrationsFailingWith(Map.of(), failingNames);
+    }
+
+    /** 同上，但允许**逐条覆写**错因（护栏②红证要注入「同文件名 + 不同错因」）。 */
+    private void givenMigrationsFailingWith(Map<String, String> causeOverrides, String... failingNames)
+            throws Exception {
         List<String> failing = List.of(failingNames);
         Resource[] resources = new Resource[failing.size()];
         for (int i = 0; i < failing.size(); i++) {
@@ -239,7 +343,10 @@ class MigrationRunnerLegacyNoiseTest {
             // 必须显式判空，否则内置 SQL 也会被当迁移抛错。
             String offending = failing.stream().filter(sql::contains).findFirst().orElse(null);
             if (offending != null) {
-                throw new RuntimeException("执行失败（真库形态：关系/策略已经存在）: " + offending);
+                String raw = causeOverrides.getOrDefault(offending,
+                        REAL_ERRORS.getOrDefault(offending, "42601|syntax error at or near \"boom\""));
+                String[] parts = raw.split("\\|", 2);
+                throw new BadSqlGrammarException("迁移", sql, new SQLException(parts[1], parts[0]));
             }
             return null;
         }).when(jdbc).execute(anyString());
