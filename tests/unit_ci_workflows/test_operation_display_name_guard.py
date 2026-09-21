@@ -50,12 +50,22 @@ HELPER = "frontend/admin-web/src/lib/operation-display.ts"
 #: 第 4 个消费面；#4621 只改了前三个 ⇒ 它一直渲染变体名，而**没有任何判据会因此变红**）。
 #: 第 5 项是 issue #4647 / D1 补的**会话卡面** —— 米宝会话里的生产进度卡（`current_operation`）；
 #: 它改前不在任何清单里 ⇒ 退回裸渲染快照名时**四条判据全绿**。
+#: 🔴 **已退役面（issue #4964，2026-09-21）**：`frontend/admin-web/src/components/production/TaskCardPrint.tsx`
+#: **不再**是本清单的成员 —— 洗水码改竖版 30×60 后**工序摘要整体退场**（用户字段裁定未选；
+#: 工人扫部位码后在 H5 看该部位工序清单，见 issue #4967）⇒ 纸面**一个工序名都不印**，
+#: 该面不再消费带 `logical_name` / `position` 的读面。
+#: **退役不等于无人管**：C5 反向钉住它不得再出现工序渲染 —— 将来要把工序加回纸面，
+#: 必须**同时**把它加回本清单，否则就是 #4630 的漏改形态复发（改了面、判据全绿、没有东西变红）。
 FACES: tuple[str, ...] = (
     "frontend/admin-web/src/components/production/ProductionProgressTable.tsx",
-    "frontend/admin-web/src/components/production/TaskCardPrint.tsx",
     "frontend/admin-web/src/app/(dashboard)/production/piecework/page.tsx",
     "frontend/admin-web/src/components/production/PieceworkTable.tsx",
     "frontend/admin-web/src/components/chat/ProductionProgressCard.tsx",
+)
+
+#: **已退役面**（issue #4964）：曾在 `FACES` 里、现在**明确不得**再渲染工序的界面
+RETIRED_FACES: tuple[str, ...] = (
+    "frontend/admin-web/src/components/production/TaskCardPrint.tsx",
 )
 
 #: 面必须 import 的符号（C2 的反空跑锚点：面文件真的在用那一份实现）
@@ -217,3 +227,28 @@ def test_c4_injected_variant_render_is_red(tmp_path: Path):
     assert _violations(after), (
         "注入 `{op.operation}` 后判据**没判红** ⇒ 守卫是空判据（不会红的断言 = 空断言）"
     )
+
+
+# ── C5：已退役面不得再渲染工序（退役 ≠ 无人管）──────────────────────────────
+
+def test_c5_retired_face_no_longer_renders_operations():
+    """C5：洗水码纸面**不再印工序**（issue #4964 的退场两项之一）—— 退役面不得被偷偷加回。
+
+    判据形态 = 退役面源码（**剥注释后**）里不得出现 `operationDisplayName`、不得出现「工序」字样、
+    也不得直接渲染变体名。**为什么必须有这条**：面一旦移出 `FACES`，C2/C3 就不再管它 ⇒
+    「把工序加回纸面、且直接渲染变体名」会**全绿** —— 那正是 #4630 登记过的漏改形态。
+    """
+    for rel in RETIRED_FACES:
+        src = _read(rel)
+        code = _strip_comments(src)
+        assert REQUIRED_IMPORT not in code, (
+            f"`{rel}` 又用回了 `{REQUIRED_IMPORT}` ⇒ 工序被加回纸面了？确要加回：**同时**把它加回 "
+            "`FACES`（本守卫的覆盖面靠白名单，不加回 = #4630 的漏改形态复发）"
+        )
+        assert "工序" not in code, (
+            f"`{rel}` 的纸面源码里出现了「工序」字样 ⇒ issue #4964 的退场项（工序摘要）被加回；"
+            "确要加回请**同时**把它加回 `FACES` 并走 `operationDisplayName`"
+        )
+        assert _violations(src) == [], (
+            f"`{rel}` 直接渲染了变体名（工人端快照名）：\n  " + "\n  ".join(_violations(src))
+        )

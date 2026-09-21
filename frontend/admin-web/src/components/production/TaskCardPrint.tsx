@@ -4,42 +4,41 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import { cn } from '@/lib/utils'
-// 工艺规格展示的单一真值定义（设计文档 §4.9「一份 spec，三处渲染」）
-import { craftSpecLine, craftSpecRows } from '@/lib/craft-display'
-// 工序显示名的**唯一**口径（issue #4621）：逻辑名 · 部位 —— 纸面**不得**直接渲染变体名
-import { operationDisplayName } from '@/lib/operation-display'
-// 「第 N 套 / 共 M 套」的**唯一实现**（issue #4949）：与进度表**同一份**口径 —— 纸面与屏幕不得各算一套
+// 工艺规格展示的单一真值定义（设计文档 §4.9「一份 spec，三处渲染」）—— 纸面**只取它的值**，
+// 不另写一份推导（否则就是第二份口径，漂移的那一份不会变红）。
+import { craftSpecRows, type CraftSpecRow } from '@/lib/craft-display'
+// 「第 N 套 / 共 M 套」的**唯一实现**：与进度表**同一份**口径 —— 纸面与屏幕不得各算一套
 import { groupBySet } from './ProductionProgressTable'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
 
 /**
- * 加工单**洗水码**（可打印纸面，issue #4946；取代此前的 A4 任务卡）
+ * 加工单**洗水码**（可打印纸面，issue #4964；取代 #4946 的 60×30 横向版）
  *
- * 用户裁定（2026-09-21，逐字意图）：加工单按**商品行 = 部位**生产（一个加工单 3 个商品 ⇒ **3 张**
- * 洗水码），每张带**该商品自己的二维码**（= 该部位自己的工序集），而**加工单公共属性
- * （加工单号/订单号/客户名/交期/套号）逐张都要呈现**。
- * 纸面 = **60mm × 30mm**（固定长宽、横向，用户裁定），只能承载**摘要**：部位名 + 工序摘要
- * （道数 + 前几道显示名）+ 工艺摘要（`craftSpecRows` 单行收敛）+ 二维码 + 人可读短码。
- * 真值源：docs/curtain-production-rules.md §1（加工单打印物含二维码，二维码是扫码报工入口）/ §5 扫码报工闭环。
+ * 用户裁定（2026-09-21，逐字意图）：洗水码改**竖版 30mm × 60mm 单列**，照**真实工单**
+ * （亿家纺织「成品定制」58mm 竖排小票）的信息顺序；字段面 = 加工单号 / 客户 / 第N套共M套 /
+ * 部位 / 件名 / 色号 / 用料 / 宽高 / 加工方式 / 订单号 / 交期 / 备注 / 算料公式 + 二维码与**大字**短码。
  *
- * 打印隔离沿用项目既有范式（见 components/orders/ShipmentDoc.tsx 文件头的 6 条约束）：
- * 1. **屏幕隐藏、打印可见**：页面已有屏幕布局，本组件 `display:none` + `@media print` 显形，
- *    屏幕上零视觉改动、打印时只有这些洗水码。
+ * 🔴 **退场两项**（同一次字段裁定**未选**，勿"顺手加回"）：
+ *   ① **工序摘要** —— 工人扫部位码后在 H5 看该部位工序清单（`#4967`），纸面不印；
+ *   ② **完整套号**（`JG-…-001`）—— 与行①的加工单号重复，纯占纸面。
+ *
+ * 打印隔离沿用项目既有范式（见 `frontend/admin-web/src/components/orders/ShipmentDoc.tsx` 文件头的 6 条约束）：
+ * 1. **屏幕隐藏、打印可见**：页面已有屏幕布局，本组件 `display:none` + `@media print` 显形；
  * 2. **portal 到 body + display:none 隔离**：`body > *:not(.task-card-print-area) { display:none !important }`
- *    —— display:none 不占版面高度，避免按隐藏内容高度分页打出空白页。
- *    `.task-card-print-area` 必须是 portal 容器本身的 class（不能再包一层）。
- * 3. 不得放进 Modal（面板 max-h 会裁掉多页明细）；每页只挂一份（全局选择器）。
+ *    —— display:none 不占版面高度，避免按隐藏内容高度分页打出空白页；
+ *    `.task-card-print-area` 必须是 portal 容器本身的 class（不能再包一层）；
+ * 3. 不得放进 Modal（面板 `max-h` 会裁掉多页明细）；每页只挂一份（全局选择器）；
  * 4. 二维码内容只放**该部位自己的** `scan_url ?? part_token`（token 化、可撤销），
- *    不放单号拼接串、不放加工单级 `qr_token`（issue #4946：粒度 = 商品行）。
- *    **缺码不画假码**：出占位框（工人按短码手输或找班长补码）。
- * 5. 🔴 **纸面高度预算**（issue #4949，实测，勿随手加行）：60×30mm 减去上下各 1.2mm 内边距
- *    ⇒ 可用 **27.6mm**。当前占用 = 行①（加工单号 + 第 N 套/共 M 套，**必须单行** 2.96mm）
- *    + 行②（订单/客户/交期 2.54mm）+ `mt-[0.5mm]` + 行③ 右列（二维码 14.82mm + 「扫码报工」
- *    2.54mm + 人可读短码 2.54mm = **19.89mm**）= **25.89mm，余量 1.7mm**。
- *    ⚠️ 行① 一旦折行（两个长标识同排、无 `shrink-0`/`whitespace-nowrap`）就吃 **5.92mm**
- *    ⇒ 越过预算 ⇒ `overflow:hidden` 会**静默裁掉纸面底部的人可读短码**（实测裁 1.25mm）——
- *    而短码是设计里明写的**降级入口**（扫码工具读不出来时手输，见
- *    `docs/design/worker-h5-scan-and-report.md` §1.4「不是可选项」）。加行/加字号前先算这笔账。
+ *    不放单号拼接串、不放加工单级 `qr_token`；**缺码不画假码**（出占位框）；
+ * 5. 🔴 **纸面高度预算（竖版 30×60 的实测账，勿随手加行）**：60mm 高减去上下各 1.2mm 内边距
+ *    ⇒ 可用 **57.6mm**；6pt / `line-height 1.2` ⇒ **每行 2.54mm**。当前构成（17 行上限）：
+ *    加工单号(7pt，2.96) + 客户 + 套序 + 部位 + 件名(≤2 行) + 色号 + 用料 + 宽高 + 加工方式(≤2 行)
+ *    + 订单号 + 交期 + 备注(≤2 行) + 算料公式(≤2 行) ≈ **43.2mm**，底部「二维码 + 短码」行 ≈ **12mm**
+ *    ⇒ 合计 ≈ **55.2mm ≤ 57.6mm**（余量 ~2.4mm）。
+ *    ⚠️ **余量是给「版式不折行」用的**：60×30 横版时代实测过一次折行吃掉 2.96mm、把纸面底部的人可读短码
+ *    挤出纸外（issue #4949）。⇒ 本版把**二维码 + 短码**放在 `shrink-0` 的底部行、文字块用
+ *    `min-h-0 overflow-hidden` 承载 —— **空间不够时被裁的是补充文字，绝不裁码与短码**
+ *    （短码是设计里明写的降级入口：`docs/design/worker-h5-scan-and-report.md` §1.4「不是可选项」）。
  */
 interface TaskCardPrintProps {
   processingOrderNo: string
@@ -52,34 +51,34 @@ interface TaskCardPrintProps {
   positions?: ProductionPosition[]
   /** 缺码时的占位文案（撤销后传「已撤销」，避免纸面指向不存在的按钮）；缺省＝待生成 */
   qrPlaceholderHint?: string
-  /** 该部位对应的加工单快照明细（condensed 工艺摘要用；键与 position.order_item_id 对齐） */
+  /** 该部位对应的加工单快照明细（色号/用料/加工方式/备注/算料公式的取值来源） */
   items?: ProcessingOrderItem[]
   className?: string
 }
 
-/** 摘要里最多印几道工序显示名（60×30mm 装不下全部；超出以「…」收口，绝不溢出纸面） */
-const OPS_SUMMARY_LIMIT = 3
-
 /**
  * 快照行 id 的读取口：后端 `buildSnapshot` **无条件**落 `itemId`（= `order_items.id` 主键，
  * 也是 `position.order_item_id` 的来源），但 `ProcessingOrderItem` 类型未登记该键
- * ⇒ 本地补一个读取口，用它把**快照行**与**部位**对齐（对不上 ⇒ 该张不出工艺摘要，不猜）。
+ * ⇒ 本地补一个读取口，用它把**快照行**与**部位**对齐（对不上 ⇒ 该张不出这些行，不猜）。
  */
 type SnapshotItem = ProcessingOrderItem & { itemId?: string }
 
-/** 工序摘要：`工序 11 道：精裁 · 布帘 → 三边 · 布帘 → 韩褶 · 布帘 …`（显示名只走 #4621 的唯一实现） */
-function opsSummary(position: ProductionPosition): string {
-  const operations = position.operations ?? []
-  const names = operations.map((op) => operationDisplayName(op)).filter((name) => name !== '')
-  const shown = names.slice(0, OPS_SUMMARY_LIMIT)
-  const body = shown.length > 0 ? `：${shown.join(' → ')}${names.length > shown.length ? ' …' : ''}` : ''
-  return `工序 ${operations.length} 道${body}`
+/** 用料 = 面料米数优先；没有则退回加工费米数（两者都是「要用多少料」的同一件事） */
+const METERS_LABELS = ['面料米数', '加工费米数']
+
+/** 取工艺规格行的值（只按标签取，不重算 —— 格式化真值在 `craft-display`） */
+function specValue(rows: CraftSpecRow[], ...labels: string[]): string {
+  for (const label of labels) {
+    const hit = rows.find((row) => row.label === label)
+    if (hit) return hit.value
+  }
+  return ''
 }
 
-/** 工艺摘要（issue #4355 的摘要形态）：`工艺：韩褶 · 加工类型：定高买宽 · …`（单行由 CSS 收敛） */
-function craftSummary(item?: ProcessingOrderItem): string {
-  if (!item) return ''
-  return craftSpecRows(item).map((row) => craftSpecLine(row)).join(' · ')
+/** 成品尺寸：两边都必须是有限数才出（半个尺寸没有意义）⇒ `3×2.75米` */
+function sizeText(width?: number | null, height?: number | null): string {
+  const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+  return ok(width) && ok(height) ? `${width}×${height}米` : ''
 }
 
 export default function TaskCardPrint({
@@ -107,17 +106,17 @@ export default function TaskCardPrint({
   }
   // 0 个部位 ⇒ 仍出**一张**显式占位（明确「无商品/无码可打印」），而不是什么都不打
   const labels: (ProductionPosition | null)[] = list.length > 0 ? list : [null]
-  // 套序/套数走**与进度表同一份**实现（issue #4949）
+  // 套序/套数走**与进度表同一份**实现
   const setViews = groupBySet(list)
 
   return createPortal(
     <div className={cn('task-card-print-area text-neutral-900', className)}>
       <style>{`
         .task-card-print-area { display: none; }
-        @page { size: 60mm 30mm; margin: 0; }
-        /* 洗水码本体：固定 60mm × 30mm，超出一律裁掉（纸面只有这么大） */
-        .task-card-label { width: 60mm; height: 30mm; overflow: hidden; box-sizing: border-box;
-          padding: 1.2mm; font-size: 6pt; line-height: 1.2;
+        @page { size: 30mm 60mm; margin: 0; }
+        /* 洗水码本体：固定 30mm × 60mm（竖版），超出一律裁掉（纸面只有这么大） */
+        .task-card-label { width: 30mm; height: 60mm; overflow: hidden; box-sizing: border-box;
+          padding: 1.2mm; font-size: 6pt; line-height: 1.2; display: flex; flex-direction: column;
           break-after: page; page-break-after: always; }
         /* 最后一张不再分页（否则末尾多吐一张空白） */
         .task-card-label:last-child { break-after: auto; page-break-after: auto; }
@@ -139,103 +138,138 @@ export default function TaskCardPrint({
         const setNo = setView ? setView.setIndex + 1 : 1
         const setCount = setView ? setView.setCount : 1
         const qrValue = position ? (position.scan_url ?? position.part_token ?? null) : null
-        const craft = craftSummary(position?.order_item_id ? itemsById.get(position.order_item_id) : undefined)
+
+        const item = position?.order_item_id ? itemsById.get(position.order_item_id) : undefined
+        const specRows = craftSpecRows(item)
+        // 加工方式 = 工艺 · 加工类型 · 打开方式 · 定型（**值**一律取自 `craft-display` 的同一份格式化，不重算）。
+        // 其中「是否定型」在纸面上按**行业措辞**收成「定型 / 不定型」—— 真实工单就是这么写的
+        // （图1「单开-韩褶-定型」、图3「双开韩褶 定高买宽 定型」）；单印一个「是」在 27.6mm 宽的
+        // 纸面上读不出是哪个字段的「是」。**只映射展示形态，不改值本身**。
+        const shaped = specValue(specRows, '是否定型')
+        const craftMode = [
+          specValue(specRows, '工艺'),
+          specValue(specRows, '加工类型'),
+          specValue(specRows, '打开方式'),
+          shaped === '是' ? '定型' : shaped === '否' ? '不定型' : '',
+        ]
+          .filter((value) => value !== '')
+          .join(' · ')
+        const meters = specValue(specRows, ...METERS_LABELS)
+        const formula = specValue(specRows, '算料公式')
+        // 备注 = 特殊选项（真实工单的「防翘扣 / 花边」那一类）+ 快照备注（缺值不渲染）
+        const remark = [specValue(specRows, '特殊选项'), (item?.remark ?? '').trim()]
+          .filter((value) => value !== '')
+          .join('；')
+        // 件名：部位名优先，退回商品名（纸面要能认出「这一张是给哪一件的」）
+        const pieceName = position ? position.position_name || position.product_name || '' : ''
+        const colorName = typeof item?.colorName === 'string' ? item.colorName.trim() : ''
+        // 色号已含在件名里 ⇒ 不重复渲染（纸面只有 27.6mm 宽，重复 = 挤掉别的字段）
+        const showColor = colorName !== '' && !pieceName.includes(colorName)
+        const size = sizeText(position?.width, position?.height)
 
         return (
           <div
             key={position?.order_item_id ?? `label-${index}`}
-            className="task-card-label flex flex-col justify-between"
+            className="task-card-label"
             data-testid={`task-card-label-${index}`}
           >
-            {/* 加工单公共属性（**逐张**都在）：加工单号 + 套序。
-                🔴 行①**必须单行**（issue #4949）：加工单号 `shrink-0` + 右span `whitespace-nowrap`
-                —— 折行会吃 2.96mm，把纸面底部的人可读短码挤出纸外（实测被裁 1.25mm）。
-                完整套号放不进行①（两个长标识同排 ⇒ 折行）⇒ 移到左列（那里有纵向余量，见下）。 */}
-            <div className="flex items-baseline justify-between gap-[1mm]">
-              <span
-                className="shrink-0 whitespace-nowrap text-[7pt] font-bold tracking-wide"
-                data-testid="task-card-no"
-              >
-                {processingOrderNo}
-              </span>
-              {position && (
-                <span
-                  className="whitespace-nowrap text-neutral-600"
-                  data-testid={`task-card-label-set-no-${index}`}
-                >
-                  第 {setNo} 套 / 共 {setCount} 套
-                </span>
+            {/* ① 加工单号 —— **主标识**：绝不折行、绝不省略（折行会把纸面底部内容挤出纸外，issue #4949） */}
+            <div
+              className="shrink-0 whitespace-nowrap text-[7pt] font-bold tracking-wide"
+              data-testid="task-card-no"
+            >
+              {processingOrderNo}
+            </div>
+
+            {/* 中部文字块：空间不够时**只裁这里**（底部码与短码 shrink-0，绝不裁） */}
+            <div className="mt-[0.5mm] min-h-0 flex-1 overflow-hidden">
+              {position ? (
+                <>
+                  {customerName && (
+                    <div className="truncate" data-testid={`task-card-label-customer-${index}`}>
+                      客户 {customerName}
+                    </div>
+                  )}
+                  {/* ② 套序：真值源 §1 的行业措辞（`第 N 套 / 共 M 套`） */}
+                  <div className="whitespace-nowrap" data-testid={`task-card-label-set-no-${index}`}>
+                    第 {setNo} 套 / 共 {setCount} 套
+                  </div>
+                  {position.position_kind && (
+                    <div className="truncate" data-testid={`task-card-label-kind-${index}`}>
+                      部位 {position.position_kind}
+                    </div>
+                  )}
+                  {/* ③ 件名（可折 2 行；认件） */}
+                  <div className="line-clamp-2" data-testid={`task-card-label-position-${index}`}>
+                    {pieceName || '—'}
+                  </div>
+                  {showColor && (
+                    <div className="truncate" data-testid={`task-card-label-color-${index}`}>
+                      色号 {colorName}
+                    </div>
+                  )}
+                  {meters && (
+                    <div className="truncate" data-testid={`task-card-label-meters-${index}`}>
+                      用料 {meters}
+                    </div>
+                  )}
+                  {size && (
+                    <div className="truncate" data-testid={`task-card-label-size-${index}`}>
+                      宽高 {size}
+                    </div>
+                  )}
+                  {craftMode && (
+                    <div className="line-clamp-2" data-testid={`task-card-label-craft-${index}`}>
+                      加工方式 {craftMode}
+                    </div>
+                  )}
+                  <div className="whitespace-nowrap" data-testid="task-card-order-no">
+                    订单 {orderNo ?? '—'}
+                  </div>
+                  <div className="whitespace-nowrap" data-testid={`task-card-label-delivery-${index}`}>
+                    交期 {expectedDeliveryDate ?? '—'}
+                  </div>
+                  {remark && (
+                    <div className="line-clamp-2" data-testid={`task-card-label-remark-${index}`}>
+                      备注 {remark}
+                    </div>
+                  )}
+                  {formula && (
+                    <div className="line-clamp-2 text-neutral-600" data-testid={`task-card-label-formula-${index}`}>
+                      {formula}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-neutral-600">
+                  该加工单暂无商品/无码可打印{qrPlaceholderHint ? `（${qrPlaceholderHint}）` : ''}
+                </div>
               )}
             </div>
 
-            {/* 加工单公共属性：订单号 / 客户名 / 交期 */}
-            <div className="truncate text-neutral-700">
-              订单 <span data-testid="task-card-order-no">{orderNo ?? '—'}</span> · 客户{' '}
-              {customerName ?? '—'} · 交期 {expectedDeliveryDate ?? '—'}
-            </div>
-
-            <div className="mt-[0.5mm] flex min-h-0 flex-1 items-start gap-[1mm]">
-              <div className="min-w-0 flex-1">
-                {position ? (
-                  <>
-                    <div
-                      className="truncate font-semibold"
-                      data-testid={`task-card-label-position-${index}`}
-                    >
-                      {position.position_name || position.product_name || '—'}
-                    </div>
-                    {/* 工序摘要（道数 + 显示名；变体名不上纸面，issue #4621） */}
-                    <div data-testid={`task-card-label-ops-${index}`}>
-                      {opsSummary(position)}
-                    </div>
-                    {/* 工艺摘要（issue #4355 的摘要形态）：单行收敛，缺值不渲染 */}
-                    {craft && (
-                      <div
-                        className="truncate text-neutral-600"
-                        data-testid={`task-card-label-craft-${index}`}
-                      >
-                        {craft}
-                      </div>
-                    )}
-                    {/* 完整套号（issue #4949）：从行①搬进**左列** —— 左列实测只用 10.15mm/19.89mm
-                        （QR 列高才是纸面的约束），有纵向余量；而行① 放不下两个长标识。纸面标识一个不少。 */}
-                    {position.set_no && (
-                      <div
-                        className="truncate text-neutral-500"
-                        data-testid={`task-card-label-set-code-${index}`}
-                      >
-                        套号 {position.set_no}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="text-neutral-600">
-                    该加工单暂无商品/无码可打印{qrPlaceholderHint ? `（${qrPlaceholderHint}）` : ''}
-                  </div>
-                )}
-              </div>
-
-              <div className="w-[17mm] shrink-0 text-center">
-                {qrValue ? (
-                  <QRCodeSVG value={qrValue} size={56} level="M" title={qrValue} data-testid="task-card-qr" />
-                ) : (
+            {/* ④ 底部（`shrink-0`）：二维码 + **大字**人可读短码 —— 纸面的功能件，永不被裁 */}
+            <div className="mt-[0.5mm] flex shrink-0 items-center gap-[1mm]">
+              {qrValue ? (
+                <QRCodeSVG value={qrValue} size={45} level="M" title={qrValue} data-testid="task-card-qr" />
+              ) : (
+                <div
+                  data-testid="task-card-qr-placeholder"
+                  className="flex h-[12mm] w-[12mm] shrink-0 items-center justify-center border border-dashed border-neutral-400 text-center text-[5pt] text-neutral-500"
+                >
+                  {qrPlaceholderHint ?? '待生成'}
+                </div>
+              )}
+              {position && (
+                <div className="min-w-0">
+                  <div className="text-neutral-600">扫码报工</div>
                   <div
-                    data-testid="task-card-qr-placeholder"
-                    className="mx-auto flex h-[15mm] w-[15mm] items-center justify-center border border-dashed border-neutral-400 text-center text-[5pt] text-neutral-500"
-                  >
-                    {qrPlaceholderHint ?? '待生成'}
-                  </div>
-                )}
-                <div className="text-neutral-600">扫码报工</div>
-                {position && (
-                  <div
-                    className="truncate font-mono font-semibold"
+                    className="truncate font-mono text-[8pt] font-bold"
                     data-testid={`task-card-label-short-code-${index}`}
                   >
                     {position.part_short_code || '—'}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         )
