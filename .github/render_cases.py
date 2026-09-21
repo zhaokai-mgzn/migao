@@ -25,27 +25,67 @@ GENERATED_HEADER = "# GENERATED FILE — DO NOT EDIT\n" \
                    "# 重新生成: python3 render_cases.py --cases <dir> --out-eval <py> --out-md <md>\n"
 
 # 域 → 旧 eval_cases Skill 枚举（生成物兼容 local_runner 的导入面）
+#
+# ⚠️ **覆盖度契约（issue #5083）**：本表必须**显式**覆盖 `.github/cases/*.yml` 出现的
+# 每一个域 —— 不许靠 `.get(domain, "GENERAL")` 的缺省静默兜底。缺省让「新增一个域」
+# 无声落地成 `Skill.GENERAL`，而它与「**有意**映射到 GENERAL」在生成物里逐字相同、
+# 静态不可区分 ⇒ 没有任何东西会因此变红。判据 =
+# `tests/unit_ci_workflows/test_render_cases_domain_map.py`（D2/D3）。
+#
+# ⚠️ **`skill` 不是计分面**（判据 = 同文件 `TestSkillIsNotConsumed`）：
+# `local_runner.py` 自建 `EvalCase` 时硬编码 `skill=Skill.GENERAL` 并注明
+# 「域信息由 `_domain` 携带，runner 不消费 skill」；全仓唯一的 `.skill` 读取点是
+# 生成物自带的 `print_summary()`（仅 `__main__` 可达的调试打印，无调用方）
+# ⇒ 本表只影响生成物的**可读性/兼容面**，**不进任何计分或断言路径**。
+#
+# `Skill` 枚举只有 7 个值（product / order / aftersales / customer / cross / multi_turn /
+# general）。下面标 `GENERAL` 的那些域是**后端 / 单测契约域**（API 层、工具注册器、
+# 领域本体、前端设计 token、令牌刷新 ……），本就不属任何 LLM skill ——
+# 映射到 `GENERAL` 是**结论**，不是兜底；显式写下是为了让这个结论可评审。
 SKILL_MAP = {
     "order": "ORDER",
     "product": "PRODUCT",
     "processing": "PRODUCT",
+    "processing-order": "PRODUCT",   # 加工单与加工项同族（工具面同在米宝 PRODUCT 家族）
     "category": "PRODUCT",
     "aftersales": "AFTERSALES",
     "customer": "CUSTOMER",
     "cross": "CROSS",
     "chat": "MULTI_TURN",
+    # ── 以下域显式映射到 GENERAL：后端 / 单测契约域，不属任何 LLM skill ──
     "defense": "GENERAL",
     "hr": "GENERAL",
     "settings": "GENERAL",
     "data": "GENERAL",
+    "agents": "GENERAL",
+    "api": "GENERAL",
+    "bmini": "GENERAL",
+    "finance": "GENERAL",
+    "knowledge": "GENERAL",
+    "misc": "GENERAL",
+    "onboarding": "GENERAL",
+    "ontology": "GENERAL",
+    "registry": "GENERAL",
+    "token-refresh": "GENERAL",
+    "ui": "GENERAL",
+    "utils": "GENERAL",
 }
 
 TIER_MAP = {"smoke": "SMOKE", "normal": "NORMAL", "edge": "EDGE", "adversarial": "ADVERSARIAL"}
 
+# 域 → 人读中文标题（`docs/testing/mibao-verification-cases.md` 的章节名 + 覆盖统计行）。
+# ⚠️ **覆盖度契约同 `SKILL_MAP`**（issue #5083）：缺项会让 md 章节标题走
+# `DOMAIN_TITLES.get(domain, domain)` 的缺省 ⇒ **直接显示英文域名**（`## ui（51 case）`），
+# 读者无法区分「缺映射」与「有意用英文」。判据 = 同文件 D1/D4。
 DOMAIN_TITLES = {
     "order": "订单域", "product": "商品域", "processing": "加工项域", "category": "分类域",
     "aftersales": "售后域", "customer": "客户域", "hr": "人事域", "settings": "设置域",
     "data": "数据域", "chat": "对话边界域", "cross": "跨域", "defense": "防御域",
+    "processing-order": "加工单域", "agents": "Agent 核心域", "api": "API 层域",
+    "bmini": "B 端小程序域", "finance": "财务对账域", "knowledge": "知识问答域",
+    "misc": "杂项域", "onboarding": "商家入驻域", "ontology": "领域本体域",
+    "registry": "工具注册器域", "token-refresh": "令牌刷新域", "ui": "前端 UI 域",
+    "utils": "跨切面工具域",
 }
 
 

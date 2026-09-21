@@ -1,0 +1,21 @@
+{
+  "_note": "issue #5079「用例断言可机器判红率过低」的**锚点 + 读数复核**。\n\n原文读数（用 `.github/assertion_taxonomy.py` 的 `scoring_assertion_count()` 复算，数字与原文逐字吻合）：`scoring_assertion_count == 0` 的用例 = **53**（分布 processing-order 19 / order 12 / api 9 / ui 5 / data 4 / product 3 / processing 1）。\n\n**但原文的 53 不等于 53 条债务**：`Case Trust Gate` 的规则 a1 还有一层**计分通道分流**（#4244 / PR #4276，落码早于本次审计基线）—— `[backend-contract]` 用例**不进 agent-eval**，其机器判红通道是 `traces.tests`（Java / pytest 单测）。实测复核：那 53 条**全部**是 `[backend-contract]`，`traces.tests` **全部非空**且引用的文件**全部真实存在** ⇒ 「无任何机器判红通道」的用例 = **0**。\n\n⇒ 把 53 当债务「燃尽」等于 `migao-acceptance` 明令禁止的**纸面修复**（把散文改写成含 `success=true` 的形态、运行期零变化）。故本锚点把**真债务**（`no_channel_total`）锁死为 0，把 53 作为**读数**留档。\n\n**豁免通道健全性另行复核（防豁免自身是假绿）**：53 条的 `traces.ci` 全部非空且指向**真实存在**的 workflow（`pr-check.yml` 52 条 / `ai-agent-tests.yml` 2 条），且每条都有**至少一个像测试文件**的 `traces.tests` 引用（代码扩展名 + 名含 test｜spec）。⚠️ 复核中抓到一处**必须留住**的真实形态，否则守卫会过严：`DA-010` 的 `traces.tests` 并引 `DailyBriefingServiceTest.java`（真测试）**与** `V44__create_daily_briefings.sql`（被契约的迁移产物）⇒ 判据只能是「**≥1 条**像测试」而不是「全部」；形状判定与 `growth_gate._is_test_file` 同口径（不另造一套）。",
+  "_metric_note": "① `no_channel_total` = 既无 runner 计分断言（`scoring_assertion_count == 0`）**也不走** `[backend-contract]` 的 `traces.tests` 通道的用例数 —— 这才是「恒绿、且没有任何东西会红」的真债务，**绝对下界 0**，history 链上恒为 0。\n② `backend_contract_scoring_zero` = `scoring_assertion_count == 0` 的用例数（含走豁免通道的），= #5079 的原始读数。它是**读数不是天花板**：把它设成只许非增会误伤合法新增（`[backend-contract]` 用例设计上就不进 agent-eval；同族摩擦已逐条记在 `.github/skip-exemption-baseline.json` 的 `history` 里：「每新增一条此类用例都要重锚 ⇒ 摩擦力归零」）。故只锁「变更必须留 note」。",
+  "_scope_note": "只许非增：`history` 链的 `no_channel_total` 必须恒为 0（回归必须**修**，不许抬锚点）；`entries` 必须 == `history` 末行；相邻两行任一度量有变却无 `note` ⇒ 红。判据本体 = `tests/unit_ci_workflows/test_case_machine_fail_channel.py` 的 `anchor_drift()`（含 4 条注入式红证）。",
+  "_how_to_regen": "读数变化时**同一 PR** 内追加一行 `history`（写明 `note` 说明来由）+ 把 `entries` 对齐到新末行。`no_channel_total` 不许 > 0：那是真债务，要修不要锚。",
+  "_anchor_sha": "2f4f14224bd3007e9ffcc1f260303cef07f19796",
+  "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
+  "entries": {
+    "no_channel_total": 0,
+    "backend_contract_scoring_zero": 53
+  },
+  "history": [
+    {
+      "sha": "2f4f14224bd3007e9ffcc1f260303cef07f19796",
+      "date": "2026-09-21",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 53,
+      "note": "首次锚定（issue #5079）。实测：390 用例 / 1361 条 data_checks（机器计分 73、纯散文 1288）/ `scoring_assertion_count == 0` 53 条（**全部**为 `[backend-contract]` 且 `traces.tests` 完整 ⇒ 真债务 0）。同时把 #5079 的读数口径修正为「runner 计分 OR 豁免通道」——原文漏了 #4244 的分流，故 53 → 0。"
+    }
+  ]
+}

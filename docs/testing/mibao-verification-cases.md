@@ -130,7 +130,7 @@
 真值: aftersales-flow.status-enums
 溯源: 2026-09-14 新增（#3494 覆盖审计）：AS-008 的正向展示断言为自然语义 data_checks（不计分）；本条补专属正向旅程——工具可达 + 权限否定禁词双防线，机器可执行；不依赖工单数据状态（诚实『暂无』回复不误伤） ｜ tags: query, aftersale
 
-## agents（6 case）
+## Agent 核心域（6 case）
 
 ### AG-001. AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离 🔵
 ```
@@ -202,7 +202,7 @@
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
 
-## api（19 case）
+## API 层域（19 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -422,7 +422,7 @@
 ```
 溯源: 2026-09-07 新增：#2984 语音空录音体验优化（生产实证：无声音停止 → 空/极小 webm → 后端裸 500 → 前端 Failed to fetch） ｜ tags: asr, voice, error-handling
 
-## bmini（6 case）
+## B 端小程序域（6 case）
 
 ### BM-001. B 端员工首次小程序登录 - 微信授权手机号匹配员工并绑定 openid 🔵
 ```
@@ -1782,7 +1782,7 @@
 真值: defense.injection
 溯源: 2026-09-13 新增（issue #3367）：C 端对抗面补齐（DF-010 的 validate_input 期望为 B 端建品形状）。2026-09-14 校准（#3544 收口批）：恒真的「未被调用」升级为 forbidden_tools。2026-09-22（issue #4201 的 case-trust burn-down 缴费）：补一条**机器计分型**前置 data_check —— 同批消掉本条的 CASE-TRUST-NO-PRECONDITION-ASSERTION（无可判定前置断言）与 CASE-TRUST-FORBIDDEN-TEXT-SOLE（forbidden_text 单独承载关键判据 ⇒ 补上机器计分条目后行为层断言陪跑），该条目已从 .github/case-trust-baseline.json 删除（条目 16→15，逐条只许缩短）。**未改** user_inputs / expectations / forbidden_tools / forbidden_text 任何一条（断言只增不减）。 ｜ tags: defense, xiaobu, sql_injection, xss, data_safety
 
-## finance（4 case）
+## 财务对账域（4 case）
 
 ### FN-001. 资金流水查询与登记 🔵
 ```
@@ -1955,7 +1955,7 @@
 真值: ai-chat.permission-layers, employee-role.write-require-admin
 溯源: 2026-09-18 新增（issue #4108 / 父 #4103 Pkg D）：「有能力时不得误拒」的正向对照。与 HR-009 请求逐字同构、仅 debug_permissions 不同（employee:create vs employee:list）⇒ 两条例用同一次全量跑即可给出'权限即差异'的对照证据。断言：expectations（action=create 值级）+ must_succeed（写真的成功）。幂等靠 pre_clean[employee_remove] + namespaces 声明（与任何写同名员工的用例自动串行，#3781 并行污染隔离）；2026-09-18 第二轮（同 CI run）：补 `precondition[debug_permissions_effective source=employee:create]`（门禁 f 条）+ `db_verify[employee]` 正向落库断言（读落库行，拦 #3550 的「200 假成功」）；2026-09-18 第三轮（issue #4150）：前置断言改成**观测服务端**（`__PAGE__` 直调探针 `dashboard_stats`，需 `dashboard:view`；本用例声明不含该码 ⇒ 探针必须**被拒**，服务端回落通配 ⇒ 被放行 ⇒ 判红）；2026-09-18 第四轮（issue #4150，**真跑实测** run 35264687083）：本条与 HR-009 同批登记 `skip_reason` —— 实测两次尝试 **create 从未被调用**（工具层未触达）⇒ 拒绝在 prompt/模型层，与 HR-009 同机制（注入面「不要调用工具尝试」/「超出即无权」）；本条**正确地**抓到了产品侧回归（#4147 G6 在修），但产品修好前无绿的可能，故按「不让已知缺口与真失败同形」登记，un-skip 判据见 skip_reason。断言口径不变、无放宽（未删任何断言）。2026-09-19 第五轮（issue #4189）：① `expectations` 放宽为接受合理流程的 OR（`employee_manage(action=create) or role_manage`）——「先查角色 ID 再 create」也合格；`must_succeed[employee_manage(action=create)]` + `db_verify[employee]` **保持承重**（只查角色不创建 / 落库没变 ⇒ 红）；② 注入面回归（#4147 G6 / PR #4164）**已修复** ⇒ un-skip，恢复执行；③ **身份矛盾照实登记**（role=admin + 单一码的内部矛盾，未解决；换真实受限角色需 auth.py 改造，超出本包范围）。 ｜ tags: permission, create, positive-control
 
-## knowledge（7 case）
+## 知识问答域（7 case）
 
 ### KN-001. 小布知识问答 - 面料问题先检索本店知识卡片（query 必填） 🟢
 ```
@@ -2016,7 +2016,7 @@
 ```
 溯源: 2026-09-09 新增（issue #3076 验收 P2-4）：S3 实测模型自补常识「更容易起球」紧邻来源标注段边界模糊——prompt 三处（tool 描述/hit message/customer_knowledge_skill）加「来源标注边界」规则，单测断言规则存在（删规则即 fail） ｜ tags: knowledge, wiki, source-annotation, xiaobu
 
-## misc（16 case）
+## 杂项域（16 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -2202,7 +2202,7 @@
 ```
 溯源: 2026-09-20 新增（issue #4837）：worker-h5 落位 app.migaozn.com/w/ —— CI 发布 + 身份断言 + 静态根禁删守卫（含注入式红证） ｜ tags: ci, deploy, worker-h5, hosting
 
-## onboarding（5 case）
+## 商家入驻域（5 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
 ```
@@ -2268,7 +2268,7 @@
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
 溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787）。2026-09-20（issue #4837 的 burn-down 缴费，metric=entries ⇒ 整条销账）：补 precondition（本用例 3 组 user_inputs 实际是**同一页面**的三组断言、非多轮会话，此前被判 CASE-TRUST-NO-PRECONDITION-ASSERTION）——断言面（user_inputs / expectations / data_checks / traces）原样未动、无放宽 ｜ tags: homepage, compliance, gb47746
 
-## ontology（4 case）
+## 领域本体域（4 case）
 
 ### ON-001. 本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象） 🔵
 ```
@@ -3350,7 +3350,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4525，设计 docs/design/processing-fee-and-option-pricing.md 包 A）。**2026-09-19 改判（issue #4594 用户裁定）**：判据 2 由「组合未命中 ⇒ 选项价不单独收」改判为「组合未定价 ⇒ **只有组合那半**记 0，已定价选项**照常计入**」（三个 unpriced 分支都先算 `specialOptions`）；影响面 = 组合没配价时订单金额变大。交付：V77 迁移（`production_route_rules.customer_unit_price NUMERIC(12,2)` + 92 行组合价 + 16 条选项价，均 `source='synthetic'`）+ ProductionRouteRule 实体字段 + ProcessingFeeCalculator 两层取价（组合 × 米数 + Σ 选项 × 1，新增 `special_options` / `special_options_total` 键，行金额 = 两者之和）+ schema.sql 终态 + e2e fixture 重建 + 合成数据生成器与守卫。**未做（如实登记）**：① 设计 §7 的「19 项」按代码事实落为 16 项（3 项无 option 规则行，见 data_checks 末条）；② 前端展示面（包 B）与 #4452 信号映射（包 C）不在本单；③ `fee_source=manual` 通道仍未落码。**2026-09-19 改判（用户裁定）**：新增 V82 —— 为**每个活跃租户**的 **16 条 `option` 规则行**初始化对客**元/套**单价（占位初始值，**会真的参与取价**；`customer_unit_price IS NULL` 守卫 ⇒ 不覆盖商家改价、重跑空转；非 option 行保持 NULL），推翻 V77 的「该列恒 NULL = 未定价」口径；schema.sql 同步同源终态。 ｜ tags: processing_fee, special_options, per_set, customer_unit_price, migration_v77, migration_v82, synthetic_seed
 
-## processing-order（51 case）
+## 加工单域（51 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -4466,7 +4466,7 @@
 真值: product-sku-stock.status-flow
 溯源: 2026-09-21 新增（用户裁定逐字：「商品需要增加 1 卷=多少米，作为商品货号的基础参数」）。 ｜ tags: product, roll_length, backend_contract
 
-## registry（1 case）
+## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
 ```
@@ -4593,7 +4593,7 @@
 真值: ai-chat.tool-classes, settings-manage.ai-config
 溯源: 2026-09-18 新增（issue #4085 第 1 项）：用户 2026-09-18 裁定「建触发机制」——新增 C 端只读工具 payment_qrcode_query（数据源复用 GET /api/admin/agent/payment-qrcodes，不新造数据源）→ _detect_card_type 映射 payment → 恢复 mini-app 渲染分支 → 放行「渲染端 ⊆ 后端可产出」L0 契约守卫。本用例提供该工具的工具级正向覆盖（Case Coverage Gate 的 uncovered/missing_positive 缺口由此关闭）。 ｜ tags: xiaobu, payment, settings
 
-## token-refresh（4 case）
+## 令牌刷新域（4 case）
 
 ### TR-001. refresh-success — 401 自动刷新并重放原请求 🔵
 ```
@@ -4639,7 +4639,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（51 case）
+## 前端 UI 域（51 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -5315,7 +5315,7 @@
 真值: frontend-fix.vitest, frontend-fix.tsc
 溯源: 2026-09-21 新增（issue #4965）：订单详情页新增「打印报价单」A4 —— 照真实报价单制式（按商品行成套 + 10 列明细 + 金额汇总 + 页脚扫码支付）；缺值不印（我们没有的字段一律不印）、加工费单独成行（与参照物的有意差异）、行小计与 OrderItemList 同源（`lib/order-amount.ts`） ｜ tags: ui, order, quotation, print, admin-web
 
-## utils（2 case）
+## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
 ```
@@ -5347,30 +5347,30 @@
 - 用例总数：390（活跃 156，跳过 234）
 - tier 分布：smoke 10 / normal 349 / adversarial 31
 - 售后域：9
-- agents：6
-- api：19
-- bmini：6
+- Agent 核心域：6
+- API 层域：19
+- B 端小程序域：6
 - 分类域：3
 - 对话边界域：43
 - 跨域：3
 - 客户域：9
 - 数据域：10
 - 防御域：22
-- finance：4
+- 财务对账域：4
 - 人事域：10
-- knowledge：7
-- misc：16
-- onboarding：5
-- ontology：4
+- 知识问答域：7
+- 杂项域：16
+- 商家入驻域：5
+- 领域本体域：4
 - 订单域：45
 - 加工项域：13
-- processing-order：51
+- 加工单域：51
 - 商品域：37
-- registry：1
+- 工具注册器域：1
 - 设置域：10
-- token-refresh：4
-- ui：51
-- utils：2
+- 令牌刷新域：4
+- 前端 UI 域：51
+- 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
 - API-013: 知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051）
