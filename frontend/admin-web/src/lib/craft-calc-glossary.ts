@@ -8,9 +8,9 @@
  * ## 本模块的三条纪律（都可由 `tests/unit/lib/craft-calc-glossary.test.ts` 单独判红）
  *
  * 1. **文案里不出现数字**：所有数值（参数当前值、算例里的米数/门幅）一律**由真值渲染** ——
- *    参数值取自配置对象，常量取自 `@/lib/craft-auto-features`（已有跨源守卫），算例由
- *    {@link buildAutoFeatureExamples} 调 `detectAutoFeatures` 产出（该函数**已不在取价路径上** ——
- *    见其文件头的退场声明；此处只借它的判据生成算例文案）。写死一个数 = 造第二份口径。
+ *    参数值取自配置对象；算例的 `reason` 自 issue #5036 包 2a 起**逐字转发服务端**判定
+ *    （`POST /api/admin/orders/auto-features`，入参带**该租户配置**）—— 本模块**不自己拼、也不自己判**。
+ *    写死一个数 = 造第二份口径。
  * 2. **口径与引擎同源**：`side_margin` 是**宽方向左右覆盖余量**（引擎 `SIDE_MARGIN` 的语义），
  *    **不是**「上下卷边」（那是 `HEM_MARGIN`）。本仓实测有**三处**把它讲反了（页面 hint /
  *    `types/index.ts` 注释 / 引擎配置字典那行注释）—— 三处都已在本单改正并加守卫（#4940 判据 1）。
@@ -21,7 +21,7 @@
  * 组合键；`拼接/接高` 是**手选**特征，**系统不推算**（见 {@link MANUAL_FEATURE_TERMS}）。
  * 把这两类混在一起讲，正是商家看不懂这些参数的根因。
  */
-import { detectAutoFeatures } from '@/lib/craft-auto-features'
+import type { AutoFeaturesResult } from '@/lib/api'
 import type { CraftCalcConfig } from '@/types'
 
 /**
@@ -342,35 +342,32 @@ export const GLOSSARY_EXAMPLE = {
   doorWidth: 2.8,
 } as const
 
-/** 一条自动推算算例（`reason` 逐字来自 `detectAutoFeatures` —— 与下单页同一份文案） */
+/** 一条自动推算算例（`reason` **逐字来自服务端判定** —— 与下单页同一份文案） */
 export interface AutoFeatureExample {
   name: string
   /** 举例的输入（含真实数字，由常量/配置渲染） */
   given: string
-  /** 系统的判定依据（**真函数产出**） */
+  /** 系统的判定依据（**服务端产出**；本模块只**转发**，不自己拼） */
   reason: string
 }
 
 /**
- * 三个自动推算特征的算例 —— **不自己拼文案**：逐条调 {@link detectAutoFeatures}，
- * 取它给出的 `reason`（与下单页「为什么判它超宽」是同一份实现 ⇒ 改一处必红）。
+ * 三个自动推算特征的算例 —— **不自己拼文案、也不自己判**：`reason` **逐字转发**服务端
+ * `POST /api/admin/orders/auto-features` 的返回（issue #5036 包 2a）。
  *
- * 举例取值使判定**稳定成立**：成品高 + 上下卷边 > 缺省门幅 ⇒ 必判超高；
- * 成品宽 + 左右覆盖余量 乘以**褶倍下限之上**的任一褶倍都 > 缺省门幅 ⇒ 必判超宽。
+ * 🔴 迁移前它调**前端** `detectAutoFeatures`，而那个函数读的是**模块常量副本**（宽 / 高余量 = 0.3）
+ * ⇒ #5005 把 `hem_margin` 做成可配之后，本页「改完参数保存后，这里的数字会跟着变」的承诺是**假的**
+ * （租户配 0.5，算例仍显示 0.3）。现在判定入参带**该租户配置** ⇒ 承诺成真。
+ *
+ * 举例取值使判定**稳定成立**：成品高 + 上下卷边 > 示例门幅 ⇒ 必判超高；
+ * 成品宽 + 左右覆盖余量 乘以褶倍 ⇒ 必判超宽。
  */
-export function buildAutoFeatureExamples(config: CraftCalcConfig): AutoFeatureExample[] {
+export function buildAutoFeatureExamples(
+  config: CraftCalcConfig,
+  fixedHeightFeatures: readonly AutoFeaturesResult['auto_features'][number][],
+  fixedWidthFeatures: readonly AutoFeaturesResult['auto_features'][number][]
+): AutoFeatureExample[] {
   const fullness = config.tiers?.standard?.fullness ?? null
-  const fixedHeight = detectAutoFeatures({
-    height: GLOSSARY_EXAMPLE.height,
-    doorWidth: GLOSSARY_EXAMPLE.doorWidth,
-    cuttingMode: '定高买宽',
-  })
-  const fixedWidth = detectAutoFeatures({
-    width: GLOSSARY_EXAMPLE.width,
-    fullness,
-    doorWidth: GLOSSARY_EXAMPLE.doorWidth,
-    cuttingMode: '定宽买高',
-  })
 
   const givenOf = (name: string): string => {
     if (name === '超高') {
@@ -379,7 +376,7 @@ export function buildAutoFeatureExamples(config: CraftCalcConfig): AutoFeatureEx
     return `举例：加工类型「定宽买高」· 成品宽 ${GLOSSARY_EXAMPLE.width} 米 · 褶倍 ${fullness ?? '—'} · 某商品门幅 ${GLOSSARY_EXAMPLE.doorWidth} 米（门幅随商品而变）`
   }
 
-  return [...fixedHeight, ...fixedWidth].map((f) => ({
+  return [...fixedHeightFeatures, ...fixedWidthFeatures].map((f) => ({
     name: f.name,
     given: givenOf(f.name),
     reason: f.reason,

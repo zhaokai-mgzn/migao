@@ -9,9 +9,46 @@
  * 复用既有用例（同 `OperationsProvenance.test.tsx` 先例，不新增用例 ID）：
  * OR-040（自动识别与余量语义）/ OR-041（算料公式与配置口径）。
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { CraftCalcGlossary } from '@/components/production/CraftCalcGlossary'
+
+/**
+ * **服务端替身**（issue #5036 包 2a）：算例的判定依据由 `POST /api/admin/orders/auto-features` 给
+ * ⇒ 本组件不再本地判，测试必须替身服务端（否则会打真实网络）。
+ */
+vi.mock('@/lib/api', () => ({
+  autoFeaturesApi: {
+    preview: (p: { width: number; height: number; fabric_width?: number; cutting_mode?: string }) => {
+      const side = 0.3
+      const hem = 0.3
+      const fullness = 2.0
+      const round = (v: number) => Number(v.toFixed(3))
+      const door = p.fabric_width ?? 0
+      const features: Array<{ name: string; source: string; reason: string }> = []
+      if (p.cutting_mode === '定宽买高') {
+        const product = (p.width + side) * fullness
+        if (product > door) {
+          features.push({
+            name: '超宽',
+            source: '推算',
+            reason: `成品宽 ${p.width} + 左右余量 ${side} = ${round(p.width + side)} 米 × 褶倍 ${fullness} = ${round(product)} 米 > 门幅 ${door} 米`,
+          })
+        }
+        features.push({ name: '倒幅', source: '推算', reason: '加工类型 = 定宽买高' })
+      } else if (p.height + hem > door) {
+        features.push({
+          name: '超高',
+          source: '推算',
+          reason: `成品高 ${p.height} + 上下卷边 ${hem} = ${round(p.height + hem)} 米 > 门幅 ${door} 米`,
+        })
+      }
+      return Promise.resolve({
+        data: { data: { auto_features: features, notices: [], door_width: door, fullness_used: fullness, notice: '' } },
+      })
+    },
+  },
+}))
 import { CALC_SCALAR_KEYS, glossaryAnchorOf } from '@/lib/craft-calc-glossary'
 import type { CraftCalcConfig } from '@/types'
 
@@ -53,11 +90,11 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
     expect(screen.getByTestId('glossary-value-side_margin')).toHaveTextContent('0.42')
   })
 
-  it('三个自动推算特征各有一条**带真实数字**的算例（由 detectAutoFeatures 产出）', () => {
+  it('三个自动推算特征各有一条**带真实数字**的算例（依据来自服务端 —— #5036 包 2a）', async () => {
     render(<CraftCalcGlossary config={CONFIG} />)
     for (const name of ['超高', '超宽', '倒幅']) {
-      const row = screen.getByTestId(`glossary-example-${name}`)
-      // 注入：算例行改成只写定义、不带依据 ⇒ 红
+      // 算例是**异步**取的（服务端判定）⇒ 必须 await；注入：算例行改成只写定义、不带依据 ⇒ 红
+      const row = await screen.findByTestId(`glossary-example-${name}`)
       expect(row).toHaveTextContent('门幅')
     }
   })

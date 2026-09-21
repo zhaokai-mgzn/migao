@@ -362,6 +362,38 @@ vi.mock('@/lib/api', () => ({
     getCraftCalcConfig: (...a: unknown[]) => mockGetCraftCalcConfig(...a),
     updateCraftCalcConfig: (...a: unknown[]) => mockUpdateCraftCalcConfig(...a),
   },
+  // 算料口径说明区块的**算例**自 #5036 包 2a 起由服务端给 ⇒ 本页挂载即发两次判定请求。
+  // 本替身逐值复刻引擎 `detect_auto_features` 的判据（示例几何：宽 2 / 高 2.6 / 门幅 2.8）。
+  autoFeaturesApi: {
+    preview: (p: { width: number; height: number; fabric_width?: number; cutting_mode?: string }) => {
+      const side = 0.3
+      const hem = 0.3
+      const fullness = 2.0
+      const round = (v: number) => Number(v.toFixed(3))
+      const door = p.fabric_width ?? 0
+      const features: Array<{ name: string; source: string; reason: string }> = []
+      if (p.cutting_mode === '定宽买高') {
+        const product = (p.width + side) * fullness
+        if (product > door) {
+          features.push({
+            name: '超宽',
+            source: '推算',
+            reason: `成品宽 ${p.width} + 左右余量 ${side} = ${round(p.width + side)} 米 × 褶倍 ${fullness} = ${round(product)} 米 > 门幅 ${door} 米`,
+          })
+        }
+        features.push({ name: '倒幅', source: '推算', reason: '加工类型 = 定宽买高' })
+      } else if (p.height + hem > door) {
+        features.push({
+          name: '超高',
+          source: '推算',
+          reason: `成品高 ${p.height} + 上下卷边 ${hem} = ${round(p.height + hem)} 米 > 门幅 ${door} 米`,
+        })
+      }
+      return Promise.resolve({
+        data: { data: { auto_features: features, notices: [], door_width: door, fullness_used: fullness, notice: '' } },
+      })
+    },
+  },
 }))
 
 import { toast } from 'sonner'
@@ -1191,7 +1223,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     // 注入：删掉说明区块 ⇒ 第一条红（区块没跟参数同屏 = 用户还得去别处找）
     expect(screen.getByTestId('craft-calc-glossary')).toBeInTheDocument()
     for (const name of ['超高', '超宽', '倒幅']) {
-      expect(screen.getByTestId(`glossary-example-${name}`)).toHaveTextContent('门幅')
+      // 算例自 #5036 包 2a 起由**服务端**给 ⇒ 异步取，必须 await
+      expect(await screen.findByTestId(`glossary-example-${name}`)).toHaveTextContent('门幅')
     }
     // 死亡条件绑 #4569：加工项特征**当前**只计价、不触发工序
     expect(screen.getByTestId('glossary-term-拼接')).toHaveTextContent('不触发工序')

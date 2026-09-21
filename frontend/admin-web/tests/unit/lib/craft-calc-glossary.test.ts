@@ -16,7 +16,7 @@
  * | 3 | 页面**不再自带第二份口径** | 页面里再出现旧文案字面量 / 不再引用说明模块 ⇒ 红 |
  * | 4 | **引擎那行注释**也不得再说「上下卷边」 | 把引擎注释改回去 ⇒ 红（漂移源头在引擎，不只是页面） |
  * | 5 | 说明文案里**不出现数字** | 在任一文案里写死 `0.25` 之类的值 ⇒ 红（数值只许来自真值） |
- * | 6 | 自动推算算例 = `detectAutoFeatures` 的**真实输出** | 算例文案自己拼 / 与下单页分叉 ⇒ 红 |
+ * | 6 | 自动推算算例 = **服务端判定**的**逐字转发**（issue #5036 包 2a） | 算例文案自己拼 / 不走服务端返回 ⇒ 红 |
  * | 7 | 拼接 / 接高写明「系统不推算」「不触发工序」 | 删掉任一句 ⇒ 红（**死亡条件**见下） |
  * | 8 | 术语覆盖清单齐全 | 少一个术语 ⇒ 红 |
  *
@@ -26,13 +26,12 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { AUTO_FEATURE_NAMES, detectAutoFeatures } from '@/lib/craft-auto-features'
+import { AUTO_FEATURE_NAMES } from '@/lib/craft-auto-features'
 import { SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
 import {
   AUTO_FEATURE_TERMS,
   CALC_PARAM_COPY,
   CALC_SCALAR_KEYS,
-  GLOSSARY_EXAMPLE,
   GLOSSARY_FORMULAS,
   MANUAL_FEATURE_TERMS,
   SPECIAL_OPTION_TERMS,
@@ -43,6 +42,16 @@ import {
   glossaryTermAnchorOf,
 } from '@/lib/craft-calc-glossary'
 import type { CraftCalcConfig } from '@/types'
+
+/**
+ * 服务端替身返回（判据 6 用）—— **故意**用「只有服务端会产出的措辞」：
+ * 若本模块自己拼文案，这三条断言必红（这才是「逐字转发」的判别力）。
+ */
+const SERVER_FIXED_HEIGHT = [{ name: '超高', source: '推算', reason: '服务端给的超高依据' }]
+const SERVER_FIXED_WIDTH = [
+  { name: '超宽', source: '推算', reason: '服务端给的超宽依据' },
+  { name: '倒幅', source: '推算', reason: '服务端给的倒幅依据' },
+]
 
 /** 算料引擎源（**真值源**）：`backend/ai-agent-service/app/tools/curtain_calc.py` */
 const CALC_SRC = resolve(__dirname, '../../../../../backend/ai-agent-service/app/tools/curtain_calc.py')
@@ -156,32 +165,24 @@ describe('算料配置页·口径与术语说明（issue #4975）', () => {
     expect(offenders).toEqual([])
   })
 
-  it('判据 6：自动推算算例 = detectAutoFeatures 的真实输出（与下单页同源同函数）', () => {
+  it('判据 6：算例 reason **逐字转发**服务端返回（本模块不自己拼 —— issue #5036 包 2a）', () => {
     const config = ENGINE_DEFAULT_CALC_CONFIG
-    const byName = Object.fromEntries(buildAutoFeatureExamples(config).map((e) => [e.name, e.reason]))
-
-    const expectedHeight = detectAutoFeatures({
-      height: GLOSSARY_EXAMPLE.height,
-      doorWidth: GLOSSARY_EXAMPLE.doorWidth,
-      cuttingMode: '定高买宽',
-    }).find((f) => f.name === '超高')
-    const expectedWidth = detectAutoFeatures({
-      width: GLOSSARY_EXAMPLE.width,
-      fullness: config.tiers.standard.fullness,
-      doorWidth: GLOSSARY_EXAMPLE.doorWidth,
-      cuttingMode: '定宽买高',
-    })
-    if (!expectedHeight) throw new Error('举例输入没能推出「超高」—— 举例参数已失效（判据失去意义）')
-
-    // 注入：算例文案改成自己拼（不调 detectAutoFeatures）⇒ 下面三条红
-    expect(byName['超高']).toBe(expectedHeight.reason)
-    expect(byName['超宽']).toBe(expectedWidth.find((f) => f.name === '超宽')?.reason)
-    expect(byName['倒幅']).toBe(expectedWidth.find((f) => f.name === '倒幅')?.reason)
+    const byName = Object.fromEntries(
+      buildAutoFeatureExamples(config, SERVER_FIXED_HEIGHT, SERVER_FIXED_WIDTH).map((e) => [e.name, e.reason])
+    )
+    // 注入：算例文案改成自己拼（不走服务端返回）⇒ 下面三条红
+    expect(byName['超高']).toBe('服务端给的超高依据')
+    expect(byName['超宽']).toBe('服务端给的超宽依据')
+    expect(byName['倒幅']).toBe('服务端给的倒幅依据')
   })
 
   it('判据 6b：算例覆盖三个自动推算特征，且顺序与 AUTO_FEATURE_NAMES 同源', () => {
-    const names = buildAutoFeatureExamples(ENGINE_DEFAULT_CALC_CONFIG).map((e) => e.name)
-    // 注入：把「超宽」举例删掉 / 举例宽度改到推不出来 / 顺序与清单分叉 ⇒ 红
+    const names = buildAutoFeatureExamples(
+      ENGINE_DEFAULT_CALC_CONFIG,
+      SERVER_FIXED_HEIGHT,
+      SERVER_FIXED_WIDTH
+    ).map((e) => e.name)
+    // 注入：把「超宽」举例删掉 / 顺序与清单分叉 ⇒ 红
     expect(names).toEqual([...AUTO_FEATURE_NAMES])
   })
 
