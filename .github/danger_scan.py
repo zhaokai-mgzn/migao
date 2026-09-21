@@ -23,10 +23,30 @@
   ⇒ label 方案重跑不生效；评论在运行期读 API，故 rerun 也能拿到最新确认。
 - **fail-closed**：取不到评论 / API 失败 / 非 owner ⇒ 该变量为空 ⇒ 仍 BLOCK。
 
+## 已发布迁移被**重写**的人工确认通道（`DANGER_ACK_MIGRATION`，#4936）
+
+「迁移不可变」判据只看 **git 状态（M/D）**，**不认指纹账本** ⇒ 经维护者裁定的合并重写
+（#4936：5 条**从未在任何环境成功应用过**的迁移 V102~V106 合并为单条 V102）**结构性过不了 CI**
+（本地实测 5 处 blocker），而既有确认通道只覆盖 workflow 删除。故补一条**同形**的通道，
+但 ack **不足以**放行 —— 必须同时过**四道**交叉校验（否则就是「把护栏换成开关」）：
+
+- marker：`/danger-ack rewrite-migration <V###>`（或 `... all`），**只有仓库 owner** 的评论算数。
+- `DANGER_ACK_MIGRATION` / `DANGER_ACK_MIGRATION_BY` / `DANGER_ACK_MIGRATION_URL`：
+  已确认的版本号（逗号分隔）/ 确认人 / 确认评论链接。取值同样由 `--resolve-acks` 在运行期
+  从 PR 评论解析（**改动清单由脚本自己 `git diff --diff-filter=MD` 算**，不依赖新环境变量）。
+- **交叉校验**（`verify_migration_acks()`；scan 模式**重跑一遍**，不只信环境变量）：
+  ① `tests/unit_ci_workflows/migration_fingerprints.json` 必须**同批**被修改（diff 状态 `M`）；
+  ② 修改型：账本里该文件名的 sha256 必须等于**磁盘当前** sha256（自己算，不信账本）；
+  ③ 删除型：账本里**不得**还留着该文件名（须同批删除）；
+  ④ ack 与改动集合一一对应（ack 了没改的版本不算数；改了没 ack 的照旧 BLOCK，逐个报）。
+- **fail-closed**：无 ack / 非 owner / 评论读取失败 / 账本没改 / 哈希不符 ⇒ 照旧 BLOCK，
+  且无 ack 时的行为与补通道前**逐字相同**。
+
 用法（由 pr-check 的 danger-scan job 调用）：
     python3 .github/danger_scan.py
 输出：danger-scan-result.json（JSON）+ 控制台报告；存在 blocker 时 exit 1。
 """
+import hashlib
 import json
 import os
 import pathlib
@@ -59,6 +79,27 @@ SECRET_REF_RE = re.compile(r"secrets\.([A-Za-z0-9_]+)")
 # （同一脚本另一条取 ACK_URL 的 gh api 也含这两个词，把 owner 过滤整条删掉照样绿）。
 # 空断言形态（`migao-acceptance`）：断言的东西不是"决定放行的那个表达式"。
 ACK_MARKER = "/danger-ack delete-workflow"
+
+# ── 已发布迁移被**重写**的确认 marker（#4936）──────────────────────────────────
+# 与删除 workflow **同形**（同源 owner / 同源评论读取 / 同源 fail-closed），但 ack 本身
+# 不足以放行 —— 放行还要过 `verify_migration_acks()` 的交叉校验（见模块 docstring）。
+MIGRATION_ACK_MARKER = "/danger-ack rewrite-migration"
+# 已发布迁移的内容指纹账本（issue #4235）：`{文件名: "sha256:..."}`。
+# 本通道要求它与迁移改动**同批更新** —— 否则 `test_migration_immutability.py` 那条独立
+# 护栏仍会判红（两条门禁必须一致：不能一条绿、一条红）。
+LEDGER_PATH = "tests/unit_ci_workflows/migration_fingerprints.json"
+# 账本/迁移文件的读取锚点 = **仓库根**（由本文件位置反推，与 cwd 无关）：
+# 判据落点的文件必须真能被读到，否则「读不到账本」会被静默读成「账本没问题」。
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+_MIGRATION_ACK_RE = re.compile(re.escape(MIGRATION_ACK_MARKER) + r"\s+([Vv]\d+|all)\b")
+_MIGRATION_VERSION_RE = re.compile(r"[Vv](\d+)")
+
+
+def migration_version(path_or_token):
+    """文件名 / 版本 token → 规范化版本号（`V102`；`v102`、`V0102` 亦归一）。无版本 ⇒ None。"""
+    name = str(path_or_token or "").rsplit("/", 1)[-1]
+    m = _MIGRATION_VERSION_RE.match(name)
+    return f"V{int(m.group(1))}" if m else None
 
 
 def parse_delete_acks(comments, owner, deleted_paths):
@@ -106,6 +147,156 @@ def ack_env_lines(acked, owner, via_url):
     ]
 
 
+def parse_migration_acks(comments, owner, changed_migrations):
+    """从 PR 评论里解析「已确认可重写」的迁移版本号。纯函数。
+
+    规则（只有 owner 本人发的评论算数，与 `parse_delete_acks` 同源）：
+      · `/danger-ack rewrite-migration V102` —— 确认**该版本**（大小写不敏感：`v102` 亦算）；
+      · `/danger-ack rewrite-migration all`  —— 一次确认 `changed_migrations` 的**全部**版本。
+
+    ⚠️ ack **不等于**放行：本函数只负责解析；放行还要过 `verify_migration_acks()` 的交叉校验。
+
+    Args:
+        comments: PR 评论对象列表（REST `/issues/{n}/comments` 形状，含 `user.login`/`body`/`html_url`）
+        owner:    确认人登录名；**只有**该账号的评论被采信
+        changed_migrations: 本次被修改/删除的迁移文件路径列表（`all` 展开为它们的版本号集合）
+
+    Returns:
+        (acked_versions: set[str], via_url: str) —— 版本号已规范化为 `V###`；
+        无命中时返回 (set(), "")。
+    """
+    versions = {}
+    for path in changed_migrations or []:
+        v = migration_version(path)
+        if v:
+            versions[v] = path
+    bodies, last_url = [], ""
+    for c in comments or []:
+        if not isinstance(c, dict):
+            continue
+        if ((c.get("user") or {}).get("login") or "") != owner or not owner:
+            continue
+        bodies.append(c.get("body") or "")
+        last_url = c.get("html_url") or last_url
+    if not bodies:
+        return set(), ""
+
+    tokens = {m.group(1) for b in bodies for m in _MIGRATION_ACK_RE.finditer(b)}
+    if any(t.lower() == "all" for t in tokens):
+        acked = set(versions)
+    else:
+        acked = {migration_version(t) for t in tokens} & set(versions)
+    return acked, (last_url if acked else "")
+
+
+def migration_ack_env_lines(acked, owner, via_url):
+    """迁移 ack → `>> $GITHUB_ENV` 行（与 `ack_env_lines` 同形；独立函数以免动既有三行的形状）。"""
+    return [
+        f"DANGER_ACK_MIGRATION={','.join(sorted(acked))}",
+        f"DANGER_ACK_MIGRATION_BY={owner if acked else ''}",
+        f"DANGER_ACK_MIGRATION_URL={via_url if acked else ''}",
+    ]
+
+
+def verify_migration_acks(acked_versions, migration_changes, ledger_changed,
+                          ledger_entries, disk_hashes):
+    """**交叉校验**（本通道的灵魂）：ack 不足以放行。纯函数。
+
+    ack 只证明「维护者点了头」，**不**证明指纹账本跟上了。四条判据（任一不满足 ⇒ 该版本不放行）：
+
+    ① **账本同批更新**：`LEDGER_PATH` 本次 diff 必须是 `M` —— 否则 ack 只是口头授权，
+       而 `tests/unit_ci_workflows/test_migration_immutability.py` 那条独立护栏仍会因
+       「已登记文件被改」判红（两条门禁必须一致）。
+    ② **账本与磁盘一致**（仅修改型）：账本里该文件名的 sha256 必须**等于磁盘当前 sha256**
+       （自己算，不信账本）—— 防「ack 了但忘了登记新指纹」。
+    ③ **删除型**：账本里**不得**还留着该文件名（须同批删掉账本条目）。
+    ④ **一一对应**：ack 了本次没改的版本 ⇒ 不算数（不放行任何东西，也不报错）。
+
+    Args:
+        acked_versions:    `parse_migration_acks()` 的结果（规范化版本号集合）
+        migration_changes: `[(status, path)]`（`_git_name_status` 形状）
+        ledger_changed:    账本本次是否被修改（`M`）
+        ledger_entries:    账本内容 `{文件名: "sha256:..."}`；**None ⇒ 读不到 ⇒ fail-closed**
+                           （与 `{}`「账本里没有条目」严格区分，§19.1 同族）
+        disk_hashes:       磁盘当前指纹 `{文件名: "sha256:..."}`（调用方算好，便于注入测试）
+
+    Returns:
+        (granted_versions: set[str], problems_by_version: dict[str, str])
+    """
+    granted, problems = set(), {}
+    changed = {}
+    for status, path in migration_changes or []:
+        v = migration_version(path)
+        if v and status[0] in ("M", "D"):
+            changed.setdefault(v, (status[0], path))
+    entries = ledger_entries if isinstance(ledger_entries, dict) else None
+    for v in sorted(acked_versions or []):
+        if v not in changed:
+            continue  # ④ 本次没改的版本：ack 不算数（不报错，也不放行任何东西）
+        status, path = changed[v]
+        name = path.rsplit("/", 1)[-1]
+        if not ledger_changed:
+            problems[v] = f"ack 必须与指纹账本同批更新 —— {LEDGER_PATH} 本次 diff 状态不是 M"
+            continue
+        if entries is None:
+            problems[v] = f"无法读取指纹账本 {LEDGER_PATH}（fail-closed，不得按「账本没问题」放行）"
+            continue
+        if status == "D":
+            if name in entries:
+                problems[v] = f"已 ack 删除，但账本仍留有该文件名 {name} —— 须同批删除账本条目"
+                continue
+        else:
+            ledger_fp = entries.get(name)
+            disk_fp = (disk_hashes or {}).get(name)
+            if not ledger_fp:
+                problems[v] = f"账本无 {name} 条目 ⇒ 先跑 --write-ledger 登记新指纹"
+                continue
+            if not disk_fp:
+                problems[v] = f"无法读取磁盘上的 {name}（fail-closed）"
+                continue
+            if ledger_fp != disk_fp:
+                problems[v] = (f"账本哈希与磁盘不符 ⇒ 先跑 --write-ledger 登记新指纹"
+                               f"（账本 {ledger_fp} / 磁盘 {disk_fp}）")
+                continue
+        granted.add(v)
+    return granted, problems
+
+
+def _repo_file(rel_path):
+    """仓内相对路径 → 绝对路径（锚在**仓库根**，与 cwd 无关）。"""
+    return REPO_ROOT / rel_path
+
+
+def _sha256_of(rel_path):
+    """仓内文件的 sha256（内容指纹，与账本 `fingerprint()` 同形）；读不到 ⇒ ""（fail-closed）。"""
+    try:
+        return "sha256:" + hashlib.sha256(_repo_file(rel_path).read_bytes()).hexdigest()
+    except Exception:
+        return ""
+
+
+def _read_ledger_entries():
+    """读指纹账本 → {文件名: 指纹}；读不到 / 结构不对 ⇒ None（fail-closed）。"""
+    try:
+        entries = json.loads(_repo_file(LEDGER_PATH).read_text(encoding="utf-8")).get("migrations")
+    except Exception as exc:  # noqa: BLE001 —— 任何异常都必须 fail-closed
+        print(f"⚠️ 迁移指纹账本读取失败（{exc}）⇒ 迁移 ack 交叉校验 fail-closed", file=sys.stderr)
+        return None
+    return entries if isinstance(entries, dict) else None
+
+
+def _changed_migration_paths():
+    """本次被**修改/删除**的迁移文件路径；取证失败 ⇒ `[]`（= 无可确认项）。
+
+    与 workflow 侧不同：本通道**不新增环境变量**承载这份清单 —— `--resolve-acks` 自己算，
+    少一个「调用方忘了传 ⇒ 静默永不确认」的失效面。
+    """
+    changes = _git_name_status(MIGRATION_DIR + "/*.sql")
+    if changes is None:
+        return []
+    return [p for s, p in changes if s[0] in ("M", "D")]
+
+
 def resolve_acks_main():
     """`--resolve-acks` 模式：读评论 JSON → 打印 GITHUB_ENV 行（由 pr-check 的 ack 步骤调用）。
 
@@ -133,12 +324,22 @@ def resolve_acks_main():
     acked, via = parse_delete_acks(comments, owner, deleted)
     for line in ack_env_lines(acked, owner, via):
         print(line)
+    # 迁移重写通道（#4936）：改动清单由脚本自己算（不依赖新环境变量）
+    changed_migrations = _changed_migration_paths()
+    mig_acked, mig_via = parse_migration_acks(comments, owner, changed_migrations)
+    for line in migration_ack_env_lines(mig_acked, owner, mig_via):
+        print(line)
     # **心跳**（§18.6「环境静默即缺陷」）：本通道的静默失效形态是「读不到评论 ⇒ 永远不放行」，
     # 命令行恒打「评论总数 / owner 评论数」——owner 评论数长期为 0 就能立刻看出通道没用上，
-    # 而不是等到有人要删 workflow 才发现（fail-closed 的反面是红得无声无息）。
+    # 而不是等到有人要重写迁移才发现（fail-closed 的反面是红得无声无息）。
     print(
         f"── 评论总数={len(comments)} / owner({owner or '未设置'}) 评论数={owner_n}"
         f" / 待确认={len(deleted)} / 已确认={sorted(acked) or '（无）'} ──",
+        file=sys.stderr,
+    )
+    print(
+        f"── 迁移 ack：待确认={len(changed_migrations)} / 已确认={sorted(mig_acked) or '（无）'}"
+        f" / 交叉校验（账本同批更新 + 哈希一致）在 scan 模式**重跑** ──",
         file=sys.stderr,
     )
 
@@ -167,7 +368,9 @@ def _truly_new_secret_lines(added_lines, removed_lines):
     return truly_new
 
 
-def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migration_changes, schema_changes, trusted_actor=False, delete_acked=frozenset()):
+def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migration_changes, schema_changes, trusted_actor=False, delete_acked=frozenset(),
+            migration_acked=frozenset(), migration_ack_by="", migration_ack_url="",
+            ledger_changed=False, ledger_entries=None, disk_hashes=None):
     """纯函数：对变更清单做安全判定。返回 (blockers, warnings)。
 
     Args:
@@ -179,7 +382,13 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
         schema_changes:    docs/sql/schema*.sql 的 [(status, path)]
         delete_acked:     **已被显式确认**可删除的 workflow 路径集合（`"*"` = 全部）。
                           为空 ⇒ 删除 workflow 一律 BLOCK（与 #4295 之前**逐字相同**）。
-                          来源见模块 docstring「删除 workflow 的人工确认通道」。
+        migration_acked:  **已被显式确认**可重写的迁移版本号集合（如 `{"V102"}`）。
+                          为空 ⇒ 修改/删除迁移一律 BLOCK（与 #4936 之前**逐字相同**）。
+        migration_ack_by / migration_ack_url: 确认人与确认评论链接（写进 WARN 文案留痕）。
+        ledger_changed:   指纹账本本次是否被修改（`M`）—— ack 的必要前提之一。
+        ledger_entries:   账本内容；None ⇒ 读不到 ⇒ fail-closed。
+        disk_hashes:      磁盘当前指纹；由调用方算好（便于注入测试）。
+                          后四项一起喂给 `verify_migration_acks()`（交叉校验的唯一判据源）。
     """
     blockers = []
     warnings = []
@@ -219,6 +428,10 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
     # 判据收紧（防让号豁免变成改迁移的口子）：只有 status == "R100" 才豁免；
     # rename 但内容有变化（R0xx）＝修改已发布迁移，照旧 BLOCK（fail-closed，§19.1 同族）。
     new_migrations = [p for s, p in migration_changes if s == "A"]
+    # 迁移重写确认通道（#4936）：ack **不足以**放行 —— 先过交叉校验（账本同批更新 + 哈希一致）。
+    # 判据落在这个纯函数上（同 #4295 的教训：判据不许落在「决定放行的那个表达式」之外）。
+    migration_granted, ack_problems = verify_migration_acks(
+        migration_acked, migration_changes, ledger_changed, ledger_entries, disk_hashes)
     for status, path in migration_changes:
         name = path.rsplit("/", 1)[-1]
         if status == "A":
@@ -236,11 +449,22 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
                     f"迁移纯改名（让号）{path} —— R100 内容零变化（issue #3812 后合入者让号），"
                     f"新名首跑应为幂等空操作；请人工确认"
                 )
+        elif status[0] in ("M", "D") and migration_version(path) in migration_granted:
+            # 已由维护者显式确认 **且** 交叉校验通过 —— 降级为 WARN 并留痕。
+            warnings.append(
+                f"已发布迁移被修改/删除 {path}（**已由维护者显式确认**，确认人 "
+                f"{migration_ack_by or '(unknown)'}，见 {migration_ack_url or '(unknown)'}；"
+                f"账本哈希一致：{LEDGER_PATH} 同批更新）—— 见 danger-scan-result.json 的 acks"
+            )
         else:
-            blockers.append(
+            msg = (
                 f"已发布迁移被修改/删除 {path} —— 迁移不可变（MigrationRunner 按序执行，"
                 f"改动会导致线上 DB 与代码脱节），只能新增 V{{n+1}}__ 迁移"
             )
+            v = migration_version(path)
+            if v in ack_problems:
+                msg += f"（已 ack 但交叉校验未通过：{ack_problems[v]}）"
+            blockers.append(msg)
 
     # ---- DDL 与迁移同步（R2）：改表结构参考必须伴随迁移 ----
     # 豁免 A（comment_only）：schema 文件只改**注释/文档**（新增行里没有任何 DDL 语句）。
@@ -449,17 +673,47 @@ def main():
     )
     ack_by = os.environ.get("DANGER_ACK_BY", "").strip()
     ack_url = os.environ.get("DANGER_ACK_URL", "").strip()
+    # 迁移重写的人工确认通道（#4936）：由 pr-check 的 ack 步骤注入（`DANGER_ACK_MIGRATION=<V###,...>`）。
+    # ⚠️ **不能只信环境变量**：账本是否同批更新、账本哈希是否等于磁盘 —— 在这里**重跑**一遍
+    # 交叉校验（环境变量只是「有人 ack 过」的线索，不是放行依据）。
+    migration_acked = frozenset(
+        v for v in (migration_version(t)
+                    for t in os.environ.get("DANGER_ACK_MIGRATION", "").split(","))
+        if v
+    )
+    migration_ack_by = os.environ.get("DANGER_ACK_MIGRATION_BY", "").strip()
+    migration_ack_url = os.environ.get("DANGER_ACK_MIGRATION_URL", "").strip()
+    ledger_changed = any(p == LEDGER_PATH and s[0] == "M" for s, p in all_changes)
+    ledger_entries = _read_ledger_entries() if migration_acked else None
+    disk_hashes = {}
+    if migration_acked:
+        for status, path in migration_changes:
+            if status[0] == "M":
+                disk_hashes[path.rsplit("/", 1)[-1]] = _sha256_of(path)
+    # analyze 内部会再算一次（同一纯函数、同一输入 ⇒ 结果必然一致）；这里算一次只为写 acks 留痕。
+    migration_granted, _ = verify_migration_acks(
+        migration_acked, migration_changes, ledger_changed, ledger_entries, disk_hashes)
     a_blockers, warnings = analyze(
         workflow_paths, wf_new_secrets, deleted_files, deploy_files,
         migration_changes, schema_changes, trusted_actor=trusted,
         delete_acked=delete_acked,
+        migration_acked=migration_acked, migration_ack_by=migration_ack_by,
+        migration_ack_url=migration_ack_url, ledger_changed=ledger_changed,
+        ledger_entries=ledger_entries, disk_hashes=disk_hashes,
     )
     blockers = blockers + a_blockers
 
-    # 留痕：谁确认了哪些删除、确认凭据在哪 —— 让「人工确认」这件事可追溯（不是"说确认就确认"）。
+    # 留痕：谁确认了哪些删除 / 哪些迁移重写、确认凭据在哪 —— 让「人工确认」可追溯
+    # （不是"说确认就确认"）。迁移条目多一个 `version` 键，据此可与删除条目区分。
     acks = [
         {"path": p, "by": ack_by or "(unknown)", "via": ack_url or "(unknown)"}
         for p in sorted(delete_acked)
+    ]
+    path_by_version = {migration_version(p): p for s, p in migration_changes if migration_version(p)}
+    acks += [
+        {"version": v, "path": path_by_version.get(v, ""),
+         "by": migration_ack_by or "(unknown)", "via": migration_ack_url or "(unknown)"}
+        for v in sorted(migration_granted)
     ]
 
     result = {
