@@ -477,6 +477,103 @@ def aggregate_by_fabric(positions: List[Dict[str, Any]]) -> Dict[str, float]:
     return agg
 
 
+# ── 自动特征（超高 / 超宽 / 倒幅）：**服务端判定**（issue #4976 包 1a）────────────────────
+# 用户 2026-09-21 裁定 B：「**判定移到服务端**」（前端只展示服务端结论）。
+# 判据与 `frontend/admin-web/src/lib/craft-auto-features.ts` **同式**（措辞也逐字对齐）——
+# 前端退场（包 2）后，本函数成为**唯一**真值源；在此之前两者并存（照实登记在 PR 描述里）。
+#
+# ⚠️ **两个方向各自受门幅约束，取决于加工类型**（用户 2026-09-20 裁定
+# 「定高买宽的话就不用算超宽，定宽买高就不用算超高」）：
+#   定高买宽 ⇒ 只判**超高**（宽按米买、无上限）
+#   定宽买高 ⇒ 只判**超宽**（= 引擎真实的分幅条件）+ **倒幅**
+#   缺省 / 表外取值 ⇒ **都不判**（保守：不猜朝向）
+# 常量的唯一落点仍是上面那两行（`SIDE_MARGIN` / `HEM_MARGIN`）—— 本段不新造第二个数。
+
+#: 加工类型 `定高买宽` —— **高**方向受门幅约束 ⇒ 只判 `超高`
+CUTTING_MODE_FIXED_HEIGHT = "定高买宽"
+#: 加工类型 `定宽买高` —— **宽**方向受门幅约束（分幅）⇒ 只判 `超宽`（+ `倒幅`）
+CUTTING_MODE_FIXED_WIDTH = "定宽买高"
+
+
+def _meters_for_reason(value: float, door_width: float) -> float:
+    """判定文案里的米数：取整到毫米；**只有「取整把严格大于抹平了」**这一种情况才给全精度。
+
+    与前端 `craft-auto-features.ts::metersForReason` 同款 —— 否则商家看到的是
+    「2.8 米 > 门幅 2.8 米」这种**自相矛盾的依据**（判据要能自证）。
+    """
+    rounded = round(value, 3)
+    return rounded if (rounded > door_width or value <= door_width) else value
+
+
+def detect_auto_features(
+    window_width: float,
+    window_height: float,
+    fabric_width: float,
+    fullness: Optional[float] = None,
+    cutting_mode: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, str]]:
+    """系统**自动推算**的特征（`超高` / `超宽` / `倒幅`）—— issue #4976 包 1a。
+
+    这三项会**进加工费组合键**（商家按「韩折+超宽+定型」这类组合配价），所以判定必须唯一：
+    本函数是**服务端**的判定实现（用户裁定 B），前端退场后它就是唯一真值源。
+
+    Args:
+        window_width: 成品宽（米）
+        window_height: 成品高（米）
+        fabric_width: **该商品/SKU 的门幅**（米）—— 权威值由调用方传入（不再用模块常量兜底）
+        fullness: **名义**褶倍（档位值）；缺失 / 非正 ⇒ **不判超宽**（不拿一个假褶倍去判价）
+        cutting_mode: 加工类型（`定高买宽` / `定宽买高`）；缺省 / 表外 ⇒ **都不判**
+        config: 租户级算料配置（`side_margin` 取自它；缺省 ⇒ 引擎默认值）
+
+    Returns:
+        `[{"name", "source", "reason"}, ...]`：顺序 = `超宽 → 超高 → 倒幅` 中命中的那些；
+        **空列表 = 不判**（不是「没算」—— `build_quote` 的该键**恒在**）。
+
+    ⚠️ **判据是行业推理、非 ERP 实证** ⇒ 一律标 `source="推算"`（与前端同口径）。
+    """
+    cfg = resolve_craft_calc_config(config)
+    features: List[Dict[str, str]] = []
+    if cutting_mode not in (CUTTING_MODE_FIXED_HEIGHT, CUTTING_MODE_FIXED_WIDTH):
+        return features  # 不猜朝向（与前端同款：缺省/表外取值一个都不判）
+
+    if cutting_mode == CUTTING_MODE_FIXED_WIDTH:
+        side_margin = cfg["side_margin"]
+        # 判据 = 引擎**真实的分幅条件** `ceil((宽 + 余量) × 褶倍 ÷ 门幅) ≥ 2`
+        # ⟺ `(宽 + 余量) × 褶倍 > 门幅`（原始浮点，不取整 —— 取整会漏报，见前端同款注释）
+        if fullness is not None and fullness > 0:
+            product = (window_width + side_margin) * fullness
+            if product > fabric_width:
+                features.append({
+                    "name": "超宽",
+                    "source": "推算",
+                    "reason": (
+                        f"成品宽 {window_width} + 左右余量 {side_margin} = "
+                        f"{round(window_width + side_margin, 3)} 米"
+                        f" × 褶倍 {fullness} = {_meters_for_reason(product, fabric_width)} 米"
+                        f" > 门幅 {fabric_width} 米"
+                    ),
+                })
+        # 倒幅只取决于加工类型（与褶倍无关）：布旋转九十度用
+        features.append({
+            "name": "倒幅",
+            "source": "推算",
+            "reason": f"加工类型 = {CUTTING_MODE_FIXED_WIDTH}",
+        })
+    elif window_height + HEM_MARGIN > fabric_width:
+        # 定高买宽：只有**高**受门幅约束（`成品高 + 上下卷边 > 门幅` ⇒ 定高买宽不可行）
+        features.append({
+            "name": "超高",
+            "source": "推算",
+            "reason": (
+                f"成品高 {window_height} + 上下卷边 {HEM_MARGIN} = "
+                f"{_meters_for_reason(window_height + HEM_MARGIN, fabric_width)} 米"
+                f" > 门幅 {fabric_width} 米"
+            ),
+        })
+    return features
+
+
 def calculate_fabric_meters(
     window_width: float,
     window_height: float,
@@ -600,6 +697,7 @@ def build_quote(
     special_options: Optional[List[str]] = None,
     formula: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
+    cutting_mode: Optional[str] = None,
 ) -> Dict[str, Any]:
     """构建完整报价单。
 
@@ -883,6 +981,17 @@ def build_quote(
         "is_shaped": is_shaped,
         "style": style,
         "special_options": special_options,
+        # ── 自动特征（issue #4976 包 1a）：**键恒在** ──────────────────────────────
+        # 空列表 = **不判**（缺加工类型 / 表外取值 / 缺褶倍），**不是**「没算」——
+        # 调用方据此区分「系统没判」与「系统判了但没有」。
+        "auto_features": detect_auto_features(
+            window_width=window_width,
+            window_height=window_height,
+            fabric_width=fabric_width,
+            fullness=N,
+            cutting_mode=cutting_mode,
+            config=config,
+        ),
     }
 
 
