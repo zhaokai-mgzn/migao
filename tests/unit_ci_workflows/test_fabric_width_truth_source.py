@@ -97,7 +97,9 @@ def test_door_width_has_single_value_source():
     # ⚠️ issue #5035：原先这里遍历 `detectAutoFeatures` / `detectAutoFeatureNotices` 的导出体
     # —— 那两个函数**已随实现删除**（判定/提示/算例都搬到服务端），故本循环退场；
     # **判据强度不放宽**：另加判据 4（死亡条件）钉住它们不得回到前端。
-    for path in (PLAN_TS, PAGE_TSX):
+    # ⚠️ issue #5043 包 2b：规则面已迁服务端 ⇒ 前端 `door-width-plan.ts` **退场**，
+    # 取值点只剩下单页（`page.tsx` 的 `parseDoorWidth`）。判据强度不放宽（仍要求经该函数取值）。
+    for path in (PAGE_TSX,):
         assert "parseDoorWidth(" in path.read_text(encoding="utf8"), (
             f"{path.name} 没有经 `parseDoorWidth()` 取门幅 —— 页面/规则自解析门幅数值 = 第二份口径"
             "（issue #4746 / #4877）"

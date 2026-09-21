@@ -52,6 +52,8 @@ public class CraftCalcClient {
     private static final String CALC_PATH = "/api/internal/production/craft-calc";
     /** 自动特征**判定**端点（issue #4976 包 2）：与试算分开 —— 理由见 {@link #autoFeatures}。 */
     private static final String AUTO_FEATURES_PATH = "/api/internal/production/auto-features";
+    /** 门幅规则**只读**端点（issue #5043 包 2b）：与试算分开 —— 理由见 {@link #doorWidthPlan}。 */
+    private static final String DOOR_WIDTH_PLAN_PATH = "/api/internal/production/door-width-plan";
     /** 引擎**默认**配置（issue #4528）：缺配置行的租户由它给值（Java 侧不抄第二份默认值）。 */
     private static final String DEFAULTS_PATH = "/api/internal/production/craft-calc-config";
     private static final int CONNECT_TIMEOUT_MS = 3_000;
@@ -209,6 +211,57 @@ public class CraftCalcClient {
         } catch (Exception e) {
             log.error("自动特征端点调用失败: url={}, error={}", url, e.getMessage());
             throw unavailable(url, "调用自动特征端点失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 门幅规则（issue #5043 包 2b）—— 前端 {@code door-width-plan.ts} 的口径搬到服务端后的**读面**。
+     *
+     * <p><b>为什么独立于 {@code /orders/craft-calc}</b>：下单页的规则要在<b>发试算请求之前</b>用
+     * （{@code pickAutoSkuForColor} 靠它决定选哪个 SKU/门幅），而试算请求<b>本身</b>要带门幅
+     * ⇒ <b>鸡生蛋</b>。且 <b>四爪钩 / 穿杆 / 平幔</b> 不发试算请求（用户 2026-09-21 裁定：
+     * 这三类工艺<b>不影响用料和门幅</b>）⇒ 规则面不能挂在试算上。</p>
+     *
+     * <p><b>单一真值</b>：规则解与幅数只在 ai-agent 的
+     * {@code backend/ai-agent-service/app/tools/curtain_calc.py::build_quote(..., fabric_widths=...)}
+     * → {@code resolve_fabric_plan}；裁决只在 {@code judge_door_width_choice} ——
+     * 本方法与控制器只<b>搬运</b>，Java 侧不复制规则。租户配置由 {@link #withTenantConfig} 注入
+     * （规则要读它的 {@code hem_margin}）。</p>
+     */
+    public Map<String, Object> doorWidthPlan(Map<String, Object> request) {
+        String url = endpoint(DOOR_WIDTH_PLAN_PATH);
+        if (!StringUtils.hasText(serviceToken)) {
+            throw unavailable(url, "未配置 ai-agent.service-token", null);
+        }
+        Map<String, Object> payload = withTenantConfig(request);
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("X-Service-Token", serviceToken);
+
+            ResponseEntity<String> response = restTemplate.exchange(
+                    url, HttpMethod.POST, new HttpEntity<>(payload, headers), String.class);
+
+            JsonNode root = objectMapper.readTree(response.getBody());
+            if (root == null || !root.path("success").asBoolean(false)) {
+                log.error("门幅规则端点返回失败: url={}, status={}, body={}",
+                        url, response.getStatusCode(), response.getBody());
+                throw unavailable(url, "门幅规则端点返回 success != true", null);
+            }
+            JsonNode data = root.path("data");
+            if (!data.path("state").isTextual()) {
+                log.error("门幅规则端点响应缺 data.state，拒绝把「端点没说」当成「不可判定」: url={}, body={}",
+                        url, response.getBody());
+                throw unavailable(url, "门幅规则端点响应缺少 data.state（single_panel / needs_splice / undecidable）", null);
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> result = objectMapper.convertValue(data, Map.class);
+            return result;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("门幅规则端点调用失败: url={}, error={}", url, e.getMessage());
+            throw unavailable(url, "调用门幅规则端点失败: " + e.getMessage(), e);
         }
     }
 

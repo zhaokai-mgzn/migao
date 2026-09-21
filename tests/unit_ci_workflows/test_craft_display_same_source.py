@@ -47,6 +47,11 @@ AUTO_FEATURES_MODULE = "frontend/admin-web/src/lib/craft-auto-features.ts"
 #: （解析不到 ⇒ `None` ⇒ 判定面**不判**、规则面 `undecidable`；反向守卫在
 #: `tests/unit_ci_workflows/test_fabric_width_truth_source.py` 判据 3 与
 #: `frontend/admin-web/tests/unit/lib/craft-auto-features.test.ts`）。
+#: 🔴 2026-09-21（issue #5043 包 2b，**第二次有意缩水**）：`SIDE_MARGIN` / `HEM_MARGIN` 的**前端副本**
+#: 已全部退场（`SIDE_MARGIN` 随 issue #5030、`HEM_MARGIN` 随 issue #5043 包 2b 规则面迁服务端）
+#: ⇒ 锚点**必须**去掉它们，否则本守卫会要求一个**不存在**的符号（假红）。
+#: **缩水不是放宽**：C2 的动态名单仍由剩余符号堵住，且「副本不得回来」另有独立的反向守卫
+#: （`tests/unit_ci_workflows/test_hem_margin_cross_language_drift.py`）。
 #: 🔴 2026-09-21（issue #5035）**有意缩水**（正面回答上面那条「锚点只换名、**不缩水**」纪律）：
 #: `detectAutoFeatures` / `detectAutoFeatureNotices` **真的退场了** —— 判定（#5019 切源）/
 #: 提示（#5036）/ 算例（#5043 包 2a）全部搬到**服务端**，前端本地实现已删除
@@ -62,7 +67,6 @@ AUTO_FEATURES_MODULE = "frontend/admin-web/src/lib/craft-auto-features.ts"
 CORE_EXPORTS: tuple[str, ...] = (
     "AUTO_FEATURE_NAMES",
     "parseDoorWidth",
-    "HEM_MARGIN",
     "CUTTING_MODE_FIXED_HEIGHT",
     "CUTTING_MODE_FIXED_WIDTH",
 )

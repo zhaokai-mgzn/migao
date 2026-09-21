@@ -65,10 +65,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 GOLDEN_JSON = REPO_ROOT / "tests/fixtures/panels-cross-language-golden.json"
 #: 真值源：算料引擎
 CALC_PY = REPO_ROOT / "backend/ai-agent-service/app/tools/curtain_calc.py"
-#: 副本：前端下单页门幅规则
+#: 原「副本」落点（**issue #5043 包 2b 起该模块已删除**）—— 只用于**死亡条件**：它不得复活
 PLAN_TS = REPO_ROOT / "frontend/admin-web/src/lib/door-width-plan.ts"
-#: 前端腿（③）：必须**读同一张表**（C6）
-TS_TEST = REPO_ROOT / "frontend/admin-web/tests/unit/lib/door-width-plan.test.ts"
 #: 引擎腿（①）：必须**读同一张表**（C6）
 ENGINE_TEST = REPO_ROOT / "backend/ai-agent-service/tests/test_curtain_calc_fabric_plan.py"
 
@@ -81,13 +79,6 @@ ENGINE_MM_EXPR = "int(round(float(value) * _MM))"
 FORBIDDEN_FLOAT_FORMS = (
     r"Math\.ceil\(\s*\w+\s*/\s*\w+\.effectiveDoorWidth\s*\)",
     r"Math\.ceil\(\s*\w+\s*/\s*selectedEffective\s*\)",
-)
-#: C3：**必须**存在的毫米整数形态
-REQUIRED_MM_FORMS = (
-    (r"Math\.round\(\s*\w+\s*\*\s*1000\s*\)", "米 ⇒ 整数毫米的舍入（与引擎 `_mm` 同源）"),
-    (r"Math\.ceil\(toMillimeters\(", "整数向上取整除法的被除数"),
-    (r"Math\.max\(1,\s*toMillimeters\(", "除数下限（与引擎 `max(1, _mm(ge))` 同式）"),
-    (r"effectiveDoorWidth\s*>\s*0", "候选过滤（与引擎 `float(g) > allow` 同式）"),
 )
 
 #: 半毫米边界（两侧舍入口径不同 ⇒ 算例表必须避开；见文件头「照实登记」）
@@ -161,32 +152,32 @@ def test_engine_source_uses_millimeter_integer_division() -> None:
 
 # ── C2 / C3：TS 侧不得再有浮点直除，且必须有毫米整数形态 ─────────────────────
 
-def test_ts_source_has_no_float_direct_division() -> None:
-    """C2：改前那两处浮点直除**不得**再出现（把 TS 改回浮点 ⇒ 红）。"""
-    src = _read(PLAN_TS)
-    for pattern in FORBIDDEN_FLOAT_FORMS:
-        assert not re.search(pattern, src), (
-            f"`frontend/admin-web/src/lib/door-width-plan.ts` 里又出现了浮点直除形态：/{pattern}/\n"
-            "⇒ 总用料恰为门幅整数倍时会多算 1 幅（并可能翻转选中的门幅）。"
-            "分幅数一律走 `panelsForFixedWidth`（毫米整数，与引擎同式）"
-        )
+def test_frontend_no_longer_holds_a_panels_implementation() -> None:
+    """C2（**issue #5043 包 2b 改判**）：前端**不得**再持有 `panels` 实现 —— 规则面已迁服务端。
 
+    迁移前本判据钉的是「TS 里不得出现浮点直除形态」（副本还在、只是口径要跟引擎一致）。
+    用户 2026-09-21 裁定「规则面迁服务端」后，`frontend/admin-web/src/lib/door-width-plan.ts`
+    **已删除** ⇒ 判据升级为**同强度的死亡条件**：那个模块**不得复活**，
+    且前端源码里不得再出现那两处浮点直除形态（防「换个文件复活」）。
 
-def test_ts_source_has_millimeter_integer_forms() -> None:
-    """C3：毫米整数形态与候选过滤**必须**在（删掉即失去与引擎的同式性）。"""
-    src = _read(PLAN_TS)
-    for pattern, why in REQUIRED_MM_FORMS:
-        assert re.search(pattern, src), (
-            f"`door-width-plan.ts` 里找不到「{why}」的形态 /{pattern}/ —— "
-            "它已与引擎脱钩（浮点直除 / 无候选过滤）⇒ 红"
-        )
-    # 分幅助手必须被**两处**消费（`resolveCutPlan` 的候选排序 + `judgeDoorWidthChoice` 的所选幅数）
-    assert src.count("panelsForFixedWidth(") >= 3, (
-        "`panelsForFixedWidth` 只在声明处出现（无消费点）—— 判定处被内联回浮点 / 该助手已成死码 ⇒ 红"
+    红证：把 `frontend/admin-web/src/lib/door-width-plan.ts` 加回来（哪怕只有浮点直除那一行）⇒ 红。
+    """
+    assert not PLAN_TS.exists(), (
+        "`frontend/admin-web/src/lib/door-width-plan.ts` 又回来了 —— 规则面已迁服务端"
+        "（issue #5043 包 2b：`POST /api/internal/production/door-width-plan`）⇒ "
+        "前端再持一份 `panels` 实现 = 第二份口径（实测曾与引擎差 0.65 米：门幅 3.2 时 1 幅 vs 2 幅）"
     )
+    for path in sorted((REPO_ROOT / "frontend/admin-web/src").rglob("*.ts")):
+        src = path.read_text(encoding="utf8")
+        for pattern in FORBIDDEN_FLOAT_FORMS:
+            assert not re.search(pattern, src), (
+                f"{path.relative_to(REPO_ROOT)} 里出现了浮点直除的分幅形态：/{pattern}/ ⇒ 红"
+            )
 
+# ⚠️ 原 C3（「TS 源码里必须有毫米整数形态」）**已随 issue #5043 包 2b 退场** ——
+# 它的主体（前端 `door-width-plan.ts`）已删除；「前端不得再持有分幅实现」由上面的
+# `test_frontend_no_longer_holds_a_panels_implementation`（死亡条件）钉住。
 
-# ── C4 / C5 / C7：golden 表与引擎式复算逐值相等 + 判别力下界 + 前提可判 ────────
 
 def test_golden_matches_engine_formula() -> None:
     """C4：逐例复算（引擎式）—— 逐候选幅数 / 选中档 / 全剔除 ⇒ 不可判定。"""
@@ -288,14 +279,16 @@ def test_golden_table_premises_are_checkable() -> None:
 # ── C6：三腿真的共读同一张表（防「三份各自漂移的期望值」）────────────────────
 
 def test_all_legs_read_the_same_golden_table() -> None:
-    """C6：引擎腿与前端腿都必须读**这张表**（否则「跨语言相等」只是三份各自硬编码的巧合）。"""
+    """C6（**issue #5043 包 2b 改判**）：**引擎腿**必须读这张表。
+
+    迁移前是**三腿**（引擎 / 静态 / 前端）共读；前端腿随规则面迁服务端**退场**
+    （`frontend/admin-web/tests/unit/lib/door-width-plan.test.ts` 已删除）⇒ 现在是**两腿**
+    （引擎腿 + 本文件的静态腿）。判据强度不放宽：仍要求**真的读同一张表**。
+    """
     name = GOLDEN_JSON.name
-    for path, leg in ((ENGINE_TEST, "引擎腿"), (TS_TEST, "前端腿")):
-        src = _read(path)
-        assert name in src, (
-            f"{leg}（{path.relative_to(REPO_ROOT)}）没有引用共享算例表 `{name}` —— "
-            "它已改成自带期望值 ⇒ 三腿会各自漂移，本守卫的「跨语言相等」结论失效"
-        )
-    assert "readFileSync" in _read(TS_TEST), (
-        "前端腿没有真的读文件（`readFileSync` 不见）—— 共享表引用已退化成装饰 ⇒ 红"
+    src = _read(ENGINE_TEST)
+    assert name in src, (
+        f"引擎腿（{ENGINE_TEST.relative_to(REPO_ROOT)}）没有引用共享算例表 `{name}` —— "
+        "它已改成自带期望值 ⇒ 静态腿与引擎腿会各自漂移，本守卫的「跨语言相等」结论失效"
     )
+    assert name in Path(__file__).read_text(encoding="utf8"), "本文件的静态腿没有引用共享算例表 ⇒ 红"

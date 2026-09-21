@@ -174,7 +174,7 @@
 ⚠️ **后端今天完全不认 `saleForm`**（`grep -rn "saleForm" backend/` 零命中）⇒ 读 `saleForm` 是**新增行为**；
 **缺键的存量单不得改变既有行为**（回归不变量）。
 
-### 4.5 分幅公式（`panels`）**四方同式**（A / B1 / B2 + 通路 C；issue #4760 核清 → **2026-09-21 改判：issue #5030**；通路 C 登记 = #5038）
+### 4.5 分幅公式（`panels`）**三方同式**（A / B1 / B2；issue #4760 核清 → **2026-09-21 改判：issue #5030**；原「通路 C」已随 **issue #5043 包 2b** 退场）
 
 **本节的公式串是实测读源的结论**（`backend/ai-agent-service/app/tools/curtain_calc.py`），
 不是提案；**代码改了本节必须同改**（机械判据 = `tests/unit_ci_workflows/test_panels_formula_split_audit.py`：
@@ -196,15 +196,13 @@
 | **A 米宝下单通路** | `calculate_fabric_meters()` 定宽分支（`curtain_calc.py`） | `build_quote` 的**兜底分支**（`formula='pleat'` 且 `mounting != s_hook` 等未命中前两支时）⇒ `CurtainCalcTool` ⇒ 米宝/小布 Agent | `ceil(窗宽 × 褶倍 ÷ 门幅)` —— **无任何宽方向余量**（issue #5030 改判后） |
 | **B1 试算通路（倍数法）** | `build_quote()` 的 `formula='fullness'` 分支 | 商家手工下单页（`orders/new` → `POST /api/admin/orders/craft-calc` → `internal.py::craft_calc`）；`craft='打孔'` 由 `resolve_craft_rule` 派生成此式 | `ceil(ceil_to_step(窗宽 × 褶倍, 0.1) ÷ 门幅)` —— **与 A 同式**（中间那道 `ceil_to_step` 在门幅为 0.1 整数倍时**恒不改判**，实测见下） |
 | **B2 试算通路（褶数法）** | `build_quote()` 的 `pleat_mode` 分支 | 同上（`craft='韩褶'` / 默认档） | `ceil(褶数法总用料 ÷ 门幅)` —— 用料 = `0.25×褶数 + 余量`；这里的余量是**开数余量**（`margin_single` / `margin_multi`，**保留**），与已退场的宽方向余量**不是一回事**（它是另一支公式，不是同一量的第二个口径） |
-| **C 下单页门幅规则（前端副本）** | `resolveCutPlan()` 的定宽买高分支（`frontend/admin-web/src/lib/door-width-plan.ts`） | 商家手工下单页自动推导（`frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx`）⇒ 门幅 / 加工类型提示 | `ceil_mm(窗宽 × 褶倍 ÷ 门幅有效值)` —— **与 A 同式**（**无**宽方向余量，issue #5030）且同取整口径（**毫米整数**除法，与引擎 `resolve_fabric_plan` 同式；issue #5038 前是浮点 `ceil` ⇒ 整数倍边界多算 1 幅） |
 
-⚠️ **通路 C（第 4 份 `panels` 实现，issue #5038）**：它与 A **同式**（`窗宽 × 褶倍`，**宽方向无余量** ——
-issue #5030）且**同取整口径**（毫米整数）。它与 A 的等价**不再靠人读**：由共享 golden 算例表
-`tests/fixtures/panels-cross-language-golden.json` **三腿共读**（引擎腿 `backend/ai-agent-service/tests/test_curtain_calc_fabric_plan.py` / 静态腿
-`tests/unit_ci_workflows/test_panels_cross_language_algorithm_guard.py` / 前端腿
-`frontend/admin-web/tests/unit/lib/door-width-plan.test.ts`）—— 任一侧改回浮点即红。
-本表的**通路 C 行**由 `tests/unit_ci_workflows/test_panels_formula_split_audit.py` 的 C6 钉住
-（登记与代码自洽：删掉该行、或把前端改回浮点 ⇒ 红）。
+🔴 **原「通路 C（第 4 份 `panels` 实现，前端副本）」已退场**（**issue #5043 包 2b**，用户 2026-09-21 裁定
+「规则面迁服务端」）：`frontend/admin-web/src/lib/door-width-plan.ts` **已删除** —— 门幅规则改由**服务端**给
+（`POST /api/internal/production/door-width-plan` → 引擎 `build_quote(..., fabric_widths=...)` →
+`resolve_fabric_plan`）⇒ **`panels` 的前端实现不再存在**，本表只剩 **A / B1 / B2 三方**。
+共享 golden 算例表 `tests/fixtures/panels-cross-language-golden.json` 的**前端腿**随之退场
+（守卫 `tests/unit_ci_workflows/test_panels_cross_language_algorithm_guard.py` 已同步）。
 
 **对照表（改后实测，issue #5030）**（门幅 `G = 2.8`、窗高 `H = 2.6` ⇒ `H + HEM_MARGIN(0.3) = 2.9 > 2.8`，
 两通路**都**落在定宽买高分支；`W` = **净窗宽 = 成品宽**、`N` = 褶倍）：

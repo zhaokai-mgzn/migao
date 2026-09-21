@@ -69,6 +69,90 @@ interface AutoFeaturesRequestForTest {
  * 定高买宽 ⇒ 只判超高（`高 + 卷边 > 门幅`）；定宽买高 ⇒ 超宽（`(宽 + 余量) × 褶倍 > 门幅`）+ 倒幅；
  * **缺门幅 ⇒ 不判**（`notice='missing-door-width'`，不回落默认门幅 —— issue #4877）。
  */
+/** 门幅规则请求（本文件用到的字段） */
+interface DoorWidthPlanRequestForTest {
+  width: number
+  height: number
+  door_widths: number[]
+  cutting_mode?: string
+  selected_door_width?: number
+  fullness?: number
+}
+
+/**
+ * **服务端替身**（issue #5043 包 2b）：门幅规则端点。
+ *
+ * 逐值复刻引擎的**规则面**（够本文件用）：定高买宽可行 ⇒ 取可行集**最小**门幅；
+ * 否则 ⇒ 定宽买高（分幅最少、并列取较小门幅）；显式 `cutting_mode` ⇒ 人工覆盖。
+ * ⚠️ 它是**服务端替身**（不是第二份实现）：代表「服务端会回什么」，页面只负责**展示**。
+ */
+const mockDoorWidthPlan = vi.fn((p: DoorWidthPlanRequestForTest) => {
+  const hem = 0.3
+  const side = 0.3
+  const fullness = p.fullness ?? 2.0
+  const candidates = [...new Set(p.door_widths)].sort((a, b) => a - b)
+  const need = Math.round((p.height + hem) * 1000) / 1000
+  const feasible = candidates.filter((g) => need <= g)
+  const mode = p.cutting_mode ?? (feasible.length > 0 ? '定高买宽' : '定宽买高')
+  let state: 'single_panel' | 'needs_splice' | 'undecidable' = 'single_panel'
+  let door: number | null = null
+  let panels: number | null = null
+  if (mode === '定高买宽') {
+    if (feasible.length > 0) door = feasible[0]
+    else {
+      state = 'needs_splice'
+      door = candidates[candidates.length - 1]
+    }
+  } else {
+    const ranked = candidates
+      .map((g) => ({ g, panels: Math.max(1, Math.ceil(((p.width + side) * fullness) / g)) }))
+      .sort((a, b) => a.panels - b.panels || a.g - b.g)
+    door = ranked[0].g
+    panels = ranked[0].panels
+  }
+  const selected = p.selected_door_width ?? null
+  let verdict: 'optimal' | 'suboptimal' | 'infeasible' | 'unknown' = 'unknown'
+  let suggestion: string | null = null
+  if (selected !== null && door !== null) {
+    if (state === 'needs_splice') {
+      verdict = 'infeasible'
+suggestion = `所选 ${selected} 米门幅单幅做不出成品高（缺口 ${Math.round((need - candidates[candidates.length - 1]) * 1000) / 1000} 米 ⇒ **需接高**）—— 本单**没有任何门幅**能单幅做成`
+    } else if (selected === door) {
+      verdict = 'optimal'
+    } else if (mode === '定高买宽') {
+      if (need > selected) {
+        verdict = 'infeasible'
+        suggestion = `所选 ${selected} 米门幅单幅做不出（成品高 ${p.height} + 上下卷边 ${hem} = ${need} 米 ⇒ **需接高**）；规则解 = ${door} 米门幅`
+      } else {
+        verdict = 'suboptimal'
+        suggestion = `规则解是 ${door} 米门幅（可行集里最小）—— 换它可少占宽幅布`
+      }
+    } else {
+      const sp = Math.max(1, Math.ceil(((p.width + side) * fullness) / selected))
+      if (sp <= (panels ?? 1)) verdict = 'optimal'
+      else {
+        verdict = 'suboptimal'
+        suggestion = `所选 ${selected} 米门幅要 ${sp} 幅；规则解 ${door} 米只要 ${panels} 幅`
+      }
+    }
+  }
+  return Promise.resolve({
+    data: {
+      data: {
+        state,
+        code: '',
+        effective_cutting_mode: mode,
+        door_width: door,
+        panels,
+        splice: state === 'needs_splice',
+        verdict,
+        suggestion,
+        reason: '服务端替身给出的规则解',
+      },
+    },
+  })
+})
+
 const mockAutoFeatures = vi.fn((params: AutoFeaturesRequestForTest) =>
   autoFeaturesServerDouble(params)
 )
@@ -153,6 +237,7 @@ vi.mock('@/lib/api', () => ({
   // （门幅 / 加工类型分流 / 褶倍；余量与卷边取引擎默认 0.3 —— 与改前前端常量同值）。
   // ⚠️ 这是**服务端替身**（不是第二份实现）：它代表「服务端会回什么」，页面只负责**展示**。
   autoFeaturesApi: { preview: (p: unknown) => mockAutoFeatures(p as AutoFeaturesRequestForTest) },
+  doorWidthPlanApi: { preview: (p: unknown) => mockDoorWidthPlan(p as DoorWidthPlanRequestForTest) },
   // **算料配置读面**（issue #4874）：公式缺省 + 档位 chips 的值域/文案都来自它 ⇒ 挂载即请求
   productionApi: {
     getCraftCalcConfig: () =>
