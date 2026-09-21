@@ -31,8 +31,8 @@ Fixes #____（父 issue，如适用）
 
 <!-- merge 后军师会自动跑验收，此处为自检 -->
 
-- [ ] 已本地跑全量单测（CP-5）
-- [ ] 已本地跑增量集成测试（CP-6）
+- [ ] 已本地跑全量单测（CP-5 · `docs/wiki/Development.md` 的「AI-TDD 流程」）
+- [ ] 已本地跑增量集成测试（CP-6 · `docs/wiki/Development.md` 的「AI-TDD 流程」）
 - [ ] 类型检查通过（`npx tsc --noEmit`）
 
 <!-- PR_CONTRACT
