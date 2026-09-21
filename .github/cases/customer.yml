@@ -279,6 +279,25 @@ cases:
       - "customer_id 从 customer_manage 查询获得"
       - "order_id 从 order_query 获得"
       - "发货操作使用正确的 order_id"
+      # ── 以下三块 = **Case Trust burn-down 缴费**（issue #5009 触碰受管用例面触发；
+      #    口径与先例 HR-002 / CH-002 / DF-008 同构：本单需真修 ≥1 条存量违规）──
+      #
+      # ① 前置断言（规则 f）：本用例的**真实前置** = 客户「王建国」名下有一张**待发货**订单。
+      #    前置不成立时（种子缺该客户/该单、或上一轮已把它发掉），`order_manage(action=
+      #    update_logistics)` 的期望永不命中 ⇒ 红的表现是 `unmatched expectation`，
+      #    看起来像「agent 不会发货」⇒ **归因全错**（这正是规则 f 要治的形态：先例 PG-013 / CU-003）。
+      #    ⚠️ 必须是**机器计分型**（含 `success=true`）才可判定；纯散文的「前置：…」不计分。
+      - "前置（precondition）：评测栈里客户「王建国」名下存在**待发货**订单，且本轮 `order_manage(action=update_logistics)` 的发货期望真的命中（不是靠未澄清就发货/发错单蒙过）（success=true）"
+    # ② 效果层断言（规则 a2）：「调用了 ≠ 成了」—— 上面 data_check 已声称「发货操作使用正确的
+    #    order_id」，本字段把这句话变成**机器可判**（`order_manage` 必须至少一次 `success=true`）。
+    must_succeed:
+      - tool: order_manage
+    # ③ 自清理声明（规则 b，弱证据）：本用例与任何争用客户「王建国」的用例自动互斥
+    #    （并行改同一客户的订单状态会互相污染前置）。形态 `<kind>:<值>`，与
+    #    `customer_phone:13800138000` / `product_name:测试` 同族 —— 此处用**姓名**作值，
+    #    因为本用例正是靠姓名（模糊名称 → 王建国）定位对象的，它没有手机号真值。
+    namespaces:
+      - "customer_name:王建国"
     skip_reason: ""
     merge_log: "eval M011 独有（模糊澄清 + 客户搜索真值）；2026-09-15 校准（issue #3669）：expectations 的 customer_manage(action=query) → **list**（该工具枚举无 query，原值级断言永不满足=假红 / 报了错也算过的假绿，见 .github/eval-coverage-baseline.yml 已销账的 action_dangling 条目）"
     traces:

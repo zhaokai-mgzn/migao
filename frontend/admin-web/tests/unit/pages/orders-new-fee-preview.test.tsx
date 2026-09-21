@@ -139,6 +139,26 @@ async function setupLine() {
   fireEvent.click(screen.getByRole('checkbox'))
 }
 
+/**
+ * 取到「加工费组合」块，并**等取价结果真的落地**（issue #5009）。
+ *
+ * 为什么要等：判定搬到服务端后，取价前要先等**服务端自动特征**回来
+ * （`autoFeaturesResolved` 闸门 —— 判定未回时组合键不完整，取价会按缺项算）。
+ * 链路 = 400ms（`CRAFT_CALC_DEBOUNCE_MS`）判定防抖 + 往返 ⇒ 300ms（`FEE_PREVIEW_DEBOUNCE_MS`）
+ * 取价防抖 + 往返 ⇒ 取价结果落地**晚于**「组合块出现」（块由 `hasAnyProcessingSelection` 决定，
+ * 与取价无关）。`fee-combination-name` 在取价未回时是占位符 `—`（见页面 `feeCombinationLabel`）
+ * ⇒ 等它不再是 `—` 即等取价落地。
+ *
+ * ⚠️ 这是**收紧等待**（等被断言的内容自己），**没有**放宽任何 `expect`。
+ */
+const waitFeeCombinationBlock = async (): Promise<HTMLElement> => {
+  const block = await screen.findByTestId('processing-fee-combinations')
+  await waitFor(() =>
+    expect(within(block).getByTestId('fee-combination-name').textContent).not.toBe('—')
+  )
+  return block
+}
+
 const submit = async () => {
   fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
   fireEvent.change(screen.getByPlaceholderText('请输入 11 位手机号'), { target: { value: '13800138000' } })
@@ -268,7 +288,7 @@ describe('下单页加工费计价预览接线（#4450）', () => {
     await setupLine()
 
     // 加工项区块里**列出具体组合名**（`items.join(' + ')`，与「加工费组合」页逐字同源）
-    const block = await screen.findByTestId('processing-fee-combinations')
+    const block = await waitFeeCombinationBlock()
     expect(within(block).getByTestId('fee-combination-name')).toHaveTextContent('布帘 + 韩褶')
     // 未定价 ⇒ 来源列显式标「未定价」（不渲染 ¥0.00 —— 仓库硬纪律）
     expect(within(block).getByText(/未定价/)).toBeInTheDocument()
@@ -293,7 +313,7 @@ describe('下单页加工费计价预览接线（#4450）', () => {
     mockFeePreview.mockResolvedValue(feeUnpriced([{ composition: '', items: [] }]))
     await setupLine()
 
-    const block = await screen.findByTestId('processing-fee-combinations')
+    const block = await waitFeeCombinationBlock()
     // 组合名照旧点明「缺选配信息」（既有文案，一字不改）
     expect(within(block).getByTestId('fee-combination-name')).toHaveTextContent(
       '没有可匹配的组合（缺选配信息）'
@@ -305,7 +325,7 @@ describe('下单页加工费计价预览接线（#4450）', () => {
 
   it('#4874 已定价行 ⇒ 单价**只读**（无改单价入口），且保留去「加工费组合」的定价入口', async () => {
     await setupLine() // stub = feeMatched()：fee_source=matched、unit_price=10
-    const block = await screen.findByTestId('processing-fee-combinations')
+    const block = await waitFeeCombinationBlock()
     expect(within(block).getByTestId('fee-unit-price')).toHaveTextContent('¥10.00/米')
     expect(within(block).queryByTestId('fee-unit-price-override')).toBeNull()
     // 已定价 ⇒ 不再需要「去定价」入口（那正是「未定价」才要做的事）
@@ -352,7 +372,7 @@ describe('下单页加工费计价预览接线（#4450）', () => {
     expandProcessing()
     fireEvent.click(screen.getAllByRole('checkbox')[0])
 
-    const block = await screen.findByTestId('processing-fee-combinations')
+    const block = await waitFeeCombinationBlock()
     fireEvent.change(within(block).getByTestId('fee-unit-price-override'), {
       target: { value: '12.5' },
     })
@@ -405,7 +425,7 @@ describe('下单页加工费计价预览接线（#4450）', () => {
       .mockResolvedValue(feeManual(12.5))
 
     await setupLine()
-    const block = await screen.findByTestId('processing-fee-combinations')
+    const block = await waitFeeCombinationBlock()
     fireEvent.change(within(block).getByTestId('fee-unit-price-override'), {
       target: { value: '12.5' },
     })

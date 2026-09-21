@@ -241,6 +241,24 @@ cases:
         action: create
     data_checks:
       - "确认后创建成功，permissions 含商品管理权限码"
+      # ── 以下三块 = **Case Trust burn-down 缴费**（issue #5009 触发；口径与先例
+      #    HR-002 / CH-002 / DF-008 同构：本单触碰了受管用例面 ⇒ 每 PR 需真修 ≥1 条存量违规）──
+      #
+      # ① 前置断言（规则 f）：本用例的**真实前置** = 评测栈里**不存在**编码为 `stock_keeper`
+      #    的角色。前置不成立时（上一轮跑坏留下同名角色），`role_manage(action=create)` 会走
+      #    **重名澄清**而不是创建 ⇒ 红的表现是 `unmatched expectation`，看起来像
+      #    「agent 不会建角色」⇒ **归因全错**（这正是规则 f 要治的形态，先例 PG-013 / CU-003）。
+      #    ⚠️ 写成**机器计分型**（含 `success=true`）才可判定；纯散文的「前置：…」不计分。
+      - "前置（precondition）：评测栈里不存在编码为 `stock_keeper` 的角色，且本轮 `role_manage(action=create)` 的创建期望真的命中（不是靠重名澄清/校验失败蒙过）（success=true）"
+    # ② 效果层断言（规则 a2）：「调用了 ≠ 成了」—— 上面 data_check 早已声称「创建成功」，
+    #    本字段把这句话变成**机器可判**（`role_manage` 必须至少一次 `success=true`）。
+    must_succeed:
+      - tool: role_manage
+    # ③ 自清理声明（规则 b，弱证据）：本用例与任何争用 `stock_keeper` 这个角色编码的用例
+    #    自动互斥（并行建同名角色会互相污染前置）。形态 `<kind>:<值>`，与 `product_name:测试`
+    #    / `customer_phone:13800138000` 同族。
+    namespaces:
+      - "role_code:stock_keeper"
     skip_reason: ""
     merge_log: "verification 5.5 独有；2026-09-10 校准：①「库存权限」生产不存在（库存由商品管理模块承载），改真实权限「商品管理」；② 补「确认创建」轮 + 明确编码/描述（role_manage create 走 validate_input→create 确认链，validate_input 已 #3157 补 role_manage 规则；「确认」一词因 agent 澄清多问编码/描述致 LLM 歧义，改为明确第二输入）"
     traces:
