@@ -74,9 +74,23 @@ async function autoFeaturesServerDouble(params: AutoFeaturesRequestForTest) {
   const fullness = 2.0
   const round = (v: number) => Number(v.toFixed(3))
   const features: Array<{ name: string; source: string; reason: string }> = []
+  // 提示（issue #5036）：由**服务端**给 —— 本替身复刻引擎 `detect_auto_feature_notices` 的输出。
+  // ⚠️ 它是**服务端替身**（不是第二份实现）：代表「服务端会回什么」，页面只负责**展示**。
+  const notices: Array<{ kind: string; reason: string }> = []
   if (params.fabric_width == null) {
     return {
-      data: { data: { auto_features: [], door_width: null, fullness_used: fullness, notice: 'missing-door-width' } },
+      data: {
+        data: {
+          auto_features: [],
+          notices: [{
+            kind: 'missing-door-width',
+            reason: '该 SKU 未维护门幅 ⇒ 超高/超宽都判不了（系统不按缺省门幅推算，请先补商品门幅）',
+          }],
+          door_width: null,
+          fullness_used: fullness,
+          notice: 'missing-door-width',
+        },
+      },
     }
   }
   const door = params.fabric_width
@@ -99,8 +113,22 @@ async function autoFeaturesServerDouble(params: AutoFeaturesRequestForTest) {
       })
     }
   }
+  // 几何矛盾提示（#4662 / #5036）：引擎按「高 + 卷边 vs 门幅」**唯一**决定实际档位
+  const overHeight = params.height + hem > door
+  const actualMode = overHeight ? '定宽买高' : '定高买宽'
+  if (actualMode !== params.cutting_mode) {
+    notices.push({
+      kind: 'cutting-mode-conflict',
+      reason:
+        `加工类型选了「${params.cutting_mode}」，但成品高 ${params.height} + 上下卷边 ${hem} = ` +
+        `${round(params.height + hem)} 米 ${overHeight ? '超过' : '未超过'}本 SKU 门幅 ${door} 米` +
+        '（判据 = 算料引擎的几何分支「高 + 卷边 vs 门幅」，不读商家选的加工类型）' +
+        `⇒ 按本 SKU 门幅口径，系统实际会按${actualMode}算` +
+        '（⚠️ 引擎试算门幅尚未按本 SKU 门幅接线 —— #4746 / 待 #4652 ⇒ 引擎实际结果可能不同）',
+    })
+  }
   return {
-    data: { data: { auto_features: features, door_width: door, fullness_used: fullness, notice: '' } },
+    data: { data: { auto_features: features, notices, door_width: door, fullness_used: fullness, notice: '' } },
   }
 }
 

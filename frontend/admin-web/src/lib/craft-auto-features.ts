@@ -301,9 +301,21 @@ export function detectAutoFeatures(input: AutoFeatureInput): AutoFeature[] {
 }
 
 /**
- * 系统识别的**提示**（issue #4662）—— 只说明「**为什么没判**」或「**系统实际会按哪种算**」，
- * **不是特征**：不进 `AUTO_FEATURE_NAMES`、不进加工费组合键、不影响
- * {@link detectAutoFeatures} 的推算结果（组合键只能含 `processing_items` 目录里有的名字 —— #4592 的 P0）。
+ * 系统识别的**提示**（issue #4662 / #5036）—— 只说明「**为什么没判**」或「**系统实际会按哪种算**」，
+ * **不是特征**：不进 `AUTO_FEATURE_NAMES`、不进加工费组合键、不影响判定结果
+ * （组合键只能含 `processing_items` 目录里有的名字 —— #4592 的 P0）。
+ *
+ * 🔴 **issue #5036 起：本类型描述的是「服务端返回什么」**（用户 2026-09-21 裁定「提示统一迁移到
+ * 服务端；**未来 agent 也需要**」）—— 提示由引擎 `curtain_calc.detect_auto_feature_notices` 产出，
+ * 读的是**该租户配置**的 `side_margin` / `hem_margin`；前端只**展示**（`api.ts::AutoFeaturesResult.notices`）。
+ *
+ * 迁移前它由本模块的 `detectAutoFeatureNotices` **本地**算，而它读**模块常量副本**（0.3）
+ * ⇒ 判定面用租户配置、提示面用常量 ⇒ #5005 把 `hem_margin` 做成可配之后，商家改过配置就会
+ * 看到**错的数**，且「几何矛盾」的**判断本身**也会错。该函数已随本单删除。
+ *
+ * 三类：① `missing-door-width`（该 SKU 未维护门幅 ⇒ 都判不了，**不回落缺省门幅**）；
+ * ② `missing-fullness`（缺褶倍 ⇒ 未判超宽）；③ `cutting-mode-conflict`（几何矛盾 ⇒
+ * 系统实际会按哪种算 —— 真值源 = 引擎的几何分支「高 + 卷边 vs 门幅」）。
  */
 export interface AutoFeatureNotice {
   kind: 'missing-fullness' | 'cutting-mode-conflict' | 'missing-door-width'
@@ -311,81 +323,4 @@ export interface AutoFeatureNotice {
   reason: string
 }
 
-/**
- * 该行需要**显式告知商家**的两件事（issue #4662）—— 纯函数。
- *
- * 🔴 **issue #4976 包 2b 起：本函数与「取价路径上的判定」已不是同一个来源** ——
- * 判定（进加工费组合键的那个）由**服务端**给（`POST /api/admin/orders/auto-features`
- * → 引擎 `curtain_calc.detect_auto_features`），而本函数仍在前端**本地**算，
- * **只为提示**（不进组合键、不改推算）。
- * ⇒ 两者**可能不同源**（服务端用**该租户配置**的余量/卷边与档位褶倍，本函数用模块常量副本）
- * —— 这是**已登记**的边界（母单 #4976：提示面未随判定一起搬）。
- *
- * ① `missing-fullness`：**褶倍缺失 ⇒ 未判超宽**（用户裁定 A 的口径）。不猜一个褶倍去判价，
- *    但也**不静默** —— 商家看得见「这里本该判、因为缺褶倍没判」。
- * ② `cutting-mode-conflict`：**几何矛盾**（用户 2026-09-20 裁定 C「以商家选的为准，
- *    几何矛盾时显式提示」）。真值源 = 算料引擎 `curtain_calc.py` 的**几何分支**：
- *    `if window_height + HEM_MARGIN <= fabric_width:` ⇒ 定高买宽，否则 ⇒ 定宽买高 + 告警
- *    （「成品高 … 超过门幅 … 的定高上限，已按定宽布（买高）计算」）。
- *    ⚠️ 引擎**不接收**商家的 `cuttingMode`（`calculate_fabric_meters` 按几何分支，`internal.py`
- *    的算料入参里没有该键）⇒ 两者**可能不一致** ⇒ 不一致时必须说出来，否则「前端推算」与
- *    「引擎实际计算」**静默不一致**（商家以为按定高买宽做，实际按定宽买高分幅）。
- *    🔴 **但「引擎实际会按哪种算」这句话在 issue #4746 下说过头了**：引擎的 `fabric_width` 是
- *    `internal.py::_FABRIC_WIDTH` **硬编码 3.2**（不是本 SKU 门幅）⇒ 拿本 SKU 门幅算出来的
- *    「系统实际会按 X 算」**可能说错**。⇒ 前提句只声明「**本页按本 SKU 门幅判**」（与
- *    本页的**服务端判定**同源），并**显式登记**「引擎试算门幅尚未接线」（分叉 #4652）；
- *    真正把两边合一要在 ai-agent 侧接线（本单不动）。
- *
- * ⚠️ 两条提示都**不改变推算**：特征仍按商家选的 `cuttingMode` 分流（裁定 C 的前半句）。
- * ⚠️ 依据缺失（高未知 / 加工类型缺失或表外）⇒ **不提示**（没有依据就不下结论，不猜）。
- */
-export function detectAutoFeatureNotices(input: AutoFeatureInput): AutoFeatureNotice[] {
-  const notices: AutoFeatureNotice[] = []
-  const mode = input.cuttingMode
-  if (mode !== CUTTING_MODE_FIXED_HEIGHT && mode !== CUTTING_MODE_FIXED_WIDTH) return notices
-
-  // 🔴 门幅缺失 / 不可解析 ⇒ 判定面**什么都没判**（issue #4877）⇒ 显式告知并直接返回：
-  // 再做「缺褶倍」「几何矛盾」两条提示会误导（它们的前提都依赖门幅）。
-  const doorWidth = parseDoorWidth(input.doorWidth)
-  if (doorWidth === null) {
-    notices.push({
-      kind: 'missing-door-width',
-      reason: '该 SKU 未维护门幅 ⇒ 超高/超宽都判不了（系统不按缺省门幅推算，请先补商品门幅）',
-    })
-    return notices
-  }
-  const width = positiveNumber(input.width)
-  const height = positiveNumber(input.height)
-
-  // ① 缺褶倍 ⇒ 未判超宽（只在「该方向真的受门幅约束」且宽已知时才说得通）
-  if (mode === CUTTING_MODE_FIXED_WIDTH && width !== null && positiveNumber(input.fullness) === null) {
-    notices.push({
-      kind: 'missing-fullness',
-      reason: `缺褶倍 ⇒ 未判超宽（成品宽 ${width} + 左右余量 ${SIDE_MARGIN} 是否要分幅取决于褶倍，不猜）`,
-    })
-  }
-
-  // ② 几何矛盾：引擎按「高 + 上下卷边 vs 门幅」**唯一**决定实际档位（与上面 `超高` 同一条判据）
-  if (height !== null) {
-    const overHeight = height + HEM_MARGIN > doorWidth
-    const actualMode = overHeight ? CUTTING_MODE_FIXED_WIDTH : CUTTING_MODE_FIXED_HEIGHT
-    if (actualMode !== mode) {
-      notices.push({
-        kind: 'cutting-mode-conflict',
-        reason:
-          `加工类型选了「${mode}」，但成品高 ${height} + 上下卷边 ${HEM_MARGIN} = ` +
-          `${metersForReason(height + HEM_MARGIN, doorWidth)} 米 ${overHeight ? '超过' : '未超过'}本 SKU 门幅 ${doorWidth} 米` +
-          // 🔴 issue #4746：**不再**声称「算料引擎按此判几何」—— 引擎按 `internal.py::_FABRIC_WIDTH`
-          // 硬编码 3.2 试算，那句是对**引擎行为**的无据断言（前提句会说错 ⇒ 商家按提示做的决定是错的）。
-          // 改后只声明**本页**按本 SKU 门幅判（判据仍是引擎的同一条几何分支），并把「引擎试算门幅
-          // 尚未接线」显式登记出来（分叉 #4652）—— 前提句由本函数入参的**同一个门幅**导出，不自编。
-          `（判据 = 算料引擎的几何分支「高 + 卷边 vs 门幅」，不读商家选的加工类型；本页按本 SKU 门幅判）` +
-          `⇒ 按本 SKU 门幅口径，系统实际会按${actualMode}算` +
-          `（⚠️ 引擎试算门幅尚未按本 SKU 门幅接线 —— #4746 / 待 #4652 ⇒ 引擎实际结果可能不同）`,
-      })
-    }
-  }
-
-  return notices
-}
 

@@ -329,6 +329,20 @@ export interface AutoFeaturesResult {
   fullness_used: number
   /** **不判的原因**：`''` / `missing-door-width` / `unknown-cutting-mode`（不静默） */
   notice: string
+  /**
+   * **商家可见提示**（issue #5036）—— `[{kind, reason}]`，键恒在（空数组 = 无提示）。
+   *
+   * ⚠️ 与 `notice` **并存是有意的**：`notice` 是单码（旧调用方不破），`notices` 带可读 `reason`
+   * 且覆盖 `notice` 表达不了的两类（`missing-fullness` / `cutting-mode-conflict`）。
+   *
+   * 🔴 提示由**服务端**给（用户 2026-09-21 裁定「统一迁移到服务端；未来 agent 也需要」）：
+   * 引擎读的是**该租户配置**的 `side_margin` / `hem_margin` ⇒ 判定与提示**同源**。
+   * 迁移前前端本地算、读**模块常量副本**（0.3）⇒ 租户改过 `hem_margin` 后会显示**错的数**。
+   */
+  notices: Array<{
+    kind: 'missing-fullness' | 'cutting-mode-conflict' | 'missing-door-width'
+    reason: string
+  }>
 }
 
 export const autoFeaturesApi = {

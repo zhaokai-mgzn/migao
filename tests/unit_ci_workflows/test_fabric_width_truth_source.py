@@ -92,7 +92,7 @@ def test_door_width_has_single_value_source():
     旧口径「静默按缺省门幅判超高/超宽」= 要替换掉的错误做法。
     """
     lib = LIB_TS.read_text(encoding="utf8")
-    for func_name in ("detectAutoFeatures", "detectAutoFeatureNotices"):
+    for func_name in ("detectAutoFeatures",):
         body = _exported_body(lib, func_name)
         assert "parseDoorWidth(" in body, (
             f"{func_name} 没有经 `parseDoorWidth()` 取门幅 —— 门幅的第二份解析 = 与判定/提示脱钩"

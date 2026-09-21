@@ -50,7 +50,6 @@ AUTO_FEATURES_MODULE = "frontend/admin-web/src/lib/craft-auto-features.ts"
 #: 锚点只换名、不缩水：仍覆盖「识别推导 + 门幅解析 + 两个方向余量常量 + 加工类型常量」。
 CORE_EXPORTS: tuple[str, ...] = (
     "detectAutoFeatures",
-    "detectAutoFeatureNotices",
     "parseDoorWidth",
     "SIDE_MARGIN",
     "HEM_MARGIN",

@@ -617,6 +617,18 @@ async def auto_features(
         request.fullness if request.fullness is not None else cfg["tiers"]["standard"]["fullness"]
     )
 
+    # 商家可见提示（issue #5036）—— **与判定面同入参**（尤其 `fullness` 必须用 `fullness_used`：
+    # 判定用的是它；提示若用 `request.fullness`，就会在「未传褶倍」时谎报「缺褶倍」，
+    # 而判定其实取了该租户的标准档）。
+    notices = curtain_calc.detect_auto_feature_notices(
+        window_width=request.width,
+        window_height=request.height,
+        fabric_width=request.fabric_width,
+        fullness=fullness_used,
+        cutting_mode=request.cutting_mode,
+        config=config,
+    )
+
     if request.cutting_mode not in (
         curtain_calc.CUTTING_MODE_FIXED_HEIGHT,
         curtain_calc.CUTTING_MODE_FIXED_WIDTH,
@@ -640,6 +652,7 @@ async def auto_features(
 
     return make_response(True, data={
         "auto_features": features,
+        "notices": notices,
         "door_width": request.fabric_width,
         "fullness_used": fullness_used,
         "notice": notice,

@@ -595,6 +595,109 @@ def detect_auto_features(
     return features
 
 
+#: 提示（notice）类别 —— ⚠️ **不是特征**：不进 `AUTO_FEATURE_NAMES`、不进加工费组合键。
+NOTICE_MISSING_DOOR_WIDTH = "missing-door-width"
+NOTICE_MISSING_FULLNESS = "missing-fullness"
+NOTICE_CUTTING_MODE_CONFLICT = "cutting-mode-conflict"
+
+
+def _num(value: float) -> str:
+    """数字 → 与**前端模板串逐字一致**的文本（issue #5036 迁移期等价性）。
+
+    JS `` `${2.0}` `` → ``2``，而 Python ``f"{2.0}"`` → ``2.0`` —— 直接用 f-string 会让
+    「同一输入的提示文案」在迁移前后**字面不同**（`#4976` 复核时实测过这条漂移：包 1a 那句
+    「与下单页同一句」**旧值从未相等**）。提示搬到服务端后商家看到的就是引擎这句 ⇒ 必须钉住。
+
+    ⚠️ 只服务**新迁移的提示文案**；`detect_auto_features` 的既有措辞**不动**（它的同款漂移是
+    已登记的独立项，改它要动已钉住的措辞断言 —— 那是另一件事）。
+    """
+    number = float(value)
+    return str(int(number)) if number == int(number) else repr(number)
+
+
+def detect_auto_feature_notices(
+    window_width: Optional[float],
+    window_height: Optional[float],
+    fabric_width: Optional[float],
+    fullness: Optional[float] = None,
+    cutting_mode: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, str]]:
+    """系统识别的**提示**（`missing-door-width` / `missing-fullness` / `cutting-mode-conflict`）
+    —— issue #5036（用户 2026-09-21 裁定「**需要统一迁移到服务端；未来 agent 也需要**」）。
+
+    与 :func:`detect_auto_features` 是**兄弟函数**（同入参、同配置口径），职责不同：
+    判定**进加工费组合键**（判定即钱）；提示**只说明**「为什么没判」或「系统实际会按哪种算」
+    —— **不进组合键、不改判定**（用户 2026-09-20 裁定 C 的前半句「以商家选的为准」）。
+
+    🔴 **为什么必须搬服务端**（迁移前的缺陷形态）：提示读的是前端**模块常量副本**
+    （宽 / 高两个余量常量，都是 `0.3`），而判定读**该租户配置**
+    ⇒ #5005 把 `hem_margin` 做成可配之后，商家改过配置就会看到**错的数**，
+    且「几何矛盾」的**判断本身**也会错。本函数一律读 `cfg`（**不新造第二份常量**）。
+
+    Args:
+        window_width: 成品宽（米）；缺 ⇒ 不提示「缺褶倍」（没有依据就不下结论）
+        window_height: 成品高（米）；缺 ⇒ 不提示「几何矛盾」（该判据依赖它）
+        fabric_width: **该商品/SKU 的门幅**（米）；缺 ⇒ `missing-door-width`
+            （**不回落任何缺省门幅**，issue #4877）
+        fullness: 名义褶倍；缺 / 非正 ⇒ `missing-fullness`（**只在定宽买高且宽已知时**）
+        cutting_mode: 加工类型；缺省 / 表外 ⇒ **一条都不提示**（不猜朝向）
+        config: 租户级算料配置（读 `side_margin` / `hem_margin`；缺省 ⇒ 引擎默认值）
+
+    Returns:
+        `[{"kind", "reason"}, ...]`；**空列表 = 无提示**。
+    """
+    notices: List[Dict[str, str]] = []
+    if cutting_mode not in (CUTTING_MODE_FIXED_HEIGHT, CUTTING_MODE_FIXED_WIDTH):
+        return notices  # 加工类型未知 ⇒ 提示的前提句无从谈起（与前端同款）
+
+    cfg = resolve_craft_calc_config(config)
+    side_margin = cfg["side_margin"]
+    hem_margin = cfg["hem_margin"]
+
+    if fabric_width is None:
+        # 缺门幅 ⇒ 判定面**什么都没判**（issue #4877）⇒ 显式告知并直接返回：
+        # 再做「缺褶倍」「几何矛盾」两条提示会误导（它们的前提都依赖门幅）。
+        notices.append({
+            "kind": NOTICE_MISSING_DOOR_WIDTH,
+            "reason": "该 SKU 未维护门幅 ⇒ 超高/超宽都判不了（系统不按缺省门幅推算，请先补商品门幅）",
+        })
+        return notices
+
+    # ① 缺褶倍 ⇒ 未判超宽（只在「该方向真的受门幅约束」且宽已知时才说得通）
+    has_fullness = (
+        isinstance(fullness, (int, float)) and not isinstance(fullness, bool) and fullness > 0
+    )
+    if cutting_mode == CUTTING_MODE_FIXED_WIDTH and window_width is not None and not has_fullness:
+        notices.append({
+            "kind": NOTICE_MISSING_FULLNESS,
+            "reason": (
+                f"缺褶倍 ⇒ 未判超宽（成品宽 {_num(window_width)} + 左右余量 {_num(side_margin)} "
+                f"是否要分幅取决于褶倍，不猜）"
+            ),
+        })
+
+    # ② 几何矛盾：引擎按「高 + 上下卷边 vs 门幅」**唯一**决定实际档位（与 `超高` 同一条判据）
+    if window_height is not None:
+        over_height = window_height + hem_margin > fabric_width
+        actual_mode = CUTTING_MODE_FIXED_WIDTH if over_height else CUTTING_MODE_FIXED_HEIGHT
+        if actual_mode != cutting_mode:
+            notices.append({
+                "kind": NOTICE_CUTTING_MODE_CONFLICT,
+                "reason": (
+                    f"加工类型选了「{cutting_mode}」，但成品高 {_num(window_height)} + 上下卷边 "
+                    f"{_num(hem_margin)} = "
+                    f"{_num(_meters_for_reason(window_height + hem_margin, fabric_width))} 米 "
+                    f"{'超过' if over_height else '未超过'}本 SKU 门幅 {_num(fabric_width)} 米"
+                    "（判据 = 算料引擎的几何分支「高 + 卷边 vs 门幅」，不读商家选的加工类型）"
+                    f"⇒ 按本 SKU 门幅口径，系统实际会按{actual_mode}算"
+                    "（⚠️ 引擎试算门幅尚未按本 SKU 门幅接线 —— #4746 / 待 #4652 ⇒ 引擎实际结果可能不同）"
+                ),
+            })
+
+    return notices
+
+
 #: **人工覆盖**值：接高 —— ⚠️ 它**不是** `cuttingMode` 的取值（ERP 加工类型只有上面两项）：
 #: 它 = 「定高买宽 + 接高工序」。故本值只作 `resolve_fabric_plan` 的**入参**；
 #: 返回值里 `cutting_mode` 恒为前两者之一，另带 `splice` 布尔 —— 不发明第三个加工类型值。
