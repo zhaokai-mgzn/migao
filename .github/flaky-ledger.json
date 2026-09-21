@@ -220,6 +220,24 @@
       "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
       "status": "open",
       "follow_up": null
+    },
+    {
+      "workflow": "PR Check",
+      "job": "ci workflow helper unit tests",
+      "run_id": 35549428688,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/35549428688",
+      "pr": 4972,
+      "head_sha": "6a42868abfc119280f9a8008d364a9ac5527e780",
+      "head_branch": "feat/wash-label-portrait-30x60",
+      "first_failure_step": "Run ci workflow helper tests",
+      "rerun_result": "failure",
+      "kind": "confirmed_failure",
+      "observed_at": "2026-09-21T01:09:23Z",
+      "reason": "同一 commit **两次都失败** ⇒ 确定性失败（已用「第二次真实结果」排除 flaky）",
+      "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
+      "status": "open",
+      "follow_up": null
     }
   ]
 }
