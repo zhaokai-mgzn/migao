@@ -104,10 +104,30 @@ cases:
       - tool: category_manage
         args:
           action: delete
+    # ── 效果层 + 自清理 + 前置自断言（case-trust burn-down 缴费，issue #4971；metric=entries ⇒ 整条销账）──
+    # 本用例命中的三条存量违规：① NO-EFFECT-ASSERTION ② NO-SELF-CLEAN ③ NO-PRECONDITION-ASSERTION
+    # ① 【效果层 = must_succeed】「调用了 ≠ 成了」（#3778）：`expectations` 只证明
+    #    `category_manage(action=delete)` 被调用过且 args 对；工具返回 `success=false`
+    #    （分类下有商品被拒 / 校验失败）时照样计分通过。删除是**该用例期望的终态** ⇒ 断言成功是加强而非放宽。
+    # ② 【自清理 = namespaces】**如实登记为弱证据**（taxonomy 明列的档位）：本用例**删除**
+    #    共享分类表里的「轻奢系列」⇒ 重跑时该名字已不在位（删除不可逆），前置与首跑**不等价**。
+    #    夹具层**没有**分类域的复位/准备动作 ⇒ 只能声明并行互斥（与 CT-002「建同一个分类」
+    #    自动串行），**不冒充强复位**；真正的强修法是加一个**准备型**分类动作
+    #    （"保证点名的分类在位"，同 `employee_reactivate` 的族；**不是** remove —— 删除类用例
+    #    要的是"靶子回来"）⇒ 新 type 属独立 issue。
+    # ③ 【前置】= 机器计分型 data_checks（含 `success=true` 字面量，runner 计分口径）：
+    #    写清本用例的**外部依赖**（目标分类在位），使「前置不成立」与「agent 不会删分类」不同形。
+    # 【断言面一字未放宽】`user_inputs` / `expectations` / `skip_reason` / `traces` 全部未动，只加上面几格。
+    namespaces:
+      - "category:轻奢系列"
+    must_succeed:
+      - tool: category_manage
+        action: delete
     data_checks:
       - "二次确认 + 风险提示后才执行删除"
+      - "前置：目标分类「轻奢系列」在位（否则「删除」没有对象、红的表现像「agent 不会删分类」）—— 删除写操作 success=true 即证前置成立；分类不在位 / 删除被拒时本判据判红，不与「agent 不会删分类」同形"
     skip_reason: ""
-    merge_log: "verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）"
+    merge_log: "verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_category_manage.py"
