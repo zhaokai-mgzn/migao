@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.3.9</version>
+        <version>3.5.16</version>
         <relativePath/>
     </parent>
 
@@ -15,7 +15,7 @@
     <artifactId>admin-api</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <name>AI Customer Service - Admin API</name>
-    <description>管理后台 API 服务（JDK 21 + Spring Boot 3.3）</description>
+    <description>管理后台 API 服务（JDK 21 + Spring Boot 3.5）</description>
 
     <properties>
         <java.version>21</java.version>
@@ -24,12 +24,12 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- 依赖版本 -->
-        <mybatis-plus.version>3.5.8</mybatis-plus.version>
+        <mybatis-plus.version>3.5.16</mybatis-plus.version>
         <jjwt.version>0.13.0</jjwt.version>
-        <bouncy-castle.version>1.85</bouncy-castle.version>
+        <bouncy-castle.version>1.86</bouncy-castle.version>
         <aliyun-oss.version>3.18.5</aliyun-oss.version>
         <aliyun-dysmsapi.version>4.6.0</aliyun-dysmsapi.version>
-        <springdoc.version>2.6.0</springdoc.version>
+        <springdoc.version>2.8.17</springdoc.version>
         <mapstruct.version>1.6.3</mapstruct.version>
         <lombok.version>1.18.48</lombok.version>
     </properties>
@@ -77,11 +77,16 @@
             <version>${mybatis-plus.version}</version>
         </dependency>
 
-        <!-- JSqlParser - MyBatis-Plus 多租户功能依赖 -->
+        <!-- JSqlParser 插件（租户/分页拦截器）——MyBatis-Plus 3.5.9 起把依赖 JSqlParser 的
+             InnerInterceptor（TenantLineInnerInterceptor / PaginationInnerInterceptor）
+             从 mybatis-plus-extension 拆到本构件，故升级必须同步引入，否则 MybatisPlusConfig 编译期即找不到类。
+             ⚠️ 不再单独 pin jsqlparser：其版本由本构件传递管理（3.5.16 → JSqlParser 5.2）。
+             单独 pin（原 4.9）会以 Maven「最近优先」压过传递版本，造成拦截器按 5.2 编译、
+             运行期却加载 4.9 ⇒ NoSuchMethodError。 -->
         <dependency>
-            <groupId>com.github.jsqlparser</groupId>
-            <artifactId>jsqlparser</artifactId>
-            <version>4.9</version>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+            <version>${mybatis-plus.version}</version>
         </dependency>
 
         <!-- PostgreSQL Driver -->
