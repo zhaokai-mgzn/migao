@@ -271,6 +271,21 @@ describe('ShipOrder', () => {
 
     await screen.findByPlaceholderText('请输入实际发货人姓名')
 
+    // 🔴 必须再等**打印区自己**落地（issue #5006）：`.shipment-print-area` 由 `ShipmentDoc` 用
+    // `const [mounted, setMounted] = useState(false); useEffect(() => setMounted(true), [])`
+    // + `createPortal(..., document.body)` 渲染 ⇒ 比发货表单**还晚一个提交**。
+    // 只等表单就绪就同步 `querySelector('.shipment-print-area')` ⇒ 撞进「表单已挂、打印区未挂」
+    // 的窗口（实测：把打印区挂载推迟 200ms 模拟该窗口变宽 ⇒ 旧写法必红
+    // `expected null not to be null`，本写法必绿）。
+    // 「发货单」是打印区自己的区块标题（实测全文档仅一处文本节点命中）⇒ 等它即等打印区。
+    //
+    // ⚠️ **归因边界（照实登记，issue #5006）**：本机**不复现**该窗口（旧写法本机 5/5 绿）⇒
+    // 本改动**不声称**已证 CI 那两次失败（run 35560642965 / 35561418929）的根因。
+    // 它的判据是**较弱但确定**的那一条：**该窗口客观存在且可达**（把打印区挂载推迟 200ms
+    // 即复现 CI 的逐字报错），而「等被断言内容自己」在结构上不依赖这个窗口 ⇒ 是**收紧等待**，
+    // 不是放宽断言（未动任何 `expect`）。根因定位仍见 #5006。
+    await screen.findByText('发货单')
+
     const doc = document.querySelector('.shipment-print-area')
     expect(doc).not.toBeNull()
     expect(doc!.textContent).toContain('发货单')
@@ -483,6 +498,15 @@ describe('ShipOrder', () => {
     await screen.findAllByText('商品发货')
     expect(screen.queryByText(/须先完成加工单后再发货/)).toBeNull()
 
+    // 🔴 下面的断言打的是**纸质发货单**（`.shipment-print-area`），它比发货表单**还晚一个提交**
+    // 才挂（`ShipmentDoc`：`useState(false)` + `useEffect(() => setMounted(true), [])`
+    // + `createPortal(..., document.body)`）⇒ 必须等打印区自己的内容落地，否则同步 `getByText`
+    // 撞进「表单已挂、打印区未挂」的窗口（实测：把打印区挂载推迟 200ms 模拟该窗口变宽 ⇒
+    // 旧写法必红 `Unable to find an element with the text: 加工费合计（元）：37.50`
+    // ——与 CI run 35560642965 逐字相同；本写法必绿）。
+    // 「打孔」由 `processingItems` 派生、只存在于打印区（屏幕侧 #4882 后已无同名文本）。
+    await screen.findByText('打孔')
+
     // 红证：`加工合计` 是那张退场表**独有**的表头
     // （保留下来的纸质发货单只有「加工费合计（元）：X」，没有「加工合计」）
     // ⇒ 把 `ProcessingTable`（定义或使用）加回来即红
@@ -490,7 +514,6 @@ describe('ShipOrder', () => {
 
     // 退场的是「表」，不是「含加工项」语义：纸质单据照旧印名称 / 米数 / 加工费合计（行级落库值）
     expect(screen.getByText('加工费合计（元）：37.50')).toBeInTheDocument()
-    expect(screen.getByText('打孔')).toBeInTheDocument()
     expect(screen.getByText('12.5')).toBeInTheDocument()
   })
 })
