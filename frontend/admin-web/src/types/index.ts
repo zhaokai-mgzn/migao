@@ -1186,7 +1186,7 @@ export interface CraftCalcConfig {
   tiers: Record<string, { fullness: number; label?: string }>
   /** 兜底用料公式：`pleat` 韩褶公式（褶数法）/ `fullness` 褶倍数公式（倍数法） */
   default_formula: string
-  /** 定宽买高上下卷边（米） */
+  /** **宽方向**左右覆盖余量（米，两侧各 15cm）—— 引擎 `SIDE_MARGIN`（issue #4940 口径订正） */
   side_margin: number
   /** 用料**向上进位**步长（米） */
   meters_rounding_step: number

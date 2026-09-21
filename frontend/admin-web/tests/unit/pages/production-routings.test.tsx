@@ -1125,6 +1125,54 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(step).not.toHaveTextContent('待完成')
   })
 
+  // ══════════════════ ⑨d 算料口径与术语说明（issue #4975） ══════════════════
+  //
+  // 判据的**取值域写死在测试里**（不从实现推导）：六个标量键 / 三个自动推算特征 / 两个手选特征。
+  // 跨源守卫（文案 vs 引擎源）在 `tests/unit/lib/craft-calc-glossary.test.ts`；本段只判**页面渲染**。
+
+  it('⑨d-① 参数旁「说明」锚点指到同 tab 的说明条目（六个标量键各一条，不指空）', async () => {
+    mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'default', config: ENGINE_DEFAULT_CALC_CONFIG }))
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
+
+    for (const key of ['per_fold_single', 'margin_single', 'margin_multi', 'min_fullness', 'side_margin', 'meters_rounding_step']) {
+      const href = screen.getByTestId(`craft-calc-config-doc-${key}`).getAttribute('href') ?? ''
+      // 注入：把锚点写死成别的 id（或漏渲染该条目）⇒ getElementById 返回 null ⇒ 红
+      expect(document.getElementById(href.replace('#', ''))).not.toBeNull()
+    }
+  })
+
+  it('⑨d-② side_margin 的口径是「左右覆盖余量」——旧文案（上下卷边）不得再上屏（issue #4940）', async () => {
+    mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'default', config: ENGINE_DEFAULT_CALC_CONFIG }))
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
+
+    // 注入：把 label/hint 改回「卷边（米）/ 定宽买高的上下卷边合计」⇒ 下面两条同时红
+    expect(screen.getAllByText(/左右覆盖余量/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/定宽买高的上下卷边合计/)).toBeNull()
+  })
+
+  it('⑨d-③ 说明区块与参数同屏：三个自动推算算例带真实数字 + 手选两项的边界可见', async () => {
+    mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'default', config: ENGINE_DEFAULT_CALC_CONFIG }))
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
+
+    // 注入：删掉说明区块 ⇒ 第一条红（区块没跟参数同屏 = 用户还得去别处找）
+    expect(screen.getByTestId('craft-calc-glossary')).toBeInTheDocument()
+    for (const name of ['超高', '超宽', '倒幅']) {
+      expect(screen.getByTestId(`glossary-example-${name}`)).toHaveTextContent('门幅')
+    }
+    // 死亡条件绑 #4569：加工项特征**当前**只计价、不触发工序
+    expect(screen.getByTestId('glossary-term-拼接')).toHaveTextContent('不触发工序')
+    expect(screen.getByTestId('glossary-term-接高')).toHaveTextContent('待查明')
+  })
+
   // ══════════════════ ⑨c 适用条件里的「单价（元/套）」（issue #4567 用户走查①；#4650 起随条件搬进抽屉） ══════════════════
   //
   // 独立规则表没了，但那笔**对客按套**的钱仍然只有一个载体 = **特殊选项触发的那条条件**
