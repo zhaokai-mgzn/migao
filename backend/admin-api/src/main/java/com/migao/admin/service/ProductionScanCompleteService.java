@@ -16,7 +16,7 @@ import java.util.Map;
 /**
  * 扫码报工主闭环（切片 ②，issue #4698；设计 {@code docs/design/set-code-and-scan-loop.md} §4 / §5）。
  *
- * <p><b>A 模式</b>（用户裁定②-3：「做完扫一次 = 完工」，零额外交互）：工人扫一次码 ⇒ 本类</p>
+ * <p><b>A 模式</b>（扫码语义 = <b>开工 / 领活</b>，2026-09-21 用户裁定① / issue #4967）：工人扫一次码 ⇒ 本类</p>
  * <ol>
  *   <li><b>幂等占位</b>（外层，{@code X-Client-Request-Id}）—— 与 {@link ProductionService#report}
  *       逐字同款：占位 → 执行 → 落快照；失败 ⇒ 释放占位（不把键永久占死）；</li>
@@ -27,10 +27,30 @@ import java.util.Map;
  *       {@code SET_ALREADY_COMPLETED} / {@code SCAN_NEEDS_SELECTION}，<b>一个字节都不写</b>
  *       {@code production_work_logs}（红证见 {@code ProductionScanCompleteServiceTest}）；</li>
  *   <li><b>一次事务</b>（{@link ProductionService#applyScanComplete}，跨 bean 调用 ⇒ 代理生效）：
- *       报工明细 + CAS（{@code done_qty}/{@code status}）+ {@code done_at} + **全部工序完成** ⇒ 加工单
- *       {@code completed}（#4961：判据不再是「必完全绿」），要么全成要么全不成；</li>
+ *       报工明细 + CAS（{@code done_qty}/{@code status}）+ {@code done_at} + <b>{@code started_at} /
+ *       {@code worker_id} / {@code worker_name}（领活时刻与领活人，#4967）</b> + **全部工序完成** ⇒
+ *       加工单 {@code completed}（#4961：判据不再是「必完全绿」），要么全成要么全不成；</li>
  *   <li>回执带「本道完成 + 本套进度 + <b>下一道是什么</b>」⇒ 工人接着扫下一个码。</li>
  * </ol>
+ *
+ * <h2>🔴 2026-09-21 语义改判（issue #4967，用户逐字裁定①）</h2>
+ * <p>原文的前提是「<b>先生产 → 做完扫一次</b>（报工 = 完工）」，而真实车间是
+ * 「<b>先扫码领活 → 再生产；完工不扫</b>」（用户逐字：「我选 1，但是工人都是先扫码报工后再真实进行生产，
+ * 不是先生产再扫码报工」）。本次只改<b>语义 / 文案 / 落码</b>：</p>
+ * <ul>
+ *   <li>🔴 <b>记账时点不变</b> —— 仍是扫码那一次推进 {@code done_qty} + 记计件（不把记账搬到「完工」，
+ *       那需要一个新的完工信号 = 回到 C 模式，用户未选）；</li>
+ *   <li>{@code started_at} / {@code worker_id} / {@code worker_name} 由「C 模式预留」<b>转正</b>
+ *       为默认路径写入（列 V92 已建 ⇒ <b>不新增迁移</b>）；</li>
+ *   <li>按钮 / 页面文案由【完成】改为【开工】/【领活】；</li>
+ *   <li>解析响应**追加** {@code set_overview}（本套 → 部位 → 工序明细）⇒ 工人扫一次就看到
+ *       「这一套还有哪几道没做」（交付物 2，单一口径在解析面，页面不再自己聚合）。</li>
+ * </ul>
+ *
+ * <p>⚠️ <b>边界（如实登记，不粉饰）</b>：{@code done_at} 今天记的是<b>领活</b>时点（<b>名不副实</b>）
+ * ⇒ 设计 §6 的「卡在哪」判据降级为「领了没做」；且最后一道必完工序<b>被领活</b>时加工单即
+ * {@code completed} ⇒ 系统上的「完工」早于真实完工、{@code 完工 → 发货} 会提前放行
+ * （用户已知悉并接受）。</p>
  *
  * <p><b>为什么是新端点（而不是复用既有 {@code .../report}）</b>：既有端点的 URL 里**强制**给了
  * {@code orderId} + {@code operationId} ⇒「哪道工序」是**客户端**决定的；A 模式把这件事交给系统
@@ -67,7 +87,8 @@ public class ProductionScanCompleteService {
     private final ClientRequestIdService clientRequestIdService;
 
     /**
-     * 扫码完成（A 模式闭环的唯一写入口）。
+     * 扫码<b>开工（领活）</b>—— A 模式闭环的唯一写入口（issue #4967 起语义 = 开工 / 领活，
+     * 记账时点与实现一字未变）。
      *
      * @param body             {@code token}（必填）+ 可选 {@code operation_id}（一键改）、
      *                         {@code qty} / {@code qualified_qty} / {@code work_type}
@@ -186,6 +207,10 @@ public class ProductionScanCompleteService {
         // ③ 一屏闭环回执：本道完成 + 本套（套号/部位/进度）+ 下一道是什么
         result.put("set_no", scan.get("set_no"));
         result.put("position", scan.get("position"));
+        // 本套工序总览（issue #4967 交付物 2）：**原样透传解析面的那一份**（`resolve` 已算好）
+        // ⇒ 工人领活成功后**无需再请求一次**就看到「这一套还有哪几道没做」，
+        // 且与扫码那一次看到的是**同一份**口径（不在回执里另算一遍 = 不造第二份聚合）。
+        result.put("set_overview", scan.get("set_overview"));
         result.put("rerouted", Boolean.TRUE.equals(operationView.get("rerouted")));
         enrichNextOperation(result, token, setId, orderItemId, tenantId);
         return result;

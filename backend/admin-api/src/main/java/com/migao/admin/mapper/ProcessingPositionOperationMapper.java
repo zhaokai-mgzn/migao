@@ -75,20 +75,33 @@ public interface ProcessingPositionOperationMapper extends BaseMapper<Processing
      * 报工身份快照（V98，issue #4733）：把「谁报的」写进工序实例（V92 预留的
      * {@code worker_id}/{@code worker_name}），与 {@code production_work_logs} 的那两列**同源**。
      *
-     * <p>🔴 只写 {@code worker_id} / {@code worker_name} / {@code updated_at} —— <b>绝不</b>出现
-     * {@code done_qty} / {@code status} / {@code unit_price} / {@code factor}：进度推进由
-     * {@link #advanceDoneQtyIfUnchanged} 的 CAS 独占，单价/系数是工资凭证快照（红线）。
+     * <p>🔴 只写 {@code worker_id} / {@code worker_name} / {@code started_at} / {@code updated_at}
+     * —— <b>绝不</b>出现 {@code done_qty} / {@code status} / {@code unit_price} / {@code factor}：
+     * 进度推进由 {@link #advanceDoneQtyIfUnchanged} 的 CAS 独占，单价/系数是工资凭证快照（红线）。
      * 单独一条 UPDATE 而不是并进 CAS，是为了**不动** CAS 的谓词与 SET 子句（并发语义一字不改）。</p>
      *
+     * <p>🔴 <b>2026-09-21 语义改判（issue #4967）：扫码 = 开工 / 领活</b> ⇒ 本语句同时把
+     * {@code started_at}（V92 已建的「C 模式预留」列）<b>转正</b>为默认路径写入 —— 扫码那一刻
+     * 就是「谁领走了这道活」的时点。写入形态用 {@code COALESCE(started_at, #{startedAt})}：
+     * <b>只有第一次领活落笔</b>，重扫 / 续报 / 换人再扫都**不改写**已记下的开工时刻
+     * （与 {@link #recordCompletionIfDone} 同款幂等形态：幂等由 SQL 机械保证、不靠调用方自觉）。</p>
+     *
+     * <p>⚠️ 商家侧报工（{@code ProductionService#report}，无工人 session ⇒ 身份可能两项皆空）
+     * 仍在身份非空时才调本方法 ⇒ 该路径**不**落 {@code started_at}（没有「谁领的」可言，不猜）。
+     * 工人扫码路径的身份由 session 保证非空 ⇒ 恒写入（见 {@code ProductionService#applyScanComplete}）。</p>
+     *
+     * @param startedAt 领活时刻（{@code COALESCE} ⇒ 已有值一字不改）
      * @return 1 = 已写入；0 = 工序不存在/已软删/跨租户（幂等空操作，不影响报工主流程）
      */
     @Update("UPDATE processing_position_operations SET worker_id = #{workerId}, "
-            + "worker_name = #{workerName}, updated_at = #{updatedAt} "
+            + "worker_name = #{workerName}, started_at = COALESCE(started_at, #{startedAt}), "
+            + "updated_at = #{updatedAt} "
             + "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0")
     int recordReporter(@Param("id") String id,
                        @Param("tenantId") Long tenantId,
                        @Param("workerId") String workerId,
                        @Param("workerName") String workerName,
+                       @Param("startedAt") OffsetDateTime startedAt,
                        @Param("updatedAt") OffsetDateTime updatedAt);
 
     /**

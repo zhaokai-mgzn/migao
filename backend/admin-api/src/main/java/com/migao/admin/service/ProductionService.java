@@ -1040,14 +1040,17 @@ public class ProductionService {
     }
 
     /**
-     * 扫码完成（切片 ②，issue #4698）的**事务边界**（设计 §4.2 方案 A）。
+     * 扫码<b>开工（领活）</b>（切片 ②，issue #4698；2026-09-21 语义改判 issue #4967）的
+     * **事务边界**（设计 §4.2 方案 A）。
      *
      * <p>🔴 <b>为什么必须单独一个 public 方法</b>：{@code @Transactional} 只在**跨 bean 调用**时
      * 经 Spring 代理生效。本方法**只**被 {@link ProductionScanCompleteService} 调用（不同 bean）⇒
-     * 代理生效，下面三处写入<b>同生共死</b>：</p>
+     * 代理生效，下面四处写入<b>同生共死</b>：</p>
      * <ol>
      *   <li>{@code production_work_logs} 报工明细（计件凭证）；</li>
-     *   <li>CAS 推进 {@code done_qty} / {@code status} + {@code done_at}（A 模式完工时刻）；</li>
+     *   <li>{@code started_at} / {@code worker_id} / {@code worker_name}（<b>领活</b>时刻与领活人；
+     *       issue #4967 把 V92 的「C 模式预留」三列转正为默认路径写入）；</li>
+     *   <li>CAS 推进 {@code done_qty} / {@code status} + {@code done_at}；</li>
      *   <li>必完工序全绿 ⇒ 加工单 {@code completed}。</li>
      * </ol>
      * 任一步抛错 ⇒ 整体回滚（**零残留**：不会出现「明细落了一条、进度没推进」这种对不上账的行）。
@@ -1064,6 +1067,11 @@ public class ProductionService {
     public Map<String, Object> applyScanComplete(Order order, ProcessingOrder po, ProcessingPositionOperation op,
                                                  BigDecimal qty, BigDecimal qualifiedQty, String workType,
                                                  WorkerIdentity identity, Long tenantId) {
+        // 🔴 扫码 = 开工 / 领活（issue #4967，2026-09-21 用户裁定）：`applyReport` 里的
+        // `recordReporter`（V92 的 `worker_id` / `worker_name` / `started_at` 三列）在这条路径上
+        // **必然**执行 —— 工人扫码的身份由 `X-Worker-Session-Id` 从服务端解，无 session 在
+        // Controller 就 401 了 ⇒ identity 恒非 null。这是「三列由 C 模式预留**转正**为默认路径写入」
+        // 的落点（列 V92 已建 ⇒ 不新增迁移）。
         return applyReport(order, po, op, qty, qualifiedQty, workType, identity, tenantId);
     }
 
@@ -1117,9 +1125,19 @@ public class ProductionService {
 
         // 每笔计件留身份快照（W4）：工序实例的 worker_id/worker_name 与报工行**同源**
         // （设计 V92 已预留这两列；单独 UPDATE，不动 CAS 的 SET 子句）。
-        if (identity.workerId() != null || identity.workerName() != null) {
+        //
+        // 🔴 2026-09-21（issue #4967）：本语句**同时**落 `started_at` —— 扫码 = 开工 / 领活
+        // ⇒ 那一刻就是「谁领走了这道活」的时点。`COALESCE(started_at, …)` 保证重扫 / 续报
+        // **不改写**已记下的开工时刻（幂等由 SQL 机械保证）。
+        //
+        // 守卫的语义（**有意**如此）：`identity == null` 才跳过 —— 调用方契约是「非 null（已兜底）」，
+        // 而**两项皆空**的 identity（商家侧报工的显式降级形态）今天**照旧写**（与改前逐字一致：
+        // 改前的守卫是「两项皆空才跳过」，改后不再跳过 —— 差异只有一处：那条路径从此也会落
+        // `started_at`。这是有意的：`worker_id/worker_name` 两列为空时 `started_at` 仍记录
+        // 「这道活在这一刻被领走」，比静默丢时刻更接近事实；且它不参与任何计件金额计算）。
+        if (identity != null) {
             positionOperationMapper.recordReporter(op.getId(), tenantId, identity.workerId(),
-                    identity.workerName(), OffsetDateTime.now());
+                    identity.workerName(), OffsetDateTime.now(), OffsetDateTime.now());
         }
         // 旁路账：谁做的 / 由哪个设备会话 / 身份来源（server_session 权威 vs client_body 显式降级）
         // 手工装配的单测里该 mapper 为 null（Spring 生产装配下恒非 null）⇒ 显式跳过而不是 NPE

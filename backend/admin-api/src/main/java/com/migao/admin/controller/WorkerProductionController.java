@@ -115,6 +115,10 @@ public class WorkerProductionController {
      * 需要同一条读面。实现**逐字复用** {@link ProductionScanService#resolve}（不新造第二套响应形状
      * —— 商家端与工人端看到的推断结果逐字同源）。</p>
      *
+     * <p>🔴 <b>响应含 {@code set_overview}</b>（issue #4967 交付物 2）：本套 → 部位 → 工序明细
+     * （逻辑名 / 应做数量+单位 / 单价 / 状态 / 已报数量）⇒ 工人扫一次就看到「这一套还有哪几道没做」。
+     * 聚合**只有这一份**（在解析面，与推断/进度/卡点同源）—— 页面不另拉一份再按套重排。</p>
+     *
      * <p>无有效工人 session ⇒ 401（fail-closed，与 {@code operations} 同款）。</p>
      */
     @GetMapping("/scan")
@@ -135,16 +139,24 @@ public class WorkerProductionController {
     }
 
     /**
-     * 工人扫码**完成**（A 模式闭环的唯一写入口，切片 ② / 设计 §4 / §5）。
+     * 工人扫码<b>开工 / 领活</b>（A 模式闭环的唯一写入口，切片 ② / 设计 §4 / §5）。
      *
      * <p>POST /api/worker/production/scan/complete</p>
+     *
+     * <p>🔴 <b>2026-09-21 语义改判（issue #4967，用户逐字裁定①）</b>：本端点的语义是
+     * <b>开工 / 领活</b>（真实车间是「先扫码领活 → 再生产；完工不扫」），<b>不是</b>「做完扫一次」。
+     * <b>路径名 {@code /scan/complete} 刻意不改</b>：它是**冻结契约**（工人端 H5 / bmini 两处
+     * 客户端 + 幂等端点标识 {@code ProductionScanCompleteService.ENDPOINT_SCAN_COMPLETE} 都按它
+     * 落证）—— 改名会让 {@code client_request_keys.endpoint} 出现两个历史值、并把已发版的小程序
+     * 打回 404。记账时点与实现一字未变（仍是这一次推进 {@code done_qty} + 记计件）。</p>
      *
      * <p>body：{@code token}（必填）+ 可选 {@code operation_id}（一键改）/ {@code qty} /
      * {@code qualified_qty} / {@code work_type}。数量缺省 = 剩余应做。</p>
      *
      * <p>🔴 身份**只**来自 {@code X-Worker-Session-Id}：body 里的 {@code worker_id} /
      * {@code worker_name} **一个字节都不读**（计件归属 = 工资凭证，见 issue #4733）。
-     * 无 session ⇒ 401，**不**降级到 body 口径。</p>
+     * 无 session ⇒ 401，**不**降级到 body 口径。身份同时被写进工序实例的
+     * {@code worker_id} / {@code worker_name} / {@code started_at}（领活人 + 领活时刻，issue #4967）。</p>
      *
      * <p>幂等：请求头 {@code X-Client-Request-Id}（与既有报工同一套实现/同一张表）；
      * 同键重复 ⇒ 不重复计件、回放首次结果（{@code replayed:true}）。</p>
