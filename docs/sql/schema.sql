@@ -919,7 +919,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_production_route_templates_tenant_default
 CREATE TABLE IF NOT EXISTS production_route_rules (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    trigger_kind VARCHAR(24) NOT NULL CHECK (trigger_kind IN ('craft', 'option', 'shaped', 'processing_item')),
+    trigger_kind VARCHAR(24) NOT NULL CHECK (trigger_kind IN ('craft', 'option', 'shaped', 'processing_item', 'position')),
     trigger_value VARCHAR(64) NOT NULL,               -- 工艺名 / 特殊选项名（逐字 = ERP 写法；它是 join key）
     position VARCHAR(16),                             -- 部位限定；NULL = 不限
     action VARCHAR(16) NOT NULL CHECK (action IN ('insert', 'remove', 'factor')),
@@ -2288,6 +2288,11 @@ ON CONFLICT (id) DO NOTHING;
 --   · `V103__clear_route_rule_positions.sql` → 存活规则的 `position` 清空为 `NULL`
 --     （本段 `rr-v70-*` 的 26 行**字面量已写 NULL**；`rr-v93-*` 的 VALUES 段仍是 V71 口径的
 --      `'布帘'`，由 V103 在运行时清空 —— 那里保持与 V71 逐字同款，供三源收敛守卫比对）；
+--     🔴 **事实订正（issue #4962，2026-09-21）**：上一句只是 **V103 当时**的口径，**保留不删**（历史）。
+--     V103 之后新增 `V108__restore_route_rule_positions.sql`，它把**唯一**那条部位限定写回
+--     ——即本段 `rr-v70-02` 那一行的 `position` 字面量已同步为 `'布帘'`⇒
+--     **本段 26 行里有且只有 1 行非 `NULL`**（`rr-v70-02`；其余 25 行仍 `NULL`），以本行为准。
+--     两条路径的终态由 `tests/unit_ci_workflows/test_restore_route_rule_positions_migration.py` 逐值比对。
 --   · `V104__deposition_matrix_collapse.sql` → 每个 `(tenant_id, logical_name)` **只留一行**：
 --       幸存行 = 四档选行规则（适用行 → **布帘**列 → `position` 字典序 → `id` 升序）；
 --       幸存行写 `position = '通用'`（中性值；该列**仅作历史载体**）+ `applicable = TRUE`；

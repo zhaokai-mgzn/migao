@@ -63,6 +63,13 @@ import type {
  * ⚠️ 只从**配置这一层**退场 —— 订单行 `curtain_type` 与加工单 `position_name` **保留**
  * （加工环节仍需区分布/纱）⇒ 订单页 / 加工单页 / 报工页**不动**。
  *
+ * ⚠️ **2026-09-21 / issue #4962（用户裁定「如果有一些工序只能布帘有或者纱帘有，可以在适用条件上设置」）**：
+ * 上面退场的是**价目这一层**的部位（工艺不再配部位）；**「适用条件」那一层随 #4962 加回了部位维** ——
+ * `production_route_rules.position`（规则级部位限定；`NULL` = 不限部位）重新参与渲染与筛选，
+ * 它是「什么时候」的**第 4 档**（`trigger_kind='position'`，取值 = **部位闭词表**）。
+ * 沿革（**不得删**）：#4937 曾让规则级部位一并退场（该键恒 `NULL`、前端不得据它渲染），#4962 加回。
+ * ⇒ 别把本节读成「整页没有『部位』二字」。
+ *
  * **工艺项为什么是一屏一张表**（issue #4588 = 母单 #4586 包 B；契约 #4587）：
  * 原形态是**两张平铺表** —— 主区只读矩阵 + 折叠次区「工序库明细」（能改计件单价但**改了不生效**）。
  * 同一个概念两个载体、改一处不生效、还没有任何提示 ⇒ 用户裁定**方案 A：合并成一屏一张表**
@@ -110,7 +117,8 @@ import type {
  *   PUT    /api/admin/production/routings/{id}            DELETE /routings/{id}      （部分更新 {name?, is_default?, mainline?, positions?, status?}）
  *   GET    /api/admin/production/operation-positions      GET  /route-rules
  *   PUT    /api/admin/production/operation-positions/{id}  （#4588 矩阵行写面；🔴 #4937/O1 起 body **只收** {unit_price?} —— `applicable` 已退场，收到即 422）
- *   POST   /api/admin/production/route-rules              （#4650 阶段 1：**条件的唯一创建写面**，被抽屉的「添加条件」复用）
+ *   POST   /api/admin/production/route-rules              （#4650 阶段 1：**条件的唯一创建写面**，被抽屉的「添加条件」复用；#4962 起 body 可带 `position`）
+ *   GET    /api/admin/production/route-rule-options        （#4616 触发值取值域：`{crafts, processing_items}`；#4962 起**新增 `positions`** = 部位闭词表）
  *   DELETE /api/admin/production/operations/{id}          （#4588 工序软删：三条护栏一次报全）
  *   DELETE /api/admin/production/route-rules/{id}         （#4588 规则软删：无硬护栏；#4650 起从抽屉里删一条条件）
  *   PUT    /api/admin/production/route-rules/{id}/customer-unit-price （#4567 特殊选项对客单价）
@@ -236,12 +244,18 @@ const SOURCE_META: Record<ProductionSource, { label: string; className: string }
  * 「每樘窗只做一次」这类语义**仍是后端按 DB 值实例化时判的**，不是商家在界面上配的。
  */
 
-/** 触发维（V71 列注释的闭词表；`shaped` / `processing_item` 是表结构预留，无种子行） */
+/**
+ * 触发维（V71 列注释的闭词表；`shaped` / `processing_item` 是表结构预留，无种子行）。
+ *
+ * `position`（**部位**，issue #4962 加回的第 4 档）—— 用户裁定「如果有一些工序只能布帘有或者
+ * 纱帘有，可以在适用条件上设置」⇒ 规则级部位限定**重新参与渲染**（人话里显示 `部位 = <值>`）。
+ */
 const TRIGGER_KIND_LABEL: Record<string, string> = {
   craft: '工艺',
   option: '特殊选项',
   shaped: '是否定型',
   processing_item: '加工项',
+  position: '部位',
 }
 
 /**
@@ -250,17 +264,32 @@ const TRIGGER_KIND_LABEL: Record<string, string> = {
  * 商家看到的不是「触发类型 / 动作 / 目标工序 / 插入锚点」，而是**这道工序在什么情况下做**：
  * - `insert` + 锚点 ⇒ `工艺 = 韩褶 时插入（在「三边」之后）`；
  * - `insert` 无锚点 ⇒ `… 时插入（追加到末尾）`（**不**渲染成「在「末尾」之后」—— 那是把空值当工序名）；
- * - `remove` ⇒ `工艺 = 四爪钩 时不做`。
+ * - `remove` ⇒ `工艺 = 四爪钩 时不做`；
+ * - `position`（#4962 加回的部位维）⇒ `部位 = 布帘 时插入（在「三边」之后）` / `部位 = 布帘 时不做`
+ *   —— 同一套形态，**只有触发维的名词不同**（既有三档的文案形态一字未动）。
  *
  * 目标工序由**所在抽屉**表达（这一段只列 `operation === 该工序` 的条件）⇒ 话里不重复工序名。
+ *
+ * 🔴 **部位限定要说出来（issue #4962）**：**任何**带 `position` 的规则都要把这一维说进人话 ——
+ * 包括 `trigger_kind ≠ 'position'` 的行（迁移 `V108` 写回的 `craft=韩褶 + position='布帘'`、
+ * 直写 API 的存量行）。**不得**因为「今天表单只给 `position` 档写这一列」就把它藏起来：
+ * 藏起来 = 商家看不见「这条条件只对布帘生效」（静默信息缺口，与「规则永不生效」同族）。
+ * - `trigger_kind === 'position'` ⇒ `部位 = 布帘 时插入（在「三边」之后）`（`trigger_value`
+ *   与 `position` 是同一把值 ⇒ **不重复渲染两遍**）；
+ * - `trigger_kind === 'craft'` 且带部位 ⇒ `部位 = 布帘、工艺 = 韩褶 时插入（…）`；
+ * - `position` 为空 / `null`（= **不限部位**）⇒ **不渲染**任何部位文案（不得出现「部位 = —」假值）。
  */
 const conditionText = (rule: RouteRule) => {
   const kind = TRIGGER_KIND_LABEL[rule.trigger_kind ?? ''] ?? rule.trigger_kind ?? '—'
   const value = rule.trigger_value ?? '—'
-  if (rule.action === 'remove') return `${kind} = ${value} 时不做`
+  const positionClause = rule.position ? `${TRIGGER_KIND_LABEL.position} = ${rule.position}` : ''
+  // `position` 档的「什么时候」**就是**部位（`trigger_value` = `position`）⇒ 只说一遍
+  const triggerClause = rule.trigger_kind === 'position' ? '' : `${kind} = ${value}`
+  const when = [positionClause, triggerClause].filter(Boolean).join('、') || `${kind} = ${value}`
+  if (rule.action === 'remove') return `${when} 时不做`
   return rule.after_operation
-    ? `${kind} = ${value} 时插入（在「${rule.after_operation}」之后）`
-    : `${kind} = ${value} 时插入（追加到末尾）`
+    ? `${when} 时插入（在「${rule.after_operation}」之后）`
+    : `${when} 时插入（追加到末尾）`
 }
 
 /**
@@ -815,10 +844,10 @@ export default function ProcessConfigPage() {
 
   // ── 抽屉里的「适用条件」（issue #4650 阶段 1：条件**挂在工序身上**，独立规则表从界面移除）──
   /**
-   * 触发值**取值域**（`GET /route-rule-options`）：工艺词表 + 加工项目录。
+   * 触发值**取值域**（`GET /route-rule-options`）：工艺词表 + 加工项目录 + **部位闭词表**（#4962）。
    * 拿不到就退化成空列表 —— 下拉里没有可选项，**不静默给一份写死的词表**（那是第二份会漂的口径）。
    */
-  const [ruleOptions, setRuleOptions] = useState<RouteRuleTriggerOptions>({ crafts: [], processing_items: [] })
+  const [ruleOptions, setRuleOptions] = useState<RouteRuleTriggerOptions>({ crafts: [], processing_items: [], positions: [] })
   /** 「添加条件」表单是否展开（就地展开在该工序的抽屉里，**不是**弹窗、**不是**独立表） */
   const [conditionFormOpen, setConditionFormOpen] = useState(false)
   /**
@@ -956,11 +985,16 @@ export default function ProcessConfigPage() {
     }
     // 触发值取值域（issue #4616）：**拿不到就空列表**（下拉无可选项），
     // 不回落任何写死的词表 —— 回落 = 第二份会漂的口径（新建的工艺永远进不了下拉）。
+    // #4962：`positions`（**部位闭词表**）同口径 —— 空就是空，**不**拿基线三部位兜底。
     if (ruleOptionsRes.status === 'fulfilled') {
       const opts = ruleOptionsRes.value.data?.data
-      setRuleOptions({ crafts: opts?.crafts ?? [], processing_items: opts?.processing_items ?? [] })
+      setRuleOptions({
+        crafts: opts?.crafts ?? [],
+        processing_items: opts?.processing_items ?? [],
+        positions: opts?.positions ?? [],
+      })
     } else {
-      setRuleOptions({ crafts: [], processing_items: [] })
+      setRuleOptions({ crafts: [], processing_items: [], positions: [] })
     }
     setLoading(false)
   }, [])
@@ -1803,13 +1837,14 @@ export default function ProcessConfigPage() {
     const reasons: string[] = []
     const trigger = conditionDraft.trigger_value.trim()
     if (!trigger) {
-      reasons.push(
-        conditionDraft.trigger_kind === 'craft'
-          ? '请选择什么时候生效：工艺必须从列表里选（手输一个不在列表里的名字 = 这条条件永远不命中）'
-          : conditionDraft.trigger_kind === 'processing_item'
-            ? '请选择什么时候生效：加工项必须从列表里选（触发键 = 订单里的加工项名，精确相等）'
-            : '请选择什么时候生效：特殊选项必须从列表里选（选项名是订单里的键，错一个字就查不到）',
-      )
+      // 每档一句**可行动**理由（说清「必须从列表里选」+ 为什么）—— 与既有三档同构。
+      const reasonByKind: Record<RouteRuleTriggerKind, string> = {
+        craft: '请选择什么时候生效：工艺必须从列表里选（手输一个不在列表里的名字 = 这条条件永远不命中）',
+        processing_item: '请选择什么时候生效：加工项必须从列表里选（触发键 = 订单里的加工项名，精确相等）',
+        position: '请选择什么时候生效：部位必须从列表里选（部位 = 布帘/纱帘/帘头/布料，空 = 不限部位）',
+        option: '请选择什么时候生效：特殊选项必须从列表里选（选项名是订单里的键，错一个字就查不到）',
+      }
+      reasons.push(reasonByKind[conditionDraft.trigger_kind] ?? reasonByKind.option)
     }
     if (reasons.length > 0) {
       setConditionReasons(reasons)
@@ -1825,6 +1860,11 @@ export default function ProcessConfigPage() {
     }
     if (conditionDraft.action === 'insert' && conditionDraft.after_operation) {
       payload.after_operation = conditionDraft.after_operation
+    }
+    // issue #4962：`position` 档把选中的部位**镜像**进规则级 `position`（= 限定部位）；
+    // 其它档**省略该键**（留空 = 不限部位，同一纪律：不拿 `null` 冒充「没填」）。
+    if (conditionDraft.trigger_kind === 'position') {
+      payload.position = trigger
     }
     setBusy(true)
     setConditionReasons([])
@@ -1854,7 +1894,7 @@ export default function ProcessConfigPage() {
     setConditionFormOpen(true)
   }
 
-  /** 「什么时候」的种类切换 ⇒ 取值换来源（工艺/加工项/特殊选项各自一份词表）+ 清空已选值 */
+  /** 「什么时候」的种类切换 ⇒ 取值换来源（工艺/加工项/特殊选项/部位各自一份词表）+ 清空已选值 */
   const switchConditionKind = (kind: RouteRuleTriggerKind) => {
     setConditionDraft((d) => ({ ...d, trigger_kind: kind, trigger_value: '' }))
     setConditionReasons([])
@@ -3477,6 +3517,8 @@ export default function ProcessConfigPage() {
                       { key: 'craft', label: '工艺' },
                       { key: 'option', label: '特殊选项' },
                       { key: 'processing_item', label: '加工项' },
+                      // #4962 加回的部位维：取值 = 部位闭词表（`ruleOptions.positions`，后端给出）
+                      { key: 'position', label: '部位' },
                     ] as const).map((k) => (
                       <button
                         key={k.key}
@@ -3510,13 +3552,17 @@ export default function ProcessConfigPage() {
                         ? '从工艺列表里选…'
                         : conditionDraft.trigger_kind === 'processing_item'
                           ? '从加工项列表里选…'
-                          : '从特殊选项列表里选…'}
+                          : conditionDraft.trigger_kind === 'position'
+                            ? '从部位列表里选…'
+                            : '从特殊选项列表里选…'}
                     </option>
                     {(conditionDraft.trigger_kind === 'craft'
                       ? ruleOptions.crafts
                       : conditionDraft.trigger_kind === 'processing_item'
                         ? ruleOptions.processing_items
-                        : optionNames
+                        : conditionDraft.trigger_kind === 'position'
+                          ? ruleOptions.positions
+                          : optionNames
                     ).map((name) => (
                       <option key={name} value={name}>
                         {name}

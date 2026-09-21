@@ -14,16 +14,27 @@
 | 部位价目 `30 × 4 = 120 行`、`OPERATION_POSITION_PRICES[工序][部位]`（两级） | 部位价目 **30 行**、`OPERATION_POSITION_PRICES[工序]`（**单键**，与 `V104` / `docs/sql/schema.sql` 终态逐行同值） |
 | 规则表 26 条**带 `position`**（部位限定生效） | 规则表 26 条**无 `position`**（O2 退场；`V103` 清空存量值） |
 
+## 🔴 本文件在 issue #4962 **部分回退**了上面第 4 行（照实登记）
+
+用户 2026-09-21 追问后的裁定：「**如果有一些工序只能布帘有或者纱帘有，可以在适用条件上设置**」
+⇒ issue **#4962** 把「**规则级**部位限定」加回（**只回退这一维**；`applicable` 适用性过滤、
+矩阵物理去部位、读面的去部位化**一字不动**）：
+
+| #4937 的形态（已改判） | #4962 的形态（本文件现在钉的） |
+|---|---|
+| 规则表 26 条**一律无 `position`** | 26 条里**恰好 1 条**带 `position`（`韩褶 → insert 上车布`，`position="布帘"`）—— 与 `V71` 字面量 / `V108__restore_route_rule_positions.sql` / `docs/sql/schema.sql` / Java `ProductionSeedTemplateService#CRAFT_RULES` **同值** |
+| 「同一工艺在**任何**帘种上得到**同一套**工序」 | **带 `position` 的规则只在该部位生效** ⇒ `韩褶` 在**布帘**上多出 `上车布`、在**纱帘/帘头**上没有；其余规则（`position` 为空 = 不限）**逐字不变** |
+
 **判据值全部硬编码在文件内**（不从被测实现推导 —— 否则「实现自洽」就能骗过测试）。
 
 ## 红证（「不会红的断言 = 空断言」，见 `TestInjectedDrift`）
 
 逐条注入式自证：少一条规则 / 规则优先级颠倒 / 规则工序名错 / 未知工序 fail-closed /
-**部位过滤重新注入** / 逻辑名映射漂移 / 价目表多一行 / 规则重新带上 `position`。
+**去掉部位限定 key**（纱帘路线会多出 `上车布` ⇒ 红）/ 逻辑名映射漂移 / 价目表多一行。
 
 ## 关联
 
-母单 #4423 · **去部位化母单 #4936 + 本包 #4937** · 真值源 `docs/curtain-production-rules.md` §2/§3 ·
+母单 #4423 · 去部位化母单 #4936 + 包 #4937 · **部位维加回 #4962** · 真值源 `docs/curtain-production-rules.md` §2/§3 ·
 种子多源收敛守卫 `tests/unit_ci_workflows/test_production_catalog_seed.py`。
 """
 from __future__ import annotations
@@ -44,7 +55,8 @@ from app.production.routing import (
     build_route_v2,
 )
 
-#: 🔴 **#4937 之后帘种不再参与取路** ⇒ 这三个帘种的序列**必须逐字相同**（本文件的核心判据）。
+#: 🔴 **#4937 之后帘种不再参与「价目适用性」筛选**；**#4962 起规则级部位限定加回**
+#: ⇒ 三个帘种的序列**只在「带 `position` 的规则」上分叉**（见 `POSITION_LIMIT_POSITION`）。
 CURTAIN_TYPES = ("布帘", "纱帘", "帘头")
 #: 工艺维（`ROUTINGS` 的键 / `build_route_v2` 的规则触发值）。
 CRAFTS = ("韩褶", "打孔", "四爪钩", "穿杆", "平幔")
@@ -53,7 +65,15 @@ CRAFTS = ("韩褶", "打孔", "四爪钩", "穿杆", "平幔")
 #: 窗帘主线（落库的 **10** 道；`打包` 由 issue #4529 插在 `外帘打卷` 与 `外帘装袋` 之间）。
 MAINLINE = ["精裁", "三边", "熨烫", "定型", "复烫", "车被", "外帘打卷", "打包", "外帘装袋", "外帘发货"]
 
-# ── ② **部位无关的冻结序列**（#4937 的新基线）──
+#: 🔴 **部位限定（issue #4962 加回）**：`V71` 的 26 条规则种子里**唯一**一条带 `position` 的是
+#: `韩褶 → insert 上车布`（`position='布帘'`）⇒ **只有「布帘」**的韩褶路线带 `上车布`。
+#: ⚠️ `四爪钩 → insert 上车布` 是**另一条**规则（`position` 为空 = 不限部位）⇒ 它**照旧**对所有
+#: 帘种生效 —— 这两条规则的名字一样、部位语义不同，别混读。
+POSITION_LIMIT_POSITION = "布帘"
+POSITION_LIMIT_RULE = ("craft", "韩褶", "insert", "上车布", POSITION_LIMIT_POSITION)
+
+# ── ② 冻结序列（#4937 部位无关基线 ∩ #4962 部位限定规则）──
+#: **布帘列**的冻结序列（= `position` 为空的规则 + 那唯一一条 `position='布帘'` 的规则）。
 EXPECTED_BY_CRAFT = {
     "韩褶": ["精裁", "三边", "韩褶", "上车布", "熨烫", "定型", "复烫", "车被",
              "外帘打卷", "打包", "外帘装袋", "外帘发货"],
@@ -65,9 +85,33 @@ EXPECTED_BY_CRAFT = {
     "平幔": ["精裁", "三边", "帘头制作", "熨烫", "定型", "车被",
              "外帘打卷", "打包", "外帘装袋", "外帘发货"],
 }
-EXPECTED_COUNTS = {"韩褶": 12, "打孔": 11, "四爪钩": 9, "穿杆": 8, "平幔": 10}
-EXPECTED_REBUILT = {(ct, craft): list(ops)
-                    for ct in CURTAIN_TYPES for craft, ops in EXPECTED_BY_CRAFT.items()}
+
+
+def _expected_for(curtain_type: str, craft: str) -> list:
+    """某 `(帘种, 工艺)` 的冻结序列（**硬编码判据**，不从实现推导）。
+
+    分叉**只有一处**：`POSITION_LIMIT_RULE`（`韩褶 → 上车布`，限 `布帘`）
+    ⇒ 非布帘的韩褶路线里没有 `上车布`。
+    """
+    seq = list(EXPECTED_BY_CRAFT[craft])
+    if craft == POSITION_LIMIT_RULE[1] and curtain_type != POSITION_LIMIT_POSITION:
+        seq.remove(POSITION_LIMIT_RULE[3])
+    return seq
+
+
+EXPECTED_REBUILT = {(ct, craft): _expected_for(ct, craft)
+                    for ct in CURTAIN_TYPES for craft in EXPECTED_BY_CRAFT}
+
+#: 道数**逐条硬编码**（不从上面的序列推导 —— 独立判据才有判别力）。
+#: 唯一分叉 = `韩褶`（布帘 12 / 非布帘 11，差的正是部位限定的那条 `上车布`）。
+EXPECTED_COUNTS = {
+    ("布帘", "韩褶"): 12, ("布帘", "打孔"): 11, ("布帘", "四爪钩"): 9,
+    ("布帘", "穿杆"): 8, ("布帘", "平幔"): 10,
+    ("纱帘", "韩褶"): 11, ("纱帘", "打孔"): 11, ("纱帘", "四爪钩"): 9,
+    ("纱帘", "穿杆"): 8, ("纱帘", "平幔"): 10,
+    ("帘头", "韩褶"): 11, ("帘头", "打孔"): 11, ("帘头", "四爪钩"): 9,
+    ("帘头", "穿杆"): 8, ("帘头", "平幔"): 10,
+}
 #: 布料单（`saleForm=布料`）走**独立主线**（「产品形态」分支，与部位维无关）。
 #: ⚠️ **字面量仍是 `配料 → 打包`**（V88 ③ 把**迁移链/bootstrap** 改成了 `裁剪 → 打包`，
 #: 但 `routing.py` 属 ai-agent，本次去部位化**未动**它 —— 本文件的判据按**当前真值源**冻结）。
@@ -182,23 +226,47 @@ class TestPositionFreeRebuild:
 
     @pytest.mark.parametrize("curtain_type,craft", sorted(EXPECTED_REBUILT))
     def test_rebuild_sequence_length(self, curtain_type, craft):
-        """道数逐条钉死（韩褶 12 / 打孔 11 / 四爪钩 9 / 穿杆 8 / 平幔 10）。"""
+        """道数逐条钉死（布帘 12/11/9/8/10；非布帘的韩褶少一道 = 部位限定的 `上车布`）。"""
         got = build_route_v2({"curtain_type": curtain_type, "craft": craft})
-        assert len(got) == EXPECTED_COUNTS[craft], (
-            f"{curtain_type}×{craft} 道数 {len(got)} ≠ {EXPECTED_COUNTS[craft]}")
+        assert len(got) == EXPECTED_COUNTS[(curtain_type, craft)], (
+            f"{curtain_type}×{craft} 道数 {len(got)} ≠ {EXPECTED_COUNTS[(curtain_type, craft)]}")
 
-    @pytest.mark.parametrize("craft", CRAFTS)
-    def test_same_craft_is_identical_across_every_curtain_type(self, craft):
-        """🔴 **本包的核心新判据**：同一工艺在**任何**帘种上得到**同一套逻辑工序名**。
+    def test_position_limited_rule_fires_only_on_its_own_position(self):
+        """🔴 **本单的核心判据（issue #4962）**：带 `position` 的规则**只在逐字匹配的部位**生效。
 
-        旧基线退休的正是这条的反面（旧 `ROUTINGS` 给纱帘另一套序列）—— 用户裁定
-        「部位不再参与任何取价、取路、筛选、配置」（母单 #4936）。
+        - `韩褶 → insert 上车布`（`position='布帘'`）⇒ **布帘必须生效**、**纱帘/帘头必须不生效**；
+        - `四爪钩 → insert 上车布`（`position` 为空 = **不限部位**）⇒ 三个帘种**都**生效
+          （反向护栏：不得把「有空值的规则」也一起筛掉 —— 那会静默少工序）。
         """
-        routes = {ct: tuple(build_route_v2({"curtain_type": ct, "craft": craft}))
-                  for ct in CURTAIN_TYPES}
-        assert len(set(routes.values())) == 1, (
-            f"工艺 `{craft}` 在不同帘种上得到不同序列 ⇒ 部位仍在参与取路："
-            f"{ {ct: list(r) for ct, r in routes.items()} }")
+        cloth = build_route_v2({"curtain_type": "布帘", "craft": "韩褶"})
+        assert "上车布" in cloth, (
+            "布帘×韩褶 少了部位限定规则插入的 `上车布` ⇒ 规则对**该生效的部位**没生效")
+        for other in ("纱帘", "帘头"):
+            seq = build_route_v2({"curtain_type": other, "craft": "韩褶"})
+            assert "上车布" not in seq, (
+                f"{other}×韩褶 带上了 `上车布` ⇒ 部位限定没生效（改前实测就是这一形态："
+                f"筛选不存在 ⇒ 规则对所有部位都生效）：{seq}")
+        # 反向护栏：`position` 为空 = 不限部位 ⇒ 仍然对所有帘种生效
+        for ct in CURTAIN_TYPES:
+            assert "上车布" in build_route_v2({"curtain_type": ct, "craft": "四爪钩"}), (
+                f"{ct}×四爪钩 少了 `上车布`（那条规则的 `position` 为空 = 不限部位）"
+                f" ⇒ 判据把空值也一起筛掉了")
+
+    def test_only_the_position_limited_rules_diverge_across_curtain_types(self):
+        """分叉面**只有**带 `position` 的规则：其余工艺在三个帘种上序列**逐字相同**（#4937 不回退）。"""
+        for craft in CRAFTS:
+            routes = {ct: tuple(build_route_v2({"curtain_type": ct, "craft": craft}))
+                      for ct in CURTAIN_TYPES}
+            if craft == POSITION_LIMIT_RULE[1]:
+                assert len(set(routes.values())) == 2, (
+                    f"工艺 `{craft}` 期望恰好两套序列（布帘 / 非布帘），实测："
+                    f"{ {ct: list(r) for ct, r in routes.items()} }")
+                assert routes["纱帘"] == routes["帘头"], (
+                    "两个**非布帘**帘种之间又分叉了 ⇒ 部位限定不是「逐字匹配布帘」这一条判据在起作用")
+            else:
+                assert len(set(routes.values())) == 1, (
+                    f"工艺 `{craft}` 在不同帘种上得到不同序列 ⇒ 部位仍在别处参与取路："
+                    f"{ {ct: list(r) for ct, r in routes.items()} }")
 
     def test_fifteen_combinations_all_rebuilt_verbatim(self):
         """一次性汇总 15/15（PR 证据里贴的就是这条的输出原文）。"""
@@ -371,15 +439,25 @@ class TestRouteRules:
         assert kinds.count("option") == 16
         assert set(kinds) == {"craft", "option"}
 
-    def test_rules_carry_no_position_key(self):
-        """🔴 **O2 退场**（issue #4937）：`ROUTE_RULES` 的规则字典**不得**再有 `position` 键。
+    def test_exactly_one_rule_carries_a_position_key(self):
+        """🔴 **部位维加回**（issue #4962）：26 条里**恰好一条**带 `position`，且值逐字冻结。
 
-        「部位限定」这一维在数据上不可表达 —— 与「部位退场」同语义（不给下一个人留
-        「看起来还生效」的假象）。
+        `V71` 的 26 条种子行里只有 `rr-v70-02`（`韩褶 → insert 上车布`）带 `position='布帘'`；
+        其余 25 条**不得**有该键（有 = 多出一条部位限定，会静默改变别的帘种的工序集）。
         """
-        offenders = [(r["trigger_value"], sorted(r)) for r in ROUTE_RULES if "position" in r]
-        assert offenders == [], (
-            f"以下规则仍带 `position` 键（O2 未完成 ⇒ 读侧还会按部位筛）：{offenders}")
+        with_position = [(r["trigger_kind"], r["trigger_value"], r["action"], r["operation"],
+                          r["position"]) for r in ROUTE_RULES if "position" in r]
+        assert with_position == [POSITION_LIMIT_RULE], (
+            f"带 `position` 的规则集漂移（期望恰好 {[POSITION_LIMIT_RULE]}）：{with_position}")
+
+    def test_position_key_uses_the_same_value_as_the_migration_seed(self):
+        """部位值与迁移/字面量种子**同值**（`V71` 的 `rr-v70-02` = `'布帘'`）。
+
+        三源（本表 / `V108` 写回 / `docs/sql/schema.sql`）由
+        `tests/unit_ci_workflows/test_production_catalog_seed.py` 另钉；本条钉**真值源自己**。
+        """
+        limited = [r for r in ROUTE_RULES if "position" in r]
+        assert [r["position"] for r in limited] == [POSITION_LIMIT_POSITION] == ["布帘"]
 
     def test_craft_rules_are_frozen_verbatim(self):
         """10 条工艺规则逐条等于冻结值（触发键 = ERP 工艺名，逐字一致）。"""
@@ -579,22 +657,22 @@ class TestInjectedDrift:
         with pytest.raises(KeyError):
             self._rebuild(("布帘", "韩褶"))
 
-    def test_reintroducing_a_position_filter_is_detected(self, monkeypatch):
-        """🔴 **新基线自己的红证**：把「部位过滤」注入回来 ⇒ 同一工艺在不同帘种上的序列不再相等。
+    def test_dropping_the_position_limit_is_detected(self, monkeypatch):
+        """🔴 **部位限定的红证**（issue #4962）：把那唯一一条 `position` 删掉 ⇒ 纱帘路线多出 `上车布`。
 
-        这是 `test_same_craft_is_identical_across_every_curtain_type` 的**判别力证明**
-        （也证明旧口径**真的**会按帘种分叉 —— 那正是被退休的 `applicable` 过滤干的事）。
+        这是 `test_position_limited_rule_fires_only_on_its_own_position` 的**判别力证明**：
+        证明那条断言真的在测「部位限定」，而不是恰好恒真（**改前实测**就是本条注入后的形态：
+        筛选不存在 ⇒ 规则对所有部位都生效）。
         """
-        def with_position_filter(position):
-            route = build_route_v2(position)
-            if position.get("curtain_type") == "纱帘":
-                return [op for op in route if op not in ("熨烫", "定型", "复烫", "车被")]
-            return route
-
-        cloth = with_position_filter({"curtain_type": "布帘", "craft": "韩褶"})
-        sheer = with_position_filter({"curtain_type": "纱帘", "craft": "韩褶"})
-        assert cloth != sheer, (
-            "注入「按帘种过滤」后两个序列仍相等 ⇒ 本红证没抓住「部位参与取路」这一形态")
+        import app.production.routing as routing
+        drifted = [{k: v for k, v in r.items() if k != "position"} for r in ROUTE_RULES]
+        assert not any("position" in r for r in drifted), "注入没生效 ⇒ 本条红证是空断言"
+        monkeypatch.setattr(routing, "ROUTE_RULES", drifted)
+        sheer = routing.build_route_v2({"curtain_type": "纱帘", "craft": "韩褶"})
+        assert "上车布" in sheer, (
+            "去掉 `position` 后纱帘路线仍没有 `上车布` ⇒ 本条注入没有再现实测形态")
+        assert list(EXPECTED_REBUILT[("纱帘", "韩褶")]) != sheer, (
+            "注入后与冻结期望相同 ⇒ 冻结期望本身没有把「少一道」判出来")
 
     def test_logical_name_mapping_drift_is_detected(self):
         """映射漂移（`纱三边` → `三边-纱`）⇒ 与冻结映射不等。"""
@@ -609,10 +687,14 @@ class TestInjectedDrift:
         extra["不存在的工序"] = {"unit_price": 1.0, "applicable": True}
         assert len(extra) != 30
 
-    def test_reintroducing_a_position_key_in_rules_is_detected(self, monkeypatch):
-        """规则里注入 `"position"` 键 ⇒ `test_rules_carry_no_position_key` 会红。"""
+    def test_widening_the_position_limit_is_detected(self, monkeypatch):
+        """反向红证：把那条规则的 `position` 从 `布帘` 改成 `帘头` ⇒ 布帘路线**少** `上车布`。
+
+        证明部位值是**逐字相等**判据（不是「有 position 就生效」这种恒真写法）。
+        """
         import app.production.routing as routing
-        drifted = [dict(r, position="布帘") for r in ROUTE_RULES]
+        drifted = [dict(r, position="帘头") if "position" in r else dict(r) for r in ROUTE_RULES]
         monkeypatch.setattr(routing, "ROUTE_RULES", drifted)
-        assert [r for r in routing.ROUTE_RULES if "position" in r], (
-            "注入没生效 ⇒ 本条红证是空断言")
+        cloth = routing.build_route_v2({"curtain_type": "布帘", "craft": "韩褶"})
+        assert "上车布" not in cloth, "改了部位值布帘路线仍带 `上车布` ⇒ 判据不是逐字相等"
+        assert "上车布" in routing.build_route_v2({"curtain_type": "帘头", "craft": "韩褶"})

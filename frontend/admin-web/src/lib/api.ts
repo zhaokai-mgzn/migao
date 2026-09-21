@@ -559,7 +559,8 @@ export const productionApi = {
   getRouteRules: () =>
     request.get<ApiResponse<RouteRule[]>>('/api/admin/production/route-rules'),
   // ②-a 规则创建弹窗的**触发值取值域**（issue #4616；权限 processing:manage）：
-  // `{crafts:[…], processing_items:[…]}` —— 活跃工艺词表 + 活跃加工项目录。
+  // `{crafts:[…], processing_items:[…], positions:[…]}` —— 活跃工艺词表 + 活跃加工项目录
+  // ＋ **部位闭词表**（#4962 新增键：`trigger_kind='position'` 的取值域，基线三部位 ∪ `布料`）。
   // 触发值必须从对应词表取（手输一个词表里没有的名字 = 建一条永远不命中的规则）。
   // 特殊选项名不在此列（可新建，没有第二份词表）。
   getRouteRuleOptions: () =>

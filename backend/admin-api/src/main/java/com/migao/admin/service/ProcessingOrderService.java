@@ -109,6 +109,15 @@ public class ProcessingOrderService {
     public static final String ERR_ROUTING_NOT_FOUND = "PRODUCTION_ROUTING_NOT_FOUND";
 
     /**
+     * 规则的第 4 档触发类型（issue #4962）：**部位维** —— {@code trigger_value} = 部位名
+     * （取值 = {@link ProductionOperationQueryService#POSITION_LIMIT_VOCABULARY}）。
+     *
+     * <p>写面把它**镜像**进 {@code production_route_rules.position} 列（列才是「限哪个部位」的
+     * 唯一判据），因此实例化侧只看列、不看 kind —— 见 {@link #rulePositionMatches}。</p>
+     */
+    public static final String TRIGGER_KIND_POSITION = "position";
+
+    /**
      * 路线引用的工序在工序库无活跃行时的错误码（fail-closed）。
      * 可见位置同 {@link #ERR_ROUTING_NOT_FOUND}。
      */
@@ -768,13 +777,46 @@ public class ProcessingOrderService {
     private static boolean conditionalRuleTriggers(ProductionRouteRule rule, List<String> options,
                                                    List<String> processingItems) {
         String kind = rule.getTriggerKind();
+        if ("craft".equals(kind)) {
+            // `craft` 维的 insert/remove **由 `buildRoute` 统一处理**（它先跑，序列已定稿）；
+            // 本方法只补「按**订单行**触发」的那两类（特殊选项 / 加工项）⇒ craft 规则在这里
+            // 返回 false 是「**不重复插入**」，**不是**「未实现」（别把它挪到下面的显式失败里：
+            // 那会让每一张单在实例化时 422）。
+            return false;
+        }
         if ("option".equals(kind)) {
             return options.contains(rule.getTriggerValue());
         }
         if ("processing_item".equals(kind)) {
             return processingItems.contains(rule.getTriggerValue());
         }
-        return false;
+        if (TRIGGER_KIND_POSITION.equals(kind)) {
+            // 部位维（issue #4962）：`trigger_value` = 部位名，写面把它**镜像**进 `position` 列
+            // ⇒ 「这条规则限哪个部位」只有**一处**判据（{@link #rulePositionMatches}，见两个调用方的
+            // 统一筛选）。此处恒 true 只表示「该触发类型已实现」，**不是**「跳过筛选」。
+            return true;
+        }
+        // ⛔ 未知 / 未实现的触发类型 ⇒ **显式失败**，不静默跳过（issue #4962）：
+        // 返回 false 会让「规则已落库但永不生效」变成无人可见的黑洞
+        // （与真值源 `routing.py::_rule_triggers` 的 `raise ValueError` 同款纪律）。
+        throw new BusinessException(ERR_ROUTING_NOT_FOUND,
+                String.format("条件工序规则「%s」的触发类型「%s」尚未实现，无法实例化工序", rule.getId(), kind),
+                422,
+                "请在「工艺配置 → 工艺路线」停用该规则，或联系研发实现该触发类型");
+    }
+
+    /**
+     * **规则级部位限定**（issue #4962 加回；此前由 issue #4937 / O2 整块退场）。
+     *
+     * <p>{@code position} 为空 / {@code NULL} = **不限部位**；否则必须**逐字**匹配当前实例化部位。
+     * 与真值源 {@code app/production/routing.py::_rule_position_matches} **同款同序同判据** ——
+     * 两侧漂移会让同一张单在 Java 与 Python 上得到不同的工序序列（车间按两套顺序干）。</p>
+     *
+     * <p>调用点**必须在触发类型分派之后**：未知类型要先显式失败，不能因为部位不匹配就静默跳过。</p>
+     */
+    private static boolean rulePositionMatches(ProductionRouteRule rule, String position) {
+        String limit = rule.getPosition();
+        return limit == null || limit.isEmpty() || Objects.equals(limit, position);
     }
 
     /**
@@ -810,10 +852,14 @@ public class ProcessingOrderService {
                     || !conditionalRuleTriggers(rule, options, processingItems)) {
                 continue;
             }
-            // ⛔ 规则级 `position`（部位限定）**已退场**（issue #4937，O2）：部位不再参与取路
-            // ⇒ 这里原来那三行筛选整块删除（`routing.py::build_route_v2` 同步删除；
-            // 新迁移 `backend/admin-api/src/main/resources/db/migration/V103__clear_route_rule_positions.sql`
-            // 把存量行的值清空为 NULL）。
+            // 🔴 **规则级部位限定**（issue #4962 加回；#4937 / O2 曾整块退场）：`position` 为空 /
+            // NULL = **不限部位**；否则必须逐字匹配当前实例化部位。与真值源
+            // `routing.py::build_route_v2` 的 `_rule_position_matches` 同款同序同判据。
+            // ⚠️ 位置**必须在触发判定之后**（上面那行已经先跑）：未知触发类型要显式失败，
+            // 不能因为部位不匹配就静默跳过（「规则落库但永不生效」的黑洞）。
+            if (!rulePositionMatches(rule, position)) {
+                continue;
+            }
             applicable.add(rule);
         }
         if (applicable.isEmpty()) {
@@ -1309,6 +1355,18 @@ public class ProcessingOrderService {
                 if (!processingItems.contains(rule.getTriggerValue())) {
                     continue;
                 }
+            } else if (TRIGGER_KIND_POSITION.equals(kind)) {
+                // 部位维（issue #4962）：`trigger_value` = 部位名，写面把它**镜像**进 `position` 列
+                // ⇒ 真正的筛选是下面那一处 {@link #rulePositionMatches}（**只有一处判据**）。
+                // 列缺值 ⇒ 这条规则对**任何**部位都不生效 = 「规则已落库但永不生效」的黑洞
+                // ⇒ 显式失败（不允许静默）。
+                if (rule.getPosition() == null || rule.getPosition().isEmpty()) {
+                    throw new BusinessException(ERR_ROUTING_NOT_FOUND,
+                            String.format("工艺路线规则「%s」的部位维触发没有落 `position` 值，"
+                                    + "无法判定它限哪个部位（规则永不生效）", rule.getId()),
+                            422,
+                            "请停用该规则后重建（部位维规则必须带 `position` / `trigger_value` 部位名）");
+                }
             } else {
                 // `shaped` 是表结构预留的触发类型（V71/V72 无种子行、无消费路径）。
                 // 静默跳过会让「规则已落库但永不生效」变成无人可见的黑洞 ⇒ 与真值源
@@ -1319,9 +1377,13 @@ public class ProcessingOrderService {
                         422,
                         "请在「工艺配置 → 工艺路线」停用该规则，或联系研发实现该触发类型");
             }
-            // ⚠️ 规则的 `position`（**规则级**部位限定）**已退场**（issue #4937，O2）：部位不再参与
-            // 取路 ⇒ 这里原来那两行 `rule.getPosition()` 筛选整块删除
-            // （`routing.py::build_route_v2` 的同名筛选同步删除；新迁移把存量行的值清空为 NULL）。
+            // 🔴 **规则级部位限定**（issue #4962 加回；#4937 / O2 曾整块退场）：`position` 为空 /
+            // NULL = **不限部位**；否则必须逐字匹配当前实例化部位。与真值源
+            // `routing.py::build_route_v2` 的 `_rule_position_matches` 同款同序同判据。
+            // ⚠️ 位置**必须在触发类型分派之后**：未知类型先显式失败，不因部位不匹配就静默跳过。
+            if (!rulePositionMatches(rule, position)) {
+                continue;
+            }
             if ("insert".equals(rule.getAction())) {
                 sequence = insertAfterLogical(sequence, rule.getOperation(), rule.getAfterOperation());
             } else if ("remove".equals(rule.getAction())) {

@@ -1054,8 +1054,12 @@ export interface RoutingCreateParams {
  *
  * ⚠️ `position` **键仍在读面契约里**（`GET /operation-positions` 仍是 10 键）但值**恒 `通用`**
  * —— 部位维已随 #4951 **物理退场**（`production_operation_positions` 每逻辑工序**一行**、
- * V102/V104 后存活行的 `applicable` 恒 `TRUE`、`production_route_rules.position` 全 `NULL`
- * 且不再参与筛选）⇒ 它**不再是配置概念**，web 面**不得渲染**它（不把「通用」这种东西给商家看）。
+ * V102/V104 后存活行的 `applicable` 恒 `TRUE`）⇒ 它**不再是配置概念**，web 面**不得渲染**它
+ * （不把「通用」这种东西给商家看）。
+ * ⚠️ 上面那句的证据里原有一条「`production_route_rules.position` 全 `NULL` 且不再参与筛选」
+ * —— 该条**只成立于 #4937…#4962 之间**：issue #4962 已把**规则级**部位维**加回**
+ * （见 {@link RouteRule.position}）⇒ 本类型的结论**不变**（价目这一层仍是一道工序一行、不渲染部位），
+ * 但别再用「规则级也恒 NULL」当证据。
  *
  * 🔴 **没有 `applicable`**（issue #4937 / O1）：部位适用性已退场 —— 读面该键恒 `true`（已无语义），
  * 写面收到它一律 **422**（「部位适用性已退场，不再受理该字段」，**拒绝**而非静默忽略）
@@ -1204,14 +1208,19 @@ export interface CraftCalcConfigResponse {
 /** 统一规则区一条：工艺变体 ∪ 特殊选项的**路线编排**规则（`action` = insert / remove） */
 export interface RouteRule {
   id: number
-  /** 触发维：`craft` 工艺 / `option` 特殊选项 */
+  /** 触发维：`craft` 工艺 / `option` 特殊选项 / `processing_item` 加工项 / `position` 部位（#4962 加回） */
   trigger_kind?: string | null
   /** 触发键取值 —— **与 ERP 名逐字一致**（#4389 join key 纪律：前端不得拼写或"纠正"） */
   trigger_value?: string | null
   /**
-   * 部位限定；`null` = 不限部位。
-   * ⚠️ **规则级部位已退场**（issue #4937 / #4951）：`production_route_rules.position`
-   * **全 `NULL` 且不再参与筛选** —— 键仍在读面契约里，前端**不得**据它渲染或过滤。
+   * 部位限定；`null` / 省略 = **不限部位**（＝任何部位都命中）。
+   *
+   * 沿革（**不得删**）：issue #4937 曾让它**退场**（该键全 `NULL`、不再参与筛选、前端不得据它渲染）；
+   * **issue #4962 加回**（用户裁定「如果有一些工序只能布帘有或者纱帘有，可以在适用条件上设置」）
+   * ⇒ 该键**重新参与渲染**：「适用条件」的人话里显示 `部位 = <值>`（见页面 `TRIGGER_KIND_LABEL`），
+   * 仍是后端读面回显键（前端**不自造**这个值）。
+   * 取值必须是**部位闭词表**里的值（`GET /route-rule-options` 的 `positions`）；限定部位在后端
+   * 必须**逐字匹配**当前实例化部位才命中。
    */
   position?: string | null
   action?: string | null
@@ -1248,7 +1257,8 @@ export interface RouteRuleCustomerPriceParams {
  */
 export interface RouteRuleCreateParams {
   /**
-   * 触发维（**闭词表**，issue #4616）：`craft` 工艺 / `option` 特殊选项 / `processing_item` 加工项。
+   * 触发维（**闭词表**，issue #4616）：`craft` 工艺 / `option` 特殊选项 / `processing_item` 加工项 /
+   * `position` **部位**（issue #4962 加回的第 4 档）。
    *
    * 省略 = `option`（**反向护栏**：老调用方/老 bundle 行为一字不变）。`shaped` 是表结构预留、
    * 无种子行 ⇒ 后端收到即 422（前端也不提供该档）。
@@ -1266,10 +1276,18 @@ export interface RouteRuleCreateParams {
   priority?: number | null
   /** 对客单价（**元/套**）；`null` = 未定价。**只允许 `trigger_kind='option'`**（两套账不互读） */
   customer_unit_price?: number | string | null
+  /**
+   * **规则级部位限定**（issue #4962 加回）：`null` / **省略** = **不限部位**（＝任何部位都命中）。
+   *
+   * 取值必须是**部位闭词表**里的值（`GET /route-rule-options` 的 `positions`）；非法值后端
+   * **422 + `error.details`**（逐条理由就地展示，同其它护栏）。`trigger_kind='position'` 时
+   * 前端把它与 `trigger_value` 一起发（值相同）；**其它档省略该键** —— 不拿 `null` 冒充「没填」。
+   */
+  position?: string | null
 }
 
-/** 条件工序规则的触发维（issue #4616；与后端闭词表 `TRIGGER_KINDS` 同口径）。 */
-export type RouteRuleTriggerKind = 'craft' | 'option' | 'processing_item'
+/** 条件工序规则的触发维（issue #4616；与后端闭词表 `TRIGGER_KINDS` 同口径；#4962 加第 4 档 `position`）。 */
+export type RouteRuleTriggerKind = 'craft' | 'option' | 'processing_item' | 'position'
 
 /**
  * 规则创建弹窗的**触发值取值域**（issue #4616；`GET /api/admin/production/route-rule-options`）。
@@ -1282,6 +1300,12 @@ export interface RouteRuleTriggerOptions {
   crafts: string[]
   /** 活跃加工项目录（触发键 = 订单行的加工项名，**精确相等**） */
   processing_items: string[]
+  /**
+   * **部位闭词表**（`trigger_kind='position'` 的取值域；issue #4962 新增的响应键）。
+   * ⚠️ 由后端给出（基线三部位 ∪ 第 4 个部位 `布料`）—— 前端**不得**硬编码成三值或四值字面量
+   * （硬编码 = 第二份会漂的词表）；拿不到就读成空列表（下拉无可选项），不回落任何写死的值。
+   */
+  positions: string[]
 }
 
 

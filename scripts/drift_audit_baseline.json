@@ -4,13 +4,13 @@
   "_entry_key_note": "条目 key 为 `<文件或分量>|<判据内部标识>`，**不含行号** —— 否则改一行就换 key，『只许缩短』会退化成随机红。",
   "_scope_note": "「已不再漂移 ⇒ 必须移除」是**全量对账**（#4045）：清单里任何条目都必须在**全库重算**里仍然真的漂移，**不再限于本次 diff 命中的文件**；反向同样成立 ——`origin/main` 记着、现在仍漂移却被删掉的条目会**阻塞**（删条目 = 偷偷缩短）。判据本体在 `.github/case_trust_gate.py` 的 `reconcile_baseline`（本脚本 import 复用，不复制第二套口径）。",
   "_when_to_regen": "① 你修好了某条存量漂移（门禁会告诉你：**全量对账**，不再限于你 diff 命中的文件）；② 别人合并了漂移修复 ⇒ 重跑审计后重生成，把已修好的条目删掉；③ 判据集合本身变化（新增/改名）⇒ 必须重生成。",
-  "anchor_sha": "b364a7eb5524ea4fc3b8e852c24580016cb96d3c",
+  "anchor_sha": "1ee03579dd2fd88db7fc2983a7d5be1821e2c64a",
   "burn_down": {
     "metric": "entries",
     "per_pr_min": 1,
     "scope": "case_touching_prs"
   },
-  "cases_fingerprint": "16c2abaa8056abf3",
+  "cases_fingerprint": "58f1086358046557",
   "entries": {
     "generated-freshness": {},
     "heartbeat": {
@@ -23,7 +23,6 @@
       "component|db_verify.name": 1,
       "component|namespaces.employee_name": 1,
       "component|namespaces.product_name": 1,
-      "component|pre_clean.customer_index": 1,
       "component|pre_clean.customer_keyword": 1,
       "component|pre_clean.employee_name": 1,
       "component|pre_clean.product_keyword": 1,
@@ -80,9 +79,9 @@
       "version": 1
     }
   },
-  "generated_at": "2026-09-20T02:41:35.666244+00:00",
+  "generated_at": "2026-09-21T01:39:22.543276+00:00",
   "policy_version": 1,
-  "reason": "2026-09-21（issue #4882）：`ProcessingItemService` 的按计价方式算价分支（`calculatePrice`/`calculateArea`/`createPriceDetail`）随端点退场被删 ⇒ `docs/testing/acceptance-protocol.md` 里那条裸行号引用已失效，且该文档段已改判为**符号锚点** ⇒ `ref-freshness` 的该条豁免**已归零**，按「只许缩短」移除。",
+  "reason": "issue #4962（加回适用条件的部位维）：CU-003 的 pre_clean[].customer_index 序号选择器退场 ⇒ component|pre_clean.customer_index 这条漂移已归零，按「条目已归零但未删 ⇒ 阻塞」的纪律销账（只删零条目，不放宽任何判据）",
   "regenerate_command": "python3 scripts/drift_audit.py --regen-baseline --reason '<理由>'",
   "schema": "migao.drift-audit-baseline/1"
 }

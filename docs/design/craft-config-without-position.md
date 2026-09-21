@@ -402,3 +402,41 @@ V71 的矩阵种子是 `routing.py` ↔ `V71` ↔ `docs/sql/schema.sql` **三源
   ⇒ 全局写法覆盖面**严格更大**（含未来租户与 `tenants` 表缺席的行）；理由写在迁移文件头，覆盖面由文末**终态对账**机械核验。
 - 「实例显示 `逻辑名 · 部位`」本轮只核了**加工单页**；工人端 / bmini / mini-app 的**面级**一致性未全量核查 ⇒ 跟随单 **#4963**（登记，不谎报闭环）。
 - `is_must_finish` / `applicable` / `position` 的**物理删列**仍不做（=「值恒定 + 读面不消费」的已退场语义），留待统一审计批次。
+
+---
+
+## 14.4 落码形态订正：O2 的**部分**回退（2026-09-21，issue #4962）
+
+> ⚠️ §14.2 里那句「**V103 随 #4936 的 V102 重写包删除**」**不是实际形态** —— 定稿时 V103 已发布并被
+> `tests/unit_ci_workflows/migration_fingerprints.json` 按 sha256 **逐字节冻结**，**不可改、不可删**
+> （`MigrationRunner` 按**文件名**记账、已应用文件整份跳过 ⇒ 改它只对全新库生效 = 「CI 全绿、功能静默缺失」，
+> issue #4235 同族）。本节记录**真正落地的形态**，读完以本节为准（§14.2 保留为**当时的裁定记录**，不删）。
+
+### 14.4.1 交付形态（逐件可核）
+
+| # | 件 | 落点 | 形态 |
+|---|---|---|---|
+| **1** | **存量库写回**（新迁移，不改 V103） | `backend/admin-api/src/main/resources/db/migration/V108__restore_route_rule_positions.sql` | 把 `V71` 种子里**唯一**那条部位限定写回：`韩褶 → insert 上车布`，`position='布帘'`。显式 `BEGIN/COMMIT` + **按租户循环** + 幂等谓词（只写 `position IS NULL` 的行）+ 终态对账 `DO $$` + 回滚 SQL 与不可复原项登记；**只写** `position` / `updated_at`（`customer_unit_price` 一字不动、规则行数不变）。**净效果**：`V103`（清空）→ `V108`（写回那一条）= 对 `V71` 字面量**恒等** |
+| **2** | **触发类型闭词表放开**（新迁移） | `backend/admin-api/src/main/resources/db/migration/V109__allow_position_trigger_kind.sql` | `V71` 的内联 `CHECK (trigger_kind IN ('craft','option','shaped','processing_item'))` **不含** `position` ⇒ 第 4 维在**界面上选得动、提交必 500**（`23514`）。本迁移按 `pg_get_constraintdef` 定位并重建该约束（幂等：已含 `position` ⇒ 空操作），**只改约束、不碰任何数据**（无 `INSERT/UPDATE/DELETE`）。**不复用 `shaped`** —— 它是「是否定型」，是另一件事，且 `buildRoute` / `routing.py::_rule_triggers` 对它的口径是「未实现 ⇒ 显式 422」，复用会抹掉这条纪律的载体 |
+| **3** | **实例化侧恢复筛选** | `ProcessingOrderService#buildRoute` / `#insertConditionalOperations`（新增 `#rulePositionMatches`）+ 真值源 `backend/ai-agent-service/app/production/routing.py::_rule_position_matches` | `position` 为空 / `NULL` / 缺键 = **不限部位**；否则**逐字**匹配当前实例化部位。**排除点必须在触发类型分派之后** ⇒ 未知/未实现触发类型照旧 **422 显式失败**（不因部位不匹配就静默跳过）；`insertConditionalOperations` 的触发判定同时补上**对未知类型的显式失败**（此前它对未知 kind 静默返回 `false` = 规则落库但永不生效的黑洞），并**保留 `craft` 档返回 false** 的既有语义（craft 由 `buildRoute` 统一处理，在此处返回 false 是「不重复插入」而非「未实现」—— 搞错这一点会让**每一张单实例化都 422**，本单实测踩到过） |
+| **4** | **配置面加回部位维** | `POST /route-rules`（`ProductionRoutingCommandService`）+ `GET /route-rule-options`（`ProductionRoutingReadService#triggerOptions`）+ 前端 `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx` | `trigger_kind` 闭词表加第 4 档 `position`；`trigger_value` 与 body 的 `position` 键都过**部位闭词表**（`ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY` = 基线三部位 ∪ 第 4 个部位 `布料`，**同一份常量**、不另抄）；`trigger_kind='position'` 时 `position` 由 `trigger_value` **镜像**（不一致 ⇒ 422）；读面 `positions` 键把闭词表交给前端（**不得**硬编码） |
+| **5** | **开租种子同值** | `ProductionSeedTemplateService#CRAFT_RULES` | 新租户播种的 `韩褶 → 上车布` 也写成 `position='布帘'`（与迁移链终态同值；**不得**只改迁移链而让新租户拿到「不限部位」的另一套语义） |
+| **6** | **三源收敛判据改判** | `tests/unit_ci_workflows/test_production_catalog_seed.py` / `test_routing_model_p2_consumers.py` / `test_routing_read_endpoints.py` | 比对键**含** `position`（#4937 期间那条「归一掉该维」的投影**撤销** —— 它会让判据对「部位限定存不存在」零判别力）；`test_rule_positions_are_cleared_in_every_terminal_source` 改判为 `..._restored_...`（四方：真值源 / `schema.sql` / `V71` 字面量 / **`V108` 迁移**） |
+
+### 14.4.2 代价与边界（**如实登记**）
+
+- **不再有「同一工艺在任何帘种上同一套工序」这条不变量**（#4937 的判据之一）：纱帘 / 帘头 × 韩褶
+  **少一道 `上车布`**（部位限定的规则不生效）。⇒ `ProductionRouteParityTest` 的
+  `sheerAndClothOrdersHaveTheSameOperationSet` **改判**为「带 `position` 的规则只在自己部位生效 +
+  空 `position` 不筛」＋「分叉面**只有**那一条」，并**补一条注入式红证**（抹掉 `position` ⇒ 纱帘立刻多出
+  `上车布`）；Python 侧同款（`test_route_model_v2.py` 的 `test_rules_carry_no_position_key` /
+  `test_same_craft_is_identical_across_every_curtain_type` / 两条注入红证**全部改判**，改前实测 **10 条红**）。
+- **两个「同名不同义」的 `上车布` 规则**：`韩褶 → 上车布`（限 `布帘`）与 `四爪钩 → 上车布`
+  （`position` 为空 = 不限）。判据必须**分别**覆盖「限定的要筛掉」与「空值不筛」（只测前者会让
+  「把所有规则都按某部位筛」这种错实现**假绿**）。
+- **`V103` 与 `V109` 都不删、不改**：`V108` 是**第三条**迁移，不是「把 V103 改回去」。
+  三者叠加的终态 = `V71` 字面量（由 §14.4.1 表格第 6 行的守卫机械核验）。
+- **未做（登记，不谎报闭环）**：`production_route_rules.position` 的**读面键**本来就在
+  （`ruleView` 一直回显它），本单**不改键集**；`GET /route-rules` 的 `position` 语义变化
+  只影响**消费方式**（前端重新据它渲染 + 实例化侧据它筛）。矩阵 / 取价侧的 `position`
+  （`production_operation_positions.position` 恒 `通用`）**一字未动**。

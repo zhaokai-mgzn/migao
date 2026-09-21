@@ -230,37 +230,85 @@ class ProductionRouteParityTest {
     }
 
     /**
-     * 🔴 **新判据**（取代退休的 {@code skippingApplicabilityFilterWouldLeakClothOnlyOperationsIntoSheerRoute}）。
+     * 🔴 **本单的核心判据**（issue #4962，取代 {@code sheerAndClothOrdersHaveTheSameOperationSet}）。
      *
-     * <p><b>旧判据</b>：注入「全部格 applicable=true」⇒ 纱帘单会带上布帘专属工序 ⇒
-     * 「别去掉 applicable 过滤」。用户已裁定去掉它 ⇒ 该判据的前提消失，**退休**。</p>
+     * <p><b>旧判据</b>（#4937 基线）：「纱帘单与布帘单的工序集**完全一致**」—— 它成立的**唯一理由**是
+     * 「规则级 `position` 也被退场了」。用户 2026-09-21 追问后的裁定
+     * 「**如果有一些工序只能布帘有或者纱帘有，可以在适用条件上设置**」把该维**加回**
+     * ⇒ 旧判据的前提消失，**改判**（不是删除、不是放宽）。</p>
      *
-     * <p><b>新判据</b>：纱帘单与布帘单的**工序集完全一致**（只因变体名不同：
-     * {@code 熨烫-布} ↔ {@code 熨烫-纱}）—— 这正是「部位不再参与取路」的可执行定义。
-     * <b>守卫强度只升不降</b>：旧判据只覆盖 1 个组合（纱帘×韩褶），新判据覆盖 **4 个工艺 × 2 帘种**。</p>
+     * <p><b>新判据</b>：分叉面**只有**带 `position` 的规则 —— 26 条种子行里恰好一条
+     * （`韩褶 → insert 上车布`，`position='布帘'`）：
+     * <ul>
+     *   <li>布帘×韩褶 ⇒ <b>有</b> `上车布-布`（限定的部位 = 当前部位）；</li>
+     *   <li>纱帘×韩褶 ⇒ <b>没有</b> `上车布-纱`（限定的部位 ≠ 当前部位）；</li>
+     *   <li>反向护栏：`四爪钩 → insert 上车布`（`position` 为空 = **不限部位**）⇒ 两个帘种**都**有
+     *       —— 判据不得把「空值」也一起筛掉（那会静默少工序）。</li>
+     * </ul>
+     * <b>守卫强度只升不降</b>：旧判据只覆盖 `韩褶/打孔/四爪钩/穿杆` 四个工艺的「相等」，
+     * 新判据额外覆盖「**必须不等**的那一格」（部位限定真的在筛）与「空值不筛」的反向护栏。</p>
      */
     @Test
-    @DisplayName("新判据（#4937）：纱帘单与布帘单的工序集完全一致（只因变体名不同）")
-    void sheerAndClothOrdersHaveTheSameOperationSet() {
-        for (String craft : List.of("韩褶", "打孔", "四爪钩", "穿杆")) {
-            List<String> cloth = instantiate("布帘", craft);
-            List<String> sheer = instantiate("纱帘", craft);
-
-            assertThat(sheer)
-                    .as("纱帘×" + craft + " 与 布帘×" + craft + " 的**道数**必须相同"
-                            + "（部位不再参与取路 ⇒ 工序集一致）")
-                    .hasSameSizeAs(cloth);
-            // 把变体名归一到逻辑名后必须**逐字相同**（顺序也相同）
-            List<String> clothLogical = cloth.stream().map(RoutingModelFixture::logicalName).toList();
-            List<String> sheerLogical = sheer.stream().map(RoutingModelFixture::logicalName).toList();
+    @DisplayName("新判据（#4962）：带 position 的规则只在**逐字匹配**的部位生效；空 position = 不限")
+    void positionLimitedRuleFiresOnlyOnItsOwnPosition() {
+        // ① 限定的部位 = 布帘 ⇒ 布帘×韩褶 必须有「上车布」
+        assertThat(instantiate("布帘", "韩褶"))
+                .as("布帘×韩褶 少了部位限定规则插入的 `上车布-布` ⇒ 规则对**该生效的部位**没生效")
+                .contains("上车布-布");
+        // ② 部位限定 ≠ 纱帘 ⇒ 纱帘×韩褶 **不得**有「上车布」
+        //    （改前实测就是这一形态：筛选不存在 ⇒ 规则对所有部位都生效）
+        assertThat(instantiate("纱帘", "韩褶"))
+                .as("纱帘×韩褶 带上了 `上车布-纱` ⇒ 部位限定没生效（筛选不存在 ⇒ 规则对所有部位都生效）")
+                .doesNotContain("上车布-纱");
+        // ③ 反向护栏：`position` 为空 = 不限部位 ⇒ 那条同名规则（四爪钩 → 上车布）仍然两处都生效
+        for (String curtainType : List.of("布帘", "纱帘")) {
+            assertThat(instantiate(curtainType, "四爪钩"))
+                    .as(curtainType + "×四爪钩 少了 `上车布`（那条规则的 position 为空 = 不限部位）"
+                            + " ⇒ 判据把空值也一起筛掉了")
+                    .anyMatch(name -> name.startsWith("上车布"));
+        }
+        // ④ 分叉面**只有**部位限定那一条：其余工艺在两个帘种上逻辑序列逐字相同（#4937 不回退）
+        for (String craft : List.of("打孔", "穿杆")) {
+            List<String> clothLogical = instantiate("布帘", craft).stream()
+                    .map(RoutingModelFixture::logicalName).toList();
+            List<String> sheerLogical = instantiate("纱帘", craft).stream()
+                    .map(RoutingModelFixture::logicalName).toList();
             assertThat(sheerLogical)
-                    .as("纱帘×" + craft + " 与 布帘×" + craft + " 的**逻辑工序序列**必须逐字相同：\n"
+                    .as("工艺 `" + craft + "` 在不同帘种上分叉 ⇒ 部位在**别处**也参与了取路：\n"
                             + "  布帘 = " + clothLogical + "\n  纱帘 = " + sheerLogical)
                     .isEqualTo(clothLogical);
-            // 变体名必须**真的不同**（否则本判据退化成「同一条路线比两次」，是空断言）
-            assertThat(sheer).as("纱帘与布帘的变体名不应完全相同（否则判据空跑）")
-                    .isNotEqualTo(cloth);
         }
+    }
+
+    /**
+     * **注入法自证**（本判据的红证）：把那条规则的 `position` 抹成 `null`（= 不限部位）
+     * ⇒ 纱帘×韩褶 **立刻**多出 `上车布-纱`（证明上面那条断言真的在测「部位限定」，不是恒真）。
+     */
+    @Test
+    @DisplayName("注入法自证（#4962）：抹掉 position ⇒ 纱帘×韩褶 多出 上车布（判据有判别力）")
+    void droppingThePositionLimitLeaksClothOnlyOperationsIntoSheerRoute() {
+        List<ProductionRouteRule> dropped = new ArrayList<>();
+        for (ProductionRouteRule rule : RoutingModelFixture.rulesWithFactors(TENANT)) {
+            dropped.add(ProductionRouteRule.builder()
+                    .id(rule.getId()).tenantId(rule.getTenantId())
+                    .triggerKind(rule.getTriggerKind()).triggerValue(rule.getTriggerValue())
+                    .position(null)   // 注入：部位限定全体退场（= #4937 之后的形态）
+                    .action(rule.getAction())
+                    .operation(rule.getOperation()).afterOperation(rule.getAfterOperation())
+                    .priority(rule.getPriority()).factor(rule.getFactor())
+                    .status(rule.getStatus()).deleted(rule.getDeleted())
+                    .build());
+        }
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(dropped);
+
+        List<String> leaked = instantiate("纱帘", "韩褶");
+        assertThat(leaked)
+                .as("抹掉 `position` 后纱帘×韩褶 仍没有 `上车布-纱` ⇒ 注入没生效，"
+                        + "`positionLimitedRuleFiresOnlyOnItsOwnPosition` 可能是空断言")
+                .contains("上车布-纱");
+        assertThat(leaked)
+                .as("注入后与冻结快照相同 ⇒ 冻结快照本身没把「少一道」判出来")
+                .isNotEqualTo(List.of(RoutingModelFixture.DEPOSITIONED_ROUTINGS[4][2].split(",")));
     }
 
     /**
@@ -335,21 +383,24 @@ class ProductionRouteParityTest {
     }
 
     /**
-     * 🔴 **O2 红证**（issue #4937）：给规则注入一个 `position` 限定 ⇒ **不得**再影响序列。
+     * 🔴 **本单的核心判据之二**（issue #4962，取代 {@code rulePositionNoLongerFiltersAnything}）。
      *
-     * <p>规则级 `position` 已退场（`buildRoute` / `insertConditionalOperations` 的两处筛选
-     * 整块删除）⇒ 给它任何值都不改变结果。这是「部位不再参与取路」在**规则维**上的可执行判据
-     * （旧基线恰好相反：那时 `position` 是承重的筛选器）。</p>
+     * <p><b>旧判据</b>（#4937 基线）：给每条规则注入 `position='帘头'` ⇒ 序列**一字不变**
+     * （「筛选已退场」）。用户 2026-09-21 追问后的裁定把该维**加回** ⇒ 旧判据的前提消失，**改判**。</p>
+     *
+     * <p><b>新判据</b>：注入 `position='帘头'` ⇒ 布帘×韩褶 的序列**当场变**（`上车布` 被筛掉）
+     * —— 这正是「规则级 `position` 重新承重」的可执行定义；且与**该部位自己**的序列一致
+     * （帘头×韩褶 也带 `position='帘头'` 的规则）。</p>
      */
     @Test
-    @DisplayName("O2 红证（#4937）：规则的 position 限定不再影响序列（筛选已退场）")
-    void rulePositionNoLongerFiltersAnything() {
+    @DisplayName("新判据（#4962）：规则的 position 重新承重（注入 '帘头' ⇒ 布帘序列当场变）")
+    void rulePositionFiltersAgain() {
         List<ProductionRouteRule> withPosition = new ArrayList<>();
         for (ProductionRouteRule rule : RoutingModelFixture.rulesWithFactors(TENANT)) {
             withPosition.add(ProductionRouteRule.builder()
                     .id(rule.getId()).tenantId(rule.getTenantId())
                     .triggerKind(rule.getTriggerKind()).triggerValue(rule.getTriggerValue())
-                    // 注入：把原本 position=null 的规则全改成 `帘头`（旧口径下这会让它们对布帘失效）
+                    // 注入：把**所有**规则的 position 改成 `帘头`（含原本 null 的与原本 布帘 的那条）
                     .position("帘头").action(rule.getAction())
                     .operation(rule.getOperation()).afterOperation(rule.getAfterOperation())
                     .priority(rule.getPriority()).factor(rule.getFactor())
@@ -358,11 +409,17 @@ class ProductionRouteParityTest {
         }
         when(productionRouteRuleMapper.selectList(any())).thenReturn(withPosition);
 
-        List<String> actual = instantiate("布帘", "韩褶");
+        List<String> cloth = instantiate("布帘", "韩褶");
         List<String> frozen = List.of(RoutingModelFixture.DEPOSITIONED_ROUTINGS[0][2].split(","));
-        assertThat(actual)
-                .as("规则的 `position` 仍在筛选（改了它序列就变）⇒ O2 未完成："
-                        + "部位还在参与取路\n  实测 = " + actual)
-                .isEqualTo(frozen);
+        assertThat(cloth)
+                .as("全部改成 `position='帘头'` 后布帘序列没变 ⇒ 规则的 `position` **没有**在筛选"
+                        + "（#4962 未落地）\n  实测 = " + cloth)
+                .isNotEqualTo(frozen);
+        assertThat(cloth)
+                .as("布帘序列仍带 `上车布-布` ⇒ 部位限定没生效")
+                .doesNotContain("上车布-布");
+        assertThat(cloth.stream().map(RoutingModelFixture::logicalName).toList())
+                .as("注入后布帘×韩褶 的序列应等于「无 上车布」的 10 道（部位不匹配 ⇒ 规则被筛掉）")
+                .doesNotContain("上车布");
     }
 }

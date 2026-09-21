@@ -124,6 +124,10 @@ public class ProductionRoutingReadService {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("crafts", productionOperationQueryService.activeCraftNames(tenantId));
         view.put("processing_items", processingItems);
+        // 部位维取值域（issue #4962）：规则级「部位限定」的**闭词表** —— 前端「什么时候 ▸ 部位」
+        // 的取值**从这里取**（不硬编码成三值，否则第 4 个部位 `布料` 在界面上选不出来、
+        // 而后端收它）。与写面校验共用**同一份**常量（`POSITION_LIMIT_VOCABULARY`）。
+        view.put("positions", ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY);
         return view;
     }
 

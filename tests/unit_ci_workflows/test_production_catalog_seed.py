@@ -1757,6 +1757,19 @@ def test_rule_positions_are_kept_across_seed_and_bootstrap(schema_sql):
         f"bootstrap 镜像里那条规则的 `position` = `{bootstrap[hz[0]]}`，期望 `布帘`"
         f"（上一版当时按已被删除的 `V103` 把它镜像成了 NULL ⇒ 新建库与存量库口径分裂）")
 
+    # 🔴 **#4962 新增（存量库路径）**：部位限定必须由**新增**迁移写回。
+    # ⚠️ `V103`（清空 `position`）已随 **#4936 的重写**被删除（其意图作废）⇒ 这里**不得**再断言它存在；
+    # 但「跑过迁移链的存量库」与「bootstrap 新建库」必须同终态 ⇒ 由 `V108` 幂等写回（`position IS NULL` 才写）。
+    v108 = MIGRATION_DIR / "V108__restore_route_rule_positions.sql"
+    assert v108.exists(), (
+        "缺 `V108__restore_route_rule_positions.sql` ⇒ 存量库里那条部位限定永远是 NULL = "
+        "「规则已落库但永不生效」，而只有全新库才对（#4235 同族：CI 全绿、功能静默缺失）")
+    v108_body = sql_code(v108.read_text(encoding="utf-8"))
+    assert re.search(r"SET\s+position\s*=\s*'布帘'", v108_body), (
+        "V108 没有把那条规则的 `position` 写回 `布帘`")
+    assert re.search(r"position\s+IS\s+NULL", v108_body), (
+        "V108 缺幂等谓词（`position IS NULL` 才写）⇒ 重跑会覆盖商家改过的值")
+
 
 def test_new_route_operations_all_have_a_price_row(schema_sql):
     """主线与规则引用的工序名都必须落在**已落库的逻辑工序集合**里（否则实例化无价可依）。

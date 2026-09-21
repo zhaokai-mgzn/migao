@@ -161,6 +161,30 @@ public class ProductionOperationQueryService {
      */
     public static final String COLLAPSE_PRICE_SOURCE_POSITION = "布帘";
 
+    /**
+     * **规则级「部位限定」的闭词表**（issue #4962）：{@link #BASELINE_POSITIONS 基线三部位}
+     * **∪ 第 4 个部位**（{@code 布料}，布料单专用 —— 与 {@code ProcessingOrderService.FABRIC_POSITION}
+     * 逐字同源，**不另抄一个字面量**）。
+     *
+     * <p>用户裁定（2026-09-21 逐字）：「如果有一些工序只能布帘有或者纱帘有，可以在适用条件上设置」
+     * ⇒ 「适用条件」加回**部位维**（{@code production_route_rules.position}）。该维此前被
+     * issue #4937 / O2 整块退场，本单只恢复它一处（其余退场面照旧）。</p>
+     *
+     * <p>为什么是**闭词表**而不是「矩阵里有什么就收什么」：退场期间 `V104` 把矩阵存活行的
+     * {@code position} 塌缩成了中性值 {@code 通用} ⇒ 按矩阵取值域会收下一个**永不可能等于任何
+     * 实例化部位**的「部位」，那就是「规则已落库但永不生效」的黑洞（本仓明令要显式失败的形态）。
+     * 实例化侧真正会传的部位只有这 4 个（{@code buildRoute} 的 {@code position} 参数）。</p>
+     */
+    public static final List<String> POSITION_LIMIT_VOCABULARY = positionLimitVocabulary();
+
+    private static List<String> positionLimitVocabulary() {
+        List<String> out = new ArrayList<>(BASELINE_POSITIONS);
+        if (!out.contains(ProcessingOrderService.FABRIC_POSITION)) {
+            out.add(ProcessingOrderService.FABRIC_POSITION);
+        }
+        return List.copyOf(out);
+    }
+
     private final ProductionOperationMapper productionOperationMapper;
     /** 具名主线（新结构的「基准工序序列」载体，V71 / V72）。 */
     private final ProductionRouteTemplateMapper productionRouteTemplateMapper;

@@ -839,9 +839,12 @@ OPERATION_POSITION_PRICES: Dict[str, Dict[str, Any]] = {
 #: 按租户种进 `production_route_rules`（issue #4577；本表仍是 V71 字面量种子的镜像 ——
 #: `tests/unit_ci_workflows/test_production_catalog_seed.py` 把「本表 ≡ V71 的 26 行」钉死）。
 #: 触发口径（`_rule_triggers`）两侧**同款**：加工项名精确相等。
-#: `trigger_value`（工艺名 / 特殊选项名，**逐字 = ERP 写法**，它是 join key）·
-#: ⛔ **`position`（规则级部位限定）已退场**（issue #4937 / O2）：键**保留**（列在库里、
-#: 新迁移 `V105` 把值清空为 `NULL`），但**没有任何消费者** —— `build_route_v2` 不再按它筛选。
+#: `trigger_value`（工艺名 / 特殊选项名 / 部位名，**逐字 = ERP 写法**，它是 join key）·
+#: 🔴 **`position`（规则级部位限定）**（issue #4962 **加回**；此前 issue #4937 / O2 整块退场）：
+#: `None` / 缺键 = **不限部位**；否则必须**逐字**匹配当前实例化部位（见 `_rule_position_matches`）。
+#: 26 条种子里**只有一条**带它（`韩褶 → insert 上车布`，`position="布帘"`）—— 与迁移侧
+#: `V71` 的字面量 + `V108__restore_route_rule_positions.sql` 的写回 + Java 的
+#: `ProductionSeedTemplateService#CRAFT_RULES` **同值**。
 #: `action`（`insert`/`remove`）·
 #: `operation`（**逻辑工序名**）· `after_operation`（insert 锚点，`None` = 追加末尾）·
 #: `priority`（**升序生效**，同序按声明顺序 —— 顺序敏感，见 `build_route_v2`）。
@@ -854,7 +857,11 @@ ROUTE_RULES: List[Dict[str, Any]] = [
     {"trigger_kind": "craft", "trigger_value": "韩褶", "action": "insert",
      "operation": "韩褶", "after_operation": "三边", "priority": 10},
     {"trigger_kind": "craft", "trigger_value": "韩褶", "action": "insert",
-     "operation": "上车布", "after_operation": "韩褶", "priority": 20},
+     "operation": "上车布", "after_operation": "韩褶", "priority": 20,
+     # 🔴 部位限定（issue #4962 加回）：V71 的 26 条种子行里**唯一**一条带 `position` 的规则
+     # （`rr-v70-02`）。帘头单/纱帘单**不做**「上车布」—— 去掉它会让该规则对帘头单生效
+     # ⇒ 主线上多出一道它本来不做的工序（**错发计件工资**，见设计文档 §11.2 / O2）。
+     "position": "布帘"},
     {"trigger_kind": "craft", "trigger_value": "打孔", "action": "insert",
      "operation": "打孔", "after_operation": "三边", "priority": 30},
     {"trigger_kind": "craft", "trigger_value": "四爪钩", "action": "insert",
@@ -908,7 +915,11 @@ ROUTE_RULES: List[Dict[str, Any]] = [
 
 
 def _rule_triggers(rule: Dict[str, Any], position: Dict[str, Any]) -> bool:
-    """该规则是否被本部位触发（**精确匹配**：选项名不得用 `contains` 命中 —— 错一个字就静默失效）。"""
+    """该规则是否被本部位触发（**精确匹配**：选项名不得用 `contains` 命中 —— 错一个字就静默失效）。
+
+    ⚠️ **只判「什么时候」那一维**；「限哪个部位」由 :func:`_rule_position_matches` 单独判
+    （调用点**必须先调本函数再调它** —— 未知触发类型要显式失败，不能因为部位不匹配就静默跳过）。
+    """
     kind = rule["trigger_kind"]
     if kind == "craft":
         return rule["trigger_value"] == position.get("craft")
@@ -919,9 +930,28 @@ def _rule_triggers(rule: Dict[str, Any], position: Dict[str, Any]) -> bool:
         # `processingInfo.processingItems[].name`（Java 侧同一口径；**精确相等** ——
         # `contains` 只存在于存量信号兜底 `firstSignalMatch`，不在此处引入第二处）。
         return rule["trigger_value"] in (position.get("processing_items") or ())
+    if kind == "position":
+        # 部位维触发（issue #4962）：`trigger_value` = 部位名，**写面把它镜像进 `position` 列**
+        # ⇒ 真正的筛选是 `_rule_position_matches`（**只有一处判据**，与 Java 侧
+        # `ProcessingOrderService#rulePositionMatches` 同款）。此处恒 True 只表示
+        # 「该触发类型已实现」，不是「跳过筛选」；列缺值 ⇒ 规则对任何部位都不生效 ⇒ 显式失败。
+        if not rule.get("position"):
+            raise ValueError(f"部位维规则缺 `position` 值（规则永不生效）: {rule}")
+        return True
     # `shaped` 仍是**表结构预留**的触发类型（无种子行、无消费路径）：
     # 静默返回 False 会让「规则已落库但永不生效」变成无人可见的黑洞 ⇒ 显式失败。
     raise ValueError(f"未实现的规则触发类型: {kind}")
+
+
+def _rule_position_matches(rule: Dict[str, Any], position: Dict[str, Any]) -> bool:
+    """**规则级部位限定**（issue #4962 加回；此前由 issue #4937 / O2 整块退场）。
+
+    `None` / 空 / 缺键 = **不限部位**；否则必须与当前实例化部位**逐字相等**。
+    与 Java 侧 `ProcessingOrderService#rulePositionMatches` **同款同序同判据** ——
+    两侧漂移会让同一张单在 Java 与 Python 上得到不同的工序序列（车间按两套顺序干）。
+    """
+    limit = rule.get("position")
+    return not limit or limit == position.get("curtain_type")
 
 
 def build_route_v2(position: Dict[str, Any]) -> List[str]:
@@ -939,8 +969,11 @@ def build_route_v2(position: Dict[str, Any]) -> List[str]:
        `_insert_after` 同款），`remove` 直接删除该工序名；
     3. 🔴 **无第 3 步**（issue #4937 / P2，用户裁定 2026-09-21）：原来第 3 步是
        「按 `OPERATION_POSITION_PRICES[工序][部位]["applicable"]` 滤掉该部位不做的工序」，
-       **整块删除** —— 部位不再参与取路 ⇒ 同一工艺在**任何**帘种上得到**同一套逻辑工序名**
-       （这是本包的新判据：纱帘单与布帘单**工序集完全一致**）。
+       **整块删除** —— 该维（`applicable` / 部位适用性）**仍然退场**。
+       ⚠️ **但第 2 步里恢复了「规则级部位限定」**（issue #4962 加回）：带 `position` 的规则
+       只在**逐字匹配**的帘种上生效（26 条种子里只有 `韩褶 → 上车布` 一条）。
+       两者不是同一件事：`applicable` 是**矩阵数据层**的「该部位做不做这道工序」（已退场），
+       `rule.position` 是**单条规则**的部位限定（在。见设计文档 §11.2 / O2）。
 
     ⚠️ **`remove` 不先于 `insert`**：顺序完全由 `priority` 决定（母单 #4423 冻结口径）。
     例：`韩褶 + insert 上车布 after 韩褶` 必须排在 `韩褶 insert 韩褶 after 三边` **之后**
@@ -965,6 +998,12 @@ def build_route_v2(position: Dict[str, Any]) -> List[str]:
         if is_fabric:
             continue
         if not _rule_triggers(rule, position):
+            continue
+        # 🔴 **规则级部位限定**（issue #4962 加回；#4937 / O2 曾整块退场）：`position` 为空 /
+        # 缺键 = 不限部位；否则必须逐字匹配当前实例化部位。
+        # ⚠️ 位置**必须在 `_rule_triggers` 之后**：未知触发类型先显式失败，不因部位不匹配静默跳过
+        # （与 Java 侧 `ProcessingOrderService.buildRoute` 的语句顺序逐字同款）。
+        if not _rule_position_matches(rule, position):
             continue
         if rule["action"] == "insert":
             route = _insert_after(route, rule["operation"], rule["after_operation"])

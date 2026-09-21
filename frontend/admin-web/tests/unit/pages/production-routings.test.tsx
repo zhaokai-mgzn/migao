@@ -1,4 +1,8 @@
 // case_ids: PG-020, PG-034, PG-053, PP-014, OR-041, UI-048, UI-049, UI-050, UI-051, UI-052
+// ⚠️ issue #4962（「什么时候」加回**部位**维 / `production_route_rules.position`）：本文件新增的 **⑱′ 组**
+// 由上面**已声明**的 `PG-053` 承载（该用例钉的就是这个「添加条件」表单 ——
+// `.github/cases/processing-order.yml` 的 PG-053 注释块与判据 9，触发维闭词表本次加第 4 档 `position`）。
+// 不新增 case_id：用例库侧的口径改判（第 4 档 + `route-rule-options` 新增 `positions` 键）由 #4962 的用例库同步一并落。
 // PG-020（issue #4203 / #4204）+ PP-014（issue #4307）**合并后**的单页用户面（issue #4416），
 // 本单（issue #4433 = 母单 #4423 的 P3）把它适配到**新路线模型**（P1 #4427 / P2 #4432 / P2b #4459 / P2c #4500）。
 //
@@ -559,10 +563,14 @@ const RULES_WITH_PRICE = [
 /**
  * 规则创建弹窗的**触发值取值域**（issue #4616）：活跃工艺词表 + 活跃加工项目录。
  * ⚠️ 判据是「**从词表取、不手输**」⇒ 弹窗里必须是**下拉**，且选项逐字来自这里。
+ *
+ * issue #4962：后端 `GET /route-rule-options` **新增 `positions` 键** = **部位闭词表**
+ * （基线三部位 ∪ 第 4 个部位 `布料`）—— 部位维的取值同样**只能从这里取**（前端不硬编码字面量）。
  */
 const RULE_TRIGGER_OPTIONS = {
   crafts: ['韩褶', '打孔', '罗马帘'],
   processing_items: ['花边', '扣环', '拼接'],
+  positions: ['布帘', '纱帘', '帘头', '布料'],
 }
 
 const ROUTINGS = {
@@ -2081,6 +2089,141 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('operation-condition-form')).toBeInTheDocument()
   })
 
+  // ══════════════════ ⑱′ 「什么时候」第 4 维 = **部位**（issue #4962 加回）══════════════════
+  //
+  // 用户裁定（2026-09-21）：「如果有一些工序只能布帘有或者纱帘有，可以在适用条件上设置」⇒
+  // `production_route_rules.position`（部位限定；`NULL` = 不限部位）**加回**：
+  //   · 写面新增第 4 档 `trigger_kind='position'`（`trigger_value` = 部位名），并把值镜像进 `position` 列；
+  //   · 取值域 = `GET /route-rule-options` 新增的 `positions` 键（**部位闭词表**，前端不硬编码）；
+  //   · 读面「人话」渲染成 `部位 = 布帘 时插入（在「三边」之后）`。
+  // 历史沿革：#4937 曾让规则级部位退场（该键恒 `NULL`、前端不得据它渲染），#4962 加回。
+
+  it('⑱′-① 「部位」档：取值**逐字来自** `route-rule-options.positions`（含第 4 个 `布料`）⇒ 提交 body 带 `position`', async () => {
+    // 刻意用**非规范顺序**的返回值（含第 4 个部位 `布料`）—— 页面若硬编码第二份三值/四值字面量，
+    // 下面「选项逐字、逐序 = 后端返回值」这条断言**必红**（注入法：把 `ruleOptions.positions` 换成
+    // 字面量 `['布帘','纱帘','帘头']` ⇒ 少一个 `布料` ⇒ 红）。
+    mockGetRouteRuleOptions
+      .mockReset()
+      .mockResolvedValue(ok({ crafts: ['韩褶'], processing_items: ['拼接'], positions: ['纱帘', '布料', '布帘', '帘头'] }))
+    await openConditions('三边')
+    await userEvent.click(screen.getByTestId('operation-condition-add'))
+    await waitFor(() => expect(screen.getByTestId('operation-condition-form')).toBeInTheDocument())
+
+    // 先在默认档（工艺）选一个值：切档必须把它清掉（不把上一档的值带过去）
+    await userEvent.selectOptions(screen.getByTestId('condition-value'), '韩褶')
+
+    // 第 4 个按钮**在「什么时候」这个 radiogroup 里**（与既有三档同构：role=radio / aria-checked）
+    const positionKind = screen.getByRole('radio', { name: '部位' })
+    expect(positionKind).toBe(screen.getByTestId('condition-kind-position'))
+    await userEvent.click(positionKind)
+    expect(positionKind).toHaveAttribute('aria-checked', 'true')
+
+    const select = screen.getByTestId('condition-value')
+    expect(select.tagName).toBe('SELECT')
+    expect(within(select).getByRole('option', { name: '从部位列表里选…' })).toBeInTheDocument()
+    // 取值 = **后端给的部位闭词表**（逐字 + 逐序；含第 4 个 `布料`）—— 不是页面自带的第二份
+    expect(Array.from(select.querySelectorAll('option')).map((o) => (o as HTMLOptionElement).value)).toEqual([
+      '',
+      '纱帘',
+      '布料',
+      '布帘',
+      '帘头',
+    ])
+    // 切档 ⇒ 已选取值被清空
+    expect(select).toHaveValue('')
+
+    await userEvent.selectOptions(select, '布帘')
+    await userEvent.selectOptions(screen.getByTestId('condition-anchor'), '精裁')
+    await userEvent.click(screen.getByTestId('condition-add-submit'))
+
+    // 提交 body：`trigger_kind='position'` + `trigger_value` = 选中的部位 + `position` 镜像同值
+    await waitFor(() =>
+      expect(mockCreateOptionRule).toHaveBeenCalledWith({
+        trigger_kind: 'position',
+        trigger_value: '布帘',
+        position: '布帘',
+        action: 'insert',
+        operation: '三边',
+        after_operation: '精裁',
+      }),
+    )
+  })
+
+  it('⑱′-② 反向护栏：其它档**不带** `position` 键（留空 = 不限部位，不拿 `null` 冒充「没填」）', async () => {
+    await openConditions('三边')
+    await userEvent.click(screen.getByTestId('operation-condition-add'))
+    await userEvent.selectOptions(screen.getByTestId('condition-value'), '罗马帘')
+    await userEvent.click(screen.getByTestId('condition-add-submit'))
+
+    await waitFor(() =>
+      expect(mockCreateOptionRule).toHaveBeenCalledWith({
+        trigger_kind: 'craft',
+        trigger_value: '罗马帘',
+        action: 'insert',
+        operation: '三边',
+        after_operation: '精裁',
+      }),
+    )
+    // 注入法：把 `payload.position = null` 无条件带上 ⇒ 本条红（`position: null` 会被读成「显式不限」，
+    // 而「没填」的语义是**省略该键**）。
+    expect(Object.keys(mockCreateOptionRule.mock.calls[0][0] as object)).not.toContain('position')
+  })
+
+  it('⑱′-③ 「部位」档本地预检：未选取值 ⇒ **部位专属**可行动理由 + 不发请求', async () => {
+    await openConditions('三边')
+    await userEvent.click(screen.getByTestId('operation-condition-add'))
+    await userEvent.click(screen.getByTestId('condition-kind-position'))
+    await userEvent.click(screen.getByTestId('condition-add-submit'))
+
+    const reasons = await screen.findByTestId('condition-add-reasons')
+    expect(reasons).toHaveTextContent(
+      '请选择什么时候生效：部位必须从列表里选（部位 = 布帘/纱帘/帘头/布料，空 = 不限部位）',
+    )
+    expect(mockCreateOptionRule).not.toHaveBeenCalled()
+  })
+
+  it('⑱′-④ 人话：`position` 档渲染成「部位 = X 时…」（insert 带锚点 / remove 不带）', async () => {
+    mockGetRouteRules.mockReset().mockResolvedValue(
+      ok([
+        { id: 41, trigger_kind: 'position', trigger_value: '布帘', position: '布帘', action: 'insert', operation: '韩褶', after_operation: '三边', priority: 5, status: 'active' },
+        { id: 42, trigger_kind: 'position', trigger_value: '纱帘', position: '纱帘', action: 'remove', operation: '车被', after_operation: null, priority: 6, status: 'active' },
+      ]),
+    )
+    await openManage('韩褶')
+    // 注入法：把 `TRIGGER_KIND_LABEL` 的 `position` 映射去掉 ⇒ 这里渲染成 `position = 布帘 …` ⇒ 红
+    expect(await screen.findByTestId('operation-condition-text-41')).toHaveTextContent(
+      '部位 = 布帘 时插入（在「三边」之后）',
+    )
+
+    await userEvent.click(screen.getByTestId('operations-manage-close'))
+    await userEvent.click(screen.getByTestId('matrix-manage-车被'))
+    expect(await screen.findByTestId('operation-condition-text-42')).toHaveTextContent('部位 = 纱帘 时不做')
+  })
+
+  it('⑱′-⑤ 反向护栏：`craft` 档带部位列 **必须说出来**（不静默藏）；空 `position` 不渲染任何部位文案', async () => {
+    mockGetRouteRules.mockReset().mockResolvedValue(
+      ok([
+        // ① 触发维是 `craft`、`position` 列**有值**（迁移 V108 写回的存量行 / 直写 API 的行）
+        //    ⇒ 🔴 issue #4962 起**必须**把部位这一维说进人话 —— 藏起来 = 商家看不见
+        //    「这条条件只对布帘生效」（静默信息缺口）。注入法：只渲染 `kind`/`value`、
+        //    丢掉 `rule.position` ⇒ 本断言红（`工艺 = 打孔 时不做` ≠ `部位 = 布帘、工艺 = 打孔 时不做`）。
+        { id: 51, trigger_kind: 'craft', trigger_value: '打孔', position: '布帘', action: 'remove', operation: '车被', after_operation: null, priority: 7, status: 'active' },
+        // ② `position` 为空 = **不限部位** ⇒ 不得渲染「部位 = —」这类假值（注入法：无脑拼一段部位文案 ⇒ 红）
+        { id: 52, trigger_kind: 'craft', trigger_value: '韩褶', position: null, action: 'insert', operation: '韩褶', after_operation: '三边', priority: 8, status: 'active' },
+      ]),
+    )
+    await openManage('韩褶')
+    const noPosition = await screen.findByTestId('operation-condition-text-52')
+    expect(noPosition).toHaveTextContent('工艺 = 韩褶 时插入（在「三边」之后）')
+    expect(noPosition.textContent ?? '').not.toContain('部位')
+
+    await userEvent.click(screen.getByTestId('operations-manage-close'))
+    await userEvent.click(screen.getByTestId('matrix-manage-车被'))
+    const craftWithPositionColumn = await screen.findByTestId('operation-condition-text-51')
+    // `trigger_kind ≠ 'position'` ⇒ **两个子句都要在**（部位在前、触发维在后，`、` 连接）
+    expect(craftWithPositionColumn).toHaveTextContent('部位 = 布帘、工艺 = 打孔 时不做')
+  })
+
   // ══════════════════ ⑲ 删除改弹框（issue #4617）══════════════════
   //
   // 用户裁定：「确认删除的交互为什么不是弹框选择，交互需要优化」——
@@ -2831,9 +2974,14 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
     await renderOperations()
     // 逐工序：只列属于它自己的那几条，一条不多、一条不少
+    // 🔴 **2026-09-21 改判（issue #4962，加回「适用条件」的部位维）**：`position` 非空的规则
+    // 现在**必须**把部位说进人话（`conditionText` 加 `部位 = <值>` 子句；`trigger_kind='position'`
+    // 时它就是唯一子句）。本用例的 2/3 号规则带 `position` ⇒ 期望文案随之改判
+    // （**只改与实现不符的文案，判据一格不放宽**：条数 / 归属 / 逐字文本三条判据全在，且**新增**
+    // 了对部位子句的覆盖；注入法：把 `conditionText` 的 `positionClause` 去掉 ⇒ 下面两条当场红）。
     const expected: Record<string, string[]> = {
-      韩褶: ['工艺 = 韩褶 时插入（在「三边」之后）', '工艺 = 打孔 时不做'],
-      三边: ['特殊选项 = 拼2次 时插入（追加到末尾）'],
+      韩褶: ['工艺 = 韩褶 时插入（在「三边」之后）', '部位 = 布帘、工艺 = 打孔 时不做'],
+      三边: ['部位 = 纱帘、特殊选项 = 拼2次 时插入（追加到末尾）'],
       精裁: ['加工项 = 花边 时插入（在「三边」之后）'],
     }
     for (const [operation, texts] of Object.entries(expected)) {

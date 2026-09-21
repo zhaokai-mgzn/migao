@@ -63,8 +63,15 @@ public class ProductionRoutingCommandService {
     /**
      * 条件工序规则的**触发维闭词表**（与 V71 的 {@code CHECK (trigger_kind IN (...))} 同口径，
      * issue #4616）。{@code shaped} 是表结构预留、**无种子行** ⇒ **不在**本集合（收到即 422）。
+     *
+     * <p>issue #4962 加第 4 档 {@code position}（**部位维**，用户裁定「如果有一些工序只能布帘有
+     * 或者纱帘有，可以在适用条件上设置」）：{@code trigger_value} = 部位名（取值 =
+     * {@link ProductionOperationQueryService#POSITION_LIMIT_VOCABULARY}），落库时**镜像**进
+     * {@code position} 列 —— 实例化侧只看列（唯一判据，见
+     * {@code ProcessingOrderService#rulePositionMatches}）。DB 的 CHECK 约束同批由
+     * {@code backend/admin-api/src/main/resources/db/migration/V109__allow_position_trigger_kind.sql} 放开。</p>
      */
-    private static final Set<String> TRIGGER_KINDS = Set.of("craft", "option", "processing_item");
+    private static final Set<String> TRIGGER_KINDS = Set.of("craft", "option", "processing_item", "position");
 
     /** 规则动作（路线编排档）：插入 / 移除（与读面 {@code ROUTE_ACTIONS} 同口径）。 */
     private static final Set<String> ACTIONS = Set.of("insert", "remove");
@@ -72,6 +79,8 @@ public class ProductionRoutingCommandService {
     private static final String TRIGGER_KIND_OPTION = "option";
     private static final String TRIGGER_KIND_CRAFT = "craft";
     private static final String TRIGGER_KIND_PROCESSING_ITEM = "processing_item";
+    /** 部位维（issue #4962）—— 见 {@link #TRIGGER_KINDS} 的类注释。 */
+    private static final String TRIGGER_KIND_POSITION = ProcessingOrderService.TRIGGER_KIND_POSITION;
 
     /**
      * 新路线的默认适用帘种集合（取值域同 {@code production_operation_positions.position}）。
@@ -416,10 +425,31 @@ public class ProductionRoutingCommandService {
             action = "insert";   // 反向护栏：老调用方只有 insert（端点此前写死 insert）
         }
         List<ApiResponse.ErrorDetail> details = new ArrayList<>();
+        // 规则级部位限定（issue #4962）：body 的 `position` 键 = 部位闭词表里的值；省略 / 空 / null
+        // = **不限部位**。部位维触发（TriggerKind='position'）时 `position` 由 `trigger_value` **镜像**
+        // 得到（列才是实例化侧的唯一判据）⇒ 两者必须一致，不一致即 422（不静默取其一）。
+        String rulePosition = optionalText(body == null ? null : body.get("position"));
+        if (TRIGGER_KIND_POSITION.equals(triggerKind)) {
+            if (rulePosition != null && !rulePosition.equals(triggerValue)) {
+                details.add(BusinessException.detail("position", String.format(
+                        "position「%s」与 trigger_value「%s」不一致 —— 部位维触发时两者是同一件事"
+                                + "（实例化侧只看 position 列），请只传其一或传同一个值",
+                        rulePosition, triggerValue)));
+            }
+            rulePosition = triggerValue;
+        }
+        if (rulePosition != null && !ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY
+                .contains(rulePosition)) {
+            details.add(BusinessException.detail("position", String.format(
+                    "未知部位「%s」：部位限定只接受 %s —— 写一个不在词表里的部位 = 这条规则对**任何**"
+                            + "订单都不生效（商家以为限定住了，实际是黑洞）",
+                    rulePosition,
+                    String.join(" / ", ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY))));
+        }
         if (!TRIGGER_KINDS.contains(triggerKind)) {
             details.add(BusinessException.detail("trigger_kind", String.format(
-                    "触发类型「%s」不在取值域内（只能是 工艺 craft / 特殊选项 option / 加工项 processing_item）"
-                            + "—— `shaped` 是表结构预留、没有规则行可落，故不收", triggerKind)));
+                    "触发类型「%s」不在取值域内（只能是 工艺 craft / 特殊选项 option / 加工项 processing_item"
+                            + " / 部位 position）—— `shaped` 是表结构预留、没有规则行可落，故不收", triggerKind)));
         }
         if (!ACTIONS.contains(action)) {
             details.add(BusinessException.detail("action", String.format(
@@ -477,7 +507,7 @@ public class ProductionRoutingCommandService {
                 .tenantId(tenantId)
                 .triggerKind(triggerKind)
                 .triggerValue(triggerValue)
-                .position(optionalText(body == null ? null : body.get("position")))
+                .position(rulePosition)
                 .action(action)
                 .operation(operation)
                 .afterOperation(afterOperation)
@@ -496,6 +526,9 @@ public class ProductionRoutingCommandService {
         result.put("id", row.getId());
         result.put("trigger_kind", row.getTriggerKind());
         result.put("trigger_value", row.getTriggerValue());
+        // 部位限定（issue #4962）：与读面 `ruleView` 同键同义（`null` = 不限部位）⇒ 写面回显
+        // 与 `GET /route-rules` 的回显一致（前端「提交/回显」两处读同一把键）。
+        result.put("position", row.getPosition());
         result.put("action", row.getAction());
         result.put("operation", row.getOperation());
         result.put("after_operation", row.getAfterOperation());
@@ -518,6 +551,11 @@ public class ProductionRoutingCommandService {
         if (TRIGGER_KIND_OPTION.equals(triggerKind)) {
             return true;   // 特殊选项名**可新建**（现状即如此）：没有第二份词表可查
         }
+        if (TRIGGER_KIND_POSITION.equals(triggerKind)) {
+            // 部位维（issue #4962）：触发值就是部位 ⇒ 词表 = `POSITION_LIMIT_VOCABULARY`
+            // （与上面 `position` 键**同一份**判据，不另抄一份）。
+            return ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY.contains(triggerValue);
+        }
         if (TRIGGER_KIND_CRAFT.equals(triggerKind)) {
             return productionOperationQueryService.activeCraftNames(tenantId).contains(triggerValue);
         }
@@ -534,6 +572,12 @@ public class ProductionRoutingCommandService {
 
     /** 触发值不在词表时的**可行动**理由（逐 kind 说清去哪儿建）。 */
     private static String triggerValueMissingReason(String triggerKind, String triggerValue) {
+        if (TRIGGER_KIND_POSITION.equals(triggerKind)) {
+            return String.format("部位「%s」不在部位闭词表（%s）里 —— 实例化侧只可能传这几个部位，"
+                            + "写别的值这条规则**永不生效**，请从列表里选",
+                    triggerValue,
+                    String.join(" / ", ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY));
+        }
         if (TRIGGER_KIND_CRAFT.equals(triggerKind)) {
             return String.format("工艺词表里没有活跃的「%s」—— 触发键查不到 ⇒ 这条规则永远不命中"
                     + "（商家以为配了、加工单上却没有），请先在「工艺词表」建这个工艺", triggerValue);
