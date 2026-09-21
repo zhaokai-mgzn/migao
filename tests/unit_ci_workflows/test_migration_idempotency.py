@@ -68,7 +68,10 @@
 2. 新增/未发布迁移里 **`RENAME`** 必须与目标存在性守卫同块
    （postgres 无 `ALTER TABLE IF NOT EXISTS`；`IF EXISTS` 只守卫源对象 —— V37 的真缺陷）；
 3. 实际扫描结果必须与 `LEGACY_UNGUARDED` **逐条相等**（新增→红；存量销账未更新→也红）；
-4. 检测器自身有正/负样本自测（防不变式被写弱成永远绿）。
+4. 检测器自身有正/负样本自测（防不变式被写弱成永远绿）；
+5. `MigrationRunner.KNOWN_BENIGN_LEGACY` ↔ `BENIGN_LEGACY_FAILURES` **键集合相等**，
+   且**两条护栏**成立（#4991）：登记必须写明可机械核验的「目标态由谁达成」（补偿迁移须真实存在
+   且晚于被补偿者）、每条必须有非空且形态合法的 **SQLSTATE 错误签名**（防退化成「只按文件名降级」）。
 
 L0 层（秒级、零外部依赖）拦住结构性缺陷，不让它流到真实 LLM 评测层去撞（`migao-dev-flow` §16.1）。
 """
@@ -109,38 +112,70 @@ GUARDED_DDL_EXEMPTIONS: set = set()
 # 存量登记表涉及的已发布迁移（前向防护的射程边界）
 _PUBLISHED_AT_ISSUE = set(LEGACY_UNGUARDED)
 
-# ── 单一事实源：Java `MigrationRunner` 的「已知良性」集合（issue #3714）──
-# 背景：评测栈 bootstrap-first 起栈时，MigrationRunner 逐条执行迁移链，上面登记的 3 个
-# 已发布迁移必失败 → 每次起栈都打印 `❌ 本次有 N 条迁移失败，schema 可能与代码不一致
-# （请立即修复并在修复后重跑）`。这句行动指令**必然为假**（无物可修、重跑必复现）→
-# 告警疲劳 → 真失败与永久噪音**同形**，正是本仓库自认的最大失败模式（归因层失效）。
+# ── 单一事实源：Java `MigrationRunner.KNOWN_BENIGN_LEGACY`（issue #3714 / #4991）──
+# 背景：评测栈 bootstrap-first 起栈时，MigrationRunner 逐条执行迁移链，在册的存量迁移必失败
+# → 每次起栈都打印 `❌ 本次有 N 条迁移失败，schema 可能与代码不一致（请立即修复并在修复后重跑）`。
+# 这句行动指令**必然为假**（无物可修、重跑必复现）→ 告警疲劳 → 真失败与永久噪音**同形**，
+# 正是本仓库自认的最大失败模式（归因层失效）。
 #
 # 修法（不触碰已发布迁移：`.github/danger_scan.py` 的「已发布迁移只增不改」是 required 护栏）：
-# Java 侧引入 `KNOWN_BENIGN_LEGACY` 命中即降级为 INFO + 汇总行分开计数，**真失败仍 ERROR**。
-# ⇒「同一个判据两份实现必然漂移」（#3701 教训）→ 本模块**锁死两边键集合相等**（下方测试）。
+# Java 侧 `KNOWN_BENIGN_LEGACY` 命中即降级为 INFO + 汇总行分开计数，**真失败仍 ERROR**。
 #
-# 解析口径：Java 常量的 **Key** 必须逐行写成 `文件名 ← 理由` 形态的字符串字面量
-# （理由里的 issue 号不受约束）；为防「理由文本里恰好含 `.sql`」被误读成键，
-# 只认 `KNOWN_BENIGN_LEGACY` 声明行与 `# ── END KNOWN_BENIGN_LEGACY ──` 标记之间的字符串字面量。
+# ⚠️ **与 `LEGACY_UNGUARDED` 是两件事（#4991 解耦）**：
+#   · `LEGACY_UNGUARDED` = **静态 DDL 守卫缺口**（检测器按 kind 发现：裸 CREATE POLICY / 裸 RENAME）；
+#   · `BENIGN_LEGACY_FAILURES` = **运行期失败良性**（目标态已由 schema.sql 或补偿迁移达成）。
+# 两者今天**不相等**：V40/V72/V74/V79 是「引用不存在的列 / ON CONFLICT 仲裁列不全 / VALUES 整列 NULL
+# 被推断成 text」—— 本检测器**根本不检测**这些形态，塞进 `LEGACY_UNGUARDED` 会当场破
+# `test_legacy_registry_matches_reality` 与「恰为 3 个」的射程断言。故拆成两份登记表，各锁各的纪律。
+#
+# ⚠️ 解析口径（#4991 起）：标记区间内每条必须写成
+#   `"<文件名>", new BenignLegacy("<目标态由谁达成>", List.of("<SQLSTATE>[:<标识符>]"…), "<理由>")`
+# **内容（目标态由谁达成 / 签名 / 理由）一律以 Java 为权威**，本模块只镜像**键集合**
+# （避免「同一判据两份实现必然漂移」#3701）。
+# 解析器对「区间内出现 `V{n}__x.sql` 形态的字面量却没被解析成键」**fail-closed 报错** ——
+# 那正是「理由 / 字段里写了完整迁移文件名 ⇒ 键集合虚假膨胀」的形态判据。
+_REPO_ROOT = Path(__file__).parent.parent.parent
 _MIGRATION_RUNNER_JAVA = (
-    Path(__file__).parent.parent.parent
+    _REPO_ROOT
     / "backend" / "admin-api" / "src" / "main" / "java" / "com" / "migao" / "admin"
     / "config" / "MigrationRunner.java"
 )
+_SCHEMA_SQL = _REPO_ROOT / "docs" / "sql" / "schema.sql"
 _JAVA_KEY_MARKER = "MIGAO_BENIGN_LEGACY_BEGIN"
 _JAVA_KEY_END_MARKER = "MIGAO_BENIGN_LEGACY_END"
-_JAVA_STRING_LITERAL_RE = re.compile(r'"([^"\\]+)"')
-# 键形态 = 迁移文件名（V{n}__desc.sql）：理由文本（含 issue 号）天然不匹配 ⇒ 只取键、不取理由。
-# 这也顺带锁住「理由文本里恰好含 `.sql`」不会污染键集合。
-_JAVA_MIGRATION_FILENAME_RE = re.compile(r"^V\d+__[\w.]+\.sql$")
+# 键形态 = 迁移文件名（V{n}__desc.sql）—— **按文本出现**取，不是只取「整条字面量」：
+# 后者抓不到「理由里嵌了一个完整迁移文件名」（那正是键集合虚假膨胀的形态）。
+_JAVA_MIGRATION_FILENAME_IN_TEXT_RE = re.compile(r"V\d+__[\w.]+\.sql")
+# 条目形态（勿改形状）：`"<文件名>", new BenignLegacy("<目标态由谁达成>", List.of(<签名…>), "<理由>")`
+_JAVA_BENIGN_ENTRY_RE = re.compile(
+    r'"([^"\\]+\.sql)"\s*,\s*new\s+BenignLegacy\(\s*"([^"\\]*)"\s*,\s*'
+    r'List\.of\(([^)]*)\)\s*,\s*"((?:[^"\\]|\\.)*)"\s*\)',
+    re.S,
+)
+# 错误签名形态：`<5 位 SQLSTATE>` 或 `<SQLSTATE>:<标识符子串>`。
+# ⚠️ SQLSTATE 是**大写字母数字**（如 `42P07` / `42703` / `23505`），不是纯数字。
+_SQLSTATE_SIG_RE = re.compile(r"[0-9A-Z]{5}(:.+)?")
+
+# ── 镜像键集合：Java `KNOWN_BENIGN_LEGACY` 的键必须与本表**完全相等**（#4991）──
+# 只镜像键；目标态 / 签名 / 理由以 Java 为权威（解析见 `parse_java_known_benign`）。
+# ⚠️ **本表只能变短**：某条被新迁移补齐 / 被裁决修好后两边同时销账；
+# **新增迁移一律不得进本表**（前向防护：新迁移必须自带幂等守卫）。
+BENIGN_LEGACY_FAILURES = {
+    "V37__rename_knowledge_entries_to_cards.sql",
+    "V42__reconcile_knowledge_table_name.sql",
+    "V44__create_daily_briefings.sql",
+    "V40__seed_default_tenant_and_roles.sql",
+    "V72__switch_routing_model_consumers.sql",
+    "V74__backfill_legacy_special_option_names.sql",
+    "V79__seed_fabric_route_and_packing_operation.sql",
+}
 
 
-def extract_java_known_benign_filenames(java_text: str) -> set:
-    """从 `MigrationRunner.java` 源码文本提取「已知良性存量」迁移文件名集合。
+def parse_java_known_benign(java_text: str) -> dict:
+    """从 `MigrationRunner.java` 源码文本提取登记表 → {文件名: {terminal_state_by, signatures, reason}}。
 
-    只认 `KNOWN_BENIGN_LEGACY` 声明行到 `END KNOWN_BENIGN_LEGACY` 标记之间的字符串字面量
-    （见上方解析口径）。标记缺失 / 重复 → 抛错（fail-closed，**不得**静默返回空集 ——
-    空集会让「两边集合相等」断言在空集上恒真，那正是空断言）。
+    标记缺失 / 重复 → 抛错（fail-closed，**不得**静默返回空 dict —— 空 dict 会让
+    「两边集合相等」断言在空集上恒真，那正是空断言）。
     """
     # 防误命中：两个标记都必须**恰好出现一次**且顺序正确 —— 0 次 = 边界不可知；
     # 多次 = 可能有多份集合。两种情况都必须响（fail-closed，不能猜、不能静默返回空集）
@@ -159,10 +194,72 @@ def extract_java_known_benign_filenames(java_text: str) -> set:
             "解析区间为空（fail-closed）"
         )
     body = java_text[start:end]
-    return {
-        lit for lit in _JAVA_STRING_LITERAL_RE.findall(body)
-        if _JAVA_MIGRATION_FILENAME_RE.match(lit)
-    }
+    entries = {}
+    for m in _JAVA_BENIGN_ENTRY_RE.finditer(body):
+        name, terminal, sigs_raw, reason = m.group(1), m.group(2), m.group(3), m.group(4)
+        entries[name] = {
+            "terminal_state_by": terminal,
+            "signatures": re.findall(r'"([^"]*)"', sigs_raw),
+            "reason": reason,
+        }
+    # fail-closed：区间内**所有** `V{n}__x.sql` 形态的文本都必须恰好是被解析到的**键** ——
+    # 多出来的必然是「理由 / 字段里写了完整迁移文件名」（键集合虚假膨胀的形态判据）。
+    literals = set(_JAVA_MIGRATION_FILENAME_IN_TEXT_RE.findall(body))
+    if literals != set(entries):
+        raise AssertionError(
+            "标记区间内的迁移文件名字面量与解析到的键不相等 —— 解析口径失效，或"
+            "「理由 / 字段里写了完整迁移文件名」（会让键集合虚假膨胀）。\n"
+            f"  字面量但未解析成键: {sorted(literals - set(entries))}\n"
+            f"  解析成键但无字面量: {sorted(set(entries) - literals)}"
+        )
+    return entries
+
+
+def find_terminal_state_problems(entries: dict) -> list:
+    """护栏①（#4991）的**唯一实现点**：登记条目必须给出可机械核验的「目标态由谁达成」。
+
+    `schema.sql` = bootstrap 终态达成；裸版本号 `V<n>` = 由该**补偿迁移**达成
+    （必须真实存在且**晚于**被补偿者）。
+    """
+    problems = []
+    for name, entry in sorted(entries.items()):
+        broken = int(re.match(r"^V(\d+)__", name).group(1))
+        by = entry["terminal_state_by"]
+        if by == "schema.sql":
+            if not _SCHEMA_SQL.exists():
+                problems.append(f"{name}: 声称目标态由 schema.sql 达成，但该文件不存在")
+            continue
+        m = re.fullmatch(r"V(\d+)", by)
+        if not m:
+            problems.append(
+                f"{name}: `terminal_state_by` 必须是 `schema.sql` 或裸版本号 `V<n>`，实际 {by!r}"
+            )
+            continue
+        comp = int(m.group(1))
+        if not sorted(MIGRATION_DIR.glob(f"V{comp}__*.sql")):
+            problems.append(f"{name}: 登记的补偿迁移 V{comp} 在迁移链里**不存在** —— 登记必须有据")
+        elif comp <= broken:
+            problems.append(f"{name}: 补偿迁移 V{comp} 必须**晚于**被补偿的 V{broken}")
+    return problems
+
+
+def find_signature_problems(entries: dict) -> list:
+    """护栏②（#4991）的**唯一实现点**：每条必须有合法（非空、SQLSTATE 形态）的错误签名。
+
+    空签名 = 退化成「命中文件名即降级」—— 同一文件换一个错因会被静默吞掉（本仓最大的失败模式）。
+    """
+    problems = []
+    for name, entry in sorted(entries.items()):
+        sigs = entry["signatures"]
+        if not sigs:
+            problems.append(f"{name}: 没有任何错误签名 ⇒ 退化成「命中文件名即降级」")
+            continue
+        for sig in sigs:
+            if not _SQLSTATE_SIG_RE.fullmatch(sig):
+                problems.append(
+                    f"{name}: 签名 {sig!r} 形态非法（应为 `<5 位 SQLSTATE>` 或 `<SQLSTATE>:<标识符>`）"
+                )
+    return problems
 
 
 _POLICY_RE = re.compile(r"\bCREATE\s+POLICY\b", re.I)
@@ -379,93 +476,149 @@ class TestMigrationIdempotencyInvariant:
         assert not GUARDED_DDL_EXEMPTIONS, "业务豁免清单应保持为空（有豁免必须逐条写理由）"
 
 
-class TestKnownBenignSetSingleSourceOfTruth:
-    """Java `KNOWN_BENIGN_LEGACY` ↔ Python `LEGACY_UNGUARDED` 必须**键集合相等**（issue #3714）。
+class TestKnownBenignLegacyRegistry:
+    """Java `KNOWN_BENIGN_LEGACY` ↔ Python `BENIGN_LEGACY_FAILURES` 的键集合 + 两条护栏（#3714 / #4991）。
 
     为什么需要（#3701 教训）：同一个判据两份实现 ⇒ 必然漂移。Java 侧降级谁、Python 侧登记谁，
-    是同一个事实（「哪些非幂等迁移是已诊断的存量」）；两边各自维护 = 迟早一边降级了
+    是同一个事实（「哪些存量失败已诊断且目标态已达成」）；两边各自维护 = 迟早一边降级了
     而另一边没登记（或反之）。漂移后果是**假绿**：
       · Java 多降级一条 → 真失败被当噪音吞掉（告警失效）；
       · Python 多登记一条 → 前向防护的射程边界被悄悄放宽（新迁移漏网）。
     """
 
-    def test_java_and_python_key_sets_are_equal(self):
+    def _java_entries(self) -> dict:
         assert _MIGRATION_RUNNER_JAVA.exists(), (
             f"找不到 MigrationRunner.java: {_MIGRATION_RUNNER_JAVA}"
         )
-        java_keys = extract_java_known_benign_filenames(
-            _MIGRATION_RUNNER_JAVA.read_text(encoding="utf-8")
-        )
-        py_keys = set(LEGACY_UNGUARDED)
+        return parse_java_known_benign(_MIGRATION_RUNNER_JAVA.read_text(encoding="utf-8"))
+
+    def test_java_and_python_key_sets_are_equal(self):
+        java_keys = set(self._java_entries())
+        py_keys = set(BENIGN_LEGACY_FAILURES)
 
         # 非空前提（防「空集上恒真」的空断言）：两边都必须真解析出东西
         assert java_keys, (
             "MigrationRunner.java 的 `KNOWN_BENIGN_LEGACY` 解析结果为空 —— "
             "要么集合被删空（噪音修法退化）、要么解析口径失效（fail-closed）"
         )
-        assert py_keys, "存量登记表为空 —— 本测试失去被测对象（存量缺口若真已清空，请一并删本测试）"
+        assert py_keys, "镜像键集合为空 —— 本测试失去被测对象（存量若真已清空，请一并删本测试）"
 
         assert java_keys == py_keys, (
-            "Java `KNOWN_BENIGN_LEGACY` 与 Python `LEGACY_UNGUARDED` **键集合不相等** —— "
+            "Java `KNOWN_BENIGN_LEGACY` 与 Python `BENIGN_LEGACY_FAILURES` **键集合不相等** —— "
             "两边是同一个判据的两份实现，漂移即假绿（#3714 / #3701）。\n"
             f"  只在 Java（会被降级为 INFO，但 Python 未登记）: {sorted(java_keys - py_keys)}\n"
             f"  只在 Python（前向防护射程被放宽，Java 未降级）: {sorted(py_keys - java_keys)}\n"
             "  修复：两边同步增删；若某迁移已被新迁移补齐/已修好，**两边同时销账**（该集合只能变短）。"
         )
 
-    def test_java_key_extractor_has_red_control(self):
-        """注入式红证（不依赖仓库真值）：解析口径必须能分辨「多一项 / 少一项」，且标记缺失必抛错。
+    def test_every_entry_names_a_real_terminal_state(self):
+        """护栏①（#4991）：登记必须有据 —— 「目标态由谁达成」必须可机械核验。"""
+        problems = find_terminal_state_problems(self._java_entries())
+        assert not problems, (
+            "「已知存量非幂等」登记表里有条目**给不出目标态达成的依据**（#4991 护栏①）——"
+            "「目标态已达成」不是一句可以随手写的话，它必须指向 `schema.sql` 或一条**真实存在且"
+            "晚于被补偿者**的补偿迁移：\n  " + "\n  ".join(problems)
+        )
+
+    def test_every_entry_has_an_sqlstate_signature(self):
+        """护栏②（#4991）：判定不得退化成「只按文件名降级」。"""
+        problems = find_signature_problems(self._java_entries())
+        assert not problems, (
+            "「已知存量非幂等」登记表里有条目的**错误签名**缺失或非法（#4991 护栏②）——"
+            "没有签名 = 命中文件名就降级 ⇒ 同一文件换一个错因（真病灶）会被静默吞掉：\n  "
+            + "\n  ".join(problems)
+        )
+
+    def test_registry_has_not_grown(self):
+        """只能变短：新增条目等于把护栏放宽，必须先走裁决（#4991 已裁决的存量 = 7 条）。"""
+        assert len(BENIGN_LEGACY_FAILURES) == 7, (
+            f"`BENIGN_LEGACY_FAILURES` 应有 7 条（#4991 已裁决的存量），"
+            f"实际 {len(BENIGN_LEGACY_FAILURES)} 条 —— **新增条目等于把护栏放宽**"
+            "（新迁移必须自带幂等守卫，不得进本表）；缩短请同步改这个数字（防登记表变垃圾场）"
+        )
+
+    def test_registry_entries_are_all_published_migrations(self):
+        """登记项必须**真实存在**于迁移链（防「登记了一个不存在的文件名」⇒ 哨兵永远不触发）。"""
+        missing = sorted(n for n in BENIGN_LEGACY_FAILURES if not (MIGRATION_DIR / n).exists())
+        assert not missing, f"登记表里有迁移链中不存在的文件名：{missing}"
+
+    # ── 注入式红证（不依赖仓库真值；形态见 migao-acceptance v1.4「断言形态」）──
+
+    def test_terminal_state_guard_has_red_control(self):
+        """护栏①的红证：引用不存在的补偿迁移 / 补偿早于被补偿 / 取值非法 ⇒ 必被判出。"""
+        assert find_terminal_state_problems({
+            "V99__injected_broken.sql": {"terminal_state_by": "V999", "signatures": ["42703:x"]},
+        }), "「引用了不存在的补偿迁移」未被判出 —— 护栏① 失效"
+        assert find_terminal_state_problems({
+            "V99__injected_broken.sql": {"terminal_state_by": "V44", "signatures": ["42703:x"]},
+        }), "「补偿迁移早于被补偿者」未被判出 —— 护栏① 失效"
+        assert find_terminal_state_problems({
+            "V99__injected_broken.sql": {"terminal_state_by": "猜的", "signatures": ["42703:x"]},
+        }), "非 `schema.sql` / 非 `V<n>` 的取值未被判出 —— 护栏① 失效"
+        # 正向：合法条目不得被误报
+        assert find_terminal_state_problems({
+            "V99__ok.sql": {"terminal_state_by": "schema.sql", "signatures": ["42P07"]},
+        }) == [], "合法条目被误报 —— 判据过严（会逼出「为过门禁而改文案」）"
+
+    def test_signature_guard_has_red_control(self):
+        """护栏②的红证：空签名 / 非法签名 ⇒ 必被判出。"""
+        assert find_signature_problems({
+            "V99__injected_broken.sql": {"terminal_state_by": "schema.sql", "signatures": []},
+        }), "空签名未被判出 —— 退化成「只按文件名降级」"
+        assert find_signature_problems({
+            "V99__injected_broken.sql": {"terminal_state_by": "schema.sql", "signatures": ["字段不存在"]},
+        }), "非 SQLSTATE 形态的签名未被判出 —— 护栏② 失效"
+        assert find_signature_problems({
+            "V99__ok.sql": {"terminal_state_by": "schema.sql", "signatures": ["42P07", "23505:a"]},
+        }) == [], "合法签名被误报"
+
+    def test_parser_fails_closed_on_polluted_reason(self):
+        """解析口径的红证：理由里写完整迁移文件名 ⇒ 键集合虚假膨胀 ⇒ 必抛错。
 
         形态选择：**注入式红证** 而非「真值主张」——后者（`assert 仓库当下恰有该缺陷`）会在
         缺陷被修好的那一刻自毁、并把报错指向无关 PR（migao-acceptance v1.4「断言形态」）。
         """
         base = "V44__create_daily_briefings.sql"
-        snippet = (
+        good = (
             "    // MIGAO_BENIGN_LEGACY_BEGIN\n"
-            "    private static final Map<String, String> KNOWN_BENIGN_LEGACY = Map.of(\n"
-            f'            "{base}", "理由（见 #3615/#3714）");\n'
+            "    static final Map<String, BenignLegacy> KNOWN_BENIGN_LEGACY = Map.ofEntries(\n"
+            f'            Map.entry("{base}",\n'
+            '                    new BenignLegacy("schema.sql", List.of("42710:p"), "理由（见 #3714）")));\n'
             "    // MIGAO_BENIGN_LEGACY_END\n"
         )
-        assert extract_java_known_benign_filenames(snippet) == {base}
+        parsed = parse_java_known_benign(good)
+        assert set(parsed) == {base}, "合法条目解析出的键不对"
+        assert parsed[base]["terminal_state_by"] == "schema.sql"
+        assert parsed[base]["signatures"] == ["42710:p"]
 
-        # ① 人为「多一项」→ 解析结果必变（红证：多降级一条会被判出来）
-        extra = snippet.replace(
-            f'"{base}",', f'"{base}",\n            "V99__injected_extra.sql",'
-        )
-        assert extract_java_known_benign_filenames(extra) == {base, "V99__injected_extra.sql"}, (
-            "解析器漏掉新增键 —— 「多降级一条」不会被判出（守卫失效）"
-        )
+        # ① 理由里写了完整迁移文件名 ⇒ 键集合被撑大 ⇒ 必须 fail-closed
+        polluted = good.replace("理由（见 #3714）", "理由：由 V76__redo_v72_with_sort_order_fix.sql 补偿")
+        try:
+            parse_java_known_benign(polluted)
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError(
+                "理由里的完整迁移文件名未被判出 —— 键集合会虚假膨胀（两边相等断言被污染）"
+            )
 
-        # ② 人为「少一项」→ 解析结果必变（红证：漏降级一条会被判出来）
-        missing = (
-            "    // MIGAO_BENIGN_LEGACY_BEGIN\n"
-            "    private static final Map<String, String> KNOWN_BENIGN_LEGACY = Map.of();\n"
-            "    // MIGAO_BENIGN_LEGACY_END\n"
+        # ② 多签名条目必须被完整解析（V79 形态：一条目两种真库错误）
+        multi = good.replace(
+            'List.of("42710:p")', 'List.of("42804:unit_price", "23505:production_operations_pkey")'
         )
-        assert extract_java_known_benign_filenames(missing) == set(), (
-            "解析器凭空造出键 —— 「漏降级一条」不会被判出（守卫失效）"
-        )
+        assert parse_java_known_benign(multi)[base]["signatures"] == [
+            "42804:unit_price", "23505:production_operations_pkey",
+        ], "多签名条目被截断（V79 的第二种真库形态会漏判 ⇒ 假红）"
 
-        # ③ 键与理由各就各位：理由文本（含 `.sql` 字样 / issue 号）不得被当成键
-        reason_with_sql = (
-            "    // MIGAO_BENIGN_LEGACY_BEGIN\n"
-            "    private static final Map<String, String> KNOWN_BENIGN_LEGACY = Map.of(\n"
-            f'            "{base}", "目标态已由 docs/sql/schema.sql 引导达成（见 #3615/#3714）");\n'
-            "    // MIGAO_BENIGN_LEGACY_END\n"
-        )
-        assert extract_java_known_benign_filenames(reason_with_sql) == {base}, (
-            "理由文本里的 `.sql` 被误读成键 —— 键集合会虚假膨胀（两边相等断言被污染）"
-        )
-
-        # ④ 声明标记缺失 → 必须抛错，不得静默返回空集（否则相等断言在空集上恒真）
+        # ③ 声明标记缺失 / 重复 ⇒ 必须抛错，不得静默返回空 dict（否则相等断言在空集上恒真）
         for broken, why in [
-            (snippet.replace("// MIGAO_BENIGN_LEGACY_BEGIN\n", ""), "声明标记缺失"),
-            (snippet.replace("MIGAO_BENIGN_LEGACY_END", "（无结束标记）"), "结束标记缺失"),
+            (good.replace("// MIGAO_BENIGN_LEGACY_BEGIN\n", ""), "声明标记缺失"),
+            (good.replace("MIGAO_BENIGN_LEGACY_END", "（无结束标记）"), "结束标记缺失"),
             # 标记重复：两份集合若被静默合并，等于判据失守
-            (snippet + snippet, "标记重复"),
+            (good + good, "标记重复"),
         ]:
             try:
-                extract_java_known_benign_filenames(broken)
+                parse_java_known_benign(broken)
             except AssertionError:
                 continue
             raise AssertionError(f"{why} 时解析器未 fail-closed（静默返回了集合）")
