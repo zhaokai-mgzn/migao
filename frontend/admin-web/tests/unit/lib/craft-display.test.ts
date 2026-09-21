@@ -38,7 +38,7 @@ const orderCraftSpec = {
   patternRepeat: 0.32,
   processingMeters: 13.3,
   fabric_meters: 13.3,
-  formulaText: '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米',
+  formulaText: '韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米',
   pleat_count: 52,
   per_panel_pleats: 26,
   panels: 4,
@@ -85,7 +85,7 @@ describe('craftSpecRows — 订单/快照层（camelCase）', () => {
       '档位',
       '特殊选项',
       '总褶数',
-      '折数（每片）',
+      '褶数（每片）',
       '幅数',
       '理论褶倍',
       '实际褶倍',
@@ -152,7 +152,7 @@ describe('craftSpecRows — 订单/快照层（camelCase）', () => {
     // 用户 2026-09-19 追加裁定「**C端也要能看到**」⇒ C 端报价卡吃 `curtain_calc` 原始输出
     // （snake_case `formula_text`）必须能取到值；订单侧吃 camelCase `formulaText`。
     // 🔴 红证：删掉 snake_case 别名 ⇒ C 端取不到值 ⇒ 本断言红。
-    const formula = '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
+    const formula = '韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
     expect(rowValue(craftSpecRows({ formula_text: formula }), '算料公式')).toBe(formula)
     expect(rowValue(craftSpecRows({ formulaText: formula }), '算料公式')).toBe(formula)
   })

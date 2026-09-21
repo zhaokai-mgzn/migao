@@ -59,13 +59,13 @@
  *
  * ① **褶距控件整体删除**（「移除订单的工艺规格中的褶距字段」）—— `pleatSpacing` 连同
  *    `DEFAULT_PLEAT_SPACING` / `buildCraftSpec` 的写键一起退场；存量单的**读侧**仍容错。
- * ② **新增「用料公式」chips**（`pleat` 韩折公式·折数法 / `fullness` 褶倍数公式·倍数法）：
- *    - 选 `pleat` ⇒ 展示**自动算出的折数**（试算响应 `pleat_count`；没结果展示「—」，
+ * ② **新增「用料公式」chips**（`pleat` 韩褶公式·褶数法 / `fullness` 褶倍数公式·倍数法）：
+ *    - 选 `pleat` ⇒ 展示**自动算出的褶数**（试算响应 `pleat_count`；没结果展示「—」，
  *      **不许编数**）；
  *    - 选 `fullness` ⇒ 展示**档位 chips**（经济档 / 标准档）——值域 = 算料配置 `tiers` 的**键**、
  *      文案取 `tiers[key].label`（**读面取值**，前端不写死档位真值）。档位进算料请求的
  *      `craft_tier`，并落库 `processingInfo.craftTier`（不再钉死 `standard`）。
- * ③ **配置加载失败不阻断录入**：按缺省（韩折公式 + 标准档）走，并**显式提示**配置未加载
+ * ③ **配置加载失败不阻断录入**：按缺省（韩褶公式 + 标准档）走，并**显式提示**配置未加载
  *    （静默按缺省走 = 商家以为按自己配的口径算）。
  * ④ **纱帘子块删除**（帘体已无「布帘+纱帘」档）。
  */
@@ -185,8 +185,8 @@ export interface OrderCraftFieldsProps {
    */
   calcConfig: CraftCalcConfig | null
   /**
-   * 最近一次算料试算的**折数**（响应 `pleat_count`）；`null` = 还没结果 ⇒ 展示「—」，
-   * **不许编数**（编一个折数 = 第二份算料逻辑）。
+   * 最近一次算料试算的**褶数**（响应 `pleat_count`）；`null` = 还没结果 ⇒ 展示「—」，
+   * **不许编数**（编一个褶数 = 第二份算料逻辑）。
    */
   pleatCount: number | null
   /** 配布边米数；`null` = 未改过（跟随主布） */
@@ -275,8 +275,8 @@ export default function OrderCraftFields({
           onChange={(next) => onChange({ style: next })}
         />
 
-        {/* **用料公式**（issue #4874，用户 2026-09-21：「加上用料公式字段，如果选择韩折公式，
-            那就自动算出折数，如果选择的是褶倍数公式，那就展示是经济档还是标准档」）。
+        {/* **用料公式**（issue #4874，用户 2026-09-21：「加上用料公式字段，如果选择韩褶公式，
+            那就自动算出褶数，如果选择的是褶倍数公式，那就展示是经济档还是标准档」）。
             ⚠️ 原「褶距」number 输入框**已删除**（同一批需求：「移除订单的工艺规格中的褶距字段」）
             —— 留一个可录键 = 与算料引擎的档位口径打架（引擎算分幅时**不读**褶距，只按档位取倍数）。 */}
         <ChipGroup
@@ -313,17 +313,17 @@ export default function OrderCraftFields({
         )}
       </div>
 
-      {/* **折数 / 档位**（issue #4874）—— 与「用料公式」chips 联动：
-          `pleat`（韩折公式）⇒ 展示**自动算出的折数**（试算响应 `pleat_count`）；
+      {/* **褶数 / 档位**（issue #4874）—— 与「用料公式」chips 联动：
+          `pleat`（韩褶公式）⇒ 展示**自动算出的褶数**（试算响应 `pleat_count`）；
           `fullness`（褶倍数公式）⇒ 展示**档位 chips**（值域与文案都取算料配置）。 */}
       {effectiveFormula === CRAFT_CALC_FORMULA_PLEAT && (
         <div className="mt-3" data-testid="craft-pleat-count">
-          <span className={LABEL_CLASS}>自动算出的折数</span>
+          <span className={LABEL_CLASS}>自动算出的褶数</span>
           <span className="text-sm font-medium text-neutral-900 tabular-nums">
-            {/* 没结果就是「—」：**不编数**（编一个折数 = 第二份算料逻辑） */}
+            {/* 没结果就是「—」：**不编数**（编一个褶数 = 第二份算料逻辑） */}
             {typeof pleatCount === 'number' && Number.isFinite(pleatCount) ? pleatCount : '—'}
           </span>
-          <span className="ml-1.5 text-xs text-neutral-400">（按韩折公式试算得出，改宽高即重算）</span>
+          <span className="ml-1.5 text-xs text-neutral-400">（按韩褶公式试算得出，改宽高即重算）</span>
         </div>
       )}
 

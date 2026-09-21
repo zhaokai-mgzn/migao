@@ -132,10 +132,10 @@ interface CraftSpecField {
  * （`lib/craft-calc-request.ts` 直接 re-export ⇒ **不存在第二份会漂移的文案**）。
  *
  * ⚠️ **键**与算料引擎 `curtain_calc.FORMULA_LABELS` 逐字一致（有守卫）；**文案**是展示层的富化形态
- * （用户 2026-09-21 截图口径：「韩折公式（折数法）」），引擎那份是短名（「韩折公式」）—— 两者**键同文案不同**，有意的。
+ * （用户 2026-09-21 截图口径：「韩褶公式（褶数法）」），引擎那份是短名（「韩褶公式」）—— 两者**键同文案不同**，有意的。
  */
 export const FORMULA_LABELS: Record<string, string> = {
-  pleat: '韩折公式（折数法）',
+  pleat: '韩褶公式（褶数法）',
   fullness: '褶倍数公式（倍数法）',
 }
 
@@ -189,7 +189,7 @@ const CRAFT_SPEC_FIELDS: CraftSpecField[] = [
   { label: '档位', keys: ['craftTier', 'craft_tier'], format: craftTier },
   { label: '特殊选项', keys: ['specialOptions', 'special_options'], format: optionList },
   { label: '总褶数', keys: ['pleatCount', 'pleat_count'], format: plainText },
-  { label: '折数（每片）', keys: ['perPanelPleats', 'per_panel_pleats'], format: plainText },
+  { label: '褶数（每片）', keys: ['perPanelPleats', 'per_panel_pleats'], format: plainText },
   { label: '幅数', keys: ['panels'], format: plainText },
   { label: '理论褶倍', keys: ['fullness'], format: times },
   { label: '实际褶倍', keys: ['fullnessActual', 'fullness_actual'], format: times },

@@ -186,7 +186,7 @@ public class ProcessingOrderService {
      * 订单侧若已存算料输出就原样送过去，Java 侧**不发明数字**（见 {@link #calcInfo}）。
      *
      * <p>{@code per_panel_pleats} / {@code fullness} / {@code fullness_actual} 为 issue #4354 新增
-     * （设计文档 §4.3）：它们是**展示/复核**用键（每片折数、理论/实际褶倍），算料端点按
+     * （设计文档 §4.3）：它们是**展示/复核**用键（每片褶数、理论/实际褶倍），算料端点按
      * {@code calc_info} 的自由字典读，多传不改变取值口径。</p>
      */
     private static final List<String> CALC_INFO_KEYS = List.of(
@@ -456,7 +456,7 @@ public class ProcessingOrderService {
      * **同一樘窗（一个窗户）** —— 它是套级工序（#4384）与加工费樘窗级（#4386）的**归属层级**。
      * 部位 = {@code order_items} 行 = 一件帘（布帘 / 纱帘 / 帘头）⇒
      * **布行与纱行各自成部位**（同组不合并），只有 {@code componentRole=配布边} 的行
-     * **不独立成部位**（否则一扇窗被算成两扇：折数/开数/幅数/工序/计件全部翻倍）。
+     * **不独立成部位**（否则一扇窗被算成两扇：褶数/开数/幅数/工序/计件全部翻倍）。
      * 组内只有配布边行时它仍自成部位（不静默丢窗）。</p>
      *
      * <p><b>定型开关（issue #4354，设计文档 §4.7）</b>：{@code isShaped=false} ⇒ 从基准序列里
@@ -503,7 +503,7 @@ public class ProcessingOrderService {
             }
             if (isAbsorbedEdgeRow(entry, groupsWithMainRow)) {
                 // 配布边行并入同组的主布部位 ⇒ **不独立成部位**（否则一扇窗被算成两扇：
-                // 折数/开数/幅数/工序/计件全部翻倍）。该行自身的货号/米数仍在快照里可展示。
+                // 褶数/开数/幅数/工序/计件全部翻倍）。该行自身的货号/米数仍在快照里可展示。
                 continue;
             }
             // 本行是否承载所在樘窗的套级工序（= 该组的主布行）。
@@ -964,7 +964,7 @@ public class ProcessingOrderService {
      * 而其 {@code per_meter} 加工项 quantity=1，取后者会让 112 米的单得到「应做 1 米」⇒ 报工上限 1 ⇒ 假完工。</p>
      *
      * <p><b>已知缺口（#4118，不是本方法缺陷）</b>：订单侧**从不落库算料输出** ⇒
-     * {@code pleat_count}（折数）/ {@code panels}（幅）/ {@code set_count}（套）/ {@code holes}（孔）
+     * {@code pleat_count}（褶数）/ {@code panels}（幅）/ {@code set_count}（套）/ {@code holes}（孔）
      * 一律取不到 ⇒ 端点在缺键时兜底 1 并在 {@code qty_source} 标 {@code fallback}。
      * 真正修法是**下单时把算料输出落库**（#4118「实际褶倍算了就丢」），届时本方法只需把透传白名单
      * 扩到那几个键即可 —— 请勿把它当 bug 反复排查。</p>

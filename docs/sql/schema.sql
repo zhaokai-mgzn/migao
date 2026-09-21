@@ -1053,7 +1053,7 @@ COMMENT ON COLUMN craft_calc_configs.min_fullness IS
 COMMENT ON COLUMN craft_calc_configs.tiers IS
     '工艺档位（JSONB：{档位名: {fullness, label}}）。护栏：非空、每档 fullness > 0 且 >= min_fullness。';
 COMMENT ON COLUMN craft_calc_configs.default_formula IS
-    '兜底用料公式：pleat（韩折公式＝折数法，默认）/ fullness（褶倍数公式＝倍数法）。'
+    '兜底用料公式：pleat（韩褶公式＝褶数法，默认）/ fullness（褶倍数公式＝倍数法）。'
     '⚠️ 只是**工艺推导表缺失时的兜底**（韩褶/打孔由 craft 推导），不是恒定生效的默认值。';
 COMMENT ON COLUMN craft_calc_configs.meters_rounding_step IS
     '用料米数**向上进位**步长（米），引擎默认 0.1。护栏：必须 > 0（截断/四舍五入 = 抹零）。';

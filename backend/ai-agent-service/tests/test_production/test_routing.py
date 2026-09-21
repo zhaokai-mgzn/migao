@@ -67,7 +67,7 @@ def test_unsupported_position_rejected():
 
 
 def test_instance_operations_qty_from_calc():
-    """应做数量=算料引擎输出：韩褶-布按折数 48、米工序按用料 12.3、套工序=1"""
+    """应做数量=算料引擎输出：韩褶-布按褶数 48、米工序按用料 12.3、套工序=1"""
     insts = instance_operations(POSITION, CALC)
     by_op = {i["operation"]: i for i in insts}
     assert by_op["韩褶-布"]["qty"] == 48
@@ -125,7 +125,7 @@ def _quote_source_keys() -> set:
     """算料引擎 build_quote **返回字典**的字面量键集（从源码文本解析，不 import 执行）。
 
     为什么用源码解析而不是调用引擎：本用例要断言的是「引擎**产出**了哪些键」这一
-    **契约事实**，调用一次只能说明某个输入下的取值，换个输入（如非折数法）键就变了。
+    **契约事实**，调用一次只能说明某个输入下的取值，换个输入（如非褶数法）键就变了。
     解析对象 = `return {...}` 里显式写出的键 + `**pleat_fields` 展开的键集。
     """
     import re
@@ -151,7 +151,7 @@ def test_engine_quote_keys_are_pinned():
     keys = _quote_source_keys()
     # 本包依赖的引擎真产出键：米数主键就在这里
     assert "fabric_meters" in keys, "引擎不再产出 fabric_meters ⇒ _qty_for 的米数契约已破"
-    assert "pleat_count" in keys, "引擎不再产出 pleat_count ⇒ 折数类工序应做数量失据"
+    assert "pleat_count" in keys, "引擎不再产出 pleat_count ⇒ 褶数类工序应做数量失据"
 
 
 def test_qty_for_uses_real_engine_output():

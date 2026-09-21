@@ -115,7 +115,7 @@ describe('OrderDetail 商品明细展示工艺规格', () => {
     expect(screen.getByText(/门幅2\.8米/)).toBeInTheDocument()
   })
 
-  it('渲染算料口径：总褶数/折数（每片）/幅数/褶倍/米数/是否对花/花距（§4.9 ②）—— ⚠️ #4876 起**不再渲染「褶距」**', async () => {
+  it('渲染算料口径：总褶数/褶数（每片）/幅数/褶倍/米数/是否对花/花距（§4.9 ②）—— ⚠️ #4876 起**不再渲染「褶距」**', async () => {
     mockGetOrder.mockResolvedValue({
       data: {
         data: orderWith({
@@ -196,7 +196,7 @@ describe('OrderDetail 商品明细展示工艺规格', () => {
   // issue #4546：用户裁定「要展示出来可以明确告知用料是如何计算出来的」
   // ⇒ 详情页把落库的算料公式串**原样**渲染（真值 = `order_items.processing_info.formulaText`）。
   it('判据 2（红证 #4546）：渲染「算料公式」行，且串**逐字**来自 processingInfo', async () => {
-    const formulaText = '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
+    const formulaText = '韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
     mockGetOrder.mockResolvedValue({
       data: { data: orderWith({ craft: '韩褶', fabric_meters: 13.3, formulaText }) },
     })

@@ -2,7 +2,7 @@
 /**
  * 工艺 → 用料公式 / 悬挂方式的**同步守卫**（issue #4527 追加裁定）。
  *
- * 用户 2026-09-19 追加裁定逐字：「**韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍**」
+ * 用户 2026-09-19 追加裁定逐字：「**韩褶用韩褶公式算布料，打孔按倍数法算布料，默认选择 2 倍**」
  * ⇒ 公式**由工艺推导**。
  *
  * 病根（同族 #4393 / #4420：`craft-display` / 默认档常量的多份副本无同步守卫）：
@@ -74,7 +74,7 @@ describe('工艺 → 公式 / 悬挂方式：前端副本与算料引擎真值�
     expect(CRAFT_CALC_FORMULA_FULLNESS).toBe('fullness')
   })
 
-  it('resolve_craft_rule 逐值一致：韩褶 → 韩折公式+s_hook / 打孔 → 褶倍数公式+eyelet', () => {
+  it('resolve_craft_rule 逐值一致：韩褶 → 韩褶公式+s_hook / 打孔 → 褶倍数公式+eyelet', () => {
     const py = pyCraftRules()
     // 逐值写死（判据不依赖实现）：改任一侧 ⇒ 红
     expect(py).toEqual({

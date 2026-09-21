@@ -36,13 +36,13 @@ CHECKLIST: List[Dict[str, Any]] = [
     {"id": "is_shaped", "label": "定型", "ui": "choice", "default_src": "industry",
      "default_rule": "curtain_type", "note": "布帘默认是/纱帘默认否/帘头是（面料红线：真丝等不耐高温须不定型）"},
     # 用料公式（issue #4873，用户 2026-09-21 需求）：**替换**退役的褶距问项 ——
-    # 原话「移除订单的工艺规格中的褶距字段，同时加上用料公式字段；如果选择韩折公式，
-    # 那就自动算出折数，如果选择的是褶倍数公式，那就展示是经济档还是标准档」。
-    # industry 默认 = `pleat`（韩折公式）；值域 = 算料引擎 `curtain_calc.FORMULA_LABELS`
-    # 的键（pleat 折数法 / fullness 倍数法）。算料档位（`craftTier`）**不进清单**：
+    # 原话「移除订单的工艺规格中的褶距字段，同时加上用料公式字段；如果选择韩褶公式，
+    # 那就自动算出褶数，如果选择的是褶倍数公式，那就展示是经济档还是标准档」。
+    # industry 默认 = `pleat`（韩褶公式）；值域 = 算料引擎 `curtain_calc.FORMULA_LABELS`
+    # 的键（pleat 褶数法 / fullness 倍数法）。算料档位（`craftTier`）**不进清单**：
     # 它由**算料配置**决定，不是顾客的回答项。
     {"id": "formula", "label": "用料公式", "ui": "choice", "default_src": "industry",
-     "default": "pleat", "note": "韩折公式（折数法，自动算折数）/ 褶倍数公式（倍数法，按档位算）"},
+     "default": "pleat", "note": "韩褶公式（褶数法，自动算褶数）/ 褶倍数公式（倍数法，按档位算）"},
     # 是否对花（issue #4362，S1）：此前只作为 `fabric` 的 note 一笔带过 ⇒ **没人问、也没处落库**。
     # 真值源 §1 把它列为下单行要素（实证 `是否对花: 不对花`）；定宽买高时每幅加一个花距。
     {"id": "has_pattern", "label": "是否对花", "ui": "choice", "default_src": "none",
@@ -118,12 +118,12 @@ def conflicts(collector: Dict[str, Any]) -> List[str]:
             warns.append(f"宽度 {w}m 小于 {WIDTH_FOUR_MIN}m，四开偏窄，建议双开")
     pleats = collector.get("pleat_count")
     if pleats is not None and open_count in (2, 4) and int(pleats) % int(open_count) != 0:
-        warns.append(f"折数 {pleats} 无法被开数 {open_count} 整除，将取最近可行折数")
+        warns.append(f"褶数 {pleats} 无法被开数 {open_count} 整除，将取最近可行褶数")
     craft = collector.get("craft")
     if craft is not None and craft not in VALID_CRAFTS:
         warns.append(f"工艺「{craft}」不在可选范围（韩褶/打孔/四爪钩/穿杆）")
     if craft == "打孔" and pleats is not None:
-        warns.append("打孔工艺按孔数计（不按折数），折数信息将被忽略")
+        warns.append("打孔工艺按孔数计（不按褶数），褶数信息将被忽略")
     fullness = collector.get("fullness")
     if fullness is not None and float(fullness) < MIN_FULLNESS:
         warns.append(f"褶皱倍数 {fullness} 低于行业下限 {MIN_FULLNESS}，影响美观，请选择更高倍数")

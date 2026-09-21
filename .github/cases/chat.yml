@@ -2030,7 +2030,7 @@ cases:
     # ── 覆盖说明（issue #3986，M3-E）──
     # 现实订单大量信息靠默认约定兜底（2026-09 客户强调）。澄清做成确定性清单驱动：
     # 必填（尺寸）追问、默认三层（行业标/商家默/客户记忆 craft_profile）、缺省即报、
-    # 矛盾拦截（4.6m 单开→建议双开/折数整除/工艺互斥/倍数红线）、轮次上限转复尺。
+    # 矛盾拦截（4.6m 单开→建议双开/褶数整除/工艺互斥/倍数红线）、轮次上限转复尺。
     # 纯函数零 IO，由单测全量覆盖（同 CH-036 惯例不进 agent-eval 冒烟）。
     user_inputs:
       - "帮我家客厅做窗帘，大概要多少钱"
@@ -2039,9 +2039,9 @@ cases:
     data_checks:
       - "尺寸（宽/高）缺失必须追问（必填检测）——不阻塞，缺省即报"
       - "默认三层合成：客户记忆 > 商家配置 > 行业标准（布帘默认定型/纱帘默认不定型、≤2.2m 单开/>2.2m 双开）"
-      - "矛盾拦截：4.6m 单开→建议双开、折数不可整除自动调整、倍数<1.5 拒绝、打孔不按折数"
+      - "矛盾拦截：4.6m 单开→建议双开、褶数不可整除自动调整、倍数<1.5 拒绝、打孔不按褶数"
       - "每轮追问 ≤3 项；超过 3 轮转复尺/人工"
-      - "**用料公式问项（issue #4873 / #4876）**：引导清单的问项 `pleat_spacing`（褶距，industry 默认 0.1）**已退役**，由 `formula`（**用料公式**，industry 默认 `pleat` = 韩折公式）取代 —— 值域 = 算料引擎 `curtain_calc.FORMULA_LABELS` 的键（`pleat` / `fullness`）；`to_craft_spec` 不再映射 `pleatSpacing`（`pleat_spacing` / `pleatSpacing` 两种写法即使传进来也**不产出**该键）。红证：把问项改回 `pleat_spacing` ⇒ `test_merged_defaults_never_yields_pleat_spacing` 与 `test_craft_spec_never_emits_retired_pleat_spacing_keys` 红。"
+      - "**用料公式问项（issue #4873 / #4876）**：引导清单的问项 `pleat_spacing`（褶距，industry 默认 0.1）**已退役**，由 `formula`（**用料公式**，industry 默认 `pleat` = 韩褶公式）取代 —— 值域 = 算料引擎 `curtain_calc.FORMULA_LABELS` 的键（`pleat` / `fullness`）；`to_craft_spec` 不再映射 `pleatSpacing`（`pleat_spacing` / `pleatSpacing` 两种写法即使传进来也**不产出**该键）。红证：把问项改回 `pleat_spacing` ⇒ `test_merged_defaults_never_yields_pleat_spacing` 与 `test_craft_spec_never_emits_retired_pleat_spacing_keys` 红。"
     skip_reason: "[backend-contract] 澄清清单引擎是确定性纯函数（app/clarification/curtain_checklist.py），由单元测试全量覆盖（backend/ai-agent-service/tests/test_clarification/test_curtain_checklist.py，**28 项** —— ⚠️ 原写「18 项」，该计数在 #4873/#4876 之前就已腐烂；2026-09-21 用 `--collect-only -q | grep -c '::'` 实测为 28），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）"
     merge_log: "2026-09-17 新增（issue #3986）：M3-E 窗帘下单澄清清单引擎覆盖登记，单测覆盖。2026-09-18（issue #4120）**证据链修复**：原 traces.tests 指向不存在的 tests/test_curtain_checklist.py，且测试文件名为 curtain_checklist.py（不匹配 python_files = test_*.py）⇒ **永不被 pytest 收集**、18 个 def test_ 一个都没跑过 ⇒ 本条用例的机器证据为**零**而没有任何东西会变红。修法：文件改名 test_curtain_checklist.py（pytest tests/ -q 实测 18 passed）+ traces.tests 指向真实路径；并新增 L0 守卫 tests/unit_ci_workflows/test_eval_evidence_chain.py 锁死「traces 引用必须存在」与「以单测覆盖为由 skip 的文件必须真被收集」（同批修掉存量 11 条幽灵 traces.tests + 7 条幽灵 traces.ci）；断言未动 2026-09-21（issue #4876）：① `skip_reason` 里的单测计数「18 项」→**实测 28 项**（该数字与 #4120 修的那一刻就已不符，属「注释里的数字会腐烂」家族）；② 新增一条判定「用料公式问项」（#4873 把 `pleat_spacing` 换成 `formula`）——**唯一映射点** `CHECKLIST_TO_CRAFT_SPEC` 随之改指 `formula`。"
     traces:
@@ -2053,7 +2053,7 @@ cases:
 
   - id: CH-036
     legacy_id: ""
-    title: "窗帘算料引擎确定性逻辑 - 折数法/工艺档位/红线/按货号汇总（单测覆盖，非 LLM 行为）"
+    title: "窗帘算料引擎确定性逻辑 - 褶数法/工艺档位/红线/按货号汇总（单测覆盖，非 LLM 行为）"
     domains:
       - chat
       - customer
@@ -2078,12 +2078,12 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "韩褶折数法算料：用料 = 0.25×折数 + 余量（单开 0.2 / 对开四开 0.3）—— 换算唯一性由单测保证"
+      - "韩褶褶数法算料：用料 = 0.25×褶数 + 余量（单开 0.2 / 对开四开 0.3）—— 换算唯一性由单测保证"
       - "倍数 < 1.5 拒绝报价（行业美学下限红线）"
-      - "开数不可整除自动取最近可行折数并告警（33 折双开 → 34 折）"
+      - "开数不可整除自动取最近可行褶数并告警（33 折双开 → 34 折）"
       - "按货号-色号汇总用料（2698-11 跨部位合计 28.0 米）—— 采购/套裁视图"
     skip_reason: "[backend-contract] 算料引擎是确定性纯计算（curtain_calc），由单元测试全量覆盖（test_curtain_calc.py），非 LLM 行为，不进入 agent-eval 冒烟（同 UI 类用例惯例）"
-    merge_log: "2026-09-17 新增（issue #3982）：M2-C 算料引擎折数法/档位/红线/汇总的覆盖登记，单测覆盖"
+    merge_log: "2026-09-17 新增（issue #3982）：M2-C 算料引擎褶数法/档位/红线/汇总的覆盖登记，单测覆盖"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_curtain_calc.py"
@@ -2107,7 +2107,7 @@ cases:
       - ai-chat.intent-tool-map
     # ── 覆盖说明（issue #3990，M3-F）──
     # 报价协商的确定性内核：curtain_calc 支持 craft_tier（standard/economy）档位对比、
-    # pleat_count 客户自报折数、source=customer_quoted 来源标记、open_count 开数余量。
+    # pleat_count 客户自报褶数、source=customer_quoted 来源标记、open_count 开数余量。
     # 纯计算由单测覆盖（test_curtain_calc.py 新增 3 项），不进 agent-eval 冒烟（同 CH-036/037 惯例）。
     # 行业实证：economy 档用料 < standard 档；48 折双开 → 12.3 米；单开余量 0.2。
     user_inputs:
@@ -2116,10 +2116,10 @@ cases:
       - tool: direct_reply
     data_checks:
       - "报价协商：craft_tier=economy 重算给出省料档对比（用料/价格少于 standard）"
-      - "客户自报折数/用料：pleat_count + source=customer_quoted 反算校验（48 折双开 → 12.3 米）"
-      - "开数余量：单开 +0.2 / 对开四开 +0.3；对开折数必须偶数"
+      - "客户自报褶数/用料：pleat_count + source=customer_quoted 反算校验（48 折双开 → 12.3 米）"
+      - "开数余量：单开 +0.2 / 对开四开 +0.3；对开褶数必须偶数"
       - "顾客自报 ≠ 成交价：最终档位由商家确认，来源标记供对账（M3-F 商家裁定）"
-    skip_reason: "[backend-contract] 报价协商内核是确定性纯计算（curtain_calc 折数法/档位），由单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037 惯例）"
+    skip_reason: "[backend-contract] 报价协商内核是确定性纯计算（curtain_calc 褶数法/档位），由单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037 惯例）"
     merge_log: "2026-09-17 新增（issue #3990）：M3-F 报价协商确定性内核覆盖登记，单测覆盖"
     traces:
       tests:

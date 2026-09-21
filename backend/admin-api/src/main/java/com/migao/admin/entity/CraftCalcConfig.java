@@ -18,7 +18,7 @@ import java.util.Map;
 /**
  * 算料公式<b>租户级配置</b>（V80，issue #4528 = 包 E）。对应表：{@code craft_calc_configs}。
  *
- * <p><b>为什么需要它</b>：用户 2026-09-19 裁定「我提供的韩折的公式<b>可能不是行业通用的</b>，
+ * <p><b>为什么需要它</b>：用户 2026-09-19 裁定「我提供的韩褶的公式<b>可能不是行业通用的</b>，
  * 可能得<b>支持每个商家自定义配置</b>」—— 包 D（#4527）已把公式参数做成「可注入 + 默认值」
  * （{@code curtain_calc.DEFAULT_CRAFT_CALC_CONFIG}），但没有消费者，商家改不了口径。
  * 本表就是那个消费者。</p>
@@ -63,7 +63,7 @@ public class CraftCalcConfig {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Object tiers;
 
-    /** 兜底公式：{@code pleat} 韩折公式（折数法）/ {@code fullness} 褶倍数公式（倍数法） */
+    /** 兜底公式：{@code pleat} 韩褶公式（褶数法）/ {@code fullness} 褶倍数公式（倍数法） */
     private String defaultFormula;
 
     /** 定宽买高上下卷边（米）；引擎默认 0.3 */

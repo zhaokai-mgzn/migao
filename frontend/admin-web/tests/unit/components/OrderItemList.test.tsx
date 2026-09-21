@@ -241,7 +241,7 @@ describe('OrderItemList', () => {
       expect(screen.getByText('是否定型').parentElement?.textContent).toContain('是')
     })
 
-    it('渲染算料口径：总褶数/折数（每片）/幅数/褶倍/米数/是否对花/花距 —— ⚠️ #4876 起**不再渲染「褶距」**', () => {
+    it('渲染算料口径：总褶数/褶数（每片）/幅数/褶倍/米数/是否对花/花距 —— ⚠️ #4876 起**不再渲染「褶距」**', () => {
       render(
         <OrderItemList
           items={[
@@ -524,7 +524,7 @@ describe('OrderItemList', () => {
 
   // issue #4546：算料公式串归入**算料**组（它是算料输出的说明，不是工艺输入）
   describe('#4546 算料公式行', () => {
-    const formulaText = '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
+    const formulaText = '韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
 
     it('判据 2（红证）：有 formulaText ⇒ 在「算料口径」组渲染「算料公式」行（逐字）', () => {
       render(

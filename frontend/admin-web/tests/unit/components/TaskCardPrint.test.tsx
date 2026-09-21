@@ -339,11 +339,11 @@ describe('TaskCardPrint（洗水码 60mm×30mm，issue #4946）', () => {
 
   it('#4555 回归：算料公式（formula_text）以摘要形态逐张上纸面，存量无该键则不出现', () => {
     const withFormula = [
-      { ...craftItems[0], formula_text: '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米' },
+      { ...craftItems[0], formula_text: '韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米' },
     ] as unknown as ProcessingOrderItem[]
     const { unmount } = printCard({ items: withFormula })
     expect(screen.getByTestId('task-card-label-craft-0')).toHaveTextContent(
-      '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米',
+      '韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米',
     )
     unmount()
 

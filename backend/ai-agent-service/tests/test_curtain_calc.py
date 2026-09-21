@@ -8,8 +8,8 @@
 - 罗马帘公式：M = (W+0.2) × (H+0.3)
 - 完整报价：面料费+加工费+辅料费+安装费=总价
 - 超限告警：成品高超门幅定高上限时返回 warning
-- 韩折折数法（M2-C，issue #3982）：0.25×折数+余量（单开0.2/多开0.3）、
-  倍数→折数派生（按开数取整）、工艺档位、来源标记、倍数<1.5 红线、
+- 韩折褶数法（M2-C，issue #3982）：0.25×褶数+余量（单开0.2/多开0.3）、
+  倍数→褶数派生（按开数取整）、工艺档位、来源标记、倍数<1.5 红线、
   开数整除调整、按货号-色号汇总（采购/套裁视图）
 - 辅料口径（issue #4118，以 #3005 为准）：罗马圈**不得**由米数推导/默认单列，
   只走 `accessories` 显式入参（数量/单价由顾客给；缺项 fail-closed）
@@ -293,7 +293,7 @@ class TestCurtainCalcPriceGuard:
         assert standard.data["craft_tier"] == "standard"
 
     async def test_tool_execute_pleat_customer_quoted(self, sample_tool_context):
-        """客户自报折数经工具生效：48 折双开 → 12.3 米且来源标记 customer_quoted（issue #3990）
+        """客户自报褶数经工具生效：48 折双开 → 12.3 米且来源标记 customer_quoted（issue #3990）
 
         同时守 ④：工具响应里必须**能读到实际褶倍**（卡片载荷 = 本响应原样，见 chat.py 的
         `curtain_calc → quotation` 映射）—— 否则前端只能拿理论值渲染（issue #4118 ④）。
@@ -306,7 +306,7 @@ class TestCurtainCalcPriceGuard:
             fabric_width=3.2, fabric_price=23.8,
             open_count=2, pleat_count=48, source="customer_quoted",
         )
-        assert result.success is True, f"折数法应成功: error={result.error}"
+        assert result.success is True, f"褶数法应成功: error={result.error}"
         assert result.data["pleat_count"] == 48
         assert result.data["fabric_meters"] == 12.3
         assert result.data["source"] == "customer_quoted"
@@ -347,7 +347,7 @@ class TestCurtainCalcDescriptionGuard:
 
 
 # ──────────────────────────────────────────────
-# 韩折折数法（【标】0.25 米/折 + 余量：单开 0.2 / 多开 0.3）
+# 韩折褶数法（【标】0.25 米/折 + 余量：单开 0.2 / 多开 0.3）
 # 行业实证：6.6m 韩褶双开 48 折 → 0.25×48+0.3 = 12.3 米
 # ──────────────────────────────────────────────
 def test_pleat_fabric_industry_case():
@@ -372,7 +372,7 @@ def test_margin_for_open_count():
 
 
 def test_derive_pleat_count_from_fullness():
-    """倍数意图→折数实现：6.6m × 2.0 双开 → 52 折（(13.2-0.3)/0.25=51.6→52），且为偶数"""
+    """倍数意图→褶数实现：6.6m × 2.0 双开 → 52 折（(13.2-0.3)/0.25=51.6→52），且为偶数"""
     pleats, warning = derive_pleat_count(6.6, 2.0, open_count=2)
     assert pleats == 52
     assert pleats % 2 == 0
@@ -380,7 +380,7 @@ def test_derive_pleat_count_from_fullness():
 
 
 def test_derive_pleat_count_four_way_divisible():
-    """四开：折数必须是 4 的倍数"""
+    """四开：褶数必须是 4 的倍数"""
     pleats, _ = derive_pleat_count(6.6, 2.0, open_count=4)
     assert pleats % 4 == 0
 
@@ -400,7 +400,7 @@ def test_pleat_divisibility_adjustment():
 
 
 def test_craft_tiers():
-    """工艺档位：标准 2.0 / 经济 1.8，档位越高折数越多（换算唯一性）"""
+    """工艺档位：标准 2.0 / 经济 1.8，档位越高褶数越多（换算唯一性）"""
     assert DEFAULT_CRAFT_TIERS["standard"]["fullness"] == 2.0
     assert DEFAULT_CRAFT_TIERS["economy"]["fullness"] == 1.8
     p_s, _ = derive_pleat_count(6.6, DEFAULT_CRAFT_TIERS["standard"]["fullness"], 2)
@@ -409,7 +409,7 @@ def test_craft_tiers():
 
 
 def test_pleat_source_marker():
-    """取值来源标记：客户自报折数"""
+    """取值来源标记：客户自报褶数"""
     _, _, info = calculate_fabric_by_pleats(48, open_count=2, source="customer_quoted")
     assert info["source"] == "customer_quoted"
 
@@ -429,7 +429,7 @@ def test_aggregate_by_fabric():
 
 
 def test_build_quote_pleat_mode():
-    """build_quote 折数法：48 折双开（3.2m 定高布，对应行业 6.6×2.6 场景）→ 用料 12.3，且带折数/来源/档位信息"""
+    """build_quote 褶数法：48 折双开（3.2m 定高布，对应行业 6.6×2.6 场景）→ 用料 12.3，且带褶数/来源/档位信息"""
     q = build_quote(
         window_width=6.6, window_height=2.6, mounting="s_hook",
         fabric_width=3.2,
@@ -469,11 +469,11 @@ def test_multi_position_quote():
 # 病根：`calculate_fabric_by_pleats` 第 184 行算出 `info["fullness_actual"]`，
 # 但 `build_quote` 的 `pleat_fields` 不含它 ⇒ 响应里只有档位**理论**倍数 `fullness`，
 # 前端卡片照它渲染 ⇒ 客户自报 48 折（实际用料 12.3÷6.6 = 1.86 倍）时显示「2 倍褶皱」。
-# 治法：`fullness_actual` 随折数法一起透传；`fullness` 的既有语义（档位/款式理论倍数）**不改**。
+# 治法：`fullness_actual` 随褶数法一起透传；`fullness` 的既有语义（档位/款式理论倍数）**不改**。
 # ══════════════════════════════════════════════
 
 class TestFullnessActualPassthrough:
-    """折数法必须同时给出理论倍数与实际倍数，二者不得互相顶替。"""
+    """褶数法必须同时给出理论倍数与实际倍数，二者不得互相顶替。"""
 
     @staticmethod
     def _customer_quoted_48_folds():
@@ -512,7 +512,7 @@ class TestFullnessActualPassthrough:
         assert std["fullness_actual"] != std["fullness"], "标准档实际值也非名义值（13.3÷6.6=2.02）"
 
     def test_multiple_method_quote_has_no_actual_fullness(self):
-        """倍数法没有「折数法反算」这一项 ⇒ 不得编造 `fullness_actual`（fail-closed）。"""
+        """倍数法没有「褶数法反算」这一项 ⇒ 不得编造 `fullness_actual`（fail-closed）。"""
         q = build_quote(
             window_width=3.0, window_height=2.7, mounting="eyelet",
             fabric_width=3.0, fabric_price=30.0,
@@ -537,17 +537,17 @@ class TestFullnessActualPassthrough:
 # ══════════════════════════════════════════════
 # 默认档**静默**回落 ⇒ 显式告警（issue #4118 ⑤-B）
 #
-# 病根：韩褶（s_hook）折数法只在**显式**传 `craft_tier` / `pleat_count` 时生效
+# 病根：韩褶（s_hook）褶数法只在**显式**传 `craft_tier` / `pleat_count` 时生效
 # （`pleat_mode` 判据在 `build_quote` 内），两者都缺 ⇒ **静默**回落倍数法
 # （回落分支的 `warning` 为空）。实测 6.6m 窗 / 2.6m 高 / 双开 / 3.2m 门幅：
-# 标准档折数法 **13.3 米（52 折）** vs 倍数法 **13.8 米**，差 0.5 米**且无任何告警**。
-# 治法：回落分支**也**返回显式 `warning`（说明按倍数法计价、非标准档折数法）。
+# 标准档褶数法 **13.3 米（52 折）** vs 倍数法 **13.8 米**，差 0.5 米**且无任何告警**。
+# 治法：回落分支**也**返回显式 `warning`（说明按倍数法计价、非标准档褶数法）。
 # ⚠️ 铁律：**数值一个字都不能变**（13.8 仍是 13.8）——本项治的是**静默**，不是数值。
 # 「按 §9 接线默认标准档（13.8→13.3）」= 改既有报价口径 = 改钱，**不在本包**（转客户提问项）。
 # ══════════════════════════════════════════════
 
 class TestDefaultTierFallbackWarning:
-    """漏传档位/折数时的倍数法回落必须**显式告警**，且数值逐值不变。"""
+    """漏传档位/褶数时的倍数法回落必须**显式告警**，且数值逐值不变。"""
 
     #: ⑤-B 红证场景（与文档 §9 待裁定条目的实测场景一致）
     FALLBACK = dict(
@@ -559,14 +559,14 @@ class TestDefaultTierFallbackWarning:
         """★红证①：漏传 `craft_tier`/`pleat_count` ⇒ 倍数法回落的 `warning` **必须非空**。
 
         改前形态：回落分支返回 `warning=""` ⇒ 顾客拿到的是倍数法的数（13.8 米），
-        却**没有任何信号**说明它不等于标准档折数法（13.3 米）——「静默」就是本项的缺陷。
+        却**没有任何信号**说明它不等于标准档褶数法（13.3 米）——「静默」就是本项的缺陷。
         """
         q = build_quote(**self.FALLBACK)
         assert q["formula_used"] == "fixed_height", (
             f"前提：漏传档位时走的应是倍数法，实际 formula_used={q['formula_used']!r}"
         )
         assert q["warning"], (
-            "漏传档位/折数时**静默**走倍数法（warning 为空）—— 同一单与标准档折数法差 0.5 米"
+            "漏传档位/褶数时**静默**走倍数法（warning 为空）—— 同一单与标准档褶数法差 0.5 米"
             "却无任何告警（issue #4118 ⑤-B）"
         )
         assert "倍数法" in q["warning"], f"告警须点名本次口径是倍数法：{q['warning']!r}"
@@ -575,9 +575,9 @@ class TestDefaultTierFallbackWarning:
         )
 
     def test_fallback_values_are_byte_for_byte_unchanged(self):
-        """★红证②（防顺手改数）：回落分支**逐值**与改前相同，且 ≠ 标准档折数法。
+        """★红证②（防顺手改数）：回落分支**逐值**与改前相同，且 ≠ 标准档褶数法。
 
-        本项只补告警、**不动数值**：13.8 仍是 13.8（标准档折数法 13.3 是**另一个**口径，
+        本项只补告警、**不动数值**：13.8 仍是 13.8（标准档褶数法 13.3 是**另一个**口径，
         改它 = 改钱 ⇒ 不在本包）。任何"顺手把默认值接成标准档"的实现都会在此变红。
         """
         q = build_quote(**self.FALLBACK)
@@ -596,16 +596,16 @@ class TestDefaultTierFallbackWarning:
             "fullness": 2.0, "formula_used": "fixed_height",
         }, f"回落分支的数值被改动了（本项只治静默、不改钱）：{q}"
         assert "pleat_count" not in q and "fullness_actual" not in q, (
-            "回落仍是倍数法 ⇒ 不得凭空长出折数字段（否则卡片会渲染一个没人算过的折数）"
+            "回落仍是倍数法 ⇒ 不得凭空长出褶数字段（否则卡片会渲染一个没人算过的褶数）"
         )
-        # 对照：标准档折数法确实是**另一个**数（若两法同值，本告警无意义）
+        # 对照：标准档褶数法确实是**另一个**数（若两法同值，本告警无意义）
         std = build_quote(**self.FALLBACK, craft_tier="standard")
         assert (std["fabric_meters"], std["pleat_count"]) == (13.3, 52)
-        assert std["warning"] == "", "显式传档位 ⇒ 折数法，不该有「回落」告警"
+        assert std["warning"] == "", "显式传档位 ⇒ 褶数法，不该有「回落」告警"
         assert q["fabric_meters"] != std["fabric_meters"]
 
     def test_no_false_alarm_when_method_is_explicit_or_not_applicable(self):
-        """防噪音告警：非韩褶（倍数法本就是本口径）与显式传档位/折数 ⇒ 不得报「回落」。"""
+        """防噪音告警：非韩褶（倍数法本就是本口径）与显式传档位/褶数 ⇒ 不得报「回落」。"""
         eyelet = build_quote(
             window_width=3.0, window_height=2.7, mounting="eyelet",
             fabric_width=3.0, fabric_price=30.0,
@@ -615,7 +615,7 @@ class TestDefaultTierFallbackWarning:
         assert build_quote(**self.FALLBACK, craft_tier="economy")["warning"] == ""
         assert build_quote(
             **self.FALLBACK, pleat_count=48, source="customer_quoted",
-        )["warning"] == "", "顾客自报折数 ⇒ 折数法，不是「回落」"
+        )["warning"] == "", "顾客自报褶数 ⇒ 褶数法，不是「回落」"
 
 
 # ══════════════════════════════════════════════
@@ -894,7 +894,7 @@ class TestCraftSpecOutput:
         assert q["total"] == pytest.approx(464.8)                # 文档 §7 算例锚定
 
     def test_open_count_and_pleats_are_usable_as_craft_spec(self):
-        """**回归护栏**：打开方式/折数/每片折数已是既有输出 ⇒ 直接当 craft spec 用，不新增重复键。"""
+        """**回归护栏**：打开方式/褶数/每片褶数已是既有输出 ⇒ 直接当 craft spec 用，不新增重复键。"""
         q = build_quote(
             window_width=6.6, window_height=2.92, mounting="s_hook",
             pleat_count=48, open_count=2,
@@ -988,16 +988,16 @@ class TestPanelsOutput:
         assert q["fabric_meters"] == pytest.approx(q["panels"] * (2.7 + 0.3 + 0.5))
 
     def test_pleat_mode_fixed_width_exposes_panels(self):
-        """折数法下成品高超限 ⇒ 走 `fixed_width_pleats`，幅数同样必须透传。
+        """褶数法下成品高超限 ⇒ 走 `fixed_width_pleats`，幅数同样必须透传。
 
-        期望值按同一公式独立算出：折数法用料（0.25×折数 + 余量）÷ 门幅 向上取整。
+        期望值按同一公式独立算出：褶数法用料（0.25×褶数 + 余量）÷ 门幅 向上取整。
         """
         q = build_quote(
             window_width=6.6, window_height=2.92, mounting="s_hook",
             fabric_width=2.8, fabric_price=30.0, pleat_count=48, open_count=2,
         )
         assert q["formula_used"] == "fixed_width_pleats"
-        pleat_meters = round(0.25 * 48 + 0.3, 2)             # 折数法用料（双开余量 0.3）
+        pleat_meters = round(0.25 * 48 + 0.3, 2)             # 褶数法用料（双开余量 0.3）
         assert q["panels"] == math.ceil(pleat_meters / 2.8)
         assert q["fabric_meters"] == pytest.approx(q["panels"] * (2.92 + 0.3))
 
@@ -1126,7 +1126,7 @@ class TestMixedColorSurcharge:
         # §10 用料段的标准档 / 经济档（52 折 13.3 米 / 46 折 11.8 米）
         standard = build_quote(**self.DOUBLE_6_6)
         economy = build_quote(**{**self.DOUBLE_6_6, "craft_tier": "economy"})
-        # §11 折数法本体（48 折双开 ⇒ 12.3 米）
+        # §11 褶数法本体（48 折双开 ⇒ 12.3 米）
         assert (sec7["fabric_meters"], sec7["total"]) == (6.6, 464.8)
         assert (standard["pleat_count"], standard["fabric_meters"], standard["total"]) == (52, 13.3, 658.0)
         assert (economy["pleat_count"], economy["fabric_meters"], economy["total"]) == (46, 11.8, 598.0)
