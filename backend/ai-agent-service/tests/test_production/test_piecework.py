@@ -97,3 +97,51 @@ def test_is_production_done_rework_not_counted():
         {"operation": "外帘装袋", "qty": 1, "qualified_qty": 0, "type": "rework"},
     ]
     assert is_production_done(INSTANCES, logs) is False
+
+
+#: #4961 判别性夹具：`外帘装袋`（**必完**）已报满，`精裁-布`（**非**必完）一行没报。
+#: ⚠️ 上面的 `INSTANCES` **不是**判别性夹具：它的必完集合 `{外帘装袋}` ⊆ 实例集合，
+#: 且三条既有用例的报工都覆盖了全部实例 ⇒ 新旧口径给**同一个**答案（对本次改判是空断言）。
+_NON_MUST_FINISH_UNFINISHED = [
+    {"operation": "精裁-布", "unit": "米", "unit_price": 0.4, "qty": 12.3, "is_must_finish": False},
+    {"operation": "外帘装袋", "unit": "套", "unit_price": 1.0, "qty": 1, "is_must_finish": True},
+]
+_ONLY_MUST_FINISH_REPORTED = [
+    {"operation": "外帘装袋", "qty": 1, "qualified_qty": 1, "type": "normal"},
+]
+
+
+def test_is_production_done_rejects_unfinished_non_must_finish_operation():
+    """🔴 #4961 判别性红证：**非**必完工序未完成 ⇒ 未完工（与 Java `ProductionService` 同口径）。
+
+    用户裁定 2026-09-21：「完工 = **全部工序全绿**」。改前实现只看 `is_must_finish` 工序
+    ⇒ 本夹具下**恒 True**（`精裁-布` 的 False 让它被跳过）⇒ 本用例逐值红
+    （实测输出 `assert True is False`）。
+    """
+    assert is_production_done(_NON_MUST_FINISH_UNFINISHED, _ONLY_MUST_FINISH_REPORTED) is False
+
+
+def test_is_production_done_requires_every_instance_done():
+    """#4961 绿侧（新口径的下界）：**全部**实例都报满 ⇒ 完工。
+
+    与上一条成对 ⇒ 「恒 False」的偷懒实现（例如把 `return False` 写死）过不了本用例。
+    """
+    logs = _ONLY_MUST_FINISH_REPORTED + [
+        {"operation": "精裁-布", "qty": 12.3, "qualified_qty": 12.3, "type": "normal"},
+    ]
+    assert is_production_done(_NON_MUST_FINISH_UNFINISHED, logs) is True
+
+
+def test_is_production_done_ignores_the_retired_must_finish_key():
+    """#4961 反向护栏：实例上**残留**的 `is_must_finish` 键不再有语义（历史载体，恒 false）。
+
+    防「实现又回去读那个键」：把 `外帘装袋` 标成非必完、`精裁-布` 标成必完并报满 ⇒
+    若实现按 `is_must_finish` 判，就会返回 True（而正确答案是 False —— `外帘装袋` 没报）。
+    本用例因此**双向**可红：读键 ⇒ True（红）；不读键 ⇒ False（绿）。
+    """
+    flipped = [
+        {"operation": "精裁-布", "unit": "米", "unit_price": 0.4, "qty": 12.3, "is_must_finish": True},
+        {"operation": "外帘装袋", "unit": "套", "unit_price": 1.0, "qty": 1, "is_must_finish": False},
+    ]
+    logs = [{"operation": "精裁-布", "qty": 12.3, "qualified_qty": 12.3, "type": "normal"}]
+    assert is_production_done(flipped, logs) is False

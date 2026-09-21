@@ -842,7 +842,8 @@ class ProcessingOrderServiceTest {
     // ── issue #4116「切库」第二半（用户裁定「现在就切」）──
     // 工序来源从**加工项目录**改为**工序库**（production_routings + production_operations）。
     // 下列用例即该切换的判据：① 实例与库逐条一致（负例 R2）；② 库取不到 ⇒ 显式失败且不回退
-    // 加工项目录、不落半成品；③ is_must_finish 读库（末道「外帘发货」在库里是 false）。
+    // 加工项目录、不落半成品；③ 实例化 payload **不带** `is_must_finish`（#4961：必完概念已退场，
+    // 该键在派生 payload 里根本不存在 —— 实例的必完列因此恒为 null，见本类第一处实例断言）。
     // 三条各有红证（见 PR body 的红证表：改回加工项目录 / 删库路线 / 改回末道必完 ⇒ 均必红）。
 
     @Test
@@ -881,20 +882,21 @@ class ProcessingOrderServiceTest {
             } else {
                 assertThat(instance.getUnitPrice()).as(where + " 单价").isEqualByComparingTo(row[3]);
             }
-            assertThat(instance.getIsMustFinish()).as(where + " 必完标记").isEqualTo(Boolean.valueOf(row[4]));
             assertThat(instance.getIsStartMarker()).as(where + " 开始标记").isEqualTo(Boolean.valueOf(row[5]));
             assertThat(instance.getPositionName()).as(where + " 部位").isEqualTo("布艺遮光帘A 米白");
             assertThat(instance.getProcessingOrderId()).isEqualTo("po-001");
             assertThat(instance.getStatus()).isEqualTo("pending");
         }
-        // 必完工序**唯一** = 库里标了 is_must_finish 的「外帘装袋」（第 10 道）；
-        // 末道「外帘发货」（第 11 道）在库里是 false ⇒ 这一行就是「末道必完」临时口径的反证
-        assertThat(instances).filteredOn(ProcessingPositionOperation::getIsMustFinish)
-                .extracting(ProcessingPositionOperation::getOperationName).containsExactly("外帘装袋");
+        // 🔴 #4961（必完概念整体退场）：实例化**一个字都不写** `is_must_finish`（列保留为历史载体）
+        // ⇒ 全部实例该字段为 `null`。改前这里有三条判据（逐行比对库里的必完值 / 「必完唯一 =
+        // 外帘装袋」/「末道不得被无条件标必完」）—— 它们的前提（实例带必完标记）已不存在，
+        // 旧判据随之退场；替代判据**更强**：该列一字不写（下面这条对**每一道**实例都成立）。
+        // 真正的完工口径（全部活跃实例完成）由 `ProductionServiceTest` 的
+        // `unfinishedNonMustFinishOperationBlocksCompletion` 一族钉住。
+        assertThat(instances).allSatisfy(instance ->
+                assertThat(instance.getIsMustFinish()).as("实例不得写必完列（#4961）").isNull());
         // 🔴 issue #4937 / O4：`打包` 进路线后位次后移一位 ⇒ `外帘发货` 在 index 11
         assertThat(instances.get(11).getOperationName()).isEqualTo("外帘发货");
-        assertThat(instances.get(11).getIsMustFinish())
-                .as("末道工序不得被无条件标必完（is_must_finish 读库 = false）").isFalse();
 
         // ② 应做数量 = **算料引擎输出**（issue #4208 接线）：米类 12.3、折类 24、套类兜底 1
         //    —— 此前取该部位订单数量（2）⇒ 11 道工序全 2.00，正是走查实测「韩褶-布 显示 3 折」的形态。
@@ -3606,8 +3608,11 @@ class ProcessingOrderServiceTest {
         assertThat(operations.get(9).get("qty_source"))
                 .as("套类 = 引擎待补键 ⇒ 显式标注 fallback（不静默）").isEqualTo("fallback");
         assertThat(operations.get(9)).containsEntry("operation", "打包");
+        // 🔴 #4961：派生 payload **不含** `is_must_finish` 键（概念已退场）—— 改前这里是
+        // `.containsEntry("is_must_finish", true)`。判据反向收紧：从「值为 true」变成「键不存在」。
         assertThat(operations.get(10)).containsEntry("operation", "外帘装袋")
-                .containsEntry("is_must_finish", true);
+                .doesNotContainKey("is_must_finish");
+        assertThat(operations).allSatisfy(op -> assertThat(op).doesNotContainKey("is_must_finish"));
     }
 
     // ══════════════════ 工序显示名统一（issue #4621，web 面命名统一 · 阶段 1）══════════════════

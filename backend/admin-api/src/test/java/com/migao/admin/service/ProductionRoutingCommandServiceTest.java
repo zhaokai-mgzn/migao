@@ -362,16 +362,38 @@ class ProductionRoutingCommandServiceTest {
     }
 
     @Test
-    @DisplayName("护栏 4：至少一道必完工序（否则完工判定永远不成立 ⇒ 这张单永远完不了工）")
-    void mainlineWithoutMustFinishOperationIsRejected() {
+    @DisplayName("#4961 护栏 4 **退场**：主线里一道必完工序都没有 ⇒ 照常保存成功（完工口径 = 全部工序全绿）")
+    void mainlineWithoutMustFinishOperationSavesFine() {
+        // 用户裁定 2026-09-21「完工 = 全部工序全绿」⇒ 加工单完工判据不再依赖 `is_must_finish`
+        // ⇒「主线至少 1 道必完工序」这条保存护栏失去前提（五条护栏 → 四条）。
+        // 夹具 `stubLibrary()` 的三道工序（布三边 / 韩褶-布 / 外帘发货）**全部** `isMustFinish=false`
+        // —— 改前这条主线被 422 拒（错误 details 里带 `must_finish`），改后必须落库成功。
+        when(productionRouteTemplateMapper.selectById("rt-1"))
+                .thenReturn(routing("rt-1", "路线甲", false, List.of("布三边")));
+        stubLibrary();
+
+        Map<String, Object> result = service.updateRouting("rt-1",
+                body("mainline", List.of("布三边", "韩褶-布", "外帘发货")), TENANT);
+
+        // 真的落库了（不是"没抛异常"而已）：逐位回读 = 归一后的逻辑名
+        assertThat(result.get("mainline")).asString()
+                .isEqualTo(List.of("三边", "韩褶", "外帘发货").toString());
+        verify(productionRouteTemplateMapper).updateById(any(ProductionRouteTemplate.class));
+    }
+
+    @Test
+    @DisplayName("#4961 护栏 4 退场后**不得**回退成「零校验」：主线里的不存在工序照样 422")
+    void mainlineWithoutMustFinishStillValidatesExistence() {
+        // 反向护栏：删掉 must_finish 那条**不等于**把整条 validateMainline 拿掉 ——
+        // 存在性/重复/空主线三条必须一字不动（否则「保存成功」会掩盖真的错路线）。
         when(productionRouteTemplateMapper.selectById("rt-1"))
                 .thenReturn(routing("rt-1", "路线甲", false, List.of("布三边")));
         stubLibrary();
 
         assertThatThrownBy(() -> service.updateRouting("rt-1",
-                body("mainline", List.of("布三边", "韩褶-布", "外帘发货")), TENANT))
+                body("mainline", List.of("布三边", "库里没有的工序")), TENANT))
                 .isInstanceOf(BusinessException.class)
-                .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("must_finish"));
+                .satisfies(e -> assertThat(detailFields((BusinessException) e)).contains("mainline[1]"));
         verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
     }
 

@@ -187,25 +187,58 @@ class ProductionOperationCommandServiceTest {
     }
 
     @Test
-    @DisplayName("非单价字段的部分更新：停用/单位/分组/排序/必完标记，未给的字段不写")
+    @DisplayName("非单价字段的部分更新：停用/单位/分组/排序/开始标记，未给的字段不写")
     void partialUpdateOfNonPriceFields() {        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
         when(productionOperationMapper.updateById(any(ProductionOperation.class))).thenReturn(1);
 
+        // ⚠️ `is_must_finish` **已从可写字段里去掉**（#4961）：带上它现在会 422（见
+        // updateRejectsTheRetiredMustFinishField）⇒ 本用例只用剩下的可写字段。
         Map<String, Object> view = service().update("op-v54-07", Map.of(
                 "status", "disabled",
                 "group_name", "后道",
                 "sort_order", 9,
-                "is_must_finish", true), TENANT);
+                "is_start_marker", true), TENANT);
 
         ArgumentCaptor<ProductionOperation> updated = ArgumentCaptor.forClass(ProductionOperation.class);
         verify(productionOperationMapper).updateById(updated.capture());
         assertThat(updated.getValue().getStatus()).isEqualTo("disabled");
         assertThat(updated.getValue().getGroupName()).isEqualTo("后道");
         assertThat(updated.getValue().getSortOrder()).isEqualTo(9);
-        assertThat(updated.getValue().getIsMustFinish()).isTrue();
+        assertThat(updated.getValue().getIsStartMarker()).isTrue();
+        assertThat(updated.getValue().getIsMustFinish()).as("退场字段不得被写").isNull();
         assertThat(updated.getValue().getUnitPrice()).as("未给单价 ⇒ 不写单价").isNull();
         verify(priceVersionMapper, never()).insert(any(ProductionOperationPriceVersion.class));
-        assertThat(view.get("is_must_finish")).isEqualTo(true);
+        assertThat(view.get("is_must_finish")).as("读面键保留、值恒 false").isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("#4961 写面退场：更新工序带 is_must_finish ⇒ 422 + 可行动 hint（不再静默落库）")
+    void updateRejectsTheRetiredMustFinishField() {
+        when(productionOperationMapper.selectById("op-v54-07")).thenReturn(operation("0.40", "active"));
+
+        assertThatThrownBy(() -> service().update("op-v54-07",
+                Map.of("is_must_finish", true), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(detailFields((BusinessException) e))
+                        .contains("is_must_finish"))
+                .hasMessageContaining("is_must_finish");
+
+        // fail-closed：**一个字节都不写**（不是"拒了但顺手把别的字段写了"）
+        verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
+        verify(priceVersionMapper, never()).insert(any(ProductionOperationPriceVersion.class));
+    }
+
+    @Test
+    @DisplayName("#4961 写面退场：新增工序带 is_must_finish ⇒ 422（同「出现即拒」口径）")
+    void createRejectsTheRetiredMustFinishField() {
+        // 出现即拒（不判值）：`false` 也拒 —— 该键已无语义，接受它只会让调用方以为"设上了"
+        assertThatThrownBy(() -> service().create(Map.of(
+                "name", "新工序", "unit_price", "1.00", "is_must_finish", false), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(detailFields((BusinessException) e))
+                        .contains("is_must_finish"));
+
+        verify(productionOperationMapper, never()).insert(any(ProductionOperation.class));
     }
 
     @Test
@@ -312,6 +345,12 @@ class ProductionOperationCommandServiceTest {
     private static List<String> detailMessages(BusinessException e) {
         return e.getDetails() == null ? List.of()
                 : e.getDetails().stream().map(com.migao.admin.dto.ApiResponse.ErrorDetail::getMessage).toList();
+    }
+
+    /** 422 的 `error.details[].field`（逐条指名字段）。 */
+    private static List<String> detailFields(BusinessException e) {
+        return e.getDetails() == null ? List.of()
+                : e.getDetails().stream().map(com.migao.admin.dto.ApiResponse.ErrorDetail::getField).toList();
     }
 
     @Test

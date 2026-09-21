@@ -27,8 +27,8 @@ import java.util.Map;
  *       {@code SET_ALREADY_COMPLETED} / {@code SCAN_NEEDS_SELECTION}，<b>一个字节都不写</b>
  *       {@code production_work_logs}（红证见 {@code ProductionScanCompleteServiceTest}）；</li>
  *   <li><b>一次事务</b>（{@link ProductionService#applyScanComplete}，跨 bean 调用 ⇒ 代理生效）：
- *       报工明细 + CAS（{@code done_qty}/{@code status}）+ {@code done_at} + 必完全绿 ⇒ 加工单
- *       {@code completed}，要么全成要么全不成；</li>
+ *       报工明细 + CAS（{@code done_qty}/{@code status}）+ {@code done_at} + **全部工序完成** ⇒ 加工单
+ *       {@code completed}（#4961：判据不再是「必完全绿」），要么全成要么全不成；</li>
  *   <li>回执带「本道完成 + 本套进度 + <b>下一道是什么</b>」⇒ 工人接着扫下一个码。</li>
  * </ol>
  *

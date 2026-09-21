@@ -192,6 +192,54 @@ class ProductionServiceTest {
         verify(orderMapper, never()).update(any(), any());
     }
 
+    /**
+     * 🔴 <b>#4961 判别性红证</b>：完工口径换成「**全部**活跃工序实例都完成（{@code done_qty ≥ qty}）」。
+     *
+     * <p>夹具 = 两道工序：`外帘装袋`（**必完**，本次报满）+ `精裁-布`（**非**必完，未报工）。
+     * 旧口径（{@code is_must_finish} 集合全绿）只看必完那道 ⇒ 判**完工**（{@code order_completed=true}）；
+     * 新口径（用户裁定 2026-09-21「完工 = 全部工序全绿」）⇒ 必须 {@code false}。</p>
+     *
+     * <p>红证（改前实测）：同一夹具下 {@code order_completed} 为 {@code true} ⇒ 本用例逐值红
+     * （错误信息 `expected: false but was: true`）。绿 ⇒ 判定真的换体了。</p>
+     */
+    @Test
+    @DisplayName("#4961 非必完工序未完成 ⇒ 不完工（改前：必完全绿即置 completed ⇒ order_completed=true）")
+    void unfinishedNonMustFinishOperationBlocksCompletion() {
+        when(positionOperationMapper.selectById("op-2"))
+                .thenReturn(op("op-2", "外帘装袋", "1.00", true, "pending", "0.00", "1.00", "1.00"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-2", "外帘装袋", "1.00", true, "done", "1.00", "1.00", "1.00"),
+                op("op-1", "精裁-布", "12.30", false, "pending", "0.00", "0.40", "1.00")));
+        when(processingOrderMapper.markCompletedIfActive(eq(PO_ID), eq(TENANT), any())).thenReturn(1);
+
+        Map<String, Object> result = service.report(ORDER_ID, "op-2", reportBody("1", "1", "normal"), TENANT, null);
+
+        assertThat(result.get("order_completed"))
+                .as("非必完的「精裁-布」还没做完 ⇒ 整单不算完工（旧口径在这里判 true）")
+                .isEqualTo(false);
+        verify(processingOrderMapper, never()).markCompletedIfActive(any(), any(), any());
+        // 冻结键仍在（只是值变了）；#4117 红线不变：订单表一字不写
+        assertThat(result).containsKey("order_completed");
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    /** #4961 反向判据：**全部**实例完成 ⇒ 才置加工单 completed（新口径的下界）。 */
+    @Test
+    @DisplayName("#4961 全部活跃实例完成 ⇒ 加工单置 completed（新口径的绿侧）")
+    void allInstancesDoneStillCompletesTheProcessingOrder() {
+        when(positionOperationMapper.selectById("op-2"))
+                .thenReturn(op("op-2", "外帘装袋", "1.00", true, "pending", "0.00", "1.00", "1.00"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-2", "外帘装袋", "1.00", true, "done", "1.00", "1.00", "1.00"),
+                op("op-1", "精裁-布", "12.30", false, "done", "12.30", "0.40", "1.00")));
+        when(processingOrderMapper.markCompletedIfActive(eq(PO_ID), eq(TENANT), any())).thenReturn(1);
+
+        Map<String, Object> result = service.report(ORDER_ID, "op-2", reportBody("1", "1", "normal"), TENANT, null);
+
+        assertThat(result.get("order_completed")).isEqualTo(true);
+        verify(processingOrderMapper).markCompletedIfActive(eq(PO_ID), eq(TENANT), any());
+    }
+
     // ── 完工语义（issue #4117）：完工 = 加工单置 completed，**不是**订单状态推进 ──
     //
     // 病灶（P0·订单不可发货）：旧实现必完全绿时用裸 `UpdateWrapper<Order>` 直写订单
@@ -655,7 +703,9 @@ class ProductionServiceTest {
         Map<String, Object> packing = operations.get(1);
         assertThat(packing.get("operation_name")).isEqualTo("外帘装袋");
         assertThat((BigDecimal) packing.get("scrap_qty")).isEqualByComparingTo("1.00");
-        assertThat(packing.get("is_must_finish")).isEqualTo(true);
+        // 🔴 #4961：worklog 读面的 `is_must_finish` 键**保留**（冻结键集，工人端/agent 的既有消费者）
+        // 但值**恒 false** —— 改前这一行断言 `true`。真实完工口径 = 全部活跃实例完成（allInstancesDone）。
+        assertThat(packing.get("is_must_finish")).isEqualTo(false);
         assertThat(packing.get("workers")).isEqualTo(List.of());          // 只有报废 ⇒ 无正常报工人
         assertThat(packing.get("last_work_date")).isEqualTo("2026-09-20");
 

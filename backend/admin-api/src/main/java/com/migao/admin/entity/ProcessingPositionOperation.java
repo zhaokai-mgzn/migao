@@ -116,7 +116,13 @@ public class ProcessingPositionOperation {
     /** 特殊选项计件系数（如 一分为二 ×1.7；选项名 = ERP 名，issue #4389） */
     private BigDecimal factor;
 
-    /** 必完工序：全绿 → 加工单置 completed（生产完工；订单状态不动，issue #4117） */
+    /**
+     * 🔴 <b>历史载体（#4961）：实例化侧不再写它，值恒 {@code false}</b>。
+     *
+     * <p>「必完工序」概念已退场：加工单完工判据 = **全部**活跃工序实例完成（{@code done_qty ≥ qty}），
+     * 不再有「必完工序全绿」这一档。列保留为历史快照（存量行由 V107 收敛为 FALSE）；
+     * 实例化 payload 与幂等签名都**不看**该列（{@code ProductionService.OpSpec}）。</p>
+     */
     private Boolean isMustFinish;
 
     /** 生产开始标记 */

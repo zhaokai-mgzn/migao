@@ -290,14 +290,34 @@ def routing_row_of(row: dict) -> dict:
     }
 
 
+#: 🔴 **已退场列**（issue #4961「必完（`is_must_finish`）概念整体退场」）：**不参与跨源逐值比对**。
+#
+# 为什么必须排除（不是放宽，是**两侧合法地不同**）：唯一的真相是——
+#   · 迁移链侧的 V54 是**已发布迁移**（内容被 `migration_fingerprints.json` 逐字节冻结）⇒
+#     它仍留着历史的 `外帘装袋 = TRUE`，**不可改**；
+#   · bootstrap 侧 `docs/sql/schema.sql` 是**终态** ⇒ 该列一律 `FALSE` 才算对
+#     （存量库由 `backend/admin-api/src/main/resources/db/migration/V107__retire_must_finish_flag.sql` 收敛）。
+# ⇒ 若继续把该列放进 `by_name` / `by_name_ident`，只有两个结局：**永久假红**，
+#   或把判据改成恒真（恒真 = 空断言，比假红更糟）。
+#
+# 替代判据（**更强**，两条各自独立、都可红，见下方）：
+#   ① `test_frozen_seed_must_finish_is_the_recorded_history`：冻结种子的**历史值**逐行等于
+#      记录在案的字面量（原判据从 `routing.py::MUST_FINISH_OPS` **派生**期望值 —— 而那个集合
+#      已随本单删除 ⇒ 判据会随被测对象一起漂移；改成字面量后钉的是**文件里真实的字节**）；
+#   ② `test_must_finish_is_false_in_every_terminal_source`：bootstrap 种子 / 模板 JSON
+#      两个**终态**源一律 `FALSE`（模板**带**该键即红）。
+_RETIRED_COLUMNS = ("is_must_finish",)
+
+
 def op_values(operation_row: dict) -> dict:
     """工序行的**逐值**口径（不含 id/sort_order：id 是各迁移自有的确定性命名、sort_order 是排序位）。
 
     含 `deleted` 之外的全部业务列 ⇒ 「改名/改价/改分组/改单位/改标记」任一都逃不掉。
+    ⚠️ 例外 = `_RETIRED_COLUMNS`（已退场列，两侧合法地不同，见该常量的说明与替代判据）。
     """
     return {col: normalize_value(operation_row[col])
             for col in ("group_name", "position", "unit", "unit_price",
-                        "is_must_finish", "is_start_marker", "status")}
+                        "is_start_marker", "status")}
 
 
 def by_name(rows):
@@ -306,8 +326,9 @@ def by_name(rows):
 
 
 #: `op_values` 的**标识符安全**版要覆盖的列（与 `op_values` 同一组，口径只差归一函数）
+#: ⚠️ 同样不含 `_RETIRED_COLUMNS`（已退场列，见该常量）。
 _OP_COLUMNS = ("group_name", "position", "unit", "unit_price",
-               "is_must_finish", "is_start_marker", "status")
+               "is_start_marker", "status")
 
 
 def op_values_ident(operation_row: dict) -> dict:
@@ -401,11 +422,15 @@ def template_json():
 
 
 def template_operations(template: dict) -> list:
-    """模板工序 → 种子行形态（列名与 `OP_COLUMNS` 对齐，供 `by_name` 直接复用）。"""
+    """模板工序 → 种子行形态（列名与 `OP_COLUMNS` 对齐，供 `by_name` 直接复用）。
+
+    ⚠️ **不带已退场列** `is_must_finish`（issue #4961）：模板是**开租播种**的输入，
+    它带该键 = 把退场键又播进每个新租户（写面已 422、实例化侧也不再读它）。
+    「模板不得带该键」由 `test_must_finish_is_false_in_every_terminal_source` 判（带即红）。
+    """
     return [{"id": o["id"], "name": o["name"], "group_name": o["group"],
              "position": "NULL" if o.get("position") is None else o["position"],
              "unit": o["unit"], "unit_price": str(o["unit_price"]),
-             "is_must_finish": "TRUE" if o["is_must_finish"] else "FALSE",
              "is_start_marker": "TRUE" if o["is_start_marker"] else "FALSE",
              "sort_order": str(o["sort_order"]), "status": o["status"]}
             for o in template["operations"]]
@@ -449,18 +474,110 @@ def test_seed_matches_python_catalog(catalog_rows, python_catalog):
     assert [key_of(r) for r in catalog_rows] == list(catalog.keys()), (
         "工序名集合/顺序与 OPERATION_CATALOG 不一致（改名或加减工序必须同步 V54/V56 种子）")
 
-    from app.production.routing import MUST_FINISH_OPS, START_MARKER_OPS
+    from app.production.routing import START_MARKER_OPS
     for row in catalog_rows:
         name = key_of(row)
         meta = catalog[name]
         assert normalize_value(row["group_name"]) == meta["group"], f"{name} 分组漂移"
         assert normalize_value(row["unit"]) == meta["unit"], f"{name} 单位漂移"
         assert float(normalize_value(row["unit_price"])) == float(meta["unit_price"]), f"{name} 单价漂移"
-        assert normalize_value(row["is_must_finish"]) == ("TRUE" if name in MUST_FINISH_OPS else "FALSE"), \
-            f"{name} 必完标记漂移"
+        # 🔴 `is_must_finish` 的期望值**不再**从 `routing.py::MUST_FINISH_OPS` 派生
+        #    （该集合已随 issue #4961 删除）—— 它的判据搬去了
+        #    `test_frozen_seed_must_finish_is_the_recorded_history`（冻结种子的历史字面量）。
         assert normalize_value(row["is_start_marker"]) == ("TRUE" if name in START_MARKER_OPS else "FALSE"), \
             f"{name} 开始标记漂移"
         assert normalize_value(row["status"]) == "active"
+
+
+# ── ①′ 已退场列（`is_must_finish`）的替代判据（#4961）──
+#
+# 为什么单独立判据：该列在**冻结的**迁移种子（历史）与**终态源**（bootstrap / 模板）之间
+# 合法地不同 ⇒ 它退出了 `op_values` / `op_values_ident` 的跨源逐值比对（见 `_RETIRED_COLUMNS`）。
+# 下面两条把这个空缺补成**更强**的判据（纯函数化 ⇒ 可用注入式夹具证明会红）。
+
+def _live_seed_true_names(rows) -> list:
+    """种子行里 `is_must_finish = TRUE` 的**存活行**工序名（升序）。纯函数（供注入自证）。"""
+    out = []
+    for row in rows:
+        deleted = row.get("deleted")
+        live = deleted is None or normalize_value(str(deleted)) in ("0", "NULL")
+        if live and normalize_value(row["is_must_finish"]) == "TRUE":
+            out.append(key_of(row))
+    return sorted(out)
+
+
+def _template_retired_key_carriers(template: dict) -> list:
+    """模板里**仍带**已退场键 `is_must_finish` 的工序名（升序）。纯函数（供注入自证）。"""
+    return sorted(o["name"] for o in template["operations"] if "is_must_finish" in o)
+
+
+def test_frozen_seed_must_finish_is_the_recorded_history(catalog_rows):
+    """冻结迁移种子的 `is_must_finish` 历史值 = 记录在案的字面量（改动即红）。
+
+    期望值是**字面量**而不是从 `routing.py` 派生的集合：本单把 `MUST_FINISH_OPS` 删了 ——
+    若期望值仍从它派生，判据就会**随被测对象一起漂移**（删集合 ⇒ 期望值跟着变空 ⇒ 判据恒真）。
+    钉字面量反而更严：它约束的是 V54/V56 这两个**已发布文件里真实的字节**
+    （另有 `migration_fingerprints.json` 的 sha256 逐字节冻结兜底）。
+    """
+    got = _live_seed_true_names(catalog_rows)
+    assert got == ["外帘装袋"], (
+        f"冻结迁移种子里 `is_must_finish = TRUE` 的存活工序 = {got}，期望恰好 `外帘装袋`"
+        f"（V54 的历史口径；已发布迁移不可改 ⇒ 改了这个值必须解释）")
+    assert len(catalog_rows) == 41, (
+        f"迁移侧工序库种子解析出 {len(catalog_rows)} 行，期望 41 ⇒ 解析失效或种子被改")
+    values = {normalize_value(r["is_must_finish"]) for r in catalog_rows}
+    assert values <= {"TRUE", "FALSE"}, f"该列出现了 TRUE/FALSE 之外的值：{values}"
+
+
+def test_must_finish_is_false_in_every_terminal_source(schema_sql, template_json):
+    """两个**终态源**的 `is_must_finish` 一律 `FALSE`（bootstrap 种子 / 模板 JSON）。
+
+    · bootstrap（`docs/sql/schema.sql`，**不跑迁移链**）⇒ 必须自己就是终态，否则新建库落在旧口径；
+    · 模板（`production-templates/curtain/seed.json`，**开租播种**）⇒ **不得带**该键
+      （带 = 把已退场的键又播进每个新租户；写面收到该字段已 422）。
+    迁移链侧的终态由 V107 承担，真库判据见
+    `tests/unit_ci_workflows/test_must_finish_retire_migration.py`。
+    """
+    schema_ops = parse_seed(schema_sql, "production_operations", OP_COLUMNS)
+    assert len(schema_ops) == 41, (
+        f"schema.sql 的工序库种子解析出 {len(schema_ops)} 行，期望 41 ⇒ 解析失效或种子被改")
+    boot_true = _live_seed_true_names(schema_ops)
+    assert boot_true == [], (
+        f"bootstrap（schema.sql）仍有存活工序 `is_must_finish = TRUE`：{boot_true} —— "
+        f"它不跑迁移链 ⇒ 必须自己就是终态（#4961）")
+    carriers = _template_retired_key_carriers(template_json)
+    assert carriers == [], (
+        f"模板 JSON 仍带已退场键 `is_must_finish`：{carriers} —— 开租播种会把该键播进新租户"
+        f"（#4961：写面已 422、实例化侧不再读它）")
+
+
+def test_retired_column_judgements_detect_injected_drift():
+    """注入式自证：上面两条判据**都能红**（否则它们只是恒真的装饰）。
+
+    ① 冻结种子里**别的**工序被标 `TRUE` ⇒「只有 `外帘装袋`」当场红；
+    ② 终态源仍有 `TRUE` 行 ⇒「终态一律 FALSE」当场红；
+    ③ 模板带该键 ⇒ 「模板不得带该键」当场红。
+    """
+    frozen = [{"name": "外帘装袋", "is_must_finish": "TRUE", "deleted": "0"},
+              {"name": "精裁-布", "is_must_finish": "FALSE", "deleted": "0"},
+              {"name": "配料", "is_must_finish": "TRUE", "deleted": "1"}]
+    assert _live_seed_true_names(frozen) == ["外帘装袋"], (
+        "纯函数口径与真实种子不一致（软删的 TRUE 行不得计入）⇒ 下面两条注入证不成立")
+
+    # ① 历史值被改（多一道工序被标必完）⇒ 判据红
+    drifted = frozen[:2] + [{"name": "韩褶-布", "is_must_finish": "TRUE", "deleted": "0"}]
+    assert _live_seed_true_names(drifted) == ["外帘装袋", "韩褶-布"], (
+        "「冻结种子的历史值」判据读不出注入的 TRUE ⇒ 它是空断言")
+
+    # ② 终态源仍有 TRUE 行 ⇒ 判据红
+    assert _live_seed_true_names([{"name": "外帘装袋", "is_must_finish": "TRUE", "deleted": "0"}]) != [], (
+        "「终态源一律 FALSE」判据对注入的 TRUE 行无判别力 ⇒ 它是空断言")
+
+    # ③ 模板带已退场键 ⇒ 判据红
+    assert _template_retired_key_carriers(
+        {"operations": [{"name": "外帘装袋", "is_must_finish": True},
+                        {"name": "精裁-布"}]}) == ["外帘装袋"], (
+        "「模板不得带该键」判据读不出注入的键 ⇒ 它是空断言")
 
 
 def test_seed_has_no_duplicate_operation_names(catalog_rows):
