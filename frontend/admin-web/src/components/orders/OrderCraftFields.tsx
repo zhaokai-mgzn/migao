@@ -135,15 +135,35 @@ function ChipGroup<T>({
   options,
   value,
   onChange,
+  autoNote,
 }: {
   label: string
   options: ReadonlyArray<ChipOption<T>>
   value: T
   onChange: (next: T) => void
+  /**
+   * 「**这一档是系统按规则自动选的**」标记（issue #5020）—— 只用于加工类型。
+   *
+   * 为什么要有它：未指定时页面按门幅规则**自动选中**一档（客服看得到选中态），但「自动选的」
+   * 与「客服自己点的」在界面上**长得一样** ⇒ 不标出来，客服会以为自己选过（也就不会去核对）。
+   * 文案与门幅提示（`door-width-suboptimal` 一族）同一口径：**只是告知，不改值**。
+   */
+  autoNote?: boolean
 }) {
   return (
     <div>
-      <div className={LABEL_CLASS}>{label}</div>
+      <div className={LABEL_CLASS}>
+        {label}
+        {autoNote && (
+          <span
+            data-testid="cutting-mode-auto"
+            title="加工类型未指定 ⇒ 系统按门幅规则自动选中（定高买宽可行 ⇒ 定高买宽；否则 ⇒ 倒幅）；点任意一档即可覆盖"
+            className="ml-1.5 rounded border border-neutral-300 bg-neutral-100 px-1 text-[10px] font-normal leading-4 text-neutral-500"
+          >
+            自动
+          </span>
+        )}
+      </div>
       <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
         {options.map((option) => {
           const active = option.value === value
@@ -195,6 +215,13 @@ export interface OrderCraftFieldsProps {
   /** 配布边单价；`null` = 未填（不生成配布边明细行 —— 后端单价必须 > 0，不凭空造价） */
   edgeUnitPrice: number | null
   onEdgeUnitPriceChange: (price: number | null) => void
+  /**
+   * 加工类型是否是**系统按规则自动选中的**（issue #5020）—— `true` ⇒ 标签旁出「自动」标记。
+   *
+   * 由页面侧给出（`derivedCraftSpec` 的唯一派生点知道「显式 vs 未指定」）⇒ 本组件**不**自己
+   * 判断（否则就是第二份「谁在算加工类型」的口径）。缺省 `false` = 不标（既有调用点行为不变）。
+   */
+  cuttingModeAuto?: boolean
 }
 
 export default function OrderCraftFields({
@@ -207,6 +234,7 @@ export default function OrderCraftFields({
   onEdgeMetersChange,
   edgeUnitPrice,
   onEdgeUnitPriceChange,
+  cuttingModeAuto = false,
 }: OrderCraftFieldsProps) {
   const uid = useId().replace(/:/g, '')
   const fieldId = (name: string) => `craft-${uid}-${name}`
@@ -259,6 +287,7 @@ export default function OrderCraftFields({
           options={toChipOptions(CUTTING_MODE_OPTIONS)}
           value={value.cuttingMode}
           onChange={(next) => onChange({ cuttingMode: next })}
+          autoNote={cuttingModeAuto}
         />
 
         <ChipGroup

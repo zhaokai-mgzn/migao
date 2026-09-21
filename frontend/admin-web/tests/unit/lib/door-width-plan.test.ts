@@ -30,6 +30,22 @@
  * - 判据 6（有效门幅）：忽略 `allowance`（当 0）⇒ 红；
  * - 判据 7（成品高直接用）：对 H 做任何扣减 ⇒ 红；
  * - 判据 8（加工类型显式）：按高度自推加工类型 ⇒ 红。
+ *
+ * ## issue #5020 改判：**加工类型缺失 ⇒ 自动推导**（原判据 8 的「缺失 ⇒ undecidable」按设计已作废）
+ *
+ * 用户 2026-09-21 改判口径（以 issue #5020 为准，覆盖旧裁定「系统永不自己改判」）：
+ * ```
+ * 定高买宽可行（成品高 + HEM_MARGIN ≤ 门幅有效值）⇒ 取**可行集里最小门幅**；加工类型 = 定高买宽
+ * 否则                                            ⇒ **倒幅**（分幅最少；并列取较小门幅）；加工类型 = 定宽买高
+ * 接高                                            ⇒ **不参与自动比较**（接高 = 上下拼接、横缝可见；
+ *                                                    行业实践是超高窗走倒幅把竖缝藏进褶皱）
+ * 人工覆盖：显式传 定高买宽 / 定宽买高 ⇒ 按所选走（显式「定高买宽」而高度超限 ⇒ needs_splice）
+ * ```
+ * ⇒ `cuttingMode` 变**可选**，缺失时按上表推导并在返回值里带出 `effectiveCuttingMode`；
+ * **表外取值仍 fail-closed**（`undecidable` / `missing-cutting-mode`，不猜）。
+ *
+ * 红证（改前实测）：`cuttingMode: undefined` ⇒ 改前一律 `undecidable`（`missing-cutting-mode`）
+ * ⇒ 判据 1~3 与 5 全红；`effectiveCuttingMode` 改前**不存在** ⇒ 取到 `undefined` ⇒ 判据 1/2/5 红。
  */
 import { describe, it, expect } from 'vitest'
 
@@ -167,9 +183,93 @@ describe('门幅选择规则 resolveCutPlan（issue #4877）', () => {
     expect(plan.state === 'single_panel' && plan.reason).toContain('2.75')
   })
 
-  // ── 判据 8：加工类型显式（不按高度自推） ──
-  it('判据 8：加工类型缺失 / 表外 ⇒ **undecidable**（按高度自推 ⇒ 红）', () => {
-    for (const mode of [undefined, '', '正幅', '倒幅']) {
+  // ── 判据 8（**issue #5020 改判**）：加工类型缺失 ⇒ **自动推导**；表外 ⇒ 仍 fail-closed ──
+  //
+  // 旧断言（改前）：「缺失 / 表外 ⇒ 一律 `undecidable`（`missing-cutting-mode`）」——
+  // 该断言按 #5020 的**新口径已作废**（缺失 ⇒ 推导），故拆成两条：
+  // ① 缺失 ⇒ 自动推导（判据 1~3、5）；② 表外 ⇒ 仍 `undecidable`（判据 6，不放宽）。
+  it('判据 1：未指定加工类型 + 候选 {2.8,3.2} + 成品高 2.75 ⇒ 自动解 = **3.2 门幅 + 定高买宽**', () => {
+    // 2.75 + 0.3 = 3.05 > 2.8（该档判需接高）但 ≤ 3.2 ⇒ 定高买宽可行 ⇒ 取**可行集里最小门幅** = 3.2
+    const plan = resolveCutPlan({ width: 3.0, height: 2.75, candidates: [2.8, 3.2] })
+    expect(plan.state).toBe('single_panel')
+    if (plan.state !== 'single_panel') throw new Error('unreachable')
+    expect(plan.doorWidth).toBe(3.2)
+    expect(plan.panels).toBe(1)
+    // 返回值必须**带出推导出的加工类型**（新增字段；既有字段语义不变）
+    expect(plan.effectiveCuttingMode).toBe('定高买宽')
+    // 反向：把自动解改成「取 2.8」（= 忽略可行性、只看最小候选）⇒ 本条必红
+    expect(plan.doorWidth).not.toBe(2.8)
+  })
+
+  it('判据 2：未指定 + 可行集为空（成品高 3.0）⇒ **倒幅**（分幅最少；并列取较小门幅）', () => {
+    // 3.0 + 0.3 = 3.3 > 3.2 = max(g_eff) ⇒ 定高买宽可行集为空 ⇒ 倒幅
+    // ceil((3.0 + 0.3) × 2 ÷ 2.8) = ceil(2.357) = 3 幅；÷ 3.2 = ceil(2.0625) = 3 幅
+    // ⇒ **并列取较小门幅** = 2.8（不占宽幅布）
+    const tie = resolveCutPlan({ width: 3.0, height: 3.0, fullness: 2, candidates: [2.8, 3.2] })
+    expect(tie.state).toBe('single_panel')
+    if (tie.state !== 'single_panel') throw new Error('unreachable')
+    expect(tie.effectiveCuttingMode).toBe('定宽买高')
+    expect(tie.doorWidth).toBe(2.8)
+    expect(tie.panels).toBe(3)
+
+    // 分幅数不并列时取**分幅最少**（3 幅 < 4 幅）：宽 5.0 ⇒ ceil(10.6/2.8)=4、ceil(10.6/3.2)=4 并列；
+    // 宽 3.3 ⇒ ceil(7.2/2.8)=3、ceil(7.2/3.2)=3 并列 ⇒ 用 4.0 宽拿非并列档：ceil(8.6/2.8)=4、ceil(8.6/3.2)=3
+    const fewer = resolveCutPlan({ width: 4.0, height: 3.0, fullness: 2, candidates: [2.8, 3.2] })
+    expect(fewer.state === 'single_panel' && fewer.doorWidth).toBe(3.2)
+    expect(fewer.state === 'single_panel' && fewer.panels).toBe(3)
+
+    // 单候选档（判据 2 字面形态）：{2.8} ⇒ 3 幅
+    const single = resolveCutPlan({ width: 3.0, height: 3.0, fullness: 2, candidates: [2.8] })
+    expect(single.state === 'single_panel' && single.panels).toBe(3)
+    expect(single.state === 'single_panel' && single.effectiveCuttingMode).toBe('定宽买高')
+  })
+
+  it('判据 3：**不自动选接高** —— 接高更省（8.25 < 9.9）仍返回**倒幅**', () => {
+    // 成品高 3.0 > 2.8 − 0.3 = 2.5 ⇒ 定高买宽不可行；按用户裁定的用料对比（本单**不实现**用料公式，
+    // 只在注释里登记口径）：接高 8.25 米 < 倒幅 ceil((2.75 + 0.3) × 2 ÷ 2.8) = 3 幅 × 3.3 = 9.9 米。
+    // ⇒ 即使接高更省，自动解**仍必须是倒幅**（接高 = 上下拼接、横缝可见；行业实践是超高窗走倒幅
+    //   把竖缝藏进褶皱）—— `needs_splice` **不得自动出现**。
+    const plan = resolveCutPlan({ width: 2.75, height: 3.0, fullness: 2, candidates: [2.8], openCount: 2 })
+    expect(plan.state).toBe('single_panel')
+    if (plan.state !== 'single_panel') throw new Error('unreachable')
+    expect(plan.effectiveCuttingMode).toBe('定宽买高')
+    expect(plan.doorWidth).toBe(2.8)
+    expect(plan.panels).toBe(3)
+    expect(plan.state).not.toBe('needs_splice')
+  })
+
+  it('判据 4：显式传 `定高买宽` 而高度超限 ⇒ 仍 `needs_splice`（人工覆盖路径保留）', () => {
+    const plan = resolveCutPlan({
+      width: 3.0,
+      height: 2.75,
+      cuttingMode: '定高买宽',
+      candidates: [2.8],
+      openCount: 2,
+    })
+    expect(plan.state).toBe('needs_splice')
+    if (plan.state !== 'needs_splice') throw new Error('unreachable')
+    expect(plan.gapMeters).toBeCloseTo(0.25, 6)
+    expect(plan.effectiveCuttingMode).toBe('定高买宽')
+  })
+
+  it('判据 5：显式传 `定宽买高` ⇒ 倒幅（人工覆盖生效，不被自动推导顶掉）', () => {
+    // 成品高 2.4 时定高买宽本可行（2.4 + 0.3 = 2.7 ≤ 2.8）⇒ 若自动推导盖过显式选择，本条必红
+    const plan = resolveCutPlan({
+      width: 3.0,
+      height: 2.4,
+      fullness: 2,
+      cuttingMode: '定宽买高',
+      candidates: [2.8, 3.2],
+    })
+    expect(plan.state).toBe('single_panel')
+    if (plan.state !== 'single_panel') throw new Error('unreachable')
+    expect(plan.effectiveCuttingMode).toBe('定宽买高')
+    // ceil(6.6/2.8)=3、ceil(6.6/3.2)=3 ⇒ 并列取较小 2.8；**不是**定高买宽的 2.8 单幅（panels=1）
+    expect(plan.panels).toBe(3)
+  })
+
+  it('判据 6：表外取值（「正幅」/「倒幅」）⇒ **undecidable**（fail-closed 不放宽）', () => {
+    for (const mode of ['正幅', '倒幅']) {
       const plan = resolveCutPlan({
         width: 3.0,
         height: 2.75,
@@ -179,6 +279,41 @@ describe('门幅选择规则 resolveCutPlan（issue #4877）', () => {
       expect(plan.state).toBe('undecidable')
       expect(plan.state === 'undecidable' && plan.code).toBe('missing-cutting-mode')
     }
+    // 边界：**空串 = 「没给」**（`undefined` / `''` 同义）⇒ 走自动推导，不算「表外」
+    expect(
+      resolveCutPlan({ width: 3.0, height: 2.75, cuttingMode: '', candidates: [2.8, 3.2] }).state
+    ).toBe('single_panel')
+  })
+
+  it('判据 7：缺尺寸 / 缺褶倍 / 缺门幅 ⇒ 仍 `undecidable`（既有 fail-closed 不得放宽）', () => {
+    // 缺门幅（自动推导也一样不判）
+    const noWidth = resolveCutPlan({ width: 3.0, height: 2.75, candidates: [] })
+    expect(noWidth.state).toBe('undecidable')
+    expect(noWidth.state === 'undecidable' && noWidth.code).toBe('no-door-width')
+
+    // 缺成品高：**两个方向都判不了** ⇒ 自动推导不得凭空选一个方向
+    const noHeight = resolveCutPlan({ width: 3.0, height: null, candidates: [3.2] })
+    expect(noHeight.state).toBe('undecidable')
+    expect(noHeight.state === 'undecidable' && noHeight.code).toBe('missing-size')
+
+    // 缺成品宽：定高买宽可行时按定高买宽判（不需要宽）；**不可行 ⇒ 要倒幅 ⇒ 缺宽判不了**
+    const autoOkNoWidthDim = resolveCutPlan({ width: null, height: 2.4, candidates: [2.8, 3.2] })
+    expect(autoOkNoWidthDim.state === 'single_panel' && autoOkNoWidthDim.effectiveCuttingMode).toBe(
+      '定高买宽'
+    )
+    const needWidth = resolveCutPlan({ width: null, height: 3.0, fullness: 2, candidates: [2.8] })
+    expect(needWidth.state).toBe('undecidable')
+    expect(needWidth.state === 'undecidable' && needWidth.code).toBe('missing-size')
+
+    // 缺褶倍：倒幅算不出分幅数 ⇒ 不判（不拿假褶倍判价）
+    const noFullness = resolveCutPlan({ width: 3.0, height: 3.0, candidates: [2.8] })
+    expect(noFullness.state).toBe('undecidable')
+    expect(noFullness.state === 'undecidable' && noFullness.code).toBe('missing-fullness')
+
+    // 显式档的既有 fail-closed 原样保留
+    expect(
+      resolveCutPlan({ width: 3.0, height: 2.75, cuttingMode: '定宽买高', candidates: [3.2] }).state
+    ).toBe('undecidable')
   })
 
   // ── 尺寸/褶倍缺失 ⇒ 不猜 ──
@@ -282,5 +417,29 @@ describe('客服所选门幅 ⇒ 相对规则解的提示 judgeDoorWidthChoice�
     expect(
       judgeDoorWidthChoice({ ...base, cuttingMode: '定高买宽', candidates: [] }, 2.8).verdict,
     ).toBe('unknown')
+  })
+
+  // ── issue #5020：judgeDoorWidthChoice 与 resolveCutPlan **同步**（它内部调后者） ──
+  it('判据 5（判定同步）：未指定加工类型 + 显式倒幅档 ⇒ 按**推导出的**加工类型给建议', () => {
+    // 成品高 3.0 ⇒ 自动解 = 定宽买高 + 分幅最少；客服选 2.8 而规则解是 3.2 ⇒ 提示多买的幅数
+    const judged = judgeDoorWidthChoice(
+      { width: 4.0, height: 3.0, fullness: 2, candidates: [2.8, 3.2] },
+      2.8
+    )
+    expect(judged.plan.state === 'single_panel' && judged.plan.effectiveCuttingMode).toBe('定宽买高')
+    expect(judged.verdict).toBe('suboptimal')
+    expect(judged.suggestion).toContain('少 1 幅')
+  })
+
+  it('判据 5（判定同步）：未指定 + 高度超限 + 显式 `定宽买高` ⇒ 不给「需接高」告警（那是定高买宽的解）', () => {
+    // 客服按倒幅选了 2.8（规则解），即便 2.75 + 0.3 > 2.8 也不该报「需接高」——
+    // 改前 `judgeDoorWidthChoice` 读 `input.cuttingMode`（undefined）⇒ 走进定宽买高的分支是巧合，
+    // 但读 `input.cuttingMode === '定高买宽'` 的判据在**显式倒幅**时才是真分歧点。
+    const judged = judgeDoorWidthChoice(
+      { width: 3.0, height: 2.75, fullness: 2, cuttingMode: '定宽买高', candidates: [2.8, 3.2] },
+      2.8
+    )
+    expect(judged.verdict).toBe('optimal')
+    expect(judged.suggestion).toBeNull()
   })
 })

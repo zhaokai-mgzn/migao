@@ -373,16 +373,49 @@ function isShapedFromItems(line: OrderLineItem): boolean | undefined {
  * 配置兜底顶掉（页面按韩褶口径发请求、后端按打孔口径算）；
  * 档位 = `line.craft.craftTier ?? defaultCraftCalcTier(配置.tiers)`（**落在配置里真实存在的档位键上**）。
  * 两者都是**读面取值**（前端不持有档位/公式真值）⇒ 页面显示 / 试算请求 / 落库三者同一份。
+ *
+ * ⚠️ **issue #5020**：`cuttingMode` 也在这里兜底 —— 见 {@link cuttingModeOf}。
  */
 function derivedCraftSpec(line: OrderLineItem, calcConfig: CraftCalcConfig | null): CraftSpecInput {
   const craft = craftFromItems(line)
   return {
     ...line.craft,
+    cuttingMode: cuttingModeOf(line),
     craft,
     isShaped: isShapedFromItems(line),
     formula: effectiveCraftCalcFormula({ formula: line.craft.formula, craft }, calcConfig),
     craftTier: line.craft.craftTier ?? defaultCraftCalcTier(calcConfig),
   }
+}
+
+/**
+ * 该行**实际据以算料 / 落库**的加工类型（issue #5020）—— 页面侧**唯一**读加工类型的入口。
+ *
+ * - 客服**显式选过**（`line.craft.cuttingMode` 有值）⇒ **逐字返回**（人工覆盖优先，规则永不改判）；
+ * - **未指定**（`undefined` / 空串）⇒ 返回**门幅规则推导出的那一档**（`resolveCutPlan` 的
+ *   `effectiveCuttingMode`：定高买宽可行 ⇒ 定高买宽；否则 ⇒ 定宽买高/倒幅）⇒ 加工类型 chips
+ *   **自动选中**，且**一点即改**（点一下就把显式值写回 `craft.cuttingMode`，从此不再自动推导）；
+ * - 规则判不了（缺尺寸 / 缺门幅 / 表外）⇒ `undefined`（chips 停在「未指定」，**不猜**）。
+ *
+ * ⚠️ **为什么不复用 `craft.cuttingMode` 直接落库**：那样「未指定」会落一个空键（下游按缺值处理 ⇒
+ * 引擎只能自己猜朝向），且界面看不到系统到底按哪种在算 —— 与「商家看得见的真值」纪律相悖。
+ * ⚠️ **不新增行状态位**：「显式 vs 未指定」已经由 `craft.cuttingMode` 的**有无**表达（同
+ * `openCountTouched` 的留痕精神）⇒ 无需第二个布尔位，也不会出现「两位不同步」。
+ */
+function cuttingModeOf(line: OrderLineItem): string | undefined {
+  const explicit = line.craft.cuttingMode
+  if (explicit) return explicit
+  const plan = resolveCutPlan({
+    width: line.width,
+    height: line.height,
+    // **不传** `cuttingMode`：这里要的正是「缺失 ⇒ 自动推导」那条路径
+    candidates: (line.product?.skus ?? [])
+      .filter((sku) => sku.colorId === line.selectedColorId)
+      .map((sku) => sku.doorWidth),
+    fullness: STANDARD_FULLNESS,
+    openCount: line.craft.openCount,
+  })
+  return plan.state === 'undecidable' ? undefined : plan.effectiveCuttingMode
 }
 
 /**
@@ -475,7 +508,10 @@ function autoFeaturesOf(line: OrderLineItem): AutoFeature[] {
     width: line.width,
     height: line.height,
     doorWidth: line.selectedSku?.doorWidth,
-    cuttingMode: line.craft.cuttingMode,
+    // ⚠️ issue #5020：走**派生后**的加工类型（`cuttingModeOf`），不是 `line.craft.cuttingMode` ——
+    // 后者在「未指定」时是 `undefined` ⇒ 识别面「两个方向都不判」，而规则面已按自动解算料
+    // ⇒ 界面显示 ≠ 落库（正是本单要消灭的那种不一致）。
+    cuttingMode: cuttingModeOf(line),
     // **褶倍**（issue #4662）—— 超宽判据 = `(宽 + SIDE_MARGIN) × 褶倍 > 门幅`（引擎的分幅条件）。
     // 值 = **标准档倍数**：本页的算料请求把 `craft_tier` 钉死为 `standard`
     // （`craft-calc-request.ts` 的 `CRAFT_CALC_TIER`）⇒ 引擎取到的 `N` 就是
@@ -498,7 +534,9 @@ function autoFeatureNoticesOf(line: OrderLineItem): AutoFeatureNotice[] {
     width: line.width,
     height: line.height,
     doorWidth: line.selectedSku?.doorWidth,
-    cuttingMode: line.craft.cuttingMode,
+    // ⚠️ issue #5020：与 {@link autoFeaturesOf} **同源**（派生后的加工类型）—— 提示的前提句
+    // 必须与判定同源，否则「几何矛盾」提示会在未指定档下说错朝向。
+    cuttingMode: cuttingModeOf(line),
     fullness: STANDARD_FULLNESS,
   })
 }
@@ -3184,7 +3222,10 @@ function LineItemBlock({
     {
       width: line.width,
       height: line.height,
-      cuttingMode: line.craft.cuttingMode,
+      // ⚠️ issue #5020：传**派生后**的加工类型（`cuttingModeOf`）—— 「未指定」时是规则自动推导
+      // 的那一档 ⇒ 提示/告警（suboptimal / infeasible）与自动选中的加工类型**同一口径**；
+      // 客服显式选过 ⇒ 逐字回带（人工覆盖优先，规则不改判）。
+      cuttingMode: cuttingModeOf(line),
       candidates: (line.product?.skus ?? [])
         .filter((sku) => sku.colorId === line.selectedColorId)
         .map((sku) => sku.doorWidth),
@@ -3466,6 +3507,9 @@ function LineItemBlock({
                   mainMeters={line.quantity}
                   calcConfig={calcConfig}
                   pleatCount={line.calc?.pleat_count ?? null}
+                  // issue #5020：未指定加工类型 ⇒ 系统按门幅规则自动选中 ⇒ 标出「自动」
+                  // （客服看得见「这不是我选的」，且点任意一档即可覆盖）
+                  cuttingModeAuto={!line.craft.cuttingMode && Boolean(cuttingModeOf(line))}
                   edgeMeters={line.edgeMeters}
                   onEdgeMetersChange={onEdgeMetersChange}
                   edgeUnitPrice={line.edgeUnitPrice}

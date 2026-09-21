@@ -12,6 +12,17 @@
  *   （系统永不自己改判）**」
  * - 「**没有一个行业通用公式能替人拍板，能被机械化的只有「可行 / 不可行 + 哪个最省」**」
  *
+ * ⚠️ **issue #5020 改判（覆盖上面第 6 条的「系统永不自己改判」）**：加工类型**缺失 ⇒ 自动推导**
+ * （不再是 `undecidable`）—— 用户 2026-09-21 新口径：
+ * ```
+ * 定高买宽可行（成品高 + HEM_MARGIN ≤ 门幅有效值）⇒ 取**可行集里最小门幅**；加工类型 = 定高买宽
+ * 否则                                            ⇒ **倒幅**（分幅最少；并列取较小门幅）；加工类型 = 定宽买高
+ * 接高                                            ⇒ **不参与自动比较**（接高 = 上下拼接、横缝可见；
+ *                                                    行业实践是超高窗走倒幅把竖缝藏进褶皱）
+ * 人工覆盖：显式传 定高买宽 / 定宽买高 ⇒ 按所选走（显式「定高买宽」而高度超限 ⇒ needs_splice）
+ * ```
+ * 推导结果从 {@link SinglePanelPlan.effectiveCuttingMode} 带出；**表外取值仍 fail-closed**（不猜）。
+ *
  * ## 判定（与真值源 `docs/curtain-fabric-quote-rules.md` §3 / 算料引擎同源）
  * ```
  * g_eff(g) = 标称门幅 − 有效余量（缩水/边损/对花回；缺省 0 —— 租户级配置键落地后接线）
@@ -19,7 +30,7 @@
  *           空 ⇒ needs_splice（缺口 = 成品高 + HEM_MARGIN − max(g_eff)）；非空 ⇒ 取 min(g_eff)
  * 定宽买高: 幅数 p(g) = ceil((成品宽 + SIDE_MARGIN) × 褶倍 ÷ g_eff(g))
  *           取 p 最小者；**并列取较小门幅**（不占宽幅布）
- * 加工类型缺失/表外 ⇒ undecidable（**不替调用方猜朝向** —— 裁定「系统永不自己改判」）
+ * 加工类型缺失 ⇒ 按上表**自动推导**（#5020）；表外 ⇒ undecidable（fail-closed，不猜）
  * ```
  *
  * ⚠️ **为什么「取最小门幅」在定高买宽下不是省米数**：定高买宽的用料 `= (宽 + 余量) × 褶倍`
@@ -27,8 +38,10 @@
  * （留给真正超高的窗）＋ 可能的单价差。而定宽买高的用料 `= 幅数 × (成品高 + 卷边)`，
  * **门幅越大米数越省** ⇒ 「取分幅最少」＝米数最省。（两条方向相反、目标同一，别读成矛盾。）
  *
- * ⚠️ **裁定「加工类型显式」是这条规则的逻辑前置**：倒幅（定宽买高）几何上**永远可行**
- * （幅数必定 ≥ 1）⇒ 若让系统「自动选最省」，它总能找到一条倒幅解，`needs_splice` 永远不触发。
+ * ⚠️ **自动推导为什么以「定高买宽是否可行」为**唯一**分岔**（#5020）：倒幅（定宽买高）几何上
+ * **永远可行**（幅数必定 ≥ 1）⇒ 若按「谁更省」比，倒幅会与接高一起参与竞争；而接高的用料公式
+ * **不在本模块**（属算料引擎 `curtain_calc.resolve_fabric_plan`）⇒ 这里只按「单幅能不能做」分岔，
+ * **不实现第二份用料公式**，也**不让接高进入自动比较**。
  *
  * ⚠️ **余量常量复用**（`SIDE_MARGIN` 宽方向 / `HEM_MARGIN` 高方向，两者今天同值 0.3 但**语义不同**，
  * 不得混用，且副本有跨语言守卫）；加工类型常量同样复用 —— 本模块**不新造**第二份字面量。
@@ -74,7 +87,13 @@ export interface CutPlanInput {
   width?: number | null
   /** 成品高（米）—— **顾客给的尺寸直接就是成品高**（裁定：不做离地/轨道/挂钩换算） */
   height?: number | null
-  /** 加工类型（`定高买宽` / `定宽买高`）—— **显式入参**，本模块不按高度自推 */
+  /**
+   * 加工类型（`定高买宽` / `定宽买高`）—— **可选**（issue #5020）。
+   *
+   * 缺失 ⇒ **自动推导**（定高买宽可行 ⇒ 定高买宽；否则 ⇒ 定宽买高/倒幅），推导结果从
+   * {@link EffectiveCuttingMode} 带出；**显式传入 ⇒ 按所选走**（人工覆盖，含「显式定高买宽
+   * 而高度超限 ⇒ `needs_splice`」）；**表外取值 ⇒ 仍 fail-closed**（`undecidable`，不猜）。
+   */
   cuttingMode?: string | null
   /** 候选门幅集（同商品同颜色、同售卖方式；是否按库存过滤由调用方决定） */
   candidates: readonly DoorWidthCandidate[]
@@ -86,8 +105,21 @@ export interface CutPlanInput {
   allowance?: number
 }
 
+/**
+ * **实际据以求解的加工类型**（issue #5020）—— `single_panel` / `needs_splice` 上**恒非空**：
+ * 显式传入 ⇒ 逐字回带；缺失 ⇒ **自动推导出的那一档**（定高买宽可行 ⇒ 定高买宽；否则 ⇒ 定宽买高）。
+ *
+ * ⚠️ 调用方读它、**不要**读 `input.cuttingMode`：后者在「未指定」时是 `undefined`，拿它做判断
+ * 会把自动解当成「没判」。
+ */
+export type EffectiveCuttingMode =
+  | typeof CUTTING_MODE_FIXED_HEIGHT
+  | typeof CUTTING_MODE_FIXED_WIDTH
+
 export interface SinglePanelPlan {
   state: 'single_panel'
+  /** **实际据以求解的**加工类型（issue #5020：显式传入 ⇒ 逐字回带；缺失 ⇒ 自动推导值） */
+  effectiveCuttingMode: EffectiveCuttingMode
   /** 选中的**标称**门幅（米） */
   doorWidth: number
   /** 选中门幅的**有效**门幅（标称 − 有效余量） */
@@ -99,6 +131,8 @@ export interface SinglePanelPlan {
 
 export interface NeedsSplicePlan {
   state: 'needs_splice'
+  /** **实际据以求解的**加工类型（接高只在**显式** `定高买宽` 下出现 ⇒ 恒为 `定高买宽`） */
+  effectiveCuttingMode: EffectiveCuttingMode
   /** 候选里最宽的**标称**门幅（缺口以它为基准算） */
   widestDoorWidth: number
   widestEffectiveDoorWidth: number
@@ -142,13 +176,13 @@ function normalizeCandidates(candidates: readonly DoorWidthCandidate[]): number[
  * **不得**回退任何缺省门幅继续推算（issue #4877 要替换掉的正是这个做法）。
  */
 export function resolveCutPlan(input: CutPlanInput): CutPlan {
-  const mode = input.cuttingMode
-  // 裁定「加工类型是显式输入」：缺失 / 表外 ⇒ **不猜朝向**（同 #4661 的「两个方向都不判」）。
-  if (mode !== CUTTING_MODE_FIXED_HEIGHT && mode !== CUTTING_MODE_FIXED_WIDTH) {
+  const requested = input.cuttingMode
+  // 表外取值（非空但不是两档之一）⇒ **仍 fail-closed**（#5020 只放宽「缺失」，不放宽「不认识」）。
+  if (requested != null && requested !== '' && !isCuttingMode(requested)) {
     return {
       state: 'undecidable',
       code: 'missing-cutting-mode',
-      reason: `未给出加工类型（${CUTTING_MODE_FIXED_HEIGHT} / ${CUTTING_MODE_FIXED_WIDTH}）—— 系统不替调用方猜朝向`,
+      reason: `加工类型「${requested}」不在表内（${CUTTING_MODE_FIXED_HEIGHT} / ${CUTTING_MODE_FIXED_WIDTH}）—— 不猜朝向`,
     }
   }
 
@@ -168,8 +202,31 @@ export function resolveCutPlan(input: CutPlanInput): CutPlan {
   }))
 
   const height = positive(input.height)
+  const fixedHeightFeasible = (): boolean =>
+    height !== null && effective.some((c) => round3(height + HEM_MARGIN) <= c.effectiveDoorWidth)
+
+  /**
+   * **加工类型缺失 ⇒ 自动推导**（issue #5020）：定高买宽可行 ⇒ 定高买宽；否则 ⇒ 定宽买高（倒幅）。
+   * ⚠️ 接高**不参与**这个比较（口径见文件头）；缺成品高 ⇒ 两档都判不了 ⇒ `missing-size`。
+   */
+  const mode: EffectiveCuttingMode | null =
+    requested != null && requested !== ''
+      ? (requested as EffectiveCuttingMode)
+      : height === null
+        ? null
+        : fixedHeightFeasible()
+          ? CUTTING_MODE_FIXED_HEIGHT
+          : CUTTING_MODE_FIXED_WIDTH
+  if (mode === null) {
+    return {
+      state: 'undecidable',
+      code: 'missing-size',
+      reason: '缺成品高 —— 判不了「定高买宽是否可行」⇒ 也推导不出加工类型（不凭空挑一个朝向）',
+    }
+  }
 
   if (mode === CUTTING_MODE_FIXED_HEIGHT) {
+    // ⚠️ 显式档也要在这里挡住缺高：**不能**让 `height!` 落到下面的算式（`null` 会算成 0）。
     if (height === null) {
       return { state: 'undecidable', code: 'missing-size', reason: '缺成品高 —— 判不了高度方向是否受门幅约束' }
     }
@@ -182,6 +239,7 @@ export function resolveCutPlan(input: CutPlanInput): CutPlan {
       const chosen = feasible[0]
       return {
         state: 'single_panel',
+        effectiveCuttingMode: CUTTING_MODE_FIXED_HEIGHT,
         doorWidth: chosen.doorWidth,
         effectiveDoorWidth: chosen.effectiveDoorWidth,
         panels: 1,
@@ -196,6 +254,7 @@ export function resolveCutPlan(input: CutPlanInput): CutPlan {
     const gap = round3(need - widest.effectiveDoorWidth)
     return {
       state: 'needs_splice',
+      effectiveCuttingMode: CUTTING_MODE_FIXED_HEIGHT,
       widestDoorWidth: widest.doorWidth,
       widestEffectiveDoorWidth: widest.effectiveDoorWidth,
       gapMeters: gap,
@@ -203,7 +262,7 @@ export function resolveCutPlan(input: CutPlanInput): CutPlan {
       reason:
         `成品高 ${height} + 上下卷边 ${HEM_MARGIN} = ${need} 米 > 最大门幅 ${widest.doorWidth} 米` +
         `（有效 ${widest.effectiveDoorWidth} 米）⇒ 没有任何门幅能单幅做成，走接高` +
-        `（缺口 ${gap} 米 × ${panelCount} 片）；**不改成倒幅**（加工类型不由系统改判）`,
+        `（缺口 ${gap} 米 × ${panelCount} 片）；**不改成倒幅**（加工类型由人工显式选定，系统不改判）`,
     }
   }
 
@@ -228,6 +287,7 @@ export function resolveCutPlan(input: CutPlanInput): CutPlan {
   const chosen = ranked[0]
   return {
     state: 'single_panel',
+    effectiveCuttingMode: CUTTING_MODE_FIXED_WIDTH,
     doorWidth: chosen.doorWidth,
     effectiveDoorWidth: chosen.effectiveDoorWidth,
     panels: chosen.panels,
@@ -236,6 +296,11 @@ export function resolveCutPlan(input: CutPlanInput): CutPlan {
       ` = ${round3(need)} 米 ÷ 门幅 ${chosen.doorWidth} 米（有效 ${chosen.effectiveDoorWidth} 米）` +
       ` ⇒ ${chosen.panels} 幅（取分幅最少；并列取较小门幅）`,
   }
+}
+
+/** 取值是否是表内两档之一（**只认这两档** —— 表外一律 fail-closed） */
+function isCuttingMode(value: string): value is EffectiveCuttingMode {
+  return value === CUTTING_MODE_FIXED_HEIGHT || value === CUTTING_MODE_FIXED_WIDTH
 }
 
 /** 客服所选门幅相对**规则解**的判定（用户 2026-09-21：「客服选了不是最省的门幅 ⇒ 提示可选最优」） */
@@ -301,7 +366,9 @@ export function judgeDoorWidthChoice(
   const needHeight = height === null ? null : round3(height + HEM_MARGIN)
 
   // 定高买宽：规则解 = **可行集里最小门幅**（用料与门幅无关 ⇒ 取小 = 不占宽幅布 + 可能的单价差）
-  if (input.cuttingMode === CUTTING_MODE_FIXED_HEIGHT) {
+  // ⚠️ issue #5020：判据读**规则实际用的**加工类型（`plan.effectiveCuttingMode`），
+  // **不是** `input.cuttingMode` —— 后者在「未指定」时是 `undefined`，会把自动解读成「不是定高买宽」。
+  if (plan.effectiveCuttingMode === CUTTING_MODE_FIXED_HEIGHT) {
     if (needHeight !== null && needHeight > selectedEffective) {
       return {
         plan,
