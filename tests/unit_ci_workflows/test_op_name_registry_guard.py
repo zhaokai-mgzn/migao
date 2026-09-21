@@ -172,6 +172,12 @@ MANAGED_FACES: tuple[str, ...] = (
     # 改前**不在任何清单里**（复验方实测四项全 False）⇒ 把它退回裸渲染快照名时四条判据全绿。
     # 今天它已走 `operationDisplayName()`（issue #4643），登记是为了让「下次再退回裸渲染」直接判红。
     "frontend/admin-web/src/components/chat/ProductionProgressCard.tsx",
+    # issue #4963：**加工单「生产」页**（卡点报表 `stuck[].operation` + 工序进度表）。它一直是
+    # 工序名消费面，但此前**收不进** S1 的 `FACES` —— 原因是 S1 的 C3 旧判据把
+    # `const op = row.operation`（**非渲染**读取）判成违规 ⇒ 想过判据只能写 `row['operation']`
+    # 绕判据（§17.3 ⑤ 禁止）。S1 的 C3 改成「渲染位置」判据后本页按正常写法进清单，
+    # 本表**同步登记**（两处清单必须双向一致，否则 `_s1_drift` 红）。
+    "frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx",
 )
 
 #: **豁免面**（文件, 理由）—— 逐条登记；**过期即红**（只许缩短）。
@@ -217,12 +223,38 @@ EXEMPT_FACES: tuple[tuple[str, str], ...] = (
     ),
 )
 
-#: 受管面「直接渲染快照名」的三种形态（与 S1 的 C3 同形；**只匹配表达式位置**，
-#: 不匹配 `operation-row-…` 这类文案/testid —— 那正是 `data-testid={`operation-row-${op.id}`}` 的误报点）。
+#: 受管面「直接渲染快照名」的形态（与 S1 的 C3 **同形** —— issue #4963 起两边都是
+#: 「**渲染位置**」判据：JSX 插值 / JSX 表达式属性 / JSX 字符串属性；**赋值 / 解构 / 条件 /
+#: 比较一律放行**，它们是读取不是渲染）。
+#: 🔴 旧形态是 `\.operation\b`（任何成员访问）—— 它把 `const op = row.operation` 判成违规，
+#: 而加工单「生产」页必须**先取值再交给 helper** ⇒ 想过判据只能写 `row['operation']` 绕判据
+#: （§17.3 ⑤ 禁止）⇒ 该面收不进任何清单（#4630 漏网形态的复发通道）。两处判据**必须同形**，
+#: 否则「同一份清单」的语义会在两个文件里分裂。
 _DIRECT_RENDER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("成员访问 .operation", re.compile(r"\.operation\b(?![\w$])")),
-    ("快照键 operation_name", re.compile(r"\boperation_name\b")),
-    ("裸标识符 {operation}", re.compile(r"\{\s*operation\b(?![\w$])")),
+    (
+        "成员访问 .operation 出现在 JSX 插值里",
+        re.compile(r"\{\s*[^}\n]*?\b\.[ \t]*operation\b(?![\w$])"),
+    ),
+    (
+        "成员访问 .operation 出现在 JSX 表达式属性里",
+        re.compile(r"\b[\w-]+\s*=\s*\{[^}\n]*?\b\.[ \t]*operation\b(?![\w$])"),
+    ),
+    (
+        "变体名 operation_name 出现在 JSX 插值里",
+        re.compile(r"\{\s*[^}\n]*?\boperation_name\b"),
+    ),
+    (
+        "变体名 operation_name 出现在 JSX 表达式属性里",
+        re.compile(r"\b[\w-]+\s*=\s*\{[^}\n]*?\boperation_name\b"),
+    ),
+    (
+        "JSX 字符串属性含变体名",
+        re.compile(
+            r"""\b[\w-]+\s*=\s*["'][^"'\n]*(?:\boperation_name\b|\b\.[ \t]*operation\b)[^"'\n]*["']"""
+        ),
+    ),
+    # 裸标识符 `{operation}`（JSX 简写渲染）；排除解构 / 对象字面量（`}` 后跟 `,`/`=`/`:`/`;`）
+    ("裸标识符 {operation}", re.compile(r"\{\s*operation\s*\}(?!\s*[,=:;])")),
 )
 
 # ── ③ 后端 web 读面成对出现 ───────────────────────────────────────────────────
@@ -870,11 +902,19 @@ def test_c2_injected_unregistered_face_is_red(tmp_path: Path):
     # 「不得直接渲染快照名」的红证（与 S1 的 C3 同形）—— 防止本文件抄来的 patterns 变成死判据
     render_rel = MANAGED_FACES[0]
     render_original = (REPO_ROOT / render_rel).read_text(encoding="utf-8")
-    render_injected = render_original + "\nconst rawSnapshotName = item.operation\n"
+    # 注入形态必须是**渲染位置**（issue #4963 起两边判据同形：赋值 / 解构是**允许**的读取，
+    # 不再判红 —— 旧注入 `const rawSnapshotName = item.operation` 已随之失效，会变成空红证）
+    render_injected = render_original + "\nconst renderRaw = (item) => <span>{item.operation}</span>\n"
     assert _fingerprint(render_injected) != _fingerprint(render_original), "直接渲染形态的注入没生效"
     (tmp_path / render_rel).write_text(render_injected, encoding="utf-8")
     assert any("成员访问 .operation" in o for o in _managed_face_violations(tmp_path)), (
-        "受管面里出现 `.operation` 直接渲染后判据没判红 ⇒ 直接渲染判据是空判据"
+        "受管面里出现 `.operation` **渲染位置**后判据没判红 ⇒ 直接渲染判据是空判据"
+    )
+    # 反向锚点：**赋值读取**不得被判红（否则判据退回「任何 .operation 都违规」的旧形态）
+    assign_injected = render_original + "\nconst rawSnapshotName = item.operation\n"
+    (tmp_path / render_rel).write_text(assign_injected, encoding="utf-8")
+    assert not any(".operation" in o for o in _managed_face_violations(tmp_path)), (
+        "赋值读取被判红 ⇒ 判据不可满足（会逼出 `row['operation']` 绕判据写法）"
     )
 
     # 还原自证 + 真树仍绿

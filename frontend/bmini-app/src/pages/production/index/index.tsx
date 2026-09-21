@@ -23,6 +23,7 @@ import {
   type WorkLogRow,
 } from '../../../services/productionService'
 import { WorkerBar } from '../../../components/WorkerBar'
+import { operationDisplayName } from '../../../utils/operationDisplayName'
 import { parseOrderIdFromQr, resolveOrderIdFromParams } from '../../../utils/productionQr'
 import {
   appendWorkLog,
@@ -126,14 +127,21 @@ function remainingQty(operation: ProductionOperation): number {
 }
 
 /**
- * 工序显示名（与既有工序列表/后端 `operationView` 同口径：逻辑名 · 部位）。
- * 缺键**不补默认值**（不猜），全缺时退化成「工序」。
+ * 工序显示名（issue #4963）：走**唯一**口径 ——
+ * `frontend/bmini-app/src/utils/operationDisplayName.ts`（与 worker-h5 直接 import 的
+ * `frontend/shared/operation-display.mjs` 逐字同语义；逐值等价由
+ * `tests/unit_ci_workflows/test_operation_display_name_guard.py` 的 C7 钉住，改一份不改另两份 ⇒ 红）。
+ *
+ * 改前这里自拼 `[logical_name, position].filter(Boolean).join(' · ') || '工序'`，与 web/worker-h5
+ * 在三种输入下渲染不同：① 缺 `logical_name` 时只显示部位（如「布帘」）而不退回快照名原文；
+ * ② 键值带空白不 trim；③ 全缺时**编占位名**「工序」而不是给空串（调用方按空态渲染）。
  */
 function operationLabel(operation: {
+  operation?: string | null
   logical_name?: string | null
   position?: string | null
 }): string {
-  return [operation.logical_name, operation.position].filter(Boolean).join(' · ') || '工序'
+  return operationDisplayName(operation)
 }
 
 /** 按 id 在本单工序列表里找该工序（A 模式离线兜底要用它的 `done_qty` 算剩余数量）。 */
@@ -693,6 +701,12 @@ export default function ProductionPage() {
                   {group.operations.map((operation) => (
                     <View key={operation.operation_id} className='production-scan-overview__op'>
                       <Text className='production-scan-overview__op-name'>
+                        {/* 本行**只**渲染逻辑名（不拼部位）：总览**已按部位分组**（组头
+                            `production-scan-overview__pos-name` 就是部位），逐行再拼一次是重复。
+                            ⇒ issue #4963 登记为「**有意的分组上下文**」而非漏网消费面：
+                            部位在本块内可见，不属 #4630「改了面、判据全绿」的形态。
+                            其余显示名消费面（主屏 / 回执「下一道」/ 计件行）一律走
+                            `operationDisplayName`（`frontend/bmini-app/src/utils/operationDisplayName.ts`）。 */}
                         {`${operation.logical_name || ''} · 应做 ${formatQty(operation.qty)}${
                           operation.unit || ''
                         }`}
@@ -791,11 +805,15 @@ export default function ProductionPage() {
                 <Text className='production-position__spec'>{specSummary(position).join(' · ')}</Text>
               )}
               {position.operations.map((operation) => {
-                const amount = pieceworkOf(piecework, operation.operation)
+                // 🔴 计件查找键 = **逻辑工序名**（`per_operation[].operation` 是逻辑名，如 `精裁`），
+                // 不是 `operation` 快照名（`精裁-布`）—— 改前拿快照名去比 ⇒ 永远查不到 ⇒
+                // 「累计计件」那一行静默消失（零报错、零判据）。显示名与查找键是**两件事**。
+                const amount = pieceworkOf(piecework, operation.logical_name ?? operation.operation)
                 return (
                   <View key={operation.id} className='operation-item'>
                     <View className='operation-item__body'>
-                      <Text className='operation-item__name'>{operation.operation}</Text>
+                      {/* 显示名走**唯一**口径（issue #4963）：逻辑名 · 部位 */}
+                      <Text className='operation-item__name'>{operationDisplayName(operation)}</Text>
                       <Text className='operation-item__meta'>
                         {`应做 ${operation.qty}${operation.unit} · ¥${formatPrice(operation.unit_price)}`}
                       </Text>

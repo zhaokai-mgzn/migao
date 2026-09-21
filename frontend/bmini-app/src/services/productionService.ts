@@ -17,6 +17,15 @@ export interface ProductionOperation {
   id: string
   seq: number
   operation: string
+  /**
+   * 逻辑工序名（后端读时派生，如 `精裁`；issue #4621）。
+   * ⚠️ **显示名不得自拼**（issue #4963）：走 `frontend/bmini-app/src/utils/operationDisplayName.ts`
+   * 的 `operationDisplayName`（`logical_name` 缺 ⇒ 退回 `operation` 原文，有 `position` 时拼 `· 部位`）。
+   * 它**也是**计件查找键（`per_operation[].operation` 给的就是逻辑名）。
+   */
+  logical_name?: string | null
+  /** 部位（如 `布帘`；部位无关工序 / 老数据为空） */
+  position?: string | null
   group: string
   unit: string
   qty: number

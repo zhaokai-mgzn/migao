@@ -12,6 +12,12 @@
 //   ③ 未登录（`worker == null`）⇒ **不得出现报工按钮**（未登录不能报工）；
 //   ④ 报工回执（`scan/complete`）⇒ 屏上只认回执给的「下一道 / 本套已完成」（#4792），
 //      前端**不**自己猜下一道工序（猜错 = 把下一笔计件记到错的工序上）。
+//
+// 工序显示名走**唯一**口径（issue #4963）：`frontend/shared/operation-display.mjs` 的
+// `operationDisplayName` —— 本文件此前自拼 `${logical_name} · ${position ?? 部位}`，与
+// admin-web 的 `frontend/admin-web/src/lib/operation-display.ts` 在「缺 logical_name」
+// 「键值带空白」「全缺」三种输入下渲染不同（各拼一份必然漂移，而漂移的那一份不会变红）。
+import { operationDisplayName } from '../../shared/operation-display.mjs'
 
 /** 初始态：未登录。 */
 export function initialState() {
@@ -166,7 +172,12 @@ export function doneNotice(receipt) {
   if (receipt.replayed) return '这次没有新增计件：重复提交已回放（同一次扫码只算一次）'
   if (receipt.orderCompleted) return '已领活 · 本单工序都领完了 🎉'
   if (receipt.setCompleted === true) return '已领活 · 本套工序都领完了 🎉'
-  if (receipt.nextOperation?.logical_name) return `已领活 · 下一道：${receipt.nextOperation.logical_name}`
+  // 🔴 「下一道」必须**带部位**（issue #4963）：改前只拼 `nextOperation.logical_name`
+  // ⇒ 跨部位时屏上少一半信息（`打卷 · 布帘` 显示成 `打卷`）。回执的 `next_operation`
+  // 本来就带 `position`（逐字照 `ProductionScanCompleteService.enrichNextOperation`）。
+  // 文案语义（「已领活」= 扫码开工/领活，issue #4967 用户逐字裁定）**一字不动**，只补部位。
+  const next = operationDisplayName(receipt.nextOperation)
+  if (next) return `已领活 · 下一道：${next}`
   return '已领活'
 }
 
@@ -261,7 +272,7 @@ function mainView(state) {
   return `${header(state)}
   <section class="wh5-card">
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
-    <div class="wh5-op" id="wh5-operation">${esc(op.logical_name)} · ${esc(op.position ?? v.position?.position_name ?? '')}</div>
+    <div class="wh5-op" id="wh5-operation">${esc(operationDisplayName(op))}</div>
     <div class="wh5-qty" id="wh5-qty">应做 ${fmtQty(op.qty)} ${esc(op.unit ?? '')}</div>
     <div class="wh5-price-row">${price}</div>
     ${v.completed === true ? '<p class="wh5-done" id="wh5-completed">本套工序都已被领走</p>' : ''}

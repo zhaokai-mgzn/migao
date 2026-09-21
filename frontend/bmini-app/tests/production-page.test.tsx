@@ -184,6 +184,56 @@ describe('ProductionPage（工人扫码报工）', () => {
     expect(screen.getByText('已完 1/3 道 · 33%')).toBeTruthy()
   })
 
+  it('工序显示名（issue #4963）：列表渲染「逻辑名 · 部位」，且计件查找键 = 逻辑名（不是快照名）', async () => {
+    // 读面（GET /production/orders/{id}/operations）自 #4621 起给每道工序下发
+    // `logical_name` + `position`（读时派生、只加不改）；`operation` 是工人端**快照名**（变体名）。
+    mockGet.mockResolvedValue({
+      success: true,
+      data: makeDetail({
+        positions: [
+          {
+            position_name: '布帘',
+            operations: [
+              {
+                // 快照名带部位后缀（变体名）+ 逻辑名 + 部位
+                id: 'op1', seq: 1, operation: '精裁-布', logical_name: '精裁', position: '布帘',
+                group: '裁剪', unit: '米', qty: 11, unit_price: 3.5, is_must_finish: true,
+                is_start_marker: true, status: 'done', done_qty: 11,
+              },
+              {
+                // 缺 logical_name（老数据）⇒ 退回快照名原文，不显示空白、不编占位名
+                id: 'op2', seq: 2, operation: '外帘装袋', logical_name: null, position: null,
+                group: '后道', unit: '米', qty: 11, unit_price: 5, is_must_finish: false,
+                is_start_marker: false, status: 'pending', done_qty: 0,
+              },
+            ],
+          },
+        ],
+      }),
+    })
+    mockPiecework.mockResolvedValue({
+      success: true,
+      data: {
+        total: 38.5,
+        per_worker: { 张师傅: 38.5 },
+        // 🔴 计件聚合的键是**逻辑名**（后端 `logicalOperationName`），不是快照名 `精裁-布`
+        per_operation: [{ operation: '精裁', amount: 38.5 }],
+      },
+    })
+
+    render(<ProductionPage />)
+    fireEvent.click(screen.getByText('扫一扫'))
+
+    // ① 显示名 = 逻辑名 · 部位
+    expect(await screen.findByText('精裁 · 布帘')).toBeTruthy()
+    // ② 红证：快照名不得上屏（改前渲染的是 `operation` 快照名）
+    expect(screen.queryByText('精裁-布')).toBeNull()
+    // ③ 缺 logical_name ⇒ 退回快照名原文（改前会只显示部位 / 编占位名「工序」）
+    expect(screen.getByText('外帘装袋')).toBeTruthy()
+    // ④ 计件查找键 = 逻辑名 ⇒ 「累计计件」那一行必须出现（改前拿快照名比 ⇒ 静默消失）
+    expect(screen.getByText('累计计件 ¥38.50')).toBeTruthy()
+  })
+
   it('操作记录：渲染**服务端**全单流水（含别人报的工序），不是只显示本机', async () => {
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
