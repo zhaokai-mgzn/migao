@@ -25,9 +25,13 @@
    首版写成 `group: post-deploy-eval-${{ github.run_id }}` 时本测试必须红——
    那等于每个 run 一个队列 = 完全没串行（变异测试 M1）。
 
-③ （#3654 追加）schedule（每 3 天全量）的抑制判据 = **"main 未动即跳过"**，方向与
+③ （#3654 追加）schedule（当时每 3 天全量）的抑制判据 = **"main 未动即跳过"**，方向与
    deploy 相反：本次 schedule 的 SHA == 上次 schedule 全量的 SHA → main 未前进 →
    同一状态已有结论 → 抑制（省一整轮全量）；不等 → 跑。查询失败/取值为空一律 fail-open。
+   ⚠️ #4974（2026-09-21 用户裁定）已删除本 workflow 的 `schedule`（改**仅手动**），
+   故本组判据**当前没有自动触发方**；它仍在原地 = **恢复定时的前置条件** ——
+   删了它，恢复定时时抑制会静默退化成 dispatch 语义（免抑制 ⇒ 每轮全量照跑）。
+   守卫（断言接线在场）：`tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`。
 """
 # case_ids: MC-012
 import os

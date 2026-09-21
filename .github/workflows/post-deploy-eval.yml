@@ -6,15 +6,17 @@ name: Post-Deploy Eval (部署后全量回归)
 # 「真实 LLM 评测收敛到一个入口」的**准确含义**（别读成"别的 workflow 都要删"）：
 #   · **判定用途**的真实 LLM 评测**只允许**走本 workflow 的分层（档内）全库跑（#3769 已落码：
 #     `purpose=determination` + `case_ids` 非空 ⇒ 派发合规守卫**直接 fail**）；
-#   · 其它带真实 LLM 的 workflow **只保留"定时 + 手动"**，**不再有 PR / 合并 / 迭代触发**
-#     （现状：PR 触发 = 0；合并/部署触发 = 0 —— 后者早由 #3925 用户裁定移除，现由 L0 锁
+#   · 其它带真实 LLM 的 workflow **只保留手动**（#4974 起**全仓自动触发 = 0 条**），
+#     **不再有 PR / 合并 / 迭代 / 定时触发**
+#     （现状：PR 触发 = 0；合并/部署触发 = 0 —— 后者早由 #3925 用户裁定移除；定时触发 = 0 ——
+#     #4974 删除本文件每周 cron；以上由 L0 锁
 #     `tests/unit_ci_workflows/test_behavior_eval_pr_thin.py` 防加回）；
-#   · **不新增**任何自动 LLM 触发（本裁定的全部要点就是省钱）。
+#   · **不新增**任何自动 LLM 触发（#4034/#4262/#4974 的要点都是省钱）。
 #
 # ── 档位矩阵（本入口）────────────────────────────────────────────────────────
 # | tier 输入 | 触发 | persona | 用途 / 判定效力 | 失败留痕 |
 # |---|---|---|---|---|
-# | `normal`（**只跑 NORMAL 档**，不含 SMOKE/ADVERSARIAL） | **定时 `0 3 * * 1`（每周一）** + 手动 | 双端（matrix，各自独立栈） | 宽度覆盖 + **唯一判定档** | `[Post-Deploy] 部署后回归失败 — <date>`（去重守卫） |
+# | `normal`（**只跑 NORMAL 档**，不含 SMOKE/ADVERSARIAL） | **仅手动**（#4974 删除每周一 `0 3 * * 1`） | 双端（matrix，各自独立栈） | 宽度覆盖 + **唯一判定档** | `[Post-Deploy] 部署后回归失败 — <date>`（去重守卫） |
 # | `smoke` | 手动 | 双端 | 门禁级快档；**非判定**（runner 三档互斥） | 同上 |
 # | `adversarial` | 手动 | 双端 | 安全/对抗；信息性（只追踪不阻塞） | 同上 |
 # | `case_ids` 定点 | 手动 + `purpose=debug` | 双端 | 复现/调试；**不构成判定结论** | — |
@@ -32,7 +34,10 @@ name: Post-Deploy Eval (部署后全量回归)
 # ── 停用 / 保留清单（before → after）────────────────────────────────────────
 # 停用：`agent-behavior-eval.yml` 的 `pull_request` → 真实 LLM（**job 整体删除**，不是加
 #   `if` 关掉 —— 关掉会留下永不执行的死 job）。**代价已知并接受**：PR 阶段不再有 LLM 行为信号。
-# 保留（#4262 收敛后的**唯一**自动 LLM 触发）：本文件**每周 1 条** normal 全量档。
+# 停用（#4974，用户裁定 2026-09-21）：本文件**每周 1 条** normal 全量档 —— 它是 #4262 收敛后
+#   的**最后一条**自动 LLM 触发，`schedule` 已删除 ⇒ 本文件**仅手动**。
+#   依据：「**完全停止真实 LLM 评测定时任务，改为只能人工手动跑**」⇒ 全仓自动真实 LLM
+#   触发由 **1 条 → 0 条**（评测只能人工派发）。
 # 停用（#4262，用户裁定 2026-09-18）：`xiaobu-acceptance` 每周 adversarial 档、
 #   `agent-eval-adversarial` 每周 adversarial 档（两条自动触发删除，改为**仅手动**）。
 #   依据：用户「不要自动进行验证，都是重复的验证，白白消耗成本」+「手动集中跑一次即可；
@@ -52,12 +57,14 @@ name: Post-Deploy Eval (部署后全量回归)
 # · #4262（2026-09-18，用户裁定）：**自动真实 LLM 触发 3 条 → 1 条** —— 本档由每 3 天
 #   收紧为**每周一**（`0 3 * * 1`），另两条每周对抗档删除定时（改仅手动），
 #   `verify-trigger` 自动验收停用（仅手动），并禁止 agent 自动派发评测（预设指令同步）。
+# · #4974（2026-09-21，用户裁定）：**自动真实 LLM 触发 1 条 → 0 条** —— 本档 `schedule`
+#   删除（本文件改为**仅手动**）；依据「完全停止真实 LLM 评测定时任务，改为只能人工手动跑」。
 # ══════════════════════════════════════════════════════════════════════════════
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # 设计意图（issue #3503 / #3483 T3；#3654 diff 定向；#3925 用户裁定改为**手动触发**）
 #
-# 1) 为什么要有"全量行为回归"（#3925 起：**部署后不再自动跑，改手动 + 每周定时**）
+# 1) 为什么要有"全量行为回归"（#3925 起：**部署后不再自动跑**；#4974 起：**定时也不跑，只由人手动派发**）
 #    现状：合并 main → deploy-ai-agent-service 推到 SWAS（**当前即云测试环境**）
 #    → 只跑 smoke-test（health/存活冒烟）。health 只证明"进程活着、端口在听"，
 #    完全证明不了 agent 的行为没退化（工具路由/确认门禁/金额计算/交互卡这些
@@ -71,9 +78,10 @@ name: Post-Deploy Eval (部署后全量回归)
 #    是"无人在场也要付钱"。改为：
 #      · **手动 workflow_dispatch**：需要时（部署后复核 / 里程碑 / 回滚复验 / 随机抽查）
 #        由人显式触发，任意档位（normal 全量 / smoke / adversarial / case_ids 定点）；
-#      · **每周 schedule cron** 跑一次 normal 全量（双 persona），承担宽度覆盖
-#        （手动档"没人记得跑"的长期漂移兜底），见下方 `on.schedule` 注释。
-#    判定口径（completion_verdict + 失败建 issue）在手动与定时两种档位下**不变**。
+#      · **（#4974 已删除）每周 schedule cron** —— #4262 的兜底定时档，2026-09-21 用户裁定
+#        「完全停止真实 LLM 评测定时任务，改为只能人工手动跑」后删除；宽度覆盖改由
+#        「人显式派发」承担（代价已知并接受：没人派发就没有周期性信号）。
+#    判定口径（completion_verdict + 失败建 issue）在**任何触发方式**下**不变**。
 #
 # 2) 为什么是"生产发布门禁的预演"
 #    生产发布入口 deploy-prod.yml 已就位但生产环境尚未部署（三层里的生产层）。
@@ -94,7 +102,7 @@ name: Post-Deploy Eval (部署后全量回归)
 #      「C 端失败」到底是 C 端退化还是被 B 端踩了，事后无法归因。
 #    · ⚠️ 与 #3417 的教训不冲突：#3417 否掉的是"**为了提速**把同一套栈的用例分片"
 #      （并发建栈把栈启动从 3.4min 抬到 12min，整体更慢）。这里是"**为了隔离**按
-#      persona 分片"，而且只在手动/定时触发（频率低，不同于 PR 门禁）——翻倍的
+#      persona 分片"，而且只在**人显式派发**时触发（频率低，不同于 PR 门禁）——翻倍的
 #      CI 分钟数换"并行 + 可归因"，这个交换是值的。
 #
 # 4) 为什么用独立栈（"标准考场"）
@@ -128,41 +136,33 @@ permissions:
   actions: write
 
 on:
-  # ── 手动触发为主（#3925，用户裁定 2026-09-15）───────────────────────────────
-  # 背景：原 workflow_run（部署后自动门禁）已被用户裁定**移除** —— 部署后不再自动评测。
-  #   部署后评测 = 独立栈 × 双 persona 真实 LLM 全量回归，是 CI 真实 LLM 成本主因之一；
-  #   每次部署自动跑（即使 #3654 已收窄为 diff 定向）仍频繁烧 token + 挤占全局评测槽位。
-  #   现改为：需要时**手动 workflow_dispatch** 执行全量回归（部署后/里程碑/回滚复验）。
-  #   ⚠️ schedule 全量**保留但收敛为每周 1 条**（宽度覆盖兜底，见下；#4262 收紧）。
-  # ── 每周全量（#3654 首发每 3 天 → #4262 用户裁定 2026-09-18 收紧为每周）────────
-  # 背景：手动档只覆盖「有人记得跑」的时刻；**宽度覆盖**由本定时档承担 —— 定期全量
-  # 兜住「合并代码与真实行为之间的长期漂移 / 跨域联动 / 共享层退化」等回归。
-  # 为什么由「每 3 天」收紧为「每周」：用户裁定「不要自动进行验证，都是重复的验证，
-  #   白白消耗成本」+「手动集中跑一次即可；兜底定时改成每周自动跑一次」——
-  #   **全仓真实 LLM 自动触发只留本一条**（原 3 条定时：本档每 3 天 + 两条每周对抗档）。
-  #   成本口径：单次双 persona 全量 ≈ mibao 84-90 条 + xiaobu 36-39 条 ≈ 122-126 场
-  #   真实多轮会话（run artifact `run_key.executed_count` 实测）；3 天档 ≈ 122 次/年，
-  #   周档 ≈ 52 次/年。
-  # 时刻选周一 03:00（UTC）= 周一 11:00 CST：避开工作日合并/部署高峰与评测流水线排队
-  #   （eval-stack-global 槽位共享，低流量时刻不容易与 PR 评测撞车）。
-  #   cron `0 3 * * 1` = 每周一 03:00 UTC。
-  # ⚠️ 不得把本档加回日级 / 3 天级，也不得在别处新增自动 LLM 触发（#4262 用户裁定）——
-  #   机械锁：`tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`（白名单 = **仅本 1 条**，
-  #   并断言 cron 为周级）。
-  #
+  # ── 触发口径：**仅手动**（#3925 / #4262 / #4974 三次收敛的终点）────────────────
+  # #3925（2026-09-15 用户裁定）：移除 workflow_run **部署后自动触发**（"无人在场也要付钱"）。
+  # #4262（2026-09-18 用户裁定）：自动真实 LLM 触发 **3 条 → 1 条**，本文件保留**每周一**
+  #   `0 3 * * 1` 作为唯一兜底档（宽度覆盖：兜住「合并代码与真实行为之间的长期漂移」）。
+  # #4974（2026-09-21 用户裁定）：「**完全停止真实 LLM 评测定时任务，改为只能人工手动跑**」
+  #   ⇒ 本文件 `schedule:` **删除**，`on:` 只剩 `workflow_dispatch`；全仓自动真实 LLM
+  #   触发 = **0 条**。要全量回归 / 宽度覆盖 ⇒ **人显式派发**：
+  #     gh workflow run post-deploy-eval.yml -f tier=normal -f purpose=determination
+  #   代价（已知并接受）：周期性兜底消失 —— 没人派发就没有定期信号；判定口径
+  #   （completion_verdict + 失败建 issue）不变，只是"何时跑"完全由人决定。
+  # ⚠️ 不得把定时加回来（哪怕"每周一次兜底"），也不得在别处新增自动 LLM 触发 ——
+  #   机械锁：`tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`（白名单 = **空集**，
+  #   并断言自动触发计数为 0）。
+  # ⚠️ `schedule` 的**接线**（`if:` 的 schedule 分支 / 抑制判据 `MODE=schedule` / 档位回落）
+  #   **有意保留**：它是"将来恢复定时"的**前置条件**（同 #3367 的档位特判范式）—— 删掉它，
+  #   恢复定时时抑制会静默退化成 dispatch 语义（免抑制 ⇒ 每轮全量照跑，#3587 的重复付费
+  #   原样复发）。守卫：`test_behavior_eval_pr_thin.py::test_schedule_mode_wiring_survives_for_reenable`。
   # ⚠️ deploy-ai-agent-service.yml 那条 `*/20 * * * *` 合并对账定时**与本 workflow 无关**
-  #   （原 workflow_run 防呆已随自动触发一并移除；本 `schedule:` 是本 workflow **自己**的
-  #   cron，事件名 = schedule，直接跑全量）。
-  #   schedule 的抑制（main 自上次全量未动即跳过）由「抑制判定」步骤 MODE=schedule 承担。
-  schedule:
-    - cron: '0 3 * * 1'
+  #   （它是部署对账，不烧 LLM；本 workflow 已无任何 cron）。
   # ── 手动档输入（#3526）──────────────────────────────────────────────────────
   # 背景：全量回归改手动后，workflow_dispatch 是**唯一**的"人显式要求评测"入口。
   # 手动补跑经常只需要 1-2 条用例的快速复验 → 提供三个旋钮（tier/case_ids/purpose）。
   #
-  # ⚠️ 铁律：以下输入**只对 workflow_dispatch 生效**。schedule（每周全量）没有 inputs，
-  #    表达式 `${{ github.event.inputs.tier || 'normal' }}` 天然回落 normal 全量 ——
-  #    定时档的判定口径**不因任何人传参而改变**（这正是选表达式而非"读 env 再判断"的原因）。
+  # ⚠️ 铁律：以下输入**只对 workflow_dispatch 生效**（本 workflow 现在也只有它）。
+  #    表达式 `${{ github.event.inputs.tier || 'normal' }}` 在没有 inputs 的事件下天然回落
+  #    normal 全量 —— 恢复定时档时同样如此：定时档的判定口径**不因任何人传参而改变**
+  #    （这正是选表达式而非"读 env 再判断"的原因）。
   # ⚠️ **tier 的语义边界（与 ② 同族：会误导的文档真值）**：`local_runner` 按 **difficulty** 选档，
   #    三个档位**互斥**（各自再滤 `skip_reason`）—— 故 `tier=normal` **只**跑 NORMAL 档，
   #    **不含** SMOKE 与 ADVERSARIAL（runner 侧原文：「# 每日回归：normal tier
@@ -173,7 +173,7 @@ on:
   workflow_dispatch:
     inputs:
       tier:
-        description: '评测档位：normal（**只跑 NORMAL 档**全量，默认=定时档同款；**不含 SMOKE/ADVERSARIAL**）| smoke（门禁级快档）| adversarial（安全/对抗）'
+        description: '评测档位：normal（**只跑 NORMAL 档**全量，默认；**不含 SMOKE/ADVERSARIAL**）| smoke（门禁级快档）| adversarial（安全/对抗）'
         required: false
         default: normal
         type: choice
@@ -203,17 +203,17 @@ on:
           - '6'
           - '8'
       force_eval:
-        description: '【#3587/#3709】手动触发的默认是 true = **免抑制**（人显式要求"我就要这一条"，回滚复验/补跑）。要恢复"被取代即抑制"请**显式传 false**。⚠️ 只对手动触发生效：定时（schedule 全量）恒走默认判定，不受本输入影响'
+        description: '【#3587/#3709】手动触发的默认是 true = **免抑制**（人显式要求"我就要这一条"，回滚复验/补跑）。要恢复"被取代即抑制"请**显式传 false**。⚠️ 本 workflow 现仅手动（#4974）；恢复定时档时 schedule 恒走默认判定，不受本输入影响'
         required: false
         default: true
         type: boolean
 
 # ── 为什么不加 `concurrency: cancel-in-progress`（#3526 的有意决策），以及 #3587 怎么在不违反它的前提下提速 ──
 # xiaobu-acceptance.yml 对 PR 场景用 cancel-in-progress 取消旧 run（PR 迭代快、取消划算）。
-# 本 workflow 恰恰相反：它挂在**每次部署**后面跑长评测（双 persona normal 全量，90min 预算）。
-# main 频繁合并时，取消在跑的长评测 → ① 门禁永远跑不完（旧 run 被杀、新 run 重头再来，
-# 形成"永远在跑、永远没结论"的活锁）；② 结论档丢失 —— 事后无法回答"某次部署时行为到底
-# 怎样"。宁可排队串行，也要让每一次部署都有完整的判定留痕。
+# 本 workflow 恰恰相反：它跑的是**人显式派发**的长评测（双 persona normal 全量，90min 预算）。
+# 取消在跑的长评测 → ① 门禁永远跑不完（旧 run 被杀、新 run 重头再来，
+# 形成"永远在跑、永远没结论"的活锁）；② 结论档丢失 —— 事后无法回答"某次派发时行为到底
+# 怎样"。宁可排队串行，也要让每一次派发都有完整的判定留痕。
 #
 # #3587（本次）：把上面那条纪律**加强**为"仓库级串行槽位"，并新增"被取代即抑制"：
 #   · concurrency group 固定为 `eval-stack-global`（**不是**按 run 区分，否则等于没串行）+
@@ -253,9 +253,9 @@ jobs:
     # 90 分钟预算（每条腿）：栈构建（无缓存路径实测 3.4~13min）+ 单 persona
     # 全量（B 端 ~47 条 / C 端 ~35 条）真实 LLM 往返。
     timeout-minutes: 90
-    # 仅在"真的到了全量回归时刻"时跑（#3925：无 workflow_run 自动触发）：
-    #   · workflow_dispatch → 手动补跑/验证/回滚复验（唯一"人显式要求"入口）
-    #   · schedule（#3654 每周全量）→ 本 workflow 自己的 cron（宽度覆盖兜底）
+    # 仅在"真的到了全量回归时刻"时跑（#3925：无 workflow_run 自动触发；#4974：也无 schedule）：
+    #   · workflow_dispatch → 手动补跑/验证/回滚复验（**唯一**"人显式要求"入口）
+    #   · `|| github.event_name == 'schedule'` **有意保留**：恢复定时时的前置条件（#3367 范式）
     if: >-
       github.event_name == 'workflow_dispatch'
       || github.event_name == 'schedule'
@@ -284,9 +284,10 @@ jobs:
       # 判据（MODE=deploy）：本次 run 对应 SHA（= 被部署的 commit）与当前 main HEAD 比对。
       #   · 相等（含 ls-remote 失败/空值等一切异常）→ **照常评测**（fail-open：绝不漏评）；
       #   · 不等 → 已被更新的 commit 取代 → **skip 评测**，并留「被取代它的 SHA + 链接链」。
-      # MODE=schedule（#3654 每周全量）：判据**方向相反**——本次 schedule 的 SHA 与
-      #   上一次 schedule 全量的 SHA 比对，相等 = main 自上次全量未动 → skip（同一状态
-      #   已有结论，重跑是纯浪费）；不等 = main 前进了 → 跑这一轮全量。两种模式共同点：
+      # MODE=schedule（#3654 每周全量；#4974 起**无定时触发**，接线有意保留为恢复定时的前置条件）：
+      #   判据**方向相反**——本次 schedule 的 SHA 与上一次 schedule 全量的 SHA 比对，
+      #   相等 = main 自上次全量未动 → skip（同一状态已有结论，重跑是纯浪费）；
+      #   不等 = main 前进了 → 跑这一轮全量。两种模式共同点：
       #   只有 skip 会抑制，一切异常 fail-open 照常跑（宁可慢，不可漏评）。
       #
       # 与"不 cancel-in-progress"那条注释的关系（显式论证，见文件头 concurrency 段）：
@@ -297,7 +298,7 @@ jobs:
       #    否则会刷红 + 自动开 issue（把"省成本"变成"制造噪音"）。
       # ⚠️ 各事件的实际抑制行为（**以实现为准**，#3709 更正 —— 此前这里写着
       #    「workflow_dispatch … **永不**抑制」，与实现不符，读者据此漏传逃生口拿到一个绿的空跑）：
-      #    · schedule（每周全量）→ schedule 判据（main 未动即抑制）；
+      #    · schedule（#4974 已删除；接线保留）→ schedule 判据（main 未动即抑制）；
       #    · **workflow_dispatch（人显式要求补跑/回滚复验）→ 默认免抑制**（#3709）；
       #      要恢复"被取代即抑制"必须**显式传 `force_eval=false`**（逃生口保留）。
       #    · （#3925：workflow_run 自动门禁已移除，无 deploy 判据触发方。）
@@ -311,8 +312,8 @@ jobs:
           EVAL_SHA: ${{ github.sha }}
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
-          # #3925：无 workflow_run 自动触发 → 无 deploy 判据；schedule（每周全量）
-          # 走"main 未动即抑制"判据；workflow_dispatch 由脚本按事件名默认免抑制。
+          # #3925：无 workflow_run 自动触发 → 无 deploy 判据；#4974：schedule 也已删除，
+          # 故实际只会走 dispatch 分支 —— schedule 分支**有意保留**（恢复定时的前置条件）。
           MODE: ${{ github.event_name == 'schedule' && 'schedule' || 'dispatch' }}
           # #3709：把**事件名**与 **force_eval 原始输入值**交给脚本，由脚本决定默认：
           #   · workflow_dispatch → 默认免抑制；显式 force_eval=false 才允许抑制（逃生口）；
@@ -563,10 +564,10 @@ jobs:
       - name: Run ${{ matrix.persona }} ${{ github.event.inputs.tier || 'normal' }}（真实 LLM）
         # ① #3587：这一条是**真实 LLM 成本的大头**，被抑制的 run 在此止步。
         if: steps.supersede.outputs.superseded != 'true'
-        # ── 档位来源（#3925：无 diff 定向，只有手动/定时两档）──
+        # ── 档位来源（#3925：无 diff 定向；#4974：只剩手动一档）──
         #   · workflow_dispatch → 手动 inputs 优先：tier 任选（normal/smoke/adversarial），
         #     case_ids 用户自填做定点复验（留空 = 按 tier 全库）；
-        #   · schedule（每周全量）→ 恒 normal 全量（无 inputs，表达式回落默认）。
+        #   · schedule（#4974 已删除；接线保留）→ 恒 normal 全量（无 inputs，表达式回落默认）。
         # ⚠️ case_ids 收窄后 summary 的 total 只反映这几条 —— 那是"定点复验"信号，
         #    不是"全量结论"；真正放行与否由 completion_verdict + 下方判定步骤说话
         #    （判定口径在手动/定时两档下**一致**：确定性失败=0 + 关键旅程全过）。
@@ -588,7 +589,7 @@ jobs:
           # 计时/日志提示用（#3526）：收窄档在日志里可见（留空 = 按档全量）
           CASE_IDS: ${{ github.event.inputs.case_ids }}
           # 用例级并发（单 job 内并行，栈只起一次，issue #3361）
-          # #3526：默认 6 = 原值（定时档行为不变），仅手动触发时可调
+          # #3526：默认 6 = 原值（全量档行为不变），仅手动触发时可调
           EVAL_CONCURRENCY: ${{ github.event.inputs.concurrency || '6' }}
           # #3769：用途进 runner（summary 的 run_key.run_mode）—— 遥测据此把
           # 「判定用途全库跑」与「定点复验小跑」分开计数（同一个 total 在两处含义不同）。
@@ -623,7 +624,7 @@ jobs:
           #    本步骤新增一个竖线就会把它顶红，而它守的是**退出码传播**语义，
           #    与本次降频改动无关。故要打印/判断的值直接展开，不引入竖线。
           echo "── 评测档位: $TIER（persona=${{ matrix.persona }}，手动 case_ids 优先）──"
-          echo "── 全量档（schedule 定时 / 手动补跑；case_ids 留空即全库）──"
+          echo "── 全量档（手动派发；case_ids 留空即全库）──"
           python tests/agent_eval/local_runner.py "$TIER" --cases .github/cases \
             ${{ github.event.inputs.case_ids != '' && format('--case-ids "{0}"', github.event.inputs.case_ids) || '' }}
 
@@ -700,7 +701,8 @@ jobs:
       - name: "被抑制记录（#3587/#3654/#3709：本 run 未评测，结论由取代/后续 run 承担）"
         # 抑制时**必须**留一条显式、可检索的记录（不是"静默跳过"）：谁取代了谁、链接在哪。
         # 这段同时写进 job summary（审计端口），使"某次部署时行为到底怎样"仍可追到链条上。
-        # #3654：schedule 抑制（main 未动）同样走这里留档，措辞兼容两种模式。
+        # #3654：schedule 抑制（main 未动）同样走这里留档，措辞兼容两种模式
+        # （#4974 起无定时触发，接线保留为恢复定时的前置条件）。
         # #3709：**未评测必须在 run 上显眼** —— 实测 run 34841093824 的形态是"整体 success +
         #   每个评测步骤 skipped + artifact 0"，只靠一个 success 的步骤名会被读成"评测通过"
         #   （主会话险些据此写「DF-011 已通过」）。故这里打 `::warning::` annotation，

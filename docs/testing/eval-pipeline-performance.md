@@ -281,8 +281,10 @@ gh run view <id> --log | grep "Start local stack" | ...
 > 下面「事实 1」的四层 PR 真实 LLM，经 #3653（2026-09-15，降到一层）之后，
 > 已由 **2026-09-17 用户裁定 2′/4′（承载 issue #4034）** 进一步**归零** ——
 > PR 层真实 LLM **停跑**，`agent-behavior-eval.yml` 只留**零 LLM 的映射信号**；
-> 判定用途收敛到单一入口 `post-deploy-eval.yml`（每 3 天 normal 全量 + 手动 dispatch），
-> 既有定时档全部保留。现状口径见 `docs/testing/eval-environments.md` §3.1/§3.7。
+> 判定用途收敛到单一入口 `post-deploy-eval.yml`（normal 全量，**手动派发**）——
+> #3925（部署后自动触发）/ #4262（两条每周对抗）/ **#4974（最后一条每周一 cron）** 依次收敛后，
+> **现状 = 全仓无任何自动真实 LLM 触发**。
+> 现状口径见 `docs/testing/eval-environments.md` §3.1/§3.7/§3.10。
 
 ### 6.1 三条实测事实
 

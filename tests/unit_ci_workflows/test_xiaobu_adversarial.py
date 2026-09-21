@@ -99,7 +99,9 @@ class TestAdversarialScheduleWiring:
 
     #4262（2026-09-18 用户裁定）删除了本 workflow 的每周 `schedule` ——
     「不要自动进行验证，都是重复的验证，白白消耗成本」：全仓自动真实 LLM 触发
-    由 **3 条收敛为 1 条**（只留 `post-deploy-eval` 每周一 normal 全量）。
+    由 **3 条收敛为 1 条**（当时只留 `post-deploy-eval` 每周一 normal 全量）；
+    #4974（2026-09-21 用户裁定）再收到底 —— 「完全停止真实 LLM 评测定时任务，
+    改为只能人工手动跑」⇒ 连那一条也删了，**全仓自动触发 = 0 条**。
 
     但 #3367 的教训**不随之作废**：定时触发没有 inputs，若不把 `schedule` 特判成
     adversarial，就会落到默认 smoke ——「加了定时任务却什么都没测到」。故本类守两件事：

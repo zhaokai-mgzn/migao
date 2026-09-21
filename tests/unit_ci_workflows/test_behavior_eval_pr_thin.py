@@ -1,46 +1,47 @@
 # case_ids: OR-016, AS-007, PR-019, CH-010, DF-011, DF-012
-"""**PR 层零真实 LLM** + **自动 LLM 触发白名单**（#4034 裁定 2′/4′；#4262 收紧为 1 条）—— L0 静态锁。
+"""**PR 层零真实 LLM** + **自动 LLM 触发全清零**（#4034 裁定 2′/4′；#4262 → 1 条；#4974 → 0 条）—— L0 静态锁。
 
 > 文件名保留历史名（`test_behavior_eval_pr_thin.py`）：它锁的一直是「PR 层有多薄」这件事。
 > 判据从 #3653 的「PR 层保留**一层**定向映射 fast 档」收紧为「PR 层 **0 层**真实 LLM」——
 > **是收紧，不是放宽**（LLM 调用层数：1 → 0）。
-> #4262（2026-09-18）再次**收紧**：自动 LLM 触发由 **3 条 → 1 条**（见下）。
+> #4262（2026-09-18）再次**收紧**：自动 LLM 触发由 **3 条 → 1 条**。
+> #4974（2026-09-21）**收紧到底**：最后 1 条（`post-deploy-eval` 每周一 cron）也删除 ⇒
+> 全仓自动真实 LLM 触发 = **0 条**，评测**只能人工手动派发**。
 
 ## 为什么需要这层锁（裁定原文）
 
 > 「**关闭 PR 时的真实 LLM 自动跑**；真实 LLM 评测**收敛到一个入口**；PR / 合并 / 迭代一律不触发。」
 > 「代价已知并接受：**PR 阶段不再有 LLM 行为信号**。」（#4034，2026-09-17）
 
-> 「**不要自动进行验证，都是重复的验证，白白消耗成本**」「**手动集中跑一次即可**」
-> 「兜底定时**改成每周自动跑一次**」（#4262，2026-09-18 —— 用户实测 9/17 CST 2 次、
-> 9/18 CST 8 次全量评测被 agent 自动派发，两天合计 1205 场真实多轮 LLM 会话）
+> 「**不要自动进行验证，都是重复的验证，白白消耗成本**」「**手动集中跑一次即可**」（#4262，2026-09-18）
+
+> 「**完全停止真实 LLM 评测定时任务，改为只能人工手动跑**」（#4974，2026-09-21 —— 用户裁定；
+> 被删的那条 = `post-deploy-eval.yml` 的 `schedule: 0 3 * * 1`，单次双 persona normal 全量
+> ≈122-126 场真实多轮会话，是 #4262 之后**唯一**还在由 cron 付费的评测）
 
 代价既已被接受，就**不允许**再被"顺手补回来"（例如在别处新增自动 LLM 触发、或把
 `behavior-eval` job 加回 PR 路径）—— 那是把用户明确买下的账又花一遍。故本文件把它落成
 **机械判据**（否则只是散文：`migao-acceptance`「关键行为禁止只写进自然语文档」同族）。
 **「不新增自动 LLM 触发」这句话本身就是本文件的第 ② 组断言。**
 
-> #4262 的另一半（**防回退方向反转**）：#4034 时白名单是"允许 3 条定时"，
-> 现在白名单是"**只允许 1 条**、且必须是**周级** cron"—— 其余真实 LLM workflow
-> 的自动触发集合必须**为空**。把任一条定时加回来（或把周级改回日级/3 天级）
-> 都会让本文件红。
+> #4974 的**防回退方向**：白名单由 #4262 的"只允许 1 条、且必须是周级 cron"变成
+> **空集** —— 任何真实 LLM workflow 的自动触发集合（`schedule` / `push` / `workflow_run` /
+> `pull_request*`）都必须为空。把任一条定时加回来（哪怕只是"每周一次兜底"）都会让本文件红。
 
 ## 锁五件事（每条的**反向变异**都会让本文件红）
 
 1. **PR 路径零 LLM**：任何带 `pull_request` / `pull_request_target` 触发的 workflow，
    其**步骤体**（`run` / `with.script`，剔除注释行）里**不得**出现 `local_runner.py`；
-2. **自动 LLM 触发白名单**：带真实 LLM 步骤的 workflow，其**自动**触发（`schedule` / `push` /
-   `workflow_run` / `pull_request*`）只能是 `AUTOMATIC_LLM_TRIGGERS` 里那**一条** `schedule`
-   （`post-deploy-eval.yml` 的**每周一**档 `0 3 * * 1`，不得删除、**也不得加密**为日级/3 天级）；
-   **其余真实 LLM workflow 的自动触发必须为空集合**（#4262 用户裁定 2026-09-18：
-   「不要自动进行验证，都是重复的验证，白白消耗成本」——自动触发由 3 条收敛为 1 条）；
+2. **自动 LLM 触发 = 空集**：带真实 LLM 步骤的 workflow，其**自动**触发（`schedule` / `push` /
+   `workflow_run` / `pull_request*`）必须**一条都没有**（#4974 用户裁定 2026-09-21：
+   「完全停止真实 LLM 评测定时任务，改为只能人工手动跑」——自动触发由 1 条收敛为 **0 条**）；
    **合并/部署触发（`push` / `workflow_run`）= 0 条**；
 3. **手动可达性**：每个带真实 LLM 步骤的 workflow 必须仍有 `workflow_dispatch`
-   （"只走定时 + 手动 dispatch"里的**手动**这一半，删掉就等于把评测变成不可执行）；
+   （自动触发清零后，手动入口是评测**唯一**的执行方式 —— 删掉它 = 评测彻底不可执行）；
 4. **映射信号不丢**：`agent-behavior-eval.yml` 的**零 LLM** map job 必须在（PR 上回答
    "这次 diff 波及哪些用例"），且 PR 评论必须给出**可复制**的派发命令（"要跑就派发单一入口"），
    并**不得**让读者把它读成"评测通过"（反假绿）；
-5. **判据本身非空跑**：见 `TestDetectorActuallyFires`（注入样本 + 负控），
+5. **判据本身非空跑**：见 `TestDetectorActuallyFires`（注入样本 + 负控 + **注入 `schedule` 必红**），
    以及 `TestZeroLlmWorkflowShape`（对"被排除出栈锁"的 workflow 逐条验"确实没有 LLM 机器"）。
 
 ## case_ids 说明（不编造）
@@ -53,7 +54,6 @@ DF-011/DF-012（防御域，唯一走 full 桶的非 normal 档映射用例）�
 import re
 from pathlib import Path
 
-import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -64,17 +64,12 @@ BEHAVIOR_EVAL = "agent-behavior-eval.yml"
 # 真实 LLM 步骤的判据锚点（与仓库既有口径一致：runner 入口文件）
 LLM_MARKER = "local_runner.py"
 
-# ★ 白名单：**允许**存在的自动触发（workflow → 允许的触发键）。
-#   加任何一条 = 新增自动 LLM 花费 ⇒ 必须在 PR 里给出用户裁定，并同步改这里。
-#   #4262（2026-09-18）用户裁定：自动触发由 **3 条 → 1 条**（「不要自动进行验证，
-#   都是重复的验证，白白消耗成本」+「兜底定时改成每周自动跑一次」）。
-#   ⇒ 其余真实 LLM workflow 的自动触发必须为空（由下面的反向断言钉死）。
-AUTOMATIC_LLM_TRIGGERS = {
-    "post-deploy-eval.yml": {"schedule"},  # **唯一**自动档：每周一 normal 全量（#4262 由每 3 天收紧）
-}
-# 唯一自动档的 cron 语义（#4262）：**周级**。写成日级/3 天级/小时级都算把成本加回来。
-WEEKLY_CADENCE_CRON = "0 3 * * 1"  # 每周一 03:00 UTC = 11:00 CST
-# 与 workflow_dispatch 一起构成"允许的触发全集"：自动触发 ⊆ 白名单，其余必须是手动。
+# ★ 白名单：**允许**存在的自动触发（workflow → 允许的触发键）—— #4974 起为**空集**。
+#   加任何一条 = 新增自动 LLM 花费 ⇒ 必须先拿到用户裁定，并同步改这里。
+#   #4974（2026-09-21）用户裁定：「**完全停止真实 LLM 评测定时任务，改为只能人工手动跑**」
+#   ⇒ #4262 留下的唯一一条（`post-deploy-eval.yml` 每周一 cron）已删除，白名单清空。
+AUTOMATIC_LLM_TRIGGERS: dict[str, set[str]] = {}
+# 与 workflow_dispatch 一起构成"允许的触发全集"：自动触发 ⊆ 白名单（空集），其余必须是手动。
 ALLOWED_MANUAL_TRIGGERS = {"workflow_dispatch"}
 # 合并/部署类触发：本裁定的"合并/迭代一律不触发" ⇒ LLM workflow 上**必须为 0**
 MERGE_TRIGGERS = {"push", "workflow_run"}
@@ -90,6 +85,16 @@ def _triggers(name: str) -> dict:
     # yaml 会把裸 `on:` 解析成布尔 True 键（与 test_schema_integrity 同一处理）
     wf = _load(name)
     return wf.get("on") or wf.get(True) or {}
+
+
+def _auto_triggers(wf: dict) -> set:
+    """workflow 的**自动**触发键（= 触发全集 − 手动白名单）。
+
+    独立成纯函数：判据本体（`test_automatic_llm_trigger_count_is_zero`）与
+    **注入式红证**（`test_injected_schedule_into_post_deploy_eval_reds`）共用同一份口径。
+    """
+    trig = wf.get("on") or wf.get(True) or {}
+    return set(trig.keys()) - ALLOWED_MANUAL_TRIGGERS
 
 
 def _steps(workflow: str) -> list:
@@ -202,14 +207,14 @@ class TestPrPathHasZeroLlm:
 
 
 class TestAutomaticLlmTriggerWhitelist:
-    """② 自动 LLM 触发 = 白名单（「不新增自动 LLM 触发」落成机械判据）。"""
+    """② 自动 LLM 触发 = 空集（「不新增自动 LLM 触发」落成机械判据；#4974 清零）。"""
 
     def test_llm_workflow_set_is_the_expected_one(self):
         got = set(_llm_workflows())
-        # #4262：白名单只剩 1 条自动档，但**带真实 LLM 步骤的 workflow 仍是 4 个** ——
-        # 另 3 个改为**仅手动**（不是被删），它们仍在 `_llm_workflows()` 里（判据 = 步骤体
-        # 含 `local_runner.py`）。故期望集 = 白名单 ∪ 仅手动的那三个。
-        expected = set(AUTOMATIC_LLM_TRIGGERS) | {
+        # #4974：白名单已清空，但**带真实 LLM 步骤的 workflow 仍是 4 个** —— 全部**仅手动**
+        # （不是被删），它们仍在 `_llm_workflows()` 里（判据 = 步骤体含 `local_runner.py`）。
+        expected = {
+            "post-deploy-eval.yml",         # #4974：删每周一 cron，改仅手动（判定用途单一入口）
             "xiaobu-acceptance.yml",        # #4262：删定时，改仅手动
             "agent-eval-adversarial.yml",   # #4262：删定时，改仅手动
             "agent-eval.yml",               # 本就仅手动
@@ -229,65 +234,64 @@ class TestAutomaticLlmTriggerWhitelist:
             "部署后自动评测已在 #3925 由用户裁定移除，不得以任何形式加回"
         )
 
-    @pytest.mark.parametrize("name", sorted(AUTOMATIC_LLM_TRIGGERS))
-    def test_automatic_triggers_match_whitelist(self, name: str):
-        auto = set(_triggers(name).keys()) - ALLOWED_MANUAL_TRIGGERS
-        assert auto == AUTOMATIC_LLM_TRIGGERS[name], (
-            f"{name} 的自动触发是 {sorted(auto)}，白名单是 "
-            f"{sorted(AUTOMATIC_LLM_TRIGGERS[name])} —— #4262 裁定后白名单只剩**周级 1 条**，"
-            "新增任何其它自动触发（含把删掉的定时加回来）= 把用户买下的账又花一遍"
-        )
-        assert _triggers(name).get("schedule"), f"{name} 的 schedule 声明为空（守卫前提失效）"
+    def test_no_llm_workflow_has_automatic_trigger(self):
+        """★ #4974 反向断言（**判据本体**）：任何真实 LLM workflow 都不得有自动触发。
 
-    def test_no_other_llm_workflow_has_automatic_trigger(self):
-        """★ #4262 反向断言：**只允许 1 条**自动档，其余真实 LLM workflow 必须零自动触发。
-
-        这是本次收紧的**判据本体**（正向白名单只覆盖"进了白名单的"，
-        漏掉"新写一条 schedule 的 workflow"；本断言把整个集合钉死）。
+        正向白名单只覆盖"进了白名单的"（现在还是空集 ⇒ 一个都不覆盖）；
+        本断言把**整个集合**钉死：漏掉"新写一条 schedule 的 workflow"这条路也堵上。
         """
         offenders = {
-            n: sorted(set(_triggers(n).keys()) - ALLOWED_MANUAL_TRIGGERS)
+            n: sorted(_auto_triggers(_load(n)))
             for n in _llm_workflows()
-            if n not in AUTOMATIC_LLM_TRIGGERS
-            and (set(_triggers(n).keys()) - ALLOWED_MANUAL_TRIGGERS)
+            if _auto_triggers(_load(n))
         }
         assert not offenders, (
             f"这些真实 LLM workflow 仍有自动触发：{offenders} —— "
-            "#4262 用户裁定（2026-09-18）：「不要自动进行验证，都是重复的验证，白白消耗成本」"
-            "⇒ 自动真实 LLM 触发**只允许 1 条**（post-deploy-eval 每周一）。"
-            "要恢复某条自动触发，必须先拿到用户裁定并同步改本文件的白名单。"
+            "#4974 用户裁定（2026-09-21）：「完全停止真实 LLM 评测定时任务，改为只能人工手动跑」"
+            "⇒ 自动真实 LLM 触发**必须为 0 条**（含 schedule / push / workflow_run / pull_request*）。"
+            "要恢复任何自动触发，必须先拿到用户裁定并同步改本文件的白名单。"
         )
 
-    def test_automatic_llm_trigger_count_is_one(self):
-        """★ 数量钉死：自动档**恰好 1 条**（多一条 = 新增花费，少一条 = 连兜底都没了）。"""
-        auto = {n for n in _llm_workflows()
-                if set(_triggers(n).keys()) - ALLOWED_MANUAL_TRIGGERS}
-        assert auto == {"post-deploy-eval.yml"}, (
-            f"自动真实 LLM 触发集合 = {sorted(auto)}（期望只有 post-deploy-eval.yml）—— "
-            "#4262：3 条收敛为 1 条；数量变化必须同步改白名单并给出裁定依据"
+    def test_automatic_llm_trigger_count_is_zero(self):
+        """★ 数量钉死：自动档**恰好 0 条**（多一条 = 新增自动花费）。"""
+        auto = {n for n in _llm_workflows() if _auto_triggers(_load(n))}
+        assert auto == set(), (
+            f"自动真实 LLM 触发集合 = {sorted(auto)}（期望为空）—— "
+            "#4974：最后一条（post-deploy-eval 每周一 cron）已删除；"
+            "数量变化必须同步改白名单并给出裁定依据"
         )
 
-    def test_weekly_cadence_only(self):
-        """★ #4262：唯一自动档必须是**周级** cron（由每 3 天收紧为每周）。
+    def test_post_deploy_eval_has_no_schedule(self):
+        """★ #4974：被删的那一条**不得**以任何形态回来（周级 / 日级 / 3 天级 / `*/N` 都算加回来）。"""
+        trig = _triggers("post-deploy-eval.yml")
+        assert "schedule" not in trig, (
+            f"post-deploy-eval 又有定时档了：{trig.get('schedule')!r} —— "
+            "#4974 用户裁定「完全停止真实 LLM 评测定时任务，改为只能人工手动跑」；"
+            "要恢复定时必须先拿用户裁定，并同步改本文件的白名单"
+        )
 
-        「不得删除」已由上一组断言钉死；本断言钉**频率**——把周级改回日级/3 天级/小时级
-        等于悄悄把成本加回来（这正是本单要治的形态）。
+    def test_schedule_mode_wiring_survives_for_reenable(self):
+        """★ #4974：`schedule` 的**接线**（事件分支 / 抑制判据）必须留在原地。
+
+        当前无定时，所以它不红；但它是**恢复定时的前置条件**（同 #3367 的档位特判范式）：
+        删掉接线后再把 cron 加回来，抑制判定会落到 dispatch 语义（免抑制 ⇒ 每轮全量照跑，
+        正是 #3587 要治的重复付费）。
         """
-        sched = _triggers("post-deploy-eval.yml").get("schedule") or []
-        crons = [s.get("cron") for s in sched if isinstance(s, dict)]
-        assert crons == [WEEKLY_CADENCE_CRON], (
-            f"post-deploy-eval 的定时档应为唯一周级『{WEEKLY_CADENCE_CRON}』，现有 {crons} —— "
-            "#4262 用户裁定「兜底定时改成每周自动跑一次」；删掉它 = 白丢宽度覆盖，"
-            "改密（日级 / 3 天级 / */N） = 把成本加回来"
+        src = (WORKFLOWS_DIR / "post-deploy-eval.yml").read_text(encoding="utf-8")
+        assert "github.event_name == 'schedule'" in src, (
+            "post-deploy-eval 的 `schedule` 事件接线被删了 —— 恢复定时时会静默退化成"
+            "「免抑制的 dispatch 语义」（#3587 的重复付费原样复发）"
         )
-        assert "*/" not in WEEKLY_CADENCE_CRON, "周级档不得含 `*/` 步进（那是日级/小时级的形态）"
+        assert "'schedule' && 'schedule'" in src, (
+            "抑制判定步骤的 `MODE=schedule` 分支被删了 —— 同上，恢复定时的前置条件丢失"
+        )
 
     def test_manual_entry_points_survive(self):
-        """③「定时 + 手动 dispatch」里的**手动**一半：每个 LLM workflow 都要能手动派发。"""
+        """③ 自动触发清零后，**手动**入口是评测唯一的执行方式：每个 LLM workflow 都要能派发。"""
         missing = [n for n in _llm_workflows() if "workflow_dispatch" not in _triggers(n)]
         assert not missing, (
             f"这些 LLM workflow 没有 workflow_dispatch：{missing} —— "
-            "裁定 4′ 允许的触发只有「定时 + 手动」；删掉手动入口 = 评测不可执行"
+            "#4974 之后触发面只剩「手动」；删掉手动入口 = 评测彻底不可执行"
         )
 
 
@@ -414,9 +418,21 @@ class TestDetectorActuallyFires:
             "行尾注释里的 local_runner.py 未被识别 —— 剥离口径被改宽，存在静默假绿风险"
         )
 
-    def test_whitelist_is_not_vacuous(self):
-        """白名单不得为空 —— 空白的白名单会让「新增自动触发」这类违规失去对照面。"""
-        assert AUTOMATIC_LLM_TRIGGERS, "自动触发白名单为空（判据退化）"
-        assert all(v for v in AUTOMATIC_LLM_TRIGGERS.values()), (
-            "白名单里有条目声明了空触发集合（判据退化）"
+    def test_llm_workflow_set_is_not_vacuous(self):
+        """反向集合非空 —— 否则「自动触发 = 0 条」是在**空集**上恒真（判据退化）。
+
+        白名单已按 #4974 清空，故"白名单非空"不再是判据；取而代之的是
+        「被检集合本身非空」+「注入 `schedule` 必红」（见下一条）。
+        """
+        assert _llm_workflows(), (
+            "没有任何 workflow 被识别为『带真实 LLM 步骤』（判据在空集上恒真 = 退化）"
+        )
+
+    def test_injected_schedule_into_post_deploy_eval_reds(self):
+        """注入式红证：把 `schedule` 加回 `post-deploy-eval` ⇒ 本文件的判据必须红。"""
+        wf = _load("post-deploy-eval.yml")
+        trig = dict(wf.get("on") or wf.get(True) or {})
+        trig["schedule"] = [{"cron": "0 3 * * 1"}]
+        assert _auto_triggers({"on": trig}) == {"schedule"}, (
+            "注入 schedule 后判据仍判『无自动触发』—— 判据是空跑（#4974 的锁失效）"
         )

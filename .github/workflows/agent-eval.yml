@@ -9,7 +9,9 @@ on:
   #   （本 workflow 早已是**手动专用**：唯一触发 = workflow_dispatch，无任何自动触发）。
   #   注意历史注释里的两处**已失效**表述，别照抄：
   #     ① 「PR 门禁由 pr-check 的 agent-eval-smoke 承担」——该 job 已按 #3653 移除；
-  #     ② 「对抗评测由 agent-eval-adversarial.yml 每周跑」——仍成立（定时档保留）。
+  #     ② 「对抗评测由 agent-eval-adversarial.yml 每周跑」——**已失效**：该定时按 #4262
+  #        删除（改仅手动）；#4974（2026-09-21 用户裁定）连 `post-deploy-eval` 的每周 cron
+  #        也删除 ⇒ 全仓自动真实 LLM 触发 = **0 条**。
   #   判定用途的唯一入口 = `post-deploy-eval.yml`（档位矩阵见该文件头部）。
   workflow_dispatch:
 

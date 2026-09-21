@@ -84,11 +84,13 @@ on:
   # ── 每周对抗档定时**已删除**（#4262，用户裁定 2026-09-18）────────────────────
   # 用户：「不要自动进行验证，都是重复的验证，白白消耗成本」+「手动集中跑一次即可；
   #   兜底定时改成每周自动跑一次」⇒ 全仓自动真实 LLM 触发由 3 条收敛为 **1 条**
-  #   （只留 `post-deploy-eval.yml` 每周一 normal 全量）。本 workflow 改为**仅手动**：
+  #   （当时只留 `post-deploy-eval.yml` 每周一 normal 全量）。本 workflow 改为**仅手动**：
   #   对抗档需要时用 `workflow_dispatch` 派发（`tier=adversarial`），覆盖未消失、只是
   #   不再由 cron 自动付费。
+  # ⚠️ **#4974（2026-09-21 用户裁定）把最后那 1 条也删了**：「完全停止真实 LLM 评测定时
+  #   任务，改为只能人工手动跑」⇒ 全仓自动真实 LLM 触发 = **0 条**（本 workflow 早已仅手动）。
   # ⚠️ 不得把 `schedule` 加回来、也不得新增任何自动触发（含 PR/push）——
-  #   机械锁：`tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`（白名单只留 1 条）。
+  #   机械锁：`tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`（白名单 #4974 起为空集）。
   # ── PR 触发档已移除（issue #3653，2026-09-15：与行为映射档**合并去重**）──
   # 曾于 2026-09-14（#3504）加 pull_request 触发跑 C 端 smoke；按 AD §6.3 结论
   # （PR 层只保留定向映射用例，完整覆盖交部署后/批次轮）移除：
