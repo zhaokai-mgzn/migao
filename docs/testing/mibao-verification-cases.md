@@ -4444,9 +4444,10 @@
 你: 改密码，旧密码xxx 新密码yyy
 期望: settings_manage(action=change_password)
 数据: 确认后修改成功
+必须成功: settings_manage(change_password)
 ```
 真值: settings-manage.change-password
-溯源: verification 6.3 独有；change_password 真值待 truth-miner 补挖 ｜ tags: write, password
+溯源: verification 6.3 独有；change_password 真值待 truth-miner 补挖；2026-09-23（case-trust burn-down 缴费，metric=entries ⇒ 整条销账；先例 = CU-005 的 #5039 缴费）：补 `must_succeed[settings_manage(action=change_password)]`（效果层：「调用了 ≠ 成了」—— 旧密码校验失败时原断言照样满分）+ `namespaces[account_password:评测管理员]`（弱证据，如实登记：夹具层无密码域复位动作）+ `preconditions`（声明层散文前置；`_PRECONDITION_TYPES` 无此类型 ⇒ 不发明类型）。**如实登记**：该前提在当前评测栈上不成立（种子无 password_hash）⇒ 本用例由「恒绿」变「可失败」，真修见 #5055。`user_inputs` / `expectations` / `data_checks` / `skip_reason` / `traces` **一字未动** ｜ tags: write, password
 
 ### ST-004. 通知列表 🔵
 ```

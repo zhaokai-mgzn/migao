@@ -6265,6 +6265,8 @@ _CASE_ST_003 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'settings_manage', 'action': 'change_password'}],
+    namespaces=['account_password:评测管理员'],
 )
 
 # ── ST-004 [NORMAL] 通知列表（源: cases/settings.yml）──
