@@ -1355,7 +1355,7 @@ def schema_terminal_price_rows(sql: str) -> dict:
     """`docs/sql/schema.sql` 的矩阵段 → **bootstrap 终态**的 `{逻辑工序: (价, 适用, status)}`。
 
     终态 = 「按显式 `deleted` 分流 ⇒ 存活行」+「按四档选行收敛为一道逻辑工序一行」
-    （issue #4937 / V104；两份判据都与生产代码同源，见 `collapse_position_rows`）。
+    （issue #4937 / **合并后的 V102**；两份判据都与生产代码同源，见 `collapse_position_rows`）。
     """
     rows = parse_seed(sql, "production_operation_positions", POSITION_PRICE_COLUMNS)
     alive = [r for r in rows if normalize_value(r.get("deleted", "0")) != "1"]
@@ -1423,7 +1423,7 @@ def _parse_each(seed_paths, table: str, columns) -> list:
 
 
 #: 四档选行规则的「布帘列」字面量（与 `routing.py::COLLAPSE_PRICE_SOURCE_POSITION` /
-#: Java `ProductionOperationQueryService.COLLAPSE_PRICE_SOURCE_POSITION` / `V104` 的 SQL **同值**；
+#: Java `ProductionOperationQueryService.COLLAPSE_PRICE_SOURCE_POSITION` / 合并后的 `V102` 的 SQL **同值**；
 #: 跨语言/跨文件同值由 `test_deposition_total_migration.py` 的
 #: `test_java_collapse_source_position_matches_the_sql_literal` 与
 #: `tests/test_production/test_position_collapse_mirror.py` 钉）。
@@ -1434,7 +1434,7 @@ def collapse_position_rows(rows: list) -> list:
     """**四档选行**：`(逻辑工序, 部位)` 多行 → 每逻辑工序一行（issue #4937 的终态口径）。
 
     档序 = ① `applicable IS TRUE` 优先 ② `position = '布帘'` 优先 ③ `position` 字典序
-    ④ `id` 升序 —— **与 `ProductionOperationQueryService#collapseToLogical` / `V104` 的
+    ④ `id` 升序 —— **与 `ProductionOperationQueryService#collapseToLogical` / 合并后的 `V102` 的
     SQL 逐档同序**（三处同序由各自的守卫钉；这里**不另发明一套**）。
 
     ⚠️ 迁移侧的字面量（V71/V79/V89）是**已发布迁移**、仍是 120 行态 ⇒ 必须先在测试侧按
@@ -1548,7 +1548,7 @@ def test_new_route_seed_sources_are_discovered_and_nonempty():
 
 
 def test_position_prices_converge_across_three_sources(schema_sql):
-    """价目**三源逐值一致**：`routing.py` ↔ V71 ∪ V79 ∪ V89（+ V102/V104 的终态改写）↔ `schema.sql`。
+    """价目**三源逐值一致**：`routing.py` ↔ V71 ∪ V79 ∪ V89（+ 合并后的 `V102` 的终态改写）↔ `schema.sql`。
 
     🔴 **issue #4937（去部位化彻底版）之后的键 = 逻辑工序**（一道一行，**30 行**）：
     部位退场 ⇒ 三源比对的口径从 `(逻辑工序, 部位)` 收敛为 `逻辑工序`。
@@ -1682,16 +1682,17 @@ def _with_packing_on_default_route(rows: list) -> list:
 def test_route_rules_converge_across_three_sources(schema_sql):
     """规则表三源**逐行逐值**一致（26 行：工艺 10 + 特殊选项 16，含 priority）。
 
-    🔴 **issue #4937 / O2 之后的键不含 `position`**：规则级部位限定退场 ⇒
-    `routing.py` 的规则字典不再有该键、`docs/sql/schema.sql` 的字面量与
-    `V103__clear_route_rule_positions.sql` 的终态都是 `NULL`。
-    ⚠️ 迁移侧的字面量（V71）里 `韩褶 → 上车布` 那条**仍是 `布帘`**（已发布迁移不可改）
-    ⇒ 比对前按 **V103 的语义**把 `position` 归一为 `None`（= 迁移链终态）。
+    🔴 **本判据的比对键不含 `position`**（2026-09-21 / #4962 口径改判）：部位维**保留**在
+    `production_route_rules.position` 上（#4962 要用它做「适用条件 = 部位」的筛选），
+    但**真值源** `routing.py` 的规则字典里**没有**该键（`backend/ai-agent-service` 不在本单射程）
+    ⇒ 三源比对只能按「去掉该维」的键做；`position` 那一维的终态由
+    `test_rule_positions_are_kept_across_seed_and_bootstrap` **单独**钉
+    （迁移字面量 ↔ bootstrap 镜像逐条逐值一致 + 唯一那条部位限定必须是 `布帘`）。
     """
     truth = _truth_rule_rows()
     migration = route_rule_rows_multi(RULE_SEED_SQLS)
     bootstrap = route_rule_rows(schema_sql)
-    # V103 的语义（终态）：存活规则的 position 一律清空 ⇒ 比对键统一去掉该维
+    # 比对键统一去掉 `position` 维（真值源没有该键 —— 它不在本单射程内）
     migration = {(k[0], k[1], k[3], k[4], k[5]): v for k, v in migration.items()}
     bootstrap = {(k[0], k[1], k[3], k[4], k[5]): v for k, v in bootstrap.items()}
     assert len(truth) == 26, f"真值源的规则不是 26 条：{len(truth)}"
@@ -1708,24 +1709,53 @@ def test_route_rules_converge_across_three_sources(schema_sql):
         "迁移侧的字面量里没有任何 `position` 非 NULL 的规则 ⇒ 本判据的「归一」是空操作")
 
 
-def test_rule_positions_are_cleared_in_every_terminal_source(schema_sql):
-    """🔴 O2 终态三方核验：`routing.py`（无键）/ `schema.sql` 字面量 / `V103` 迁移**都必须清空**。
+def test_rule_positions_are_kept_across_seed_and_bootstrap(schema_sql):
+    """🔴 **#4962 口径改判**：部位维**保留**在 `production_route_rules.position` 上，且两源逐字一致。
 
-    只改一处即红：① `routing.py` 留着 `position` 键 ⇒ 读侧还会筛；
-    ② `schema.sql` 的字面量还带 `布帘` ⇒ 新建库的规则仍限部位；
-    ③ 没有 `V103` 迁移 ⇒ 存量库的值永远清不掉（「CI 全绿、功能静默缺失」，issue #4235）。
+    **改判要点（换对象，不削弱）**：原判据要求「`routing.py` 无该键 / `schema.sql` 字面量清空 /
+    `V103` 把 `position` 置 `NULL`」三件事同时成立 —— 那是「部位维**退场**」的口径。
+    用户 2026-09-21 裁定「结合新的需求（**#4962 适用条件加回部位维**）统一考量」⇒ 部位维
+    **只允许活在一个地方** = `production_route_rules.position`；`V103`（清空 `position`）的意图
+    **已作废** ⇒ 该迁移文件被删除（**删除即撤销**），bootstrap 镜像也要**恢复**成 `'布帘'`。
+    ⇒ 本判据改钉**保留侧的终态**，三条都**可红**：
+      ① `V103__clear_route_rule_positions.sql` **不存在**（谁把清空意图加回来即红）；
+      ② 迁移侧字面量（`V71`）与 bootstrap 镜像（`docs/sql/schema.sql`）的 `position`
+         **逐条逐值一致**（改任一侧即红）；
+      ③ 唯一那条部位限定的种子规则 `韩褶 → insert 上车布` 的 `position` **逐字 = `'布帘'`**
+         （改成 `NULL` 或别的部位即红 —— 上一版当时按已删除的 `V103` 把它镜像成了 `NULL`）。
+
+    **自证（防空跑）**：迁移侧至少有一条 `position` 非 `NULL`（否则「逐条比对」恒真）。
     """
-    v103 = MIGRATION_DIR / "V103__clear_route_rule_positions.sql"
-    assert v103.exists(), "缺 `V103__clear_route_rule_positions.sql` ⇒ 存量库的规则 position 永远是旧值"
-    body = sql_code(v103.read_text(encoding="utf-8"))
-    assert re.search(r"SET\s+position\s*=\s*NULL", body), "V103 没有把 position 写成 NULL"
-    # schema.sql：V70 的 26 行字面量（**非** V93 的 VALUES 段）必须全是 NULL
-    v70_block = schema_sql[schema_sql.index("INSERT INTO production_route_rules"):
-                           schema_sql.index("-- ── 工序路线模型重构 P2 的终态种子")]
-    positions = re.findall(r"\('rr-v70-\d+', 1, '[^']*', '[^']*', (NULL|'[^']*')", v70_block)
-    assert len(positions) == 26, f"V70 规则字面量解析出 {len(positions)} 行，期望 26"
-    assert set(positions) == {"NULL"}, (
-        f"schema.sql 的 V70 规则字面量仍有非 NULL 的 position：{sorted(set(positions))}")
+    assert not (MIGRATION_DIR / "V103__clear_route_rule_positions.sql").exists(), (
+        "`V103__clear_route_rule_positions.sql` 又出现了 —— 它「清空 "
+        "`production_route_rules.position`」的意图**已作废**（#4962 要把部位维加回来，"
+        "见 issue #4936 / #4962 的裁定）⇒ 不得复活；部位维的唯一载体就是这一列")
+
+    migration = {(k[0], k[1], k[3], k[4], k[5]): k[2]
+                 for k in route_rule_rows_multi(RULE_SEED_SQLS)}
+    bootstrap = {(k[0], k[1], k[3], k[4], k[5]): k[2] for k in route_rule_rows(schema_sql)}
+    assert migration, "迁移侧的规则字面量一行都没解析出来 ⇒ 本判据会空跑"
+    assert any(pos is not None for pos in migration.values()), (
+        "迁移侧没有任何 `position` 非 NULL 的规则 ⇒ 「逐条比对」是空操作（红证前提不成立）")
+    assert len(migration) == 26, f"迁移侧的规则键数 = {len(migration)}，期望 26（判据会空跑？）"
+    assert len(bootstrap) == 26, f"bootstrap 的规则键数 = {len(bootstrap)}，期望 26"
+
+    drifted = {k: (migration.get(k), bootstrap.get(k)) for k in set(migration) | set(bootstrap)
+               if migration.get(k) != bootstrap.get(k)}
+    assert drifted == {}, (
+        f"`production_route_rules.position` 在「迁移字面量」与「bootstrap 镜像」之间漂移"
+        f"（前 = 迁移侧，后 = bootstrap）：{drifted} —— 部位维是 #4962 的唯一载体，两源必须逐字一致")
+
+    # ⚠️ `migration` 的键已**去掉 position 维** ⇒ 五元组 = (触发类型, 触发值, 动作, 工序, 锚点)
+    hz = [k for k in migration
+          if k[0] == "craft" and k[1] == "韩褶" and k[2] == "insert" and k[3] == "上车布"]
+    assert len(hz) == 1, f"找不到唯一的「韩褶 → insert 上车布」种子规则（判据会空跑）：{hz}"
+    assert migration[hz[0]] == "布帘", (
+        f"`韩褶 → insert 上车布` 的 `position` = `{migration[hz[0]]}`，期望 `布帘` —— "
+        f"它是**唯一**那条部位限定的种子规则（`V71` 的终态）")
+    assert bootstrap[hz[0]] == "布帘", (
+        f"bootstrap 镜像里那条规则的 `position` = `{bootstrap[hz[0]]}`，期望 `布帘`"
+        f"（上一版当时按已被删除的 `V103` 把它镜像成了 NULL ⇒ 新建库与存量库口径分裂）")
 
 
 def test_new_route_operations_all_have_a_price_row(schema_sql):

@@ -2460,7 +2460,7 @@ INSERT INTO production_route_rules
      operation, after_operation, priority, status)
 VALUES
   ('rr-v70-01', 1, 'craft', '韩褶', NULL, 'insert', '韩褶', '三边', 10, 'active'),
-  ('rr-v70-02', 1, 'craft', '韩褶', NULL, 'insert', '上车布', '韩褶', 20, 'active'),
+  ('rr-v70-02', 1, 'craft', '韩褶', '布帘', 'insert', '上车布', '韩褶', 20, 'active'),
   ('rr-v70-03', 1, 'craft', '打孔', NULL, 'insert', '打孔', '三边', 30, 'active'),
   ('rr-v70-04', 1, 'craft', '四爪钩', NULL, 'insert', '上车布', '三边', 40, 'active'),
   ('rr-v70-05', 1, 'craft', '四爪钩', NULL, 'remove', '定型', NULL, 50, 'active'),
