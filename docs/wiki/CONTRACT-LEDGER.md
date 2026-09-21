@@ -41,6 +41,22 @@
 
 ## 三、端点签名（勿自造）
 
+> 🔶 **本节的口径（2026-09-21 实测登记，issue #5072）**：本节登记的是**跨模块契约** ——
+> Java↔引擎、前端↔后端的**钱路径 / 字段名 / 键集 / 取值枚举 / fail-closed 口径** ——
+> **不是端点清单**。
+>
+> **实测**（2026-09-21，扫 `backend/admin-api/**/*Controller.java` 的 `@RequestMapping` + 方法级注解
+> 重建全路径，再逐条到本节查）：admin-api 共 **238** 个端点，其中 **115** 个不在本节。未登记的是
+> `GET|POST /api/admin/products`、`GET|POST|PATCH /api/admin/inbound-orders`、`GET /api/admin/stock-ledger`
+> 这类**普通 CRUD**，属**有意不登记**（登记它们只会稀释本节的信噪比 —— 本节的价值在「改一处必须检查另一处」）。
+>
+> **补登记的判据**：新增端点时问一句「它是否承载**跨模块**的字段/键集/取值口径，或**钱路径**语义」——
+> **是** ⇒ 补一行（先例：`#4729` 为 `GET /operation-layers`，`#5072` 为 `POST /api/admin/orders/auto-features`）；
+> **否** ⇒ 不必登记。
+>
+> ⚠️ **不要**按「每个 `@RequestMapping` 都要有一行」造机械齐全性守卫：按实测比例它会立刻要求登记 115 条
+> 普通 CRUD（假红），并把「**什么**值得锁」这个判断责任推给机械判据（形式化登记 = 另一种腐烂）。
+
 | 操作 | 端点 | Body 关键字段 |
 |---|---|---|
 | 订单退款 | `PUT /api/admin/orders/{id}/refund` | `refund_reason`、`refund_amount`（缺省=全额） |
