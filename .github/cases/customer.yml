@@ -202,21 +202,34 @@ cases:
     #   **客户档案**的手机号 ⇒ 靶子存在性在写完之后**依然成立**（不是「跑一遍就把自己的前置改没了」）。
     # 【效果层 = `must_succeed`】「调用了 ≠ 成了」（#3778）：`expectations` 只证明 `customer_manage(action=update)`
     #   被调用过且 args 对；工具返回 `success=false`（字段校验拒绝 / 并发改名冲突）时照样计分通过。
-    # 【自清理 = `namespaces`】**如实登记为弱证据**（taxonomy 明列的档位）：本用例把客户档案手机号
-    #   13800138000 → 13900001111 ⇒ 重跑前置不再等价；而夹具层**没有**「把客户档案改回来」的 `pre_clean`
-    #   类型（已落地的五个：product_remove / product_dedupe / employee_reactivate / aftersales_ticket_prepare /
-    #   customer_tag_remove）⇒ 只能声明并行互斥（与同栈其它 `customer_phone:13800138000` 用例自动互斥），
-    #   **不冒充强修复**；真正的强修法是加一个 `customer_profile_restore` 复位动作（新 type ⇒ 独立 issue）。
-    # 【断言面一字未放宽】`user_inputs` / `expectations` / `data_checks` / `skip_reason` **全部未动**，只加上面三格。
-    namespaces:
-      - "customer_phone:13800138000"
+    # 【自清理 = `customer_profile_restore`（**真复位**，issue #4992）】本用例把客户档案手机号
+    #   13800138000 → 13900001111 ⇒ 重跑前置不再等价（第二轮按 `13800138000` 定位不到客户）。
+    #   #4992 前夹具层**没有**「把客户档案改回来」的类型（已落地的五个：product_remove /
+    #   product_dedupe / employee_reactivate / aftersales_ticket_prepare / customer_tag_remove），
+    #   只能登记 `namespaces`（taxonomy 明列的**弱证据**档）。现补上 `customer_profile_restore`
+    #   （`tests/agent_eval/local_runner.py` 的复位族第二批）：
+    #     · `pre_clean` 的定位键 = **种子手机号**（13800138000）⇒ 首跑/重试都从种子态起跑；
+    #     · `post_clean` 的定位键 = **本用例写出去的值**（13900001111）⇒ 把它复位回种子号，
+    #       世界归零（后续读该客户档案的用例看到的是种子态）。
+    #   ⚠️ 弱证据 `namespaces` 随之**撤掉**：并行互斥的诉求已被"用例结束后世界即归零"覆盖
+    #   （同窗口并行改同一客户的用例读到的不再是对方的脏值）。
+    # 【断言面一字未放宽】`user_inputs` / `expectations` / `data_checks` / `skip_reason` **全部未动**，
+    #   只加上面两格复位声明 + 撤掉 `namespaces`。
+    pre_clean:
+      - type: customer_profile_restore
+        customer_keyword: "13800138000"
+        phone: "13800138000"
+    post_clean:
+      - type: customer_profile_restore
+        customer_keyword: "13900001111"
+        phone: "13800138000"
     precondition:
       - type: order_count_for_phone
         source: "13800138000"
     must_succeed:
       - tool: customer_manage
     skip_reason: ""
-    merge_log: "verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）。2026-09-14 消除顺序依赖（issue #3568）：裸文本「第一个」→ 手机号唯一指代（重名澄清轮消失，干净栈/生产栈同判；连打三轮的澄清轮次表也随之消失） ｜ 2026-09-21（case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `namespaces[customer_phone:13800138000]`（弱证据，如实登记：夹具层无「把客户档案改回来」的复位动作）+ `precondition[order_count_for_phone: 13800138000]`（靶子存在性，结构化下界 `min:1`）+ `must_succeed[customer_manage]`（效果层）；`user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽"
+    merge_log: "verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）。2026-09-14 消除顺序依赖（issue #3568）：裸文本「第一个」→ 手机号唯一指代（重名澄清轮消失，干净栈/生产栈同判；连打三轮的澄清轮次表也随之消失） ｜ 2026-09-21（case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `namespaces[customer_phone:13800138000]`（弱证据，如实登记：夹具层无「把客户档案改回来」的复位动作）+ `precondition[order_count_for_phone: 13800138000]`（靶子存在性，结构化下界 `min:1`）+ `must_succeed[customer_manage]`（效果层）；`user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽 ｜ 2026-09-21（issue #4992 的夹具层复位动作）：自清理由**弱证据** `namespaces` 升级为**真复位** `pre_clean` + `post_clean[customer_profile_restore]`（`pre` 按种子手机号 13800138000 定位、`post` 按本用例写出的 13900001111 定位并复位回种子号；实现见 `tests/agent_eval/local_runner.py` 的 `_restore_customer_profile`），`namespaces` 随之撤掉 —— `user_inputs` / `expectations` / `data_checks` / `skip_reason` / `precondition` / `must_succeed` 一字未动、断言强度不放宽"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_base.py"

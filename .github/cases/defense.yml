@@ -633,8 +633,34 @@ cases:
       - "消息超过 max_recent=12 后触发压缩（原用例写 20 轮已校准）"
       - "上下文包含历史摘要"
       - "最后一步正确复用前几轮的 UUID"
+    # ── 前置自断言 + 自清理 + 效果层（issue #4992 的 case-trust burn-down 缴费）────────────
+    # 本用例命中的三条存量违规（`metric=entries` ⇒ 必须**整条销账**）：
+    #   ① CASE-TRUST-NO-PRECONDITION-ASSERTION ② CASE-TRUST-NO-SELF-CLEAN ③ CASE-TRUST-NO-EFFECT-ASSERTION
+    # 【真前置】末轮「给张三下遮光窗帘的订单」按**商品名**定位下单对象 ⇒「该名字唯一」是它真正
+    #   依赖且**只读**的前置（同名副本 >1 时 agent 会合理地要求澄清，而报告上只表现为
+    #   `unmatched expectation` = 看起来像「agent 不干活」，归因全错）。取数走既有
+    #   `product_count_for_keyword`（复用**既有已登记**类型，不新增 type/探针）；
+    #   本用例**只建单不建品** ⇒ 该计数运行期不漂移，`expect: 1` 不会自踩（缺省 `max_growth: 0` 成立）。
+    # 【效果层 = `must_succeed`】「调用了 ≠ 成了」（#3778）：`expectations` 只证明 `order_create`
+    #   被调用过，工具返回 `success=false`（校验拒绝 / 前置不足）时照样计分通过。
+    # 【自清理 = `namespaces`】**如实登记为弱证据**（taxonomy 明列的档位）：本用例会**建单**
+    #   （`order_create` 按手机号 upsert 客户档案）⇒ 与同栈其它 `customer_phone:13800138000`
+    #   用例自动互斥。⚠️ 夹具层**没有**「删掉本用例建的那笔订单」的复位动作
+    #   （`order_status_restore` 只按点名的 `order_no` 复位**状态**、不删单）⇒ 重试前置等价性
+    #   这条残留**如实登记**在此，不冒充强复位。
+    # 【断言面一字未放宽】`user_inputs` / `expectations` / `data_checks` / `skip_reason` **全部未动**。
+    # ⚠️ 如实登记：本用例是 **skip 用例**（`skip_reason` 见下）⇒ 三格**当前不进运行期**；
+    #   它们是把这个用例的真前置/真效果/真争用在**声明层**钉住（解 skip 的那一刻即生效）。
+    namespaces:
+      - "customer_phone:13800138000"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
+    must_succeed:
+      - tool: order_create
     skip_reason: "需要多轮对话，跑一遍耗时较长"
-    merge_log: "eval L001 独有；压缩阈值按代码校准 20→12"
+    merge_log: "eval L001 独有；压缩阈值按代码校准 20→12 ｜ 2026-09-21（issue #4992 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（真前置 —— 按名定位下单对象，同名副本会让 agent 合理地要求澄清而报告只表现为「agent 不干活」）+ `must_succeed[order_create]`（效果层，「调用了 ≠ 成了」）+ `namespaces[customer_phone:13800138000]`（**弱证据**，如实登记：夹具层无「删掉本用例建的那笔订单」的复位动作）；`user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_context_manager.py"

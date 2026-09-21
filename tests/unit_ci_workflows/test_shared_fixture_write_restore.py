@@ -497,6 +497,11 @@ class TestRunnerRegistryIsTheSingleSource:
                 f"{t} 不能在 post 阶段执行 ⇒ 写方无从声明（#4075 的机制等于没落地）：{meta}")
         assert "product_status_restore" in lr._POSTCLEAN_TYPES
         assert "sku_price_restore" in lr._POSTCLEAN_TYPES
+        # #4992 的复位族第二批（订单状态 / 客户档案）：同一条结论通道
+        # （`restore_failures` → `completion_verdict`）—— 行为面守卫见
+        # `tests/unit_ci_workflows/test_shared_fixture_restore_order_customer.py`。
+        assert {"order_status_restore", "customer_profile_restore"} <= lr._POSTCLEAN_TYPES
+        assert {"order_status_restore", "customer_profile_restore"} <= lr._PRECLEAN_TYPES
 
     def test_runner_restore_attrs_have_a_known_writer_surface(self):
         """runner 里的复位属性必须能在**本守卫的写面表**里找到对应写方。
