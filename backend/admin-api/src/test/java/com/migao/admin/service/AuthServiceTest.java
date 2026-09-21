@@ -457,7 +457,7 @@ class AuthServiceTest {
      * 「勾了权限却看不到菜单」/「菜单点不进」。schema 见 issue #4203 交付面表格。</p>
      */
     @Test
-    @DisplayName("生产管理组：三节点路由 + 权限码 processing:manage（与 MenuController/menu.ts 同构）")
+    @DisplayName("生产管理组：生产看板/工艺配置/计件工资（processing:manage）+ 与 MenuController/menu.ts 同构（issue #4440）")
     void currentUserMenusExposeProductionGroup() {
         authenticateAs("user-001", 1L);
         when(userService.getUserById("user-001")).thenReturn(testUser);
@@ -473,13 +473,16 @@ class AuthServiceTest {
         // 组 key 沿用既有侧边栏约定（product-center / trade-center / customer-center 同族），
         // 与前端 config/menu.ts 的 MenuGroup.key 对齐
         assertThat(production.getKey()).isEqualTo("production-center");
+        // 🔴 issue #4440：节点名/路径与前端 `frontend/admin-web/src/config/menu.ts` 的
+        // `production-process` 逐字一致 —— issue #4416 已把「工序库」+「工艺路线」合并为
+        // 单入口「工艺配置」（`/production/routings`；旧路径 `/production/operations` 是重定向）。
+        // ⚠️ 「入库单」不在此列表内：它的权限码是 `inbound:view`（本用例只给 `processing:manage`）。
         assertThat(production.getChildren())
                 .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getName)
-                .containsExactly("生产看板", "工序库", "工艺路线", "计件工资");
+                .containsExactly("生产看板", "工艺配置", "计件工资");
         assertThat(production.getChildren())
                 .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getPath)
-                .containsExactly("/production", "/production/operations", "/production/routings",
-                        "/production/piecework");
+                .containsExactly("/production", "/production/routings", "/production/piecework");
 
         clearAuthentication();
     }

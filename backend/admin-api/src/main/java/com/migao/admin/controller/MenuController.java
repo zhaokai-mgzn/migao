@@ -35,11 +35,13 @@ public class MenuController {
         // 与 AuthService.buildMenusByPermissions 的侧边栏节点**必须同构**（否则「岗位权限」页
         // 勾得动、侧边栏看不到），也与前端 menu.ts 同构。
         MenuNode pr1 = new MenuNode("processing:manage", "生产看板");
-        MenuNode pr2 = new MenuNode("processing:manage", "工序库");
+        // 🔴 「工艺配置」= issue #4416 把「工序库」+「工艺路线」**合并为单一入口**后的名称
+        // （工序库半边 = 该页左栏；旧路径 /production/operations 保留为重定向）。
+        // issue #4440：本树此前仍是**合并前**的两个节点（工序库 / 工艺路线）⇒ 与前端 config/menu.ts 漂移，
+        // 而前端「岗位权限」页**确实消费**本树（`GET /api/admin/menus`）⇒ 商家勾选的菜单项与真实侧边栏对不上。
+        // 权限码沿用 processing:manage（不要新造权限码）。
+        MenuNode pr2 = new MenuNode("processing:manage", "工艺配置");
         MenuNode pr3 = new MenuNode("processing:manage", "计件工资");
-        // 工艺路线（issue #4308 交付物：路线/信号/工序写面的用户面入口，前端 /production/routings）。
-        // 权限码沿用 processing:manage（与 pr1~pr3 同一份 —— 不要新造权限码）。
-        MenuNode pr4 = new MenuNode("processing:manage", "工艺路线");
         MenuNode a1 = new MenuNode("agent:session", "会话监控");
         MenuNode e1 = new MenuNode("employee:list", "员工列表");
         MenuNode e2 = new MenuNode("employee:create", "新增员工");
@@ -55,7 +57,7 @@ public class MenuController {
             new MenuNode("dashboard", "工作台", List.of(d1)),
             new MenuNode("orders", "订单管理", List.of(o1, o2, o3)),
             new MenuNode("products", "商品管理", List.of(p1, p2, p3, p4)),
-            new MenuNode("production", "生产管理", List.of(pr1, pr2, pr3, pr4, i1)),
+            new MenuNode("production", "生产管理", List.of(pr1, pr2, pr3, i1)),
             new MenuNode("agent", "客服工作台", List.of(a1)),
             new MenuNode("employees", "员工管理", List.of(e1, e2)),
             new MenuNode("customers", "客户管理", List.of(c1)),
