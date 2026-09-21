@@ -33,6 +33,7 @@ import static org.mockito.Mockito.*;
  * - Secret 未配置 / X-Tenant-Id 解析 / shouldNotFilter 路径匹配
  * - SecurityContext 设置 / TenantContext 清理
  * - X-User-Id 命中同租户商户员工时不再挂 service 旁路（issue #4105 F2）
+ * - 商户员工判定查库异常时**拒绝请求**（fail-closed，issue #5085 改判 #4105 的 fail-open）
  */
 @ExtendWith(MockitoExtension.class)
 class ServiceTokenFilterTest {
@@ -245,12 +246,14 @@ class ServiceTokenFilterTest {
     }
 
     @Test
-    @DisplayName("商户员工查库抛异常 — 回退内部服务身份（不 500、不提权给不可信方）+ 记 ERROR 留痕")
-    void staffLookupThrows_fallsBackToServiceIdentityWithErrorLog() throws ServletException, IOException {
+    @DisplayName("商户员工查库抛异常 — 拒绝请求（fail-closed），绝不回退 service 全权 + 记 ERROR 留痕")
+    void staffLookupThrows_rejectsRequestInsteadOfServiceIdentity() throws ServletException, IOException {
         when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
         when(request.getHeader("X-Tenant-Id")).thenReturn("5");
         when(request.getHeader("X-User-Id")).thenReturn("staff-boom");
         when(userMapper.selectById("staff-boom")).thenThrow(new RuntimeException("db down"));
+        PrintWriter writer = mock(PrintWriter.class);
+        lenient().when(response.getWriter()).thenReturn(writer);
 
         ch.qos.logback.classic.Logger filterLogger =
                 (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ServiceTokenFilter.class);
@@ -261,17 +264,24 @@ class ServiceTokenFilterTest {
         try {
             filter.doFilterInternal(request, response, filterChain);
 
-            // 决策（issue #4105）：调用方已持有可信 SERVICE_TOKEN，查库失败时回退今日行为，
-            // 但**必须**留 ERROR 痕迹，避免「查失败」与「查不到」无从区分。
+            // 承重判据 1（issue #5085 选 B）：判定依赖不可用时**拒绝请求**，且不继续 filter chain。
+            // 红证形态（改前）：status 从未被设置、filterChain 被调用、上下文挂着 ROLE_SERVICE。
+            verify(response).setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+            verify(filterChain, never()).doFilter(request, response);
+
+            // 承重判据 2（本缺陷的落点）：异常路径**绝不**挂 service 身份 —— 一旦挂上，
+            // PermissionInterceptor.hasBypassRole() 对 "service" 直接放行 ⇒ 受限岗位员工的请求
+            // 在 DB 抖动时从「拒绝」翻转为 service 全权（失效方向是放宽，且不需要攻击者构造）。
+            assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+
+            // 判据 3：ERROR 留痕 —— 使「查失败」与「查不到」在日志里可区分（不得静默失效）。
             assertThat(appender.list).anySatisfy(event -> {
                 assertThat(event.getLevel()).isEqualTo(ch.qos.logback.classic.Level.ERROR);
                 assertThat(event.getFormattedMessage()).contains("staff-boom");
             });
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            assertThat(((SecurityUser) auth.getPrincipal()).getRoles()).containsExactly("service");
-            assertThat(auth.getAuthorities()).extracting("authority")
-                    .containsExactlyInAnyOrder("ROLE_SERVICE", "ROLE_INTERNAL");
-            verify(filterChain).doFilter(request, response);
+
+            // 判据 4：提前 return 也必须清理 TenantContext（线程池复用不得串租户）。
+            assertThat(TenantContext.getTenantId()).isNull();
         } finally {
             filterLogger.detachAppender(appender);
         }
