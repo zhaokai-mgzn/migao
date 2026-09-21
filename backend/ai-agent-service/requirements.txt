@@ -49,5 +49,5 @@ pytest-rerunfailures==16.6.1
 pytest-xdist==3.8.0  # issue #2957: 本地并行提速（run -n auto）
 
 # ASR 语音识别
-dashscope>=1.27.4
+dashscope>=1.27.5
 
