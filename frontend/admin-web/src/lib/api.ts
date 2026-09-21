@@ -317,6 +317,12 @@ export interface AutoFeaturesParams {
   fabric_width?: number
   /** 加工类型（`定高买宽` / `定宽买高`）；缺 ⇒ 服务端不判（不猜朝向） */
   cutting_mode?: string
+  /**
+   * **该租户的算料配置**（issue #5036 包 2a）—— 判定要用**该租户**的
+   * `side_margin` / `hem_margin` / 档位褶倍，**不是前端常量副本**。
+   * 缺省 ⇒ 引擎默认值（未配置租户口径一字不变）。
+   */
+  config?: CraftCalcConfig
 }
 
 /** 自动特征判定**结果**（issue #4976 包 2b）：判定 + 「用了哪些值」+「为什么没判」 */

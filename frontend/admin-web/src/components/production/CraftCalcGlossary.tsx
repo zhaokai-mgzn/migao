@@ -6,17 +6,19 @@
  *
  * ## 三条实现纪律
  *
- * 1. **不写死任何数字**：参数值取自 `config`（页面草稿），算例由
- *    `buildAutoFeatureExamples(config)` 调 `detectAutoFeatures` 产出（**与引擎判据同式**；
- *    下单页的判定自 issue #4976 包 2b 起由**服务端**给，措辞逐字对齐 ⇒ 商家看到的文案不变）。
+ * 1. **不写死任何数字**：参数值取自 `config`（页面草稿）；算例的**判定依据**自 issue #5036 包 2a 起
+ *    由**服务端**给（`POST /api/admin/orders/auto-features`，入参带**该租户配置**）⇒
+ *    「改完参数保存后数字会跟着变」这句承诺才**成真**（迁移前读前端模块常量副本 = 假承诺）。
  * 2. **原生 `<details>`**：键盘可达、可打印、可被测试稳定断言（不引第三方折叠组件、不自绘开关）。
  * 3. **锚点由模块函数给**（`glossaryAnchorOf` / `glossaryTermAnchorOf`）：参数旁的「说明」链接与
  *    本区块的条目 id 同源，不会各写一份而对不上。
  */
+import { useEffect, useState } from 'react'
 import {
   AUTO_FEATURE_TERMS,
   CALC_PARAM_COPY,
   CALC_SCALAR_KEYS,
+  GLOSSARY_EXAMPLE,
   GLOSSARY_FORMULAS,
   MANUAL_FEATURE_TERMS,
   SPECIAL_OPTION_TERMS,
@@ -25,8 +27,11 @@ import {
   glossaryAnchorOf,
   glossaryOptionAnchorOf,
   glossaryTermAnchorOf,
+  type AutoFeatureExample,
   type GlossaryTerm,
 } from '@/lib/craft-calc-glossary'
+import { CUTTING_MODE_FIXED_HEIGHT, CUTTING_MODE_FIXED_WIDTH } from '@/lib/craft-auto-features'
+import { autoFeaturesApi } from '@/lib/api'
 import type { CraftCalcConfig } from '@/types'
 
 /** 配置键当前值（标量渲染成文本；字典/档位在表单里各自成表，这里给占位） */
@@ -59,7 +64,48 @@ function TermBlock({ term, anchor, meta }: { term: GlossaryTerm; anchor?: string
 }
 
 export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
-  const examples = buildAutoFeatureExamples(config)
+  const [examples, setExamples] = useState<AutoFeatureExample[]>([])
+  const [examplesError, setExamplesError] = useState<string | null>(null)
+  const fullness = config.tiers?.standard?.fullness ?? null
+
+  // 🔴 issue #5036 包 2a：算例的**判定依据**由**服务端**给（读**该租户配置**）—— 本组件只**展示**。
+  // 依赖用**入参签名**（不是 `config` 对象本身）：页面草稿每次渲染都是新对象 ⇒ 用对象当依赖会自激请求风暴。
+  const examplesSignature = [config.side_margin, config.hem_margin, fullness].join('|')
+
+  useEffect(() => {
+    let cancelled = false
+    const base = {
+      width: GLOSSARY_EXAMPLE.width,
+      height: GLOSSARY_EXAMPLE.height,
+      fabric_width: GLOSSARY_EXAMPLE.doorWidth,
+      config,
+    }
+    // 两组示例几何：定高买宽 ⇒ 超高；定宽买高 ⇒ 超宽 / 倒幅（与判定的分流一致）
+    Promise.all([
+      autoFeaturesApi.preview({ ...base, cutting_mode: CUTTING_MODE_FIXED_HEIGHT }),
+      autoFeaturesApi.preview({ ...base, cutting_mode: CUTTING_MODE_FIXED_WIDTH }),
+    ])
+      .then(([fixedHeight, fixedWidth]) => {
+        if (cancelled) return
+        setExamples(
+          buildAutoFeatureExamples(
+            config,
+            fixedHeight.data?.data?.auto_features ?? [],
+            fixedWidth.data?.data?.auto_features ?? []
+          )
+        )
+        setExamplesError(null)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setExamples([])
+        setExamplesError('算例加载失败：服务端判定不可用（请稍后重试）')
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 依赖 = 入参签名（理由见上）
+  }, [examplesSignature])
 
   return (
     <section
@@ -125,6 +171,11 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
         <h3 className="mt-2 text-sm font-medium text-neutral-700">
           系统自动推算（会进加工费组合键）
         </h3>
+        {examplesError !== null && (
+          <p data-testid="glossary-examples-error" className="mt-1 text-xs text-amber-700">
+            {examplesError}
+          </p>
+        )}
         <div className="mt-1">
           {AUTO_FEATURE_TERMS.map((term) => (
             <div key={term.name}>
