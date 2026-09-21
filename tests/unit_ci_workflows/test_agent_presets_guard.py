@@ -347,6 +347,85 @@ def test_prune_classifies_merged_and_unmerged_worktrees(tmp_path: Path):
     assert merged_wt.is_dir() and unmerged_wt.is_dir() and dirty_wt.is_dir()
 
 
+def _run_guard_with_env(repo: Path, env: dict, *args: str) -> subprocess.CompletedProcess:
+    """同 `_run_guard`，但**可注入 env**（用于把假的 `gh` 放到 PATH 最前）。"""
+    return subprocess.run(
+        [sys.executable, str(GUARD), "--repo", str(repo), *args],
+        capture_output=True, text=True, env=env,
+    )
+
+
+def _squash_repo(tmp_path: Path):
+    """真 git 仓库 + 一个**squash 合并形态**的工作区。
+
+    「squash 合并形态」= 分支有独有提交、**不是** `main` 的祖先、`git cherry` 也全是 `+`
+    （本仓的合并方式含 squash ⇒ 这两条判据**结构上**看不见它）。
+    返回 `(repo, worktree, fakebin)`。
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "fixture@example.com")
+    _git(repo, "config", "user.name", "fixture")
+    (repo / "f.txt").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    wt = tmp_path / "wt-squash"
+    _git(repo, "worktree", "add", "-q", "-b", "fix/squash-merged", str(wt))
+    (wt / "new.txt").write_text("squash 合并前推的交付物\n", encoding="utf-8")
+    _git(wt, "add", "-A")
+    _git(wt, "commit", "-q", "-m", "squash 前的提交")
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    return repo, wt, fakebin
+
+
+def _fake_gh(fakebin: Path, body: str) -> dict:
+    gh = fakebin / "gh"
+    gh.write_text(body, encoding="utf-8")
+    gh.chmod(0o755)
+    return {**os.environ, "PATH": f"{fakebin}{os.pathsep}{os.environ.get('PATH', '')}"}
+
+
+def test_prune_sees_squash_merged_branch_via_pr_state(tmp_path: Path):
+    """**实测缺陷**（2026-09-21）：`prune` 曾只按「祖先可达 / `git cherry` 无 `+`」判，
+    而本仓含 **squash 合并** ⇒ 那两条**结构上看不见**（实测只认出 41/62）⇒ 垃圾持续堆积。
+
+    本判据 = 「**GitHub 上 PR 已 MERGED**」这条补充判据。
+
+    红证：把 `_pr_merged_branches` 的接入删掉（退回只按祖先/cherry）⇒ 本断言红
+    （该工作区会落到「需人看」）。
+    """
+    repo, wt, fakebin = _squash_repo(tmp_path)
+    env = _fake_gh(fakebin, '#!/bin/sh\necho \'[{"headRefName":"fix/squash-merged"}]\'\n')
+
+    proc = _run_guard_with_env(repo, env, "prune", "--dry-run", "--ref", "main")
+
+    assert proc.returncode == 0, proc.stdout
+    safe_block = proc.stdout.split("── 需人看")[0]
+    assert str(wt) in safe_block, f"squash 合并的工作区未被认出：\n{proc.stdout}"
+    assert "经「PR 已合并」判据" in safe_block
+    assert "「PR 已合并」这条判据**未跑**" not in proc.stdout
+
+
+def test_prune_says_when_pr_state_check_did_not_run(tmp_path: Path):
+    """`gh` 取不到（未登录 / 离线 / 限额）⇒ **必须显式打印「未跑」**。
+
+    「没跑」必须长得像「没跑」—— 否则用户会把**少报的**清单当成全量
+    （本仓纪律：未跑 ≠ 通过，见 `migao-dev-flow` §1/§2.1）。
+    """
+    repo, wt, fakebin = _squash_repo(tmp_path)
+    env = _fake_gh(fakebin, "#!/bin/sh\nexit 1\n")
+
+    proc = _run_guard_with_env(repo, env, "prune", "--dry-run", "--ref", "main")
+
+    assert proc.returncode == 0, proc.stdout
+    assert "「PR 已合并」这条判据**未跑**" in proc.stdout
+    # 判不了 ⇒ **保守**落到「需人看」（不得因为查不到就判可移除）
+    manual_block = proc.stdout.split("── 需人看")[1]
+    assert str(wt) in manual_block
+
+
 def test_prune_never_deletes_anything(tmp_path: Path):
     """红线：prune（含 --dry-run）跑完，工作区数量与目录**一个不少**。"""
     repo = tmp_path / "repo"
