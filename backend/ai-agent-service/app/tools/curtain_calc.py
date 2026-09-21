@@ -1380,7 +1380,7 @@ def build_quote(
         pleat_fields.get("per_fold", cfg["per_fold_single"]),
     )
 
-    return {
+    quote = {
         "fabric_meters": round(meters, 2),
         # §6.1（issue #4346，用户已裁定）：米数**拆两个字段** ——
         # `processing_meters` = **主布行**米数（加工费口径）；`fabric_meters` = Σ 面料行米数。
@@ -1425,10 +1425,6 @@ def build_quote(
         "cutting_mode": plan_state["cutting_mode"] or cutting_mode,
         "splice": plan_state["splice"],
         "door_width_reason": plan_state["reason"],
-        # 幅数（issue #5043 包 2b，**加性**）：定宽买高 ⇒ 分幅数；其余 ⇒ `None`
-        # （键恒在；既有调用读到的既有键**逐值不变**）。局部变量 `panels` 本就存在
-        # （`_resolve_plan` 的返回值 / 定宽买高的复算），此处只是**如实暴露**它。
-        "panels": panels,
         "auto_features": detect_auto_features(
             window_width=window_width,
             window_height=window_height,
@@ -1438,6 +1434,12 @@ def build_quote(
             config=config,
         ),
     }
+    # 幅数（issue #5043 包 2b，**加性**）：**只在真有幅数时**才出键 ——
+    # 定高买宽「按宽买米，**幅数无定义**」⇒ **键缺席**（既有口径：**既不补 0，也不补 1
+    # 冒充「1 幅」**；守卫 = 契约测试「定高买宽不得造幅数」）。既有键**逐值不变**。
+    if panels is not None:
+        quote["panels"] = panels
+    return quote
 
 
 def calculate_multi_position(positions: List[Dict[str, Any]]) -> Dict[str, Any]:
