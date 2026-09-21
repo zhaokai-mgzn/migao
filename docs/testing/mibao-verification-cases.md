@@ -2358,9 +2358,10 @@
 数据: confirm 卡片先于写操作（destructive 约定，真值在 ai-chat.tool-classes）
 数据: 取消失败（订单状态不允许）也应如实说明，不得声称已取消
 必填: order_manage() 字段 order_id
+必须成功: order_manage
 ```
 真值: order.states, order.flow, order.pay-side-effects, order.cancel-side-effects, order.refund-side-effects, order.no-format
-溯源: eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号，改「先定位再取消」+ order_before/required_args 守住解析契约 ｜ tags: id_resolve, adversarial, destructive
+溯源: eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号，改「先定位再取消」+ order_before/required_args 守住解析契约；2026-09-21（issue #4966 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `namespaces`（弱证据，如实登记：夹具层无订单复位动作）+ `precondition[order_count_for_phone: 13800138000]`（靶子存在性）+ `must_succeed[order_manage]`（效果层，「调用了 ≠ 成了」）—— `user_inputs` / `expectations` / `required_args` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽 ｜ tags: id_resolve, adversarial, destructive
 
 ### OR-008. 创建订单 - 先查商品 SKU 再下单 🔵
 ```

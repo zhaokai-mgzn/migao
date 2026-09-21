@@ -66,7 +66,7 @@ describe('craftCalcParamsOf — 凑齐入参才发请求（fail-closed）', () =
     expect(pleat).not.toBe(fullness)
   })
 
-  // ── 用户 2026-09-19 追加裁定：「韩折用韩褶公式算布料，打孔按倍数法算布料，默认选择 2 倍」──
+  // ── 用户 2026-09-19 追加裁定：「韩褶用韩褶公式算布料，打孔按倍数法算布料，默认选择 2 倍」──
   it('#4527 韩褶 ⇒ 褶数法（pleat）+ s_hook', () => {
     const params = craftCalcParamsOf(line({ craft: { craft: '韩褶' } }))
     expect(params).toMatchObject({

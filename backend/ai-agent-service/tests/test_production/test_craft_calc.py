@@ -410,7 +410,7 @@ class TestFormulaSelectionEndpoint:
         assert "CRAFT_CALC_INVALID_INPUT" in resp.text
         assert "formula" in resp.text
 
-    # ── 追加裁定（用户 2026-09-19）：「韩折用韩褶公式算布料，打孔按倍数法算布料，默认选择 2 倍」──
+    # ── 追加裁定（用户 2026-09-19）：「韩褶用韩褶公式算布料，打孔按倍数法算布料，默认选择 2 倍」──
     # ⇒ 公式**由工艺推导**；`formula` 入参保留为显式覆盖。端点只透传 `craft`，推导表在算料引擎。
 
     def test_craft_hole_punch_derives_fullness_formula(self, client):

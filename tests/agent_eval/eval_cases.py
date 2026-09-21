@@ -3472,6 +3472,9 @@ _CASE_OR_007 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'order_manage', 'fields': ['order_id']}],
+    must_succeed=[{'tool': 'order_manage'}],
+    namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
 # ── OR-008 [NORMAL] 创建订单 - 先查商品 SKU 再下单（源: cases/order.yml）──

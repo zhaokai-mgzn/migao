@@ -359,12 +359,38 @@ cases:
     # 「取消能不能成功」取决于那条订单的当前状态（种子栈里最新订单是 shipped，状态机
     # 可能合法拒绝）—— 那会把「取消被状态机拒绝」误判成「没先定位订单」。
     # 本用例守的是**指代解析**（required_args 的 order_id 非空），不守取消结果。
+    #
+    # ── 三格声明（issue #4966 的 case-trust burn-down 缴费；**断言面一字未放宽**）──
+    # 本条命中的三个码（`CASE-TRUST-NO-EFFECT-ASSERTION` / `-NO-PRECONDITION-ASSERTION`
+    # / `-NO-SELF-CLEAN`）都是「写用例缺声明」，修法见 `.github/assertion_taxonomy.py`。
+    # 【为什么**不**写 `order_before: order_query before order_manage`】（上段已述）：runner 的
+    #   时序断言要求后件是**成功**调用 ⇒ 与「取消失败也应如实说明」自相矛盾。
+    # 【效果层 = `must_succeed`】「调用了 ≠ 成了」（#3778）：`expectations` 只证明
+    #   `order_manage(action=cancel)` 被调用过，返回 success=false 也照样计分通过。
+    #   本用例按「**最近这笔订单**」指代解析（种子栈里 张三 `13800138000` 名下最新的
+    #   `EVAL-MB-ORD-0002` 状态 = `confirmed`，状态机**允许**取消）⇒ 成功是可判定的期望；
+    #   它失败即说明「指代解析到了一条不可取消的订单」或「工具真的坏了」，两种都该红。
+    # 【前置 = `order_count_for_phone`】本用例的靶子是「该手机号名下的最近订单」——
+    #   靶子**不存在**时红的表现是 `unmatched expectation`（看起来像「agent 不会取消订单」，
+    #   归因全错，同 `product_count_for_keyword` 的理由）。
+    # 【自清理 = `namespaces`】**如实登记为弱证据**（taxonomy 明列的档位）：本用例**取消**订单
+    #   ⇒ 重跑的前置不再等价（那条订单已 cancelled）。而夹具层**没有**订单复位动作
+    #   （`tests/agent_eval/local_runner.py` 的 `_CLEAN_TYPES` 里没有 order_* 复位类型；
+    #   `processing_order_reset` 只复位**加工单**、不复位订单状态）⇒ 只能声明并行互斥，
+    #   **不冒充强修复**；真正的强修法是新增 `order_status_restore` 复位动作（独立 issue）。
+    namespaces:
+      - "customer_phone:13800138000"
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
+    must_succeed:
+      - tool: order_manage
     data_checks:
       - "取消前必须先定位到真实订单（order_query → order_manage 的 order_id 非空）"
       - "confirm 卡片先于写操作（destructive 约定，真值在 ai-chat.tool-classes）"
       - "取消失败（订单状态不允许）也应如实说明，不得声称已取消"
     skip_reason: ""
-    merge_log: "eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号，改「先定位再取消」+ order_before/required_args 守住解析契约"
+    merge_log: "eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号，改「先定位再取消」+ order_before/required_args 守住解析契约；2026-09-21（issue #4966 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `namespaces`（弱证据，如实登记：夹具层无订单复位动作）+ `precondition[order_count_for_phone: 13800138000]`（靶子存在性）+ `must_succeed[order_manage]`（效果层，「调用了 ≠ 成了」）—— `user_inputs` / `expectations` / `required_args` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_order_manage.py"
