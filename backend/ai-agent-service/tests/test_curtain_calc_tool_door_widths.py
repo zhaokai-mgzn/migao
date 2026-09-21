@@ -137,14 +137,17 @@ async def test_narrow_only_candidate_also_rotates(monkeypatch):
     # 候选里**只有 2.8**（3.05 > 2.8）⇒ 也必须倒幅 —— 证明候选集真的参与判定。
     # 显式 `fabric_width=3.2` 是**判别性**入参（schema 已声明「传了 `fabric_widths` ⇒ `fabric_width`
     # 被忽略」）：3.05 ≤ 3.2 ⇒ 若候选集没接线、走显式门幅，解会是「定高买宽 3.2 / 6.0 米」；
-    # 接线后仍是「倒幅 2.8 / 9.15 米」⇒ 两条路径可分辨。
+    # 接线后仍是「倒幅 2.8 / 9.2 米」⇒ 两条路径可分辨。
     # 红证（实测）：`execute` 里 `fabric_widths=fabric_widths,` 变异成 `=None,` ⇒ 本断言红
     # （`cutting_mode` → `定高买宽`、`door_width` → 3.2、`fabric_meters` → 6.0）。
+    # ⚠️ 米数锚点 **9.15 → 9.2**（issue #5084 改钉）：3 幅 × 3.05 = 9.15 是**未进位**值，
+    #    声明口径 = 真值源 `docs/curtain-fabric-quote-rules.md` §8「一律向上进位到 0.1」
+    #    ⇒ 期望值取进位后的值（算例对照见本 PR「改钉清单」）；判定结构（幅数 / 门幅）一字未动。
     result = await _run(monkeypatch, window_height=2.75, fabric_width=3.2, fabric_widths=[2.8])
     assert result.data["cutting_mode"] == cc.CUTTING_MODE_FIXED_WIDTH
     assert result.data["door_width"] == 2.8
     assert result.data["panels"] == 3
-    assert result.data["fabric_meters"] == pytest.approx(9.15)
+    assert result.data["fabric_meters"] == pytest.approx(9.2)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -153,11 +156,13 @@ async def test_narrow_only_candidate_also_rotates(monkeypatch):
 
 async def test_without_candidates_single_width_behaviour_is_unchanged(monkeypatch):
     # 不传候选集 ⇒ 既有单一门幅口径：3.05 > 2.8 ⇒ 倒幅（与 #5013 之前逐值一致）
+    # 米数已按 #5084 改钉为进位后的值（旧锚点 = 未进位的缺陷证据）—— 声明口径 = 真值源
+    # `docs/curtain-fabric-quote-rules.md` §8「一律向上进位到 0.1」；算例对照见本 PR「改钉清单」。
     result = await _run(monkeypatch, window_height=2.75, fabric_width=2.8)
     assert result.data["door_width"] == 2.8
     assert result.data["cutting_mode"] == cc.CUTTING_MODE_FIXED_WIDTH
     assert result.data["splice"] is False
-    assert result.data["fabric_meters"] == pytest.approx(9.15)
+    assert result.data["fabric_meters"] == pytest.approx(9.2)
 
 
 async def test_build_quote_receives_candidates_verbatim(monkeypatch):
