@@ -9,7 +9,8 @@
  *
  * 1. **文案里不出现数字**：所有数值（参数当前值、算例里的米数/门幅）一律**由真值渲染** ——
  *    参数值取自配置对象，常量取自 `@/lib/craft-auto-features`（已有跨源守卫），算例由
- *    {@link buildAutoFeatureExamples} 调 `detectAutoFeatures` 产出。写死一个数 = 造第二份口径。
+ *    {@link buildAutoFeatureExamples} 调 `detectAutoFeatures` 产出（该函数**已不在取价路径上** ——
+ *    见其文件头的退场声明；此处只借它的判据生成算例文案）。写死一个数 = 造第二份口径。
  * 2. **口径与引擎同源**：`side_margin` 是**宽方向左右覆盖余量**（引擎 `SIDE_MARGIN` 的语义），
  *    **不是**「上下卷边」（那是 `HEM_MARGIN`）。本仓实测有**三处**把它讲反了（页面 hint /
  *    `types/index.ts` 注释 / 引擎配置字典那行注释）—— 三处都已在本单改正并加守卫（#4940 判据 1）。
