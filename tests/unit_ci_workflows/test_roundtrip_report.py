@@ -32,12 +32,20 @@
 | `test_report_contains_required_action_text` | 删掉「处置要求」段 ⇒ 报告退化成统计表 ⇒ 必红 |
 | `test_zstd_frame_without_decompressor_is_not_silent` | 无解压器时返回空串（而非显式原因）⇒ 必红 |
 | `test_directory_input_picks_the_latest_session` | 取第一个匹配（或不过滤 `session*`）⇒ 必红 |
+| `TestPersonaJudgmentIsNotVacuous::test_anchor_form_is_a_single_source_and_passes` | 锚点/别名接错（如 `prefix: *nope`）⇒ `KeyError`（fail-closed），不是静默通过 |
+| `TestPersonaJudgmentIsNotVacuous::test_literal_form_drift_is_still_caught` | 两份字面副本漂移 ⇒ 必红（**真断言差异**，不是 `KeyError`） |
+| `TestPersonaJudgmentIsNotVacuous::test_anchor_form_rule_change_is_caught` | 锚点形态下改「往返预算」⇒ 必红（规则名判据没被锚点架空） |
+| `TestPersonaJudgmentIsNotVacuous::test_undefined_anchor_is_fail_closed` | 未定义锚点静默返回空块 ⇒ 必红（空块 = `text == prefix` 与规则名两条同时变成空断言） |
 
 ## 边界（照实登记）
 
 - CI 的 `ci workflow helper unit tests` job 只装 `pytest` + `pyyaml`（**无 `zstandard`**，`zstd` CLI 不保证），
   故 zstd **等价性**那条用 `skipif` 显式跳过（跳过长得像跳过）；**无解压器必须报原因**那条在 CI 真跑。
 - 本文件不测「模型时间」的绝对值：它是**上界**（后台 job 与生成重叠），只断言其**算术关系**。
+- `text` / `prefix` 自 issue #5081 起用 YAML 锚点**合流为单一源**（`&migao_persona` / `*migao_persona`）：
+  「两处必相同」由 YAML 语义**结构性保证**（不可能漂移）⇒ 本判据是**守卫改判**（支持 `&anchor` / `*anchor`），
+  **不是放宽**：字面副本形态的漂移检测**原样保留**（见 `test_literal_form_drift_is_still_caught`）。
+  有意**不**加「禁止退回逐字副本」的判据：退回后漂移仍被本判据抓住，无需再加一条。
 """
 
 from __future__ import annotations
@@ -45,6 +53,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -237,44 +246,143 @@ def test_usage_error_is_2_not_a_silent_pass(tmp_path):
 PRESET = ROOT / ".agent-presets" / "migao" / "agent.cordis.yml"
 SKILL = ROOT / ".agent-presets" / "migao" / "skills" / "migao-dev-flow" / "SKILL.md"
 
+# `text` / `prefix` 的合法形态（issue #5081 起允许锚点合流为单一源）：
+#   ① `key: >-`             字面块标量（两份独立副本）
+#   ② `key: &anchor >-`     锚点（正文只存这一份）
+#   ③ `key: *anchor`        别名（解析到锚点正文）
+_BLOCK_LINE = re.compile(r"^    (text|prefix): (?:&([\w.-]+) )?>-$")
+_ALIAS_LINE = re.compile(r"^    (text|prefix): \*([\w.-]+)$")
+
 
 def _persona_blocks(path: Path) -> dict:
-    """取 persona 的 `text` / `prefix` 两个块标量（逐字，含空行）。"""
+    """取 persona 的 `text` / `prefix` 正文（逐字，含空行）—— 支持上面三种形态。
+
+    ① 两份字面副本各自独立 ⇒「两处必相同」只能靠本判据**事后比对**；
+    ②③ 锚点 + 别名 ⇒ 两个键拿到**同一份**正文，「必相同」成了 YAML 语义的
+    **结构性保证**（不可能漂移，比事后比对更强）—— 这正是 issue #5081 的合流修法。
+
+    别名指向**未定义的锚点** ⇒ `KeyError`（**fail-closed**）：不得退化成「少一个键 / 空块」——
+    空块会让 `text == prefix` 与「规则名两处都在」两条断言**同时**变成空断言。
+    """
     out: dict = {}
+    anchors: dict = {}
     key = None
     buf: list = []
+    pending = None
+
+    def flush() -> None:
+        nonlocal key, buf, pending
+        if key:
+            body = "\n".join(buf)
+            out[key] = body
+            if pending:
+                anchors[pending] = body
+        key, buf, pending = None, [], None
+
     for line in path.read_text(encoding="utf-8").split("\n"):
-        if line.startswith("    text: >-") or line.startswith("    prefix: >-"):
-            if key:
-                out[key] = "\n".join(buf)
-            key, buf = line.split(":")[0].strip(), []
-        elif key and (line.startswith("      ") or not line.strip()):
+        m_alias = _ALIAS_LINE.match(line)
+        if m_alias:
+            flush()
+            out[m_alias.group(1)] = anchors[m_alias.group(2)]
+            continue
+        m_block = _BLOCK_LINE.match(line)
+        if m_block:
+            flush()
+            key, pending = m_block.group(1), m_block.group(2)
+            continue
+        if key and (line.startswith("      ") or not line.strip()):
             buf.append(line[6:] if line.startswith("      ") else "")
         elif key:
-            out[key] = "\n".join(buf)
-            key = None
-    if key:
-        out[key] = "\n".join(buf)
+            flush()
+    flush()
     return out
 
 
+def _persona_violations(path: Path) -> list:
+    """persona 落点判据的**唯一实现**（空表 = 通过）—— 真用例与红证夹具共用，避免两套口径。"""
+    blocks = _persona_blocks(path)
+    problems = []
+    if blocks["text"] != blocks["prefix"]:
+        problems.append("text 与 prefix 的正文不同（副本漂移 ⇒ 加载到哪份取决于 DSH 读哪个键）")
+    for name in ("text", "prefix"):
+        if "往返预算" not in blocks[name]:
+            problems.append(f"{name} 缺「往返预算」规则名（#4428 的落点判据）")
+        if "§21" not in blocks[name]:
+            problems.append(f"{name} 缺章节号 §21（读的人找不到判据 = 悬空指针）")
+    return problems
+
+
 def test_persona_text_and_prefix_are_byte_identical():
-    """两处副本一旦漂移，加载到的研发模式就取决于 DSH 读哪个键 —— 而没有任何东西会红。"""
+    """两处正文必须逐字相同：锚点形态由 YAML 保证，字面形态由本判据盯着。"""
     blocks = _persona_blocks(PRESET)
+    assert set(blocks) == {"text", "prefix"}, (
+        f"persona 的 text/prefix 没解析出来（实测键 = {sorted(blocks)}）—— 判据会退化成空断言，宁可红"
+    )
     assert blocks["text"] == blocks["prefix"]
 
 
 def test_persona_carries_the_roundtrip_budget_rule():
     """#4428 的落点判据：规则名 + 指向的章节号必须两处都在（措辞可变，身份不可丢）。"""
-    blocks = _persona_blocks(PRESET)
-    for key in ("text", "prefix"):
-        assert "往返预算" in blocks[key]
-        assert "§21" in blocks[key]
+    problems = [p for p in _persona_violations(PRESET) if "往返预算" in p or "§21" in p]
+    assert problems == []
 
 
 def test_the_section_the_persona_points_at_really_exists():
     """悬空指针 = 读的人找不到判据 ⇒ persona 说「全文见 §21」时技能里必须有 §21。"""
     assert "## 21. " in SKILL.read_text(encoding="utf-8")
+
+
+_PERSONA_BODY = """\
+      You are the MIGAO AI 智能客服系统研发 Agent（夹具 persona）。
+
+      开发节奏遵循「往返预算」…全文见 `migao-dev-flow` §21。
+"""
+
+
+def _write_preset(tmp_path: Path, text_line: str, prefix_line: str,
+                  text_body: str = _PERSONA_BODY, prefix_body=None) -> Path:
+    """写一个最小 preset 夹具（**真文件**，不是 mock —— 本判据的本体就是这份 YAML）。"""
+    body2 = _PERSONA_BODY if prefix_body is None else prefix_body
+    fixture = ("- id: persona\n"
+               "  name: '@deepseek-ai/dsh-persona'\n"
+               "  config:\n"
+               f"    {text_line}\n{text_body}\n"
+               f"    {prefix_line}\n{body2}\n"
+               "    suffix: Your working directory is {{cwd}}.\n")
+    path = tmp_path / "agent.cordis.yml"
+    path.write_text(fixture, encoding="utf-8")
+    return path
+
+
+class TestPersonaJudgmentIsNotVacuous:
+    """:red_circle: 红证（注入式，issue #5081）：合流的**每种形态**各有一条，逐条都能单独判红。"""
+
+    def test_anchor_form_is_a_single_source_and_passes(self, tmp_path):
+        """形态①（本 PR 的形态）：一处锚点 + 一处别名 ⇒ 两键同一份正文 ⇒ 通过。"""
+        path = _write_preset(tmp_path, "text: &persona >-", "prefix: *persona")
+        assert _persona_violations(path) == []
+
+    def test_literal_form_drift_is_still_caught(self, tmp_path):
+        """形态②（反例）：两份字面副本漂移 ⇒ **必须判红**，且是**真断言差异**（不是 KeyError）。"""
+        path = _write_preset(tmp_path, "text: >-", "prefix: >-",
+                             prefix_body=_PERSONA_BODY + "      （漂移注入）\n")
+        problems = _persona_violations(path)      # 能返回值本身 = 两个块都解析出来了（不是 KeyError）
+        assert problems, "副本漂移没有被判红 —— 判据是空的"
+        assert any("不同" in p for p in problems), f"漂移该报「正文不同」，实测 = {problems}"
+
+    def test_anchor_form_rule_change_is_caught(self, tmp_path):
+        """形态③（反例）：锚点形态下改「往返预算」⇒ 仍必须判红（规则名判据没被锚点架空）。"""
+        path = _write_preset(tmp_path, "text: &persona >-", "prefix: *persona",
+                             _PERSONA_BODY.replace("往返预算", "往返统计"))
+        problems = _persona_violations(path)
+        assert problems, "锚点形态下规则名消失没有被判红 —— 判据被架空"
+        assert any("往返预算" in p for p in problems), f"该报缺规则名，实测 = {problems}"
+
+    def test_undefined_anchor_is_fail_closed(self, tmp_path):
+        """别名指向**不存在的锚点** ⇒ `KeyError`（fail-closed）：不许退化成空块 / 少一个键。"""
+        path = _write_preset(tmp_path, "text: >-", "prefix: *nope")
+        with pytest.raises(KeyError):
+            _persona_blocks(path)
 
 
 # ── 9. 等待型调用（`sleep N` 轮询）判据（issue #4455）──────────────────────
