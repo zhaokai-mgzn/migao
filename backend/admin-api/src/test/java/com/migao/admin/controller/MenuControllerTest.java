@@ -130,12 +130,15 @@ class MenuControllerTest {
                 // 已由 issue #4416 合并为单入口「工艺配置」⇒ 服务端与前端**必须同构**
                 // （本树被前端「岗位权限」页消费）。
                 java.util.List.of("生产看板", "工艺配置", "计件工资", "入库单"), childLabels);
-        // 加工四项共用 processing:manage（岗位权限页勾一处 = 那四项可见）；
+        // 加工三项共用 processing:manage（岗位权限页勾一处 = 那三项可见）；
         // 「入库单」是**仓储**动作、权限码独立为 inbound:view（issue #5045）——
         // 并进 processing:manage 会让「有 inbound:view、没有 processing:manage」的仓管看不到菜单。
         // 本断言与 frontend/admin-web/src/config/menu.ts、AuthService.buildMenusByPermissions 三处同构。
+        // ⚠️ issue #4440：本列表与上面的 childLabels 是**同一组节点的两个字段**，必须**同时改**——
+        // 只改一处就造出「节点数 4 / 权限码 5」的自相矛盾（本 PR 首轮 CI 实测：labels 已改、codes 漏改
+        // ⇒ admin-api unit tests 判红 expected 5 vs actual 4）。
         org.junit.jupiter.api.Assertions.assertEquals(
                 java.util.List.of("processing:manage", "processing:manage", "processing:manage",
-                        "processing:manage", "inbound:view"), childCodes);
+                        "inbound:view"), childCodes);
     }
 }

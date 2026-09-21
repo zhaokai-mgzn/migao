@@ -37,8 +37,15 @@ describe('入库单菜单三处同构（PR-038 / issue #5034）', () => {
 
   it('② MenuController 的权限树有 inbound:view 节点（岗位权限页勾得动）', () => {
     expect(MENU_CONTROLLER).toContain('new MenuNode("inbound:view", "入库单")')
-    // 必须真的挂进菜单树（只声明不挂 = 页面上看不到）
-    expect(MENU_CONTROLLER).toMatch(/List\.of\(pr1, pr2, pr3, pr4, i1\)/)
+    // 必须真的挂进「生产管理」组（只声明不挂 = 页面上看不到）。
+    // issue #4440：判据**只钉本用例真正关心的事**（入库单 i1 挂在该组内），**不**把整张节点表抄进来 ——
+    // 抄整表会让任何**与本用例无关**的组内增删（如 #4416「工序库」+「工艺路线」合并为「工艺配置」）
+    // 都把这条例红，报出的是**假回归**（本 PR 首轮 CI 实测：`List.of(pr1, pr2, pr3, pr4, i1)` 判红）。
+    // 节点表的**逐一精确性**另有置信来源：Java `MenuControllerTest`（labels + codes 双列表精确断言）、
+    // `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`（三份源逐值相等）。
+    expect(MENU_CONTROLLER).toMatch(
+      /new MenuNode\("production", "生产管理", List\.of\([^)]*\bi1\b[^)]*\)\)/,
+    )
   })
 
   it('③ AuthService.buildMenusByPermissions 有入库单节点（真实侧边栏看得到），且与①同路径同图标', () => {
