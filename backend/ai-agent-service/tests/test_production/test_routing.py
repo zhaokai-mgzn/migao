@@ -320,9 +320,11 @@ def test_operation_catalog_size_is_frozen_for_this_issue():
 def _orphan_operations() -> set:
     """有工序、有价、**零消费**的工序（既不在任何路线里，也不被任何特殊选项条件工序引用）。
 
-    `NEW_MODEL_ONLY_OPERATIONS`（`配料`/`打包`）**不算孤儿**：它们被**新模型**的主线消费
-    （`FABRIC_MAINLINE_STEPS` / `ROUTE_MAINLINE_STEPS`），只是旧 `ROUTINGS` 不引用它们
-    （旧快照一字未动 —— 消费路径未切换）。
+    `NEW_MODEL_ONLY_OPERATIONS`（`配料`/`打包`）**不算孤儿**：它们是**新模型**的工序，
+    只是旧 `ROUTINGS` 不引用它们（旧快照一字未动 —— 消费路径未切换）。
+    ⚠️ `打包` 仍被 `ROUTE_MAINLINE_STEPS` 消费；`配料` **自 issue #4952 起零消费**
+    （`FABRIC_MAINLINE_STEPS` 改判为 `裁剪 → 打包`），它的工序行 / 价目行只作历史真值源镜像
+    保留（见 `routing.py::NEW_MODEL_ONLY_OPERATIONS` 的注释）。
     """
     consumed = {op for ops in ROUTINGS.values() for op in ops}
     consumed |= {rule["operation"] for rule in SPECIAL_OPTION_ROUTINGS.values()

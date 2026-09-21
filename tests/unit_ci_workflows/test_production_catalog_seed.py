@@ -1635,30 +1635,49 @@ def test_route_template_converges_across_three_sources(schema_sql):
         "窗帘路线的**字面量**种子漂移（V71 的 9 道）—— 第 10 道 `打包` 由 V79 的 UPDATE 追加，"
         "两处都要与真值源一致"
     )
-    assert _with_packing_on_default_route(migration) == truth, (
-        f"具名路线（迁移链终态 = 字面量 + V79 的打包插入）≠ routing.py："
-        f"{_with_packing_on_default_route(migration)} ≠ {truth}"
+    terminal = _with_v88_fabric_mainline_rewrite(_with_packing_on_default_route(migration))
+    assert terminal == truth, (
+        f"具名路线（迁移链终态 = V71 字面量 + V79 的打包插入 + V88 ③ 的 `配料` → `裁剪`）"
+        f"≠ routing.py：{terminal} ≠ {truth}"
     )
-    # ⚠️ 真值源（`routing.py`）的布料主线仍是旧口径 `配料 → 打包`（它属 ai-agent，本单**红线不改**）
-    # ⇒ 把 bootstrap 的**终态**（issue #4690 起 `裁剪 → 打包`）按 V88 ③ 的等价改写**升到真值源口径**再比。
-    # 不这样做就会「拿终态比旧口径」（苹果比橘子）；真正的终态一致性由
-    # `test_public_ops_v88_migration.py::test_bootstrap_matches_migration_chain_terminal_state` 钉。
-    assert _as_truth_caliber(route_template_rows(schema_sql)) == truth, \
-        "具名路线：schema.sql 终态 ≠ routing.py（bootstrap 库与迁移库路线不同）"
+    # 🔴 **口径折算已撤（issue #4952）**：真值源 `routing.py::FABRIC_MAINLINE_STEPS` 已改判为
+    # `裁剪 → 打包`（= V88 ③ 之后的终态）⇒ bootstrap 与真值源**逐字直比**，不再有「把 bootstrap
+    # 折回旧口径」这一步（那套折算机制一旦不再需要就是死账）。任何一侧漂移即红 —— 含真值源
+    # 回退成 `配料`（本单的红证形态）。
+    assert route_template_rows(schema_sql) == truth, (
+        f"具名路线：schema.sql 终态 ≠ routing.py（bootstrap 库与迁移库路线不同）："
+        f"{route_template_rows(schema_sql)} ≠ {truth}")
 
 
-def _as_truth_caliber(rows: list) -> list:
-    """把 bootstrap 的路线**终态**折回真值源口径：布料主线的 `裁剪` → `配料`（V88 ③ 的逆）。
+def _with_v88_fabric_mainline_rewrite(rows: list) -> list:
+    """把**字面量**种子升到迁移链终态：套用 `V88` ③ 的 `配料` → `裁剪` 元素替换。
 
-    只动**布料路线**（`is_default = False` 且 `positions == ("布料",)`）⇒ 窗帘默认路线一字不动。
+    ⚠️ **这不是「口径折算」**（那种「把终态折回真值源旧口径」的机制已随 issue #4952 删除）——
+    它是**读被测实现**：迁移链的终态 = 字面量种子 + V88 ③ 的 `UPDATE … jsonb_agg(CASE WHEN
+    elem = '"配料"' THEN '"裁剪"')`（V79 是**已发布迁移**、不可改 ⇒ 第 2 道只能由 V88 补）。
+    替换表从 `V88` 正文里读（同 `test_fabric_route_seed.py::_v88_fabric_mainline_rewrite` 口径），
+    不写死；V88 缺席 ⇒ 空表 ⇒ 布料主线退回 `配料 → 打包` ⇒ 本判据红。
     """
+    rewrite = _v88_fabric_mainline_rewrite()
     out = []
     for row in rows:
         if row["is_default"] or row["positions"] != ("布料",):
             out.append(row)
             continue
-        out.append({**row, "mainline": tuple("配料" if s == "裁剪" else s for s in row["mainline"])})
+        out.append({**row, "mainline": tuple(rewrite.get(s, s) for s in row["mainline"])})
     return out
+
+
+def _v88_fabric_mainline_rewrite() -> dict:
+    """`V88` ③ 的**元素替换表**（`配料` → `裁剪`）；V88 缺席 / 没有该替换 ⇒ 空表（⇒ 判据红）。"""
+    path = MIGRATION_DIR / "V88__retire_material_prep_and_fabric_position.sql"
+    if not path.exists():
+        return {}
+    body = "\n".join(line for line in path.read_text(encoding="utf-8").split("\n")
+                     if not line.lstrip().startswith("--"))
+    if not re.search(r"""elem\s*=\s*'"配料"'\s*::jsonb\s+THEN\s+'"裁剪"'""", body):
+        return {}
+    return {"配料": "裁剪"}
 
 
 def _with_packing_on_default_route(rows: list) -> list:
