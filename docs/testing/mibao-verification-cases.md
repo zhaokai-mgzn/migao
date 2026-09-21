@@ -4401,7 +4401,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（50 case）
+## ui（51 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -5059,6 +5059,24 @@
 ```
 溯源: 2026-09-19 新增（issue #4721 P1-1，补 #4677 的行为进用例库）：就绪度判据由「数条数」改为「点名缺哪条」；补套入口由「工序库为空才显示」改为「缺失即显示」。 ｜ tags: ui, production-routing, seed-template, admin-web
 
+### UI-053. 订单详情页「打印报价单」A4 — 按商品行成套 + 部位/部位信息/部位备注/宽*高/组件/货号/用料/价格/小计 + 金额汇总 + 扫码支付（issue #4965） 🔵
+```
+你: 这是从订单上打印的报价单，用来发给客户的，也可用于生产，这是A4大小，这个用来参考设计我们的打印制式
+你: 把订单的打印功能改成这样的报价单
+期望: direct_reply
+数据: 订单详情页 shipped/completed 操作区在「打印发货单」旁并列新增「打印报价单」（`window.print()`，与既有按钮同一权限口径与写法）；`QuotationDoc` 在**页面级**挂载一份（不进 Modal、每页只挂一份）
+数据: 纸面四段齐全（A4，`@page { size: A4 }`）：① 表头 = 报价单 / 单号 `orderNo` / 货运（`logisticsType` + `logisticsCompany`，两者都缺 ⇒ 该栏不印）/ 客户·电话·地址 / 备注；② 正文 = **每个商品行自成一套**（用户裁定：不做樘窗分组），段头 `第N套/共M套` + `本套金额`，每段一张 10 列表 `部位 | 部位信息 | 部位备注 | 宽*高 | 组件 | 货号 | 用料 | 价格 | 小计 | 备注`；③ 汇总 = 本单总金额 / 优惠金额 / 本单应收；④ 页脚 = 温馨提示常量 + 扫码支付码
+数据: 逐列映射：部位 = `processingInfo.curtainType`；部位信息 / 部位备注 = `lib/craft-display.ts` 的 `craftSpecRows()`（§4.9 单一真值，不另写推导；「部位」行已有自己的列 ⇒ 从两列排除；两列切分沿用既有「原始输入 / 算料输出」分组）；宽*高 = `width`×`height`（米，任一缺 ⇒ 不印）；组件 = 面料行 `processingInfo.componentRole`（缺省即主布）/ 加工费行「加工费」；货号 = `productCode` + `processingInfo.colorName`；用料 = `quantity`（米）；价格/小计 = 面料行 `unitPrice`/`subtotal`、加工费行 `processingFee`/`processingFee`
+数据: 加工费**单独成行**（`processingFee > 0` 才出）：与参照物的一处**有意差异** —— 参照物把加工费并进面料单价，而我们 `unitPrice` 与 `processingFee` 是两笔真实金额，必须分别列示，否则商家对不上账
+数据: 金额口径单一真值：行小计（本套金额）= `lib/order-amount.ts` 的 `lineSubtotal(item)` = `subtotal + processingFee`，与 `OrderItemList` 的明细行小计**同一份**实现（不各算一套）；汇总三个数字只读订单字段 `totalAmount` / `discountAmount` / `actualAmount`，**不自己求和**
+数据: 缺值不渲染（用户裁定 ①）：上期余额 / 预存抵扣 / 账户余额 / 交付日期 / 制单人一律不印；键缺席 / null / 空串 / 空数组 ⇒ 该行不出现；纸面绝不出现 `undefined` / `null` / `NaN`（含整单缺值扫描）
+数据: 页脚扫码支付码 = `TenantPaymentQrcode`（`GET /api/admin/settings/payment-qrcodes`，`settingsApi.getPaymentQrcodes`）：有码 ⇒ 印图片 + 收款方；**没有码 / 缺 `imageUrl` / 拉取失败 ⇒ 整块不出现、不画假码**；常驻组件**不在挂载时**拉码（`beforeprint` 时才拉，避免每次打开订单详情页都发请求）
+数据: 打印隔离沿用 `components/orders/ShipmentDoc.tsx` 的范式 6 条：portal 到 `document.body` 直接子级 + 容器自身 class `quotation-print-area` + `display:none` 与 `@media print` 显形 + `body > *:not(.quotation-print-area){display:none!important}` + visibility 防御 + 不进 Modal + 每页只挂一份
+跳过: [backend-contract] 纯前端打印纸面 + 既有端点只读（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx、tests/unit/pages/order-detail.test.tsx、tests/unit/lib/logistics.test.ts 执行
+```
+真值: frontend-fix.vitest, frontend-fix.tsc
+溯源: 2026-09-21 新增（issue #4965）：订单详情页新增「打印报价单」A4 —— 照真实报价单制式（按商品行成套 + 10 列明细 + 金额汇总 + 页脚扫码支付）；缺值不印（我们没有的字段一律不印）、加工费单独成行（与参照物的有意差异）、行小计与 OrderItemList 同源（`lib/order-amount.ts`） ｜ tags: ui, order, quotation, print, admin-web
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -5088,8 +5106,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：369（活跃 155，跳过 214）
-- tier 分布：smoke 10 / normal 328 / adversarial 31
+- 用例总数：370（活跃 155，跳过 215）
+- tier 分布：smoke 10 / normal 329 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -5113,7 +5131,7 @@
 - registry：1
 - 设置域：10
 - token-refresh：4
-- ui：50
+- ui：51
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

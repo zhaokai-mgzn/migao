@@ -20,11 +20,16 @@
  * 两条硬约束（§4.9，沿用未改）：
  * 1. **缺值不渲染**：键缺席 / `null` / 空串 ⇒ 该行不出现；绝不渲染 `undefined`/`null`/`NaN`；
  * 2. **只做展示**：不推导金额、不加价（展示映射的单一真值是 `lib/craft-display.ts`，不另写一份）。
+ *
+ * 金额口径（issue #4965）：行小计 = `lib/order-amount.ts` 的 `lineSubtotal(item)`
+ * —— 报价单纸面（`QuotationDoc.tsx` 的「本套金额」）用**同一份**实现，
+ * 屏幕与纸面不得各算一套（商家是照纸面对账的）。
  */
 
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { craftSpecRows, isCraftSpecKey, type CraftSpecRow } from '@/lib/craft-display'
+import { lineSubtotal } from '@/lib/order-amount'
 import type { OrderItem } from '@/types'
 
 interface OrderItemListProps {
@@ -48,8 +53,11 @@ const sellingMethodLabel: Record<string, string> = {
  *
  * 为什么分两组：输入丢了永远拿不回来、输出可重算；商家核对时看的是两组不同的东西
  * （「我报的宽高对不对」vs「系统算的褶数用料对不对」）。混在一列 16 行里两组都读不出来。
+ *
+ * **导出**（issue #4965）：报价单（`QuotationDoc.tsx`）的「部位信息 / 部位备注」两列是同一份
+ * 切分口径 ⇒ 从本处 import，**不**在纸面再写一份会漂移的副本。
  */
-const CALC_OUTPUT_LABELS = new Set([
+export const CALC_OUTPUT_LABELS = new Set([
   '总褶数',
   '褶数（每片）',
   '幅数',
@@ -335,7 +343,7 @@ function ItemRow({ item }: { item: OrderItem }) {
       </div>
       <div className="col-span-2 text-right">
         <div className="text-sm font-medium text-neutral-900">
-          {formatAmount(item.subtotal + processingFee)}
+          {formatAmount(lineSubtotal(item))}
         </div>
         {/* 算式（issue #4426）：商家据此对上报价单与加工单 */}
         <div className="mt-0.5 text-xs text-neutral-400 tabular-nums">

@@ -9,7 +9,7 @@ import dayjs from 'dayjs'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
-import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc } from '@/components/orders'
+import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc } from '@/components/orders'
 import type { Order, OrderItem, LogisticsFormData, ProcessingOrder } from '@/types'
 import { normalizeOrderStatus, displayOrderStatus } from '@/types'
 import { craftSpecRows } from '@/lib/craft-display'
@@ -263,6 +263,7 @@ export default function OrderDetailPage() {
         onEditLogistics={() => setShowEditLogistics(true)}
         onRefund={() => setRefundModalOpen(true)}
         onPrintShipment={() => window.print()}
+        onPrintQuotation={() => window.print()}
       />
 
       {/* 基础信息 */}
@@ -313,6 +314,11 @@ export default function OrderDetailPage() {
 
       {/* 纸质发货单（issue #3768）：屏幕上隐藏，仅打印呈现；已发货/已完成可在此补打 */}
       <ShipmentDoc order={order} logistics={order.logistics} />
+
+      {/* 纸质报价单（issue #4965）：屏幕上隐藏，仅打印呈现；照真实报价单 A4 制式
+          （每商品行一套 + 金额汇总 + 扫码支付）。页面级挂载一份 —— 与 ShipmentDoc 同范式
+          （不进 Modal、每页只挂一份，见组件文件头 6 条约束）。 */}
+      <QuotationDoc order={order} />
 
       {/* 收货信息 */}
       <SectionCard title="收货信息">
@@ -443,6 +449,8 @@ interface StatusSectionProps {
   onRefund: () => void
   /** 补打发货单（已发货/已完成；发货页有状态守卫进不去，重打只能在这里） */
   onPrintShipment: () => void
+  /** 打印报价单（issue #4965）：与「打印发货单」并列，同一权限口径与写法 */
+  onPrintQuotation: () => void
 }
 
 function StatusSection({
@@ -456,6 +464,7 @@ function StatusSection({
   onEditLogistics,
   onRefund,
   onPrintShipment,
+  onPrintQuotation,
 }: StatusSectionProps) {
   const status = normalizeOrderStatus(order.status as string)
   const display = displayOrderStatus(order.status as string)
@@ -562,6 +571,11 @@ function StatusSection({
               <Printer className="w-4 h-4" />
               打印发货单
             </Button>
+            {/* 打印报价单（issue #4965）：与「打印发货单」并列，同一权限口径与写法 */}
+            <Button variant="secondary" onClick={onPrintQuotation} className="gap-1.5">
+              <Printer className="w-4 h-4" />
+              打印报价单
+            </Button>
             <Button onClick={onConfirmReceive} className="gap-1.5">
               确认收货
               <Zap className="w-4 h-4" />
@@ -587,6 +601,11 @@ function StatusSection({
             <Button variant="secondary" onClick={onPrintShipment} className="gap-1.5">
               <Printer className="w-4 h-4" />
               打印发货单
+            </Button>
+            {/* 打印报价单（issue #4965）：已完成订单同样可补打 */}
+            <Button variant="secondary" onClick={onPrintQuotation} className="gap-1.5">
+              <Printer className="w-4 h-4" />
+              打印报价单
             </Button>
           </div>
         </div>

@@ -1,4 +1,4 @@
-// case_ids: OR-001, OR-002, OR-003, UI-024, UI-040
+// case_ids: OR-001, OR-002, OR-003, UI-024, UI-040, UI-053
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -51,6 +51,8 @@ vi.mock('@/components/orders', () => ({
   ProcessingOrderBlock: () => <div data-testid="po-block">ProcessingOrderBlock</div>,
   // 纸质发货单（issue #3768）：本文件只验证入口按钮，单据内容由 ShipmentDoc.test.tsx 覆盖
   ShipmentDoc: () => <div data-testid="shipment-doc">ShipmentDoc</div>,
+  // 纸质报价单（issue #4965）：同上 —— 入口按钮在本文件，纸面内容由 QuotationDoc.test.tsx 覆盖
+  QuotationDoc: () => <div data-testid="quotation-doc">QuotationDoc</div>,
   CloseOrderModal: ({ open }: any) => open ? <div data-testid="close-modal">CloseModal</div> : null,
   LogisticsForm: ({ open }: any) => open ? <div data-testid="logistics-form">LogisticsForm</div> : null,
   RefundOrderModal: ({ open, onConfirm }: any) =>
@@ -315,6 +317,44 @@ describe('OrderDetailPage', () => {
 
     await waitFor(() => expect(screen.getAllByText('订单详情').length).toBeGreaterThanOrEqual(1))
     expect(screen.queryByRole('button', { name: /打印发货单/ })).not.toBeInTheDocument()
+  })
+
+  // ===== 打印报价单（issue #4965 / UI-053）：与「打印发货单」并列，同一权限口径与写法 =====
+
+  it('已发货订单操作区显示「打印报价单」且点击真的触发 window.print（与发货单同一写法）', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
+    try {
+      mockGetOrder.mockResolvedValue({
+        data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } },
+      })
+      render(<OrderDetailPage />)
+
+      const btn = await screen.findByRole('button', { name: /打印报价单/ })
+      await userEvent.setup().click(btn)
+
+      expect(printSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      printSpy.mockRestore()
+    }
+  })
+
+  it('已完成订单也能打印报价单（与发货单入口同状态口径）', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'completed', refundAmount: 0 } },
+    })
+    render(<OrderDetailPage />)
+
+    expect(await screen.findByRole('button', { name: /打印报价单/ })).toBeInTheDocument()
+  })
+
+  it('报价单在页面级挂载一份（不进 Modal；每页只挂一份）', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } },
+    })
+    render(<OrderDetailPage />)
+
+    await screen.findByRole('button', { name: /打印报价单/ })
+    expect(screen.getAllByTestId('quotation-doc')).toHaveLength(1)
   })
 
   it('编辑物流弹窗回填已落库的发货人（存量为空时也可在此补齐）', async () => {

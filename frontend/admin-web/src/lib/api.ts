@@ -117,6 +117,7 @@ import type {
   FinanceSummary,
   ReceivableReconciliationItem,
   UnpricedRepricingResult,
+  PaymentQrcodeMap,
 } from '@/types'
 import { FrontendToBackendStatus } from '@/types'
 
@@ -963,6 +964,14 @@ export const settingsApi = {
 
   getLoginLogs: (params?: PageParams) =>
     request.get<ApiResponse<PageResponse<LoginLog>>>('/api/admin/settings/login-logs', { params }),
+
+  /**
+   * 本租户收款二维码（微信/支付宝各一张；issue #4965 报价单页脚「扫码支付」用）。
+   * 后端 `SettingsController.getPaymentQrcodes` 按 `payment_type` 分组返回；
+   * 无码 ⇒ 空 map（调用方据此**整块不渲染**，不画假码）。
+   */
+  getPaymentQrcodes: () =>
+    request.get<ApiResponse<PaymentQrcodeMap>>('/api/admin/settings/payment-qrcodes'),
 }
 
 // 智能每日经营简报 API（issue #3468）

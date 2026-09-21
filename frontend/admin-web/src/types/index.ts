@@ -1802,6 +1802,25 @@ export interface SystemSettings {
   notificationEnabled: boolean
 }
 
+/**
+ * 企业收款二维码（issue #3990 建实体，issue #4965 起用于报价单页脚「扫码支付」）。
+ *
+ * 后端 `GET /api/admin/settings/payment-qrcodes` 按 `payment_type` 分组返回
+ * （`{wechat: {...}, alipay: {...}}`），实体字段为 camelCase：
+ * `imageUrl` 收款码图片地址 / `payeeName` 收款主体名称 / `status` active|disabled。
+ * ⚠️ 平台不经手资金（二清规避）—— 码是商家自己的，纸面只透出图片与收款主体。
+ */
+export interface PaymentQrcode {
+  paymentType?: string
+  imageUrl?: string
+  payeeName?: string
+  remark?: string
+  status?: string
+}
+
+/** 收款码表：键 = `wechat` / `alipay`（后端 map 口径） */
+export type PaymentQrcodeMap = Record<string, PaymentQrcode>
+
 // 修改密码参数
 export interface ChangePasswordParams {
   oldPassword: string
