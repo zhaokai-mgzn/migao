@@ -364,6 +364,24 @@
       "remedy": "按真实失败排查（本机制已用「同 commit 第二次结果」排除 flaky 可能）",
       "status": "open",
       "follow_up": null
+    },
+    {
+      "workflow": "PR Check",
+      "job": "admin-web typecheck + unit tests",
+      "run_id": 35553635985,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/35553635985",
+      "pr": 4973,
+      "head_sha": "76257dd9c9359825f3eed72eda226a617dbc4fb2",
+      "head_branch": "feat/worker-scan-claim-and-set-view",
+      "first_failure_step": "Run unit tests",
+      "rerun_result": "success",
+      "kind": "flaky",
+      "observed_at": "2026-09-21T02:23:49Z",
+      "reason": "首次失败、**重跑后通过**（随机波动）——**不是**本次改动修好了它",
+      "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
+      "status": "open",
+      "follow_up": null
     }
   ]
 }
