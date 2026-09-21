@@ -657,3 +657,153 @@ async def auto_features(
         "fullness_used": fullness_used,
         "notice": notice,
     })
+
+class DoorWidthPlanRequest(BaseModel):
+    """门幅规则**只读**请求（issue #5043 包 2b —— 前端 `door-width-plan.ts` 的口径搬到服务端）。
+
+    ⚠️ **与算料试算分开是有意的**：本端点只回答「**哪个门幅 / 单幅还是接高 / 客服所选是否最优**」，
+    **不算钱、不落库**。理由（读源）：下单页的规则要在**发试算请求之前**用
+    （`pickAutoSkuForColor` 靠它决定选哪个 SKU/门幅），而试算请求**本身**要带门幅 ⇒ **鸡生蛋**。
+
+    ⚠️ **四爪钩 / 穿杆 / 平幔 照常可算**（用户 2026-09-21 裁定：「这三个工艺**不影响用料和门幅**」）
+    ⇒ 本端点**不继承** `craft-calc-request.ts::CALC_CRAFTS` 的闸门，也不为这三类另立口径。
+    """
+
+    width: float = Field(..., gt=0, description="成品宽（米）")
+    height: Optional[float] = Field(
+        None, gt=0, description="成品高（米）；缺 ⇒ `undecidable: missing-size`（不猜朝向）"
+    )
+    door_widths: List[float] = Field(
+        default_factory=list, description="候选门幅（米，来自该颜色的 SKU）；非法值剔除，**不回落缺省门幅**"
+    )
+    cutting_mode: Optional[str] = Field(
+        None, description="加工类型；缺省 ⇒ **自动推导**（定高买宽可行 ⇒ 定高买宽；否则 ⇒ 定宽买高）"
+    )
+    selected_door_width: Optional[float] = Field(
+        None, gt=0, description="**客服所选**门幅（米）；裁决用；缺 ⇒ `verdict='unknown'`（无可比对象）"
+    )
+    allowance: float = Field(0.0, ge=0, description="门幅**有效余量**（米：缩水/边损/对花回）")
+    open_count: int = Field(1, ge=1, description="开数")
+    mounting: str = Field("eyelet", description="悬挂方式（`eyelet` / `s_hook`）")
+    fullness: Optional[float] = Field(None, gt=0, description="名义褶倍；缺省 ⇒ 取该租户配置的标准档")
+    craft: Optional[str] = Field(None, description="工艺（如 `韩褶` / `打孔`；其余按该租户默认公式）")
+    craft_tier: Optional[str] = Field(None, description="工艺档位（`standard` / `economy`）")
+    pleat_count: Optional[int] = Field(None, ge=1, description="褶数（韩褶褶数法）")
+    formula: Optional[str] = Field(None, description="用料公式（`pleat` / `fullness`）")
+    has_pattern: bool = Field(False, description="是否对花")
+    pattern_repeat: float = Field(0.0, ge=0, description="花距（米）")
+    config: Optional[Dict[str, Any]] = Field(None, description="租户级算料配置（判定读它的 `hem_margin`）")
+
+
+@router.post("/production/door-width-plan")
+async def door_width_plan(
+    request: DoorWidthPlanRequest,
+    authorized: bool = Depends(verify_service_token),
+):
+    """门幅规则（`POST /api/internal/production/door-width-plan`）—— issue #5043 包 2b。
+
+    **单一真值**：规则解与幅数**只在引擎**（`build_quote(..., fabric_widths=...)` →
+    `resolve_fabric_plan`）；裁决只在 `curtain_calc.judge_door_width_choice` 一处 ——
+    本端点只做「入参归一 + 组装」，**不复制任何规则**（第二份规则 = 与引擎算料脱钩）。
+
+    返回 `data`：`state`（`single_panel` / `needs_splice` / `undecidable`）/ `code`（undecidable 原因）/
+    `effective_cutting_mode` / `door_width` / `panels` / `splice` / `verdict` / `suggestion` / `reason`。
+    **不含任何金额字段**（只读规则面）。
+    """
+    try:
+        config = _normalize_craft_calc_config(request.config)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"success": False, "error": {"code": "CRAFT_CALC_INVALID_INPUT", "message": str(e)}},
+        ) from e
+
+    def _undecidable(code: str, reason: str) -> Any:
+        return make_response(True, data={
+            "state": "undecidable", "code": code, "effective_cutting_mode": None,
+            "door_width": None, "panels": None, "splice": False,
+            "verdict": curtain_calc.DOOR_WIDTH_VERDICT_UNKNOWN, "suggestion": None, "reason": reason,
+        })
+
+    # 候选门幅：非法值**剔除**（不默认成任何值 —— issue #4877 口径）
+    candidates = sorted({
+        float(g) for g in (request.door_widths or [])
+        if isinstance(g, (int, float)) and not isinstance(g, bool) and float(g) > 0
+    })
+    if not candidates:
+        return _undecidable(
+            "no-door-width",
+            "该规格没有可用门幅（SKU 未维护门幅）—— 不按缺省门幅推算",
+        )
+    if request.height is None:
+        return _undecidable(
+            "missing-size",
+            "缺成品高 —— 判不了「定高买宽是否可行」⇒ 也推导不出加工类型（不凭空挑一个朝向）",
+        )
+
+    cfg = curtain_calc.resolve_craft_calc_config(config)
+    fullness_used = (
+        request.fullness if request.fullness is not None else cfg["tiers"]["standard"]["fullness"]
+    )
+
+    def _quote(door_widths: List[float]) -> Dict[str, Any]:
+        """**复用 `build_quote`**（定高用料 T 的唯一实现）—— 端点**不自算 T**、不复刻公式选择。"""
+        return curtain_calc.build_quote(
+            window_width=request.width,
+            window_height=request.height,
+            mounting=request.mounting,
+            fullness=fullness_used,
+            fabric_width=candidates[0],
+            fabric_widths=door_widths,
+            open_count=request.open_count,
+            pleat_count=request.pleat_count,
+            craft_tier=request.craft_tier,
+            craft=request.craft,
+            formula=request.formula,
+            has_pattern=request.has_pattern,
+            pattern_repeat=request.pattern_repeat,
+            cutting_mode=request.cutting_mode,
+            config=config,
+        )
+
+    try:
+        plan = _quote(candidates)
+    except ValueError as e:
+        # 加工类型表外等 ⇒ **fail-closed**（不猜朝向）
+        return _undecidable("missing-cutting-mode", str(e))
+
+    # 定宽买高裁决要比**幅数** ⇒ 用**同一份口径**把「所选门幅」也解一次（复用 `build_quote`，
+    # 不另写分子 —— 前端那份「恒按倍数法」的分子正是本单要消灭的分歧）。
+    selected_panels: Optional[int] = None
+    selected = request.selected_door_width
+    if (
+        selected is not None
+        and selected > 0
+        and plan.get("cutting_mode") == curtain_calc.CUTTING_MODE_FIXED_WIDTH
+        and plan.get("door_width") != selected
+    ):
+        try:
+            selected_panels = _quote([float(selected)]).get("panels")
+        except ValueError:
+            selected_panels = None
+
+    choice = curtain_calc.judge_door_width_choice(
+        plan,
+        window_height=request.height,
+        selected_door_width=selected,
+        selected_panels=selected_panels,
+        allowance=request.allowance,
+        config=config,
+    )
+
+    return make_response(True, data={
+        "state": "needs_splice" if plan.get("splice") else "single_panel",
+        "code": "",
+        "effective_cutting_mode": plan.get("cutting_mode"),
+        "door_width": plan.get("door_width"),
+        "panels": plan.get("panels"),
+        "splice": bool(plan.get("splice")),
+        "verdict": choice["verdict"],
+        "suggestion": choice["suggestion"],
+        "reason": plan.get("door_width_reason", ""),
+    })
