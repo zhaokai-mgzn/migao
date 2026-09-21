@@ -368,6 +368,22 @@ gate_check() {
     fi
     python3 .github/growth_gate.py --check-weak --new-tests-only --files $NEW_CANDIDATES || GATE_RC=1
   fi
+  # 存量弱断言锚点（issue #5080 盲区②）：上面那步只扫**新增**文件 ⇒ 存量永久免疫、
+  # 没有燃尽出口。本步给存量一个「只许非增」的机械载体（`--check-weak-baseline`）：
+  # 账本 `.github/weak-assert-baseline.json` 是锚点快照，任一文件越过锚点、或出现新入账文件
+  # ⇒ 非零；账本损坏/扫描失败 ⇒ 非零（fail-closed）。
+  # ⚠️ 与上一检查**互补、不替代**：新增文件仍由 `--check-weak` fail-closed。
+  # ⚠️ 账本不存在 ⇒ 本工作区**显式声明「未跑」**（不是「通过」）：harness 桩仓库
+  #    （如 tests/unit_ci_workflows 里复制本脚本的最小仓库）不携带账本，此处置零；
+  #    权威判据在 CI —— 守卫 `tests/unit_ci_workflows/test_weak_assert_blindspots.py`
+  #    直接读真账本并做自洽校验，**删掉账本即判红**（缺口不在这里，见该文件的账本测试）。
+  WEAK_LEDGER=".github/weak-assert-baseline.json"
+  if [ -f "$WEAK_LEDGER" ]; then
+    echo "  🔍 存量弱断言锚点（只许缩短；新增文件由上一检查 fail-closed）"
+    python3 .github/growth_gate.py --check-weak-baseline || GATE_RC=1
+  else
+    echo "::warning:: 存量弱断言锚点检查**未跑**：$WEAK_LEDGER 不存在 —— 这不是「通过」（CI 守卫测试会对缺失/损坏的账本判红）。"
+  fi
   case_coverage_check || GATE_RC=1
   [ "$GATE_RC" -eq 0 ] && [ "$BLOCKERS" = "0" ]
 }
