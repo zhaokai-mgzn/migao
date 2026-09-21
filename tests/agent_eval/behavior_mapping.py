@@ -12,9 +12,14 @@ OR-016、改售后 → AS-007、改建品 → PR-019、改交互卡 → CH-010/C
 2. **PR 门禁太窄**：PR 上的 Agent Eval 只有 smoke 档 7 条（跨域抽样，回答的是"没崩"），
    改一行 `order_skill.py` 时可能一条订单用例都没跑到 → 行为回归要到合并之后才发现。
 
-所以把那张表写成**纯函数**：输入 PR 的变更文件列表，输出该跑的用例 ID。
-`.github/workflows/agent-behavior-eval.yml` 用它自动选用例（改哪测哪），
+所以把那张表写成**纯函数**：输入改动文件列表，输出该跑的用例 ID。
 口径仍来自 §13.2，不新造标准。
+
+> ⚠️ **#4275（2026-09-21，用户裁定，承接 #4262「不要自动进行验证」）**：消费它的
+> `.github/workflows/agent-behavior-eval.yml`（在每个行为 PR 上**自动贴映射评论**）已**整体删除**
+> ⇒ 本模块**没有 workflow 消费方了**。调用者改为**人 / agent 按 §13.2 做零成本映射**
+> —— 能力一字未减（本模块是**零依赖纯函数**，本机直接可调），删的只是"自动触发 + 自动评论"
+> 这个入口（它的唯一产物是 PR 评论，绑死 PR 上下文 ⇒ 改不成有意义的手动档）。
 
 ## 契约
 
@@ -26,14 +31,15 @@ OR-016、改售后 → AS-007、改建品 → PR-019、改交互卡 → CH-010/C
 - **规则只锚定 agent 本体源码**（`BEHAVIOR_SOURCE_PREFIXES`）：用例/测试/文档路径
   （`tests/**`、`.github/cases/**`）永不进规则桶（阻塞），只能落兜底网（#3551 假阻塞修复）。
 
-零第三方依赖是硬要求：workflow 的 map job 只装系统 python3（不 pip install），
-单测也要秒级跑完（§16.1 的 L0 静态层）。
+零第三方依赖是硬要求：原 workflow 的 map job 只装系统 python3（不 pip install），
+本机手调与单测也要秒级跑完（§16.1 的 L0 静态层）。
 """
 import re
 
 # ── AI 行为域（只有这些路径的改动才可能触发行为评测）──
-# 与 workflow 的 `on.pull_request.paths` 保持一致：三处是同一口径的两种表达
-# （workflow 用它做触发器过滤，这里用它决定"要不要跑/跑默认集"）。
+# 原与 `agent-behavior-eval.yml` 的 `on.pull_request.paths` 是同一口径的两种表达
+# （workflow 用它做触发器过滤，这里用它决定"要不要跑/跑默认集"）；该 workflow 已于
+# #4275 整体删除 ⇒ **本元组是这一口径的唯一真值**（映射的调用者按 §13.2 直接用它）。
 AI_BEHAVIOR_PATH_PREFIXES = (
     "backend/ai-agent-service/app/",   # agent 本体：skills / tools / prompt / 交互卡
     "tests/agent_eval/",               # 评测基建（改了它，评测口径本身就需要复验）

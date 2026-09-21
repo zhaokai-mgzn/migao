@@ -54,7 +54,7 @@ WORKFLOW_FILE="post-deploy-eval.yml"
 # ── 评测相关路径（runner / 用例库 / ai-agent 行为源 / 评测 workflow 与脚本）──
 # 口径与 tests/agent_eval/behavior_mapping.py 的 BEHAVIOR_SOURCE_PREFIXES 同源（行为源），
 # 另加 runner 与用例库：这三类变了才可能改变"评测结论"。
-EVAL_RELEVANT_RE='^(tests/agent_eval/|backend/ai-agent-service/|\.github/cases/|\.github/scripts/eval_|\.github/workflows/(post-deploy-eval|agent-behavior-eval|xiaobu-acceptance)\.yml)'
+EVAL_RELEVANT_RE='^(tests/agent_eval/|backend/ai-agent-service/|\.github/cases/|\.github/scripts/eval_|\.github/workflows/(post-deploy-eval|xiaobu-acceptance)\.yml)'
 
 say() { echo "$@"; }
 

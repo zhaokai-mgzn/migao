@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.42.0
+version: 1.43.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -796,9 +796,13 @@ completion_verdict ✅ + 双裁判无未裁定分歧；运行期只 smoke/抽样
 cron 也已删除）承担。
 禁止把 LLM 档改成 required（历史决策，勿翻案）。
 
-**📌 决策记录（2026-09-14 用户确认 → 2026-09-17 裁定 2′/4′ 覆盖）**：**行为映射门禁
-（agent-behavior-eval）不纳入 required**（理由：方差 + persona 参数化 check 名）。
-⚠️ 该门禁的**评测部分已停跑**（issue #4034）：PR 上只剩零 LLM 的映射信号；拦截交给确定性层。
+**📌 决策记录（2026-09-14 用户确认 → 2026-09-17 裁定 2′/4′ 覆盖 → 2026-09-21 #4275 收口）**：
+**行为映射门禁（`agent-behavior-eval`）不纳入 required**（理由：方差 + persona 参数化 check 名）。
+⚠️ 该门禁的**评测部分已停跑**（issue #4034）；**其 workflow 文件本身也已在 #4275 整体删除**
+（用户裁定，落法 A，承接 #4262「不要自动进行验证」）⇒ **PR 上不再有任何自动行为信号**
+（连零 LLM 的映射评论也没有了）；拦截交给确定性层。「改了哪些文件 → 该跑哪几条用例」改由
+**本机**按 §13.2 + `tests/agent_eval/behavior_mapping.py`（零依赖纯函数）算 —— **零成本、不派发**
+（这正是 #4262 保留的「零成本动作」）。
 ⇒ 阅后动作变了：**PR 上不再有"规则命中强信号"可看**；取而代之的是裁定 4′ 要求的
 **「LLM 发现 → 确定性下沉」**（红例必须落成 ≥1 条确定性断言，台账 + 机械检查见
 `docs/testing/llm-finding-sinking.md`；`python3 .github/llm_sink_check.py --issue N`）。
@@ -905,7 +909,7 @@ cron 也已删除）承担。
 
 | 要回答的问题 | 用什么 | **不要**用什么 |
 |---|---|---|
-| 这条改动**影响行为吗**？（PR 阶段） | **PR 上的映射信号**（`agent-behavior-eval.yml` 的 `map` job：diff → §13.2 用例集 + 打印派发命令）——⚠️ **零 LLM**：它只告诉你"波及哪些用例"，**不产生评测结论**。要真结论 ⇒ 手动派发 `post-deploy-eval`（`case_ids` + `purpose=debug`，**非判定用途**） | 不为单条改动派**全量**（全量属部署后 / 批次轮）；**不要在 PR 上期待 LLM 结论**（裁定 2′/4′：PR 层真实 LLM 已停跑，#4034） |
+| 这条改动**影响行为吗**？（PR 阶段） | **本机零成本映射**：调 `tests/agent_eval/behavior_mapping.py` 的 `map_changed_files_with_source(<改动文件列表>)`（零依赖纯函数）⇒ diff → §13.2 用例集——⚠️ **它只告诉你"波及哪些用例"，不产生评测结论**。⚠️ **#4275**：原 PR 上自动贴的映射评论（`agent-behavior-eval.yml` 的 `map` job）已随该 workflow **整体删除** ⇒ PR 上**没有任何自动行为信号**。要真结论 ⇒ 手动派发 `post-deploy-eval`（`case_ids` + `purpose=debug`，**非判定用途**） | 不为单条改动派**全量**（全量属部署后 / 批次轮）；**不要在 PR 上期待 LLM 结论**（裁定 2′/4′：PR 层真实 LLM 已停跑，#4034；#4275 起连映射评论也没有） |
 | **这几条 case 修好了吗**？ | **合并后的一次全量档**（`tier=normal`，不带 `case_ids`，跑全库 ⇒ 天然覆盖「缺陷由另一条用例制造」的前置条件，§17.4 ③） | 不用窄重放当结论（除非全量覆盖不到该用例）；用窄重放**必须回答**「本次运行复现了缺陷的前置条件吗」（`migao-acceptance` v1.7） |
 | **能不能放行**（里程碑）？ | **全量档 + `completion_verdict` + 独立盲审**（§16.4 结论档） | 不拿单次窄重放的绿当结论；不拿**被抑制 / cancelled / 空跑**的 run 当结论 |
 
@@ -990,8 +994,9 @@ cron 也已删除）承担。
 3. **跑之前拦，别跑完看日志**（C 空跑守卫；v1.26 起**已落码**，#3769）：**评测相关路径**
    （runner / 用例库 / ai-agent 行为源 / 评测 workflow）的变更集为空 ⇒ **不派发**，打印
    **`⏭️ 评测相关代码无变更 ⇒ 未跑（引用 <run_id>）`** —— **「没跑」必须长得像「没跑」**
-   （同族示例：`verify-all.sh` 的「⚠️ 无变更或无法对比 origin/main，跳过」；`agent-behavior-eval.yml`
-   的 `⏭️` 图标语义）。**别让"跳过"在日志里长得像"通过"**。
+   （同族示例：`verify-all.sh` 的「⚠️ 无变更或无法对比 origin/main，跳过」；已删除的
+   `agent-behavior-eval.yml`（#4275）曾用 `⏭️` 表达同一语义）。
+   **别让"跳过"在日志里长得像"通过"**。
    命中复用（B）时同样打印 `⏭️ …不重复跑` 并给出旧 run id —— 一律**不复用"绿"的字样**。
 
 > 反面对照（假红）：测试自己**重建产物路径**导致「本地绿 / CI 红」—— 见 `migao-acceptance`
@@ -1165,7 +1170,7 @@ cron 也已删除）承担。
      `concurrency: cancel-in-progress`** —— 「宁可排队串行，也要让每一次部署都有完整的判定留痕」
      （文件内注释「为什么不加 `concurrency: cancel-in-progress`…」—— **按注释文本检索**，`@c5f07f29` 位于 `:139-144`）；
      而 PR 场景的 `xiaobu-acceptance.yml`（`concurrency.group` + `cancel-in-progress: true`，**按这两行文本检索**，`@c5f07f29` 位于 `:105-107`）
-     与 `agent-behavior-eval.yml`（同形，`@c5f07f29` 位于 `:109-111`）会取消**同一 PR** 的旧 run
+     与已删除的 `agent-behavior-eval.yml`（#4275；同形，`@c5f07f29` 位于 `:109-111`）会取消**同一 PR** 的旧 run
      ⇒ **多包并发派发时相互取消是真实发生的**：实测某窗口内
      **14 个 run 被取消，其中 8 个是 Post-Deploy Eval**（SHA 覆盖 `cc44197d`×4、`69f677af`×2、`541bacbe`×2）。
    - ⚠️ **`cancelled` 的 run 不是结果**：`conclusion=cancelled`、**没有 verdict、没有可用 artifact**
@@ -1701,7 +1706,7 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
 **尚未接 CI required check** —— 现为人工 / 会话收尾时调用，**不会自动拦人**。
 ⚠️ **P7 只解决墙钟与往返，不解决「CI 本身 3-4 min」** —— 那不在本单内。
 
-## 版本沿革（v1.1 → v1.41.0）
+## 版本沿革（v1.1 → v1.43.0）
 
 > 本节由 **v1.21** 从 frontmatter `description` **逐字迁入**（条目文本未改，仅加列表符号并按版本排序）。
 > 背景：frontmatter `description` 是 YAML 纯标量，会在第一个「空白 + `#`」处**静默截断** ——
@@ -1735,7 +1740,7 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
   故 `tier=normal` **只跑 NORMAL 档**（不含 SMOKE/ADVERSARIAL）：§16.7「禁空跑」② 的「全库」已就地注明
   「**该档**全库 ≠ 覆盖全部用例」，`post-deploy-eval.yml` 的 `tier` 输入描述同步由「normal（全量）」收紧为
   「normal（**只跑 NORMAL 档**全量；不含 SMOKE/ADVERSARIAL）」+ 紧邻注释登记边界（**只改描述/注释，默认值仍 `normal`**）。
-  同时清掉 `.github/workflows/agent-behavior-eval.yml` 注释里「AS-007 已 `skip_reason` 非空」的过期举例（实测 `skip_reason` 为空、米宝端照跑；小布端选不中是**工具集**口径而非 skip）——**只改注释，不动 `unrunnable` 过滤逻辑**。
+  同时清掉 `.github/workflows/agent-behavior-eval.yml` 注释里「AS-007 已 `skip_reason` 非空」的过期举例（实测 `skip_reason` 为空、米宝端照跑；小布端选不中是**工具集**口径而非 skip）——**只改注释，不动 `unrunnable` 过滤逻辑**。（⚠️ 该文件已于 **v1.43.0 / #4275** 整体删除；本条是**当时**的动作记录，照实保留。）
 - v1.27（2026-09-15 **补今晚实操暴露的 4 条缺口**，本次）：
   ① **§17.4 新增「判定跑在飞期间冻结合并」** —— 判定跑在飞时不往 main 合新东西，增量**并到下一批**；
   已落增量 ⇒ 结论**必须写明 verdict 覆盖到哪个 SHA**（`run_key.sha`）并标注「其后增量未经全库验证，
@@ -1856,6 +1861,9 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
      ⚠️ **上面这句「定时档全部保留」已被 v1.33 / #4262 改判**（见版本沿革末条）：自动 LLM
      触发由 3 条收敛为 **1 条**（只留 `post-deploy-eval` 每周一），两条每周 adversarial 定时删除。
      防回退锁同步收紧为「白名单 = 1 条 + 反向断言其余为空 + 周级 cron」。**勿照抄本 v1.31 条**。
+      ⚠️ **再改判（v1.43.0 / #4275）**：该 workflow **文件本身**也被删除（用户裁定，落法 A）⇒
+      PR 上连**零 LLM 的映射信号**都没有；防回退锁改判为「**现存 PR 层集合**的机具扫描」
+      （零 LLM runner / 起栈注种子机具 / `id: eval` / 评测槽位 / 波动台账）+ 「凡起栈必登记」。
   详版：`docs/testing/llm-finding-sinking.md` + `docs/testing/eval-environments.md` §3.7。
 - v1.32（2026-09-17 **issue #4065 落码入册**，本次）：§17.3「交付物搁浅」由**仅纪律**改为**已落码** ——
   `scripts/stranding-check.sh`（内容级：以 PR 在 main 上的**合并点**为锚 + 从**远端分支 ref** 看「合并后是否还有 push」；
@@ -2058,3 +2066,54 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
      **没有机械锁**（静态锁拦不住 agent 主动 `gh workflow run`）；非 LLM 的定时任务
      （`fixture-record` 月度重录 / `drift-audit` 每日静态审计 / `deploy-*` 部署对账）
      **不在本单范围、未动**。
+- v1.43.0（2026-09-21 **issue #4275 落地：删掉 PR 层最后一个自动入口 `agent-behavior-eval.yml`**，本次）：
+
+  用户裁定（落法 A）：**删掉整个 workflow + 同步守卫** —— 承接 #4262「不要自动进行验证」
+  「CI 运行次数太多」。该 workflow（426 行）的**唯一产物是 PR 评论**（`issues.createComment`），
+  map job 绑死 PR 上下文（`github.base_ref` + PR 号）⇒ **无 PR 可评论**，留 `workflow_dispatch`
+  空档 = 仓库明令禁止的「永不执行的死 job」；它**零 LLM、不花钱**，删它是为 **CI 运行次数**
+  （9/18 实测 13 次/天，每次 ~27s CI 分钟）。分支保护 required 集合里**从来没有**以它命名的项
+  （原 PR #4288 已核），故删除不会留下永久 pending 的 required check。
+
+  ① **守卫改判（删的是「被测对象已不存在」的断言，不是放宽门槛）**：
+     `test_behavior_eval_pr_thin.py` —— 原「解析那个文件的机具面」改判为**现存 PR 层集合**的
+     机具扫描（零 LLM runner / 起栈注种子机具 / `id: eval` / 评测槽位 / 波动台账；**五轴各一条
+     注入式红证** + 负控）；`TestPathsFrontGate`（解析它 `on.pull_request.paths`）改判到纯函数面
+     （非行为路径 ⇒ 映射结果为空、`source == 'none'`）；`TestMappingSignalSurvives`（它的评论脚本）
+     随对象删除 —— 被测对象不存在，断言无处施加。
+     `test_behavior_gate_reachability.py` —— 只删「解析那个 workflow」的见证层
+     （**本体 = 用例库自身的结构性不可达，与有没有消费方无关 ⇒ 一个字未改**）；
+     分层锁（原逐字锁 map 步骤的 `mode = "blocking" if source == "rules" ...`）改挂到
+     `map_changed_files_with_source` 的 **`source` 三分法**上。
+     `test_behavior_mapping_tool_coverage.py` —— 只删 workflow-parsing 的 premise 类
+     （**persona 相容性本体由 `select_cases_for_persona` 纯函数断言 ⇒ 保留**）。
+     `test_eval_stack_seed_parity.py` —— 删「被排除对象无栈机件」两问（对象不存在），
+     **改判为更强的一条**：`{含起栈机具的 workflow} == set(EVAL_WORKFLOWS)`（**双向相等**）——
+     把 #4288 PR body 里自认**未实装**的「漏登记拦不住」落成机械判据；
+     `TestPrLayerIsSignalOnlyNotGate` 三条改判到**现存 PR 层**（零 LLM / 零 `issues.create(` /
+     **零死权限**：声明 `issues` 权限必有 `issues.*` 消费方 —— 不能写成"一律不得声明"，因为
+     `pr-issue-link.yml` / `close-linked-issues.yml` **合法消费**），一条（PR 评论脚本）随对象删除。
+
+  ② **功能性引用同步**：`.github/scripts/eval_slot_status.sh` 的 `SLOT_WORKFLOWS`（三 → 二）、
+     `.github/scripts/eval_dispatch_guard.sh` 的 `EVAL_RELEVANT_RE`、`scripts/eval_stack_seed.sh`
+     的根因注释（保留为**根因证据**、标注已删除）、`.github/scripts/flake_history.py` 的历史
+     artifact 归属、`tests/agent_eval/behavior_mapping.py` 的"谁在消费它"
+     （⇒ 现在**没有 workflow 消费方**：调用者是**人 / agent 按 §13.2**）、
+     `tests/unit_ci_workflows/test_post_deploy_eval_supersede.py` 的文档必提列表（收敛为一个）；
+     `.github/skip-exemption-baseline.json` 的 CH-021 论据原引用该文件注释
+     ⇒ **显式登记「论据已失效、须重新取证」**（**不默认它可跑**）。
+
+  ③ **文档同步**：`docs/wiki/CI-CD.md` / `DEV-FLOW.md` / `Testing.md` / `gate-exemption-ledger.md`、
+     `docs/testing/eval-environments.md`（§1.1 种子口径 / §3.1 门禁表 / §3.2 决策记录 /
+     §3.3 槽位表 / §3.7 裁定记录）、`eval-pipeline-performance.md`、`llm-finding-sinking.md`。
+     ⚠️ `docs/audit-2026-09/**` 与 `acceptance/**` 是**历史证据**，**未动**。
+
+  ④ **能力去向（不是白丢）**：映射能力仍在 `tests/agent_eval/behavior_mapping.py`
+     （**零依赖纯函数**，本机可调 `map_changed_files_with_source(<改动文件列表>)`）——
+     这正是 #4262 保留的「零成本动作」；删的只是「在 PR 上**自动**贴评论」这个入口。
+
+  ⑤ **未实装 / 边界（照实登记，§19.1）**：**没有机械锁阻止"将来再建一个零 LLM 但每 PR 自动跑的
+     新入口"** —— 现存锁拦的是「带真实 LLM 步骤的 workflow」（自动触发白名单）与「起栈机具」
+     （`EVAL_WORKFLOWS` 双向相等），一个纯评论的零 LLM PR workflow 若被重造，仍能溜过。
+     另外：删除 workflow 需要**仓库 owner 本人在 PR 上贴 `/danger-ack delete-workflow all`**
+     才放行（`danger_scan` 的确认通道），那是**人工步骤**，不在 agent 范围内。

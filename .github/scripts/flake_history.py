@@ -56,7 +56,8 @@ lr = _load_runner()
 #
 # 实测证据（`gh api repos/<repo>/actions/artifacts?per_page=100`，2026-09-15）：
 #   · `agent-eval-flake-ledger`                     ← agent-eval.yml
-#   · `agent-eval-flake-ledger-behavior-<persona>`  ← agent-behavior-eval.yml
+#   · `agent-eval-flake-ledger-behavior-<persona>`  ← agent-behavior-eval.yml（该 workflow
+#     已于 #4275 删除；此处是**历史 artifact 名**的证据，不是活跃产出方）
 #   · `agent-eval-flake-ledger-shard<N>`            ← xiaobu-acceptance.yml
 #   · `post-deploy-eval-<persona>`                  ← post-deploy-eval.yml（汇总+台账同 artifact）
 # 抢救包的原值 `agent-eval-flakes` **一个都匹配不上**（真实名字里 `flake` 后是 `-` 而非 `s`）

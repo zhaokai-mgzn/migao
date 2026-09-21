@@ -36,9 +36,15 @@
    ⚠️ **2026-09-17 前提变更**（用户裁定 2′/4′，issue #4034）：PR 层**不再启动任何腿**
    （`behavior-eval` job 整体删除，PR 上零真实 LLM）⇒ 上面这条"会启动的腿"的判定时机
    从 **PR 自动**移到**派发时**（判定用途走单一入口 `post-deploy-eval`；单腿窄跑走
-   `xiaobu-acceptance.yml` 的 `persona` 输入，手动）。前提的**新形态**（map 仍按 persona
-   分桶 + PR 评论仍按 persona 分条呈现，不把单腿结果说成双端结论）由
-   `TestWorkflowPersonaBucketingPremise` 锁住：premise 一变，本判据必须重新审视。
+   `xiaobu-acceptance.yml` 的 `persona` 输入，手动）。
+
+   ⚠️ **2026-09-21 #4275 再变**：`agent-behavior-eval.yml` 按用户裁定**整体删除**（落法 A，
+   承接 #4262「不要自动进行验证」）⇒ 原 `TestWorkflowPersonaBucketingPremise` 锁定的两条
+   premise（"map job 按 persona 分桶" + "PR 评论按 persona 分条"）的**被测对象已不存在**
+   （那个 map job 与那条评论脚本都随文件删除），断言**无处可施加** ⇒ 该 premise 类删除。
+   ⚠️ **但 persona 相容性本体一个字未改**：它的判据本来就落在 `select_cases_for_persona`
+   这条**纯函数**上（见下面 B/C 两组），与有没有 workflow 消费方**无关**
+   —— 删掉消费方不会让"单腿拿到不属于本腿的 ID"这件事变无害（`#3822` 的 `exit 1` 形态仍在）。
 
 ## 红证（不靠"补规则前的历史"，而是注入式 —— 与被测真值解耦，永远有效）
 
@@ -60,7 +66,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / ".github"))
@@ -75,7 +80,6 @@ from eval_case_filter import case_skip_reason, select_cases_for_persona  # noqa:
 from render_cases import load_case_dicts  # noqa: E402
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
-BEHAVIOR_EVAL_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "agent-behavior-eval.yml"
 PERSONAS = ("mibao", "xiaobu")
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -142,11 +146,14 @@ def declared_coverage_gaps(declared, mapping_fn):
 
 
 def bucket_by_persona(ids, runnable_by_persona, personas=PERSONAS):
-    """workflow map job 的分桶镜像 → `({persona: [case_id]}, [无人可跑的 case_id])`。
+    """**本地分桶约定** → `({persona: [case_id]}, [无人可跑的 case_id])`。
 
-    唯一复述的是 workflow 那两行分桶规则（`owners = [p for p in ("mibao","xiaobu")
-    if cid in runnable[p]]` → `owners[0]`）；premise 由
-    `TestWorkflowPersonaBucketingPremise` 锁住（workflow 改了分桶口径这里必须同步）。
+    复述的是分桶约定（`owners = [p for p in ("mibao","xiaobu")
+    if cid in runnable[p]]` → `owners[0]`）。
+    ⚠️ #4275 前它镜像的是 `agent-behavior-eval.yml` 的 map job、premise 由
+    `TestWorkflowPersonaBucketingPremise` 锁住；该 workflow 已删除 ⇒ 镜像前提与被删的
+    premise 类一并消失（**被测对象不存在**）。现在它是**本机口径**：按 §13.2 算该跑哪几条
+    用例时，跨端用例归 `mibao` 腿（仓库默认 persona）。
     """
     buckets, orphan = {}, []
     for cid in ids:
@@ -194,14 +201,11 @@ def _declared_case_ids():
     return sorted({cid for ids, _why in DECLARED_TOOL_FILE_COVERAGE.values() for cid in ids})
 
 
-def _map_step_script():
-    """取 `agent-behavior-eval.yml`「计算执行计划」步骤（id=map）的内联脚本正文。"""
-    wf = yaml.safe_load(BEHAVIOR_EVAL_WORKFLOW.read_text(encoding="utf-8")) or {}
-    for job in (wf.get("jobs") or {}).values():
-        for step in job.get("steps") or []:
-            if step.get("id") == "map":
-                return step.get("run") or ""
-    return ""
+# ⚠️ #4275：原 `_map_step_script()`（解析 `agent-behavior-eval.yml` 的 map 步骤内联脚本）
+#   与其消费方 `TestWorkflowPersonaBucketingPremise` **已删除** —— 该 workflow 已按用户裁定
+#   整体删除（承接 #4262），**被测对象不存在 ⇒ 断言无处施加**（不是"跑不过就删"）。
+#   本文件的核心判据（B/C 两组：改了这个文件 → 声明的用例必须被选中 + 真能被调度）
+#   **一字未改**，它们的载体是 `behavior_mapping` / `select_cases_for_persona` 纯函数。
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -379,7 +383,8 @@ class TestDeclaredCoverageIsActuallyDispatched:
 
         这是"**为什么本包不需要给 C 端配一条对位用例**"的机器证据（`#3653`：persona 从分桶
         派生，单 persona 命中只起一套栈）。⚠️ 它锁的是**派生结果**，不是"双端用例必须归 mibao"
-        这条规则本身（后者由 `TestWorkflowPersonaBucketingPremise` 的 premise 锚点承担）。
+        这条规则本身（后者原由 `TestWorkflowPersonaBucketingPremise` 的 premise 锚点承担，
+        #4275 后该 workflow 已删除 ⇒ 见 `bucket_by_persona` 的 docstring 与模块头）。
         """
         runnable = _runnable_by_persona()
         case_ids, _source = map_changed_files_with_source(
@@ -392,65 +397,15 @@ class TestDeclaredCoverageIsActuallyDispatched:
         )
 
 
-class TestWorkflowPersonaBucketingPremise:
-    """premise 守卫：上面那条「persona 相容」结论**依赖 workflow 的既有分桶语义**。
-
-    ⚠️ **premise 已于 2026-09-17 变更**（用户裁定 2′/4′，issue #4034）：原第二条判据
-    （`behavior-eval` 的 matrix 消费 `needs.map.outputs.personas`）的**被测 job 已整体删除**
-    —— PR 上不再启动任何腿，"matrix 是否消费派生 persona"在 PR 路径上已无对象
-    （PR 层零 LLM 的机械锁见 `tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`）。
-    但本文件的结论**仍依赖两件活着的事**，故判据随之改挂在新前提上（不是删断言了事）：
-
-      ① map job 仍**按 persona 分桶**（`test_map_step_buckets_per_persona`，原样保留）——
-         它是 `PR-006` 落 mibao 桶这一结论的来源；
-      ② PR 评论仍**按 persona 分条**呈现（评论脚本按 `persona + '|'` 过滤执行计划）——
-         否则单腿的映射集会被读成「双端都覆盖了」（`#3822` 同族的假绿形态）。
-
-    单腿窄跑的**新落点**：`xiaobu-acceptance.yml` 的 `persona` 输入（手动，`#3822` 的
-    单腿入口）；判定用途走单一入口 `post-deploy-eval`（一次覆盖两条腿，`#3769`）。
-    premise 变 ⇒ 本文件红 ⇒ 必须重新审视。
-    """
-
-    def test_map_step_buckets_per_persona(self):
-        script = _map_step_script()
-        assert script, "找不到 agent-behavior-eval.yml 的 map 步骤内联脚本（premise 失效）"
-        for anchor in ('owners[0]', "select_cases_for_persona", "personas.append"):
-            assert anchor in script, (
-                f"map job 的分桶实现里找不到 {anchor!r} —— 「按 persona 分桶派生腿」的 premise 变了；"
-                "本文件的 persona 相容性断言（test_no_started_leg_would_exit_1…）必须重新设计。"
-            )
-
-    def test_pr_comment_preserves_per_persona_split(self):
-        """PR 评论必须**按 persona 分条**呈现执行计划（单腿结果不得被呈成双端结论）。
-
-        这条替代了原 `test_eval_matrix_consumes_derived_personas`（被测 job 已删除）：
-        现在 PR 上唯一的输出就是这条评论，而它必须仍保持「一条腿一条评论 + 只贴本腿的桶」，
-        否则读者会把「只映射到 mibao 的用例」当成"两端都跑了"。
-        反向变异：去掉带 persona 的 marker、或把整份 plan 不分 persona 地贴出去 ⇒ 红。
-        """
-        wf = yaml.safe_load(BEHAVIOR_EVAL_WORKFLOW.read_text(encoding="utf-8")) or {}
-        scripts = "\n".join(
-            str((s.get("with") or {}).get("script") or "")
-            for job in (wf.get("jobs") or {}).values()
-            for s in (job.get("steps") or [])
-        )
-        assert "for (const persona of personas)" in scripts, (
-            "PR 评论不再逐个 persona 分条发布（评论脚本里找不到 `for (const persona of personas)`）"
-            "—— 分条的判据就是它：一条腿一条评论，各带自己的 marker"
-        )
-        assert "agent-behavior-eval:${persona}" in scripts, (
-            "评论 marker 丢掉了 persona 维度 —— 两条评论会互相覆盖（后写的赢），"
-            "有一端的映射结论从 PR 上消失 = 假绿"
-        )
-        # 执行计划必须按 `persona|` 前缀过滤（两处：展示用的 scopedPlan + 派发命令用的 planLines）
-        assert "${persona}|" in scripts and "l.startsWith(persona + '|')" in scripts, (
-            "评论未按 `persona|` 前缀过滤执行计划 —— 一端读者会看到别端的桶，"
-            "把「单腿命中」读成「双端覆盖」（#3822 同族的假绿形态）"
-        )
-        # 分条的前提是 plan 行的形状仍是 `persona|suite|ids|mode`（map 侧的定义）
-        assert '"|".join([p, s,' in _map_step_script(), (
-            "map 侧的执行计划不再是 `persona|档位|用例|门禁` 形状 —— 评论的分条过滤失去判据"
-        )
+# ⚠️ #4275：原 `TestWorkflowPersonaBucketingPremise`（`test_map_step_buckets_per_persona` +
+#   `test_pr_comment_preserves_per_persona_split`）**已删除** —— 两条判据解析的都是
+#   `.github/workflows/agent-behavior-eval.yml`（map 步骤内联脚本 / PR 评论脚本），而该
+#   workflow 已按用户裁定整体删除（承接 #4262）。**被测对象不存在 ⇒ 断言无处施加**。
+#   ⚠️ 注意：这一条**不是**"persona 相容性判据被删" ——
+#   `test_no_declared_file_leaves_an_orphan_case` / `test_declared_case_lands_in_a_real_bucket`
+#   / `test_no_started_leg_would_exit_1_on_the_declared_diffs` 三条（C 组）**逐字保留**，
+#   它们的载体是 `select_cases_for_persona` 纯函数，与消费方在不在无关（`#3822` 的
+#   「单腿拿到外端 ID ⇒ runner exit 1」风险不因删掉一个 PR workflow 而消失）。
 
 
 # ══════════════════════════════════════════════════════════════════════════════

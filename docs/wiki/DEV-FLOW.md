@@ -176,13 +176,16 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
 | ~~**Agent Eval (smoke)**（pr-check 的 `agent-eval-smoke` job）~~ | ~~每次 PR~~ | ~~smoke tier ~7 条~~ | ⚠️ **已移除**（issue #3653，2026-09-15）：它评的是**已部署 main**（`ai-api.migaozn.com`），与本 PR 改动**无因果**，却是四层冗余里最贵的一层（实测 2.5h 内 85 次 ≈ 43% 的评测次数） |
 | E2E Real | 每日 00:00 定时 | 135+ integration 真实 LLM | 频率已合理（低峰回归），保持 |
 
-- ⚠️ **PR 层的真实 LLM = 0 次**（2026-09-17 用户裁定 2′/4′，承载 issue #4034）：
-  `agent-behavior-eval.yml` 的评测 job 已**整体删除**，PR 上只留**零 LLM 的映射信号**
-  （diff → §13.2 用例集 + 可复制派发命令）。判定用途走**单一入口** `post-deploy-eval.yml`
-  （每 3 天 normal 全量 + 手动 `workflow_dispatch`）；定时档（3 天 normal / 每周 adversarial ×2）**全部保留**。
+- ⚠️ **PR 层的真实 LLM = 0 次，且 PR 上不再有任何自动行为信号**（2026-09-17 用户裁定 2′/4′，
+  承载 issue #4034；**#4275** 承接 #4262「不要自动进行验证」把最后一个 PR 层入口也删了）：
+  `agent-behavior-eval.yml` 的评测 job 在 #4034 **整体删除**，**该 workflow 文件本身**又在 #4275
+  **整体删除** ⇒ 连「零 LLM 的映射评论」也没有了。判定用途走**单一入口** `post-deploy-eval.yml`
+  （**仅手动 `workflow_dispatch`**：#4262 收敛定时档、**#4974 删除最后一条每周一 cron**
+  ⇒ 全仓自动真实 LLM 触发 = **0 条**）。「改了哪些文件 → 该跑哪几条用例」由**本机**按本节
+  §13.2 映射表 + `tests/agent_eval/behavior_mapping.py`（零依赖纯函数）算，**零成本、不派发**。
 - 其余环节不烧真实 token：`nightly-verification` 是 fixture e2e + smoke p1（HTTP 层）；
-  `agent-eval.yml`(normal 47 条) 与 `adversarial` 已降频为手动/每周（对抗档为**定时保留**）；
-  `xiaobu-acceptance` 除定时对抗档外均为手动，且它是**单腿窄跑**入口（`persona` 输入）。
+  `agent-eval.yml`(normal) 与 `agent-eval-adversarial` 均为**仅手动**（#4262 删定时）；
+  `xiaobu-acceptance` 同为**仅手动**，且它是**单腿窄跑**入口（`persona` 输入）。
 - **LLM 红例的闭环**（裁定 4′）：必须下沉为 ≥1 条确定性断言（`must_succeed`/`db_verify`/
   `amount_verify`/`output_verify`/L0 不变式）；账本 = `.github/llm-finding-ledger.json`，
   机械检查 = `python3 .github/llm_sink_check.py --selftest | --issue N | --all`
