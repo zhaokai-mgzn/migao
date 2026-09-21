@@ -52,7 +52,8 @@ OPERATION_CATALOG: Dict[str, Dict[str, Any]] = {
     "扣环-布": {"group": "车位", "unit": "个", "unit_price": 0.3},
     "防翘扣-布": {"group": "车位", "unit": "个", "unit_price": 0.2},
     # ── issue #4529（包 F）：布料基础路线的两道工序（用户裁定 2026-09-19）──
-    # · `配料`：**布料单**（`saleForm = 布料`）的前道工序，单位 = **米**（按部位算料）；
+    # · `配料`：**已退场**（issue #4952 起零消费）—— 原为布料单前道工序（单位 米）；V88 已把
+    #   布料主线改判为 `裁剪 → 打包`，工序行保留只为「已发布迁移 / bootstrap 的历史镜像」可比对；
     # · `打包`：**跨产品形态**的工序 —— 追加裁定「如果是布料也可以有打包工序」⇒ 它**不等于**
     #   `外帘装袋`（后者是外帘/成品帘专属）；单位 = **套**，`scope = 'set'`（一单一套一次，
     #   不按部位展开 —— 见 V79 的 `SET scope='set'` 回填与 Java 侧 `keepsSetLevel` 去重）。
@@ -147,8 +148,11 @@ PENDING_CUSTOMER_CONFIRMATION_OPERATIONS = frozenset(
 
 # ── **新模型**消费、旧 `ROUTINGS` 不消费的工序（issue #4529）──
 # 登记在这里的唯一理由与上面那个集合相同：让「旧模型孤儿」与「忘了建路线」在数据上**可区分**。
-# `配料` 只出现在 `FABRIC_MAINLINE_STEPS`；`打包` 出现在 `ROUTE_MAINLINE_STEPS`（新模型主线）
-# ⇒ 它们对 `ROUTINGS` 确实是孤儿。
+# `打包` 出现在 `ROUTE_MAINLINE_STEPS`（新模型主线）⇒ 它对 `ROUTINGS` 确实是孤儿。
+# `配料` **自 issue #4952 起零消费**（`FABRIC_MAINLINE_STEPS` 已改判为 `裁剪 → 打包`）；它的
+# 工序行 / 价目行仍留作 V79/V88 已发布迁移与 `docs/sql/schema.sql` 的**历史真值源镜像**
+# （删表 = 删守卫）。本集合的语义 = 「有工序、有价，但**旧 `ROUTINGS` 不引用**」—— 它只把这两道
+# 从孤儿集合里摘出来，避免 `tests/test_production/test_routing.py` 的孤儿判据把它们判成「忘了建路线」。
 NEW_MODEL_ONLY_OPERATIONS = frozenset({"配料", "打包"})
 
 # ── 特殊选项 → 条件工序（插在目标工序后；`after` = **锚点在它之前**，见 `_insert_after`）──
@@ -500,8 +504,17 @@ ROUTE_TEMPLATE_NAME_DEFAULT = "窗帘工序路线（默认）"
 FABRIC_POSITION = "布料"
 #: 选中布料路线的键：`processing_info.saleForm`（前端 `SALE_FORM_FABRIC` 逐字一致 —— join key）。
 SALE_FORM_FABRIC = "布料"
-#: 布料主线（**2 道**）：`配料` → `打包`（不含任何窗帘工艺/部位工序）。
-FABRIC_MAINLINE_STEPS: List[str] = ["配料", "打包"]
+#: 布料主线（**2 道**）：`裁剪` → `打包`（不含任何窗帘工艺/部位工序）。
+#:
+#: 🔴 **issue #4952 口径改判**：原值 `配料 → 打包` 是 **V88 之前**的口径，与库终态**已分叉**
+#: —— 用户裁定逐字「布料单该用 **裁剪**」（#4673 评论，设计 F5 已改判掉早期的「配料是公共工序」），
+#: 迁移侧 `V88__retire_material_prep_and_fabric_position.sql` ③ 把 `配料` 手术式替换成 `裁剪`、
+#: `V89__backfill_fabric_seed_for_existing_tenants.sql` ③ 直接落字面量 `["裁剪","打包"]`、
+#: `docs/sql/schema.sql` 的 `布料工序路线` 与 Java 开租播种
+#: `ProductionSeedTemplateService.FABRIC_MAINLINE_STEPS = List.of("裁剪","打包")` **四处同值**
+#: ⇒ 本常量是**最后一个旧口径**（三源收敛守卫此前靠「折算」记账，本单撤掉折算、改逐字直比）。
+#: ⚠️ `配料` 随之**零消费**（工序行 / 价目行仍留作历史真值源镜像，见 `NEW_MODEL_ONLY_OPERATIONS`）。
+FABRIC_MAINLINE_STEPS: List[str] = ["裁剪", "打包"]
 #: 布料路线模板名（种子名；商家可改名 —— 幂等键是 `(tenant_id, name)`，不是这个名字）。
 FABRIC_ROUTE_TEMPLATE_NAME_DEFAULT = "布料工序路线"
 
@@ -677,7 +690,7 @@ _POSITION_PRICE_ROWS: List[tuple] = [
     ("防翘扣", "纱帘", None, False),
     ("防翘扣", "帘头", None, False),
     # ── issue #4529（包 F）：第 4 个部位「布料」的 28 行（既有 28 道**逐行显式 FALSE**）──
-    # 逐行显式纪律不变：布料部位上**只有** `配料`/`打包` 适用，其余 28 道是「明确不做」
+    # 逐行显式纪律不变：布料部位上**只有** `裁剪`/`打包` 适用，其余 28 道是「明确不做」
     # （不是缺行 —— 缺行会让 `build_route_v2` 的 `prices[op][position]` KeyError）。
     ("精裁", "布料", None, False),
     ("裁剪", "布料", None, False),
@@ -959,7 +972,7 @@ def build_route_v2(position: Dict[str, Any]) -> List[str]:
 
     纯函数（不改入参、不碰 DB、零 LLM）。语义（**顺序敏感**）：
 
-    1. 取主线：`saleForm = 布料`（issue #4529）⇒ `FABRIC_MAINLINE_STEPS`（**当前字面量** `配料 → 打包`）；
+    1. 取主线：`saleForm = 布料`（issue #4529）⇒ `FABRIC_MAINLINE_STEPS`（**当前字面量** `裁剪 → 打包`）；
        否则 `ROUTE_MAINLINE_STEPS`（窗帘 10 道）。**两条主线由「产品形态」选定**（与 DB 侧
        「每租户两条路线模板」一一对应：`routeTemplateFor(tenantId, 部位)` 按 `positions` 选模板）
        —— ⚠️ 这是**唯一**仍读 `curtain_type` 的地方，且它是**路线模板的选择键**（产品形态），
@@ -989,7 +1002,7 @@ def build_route_v2(position: Dict[str, Any]) -> List[str]:
     for rule in sorted(ROUTE_RULES, key=lambda r: r["priority"]):
         # 🔴 **工艺规则只对「窗帘类产品形态」生效**（issue #4937 / P2）。
         # 判据 = 与主线选择**同一个键**（`saleForm == 布料` ⇒ 布料主线，见上一行）：
-        # 布料单是**另一个产品形态**（它的主线只有 `配料 → 打包`），在它上面套用窗帘工艺规则
+        # 布料单是**另一个产品形态**（它的主线只有 `裁剪 → 打包`），在它上面套用窗帘工艺规则
         # 会把 `韩褶`/`上车布` 插进布料单 —— 而**旧口径下这件事被 `applicable` 过滤挡住了**
         # （`韩褶 × 布料` 当时是 `FALSE`）。部位过滤退场后，"哪些工序不属于这个产品形态"
         # 必须由**产品形态**（而不是部位）表达 —— 否则布料单的工序数会当场从 2 变 4。

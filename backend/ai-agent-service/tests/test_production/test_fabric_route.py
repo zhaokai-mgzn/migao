@@ -7,7 +7,7 @@
 
 用户裁定（2026-09-19，issue #4529）：
 
-1. **布料单**（`processing_info.saleForm = 布料`）只有两道工序：`配料` + `打包`；
+1. **布料单**（`processing_info.saleForm = 布料`）只有两道工序：`裁剪` + `打包`；
 2. **成品帘**主线 = 9 道 + `打包` = **10 道**，且 `打包` 在一条路线里**只出现 1 行**；
 3. `打包` 是**套级**工序（`scope='set'`）；
 4. 价目矩阵（issue #4937 之后）= **30 道逻辑工序 × 1 行**（部位维退场；幸存行 `position='通用'`）；
@@ -95,13 +95,16 @@ def _migration_sql() -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 判据 1：布料单 ⇒ 配料 + 打包（两道；缺/多 ⇒ 红）
+# 判据 1：布料单 ⇒ 裁剪 + 打包（两道；缺/多 ⇒ 红）
 # ══════════════════════════════════════════════════════════════════════════════════
 
 def test_fabric_mainline_is_material_prep_then_packing():
-    """布料主线 = `配料 → 打包`（用户裁定：布料也可以有打包工序）。"""
-    assert FABRIC_MAINLINE_STEPS == ["配料", "打包"], (
-        f"布料主线漂移：{FABRIC_MAINLINE_STEPS}（裁定 = 配料 → 打包）")
+    """布料主线 = `裁剪 → 打包`（用户裁定逐字「布料单该用 **裁剪**」，issue #4673 / V88 ③）。
+
+    ⚠️ 旧口径 `配料 → 打包` 已被 issue #4952 改判（`配料` 自本单起**零消费**）。
+    """
+    assert FABRIC_MAINLINE_STEPS == ["裁剪", "打包"], (
+        f"布料主线漂移：{FABRIC_MAINLINE_STEPS}（裁定 = 裁剪 → 打包，见 V88 ③ / #4952）")
     assert FABRIC_POSITION == "布料", "第 4 个产品形态名必须是 `布料`（前端 saleForm 的取值逐字）"
 
 
@@ -113,18 +116,22 @@ def test_fabric_order_route_is_exactly_two_operations():
     `routing.py::build_route_v2` 的 `if is_fabric: continue`（同一条主线选择键）。
     """
     route = build_route_v2({"curtain_type": FABRIC_POSITION})
-    assert route == ["配料", "打包"], f"布料单的工序不是 配料+打包：{route}"
+    assert route == ["裁剪", "打包"], f"布料单的工序不是 裁剪+打包：{route}"
     # 工艺维对布料单无意义：带 craft 不得改变结果（否则同一张布料单会因工艺不同而多工序）
     for craft in CRAFTS:
-        assert build_route_v2({"curtain_type": FABRIC_POSITION, "craft": craft}) == ["配料", "打包"], (
+        assert build_route_v2({"curtain_type": FABRIC_POSITION, "craft": craft}) == ["裁剪", "打包"], (
             f"craft={craft} 改变了布料路线 ⇒ 布料单会被插入窗帘工艺工序")
     # 特殊选项也不得给布料单加工序（窗帘的条件工序锚点/适用性都不在布料上）
     assert build_route_v2({"curtain_type": FABRIC_POSITION, "special_options": ["加花边"]}) == \
-        ["配料", "打包"]
+        ["裁剪", "打包"]
 
 
 def test_curtain_routes_do_not_get_material_prep():
-    """`配料` 是**布料专属**：任何窗帘工艺路线里都不许出现。"""
+    """`配料` 是**布料专属**：任何窗帘工艺路线里都不许出现。
+
+    ⚠️ `配料` 自 issue #4952 起**零消费**（布料主线已改判为 `裁剪 → 打包`）⇒ 本判据对当前
+    真值源是「恒真但 fail-closed」—— 它挡的是「谁把 `配料` 又插回窗帘路线/规则」。
+    """
     for craft in ROUTINGS:
         for curtain_type in CURTAIN_POSITIONS:
             route = build_route_v2({"curtain_type": curtain_type, "craft": craft})
@@ -404,9 +411,15 @@ class TestInjectedDrift:
         assert moved.index("打包") != moved.index("外帘打卷") + 1, "打包挪位读不出来"
 
     def test_fabric_route_judgement_detects_extra_operation(self):
-        """布料路线多一道（如 `打包` 被按部位展开两次）⇒ 判据 1 会红。"""
-        route = ["配料", "打包"]
-        assert route != ["配料", "打包", "打包"], "自证：重复打包确实能被相等判据照出来"
+        """布料路线多一道（如 `打包` 被按部位展开两次）⇒ 判据 1 会红。
+
+        ⚠️ 用**被测实现的真产出**（不是字面量比字面量）：否则「自证」与判据各用一套口径，
+        注入什么都读不出来（#4313 形态）。
+        """
+        route = build_route_v2({"curtain_type": FABRIC_POSITION})
+        assert route == ["裁剪", "打包"], "前提变了：布料路线不再是两道"
+        assert route != ["裁剪", "打包", "打包"], "自证：重复打包确实能被相等判据照出来"
+        assert route != ["配料", "打包"], "自证：旧口径（第三种取值）确实能被相等判据照出来"
 
     def test_scope_judgement_detects_missing_set_backfill(self):
         """`SET scope='set'` 的 UPDATE 少了 `打包` ⇒ 判据 3 会红。"""

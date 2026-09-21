@@ -113,11 +113,12 @@ EXPECTED_COUNTS = {
     ("帘头", "穿杆"): 8, ("帘头", "平幔"): 10,
 }
 #: 布料单（`saleForm=布料`）走**独立主线**（「产品形态」分支，与部位维无关）。
-#: ⚠️ **字面量仍是 `配料 → 打包`**（V88 ③ 把**迁移链/bootstrap** 改成了 `裁剪 → 打包`，
-#: 但 `routing.py` 属 ai-agent，本次去部位化**未动**它 —— 本文件的判据按**当前真值源**冻结）。
-#: 「迁移链/bootstrap ↔ 真值源」的口径折算由
-#: `tests/unit_ci_workflows/test_production_catalog_seed.py::_as_truth_caliber` 承担。
-FABRIC_EXPECTED = ["配料", "打包"]
+#: 🔴 **issue #4952 口径改判**：字面量已从 `配料 → 打包`（V88 之前的旧口径）改为
+#: `裁剪 → 打包` —— 与 `V88__retire_material_prep_and_fabric_position.sql` ③ /
+#: `V89__backfill_fabric_seed_for_existing_tenants.sql` ③ / `docs/sql/schema.sql` /
+#: Java 开租播种 `ProductionSeedTemplateService.FABRIC_MAINLINE_STEPS` **四处同值**。
+#: ⇒ 三源收敛守卫不再需要「口径折算」（`_as_truth_caliber` 已随本单删除，改为逐字直比）。
+FABRIC_EXPECTED = ["裁剪", "打包"]
 
 # ── ③ 逻辑工序名映射（35 → 28）：7 组部位变体 + 去后缀/无后缀者 ──
 VARIANT_GROUPS = {
