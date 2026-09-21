@@ -17,7 +17,7 @@
 
 真值来源：docs/curtain-fabric-quote-rules.md（行业标准值 + 经验默认值）
 """
-# case_ids: PR-013, PR-024, OR-022, CH-036, CH-038
+# case_ids: PR-013, PR-024, OR-022, CH-036, CH-038, OR-041
 
 import math
 import re
@@ -38,6 +38,7 @@ from app.tools.curtain_calc import (
     margin_for_open_count,
     aggregate_by_fabric,
     build_quote,
+    ceil_to_step,
 )
 
 #: 仓根（tests/ → ai-agent-service/ → backend/ → 仓根），与既有测试同惯例
@@ -1192,3 +1193,180 @@ class TestMixedColorSurcharge:
         single = await tool.execute(context=sample_tool_context, **self.DOUBLE_6_6)
         assert "拼色加价" not in single.summary, "单色款的 summary 一字不得变"
         assert single.data["mixed_color_surcharge"] == 0.0
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 用料进位收敛到**唯一出口** + 展示米数与计费金额**同源**（issue #5084）
+#
+# 声明口径 = docs/curtain-fabric-quote-rules.md §8：
+#   「用料米数**一律向上进位到 0.1**（`ceil(x*10)/10`）—— 截断 / 四舍五入即违约；
+#     进位只在**总用料**上做一次」；配置键 = `meters_rounding_step`（商家可注入）。
+# 架构契约（`resolve_fabric_plan` 的 Returns 已如此声明）：
+#   「`meters`（**未进位** —— 进位由 `build_quote` 单点负责）」⇒ 唯一出口只能是 `build_quote`。
+#
+# 改前实测（基线 `origin/main`，红线证据）：
+#   `build_quote(window_width=2.13, window_height=2.4, craft='韩褶', fullness=1.8, fabric_price=100)`
+#   ⇒ `fabric_meters = 3.83`（3.834 被 `round(meters, 2)` **四舍五入**）、`fabric_cost = 383.4`
+#   ⇒ 展示米数 × 单价 = `3.83 × 100 = 383.0` ≠ 计费 `383.4` —— **同一份报价内部不自洽**；
+#   同族：`build_quote(3.0, 2.63, formula='fullness', fullness=2.0, fabric_width=2.8)` ⇒ `8.79`
+#   （声明应 `ceil(8.79, 0.1) = 8.8`）。
+#
+# 期望值全部**写死**（纸表 / 手算 / issue 正文红证），**不得**从实现推导（`X == X` 不会红）。
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestMetersRoundingSingleGate:
+    """进位必须在 `build_quote` 的**唯一出口**完成，且算价吃的是进位后的同一个变量。
+
+    每条断言都有能**单独**让它红的变异（注入式红证）：
+      · 去掉出口的 `ceil_to_step` ⇒ 米数断言红（3.83 ≠ 3.9 / 8.79 ≠ 8.8）；
+      · 把 `fabric_cost` 换回进位前的米数 ⇒ 明细自洽断言红（383.4 ≠ 3.90×100）；
+      · 出口把步长写死 0.1（不读 `cfg['meters_rounding_step']`）⇒ 自定义步长用例红。
+    """
+
+    #: (路径标签, `build_quote` 入参, 期望米数, 期望面料费) —— 四条**不同**的算料路径。
+    #: 期望值 = 手算/纸表：13.3 = 0.25×52+0.3（6.6 双开 standard ⇒ 52 折）、11.0 = 5.5×2.0（ERP 锚点
+    #: `CSO260915-02615`）、3.9 = ceil(2.13×1.8)、8.8 = ceil(3×(2.63+0.3))。
+    PATHS = (
+        ("褶数法（韩褶公式）",
+         dict(window_width=6.6, window_height=2.6, mounting="s_hook", fabric_width=3.2,
+              fabric_price=30.0, open_count=2, craft_tier="standard"),
+         13.3, 399.0),
+        ("褶倍数公式（倍数法）",
+         dict(window_width=5.5, window_height=2.5, mounting="s_hook", fabric_width=3.2,
+              fabric_price=30.0, open_count=2, craft_tier="standard", formula="fullness"),
+         11.0, 330.0),
+        ("倍数法回落（craft=韩褶 + 显式褶倍，无档位/无褶数）",
+         dict(window_width=2.13, window_height=2.4, craft="韩褶", fullness=1.8, fabric_price=100.0),
+         3.9, 390.0),
+        ("定宽买高（窗高 + 卷边超门幅）",
+         dict(window_width=3.0, window_height=2.63, formula="fullness", fullness=2.0,
+              fabric_width=2.8, fabric_price=100.0),
+         8.8, 880.0),
+    )
+
+    def test_fallback_path_rounds_up_and_costs_share_the_same_meters(self):
+        """issue 正文红证用例：craft=韩褶 + 显式褶倍 1.8 / 2.13m×2.4m ⇒ **3.9 米**（不是 3.83）。
+
+        `2.13 × 1.8 = 3.834` ⇒ 声明口径 `ceil(3.834, 0.1) = 3.9`；改前 `round(3.834, 2) = 3.83`
+        （四舍五入 = 违约），且算价用进位前的米数 ⇒ 展示 `3.83×100 = 383.0` ≠ 计费 `383.4`。
+        """
+        q = build_quote(
+            window_width=2.13, window_height=2.4, craft="韩褶", fullness=1.8, fabric_price=100.0)
+        assert q["formula_used"] == "fixed_height", "本用例走的是倍数法（定高买宽）回落支"
+        assert q["fabric_meters"] == 3.9, (
+            f"声明口径 ceil(2.13×1.8=3.834, 0.1) = 3.9，实际拿到 {q['fabric_meters']}"
+            " —— 四舍五入 / 不进位即违约"
+        )
+        assert q["fabric_cost"] == 390.0, (
+            f"面料费必须用**进位后**的米数（3.9 × 100 = 390.0），实际 {q['fabric_cost']}"
+        )
+        assert q["processing_cost"] == 39.0, "加工费（韩褶 10 元/米）同样吃进位后的米数"
+
+    def test_fixed_width_branch_rounds_up(self):
+        """同族红证②：定宽买高 `3 幅 × (2.63 + 0.3) = 8.79` ⇒ 进位 **8.8**（不是 8.79）。"""
+        q = build_quote(
+            window_width=3.0, window_height=2.63, formula="fullness", fullness=2.0,
+            fabric_width=2.8, fabric_price=100.0)
+        assert q["formula_used"] == "fixed_width_fullness"
+        assert q["panels"] == 3, "3 幅 × 2.93 米 ⇒ 8.79 米（幅数由 `ceil(6.0/2.8)` 决定）"
+        assert q["fabric_meters"] == 8.8, (
+            f"声明口径 ceil(8.79, 0.1) = 8.8，实际拿到 {q['fabric_meters']}"
+        )
+        assert q["fabric_cost"] == 880.0
+
+    def test_door_width_plan_path_is_also_covered_by_the_gate(self):
+        """第 4 条路径：门幅自动选择（`fabric_widths` ⇒ `resolve_fabric_plan`）的米数也过唯一出口。
+
+        `resolve_fabric_plan` 的契约明写「`meters` **未进位** —— 进位由 `build_quote` 单点负责」
+        ⇒ 该路径若不过出口，就是同一份报价里第二个不受约束的米数来源。
+        """
+        q = build_quote(
+            window_width=3.0, window_height=2.63, formula="fullness", fullness=2.0,
+            fabric_width=2.8, fabric_widths=[2.8], fabric_price=100.0)
+        assert q["fabric_meters"] == 8.8, (
+            f"门幅规则路径的米数必须与单一门幅路径**同值**，实际 {q['fabric_meters']}"
+        )
+        assert q["fabric_cost"] == 880.0
+
+    def test_configured_rounding_step_is_read_at_the_gate(self):
+        """出口必须读 `cfg['meters_rounding_step']`（商家可注入），**不得**写死 0.1。
+
+        步长 0.5 ⇒ `ceil(3.834 / 0.5) = 8 ⇒ 4.0 米`（写死 0.1 会得 3.9 ⇒ 商家口径失效）。
+        """
+        q = build_quote(
+            window_width=2.13, window_height=2.4, craft="韩褶", fullness=1.8, fabric_price=100.0,
+            config={"meters_rounding_step": 0.5})
+        assert q["fabric_meters"] == 4.0, (
+            f"自定义进位步长 0.5 ⇒ 4.0 米，实际 {q['fabric_meters']}（出口没读配置？）"
+        )
+        assert q["fabric_cost"] == 400.0
+
+    def test_all_paths_show_the_same_meters_as_they_bill(self):
+        """**跨路径一致性断言**：四条路径都满足 ①米数是 0.1 的整数倍；②「米数 × 单价 == 明细金额」。
+
+        ② 直接**从明细文案里**取展示米数与展示单价再乘 —— 复现商家对账动作：明细写
+        「3.83 米 × ¥100/米」而金额 383.4 就是本条要消灭的不自洽（基线实测红）。
+        """
+        for label, kwargs, expected_meters, expected_cost in self.PATHS:
+            q = build_quote(**kwargs)
+            assert q["fabric_meters"] == expected_meters, (
+                f"{label}：期望 {expected_meters} 米，实际 {q['fabric_meters']}"
+            )
+            assert q["fabric_meters"] == ceil_to_step(q["fabric_meters"], 0.1), (
+                f"{label}：{q['fabric_meters']} 米不是进位步长 0.1 的整数倍（没过分口？）"
+            )
+            assert q["fabric_cost"] == expected_cost, (
+                f"{label}：面料费 = 米数 × 单价 ⇒ {expected_cost}，实际 {q['fabric_cost']}"
+            )
+            fabric_row, processing_row = q["breakdown"][0], q["breakdown"][1]
+            assert (fabric_row["name"], processing_row["name"]) == ("面料", "加工费")
+            for row in (fabric_row, processing_row):
+                parsed = re.match(r"^(\d+\.\d{2})米 × ¥([\d.]+)/米$", row["detail"])
+                assert parsed, f"{label}：明细行格式变了：{row['detail']!r}"
+                shown_meters, shown_price = float(parsed.group(1)), float(parsed.group(2))
+                assert shown_meters == q["fabric_meters"], (
+                    f"{label}：明细写「{row['detail']}」而 `fabric_meters` = {q['fabric_meters']}"
+                    " —— 展示米数与计费米数不是同一个变量"
+                )
+                assert row["cost"] == round(shown_meters * shown_price, 2), (
+                    f"{label}：明细写「{row['detail']}」而金额是 {row['cost']}"
+                    f"（{shown_meters} × {shown_price} = {round(shown_meters * shown_price, 2)}）"
+                    " —— 同一份报价内部不自洽"
+                )
+
+    def test_mixed_color_surcharge_uses_the_same_rounded_meters(self):
+        """拼色加价（元/米 × 该款面料米数）必须与 `fabric_meters` **同源同一变量**。
+
+        issue 用例 + `style='拼色'`：`3.9 × 2.4 = 9.36` 元（改前会用进位前的 3.834 ⇒ 9.2 元）。
+        """
+        q = build_quote(
+            window_width=2.13, window_height=2.4, craft="韩褶", fullness=1.8, fabric_price=100.0,
+            style="拼色")
+        assert q["fabric_meters"] == 3.9
+        assert q["mixed_color_surcharge"] == 9.36, (
+            f"拼色加价必须 = fabric_meters × 单价，实际 {q['mixed_color_surcharge']}"
+        )
+        surcharge_row = next(r for r in q["breakdown"] if r["name"] == "拼色加价")
+        assert surcharge_row["cost"] == q["mixed_color_surcharge"]
+        assert surcharge_row["detail"] == (
+            f"{q['fabric_meters']:.2f}米 × ¥{curtain_calc_module.MIXED_COLOR_SURCHARGE_PER_METER}/米"
+        ), f"拼色明细行米数必须与 `fabric_meters` 同源，实际 {surcharge_row['detail']!r}"
+        assert q["total"] == round(
+            q["fabric_cost"] + q["processing_cost"] + q["accessory_cost"]
+            + q["install_cost"] + q["mixed_color_surcharge"], 2)
+
+    def test_roman_path_is_untouched_by_this_pack(self):
+        """本单**范围守卫**：罗马帘路径逐值不变（issue #5084 明确剔除罗马帘）。
+
+        用户已裁定罗马帘「无实际业务」⇒ 本单**只做**「进位规则收敛 + 展示/计费同源」，
+        **不得**顺手把罗马帘也纳入进位。值级锚点 = 改前实测 `(2+0.2)×(2+0.3) = 5.06` 米。
+        （残余口径缺口**如实登记**在 PR body：罗马帘仍不进位，如需收敛另开单。）
+        """
+        q = build_quote(
+            window_width=2.0, window_height=2.0, mounting="roman", fullness=1.0, fabric_price=100.0)
+        assert q["formula_used"] == "roman_panel"
+        assert q["fabric_meters"] == 5.06, (
+            f"罗马帘米数必须逐值不变（5.06），实际 {q['fabric_meters']} —— 越界改到被剔除的路径"
+        )
+        assert q["fabric_cost"] == 506.0
+        assert calculate_fabric_meters(2.0, 2.0, 1.0, 2.8, mounting="roman")[0] == 5.06

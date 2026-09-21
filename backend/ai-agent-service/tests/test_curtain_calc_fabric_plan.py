@@ -272,8 +272,11 @@ class TestBuildQuoteWiring:
         assert q["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH
         assert q["splice"] is False
         # 既有口径：3.05 > 2.8 ⇒ 倒幅 ceil(6.0 / 2.8) = 3 幅 × 3.05 米 = 9.15 米
-        # （issue #5030 只改分幅分子 6.6 → 6.0；幅数 3 与每幅长 3.05 都不变 ⇒ 米数**未变**）
-        assert q["fabric_meters"] == pytest.approx(9.15)
+        # （issue #5030 只改分幅分子 6.6 → 6.0；幅数 3 与每幅长 3.05 都不变）
+        # ⚠️ 米数锚点 **9.15 → 9.2**（issue #5084 改钉）：9.15 是**未进位**值，
+        #    声明口径（docs/curtain-fabric-quote-rules.md §8「一律向上进位到 0.1」）⇒ ceil(9.15, 0.1) = 9.2。
+        #    原断言 = 缺陷证据（进位规则只覆盖 2/5 路径）；本处只改期望值，幅数/门幅判定一字未动。
+        assert q["fabric_meters"] == pytest.approx(9.2)
 
 
 # ── 跨语言 golden 算例表（issue #5038）：引擎 `panels` == admin-web 副本逐值 ──
