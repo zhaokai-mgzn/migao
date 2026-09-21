@@ -66,6 +66,10 @@ S1（issue #4621 / `tests/unit_ci_workflows/test_operation_display_name_guard.py
 | ③b / ④ 锚点 | ③b 的豁免表为空 ⇒ 红；④ 的键名常量漂移 ⇒ 红 |
 | 全局阳性对照 | helper `operation-display.ts` 必须出现在 ① 的语料里（证明真扫到了我们关心的代码） |
 
+⚠️ **受管表的一次退役（issue #4964）**：洗水码纸面 `TaskCardPrint.tsx` 因**工序摘要退场**从
+`MANAGED_FACES` 转入 `EXEMPT_FACES`（理由与过期条件见该条）；S1 的 `FACES` 同批退役 ⇒ 双向漂移断言
+仍为空。**这不是放宽判据**：纸面一旦重新渲染工序名，本文件 `_direct_render_hits` 与 S1 的 C5 都会红。
+
 ⚠️ **④ 与「不重写 S1」的关系**（issue #4647）：④ 是**新增**判据，与 S1 的 `FACES` 无关；
 ② 的受管表新增了米宝会话卡 ⇒ 同步加进 S1 的 `FACES`（否则 `_s1_drift` 会红 —— 两处清单必须一致）。
 
@@ -158,7 +162,10 @@ MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
 #: 裸 `{operation}`）。这份清单必须覆盖 S1 的 `FACES`（防漂移断言见 C2d）。
 MANAGED_FACES: tuple[str, ...] = (
     "frontend/admin-web/src/components/production/ProductionProgressTable.tsx",
-    "frontend/admin-web/src/components/production/TaskCardPrint.tsx",
+    # 🔴 `TaskCardPrint.tsx`（洗水码纸面）**已退役**（issue #4964）：用户 2026-09-21 字段裁定把
+    # 「工序摘要」列为**退场项**（工人扫部位码后在 H5 看该部位工序清单，见 issue #4967）⇒ 纸面
+    # 一个工序名都不渲染 ⇒ 它不再是「工序名消费面」。S1 的 `FACES` 同步退役（两处清单仍双向一致）。
+    # 它**仍命中标记**（`ProductionPosition`）只是因为 props 要取部位/尺寸/码 ⇒ 落 `EXEMPT_FACES`。
     "frontend/admin-web/src/app/(dashboard)/production/piecework/page.tsx",
     "frontend/admin-web/src/components/production/PieceworkTable.tsx",
     # issue #4647 / D1：米宝会话里的**生产进度卡** —— 它渲染 `current_operation`（工人端快照名），
@@ -169,6 +176,16 @@ MANAGED_FACES: tuple[str, ...] = (
 
 #: **豁免面**（文件, 理由）—— 逐条登记；**过期即红**（只许缩短）。
 EXEMPT_FACES: tuple[tuple[str, str], ...] = (
+    (
+        "frontend/admin-web/src/components/production/TaskCardPrint.tsx",
+        "**洗水码纸面**（issue #4964 起**不再印工序**）：用户 2026-09-21 字段裁定把「工序摘要」列为"
+        "**退场项**（工人扫部位码后在 H5 看该部位工序清单，见 issue #4967）⇒ 纸面一个工序名都不渲染。"
+        "它仍命中标记（`ProductionPosition`）只是因为 props 要取**部位/尺寸/码**，与工序名无关。"
+        "⚠️ 因此它**从 `MANAGED_FACES` 退役**（S1 的 `FACES` 同步退役 ⇒ 两处清单仍双向一致）。"
+        "**过期即红**：一旦它又开始渲染工序名（`operationDisplayName` / 裸快照名 / 「工序」字样）⇒ "
+        "本文件的 `_direct_render_hits` 会命中，且 S1 守卫新增的 **C5** 也判红 —— 确要加回纸面，"
+        "必须**同时**把它加回本文件的 `MANAGED_FACES` 与 S1 的 `FACES`。",
+    ),
     (
         "frontend/admin-web/src/types/index.ts",
         "**类型契约声明**（`ProductionOperation` / `ProductionPosition` / `per_operation` 的 TS 类型）："
