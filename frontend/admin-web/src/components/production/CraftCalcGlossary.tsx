@@ -7,7 +7,8 @@
  * ## 三条实现纪律
  *
  * 1. **不写死任何数字**：参数值取自 `config`（页面草稿），算例由
- *    `buildAutoFeatureExamples(config)` 调 `detectAutoFeatures` 产出（与下单页同一份文案）。
+ *    `buildAutoFeatureExamples(config)` 调 `detectAutoFeatures` 产出（**与引擎判据同式**；
+ *    下单页的判定自 issue #4976 包 2b 起由**服务端**给，措辞逐字对齐 ⇒ 商家看到的文案不变）。
  * 2. **原生 `<details>`**：键盘可达、可打印、可被测试稳定断言（不引第三方折叠组件、不自绘开关）。
  * 3. **锚点由模块函数给**（`glossaryAnchorOf` / `glossaryTermAnchorOf`）：参数旁的「说明」链接与
  *    本区块的条目 id 同源，不会各写一份而对不上。

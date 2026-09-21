@@ -614,8 +614,9 @@ const MANUAL_ADD_REASON = '系统未推算，商家手动加'
 /**
  * 系统识别块的**展示行** —— 系统推算的（含被不采纳的）+ 商家强制加的。
  *
- * 单一真值：推算一律走 {@link autoFeaturesOf}（`lib/craft-auto-features.ts` 的
- * `detectAutoFeatures`）—— **本页不得出现第二份推导**。
+ * 单一真值：推算一律走 {@link autoFeaturesOf}（**服务端判定**，issue #4976 包 2b ——
+ * 用户裁定 B「判定移到服务端」）—— **本页不得出现第二份推导**
+ * （静态判据钉住：页面里不得再出现本地判特征调用 `detectAutoFeatures(…)`）。
  */
 function autoFeatureRowsOf(line: OrderLineItem): SystemAutoFeatureRow[] {
   const rejected = line.rejectedAutoFeatures ?? []
@@ -3432,7 +3433,7 @@ function LineItemBlock({
   /**
    * ① 尺寸行旁的**就地徽标**（issue #4658）—— 生效特征名 + （门幅走了默认值时的）提示。
    *
-   * 与 ②「系统识别」块**读同一份** `autoFeatures`（同一 `detectAutoFeatures` 推导 ⇒
+   * 与 ②「系统识别」块**读同一份** `autoFeatures`（同一**服务端判定**结果，issue #4976 包 2b ⇒
    * 严禁第二份推导实现）。被**不采纳**的不出现在徽标里（徽标 = 生效值）。
    */
   const sizeAutoBadges =
