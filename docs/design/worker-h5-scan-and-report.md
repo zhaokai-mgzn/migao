@@ -508,7 +508,7 @@ users (role='worker', permissions=[], worker_no=<工号>, password_hash=<PIN 的
 | ① | 解析 → `(set_id, order_item_id)` + 校验工序归属（防呆④） | — |
 | ② | **定工序**：显式 `operation_id` 则校验归属；否则 §3.2 推断 ⇒ 零道/多道 ⇒ **拒绝**（防呆⑤） | — |
 | ③ | 防呆：幂等 / 数量上限（**拒绝不 clamp**）/ 非本部位码 | ⚠️ **不校验前道**（#4694 裁定） |
-| ④ | **同事务**：insert `work_logs` → **写 `started_at` / `worker_id` / `worker_name`（领活时刻与领活人，issue #4967 转正）** → CAS 推进 `done_qty` + `done_at` → 必完全绿 ⇒ 加工单 `completed` → 首工序 ⇒ `in_processing` | **新增 `@Transactional` 的 `completeByScan(...)`**；**不改** 既有 `report`（它刻意不加 `@Transactional`）。🔴 `started_at` 用 `COALESCE` ⇒ 只有**第一次**领活落笔 |
+| ④ | **同事务**：insert `work_logs` → **写 `started_at` / `worker_id` / `worker_name`（领活时刻与领活人，issue #4967 转正）** → CAS 推进 `done_qty` + `done_at` → 全部活跃工序实例报满 ⇒ 加工单 `completed`（#4961 口径） → 首工序 ⇒ `in_processing` | **新增 `@Transactional` 的 `completeByScan(...)`**；**不改** 既有 `report`（它刻意不加 `@Transactional`）。🔴 `started_at` 用 `COALESCE` ⇒ 只有**第一次**领活落笔 |
 | ⑤ | 追加 `worker_report_audits`（§3.4，**同事务**） | 新表 |
 
 ### 5.3 防呆逐条（#4687 §5.3，**含本设计对 H5 的增量**）
