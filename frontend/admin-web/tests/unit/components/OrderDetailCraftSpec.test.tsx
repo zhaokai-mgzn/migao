@@ -111,7 +111,11 @@ describe('OrderDetail 商品明细展示工艺规格', () => {
     // 「是否定型」= 是（按行断言，避免与其它「是」歧义）
     expect(within(spec).getByText('是否定型').parentElement?.textContent).toContain('是')
     // 既有的销售信息（色号/方式/门幅）不受影响
-    expect(screen.getByText('米白')).toBeInTheDocument()
+    // ⚠️ 全页查询 `米白` 现在是**多处**匹配：商品明细表（本断言的对象）**与**报价单
+    // （issue #4965 的 `QuotationDoc` 纸面「货号 = productCode + colorName」也渲染它，
+    // 同 `ShipmentDoc` 渲染同一商品名那类碰撞）⇒ 用 `getAllByText` 断言「至少一处」，
+    // 不假定唯一（断言强度不变：本用例守的是销售信息**仍在**，不是它只出现一次）。
+    expect(screen.getAllByText('米白').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText(/门幅2\.8米/)).toBeInTheDocument()
   })
 
