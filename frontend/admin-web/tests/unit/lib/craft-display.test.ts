@@ -51,6 +51,8 @@ const quoteCraftSpec = {
   curtain_type: '纱帘',
   craft: '打孔',
   formula_used: 'fixed_width_pleats',
+  // 门幅（issue #5022）：`curtain_calc.build_quote` 回传的**数字**（米）—— 顾客要看到「系统按几米算的」
+  door_width: 3.2,
   open_count: 4,
   is_shaped: false,
   style: '单色',
@@ -289,5 +291,58 @@ describe('isCraftSpecKey / craftSpecLine', () => {
 
   it('纯文本行形如「工艺：韩褶」（复制/打印用）', () => {
     expect(craftSpecLine({ label: '工艺', value: '韩褶' })).toBe('工艺：韩褶')
+  })
+})
+
+describe('craftSpecRows — 门幅（issue #5022：C 端报价卡展示系统自动选中的门幅）', () => {
+  // 背景：issue #5013 让引擎在候选门幅集内自动选门幅，`curtain_calc.build_quote` 回传
+  // `door_width`（数字，米）；用户 2026-09-19 对算料透明度的裁定「C端也要能看到」（#4546）
+  // 同样适用于门幅 ⇒ 三端同源定义里补这一行（缺值 / 非法值一律不渲染，fail-closed）。
+  it('#5022 判据 1：算料输出形态 `door_width: 3.2`（数字，米）⇒ 渲染「门幅 / 3.2米」', () => {
+    expect(rowValue(craftSpecRows({ door_width: 3.2 }), '门幅')).toBe('3.2米')
+  })
+
+  it('#5022 判据 2：订单/快照形态 `doorWidth`（字符串）走**同一份解析** ⇒ 同样渲染', () => {
+    // 订单层落的是 SKU 的 `doorWidth` 原串（'2.8米' / '2.8' 两种存量形态都真实存在）
+    expect(rowValue(craftSpecRows({ doorWidth: '3.2米' }), '门幅')).toBe('3.2米')
+    expect(rowValue(craftSpecRows({ doorWidth: '3.2' }), '门幅')).toBe('3.2米')
+    // 两个别名都登记（camelCase 在前 = 既有别名约定）；订单侧直存中文串时优先于算料口径
+    expect(rowValue(craftSpecRows({ doorWidth: '2.8米', door_width: 3.2 }), '门幅')).toBe('2.8米')
+    // ⚠️ 残缺数（'3.2.1'）**不**退化成「取前缀 3.2」—— 宁可少一行，也不猜（fail-closed）
+    expect(rowValue(craftSpecRows({ doorWidth: '3.2.1' }), '门幅')).toBeUndefined()
+    expect(rowValue(craftSpecRows({ doorWidth: 'abc' }), '门幅')).toBeUndefined()
+  })
+
+  it('#5022 判据 3：缺值 / 非法值 ⇒ 该行**不渲染**（fail-closed，不补默认门幅）', () => {
+    for (const bad of [
+      undefined,
+      null,
+      '',
+      '   ',
+      'abc',
+      '3.2.1',
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      0,
+      -1,
+      {},
+      [],
+    ]) {
+      expect(craftSpecRows({ door_width: bad }).map((row) => row.label)).not.toContain('门幅')
+      expect(craftSpecRows({ doorWidth: bad }).map((row) => row.label)).not.toContain('门幅')
+    }
+    // 键缺席（存量单形态）⇒ 同样不出现
+    expect(craftSpecRows({ curtainType: '布帘' }).map((row) => row.label)).toEqual(['部位'])
+  })
+
+  it('#5022 判据 5：既有「加工类型」行不受影响（`formula_used` 映射逐字不变）', () => {
+    expect(rowValue(craftSpecRows({ formula_used: 'fixed_height_pleats' }), '加工类型')).toBe('定高买宽')
+    expect(rowValue(craftSpecRows({ formula_used: 'roman_panel' }), '加工类型')).toBe('定宽买高')
+    // 两行同载荷共存：门幅不吞掉加工类型，反之亦然
+    const rows = craftSpecRows({ formula_used: 'fixed_height', door_width: 2.8 })
+    expect(rows).toEqual([
+      { label: '加工类型', value: '定高买宽' },
+      { label: '门幅', value: '2.8米' },
+    ])
   })
 })

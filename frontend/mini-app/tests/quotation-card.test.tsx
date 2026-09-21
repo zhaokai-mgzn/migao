@@ -77,6 +77,8 @@ describe('QuotationCard — 报价单确认下单', () => {
     curtain_type: '布帘',
     craft: '韩褶',
     formula_used: 'fixed_height_pleats',
+    // 门幅（issue #5022）：`curtain_calc.build_quote` 回传的**数字**（米）—— 系统自动选中的门幅
+    door_width: 3.2,
     open_count: 2,
     is_shaped: true,
     style: '拼色',
@@ -161,6 +163,33 @@ describe('QuotationCard — 报价单确认下单', () => {
   it('旧载荷（无工艺键）时报价卡渲染与改动前一致（向后兼容）', () => {
     const { container } = render(<QuotationCard data={baseQuote} />)
     expect(screen.queryByText('工艺规格')).toBeNull()
+    expect(container.textContent).not.toMatch(/undefined|null|NaN/)
+  })
+
+  // ── issue #5022：C 端报价卡展示**系统自动选中的门幅**（#5013 引擎回传 `door_width`）─────
+
+  it('#5022 判据 1：渲染「门幅」行 —— 顾客看得到系统按几米算的（`door_width: 3.2`）', () => {
+    render(<QuotationCard data={{ ...baseQuote, ...craftSpec }} />)
+    expect(screen.getByText('门幅')).toBeTruthy()
+    expect(screen.getByText('3.2米')).toBeTruthy()
+  })
+
+  it('#5022 判据 3：缺值 / 非法值 ⇒ 门幅行不出现，且页面不出现 undefined/null/NaN', () => {
+    // 引擎口径是数字 ⇒ 卡片级测「数字非法值」与「缺键」；**字符串形态**（订单/快照层的 SKU 原串）
+    // 走同一份解析，判据在 `frontend/admin-web/tests/unit/lib/craft-display.test.ts` 判据 2。
+    const badValues: unknown[] = [null, '', 'abc', 0, -1, Number.NaN]
+    for (const bad of badValues) {
+      const { container, unmount } = render(
+        <QuotationCard data={{ ...baseQuote, ...craftSpec, door_width: bad as number }} />
+      )
+      expect(screen.queryByText('门幅')).toBeNull()
+      expect(container.textContent).not.toMatch(/undefined|null|NaN/)
+      unmount()
+    }
+    // 键缺席（存量单形态）⇒ 同样不出现
+    const { door_width: _omitted, ...withoutDoorWidth } = craftSpec
+    const { container } = render(<QuotationCard data={{ ...baseQuote, ...withoutDoorWidth }} />)
+    expect(screen.queryByText('门幅')).toBeNull()
     expect(container.textContent).not.toMatch(/undefined|null|NaN/)
   })
 })

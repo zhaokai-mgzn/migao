@@ -44,6 +44,12 @@ export interface QuoteData {
   pattern_repeat?: number | null
   processing_meters?: number | null
   /**
+   * 系统**自动选中**的门幅（米；issue #5013 引擎回传、issue #5022 展示）。
+   * 数字 = 算料输出口径（`curtain_calc.build_quote` 的 `door_width`）；
+   * 缺键 / `null` ⇒ 「门幅」行不渲染（**不补默认门幅** —— #4877 已删缺省门幅）。
+   */
+  door_width?: number | null
+  /**
    * 算料公式串（issue #4546，用户 2026-09-19 追加裁定「**C端也要能看到**」）：
    * 由算料引擎产出、**原样**来自 `curtain_calc` 输出；缺键/`null`/空串 ⇒ 该行不渲染。
    */
