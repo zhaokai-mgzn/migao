@@ -350,8 +350,14 @@ public class ProductionOperationQueryService {
      * <p>命中口径 = 模板的 {@code positions} 含该部位；**没有**部位专属模板 ⇒ 返回 {@code null}
      * （「兜底到默认模板」是**调用方**的策略，不是库的语义 —— 与旧 {@code findRouting} 同款分工）。</p>
      *
-     * <p>多命中时取 {@code (is_default DESC, id)} 第一条（读取侧已按此排序）：
-     * 默认模板优先、其余按 id 稳定 —— 派生必须确定，否则同一张单两次生成会得到不同工序序列。</p>
+     * <p>多命中时取 {@code (is_default DESC, created_at ASC, id ASC)} 第一条（读取侧已按此排序）：
+     * 默认模板优先 ⇒ **先建者优先** ⇒ id 稳定。派生必须确定，否则同一张单两次生成会得到不同工序序列。</p>
+     *
+     * <p>🔴 **issue #4563（P1·涉钱）**：第二键曾是 `id`。而新建路线的 id 是 UUID（十六进制字符
+     * **恒小于**种子 id 的 `rt-` 前缀）⇒ 商家新建一条 `positions` 含 `布料` 的路线就会**静默顶掉**
+     * V79 种子的「布料工序路线」；叠加适用性过滤（窗帘各道对 `布料` 标 `applicable=FALSE`，
+     * 只有 `配料`/`打包` 为 TRUE）⇒ **布料单只剩「打包」（丢「配料」）**，若新路线还是空壳
+     * ⇒ **零工序加工单**（工人扫不了码、且没有任何东西变红）。工序 = 计件工资的输入 ⇒ 属**涉钱**。</p>
      */
     public ProductionRouteTemplate routeTemplateFor(Long tenantId, String position) {
         if (position == null) {
@@ -745,7 +751,11 @@ public class ProductionOperationQueryService {
     // ══════════════════════════════════════════════════════════════════════════════
 
     /**
-     * 活跃路线模板（tenant + deleted=0 + status=active；默认优先、其余按 id 稳定）。
+     * 活跃路线模板（tenant + deleted=0 + status=active；**默认优先 → 先建者优先 → id 稳定**）。
+
+     * <p>⚠️ 排序**第三键不是装饰**（issue #4563）：`id` 是 UUID（`ASSIGN_UUID`）而种子 id 形如
+     * `rt-v79-01` ⇒ **UUID 的十六进制字符恒小于 `r`** ⇒ 只按 `id` 排会把**新建的**排在前面、
+     * 静默顶掉种子路线。用 `created_at` 作第二键 = 「**先建者优先**」，新建的**不会**顶掉既有。</p>
      *
      * <p>public 的理由（issue #4587 ③）：删工序的护栏要判「它还在不在某条**活跃主线**里」
      * —— 那条判据必须读**同一份**活跃口径（{@code deleted=0 AND status='active'}），
@@ -758,6 +768,11 @@ public class ProductionOperationQueryService {
                         .eq(ProductionRouteTemplate::getDeleted, 0)
                         .eq(ProductionRouteTemplate::getStatus, "active")
                         .orderByDesc(ProductionRouteTemplate::getIsDefault)
+                        // 🔴 issue #4563（P1·涉钱）：**先建者优先** —— 见 `routeTemplateFor` 的说明。
+                        // 缺了它，tie-break 只剩 `id ASC`，而新建路线的 id 是 UUID（十六进制字符
+                        // **恒小于**种子 `rt-…`）⇒ 任何新建的、`positions` 含同部位的路线都会
+                        // **静默顶掉**既有路线（布料单会丢「配料」，空壳路线更会出**零工序加工单**）。
+                        .orderByAsc(ProductionRouteTemplate::getCreatedAt)
                         .orderByAsc(ProductionRouteTemplate::getId));
         return rows == null ? List.of() : rows;
     }
