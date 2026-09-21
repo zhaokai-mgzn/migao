@@ -2501,7 +2501,7 @@ _CASE_FN_001 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['登记一笔线下收款，金额 88 元，微信支付', '确认'],
     expectations=['finance_api(action=create_transaction, type=income)'],
-    data_checks=['流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）', '登记失败时不得声称成功：must_succeed 读 tool_result.success 判红，output_verify 无成功调用即判红'],
+    data_checks=['流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）', '登记失败时不得声称成功：must_succeed 读 tool_result.success 判红，output_verify 无成功调用即判红', '前置：财务写面可用且本次登记可落库 —— 工具返回 success=true 即证前置成立（机器计分口径，同 must_succeed）'],
     skip_reason='',
     tags=['finance', 'query'],
     persona='',
@@ -2510,6 +2510,7 @@ _CASE_FN_001 = EvalCase(
     forbidden_card_text=[],
     must_succeed=[{'tool': 'finance_api'}],
     output_verify=[{'tool': 'finance_api', 'action': 'create_transaction', 'expect': {'transactionNo': '__nonempty__', 'type': 'income', 'amount': 88, 'status': 'success'}}],
+    namespaces=['finance_txn:88'],
 )
 
 # ── FN-002 [NORMAL] 收支汇总（源: cases/finance.yml）──

@@ -1756,6 +1756,7 @@
 期望: finance_api(action=create_transaction, type=income)
 数据: 流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）
 数据: 登记失败时不得声称成功：must_succeed 读 tool_result.success 判红，output_verify 无成功调用即判红
+数据: 前置：财务写面可用且本次登记可落库 —— 工具返回 success=true 即证前置成立（机器计分口径，同 must_succeed）
 必须成功: finance_api
 产出: finance_api(create_transaction) → transactionNo==__nonempty__; type==income; amount==88; status==success
 ```

@@ -320,7 +320,13 @@ NAMESPACE_EMPLOYEE_PREFIXES = ("employee_name:", "employee_phone:")
 #:   ⚠️ 真值锚点若将来扩到分类面（`extract_seed_catalog` 收 categories），本条应**改判**进
 #:      `NAMESPACE_PREFIXES_JUDGED` 并补对应断言 —— 本常量就是那笔账的登记处。
 NAMESPACE_CATEGORY_PREFIXES = ("category:",)
-NAMESPACE_PREFIXES_OUT_OF_SCOPE = NAMESPACE_EMPLOYEE_PREFIXES + NAMESPACE_CATEGORY_PREFIXES
+#: `finance_txn:`（issue #4967 的 burn-down 缴费给 `FN-001` 加的并行互斥键）—— **显式范围外**：
+#:   本判据的四类只覆盖 商品 / 加工项 / 色名 / 客户 ⇒ 财务流水域显式登记（**登记而非沉默**：
+#:   不加进任何一张表 ⇒ 本判据报红，见 `TestNoSilentSkip`）。
+NAMESPACE_FINANCE_PREFIXES = ("finance_txn:",)
+NAMESPACE_PREFIXES_OUT_OF_SCOPE = (
+    NAMESPACE_EMPLOYEE_PREFIXES + NAMESPACE_CATEGORY_PREFIXES + NAMESPACE_FINANCE_PREFIXES
+)
 NAMESPACE_PREFIXES_JUDGED = ("product_name:", "customer_phone:")
 #: 分类面清单（判 / 显式范围外）—— 出现**不在两张表里**的新形态 ⇒ `TestNoSilentSkip` 报红，
 #: 不许悄悄落入盲区（盲区长得像通过，R5 禁的正是这种静默失效）
