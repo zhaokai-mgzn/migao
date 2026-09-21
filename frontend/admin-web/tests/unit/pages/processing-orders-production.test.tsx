@@ -18,6 +18,9 @@
 // `positions` 给任务卡（每部位一张 60×30mm，码 = 该部位自己的 `scan_url`/`part_token`），
 // 且「生成二维码（测试用）」弹层**逐张**出码（N 个部位 ⇒ N 张，各带人可读短码 + 复制短码），
 // 不再是「一张单号码」。撤销语义（`qr_token` 为空 ⇒ 占位文案）逐字保留。
+// PP-011（issue #4960 第 3 条 / #4961，2026-09-21）：① 实例显示名 `逻辑名 · 部位` 的**口径唯一性**
+// —— 本页「卡在哪」原先手拼了一份，与同页进度表两套口径 ⇒ 改判为同走 `operationDisplayName`
+// （正/负态各一条：`精裁 · 布帘` / 部位无关只显示逻辑名）；② 工序进度表那枚「必完」badge 退场。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -29,6 +32,9 @@ const mockInstantiate = vi.fn()
 const mockRecordPrint = vi.fn()
 const mockRevokeQrToken = vi.fn()
 const mockRepriceUnpricedInstances = vi.fn()
+// issue #4949 起「卡在哪」（`StuckPointsReport`）也走替身：缺省给空报表，
+// 单条用例可覆盖出「卡点行」—— 那是**实例显示口径**（`逻辑名 · 部位`）的第三个消费面。
+const mockGetStuckPoints = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   processingOrderApi: {
@@ -43,20 +49,8 @@ vi.mock('@/lib/api', () => ({
     repriceUnpricedInstances: (...args: unknown[]) => mockRepriceUnpricedInstances(...args),
     // issue #4949：本 mock 此前**缺** `getStuckPoints` ⇒ 页面调用时抛 TypeError 被 try/catch 吞掉
     // （测试仍 PASS，但 stderr 一直有噪音，且「卡在哪」面板恒走错误分支 —— 假覆盖）。
-    // 补齐为**成功**值，让页面走真实渲染路径。
-    getStuckPoints: () =>
-      Promise.resolve({
-        data: {
-          data: {
-            mode: 'A',
-            threshold_hours: 4,
-            threshold_source: 'default',
-            states: { not_started: 0, in_progress: 0, completed: 0 },
-            stuck_total: 0,
-            stuck: [],
-          },
-        },
-      }),
+    // ⇒ 恒给**成功**值（缺省 = 空报表，见 `beforeEach`），让页面走真实渲染路径。
+    getStuckPoints: (...args: unknown[]) => mockGetStuckPoints(...args),
   },
 }))
 
@@ -172,6 +166,17 @@ describe('加工单生产明细页', () => {
     mockRepriceUnpricedInstances.mockReset().mockResolvedValue(
       ok({ filled: 1, already_priced: 1, still_unpriced: 0, batch_id: 'batch-1' }),
     )
+    // 「卡在哪」缺省 = 空报表（issue #4949：不抛错、走真实渲染路径）
+    mockGetStuckPoints.mockReset().mockResolvedValue(
+      ok({
+        mode: 'A',
+        threshold_hours: 4,
+        threshold_source: 'default',
+        states: { not_started: 0, in_progress: 0, completed: 0 },
+        stuck_total: 0,
+        stuck: [],
+      }),
+    )
   })
 
   it('渲染头部信息：加工单号/订单号/状态/交期 + 进度百分比', async () => {
@@ -188,15 +193,83 @@ describe('加工单生产明细页', () => {
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
   })
 
-  it('用加工单上的 orderId 拉工序与计件，并渲染工序表/必完标记/计件合计', async () => {
+  it('用加工单上的 orderId 拉工序与计件，并渲染工序表 + 计件合计（「必完」badge 已退场，issue #4961）', async () => {
     render(<ProductionDetailPage />)
 
     await waitFor(() => expect(screen.getByTestId('operation-row-op-1')).toBeInTheDocument())
 
     expect(mockGetOrderOperations).toHaveBeenCalledWith('order-uuid-1')
     expect(mockGetPiecework).toHaveBeenCalledWith('order-uuid-1')
-    expect(within(screen.getByTestId('operation-row-op-2')).getByText('必完')).toBeInTheDocument()
+    // ⚠️ issue #4961 改判（本行原断言 `operation-row-op-2` 里有「必完」badge，夹具 op-2 的
+    // `is_must_finish: true` 就是它的红证）：完工口径改为「全部工序实例全绿」后这枚 badge 退场
+    // ⇒ 判据换成**反向断言**；删的是门槛标记，**不是**这一行 —— 工序显示名与计件合计照旧。
+    expect(screen.queryByText('必完')).toBeNull()
+    expect(within(screen.getByTestId('operation-row-op-2')).getByText('外帘装袋')).toBeInTheDocument()
     expect(screen.getByTestId('piecework-total')).toHaveTextContent('¥17.00')
+  })
+
+  // ── 实例显示口径（issue #4960 第 3 条核查）：`逻辑名 · 部位` 全站**只有一份**拼装 ──
+  // 「卡在哪」这一行此前在本页**手拼**了 `${logical_name} · ${position}`，与同页进度表
+  // （`ProductionProgressTable` → `operationDisplayName`）**两套口径** ⇒ 现在两处都走同一份。
+  // ⚠️ 夹具**刻意造出两套实现会分歧的输入**（否则这条判据是空断言）：
+  //   ③ 键值带空白（helper 冻结口径会 trim）④ 缺 `logical_name`（helper 不发明名字）。
+  it('「卡在哪」的工序名走唯一口径（`逻辑名 · 部位`）：有部位 ⇒ `精裁 · 布帘`；部位无关 ⇒ 只显示逻辑名、不拼空部位', async () => {
+    mockGetStuckPoints.mockResolvedValue(
+      ok({
+        mode: 'A',
+        threshold_hours: 4,
+        threshold_source: 'default',
+        states: { not_started: 4, in_progress: 0, completed: 0 },
+        stuck_total: 4,
+        stuck: [
+          // ① 正：有部位 ⇒ `逻辑名 · 部位`
+          {
+            set_id: 'set-1',
+            set_no: 'JG-20260917-0001-001',
+            operation: { operation_id: 'op-1', logical_name: '精裁', position: '布帘', seq: 1 },
+            stalled_hours: 5.5,
+          },
+          // ② 负：部位无关工序（`position` 为 null）⇒ 只显示逻辑名，**不拼空部位**
+          {
+            set_id: 'set-2',
+            set_no: 'JG-20260917-0001-002',
+            operation: { operation_id: 'op-9', logical_name: '外帘装袋', position: null, seq: 9 },
+            stalled_hours: 7,
+          },
+          // ③ 红证：键值带空白 ⇒ helper 的冻结口径会 trim（改前的手拼形态渲染成 ` 韩褶  ·  纱帘 `）
+          {
+            set_id: 'set-3',
+            set_no: 'JG-20260917-0001-003',
+            operation: { operation_id: 'op-3', logical_name: ' 韩褶 ', position: ' 纱帘 ', seq: 3 },
+            stalled_hours: 2,
+          },
+          // ④ 红证：缺 `logical_name`（老数据 / 自建工序）⇒ **不发明名字**，落既有空态符 `—`
+          //    （改前的手拼形态按 `position` 有值走前半支 ⇒ 渲染成 ` · 布帘`，名是空的）
+          {
+            set_id: 'set-4',
+            set_no: 'JG-20260917-0001-004',
+            operation: { operation_id: 'op-4', logical_name: null, position: '布帘', seq: 4 },
+            stalled_hours: 3,
+          },
+        ],
+      }),
+    )
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getAllByTestId('production-stuck-points-row')).toHaveLength(4))
+    const rows = screen.getAllByTestId('production-stuck-points-row')
+
+    // ① 正：逐字 `精裁 · 布帘`（分隔符两侧各一个空格 —— 与 helper 的冻结口径一致）
+    expect(rows[0]).toHaveTextContent('精裁 · 布帘')
+    // ② 负：只显示逻辑名；**不得**出现空部位拖尾（`外帘装袋 ·`）或空态符（`—`）
+    expect(rows[1]).toHaveTextContent('外帘装袋')
+    expect(rows[1]).not.toHaveTextContent('外帘装袋 ·')
+    expect(rows[1]).not.toHaveTextContent('—')
+    // ③ 红证：空白被 trim 掉（手拼形态在这里判红）
+    expect(rows[2]).toHaveTextContent('韩褶 · 纱帘')
+    // ④ 红证：读面没给逻辑名 ⇒ 落空态符，**不得**把「部位」冒充成工序名
+    expect(rows[3]).toHaveTextContent('—')
+    expect(rows[3]).not.toHaveTextContent('· 布帘')
   })
 
   // ── 套口径（issue #4686，用户裁定 2026-09-20「一樘窗 = 一套」）──

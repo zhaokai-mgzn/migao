@@ -13,6 +13,10 @@ import { processingOrderApi, productionApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
 import { useRouteId } from '@/lib/use-route-id'
 import { routeSourceNotice } from '@/lib/route-source'
+// 工序显示名的**唯一**口径（`逻辑名 · 部位`）：本页此前在「卡在哪」那一行为手拼了一份，
+// 与同页进度表（`ProductionProgressTable` → 同一份 helper）**两套口径**
+// ⇒ `logical_name` 缺失时会渲染成 ` · 布帘` 或 `—`，而进度表渲染的是快照名原文。
+import { operationDisplayName } from '@/lib/operation-display'
 import ProductionProgressTable from '@/components/production/ProductionProgressTable'
 import PieceworkTable from '@/components/production/PieceworkTable'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
@@ -541,27 +545,30 @@ export default function ProcessingOrderProductionPage() {
                   </p>
                 ) : (
                   <ul className="space-y-2">
-                    {(stuckPoints?.stuck ?? []).map((row) => (
-                      <li
-                        key={`${row.set_id ?? ''}-${row.operation?.operation_id ?? ''}`}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded border border-neutral-200 px-3 py-2 text-sm"
-                        data-testid="production-stuck-points-row"
-                      >
-                        <span className="text-neutral-900">
-                          <span className="font-medium">{row.set_no ?? row.processing_order_id ?? '—'}</span>
-                          <span className="mx-1 text-neutral-400">·</span>
-                          {row.operation?.position
-                            ? `${row.operation?.logical_name ?? ''} · ${row.operation.position}`
-                            : (row.operation?.logical_name ?? '—')}
-                        </span>
-                        <span className="text-red-600">
-                          等了 {(row.stalled_hours ?? 0).toFixed(1)} 小时
-                          {row.predecessor?.done_at
-                            ? `（上道 ${formatFullDateTime(row.predecessor.done_at)} 完成）`
-                            : ''}
-                        </span>
-                      </li>
-                    ))}
+                    {(stuckPoints?.stuck ?? []).map((row) => {
+                      // 显示名走**唯一**口径 `operationDisplayName`（不在这里再拼一份）；
+                      // 两个键都缺时退回既有空态符 `—`（不编占位工序名）。
+                      const op = row.operation
+                      return (
+                        <li
+                          key={`${row.set_id ?? ''}-${op?.operation_id ?? ''}`}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded border border-neutral-200 px-3 py-2 text-sm"
+                          data-testid="production-stuck-points-row"
+                        >
+                          <span className="text-neutral-900">
+                            <span className="font-medium">{row.set_no ?? row.processing_order_id ?? '—'}</span>
+                            <span className="mx-1 text-neutral-400">·</span>
+                            {operationDisplayName(op) || '—'}
+                          </span>
+                          <span className="text-red-600">
+                            等了 {(row.stalled_hours ?? 0).toFixed(1)} 小时
+                            {row.predecessor?.done_at
+                              ? `（上道 ${formatFullDateTime(row.predecessor.done_at)} 完成）`
+                              : ''}
+                          </span>
+                        </li>
+                      )
+                    })}
                   </ul>
                 )}
               </>

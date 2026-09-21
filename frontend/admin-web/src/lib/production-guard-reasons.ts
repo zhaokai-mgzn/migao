@@ -45,7 +45,15 @@ function fallbackMessage(error: unknown): string | null {
 
 /**
  * 工艺路线护栏理由 → 逐条可读文案（issue #4308 的护栏清单：空序列 / 工序不存在 / 重复 /
- * 缺必完工序 / 权限）。识别不了的原样透出 —— **绝不吞掉后端理由**（吞掉就等于回到「只弹保存失败」）。
+ * **缺必完工序** / 权限）。识别不了的原样透出 —— **绝不吞掉后端理由**（吞掉就等于回到「只弹保存失败」）。
+ *
+ * 🔴 **`/必完/` 分支必须保留**（issue #4961 的 WIP 曾删掉它，理由「后端已移除那条护栏」**经核查不成立**）：
+ * 后端**仍在** `backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java`
+ * 里对 `PUT /routings/{id}` 判「主线中至少要有 1 道必完工序」并返回 422（护栏单测
+ * `ProductionRoutingCommandServiceTest` 的「护栏 4：至少一道必完工序」仍在跑）⇒ 商家**一定会**
+ * 收到一条含「必完」的理由，本分支不是死代码。`.github/cases/processing.yml` 也把
+ * 「分别带可读归因（工序不存在 / 工序重复 / **缺少必完工序**）」写成判据。
+ * **死亡条件（届时才可删）**：后端护栏 4 与本文件同时被判据移除（后端语义一动，删它的 PR 顺带删这里）。
  */
 export function describeRoutingGuard(raw: string): string {
   const s = merchantWording(raw).trim()

@@ -1,7 +1,9 @@
 // case_ids: PP-011
 // PP-011（issue #4000，M4-H 按需单据渲染）：加工单生产明细 —— 工序进度表按部位分组渲染、
-// 必完工序标记（is_must_finish）、状态（待做/已完成）与空态。
-// 真值源：docs/curtain-production-rules.md §2 工序库（必完工序=打包前置）/ §5 扫码报工闭环。
+// 状态（待做/已完成）与空态。
+// ⚠️ 原「必完工序标记（is_must_finish）」已随 issue #4961 退场（完工口径 = 全部工序实例全绿）
+// ⇒ 本文件的夹具不再带该键，判据换成反向断言（见 #4961-⑤）。
+// 真值源：docs/curtain-production-rules.md §2 工序库 / §5 扫码报工闭环。
 import { describe, expect, it } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import ProductionProgressTable from '@/components/production/ProductionProgressTable'
@@ -24,7 +26,6 @@ const positions: ProductionPosition[] = [
         unit: '套',
         qty: 2,
         unit_price: 8.5,
-        is_must_finish: false,
         is_start_marker: true,
         status: 'done',
         done_qty: 2,
@@ -39,7 +40,6 @@ const positions: ProductionPosition[] = [
         unit: '件',
         qty: 2,
         unit_price: 3,
-        is_must_finish: true,
         is_start_marker: false,
         status: 'pending',
         done_qty: 0,
@@ -59,7 +59,6 @@ const positions: ProductionPosition[] = [
         unit: '折',
         qty: 24,
         unit_price: 1.2,
-        is_must_finish: false,
         status: 'pending',
         done_qty: 0,
       },
@@ -140,13 +139,14 @@ describe('ProductionProgressTable', () => {
     expect(within(screen.getByTestId('operation-row-legacy-1')).getByText('定型-布')).toBeInTheDocument()
   })
 
-  it('必完工序（is_must_finish）加「必完」标记，非必完工序不加', () => {
+  it('#4961-⑤ 「必完」badge 整体退场（口径改为「全部工序实例全绿」）', () => {
     render(<ProductionProgressTable positions={positions} />)
 
-    const badges = screen.getAllByText('必完')
-    expect(badges).toHaveLength(1)
-    expect(within(screen.getByTestId('operation-row-op-2')).getByText('必完')).toBeInTheDocument()
-    expect(within(screen.getByTestId('operation-row-op-1')).queryByText('必完')).toBeNull()
+    // 改前：op-2 的 `is_must_finish` 为 true ⇒ 进度表里恰好有 1 枚「必完」badge
+    expect(screen.queryByText('必完')).toBeNull()
+    // 工序显示名与状态列**不受影响**（删的是门槛标记，不是这一行）
+    expect(within(screen.getByTestId('operation-row-op-2')).getByText('外帘装袋')).toBeInTheDocument()
+    expect(within(screen.getByTestId('operation-row-op-2')).getByTestId('op-status')).toHaveTextContent('待做')
   })
 
   it('状态列区分「待做 / 已完成」（未报工的工序显示待做）', () => {

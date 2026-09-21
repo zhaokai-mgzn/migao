@@ -63,6 +63,17 @@ describe('探针：真实后端信封（路线页口径）', () => {
     expect(describeRoutingGuard('别的理由')).toBe('别的理由')
     expect(describeRoutingGuard('')).toBe('保存失败')
   })
+
+  it('#4961-⑥（**改判**）必完分支**保留**：后端护栏 4 仍在 ⇒ 该前缀不是死分支', () => {
+    // 🔴 WIP 原判据是「不再套前缀」，其理由是「后端已移除那条护栏」—— 经核查**不成立**：
+    // `backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java`
+    // 仍对 `PUT /routings/{id}` 判「主线中至少要有 1 道必完工序」并返回 422
+    // （`ProductionRoutingCommandServiceTest` 的「护栏 4」仍在跑）⇒ 前缀必须保留，且**原文逐字不吞**。
+    const raw = '主线中至少要有 1 道必完工序：必完工序全绿是加工单完工判定的唯一依据，一道都没有 ⇒ 这张单永远完不了工'
+    const got = describeRoutingGuard(raw)
+    expect(got).toBe(`缺少必完工序：${raw}`)
+    expect(got).toContain(raw)
+  })
 })
 
 describe('加工费页口径（feeGuardReasons）', () => {
