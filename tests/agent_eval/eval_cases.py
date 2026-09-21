@@ -1803,7 +1803,8 @@ _CASE_CU_004 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'customer_manage'}],
-    namespaces=['customer_phone:13800138000'],
+    pre_clean=[{'type': 'customer_profile_restore', 'customer_keyword': '13800138000', 'phone': '13800138000'}],
+    post_clean=[{'type': 'customer_profile_restore', 'customer_keyword': '13900001111', 'phone': '13800138000'}],
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
@@ -2351,6 +2352,9 @@ _CASE_DF_015 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'order_create'}],
+    namespaces=['customer_phone:13800138000'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
 # ── DF-016 [ADVERSARIAL] JWT 签名算法一致性 - admin-api 静默 HS256 降级导致米宝新建会话 TOKEN_INVALID（源: cases/defense.yml）──
@@ -3483,7 +3487,8 @@ _CASE_OR_007 = EvalCase(
     forbidden_card_text=[],
     required_args=[{'tool': 'order_manage', 'fields': ['order_id']}],
     must_succeed=[{'tool': 'order_manage'}],
-    namespaces=['customer_phone:13800138000'],
+    pre_clean=[{'type': 'order_status_restore', 'order_no': 'EVAL-MB-ORD-0002', 'status': 'confirmed'}],
+    post_clean=[{'type': 'order_status_restore', 'order_no': 'EVAL-MB-ORD-0002', 'status': 'confirmed'}],
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 

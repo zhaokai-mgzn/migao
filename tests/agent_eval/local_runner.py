@@ -365,6 +365,26 @@ UPDATE orders
 RETURNING id
 """
 
+# ── 订单状态复位（issue #4992）：参数化的**幂等**版（上一条是 PG-013 专用的写死形态）──
+# 与 `_RESTORE_ORDER_STATUS_SQL` 的差别只有「目标状态是参数」这一处，其余（按 `order_no`
+# 精确匹配 + `RETURNING id` 判命中）**逐字对齐** —— 不复制第二套定位口径（§18 单一真相源）。
+# ⚠️ 为什么走 DB 直连而不是 admin-api 的**订单状态端点**：`OrderService.STATUS_TRANSITIONS`
+#   把 `cancelled` / `completed` 设为**终态**（`cancelled → Set.of()`）⇒ 用例首跑取消掉的订单
+#   在 HTTP 面上**没有**反向放行（这正是 OR-007 只能登记 `namespaces` 弱证据的原因）。
+#   复位与 `scripts/eval_stack_seed.sh` 走**同一条 DB**（同 `_reset_processing_order` 的先例）。
+_ORDER_STATUS_RESTORE_SQL = """
+UPDATE orders
+   SET status = $2, updated_at = NOW()
+ WHERE tenant_id = 1 AND order_no = $1
+RETURNING id
+"""
+
+# 订单状态机的**取值真值**（`OrderStatusUpdateRequest` 的 `@Pattern` 与
+# `OrderService.STATUS_TRANSITIONS` 的键集**逐字一致**）：复位值不在其中 = 配置错误，
+# 必须在写库**之前**就红（写进去一个状态机会拒绝的值 = 制造一个比原来更脏的夹具）。
+_ORDER_STATUS_VALUES = frozenset(
+    {"pending", "confirmed", "producing", "shipped", "completed", "cancelled"})
+
 
 async def _reset_processing_order(order_no: str) -> str:
     """把被点名的订单复位回 seed 初始态（`confirmed` + 无在途加工单）；返回人读消息。
@@ -442,6 +462,18 @@ _CLEAN_TYPES: dict[str, dict] = {
     #     —— 唯一例外是"目标当前值已等于复位值"（幂等成功，不是 no-op 空转）。
     "product_status_restore":    {"phases": ("pre", "post"), "attr": "status"},
     "sku_price_restore":         {"phases": ("pre", "post"), "attr": "sku_price"},
+    # ── 复位族第二批（issue #4992）：写方改的是**订单状态** / **客户档案字段** ──
+    # 为什么这两条此前只能登记 `namespaces` 弱证据（OR-007 / CU-004 的原注释）：
+    #   · OR-007 **取消**订单 ⇒ 重跑时那条订单已 `cancelled`（终态，状态机 `cancelled → Set.of()`
+    #     ⇒ HTTP 面无反向放行）⇒ 只能声明并行互斥；
+    #   · CU-004 把客户档案手机号 `13800138000 → 13900001111` ⇒ 夹具层没有「把档案改回来」的类型。
+    # 本批把两条都补成**真复位**（实现体见 `_restore_order_status` / `_restore_customer_profile`）。
+    # ⚠️ `attr` 留空是**有意**的：`attr` 是「商品夹具属性 ↔ 复位类型」的映射键
+    #   （`RESTORE_TYPES_BY_ATTR`，消费者 = `test_shared_fixture_write_restore.py` 的判据②），
+    #   订单/客户不是商品夹具 ⇒ 不参与那条判据（编一个 `order_status` 属性会让
+    #   `test_runner_restore_attrs_have_a_known_writer_surface` 判「无对应写方」而红）。
+    "order_status_restore":      {"phases": ("pre", "post"), "attr": ""},
+    "customer_profile_restore":  {"phases": ("pre", "post"), "attr": ""},
 }
 
 # 派生视图（**不要**再各写一份字面量：类型清单只在上面那张表里）
@@ -938,6 +970,164 @@ async def _restore_sku_price(token: str, spec: dict, phase: str) -> str:
     return f"已复位 {_who} 的 SKU 价 → {want}（回读一致）"
 
 
+async def _restore_order_status(token: str, spec: dict, phase: str) -> str:
+    """`order_status_restore`：把**被点名的订单**状态复位到给定值（issue #4992）。
+
+    为什么需要（OR-007 的病灶）：OR-007「把最近这笔订单取消掉」**取消**的是种子订单
+    `EVAL-MB-ORD-0002`（`fixtures/mibao_eval_seed.sql` 的插入值 = `confirmed`）——
+    首跑之后它成了**终态** `cancelled`，重跑的前置不再等价（`order_query` 仍能查到，
+    但"取消"这一步不再可成功）⇒ 用例只能登记 `namespaces` 并行互斥（**弱证据**，不解决重试前置）。
+    本动作把那一半补上：按 `order_no`（**不可变键**，§18.3）复位 `status`。
+
+    ⚠️ 走 DB 直连而不是 admin-api 的订单状态端点（HTTP 写面）的**唯一**原因：
+    `OrderService.STATUS_TRANSITIONS` 把 `cancelled` / `completed` 设为终态 ⇒ HTTP 面上
+    **没有**反向放行。口径与 `_reset_processing_order`（#3833）同一份：与 seed 走同一条 DB。
+    定位**只按 `order_no` 精确匹配**（禁子串/模糊）—— 误伤 `EVAL-MB-ORD-0003/0004` 等
+    共享种子的教训见 #3800（`product_remove` 连带误删）。
+
+    幂等：当前状态**已等于**复位值 ⇒ 成功返回，**不发** UPDATE（且回读一致）。
+    失败可见（fail-closed，走 `_clean_not_applied(phase, …)` 的稳定标记）：
+    缺 `order_no` / 缺 `status` / 状态值非法 / asyncpg 不可用 / DB 不可达 / 订单不在 / 回读不符。
+    ⚠️ 措辞红线（#3751）：**成功路径**的消息不得含「未复位」/「失败」——`_reset_for_retry`
+    据此判"重试前置与首次不等价"。
+    """
+    order_no = str(spec.get("order_no") or "").strip()
+    if not order_no:
+        return _clean_not_applied(phase, "`order_status_restore` 缺 `order_no`（无法定位目标订单）")
+    want = str(spec.get("status") or "").strip()
+    if not want:
+        return _clean_not_applied(phase, "`order_status_restore` 缺 `status`（无法确定复位目标值）")
+    if want not in _ORDER_STATUS_VALUES:
+        return _clean_not_applied(
+            phase, f"`order_status_restore` 的 `status`={want!r} 不是合法订单状态"
+                   f"（合法值：{sorted(_ORDER_STATUS_VALUES)}）")
+    try:
+        import asyncpg  # 延迟导入：本模块的**模块级**第三方依赖仍只有 httpx
+    except ImportError as e:
+        return _clean_not_applied(phase, f"订单 {order_no} 状态未复位（asyncpg 不可用: {e}）")
+    try:
+        conn = await asyncpg.connect(_eval_db_dsn(), timeout=8)
+        try:
+            row = await conn.fetchrow(
+                "SELECT status FROM orders WHERE tenant_id = 1 AND order_no = $1", order_no)
+            if row is None:
+                return _clean_not_applied(
+                    phase, f"库里没有订单 {order_no}（栈缺 seed？见 fixtures/mibao_eval_seed.sql）")
+            cur = str(row["status"] or "")
+            if cur == want:
+                return f"订单 {order_no} 状态本就是 {want}，无需复位（幂等）"
+            hit = await conn.fetchrow(_ORDER_STATUS_RESTORE_SQL, order_no, want)
+            if hit is None:
+                return _clean_not_applied(phase, f"订单 {order_no} 状态复位为 {want} 未命中任何行")
+            back = await conn.fetchrow(
+                "SELECT status FROM orders WHERE tenant_id = 1 AND order_no = $1", order_no)
+            got = str((back or {}).get("status") or "")
+            if got != want:
+                return _clean_not_applied(
+                    phase, f"订单 {order_no} 状态复位**未生效** —— 回读 {got or '(空)'}，应为 {want}")
+        finally:
+            await conn.close()
+    except Exception as e:
+        return _clean_not_applied(
+            phase, f"订单 {order_no} 状态未复位（DB 不可达/失败: {type(e).__name__}: {e}）")
+    return f"已复位订单 {order_no} 状态 → {want}（回读一致）"
+
+
+async def _find_customer_target(client, token: str, keyword: str) -> tuple:
+    """按手机号/客户 ID 定位复位目标客户 → `(item, 错误文案)`（二者必有一个为空）。
+
+    优先级：显式 `customer_id` > **手机号精确命中唯一**。0 件或多件 ⇒ 错误文案（fail-closed）。
+    为什么不做模糊兜底（同 `_find_restore_target` 的理由）：复位改的是**共享夹具**，
+    改错对象比不复位更糟（§18.3：定位被测对象必须用不可变标识；序号选择器 = HR-003 恒红的形态）。
+    """
+    kw = str(keyword or "").strip()
+    if not kw:
+        return None, "复位动作缺 `customer_keyword`（无法定位目标客户）"
+    r = await client.get(f"{ADMIN_API}/api/admin/customers", headers=_admin_headers(token),
+                         params={"keyword": kw, "page": 1, "size": 10}, timeout=15)
+    items = (_safe_json(r, {}) or {}).get("data", {}).get("items", []) or []
+    exact = [c for c in items
+             if str(c.get("id") or "") == kw or str(c.get("phone") or "").strip() == kw]
+    if len(exact) == 1:
+        return exact[0], ""
+    if not exact:
+        return None, f"客户「{kw}」不在库里（复位目标不存在）"
+    return None, (f"客户「{kw}」命中 {len(exact)} 位（复位目标不唯一）"
+                  f"—— 改用手机号或 `customer_id` 精确定位，不要对共享夹具瞎改")
+
+
+def _customer_profile_of(body: dict) -> dict:
+    """从详情响应里取**档案本体**（`data.profile`；扁平形态原样返回）。
+
+    `CustomerService.getCustomerDetail` 返回 `{id, profile, tags, orders, sessions}`
+    —— 复位要核对的是 `profile` 里的列（`phone` / `wechatNickname`），不是外层壳。
+    """
+    data = body.get("data") if isinstance(body, dict) else None
+    data = data if isinstance(data, dict) else {}
+    prof = data.get("profile")
+    return prof if isinstance(prof, dict) else data
+
+
+async def _restore_customer_profile(token: str, spec: dict, phase: str) -> str:
+    """`customer_profile_restore`：把**客户档案被写的字段**复位到给定值（issue #4992）。
+
+    为什么需要（CU-004 的病灶）：CU-004 把客户档案手机号 `13800138000 → 13900001111`
+    ⇒ 重跑的前置不再等价（第二轮按 `13800138000` 定位不到客户），而夹具层没有
+    「把客户档案改回来」的类型 ⇒ 用例只能登记 `namespaces` 并行互斥（**弱证据**）。
+    本动作按 `customer_keyword`（定位键，通常是**当前**手机号或 `customer_id`）定位，
+    把 `phone`（必填，缺 = 配置错误 ⇒ 必红）与可选 `name`（= `wechatNickname` 列，
+    与 `customer_manage.NAME_ALIAS_TO_CANONICAL` 同一份别名口径）复位。
+
+    幂等：当前值**已等于**复位值 ⇒ 成功返回，**不发** PUT。
+    失败可见（fail-closed）：缺 `customer_keyword` / 缺 `phone` / 目标不在 / 目标不唯一 /
+    HTTP ≥300 / **回读不符**（#3807：2xx ≠ 值已落地 ⇒ 没有回读校验时这一格是静默空转）。
+    ⚠️ 走 HTTP（`PUT /api/admin/customers/{id}`）而不是 DB：该端点的部分更新语义
+    （`CustomerService.updateCustomer` 只覆盖非空字段）正好是"把被写的字段写回原值"，
+    且**回读**能证明值真的落地 —— 不必为夹具复位再开一条 DB 写面。
+    """
+    kw = str(spec.get("customer_keyword") or spec.get("customer_id") or "").strip()
+    want_phone = str(spec.get("phone") or "").strip()
+    if not want_phone:
+        return _clean_not_applied(
+            phase, "`customer_profile_restore` 缺 `phone`（无法确定复位目标值）")
+    want_name = str(spec.get("name") or spec.get("wechat_nickname") or "").strip()
+    _who = f"客户「{kw}」"
+    async with httpx.AsyncClient() as c:
+        h = _admin_headers(token)
+        target, err = await _find_customer_target(c, token, kw)
+        if not target:
+            return _clean_not_applied(phase, err)
+        cid = str(target.get("id") or "")
+        prof = _customer_profile_of(_safe_json(
+            await c.get(f"{ADMIN_API}/api/admin/customers/{cid}", headers=h, timeout=15), {}) or {})
+        cur_phone = str(prof.get("phone") or "").strip()
+        cur_name = str(prof.get("wechatNickname") or "").strip()
+        need = {}
+        if cur_phone != want_phone:
+            need["phone"] = want_phone
+        if want_name and cur_name != want_name:
+            need["wechatNickname"] = want_name
+        if not need:
+            return f"{_who} 的档案字段本就是 {want_phone}，无需复位（幂等）"
+        r = await c.put(f"{ADMIN_API}/api/admin/customers/{cid}", headers=h,
+                        json=dict(need), timeout=15)
+        if getattr(r, "status_code", 0) >= 300:
+            return _clean_not_applied(
+                phase, f"{_who} 档案复位为 {need} 失败（HTTP {r.status_code}）")
+        got = _customer_profile_of(_safe_json(
+            await c.get(f"{ADMIN_API}/api/admin/customers/{cid}", headers=h, timeout=15), {}) or {})
+        got_phone = str(got.get("phone") or "").strip()
+        if got_phone != want_phone:
+            return _clean_not_applied(
+                phase, f"{_who} 档案手机号复位**未生效** —— 回读 {got_phone or '(空)'}，"
+                       f"应为 {want_phone}")
+        if want_name and str(got.get("wechatNickname") or "").strip() != want_name:
+            return _clean_not_applied(
+                phase, f"{_who} 档案姓名复位**未生效** —— 回读 "
+                       f"{str(got.get('wechatNickname') or '(空)')}，应为 {want_name}")
+    return f"已复位 {_who} 档案 → {sorted(need)}（回读一致）"
+
+
 def _match_sku_price(skus, color: str, method: str, width: str):
     """按色名/售卖方式/门幅在回读的 `skus[]` 里取值（纯函数；缺项 = 不限定）。
 
@@ -983,6 +1173,9 @@ async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
       （#3781：只用姓名会命中同名残留 → 目标不确定 → 用例恒红）。
     - product_status_restore / sku_price_restore: **复位族**（#4075）——把写方对共享夹具
       （种子商品）的改动复位；幂等 + 回读校验 + 失败可见（见各自 docstring）。
+    - order_status_restore / customer_profile_restore: **复位族第二批**（#4992）——把写方
+      对**订单状态** / **客户档案字段**的改动复位；幂等 + 回读校验 + 失败可见
+      （见各自 docstring；前者走 DB 直连，理由是订单状态机把终态设为不可逆）。
 
     ⚠️ 调用时机（issue #3751 / #4075）：`pre` 阶段只允许在**一次尝试开始之前**执行
     （`run_suite` 在首次尝试前与每次重试前调用；绝不在 `run_case`/`db_verify` 之后 ——
@@ -1151,6 +1344,13 @@ async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
     if _type == "sku_price_restore":
         # 复位族（#4075）：把 **SKU 价**复位（PR-021 的病灶面）。
         return await _restore_sku_price(token, spec, phase)
+    if _type == "order_status_restore":
+        # 复位族（#4992）：把**订单状态**复位（OR-007「取消订单」的病灶面 —— 首跑取消后
+        # 该订单进终态，重跑前置不等价）。走 DB 直连的理由见该函数 docstring。
+        return await _restore_order_status(token, spec, phase)
+    if _type == "customer_profile_restore":
+        # 复位族（#4992）：把**客户档案被写的字段**复位（CU-004「改手机号」的病灶面）。
+        return await _restore_customer_profile(token, spec, phase)
     # ── customer_tag_remove（登记表里的最后一个 ⇒ 落到这里即它；其余情况是
     #    "登记了但漏写实现体"，同样走配置错误，不许退回静默）──
     # 配置错误**不是**静默跳过（issue #3781）：旧行为 `（跳过）` 只被打印一行，

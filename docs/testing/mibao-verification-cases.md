@@ -1239,10 +1239,12 @@
 你: [🤖 按上一轮卡片作答]
 期望: customer_manage(action=update)
 数据: 仅 phone 被更新，未传字段保持原值
+清理: customer_profile_restore(customer_keyword=13800138000、phone=13800138000)
+复位: customer_profile_restore(customer_keyword=13900001111、phone=13800138000)
 必须成功: customer_manage
 ```
 真值: customer-list.partial-update
-溯源: verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）。2026-09-14 消除顺序依赖（issue #3568）：裸文本「第一个」→ 手机号唯一指代（重名澄清轮消失，干净栈/生产栈同判；连打三轮的澄清轮次表也随之消失） ｜ 2026-09-21（case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `namespaces[customer_phone:13800138000]`（弱证据，如实登记：夹具层无「把客户档案改回来」的复位动作）+ `precondition[order_count_for_phone: 13800138000]`（靶子存在性，结构化下界 `min:1`）+ `must_succeed[customer_manage]`（效果层）；`user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽 ｜ tags: update
+溯源: verification 4.4 独有；2026-09-09 校准：补「选第一个」+「确认」两轮——「张三」生产有 3 位重名，agent 正确发 choice 卡澄清（#3142 修 validate_input 空转后不再幻觉「不支持」），需用户点选+确认后 update；probe 实证完整流程走通（重名澄清→选第一个→确认→update 成功）。2026-09-14 消除顺序依赖（issue #3568）：裸文本「第一个」→ 手机号唯一指代（重名澄清轮消失，干净栈/生产栈同判；连打三轮的澄清轮次表也随之消失） ｜ 2026-09-21（case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `namespaces[customer_phone:13800138000]`（弱证据，如实登记：夹具层无「把客户档案改回来」的复位动作）+ `precondition[order_count_for_phone: 13800138000]`（靶子存在性，结构化下界 `min:1`）+ `must_succeed[customer_manage]`（效果层）；`user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽 ｜ 2026-09-21（issue #4992 的夹具层复位动作）：自清理由**弱证据** `namespaces` 升级为**真复位** `pre_clean` + `post_clean[customer_profile_restore]`（`pre` 按种子手机号 13800138000 定位、`post` 按本用例写出的 13900001111 定位并复位回种子号；实现见 `tests/agent_eval/local_runner.py` 的 `_restore_customer_profile`），`namespaces` 随之撤掉 —— `user_inputs` / `expectations` / `data_checks` / `skip_reason` / `precondition` / `must_succeed` 一字未动、断言强度不放宽 ｜ tags: update
 
 ### CU-005. 对抗性 - 模糊名称渐进澄清（老王→王建国→订单→发货） 🔴
 ```
@@ -1632,10 +1634,11 @@
 数据: 消息超过 max_recent=12 后触发压缩（原用例写 20 轮已校准）
 数据: 上下文包含历史摘要
 数据: 最后一步正确复用前几轮的 UUID
+必须成功: order_create
 跳过: 需要多轮对话，跑一遍耗时较长
 ```
 真值: ai-chat.compression
-溯源: eval L001 独有；压缩阈值按代码校准 20→12 ｜ tags: compression, long_conversation
+溯源: eval L001 独有；压缩阈值按代码校准 20→12 ｜ 2026-09-21（issue #4992 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（真前置 —— 按名定位下单对象，同名副本会让 agent 合理地要求澄清而报告只表现为「agent 不干活」）+ `must_succeed[order_create]`（效果层，「调用了 ≠ 成了」）+ `namespaces[customer_phone:13800138000]`（**弱证据**，如实登记：夹具层无「删掉本用例建的那笔订单」的复位动作）；`user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽 ｜ tags: compression, long_conversation
 
 ### DF-016. JWT 签名算法一致性 - admin-api 静默 HS256 降级导致米宝新建会话 TOKEN_INVALID 🔴
 ```
@@ -2366,11 +2369,13 @@
 数据: 取消前必须先定位到真实订单（order_query → order_manage 的 order_id 非空）
 数据: confirm 卡片先于写操作（destructive 约定，真值在 ai-chat.tool-classes）
 数据: 取消失败（订单状态不允许）也应如实说明，不得声称已取消
+清理: order_status_restore(order_no=EVAL-MB-ORD-0002、status=confirmed)
+复位: order_status_restore(order_no=EVAL-MB-ORD-0002、status=confirmed)
 必填: order_manage() 字段 order_id
 必须成功: order_manage
 ```
 真值: order.states, order.flow, order.pay-side-effects, order.cancel-side-effects, order.refund-side-effects, order.no-format
-溯源: eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号，改「先定位再取消」+ order_before/required_args 守住解析契约；2026-09-21（issue #4966 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `namespaces`（弱证据，如实登记：夹具层无订单复位动作）+ `precondition[order_count_for_phone: 13800138000]`（靶子存在性）+ `must_succeed[order_manage]`（效果层，「调用了 ≠ 成了」）—— `user_inputs` / `expectations` / `required_args` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽 ｜ tags: id_resolve, adversarial, destructive
+溯源: eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号，改「先定位再取消」+ order_before/required_args 守住解析契约；2026-09-21（issue #4966 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `namespaces`（弱证据，如实登记：夹具层无订单复位动作）+ `precondition[order_count_for_phone: 13800138000]`（靶子存在性）+ `must_succeed[order_manage]`（效果层，「调用了 ≠ 成了」）—— `user_inputs` / `expectations` / `required_args` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽 ｜ 2026-09-21（issue #4992 的夹具层复位动作）：自清理由**弱证据** `namespaces` 升级为**真复位** `pre_clean` + `post_clean[order_status_restore(EVAL-MB-ORD-0002 → confirmed)]`（按不可变键 `order_no` 复位；实现见 `tests/agent_eval/local_runner.py` 的 `_restore_order_status`），`namespaces` 随之撤掉 —— `user_inputs` / `expectations` / `required_args` / `data_checks` / `skip_reason` / `precondition` / `must_succeed` 一字未动、断言强度不放宽 ｜ tags: id_resolve, adversarial, destructive
 
 ### OR-008. 创建订单 - 先查商品 SKU 再下单 🔵
 ```
