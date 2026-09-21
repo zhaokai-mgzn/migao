@@ -1672,12 +1672,31 @@ _CASE_CH_042 = EvalCase(
     user_inputs=['我家窗户 3 米宽 2.75 米高，帮我算下要多少布多少钱'],
     expectations=['direct_reply'],
     data_checks=['候选门幅 {2.8, 3.2} + 成品高 2.75 ⇒ 定高买宽取**最小可行门幅 3.2**（2.8 会判需接高）', '所有候选都不可行 ⇒ **倒幅**（分幅最少），**不自动选接高**（即使接高米数更省）', '人工覆盖选接高 ⇒ 按口径 A 算料：M = T + ceil(k / floor(g_eff/d_eff)) × Wp', '对花时每条加高条 +1 个花距（与倒幅「每幅 +1 花距」同口径）', '自动结果可人工覆盖，覆盖后按所选口径算料并给出对比'],
-    skip_reason='[backend-contract] 门幅/加工类型自动选择是确定性纯计算（curtain_calc 的 resolve_fabric_plan），由单元测试全量覆盖（test_curtain_calc_fabric_plan.py），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）',
+    skip_reason='[backend-contract] 本条**只**登记「候选集内怎么选门幅 / 怎么自动定加工类型」这一层**确定性纯计算**（curtain_calc 的 resolve_fabric_plan），由单元测试全量覆盖（test_curtain_calc_fabric_plan.py）⇒ 不进 agent-eval 冒烟（同 CH-036 惯例）。⚠️ 它**不覆盖**「模型会不会把 product_detail 的 SKU 门幅**去重**成候选集、填进 curtain_calc 的 fabric_widths」——那是**纯 LLM 行为**（确定性单测测不到，issue #5039），由 **CH-043** 覆盖（计分断言 = curtain_calc(fabric_widths=[2.8, 3.2])）。两条判据面不同、互不替代：本条管『给了候选集之后引擎算得对不对』，CH-043 管『模型给不给候选集』。',
     tags=['xiaobu', 'quote', 'curtain-calc', 'door-width'],
     persona='xiaobu',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+)
+
+# ── CH-043 [NORMAL] 窗帘算料 - 顾客没指定门幅 ⇒ 模型把商品 SKU 的门幅去重成候选集填进 curtain_calc（LLM 填参行为）（源: cases/chat.yml）──
+_CASE_CH_043 = EvalCase(
+    id='CH-043',
+    legacy_id='',
+    title='窗帘算料 - 顾客没指定门幅 ⇒ 模型把商品 SKU 的门幅去重成候选集填进 curtain_calc（LLM 填参行为）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['夏日清风窗帘这款，我家窗户 3 米宽、2.7 米高，帮我算算要多少布、多少钱？'],
+    expectations=['curtain_calc(fabric_widths=[2.8, 3.2])'],
+    data_checks=['候选集来源 = `product_detail` 的 SKU 列表**去重**（评测栈种子 `prod_eval_summer`「夏日清风窗帘」的米白色散剪 SKU 有 2.8 / 3.2 两门幅）——**不是**顾客说的、也**不是**默认值 2.8（真值 fabric-calc.fabric-widths-candidate）', '顾客**没指定**门幅 ⇒ 传候选集 `fabric_widths`，**不传**单值 `fabric_width`（#5016 口径：两者同时传时 `fabric_width` 被忽略）', '系统在候选集内自动选门幅（成品高 2.7 + 卷边 0.3 ≤ 3.2 ⇒ 定高买宽取最小可行门幅 3.2）——这一层**确定性逻辑**由单测覆盖（CH-042 登记），本用例只钉「模型填参」', '⚠️ 本用例**不派发真实 LLM 评测**（用户裁定 #4262/#4974）：只登记用例，等人工集中跑一次时验证'],
+    skip_reason='',
+    tags=['xiaobu', 'quote', 'curtain-calc', 'fabric-widths'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'curtain_calc'}],
 )
 
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
@@ -1842,6 +1861,8 @@ _CASE_CU_005 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'order_manage', 'action': 'update_logistics'}],
+    namespaces=['customer_order:王建国'],
 )
 
 # ── CU-006 [NORMAL] C 端租户域名路由 - 微信用户经企业域名自动关联租户并落 CRM 客户档案（#3011）（源: cases/customer.yml）──
@@ -7252,6 +7273,7 @@ ALL_CASES = (
     _CASE_CH_040,
     _CASE_CH_041,
     _CASE_CH_042,
+    _CASE_CH_043,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,

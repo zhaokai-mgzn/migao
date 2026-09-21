@@ -133,6 +133,32 @@ WHERE pc.product_id IN ('prod_eval_blackout', 'prod_eval_dark_green', 'prod_eval
       AND s.selling_method = 'bulk_cut' AND s.door_width = '2.8'
   );
 
+-- ── 4b. 第二门幅 SKU（issue #5039：CH-043「候选门幅集」的接地对象）──
+-- 为什么必须补这一行（**前提核实结论，照实登记**）：issue #5039 的场景写的是
+--   「该商品 SKU 有 2.8 / 3.2 两门幅」，而本夹具此前**每个商品只有 `2.8` 一种门幅**
+--   （按 `door_width` 检索实测只有 `'2.8'`）⇒ 模型即使正确执行「把 SKU 门幅去重后传
+--   `fabric_widths`」，去重结果恒为 `[2.8]`（长度 1）⇒ 「含 2.8 与 3.2」的断言**恒红**
+--   （按 `migao-acceptance`：恒红与恒绿同属**空断言**，什么都没测）。
+--   #5016 的工具 description / `customer_quote.md` 举的例子正是 `[2.8, 3.2]`
+--   （原文「同一商品常同时有 2.8 / 3.2 两种门幅」）⇒ 夹具按真实商品形态补上 3.2。
+-- 为什么只补 `prod_eval_summer`（夏日清风窗帘）的**米白色 / 散剪**：
+--   · 点名该商品的下单用例只有 OR-017（输入自带「米白色，3 米，**门幅 2.8 米**散剪」）
+--     与 OR-018（输入自带「米白色 3 米」，**不**断言 doorWidth）⇒ 新增一种门幅不改变
+--     两者的解析结果；断言 doorWidth 的 OR-008/OR-009 打的是「遮光窗帘」且输入自带 2.8，不受影响。
+--   · 价格取 `p.base_price`（与既有 2.8 SKU **同价** 158.00）⇒ 订单金额断言逐值不变。
+-- 幂等：`NOT EXISTS` 判据含 `door_width`（与上一块同一形态，可重复执行）。
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, selling_method, door_width, price, stock, sku_code)
+SELECT 1, pc.product_id, pc.id, pc.color_name, 'bulk_cut', '3.2', p.base_price, 500,
+       p.sku_code || '-' || pc.color_name || '-3.2'
+FROM product_colors pc
+JOIN products p ON p.id = pc.product_id
+WHERE pc.product_id = 'prod_eval_summer'
+  AND NOT EXISTS (
+    SELECT 1 FROM product_skus s
+    WHERE s.product_id = pc.product_id AND s.color_id = pc.id
+      AND s.selling_method = 'bulk_cut' AND s.door_width = '3.2'
+  );
+
 -- ── 5. 商品 ↔ 加工项关联：**已随 #4371 解耦删除** ──
 -- 旧写法往 `product_processing_items` 把「遮光窗帘/北欧风窗帘/夏日清风窗帘」各自挂上
 -- 加工项（作为下单加工项环节 `processing_items` 的来源）。解耦后加工项是**店铺级目录**

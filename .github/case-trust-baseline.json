@@ -20,28 +20,21 @@
     "deadline": "2026-12-31"
   },
   "anchor_sha": "44615b6c9be18d23709a92c0c7e027da259f0836",
-  "case_total": 372,
-  "violation_case_count": 3,
+  "case_total": 373,
+  "violation_case_count": 2,
   "rule_counts": {
     "CASE-TRUST-EMPTY-ASSERTION": 0,
-    "CASE-TRUST-NO-EFFECT-ASSERTION": 3,
-    "CASE-TRUST-NO-SELF-CLEAN": 3,
+    "CASE-TRUST-NO-EFFECT-ASSERTION": 2,
+    "CASE-TRUST-NO-SELF-CLEAN": 2,
     "CASE-TRUST-PRECLEAN-TARGET-UNRESOLVABLE": 0,
     "CASE-TRUST-FORBIDDEN-TEXT-SOLE": 0,
     "CASE-TRUST-VOLATILE-LOCATOR": 0,
-    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 3,
+    "CASE-TRUST-NO-PRECONDITION-ASSERTION": 2,
     "CASE-TRUST-SELF-TARGET-NO-MAX-GROWTH": 0,
     "CASE-TRUST-STALE-LINE-REF": 0,
     "CASE-TRUST-SINGLE-LEG-NO-PERSONA": 0
   },
   "violations": {
-    "CU-005": {
-      "codes": [
-        "CASE-TRUST-NO-EFFECT-ASSERTION",
-        "CASE-TRUST-NO-PRECONDITION-ASSERTION",
-        "CASE-TRUST-NO-SELF-CLEAN"
-      ]
-    },
     "DF-018": {
       "codes": [
         "CASE-TRUST-NO-EFFECT-ASSERTION",
