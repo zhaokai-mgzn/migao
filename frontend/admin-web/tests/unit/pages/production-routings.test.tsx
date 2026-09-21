@@ -1105,6 +1105,23 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(step).not.toHaveTextContent('下一步')
   })
 
+  it('算料配置面板的说明文案**不得漏出 markdown 星号**（issue #5033 顺手修）', async () => {
+    // 红证：把 `保存后<strong>新</strong>的算料` 改回 `保存后**新**的算料` ⇒ 下面两条断言红
+    //（用户截图实证：JSX 纯文本里的 `**` 会**原样渲染**成字面星号，不是加粗）。
+    mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'stored', config: ENGINE_DEFAULT_CALC_CONFIG }))
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
+
+    const panel = screen.getByTestId('craft-calc-config-panel')
+    // ⚠️ 只钉**这一句**：面板里其它区（术语说明）的散文仍带 markdown `**`（**已知的更大问题**，
+    // 见 issue #5033 的登记）⇒ 断言整块 textContent 不含 `**` 会因那些存量而红（**假红**）。
+    expect(panel.textContent).not.toContain('保存后**新**')
+    expect(within(panel).getByText('新', { selector: 'strong' })).toBeInTheDocument()
+    expect(panel).toHaveTextContent('保存后新的算料按当前配置计算')
+  })
+
   it('就绪度第 4 步「算料配置」：本租户无配置行（source=default）⇒ todo + 指向「算料配置」tab', async () => {
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
