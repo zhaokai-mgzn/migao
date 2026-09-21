@@ -1,6 +1,9 @@
 # CI/CD 流水线
 
-## 14 个 GitHub Actions 工作流
+## GitHub Actions 工作流
+
+> **数量不写死**（易腐：24 小时内真值从 34 变 33，见 issue #5082）—— 现值现取：
+> `ls .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null | wc -l`
 
 | 工作流 | 触发 | 说明 |
 |--------|------|------|

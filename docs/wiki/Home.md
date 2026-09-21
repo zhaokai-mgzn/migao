@@ -1,13 +1,13 @@
 # AIKF — AI 智能客服系统
 
-面向布艺行业的多租户 AI 智能客服 SaaS。LangGraph StateGraph + DeepSeek V4 Pro + DeepSeek V4 Flash Vision + 知识卡片(LLM WIKI) + 30+ Tools，覆盖售前→售后全链路。
+面向布艺行业的多租户 AI 智能客服 SaaS。LangGraph StateGraph + DeepSeek V4 Pro + DeepSeek V4 Flash Vision + 知识卡片(LLM WIKI) + 业务工具（数量以 `registry.py` 注册表为单一源），覆盖售前→售后全链路。
 
 ## 架构
 
 ```
 客户端: 微信小程序(SSE) + 管理后台(REST)
      → API 网关
-     → Admin API(:8080, Java 21/Spring Boot 3.3) + AI Agent(:8000, Python 3.11/FastAPI/LangGraph)
+     → Admin API(:8080, Java 21/Spring Boot) + AI Agent Service(:8001 宿主端口，容器内 8000；Python 3.11/FastAPI/LangGraph)
      → PostgreSQL 15(RLS) + Redis 7 + DeepSeek V4 Pro / DeepSeek V4 Flash Vision
 ```
 
@@ -15,10 +15,10 @@
 
 | 层 | 技术 |
 |----|------|
-| Admin API | Java 21 / Spring Boot 3.3.5 / MyBatis-Plus 3.5.8 |
-| AI Service | Python 3.11 / FastAPI 0.115 / LangChain 0.3.14 / LangGraph 0.2.60 |
+| Admin API | Java 21 / Spring Boot / MyBatis-Plus（**版本不抄数**，真值源 `backend/admin-api/pom.xml`） |
+| AI Service | Python 3.11 / FastAPI / LangChain Core / LangGraph（**版本不抄数**，真值源 `backend/ai-agent-service/requirements.txt`） |
 | Admin Web | Next.js 14.2 (App Router) / React 18 / TypeScript 5.7 / Tailwind |
-| Mini App | Taro 4.2.1 / React 18 / Sass |
+| Mini App | Taro（**版本不抄数**，真值源 `frontend/mini-app/package.json` 的 `@tarojs/taro`） / React 18 / Sass |
 | DB | PostgreSQL 15 + Redis 7 |
 | 知识库 | knowledge_cards（LLM WIKI 词条模型） |
 | LLM | DeepSeek V4 Pro (主) + DeepSeek V4 Flash (意图) + DeepSeek V4 Flash Vision (视觉) |
@@ -30,7 +30,7 @@
 ```
 migao/
 ├── backend/admin-api/          # Java 管理后台 (22 Controllers, 23 Services, 42 Entities)
-├── backend/ai-agent-service/   # Python AI 服务 (LangGraph双Agent, 30+ Tools, 知识卡片检索)
+├── backend/ai-agent-service/   # Python AI 服务 (LangGraph双Agent, 业务工具, 知识卡片检索)
 ├── frontend/admin-web/         # Next.js 管理后台 (22 页面)
 ├── frontend/mini-app/          # Taro 微信小程序
 ├── deploy/terraform/           # 阿里云 IaC
