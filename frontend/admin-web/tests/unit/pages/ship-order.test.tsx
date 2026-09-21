@@ -479,20 +479,8 @@ describe('ShipOrder', () => {
     })
     render(<ShipOrder />)
 
-    // 🔴 等待锚点 = **被断言内容自己**（issue #5006 的根因就在这一行）。
-    // 不要改回 `await screen.findAllByText('商品发货')`：「商品发货」在**首帧**就有两处
-    // 静态命中（面包屑 `<span>商品发货</span>` 与 `<h1>商品发货</h1>`，都不依赖订单数据）
-    // ⇒ 该等待**立刻返回**，而**纸质发货单比发货表单还晚一个提交**才落地：
-    // `ShipmentDoc` 用 `const [mounted, setMounted] = useState(false);
-    // useEffect(() => setMounted(true), [])` + `createPortal(..., document.body)`
-    // ⇒ 紧随其后的**同步** `getByText` 撞进这个窗口。
-    // 本机实测（`getOrder` 无延迟）：锚点返回那一刻 `document.body.textContent` 恰好
-    // 等于 `"加载订单详情..."`、`document.querySelector('.shipment-print-area') === null`，
-    // 100ms 后才有；该窗口在本机同一个 microtask 批次内关闭（8/8 绿），CI 负载下第二个提交
-    // 被推迟到窗口之后 ⇒ 间歇红（CI run 35560642965 / 35561418929 同一条报错）。
-    // 这是**竞态**，不是跨用例污染（本文件 `restoreAllMocks` 只在注释里，见 describe 头反例二）。
-    // 等「打孔」= 等打印区真的挂上（它只由 `processingItems` 派生，屏幕侧 #4882 后已无同名文本）。
-    await screen.findByText('打孔')
+    // 等发货表单落地（先确认没被守卫拦成阻断页 —— 否则下面的断言是空跑）
+    await screen.findAllByText('商品发货')
     expect(screen.queryByText(/须先完成加工单后再发货/)).toBeNull()
 
     // 红证：`加工合计` 是那张退场表**独有**的表头
@@ -502,6 +490,7 @@ describe('ShipOrder', () => {
 
     // 退场的是「表」，不是「含加工项」语义：纸质单据照旧印名称 / 米数 / 加工费合计（行级落库值）
     expect(screen.getByText('加工费合计（元）：37.50')).toBeInTheDocument()
+    expect(screen.getByText('打孔')).toBeInTheDocument()
     expect(screen.getByText('12.5')).toBeInTheDocument()
   })
 })
