@@ -544,7 +544,8 @@ def detect_auto_features(
         side_margin = cfg["side_margin"]
         # 判据 = 引擎**真实的分幅条件** `ceil((宽 + 余量) × 褶倍 ÷ 门幅) ≥ 2`
         # ⟺ `(宽 + 余量) × 褶倍 > 门幅`（原始浮点，不取整 —— 取整会漏报，见前端同款注释）
-        if fullness is not None and fullness > 0:
+        # ⚠️ 宽 / 褶倍缺失 ⇒ **不判**（调用方可能只给了高；不拿假值去判价）
+        if window_width is not None and fullness is not None and fullness > 0:
             product = (window_width + side_margin) * fullness
             if product > fabric_width:
                 features.append({
@@ -563,7 +564,7 @@ def detect_auto_features(
             "source": "推算",
             "reason": f"加工类型 = {CUTTING_MODE_FIXED_WIDTH}",
         })
-    elif window_height + cfg["hem_margin"] > fabric_width:
+    elif window_height is not None and window_height + cfg["hem_margin"] > fabric_width:
         # 定高买宽：只有**高**受门幅约束（`成品高 + 上下卷边 > 门幅` ⇒ 定高买宽不可行）
         features.append({
             "name": "超高",

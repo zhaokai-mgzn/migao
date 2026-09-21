@@ -542,3 +542,102 @@ async def craft_calc(
         f"=> {data['fabric_meters']}m / {data['pleat_count']}折"
     )
     return make_response(True, data=data)
+
+
+class AutoFeaturesRequest(BaseModel):
+    """自动特征判定请求（issue #4976 包 2 —— 「判定移到服务端」的**读面**）。
+
+    ⚠️ **与算料试算分开是有意的**：本端点只判「超高 / 超宽 / 倒幅」，**不算用料、不取价**。
+    理由（读源事实）：下单页的 `CALC_CRAFTS` 只含 `韩褶 / 打孔 / 空` ⇒ **四爪钩 / 穿杆 / 平幔
+    不发试算请求**，而自动特征是**每一行**都要判的 —— 把判定挂在试算响应上，那些行会**丢特征**
+    ⇒ 组合键少一项 ⇒ **加工费匹配不到组合价**（P1 钱风险）。
+    """
+
+    width: Optional[float] = Field(None, gt=0, description="成品宽（米）；缺 ⇒ 不判超宽")
+    height: Optional[float] = Field(None, gt=0, description="成品高（米）；缺 ⇒ 不判超高")
+    fabric_width: Optional[float] = Field(
+        None,
+        gt=0,
+        description=(
+            "**该商品/SKU 的门幅**（米）。⚠️ **没有缺省门幅**（issue #4877）：缺 ⇒ **不判** + "
+            "`notice='missing-door-width'`，**不回落**任何默认门幅（回落 = 拿一个不是这张单的值判价）。"
+        ),
+    )
+    cutting_mode: Optional[str] = Field(
+        None,
+        description=(
+            "加工类型（`定高买宽` / `定宽买高`）：决定**哪个方向受门幅约束**。"
+            "缺省 / 表外 ⇒ **不判** + `notice='unknown-cutting-mode'`（保守：不猜朝向）。"
+        ),
+    )
+    fullness: Optional[float] = Field(
+        None,
+        gt=0,
+        description="名义褶倍；缺省 ⇒ 取**该租户配置**的标准档（回显在 `fullness_used`，供商家核对）。",
+    )
+    config: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "算料公式参数（**租户级**）：判定用到 `side_margin`（宽方向余量）/ `hem_margin`（高方向卷边）"
+            "与 `tiers` 的标准档褶倍。缺省 ⇒ 引擎默认值（未配置租户口径一字不变）。"
+        ),
+    )
+
+
+@router.post("/production/auto-features")
+async def auto_features(
+    request: AutoFeaturesRequest,
+    authorized: bool = Depends(verify_service_token),
+):
+    """自动特征判定（`POST /api/internal/production/auto-features`）—— issue #4976 包 2。
+
+    用户 2026-09-21 裁定 B「**判定移到服务端**」的读面：前端只**展示**本端点的结论。
+
+    **单一真值**：判定逻辑只在 `curtain_calc.detect_auto_features` 一处 ——
+    本端点只做「入参归一 + 为什么没判的显式说明」，**不复制任何判据**（第二份判据 = 第二套价）。
+
+    返回 `data`：`auto_features`（`[{name, source, reason}]`，**键恒在**，空列表 = **不判**）/
+    `door_width`（实际用于判定的门幅；缺门幅时 `None`）/ `fullness_used`（实际用于判超宽的褶倍）/
+    `notice`（`''` / `missing-door-width` / `unknown-cutting-mode` —— **不判的原因**，不静默）。
+    """
+    try:
+        config = _normalize_craft_calc_config(request.config)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"success": False, "error": {"code": "CRAFT_CALC_INVALID_INPUT", "message": str(e)}},
+        ) from e
+
+    cfg = curtain_calc.resolve_craft_calc_config(config)
+    fullness_used = (
+        request.fullness if request.fullness is not None else cfg["tiers"]["standard"]["fullness"]
+    )
+
+    if request.fabric_width is None:
+        # 缺门幅 ⇒ **不判**（不回落任何默认门幅，issue #4877）
+        features, notice = [], "missing-door-width"
+    elif request.cutting_mode not in (
+        curtain_calc.CUTTING_MODE_FIXED_HEIGHT,
+        curtain_calc.CUTTING_MODE_FIXED_WIDTH,
+    ):
+        # 缺 / 表外加工类型 ⇒ **不判**（不猜朝向）
+        features, notice = [], "unknown-cutting-mode"
+    else:
+        features, notice = (
+            curtain_calc.detect_auto_features(
+                window_width=request.width,
+                window_height=request.height,
+                fabric_width=request.fabric_width,
+                fullness=fullness_used,
+                cutting_mode=request.cutting_mode,
+                config=config,
+            ),
+            "",
+        )
+
+    return make_response(True, data={
+        "auto_features": features,
+        "door_width": request.fabric_width,
+        "fullness_used": fullness_used,
+        "notice": notice,
+    })
