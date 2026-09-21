@@ -1,19 +1,27 @@
 # case_ids: OR-040
-"""`HEM_MARGIN` / `SIDE_MARGIN` **跨语言常量副本**的漂移守卫（issue #4656）。
+"""`HEM_MARGIN` **跨语言常量副本**的漂移守卫（issue #4656；issue #5030 改判）。
 
 ## 病根（本单要治的静默失效形态）
 
-`frontend/admin-web/src/lib/craft-auto-features.ts` 里的两个余量常量是**算料引擎的副本**：
+`frontend/admin-web/src/lib/craft-auto-features.ts` 里的高方向余量常量是**算料引擎的副本**：
 
 | 前端副本 | 真值源（`backend/ai-agent-service/app/tools/curtain_calc.py`） | 语义 | 方向 |
 |---|---|---|---|
-| `SIDE_MARGIN = 0.3` | `SIDE_MARGIN = 0.3  # 定高布：左右覆盖余量合计（各 15cm）` | 左右覆盖余量 | **宽**（`超宽`） |
 | `HEM_MARGIN = 0.3` | `HEM_MARGIN = 0.3  # 定宽布：上下卷边合计（脚位+止口）` | 上下卷边 | **高**（`超高`） |
 
-两边**各自独立存在** ⇒ 引擎改了卷边、前端没跟（或反之）⇒ **同一张单前端判「超宽/超高」、
-后端算料不这么算**。而「超宽/超高」进的是**加工费组合键**
+两边**各自独立存在** ⇒ 引擎改了卷边、前端没跟（或反之）⇒ **同一张单前端判「超高」、
+后端算料不这么算**。而「超高」进的是**加工费组合键**
 （`ProcessingFeeQueryService.featureNames()` 只读 `processingInfo.processingItems[]`）
 ⇒ 漂移的后果是**静默算错价**（与 #4592「正幅污染组合键 ⇒ 加工费恒 ¥0.00」同族）。
+
+## 2026-09-21 改判（issue #5030）：`SIDE_MARGIN` 整体退场
+
+用户裁定「订单这里的**宽和高是窗户的宽高**」⇒ 成品宽 = 净窗宽 ⇒ **宽方向没有余量**
+⇒ 常量 `SIDE_MARGIN` 与配置键 `side_margin` 一并删除。
+**旧判据 C2**（「两个方向不得合并：前端必须**同时**导出 `SIDE_MARGIN` 与 `HEM_MARGIN`」）
+的前提（该常量存在）随之消失 ⇒ **删掉**，替换为**同强度的反向守卫**：
+前端源码里**再出现** `SIDE_MARGIN`/`side_margin` ⇒ 红（新判据 C2'）。
+⚠️ `HEM_MARGIN`（高方向）**保留**，它的逐值/逐字/消费点/引文守卫**一条都不放宽**。
 
 ## 本守卫**不新造口径**，补的是既有守卫结构上看不到的两面
 
@@ -34,9 +42,9 @@
 | # | 判据 | 红证（怎么让它红） |
 |---|---|---|
 | C1 | 两侧逐值相等（引擎源 vs 前端源） | 前端 `HEM_MARGIN` → `0.31`（或引擎 → `0.35`）⇒ 红 |
-| C2 | **两个方向不得合并**：前端必须**同时**导出两个名字、各自跟自己的引擎常量（#4661 的回归形态 = 两处都用 `HEM_MARGIN`） | 前端删掉 `SIDE_MARGIN`（或把它的初值指到 `HEM_MARGIN` 的值）⇒ 红 |
+| C2' | **宽方向余量不得复活**：前端源码里出现 `SIDE_MARGIN` / `side_margin` ⇒ 红（issue #5030） | 把 `export const SIDE_MARGIN = 0.3` 加回前端 ⇒ 红 |
 | C3 | 前端注释引用的引擎行**逐字**一致（值 **+ 语义注释**；空白归一后比对） | 只改引擎注释措辞（`脚位+止口` → `脚位`）⇒ 红 |
-| C4 | **判别力下界（反恒真）**：两侧都必须解析到正数；前端**真的消费**了这两个常量；前端代码里**不得**出现第二份与引擎余量同值的字面量（判定处内联 = 常量改了判定不跟） | 判定处 `height + HEM_MARGIN` → `height + 0.3` ⇒ 红 |
+| C4 | **判别力下界（反恒真）**：两侧都必须解析到正数；前端**真的消费**了 `HEM_MARGIN`；前端代码里**不得**出现第二份与引擎余量同值的字面量（判定处内联 = 常量改了判定不跟） | 判定处 `height + HEM_MARGIN` → `height + 0.3` ⇒ 红 |
 | C5 | 前端注释里引用的守卫文件**真的存在**且真的读源（引文不得腐烂，同 §19.2 ③） | 删掉/改名 `craft-auto-features.test.ts` ⇒ 红 |
 
 ⚠️ **本守卫不 import 被测引擎**（`app` 包的导入期需要完整 `.env` ⇒ 会红于环境而非红于口径）
@@ -61,8 +69,11 @@ TS_GUARD = REPO_ROOT / "frontend/admin-web/tests/unit/lib/craft-auto-features.te
 #: 余量常量的**消费点**（issue #5035 起：判定/提示实现已退场，只剩规则面在读这两个常量）
 PLAN_TS = REPO_ROOT / "frontend/admin-web/src/lib/door-width-plan.ts"
 
-#: 本守卫钉的两个方向余量（两侧**同名**；两个方向**各自**跟自己的引擎常量，不得合并）
-MARGINS: tuple[str, ...] = ("SIDE_MARGIN", "HEM_MARGIN")
+#: 本守卫钉的余量常量 —— **只剩高方向**（`SIDE_MARGIN` 已按 issue #5030 整体退场）
+MARGINS: tuple[str, ...] = ("HEM_MARGIN",)
+
+#: 已退场的宽方向标识符（C2' 反向守卫）
+DROPPED_IDENTIFIERS: tuple[str, ...] = ("SIDE_MARGIN", "side_margin")
 
 #: 注释引文里的空白会被排版改写（引擎侧对齐用多空格、前端注释用两空格）⇒ 比对前归一空白
 _WS = re.compile(r"\s+")
@@ -128,19 +139,38 @@ def _lib_source() -> str:
     return LIB_TS.read_text(encoding="utf8")
 
 
-# ── C1 / C2：两侧逐值相等（两个方向各自跟自己的引擎常量）────────────────────────
+# ── C1 / C2'：两侧逐值相等（高方向各自跟自己的引擎常量）+ 宽方向余量不得复活 ──────
 
 def test_margins_equal_engine_truth() -> None:
-    """C1+C2：前端两个余量常量 == 引擎**同名**常量（逐值读源，不写死）。"""
+    """C1：前端余量常量 == 引擎**同名**常量（逐值读源，不写死）。"""
     calc, lib = _calc_source(), _lib_source()
     for name in MARGINS:
         engine, frontend = _py_value(calc, name), _ts_value(lib, name)
         assert engine > 0, f"引擎 {name} 读出来不是正数（{engine}）—— 解析口径变了，请同步本守卫"
         assert frontend == engine, (
             f"跨语言常量漂移：{name} 前端 = {frontend} / 引擎 = {engine}。"
-            "「超宽/超高」进加工费组合键 ⇒ 这处漂移 = 静默算错价；"
+            "「超高」进加工费组合键 ⇒ 这处漂移 = 静默算错价；"
             "改哪边都要改另一边（前端值不得单独改）"
         )
+
+
+def test_side_margin_does_not_come_back_in_frontend() -> None:
+    """C2'（issue #5030 改判）：宽方向余量不得在前端复活（旧 C2 的前提已被裁定删除）。
+
+    旧判据 C2 要求「前端必须**同时**导出 `SIDE_MARGIN` 与 `HEM_MARGIN`」—— 它的前提是
+    `SIDE_MARGIN` **存在**。用户 2026-09-21 裁定「订单宽 = 净窗宽、成品宽 = 净窗宽」⇒
+    宽方向**没有余量** ⇒ 该常量与配置键 `side_margin` 一并退场 ⇒ 旧判据改成**反向守卫**
+    （同强度：新判据凭「源码里再出现该标识符 ⇒ 红」单独判红）。
+
+    ⚠️ 注释里的「已退场」说明不算复活（本仓惯例：口径退场要在注释里留档）。
+    """
+    lib = _strip_comments(_lib_source())
+    hits = [ident for ident in DROPPED_IDENTIFIERS if ident in lib]
+    assert hits == [], (
+        f"前端代码里又出现 {hits} —— 宽方向余量已按用户 2026-09-21 裁定（issue #5030）"
+        "**整体退场**（订单宽 = 净窗宽、成品宽 = 净窗宽 ⇒ 判据 = `窗宽 × 褶倍 > 门幅`）；"
+        "它一旦回来，前端判定就与引擎分幅条件静默脱钩 ⇒ 红"
+    )
 
 
 # ── C3：前端注释引用的引擎行逐字一致（值 + 语义注释）──────────────────────────
@@ -179,7 +209,8 @@ def test_frontend_actually_consumes_margins_and_has_no_second_literal() -> None:
             "要么判定处被内联成字面量（常量改了判定不跟），要么该常量已成死码"
         )
 
-    # 引擎余量值在前端代码里**恰好**出现在同名常量的声明处（按值分组：两方向同值时合计 2 处）
+    # 引擎余量值在前端代码里**恰好**出现在同名常量的声明处（`MARGINS` 里每个名字 1 处；
+    # issue #5030 后只剩高方向 `HEM_MARGIN` ⇒ 期望恰 1 处 `0.3`）
     by_value: dict[float, list[str]] = {}
     for name in MARGINS:
         by_value.setdefault(_py_value(calc, name), []).append(name)

@@ -79,7 +79,8 @@ function specValue(rows: CraftSpecRow[], ...labels: string[]): string {
   return ''
 }
 
-/** 成品尺寸：两边都必须是有限数才出（半个尺寸没有意义）⇒ `3×2.75米` */
+/** 宽高（= 窗宽 × 窗高；成品宽 = 窗宽、成品高 = 窗高，用户 2026-09-21 裁定 issue #5030）：
+ * 两边都必须是有限数才出（半个尺寸没有意义）⇒ `3×2.75米` */
 function sizeText(width?: number | null, height?: number | null): string {
   const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
   return ok(width) && ok(height) ? `${width}×${height}米` : ''

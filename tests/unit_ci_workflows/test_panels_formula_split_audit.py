@@ -1,41 +1,52 @@
 # case_ids: OR-036, OR-040
-"""分幅公式（`panels`）**三条口径**的核清与「口径自洽」守卫（issue #4760）。
+"""分幅公式（`panels`）**四方同式**守卫（issue #4760 → 改判 issue #5030）。
 
 ## 为什么需要这条（本单的静默失效形态）
 
-`backend/ai-agent-service/app/tools/curtain_calc.py` 里 **`panels`（定宽买高时的幅数）有三条口径**：
-
-| 通路 | 落点 | 口径 | 含 `side_margin`？ |
-|---|---|---|---|
-| **A 米宝下单通路** | `calculate_fabric_meters()` 定宽分支 | `ceil((W + side_margin) × N / G)` | **含** |
-| **B1 试算通路（倍数法）** | `build_quote()` 的 `formula='fullness'` 分支 | `ceil(ceil_to_step(W × N, 0.1) / G)` | 不含（且**多一道 `ceil_to_step`**） |
-| **B2 试算通路（褶数法）** | `build_quote()` 的 `pleat_mode` 分支 | `ceil(褶数法总用料 / G)` | 不含 |
-| **C 下单页门幅规则（前端副本）** | `frontend/admin-web/src/lib/door-width-plan.ts` 的 `resolveCutPlan()` 定宽买高分支 | `ceil_mm((W + SIDE_MARGIN) × N / G_eff)` | **含**（与 A 同式，且同取整口径 = **毫米整数**；issue #5038 前是浮点 `ceil` ⇒ 整数倍边界多算 1 幅） |
-
-A 与 B1/B2 都在**给商家算料**（米宝下单 vs 商家手工下单页试算）⇒ **同一张单两个答案**；
+`backend/ai-agent-service/app/tools/curtain_calc.py` 里 **`panels`（定宽买高时的幅数）曾有
+三条口径**：A 米宝下单通路含 `side_margin`、B1/B2 试算通路不含 ⇒ **同一张单两个答案**，
 差 1 幅 = 差整整一幅长（`H + HEM_MARGIN`）⇒ 面料费 + 加工费同幅变化（**涉钱**）。
-真值源 `docs/curtain-fabric-quote-rules.md` §3 写的是 `P = ceil((W + SIDE_MARGIN) × N / G)`（#4819 起该节只写符号，数值见该文 §0「数值常量清单」）⇒ 站 **A**。
-**通路 C**（issue #5038 登记，第 4 份副本）与 A **同式**（含 `side_margin` + 毫米整数取整）⇒ 它**不在**
-上面这条 A-vs-B1/B2 的分叉里；它与 A 的**算法级**等价由共享 golden 算例表钉住
-（`tests/fixtures/panels-cross-language-golden.json`，三腿共读；守卫
-`tests/unit_ci_workflows/test_panels_cross_language_algorithm_guard.py`）。
 
-## 本守卫钉什么（**不钉「不一致」本身**）
+**2026-09-21 改判（issue #5030）**：宽方向余量整体退场 ⇒ 四条落点（A / B1 / B2 / **C 前端副本**）
+**四方同式** = `ceil(窗宽 × 褶倍 ÷ 门幅)`；旧判据「A ≥ B1 且恰差 1 幅」的前提（`side_margin > 0`）
+随之消失 ⇒ **删除**（留着就是不会红的空断言），改钉「同式 + 反向守卫」。
 
-修法必须改 `backend/ai-agent-service/**` ⇒ 用户裁定本会话不动（#4652），**且需业务裁定**
-（改试算口径 = 改商家看到的钱）⇒ 本单**不修代码**，也**不加一条会一直红的守卫**。
-本守卫钉的是**登记与代码的自洽**：`docs/design/craft-calc-and-fabric-routing.md` §4.5 的对照表是
-**实测读源**的结论 —— 代码改了（无论统一还是改口径）而文档没跟着改 ⇒ **红**。
+**通路 C**（issue #5038 登记，第 4 份副本 = 前端 `frontend/admin-web/src/lib/door-width-plan.ts`）
+与 A 的**算法级**等价由共享 golden 算例表钉住（`tests/fixtures/panels-cross-language-golden.json`，
+三腿共读；守卫 `tests/unit_ci_workflows/test_panels_cross_language_algorithm_guard.py`），
+且取整口径 = **毫米整数**（浮点在「总用料恰为门幅整数倍」边界上会多算 1 幅）。
+
+## 2026-09-21 用户业务裁定（issue #5030，逐字）
+
+> 「订单这里的**宽和高是窗户的宽高**」⇒ 订单行 `width` = **净窗宽**、`height` = **净窗高**；
+> **成品宽 = 净窗宽**、**成品高 = 净窗高**（无任何覆盖/离地/轨道换算）。
+> 宽度用料口径 = **R1**：**用料 = 窗宽 × 褶倍**，**不再另加「左右覆盖余量」**
+> ⇒ 常量 `SIDE_MARGIN` 与配置键 `side_margin` **整体退场**。
+
+⇒ 本守卫的**前提被裁定掉了**：A 与 B1 **不再有差异**（都 = `ceil(窗宽 × 褶倍 ÷ 门幅)`）
+⇒ **旧判据「A ≥ B1 且恰差 1 幅」删除**（它的前提 `side_margin > 0` 已不存在，
+留着它就是一条不会红的空断言）。**改判为「四方同式」**：
+
+| # | 四方（口径源） | 落点 | 必须同式 |
+|---|---|---|---|
+| 1 | **引擎 A 通路** | `calculate_fabric_meters()` 定宽分支 | `ceil(窗宽 × 褶倍 ÷ 门幅)` |
+| 2 | **`build_quote` 的 panels** | `build_quote()` 的 `fixed_width` 复算 | 与 ① 逐字同式（同源，不新造第二式） |
+| 3 | **前端超宽判据** | `frontend/admin-web/src/lib/craft-auto-features.ts` | `width * fullness > doorWidth`（同一条件的布尔形态） |
+| 4 | **真值源 §3 公式** | `docs/curtain-fabric-quote-rules.md` §3 | `P = ceil(W × N / G)`（**不得**含 `SIDE_MARGIN`） |
+
+**为什么这四条必须一起判**：它们是同一个物理量的四处落点 —— 只判一处 ⇒ 另外三处漂移
+**没有任何东西会红**（#4760 的病根就是「A 与 B1 分叉而无人知」）。
+
+## 判据（每条都能**单独**判红）
 
 | # | 判据 | 红证（怎么让它红） |
 |---|---|---|
-| C1 | §4.5 对照表**逐行**可被复算：A 通路 = `ceil((W+side_margin)×N/G)`、B1 通路 = `ceil(ceil_to_step(W×N,0.1)/G)` | 把表里任一行的 `panels` 改一个数 ⇒ 红 |
-| C2 | 「一致？」列必须与复算相符 | 把某个 ❌ 行改成 ✅ ⇒ 红 |
-| C3 | 表里**同时**存在一致行与不一致行（反向护栏，防"整表恒真"） | 把全部行改成 ✅ ⇒ 红 |
-| C4 | 差异恒为 **A ≥ B1 且差恰 1 幅**（`side_margin > 0` ⇒ A 不可能少于 B1） | 把 A 的行改成比 B1 小 ⇒ 红 |
-| C5 | 三条公式串**逐字**出现在文档里（改代码改文档才一致） | 把 §4.5 的 `ceil((宽 + side_margin) × 褶倍 ÷ 门幅)` 删掉 ⇒ 红 |
-| C6 | **判定面**的「超宽」判据仍与 A 同式（`(宽 + side_margin) × 褶倍 > 门幅`）—— 三方（A / 判定面 / 真值源）已对齐，只有 B1/B2 落后。⚠️ issue #5035 起判定面在**服务端**（`curtain_calc.detect_auto_features`），读源随之改到引擎侧 | 引擎判据去掉 `side_margin` ⇒ 红 |
-| C7 | **第 4 份副本（通路 C）已登记**：§4.5「通路与调用方」表里有通路 C 行、口径串逐字在文档里，且**前端源码实测**确为毫米整数式（无浮点直除） | 删掉通路 C 行 ⇒ 红；把 `door-width-plan.ts` 改回浮点 `Math.ceil(need / g_eff)` ⇒ 红 |
+| C1 | 引擎 A 通路公式串 == 真值源 §3 公式串（**归一化后**逐字） | 真值源改回 `(W + SIDE_MARGIN) × N`（或引擎改回含余量）⇒ 红 |
+| C2 | `build_quote` 的 panels 复算与 A 通路**逐字同式**（`ceil(窗宽 × 褶倍 ÷ 门幅)`） | 只在 `build_quote` 里加回 `+ cfg["side_margin"]` ⇒ 红 |
+| C3 | **判定面**（引擎 `detect_auto_features`，issue #5035 起判定已迁服务端）的超宽判据 == 分幅条件的**布尔形态**（`product = window_width * fullness`，**无任何余量**） | 引擎改回 `(window_width + side_margin) * fullness > fabric_width` ⇒ 红 |
+| C4 | **对照表逐行可复算**（≥6 组）：引擎 A 与 `build_quote` 复算**逐组相等**，且「一致？」列与实测相符 | 任一组 panels 改一个数 ⇒ 红 |
+| C5 | **反向守卫**：引擎 / 前端 / TS 类型 / Java 实体 / Java 服务 / `schema.sql` / 真值源 §3 公式行里**再出现** `side_margin`/`SIDE_MARGIN` ⇒ 红 | 把常量或配置键加回任一源 ⇒ 红 |
+| C6 | **通路 C 已登记**（issue #5038）：§4.5「通路与调用方」表里有通路 C 行、口径串逐字在文档里，且**前端源码实测**确为毫米整数式（无浮点直除） | 删掉通路 C 行 ⇒ 红；把 `door-width-plan.ts` 改回浮点 `Math.ceil(need / g_eff)` ⇒ 红 |
 
 ⚠️ **本守卫不 import 被测引擎**：`app` 包的导入期需要完整 `.env`（否则 pydantic Settings 报缺失键）
 ⇒ 在 CI 的 `unit_ci_workflows` job 里会**红于环境而非红于口径**。故这里**照源里的公式复算**
@@ -50,98 +61,57 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-DESIGN_DOC = REPO_ROOT / "docs/design/craft-calc-and-fabric-routing.md"
 CALC_PY = REPO_ROOT / "backend/ai-agent-service/app/tools/curtain_calc.py"
+AUTO_FEATURES_TS = REPO_ROOT / "frontend/admin-web/src/lib/craft-auto-features.ts"
+TRUTH_DOC = REPO_ROOT / "docs/curtain-fabric-quote-rules.md"
 #: 通路 C（第 4 份 `panels` 副本，issue #5038）—— 前端门幅规则的落点
 PLAN_TS = REPO_ROOT / "frontend/admin-web/src/lib/door-width-plan.ts"
+#: §4.5 所在的设计文档（C6 判「通路 C 已登记」的读源）
+DESIGN_DOC = REPO_ROOT / "docs/design/craft-calc-and-fabric-routing.md"
 
-#: §4.5 的锚点（**文本锚点，不写死行号** —— 行号会随文档编辑腐烂）
-SECTION_ANCHOR = "### 4.5 分幅公式"
-#: 结束锚点用「本节的收尾行」而非泛化的 `---`（§4.5.1 内部也有 `---` 分隔线 ⇒ 泛化锚点会截短本节）
-SECTION_END = "一致 ⇒ 去掉中间取整**不引入**新的米数口径）。"
-
-#: 对照表固定前提（表头下方那段逐字写着这两个值；从文档里读，不在这里另立一份）
-GEOMETRY = {"门幅": 2.8, "窗高": 2.6}
+#: 真值源 §3 的锚点（**文本锚点，不写死行号** —— 行号会随文档编辑腐烂）
+SECTION3_ANCHOR = "## 3. 用布量精确公式"
+SECTION3_END = "## 4. 损耗与余量"
 
 #: 对照表最少组数（#4760 验收判据要求 ≥6 组；**这是判据的下界，不是"当前有几行"的计数**）
-MIN_ROWS = 6
+MIN_GROUPS = 6
 
-#: 三条公式串（**逐字**，与 §4.5 表格里的写法一致）—— C5 用
-FORMULA_STRINGS = (
-    "ceil((宽 + side_margin) × 褶倍 ÷ 门幅)",
-    "ceil(ceil_to_step(宽 × 褶倍, 0.1) ÷ 门幅)",
-    "ceil(褶数法总用料 ÷ 门幅)",
-    "ceil_mm((宽 + SIDE_MARGIN) × 褶倍 ÷ 门幅有效值)",  # 通路 C（issue #5038 登记）
+#: `side_margin` 的两种拼写（反向守卫 C5 的命中面）
+DROPPED_IDENTIFIERS = ("SIDE_MARGIN", "side_margin")
+
+#: C5 判「代码里不得再出现」的源（**逐文件**：少一个 = 那一源永久免检且无人知）
+#: ⚠️ `db/migration/**` 有意**不在**名单里：V80 建列、V112 删列是历史留档（迁移链**不可改**，
+#: 见 `test_craft_calc_config_contract.py` 的 `_migration_config_columns`）—— 终态由那个守卫判。
+NO_SIDE_MARGIN_SOURCES: tuple[Path, ...] = (
+    CALC_PY,
+    AUTO_FEATURES_TS,
+    REPO_ROOT / "frontend/admin-web/src/types/index.ts",
+    REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/entity/CraftCalcConfig.java",
+    REPO_ROOT / "backend/admin-api/src/main/java/com/migao/admin/service/CraftCalcConfigService.java",
+    REPO_ROOT / "docs/sql/schema.sql",
 )
 
-#: 通路 C 在 §4.5「通路与调用方」表里的**行锚点**与**口径串**（C7：登记与代码自洽）
+#: 对照表（**写死**的几何：`W` = 净窗宽、`N` = 褶倍、`G` = 门幅）
+#: 期望值**不从实现推导**（纸表 + 手算）—— `ceil(W × N / G)` 逐组手算：
+#:   1.1×2.0/2.8 = 0.786 → 1 ; 1.5×2.0/2.8 = 1.071 → 2 ; 2.0×1.5/2.8 = 1.071 → 2
+#:   3.0×2.0/2.8 = 2.143 → 3 ; 4.0×2.0/2.8 = 2.857 → 3 ; 1.45×1.8/2.8 = 0.932 → 1
+TABLE: tuple[tuple[float, float, float, int], ...] = (
+    (1.1, 2.0, 2.8, 1),
+    (1.5, 2.0, 2.8, 2),
+    (2.0, 1.5, 2.8, 2),
+    (3.0, 2.0, 2.8, 3),
+    (4.0, 2.0, 2.8, 3),
+    (1.45, 1.8, 2.8, 1),
+)
+#: 通路 C 在 §4.5「通路与调用方」表里的**行锚点**与**口径串**（C6：登记与代码自洽）
 PATH_C_ANCHOR = "C 下单页门幅规则（前端副本）"
-PATH_C_FORMULA = "ceil_mm((宽 + SIDE_MARGIN) × 褶倍 ÷ 门幅有效值)"
+PATH_C_FORMULA = "ceil_mm(窗宽 × 褶倍 ÷ 门幅有效值)"
 
-
-def _section(text: str) -> str:
-    """取 §4.5 正文（锚点取不到 ⇒ 直接失败，**不静默跳过**）。"""
-    start = text.find(SECTION_ANCHOR)
-    assert start != -1, (
-        f"设计文档里找不到「{SECTION_ANCHOR}」（§4.5 是 #4760 的登记落点）—— "
-        "若已改名/移动，请同步本守卫的锚点（路径漂移不得退化成静默通过）"
-    )
-    rest = text[start:]
-    end = rest.find(SECTION_END)
-    assert end != -1, f"§4.5 的结束锚点「{SECTION_END!r}」取不到 —— 结构变了，请同步本守卫"
-    return rest[:end]
-
-
-def _doc_constants(section: str) -> tuple[float, float, float]:
-    """从 §4.5 正文读 `门幅 G` / `窗高 H` / `side_margin` 默认值（**真值从源里读，不写死**）。"""
-    door = re.search(r"门幅 `G = ([0-9.]+)`", section)
-    height = re.search(r"窗高 `H = ([0-9.]+)`", section)
-    side = re.search(r"`side_margin`|左右各 15cm", section)
-    assert door and height, "§4.5 里读不到 `G = …` / `H = …` 前提（表头段被改动 ⇒ 请同步本守卫）"
-    assert side, "§4.5 里读不到 `side_margin` 的语义说明（本单的核心量被删 ⇒ 红）"
-    return float(door.group(1)), float(height.group(1)), 0.3
-
-
-def _rows(section: str) -> list[tuple[float, float, int, int, bool]]:
-    """解析对照表行：`| 宽 | 褶倍 | A panels | B1 panels | 一致？ |`。
-
-    表头/分隔行按「第 3 列必须是整数」自然排除；解析不到任何行 ⇒ 失败（不静默空跑）。
-    """
-    out: list[tuple[float, float, int, int, bool]] = []
-    for line in section.splitlines():
-        if not line.strip().startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) != 5:
-            continue
-        if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", cells[0]):
-            continue
-        if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", cells[1]):
-            continue
-        if not re.fullmatch(r"[0-9]+", cells[2]) or not re.fullmatch(r"[0-9]+", cells[3]):
-            continue
-        mark = cells[4]
-        assert mark in ("✅ 一致", "❌ 不一致"), (
-            f"§4.5 对照表的「一致？」列出现未登记取值 {mark!r}（只认 `✅ 一致` / `❌ 不一致`）"
-        )
-        out.append((float(cells[0]), float(cells[1]), int(cells[2]), int(cells[3]), mark == "✅ 一致"))
-    return out
-
-
-def _ceil_to_step(value: float, step: float) -> float:
-    """与引擎 `ceil_to_step` **逐字同源**（含 `round(..., 9)` 吸二进制噪声那一步）。"""
-    units = round(value / step, 9)
-    return round(math.ceil(units) * step, 9)
-
-
-def _panels_path_a(width: float, fullness: float, side_margin: float, door: float) -> int:
-    """通路 A：`calculate_fabric_meters` 定宽分支 `ceil((W + side_margin) × N / G)`。"""
-    return math.ceil((width + side_margin) * fullness / door)
-
-
-def _panels_path_b1(width: float, fullness: float, door: float, step: float = 0.1) -> int:
-    """通路 B1：`build_quote` 的 `formula='fullness'` 分支 `ceil(ceil_to_step(W × N, step) / G)`。"""
-    return math.ceil(_ceil_to_step(width * fullness, step) / door)
+#: 引擎源码里的分幅表达式（**逐字**；A 通路与 `build_quote` 的复算各一处）
+ENGINE_PANELS_RE = re.compile(r"math\.ceil\(\s*window_width\s*\*\s*(\w+)\s*/\s*fabric_width\s*\)")
+#: **判定面**的超宽判据（逐字：`product = window_width * fullness`，**不得**有任何余量项）
+#: ⚠️ issue #5035 起判定面已整条搬到服务端（前端 `detectAutoFeatures` 删除）⇒ 本条瞄**引擎**。
+OVER_WIDTH_CRITERION = "product = window_width * fullness"
 
 
 def _read(path: Path) -> str:
@@ -149,105 +119,213 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf8")
 
 
+#: 多语言注释/文档串（判 C5 时只认**代码**：口径退场要在注释/docstring 里留档说明，本仓惯例）
+_TRIPLE = re.compile(r'"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'')
+_BLOCK = re.compile(r"/\*[\s\S]*?\*/")
+_LINE_COMMENT = re.compile(r"(?:^|\s)(?:\*/?\s*)?(?://|--|#)[^\n]*", re.M)
+#: SQL 的第三种「散文载体」：单引号字符串字面量（`COMMENT ON COLUMN … IS '…'`）
+_SQL_STRING = re.compile(r"'(?:[^']|'')*'")
+
+
+def _code_only(path: Path) -> str:
+    """去掉注释 / 文档串 / SQL 字符串字面量 —— C5 只判**代码**里的标识符（注释里的「已退场」不算）。
+
+    ⚠️ 不用「按行前缀过滤」那种弱形态：实测 `schema.sql` 的多行 `COMMENT ON` 续行、
+    字符串字面量，以及 `curtain_calc.py` 的 **docstring** 都不以 `--`/`#` 开头
+    ⇒ 弱过滤会**误红**（误红即坏断言，`migao-acceptance`）。
+    """
+    text = path.read_text(encoding="utf8")
+    if path.suffix == ".sql":
+        text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("--"))
+        return _BLOCK.sub("", _SQL_STRING.sub("", text))
+    out = _TRIPLE.sub("", text)
+    out = _BLOCK.sub("", out)
+    return _LINE_COMMENT.sub("", out)
+
+
+def _section(text: str, start_anchor: str, end_anchor: str) -> str:
+    """取锚点之间的正文（**锚点取不到 ⇒ 直接失败**，不静默跳过）。"""
+    start = text.find(start_anchor)
+    assert start != -1, (
+        f"文档里找不到锚点「{start_anchor}」（真值源 §3 是 #4760 的判定落点）—— "
+        "若已改名/移动，请同步本守卫（路径漂移不得退化成静默通过）"
+    )
+    rest = text[start:]
+    end = rest.find(end_anchor, len(start_anchor))
+    assert end != -1, f"文档里找不到结束锚点「{end_anchor}」—— 结构变了，请同步本守卫"
+    return rest[:end]
+
+
+def _normalize_formula(expr: str) -> str:
+    """公式表达式归一化（只归一排版噪声：空白 / 乘号 / 外层括号）—— **不归一语义**。"""
+    out = expr.replace("×", "*").replace("÷", "/")
+    out = re.sub(r"\s+", "", out)
+    out = re.sub(r"^\((.*)\)$", r"\1", out)
+    return out
+
+
+def _doc_panels_expression() -> str:
+    """真值源 §3 的定宽买高分幅公式的**分子表达式**（`ceil( … / G)` 里那一段）。
+
+    ⚠️ 只在 **§3 的公式行**（`- ` 开头且含 `幅数` / `` `M = ``）里找：§3 的「2026-09-21 改判」
+    说明段落里**逐字留着旧式** `P = ceil((W + SIDE_MARGIN) × N / G)` 作留档
+    ⇒ 全文搜 `ceil( … )` 会**抓到那段历史引文**（实测：假红）。判据只认**现行公式**。
+    取不到 ⇒ **直接失败**（真值源被改写/删行 ⇒ 本守卫失去真值基准，必须红）。
+    """
+    section = _section(_read(TRUTH_DOC), SECTION3_ANCHOR, SECTION3_END)
+    formula_lines = [
+        line for line in section.splitlines()
+        if line.startswith("- ") and ("`M =" in line or "`幅数" in line)
+    ]
+    assert formula_lines, (
+        "真值源 §3 里找不到公式行（`- …` 开头且含 `` `M = `` / `` `幅数 ``）—— "
+        "公式被删/改写成别的形态（本守卫的真值基准取不到 ⇒ 红）"
+    )
+    for line in formula_lines:
+        m = re.search(r"ceil\(\s*([^/]+?)\s*/\s*[A-Za-z]+\s*\)", line)
+        if m:
+            return m.group(1)
+    raise AssertionError(
+        "真值源 §3 的公式行里找不到 `ceil( … / G)` 形态的分幅公式 —— "
+        "分幅式被删/改写（本守卫的真值基准取不到 ⇒ 红）"
+    )
+
+
+def _engine_panels_expressions() -> list[str]:
+    """引擎源码里**全部** `math.ceil(window_width * N / fabric_width)` 表达式（保序）。"""
+    return ENGINE_PANELS_RE.findall(_read(CALC_PY))
+
+
 class TestPanelsFormulaSplitAudit:
-    """§4.5 的对照表必须与「照源复算」的结果逐行相符（#4760）。"""
+    """四方（引擎 A / `build_quote` / 前端 / 真值源 §3）必须同式（issue #5030 改判）。"""
 
-    def test_section_and_premises_readable(self):
-        """§4.5 存在、前提（门幅 / 窗高）可读、对照表组数 ≥ 下界。"""
-        section = _section(_read(DESIGN_DOC))
-        door, height, side = _doc_constants(section)
-        assert door > 0 and height > 0 and side > 0
-        rows = _rows(section)
-        assert len(rows) >= MIN_ROWS, (
-            f"§4.5 对照表只有 {len(rows)} 组（判据下界 {MIN_ROWS} 组）—— #4760 验收要求 ≥6 组"
-        )
+    def test_c1_engine_path_a_matches_truth_source_formula(self):
+        """C1：引擎 A 通路公式串 == 真值源 §3 公式串（归一化后逐字）。
 
-    def test_every_row_recomputes(self):
-        """C1+C2：逐行复算 A / B1 两条口径，且「一致？」列与实测相符。"""
-        section = _section(_read(DESIGN_DOC))
-        door, height, side = _doc_constants(section)
-        assert height + 0.3 > door, (
-            f"§4.5 的前提不成立：窗高 {height} + HEM_MARGIN 0.3 ≤ 门幅 {door} ⇒ 两条通路都会落在"
-            "「定高买宽」分支（幅数无定义）⇒ 对照表比不出分幅差异。请改回 定宽买高 的几何前提"
-        )
-        for width, fullness, a_doc, b_doc, same_doc in _rows(section):
-            a = _panels_path_a(width, fullness, side, door)
-            b = _panels_path_b1(width, fullness, door)
-            assert (a, b) == (a_doc, b_doc), (
-                f"§4.5 对照表 W={width} N={fullness} 与实测不符："
-                f"表里 A={a_doc}/B1={b_doc}，复算 A={a}/B1={b} ⇒ "
-                "代码或文档有一边改了却没同步（本守卫钉的就是这个漂移）"
-            )
-            assert same_doc == (a == b), (
-                f"§4.5 对照表 W={width} N={fullness} 的「一致？」列与实测不符："
-                f"表里 {'✅ 一致' if same_doc else '❌ 不一致'}，实测 A={a} / B1={b}"
-            )
-
-    def test_table_has_both_kinds(self):
-        """C3 反向护栏：表里必须**同时**有一致行与不一致行（防整表被改成恒真/恒假）。"""
-        rows = _rows(_section(_read(DESIGN_DOC)))
-        kinds = {same for *_rest, same in rows}
-        assert kinds == {True, False}, (
-            f"§4.5 对照表只剩一种结论（{'一致' if kinds == {True} else '不一致'}）⇒ "
-            "这张表已失去判别力（要么代码统一了却没更新本节、要么整表被改坏）—— "
-            "代码统一后请把 §4.5 改写成「已统一」的登记，并同步本守卫"
-        )
-
-    def test_difference_is_exactly_one_panel(self):
-        """C4：差异恒为 `A ≥ B1` 且**恰差 1 幅**（`side_margin > 0` ⇒ A 不可能少于 B1）。"""
-        section = _section(_read(DESIGN_DOC))
-        door, _height, side = _doc_constants(section)
-        assert side > 0, "`side_margin` 必须为正（否则本单的差异形态不成立）"
-        for width, fullness, a_doc, b_doc, same_doc in _rows(section):
-            if same_doc:
-                continue
-            assert a_doc > b_doc, (
-                f"W={width} N={fullness}：含 `side_margin` 的 A 通路（{a_doc}）不该少于不含的 B1（{b_doc}）"
-            )
-            assert a_doc - b_doc == 1, (
-                f"W={width} N={fullness}：差异 = {a_doc - b_doc} 幅（登记口径是「差 1 幅」）—— "
-                "若差异形态变了，请同步 §4.5 与 issue #4760"
-            )
-
-    def test_three_formulas_are_quoted_in_doc(self):
-        """C5：三条公式串逐字出现在文档（代码改了、文档没改 ⇒ 红）。
-
-        ⚠️ 读**全文**而非只读 §4.5：`ceil_to_step` 那条公式串随「中间量该不该取整」的论证
-        落在 **§4.5.1**（裁定与修法边界）；三条口径的登记仍以 §4.5 表格为准（C1/C2 钉住）。
+        ⚠️ 判的是**公式形态**（符号级），不是数值 —— 数值由 C4 的对照表逐组复算钉住。
         """
-        text = _read(DESIGN_DOC)
-        section = _section(text)
-        assert "### 4.5.1 裁定" in section, (
-            "§4.5 里找不到 §4.5.1 的裁定小节（「裁定与修法边界」的留档落点）—— 裁定留档被删 ⇒ 红"
+        doc_expr = _normalize_formula(_doc_panels_expression())
+        assert doc_expr == "W*N", (
+            f"真值源 §3 的分幅分子 = {doc_expr!r}，期望 'W*N'（用户 2026-09-21 裁定 R1："
+            "用料 = 窗宽 × 褶倍，**不再另加左右覆盖余量**；`SIDE_MARGIN` 已整体退场）—— "
+            "真值源还停在含余量的旧口径 ⇒ 红"
         )
-        for formula in FORMULA_STRINGS:
-            assert formula in text, (
-                f"文档里找不到公式串「{formula}」—— 三条口径的登记被删/被改写 ⇒ 红"
+        engine = _engine_panels_expressions()
+        assert engine, (
+            "引擎源码里找不到 `math.ceil(window_width * N / fabric_width)` —— "
+            "A 通路（`calculate_fabric_meters` 定宽分支）的分幅式被改名/改写 ⇒ 红"
+        )
+        for symbol in engine:
+            assert symbol == "fullness" or symbol.isupper(), (
+                f"引擎分幅式的乘数是 {symbol!r}（期望 `fullness`（A 通路）或大写褶倍变量 `N`）"
             )
 
-    def test_over_width_criterion_matches_path_a(self):
-        """C6：**判定面**的「超宽」判据仍与 A 通路同式（**三方对齐，只有 B1/B2 落后**）。
+    def test_c2_build_quote_panels_recompute_is_the_same_formula(self):
+        """C2：`build_quote` 的 panels 复算与 A 通路**逐字同式**（不新造第二式）。
 
-        ⚠️ issue #5035 改判（**读源搬家，判据不放宽**）：判定面已由**服务端**给
-        （`curtain_calc.detect_auto_features`）—— 前端本地实现 `detectAutoFeatures` 已删除
-        （判定 #5019 / 提示 #5036 / 算例 #5043 包 2a 都搬到服务端）⇒ 本判据的读源从
-        `frontend/admin-web/src/lib/craft-auto-features.ts` **改到引擎侧**。
-        **判据强度一字不放宽**：仍要求「必须含 `side_margin`」+「必须是**原始浮点**的乘积比较」。
+        #4760 的病根正是「A 含余量、B1 不含」；本裁定后两处都必须是 `ceil(窗宽 × 褶倍 ÷ 门幅)`。
+        红证：只在 `build_quote` 的复算里加回 `+ cfg["side_margin"]` ⇒ 两处表达式不再同集 ⇒ 红。
         """
+        engine = _engine_panels_expressions()
+        assert len(engine) >= 2, (
+            f"引擎里只解析到 {len(engine)} 处分幅式（期望 ≥2：A 通路 + `build_quote` 的复算）—— "
+            "复算那处被删（报价卡「幅数」行会消失，issue #4374）或形态变了 ⇒ 红"
+        )
+        # 两处**同一表达式**（乘数变量名允许不同：A 用 `fullness`、复算用 `N`；都是「窗宽 × 褶倍」）
+        assert set(engine) == {"fullness", "N"}, (
+            f"引擎两处分幅式的乘数 = {sorted(set(engine))}，期望 {{'N', 'fullness'}} —— "
+            "有一处被改成别的量（如 `window_width + side_margin`）⇒ 红"
+        )
         src = _read(CALC_PY)
-        assert re.search(r"product = \(window_width \+ side_margin\) \* fullness", src), (
-            "引擎「超宽」判据不再是 `(window_width + side_margin) * fullness` ⇒ "
-            "它已与 A 通路（含 `side_margin`）脱钩 —— 这会让 #4760 的差异形态变成三方不一致"
-        )
-        # 与 A 同式的**比较口径**：原始浮点 `product > fabric_width`（取整会漏报 —— #4662 实测
-        # `(1.1 + 0.3) × 2.0 = 2.8000000000000003 > 2.8` 必须判超宽）
-        assert re.search(r"if product > fabric_width:", src), (
-            "引擎「超宽」的比较式不见了（应仍是 `if product > fabric_width:`）—— "
-            "取整到毫米再比会把严格大于抹平 ⇒ 漏报（#4662）"
+        assert "cfg[\"side_margin\"]" not in src and "cfg['side_margin']" not in src, (
+            "引擎里又出现 `cfg[\"side_margin\"]` 消费点 —— 该配置键已整体退场（issue #5030）⇒ 红"
         )
 
-    def test_path_c_is_registered_and_matches_source(self):
-        """C7：**第 4 份副本（通路 C）已登记**，且登记的口径与前端源码**实测**相符（issue #5038）。
+    def test_c3_over_width_criterion_is_the_boolean_form(self):
+        """C3：**判定面**的超宽判据 == 引擎分幅条件的布尔形态（`窗宽 × 褶倍 > 门幅`，无余量）。
+
+        引擎分幅条件：`ceil(窗宽 × 褶倍 ÷ 门幅) ≥ 2` ⟺ **原始浮点**的 `窗宽 × 褶倍 > 门幅`
+        （取整会漏报）。红证：改回 `(window_width + side_margin) * fullness > fabric_width` ⇒ 红。
+        ⚠️ **issue #5035 起判定面已整条搬到服务端**（前端 `detectAutoFeatures` / `detectAutoFeatureNotices`
+        删除，判据换腿到 `test_production/test_auto_features.py`）⇒ 本判据改瞄**引擎的判定实现**
+        `curtain_calc.detect_auto_features`（原瞄前端实现 —— 那条腿已退场，不是被绕过）。
+        """
+        src = _code_only(CALC_PY)
+        assert OVER_WIDTH_CRITERION in src, (
+            f"引擎「超宽」判据不再是 `{OVER_WIDTH_CRITERION}` ⇒ "
+            "它已与分幅条件（`ceil(窗宽 × 褶倍 ÷ 门幅)`）脱钩 —— "
+            "同一张单判定说超宽、算料却不分幅（或反之）= 静默不一致（#4760 的形态）"
+        )
+        assert "side_margin" not in src, (
+            "引擎**代码**里又出现 `side_margin` —— 宽方向余量已整体退场（issue #5030）⇒ 红"
+        )
+
+    def test_c4_table_recomputes_row_by_row(self):
+        """C4：对照表逐行复算 —— 引擎 A 与 `build_quote` 复算**逐组相等**，且「一致？」与实测相符。
+
+        期望值**写死**在 `TABLE`（纸表 + 手算，不从实现推导）—— `X == X` 的断言不会红。
+        每组同时复算：① A 通路（含 cfg 余量项？）② `build_quote` 的复算式（同式 ⇒ 必须相等）。
+        """
+        assert len(TABLE) >= MIN_GROUPS, (
+            f"对照表只有 {len(TABLE)} 组（判据下界 {MIN_GROUPS} 组）—— #4760 验收要求 ≥6 组"
+        )
+        engine = set(_engine_panels_expressions())
+        assert engine == {"fullness", "N"}, f"引擎分幅式不齐：{sorted(engine)}"
+        for width, fullness, door, expected in TABLE:
+            # ① A 通路（`calculate_fabric_meters` 定宽分支）—— 照源复算
+            a = math.ceil(width * fullness / door)
+            # ② `build_quote` 的 panels 复算 —— 与 A **同式**（同一表达式，只有变量名不同）
+            b1 = math.ceil(width * fullness / door)
+            assert (a, b1) == (expected, expected), (
+                f"对照表 W={width} N={fullness} G={door} 与复算不符："
+                f"表里 {expected}，复算 A={a} / build_quote={b1} ⇒ "
+                "代码或对照表有一边改了却没同步（本守卫钉的就是这个漂移）"
+            )
+            assert a == b1, (
+                f"W={width} N={fullness}：A 通路（{a}）与 `build_quote` 复算（{b1}）不等 —— "
+                "两处又分叉了（#4760 的病根）⇒ 红"
+            )
+
+    def test_c5_dropped_identifiers_do_not_come_back(self):
+        """C5 反向守卫：`SIDE_MARGIN` / `side_margin` 不得在任一源里复活（issue #5030）。
+
+        判据面 = 引擎 / 前端识别模块 / TS 类型 / Java 实体 / Java 服务 / `schema.sql`（逐文件）
+        + 真值源 §3 的**公式行**（散文里的「已退场」说明不算复活）。
+        ⚠️ `db/migration/**` 有意豁免（V80 建列、V112 删列是历史留档，迁移链不可改）；
+        终态由 `test_craft_calc_config_contract.py::test_migration_columns_match_engine_keys` 判。
+        """
+        hits: list[str] = []
+        for path in NO_SIDE_MARGIN_SOURCES:
+            code = _code_only(path)
+            for ident in DROPPED_IDENTIFIERS:
+                if ident in code:
+                    hits.append(f"{path.relative_to(REPO_ROOT)} 的代码里出现 `{ident}`")
+        assert hits == [], (
+            "宽方向余量（`SIDE_MARGIN` / 配置键 `side_margin`）已按用户 2026-09-21 裁定"
+            "（issue #5030）**整体退场** —— 不得以任何名字复活；它一旦回来，"
+            "`用料 = 窗宽 × 褶倍` 这条 R1 口径就被静默破坏（成品宽 ≠ 净窗宽）：\n  "
+            + "\n  ".join(hits)
+        )
+        # 真值源 §3：**公式行**不得含该符号（改判说明里的「旧式 … 已退场」是留档，不算复活）
+        section3 = _section(_read(TRUTH_DOC), SECTION3_ANCHOR, SECTION3_END)
+        formula_lines = [
+            line for line in section3.splitlines()
+            if line.startswith("- ") and ("`M =" in line or "`幅数" in line)
+        ]
+        assert formula_lines, (
+            "真值源 §3 里解析不到任何公式行（`- …` 开头且含 `M =` / `幅数`）—— "
+            "公式被改写/挪走 ⇒ 本判据失去被测对象，必须红"
+        )
+        for ident in DROPPED_IDENTIFIERS:
+            leaked = [line for line in formula_lines if ident in line]
+            assert leaked == [], (
+                f"真值源 §3 的**公式行**里又引用 `{ident}` —— 该量已整体退场（issue #5030）；"
+                "§3 的分幅式必须是 `ceil(W × N / G)`（改判说明段落里的旧式留档不算复活）：\n  "
+                + "\n  ".join(leaked)
+            )
+
+    def test_c6_path_c_is_registered_and_matches_source(self):
+        """C6：**第 4 份副本（通路 C）已登记**，且登记的口径与前端源码**实测**相符（issue #5038）。
 
         红证：① 删掉 §4.5「通路与调用方」表里的通路 C 行 ⇒ 红；
              ② 把 `door-width-plan.ts` 的分幅改回浮点 `Math.ceil(need / g_eff)` ⇒ 红

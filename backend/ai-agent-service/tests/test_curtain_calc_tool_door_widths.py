@@ -14,7 +14,8 @@
 2. 工具 `description` 告诉模型「顾客没指定门幅 ⇒ 传 fabric_widths，系统自动选」；
 3. `execute(fabric_widths=[2.8, 3.2], 成品高 2.75)` ⇒ 自动解 = **3.2 门幅 + 定高买宽**
    （2.8 会判需接高：`2.75 + 0.3 = 3.05 > 2.8`）；
-4. `execute(fabric_widths=[2.8, 3.2], 成品高 3.0)` ⇒ **倒幅**（`ceil(6.6/2.8) = 3` 幅）；
+4. `execute(fabric_widths=[2.8, 3.2], 成品高 3.0)` ⇒ **倒幅**（issue #5030：用料 `T = 3.0 × 2 = 6.0`
+   ⇒ 2.8 档 `ceil_mm(6.0/2.8) = 3` 幅、3.2 档 `ceil_mm(6.0/3.2) = 2` 幅 ⇒ 取分幅最少的 **3.2 / 2 幅**）；
 5. **只给 2.8**（成品高 2.75）**且显式给 `fabric_width=3.2`** ⇒ 仍倒幅、门幅 **2.8**
    （候选集**压过**显式单值门幅）—— 证明候选集**真的参与判定**；
 6. **不传 `fabric_widths`** ⇒ 既有单一门幅口径**逐值不变**（回归不变量）；
@@ -41,7 +42,7 @@ CurtainCalcTool = cc.CurtainCalcTool
 TENANT_ID = 7
 USER_ID = "u-5016"
 
-#: 基线入参（成品宽 3.0 / 2 倍褶 ⇒ 定高买宽用料 T = (3.0 + 0.3) × 2 = 6.6 米）
+#: 基线入参（成品宽 3.0 / 2 倍褶 ⇒ 定高买宽用料 T = 3.0 × 2 = 6.0 米；issue #5030：宽方向无余量）
 ANCHOR: Dict[str, Any] = {
     "window_width": 3.0,
     "fabric_price": 98.0,
@@ -108,35 +109,37 @@ def test_tool_description_tells_model_to_pass_candidates():
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def test_candidates_pick_widest_feasible_and_fixed_height(monkeypatch):
-    # 2.75 + 0.3 = 3.05：2.8 不可行、3.2 可行 ⇒ 自动解 = 3.2 + 定高买宽，用料 = T = 6.6
+    # 2.75 + 0.3 = 3.05：2.8 不可行、3.2 可行 ⇒ 自动解 = 3.2 + 定高买宽，用料 = T = 3.0 × 2 = 6.0
     result = await _run(monkeypatch, window_height=2.75, fabric_widths=[2.8, 3.2])
     assert result.success is True, result.message
     assert result.data["door_width"] == 3.2
     assert result.data["cutting_mode"] == cc.CUTTING_MODE_FIXED_HEIGHT
     assert result.data["splice"] is False
-    assert result.data["fabric_meters"] == pytest.approx(6.6)
+    assert result.data["fabric_meters"] == pytest.approx(6.0)
     assert result.data["formula_used"] == "fixed_height"
 
 
 async def test_candidates_fall_back_to_rotated_when_none_feasible(monkeypatch):
-    # 3.0 + 0.3 = 3.3 > 3.2 ⇒ 无可行门幅 ⇒ 倒幅；ceil(6.6 / 2.8) = 3 幅 × 3.3 = 9.9
-    # ⚠️ 本条是**行为断言**、**不**承担接线红证：候选路径选中的门幅与缺省门幅同为 2.8
-    # ⇒ 与既有单一门幅口径**逐值重合**（接线红证见判据 3 / 5 / 7，理由见模块 docstring）。
+    # 3.0 + 0.3 = 3.3 > 3.2 ⇒ 无可行门幅 ⇒ 倒幅；issue #5030 后 T = 3.0 × 2 = 6.0
+    # ⇒ 2.8 档 ceil_mm(6.0/2.8) = 3 幅、3.2 档 ceil_mm(6.0/3.2) = 2 幅 ⇒ 取分幅最少 = 3.2 / 2 幅
+    # ⇒ 用料 2 × (3.0 + 0.3) = 6.6。
+    # ⚠️ 口径变更后本条**也**成了接线判别（候选路径选中 3.2/2 幅；不接线走显式/缺省单值口径是
+    # 2.8/3 幅）—— 接线红证仍以判据 3 / 5 / 7 为主（理由见模块 docstring）。
     result = await _run(monkeypatch, window_height=3.0, fabric_widths=[2.8, 3.2])
     assert result.success is True, result.message
     assert result.data["cutting_mode"] == cc.CUTTING_MODE_FIXED_WIDTH
-    assert result.data["panels"] == 3
-    assert result.data["fabric_meters"] == pytest.approx(9.9)
+    assert result.data["panels"] == 2
+    assert result.data["fabric_meters"] == pytest.approx(6.6)
     assert result.data["formula_used"] == "fixed_width"
 
 
 async def test_narrow_only_candidate_also_rotates(monkeypatch):
     # 候选里**只有 2.8**（3.05 > 2.8）⇒ 也必须倒幅 —— 证明候选集真的参与判定。
     # 显式 `fabric_width=3.2` 是**判别性**入参（schema 已声明「传了 `fabric_widths` ⇒ `fabric_width`
-    # 被忽略」）：3.05 ≤ 3.2 ⇒ 若候选集没接线、走显式门幅，解会是「定高买宽 3.2 / 6.6 米」；
+    # 被忽略」）：3.05 ≤ 3.2 ⇒ 若候选集没接线、走显式门幅，解会是「定高买宽 3.2 / 6.0 米」；
     # 接线后仍是「倒幅 2.8 / 9.15 米」⇒ 两条路径可分辨。
     # 红证（实测）：`execute` 里 `fabric_widths=fabric_widths,` 变异成 `=None,` ⇒ 本断言红
-    # （`cutting_mode` → `定高买宽`、`door_width` → 3.2、`fabric_meters` → 6.6）。
+    # （`cutting_mode` → `定高买宽`、`door_width` → 3.2、`fabric_meters` → 6.0）。
     result = await _run(monkeypatch, window_height=2.75, fabric_width=3.2, fabric_widths=[2.8])
     assert result.data["cutting_mode"] == cc.CUTTING_MODE_FIXED_WIDTH
     assert result.data["door_width"] == 2.8

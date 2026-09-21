@@ -6,6 +6,29 @@
 
 ## [Unreleased]
 
+### 算料口径：订单宽高 = 窗户宽高 —— 用料 = 窗宽 × 褶倍，「左右覆盖余量」整体退场（2026-09-21，issue #5030）
+
+- **用户裁定（2026-09-21，逐字）**：「订单这里的宽和高是**窗户的宽高**」；宽度用料 = **窗宽 × 褶倍**
+  （不再另加左右覆盖）；**成品高 = 净窗高**（不做换算）；「不用考虑左右余量，根据公式算出来的用料就已经包含了，
+  我们是否需要移除左右余量这个概念」⇒ **移除**（常量 + 配置键 + DB 列一起删干净，留着就是「改了不生效」的静默失效）。
+- `backend/ai-agent-service`：`curtain_calc.py` 删常量 `SIDE_MARGIN` 与配置键 `side_margin`；
+  `calculate_fabric_meters` 定高用料 `(W+0.3)×N → W×N`、定宽分幅 `ceil((W+0.3)×N/G) → ceil(W×N/G)`；
+  `detect_auto_features` 的「超宽」判据 `→ 窗宽 × 褶倍 > 门幅`（reason 文案同步）。
+- 配置面**五处同源**同步删键：引擎键集 / 新迁移 `V112__drop_craft_calc_side_margin.sql`（`DROP COLUMN IF EXISTS`，幂等）/
+  `docs/sql/schema.sql` / Java `CraftCalcConfig` / `CraftCalcConfigService`（`CONFIG_KEYS` + `NUMERIC_KEYS`）。
+- `frontend/admin-web`：`lib/craft-auto-features.ts` 删导出常量 `SIDE_MARGIN`；`lib/door-width-plan.ts` 分幅与依据去余量；
+  `lib/craft-calc-glossary.ts` / `types/index.ts` / 算料配置页去该键；下单页标签改 **「窗宽 (米) / 窗高 (米)」**，
+  ①区块提示句改为「按**窗户净尺寸**填（成品宽 = 窗宽、成品高 = 窗高）」。
+- **改钱面（实测读数）**：`calculate_fabric_meters` 通路 3.0/2.5/2.0/2.8 ⇒ **6.60 → 6.00 米**；6.6/2.6/2.0/3.2 ⇒
+  **13.80 → 13.20 米**；6.6/2.6/2.0/2.8（定宽 5 幅）不变。B 端下单页两条通路（`pleat` / `fullness`）本就不含余量 ⇒ 金额不变。
+- 判据改判：`tests/unit_ci_workflows/test_panels_formula_split_audit.py`（#4760 的「A 含 / B1 不含、恰差 1 幅」形态随本裁定消失）
+  改为**四方同式** `ceil(窗宽 × 褶倍 ÷ 门幅)` + 反向守卫；`test_craft_calc_config_contract.py` 的 #4940 文案漂移守卫
+  改为「全仓不再出现该键（迁移历史注释除外）」。
+- 一并关闭：**#4760**（两条通路分幅公式不一致 —— 本裁定即其要求的业务裁定：`side_margin` **不该算**）、
+  **#4940**（配置页文案与引擎口径相反 —— 其 A/B 两条路都被「该键整体退场」取代）。
+- 真值源：`docs/curtain-fabric-quote-rules.md` 的常量清单 / 公式 / 分幅对照表 / 完整算例按新口径同步
+  （3m 窗算例由 `M = 3.3 × 2 = 6.6 米` 改为 `M = 3 × 2 = 6.0 米`；该文已不再写「左右覆盖余量」）。
+
 ### 加工单打印任务卡改「洗水码」形态：按商品行（部位）出码（2026-09-21，issue #4946）
 
 - **用户裁定（三条，2026-09-21）**：① 洗水码固定 **60mm × 30mm**；② 粒度 = **商品行（部位）**，一个商品一张纸；

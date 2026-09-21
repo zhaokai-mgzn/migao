@@ -63,7 +63,6 @@ vi.mock('@/lib/api', () => ({
               min_fullness: 1.5,
               tiers: { standard: { fullness: 2.0, label: '标准档' } },
               default_formula: 'pleat',
-              side_margin: 0.15,
               meters_rounding_step: 0.1,
             },
           },
@@ -139,9 +138,9 @@ async function setupLine() {
   render(<NewOrderPage />)
   fireEvent.click(await screen.findByText('点击搜索并选择商品'))
   fireEvent.click(await screen.findByText('遮光窗帘'))
-  await screen.findByText('宽 (米)')
-  fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-  fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+  await screen.findByText('窗宽 (米)')
+  fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+  fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
   // 帘行米数输入框（issue #4598 起 label = 「用料米数」，旧文案「数量」）—— 它就是加工费米数
   await waitFor(() => expect(inputOf('用料米数')).toHaveValue(13.3))
   expandProcessing()
@@ -325,7 +324,7 @@ describe('下单页加工费计价预览接线（#4450）', () => {
     render(<NewOrderPage />)
     fireEvent.click(await screen.findByText('点击搜索并选择商品'))
     fireEvent.click(await screen.findByText('遮光窗帘'))
-    await screen.findByText('宽 (米)')
+    await screen.findByText('窗宽 (米)')
     // 刻意**不填宽高**（自动识别特征以宽高为输入）也**不勾**加工项 ⇒ 组合键为空
     expandProcessing()
     await waitFor(() => expect(mockFeePreview).toHaveBeenCalled())
@@ -354,9 +353,9 @@ describe('下单页加工费计价预览接线（#4450）', () => {
     render(<NewOrderPage />)
     fireEvent.click(await screen.findByText('点击搜索并选择商品'))
     fireEvent.click(await screen.findByText('遮光窗帘'))
-    await screen.findByText('宽 (米)')
-    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    await screen.findByText('窗宽 (米)')
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
     await waitFor(() => expect(inputOf('用料米数')).toHaveValue(13.3))
     expandProcessing()
     fireEvent.click(screen.getAllByRole('checkbox')[0])

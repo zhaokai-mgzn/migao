@@ -1,0 +1,46 @@
+-- 删除算料配置的「左右覆盖余量」列 `side_margin`（issue #5030；来源 = #4760 要求的业务裁定 + #4940）
+--
+-- ## 一句话
+-- 用户 2026-09-21 裁定：**订单里的宽和高是窗户的宽高**（净窗宽 / 净窗高）⇒
+-- **成品宽 = 净窗宽**、**成品高 = 净窗高**；宽度方向的用料 = `窗宽 × 褶倍`
+-- ⇒ 「左右覆盖余量」（常量 `SIDE_MARGIN` / 配置键 `side_margin`）**整体退场**。
+--
+-- ## 为什么是删列（而不是改文案）
+-- 本裁定后 `side_margin` **没有任何消费者**（引擎三处消费点一并改为不含余量：
+-- `calculate_fabric_meters` 的定高用料与定宽分幅、`build_quote` 的 panels 复算、
+-- `detect_auto_features` 的超宽判据）⇒ 留着一列「可配却无效果」的参数 =
+-- 商家改了不生效的**静默失效**（本仓明令禁止的形态）。
+-- 它同时是 #4760（引擎两条通路分幅公式不一致）与 #4940（配置页文案与引擎口径相反）的共同病根。
+--
+-- ## 为什么是新迁移（而不是改 V80 / V110）
+-- `MigrationRunner` 的台账 `schema_migrations` 按**文件名**记、已应用的文件**整份跳过**
+-- ⇒ 改旧文件只对全新库生效、存量环境永远拿不到 = 「CI 全绿、功能静默缺失」（issue #4235）。
+-- **一切增量走新文件。**
+--
+-- ## 迁移号（**现取**，不写死）
+-- 落码时本单取 `V111`；**与 main 集成时发现号冲突** —— `V111__create_inbound_orders_and_batches.sql`
+-- （issue #5045 的入库单模块）已先占用 `V111` ⇒ 本迁移**改号为 `V112`**（内容一字未动，
+-- 只换文件名；`migration_fingerprints.json` 台账同批重登记）。
+-- ⚠️ 教训（本仓既有纪律）：**迁移号必须现取**（`ls … | sort -V | tail -1`），且**长尾 PR 要
+-- 在合并前再取一次** —— 号被别人占用时只能改号，改已发布迁移的内容是禁止的（issue #4235）。
+--
+-- ## 幂等（`MigrationRunner` 硬要求所有迁移可重复执行）
+-- `DROP COLUMN IF EXISTS` ⇒ 重复执行净效果相同。
+--
+-- ## 停止条件（fail-closed）
+-- `craft_calc_configs` 表不存在 ⇒ 迁移失败并停下（**不** CREATE TABLE 兜底 ——
+-- 那会造出一张缺唯一索引/缺注释的影子配置表，比失败更危险）。
+--
+-- ## 回滚
+-- 本列承载的口径**已退场** ⇒ **不回滚**（要恢复必须先裁定口径，不是恢复一个列）。
+-- 若确需临时回滚（仅供人工应急，非本单产物）：
+-- ```sql
+-- ALTER TABLE craft_calc_configs ADD COLUMN IF NOT EXISTS side_margin NUMERIC(6,3) NOT NULL DEFAULT 0.3;
+-- ```
+--
+-- ## 跨源收敛判据（五处同源）
+-- 删列后键集必须逐字一致：引擎 `curtain_calc.DEFAULT_CRAFT_CALC_CONFIG`（**真值源**）/
+-- 本迁移 / `docs/sql/schema.sql`（bootstrap 终态）/ Java 实体 `CraftCalcConfig` /
+-- Java 写面 `CraftCalcConfigService.CONFIG_KEYS` + `NUMERIC_KEYS`。
+-- 守卫 = `tests/unit_ci_workflows/test_craft_calc_config_contract.py`（少一处 ⇒ 红）。
+ALTER TABLE craft_calc_configs DROP COLUMN IF EXISTS side_margin;

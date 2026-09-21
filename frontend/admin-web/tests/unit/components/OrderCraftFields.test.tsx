@@ -53,7 +53,6 @@ const CALC_CONFIG: CraftCalcConfig = {
     economy: { fullness: 1.8, label: '经济档（1.8倍）' },
   },
   default_formula: 'pleat',
-  side_margin: 0.15,
   hem_margin: 0.3,
   meters_rounding_step: 0.1,
 }

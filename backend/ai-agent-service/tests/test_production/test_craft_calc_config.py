@@ -196,8 +196,12 @@ class TestEngineDefaultsEndpoint:
         assert config["tiers"]["standard"]["fullness"] == 2.0
         assert config["tiers"]["economy"]["fullness"] == 1.8
         assert config["default_formula"] == "pleat"
-        assert config["side_margin"] == 0.3
+        assert config["hem_margin"] == 0.3
         assert config["meters_rounding_step"] == 0.1
+        # 反向守卫（issue #5030）：宽方向余量的配置键已整体退场 ⇒ 端点不得再回显它
+        assert "side_margin" not in config, (
+            "端点又回显 `side_margin` —— 该键已按用户 2026-09-21 裁定（issue #5030）整体退场"
+        )
 
     def test_key_set_equals_engine_key_set(self, client):
         """键集**恰好**等于引擎配置的键集（多一个/少一个 ⇒ 红）。

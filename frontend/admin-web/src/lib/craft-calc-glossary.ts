@@ -11,9 +11,10 @@
  *    参数值取自配置对象；算例的 `reason` 自 issue #5036 包 2a 起**逐字转发服务端**判定
  *    （`POST /api/admin/orders/auto-features`，入参带**该租户配置**）—— 本模块**不自己拼、也不自己判**。
  *    写死一个数 = 造第二份口径。
- * 2. **口径与引擎同源**：`side_margin` 是**宽方向左右覆盖余量**（引擎 `SIDE_MARGIN` 的语义），
- *    **不是**「上下卷边」（那是 `HEM_MARGIN`）。本仓实测有**三处**把它讲反了（页面 hint /
- *    `types/index.ts` 注释 / 引擎配置字典那行注释）—— 三处都已在本单改正并加守卫（#4940 判据 1）。
+ * 2. **口径与引擎同源**：订单宽高 = **窗户宽高**（净窗宽 / 净窗高）⇒ 成品宽 = 净窗宽、
+ *    成品高 = 净窗高。**「左右覆盖余量」这个概念已整体退场**（用户 2026-09-21 裁定，issue #5030
+ *    ⇒ 常量 `SIDE_MARGIN` 与配置键 `side_margin` 一并删除），高方向只剩 `HEM_MARGIN`
+ *    （上下卷边，配置键 `hem_margin`）。
  * 3. **键集必须覆盖引擎全部配置键**：引擎 `DEFAULT_CRAFT_CALC_CONFIG` 加一个键而不补文案 ⇒ 守卫红
  *    （这样 #4976 把 `hem_margin` 加进键集时，本模块会被**强制**同步补上说明）。
  *
@@ -33,7 +34,6 @@ export const CALC_SCALAR_KEYS = [
   'margin_single',
   'margin_multi',
   'min_fullness',
-  'side_margin',
   'hem_margin',
   'meters_rounding_step',
 ] as const
@@ -82,11 +82,6 @@ export const CALC_PARAM_COPY: Record<string, CalcParamCopy> = {
     label: '褶倍下限',
     hint: '行业红线：不得低于系统默认值（低于它用料不足）',
     impact: '护栏：档位褶倍不得低于它（低于它用料不足 = 褶子太平、效果不达标）',
-  },
-  side_margin: {
-    label: '左右覆盖余量（米）',
-    hint: '宽方向：两侧覆盖余量 —— 定高买宽按宽买米时加它，定宽买高按它算分幅',
-    impact: '**宽方向**的覆盖余量（引擎 `SIDE_MARGIN`）：定高买宽时加在用料里，定宽买高时进分幅判据',
   },
   hem_margin: {
     label: '上下卷边（米）',
@@ -141,8 +136,8 @@ export const AUTO_FEATURE_TERMS: GlossaryTerm[] = [
   },
   {
     name: '超宽',
-    definition: '定宽买高时，成品宽加左右覆盖余量再乘褶倍超过门幅 —— 一幅布不够宽，要分幅',
-    criterion: '加工类型 = 定宽买高 且 (成品宽 + 左右覆盖余量) × 褶倍 > 门幅',
+    definition: '定宽买高时，窗宽乘褶倍超过门幅 —— 一幅布不够宽，要分幅',
+    criterion: '加工类型 = 定宽买高 且 窗宽 × 褶倍 > 门幅',
     impact:
       '① 进加工费组合键；② **真正多花钱的地方是分幅**（幅数向上取整 ⇒ 米数整幅地涨），不是「超宽」这两个字本身',
     boundary:
@@ -306,18 +301,18 @@ export const SPECIAL_OPTION_TERMS: SpecialOptionTerm[] = [
 export const GLOSSARY_FORMULAS: { name: string; formula: string; note: string }[] = [
   {
     name: '褶数法（韩褶公式）',
-    formula: '每片用料 = 每折吃布 × 每片褶数 + 每片余量；总用料 = 每片用料 × 开数；每片宽 = 成品宽 ÷ 开数',
+    formula: '每片用料 = 每折吃布 × 每片褶数 + 每片余量；总用料 = 每片用料 × 开数；每片宽 = 窗宽 ÷ 开数',
     note: '韩褶按工艺自动走这条；折数由倍数意图反算，并按开数取整（对开取偶数、四开取四的倍数）',
   },
   {
     name: '倍数法（褶倍数公式）',
-    formula: '总用料 = (成品宽 + 左右覆盖余量) × 褶倍',
+    formula: '总用料 = 窗宽 × 褶倍',
     note: '打孔等按工艺走这条；褶倍取自工艺档位，且不得低于褶倍下限',
   },
   {
     name: '定宽买高：分幅',
     formula:
-      '幅数 = ⌈(成品宽 + 左右覆盖余量) × 褶倍 ÷ 门幅⌉（向上取整）；每幅长 = 成品高 + 上下卷边（有花距再加一个花距）；总用料 = 幅数 × 每幅长',
+      '幅数 = ⌈窗宽 × 褶倍 ÷ 门幅⌉（向上取整）；每幅长 = 窗高 + 上下卷边（有花距再加一个花距）；总用料 = 幅数 × 每幅长',
     note: '成品高加上下卷边超过门幅时，引擎自动从「定高买宽」回落到这条 —— 这就是超高会改米数的原因',
   },
   {
@@ -360,7 +355,7 @@ export interface AutoFeatureExample {
  * （租户配 0.5，算例仍显示 0.3）。现在判定入参带**该租户配置** ⇒ 承诺成真。
  *
  * 举例取值使判定**稳定成立**：成品高 + 上下卷边 > 示例门幅 ⇒ 必判超高；
- * 成品宽 + 左右覆盖余量 乘以褶倍 ⇒ 必判超宽。
+ * 窗宽 乘以**褶倍下限之上**的任一褶倍都 > 示例门幅 ⇒ 必判超宽（issue #5030：**宽方向无余量**）。
  */
 export function buildAutoFeatureExamples(
   config: CraftCalcConfig,
@@ -371,9 +366,9 @@ export function buildAutoFeatureExamples(
 
   const givenOf = (name: string): string => {
     if (name === '超高') {
-      return `举例：加工类型「定高买宽」· 成品高 ${GLOSSARY_EXAMPLE.height} 米 · 某商品门幅 ${GLOSSARY_EXAMPLE.doorWidth} 米（门幅随商品而变）`
+      return `举例：加工类型「定高买宽」· 窗高 ${GLOSSARY_EXAMPLE.height} 米 · 某商品门幅 ${GLOSSARY_EXAMPLE.doorWidth} 米（门幅随商品而变）`
     }
-    return `举例：加工类型「定宽买高」· 成品宽 ${GLOSSARY_EXAMPLE.width} 米 · 褶倍 ${fullness ?? '—'} · 某商品门幅 ${GLOSSARY_EXAMPLE.doorWidth} 米（门幅随商品而变）`
+    return `举例：加工类型「定宽买高」· 窗宽 ${GLOSSARY_EXAMPLE.width} 米 · 褶倍 ${fullness ?? '—'} · 某商品门幅 ${GLOSSARY_EXAMPLE.doorWidth} 米（门幅随商品而变）`
   }
 
   return [...fixedHeightFeatures, ...fixedWidthFeatures].map((f) => ({

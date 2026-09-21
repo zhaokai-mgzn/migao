@@ -68,12 +68,12 @@ public class CraftCalcConfigService {
      */
     public static final List<String> CONFIG_KEYS = List.of(
             "per_fold_single", "per_fold_mixed_times", "margin_single", "margin_multi",
-            "min_fullness", "tiers", "default_formula", "side_margin", "hem_margin",
+            "min_fullness", "tiers", "default_formula", "hem_margin",
             "meters_rounding_step");
 
     /** 必须是**正数**的标量键（引擎 {@code _POSITIVE_CONFIG_KEYS} 同集合）。 */
     private static final List<String> NUMERIC_KEYS = List.of(
-            "per_fold_single", "margin_single", "margin_multi", "min_fullness", "side_margin",
+            "per_fold_single", "margin_single", "margin_multi", "min_fullness",
             "hem_margin", "meters_rounding_step");
 
     private final CraftCalcConfigMapper craftCalcConfigMapper;
@@ -272,7 +272,6 @@ public class CraftCalcConfigService {
         row.setMinFullness((BigDecimal) config.get("min_fullness"));
         row.setTiers(config.get("tiers"));
         row.setDefaultFormula((String) config.get("default_formula"));
-        row.setSideMargin((BigDecimal) config.get("side_margin"));
         row.setMetersRoundingStep((BigDecimal) config.get("meters_rounding_step"));
     }
 

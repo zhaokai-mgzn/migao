@@ -324,7 +324,7 @@ export interface AutoFeaturesParams {
   cutting_mode?: string
   /**
    * **该租户的算料配置**（issue #5036 包 2a）—— 判定要用**该租户**的
-   * `side_margin` / `hem_margin` / 档位褶倍，**不是前端常量副本**。
+   * `hem_margin` / 档位褶倍（宽方向余量 `side_margin` 已按 issue #5030 **整体退场**），**不是前端常量副本**。
    * 缺省 ⇒ 引擎默认值（未配置租户口径一字不变）。
    */
   config?: CraftCalcConfig
@@ -347,7 +347,7 @@ export interface AutoFeaturesResult {
    * 且覆盖 `notice` 表达不了的两类（`missing-fullness` / `cutting-mode-conflict`）。
    *
    * 🔴 提示由**服务端**给（用户 2026-09-21 裁定「统一迁移到服务端；未来 agent 也需要」）：
-   * 引擎读的是**该租户配置**的 `side_margin` / `hem_margin` ⇒ 判定与提示**同源**。
+   * 引擎读的是**该租户配置**的 `hem_margin`（宽方向余量已按 issue #5030 退场）⇒ 判定与提示**同源**。
    * 迁移前前端本地算、读**模块常量副本**（0.3）⇒ 租户改过 `hem_margin` 后会显示**错的数**。
    */
   notices: Array<{

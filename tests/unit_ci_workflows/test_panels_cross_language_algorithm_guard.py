@@ -49,7 +49,7 @@
 两侧不同 —— Python `round` 是**银行家舍入**、JS `Math.round` 是**四舍五入**
 （`2.7505 ⇒ Python 2750 / JS 2751`）。该形态要求输入精确落在半毫米上，**不在业务输入形态内**
 （宽高按厘米报、褶倍是一位小数）；C7 断言算例表**不含**该形态，故本表的等价性前提成立。
-⚠️ 本表只钉**取整口径**；A 通路与 B1/B2 的 `side_margin` 差异是**另一件事**，登记在
+⚠️ 本表只钉**取整口径**（`need = width × fullness`，宽方向**无余量** —— issue #5030）；
 `docs/design/craft-calc-and-fabric-routing.md` §4.5（issue #4760），**不在本单范围、未动**。
 """
 from __future__ import annotations
@@ -139,8 +139,9 @@ def _engine_candidates(candidates: list[float], allowance: float) -> list[float]
     return [g for g in candidates if g > allowance]
 
 
-def _case_need(case: dict, side_margin: float) -> float:
-    return (case["width"] + side_margin) * case["fullness"]
+def _case_need(case: dict) -> float:
+    """总用料（米）= `width × fullness` —— **宽方向无余量**（issue #5030：成品宽 = 净窗宽）。"""
+    return case["width"] * case["fullness"]
 
 
 # ── C1：引擎侧仍是毫米整数式（源形态判据）────────────────────────────────────
@@ -189,10 +190,8 @@ def test_ts_source_has_millimeter_integer_forms() -> None:
 
 def test_golden_matches_engine_formula() -> None:
     """C4：逐例复算（引擎式）—— 逐候选幅数 / 选中档 / 全剔除 ⇒ 不可判定。"""
-    side_margin = _py_float(_read(CALC_PY), "SIDE_MARGIN")
-    assert side_margin > 0, "引擎 `SIDE_MARGIN` 读出来不是正数（解析口径变了，请同步本守卫）"
     for case in _golden()["cases"]:
-        need = _case_need(case, side_margin)
+        need = _case_need(case)
         allowance = case["allowance"]
         kept = _engine_candidates(case["candidates"], allowance)
         expected = case["expected"]
@@ -226,12 +225,11 @@ def test_golden_matches_engine_formula() -> None:
 
 def test_golden_table_has_discriminating_power() -> None:
     """C5：**至少一例**「浮点式 ≠ 引擎式」—— 否则这张表证明不了任何事（反恒真）。"""
-    side_margin = _py_float(_read(CALC_PY), "SIDE_MARGIN")
     differing: list[str] = []
     for case in _golden()["cases"]:
         if case["expected"]["state"] != "single_panel":
             continue
-        need = _case_need(case, side_margin)
+        need = _case_need(case)
         allowance = case["allowance"]
         engine = [_engine_panels(need, _round3(g - allowance)) for g in case["candidates"]]
         floating = [_float_panels(need, _round3(g - allowance)) for g in case["candidates"]]
@@ -247,11 +245,11 @@ def test_golden_table_has_discriminating_power() -> None:
         for case in _golden()["cases"]
         if case["expected"]["state"] == "single_panel"
         and [
-            _engine_panels(_case_need(case, side_margin), _round3(g - case["allowance"]))
+            _engine_panels(_case_need(case), _round3(g - case["allowance"]))
             for g in case["candidates"]
         ]
         == [
-            _float_panels(_case_need(case, side_margin), _round3(g - case["allowance"]))
+            _float_panels(_case_need(case), _round3(g - case["allowance"]))
             for g in case["candidates"]
         ]
     ]

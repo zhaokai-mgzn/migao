@@ -19,9 +19,12 @@
 
 ## 红证（逐条可注入）
 
-- 在 V80 里删掉 `side_margin` 列 ⇒ 判据 2 红；
+- 在 V80 里删掉 `hem_margin` 列 ⇒ 判据 2 红；
 - 在 `schema.sql` 里删掉 `tiers` 列 ⇒ 判据 3 红；
 - 在实体里删掉 `metersRoundingStep` 字段 ⇒ 判据 4 红；
+- 把 `sideMargin` 字段（或 `CONFIG_KEYS` 的 `"side_margin"`）加回来 ⇒ 判据 4c 红
+  （issue #5030：该键已整体退场）；
+- 删掉 V112 的 `DROP COLUMN side_margin` ⇒ 判据 4d 红；
 - 在 `CONFIG_KEYS` 里加 `"default_fabric_width"` ⇒ 判据 5 红；
 - 把 `MIN_FULLNESS_RED_LINE` 改成 `1.2` ⇒ 判据 6 红；
 - 把 `FORMULAS` 改成 `Set.of("pleat")` ⇒ 判据 7 红；
@@ -44,6 +47,33 @@ SERVICE = REPO / "backend/admin-api/src/main/java/com/migao/admin/service/CraftC
 
 #: 非配置键的结构列（表范式要求，不参与「配置键集」比对）
 STRUCTURAL_COLUMNS = {"id", "tenant_id", "status", "created_at", "updated_at", "deleted"}
+
+#: 多语言注释/文档串（判据 4c 只认**代码**：口径退场要在注释/docstring 里留档说明，本仓惯例）
+_TRIPLE = re.compile(r'"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'')
+_BLOCK = re.compile(r"/\*[\s\S]*?\*/")
+_LINE_COMMENT = re.compile(r"(?:^|\s)(?:\*/?\s*)?(?://|--|#)[^\n]*", re.M)
+#: SQL 里还有第三种「散文载体」：**单引号字符串字面量**（`COMMENT ON COLUMN … IS '…'`）。
+#: 实测 `docs/sql/schema.sql` 的 `hem_margin` 列注释里逐字写着「`side_margin` 已随 issue #5030
+#: 退场」—— 那是**注释正文**，不是列定义。不排除它 ⇒ 判据**误红**（误红即坏断言）。
+_SQL_STRING = re.compile(r"'(?:[^']|'')*'")
+
+
+def _code_only(path: Path) -> str:
+    """去掉注释 / 文档串 / SQL 字符串字面量 —— 判据 4c 只判**代码**里的标识符。
+
+    ⚠️ 不用「按行前缀过滤」那种弱形态：实测 `schema.sql` 的多行 `COMMENT ON` 续行、
+    字符串字面量，以及 `curtain_calc.py` 的 **docstring** 都不以 `--`/`#` 开头
+    ⇒ 弱过滤会**误红**（误红即坏断言，`migao-acceptance`）。
+    """
+    text = path.read_text(encoding="utf-8")
+    if path.suffix == ".sql":
+        # SQL：先剔 `--` 注释行与单引号字面量（**列定义行**不含单引号 ⇒ 真复活仍会被抓到）
+        text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("--"))
+        text = _SQL_STRING.sub("", text)
+        return _BLOCK.sub("", text)
+    out = _TRIPLE.sub("", text)
+    out = _BLOCK.sub("", out)
+    return _LINE_COMMENT.sub("", out)
 
 
 def _create_table_columns(sql: str, table: str) -> set:
@@ -70,20 +100,42 @@ def _create_table_columns(sql: str, table: str) -> set:
 
 #: 配置列可以**分多次迁移**长出：已发布迁移不可改（`MigrationRunner` 按文件名整份跳过 ⇒
 #: 改旧文件只对全新库生效，issue #4235）⇒ 新增配置键**必然**落在新迁移里。
+#: ⚠️ 分隔符一律 `\s+`（**不是单个空格**）：实测 V110 的 `ALTER TABLE craft_calc_configs`
+#: 与 `ADD COLUMN IF NOT EXISTS hem_margin` **分两行** —— 单空格正则读不到 ⇒ 判据 2 假红。
 _ALTER_COLUMN_RE = re.compile(
     r"ALTER\s+TABLE\s+craft_calc_configs\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)", re.I)
+#: 配置列也可以**分多次迁移退场**（issue #5030：`side_margin` 由 **V112** 删列）——
+#: 只聚合 `ADD COLUMN` 会把已删的列算成「仍在」（V80 建列 + V112 删列 ⇒ 净结果 = 无）。
+#: 与 `ADD` 同族：**按内容聚合**，不写死「哪一份迁移删了哪一列」。
+_DROP_COLUMN_RE = re.compile(
+    r"ALTER\s+TABLE\s+craft_calc_configs\s+DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?(\w+)", re.I)
+
+
+def _sql_code(sql: str) -> str:
+    """去掉 SQL 注释行 —— 迁移文件里**注释掉的** `ALTER TABLE …` 不算真实迁移语句。
+
+    实测（本仓）：V110 的 `-- -- ALTER TABLE craft_calc_configs DROP COLUMN IF EXISTS hem_margin;`
+    与 V112 的 `-- ALTER TABLE … ADD COLUMN IF NOT EXISTS side_margin …;` 都是**留档注释**
+    ⇒ 不剔掉 ⇒ 聚合出「`hem_margin` 被删了」「`side_margin` 又被加回来了」两个**假事实**（误红即坏断言）。
+    """
+    text = _BLOCK.sub("", sql)
+    return "\n".join(line for line in text.split("\n") if not line.strip().startswith("--"))
 
 
 def _migration_config_columns() -> set:
-    """**迁移链**给出的配置列 = 建表迁移的列 ∪ 后续 `ALTER TABLE … ADD COLUMN` 的列。
+    """**迁移链终态**的配置列 = 建表迁移的列 ∪ `ADD COLUMN` − `DROP COLUMN`（按文件名顺序）。
 
     为什么不只看建表迁移（旧口径）：把来源写死成 `V80` ⇒ 一加键守卫就红，逼人改判据
     （而「改判据」等于自己给自己发通行证）—— 本仓反复踩过的形态。
-    ⇒ 按**内容**聚合（同族先例：种子守卫按集合聚合，不再写死 V54）。
+    为什么还要减去 `DROP COLUMN`（issue #5030）：`side_margin` 由 V80 建、V112 删 ⇒
+    只看 `ADD` 会把一个**已不存在**的列算进键集 ⇒ 判据 2 恒红且无法靠真值源修好。
+    ⇒ 按**内容**聚合（同族先例：种子守卫按集合聚合，不再写死 V54）；**注释掉的语句不算**（`_sql_code`）。
     """
     cols = _create_table_columns(MIGRATION.read_text(encoding="utf-8"), "craft_calc_configs")
     for path in sorted(MIGRATIONS_DIR.glob("V*.sql")):
-        cols |= {n.lower() for n in _ALTER_COLUMN_RE.findall(path.read_text(encoding="utf-8"))}
+        code = _sql_code(path.read_text(encoding="utf-8"))
+        cols |= {n.lower() for n in _ALTER_COLUMN_RE.findall(code)}
+        cols -= {n.lower() for n in _DROP_COLUMN_RE.findall(code)}
     return cols - STRUCTURAL_COLUMNS
 
 
@@ -245,19 +297,61 @@ def test_java_to_config_map_matches_engine_keys():
     )
 
 
-def test_java_entity_side_margin_comment_is_not_the_old_drift():
-    """判据 4c：实体里 `sideMargin` 的注释不得再写「上下卷边」（issue #4940 的第 4 处）。
+def test_java_entity_side_margin_is_gone_everywhere():
+    """判据 4c（issue #5030 **改判**）：`side_margin` 在**全仓配置源**里都不得再出现。
 
-    同一处漂移曾在页面 hint / TS 类型注释 / 引擎配置字典注释 / **Java 实体**各写一遍
-    ⇒ 语义面也要有守卫（只看键集的判据照不到「同名不同义」）。
-    红证：把注释改回「定宽买高上下卷边」⇒ 红。
+    旧判据（#4940）钉的是「实体里 `sideMargin` 的注释不得写『上下卷边』」—— 那是
+    「同名不同义」的文案漂移守卫，前提 = **该字段还存在**。
+    用户 2026-09-21 裁定（issue #5030，逐字）：「订单这里的**宽和高是窗户的宽高**」⇒
+    成品宽 = 净窗宽 ⇒ 常量 `SIDE_MARGIN` 与配置键 `side_margin` **整体退场**
+    ⇒ 旧判据的前提消失，**改判为反向守卫**（不留一条不会红的空断言）。
+
+    判据面（**逐文件**，少一个 = 那一源永久免检且无人知）：
+    引擎常量/配置字典、`schema.sql`、Java 实体字段、`CONFIG_KEYS`、前端键集。
+
+    红证：把 `sideMargin` 字段（或 `CONFIG_KEYS` 里的 `"side_margin"`、前端
+    `types/index.ts` 的该键）加回任一源 ⇒ 红。
+    ⚠️ **迁移链**（`db/migration/**`）有意不在判据面里：V80 建列、V112 删列是**历史留档**
+    （已发布迁移不可改，issue #4235）⇒ 终态由 `test_migration_columns_match_engine_keys` 判。
     """
-    src = ENTITY.read_text(encoding="utf-8")
-    m = re.search(r"(/\*\*.*?\*/)\s*private\s+BigDecimal\s+sideMargin;", src, re.S)
-    assert m, "实体里找不到 sideMargin 字段（含其 javadoc）"
-    comment = m.group(1)
-    assert "左右" in comment, "sideMargin 的注释必须写明它是**宽方向左右覆盖余量**"
-    assert "上下卷边" not in comment, "sideMargin 的注释不得说「上下卷边」（那是 hemMargin）"
+    sources = {
+        "引擎常量/配置字典": ENGINE,
+        "schema.sql": SCHEMA,
+        "Java 实体": ENTITY,
+        "Java 写面 CONFIG_KEYS": SERVICE,
+        "前端键集": REPO / "frontend/admin-web/src/types/index.ts",
+    }
+    hits: list[str] = []
+    for label, path in sources.items():
+        assert path.exists(), f"被判据引用的文件不存在：{path}（路径漂移 ⇒ 红，不得静默跳过）"
+        code = _code_only(path)
+        for ident in ("SIDE_MARGIN", "side_margin", "sideMargin"):
+            if ident in code:
+                hits.append(f"{label}（{path.relative_to(REPO)}）的代码里出现 `{ident}`")
+    assert hits == [], (
+        "宽方向余量（常量 `SIDE_MARGIN` / 配置键 `side_margin`）已按用户 2026-09-21 裁定"
+        "（issue #5030）**整体退场** —— 它一旦回到任一源，`用料 = 窗宽 × 褶倍` 这条 R1 口径"
+        "就被静默破坏（成品宽 ≠ 净窗宽 = 静默改钱）：\n  " + "\n  ".join(hits)
+    )
+
+
+def test_side_margin_column_is_dropped_by_a_migration():
+    """判据 4d：`side_margin` 列**真的**被迁移删掉（否则存量库永远留着这列）。
+
+    红证：把 V112 删掉（或改成注释）⇒ 迁移链终态里 `side_margin` 复现 ⇒ 本断言红。
+    ⚠️ 判据**不写死迁移文件名**（与 `_migration_config_columns` 同族：按内容聚合，
+    不写死「哪一份迁移干了这件事」—— 写死文件名会逼下一个人改判据）。
+    """
+    dropped = set()
+    for path in sorted(MIGRATIONS_DIR.glob("V*.sql")):
+        dropped |= {n.lower() for n in _DROP_COLUMN_RE.findall(_sql_code(path.read_text(encoding="utf-8")))}
+    assert "side_margin" in dropped, (
+        "迁移链里没有任何 `ALTER TABLE craft_calc_configs DROP COLUMN side_margin` —— "
+        "存量库会永远留着这个**没有任何消费者**的列（issue #5030 要求它整体退场）⇒ 红"
+    )
+    assert "side_margin" not in _migration_config_columns(), (
+        "迁移链**终态**里 `side_margin` 仍在（建列迁移没被删列迁移抵消）⇒ 判据 2 会红"
+    )
 
 
 def test_alter_migrations_are_idempotent():

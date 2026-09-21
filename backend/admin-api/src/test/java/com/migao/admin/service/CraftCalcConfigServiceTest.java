@@ -64,7 +64,6 @@ class CraftCalcConfigServiceTest {
                 "standard", new LinkedHashMap<>(Map.of("fullness", 2.0, "label", "标准工艺")),
                 "economy", new LinkedHashMap<>(Map.of("fullness", 1.8, "label", "经济工艺")))));
         body.put("default_formula", "pleat");
-        body.put("side_margin", 0.3);
         body.put("hem_margin", 0.3);
         body.put("meters_rounding_step", 0.1);
         return body;
@@ -207,12 +206,15 @@ class CraftCalcConfigServiceTest {
     @DisplayName("缺键 ⇒ 422 逐键报缺（PUT 是全量替换：缺键不得静默按默认值存）")
     void missingKeysRejected() {
         Map<String, Object> body = validBody();
-        body.remove("side_margin");
+        // ⚠️ issue #5030：原判据删的是 `side_margin` —— 该键（宽方向左右覆盖余量）已整体退场
+        // ⇒ 改用**仍存在**的 `hem_margin`（高方向上下卷边）。判据强度**不变**：
+        // 缺键必须逐键报缺、不得静默按默认值存（PUT 是全量替换）。
+        body.remove("hem_margin");
         assertThatThrownBy(() -> service.put(7L, body))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> {
                     List<ApiResponse.ErrorDetail> details = detailsOf((BusinessException) e);
-                    assertThat(fieldsOf(details)).contains("side_margin");
+                    assertThat(fieldsOf(details)).contains("hem_margin");
                     assertThat(details.toString()).contains("全量替换");
                 });
     }
@@ -319,7 +321,6 @@ class CraftCalcConfigServiceTest {
                 .minFullness(new BigDecimal("1.5"))
                 .tiers(Map.of("standard", Map.of("fullness", new BigDecimal("2.0"))))
                 .defaultFormula("pleat")
-                .sideMargin(new BigDecimal("0.3"))
                 .metersRoundingStep(new BigDecimal("0.1"))
                 .status("active")
                 .deleted(0)

@@ -4,7 +4,7 @@
 ## 病灶（本文件要钉住的形态）
 
 商家在「工艺配置 → 算料配置」改口径（`per_fold_single` / `margin_*` / `min_fullness` /
-`default_formula` / `side_margin` / `meters_rounding_step`）后，**服务端下单路径读它**
+`default_formula` / `hem_margin` / `meters_rounding_step`）后，**服务端下单路径读它**
 （`CraftCalcClient#withTenantConfig` → `craftCalcConfigMapper.selectActiveByTenant`），
 而米宝/小布的 `CurtainCalcTool.execute` **从不传 `config`** ⇒ 引擎回落模块级
 `DEFAULT_CRAFT_CALC_CONFIG` ⇒ **同一张单两个米数/两个金额**（口径的每一项都直接改米数 = 改钱）。
@@ -50,13 +50,15 @@ from app.tools.curtain_calc import (
 TENANT_ID = 7
 USER_ID = "u-4922"
 
-#: 入参锚点（6.6m 窗 / 2.5m 高 / 打孔 / 单开 / 门幅 2.8）：默认口径 = 13.8 米（`(6.6+0.3)×2`）。
+#: 入参锚点（6.6m 窗 / 2.5m 高 / 打孔 / 单开 / 门幅 2.8）：默认口径 = **13.2 米**（`6.6 × 2`）。
+#: ⚠️ issue #5030（2026-09-21 用户裁定）：订单宽 = **净窗宽** ⇒ 宽方向没有左右覆盖余量
+#: ⇒ 旧读数 `(6.6+0.3)×2 = 13.8` 已退场；**本文件守的东西一字未动**（租户配置真的被消费）。
 ANCHOR: Dict[str, Any] = dict(window_width=6.6, window_height=2.5, fabric_price=30.0)
 
 #: 服务端返回的**租户配置**（形状 = `GET /api/admin/production/craft-calc-config` 的 `data.config`；
 #: JSON 对象键恒为字符串 ⇒ `per_fold_mixed_times` 的键是 `"1"` / `"2"`）。
 #: 与引擎默认值的两处**实质不同**：`default_formula`（pleat → fullness）、`meters_rounding_step`（0.1 → 0.5）
-#: ⇒ 米数 13.8 → **13.5**（不是「相同数字换了个来源」，那样判据 1 是恒真的空断言）。
+#: ⇒ 米数 **13.2 → 13.5**（不是「相同数字换了个来源」，那样判据 1 是恒真的空断言）。
 TENANT_CONFIG_JSON: Dict[str, Any] = {
     "per_fold_single": 0.25,
     "per_fold_mixed_times": {"1": 0.65, "2": 1.2},
@@ -68,7 +70,7 @@ TENANT_CONFIG_JSON: Dict[str, Any] = {
         "economy": {"fullness": 1.8, "label": "经济工艺"},
     },
     "default_formula": "fullness",
-    "side_margin": 0.3,
+    "hem_margin": 0.3,
     "meters_rounding_step": 0.5,
 }
 
@@ -150,9 +152,9 @@ async def test_tenant_config_reaches_build_quote(monkeypatch):
     assert result.data is not None
     assert result.data["fabric_meters"] == expected["fabric_meters"] == 13.5
     assert result.data["total"] == expected["total"]
-    # ③ **不是**默认口径（默认 = 韩褶公式 + 1 位进位 ⇒ 13.8 米）—— 这一条才是「接线生效」的红证
+    # ③ **不是**默认口径（默认 = 韩褶公式 + 1 位进位 ⇒ **13.2** 米）—— 这一条才是「接线生效」的红证
     baseline = build_quote(window_width=6.6, window_height=2.5, mounting="eyelet", fabric_price=30.0)
-    assert baseline["fabric_meters"] == 13.8
+    assert baseline["fabric_meters"] == 13.2
     assert result.data["fabric_meters"] != baseline["fabric_meters"]
     # ④ 留痕：配置来源可观测
     assert result.data["config_source"] == "tenant"
@@ -169,7 +171,7 @@ async def test_no_config_row_is_zero_regression(monkeypatch):
     assert result.data is not None
     baseline = build_quote(window_width=6.6, window_height=2.5, mounting="eyelet", fabric_price=30.0)
     _same_metrics(result.data, baseline)
-    assert result.data["fabric_meters"] == 13.8
+    assert result.data["fabric_meters"] == 13.2
     assert result.data["config_source"] == "default(no_row)"
     # 摘要/话术也不因本单而变（缺行 = 商家没配口径，没有任何新信息要对顾客说）
     assert result.summary == (
@@ -247,7 +249,7 @@ async def test_transport_failure_degrades_with_trace(monkeypatch, exc, label):
     assert result.success is True, result.message
     assert result.data is not None
     assert result.data["config_source"] == "default(fetch_failed)"
-    assert result.data["fabric_meters"] == 13.8          # 引擎默认口径（= 改动前行为）
+    assert result.data["fabric_meters"] == 13.2          # 引擎默认口径（issue #5030：6.6 × 2）
     # **不静默**：降级必须明说（报价单 warning 随卡片/模型一起回给商家）
     assert "算料口径" in result.data["warning"]
     assert "默认口径" in result.data["warning"]
@@ -343,7 +345,7 @@ async def test_meters_match_internal_endpoint_path(monkeypatch):
     assert result.data is not None
     assert result.data["fabric_meters"] == endpoint_side["fabric_meters"] == 13.5
     assert result.data["formula_used"] == endpoint_side["formula_used"]
-    # 反向：两侧若各自回落默认口径会得 13.8 ⇒ 本判据不是恒真
+    # 反向：两侧若各自回落默认口径会得 13.2 ⇒ 本判据不是恒真
     assert endpoint_side["fabric_meters"] != build_quote(
         window_width=6.6, window_height=2.5, mounting="eyelet", open_count=1,
         fabric_width=2.8)["fabric_meters"]

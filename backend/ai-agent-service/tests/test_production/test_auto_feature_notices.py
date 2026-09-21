@@ -112,19 +112,33 @@ class TestMissingFullnessNotice:
         notices = _notices(cutting_mode=FIXED_WIDTH, fullness=None, window_width=2)
         assert "missing-fullness" in _kinds(notices)
         # 判据 7：整数值不得被写成 `2.0`（改前前端产出 `2`）
-        assert "成品宽 2 + 左右余量 0.3" in _reason(notices, "missing-fullness")
+        # issue #5030：宽方向余量整体退场 ⇒ 依据里只剩「窗宽 X」（**不得**再出现任何余量名）
+        reason = _reason(notices, "missing-fullness")
+        assert "窗宽 2" in reason
+        assert "余量" not in reason, "宽方向已无余量（issue #5030）⇒ 依据里不得出现余量名"
 
     def test_fixed_height_does_not_ask_for_fullness(self):
         # 定高买宽的宽方向**不受门幅约束** ⇒ 缺褶倍无可指摘（提示会误导）
         assert "missing-fullness" not in _kinds(_notices(cutting_mode=FIXED_HEIGHT, fullness=None))
 
-    def test_side_margin_comes_from_tenant_config(self):
-        reason = _reason(
+    def test_side_margin_is_retired_and_changes_nothing(self):
+        """🔴 issue #5030 改判：`side_margin` 已**整体退场** ⇒ 传它**不改变**任何提示。
+
+        原判据（「提示里的左右余量取自租户配置」）的前提随该键消失 —— 换成同强度的**反向守卫**：
+        ① 键集里没有它（引擎配置字典）；② 传进去也不进依据（不复活、不消费）。
+        红证：把 `cfg["side_margin"]` 读回来并拼进 reason ⇒ 本断言红。
+        """
+        from app.tools.curtain_calc import DEFAULT_CRAFT_CALC_CONFIG
+
+        assert "side_margin" not in DEFAULT_CRAFT_CALC_CONFIG, (
+            "引擎配置键集里又出现 `side_margin` —— 该键已按 issue #5030 整体退场 ⇒ 红"
+        )
+        base = _reason(_notices(cutting_mode=FIXED_WIDTH, fullness=None), "missing-fullness")
+        tuned = _reason(
             _notices(cutting_mode=FIXED_WIDTH, fullness=None, config={"side_margin": 0.5}),
             "missing-fullness",
         )
-        # 注入：用模块常量 0.3 ⇒ 必红
-        assert "左右余量 0.5" in reason
+        assert tuned == base, "传 `side_margin` 改变了提示依据 ⇒ 该键被静默消费（issue #5030 已退场）⇒ 红"
 
 
 class TestCuttingModeConflictNotice:

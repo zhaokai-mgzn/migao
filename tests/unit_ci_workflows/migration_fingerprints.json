@@ -107,6 +107,7 @@
     "V109__allow_position_trigger_kind.sql": "sha256:a7f35626354d531938ba596771de6b2cefd32edfc2a58cadc93c4adb2ab4520d",
     "V110__add_craft_calc_hem_margin.sql": "sha256:e15ef8aaa13cd5eba71910996bdc45f9ed5ad0ca40d0666d4ac5724c535b408d",
     "V111__create_inbound_orders_and_batches.sql": "sha256:564fc684bdfb71e5307d2336f9bab83707161f738c7f164fd49a49d426cc1ea6",
+    "V112__drop_craft_calc_side_margin.sql": "sha256:d862bb36088cddbb686c9c21097ac33a3051d309f9608a1835774b50d72d95d0",
     "V112__product_roll_length_and_selling_method_base_attribute.sql": "sha256:e70b3057f112c8d1e98673e13f2474998ac8ca65eba62a683b02b6f8f604fe6c"
   }
 }

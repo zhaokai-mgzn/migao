@@ -53,7 +53,6 @@ const CALC_CONFIG_OK = {
           economy: { fullness: 1.8, label: '经济档（1.8倍）' },
         },
         default_formula: 'pleat',
-        side_margin: 0.15,
         meters_rounding_step: 0.1,
       },
     },
@@ -264,13 +263,13 @@ describe('NewOrderPage', () => {
   const pickProduct = async (productName: string) => {
     fireEvent.click(await screen.findByText('点击搜索并选择商品'))
     fireEvent.click(await screen.findByText(productName))
-    // 宽 / 高必填（issue #4420）：选完商品即补齐，让各用例回到「只验它自己那条判据」的状态
-    await screen.findByText('宽 (米)')
+    // 窗宽 / 窗高必填（issue #4420）：选完商品即补齐，让各用例回到「只验它自己那条判据」的状态
+    await screen.findByText('窗宽 (米)')
     fillSize()
   }
 
   /**
-   * 宽 / 高必填（issue #4420，用户 2026-09-19 裁定）。
+   * 窗宽 / 窗高必填（issue #4420，用户 2026-09-19 裁定）。
    * `Label` 无 `htmlFor` 关联 ⇒ 按 label 文本定位其所在容器里的 input。
    */
   const fillSize = (idx = 0, w = '6.6', h = '2.6') => {
@@ -280,8 +279,8 @@ describe('NewOrderPage', () => {
       screen
         .getAllByText(label)
         .map((el) => el.closest('div')!.querySelector('input') as HTMLInputElement)
-    fireEvent.change(pick('宽 (米)')[idx], { target: { value: w } })
-    fireEvent.change(pick('高 (米)')[idx], { target: { value: h } })
+    fireEvent.change(pick('窗宽 (米)')[idx], { target: { value: w } })
+    fireEvent.change(pick('窗高 (米)')[idx], { target: { value: h } })
   }
 
   /** 展开工艺规格里的「特殊选项」区（issue #4420：默认收起） */
@@ -711,7 +710,7 @@ describe('NewOrderPage', () => {
       })
       render(<NewOrderPage />)
       await pickProduct(productName)
-      await screen.findByText('宽 (米)')
+      await screen.findByText('窗宽 (米)')
       expandCraft()
     }
 
@@ -1026,7 +1025,7 @@ describe('NewOrderPage', () => {
     it('下单页**不再出现**「樘窗」输入框（红证：修复前存在）', async () => {
       render(<NewOrderPage />)
       await pickProduct('遮光窗帘')
-      await screen.findByText('宽 (米)')
+      await screen.findByText('窗宽 (米)')
       expect(screen.queryByLabelText('樘窗')).toBeNull()
       expect(screen.queryByText('樘窗')).toBeNull()
     })
@@ -1069,7 +1068,7 @@ describe('NewOrderPage', () => {
       })
       render(<NewOrderPage />)
       await pickProduct('遮光窗帘')
-      await screen.findByText('宽 (米)')
+      await screen.findByText('窗宽 (米)')
       expandCraft()
     }
 
@@ -1083,7 +1082,7 @@ describe('NewOrderPage', () => {
       render(<NewOrderPage />)
       fireEvent.click(await screen.findByText('点击搜索并选择商品'))
       fireEvent.click(await screen.findByText('遮光窗帘'))
-      await screen.findByText('宽 (米)')
+      await screen.findByText('窗宽 (米)')
       // 刻意**不走** pickProduct（它会补齐宽高）——这里要的就是「没填」的形态
       await fillCustomerAndSubmit()
 
@@ -1327,7 +1326,7 @@ describe('NewOrderPage', () => {
       mockGetProcessingItems.mockResolvedValue({ data: { data: { items } } })
       render(<NewOrderPage />)
       await pickProduct('遮光窗帘')
-      await screen.findByText('宽 (米)')
+      await screen.findByText('窗宽 (米)')
     }
 
     /** 勾选 / 取消加工项（按**商家所见的名字**定位，不数 checkbox） */
@@ -1486,7 +1485,7 @@ describe('NewOrderPage', () => {
       mockGetProcessingItems.mockResolvedValue({ data: { data: { items } } })
       render(<NewOrderPage />)
       await pickProduct('遮光窗帘')
-      await screen.findByText('宽 (米)')
+      await screen.findByText('窗宽 (米)')
       expandProcessing()
     }
 
@@ -1730,14 +1729,14 @@ describe('NewOrderPage', () => {
       fireEvent.click(screen.getByRole('button', { name: /添加商品/ }))
       await pick(2, name)
     }
-    /** 填宽/高（Label 无 `htmlFor` ⇒ 按 label 文本定位其容器里的 input） */
+    /** 填窗宽/窗高（Label 无 `htmlFor` ⇒ 按 label 文本定位其容器里的 input） */
     const fillSize = (w: string, h: string) => {
       const pick1 = (label: string) =>
         screen
           .getAllByText(label)
           .map((el) => el.closest('div')!.querySelector('input') as HTMLInputElement)
-      fireEvent.change(pick1('宽 (米)')[0], { target: { value: w } })
-      fireEvent.change(pick1('高 (米)')[0], { target: { value: h } })
+      fireEvent.change(pick1('窗宽 (米)')[0], { target: { value: w } })
+      fireEvent.change(pick1('窗高 (米)')[0], { target: { value: h } })
     }
 
     it('判据 1：**默认展开**（aria-expanded=true + 卡片体在）—— 改前默认行为不变', async () => {
@@ -1856,7 +1855,7 @@ describe('NewOrderPage', () => {
       })
       render(<NewOrderPage />)
       await pickProduct('遮光窗帘')
-      await screen.findByText('宽 (米)')
+      await screen.findByText('窗宽 (米)')
     }
     /** 收货信息里的两个物流控件（issue #4874；**可编辑**，不是只读提示） */
     const logisticsType = () => screen.getByTestId('order-logistics-type') as HTMLSelectElement

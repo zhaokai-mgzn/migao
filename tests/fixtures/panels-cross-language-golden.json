@@ -6,138 +6,176 @@
     "本表被**三侧**共读（同一组输入、同一份期望值，任一侧漂移即红）：",
     "  ① 引擎腿 = backend/ai-agent-service/tests/test_curtain_calc_fabric_plan.py（跑真引擎）；",
     "  ② 静态腿 = tests/unit_ci_workflows/test_panels_cross_language_algorithm_guard.py（照源复算 + 钉 TS 源码形态）；",
-    "  ③ 前端腿 = frontend/admin-web/tests/unit/lib/door-width-plan.test.ts（跑真 TS）。",
+    "  ③ 前端腿 = frontend/admin-web/tests/lib/door-width-plan.test.ts（跑真 TS）。",
     "**为什么必须有这张表**：总用料恰为门幅整数倍时，浮点 `ceil` 会多算 1 幅",
-    "（`(1.1 + 0.3) × 2 = 2.8000000000000003` ⇒ 浮点 2 幅 / 引擎 1 幅），而幅数进 `(panels, 门幅)` 双键排序",
+    "（`4.2 ÷ 1.4 = 3.0000000000000004` ⇒ 浮点 4 幅 / 引擎 3 幅），而幅数进 `(panels, 门幅)` 双键排序",
     "⇒ 还会**翻转选中的门幅**（见 `flip-door-width`）。两条腿各自的语言都无法单独发现这处分叉。",
-    "⚠️ 本表只钉**取整口径**（浮点 vs 毫米整数）。A 通路与 B1/B2 的 `side_margin` 差异是**另一件事**，",
-    "已单独登记在 docs/design/craft-calc-and-fabric-routing.md §4.5（issue #4760），不在本表范围。"
+    "⚠️ 本表只钉**取整口径**（浮点 vs 毫米整数）。",
+    "🔴 **2026-09-21（issue #5030）**：宽方向余量整体退场 ⇒ 总用料口径由 `(width + side_margin) × fullness`",
+    "改为 **`width × fullness`**（成品宽 = 净窗宽）⇒ 本表的算例值随之重建（边界算例改取",
+    "`4.2 ÷ 1.4`、`8.4 ÷ 1.4`、`8.4 ÷ 2.8`、`9.8 ÷ 1.4` 四处浮点漂移；判别力与「非边界不被误改」两条护栏都保留）。"
   ],
   "conventions": {
-    "need": "总用料（米）= (width + side_margin) × fullness；side_margin 由两侧各自的常量给（0.3，已被常量守卫钉成相等）",
+    "need": "总用料（米）= **width × fullness**（宽方向**无**余量，issue #5030）",
     "candidates": "候选门幅（米）—— 必须**已升序且去重**（两侧都按升序对齐下标）",
     "panelsPerCandidate": "与 candidates 同序、逐候选的分幅数（单候选调用一次即可测得）",
     "state": "single_panel = 有解；undecidable = 候选全被剔除（引擎侧抛 ValueError，fail-closed）"
   },
   "cases": [
     {
-      "id": "boundary-2.8-single",
-      "why": "总用料 (1.1 + 0.3) × 2 = 2.8000000000000003 恰为门幅 2.8 的整数倍（浮点向上漂）⇒ 引擎 1 幅，浮点 ceil 给 2 幅",
-      "width": 1.1,
-      "height": 3.0,
-      "fullness": 2,
-      "allowance": 0.0,
-      "candidates": [2.8],
-      "expected": {
-        "state": "single_panel",
-        "panelsPerCandidate": [1],
-        "chosenDoorWidth": 2.8,
-        "chosenPanels": 1
-      }
-    },
-    {
       "id": "boundary-2.8-wide-window",
-      "why": "总用料 (3.9 + 0.3) × 2 = 8.4 ⇒ 8.4 ÷ 2.8 = 3.0000000000000004（浮点）⇒ 引擎 3 幅，浮点 ceil 给 4 幅",
-      "width": 3.9,
+      "why": "总用料 4.2 × 2 = 8.4 ⇒ 8.4 ÷ 2.8 = 3.0000000000000004（浮点）⇒ 引擎 3 幅，浮点 ceil 给 4 幅",
+      "width": 4.2,
       "height": 3.0,
-      "fullness": 2,
+      "fullness": 2.0,
       "allowance": 0.0,
-      "candidates": [2.8],
+      "candidates": [
+        2.8
+      ],
       "expected": {
         "state": "single_panel",
-        "panelsPerCandidate": [3],
+        "panelsPerCandidate": [
+          3
+        ],
         "chosenDoorWidth": 2.8,
         "chosenPanels": 3
       }
     },
     {
       "id": "boundary-1.4-narrow",
-      "why": "窄幅布：总用料 2.8000000000000003 ÷ 1.4 = 2.0000000000000004（浮点）⇒ 引擎 2 幅，浮点 ceil 给 3 幅",
-      "width": 1.1,
+      "why": "窄幅布：总用料 4.2 ⇒ 4.2 ÷ 1.4 = 3.0000000000000004（浮点）⇒ 引擎 3 幅，浮点 ceil 给 4 幅",
+      "width": 2.1,
       "height": 3.0,
-      "fullness": 2,
+      "fullness": 2.0,
       "allowance": 0.0,
-      "candidates": [1.4],
+      "candidates": [
+        1.4
+      ],
       "expected": {
         "state": "single_panel",
-        "panelsPerCandidate": [2],
+        "panelsPerCandidate": [
+          3
+        ],
         "chosenDoorWidth": 1.4,
-        "chosenPanels": 2
+        "chosenPanels": 3
       }
     },
     {
       "id": "boundary-1.4-wide-window",
-      "why": "窄幅布：8.4 ÷ 1.4 = 6.000000000000001（浮点）⇒ 引擎 6 幅，浮点 ceil 给 7 幅",
-      "width": 3.9,
+      "why": "窄幅布：总用料 8.4 ⇒ 8.4 ÷ 1.4 = 6.000000000000001（浮点）⇒ 引擎 6 幅，浮点 ceil 给 7 幅",
+      "width": 4.2,
       "height": 3.0,
-      "fullness": 2,
+      "fullness": 2.0,
       "allowance": 0.0,
-      "candidates": [1.4],
+      "candidates": [
+        1.4
+      ],
       "expected": {
         "state": "single_panel",
-        "panelsPerCandidate": [6],
+        "panelsPerCandidate": [
+          6
+        ],
         "chosenDoorWidth": 1.4,
         "chosenPanels": 6
       }
     },
     {
-      "id": "non-multiple-unchanged",
-      "why": "**非整数倍**（6.6 ÷ 3.2 = 2.0625）⇒ 浮点与毫米整数**同值 3 幅**：本条是「不许把非边界输入改坏」的反向护栏",
-      "width": 3.0,
+      "id": "boundary-1.4-extra",
+      "why": "窄幅布：总用料 9.8 ⇒ 9.8 ÷ 1.4 = 7.000000000000001（浮点）⇒ 引擎 7 幅，浮点 ceil 给 8 幅",
+      "width": 4.9,
       "height": 3.0,
-      "fullness": 2,
+      "fullness": 2.0,
       "allowance": 0.0,
-      "candidates": [3.2],
+      "candidates": [
+        1.4
+      ],
       "expected": {
         "state": "single_panel",
-        "panelsPerCandidate": [3],
-        "chosenDoorWidth": 3.2,
+        "panelsPerCandidate": [
+          7
+        ],
+        "chosenDoorWidth": 1.4,
+        "chosenPanels": 7
+      }
+    },
+    {
+      "id": "non-multiple-unchanged",
+      "why": "**非整数倍**（6.0 ÷ 2.8 = 2.142857…）⇒ 浮点与毫米整数**同值 3 幅**：本条是「不许把非边界输入改坏」的反向护栏",
+      "width": 3.0,
+      "height": 3.0,
+      "fullness": 2.0,
+      "allowance": 0.0,
+      "candidates": [
+        2.8
+      ],
+      "expected": {
+        "state": "single_panel",
+        "panelsPerCandidate": [
+          3
+        ],
+        "chosenDoorWidth": 2.8,
         "chosenPanels": 3
       }
     },
     {
       "id": "flip-door-width",
-      "why": "边界漂移**翻转选中门幅**：引擎两档都 1 幅 ⇒ 并列取较小 2.8；浮点给 2.8=2 幅、3.2=1 幅 ⇒ 选中 3.2（多占宽幅布）",
-      "width": 1.1,
+      "why": "边界漂移**翻转选中门幅**：引擎两档都 3 幅 ⇒ 并列取较小 2.8；浮点给 2.8=4 幅、3.2=3 幅 ⇒ 选中 3.2（多占宽幅布）",
+      "width": 4.2,
       "height": 3.0,
-      "fullness": 2,
+      "fullness": 2.0,
       "allowance": 0.0,
-      "candidates": [2.8, 3.2],
+      "candidates": [
+        2.8,
+        3.2
+      ],
       "expected": {
         "state": "single_panel",
-        "panelsPerCandidate": [1, 1],
+        "panelsPerCandidate": [
+          3,
+          3
+        ],
         "chosenDoorWidth": 2.8,
-        "chosenPanels": 1
+        "chosenPanels": 3
       }
     },
     {
       "id": "multi-candidate-panels",
-      "why": "多候选下幅数本身错：引擎 [2, 1] ⇒ 取 2.8/1 幅；浮点 [3, 2] ⇒ 取 2.8/**2 幅**（门幅对、幅数错 ⇒ 米数差整整一幅长）",
-      "width": 1.1,
+      "why": "多候选下幅数本身错：引擎 [3, 2] ⇒ 取 2.8/2 幅；浮点 [4, 2] ⇒ 仍是 2.8 但 1.4 那档多算 1 幅",
+      "width": 2.1,
       "height": 3.0,
-      "fullness": 2,
+      "fullness": 2.0,
       "allowance": 0.0,
-      "candidates": [1.4, 2.8],
+      "candidates": [
+        1.4,
+        2.8
+      ],
       "expected": {
         "state": "single_panel",
-        "panelsPerCandidate": [2, 1],
+        "panelsPerCandidate": [
+          3,
+          2
+        ],
         "chosenDoorWidth": 2.8,
-        "chosenPanels": 1
+        "chosenPanels": 2
       }
     },
     {
       "id": "allowance-effective-width",
-      "why": "有效余量生效：有效门幅 2.75 ⇒ ceil(2800 / 2750) = 2 幅（两侧同值，钉「余量不得被忽略」）",
+      "why": "有效余量生效：有效门幅 2.75 ⇒ ceil(2200 / 2750) = 1 幅（两侧同值，钉「余量不得被忽略」）",
       "width": 1.1,
       "height": 3.0,
-      "fullness": 2,
+      "fullness": 2.0,
       "allowance": 0.05,
-      "candidates": [2.8],
+      "candidates": [
+        2.8
+      ],
       "expected": {
         "state": "single_panel",
-        "panelsPerCandidate": [2],
+        "panelsPerCandidate": [
+          1
+        ],
         "chosenDoorWidth": 2.8,
-        "chosenPanels": 2
+        "chosenPanels": 1
       }
     },
     {
@@ -145,9 +183,11 @@
       "why": "有效余量 = 门幅 ⇒ 有效门幅 0 ⇒ 引擎按 `g > allowance` **剔除**候选（抛 ValueError）；TS 若不过滤则 `Math.ceil(need / 0) = Infinity` 静默产出垃圾",
       "width": 1.1,
       "height": 3.0,
-      "fullness": 2,
+      "fullness": 2.0,
       "allowance": 2.8,
-      "candidates": [2.8],
+      "candidates": [
+        2.8
+      ],
       "expected": {
         "state": "undecidable"
       }
@@ -157,9 +197,11 @@
       "why": "有效余量 > 门幅 ⇒ 有效门幅为**负** ⇒ 引擎剔除；TS 若不过滤则 `need / 负数` 得负幅数被 `max(1, …)` 兜成 1 幅（同样是垃圾）",
       "width": 1.1,
       "height": 3.0,
-      "fullness": 2,
+      "fullness": 2.0,
       "allowance": 3.0,
-      "candidates": [2.8],
+      "candidates": [
+        2.8
+      ],
       "expected": {
         "state": "undecidable"
       }

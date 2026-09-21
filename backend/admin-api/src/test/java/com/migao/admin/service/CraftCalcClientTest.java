@@ -322,7 +322,7 @@ class CraftCalcClientTest {
                 .minFullness(new BigDecimal("1.5"))
                 .tiers(Map.of("standard", Map.of("fullness", new BigDecimal("2.0"), "label", "标准工艺")))
                 .defaultFormula("pleat")
-                .sideMargin(new BigDecimal("0.3"))
+                .hemMargin(new BigDecimal("0.3"))
                 .metersRoundingStep(new BigDecimal("0.1"))
                 .status("active")
                 .deleted(0)
@@ -355,7 +355,7 @@ class CraftCalcClientTest {
         assertThat(String.valueOf(config.get("margin_multi"))).isEqualTo("0.3");
         assertThat(config).containsEntry("default_formula", "pleat");
         assertThat(config).containsKeys("per_fold_mixed_times", "margin_single", "min_fullness",
-                "tiers", "side_margin", "meters_rounding_step");
+                "tiers", "hem_margin", "meters_rounding_step");
         // 调用方的 map **不得**被就地改（上游可能复用同一个请求对象）
         assertThat(original).doesNotContainKey("config");
     }
@@ -409,7 +409,7 @@ class CraftCalcClientTest {
                           "margin_single":0.2,"margin_multi":0.3,"min_fullness":1.5,
                           "tiers":{"standard":{"fullness":2.0,"label":"标准工艺"},
                                    "economy":{"fullness":1.8,"label":"经济工艺"}},
-                          "default_formula":"pleat","side_margin":0.3,"meters_rounding_step":0.1}}}
+                          "default_formula":"pleat","hem_margin":0.3,"meters_rounding_step":0.1}}}
                         """));
 
         Map<String, Object> config = client.defaultConfig();
@@ -452,7 +452,7 @@ class CraftCalcClientTest {
     void autoFeaturesCarriesEngineDataVerbatim() {
         String body = """
                 {"success":true,"data":{
-                  "auto_features":[{"name":"超宽","source":"推算","reason":"成品宽 1.6 + 左右余量 0.3 = 1.9 米 × 褶倍 2.0 = 3.8 米 > 门幅 2.8 米"},
+                  "auto_features":[{"name":"超宽","source":"推算","reason":"窗宽 1.6 × 褶倍 2.0 = 3.2 米 > 门幅 2.8 米"},
                                     {"name":"倒幅","source":"推算","reason":"加工类型 = 定宽买高"}],
                   "door_width":2.8,"fullness_used":2.0,"notice":""},
                  "requestId":"req_1","timestamp":1758100000}

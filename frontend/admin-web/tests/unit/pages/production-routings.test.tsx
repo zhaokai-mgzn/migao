@@ -635,7 +635,8 @@ const ENGINE_DEFAULT_CALC_CONFIG = {
     economy: { fullness: 1.8, label: '经济工艺' },
   },
   default_formula: 'pleat',
-  side_margin: 0.3,
+  // 🔴 #5030：宽方向的 `side_margin` 已整体退场（用户 2026-09-21 裁定）⇒ 换回**仍在场**的高方向卷边键
+  hem_margin: 0.3,
   meters_rounding_step: 0.1,
 }
 
@@ -1194,22 +1195,29 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await userEvent.click(screen.getByTestId('process-config-tab-calc'))
     await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
 
-    for (const key of ['per_fold_single', 'margin_single', 'margin_multi', 'min_fullness', 'side_margin', 'meters_rounding_step']) {
+    for (const key of ['per_fold_single', 'margin_single', 'margin_multi', 'min_fullness', 'hem_margin', 'meters_rounding_step']) {
       const href = screen.getByTestId(`craft-calc-config-doc-${key}`).getAttribute('href') ?? ''
       // 注入：把锚点写死成别的 id（或漏渲染该条目）⇒ getElementById 返回 null ⇒ 红
       expect(document.getElementById(href.replace('#', ''))).not.toBeNull()
     }
   })
 
-  it('⑨d-② side_margin 的口径是「左右覆盖余量」——旧文案（上下卷边）不得再上屏（issue #4940）', async () => {
+  // 🔴 issue #5030 改判：原判据「`side_margin` 的口径是『左右覆盖余量』」的前提**已消失** ——
+  // 用户 2026-09-21 裁定订单宽高 = 窗户宽高 ⇒ 「左右覆盖余量」**整体退场**（常量与配置键一并删除）。
+  // ⇒ 改成**同强度的反向守卫**：这一项**已不在页面上**（加回该参数 ⇒ 下面三条红）。
+  it('⑨d-② `side_margin` **已不在页面上**（宽方向无余量；旧文案不得复活）（issue #5030）', async () => {
     mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'default', config: ENGINE_DEFAULT_CALC_CONFIG }))
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
     await userEvent.click(screen.getByTestId('process-config-tab-calc'))
     await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
 
-    // 注入：把 label/hint 改回「卷边（米）/ 定宽买高的上下卷边合计」⇒ 下面两条同时红
-    expect(screen.getAllByText(/左右覆盖余量/).length).toBeGreaterThan(0)
+    // 注入：把 `side_margin` 加回键集（或把旧文案抄回页面）⇒ 下面三条同时红
+    expect(screen.queryByTestId('craft-calc-config-scalar-side_margin')).toBeNull()
+    expect(screen.queryByTestId('craft-calc-config-doc-side_margin')).toBeNull()
+    expect(screen.queryByText(/左右覆盖余量/)).toBeNull()
+    // 反向自证：同一张表单里**仍在场**的高方向参数必须能被看见（否则上面三条是空断言）
+    expect(screen.getByTestId('craft-calc-config-scalar-hem_margin')).toBeInTheDocument()
     expect(screen.queryByText(/定宽买高的上下卷边合计/)).toBeNull()
   })
 
@@ -3147,7 +3155,7 @@ describe('算料配置 tab（issue #4528）', () => {
         'min_fullness',
         'tiers',
         'default_formula',
-        'side_margin',
+        'hem_margin',
         'meters_rounding_step',
       ].sort(),
     )

@@ -15,8 +15,10 @@ fail-closed；服务端不可达 ⇒ 显式降级 + 留痕，见 `load_tenant_cr
 顾客显式要单独买辅料（如单独买罗马圈）时走 `accessories` **显式入参**，数量/单价必须由调用方给出。
 
 核心公式：
-- 定高布（买宽）：M = (W + 0.3) × N    （W=窗宽, N=褶皱倍数, 0.3=左右各15cm覆盖余量）
-- 定宽布（买高）：P = ceil((W+0.3)×N/G)，M = P × (H + 0.3)   （G=门幅, H=窗高, 0.3=上下卷边）
+- 定高布（买宽）：M = W × N    （W=窗宽, N=褶皱倍数 —— **不再另加左右覆盖余量**）
+  ⚠️ 订单宽高 = **窗户宽高**（净窗宽/净窗高）⇒ 成品宽 = 净窗宽、成品高 = 净窗高
+  （用户 2026-09-21 裁定，issue #5030；`SIDE_MARGIN` 与配置键 `side_margin` 一并退场）
+- 定宽布（买高）：P = ceil(W×N/G)，M = P × (H + 0.3)   （G=门幅, H=窗高, 0.3=上下卷边）
 - 罗马帘：M = (W + 0.2) × (H + 0.3)
 - 对花：定宽布每幅长加 1 个花距
 
@@ -66,7 +68,6 @@ DEFAULT_PROCESSING_PRICE: Dict[str, float] = {
 }
 
 # ── 损耗/余量常量（【标】行业标准）──
-SIDE_MARGIN = 0.3       # 定高布：左右覆盖余量合计（各 15cm）
 HEM_MARGIN = 0.3        # 定宽布：上下卷边合计（脚位+止口）
 ROMAN_SIDE = 0.2        # 罗马帘：包边余量
 ROD_EXTENSION = 0.4     # 罗马杆两端各伸出 15~20cm，合计 0.3~0.4
@@ -195,7 +196,6 @@ DEFAULT_CRAFT_CALC_CONFIG: MappingProxyType = MappingProxyType({
     "min_fullness": MIN_FULLNESS,                              # 褶倍下限（护栏）
     "tiers": {k: dict(v) for k, v in DEFAULT_CRAFT_TIERS.items()},
     "default_formula": FORMULA_PLEAT,                          # 默认公式 = 韩褶公式
-    "side_margin": SIDE_MARGIN,                                # 宽方向左右覆盖余量合计（各 15cm）
     "hem_margin": HEM_MARGIN,                                  # 高方向上下卷边合计（脚位+止口，issue #4976 包 1b）
     "meters_rounding_step": 0.1,                               # 用料米数**向上进位**步长（米）
 })
@@ -203,7 +203,7 @@ DEFAULT_CRAFT_CALC_CONFIG: MappingProxyType = MappingProxyType({
 #: 配置里必须是**正数**的键（0/负数 ⇒ 显式报错，不静默回退默认值）
 _POSITIVE_CONFIG_KEYS = (
     "per_fold_single", "margin_single", "margin_multi",
-    "min_fullness", "side_margin", "hem_margin", "meters_rounding_step",
+    "min_fullness", "hem_margin", "meters_rounding_step",
 )
 
 
@@ -213,7 +213,7 @@ def resolve_craft_calc_config(config: Optional[Dict[str, Any]] = None) -> Dict[s
     **fail-closed**：配置来自商家（**不可信输入**）⇒ 非法值**显式报错**，
     **不得**静默回退默认值（静默 = 算错钱且无人知道）。校验项：
 
-    - 数值键必须 > 0（`per_fold_single` / 余量 / `min_fullness` / `side_margin` / 进位步长）；
+    - 数值键必须 > 0（`per_fold_single` / 余量 / `min_fullness` / `hem_margin` / 进位步长）；
     - `per_fold_mixed_times` 的键必须是**正整数**、值必须 > 0；
     - `tiers` 非空，且每档 `fullness` > 0；
     - `default_formula` 必须是已登记的公式名。
@@ -488,9 +488,10 @@ def aggregate_by_fabric(positions: List[Dict[str, Any]]) -> Dict[str, float]:
 #   定高买宽 ⇒ 只判**超高**（宽按米买、无上限）
 #   定宽买高 ⇒ 只判**超宽**（= 引擎真实的分幅条件）+ **倒幅**
 #   缺省 / 表外取值 ⇒ **都不判**（保守：不猜朝向）
-# 常量的唯一落点仍是上面那两行（`SIDE_MARGIN` / `HEM_MARGIN`）—— 本段不新造第二个数。
-# ⚠️ 两个常量同时是**配置键的默认值**（`side_margin` / `hem_margin`，issue #4976 包 1b）：
+# 常量 `HEM_MARGIN` 同时是**配置键的默认值**（`hem_margin`，issue #4976 包 1b）：
 # 引擎函数体里一律读 `cfg[...]`，常量只出现在配置字典那一行。
+# ⚠️ 宽方向的 `SIDE_MARGIN` / `side_margin` 已**整体退场**（用户 2026-09-21 裁定，issue #5030）
+# —— 判据里不再有任何宽方向余量（订单宽 = 净窗宽，成品宽 = 净窗宽）。
 
 #: 加工类型 `定高买宽` —— **高**方向受门幅约束 ⇒ 只判 `超高`
 CUTTING_MODE_FIXED_HEIGHT = "定高买宽"
@@ -529,7 +530,7 @@ def detect_auto_features(
             但 **`倒幅` 照判**（它只取决于加工类型、与门幅无关 —— issue #5033）
         fullness: **名义**褶倍（档位值）；缺失 / 非正 ⇒ **不判超宽**（不拿一个假褶倍去判价）
         cutting_mode: 加工类型（`定高买宽` / `定宽买高`）；缺省 / 表外 ⇒ **都不判**
-        config: 租户级算料配置（`side_margin` 取自它；缺省 ⇒ 引擎默认值）
+        config: 租户级算料配置（`hem_margin` 取自它；缺省 ⇒ 引擎默认值）
 
     Returns:
         `[{"name", "source", "reason"}, ...]`：顺序 = `超宽 → 超高 → 倒幅` 中命中的那些；
@@ -543,31 +544,31 @@ def detect_auto_features(
         return features  # 不猜朝向（与前端同款：缺省/表外取值一个都不判）
 
     if cutting_mode == CUTTING_MODE_FIXED_WIDTH:
-        side_margin = cfg["side_margin"]
-        # 判据 = 引擎**真实的分幅条件** `ceil((宽 + 余量) × 褶倍 ÷ 门幅) ≥ 2`
-        # ⟺ `(宽 + 余量) × 褶倍 > 门幅`（原始浮点，不取整 —— 取整会漏报，见前端同款注释）
+        # 判据 = 引擎**真实的分幅条件** `ceil(窗宽 × 褶倍 ÷ 门幅) ≥ 2`
+        # ⟺ `窗宽 × 褶倍 > 门幅`（原始浮点，不取整 —— 取整会漏报，见前端同款注释）
+        # ⚠️ 用户 2026-09-21 裁定（issue #5030）：订单宽 = **净窗宽**、成品宽 = 净窗宽
+        # ⇒ 判据里**不再有左右覆盖余量**（该概念与配置键 `side_margin` 整体退场）。
         # ⚠️ 宽 / 褶倍缺失 ⇒ **不判**（调用方可能只给了高；不拿假值去判价）
         # ⚠️ 宽 / 褶倍 / **门幅**缺失 ⇒ **不判超宽**（调用方可能只给了高，或该 SKU 未维护门幅；
         # 不拿假值去判价 —— issue #4877：门幅**没有**缺省值）。
         # 🔴 `fabric_width is not None` 这条守卫是 **#5033** 的根因修复：缺了它，
         # `product > fabric_width` 会抛 `TypeError` ⇒ 调用方（判定端点）只能**短路**，
         # 而短路会把**与门幅无关**的 `倒幅` 一起吞掉 ⇒ 组合键少一项（改钱）。
+        # 🔴 判据里的宽方向**没有余量**（issue #5030）：`窗宽 × 褶倍`（成品宽 = 净窗宽）。
         if (
             fabric_width is not None
             and window_width is not None
             and fullness is not None
             and fullness > 0
         ):
-            product = (window_width + side_margin) * fullness
+            product = window_width * fullness
             if product > fabric_width:
                 features.append({
                     "name": "超宽",
                     "source": "推算",
                     "reason": (
-                        f"成品宽 {window_width} + 左右余量 {side_margin} = "
-                        f"{round(window_width + side_margin, 3)} 米"
-                        f" × 褶倍 {fullness} = {_meters_for_reason(product, fabric_width)} 米"
-                        f" > 门幅 {fabric_width} 米"
+                        f"窗宽 {window_width} × 褶倍 {fullness} = "
+                        f"{_meters_for_reason(product, fabric_width)} 米 > 门幅 {fabric_width} 米"
                     ),
                 })
         # 倒幅只取决于加工类型（与褶倍无关）：布旋转九十度用
@@ -631,7 +632,7 @@ def detect_auto_feature_notices(
     —— **不进组合键、不改判定**（用户 2026-09-20 裁定 C 的前半句「以商家选的为准」）。
 
     🔴 **为什么必须搬服务端**（迁移前的缺陷形态）：提示读的是前端**模块常量副本**
-    （宽 / 高两个余量常量，都是 `0.3`），而判定读**该租户配置**
+    （宽方向余量已于 issue #5030 整体退场；高方向那个常量是 `0.3`），而判定读**该租户配置**
     ⇒ #5005 把 `hem_margin` 做成可配之后，商家改过配置就会看到**错的数**，
     且「几何矛盾」的**判断本身**也会错。本函数一律读 `cfg`（**不新造第二份常量**）。
 
@@ -642,7 +643,7 @@ def detect_auto_feature_notices(
             （**不回落任何缺省门幅**，issue #4877）
         fullness: 名义褶倍；缺 / 非正 ⇒ `missing-fullness`（**只在定宽买高且宽已知时**）
         cutting_mode: 加工类型；缺省 / 表外 ⇒ **一条都不提示**（不猜朝向）
-        config: 租户级算料配置（读 `side_margin` / `hem_margin`；缺省 ⇒ 引擎默认值）
+        config: 租户级算料配置（读 `hem_margin`；缺省 ⇒ 引擎默认值）
 
     Returns:
         `[{"kind", "reason"}, ...]`；**空列表 = 无提示**。
@@ -652,7 +653,6 @@ def detect_auto_feature_notices(
         return notices  # 加工类型未知 ⇒ 提示的前提句无从谈起（与前端同款）
 
     cfg = resolve_craft_calc_config(config)
-    side_margin = cfg["side_margin"]
     hem_margin = cfg["hem_margin"]
 
     if fabric_width is None:
@@ -672,8 +672,7 @@ def detect_auto_feature_notices(
         notices.append({
             "kind": NOTICE_MISSING_FULLNESS,
             "reason": (
-                f"缺褶倍 ⇒ 未判超宽（成品宽 {_num(window_width)} + 左右余量 {_num(side_margin)} "
-                f"是否要分幅取决于褶倍，不猜）"
+                f"缺褶倍 ⇒ 未判超宽（窗宽 {_num(window_width)} 是否要分幅取决于褶倍，不猜）"
             ),
         })
 
@@ -696,6 +695,108 @@ def detect_auto_feature_notices(
             })
 
     return notices
+
+
+#: 门幅规则的**四态裁决**（issue #5043 包 2b）—— 与前端 `door-width-plan.ts::judgeDoorWidthChoice`
+#: **逐条对齐**（前端退场后这里是唯一实现）。
+DOOR_WIDTH_VERDICT_OPTIMAL = "optimal"
+DOOR_WIDTH_VERDICT_SUBOPTIMAL = "suboptimal"
+DOOR_WIDTH_VERDICT_INFEASIBLE = "infeasible"
+DOOR_WIDTH_VERDICT_UNKNOWN = "unknown"
+
+
+def judge_door_width_choice(
+    plan: Dict[str, Any],
+    *,
+    window_height: Optional[float] = None,
+    selected_door_width: Optional[float] = None,
+    selected_panels: Optional[int] = None,
+    allowance: float = 0.0,
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """客服所选门幅 ⇒ 相对**规则解**的判定与建议（issue #5043 包 2b）。
+
+    三条边界（与前端同款，**一字不放宽**）：
+    ① **未选 ⇒ `unknown`**（不提示「最优」—— 没有可比对象）；
+    ② **所选门幅不可行 ⇒ `infeasible`**（比「非最优」更强：先告警「需接高」，再给规则解）；
+    ③ **并列最优不提示**：定宽买高下**分幅数相同 = 米数相同** ⇒ 判 `optimal`（挑哪个门幅是
+       库存/单价的事，系统不 nag）。
+
+    Args:
+        plan: `build_quote(..., fabric_widths=[...])` 的返回值（含 `door_width` / `cutting_mode` /
+            `splice` / `panels`）—— **规则解由它给**，本函数**不重算规则**。
+        window_height: 成品高（米）；定高买宽下判「所选门幅单幅做不做得出」用
+        selected_door_width: 客服所选门幅（米）；缺 / 非正 ⇒ `unknown`
+        selected_panels: **所选门幅**的分幅数（由调用方用**同一份口径**算出；定宽买高裁决用）
+        allowance: 门幅有效余量（米）
+        config: 算料配置（读 `hem_margin`；**不新造第二份常量**）
+
+    Returns:
+        `{"verdict": <四态之一>, "suggestion": <可执行建议 | None>}`
+    """
+    cfg = resolve_craft_calc_config(config)
+    hem_margin = cfg["hem_margin"]
+    selected = (
+        float(selected_door_width)
+        if isinstance(selected_door_width, (int, float))
+        and not isinstance(selected_door_width, bool)
+        and selected_door_width > 0
+        else None
+    )
+    if selected is None:
+        return {"verdict": DOOR_WIDTH_VERDICT_UNKNOWN, "suggestion": None}
+
+    allow = max(float(allowance or 0.0), 0.0)
+    selected_eff = round(selected - allow, 3)
+    door_width = plan.get("door_width")
+
+    if plan.get("splice"):
+        return {
+            "verdict": DOOR_WIDTH_VERDICT_INFEASIBLE,
+            "suggestion": (
+                f"所选 {_num(selected)} 米门幅单幅做不出成品高 —— 本单**没有任何门幅**能单幅做成"
+                "（规则解同此结论，需接高）"
+            ),
+        }
+    if door_width == selected:
+        return {"verdict": DOOR_WIDTH_VERDICT_OPTIMAL, "suggestion": None}
+
+    if plan.get("cutting_mode") == CUTTING_MODE_FIXED_HEIGHT:
+        if window_height is None:
+            return {"verdict": DOOR_WIDTH_VERDICT_UNKNOWN, "suggestion": None}
+        need_height = round(float(window_height) + hem_margin, 3)
+        if need_height > selected_eff:
+            return {
+                "verdict": DOOR_WIDTH_VERDICT_INFEASIBLE,
+                "suggestion": (
+                    f"所选 {_num(selected)} 米门幅单幅做不出（成品高 {_num(window_height)} + 上下卷边 "
+                    f"{_num(hem_margin)} = {_num(need_height)} 米，缺口 "
+                    f"{_num(round(need_height - selected_eff, 3))} 米 ⇒ **需接高**）；"
+                    f"规则解 = {_num(door_width)} 米门幅"
+                ),
+            }
+        return {
+            "verdict": DOOR_WIDTH_VERDICT_SUBOPTIMAL,
+            "suggestion": (
+                f"规则解是 {_num(door_width)} 米门幅（可行集里最小：成品高 {_num(window_height)} + "
+                f"上下卷边 {_num(hem_margin)} = {_num(need_height)} 米 ≤ {_num(door_width)} 米）"
+                "—— 换它可少占宽幅布（宽幅布留给真正超高的窗）"
+            ),
+        }
+
+    rule_panels = plan.get("panels")
+    if not isinstance(rule_panels, int) or not isinstance(selected_panels, int):
+        return {"verdict": DOOR_WIDTH_VERDICT_UNKNOWN, "suggestion": None}
+    if selected_panels <= rule_panels:
+        return {"verdict": DOOR_WIDTH_VERDICT_OPTIMAL, "suggestion": None}
+    per_panel = round((float(window_height) if window_height is not None else 0.0) + hem_margin, 3)
+    return {
+        "verdict": DOOR_WIDTH_VERDICT_SUBOPTIMAL,
+        "suggestion": (
+            f"所选 {_num(selected)} 米门幅要 {selected_panels} 幅；规则解 {_num(door_width)} 米只要 "
+            f"{rule_panels} 幅（少 {selected_panels - rule_panels} 幅 × 每幅 {_num(per_panel)} 米用料）"
+        ),
+    }
 
 
 #: **人工覆盖**值：接高 —— ⚠️ 它**不是** `cuttingMode` 的取值（ERP 加工类型只有上面两项）：
@@ -874,7 +975,7 @@ def calculate_fabric_meters(
 
     Args:
         window_width: 窗宽（米）
-        window_height: 窗高（米，成品窗帘高度）
+        window_height: 净窗高（米）—— **成品高 = 净窗高**（用户 2026-09-21 裁定，issue #5030）
         fullness: 褶皱倍数
         fabric_width: 面料门幅（米）
         mounting: 悬挂方式（eyelet/s_hook/hook/roman）
@@ -895,12 +996,12 @@ def calculate_fabric_meters(
 
     # 定高布可用条件：成品高 + 卷边 ≤ 门幅（2.8m 定高上限成品高约 2.5m）
     if window_height + cfg["hem_margin"] <= fabric_width:
-        # 定高买宽：M = (W + 0.3) × N（逐片表达同值：每片宽 × N × 开数 —— 与开数无关，issue #4527 判据 5）
-        meters = (window_width + cfg["side_margin"]) * fullness
+        # 定高买宽：M = W × N（逐片表达同值：每片宽 × N × 开数 —— 与开数无关，issue #4527 判据 5）
+        meters = window_width * fullness
         return meters, "fixed_height", ""
 
     # 定宽买高：幅数向上取整，每幅长 = 窗高 + 卷边（+ 对花花距）
-    panels = math.ceil((window_width + cfg["side_margin"]) * fullness / fabric_width)
+    panels = math.ceil(window_width * fullness / fabric_width)
     panel_length = window_height + cfg["hem_margin"]
     if has_pattern:
         panel_length += pattern_repeat
@@ -1191,9 +1292,9 @@ def build_quote(
             if formula_used == "fixed_width":
                 # 定宽买高：幅数在 `calculate_fabric_meters` 内算出（局部变量 `panels`）却没进返回值
                 # ⇒ 报价卡「幅数」行永不出现（issue #4374 交付物 3）。此处按**同一公式**
-                # （`ceil((W + side_margin) × N / G)`，与 `calculate_fabric_meters` 的定宽分支逐字同源）
+                # （`ceil(W × N / G)`，与 `calculate_fabric_meters` 的定宽分支逐字同源）
                 # 复算暴露它 —— **入参一字未动 ⇒ 米数/金额逐值不变**（本单不改钱）。
-                panels = math.ceil((window_width + cfg["side_margin"]) * N / fabric_width)
+                panels = math.ceil(window_width * N / fabric_width)
             # 新键（issue #5013）也要**如实**：罗马帘没有「定高/定宽」之分 ⇒ `None`
             # （不发明第三个加工类型值）。
             plan_state["cutting_mode"] = {
@@ -1203,8 +1304,8 @@ def build_quote(
         if mounting == "s_hook":
             # issue #4118 ⑤-B：韩褶（s_hook）的**标准档口径是褶数法**，但褶数法只在显式传
             # `craft_tier` / `pleat_count` 时触发（`pleat_mode` 判据）⇒ 两者都缺时这里**静默**
-            # 走了倍数法：实测同一单（6.6m 窗 / 2.6m 高 / 双开 / 3.2m 门幅）倍数法 13.8 米，
-            # 而标准档褶数法 13.3 米（52 折），差 0.5 米却**零告警**。
+            # 走了倍数法：实测同一单（6.6m 窗 / 2.6m 高 / 双开 / 3.2m 门幅）倍数法 13.2 米，
+            # 而标准档褶数法 13.3 米（52 折），差 0.1 米却**零告警**。
             # 治法 = **只补显式告警、不动一个数值**（把默认档接成标准档 = 改既有报价口径 = 改钱，
             # 需客户裁定，不在本包）。
             warning = (warning + " " if warning else "") + (
@@ -1278,7 +1379,7 @@ def build_quote(
         pleat_fields.get("per_fold", cfg["per_fold_single"]),
     )
 
-    return {
+    quote = {
         "fabric_meters": round(meters, 2),
         # §6.1（issue #4346，用户已裁定）：米数**拆两个字段** ——
         # `processing_meters` = **主布行**米数（加工费口径）；`fabric_meters` = Σ 面料行米数。
@@ -1332,6 +1433,12 @@ def build_quote(
             config=config,
         ),
     }
+    # 幅数（issue #5043 包 2b，**加性**）：**只在真有幅数时**才出键 ——
+    # 定高买宽「按宽买米，**幅数无定义**」⇒ **键缺席**（既有口径：**既不补 0，也不补 1
+    # 冒充「1 幅」**；守卫 = 契约测试「定高买宽不得造幅数」）。既有键**逐值不变**。
+    if panels is not None:
+        quote["panels"] = panels
+    return quote
 
 
 def calculate_multi_position(positions: List[Dict[str, Any]]) -> Dict[str, Any]:
