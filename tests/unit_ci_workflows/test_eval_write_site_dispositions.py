@@ -98,6 +98,11 @@ DISPOSITIONS = {
     ("_restore_sku_price", "patch", 1):
         "已校验：status_code >= 300 记账 + **回读** `skus[].price` 比对（按色名/售卖方式/门幅）；"
         "回读找不到该规格 ⇒ 按「未证实」记账（不静默当成功）",
+    # ── 复位族第二批（issue #4992）：同为**已校验**档（状态码 + 回读值比对）──
+    ("_restore_customer_profile", "put", 1):
+        "已校验（issue #4992）：status_code >= 300 记账 + **回读** `data.profile.phone`（与可选 "
+        "`wechatNickname`）比对；2xx 但值未落地 ⇒ `PRECONDITION_NOT_RESTORED: post_clean` 进结论"
+        "（#3807 的静默空转形态；红证见 test_shared_fixture_restore_order_customer.py）",
     ("login", "post", 1):
         "已校验（隐式）：必须解析出 token，拿不到即抛错 —— 缺值不可能继续",
     ("get_or_create_session", "post", 1):

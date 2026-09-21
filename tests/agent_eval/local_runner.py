@@ -368,7 +368,7 @@ RETURNING id
 # ── 订单状态复位（issue #4992）：参数化的**幂等**版（上一条是 PG-013 专用的写死形态）──
 # 与 `_RESTORE_ORDER_STATUS_SQL` 的差别只有「目标状态是参数」这一处，其余（按 `order_no`
 # 精确匹配 + `RETURNING id` 判命中）**逐字对齐** —— 不复制第二套定位口径（§18 单一真相源）。
-# ⚠️ 为什么走 DB 直连而不是 `PUT /api/admin/orders/{id}/status`：`OrderService.STATUS_TRANSITIONS`
+# ⚠️ 为什么走 DB 直连而不是 admin-api 的**订单状态端点**：`OrderService.STATUS_TRANSITIONS`
 #   把 `cancelled` / `completed` 设为**终态**（`cancelled → Set.of()`）⇒ 用例首跑取消掉的订单
 #   在 HTTP 面上**没有**反向放行（这正是 OR-007 只能登记 `namespaces` 弱证据的原因）。
 #   复位与 `scripts/eval_stack_seed.sh` 走**同一条 DB**（同 `_reset_processing_order` 的先例）。
@@ -979,7 +979,7 @@ async def _restore_order_status(token: str, spec: dict, phase: str) -> str:
     但"取消"这一步不再可成功）⇒ 用例只能登记 `namespaces` 并行互斥（**弱证据**，不解决重试前置）。
     本动作把那一半补上：按 `order_no`（**不可变键**，§18.3）复位 `status`。
 
-    ⚠️ 走 DB 直连而不是 HTTP（`PUT /api/admin/orders/{id}/status`）的**唯一**原因：
+    ⚠️ 走 DB 直连而不是 admin-api 的订单状态端点（HTTP 写面）的**唯一**原因：
     `OrderService.STATUS_TRANSITIONS` 把 `cancelled` / `completed` 设为终态 ⇒ HTTP 面上
     **没有**反向放行。口径与 `_reset_processing_order`（#3833）同一份：与 seed 走同一条 DB。
     定位**只按 `order_no` 精确匹配**（禁子串/模糊）—— 误伤 `EVAL-MB-ORD-0003/0004` 等
