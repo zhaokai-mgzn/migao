@@ -3000,6 +3000,9 @@ PERMISSION_LABELS = {
     "processing:manage": "加工管理",
     "processing:view": "加工单查看",
     "processing:update": "加工单操作",
+    # 入库单（V111，issue #5034）：名称逐字取 admin-api RegistrationService 的同码条目
+    "inbound:view": "入库单查看",
+    "inbound:create": "入库单操作",
     "knowledge:manage": "知识库管理",
     "order:list": "订单列表",
     "order:detail": "订单详情",

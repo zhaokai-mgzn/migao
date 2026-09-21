@@ -76,7 +76,8 @@ from app.tools.registry import create_default_registry
 # 真值表（判据的唯一来源 —— 测试与红证夹具共用这一处，不写第二份）
 # ──────────────────────────────────────────────────────────────────────────────
 
-#: admin-api 权限目录（18 码，`RegistrationService` 第 548-567 行逐条对齐）
+#: admin-api 权限目录（20 码，`RegistrationService` 的 defaultPermissions 逐条对齐；
+#: 该判据按**集合**比对 ⇒ 新增码必须同批落在这里，否则「镜像腐烂 ⇒ 工具层按错码授权」判红）
 PERMISSION_CATALOG = frozenset({
     "dashboard:view",
     "product:manage",
@@ -86,6 +87,9 @@ PERMISSION_CATALOG = frozenset({
     "processing:manage",
     "processing:view",
     "processing:update",
+    # 入库单（V111，issue #5034）：与 V111 迁移的存量租户权限补齐**同源同码**
+    "inbound:view",
+    "inbound:create",
     "knowledge:manage",
     "order:list",
     "order:detail",
@@ -103,20 +107,21 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "admin": frozenset({"*"}),
     "operator": frozenset({
         "agent:session", "customer:view", "dashboard:view", "employee:list",
-        "finance:view", "order:detail", "order:list", "order:refund",
+        "finance:view", "inbound:create", "inbound:view",
+        "order:detail", "order:list", "order:refund",
         "processing:manage", "processing:update", "processing:view",
         "product:category", "product:create", "product:list",
     }),
     "customer_service": frozenset({
-        "agent:session", "customer:view", "dashboard:view",
+        "agent:session", "customer:view", "dashboard:view", "inbound:view",
         "order:detail", "order:list", "processing:view",
     }),
     "sales": frozenset({
-        "customer:view", "dashboard:view", "order:detail", "order:list",
+        "customer:view", "dashboard:view", "inbound:view", "order:detail", "order:list",
         "processing:view", "product:list",
     }),
     "finance": frozenset({
-        "dashboard:view", "finance:view", "order:detail", "order:list",
+        "dashboard:view", "finance:view", "inbound:view", "order:detail", "order:list",
         "processing:view",
     }),
     "product_manager": frozenset({
