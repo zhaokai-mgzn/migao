@@ -1,6 +1,6 @@
 ---
 name: migao-dev-flow
-version: 1.41.0
+version: 1.42.0
 # ⚠️ YAML 纯标量陷阱 + 本仓库取舍（v1.21，2026-09-15 实证）：
 # `description` 是 YAML **纯标量** ⇒ 解析在第一个「空白 + `#`」处**截断**（`#` 起被当成注释起始），
 # 其余内容**静默丢失** —— 「文件里写了」≠「加载器读到了」（与「注释漂移 = 假绿来源」同族，但更隐蔽）。
@@ -436,7 +436,8 @@ aliyun rds ModifySecurityIps --DBInstanceId pgm-bp1p7w92k81ob5to \
   10 次全量，9/17 CST 2 次 + 9/18 CST 8 次 = 1205 场真实多轮 LLM 会话）。
 - **本技能旧版口径（v1.9「提交前自动跑、不等用户要求」）已作废** —— 照抄它 = 把用户
   明确买下的账又花一遍。防回退机械锁见 §16.5 门禁矩阵 + `test_behavior_eval_pr_thin.py`
-  （白名单：自动真实 LLM 触发**只允许 1 条**，即 `post-deploy-eval` 每周一）。
+  （白名单：自动真实 LLM 触发**必须为 0 条** —— #4974 起连 `post-deploy-eval` 的每周 cron
+  也已删除，评测**只能人工手动派发**；用户原话「完全停止真实 LLM 评测定时任务，改为只能人工手动跑」）。
 
 ### 13.1 命令（**仅用户显式要求时执行**；命令本身不变）
 
@@ -791,7 +792,8 @@ completion_verdict ✅ + 双裁判无未裁定分歧；运行期只 smoke/抽样
 （`.env`/三模块单测/QA Gate/ci-helper/gitleaks/Danger Scan）——**LLM 行为层不进 required
 是有意设计**（真实 LLM 方差会卡死合并流水线；job 名还随 persona 参数化）。
 ⇒ **映射信号红 ≠ 不能合并**（PR 上只剩零 LLM 的映射，没有"红"可言）；
-硬拦截由确定性层（required）+ 定期/手动全量（`post-deploy-eval`，**每周一档 + 手动档**）承担。
+硬拦截由确定性层（required）+ **手动**全量（`post-deploy-eval`，**仅手动**；#4974 起连兜底
+cron 也已删除）承担。
 禁止把 LLM 档改成 required（历史决策，勿翻案）。
 
 **📌 决策记录（2026-09-14 用户确认 → 2026-09-17 裁定 2′/4′ 覆盖）**：**行为映射门禁
@@ -814,10 +816,13 @@ completion_verdict ✅ + 双裁判无未裁定分歧；运行期只 smoke/抽样
 1. **手动派发的现状真值（v1.20 修正，#3709 修复后）**：`workflow_dispatch` **默认免抑制**。
    `eval_supersede.sh` 按 `EVENT_NAME=workflow_dispatch` ⇒ `FORCE_EVAL=true`（语义 = 人显式要求
    "我就要这一条"，回滚复验/补跑）；**要恢复「被取代即抑制」必须显式传 `-f force_eval=false`**
-   （逃生口保留，省成本路径不消失）。**自动门禁**（`schedule` = `post-deploy-eval` **每周一**全量；
-   `workflow_run` 部署后触发已在 #3925 移除、**不存在**）语义**不变** —— 它们没有 inputs，不受该默认值影响。
-   ⚠️ #4262（2026-09-18）后**全仓自动真实 LLM 触发只剩这一条**（原 3 条：每 3 天 normal +
-   两条每周 adversarial，后两条已改仅手动）。
+   （逃生口保留，省成本路径不消失）。**自动门禁**：`workflow_run` 部署后触发已在 #3925 移除；
+   `schedule` 全量已在 **#4974** 删除（#4262 时唯一残留的那条 `post-deploy-eval` 每周一 cron）
+   ⇒ **现状：全仓自动真实 LLM 触发 = 0 条**，派发**只能人工手动**；接线（`MODE=schedule` /
+   档位特判）**有意保留**为"恢复定时"的前置条件。
+   ⚠️ 口径沿革（**别照抄中间态**）：#4262（2026-09-18）后是「3 条 → **1 条**」；
+   **#4974（2026-09-21 用户裁定）后是「1 条 → 0 条」**（「完全停止真实 LLM 评测定时任务，
+   改为只能人工手动跑」）。
    - ⚠️ **被抑制时要看得见**：run 上会打 `::warning::` 标注（两条 persona 腿 + report job 共三条），
      step summary 抬头是「本 run 未评测（不构成结论）」。**据此不得再把「绿」读成「评测通过」**
      （抑制**依旧不是 failure**：不刷红、不建 issue —— 要的是可见，不是变红）。
@@ -1875,7 +1880,8 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
      `ai-verify/*` 队列；#3608 的「恢复自动触发必须用免疫 GITHUB_TOKEN 抑制的触发源」教训**保留**在
      文件注释与守卫测试里（不是作废，是恢复时的前置条件）。
   ④ **守卫同步**（三处，均带红证）：`test_behavior_eval_pr_thin.py` 白名单收紧为 **1 条** +
-     新增「其余 LLM workflow 自动触发必须为空」+「数量恰好 1」+「cron 必须周级」；
+     新增「其余 LLM workflow 自动触发必须为空」+「数量恰好 1」+「cron 必须周级」
+     （⚠️ **#4974 后该组断言已改为「空集」+「数量恰好 0」+「不得再有 schedule」，见 v1.42.0**）；
      `test_verify_trigger_chain.py` 改判为「仅手动」；`test_xiaobu_adversarial.py` 的
      `test_workflow_has_weekly_schedule` 改判为「仅手动」，并**保留** #3367 的档位特判守卫
      （删了它 → 将来恢复定时会落到默认 smoke，原样复发）。
@@ -2028,3 +2034,27 @@ dispatch 部署 ⇒ 容器重建产生 **1~3 分钟**的 502 窗口；一次活�
   ⑤ **为过门禁绕判据**（`danger_scan` 对**新增 workflow 文件**也是 BLOCK ⇒ "换文件名降级"不成立；不许 `secrets[format(...)]`）；
   ⑥ **改静态资源未确认发布腿被触发**（核线上内容 == `origin/main` 内容）；
   ⑦ **把"run success + 健康检查全绿"读成"线上就是那个版本"**（唯一判据 = **容器真身**；本会话实测到一条**静默回退**生产的三重绿 P0）。
+- v1.42.0（2026-09-21，**issue #4974 用户裁定：自动真实 LLM 触发 1 条 → 0 条**，本次）：
+  用户裁定「**完全停止真实 LLM 评测定时任务，改为只能人工手动跑**」⇒ 删除 `post-deploy-eval.yml`
+  的**最后一条** cron（`0 3 * * 1`，每周一；双 persona normal 全量，单次 ≈122-126 场真实多轮会话，
+  按 artifact `run_key.executed_count` 实测）—— 它是 #4262 收敛后**唯一**还在由 cron 付费的评测。
+  本次落码：
+  ① **workflow**：`post-deploy-eval.yml` 的 `on:` 只剩 `workflow_dispatch`（`schedule` 删除）；
+     文件头档位矩阵 / 停用清单 / 沿革 / `on:` 段注释全部改判。
+  ② **§13 口径**：行为改动的评测体检「默认不跑、不派发」**不变**；但"防回退锁"的白名单
+     由「只允许 1 条」改为**空集** —— 现在**没有任何**自动 LLM 触发可被"顺手补回来"。
+  ③ **守卫同步（均有注入式红证）**：`test_behavior_eval_pr_thin.py` 白名单 → 空集 +
+     「任何真实 LLM workflow 自动触发必须为空」+「数量恰好 0」+「`post-deploy-eval` 不得再有
+     `schedule`」+「**`schedule` 接线必须存活**（恢复定时的前置条件，同 #3367 范式）」+
+     「注入 `schedule` 必红」；`test_xiaobu_adversarial.py` / `test_agent_eval_deployed_env_lock.py`
+     的「仅手动」判据口径同步（**判据未放宽**，只改口径文字）。
+  ④ **文档**：`docs/testing/eval-environments.md` 新增 §3.10（决策记录 + before/after 表），
+     §二 / §3.1 / §3.6 / §3.7 / §3.8 同步；`docs/wiki/Testing.md` 的 tier→频率表改判
+     （`normal` 由「每周一自动 + 手动」→「**仅手动**」）；`docs/testing/eval-pipeline-performance.md` 同步。
+  ⑤ **不变量（没被砍）**：`workflow_dispatch` 手动入口全保留；判定口径（`completion_verdict` +
+     失败去重建 issue）一字未改；`schedule` 的**接线**（`if:` 分支 / `MODE=schedule` / 档位回落）
+     有意保留为恢复定时的前置条件（删了它，恢复时会静默退化成"免抑制"的 dispatch 语义）。
+  ⑥ **未实装 / 边界（照实登记，§19.1）**：agent 侧"不自动派发"仍**只有指令约束**（提示词 + 本技能），
+     **没有机械锁**（静态锁拦不住 agent 主动 `gh workflow run`）；非 LLM 的定时任务
+     （`fixture-record` 月度重录 / `drift-audit` 每日静态审计 / `deploy-*` 部署对账）
+     **不在本单范围、未动**。

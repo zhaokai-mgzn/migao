@@ -213,10 +213,10 @@ def audit_no_new_secret_refs(source: str) -> list:
 
 
 def audit_manual_only(wf: dict) -> list:
-    """⑥ 仍**仅手动**（#4262：全仓自动真实 LLM 触发只允许 1 条）。"""
+    """⑥ 仍**仅手动**（#4262：自动触发收敛；#4974：全仓自动真实 LLM 触发 = **0 条**）。"""
     keys = sorted(_triggers(wf))
     if keys != ["workflow_dispatch"]:
-        return [f"{WORKFLOW} 的触发面 = {keys} —— 必须仍为仅手动（#4262）"]
+        return [f"{WORKFLOW} 的触发面 = {keys} —— 必须仍为仅手动（#4262 / #4974）"]
     return []
 
 

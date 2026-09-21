@@ -68,7 +68,7 @@ python3 -c "import sys,collections;sys.path.insert(0,'.github');from render_case
 | tier | 数量 | 频率 | workflow |
 |------|------|------|----------|
 | smoke | **现取**（命令见上） | ~~每次 PR（100% 通过才合并）~~ ⇒ **无自动档**（仅手动） | ~~pr-check `agent-eval-smoke`~~（该 job 已按 #3653 移除）⇒ 手动 `post-deploy-eval` 的 `workflow_dispatch` 可选 `tier=smoke` |
-| normal | **现取**（命令见上） | ~~按需手动触发~~ ⇒ **每周一自动**（`post-deploy-eval` 定时档）+ 按需手动 | `post-deploy-eval`（每周一，normal 全量）/ `agent-eval`（手动，local_runner.py normal） |
+| normal | **现取**（命令见上） | ~~按需手动触发~~ ⇒ ~~**每周一自动**（`post-deploy-eval` 定时档）~~ ⇒ **仅手动**（#4974 删除每周 cron） | `post-deploy-eval`（手动派发，normal 全量）/ `agent-eval`（手动，local_runner.py normal） |
 | adversarial | **现取**（命令见上） | ~~每周六 03:00（只追踪不阻塞）~~ ⇒ **仅手动 `workflow_dispatch`**（定时已按 #4262 删除） | agent-eval-adversarial |
 
 > 🔴 **口径订正（issue #4751，2026-09-20）**：本表「数量」列原写 `smoke 7 / normal 81 / adversarial 26`。
@@ -84,13 +84,14 @@ python3 -c "import sys,collections;sys.path.insert(0,'.github');from render_case
 > 该 job 已按 **#3653**（2026-09-15）移除（理由：云环境不含 PR 分支代码 ⇒ 结果与本 PR 无因果；
 > 锚点 = `.github/workflows/pr-check.yml` 里 gitleaks 段前的那段注释）⇒ **该档现在没有任何自动触发**，
 > 只剩手动（`post-deploy-eval` 的 `workflow_dispatch` `tier` 输入可选 `smoke`）。
-> **② `normal`**：原写「按需手动触发」—— 实测 `.github/workflows/post-deploy-eval.yml` 有
-> `schedule: cron '0 3 * * 1'`（**每周一**；按 #4262 由「每 3 天」收紧），定时档恒跑 **normal 全量**
-> （`${{ github.event.inputs.tier || 'normal' }}`，schedule 无 inputs ⇒ 回落 normal）⇒ 频率是
-> 「**每周一自动 + 按需手动**」，不是「仅手动」。
+> **② `normal`**：原写「按需手动触发」—— #4759 当时实测 `.github/workflows/post-deploy-eval.yml`
+> 有 `schedule: cron '0 3 * * 1'`（**每周一**；按 #4262 由「每 3 天」收紧），定时档恒跑 **normal 全量**
+> ⇒ 当时频率是「每周一自动 + 按需手动」。**该定时已按 #4974（2026-09-21 用户裁定「完全停止真实
+> LLM 评测定时任务，改为只能人工手动跑」）删除** ⇒ 现状 = **仅手动**（`workflow_dispatch`；
+> 手动不传 `tier` 时表达式仍回落 normal 全量）。
 > **③ `adversarial`**：原写「每周六 03:00」—— 实测 `.github/workflows/agent-eval-adversarial.yml`
 > 的 `on:` **只有 `workflow_dispatch`**（每周定时已按 **#4262** 用户裁定删除：自动真实 LLM 触发
-> 由 3 条收敛为 1 条）⇒ 改为「**仅手动**」。
+> 由 3 条收敛为 1 条；**#4974 起为 0 条**）⇒ 改为「**仅手动**」。
 > ✅ **「谁对」的结论（先核清再改，本单只改一边）**：**workflow 文件是权威，文档是过期副本**。
 > 依据：① 定时档的**成本裁定**（#4262，用户原话「不要自动进行验证，都是重复的验证，白白消耗成本」）
 > 落在 workflow 上 —— 把文档改回「每周六」= **与用户裁定相反**；② 频率是**运行期事实**，
