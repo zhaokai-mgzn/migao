@@ -198,11 +198,19 @@ const inputOf = (label: string, idx = 0) =>
  *
  * 判定已移到服务端 ⇒ 特征**不再同步可得**：本页 effect 防抖 400ms
  * （`orders/new/page.tsx` 的 `CRAFT_CALC_DEBOUNCE_MS`）后发请求、响应回来才写回行状态。
- * ⇒ 断言前必须等它落地，否则测到的是「判定还没到」（不是「没判」）。
+ *
+ * 🔴 **不固定 sleep**：固定等 500ms 在慢机器上会假红（**本 PR 实测：CI 上就是这么红的**，
+ * 本地全绿）。⇒ 轮询到「请求真的发出」为止，再让响应写回；宽高没齐（本就没有判定请求）⇒ 直接返回。
  */
 async function settleAutoFeatures(): Promise<void> {
+  try {
+    await waitFor(() => expect(mockAutoFeatures).toHaveBeenCalled(), { timeout: 3000 })
+  } catch {
+    // 宽高没齐 ⇒ 本就没有判定请求（提交校验会拦），不必等
+    return
+  }
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 }
 

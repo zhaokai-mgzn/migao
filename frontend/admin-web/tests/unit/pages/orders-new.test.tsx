@@ -23,6 +23,18 @@ const mockGetCustomers = vi.fn()
 const mockGetCraftCalcConfig = vi.fn()
 
 /**
+ * 自动特征判定端点（issue #4976 包 2b）：判定已移到服务端 ⇒ 页面挂载即请求。
+ * 本文件与「自动特征」正交 ⇒ 替身返回**不判**（`missing-door-width`）。
+ * ⚠️ 必须是 `vi.fn`（不是内联箭头）：`fillCustomerAndSubmit` 要**轮询到它被调用**才知道
+ * 判定已就绪（固定 sleep 在慢机器上会假红 —— CI 实测踩过）。
+ */
+const mockAutoFeaturesPreview = vi.fn((_params: unknown) =>
+  Promise.resolve({
+    data: { data: { auto_features: [], door_width: null, fullness_used: 2.0, notice: 'missing-door-width' } },
+  })
+)
+
+/**
  * 算料配置桩（issue #4874）：用料公式缺省（`pleat`）与档位值域/文案都取自它。
  * 档位 label 刻意与键名不同字 ⇒ 页面写死一套中文档位名必红。
  */
@@ -85,10 +97,7 @@ vi.mock('@/lib/api', () => ({
   // 本文件与「自动特征」正交 ⇒ 服务端替身返回**不判**（`missing-door-width`）。
   // ⚠️ 必须**返回**（不能像试算那样挂起）：判定缺席会被提交闸门拦住 ⇒ 本文件无关的断言会连带红。
   autoFeaturesApi: {
-    preview: () =>
-      Promise.resolve({
-        data: { data: { auto_features: [], door_width: null, fullness_used: 2.0, notice: 'missing-door-width' } },
-      }),
+    preview: (params: unknown) => mockAutoFeaturesPreview(params),
   },
   // 加工费计价预览（issue #4450）：本文件验的是樘窗绑组 / 配布边 / 加工项数量口径，
   // 与「组合取价」正交 ⇒ 桩成一个**按组合价目取价**的服务端。
@@ -314,10 +323,16 @@ describe('NewOrderPage', () => {
     await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
     // 自动识别判定闸门（issue #4976 包 2b）：判定已移到**服务端**（防抖 400ms + 一次往返）
     // ⇒ 提交前同样等它落地（判定缺席 ⇒ 组合键少一项 ⇒ 取价错 ⇒ 闸门会拦住提交）。
+    // 🔴 **不固定 sleep**（慢机器上会假红）：轮询到请求真的发出 + 响应写回；宽高没齐 ⇒ 不等。
     // 判据本身在 orders-new-auto-features.test.tsx（含闸门的三态）。
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 500))
-    })
+    try {
+      await waitFor(() => expect(mockAutoFeaturesPreview).toHaveBeenCalled(), { timeout: 3000 })
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+    } catch {
+      // 本用例没有可判定的行（宽高没齐）⇒ 本就没有判定请求
+    }
     fireEvent.click(screen.getByText('提交订单'))
   }
 
