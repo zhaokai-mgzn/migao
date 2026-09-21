@@ -512,9 +512,11 @@
 你: 确认
 期望: category_manage(action=create)
 数据: name 必填校验通过后创建成功（扁平分类，无 parent 父分类，对齐 #2905）
+数据: 前置：分类管理写面可用且「轻奢系列」未被占用 —— 写操作 success=true 即证前置成立；被拒（重名/校验失败）时 must_succeed 判红，不与「agent 不会建分类」同形
+必须成功: category_manage
 ```
 真值: category-manage.create
-溯源: verification 2.11 独有；2026-09-09 校准：分类已扁平化（#2905 移除父子概念），原「在窗帘布艺下新建子分类」是错误语义（agent 引导选父分类但 admin-api 忽略 parentId，分类创建成顶级后 agent 困惑）——改为扁平创建 + 补确认轮 ｜ tags: create
+溯源: verification 2.11 独有；2026-09-09 校准：分类已扁平化（#2905 移除父子概念），原「在窗帘布艺下新建子分类」是错误语义（agent 引导选父分类但 admin-api 忽略 parentId，分类创建成顶级后 agent 困惑）——改为扁平创建 + 补确认轮；2026-09-21（case-trust burn-down 缴费，issue #4965，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage]`（效果层）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类复位动作）+ 机器计分型前置断言；`user_inputs` / `expectations` / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ tags: create
 
 ### CT-003. 删除分类 - 二次确认 + 风险提示 🔴
 ```

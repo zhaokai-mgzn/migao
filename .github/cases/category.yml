@@ -50,10 +50,30 @@ cases:
       - tool: category_manage
         args:
           action: create
+    # ── 效果层 + 自清理 + 前置自断言（case-trust burn-down 缴费，issue #4965；metric=entries ⇒ 整条销账）──
+    # 本用例命中的三条存量违规：① NO-EFFECT-ASSERTION ② NO-SELF-CLEAN ③ NO-PRECONDITION-ASSERTION
+    # ① 【效果层 = must_succeed】「调用了 ≠ 成了」（#3778）：`expectations` 只证明
+    #    `category_manage(action=create)` 被调用过且 args 对；工具返回 `success=false`
+    #    （重名拒绝 / 校验失败）时照样计分通过。创建是**该用例期望的终态** ⇒ 断言成功是加强而非放宽。
+    # ② 【自清理 = namespaces】**如实登记为弱证据**（taxonomy 明列的档位）：本用例在共享的
+    #    分类表里新建「轻奢系列」⇒ 重跑时该名字已在位，前置与首跑**不等价**（重名 ⇒ 创建被拒）。
+    #    夹具层**没有**「删除分类」的 `pre_clean` 类型（已落地的六个：product_remove / product_dedupe /
+    #    employee_reactivate / aftersales_ticket_prepare / customer_tag_remove / processing_order_reset）
+    #    ⇒ 只能声明并行互斥（与任何同样操作该分类名的用例自动串行 —— **CT-003 正是删除该分类**），
+    #    **不冒充强复位**；真正的强修法是加一个分类复位动作（新 type ⇒ 独立 issue）。
+    # ③ 【前置】= 机器计分型 data_checks（含 `success=true` 字面量，runner 计分口径）：
+    #    写清本用例的**外部依赖**（分类管理可用、名字未被占用），使「前置不成立」与
+    #    「agent 不会建分类」不同形。
+    # 【断言面一字未放宽】`user_inputs` / `expectations` / `skip_reason` / `traces` 全部未动，只加上面几格。
+    namespaces:
+      - "category:轻奢系列"
+    must_succeed:
+      - tool: category_manage
     data_checks:
       - "name 必填校验通过后创建成功（扁平分类，无 parent 父分类，对齐 #2905）"
+      - "前置：分类管理写面可用且「轻奢系列」未被占用 —— 写操作 success=true 即证前置成立；被拒（重名/校验失败）时 must_succeed 判红，不与「agent 不会建分类」同形"
     skip_reason: ""
-    merge_log: "verification 2.11 独有；2026-09-09 校准：分类已扁平化（#2905 移除父子概念），原「在窗帘布艺下新建子分类」是错误语义（agent 引导选父分类但 admin-api 忽略 parentId，分类创建成顶级后 agent 困惑）——改为扁平创建 + 补确认轮"
+    merge_log: "verification 2.11 独有；2026-09-09 校准：分类已扁平化（#2905 移除父子概念），原「在窗帘布艺下新建子分类」是错误语义（agent 引导选父分类但 admin-api 忽略 parentId，分类创建成顶级后 agent 困惑）——改为扁平创建 + 补确认轮；2026-09-21（case-trust burn-down 缴费，issue #4965，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage]`（效果层）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类复位动作）+ 机器计分型前置断言；`user_inputs` / `expectations` / `skip_reason` / `traces` 一字未动、断言强度不放宽"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_category_manage.py"

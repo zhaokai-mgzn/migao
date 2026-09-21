@@ -826,13 +826,15 @@ _CASE_CT_002 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=["新建一个'轻奢系列'分类", '确认'],
     expectations=['category_manage(action=create)'],
-    data_checks=['name 必填校验通过后创建成功（扁平分类，无 parent 父分类，对齐 #2905）'],
+    data_checks=['name 必填校验通过后创建成功（扁平分类，无 parent 父分类，对齐 #2905）', '前置：分类管理写面可用且「轻奢系列」未被占用 —— 写操作 success=true 即证前置成立；被拒（重名/校验失败）时 must_succeed 判红，不与「agent 不会建分类」同形'],
     skip_reason='',
     tags=['create'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'category_manage'}],
+    namespaces=['category:轻奢系列'],
 )
 
 # ── CT-003 [ADVERSARIAL] 删除分类 - 二次确认 + 风险提示（源: cases/category.yml）──
