@@ -213,11 +213,17 @@ class TestDefaultFormula:
 
     def test_pleat_formula_still_needs_a_tier_or_pleat_count(self):
         """反向：`formula='pleat'`（默认）在 s_hook 下**仍**需要 `craft_tier`/`pleat_count` 触发褶数法
-        —— 既有触发条件不得被新入参删掉（否则 6.6m 双开从 13.3 变 13.8 米 = 静默改钱）。"""
+        —— 既有触发条件不得被新入参删掉（否则 6.6m 双开从 13.3 变 **13.2** 米 = 静默改钱）。
+
+        ⚠️ 期望值 13.8 → **13.2** 的唯一原因 = 用户 2026-09-21 裁定（issue #5030）
+        「订单宽 = **净窗宽** ⇒ 成品宽 = 净窗宽，**不再另加左右覆盖余量**」
+        （倍数法 = `6.6 × 2.0 = 13.2`）。**本判据守的东西一字未动**：
+        褶数法仍要显式档位/褶数触发，缺了就走倍数法并给显式告警（标准档 13.3 是**另一个**口径）。
+        """
         q = build_quote(formula="pleat", window_width=6.6, window_height=2.5, mounting="s_hook",
                         fabric_width=3.2, fabric_price=30.0, open_count=2)
         assert q["formula_used"] == "fixed_height"
-        assert q["fabric_meters"] == 13.8
+        assert q["fabric_meters"] == 13.2
         assert "未指定工艺档位" in q["warning"]
 
 
@@ -350,14 +356,22 @@ class TestCraftDerivesFormula:
 
 REQUIRED_CONFIG_KEYS = (
     "per_fold_single", "per_fold_mixed_times", "margin_single", "margin_multi",
-    "min_fullness", "tiers", "default_formula", "side_margin", "meters_rounding_step",
+    "min_fullness", "tiers", "default_formula", "hem_margin", "meters_rounding_step",
 )
+
+#: 已按用户 2026-09-21 裁定（issue #5030）**整体退场**的配置键 —— 反向守卫用
+#: （订单宽 = 净窗宽 ⇒ 宽方向没有余量 ⇒ 该键没有任何消费者）。
+DROPPED_CONFIG_KEYS = ("side_margin",)
 
 
 class TestConfigContract:
 
     def test_default_config_values_match_existing_constants(self):
-        """默认配置逐键 = 现有模块常量（**回归不变量**：不传配置 ⇒ 数值与改前一致）。"""
+        """默认配置逐键 = 现有模块常量（**回归不变量**：不传配置 ⇒ 数值与改前一致）。
+
+        ⚠️ 唯一变化（issue #5030）：`side_margin` 退场、`hem_margin` 登记进来
+        —— 其余每一键的**逐值**断言一字未动。
+        """
         cfg = DEFAULT_CRAFT_CALC_CONFIG
         assert set(REQUIRED_CONFIG_KEYS) <= set(cfg)
         assert cfg["per_fold_single"] == curtain_calc.PLEAT_FABRIC_PER_FOLD == 0.25
@@ -367,8 +381,14 @@ class TestConfigContract:
         assert cfg["min_fullness"] == curtain_calc.MIN_FULLNESS == 1.5
         assert cfg["tiers"] == curtain_calc.DEFAULT_CRAFT_TIERS
         assert cfg["default_formula"] == FORMULA_PLEAT == "pleat"
-        assert cfg["side_margin"] == curtain_calc.SIDE_MARGIN == 0.3
+        assert cfg["hem_margin"] == curtain_calc.HEM_MARGIN == 0.3
         assert cfg["meters_rounding_step"] == 0.1
+        # 反向守卫（issue #5030）：宽方向余量的配置键**不得**回到默认配置字典
+        for dropped in DROPPED_CONFIG_KEYS:
+            assert dropped not in cfg, (
+                f"`{dropped}` 又回到了 DEFAULT_CRAFT_CALC_CONFIG —— 该键已按用户 2026-09-21 裁定"
+                "（issue #5030）整体退场（订单宽 = 净窗宽 ⇒ 宽方向没有余量）⇒ 红"
+            )
 
     def test_explicit_default_config_equals_no_config(self):
         """显式传 `DEFAULT_CRAFT_CALC_CONFIG` 与不传 ⇒ **逐值相同**（配置路径与默认路径同一份口径）。"""
@@ -411,7 +431,7 @@ class TestConfigGuardrails:
         ("margin_single", -0.1),
         ("margin_multi", -0.1),
         ("min_fullness", 0),
-        ("side_margin", -0.3),
+        ("hem_margin", -0.3),
         ("meters_rounding_step", 0),
         ("meters_rounding_step", -0.1),
     ])

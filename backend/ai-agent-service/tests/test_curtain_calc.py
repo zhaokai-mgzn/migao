@@ -1,8 +1,8 @@
 """窗帘算料报价核心函数单元测试（app/tools/curtain_calc.py）
 
 覆盖（POC 小布增强 · 算料报价工具）：
-- 定高布买宽公式：M = (W + 0.3) × N
-- 定宽布买高公式（窗高超门幅上限）：P = ceil((W+0.3)×N/G)，M = P × (H+0.3)
+- 定高布买宽公式：M = W × N（**宽方向没有余量** —— 用户 2026-09-21 裁定，issue #5030）
+- 定宽布买高公式（窗高超门幅上限）：P = ceil(W×N/G)，M = P × (H+0.3)
 - 褶皱倍数默认值（按悬挂方式：打孔/韩式褶/四爪钩=2.0，罗马帘=1.0）
 - 对花损耗：每幅加花距
 - 罗马帘公式：M = (W+0.2) × (H+0.3)
@@ -50,9 +50,10 @@ QUOTE_RULES_DOC = REPO_ROOT / "docs" / "curtain-fabric-quote-rules.md"
 # ──────────────────────────────────────────────
 
 def test_fixed_height_meters_standard():
-    """定高布买宽：M = (W + 0.3) × N。
+    """定高布买宽：M = W × N（**宽方向没有余量** —— issue #5030）。
 
-    窗宽 3m、窗高 2.5m、2 倍褶皱、门幅 2.8m（不超限）→ (3+0.3)×2 = 6.6m
+    窗宽 3m、窗高 2.5m、2 倍褶皱、门幅 2.8m（不超限）→ 3 × 2 = 6.0m
+    （旧式 `(3+0.3)×2 = 6.6` 随用户 2026-09-21 裁定「订单宽 = 净窗宽」退场）
     """
     meters, formula, warning = calculate_fabric_meters(
         window_width=3.0,
@@ -61,7 +62,7 @@ def test_fixed_height_meters_standard():
         fabric_width=2.8,
         mounting="eyelet",
     )
-    assert meters == pytest.approx(6.6)
+    assert meters == pytest.approx(6.0)
     assert formula == "fixed_height"
     assert warning == ""
 
@@ -82,7 +83,7 @@ def test_fixed_height_boundary_2_5m_ok():
 def test_fixed_width_meters_when_over_limit():
     """窗高 2.7m + 卷边 0.3 = 3.0 > 门幅 2.8 → 定宽布。
 
-    P = ceil((3+0.3)×2 / 2.8) = ceil(6.6/2.8) = ceil(2.357) = 3
+    P = ceil(3×2 / 2.8) = ceil(6.0/2.8) = ceil(2.143) = 3
     L = 2.7 + 0.3 = 3.0
     M = 3 × 3.0 = 9.0
     """
@@ -101,7 +102,7 @@ def test_fixed_width_meters_when_over_limit():
 def test_fixed_width_panel_round_up():
     """幅数必须向上取整：窄门幅 1.4m 时。
 
-    (3+0.3)×2 / 1.4 = 6.6/1.4 = 4.714 → ceil = 5 幅
+    3×2 / 1.4 = 6.0/1.4 = 4.286 → ceil = 5 幅
     """
     meters, formula, _ = calculate_fabric_meters(
         window_width=3.0,
@@ -179,15 +180,17 @@ def test_roman_shade_meters():
 def test_quote_total_breakdown():
     """完整报价：打孔帘 3m×2.5m、2 倍褶、2.8m 定高、面料 30 元/米。
 
-    M = 6.6m
-    面料费 = 6.6 × 30 = 198
-    加工费 = 6.6 × 8 = 52.8        （按米打包，**已含罗马圈等辅料**，issue #3005/#4118）
-    辅料费 = 孔带 6.6×8=52.8 + 罗马杆 3.4×25=85 + 绑带 15 = 152.8
+    M = 6.0m（= 3 × 2，**宽方向没有余量** —— issue #5030）
+    面料费 = 6.0 × 30 = 180
+    加工费 = 6.0 × 8 = 48          （按米打包，**已含罗马圈等辅料**，issue #3005/#4118）
+    辅料费 = 孔带 6.0×8=48 + 罗马杆 3.4×25=85 + 绑带 15 = 148
     安装费 = 3.4 × 18 = 61.2
-    总价 = 198 + 52.8 + 152.8 + 61.2 = 464.8
+    总价 = 180 + 48 + 148 + 61.2 = 437.2
 
     ⚠️ 本条曾断言 `60 + 52.8 + 85 + 15` / 总价 `524.8`（罗马圈 40×1.5=60 由米数推导）
     —— 那是 issue #4118 ② 的「单测反向锚定偏离值」，已按 #3005 口径改正。
+    ⚠️ issue #5030：米数 6.6 → 6.0 ⇒ 按米计的四项（面料/加工/孔带）随之变；**辅料条目不变**
+    （仍是 孔带 + 罗马杆 + 绑带 三条，罗马圈仍不推导）、**安装费不变**（按杆长，与米数无关）。
     """
     quote = build_quote(
         window_width=3.0,
@@ -196,13 +199,13 @@ def test_quote_total_breakdown():
         fabric_width=2.8,
         fabric_price=30.0,
     )
-    assert quote["fabric_meters"] == pytest.approx(6.6)
-    assert quote["fabric_cost"] == pytest.approx(198.0)
-    assert quote["processing_cost"] == pytest.approx(52.8)
-    # 辅料：孔带 52.8 + 罗马杆 85 + 绑带 15（罗马圈不进默认项 —— 见 TestAccessoryCaliber）
-    assert quote["accessory_cost"] == pytest.approx(52.8 + 85 + 15)
+    assert quote["fabric_meters"] == pytest.approx(6.0)
+    assert quote["fabric_cost"] == pytest.approx(180.0)
+    assert quote["processing_cost"] == pytest.approx(48.0)
+    # 辅料：孔带 48 + 罗马杆 85 + 绑带 15（罗马圈不进默认项 —— 见 TestAccessoryCaliber）
+    assert quote["accessory_cost"] == pytest.approx(48.0 + 85 + 15)
     assert quote["install_cost"] == pytest.approx(61.2)
-    assert quote["total"] == pytest.approx(198 + 52.8 + 152.8 + 61.2)
+    assert quote["total"] == pytest.approx(180 + 48 + 148 + 61.2)
 
 
 def test_quote_uses_default_fullness_when_not_provided():
@@ -214,7 +217,7 @@ def test_quote_uses_default_fullness_when_not_provided():
         fabric_width=2.8,
         fabric_price=30.0,
     )
-    assert quote["fabric_meters"] == pytest.approx(6.6)
+    assert quote["fabric_meters"] == pytest.approx(6.0)
 
 
 def test_quote_warning_on_over_limit():
@@ -540,10 +543,13 @@ class TestFullnessActualPassthrough:
 # 病根：韩褶（s_hook）褶数法只在**显式**传 `craft_tier` / `pleat_count` 时生效
 # （`pleat_mode` 判据在 `build_quote` 内），两者都缺 ⇒ **静默**回落倍数法
 # （回落分支的 `warning` 为空）。实测 6.6m 窗 / 2.6m 高 / 双开 / 3.2m 门幅：
-# 标准档褶数法 **13.3 米（52 折）** vs 倍数法 **13.8 米**，差 0.5 米**且无任何告警**。
+# 标准档褶数法 **13.3 米（52 折）** vs 倍数法 **13.2 米**，差 0.1 米**且无任何告警**。
 # 治法：回落分支**也**返回显式 `warning`（说明按倍数法计价、非标准档褶数法）。
-# ⚠️ 铁律：**数值一个字都不能变**（13.8 仍是 13.8）——本项治的是**静默**，不是数值。
-# 「按 §9 接线默认标准档（13.8→13.3）」= 改既有报价口径 = 改钱，**不在本包**（转客户提问项）。
+# ⚠️ 铁律：**数值一个字都不能变**（13.2 仍是 13.2）——本项治的是**静默**，不是数值。
+# 「按 §9 接线默认标准档（13.2→13.3）」= 改既有报价口径 = 改钱，**不在本包**（转客户提问项）。
+# ⚠️ issue #5030（2026-09-21 用户裁定）：宽方向不再有左右覆盖余量 ⇒ 倍数法
+# **13.8 → 13.2**（`6.6 × 2.0`）、两法之差 **0.5 → 0.1 米**。本类**只更新这两处读数**；
+# 「回落必须显式告警」「回落分支与标准档不同值」这两条不变量**一字未动**。
 # ══════════════════════════════════════════════
 
 class TestDefaultTierFallbackWarning:
@@ -558,7 +564,7 @@ class TestDefaultTierFallbackWarning:
     def test_fallback_to_multiplier_method_is_not_silent(self):
         """★红证①：漏传 `craft_tier`/`pleat_count` ⇒ 倍数法回落的 `warning` **必须非空**。
 
-        改前形态：回落分支返回 `warning=""` ⇒ 顾客拿到的是倍数法的数（13.8 米），
+        改前形态：回落分支返回 `warning=""` ⇒ 顾客拿到的是倍数法的数（13.2 米），
         却**没有任何信号**说明它不等于标准档褶数法（13.3 米）——「静默」就是本项的缺陷。
         """
         q = build_quote(**self.FALLBACK)
@@ -566,7 +572,7 @@ class TestDefaultTierFallbackWarning:
             f"前提：漏传档位时走的应是倍数法，实际 formula_used={q['formula_used']!r}"
         )
         assert q["warning"], (
-            "漏传档位/褶数时**静默**走倍数法（warning 为空）—— 同一单与标准档褶数法差 0.5 米"
+            "漏传档位/褶数时**静默**走倍数法（warning 为空）—— 同一单与标准档褶数法差 0.1 米"
             "却无任何告警（issue #4118 ⑤-B）"
         )
         assert "倍数法" in q["warning"], f"告警须点名本次口径是倍数法：{q['warning']!r}"
@@ -575,10 +581,12 @@ class TestDefaultTierFallbackWarning:
         )
 
     def test_fallback_values_are_byte_for_byte_unchanged(self):
-        """★红证②（防顺手改数）：回落分支**逐值**与改前相同，且 ≠ 标准档褶数法。
+        """★红证②（防顺手改数）：回落分支**逐值**与本次口径一致，且 ≠ 标准档褶数法。
 
-        本项只补告警、**不动数值**：13.8 仍是 13.8（标准档褶数法 13.3 是**另一个**口径，
+        本项只补告警、**不动数值**：13.2 仍是 13.2（标准档褶数法 13.3 是**另一个**口径，
         改它 = 改钱 ⇒ 不在本包）。任何"顺手把默认值接成标准档"的实现都会在此变红。
+        ⚠️ issue #5030 只把**宽方向余量**这一件事改掉（13.8 → 13.2，逐项随之变）；
+        **本断言仍是逐值相等**（不是 `>=` / `approx` / `in`），强度未降。
         """
         q = build_quote(**self.FALLBACK)
         assert {
@@ -591,8 +599,8 @@ class TestDefaultTierFallbackWarning:
             "fullness": q["fullness"],
             "formula_used": q["formula_used"],
         } == {
-            "fabric_meters": 13.8, "fabric_cost": 690.0, "processing_cost": 138.0,
-            "accessory_cost": 0.0, "install_cost": 126.0, "total": 954.0,
+            "fabric_meters": 13.2, "fabric_cost": 660.0, "processing_cost": 132.0,
+            "accessory_cost": 0.0, "install_cost": 126.0, "total": 918.0,
             "fullness": 2.0, "formula_used": "fixed_height",
         }, f"回落分支的数值被改动了（本项只治静默、不改钱）：{q}"
         assert "pleat_count" not in q and "fullness_actual" not in q, (
@@ -647,8 +655,9 @@ class TestAccessoryCaliber:
             "面料", "加工费", "孔带", "罗马杆", "绑带", "安装费",
         ]
         assert [b["name"] for b in quote["breakdown"] if "个" in b["detail"]] == []
-        assert quote["accessory_cost"] == pytest.approx(152.8)
-        assert quote["total"] == pytest.approx(464.8)
+        # issue #5030：米数 6.6 → 6.0 ⇒ 孔带（按米）48 而非 52.8；**条目数不变**（仍 6 条）
+        assert quote["accessory_cost"] == pytest.approx(148.0)
+        assert quote["total"] == pytest.approx(437.2)
 
     def test_more_meters_never_adds_a_per_piece_item(self):
         """米数变多（窗更宽）只让「孔带」按米变贵，**不**冒出按个的项。"""
@@ -672,8 +681,9 @@ class TestAccessoryCaliber:
         assert len(ring) == 1, f"显式辅料必须出现在明细里：{quote['breakdown']}"
         assert ring[0]["detail"] == "40个 × ¥1.5/个"
         assert ring[0]["cost"] == pytest.approx(60.0)
-        assert quote["accessory_cost"] == pytest.approx(152.8 + 60.0)
-        assert quote["total"] == pytest.approx(464.8 + 60.0)
+        # issue #5030：默认辅料 152.8 → 148.0（孔带按米）；显式那 60 元**原样**计入
+        assert quote["accessory_cost"] == pytest.approx(148.0 + 60.0)
+        assert quote["total"] == pytest.approx(437.2 + 60.0)
 
     def test_default_and_explicit_quotes_differ_only_by_the_explicit_line(self):
         """同一算例：不给 accessories 与给 40 个圈的**差**必须恰好等于显式那一项（不推导的判据）。"""
@@ -713,7 +723,7 @@ class TestAccessoryCaliber:
             "fabric_width": 3.0, "fabric_price": 30.0, "fabric_code": "2698-11",
             "accessories": [{"name": "罗马圈", "quantity": 40, "unit_price": 1.5}],
         }])
-        assert res["positions"][0]["accessory_cost"] == pytest.approx(152.8 + 60.0)
+        assert res["positions"][0]["accessory_cost"] == pytest.approx(148.0 + 60.0)
 
 
 class TestCurtainCalcAccessoryCaliberTool:
@@ -737,7 +747,7 @@ class TestCurtainCalcAccessoryCaliberTool:
         )
         assert result.success is True, f"报价应成功: error={result.error}"
         assert "罗马圈" not in str(result.data["breakdown"])
-        assert result.data["total"] == pytest.approx(464.8)
+        assert result.data["total"] == pytest.approx(437.2)
 
     async def test_tool_applies_explicit_accessories(self, sample_tool_context):
         from app.tools.curtain_calc import CurtainCalcTool
@@ -747,7 +757,7 @@ class TestCurtainCalcAccessoryCaliberTool:
             accessories=[{"name": "罗马圈", "quantity": 40, "unit_price": 1.5}],
         )
         assert result.success is True, f"显式辅料应被接受: error={result.error}"
-        assert result.data["total"] == pytest.approx(524.8)
+        assert result.data["total"] == pytest.approx(497.2)
         assert "罗马圈" in str(result.data["breakdown"])
 
     async def test_tool_rejects_malformed_accessory_with_reason(self, sample_tool_context):
@@ -884,14 +894,18 @@ class TestCraftSpecOutput:
         assert q["processing_meters"] == q["fabric_meters"]
 
     def test_split_does_not_change_existing_amounts(self):
-        """**回归护栏**：拆字段不得改任何一个数值（现有单金额一字不变）。"""
+        """**回归护栏**：拆字段不得改任何一个数值（现有单金额一字不变）。
+
+        ⚠️ issue #5030 只改**宽方向余量**（6.6 → 6.0、464.8 → 437.2，随真值源 §7 同步）；
+        「拆分前后金额相等」「`processing_meters == fabric_meters`」这两条不变量**一字未动**。
+        """
         q = build_quote(
             window_width=3.0, window_height=2.7, mounting="eyelet",
             fabric_width=3.0, fabric_price=30.0,
         )
-        assert q["fabric_meters"] == pytest.approx(6.6)          # 文档 §7 算例锚定
-        assert q["processing_meters"] == pytest.approx(6.6)
-        assert q["total"] == pytest.approx(464.8)                # 文档 §7 算例锚定
+        assert q["fabric_meters"] == pytest.approx(6.0)          # 文档 §7 算例锚定
+        assert q["processing_meters"] == pytest.approx(6.0)
+        assert q["total"] == pytest.approx(437.2)                # 文档 §7 算例锚定
 
     def test_open_count_and_pleats_are_usable_as_craft_spec(self):
         """**回归护栏**：打开方式/褶数/每片褶数已是既有输出 ⇒ 直接当 craft spec 用，不新增重复键。"""
@@ -1097,11 +1111,15 @@ class TestMixedColorSurcharge:
         assert round(sum(b["cost"] for b in q["breakdown"]), 2) == q["total"] == 2784.48
 
     def test_single_color_quote_is_unchanged(self):
-        """**单色款不受影响**（回归）：§7 算例逐值不变、明细无加价行、加价键 = 0.0。"""
+        """**单色款不受影响**（回归）：§7 算例逐值对齐真值源、明细无加价行、加价键 = 0.0。
+
+        ⚠️ issue #5030 只改**宽方向余量** ⇒ §7 读数 6.6 → 6.0、464.8 → 437.2；
+        本判据守的「单色款没有加价行 / `mixed_color_surcharge == 0.0`」**一字未动**。
+        """
         q = build_quote(window_width=3.0, window_height=2.7, mounting="eyelet",
                         fabric_width=3.0, fabric_price=30.0)
-        assert q["fabric_meters"] == 6.6
-        assert q["total"] == 464.8                      # §7 算例（改前既有值，逐值不变）
+        assert q["fabric_meters"] == 6.0
+        assert q["total"] == 437.2                      # §7 算例（真值源已按 #5030 同步）
         assert q["mixed_color_surcharge"] == 0.0
         assert [b["name"] for b in q["breakdown"]] == [
             "面料", "加工费", "孔带", "罗马杆", "绑带", "安装费",
@@ -1119,15 +1137,20 @@ class TestMixedColorSurcharge:
             assert single[key] == implicit[key], f"{key} 在「显式单色」与「不传 style」之间不一致"
 
     def test_not_retroactive_legacy_signatures_are_value_identical(self):
-        """**不追溯**（行为判据）：不传 `style` 的历史调用签名逐值不变 ⇒ 重放历史报价得同一批数。"""
-        # §7 算例（打孔 / 6.6 米 / 464.8 元）
+        """**不追溯**（行为判据）：不传 `style` 的历史调用签名逐值相等 ⇒ 重放历史报价得同一批数。
+
+        ⚠️ issue #5030 只改**宽方向余量**（§7 读数 6.6 → 6.0、464.8 → 437.2，随真值源同步）；
+        本判据守的「不传 style 的调用**没有**拼色加价」「三个 legacy 签名各自逐值相等」
+        **一字未动**（断言仍是逐值 `==` 元组，不是 `>=`/`approx`/`in`）。
+        """
+        # §7 算例（打孔 / 6.0 米 / 437.2 元）
         sec7 = build_quote(window_width=3.0, window_height=2.7, mounting="eyelet",
                            fabric_width=3.0, fabric_price=30.0)
-        # §10 用料段的标准档 / 经济档（52 折 13.3 米 / 46 折 11.8 米）
+        # §10 用料段的标准档 / 经济档（52 折 13.3 米 / 46 折 11.8 米 —— 褶数法不受本裁定影响）
         standard = build_quote(**self.DOUBLE_6_6)
         economy = build_quote(**{**self.DOUBLE_6_6, "craft_tier": "economy"})
         # §11 褶数法本体（48 折双开 ⇒ 12.3 米）
-        assert (sec7["fabric_meters"], sec7["total"]) == (6.6, 464.8)
+        assert (sec7["fabric_meters"], sec7["total"]) == (6.0, 437.2)
         assert (standard["pleat_count"], standard["fabric_meters"], standard["total"]) == (52, 13.3, 658.0)
         assert (economy["pleat_count"], economy["fabric_meters"], economy["total"]) == (46, 11.8, 598.0)
         assert calculate_fabric_by_pleats(48, open_count=2)[0] == 12.3

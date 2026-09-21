@@ -129,8 +129,8 @@ class CraftCalcRequest(BaseModel):
         description=(
             "算料公式参数（issue #4528 = 包 E）：**租户级**配置，键集 = 算料引擎 "
             "`curtain_calc.DEFAULT_CRAFT_CALC_CONFIG`（per_fold_single / per_fold_mixed_times / "
-            "margin_single / margin_multi / min_fullness / tiers / default_formula / side_margin / "
-            "meters_rounding_step）。**缺省/None ⇒ 引擎默认值**（未配置租户的既有口径一字不变）。"
+            "margin_single / margin_multi / min_fullness / tiers / default_formula / "
+            "hem_margin / meters_rounding_step）。**缺省/None ⇒ 引擎默认值**（未配置租户的既有口径一字不变）。"
             "非法值 ⇒ 400（**不静默回退默认值** —— 静默 = 算错钱且无人知道）。"
             "⚠️ 本端点只做**键类型归一**（JSON 对象键恒为字符串 ⇒ 拼次键转回 int），不复制校验规则。"
         ),
@@ -578,7 +578,7 @@ class AutoFeaturesRequest(BaseModel):
     config: Optional[Dict[str, Any]] = Field(
         None,
         description=(
-            "算料公式参数（**租户级**）：判定用到 `side_margin`（宽方向余量）/ `hem_margin`（高方向卷边）"
+            "算料公式参数（**租户级**）：判定用到 `hem_margin`（高方向卷边）"
             "与 `tiers` 的标准档褶倍。缺省 ⇒ 引擎默认值（未配置租户口径一字不变）。"
         ),
     )

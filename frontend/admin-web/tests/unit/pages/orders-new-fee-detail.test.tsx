@@ -60,7 +60,6 @@ vi.mock('@/lib/api', () => ({
               min_fullness: 1.5,
               tiers: { standard: { fullness: 2.0, label: '标准档' } },
               default_formula: 'pleat',
-              side_margin: 0.15,
               meters_rounding_step: 0.1,
             },
           },
@@ -142,14 +141,18 @@ const inputOf = (label: string, idx = 0) =>
     .getAllByText(label)
     .map((el) => el.closest('div')!.querySelector('input') as HTMLInputElement)[idx]
 
-/** 选商品 → 填宽高（默认门幅缺省 2.8 ⇒ 6.6×2.6 会自动识别出超宽 + 超高）→ 勾一个加工项 */
+/**
+ * 选商品 → 填窗宽窗高（6.6 × 2.6，SKU 自带门幅 ⇒ 定宽买高下 6.6×2 = 13.2 > 2.8 会识别出「超宽」；
+ * 定高买宽下 2.6+0.3 = 2.9 > 2.8 识别出「超高」）→ 勾一个加工项
+ * 🔴 #5030：宽方向**不再加左右余量**；且门幅**已无缺省值**（issue #4877）⇒ 门幅由 SKU 提供。
+ */
 async function setupLine() {
   render(<NewOrderPage />)
   fireEvent.click(await screen.findByText('点击搜索并选择商品'))
   fireEvent.click(await screen.findByText('遮光窗帘'))
-  await screen.findByText('宽 (米)')
-  fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-  fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+  await screen.findByText('窗宽 (米)')
+  fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+  fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
   expandProcessing()
   fireEvent.click(await screen.findByRole('checkbox'))
   await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())

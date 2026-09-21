@@ -5,8 +5,10 @@
 
 被测函数：`app.tools.curtain_calc.resolve_fabric_plan`（纯函数，不碰钱、不读库）。
 
-算例公共参数（真单回归形态）：成品宽 3.0 / 2 倍褶 ⇒ **定高买宽用料 T = (3.0 + 0.3) × 2 = 6.6 米**
-（本单不改用料公式 ⇒ `T` 由调用方算好传入，测试直接给 6.6）。
+算例公共参数（真单回归形态）：成品宽 3.0 / 2 倍褶 ⇒ **定高买宽用料 T = 3.0 × 2 = 6.0 米**
+（issue #5030 后宽方向**没有**左右覆盖余量；本单不改用料公式 ⇒ `T` 由调用方算好传入，
+测试直接给 6.0 —— 见 `TestBuildQuoteWiring` 的接线断言）。
+
 
 ## issue #5038：文件末尾的 `TestCrossLanguagePanelsGolden`（**引擎腿**）
 
@@ -226,22 +228,28 @@ class TestBuildQuoteWiring:
         assert q["door_width"] == 3.2
         assert q["cutting_mode"] == CUTTING_MODE_FIXED_HEIGHT
         assert q["splice"] is False
-        assert q["fabric_meters"] == pytest.approx(6.6)
+        # issue #5030：定高买宽用料 = 窗宽 × 褶倍 = 3.0 × 2 = 6.0（旧式含 0.3 余量 ⇒ 6.6）
+        assert q["fabric_meters"] == pytest.approx(6.0)
         assert q["formula_used"] == "fixed_height"
 
     def test_candidates_fall_back_to_rotated(self):
         # 可行集为空 ⇒ 倒幅。显式 `fabric_width=3.2` 是**判别性**入参：既有单一门幅口径下
-        # 3.3 > 3.2 也走倒幅，且 `panels`（同为 3）与 `fabric_meters`（同为 9.9）**逐值重合**
-        # ⇒ 只断言它们分辨不出接线与否；接线后候选集**压过**显式门幅、取分幅并列中的较小门幅 2.8。
-        # 红证（实测）：把 `_resolve_plan` 的 `if fabric_widths:` 变异成 `if False:` ⇒ 本断言红
-        # （`door_width` → 3.2）。
+        # 3.3 > 3.2 也走倒幅，且 `panels` 与 `fabric_meters` **逐值重合** ⇒ 只断言它们分辨不出
+        # 接线与否；接线后候选集**压过**显式门幅、取分幅并列中的较小门幅 2.8。
+        # 🔴 issue #5030：宽方向余量退场 ⇒ 用料 = `窗宽 × 褶倍`（旧式含 0.3 ⇒ 判别性几何随之改）。
+        # 本组几何（W=4.2 / N=2 ⇒ 8.4 米）：2.8 与 3.2 都 **3 幅**（毫米整数式）⇒ 并列取较小 2.8；
+        # 显式 `fabric_width=3.2` 那条口径会取 3.2 ⇒ 两者可分辨（红证：把 `_resolve_plan` 的
+        # `if fabric_widths:` 变异成 `if False:` ⇒ 本断言红，`door_width` → 3.2）。
         q = build_quote(
-            window_width=3.0, window_height=3.0, fullness=2, fabric_price=98,
+            window_width=4.2, window_height=3.0, fullness=2, fabric_price=98,
             fabric_width=3.2, fabric_widths=[2.8, 3.2],
         )
         assert q["door_width"] == 2.8, "候选集压过显式 fabric_width（schema 已声明后者被忽略）"
         assert q["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH
+        # 幅数 = ceil_mm(窗宽 × 褶倍 ÷ 门幅) = ceil(8.4 / 2.8) = 3（与 3.2 档并列 ⇒ 取较小门幅 2.8；
+        # 旧式含余量时该组是 ceil(9.0/2.8) = 4 幅 —— 口径变了，几何随之改，判别性不变）
         assert q["panels"] == 3
+        # 倒幅米数由门幅规则给：幅数 3 × 每幅长 (3.0 + 0.3) = 9.9
         assert q["fabric_meters"] == pytest.approx(9.9)
         assert q["formula_used"] == "fixed_width"
 
@@ -251,7 +259,8 @@ class TestBuildQuoteWiring:
             open_count=2, fabric_widths=[2.8, 3.2], cutting_mode=CUTTING_MODE_SPLICE,
         )
         assert q["splice"] is True
-        assert q["fabric_meters"] == pytest.approx(9.9)
+        # 接高 = T + 段数 × 每片宽 = 6.0 + 1 × 3.0 = 9.0（T 随 #5030 由 6.6 → 6.0）
+        assert q["fabric_meters"] == pytest.approx(9.0)
 
     def test_without_candidates_single_width_behaviour_is_unchanged(self):
         # 回归不变量：**不传候选集** ⇒ 既有单一门幅口径一字不变（2.75 + 0.3 > 2.8 ⇒ 倒幅）
@@ -262,7 +271,8 @@ class TestBuildQuoteWiring:
         assert q["door_width"] == 2.8
         assert q["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH
         assert q["splice"] is False
-        # 既有口径：3.05 > 2.8 ⇒ 倒幅 ceil(6.6 / 2.8) = 3 幅 × 3.05 米 = 9.15 米
+        # 既有口径：3.05 > 2.8 ⇒ 倒幅 ceil(6.0 / 2.8) = 3 幅 × 3.05 米 = 9.15 米
+        # （issue #5030 只改分幅分子 6.6 → 6.0；幅数 3 与每幅长 3.05 都不变 ⇒ 米数**未变**）
         assert q["fabric_meters"] == pytest.approx(9.15)
 
 
@@ -294,7 +304,7 @@ class TestCrossLanguagePanelsGolden:
         for case in self._cases():
             if case["expected"]["state"] != "single_panel":
                 continue
-            need = (case["width"] + cfg["side_margin"]) * case["fullness"]
+            need = case["width"] * case["fullness"]
             for i, door_width in enumerate(case["candidates"]):
                 p = resolve_fabric_plan(
                     window_height=case["height"],
@@ -315,7 +325,7 @@ class TestCrossLanguagePanelsGolden:
         for case in self._cases():
             if case["expected"]["state"] != "single_panel":
                 continue
-            need = (case["width"] + cfg["side_margin"]) * case["fullness"]
+            need = case["width"] * case["fullness"]
             p = resolve_fabric_plan(
                 window_height=case["height"],
                 fixed_height_meters=need,
@@ -339,7 +349,7 @@ class TestCrossLanguagePanelsGolden:
             if case["expected"]["state"] != "undecidable":
                 continue
             checked += 1
-            need = (case["width"] + cfg["side_margin"]) * case["fullness"]
+            need = case["width"] * case["fullness"]
             with pytest.raises(ValueError):
                 resolve_fabric_plan(
                     window_height=case["height"],

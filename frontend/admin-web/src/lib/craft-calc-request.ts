@@ -36,7 +36,7 @@ export const CRAFT_CALC_MOUNTING = 's_hook'
 /**
  * 用料**计算方法**（issue #4527，用户 2026-09-19 裁定：「根据用户要求选择不同的计算公式，**默认用韩折的**」）：
  * - `pleat` = **韩褶公式**（褶数法）：`总用料 = 每片用料 × 开数`，每片用料 = 每折吃布 × 每片褶数 + 每片余量；
- * - `fullness` = **褶倍数公式**（倍数法）：`总用料 = 每片宽 × 褶倍 × 开数`（= 成品宽 × 褶倍，与开数无关）。
+ * - `fullness` = **褶倍数公式**（倍数法）：`总用料 = 每片宽 × 褶倍 × 开数`（= 窗宽 × 褶倍，与开数无关）。
  *
  * ⚠️ 前端**只传公式名**，不实现任何公式（实现唯一落在算料引擎 `curtain_calc.py`；
  * 前端复制常量/算式 = **第二份算料逻辑**）。
@@ -157,9 +157,9 @@ export const CRAFT_CALC_MOUNTING_BY_CRAFT: Record<string, string> = {
 const CALC_CRAFTS = new Set(['韩褶', '打孔', ''])
 
 export interface CalcLineInput {
-  /** 成品宽（米）—— 必填 */
+  /** 窗宽（米；= 成品宽，用户 2026-09-21 裁定）—— 必填 */
   width: number | null
-  /** 成品高（米）—— 必填 */
+  /** 窗高（米；= 成品高，用户 2026-09-21 裁定）—— 必填 */
   height: number | null
   craft: CraftSpecInput
   /**

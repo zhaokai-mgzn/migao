@@ -13,7 +13,7 @@
  * ⇒ 前端的本地判定实现 `detectAutoFeatures` **已无人调用**，随本单（#5035）删除。
  * 本模块**只保留**「不是判定」的那三件事：
  * 1. **门幅解析** `parseDoorWidth()`（#4877：**没有缺省门幅** —— 解析不到 ⇒ `null` ⇒ 不判）；
- * 2. **余量常量副本** `SIDE_MARGIN` / `HEM_MARGIN`（宽 / 高两个方向，**语义不同不得混用**；
+ * 2. **余量常量副本** `HEM_MARGIN`（高方向；宽方向余量已按 issue #5030 整体退场）；
  *    跨语言漂移守卫见下）+ 加工类型常量；
  * 3. **自动推导特征名清单** `AUTO_FEATURE_NAMES`（必须与 `processing_items` 目录（V83）**逐值对齐**，
  *    否则组合键永远匹配不到价 ⇒ 加工费恒 ¥0.00 —— issue #4592 的 P0）。
@@ -22,10 +22,10 @@
  *
  * | # | 判据 | 红证 |
  * |---|---|---|
- * | 1 | `SIDE_MARGIN` / `HEM_MARGIN` 与引擎 `curtain_calc.py` **逐值相等** | 改 Python 侧任一常量 ⇒ 红 |
+ * | 1 | `HEM_MARGIN` 与引擎 `curtain_calc.py` **逐值相等**（宽方向余量已退场 ⇒ 反向守卫见下） | 改 Python 侧该常量 ⇒ 红 |
  * | 2 | `parseDoorWidth()` 缺失 / 不可解析 / 非正 ⇒ `null`（**不得回退任何缺省门幅**） | 回退到 2.8 ⇒ 红 |
  * | 3 | `DEFAULT_DOOR_WIDTH` / `resolveDoorWidth` **不得**回到本模块（反向守卫） | 把缺省门幅加回来 ⇒ 红 |
- * | 4 | 引擎「定宽买高」分幅公式**逐字**是 `(宽 + side_margin) × fullness ÷ 门幅` | 引擎改公式而前端不跟 ⇒ 红 |
+ * | 4 | 引擎「定宽买高」分幅公式**逐字**是 `math.ceil(window_width * fullness / fabric_width)`（**无宽方向余量**，issue #5030） | 引擎改公式而前端不跟 ⇒ 红 |
  * | 5 | `AUTO_FEATURE_NAMES` 与 V83 目录里标「自动推导特征」的行**逐值对齐**（双向、按序） | 清单多一项（如 `正幅`）⇒ 红 |
  *
  * ⚠️ **判定语义（分流 / 含褶倍 / 倒幅 / 几何矛盾）的判据已不在本文件** —— 它们随实现一起搬到
@@ -38,7 +38,6 @@ import { resolve } from 'node:path'
 import {
   AUTO_FEATURE_NAMES,
   HEM_MARGIN,
-  SIDE_MARGIN,
   parseDoorWidth,
 } from '@/lib/craft-auto-features'
 
@@ -72,9 +71,18 @@ function pyConst(name: string): number {
 /** 前端门幅库源（反向守卫用）：`frontend/admin-web/src/lib/craft-auto-features.ts` */
 const LIB_SRC = resolve(__dirname, '../../../src/lib/craft-auto-features.ts')
 
-describe('余量常量 —— 两个方向各自复用算料引擎的**对应**常量（不新造数、也不混用）', () => {
-  it('SIDE_MARGIN（宽方向）= curtain_calc.SIDE_MARGIN（逐值比对，漂移即红）', () => {
-    expect(SIDE_MARGIN).toBe(pyConst('SIDE_MARGIN'))
+describe('余量常量 —— **只有高方向有**（宽方向的「左右覆盖余量」已整体退场）', () => {
+  // 🔴 issue #5030 改判（用户 2026-09-21 裁定）：订单宽高 = **窗户宽高** ⇒ 成品宽 = 净窗宽、
+  // 成品高 = 净窗高；宽度用料 = `窗宽 × 褶倍`（**不再另加左右覆盖余量**）。
+  // ⇒ 原判据「SIDE_MARGIN（宽方向）= curtain_calc.SIDE_MARGIN（逐值比对）」的前提**已消失**
+  //   （常量两侧都不存在了）⇒ 改成**同强度的反向守卫**：两侧都**不得**再定义这个常量。
+  // 红证：在 `curtain_calc.py` 里加回 `SIDE_MARGIN = 0.3`（行首定义形态）⇒ 第一条红；
+  //       在 `craft-auto-features.ts` 里加回 `export const SIDE_MARGIN = 0.3` ⇒ 第二条红。
+  it('#5030 宽方向余量常量**不得复活**：引擎与前端库都不再有 SIDE_MARGIN 定义（反向守卫）', () => {
+    // 只认**行首定义形态**（`^SIDE_MARGIN = …`）—— 引擎注释里以历史记录形式提到这个名字是允许的
+    expect(source).not.toMatch(/^SIDE_MARGIN\s*=/m)
+    const lib = readFileSync(LIB_SRC, 'utf8')
+    expect(lib).not.toContain('export const SIDE_MARGIN')
   })
 
   it('HEM_MARGIN（高方向）= curtain_calc.HEM_MARGIN（逐值比对，漂移即红）', () => {
@@ -131,14 +139,14 @@ describe('#4746 / #4877 门幅真值源（**前端不持有缺省门幅** + 反�
 describe('#4662 分幅口径 —— 钉**引擎侧**真值源（前端判定已退场，本条守公式不被改走）', () => {
   /**
    * 真值源（算料引擎 `curtain_calc.py` 的**定宽买高**分支）：
-   * `panels = math.ceil((window_width + cfg["side_margin"]) * fullness / fabric_width)`
-   * ⇒ 「要分幅」⟺ `(窗宽 + 左右余量) × 褶倍 > 门幅` —— **这才是真正多花钱的地方**
-   * （用户 2026-09-20 裁定 A：「超宽」要含褶倍）。
+   * `panels = math.ceil(window_width * fullness / fabric_width)`
+   * ⇒ 「要分幅」⟺ `窗宽 × 褶倍 > 门幅` —— **这才是真正多花钱的地方**
+   * （用户 2026-09-20 裁定 A：「超宽」要含褶倍；issue #5030：**宽方向无余量**）。
    */
-  it('#4662 判据与引擎**同源**：定宽买高分支逐字就是 (宽 + side_margin) × fullness ÷ 门幅（漂移即红）', () => {
+  it('#4662 / #5030 判据与引擎**同源**：定宽买高分支逐字就是 ceil(窗宽 × 褶倍 ÷ 门幅)（漂移即红）', () => {
     // 逐字读真值源（不是抄现值）：引擎改了分幅公式而前端不跟 ⇒ 本断言必红
     expect(source).toContain(
-      'panels = math.ceil((window_width + cfg["side_margin"]) * fullness / fabric_width)'
+      'panels = math.ceil(window_width * fullness / fabric_width)'
     )
     // 定高可用条件（判定 / 提示的几何依据）：`高 + 上下卷边 <= 门幅` ⇒ 定高买宽，否则回落定宽买高。
     // ⚠️ issue #4976 包 1b 起**上下卷边可配**：引擎读 `cfg["hem_margin"]`（默认值 = 常量 `HEM_MARGIN`）。
