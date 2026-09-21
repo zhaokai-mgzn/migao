@@ -259,6 +259,17 @@ describe('特殊选项术语（issue #4986）', () => {
     return out
   }
 
+  /**
+   * 变体名 → **逻辑名**（`拼1次-布` ⇒ `拼1次`）。
+   *
+   * 真值源 `SPECIAL_OPTION_ROUTINGS` 给的是**变体名**（按部位派生），而前端**只许写逻辑名**
+   * （硬编码变体名 = 把部位写死）—— 守卫 `tests/unit_ci_workflows/test_op_name_registry_guard.py`
+   * 判据① 直接判红（本模块第一版就是被它抓到的）。
+   */
+  function logicalOf(name: string): string {
+    return name.split('-')[0]
+  }
+
   it('判据 1：六个术语逐字取自真实特殊选项清单（清单改名/删项 ⇒ 红）', () => {
     const missing = SPECIAL_OPTION_TERMS.map((t) => t.name).filter(
       (n) => !(SPECIAL_OPTIONS as readonly string[]).includes(n)
@@ -276,7 +287,7 @@ describe('特殊选项术语（issue #4986）', () => {
     ])
   })
 
-  it('判据 2：说明里的工序映射与 routing.py 逐值一致（改一处必红）', () => {
+  it('判据 2：说明里的工序映射与 routing.py 逐值一致（**逻辑名**；改一处必红）', () => {
     const entries = routingEntries()
     for (const term of SPECIAL_OPTION_TERMS) {
       if (term.operation === null) {
@@ -284,9 +295,23 @@ describe('特殊选项术语（issue #4986）', () => {
         expect(Object.keys(entries)).not.toContain(term.name)
         continue
       }
-      // 注入：把「接高」的锚点从 精裁-布 改成 布三边 ⇒ 红
-      expect(entries[term.name]).toEqual({ operation: term.operation, after: term.after })
+      // 注入：把「接高」的锚点从 精裁 改成 布三边 ⇒ 下面两条红
+      expect(term.operation).toBe(logicalOf(entries[term.name].operation))
+      expect(term.after).toBe(logicalOf(entries[term.name].after))
     }
+  })
+
+  it('判据 2b：说明里**不得出现变体名**（部位后缀 `-布` / `-纱` / `-帘头` / `-布料`）', () => {
+    // 与 Python 守卫 test_op_name_registry_guard.py 判据① 同口径（前端源码全域扫描）——
+    // 本模块第一版把「拼1次-布」写进说明，正是被那条守卫抓到的。
+    const offenders = SPECIAL_OPTION_TERMS.flatMap((t) => [
+      t.operation ?? '',
+      t.after ?? '',
+      t.definition,
+      t.impact,
+      t.boundary ?? '',
+    ]).filter((s) => /-(布|纱|帘头|布料)/.test(s))
+    expect(offenders).toEqual([])
   })
 
   it('判据 3：拼3次写明「用料系数未登记 ⇒ 不插值、不静默退回单色」', () => {
