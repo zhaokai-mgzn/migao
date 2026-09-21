@@ -38,12 +38,12 @@ public class ProductSku {
     private String colorName;
 
     /**
-     * 售卖方式: bulk_cut(散剪) / full_roll(整卷)
-     */
-    private String sellingMethod;
-
-    /**
      * 规格尺寸: 2.8m / 3.2m / 3.4m
+     *
+     * <p>SKU 组合的**第二个**（也是最后一个）维度 —— 用户裁定 2026-09-21：
+     * 「商品的售卖方式整卷/散件不能作为 SKU 的组合项，只能作为基础属性，
+     * 商品的 SKU 由颜色+门幅组成即可」⇒ 原 {@code sellingMethod} 字段已随 V112 迁移删除
+     * （售卖方式上移为商品级 {@link Product#getSellingMethods()}）。</p>
      */
     private String doorWidth;
 

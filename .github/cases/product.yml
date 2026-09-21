@@ -1754,3 +1754,95 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: PR-042
+    legacy_id: ""
+    title: "SKU 组合只有 颜色 × 门幅 —— 售卖方式不是 SKU 维度（DB 唯一键 + 三端读写面）"
+    domains:
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - product
+      - sku_matrix
+      - backend_contract
+    truths_ref:
+      - product-sku-stock.status-flow
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**唯一键只有两维**：`product_skus` 的组合约束逐字为 `UNIQUE (product_id, color_id, door_width)`；`product_skus.selling_method` 列**已不存在**（`information_schema.columns` 查不到 ⇒ 迁移 V108 的终态对账会抛）。注入：把 `selling_method` 加回唯一键 ⇒ 断言红。"
+      - "判据 2·**建品只按颜色×门幅生成**：`ProductService.saveColorsAndSkus` 的笛卡尔积是 `colors × doorWidths`（原 `colors × sellingMethods × doorWidths`）——注入：把 sellingMethods 放回积 ⇒ 生成行数 = 颜色×售卖方式×门幅 ≠ 颜色×门幅 ⇒ 断言红。"
+      - "判据 3·**SKU 定位键族不含售卖方式**：`OrderService.matchSkuId` 的 `colorId+doorWidth` / `colorName+doorWidth` 两族即可唯一定位（原 `+sellingMethod` 那一维已删）；`order_items.processing_info` 里历史单残留的 `sellingMethod` 键**不得**再参与 SKU 定位（注入：把它加回 where 条件 ⇒ 同色同门幅的历史单定位不到 SKU ⇒ 断言红）。"
+      - "判据 4·**存量去重可复算**：同 `(product_id,color_id,door_width)` 的旧多行（散剪一行/整卷一行）收敛为**价格最低**那一行，同价取 `id` 最小 —— 两遍执行保留同一行（幂等可断言）。"
+      - "判据 5·**迁移必须能在真库上真的跑起来**（回填不得引用不存在的列）：`product_skus` **没有** `deleted` 列（删除走 `deleteById` = 物理删除）⇒ 回填写 `AND deleted = 0` 会让真库抛「字段 deleted 不存在」、整份迁移回滚，而 `MigrationRunner` 对非连接类失败是**跳过并继续** ⇒ 部署 success、三列永不建（#4402 同族）。**本单第一版正是这个缺陷，且测试夹具自己给该表补了 `deleted` ⇒ 夹具把真缺陷挡掉了**（独立对抗式复核实测抓到）。⇒ 真库判据的 `_DDL` 必须与真 schema **逐列一致**，并有静态断言钉住「回填里不得出现 `deleted`」。"
+    skip_reason: "[backend-contract] 商品模型改造的后端契约（迁移 + Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/unit_ci_workflows/test_product_roll_length_migration.py、backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java 与 OrderStockSkuKeyFamilyTest.java 执行"
+    merge_log: "2026-09-21 新增（用户裁定逐字：「商品的售卖方式整卷/散件不能作为 SKU 的组合项，只能作为基础属性，商品的 SKU 由颜色+门幅组成即可」）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_product_roll_length_migration.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderStockSkuKeyFamilyTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-043
+    legacy_id: ""
+    title: "售卖方式 = 商品级基础属性（products.selling_methods），非 SKU 组合维度"
+    domains:
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - product
+      - selling_method
+      - backend_contract
+    truths_ref:
+      - product-sku-stock.status-flow
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**落商品列**：`products.selling_methods`（JSONB 数组，取值 `bulk_cut` / `full_roll`）是售卖方式的**唯一**载体；`product_skus` 不得有该列。注入：把该列建到 `product_skus` ⇒ PR-042 判据 1 红。"
+      - "判据 2·**回填取旧数据真值**：迁移把该货号 SKU 里真实出现过的售卖方式去重回填（不是无脑默认）；一个 SKU 都没有的货号回填 `[\"bulk_cut\",\"full_roll\"]`（最宽口径，不误禁商家已有售卖方式）。"
+      - "判据 3·**读面契约**：商品详情响应 `sellingMethods` 取自商品列（不再是「从 SKU 派生」）——注入：把读面改回从 SKU 派生 ⇒ 该字段恒空 ⇒ 断言红。"
+      - "判据 4·**订单侧校验锚点**：订单行 `selling_method` 必须属于该货号 `products.selling_methods`（越界 ⇒ 显式拒绝，不静默落库）。"
+    skip_reason: "[backend-contract] 商品基础属性契约（迁移 + Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/unit_ci_workflows/test_product_roll_length_migration.py 与 backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java 执行"
+    merge_log: "2026-09-21 新增（用户裁定逐字：「商品的售卖方式整卷/散件不能作为 SKU 的组合项，只能作为基础属性」）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_product_roll_length_migration.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-044
+    legacy_id: ""
+    title: "商品「1 卷 = 多少米」= 货号级基础参数（roll_length_m），未配置禁止推算"
+    domains:
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - product
+      - roll_length
+      - backend_contract
+    truths_ref:
+      - product-sku-stock.status-flow
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**货号级一列**：`products.roll_length_m NUMERIC(8,2)`（可空、**不设默认值**）。注入：给它加 `DEFAULT 60` ⇒ 「未配置」这一档从库里消失 ⇒ 断言红。"
+      - "判据 2·**NULL = 未知，禁止推算**：`ProductRollAllocation.allocate(qty, null)` / `(qty, <=0)` 一律返回未分配（`rollCount == null`，三字段全 null）——不得用任何兜底常量算出一个看似合理的分配（行业卷长是区间值，见 docs/curtain-selling-method-industry-research.md §5）。"
+      - "判据 3·**读面契约**：商品详情/编辑表单读得到 `rollLengthM`（product_detail / 商品编辑页回显），写入走 `rollLengthM`。"
+      - "判据 4·**边界语义**：`quantity < rollLength` ⇒ `rollCount = 0` 且余量 = 全部数量（「0 整卷 + 全部散剪」是**真实结论**，与「未分配 null」不是一回事）；恰好整卷倍数 ⇒ 余量 `0`（不是 null）。"
+    skip_reason: "[backend-contract] 商品基础参数契约（迁移 + Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/unit_ci_workflows/test_product_roll_length_migration.py 与 backend/admin-api/src/test/java/com/migao/admin/service/ProductRollAllocationTest.java 执行"
+    merge_log: "2026-09-21 新增（用户裁定逐字：「商品需要增加 1 卷=多少米，作为商品货号的基础参数」）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_product_roll_length_migration.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductRollAllocationTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

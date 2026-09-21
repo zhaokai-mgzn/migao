@@ -7,9 +7,12 @@ ID 解析、默认值填充、字段规范化由 Java Agent 端点负责。
 
 ⚠️ 后端契约：create 的 payload 键必须 ∈ `dto/agent/AgentProductCreateRequest` 字段
 （name/categoryId/basePrice/skuCode/description/brand/unit/pricingType/stock/status/
-images/detailImages/colors/sellingMethods/doorWidths/specifications/stockDeductionMode/
-allowReturnRestock）—— Spring 静默忽略未知字段，下发 DTO 没有的键 = 无声丢数据 +
-工具报成功（工具审计 A4：`skus` 因此被删）。
+images/detailImages/colors/sellingMethods/rollLengthM/doorWidths/specifications/
+stockDeductionMode/allowReturnRestock）—— Spring 静默忽略未知字段，下发 DTO 没有的键 =
+无声丢数据 + 工具报成功（工具审计 A4：`skus` 因此被删）。
+⚠️ 商品模型（用户裁定 2026-09-21 / V111）：`sellingMethods`（该货号支持哪些售卖方式）与
+`rollLengthM`（**1 卷 = 多少米**）都是**商品货号级基础参数**；SKU 组合只有 **颜色 × 门幅**
+（`colors` × `doorWidths`），售卖方式**不是** SKU 组合维度。
 ⚠️ issue #4371：`processingItemIds`/`processingItemConfigs` 已随「商品↔加工项解耦」从
 DTO 与本工具一并移除 —— 加工项是**店铺级目录**（`processing_item_query`），不再挂在商品上。
 """
@@ -94,7 +97,13 @@ class ProductManageTool(BaseTool):
             },
             "selling_methods": {
                 "type": "array", "items": {"type": "string"},
-                "description": "售卖方式数组。支持中文（散剪/整卷）或英文（bulk_cut/full_roll）",
+                "description": "售卖方式（**商品级基础属性**，不是 SKU 组合维度）：该货号支持哪些售卖方式；"
+                               "支持中文（散剪/整卷）或英文（bulk_cut/full_roll）",
+            },
+            "roll_length_m": {
+                "type": "number",
+                "description": "1 卷 = 多少米（**商品货号级基础参数**）。不填=未配置；"
+                               "未配置时订单侧不会推算整卷发货分配",
             },
             "door_widths": {
                 "type": "array", "items": {"type": "string"},
@@ -132,6 +141,7 @@ class ProductManageTool(BaseTool):
         unit: Optional[str] = None,
         colors: Optional[list] = None,
         selling_methods: Optional[list] = None,
+        roll_length_m: Optional[float] = None,
         door_widths: Optional[list] = None,
         sku_code: Optional[str] = None,
         pricing_type: Optional[str] = None,
@@ -157,12 +167,12 @@ class ProductManageTool(BaseTool):
                     description, stock_quantity, brand, images,
                     detail_images, specifications, unit, colors, selling_methods,
                     door_widths, sku_code, pricing_type,
-                    status, allow_return_restock)
+                    status, allow_return_restock, roll_length_m)
             elif action == "update":
                 return await self._update_product(context, product_id, name, category_id,
                     price, description, stock_quantity, brand, images, detail_images,
                     specifications, unit, colors, pricing_type, selling_methods,
-                    door_widths, sku_code, status)
+                    door_widths, sku_code, status, roll_length_m)
             elif action == "toggle_status":
                 return await self._toggle_status(context, product_id, status)
             else:
@@ -186,7 +196,7 @@ class ProductManageTool(BaseTool):
                                detail_images, specifications, unit, colors,
                                selling_methods, door_widths, sku_code,
                                pricing_type, status,
-                               allow_return_restock=None) -> ToolResult:
+                               allow_return_restock=None, roll_length_m=None) -> ToolResult:
         if not name:
             return ToolResult(
                 success=False, error="缺少商品名称",
@@ -205,6 +215,9 @@ class ProductManageTool(BaseTool):
         if detail_images: json_data["detailImages"] = detail_images
         if colors: json_data["colors"] = colors
         if selling_methods: json_data["sellingMethods"] = selling_methods
+        # 1 卷 = 多少米（货号级基础参数，V111）：未配置（None）时不下发 ⇒ 后端保持 NULL，
+        # 订单侧不得用任何兜底常量推算整卷发货分配。
+        if roll_length_m is not None: json_data["rollLengthM"] = roll_length_m
         if door_widths: json_data["doorWidths"] = door_widths
         if sku_code: json_data["skuCode"] = sku_code
         if specifications: json_data["specifications"] = specifications
@@ -250,7 +263,8 @@ class ProductManageTool(BaseTool):
     async def _update_product(self, context, product_id, name, category_id, price,
                                description, stock_quantity, brand, images, detail_images,
                                specifications, unit, colors, pricing_type, selling_methods,
-                               door_widths, sku_code, status=None) -> ToolResult:
+                               door_widths, sku_code, status=None,
+                               roll_length_m=None) -> ToolResult:
         if not product_id:
             return ToolResult(
                 success=False, error="缺少商品 ID",
@@ -287,6 +301,7 @@ class ProductManageTool(BaseTool):
         if pricing_type is not None: json_data["pricingType"] = pricing_type
         if colors is not None: json_data["colors"] = colors
         if selling_methods is not None: json_data["sellingMethods"] = selling_methods
+        if roll_length_m is not None: json_data["rollLengthM"] = roll_length_m
         if door_widths is not None: json_data["doorWidths"] = door_widths
         if sku_code is not None: json_data["skuCode"] = sku_code
 

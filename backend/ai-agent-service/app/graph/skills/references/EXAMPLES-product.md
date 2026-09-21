@@ -13,7 +13,7 @@
     formFields=[
       {key:"name", label:"商品名称", value:"遮光窗帘"},
       {key:"price", label:"单价(元)", value:"50"},
-      {key:"selling_methods", label:"售卖方式", required:true, placeholder:"散剪/整卷"},
+      {key:"selling_methods", label:"售卖方式（商品级基础属性）", required:true, placeholder:"散剪/整卷"},
       {key:"door_widths", label:"门幅", placeholder:"如 2.8米"},
       {key:"sku_code", label:"货号", placeholder:"按色号/品牌缩写/拼音首字母生成"}
     ]
@@ -26,6 +26,7 @@
 ```
 用户点选分类卡「窗帘」（= 已确认分类 ID，如 cat_curtain）+ 回填 form:
   name="遮光窗帘", price=50, selling_methods=["散剪","整卷"], door_widths=["2.8米"], sku_code="ZG-001"
+  // selling_methods = 商品级基础属性（不参与 SKU 组合）；SKU 组合只有 颜色 × 门幅
 → 💬 "基本信息已收到。货号 ZG-001 可以吗？"
 🔴 建品**没有**加工项多选卡（issue #4371：加工项是店铺级目录，与商品无关）——
    不要调 processing_item_query 问加工项，也不要把加工项写进 create 参数。
@@ -43,7 +44,8 @@
 用户确认 → product_manage(
     action="create", name="遮光窗帘", price=50, status="on_sale",
     sku_code="ZG-001", colors=["2699-01 米白色"],
-    selling_methods=["散剪","整卷"], door_widths=["2.8米"],
+    selling_methods=["散剪","整卷"], door_widths=["2.8米"],  // 前者是商品级基础属性，SKU = 颜色 × 门幅
+    roll_length_m=60,  // 1 卷 = 多少米（货号级基础参数，可选；不填=未配置）
     specifications={"克重":"200-300g","材质":"涤纶","功能":"遮光","工艺":"色织","风格":"现代简约","图案":"纯色"},
     unit="米", pricing_type="per_meter"
   )
@@ -69,7 +71,7 @@
     ]
   )
 → 💬 "图片识别到名称'雪尼尔遮光窗帘'、2 种颜色。价格和售卖方式还需补充。货号建议 XNE3610。"
-用户回填 price=68, selling_methods=["散剪"] → confirm → validate_input → product_manage → 完成
+用户回填 price=68, selling_methods=["散剪"]（商品级基础属性） → confirm → validate_input → product_manage → 完成
 ```
 
 关键点：识别结果**以预填 form 呈现（呈现即一次确认入口）**，不要跳过呈现直接建品；

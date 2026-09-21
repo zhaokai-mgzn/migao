@@ -281,6 +281,23 @@ export default function ProductDetailPage() {
                 <dt className="text-xs text-neutral-500">在售颜色</dt>
                 <dd className="text-sm text-neutral-900 mt-0.5">{product.colorCount ?? (product.colors?.length ?? '-')}</dd>
               </div>
+              {/* 售卖方式（商品级基础属性）与 1 卷米数（商品货号级基础参数） */}
+              {product.sellingMethods && product.sellingMethods.length > 0 && (
+                <div>
+                  <dt className="text-xs text-neutral-500">售卖方式</dt>
+                  <dd className="text-sm text-neutral-900 mt-0.5">
+                    {product.sellingMethods
+                      .map((m) => SellingMethodLabels[m] || m)
+                      .join(' / ')}
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-xs text-neutral-500">1 卷 = 多少米</dt>
+                <dd className="text-sm text-neutral-900 mt-0.5">
+                  {product.rollLengthM != null ? `${product.rollLengthM} 米` : '未配置'}
+                </dd>
+              </div>
               {product.salesCount != null && (
                 <div>
                   <dt className="text-xs text-neutral-500">累计销量</dt>
@@ -333,7 +350,7 @@ export default function ProductDetailPage() {
             </div>
           )}
 
-          {/* 销售信息（SKU） */}
+          {/* 销售信息（SKU 组合 = 颜色 × 门幅；售卖方式 / 卷长是商品级基础属性，见「基本信息」） */}
           {skus.length > 0 && (
             <div className="bg-neutral-50 rounded-lg p-4">
               <h3 className="text-sm font-semibold text-neutral-700 mb-3">销售信息</h3>
@@ -342,7 +359,6 @@ export default function ProductDetailPage() {
                   <thead className="bg-neutral-50 text-neutral-600">
                     <tr>
                       <th className="px-3 py-2 text-left font-medium">颜色</th>
-                      <th className="px-3 py-2 text-left font-medium">售卖方式</th>
                       <th className="px-3 py-2 text-left font-medium">门幅</th>
                       <th className="px-3 py-2 text-left font-medium">货号</th>
                       <th className="px-3 py-2 text-right font-medium">库存</th>
@@ -353,9 +369,6 @@ export default function ProductDetailPage() {
                     {skus.map((sku) => (
                       <tr key={sku.id} className="text-neutral-900">
                         <td className="px-3 py-2">{sku.colorName || '-'}</td>
-                        <td className="px-3 py-2">
-                          {sku.sellingMethod ? SellingMethodLabels[sku.sellingMethod] || sku.sellingMethod : '-'}
-                        </td>
                         <td className="px-3 py-2">{sku.doorWidth || '-'}</td>
                         <td className="px-3 py-2 font-mono text-xs">{sku.skuCode || '-'}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{sku.stock ?? '-'}</td>

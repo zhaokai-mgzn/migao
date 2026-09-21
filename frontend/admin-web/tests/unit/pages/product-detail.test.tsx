@@ -1,4 +1,4 @@
-// case_ids: PR-011, PR-019
+// case_ids: PR-011, PR-019, PR-042, PR-043, PR-044, OR-046
 // #4371：加工项与商品解耦 —— 商品详情页不再展示商品维度的「加工项」块
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -211,6 +211,29 @@ describe('ProductDetailPage', () => {
     render(<ProductDetailPage />)
     await waitFor(() => {
       expect(screen.getByText('商品描述')).toBeInTheDocument()
+    })
+  })
+
+  // ========== 售卖方式 / 卷长 = 商品级基础属性（PR-042 / PR-043）==========
+  //
+  // ⚠️ 断言必须留在 `waitFor` 内：`tests/setup.ts` 的 `useRouter()` 每次调用返回**新对象**
+  // ⇒ 详情页 effect（deps 含 router）反复重跑、loading 态会周期性回来，
+  // 在 waitFor 之后做同步查询会偶发撞上 loading 帧（实测）。
+  it('PR-042: SKU 表**没有**「售卖方式」列（它已上移为商品级基础属性）', async () => {
+    render(<ProductDetailPage />)
+    await waitFor(() => {
+      const table = screen.getByText('颜色').closest('table') as HTMLTableElement
+      const headers = Array.from(table.querySelectorAll('th')).map((th) => th.textContent || '')
+      expect(headers.some((h) => h.includes('售卖方式'))).toBe(false)
+      expect(headers.some((h) => h.includes('门幅'))).toBe(true)
+    })
+  })
+
+  it('PR-043: 未配置卷长时显示「未配置」（不编数字）', async () => {
+    render(<ProductDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('1 卷 = 多少米')).toBeInTheDocument()
+      expect(screen.getByText('未配置')).toBeInTheDocument()
     })
   })
 })

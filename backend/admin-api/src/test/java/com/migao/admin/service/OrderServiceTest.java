@@ -1,11 +1,12 @@
 package com.migao.admin.service;
-// case_ids: OR-006, FN-001, OR-001, PG-003, PG-009, PG-010, PG-042, OR-023
+// case_ids: OR-006, FN-001, OR-001, PG-003, PG-009, PG-010, PG-042, OR-023, OR-046
 
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
+import com.migao.admin.entity.Product;
 import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.entity.FinanceTransaction;
 import com.migao.admin.entity.ProductSku;
@@ -284,6 +285,29 @@ class OrderServiceTest {
         assertThat(result.getItems()).hasSize(1);
         assertThat(result.getItems().get(0).getProductName()).isEqualTo("蜂巢帘");
         assertThat(result.getLogistics()).isNull();
+    }
+
+    @Test
+    @DisplayName("查询订单详情（V111 / OR-046 判据 4）：售卖方式偏好与整卷分配三字段真的出现在响应里")
+    void getOrderById_exposesRollAllocationFields() {
+        // 独立对抗式复核抓到：OR-046 判据 4 声称「订单详情响应带 sellingMethod/rollCount/rollLengthM」，
+        // 但此前**零测试**证明它们真的出现在**响应**里（只有「insert 前」的断言）。
+        // `OrderItemResponse` 的这三个字段靠 `BeanUtils.copyProperties` 从实体拷 —— 一旦有人改名/删字段，
+        // 只有这条断言会红。
+        OrderItem item = testOrderItem;
+        item.setSellingMethod("full_roll");
+        item.setRollCount(1);
+        item.setRollLengthM(new BigDecimal("60.00"));
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
+        when(orderLogisticsMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of());
+
+        OrderDetailResponse result = orderService.getOrderById("order-001");
+
+        OrderDetailResponse.OrderItemResponse line = result.getItems().get(0);
+        assertThat(line.getSellingMethod()).isEqualTo("full_roll");
+        assertThat(line.getRollCount()).isEqualTo(1);
+        assertThat(line.getRollLengthM()).isEqualByComparingTo("60");
     }
 
     @Test
@@ -2256,15 +2280,15 @@ class OrderServiceTest {
                 .build();
     }
 
-    /** 库内既有 SKU：枚举 bulk_cut + 门幅写法可指定（种子是 2.8，agent 建品落库的是 2.8米） */
-    private ProductSku storedSku(String sellingMethod, String doorWidth) {
+    /** 库内既有 SKU：门幅写法可指定（种子是 2.8，agent 建品落库的是 2.8米）。
+     *  V108：售卖方式已不是 SKU 维度 ⇒ 本 helper 不再收该参数。 */
+    private ProductSku storedSku(String doorWidth) {
         return ProductSku.builder()
                 .id(COMBO_SKU_ID)
                 .tenantId(1L)
                 .productId("prod-001")
                 .colorId(11L)
                 .colorName("米白")
-                .sellingMethod(sellingMethod)
                 .doorWidth(doorWidth)
                 .price(new BigDecimal("168.00"))
                 .stock(10)
@@ -2299,7 +2323,7 @@ class OrderServiceTest {
         when(orderMapper.update(any(), any())).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(List.of(storedSku("bulk_cut", "2.8")));
+                .thenReturn(List.of(storedSku("2.8")));
 
         // when
         orderService.cancelOrder("order-001", "客户不要了");
@@ -2318,7 +2342,7 @@ class OrderServiceTest {
         when(orderMapper.update(any(), any())).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(List.of(storedSku("bulk_cut", "2.8米")));
+                .thenReturn(List.of(storedSku("2.8米")));
 
         orderService.cancelOrder("order-001", "客户不要了");
 
@@ -2330,7 +2354,7 @@ class OrderServiceTest {
     void confirmPayment_deductsStockForChineseMethodAndUnitWidth() {
         testOrder.setStatus("pending");
         OrderItem item = buildItemWithCombination("散剪", "2.8米");
-        ProductSku sku = storedSku("bulk_cut", "2.8");
+        ProductSku sku = storedSku("2.8");
 
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
         when(orderMapper.update(any(), any())).thenReturn(1);
@@ -2344,6 +2368,200 @@ class OrderServiceTest {
         verify(productSkuMapper).increaseSalesCount(COMBO_SKU_ID, 2);
     }
 
+    // ======================== V108：优先整卷发货分配落订单行 ========================
+
+    /** 建单请求：一条明细 + 指定售卖方式/数量（V108 分配链路用） */
+    private OrderCreateRequest rollAllocationRequest(String sellingMethod, String quantity) {
+        OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
+        itemReq.setProductId("prod-001");
+        itemReq.setProductName("遮光窗帘");
+        itemReq.setQuantity(new BigDecimal(quantity));
+        itemReq.setUnitPrice(new BigDecimal("50.00"));
+        itemReq.setSubtotal(new BigDecimal("5000.00"));
+        itemReq.setSellingMethod(sellingMethod);
+
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setCustomerName("张三");
+        request.setCustomerPhone("13800138000");
+        request.setItems(List.of(itemReq));
+        return request;
+    }
+
+    /**
+     * 建单持久化桩。
+     *
+     * <p>⚠️ 用 {@code lenient()}：本组里两条用例（未指定售卖方式 / 越界售卖方式被拒）
+     * <b>不走到</b>「读回订单」那一步 —— 严格 stubbing 会把「用不到的桩」判成错误
+     * （UnnecessaryStubbing），而那不是被测行为的问题。</p>
+     */
+    private void stubCreateOrderPersistence() {
+        lenient().when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
+            ((Order) invocation.getArgument(0)).setId("order-roll");
+            return 1;
+        });
+        lenient().when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
+        lenient().when(orderMapper.selectById("order-roll")).thenReturn(Order.builder()
+                .id("order-roll").tenantId(1L).orderNo("ORD-ROLL-0001")
+                .customerName("张三").customerPhone("13800138000")
+                .totalAmount(new BigDecimal("5000.00")).status("pending").build());
+        lenient().when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        lenient().when(orderLogisticsMapper.selectByOrderId("order-roll", 1L)).thenReturn(List.of());
+    }
+
+    @Test
+    @DisplayName("V108 用户裁定原话例：买 100 米、一卷 60 米 ⇒ 订单行 rollCount=1（整卷 60 + 散剪 40）")
+    void createOrder_fullRoll_allocationMatchesUserRulingExample() {
+        // 用户裁定 2026-09-21 原话：「客户买 100 米布，一卷=60 米，那就发 1 整卷 60 + 散剪出的 40 米」
+        stubCreateOrderPersistence();
+        when(productMapper.selectById("prod-001")).thenReturn(Product.builder()
+                .id("prod-001").tenantId(1L).name("遮光窗帘")
+                .sellingMethods(List.of("bulk_cut", "full_roll"))
+                .rollLengthM(new BigDecimal("60.00"))
+                .build());
+
+        orderService.createOrder(rollAllocationRequest("full_roll", "100"), 1L);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        OrderItem saved = captor.getValue();
+        assertThat(saved.getSellingMethod()).isEqualTo("full_roll");
+        assertThat(saved.getRollCount()).isEqualTo(1);
+        assertThat(saved.getRollLengthM()).isEqualByComparingTo("60");
+        // 散剪余量 = quantity − rollCount × rollLengthM（不落列，由读面按同一口径导出）
+        assertThat(saved.getQuantity().subtract(
+                saved.getRollLengthM().multiply(BigDecimal.valueOf(saved.getRollCount()))))
+                .isEqualByComparingTo("40");
+    }
+
+    @Test
+    @DisplayName("V108 用户裁定例子的真实链路：顾客**没说整卷**（按米买 100 米）也必须落分配")
+    void createOrder_bulkCutStillGetsRollAllocation() {
+        // 独立对抗式复核抓到：闸门若写成「只有明说 full_roll 才算」，用户裁定举的例子
+        // （「客户买 100 米布，一卷=60 米 ⇒ 1 整卷 60 + 散剪 40」）在新单路径上**根本不生效**
+        // —— 那句话里顾客没有说「我要整卷」。⇒ 分配闸门 = 货号有没有配卷长。
+        stubCreateOrderPersistence();
+        when(productMapper.selectById("prod-001")).thenReturn(Product.builder()
+                .id("prod-001").tenantId(1L).name("遮光窗帘")
+                .sellingMethods(List.of("bulk_cut", "full_roll"))
+                .rollLengthM(new BigDecimal("60.00"))
+                .build());
+
+        orderService.createOrder(rollAllocationRequest("bulk_cut", "100"), 1L);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        OrderItem saved = captor.getValue();
+        assertThat(saved.getSellingMethod()).isEqualTo("bulk_cut");
+        assertThat(saved.getRollCount()).as("按米买布也要算整卷分配（优先整卷发货）").isEqualTo(1);
+        assertThat(saved.getRollLengthM()).isEqualByComparingTo("60");
+    }
+
+    @Test
+    @DisplayName("V108 未指定售卖方式也不阻止分配（顾客没说，但货号配了卷长）")
+    void createOrder_unspecifiedSellingMethodStillGetsAllocation() {
+        stubCreateOrderPersistence();
+        when(productMapper.selectById("prod-001")).thenReturn(Product.builder()
+                .id("prod-001").tenantId(1L).name("遮光窗帘")
+                .sellingMethods(List.of("bulk_cut", "full_roll"))
+                .rollLengthM(new BigDecimal("60.00"))
+                .build());
+
+        orderService.createOrder(rollAllocationRequest(null, "100"), 1L);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        OrderItem saved = captor.getValue();
+        assertThat(saved.getSellingMethod()).as("未指定 ⇒ 该列保持 NULL（不猜）").isNull();
+        assertThat(saved.getRollCount()).as("但分配照算（闸门是卷长，不是售卖方式）").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("V108 货号未配卷长 ⇒ 分配两列保持 NULL（「不知道」不许伪装成「0 整卷」）")
+    void createOrder_fullRoll_withoutRollLength_leavesAllocationNull() {
+        stubCreateOrderPersistence();
+        when(productMapper.selectById("prod-001")).thenReturn(Product.builder()
+                .id("prod-001").tenantId(1L).name("遮光窗帘")
+                .sellingMethods(List.of("bulk_cut", "full_roll"))
+                .rollLengthM(null)
+                .build());
+
+        orderService.createOrder(rollAllocationRequest("full_roll", "100"), 1L);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        OrderItem saved = captor.getValue();
+        // 售卖方式偏好照落（顾客确实要求了整卷），但分配算不出来 ⇒ 两列 NULL（不是 0）
+        assertThat(saved.getSellingMethod()).isEqualTo("full_roll");
+        assertThat(saved.getRollCount()).isNull();
+        assertThat(saved.getRollLengthM()).isNull();
+    }
+
+    @Test
+    @DisplayName("V108 agent 路径：processingInfo.sellingMethod 是真实写入位置 ⇒ 必须认它（否则整卷偏好恒为空）")
+    void createOrder_fullRoll_fromProcessingInfoFallback() {
+        // ai-agent（order_create）把售卖方式写进 processing_info（该键同时被加工单快照消费，不能挪）
+        // ⇒ 服务端若不认它，「agent 明确说了要整卷」这条链路的分配恒为空（静默）。
+        stubCreateOrderPersistence();
+        when(productMapper.selectById("prod-001")).thenReturn(Product.builder()
+                .id("prod-001").tenantId(1L).name("遮光窗帘")
+                .sellingMethods(List.of("bulk_cut", "full_roll"))
+                .rollLengthM(new BigDecimal("60.00"))
+                .build());
+
+        OrderCreateRequest request = rollAllocationRequest(null, "100"); // 行字段不传
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("sellingMethod", "整卷"); // agent 真实形态：中文标签
+        request.getItems().get(0).setProcessingInfo(info);
+
+        orderService.createOrder(request, 1L);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        OrderItem saved = captor.getValue();
+        assertThat(saved.getSellingMethod()).isEqualTo("full_roll"); // 中文标签已归一化
+        assertThat(saved.getRollCount()).isEqualTo(1);
+        assertThat(saved.getRollLengthM()).isEqualByComparingTo("60");
+    }
+
+    @Test
+    @DisplayName("V108 未指定售卖方式 ⇒ 售卖方式列 NULL（不猜），但货号**未配卷长**时分配也保持 NULL")
+    void createOrder_noSellingMethodAndNoRollLength_leavesAllThreeNull() {
+        stubCreateOrderPersistence();
+        // lenient：本用例的判据正是「**根本不读商品**」——未指定售卖方式时不得去查卷长
+        // （严格 stubbing 会把「这个桩没被用到」当错误，而没被用到恰恰是本用例要证明的事）
+        lenient().when(productMapper.selectById("prod-001")).thenReturn(Product.builder()
+                .id("prod-001").tenantId(1L).name("遮光窗帘")
+                .sellingMethods(List.of("bulk_cut", "full_roll"))
+                .rollLengthM(null)   // 货号未配卷长 ⇒ 分配两列必须保持 NULL
+                .build());
+
+        orderService.createOrder(rollAllocationRequest(null, "100"), 1L);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        OrderItem saved = captor.getValue();
+        assertThat(saved.getSellingMethod()).isNull();
+        assertThat(saved.getRollCount()).isNull();
+        assertThat(saved.getRollLengthM()).isNull();
+    }
+
+    @Test
+    @DisplayName("V108 越界售卖方式 ⇒ 显式拒绝（不静默落一个本店不提供的售卖方式）")
+    void createOrder_unsupportedSellingMethod_isRejected() {
+        stubCreateOrderPersistence();
+        // 该货号只支持散剪
+        when(productMapper.selectById("prod-001")).thenReturn(Product.builder()
+                .id("prod-001").tenantId(1L).name("遮光窗帘")
+                .sellingMethods(List.of("bulk_cut"))
+                .rollLengthM(new BigDecimal("60.00"))
+                .build());
+
+        assertThatThrownBy(() -> orderService.createOrder(rollAllocationRequest("full_roll", "100"), 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不支持售卖方式");
+        verify(orderItemMapper, never()).insert(any(OrderItem.class));
+    }
+
     @Test
     @DisplayName("#3621 + #4090 反向断言：真正不同的门幅（2.8米 vs 库内 3.2）不得匹配 —— 且必须显式拒绝（不静默跳过）")
     void cancelOrder_doesNotRestoreStockWhenDoorWidthDiffers() {
@@ -2353,7 +2571,7 @@ class OrderServiceTest {
         when(orderMapper.update(any(), any())).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(List.of(storedSku("bulk_cut", "3.2")));
+                .thenReturn(List.of(storedSku("3.2")));
 
         ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
                 attachOrderLogAppender();
@@ -2378,48 +2596,38 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("#3621 + #4090 反向断言：不同售卖方式（整卷 vs 库内散剪）即便门幅相同也不得匹配 —— 且必须显式拒绝")
-    void cancelOrder_doesNotRestoreStockWhenSellingMethodDiffers() {
+    @DisplayName("V108 反向断言：售卖方式不再是 SKU 维度 ⇒ 明细写「整卷」也必须回补到同色同门幅那一行")
+    void cancelOrder_sellingMethodIsNotPartOfSkuIdentity_restoresStock() {
+        // V108 / 用户裁定 2026-09-21：「售卖方式整卷/散件不能作为 SKU 的组合项」⇒
+        // 同色同门幅只有一行 SKU。修复前该组合有「散剪/整卷」两行、定位必须带上售卖方式；
+        // 那种模型下「明细写整卷 + 库里只有散剪行」= 定位不到 ⇒ 显式拒绝（本测试的旧形态）。
+        // 新口径下它必须**回补成功** —— 这就是本断言的红证方向（反向）。
         testOrder.setStatus("confirmed");
         OrderItem item = buildItemWithCombination("整卷", "2.8米");
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
         when(orderMapper.update(any(), any())).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
-        // 模拟 SQL 按归一化后的枚举过滤：明细是「整卷」→ 查 full_roll，库内只有 bulk_cut 行 → 0 候选
-        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(java.util.List.<ProductSku>of(storedSku("2.8")));
+        when(productSkuMapper.restoreStock(anyLong(), anyInt())).thenReturn(1);
 
-        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
-                attachOrderLogAppender();
-        try {
-            // issue #4090：声明了 SKU 身份却定位不到 ⇒ 显式失败（修前是 WARN + 静默跳过）
-            assertThatThrownBy(() -> orderService.cancelOrder("order-001", "客户不要了"))
-                    .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("无法定位到 SKU")
-                    .hasMessageContaining("sellingMethod=整卷");
+        orderService.cancelOrder("order-001", "客户不要了");
 
-            // 不同售卖方式不得被归一化合并（不得回补到 bulk_cut 行）
-            verify(productSkuMapper, never()).restoreStock(anyLong(), anyInt());
-            verify(productSkuMapper, never()).decreaseSalesCount(anyLong(), anyInt());
-            // 且查询条件里是归一化后的枚举，不是中文标签（无第二套映射口径）
-            ArgumentCaptor<LambdaQueryWrapper<ProductSku>> wrapperCaptor =
-                    ArgumentCaptor.forClass(LambdaQueryWrapper.class);
-            verify(productSkuMapper, atLeastOnce()).selectList(wrapperCaptor.capture());
-            List<String> queryParams = new ArrayList<>();
-            for (LambdaQueryWrapper<ProductSku> captured : wrapperCaptor.getAllValues()) {
-                captured.getSqlSegment(); // MP 的 formatParam 是惰性 ISqlSegment，须先触发 SQL 段生成
-                captured.getParamNameValuePairs().values()
-                        .forEach(v -> queryParams.add(String.valueOf(v)));
-            }
-            assertThat(queryParams)
-                    .anyMatch(v -> "full_roll".equals(v))
-                    .noneMatch(v -> "整卷".equals(v));
-            // 未命中不静默
-            assertThat(appender.list).anyMatch(e ->
-                    e.getLevel() == ch.qos.logback.classic.Level.WARN
-                            && e.getFormattedMessage().contains("键族定位不到"));
-        } finally {
-            detachOrderLogAppender(appender);
+        // Then: 回补到那一行（售卖方式不参与定位）
+        verify(productSkuMapper).restoreStock(anyLong(), anyInt());
+        // 且查询条件里**没有**售卖方式（枚举与中文标签都不该出现）
+        ArgumentCaptor<LambdaQueryWrapper<ProductSku>> wrapperCaptor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(productSkuMapper, atLeastOnce()).selectList(wrapperCaptor.capture());
+        List<String> queryParams = new ArrayList<>();
+        for (LambdaQueryWrapper<ProductSku> captured : wrapperCaptor.getAllValues()) {
+            captured.getSqlSegment(); // MP 的 formatParam 是惰性 ISqlSegment，须先触发 SQL 段生成
+            captured.getParamNameValuePairs().values()
+                    .forEach(v -> queryParams.add(String.valueOf(v)));
         }
+        assertThat(queryParams)
+                .as("售卖方式不得参与 SKU 定位（V108：SKU 组合只有 颜色 × 门幅）")
+                .noneMatch(v -> "full_roll".equals(v) || "bulk_cut".equals(v)
+                        || "整卷".equals(v) || "散剪".equals(v));
     }
 
     @Test
@@ -2440,7 +2648,7 @@ class OrderServiceTest {
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(item));
         when(productSkuMapper.selectById(999L)).thenReturn(null);
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(List.of(storedSku("bulk_cut", "2.8")));
+                .thenReturn(List.of(storedSku("2.8")));
 
         orderService.cancelOrder("order-001", "客户不要了");
 

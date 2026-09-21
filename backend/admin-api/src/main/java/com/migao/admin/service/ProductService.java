@@ -268,7 +268,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                         ? sku.getColorName()
                         : colorNameMap.get(sku.getColorId())
                 );
-                skuResp.setSellingMethod(sku.getSellingMethod());
                 skuResp.setDoorWidth(sku.getDoorWidth());
                 skuResp.setPrice(sku.getPrice());
                 skuResp.setStock(sku.getStock());
@@ -279,16 +278,20 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }).collect(Collectors.toList());
             response.setSkus(skuResponses);
 
-            // 从 SKU 派生 sellingMethods 与 doorWidths（保持插入顺序去重）
-            Set<String> sm = new LinkedHashSet<>();
+            // 门幅仍从 SKU 派生（它是 SKU 组合维度之一，保持插入顺序去重）
             Set<String> dw = new LinkedHashSet<>();
             for (ProductSku sku : skuEntities) {
-                if (StringUtils.hasText(sku.getSellingMethod())) sm.add(sku.getSellingMethod());
                 if (StringUtils.hasText(sku.getDoorWidth())) dw.add(sku.getDoorWidth());
             }
-            response.setSellingMethods(new ArrayList<>(sm));
             response.setDoorWidths(new ArrayList<>(dw));
         }
+
+        // 售卖方式取自**商品列**（V108：它是商品级基础属性，不再是 SKU 组合维度）。
+        // ⚠️ 原实现「从 SKU 派生 sellingMethods」已删除 —— 那种写法在 SKU 不再带该列之后
+        // 会恒返回空数组（静默丢失商家配的售卖方式），且与「售卖方式是商品属性」的裁定相反。
+        response.setSellingMethods(product.getSellingMethods() != null
+                ? new ArrayList<>(product.getSellingMethods())
+                : new ArrayList<>());
 
         // 回填商品属性：brand + specifications
         fillProductAttributes(response, id);
@@ -570,27 +573,27 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }
         }
 
-        // 笛卡尔积自动生成 SKU：colors × sellingMethods × doorWidths
+        // 笛卡尔积自动生成 SKU：colors × doorWidths（**仅此二维**）
+        // 用户裁定 2026-09-21：「商品的售卖方式整卷/散件不能作为 SKU 的组合项，只能作为基础属性，
+        // 商品的 SKU 由颜色+门幅组成即可」⇒ 原 `colors × sellingMethods × doorWidths` 里
+        // 那一维已删（售卖方式落 products.selling_methods）。`sellingMethods` 形参保留只为
+        // 兼容调用方签名与「矩阵式建品」判据（**不再参与组合**）。
         if ((skuInputs == null || skuInputs.isEmpty())
                 && !colorNames.isEmpty()
-                && sellingMethods != null && !sellingMethods.isEmpty()
                 && doorWidths != null && !doorWidths.isEmpty()) {
             skuInputs = new ArrayList<>();
             for (String colorName : colorNames) {
-                for (String sm : sellingMethods) {
-                    for (String dw : doorWidths) {
-                        ProductSkuInput sku = new ProductSkuInput();
-                        sku.setColorName(colorName);
-                        sku.setSellingMethod(sm);
-                        sku.setDoorWidth(dw);
-                        sku.setPrice(basePrice);
-                        sku.setStock(stock != null && stock > 0 ? stock : 100);
-                        // 自动生成 SKU 编码
-                        Integer colorSeq = colorSeqMap.get(colorName);
-                        sku.setSkuCode(generateSkuCode(productId, productSkuCode,
-                                colorSeq != null ? colorSeq : 0, sm, dw));
-                        skuInputs.add(sku);
-                    }
+                for (String dw : doorWidths) {
+                    ProductSkuInput sku = new ProductSkuInput();
+                    sku.setColorName(colorName);
+                    sku.setDoorWidth(dw);
+                    sku.setPrice(basePrice);
+                    sku.setStock(stock != null && stock > 0 ? stock : 100);
+                    // 自动生成 SKU 编码
+                    Integer colorSeq = colorSeqMap.get(colorName);
+                    sku.setSkuCode(generateSkuCode(productId, productSkuCode,
+                            colorSeq != null ? colorSeq : 0, dw));
+                    skuInputs.add(sku);
                 }
             }
         }
@@ -598,8 +601,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (skuInputs != null) {
             for (ProductSkuInput input : skuInputs) {
                 if (input == null) continue;
-                if (!StringUtils.hasText(input.getSellingMethod())
-                        || !StringUtils.hasText(input.getDoorWidth())) {
+                if (!StringUtils.hasText(input.getDoorWidth())) {
                     continue;
                 }
                 // 解析 colorId（兼容前端旧逻辑，新数据走 colorName）
@@ -615,13 +617,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 if (mappedColorId == null && StringUtils.hasText(input.getColorName())) {
                     mappedColorId = colorIdByName.get(input.getColorName());
                 }
-                // upsert：按 id 优先、其次按组合（colorId/colorName + 售卖方式 + 门幅）匹配
+                // upsert：按 id 优先、其次按组合（colorId/colorName + 门幅）匹配
                 ProductSku matched = matchExistingSku(skuById, existingSkus, input, mappedColorId);
                 if (matched != null) {
                     // 保留主键原地更新，避免订单里存的旧 skuId 失效
                     matched.setColorId(mappedColorId != null ? mappedColorId : matched.getColorId());
                     matched.setColorName(input.getColorName());
-                    matched.setSellingMethod(input.getSellingMethod());
                     matched.setDoorWidth(input.getDoorWidth());
                     matched.setPrice(input.getPrice() != null ? input.getPrice() : matched.getPrice());
                     matched.setStock(input.getStock() != null ? input.getStock() : matched.getStock());
@@ -636,7 +637,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     entity.setProductId(productId);
                     entity.setColorId(mappedColorId);
                     entity.setColorName(input.getColorName());
-                    entity.setSellingMethod(input.getSellingMethod());
                     entity.setDoorWidth(input.getDoorWidth());
                     entity.setPrice(input.getPrice() != null ? input.getPrice() : BigDecimal.ZERO);
                     entity.setStock(input.getStock() != null ? input.getStock() : 0);
@@ -645,7 +645,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                             ? input.getSkuCode()
                             : generateSkuCode(productId, productSkuCode,
                                     colorSeqMap.getOrDefault(input.getColorName(), 0),
-                                    input.getSellingMethod(), input.getDoorWidth());
+                                    input.getDoorWidth());
                     entity.setSkuCode(skuCode);
                     entity.setSalesCount(0);
                     productSkuMapper.insert(entity);
@@ -698,16 +698,19 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
     /**
      * 在现有 SKU 中匹配输入：
-     * 1. 优先按真实 DB id（前端表单携带）；2. 其次按组合（colorId/colorName + sellingMethod + doorWidth，Agent 按名称重建路径）。
+     * 1. 优先按真实 DB id（前端表单携带）；2. 其次按组合（colorId/colorName + doorWidth，Agent 按名称重建路径）。
      *
-     * <p>组合匹配的**归一化口径**（issue #3616，同族 #3539/#3546）：售卖方式用中文标签（「散剪」）
-     * 还是英文枚举（bulk_cut）、门幅写「2.8米」还是「2.8」，库内两种写法都真实存在
-     * （demo-seed 落 '2.8米'、eval 种子落 '2.8'；{@link #toWidthShort(String)} 早已把两者当同一门幅）。
-     * 字面 {@code Objects.equals} 会把**同一组合**判为不同 → 旧行被当成「缺失」物理删除 + 插入新行
-     * （主键漂移 → 订单 processingInfo 里旧 skuId 断链，正是本方法上方注释要防的），且失败静默无报错。
-     * 故这里复用**与调价路径同一套**归一化入口：{@link #translateSellingMethod(String)} +
-     * {@link #normalizeDoorWidth(String)}（双侧归一，库内在哪一侧是哪种写法都能命中），
-     * 不新增第二套映射、不新增/删除 SKU 行。
+     * <p><b>V108（用户裁定 2026-09-21）</b>：组合里<b>不再有售卖方式</b> ——
+     * 「商品的售卖方式整卷/散件不能作为 SKU 的组合项，只能作为基础属性，商品的 SKU 由颜色+门幅组成即可」
+     * ⇒ SKU 组合 = 颜色 × 门幅。原「售卖方式中文标签 vs 英文枚举」的归一化比较随之删除
+     * （该维度不存在了）；调用方若仍传售卖方式，它<b>不参与匹配</b>。</p>
+     *
+     * <p>门幅的**归一化口径**（issue #3616，同族 #3539/#3546）保留：「2.8米」与「2.8」库内两种写法
+     * 都真实存在（demo-seed 落 '2.8米'、eval 种子落 '2.8'；{@link #toWidthShort(String)} 早已把两者
+     * 当同一门幅）。字面 {@code Objects.equals} 会把**同一组合**判为不同 → 旧行被当成「缺失」物理删除
+     * + 插入新行（主键漂移 → 订单 processingInfo 里旧 skuId 断链，正是本方法上方注释要防的），
+     * 且失败静默无报错 ⇒ 必须过 {@link #normalizeDoorWidth(String)}（双侧归一），
+     * 不新增第二套映射、不新增/删除 SKU 行。</p>
      */
     private ProductSku matchExistingSku(Map<Long, ProductSku> skuById, List<ProductSku> existingSkus,
                                         ProductSkuInput input, Long resolvedColorId) {
@@ -721,9 +724,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             boolean colorMatches = (resolvedColorId != null && resolvedColorId.equals(s.getColorId()))
                     || (StringUtils.hasText(input.getColorName())
                         && input.getColorName().equals(s.getColorName()));
+            // 组合 = 颜色 + 门幅（V108：售卖方式已不是 SKU 维度 ⇒ 不再参与匹配）
             if (colorMatches
-                    && java.util.Objects.equals(translateSellingMethod(input.getSellingMethod()),
-                                                translateSellingMethod(s.getSellingMethod()))
                     && java.util.Objects.equals(normalizeDoorWidth(input.getDoorWidth()),
                                                 normalizeDoorWidth(s.getDoorWidth()))) {
                 return s;
@@ -734,28 +736,21 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
     /**
      * 生成 SKU 编码
-     * 格式: {货号}-{颜色序号2位}-{售卖方式缩写}-{门幅缩写}
-     * 示例: 50181A94-01-SJ-28（有货号优先用货号），984D744B-01-SJ-28（无货号兜底用ID前缀）
+     * 格式: {货号}-{颜色序号2位}-{门幅缩写}
+     * 示例: 50181A94-01-28（有货号优先用货号），984D744B-01-28（无货号兜底用ID前缀）
+     *
+     * <p>V108：售卖方式缩写那一段（原 {@code -SJ-}/{@code -ZJ-}）已删 ——
+     * SKU 组合只有 颜色 × 门幅，售卖方式是商品级属性，不属于 SKU 身份。</p>
      */
     private String generateSkuCode(String productId, String productSkuCode, int colorSeq,
-                                   String sellingMethod, String doorWidth) {
+                                   String doorWidth) {
         String prefix;
         if (StringUtils.hasText(productSkuCode)) {
             prefix = productSkuCode.toUpperCase();
         } else {
             prefix = productId.length() >= 8 ? productId.substring(0, 8).toUpperCase() : productId.toUpperCase();
         }
-        return String.format("%s-%02d-%s-%s", prefix, colorSeq, toMethodAbbr(sellingMethod), toWidthShort(doorWidth));
-    }
-
-    /** 售卖方式 → 缩写: bulk_cut→SJ(散剪), full_roll→ZJ(整卷) */
-    private String toMethodAbbr(String sellingMethod) {
-        if (sellingMethod == null) return "XX";
-        return switch (sellingMethod) {
-            case "bulk_cut" -> "SJ";
-            case "full_roll" -> "ZJ";
-            default -> sellingMethod.length() > 3 ? sellingMethod.substring(0, 3).toUpperCase() : sellingMethod.toUpperCase();
-        };
+        return String.format("%s-%02d-%s", prefix, colorSeq, toWidthShort(doorWidth));
     }
 
     /** 门幅 → 数字缩写: "2.8米"→"28", "3.2米"→"32" */
@@ -1497,11 +1492,16 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             createReq.setColors(colorInputs);
         }
 
-        // 售卖方式: "散剪"/"整卷" → bulk_cut/full_roll
+        // 售卖方式: "散剪"/"整卷" → bulk_cut/full_roll（商品级基础属性，V108）
         if (request.getSellingMethods() != null) {
             createReq.setSellingMethods(request.getSellingMethods().stream()
                     .map(this::translateSellingMethod)
                     .collect(Collectors.toList()));
+        }
+
+        // 1 卷 = 多少米（商品货号级基础参数，V108）：null = 未配置 ⇒ 不写（不猜）
+        if (request.getRollLengthM() != null) {
+            createReq.setRollLengthM(request.getRollLengthM());
         }
 
         // 门幅 直接透传
@@ -1576,6 +1576,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (request.getSellingMethods() != null) {
             updateReq.setSellingMethods(request.getSellingMethods().stream()
                     .map(this::translateSellingMethod).collect(Collectors.toList()));
+            hasUpdate = true;
+        }
+        // 1 卷 = 多少米（V108）：null = 不修改（部分更新口径，与其它字段一致）
+        if (request.getRollLengthM() != null) {
+            updateReq.setRollLengthM(request.getRollLengthM());
             hasUpdate = true;
         }
         if (request.getDoorWidths() != null) { updateReq.setDoorWidths(request.getDoorWidths()); hasUpdate = true; }
@@ -1724,48 +1729,49 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * @return 真实 UUID，未找到返回 null
      */
     /**
-     * 更新单个 SKU 的价格。按颜色/售卖方式/门幅匹配。
+     * 更新单个 SKU 的价格。按颜色/门幅匹配。
      *
-     * <p>归一化（issue #3539）：agent / 前端按**中文业务术语**传参（「散剪」「整卷」「2.8米」），
-     * 而 product_skus 落库的是枚举/数值（bulk_cut、full_roll、2.8）——直接字面 eq 必然 0 行命中，
-     * 对外表现为「SKU不存在」（实测 run 34805827043：PR-021 的 sku_update 连续两次失败，
-     * 自修复只把门幅「2.8米」修成「2.8」，售卖方式的中文标签一直没救回来）。
+     * <p>归一化（issue #3539）：agent / 前端按**中文业务术语**传参（「2.8米」），
+     * 而 product_skus 落库的是数值（2.8）——直接字面 eq 必然 0 行命中，
+     * 对外表现为「SKU不存在」。
      *
-     * <p>故：① 售卖方式复用建品路径同一个 {@link #translateSellingMethod(String)}
-     * （不新增第二套映射表）；② 门幅先按原值精确匹配，未命中再按「去掉 米/m 后缀」双侧归一化兜底
+     * <p>故：门幅先按原值精确匹配，未命中再按「去掉 米/m 后缀」双侧归一化兜底
      * —— 库内两种写法都真实存在（种子 SKU 是 '2.8'，agent 建品落库的是 '2.8米'），
      * 只做输入侧去后缀会反向打不到后者。
+     *
+     * <p><b>V108（用户裁定 2026-09-21）</b>：售卖方式那一维已从匹配里删除 ——
+     * SKU 组合只有 颜色 × 门幅（售卖方式是商品级 {@code products.selling_methods}）。
+     * 调用方若仍传售卖方式，它**不参与定位**（同色同门幅只有一行 SKU）。
      */
-    public void updateSkuPrice(String productId, String color, String sellingMethod,
+    public void updateSkuPrice(String productId, String color,
                                 String doorWidth, java.math.BigDecimal price, Long tenantId) {
-        String normalizedMethod = translateSellingMethod(sellingMethod);
         java.util.List<ProductSku> candidates =
-                selectSkuCandidatesForPriceUpdate(productId, color, normalizedMethod, doorWidth, tenantId);
+                selectSkuCandidatesForPriceUpdate(productId, color, doorWidth, tenantId);
         if (candidates.isEmpty()) {
             throw BusinessException.notFound("SKU",
                     "未找到匹配的 SKU。请用 product_detail 查看可用 SKU 后重试");
         }
         ProductSku sku = candidates.get(0);
         if (candidates.size() > 1) {
-            log.warn("SKU调价匹配到多个({})候选，取第一个: product={}, color={}, method={}",
-                    candidates.size(), productId, color, sellingMethod);
+            log.warn("SKU调价匹配到多个({})候选，取第一个: product={}, color={}",
+                    candidates.size(), productId, color);
         }
         sku.setPrice(price);
         productSkuMapper.updateById(sku);
-        log.info("SKU价格已更新: product={}, color={}, method={}, width={}, price={}",
-                productId, color, sellingMethod, doorWidth, price);
+        log.info("SKU价格已更新: product={}, color={}, width={}, price={}",
+                productId, color, doorWidth, price);
     }
 
     /**
      * SKU 调价候选匹配：门幅精确匹配优先；未命中时放宽门幅条件、在 Java 侧做「去 米/m 后缀」
      * 双侧归一化比较（不改写库内值，也不新增 SKU 行）。
-     * 返回最多 2 条，供调用方「取第一个 + 多命中告警」（常见于不填门幅时同名颜色+散剪有多个门幅）。
+     * 返回最多 2 条，供调用方「取第一个 + 多命中告警」（常见于不填门幅时同名颜色有多个门幅）。
      */
     private java.util.List<ProductSku> selectSkuCandidatesForPriceUpdate(String productId, String color,
-                                                                        String sellingMethod, String doorWidth,
+                                                                        String doorWidth,
                                                                         Long tenantId) {
         java.util.List<ProductSku> exact = productSkuMapper.selectList(
-                skuPriceUpdateScope(productId, color, sellingMethod, tenantId)
+                skuPriceUpdateScope(productId, color, tenantId)
                         .eq(StringUtils.hasText(doorWidth), ProductSku::getDoorWidth, doorWidth)
                         .last("LIMIT 2"));
         if (!exact.isEmpty() || !StringUtils.hasText(doorWidth)) {
@@ -1773,21 +1779,20 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         }
         String targetWidth = normalizeDoorWidth(doorWidth);
         return productSkuMapper.selectList(
-                        skuPriceUpdateScope(productId, color, sellingMethod, tenantId))
+                        skuPriceUpdateScope(productId, color, tenantId))
                 .stream()
                 .filter(s -> targetWidth.equals(normalizeDoorWidth(s.getDoorWidth())))
                 .limit(2)
                 .collect(java.util.stream.Collectors.toList());
     }
 
-    /** 调价定位范围：商品 + 租户（拦截器之外显式带租户）+ 可选的颜色/售卖方式 */
+    /** 调价定位范围：商品 + 租户（拦截器之外显式带租户）+ 可选的颜色 */
     private LambdaQueryWrapper<ProductSku> skuPriceUpdateScope(String productId, String color,
-                                                               String sellingMethod, Long tenantId) {
+                                                               Long tenantId) {
         return new LambdaQueryWrapper<ProductSku>()
                 .eq(ProductSku::getProductId, productId)
                 .eq(ProductSku::getTenantId, tenantId)
-                .eq(StringUtils.hasText(color), ProductSku::getColorName, color)
-                .eq(StringUtils.hasText(sellingMethod), ProductSku::getSellingMethod, sellingMethod);
+                .eq(StringUtils.hasText(color), ProductSku::getColorName, color);
     }
 
     /**
@@ -1797,7 +1802,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      *
      * <p><b>单一入口</b>（issue #3616）：调价路径 {@link #selectSkuCandidatesForPriceUpdate} 与
      * 建品/更新商品路径 {@link #matchExistingSku} 都必须走本方法，禁止裸比字面值
-     * （有静态不变式测试锁定，见 ProductServiceTest#skuMatch_NoBareEqualityComparison_OnSellingMethodOrDoorWidth）。
+     * （有静态不变式测试锁定，见 ProductServiceTest#skuMatch_NoBareEqualityComparison_OnDoorWidth）。
      */
     private static String normalizeDoorWidth(String rawDoorWidth) {
         if (rawDoorWidth == null) {
@@ -1852,7 +1857,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         resp.setProductId(sku.getProductId());
         resp.setColorId(sku.getColorId());
         resp.setColorName(sku.getColorName());
-        resp.setSellingMethod(sku.getSellingMethod());
         resp.setDoorWidth(sku.getDoorWidth());
         resp.setPrice(sku.getPrice());
         resp.setStock(sku.getStock());

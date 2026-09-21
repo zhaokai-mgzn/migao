@@ -148,6 +148,31 @@ public class OrderCreateRequest {
         private Object processingInfo;
 
         /**
+         * 本行售卖方式（**订单级偏好**，V111）：{@code bulk_cut}(散剪) / {@code full_roll}(整卷)。
+         *
+         * <p>用户裁定 2026-09-21：「在订单中再体现<b>客户要求优先整卷发货</b>」。它是<b>顾客要求</b>，
+         * 不是 SKU 维度（SKU 组合只有 颜色 × 门幅）⇒ 与 {@code processingInfo.sellingMethod}
+         * 同义，此处是**列**形态。{@code null} = 下单未指定（**不猜**）。</p>
+         */
+        private String sellingMethod;
+
+        /**
+         * 整卷数（V111）：优先整卷发货时发出的整卷数。
+         *
+         * <p>⚠️ <b>由服务端按该货号的 {@code products.roll_length_m} 计算</b>
+         * （{@code ProductRollAllocation}），调用方**传了也会被覆盖** —— 卷长与数量的函数
+         * 只有一个权威实现，不允许客户端各算一套（那会让「同一单两个整卷数」）。
+         * 货号未配卷长时**不落该值**（NULL，不猜）。</p>
+         */
+        private Integer rollCount;
+
+        /**
+         * 下单时该货号的「1 卷 = 多少米」快照（V111）：同样由服务端按商品当前值写入，
+         * 订单是快照不是视图 ⇒ 货号后来改卷长不改变历史单的分配口径。
+         */
+        private BigDecimal rollLengthM;
+
+        /**
          * 小计
          *
          * <p>必填（issue #4089 · A17 收敛）：收敛前 agent 侧 DTO 是平行定义且 {@code subtotal} 可选，

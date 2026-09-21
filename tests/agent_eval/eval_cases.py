@@ -4332,6 +4332,24 @@ _CASE_OR_045 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-046 [NORMAL] 订单体现「客户要求优先整卷发货」+ 分配落库（100 米 / 一卷 60 米 ⇒ 1 整卷 60 + 散剪 40）（源: cases/order.yml）──
+_CASE_OR_046 = EvalCase(
+    id='OR-046',
+    legacy_id='',
+    title='订单体现「客户要求优先整卷发货」+ 分配落库（100 米 / 一卷 60 米 ⇒ 1 整卷 60 + 散剪 40）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['判据 1·**分配算法确定性**（用户裁定原话例）：`quantity=100`、`roll_length_m=60` ⇒ `rollCount=1`、`cutMeters=40`；`120/60 ⇒ 2 卷 + 0 米散剪`；`50/60 ⇒ 0 卷 + 50 米散剪`。注入：把向下取整改成四舍五入 ⇒ `50/60` 得 1 卷 ⇒ 断言红。**溢出 ⇒ 未分配（不是 500）**：`1e9 / 0.01`、`2147483648 / 1` 这类输入不得让建单 500（独立对抗式复核实测抓到 `intValueExact` 会抛 Overflow）。', '判据 1b·**分配闸门 = 货号有没有配卷长，与售卖方式无关**（用户原话的例子就是按米买布）：`bulk_cut`（散剪/按米买）与**未指定**售卖方式的订单行同样要落 `rollCount` —— 用户裁定那句「客户买 100 米布，一卷=60 米 ⇒ 1 整卷 60 + 散剪 40」里顾客**没有**说「我要整卷」⇒ 把闸门写成「只有明说 full_roll 才算」会让该例子在新单路径上**根本不生效**（独立对抗式复核实测抓到）。注入：把「只有 full_roll 才分配」的早退加回 ⇒ 本判据红。', '判据 2·**三列落订单行**：`order_items.selling_method`（本行售卖方式偏好）+ `roll_count`（整卷数）+ `roll_length_m`（下单时卷长**快照**）——订单是快照不是视图 ⇒ 货号后来改卷长不改变历史单的分配口径（注入：读面改成实时读 `products.roll_length_m` ⇒ 改货号卷长后历史单数字跟着漂移 ⇒ 断言红）。', '判据 3·**未配置卷长 ⇒ 不写分配**：`products.roll_length_m IS NULL` 时分配两列保持 NULL（`roll_count` / `roll_length_m`），**不得**落 0（「不知道」不许伪装成「0 整卷」）。', '判据 4·**跨端可见**：订单详情响应带 `sellingMethod` / `rollCount` / `rollLengthM`（管理端订单明细读它渲染「整卷 N + 散剪 M 米」）。证据 = `OrderServiceTest.getOrderById_exposesRollAllocationFields`（读**响应**，不是「insert 前」；此前该判据零测试 —— 独立对抗式复核抓到）。前端：`rollAllocationText` 在字段任一为空、或余量为负（数据自相矛盾）时**不渲染**，不把不一致渲染成正常分配。'],
+    skip_reason='[backend-contract] 订单行契约（Java 单测 + admin-web vitest，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProductRollAllocationTest.java、OrderServiceTest.java 与 frontend/admin-web/tests/unit/components/OrderItemList.test.tsx 执行',
+    tags=['order', 'roll_allocation', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -6195,6 +6213,60 @@ _CASE_PR_041 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-042 [NORMAL] SKU 组合只有 颜色 × 门幅 —— 售卖方式不是 SKU 维度（DB 唯一键 + 三端读写面）（源: cases/product.yml）──
+_CASE_PR_042 = EvalCase(
+    id='PR-042',
+    legacy_id='',
+    title='SKU 组合只有 颜色 × 门幅 —— 售卖方式不是 SKU 维度（DB 唯一键 + 三端读写面）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['判据 1·**唯一键只有两维**：`product_skus` 的组合约束逐字为 `UNIQUE (product_id, color_id, door_width)`；`product_skus.selling_method` 列**已不存在**（`information_schema.columns` 查不到 ⇒ 迁移 V108 的终态对账会抛）。注入：把 `selling_method` 加回唯一键 ⇒ 断言红。', '判据 2·**建品只按颜色×门幅生成**：`ProductService.saveColorsAndSkus` 的笛卡尔积是 `colors × doorWidths`（原 `colors × sellingMethods × doorWidths`）——注入：把 sellingMethods 放回积 ⇒ 生成行数 = 颜色×售卖方式×门幅 ≠ 颜色×门幅 ⇒ 断言红。', '判据 3·**SKU 定位键族不含售卖方式**：`OrderService.matchSkuId` 的 `colorId+doorWidth` / `colorName+doorWidth` 两族即可唯一定位（原 `+sellingMethod` 那一维已删）；`order_items.processing_info` 里历史单残留的 `sellingMethod` 键**不得**再参与 SKU 定位（注入：把它加回 where 条件 ⇒ 同色同门幅的历史单定位不到 SKU ⇒ 断言红）。', '判据 4·**存量去重可复算**：同 `(product_id,color_id,door_width)` 的旧多行（散剪一行/整卷一行）收敛为**价格最低**那一行，同价取 `id` 最小 —— 两遍执行保留同一行（幂等可断言）。', '判据 5·**迁移必须能在真库上真的跑起来**（回填不得引用不存在的列）：`product_skus` **没有** `deleted` 列（删除走 `deleteById` = 物理删除）⇒ 回填写 `AND deleted = 0` 会让真库抛「字段 deleted 不存在」、整份迁移回滚，而 `MigrationRunner` 对非连接类失败是**跳过并继续** ⇒ 部署 success、三列永不建（#4402 同族）。**本单第一版正是这个缺陷，且测试夹具自己给该表补了 `deleted` ⇒ 夹具把真缺陷挡掉了**（独立对抗式复核实测抓到）。⇒ 真库判据的 `_DDL` 必须与真 schema **逐列一致**，并有静态断言钉住「回填里不得出现 `deleted`」。'],
+    skip_reason='[backend-contract] 商品模型改造的后端契约（迁移 + Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/unit_ci_workflows/test_product_roll_length_migration.py、backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java 与 OrderStockSkuKeyFamilyTest.java 执行',
+    tags=['product', 'sku_matrix', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-043 [NORMAL] 售卖方式 = 商品级基础属性（products.selling_methods），非 SKU 组合维度（源: cases/product.yml）──
+_CASE_PR_043 = EvalCase(
+    id='PR-043',
+    legacy_id='',
+    title='售卖方式 = 商品级基础属性（products.selling_methods），非 SKU 组合维度',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['判据 1·**落商品列**：`products.selling_methods`（JSONB 数组，取值 `bulk_cut` / `full_roll`）是售卖方式的**唯一**载体；`product_skus` 不得有该列。注入：把该列建到 `product_skus` ⇒ PR-042 判据 1 红。', '判据 2·**回填取旧数据真值**：迁移把该货号 SKU 里真实出现过的售卖方式去重回填（不是无脑默认）；一个 SKU 都没有的货号回填 `[\\"bulk_cut\\",\\"full_roll\\"]`（最宽口径，不误禁商家已有售卖方式）。', '判据 3·**读面契约**：商品详情响应 `sellingMethods` 取自商品列（不再是「从 SKU 派生」）——注入：把读面改回从 SKU 派生 ⇒ 该字段恒空 ⇒ 断言红。', '判据 4·**订单侧校验锚点**：订单行 `selling_method` 必须属于该货号 `products.selling_methods`（越界 ⇒ 显式拒绝，不静默落库）。'],
+    skip_reason='[backend-contract] 商品基础属性契约（迁移 + Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/unit_ci_workflows/test_product_roll_length_migration.py 与 backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java 执行',
+    tags=['product', 'selling_method', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-044 [NORMAL] 商品「1 卷 = 多少米」= 货号级基础参数（roll_length_m），未配置禁止推算（源: cases/product.yml）──
+_CASE_PR_044 = EvalCase(
+    id='PR-044',
+    legacy_id='',
+    title='商品「1 卷 = 多少米」= 货号级基础参数（roll_length_m），未配置禁止推算',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['判据 1·**货号级一列**：`products.roll_length_m NUMERIC(8,2)`（可空、**不设默认值**）。注入：给它加 `DEFAULT 60` ⇒ 「未配置」这一档从库里消失 ⇒ 断言红。', '判据 2·**NULL = 未知，禁止推算**：`ProductRollAllocation.allocate(qty, null)` / `(qty, <=0)` 一律返回未分配（`rollCount == null`，三字段全 null）——不得用任何兜底常量算出一个看似合理的分配（行业卷长是区间值，见 docs/curtain-selling-method-industry-research.md §5）。', '判据 3·**读面契约**：商品详情/编辑表单读得到 `rollLengthM`（product_detail / 商品编辑页回显），写入走 `rollLengthM`。', '判据 4·**边界语义**：`quantity < rollLength` ⇒ `rollCount = 0` 且余量 = 全部数量（「0 整卷 + 全部散剪」是**真实结论**，与「未分配 null」不是一回事）；恰好整卷倍数 ⇒ 余量 `0`（不是 null）。'],
+    skip_reason='[backend-contract] 商品基础参数契约（迁移 + Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/unit_ci_workflows/test_product_roll_length_migration.py 与 backend/admin-api/src/test/java/com/migao/admin/service/ProductRollAllocationTest.java 执行',
+    tags=['product', 'roll_length', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -7646,6 +7718,7 @@ ALL_CASES = (
     _CASE_OR_043,
     _CASE_OR_044,
     _CASE_OR_045,
+    _CASE_OR_046,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
@@ -7744,6 +7817,9 @@ ALL_CASES = (
     _CASE_PR_039,
     _CASE_PR_040,
     _CASE_PR_041,
+    _CASE_PR_042,
+    _CASE_PR_043,
+    _CASE_PR_044,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

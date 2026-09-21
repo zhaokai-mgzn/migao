@@ -30,7 +30,6 @@ class LongIdSerializationTest {
         sku.setId(2093675370043592706L);
         sku.setProductId("p-001");
         sku.setColorId(2093675369993261000L);
-        sku.setSellingMethod("bulk_cut");
         sku.setDoorWidth("2.8米");
         sku.setPrice(new BigDecimal("88.00"));
         sku.setStock(100);

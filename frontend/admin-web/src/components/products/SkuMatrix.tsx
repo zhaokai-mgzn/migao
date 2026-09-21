@@ -5,35 +5,26 @@ import { useMemo, useRef, useState, useEffect } from 'react'
 import { Plus, Trash2, GripVertical, Check, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, Select } from '@/components/ui'
-import type { ProductColor, ProductSku, SellingMethod } from '@/types'
-import { SellingMethodLabels } from '@/types'
+import type { ProductColor, ProductSku } from '@/types'
 import { rebuildSkus, nextTempId, DOOR_WIDTH_OPTIONS, doorWidthSelectOptions, normalizeDoorWidth, formatDoorWidth, sameDoorWidth } from '@/lib/sku-utils'
 
 interface SkuMatrixProps {
   value: {
     colors: ProductColor[]
-    sellingMethods: SellingMethod[]
     doorWidths: string[]
     skus: ProductSku[]
   }
   onChange: (v: {
     colors: ProductColor[]
-    sellingMethods: SellingMethod[]
     doorWidths: string[]
     skus: ProductSku[]
   }) => void
   errors?: {
     colors?: string
-    sellingMethods?: string
     doorWidths?: string
     skus?: string
   }
 }
-
-const SELLING_METHOD_OPTIONS: { value: SellingMethod; label: string }[] = [
-  { value: 'bulk_cut', label: '散剪' },
-  { value: 'full_roll', label: '整卷' },
-]
 
 // 门幅选项（值 canonical 裸数值 / 显示带单位）见 @/lib/sku-utils 的 DOOR_WIDTH_OPTIONS
 // （issue #3621：值/显示分离，避免选项值 '2.8米' 与库内 '2.8' 口径不一致）
@@ -66,10 +57,16 @@ const PRESET_COLORS: { name: string; hex: string }[] = [
   { name: '银色', hex: '#C0C0C0' },
 ]
 
-type BatchScope = 'all' | 'color' | 'method' | 'width'
+type BatchScope = 'all' | 'color' | 'width'
 
+/**
+ * 销售属性矩阵：**颜色 × 门幅**。
+ *
+ * ⚠️ 「售卖方式（整卷 / 散剪）」**不在这里** —— 它是商品级基础属性
+ * （`ProductForm` 的基础属性区，请求体顶层 `sellingMethods`），不是 SKU 的组合项。
+ */
 export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
-  const { colors, sellingMethods, doorWidths, skus } = value
+  const { colors, doorWidths, skus } = value
 
   // ========== 颜色管理 ==========
   const handleAddColor = () => {
@@ -87,7 +84,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     onChange({
       ...value,
       colors: nextColors,
-      skus: rebuildSkus(nextColors, sellingMethods, doorWidths, skus),
+      skus: rebuildSkus(nextColors, doorWidths, skus),
     })
   }
 
@@ -107,7 +104,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     onChange({
       ...value,
       colors: nextColors,
-      skus: rebuildSkus(nextColors, sellingMethods, doorWidths, skus),
+      skus: rebuildSkus(nextColors, doorWidths, skus),
     })
   }
 
@@ -132,7 +129,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     onChange({
       ...value,
       colors: nextColors,
-      skus: rebuildSkus(nextColors, sellingMethods, doorWidths, skus),
+      skus: rebuildSkus(nextColors, doorWidths, skus),
     })
   }
 
@@ -173,55 +170,9 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     onChange({
       ...value,
       colors: reordered,
-      skus: rebuildSkus(reordered, sellingMethods, doorWidths, skus),
+      skus: rebuildSkus(reordered, doorWidths, skus),
     })
     setColorDragIdx(null)
-  }
-
-  // ========== 售卖方式（多行下拉，去重） ==========
-  const handleAddSellingMethod = () => {
-    // 占位空值（用 '' 表示尚未选择）
-    if (sellingMethods.length >= SELLING_METHOD_OPTIONS.length) {
-      toast.warning('已添加全部可用的售卖方式')
-      return
-    }
-    onChange({
-      ...value,
-      sellingMethods: [...sellingMethods, '' as unknown as SellingMethod],
-    })
-  }
-
-  const handleChangeSellingMethod = (idx: number, v: string) => {
-    if (!v) {
-      // 选择为空，移除占位行
-      const next = sellingMethods.filter((_, i) => i !== idx)
-      onChange({
-        ...value,
-        sellingMethods: next,
-        skus: rebuildSkus(colors, next, doorWidths, skus),
-      })
-      return
-    }
-    if (sellingMethods.some((m, i) => i !== idx && m === v)) {
-      toast.warning('当前售卖方式已经添加过了哦')
-      return
-    }
-    const next = [...sellingMethods]
-    next[idx] = v as SellingMethod
-    onChange({
-      ...value,
-      sellingMethods: next,
-      skus: rebuildSkus(colors, next, doorWidths, skus),
-    })
-  }
-
-  const handleRemoveSellingMethod = (idx: number) => {
-    const next = sellingMethods.filter((_, i) => i !== idx)
-    onChange({
-      ...value,
-      sellingMethods: next,
-      skus: rebuildSkus(colors, next, doorWidths, skus),
-    })
   }
 
   // ========== 规格尺寸（多行下拉，去重） ==========
@@ -239,7 +190,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       onChange({
         ...value,
         doorWidths: next,
-        skus: rebuildSkus(colors, sellingMethods, next, skus),
+        skus: rebuildSkus(colors, next, skus),
       })
       return
     }
@@ -254,7 +205,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     onChange({
       ...value,
       doorWidths: next,
-      skus: rebuildSkus(colors, sellingMethods, next, skus),
+      skus: rebuildSkus(colors, next, skus),
     })
   }
 
@@ -263,15 +214,11 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     onChange({
       ...value,
       doorWidths: next,
-      skus: rebuildSkus(colors, sellingMethods, next, skus),
+      skus: rebuildSkus(colors, next, skus),
     })
   }
 
   // ========== SKU 单元格 ==========
-  const validSellingMethods = useMemo(
-    () => sellingMethods.filter((m) => !!m),
-    [sellingMethods]
-  )
   const validDoorWidths = useMemo(
     () => doorWidths.filter((w) => !!w),
     [doorWidths]
@@ -287,7 +234,6 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
   // 与表格渲染共用同一匹配逻辑（优先 colorId，兜底 colorName + 门幅双侧归一化）
   const findSku = (
     color: ProductColor,
-    method: SellingMethod,
     width: string
   ): ProductSku | undefined =>
     skus.find((s) => {
@@ -295,7 +241,6 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       const nameMatch = s.colorName === color.colorName
       return (
         (idMatch || (s.colorId == null && nameMatch)) &&
-        s.sellingMethod === method &&
         sameDoorWidth(s.doorWidth, width)
       )
     })
@@ -305,22 +250,19 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     let price = 0
     let stock = 0
     for (const color of colors) {
-      for (const method of validSellingMethods) {
-        for (const width of validDoorWidths) {
-          const sku = findSku(color, method, width)
-          if (!sku || Number(sku.price) <= 0) price++
-          if (!sku || Number(sku.stock) < 0) stock++
-        }
+      for (const width of validDoorWidths) {
+        const sku = findSku(color, width)
+        if (!sku || Number(sku.price) <= 0) price++
+        if (!sku || Number(sku.stock) < 0) stock++
       }
     }
     return { price, stock, total: price + stock }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [colors, validSellingMethods, validDoorWidths, skus])
+  }, [colors, validDoorWidths, skus])
 
   const handleSkuChange = (
     colorId: string,
     colorName: string,
-    method: SellingMethod,
     width: string,
     field: 'price' | 'stock',
     val: number
@@ -329,7 +271,6 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       const idMatch = s.colorId != null && s.colorId === colorId
       const nameMatch = s.colorName === colorName
       if ((idMatch || (s.colorId == null && nameMatch)) &&
-        s.sellingMethod === method &&
         sameDoorWidth(s.doorWidth, width)) {
         return { ...s, [field]: val }
       }
@@ -346,7 +287,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
 
   const handleBatchFill = () => {
     if (skus.length === 0) {
-      toast.warning('请先完善颜色 / 售卖方式 / 规格尺寸')
+      toast.warning('请先完善颜色 / 规格尺寸')
       return
     }
     const priceNum = batchPrice === '' ? null : parseFloat(batchPrice)
@@ -358,7 +299,6 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     const isMatch = (s: ProductSku): boolean => {
       if (batchScope === 'all') return true
       if (batchScope === 'color') return String(s.colorId) === batchTarget
-      if (batchScope === 'method') return s.sellingMethod === batchTarget
       if (batchScope === 'width') return sameDoorWidth(s.doorWidth, batchTarget)
       return false
     }
@@ -386,20 +326,15 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
         value: String(c.id),
         label: c.colorName || '未命名颜色',
       }))
-    if (batchScope === 'method')
-      return validSellingMethods.map((m) => ({
-        value: m,
-        label: SellingMethodLabels[m],
-      }))
     if (batchScope === 'width')
       return validDoorWidths.map((w) => ({
         value: normalizeDoorWidth(w) || w,
         label: formatDoorWidth(w),
       }))
     return []
-  }, [batchScope, colors, validSellingMethods, validDoorWidths])
+  }, [batchScope, colors, validDoorWidths])
 
-  const totalSkus = colors.length * validSellingMethods.length * validDoorWidths.length
+  const totalSkus = colors.length * validDoorWidths.length
 
   // ========== 颜色校验 - 单行错误 ==========
   const colorRowError = (c: ProductColor): string | null => {
@@ -520,42 +455,6 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
         )}
       </div>
 
-      {/* ===== 售卖方式 ===== */}
-      <RowSelectorSection
-        title="售卖方式"
-        count={validSellingMethods.length}
-        sortableHidden
-        onAdd={handleAddSellingMethod}
-        canAdd={sellingMethods.length < SELLING_METHOD_OPTIONS.length}
-        error={errors?.sellingMethods}
-      >
-        {sellingMethods.map((m, idx) => (
-          <div key={`sm-${idx}`} className="flex items-center gap-2">
-            <div className="w-44">
-              <Select
-                options={[
-                  { value: '', label: '请选择' },
-                  ...SELLING_METHOD_OPTIONS.map((o) => ({
-                    value: o.value,
-                    label: o.label,
-                  })),
-                ]}
-                value={m || ''}
-                onChange={(e) => handleChangeSellingMethod(idx, e.target.value)}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => handleRemoveSellingMethod(idx)}
-              className="relative z-40 w-9 h-9 inline-flex items-center justify-center rounded text-neutral-400 hover:text-red-500 hover:bg-red-50"
-              title="删除"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        ))}
-      </RowSelectorSection>
-
       {/* ===== 规格尺寸 ===== */}
       <RowSelectorSection
         title="规格尺寸"
@@ -610,7 +509,6 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
               options={[
                 { value: 'all', label: '全部' },
                 { value: 'color', label: '按颜色分类' },
-                { value: 'method', label: '按售卖方式' },
                 { value: 'width', label: '按规格尺寸' },
               ]}
               value={batchScope}
@@ -696,130 +594,113 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
 
         {totalSkus === 0 ? (
           <div className="text-sm text-neutral-400 text-center py-6 border border-dashed border-neutral-200 rounded">
-            请先完善颜色分类、售卖方式、规格尺寸
+            请先完善颜色分类、规格尺寸
           </div>
         ) : (
           <div className="overflow-x-auto border border-neutral-200 rounded-md">
             <table className="w-full text-sm border-collapse">
               <thead className="bg-neutral-50/80">
                 <tr className="text-neutral-600">
-                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[26%]">
+                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[30%]">
                     颜色分类
                   </th>
-                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[14%]">
-                    售卖方式
-                  </th>
-                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[14%]">
+                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[20%]">
                     规格尺寸
                   </th>
-                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[23%]">
+                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[25%]">
                     <span className="text-red-500 mr-0.5">*</span>价格（元）
                   </th>
-                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[23%]">
+                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[25%]">
                     <span className="text-red-500 mr-0.5">*</span>库存（米）
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {colors.map((color) => {
-                  const colorRowSpan =
-                    validSellingMethods.length * validDoorWidths.length || 1
-                  return validSellingMethods.map((method, mIdx) =>
-                    validDoorWidths.map((width, wIdx) => {
-                      const sku = findSku(color, method, width)
-                      // 与 validateProductForm 规则一致：价格必须 >0，库存必须 >=0
-                      const priceInvalid = !sku || Number(sku.price) <= 0
-                      const stockInvalid = !sku || Number(sku.stock) < 0
-                      const validationOn = !!errors?.skus
-                      const cellCls =
-                        'w-full h-8 px-2 text-sm rounded border focus:outline-none focus:ring-2'
-                      const cellClsNormal =
-                        'bg-white border-neutral-300 focus:border-primary-500 focus:ring-primary-500/15'
-                      const cellClsError =
-                        'bg-red-50/60 border-red-400 focus:border-red-500 focus:ring-red-500/15'
-                      const isFirstRowOfColor = mIdx === 0 && wIdx === 0
-                      const isFirstRowOfMethod = wIdx === 0
-                      return (
-                        <tr
-                          key={`${color.id}-${method}-${width}`}
-                          className="border-b border-neutral-100 last:border-b-0 hover:bg-neutral-50/40"
-                        >
-                          {isFirstRowOfColor && (
-                            <td
-                              rowSpan={colorRowSpan}
-                              className="px-3 py-2 align-middle border-r border-neutral-100 bg-white"
-                            >
-                              <div className="text-sm text-neutral-700 truncate">
-                                {color.colorName || '未命名'}
-                                {color.remark && (
-                                  <span className="text-neutral-400">
-                                    （{color.remark}）
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                          )}
-                          {isFirstRowOfMethod && (
-                            <td
-                              rowSpan={validDoorWidths.length}
-                              className="px-3 py-2 align-middle border-r border-neutral-100 text-neutral-700"
-                            >
-                              {SellingMethodLabels[method]}
-                            </td>
-                          )}
-                          <td className="px-3 py-2 border-r border-neutral-100 text-neutral-700">
-                            {formatDoorWidth(width)}
+                  const colorRowSpan = validDoorWidths.length || 1
+                  return validDoorWidths.map((width, wIdx) => {
+                    const sku = findSku(color, width)
+                    // 与 validateProductForm 规则一致：价格必须 >0，库存必须 >=0
+                    const priceInvalid = !sku || Number(sku.price) <= 0
+                    const stockInvalid = !sku || Number(sku.stock) < 0
+                    const validationOn = !!errors?.skus
+                    const cellCls =
+                      'w-full h-8 px-2 text-sm rounded border focus:outline-none focus:ring-2'
+                    const cellClsNormal =
+                      'bg-white border-neutral-300 focus:border-primary-500 focus:ring-primary-500/15'
+                    const cellClsError =
+                      'bg-red-50/60 border-red-400 focus:border-red-500 focus:ring-red-500/15'
+                    const isFirstRowOfColor = wIdx === 0
+                    return (
+                      <tr
+                        key={`${color.id}-${width}`}
+                        className="border-b border-neutral-100 last:border-b-0 hover:bg-neutral-50/40"
+                      >
+                        {isFirstRowOfColor && (
+                          <td
+                            rowSpan={colorRowSpan}
+                            className="px-3 py-2 align-middle border-r border-neutral-100 bg-white"
+                          >
+                            <div className="text-sm text-neutral-700 truncate">
+                              {color.colorName || '未命名'}
+                              {color.remark && (
+                                <span className="text-neutral-400">
+                                  （{color.remark}）
+                                </span>
+                              )}
+                            </div>
                           </td>
-                          <td className="px-3 py-2 border-r border-neutral-100">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              placeholder="0.00"
-                              value={sku?.price || ''}
-                              onChange={(e) =>
-                                handleSkuChange(
-                                  color.id,
-                                  color.colorName,
-                                  method,
-                                  width,
-                                  'price',
-                                  parseFloat(e.target.value) || 0
-                                )
-                              }
-                              aria-invalid={validationOn && priceInvalid ? true : undefined}
-                              className={`${cellCls} ${
-                                validationOn && priceInvalid ? cellClsError : cellClsNormal
-                              }`}
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              placeholder="0"
-                              value={sku?.stock || ''}
-                              onChange={(e) =>
-                                handleSkuChange(
-                                  color.id,
-                                  color.colorName,
-                                  method,
-                                  width,
-                                  'stock',
-                                  parseInt(e.target.value, 10) || 0
-                                )
-                              }
-                              aria-invalid={validationOn && stockInvalid ? true : undefined}
-                              className={`${cellCls} ${
-                                validationOn && stockInvalid ? cellClsError : cellClsNormal
-                              }`}
-                            />
-                          </td>
-                        </tr>
-                      )
-                    })
-                  )
+                        )}
+                        <td className="px-3 py-2 border-r border-neutral-100 text-neutral-700">
+                          {formatDoorWidth(width)}
+                        </td>
+                        <td className="px-3 py-2 border-r border-neutral-100">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={sku?.price || ''}
+                            onChange={(e) =>
+                              handleSkuChange(
+                                color.id,
+                                color.colorName,
+                                width,
+                                'price',
+                                parseFloat(e.target.value) || 0
+                              )
+                            }
+                            aria-invalid={validationOn && priceInvalid ? true : undefined}
+                            className={`${cellCls} ${
+                              validationOn && priceInvalid ? cellClsError : cellClsNormal
+                            }`}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            placeholder="0"
+                            value={sku?.stock || ''}
+                            onChange={(e) =>
+                              handleSkuChange(
+                                color.id,
+                                color.colorName,
+                                width,
+                                'stock',
+                                parseInt(e.target.value, 10) || 0
+                              )
+                            }
+                            aria-invalid={validationOn && stockInvalid ? true : undefined}
+                            className={`${cellCls} ${
+                              validationOn && stockInvalid ? cellClsError : cellClsNormal
+                            }`}
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })
                 })}
               </tbody>
             </table>

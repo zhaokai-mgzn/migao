@@ -139,9 +139,18 @@ public class ProductResponse {
     private List<ProductColorResponse> colors;
 
     /**
-     * 售卖方式列表（详情接口返回，去重后从 SKU 派生）
+     * 售卖方式列表（**商品级基础属性**，非 SKU 组合维度）—— 取自 {@code products.selling_methods}。
+     *
+     * <p>V108 / 用户裁定 2026-09-21：SKU 组合只有 颜色 × 门幅，售卖方式上移为商品属性。
+     * 原实现「从 SKU 派生」已删除（SKU 不再带该列 ⇒ 那样会恒返回空数组）。</p>
      */
     private List<String> sellingMethods;
+
+    /**
+     * 1 卷 = 多少米（**商品货号级基础参数**）。
+     * {@code null} = 未配置 ⇒ 订单侧**禁止**推算整卷发货分配（见 {@code ProductRollAllocation}）。
+     */
+    private BigDecimal rollLengthM;
 
     /**
      * 规格尺寸列表（详情接口返回，去重后从 SKU 派生）

@@ -29,12 +29,10 @@ public class ProductSkuInput {
     private String colorName;
 
     /**
-     * 售卖方式: bulk_cut / full_roll
-     */
-    private String sellingMethod;
-
-    /**
      * 规格尺寸: 2.8m / 3.2m / 3.4m
+     *
+     * <p>SKU 组合 = 颜色 × 门幅（**仅此二维**）。原 {@code sellingMethod} 字段已删除
+     * （用户裁定 2026-09-21：售卖方式是商品级基础属性，不是 SKU 组合维度）。</p>
      */
     private String doorWidth;
 

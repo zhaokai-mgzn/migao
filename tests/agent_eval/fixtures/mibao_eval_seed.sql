@@ -23,15 +23,18 @@
 -- has_processing 列已随 #4371 解耦删除（V66 迁移 DROP COLUMN）：加工项是店铺级目录，
 -- 「该商品是否绑了加工项」不再有语义 ⇒ OR-016 的询问前提改为「店铺加工项目录非空」
 -- （见下方 processing_items 种子），不再依赖商品侧的信号位。
+-- V111（用户裁定 2026-09-21）：售卖方式 `selling_methods` 与 `roll_length_m`（1 卷 = 多少米）
+-- 都是**商品货号级基础参数**（不再是 SKU 组合维度）⇒ 必须在 products 行上给值。
 INSERT INTO products
   (id, tenant_id, name, category_id, base_price, description, images, detail_images,
    stock, stock_warning_threshold, status, unit, pricing_type, sku_code,
-   stock_deduction_mode, sales_count, sales_amount, recommended)
+   stock_deduction_mode, sales_count, sales_amount, recommended,
+   selling_methods, roll_length_m)
 VALUES
   ('prod_eval_2699', 1, '2699系列雪尼尔窗帘面料', 'cat_eval_curtain', 23.80,
    '雪尼尔面料，手感厚实，适合窗帘定制（B 端评测 fixture）',
    '[]'::jsonb, '[]'::jsonb, 1000, 10, 'on_sale', '米', 'per_meter', 'EVAL-2699-28',
-   'on_order', 0, 0, FALSE)
+   'on_order', 0, 0, FALSE, '["bulk_cut", "full_roll"]'::jsonb, 60.00)
 ON CONFLICT (id) DO NOTHING;
 
 -- 颜色：2699-03 暖米色（用例原文「2699-03暖米色」）
@@ -46,8 +49,10 @@ WHERE NOT EXISTS (
   WHERE pc.product_id = v.product_id AND pc.color_name = v.color_name
 );
 
-INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, selling_method, door_width, price, stock, sku_code)
-SELECT 1, pc.product_id, pc.id, pc.color_name, 'bulk_cut', '2.8', p.base_price, 500,
+-- V111：`product_skus.selling_method` 列已删除（售卖方式上移为 products.selling_methods），
+-- 唯一键 = (product_id, color_id, door_width) ⇒ 本 INSERT 不得再写该列。
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT 1, pc.product_id, pc.id, pc.color_name, '2.8', p.base_price, 500,
        p.sku_code || '-' || pc.color_name
 FROM product_colors pc
 JOIN products p ON p.id = pc.product_id
@@ -55,7 +60,7 @@ WHERE pc.product_id = 'prod_eval_2699'
   AND NOT EXISTS (
     SELECT 1 FROM product_skus s
     WHERE s.product_id = pc.product_id AND s.color_id = pc.id
-      AND s.selling_method = 'bulk_cut' AND s.door_width = '2.8'
+      AND s.door_width = '2.8'
   );
 
 -- ── 商品 ↔ 加工项关联：**已随 #4371 解耦删除** ──

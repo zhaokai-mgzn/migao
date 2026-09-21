@@ -32,12 +32,11 @@ public class ProductSkuResponse {
     private String colorName;
 
     /**
-     * 售卖方式: bulk_cut(散剪) / full_roll(整卷)
-     */
-    private String sellingMethod;
-
-    /**
      * 规格尺寸
+     *
+     * <p>⚠️ 本 DTO **不再有** {@code sellingMethod} —— 用户裁定 2026-09-21：
+     * SKU 组合只有 颜色 × 门幅，售卖方式已上移为商品级
+     * {@code ProductResponse.sellingMethods}（V111 迁移删列）。</p>
      */
     private String doorWidth;
 

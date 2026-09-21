@@ -54,13 +54,21 @@ export function validateProductForm(
       if (incomplete) errs.colors = '颜色必须填写名称'
     }
 
-    // ─── 售卖方式 / 门幅 ───
+    // ─── 售卖方式（商品级基础属性）───
     if (
       !form.sellingMethods ||
       form.sellingMethods.filter(Boolean).length === 0
     ) {
       errs.sellingMethods = '请至少添加 1 种售卖方式'
     }
+
+    // ─── 1 卷 = 多少米（商品货号级基础参数；**留空允许**，填了必须 > 0）───
+    const rollLength = form.rollLengthM
+    if (rollLength !== undefined && rollLength !== null && !(Number(rollLength) > 0)) {
+      errs.rollLengthM = '卷长必须大于 0 米'
+    }
+
+    // ─── 门幅 ───
     if (
       !form.doorWidths ||
       form.doorWidths.filter(Boolean).length === 0
@@ -68,19 +76,15 @@ export function validateProductForm(
       errs.doorWidths = '请至少添加 1 种规格尺寸'
     }
 
-    // ─── SKU 完整性 ───
+    // ─── SKU 完整性（组合只有 颜色 × 门幅）───
     if (
       form.colors &&
       form.colors.length > 0 &&
-      form.sellingMethods &&
-      form.sellingMethods.filter(Boolean).length > 0 &&
       form.doorWidths &&
       form.doorWidths.filter(Boolean).length > 0
     ) {
       const totalCells =
-        form.colors.length *
-        form.sellingMethods.filter(Boolean).length *
-        form.doorWidths.filter(Boolean).length
+        form.colors.length * form.doorWidths.filter(Boolean).length
       const list = form.skus || []
       const filled = list.filter(
         (s) => Number(s.price) > 0 && Number(s.stock) >= 0,

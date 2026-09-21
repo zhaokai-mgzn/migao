@@ -24,6 +24,7 @@ import type {
   StockDeductionMode,
   CategoryFormData,
 } from '@/types'
+import { SellingMethodLabels } from '@/types'
 
 interface ProductFormProps {
   initialData?: Partial<ProductFormData>
@@ -41,13 +42,23 @@ const ANCHORS = {
   unit: 'pf-unit',
   categoryId: 'pf-category',
   images: 'pf-images',
-  colors: 'pf-colors',
+  // 售卖方式 / 卷长已上移为**商品基础属性**（不再是 SKU 矩阵里的维度）
   sellingMethods: 'pf-selling-methods',
+  rollLengthM: 'pf-roll-length',
+  colors: 'pf-colors',
   doorWidths: 'pf-door-widths',
   // #2908: skus 错误锚点指向 SkuMatrix 内警示横幅本身（否则滚到矩阵顶部，
   // 表格下方的小字提示仍可能不可见）
   skus: 'pf-skus-error',
 } as const
+
+/**
+ * 售卖方式选项（**商品级基础属性**）。
+ *
+ * ⚠️ 它不是 SKU 的组合项：SKU 由 **颜色 × 门幅** 组成（唯一键 `(product_id, color_id, door_width)`）。
+ * 用户裁定（2026-09）：「商品的售卖方式整卷/散件不能作为 SKU 的组合项，只能作为基础属性」。
+ */
+const SELLING_METHOD_OPTIONS: SellingMethod[] = ['bulk_cut', 'full_roll']
 
 // 扁平化分类树为下拉选项
 function flattenCategories(
@@ -88,6 +99,7 @@ const DEFAULT_FORM: ProductFormData = {
   specifications: {},
   colors: [],
   sellingMethods: [],
+  rollLengthM: null,
   doorWidths: [],
   skus: [],
 }
@@ -220,6 +232,8 @@ export default function ProductForm({
         sku: form.skuCode || form.sku,
         // 过滤未选中的空占位值，保证后端拿到干净数据
         sellingMethods: (form.sellingMethods || []).filter(Boolean),
+        // 1 卷 = 多少米（商品货号级基础参数）—— **顶层**提交，未配置即 null
+        rollLengthM: form.rollLengthM ?? null,
         doorWidths: (form.doorWidths || []).filter(Boolean),
         price: derivePrice(form.skus || [], form.price),
         status: targetStatus,
@@ -407,22 +421,19 @@ export default function ProductForm({
   const skuValue = useMemo(
     () => ({
       colors: form.colors || [],
-      sellingMethods: form.sellingMethods || [],
       doorWidths: form.doorWidths || [],
       skus: form.skus || [],
     }),
-    [form.colors, form.sellingMethods, form.doorWidths, form.skus]
+    [form.colors, form.doorWidths, form.skus]
   )
 
   const handleSkuChange = (v: {
     colors: ProductColor[]
-    sellingMethods: SellingMethod[]
     doorWidths: string[]
     skus: ProductSku[]
   }) => {
     updateMany({
       colors: v.colors,
-      sellingMethods: v.sellingMethods,
       doorWidths: v.doorWidths,
       skus: v.skus,
     })
@@ -551,6 +562,79 @@ export default function ProductForm({
               errors={{ skuCode: errors.skuCode, unit: errors.unit }}
             />
           </FieldRow>
+
+          {/* 售卖方式（**商品级基础属性** —— 用户裁定：整卷/散件不能作为 SKU 的组合项） */}
+          <FieldRow label="售卖方式" required alignTop>
+            <div id={ANCHORS.sellingMethods} data-testid="pf-selling-methods">
+              <div className="flex flex-wrap items-center gap-5 pt-2">
+                {SELLING_METHOD_OPTIONS.map((m) => {
+                  const checked = (form.sellingMethods || []).includes(m)
+                  return (
+                    <label
+                      key={m}
+                      className="inline-flex items-center gap-1.5 text-sm cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 rounded border-neutral-300 accent-primary-600"
+                        checked={checked}
+                        onChange={() =>
+                          updateField(
+                            'sellingMethods',
+                            checked
+                              ? (form.sellingMethods || []).filter((x) => x !== m)
+                              : [...(form.sellingMethods || []), m]
+                          )
+                        }
+                      />
+                      <span className={checked ? 'text-neutral-800' : 'text-neutral-600'}>
+                        {SellingMethodLabels[m]}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+              <p className="mt-1.5 text-xs text-neutral-500">
+                商品的基础属性（不是 SKU 组合项）：SKU 由「颜色 × 门幅」组成；
+                客户下单时可要求优先按整卷发货，订单里再体现分配
+              </p>
+              {errors.sellingMethods && (
+                <p className="text-sm text-red-600 mt-2">{errors.sellingMethods}</p>
+              )}
+            </div>
+          </FieldRow>
+
+          {/* 1 卷 = 多少米（商品货号级基础参数） */}
+          <FieldRow label="1 卷 = 多少米" alignTop>
+            <div id={ANCHORS.rollLengthM} data-testid="pf-roll-length">
+              <div className="relative w-44">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="未配置"
+                  value={form.rollLengthM ?? ''}
+                  onChange={(e) =>
+                    updateField(
+                      'rollLengthM',
+                      e.target.value === '' ? null : Number(e.target.value)
+                    )
+                  }
+                  className="w-full h-9 px-3 pr-8 text-sm rounded border border-neutral-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400">
+                  米
+                </span>
+              </div>
+              <p className="mt-1.5 text-xs text-neutral-500">
+                商品货号级的基础参数：1 卷布有多少米。留空表示未配置 ——
+                未配置时订单不会推算整卷发货（例如买 100 米、1 卷 60 米 ⇒ 1 整卷 + 散剪 40 米）
+              </p>
+              {errors.rollLengthM && (
+                <p className="text-sm text-red-600 mt-2">{errors.rollLengthM}</p>
+              )}
+            </div>
+          </FieldRow>
         </div>
       </Section>
 
@@ -558,7 +642,6 @@ export default function ProductForm({
       <Section title="销售信息">
         <div className="space-y-7">
           <div id={ANCHORS.colors}>
-            <div id={ANCHORS.sellingMethods} />
             <div id={ANCHORS.doorWidths} />
             <div id={ANCHORS.skus} />
             <SkuMatrix
@@ -566,7 +649,6 @@ export default function ProductForm({
               onChange={handleSkuChange}
               errors={{
                 colors: errors.colors,
-                sellingMethods: errors.sellingMethods,
                 doorWidths: errors.doorWidths,
                 skus: errors.skus,
               }}

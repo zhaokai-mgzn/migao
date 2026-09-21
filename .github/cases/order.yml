@@ -3417,3 +3417,35 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: OR-046
+    legacy_id: ""
+    title: "订单体现「客户要求优先整卷发货」+ 分配落库（100 米 / 一卷 60 米 ⇒ 1 整卷 60 + 散剪 40）"
+    domains:
+      - order
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - order
+      - roll_allocation
+      - backend_contract
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**分配算法确定性**（用户裁定原话例）：`quantity=100`、`roll_length_m=60` ⇒ `rollCount=1`、`cutMeters=40`；`120/60 ⇒ 2 卷 + 0 米散剪`；`50/60 ⇒ 0 卷 + 50 米散剪`。注入：把向下取整改成四舍五入 ⇒ `50/60` 得 1 卷 ⇒ 断言红。**溢出 ⇒ 未分配（不是 500）**：`1e9 / 0.01`、`2147483648 / 1` 这类输入不得让建单 500（独立对抗式复核实测抓到 `intValueExact` 会抛 Overflow）。"
+      - "判据 1b·**分配闸门 = 货号有没有配卷长，与售卖方式无关**（用户原话的例子就是按米买布）：`bulk_cut`（散剪/按米买）与**未指定**售卖方式的订单行同样要落 `rollCount` —— 用户裁定那句「客户买 100 米布，一卷=60 米 ⇒ 1 整卷 60 + 散剪 40」里顾客**没有**说「我要整卷」⇒ 把闸门写成「只有明说 full_roll 才算」会让该例子在新单路径上**根本不生效**（独立对抗式复核实测抓到）。注入：把「只有 full_roll 才分配」的早退加回 ⇒ 本判据红。"
+      - "判据 2·**三列落订单行**：`order_items.selling_method`（本行售卖方式偏好）+ `roll_count`（整卷数）+ `roll_length_m`（下单时卷长**快照**）——订单是快照不是视图 ⇒ 货号后来改卷长不改变历史单的分配口径（注入：读面改成实时读 `products.roll_length_m` ⇒ 改货号卷长后历史单数字跟着漂移 ⇒ 断言红）。"
+      - "判据 3·**未配置卷长 ⇒ 不写分配**：`products.roll_length_m IS NULL` 时分配两列保持 NULL（`roll_count` / `roll_length_m`），**不得**落 0（「不知道」不许伪装成「0 整卷」）。"
+      - "判据 4·**跨端可见**：订单详情响应带 `sellingMethod` / `rollCount` / `rollLengthM`（管理端订单明细读它渲染「整卷 N + 散剪 M 米」）。证据 = `OrderServiceTest.getOrderById_exposesRollAllocationFields`（读**响应**，不是「insert 前」；此前该判据零测试 —— 独立对抗式复核抓到）。前端：`rollAllocationText` 在字段任一为空、或余量为负（数据自相矛盾）时**不渲染**，不把不一致渲染成正常分配。"
+    skip_reason: "[backend-contract] 订单行契约（Java 单测 + admin-web vitest，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProductRollAllocationTest.java、OrderServiceTest.java 与 frontend/admin-web/tests/unit/components/OrderItemList.test.tsx 执行"
+    merge_log: "2026-09-21 新增（用户裁定逐字：「在订单中再体现客户要求优先整卷发货，例子：客户买 100 米布，一卷=60 米，那就发 1 整卷 60 + 散剪出的 40 米」）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductRollAllocationTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java"
+        - "frontend/admin-web/tests/unit/components/OrderItemList.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

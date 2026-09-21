@@ -482,7 +482,6 @@ export default function InboundOrdersPage() {
                       <input type="checkbox" checked={checked} onChange={() => toggleSku(sku)} />
                       <span className="flex-1">
                         {sku.colorName || '默认色'} / {sku.doorWidth || '默认门幅'}
-                        {sku.sellingMethod ? ` / ${sku.sellingMethod}` : ''}
                       </span>
                       <span className="text-neutral-500">当前库存 {sku.stock ?? 0}</span>
                     </label>

@@ -29,7 +29,7 @@ class ProductDetailTool(BaseTool):
     
     name = "product_detail"
     description = (
-        "【触发】用户问'XX商品详情''XX多少钱''XX什么颜色''XX的规格'或指定商品ID时调用。【前置】需要 product_id（支持名称/序号/UUID）。【下单前必调】创建订单前必须先调本工具查看 SKU 列表（颜色×售卖方式×门幅），让用户选择规格后再下单。【反例】搜商品列表用 product_search，查库存用 inventory_manage。【标注】READONLY"
+        "【触发】用户问'XX商品详情''XX多少钱''XX什么颜色''XX的规格'或指定商品ID时调用。【前置】需要 product_id（支持名称/序号/UUID）。【下单前必调】创建订单前必须先调本工具查看 SKU 列表（颜色×门幅），让用户选择规格后再下单。【反例】搜商品列表用 product_search，查库存用 inventory_manage。【标注】READONLY"
     )
     
     parameters = {
@@ -198,6 +198,11 @@ class ProductDetailTool(BaseTool):
                 data.get("images", [None])[0] if data.get("images") else None
             ),
             "skus": skus,
+            # 售卖方式是**商品级基础属性**（用户裁定 2026-09-21 / V111）：该货号支持哪些售卖方式。
+            # 它不是 SKU 组合维度 —— SKU 组合只有 颜色 × 门幅（`skus[]` 里不再有 selling_method）。
+            "selling_methods": data.get("sellingMethods") or [],
+            # 1 卷 = 多少米（**货号级基础参数**）。None = 未配置 ⇒ 订单侧不得推算整卷发货分配。
+            "roll_length_m": data.get("rollLengthM"),
             "specifications": data.get("specifications", {}),
             "sales_count": data.get("salesCount", 0),
             "created_at": data.get("createdAt"),
@@ -221,7 +226,8 @@ class ProductDetailTool(BaseTool):
                 "id": sku.get("id"),
                 "sku_code": sku.get("skuCode"),
                 "color_name": sku.get("colorName"),
-                "selling_method": sku.get("sellingMethod"),
+                # V111：SKU 组合只有 颜色 × 门幅 —— 售卖方式已上移为商品级基础属性
+                # （见 `_format_product` 的 selling_methods / roll_length_m），不在此透出。
                 "door_width": sku.get("doorWidth"),
                 "specifications": sku.get("specifications", {}),
                 "price": sku.get("price"),

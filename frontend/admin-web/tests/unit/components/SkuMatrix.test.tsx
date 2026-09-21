@@ -1,13 +1,13 @@
 /**
  * SkuMatrix 组件测试
  * 覆盖：#563 — 销售属性矩阵渲染、颜色管理、SKU 表格
- * case_ids: PR-010
+ * case_ids: PR-010, PR-042, PR-043, PR-044, OR-046
  */
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { toast } from 'sonner'
 import SkuMatrix from '@/components/products/SkuMatrix'
-import type { ProductColor, ProductSku, SellingMethod } from '@/types'
+import type { ProductColor, ProductSku } from '@/types'
 
 // issue #3621：门幅选项/匹配口径统一用例需要断言「拒绝重复门幅」的可见提示
 vi.mock('sonner', () => ({
@@ -27,7 +27,6 @@ vi.mock('@/lib/utils', () => ({
 
 const createDefaultValue = () => ({
   colors: [] as ProductColor[],
-  sellingMethods: [] as SellingMethod[],
   doorWidths: [] as string[],
   skus: [] as ProductSku[],
 })
@@ -51,7 +50,7 @@ describe('SkuMatrix (#563)', () => {
       />
     )
     expect(
-      screen.getByText('请先完善颜色分类、售卖方式、规格尺寸')
+      screen.getByText('请先完善颜色分类、规格尺寸')
     ).toBeTruthy()
   })
 
@@ -66,14 +65,20 @@ describe('SkuMatrix (#563)', () => {
     expect(screen.getByText('添加颜色分类')).toBeTruthy()
   })
 
-  it('渲染售卖方式区块', () => {
+  // 反向断言（PR-042）：售卖方式**不再是矩阵里的维度** —— 它已上移为商品级基础属性
+  it('PR-042: 矩阵里**没有**售卖方式区块', () => {
     render(
       <SkuMatrix
-        value={createDefaultValue()}
+        value={{
+          ...createDefaultValue(),
+          colors: [{ id: '-1', colorName: '红色', remark: '', sortOrder: 0 }],
+          doorWidths: ['2.8'],
+        }}
         onChange={vi.fn()}
       />
     )
-    expect(screen.getByText('售卖方式')).toBeTruthy()
+    expect(screen.queryByText('售卖方式')).toBeNull()
+    expect(screen.queryByText('按售卖方式')).toBeNull()
   })
 
   it('渲染规格尺寸区块', () => {
@@ -239,7 +244,7 @@ describe('SkuMatrix (#563)', () => {
     expect(deleteBtn.className).toContain('relative')
   })
 
-  it('#1286 L2-01: 售卖方式与规格尺寸删除按钮也有 z-40', () => {
+  it('#1286 L2-01: 规格尺寸删除按钮也有 z-40', () => {
     const color: ProductColor = {
       id: '-1',
       colorName: '黑色',
@@ -251,13 +256,11 @@ describe('SkuMatrix (#563)', () => {
         value={{
           ...createDefaultValue(),
           colors: [color],
-          sellingMethods: ['bulk_cut' as SellingMethod],
           doorWidths: ['2.8米'],
           skus: [{
             id: '-100',
             colorId: '-1',
             colorName: '黑色',
-            sellingMethod: 'bulk_cut' as SellingMethod,
             doorWidth: '2.8米',
             price: 100,
             stock: 50,
@@ -268,8 +271,8 @@ describe('SkuMatrix (#563)', () => {
       />
     )
     const deleteBtns = screen.getAllByTitle('删除')
-    // 颜色 + 售卖方式 + 规格尺寸 = 3 个删除按钮
-    expect(deleteBtns).toHaveLength(3)
+    // 颜色 + 规格尺寸 = 2 个删除按钮（售卖方式已不是矩阵维度）
+    expect(deleteBtns).toHaveLength(2)
     deleteBtns.forEach((btn) => {
       expect(btn.className).toContain('z-40')
     })
@@ -414,7 +417,6 @@ describe('SkuMatrix (#563)', () => {
       id: '-100',
       colorId: '-1',
       colorName: '红色',
-      sellingMethod: 'bulk_cut' as SellingMethod,
       doorWidth: '2.8米',
       price: 100,
       stock: 50,
@@ -424,7 +426,6 @@ describe('SkuMatrix (#563)', () => {
       <SkuMatrix
         value={{
           colors: [color],
-          sellingMethods: ['bulk_cut' as SellingMethod],
           doorWidths: ['2.8米'],
           skus: [sku],
         }}
@@ -433,10 +434,45 @@ describe('SkuMatrix (#563)', () => {
     )
     // SKU 表格应渲染（不再显示占位提示）
     expect(
-      screen.queryByText('请先完善颜色分类、售卖方式、规格尺寸')
+      screen.queryByText('请先完善颜色分类、规格尺寸')
     ).toBeNull()
     // 表格中显示颜色名称
     expect(screen.getByText('红色')).toBeTruthy()
+  })
+
+  // ========== ① 二维矩阵：2 颜色 × 2 门幅 = 4 行（PR-042） ==========
+  //
+  // 用户裁定：售卖方式不能作为 SKU 的组合项 ⇒ 矩阵只有「颜色 × 门幅」。
+  // 红证形态：旧实现三维 ⇒ 2 × 2（售卖方式）× 2 = **8** 行；现在必须是 **4** 行，
+  // 且表头里**没有**「售卖方式」列。
+  it('PR-042: 2 颜色 × 2 门幅 ⇒ 4 行 SKU，且表格无「售卖方式」列', () => {
+    const colors: ProductColor[] = [
+      { id: '-1', colorName: '红色', remark: '', sortOrder: 0 },
+      { id: '-2', colorName: '蓝色', remark: '', sortOrder: 1 },
+    ]
+    const { container } = render(
+      <SkuMatrix
+        value={{ colors, doorWidths: ['2.8', '3.2'], skus: [] }}
+        onChange={vi.fn()}
+      />
+    )
+
+    // ① 行数 = 2 × 2 = 4（**不是** 8）
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(4)
+    // 每行 2 个输入框（价格 / 库存）⇒ 4 × 2 = 8
+    expect(container.querySelectorAll('td input[type="number"]')).toHaveLength(8)
+
+    // ② 表头没有「售卖方式」列
+    const headers = Array.from(
+      container.querySelectorAll('thead th')
+    ).map((th) => th.textContent || '')
+    expect(headers.some((h) => h.includes('售卖方式'))).toBe(false)
+    expect(headers.some((h) => h.includes('颜色分类'))).toBe(true)
+    expect(headers.some((h) => h.includes('规格尺寸'))).toBe(true)
+
+    // ③ 单元格里也不出现任何售卖方式文案
+    expect(within(container).queryByText('散剪')).toBeNull()
+    expect(within(container).queryByText('整卷')).toBeNull()
   })
 
   // ========== #2908: 校验失败提示可见性 ==========
@@ -445,14 +481,12 @@ describe('SkuMatrix (#563)', () => {
     colors: [
       { id: '-1', colorName: '红色', remark: '', sortOrder: 0 } as ProductColor,
     ],
-    sellingMethods: ['bulk_cut' as SellingMethod],
     doorWidths: ['2.8米'],
     skus: [
       {
         id: '-100',
         colorId: '-1',
         colorName: '红色',
-        sellingMethod: 'bulk_cut' as SellingMethod,
         doorWidth: '2.8米',
         price: 0,
         stock: 0,
@@ -519,7 +553,6 @@ describe('SkuMatrix (#563)', () => {
           colors: [
             { id: '-1', colorName: '红色', remark: '', sortOrder: 0 },
           ] as ProductColor[],
-          sellingMethods: ['bulk_cut' as SellingMethod],
           doorWidths: ['2.8米'],
           skus: [],
         }}
@@ -556,7 +589,6 @@ describe('门幅口径统一 (#3621)', () => {
     id: '100',
     colorId: '1',
     colorName: '红色',
-    sellingMethod: 'bulk_cut' as SellingMethod,
     doorWidth: '2.8',
     price: 168,
     stock: 500,
@@ -569,7 +601,6 @@ describe('门幅口径统一 (#3621)', () => {
       <SkuMatrix
         value={{
           colors: [color3621],
-          sellingMethods: ['bulk_cut' as SellingMethod],
           doorWidths: ['2.8'],
           skus: [existingSku()],
         }}
@@ -599,7 +630,6 @@ describe('门幅口径统一 (#3621)', () => {
       <SkuMatrix
         value={{
           colors: [color3621],
-          sellingMethods: ['bulk_cut' as SellingMethod],
           // 存量表单里的历史写法（后端由 SKU 派生，两种写法都真实存在）
           doorWidths: ['2.8米'],
           skus: [existingSku({ doorWidth: '2.8米' })],
@@ -625,7 +655,6 @@ describe('门幅口径统一 (#3621)', () => {
       <SkuMatrix
         value={{
           colors: [color3621],
-          sellingMethods: ['bulk_cut' as SellingMethod],
           doorWidths: ['2.8', '3.2'],
           skus: [
             existingSku(),
@@ -657,7 +686,6 @@ describe('门幅口径统一 (#3621)', () => {
       <SkuMatrix
         value={{
           colors: [color3621],
-          sellingMethods: ['bulk_cut' as SellingMethod],
           doorWidths: ['2.8', '3.2'],
           skus: [
             existingSku(),
@@ -679,9 +707,7 @@ describe('门幅口径统一 (#3621)', () => {
     expect(next.doorWidths).toEqual(['2.8', '3.4'])
     // 新组合已重建出 SKU 行（成果物存在于提交数据里）
     expect(
-      next.skus.some(
-        (s: ProductSku) => s.doorWidth === '3.4' && s.sellingMethod === 'bulk_cut'
-      )
+      next.skus.some((s: ProductSku) => s.doorWidth === '3.4')
     ).toBe(true)
 
     // 结果可见：以新值重渲染后，下拉显示 3.4米，且矩阵里出现 3.4 价格输入框
@@ -704,7 +730,6 @@ describe('门幅口径统一 (#3621)', () => {
       <SkuMatrix
         value={{
           colors: [color3621],
-          sellingMethods: ['bulk_cut' as SellingMethod],
           doorWidths: ['2.8米'],
           skus: [existingSku()],
         }}

@@ -116,7 +116,7 @@ public class AgentProductController {
     }
 
     /**
-     * Agent 专用 SKU 价格更新。按颜色/售卖方式/门幅精确匹配。
+     * Agent 专用 SKU 价格更新。按颜色/门幅匹配（V108：售卖方式不再是 SKU 维度 ⇒ 不参与定位）。
      * PATCH /api/admin/agent/products/{productId}/skus/price
      */
     @PatchMapping("/{productId}/skus/price")
@@ -125,22 +125,21 @@ public class AgentProductController {
             @RequestBody Map<String, Object> body) {
         Long tenantId = TenantContext.getTenantId();
         String color = (String) body.getOrDefault("color", "");
-        String sellingMethod = (String) body.getOrDefault("selling_method", "");
         String doorWidth = (String) body.getOrDefault("door_width", "");
         Object priceObj = body.get("price");
         if (priceObj == null) {
             throw BusinessException.validationError("缺少 price 字段");
         }
         java.math.BigDecimal price = new java.math.BigDecimal(priceObj.toString());
-        log.info("[Agent] SKU调价: product={}, color={}, method={}, width={}, price={}",
-                productId, color, sellingMethod, doorWidth, price);
+        log.info("[Agent] SKU调价: product={}, color={}, width={}, price={}",
+                productId, color, doorWidth, price);
         try {
             String resolvedId = productService.resolveProductId(productId, tenantId);
             if (resolvedId == null) {
                 throw BusinessException.notFound("商品（" + productId + "）",
                         "请先用 product_search 查出正确 ID");
             }
-            productService.updateSkuPrice(resolvedId, color, sellingMethod, doorWidth, price, tenantId);
+            productService.updateSkuPrice(resolvedId, color, doorWidth, price, tenantId);
             ProductResponse result = productService.getProductById(resolvedId, tenantId);
             return ApiResponse.success(result);
         } catch (Exception e) {

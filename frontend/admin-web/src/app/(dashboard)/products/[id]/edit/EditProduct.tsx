@@ -68,7 +68,9 @@ export default function EditProductPage() {
     specifications: toEnglishSpecKeys(product.specifications || {}),
     stockDeductionMode: (product.stockDeductionMode === 'on_order' ? 'on_place' : product.stockDeductionMode === 'on_payment' ? 'on_pay' : 'on_place') as ProductFormData['stockDeductionMode'],
     colors: product.colors || [],
+    // 售卖方式（商品级基础属性）与 1 卷米数（商品货号级基础参数）—— 顶层字段，直接回显
     sellingMethods: product.sellingMethods || [],
+    rollLengthM: product.rollLengthM ?? null,
     doorWidths: product.doorWidths || [],
     skus: product.skus || [],
   }
