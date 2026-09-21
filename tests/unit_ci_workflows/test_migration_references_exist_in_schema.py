@@ -49,31 +49,34 @@ ALLOWLIST_TABLES = {
     "product_processing_items",    # V33/V34/V41 用；V66（#4371）已把它彻底解耦/删除 ⇒ 终态无
     "knowledge_entries",           # V37/V42 用；V37 已改名 knowledge_cards ⇒ 终态无
     # ⚠️ **不是「豁免一条真缺陷」，而是判据的**已知假阳性形态**（issue #4937 实测）：
-    # V104 的 `CREATE TEMP TABLE _v104_survivors ON COMMIT DROP AS …` 是**会话级临时表**
+    # 合并后的 `V102__retire_applicability_flag.sql` 里
+    # `CREATE TEMP TABLE _v102_survivors ON COMMIT DROP AS …` 是**会话级临时表**
     # —— 由**同一个迁移文件**建、用完随事务消失，**结构上不可能**出现在 bootstrap
     # `docs/sql/schema.sql` 里（该文件不跑迁移链）。判据 `_referenced_tables` 读 `FROM <标识符>`，
     # 它天然分不清「临时表」与「终态表」。
     # ⇒ 登记在此的**理由与作用域都写清楚**：只允许这一个名字（**不做前缀通配**），
     # 且本条目**必须**被 `test_temp_table_allowlist_entry_is_load_bearing` 的反向断言证明在承重。
-    "_v104_survivors",
+    # ⚠️ **判据数量与强度与改判前逐字相同**：改判只是把对象从 `V104` 的 `_v104_survivors`
+    # 换到 `V102` 的 `_v102_survivors`（那两条迁移已合并为一条，`V104` 文件已删除）。
+    "_v102_survivors",
 }
 
 
 def test_temp_table_allowlist_entry_is_load_bearing():
-    """上一条 `_v104_survivors` 的**死亡条件**（豁免不许变成永久条目）。
+    """上一条 `_v102_survivors` 的**死亡条件**（豁免不许变成永久条目）。
 
-    反向断言：V104 **真的**建了这张临时表、且**真的**在写语句与对账里引用它；
-    一旦 V104 不再用临时表（改写成 CTE / 子查询）⇒ 该条目就是死条目 ⇒ 本条判红，
+    反向断言：合并后的 `V102` **真的**建了这张临时表、且**真的**在写语句与对账里引用它；
+    一旦 `V102` 不再用临时表（改写成 CTE / 子查询）⇒ 该条目就是死条目 ⇒ 本条判红，
     要求把它从 `ALLOWLIST_TABLES` 删掉（本仓口径：豁免必须有死亡条件）。
     """
-    v104 = MIGRATION_DIR / "V104__deposition_matrix_collapse.sql"
-    assert v104.exists(), "V104 不见了 ⇒ 上面的 allowlist 条目已成死条目，删掉它"
-    body = v104.read_text(encoding="utf-8")
-    assert "CREATE TEMP TABLE _v104_survivors" in body, (
-        "V104 不再建 `_v104_survivors` 临时表 ⇒ 请把 `ALLOWLIST_TABLES` 里的该条目删掉"
+    v102 = MIGRATION_DIR / "V102__retire_applicability_flag.sql"
+    assert v102.exists(), "V102 不见了 ⇒ 上面的 allowlist 条目已成死条目，删掉它"
+    body = v102.read_text(encoding="utf-8")
+    assert "CREATE TEMP TABLE _v102_survivors" in body, (
+        "V102 不再建 `_v102_survivors` 临时表 ⇒ 请把 `ALLOWLIST_TABLES` 里的该条目删掉"
         "（豁免没有对象就是死条目）")
-    assert body.count("_v104_survivors") >= 3, (
-        "`_v104_survivors` 只被建、没有被引用 ⇒ 它是装饰（豁免对象不存在）")
+    assert body.count("_v102_survivors") >= 3, (
+        "`_v102_survivors` 只被建、没有被引用 ⇒ 它是装饰（豁免对象不存在）")
 
 
 def _schema_text() -> str:
