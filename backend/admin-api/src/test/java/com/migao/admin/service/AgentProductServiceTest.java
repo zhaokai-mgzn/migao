@@ -222,7 +222,6 @@ class AgentProductServiceTest {
             s.setProductId("prod-001");
             s.setTenantId(1L);
             s.setColorName("米白");
-            s.setSellingMethod("bulk_cut");
             s.setDoorWidth("2.8米");
             s.setStock(stock);
             return s;

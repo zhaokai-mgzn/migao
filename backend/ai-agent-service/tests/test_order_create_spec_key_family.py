@@ -1,11 +1,18 @@
-# case_ids: OR-016, OR-011
+# case_ids: OR-016, OR-011, PR-042, PR-043, PR-044, OR-046
 """order_create 规格键族 ↔ 服务端库存匹配读取点（跨语言契约，issue #4090）。
 
 **红证（issue #4090）**：唯一生产者 `order_create` 只能产出**字符串族**
-（`skuCode/colorName/sellingMethod/doorWidth` —— `product_detail._format_skus` 既不返回
+（`skuCode/colorName/doorWidth` —— `product_detail._format_skus` 既不返回
 `color_id` 也不返回 `skuId`），而服务端 `OrderService.matchSkuId` 原先只认 **ID 族**
 （`skuId`，或 `colorId+sellingMethod+doorWidth`）⇒ **键族不相交** ⇒ 库存校验 / 扣减 / 销量
 三处同时静默跳过（顾客下单成功、SKU 库存不动、销量不涨、无任何失败信号）。
+
+**V108 模型变更（用户裁定 2026-09-21）**：售卖方式**整卷/散件不能作为 SKU 的组合项**，
+只能作为**商品级基础属性**（`products.selling_methods`）⇒ SKU 组合**只有 颜色 × 门幅**，
+`product_skus.selling_method` 列已删、`product_detail` 的 `skus[]` 不再透出 `selling_method`。
+故键族收窄为 `skuId → skuCode → colorId+doorWidth → colorName+doorWidth`；
+`processing_info.sellingMethod` **仍在**（订单级偏好：客户要求优先整卷发货），但**不再参与定位**
+（历史单里该键原样保留 ⇒ 键族必须对它免疫）。
 
 修法两侧同时收口：
 1. **服务端**（Java）：`matchSkuId` 改读字符串族（`product_skus.sku_code / color_name` 就是
@@ -17,9 +24,11 @@
 判据（零 LLM / 零网络）：
 - ① **键族必须相交**：至少一个 SKU 身份键既由工具产出、又被服务端读取（不相交 ⇒ 红）；
 - ② **声明的键必须可得**：能在 `product_detail` 输出里找到取值来源（`colorId` 是唯一例外，
-  必须在描述里显式标明「product_detail 不返回」）；
+  必须在描述里显式标明「product_detail 不返回」；`sellingMethod` 必须标明「订单级」）；
 - ③ **负例**：两侧任一退回修前形态（服务端只读 ID 族 / schema 不声明 `skuId` / 声明拿不到的键）
-  ⇒ 判据必红（证明这条判据不会永远绿）。
+  ⇒ 判据必红（证明这条判据不会永远绿）；
+- ④ **V108 两维键族**：声明与消费点都不得再出现 `sellingMethod+doorWidth`，且**不带**
+  `sellingMethod` 的行仍能定位、**带**它（历史单）定位到**同一个** SKU。
 
 Java 解析口径复用既有跨端契约测试的 `_method_body`（不造第三套）。
 """
@@ -44,18 +53,25 @@ _ORDER_CREATE_SRC = _REPO_ROOT / "backend/ai-agent-service/app/tools/order_creat
 _SPEC_KEYS = ("skuId", "skuCode", "colorId", "colorName", "sellingMethod", "doorWidth")
 # SKU 身份键：能指名「选了哪个 SKU」的键（属性键单独出现不能定位 SKU）
 _IDENTITY_KEYS = ("skuId", "skuCode", "colorId", "colorName")
-# 属性键：售卖方式 / 门幅（服务端按 SkuNotation 归一化比较）
-_ATTRIBUTE_KEYS = ("sellingMethod", "doorWidth")
+# 属性键：门幅（服务端按 SkuNotation 归一化比较）。
+# V108：`sellingMethod` **已退场**——它是订单级偏好，不再是 SKU 组合维度（不再由
+# product_detail 产出，服务端也不再读它定位 SKU）；留在 _SPEC_KEYS 是因为它仍是
+# `processing_info` 的合法键（历史单快照 + 订单级偏好），只是不参与键族判据。
+_ATTRIBUTE_KEYS = ("doorWidth",)
 # product_detail `_format_skus` 输出键 → `processing_info` 规格键（工具描述里承诺的取值来源）
 _PRODUCT_DETAIL_SOURCES = {
     "sku_code": "skuCode",
     "color_name": "colorName",
-    "selling_method": "sellingMethod",
     "door_width": "doorWidth",
     "id": "skuId",
 }
 # product_detail 不返回、因此**不可得**的键（Agent 路径不得教模型去填）——描述里必须显式标注
-_UNOBTAINABLE = {"colorId": "product_detail 不返回"}
+_UNOBTAINABLE = {
+    "colorId": "product_detail 不返回",
+    # V108：售卖方式不再是 SKU 维度 ⇒ product_detail 的 skus[] 不再透出它；
+    # 它只作为**订单级**偏好出现在 processing_info 里（描述必须讲清，否则又是幻觉源）。
+    "sellingMethod": "订单级",
+}
 
 # 修前（issue #4090）服务端 `matchSkuId` 的读取点：只认 ID 族（负例复现用）
 _PRE_FIX_SERVER_KEYS = {"skuId", "colorId", "sellingMethod", "doorWidth"}
@@ -167,10 +183,17 @@ def test_negative_pre_fix_key_families_are_disjoint():
 
 
 def test_declared_spec_keys_are_obtainable_or_marked_unobtainable():
-    """schema 声明的每个规格键都要有取值来源；`colorId` 必须显式标注不可得。"""
+    """schema 声明的每个规格键都要有取值来源；不可得的键必须显式标注。
+
+    V108：`sellingMethod` 从「可得」移到「不可得但已标注（订单级）」—— SKU 组合只有
+    颜色 × 门幅，`product_detail` 的 `skus[]` 不再返回售卖方式。
+    """
     obtainable = _obtainable_spec_keys()
-    assert {"skuId", "skuCode", "colorName", "sellingMethod", "doorWidth"} <= obtainable, (
+    assert {"skuId", "skuCode", "colorName", "doorWidth"} <= obtainable, (
         f"product_detail 取值来源不完整: {sorted(obtainable)}（sku 主键在 skus[].id）"
+    )
+    assert "sellingMethod" not in obtainable, (
+        "V108 起售卖方式不再是 SKU 维度 —— product_detail 不得再把它当规格来源透出"
     )
     assert unobtainable_declarations(_spec_schema_properties(), obtainable) == [], (
         "以下声明键拿不到且未标注不可得（模型只能臆造）: "
@@ -208,6 +231,86 @@ def test_negative_unobtainable_declared_key_is_red():
 
     red = unobtainable_declarations(mutated, _obtainable_spec_keys())
     assert red == ["colorId"], f"拿不到又未标注的声明键没有被判红: {red}"
+
+
+# ── ④ V108：SKU 组合只有 颜色 × 门幅（sellingMethod 退为订单级偏好）──────────────
+
+
+def test_key_family_drops_selling_method_dimension():
+    """键族声明与消费点都必须收窄为两维（V112，用户裁定 2026-09-21）。
+
+    红证：修前形态（售卖方式当 SKU 组合维度）描述里是 `colorId+sellingMethod+doorWidth`、
+    服务端 `matchSkuId` 也读 `info.get("sellingMethod")` ⇒ 本判据必红。
+    """
+    pinfo_schema = OrderCreateTool.parameters["properties"]["items"]["items"][
+        "properties"]["processing_info"]
+    for text in (OrderCreateTool.description, pinfo_schema["description"]):
+        assert "colorId+doorWidth" in text, f"键族未收窄为 颜色+门幅: {text[:120]}"
+        assert "colorName+doorWidth" in text, f"键族未收窄为 颜色+门幅: {text[:120]}"
+        assert "sellingMethod+doorWidth" not in text, (
+            "售卖方式仍是 SKU 组合维度（V108 已把它上移为商品级基础属性）"
+        )
+    assert "sellingMethod" not in _server_read_spec_keys(), (
+        f"服务端 matchSkuId 仍在按 sellingMethod 定位 SKU: {sorted(_server_read_spec_keys())}"
+    )
+    # 订单级偏好语义必须在 schema 里讲清（否则模型会继续把它当 SKU 维度填）
+    assert "订单级" in _spec_schema_properties()["sellingMethod"]["description"]
+
+
+_V108_SKUS = [
+    {"id": "xy-1", "skuCode": "XY-01", "colorName": "米白", "doorWidth": "2.8",
+     "price": 100.0, "stock": 10},
+    {"id": "xy-2", "skuCode": "XY-02", "colorName": "浅灰", "doorWidth": "2.8",
+     "price": 130.0, "stock": 10},
+]
+
+
+def _v108_item(pinfo: dict) -> dict:
+    return {"product_name": "分色价商品", "quantity": 3, "unit_price": 130.0,
+            "subtotal": 390.0, "processing_info": pinfo}
+
+
+def test_order_create_locates_sku_without_selling_method():
+    """② **不带** sellingMethod：按 colorName+doorWidth 仍能定位并接受该行（V108 核心回归）。"""
+    from tests.test_order_create_tool_price_grounding import _run_execute
+
+    result, post_called, sent = _run_execute(
+        [_v108_item({"colorName": "浅灰", "doorWidth": "2.8"})],
+        price=100.0, skus=_V108_SKUS, name="分色价商品")
+    assert post_called is True and result.success is True, (
+        f"不带 sellingMethod 的规格行被拒 —— 键族仍依赖已退场的那一维: "
+        f"{result.error} {result.message}"
+    )
+    pinfo = sent["items"][0]["processingInfo"]
+    assert pinfo["colorName"] == "浅灰" and pinfo["doorWidth"] == "2.8"
+    assert "sellingMethod" not in pinfo, "工具不得替模型补一个已退场的 SKU 维度键"
+
+
+def test_historical_selling_method_key_hits_the_same_sku():
+    """③ **带** sellingMethod（历史单快照）：定位结果与不带时**同一个 SKU**（键族对它免疫）。"""
+    from app.utils.sku_price import _match_sku_price
+    from tests.test_order_create_tool_price_grounding import _run_execute
+
+    # 接地快照用 `product_detail` 的**扁平快照口径**（snake_case，与 `_library_skus_of` 同构）
+    grounded = {"product_id": "p1", "name": "分色价商品", "price": 100.0,
+                "skus": [{"color_name": "米白", "sku_code": "XY-01", "price": 100.0},
+                         {"color_name": "浅灰", "sku_code": "XY-02", "price": 130.0}]}
+    without = _match_sku_price(grounded, _v108_item({"colorName": "浅灰", "doorWidth": "2.8"}))
+    legacy_pinfo = {"colorName": "浅灰", "doorWidth": "2.8", "sellingMethod": "full_roll"}
+    with_legacy = _match_sku_price(grounded, _v108_item(legacy_pinfo))
+    assert without == with_legacy == 130.0, (
+        f"历史 sellingMethod 键改变了定位结果: 不带={without} 带={with_legacy}"
+    )
+
+    result, post_called, sent = _run_execute(
+        [_v108_item(legacy_pinfo)], price=100.0, skus=_V108_SKUS, name="分色价商品")
+    assert post_called is True and result.success is True, (
+        f"历史单（processing_info 带 sellingMethod）必须仍能落单: {result.error} {result.message}"
+    )
+    # 除该偏好键外，落单行与不带时逐字等价（同一个 SKU、同一档价）
+    assert {k: v for k, v in sent["items"][0]["processingInfo"].items()
+            if k != "sellingMethod"} == {"colorName": "浅灰", "doorWidth": "2.8"}
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # craft spec 枚举闸门（issue #4346 包 1 · Python 生产端）

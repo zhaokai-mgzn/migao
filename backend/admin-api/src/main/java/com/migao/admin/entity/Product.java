@@ -113,6 +113,24 @@ public class Product {
      */
     private Boolean allowReturnRestock;
 
+    /**
+     * 售卖方式（**商品级基础属性**，非 SKU 组合维度）—— 用户裁定 2026-09-21：
+     * 「商品的售卖方式整卷/散件不能作为 SKU 的组合项，只能作为基础属性，
+     * 商品的 SKU 由颜色+门幅组成即可」。取值 {@code bulk_cut}(散剪) / {@code full_roll}(整卷)，
+     * JSONB 数组存库（V111 迁移）。
+     */
+    @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
+    private List<String> sellingMethods;
+
+    /**
+     * 1 卷 = 多少米（**商品货号级基础参数**，V111 迁移）。
+     *
+     * <p>{@code null} = 未配置/未知 ⇒ 订单侧**禁止**推算整卷发货分配
+     * （行业卷长是区间值「60 米左右」，不得编造 —— 见
+     * {@code docs/curtain-selling-method-industry-research.md} §5）。</p>
+     */
+    private BigDecimal rollLengthM;
+
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 

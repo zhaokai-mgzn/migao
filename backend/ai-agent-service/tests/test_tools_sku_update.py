@@ -2,7 +2,7 @@
 
 覆盖：安全属性（审计 07 P0-L1 requires_confirmation）、参数校验、成功/失败行为、角色权限。
 """
-# case_ids: PR-003, PR-009
+# case_ids: PR-003, PR-009, PR-042, PR-043, PR-044, OR-046
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -55,16 +55,21 @@ class TestExecute:
 
         result = await tool.execute(
             context, product_id="prod-001", price=9.9,
-            color="白色", selling_method="bulk_cut", door_width="2.8米",
+            color="白色", door_width="2.8米",
         )
 
         assert result.success is True
         assert result.data["new_price"] == 9.9
+        # V108：SKU 组合只有 颜色 × 门幅 ⇒ payload 不得再带 `selling_method`
+        # （接收端 /skus/price 不读该键 ⇒ 下发=静默丢弃；判据见
+        #  tests/test_tool_payload_backend_contract.py）
         client.patch.assert_awaited_once_with(
             "/api/admin/agent/products/prod-001/skus/price",
-            json_data={"price": 9.9, "color": "白色",
-                       "selling_method": "bulk_cut", "door_width": "2.8米"},
+            json_data={"price": 9.9, "color": "白色", "door_width": "2.8米"},
             tenant_id=1, user_id="admin_001",
+        )
+        assert "selling_method" not in tool.parameters["properties"], (
+            "V108 起售卖方式不是 SKU 维度 —— sku_update 不得再声明该参数"
         )
 
     @pytest.mark.asyncio

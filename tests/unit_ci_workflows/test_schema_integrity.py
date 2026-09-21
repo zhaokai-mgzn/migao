@@ -513,6 +513,41 @@ def _strip_sql_comments(sql: str) -> str:
     return "\n".join(re.sub(r"--.*$", "", line) for line in sql.splitlines())
 
 
+def _split_sql_fields(tuple_body: str) -> list:
+    """把一个 VALUES 元组的**内部**按顶层逗号切成字段（**认 SQL 单引号字符串**）。
+
+    ⚠️ 为什么不能用 `split(",")`：`'["bulk_cut", "full_roll"]'::jsonb` 这类 JSONB 字面量
+    里就有逗号 ⇒ 一个字段被切成三份 ⇒ 列数与列清单对不上 ⇒ 该行被静默丢弃。
+    本单实测：V108 给 products 追加 `selling_methods`（JSONB 数组）后，
+    `test_only_one_recommended_product` 从「3 条元组」变成「0 条」并报「解析疑似失效」。
+
+    SQL 单引号字符串的转义是**双写单引号**（`''`）—— 必须认，否则 `'it''s'` 会被切断。
+    """
+    fields, buf, in_quote = [], [], False
+    i = 0
+    while i < len(tuple_body):
+        ch = tuple_body[i]
+        if in_quote:
+            if ch == "'":
+                if i + 1 < len(tuple_body) and tuple_body[i + 1] == "'":
+                    buf.append("''")
+                    i += 2
+                    continue
+                in_quote = False
+            buf.append(ch)
+        elif ch == "'":
+            in_quote = True
+            buf.append(ch)
+        elif ch == ",":
+            fields.append("".join(buf).strip())
+            buf = []
+        else:
+            buf.append(ch)
+        i += 1
+    fields.append("".join(buf).strip())
+    return fields
+
+
 class TestXiaobuEvalFixture:
     """C 端评测业务数据 fixture 契约（issue #3270）。
 
@@ -1082,16 +1117,33 @@ class TestNamedProductsAreSeeded:
         """推荐位只能有一个商品：CH-010「推荐几款热销窗帘」→「第一款」依赖列表顺序，
         多个推荐商品会让"第一款"不确定 → 用例抖动。
 
-        解析方式：`recommended` 是 products 每行 VALUES 的**最后一个**布尔字段。
+        解析方式：按**列清单**定位 `recommended`，不再靠「最后一个布尔」。
         ⚠️ 2026-09-19（#4371）：`has_processing` 列已随解耦 DROP（V66）⇒ 尾形由
-        `, <has_processing>, <recommended>)` 变成 `, <recommended>)`，故正则同步收窄为
-        **末尾单个布尔**。这是解析口径的同步（列被删了），不是放宽判据 —— 下面仍有
-        `len(flags) >= 3` 的「解析没坏」自检兜底（否则本测试空转 = 假绿）。
+        `, <has_processing>, <recommended>)` 变成 `, <recommended>)`，当时把正则收窄为
+        **末尾单个布尔**。2026-09-21（V108）：products 又追加了 `selling_methods` /
+        `roll_length_m` ⇒ `recommended` **不再是最后一列**，尾形判据再次失效（本测试实测报
+        「仅解析出 0 条商品元组」）。⇒ 改为**按列清单的下标**取该列，与列顺序解耦
+        —— 以后再往 products 追加列也不会再让本测试空转。
+        下面仍有 `len(flags) >= 3` 的「解析没坏」自检兜底（否则本测试空转 = 假绿）。
         """
         sql = _strip_sql_comments(FIXTURE.read_text(encoding="utf-8"))
         block = re.search(r"INSERT\s+INTO\s+products[\s\S]*?;", sql, re.I)
         assert block, "未找到 products 种子语句"
-        flags = re.findall(r",\s*(TRUE|FALSE)\s*\)", block.group(0))
+        stmt = block.group(0)
+        # 列清单 → `recommended` 的下标（0-based）
+        col_block = re.search(r"INSERT\s+INTO\s+products\s*\(([^)]*)\)", stmt, re.I | re.S)
+        assert col_block, "未解析到 products 的列清单"
+        columns = [c.strip() for c in col_block.group(1).split(",")]
+        assert "recommended" in columns, "列清单里没有 recommended"
+        rec_idx = columns.index("recommended")
+
+        flags = []
+        values = stmt[stmt.index("VALUES"):]
+        # 元组 = 括号组（可含一层嵌套括号）
+        for row in re.finditer(r"\(((?:[^()]|\([^()]*\))*)\)", values, re.S):
+            fields = _split_sql_fields(row.group(1))
+            if len(fields) == len(columns) and fields[rec_idx] in ("TRUE", "FALSE"):
+                flags.append(fields[rec_idx])
         assert len(flags) >= 3, (
             f"仅解析出 {len(flags)} 条商品元组 —— 解析疑似失效（本测试会空转假绿）"
         )

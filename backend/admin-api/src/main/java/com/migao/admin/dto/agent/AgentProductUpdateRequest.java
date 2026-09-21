@@ -56,10 +56,13 @@ public class AgentProductUpdateRequest {
     private List<String> colors;
 
     /**
-     * 售卖方式列表，null = 不修改。
-     * 传了则全量替换（会触发 SKU 重建）。
+     * 售卖方式列表（**商品级基础属性**，不是 SKU 组合维度），null = 不修改。
+     * 传了则全量替换（**不再触发 SKU 重建** —— SKU 组合只有 颜色 × 门幅）。
      */
     private List<String> sellingMethods;
+
+    /** 1 卷 = 多少米（商品货号级基础参数），null = 不修改 */
+    private BigDecimal rollLengthM;
 
     /**
      * 门幅列表，null = 不修改。

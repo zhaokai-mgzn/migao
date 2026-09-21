@@ -59,8 +59,11 @@ public class AgentProductCreateRequest {
     /** 颜色列表（纯字符串），服务端转为 ProductColorInput */
     private List<String> colors;
 
-    /** 售卖方式（如 "散剪"/"整卷"），服务端翻译为 bulk_cut/full_roll */
+    /** 售卖方式（**商品级基础属性**，如 "散剪"/"整卷"），服务端翻译为 bulk_cut/full_roll */
     private List<String> sellingMethods;
+
+    /** 1 卷 = 多少米（商品货号级基础参数；null = 未配置 ⇒ 订单侧不推算整卷分配） */
+    private BigDecimal rollLengthM;
 
     /** 门幅列表（如 "2.8米"） */
     private List<String> doorWidths;

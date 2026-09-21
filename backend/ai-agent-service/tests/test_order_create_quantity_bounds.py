@@ -40,7 +40,7 @@
   库存/销量，且 per_area 的面积可以合法 <1 ㎡（设 ≥1 会误伤小面积加工单，见本文件
   `TestOrderCreateParamGuardSchemaContract.test_processing_item_bounds_declared`）。
 """
-# case_ids: OR-024, OR-016, OR-028, OR-015
+# case_ids: OR-024, OR-016, OR-028, OR-015, PR-042, PR-043, PR-044, OR-046
 import importlib
 import inspect
 import math
@@ -72,12 +72,10 @@ NUMERIC_BOUND_EXEMPTIONS = {
 # 为什么用「字段名注册表」而不是「required + enum」：enum 型参数**没声明 enum 时无法
 # 从 schema 反推它是枚举**（信息缺失），而本次缺口（sellingMethod）是**可选嵌套**参数
 # —— 用 required 过滤会让锁对缺口完全空转（假锁）。
-ENUM_DECLARATION_EXEMPTIONS = {
-    "sku_update.selling_method": (
-        "归属 #3616/#3621（门幅/售卖方式口径包）：该包可能选别名归一化而非拒绝，"
-        "为避免两包对同一字段给出相反契约，本包只报告不改"
-    ),
-}
+# V108（用户裁定 2026-09-21）：`sku_update.selling_method` 已随「售卖方式上移为商品级基础
+# 属性」从 schema 删除（接收端 /skus/price 也不再读该键）⇒ 原豁免条目必须一并删除，
+# 否则 `test_exemptions_reference_existing_params` 会红（清单过期自证）。
+ENUM_DECLARATION_EXEMPTIONS: dict = {}
 
 # ── 语义注册表（#3622）──
 # 金额/数量/尺寸类字段名：一旦为负，直接污染金额/库存/面积数学 → 必须声明下限（含**可选**字段）。
@@ -87,6 +85,8 @@ _MONEY_QTY_SIZE_FIELD_NAMES = {
 }
 # 枚举型字段名：拼写变体会静默落库（后端按字面比较/落 JSONB）→ 必须声明 `enum`。
 # issue #4882：`pricingMethod` 字段已整体删除 ⇒ 从注册表移除（留着会让哨兵断言指向不存在的字段）。
+# V108：`sku_update.selling_method` 参数已删（售卖方式不再是 SKU 维度）—— 但**保留**注册表里的
+# `selling_method` 这个名字：`processing_info.sellingMethod`（订单级偏好）仍是该枚举语义的字段。
 _ENUM_FIELD_NAMES = {"sellingMethod", "selling_method"}
 
 _NUMERIC_TYPES = {"integer", "number"}

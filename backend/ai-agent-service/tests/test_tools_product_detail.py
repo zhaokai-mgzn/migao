@@ -3,7 +3,7 @@
 
 测试 ProductDetailTool.execute() 的各种场景
 """
-# case_ids: CH-001, PR-003, PR-004
+# case_ids: CH-001, PR-003, PR-004, PR-042, PR-043, PR-044, OR-046
 
 import pytest
 from unittest.mock import patch, AsyncMock
@@ -37,6 +37,10 @@ def sample_product_data():
             {
                 "id": "sku_001",
                 "skuCode": "CURTAIN-001-WHITE",
+                "colorName": "白色",
+                "doorWidth": "2.8米",
+                # V108：旧后端仍可能回带该键 —— 工具**不得**把它当 SKU 维度透出
+                "sellingMethod": "bulk_cut",
                 "specifications": {"color": "白色", "size": "2.8m"},
                 "price": 299.0,
                 "stock": 50,
@@ -45,12 +49,18 @@ def sample_product_data():
             {
                 "id": "sku_002",
                 "skuCode": "CURTAIN-001-GRAY",
+                "colorName": "灰色",
+                "doorWidth": "2.8米",
+                "sellingMethod": "bulk_cut",
                 "specifications": {"color": "灰色", "size": "2.8m"},
                 "price": 299.0,
                 "stock": 50,
                 "status": "active",
             },
         ],
+        # V108（用户裁定 2026-09-21）：售卖方式 = **商品级基础属性**；1 卷 = 多少米 = 货号级基础参数
+        "sellingMethods": ["bulk_cut", "full_roll"],
+        "rollLengthM": 60.0,
         "specifications": {"fabric": "雪尼尔", "width": "2.8m"},
         "salesCount": 500,
         "createdAt": "2026-01-01T00:00:00Z",
@@ -310,6 +320,50 @@ class TestProductDetailFormatProduct:
         assert product["name"] == "最小商品"
         assert product["skus"] == []
         assert product["sales_count"] == 0
+        # V108：缺省时售卖方式为空数组、卷长为 None（**不得**编造兜底卷长）
+        assert product["selling_methods"] == [] and product["roll_length_m"] is None
+
+    def test_format_product_exposes_product_level_selling_methods_and_roll_length(self, tool):
+        """① V108：售卖方式/卷长是**商品级**字段，且 `skus[]` 不再有 `selling_method`。
+
+        红证：修前 `_format_skus` 逐项透出 `"selling_method": sku.get("sellingMethod")`，
+        且商品级 `selling_methods` / `roll_length_m` 根本不存在 ⇒ 本判据必红。
+        """
+        data = {
+            "id": "prod_v108",
+            "name": "遮光窗帘",
+            "sellingMethods": ["bulk_cut", "full_roll"],
+            "rollLengthM": 60.0,
+            "skus": [{
+                "id": "sku_v108",
+                "skuCode": "ZG-001-米白",
+                "colorName": "米白",
+                "doorWidth": "2.8米",
+                "sellingMethod": "full_roll",   # 旧字段：不得再作为 SKU 维度透出
+                "price": 168.0,
+                "stock": 500,
+            }],
+        }
+
+        product = tool._format_product(data)
+
+        assert product["selling_methods"] == ["bulk_cut", "full_roll"], (
+            "商品级售卖方式必须透出（它是货号基础属性，不是 SKU 维度）"
+        )
+        assert product["roll_length_m"] == 60.0, "1 卷 = 多少米必须透出（订单侧整卷分配的基础参数）"
+        assert len(product["skus"]) == 1
+        sku = product["skus"][0]
+        assert "selling_method" not in sku, (
+            "V108：SKU 组合只有 颜色 × 门幅 —— skus[] 不得再有 selling_method 键"
+        )
+        # SKU 的两维（颜色 + 门幅）必须仍在
+        assert sku["color_name"] == "米白" and sku["door_width"] == "2.8米"
+
+    def test_format_product_roll_length_absent_is_none_not_fabricated(self, tool):
+        """V108：货号未配卷长 ⇒ `roll_length_m` 为 None（**禁止**用兜底常量推算）。"""
+        product = tool._format_product({"id": "p", "name": "未配卷长商品"})
+
+        assert product["roll_length_m"] is None and product["selling_methods"] == []
 
     def test_format_skus_empty(self, tool):
         """格式化空 SKU 列表"""

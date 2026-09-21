@@ -59,7 +59,7 @@
       product_id="...", product_name="遮光窗帘", quantity=3, unit_price=88,
       subtotal=264 + 60 = 324,   # 面料小计 + 加工费，必须含加工费！
       processing_info={
-        colorId=..., colorName=..., sellingMethod="bulk_cut", doorWidth="2.8米",
+        colorName=..., doorWidth="2.8米", sellingMethod="bulk_cut",  # SKU=颜色×门幅；售卖方式是订单级偏好
         processingFee=60,  # 加工费合计（加工项已无单价，金额取目录/服务端口径）
         processingItems=[{id:"pi_shape_high", name:"定型", quantity:3, unit:"米"}]
       }

@@ -95,6 +95,12 @@ public class ProductCreateRequest {
     private List<String> sellingMethods;
 
     /**
+     * 1 卷 = 多少米（**商品货号级基础参数**，V108）。
+     * 可空 —— 未配置时订单侧**不推算**整卷发货分配（不猜，见 {@code ProductRollAllocation}）。
+     */
+    private BigDecimal rollLengthM;
+
+    /**
      * 规格尺寸列表（如 2.8m / 3.2m / 3.4m）
      */
     private List<String> doorWidths;

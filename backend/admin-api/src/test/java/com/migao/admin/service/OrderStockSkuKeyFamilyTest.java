@@ -187,7 +187,7 @@ class OrderStockSkuKeyFamilyTest {
         return ProductSku.builder()
                 .id(SKU_ID).tenantId(1L).productId(PRODUCT_ID)
                 .colorId(11L).colorName("米白")
-                .sellingMethod("bulk_cut").doorWidth("2.8")
+                .doorWidth("2.8")
                 .skuCode("SKU-MB-28")
                 .price(new BigDecimal("168.00")).stock(10).salesCount(5)
                 .build();

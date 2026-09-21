@@ -584,6 +584,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             // 判在本方法（表单 / Agent / 程序化三条路径的**唯一共享入口**）才无死角；
             // 全部可空、不设必填校验（用户裁定「部位不是必填的」）⇒ 缺键就是缺。
             OrderLineCraftFields.materialize(normalizedInfo, item);
+            // ── 售卖方式偏好 + 「优先整卷发货」分配落列（V111，用户裁定 2026-09-21）──
+            // 三列语义见 OrderItem 的字段 javadoc；判在**本方法**（表单 / Agent / 程序化三条路径
+            // 的唯一共享入口）才无死角 —— 与上面 V63 的行要素物化同一理由。
+            applyRollAllocation(itemRequest, item);
             item.setSubtotal(resolveItemSubtotal(itemRequest));
             orderItemMapper.insert(item);
         }
@@ -839,6 +843,125 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         return response;
+    }
+
+    /**
+     * 售卖方式偏好校验 + 「优先整卷发货」分配落列（V111，用户裁定 2026-09-21）。
+     *
+     * <p><b>为什么分配在服务端算</b>：整卷数是 {@code quantity} 与货号卷长的函数，只能有一个
+     * 权威实现 —— 若允许调用方各算一套，「同一张单两个整卷数」无法对账。故请求里带来的
+     * {@code rollCount} / {@code rollLengthM} **一律被覆盖**（不接受客户端自算值）。</p>
+     *
+     * <p><b>分配闸门 = 货号有没有配卷长，与售卖方式无关</b>（用户原话的例子就是按米买布）：
+     * 「客户买 100 米布，一卷=60 米 ⇒ 发 1 整卷 60 + 散剪 40 米」里顾客**没有**说「我要整卷」。
+     * ⇒ 把闸门写成「只有明说整卷才算」会让用户裁定举的例子在新单路径上**根本不生效**
+     * （独立对抗式复核实测抓到）。「优先整卷发货」是**发货方式**偏好，不是「整卷售卖单」专属。</p>
+     *
+     * <p><b>三条不猜的红线</b>：</p>
+     * <ol>
+     *   <li>未指定售卖方式 ⇒ 该列保持 NULL（不默认整卷、也不默认散剪）
+     *       —— 但它**不阻止**分配（见上）；</li>
+     *   <li>货号未配卷长（{@code products.roll_length_m} 为空/非正）⇒
+     *       {@code rollCount} / {@code rollLengthM} 保持 NULL，<b>不落 0</b>
+     *       —— 「不知道」不许伪装成「0 整卷」（见 {@link ProductRollAllocation}）；</li>
+     *   <li>货号不存在（历史/外部商品）⇒ 同上，且不因此拒绝整单（订单行的售卖方式是偏好，
+     *       不是 SKU 身份，与库存路径的 fail-closed 判据不同层）。</li>
+     * </ol>
+     *
+     * <p><b>越界售卖方式必须显式拒绝</b>：该货号 {@code products.selling_methods} 不支持顾客
+     * 要的那一档时抛 422（可行动文案）—— 静默落库会让仓库照一个本店不提供的售卖方式发货。</p>
+     *
+     * <p><b>取值来源有两处，列优先</b>：① 请求体行字段 {@code sellingMethod}；
+     * ② 回落 {@code processingInfo.sellingMethod} —— 那是 ai-agent（{@code order_create}）
+     * 一直以来的真实写入位置（该键同时被加工单快照消费，不能挪），所以**必须**认它，
+     * 否则「agent 明确说了要整卷」这条链路上分配恒为空。</p>
+     */
+    private void applyRollAllocation(OrderCreateRequest.OrderItemRequest itemRequest, OrderItem item) {
+        if (itemRequest.getProductId() == null) {
+            return; // 没有商品 ⇒ 既无售卖方式口径也无卷长口径（不猜）
+        }
+        Product product = productMapper.selectById(itemRequest.getProductId());
+
+        // ① 售卖方式偏好：未指定 ⇒ 该列保持 NULL（不默认整卷、也不默认散剪）
+        String sellingMethod = SkuNotation.normalizeSellingMethod(itemRequest.getSellingMethod());
+        if (sellingMethod == null) {
+            sellingMethod = SkuNotation.normalizeSellingMethod(
+                    readProcessingInfoSellingMethod(itemRequest.getProcessingInfo()));
+        }
+        if (sellingMethod != null) {
+            item.setSellingMethod(sellingMethod);
+            if (product != null) {
+                assertSellingMethodSupported(itemRequest, product, sellingMethod);
+            }
+        }
+
+        // ② 整卷分配：**只看货号有没有配卷长**（不看售卖方式）
+        // 用户裁定原话：「在订单中再体现客户要求**优先整卷发货**，例子：客户买 100 米布，
+        // 一卷=60 米，那就发 1 整卷 60 + 散剪出的 40 米」—— 那个例子里顾客**没有**说「我要整卷」，
+        // 他只是买了 100 米布 ⇒ 若把闸门写成「只有明说整卷才算」，用户裁定举的例子在新单路径上
+        // **根本不生效**（独立对抗式复核实测抓到）。故：`bulk_cut`（按米买布）同样算分配 ——
+        // 「优先整卷发货」本来就是**发货方式**偏好，不是「整卷售卖单」专属。
+        if (product == null) {
+            log.warn("applyRollAllocation: 商品不存在，跳过整卷分配（不猜卷长）, productId={}, orderId={}",
+                    itemRequest.getProductId(), item.getOrderId());
+            return; // 不因此拒绝整单
+        }
+        ProductRollAllocation.Allocation allocation =
+                ProductRollAllocation.allocate(itemRequest.getQuantity(), product.getRollLengthM());
+        if (!allocation.allocated()) {
+            // ③ 货号未配卷长（或数量非法）⇒ 分配两列保持 NULL（不落 0）
+            log.info("applyRollAllocation: 货号未配卷长，按「不推算」处理, productId={}, orderId={}",
+                    itemRequest.getProductId(), item.getOrderId());
+            return;
+        }
+        item.setRollCount(allocation.rollCount());
+        item.setRollLengthM(allocation.rollLengthM());
+    }
+
+    /**
+     * 从 {@code processingInfo} 里读售卖方式偏好（ai-agent 的真实写入位置）。
+     *
+     * <p>{@code processingInfo} 既可能是 Map（服务端已归一化），也可能是 JSON 字符串
+     * （历史/程序化调用方直传）—— 两种形态都要认，否则 agent 路径静默读不到。</p>
+     *
+     * @return 原始字符串（未归一化）；无该键或形态不可解析 ⇒ {@code null}
+     */
+    @SuppressWarnings("unchecked")
+    private String readProcessingInfoSellingMethod(Object processingInfo) {
+        Object raw = processingInfo;
+        if (raw instanceof String text && !text.isBlank()) {
+            try {
+                raw = objectMapper.readValue(text, Map.class);
+            } catch (Exception e) {
+                log.warn("applyRollAllocation: processingInfo 是字符串但不是合法 JSON，读不到售卖方式偏好: {}",
+                        e.getMessage());
+                return null;
+            }
+        }
+        if (!(raw instanceof Map)) {
+            return null;
+        }
+        Object value = ((Map<String, Object>) raw).get("sellingMethod");
+        return value == null ? null : value.toString();
+    }
+
+    /** 该货号是否支持这个售卖方式（{@code products.selling_methods} 是权威口径）。 */
+    private void assertSellingMethodSupported(OrderCreateRequest.OrderItemRequest itemRequest,                                              Product product, String sellingMethod) {
+        List<String> supported = product.getSellingMethods();
+        if (supported == null || supported.isEmpty()) {
+            return; // 未配置 ⇒ 不误禁（存量商品可能没有该列的值）
+        }
+        boolean ok = supported.stream()
+                .anyMatch(m -> sellingMethod.equals(SkuNotation.normalizeSellingMethod(m)));
+        if (!ok) {
+            throw BusinessException.validationError(String.format(
+                    "商品「%s」不支持售卖方式「%s」（该货号支持：%s）。"
+                            + "请改用受支持的售卖方式，或先让商家在商品上配置该售卖方式。",
+                    itemRequest.getProductName() != null ? itemRequest.getProductName()
+                            : itemRequest.getProductId(),
+                    sellingMethod,
+                    String.join(" / ", supported)));
+        }
     }
 
     /**
@@ -1573,7 +1696,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 库存路径的<b>单一判据</b>（issue #4090）：该明细是否声明了 SKU 身份、能否定位到 SKU。
      *
      * <p>processingInfo 键族：{@code { "skuId": N, "skuCode": "...", "colorId": N,
-     * "colorName": "...", "sellingMethod": "...", "doorWidth": "...", ... }}。
+     * "colorName": "...", "doorWidth": "...", ... }}。
      * <b>三种结果，只有一种允许「不做 SKU 级库存调整」</b>：</p>
      * <ul>
      *   <li>{@code null} —— 明细<b>没有声明 SKU 身份键</b>（{@code skuId/skuCode/colorId/colorName}
@@ -1596,10 +1719,13 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * （{@code product_skus.sku_code / color_name} 就是同一行上的原值）；② 仍然定位不到时
      * **显式拒绝**而不是放行。</p>
      *
-     * <p>口径统一（issue #3621 沿用）：售卖方式中文标签（{@code 散剪}）与带单位门幅
-     * （{@code 2.8米}）用 {@link SkuNotation} 同一套归一化比较，只归一化<b>匹配比较</b>、
-     * 不回写库内值；陈旧 {@code skuId} 先校验存在性，不存在则回退键族匹配（防主键漂移后
-     * update 命中 0 行的静默失败）。</p>
+     * <p>口径统一（issue #3621 沿用）：带单位门幅（{@code 2.8米}）用 {@link SkuNotation}
+     * 双侧归一化比较，只归一化<b>匹配比较</b>、不回写库内值；陈旧 {@code skuId} 先校验存在性，
+     * 不存在则回退键族匹配（防主键漂移后 update 命中 0 行的静默失败）。</p>
+     *
+     * <p><b>V111（用户裁定 2026-09-21）</b>：键族由 {@code colorId+sellingMethod+doorWidth}
+     * 收窄为 {@code colorId+doorWidth} —— 售卖方式不再是 SKU 组合维度（它上移为商品级
+     * {@code products.selling_methods} 与订单行偏好 {@code order_items.selling_method}）。</p>
      *
      * @param actionLabel 动作文案（「下单」/「确认支付」/「取消回补」），用于错误提示
      */
@@ -1615,7 +1741,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         String skuCode = toSkuText(info.get("skuCode"));
         Long colorId = toSkuKey(info.get("colorId"), "colorId", item);
         String colorName = toSkuText(info.get("colorName"));
-        String sellingMethod = toSkuText(info.get("sellingMethod"));
+        // V111：processingInfo 里历史残留的 `sellingMethod` 键**不再参与 SKU 定位** ——
+        // 售卖方式是商品级基础属性（products.selling_methods）+ 订单行偏好，
+        // SKU 组合只有 颜色 × 门幅（用户裁定 2026-09-21）。该键仍在 processingInfo 里原样保留
+        // （历史快照不回改），只是不再是键族的一维。
         String doorWidth = toSkuText(info.get("doorWidth"));
 
         // 未声明任何 SKU 身份键 → 无 SKU 级库存调整（唯一合法的跳过）
@@ -1634,19 +1763,18 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                     actionLabel, item.getOrderId(), item.getProductId(), skuId);
         }
 
-        // ② ID 族组合回退（#3621 既有口径，不动）：colorId + 售卖方式 + 门幅
-        if (colorId != null && sellingMethod != null && doorWidth != null) {
-            ProductSku byCombination = findSkuByCombination(item.getProductId(), colorId,
-                    sellingMethod, doorWidth);
+        // ② ID 族组合回退（V111：键族为 colorId + 门幅 —— 售卖方式已不是 SKU 维度）
+        if (colorId != null && doorWidth != null) {
+            ProductSku byCombination = findSkuByCombination(item.getProductId(), colorId, doorWidth);
             if (byCombination != null) {
                 return byCombination.getId();
             }
         }
 
-        // ③ 字符串族（issue #4090 新增）：skuCode / colorName(+colorId) + 已声明属性键 ——
+        // ③ 字符串族（issue #4090 新增）：skuCode / colorName(+colorId) + 门幅 ——
         //    唯一生产者 ai-agent 只能产出这一族，此前它必然落进 ④（静默跳过）
         ProductSku byKeyFamily = findSkuByKeyFamily(item.getProductId(), skuCode, colorId, colorName,
-                sellingMethod, doorWidth);
+                doorWidth);
         if (byKeyFamily != null) {
             return byKeyFamily.getId();
         }
@@ -1654,20 +1782,20 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // ④ 声明了 SKU 身份却定位不到（含命中多行无法唯一确定）⇒ 显式失败，可行动 suggestion
         log.warn("matchSkuId: 声明了 SKU 身份但键族定位不到（未命中或多行歧义）→ 显式拒绝该动作（不静默跳过）, action={}, orderId={}, productId={}, {}",
                 actionLabel, item.getOrderId(), item.getProductId(),
-                describeDeclaredSpec(skuCode, colorId, colorName, sellingMethod, doorWidth));
+                describeDeclaredSpec(skuCode, colorId, colorName, doorWidth));
         throw BusinessException.validationError(String.format(
                 "商品「%s」的本次规格无法定位到 SKU（%s）：已声明 %s。"
                         + "无法确定该行对应哪个 SKU，故**拒绝**而不是放行（放行会造成「订单成交但库存不动、销量不涨」）。"
-                        + "请用 product_detail 返回的 skus[] 原值核对规格（sku_code / color_name / selling_method / door_width），"
+                        + "请用 product_detail 返回的 skus[] 原值核对规格（sku_code / color_name / door_width），"
                         + "或直接传 skuId（skus[].id）后重试。",
                 item.getProductName() != null ? item.getProductName() : item.getProductId(),
                 actionLabel,
-                describeDeclaredSpec(skuCode, colorId, colorName, sellingMethod, doorWidth)));
+                describeDeclaredSpec(skuCode, colorId, colorName, doorWidth)));
     }
 
     /**
      * 字符串族定位（issue #4090）：{@code skuCode} 精确匹配；{@code colorName/colorId} +
-     * 已声明的售卖方式（归一化）/门幅（双侧归一化）组合匹配。
+     * 已声明的门幅（双侧归一化）组合匹配。
      *
      * <p>命中必须<b>唯一</b>：多行命中意味着「规格不足以唯一确定 SKU」（如只给了颜色、该颜色下
      * 有多个门幅），此时返回 null 交由调用方显式拒绝 —— 任取一条会扣错 SKU 的库存，比拒绝更糟。</p>
@@ -1675,7 +1803,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @return 唯一命中的 SKU；0 行或多行命中返回 null（调用方负责告警与拒绝）
      */
     private ProductSku findSkuByKeyFamily(String productId, String skuCode, Long colorId, String colorName,
-                                          String sellingMethod, String doorWidth) {
+                                          String doorWidth) {
         if (skuCode == null && colorId == null && colorName == null) {
             return null;
         }
@@ -1684,8 +1812,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 .eq(skuCode != null, ProductSku::getSkuCode, skuCode)
                 .eq(colorId != null, ProductSku::getColorId, colorId)
                 .eq(colorName != null, ProductSku::getColorName, colorName)
-                .eq(sellingMethod != null, ProductSku::getSellingMethod,
-                        SkuNotation.normalizeSellingMethod(sellingMethod))
                 .orderByAsc(ProductSku::getId);
         List<ProductSku> rows = productSkuMapper.selectList(wrapper);
 
@@ -1702,8 +1828,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             hits++;
         }
         if (hits > 1) {
-            log.warn("matchSkuId: 规格不足以唯一定位 SKU（{} 行命中）→ 交由调用方显式拒绝, productId={}, skuCode={}, colorId={}, colorName={}, sellingMethod={}, doorWidth={}",
-                    hits, productId, skuCode, colorId, colorName, sellingMethod, doorWidth);
+            log.warn("matchSkuId: 规格不足以唯一定位 SKU（{} 行命中）→ 交由调用方显式拒绝, productId={}, skuCode={}, colorId={}, colorName={}, doorWidth={}",
+                    hits, productId, skuCode, colorId, colorName, doorWidth);
             return null;
         }
         return found;
@@ -1735,12 +1861,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
     /** 已声明的规格键描述（错误话术/告警用：说清「缺哪个键、该补什么」的依据）。 */
     private String describeDeclaredSpec(String skuCode, Long colorId, String colorName,
-                                        String sellingMethod, String doorWidth) {
+                                        String doorWidth) {
         List<String> parts = new ArrayList<>();
         if (skuCode != null) parts.add("skuCode=" + skuCode);
         if (colorId != null) parts.add("colorId=" + colorId);
         if (colorName != null) parts.add("colorName=" + colorName);
-        if (sellingMethod != null) parts.add("sellingMethod=" + sellingMethod);
         if (doorWidth != null) parts.add("doorWidth=" + doorWidth);
         return String.join(", ", parts);
     }
@@ -1748,22 +1873,21 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     // ======================== Agent BFF 方法 ========================
 
     /**
-     * 组合回退匹配：商品 + 颜色 + 售卖方式（归一化后）定位候选，门幅在 Java 侧按
-     * {@link SkuNotation#sameDoorWidth} 双侧归一化比较（库内 {@code 2.8} 与明细
+     * 组合回退匹配：商品 + 颜色（+ 门幅，Java 侧按
+     * {@link SkuNotation#sameDoorWidth} 双侧归一化比较，库内 {@code 2.8} 与明细
      * {@code 2.8米} / {@code 门幅2.8米} 视为同一物理门幅；{@code 2.8} vs {@code 3.2} 不等）。
      *
-     * <p>只归一化<b>匹配比较</b>，不回写库内值（与 #3546 调价路径同一处理）。同一组合命中
-     * 多行时取第一条并告警，便于发现历史重复行。
+     * <p>V111（用户裁定 2026-09-21）：售卖方式那一维已从本匹配里删除 —— SKU 组合只有
+     * 颜色 × 门幅，售卖方式是商品级基础属性。同一组合命中多行时取第一条并告警，
+     * 便于发现历史重复行。</p>
      *
      * @return 命中的 SKU；未命中返回 null（调用方负责告警，不再静默跳过）
      */
-    private ProductSku findSkuByCombination(String productId, Long colorId,
-                                            String sellingMethod, String doorWidth) {
+    private ProductSku findSkuByCombination(String productId, Long colorId, String doorWidth) {
         List<ProductSku> candidates = productSkuMapper.selectList(
                 new LambdaQueryWrapper<ProductSku>()
                         .eq(ProductSku::getProductId, productId)
-                        .eq(ProductSku::getColorId, colorId)
-                        .eq(ProductSku::getSellingMethod, SkuNotation.normalizeSellingMethod(sellingMethod)));
+                        .eq(ProductSku::getColorId, colorId));
         ProductSku found = null;
         int hits = 0;
         for (ProductSku candidate : candidates) {
@@ -1775,8 +1899,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             }
         }
         if (hits > 1) {
-            log.warn("matchSkuId: 归一化后同一组合命中多行 SKU（库内可能存在同门幅重复行），取第一条: productId={}, colorId={}, sellingMethod={}, doorWidth={}, hits={}",
-                    productId, colorId, sellingMethod, doorWidth, hits);
+            log.warn("matchSkuId: 归一化后同一组合命中多行 SKU（库内可能存在同门幅重复行），取第一条: productId={}, colorId={}, doorWidth={}, hits={}",
+                    productId, colorId, doorWidth, hits);
         }
         return found;
     }

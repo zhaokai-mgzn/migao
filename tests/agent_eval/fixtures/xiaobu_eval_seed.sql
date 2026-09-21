@@ -82,26 +82,29 @@ ON CONFLICT (id) DO NOTHING;
 --    下单，实为库里没这个东西。**数据层缺口，不是能力缺陷。**
 -- `recommended`：只让「遮光窗帘」进推荐位，避免 CH-010「推荐几款热销窗帘」的
 --    「第一款」在多个推荐商品间变得不确定；夏日清风靠**名称**命中，不靠推荐位。
+-- V111（用户裁定 2026-09-21）：售卖方式 `selling_methods` 与 `roll_length_m`（1 卷 = 多少米）
+-- 都是**商品货号级基础参数**（不再是 SKU 组合维度）⇒ 必须在 products 行上给值。
 INSERT INTO products
   (id, tenant_id, name, category_id, base_price, description, images, detail_images,
    stock, stock_warning_threshold, status, unit, pricing_type, sku_code,
-   stock_deduction_mode, sales_count, sales_amount, recommended)
+   stock_deduction_mode, sales_count, sales_amount, recommended,
+   selling_methods, roll_length_m)
 VALUES
   ('prod_eval_blackout', 1, '遮光窗帘', 'cat_eval_curtain', 168.00,
    '高遮光面料，适合卧室与客厅，遮光率 95%，支持散剪与加工定制',
    '[]'::jsonb, '[]'::jsonb, 1000, 10, 'on_sale', '米', 'per_meter', 'EVAL-BLK-28',
-   'on_order', 0, 0, TRUE),
+   'on_order', 0, 0, TRUE, '["bulk_cut", "full_roll"]'::jsonb, 60.00),
   ('prod_eval_dark_green', 1, '北欧风窗帘', 'cat_eval_curtain', 128.00,
    '北欧简约风格，棉麻质感，适合客厅与书房',
    '[]'::jsonb, '[]'::jsonb, 800, 10, 'on_sale', '米', 'per_meter', 'EVAL-NRD-28',
-   'on_order', 0, 0, FALSE),
+   'on_order', 0, 0, FALSE, '["bulk_cut", "full_roll"]'::jsonb, 60.00),
   ('prod_eval_summer', 1, '夏日清风窗帘', 'cat_eval_curtain', 158.00,
    '轻薄透气夏日清风系列，支持散剪 2.8 米门幅与打孔/折边加工',
    '[]'::jsonb, '[]'::jsonb, 600, 10, 'on_sale', '米', 'per_meter', 'EVAL-SMB-28',
-   'on_order', 0, 0, FALSE)
+   'on_order', 0, 0, FALSE, '["bulk_cut", "full_roll"]'::jsonb, 60.00)
 ON CONFLICT (id) DO NOTHING;
 
--- ── 4. 颜色 / SKU（选品规格收集所需：colorId + sellingMethod + doorWidth）──
+-- ── 4. 颜色 / SKU（选品规格收集所需：colorId + doorWidth —— V108 起 SKU 组合**只有** 颜色 × 门幅）──
 INSERT INTO product_colors (tenant_id, product_id, color_name, main_color_hex, sort_order)
 SELECT v.tenant_id, v.product_id, v.color_name, v.hex, v.ord
 FROM (VALUES
@@ -121,8 +124,10 @@ WHERE NOT EXISTS (
 
 -- color_name 必须一并写入：ProductSku 实体声明了该列，admin-api 拉 SKU 列表时 SELECT 它
 -- （schema.sql/V41 已补列；不写则返回 null，前端色号显示为空）。
-INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, selling_method, door_width, price, stock, sku_code)
-SELECT 1, pc.product_id, pc.id, pc.color_name, 'bulk_cut', '2.8', p.base_price, 500,
+-- V111：`product_skus.selling_method` 列已删除（售卖方式上移为 products.selling_methods），
+-- 唯一键 = (product_id, color_id, door_width) ⇒ 本 INSERT 不得再写该列。
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT 1, pc.product_id, pc.id, pc.color_name, '2.8', p.base_price, 500,
        p.sku_code || '-' || pc.color_name
 FROM product_colors pc
 JOIN products p ON p.id = pc.product_id
@@ -130,7 +135,7 @@ WHERE pc.product_id IN ('prod_eval_blackout', 'prod_eval_dark_green', 'prod_eval
   AND NOT EXISTS (
     SELECT 1 FROM product_skus s
     WHERE s.product_id = pc.product_id AND s.color_id = pc.id
-      AND s.selling_method = 'bulk_cut' AND s.door_width = '2.8'
+      AND s.door_width = '2.8'
   );
 
 -- ── 4b. 第二门幅 SKU（issue #5039：CH-043「候选门幅集」的接地对象）──
@@ -147,8 +152,8 @@ WHERE pc.product_id IN ('prod_eval_blackout', 'prod_eval_dark_green', 'prod_eval
 --     两者的解析结果；断言 doorWidth 的 OR-008/OR-009 打的是「遮光窗帘」且输入自带 2.8，不受影响。
 --   · 价格取 `p.base_price`（与既有 2.8 SKU **同价** 158.00）⇒ 订单金额断言逐值不变。
 -- 幂等：`NOT EXISTS` 判据含 `door_width`（与上一块同一形态，可重复执行）。
-INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, selling_method, door_width, price, stock, sku_code)
-SELECT 1, pc.product_id, pc.id, pc.color_name, 'bulk_cut', '3.2', p.base_price, 500,
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT 1, pc.product_id, pc.id, pc.color_name, '3.2', p.base_price, 500,
        p.sku_code || '-' || pc.color_name || '-3.2'
 FROM product_colors pc
 JOIN products p ON p.id = pc.product_id
@@ -156,7 +161,7 @@ WHERE pc.product_id = 'prod_eval_summer'
   AND NOT EXISTS (
     SELECT 1 FROM product_skus s
     WHERE s.product_id = pc.product_id AND s.color_id = pc.id
-      AND s.selling_method = 'bulk_cut' AND s.door_width = '3.2'
+      AND s.door_width = '3.2'
   );
 
 -- ── 5. 商品 ↔ 加工项关联：**已随 #4371 解耦删除** ──

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-// case_ids: PR-010
+// case_ids: PR-010, PR-042, PR-043, PR-044, OR-046
 import { validateProductForm, derivePrice } from '@/lib/product-utils'
 import type { ProductFormData, ProductColor, SellingMethod } from '@/types'
 
@@ -21,7 +21,6 @@ function baseForm(overrides?: Partial<ProductFormData>): ProductFormData {
         id: '1',
         colorId: '1',
         colorName: '红色',
-        sellingMethod: 'bulk_cut' as SellingMethod,
         doorWidth: '2.8米',
         price: 100,
         stock: 50,
@@ -174,7 +173,6 @@ describe('validateProductForm', () => {
             id: '1',
         colorId: '1',
             colorName: '红色',
-            sellingMethod: 'bulk_cut' as SellingMethod,
             doorWidth: '2.8米',
             price: 0, // 价格为 0
             stock: 50,
@@ -188,7 +186,7 @@ describe('validateProductForm', () => {
   })
 
   it('rejects when SKU count < expected cells', () => {
-    // 2 colors × 1 method × 1 width = 2 cells, but only 1 SKU
+    // 2 colors × 1 width = 2 cells（组合只有 颜色 × 门幅）, but only 1 SKU
     const errs = validateProductForm(
       baseForm({
         colors: [
@@ -202,7 +200,6 @@ describe('validateProductForm', () => {
             id: '1',
         colorId: '1',
             colorName: '红色',
-            sellingMethod: 'bulk_cut' as SellingMethod,
             doorWidth: '2.8米',
             price: 100,
             stock: 50,
@@ -226,14 +223,55 @@ describe('validateProductForm', () => {
         sellingMethods: ['bulk_cut' as SellingMethod],
         doorWidths: ['2.8米'],
         skus: [
-          { id: '1', colorId: '1', colorName: '红色', sellingMethod: 'bulk_cut' as SellingMethod, doorWidth: '2.8米', price: 100, stock: 50, status: 'active' as const },
+          { id: '1', colorId: '1', colorName: '红色', doorWidth: '2.8米', price: 100, stock: 50, status: 'active' as const },
           { id: '2',
-        colorId: '2', colorName: '蓝色', sellingMethod: 'bulk_cut' as SellingMethod, doorWidth: '2.8米', price: 80, stock: 30, status: 'active' as const },
+        colorId: '2', colorName: '蓝色', doorWidth: '2.8米', price: 80, stock: 30, status: 'active' as const },
         ],
       }),
       'on_sale',
     )
     expect(Object.keys(errs)).toEqual([])
+  })
+
+  // ─── 1 卷 = 多少米（商品货号级基础参数；PR-043）───
+
+  it('PR-043: 卷长留空（null / undefined）**不报错** —— 未配置是合法状态', () => {
+    expect(
+      Object.keys(validateProductForm(baseForm({ rollLengthM: null }), 'on_sale')),
+    ).toEqual([])
+    expect(
+      Object.keys(
+        validateProductForm(baseForm({ rollLengthM: undefined }), 'on_sale'),
+      ),
+    ).toEqual([])
+  })
+
+  it('PR-043: 卷长填了必须 > 0（0 / 负数 / NaN 都拒绝）', () => {
+    expect(
+      validateProductForm(baseForm({ rollLengthM: 0 }), 'on_sale').rollLengthM,
+    ).toBe('卷长必须大于 0 米')
+    expect(
+      validateProductForm(baseForm({ rollLengthM: -60 }), 'on_sale').rollLengthM,
+    ).toBe('卷长必须大于 0 米')
+    expect(
+      validateProductForm(
+        baseForm({ rollLengthM: Number.NaN }),
+        'on_sale',
+      ).rollLengthM,
+    ).toBe('卷长必须大于 0 米')
+  })
+
+  it('PR-043: 卷长 > 0 通过校验', () => {
+    expect(
+      Object.keys(
+        validateProductForm(baseForm({ rollLengthM: 60 }), 'on_sale'),
+      ),
+    ).toEqual([])
+  })
+
+  it('PR-043: 草稿态不校验卷长（只校验标题）', () => {
+    const errs = validateProductForm(baseForm({ rollLengthM: 0 }), 'draft')
+    expect(errs.rollLengthM).toBeUndefined()
   })
 
   // ─── 综合：全部合法 → 无错误 ───
@@ -282,25 +320,25 @@ describe('derivePrice', () => {
 
   it('returns min positive SKU price', () => {
     const skus = [
-      { id: '1', colorId: '1', colorName: '红', sellingMethod: 'bulk_cut' as SellingMethod, doorWidth: '2.8米', price: 100, stock: 10, status: 'active' as const },
+      { id: '1', colorId: '1', colorName: '红', doorWidth: '2.8米', price: 100, stock: 10, status: 'active' as const },
       { id: '2',
-        colorId: '1', colorName: '红', sellingMethod: 'full_roll' as SellingMethod, doorWidth: '2.8米', price: 80, stock: 10, status: 'active' as const },
+        colorId: '1', colorName: '红', doorWidth: '3.2米', price: 80, stock: 10, status: 'active' as const },
     ]
     expect(derivePrice(skus, 0)).toBe(80)
   })
 
   it('filters out zero-price SKUs and returns min positive', () => {
     const skus = [
-      { id: '1', colorId: '1', colorName: '红', sellingMethod: 'bulk_cut' as SellingMethod, doorWidth: '2.8米', price: 0, stock: 10, status: 'active' as const },
+      { id: '1', colorId: '1', colorName: '红', doorWidth: '2.8米', price: 0, stock: 10, status: 'active' as const },
       { id: '2',
-        colorId: '1', colorName: '红', sellingMethod: 'full_roll' as SellingMethod, doorWidth: '2.8米', price: 120, stock: 10, status: 'active' as const },
+        colorId: '1', colorName: '红', doorWidth: '3.2米', price: 120, stock: 10, status: 'active' as const },
     ]
     expect(derivePrice(skus, 0)).toBe(120)
   })
 
   it('returns form.price when all SKU prices are 0', () => {
     const skus = [
-      { id: '1', colorId: '1', colorName: '红', sellingMethod: 'bulk_cut' as SellingMethod, doorWidth: '2.8米', price: 0, stock: 10, status: 'active' as const },
+      { id: '1', colorId: '1', colorName: '红', doorWidth: '2.8米', price: 0, stock: 10, status: 'active' as const },
     ]
     expect(derivePrice(skus, 50)).toBe(50)
   })

@@ -44,10 +44,10 @@ PRODUCT_SYSTEM_PROMPT = """## 🔴 改商品级定价→product_update。单独�
 | price | 是 | 用户提供 |
 | sku_code | 是 | 用户直接提供时直接使用；未提供时引导（色号/品牌/拼音首字母/自动生成） |
 | category_id | 是 | 用户提供分类名时**当轮立即**调 category_manage 查分类树匹配 ID，不要留到"确认创建"阶段；未提供时调 interact(choice) 渲染分类选择器 |
-| selling_methods | 是 | 用户提供或默认["散剪","整卷"] |
+| selling_methods | 是 | 用户提供或默认["散剪","整卷"]（**商品级基础属性**，非 SKU 维度） |
 | door_widths | 是 | 用户提供或默认["2.8米"] |
 | colors | 是 | 用户提供或图片识别 |
-| 以上三个字段决定 SKU 笛卡尔积 |
+| colors × door_widths 决定 SKU 组合（**只有 颜色 × 门幅**） |
 | unit | 否 | 窗帘默认"米" |
 | pricing_type | 否 | 窗帘默认"per_meter" |
 | specifications | 否 | 窗帘默认见下方 |
@@ -95,7 +95,7 @@ XXX 图案、XXX 风格"。用户提交/修改表单即完成确认。**禁止�
 
 ## SKU
 
-传 colors + selling_methods + door_widths → 系统自动生成笛卡尔积 SKU。
+传 colors + door_widths → 系统按 **颜色 × 门幅** 生成 SKU（selling_methods 是商品级基础属性，**不参与** SKU 组合）。
 售卖方式有几个传几个（如用户只要散剪，只传 ["散剪"]）。
 
 ## 货号

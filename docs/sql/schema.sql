@@ -161,6 +161,9 @@ CREATE TABLE products (
     recommended BOOLEAN DEFAULT FALSE,                       -- 是否商家推荐（C 端新品推荐位展示依据）
     -- 退货回补库存开关（来自 V33__add_allow_return_restock.sql）
     allow_return_restock BOOLEAN DEFAULT FALSE,              -- 是否允许退货回补库存（窗帘行业定制退货不可再售，默认不回补）
+    -- 售卖方式基础属性（商品级，**非** SKU 组合维度）+ 1 卷多少米（来自 V113，用户裁定 2026-09-21）
+    selling_methods JSONB DEFAULT '["bulk_cut", "full_roll"]'::jsonb,  -- 该货号支持哪些售卖方式（bulk_cut 散剪 / full_roll 整卷）
+    roll_length_m NUMERIC(8,2),                              -- 1 卷 = 多少米（货号级基础参数）；NULL = 未配置 ⇒ 禁止推算整卷分配
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
@@ -202,7 +205,6 @@ CREATE TABLE product_skus (
     tenant_id BIGINT NOT NULL,
     product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     color_id BIGINT REFERENCES product_colors(id) ON DELETE CASCADE,
-    selling_method VARCHAR(20) NOT NULL,                  -- bulk_cut(散剪) / full_roll(整卷)
     door_width VARCHAR(20) NOT NULL,                      -- 规格尺寸: 2.8m / 3.2m / 3.4m
     price DECIMAL(10,2) NOT NULL DEFAULT 0,
     stock INTEGER NOT NULL DEFAULT 0,
@@ -216,9 +218,10 @@ CREATE TABLE product_skus (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 CREATE INDEX idx_product_skus_tenant_product ON product_skus(tenant_id, product_id);
+-- 组合只有 颜色 × 门幅（V113：售卖方式已上移为商品级基础属性 products.selling_methods）
 ALTER TABLE product_skus ADD CONSTRAINT uq_product_skus_combination
-    UNIQUE (product_id, color_id, selling_method, door_width);
-COMMENT ON TABLE product_skus IS 'SKU矩阵表，颜色×售卖方式×门幅 组合';
+    UNIQUE (product_id, color_id, door_width);
+COMMENT ON TABLE product_skus IS 'SKU矩阵表，组合 = 颜色 × 门幅（仅此二维）';
 COMMENT ON COLUMN product_skus.avg_cost IS '移动加权平均单位成本（元/单位，V111）。NULL = 未知（存量库存无成本真值来源，一律不回填、不猜 0）';
 COMMENT ON COLUMN product_skus.cost_amount IS '库存成本金额 = stock * avg_cost（V111，派生冗余列）。NULL = 成本未知（不得用 0 冒充「成本为零」）';
 COMMENT ON COLUMN product_skus.latest_batch_no IS '最近一次入库的批次号（V111，系统生成的 PC-yyyyMMdd-NNNN）；NULL = 从未入库过';
@@ -715,6 +718,11 @@ CREATE TABLE order_items (
     pleat_count INTEGER,                            -- 总褶数（与工序应做数量口径对齐）
     has_pattern BOOLEAN,                            -- 是否对花
     corner VARCHAR(32),                             -- 转角（取自澄清清单窗型；影响开数与片数）
+    -- 售卖方式偏好 + 优先整卷发货的分配结果（V113，用户裁定 2026-09-21；
+    -- 例：买 100 米、一卷 60 米 ⇒ roll_count=1、整卷 60 米 + 散剪 40 米）
+    selling_method VARCHAR(20),                     -- 本行售卖方式：bulk_cut(散剪) / full_roll(整卷)；NULL = 下单未指定（不猜）
+    roll_count INTEGER,                             -- 发出的整卷数（= floor(quantity / roll_length_m)）；NULL = 未要求整卷或货号未配卷长
+    roll_length_m NUMERIC(8,2),                     -- 下单时货号「1 卷 = 多少米」的快照（订单是快照不是视图）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0

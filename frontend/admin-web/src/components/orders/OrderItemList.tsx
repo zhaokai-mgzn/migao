@@ -137,6 +137,45 @@ export function isUnpriced(detail: ProcessingFeeDetail | null): boolean {
   return detail?.fee_source === 'unpriced'
 }
 
+/**
+ * 整卷 / 散剪分配文案（用户裁定：**优先整卷发货**）。
+ *
+ * 口径（用户原话）：「客户买 100 米布，一卷=60 米，那就发 1 整卷 60 + 散剪出的 40 米」
+ * ⇒ 散剪米数 = 行米数 − 整卷数 × 卷长（`order_items` 的 `quantity` / `roll_count` /
+ * `roll_length_m` 三者都是后端给的真值，本函数**只做展示、不重算金额**）。
+ *
+ * 两条硬约束（与 §4.9「缺值不渲染」同族）：
+ * 1. `rollCount` / `rollLengthM` **任一为空 ⇒ 返回 `null`**（未配置卷长时**不编数字**，
+ *    也**不**显示「未配置」这类占位 —— 那会让商家以为系统已经算过分配）；
+ * 2. 散剪为 0（正好整卷）⇒ 只显示「整卷 N」。
+ *
+ * @returns 展示文案；无法推算时 `null`
+ */
+export function rollAllocationText(item: OrderItem): string | null {
+  const rollCount = numericOrNull(item.rollCount)
+  const rollLengthM = numericOrNull(item.rollLengthM)
+  if (rollCount === null || rollLengthM === null) return null
+  if (rollCount < 0 || rollLengthM <= 0) return null
+
+  const quantity = numericOrNull(item.quantity)
+  if (quantity === null) return null
+  // 浮点噪声（60 × 1.1 之类）→ 保留 2 位后去掉尾零
+  const remaining = Math.round((quantity - rollCount * rollLengthM) * 100) / 100
+
+  // 余量为负 = 数据自相矛盾（整卷数 × 卷长 > 数量）⇒ **不渲染**，不要把不一致渲染成正常分配
+  // （独立对抗式复核实测：`{quantity:100, rollCount:2, rollLengthM:60}` 原本会渲染「整卷 2」，
+  //   把 -20 米余量静默吞掉）。服务端不会产出这种组合（分配由 floor 保证），
+  // 但前端读的是**可能被改过的存量行**，宁可什么都不说。
+  if (remaining < 0) return null
+
+  if (rollCount === 0) {
+    return remaining > 0 ? `散剪 ${remaining} 米` : null
+  }
+  return remaining > 0
+    ? `整卷 ${rollCount} + 散剪 ${remaining} 米`
+    : `整卷 ${rollCount}`
+}
+
 /** 一组 label/value 网格（缺值行已由 `craftSpecRows` 丢弃 ⇒ 空组不渲染） */
 function SpecGroup({ title, rows }: { title: string; rows: CraftSpecRow[] }) {
   if (rows.length === 0) return null
@@ -221,11 +260,20 @@ function ItemRow({ item }: { item: OrderItem }) {
 
   const info = (item.processingInfo ?? {}) as Record<string, unknown>
   const colorName = typeof info.colorName === 'string' ? info.colorName : undefined
-  const sellingMethod =
-    typeof info.sellingMethod === 'string'
-      ? sellingMethodLabel[info.sellingMethod] || info.sellingMethod
-      : undefined
+  // 售卖方式：**订单行字段优先**（`order_items.selling_method`），
+  // 历史单该键缺席 ⇒ 回落到 `processingInfo.sellingMethod`（老口径，键名不变）
+  const rawSellingMethod =
+    typeof item.sellingMethod === 'string' && item.sellingMethod !== ''
+      ? item.sellingMethod
+      : typeof info.sellingMethod === 'string'
+        ? info.sellingMethod
+        : undefined
+  const sellingMethod = rawSellingMethod
+    ? sellingMethodLabel[rawSellingMethod] || rawSellingMethod
+    : undefined
   const doorWidth = typeof info.doorWidth === 'string' ? info.doorWidth : undefined
+  // 优先整卷发货的分配（`rollCount` / `rollLengthM` 未配置 ⇒ `null` ⇒ 不渲染任何文案）
+  const rollAllocation = rollAllocationText(item)
 
   const processingFee = item.processingFee || 0
   // 加工费构成（#4406）：只展示服务端已算好的数，**不重算**
@@ -268,6 +316,17 @@ function ItemRow({ item }: { item: OrderItem }) {
             <span className="text-xs text-neutral-400">规格: {item.specification}</span>
           )}
         </div>
+
+        {/* 优先整卷发货的分配（用户裁定）：买 100 米 / 1 卷 60 米 ⇒ 整卷 1 + 散剪 40 米。
+            未配置卷长（两字段任一为空）⇒ 整行不出现 —— 不编数字。 */}
+        {rollAllocation && (
+          <div
+            data-testid="roll-allocation"
+            className="mt-1 text-xs text-neutral-500"
+          >
+            优先整卷发货：{rollAllocation}
+          </div>
+        )}
 
         {/* 工艺规格 + 算料口径：分两组（§5.9.3 输入 / 输出）—— 无任何工艺键时整块不出现 */}
         {specRows.length > 0 && (

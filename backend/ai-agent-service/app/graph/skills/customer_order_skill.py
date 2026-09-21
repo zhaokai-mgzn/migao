@@ -102,9 +102,9 @@ issue #4454）：左列说法**一律换成右列内部值**写进 `processing_i
      只有**顾客**给窗宽/窗高（或明说「算料」）才 `curtain_calc` 并先问齐尺寸。
    - 顾客修改地址后以顾客最终确认值为准（预填仅减少输入，不替顾客做主）
 2. **商品详情铁律（confirm 之前必须先调 product_detail）**：product_search 的**列表数据不含**
-   颜色 ID（colorId）、售卖方式/门幅等 `processing_info` 必需字段，这些只在 `product_detail` 里。
+   颜色 ID（colorId）、门幅等 `processing_info` 必需字段，这些只在 `product_detail` 里。
    故**在发订单确认卡之前，必须先对顾客选定的商品调一次 product_detail**，拿到 `skus`
-   （colorId、colorName、sellingMethod、doorWidth）再进入第 3 步。⚠️ 加工项**不在**商品详情里（#4371）——见第 3 步。
+   （skuId、colorName、doorWidth —— SKU 组合只有 颜色×门幅）再进入第 3 步。⚠️ 加工项**不在**商品详情里（#4371）——见第 3 步。
 3. **加工项（confirm 之前必须主动询问）**：加工项是**店铺级目录，与商品无关**（#4371）——
    先调 `processing_item_query`（可带 keyword，**不带**商品分类参数）拿目录；目录**非空**时
    在发订单确认卡之前用 interact(component=choice, multiSelect=true) 主动询问

@@ -719,7 +719,7 @@ class ProductServiceTest {
         when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
         ProductSku sku = ProductSku.builder()
                 .id(1001L).tenantId(1L).productId("prod-001")
-                .colorName("红色").sellingMethod("bulk_cut").doorWidth("2.8米")
+                .colorName("红色").doorWidth("2.8米")
                 .price(new BigDecimal("88.00")).stock(10).skuCode("HCL-01-SJ-28").build();
         when(productSkuMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(sku);
         when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
@@ -781,7 +781,6 @@ class ProductServiceTest {
         s1.setId(1001L);
         s1.setColorId(50L);
         s1.setColorName("红色");
-        s1.setSellingMethod("bulk_cut");
         s1.setDoorWidth("2.8米");
         s1.setPrice(new BigDecimal("99.00"));
         s1.setStock(10);
@@ -791,7 +790,7 @@ class ProductServiceTest {
                 .id(50L).tenantId(1L).productId("prod-001").colorName("红色").sortOrder(0).build();
         ProductSku existingSku = ProductSku.builder()
                 .id(1001L).tenantId(1L).productId("prod-001").colorId(50L)
-                .colorName("红色").sellingMethod("bulk_cut").doorWidth("2.8米")
+                .colorName("红色").doorWidth("2.8米")
                 .price(new BigDecimal("88.00")).stock(10).skuCode("HCL-01-SJ-28").build();
 
         when(productMapper.selectById("prod-001")).thenReturn(testProduct).thenReturn(testProduct);
@@ -829,7 +828,7 @@ class ProductServiceTest {
                 .id(50L).tenantId(1L).productId("prod-001").colorName("红色").sortOrder(0).build();
         ProductSku existingSku = ProductSku.builder()
                 .id(1001L).tenantId(1L).productId("prod-001").colorId(50L)
-                .colorName("红色").sellingMethod("bulk_cut").doorWidth("2.8米")
+                .colorName("红色").doorWidth("2.8米")
                 .price(new BigDecimal("88.00")).stock(10).skuCode("HCL-01-SJ-28").build();
 
         when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
@@ -893,7 +892,7 @@ class ProductServiceTest {
                 .id(50L).tenantId(1L).productId("prod-001").colorName("红色").sortOrder(0).build();
         ProductSku legacySku = ProductSku.builder()
                 .id(1001L).tenantId(1L).productId("prod-001").colorId(50L)
-                .colorName(null).sellingMethod("bulk_cut").doorWidth("2.8米")
+                .colorName(null).doorWidth("2.8米")
                 .price(new BigDecimal("88.00")).stock(10).skuCode("HCL-01-SJ-28").build();
 
         when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
@@ -1499,12 +1498,10 @@ class ProductServiceTest {
         request.setBasePrice(new BigDecimal("68.00"));
         request.setStock(999); // 非权威的请求值：不得成为商品级列的最终值
         ProductSkuInput s1 = new ProductSkuInput();
-        s1.setSellingMethod("bulk_cut");
         s1.setDoorWidth("2.8米");
         s1.setStock(30);
         ProductSkuInput s2 = new ProductSkuInput();
-        s2.setSellingMethod("full_roll");
-        s2.setDoorWidth("2.8米");
+        s2.setDoorWidth("3.2米");
         s2.setStock(70);
         request.setSkus(List.of(s1, s2));
 
@@ -1572,42 +1569,43 @@ class ProductServiceTest {
     // 而 product_skus 落库的是枚举/数值（bulk_cut、2.8）——字面 eq 必然 0 行命中，
     // 对外表现为「SKU不存在」（实测 run 34805827043：sku_update 连续两次失败）。
 
-    /** 与 product_colors 里遮光窗帘的既有 SKU 同形：枚举 bulk_cut + 数值门幅 2.8 */
+    /** 与 product_colors 里遮光窗帘的既有 SKU 同形：数值门幅 2.8（V108：SKU 不再带售卖方式） */
     private ProductSku evalBlackoutSku() {
         return ProductSku.builder()
                 .id(2001L).tenantId(1L).productId("prod-001")
-                .colorName("米白").sellingMethod("bulk_cut").doorWidth("2.8")
+                .colorName("米白").doorWidth("2.8")
                 .price(new BigDecimal("168.00")).stock(500).skuCode("EVAL-BLK-28-米白").build();
     }
 
     @Test
-    @DisplayName("SKU调价（PR-021）- agent 传中文「散剪」必须命中 bulk_cut 存量行")
+    @DisplayName("SKU调价（V108）- 售卖方式不参与 SKU 定位（组合只有 颜色 × 门幅）")
     @SuppressWarnings("unchecked")
-    void updateSkuPrice_ChineseSellingMethodLabel_MatchesEnumStoredRow() {
-        // Given: 库里是枚举 bulk_cut
+    void updateSkuPrice_SellingMethodIsNotPartOfSkuIdentity() {
+        // V108 / 用户裁定 2026-09-21：售卖方式是商品级基础属性 ⇒ 不再是 SKU 组合维度。
+        // 判据形态：定位条件里**不得出现**售卖方式（枚举或中文标签都不行）——
+        // 修复前库里同色同门幅有「散剪/整卷」两行、靠售卖方式区分，那种模型下本断言不成立。
         ProductSku sku = evalBlackoutSku();
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku));
         when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
 
-        // When: agent 按中文业务术语传参（实测轨迹原样）
-        productService.updateSkuPrice("prod-001", "米白", "散剪", "2.8", new BigDecimal("150.00"), 1L);
+        productService.updateSkuPrice("prod-001", "米白", "2.8", new BigDecimal("150.00"), 1L);
 
-        // Then: 落库的是该行 + 新价格
+        // Then: 原地改价命中该行
         ArgumentCaptor<ProductSku> skuCaptor = ArgumentCaptor.forClass(ProductSku.class);
         verify(productSkuMapper).updateById(skuCaptor.capture());
         assertThat(skuCaptor.getValue().getId()).isEqualTo(2001L);
         assertThat(skuCaptor.getValue().getPrice()).isEqualByComparingTo(new BigDecimal("150.00"));
 
-        // 且查询条件里是枚举，不是中文标签（复用 translateSellingMethod，无第二套口径）
-        // 注：MP 的 formatParam 是惰性 ISqlSegment，须先触发 SQL 段生成才会物化参数表
+        // 且查询条件里**没有**售卖方式（注：MP 的 formatParam 惰性，须先触发 SQL 段生成）
         ArgumentCaptor<LambdaQueryWrapper<ProductSku>> wrapperCaptor =
                 ArgumentCaptor.forClass(LambdaQueryWrapper.class);
         verify(productSkuMapper).selectList(wrapperCaptor.capture());
         LambdaQueryWrapper<ProductSku> captured = wrapperCaptor.getValue();
         captured.getSqlSegment();
         assertThat(captured.getParamNameValuePairs().values())
-                .anyMatch(v -> "bulk_cut".equals(v))
-                .noneMatch(v -> "散剪".equals(v));
+                .as("售卖方式不得参与 SKU 定位（V108：SKU 组合只有 颜色 × 门幅）")
+                .noneMatch(v -> "bulk_cut".equals(v) || "full_roll".equals(v)
+                        || "散剪".equals(v) || "整卷".equals(v));
     }
 
     @Test
@@ -1621,7 +1619,7 @@ class ProductServiceTest {
         when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
 
         // When
-        productService.updateSkuPrice("prod-001", "米白", "散剪", "2.8米", new BigDecimal("150.00"), 1L);
+        productService.updateSkuPrice("prod-001", "米白", "2.8米", new BigDecimal("150.00"), 1L);
 
         // Then: 兜底命中并原地改价（不新建行、不改库里的门幅写法）
         ArgumentCaptor<ProductSku> skuCaptor = ArgumentCaptor.forClass(ProductSku.class);
@@ -1639,7 +1637,7 @@ class ProductServiceTest {
         when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
 
         // When
-        productService.updateSkuPrice("prod-001", "米白", "bulk_cut", "2.8", new BigDecimal("150.00"), 1L);
+        productService.updateSkuPrice("prod-001", "米白", "2.8", new BigDecimal("150.00"), 1L);
 
         // Then
         verify(productSkuMapper, times(1)).selectList(any(LambdaQueryWrapper.class));
@@ -1654,7 +1652,7 @@ class ProductServiceTest {
 
         // When & Then: 与线上指纹一致（sku_update!SKU不存在）——message=SKU不存在，suggestion 供 agent 自修复
         assertThatThrownBy(() ->
-                productService.updateSkuPrice("prod-001", "米白", "散剪", "2.8米", new BigDecimal("150.00"), 1L))
+                productService.updateSkuPrice("prod-001", "米白", "2.8米", new BigDecimal("150.00"), 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("SKU不存在")
                 .satisfies(ex -> {
@@ -1673,25 +1671,24 @@ class ProductServiceTest {
     // 库内两种写法都真实存在：docs/deployment/demo-seed.sql 落 '2.8米'、
     // tests/agent_eval/fixtures/*_eval_seed.sql 落 '2.8'；toWidthShort() 早已把两者当同一门幅。
 
-    /** 商品更新请求：颜色 × 售卖方式 × 门幅（触发 SKU 重建 → 走 matchExistingSku 组合匹配） */
-    private ProductUpdateRequest skuMatrixUpdate(String sellingMethod, String doorWidth) {
+    /** 商品更新请求：颜色 × 门幅（触发 SKU 重建 → 走 matchExistingSku 组合匹配）。
+     *  V108：售卖方式已不是 SKU 组合维度 ⇒ 本 helper 不再收该参数。 */
+    private ProductUpdateRequest skuMatrixUpdate(String doorWidth) {
         ProductUpdateRequest request = new ProductUpdateRequest();
         request.setName("遮光窗帘");
         request.setCategoryId("cat-001");
         ProductColorInput color = new ProductColorInput();
         color.setColorName("米白");
         request.setColors(List.of(color));
-        request.setSellingMethods(List.of(sellingMethod));
         request.setDoorWidths(List.of(doorWidth));
         return request;
     }
 
-    /** 库内既有行（颜色主键 42 + 指定售卖方式/门幅写法） */
-    private ProductSku storedSku(Long id, String sellingMethod, String doorWidth) {
+    /** 库内既有行（颜色主键 42 + 指定门幅写法） */
+    private ProductSku storedSku(Long id, String doorWidth) {
         ProductSku sku = evalBlackoutSku();
         sku.setId(id);
         sku.setColorId(42L);
-        sku.setSellingMethod(sellingMethod);
         sku.setDoorWidth(doorWidth);
         return sku;
     }
@@ -1720,41 +1717,31 @@ class ProductServiceTest {
     @DisplayName("SKU组合匹配（#3616）- 入参「2.8米」必须命中库内数值门幅「2.8」行（不删旧行、不建新行）")
     void matchExistingSku_DoorWidthUnitSuffix_UpdatesStoredRowInPlace() {
         // Given: 库内是 eval 种子的写法 '2.8'（agent/前端按业务术语传 '2.8米'）
-        stubUpdateWithStoredSku(storedSku(2001L, "bulk_cut", "2.8"));
+        stubUpdateWithStoredSku(storedSku(2001L, "2.8"));
         when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
 
         // When
-        productService.updateProduct("prod-001", skuMatrixUpdate("bulk_cut", "2.8米"), 1L);
+        productService.updateProduct("prod-001", skuMatrixUpdate("2.8米"), 1L);
 
         // Then: 命中既有行（id 2001 原地更新），没有「删旧行 + 建新行」
         assertSkuRowUpdatedInPlace(2001L);
     }
 
     @Test
-    @DisplayName("SKU组合匹配（#3616）- 入参中文「散剪」必须命中库内枚举 bulk_cut 行")
-    void matchExistingSku_ChineseSellingMethodLabel_UpdatesStoredEnumRow() {
-        // Given: 库内是枚举（product_manage 入参也允许中文标签，REST 路径原样透传）
-        stubUpdateWithStoredSku(storedSku(2001L, "bulk_cut", "2.8"));
+    @DisplayName("SKU组合匹配（V108）- 售卖方式不参与组合：同色同门幅只命中一行（不再按散剪/整卷分行）")
+    void matchExistingSku_SellingMethodIsNotPartOfCombination() {
+        // V108 / 用户裁定 2026-09-21：「售卖方式整卷/散件不能作为 SKU 的组合项」⇒
+        // 同色同门幅只有**一行** SKU。修复前库里该组合有「散剪/整卷」两行，
+        // 组合匹配必须带上售卖方式才能区分 —— 那种模型下本断言不成立（这就是红证）。
+        stubUpdateWithStoredSku(storedSku(2001L, "2.8"));
         when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
 
-        // When
-        productService.updateProduct("prod-001", skuMatrixUpdate("散剪", "2.8米"), 1L);
+        // 商品级售卖方式声明两种都支持（它落在 products.selling_methods，不进 SKU 组合）
+        ProductUpdateRequest request = skuMatrixUpdate("2.8米");
+        request.setSellingMethods(List.of("bulk_cut", "full_roll"));
+        productService.updateProduct("prod-001", request, 1L);
 
-        // Then
-        assertSkuRowUpdatedInPlace(2001L);
-    }
-
-    @Test
-    @DisplayName("SKU组合匹配（#3616）- 库内为中文标签「散剪」时枚举入参仍须命中（归一化必须双侧）")
-    void matchExistingSku_StoredChineseLabel_MatchesEnumInput() {
-        // Given: 反向方向——库内是中文标签（历史数据/早期写入），入参是枚举
-        stubUpdateWithStoredSku(storedSku(2001L, "散剪", "2.8米"));
-        when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
-
-        // When
-        productService.updateProduct("prod-001", skuMatrixUpdate("bulk_cut", "2.8"), 1L);
-
-        // Then: 只归一化入参不够，必须两侧都归一
+        // Then: 命中既有行原地更新 —— 不因「声明了两种售卖方式」而多建一行
         assertSkuRowUpdatedInPlace(2001L);
     }
 
@@ -1762,12 +1749,12 @@ class ProductServiceTest {
     @DisplayName("SKU组合匹配（#3616）反向断言 - 门幅 2.8 vs 3.2 仍是不同组合（不得归一化过宽）")
     void matchExistingSku_DifferentDoorWidth_StillCreatesNewCombination() {
         // Given
-        stubUpdateWithStoredSku(storedSku(2001L, "bulk_cut", "2.8"));
+        stubUpdateWithStoredSku(storedSku(2001L, "2.8"));
         when(productSkuMapper.insert(any(ProductSku.class))).thenReturn(1);
         when(productSkuMapper.deleteById((java.io.Serializable) any())).thenReturn(1);
 
         // When: 真正不同的门幅
-        productService.updateProduct("prod-001", skuMatrixUpdate("bulk_cut", "3.2米"), 1L);
+        productService.updateProduct("prod-001", skuMatrixUpdate("3.2米"), 1L);
 
         // Then: 仍判为不匹配（走既有「插入新组合」语义），绝不能被归一化合并
         ArgumentCaptor<ProductSku> captor = ArgumentCaptor.forClass(ProductSku.class);
@@ -1778,61 +1765,40 @@ class ProductServiceTest {
     }
 
     @Test
-    @DisplayName("SKU组合匹配（#3616）反向断言 - 售卖方式 bulk_cut vs full_roll 仍是不同组合")
-    void matchExistingSku_DifferentSellingMethod_StillCreatesNewCombination() {
-        // Given
-        stubUpdateWithStoredSku(storedSku(2001L, "bulk_cut", "2.8"));
-        when(productSkuMapper.insert(any(ProductSku.class))).thenReturn(1);
-        when(productSkuMapper.deleteById((java.io.Serializable) any())).thenReturn(1);
-
-        // When
-        productService.updateProduct("prod-001", skuMatrixUpdate("full_roll", "2.8"), 1L);
-
-        // Then
-        ArgumentCaptor<ProductSku> captor = ArgumentCaptor.forClass(ProductSku.class);
-        verify(productSkuMapper).insert(captor.capture());
-        assertThat(captor.getValue().getSellingMethod()).isEqualTo("full_roll");
-        verify(productSkuMapper).deleteById((java.io.Serializable) 2001L);
-        verify(productSkuMapper, never()).updateById(any(ProductSku.class));
-    }
-
-    @Test
     @DisplayName("SKU匹配口径（#3616）- 调价路径与商品更新路径对同一等价写法判定一致")
     void skuMatch_Normalization_IsConsistentAcrossPriceAndMatrixPaths() {
         // Path A：agent sku_update 调价路径（#3539/#3546 已归一）——「散剪」+「2.8米」命中 'bulk_cut'/'2.8'
-        ProductSku stored = storedSku(2001L, "bulk_cut", "2.8");
+        ProductSku stored = storedSku(2001L, "2.8");
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(stored));
         when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
-        productService.updateSkuPrice("prod-001", "米白", "散剪", "2.8米", new BigDecimal("150.00"), 1L);
+        productService.updateSkuPrice("prod-001", "米白", "2.8米", new BigDecimal("150.00"), 1L);
         verify(productSkuMapper).updateById(any(ProductSku.class));
         assertThat(stored.getPrice()).isEqualByComparingTo(new BigDecimal("150.00"));
 
         // Path B：商品更新路径（产品矩阵重建）——同一等价写法必须同样命中，而不是删旧行+建新行
         reset(productSkuMapper);
-        stubUpdateWithStoredSku(storedSku(2001L, "bulk_cut", "2.8"));
+        stubUpdateWithStoredSku(storedSku(2001L, "2.8"));
         when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
-        productService.updateProduct("prod-001", skuMatrixUpdate("散剪", "2.8米"), 1L);
+        productService.updateProduct("prod-001", skuMatrixUpdate("2.8米"), 1L);
         assertSkuRowUpdatedInPlace(2001L);
     }
 
     @Test
     @DisplayName("SKU组合匹配（#3616）- 前端矩阵的「同义写法 tempId 条目」不得另建一行（重复行防线）")
     void matchExistingSku_DuplicateMatrixEntryWithTempId_DoesNotCreateSecondRow() {
-        // Given: 库内 1 行（米白/bulk_cut/2.8）；admin-web SkuMatrix 门幅下拉是 ['2.8米',...]、
+        // Given: 库内 1 行（米白/2.8）；admin-web SkuMatrix 门幅下拉是 ['2.8米',...]、
         // sku-utils.matchWidth 只容 legacy '门幅' 前缀 → 同一物理门幅被前端判成新组合，
         // 生成 id=nextTempId()（负数）的新条目，与带真实 id 的旧条目一起提交。
-        stubUpdateWithStoredSku(storedSku(2001L, "bulk_cut", "2.8"));
+        stubUpdateWithStoredSku(storedSku(2001L, "2.8"));
         when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
 
         ProductSkuInput withRealId = new ProductSkuInput();
         withRealId.setId(2001L);
         withRealId.setColorName("米白");
-        withRealId.setSellingMethod("bulk_cut");
         withRealId.setDoorWidth("2.8");
         ProductSkuInput withTempId = new ProductSkuInput();
         withTempId.setId(-1L);
         withTempId.setColorName("米白");
-        withTempId.setSellingMethod("bulk_cut");
         withTempId.setDoorWidth("2.8米");
         ProductUpdateRequest request = new ProductUpdateRequest();
         request.setName("遮光窗帘");
@@ -2017,16 +1983,16 @@ class ProductServiceTest {
 
     @Test
     @DisplayName("SKU匹配口径（#3616）静态不变式 - 售卖方式/门幅的等值比较必须走同一归一化入口")
-    void skuMatch_NoBareEqualityComparison_OnSellingMethodOrDoorWidth() throws Exception {
-        // L0 静态不变式（migao-dev-flow §16.1）：同一概念（售卖方式/门幅）的匹配不得裸比字面值，
-        // 必须过 translateSellingMethod()/normalizeDoorWidth()——防「修一处漏一处」复发。
+    void skuMatch_NoBareEqualityComparison_OnDoorWidth() throws Exception {
+        // L0 静态不变式（migao-dev-flow §16.1）：门幅的匹配不得裸比字面值，
+        // 必须过 normalizeDoorWidth() —— 防「修一处漏一处」复发。
+        // V108：售卖方式那一维已退场（不再是 SKU 组合维度）⇒ 判据只留门幅。
         List<String> offenders = java.nio.file.Files.readAllLines(productServiceSourceFile()).stream()
                 .filter(line -> line.contains("Objects.equals("))
-                .filter(line -> (line.contains("getSellingMethod()") && !line.contains("translateSellingMethod("))
-                        || (line.contains("getDoorWidth()") && !line.contains("normalizeDoorWidth(")))
+                .filter(line -> line.contains("getDoorWidth()") && !line.contains("normalizeDoorWidth("))
                 .toList();
         assertThat(offenders)
-                .as("裸 Objects.equals 比较售卖方式/门幅（未过 translateSellingMethod/normalizeDoorWidth）")
+                .as("裸 Objects.equals 比较门幅（未过 normalizeDoorWidth）")
                 .isEmpty();
     }
 

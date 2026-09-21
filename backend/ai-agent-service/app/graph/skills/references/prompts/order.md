@@ -40,7 +40,6 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 - **「完成订单」= 确认收货**：用户说"完成""收货""确认收货"→ 调用 order_manage(action=update_status, status="completed")，前提是当前状态为 shipped
 - **「发货」**：调用 order_manage(action=update_status, status="shipped")，前提是当前状态为 producing
 - **「关闭/取消」**：调用 order_manage(action=cancel)，可关闭 pending/confirmed 状态的订单
-- 执行写操作前必须先确认当前状态，状态不符合前置条件时告知用户
 
 ## 加工单
 
@@ -102,9 +101,9 @@ issue #4454）：左列说法**一律换成右列内部值**写进 `processing_i
 
 ## 下单流程（🔴 必须先选 SKU，禁止跳过）
 
-用户指定商品后必须先调 product_detail。`skus` > 1 条时**必须调 interact(component="choice") 组件**呈现规格选项（颜色|售卖方式|单价）让用户点选——系统才记得住当前下单流程，后续"选1/确认"等短消息才会正确回到本流程；禁止只用纯文本表格让用户回复数字（短消息会被误路由到其它模块）。`skus` = 1 直接用。**规格/色号均单选，禁传 multiSelect=true（多选仅加工项用）**。
-⚠️ **门幅由算料自动定**（`fabric_widths` 候选集），**不让顾客点选**。
-选中后提取 color_name/selling_method/door_width/sku_code/price 填入 order_create items。
+用户指定商品后必须先调 product_detail。`skus` > 1 条时**必须调 interact(component="choice")**呈现规格选项（颜色|单价）让用户点选——系统才记得住当前下单流程，后续"选1/确认"等短消息才会正确回到本流程；禁止只用纯文本表格让用户回复数字。`skus` = 1 直接用。**规格/色号单选，禁 multiSelect=true**。
+⚠️ **门幅由算料自动定**（`fabric_widths` 候选集），**不让顾客点选**；售卖方式同理（商品级属性，非 SKU 维度），不进规格卡。
+选中后提取 color_name/door_width/sku_code/price 填入 order_create items；要「优先整卷发货」时把售卖方式写进 `processing_info.sellingMethod`（订单级偏好，服务端据此算整卷数）。
 
 ## 单价铁律（🔴 报价/确认/落单的单价必须来自商品库，禁止编造）
 
@@ -116,7 +115,7 @@ issue #4454）：左列说法**一律换成右列内部值**写进 `processing_i
 - **系统会拦截并回填**：`order_create` 按商品库核对每行 `unit_price`，不一致会被拦截
   （error=unit_price_not_grounded）并回填库价；商品名查不到 / 多规格价未指定所选 SKU → 拒绝。
   **拦截后不要重试同一错价**，把该行 `unit_price`（与 `subtotal`）改成回填的库价再下单。
-- 「规格维度」（颜色/售卖方式/门幅）与「单价」是两回事：规格决定选哪个 SKU，单价来自该 SKU 的
+- 「规格维度」（颜色/门幅）与「单价」是两回事：规格决定选哪个 SKU，单价来自该 SKU 的
   `skus[].price`；加工费来自加工项（见下节），不在此铁律范围。
 - 【铁律】规格卡的 option value 是规格/SKU ID，**不是商品 ID**：用户点选规格后，用商品 ID（product_id，来自 product_detail 调用参数）与所选规格字段填入订单；**禁止用规格 ID 调 product_detail/product_search**（规格 ID 查不到商品，CR-001 实拍：auto_select 回规格 ID 后 agent 误当商品 ID 查询致流程空转）。
 

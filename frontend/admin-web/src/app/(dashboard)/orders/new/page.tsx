@@ -75,7 +75,6 @@ interface OrderProductSku {
   productId?: string
   colorId: string
   colorName?: string
-  sellingMethod?: string
   doorWidth?: string
   price: number
   stock?: number
@@ -203,13 +202,6 @@ interface OrderLineItem {
   autoFeatures?: AutoFeaturesResult | null
   /** 判定失败原因（行内显式提示；**不放行提交** —— 组合键少一项 = 钱会错） */
   autoFeaturesError?: string | null
-}
-
-const sellingMethodLabel: Record<string, string> = {
-  bulk_cut: '散剪',
-  full_roll: '整卷',
-  per_meter: '按米',
-  per_piece: '按件',
 }
 
 /** 开数 → 中文标签（复用 lib 的单一映射，不另写一份） */
@@ -491,16 +483,17 @@ function pickAutoSkuForColor(
   const exact = skusOfColor.filter((sku) => parseDoorWidth(sku.doorWidth) === plan.doorWidth)
   if (exact.length === 0) return null
   if (exact.length === 1) return exact[0]
-  // **同一最优门幅下有多个 SKU**（散剪/整卷）⇒ 也必须选出一个**默认**（issue #4899）：
+  // **同一最优门幅下有多个 SKU** ⇒ 也必须选出一个**默认**（issue #4899）：
   // 什么都不选 = 界面显示「门幅未维护」（误导：不是没维护，是没选到）+ 客服无从下手。
-  // 平局口径（可解释、可覆盖）：**售卖方式 = 散剪（`bulk_cut`）优先**（issue #5014，用户 2026-09-21：
-  // 每个门幅有散剪/整卷两个销售属性，反推出门幅后「选择门幅 + **散剪**的 SKU 即可」—— 定做单按米买布）
-  // → **有库存优先 → 单价低者优先 → 按 id 稳定**。
-  // ⚠️ 散剪**缺货**也仍优先（#5014 判据 5，用户字面口径）：库存只是平局参考；它是**自动选中**
-  // （`skuAutoSelected=true`）⇒ 客服一点即改，规则也会随输入变化重算。
+  // 平局口径：**有库存优先 → 单价低者优先 → 按 id 稳定**。
+  //
+  // ⚠️ 2026-09-21（V111，用户裁定）：平局口径的**首位**「售卖方式 = 散剪优先」（#5014）**已退场**
+  // —— 那条口径的前提是「每个门幅有散剪/整卷两个销售属性」，而用户已裁定售卖方式是
+  // **商品级基础属性**、SKU 组合只有 **颜色 × 门幅** ⇒ 同一 (颜色, 门幅) 只有**一行** SKU，
+  // 「按售卖方式选哪一支」这个问题本身不存在了（`OrderProductSku` 也已无 `sellingMethod` 字段，
+  // 留着这个比较是**死代码**：首项恒为 0）。#5014 的其余判据（有库存/单价/id 三级平局）一字不动。
   const [best] = [...exact].sort(
     (a, b) =>
-      Number(b.sellingMethod === 'bulk_cut') - Number(a.sellingMethod === 'bulk_cut') ||
       Number(Number(b.stock ?? 0) > 0) - Number(Number(a.stock ?? 0) > 0) ||
       Number(a.price ?? 0) - Number(b.price ?? 0) ||
       String(a.id).localeCompare(String(b.id))
@@ -751,7 +744,8 @@ function buildLineProcessingInfo(
     colorName,
     skuId: sku?.id,
     skuCode: sku?.skuCode,
-    sellingMethod: sku?.sellingMethod,
+    // ⚠️ SKU 不再带售卖方式（SKU 组合 = 颜色 × 门幅，售卖方式是**商品级基础属性**）
+    // ⇒ 本行售卖方式偏好不再由 SKU 派生；行级 `sellingMethod` 由订单侧另行承载
     doorWidth: sku?.doorWidth,
     ...(isFabric ? {} : { processingItems: processingDetails }),
     ...mainSpec,
@@ -3125,11 +3119,6 @@ function ProductGroupBlock({
                             <div className="text-left">
                               <div className="font-medium">
                                 {sku.doorWidth || '默认规格'}
-                                {sku.sellingMethod && (
-                                  <span className="ml-2 text-xs text-neutral-500">
-                                    {sellingMethodLabel[sku.sellingMethod] || sku.sellingMethod}
-                                  </span>
-                                )}
                               </div>
                               <div className="text-xs text-neutral-400 mt-0.5">
                                 库存 {sku.stock ?? 0}

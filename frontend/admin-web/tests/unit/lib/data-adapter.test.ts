@@ -9,7 +9,7 @@
  *
  * 这些转换如果出错，数据会静默损坏——后端收到错误值或前端展示错误状态。
  */
-// case_ids: OR-003, OR-004, OR-005, UI-040, UI-047
+// case_ids: OR-003, OR-004, OR-005, UI-040, UI-047, PR-042, PR-043, PR-044, OR-046
 
 import { describe, it, expect } from 'vitest'
 import {
@@ -184,13 +184,17 @@ describe('buildProductPayload', () => {
     const form = makeProductForm({
       colors: [{ id: '1', colorName: '红', sortOrder: 0 }],
       sellingMethods: ['bulk_cut'] as any,
+      rollLengthM: 60,
       doorWidths: ['2.8米'],
-      skus: [{ id: '-1', colorId: '1', colorName: '红', sellingMethod: 'bulk_cut', doorWidth: '2.8米', price: 99, stock: 10, status: 'active' }],
+      skus: [{ id: '-1', colorId: '1', colorName: '红', doorWidth: '2.8米', price: 99, stock: 10, status: 'active' }],
     })
     const payload = buildProductPayload(form)
     expect(payload.colors).toEqual(form.colors)
     expect(payload.skus).toEqual(form.skus)
+    // 售卖方式 / 卷长是**商品级基础属性** ⇒ 走请求体**顶层**，不在 skus[] 里
     expect(payload.sellingMethods).toEqual(form.sellingMethods)
+    expect(payload.rollLengthM).toBe(60)
+    expect('sellingMethod' in (payload.skus![0] as object)).toBe(false)
     expect(payload.doorWidths).toEqual(form.doorWidths)
   })
 

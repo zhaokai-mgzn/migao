@@ -423,7 +423,6 @@ class StockLedgerTest {
         s.setTenantId(TENANT_ID);
         s.setProductId(PRODUCT_ID);
         s.setColorName("米白");
-        s.setSellingMethod("bulk_cut");
         s.setDoorWidth("2.8米");
         s.setSkuCode("SKU-" + id);
         s.setStock(stock);

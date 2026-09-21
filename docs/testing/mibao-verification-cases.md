@@ -2323,7 +2323,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（44 case）
+## 订单域（45 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -3113,6 +3113,17 @@
 跳过: [backend-contract] 下单页 ↔ 订单表 ↔ 发货页契约（admin-web vitest + admin-api Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/orders-new.test.tsx、frontend/admin-web/tests/unit/pages/ship-order.test.tsx 与 backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java 执行
 ```
 溯源: 2026-09-21 新增（issue #4872 + #4874；用户原话「新增订单时收货信息中缺少用户的常用物流/快递以及常用公司，选择客户后要默认带出」）。判据 3 的「不设列默认」为同日独立复核（#4878）修正 —— 原实现给了 `DEFAULT 'express'`，会把「未指定」这一档从库里抹掉。 ｜ tags: order, logistics, default_receiver, backend_contract
+
+### OR-046. 订单体现「客户要求优先整卷发货」+ 分配落库（100 米 / 一卷 60 米 ⇒ 1 整卷 60 + 散剪 40） 🔵
+```
+数据: 判据 1·**分配算法确定性**（用户裁定原话例）：`quantity=100`、`roll_length_m=60` ⇒ `rollCount=1`、`cutMeters=40`；`120/60 ⇒ 2 卷 + 0 米散剪`；`50/60 ⇒ 0 卷 + 50 米散剪`。注入：把向下取整改成四舍五入 ⇒ `50/60` 得 1 卷 ⇒ 断言红。**溢出 ⇒ 未分配（不是 500）**：`1e9 / 0.01`、`2147483648 / 1` 这类输入不得让建单 500（独立对抗式复核实测抓到 `intValueExact` 会抛 Overflow）。
+数据: 判据 1b·**分配闸门 = 货号有没有配卷长，与售卖方式无关**（用户原话的例子就是按米买布）：`bulk_cut`（散剪/按米买）与**未指定**售卖方式的订单行同样要落 `rollCount` —— 用户裁定那句「客户买 100 米布，一卷=60 米 ⇒ 1 整卷 60 + 散剪 40」里顾客**没有**说「我要整卷」⇒ 把闸门写成「只有明说 full_roll 才算」会让该例子在新单路径上**根本不生效**（独立对抗式复核实测抓到）。注入：把「只有 full_roll 才分配」的早退加回 ⇒ 本判据红。
+数据: 判据 2·**三列落订单行**：`order_items.selling_method`（本行售卖方式偏好）+ `roll_count`（整卷数）+ `roll_length_m`（下单时卷长**快照**）——订单是快照不是视图 ⇒ 货号后来改卷长不改变历史单的分配口径（注入：读面改成实时读 `products.roll_length_m` ⇒ 改货号卷长后历史单数字跟着漂移 ⇒ 断言红）。
+数据: 判据 3·**未配置卷长 ⇒ 不写分配**：`products.roll_length_m IS NULL` 时分配两列保持 NULL（`roll_count` / `roll_length_m`），**不得**落 0（「不知道」不许伪装成「0 整卷」）。
+数据: 判据 4·**跨端可见**：订单详情响应带 `sellingMethod` / `rollCount` / `rollLengthM`（管理端订单明细读它渲染「整卷 N + 散剪 M 米」）。证据 = `OrderServiceTest.getOrderById_exposesRollAllocationFields`（读**响应**，不是「insert 前」；此前该判据零测试 —— 独立对抗式复核抓到）。前端：`rollAllocationText` 在字段任一为空、或余量为负（数据自相矛盾）时**不渲染**，不把不一致渲染成正常分配。
+跳过: [backend-contract] 订单行契约（Java 单测 + admin-web vitest，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProductRollAllocationTest.java、OrderServiceTest.java 与 frontend/admin-web/tests/unit/components/OrderItemList.test.tsx 执行
+```
+溯源: 2026-09-21 新增（用户裁定逐字：「在订单中再体现客户要求优先整卷发货，例子：客户买 100 米布，一卷=60 米，那就发 1 整卷 60 + 散剪出的 40 米」）。 ｜ tags: order, roll_allocation, backend_contract
 
 ## 加工项域（13 case）
 
@@ -3999,7 +4010,7 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-22 新增（issue #4201）：加工单「过程明细」agent 只读面（端点 GET /api/admin/agent/production/worklog + 工具 production_worklog_query + order/general skill 绑定 + prompts/order.md 口径）。**断言面**：must_succeed + required_args(order_no) + forbidden_tools（两个加工单写工具 + 加工项目录冒充）+ forbidden_text（具名报工人 = 编造指纹）+ want_text(any_of 存在性) + data_checks 首条 success=true。**未做（如实登记）**：**数值断言**（合格/返工/报废的**具体数字**）未落 —— 评测栈 `production_work_logs` 零 seed，要落数值只能给 seed 补「加工单 + 工序实例 + 报工」三段夹具，而本地**无 docker**、无法验证 seed SQL（写错会打挂整个 mibao 套件）⇒ 本单不碰 seed，登记为后续项。 ｜ 2026-09-21（issue #4960 / #4961 用例库同步，配套 feat/4960-4961-integration，**本条判据一字未动**）：data_checks 里 `operations[].is_must_finish` 仍是**冻结读面键**（服务端恒 `false`、历史载体，前端/agent 零消费）—— 本条不改任何判据，只登记该键的**值语义已冻结为历史载体**，防后续把「键还在」误读成「必完仍是活语义」。`user_inputs` / `expectations` / `skip_reason` 与其余 data_check **一字未动**，**判据一格不放宽**。 ｜ tags: processing_order, production, llm_behavior, worklog, readonly
 
-## 商品域（34 case）
+## 商品域（37 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -4420,6 +4431,40 @@
 ```
 真值: inbound-order-flow.draft-then-post
 溯源: 2026-09-23 新增（issue #5045，V111）：入库单模块的 Mapper/SQL 契约面（growth gate 的 mapper 缺测门禁要求同名测试） ｜ tags: inventory, inbound, backend-contract
+
+### PR-042. SKU 组合只有 颜色 × 门幅 —— 售卖方式不是 SKU 维度（DB 唯一键 + 三端读写面） 🔵
+```
+数据: 判据 1·**唯一键只有两维**：`product_skus` 的组合约束逐字为 `UNIQUE (product_id, color_id, door_width)`；`product_skus.selling_method` 列**已不存在**（`information_schema.columns` 查不到 ⇒ 迁移 V108 的终态对账会抛）。注入：把 `selling_method` 加回唯一键 ⇒ 断言红。
+数据: 判据 2·**建品只按颜色×门幅生成**：`ProductService.saveColorsAndSkus` 的笛卡尔积是 `colors × doorWidths`（原 `colors × sellingMethods × doorWidths`）——注入：把 sellingMethods 放回积 ⇒ 生成行数 = 颜色×售卖方式×门幅 ≠ 颜色×门幅 ⇒ 断言红。
+数据: 判据 3·**SKU 定位键族不含售卖方式**：`OrderService.matchSkuId` 的 `colorId+doorWidth` / `colorName+doorWidth` 两族即可唯一定位（原 `+sellingMethod` 那一维已删）；`order_items.processing_info` 里历史单残留的 `sellingMethod` 键**不得**再参与 SKU 定位（注入：把它加回 where 条件 ⇒ 同色同门幅的历史单定位不到 SKU ⇒ 断言红）。
+数据: 判据 4·**存量去重可复算**：同 `(product_id,color_id,door_width)` 的旧多行（散剪一行/整卷一行）收敛为**价格最低**那一行，同价取 `id` 最小 —— 两遍执行保留同一行（幂等可断言）。
+数据: 判据 5·**迁移必须能在真库上真的跑起来**（回填不得引用不存在的列）：`product_skus` **没有** `deleted` 列（删除走 `deleteById` = 物理删除）⇒ 回填写 `AND deleted = 0` 会让真库抛「字段 deleted 不存在」、整份迁移回滚，而 `MigrationRunner` 对非连接类失败是**跳过并继续** ⇒ 部署 success、三列永不建（#4402 同族）。**本单第一版正是这个缺陷，且测试夹具自己给该表补了 `deleted` ⇒ 夹具把真缺陷挡掉了**（独立对抗式复核实测抓到）。⇒ 真库判据的 `_DDL` 必须与真 schema **逐列一致**，并有静态断言钉住「回填里不得出现 `deleted`」。
+跳过: [backend-contract] 商品模型改造的后端契约（迁移 + Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/unit_ci_workflows/test_product_roll_length_migration.py、backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java 与 OrderStockSkuKeyFamilyTest.java 执行
+```
+真值: product-sku-stock.status-flow
+溯源: 2026-09-21 新增（用户裁定逐字：「商品的售卖方式整卷/散件不能作为 SKU 的组合项，只能作为基础属性，商品的 SKU 由颜色+门幅组成即可」）。 ｜ tags: product, sku_matrix, backend_contract
+
+### PR-043. 售卖方式 = 商品级基础属性（products.selling_methods），非 SKU 组合维度 🔵
+```
+数据: 判据 1·**落商品列**：`products.selling_methods`（JSONB 数组，取值 `bulk_cut` / `full_roll`）是售卖方式的**唯一**载体；`product_skus` 不得有该列。注入：把该列建到 `product_skus` ⇒ PR-042 判据 1 红。
+数据: 判据 2·**回填取旧数据真值**：迁移把该货号 SKU 里真实出现过的售卖方式去重回填（不是无脑默认）；一个 SKU 都没有的货号回填 `[\"bulk_cut\",\"full_roll\"]`（最宽口径，不误禁商家已有售卖方式）。
+数据: 判据 3·**读面契约**：商品详情响应 `sellingMethods` 取自商品列（不再是「从 SKU 派生」）——注入：把读面改回从 SKU 派生 ⇒ 该字段恒空 ⇒ 断言红。
+数据: 判据 4·**订单侧校验锚点**：订单行 `selling_method` 必须属于该货号 `products.selling_methods`（越界 ⇒ 显式拒绝，不静默落库）。
+跳过: [backend-contract] 商品基础属性契约（迁移 + Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/unit_ci_workflows/test_product_roll_length_migration.py 与 backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java 执行
+```
+真值: product-sku-stock.status-flow
+溯源: 2026-09-21 新增（用户裁定逐字：「商品的售卖方式整卷/散件不能作为 SKU 的组合项，只能作为基础属性」）。 ｜ tags: product, selling_method, backend_contract
+
+### PR-044. 商品「1 卷 = 多少米」= 货号级基础参数（roll_length_m），未配置禁止推算 🔵
+```
+数据: 判据 1·**货号级一列**：`products.roll_length_m NUMERIC(8,2)`（可空、**不设默认值**）。注入：给它加 `DEFAULT 60` ⇒ 「未配置」这一档从库里消失 ⇒ 断言红。
+数据: 判据 2·**NULL = 未知，禁止推算**：`ProductRollAllocation.allocate(qty, null)` / `(qty, <=0)` 一律返回未分配（`rollCount == null`，三字段全 null）——不得用任何兜底常量算出一个看似合理的分配（行业卷长是区间值，见 docs/curtain-selling-method-industry-research.md §5）。
+数据: 判据 3·**读面契约**：商品详情/编辑表单读得到 `rollLengthM`（product_detail / 商品编辑页回显），写入走 `rollLengthM`。
+数据: 判据 4·**边界语义**：`quantity < rollLength` ⇒ `rollCount = 0` 且余量 = 全部数量（「0 整卷 + 全部散剪」是**真实结论**，与「未分配 null」不是一回事）；恰好整卷倍数 ⇒ 余量 `0`（不是 null）。
+跳过: [backend-contract] 商品基础参数契约（迁移 + Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/unit_ci_workflows/test_product_roll_length_migration.py 与 backend/admin-api/src/test/java/com/migao/admin/service/ProductRollAllocationTest.java 执行
+```
+真值: product-sku-stock.status-flow
+溯源: 2026-09-21 新增（用户裁定逐字：「商品需要增加 1 卷=多少米，作为商品货号的基础参数」）。 ｜ tags: product, roll_length, backend_contract
 
 ## registry（1 case）
 
@@ -5299,8 +5344,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：386（活跃 156，跳过 230）
-- tier 分布：smoke 10 / normal 345 / adversarial 31
+- 用例总数：390（活跃 156，跳过 234）
+- tier 分布：smoke 10 / normal 349 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -5317,10 +5362,10 @@
 - misc：16
 - onboarding：5
 - ontology：4
-- 订单域：44
+- 订单域：45
 - 加工项域：13
 - processing-order：51
-- 商品域：34
+- 商品域：37
 - registry：1
 - 设置域：10
 - token-refresh：4
@@ -5367,6 +5412,7 @@
 - OR-043: 下单页两步化 —— 四段手风琴合并为「尺寸与数量 · 工艺规格」+「加工项 · 特殊选项」两个区块
 - OR-044: 加工项区块的「加工费组合」明细块 —— 组合名逐字同源 + 未定价可就地改单价并随建单提交
 - OR-045: 新增订单收货信息 —— 「常用物流/快递」+「常用物流公司」两控件（选客户默认带出 → 落 orders 两列 → 发货页订单值优先）
+- OR-046: 订单体现「客户要求优先整卷发货」+ 分配落库（100 米 / 一卷 60 米 ⇒ 1 整卷 60 + 散剪 40）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

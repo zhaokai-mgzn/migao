@@ -1,4 +1,4 @@
-// case_ids: OR-001, UI-020, OR-034, OR-039
+// case_ids: OR-001, UI-020, OR-034, OR-039, PR-042, PR-043, PR-044, OR-046
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
 import { render, screen, within, fireEvent } from '@testing-library/react'
@@ -575,6 +575,82 @@ describe('OrderItemList', () => {
         />
       )
       expect(screen.queryByText('算料公式')).toBeNull()
+    })
+  })
+
+  // ========== ③ 优先整卷发货的分配（PR-044 / 用户裁定）==========
+  //
+  // 用户原话：「客户买 100 米布，一卷=60 米，那就发 1 整卷 60 + 散剪出的 40 米」。
+  // 硬约束：**未配置卷长（rollCount / rollLengthM 任一为空）⇒ 不编数字、不渲染分配文案**。
+  describe('优先整卷发货分配（PR-044）', () => {
+    it('PR-044: rollCount=1 + rollLengthM=60 + 买 100 米 ⇒ 「整卷 1 + 散剪 40 米」', () => {
+      render(
+        <OrderItemList
+          items={[
+            makeItem({ quantity: 100, rollCount: 1, rollLengthM: 60, sellingMethod: 'full_roll' }),
+          ]}
+        />
+      )
+      const el = screen.getByTestId('roll-allocation')
+      expect(el.textContent).toContain('整卷 1 + 散剪 40 米')
+    })
+
+    it('PR-044: rollCount=null ⇒ **不渲染**任何整卷/散剪分配文案', () => {
+      render(
+        <OrderItemList
+          items={[makeItem({ quantity: 100, rollCount: null, rollLengthM: 60 })]}
+        />
+      )
+      expect(screen.queryByTestId('roll-allocation')).toBeNull()
+      expect(screen.queryByText(/散剪/)).toBeNull()
+      expect(screen.queryByText(/整卷/)).toBeNull()
+    })
+
+    it('PR-044: rollLengthM=null（未配置卷长）⇒ 同样不渲染分配文案（不编数字）', () => {
+      render(
+        <OrderItemList
+          items={[makeItem({ quantity: 100, rollCount: 1, rollLengthM: null })]}
+        />
+      )
+      expect(screen.queryByTestId('roll-allocation')).toBeNull()
+      expect(screen.queryByText(/散剪/)).toBeNull()
+    })
+
+    it('PR-044: rollCount=0（全部散剪）⇒ 「散剪 40 米」', () => {
+      render(
+        <OrderItemList
+          items={[makeItem({ quantity: 40, rollCount: 0, rollLengthM: 60 })]}
+        />
+      )
+      expect(screen.getByTestId('roll-allocation').textContent).toContain('散剪 40 米')
+    })
+
+    it('PR-044: 正好整卷（100 米 / 1 卷 100 米）⇒ 只显示「整卷 1」，不出现散剪 0', () => {
+      render(
+        <OrderItemList
+          items={[makeItem({ quantity: 100, rollCount: 1, rollLengthM: 100 })]}
+        />
+      )
+      const el = screen.getByTestId('roll-allocation')
+      expect(el.textContent).toContain('整卷 1')
+      expect(el.textContent).not.toContain('散剪')
+    })
+
+    // 售卖方式口径（PR-042）：**订单行字段优先**，历史单回落 processingInfo
+    it('PR-044: 售卖方式读订单行字段（item.sellingMethod）', () => {
+      render(
+        <OrderItemList items={[makeItem({ sellingMethod: 'full_roll' })]} />
+      )
+      expect(screen.getByText('整卷')).toBeInTheDocument()
+    })
+
+    it('PR-044: 历史单（行字段缺席）回落 processingInfo.sellingMethod', () => {
+      render(
+        <OrderItemList
+          items={[makeItem({ processingInfo: { sellingMethod: 'bulk_cut' } })]}
+        />
+      )
+      expect(screen.getByText('散剪')).toBeInTheDocument()
     })
   })
 })

@@ -146,8 +146,15 @@ export interface Product {
   skus?: ProductSku[]
   // 商品颜色列表
   colors?: ProductColor[]
-  // 售卖方式列表
+  // 售卖方式列表（**商品级基础属性**，不是 SKU 组合项）
   sellingMethods?: SellingMethod[]
+  /**
+   * 1 卷 = 多少米（**商品货号级基础参数**，可空）。
+   *
+   * 它是订单「优先整卷发货」的推算依据（买 100 米、1 卷 60 米 ⇒ 1 整卷 + 散剪 40 米）；
+   * `null` / 缺省 = 未配置 ⇒ 订单侧不推算整卷分配。
+   */
+  rollLengthM?: number | null
   // 门幅列表
   doorWidths?: string[]
   createdAt?: string
@@ -215,7 +222,9 @@ export interface ProductFormData {
   detailImages?: string[]
   specifications?: Record<string, string>
   colors?: ProductColor[]
+  // 售卖方式（商品级基础属性）与 1 卷米数（商品货号级基础参数）—— 都在请求体**顶层**
   sellingMethods?: SellingMethod[]
+  rollLengthM?: number | null
   doorWidths?: string[]
   skus?: ProductSku[]
 }
@@ -508,6 +517,16 @@ export interface OrderItem {
   sku?: string
   width?: number
   height?: number
+  /**
+   * 本行**售卖方式偏好**（订单行字段，后端 `order_items.selling_method`）。
+   *
+   * 历史单该键缺席 ⇒ 展示侧回落到 `processingInfo.sellingMethod`（见 `OrderItemList`）。
+   */
+  sellingMethod?: string
+  /** 整卷数（后端 `order_items.roll_count`）；与 {@link rollLengthM} 齐备才可推算分配 */
+  rollCount?: number | null
+  /** 下单时的卷长快照（米，后端 `order_items.roll_length_m`） */
+  rollLengthM?: number | null
   processingInfo?: Record<string, unknown>
   processingFee?: number
   subtotal: number
@@ -2497,11 +2516,14 @@ export interface ProductColor {
 }
 
 // 商品 SKU（id/colorId 为 BIGSERIAL，可能超过 JS 2^53，后端序列化为字符串）
+//
+// ⚠️ **SKU 组合只有 颜色 × 门幅**（唯一键 `(product_id, color_id, door_width)`）。
+// 「售卖方式（整卷 / 散剪）」是**商品级基础属性**（`Product.sellingMethods`），
+// **不再**是 SKU 的组合项，故此处**没有** `sellingMethod`。
 export interface ProductSku {
   id: string
   colorId: string
   colorName?: string
-  sellingMethod: SellingMethod
   doorWidth: string
   price: number
   costPrice?: number
@@ -2629,7 +2651,6 @@ export interface ReceivableReconciliationItem {
   createdAt?: string
 }
 
-// ============================================================
 // 入库单 / 批次（V111，issue #5034）
 // ============================================================
 // 一次布料收货 = 一张入库单；**一个 SKU 行 = 一个批次**（用户裁定 2026-09-23）。

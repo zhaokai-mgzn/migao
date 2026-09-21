@@ -3,7 +3,7 @@
 对应 app/tools/product_manage.py 的 create/update/toggle_status 三条 action，
 覆盖正常路径、参数校验、camelCase 字段映射、异常泛化兜底。
 """
-# case_ids: PR-007, PR-008, PR-009
+# case_ids: PR-007, PR-008, PR-009, PR-042, PR-043, PR-044, OR-046
 import pytest
 import httpx
 from unittest.mock import AsyncMock, patch
@@ -83,6 +83,43 @@ class TestProductCreate:
         assert json_data["doorWidths"] == ["2.8米"]
         assert json_data["skuCode"] == "SKU-1"
         assert json_data["pricingType"] == "per_meter"
+
+    @patch("app.tools.product_manage.get_admin_api_client")
+    async def test_create_roll_length_transmitted_only_when_configured(
+        self, mock_get_client, tool, admin_tool_context, mock_client
+    ):
+        """V108：`roll_length_m`（1 卷 = 多少米）是**货号级基础参数**。
+
+        配置了就透传 `rollLengthM`；未配置（None）**不得**下发任何兜底常量
+        （后端保持 NULL ⇒ 订单侧不推算整卷分配）。
+        """
+        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "p-1"}})
+        mock_get_client.return_value = mock_client
+
+        await tool.execute(context=admin_tool_context, action="create",
+                           name="遮光窗帘", price=168.0, roll_length_m=60.0)
+        assert mock_client.post.call_args[1]["json_data"]["rollLengthM"] == 60.0
+
+        mock_client.post.reset_mock()
+        await tool.execute(context=admin_tool_context, action="create",
+                           name="遮光窗帘", price=168.0)
+        assert "rollLengthM" not in mock_client.post.call_args[1]["json_data"], (
+            "未配置卷长时不得下发兜底值（后端 NULL = 未知，禁止推算）"
+        )
+
+    @patch("app.tools.product_manage.get_admin_api_client")
+    async def test_update_roll_length_transmitted(
+        self, mock_get_client, tool, admin_tool_context, mock_client
+    ):
+        """V108：update 路径同样要能改「1 卷 = 多少米」（只传非 None 字段）。"""
+        mock_client.patch = AsyncMock(return_value={"success": True, "data": {"id": "p-1"}})
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(context=admin_tool_context, action="update",
+                                    product_id="11111111-1111-1111-1111-111111111111",
+                                    roll_length_m=45.5)
+        assert result.success is True
+        assert mock_client.patch.call_args[1]["json_data"]["rollLengthM"] == 45.5
 
     @patch("app.tools.product_manage.get_admin_api_client")
     async def test_create_failure_passthrough(self, mock_get_client, tool, admin_tool_context, mock_client):
@@ -468,7 +505,7 @@ class TestProductManageSchemaContract:
     AGENT_CREATE_FIELDS = {
         "name", "categoryId", "basePrice", "skuCode", "description", "brand", "unit",
         "pricingType", "stock", "status", "images", "detailImages", "colors",
-        "sellingMethods", "doorWidths",
+        "sellingMethods", "rollLengthM", "doorWidths",
         "specifications", "stockDeductionMode", "allowReturnRestock",
     }
 

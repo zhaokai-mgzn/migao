@@ -2,9 +2,9 @@
  * ProductForm 组件测试
  * 覆盖：#646 移除 in_warehouse — 按钮数量、labelMap 无仓库中
  * #4371：加工项与商品解耦 —— 表单不再有「是否支持加工」与加工项配置编辑区
- * case_ids: PR-008, PR-017
+ * case_ids: PR-008, PR-017, PR-042, PR-043, PR-044, OR-046
  */
-import { render, screen } from '@testing-library/react'
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import ProductForm from '@/components/products/ProductForm'
 
@@ -252,5 +252,122 @@ describe('ProductForm (#2908 — 校验失败提示可见性)', () => {
     await ue.type(screen.getByPlaceholderText('最多可输入50汉字（100字符）'), '测试商品')
     await ue.click(screen.getByText('提交并上架'))
     expect(screen.getByRole('alert').textContent).toContain('7 处必填')
+  })
+})
+
+// ========== 售卖方式 / 1 卷米数 = 商品基础属性（PR-042 / PR-043）==========
+//
+// 用户裁定：「商品的售卖方式整卷/散件**不能作为 SKU 的组合项**，只能作为基础属性」；
+// 「商品需要增加 1 卷=多少米，作为**商品货号的基础参数**」。
+// ⇒ 两个控件都在**基础属性**区（`基础信息` section），提交时走请求体**顶层**。
+describe('售卖方式与卷长：商品基础属性（PR-042 / PR-043）', () => {
+  const mockOnSubmit = vi.fn().mockResolvedValue(undefined)
+
+  /** 一个除「售卖方式 / 卷长」外全部合法的编辑态表单（提交校验可通过） */
+  const validInitialData = {
+    name: '遮光窗帘',
+    skuCode: 'CUR-001',
+    unit: '米',
+    categoryId: 'cat-1',
+    images: ['https://example.com/a.jpg'],
+    colors: [{ id: '1', colorName: '红色', sortOrder: 0 }],
+    sellingMethods: [] as ('bulk_cut' | 'full_roll')[],
+    doorWidths: ['2.8'],
+    skus: [
+      {
+        id: '1',
+        colorId: '1',
+        colorName: '红色',
+        doorWidth: '2.8',
+        price: 100,
+        stock: 10,
+        status: 'active' as const,
+      },
+    ],
+    status: 'draft' as const,
+  }
+
+  it('PR-042: 售卖方式 / 卷长控件在「基础信息」区（不在 SKU 矩阵里）', () => {
+    render(<ProductForm onSubmit={mockOnSubmit} />)
+
+    const baseSection = screen.getByText('基础信息').closest('section') as HTMLElement
+    expect(baseSection).toBeTruthy()
+    // 两个控件都在基础属性区
+    expect(within(baseSection).getByTestId('pf-selling-methods')).toBeTruthy()
+    expect(within(baseSection).getByTestId('pf-roll-length')).toBeTruthy()
+    expect(within(baseSection).getByText('售卖方式')).toBeTruthy()
+    expect(within(baseSection).getByText('1 卷 = 多少米')).toBeTruthy()
+    // 售卖方式是多选（散剪 / 整卷），沿用既有标签
+    expect(within(baseSection).getByText('散剪')).toBeTruthy()
+    expect(within(baseSection).getByText('整卷')).toBeTruthy()
+    // SKU 矩阵（本测试里被 mock）**不**承载售卖方式
+    expect(within(screen.getByTestId('sku-matrix')).queryByText('售卖方式')).toBeNull()
+  })
+
+  it('PR-043: 提交 ⇒ 顶层带 sellingMethods / rollLengthM，且 skus[] 不带 sellingMethod', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    Element.prototype.scrollIntoView = vi.fn()
+    render(<ProductForm initialData={validInitialData} onSubmit={onSubmit} />)
+
+    // 勾「整卷」（商品级基础属性，多选）
+    fireEvent.click(screen.getByLabelText('整卷'))
+    // 填「1 卷 = 多少米」
+    const rollInput = within(screen.getByTestId('pf-roll-length')).getByRole(
+      'spinbutton'
+    ) as HTMLInputElement
+    fireEvent.change(rollInput, { target: { value: '60' } })
+    expect(rollInput.value).toBe('60')
+
+    fireEvent.click(screen.getByText('提交并上架'))
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+    const [payload] = onSubmit.mock.calls[0]
+    // ① 顶层字段（不是塞进 skus[]）
+    expect(payload.sellingMethods).toEqual(['full_roll'])
+    expect(payload.rollLengthM).toBe(60)
+    // ② skus[] 里**没有** sellingMethod（SKU 组合只有 颜色 × 门幅）
+    expect(payload.skus).toHaveLength(1)
+    expect('sellingMethod' in payload.skus[0]).toBe(false)
+  })
+
+  it('PR-043: 卷长留空 ⇒ 顶层 rollLengthM 为 null（未配置是合法状态）', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    Element.prototype.scrollIntoView = vi.fn()
+    render(<ProductForm initialData={validInitialData} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByLabelText('散剪'))
+    fireEvent.click(screen.getByText('提交并上架'))
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+    const [payload] = onSubmit.mock.calls[0]
+    expect(payload.sellingMethods).toEqual(['bulk_cut'])
+    expect(payload.rollLengthM).toBeNull()
+  })
+
+  it('PR-043: 卷长填 0 ⇒ 校验拦下（卷长必须大于 0 米），不提交', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    Element.prototype.scrollIntoView = vi.fn()
+    render(<ProductForm initialData={validInitialData} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByLabelText('整卷'))
+    const rollInput = within(screen.getByTestId('pf-roll-length')).getByRole(
+      'spinbutton'
+    ) as HTMLInputElement
+    fireEvent.change(rollInput, { target: { value: '0' } })
+    fireEvent.click(screen.getByText('提交并上架'))
+
+    expect(await screen.findByText('卷长必须大于 0 米')).toBeTruthy()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('PR-043: 售卖方式一项都没勾 ⇒ 校验拦下（沿用原规则，只是位置变了）', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    Element.prototype.scrollIntoView = vi.fn()
+    render(<ProductForm initialData={validInitialData} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByText('提交并上架'))
+
+    expect(await screen.findByText('请至少添加 1 种售卖方式')).toBeTruthy()
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 })

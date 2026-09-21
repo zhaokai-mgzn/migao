@@ -224,6 +224,25 @@ public class OrderDetailResponse {
         private Object processingFeeDetail;
 
         /**
+         * 本行售卖方式（**订单级偏好**，V111）：{@code bulk_cut}(散剪) / {@code full_roll}(整卷)。
+         * {@code null} = 下单未指定（不猜）。用户裁定 2026-09-21「在订单中再体现客户要求优先整卷发货」。
+         */
+        private String sellingMethod;
+
+        /**
+         * 整卷数（V111）：优先整卷发货时发出的整卷数。
+         * {@code null} = 未要求整卷或货号未配卷长（**禁止**推算，前端据此不渲染分配文案）。
+         */
+        private Integer rollCount;
+
+        /**
+         * 下单时该货号「1 卷 = 多少米」的**快照**（V111）。
+         * 与 {@link #rollCount} 配对渲染「整卷 N + 散剪 M 米」，其中
+         * {@code M = quantity - rollCount × rollLengthM}。
+         */
+        private BigDecimal rollLengthM;
+
+        /**
          * 创建时间
          */
         private OffsetDateTime createdAt;

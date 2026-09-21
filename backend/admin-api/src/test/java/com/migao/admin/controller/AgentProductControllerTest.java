@@ -74,7 +74,6 @@ class AgentProductControllerTest extends BaseControllerTest {
             skuResp.setId(1001L);
             skuResp.setProductId(PROD_ID);
             skuResp.setColorName("红色");
-            skuResp.setSellingMethod("bulk_cut");
             skuResp.setDoorWidth("2.8米");
             skuResp.setPrice(new BigDecimal("99.00"));
 

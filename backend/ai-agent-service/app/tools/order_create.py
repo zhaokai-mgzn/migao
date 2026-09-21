@@ -37,9 +37,11 @@ _PHONE_PATTERN = re.compile(r"^1[3-9]\d{9}$")  # 中国大陆手机号
 _NUMERIC_PREFIX_PATTERN = re.compile(r"^[¥￥$]?\s*(?P<num>[+-]?\d+(?:\.\d+)?)")
 
 # 枚举合法值（issue #3622）。单一事实源在 admin-api 侧，工具侧照抄，别名归一化刻意不做：
-# - sellingMethod: `product_skus.selling_method` = bulk_cut(散剪) / full_roll(整卷)；
-#   `OrderService:1435` 回退匹配时按**字面** eq 比较 → 拼写变体静默匹配不到
-#   → 库存校验/销量统计静默丢失（#3621 同源）。
+# - sellingMethod: **订单级**售卖方式偏好（`order_items.selling_method`；商品级基础属性是
+#   `products.selling_methods`，V111）= bulk_cut(散剪) / full_roll(整卷)；
+#   顾客要求「优先整卷发货」就落在这里，**不是** SKU 组合维度（SKU 组合只有 颜色 × 门幅）。
+#   `OrderService` 按**字面** eq 比较 → 拼写变体静默匹配不到
+#   → 偏好静默丢失（#3621 同源）。
 # （原 `_PRICING_METHODS = ("per_meter", …)` 随 issue #4882 删除：加工项**不再有单价与
 #   计价方式** → `processingItems[]` 每项只剩 {id, name, quantity}(+unit)，无字段可枚举。）
 _SELLING_METHODS = ("bulk_cut", "full_roll")
@@ -365,10 +367,11 @@ class OrderCreateTool(BaseTool):
         "必须带 skuId，或 colorName/skuCode（取 product_detail 的 skus[].id / color_name / sku_code）；"
         # 规格键族契约（issue #4090）：服务端库存匹配读的就是这几个键 —— 供应商（本工具）必须
         # 声明模型**真能拿到**的键，且键族要与服务端一致（否则库存校验/扣减/销量会被拒绝或走偏）。
-        "**规格键族**：服务端按 skuId → skuCode → colorId+sellingMethod+doorWidth → "
-        "colorName+sellingMethod+doorWidth 定位 SKU（库存校验/扣减/销量都按它走）。"
+        "**规格键族**：服务端按 skuId → skuCode → colorId+doorWidth → "
+        "colorName+doorWidth 定位 SKU（库存校验/扣减/销量都按它走）——"
+        "SKU 组合**只有 颜色 × 门幅**（售卖方式已上移为商品级基础属性，不是 SKU 维度）。"
         "优先传 skuId（product_detail 的 skus[].id，最精确）；用 skuCode/colorName 时必须与 "
-        "skus[] 原值逐字一致，并**同时给 sellingMethod 与 doorWidth** —— "
+        "skus[] 原值逐字一致，并**同时给 doorWidth** —— "
         "只给颜色（或规格与库内对不上、命中多行）会因无法唯一定位 SKU 被拒绝（issue #4090）。"
         "**不要臆造规格键**（尤其 colorId：product_detail 不返回该字段，填错会让下单被拒）。"
         "单价必须落在商品库价集合内（商品 price 或某个 SKU 价），编造价一律拦截。"
@@ -377,7 +380,8 @@ class OrderCreateTool(BaseTool):
         "禁止编造分色/规格价（如库价 168 却报「米白 150」），"
         "报价/确认卡/落单三者单价必须一致；系统会在调用前按库价校验，不一致会被拦截并回填库价。"
         "【不议价】agent 路径不允许偏离商品库价；顾客要议价/优惠时不要改单价，请引导走后台。"
-        "售卖方式/门幅/颜色等规格信息放入 items[i].processing_info（字段：skuId/skuCode/colorName/sellingMethod/doorWidth），"
+        "颜色/门幅等 SKU 规格信息放入 items[i].processing_info（字段：skuId/skuCode/colorName/doorWidth）；"
+        "**订单级**售卖方式偏好（sellingMethod，客户要求优先整卷发货）也放这里 —— 它是订单行偏好，不是 SKU 维度。"
         "不要平铺在 items 顶层（平铺会被丢弃）。"
         # 工艺规格落库（issue #4346 / 设计文档 §4.9）：引导清单**已经问到了**这些工艺参数，
         # 但此前下单时全被丢弃 ⇒ 加工单只能靠加工项名**猜**部位（实证 V58：纱帘订单拿到布帘的
@@ -543,8 +547,8 @@ class OrderCreateTool(BaseTool):
                         },
                         "processing_info": {
                             "type": "object",
-                            "description": "商品销售信息（选了颜色/门幅后必填）：skuId(SKU主键，来自商品详情 skus[].id，**首选键**)、skuCode(SKU编码)、colorName(颜色名称)、sellingMethod(售卖方式: bulk_cut散剪/full_roll整卷)、doorWidth(门幅如2.8米)、processingItems(加工项列表)、processingFee(加工费合计)。"
-                                           "服务端按 skuId → skuCode → colorId+sellingMethod+doorWidth → colorName+sellingMethod+doorWidth 定位 SKU（库存校验/扣减/销量都按它走）；"
+                            "description": "商品销售信息（选了颜色/门幅后必填）：skuId(SKU主键，来自商品详情 skus[].id，**首选键**)、skuCode(SKU编码)、colorName(颜色名称)、doorWidth(门幅如2.8米)、processingItems(加工项列表)、processingFee(加工费合计)；可选 sellingMethod(**订单级**售卖方式偏好：客户要求优先整卷发货，不是 SKU 维度)。"
+                                           "服务端按 skuId → skuCode → colorId+doorWidth → colorName+doorWidth 定位 SKU（SKU 组合只有 颜色×门幅；库存校验/扣减/销量都按它走）；"
                                            "⚠️商品有**多个不同 SKU 价**时 skuId 或 colorName/skuCode **必填**（取 product_detail 的 skus[]）——"
                                            "缺规格则无法确定该行库价、下单会被拒绝（issue #4011）；规格与库内原值对不上或无法唯一定位（只给颜色、命中多行）同样会被拒绝（issue #4090）。",
                             "properties": {
@@ -555,7 +559,7 @@ class OrderCreateTool(BaseTool):
                                 "sellingMethod": {
                                     "type": "string",
                                     "enum": ["bulk_cut", "full_roll"],
-                                    "description": "售卖方式，取 product_detail skus[].selling_method 原值：bulk_cut(散剪) / full_roll(整卷)。拼写变体（散剪/bulkCut）会被本地拒绝",
+                                    "description": "**订单级**售卖方式偏好（客户要求优先整卷发货），**不是** SKU 维度——SKU 由颜色+门幅定位。取值 bulk_cut(散剪) / full_roll(整卷)。拼写变体（散剪/bulkCut）会被本地拒绝",
                                 },
                                 "doorWidth": {"type": "string", "description": "门幅"},
                                 # ── 工艺规格（issue #4346 / 设计文档 §4.2 · §4.8 · §4.9）──────────
