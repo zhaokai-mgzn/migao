@@ -28,7 +28,7 @@
  * g_eff(g) = 标称门幅 − 有效余量（缩水/边损/对花回；缺省 0 —— 租户级配置键落地后接线）
  * 定高买宽: 可行 = { g | 成品高 + HEM_MARGIN ≤ g_eff(g) }
  *           空 ⇒ needs_splice（缺口 = 成品高 + HEM_MARGIN − max(g_eff)）；非空 ⇒ 取 min(g_eff)
- * 定宽买高: 幅数 p(g) = ceil_mm((成品宽 + SIDE_MARGIN) × 褶倍 ÷ g_eff(g))
+ * 定宽买高: 幅数 p(g) = ceil_mm(窗宽 × 褶倍 ÷ g_eff(g))
  *           `ceil_mm` = **毫米整数**向上取整（与引擎 `-(-_mm(a) // max(1, _mm(b)))` **同式**；
  *           浮点 `ceil` 在「总用料恰为门幅整数倍」的边界上会多算 1 幅 —— 见 `panelsForFixedWidth`）
  *           候选 g_eff(g) ≤ 0 **剔除**（全剔除 ⇒ undecidable，与引擎同式 fail-closed）
@@ -46,8 +46,9 @@
  * **不在本模块**（属算料引擎 `curtain_calc.resolve_fabric_plan`）⇒ 这里只按「单幅能不能做」分岔，
  * **不实现第二份用料公式**，也**不让接高进入自动比较**。
  *
- * ⚠️ **余量常量复用**（`SIDE_MARGIN` 宽方向 / `HEM_MARGIN` 高方向，两者今天同值 0.3 但**语义不同**，
- * 不得混用，且副本有跨语言守卫）；加工类型常量同样复用 —— 本模块**不新造**第二份字面量。
+ * ⚠️ **余量只剩高方向**：{@link HEM_MARGIN}（上下卷边）—— 宽方向**没有余量**
+ * （用户 2026-09-21 裁定，issue #5030：订单宽 = 净窗宽、成品宽 = 净窗宽）；加工类型常量复用，
+ * 本模块**不新造**第二份字面量。
  *
  * ## 与算料引擎的关系（**有守卫的副本**，不是第二份长期口径）
  * 真值源 = `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `resolve_fabric_plan`
@@ -77,7 +78,6 @@ import {
   CUTTING_MODE_FIXED_HEIGHT,
   CUTTING_MODE_FIXED_WIDTH,
   HEM_MARGIN,
-  SIDE_MARGIN,
   parseDoorWidth,
 } from '@/lib/craft-auto-features'
 
@@ -96,9 +96,9 @@ export type CutPlanUndecidableCode =
   | 'missing-fullness'
 
 export interface CutPlanInput {
-  /** 成品宽（米）—— 缺失 ⇒ 定宽买高判不了（定高买宽不需要宽） */
+  /** 窗宽（米）= 成品宽（用户 2026-09-21 裁定，issue #5030）—— 缺失 ⇒ 定宽买高判不了（定高买宽不需要宽） */
   width?: number | null
-  /** 成品高（米）—— **顾客给的尺寸直接就是成品高**（裁定：不做离地/轨道/挂钩换算） */
+  /** 净窗高（米）= 成品高 —— **顾客给的尺寸直接就是成品高**（裁定：不做离地/轨道/挂钩换算） */
   height?: number | null
   /**
    * 加工类型（`定高买宽` / `定宽买高`）—— **可选**（issue #5020）。
@@ -324,7 +324,7 @@ export function resolveCutPlan(input: CutPlanInput): CutPlan {
     }
   }
 
-  const need = (width + SIDE_MARGIN) * fullness
+  const need = width * fullness
   const ranked = effective
     .map((c) => ({ ...c, panels: panelsForFixedWidth(need, c.effectiveDoorWidth) }))
     .sort((a, b) => a.panels - b.panels || a.effectiveDoorWidth - b.effectiveDoorWidth)
@@ -336,7 +336,7 @@ export function resolveCutPlan(input: CutPlanInput): CutPlan {
     effectiveDoorWidth: chosen.effectiveDoorWidth,
     panels: chosen.panels,
     reason:
-      `成品宽 ${width} + 左右余量 ${SIDE_MARGIN} = ${round3(width + SIDE_MARGIN)} 米 × 褶倍 ${fullness}` +
+      `窗宽 ${width} 米 × 褶倍 ${fullness}` +
       ` = ${round3(need)} 米 ÷ 门幅 ${chosen.doorWidth} 米（有效 ${chosen.effectiveDoorWidth} 米）` +
       ` ⇒ ${chosen.panels} 幅（取分幅最少；并列取较小门幅）`,
   }
@@ -443,7 +443,7 @@ export function judgeDoorWidthChoice(
   if (width === null || fullness === null) {
     return { plan, selectedDoorWidth: selected, verdict: 'unknown', suggestion: null }
   }
-  const need = (width + SIDE_MARGIN) * fullness
+  const need = width * fullness
   const selectedPanels = panelsForFixedWidth(need, selectedEffective)
   if (selectedPanels <= plan.panels) {
     // 并列（分幅数相同 ⇒ 米数相同）：挑哪个门幅是库存/单价的事，不 nag。

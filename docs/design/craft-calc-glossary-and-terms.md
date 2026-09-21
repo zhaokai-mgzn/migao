@@ -22,6 +22,11 @@ frontend/admin-web/src/lib/craft-calc-glossary.ts 并逐条读源守卫。
 引擎里它是**宽方向左右覆盖余量**），而且同一个错**在三处**各写了一遍（页面 hint / 契约类型注释 /
 引擎配置字典那行注释）—— 照现有形态继续加文案，只会加出第二、第三份口径（issue #4940 的形态）。
 
+> 🔴 **2026-09-21 收口（用户裁定，issue #5030）**：`side_margin` 这个键**整体退场** ——
+> 订单宽高 = **窗户宽高**（净窗宽 / 净窗高）⇒ 成品宽 = 净窗宽 ⇒ **宽方向没有余量**。
+> ⇒ #4940 的「页面文案与引擎口径相反」不再是靠改文案收口，而是**该键连同概念一起删除**
+> （引擎常量 / 配置键 / DB 列 / 页面 / 契约类型六处同删，见 `docs/wiki/CONTRACT-LEDGER.md` 的算料配置键行）。
+
 ---
 
 ## 1. 用户裁定（2026-09-21）
@@ -40,7 +45,7 @@ frontend/admin-web/src/lib/craft-calc-glossary.ts 并逐条读源守卫。
 | # | 事实 | 证据（读源） |
 |---|---|---|
 | 1 | 算料配置 tab 原本只有六条一行 hint，**没有任何术语/公式说明** | `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx` 的 `CALC_SCALAR_FIELDS`（本单已改为引用说明模块） |
-| 2 | **同一处口径漂移写了三遍**：页面 hint「定宽买高的上下卷边合计」/ `frontend/admin-web/src/types/index.ts` 的 `side_margin` 注释 / 引擎 `DEFAULT_CRAFT_CALC_CONFIG` 那行尾注。而引擎常量自身的注释是「定高布：左右覆盖余量合计（各 15cm）」，消费点也在**宽**方向 | `backend/ai-agent-service/app/tools/curtain_calc.py`（常量定义行、`DEFAULT_CRAFT_CALC_CONFIG`、定高买宽用料式、定宽买高分幅式） |
+| 2 | **同一处口径漂移写了三遍**：页面 hint「定宽买高的上下卷边合计」/ `frontend/admin-web/src/types/index.ts` 的 `side_margin` 注释 / 引擎 `DEFAULT_CRAFT_CALC_CONFIG` 那行尾注。而引擎常量自身的注释是「定高布：左右覆盖余量合计（各 15cm）」，消费点也在**宽**方向（⚠️ **该键已按 issue #5030 整体退场** —— 本行是**当时**的事实记录，现状见本节顶部的收口说明） | `backend/ai-agent-service/app/tools/curtain_calc.py`（常量定义行、`DEFAULT_CRAFT_CALC_CONFIG`、定高买宽用料式、定宽买高分幅式） |
 | 3 | 超高/超宽/倒幅 的**推导文案已存在且已同源**（`reason` 由真实数字拼出，下单页逐条显示）；拼接/接高**不是系统推算**，是手选加工项 | `frontend/admin-web/src/lib/craft-auto-features.ts` · V83 加工项目录种子 · issue #4569 |
 | 4 | 🔴 **origin/main 的门幅口径已改判**：前端**不再有缺省门幅**（`DEFAULT_DOOR_WIDTH` / `resolveDoorWidth` 已删除，改为 `parseDoorWidth(): number \| null`，解析不到 ⇒ **不判**并显式告知） | `frontend/admin-web/src/lib/craft-auto-features.ts`（门幅口径节）· 守卫 `tests/unit_ci_workflows/test_fabric_width_truth_source.py`（issue #4877） |
 
@@ -54,7 +59,8 @@ frontend/admin-web/src/lib/craft-calc-glossary.ts 并逐条读源守卫。
 
 1. **说明 = 真值的投影，不是第二份口径**。能取真值就取，写死的只有「定义与判据句式」。
 2. **参数说明与术语说明分开写**。参数回答「我这家的口径是多少」；术语回答「系统怎么判、拿哪些参数判」。
-   今天的混乱正是两者搅在一起（`side_margin` 的 hint 写的是**另一个量**）。
+   今天的混乱正是两者搅在一起（`side_margin` 的 hint 写的是**另一个量**；该键已按 issue #5030 退场，
+   现存的参数说明只剩 `hem_margin` 这类**单一语义**的键）。
 3. **术语按「谁产生 / 影响什么」分组**（用户最需要的认知支架）：
 
 | 组 | 成员 | 谁产生 | 影响什么 |
@@ -112,7 +118,7 @@ frontend/admin-web/src/lib/craft-calc-glossary.ts 并逐条读源守卫。
 |---|---|---|
 | 1 | 引擎配置键集 ⊆ 说明键集 | 在引擎配置字典加一个键而不补文案 ⇒ 红（**#4976 加 `hem_margin` 时会被强制同步**） |
 | 1b | 六个标量键与说明模块的清单逐值一致 | 少一个 ⇒ 红（表单少一个输入框） |
-| 2 | `side_margin` 口径 = **左右覆盖余量** | 改回「定宽买高的上下卷边合计」⇒ 红（= #4940 判据 1） |
+| 2 | 🔴 **改判（issue #5030）**：`side_margin` **已整体退场** —— 键集 / `CALC_PARAM_COPY` / `types/index.ts` / 引擎配置字典 / 迁移列 / Java 实体与 `CONFIG_KEYS` **六处都不得出现该键**（原判据「口径 = 左右覆盖余量」的前提随该键消失 ⇒ 换成同强度的**反向**守卫） | 任一处把该键加回（或把「左右覆盖余量」重新上屏）⇒ 红 |
 | 3 | 页面不再自带第二份口径 | 把 `CALC_SCALAR_KEYS.map(...)` 换回手写数组 / 旧 hint 抄回 ⇒ 红 |
 | 3b | 契约类型注释同口径 | 改回「定宽买高上下卷边」⇒ 红 |
 | 4 | **引擎配置字典那行注释**同口径 | 改回旧注释 ⇒ 红（漂移源头在引擎，不只是页面） |

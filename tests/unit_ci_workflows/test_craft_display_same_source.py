@@ -54,10 +54,14 @@ AUTO_FEATURES_MODULE = "frontend/admin-web/src/lib/craft-auto-features.ts"
 #: ⚠️ **缩水不是放宽**：堵「模块被清空 ⇒ C2 恒真」的锚点**数量不减**（用 `AUTO_FEATURE_NAMES`
 #: 补上退场符号的位置），且新增**死亡条件**守卫
 #: （`tests/unit_ci_workflows/test_fabric_width_truth_source.py` 判据 4：那两个函数不得回来）。
+#: ⚠️ 2026-09-21（issue #5030 宽高口径改判）**再删一个锚点**：`SIDE_MARGIN` 整体退场
+#: （订单宽 = 净窗宽 ⇒ 宽方向没有余量）⇒ 锚点从它身上撤下；**锚点只换名、不缩水**：
+#: 仍覆盖「识别推导 + 门幅解析 + 高方向余量常量 + 加工类型常量」。
+#: 反向守卫（源码里再出现该标识符 ⇒ 红）= `test_panels_formula_split_audit.py` 判据 C5 与
+#: `test_hem_margin_cross_language_drift.py` 判据 C2'。
 CORE_EXPORTS: tuple[str, ...] = (
     "AUTO_FEATURE_NAMES",
     "parseDoorWidth",
-    "SIDE_MARGIN",
     "HEM_MARGIN",
     "CUTTING_MODE_FIXED_HEIGHT",
     "CUTTING_MODE_FIXED_WIDTH",

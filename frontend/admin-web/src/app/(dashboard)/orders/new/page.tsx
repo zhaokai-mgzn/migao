@@ -516,7 +516,7 @@ function pickAutoSkuForColor(
  * `orders-new-auto-features.test.ts` 的「本页不得本地判特征」钉住）。
  *
  * 为什么必须搬：判定进**加工费组合键**（`processingInfo.processingItems[].name`）⇒ 判定即钱。
- * 服务端判定用的是**该租户的配置**（`side_margin` / `hem_margin` / 档位褶倍）与**该 SKU 的门幅**，
+ * 服务端判定用的是**该租户的配置**（`hem_margin` / 档位褶倍；宽方向余量 `side_margin` 已按 issue #5030 **整体退场**）与**该 SKU 的门幅**，
  * 而前端只持有一份常量副本 ⇒ 商家改过配置后两边会算出不同的键（本单要消灭的正是这种脱钩）。
  *
  * 只保留服务端认得的名字（`AUTO_FEATURE_NAMES` 与加工项目录 V83 逐值对齐，有守卫）——
@@ -581,7 +581,7 @@ function autoFeaturesBlockReason(lineItems: OrderLineItem[]): string | null {
  */
 function autoFeatureNoticesOf(line: OrderLineItem): AutoFeatureNotice[] {
   // 🔴 issue #5036：提示改由**服务端**给（用户 2026-09-21 裁定「统一迁移到服务端；未来 agent 也需要」）
-  // —— 引擎读的是**该租户配置**的 `side_margin` / `hem_margin` ⇒ 与判定**同源**。
+  // —— 引擎读的是**该租户配置**的 `hem_margin`（宽方向余量已按 issue #5030 退场）⇒ 与判定**同源**。
   // 迁移前本函数在前端本地算、读**模块常量副本**（0.3）⇒ 租户改过 `hem_margin` 后这里会显示
   // **错的数**，且「几何矛盾」的**判断本身**也会错 —— 那正是本单要消灭的脱钩。
   // 本页只**展示**：`kind` / `reason` 一律照服务端返回，**不编**口径（`#4662` 的裁定 C 不变）。
@@ -3498,11 +3498,12 @@ function LineItemBlock({
             {/* 尺寸与数量（issue #4420 分区①）：宽 / 高 必填 + 数量 / 单价 */}
             <div className="pt-3 border-t border-neutral-100">
               <p className="mb-3 text-xs text-neutral-400">
-                宽 / 高按成品尺寸填，单位米 —— <strong>一套帘共用一份尺寸</strong>（同一商品组内主布与纱帘同宽同高）
+                宽 / 高按<strong>窗户净尺寸</strong>填，单位米（成品宽 = 窗宽、成品高 = 窗高）——
+                <strong>一套帘共用一份尺寸</strong>（同一商品组内主布与纱帘同宽同高）
               </p>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
-                  <Label required>宽 (米)</Label>
+                  <Label required>窗宽 (米)</Label>
                   <input
                     type="number"
                     min={0}
@@ -3515,7 +3516,7 @@ function LineItemBlock({
                   {errWidth && <p className="mt-1 text-sm text-red-600">{errWidth}</p>}
                 </div>
                 <div>
-                  <Label required>高 (米)</Label>
+                  <Label required>窗高 (米)</Label>
                   <input
                     type="number"
                     min={0}
@@ -3620,7 +3621,7 @@ function LineItemBlock({
                 />
 
               {/* **系统识别**（issue #4658：从 ③加工项 移到 ②工艺规格）—— 为什么归这里：
-                  它由「成品宽/高 + SKU 门幅」推出、产出进**加工费组合键** ⇒ 属**规格/报价**语义；
+                  它由「窗宽/窗高 + SKU 门幅」推出、产出进**加工费组合键** ⇒ 属**规格/报价**语义；
                   且它**不可手选、与加工项勾选无联动** ⇒ 放在「你勾什么」的加工项区会误导。
                   这里**紧挨推导依据**展示（`reason` 逐条显示，商家要能核对判定）。
 
@@ -3634,7 +3635,7 @@ function LineItemBlock({
                   className="mt-3 rounded border border-dashed border-neutral-300 bg-neutral-50/60 px-3 py-2"
                 >
                   <div className="text-xs font-medium text-neutral-600">
-                    系统识别（按成品宽高与门幅推算，不可手选；可采纳 / 不采纳）
+                    系统识别（按窗宽窗高与门幅推算，不可手选；可采纳 / 不采纳）
                   </div>
                   {/* issue #4899：规则**判不了**时要显式说明「缺什么就动不了」，不许静默什么都不做
                       （用户实测「无法反选门幅」的一种形态 = 尺寸没填、页面却一言不发） */}
@@ -3642,7 +3643,7 @@ function LineItemBlock({
                     doorWidthChoice.plan.state === 'undecidable' &&
                     doorWidthChoice.plan.code === 'missing-size' && (
                       <p data-testid="door-width-need-size" className="mt-1 text-xs text-neutral-500">
-                        填完成品宽高后，系统会按规则自动选最优门幅（可行集里最小门幅 / 定宽买高分幅最少）
+                        填完窗宽窗高后，系统会按规则自动选最优门幅（可行集里最小门幅 / 定宽买高分幅最少）
                       </p>
                     )}
                   {doorWidthMissing && (

@@ -168,6 +168,19 @@ VALUES
    3, 3, 3, 9, 0, 0.00)
 ON CONFLICT (id) DO NOTHING;
 
+-- ── 3b. 客户：王五（CU-005「模糊名 → 澄清 → 搜到真人 → 拿 customer_id」的点名对象）──
+-- 为什么补（#5030 的 case-trust burn-down 缴费用）：CU-005 原写「就是王建国」，而评测栈是
+-- **全新库 + 固定 seed**（`.github/workflows/post-deploy-eval.yml`）⇒ 考场里根本没有这个客户，
+-- 用例的期望链（客户列表搜到人 → 查其订单 → 发货）**物理不可满足**。王五 是本种子里**已有**的
+-- 员工/订单客户名（`emp_eval_wangwu` / `EVAL-MB-ORD-0004`）⇒ 补一条客户档案即让该链路可达。
+INSERT INTO customer_profiles
+  (id, tenant_id, wechat_nickname, phone, vip_level, customer_status, source_channel,
+   r_score, f_score, m_score, rfm_total_score, total_orders, total_consumption)
+VALUES
+  ('cust_eval_wangwu', 1, '王五', '13700137000', 'normal', 'active', 'wechat_mini',
+   0, 0, 0, 0, 0, 0.00)
+ON CONFLICT (id) DO NOTHING;
+
 -- 标签：VIP2 / 活跃（CU-003 输入「给张三加VIP2活跃标签」——标签需已存在才能挂）
 INSERT INTO customer_tags (id, tenant_id, name, color, tag_type, description)
 VALUES
@@ -195,6 +208,8 @@ DECLARE
   v_pi     INTEGER;
   v_cust   INTEGER;
   v_emp    INTEGER;
+  v_cust_w INTEGER;
+  v_ord6   INTEGER;
 BEGIN
   SELECT count(*) INTO v_prod   FROM products          WHERE id = 'prod_eval_2699' AND deleted = 0;
   SELECT count(*) INTO v_colors FROM product_colors    WHERE product_id = 'prod_eval_2699';
@@ -206,16 +221,20 @@ BEGIN
   SELECT count(*) INTO v_pi     FROM processing_items  WHERE tenant_id = 1 AND deleted = 0;
   SELECT count(*) INTO v_cust   FROM customer_profiles WHERE id = 'cust_eval_zhangsan';
   SELECT count(*) INTO v_emp    FROM agent_employees   WHERE id = 'emp_eval_wangwu' AND deleted = 0;
+  -- CU-005 的两个点名对象（#5030 缴费用）：客户档案「王五」+ 其**无加工项**的可发货订单 0006
+  SELECT count(*) INTO v_cust_w FROM customer_profiles WHERE id = 'cust_eval_wangwu';
+  SELECT count(*) INTO v_ord6   FROM orders            WHERE order_no = 'EVAL-MB-ORD-0006' AND deleted = 0;
   -- 加工项关联计数（v_assoc）随 #4371 解耦删除：product_processing_items 已被 V66 DROP，
   -- OR-016 的前提改为「店铺加工项目录非空」（v_pi 即该前提的读数）。
-  RAISE NOTICE 'B 端评测 fixture 核对: 2699商品=% 颜色=% 加工项目录=% 客户张三=% 员工王五=%',
-    v_prod, v_colors, v_pi, v_cust, v_emp;
+  RAISE NOTICE 'B 端评测 fixture 核对: 2699商品=% 颜色=% 加工项目录=% 客户张三=% 员工王五=% 客户王五=% 订单0006=%',
+    v_prod, v_colors, v_pi, v_cust, v_emp, v_cust_w, v_ord6;
   IF v_prod < 1 OR v_colors < 1 OR v_pi < 16 THEN   -- 16 = ERP 目录项数（见上）
     RAISE EXCEPTION 'B 端 fixture 注入失败：2699 商品/颜色/加工项目录 缺失（prod=% colors=% pi=%）',
       v_prod, v_colors, v_pi;
   END IF;
-  IF v_cust < 1 OR v_emp < 1 THEN
-    RAISE EXCEPTION 'B 端 fixture 注入失败：客户张三=% 员工王五=%', v_cust, v_emp;
+  IF v_cust < 1 OR v_emp < 1 OR v_cust_w < 1 OR v_ord6 < 1 THEN
+    RAISE EXCEPTION 'B 端 fixture 注入失败：客户张三=% 员工王五=% 客户王五=% 订单0006=%',
+      v_cust, v_emp, v_cust_w, v_ord6;
   END IF;
 END $$;
 
@@ -346,7 +365,16 @@ VALUES
   ('b1c2d3e4-f5a6-4b7c-8d9e-000000000005', 1, 'EVAL-MB-ORD-0005', NULL, '张三', '13800138000',
    '浙江省杭州市西湖区文三路 1 号 1 幢 101 室', 528.00, 'completed', 'paid', TRUE,
    'completed', 'B 端评测 fixture：承载 AS-004 未处理工单的已完成订单（#3519，须早于 Phase 2 两单；独立 id/order_no 见 #4259）',
-   TIMESTAMPTZ '2026-09-01 09:00:00+08', TIMESTAMPTZ '2026-09-01 09:00:00+08', 0)
+   TIMESTAMPTZ '2026-09-01 09:00:00+08', TIMESTAMPTZ '2026-09-01 09:00:00+08', 0),
+  -- ── CU-005 的发货对象（#5030 的 case-trust burn-down 缴费用）──
+  -- 为什么必须是**无 order_items** 的单：`update_logistics` 语义 = 记录物流后流转 shipped
+  -- （`OrderService.updateOrderForAgent`），而 `assertProcessingCompletedBeforeShip` 会拒
+  -- 「含加工项且无已完成加工单」的单 ⇒ 种子里既有的 confirmed 单（0002/0003/0004）**都含加工项**，
+  -- 发货必然被拒（`must_succeed` 会是假断言）。本单刻意不挂明细 ⇒ 走 confirmed→shipped 合法路径。
+  ('b1c2d3e4-f5a6-4b7c-8d9e-000000000006', 1, 'EVAL-MB-ORD-0006', NULL, '王五', '13700137000',
+   '浙江省杭州市滨江区江南大道 3 号 3 幢 303 室', 524.00, 'confirmed', 'paid', TRUE,
+   'completed', 'B 端评测 fixture：CU-005 的发货对象（无 order_items ⇒ 可 confirmed→shipped）',
+   TIMESTAMPTZ '2026-09-12 11:00:00+08', TIMESTAMPTZ '2026-09-12 11:00:00+08', 0)
 ON CONFLICT (id) DO NOTHING;
 
 -- 未处理（pending）退货工单：AS-004 第 2 轮「把第一张未处理的工单关闭」的指代对象。

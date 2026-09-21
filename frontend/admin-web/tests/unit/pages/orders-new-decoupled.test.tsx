@@ -46,7 +46,6 @@ vi.mock('@/lib/api', () => ({
               min_fullness: 1.5,
               tiers: { standard: { fullness: 2.0, label: '标准档' } },
               default_formula: 'pleat',
-              side_margin: 0.15,
               meters_rounding_step: 0.1,
             },
           },

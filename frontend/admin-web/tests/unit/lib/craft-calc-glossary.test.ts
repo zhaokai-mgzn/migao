@@ -4,7 +4,8 @@
  *
  * 复用既有用例（不新增用例 ID，理由同 `OperationsProvenance.test.tsx` 的先例：新增用例会触发
  * case-trust burn-down 预算 + 与生成物争抢）：
- * - **OR-040** = 下单页系统识别 / 余量常量语义（`SIDE_MARGIN` 左右覆盖余量 vs `HEM_MARGIN` 上下卷边）；
+ * - **OR-040** = 下单页系统识别 / 余量常量语义（`HEM_MARGIN` 上下卷边；宽方向的「左右覆盖余量」
+ *   `SIDE_MARGIN` 已随 issue #5030 **整体退场**）；
  * - **OR-041** = 算料公式按工艺派生 + 逐片口径 + 向上进位（= 本页这些参数的消费方）。
  *
  * ## 本文件治的缺陷形态（每一条都能单独判红）
@@ -12,9 +13,9 @@
  * | # | 判据 | 红证（怎么让它红） |
  * |---|---|---|
  * | 1 | 引擎配置键集 ⊆ 说明键集 | 在 `DEFAULT_CRAFT_CALC_CONFIG` 加一个键而不补文案 ⇒ 红 |
- * | 2 | `side_margin` 的口径 = **左右覆盖余量** | 把文案改回「定宽买高的上下卷边合计」⇒ 红（= #4940 判据 1） |
+ * | 2 | `side_margin` **整体退场**（键集 / 文案 / types / 引擎配置字典 / 迁移列五处都不存在） | 任一处把它加回来 ⇒ 红（= #5030 的反向守卫） |
  * | 3 | 页面**不再自带第二份口径** | 页面里再出现旧文案字面量 / 不再引用说明模块 ⇒ 红 |
- * | 4 | **引擎那行注释**也不得再说「上下卷边」 | 把引擎注释改回去 ⇒ 红（漂移源头在引擎，不只是页面） |
+ * | 4 | 引擎配置字典**不再有** `side_margin` 键；**只剩** `hem_margin`（上下卷边） | 把 `"side_margin": SIDE_MARGIN` 加回引擎 ⇒ 红 |
  * | 5 | 说明文案里**不出现数字** | 在任一文案里写死 `0.25` 之类的值 ⇒ 红（数值只许来自真值） |
  * | 6 | 自动推算算例 = **服务端判定**的**逐字转发**（issue #5036 包 2a） | 算例文案自己拼 / 不走服务端返回 ⇒ 红 |
  * | 7 | 拼接 / 接高写明「系统不推算」「不触发工序」 | 删掉任一句 ⇒ 红（**死亡条件**见下） |
@@ -24,7 +25,7 @@
  * 一旦 issue #4569 裁定改为「也触发工序」，**这条必须连同文案一起改判** —— 它不是"永真"断言。
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { AUTO_FEATURE_NAMES } from '@/lib/craft-auto-features'
 import { SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
@@ -61,9 +62,27 @@ const engineSrc = readFileSync(CALC_SRC, 'utf8')
 const PAGE_SRC = resolve(__dirname, '../../../src/app/(dashboard)/production/routings/page.tsx')
 const pageSrc = readFileSync(PAGE_SRC, 'utf8')
 
-/** 后端契约类型（`side_margin` 的注释同样在讲口径 ⇒ 也在守卫范围内） */
+/** 后端契约类型（`hem_margin` 的口径注释在守卫范围内；`side_margin` 应已整体退场） */
 const TYPES_SRC = resolve(__dirname, '../../../src/types/index.ts')
 const typesSrc = readFileSync(TYPES_SRC, 'utf8')
+
+/** 后端迁移目录 + bootstrap 终态（**反向守卫**：`side_margin` 列不得残留，issue #5030） */
+const MIGRATION_DIR = resolve(
+  __dirname,
+  '../../../../../backend/admin-api/src/main/resources/db/migration'
+)
+const SCHEMA_SRC = resolve(__dirname, '../../../../../docs/sql/schema.sql')
+const schemaSrc = readFileSync(SCHEMA_SRC, 'utf8')
+
+/** Java 侧（实体 + 写面）—— 键集/字段同属跨源收敛面 */
+const JAVA_ENTITY_SRC = resolve(
+  __dirname,
+  '../../../../../backend/admin-api/src/main/java/com/migao/admin/entity/CraftCalcConfig.java'
+)
+const JAVA_SERVICE_SRC = resolve(
+  __dirname,
+  '../../../../../backend/admin-api/src/main/java/com/migao/admin/service/CraftCalcConfigService.java'
+)
 
 /** 说明模块自身（判据 9 的扫描面） */
 const GLOSSARY_SRC = resolve(__dirname, '../../../src/lib/craft-calc-glossary.ts')
@@ -78,7 +97,6 @@ const ENGINE_DEFAULT_CALC_CONFIG: CraftCalcConfig = {
   min_fullness: 1.5,
   tiers: { standard: { fullness: 2.0, label: '标准工艺' }, economy: { fullness: 1.8, label: '经济工艺' } },
   default_formula: 'pleat',
-  side_margin: 0.3,
   hem_margin: 0.3,
   meters_rounding_step: 0.1,
 }
@@ -111,22 +129,73 @@ describe('算料配置页·口径与术语说明（issue #4975）', () => {
   it('判据 1b：六个标量键与说明模块的标量清单**逐值一致**（少一个 = 表单少一个输入框）', () => {
     const engineScalarKeys = engineConfigKeys().filter((k) => CALC_SCALAR_KEYS.includes(k as never))
     expect([...CALC_SCALAR_KEYS].sort()).toEqual(engineScalarKeys.sort())
+    // 🔴 #5030 反向守卫：`side_margin` 已从两侧键集退场 —— 任一侧加回 ⇒ 本断言红
+    expect([...CALC_SCALAR_KEYS]).not.toContain('side_margin')
+    expect(engineConfigKeys()).not.toContain('side_margin')
   })
 
-  it('判据 2：side_margin 的口径是「左右覆盖余量」，不是「上下卷边」（issue #4940）', () => {
-    const copy = CALC_PARAM_COPY.side_margin
+  // 🔴 issue #5030 改判（用户 2026-09-21 裁定：「订单里的宽和高是窗户的宽高」⇒ 用料 = 窗宽 × 褶倍，
+  // 不再另加左右覆盖余量）。原判据 2「`side_margin` 的口径 = 左右覆盖余量」的**前提已消失**
+  // （键与常量都没了）⇒ 改成**同强度的反向守卫**：五处都不得再有这个键。
+  // 红证（逐处可单独判红）：① `CALC_SCALAR_KEYS` 加回 `'side_margin'`；② `CALC_PARAM_COPY` 加回条目；
+  // ③ `types/index.ts` 加回 `side_margin: number`；④ 引擎 `DEFAULT_CRAFT_CALC_CONFIG` 加回该键；
+  // ⑤ 新增迁移里再出现 `ADD COLUMN … side_margin`。
+  it('判据 2：`side_margin` **整体退场** —— 键集 / 文案 / types / 引擎配置字典都不存在（#5030 反向守卫）', () => {
+    expect([...CALC_SCALAR_KEYS]).not.toContain('side_margin')
+    expect(Object.keys(CALC_PARAM_COPY)).not.toContain('side_margin')
+    expect(typesSrc).not.toContain('side_margin')
+    expect(engineConfigKeys()).not.toContain('side_margin')
+    // 反向自证（守卫非空转）：同一形态的**仍在场**的键必须能被这些断言面看见
+    expect(typesSrc).toContain('hem_margin')
+    expect(engineConfigKeys()).toContain('hem_margin')
+  })
+
+  it('判据 2b：高方向的 `hem_margin`（上下卷边）**仍在场**且口径未变（#5030 只退场宽方向）', () => {
+    const copy = CALC_PARAM_COPY.hem_margin
     const text = `${copy.label}${copy.hint}${copy.impact}`
-    // 注入：把 hint 改回「定宽买高的上下卷边合计」⇒ 下面两条红（这正是改前的线上文案）
-    expect(text).toContain('左右')
-    expect(text).not.toContain('上下卷边')
+    // 注入：把 `hem_margin` 也一起删掉（或把文案改成宽方向语义）⇒ 红
+    expect(text).toContain('上下卷边')
+    expect(text).toContain('高方向')
+    // 引擎侧自证：常量定义行与语义注释逐字一致（读源，不抄现值）
+    const line = engineSrc.split('\n').find((l) => /^HEM_MARGIN\s*=/.test(l))
+    if (!line) throw new Error('curtain_calc.py 里找不到 HEM_MARGIN 的常量定义行')
+    expect(line).toContain('上下卷边')
   })
 
-  it('判据 2b：上下卷边归 hem_margin 语义 —— SIDE_MARGIN 常量行讲的是左右余量（读源自证）', () => {
-    const line = engineSrc.split('\n').find((l) => /^SIDE_MARGIN\s*=/.test(l))
-    if (!line) throw new Error('curtain_calc.py 里找不到 SIDE_MARGIN 的常量定义行')
-    // 判据的基准取自引擎自己的语义注释 ⇒ 文案不可能比引擎"更对"
-    expect(line).toContain('左右覆盖余量')
-    expect(line).not.toContain('上下卷边')
+  it('判据 2c：后端侧 `side_margin` 同样退场 —— 迁移 / bootstrap schema / Java 实体与写面（#5030）', () => {
+    // 迁移目录：不得有任何**新增**迁移再建/再写这一列。
+    // ⚠️ V80 是**历史**建表迁移（当时的快照就是有这一列），V112 才是删它的那一条 ⇒ 只钉
+    // 「V80 之后的文件里再出现 ADD COLUMN / INSERT 该列」这一形态（拿 V80 当 offender = 假红）。
+    const migrationFiles = readdirSync(MIGRATION_DIR).filter((f) => f.endsWith('.sql'))
+    // 自证解析面非空（目录读错 ⇒ 本守卫必须红，不静默空跑）
+    expect(migrationFiles.length).toBeGreaterThan(50)
+    const V80 = 'V80__create_craft_calc_configs.sql'
+    expect(migrationFiles).toContain(V80)
+    // V80 确实建过这一列（否则「后续不得再出现」这条判据就失去了前提，会变成空断言）
+    expect(readFileSync(resolve(MIGRATION_DIR, V80), 'utf8')).toMatch(/side_margin\s+NUMERIC/i)
+    const offenders = migrationFiles
+      .filter((f) => f !== V80)
+      .filter((f) => {
+        // 只看**可执行 SQL**（行首非注释）—— 注释里写回滚样例（V112 就有）不算复活
+        const executable = readFileSync(resolve(MIGRATION_DIR, f), 'utf8')
+          .split('\n')
+          .filter((l) => !/^\s*--/.test(l))
+          .join('\n')
+        return /ADD COLUMN[^;]*side_margin/i.test(executable)
+      })
+    expect(offenders).toEqual([])
+    // 删列那一条必须在（回滚/重放路径靠它；删掉 ⇒ 存量库永远带着一列无消费者的参数）
+    expect(migrationFiles).toContain('V112__drop_craft_calc_side_margin.sql')
+    // bootstrap 终态：`side_margin` 只许出现在注释里（真实列定义形如 `side_margin NUMERIC(6,3)`）
+    expect(schemaSrc).not.toMatch(/^\s*side_margin\s+[A-Z]/m)
+    expect(schemaSrc).toContain('hem_margin')
+    // Java 实体 + 写面：字段与键集都不得残留
+    const javaEntity = readFileSync(JAVA_ENTITY_SRC, 'utf8')
+    const javaService = readFileSync(JAVA_SERVICE_SRC, 'utf8')
+    expect(javaEntity).not.toContain('sideMargin')
+    expect(javaService).not.toContain('side_margin')
+    // 反向自证：同一个写面的**仍在场**的键必须能被看见（否则上面两条是空断言）
+    expect(javaService).toContain('hem_margin')
   })
 
   it('判据 3：页面不再自带第二份口径（改成引用说明模块 + 文案由模块派生）', () => {
@@ -141,22 +210,23 @@ describe('算料配置页·口径与术语说明（issue #4975）', () => {
     expect(pageSrc).toContain('f.anchor')
   })
 
-  it('判据 3b：后端契约类型里 side_margin 的注释同口径（第三处漂移点）', () => {
-    const line = typesSrc.split('\n').find((l) => l.includes('side_margin: number'))
-    if (!line) throw new Error('types/index.ts 里找不到 side_margin 字段')
-    // 注释在字段**上一行**
-    const idx = typesSrc.split('\n').indexOf(line)
-    const comment = typesSrc.split('\n')[idx - 1]
-    expect(comment).toContain('左右')
-    expect(comment).not.toContain('上下卷边')
+  // 🔴 #5030 改判：原判据 3b 钉的是「types 里 `side_margin` 的注释口径」—— 该字段已删 ⇒
+  // 前提消失 ⇒ 改成**同强度的反向守卫**：types 里不得再有这个字段/标识。
+  it('判据 3b：后端契约类型里 `side_margin` 字段**已删**（不得残留字段或注释）（#5030）', () => {
+    expect(typesSrc).not.toContain('side_margin')
+    // 反向自证：同一接口里**仍在场**的高方向字段必须能被看见（否则上一条是空断言）
+    expect(typesSrc).toContain('hem_margin: number')
   })
 
-  it('判据 4：引擎配置字典里 side_margin 那行注释也不得再说「上下卷边」', () => {
-    const line = engineSrc.split('\n').find((l) => l.includes('"side_margin": SIDE_MARGIN'))
-    if (!line) throw new Error('curtain_calc.py 里找不到 DEFAULT_CRAFT_CALC_CONFIG 的 side_margin 行')
-    // 注入：把这行注释改回「# 定宽买高上下卷边（米）」⇒ 本断言红（改前实测即此形态）
-    expect(line).toContain('左右')
-    expect(line).not.toContain('上下卷边')
+  // 🔴 #5030 改判：原判据 4 钉「引擎配置字典里 side_margin 那行注释不得说『上下卷边』」——
+  // 该键已从 `DEFAULT_CRAFT_CALC_CONFIG` 删除 ⇒ 前提消失 ⇒ 改成**同强度的反向守卫**。
+  it('判据 4：引擎配置字典里**不再有** `side_margin` 键；只剩 `hem_margin`（#5030）', () => {
+    expect(engineConfigKeys()).not.toContain('side_margin')
+    expect(engineSrc).not.toContain('"side_margin"')
+    // 反向自证：高方向那行仍在（否则「没有 side_margin」可能只是整块被删）
+    const line = engineSrc.split('\n').find((l) => l.includes('"hem_margin": HEM_MARGIN'))
+    if (!line) throw new Error('curtain_calc.py 里找不到 DEFAULT_CRAFT_CALC_CONFIG 的 hem_margin 行')
+    expect(line).toContain('上下卷边')
   })
 
   it('判据 5：说明文案里不出现数字（数值一律由真值渲染 ⇒ 杜绝第二份口径）', () => {

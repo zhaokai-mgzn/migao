@@ -28,17 +28,30 @@
 
 | # | 判据 | 红证（怎么让它红） |
 |---|---|---|
-| C1 | §0 清单里每个符号的**声称值** == 引擎源码里该常量的**真值**（逐值读源） | 把引擎 `SIDE_MARGIN` 改成 `0.35` 而不改文档 ⇒ 红；把文档里的 `0.3` 改成 `0.35` ⇒ 红 |
-| C2 | §3 的公式行里**不得出现**这些常量的数值字面量（消灭副本，防回退） | 把 §3 的 `(W + SIDE_MARGIN)` 改回 `(W + 0.3)` ⇒ 红 |
+| C1 | §0 清单里每个符号的**声称值** == 引擎源码里该常量的**真值**（逐值读源） | 把引擎 `HEM_MARGIN` 改成 `0.35` 而不改文档 ⇒ 红；把文档里的 `0.3` 改成 `0.35` ⇒ 红 |
+| C2 | §3 的公式行里**不得出现**这些常量的数值字面量（消灭副本，防回退） | 把 §3 的 `(H + HEM_MARGIN)` 改回 `(H + 0.3)` ⇒ 红 |
 | C3 | **判别力下界（反恒真）**：符号表必须非空且覆盖 §3 实际引用的符号；每个符号必须在引擎源码里**真被消费**（除定义处外还有引用）；值必须为正数 | 删掉 §0 的表格 ⇒ 红；把 `ROMAN_SIDE` 内联成字面量（定义还在但无消费点）⇒ 红 |
 | C4 | **文档不得同时声称同一个常量的两个不同数值**（`0.3` 与 `0.35` 并存 ⇒ 必有一处说谎） | 往 §0 之外再抄一份不同值的余量 ⇒ 红 |
 | C5 | **注入式自证**：C1~C4、C6 的判定函数在**构造的**缺陷载荷上必须报错；同一载荷不注入 ⇒ 通过 | 见 `TestGuardSelfProof`（证明主测试的绿不是空跑） |
 | C6 | **引用方不得归属一个真值源章节里没有的数/节**（「假真值源」**第二形态**：真值源没错，是**引用方抄了旧数**；issue #4832） | 写一句「`quote-rules §10` = 0.15」而 §10 正文里没有 `0.15` ⇒ 红；写「`quote-rules §126`」而真值源没有该节 ⇒ 红 |
 
+⚠️ **issue #5030 改判（2026-09-21 用户裁定）**：订单宽高 = **窗户宽高** ⇒ 成品宽 = 净窗宽、
+成品高 = 净窗高 ⇒ 宽度用料 = `窗宽 × 褶倍`（**不再另加左右覆盖余量**）⇒ 常量 `SIDE_MARGIN`
+与配置键 `side_margin` **整体退场**。本守卫的 `REQUIRED_CONSTANTS` / `REQUIRED_IN_SECTION3`
+据此删除该符号（**不是放宽**：清单少一个符号 ⇒ 少一项逐值守卫，故同强度补**反向守卫**
+—— 源码里再出现 `SIDE_MARGIN`/`side_margin` ⇒ 红，落点 =
+`test_panels_formula_split_audit.py` 判据 C5 与 `test_craft_calc_config_contract.py` 判据 4c，**全仓逐文件**）。
+⚠️ **本次改判后的已知红项（等文档包同步，不得为绿而放宽）**：真值源
+`docs/curtain-fabric-quote-rules.md` §0 仍列着 `SIDE_MARGIN` 行、§3 仍写
+`M = (W + SIDE_MARGIN) × N` / `P = ceil((W + SIDE_MARGIN) × N / G)` ⇒ C1（清单逐行读引擎真值）、
+C2 补（§3 符号引用）、C4（§0 之外的矛盾声称）**在该文档同步前必然红** ——
+这是**正确的红**（真值源与现实不符），文档包改完即绿。
+
 ⚠️ **本守卫不 import 被测引擎**（`app` 包的导入期需要完整 `.env` ⇒ 会红于环境而非红于口径）
 —— 与 `test_hem_margin_cross_language_drift.py` / `test_fabric_width_truth_source.py` 同族，照源读常量。
 
-⚠️ **边界（照实登记，别把「登记了」读成「治住了」）**：C1~C4 覆盖 §0 清单登记的 **12 个标量常量**
+⚠️ **边界（照实登记，别把「登记了」读成「治住了」）**：C1~C4 覆盖 §0 清单登记的标量常量
+（issue #5030 后为 **11 个**：`SIDE_MARGIN` 已退场）
 + §3 的公式行。字典型常量（`DEFAULT_FULLNESS` / `DEFAULT_PROCESSING_PRICE` / `DEFAULT_CRAFT_TIERS`）
 与拼色系数表的散文副本仍散在 §1 / §5 / §8 / §10（issue #4819 报告的分叉项，本单不改其数值）。
 
@@ -70,8 +83,12 @@ SECTION3_ANCHOR = "## 3. 用布量精确公式"
 SECTION3_END = "## 4. 损耗与余量"
 
 #: 清单必须覆盖的常量（符号 → 引擎源码里的常量名）。**值一律从源码读，这里不写数。**
+#: ⚠️ issue #5030（2026-09-21 用户裁定）**删除 `SIDE_MARGIN`**：订单宽高 = **窗户宽高**
+#: ⇒ 成品宽 = 净窗宽、成品高 = 净窗高，宽度用料 = `窗宽 × 褶倍`（**不再另加左右覆盖余量**）
+#: ⇒ 该常量与配置键 `side_margin` 整体退场，真值源 §0 清单里**不该再有它**。
+#: 反向守卫（源码里再出现该标识符 ⇒ 红）= `test_panels_formula_split_audit.py` 判据 C5 与
+#: `test_craft_calc_config_contract.py` 判据 4c（**全仓逐文件**）。
 REQUIRED_CONSTANTS: dict[str, str] = {
-    "SIDE_MARGIN": "SIDE_MARGIN",
     "HEM_MARGIN": "HEM_MARGIN",
     "ROMAN_SIDE": "ROMAN_SIDE",
     "ROD_EXTENSION": "ROD_EXTENSION",
@@ -86,7 +103,8 @@ REQUIRED_CONSTANTS: dict[str, str] = {
 }
 
 #: §3 里**必须**以符号形态出现的量（公式的被引用面；缺一个 ⇒ 副本可能已被抄回散文）
-REQUIRED_IN_SECTION3 = ("SIDE_MARGIN", "HEM_MARGIN", "ROMAN_SIDE")
+#: ⚠️ `SIDE_MARGIN` 已按 issue #5030 整体退场 ⇒ 从本清单删除（§3 的分幅式不再引用它）。
+REQUIRED_IN_SECTION3 = ("HEM_MARGIN", "ROMAN_SIDE")
 
 #: 浮点字面量（`0.3` / `0.35` 都算；`W` / `2.8` 里的整数不算）
 _FLOAT = re.compile(r"(?<![\w.])(\d+\.\d+)(?![\w.])")
@@ -482,7 +500,9 @@ def _payload(checklist: str, section3: str) -> str:
 
 
 #: 一个**语法正确**的清单行模板（值是占位符，由测试按「当前真值」或「陈旧值」填入）
-_ROW = "| `SIDE_MARGIN` | `curtain_calc.py` 的 `SIDE_MARGIN` | 左右覆盖余量 | {v} |"
+#: ⚠️ issue #5030 后 `SIDE_MARGIN` 已整体退场 ⇒ 自证载荷改用**仍在**的高方向常量 `HEM_MARGIN`
+#: （自证必须复用**真实存在**的常量：拿一个已删的符号做载荷，`_engine_value` 取不到真值 ⇒ 自证自己先红）。
+_ROW = "| `HEM_MARGIN` | `curtain_calc.py` 的 `HEM_MARGIN` | 上下卷边合计 | {v} |"
 
 
 class TestGuardSelfProof:
@@ -496,61 +516,61 @@ class TestGuardSelfProof:
     def test_c1_detects_stale_claim(self) -> None:
         """C1 自证：清单声称值与引擎真值不符 ⇒ 同一判定体必须报出漂移。"""
         source = _calc_text()
-        truth = _engine_value(source, "SIDE_MARGIN")
+        truth = _engine_value(source, "HEM_MARGIN")
         stale = f"{truth}5"          # 构造一个**必然不等于**真值的数（不写死任何常量值）
-        payload = _payload(_ROW.format(v=stale), "`M = (W + SIDE_MARGIN) × N`")
+        payload = _payload(_ROW.format(v=stale), "`M = (H + HEM_MARGIN)`")
         drift = _checklist_drift(payload, source)
-        assert drift and "SIDE_MARGIN" in drift[0], (
+        assert drift and "HEM_MARGIN" in drift[0], (
             f"注入陈旧值 {stale}（真值 {truth}）后判定体没报漂移：{drift} ⇒ C1 是空断言"
         )
 
     def test_c1_clean_payload_passes(self) -> None:
         """C1 反向：同一载荷填**真值** ⇒ 判定体不得报漂移（证明红由注入引起）。"""
         source = _calc_text()
-        truth = _engine_value(source, "SIDE_MARGIN")
-        payload = _payload(_ROW.format(v=truth), "`M = (W + SIDE_MARGIN) × N`")
+        truth = _engine_value(source, "HEM_MARGIN")
+        payload = _payload(_ROW.format(v=truth), "`M = (H + HEM_MARGIN)`")
         assert _checklist_drift(payload, source) == [], "干净载荷被判成漂移 ⇒ 判据误红"
 
     def test_c2_detects_literal_in_section3(self) -> None:
         """C2 自证：§3 抄回数值字面量 ⇒ 同一判定体必须报出来。"""
         source = _calc_text()
-        truth = _engine_value(source, "SIDE_MARGIN")
-        payload = _payload(_ROW.format(v=truth), f"`M = (W + {truth}) × N`")
+        truth = _engine_value(source, "HEM_MARGIN")
+        payload = _payload(_ROW.format(v=truth), f"`M = (H + {truth})`")
         hits = _section3_literal_hits(payload, source)
-        assert hits and "SIDE_MARGIN" in hits[0], (
+        assert hits and "HEM_MARGIN" in hits[0], (
             f"注入 §3 字面量 {truth} 后判定体没报出来：{hits} ⇒ C2 是空断言"
         )
 
     def test_c2_clean_payload_passes(self) -> None:
         """C2 反向：同一载荷**不注入** ⇒ 判定体读不到字面量（证明红由注入引起）。"""
         source = _calc_text()
-        truth = _engine_value(source, "SIDE_MARGIN")
-        payload = _payload(_ROW.format(v=truth), "`M = (W + SIDE_MARGIN) × N`")
+        truth = _engine_value(source, "HEM_MARGIN")
+        payload = _payload(_ROW.format(v=truth), "`M = (H + HEM_MARGIN)`")
         assert _section3_literal_hits(payload, source) == [], "干净载荷被判成有字面量 ⇒ 判据误红"
 
     def test_c3_detects_dead_constant(self) -> None:
         """C3 自证：常量只剩定义、没有消费点 ⇒ `_consumed_names` 必须认出来。"""
         live = _consumed_names(_calc_text())
-        assert "SIDE_MARGIN" in live, "真源里 SIDE_MARGIN 竟无消费点 ⇒ 判据前提变了，请同步本守卫"
-        dead = "SIDE_MARGIN = 0.3\nOTHER = 1\n"
-        assert "SIDE_MARGIN" not in _consumed_names(dead), (
+        assert "HEM_MARGIN" in live, "真源里 HEM_MARGIN 竟无消费点 ⇒ 判据前提变了，请同步本守卫"
+        dead = "HEM_MARGIN = 0.3\nOTHER = 1\n"
+        assert "HEM_MARGIN" not in _consumed_names(dead), (
             "死常量（只有定义、无引用）被判成「已消费」⇒ C3 是空断言"
         )
 
     def test_c4_detects_conflicting_value(self) -> None:
         """C4 自证：同一条规则里两个不同数值并存 ⇒ 同一判定体必须报矛盾。"""
         source = _calc_text()
-        truth = _engine_value(source, "SIDE_MARGIN")
+        truth = _engine_value(source, "HEM_MARGIN")
         other = f"{truth}5"
-        payload = _payload(_ROW.format(v=truth), f"`SIDE_MARGIN` = {other}（覆盖余量）")
+        payload = _payload(_ROW.format(v=truth), f"`HEM_MARGIN` = {other}（上下卷边）")
         conflicts = _conflicting_claims(payload, source)
         assert conflicts, f"注入矛盾值 {other}（真值 {truth}）后判定体没报矛盾 ⇒ C4 是空断言"
 
     def test_c4_clean_payload_passes(self) -> None:
         """C4 反向：同一载荷只写符号名 ⇒ 判定体不得报矛盾。"""
         source = _calc_text()
-        truth = _engine_value(source, "SIDE_MARGIN")
-        payload = _payload(_ROW.format(v=truth), "`SIDE_MARGIN` 覆盖余量按符号取")
+        truth = _engine_value(source, "HEM_MARGIN")
+        payload = _payload(_ROW.format(v=truth), "`HEM_MARGIN` 上下卷边按符号取")
         assert _conflicting_claims(payload, source) == [], "干净载荷被判成矛盾 ⇒ 判据误红"
 
     def test_c6_detects_missing_section(self) -> None:

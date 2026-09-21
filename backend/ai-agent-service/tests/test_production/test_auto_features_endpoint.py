@@ -21,7 +21,7 @@
 | 3b | 引擎在 `fabric_width=None` 时**不得抛异常**（#5033 根因：`product > None` 抛 `TypeError` ⇒ 调用方只能短路） | 去掉 `fabric_width is not None` 守卫 ⇒ `TypeError` ⇒ 红 |
 | 4 | 缺 / 表外加工类型 ⇒ 不判 + `notice='unknown-cutting-mode'`（不猜朝向） | 缺省时按定高买宽兜底 ⇒ 红 |
 | 5 | 褶倍缺省 ⇒ 取**该租户配置**的标准档（并回显 `fullness_used` 供核对） | 写死 2.0 ⇒ 红 |
-| 6 | 租户配置 `side_margin` / `hem_margin` 生效 | 用模块常量 ⇒ 红 |
+| 6' | 租户配置 `hem_margin` 生效（**高**方向，不受本裁定影响）；宽方向余量键 `side_margin` **已退场、传它不改变判定**（issue #5030 改判） | 用模块常量 ⇒ 红；把 `side_margin` 接回判据 ⇒ 红 |
 | 7 | 响应**自描述**：`door_width` / `fullness_used` 回显实际用于判定的值（商家可核对） | 不回显 ⇒ 红 |
 | 8 | 缺 `X-Service-Token` ⇒ 401（与既有内部端点同款） | — |
 """
@@ -67,7 +67,7 @@ def _names(features):
     return [f["name"] for f in features]
 
 
-#: 一份能判出特征的输入（定宽买高：(1.6 + 0.3) × 2.0 = 3.8 > 门幅 2.8）
+#: 一份能判出特征的输入（定宽买高：1.6 × 2.0 = 3.2 > 门幅 2.8；issue #5030 后**无**宽方向余量）
 BASE = {
     "width": 1.6, "height": 2.0, "fabric_width": 2.8,
     "cutting_mode": FIXED_WIDTH, "fullness": 2.0,
@@ -155,22 +155,36 @@ class TestEngineAcceptsUnknownDoorWidth:
 
 
 class TestTenantConfig:
-    """判据 5 / 6：褶倍缺省取**该租户配置**的标准档；`side_margin`/`hem_margin` 生效。"""
+    """判据 5 / 6'：褶倍缺省取**该租户配置**的标准档；`hem_margin` 生效、
+    宽方向余量键 `side_margin` **已退场**（issue #5030）。"""
 
     def test_fullness_defaults_to_tenant_standard_tier(self, client):
         payload = {k: v for k, v in BASE.items() if k != "fullness"}
         data = _data(client, payload)
         assert data["fullness_used"] == 2.0  # 引擎默认标准档
-        # 把标准档改成 1.6 ⇒ 3.8 仍 > 2.8（判定不变），但回显值必须跟着变
+        # 把标准档改成 1.6 ⇒ 1.6 × 1.6 = 2.56 ≤ 2.8（判定变了），回显值也必须跟着变
         tuned = _data(client, {**payload, "config": {"tiers": {"standard": {"fullness": 1.6}}}})
         assert tuned["fullness_used"] == 1.6
 
-    def test_side_margin_from_tenant_config_changes_the_verdict(self, client):
+    def test_side_margin_in_config_does_not_change_the_verdict(self, client):
+        """判据 6'（issue #5030 **改判**）：`side_margin` 已退场 ⇒ 传它**不改变**判定。
+
+        旧判据（#4976 包 2）钉的是「租户配置 `side_margin` 生效（改它 ⇒ 超宽判定随之变）」——
+        前提 = 该键**存在且被引擎消费**。用户 2026-09-21 裁定「订单宽 = 净窗宽、成品宽 = 净窗宽」
+        ⇒ 该键整体退场 ⇒ 旧判据的前提消失，**改判为反向守卫**：
+        ① 传 `{"side_margin": 0.9}` 与不传 config **逐值相同**（键没有被消费）；
+        ② 引擎配置字典键集里**没有** `side_margin`（有人加回键集并接进判据 ⇒ 红）。
+        """
         roomy = {**BASE, "fabric_width": 4.0}
-        assert _names(_data(client, roomy)["auto_features"]) == ["倒幅"]
-        tuned = _data(client, {**roomy, "config": {"side_margin": 0.9}})
-        # (1.6 + 0.9) × 2.0 = 5.0 > 4.0 ⇒ 判超宽
-        assert _names(tuned["auto_features"]) == ["超宽", "倒幅"]
+        plain = _data(client, roomy)["auto_features"]
+        assert _names(plain) == ["倒幅"]
+        assert _data(client, {**roomy, "config": {"side_margin": 0.9}})["auto_features"] == plain, (
+            "传 `side_margin` 改变了端点判定 —— 该键已按用户 2026-09-21 裁定（issue #5030）"
+            "整体退场（订单宽 = 净窗宽 ⇒ 宽方向没有余量）⇒ 它又被接回了判据 ⇒ 红"
+        )
+        assert "side_margin" not in curtain_calc.DEFAULT_CRAFT_CALC_CONFIG, (
+            "`side_margin` 又回到了 DEFAULT_CRAFT_CALC_CONFIG —— 该键已整体退场（issue #5030）"
+        )
 
     def test_hem_margin_from_tenant_config_changes_the_verdict(self, client):
         base = {"width": 1.6, "height": 2.4, "fabric_width": 2.8,
@@ -187,6 +201,8 @@ class TestSameSourceAsEngine:
         BASE,
         {**BASE, "fabric_width": 4.0},
         {"width": 1.6, "height": 2.6, "fabric_width": 2.8, "cutting_mode": FIXED_HEIGHT, "fullness": 2.0},
+        {**BASE, "config": {"hem_margin": 0.5}},
+        # 已退场的键也照传（端点必须与引擎**逐值**同源 —— 包括「传了没人消费的键」这一情形）
         {**BASE, "config": {"side_margin": 0.9}},
     ])
     def test_endpoint_equals_engine_function(self, client, payload):

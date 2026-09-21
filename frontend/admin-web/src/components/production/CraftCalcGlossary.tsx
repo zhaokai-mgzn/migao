@@ -70,7 +70,9 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
 
   // 🔴 issue #5036 包 2a：算例的**判定依据**由**服务端**给（读**该租户配置**）—— 本组件只**展示**。
   // 依赖用**入参签名**（不是 `config` 对象本身）：页面草稿每次渲染都是新对象 ⇒ 用对象当依赖会自激请求风暴。
-  const examplesSignature = [config.side_margin, config.hem_margin, fullness].join('|')
+  // 🔴 issue #5030：宽方向余量（`side_margin`）**整体退场** ⇒ 不再进依赖签名（它已不参与任何判定）；
+  // 仍进签名的两项 = 会改变算例结果的配置：高方向卷边 + 标准档褶倍。
+  const examplesSignature = [config.hem_margin, fullness].join('|')
 
   useEffect(() => {
     let cancelled = false

@@ -61,7 +61,6 @@ const CONFIG: CraftCalcConfig = {
   min_fullness: 1.5,
   tiers: { standard: { fullness: 2.0, label: '标准工艺' }, economy: { fullness: 1.8, label: '经济工艺' } },
   default_formula: 'pleat',
-  side_margin: 0.3,
   hem_margin: 0.3,
   meters_rounding_step: 0.1,
 }
@@ -82,12 +81,18 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
     }
   })
 
-  it('参数值取自配置对象（不是写死的数）', () => {
-    const changed: CraftCalcConfig = { ...CONFIG, per_fold_single: 0.31, side_margin: 0.42 }
+  it('参数值取自配置对象（不是写死的数）；`side_margin` 已随 #5030 退场', () => {
+    const changed: CraftCalcConfig = { ...CONFIG, per_fold_single: 0.31, hem_margin: 0.42 }
     render(<CraftCalcGlossary config={changed} />)
     // 注入：把渲染值写死成默认值 ⇒ 两条都红
     expect(screen.getByTestId('glossary-value-per_fold_single')).toHaveTextContent('0.31')
-    expect(screen.getByTestId('glossary-value-side_margin')).toHaveTextContent('0.42')
+    expect(screen.getByTestId('glossary-value-hem_margin')).toHaveTextContent('0.42')
+    // 🔴 #5030 改判：原判据钉 `glossary-value-side_margin` = 0.42 —— 该键已整体退场
+    // ⇒ 改成**同强度的反向守卫**：值行与说明条目都不得再渲染出来（加回该键 ⇒ 红）
+    expect(screen.queryByTestId('glossary-value-side_margin')).toBeNull()
+    expect(document.getElementById('glossary-param-side_margin')).toBeNull()
+    // 反向自证：同一张表**仍在场**的高方向值行必须能被看见（否则上面两条是空断言）
+    expect(document.getElementById('glossary-param-hem_margin')).not.toBeNull()
   })
 
   it('三个自动推算特征各有一条**带真实数字**的算例（依据来自服务端 —— #5036 包 2a）', async () => {

@@ -16,18 +16,20 @@
 | # | 判据 | 红证（怎么让它红） |
 |---|---|---|
 | 1 | 按 `cutting_mode` 分流：`定高买宽` ⇒ 只判超高；`定宽买高` ⇒ 超宽 + 倒幅；缺省/表外 ⇒ **都不判**（不猜朝向） | 去掉分流（两边都判）⇒ 红 |
-| 2 | 超宽判据 = `(成品宽 + side_margin) × 褶倍 > 门幅`（**与下单页同式**）；**缺褶倍 ⇒ 不判超宽** | 改成「只比 宽 + 余量」（漏褶倍）⇒ 红 |
+| 2 | 超宽判据 = `窗宽 × 褶倍 > 门幅`（**与下单页同式**；issue #5030 后**不含任何宽方向余量**）；**缺褶倍 ⇒ 不判超宽** | 改成「只比 宽」（漏褶倍）⇒ 红；把宽方向余量加回判据 ⇒ 红 |
 | 3 | **门幅接线**：传 SKU 门幅 ⇒ 分幅与自动特征随它变；**不传 ⇒ 与今天逐值一致** | 端点忽略入参（仍用常量）⇒ 红 |
 | 4 | `build_quote` 的 `auto_features` **键恒在**（空列表 = 不判，不是「没算」） | 改成「不判时省略键」⇒ 红 |
-| 5 | 租户配置 `side_margin` 生效（改它 ⇒ 超宽判定随之变） | 用模块常量而不是 `cfg` ⇒ 红 |
+| 5' | 宽方向余量的配置键 `side_margin` **已退场、不得被消费**（传它不改变判定 + 键集里没有它） | 把它接回判据 ⇒ 红（issue #5030 改判；旧判据「取自该租户配置」的前提已消失） |
 | 6 | 判定依据（`reason`）带**真实数字**（商家要能核对「为什么判它超宽」） | reason 写成固定串 ⇒ 红 |
 | 7 | **倒幅与褶倍无关**（它是加工类型的函数） | 让缺褶倍把倒幅也吃掉 ⇒ 红 |
 
 ## 与前端的关系（照实登记）
 
 下单页 `frontend/admin-web/src/lib/craft-auto-features.ts` **本包不动** —— 它仍是取价路径的判定源。
-两条判据（服务端 / 前端）在本包内**并存**，措辞逐字对齐（同一句「成品宽 … + 左右余量 … × 褶倍 …
-= … 米 > 门幅 … 米」）；前端退场（只展示服务端结论）是**包 2**，届时本包的输出成为唯一真值。
+两条判据（服务端 / 前端）在本包内**并存**，措辞逐字对齐（同一句「窗宽 … × 褶倍 … = … 米 > 门幅 … 米」，
+issue #5030 后**不含**「+ 左右余量」那一段）；前端退场（只展示服务端结论）是**包 2**，届时本包的输出成为唯一真值。
+⚠️ 两端的 float 打印形态**本就不同**（Python `{2.0}` 打 `2.0`、TS 打 `2`）—— 这是**改前既有**差异，
+**不要**断言两端 reason 逐字相等（否则会引入一条永远红或逼人改渲染的坏断言）。
 """
 
 import pytest
@@ -106,7 +108,8 @@ class TestOverWidthCriterion:
     """判据 2 / 7：超宽含**褶倍**（分幅才是多花钱的地方）；倒幅与褶倍无关。"""
 
     def test_over_width_multiplies_fullness(self):
-        # 只比「宽 + 余量」= 1.9 ≤ 2.8 会**漏报**；含褶倍 3.8 > 2.8 才是引擎真实的分幅条件
+        # 只比「宽」= 1.6 ≤ 2.8 会**漏报**；含褶倍 3.2 > 2.8 才是引擎真实的分幅条件
+        # （issue #5030 后宽方向没有余量 ⇒ 3.2 而非 3.8）
         assert _names(_detect(cutting_mode=FIXED_WIDTH)) == ["超宽", "倒幅"]
 
     def test_missing_fullness_skips_over_width_but_keeps_reverse(self):
@@ -114,19 +117,52 @@ class TestOverWidthCriterion:
         assert _names(_detect(fullness=None, cutting_mode=FIXED_WIDTH)) == ["倒幅"]
 
     def test_roomy_door_width_skips_over_width(self):
-        # (1.6 + 0.3) × 2.0 = 3.8 ≤ 4.0 ⇒ 不分幅 ⇒ 不判超宽（仍判倒幅）
+        # 1.6 × 2.0 = 3.2 ≤ 4.0 ⇒ 不分幅 ⇒ 不判超宽（仍判倒幅）
         assert _names(_detect(fabric_width=4.0, cutting_mode=FIXED_WIDTH)) == ["倒幅"]
 
+    def test_boundary_flips_at_the_new_criterion(self):
+        """★边界（issue #5030 改判的判别性锚）：1.3 宽 / 2.0 倍 / 门幅 2.8。
 
-class TestTenantConfigWins:
-    """判据 5：`side_margin` 取自**该租户的配置**（不是模块常量）。"""
+        旧判据 `(1.3 + 0.3) × 2.0 = 3.2 > 2.8` ⇒ **判超宽**；
+        新判据 `1.3 × 2.0 = 2.6 ≤ 2.8` ⇒ **不判超宽**（仍判倒幅）。
+        红证：把宽方向余量加回判据 ⇒ 本断言红（这正是「静默改价」的形态）。
+        """
+        assert _names(_detect(window_width=1.3, cutting_mode=FIXED_WIDTH)) == ["倒幅"]
+        # 对照：1.5 宽在两套判据下都超宽（3.0 > 2.8）⇒ 边界真的移动了，不是判据整体失效
+        assert _names(_detect(window_width=1.5, cutting_mode=FIXED_WIDTH)) == ["超宽", "倒幅"]
 
-    def test_side_margin_from_config_changes_the_verdict(self):
-        # 门幅 4.0：默认余量 0.3 ⇒ 3.8 ≤ 4.0 不判；把余量调到 0.9 ⇒ 2.5 × 2.0 = 5.0 > 4.0 ⇒ 判超宽
-        assert _names(_detect(fabric_width=4.0, cutting_mode=FIXED_WIDTH)) == ["倒幅"]
-        assert _names(
-            _detect(fabric_width=4.0, cutting_mode=FIXED_WIDTH, config={"side_margin": 0.9})
-        ) == ["超宽", "倒幅"]
+
+class TestDroppedSideMarginKeyIsNotConsumed:
+    """判据 5'（issue #5030 **改判**）：宽方向余量的配置键 `side_margin` 已退场、**不得**被消费。
+
+    旧判据 5（#4976 包 1a）钉的是「`side_margin` 取自**该租户的配置**（不是模块常量）」——
+    它的前提 = 该键**存在且被引擎消费**。用户 2026-09-21 裁定「订单宽 = 净窗宽、成品宽 = 净窗宽」
+    ⇒ 该键与常量一并退场 ⇒ 旧判据的前提消失，**改判为反向守卫**（不留一条不会红的空断言）。
+
+    新判据凭两点单独判红：① 传 `{"side_margin": 0.9}` **不改变**判定结果（键没有被消费）；
+    ② 引擎配置字典的键集里**没有** `side_margin`（有人把它加回键集并接进判据 ⇒ 红）。
+    """
+
+    def test_side_margin_in_config_does_not_change_the_verdict(self):
+        # 旧判据下：余量 0.9 ⇒ (1.6 + 0.9) × 2.0 = 5.0 > 4.0 ⇒ 会判超宽
+        # 新判据下：该键**没有消费者** ⇒ 与不传 config 逐值相同
+        plain = _detect(fabric_width=4.0, cutting_mode=FIXED_WIDTH)
+        assert _names(plain) == ["倒幅"]
+        assert _detect(
+            fabric_width=4.0, cutting_mode=FIXED_WIDTH, config={"side_margin": 0.9}
+        ) == plain, (
+            "传 `side_margin` 改变了判定结果 —— 该键已按用户 2026-09-21 裁定（issue #5030）"
+            "整体退场（订单宽 = 净窗宽 ⇒ 宽方向没有余量）⇒ 它又被接回了判据 ⇒ 红"
+        )
+
+    def test_side_margin_is_not_a_config_key(self):
+        """引擎配置字典的键集里不得再有 `side_margin`（有人加回键集 ⇒ 红）。"""
+        assert "side_margin" not in curtain_calc.DEFAULT_CRAFT_CALC_CONFIG, (
+            "`side_margin` 又回到了 DEFAULT_CRAFT_CALC_CONFIG —— 该键已整体退场（issue #5030）"
+        )
+        assert "hem_margin" in curtain_calc.DEFAULT_CRAFT_CALC_CONFIG, (
+            "高方向卷边 `hem_margin` 必须**保留**（它不受本裁定影响；缺了 = 过度删除）"
+        )
 
 
 class TestReasonCarriesNumbers:
@@ -153,7 +189,7 @@ class TestReasonCarriesNumbers:
         必须是有意识的改动（本断言红 ⇒ 先想清楚再改）。
         """
         assert [f["reason"] for f in _detect(cutting_mode=FIXED_WIDTH)] == [
-            "成品宽 1.6 + 左右余量 0.3 = 1.9 米 × 褶倍 2.0 = 3.8 米 > 门幅 2.8 米",
+            "窗宽 1.6 × 褶倍 2.0 = 3.2 米 > 门幅 2.8 米",
             "加工类型 = 定宽买高",
         ]
         assert [f["reason"] for f in _detect(window_height=2.6, cutting_mode=FIXED_HEIGHT)] == [

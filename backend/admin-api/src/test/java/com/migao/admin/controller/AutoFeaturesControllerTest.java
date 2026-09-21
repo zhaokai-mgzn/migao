@@ -61,7 +61,7 @@ class AutoFeaturesControllerTest extends BaseControllerTest {
         when(craftCalcClient.autoFeatures(any())).thenReturn(Map.of(
                 "auto_features", List.of(Map.of(
                         "name", "超宽", "source", "推算",
-                        "reason", "成品宽 1.6 + 左右余量 0.3 = 1.9 米 × 褶倍 2.0 = 3.8 米 > 门幅 2.8 米")),
+                        "reason", "窗宽 1.6 × 褶倍 2.0 = 3.2 米 > 门幅 2.8 米")),
                 "door_width", 2.8,
                 "fullness_used", 2.0,
                 "notice", ""));

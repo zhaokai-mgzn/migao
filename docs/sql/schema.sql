@@ -1035,7 +1035,6 @@ CREATE TABLE IF NOT EXISTS craft_calc_configs (
     tiers JSONB NOT NULL DEFAULT
         '{"standard": {"fullness": 2.0, "label": "标准工艺"}, "economy": {"fullness": 1.8, "label": "经济工艺"}}'::jsonb,
     default_formula VARCHAR(16) NOT NULL DEFAULT 'pleat',
-    side_margin NUMERIC(6,3) NOT NULL DEFAULT 0.3,
     hem_margin NUMERIC(6,3) NOT NULL DEFAULT 0.3,
     meters_rounding_step NUMERIC(6,3) NOT NULL DEFAULT 0.1,
     status VARCHAR(16) NOT NULL DEFAULT 'active',
@@ -1066,7 +1065,7 @@ COMMENT ON COLUMN craft_calc_configs.default_formula IS
 COMMENT ON COLUMN craft_calc_configs.hem_margin IS
     '高方向**上下卷边**合计（米；脚位+止口），引擎默认 0.3（V110，issue #4976 包 1b）。'
     '护栏：必须 > 0。消费点：定高可行性 / 定宽买高每幅长 / 折数法 / 罗马帘 / 自动特征「超高」判据。'
-    '⚠️ 与 side_margin（**宽方向**左右覆盖余量）是两个量，不得混用（issue #4940）。';
+    '⚠️ 宽方向**没有**余量（订单宽 = 净窗宽 ⇒ 成品宽 = 净窗宽；`side_margin` 已随 issue #5030 退场）。';
 COMMENT ON COLUMN craft_calc_configs.meters_rounding_step IS
     '用料米数**向上进位**步长（米），引擎默认 0.1。护栏：必须 > 0（截断/四舍五入 = 抹零）。';
 COMMENT ON COLUMN craft_calc_configs.status IS

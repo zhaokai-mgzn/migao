@@ -93,7 +93,6 @@ const CALC_CONFIG_OK = {
           economy: { fullness: 1.8, label: '经济档（1.8倍）' },
         },
         default_formula: 'pleat',
-        side_margin: 0.15,
         meters_rounding_step: 0.1,
       },
     },
@@ -131,7 +130,7 @@ const qtyInput = (idx = 0) => inputOf('用料米数', idx)
 const pickProduct = async () => {
   fireEvent.click(await screen.findByText('点击搜索并选择商品'))
   fireEvent.click(await screen.findByText('遮光窗帘'))
-  await screen.findByText('宽 (米)')
+  await screen.findByText('窗宽 (米)')
 }
 
 /** 填收货信息 → 等计价就绪 → 提交（落库 payload 的判据用；与 fee-preview 测试同一套流程） */
@@ -165,8 +164,8 @@ describe('下单页算料试算接线（#4434）', () => {
     render(<NewOrderPage />)
     await pickProduct()
 
-    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
 
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
     // 入参 = 标准档 + 韩褶 + 开数（缺省 1）；**前端不补默认值、不重算**
@@ -187,8 +186,8 @@ describe('下单页算料试算接线（#4434）', () => {
   it('判据 2：改宽 ⇒ 重新试算并更新数量（防抖后）', async () => {
     render(<NewOrderPage />)
     await pickProduct()
-    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
     await waitFor(() => expect(qtyInput()).toHaveValue(13.3))
 
     mockCraftCalcPreview.mockResolvedValue({
@@ -201,7 +200,7 @@ describe('下单页算料试算接线（#4434）', () => {
         },
       },
     })
-    fireEvent.change(inputOf('宽 (米)'), { target: { value: '5' } })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } })
 
     await waitFor(() => expect(qtyInput()).toHaveValue(9.8))
     expect(screen.getByText(/= 9\.8米/)).toBeInTheDocument()
@@ -210,8 +209,8 @@ describe('下单页算料试算接线（#4434）', () => {
   it('判据 3（红证）：手改数量 ⇒ 标记「人工指定」，且**不被试算静默改回**', async () => {
     render(<NewOrderPage />)
     await pickProduct()
-    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
     await waitFor(() => expect(qtyInput()).toHaveValue(13.3))
 
     // 商家手改（真值源 §8：用料必须带来源）
@@ -220,7 +219,7 @@ describe('下单页算料试算接线（#4434）', () => {
     expect(screen.getByText('人工指定')).toBeInTheDocument()
 
     // 再改宽：**不得**触发试算覆盖手工值
-    fireEvent.change(inputOf('宽 (米)'), { target: { value: '5' } })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '5' } })
     // 负向断言没有可等的元素 ⇒ 等一个短窗口后确认请求数没涨、值没被改
     await new Promise((r) => setTimeout(r, 600))
     expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1)
@@ -230,8 +229,8 @@ describe('下单页算料试算接线（#4434）', () => {
   it('判据 4：点「恢复按公式计算」⇒ 显式切回并重新预填（唯一的回切通道）', async () => {
     render(<NewOrderPage />)
     await pickProduct()
-    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
     await waitFor(() => expect(qtyInput()).toHaveValue(13.3))
 
     fireEvent.change(qtyInput(), { target: { value: '20' } })
@@ -249,8 +248,8 @@ describe('下单页算料试算接线（#4434）', () => {
     })
     render(<NewOrderPage />)
     await pickProduct()
-    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
 
     await waitFor(() =>
       expect(screen.getByText(/算料试算失败.*拼3次/)).toBeInTheDocument()
@@ -262,7 +261,7 @@ describe('下单页算料试算接线（#4434）', () => {
   it('判据 6：参数不全（只有宽没有高）⇒ **不发请求**（不得用默认窗宽猜米数）', async () => {
     render(<NewOrderPage />)
     await pickProduct()
-    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
     // 负向断言：等过防抖窗口后确认一次请求都没发
     await new Promise((r) => setTimeout(r, 600))
     expect(mockCraftCalcPreview).not.toHaveBeenCalled()
@@ -288,8 +287,8 @@ describe('下单页算料试算接线（#4434）', () => {
     })
     render(<NewOrderPage />)
     await pickProduct()
-    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
 
     mockCraftCalcPreview.mockClear()
@@ -328,8 +327,8 @@ describe('下单页算料试算接线（#4434）', () => {
     })
     render(<NewOrderPage />)
     await pickProduct()
-    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
 
     mockCraftCalcPreview.mockClear()
@@ -353,8 +352,8 @@ describe('下单页算料试算接线（#4434）', () => {
 
       render(<NewOrderPage />)
       await pickProduct()
-      fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-      fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+      fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+      fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
       await waitFor(() => expect(qtyInput()).toHaveValue(13.3))
       await submitOrder()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
@@ -370,8 +369,8 @@ describe('下单页算料试算接线（#4434）', () => {
 
       render(<NewOrderPage />)
       await pickProduct()
-      fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-      fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+      fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+      fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
       await waitFor(() => expect(screen.getByText(/算料试算失败/)).toBeInTheDocument())
       await submitOrder()
       await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
@@ -421,8 +420,8 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     // 试算还没发（宽高未填）⇒ 褶数是「—」：**不编数**
     expect(within(screen.getByTestId('craft-pleat-count')).getByText('—')).toBeInTheDocument()
 
-    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
     // 试算回来（`pleat_count: 52`）⇒ 褶数展示**照抄响应**（页面不自己算褶数）
     await waitFor(() =>
       expect(
@@ -457,8 +456,8 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     render(<NewOrderPage />)
     await pickProduct()
     openStep1()
-    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalledTimes(1))
 
     fireEvent.click(formulaRadio('褶倍数公式（倍数法）'))
@@ -490,8 +489,8 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     expect(formulaRadio('韩褶公式（褶数法）')).toHaveAttribute('aria-checked', 'true')
     expect(screen.queryByTestId('craft-tier-options')).toBeNull()
 
-    fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
-    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
     await waitFor(() => expect(mockCraftCalcPreview).toHaveBeenCalled())
     // 不阻断录入：试算照发，缺省档 = 常量 `standard`
     expect(mockCraftCalcPreview.mock.calls.at(-1)![0]).toMatchObject({

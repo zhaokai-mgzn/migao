@@ -418,13 +418,14 @@ function RulePriceCell({
 // ────────────────────────── 算料配置（tab「算料配置」，issue #4528 = 包 E） ──────────────────────────
 
 /**
- * 六个标量键的展示元数据 —— **单一真值** = `@/lib/craft-calc-glossary` 的 `CALC_PARAM_COPY`
+ * 标量键的展示元数据 —— **单一真值** = `@/lib/craft-calc-glossary` 的 `CALC_PARAM_COPY`
  * （issue #4975）。默认值/范围一律由后端给，前端**不持有**。
  *
- * 本页原来自带一份文案，其中 `side_margin` 的 label/hint 与算料引擎**口径相反**：页面说它是
- * 「定宽买高的上下卷边合计」，而引擎里它是**宽方向左右覆盖余量**（真正的上下卷边是 `HEM_MARGIN`，
- * 那是另一个量）⇒ 页面成了第二份口径（issue #4940）。⇒ 改为**引用同一份**，并由
- * `tests/unit/lib/craft-calc-glossary.test.ts` 逐条读源守卫（改回旧文案即红）。
+ * 本页原来自带一份文案，其中 `side_margin` 的 label/hint 与算料引擎**口径相反**（页面说它是
+ * 「定宽买高的上下卷边合计」，引擎里它是宽方向余量）⇒ 页面成了第二份口径（issue #4940）。
+ * ⇒ 改为**引用同一份**（`tests/unit/lib/craft-calc-glossary.test.ts` 逐条读源守卫）。
+ * ⚠️ 用户 2026-09-21 裁定（issue #5030）后该键**整体退场** ⇒ 这一项已从键集里删除，
+ * 「左右覆盖余量」不再是可配参数（宽方向没有余量）。
  */
 const CALC_SCALAR_FIELDS: { key: CalcScalarKey; label: string; hint: string; impact: string; anchor: string }[] =
   CALC_SCALAR_KEYS.map((key) => ({ key, ...CALC_PARAM_COPY[key], anchor: glossaryAnchorOf(key) }))

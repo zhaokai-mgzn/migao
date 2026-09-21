@@ -6,7 +6,8 @@
  * ⇒ 前端的本地判定实现 `detectAutoFeatures` 已无人调用，随本单（#5035）**删除**。
  * 本模块只剩三件**不是判定**的事：
  * 1. `parseDoorWidth()` —— 门幅解析（#4877：**没有缺省门幅**，解析不到 ⇒ `null` ⇒ 不判）；
- * 2. `SIDE_MARGIN` / `HEM_MARGIN` / `CUTTING_MODE_*` —— **常量副本**（各有跨语言守卫）；
+ * 2. `HEM_MARGIN` / `CUTTING_MODE_*` —— **常量副本**（各有跨语言守卫）；
+ *    ⚠️ 宽方向余量 `SIDE_MARGIN` 已按 issue #5030 **整体退场**（订单宽 = 净窗宽 ⇒ 宽方向没有余量）；
  * 3. `AUTO_FEATURE_NAMES` —— 自动推导特征名清单（须与 `processing_items` 目录（V83）**逐值对齐**）。
  *
  * ⚠️ **`定型` 不在清单里**（issue #4566，用户 2026-09-19 裁定「工艺、定型…直接通过加工项来勾选」）：
@@ -24,26 +25,15 @@
  */
 
 /**
- * **宽方向**余量（米）= 算料引擎 `curtain_calc.py` 的 `SIDE_MARGIN`
- * （`SIDE_MARGIN = 0.3  # 定高布：左右覆盖余量合计（各 15cm）`）—— 本文件是**副本**。
- *
- * ⚠️ 它**只**用于**宽**方向（`超宽`）；**高**方向必须用 {@link HEM_MARGIN}（issue #4661）：
- * 两者今天同值 0.3、**语义不同**（左右覆盖余量 ≠ 上下卷边），混用 = 与真值源口径脱钩。
- *
- * 🔴 **本副本有守卫**（issue #4656 收口，**漂移会被拦**）：
- * - `tests/unit/lib/craft-auto-features.test.ts` —— 前端腿，逐值读 Python 源比对（漂移即红）；
- * - `tests/unit_ci_workflows/test_hem_margin_cross_language_drift.py` —— Python 腿（独立 job），
- *   另钉**上面那行引文逐字一致**（注释里的值/语义也会腐烂，§19.2 ③）。
- *
- * 本仓「副本必须有同步守卫」纪律的落点（同族 #4393 / `PLEAT_FABRIC_PER_FOLD`）。
+ * ⚠️ **宽方向没有余量常量**（用户 2026-09-21 裁定，issue #5030）：订单宽 = **净窗宽**、
+ * 成品宽 = 净窗宽 ⇒ 超宽判据 = `窗宽 × 褶倍 > 门幅`。原先的 `SIDE_MARGIN = 0.3`
+ * （左右覆盖余量）与配置键 `side_margin` **一并退场**，不得以任何名字复活。
  */
-export const SIDE_MARGIN = 0.3
-
 /**
  * **高方向**卷边（米）= 算料引擎 `curtain_calc.py` 的 `HEM_MARGIN`
  * （`HEM_MARGIN = 0.3  # 定宽布：上下卷边合计（脚位+止口）`）—— 本文件是**副本**。
  *
- * ⚠️ 它**只**用于**高**方向（`超高`）；**宽**方向必须用 {@link SIDE_MARGIN}（issue #4661）。
+ * ⚠️ 它**只**用于**高**方向（`超高`）—— **宽方向没有余量**（issue #5030）。
  *
  * 🔴 **本副本有守卫**（issue #4656 收口，**漂移会被拦**）：常量值与上面那行引文（值 + 语义注释）
  * 都由守卫逐值读 Python 源比对 ——
@@ -142,7 +132,7 @@ export const CUTTING_MODE_FIXED_WIDTH = '定宽买高'
  *
  * 🔴 **issue #5036 起：本类型描述的是「服务端返回什么」**（用户 2026-09-21 裁定「提示统一迁移到
  * 服务端；**未来 agent 也需要**」）—— 提示由引擎 `curtain_calc.detect_auto_feature_notices` 产出，
- * 读的是**该租户配置**的 `side_margin` / `hem_margin`；前端只**展示**（`api.ts::AutoFeaturesResult.notices`）。
+ * 读的是**该租户配置**的 `hem_margin`（宽方向余量已按 issue #5030 退场）；前端只**展示**（`api.ts::AutoFeaturesResult.notices`）。
  *
  * 迁移前它由本模块的 `detectAutoFeatureNotices` **本地**算，而它读**模块常量副本**（0.3）
  * ⇒ 判定面用租户配置、提示面用常量 ⇒ #5005 把 `hem_margin` 做成可配之后，商家改过配置就会
