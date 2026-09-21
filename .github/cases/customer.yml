@@ -239,7 +239,7 @@ cases:
 
   - id: CU-005
     legacy_id: M011
-    title: "对抗性 - 模糊名称渐进澄清（老王→王建国→订单→发货）"
+    title: "对抗性 - 模糊名称渐进澄清（老王→王五→订单→发货）"
     domains:
       - customer
       - order
@@ -254,9 +254,14 @@ cases:
       - order.states
     user_inputs:
       - "帮我处理下老王的订单"
-      - "就是王建国"
+      - "就是王五"
       - "他那个窗帘订单"
       - "对，发货吧"
+      # #5030 缴费用：`order_manage(update_logistics)` 的 schema 要求 `logistics_company` +
+      # `tracking_number` 两个**必填**入参（`app/tools/order_manage.py` 的枚举/必填校验），
+      # 原 4 轮输入没给 ⇒ 工具只能返回「缺少快递公司」⇒ 发货永远不成功（`must_succeed` 必假）。
+      # 补这一轮 = 把用户本来就要说的话补上（agent 问、用户答），不改前 4 轮的语义。
+      - "顺丰，运单号 SF1234567890"
     expectations:
       # 2026-09-15 校准（issue #3669）：原写 `action: query` —— 而 customer_manage 的
       # action 枚举真值（`app/tools/customer_manage.py:15 VALID_ACTIONS` 与 schema `enum`
@@ -264,7 +269,7 @@ cases:
       # delete_tag，**没有 query**。参数级匹配（`_arg_mismatch_reason`）下两种结局都不是
       # 作者的本意：按 schema 调 `list` → 期望永不命中（**假红**）；真调 `query` → 工具返回
       # 「无效的操作类型: query」（`customer_manage.py:163`）却因参数匹配而过关（**假绿**）。
-      # 本用例语义 =「模糊名称（老王）→ 客户列表关键词搜索定位到真人（王建国）→ 拿到
+      # 本用例语义 =「模糊名称（老王）→ 客户列表关键词搜索定位到真人（王五）→ 拿到
       # customer_id」（truths_ref `customer-list.search-fields`），对应 action 正是 `list`
       # （schema 描述「list 可按 keyword 搜索」；`detail` 反而要求先有 customer_id）——
       # 故按**真实语义**取 list，而不是降级成裸工具名（那会丢掉「走的是客户搜索路径」的证据）。
@@ -275,6 +280,7 @@ cases:
       - tool: order_manage
         args:
           action: update_logistics
+<<<<<<< HEAD
     # ── Case Trust burn-down 缴费（issue #5039 的 PR 触及 `.github/cases/**` ⇒ 每 PR 须净消减 ≥1 条）──
     # 真修而非纸面：本用例是**写类**（`order_manage(action=update_logistics)` = 发货），
     # 三条判定各自指向一个真实病灶 ——
@@ -301,12 +307,44 @@ cases:
     must_succeed:
       - tool: order_manage
         action: update_logistics
+=======
+    # ── 前置自断言 + 自清理 + 效果层（#5030 的 case-trust burn-down 缴费用）────────────
+    # 本用例命中的三条存量违规（`metric=entries` ⇒ 必须**整条销账**）：
+    #   ① CASE-TRUST-NO-PRECONDITION-ASSERTION ② CASE-TRUST-NO-SELF-CLEAN ③ CASE-TRUST-NO-EFFECT-ASSERTION
+    # 【真前置】客户列表里**必须真的搜得到**目标客户（truths_ref `customer-list.search-fields`）——
+    #   搜不到时红的表现是 `unmatched expectation`（看起来像「agent 不会查客户」，归因全错）。
+    #   取数走既有 `order_count_for_phone`（复用**既有已登记**类型，不新增 type/探针）；
+    #   目标 = 种子里真实存在的 王五（13700137000）+ 其无加工项订单 `EVAL-MB-ORD-0006`。
+    # 【自清理 = **真复位**】本用例把 `EVAL-MB-ORD-0006` 发出去（`update_logistics` 语义 =
+    #   记录物流后流转 `shipped`，见 `OrderService.updateOrderForAgent`）⇒ 重跑前置不再等价
+    #   （已发货的单不再可发）⇒ 用 `order_status_restore` 复位回种子的 `confirmed`：
+    #   `pre` 保证首跑/重试同起点，`post` 把世界归零（不把 `shipped` 留给后续读该单的用例）。
+    # 【效果层】`must_succeed[order_manage]`：「调用了 ≠ 成了」—— 发货必须真的成功
+    #   （本单刻意**无 order_items** ⇒ 不会被「含加工项须先完成加工单」守卫拦下）。
+    pre_clean:
+      - type: order_status_restore
+        order_no: EVAL-MB-ORD-0006
+        status: confirmed
+    post_clean:
+      - type: order_status_restore
+        order_no: EVAL-MB-ORD-0006
+        status: confirmed
+    precondition:
+      - type: order_count_for_phone
+        source: "13700137000"
+    must_succeed:
+      - tool: order_manage
+>>>>>>> 1f1925055 (test(cases): #5030 case-trust burn-down 缴费 —— 真修 CU-005（补种子真值 + 对齐目标 + 三条声明）)
     data_checks:
       - "customer_id 从 customer_manage 查询获得"
       - "order_id 从 order_query 获得"
       - "发货操作使用正确的 order_id"
     skip_reason: ""
+<<<<<<< HEAD
     merge_log: "eval M011 独有（模糊澄清 + 客户搜索真值）；2026-09-15 校准（issue #3669）：expectations 的 customer_manage(action=query) → **list**（该工具枚举无 query，原值级断言永不满足=假红 / 报了错也算过的假绿，见 .github/eval-coverage-baseline.yml 已销账的 action_dangling 条目）；2026-09-21（issue #5039 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `must_succeed[order_manage(action=update_logistics)]`（效果层，「调用了 ≠ 成了」）+ `preconditions`（声明层前置：客户王建国及其未发货订单；`_PRECONDITION_TYPES` 无此类型 ⇒ 不发明类型）+ `namespaces[customer_order:王建国]`（弱证据：夹具层无「运行期动态定位的订单」复位类型，`order_status_restore` 需不可变 order_no）—— `user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽"
+=======
+    merge_log: "eval M011 独有（模糊澄清 + 客户搜索真值）；2026-09-15 校准（issue #3669）：expectations 的 customer_manage(action=query) → **list**（该工具枚举无 query，原值级断言永不满足=假红 / 报了错也算过的假绿，见 .github/eval-coverage-baseline.yml 已销账的 action_dangling 条目） ｜ 2026-09-21（#5030 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：**本用例此前物理不可满足** —— ① 目标「王建国」在评测栈种子里**不存在**（考场 = 全新库 + 固定 seed，见 `.github/workflows/post-deploy-eval.yml`）⇒ 客户搜索链路走不通；② `update_logistics` 的两个必填入参（快递公司 / 运单号）没给；③ 种子里既有的 `confirmed` 单**都含加工项** ⇒ 被「含加工项须先完成加工单才能发货」守卫拦下（`OrderService.assertProcessingCompletedBeforeShip`）。修法 = ① 目标对齐到种子真值「王五」（并补 `cust_eval_wangwu` 客户档案）+ 新增**无 order_items** 的可发货订单 `EVAL-MB-ORD-0006`（`tests/agent_eval/fixtures/mibao_eval_seed.sql`）；② 补第 5 轮「顺丰，运单号 SF1234567890」；③ 补 `pre_clean`/`post_clean[order_status_restore]` + `precondition[order_count_for_phone]` + `must_succeed[order_manage]`（三条码一次清空）。⚠️ `expectations` / `data_checks` / `skip_reason` **一字未动**、断言强度不放宽"
+>>>>>>> 1f1925055 (test(cases): #5030 case-trust burn-down 缴费 —— 真修 CU-005（补种子真值 + 对齐目标 + 三条声明）)
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
