@@ -2473,7 +2473,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
       guardError([
         '工序「罗马帘-打孔」不在工序库中',
         '工序「精裁」在主线中重复出现 2 次',
-        '路线至少要有一道必完工序（当前 0 道）',
+        '当前账号没有工艺路线管理权限',
       ]),
     )
     await renderOnRoutes()
@@ -2486,12 +2486,11 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(within(screen.getByTestId('routing-error-11')).getAllByTestId(/^routing-error-item-/)).toHaveLength(3)
     expect(screen.getByTestId('routing-error-item-0')).toHaveTextContent('工序不存在')
     expect(screen.getByTestId('routing-error-item-1')).toHaveTextContent('工序重复')
-    // 🔴 改判（原 WIP 写「`/必完/` 分支已删 ⇒ 原样透出」）：后端护栏 4 仍在
-    // （`backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java`
-    // 对 `PUT /routings/{id}` 判「主线中至少要有 1 道必完工序」）⇒ 可读归因必须保留，
-    // 同时**原文逐字不吞**（两条一起断言，少一条就是「吞理由」或「丢归因」）
-    expect(screen.getByTestId('routing-error-item-2')).toHaveTextContent('缺少必完工序')
-    expect(screen.getByTestId('routing-error-item-2')).toHaveTextContent('路线至少要有一道必完工序（当前 0 道）')
+    // 🔴 改判（issue #4961 集成收口）：「至少一道必完工序」那条**后端护栏已退场**（五条 ⇒ 四条），
+    // 前端 `describeRoutingGuard` 的「缺少必完工序」前缀分支也随之一并删除（该文件自述的死亡条件已满足）
+    // ⇒ 本用例的第三条改用**仍在**的护栏（权限），判据一格不放宽：逐条独立成条 + 可读归因 + **原文逐字不吞**
+    expect(screen.getByTestId('routing-error-item-2')).toHaveTextContent('没有工艺路线管理权限')
+    expect(screen.getByTestId('routing-error-item-2')).toHaveTextContent('当前账号没有工艺路线管理权限')
   })
 
   // ⚠️ issue #4961：原「护栏就地预检：主线缺必完工序 ⇒ 黄条」那条用例的**被测对象已整体删除**
