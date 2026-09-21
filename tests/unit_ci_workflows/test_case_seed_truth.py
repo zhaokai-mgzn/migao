@@ -324,8 +324,17 @@ NAMESPACE_CATEGORY_PREFIXES = ("category:",)
 #:   本判据的四类只覆盖 商品 / 加工项 / 色名 / 客户 ⇒ 财务流水域显式登记（**登记而非沉默**：
 #:   不加进任何一张表 ⇒ 本判据报红，见 `TestNoSilentSkip`）。
 NAMESPACE_FINANCE_PREFIXES = ("finance_txn:",)
+#: `role_code:`（issue #5013 的 Case Trust burn-down 缴费给 `HR-005` 加的并行互斥键）—— **显式范围外**，
+#:   理由与 `category:` 同族（**登记而非沉默**：不加进任何一张表 ⇒ 本判据报红，见 `TestNoSilentSkip`）：
+#:   ① **种子真值目录不含角色**：`extract_seed_catalog` 收的是 `customer_tags` / `products` 等，
+#:      拿它判 `stock_keeper` 只会得到恒假结论（"基于错误的真相模型写出的护栏"）；
+#:   ② **语义就是创建**：HR-005 正是**新建**一个种子里没有的角色 ⇒ 不存在"可在种子里解析"的目标。
+#:   ⚠️ 真值锚点若将来扩到角色面（`extract_seed_catalog` 收 roles），本条应**改判**进
+#:      `NAMESPACE_PREFIXES_JUDGED` 并补对应断言 —— 本常量就是那笔账的登记处。
+NAMESPACE_ROLE_PREFIXES = ("role_code:",)
 NAMESPACE_PREFIXES_OUT_OF_SCOPE = (
     NAMESPACE_EMPLOYEE_PREFIXES + NAMESPACE_CATEGORY_PREFIXES + NAMESPACE_FINANCE_PREFIXES
+    + NAMESPACE_ROLE_PREFIXES
 )
 NAMESPACE_PREFIXES_JUDGED = ("product_name:", "customer_phone:")
 #: 分类面清单（判 / 显式范围外）—— 出现**不在两张表里**的新形态 ⇒ `TestNoSilentSkip` 报红，
