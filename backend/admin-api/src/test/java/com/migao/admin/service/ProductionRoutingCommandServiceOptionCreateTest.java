@@ -323,6 +323,111 @@ class ProductionRoutingCommandServiceOptionCreateTest {
         lenient().when(processingItemMapper.selectList(any())).thenReturn(rows);
     }
 
+    // ══════════════════ PG-053 / #4962：**部位维**（第 4 档 trigger_kind='position'）══════════════════
+    //
+    // 用户裁定（2026-09-21 逐字）：「如果有一些工序只能布帘有或者纱帘有，可以在适用条件上设置」
+    // ⇒ 「什么时候」加第 4 维「部位」。
+    // 病根（本单修复前）：部位限定被 #4937 / O2 整块退场 + 闭词表不含 `position`
+    // ⇒ 界面上选得动、提交必 `23514 check_violation`（500）；写一个不在词表里的部位
+    // 则会落一条**永不生效**的规则（黑洞）。
+    //
+    // 红证（注入式）：
+    //   ① 把 `TRIGGER_KINDS` 里的 `"position"` 去掉 ⇒ `positionRuleIsCreatedWithPositionTriggerKind` 红；
+    //   ② 去掉 `POSITION_LIMIT_VOCABULARY` 那一段校验 ⇒ `positionTriggerValueOutsideVocabularyIsRejected` 红
+    //      （不再抛 422，且 insert 会被调用）；
+    //   ③ 去掉「镜像进 `position` 列」那两行 ⇒ `positionRuleMirrorsTriggerValueIntoPositionColumn` 红
+    //      （实例化侧的唯一判据是 `position` 列 ⇒ 规则永不生效）。
+
+    @Test
+    @DisplayName("PG-053 / #4962 建部位维规则：trigger_kind='position' + 值取自部位闭词表 + 镜像进 position 列")
+    void positionRuleIsCreatedWithPositionTriggerKind() {
+        Map<String, Object> result = service.createRouteRule(
+                body("trigger_kind", "position", "trigger_value", "布帘", "operation", "三边",
+                        "after_operation", "精裁"),
+                TENANT);
+
+        ProductionRouteRule row = inserted();
+        assertThat(row.getTriggerKind()).isEqualTo("position");
+        assertThat(row.getTriggerValue()).isEqualTo("布帘");
+        assertThat(row.getPosition()).as("部位维触发必须**镜像**进 position 列（实例化侧的唯一判据）")
+                .isEqualTo("布帘");
+        assertThat(row.getCustomerUnitPrice()).as("部位维行不按套计价 ⇒ 对客单价必须为空").isNull();
+        assertThat(result).containsEntry("trigger_kind", "position")
+                .containsEntry("trigger_value", "布帘")
+                .containsEntry("position", "布帘");
+    }
+
+    @Test
+    @DisplayName("PG-053 / #4962 部位闭词表**含第 4 个部位 `布料`**（不得硬编码成三值）")
+    void positionVocabularyCarriesTheFourthPosition() {
+        assertThat(ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY)
+                .containsExactly("布帘", "纱帘", "帘头", "布料");
+        Map<String, Object> result = service.createRouteRule(
+                body("trigger_kind", "position", "trigger_value", "布料", "operation", "三边"), TENANT);
+        assertThat(result).containsEntry("position", "布料");
+    }
+
+    @Test
+    @DisplayName("PG-053 / #4962 部位值不在闭词表 ⇒ 422 逐条理由（点名全表），且**一个字节都不写**")
+    void positionTriggerValueOutsideVocabularyIsRejected() {
+        assertThatThrownBy(() -> service.createRouteRule(
+                body("trigger_kind", "position", "trigger_value", "罗马帘", "operation", "三边"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(thrown -> {
+                    BusinessException e = (BusinessException) thrown;
+                    assertThat(e.getHttpStatus()).isEqualTo(422);
+                    assertThat(e.getDetails()).extracting("field").contains("trigger_value");
+                    assertThat(e.getDetails().get(0).getMessage())
+                            .as("可行动理由必须点名闭词表全表（含第 4 个部位）")
+                            .contains("布帘").contains("纱帘").contains("帘头").contains("布料");
+                });
+        verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
+    }
+
+    @Test
+    @DisplayName("PG-053 / #4962 body 的 `position` 键同样过闭词表（craft 档也能限部位）")
+    void explicitPositionKeyIsValidatedAgainstTheVocabulary() {
+        stubCrafts("韩褶");
+        Map<String, Object> ok = service.createRouteRule(
+                body("trigger_kind", "craft", "trigger_value", "韩褶", "position", "纱帘",
+                        "operation", "三边"),
+                TENANT);
+        assertThat(ok).containsEntry("position", "纱帘");
+        assertThat(inserted().getPosition()).isEqualTo("纱帘");
+
+        assertThatThrownBy(() -> service.createRouteRule(
+                body("trigger_kind", "craft", "trigger_value", "韩褶", "position", "通用",
+                        "operation", "三边"),
+                TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(thrown -> assertThat(((BusinessException) thrown).getDetails())
+                        .extracting("field").contains("position"));
+    }
+
+    @Test
+    @DisplayName("PG-053 / #4962 部位维规则的 `position` 与 `trigger_value` 不一致 ⇒ 422（不静默取其一）")
+    void positionAndTriggerValueMismatchIsRejected() {
+        assertThatThrownBy(() -> service.createRouteRule(
+                body("trigger_kind", "position", "trigger_value", "布帘", "position", "纱帘",
+                        "operation", "三边"),
+                TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(thrown -> assertThat(((BusinessException) thrown).getDetails())
+                        .extracting("field").contains("position"));
+        verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
+    }
+
+    @Test
+    @DisplayName("PG-053 / #4962 省略 / 空 `position` = **不限部位**（落 NULL，不落默认部位）")
+    void blankPositionMeansUnlimited() {
+        stubCrafts("韩褶");
+        Map<String, Object> result = service.createRouteRule(
+                body("trigger_kind", "craft", "trigger_value", "韩褶", "operation", "三边"), TENANT);
+        assertThat(inserted().getPosition()).as("省略 = 不限部位 ⇒ NULL").isNull();
+        assertThat(result).containsEntry("position", null);
+        assertThat(result).containsKey("position");
+    }
+
     @Test
     @DisplayName("PG-053 建 craft 规则：trigger_kind='craft' 落库、触发值取自活跃工艺词表、无对客单价")
     void craftRuleIsCreatedWithCraftTriggerKind() {

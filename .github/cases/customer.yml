@@ -106,14 +106,43 @@ cases:
       - "add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过"
     pre_clean:
       # `customer_keyword` 用**手机号**而不是姓名（#3568 口径）：admin-api 客户列表按
-      # `created_at DESC` 排序（`CustomerService.getCustomerPage`），而本类型取的是该列表
-      # 第 `customer_index` 条 ⇒ 重名时 `customer_index: 0` 会命中**最新建的那个张三**
-      # （OR-010 造的），不是种子客户 —— 清理会打在错的人身上。
+      # `created_at DESC` 排序（`CustomerService.getCustomerPage`）⇒ 重名时按**列表位置**
+      # 定位会命中**最新建的那个张三**（OR-010 造的），不是种子客户 —— 清理会打在错的人身上。
+      # 🔴 **2026-09-21 改判（issue #4962 的 case-trust burn-down 缴费）**：`customer_index: 0`
+      #   **删除** —— 手机号 `13800138000` 本身已是**唯一且不可变**的定位键（种子客户
+      #   `cust_eval_zhangsan`）；再叠一个**序号选择器**只会在「别人中途造一条同序记录」时
+      #   把清理打到别的对象上（`CASE-TRUST-VOLATILE-LOCATOR` 的取证形态正是本条：
+      #   `customer_index: 0` + `created_at DESC`）。**不是放宽**：定位键从「位置」换成
+      #   「不可变标识」，判据强度只升不降。
       # `tag_name` 必须是种子标签目录里真有的名字，否则本清理**结构性空转**（#3794）。
       - type: customer_tag_remove
         customer_keyword: "13800138000"
-        customer_index: 0
         tag_name: "VIP2"
+    # ── 前置自断言 + 效果层（#4962 轮次的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）──
+    # 本用例命中的三条存量违规：
+    #   ① CASE-TRUST-NO-PRECONDITION-ASSERTION  ② CASE-TRUST-NO-EFFECT-ASSERTION
+    #   ③ CASE-TRUST-VOLATILE-LOCATOR（已由上面对 `pre_clean` 的改判销账）
+    # 【真前置】本用例用**手机号唯一指代**（13800138000）定位靶子客户 —— 靶子不存在时红的表现是
+    #   `unmatched expectation`（看起来像「agent 不会打标签」，归因全错）。取数走既有
+    #   `_probe_phone_order_count` → `GET /api/admin/orders?receiver=<手机号>`（与 CU-004 / AS-003 /
+    #   OR-012 / OR-006 **同一部手机号、同一份「怎么数订单」的口径** —— 不另立第二份定义，§18）。
+    #   **刻意不声明 `expect: <N>`**：该基线随栈组成而变（同栈并行建单用例）⇒ 只用 runner 的
+    #   **结构下界** `min: 1`。类型 `order_count_for_phone` 是**既有已登记**类型 ⇒ 不新增 type、不改探针。
+    #   ⚠️ 它与本用例的写动作**不冲突**：探针按 `orders.receiver`（订单收件手机号）计数，而本用例写的是
+    #   **客户档案的 tags** ⇒ 靶子存在性在写完之后**依然成立**（同 CU-004 的论证）。
+    # 【效果层 = `must_succeed`】「调用了 ≠ 成了」（#3778）：`expectations` 只证明
+    #   `customer_manage(action=add_tag)` 被调用过且 args 对；工具返回 `success=false`
+    #   （tagId 解析不到 / 并发冲突）时照样计分通过。
+    # 【自清理 = `namespaces` + `pre_clean`】两者**本用例原本就有**（不在本次销账的三条里）——
+    #   `namespaces` 是**弱证据**（并行互斥），如实登记；`pre_clean[customer_tag_remove]` 是夹具层
+    #   的**真复位**（把该客户的 `profiles.tags` 里的 `VIP2` 摘掉）。⇒ 无需再补，也不冒充强修复。
+    # 【断言面一字未放宽】`user_inputs` / `expectations` / `data_checks` / `skip_reason` **全部未动**，
+    #   只加下面两格 + 按上面改判 `pre_clean` 的定位键。
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
+    must_succeed:
+      - tool: customer_manage
     # 全局命名空间声明（issue #3781）：与同样争用该客户身份的用例自动互斥
     # （`customer_phone:13800138000` 被 OR-008/OR-009/OR-016/AS-003/CR-001/CH-010 等声明，
     # 构成真实争用组）—— 本用例写该客户的 `profiles.tags`，CU-004 改该客户的 phone，
@@ -121,7 +150,7 @@ cases:
     namespaces:
       - "customer_phone:13800138000"
     skip_reason: ""
-    merge_log: "verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮）。2026-09-10 再校准：agent 重名澄清升级为 choice 交互卡（card 内容 LLM 动态生成），「第一个」文本指代不稳定 → 改 auto_select 自动回第一个选项（runner #3160 支持）。2026-09-15（issue #3832）修正三处真值错误：① 标签名改种子目录真有的「VIP2」（原「VIP2活跃」不在目录里 ⇒ pre_clean 结构性空转，见 #3794）；② 姓名改手机号唯一指代（OR-010 建单自动 upsert 出同名张三 ⇒ 重名澄清轮不可控、「张三」落点不确定），删掉 auto_select 轮；③ 收尾轮裸文本「确认」→ auto_respond 答卡轮（裸文本不放行写操作）；④ 补 namespaces 进串行道。断言（customer_manage(action=add_tag)）**未改**"
+    merge_log: "verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮）。2026-09-10 再校准：agent 重名澄清升级为 choice 交互卡（card 内容 LLM 动态生成），「第一个」文本指代不稳定 → 改 auto_select 自动回第一个选项（runner #3160 支持）。2026-09-15（issue #3832）修正三处真值错误：① 标签名改种子目录真有的「VIP2」（原「VIP2活跃」不在目录里 ⇒ pre_clean 结构性空转，见 #3794）；② 姓名改手机号唯一指代（OR-010 建单自动 upsert 出同名张三 ⇒ 重名澄清轮不可控、「张三」落点不确定），删掉 auto_select 轮；③ 收尾轮裸文本「确认」→ auto_respond 答卡轮（裸文本不放行写操作）；④ 补 namespaces 进串行道。断言（customer_manage(action=add_tag)）**未改** ｜ 2026-09-21（issue #4962 的 case-trust burn-down 缴费，metric=entries ⇒ **整条销账**）：本用例从豁免清单**整条移除**（9→8）。① `CASE-TRUST-VOLATILE-LOCATOR` 销账 —— `pre_clean[].customer_index: 0` **删除**（手机号是不变标识；序号选择器是这条规则的取证形态本身），定位键**换强不换弱**；② `CASE-TRUST-NO-PRECONDITION-ASSERTION` 销账 —— 补 `precondition[order_count_for_phone: 13800138000]`（既有已登记 type，靶子存在性，结构下界 `min:1`，与 CU-004 同源同口径）；③ `CASE-TRUST-NO-EFFECT-ASSERTION` 销账 —— 补 `must_succeed[customer_manage]`（效果层）。`user_inputs` / `expectations` / `data_checks` / `skip_reason` / `namespaces` **一字未动**、判据一格不放宽"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_base.py"

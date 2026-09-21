@@ -102,6 +102,8 @@
     "V100__add_order_logistics_columns.sql": "sha256:1ac6420a0a6ae18139f1259452947fb940e9b08ba7624a8a286822585f549331",
     "V101__drop_processing_item_price_and_pricing_method.sql": "sha256:ab31632951e7b70490cc9ef6ed53567681e0f4f04408acd4c26ae495ed10b131",
     "V102__retire_applicability_flag.sql": "sha256:3d8036095386cbf130bb2b576741ff4a817d67a0a6581c14bd5fbb8f4d78a444",
-    "V107__retire_must_finish_flag.sql": "sha256:b906c9e472832b4a722558b95bb490cb02264dc8731ad91c0200b48b01e4a8ad"
+    "V107__retire_must_finish_flag.sql": "sha256:b906c9e472832b4a722558b95bb490cb02264dc8731ad91c0200b48b01e4a8ad",
+    "V108__restore_route_rule_positions.sql": "sha256:9ce2a0570fd4917b955bb48066f05d8a65ced91f2799e52fafcc9631c4dd6fc0",
+    "V109__allow_position_trigger_kind.sql": "sha256:a7f35626354d531938ba596771de6b2cefd32edfc2a58cadc93c4adb2ab4520d"
   }
 }

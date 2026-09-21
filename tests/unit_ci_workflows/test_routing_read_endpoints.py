@@ -200,17 +200,22 @@ def _collapse_seed_rows() -> dict:
 
 
 def _truth_rules() -> dict:
-    """`routing.py::ROUTE_RULES` → 与 `_rule_seed_rows` 同形的键（**不含** `position`，issue #4937 / O2）。
+    """`routing.py::ROUTE_RULES` → 与 `_rule_seed_rows` 同形的键（**含** `position`）。
 
-    规则级部位限定退场 ⇒ 真值源的规则字典不再有该键、SQL 侧一律 `NULL` ⇒ 比对键去掉该维。
+    🔴 **issue #4962 改判**（此前 #4937 / O2 期间比对键去掉过这一维）：规则级部位限定
+    **加回** ⇒ 真值源里恰好一条带 `position`（`韩褶 → insert 上车布` = `'布帘'`），
+    SQL 字面量侧同值（`V71` 的 `rr-v70-02`；迁移链终态由
+    `V108__restore_route_rule_positions.sql` 写回、净效果 = 恒等）⇒ 比对键**必须含**该维。
     """
     sys.path.insert(0, str(ROUTING_PY_DIR))
     try:
         from app.production.routing import ROUTE_RULES
-        assert not any("position" in r for r in ROUTE_RULES), (
-            "`routing.py::ROUTE_RULES` 仍有 `position` 键 ⇒ O2 未完成（部位还在参与取路）")
-        return {(r["trigger_kind"], r["trigger_value"], r["action"],
-                 r["operation"], r["after_operation"]): int(r["priority"]) for r in ROUTE_RULES}
+        limited = [r for r in ROUTE_RULES if r.get("position")]
+        assert len(limited) == 1 and limited[0]["position"] == "布帘", (
+            f"`routing.py::ROUTE_RULES` 的部位限定集漂移（期望恰好一条 `布帘`）：{limited}")
+        return {(r["trigger_kind"], r["trigger_value"], r.get("position"),
+                 r["action"], r["operation"], r["after_operation"]):
+                int(r["priority"]) for r in ROUTE_RULES}
     finally:
         sys.path.pop(0)
 
@@ -576,8 +581,8 @@ def test_rule_seed_is_visible_and_matches_truth_source():
     assert len(seed) == 26, (
         f"规则种子行数 = {len(seed)}，期望 26（工艺变体 10 + 特殊选项 16，母单 #4423 冻结数字）"
     )
-    # ⚠️ V103 的终态：存活规则的 `position` 一律清空 ⇒ 比对键去掉该维（迁移字面量仍是旧值）
-    seed = {(k[0], k[1], k[3], k[4], k[5]): v for k, v in seed.items()}
+    # 🔴 issue #4962 改判：比对键**含** `position`（#4937 期间曾去掉该维；现在真值源里恰好一条
+    # `韩褶 → insert 上车布 = '布帘'`，与 V71 字面量同值 ⇒ 不再投影掉它）。
     truth = _truth_rules()
     assert len(truth) == 26, f"真值源 ROUTE_RULES 条数 = {len(truth)}，期望 26"
     drifted = {key: (seed.get(key), truth.get(key)) for key in set(seed) | set(truth)
@@ -587,7 +592,7 @@ def test_rule_seed_is_visible_and_matches_truth_source():
         f"漂移 ⇒ 商家在规则区看到的顺序/锚点与实际实例化不同（工序顺序错 = 车间按错顺序干）"
     )
     hidden = {key: row for key, row in seed.items()
-              if row[1] != VISIBLE_STATUS or key[2] not in ROUTE_ACTIONS}
+              if row[1] != VISIBLE_STATUS or key[3] not in ROUTE_ACTIONS}
     assert not hidden, (
         f"这些规则行对端点**不可见**（status ≠ {VISIBLE_STATUS} 或 action 不在 {ROUTE_ACTIONS}）："
         f"{hidden} —— 真值源里有、规则区看不见 = 静默少一条"

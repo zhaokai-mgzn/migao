@@ -133,10 +133,11 @@ public class ProductionSeedTemplateService {
      */
     private static final String[][] CRAFT_RULES = {
             {"韩褶", "NULL", "insert", "韩褶", "三边"},
-            // 🔴 issue #4937 / O2：规则级 `position` 已退场 ⇒ 开租播种一律 `NULL`
-            // （此前这里是 `"布帘"`，与 V71 的字面量同款；存量库由
-            //  `V103__clear_route_rule_positions.sql` 清空，新租户不能继续种旧口径）。
-            {"韩褶", "NULL", "insert", "上车布", "韩褶"},
+            // 🔴 issue #4962（加回部位维）：`V71` 的字面量种子里 `韩褶 → 上车布` 就是 `position='布帘'`
+            // （26 条里**唯一**一条带部位限定的）—— 开租播种必须与迁移链终态**同值**
+            // （迁移链侧由 `V108__restore_route_rule_positions.sql` 写回；本处是同一份种子的 Java 路径）。
+            // ⚠️ 历史（照实留痕）：issue #4937 / O2 曾把它改成 `NULL`（部位维退场），本单把它改回来。
+            {"韩褶", "布帘", "insert", "上车布", "韩褶"},
             {"打孔", "NULL", "insert", "打孔", "三边"},
             {"四爪钩", "NULL", "insert", "上车布", "三边"},
             {"四爪钩", "NULL", "remove", "定型", "NULL"},
