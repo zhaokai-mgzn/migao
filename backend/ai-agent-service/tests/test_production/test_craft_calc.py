@@ -441,6 +441,10 @@ class TestResponseShape:
         "fabric_meters", "pleat_count", "per_panel_pleats", "open_count", "margin",
         "per_fold", "fullness", "fullness_actual", "formula_used", "formula_text",
         "source", "craft_tier", "warning",
+        # issue #4976 包 1a：自动特征（超高/超宽/倒幅）改由**服务端**判定（用户裁定 B）——
+        # 该键**恒在**（空列表 = 不判，不是「没算」）。契约在此**有意识**长大一处：
+        # admin-api 侧的解析要跟着加（包 2）；本断言是「出参形态」的唯一冻结点。
+        "auto_features",
     }
 
     def test_data_has_frozen_keys(self, client):

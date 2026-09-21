@@ -135,6 +135,25 @@ class CraftCalcRequest(BaseModel):
             "⚠️ 本端点只做**键类型归一**（JSON 对象键恒为字符串 ⇒ 拼次键转回 int），不复制校验规则。"
         ),
     )
+    fabric_width: Optional[float] = Field(
+        None,
+        gt=0,
+        description=(
+            "**该商品/SKU 的门幅**（米，issue #4976 包 1a）：由 admin-api 按订单行的 SKU 门幅传入。"
+            "缺省 ⇒ 本端点既有常量 `_FABRIC_WIDTH`（**回归不变量**：未接线的调用方口径一字不变）。"
+            "⚠️ 门幅的权威是 **SKU/商品门幅**（商品可配、**没有缺省门幅**，issue #4877）——"
+            "本字段就是把它接进来的入口；不接 = 服务端按一个不是这张单的值判「超宽/超高」（分叉 #4652 / #4746）。"
+        ),
+    )
+    cutting_mode: Optional[str] = Field(
+        None,
+        description=(
+            "加工类型（`定高买宽` / `定宽买高`，issue #4976 包 1a）：决定**哪个方向受门幅约束** ——"
+            "`定高买宽` ⇒ 只判超高；`定宽买高` ⇒ 超宽（分幅）+ 倒幅。"
+            "缺省 / 表外取值 ⇒ **都不判**（保守：不猜朝向，与下单页同款）。"
+            "用户 2026-09-20 裁定：「定高买宽的话就不用算超宽，定宽买高就不用算超高」。"
+        ),
+    )
 
 
 @router.post("/tools/execute")
@@ -409,7 +428,11 @@ async def craft_calc(
     返回 `data`：`fabric_meters` / `pleat_count` / `per_panel_pleats` / `open_count` / `margin` /
     `per_fold`（每折吃布：单色 0.25 / 拼1次 0.65 / 拼2次 1.2）/
     `fullness`（档位**理论**倍数）/ `fullness_actual`（用料÷窗宽，**实际**倍数）/
-    `formula_used` / `formula_text` / `source` / `craft_tier` / `warning`。
+    `formula_used` / `formula_text` / `source` / `craft_tier` / `warning` /
+    `auto_features`（**自动特征**：超高/超宽/倒幅，issue #4976 包 1a —— 键恒在，空列表 = 不判）。
+
+    入参补充（issue #4976 包 1a）：`fabric_width`（**SKU 门幅**；缺省 ⇒ 本端点既有常量）与
+    `cutting_mode`（加工类型：`定高买宽` ⇒ 只判超高 / `定宽买高` ⇒ 超宽 + 倒幅；缺省 ⇒ 都不判）。
 
     fail-closed（三处，均**不静默**）：
     ① `mounting` 非韩褶（褶数法不适用）⇒ 400；
@@ -454,7 +477,8 @@ async def craft_calc(
             window_height=request.height if request.height is not None else _DEFAULT_HEIGHT,
             mounting=request.mounting,
             open_count=request.open_count,
-            fabric_width=_FABRIC_WIDTH,
+            fabric_width=request.fabric_width if request.fabric_width is not None else _FABRIC_WIDTH,
+            cutting_mode=request.cutting_mode,
             craft_tier=request.craft_tier,
             style=request.style,
             special_options=request.special_options,
@@ -508,6 +532,9 @@ async def craft_calc(
         "source": quote["source"],
         "craft_tier": quote["craft_tier"],
         "warning": quote["warning"],
+        # 自动特征（issue #4976 包 1a，用户裁定 B「判定移到服务端」）：**键恒在**，
+        # 空列表 = 不判（缺加工类型 / 缺褶倍）。由引擎产出 ⇒ 与 `fabric_meters` 同源。
+        "auto_features": quote["auto_features"],
     }
     logger.info(
         f"Craft calc: width={request.width} open_count={request.open_count} "
