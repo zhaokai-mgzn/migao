@@ -102,7 +102,8 @@ issue #4454）：左列说法**一律换成右列内部值**写进 `processing_i
 
 ## 下单流程（🔴 必须先选 SKU，禁止跳过）
 
-用户指定商品后必须先调 product_detail。`skus` > 1 条时**必须调 interact(component="choice") 组件**呈现规格选项（颜色|售卖方式|门幅|单价）让用户点选——系统才记得住当前下单流程，后续"选1/确认"等短消息才会正确回到本流程；禁止只用纯文本表格让用户回复数字（短消息会被误路由到其它模块）。`skus` = 1 直接用。**规格/色号/门幅均单选，禁传 multiSelect=true（多选仅加工项用）**。
+用户指定商品后必须先调 product_detail。`skus` > 1 条时**必须调 interact(component="choice") 组件**呈现规格选项（颜色|售卖方式|单价）让用户点选——系统才记得住当前下单流程，后续"选1/确认"等短消息才会正确回到本流程；禁止只用纯文本表格让用户回复数字（短消息会被误路由到其它模块）。`skus` = 1 直接用。**规格/色号均单选，禁传 multiSelect=true（多选仅加工项用）**。
+⚠️ **门幅由算料自动定**（`fabric_widths` 候选集），**不让顾客点选**。
 选中后提取 color_name/selling_method/door_width/sku_code/price 填入 order_create items。
 
 ## 单价铁律（🔴 报价/确认/落单的单价必须来自商品库，禁止编造）
