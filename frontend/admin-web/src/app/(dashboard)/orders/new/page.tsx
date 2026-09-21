@@ -516,7 +516,7 @@ function pickAutoSkuForColor(
  * `orders-new-auto-features.test.ts` 的「本页不得本地判特征」钉住）。
  *
  * 为什么必须搬：判定进**加工费组合键**（`processingInfo.processingItems[].name`）⇒ 判定即钱。
- * 服务端判定用的是**该租户的配置**（`side_margin` / `hem_margin` / 档位褶倍）与**该 SKU 的门幅**，
+ * 服务端判定用的是**该租户的配置**（`hem_margin` / 档位褶倍；宽方向余量 `side_margin` 已按 issue #5030 **整体退场**）与**该 SKU 的门幅**，
  * 而前端只持有一份常量副本 ⇒ 商家改过配置后两边会算出不同的键（本单要消灭的正是这种脱钩）。
  *
  * 只保留服务端认得的名字（`AUTO_FEATURE_NAMES` 与加工项目录 V83 逐值对齐，有守卫）——
@@ -581,7 +581,7 @@ function autoFeaturesBlockReason(lineItems: OrderLineItem[]): string | null {
  */
 function autoFeatureNoticesOf(line: OrderLineItem): AutoFeatureNotice[] {
   // 🔴 issue #5036：提示改由**服务端**给（用户 2026-09-21 裁定「统一迁移到服务端；未来 agent 也需要」）
-  // —— 引擎读的是**该租户配置**的 `side_margin` / `hem_margin` ⇒ 与判定**同源**。
+  // —— 引擎读的是**该租户配置**的 `hem_margin`（宽方向余量已按 issue #5030 退场）⇒ 与判定**同源**。
   // 迁移前本函数在前端本地算、读**模块常量副本**（0.3）⇒ 租户改过 `hem_margin` 后这里会显示
   // **错的数**，且「几何矛盾」的**判断本身**也会错 —— 那正是本单要消灭的脱钩。
   // 本页只**展示**：`kind` / `reason` 一律照服务端返回，**不编**口径（`#4662` 的裁定 C 不变）。

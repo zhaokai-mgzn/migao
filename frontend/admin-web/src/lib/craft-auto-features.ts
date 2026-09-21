@@ -132,7 +132,7 @@ export const CUTTING_MODE_FIXED_WIDTH = '定宽买高'
  *
  * 🔴 **issue #5036 起：本类型描述的是「服务端返回什么」**（用户 2026-09-21 裁定「提示统一迁移到
  * 服务端；**未来 agent 也需要**」）—— 提示由引擎 `curtain_calc.detect_auto_feature_notices` 产出，
- * 读的是**该租户配置**的 `side_margin` / `hem_margin`；前端只**展示**（`api.ts::AutoFeaturesResult.notices`）。
+ * 读的是**该租户配置**的 `hem_margin`（宽方向余量已按 issue #5030 退场）；前端只**展示**（`api.ts::AutoFeaturesResult.notices`）。
  *
  * 迁移前它由本模块的 `detectAutoFeatureNotices` **本地**算，而它读**模块常量副本**（0.3）
  * ⇒ 判定面用租户配置、提示面用常量 ⇒ #5005 把 `hem_margin` 做成可配之后，商家改过配置就会
