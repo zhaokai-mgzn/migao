@@ -35,6 +35,15 @@ vi.mock('@/lib/api', () => ({
   customerApi: { getCustomers: (...a: unknown[]) => mockGetCustomers(...a) },
   // 算料试算与「费用明细展示」正交 ⇒ 停在进行中（避免改写数量污染判据）
   craftCalcApi: { preview: () => new Promise(() => {}) },
+  // **自动特征判定端点**（issue #4976 包 2b）：判定已移到服务端 ⇒ 页面挂载即请求。
+  // 本文件与「自动特征」正交 ⇒ 服务端替身返回**不判**（`missing-door-width`）。
+  // ⚠️ 必须**返回**：判定缺席会被提交闸门拦住 ⇒ 本文件无关的断言会连带红。
+  autoFeaturesApi: {
+    preview: () =>
+      Promise.resolve({
+        data: { data: { auto_features: [], door_width: null, fullness_used: 2.0, notice: 'missing-door-width' } },
+      }),
+  },
   feePreviewApi: { preview: (...a: unknown[]) => mockFeePreview(...a) },
   // **算料配置读面**（issue #4874）：公式缺省 + 档位 chips 的值域/文案都来自它 ⇒ 挂载即请求
   productionApi: {

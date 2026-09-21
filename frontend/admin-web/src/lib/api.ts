@@ -304,6 +304,45 @@ export const craftCalcApi = {
     request.post<ApiResponse<CraftCalcResult>>('/api/admin/orders/craft-calc', params),
 }
 
+/** 自动特征判定**入参**（issue #4976 包 2b）—— 判定移到服务端的读面入参 */
+export interface AutoFeaturesParams {
+  /** 成品宽（米） */
+  width: number
+  /** 成品高（米） */
+  height: number
+  /**
+   * **该商品/SKU 的门幅**（米）。⚠️ **没有缺省门幅**（issue #4877）：
+   * 拿不到 ⇒ **不发该键** ⇒ 服务端**不判**并在 `notice` 里说明（不回落任何默认门幅）。
+   */
+  fabric_width?: number
+  /** 加工类型（`定高买宽` / `定宽买高`）；缺 ⇒ 服务端不判（不猜朝向） */
+  cutting_mode?: string
+}
+
+/** 自动特征判定**结果**（issue #4976 包 2b）：判定 + 「用了哪些值」+「为什么没判」 */
+export interface AutoFeaturesResult {
+  /** 判定出的特征（`{name, source, reason}`）；**空数组 = 不判**（不是「没算」） */
+  auto_features: Array<{ name: string; source: string; reason: string }>
+  /** 实际用于判定的门幅（缺门幅时 `null`）—— 商家可核对 */
+  door_width: number | null
+  /** 实际用于判超宽的褶倍 —— 商家可核对 */
+  fullness_used: number
+  /** **不判的原因**：`''` / `missing-door-width` / `unknown-cutting-mode`（不静默） */
+  notice: string
+}
+
+export const autoFeaturesApi = {
+  /**
+   * 自动特征判定（**不落库、不算用料**）—— issue #4976 包 2b，用户裁定 B「判定移到服务端」。
+   *
+   * ⚠️ 与 `craftCalcApi` **分开**是有意的：算料试算对**四爪钩 / 穿杆 / 平幔**没有口径
+   * （那三类工艺不发试算请求），而自动特征是**每一行**都要判的 —— 挂在试算上会让那些行
+   * **丢特征** ⇒ 加工费组合键少一项 ⇒ 匹配不到组合价。
+   */
+  preview: (params: AutoFeaturesParams) =>
+    request.post<ApiResponse<AutoFeaturesResult>>('/api/admin/orders/auto-features', params),
+}
+
 /**
  * 加工费计价**预览**（issue #4450 · 前置 #4406）。
  *
