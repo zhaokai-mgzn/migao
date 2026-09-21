@@ -25,6 +25,27 @@ name: Drift Audit (真相源契约)
 #  · 未实装的判据见 `python3 scripts/drift_audit.py --list-checks` 的 `unimplemented`
 #    （语义级引用命中 / 写死条数 / 章节指向 / 运行期 fencing / namespace 覆盖率 /
 #    同步副本的兑现或撤回）—— **不用恒真判断凑数**。
+#
+# ── 面外漂移的拦截点（#5074 登记：**别把它读成"已拦"**）──────────────────────
+#  · **面外**（新增漂移所属的文件不在本 PR 的改动集里）在 **PR 腿恒绿**：判定面就是「本 PR 的
+#    改动集」，把并行包刚合并的漂移判红是「假红」（报错指向错误的对象）。而 `heartbeat` 判据的
+#    条目 key 是**裸文件名**（如 `deploy-frontend.yml` 的 `stale` 条目），脚本拿它与**仓库相对
+#    全路径**比对 ⇒ 心跳类漂移**结构上永远是面外** ⇒ 没有任何 PR 会因它变红。
+#  · ⇒ 面外漂移的拦截点只有两条，且**都是人**：
+#    ① **PR 腿**：**面内**新增漂移 ⇒ 给该 PR 打 `block/merge`（`automerge.yml` 的 `if:` 会跳过
+#       带该标签的 PR）⇒ **未 arm** 的 PR 被拦；⚠️ **已 arm** 的 PR 标签拦不住（`#4248`：那个
+#       `if:` 只在 arm 时生效，停已 arm 的 PR 要 `gh pr merge --disable-auto`）。本 job **不在**
+#       分支保护的 required 集合里 —— 该清单**会漂移**，要用
+#       `gh api repos/<owner>/<repo>/branches/main/protection` **现查**，不许凭名字/印象写死；
+#       故它的拦截力来自 `block/merge`，不是 required。
+#    ② **本文件的定时腿 + P1 值班 issue**：定时腿失败 ⇒ 开/更 issue 并打 `priority/P1`
+#       （值班口径；issue 正文登记「谁被拦」与清零判据）。
+#  · **有意不做**：定时腿失败时给 PR 打 `block/merge`。定时腿**没有 PR**（标签无处施加），而
+#    以面外漂移给「相关 PR」打标会把**修这条漂移的那个 PR 自己**拦死 —— 修复要等合并之后才生效
+#    ⇒ 标签永远摘不掉 = `#5075` 同款自锁。宁可如实登记「只告警 + 值班」，也不装成「已拦」。
+#  · 边界（照实登记）：心跳阈值 = 3 × 声明的 cron 周期，而 GitHub 对本仓的分钟级 cron
+#    **实测节流到 2~5.5 小时** ⇒ 声明 `*/N` 的调度会**结构性**判成 `stale`；这条要清零得动
+#    调度声明或判据本体（`scripts/drift_audit.py` 的 heartbeat），**不在本 workflow 的判定面内**。
 
 on:
   pull_request:
@@ -99,6 +120,12 @@ jobs:
             cat /tmp/drift-audit.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          # 面外漂移的**通道登记**（#5074）：PR 腿对面外漂移恒绿（判定面 = 本 PR 的改动集），
+          # 这里显式报出条数 + 承接物 —— 免得「面外」被读成「没问题」（那正是本单的缺陷形态）。
+          OUT_SCOPE=$(python3 -c "import json;print(json.load(open('drift-audit-report.json'))['summary']['new_drift_out_of_scope'])" 2>/dev/null || echo '?')
+          if [ "${OUT_SCOPE}" != "0" ] && [ "${OUT_SCOPE}" != "?" ]; then
+            echo "::warning::面外新增漂移 ${OUT_SCOPE} 条（所属文件不在本 PR 改动集 ⇒ **本 PR 不阻塞**）：由定时腿的 P1 值班 issue 承接（标题含「真相源契约审计未通过（定时腿）」）；只有**面内**新增漂移才会卡本 PR。通道语义见本文件头部「面外漂移的拦截点」。"
+          fi
           exit $RC
 
       - name: Upload 机器可读报告
@@ -151,7 +178,7 @@ jobs:
           echo "$LABELS" | grep -qx 'block/merge' && gh pr edit "$PR" --remove-label block/merge || true
           exit 0
 
-      - name: 定时腿失败 ⇒ 开/更 issue 留痕（静默即缺陷）
+      - name: 定时腿失败 ⇒ 开/更 P1 issue（**值班口径**：本通道不拦合并，见文件头登记）
         if: failure() && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -166,10 +193,23 @@ jobs:
             echo '```'
             cat /tmp/drift-audit.txt 2>/dev/null || echo "(报告缺失)"
             echo '```'
+            echo ''
+            echo "### 谁被拦（本通道的语义 —— 别当成\"已覆盖\"，见 \`.github/workflows/drift-audit.yml\` 头部）"
+            echo ''
+            echo "- **本定时腿不拦合并**：定时腿没有 PR ⇒ \`block/merge\` 无处施加；而以面外漂移给"
+            echo "  「相关 PR」打标会把**修这条漂移的那个 PR 自己**拦死（修复要等合并后才生效 ⇒ 标签"
+            echo "  永远摘不掉）= \`#5075\` 同款自锁。"
+            echo "- **替代拦截点**：① **PR 腿**：**面内**新增漂移 ⇒ 给该 PR 打 \`block/merge\`"
+            echo "  （\`automerge.yml\` 跳过带该标签的 PR ⇒ 未 arm 的 PR 被拦；已 arm 的要"
+            echo "  \`gh pr merge --disable-auto\`，见 \`#4248\`）；② 本 issue（**P1 值班**）承接**面外**漂移。"
+            echo "- **清零判据**：\`python3 scripts/drift_audit.py --check --strict-stale --fail-on-unknown --base origin/main\` 退出 0 ⇒ 本 issue 可关。"
+            echo "- **本 issue 的处置归属**：面外条目按所属文件分流（如 \`deploy-*\` 归部署包、"
+            echo "  \`flaky-ledger-reconcile.yml\` 归台账兜底包）；心跳型条目见文件头登记的边界。"
           } > "$BODY"
           if [ -n "$EXIST" ]; then
             gh issue comment "$EXIST" --body-file "$BODY" || true
+            gh issue edit "$EXIST" --add-label priority/P1 || true
           else
-            gh issue create --title "$TITLE" --body-file "$BODY" || true
+            gh issue create --title "$TITLE" --body-file "$BODY" --label priority/P1 || true
           fi
           exit 0
