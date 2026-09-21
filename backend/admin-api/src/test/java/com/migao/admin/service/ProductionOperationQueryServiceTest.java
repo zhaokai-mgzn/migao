@@ -326,6 +326,39 @@ class ProductionOperationQueryServiceTest {
     }
 
     @Test
+    @DisplayName("#4563 路线命中 tie-break：**先建者优先**（is_default DESC → created_at ASC → id ASC）—— 只按 id 排会让新建路线**静默顶掉**种子")
+    void routeTemplatesOrderTieBreakIsCreatedAtFirst() {
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                template("rt-v79-01", "布料工序路线", false, List.of("布料"), List.of("配料", "打包"))));
+
+        service().routeTemplates(TENANT);
+
+        ArgumentCaptor<LambdaQueryWrapper<ProductionRouteTemplate>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(productionRouteTemplateMapper).selectList(captor.capture());
+        // 归一空白与逗号，便于断言「顺序」
+        String sql = captor.getValue().getSqlSegment().toLowerCase()
+                .replaceAll("\\s+", " ").replaceAll("\\s*,\\s*", ", ");
+        assertThat(sql).as("排序第一键仍是「默认优先」（既有语义不动）").contains("is_default desc");
+        // 注入：把 `created_at` 那一键删掉（退回 `is_default DESC, id ASC`）⇒ 下面两条红
+        assertThat(sql).as("第二键必须是 `created_at`（先建者优先）").contains("created_at");
+        int orderBy = sql.indexOf("order by");
+        assertThat(orderBy).as("SQL 里应有 ORDER BY（本判据的前提）").isGreaterThanOrEqualTo(0);
+        String orderTail = sql.substring(orderBy);
+        assertThat(orderTail.indexOf("created_at"))
+                .as("`created_at` 必须排在 `id` **之前** —— 顺序错了等于没修（新建路线仍会顶掉种子）")
+                .isGreaterThanOrEqualTo(0);
+        assertThat(orderTail.indexOf("created_at"))
+                .isLessThan(orderTail.lastIndexOf(" id"));
+
+        // 反向自证（**不是空断言**）：本修法要防的正是下面这个事实 ——
+        // 新建路线的 id 是 UUID，其十六进制首字符小于种子 id 的 `r` ⇒ 只按 id 排时**新建的在前**。
+        assertThat("a1b2c3d4-0000-0000-0000-000000000000".compareTo("rt-v79-01"))
+                .as("UUID id 排在小写 `rt-…` 种子 id 之前 ⇒ 只按 id 排 = 新建路线静默顶掉种子（#4563 的机制）")
+                .isNegative();
+    }
+
+    @Test
     @DisplayName("defaultRouteTemplate：按 is_default 命中；没有默认 ⇒ null（调用方 T3 fail-closed）")
     void defaultRouteTemplatePicksTheDefaultFlag() {
         when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
