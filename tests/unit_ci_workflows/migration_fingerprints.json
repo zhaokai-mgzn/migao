@@ -105,6 +105,7 @@
     "V107__retire_must_finish_flag.sql": "sha256:b906c9e472832b4a722558b95bb490cb02264dc8731ad91c0200b48b01e4a8ad",
     "V108__restore_route_rule_positions.sql": "sha256:9ce2a0570fd4917b955bb48066f05d8a65ced91f2799e52fafcc9631c4dd6fc0",
     "V109__allow_position_trigger_kind.sql": "sha256:a7f35626354d531938ba596771de6b2cefd32edfc2a58cadc93c4adb2ab4520d",
-    "V110__add_craft_calc_hem_margin.sql": "sha256:e15ef8aaa13cd5eba71910996bdc45f9ed5ad0ca40d0666d4ac5724c535b408d"
+    "V110__add_craft_calc_hem_margin.sql": "sha256:e15ef8aaa13cd5eba71910996bdc45f9ed5ad0ca40d0666d4ac5724c535b408d",
+    "V111__create_inbound_orders_and_batches.sql": "sha256:564fc684bdfb71e5307d2336f9bab83707161f738c7f164fd49a49d426cc1ea6"
   }
 }

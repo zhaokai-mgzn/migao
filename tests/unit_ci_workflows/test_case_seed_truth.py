@@ -342,9 +342,19 @@ NAMESPACE_ROLE_PREFIXES = ("role_code:",)
 #:   正是拿 `order_no:EVAL-1` 当"未分类形态"的样本 —— 登记它会同时拆掉那条红证。
 #:   ⚠️ 真值锚点若将来扩到"按客户动态定位订单"的形态，本条应**改判**并补对应断言。
 NAMESPACE_CUSTOMER_ORDER_PREFIXES = ("customer_order:",)
+#: `account_password:`（issue #5055 的 burn-down 缴费给 `ST-003` 加的并行互斥键）——
+#:   **显式范围外**（登记而非沉默，口径同 `customer_order:`）：本判据只覆盖
+#:   商品 / 加工项 / 色名 / 客户四类实体字面量，而 **账号密码不是种子目录里的实体** ——
+#:   `extract_seed_catalog` 收的是 `customer_tags` / `products` / `product_colors` / 客户档案，
+#:   种子的 `users` 插入**不含 `password_hash`** ⇒ 拿种子真值判它只会得到恒假结论
+#:   （「基于错误的真相模型写出的护栏」，同 `category:` / `role_code:` 的登记口径）。
+#:   ⚠️ 真值锚点若将来扩到账号凭据面，本条应**改判**进 `NAMESPACE_PREFIXES_JUDGED`
+#:   并补对应断言 —— 本常量就是那笔账的登记处。
+NAMESPACE_ACCOUNT_PREFIXES = ("account_password:",)
 NAMESPACE_PREFIXES_OUT_OF_SCOPE = (
     NAMESPACE_EMPLOYEE_PREFIXES + NAMESPACE_CATEGORY_PREFIXES + NAMESPACE_FINANCE_PREFIXES
     + NAMESPACE_ROLE_PREFIXES + NAMESPACE_CUSTOMER_ORDER_PREFIXES
+    + NAMESPACE_ACCOUNT_PREFIXES
 )
 NAMESPACE_PREFIXES_JUDGED = ("product_name:", "customer_phone:")
 #: 分类面清单（判 / 显式范围外）—— 出现**不在两张表里**的新形态 ⇒ `TestNoSilentSkip` 报红，

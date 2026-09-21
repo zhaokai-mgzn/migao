@@ -1375,6 +1375,22 @@ class TestDegenerateGuardRails:
 # 四、基线清单与「只许缩短」
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _assert_baseline_is_not_a_shell(data: dict) -> None:
+    """**单一实现**：基线不得是「空壳」—— 计数全 0 却还有条目 = 派生读数撒谎。
+
+    为什么抽出来：`burn_down.deadline` 要求的是「全清单清零」⇒ **全 0 是合法终态**；
+    但「计数全 0 + 事实非空」是**规则失效 / 账本被改坏**的形态，必须判红。
+    两条判据同源 ⇒ 抽成一个函数，正向用例与注入式红证**调同一份实现**
+    （否则红证只能断言「注入生效了」，测不到那条分支本身 —— 假红证，本仓库明令禁止）。
+    """
+    counts = data.get("rule_counts") or {}
+    if not any(n > 0 for n in counts.values()):
+        assert not (data.get("violations") or {}), (
+            "基线 rule_counts 全 0 但 violations 非空 —— 派生读数与事实不一致"
+            "（要么规则失效（恒绿），要么账本被改坏）"
+        )
+
+
 class TestBaselineDiscipline:
     def test_baseline_exists_and_is_shaped(self):
         assert BASELINE.exists(), (
@@ -1407,10 +1423,36 @@ class TestBaselineDiscipline:
         assert not all_exempt, (
             f"这些规则在基线上的违规数 = 用例总数（规则形同不存在）：{all_exempt}"
         )
-        # 判据不得恒绿：至少有一条规则在存量上真的报出了东西（否则基线可能被清空成空壳）
-        assert any(n > 0 for n in counts.values()), (
-            "基线里所有规则计数都是 0 —— 要么规则失效（恒绿），要么清单被清空"
-        )
+        # 判据不得恒绿：至少有一条规则在存量上真的报出了东西。
+        # ⚠️ **全清零是合法终态**（`burn_down.deadline` 要求的就是「全清单清零」）——
+        # 所以「所有计数都是 0」不能**无条件**判红，否则修完最后一条违规反而红
+        # （实测 2026-09-23：清掉 DF-018/ST-003 后本断言红，而门禁本体判 ✅）。
+        # 但**空壳**仍必须判红：计数全 0 却还有条目 ⇒ 派生读数撒谎（规则失效或账本不自洽）。
+        _assert_baseline_is_not_a_shell(data)
+
+    def test_all_clear_baseline_still_reds_on_a_shell(self):
+        """红证（新增）：**全清零**分支不得把「空壳」也放行。
+
+        `test_baseline_is_not_used_to_exempt_all_rules` 现在接受「计数全 0」这一合法终态
+        ⇒ 必须证明那条分支**仍然会对空壳判红**，否则这次改动就是把护栏拆了（#4712 同族：
+        「为过门禁改判据」的反面 —— 改判据就必须同时补一条能单独让它红的注入）。
+        """
+        data = json.loads(BASELINE.read_text(encoding="utf-8"))
+        assert (data.get("case_total") or 0) > 0, "基线缺 case_total（无法判断豁免面）"
+
+        # ① 注入「空壳」：计数全 0 + 事实非空 ⇒ 判红（这就是「规则失效 / 账本被改坏」的形态）
+        shell = {**data, "rule_counts": {k: 0 for k in (data.get("rule_counts") or {})},
+                 "violations": {"__INJECTED__": {"codes": ["CASE-TRUST-EMPTY-ASSERTION"]}}}
+        with pytest.raises(AssertionError):
+            _assert_baseline_is_not_a_shell(shell)
+
+        # ② 反向：全 0 且事实也空 ⇒ 放行（**合法终态**，`burn_down.deadline` 要的就是它）
+        _assert_baseline_is_not_a_shell(
+            {**data, "rule_counts": {k: 0 for k in (data.get("rule_counts") or {})},
+             "violations": {}})
+
+        # ③ 现状（无论全清零还是仍有条目）都必须过 —— 正向对照
+        _assert_baseline_is_not_a_shell(data)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2373,11 +2415,19 @@ class TestReconcileBaseAlignment:
     def test_fork_point_selection_uses_merge_base_when_untouched(self):
         """未触碰受管面 ⇒ 真的去读 `merge-base` 那份清单（不是嘴上说说）。"""
         g = self._g()
+        # ⚠️ `main_baseline` 用**非空**夹具（不再传 `{"violations": {}}`）：本测试的落点是
+        # 「是否去读了 merge-base」这一行为，而**空基线**会让它在两种合法情形下**同形**
+        # ——① 读到了 merge-base 的那份清单、② merge-base 取不到（浅克隆）而 fail-closed
+        # 退回 main。后者在浅克隆下必然发生 ⇒ 旧写法会无条件红（且与「浅克隆」无关地
+        # 误导排查）。改成非空夹具后，`base` 恒为「merge-base 那份 ∨ main 那份」，两者都非空
+        # ⇒ 断言只对**真的没读到**（返回 None/空 dict）判红 —— 判别力一格未降。
+        main_baseline = {"violations": {"X-001": {"codes": ["CASE-TRUST-EMPTY-ASSERTION"]}},
+                         "burn_down": CFG}
         base, name, note = g.select_reconcile_base(
-            "HEAD", {"cases_dir": [], "case_yml": [], "baseline": []}, {"violations": {}})
+            "HEAD", {"cases_dir": [], "case_yml": [], "baseline": []}, main_baseline)
         assert name.startswith("merge-base("), name
         assert "未触碰受管面" in note, note
-        assert isinstance(base, dict) and base.get("violations"), (
+        assert isinstance(base, dict) and "violations" in base, (
             "分叉点清单没读到（返回了空/None ⇒ 判据会在空账本上静默通过）"
         )
 
@@ -2462,10 +2512,21 @@ class TestDerivedReadings:
         return _gate_module()
 
     def _corrupt_in_memory(self) -> dict:
+        """造一份「派生读数与事实不一致」的账本（本类三条红证的注入源）。
+
+        ⚠️ 不能假设 `rule_counts` 里一定已有非 0 项 —— **全清零是合法终态**
+        （`burn_down.deadline` 要求的就是它；实测 2026-09-23 清掉最后两条违规后，
+        旧写法 `next(k for k, n in rc.items() if n > 0)` 直接 `StopIteration`
+        ⇒ 三条红证一起变成**错误**而不是结论）。改成：优先取现有的非 0 项（保住原语义），
+        全 0 时**自造**一个非 0 项（注入点，任何规则码都行 —— 只要与事实不符即可）。
+        """
         data = json.loads(BASELINE.read_text(encoding="utf-8"))
         rc = dict(data["rule_counts"])
-        code = next(k for k, n in rc.items() if n > 0)
-        rc[code] = rc[code] + 1                     # 只改派生读数，**不动事实**
+        code = next((k for k, n in rc.items() if n > 0), None)
+        if code is None:
+            # 全清零：自造一个非 0 计数（不动事实 violations）⇒ 仍然是「读数撒谎」的注入
+            code = sorted(rc)[0] if rc else sorted(tax.RULES_BY_CODE)[0]
+        rc[code] = rc.get(code, 0) + 1               # 只改派生读数，**不动事实**
         data["rule_counts"] = rc
         return data
 

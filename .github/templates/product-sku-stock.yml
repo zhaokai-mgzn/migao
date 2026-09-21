@@ -8,6 +8,9 @@ business_truths:
   - [product-sku-stock.realtime] 库存数字 = 实时数据
   - [product-sku-stock.status-flow] 商品状态流转必须合法（不允许废弃状态 in_warehouse）
 
+  - [inbound-order-flow.draft-then-post] 入库单：建单是**草稿**（不动库存）；**过账**才一次性地自动生成批次号（PC-yyyyMMdd-NNNN）+ 加 SKU 库存 + 落 stock_ledger_entries(reason=inbound) + 按移动加权平均重算 product_skus.avg_cost；已过账不得重复过账、不得作废（V111，issue #5034）
+  - [inbound-order-flow.batch-granularity] 批次粒度 = **入库单行**（一个 SKU 行 = 一个批次，用户裁定 2026-09-23）；系统批次号 batch_no 与供应商缸号 dye_lot 是**两列**，dye_lot 可空且不得用 batch_no 冒充（docs/curtain-selling-method-industry-research.md §1/§8.2）
+  - [inbound-order-flow.cost-null-semantics] 成本 NULL = 未知：存量 SKU 的 avg_cost/cost_amount 一律不回填、不猜 0；入库行未记单价时只加数量、均价保持原值（V111）
   - [product-sku-stock.create-flow] 创建商品：用户提供分类名时当轮立即调 category_manage 查分类树匹配 ID，不留到「确认创建」阶段；未提供时 interact(choice) 渲染分类选择器（product_skill.py）
   - [product-sku-stock.create-confirm] 创建商品写操作前 validate_input 汇总确认（confirm 约定见 ai-chat.confirm-required）
 primary_specs:

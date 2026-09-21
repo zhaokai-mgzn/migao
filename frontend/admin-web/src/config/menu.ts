@@ -102,6 +102,12 @@ export const menuGroups: MenuGroup[] = [{
       // issue #4490 规格修订（用户 2026-09-19）：合并后的加工项入口（#4542 起菜单名「加工项管理」）**已移出本组**，归入
       // **商品管理**组（见 product-center 组内注释）—— 本组因此回到三项。
       { key: 'production-piecework', name: '计件工资', icon: 'Calculator', path: '/production/piecework', permissionCode: 'processing:manage' },
+      // 入库单（V111，issue #5034）：商品布料入库 —— 建单（草稿）/ 过账（自动生成批次号 +
+      // 自动加库存 + 移动加权平均成本）/ 作废（仅草稿）；批次与库存台账可查。
+      // 权限码 inbound:view —— 与后端 @RequirePermission("inbound:view") 及
+      // MenuController / AuthService.buildMenusByPermissions 的节点同构（三处同构，漏一处 =
+      // 「岗位权限页勾得动、侧边栏看不到」）。
+      { key: 'inbound-orders', name: '入库单', icon: 'PackageOpen', path: '/inbound-orders', permissionCode: 'inbound:view' },
     ],
   },
 

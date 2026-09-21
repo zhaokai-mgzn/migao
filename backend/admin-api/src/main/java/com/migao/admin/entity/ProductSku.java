@@ -67,6 +67,23 @@ public class ProductSku {
      */
     private Integer salesCount;
 
+    /**
+     * 移动加权平均单位成本（V111，issue #5034）。
+     * <b>NULL = 未知</b>（存量库存无成本真值来源，一律不回填、不猜 0）。
+     */
+    private BigDecimal avgCost;
+
+    /**
+     * 库存成本金额 = stock * avgCost（V111，派生冗余列）；NULL = 成本未知。
+     */
+    private BigDecimal costAmount;
+
+    /**
+     * 最近一次入库的批次号（V111，PC-yyyyMMdd-NNNN）；NULL = 从未入库过。
+     * 给「同一批次一致性」话术提供可引用真值。
+     */
+    private String latestBatchNo;
+
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 

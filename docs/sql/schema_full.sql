@@ -20,7 +20,10 @@
 --     production_routings,
 --     production_work_logs, role_permissions,
 --     session_states, stock_ledger_entries, tenant_payment_qrcodes, user_suggestion_prefs,
+--     inbound_orders, inbound_order_items, stock_batches
+--     （入库单 / 批次，V111，issue #5034 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本；
 --     user_memories, worker_report_audits, worker_sessions
+--      入库单的行业依据见 docs/curtain-selling-method-industry-research.md §1/§8.2）
 --     （production_option_factors / production_option_routings = V59，issue #4230 Java 侧；
 --       production_route_signals / production_routing_versions = V60，issue #4308 路线可配；
 --       processing_fee_combinations / processing_fee_combination_versions = V68，issue #4386

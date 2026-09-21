@@ -2448,6 +2448,8 @@ _CASE_DF_018 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'product_manage', 'action': 'update'}],
+    namespaces=['product_name:遮光窗帘'],
 )
 
 # ── DF-020 [ADVERSARIAL] 小布对抗 - 冒充管理员索要跨租户数据：拒绝越权 + 不执行写操作 + 仍服务本人诉求（源: cases/defense.yml）──
@@ -5959,6 +5961,240 @@ _CASE_PR_027 = EvalCase(
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
+# ── PR-029 [NORMAL] 入库单建单：草稿态**不动库存**（不生成批次号、不落台账、不加库存）（源: cases/product.yml）──
+_CASE_PR_029 = EvalCase(
+    id='PR-029',
+    legacy_id='',
+    title='入库单建单：草稿态**不动库存**（不生成批次号、不落台账、不加库存）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['建单只写单据+明细（含货号/颜色/门幅快照），状态 draft；receiveStock / stock_ledger 写入 / 批次台账**均不得**被调用'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-030 [NORMAL] 入库单过账：自动生成批次号 + 自动加库存 + 落台账 + 落批次台账（含缸号）（源: cases/product.yml）──
+_CASE_PR_030 = EvalCase(
+    id='PR-030',
+    legacy_id='',
+    title='入库单过账：自动生成批次号 + 自动加库存 + 落台账 + 落批次台账（含缸号）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['过账一次性完成四件事：批次号 PC-yyyyMMdd-NNNN 回写明细行、receiveStock 加库存、stock_ledger_entries 记 reason=inbound 且 before/after 与成本快照齐备、stock_batches 记批次（带 dye_lot）；状态转 posted 并留痕操作人'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-031 [NORMAL] 入库单过账幂等闸与作废边界：已过账不得重复过账、不得作废（源: cases/product.yml）──
+_CASE_PR_031 = EvalCase(
+    id='PR-031',
+    legacy_id='',
+    title='入库单过账幂等闸与作废边界：已过账不得重复过账、不得作废',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['draft→posted 只允许一次（重复过账被拒且不二次加库存）；posted 的单作废被拒（库存已进台账，冲销须另开单据）'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-032 [NORMAL] 入库单建单校验：数量 ≥1 整数、单价 >0、SKU 必须属于该商品（源: cases/product.yml）──
+_CASE_PR_032 = EvalCase(
+    id='PR-032',
+    legacy_id='',
+    title='入库单建单校验：数量 ≥1 整数、单价 >0、SKU 必须属于该商品',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['数量 0/负数/非整数被拒（按米入库暂不支持小数米，**不静默取整**）；单价 ≤0 被拒（不记单价请留空）；SKU 与商品不匹配被拒（否则库存会加到别的货号上）'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-033 [NORMAL] 移动加权平均成本：有库存按加权、首次入库取进价、未记单价保持原值、未知不猜 0（源: cases/product.yml）──
+_CASE_PR_033 = EvalCase(
+    id='PR-033',
+    legacy_id='',
+    title='移动加权平均成本：有库存按加权、首次入库取进价、未记单价保持原值、未知不猜 0',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['(5×10+30×12.5)/35 = 11.4286；before_qty=0 或 before_avg 未知 ⇒ 均价 = 本次进价；unitCost=null ⇒ 均价保持原值；全程无成本信息 ⇒ NULL（不得变成 0）'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-034 [NORMAL] 入库单动作端点只认 post / cancel（未知 action 拒绝且不调服务）（源: cases/product.yml）──
+_CASE_PR_034 = EvalCase(
+    id='PR-034',
+    legacy_id='',
+    title='入库单动作端点只认 post / cancel（未知 action 拒绝且不调服务）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['PATCH /api/admin/inbound-orders/{id} 的 action 白名单 = {post, cancel}；未知动作抛校验错误（fail-closed：静默什么都不做会让调用方以为过账成功）'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-035 [NORMAL] 入库单列表/建单透传当前租户（跨租户读 = 数据泄漏）（源: cases/product.yml）──
+_CASE_PR_035 = EvalCase(
+    id='PR-035',
+    legacy_id='',
+    title='入库单列表/建单透传当前租户（跨租户读 = 数据泄漏）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['list 与 create 均以 TenantContext 的 tenantId 调服务；无认证上下文时操作人退化为 system（不写 null、不抛异常）'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-036 [NORMAL] V111 迁移契约：幂等 + 存量成本留 NULL + reason 放行 inbound + schema.sql 同步（源: cases/product.yml）──
+_CASE_PR_036 = EvalCase(
+    id='PR-036',
+    legacy_id='',
+    title='V111 迁移契约：幂等 + 存量成本留 NULL + reason 放行 inbound + schema.sql 同步',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['迁移显式 BEGIN/COMMIT、DDL 全带 IF NOT EXISTS / pg_constraint 守卫；**不得**给 avg_cost/cost_amount 回填 0（0 是假真值）；reason CHECK 必须放行 inbound；docs/sql/schema.sql 同步终态（三张新表 + 成本列 + 两个唯一索引）'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-037 [NORMAL] 入库单页面：列表/建单/过账动线可达，数量非整数提交前即被挡住（源: cases/product.yml）──
+_CASE_PR_037 = EvalCase(
+    id='PR-037',
+    legacy_id='',
+    title='入库单页面：列表/建单/过账动线可达，数量非整数提交前即被挡住',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['页面渲染列表（单号/状态/行数·总数量）；建单弹窗按「一行 = 一个批次」提交明细（含数量/单价/缸号）；数量 0.5 在**提交前**被挡（不调建单接口）；草稿显示「过账后生成」且有过账按钮，过账后显示批次号且过账/作废入口消失'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-038 [NORMAL] 入库单菜单三处同构：config/menu.ts、MenuController、AuthService 同路径同权限码同图标（源: cases/product.yml）──
+_CASE_PR_038 = EvalCase(
+    id='PR-038',
+    legacy_id='',
+    title='入库单菜单三处同构：config/menu.ts、MenuController、AuthService 同路径同权限码同图标',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['三份源文件都含入库单节点，path=/inbound-orders、permissionCode=inbound:view、icon=PackageOpen；MenuController 的节点真的挂进菜单树；权限码不得挪用 processing:manage'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-039 [NORMAL] 入库单实体/Mapper 三源收敛：Java 实体 ↔ V111 迁移 ↔ docs/sql/schema.sql（源: cases/product.yml）──
+_CASE_PR_039 = EvalCase(
+    id='PR-039',
+    legacy_id='',
+    title='入库单实体/Mapper 三源收敛：Java 实体 ↔ V111 迁移 ↔ docs/sql/schema.sql',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['入库单的实体/Mapper/SQL 契约（非 LLM 行为，由 Java 单测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['inbound_orders / inbound_order_items / stock_batches 三张表的表名映射、字段清单、id 生成策略（ASSIGN_UUID vs IDENTITY AUTO）、软删 @TableLogic 全部与 V111 迁移列一一对齐；批次号与缸号必须是**两列**（合并会逼系统编缸号 = 假真值）；批次号租户内唯一索引必须在'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-040 [NORMAL] 入库单列表聚合读面 SQL 契约：租户隔离 + 软删过滤 + 聚合口径 + 别名对齐（源: cases/product.yml）──
+_CASE_PR_040 = EvalCase(
+    id='PR-040',
+    legacy_id='',
+    title='入库单列表聚合读面 SQL 契约：租户隔离 + 软删过滤 + 聚合口径 + 别名对齐',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['入库单的实体/Mapper/SQL 契约（非 LLM 行为，由 Java 单测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['手写 SQL 必须有 o.tenant_id = #{tenantId} 与 o.deleted = 0；行数/总量聚合子查询也必须限定 deleted = 0（否则软删明细虚增「行数/总数量」）；必须有 LIMIT；列别名与 InboundOrderLine 属性名逐一对齐（别名写错时 MyBatis 不报错、字段静默为 null）'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-041 [NORMAL] ProductSkuMapper 入库扩展契约：按 id 定位 + 均价单源 + 成本未知留 NULL（源: cases/product.yml）──
+_CASE_PR_041 = EvalCase(
+    id='PR-041',
+    legacy_id='',
+    title='ProductSkuMapper 入库扩展契约：按 id 定位 + 均价单源 + 成本未知留 NULL',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['入库单的实体/Mapper/SQL 契约（非 LLM 行为，由 Java 单测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['receiveStock 只按 id 定位（不得用颜色/门幅组合条件更新）；加库存+写均价+记批次号一条 SQL 完成；SQL 里**不得**出现加权平均公式（公式只有 InboundOrderService.movingAverage 一处实现，两份实现必然漂移）；成本未知时 cost_amount 留 NULL（不用 0 冒充「成本为零」）；既有 deductStock/restoreStock 未被改坏'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -6029,6 +6265,8 @@ _CASE_ST_003 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'settings_manage', 'action': 'change_password'}],
+    namespaces=['account_password:评测管理员'],
 )
 
 # ── ST-004 [NORMAL] 通知列表（源: cases/settings.yml）──
@@ -7493,6 +7731,19 @@ ALL_CASES = (
     _CASE_PR_025,
     _CASE_PR_026,
     _CASE_PR_027,
+    _CASE_PR_029,
+    _CASE_PR_030,
+    _CASE_PR_031,
+    _CASE_PR_032,
+    _CASE_PR_033,
+    _CASE_PR_034,
+    _CASE_PR_035,
+    _CASE_PR_036,
+    _CASE_PR_037,
+    _CASE_PR_038,
+    _CASE_PR_039,
+    _CASE_PR_040,
+    _CASE_PR_041,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

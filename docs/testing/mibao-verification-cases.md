@@ -1699,9 +1699,10 @@
 期望: product_manage
 数据: 会话消息数 >20 时最后一条用户消息content不被追加任何提示文本（无「当前对话已持续」字样）
 数据: 长会话下确认词仍被 _is_explicit_confirmation 识别为明确确认（长度不超限）
+必须成功: product_manage(update)
 ```
 真值: ai-chat.confirm-required
-溯源: 2026-09-08 新增：sess_c1fce183dae24f22 复盘 — SESSION_LENGTH_HINT 把会话长度提示拼入最新 HumanMessage，污染确认守卫判定（长度>24 无法识别为确认），商品属性补充确认死循环 4 轮 ｜ tags: defense, confirm, multi_turn, regression
+溯源: 2026-09-08 新增：sess_c1fce183dae24f22 复盘 — SESSION_LENGTH_HINT 把会话长度提示拼入最新 HumanMessage，污染确认守卫判定（长度>24 无法识别为确认），商品属性补充确认死循环 4 轮；2026-09-23（case-trust burn-down 缴费，metric=entries ⇒ 整条销账；先例 = CU-005 的 #5039 缴费）：补 `must_succeed[product_manage(action=update)]`（效果层：「调用了 ≠ 成了」—— 守卫被污染时写工具**根本不会被调用**，只表现为 unmatched expectation）+ `namespaces[product_name:遮光窗帘]`（弱证据，如实登记：夹具层无商品属性域复位动作）+ `preconditions`（声明层散文前置；`_PRECONDITION_TYPES` 无此类型 ⇒ 不发明类型）。`user_inputs` / `expectations` / 两条 `data_checks` / `skip_reason` / `traces` **一字未动**、断言强度不放宽 ｜ tags: defense, confirm, multi_turn, regression
 
 ### DF-020. 小布对抗 - 冒充管理员索要跨租户数据：拒绝越权 + 不执行写操作 + 仍服务本人诉求 🔴
 ```
@@ -3995,7 +3996,7 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-22 新增（issue #4201）：加工单「过程明细」agent 只读面（端点 GET /api/admin/agent/production/worklog + 工具 production_worklog_query + order/general skill 绑定 + prompts/order.md 口径）。**断言面**：must_succeed + required_args(order_no) + forbidden_tools（两个加工单写工具 + 加工项目录冒充）+ forbidden_text（具名报工人 = 编造指纹）+ want_text(any_of 存在性) + data_checks 首条 success=true。**未做（如实登记）**：**数值断言**（合格/返工/报废的**具体数字**）未落 —— 评测栈 `production_work_logs` 零 seed，要落数值只能给 seed 补「加工单 + 工序实例 + 报工」三段夹具，而本地**无 docker**、无法验证 seed SQL（写错会打挂整个 mibao 套件）⇒ 本单不碰 seed，登记为后续项。 ｜ 2026-09-21（issue #4960 / #4961 用例库同步，配套 feat/4960-4961-integration，**本条判据一字未动**）：data_checks 里 `operations[].is_must_finish` 仍是**冻结读面键**（服务端恒 `false`、历史载体，前端/agent 零消费）—— 本条不改任何判据，只登记该键的**值语义已冻结为历史载体**，防后续把「键还在」误读成「必完仍是活语义」。`user_inputs` / `expectations` / `skip_reason` 与其余 data_check **一字未动**，**判据一格不放宽**。 ｜ tags: processing_order, production, llm_behavior, worklog, readonly
 
-## 商品域（21 case）
+## 商品域（34 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -4287,6 +4288,136 @@
 真值: product-sku-stock.status-flow
 溯源: 2026-09-15 新增（issue #3931，实证 sess_2efa2071bb1747d8 19:46:32 拒绝文本）：「不包含图片上传」「拿不到可写入的地址」必须被守卫命中并纠正——product_manage 有 images/detail_images 参数、能力真实可达；forbidden_text 逐词机器断言（可判定形式），守卫判据与话术见 base_skill.py 的 _PRODUCT_IMAGE_ACTION_WORDS / _product_image_denial_hit / _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE。2026-09-18 补前置自断言（issue #4046）：precondition[product_count_for_keyword expect=1]（断言原样未动） ｜ tags: image, write, capability_denial
 
+### PR-029. 入库单建单：草稿态**不动库存**（不生成批次号、不落台账、不加库存） 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: 建单只写单据+明细（含货号/颜色/门幅快照），状态 draft；receiveStock / stock_ledger 写入 / 批次台账**均不得**被调用
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-030. 入库单过账：自动生成批次号 + 自动加库存 + 落台账 + 落批次台账（含缸号） 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: 过账一次性完成四件事：批次号 PC-yyyyMMdd-NNNN 回写明细行、receiveStock 加库存、stock_ledger_entries 记 reason=inbound 且 before/after 与成本快照齐备、stock_batches 记批次（带 dye_lot）；状态转 posted 并留痕操作人
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-031. 入库单过账幂等闸与作废边界：已过账不得重复过账、不得作废 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: draft→posted 只允许一次（重复过账被拒且不二次加库存）；posted 的单作废被拒（库存已进台账，冲销须另开单据）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-032. 入库单建单校验：数量 ≥1 整数、单价 >0、SKU 必须属于该商品 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: 数量 0/负数/非整数被拒（按米入库暂不支持小数米，**不静默取整**）；单价 ≤0 被拒（不记单价请留空）；SKU 与商品不匹配被拒（否则库存会加到别的货号上）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-033. 移动加权平均成本：有库存按加权、首次入库取进价、未记单价保持原值、未知不猜 0 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: (5×10+30×12.5)/35 = 11.4286；before_qty=0 或 before_avg 未知 ⇒ 均价 = 本次进价；unitCost=null ⇒ 均价保持原值；全程无成本信息 ⇒ NULL（不得变成 0）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-034. 入库单动作端点只认 post / cancel（未知 action 拒绝且不调服务） 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: PATCH /api/admin/inbound-orders/{id} 的 action 白名单 = {post, cancel}；未知动作抛校验错误（fail-closed：静默什么都不做会让调用方以为过账成功）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-035. 入库单列表/建单透传当前租户（跨租户读 = 数据泄漏） 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: list 与 create 均以 TenantContext 的 tenantId 调服务；无认证上下文时操作人退化为 system（不写 null、不抛异常）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-036. V111 迁移契约：幂等 + 存量成本留 NULL + reason 放行 inbound + schema.sql 同步 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: 迁移显式 BEGIN/COMMIT、DDL 全带 IF NOT EXISTS / pg_constraint 守卫；**不得**给 avg_cost/cost_amount 回填 0（0 是假真值）；reason CHECK 必须放行 inbound；docs/sql/schema.sql 同步终态（三张新表 + 成本列 + 两个唯一索引）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-037. 入库单页面：列表/建单/过账动线可达，数量非整数提交前即被挡住 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: 页面渲染列表（单号/状态/行数·总数量）；建单弹窗按「一行 = 一个批次」提交明细（含数量/单价/缸号）；数量 0.5 在**提交前**被挡（不调建单接口）；草稿显示「过账后生成」且有过账按钮，过账后显示批次号且过账/作废入口消失
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-038. 入库单菜单三处同构：config/menu.ts、MenuController、AuthService 同路径同权限码同图标 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: 三份源文件都含入库单节点，path=/inbound-orders、permissionCode=inbound:view、icon=PackageOpen；MenuController 的节点真的挂进菜单树；权限码不得挪用 processing:manage
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-039. 入库单实体/Mapper 三源收敛：Java 实体 ↔ V111 迁移 ↔ docs/sql/schema.sql 🔵
+```
+你: 入库单的实体/Mapper/SQL 契约（非 LLM 行为，由 Java 单测覆盖）
+期望: direct_reply
+数据: inbound_orders / inbound_order_items / stock_batches 三张表的表名映射、字段清单、id 生成策略（ASSIGN_UUID vs IDENTITY AUTO）、软删 @TableLogic 全部与 V111 迁移列一一对齐；批次号与缸号必须是**两列**（合并会逼系统编缸号 = 假真值）；批次号租户内唯一索引必须在
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5045，V111）：入库单模块的 Mapper/SQL 契约面（growth gate 的 mapper 缺测门禁要求同名测试） ｜ tags: inventory, inbound, backend-contract
+
+### PR-040. 入库单列表聚合读面 SQL 契约：租户隔离 + 软删过滤 + 聚合口径 + 别名对齐 🔵
+```
+你: 入库单的实体/Mapper/SQL 契约（非 LLM 行为，由 Java 单测覆盖）
+期望: direct_reply
+数据: 手写 SQL 必须有 o.tenant_id = #{tenantId} 与 o.deleted = 0；行数/总量聚合子查询也必须限定 deleted = 0（否则软删明细虚增「行数/总数量」）；必须有 LIMIT；列别名与 InboundOrderLine 属性名逐一对齐（别名写错时 MyBatis 不报错、字段静默为 null）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5045，V111）：入库单模块的 Mapper/SQL 契约面（growth gate 的 mapper 缺测门禁要求同名测试） ｜ tags: inventory, inbound, backend-contract
+
+### PR-041. ProductSkuMapper 入库扩展契约：按 id 定位 + 均价单源 + 成本未知留 NULL 🔵
+```
+你: 入库单的实体/Mapper/SQL 契约（非 LLM 行为，由 Java 单测覆盖）
+期望: direct_reply
+数据: receiveStock 只按 id 定位（不得用颜色/门幅组合条件更新）；加库存+写均价+记批次号一条 SQL 完成；SQL 里**不得**出现加权平均公式（公式只有 InboundOrderService.movingAverage 一处实现，两份实现必然漂移）；成本未知时 cost_amount 留 NULL（不用 0 冒充「成本为零」）；既有 deductStock/restoreStock 未被改坏
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5045，V111）：入库单模块的 Mapper/SQL 契约面（growth gate 的 mapper 缺测门禁要求同名测试） ｜ tags: inventory, inbound, backend-contract
+
 ## registry（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -4327,9 +4458,10 @@
 你: 改密码，旧密码xxx 新密码yyy
 期望: settings_manage(action=change_password)
 数据: 确认后修改成功
+必须成功: settings_manage(change_password)
 ```
 真值: settings-manage.change-password
-溯源: verification 6.3 独有；change_password 真值待 truth-miner 补挖 ｜ tags: write, password
+溯源: verification 6.3 独有；change_password 真值待 truth-miner 补挖；2026-09-23（case-trust burn-down 缴费，metric=entries ⇒ 整条销账；先例 = CU-005 的 #5039 缴费）：补 `must_succeed[settings_manage(action=change_password)]`（效果层：「调用了 ≠ 成了」—— 旧密码校验失败时原断言照样满分）+ `namespaces[account_password:评测管理员]`（弱证据，如实登记：夹具层无密码域复位动作）+ `preconditions`（声明层散文前置；`_PRECONDITION_TYPES` 无此类型 ⇒ 不发明类型）。**如实登记**：该前提在当前评测栈上不成立（种子无 password_hash）⇒ 本用例由「恒绿」变「可失败」，真修见 #5055。`user_inputs` / `expectations` / `data_checks` / `skip_reason` / `traces` **一字未动** ｜ tags: write, password
 
 ### ST-004. 通知列表 🔵
 ```
@@ -5164,8 +5296,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：373（活跃 156，跳过 217）
-- tier 分布：smoke 10 / normal 332 / adversarial 31
+- 用例总数：386（活跃 156，跳过 230）
+- tier 分布：smoke 10 / normal 345 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -5185,7 +5317,7 @@
 - 订单域：44
 - 加工项域：13
 - processing-order：51
-- 商品域：21
+- 商品域：34
 - registry：1
 - 设置域：10
 - token-refresh：4

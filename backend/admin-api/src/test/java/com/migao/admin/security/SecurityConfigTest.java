@@ -151,6 +151,19 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.StockLedgerMapper stockLedgerMapper;
 
+    // 入库单（issue #5045，V111）：InboundOrderService 依赖的四个 Mapper 必须顶替 ——
+    // 本上下文排除了 MybatisPlusAutoConfiguration ⇒ 没有 sqlSessionFactory ⇒ 不顶替会让
+    // **整类 42 条断言一起红**，而红的表现是「ApplicationContext failure threshold exceeded」
+    // （看不出跟入库单有关，排查会绕远）。同 StockLedgerMapper 的口径。
+    @MockBean
+    private com.migao.admin.mapper.InboundOrderMapper inboundOrderMapper;
+    @MockBean
+    private com.migao.admin.mapper.InboundOrderItemMapper inboundOrderItemMapper;
+    @MockBean
+    private com.migao.admin.mapper.InboundOrderQueryMapper inboundOrderQueryMapper;
+    @MockBean
+    private com.migao.admin.mapper.StockBatchMapper stockBatchMapper;
+
     @MockBean
     private com.migao.admin.service.NotificationService notificationService;
 

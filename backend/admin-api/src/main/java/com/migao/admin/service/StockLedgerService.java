@@ -18,6 +18,7 @@ import org.springframework.util.StringUtils;
 
 import com.migao.admin.security.SecurityUser;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -64,6 +65,24 @@ public class StockLedgerService extends ServiceImpl<StockLedgerMapper, StockLedg
      */
     public void record(Long tenantId, String productId, Long skuId, String skuCode,
                        int beforeQty, int afterQty, String reason, String refNo, String note) {
+        record(tenantId, productId, skuId, skuCode, beforeQty, afterQty, reason, refNo, note,
+                null, null, null);
+    }
+
+    /**
+     * 记录一次 SKU 库存变更（追加写）+ **成本快照**（V111，issue #5034）。
+     *
+     * <p>成本三参全部可空：传 null = <b>该次变更的成本未知</b>（存量路径不伪造 0）。
+     * 入库单过账走本重载（成本来自入库行单价）；其余既有写入方走上面那个不传成本的版本，
+     * 语义与落库结果**逐字不变**。</p>
+     *
+     * @param unitCost      本次变更的单位成本（入库 = 行单价；出库 = 当时移动加权均价）
+     * @param avgCostBefore 变更前该 SKU 的移动加权平均成本
+     * @param avgCostAfter  变更后该 SKU 的移动加权平均成本（出库不变、入库重算）
+     */
+    public void record(Long tenantId, String productId, Long skuId, String skuCode,
+                       int beforeQty, int afterQty, String reason, String refNo, String note,
+                       BigDecimal unitCost, BigDecimal avgCostBefore, BigDecimal avgCostAfter) {
         StockLedger entry = StockLedger.builder()
                 .tenantId(tenantId)
                 .productId(productId)
@@ -75,13 +94,19 @@ public class StockLedgerService extends ServiceImpl<StockLedgerMapper, StockLedg
                 .reason(reason)
                 .refNo(refNo)
                 .note(note)
+                .unitCost(unitCost)
+                // 成本金额由本方法按 |delta| * unitCost 算出 —— 同 delta 的算法：不接受调用方传入的金额，
+                // 从根上排除「金额与数量/单价三者不自洽」的脏行
+                .costAmount(costAmountOf(afterQty - beforeQty, unitCost))
+                .avgCostBefore(avgCostBefore)
+                .avgCostAfter(avgCostAfter)
                 .operator(resolveOperator())
                 .createdAt(OffsetDateTime.now())
                 .build();
         stockLedgerMapper.insert(entry);
-        log.info("库存流水: tenant={}, product={}, skuId={}, skuCode={}, {}->{}(delta={}), reason={}, refNo={}, operator={}",
+        log.info("库存流水: tenant={}, product={}, skuId={}, skuCode={}, {}->{}(delta={}), reason={}, refNo={}, operator={}, unitCost={}, avgCost {}->{}",
                 tenantId, productId, skuId, skuCode, beforeQty, afterQty, afterQty - beforeQty,
-                reason, refNo, entry.getOperator());
+                reason, refNo, entry.getOperator(), unitCost, avgCostBefore, avgCostAfter);
     }
 
     /**
@@ -130,7 +155,11 @@ public class StockLedgerService extends ServiceImpl<StockLedgerMapper, StockLedg
                 continue;
             }
             record(tenantId, current.getProductId(), current.getId(), current.getSkuCode(),
-                    beforeQty, afterQty, reason, refNo, note);
+                    beforeQty, afterQty, reason, refNo, note,
+                    // 成本快照（V111）：**回补/扣减都不改移动加权均价**（移动加权平均的标准语义）
+                    // ⇒ unitCost = 变更时均价、before == after。均价未知（NULL）时三列全 NULL，
+                    // 不用 0 冒充「成本为零」。
+                    previous.getAvgCost(), previous.getAvgCost(), previous.getAvgCost());
             rows++;
         }
         return rows;
@@ -168,5 +197,13 @@ public class StockLedgerService extends ServiceImpl<StockLedgerMapper, StockLedg
 
     private static int stockOf(ProductSku sku) {
         return sku != null && sku.getStock() != null ? sku.getStock() : 0;
+    }
+
+    /**
+     * 成本金额 = |delta| * unitCost（V111）。
+     * 单价未知 ⇒ 返回 null（**不用 0 冒充「成本为零」** —— 0 会被读成真数据）。
+     */
+    private static BigDecimal costAmountOf(int delta, BigDecimal unitCost) {
+        return unitCost == null ? null : unitCost.multiply(BigDecimal.valueOf(Math.abs((long) delta)));
     }
 }
