@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, feePreviewApi, type CraftCalcResult, type CraftCalcParams, type FeePreviewResult, type FeePreviewRow } from '@/lib/api'
+import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, autoFeaturesApi, feePreviewApi, type AutoFeaturesParams, type AutoFeaturesResult, type CraftCalcResult, type CraftCalcParams, type FeePreviewResult, type FeePreviewRow } from '@/lib/api'
 import { resolveImageUrl } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
 import { Button, Card, Input, Modal } from '@/components/ui'
@@ -58,7 +58,6 @@ import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
 import {
   AUTO_FEATURE_NAMES,
   detectAutoFeatureNotices,
-  detectAutoFeatures,
   parseDoorWidth,
   type AutoFeature,
   type AutoFeatureName,
@@ -198,6 +197,13 @@ interface OrderLineItem {
   calc: CraftCalcResult | null
   /** 试算失败原因（行内显式提示；**不退回任何估算值**） */
   calcError: string | null
+  /**
+   * 最近一次**自动特征判定**结果（issue #4976 包 2b）—— 判定来自**服务端**（用户裁定 B）。
+   * `undefined` / `null` = **还没判**（提交闸门会拦，见 `autoFeaturesBlockReason`）。
+   */
+  autoFeatures?: AutoFeaturesResult | null
+  /** 判定失败原因（行内显式提示；**不放行提交** —— 组合键少一项 = 钱会错） */
+  autoFeaturesError?: string | null
 }
 
 const sellingMethodLabel: Record<string, string> = {
@@ -503,24 +509,67 @@ function pickAutoSkuForColor(
   return best ?? null
 }
 
+/**
+ * 该行的自动特征 —— **判定来自服务端**（issue #4976 包 2b，用户 2026-09-21 裁定 B
+ * 「**判定移到服务端**」，前端只展示服务端结论）。
+ *
+ * ⚠️ **本页不再本地推导**：此前的 `detectAutoFeatures(...)` 调用已退场（静态判据
+ * `orders-new-auto-features.test.ts` 的「本页不得本地判特征」钉住）。
+ *
+ * 为什么必须搬：判定进**加工费组合键**（`processingInfo.processingItems[].name`）⇒ 判定即钱。
+ * 服务端判定用的是**该租户的配置**（`side_margin` / `hem_margin` / 档位褶倍）与**该 SKU 的门幅**，
+ * 而前端只持有一份常量副本 ⇒ 商家改过配置后两边会算出不同的键（本单要消灭的正是这种脱钩）。
+ *
+ * 只保留服务端认得的名字（`AUTO_FEATURE_NAMES` 与加工项目录 V83 逐值对齐，有守卫）——
+ * 服务端若返回目录里没有的名字，进组合键会**永远匹配不到价** ⇒ 宁可漏也不要污染键。
+ */
 function autoFeaturesOf(line: OrderLineItem): AutoFeature[] {
-  return detectAutoFeatures({
-    width: line.width,
-    height: line.height,
-    doorWidth: line.selectedSku?.doorWidth,
-    // ⚠️ issue #5020：走**派生后**的加工类型（`cuttingModeOf`），不是 `line.craft.cuttingMode` ——
-    // 后者在「未指定」时是 `undefined` ⇒ 识别面「两个方向都不判」，而规则面已按自动解算料
-    // ⇒ 界面显示 ≠ 落库（正是本单要消灭的那种不一致）。
-    cuttingMode: cuttingModeOf(line),
-    // **褶倍**（issue #4662）—— 超宽判据 = `(宽 + SIDE_MARGIN) × 褶倍 > 门幅`（引擎的分幅条件）。
-    // 值 = **标准档倍数**：本页的算料请求把 `craft_tier` 钉死为 `standard`
-    // （`craft-calc-request.ts` 的 `CRAFT_CALC_TIER`）⇒ 引擎取到的 `N` 就是
-    // `DEFAULT_CRAFT_TIERS.standard.fullness`，即此处的 `STANDARD_FULLNESS`
-    // （**有守卫的副本**：`craft-calc-defaults.test.ts` 逐值读 Python 源比对，漂移即红）。
-    // ⚠️ **不拿「褶距」反推倍数**：引擎算分幅时**不读** `pleatSpacing`（它只按档位取倍数）⇒
-    // 反推会让「前端推算」与「引擎实际计算」脱钩（正是本单要消灭的那种不一致）。
-    fullness: STANDARD_FULLNESS,
-  })
+  const rows = line.autoFeatures?.auto_features ?? []
+  return rows
+    .filter((f) => (AUTO_FEATURE_NAMES as readonly string[]).includes(f.name))
+    .map((f) => ({ name: f.name as AutoFeatureName, source: '推算' as const, reason: f.reason }))
+}
+
+/** 自动特征判定的**入参**（`null` = 宽高没填齐 ⇒ 不发请求，提交校验本来也拦） */
+function autoFeatureParamsOf(line: OrderLineItem): AutoFeaturesParams | null {
+  const width = Number(line.width)
+  const height = Number(line.height)
+  if (!Number.isFinite(width) || width <= 0) return null
+  if (!Number.isFinite(height) || height <= 0) return null
+  const params: AutoFeaturesParams = { width, height }
+  // 门幅：**取该 SKU 的**（`parseDoorWidth` 是唯一解析点，issue #4877）。
+  // 解析不到 ⇒ **不发该键** ⇒ 服务端不判并在 notice 里说明（**不回落默认门幅**）。
+  const doorWidth = parseDoorWidth(line.selectedSku?.doorWidth)
+  if (doorWidth !== null) params.fabric_width = doorWidth
+  // ⚠️ issue #5020（rebase 时采纳 main 的口径）：走**派生后**的加工类型（`cuttingModeOf`），
+  // 不是 `line.craft.cuttingMode` —— 后者在「未指定」时是 `undefined` ⇒ 判定面「两个方向都不判」，
+  // 而规则面已按自动解算料 ⇒ **界面显示 ≠ 落库**（正是本单要消灭的那种不一致）。
+  const cuttingMode = cuttingModeOf(line)
+  if (cuttingMode) params.cutting_mode = cuttingMode
+  return params
+}
+
+/** 判定入参签名：**只含入参**（判定结果写回行状态 ⇒ 用它当依赖会自激成请求风暴） */
+function autoFeatureParamsSignature(params: AutoFeaturesParams | null): string {
+  if (params === null) return ''
+  return [params.width, params.height, params.fabric_width ?? '', params.cutting_mode ?? ''].join('|')
+}
+
+/**
+ * 提交闸门（issue #4976 包 2b）：**判定没就绪 ⇒ 不许提交**。
+ *
+ * 与既有「加工费计价闸门」（#4450）同口径：组合键是**服务端取价的键**，
+ * 判定缺席 ⇒ 键少一项 ⇒ 服务端按另一个组合取价（或取不到价）⇒ 页面总额 ≠ 服务端总额
+ * ⇒ 被创建路径的「实收金额与应收不一致」拒单（或**少收/多收**）。
+ * ⇒ 宁可让商家等一下，也不发一个键不完整的单。
+ */
+function autoFeaturesBlockReason(lineItems: OrderLineItem[]): string | null {
+  for (const line of lineItems) {
+    if (autoFeatureParamsOf(line) === null) continue
+    if (line.autoFeaturesError) return '自动识别判定失败，请稍候重试后再提交'
+    if (!line.autoFeatures) return '自动识别判定中，请稍候再提交'
+  }
+  return null
 }
 
 /**
@@ -1477,6 +1526,57 @@ export default function NewOrderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calcSignature])
 
+  // ===== 自动特征判定（issue #4976 包 2b：判定移到服务端）=====
+  //
+  // 与上面的试算 effect **同形态**（防抖 + 取消 + 只按入参签名触发），但**入参不同**：
+  // 试算受 `CALC_CRAFTS` 门控（四爪钩/穿杆/平幔 不发），判定**每一行都发**。
+  const autoFeatureSignature = useMemo(
+    () =>
+      lineItems
+        .map((l) => `${l.id}:${autoFeatureParamsSignature(autoFeatureParamsOf(l))}`)
+        .join(';'),
+    [lineItems]
+  )
+
+  useEffect(() => {
+    const targets: Array<{ id: string; params: AutoFeaturesParams }> = []
+    for (const line of lineItems) {
+      const params = autoFeatureParamsOf(line)
+      if (params) targets.push({ id: line.id, params })
+    }
+    if (targets.length === 0) return
+
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      const results: Array<{ id: string; data: AutoFeaturesResult | null; error: string | null }> =
+        await Promise.all(
+          targets.map(async ({ id, params }) => {
+            try {
+              const res = await autoFeaturesApi.preview(params)
+              return { id, data: res.data?.data ?? null, error: null }
+            } catch (e) {
+              return { id, data: null, error: craftCalcErrorText(e) }
+            }
+          })
+        )
+      if (cancelled) return
+      setLineItems((prev) =>
+        prev.map((it) => {
+          const hit = results.find((r) => r.id === it.id)
+          if (!hit) return it
+          // 判定**只**写这两个字段：不碰数量/加工项（判定不产生米数）
+          return { ...it, autoFeatures: hit.data, autoFeaturesError: hit.error }
+        })
+      )
+    }, CRAFT_CALC_DEBOUNCE_MS)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFeatureSignature])
+
   // ===== 加工费计价预览（issue #4450 · 前置 #4406）=====
   //
   // **为什么必须有它**：本页此前本地自算（Σ 加工项），而服务端创建订单按**选配组合取价**
@@ -1700,6 +1800,10 @@ export default function NewOrderPage() {
 
     lineItems.forEach((line, idx) => {
       const prefix = `line_${line.id}`
+      // 自动特征判定闸门（issue #4976 包 2b）：判定缺席 ⇒ 组合键少一项 ⇒ 取价错
+      // （与上面的加工费计价闸门同口径；判定不产生米数，所以放在逐行校验之前）
+      const autoBlock = autoFeaturesBlockReason([line])
+      if (autoBlock) e[`${prefix}_autoFeatures`] = autoBlock
       if (!line.product) {
         e[`${prefix}_product`] = `第 ${idx + 1} 个商品未选择`
         return

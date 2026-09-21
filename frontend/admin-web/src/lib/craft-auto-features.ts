@@ -219,6 +219,21 @@ export const CUTTING_MODE_FIXED_WIDTH = '定宽买高'
  * 🔴 **`定高买宽` 不推导朝向特征**（issue #4592，P0）：它等于**正幅**（窗帘常态），
  * 而 `正幅` 不在 `processing_items` 目录（V83）里 ⇒ 推它就会让**默认订单**的组合键
  * 永远匹配不到价。用户裁定「正幅不用作为加工项的加项，但是倒幅是需要的」。
+ *
+ * 🔴🔴 **issue #4976 包 2b 起：本函数已不在「取价路径」上**（用户 2026-09-21 裁定 B
+ * 「**判定移到服务端**」）—— 下单页的自动特征判定改由服务端
+ * （`POST /api/admin/orders/auto-features` → 引擎 `curtain_calc.detect_auto_features`）给出，
+ * 前端只**展示**服务端结论。⇒ **本函数不再被 `orders/new` 调用**（静态判据
+ * `orders-new-auto-features.test.ts` 的「本页不得本地判特征」钉住），其单测保留只为
+ * **钉住判据语义**（服务端实现与之同式，措辞逐字对齐）。
+ *
+ * 为什么必须搬：判定进**加工费组合键** ⇒ 判定即钱；而服务端判定用的是**该租户的配置**
+ * （`side_margin` / `hem_margin` / 档位褶倍）与**该 SKU 的门幅**，前端只持常量副本
+ * ⇒ 商家改过配置后两边会算出不同的键。
+ *
+ * ⚠️ **待收口（已登记在母单 #4976）**：本函数与它的单测可在后续小单里**整体删除**
+ * （它已是「无人调用的第二份判据」）—— 本包不删是为了把「钱路径切换」与「删实现+改 46 条单测」
+ * 分成两步，降低一次性改动面。
  */
 export function detectAutoFeatures(input: AutoFeatureInput): AutoFeature[] {
   const features: AutoFeature[] = []
