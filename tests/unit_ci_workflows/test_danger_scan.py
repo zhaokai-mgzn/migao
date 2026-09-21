@@ -14,6 +14,9 @@ from danger_scan import (
     _truly_new_secret_lines,
     parse_delete_acks,
     ack_env_lines,
+    parse_migration_acks,
+    migration_ack_env_lines,
+    verify_migration_acks,
 )
 
 
@@ -647,3 +650,399 @@ class TestAckStepWiringIsThin:
         assert '--resolve-acks >> "$GITHUB_ENV"' in script, (
             "ack 不是由纯函数输出写入 GITHUB_ENV —— 出现了第二套写入口"
         )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 已发布迁移被**重写**的人工确认通道（#4936：授权把 V102~V106 合并为单条 V102）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 病根：「迁移不可变」判据只看 **git 状态（M/D）**，**不认指纹账本** ⇒ 经维护者裁定的
+# 合并重写（#4936 的 5 条从未在任何环境成功应用过的迁移）**结构性过不了 CI**
+# （本地实测 5 处 blocker），而既有确认通道只覆盖 workflow 删除。
+#
+# 本通道与 `delete-workflow` **同形**（同源 owner / 同源评论读取 / 同源 fail-closed），
+# 但 ack **不足以**放行 —— 必须同时过 `verify_migration_acks()` 的四条交叉校验。
+# 放宽门禁的改动，判据必须比原判据**更严**，否则就是「把护栏换成开关」。
+
+
+class TestParseMigrationAcks:
+    """`/danger-ack rewrite-migration <V###|all>` 的解析（行为级纯函数）。"""
+
+    OWNER = "zhaokai-mgzn"
+    MIG = "backend/admin-api/src/main/resources/db/migration"
+    V102 = f"{MIG}/V102__rewrite_published.sql"
+    V103 = f"{MIG}/V103__other.sql"
+
+    @staticmethod
+    def _c(login, body, url="https://example.invalid/c/1"):
+        return {"user": {"login": login}, "body": body, "html_url": url}
+
+    def test_owner_marker_for_exact_version(self):
+        acked, via = parse_migration_acks(
+            [self._c(self.OWNER, "/danger-ack rewrite-migration V102")],
+            self.OWNER, [self.V102, self.V103],
+        )
+        assert acked == {"V102"}, f"只确认了 V102，却放行了 {acked}"
+        assert via, "留痕缺确认评论链接"
+
+    def test_marker_all_covers_every_changed_migration(self):
+        acked, _ = parse_migration_acks(
+            [self._c(self.OWNER, "/danger-ack rewrite-migration all")],
+            self.OWNER, [self.V102, self.V103],
+        )
+        assert acked == {"V102", "V103"}, f"`all` 未展开为本次改动集合：{acked}"
+
+    def test_all_with_no_changed_migrations_grants_nothing(self):
+        """本次没有迁移改动时，`all` 不得变成「全局开关」。"""
+        acked, via = parse_migration_acks(
+            [self._c(self.OWNER, "/danger-ack rewrite-migration all")], self.OWNER, [])
+        assert acked == set() and via == ""
+
+    def test_non_owner_comment_is_ignored(self):
+        """**核心安全判据**：非 owner 评论一律不采信（否则任何人一句话就能改已发布迁移）。"""
+        acked, via = parse_migration_acks(
+            [self._c("random-contributor", "/danger-ack rewrite-migration all")],
+            self.OWNER, [self.V102],
+        )
+        assert acked == set(), f"非 owner 的确认被采信：{acked}"
+        assert via == ""
+
+    def test_empty_owner_never_acks(self):
+        """owner 未配置（env 缺失）⇒ 一律不放行（fail-closed，不得退化成"谁都可以"）。"""
+        acked, _ = parse_migration_acks(
+            [self._c("", "/danger-ack rewrite-migration all")], "", [self.V102])
+        assert acked == set()
+
+    def test_no_marker_acks_nothing(self):
+        acked, _ = parse_migration_acks(
+            [self._c(self.OWNER, "同意重写，但没写 marker")], self.OWNER, [self.V102])
+        assert acked == set()
+
+    def test_empty_comments_acks_nothing(self):
+        assert parse_migration_acks([], self.OWNER, [self.V102]) == (set(), "")
+
+    def test_version_match_is_case_insensitive(self):
+        """`v102` / `V102` 都算（用户原话里的版本号大小写不敏感）。"""
+        acked, _ = parse_migration_acks(
+            [self._c(self.OWNER, "/danger-ack rewrite-migration v102")],
+            self.OWNER, [self.V102])
+        assert acked == {"V102"}, f"小写 v102 未匹配 V102__ 迁移：{acked}"
+
+    def test_lowercase_filename_version_is_recognized(self):
+        acked, _ = parse_migration_acks(
+            [self._c(self.OWNER, "/danger-ack rewrite-migration V102")],
+            self.OWNER, [f"{self.MIG}/v102__rewrite.sql"])
+        assert acked == {"V102"}, f"小写文件名的版本号未被识别：{acked}"
+
+    def test_ack_for_unrelated_version_grants_nothing(self):
+        acked, _ = parse_migration_acks(
+            [self._c(self.OWNER, "/danger-ack rewrite-migration V999")],
+            self.OWNER, [self.V102])
+        assert acked == set(), "确认被当成全局开关（确认 V999 等于放行 V102）"
+
+    def test_bare_marker_is_not_a_wildcard(self):
+        """裸 marker（没跟版本号、也没跟 `all`）**不得**匹配任何版本。"""
+        acked, _ = parse_migration_acks(
+            [self._c(self.OWNER, "/danger-ack rewrite-migration")], self.OWNER, [self.V102])
+        assert acked == set()
+
+    def test_junk_entries_do_not_crash_or_ack(self):
+        acked, _ = parse_migration_acks(
+            ["junk", None, 42, self._c(self.OWNER, "/danger-ack rewrite-migration all")],
+            self.OWNER, [])
+        assert acked == set()
+
+    def test_env_lines_empty_when_nothing_acked(self):
+        lines = migration_ack_env_lines(set(), self.OWNER, "")
+        assert lines[0] == "DANGER_ACK_MIGRATION=", lines
+        assert all("rewrite-migration" not in ln for ln in lines)
+
+    def test_env_lines_carry_versions_and_audit_identity(self):
+        joined = "\n".join(migration_ack_env_lines(
+            {"V103", "V102"}, self.OWNER, "https://example.invalid/c/9"))
+        assert "DANGER_ACK_MIGRATION=V102,V103" in joined, joined
+        assert f"DANGER_ACK_MIGRATION_BY={self.OWNER}" in joined
+        assert "DANGER_ACK_MIGRATION_URL=https://example.invalid/c/9" in joined
+
+
+class TestVerifyMigrationAcks:
+    """交叉校验纯函数（四条判据各自独立，互不掩盖）。"""
+
+    MIG = "backend/admin-api/src/main/resources/db/migration"
+    V102 = f"{MIG}/V102__rewrite_published.sql"
+    NAME = "V102__rewrite_published.sql"
+    H = "sha256:" + "a" * 64
+    H2 = "sha256:" + "b" * 64
+
+    def _verify(self, changes, acked=("V102",), *, ledger_changed=True, entries=None, disk=None):
+        return verify_migration_acks(
+            frozenset(acked), changes, ledger_changed,
+            {self.NAME: self.H} if entries is None else entries,
+            {self.NAME: self.H} if disk is None else disk,
+        )
+
+    def test_granted_when_all_checks_pass(self):
+        granted, problems = self._verify([("M", self.V102)])
+        assert granted == {"V102"} and not problems
+
+    def test_no_ledger_update_rejects(self):
+        granted, problems = self._verify([("M", self.V102)], ledger_changed=False)
+        assert granted == set()
+        assert "同批更新" in problems["V102"], problems
+
+    def test_disk_hash_mismatch_rejects(self):
+        granted, problems = self._verify([("M", self.V102)], disk={self.NAME: self.H2})
+        assert granted == set()
+        assert "哈希与磁盘不符" in problems["V102"] and "--write-ledger" in problems["V102"]
+
+    def test_unreadable_ledger_fails_closed(self):
+        """`ledger_entries=None`（读不到账本）≠ `{}`（账本里没这条）—— 前者必须 fail-closed。"""
+        granted, problems = verify_migration_acks(
+            frozenset({"V102"}), [("M", self.V102)], True, None, {self.NAME: self.H})
+        assert granted == set(), "读不到账本却放行了 —— 安全门禁的失效方向必须是报错"
+        assert "无法读取指纹账本" in problems["V102"], problems
+
+    def test_delete_ack_requires_ledger_entry_removed(self):
+        granted, problems = self._verify([("D", self.V102)])
+        assert granted == set()
+        assert "账本仍留有该文件名" in problems["V102"], problems
+        granted2, problems2 = self._verify([("D", self.V102)], entries={})
+        assert granted2 == {"V102"} and not problems2
+
+    def test_ack_for_unmodified_version_is_inert(self):
+        granted, problems = self._verify([("M", self.V102)], acked=("V999",))
+        assert granted == set() and not problems, "ack 了本次没改的版本 ⇒ 不算数（也不报错）"
+
+    def test_rename_with_content_change_is_not_ackable(self):
+        """`R0xx`（改名 + 内容变化）不是 M/D ⇒ ack 不得顺带豁免它。"""
+        granted, _ = self._verify([("R062", self.V102)])
+        assert granted == set()
+
+
+class TestMigrationRewriteAck:
+    """`analyze` **行为级**：ack + 交叉校验通过 ⇒ 降 WARN；任一条件不满足 ⇒ 照旧 BLOCK。"""
+
+    MIG = "backend/admin-api/src/main/resources/db/migration"
+    V102 = f"{MIG}/V102__rewrite_published.sql"
+    V103 = f"{MIG}/V103__other.sql"
+    NAME102 = "V102__rewrite_published.sql"
+    H = "sha256:" + "a" * 64
+    H2 = "sha256:" + "b" * 64
+    BY = "zhaokai-mgzn"
+    URL = "https://example.invalid/pr/4936#issuecomment-1"
+
+    def _analyze(self, changes, acked=(), *, ledger_changed=True, entries=None, disk=None):
+        return analyze(
+            workflow_changes=[], wf_new_secrets={}, deleted_files=[], deploy_files=[],
+            migration_changes=changes, schema_changes=[],
+            migration_acked=frozenset(acked),
+            migration_ack_by=self.BY, migration_ack_url=self.URL,
+            ledger_changed=ledger_changed,
+            ledger_entries={self.NAME102: self.H} if entries is None else entries,
+            disk_hashes={self.NAME102: self.H} if disk is None else disk,
+        )
+
+    def test_no_ack_still_blocks_verbatim(self):
+        """**负控（防放宽）**：不传 ack ⇒ 与补通道前**逐字同形**（仍 BLOCK）。"""
+        blockers, warnings = self._analyze([("M", self.V102)])
+        expected = (
+            f"已发布迁移被修改/删除 {self.V102} —— 迁移不可变（MigrationRunner 按序执行，"
+            f"改动会导致线上 DB 与代码脱节），只能新增 V{{n+1}}__ 迁移"
+        )
+        assert blockers == [expected], f"无 ack 时的行为必须逐字不变，实得 {blockers}"
+        assert not warnings
+
+    def test_deleted_migration_no_ack_still_blocks_verbatim(self):
+        blockers, _ = self._analyze([("D", self.V102)])
+        assert len(blockers) == 1 and "迁移不可变" in blockers[0]
+
+    def test_ack_with_ledger_updated_and_hash_match_passes(self):
+        """① ack + 账本已更新 + 哈希一致 ⇒ 无 blocker，且 WARN 带齐留痕三要素。"""
+        blockers, warnings = self._analyze([("M", self.V102)], acked=["V102"])
+        assert not blockers, f"已确认且账本一致仍被 BLOCK：{blockers}"
+        joined = "\n".join(warnings)
+        assert "已由维护者显式确认" in joined, joined
+        assert self.BY in joined, "WARN 文案缺确认人"
+        assert self.URL in joined, "WARN 文案缺评论链接"
+        assert "账本哈希一致" in joined, "WARN 文案缺「账本哈希一致」"
+
+    def test_ack_without_ledger_update_still_blocks(self):
+        """② ack 但账本**未**同批更新 ⇒ 仍 BLOCK（文案点明原因）。"""
+        blockers, warnings = self._analyze(
+            [("M", self.V102)], acked=["V102"], ledger_changed=False)
+        joined = "\n".join(blockers)
+        assert "迁移不可变" in joined, blockers
+        assert "同批更新" in joined and "migration_fingerprints.json" in joined, blockers
+        assert not any("已由维护者显式确认" in w for w in warnings), (
+            "账本没跟上却降级为 WARN —— ack 被当成了万能钥匙"
+        )
+
+    def test_ack_with_ledger_disk_mismatch_still_blocks(self):
+        """③ 账本哈希与磁盘不符 ⇒ 仍 BLOCK（防「ack 了但忘了登记新指纹」）。"""
+        blockers, _ = self._analyze(
+            [("M", self.V102)], acked=["V102"], disk={self.NAME102: self.H2})
+        joined = "\n".join(blockers)
+        assert "哈希与磁盘不符" in joined and "--write-ledger" in joined, blockers
+
+    def test_ack_delete_with_ledger_entry_kept_still_blocks(self):
+        """④ 删除型被 ack 但账本仍留名 ⇒ 仍 BLOCK；账本条目已删 ⇒ 放行。"""
+        blockers, _ = self._analyze([("D", self.V102)], acked=["V102"])
+        assert any("账本仍留有该文件名" in b for b in blockers), blockers
+        blockers2, warnings2 = self._analyze([("D", self.V102)], acked=["V102"], entries={})
+        assert not blockers2, f"账本条目已删仍被 BLOCK：{blockers2}"
+        assert any("已由维护者显式确认" in w for w in warnings2)
+
+    def test_ack_for_unmodified_version_grants_nothing(self):
+        """⑥ ack 了本次没改的版本 ⇒ 不放行任何东西（本次真改的仍 BLOCK）。"""
+        blockers, _ = self._analyze([("M", self.V102)], acked=["V999"])
+        assert any("迁移不可变" in b for b in blockers), "ack 了没改的版本却放行了 V102"
+
+    def test_ack_for_unmodified_version_with_no_changes_is_not_an_error(self):
+        blockers, warnings = self._analyze([], acked=["V999"])
+        assert not blockers and not warnings
+
+    def test_unacked_sibling_migration_still_blocks(self):
+        """④「本次改了但没 ack 的 ⇒ 照旧 BLOCK（逐个报）」—— 确认不得顺带放行兄弟文件。"""
+        blockers, _ = self._analyze(
+            [("M", self.V102), ("M", self.V103)], acked=["V102"],
+            entries={self.NAME102: self.H}, disk={self.NAME102: self.H})
+        assert any(self.V103 in b for b in blockers), blockers
+        assert not any(self.V102 in b for b in blockers), blockers
+
+    def test_ack_does_not_exempt_rename_with_content_change(self):
+        """**作用域锁**：ack 只对 M/D 生效，不得顺带放宽 `R0xx`（改名 + 内容变化）。"""
+        blockers, _ = self._analyze([("R062", self.V102)], acked=["V102"])
+        assert any("迁移不可变" in b for b in blockers), (
+            "ack 顺带放行了「改名 + 内容变化」—— 那是把确认通道变成万能钥匙"
+        )
+
+    def test_ledger_entry_missing_blocks_with_regen_hint(self):
+        blockers, _ = self._analyze(
+            [("M", self.V102)], acked=["V102"], entries={}, disk={self.NAME102: self.H})
+        assert any("--write-ledger" in b for b in blockers), blockers
+
+
+class TestMigrationAckResolveMode:
+    """`--resolve-acks`：除既有三行外**追加**迁移三行；迁移清单由脚本自己算。"""
+
+    OWNER = "zhaokai-mgzn"
+    MIG = "backend/admin-api/src/main/resources/db/migration"
+    V102 = f"{MIG}/V102__rewrite_published.sql"
+    V103 = f"{MIG}/V103__other.sql"
+
+    def _run(self, monkeypatch, tmp_path, capsys, body, changes):
+        import json as _json
+
+        import danger_scan
+
+        comments_path = tmp_path / "pr-comments.json"
+        comments_path.write_text(_json.dumps(
+            [{"user": {"login": self.OWNER}, "body": body,
+              "html_url": "https://example.invalid/c/42"}]),
+            encoding="utf-8")
+        monkeypatch.setenv("DANGER_COMMENTS_JSON", str(comments_path))
+        monkeypatch.setenv("DANGER_OWNER", self.OWNER)
+        monkeypatch.delenv("DANGER_DELETED_WORKFLOWS", raising=False)
+        monkeypatch.setattr(
+            danger_scan, "_git_name_status",
+            lambda scope: list(changes) if scope.endswith("*.sql") else [])
+        danger_scan.resolve_acks_main()
+        return capsys.readouterr()
+
+    def test_prints_migration_env_lines(self, monkeypatch, tmp_path, capsys):
+        cap = self._run(
+            monkeypatch, tmp_path, capsys, "/danger-ack rewrite-migration all",
+            [("M", self.V102), ("D", self.V103)])
+        assert "DANGER_ACK_MIGRATION=V102,V103" in cap.out, cap.out
+        assert f"DANGER_ACK_MIGRATION_BY={self.OWNER}" in cap.out, cap.out
+        assert "DANGER_ACK_MIGRATION_URL=https://example.invalid/c/42" in cap.out, cap.out
+        # 既有三行**逐字不变**（同一次调用里两个通道各写各的）
+        assert "DANGER_ACK_DELETE=\n" in cap.out + "\n", cap.out
+
+    def test_heartbeat_is_visible(self, monkeypatch, tmp_path, capsys):
+        """**心跳**：静默失效（读不到评论 ⇒ 永远不放行）必须肉眼可见。"""
+        cap = self._run(
+            monkeypatch, tmp_path, capsys, "/danger-ack rewrite-migration V102",
+            [("M", self.V102)])
+        assert "迁移 ack" in cap.err, f"缺迁移通道心跳行：{cap.err!r}"
+        assert "V102" in cap.err, cap.err
+
+    def test_non_owner_comment_yields_empty_env(self, monkeypatch, tmp_path, capsys):
+        import json as _json
+
+        import danger_scan
+
+        comments_path = tmp_path / "pr-comments.json"
+        comments_path.write_text(_json.dumps(
+            [{"user": {"login": "random-contributor"},
+              "body": "/danger-ack rewrite-migration all",
+              "html_url": "https://example.invalid/c/43"}]), encoding="utf-8")
+        monkeypatch.setenv("DANGER_COMMENTS_JSON", str(comments_path))
+        monkeypatch.setenv("DANGER_OWNER", self.OWNER)
+        monkeypatch.setattr(
+            danger_scan, "_git_name_status",
+            lambda scope: [("M", self.V102)] if scope.endswith("*.sql") else [])
+        danger_scan.resolve_acks_main()
+        cap = capsys.readouterr()
+        assert "DANGER_ACK_MIGRATION=\n" in cap.out + "\n", cap.out
+        assert "DANGER_ACK_MIGRATION_BY=\n" in cap.out + "\n", cap.out
+
+
+class TestMigrationAckScanMode:
+    """scan 模式端到端：从 `DANGER_ACK_MIGRATION` 读入，**并重跑交叉校验**（不只信环境变量）。"""
+
+    LEDGER = "tests/unit_ci_workflows/migration_fingerprints.json"
+    MIG = "backend/admin-api/src/main/resources/db/migration"
+    # 用一条**真实且已登记**的迁移：账本指纹必须等于磁盘指纹（本 worktree 干净 ⇒ 恒等）
+    REAL = f"{MIG}/V1__add_permissions_to_users.sql"
+
+    def _run_main(self, monkeypatch, tmp_path, by_scope, env=None):
+        import json as _json
+
+        import danger_scan
+
+        monkeypatch.setattr(
+            danger_scan, "_git_name_status", lambda scope: list(by_scope.get(scope, [])))
+        for k, v in (env or {}).items():
+            monkeypatch.setenv(k, v)
+        monkeypatch.chdir(tmp_path)
+        try:
+            danger_scan.main()
+            rc = 0
+        except SystemExit as e:
+            rc = e.code
+        payload = _json.loads((tmp_path / "danger-scan-result.json").read_text(encoding="utf-8"))
+        return rc, payload
+
+    def _scopes(self, *, ledger_changed=True):
+        import danger_scan
+
+        return {
+            ".": [("M", self.REAL)] + ([("M", self.LEDGER)] if ledger_changed else []),
+            danger_scan.MIGRATION_DIR + "/*.sql": [("M", self.REAL)],
+        }
+
+    ACK_ENV = {
+        "DANGER_ACK_MIGRATION": "V1",
+        "DANGER_ACK_MIGRATION_BY": "zhaokai-mgzn",
+        "DANGER_ACK_MIGRATION_URL": "https://example.invalid/c/42",
+    }
+
+    def test_no_ack_blocks(self, monkeypatch, tmp_path):
+        rc, payload = self._run_main(monkeypatch, tmp_path, self._scopes())
+        assert rc == 1, payload
+        assert any("迁移不可变" in b for b in payload["blockers"]), payload["blockers"]
+
+    def test_ack_with_consistent_ledger_passes_and_is_audited(self, monkeypatch, tmp_path):
+        rc, payload = self._run_main(monkeypatch, tmp_path, self._scopes(), self.ACK_ENV)
+        assert rc == 0, f"ack + 账本一致仍被 BLOCK：{payload['blockers']}"
+        acks = [a for a in payload["acks"] if a.get("version")]
+        assert acks and acks[0]["version"] == "V1", payload["acks"]
+        assert acks[0]["by"] == "zhaokai-mgzn" and acks[0]["via"].startswith("https://")
+
+    def test_scan_mode_rechecks_ledger(self, monkeypatch, tmp_path):
+        """**不能只信环境变量**：账本本次没改 ⇒ 即便 ack 存在也必须 BLOCK。"""
+        rc, payload = self._run_main(
+            monkeypatch, tmp_path, self._scopes(ledger_changed=False), self.ACK_ENV)
+        assert rc == 1, f"账本没改却放行了：{payload}"
+        assert any("同批更新" in b for b in payload["blockers"]), payload["blockers"]

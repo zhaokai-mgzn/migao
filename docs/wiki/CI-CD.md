@@ -285,3 +285,35 @@ Issue 创建（CONTRACT_JSON 含 business_truths + cases 引用）→ 自动生�
   （无确认时的行为与补通道前**逐字相同**）。
 - 判定逻辑在 `danger_scan.py` 的 `parse_delete_acks()` 纯函数里（**不在 YAML 字符串里**）——
   首版把判据写成脚本文本匹配，红证实测"不红"（空断言），故改挂到纯函数上。
+
+## Danger Scan：已发布迁移被**重写**的人工确认通道（#4936）
+
+「迁移不可变」判据只看 **git 状态（M/D）**，**不认指纹账本** ⇒ 经维护者裁定的**合并重写**
+（#4936：5 条**从未在任何环境成功应用过**的迁移 V102~V106 合并为单条 V102）**结构性过不了 CI**。
+本通道与上面的删除 workflow **同形**（同源 owner / 同源评论读取 / 同源 fail-closed），
+但 **ack 不足以放行** —— 必须同时过 `verify_migration_acks()` 的交叉校验：
+
+**怎么做**（owner 本人操作，两步）：
+
+1. 在 PR 上评论一行（**必须由 owner 账号发出**；其他人的评论一律不采信）：
+   ```
+   /danger-ack rewrite-migration V102
+   ```
+   多条可用 `/danger-ack rewrite-migration all`（展开为本次**全部**被修改/删除的迁移）。
+2. 重跑一次该 check（`gh run rerun <danger-scan-run-id> --failed`）。
+
+之后该条降为 WARN，并在 `danger-scan-result.json` 的 `acks` 里留痕（版本号 + 确认人 + 评论链接）。
+
+**ack 之外还必须同时满足**（任一条不满足 ⇒ 照旧 BLOCK，并在 blocker 文案里点名原因）：
+
+- **账本同批更新**：`tests/unit_ci_workflows/migration_fingerprints.json` 本次 diff 状态必须是 `M`；
+- **账本与磁盘一致**：修改型迁移在账本里的 sha256 必须等于**磁盘当前** sha256
+  （不一致 ⇒ 先跑 `python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger`）；
+- **删除型迁移**：账本里**不得**还留着该文件名（须同批删掉条目）；
+- **一一对应**：ack 了本次没改的版本 ⇒ 不算数；本次改了没 ack 的 ⇒ 照旧 BLOCK（逐个报）。
+
+- **fail-closed**：无 ack / 评论 API 失败 / 非 owner / 账本没改 / 哈希不符 ⇒ **仍 BLOCK**
+  （无 ack 时的行为与补通道前**逐字相同**）。
+- 判定逻辑在 `.github/danger_scan.py` 的 `parse_migration_acks()` + `verify_migration_acks()`
+  两个纯函数里；scan 模式**重跑**交叉校验（不只信 `DANGER_ACK_MIGRATION` 环境变量）。
+
