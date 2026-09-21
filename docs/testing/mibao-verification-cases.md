@@ -532,7 +532,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ tags: delete, destructive, confirm
 
-## 对话边界域（41 case）
+## 对话边界域（42 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -1136,6 +1136,20 @@
 ```
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-17 新增（issue #3996，M4-I）：计件工资问答 B 端覆盖（米宝） ｜ tags: mibao, production, piecework
+
+### CH-042. 门幅与加工类型自动选择 - 候选集内选门幅 + 自动定高买宽/定宽买高（单测覆盖，非 LLM 行为） 🔵
+```
+你: 我家窗户 3 米宽 2.75 米高，帮我算下要多少布多少钱
+期望: direct_reply
+数据: 候选门幅 {2.8, 3.2} + 成品高 2.75 ⇒ 定高买宽取**最小可行门幅 3.2**（2.8 会判需接高）
+数据: 所有候选都不可行 ⇒ **倒幅**（分幅最少），**不自动选接高**（即使接高米数更省）
+数据: 人工覆盖选接高 ⇒ 按口径 A 算料：M = T + ceil(k / floor(g_eff/d_eff)) × Wp
+数据: 对花时每条加高条 +1 个花距（与倒幅「每幅 +1 花距」同口径）
+数据: 自动结果可人工覆盖，覆盖后按所选口径算料并给出对比
+跳过: [backend-contract] 门幅/加工类型自动选择是确定性纯计算（curtain_calc 的 resolve_fabric_plan），由单元测试全量覆盖（test_curtain_calc_fabric_plan.py），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）
+```
+真值: ai-chat.intent-tool-map
+溯源: 2026-09-21 新增（issue #5013）：门幅与加工类型自动选择（候选集内选门幅 + 自动定高买宽/定宽买高 + 接高退人工覆盖）的引擎覆盖登记，单测覆盖 ｜ tags: xiaobu, quote, curtain-calc, door-width
 
 ## 跨域（3 case）
 
@@ -5135,14 +5149,14 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：371（活跃 155，跳过 216）
-- tier 分布：smoke 10 / normal 330 / adversarial 31
+- 用例总数：372（活跃 155，跳过 217）
+- tier 分布：smoke 10 / normal 331 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
 - bmini：6
 - 分类域：3
-- 对话边界域：41
+- 对话边界域：42
 - 跨域：3
 - 客户域：9
 - 数据域：10
