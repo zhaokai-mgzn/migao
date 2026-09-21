@@ -35,6 +35,7 @@ Commit: `feat(frontend): 描述` / `fix(backend): 描述` / `test:` / `refactor:
 1. **分支开即关联 Issue，验证完即 PR，CI 绿即合并**——分支存活目标 < 1-2 天。
 2. **切换分支前 `git status` 必须干净**（有改动先 commit/stash）——未提交改动会被静默带到新分支。
 3. **本地验证必须基于最新主线**：验证前先 `git fetch origin main && git rebase origin/main`，否则验证的是旧基线。
+   - ⚠️ **改了 `.github/cases/**`（或 `.github/case-trust-baseline.json`）的分支，同步 main 必须用 `./scripts/sync-main.sh --rebase`**（issue #4984）：merge 会把「本分支缺少 main 新增的用例销账块（`must_succeed` / `namespaces` / `precondition` 等）」当成**有意删除**、**无冲突**接受 ⇒ **静默回退** main 已缴的 case-trust 债（实测 #4965：5 个文件净删 −27/−25/−20/−3/−2 行），随后门禁判红且**归因指向错误方向**。`sync-main.sh` 的 merge 模式现已**前置拒绝**这种组合 + 合并后**内容级校验**；替代路径就是 `--rebase`。
 4. **多分支并行验证用 git worktree**（每个分支独立工作目录，切换零污染）：
    ```bash
    ./scripts/dev-worktree.sh add <branch>   # 建独立工作区（默认 ../migao-wt/<分支>）
