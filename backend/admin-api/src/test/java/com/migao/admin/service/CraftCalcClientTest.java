@@ -24,6 +24,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -430,5 +431,74 @@ class CraftCalcClientTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("data.config")
                 .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(422));
+    }
+
+    // ────────────────────────── 自动特征判定（issue #4976 包 2） ──────────────────────────
+
+    private static final String AUTO_FEATURES_URL =
+            "http://agent:8000/api/internal/production/auto-features";
+
+    private static Map<String, Object> autoFeaturesRequest() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("width", 1.6);
+        body.put("height", 2.0);
+        body.put("fabric_width", 2.8);
+        body.put("cutting_mode", "定宽买高");
+        return body;
+    }
+
+    @Test
+    @DisplayName("#4976 自动特征端点：打到独立路径 + 带 X-Service-Token + data 原样搬运")
+    void autoFeaturesCarriesEngineDataVerbatim() {
+        String body = """
+                {"success":true,"data":{
+                  "auto_features":[{"name":"超宽","source":"推算","reason":"成品宽 1.6 + 左右余量 0.3 = 1.9 米 × 褶倍 2.0 = 3.8 米 > 门幅 2.8 米"},
+                                    {"name":"倒幅","source":"推算","reason":"加工类型 = 定宽买高"}],
+                  "door_width":2.8,"fullness_used":2.0,"notice":""},
+                 "requestId":"req_1","timestamp":1758100000}
+                """;
+        when(restTemplate.exchange(eq(AUTO_FEATURES_URL), eq(HttpMethod.POST),
+                any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok(body));
+
+        Map<String, Object> data = client.autoFeatures(autoFeaturesRequest());
+
+        // 注入：客户端打到试算路径 / 漏 token ⇒ 上面的 when 不命中 ⇒ 红
+        verify(restTemplate).exchange(eq(AUTO_FEATURES_URL), eq(HttpMethod.POST),
+                any(HttpEntity.class), eq(String.class));
+        assertThat(data).containsEntry("notice", "");
+        assertThat(data).containsEntry("door_width", 2.8);
+        assertThat((List<?>) data.get("auto_features")).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("#4976 fail-closed：响应缺 data.auto_features ⇒ 422（「端点没说」≠「判了没命中」）")
+    void missingAutoFeaturesFailsClosed() {
+        when(restTemplate.exchange(eq(AUTO_FEATURES_URL), eq(HttpMethod.POST),
+                any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok("{\"success\":true,\"data\":{\"door_width\":2.8}}"));
+
+        assertThatThrownBy(() -> client.autoFeatures(autoFeaturesRequest()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("data.auto_features")
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(422));
+    }
+
+    @Test
+    @DisplayName("#4976 自动特征端点同样注入本租户配置（缺行 ⇒ 不加 config 键）")
+    void autoFeaturesInjectsTenantConfigOnlyWhenPresent() {
+        when(restTemplate.exchange(eq(AUTO_FEATURES_URL), eq(HttpMethod.POST),
+                any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok("{\"success\":true,\"data\":{\"auto_features\":[],"
+                        + "\"door_width\":2.8,\"fullness_used\":2.0,\"notice\":\"\"}}"));
+
+        client.autoFeatures(autoFeaturesRequest());
+
+        ArgumentCaptor<HttpEntity<Map<String, Object>>> captor =
+                ArgumentCaptor.forClass(HttpEntity.class);
+        verify(restTemplate).exchange(eq(AUTO_FEATURES_URL), eq(HttpMethod.POST), captor.capture(),
+                eq(String.class));
+        // 无租户上下文 ⇒ 不查不注入（与 #4528 同口径：不猜一个租户去读别人的配置）
+        assertThat(captor.getValue().getBody()).doesNotContainKey("config");
     }
 }

@@ -50,6 +50,8 @@ import java.util.Map;
 public class CraftCalcClient {
 
     private static final String CALC_PATH = "/api/internal/production/craft-calc";
+    /** 自动特征**判定**端点（issue #4976 包 2）：与试算分开 —— 理由见 {@link #autoFeatures}。 */
+    private static final String AUTO_FEATURES_PATH = "/api/internal/production/auto-features";
     /** 引擎**默认**配置（issue #4528）：缺配置行的租户由它给值（Java 侧不抄第二份默认值）。 */
     private static final String DEFAULTS_PATH = "/api/internal/production/craft-calc-config";
     private static final int CONNECT_TIMEOUT_MS = 3_000;
@@ -155,6 +157,58 @@ public class CraftCalcClient {
         } catch (Exception e) {
             log.error("算料试算端点不可达: url={}, err={}", url, e.getMessage());
             throw unavailable(url, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 自动特征**判定**（issue #4976 包 2）：把引擎的判定结论**原样搬运**给调用方。
+     *
+     * <p><b>为什么与 {@link #calc} 分开</b>（不是重复端点）：算料试算对
+     * <b>四爪钩 / 穿杆 / 平幔</b> 没有口径（下单页根本不发试算请求），而自动特征是
+     * <b>每一行</b>都要判的 —— 判定若只挂在试算响应上，那些行会<b>丢特征</b> ⇒
+     * 加工费组合键少一项 ⇒ <b>匹配不到组合价</b>。判定只吃「几何 + SKU 门幅 + 加工类型 + 租户配置」，
+     * 与用料公式无关，所以本就该独立成面。</p>
+     *
+     * <p><b>原样搬运</b>：返回引擎 {@code data} 的键值（{@code auto_features} / {@code door_width} /
+     * {@code fullness_used} / {@code notice}），Java 侧<b>不重排、不补默认值、不复制判据</b>。</p>
+     *
+     * <p><b>fail-closed</b>：缺 {@code data.auto_features} ⇒ 422 ——
+     * 「端点没说」与「判了但没命中」必须可区分（前者静默读成后者 = 组合键少一项却无人知道）。</p>
+     */
+    public Map<String, Object> autoFeatures(Map<String, Object> request) {
+        String url = endpoint(AUTO_FEATURES_PATH);
+        if (!StringUtils.hasText(serviceToken)) {
+            throw unavailable(url, "未配置 ai-agent.service-token", null);
+        }
+        Map<String, Object> payload = withTenantConfig(request);
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("X-Service-Token", serviceToken);
+
+            ResponseEntity<String> response = restTemplate.exchange(
+                    url, HttpMethod.POST, new HttpEntity<>(payload, headers), String.class);
+
+            JsonNode root = objectMapper.readTree(response.getBody());
+            if (root == null || !root.path("success").asBoolean(false)) {
+                log.error("自动特征端点返回失败: url={}, status={}, body={}",
+                        url, response.getStatusCode(), response.getBody());
+                throw unavailable(url, "自动特征端点返回 success != true", null);
+            }
+            JsonNode data = root.path("data");
+            if (!data.path("auto_features").isArray()) {
+                log.error("自动特征端点响应缺 data.auto_features，拒绝把「端点没说」当成「没判」: url={}, body={}",
+                        url, response.getBody());
+                throw unavailable(url, "自动特征端点响应缺少 data.auto_features（空列表 = 不判，键必须存在）", null);
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> result = objectMapper.convertValue(data, Map.class);
+            return result;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("自动特征端点调用失败: url={}, error={}", url, e.getMessage());
+            throw unavailable(url, "调用自动特征端点失败: " + e.getMessage(), e);
         }
     }
 
