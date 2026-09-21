@@ -39,7 +39,6 @@ import {
   AUTO_FEATURE_NAMES,
   HEM_MARGIN,
   SIDE_MARGIN,
-  detectAutoFeatureNotices,
   detectAutoFeatures,
   parseDoorWidth,
 } from '@/lib/craft-auto-features'
@@ -153,7 +152,7 @@ describe('门幅解析（SKU.doorWidth；**缺省已删除** —— 解析不到
  * ② 几何矛盾提示当时写「（算料引擎按此判几何、不读商家选的加工类型）」—— 对**引擎行为**的
  * **无据断言**（引擎按 `_FABRIC_WIDTH` = 3.2 算）⇒ 同源 / 不谎报两条断言必红。
  */
-describe('#4746 门幅真值源（缺省副本逐值锚定算料引擎默认门幅；判定与提示同源）', () => {
+describe('#4746 门幅真值源（缺省副本逐值锚定算料引擎默认门幅；判定面门幅唯一）', () => {
   // 🔴 issue #4877（改判）：**前端不再持有缺省门幅** ⇒ 旧判据（`DEFAULT_DOOR_WIDTH` 逐值锚定算料
   // 引擎默认门幅）随常量一起删除。**反向守卫**：缺省一旦被重新引入（常量或解析回退）⇒ 红
   // （§17.3 ④「豁免必须有死亡条件」的同类形态：判据要能证明旧做法**没有回来**）。
@@ -163,31 +162,13 @@ describe('#4746 门幅真值源（缺省副本逐值锚定算料引擎默认门�
     expect(lib).not.toContain('resolveDoorWidth')
   })
 
-  it('#4746 判定与提示**同源**：几何矛盾提示里的门幅 = 该行 SKU 门幅（写死任一个数都必红）', () => {
-    for (const [raw, value] of [
-      ['2.8米', 2.8],
-      ['1.4米', 1.4],
-      ['3.2米', 3.2],
-    ] as const) {
-      const notice = detectAutoFeatureNotices({
-        width: 1.0,
-        height: 3.0, // 3.0 + 0.3 = 3.3 > 三个门幅都成立 ⇒ 三种门幅都能拿到矛盾提示
-        doorWidth: raw,
-        cuttingMode: '定高买宽',
-      }).find((n) => n.kind === 'cutting-mode-conflict')!
-      expect(notice.reason).toContain(`本 SKU 门幅 ${value} 米`)
-      expect(notice.reason).toContain(`本 SKU 门幅 ${parseDoorWidth(raw)} 米`)
-    }
-  })
-
   // 红证（issue #4877，改前必红）：改前「未携带门幅 ⇒ 按缺省门幅判 + 提示里写缺省门幅」；
   // 改后 = **不判**（特征为空）+ 只给一条 `missing-door-width` 告知。
   it('#4877 SKU 未携带门幅 ⇒ **不判** + 显式告知 `missing-door-width`（旧口径「按 2.8 推」⇒ 红）', () => {
     const input = { width: 1.0, height: 3.0, cuttingMode: '定高买宽' as const }
     expect(detectAutoFeatures(input)).toEqual([])
-    const notices = detectAutoFeatureNotices(input)
-    expect(notices.map((n) => n.kind)).toEqual(['missing-door-width'])
-    expect(notices[0].reason).toContain('未维护门幅')
+    // 提示（`missing-door-width`）自 issue #5036 起由**服务端**给 ⇒ 该断言在服务端腿：
+    // `backend/ai-agent-service/tests/test_production/test_auto_feature_notices.py`
   })
 
   // 反向判据（issue #4877 落码时新发现）：`倒幅` 由**加工类型**唯一推导，与门幅无关 ⇒
@@ -196,20 +177,6 @@ describe('#4746 门幅真值源（缺省副本逐值锚定算料引擎默认门�
     expect(names({ width: 1.5, height: 1.5, cuttingMode: '定宽买高' })).toEqual(['倒幅'])
   })
 
-  // 红证（issue #4746，改前必红）：改前文案断言「算料引擎按此判几何」= 对引擎行为的无据断言
-  // （引擎按 `internal.py::_FABRIC_WIDTH` = 3.2 试算）⇒ 商家按提示做的决定可能是错的。
-  // 改后：只声明**本页按本 SKU 门幅**判，并显式登记「引擎试算门幅尚未接线」（#4652）。
-  it('#4746 提示不再声称「引擎按本 SKU 门幅判几何」+ 显式登记引擎试算门幅未接线（改前必红）', () => {
-    const notice = detectAutoFeatureNotices({
-      width: 1.0,
-      height: 3.0,
-      doorWidth: '2.8米',
-      cuttingMode: '定高买宽',
-    }).find((n) => n.kind === 'cutting-mode-conflict')!
-    expect(notice.reason).not.toContain('算料引擎按此判几何')
-    expect(notice.reason).toContain('引擎试算门幅尚未按本 SKU 门幅接线')
-    expect(notice.reason).toContain('#4746')
-  })
 })
 
 describe('超高 / 超宽 —— 与门幅比较，**按加工类型分流**（issue #4661）', () => {
@@ -385,13 +352,9 @@ describe('#4662 「超宽」判据**含褶倍**（与算料引擎算分幅的口
   })
 
   // 口径（issue #4662）：褶倍缺失 / 非正 ⇒ **不判超宽**（不猜一个褶倍去判价），且**界面显式说明**。
-  it('#4662 褶倍缺失 / 非正数 ⇒ 不判超宽 + 显式提示「缺褶倍 ⇒ 未判超宽」', () => {
-    // 高 2.6 + 0.3 = 2.9 > 2.8 ⇒ 与「定宽买高」几何一致 ⇒ 只该出**缺褶倍**这一条提示
+  it('#4662 褶倍缺失 / 非正数 ⇒ 不判超宽（「缺褶倍」提示自 #5036 起由服务端给）', () => {
     const noFullness = { width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '定宽买高' }
     expect(names(noFullness)).toEqual(['倒幅'])
-    expect(detectAutoFeatureNotices(noFullness)).toEqual([
-      { kind: 'missing-fullness', reason: expect.stringContaining('缺褶倍 ⇒ 未判超宽') },
-    ])
     for (const fullness of [null, undefined, 0, -2, Number.NaN]) {
       expect(names({ ...noFullness, fullness })).toEqual(['倒幅'])
     }
@@ -429,82 +392,10 @@ describe('#4662 「超宽」判据**含褶倍**（与算料引擎算分幅的口
   })
 })
 
-describe('#4662 加工类型**几何矛盾** ⇒ 显式提示（裁定 C：推算以商家选的为准，矛盾必须说出来）', () => {
-  /**
-   * 真值源（算料引擎 `curtain_calc.py`）：`if window_height + HEM_MARGIN <= fabric_width:` ⇒
-   * **定高买宽**，否则 **定宽买高 + 告警**（「成品高 … 超过门幅 … 的定高上限，已按定宽布（买高）计算」）。
-   * 引擎**不接收**商家的 `cuttingMode`（`calculate_fabric_meters` 按几何分支，`internal.py` 的入参里没有它）
-   * ⇒ 商家手选的档位与引擎实际算的档位**可能不一致**，本组就是那个不一致的判据 + 显式提示。
-   *
-   * 红证（issue #4662，修复前实测）：改前 `detectAutoFeatureNotices` **不存在**（import 即红）；
-   * 页面**零提示** ⇒ 商家以为按「定高买宽」做，引擎实际按「定宽买高」分幅 ⇒ 静默不一致。
-   */
-  it('#4662 定高买宽 + 高 + 卷边 > 门幅 ⇒ 提示「系统实际会按定宽买高算」', () => {
-    const notices = detectAutoFeatureNotices({
-      width: 6.6,
-      height: 2.6,
-      doorWidth: 2.8,
-      cuttingMode: '定高买宽',
-    })
-    expect(notices).toHaveLength(1)
-    expect(notices[0].kind).toBe('cutting-mode-conflict')
-    expect(notices[0].reason).toContain('系统实际会按定宽买高算')
-    // 依据说清（哪两个数比出来的）+ 门幅前提可见（前端**不编**口径）
-    expect(notices[0].reason).toContain('成品高 2.6 + 上下卷边 0.3 = 2.9 米')
-    expect(notices[0].reason).toContain('门幅 2.8 米')
-  })
-
-  it('#4662 提示**不改变推算**（以商家选的为准）：特征仍是「超高」，不冒出超宽/倒幅', () => {
-    const input = { width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '定高买宽' }
-    expect(names(input)).toEqual(['超高'])
-    expect(detectAutoFeatureNotices(input)).toHaveLength(1)
-    // 提示**不是特征** ⇒ 不得进 AUTO_FEATURE_NAMES（它进加工费组合键；目录里没有的名字 = 价恒 ¥0.00）
-    expect(AUTO_FEATURE_NAMES).toEqual(['超高', '超宽', '倒幅'])
-  })
-
-  it('#4662 反向也提示：定宽买高 + 高 + 卷边 ≤ 门幅 ⇒ 系统实际会按定高买宽算', () => {
-    const notices = detectAutoFeatureNotices({
-      width: 1.5,
-      height: 1.5,
-      doorWidth: 2.8,
-      cuttingMode: '定宽买高',
-      fullness: 2.0,
-    })
-    expect(notices.map((n) => n.kind)).toEqual(['cutting-mode-conflict'])
-    expect(notices[0].reason).toContain('系统实际会按定高买宽算')
-  })
-
-  it('#4662 几何一致 ⇒ **零提示**（不制造噪音；反向护栏，改前即绿）', () => {
-    // 定高买宽 + 高不超门幅；定宽买高 + 高超门幅 —— 两种「与几何一致」的档位
-    expect(
-      detectAutoFeatureNotices({ width: 1.5, height: 1.5, doorWidth: 2.8, cuttingMode: '定高买宽' })
-    ).toEqual([])
-    expect(
-      detectAutoFeatureNotices({
-        width: 6.6,
-        height: 2.6,
-        doorWidth: 2.8,
-        cuttingMode: '定宽买高',
-        fullness: 2.0,
-      })
-    ).toEqual([])
-    // 边界：高 + 卷边 **恰好等于**门幅 ⇒ 定高布仍可用（引擎 `<=`）⇒ 定高买宽一致
-    expect(
-      detectAutoFeatureNotices({ width: 1.0, height: 2.5, doorWidth: 2.8, cuttingMode: '定高买宽' })
-    ).toEqual([])
-  })
-
-  it('#4662 高缺失 / 加工类型缺失 ⇒ 不提示（没有依据就不下结论，不猜）', () => {
-    expect(
-      detectAutoFeatureNotices({ width: 6.6, height: null, doorWidth: 2.8, cuttingMode: '定高买宽' })
-    ).toEqual([])
-    expect(detectAutoFeatureNotices({ width: 6.6, height: 2.6, doorWidth: 2.8 })).toEqual([])
-    expect(
-      detectAutoFeatureNotices({ width: 6.6, height: 2.6, doorWidth: 2.8, cuttingMode: '斜着裁' })
-    ).toEqual([])
-  })
-})
-
+// ⚠️ issue #5036：提示（`missing-door-width` / `missing-fullness` / `cutting-mode-conflict`）自本单起
+// 由**服务端**给 ⇒ 「几何矛盾 ⇒ 显式提示」这一整组判据迁到**服务端腿**（同一批断言，**不是删掉**）：
+// `backend/ai-agent-service/tests/test_production/test_auto_feature_notices.py`。
+// 页面链路（提示真的渲染出来 + 文案逐字）仍在本目录的 `orders-new-auto-features.test.tsx`。
 describe('倒幅 —— 由 cuttingMode 唯一推导（不设手选项）；正幅（定高买宽）**不推导**', () => {
   it('定宽买高 ⇒ 倒幅（布旋转 90°，门幅变宽度方向）', () => {
     expect(names({ width: 1.5, height: 1.5, cuttingMode: '定宽买高' })).toContain('倒幅')

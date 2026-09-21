@@ -57,7 +57,6 @@ import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
 // （它们在目录里必须存在 —— 商家配「加工费组合」要能选到；但手选控件必须没有它们，判据 8）
 import {
   AUTO_FEATURE_NAMES,
-  detectAutoFeatureNotices,
   parseDoorWidth,
   type AutoFeature,
   type AutoFeatureName,
@@ -573,21 +572,20 @@ function autoFeaturesBlockReason(lineItems: OrderLineItem[]): string | null {
 }
 
 /**
- * 该行要**显式告知**商家的两件事（issue #4662）—— 与 {@link autoFeaturesOf} **同源同入参**：
- * ① 褶倍缺失 ⇒ 未判超宽；② 加工类型与几何**矛盾** ⇒ 系统实际会按哪种算。
+ * 该行要**显式告知**商家的提示（issue #4662）—— 三类：① 该 SKU 未维护门幅 ⇒ 都判不了；
+ * ② 褶倍缺失 ⇒ 未判超宽；③ 加工类型与几何**矛盾** ⇒ 系统实际会按哪种算。
  *
  * ⚠️ 提示**不是特征**：不进组合键、不改推算（裁定 C 的前半句「以商家选的为准」）。
+ * 🔴 **issue #5036 起来源 = 服务端**（用户 2026-09-21 裁定「统一迁移到服务端；未来 agent 也需要」）
+ * —— 见下，本页只展示。
  */
 function autoFeatureNoticesOf(line: OrderLineItem): AutoFeatureNotice[] {
-  return detectAutoFeatureNotices({
-    width: line.width,
-    height: line.height,
-    doorWidth: line.selectedSku?.doorWidth,
-    // ⚠️ issue #5020：与 {@link autoFeaturesOf} **同源**（派生后的加工类型）—— 提示的前提句
-    // 必须与判定同源，否则「几何矛盾」提示会在未指定档下说错朝向。
-    cuttingMode: cuttingModeOf(line),
-    fullness: STANDARD_FULLNESS,
-  })
+  // 🔴 issue #5036：提示改由**服务端**给（用户 2026-09-21 裁定「统一迁移到服务端；未来 agent 也需要」）
+  // —— 引擎读的是**该租户配置**的 `side_margin` / `hem_margin` ⇒ 与判定**同源**。
+  // 迁移前本函数在前端本地算、读**模块常量副本**（0.3）⇒ 租户改过 `hem_margin` 后这里会显示
+  // **错的数**，且「几何矛盾」的**判断本身**也会错 —— 那正是本单要消灭的脱钩。
+  // 本页只**展示**：`kind` / `reason` 一律照服务端返回，**不编**口径（`#4662` 的裁定 C 不变）。
+  return line.autoFeatures?.notices ?? []
 }
 
 /**
