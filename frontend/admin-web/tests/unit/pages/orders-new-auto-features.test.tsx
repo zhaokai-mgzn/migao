@@ -204,7 +204,8 @@ const inputOf = (label: string, idx = 0) =>
  */
 async function settleAutoFeatures(): Promise<void> {
   try {
-    await waitFor(() => expect(mockAutoFeatures).toHaveBeenCalled(), { timeout: 3000 })
+    // 2000ms 足够覆盖防抖 + 一次本地替身往返（比 vitest 的 5000ms 用例超时留足余量）
+    await waitFor(() => expect(mockAutoFeatures).toHaveBeenCalled(), { timeout: 2000 })
   } catch {
     // 宽高没齐 ⇒ 本就没有判定请求（提交校验会拦），不必等
     return
@@ -369,6 +370,10 @@ async function setupLineWithSkus(opts: {
   openStep('尺寸与数量')
   if (width !== null) fireEvent.change(inputOf('宽 (米)'), { target: { value: width } })
   if (height !== null) fireEvent.change(inputOf('高 (米)'), { target: { value: height } })
+  // 尺寸齐 ⇒ 会有判定请求 ⇒ 等它落地（本文件多处 `selectedInfo()` 会**提交订单**，
+  // 判定未就绪会被提交闸门拦住 ⇒ 断言拿不到 payload）；
+  // 🔴 尺寸未填（`null`）⇒ **本就没有判定请求** ⇒ **不要等**（白等会把用例拖过 5s 用例超时 —— CI 实测踩过）
+  if (width !== null && height !== null) await settleAutoFeatures()
 }
 
 describe('#4899 反选门幅：**自动选中会被规则重算**、手选不被覆盖、判不了要显式说明', () => {
