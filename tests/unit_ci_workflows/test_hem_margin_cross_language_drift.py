@@ -58,6 +58,8 @@ CALC_PY = REPO_ROOT / "backend/ai-agent-service/app/tools/curtain_calc.py"
 LIB_TS = REPO_ROOT / "frontend/admin-web/src/lib/craft-auto-features.ts"
 #: 前端腿守卫（C5：前端注释引用的那个文件，必须真的存在且真的读源）
 TS_GUARD = REPO_ROOT / "frontend/admin-web/tests/unit/lib/craft-auto-features.test.ts"
+#: 余量常量的**消费点**（issue #5035 起：判定/提示实现已退场，只剩规则面在读这两个常量）
+PLAN_TS = REPO_ROOT / "frontend/admin-web/src/lib/door-width-plan.ts"
 
 #: 本守卫钉的两个方向余量（两侧**同名**；两个方向**各自**跟自己的引擎常量，不得合并）
 MARGINS: tuple[str, ...] = ("SIDE_MARGIN", "HEM_MARGIN")
@@ -157,13 +159,22 @@ def test_frontend_comment_quotes_engine_line_verbatim() -> None:
 # ── C4：判别力下界（反恒真 / 防「声明了但判定处内联」）────────────────────────
 
 def test_frontend_actually_consumes_margins_and_has_no_second_literal() -> None:
-    """C4：常量必须被**消费**，且代码里不得出现第二份同值字面量（否则改常量判定不跟）。"""
+    """C4：常量必须被**消费**，且代码里不得出现第二份同值字面量（否则改常量判定不跟）。
+
+    ⚠️ issue #5035 改判（**消费点搬家，判据不放宽**）：原先消费点在**声明文件内部**
+    （`craft-auto-features.ts` 的 `detectAutoFeatures` / `detectAutoFeatureNotices`）——
+    那两个实现已随「判定（#5019）/ 提示（#5036）/ 算例（#5043 包 2a）搬到服务端」**删除**
+    ⇒ 消费点只剩**规则面**（`door-width-plan.ts` 的 `resolveCutPlan` / `judgeDoorWidthChoice`）。
+    故判据改为「声明处 + **前端消费点**（可在别的模块，常量本就是 `export` 的）合计 > 1」；
+    **仍**要求声明文件内不得出现第二份同值字面量（那才是本条真正要防的「内联副本」）。
+    """
     calc, lib = _calc_source(), _lib_source()
     code = _strip_comments(lib)
+    plan_code = _strip_comments(PLAN_TS.read_text(encoding="utf8"))
 
     for name in MARGINS:
-        # 出现次数 > 1 ⇒ 除了声明处，至少有一处**消费**（判定/文案）
-        assert code.count(name) > 1, (
+        # 声明处（lib）1 处 + 消费点（lib 内或规则面）≥1 处
+        assert code.count(name) + plan_code.count(name) > 1, (
             f"{name} 在前端代码里只出现在声明处（无消费点）—— "
             "要么判定处被内联成字面量（常量改了判定不跟），要么该常量已成死码"
         )

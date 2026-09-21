@@ -1,24 +1,26 @@
 /**
- * 下单页**自动识别**（issue #4526 包 B · 设计文档 §5.1 / §5.2 / §9 判据 8）—— 纯函数，无副作用。
+ * 下单页「自动识别」的**残余面**（issue #4526 包 B 的遗产；issue #5035 收口）—— 纯函数，无副作用。
  *
- * 用户 2026-09-19：「**超高 / 超宽是和门幅标准比较的**，客户报的数据和门幅对比后能
- * **自动区分**出来是超高还是超宽，**这个要求做到自动识别**」。
+ * 🔴 **本模块已不做判定**：用户 2026-09-21 的裁定把整条链搬到了**服务端** ——
+ * **判定**（#5019 切源）/ **提示**（#5036）/ **算例**（#5043 包 2a）都由服务端给，前端只**展示**。
+ * ⇒ 前端的本地判定实现 `detectAutoFeatures` 已无人调用，随本单（#5035）**删除**。
+ * 本模块只剩三件**不是判定**的事：
+ * 1. `parseDoorWidth()` —— 门幅解析（#4877：**没有缺省门幅**，解析不到 ⇒ `null` ⇒ 不判）；
+ * 2. `SIDE_MARGIN` / `HEM_MARGIN` / `CUTTING_MODE_*` —— **常量副本**（各有跨语言守卫）；
+ * 3. `AUTO_FEATURE_NAMES` —— 自动推导特征名清单（须与 `processing_items` 目录（V83）**逐值对齐**）。
  *
- * ⚠️ **`定型` 不在自动识别里**（issue #4566，用户 2026-09-19 裁定「工艺、定型…直接通过加工项
- * 来勾选」）：它是**手选**加工项，勾选态即 `isShaped`。本模块只推导
- * 与门幅比较的超高/超宽 + 由加工类型推导的**倒幅**。
+ * ⚠️ **`定型` 不在清单里**（issue #4566，用户 2026-09-19 裁定「工艺、定型…直接通过加工项来勾选」）：
+ * 它是**手选**加工项，勾选态即 `isShaped`。
  *
- * ⚠️ **`正幅` 不是自动推导特征**（issue #4592，用户 2026-09-19 裁定「窗帘默认都是正幅，
- * **正幅不用作为加工项的加项**，但是**倒幅是需要的**」）：本模块推导出的特征会**进加工费
- * 组合键**（见 `orders/new/page.tsx::processingDetailsOf`），而 `正幅` **不在** `processing_items`
- * 目录里（V83 只种了 `超高`/`超宽`/`倒幅` 三项）⇒ 商家配不出含它的组合 ⇒ 组合键永远匹配不到价
- * ⇒ 加工费恒 ¥0.00（P0）。本清单因此与 V83 目录**逐值对齐**：`超高` / `超宽` / `倒幅`。
+ * ⚠️ **`正幅` 不在清单里**（issue #4592，用户 2026-09-19 裁定「正幅不用作为加工项的加项，
+ * 但是倒幅是需要的」）：清单里的名字会**进加工费组合键**，而 `正幅` **不在** `processing_items`
+ * 目录（V83 只种了 `超高` / `超宽` / `倒幅`）⇒ 商家配不出含它的组合 ⇒ 组合键永远匹配不到价
+ * ⇒ 加工费恒 ¥0.00（P0）。本清单因此与 V83 目录**逐值对齐**。
  *
  * ⚠️ **本文件是 admin-web 专属**，刻意**不放进** `lib/craft-display.ts`：那个文件在
  * admin-web / mini-app / bmini-app **三端逐字同源**（设计 §4.9「一份 spec，三处渲染」，
- * 当前三份 sha 全等、**尚无同步守卫** = 既有 issue #4393）。把下单页的**取价推导**塞进去
- * 会静默破坏那个不变量（将来做「三端同步」的人会被带偏）；而且自动识别是**取价逻辑**，
- * 不是**展示**逻辑，本就不属于那个文件（YAGNI：另两端今天不用它）。
+ * 当前三份 sha 全等、**尚无同步守卫** = 既有 issue #4393）。把下单页的**取价口径**塞进去
+ * 会静默破坏那个不变量；而且这些常量是**取价逻辑**，不是**展示**逻辑（YAGNI：另两端今天不用它）。
  */
 
 /**
@@ -114,26 +116,6 @@ function positiveNumber(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null
 }
 
-/** 米数取整到毫米（判定文案用）—— 浮点加法会给出 `6.8999999999999995` 这类值，不能进判定文案 */
-function roundMeters(value: number): number {
-  return Number(value.toFixed(3))
-}
-
-/**
- * 判定文案里的米数：取整到毫米；**只有「取整把严格大于抹平了」这一种情况**才照实给全精度
- * （如 `(1.1 + 0.3) × 2 = 2.8000000000000003`）—— 否则商家看到的是
- * 「2.8 米 > 门幅 2.8 米」这种**自相矛盾的依据**（判据要能自证）。
- *
- * ⚠️ 判据本身**不做取整**（与算料引擎一致，见 {@link detectAutoFeatures}）：引擎的分幅条件是
- * `ceil((宽 + side_margin) × 褶倍 ÷ 门幅) ≥ 2`，即**原始浮点**的 `乘积 > 门幅`
- * —— 实测 `宽 1.1 × 褶倍 2.0 ÷ 门幅 2.8`：引擎 `panels = 2`（米数翻倍），
- * 而「先取整到毫米再比」会判「不超宽」⇒ **漏报**（正是本单要消灭的那种脱钩）。
- */
-function metersForReason(value: number, doorWidth: number): number | string {
-  const rounded = roundMeters(value)
-  return rounded > doorWidth || value <= doorWidth ? rounded : String(value)
-}
-
 /**
  * 门幅解析 —— 解析 SKU 的 `doorWidth`（可带单位，如 `2.8米`）。
  * 缺席 / 不可解析 / 非正数 ⇒ `null`（**不默认成任何值**）。
@@ -148,157 +130,10 @@ export function parseDoorWidth(doorWidth: unknown): number | null {
   return positiveNumber(match[1])
 }
 
-
-
-/** 一条自动识别特征入参（尺寸一律米；`doorWidth` 给原始值，本函数负责解析） */
-export interface AutoFeatureInput {
-  /** 成品宽（米）；缺失 / 非正数 ⇒ 不判超宽 */
-  width?: number | null
-  /** 成品高（米）；缺失 / 非正数 ⇒ 不判超高 */
-  height?: number | null
-  /** SKU 门幅（原样传入，本函数用 {@link parseDoorWidth} 解析；解析不到 ⇒ **不判**，见 #4877） */
-  doorWidth?: unknown
-  /**
-   * 加工类型（`定高买宽` / `定宽买高`）—— **决定哪个方向受门幅约束**（issue #4661）：
-   * `定高买宽` ⇒ 只判超高；`定宽买高` ⇒ 只判超宽（+ 倒幅）。
-   * ⚠️ 缺失 / 表外取值 ⇒ **超宽与超高都不判**（保守，不猜朝向；`倒幅` 亦不推导）。
-   */
-  cuttingMode?: string
-  /**
-   * **褶倍（倍数）**—— 宽方向**分幅**的乘数（issue #4662，用户 2026-09-20 裁定 A）。
-   *
-   * 与算料引擎 `curtain_calc.py` 的定宽买高分支
-   * `panels = math.ceil((window_width + cfg["side_margin"]) * fullness / fabric_width)`
-   * 里的 `fullness` **同一个数**：判据 = `(宽 + SIDE_MARGIN) × 褶倍 > 门幅`
-   * （**这才是真正多花钱的地方** —— 分幅）。
-   *
-   * ⚠️ 缺失 / 非正数 ⇒ **不判超宽**（不猜：宁可漏判并在界面说明，也不拿一个假褶倍去判价）；
-   * 「为什么没判」由 {@link detectAutoFeatureNotices} 给出（界面可见，不静默）。
-   */
-  fullness?: number | null
-}
-
 /** 加工类型 `定高买宽` —— **高**方向受门幅约束（**宽**按米买、无上限）⇒ 只判 `超高` */
 export const CUTTING_MODE_FIXED_HEIGHT = '定高买宽'
 /** 加工类型 `定宽买高` —— **宽**方向受门幅约束（分幅数 = `(宽+余量)×褶倍 ÷ 门幅`）⇒ 只判 `超宽` */
 export const CUTTING_MODE_FIXED_WIDTH = '定宽买高'
-
-/**
- * 自动识别（设计 §5.2 冻结规则；issue #4661 按加工类型分流）—— 纯函数，**不读任何全局状态**。
- *
- * 顺序 = `超宽 → 超高 → 倒幅`（与 ERP 组合名 `韩折+超宽+超高+定型` 同族；
- * 组合键归一化另有唯一实现，此处顺序只为展示稳定）。
- *
- * 🔴 **两个方向各自被门幅约束，取决于加工类型**（issue #4661，用户 2026-09-20 裁定
- * 「**定高买宽的话就不用算超宽，定宽买高就不用算超高**」）。真值源
- * `curtain_calc.py`：`定高买宽` ⇒ `M = (W + SIDE_MARGIN) × 褶倍`，**宽按米买无上限**、
- * 只有**高**受 `门幅` 约束（`高 + HEM_MARGIN ≤ 门幅` 才是可用条件）；`定宽买高` ⇒
- * `幅数 = ceil((W + SIDE_MARGIN) × 褶倍 / 门幅)`，**宽**受门幅约束。⇒ 判据表：
- *
- * | `cuttingMode` | 判超宽 | 判超高 | 判倒幅 |
- * |---|---|---|---|
- * | `定高买宽` | ❌ | ✅（`高 + HEM_MARGIN > 门幅`）| ❌ |
- * | `定宽买高` | ✅（`(宽 + SIDE_MARGIN) × 褶倍 > 门幅`；**褶倍缺失 ⇒ 不判**）| ❌ | ✅ |
- * | 缺失 / 表外取值 | ❌ | ❌ | ❌（保守：**不猜**朝向）|
- *
- * ⚠️ **「超宽」判据含褶倍**（issue #4662，用户 2026-09-20 裁定 A「含褶倍，与算料引擎一致」）：
- * 只比 `宽 + SIDE_MARGIN > 门幅` 会**漏报韩褶大窗**（1.5 宽 × 2.0 倍 = 3.6 米要分 2 幅，
- * 而 1.8 ≤ 2.8 判「不超宽」）—— 分幅才是多花钱的地方。褶倍缺失 / 非正 ⇒ **不判超宽**
- * （不猜），并由 {@link detectAutoFeatureNotices} 显式说明。
- *
- * ⚠️ **几何矛盾**（商家选的档位 vs 引擎按几何实际算的档位）不在本函数里 —— 见
- * {@link detectAutoFeatureNotices}：推算**以商家选的为准**（用户 2026-09-20 裁定 C），
- * 矛盾只**提示**、不改变推算结果。
- *
- * ⚠️ **常量按方向分开**：宽方向用 {@link SIDE_MARGIN}（左右覆盖余量）、高方向用
- * {@link HEM_MARGIN}（上下卷边）—— 今天同值 0.3、**语义不同**，不得混用。
- *
- * ⚠️ **`定型` 已移出**（issue #4566，用户 2026-09-19 裁定「工艺、定型…直接通过加工项来勾选」）：
- * 它现在是**手选**加工项（勾选态 = `isShaped`），不再由本函数推导。
- *
- * 🔴 **`定高买宽` 不推导朝向特征**（issue #4592，P0）：它等于**正幅**（窗帘常态），
- * 而 `正幅` 不在 `processing_items` 目录（V83）里 ⇒ 推它就会让**默认订单**的组合键
- * 永远匹配不到价。用户裁定「正幅不用作为加工项的加项，但是倒幅是需要的」。
- *
- * 🔴🔴 **issue #4976 包 2b 起：本函数已不在「取价路径」上**（用户 2026-09-21 裁定 B
- * 「**判定移到服务端**」）—— 下单页的自动特征判定改由服务端
- * （`POST /api/admin/orders/auto-features` → 引擎 `curtain_calc.detect_auto_features`）给出，
- * 前端只**展示**服务端结论。⇒ **本函数不再被 `orders/new` 调用**（静态判据
- * `orders-new-auto-features.test.ts` 的「本页不得本地判特征」钉住），其单测保留只为
- * **钉住判据语义**（服务端实现与之同式，措辞逐字对齐）。
- *
- * 为什么必须搬：判定进**加工费组合键** ⇒ 判定即钱；而服务端判定用的是**该租户的配置**
- * （`side_margin` / `hem_margin` / 档位褶倍）与**该 SKU 的门幅**，前端只持常量副本
- * ⇒ 商家改过配置后两边会算出不同的键。
- *
- * ⚠️ **待收口（已登记在母单 #4976）**：本函数与它的单测可在后续小单里**整体删除**
- * （它已是「无人调用的第二份判据」）—— 本包不删是为了把「钱路径切换」与「删实现+改 46 条单测」
- * 分成两步，降低一次性改动面。
- */
-export function detectAutoFeatures(input: AutoFeatureInput): AutoFeature[] {
-  const features: AutoFeature[] = []
-  const mode = input.cuttingMode
-
-  // 加工类型缺失 / 表外取值 ⇒ 两个方向**都不判**（保守，不猜）；`倒幅` 亦不推导。
-  if (mode !== CUTTING_MODE_FIXED_HEIGHT && mode !== CUTTING_MODE_FIXED_WIDTH) return features
-
-  // 🔴 门幅缺失 / 不可解析 ⇒ **超高 / 超宽都不判**（issue #4877：**已无缺省门幅**）。
-  // 「判不了」必须长得像「判不了」（由 {@link detectAutoFeatureNotices} 显式告知），
-  // 不许拿一个默认门幅顶上 —— 真单实测：同一张 3.0×2.75 的单子，门幅按 2.8 / 3.2 之差
-  // 会得到「需接高」与「单幅可做」两种相反结论。
-  // ⚠️ **`倒幅` 照常推导**（见下）：它由**加工类型**唯一决定、与门幅无关 ——
-  // 因为门幅缺数据就连它一起吞掉 = 静默少一个加工费组合键项（改钱），那不是「不猜」，是「漏判」。
-  const doorWidth = parseDoorWidth(input.doorWidth)
-
-  // 宽方向（只属 `定宽买高`）：判据 = 算料引擎的**分幅**条件
-  // `ceil((宽 + side_margin) × 褶倍 ÷ 门幅) ≥ 2` ⟺ `(宽 + side_margin) × 褶倍 > 门幅`（#4662）。
-  // 余量 = 左右覆盖余量 `SIDE_MARGIN`（与真值源分幅数公式同常量）；褶倍缺失 ⇒ 不判（不猜）。
-  const width = positiveNumber(input.width)
-  const fullness = positiveNumber(input.fullness)
-  if (
-    doorWidth !== null &&
-    mode === CUTTING_MODE_FIXED_WIDTH &&
-    width !== null &&
-    fullness !== null &&
-    // ⚠️ **不取整**：与引擎逐字同源（`ceil(乘积 ÷ 门幅) ≥ 2` ⟺ 原始浮点的 `乘积 > 门幅`）
-    (width + SIDE_MARGIN) * fullness > doorWidth
-  ) {
-    features.push({
-      name: '超宽',
-      source: '推算',
-      reason:
-        `成品宽 ${width} + 左右余量 ${SIDE_MARGIN} = ${roundMeters(width + SIDE_MARGIN)} 米` +
-        ` × 褶倍 ${fullness} = ${metersForReason((width + SIDE_MARGIN) * fullness, doorWidth)} 米 > 门幅 ${doorWidth} 米`,
-    })
-  }
-
-  // 高方向（只属 `定高买宽`）：余量 = 上下卷边 `HEM_MARGIN`（与真值源可用条件同常量）
-  // ⚠️ **不取整**：引擎的定高可用条件是 `window_height + HEM_MARGIN <= fabric_width`（原始浮点）——
-  // 取整会让「成品高 2.5001」这类输入在前端判「不超高」而引擎实际回落定宽（静默不一致）。
-  const height = positiveNumber(input.height)
-  if (
-    doorWidth !== null &&
-    mode === CUTTING_MODE_FIXED_HEIGHT &&
-    height !== null &&
-    height + HEM_MARGIN > doorWidth
-  ) {
-    features.push({
-      name: '超高',
-      source: '推算',
-      reason: `成品高 ${height} + 上下卷边 ${HEM_MARGIN} = ${metersForReason(height + HEM_MARGIN, doorWidth)} 米 > 门幅 ${doorWidth} 米`,
-    })
-  }
-
-  // **倒幅**由 `cuttingMode` 唯一推导（设计 §5.1）—— 设手选项 = 制造第二份冲突口径。
-  // `定高买宽`（= **正幅**，也是缺省加工类型）**刻意不推导**（issue #4592，P0）：
-  // `正幅` 不在 `processing_items` 目录（V83 只有 超高/超宽/倒幅）⇒ 推它 = 每张默认订单的
-  // 组合键都带一个商家配不出的名字 ⇒ 组合价永远匹配不到 ⇒ 加工费恒 ¥0.00。
-  if (mode === CUTTING_MODE_FIXED_WIDTH) {
-    features.push({ name: '倒幅', source: '推算', reason: '加工类型 = 定宽买高' })
-  }
-
-  return features
-}
 
 /**
  * 系统识别的**提示**（issue #4662 / #5036）—— 只说明「**为什么没判**」或「**系统实际会按哪种算**」，

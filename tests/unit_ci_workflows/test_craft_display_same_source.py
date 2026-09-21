@@ -15,7 +15,7 @@
 | # | 判据 | 红证（怎么让它红） |
 |---|---|---|
 | C1 | 三份 `craft-display.ts` 逐字节相等 | 只改其中一份 ⇒ 必红 |
-| C2 | 自动识别实现**不在** `craft-display.ts` 里 | 把 `detectAutoFeatures` 挪回去 ⇒ 必红 |
+| C2 | 取价口径模块**不在** `craft-display.ts` 里 | 把 `AUTO_FEATURE_NAMES` / `parseDoorWidth` 挪回去 ⇒ 必红（⚠️ issue #5035：`detectAutoFeatures` 已退场，**不能再当锚点** —— 拿一个不存在的符号当红证 = 空断言） |
 | C3 | 三份文件都存在（路径漂移 ⇒ 红，而不是静默跳过） | 删/移动任一份 ⇒ 必红 |
 
 **为什么 C2 也要有**：C1 只保证「三份一样」——把自动识别**同时**抄进三份也能满足 C1，
@@ -47,9 +47,15 @@ AUTO_FEATURES_MODULE = "frontend/admin-web/src/lib/craft-auto-features.ts"
 #: （解析不到 ⇒ `None` ⇒ 判定面**不判**、规则面 `undecidable`；反向守卫在
 #: `tests/unit_ci_workflows/test_fabric_width_truth_source.py` 判据 3 与
 #: `frontend/admin-web/tests/unit/lib/craft-auto-features.test.ts`）。
-#: 锚点只换名、不缩水：仍覆盖「识别推导 + 门幅解析 + 两个方向余量常量 + 加工类型常量」。
+#: 🔴 2026-09-21（issue #5035）**有意缩水**（正面回答上面那条「锚点只换名、**不缩水**」纪律）：
+#: `detectAutoFeatures` / `detectAutoFeatureNotices` **真的退场了** —— 判定（#5019 切源）/
+#: 提示（#5036）/ 算例（#5043 包 2a）全部搬到**服务端**，前端本地实现已删除
+#: ⇒ 锚点**必须**去掉它们，否则本守卫会要求一个**不存在**的符号（那是假红）。
+#: ⚠️ **缩水不是放宽**：堵「模块被清空 ⇒ C2 恒真」的锚点**数量不减**（用 `AUTO_FEATURE_NAMES`
+#: 补上退场符号的位置），且新增**死亡条件**守卫
+#: （`tests/unit_ci_workflows/test_fabric_width_truth_source.py` 判据 4：那两个函数不得回来）。
 CORE_EXPORTS: tuple[str, ...] = (
-    "detectAutoFeatures",
+    "AUTO_FEATURE_NAMES",
     "parseDoorWidth",
     "SIDE_MARGIN",
     "HEM_MARGIN",

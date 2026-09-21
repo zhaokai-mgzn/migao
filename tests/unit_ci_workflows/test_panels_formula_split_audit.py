@@ -34,7 +34,7 @@ A 与 B1/B2 都在**给商家算料**（米宝下单 vs 商家手工下单页试
 | C3 | 表里**同时**存在一致行与不一致行（反向护栏，防"整表恒真"） | 把全部行改成 ✅ ⇒ 红 |
 | C4 | 差异恒为 **A ≥ B1 且差恰 1 幅**（`side_margin > 0` ⇒ A 不可能少于 B1） | 把 A 的行改成比 B1 小 ⇒ 红 |
 | C5 | 三条公式串**逐字**出现在文档里（改代码改文档才一致） | 把 §4.5 的 `ceil((宽 + side_margin) × 褶倍 ÷ 门幅)` 删掉 ⇒ 红 |
-| C6 | 前端「超宽」判据仍与 A 同式（`(宽 + SIDE_MARGIN) × 褶倍 > 门幅`）—— 三方（A / 前端 / 真值源）已对齐，只有 B1/B2 落后 | 前端判据去掉 `SIDE_MARGIN` ⇒ 红 |
+| C6 | **判定面**的「超宽」判据仍与 A 同式（`(宽 + side_margin) × 褶倍 > 门幅`）—— 三方（A / 判定面 / 真值源）已对齐，只有 B1/B2 落后。⚠️ issue #5035 起判定面在**服务端**（`curtain_calc.detect_auto_features`），读源随之改到引擎侧 | 引擎判据去掉 `side_margin` ⇒ 红 |
 | C7 | **第 4 份副本（通路 C）已登记**：§4.5「通路与调用方」表里有通路 C 行、口径串逐字在文档里，且**前端源码实测**确为毫米整数式（无浮点直除） | 删掉通路 C 行 ⇒ 红；把 `door-width-plan.ts` 改回浮点 `Math.ceil(need / g_eff)` ⇒ 红 |
 
 ⚠️ **本守卫不 import 被测引擎**：`app` 包的导入期需要完整 `.env`（否则 pydantic Settings 报缺失键）
@@ -52,7 +52,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 DESIGN_DOC = REPO_ROOT / "docs/design/craft-calc-and-fabric-routing.md"
 CALC_PY = REPO_ROOT / "backend/ai-agent-service/app/tools/curtain_calc.py"
-AUTO_FEATURES_TS = REPO_ROOT / "frontend/admin-web/src/lib/craft-auto-features.ts"
 #: 通路 C（第 4 份 `panels` 副本，issue #5038）—— 前端门幅规则的落点
 PLAN_TS = REPO_ROOT / "frontend/admin-web/src/lib/door-width-plan.ts"
 
@@ -226,12 +225,25 @@ class TestPanelsFormulaSplitAudit:
                 f"文档里找不到公式串「{formula}」—— 三条口径的登记被删/被改写 ⇒ 红"
             )
 
-    def test_frontend_over_width_criterion_matches_path_a(self):
-        """C6：前端「超宽」判据仍与 A 通路同式（**三方对齐，只有 B1/B2 落后**）。"""
-        src = _read(AUTO_FEATURES_TS)
-        assert re.search(r"\(width \+ SIDE_MARGIN\) \* fullness > doorWidth", src), (
-            "前端「超宽」判据不再是 `(width + SIDE_MARGIN) * fullness > doorWidth` ⇒ "
-            "它已与引擎 A 通路（含 `side_margin`）脱钩 —— 这会让 #4760 的差异形态变成三方不一致"
+    def test_over_width_criterion_matches_path_a(self):
+        """C6：**判定面**的「超宽」判据仍与 A 通路同式（**三方对齐，只有 B1/B2 落后**）。
+
+        ⚠️ issue #5035 改判（**读源搬家，判据不放宽**）：判定面已由**服务端**给
+        （`curtain_calc.detect_auto_features`）—— 前端本地实现 `detectAutoFeatures` 已删除
+        （判定 #5019 / 提示 #5036 / 算例 #5043 包 2a 都搬到服务端）⇒ 本判据的读源从
+        `frontend/admin-web/src/lib/craft-auto-features.ts` **改到引擎侧**。
+        **判据强度一字不放宽**：仍要求「必须含 `side_margin`」+「必须是**原始浮点**的乘积比较」。
+        """
+        src = _read(CALC_PY)
+        assert re.search(r"product = \(window_width \+ side_margin\) \* fullness", src), (
+            "引擎「超宽」判据不再是 `(window_width + side_margin) * fullness` ⇒ "
+            "它已与 A 通路（含 `side_margin`）脱钩 —— 这会让 #4760 的差异形态变成三方不一致"
+        )
+        # 与 A 同式的**比较口径**：原始浮点 `product > fabric_width`（取整会漏报 —— #4662 实测
+        # `(1.1 + 0.3) × 2.0 = 2.8000000000000003 > 2.8` 必须判超宽）
+        assert re.search(r"if product > fabric_width:", src), (
+            "引擎「超宽」的比较式不见了（应仍是 `if product > fabric_width:`）—— "
+            "取整到毫米再比会把严格大于抹平 ⇒ 漏报（#4662）"
         )
 
     def test_path_c_is_registered_and_matches_source(self):
