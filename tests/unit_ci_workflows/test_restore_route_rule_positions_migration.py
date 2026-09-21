@@ -64,7 +64,6 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
 V71 = MIGRATION_DIR / "V71__normalize_routing_model_structure.sql"
-V103 = MIGRATION_DIR / "V103__clear_route_rule_positions.sql"
 V108 = MIGRATION_DIR / "V108__restore_route_rule_positions.sql"
 V109 = MIGRATION_DIR / "V109__allow_position_trigger_kind.sql"
 SCHEMA_SQL = REPO / "docs/sql/schema.sql"
@@ -819,16 +818,22 @@ def test_bootstrap_schema_sql_is_the_terminal_state_of_the_migration_chain(psql)
              f"('{r['id']}', {r['tenant']}, '{r['kind']}', '{r['value']}', {r['position']}, "
              f"'{r['action']}', {r['operation']}, {r['after']}, {r['priority']}, "
              f"'{r['status']}');")
-    psql(_as_runner_would(_read(V103)))
+    # 🔴 **V103 已不存在**（issue #4980 把 V102~V106 合并重写为单条 `V102`，且**有意撤销** V103 的意图
+    # —— `V102__retire_applicability_flag.sql` 文件头逐字：「`V103` 的意图已作废 ⇒ **删除该文件就是撤销它**」）
+    # ⇒ 链模拟里不能再跑它（按文件名读会 `FileNotFoundError`，issue #4990）。
+    # ⚠️ **但判别力必须保住**：原设计的判别来自「V103 清空后必须全 NULL」那一步；该步不可达之后，
+    # 「两条路径终态相等」会退化成「两边恰好都是 NULL」的**空断言** ⇒ 改为**注入式判别**：
+    # 手工把 `rr-v70-02` 置 `NULL`（= 模拟「若 V103 真跑过」的形态）⇒ 跑 V108 ⇒ 必须被写回。
+    # 若 V108 变成 no-op / 谓词写错 ⇒ 下面的 `injected` 判据先红（注入没生效），或终态比对红。
+    psql(f"UPDATE {TABLE} SET position = NULL WHERE tenant_id = 1 AND id = 'rr-v70-02';")
     mid = _chain_positions(psql)
-    assert set(mid.values()) == {"NULL"}, (
-        f"跑完 V103 后 V70 规则仍有非 NULL 的 position：{sorted(set(mid.values()))}"
-        f"⇒ 下面的比对会退化成「两边恰好都是 NULL」的空断言")
+    assert mid["rr-v70-02"] == "NULL", (
+        f"注入失败：`rr-v70-02` 的 position 仍 = {mid['rr-v70-02']} ⇒ 下面的 V108 写回判据会**空跑**")
     _apply(psql, V108)
     chain = _chain_positions(psql)
     chain_non_null = sorted(k for k, v in chain.items() if v != "NULL")
-    print(f"[#4962 迁移链] V71 种子 ⇒ V103 后取值集 = {sorted(set(mid.values()))}；"
-          f"⇒ V108 后非 NULL 的 = {chain_non_null}；取值 = {[chain[k] for k in chain_non_null]}")
+    print(f"[#4962 迁移链] V71 种子 ⇒ 注入 rr-v70-02=NULL ⇒ V108 后非 NULL 的 = {chain_non_null}；"
+          f"取值 = {[chain[k] for k in chain_non_null]}")
 
     assert chain_non_null == boot_non_null, (
         f"两条路径的**非 NULL 行集合**分裂：bootstrap = {boot_non_null}，迁移链 = {chain_non_null}")
@@ -880,3 +885,18 @@ def test_v108_written_value_matches_the_bootstrap_literal_exactly():
             assert r["position"] == "NULL", (
                 f"V71 冻结种子 `{r['id']}` 意外带了 position = {r['position']}"
                 f"（V108 只写回那一条 ⇒ 这里必须仍是 NULL）")
+
+
+def test_referenced_migrations_exist():
+    """本模块引用的每个迁移文件都必须**存在** —— 缺失要给**可读判据**，而不是 `FileNotFoundError`。
+
+    失败形态实测（issue #4990）：`#4980` 把 V102~V106 合并重写为单条 `V102` 并**删除** V103，
+    而本模块当时按文件名硬编码读它 ⇒ 测试直接抛 `FileNotFoundError`（回溯指向 `pathlib.read_text`），
+    读者要翻栈才知道「是迁移被删了」而不是「迁移写错了」。
+    """
+    refs = {"V71": V71, "V108": V108, "V109": V109}
+    missing = sorted(name for name, path in refs.items() if not path.is_file())
+    assert missing == [], (
+        f"本模块引用的迁移文件不存在：{missing}（实际路径见模块顶部的常量）—— "
+        "迁移被合并重写/删除时，**必须同 PR 更新本模块的引用**（判据形态：这里给可读清单，"
+        "而不是让 `_read()` 抛 FileNotFoundError）；V103 的撤销先例见 issue #4980 / #4990")
