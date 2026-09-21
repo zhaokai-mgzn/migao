@@ -69,6 +69,7 @@ issue #3956 实证过「软链目标被误删 ⇒ DSH 研发模式当场消失�
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -637,6 +638,35 @@ def _merged_into(ref: str, branch: str, cwd: Path) -> bool:
     return _unmerged_commits(ref, branch, cwd) == 0
 
 
+def _pr_merged_branches(cwd: Path) -> set[str] | None:
+    """GitHub 上**已合并** PR 的 head 分支名集合；取不到 ⇒ `None`。
+
+    🔴 **为什么需要这条**（本仓实测，2026-09-21）：本仓的合并方式含 **squash**
+    ⇒ squash 之后原分支的提交**永远不是** `origin/main` 的祖先，`git cherry` 也全是 `+` 行
+    ⇒ `_merged_into` 的两条判据**结构上看不见** squash 合并的分支。
+    实测：`prune` 只认出 **41** 个可回收，而按 PR 状态有 **62** 个 ⇒ 漏判 21 个、
+    垃圾持续堆积且**没有任何东西会变红**。
+
+    取不到（无 `gh` / 未登录 / 离线 / 限额）⇒ 返回 `None`，**调用方必须把「未跑」显式打印出来**
+    （「没跑」必须长得像「没跑」，不得静默少报）。
+    """
+    try:
+        proc = subprocess.run(
+            ["gh", "pr", "list", "--state", "merged", "--limit", "500", "--json", "headRefName"],
+            cwd=cwd, capture_output=True, text=True, timeout=60,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        rows = json.loads(proc.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+    names = {r.get("headRefName") for r in rows if isinstance(r, dict) and r.get("headRefName")}
+    return names or None
+
+
 def _locked_branches(cwd: Path) -> set[str]:
     """活跃会话锁涉及的分支（PID 仍存活）—— 被锁的工作区一律不判「可安全移除」。
 
@@ -678,6 +708,7 @@ def cmd_prune(args: argparse.Namespace) -> int:
     entries = _worktrees(cwd)
     root = Path(git("rev-parse", "--show-toplevel", cwd=cwd).stdout.strip())
     locked = _locked_branches(cwd)
+    pr_merged = _pr_merged_branches(cwd)
 
     safe: list[tuple[str, str]] = []
     manual: list[tuple[str, str, str]] = []
@@ -697,10 +728,11 @@ def cmd_prune(args: argparse.Namespace) -> int:
             reasons.append("detached HEAD，无分支可核合入状态")
         elif branch in locked:
             reasons.append("有活跃会话锁（可能有会话在用）")
-        elif not _merged_into(ref, branch, cwd):
+        elif not _merged_into(ref, branch, cwd) and not (pr_merged and branch in pr_merged):
             ahead = _unmerged_commits(ref, branch, cwd)
             reasons.append(
                 f"分支未合入 {ref}（{ahead if ahead >= 0 else '?'} 个提交未进 upstream，可能仍有未合并工作）"
+                + ("" if pr_merged is not None else "；且「PR 已合并」这条判据**未跑**")
             )
         if reasons:
             manual.append((path, branch or "(detached)", "；".join(reasons)))
@@ -708,9 +740,16 @@ def cmd_prune(args: argparse.Namespace) -> int:
             safe.append((path, branch))
 
     print(f"🧹 worktree 存量体检（基准 {ref}，工作区共 {len(entries)} 个）—— **只出清单，不删除**\n")
-    print(f"── 可安全移除（分支已合入 {ref} + 工作树干净 + 无活跃锁）：{len(safe)} 个 ──")
+    print(f"── 可安全移除（分支已合入 {ref} 或 **PR 已合并** + 工作树干净 + 无活跃锁）：{len(safe)} 个 ──")
     for path, branch in safe:
-        print(f"  ✅ {path}  （分支 {branch}）")
+        via = "" if _merged_into(ref, branch, cwd) else "  ← 经「PR 已合并」判据（squash 合并，祖先/`cherry` 看不见）"
+        print(f"  ✅ {path}  （分支 {branch}）{via}")
+    if pr_merged is None:
+        print(
+            "\n⚠️ 「PR 已合并」这条判据**未跑**（gh 不可用 / 未登录 / 离线）"
+            "⇒ 本清单**可能少报** squash 合并的分支（实测：漏判 21/62）。"
+            "\n   （本仓的 squash 合并**结构上**不是祖先可达、`git cherry` 也全是 `+` ⇒ 没有这条判据看不见它。）"
+        )
     if not safe:
         print("  （无）")
     print(f"\n── 需人看（其余 {len(manual)} 个）：")
@@ -719,7 +758,8 @@ def cmd_prune(args: argparse.Namespace) -> int:
     print(
         "\n如何真删（**人工逐条确认后执行**，本脚本不代劳）：\n"
         "  ./scripts/dev-worktree.sh rm <分支或路径> --delete-branch\n"
-        f"⚠️ 判据是「已合入 {ref}」的**内容级**判定（祖先可达 + `git cherry` 无 `+` 行）；\n"
+        f"⚠️ 判据 = 「已合入 {ref}」（祖先可达 或 `git cherry` 无 `+` 行）**或**「GitHub 上 PR 已 MERGED」\n"
+        f"   （后者治 **squash 合并**：祖先与 `cherry` 都看不见，实测漏判 21/62）；\n"
         "   若你不确定，先 `git -C <path> log --oneline -3` 与 `git status` 人工过一遍。"
     )
     return 0
