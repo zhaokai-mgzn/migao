@@ -25,6 +25,7 @@ business_truths:
   # 未落码 ⇒ **不登记为真值**（登记 = 承诺代码能做到，属「文档承诺、代码不读」的静默失效）：
   #   拼色**主布 / 配布边分列**用料；**定型**报价加价 —— 见 docs/curtain-fabric-quote-rules.md §10 / §11 的【背·未落码】登记。
   #   （拼色**计价**已随用户 2026-09-21 裁定落码 ⇒ 已登记为真值 `fabric-calc.mixed-color-surcharge`。）
+  - [fabric-calc.fabric-widths-candidate] **候选门幅集由模型从商品 SKU 去重得来**（issue #5016，用户 2026-09-21 裁定「顾客给出窗宽窗高后，系统自动选门幅（2.8/3.2）」）：顾客**没指定**门幅时，模型必须把 `product_detail` 返回的 SKU 列表里的 `door_width` **去重**后作为 `fabric_widths` 传给 `curtain_calc`（如 `[2.8, 3.2]`）——**由引擎**在候选集内自动选门幅、并自动决定用「定高买宽」还是「定宽买高」；顾客**明确指定**了门幅时才传单值 `fabric_width`（两者同时传 ⇒ `fabric_width` 被忽略）。⚠️ 边界两条：① `fabric_widths` 是**可选**入参 ⇒ 不传时既有单一门幅口径**逐值不变**（#5016 的红线）；② 「模型会不会填这个参数」是**纯 LLM 行为**，确定性单测**测不到** ⇒ 该行为的评测覆盖 = CH-043（引擎侧「候选集内怎么选」由单测覆盖，登记在 CH-042）
   - [fabric-calc.no-fabrication] 不编造报价数据，必须通过 curtain_calc 工具计算
 
 primary_specs:

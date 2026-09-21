@@ -332,9 +332,19 @@ NAMESPACE_FINANCE_PREFIXES = ("finance_txn:",)
 #:   ⚠️ 真值锚点若将来扩到角色面（`extract_seed_catalog` 收 roles），本条应**改判**进
 #:      `NAMESPACE_PREFIXES_JUDGED` 并补对应断言 —— 本常量就是那笔账的登记处。
 NAMESPACE_ROLE_PREFIXES = ("role_code:",)
+#: `customer_order:`（issue #5039 的 burn-down 缴费给 `CU-005` 加的并行互斥键）—— **显式范围外**：
+#:   本判据只判「结构性声明的实体字面量能否在**种子真值**里解析」，而 CU-005 的目标订单是
+#:   「模糊名（老王）→ 真人（王建国）→ 他的窗帘订单」在**运行期动态定位**的 —— 种子里
+#:   既没有客户「王建国」也没有对应订单 ⇒ 拿种子真值判它只会得到恒假结论
+#:   （"基于错误的真相模型写出的护栏"，同 `category:` / `role_code:` 的登记口径）。
+#:   ⚠️ **有意不用 `order_no:`**：那是**可**在种子里解析的形态（`EVAL-MB-ORD-0001`~`0005`），
+#:   应走 `NAMESPACE_PREFIXES_JUDGED` 判据而不是范围外；且 `TestNoSilentSkip` 的注入式红证
+#:   正是拿 `order_no:EVAL-1` 当"未分类形态"的样本 —— 登记它会同时拆掉那条红证。
+#:   ⚠️ 真值锚点若将来扩到"按客户动态定位订单"的形态，本条应**改判**并补对应断言。
+NAMESPACE_CUSTOMER_ORDER_PREFIXES = ("customer_order:",)
 NAMESPACE_PREFIXES_OUT_OF_SCOPE = (
     NAMESPACE_EMPLOYEE_PREFIXES + NAMESPACE_CATEGORY_PREFIXES + NAMESPACE_FINANCE_PREFIXES
-    + NAMESPACE_ROLE_PREFIXES
+    + NAMESPACE_ROLE_PREFIXES + NAMESPACE_CUSTOMER_ORDER_PREFIXES
 )
 NAMESPACE_PREFIXES_JUDGED = ("product_name:", "customer_phone:")
 #: 分类面清单（判 / 显式范围外）—— 出现**不在两张表里**的新形态 ⇒ `TestNoSilentSkip` 报红，
