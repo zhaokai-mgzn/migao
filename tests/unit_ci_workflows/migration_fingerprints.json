@@ -1,6 +1,5 @@
 {
   "note": "已发布迁移的内容指纹账本（issue #4235）。新增迁移后跑：python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger（只新增条目，不覆盖已登记指纹）",
-  "_comment": "⚠️ 本账本在 2026-09-21 有过**一次**非「只新增条目」的改动（issue #4936 / #4937，PR 同批）：① `V102__retire_applicability_flag.sql` 的指纹换成新哈希（内容整体重写）；② 删除 `V103` / `V104` / `V105` / `V106` 四条条目（四个文件同批从磁盘删除）。正当性（**核过前提才动手**，不是「刷新一下就好」）：这五条迁移**从未在任何环境成功应用过** —— 云测试环境 2026-09-20 的容器启动日志里，`MigrationRunner` 逐条点名 V102/V103/V104/V105/V106 全部失败（`MigrationRunner` 对非连接类失败是「跳过这一条、继续跑后面的」⇒ 部署照样 success，是**静默失败**）；线上读面实测矩阵 `position` 仍是 `布帘`/`帘头`、工序库里没有 4 道 `-纱` 变体。⇒ 它们是**五条没生效的半成品**，不是「已发布迁移」；改写/删除它们不会让任何存量环境丢东西（`schema_migrations` 按文件名记账，这五条从未被记进去）。用户裁定原文（2026-09-21）：「DB层的改造需要彻底」；早先同族：「这些都是测试数据，不要怕搞坏」+「不计成本的改」。⇒ 五条合并重写为**一条** `V102`（矩阵塌缩 + 纱帘变体 backfill，新增 4 道 `-纱` 变体，`production_route_rules` 一字不碰 —— 部位维保留为 #4962 的唯一载体）。除 V102 外的已登记条目**逐个字节校验过**（脚本里带前置断言：任何其它条目漂移即拒绝写出）。",
   "migrations": {
     "V1__add_permissions_to_users.sql": "sha256:1364c75115a1818071deb3f84e2a0a52817589421b909046ba1aeb5f32e5a02b",
     "V2__init_rbac_data.sql": "sha256:2c2030a626a172efc2d6dc8f53c08d65c40fc1eb202c832ffa8feea97db5dec6",
@@ -104,6 +103,7 @@
     "V102__retire_applicability_flag.sql": "sha256:3d8036095386cbf130bb2b576741ff4a817d67a0a6581c14bd5fbb8f4d78a444",
     "V107__retire_must_finish_flag.sql": "sha256:b906c9e472832b4a722558b95bb490cb02264dc8731ad91c0200b48b01e4a8ad",
     "V108__restore_route_rule_positions.sql": "sha256:9ce2a0570fd4917b955bb48066f05d8a65ced91f2799e52fafcc9631c4dd6fc0",
-    "V109__allow_position_trigger_kind.sql": "sha256:a7f35626354d531938ba596771de6b2cefd32edfc2a58cadc93c4adb2ab4520d"
+    "V109__allow_position_trigger_kind.sql": "sha256:a7f35626354d531938ba596771de6b2cefd32edfc2a58cadc93c4adb2ab4520d",
+    "V110__add_craft_calc_hem_margin.sql": "sha256:e15ef8aaa13cd5eba71910996bdc45f9ed5ad0ca40d0666d4ac5724c535b408d"
   }
 }

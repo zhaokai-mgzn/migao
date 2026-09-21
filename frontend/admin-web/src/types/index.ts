@@ -1192,6 +1192,8 @@ export interface CraftCalcConfig {
   default_formula: string
   /** **宽方向**左右覆盖余量（米，两侧各 15cm）—— 引擎 `SIDE_MARGIN`（issue #4940 口径订正） */
   side_margin: number
+  /** **高方向**上下卷边合计（米；脚位+止口）—— 引擎 `HEM_MARGIN`（issue #4976 包 1b：可配） */
+  hem_margin: number
   /** 用料**向上进位**步长（米） */
   meters_rounding_step: number
 }

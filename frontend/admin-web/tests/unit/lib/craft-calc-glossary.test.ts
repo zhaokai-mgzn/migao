@@ -70,6 +70,7 @@ const ENGINE_DEFAULT_CALC_CONFIG: CraftCalcConfig = {
   tiers: { standard: { fullness: 2.0, label: '标准工艺' }, economy: { fullness: 1.8, label: '经济工艺' } },
   default_formula: 'pleat',
   side_margin: 0.3,
+  hem_margin: 0.3,
   meters_rounding_step: 0.1,
 }
 

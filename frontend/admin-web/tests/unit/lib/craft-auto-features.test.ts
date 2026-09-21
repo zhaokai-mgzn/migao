@@ -327,8 +327,11 @@ describe('#4662 「超宽」判据**含褶倍**（与算料引擎算分幅的口
     expect(source).toContain(
       'panels = math.ceil((window_width + cfg["side_margin"]) * fullness / fabric_width)'
     )
-    // 定高可用条件（几何矛盾提示的依据）：`高 + HEM_MARGIN <= 门幅` ⇒ 定高买宽，否则回落定宽买高
-    expect(source).toContain('if window_height + HEM_MARGIN <= fabric_width:')
+    // 定高可用条件（几何矛盾提示的依据）：`高 + 上下卷边 <= 门幅` ⇒ 定高买宽，否则回落定宽买高。
+    // ⚠️ issue #4976 包 1b 起**上下卷边可配**：引擎读 `cfg["hem_margin"]`（默认值 = 常量 `HEM_MARGIN`）。
+    // 前端仍用本地常量判「超高」= **已知偏差**（商家改了卷边、下单页仍按默认判），
+    // 由包 2「判定移到服务端」收口 ⇒ 本断言钉的是**引擎侧**的读取点（前端退场后这行也随之退场）。
+    expect(source).toContain('if window_height + cfg["hem_margin"] <= fabric_width:')
   })
 
   // 红证（issue #4662，修复前实测）：宽 1.5 × 褶倍 2.0 ⇒ 分幅 3.6 米 > 门幅 2.8 ⇒ **该报**；
