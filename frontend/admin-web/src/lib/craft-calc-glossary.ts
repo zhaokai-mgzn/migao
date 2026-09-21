@@ -20,7 +20,7 @@
  * 组合键；`拼接/接高` 是**手选**特征，**系统不推算**（见 {@link MANUAL_FEATURE_TERMS}）。
  * 把这两类混在一起讲，正是商家看不懂这些参数的根因。
  */
-import { detectAutoFeatures } from '@/lib/craft-auto-features'
+import AUTO_FEATURE_EXAMPLES from '@/lib/auto-feature-examples.json'
 import type { CraftCalcConfig } from '@/types'
 
 /**
@@ -339,49 +339,50 @@ export const GLOSSARY_EXAMPLE = {
   width: 2,
   height: 2.6,
   doorWidth: 2.8,
+  /** 举例用的褶倍 = 引擎默认标准档（`DEFAULT_CRAFT_TIERS.standard.fullness`）—— **固定示例值** */
+  fullness: 2,
 } as const
 
-/** 一条自动推算算例（`reason` 逐字来自 `detectAutoFeatures` —— 与下单页同一份文案） */
+/** 一条自动推算算例（`reason` 逐字来自**引擎**产出 —— 与下单页看到的是同一份文案） */
 export interface AutoFeatureExample {
   name: string
-  /** 举例的输入（含真实数字，由常量/配置渲染） */
+  /** 举例的输入（含真实数字，由常量渲染） */
   given: string
-  /** 系统的判定依据（**真函数产出**） */
+  /** 系统的判定依据（**引擎产出**，见 `auto-feature-examples.json` 的 `_provenance`） */
   reason: string
 }
 
 /**
- * 三个自动推算特征的算例 —— **不自己拼文案**：逐条调 {@link detectAutoFeatures}，
- * 取它给出的 `reason`（与下单页「为什么判它超宽」是同一份实现 ⇒ 改一处必红）。
+ * 自动推算特征的算例 —— **不自己拼文案**：`reason` 逐字取自
+ * `src/lib/auto-feature-examples.json`（**由引擎 `detect_auto_features` 产出**）。
  *
- * 举例取值使判定**稳定成立**：成品高 + 上下卷边 > 缺省门幅 ⇒ 必判超高；
- * 成品宽 + 左右覆盖余量 乘以**褶倍下限之上**的任一褶倍都 > 缺省门幅 ⇒ 必判超宽。
+ * 🔴 **issue #5009 改判**：原先这里调前端 `detectAutoFeatures` 现场算 —— 判定搬到服务端后
+ * 前端**不再有**判定实现（也不能有：`hem_margin` 可配后前端常量副本会判错），
+ * 而算例文案必须与商家在下单页看到的一致 ⇒ 唯一来源只能是**引擎产出**。
+ * 该 JSON 由守卫 `backend/ai-agent-service/tests/test_production/test_auto_features.py` 的
+ * `TestGlossaryExamplesAreEngineOutput` **逐字**钉住（引擎改措辞 ⇒ 该用例红 ⇒ 必须重生成）。
+ *
+ * ⚠️ **算例的褶倍是固定示例值**（标准档 2 倍），**不随本租户配置变** —— 与「参数表按当前配置
+ * 渲染」是两件事：举例若随配置漂，页面上的示例会与文档/截图对不上（照实登记的口径收紧）。
+ *
+ * 🔴 **这是相对改前的可见变化（照实登记，§19.1）**：改前 `buildAutoFeatureExamples(config)`
+ * 取**本页草稿**的档位褶倍（`config.tiers?.standard?.fullness`）⇒ 商家在表单里改「工艺档位」时，
+ * 说明区的算例**会跟着变**；现在固定为引擎默认档的示例值 ⇒ **不再跟着变**。
+ * 取舍理由：前端已无判定实现，要动态就得为说明区再加一次服务端取数（成本大于收益）。
+ * **本差异没有判据**（不会红）—— 只登记，不粉饰。
  */
-export function buildAutoFeatureExamples(config: CraftCalcConfig): AutoFeatureExample[] {
-  const fullness = config.tiers?.standard?.fullness ?? null
-  const fixedHeight = detectAutoFeatures({
-    height: GLOSSARY_EXAMPLE.height,
-    doorWidth: GLOSSARY_EXAMPLE.doorWidth,
-    cuttingMode: '定高买宽',
-  })
-  const fixedWidth = detectAutoFeatures({
-    width: GLOSSARY_EXAMPLE.width,
-    fullness,
-    doorWidth: GLOSSARY_EXAMPLE.doorWidth,
-    cuttingMode: '定宽买高',
-  })
-
+export function buildAutoFeatureExamples(): AutoFeatureExample[] {
   const givenOf = (name: string): string => {
     if (name === '超高') {
       return `举例：加工类型「定高买宽」· 成品高 ${GLOSSARY_EXAMPLE.height} 米 · 某商品门幅 ${GLOSSARY_EXAMPLE.doorWidth} 米（门幅随商品而变）`
     }
-    return `举例：加工类型「定宽买高」· 成品宽 ${GLOSSARY_EXAMPLE.width} 米 · 褶倍 ${fullness ?? '—'} · 某商品门幅 ${GLOSSARY_EXAMPLE.doorWidth} 米（门幅随商品而变）`
+    return `举例：加工类型「定宽买高」· 成品宽 ${GLOSSARY_EXAMPLE.width} 米 · 褶倍 ${GLOSSARY_EXAMPLE.fullness} · 某商品门幅 ${GLOSSARY_EXAMPLE.doorWidth} 米（门幅随商品而变）`
   }
 
-  return [...fixedHeight, ...fixedWidth].map((f) => ({
-    name: f.name,
-    given: givenOf(f.name),
-    reason: f.reason,
+  return AUTO_FEATURE_EXAMPLES.examples.map((e) => ({
+    name: e.name,
+    given: givenOf(e.name),
+    reason: e.reason,
   }))
 }
 

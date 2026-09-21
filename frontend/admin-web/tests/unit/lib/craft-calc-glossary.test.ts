@@ -26,7 +26,8 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { AUTO_FEATURE_NAMES, detectAutoFeatures } from '@/lib/craft-auto-features'
+import { AUTO_FEATURE_NAMES } from '@/lib/craft-auto-features'
+import AUTO_FEATURE_EXAMPLES from '@/lib/auto-feature-examples.json'
 import { SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
 import {
   AUTO_FEATURE_TERMS,
@@ -156,33 +157,46 @@ describe('算料配置页·口径与术语说明（issue #4975）', () => {
     expect(offenders).toEqual([])
   })
 
-  it('判据 6：自动推算算例 = detectAutoFeatures 的真实输出（与下单页同源同函数）', () => {
-    const config = ENGINE_DEFAULT_CALC_CONFIG
-    const byName = Object.fromEntries(buildAutoFeatureExamples(config).map((e) => [e.name, e.reason]))
+  it('判据 6：自动推算算例 = **引擎产出**的文案（issue #5009 起唯一来源）', () => {
+    const byName = Object.fromEntries(buildAutoFeatureExamples().map((e) => [e.name, e.reason]))
+    const pinned = Object.fromEntries(
+      (AUTO_FEATURE_EXAMPLES.examples as Array<{ name: string; reason: string }>).map((e) => [
+        e.name,
+        e.reason,
+      ])
+    )
 
-    const expectedHeight = detectAutoFeatures({
-      height: GLOSSARY_EXAMPLE.height,
-      doorWidth: GLOSSARY_EXAMPLE.doorWidth,
-      cuttingMode: '定高买宽',
-    }).find((f) => f.name === '超高')
-    const expectedWidth = detectAutoFeatures({
-      width: GLOSSARY_EXAMPLE.width,
-      fullness: config.tiers.standard.fullness,
-      doorWidth: GLOSSARY_EXAMPLE.doorWidth,
-      cuttingMode: '定宽买高',
-    })
-    if (!expectedHeight) throw new Error('举例输入没能推出「超高」—— 举例参数已失效（判据失去意义）')
-
-    // 注入：算例文案改成自己拼（不调 detectAutoFeatures）⇒ 下面三条红
-    expect(byName['超高']).toBe(expectedHeight.reason)
-    expect(byName['超宽']).toBe(expectedWidth.find((f) => f.name === '超宽')?.reason)
-    expect(byName['倒幅']).toBe(expectedWidth.find((f) => f.name === '倒幅')?.reason)
+    // 注入：算例文案改成自己拼（不读引擎产出的 fixture）⇒ 下面三条红
+    expect(byName['超高']).toBe(pinned['超高'])
+    expect(byName['超宽']).toBe(pinned['超宽'])
+    expect(byName['倒幅']).toBe(pinned['倒幅'])
+    // 反证：算例里必须**真的有数字**（fixture 退化成空串/占位 ⇒ 红）
+    expect(pinned['超高']).toContain('门幅')
+    expect(pinned['超宽']).toContain('褶倍')
+    // ⚠️ fixture 由**引擎**产出并逐字钉住 —— 守卫在 Python 腿：
+    // `backend/ai-agent-service/tests/test_production/test_auto_features.py::TestGlossaryExamplesAreEngineOutput`
+    // （引擎改措辞 ⇒ 那条红 ⇒ 必须重生成 `src/lib/auto-feature-examples.json`）
   })
 
   it('判据 6b：算例覆盖三个自动推算特征，且顺序与 AUTO_FEATURE_NAMES 同源', () => {
-    const names = buildAutoFeatureExamples(ENGINE_DEFAULT_CALC_CONFIG).map((e) => e.name)
-    // 注入：把「超宽」举例删掉 / 举例宽度改到推不出来 / 顺序与清单分叉 ⇒ 红
+    const names = buildAutoFeatureExamples().map((e) => e.name)
+    // 注入：把「超宽」举例删掉 / 顺序与清单分叉 ⇒ 红
     expect(names).toEqual([...AUTO_FEATURE_NAMES])
+  })
+
+  // 🔴 **照实登记的可见行为变化**（issue #5009 = #4976 包 2b，§19.1）：
+  // **改前** `buildAutoFeatureExamples(config)` 会取**页面草稿**的档位褶倍
+  // （`config.tiers?.standard?.fullness`）⇒ 商家在表单里改档位褶倍时，说明区的算例**跟着变**；
+  // **改后**算例取自引擎产出的静态快照（`src/lib/auto-feature-examples.json`，标准档 2 倍）
+  // ⇒ **不随草稿配置变化**。取舍理由：前端已无判定实现，要动态就得再调一次服务端
+  // （把说明区变成第二个取数面，成本大于收益）。
+  // 本断言把该差异**钉住**（将来改回动态 ⇒ 必须翻转本断言，不是悄悄改回去）。
+  it('#5009 已知差异（登记）：算例**不随**本页草稿配置变化（改前会变）', () => {
+    // 红证：给 `buildAutoFeatureExamples` 加回 `config` 形参（或让它读配置）⇒ 本断言红
+    expect(buildAutoFeatureExamples.length).toBe(0)
+    expect(buildAutoFeatureExamples().map((e) => e.reason)).toEqual(
+      (AUTO_FEATURE_EXAMPLES.examples as Array<{ reason: string }>).map((e) => e.reason)
+    )
   })
 
   it('判据 7：拼接 / 接高写明「系统不推算」+「不触发工序」（死亡条件绑 #4569）', () => {

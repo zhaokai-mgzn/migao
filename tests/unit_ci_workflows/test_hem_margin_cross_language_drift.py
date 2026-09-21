@@ -38,12 +38,17 @@
 | C3 | 前端注释引用的引擎行**逐字**一致（值 **+ 语义注释**；空白归一后比对） | 只改引擎注释措辞（`脚位+止口` → `脚位`）⇒ 红 |
 | C4 | **判别力下界（反恒真）**：两侧都必须解析到正数；前端**真的消费**了这两个常量；前端代码里**不得**出现第二份与引擎余量同值的字面量（判定处内联 = 常量改了判定不跟） | 判定处 `height + HEM_MARGIN` → `height + 0.3` ⇒ 红 |
 | C5 | 前端注释里引用的守卫文件**真的存在**且真的读源（引文不得腐烂，同 §19.2 ③） | 删掉/改名 `craft-auto-features.test.ts` ⇒ 红 |
+| C6 | **消费方白名单**（issue #5009 = #4976 包 2）：余量常量的消费方 ⊆ 定义处 + `door-width-plan.ts`（门幅规则/建议）—— **取价路径（下单页）不得再读前端常量副本** | 在 `orders/new/page.tsx` 里加一处 `HEM_MARGIN` 引用 ⇒ 红 |
 
 ⚠️ **本守卫不 import 被测引擎**（`app` 包的导入期需要完整 `.env` ⇒ 会红于环境而非红于口径）
 —— 照源里的赋值复算，与 `test_fabric_width_truth_source.py` 同族。
 
-⚠️ **本单不动 `backend/ai-agent-service/**`**（用户裁定 ai-agent 改动待排期，分叉 #4652）：
-引擎侧的 `_FABRIC_WIDTH` 硬编码门幅与 docstring 里的公式散文**不在本守卫范围**，照实登记。
+⚠️ **issue #5009 起判定在服务端**（`backend/ai-agent-service/app/tools/curtain_calc.py` 的
+`detect_auto_features` / `detect_auto_feature_notices`，经
+`POST /api/admin/orders/craft-calc/auto-features` 暴露）⇒ 前端 `craft-auto-features.ts`
+**不再有** `detectAutoFeatures` / `detectAutoFeatureNotices`（本守卫的 C6 与前端腿的 N1 共同钉住）。
+引擎侧的 `_FABRIC_WIDTH` 硬编码门幅仍属分叉 #4652（**试算**通路尚未按 SKU 门幅接线；
+**判定**通路已于 #5009 按 SKU 门幅接线）—— 不在本守卫范围，照实登记。
 """
 from __future__ import annotations
 
@@ -61,6 +66,33 @@ TS_GUARD = REPO_ROOT / "frontend/admin-web/tests/unit/lib/craft-auto-features.te
 
 #: 本守卫钉的两个方向余量（两侧**同名**；两个方向**各自**跟自己的引擎常量，不得合并）
 MARGINS: tuple[str, ...] = ("SIDE_MARGIN", "HEM_MARGIN")
+
+#: 余量常量在**前端**的允许消费方（C6 白名单；issue #5009 = #4976 包 2）——
+#: 判定已搬到服务端 ⇒ **取价路径（下单页加工费组合键）不得再读前端常量副本**；
+#: 白名单只留「门幅规则 / 建议」那一面（`door-width-plan.ts`，**不进组合键**）+ 常量定义处。
+ALLOWED_CONSUMERS: frozenset[str] = frozenset({
+    # 常量定义处（本身当然「出现」）
+    "frontend/admin-web/src/lib/craft-auto-features.ts",
+    # 门幅规则 / 建议：挑哪个 SKU 门幅、要不要接高 —— 是**建议**、不进组合键（边界见该文件头）
+    "frontend/admin-web/src/lib/door-width-plan.ts",
+    # 「算料配置」页的**说明文案**里提到常量名（术语解释），**不 import、不消费** ——
+    # 由下面的 `test_glossary_only_mentions_the_names` 钉住「只是文案」
+    "frontend/admin-web/src/lib/craft-calc-glossary.ts",
+})
+
+#: 只**提及名字**（文案）的文件 —— 不得 import 常量（提及 ≠ 消费）
+MENTION_ONLY = "frontend/admin-web/src/lib/craft-calc-glossary.ts"
+
+
+def _frontend_consumers() -> set[str]:
+    """前端源码里**代码**（去注释）引用余量常量的文件集合（相对仓库根的路径）。"""
+    hits: set[str] = set()
+    src_root = REPO_ROOT / "frontend/admin-web/src"
+    for path in sorted(src_root.rglob("*.ts")) + sorted(src_root.rglob("*.tsx")):
+        code = _strip_comments(path.read_text(encoding="utf8"))
+        if any(re.search(rf"\b{name}\b", code) for name in MARGINS):
+            hits.add(str(path.relative_to(REPO_ROOT)))
+    return hits
 
 #: 注释引文里的空白会被排版改写（引擎侧对齐用多空格、前端注释用两空格）⇒ 比对前归一空白
 _WS = re.compile(r"\s+")
@@ -162,10 +194,12 @@ def test_frontend_actually_consumes_margins_and_has_no_second_literal() -> None:
     code = _strip_comments(lib)
 
     for name in MARGINS:
-        # 出现次数 > 1 ⇒ 除了声明处，至少有一处**消费**（判定/文案）
-        assert code.count(name) > 1, (
-            f"{name} 在前端代码里只出现在声明处（无消费点）—— "
-            "要么判定处被内联成字面量（常量改了判定不跟），要么该常量已成死码"
+        # ⚠️ issue #5009 改判：消费点**已不在本文件**（判定搬到服务端，消费方只剩门幅规则）
+        # ⇒ 「被消费」改由 C6 的**跨文件**判据承担（本文件内只出现声明处是**预期**形态）。
+        assert code.count(name) == 1, (
+            f"{name} 在 craft-auto-features.ts 的代码里出现 {code.count(name)} 次 —— "
+            "issue #5009 后本文件只应是**声明处**；多出来的引用意味着判定/文案又回到了这里"
+            "（取价路径不得读前端常量副本，见 C6）"
         )
 
     # 引擎余量值在前端代码里**恰好**出现在同名常量的声明处（按值分组：两方向同值时合计 2 处）
@@ -199,3 +233,63 @@ def test_cited_frontend_guard_exists_and_reads_source() -> None:
             f"前端守卫里找不到 `pyConst('{name}')` —— 该常量的**前端腿**值级守卫没了，"
             "注释里那句「本副本有守卫」变成假话"
         )
+
+
+# ── C6：消费方白名单（issue #5009）—— 取价路径不得再读前端常量 ────────────────
+
+def test_margin_consumers_are_whitelisted() -> None:
+    """C6（issue #5009 = #4976 包 2）：余量常量的**消费方**必须落在白名单内。
+
+    为什么需要它（本条的来历就是一句**会腐烂的假声明**）：包 2 把判定搬到服务端后，
+    `craft-auto-features.ts` 的注释写了「取价路径不再读它，白名单守卫钉住这一点」，
+    而当时**守卫里根本没有白名单** —— 将来有人把 `HEM_MARGIN` 重新引回
+    `orders/new/page.tsx` 的取价路径，**全绿**，而注释仍说「会红」。
+    ⇒ 把承诺变成机械判据：**出现白名单外的消费方 ⇒ 红**。
+
+    ⚠️ **本判据不追求「前端没有常量」**（做不到也不该做）：`door-width-plan.ts` 的
+    **门幅规则/建议**（挑哪个 SKU 门幅 / 要不要接高）仍在用这两个常量，且**照实登记**了
+    「它与租户配置可能不一致」（见该文件头的边界段）。本条钉的是**取价路径**。
+    """
+    hits = _frontend_consumers()
+
+    # 反恒真：一个消费方都没有 ⇒ 常量已成死码，本判据空跑 ⇒ 必须红（不静默通过）
+    assert hits, (
+        "前端一个余量常量消费方都没找到 —— 要么常量被删（本守卫失去判别力，"
+        "请同步改判），要么扫描面写错（本判据空跑）"
+    )
+    outside = sorted(hits - ALLOWED_CONSUMERS)
+    assert not outside, (
+        "余量常量出现了**白名单外**的消费方：\n  " + "\n  ".join(outside) + "\n"
+        "判定自 issue #5009 起在服务端（`curtain_calc.detect_auto_features`）⇒ **取价路径**"
+        "（下单页组合键）不得再读前端常量副本（`hem_margin` 可配 ⇒ 副本必然与引擎判出两套结论）。\n"
+        "若新增消费方是**有意的**（例如又一处建议面），请连同「它与租户配置可能不一致」的登记一起"
+        f"加进白名单：{sorted(ALLOWED_CONSUMERS)}"
+    )
+    # 白名单里的消费方必须**真的**还在读（否则白名单会随实现退场而腐烂）
+    assert "frontend/admin-web/src/lib/door-width-plan.ts" in hits, (
+        "白名单里的 door-width-plan.ts 已不再读余量常量 ⇒ 白名单腐烂（请同步收窄本判据）"
+    )
+
+    # 取价路径点名（#5009 判据 4 的**机械版**）：下单页代码不得出现任一余量常量
+    page_code = _strip_comments(
+        (REPO_ROOT / "frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx").read_text(encoding="utf8")
+    )
+    for name in MARGINS:
+        assert not re.search(rf"\b{name}\b", page_code), (
+            f"下单页代码里出现了 {name} —— 取价路径（加工费组合键）不得读前端余量常量副本；"
+            "判定一律走服务端（`craftCalcApi.autoFeatures`）"
+        )
+
+
+def test_glossary_only_mentions_the_names() -> None:
+    """白名单里的 `craft-calc-glossary.ts` **只能提及名字**（说明文案），不得 import 常量。
+
+    为什么单列一条：它进白名单的唯一理由是「术语解释的**文案**里写了 `SIDE_MARGIN` / `HEM_MARGIN`
+    这两个名字」—— 那是**提及**，不是**消费**。若哪天它真的 import 了常量（拿去做判定/算数），
+    它就变成了一个**真实的**消费方，白名单的那条理由立刻失效 ⇒ 本判据必须红。
+    """
+    src = (REPO_ROOT / MENTION_ONLY).read_text(encoding="utf8")
+    assert "from '@/lib/craft-auto-features'" not in src, (
+        f"{MENTION_ONLY} 已 import `@/lib/craft-auto-features` —— 它不再只是「文案提及」，"
+        "而是**真消费**（可能拿常量去算/判）⇒ 白名单理由失效，必须红并重新复核该消费面"
+    )

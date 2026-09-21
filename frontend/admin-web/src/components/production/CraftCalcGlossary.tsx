@@ -6,8 +6,9 @@
  *
  * ## 三条实现纪律
  *
- * 1. **不写死任何数字**：参数值取自 `config`（页面草稿），算例由
- *    `buildAutoFeatureExamples(config)` 调 `detectAutoFeatures` 产出（与下单页同一份文案）。
+ * 1. **不写死任何数字**：参数值取自 `config`（页面草稿）；算例的 `reason` 取自
+ *    `buildAutoFeatureExamples()`（**引擎产出**，见 `src/lib/auto-feature-examples.json`
+ *    的 `_provenance`）—— 判定自 issue #5009 起在服务端，前端**没有**第二份判定实现。
  * 2. **原生 `<details>`**：键盘可达、可打印、可被测试稳定断言（不引第三方折叠组件、不自绘开关）。
  * 3. **锚点由模块函数给**（`glossaryAnchorOf` / `glossaryTermAnchorOf`）：参数旁的「说明」链接与
  *    本区块的条目 id 同源，不会各写一份而对不上。
@@ -58,7 +59,7 @@ function TermBlock({ term, anchor, meta }: { term: GlossaryTerm; anchor?: string
 }
 
 export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
-  const examples = buildAutoFeatureExamples(config)
+  const examples = buildAutoFeatureExamples()
 
   return (
     <section

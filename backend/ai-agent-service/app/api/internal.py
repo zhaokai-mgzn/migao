@@ -598,7 +598,9 @@ async def auto_features(
 
     返回 `data`：`auto_features`（`[{name, source, reason}]`，**键恒在**，空列表 = **不判**）/
     `door_width`（实际用于判定的门幅；缺门幅时 `None`）/ `fullness_used`（实际用于判超宽的褶倍）/
-    `notice`（`''` / `missing-door-width` / `unknown-cutting-mode` —— **不判的原因**，不静默）。
+    `notice`（`''` / `missing-door-width` / `unknown-cutting-mode` —— **不判的原因**，不静默）/
+    `notices`（`[{kind, reason}]`，**加性扩展**（issue #5009 = #4976 包 2b）：可读提示，
+    含几何矛盾「系统实际会按哪种算」与缺褶倍 —— 前端只渲染，不再自己判）。
     """
     try:
         config = _normalize_craft_calc_config(request.config)
@@ -608,36 +610,63 @@ async def auto_features(
             detail={"success": False, "error": {"code": "CRAFT_CALC_INVALID_INPUT", "message": str(e)}},
         ) from e
 
-    cfg = curtain_calc.resolve_craft_calc_config(config)
+    try:
+        cfg = curtain_calc.resolve_craft_calc_config(config)
+    except ValueError as e:
+        # 租户配置非法（如 hem_margin ≤ 0）⇒ **400 逐条理由**，不静默回退默认值、也不 500
+        # （issue #5009 = #4976 包 2b：判定通路与算料通路同口径的 fail-closed）
+        raise HTTPException(
+            status_code=400,
+            detail={"success": False, "error": {"code": "CRAFT_CALC_INVALID_INPUT", "message": str(e)}},
+        ) from e
     fullness_used = (
         request.fullness if request.fullness is not None else cfg["tiers"]["standard"]["fullness"]
     )
 
+    # `notice`（**机器可判的原因码**，包 2a 契约）：说明「为什么没判」—— 判定本身仍一律交给
+    # `detect_auto_features`（单一真值），**不在端点里另写一套短路逻辑**。
     if request.fabric_width is None:
-        # 缺门幅 ⇒ **不判**（不回落任何默认门幅，issue #4877）
-        features, notice = [], "missing-door-width"
+        notice = "missing-door-width"
     elif request.cutting_mode not in (
         curtain_calc.CUTTING_MODE_FIXED_HEIGHT,
         curtain_calc.CUTTING_MODE_FIXED_WIDTH,
     ):
-        # 缺 / 表外加工类型 ⇒ **不判**（不猜朝向）
-        features, notice = [], "unknown-cutting-mode"
+        notice = "unknown-cutting-mode"
     else:
-        features, notice = (
-            curtain_calc.detect_auto_features(
-                window_width=request.width,
-                window_height=request.height,
-                fabric_width=request.fabric_width,
-                fullness=fullness_used,
-                cutting_mode=request.cutting_mode,
-                config=config,
-            ),
-            "",
-        )
+        notice = ""
+
+    # 🔴 issue #5009 = #4976 包 2b：**缺门幅 ≠ 什么都不判** —— `倒幅` 只取决于加工类型、
+    # 与门幅无关 ⇒ 它在门幅缺失时**照判**（`detect_auto_features` 的 `fabric_width=None` 分支）。
+    # 端点若在此短路成 `[]`，`定宽买高 + 门幅未维护` 的行会**静默少一个组合键项**（改钱），
+    # 而改前的前端实现是判它的（迁移期等价性，见 `test_auto_features.py::TestMigrationEquivalence`）。
+    features = curtain_calc.detect_auto_features(
+        window_width=request.width,
+        window_height=request.height,
+        fabric_width=request.fabric_width,
+        fullness=fullness_used,
+        cutting_mode=request.cutting_mode,
+        config=config,
+    )
+
+    # 提示（`notices`，issue #5009 = #4976 包 2b，**加性扩展**）：与 `notice`（单个**原因码**，
+    # 包 2a 的契约、**保留不变**）并存 —— 提示是**商家可见的实质文案**（逐字），
+    # 包 2b 前端退场后必须由服务端给，否则「几何矛盾 ⇒ 系统实际会按定宽买高算」这类提示会**整条消失**
+    # （可见行为回归），且 `cutting-mode-conflict` 的依据里嵌着**上下卷边** ——
+    # 留前端副本会在商家改 `hem_margin` 后**给商家看一个错的数**（0.3）。
+    # ⚠️ 与 `notice` 的关系：`notice` = 「没判」的**机器可判原因码**；`notices` = **可读提示**（含几何矛盾）。
+    notices = curtain_calc.detect_auto_feature_notices(
+        window_width=request.width,
+        window_height=request.height,
+        fabric_width=request.fabric_width,
+        fullness=fullness_used,
+        cutting_mode=request.cutting_mode,
+        config=config,
+    )
 
     return make_response(True, data={
         "auto_features": features,
         "door_width": request.fabric_width,
         "fullness_used": fullness_used,
         "notice": notice,
+        "notices": notices,
     })

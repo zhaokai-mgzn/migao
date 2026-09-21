@@ -501,4 +501,33 @@ class CraftCalcClientTest {
         // 无租户上下文 ⇒ 不查不注入（与 #4528 同口径：不猜一个租户去读别人的配置）
         assertThat(captor.getValue().getBody()).doesNotContainKey("config");
     }
+
+    @Test
+    @DisplayName("#5009 fail-closed 文案**按操作分口径**：判定端点说「判定」，不得说「试算 / 用料米数」")
+    void autoFeaturesFailClosedWordingIsNotTheCalcOne() {
+        // 红证：让 `autoFeatures` 复用试算那条 `unavailable(...)`（文案写「无法试算**用料米数**…已中止本次**试算**」）
+        // ⇒ 下面两条否定断言红 —— 判定**不算用料**（本单红线），复用文案会把排查引到「用料米数」上。
+        when(restTemplate.exchange(eq(AUTO_FEATURES_URL), eq(HttpMethod.POST),
+                any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok("{\"success\":true,\"data\":{\"door_width\":2.8}}"));
+
+        assertThatThrownBy(() -> client.autoFeatures(Map.of("cutting_mode", "定高买宽")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("自动特征判定")
+                .hasMessageNotContaining("试算")
+                .hasMessageNotContaining("用料米数")
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(422));
+    }
+
+    @Test
+    @DisplayName("#5009 回归不变量：**试算**端点的 fail-closed 文案一字不变")
+    void calcFailClosedWordingUnchanged() {
+        when(restTemplate.exchange(eq(URL), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenThrow(new ResourceAccessException("Connection refused"));
+
+        assertThatThrownBy(() -> client.calc(request()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("无法试算用料米数")
+                .hasMessageContaining("不给 0 米");
+    }
 }

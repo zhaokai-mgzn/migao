@@ -1,0 +1,535 @@
+{
+  "_provenance": "issue #5009（#4976 包 2）迁移期等价性 golden 表：每行的 auto_features / notices / fabric_width 由**改前**前端实现（frontend/admin-web/src/lib/craft-auto-features.ts @ a4ede77bc 的 detectAutoFeatures / detectAutoFeatureNotices / parseDoorWidth）实际执行捕获，非手写。Python 腿断言服务端输出 == 本表（逐字，含 reason）；TS 腿断言页面消费服务端响应 == 本表。",
+  "_generated_from": "a4ede77bc",
+  "rows": [
+    {
+      "id": "M01",
+      "note": "定高买宽 · 高超门幅 ⇒ 超高",
+      "input": {
+        "width": 1.6,
+        "height": 2.6,
+        "door_width": "2.8",
+        "cutting_mode": "定高买宽",
+        "fullness": 2
+      },
+      "fabric_width": 2.8,
+      "auto_features": [
+        {
+          "name": "超高",
+          "source": "推算",
+          "reason": "成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米"
+        }
+      ],
+      "notices": [
+        {
+          "kind": "cutting-mode-conflict",
+          "reason": "加工类型选了「定高买宽」，但成品高 2.6 + 上下卷边 0.3 = 2.9 米 超过本 SKU 门幅 2.8 米（判据 = 算料引擎的几何分支「高 + 卷边 vs 门幅」，不读商家选的加工类型；本页按本 SKU 门幅判）⇒ 按本 SKU 门幅口径，系统实际会按定宽买高算（⚠️ 引擎试算门幅尚未按本 SKU 门幅接线 —— #4746 / 待 #4652 ⇒ 引擎实际结果可能不同）"
+        }
+      ]
+    },
+    {
+      "id": "M02",
+      "note": "定高买宽 · 高+卷边 == 门幅（不严格大于）⇒ 不判",
+      "input": {
+        "width": 1.6,
+        "height": 2.5,
+        "door_width": "2.8",
+        "cutting_mode": "定高买宽",
+        "fullness": 2
+      },
+      "fabric_width": 2.8,
+      "auto_features": [],
+      "notices": []
+    },
+    {
+      "id": "M03",
+      "note": "定高买宽 · 门幅整米（3.0）⇒ 文案里门幅形态",
+      "input": {
+        "width": 1.6,
+        "height": 2.8,
+        "door_width": "3.0",
+        "cutting_mode": "定高买宽",
+        "fullness": 2
+      },
+      "fabric_width": 3,
+      "auto_features": [
+        {
+          "name": "超高",
+          "source": "推算",
+          "reason": "成品高 2.8 + 上下卷边 0.3 = 3.1 米 > 门幅 3 米"
+        }
+      ],
+      "notices": [
+        {
+          "kind": "cutting-mode-conflict",
+          "reason": "加工类型选了「定高买宽」，但成品高 2.8 + 上下卷边 0.3 = 3.1 米 超过本 SKU 门幅 3 米（判据 = 算料引擎的几何分支「高 + 卷边 vs 门幅」，不读商家选的加工类型；本页按本 SKU 门幅判）⇒ 按本 SKU 门幅口径，系统实际会按定宽买高算（⚠️ 引擎试算门幅尚未按本 SKU 门幅接线 —— #4746 / 待 #4652 ⇒ 引擎实际结果可能不同）"
+        }
+      ]
+    },
+    {
+      "id": "M04",
+      "note": "定高买宽 · 高缺 ⇒ 不判",
+      "input": {
+        "width": 1.6,
+        "height": null,
+        "door_width": "2.8",
+        "cutting_mode": "定高买宽",
+        "fullness": 2
+      },
+      "fabric_width": 2.8,
+      "auto_features": [],
+      "notices": []
+    },
+    {
+      "id": "M05",
+      "note": "定高买宽 · 门幅缺 ⇒ 不判（不回落 3.2）",
+      "input": {
+        "width": 1.6,
+        "height": 2.6,
+        "door_width": null,
+        "cutting_mode": "定高买宽",
+        "fullness": 2
+      },
+      "fabric_width": null,
+      "auto_features": [],
+      "notices": [
+        {
+          "kind": "missing-door-width",
+          "reason": "该 SKU 未维护门幅 ⇒ 超高/超宽都判不了（系统不按缺省门幅推算，请先补商品门幅）"
+        }
+      ]
+    },
+    {
+      "id": "M06",
+      "note": "定宽买高 · 超宽 + 倒幅",
+      "input": {
+        "width": 1.6,
+        "height": 2.6,
+        "door_width": "2.8",
+        "cutting_mode": "定宽买高",
+        "fullness": 2
+      },
+      "fabric_width": 2.8,
+      "auto_features": [
+        {
+          "name": "超宽",
+          "source": "推算",
+          "reason": "成品宽 1.6 + 左右余量 0.3 = 1.9 米 × 褶倍 2 = 3.8 米 > 门幅 2.8 米"
+        },
+        {
+          "name": "倒幅",
+          "source": "推算",
+          "reason": "加工类型 = 定宽买高"
+        }
+      ],
+      "notices": []
+    },
+    {
+      "id": "M07",
+      "note": "定宽买高 · 不超宽 ⇒ 只有倒幅",
+      "input": {
+        "width": 1,
+        "height": 2.6,
+        "door_width": "2.8",
+        "cutting_mode": "定宽买高",
+        "fullness": 2
+      },
+      "fabric_width": 2.8,
+      "auto_features": [
+        {
+          "name": "倒幅",
+          "source": "推算",
+          "reason": "加工类型 = 定宽买高"
+        }
+      ],
+      "notices": []
+    },
+    {
+      "id": "M08",
+      "note": "定宽买高 · 高缺 ⇒ 超宽 + 倒幅（高不影响）",
+      "input": {
+        "width": 1.6,
+        "height": null,
+        "door_width": "2.8",
+        "cutting_mode": "定宽买高",
+        "fullness": 2
+      },
+      "fabric_width": 2.8,
+      "auto_features": [
+        {
+          "name": "超宽",
+          "source": "推算",
+          "reason": "成品宽 1.6 + 左右余量 0.3 = 1.9 米 × 褶倍 2 = 3.8 米 > 门幅 2.8 米"
+        },
+        {
+          "name": "倒幅",
+          "source": "推算",
+          "reason": "加工类型 = 定宽买高"
+        }
+      ],
+      "notices": []
+    },
+    {
+      "id": "M09",
+      "note": "定宽买高 · 宽缺 ⇒ 只有倒幅（倒幅不吞）",
+      "input": {
+        "width": null,
+        "height": 2.6,
+        "door_width": "2.8",
+        "cutting_mode": "定宽买高",
+        "fullness": 2
+      },
+      "fabric_width": 2.8,
+      "auto_features": [
+        {
+          "name": "倒幅",
+          "source": "推算",
+          "reason": "加工类型 = 定宽买高"
+        }
+      ],
+      "notices": []
+    },
+    {
+      "id": "M10",
+      "note": "定宽买高 · 门幅缺 ⇒ 只有倒幅（#4877 倒幅与门幅无关）",
+      "input": {
+        "width": 1.6,
+        "height": 2.6,
+        "door_width": null,
+        "cutting_mode": "定宽买高",
+        "fullness": 2
+      },
+      "fabric_width": null,
+      "auto_features": [
+        {
+          "name": "倒幅",
+          "source": "推算",
+          "reason": "加工类型 = 定宽买高"
+        }
+      ],
+      "notices": [
+        {
+          "kind": "missing-door-width",
+          "reason": "该 SKU 未维护门幅 ⇒ 超高/超宽都判不了（系统不按缺省门幅推算，请先补商品门幅）"
+        }
+      ]
+    },
+    {
+      "id": "M11",
+      "note": "定宽买高 · 褶倍缺 ⇒ 只有倒幅",
+      "input": {
+        "width": 1.6,
+        "height": 2.6,
+        "door_width": "2.8",
+        "cutting_mode": "定宽买高",
+        "fullness": null
+      },
+      "fabric_width": 2.8,
+      "auto_features": [
+        {
+          "name": "倒幅",
+          "source": "推算",
+          "reason": "加工类型 = 定宽买高"
+        }
+      ],
+      "notices": [
+        {
+          "kind": "missing-fullness",
+          "reason": "缺褶倍 ⇒ 未判超宽（成品宽 1.6 + 左右余量 0.3 是否要分幅取决于褶倍，不猜）"
+        }
+      ]
+    },
+    {
+      "id": "M12",
+      "note": "定宽买高 · 宽与门幅都缺 ⇒ 只有倒幅",
+      "input": {
+        "width": null,
+        "height": null,
+        "door_width": null,
+        "cutting_mode": "定宽买高",
+        "fullness": 2
+      },
+      "fabric_width": null,
+      "auto_features": [
+        {
+          "name": "倒幅",
+          "source": "推算",
+          "reason": "加工类型 = 定宽买高"
+        }
+      ],
+      "notices": [
+        {
+          "kind": "missing-door-width",
+          "reason": "该 SKU 未维护门幅 ⇒ 超高/超宽都判不了（系统不按缺省门幅推算，请先补商品门幅）"
+        }
+      ]
+    },
+    {
+      "id": "M13",
+      "note": "加工类型缺 ⇒ 都不判",
+      "input": {
+        "width": 1.6,
+        "height": 2.6,
+        "door_width": "2.8",
+        "cutting_mode": null,
+        "fullness": 2
+      },
+      "fabric_width": 2.8,
+      "auto_features": [],
+      "notices": []
+    },
+    {
+      "id": "M14",
+      "note": "加工类型表外（接高）⇒ 都不判",
+      "input": {
+        "width": 1.6,
+        "height": 2.6,
+        "door_width": "2.8",
+        "cutting_mode": "接高",
+        "fullness": 2
+      },
+      "fabric_width": 2.8,
+      "auto_features": [],
+      "notices": []
+    },
+    {
+      "id": "M15",
+      "note": "门幅带单位（2.8米）⇒ 解析后判定",
+      "input": {
+        "width": 1.6,
+        "height": 2.6,
+        "door_width": "2.8米",
+        "cutting_mode": "定宽买高",
+        "fullness": 2
+      },
+      "fabric_width": 2.8,
+      "auto_features": [
+        {
+          "name": "超宽",
+          "source": "推算",
+          "reason": "成品宽 1.6 + 左右余量 0.3 = 1.9 米 × 褶倍 2 = 3.8 米 > 门幅 2.8 米"
+        },
+        {
+          "name": "倒幅",
+          "source": "推算",
+          "reason": "加工类型 = 定宽买高"
+        }
+      ],
+      "notices": []
+    },
+    {
+      "id": "M16",
+      "note": "门幅不可解析（暂无）⇒ 只有倒幅",
+      "input": {
+        "width": 1.6,
+        "height": 2.6,
+        "door_width": "暂无",
+        "cutting_mode": "定宽买高",
+        "fullness": 2
+      },
+      "fabric_width": null,
+      "auto_features": [
+        {
+          "name": "倒幅",
+          "source": "推算",
+          "reason": "加工类型 = 定宽买高"
+        }
+      ],
+      "notices": [
+        {
+          "kind": "missing-door-width",
+          "reason": "该 SKU 未维护门幅 ⇒ 超高/超宽都判不了（系统不按缺省门幅推算，请先补商品门幅）"
+        }
+      ]
+    },
+    {
+      "id": "M17",
+      "note": "定宽买高 · 经济档褶倍 1.8（不足 ⇒ 只有倒幅）",
+      "input": {
+        "width": 1.5,
+        "height": 2.6,
+        "door_width": "2.8",
+        "cutting_mode": "定宽买高",
+        "fullness": 1.8
+      },
+      "fabric_width": 2.8,
+      "auto_features": [
+        {
+          "name": "超宽",
+          "source": "推算",
+          "reason": "成品宽 1.5 + 左右余量 0.3 = 1.8 米 × 褶倍 1.8 = 3.24 米 > 门幅 2.8 米"
+        },
+        {
+          "name": "倒幅",
+          "source": "推算",
+          "reason": "加工类型 = 定宽买高"
+        }
+      ],
+      "notices": []
+    },
+    {
+      "id": "M18",
+      "note": "定宽买高 · 经济档褶倍 1.8（超宽 ⇒ 超宽 + 倒幅）",
+      "input": {
+        "width": 1.6,
+        "height": 2.6,
+        "door_width": "2.8",
+        "cutting_mode": "定宽买高",
+        "fullness": 1.8
+      },
+      "fabric_width": 2.8,
+      "auto_features": [
+        {
+          "name": "超宽",
+          "source": "推算",
+          "reason": "成品宽 1.6 + 左右余量 0.3 = 1.9 米 × 褶倍 1.8 = 3.42 米 > 门幅 2.8 米"
+        },
+        {
+          "name": "倒幅",
+          "source": "推算",
+          "reason": "加工类型 = 定宽买高"
+        }
+      ],
+      "notices": []
+    },
+    {
+      "id": "M19",
+      "note": "定宽买高 · 半毫米边界（宽 1.25 ⇒ 1.55×2=3.1）",
+      "input": {
+        "width": 1.25,
+        "height": 2.6,
+        "door_width": "3.0",
+        "cutting_mode": "定宽买高",
+        "fullness": 2
+      },
+      "fabric_width": 3,
+      "auto_features": [
+        {
+          "name": "超宽",
+          "source": "推算",
+          "reason": "成品宽 1.25 + 左右余量 0.3 = 1.55 米 × 褶倍 2 = 3.1 米 > 门幅 3 米"
+        },
+        {
+          "name": "倒幅",
+          "source": "推算",
+          "reason": "加工类型 = 定宽买高"
+        }
+      ],
+      "notices": [
+        {
+          "kind": "cutting-mode-conflict",
+          "reason": "加工类型选了「定宽买高」，但成品高 2.6 + 上下卷边 0.3 = 2.9 米 未超过本 SKU 门幅 3 米（判据 = 算料引擎的几何分支「高 + 卷边 vs 门幅」，不读商家选的加工类型；本页按本 SKU 门幅判）⇒ 按本 SKU 门幅口径，系统实际会按定高买宽算（⚠️ 引擎试算门幅尚未按本 SKU 门幅接线 —— #4746 / 待 #4652 ⇒ 引擎实际结果可能不同）"
+        }
+      ]
+    },
+    {
+      "id": "M20",
+      "note": "定高买宽 · 半毫米边界（高 2.7005）",
+      "input": {
+        "width": 1.6,
+        "height": 2.7005,
+        "door_width": "3.0",
+        "cutting_mode": "定高买宽",
+        "fullness": 2
+      },
+      "fabric_width": 3,
+      "auto_features": [
+        {
+          "name": "超高",
+          "source": "推算",
+          "reason": "成品高 2.7005 + 上下卷边 0.3 = 3.0004999999999997 米 > 门幅 3 米"
+        }
+      ],
+      "notices": [
+        {
+          "kind": "cutting-mode-conflict",
+          "reason": "加工类型选了「定高买宽」，但成品高 2.7005 + 上下卷边 0.3 = 3.0004999999999997 米 超过本 SKU 门幅 3 米（判据 = 算料引擎的几何分支「高 + 卷边 vs 门幅」，不读商家选的加工类型；本页按本 SKU 门幅判）⇒ 按本 SKU 门幅口径，系统实际会按定宽买高算（⚠️ 引擎试算门幅尚未按本 SKU 门幅接线 —— #4746 / 待 #4652 ⇒ 引擎实际结果可能不同）"
+        }
+      ]
+    },
+    {
+      "id": "M21",
+      "note": "定宽买高 · 浮点长尾（1.1 × 2.0）",
+      "input": {
+        "width": 1.1,
+        "height": 2.6,
+        "door_width": "2.8",
+        "cutting_mode": "定宽买高",
+        "fullness": 2
+      },
+      "fabric_width": 2.8,
+      "auto_features": [
+        {
+          "name": "超宽",
+          "source": "推算",
+          "reason": "成品宽 1.1 + 左右余量 0.3 = 1.4 米 × 褶倍 2 = 2.8000000000000003 米 > 门幅 2.8 米"
+        },
+        {
+          "name": "倒幅",
+          "source": "推算",
+          "reason": "加工类型 = 定宽买高"
+        }
+      ],
+      "notices": []
+    },
+    {
+      "id": "M22",
+      "note": "定高买宽 · 门幅 2.8、高 2.5001（浮点边界）",
+      "input": {
+        "width": 1.6,
+        "height": 2.5001,
+        "door_width": "2.8",
+        "cutting_mode": "定高买宽",
+        "fullness": 2
+      },
+      "fabric_width": 2.8,
+      "auto_features": [
+        {
+          "name": "超高",
+          "source": "推算",
+          "reason": "成品高 2.5001 + 上下卷边 0.3 = 2.8001 米 > 门幅 2.8 米"
+        }
+      ],
+      "notices": [
+        {
+          "kind": "cutting-mode-conflict",
+          "reason": "加工类型选了「定高买宽」，但成品高 2.5001 + 上下卷边 0.3 = 2.8001 米 超过本 SKU 门幅 2.8 米（判据 = 算料引擎的几何分支「高 + 卷边 vs 门幅」，不读商家选的加工类型；本页按本 SKU 门幅判）⇒ 按本 SKU 门幅口径，系统实际会按定宽买高算（⚠️ 引擎试算门幅尚未按本 SKU 门幅接线 —— #4746 / 待 #4652 ⇒ 引擎实际结果可能不同）"
+        }
+      ]
+    },
+    {
+      "id": "M23",
+      "note": "定宽买高 · 宽非正（0）⇒ 只有倒幅",
+      "input": {
+        "width": 0,
+        "height": 2.6,
+        "door_width": "2.8",
+        "cutting_mode": "定宽买高",
+        "fullness": 2
+      },
+      "fabric_width": 2.8,
+      "auto_features": [
+        {
+          "name": "倒幅",
+          "source": "推算",
+          "reason": "加工类型 = 定宽买高"
+        }
+      ],
+      "notices": []
+    },
+    {
+      "id": "M24",
+      "note": "定高买宽 · 高非正（0）⇒ 不判",
+      "input": {
+        "width": 1.6,
+        "height": 0,
+        "door_width": "2.8",
+        "cutting_mode": "定高买宽",
+        "fullness": 2
+      },
+      "fabric_width": 2.8,
+      "auto_features": [],
+      "notices": []
+    }
+  ]
+}

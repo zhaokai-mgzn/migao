@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, feePreviewApi, type CraftCalcResult, type CraftCalcParams, type FeePreviewResult, type FeePreviewRow } from '@/lib/api'
+import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, feePreviewApi, type CraftCalcResult, type CraftCalcParams, type FeePreviewResult, type FeePreviewRow, type AutoFeatureRow, type AutoFeatureNoticeRow, type AutoFeatureParams } from '@/lib/api'
 import { resolveImageUrl } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
 import { Button, Card, Input, Modal } from '@/components/ui'
@@ -53,16 +53,20 @@ import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
 // ⚠️ #4592：`定高买宽`（= 正幅，缺省档）**不推导** —— 正幅不在加工项目录（V83）里，
 //    推它会让默认订单的组合键永远匹配不到价（加工费恒 ¥0.00）
 // ⚠️ 取自 **admin-web 专属**模块（不是三端同源的 `craft-display`，见该文件头）
-// `AUTO_FEATURE_NAMES`（#4566）：下单页用它把目录里的**自动推导特征**滤出**手选**列表
-// （它们在目录里必须存在 —— 商家配「加工费组合」要能选到；但手选控件必须没有它们，判据 8）
+// 🔴 **issue #5009 = #4976 包 2：判定已移到服务端** —— 本页**不再**调 `detectAutoFeatures` /
+//    `detectAutoFeatureNotices`（已从该模块删除），判定来源 = 只读端点
+//    `craftCalcApi.autoFeatures`（`curtain_calc.detect_auto_features`）。
+//    `AUTO_FEATURE_NAMES`（#4566）仍在这里用：① 把目录里的**自动推导特征**滤出**手选**列表
+//    （它们在目录里必须存在 —— 商家配「加工费组合」要能选到；但手选控件必须没有它们，判据 8）；
+//    ② 挡住服务端返回的、**目录里没有的**特征名（#4592 的 P0：那会让组合键恒匹配不到价）。
 import {
   AUTO_FEATURE_NAMES,
-  detectAutoFeatureNotices,
-  detectAutoFeatures,
+  AUTO_FEATURE_NOTICE_KINDS,
   parseDoorWidth,
   type AutoFeature,
   type AutoFeatureName,
   type AutoFeatureNotice,
+  type AutoFeatureNoticeKind,
 } from '@/lib/craft-auto-features'
 // 门幅选择规则（issue #4877，用户 2026-09-21 裁定）：**可行 / 不可行 + 哪个最省**
 // —— 定高买宽取可行集里最小门幅、定宽买高取分幅最少；所有门幅都不满足 ⇒ 必然走接高。
@@ -149,6 +153,23 @@ interface OrderLineItem {
    * （例：SKU 没录门幅 ⇒ 系统按默认 2.8 米兜底 ⇒ 本该超宽却漏判）。
    */
   manualAutoFeatures?: string[]
+  /**
+   * 判定端点**不可用**时的可见提示（issue #5009）—— 见 {@link AUTO_FEATURES_UNAVAILABLE_TEXT}。
+   *
+   * 🔴 为什么必须**可见**（不是静默）：判定失败 ⇒ 组合键**少项**，而「少项」有两种结局 ——
+   * 商家没配那个简化组合 ⇒ `unpriced`（可见）；**商家配了基础组合** ⇒ **取价成功、金额偏低**
+   * ⇒ 屏幕上一切正常、钱少了（这才是常见情形）。⇒ 与同页**试算**通路的既有取舍一致：
+   * **不拦**（拦住会把整条下单链路堵死，比配错价更糟），但**必须看得见**。
+   */
+  autoFeaturesError?: string
+  /**
+   * **服务端**判定的自动特征（issue #5009 = #4976 包 2）—— 判定唯一来源。
+   * `undefined` = **还没回来**（页面据此不进取价/提交，见 `autoFeaturesResolved`）；
+   * `[]` = 服务端判了但**没有**（缺门幅 / 缺加工类型 / 缺褶倍 / 缺尺寸）—— 两者**必须可区分**。
+   */
+  serverAutoFeatures?: AutoFeatureRow[]
+  /** **服务端**给的系统识别提示（issue #5009；与 `serverAutoFeatures` 同一次请求返回） */
+  serverAutoFeatureNotices?: AutoFeatureNoticeRow[]
   /** 工艺规格录入（issue #4375 §4.2/§4.5）—— 未填的键不落库；三条默认档见 createDefaultCraftSpec */
   craft: CraftSpecInput
   // ── 「套窗」输入已移除（issue #4486，用户裁定「我感觉不需要」）──
@@ -244,6 +265,16 @@ function deriveProcessingQty(fabricMeters: number): number {
 
 /** 试算防抖（issue #4434）：连打宽高时只在停手后发一次请求 */
 const CRAFT_CALC_DEBOUNCE_MS = 400
+
+/**
+ * 判定端点不可用时的**可见提示**（issue #5009）—— 与同页试算通路的取舍一致：**不拦、但必须可见**。
+ *
+ * 为什么不拦：ai-agent 抖动会把整条下单链路堵死，比配错价更糟（与试算失败保持同一取舍）。
+ * 为什么必须可见：判定失败 ⇒ 组合键**少项**；商家**配了基础组合**时那是**取价成功、金额偏低**
+ * ⇒ 页面不报错、商家看不出（静默少收钱）。措辞必须说清「可能缺项」，不是「算料失败」。
+ */
+const AUTO_FEATURES_UNAVAILABLE_TEXT =
+  '系统判定不可用（算料服务未响应）：本次「超高 / 超宽 / 倒幅」可能漏判，加工费组合可能缺项 —— 请稍后重试或核对加工项'
 
 /** 加工费计价预览防抖（issue #4450） */
 const FEE_PREVIEW_DEBOUNCE_MS = 300
@@ -443,19 +474,9 @@ function withShapedDefault(
 }
 
 /**
- * 该行的**自动识别特征**（issue #4526 · 设计 §5.1/§5.2）—— 纯推导，**不是可勾选项**。
- *
- * 用户 2026-09-19：「超高 / 超宽是和门幅标准比较的……**这个要求做到自动识别**」。
- * 门幅取 SKU 的 `doorWidth`（缺省 2.8）；倒幅由 `cuttingMode` 唯一推导
- * （`定高买宽` = 正幅，**不推导** —— issue #4592：正幅不在加工项目录里，推它会让默认订单
- * 的组合键永远匹配不到价）。
- *
- * ⚠️ 这些特征**进组合键**（`打孔+超高+定型` 与 ERP 逐字同构）⇒ 与手选加工项一起落
- * `processingInfo.processingItems`（服务端的特征名唯一来源就是它），但**不计入手选计数**、
- * 也**不在手选列表里出 checkbox**（判据 8：手选项 ⇒ 红；由 `handPickableProcessingItems` 滤掉）。
- * ⚠️ `定型` 已**不在**本函数里（#4566）：它是手选加工项，其勾选态单独派生 `isShaped`。
- * ⚠️ **本页是推导的单一真值**：判据一律走 `lib/craft-auto-features.ts`（#4662 起「超宽」含**褶倍**、
- * 几何矛盾另走 {@link autoFeatureNoticesOf}）—— 本页**不得**出现第二份推导。
+ * ⚠️ **自动识别的推导实现已不在本页**（issue #5009 = #4976 包 2）：判定在服务端
+ * （`curtain_calc.detect_auto_features`），本页只把服务端结论搬进组合键 ——
+ * 见下面的 {@link autoFeaturesOf} / {@link autoFeatureRowsOf}。
  */
 /**
  * 该颜色的**默认选中 SKU**（issue #4877 裁定 C：**规则驱动默认选中**）。
@@ -503,24 +524,36 @@ function pickAutoSkuForColor(
   return best ?? null
 }
 
+/**
+ * 该行的**自动识别特征**（issue #4526 · 设计 §5.1/§5.2）—— **判定来源 = 服务端**（issue #5009）。
+ *
+ * 用户 2026-09-19：「超高 / 超宽是和门幅标准比较的……**这个要求做到自动识别**」；
+ * 用户 2026-09-21 裁定 **B「判定移到服务端」**（前端只展示服务端结论）。
+ *
+ * 🔴 **本页不得出现第二份推导**：`hem_margin` 自 #4976 包 1b 起**可配** —— 商家把它改成 0.5 后，
+ * 引擎按 0.5 算料，而前端常量副本仍按 0.3 判「超高」⇒ **同一张单两套结论、组合键配错价**。
+ * 判定实现在 `backend/ai-agent-service/app/tools/curtain_calc.py`，由
+ * `POST /api/admin/orders/auto-features` 暴露。
+ *
+ * ⚠️ 服务端未返回（首次渲染 / 请求失败）⇒ **空**（= 不判），**不回落**任何本地推算；
+ * 取价与提交由 {@link autoFeaturesResolved} 拦住，等结论回来再算。
+ * ⚠️ 名字必须落在 {@link AUTO_FEATURE_NAMES}（= `processing_items` 目录 V83 的三项）内 ——
+ * 目录里没有的名字进组合键 ⇒ 组合价永远匹配不到 ⇒ 加工费恒 ¥0.00（#4592 的 P0）。
+ *
+ * ⚠️ 这些特征**进组合键**（`打孔+超高+定型` 与 ERP 逐字同构）⇒ 与手选加工项一起落
+ * `processingInfo.processingItems`（服务端的特征名唯一来源就是它），但**不计入手选计数**、
+ * 也**不在手选列表里出 checkbox**（判据 8：手选项 ⇒ 红；由 `handPickableProcessingItems` 滤掉）。
+ * ⚠️ `定型` 已**不在**本函数里（#4566）：它是手选加工项，其勾选态单独派生 `isShaped`。
+ */
 function autoFeaturesOf(line: OrderLineItem): AutoFeature[] {
-  return detectAutoFeatures({
-    width: line.width,
-    height: line.height,
-    doorWidth: line.selectedSku?.doorWidth,
-    // ⚠️ issue #5020：走**派生后**的加工类型（`cuttingModeOf`），不是 `line.craft.cuttingMode` ——
-    // 后者在「未指定」时是 `undefined` ⇒ 识别面「两个方向都不判」，而规则面已按自动解算料
-    // ⇒ 界面显示 ≠ 落库（正是本单要消灭的那种不一致）。
-    cuttingMode: cuttingModeOf(line),
-    // **褶倍**（issue #4662）—— 超宽判据 = `(宽 + SIDE_MARGIN) × 褶倍 > 门幅`（引擎的分幅条件）。
-    // 值 = **标准档倍数**：本页的算料请求把 `craft_tier` 钉死为 `standard`
-    // （`craft-calc-request.ts` 的 `CRAFT_CALC_TIER`）⇒ 引擎取到的 `N` 就是
-    // `DEFAULT_CRAFT_TIERS.standard.fullness`，即此处的 `STANDARD_FULLNESS`
-    // （**有守卫的副本**：`craft-calc-defaults.test.ts` 逐值读 Python 源比对，漂移即红）。
-    // ⚠️ **不拿「褶距」反推倍数**：引擎算分幅时**不读** `pleatSpacing`（它只按档位取倍数）⇒
-    // 反推会让「前端推算」与「引擎实际计算」脱钩（正是本单要消灭的那种不一致）。
-    fullness: STANDARD_FULLNESS,
-  })
+  return (line.serverAutoFeatures ?? [])
+    .filter((row) => (AUTO_FEATURE_NAMES as readonly string[]).includes(row.name))
+    .map((row) => ({
+      name: row.name as AutoFeatureName,
+      // 判据是行业推理、非 ERP 实证 ⇒ 一律标「推算」（服务端同口径；本页只搬运）
+      source: '推算' as const,
+      reason: row.reason,
+    }))
 }
 
 /**
@@ -529,16 +562,32 @@ function autoFeaturesOf(line: OrderLineItem): AutoFeature[] {
  *
  * ⚠️ 提示**不是特征**：不进组合键、不改推算（裁定 C 的前半句「以商家选的为准」）。
  */
+/**
+ * 该行要**显式告知**商家的两件事（issue #4662）—— **来源 = 服务端**（issue #5009，与
+ * {@link autoFeaturesOf} 同一次请求返回）。
+ *
+ * ① `missing-fullness`：**褶倍缺失 ⇒ 未判超宽**（用户裁定 A 的口径）。不猜一个褶倍去判价，
+ *    但也**不静默** —— 商家看得见「这里本该判、因为缺褶倍没判」。
+ * ② `cutting-mode-conflict`：**几何矛盾**（用户 2026-09-20 裁定 C「以商家选的为准，
+ *    几何矛盾时显式提示」）。
+ * ③ `missing-door-width`：**该 SKU 未维护门幅 ⇒ 超高/超宽都判不了**（issue #4877）——
+ *    「这里本该判」必须让商家看见（不静默、不回落缺省门幅）。
+ *
+ * ⚠️ **搬到服务端的理由**：提示句里嵌着**上下卷边**等租户可配参数（`hem_margin`，#4976 包 1b）
+ * ⇒ 留在前端的常量副本会在商家改配置后**给商家看一个错的数**。
+ * ⚠️ 提示**不是特征**：不进组合键、不改判定（裁定 C 的前半句「以商家选的为准」）。
+ */
+/**
+ * 该行要**显式告知**商家的两件事（issue #4662）—— 与 {@link autoFeaturesOf} **同源同入参**：
+ * ① 褶倍缺失 ⇒ 未判超宽；② 加工类型与几何**矛盾** ⇒ 系统实际会按哪种算。
+ *
+ * ⚠️ 提示**不是特征**：不进组合键、不改推算（裁定 C 的前半句「以商家选的为准」）。
+ * 🔴 **issue #5009 起这两条也由服务端给**（见下面的实现）。
+ */
 function autoFeatureNoticesOf(line: OrderLineItem): AutoFeatureNotice[] {
-  return detectAutoFeatureNotices({
-    width: line.width,
-    height: line.height,
-    doorWidth: line.selectedSku?.doorWidth,
-    // ⚠️ issue #5020：与 {@link autoFeaturesOf} **同源**（派生后的加工类型）—— 提示的前提句
-    // 必须与判定同源，否则「几何矛盾」提示会在未指定档下说错朝向。
-    cuttingMode: cuttingModeOf(line),
-    fullness: STANDARD_FULLNESS,
-  })
+  return (line.serverAutoFeatureNotices ?? [])
+    .filter((row) => (AUTO_FEATURE_NOTICE_KINDS as readonly string[]).includes(row.kind))
+    .map((row) => ({ kind: row.kind as AutoFeatureNoticeKind, reason: row.reason }))
 }
 
 /**
@@ -1477,6 +1526,102 @@ export default function NewOrderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calcSignature])
 
+  // ===== 自动特征判定（issue #5009 = #4976 包 2，用户裁定 B「判定移到服务端」）=====
+  //
+  // 为什么**另起一条通路**（不复用上面的算料试算 effect）—— 三条都是「复用就会改钱」：
+  // ① 试算只对韩褶/打孔发请求（`craft-calc-request.ts` 的 `CALC_CRAFTS`）⇒ 四爪钩/穿杆/平幔行
+  //    拿不到结论，而它们**今天照样带特征进组合键**；
+  // ② 上面的 effect 只对 `metersSource === 公式计算` 的行发请求 ⇒ **人工指定用料**的行同样会漏；
+  // ③ 试算端点的 `fabric_width` / `height` 缺省回落 3.2 / 2.5（包 1a 的回归不变量）
+  //    ⇒ **表达不了**「该 SKU 无门幅 / 高未知 ⇒ 不判」（issue #4877）。
+  // ⇒ 判定走只读端点：入参缺省 = 未知 ⇒ 服务端不判，并由 `notices` 显式告知（页面渲染）。
+  const autoFeatureSignature = useMemo(
+    () =>
+      lineItems
+        .map(
+          (l) =>
+            `${l.id}:${l.width ?? ''}:${l.height ?? ''}:` +
+            `${parseDoorWidth(l.selectedSku?.doorWidth) ?? ''}:${cuttingModeOf(l) ?? ''}`
+        )
+        .join(';'),
+    [lineItems]
+  )
+
+  useEffect(() => {
+    if (lineItems.length === 0) return
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      const results = await Promise.all(
+        lineItems.map(async (line) => {
+          const doorWidth = parseDoorWidth(line.selectedSku?.doorWidth)
+          const params: AutoFeatureParams = {
+            // **缺省 = 未知 ⇒ 服务端不判**（不补默认值 —— 补了就是第二份口径）
+            ...(typeof line.width === 'number' && line.width > 0 ? { width: line.width } : {}),
+            ...(typeof line.height === 'number' && line.height > 0 ? { height: line.height } : {}),
+            ...(doorWidth !== null ? { fabric_width: doorWidth } : {}),
+            // ⚠️ issue #5020：走**派生后**的加工类型（`cuttingModeOf`），不是 `line.craft.cuttingMode` ——
+            // 后者在「未指定」时是 `undefined` ⇒ 服务端「两个方向都不判」，而规则面已按自动解算料
+            // ⇒ 界面显示 ≠ 落库（正是本单要消灭的那种不一致）。
+            ...(cuttingModeOf(line) ? { cutting_mode: cuttingModeOf(line) } : {}),
+            // 褶倍 = 标准档（**有守卫的副本** `craft-calc-defaults.test.ts` 逐值读 Python 源比对）。
+            // ⚠️ **照实登记的既有偏差（本单不修）**：引擎算分幅时按**租户配置的档位倍数**取 N
+            // （`cfg["tiers"][craft_tier].fullness`），而这里固定发标准档 2.0 ⇒ 租户改了
+            // `tiers.standard.fullness` 后，**判定用的褶倍**与**算料用的褶倍**可能不同
+            // （改判定口径 = 改组合键 = 改钱，无用户裁定不许动）。
+            fullness: STANDARD_FULLNESS,
+          }
+          try {
+            const res = await craftCalcApi.autoFeatures(params)
+            return {
+              id: line.id,
+              rows: res.data?.data?.auto_features ?? [],
+              notices: res.data?.data?.notices ?? [],
+              error: undefined as string | undefined,
+            }
+          } catch {
+            // 判定端点不可用 ⇒ **不判**（空），**不回落**本地推算（回落 = 第二份判定实现）。
+            // 🔴 但**必须可见**（见 `autoFeaturesError` 的说明）：组合键会少项，而「少项」在
+            // 「商家配了基础组合」时是**取价成功但金额偏低** ⇒ 静默就是静默少收钱。
+            return {
+              id: line.id,
+              rows: [] as AutoFeatureRow[],
+              notices: [] as AutoFeatureNoticeRow[],
+              error: AUTO_FEATURES_UNAVAILABLE_TEXT,
+            }
+          }
+        })
+      )
+      if (cancelled) return
+      setLineItems((prev) =>
+        prev.map((it) => {
+          const hit = results.find((r) => r.id === it.id)
+          if (!hit) return it
+          return {
+            ...it,
+            serverAutoFeatures: hit.rows,
+            serverAutoFeatureNotices: hit.notices,
+            autoFeaturesError: hit.error,
+          }
+        })
+      )
+    }, CRAFT_CALC_DEBOUNCE_MS)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+    // 依赖**只含入参签名**：结果写回 `serverAutoFeatures` 不改动入参 ⇒ 不会自激成请求风暴
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFeatureSignature])
+
+  /**
+   * 所有行的**服务端判定**都回来了吗（issue #5009）—— `undefined` = 还没回来。
+   *
+   * 为什么要它：组合键由服务端结论参与构成 ⇒ 结论未回时取价会按**缺项**的组合键算一次
+   * （页面显示错的加工费、提交也可能落错价）⇒ 取价 effect 与提交都必须**等**它。
+   */
+  const autoFeaturesResolved = lineItems.every((l) => l.serverAutoFeatures !== undefined)
+
   // ===== 加工费计价预览（issue #4450 · 前置 #4406）=====
   //
   // **为什么必须有它**：本页此前本地自算（Σ 加工项），而服务端创建订单按**选配组合取价**
@@ -1548,6 +1693,13 @@ export default function NewOrderPage() {
       setFeePreviewPending(false)
       return
     }
+    // 🔴 issue #5009：自动特征（判定在服务端）还没回来 ⇒ 组合键**还不完整**
+    // ⇒ 不请求取价（否则会先按缺项的组合键取一次价，页面/提交都可能拿到错的加工费）。
+    // 置 `feePreviewPending` 同时**拦住提交**（`handleSubmit` 的校验：pending ⇒ 不提交）。
+    if (!autoFeaturesResolved) {
+      setFeePreviewPending(true)
+      return
+    }
     setFeePreviewPending(true)
     let cancelled = false
     const timer = setTimeout(async () => {
@@ -1569,8 +1721,9 @@ export default function NewOrderPage() {
       clearTimeout(timer)
     }
     // 依赖只含**入参签名**：结果写回 totals 不改动入参 ⇒ 不会自激成请求风暴
+    // （`autoFeaturesResolved` 是 issue #5009 的「等判定回来再取价」闸门 —— 它翻转时签名也会变）
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feePreviewSignature, pricedLines.length])
+  }, [feePreviewSignature, pricedLines.length, autoFeaturesResolved])
 
   /** 未定价的行数（服务端按 0 计）—— 必须显式可见：`¥0.00` 与「本来就不收」分不清 */
   // ⚠️ **布料行不计入「未定价」**（issue #4493）：布料无加工 ⇒ 服务端按 0 计是**正常**的，
@@ -3563,10 +3716,22 @@ function LineItemBlock({
                       {doorWidthChoice.suggestion}
                     </p>
                   )}
+                  {/* **判定不可用**（issue #5009）—— 必须**可见**：判定失败 ⇒ 组合键少项，
+                      而「商家配了基础组合」时那是**取价成功但金额偏低**（静默少收钱）⇒
+                      与试算通路的取舍一致：**不拦、但必须看得见**。 */}
+                  {line.autoFeaturesError && (
+                    <p
+                      data-testid="auto-features-unavailable"
+                      className="mt-1 text-xs text-danger-600"
+                    >
+                      {line.autoFeaturesError}
+                    </p>
+                  )}
                   {/* **提示**（issue #4662）：① 缺褶倍 ⇒ 未判超宽（不猜、也不静默）；
                       ② 加工类型与几何**矛盾** ⇒ 系统实际会按哪种算（与算料引擎的自动回落一致）。
                       ⚠️ 提示**不改推算、不进组合键** —— 只把「前端推算」与「引擎实际计算」的
-                      不一致**摆到台面上**（用户 2026-09-20 裁定 C）。 */}
+                      不一致**摆到台面上**（用户 2026-09-20 裁定 C）。
+                      🔴 issue #5009：这些提示**也由服务端产出**（`notices`），前端只渲染。 */}
                   {autoFeatureNotices.map((notice) => (
                     <p
                       key={notice.kind}

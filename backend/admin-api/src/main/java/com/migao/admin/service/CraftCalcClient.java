@@ -178,7 +178,7 @@ public class CraftCalcClient {
     public Map<String, Object> autoFeatures(Map<String, Object> request) {
         String url = endpoint(AUTO_FEATURES_PATH);
         if (!StringUtils.hasText(serviceToken)) {
-            throw unavailable(url, "未配置 ai-agent.service-token", null);
+            throw unavailable(url, "未配置 ai-agent.service-token", null, false);
         }
         Map<String, Object> payload = withTenantConfig(request);
         try {
@@ -193,13 +193,13 @@ public class CraftCalcClient {
             if (root == null || !root.path("success").asBoolean(false)) {
                 log.error("自动特征端点返回失败: url={}, status={}, body={}",
                         url, response.getStatusCode(), response.getBody());
-                throw unavailable(url, "自动特征端点返回 success != true", null);
+                throw unavailable(url, "自动特征端点返回 success != true", null, false);
             }
             JsonNode data = root.path("data");
             if (!data.path("auto_features").isArray()) {
                 log.error("自动特征端点响应缺 data.auto_features，拒绝把「端点没说」当成「没判」: url={}, body={}",
                         url, response.getBody());
-                throw unavailable(url, "自动特征端点响应缺少 data.auto_features（空列表 = 不判，键必须存在）", null);
+                throw unavailable(url, "自动特征端点响应缺少 data.auto_features（空列表 = 不判，键必须存在）", null, false);
             }
             @SuppressWarnings("unchecked")
             Map<String, Object> result = objectMapper.convertValue(data, Map.class);
@@ -208,7 +208,7 @@ public class CraftCalcClient {
             throw e;
         } catch (Exception e) {
             log.error("自动特征端点调用失败: url={}, error={}", url, e.getMessage());
-            throw unavailable(url, "调用自动特征端点失败: " + e.getMessage(), e);
+            throw unavailable(url, "调用自动特征端点失败: " + e.getMessage(), e, false);
         }
     }
 
@@ -288,6 +288,34 @@ public class CraftCalcClient {
     }
 
     private BusinessException unavailable(String url, String reason, Exception cause) {
+        return unavailable(url, reason, cause, true);
+    }
+
+    /**
+     * fail-closed 文案**按操作分口径**（issue #5009 = #4976 包 2b）。
+     *
+     * <p>为什么要分：本方法原先只有一条**试算专用**文案（「无法试算<b>用料米数</b> / 已中止本次<b>试算</b> /
+     * 不给 0 米 / <b>用料米数</b>必须来自算料引擎」）。自动特征**判定不算用料**
+     * （本单红线：试算通路米数一字不变 —— #4746 不在本单）⇒ 复用会让调用方与商家
+     * 往「用料米数」上排查（误导）。</p>
+     *
+     * @param forCalc {@code true} = 算料**试算**口径（**既有文案一字不变** —— 回归不变量）；
+     *                {@code false} = 自动特征**判定**口径
+     */
+    private BusinessException unavailable(String url, String reason, Exception cause, boolean forCalc) {
+        if (!forCalc) {
+            BusinessException e = new BusinessException(ERR_CRAFT_CALC_UNAVAILABLE,
+                    "算料服务（ai-agent）不可用，无法完成自动特征判定，已中止本次判定（不回落本地推算）：" + reason,
+                    422,
+                    "请确认 ai-agent-service 已启动、且 ai-agent.base-url / ai-agent.service-token 配置正确"
+                            + "（当前服务地址 " + url + "）；确认后重新打开或重试下单页。"
+                            + "自动特征（超高 / 超宽 / 倒幅）必须由算料引擎判定（判定唯一真值源），"
+                            + "系统不会在前端另算一份；判定不可用期间加工费组合可能缺项（页面会显式提示）。");
+            if (cause != null) {
+                e.initCause(cause);
+            }
+            return e;
+        }
         BusinessException e = new BusinessException(ERR_CRAFT_CALC_UNAVAILABLE,
                 "算料服务（ai-agent）不可用，无法试算用料米数，已中止本次试算（不给 0 米）：" + reason,
                 422,

@@ -298,10 +298,71 @@ export interface CraftCalcResult {
   warning?: string
 }
 
+/**
+ * 自动特征**判定**入参（issue #5009 = #4976 包 2，用户裁定 B「判定移到服务端」）。
+ *
+ * 与 {@link CraftCalcParams} **分开**：判定只吃「几何 + SKU 门幅 + 加工类型 + 褶倍」，**不算用料**
+ * （试算米数一字不变 —— #4746 是另一件事）。
+ *
+ * ⚠️ **三个几何键缺省 = 「未知 ⇒ 服务端不判」**（不是回落默认值）：
+ * `fabric_width` 缺省**不回落** 3.2（issue #4877）、`height` 缺省**不回落** 2.5。
+ * 页面据此在拿不到 SKU 门幅时**照样请求**，由服务端返回 `missing-door-width` 提示 ——
+ * 而不是前端自己判、也不是静默按缺省门幅判价。
+ */
+export interface AutoFeatureParams {
+  /** 成品宽（米）；缺省 ⇒ 不判超宽（`倒幅` 照判 —— 它只取决于加工类型） */
+  width?: number
+  /** 成品高（米）；缺省 ⇒ 不判超高 */
+  height?: number
+  /** **该 SKU 的门幅**（米）；`parseDoorWidth` 解析不到 ⇒ **不传** */
+  fabric_width?: number
+  /** 加工类型（`定高买宽` / `定宽买高`）；缺省/表外 ⇒ 都不判 */
+  cutting_mode?: string
+  /** 褶倍（超宽判据 = `(宽 + 左右余量) × 褶倍 > 门幅`）；缺省 ⇒ 不判超宽 */
+  fullness?: number
+}
+
+/** 一条自动特征（服务端产出，前端**只展示** —— snake_case 与后端同键名 ⇒ 零映射） */
+export interface AutoFeatureRow {
+  name: string
+  source: string
+  /** 可读依据（哪两个数比出来的）—— 商家要能核对判定 */
+  reason: string
+}
+
+/** 一条提示（**不进组合键**）：为什么没判 / 系统实际会按哪种算 */
+export interface AutoFeatureNoticeRow {
+  kind: string
+  reason: string
+}
+
+/** 判定响应 `data`（issue #4976 包 2a / #5009 包 2b）—— `auto_features` 键恒在：空列表 = **不判** */
+export interface AutoFeatureResult {
+  auto_features: AutoFeatureRow[]
+  /** 实际用于判定的门幅（缺门幅 ⇒ `null`，**不回落默认值**） */
+  door_width?: number | null
+  /** 实际用于判超宽的褶倍 */
+  fullness_used?: number
+  /** 「没判」的**机器可判原因码**：`''` / `missing-door-width` / `unknown-cutting-mode` */
+  notice?: string
+  /** **可读提示**（`[{kind, reason}]`，加性扩展 issue #5009 = #4976 包 2b）—— 前端只渲染 */
+  notices: AutoFeatureNoticeRow[]
+}
+
 export const craftCalcApi = {
   /** 算料试算（**不落库**）—— 供下单页预填「数量」并展示公式串 */
   preview: (params: CraftCalcParams) =>
     request.post<ApiResponse<CraftCalcResult>>('/api/admin/orders/craft-calc', params),
+  /**
+   * 自动特征**判定**（issue #5009 = #4976 包 2）—— **只读、不算料**，与试算**分开**。
+   *
+   * 为什么单独一条通路（不是复用 `preview` 的响应）：试算只覆盖韩褶/打孔
+   * （`craft-calc-request.ts` 的 `CALC_CRAFTS`），且下单页只对「公式计算」的行发请求，
+   * 而四爪钩/穿杆/平幔行与人工指定用料行**也要**把特征带进加工费组合键
+   * ⇒ 复用试算响应会让这些行**静默少组合键项**（改钱）。
+   */
+  autoFeatures: (params: AutoFeatureParams) =>
+    request.post<ApiResponse<AutoFeatureResult>>('/api/admin/orders/auto-features', params),
 }
 
 /**

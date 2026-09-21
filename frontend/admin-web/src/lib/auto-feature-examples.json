@@ -1,0 +1,17 @@
+{
+  "_provenance": "「算料配置」页算例文案（issue #5009）：**由引擎产出**（curtain_calc.detect_auto_features），非手写 —— 文案的唯一来源是服务端。守卫 = backend/ai-agent-service/tests/test_production/test_auto_features.py 的 TestGlossaryExamplesAreEngineOutput。",
+  "examples": [
+    {
+      "name": "超高",
+      "reason": "成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米"
+    },
+    {
+      "name": "超宽",
+      "reason": "成品宽 2 + 左右余量 0.3 = 2.3 米 × 褶倍 2 = 4.6 米 > 门幅 2.8 米"
+    },
+    {
+      "name": "倒幅",
+      "reason": "加工类型 = 定宽买高"
+    }
+  ]
+}

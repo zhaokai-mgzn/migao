@@ -2895,7 +2895,7 @@ export default function ProcessConfigPage() {
                     </span>
                   </div>
                   <p className="text-sm text-neutral-500">
-                    这些参数决定用料米数（褶数法：每折吃布 × 褶数 + 余量）。保存后**新**的算料按当前配置计算，
+                    这些参数决定用料米数（褶数法：每折吃布 × 褶数 + 余量）。保存后<strong>新</strong>的算料按当前配置计算，
                     已生成的单据不受影响。
                   </p>
 

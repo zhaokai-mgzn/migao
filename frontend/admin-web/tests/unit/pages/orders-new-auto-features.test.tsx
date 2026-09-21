@@ -45,6 +45,112 @@ const mockGetProduct = vi.fn()
 const mockGetProcessingItems = vi.fn()
 const mockGetCustomers = vi.fn()
 
+/**
+ * **判定端点测试替身**（issue #5009 = #4976 包 2）—— 逐值写死「服务端会回什么」。
+ *
+ * ⚠️ **它是替身、不是判据来源**：真实判定实现在算料引擎
+ * `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `detect_auto_features`，
+ * 其正确性 + 迁移期等价性由 `backend/ai-agent-service/tests/test_production/test_auto_features.py`
+ * 的 golden 表**逐例逐字**对账。**本文件只验证「页面怎么消费服务端结论」**
+ * （渲染、裁决、组合键），不验证判定规则本身。
+ */
+function fakeAutoFeatures(params: {
+  width?: number
+  height?: number
+  fabric_width?: number
+  cutting_mode?: string
+  fullness?: number
+}) {
+  /** 判定文案里的米数（与引擎 `_meters_for_reason` 同款：取整到毫米，只在「抹平了严格大于」时给全精度） */
+  const metersForReason = (value: number, door: number) => {
+    const rounded = Number(value.toFixed(3))
+    return rounded > door || value <= door ? rounded : value
+  }
+  const { width, height, fabric_width: door, cutting_mode: mode, fullness } = params
+  const rows: Array<{ name: string; source: string; reason: string }> = []
+  const notices: Array<{ kind: string; reason: string }> = []
+  if (mode !== '定高买宽' && mode !== '定宽买高') return { rows, notices }
+  if (door === undefined) {
+    notices.push({
+      kind: 'missing-door-width',
+      reason: '该 SKU 未维护门幅 ⇒ 超高/超宽都判不了（系统不按缺省门幅推算，请先补商品门幅）',
+    })
+    if (mode === '定宽买高') rows.push({ name: '倒幅', source: '推算', reason: '加工类型 = 定宽买高' })
+    return { rows, notices }
+  }
+  if (mode === '定宽买高') {
+    if (width !== undefined && fullness !== undefined && (width + 0.3) * fullness > door) {
+      rows.push({
+        name: '超宽',
+        source: '推算',
+        reason:
+          `成品宽 ${width} + 左右余量 0.3 = ${Number((width + 0.3).toFixed(3))} 米` +
+          ` × 褶倍 ${fullness} = ${metersForReason((width + 0.3) * fullness, door)} 米 > 门幅 ${door} 米`,
+      })
+    }
+    rows.push({ name: '倒幅', source: '推算', reason: '加工类型 = 定宽买高' })
+  } else if (height !== undefined && height + 0.3 > door) {
+    rows.push({
+      name: '超高',
+      source: '推算',
+      reason: `成品高 ${height} + 上下卷边 0.3 = ${metersForReason(height + 0.3, door)} 米 > 门幅 ${door} 米`,
+    })
+  }
+  // 几何矛盾提示（服务端 `detect_auto_feature_notices` 的同款输出）
+  if (height !== undefined) {
+    const overHeight = height + 0.3 > door
+    const actualMode = overHeight ? '定宽买高' : '定高买宽'
+    if (actualMode !== mode) {
+      notices.push({
+        kind: 'cutting-mode-conflict',
+        reason:
+          `加工类型选了「${mode}」，但成品高 ${height} + 上下卷边 0.3 = ` +
+          `${Number((height + 0.3).toFixed(3))} 米 ${overHeight ? '超过' : '未超过'}本 SKU 门幅 ${door} 米` +
+          `（判据 = 算料引擎的几何分支「高 + 卷边 vs 门幅」，不读商家选的加工类型；本页按本 SKU 门幅判）` +
+          `⇒ 按本 SKU 门幅口径，系统实际会按${actualMode}算` +
+          `（⚠️ 引擎试算门幅尚未按本 SKU 门幅接线 —— #4746 / 待 #4652 ⇒ 引擎实际结果可能不同）`,
+      })
+    }
+  }
+  return { rows, notices }
+}
+
+/** 判定端点替身是否强制失败（issue #5009 的「不可用要可见」判据用；`beforeEach` 复位） */
+let mockAutoFeaturesFail = false
+
+const mockAutoFeatures = vi.fn((params: Parameters<typeof fakeAutoFeatures>[0]) =>
+  mockAutoFeaturesFail
+    ? Promise.reject(new Error('auto-features unavailable'))
+    : Promise.resolve({
+        data: {
+          data: {
+            auto_features: fakeAutoFeatures(params).rows,
+            notices: fakeAutoFeatures(params).notices,
+          },
+        },
+      })
+)
+
+/** 加工费计价预览替身（取值与改前一致：未定价一行） */
+const mockFeePreview = vi.fn((_payload: unknown) =>
+  Promise.resolve({
+    data: {
+      data: {
+        items: [
+          {
+            processingFee: 0,
+            processingFeeDetail: { fee_source: 'unpriced', amount: 0, hint: '去定价' },
+          },
+        ],
+        processingFeeTotal: 0,
+      },
+    },
+  })
+)
+
+/** 算料试算替身（issue #5009 的回归不变量：**本单不动试算通路** ⇒ 默认永不 resolve，够用即可） */
+const mockCraftPreview = vi.fn((_params: unknown) => new Promise(() => {}))
+
 vi.mock('@/lib/api', () => ({
   orderApi: { createOrder: (...a: unknown[]) => mockCreateOrder(...a) },
   productApi: {
@@ -53,7 +159,11 @@ vi.mock('@/lib/api', () => ({
   },
   processingItemApi: { getProcessingItems: (...a: unknown[]) => mockGetProcessingItems(...a) },
   customerApi: { getCustomers: (...a: unknown[]) => mockGetCustomers(...a) },
-  craftCalcApi: { preview: () => new Promise(() => {}) },
+  craftCalcApi: {
+    preview: (...a: unknown[]) => mockCraftPreview(a[0] as never),
+    // 判定端点（issue #5009）：**只读**，与试算分开 —— 见 `fakeAutoFeatures` 的说明
+    autoFeatures: (...a: unknown[]) => mockAutoFeatures(a[0] as never),
+  },
   // **算料配置读面**（issue #4874）：公式缺省 + 档位 chips 的值域/文案都来自它 ⇒ 挂载即请求
   productionApi: {
     getCraftCalcConfig: () =>
@@ -77,20 +187,7 @@ vi.mock('@/lib/api', () => ({
       }),
   },
   feePreviewApi: {
-    preview: () =>
-      Promise.resolve({
-        data: {
-          data: {
-            items: [
-              {
-                processingFee: 0,
-                processingFeeDetail: { fee_source: 'unpriced', amount: 0, hint: '去定价' },
-              },
-            ],
-            processingFeeTotal: 0,
-          },
-        },
-      }),
+    preview: (...a: unknown[]) => mockFeePreview(a[0] as never),
   },
 }))
 
@@ -168,6 +265,11 @@ async function setupLine(opts: { doorWidth?: string; width?: string; height?: st
   openStep('尺寸与数量')
   fireEvent.change(inputOf('宽 (米)'), { target: { value: width } })
   fireEvent.change(inputOf('高 (米)'), { target: { value: height } })
+  // 🔴 issue #5009：判定在**服务端**（异步）—— 断言前必须等结论回来（改前是同步推导，无需等）。
+  // 用「取价已被触发」当完成信号：取价被 `autoFeaturesResolved` 闸门拦住 ⇒ 它被调用 =
+  // 判定结论已写回行状态（同一条闸门也拦住提交，见 handleSubmit 的校验）。
+  await waitFor(() => expect(mockAutoFeatures).toHaveBeenCalled(), { timeout: 3000 })
+  await waitFor(() => expect(mockFeePreview).toHaveBeenCalled(), { timeout: 3000 })
 }
 
 /**
@@ -211,6 +313,11 @@ async function setupLineMultiDoorWidth(opts: {
   openStep('尺寸与数量')
   fireEvent.change(inputOf('宽 (米)'), { target: { value: width } })
   fireEvent.change(inputOf('高 (米)'), { target: { value: height } })
+  // 🔴 issue #5009：判定在**服务端**（异步）—— 断言前必须等结论回来（改前是同步推导，无需等）。
+  // 用「取价已被触发」当完成信号：取价被 `autoFeaturesResolved` 闸门拦住 ⇒ 它被调用 =
+  // 判定结论已写回行状态（同一条闸门也拦住提交，见 handleSubmit 的校验）。
+  await waitFor(() => expect(mockAutoFeatures).toHaveBeenCalled(), { timeout: 3000 })
+  await waitFor(() => expect(mockFeePreview).toHaveBeenCalled(), { timeout: 3000 })
 }
 
 describe('#4877 门幅规则接线（裁定 C：规则驱动默认选中 + 非最优提示 + 需接高告警）', () => {
@@ -563,6 +670,7 @@ describe('#5020 加工类型自动推导：未指定 ⇒ 自动选中；客服�
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockAutoFeaturesFail = false
   mockGetProcessingItems.mockResolvedValue({
     data: {
       data: {
@@ -906,5 +1014,83 @@ describe('#4662 「超宽」含褶倍 + 加工类型几何矛盾显式提示（�
     await setupLine({ doorWidth: '2.8米', width: '1.5', height: '1.5' }) // 缺省定高买宽 + 1.8 ≤ 2.8
     openStep('尺寸与数量')
     expect(screen.queryByTestId('auto-feature-notice-cutting-mode-conflict')).toBeNull()
+  })
+})
+
+/**
+ * 🔴 issue #5009：判定取数**不受**算料口径约束 —— 三类「复用试算响应就会改钱」的行。
+ *
+ * 为什么必须有这几条（主会话复核提出的判据缺口）：功能上 `autoFeatureSignature` 与取数 effect
+ * **都不过滤** craft / `metersSource`，但**没有任何东西会红** ⇒ 将来有人把
+ * `CALC_CRAFTS` 过滤或 `metersSource === 公式计算` 的过滤加回取数 effect，**全绿**，
+ * 而组合键会静默少项（改钱）。红证 = 加回任一条过滤 ⇒ 本组用例红。
+ */
+describe('#5009 三类行的判定取数不受算料口径约束（复用试算响应就会静默少组合键项）', () => {
+  /** 取「用料米数」输入框（改它 ⇒ metersSource = 人工指定） */
+  const qtyInput = (idx = 0) => inputOf('用料米数', idx)
+
+  it('无自动算料口径的工艺行（穿杆）⇒ **不发试算**，但**照样取服务端判定**并进组合键', async () => {
+    mockGetProcessingItems.mockResolvedValue({
+      data: { data: { items: [{ id: 'pi-rod', name: '穿杆', craftHint: '穿杆', unit: '米' }] } },
+    })
+    await setupLine({ doorWidth: '2.8米' })
+    // 先自证「该工艺确实**不发**试算」（否则本用例测的不是这一类行）
+    await waitFor(() => expect(mockCraftPreview).toHaveBeenCalled(), { timeout: 3000 })
+    mockCraftPreview.mockClear()
+    openStep('加工项')
+    fireEvent.click(await screen.findByRole('checkbox', { name: '穿杆' }))
+
+    await waitFor(() => expect(mockCraftPreview).not.toHaveBeenCalled())
+    openStep('尺寸与数量')
+    // 红证：给取数 effect 加回 `CALC_CRAFTS` / `craftCalcParamsOf` 过滤 ⇒ 判定不来 ⇒ 下面红
+    await waitFor(
+      () => expect(screen.getByTestId('auto-feature-超高')).toBeInTheDocument(),
+      { timeout: 3000 }
+    )
+    expect(await submitAndGetProcessingNames()).toContain('超高')
+  })
+
+  it('人工指定用料的行（metersSource ≠ 公式计算）⇒ 照样取服务端判定并进组合键', async () => {
+    await setupLine({ doorWidth: '2.8米' })
+    // 商家手改数量 ⇒ 标记「人工指定」（试算不再覆盖它，但**判定照取**）
+    fireEvent.change(qtyInput(), { target: { value: '20' } })
+    expect(screen.getByText('人工指定')).toBeInTheDocument()
+
+    // 红证：给取数 effect 加回 `metersSource === 公式计算` 过滤 ⇒ 判定不来 ⇒ 下面红
+    await waitFor(
+      () => expect(screen.getByTestId('auto-feature-超高')).toBeInTheDocument(),
+      { timeout: 3000 }
+    )
+    expect(await submitAndGetProcessingNames()).toContain('超高')
+  })
+
+  it('#5009 回归不变量：试算通路入参**未变**（本单不接线算料门幅 —— #4746 不在范围）', async () => {
+    await setupLine({ doorWidth: '2.8米' })
+    await waitFor(() => expect(mockCraftPreview).toHaveBeenCalled(), { timeout: 3000 })
+
+    const calc = mockCraftPreview.mock.calls.at(-1)?.[0] as Record<string, unknown>
+    // 红证：把 `fabric_width` / `cutting_mode` 加进**试算**入参（= 顺手做 #4746）⇒ 红 ——
+    // 那会改**米数**（钱），而本单只搬判定位置。
+    expect(calc).not.toHaveProperty('fabric_width')
+    expect(calc).not.toHaveProperty('cutting_mode')
+    // 门幅只走**判定**通路（两条通路职责分明）
+    const judge = mockAutoFeatures.mock.calls.at(-1)?.[0] as Record<string, unknown>
+    expect(judge).toHaveProperty('fabric_width', 2.8)
+    expect(judge).toHaveProperty('cutting_mode', '定高买宽')
+  })
+
+  it('#5009 判定端点不可用 ⇒ **行内显式可见**（不拦、但必须看得见）', async () => {
+    // 为什么必须可见：判定失败 ⇒ 组合键**少项**，而「商家配了基础组合」时那是
+    // **取价成功、金额偏低** ⇒ 页面不报错、商家看不出（静默少收钱）。
+    // 为什么**不拦**：ai-agent 抖动会把整条下单链路堵死，比配错价更糟（与试算通路同一取舍）。
+    mockAutoFeaturesFail = true
+    await setupLine({ doorWidth: '2.8米' })
+    openStep('尺寸与数量')
+
+    // 红证：把 catch 分支改回静默（不给可见提示）⇒ 本断言红
+    const hint = await screen.findByTestId('auto-features-unavailable', undefined, { timeout: 3000 })
+    expect(hint.textContent).toContain('可能缺项')
+    // 且**不回落**本地推算（判定来源只能是服务端）
+    expect(screen.queryByTestId('auto-feature-超高')).toBeNull()
   })
 })

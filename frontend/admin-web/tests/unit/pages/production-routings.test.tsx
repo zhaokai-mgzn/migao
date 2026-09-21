@@ -3825,3 +3825,37 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(step).not.toHaveTextContent('缺 ')
   })
 })
+
+/**
+ * #5009（顺手修）：算料配置描述句里的 **markdown 星号漏进 JSX 纯文本**。
+ *
+ * 用户截图实证：`保存后**新**的算料按当前配置计算` 里的 `**` 是 markdown 语法，写进 JSX 纯文本
+ * 后**渲染成字面 `**新**`**（React 不认 markdown）。改法 = `<strong>新</strong>`。
+ *
+ * 判据 = **渲染结果不含 `**`** 且「新」真的是 `<strong>`（改回星号 ⇒ 红）。
+ */
+describe('#5009 顺手修：算料配置描述句不得把 markdown 星号渲染成字面量', () => {
+  it('描述句渲染结果**不含** `**`，且「新」是 `<strong>` 而不是星号包裹', async () => {
+    mockGetCraftCalcConfig
+      .mockReset()
+      .mockResolvedValue(ok({ source: 'stored', config: ENGINE_DEFAULT_CALC_CONFIG }))
+    render(<ProcessConfigPage />)
+    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
+    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
+
+    const panel = screen.getByTestId('craft-calc-config-panel')
+    // ⚠️ 断言**只覆盖那句描述句**（不是整个面板）：同屏的「口径与术语说明」区块里
+    // 还有**别处**的 markdown 星号（术语文案写成 `**宽方向**…` 并当纯文本渲染）——
+    // 那是**既有**形态、不在本单范围，已照实登记（见 PR body 的边界段）。
+    const desc = Array.from(panel.querySelectorAll('p')).find((el) =>
+      (el.textContent ?? '').includes('保存后')
+    )
+    expect(desc).toBeTruthy()
+    // 注入：把 `<strong>新</strong>` 改回 `**新**` ⇒ 该句渲染文本里出现字面 `**` ⇒ 红
+    expect(desc!.textContent).not.toContain('**')
+    expect(desc!.textContent).toContain('保存后新的算料按当前配置计算')
+    // 加粗是**真的**（`<strong>`），不是靠星号
+    expect(desc!.querySelector('strong')?.textContent).toBe('新')
+  })
+})

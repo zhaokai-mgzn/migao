@@ -101,10 +101,23 @@ class TestNoDefaultDoorWidth:
     """判据 3：缺门幅 ⇒ 不判（**不回落任何默认门幅**，与 #4877 同口径）。"""
 
     def test_missing_door_width_is_explicitly_not_judged(self, client):
+        """🔴 **2026-09-21 改判（issue #5009 = #4976 包 2b）**：原断言是 `auto_features == []`。
+
+        改判理由（**不是放宽**）：`BASE` 的加工类型是 `定宽买高` ⇒ 缺门幅时**「倒幅」仍要判**
+        —— 它只取决于加工类型、**与门幅无关**（`detect_auto_features` 的 `fabric_width=None` 分支）。
+        原断言把「缺门幅」整段吞成空列表 ⇒ `定宽买高 + 门幅未维护` 的行**静默少一个组合键项**
+        （= 改钱，同 #4592「组合键恒 ¥0.00」同族），而**改前的前端实现是判它的**
+        （迁移期等价性，见 `tests/test_production/test_auto_features.py::TestMigrationEquivalence`
+        的 M10/M12/M16 行）。
+
+        ⇒ 现在钉的是**精确**形态：**几何特征（超宽）不判**（不回落任何默认门幅，本用例的原意一字未丢）、
+        **倒幅照判**、`notice` 仍是 `missing-door-width`、`door_width` 仍回 `None`。
+        红证：把端点改回「缺门幅 ⇒ `features = []`」⇒ 本断言红；回落到 2.8/3.2 ⇒ 会判出「超宽」⇒ 也红。
+        """
         payload = {k: v for k, v in BASE.items() if k != "fabric_width"}
         data = _data(client, payload)
-        # 注入：缺门幅时回落到 2.8 / 3.2 ⇒ 会判出超宽 ⇒ 红
-        assert data["auto_features"] == []
+        # 几何特征**不判**（注入：回落到 2.8 / 3.2 ⇒ 会判出超宽 ⇒ 红）
+        assert [f["name"] for f in data["auto_features"]] == ["倒幅"]
         assert data["notice"] == "missing-door-width"
         assert data["door_width"] is None
 

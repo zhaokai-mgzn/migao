@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import math
 import re
+from decimal import ROUND_HALF_UP, Decimal
 from types import MappingProxyType
 from typing import Any, Dict, List, Optional
 
@@ -498,13 +499,46 @@ CUTTING_MODE_FIXED_HEIGHT = "定高买宽"
 CUTTING_MODE_FIXED_WIDTH = "定宽买高"
 
 
+def _js_num(value: float) -> str:
+    """把数字渲染成 **JavaScript `String(number)` 的同一形态**（issue #5009 = #4976 包 2b）。
+
+    为什么需要它：判定文案由**服务端产出**、商家在**下单页**看到 —— 前端退场（包 2b）时
+    **文案不得变**（#5009 判据 6）。而两侧对**整数浮点**的字符串化不同：
+
+    | 值 | Python `f"{v}"` | JS `` `${v}` `` |
+    |---|---|---|
+    | `2.0` | `2.0` | `2` |
+    | `3.0` | `3.0` | `3` |
+
+    **标准档褶倍 2.0 是常见情形**（不是边界）⇒ 不处理则「与下单页同一句」是一句**假声明**。
+    ⚠️ 包 1a 的判据 8 只钉了引擎自己那句，**前端腿从未比对过这两句** ⇒ 这条不一致
+    在库里**没有任何东西会变红**（`migao-acceptance` 的「不会红的断言 = 空断言」形态）。
+
+    口径：两侧都是**最短往返表示**（Python `repr(float)` / JS `Number.prototype.toString`），
+    差别只在「整数值带不带 `.0`」⇒ 去掉尾 `.0` 即逐字一致。
+    """
+    text = repr(float(value))
+    return text[:-2] if text.endswith(".0") else text
+
+
+def _round_mm(value: float) -> float:
+    """取整到毫米 —— **JS `Number(v.toFixed(3))` 的语义**（issue #5009）。
+
+    为什么不用 `round(v, 3)`：Python 的 `round` 是**银行家舍入**（`.5` 进偶数），
+    而 JS `toFixed` 是 **half-away-from-zero** 且作用于**二进制真值** ⇒ 半毫米边界上
+    两侧会给出不同字符串（判定文案要逐字一致）。`Decimal(float)` 取的就是二进制真值，
+    配 `ROUND_HALF_UP` 即与 `toFixed` 同口径。
+    """
+    return float(Decimal(value).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
+
+
 def _meters_for_reason(value: float, door_width: float) -> float:
     """判定文案里的米数：取整到毫米；**只有「取整把严格大于抹平了」**这一种情况才给全精度。
 
     与前端 `craft-auto-features.ts::metersForReason` 同款 —— 否则商家看到的是
     「2.8 米 > 门幅 2.8 米」这种**自相矛盾的依据**（判据要能自证）。
     """
-    rounded = round(value, 3)
+    rounded = _round_mm(value)
     return rounded if (rounded > door_width or value <= door_width) else value
 
 
@@ -544,18 +578,26 @@ def detect_auto_features(
         side_margin = cfg["side_margin"]
         # 判据 = 引擎**真实的分幅条件** `ceil((宽 + 余量) × 褶倍 ÷ 门幅) ≥ 2`
         # ⟺ `(宽 + 余量) × 褶倍 > 门幅`（原始浮点，不取整 —— 取整会漏报，见前端同款注释）
-        # ⚠️ 宽 / 褶倍缺失 ⇒ **不判**（调用方可能只给了高；不拿假值去判价）
-        if window_width is not None and fullness is not None and fullness > 0:
+        # ⚠️ 宽 / 褶倍 / **门幅**缺失 ⇒ **不判**（调用方可能只给了高；不拿假值去判价）
+        # 🔴 `fabric_width is None` = 「该 SKU 未维护门幅」⇒ **不判**（**不回落**模块常量，
+        # issue #4877）；由 `detect_auto_feature_notices` 回 `missing-door-width` 显式告知。
+        if (
+            fabric_width is not None
+            and window_width is not None
+            and window_width > 0
+            and fullness is not None
+            and fullness > 0
+        ):
             product = (window_width + side_margin) * fullness
             if product > fabric_width:
                 features.append({
                     "name": "超宽",
                     "source": "推算",
                     "reason": (
-                        f"成品宽 {window_width} + 左右余量 {side_margin} = "
-                        f"{round(window_width + side_margin, 3)} 米"
-                        f" × 褶倍 {fullness} = {_meters_for_reason(product, fabric_width)} 米"
-                        f" > 门幅 {fabric_width} 米"
+                        f"成品宽 {_js_num(window_width)} + 左右余量 {_js_num(side_margin)} = "
+                        f"{_js_num(_round_mm(window_width + side_margin))} 米"
+                        f" × 褶倍 {_js_num(fullness)} = {_js_num(_meters_for_reason(product, fabric_width))} 米"
+                        f" > 门幅 {_js_num(fabric_width)} 米"
                     ),
                 })
         # 倒幅只取决于加工类型（与褶倍无关）：布旋转九十度用
@@ -564,15 +606,20 @@ def detect_auto_features(
             "source": "推算",
             "reason": f"加工类型 = {CUTTING_MODE_FIXED_WIDTH}",
         })
-    elif window_height is not None and window_height + cfg["hem_margin"] > fabric_width:
+    elif (
+        fabric_width is not None
+        and window_height is not None
+        and window_height > 0
+        and window_height + cfg["hem_margin"] > fabric_width
+    ):
         # 定高买宽：只有**高**受门幅约束（`成品高 + 上下卷边 > 门幅` ⇒ 定高买宽不可行）
         features.append({
             "name": "超高",
             "source": "推算",
             "reason": (
-                f"成品高 {window_height} + 上下卷边 {cfg['hem_margin']} = "
-                f"{_meters_for_reason(window_height + cfg['hem_margin'], fabric_width)} 米"
-                f" > 门幅 {fabric_width} 米"
+                f"成品高 {_js_num(window_height)} + 上下卷边 {_js_num(cfg['hem_margin'])} = "
+                f"{_js_num(_meters_for_reason(window_height + cfg['hem_margin'], fabric_width))} 米"
+                f" > 门幅 {_js_num(fabric_width)} 米"
             ),
         })
     return features
@@ -738,6 +785,93 @@ def resolve_fabric_plan(
         return _fixed_height() if feasible else _splice()
     # 自动（裁定 4）：定高买宽可行 ⇒ 它；否则 ⇒ **倒幅**。接高**不参与自动比较**。
     return _fixed_height() if feasible else _fixed_width()
+#: 提示类别（与 `frontend/admin-web/src/lib/craft-auto-features.ts` 的 `AutoFeatureNotice['kind']`
+#: 逐值一致 —— 前端退场后**服务端产出、前端只渲染**，键名不得各写一份）
+AUTO_FEATURE_NOTICE_KINDS = (
+    "missing-door-width",
+    "missing-fullness",
+    "cutting-mode-conflict",
+)
+
+
+def detect_auto_feature_notices(
+    window_width: Optional[float],
+    window_height: Optional[float],
+    fabric_width: Optional[float],
+    fullness: Optional[float] = None,
+    cutting_mode: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, str]]:
+    """系统识别的**提示**（`[{kind, reason}]`）—— issue #4662；issue #5009 起改由**服务端**产出。
+
+    **提示不是特征**：不进 `AUTO_FEATURE_NAMES`、不进加工费组合键、不影响
+    `detect_auto_features` 的推算结果（组合键只能含 `processing_items` 目录里有的名字 —— #4592 的 P0）。
+    它只说明「**为什么没判**」或「**系统实际会按哪种算**」。
+
+    为什么搬到服务端（issue #5009 = #4976 包 2b）：用户对 #4940 的裁定是「**B. 判定移到服务端**
+    ⇒ 前端只展示服务端结论」——「为什么没判」属于**判定面**；且 `cutting-mode-conflict` 的依据里
+    嵌着**上下卷边**，商家把 `hem_margin` 改成 0.5 后，留在前端的副本会**给商家看一个错的数**（0.3）。
+
+    Args:
+        与 `detect_auto_features` 同形同义（`None` = 未知 ⇒ 不判/不提）。
+
+    Returns:
+        ① `missing-door-width`：该 SKU 未维护门幅 ⇒ 超高/超宽都判不了（#4877，**不回落缺省门幅**）；
+        ② `missing-fullness`：缺褶倍 ⇒ 未判超宽（不猜一个褶倍去判价）；
+        ③ `cutting-mode-conflict`：商家选的加工类型与**几何分支**给出的不一致（以商家选的为准，只提示）。
+        两条依据缺失（高未知 / 加工类型缺失或表外）⇒ **不提示**（没有依据就不下结论，不猜）。
+    """
+    cfg = resolve_craft_calc_config(config)
+    notices: List[Dict[str, str]] = []
+    if cutting_mode not in (CUTTING_MODE_FIXED_HEIGHT, CUTTING_MODE_FIXED_WIDTH):
+        return notices
+
+    # 🔴 门幅缺失 / 不可解析 ⇒ 判定面**什么都没判**（#4877）⇒ 显式告知并直接返回：
+    # 再做「缺褶倍」「几何矛盾」两条提示会误导（它们的前提都依赖门幅）。
+    if fabric_width is None:
+        notices.append({
+            "kind": "missing-door-width",
+            "reason": "该 SKU 未维护门幅 ⇒ 超高/超宽都判不了（系统不按缺省门幅推算，请先补商品门幅）",
+        })
+        return notices
+
+    side_margin = cfg["side_margin"]
+    hem_margin = cfg["hem_margin"]
+    width = window_width if (window_width is not None and window_width > 0) else None
+    height = window_height if (window_height is not None and window_height > 0) else None
+    fullness_ok = fullness is not None and fullness > 0
+
+    # ① 缺褶倍 ⇒ 未判超宽（只在「该方向真的受门幅约束」且宽已知时才说得通）
+    if cutting_mode == CUTTING_MODE_FIXED_WIDTH and width is not None and not fullness_ok:
+        notices.append({
+            "kind": "missing-fullness",
+            "reason": (
+                f"缺褶倍 ⇒ 未判超宽（成品宽 {_js_num(width)} + 左右余量 {_js_num(side_margin)} "
+                "是否要分幅取决于褶倍，不猜）"
+            ),
+        })
+
+    # ② 几何矛盾：引擎按「高 + 上下卷边 vs 门幅」**唯一**决定实际档位（与 `超高` 同一条判据）
+    if height is not None:
+        over_height = height + hem_margin > fabric_width
+        actual_mode = CUTTING_MODE_FIXED_WIDTH if over_height else CUTTING_MODE_FIXED_HEIGHT
+        if actual_mode != cutting_mode:
+            notices.append({
+                "kind": "cutting-mode-conflict",
+                "reason": (
+                    f"加工类型选了「{cutting_mode}」，但成品高 {_js_num(height)} + "
+                    f"上下卷边 {_js_num(hem_margin)} = "
+                    f"{_js_num(_meters_for_reason(height + hem_margin, fabric_width))} 米 "
+                    f"{'超过' if over_height else '未超过'}本 SKU 门幅 {_js_num(fabric_width)} 米"
+                    # 🔴 issue #4746：**不再**声称「算料引擎按此判几何」—— 试算端点按
+                    # `internal.py::_FABRIC_WIDTH` 硬编码门幅算，那句是对**引擎行为**的无据断言。
+                    "（判据 = 算料引擎的几何分支「高 + 卷边 vs 门幅」，不读商家选的加工类型；本页按本 SKU 门幅判）"
+                    f"⇒ 按本 SKU 门幅口径，系统实际会按{actual_mode}算"
+                    "（⚠️ 引擎试算门幅尚未按本 SKU 门幅接线 —— #4746 / 待 #4652 ⇒ 引擎实际结果可能不同）"
+                ),
+            })
+
+    return notices
 
 
 def calculate_fabric_meters(
