@@ -9,7 +9,7 @@ import dayjs from 'dayjs'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
-import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc } from '@/components/orders'
+import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, type PrintTarget } from '@/components/orders'
 import type { Order, OrderItem, LogisticsFormData, ProcessingOrder } from '@/types'
 import { normalizeOrderStatus, displayOrderStatus } from '@/types'
 import { craftSpecRows } from '@/lib/craft-display'
@@ -102,6 +102,18 @@ export default function OrderDetailPage() {
 
   // 倒计时
   const [countdown, setCountdown] = useState({ h: 0, m: 0, s: 0, expired: false })
+
+  /**
+   * 本次打印的目标（issue #4965）：本页**同时挂着两份纸质单据**（发货单 `ShipmentDoc` +
+   * 报价单 `QuotationDoc`），它们的 `visibility: visible` 打印防御是**同特异性**的兄弟规则
+   * ⇒ 后渲染者胜，会把先渲染那份重新藏掉（CI `Demo path specs` 实测红）。故由页面统一置位：
+   * 点哪个按钮就只让那份单据显形（另一份的 `visibility` 防御不生效）。
+   */
+  const [printTarget, setPrintTarget] = useState<PrintTarget | null>(null)
+  const printDoc = (target: PrintTarget) => {
+    setPrintTarget(target)
+    window.print()
+  }
 
   // 加载订单
   const loadOrder = useCallback(async () => {
@@ -262,8 +274,8 @@ export default function OrderDetailPage() {
         onConfirmReceive={() => setConfirmReceiveOpen(true)}
         onEditLogistics={() => setShowEditLogistics(true)}
         onRefund={() => setRefundModalOpen(true)}
-        onPrintShipment={() => window.print()}
-        onPrintQuotation={() => window.print()}
+        onPrintShipment={() => printDoc('shipment')}
+        onPrintQuotation={() => printDoc('quotation')}
       />
 
       {/* 基础信息 */}
@@ -313,12 +325,12 @@ export default function OrderDetailPage() {
       />
 
       {/* 纸质发货单（issue #3768）：屏幕上隐藏，仅打印呈现；已发货/已完成可在此补打 */}
-      <ShipmentDoc order={order} logistics={order.logistics} />
+      <ShipmentDoc order={order} logistics={order.logistics} printTarget={printTarget} />
 
       {/* 纸质报价单（issue #4965）：屏幕上隐藏，仅打印呈现；照真实报价单 A4 制式
           （每商品行一套 + 金额汇总 + 扫码支付）。页面级挂载一份 —— 与 ShipmentDoc 同范式
           （不进 Modal、每页只挂一份，见组件文件头 6 条约束）。 */}
-      <QuotationDoc order={order} />
+      <QuotationDoc order={order} printTarget={printTarget} />
 
       {/* 收货信息 */}
       <SectionCard title="收货信息">

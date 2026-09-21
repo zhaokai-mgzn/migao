@@ -1,3 +1,5 @@
+export type PrintTarget = 'shipment' | 'quotation'
+
 export { default as OrderTable } from './OrderTable'
 export { default as RemarkPopover } from './RemarkPopover'
 export { default as OrderStatusBadge } from './OrderStatusBadge'

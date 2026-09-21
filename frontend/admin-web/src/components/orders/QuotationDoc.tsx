@@ -9,6 +9,7 @@ import { resolveImageUrl } from '@/lib/utils'
 // 「算料输出」行的标签（原始输入 vs 算料输出的分组口径）—— 从既有那份 import，
 // 不复制一份会漂移的副本（见文件头第 5 条）
 import { CALC_OUTPUT_LABELS } from './OrderItemList'
+import type { PrintTarget } from './index'
 import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
 
 /**
@@ -34,6 +35,12 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *    `@media print { body * { visibility: hidden } }` 做打印隔离，会把本单据一起藏成 invisible
  *    （纸面空白，issue #3912 回归）⇒ print 块内必须显式恢复
  *    `.quotation-print-area, .quotation-print-area * { visibility: visible; }`。
+ *    🔴 **但该防御必须限定「本单据是本次打印目标」**（issue #4965 实测回归）：订单详情页同时挂着
+ *    发货单（`ShipmentDoc`）——两个单据是 body 的**兄弟**节点，`.shipment-print-area` 与
+ *    `.quotation-print-area` 的 `visibility: visible` **同特异性**，后渲染者胜 ⇒ 本组件（后挂）
+ *    会把发货单重新藏掉（CI 的 `Demo path specs` 实测：`expect('.shipment-print-area').toBeVisible()`
+ *    失败）。故防御写成属性选择器 `.quotation-print-area[data-print-target='quotation'], …`，
+ *    由调用方在打印时置位（见 `PrintTarget` / `OrderDetail` 的 `printTarget`）。
  * 3. **不得放进 Modal**：`Modal` 面板是 `max-h-full` + 内部 `overflow-y-auto`，打印只会打出
  *    可视区那一屏（多页明细被裁）。故调用方一律渲染在页面级。
  * 4. **每页只挂一份**：`.quotation-print-area` 是全局选择器，挂两份会打印出两套单据。
@@ -61,6 +68,12 @@ interface QuotationDocProps {
    * 不传 ⇒ 组件自取；取不到/为空 ⇒ 页脚支付块整块不出现。
    */
   paymentQrcodes?: PaymentQrcodeMap
+  /**
+   * 本次打印的目标（`'quotation'` = 打印本报价单）。**只在为 `'quotation'` 时**置位
+   * `data-print-target`，让 visibility 防御只作用于本单据 —— 否则会把同页的发货单
+   * （`ShipmentDoc`）重新藏掉（issue #4965 实测回归，见文件头第 2 条）。
+   */
+  printTarget?: PrintTarget | null
   className?: string
 }
 
@@ -92,7 +105,12 @@ const PAYMENT_TYPE_LABELS: Record<string, string> = {
   alipay: '支付宝',
 }
 
-export default function QuotationDoc({ order, paymentQrcodes, className }: QuotationDocProps) {
+export default function QuotationDoc({
+  order,
+  paymentQrcodes,
+  printTarget,
+  className,
+}: QuotationDocProps) {
   // 打印只发生在客户端；SSR/首帧无 document，portal 前先等 mounted（未挂载返回 null）
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -155,7 +173,10 @@ export default function QuotationDoc({ order, paymentQrcodes, className }: Quota
   const hasDiscount = typeof order.discountAmount === 'number'
 
   return createPortal(
-    <div className={className ? `quotation-print-area ${className}` : 'quotation-print-area'}>
+    <div
+      className={className ? `quotation-print-area ${className}` : 'quotation-print-area'}
+      {...(printTarget === 'quotation' ? { 'data-print-target': 'quotation' } : {})}
+    >
       <style>{`
         .quotation-print-area { display: none; }
         @page { size: A4; margin: 12mm; }
@@ -169,8 +190,12 @@ export default function QuotationDoc({ order, paymentQrcodes, className }: Quota
           }
           /* 防御：页面其他组件（如 ProcessingOrderBlock）残留的
              "body * { visibility: hidden }" 打印隔离会连同本单据一起藏掉
-             ——必须显式恢复单据自身可见（见文件头第 2 条）。 */
-          .quotation-print-area, .quotation-print-area * { visibility: visible; }
+             ——必须显式恢复单据自身可见（见文件头第 2 条）。
+             ⚠️ 限定 [data-print-target='quotation']：本页同时挂着发货单，两条
+             visibility: visible 同特异性 ⇒ 后渲染者胜，不加限定会把发货单藏掉
+             （issue #4965 实测回归）。 */
+          .quotation-print-area[data-print-target='quotation'],
+          .quotation-print-area[data-print-target='quotation'] * { visibility: visible; }
           .quotation-set { break-inside: avoid; }
         }
       `}</style>

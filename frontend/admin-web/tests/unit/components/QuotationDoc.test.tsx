@@ -13,6 +13,7 @@ vi.mock('@/lib/api', () => ({
 }))
 
 import QuotationDoc from '@/components/orders/QuotationDoc'
+import ShipmentDoc from '@/components/orders/ShipmentDoc'
 import type { Order, OrderItem } from '@/types'
 /**
  * 报价单（可打印纸质文档，issue #4965）—— 照真实报价单 A4 制式（亿家纺织 CSO260918-03182）。
@@ -410,9 +411,114 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
         /body > \*:not\(\.quotation-print-area\)\s*\{\s*display:\s*none\s*!important/
       )
       // visibility 防御（订单详情页 ProcessingOrderBlock 残留的 body * { visibility: hidden }）
-      expect(style).toMatch(
-        /\.quotation-print-area,\s*\.quotation-print-area \*\s*\{\s*visibility:\s*visible/
+      // —— 形态见下一条：必须限定本次打印目标
+      expect(style).toMatch(/\.quotation-print-area\[data-print-target='quotation'\]/)
+      expect(style).toMatch(/visibility:\s*visible/)
+    })
+
+    // 🔴 回归守卫（issue #4965 实测：CI `Demo path specs` 因这条判据缺失而红）：
+    // 订单详情页**同时挂着**发货单（`ShipmentDoc`）—— 两个单据是 body 的兄弟节点，
+    // 各自的 `visibility: visible` 打印防御**同特异性** ⇒ 后渲染者胜，报价单会把发货单
+    // 重新藏掉（纸面空白）。故防御必须限定「本次打印目标」。
+    it('visibility 防御限定本次打印目标（否则会把同页发货单藏掉）', () => {
+      render(<QuotationDoc order={buildOrder()} printTarget="quotation" />)
+      const el = doc()
+      expect(el.getAttribute('data-print-target')).toBe('quotation')
+      const styleEl = el.querySelector('style') as HTMLStyleElement
+      const css = styleEl.textContent || ''
+      expect(css).toMatch(
+        /\.quotation-print-area\[data-print-target='quotation'\],\s*\.quotation-print-area\[data-print-target='quotation'\] \*/
       )
+      // 不加限定的旧形态必须**不存在**于**生效规则**里（它正是把发货单藏掉的那条）——
+      // 只看 CSSOM 规则文本，不看原文（注释里会引到旧形态做说明，字符串匹配会误判）
+      const printBlock = Array.from(styleEl.sheet!.cssRules).find(
+        (r): r is CSSMediaRule => (r as CSSMediaRule).media?.mediaText?.includes('print') === true
+      )
+      expect(printBlock).toBeDefined()
+      const effective = Array.from(printBlock!.cssRules).map((r) => r.cssText).join('\n')
+      expect(effective).toMatch(/\[data-print-target='quotation'\]/)
+      expect(effective).not.toMatch(
+        /(^|[\s,])\.quotation-print-area,\s*\.quotation-print-area \*\s*\{[^}]*visibility/
+      )
+    })
+
+    it('未置位打印目标 ⇒ 不加 data-print-target（点「打印发货单」时报价单不参与显形）', () => {
+      render(<QuotationDoc order={buildOrder()} />)
+      expect(doc()?.getAttribute('data-print-target')).toBeNull()
+    })
+
+    // 🔴 端到端回归复现（issue #4965 实测：CI `Demo path specs` 红在
+    // `expect('.shipment-print-area').toBeVisible()`）：订单详情页**同时挂着**两份单据，
+    // 且页面上有 `ProcessingOrderBlock` 的遗留隔离 `@media print { body * { visibility: hidden } }`
+    // —— 两份单据各自都写 `visibility: visible` 防御，**同特异性、后渲染者胜** ⇒
+    // 后挂的报价单会把先挂的发货单重新藏掉（补打纸面空白）。
+    // 这里按真实 DOM 顺序把三块 print 规则并到样式表末尾（jsdom 不解析媒体查询，故为等价仿真，
+    // 同 ShipmentDoc.test.tsx 的 ② 手法），断言「点谁只显谁」。
+    it('两单共存（含遗留 body * 隔离）：点谁只显谁，不把对方藏掉', () => {
+      // 遗留隔离（订单详情页 ProcessingOrderBlock 的真实形态）—— 防抖动的靶子
+      const legacy = document.createElement('style')
+      legacy.textContent = '@media print { body * { visibility: hidden; } }'
+      document.head.appendChild(legacy)
+
+      const inlinePrintBlocks = () => {
+        const els = [
+          legacy,
+          ...Array.from(
+            document.querySelectorAll<HTMLStyleElement>(
+              '.shipment-print-area style, .quotation-print-area style'
+            )
+          ),
+        ]
+        // 按 DOM 顺序（legacy 在最前、两份单据按挂载顺序）把 print 块内规则并入样式表末尾
+        for (const el of els) {
+          const block = Array.from(el.sheet!.cssRules).find(
+            (r): r is CSSMediaRule => (r as CSSMediaRule).media?.mediaText?.includes('print') === true
+          )
+          if (block) {
+            el.textContent = `${el.textContent}\n${Array.from(block.cssRules)
+              .map((r) => r.cssText)
+              .join('\n')}`
+          }
+        }
+      }
+      const clear = () => {
+        for (const el of Array.from(document.querySelectorAll('style'))) el.textContent = ''
+      }
+
+      // ── 场景 A：点「打印报价单」──
+      let view = render(
+        <>
+          <ShipmentDoc order={buildOrder()} printTarget="quotation" />
+          <QuotationDoc order={buildOrder()} printTarget="quotation" />
+        </>
+      )
+      inlinePrintBlocks()
+      const shipment = document.querySelector('.shipment-print-area') as HTMLElement
+      const quotation = document.querySelector('.quotation-print-area') as HTMLElement
+      expect(getComputedStyle(quotation).visibility).toBe('visible')
+      // 发货单**不得**被报价单的防御带成 visible（这正是 CI 那条红的形态）
+      expect(getComputedStyle(shipment).visibility).toBe('hidden')
+      view.unmount()
+      clear()
+
+      // ── 场景 B：点「打印发货单」（反向：发货单显形、报价单保持 hidden）──
+      // 遗留隔离复位（`clear()` 把它清空了；它必须与两份单据一起参与本次级联）
+      legacy.textContent = '@media print { body * { visibility: hidden; } }'
+      view = render(
+        <>
+          <ShipmentDoc order={buildOrder()} printTarget="shipment" />
+          <QuotationDoc order={buildOrder()} printTarget="shipment" />
+        </>
+      )
+      inlinePrintBlocks()
+      const shipment2 = document.querySelector('.shipment-print-area') as HTMLElement
+      const quotation2 = document.querySelector('.quotation-print-area') as HTMLElement
+      expect(getComputedStyle(shipment2).visibility).toBe('visible')
+      expect(getComputedStyle(quotation2).visibility).toBe('hidden')
+
+      view.unmount()
+      clear()
+      legacy.remove()
     })
 
     it('纸面绝不出现 undefined / null / NaN（整单缺值扫描）', () => {
