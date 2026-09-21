@@ -27,6 +27,10 @@ const ROUTE_BREADCRUMB_MAP: Array<{
 }> = [
   // 工作台
   { match: (p) => p === '/' || p === '/dashboard', crumbs: [{ label: '工作台', href: '/dashboard' }, { label: '经营看板' }] },
+  // 每日简报（issue #5071）：此前**没有条目** ⇒ 落兜底分支、面包屑只剩「工作台」一项，
+  // §15.2「面包屑与侧边栏菜单名一致」不成立（与 #5034 的入库单是**同一形态**的漏改）。
+  // ⚠️ 本表是 `find` 取**首个命中**、顺序敏感 ⇒ 前缀不得写宽（`p.startsWith('/b')` 会抢走别的匹配）。
+  { match: (p) => p.startsWith('/briefing'), crumbs: [{ label: '工作台' }, { label: '每日简报' }] },
 
   // 智能客服组（与侧边栏"智能客服"分组对齐，#2969 知识库归入本组）
   { match: (p) => p.startsWith('/chat'), crumbs: [{ label: '智能客服' }, { label: '米宝 · 在线对话' }] },
@@ -60,6 +64,9 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   { match: (p) => p.startsWith('/production/piecework'), crumbs: [{ label: '生产管理' }, { label: '计件工资' }] },
   // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
   { match: (p) => p.startsWith('/production'), crumbs: [{ label: '生产管理' }, { label: '生产看板' }] },
+  // 入库单（issue #5071）：V111（#5034）新增菜单项时**漏了本表这一处** ⇒ 面包屑只剩「工作台」一项。
+  // 组名/菜单名与侧边栏 `config/menu.ts` 的 `inbound-orders`（生产管理组）逐字一致。
+  { match: (p) => p.startsWith('/inbound-orders'), crumbs: [{ label: '生产管理' }, { label: '入库单' }] },
 
   // 订单管理（与侧边栏"订单管理"分组对齐）
   { match: (p) => p.startsWith('/orders'), crumbs: [{ label: '订单管理' }, { label: '订单列表' }] },

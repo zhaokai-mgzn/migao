@@ -485,6 +485,30 @@ describe('Header', () => {
     expect(screen.getByText('计件工资')).toBeInTheDocument()
   })
 
+  // 入库单（issue #5071）：V111（#5034）新增该菜单项时**漏了 Header 的匹配表** ⇒ 该页面包屑
+  // 落兜底分支、**只剩「工作台」一项**（实测），§15.2「面包屑与侧边栏菜单名一致」不成立。
+  it('/inbound-orders 路径面包屑（生产管理 > 入库单，issue #5071 补）', async () => {
+    mockPathname = '/inbound-orders'
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByText('生产管理')).toBeInTheDocument()
+    expect(screen.getByText('入库单')).toBeInTheDocument()
+    // 不得回落成兜底（兜底只有「工作台」一项）
+    expect(screen.queryByText('工作台')).not.toBeInTheDocument()
+  })
+
+  // 每日简报（issue #5071 同批实测发现的**同类第二例**）：与入库单同一形态 —— 菜单有、匹配表无。
+  it('/briefing 路径面包屑（工作台 > 每日简报，issue #5071 补）', async () => {
+    mockPathname = '/briefing'
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByText('工作台')).toBeInTheDocument()
+    expect(screen.getByText('每日简报')).toBeInTheDocument()
+    // 兜底形态是「只有 工作台、没有第二项」；这里必须两项都在（上方两条断言即判据）
+  })
+
   it('/processing-orders/{id}/production 面包屑改判到生产管理组（issue #4357；原「订单管理 > 加工单」）', async () => {
     mockPathname = '/processing-orders/JG-20260917-0001/production'
     await act(async () => {
