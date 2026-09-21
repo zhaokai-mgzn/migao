@@ -198,7 +198,12 @@ class TestFailClosed:
 
 
 # ── 接线：`build_quote(fabric_widths=...)` 真的走门幅规则（issue #5013） ──────
-# ⚠️ 这是「函数写好了但没人调」的守卫：删掉 `build_quote` 里的 `_resolve_plan` 调用 ⇒ 本类全红。
+# ⚠️ 这是「函数写好了但没人调」的守卫。接线红证（实测）：把 `_resolve_plan` 里的
+#    `if fabric_widths:` 变异成 `if False:`（= 删掉调用）⇒
+#    `test_candidates_pick_widest_feasible_and_fixed_height` /
+#    `test_explicit_splice_override_is_honored` / `test_candidates_fall_back_to_rotated` 三条红。
+#    ⚠️ **不是「本类全红」**：`test_without_candidates_single_width_behaviour_is_unchanged` 是
+#    **回归不变量**（故意走既有单一门幅口径）⇒ 它按设计**不**因该变异变红（issue #5040）。
 class TestBuildQuoteWiring:
     def test_candidates_pick_widest_feasible_and_fixed_height(self):
         q = build_quote(
@@ -212,10 +217,16 @@ class TestBuildQuoteWiring:
         assert q["formula_used"] == "fixed_height"
 
     def test_candidates_fall_back_to_rotated(self):
+        # 可行集为空 ⇒ 倒幅。显式 `fabric_width=3.2` 是**判别性**入参：既有单一门幅口径下
+        # 3.3 > 3.2 也走倒幅，且 `panels`（同为 3）与 `fabric_meters`（同为 9.9）**逐值重合**
+        # ⇒ 只断言它们分辨不出接线与否；接线后候选集**压过**显式门幅、取分幅并列中的较小门幅 2.8。
+        # 红证（实测）：把 `_resolve_plan` 的 `if fabric_widths:` 变异成 `if False:` ⇒ 本断言红
+        # （`door_width` → 3.2）。
         q = build_quote(
             window_width=3.0, window_height=3.0, fullness=2, fabric_price=98,
-            fabric_widths=[2.8, 3.2],
+            fabric_width=3.2, fabric_widths=[2.8, 3.2],
         )
+        assert q["door_width"] == 2.8, "候选集压过显式 fabric_width（schema 已声明后者被忽略）"
         assert q["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH
         assert q["panels"] == 3
         assert q["fabric_meters"] == pytest.approx(9.9)

@@ -15,9 +15,19 @@
 3. `execute(fabric_widths=[2.8, 3.2], 成品高 2.75)` ⇒ 自动解 = **3.2 门幅 + 定高买宽**
    （2.8 会判需接高：`2.75 + 0.3 = 3.05 > 2.8`）；
 4. `execute(fabric_widths=[2.8, 3.2], 成品高 3.0)` ⇒ **倒幅**（`ceil(6.6/2.8) = 3` 幅）；
-5. **只给 2.8**（成品高 2.75）⇒ 倒幅（候选里没有可行门幅）—— 证明候选集**真的参与判定**；
+5. **只给 2.8**（成品高 2.75）**且显式给 `fabric_width=3.2`** ⇒ 仍倒幅、门幅 **2.8**
+   （候选集**压过**显式单值门幅）—— 证明候选集**真的参与判定**；
 6. **不传 `fabric_widths`** ⇒ 既有单一门幅口径**逐值不变**（回归不变量）；
-7. `build_quote` **真的收到** `fabric_widths`（接线红证：删掉 `execute` 里那一行 ⇒ 红）。
+7. `build_quote` **真的收到** `fabric_widths`（接线红证见下）。
+
+> **接线红证（实测）**：把 `execute` 里的 `fabric_widths=fabric_widths,` 变异成 `fabric_widths=None,`
+> ⇒ **判据 3 / 5 / 7** 变红。判据 6 是**回归不变量**（不传候选集 ⇒ 本就不该因该变异变红）；
+> 判据 4 在「候选集只含缺省门幅 2.8」的输入下与既有单一门幅口径**逐值重合** ⇒ 它**不**承担接线红证，
+> 只承担行为断言（理由写在该条注释里）。
+> ⚠️ **issue #5040 的形态**：判据 5 原先**只**给候选集 2.8、不显式给 `fabric_width` ⇒ 两条路径的解
+> **完全相同**（`execute` 的缺省 `fabric_width` 也是 2.8）⇒ 当时那句「红证：把 `fabric_widths`
+> 原样丢掉 ⇒ 本断言红」**推演不成立**（实测变异后该条照旧绿）。现改为显式给一个**冲突**的
+> `fabric_width=3.2`，使两条路径可分辨 ⇒ 该红证成立。
 """
 from typing import Any, Dict, List, Optional
 
@@ -110,6 +120,8 @@ async def test_candidates_pick_widest_feasible_and_fixed_height(monkeypatch):
 
 async def test_candidates_fall_back_to_rotated_when_none_feasible(monkeypatch):
     # 3.0 + 0.3 = 3.3 > 3.2 ⇒ 无可行门幅 ⇒ 倒幅；ceil(6.6 / 2.8) = 3 幅 × 3.3 = 9.9
+    # ⚠️ 本条是**行为断言**、**不**承担接线红证：候选路径选中的门幅与缺省门幅同为 2.8
+    # ⇒ 与既有单一门幅口径**逐值重合**（接线红证见判据 3 / 5 / 7，理由见模块 docstring）。
     result = await _run(monkeypatch, window_height=3.0, fabric_widths=[2.8, 3.2])
     assert result.success is True, result.message
     assert result.data["cutting_mode"] == cc.CUTTING_MODE_FIXED_WIDTH
@@ -119,9 +131,13 @@ async def test_candidates_fall_back_to_rotated_when_none_feasible(monkeypatch):
 
 
 async def test_narrow_only_candidate_also_rotates(monkeypatch):
-    # 候选里**只有 2.8**（3.05 > 2.8）⇒ 也必须倒幅 —— 证明候选集真的参与判定，
-    # 而不是「没给候选就走默认 2.8」的假接线（红证：把 fabric_widths 原样丢掉 ⇒ 本断言红）
-    result = await _run(monkeypatch, window_height=2.75, fabric_widths=[2.8])
+    # 候选里**只有 2.8**（3.05 > 2.8）⇒ 也必须倒幅 —— 证明候选集真的参与判定。
+    # 显式 `fabric_width=3.2` 是**判别性**入参（schema 已声明「传了 `fabric_widths` ⇒ `fabric_width`
+    # 被忽略」）：3.05 ≤ 3.2 ⇒ 若候选集没接线、走显式门幅，解会是「定高买宽 3.2 / 6.6 米」；
+    # 接线后仍是「倒幅 2.8 / 9.15 米」⇒ 两条路径可分辨。
+    # 红证（实测）：`execute` 里 `fabric_widths=fabric_widths,` 变异成 `=None,` ⇒ 本断言红
+    # （`cutting_mode` → `定高买宽`、`door_width` → 3.2、`fabric_meters` → 6.6）。
+    result = await _run(monkeypatch, window_height=2.75, fabric_width=3.2, fabric_widths=[2.8])
     assert result.data["cutting_mode"] == cc.CUTTING_MODE_FIXED_WIDTH
     assert result.data["door_width"] == 2.8
     assert result.data["panels"] == 3
