@@ -80,5 +80,7 @@ public class InboundOrder {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private OffsetDateTime updatedAt;
 
+    /** 软删：标 @TableLogic ⇒ 查询自动带 deleted = 0（软删行不得出现在列表/详情里） */
+    @TableLogic
     private Integer deleted;
 }

@@ -3981,7 +3981,7 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-22 新增（issue #4201）：加工单「过程明细」agent 只读面（端点 GET /api/admin/agent/production/worklog + 工具 production_worklog_query + order/general skill 绑定 + prompts/order.md 口径）。**断言面**：must_succeed + required_args(order_no) + forbidden_tools（两个加工单写工具 + 加工项目录冒充）+ forbidden_text（具名报工人 = 编造指纹）+ want_text(any_of 存在性) + data_checks 首条 success=true。**未做（如实登记）**：**数值断言**（合格/返工/报废的**具体数字**）未落 —— 评测栈 `production_work_logs` 零 seed，要落数值只能给 seed 补「加工单 + 工序实例 + 报工」三段夹具，而本地**无 docker**、无法验证 seed SQL（写错会打挂整个 mibao 套件）⇒ 本单不碰 seed，登记为后续项。 ｜ 2026-09-21（issue #4960 / #4961 用例库同步，配套 feat/4960-4961-integration，**本条判据一字未动**）：data_checks 里 `operations[].is_must_finish` 仍是**冻结读面键**（服务端恒 `false`、历史载体，前端/agent 零消费）—— 本条不改任何判据，只登记该键的**值语义已冻结为历史载体**，防后续把「键还在」误读成「必完仍是活语义」。`user_inputs` / `expectations` / `skip_reason` 与其余 data_check **一字未动**，**判据一格不放宽**。 ｜ tags: processing_order, production, llm_behavior, worklog, readonly
 
-## 商品域（31 case）
+## 商品域（34 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -4372,6 +4372,36 @@
 ```
 真值: inbound-order-flow.draft-then-post
 溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-039. 入库单实体/Mapper 三源收敛：Java 实体 ↔ V111 迁移 ↔ docs/sql/schema.sql 🔵
+```
+你: 入库单的实体/Mapper/SQL 契约（非 LLM 行为，由 Java 单测覆盖）
+期望: direct_reply
+数据: inbound_orders / inbound_order_items / stock_batches 三张表的表名映射、字段清单、id 生成策略（ASSIGN_UUID vs IDENTITY AUTO）、软删 @TableLogic 全部与 V111 迁移列一一对齐；批次号与缸号必须是**两列**（合并会逼系统编缸号 = 假真值）；批次号租户内唯一索引必须在
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5045，V111）：入库单模块的 Mapper/SQL 契约面（growth gate 的 mapper 缺测门禁要求同名测试） ｜ tags: inventory, inbound, backend-contract
+
+### PR-040. 入库单列表聚合读面 SQL 契约：租户隔离 + 软删过滤 + 聚合口径 + 别名对齐 🔵
+```
+你: 入库单的实体/Mapper/SQL 契约（非 LLM 行为，由 Java 单测覆盖）
+期望: direct_reply
+数据: 手写 SQL 必须有 o.tenant_id = #{tenantId} 与 o.deleted = 0；行数/总量聚合子查询也必须限定 deleted = 0（否则软删明细虚增「行数/总数量」）；必须有 LIMIT；列别名与 InboundOrderLine 属性名逐一对齐（别名写错时 MyBatis 不报错、字段静默为 null）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5045，V111）：入库单模块的 Mapper/SQL 契约面（growth gate 的 mapper 缺测门禁要求同名测试） ｜ tags: inventory, inbound, backend-contract
+
+### PR-041. ProductSkuMapper 入库扩展契约：按 id 定位 + 均价单源 + 成本未知留 NULL 🔵
+```
+你: 入库单的实体/Mapper/SQL 契约（非 LLM 行为，由 Java 单测覆盖）
+期望: direct_reply
+数据: receiveStock 只按 id 定位（不得用颜色/门幅组合条件更新）；加库存+写均价+记批次号一条 SQL 完成；SQL 里**不得**出现加权平均公式（公式只有 InboundOrderService.movingAverage 一处实现，两份实现必然漂移）；成本未知时 cost_amount 留 NULL（不用 0 冒充「成本为零」）；既有 deductStock/restoreStock 未被改坏
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5045，V111）：入库单模块的 Mapper/SQL 契约面（growth gate 的 mapper 缺测门禁要求同名测试） ｜ tags: inventory, inbound, backend-contract
 
 ## registry（1 case）
 
@@ -5250,8 +5280,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：382（活跃 155，跳过 227）
-- tier 分布：smoke 10 / normal 341 / adversarial 31
+- 用例总数：385（活跃 155，跳过 230）
+- tier 分布：smoke 10 / normal 344 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
@@ -5271,7 +5301,7 @@
 - 订单域：44
 - 加工项域：13
 - processing-order：51
-- 商品域：31
+- 商品域：34
 - registry：1
 - 设置域：10
 - token-refresh：4

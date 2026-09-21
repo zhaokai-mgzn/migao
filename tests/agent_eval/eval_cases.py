@@ -6139,6 +6139,60 @@ _CASE_PR_038 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-039 [NORMAL] 入库单实体/Mapper 三源收敛：Java 实体 ↔ V111 迁移 ↔ docs/sql/schema.sql（源: cases/product.yml）──
+_CASE_PR_039 = EvalCase(
+    id='PR-039',
+    legacy_id='',
+    title='入库单实体/Mapper 三源收敛：Java 实体 ↔ V111 迁移 ↔ docs/sql/schema.sql',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['入库单的实体/Mapper/SQL 契约（非 LLM 行为，由 Java 单测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['inbound_orders / inbound_order_items / stock_batches 三张表的表名映射、字段清单、id 生成策略（ASSIGN_UUID vs IDENTITY AUTO）、软删 @TableLogic 全部与 V111 迁移列一一对齐；批次号与缸号必须是**两列**（合并会逼系统编缸号 = 假真值）；批次号租户内唯一索引必须在'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-040 [NORMAL] 入库单列表聚合读面 SQL 契约：租户隔离 + 软删过滤 + 聚合口径 + 别名对齐（源: cases/product.yml）──
+_CASE_PR_040 = EvalCase(
+    id='PR-040',
+    legacy_id='',
+    title='入库单列表聚合读面 SQL 契约：租户隔离 + 软删过滤 + 聚合口径 + 别名对齐',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['入库单的实体/Mapper/SQL 契约（非 LLM 行为，由 Java 单测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['手写 SQL 必须有 o.tenant_id = #{tenantId} 与 o.deleted = 0；行数/总量聚合子查询也必须限定 deleted = 0（否则软删明细虚增「行数/总数量」）；必须有 LIMIT；列别名与 InboundOrderLine 属性名逐一对齐（别名写错时 MyBatis 不报错、字段静默为 null）'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-041 [NORMAL] ProductSkuMapper 入库扩展契约：按 id 定位 + 均价单源 + 成本未知留 NULL（源: cases/product.yml）──
+_CASE_PR_041 = EvalCase(
+    id='PR-041',
+    legacy_id='',
+    title='ProductSkuMapper 入库扩展契约：按 id 定位 + 均价单源 + 成本未知留 NULL',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['入库单的实体/Mapper/SQL 契约（非 LLM 行为，由 Java 单测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['receiveStock 只按 id 定位（不得用颜色/门幅组合条件更新）；加库存+写均价+记批次号一条 SQL 完成；SQL 里**不得**出现加权平均公式（公式只有 InboundOrderService.movingAverage 一处实现，两份实现必然漂移）；成本未知时 cost_amount 留 NULL（不用 0 冒充「成本为零」）；既有 deductStock/restoreStock 未被改坏'],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -7683,6 +7737,9 @@ ALL_CASES = (
     _CASE_PR_036,
     _CASE_PR_037,
     _CASE_PR_038,
+    _CASE_PR_039,
+    _CASE_PR_040,
+    _CASE_PR_041,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
