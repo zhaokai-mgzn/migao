@@ -1117,8 +1117,10 @@ public class AuthService {
         List<UserInfoResponse.MenuItem> productionChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("processing:manage")) {
             productionChildren.add(menuItem("production", "生产看板", "Factory", "/production"));
-            productionChildren.add(menuItem("production-operations", "工序库", "ListChecks", "/production/operations"));
-            productionChildren.add(menuItem("production-routings", "工艺路线", "Route", "/production/routings"));
+            // 🔴 issue #4440：id/名称/图标/路径必须与前端 `frontend/admin-web/src/config/menu.ts` 的
+            // `production-process` **逐字一致**（issue #4416 把「工序库」+「工艺路线」合并为「工艺配置」；
+            // 本处此前仍是合并前的两个节点 ⇒ 「岗位权限」页（消费本列表）与真实侧边栏漂移）。
+            productionChildren.add(menuItem("production-process", "工艺配置", "Route", "/production/routings"));
             productionChildren.add(menuItem("production-piecework", "计件工资", "Coins", "/production/piecework"));
         }
         // 入库单（V111，issue #5034）：生产管理组第五项，但**权限码独立**（inbound:view）——
