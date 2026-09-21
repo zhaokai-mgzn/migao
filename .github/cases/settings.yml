@@ -74,7 +74,10 @@ cases:
     truths_ref:
       - settings-manage.change-password
     user_inputs:
-      - "改密码，旧密码xxx 新密码yyy"
+      # 🔴 #5030 的口径修复：新密码由占位符 `yyy` 改为 ≥6 位 —— `settings_manage._change_password`
+      # 有**代码级**长度校验 `len(new_password) < 6` ⇒ 3 位新密码**必然被拒**，而下面那条
+      # `must_succeed` 与 data_check「确认后修改成功」都要求它成功（旧输入下物理不可满足）。
+      - "改密码，旧密码xxx 新密码newpass123"
     expectations:
       - tool: settings_manage
         args:

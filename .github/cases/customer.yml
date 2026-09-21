@@ -280,34 +280,6 @@ cases:
       - tool: order_manage
         args:
           action: update_logistics
-<<<<<<< HEAD
-    # ── Case Trust burn-down 缴费（issue #5039 的 PR 触及 `.github/cases/**` ⇒ 每 PR 须净消减 ≥1 条）──
-    # 真修而非纸面：本用例是**写类**（`order_manage(action=update_logistics)` = 发货），
-    # 三条判定各自指向一个真实病灶 ——
-    #   ① 门禁 a2（效果层）：`expectations` 只证明「调用发生」且 action 给对 ——
-    #      工具返回 `success=false`（缺运单号/订单状态不允许发货）**照样满分**（#3778「调用了 ≠ 成了」）；
-    #   ② 门禁 b（自清理）：首跑发货后那笔订单不再处于「待发货」⇒ 重跑前置与首跑**不等价**（#3800 同族）。
-    #      ⚠️ 夹具层**没有**适用于本条的复位类型：`order_status_restore` 要求**不可变 `order_no`**
-    #      （`_restore_order_status` 只按 order_no 精确匹配），而本用例的订单是「模糊名 → 真人 →
-    #      订单」在**运行期动态定位**的（种子里没有客户「王建国」）⇒ 只能声明并行互斥
-    #      （taxonomy `SELF_CLEAN_FIELDS` 明列的**弱证据**档：只保证并行互斥、不解决重试前置）。
-    #   ③ 门禁 f（前置自断言）：无任何可判定前置 ⇒ 澄清链路不成立时红的表现是
-    #      `unmatched expectation`，看起来像「**agent 不干活**」⇒ 归因全错（PG-013 形态）。
-    # ⚠️ 为什么用**声明层** `preconditions`（门禁 f 的推荐形态）而不是 typed `precondition`：
-    #    `_PRECONDITION_TYPES` 只登记了 6 种类型（order_count_for_phone / product_count_for_keyword /
-    #    employee_count_for_phone / debug_permissions_effective / aftersales_ticket_count_for_ticket_no /
-    #    processing_item_count_for_keyword），**没有「按名字定位的客户 + 其未发货订单」这一类**
-    #    ⇒ 不发明类型、也不拿别的类型冒充（同 HR-005 先例）。
-    # ⚠️ `customer_order:` 是**新**的命名空间前缀 ⇒ 已在
-    #    `tests/unit_ci_workflows/test_case_seed_truth.py` 显式登记为范围外（登记而非沉默）。
-    namespaces:
-      - "customer_order:王建国"
-    preconditions:
-      - "客户『王建国』存在、且名下有一笔尚未发货的窗帘订单（本用例的「模糊名 → 真人 → 订单 → 发货」链路依赖它）"
-    must_succeed:
-      - tool: order_manage
-        action: update_logistics
-=======
     # ── 前置自断言 + 自清理 + 效果层（#5030 的 case-trust burn-down 缴费用）────────────
     # 本用例命中的三条存量违规（`metric=entries` ⇒ 必须**整条销账**）：
     #   ① CASE-TRUST-NO-PRECONDITION-ASSERTION ② CASE-TRUST-NO-SELF-CLEAN ③ CASE-TRUST-NO-EFFECT-ASSERTION
@@ -334,17 +306,12 @@ cases:
         source: "13700137000"
     must_succeed:
       - tool: order_manage
->>>>>>> 1f1925055 (test(cases): #5030 case-trust burn-down 缴费 —— 真修 CU-005（补种子真值 + 对齐目标 + 三条声明）)
     data_checks:
       - "customer_id 从 customer_manage 查询获得"
       - "order_id 从 order_query 获得"
       - "发货操作使用正确的 order_id"
     skip_reason: ""
-<<<<<<< HEAD
-    merge_log: "eval M011 独有（模糊澄清 + 客户搜索真值）；2026-09-15 校准（issue #3669）：expectations 的 customer_manage(action=query) → **list**（该工具枚举无 query，原值级断言永不满足=假红 / 报了错也算过的假绿，见 .github/eval-coverage-baseline.yml 已销账的 action_dangling 条目）；2026-09-21（issue #5039 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `must_succeed[order_manage(action=update_logistics)]`（效果层，「调用了 ≠ 成了」）+ `preconditions`（声明层前置：客户王建国及其未发货订单；`_PRECONDITION_TYPES` 无此类型 ⇒ 不发明类型）+ `namespaces[customer_order:王建国]`（弱证据：夹具层无「运行期动态定位的订单」复位类型，`order_status_restore` 需不可变 order_no）—— `user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽"
-=======
     merge_log: "eval M011 独有（模糊澄清 + 客户搜索真值）；2026-09-15 校准（issue #3669）：expectations 的 customer_manage(action=query) → **list**（该工具枚举无 query，原值级断言永不满足=假红 / 报了错也算过的假绿，见 .github/eval-coverage-baseline.yml 已销账的 action_dangling 条目） ｜ 2026-09-21（#5030 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：**本用例此前物理不可满足** —— ① 目标「王建国」在评测栈种子里**不存在**（考场 = 全新库 + 固定 seed，见 `.github/workflows/post-deploy-eval.yml`）⇒ 客户搜索链路走不通；② `update_logistics` 的两个必填入参（快递公司 / 运单号）没给；③ 种子里既有的 `confirmed` 单**都含加工项** ⇒ 被「含加工项须先完成加工单才能发货」守卫拦下（`OrderService.assertProcessingCompletedBeforeShip`）。修法 = ① 目标对齐到种子真值「王五」（并补 `cust_eval_wangwu` 客户档案）+ 新增**无 order_items** 的可发货订单 `EVAL-MB-ORD-0006`（`tests/agent_eval/fixtures/mibao_eval_seed.sql`）；② 补第 5 轮「顺丰，运单号 SF1234567890」；③ 补 `pre_clean`/`post_clean[order_status_restore]` + `precondition[order_count_for_phone]` + `must_succeed[order_manage]`（三条码一次清空）。⚠️ `expectations` / `data_checks` / `skip_reason` **一字未动**、断言强度不放宽"
->>>>>>> 1f1925055 (test(cases): #5030 case-trust burn-down 缴费 —— 真修 CU-005（补种子真值 + 对齐目标 + 三条声明）)
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
