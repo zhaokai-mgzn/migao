@@ -99,7 +99,7 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("生产管理组：生产看板/工序库/计件工资 三节点，权限码统一 processing:manage（issue #4203/#4205）")
+    @DisplayName("生产管理组：生产看板/工序库/计件工资/工艺路线 + 入库单（issue #4203/#4205/#4308/#5045）")
     void productionGroupIsExposedWithUnifiedPermissionCode() throws Exception {
         String body = mockMvc.perform(get("/api/admin/menus"))
                 .andExpect(status().isOk())
@@ -122,13 +122,16 @@ class MenuControllerTest {
             childLabels.add(child.path("label").asText());
             childCodes.add(child.path("code").asText());
         });
-        // 四节点（issue #4308 新增「工艺路线」= 路线/信号/工序写面的用户面入口）。
+        // 五节点（issue #4308 新增「工艺路线」；issue #5045 新增「入库单」）。
         // 精确断言（不是 contains）：漏加菜单项 ⇒ 岗位权限页勾得动、侧边栏看不到（#4203 同族坑）。
         org.junit.jupiter.api.Assertions.assertEquals(
-                java.util.List.of("生产看板", "工序库", "计件工资", "工艺路线"), childLabels);
-        // 四节点共用同一权限码：岗位权限页勾一处 = 整组可见（与 menu.ts / AuthService 同构）
+                java.util.List.of("生产看板", "工序库", "计件工资", "工艺路线", "入库单"), childLabels);
+        // 加工四项共用 processing:manage（岗位权限页勾一处 = 那四项可见）；
+        // 「入库单」是**仓储**动作、权限码独立为 inbound:view（issue #5045）——
+        // 并进 processing:manage 会让「有 inbound:view、没有 processing:manage」的仓管看不到菜单。
+        // 本断言与 frontend/admin-web/src/config/menu.ts、AuthService.buildMenusByPermissions 三处同构。
         org.junit.jupiter.api.Assertions.assertEquals(
                 java.util.List.of("processing:manage", "processing:manage", "processing:manage",
-                        "processing:manage"), childCodes);
+                        "processing:manage", "inbound:view"), childCodes);
     }
 }
