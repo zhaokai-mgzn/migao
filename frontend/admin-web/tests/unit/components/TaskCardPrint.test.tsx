@@ -260,7 +260,11 @@ describe('TaskCardPrint（洗水码 竖版 30mm×60mm 单列，issue #4964）', 
     expect(css).toMatch(/\.task-card-label:last-child \{[^}]*break-after: auto/)
     // 屏幕隐藏、打印显形 + visibility 防御（ShipmentDoc 的 6 条约束，勿随手改）
     expect(css).toContain('.task-card-print-area { display: none; }')
-    expect(css).toContain('body > *:not(.task-card-print-area) { display: none !important; }')
+    // 🔴 共享隔离选择器（issue #4983，来自 #4965 实测）：按「自己那一份」写会藏掉兄弟单据
+    expect(css).toContain('body > *:not(.print-doc) { display: none !important; }')
+    expect(css).not.toContain('body > *:not(.task-card-print-area)')
+    // 容器必须带共享标记类（否则共享选择器选不到自己 ⇒ 打印整页空白）
+    expect(area.className).toContain('print-doc')
     expect(css).toContain('.task-card-print-area, .task-card-print-area * { visibility: visible; }')
 
     ;[0, 1, 2].forEach((i) => expect(screen.getByTestId(`task-card-label-${i}`).className).toContain('task-card-label'))

@@ -24,9 +24,13 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  *
  * 打印隔离沿用项目既有范式（见 `frontend/admin-web/src/components/orders/ShipmentDoc.tsx` 文件头的 6 条约束）：
  * 1. **屏幕隐藏、打印可见**：页面已有屏幕布局，本组件 `display:none` + `@media print` 显形；
- * 2. **portal 到 body + display:none 隔离**：`body > *:not(.task-card-print-area) { display:none !important }`
+ * 2. **portal 到 body + display:none 隔离**：`body > *:not(.print-doc) { display:none !important }`
  *    —— display:none 不占版面高度，避免按隐藏内容高度分页打出空白页；
- *    `.task-card-print-area` 必须是 portal 容器本身的 class（不能再包一层）；
+ *    `.task-card-print-area` 必须是 portal 容器本身的 class（不能再包一层），且**必须同时带共享标记类
+ *    `print-doc`**（issue #4983，来自 #4965 的实测）：按「自己那一份」写选择器
+ *    （`body > *:not(.task-card-print-area)`）会把**兄弟单据也选进来**整份 `display:none` 掉 ——
+ *    同一页挂两份打印单据时各自把对方藏掉；共享 `print-doc` 是让「排除所有打印单据」成立的唯一写法。
+ *    守卫 = `tests/unit_ci_workflows/test_print_doc_convention_guard.py`；
  * 3. 不得放进 Modal（面板 `max-h` 会裁掉多页明细）；每页只挂一份（全局选择器）；
  * 4. 二维码内容只放**该部位自己的** `scan_url ?? part_token`（token 化、可撤销），
  *    不放单号拼接串、不放加工单级 `qr_token`；**缺码不画假码**（出占位框）；
@@ -110,7 +114,7 @@ export default function TaskCardPrint({
   const setViews = groupBySet(list)
 
   return createPortal(
-    <div className={cn('task-card-print-area text-neutral-900', className)}>
+    <div className={cn('task-card-print-area print-doc text-neutral-900', className)}>
       <style>{`
         .task-card-print-area { display: none; }
         @page { size: 30mm 60mm; margin: 0; }
@@ -121,7 +125,7 @@ export default function TaskCardPrint({
         /* 最后一张不再分页（否则末尾多吐一张空白） */
         .task-card-label:last-child { break-after: auto; page-break-after: auto; }
         @media print {
-          body > *:not(.task-card-print-area) { display: none !important; }
+          body > *:not(.print-doc) { display: none !important; }
           .task-card-print-area {
             display: block;
             position: static;
