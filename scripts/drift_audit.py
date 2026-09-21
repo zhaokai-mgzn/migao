@@ -1125,14 +1125,21 @@ UNIMPLEMENTED: list[dict[str, str]] = [
     {
         "id": "hardcoded-count",
         "invariant": "I1",
-        "what": "写死条数（如『C 端全量 ~40 条』『B 端 ~47 条』）随用例库漂移的检测",
-        "why": "受管引用面上 `~?N 条` 命中 **63 处**，绝大多数是叙事/历史语境"
-               "（『6 条确定性失败』『15 条 × 1 次采样』『此前写死 4 条』），"
-               "**无零误红的判据**（无法区分『断言当下条数』与『复述历史读数』）。"
-               "issue #3787 第 4 条正是此族。",
-        "missing": "需要用例库给出**机器可读的条数声明位**（如 `truths_ref` 里的计数锚），"
-                   "或把这类句子改成『以 X 为单一事实源』的无数字写法 —— 属 `cases/**` 与 "
-                   "`tests/unit_ci_workflows/**`（#3787 单）。",
+        "what": "写死条数 / 写死版本随真值漂移的检测（『文档里写死的现值』与真值不一致）",
+        "why": "**两个面分开登记（#5082）**。**已实装面** = **登记过**的易变现值位（workflow 数、业务工具数、"
+               "Taro / Spring Boot / FastAPI / LangChain / LangGraph 版本、账本自述存量数的**生成器模板**）"
+               "**一律不许写死**："
+               "守卫 = `tests/unit_ci_workflows/test_doc_present_value_guard.py`（逐位扫『写死形态』+ 每个登记"
+               "文件必须指明真值源 + 每条目一条**隔离性注入红证**：把历史错值注回真文件必红）。"
+               "**判据本体在测试面** —— 本 `CHECKS` 集合的每条判据都要求在 "
+               "`tests/unit_ci_workflows/test_drift_audit_contract.py` 的 `REDPROOF` 表里有夹具，新增判据须同步补表。"
+               "**仍未实装面** = 受管引用面上**泛化**的 `~?N 条`（命中数十处，绝大多数是叙事/历史语境："
+               "『6 条确定性失败』『15 条 × 1 次采样』）：**无零误红判据**（无法区分『断言当下条数』与"
+               "『复述历史读数』，实测 26 条带锚引用里 20 条误红同族）。issue #3787 第 4 条正是此族。",
+        "missing": "泛化面需要用例库给出**机器可读的条数声明位**，或把叙事句改成**无数字写法**"
+                   "（『以 X 为单一事实源』）—— 属 `cases/**` 与 `tests/unit_ci_workflows/**`（#3787 单）。"
+                   "**新增登记位** = 往上面那个守卫的 `CLAIMS` 表加一行（一处登记 = 一处判定面）；"
+                   "未登记的现值位**照旧不判**，不冒充已覆盖。",
     },
     {
         "id": "section-pointer-semantic",
@@ -1790,10 +1797,17 @@ def build_baseline(rep: dict, reason: str) -> dict:
                        "`origin/main` 记着、现在仍漂移却被删掉的条目会**阻塞**（删条目 = 偷偷缩短）。"
                        "判据本体在 `.github/case_trust_gate.py` 的 `reconcile_baseline`（本脚本 import 复用，"
                        "不复制第二套口径）。",
+        # ⚠️ 本模板**不许写死存量条数**（issue #5082）：它原先把存量条数写死在正文里
+        #    （旧读数 = 65，burn-down 之后真值已变小）⇒ **每次重生成都把腐烂的读数再抄一遍**，
+        #    而没有任何东西会因此变红（`hardcoded-count` 当时登记为未实装 —— 这正是该登记要治的形态）。
+        #    修法 = **现取**：指向审计自己末行的读数。守卫 = 本句产出的正文里不得出现
+        #    「写死的存量条数」句式（`tests/unit_ci_workflows/test_doc_present_value_guard.py`）。
         "_burn_down_note": "`burn_down` 块 = 每 PR 最低净消减（默认 ≥1 条）。"
                            "**不设 `deadline` / `priority_deadline`**（未设 = 该两条不生效）："
-                           "本门禁的存量是 65 条**跨目录**条目（`docs/**` / `tests/**` / "
-                           "`scripts/**` / `.github/workflows/**` …），没有单一 owner 能在某个日期前"
+                           "本门禁的存量是**跨目录**条目（`docs/**` / `tests/**` / "
+                           "`scripts/**` / `.github/workflows/**` …；**现值不写死** —— 现取 "
+                           "`python3 scripts/drift_audit.py --check --base origin/main` 末行的"
+                           "「现剩 条目 N / 违规码 M」），没有单一 owner 能在某个日期前"
                            "清零；照抄 case-trust 的到期日只会造出一条**必然红且无人能修**的判据"
                            "（到期日一旦写进 `--base` 那一份，按『只许收紧』还改不回来）。"
                            "何时设：存量缩到可归属的范围、或用户明确给定日期时。"

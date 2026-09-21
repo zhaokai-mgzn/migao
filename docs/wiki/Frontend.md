@@ -49,13 +49,13 @@
 - `merchant.migaozn.com` → dashboard（根路径跳登录）
 - `migaozn.com` → corporate 页面（dashboard 前缀跳 merchant，未知路径回首页）
 
-## mini-app (Taro 3.6 微信小程序)
+## mini-app (Taro 微信小程序)
 
 3 个 tab 页：对话(SSE流式) · 会话历史 · 个人中心
 5 种卡片组件：ProductCard, KnowledgeCard, LogisticsCard, ToolCallIndicator
-技术：Taro 3.6 / React 18 / Sass / Zustand
+技术：Taro（**版本不抄数**，真值源 `frontend/mini-app/package.json` 的 `@tarojs/taro`）/ React 18 / Sass / Zustand
 
-## bmini-app (Taro 4.2.1 B 端商家小程序，issue #2977)
+## bmini-app (Taro B 端商家小程序，issue #2977)
 
 B 端 agent 手机版（商家员工「问米宝」）：独立小程序（与 C 端小布不同 appid/主体），
 复用 C 端 mini-app 的基建代码（SSEClient / authStore / request / chatService）。

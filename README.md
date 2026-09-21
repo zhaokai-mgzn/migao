@@ -4,12 +4,12 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 > 面向通用行业的多租户 AI 智能客服 SaaS 平台，以布艺窗帘行业为示例场景。  
-> 基于大语言模型（DeepSeek V4 Pro + DeepSeek V4 Flash Vision）+ 33 个业务工具，覆盖售前咨询到售后服务全链路。
+> 基于大语言模型（DeepSeek V4 Pro + DeepSeek V4 Flash Vision）+ 业务工具（**数量以注册表为单一源**，复算命令见「技术栈」的「版本真值源」），覆盖售前咨询到售后服务全链路。
 
 ## ✨ 核心亮点
 
 - **双 Agent 架构** — C 端客服"小布" + B 端工作助手"米宝"，LangGraph 状态图驱动
-- **33 个 AI 工具** — 商品搜索、订单管理、物流追踪、客户查询等，自动意图路由
+- **AI 工具** — 商品搜索、订单管理、物流追踪、客户查询等，自动意图路由（数量以 `registry.py` 注册表为单一源）
 - **多租户 SaaS** — 租户隔离（JWT 派生 tenant_id → MyBatis 租户拦截器 → 字段脱敏）
 - **完整业务后台** — 商品、订单、CRM、人工坐席、数据看板等 12+ 管理模块
 - **微信小程序** — Taro 跨端框架，SSE 流式对话，原生体验
@@ -22,12 +22,12 @@
 ```mermaid
 graph TB
     subgraph 客户端
-        A[微信小程序<br/>Taro 4.2.1] --> |SSE| GW[API 网关]
+        A[微信小程序<br/>Taro] --> |SSE| GW[API 网关]
         B[管理后台<br/>Next.js 14] --> |REST| GW
     end
 
     subgraph 后端服务
-        GW --> C[Admin API<br/>Java 21 · Spring Boot 3.3]
+        GW --> C[Admin API<br/>Java 21 · Spring Boot]
         GW --> D[AI Agent Service<br/>Python 3.11 · FastAPI]
         C <--> |Service Token| D
     end
@@ -42,7 +42,7 @@ graph TB
     subgraph AI 能力
         D --> H[DeepSeek<br/>V4 Pro / V4 Flash Vision]
         D --> I[意图路由 → 工具调用<br/>LangGraph 状态机]
-        D --> J[33 Tools<br/>业务工具 + 权限/确认守卫]
+        D --> J[Tools<br/>业务工具 + 权限/确认守卫]
     end
 
     subgraph 基础设施
@@ -57,15 +57,28 @@ graph TB
 
 | 层级 | 技术 | 版本 |
 |------|------|------|
-| **后端 — 管理 API** | Java + Spring Boot + MyBatis-Plus + Spring Security | JDK 21 / Boot 3.3.9 / MP 3.5.8 |
-| **后端 — AI 服务** | Python + FastAPI + LangChain + LangGraph | 3.11 / FastAPI 0.115 / LC 0.3.14 / LG 0.2.60 |
+| **后端 — 管理 API** | Java + Spring Boot + MyBatis-Plus + Spring Security | JDK 21（Boot / MP 版本见 `backend/admin-api/pom.xml`） |
+| **后端 — AI 服务** | Python + FastAPI + LangChain Core + LangGraph | Python 3.11（依赖版本见 `backend/ai-agent-service/requirements.txt`） |
 | **前端 — 管理后台** | Next.js (App Router) + React + TypeScript + Tailwind CSS | 14.2 / React 18 / TS 5.7 |
-| **前端 — 微信小程序** | Taro + React + TypeScript + Sass | 4.2.1 / React 18 |
+| **前端 — 微信小程序** | Taro + React + TypeScript + Sass | React 18（Taro 版本见 `frontend/mini-app/package.json`） |
 | **数据库** | PostgreSQL + Redis | PG 15 / Redis 7 |
 | **知识库** | PostgreSQL（knowledge_cards 词条模型，结构化检索，无向量库） | LLM WIKI（issue #3051） |
 | **大语言模型** | DeepSeek V4 Pro (主) + DeepSeek V4 Flash Vision (视觉) | V4-Pro / V4-Flash / V4-Flash-Vision |
 | **认证** | RS256 JWT (BouncyCastle) + 微信小程序登录 + 短信验证码 | — |
 | **部署** | 阿里云 SWAS + RDS + Redis(Tair) + OSS + GitHub Actions | — |
+
+> **版本真值源（易变现值一律不在此抄数 —— 抄一份 = 第二个真值源，且没有任何东西会红；issue #5082）**
+>
+> - Java / Spring Boot / MyBatis-Plus：`backend/admin-api/pom.xml`
+> - AI 服务依赖（FastAPI / LangChain Core / LangGraph）：`backend/ai-agent-service/requirements.txt`
+>   —— 复算 `grep -E '^(fastapi|langgraph|langchain-)==' backend/ai-agent-service/requirements.txt`
+> - 前端版本：`frontend/admin-web/package.json` / `frontend/mini-app/package.json`
+> - **业务工具数量**：以 `backend/ai-agent-service/app/tools/registry.py` 的注册表为单一源
+>   —— 复算 `python3 -c "import sys;sys.path.insert(0,'backend/ai-agent-service');from app.tools.registry import create_default_registry;print(len(create_default_registry().get_all_tools()))"`
+>   （需该服务依赖已安装）
+> - **workflow 数量**：`ls .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null | wc -l`
+>
+> 守卫 = `tests/unit_ci_workflows/test_doc_present_value_guard.py`（登记面上一处写死现值即红）。
 
 ## 📦 功能概览
 
@@ -105,7 +118,7 @@ graph TB
 ```
 migao/
 ├── backend/
-│   ├── admin-api/              # Java 管理后台 API（Spring Boot 3.3）
+│   ├── admin-api/              # Java 管理后台 API（Spring Boot）
 │   │   ├── src/main/java/com/migao/admin/
 │   │   │   ├── controller/     # 27 个 REST Controller
 │   │   │   ├── service/        # 26 个业务 Service
@@ -124,7 +137,7 @@ migao/
 │       │   ├── agents/         # 双 Agent：小布（C端）+ 米宝（B端）
 │       │   ├── api/            # SSE 流式聊天 + 内部 API
 │       │   ├── graph/          # LangGraph 状态图（意图路由→工具调用→响应）
-│       │   ├── tools/          # 33 个业务工具（注册于 registry.py）
+│       │   ├── tools/          # 业务工具（注册于 registry.py，数量以注册表为单一源）
 │       │   ├── router/         # 意图分类（LLM + 规则引擎）
 │       │   ├── llm/            # LLM 工厂、模型路由、成本追踪
 │       │   ├── cache/          # 语义缓存
@@ -142,7 +155,7 @@ migao/
 │   │   ├── package.json
 │   │   └── .env.development / .env.production
 │   │
-│   └── mini-app/               # Taro 4.2.1 微信小程序 + H5（app.migaozn.com）
+│   └── mini-app/               # Taro 微信小程序 + H5（app.migaozn.com）
 │       ├── src/pages/          # 对话、会话列表、个人中心
 │       ├── src/components/     # 消息气泡、产品卡片、物流卡片等
 │       └── package.json
@@ -163,7 +176,7 @@ migao/
 │
 ├── tests/smoke/                # E2E 冒烟测试（pytest）
 ├── backend/admin-api/src/main/resources/knowledge-templates/  # 行业模板（布艺 curtain，32 条预置知识卡片）
-└── .github/workflows/          # CI/CD（19 个工作流）
+└── .github/workflows/          # CI/CD（工作流数量现取：ls .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null | wc -l）
 ```
 
 ## 🚀 快速开始
@@ -320,7 +333,7 @@ gh pr merge --squash --delete-branch
 | **设计** | [UI 设计规范](docs/design/ui-design-spec.md) | 色彩、字体、组件、响应式 |
 | | [管理后台设计](docs/design/admin-dashboard-design.md) | 页面路由、权限矩阵、CRM |
 | | [坐席工作台设计](docs/design/agent-workspace-design.md) | 人工坐席流程、WebSocket |
-| | [工具规范](docs/design/skill-spec.md) | 33 个 AI 工具定义与安全层 |
+| | [工具规范](docs/design/skill-spec.md) | AI 工具定义与安全层（数量以 `registry.py` 注册表为单一源） |
 
 ## 📊 项目进度
 
