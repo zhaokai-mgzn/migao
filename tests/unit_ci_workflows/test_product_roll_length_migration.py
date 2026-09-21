@@ -1,5 +1,5 @@
 # case_ids: PR-042, PR-043, PR-044, OR-046
-"""V112 商品模型改造迁移的承重判据 + 真库两遍幂等 + bootstrap 终态镜像。
+"""V113 商品模型改造迁移的承重判据 + 真库两遍幂等 + bootstrap 终态镜像。
 
 （用户裁定 2026-09-21，逐字：「商品需要增加 1 卷=多少米，作为**商品货号的基础参数**，
 商品的售卖方式**整卷/散件不能作为 SKU 的组合项**，只能作为**基础属性**，商品的 SKU 由**颜色+门幅**
@@ -41,7 +41,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration"
-V112 = MIGRATION_DIR / "V112__product_roll_length_and_selling_method_base_attribute.sql"
+V113 = MIGRATION_DIR / "V113__product_roll_length_and_selling_method_base_attribute.sql"
 SCHEMA_SQL = REPO / "docs/sql/schema.sql"
 LEDGER = Path(__file__).resolve().parent / "migration_fingerprints.json"
 
@@ -56,7 +56,7 @@ def _read(path: Path) -> str:
 def _strip_comments(sql: str) -> str:
     """SQL 注释（`--` 行注释与 `/* */` 块注释）→ 空，供**写语句**判据用。
 
-    ⚠️ 必须去注释：本仓迁移把「回滚 SQL」写在注释里（V112 的回滚段里就有 `ALTER TABLE ... DROP`），
+    ⚠️ 必须去注释：本仓迁移把「回滚 SQL」写在注释里（V113 的回滚段里就有 `ALTER TABLE ... DROP`），
     不去注释会把注释里的语句当成真写语句（#4595 的同族教训）。
     """
     sql = re.sub(r"/\*.*?\*/", "", sql, flags=re.S)
@@ -67,32 +67,32 @@ def _strip_comments(sql: str) -> str:
 
 def test_v111_exists_and_is_registered_in_the_fingerprint_ledger():
     """迁移不可变护栏（issue #4235）：新增迁移必须在内容指纹账本里，否则它以后能被静默改。"""
-    assert V112.exists(), f"缺少迁移文件：{V112.name}"
+    assert V113.exists(), f"缺少迁移文件：{V113.name}"
     ledger = json.loads(_read(LEDGER))["migrations"]
-    assert V112.name in ledger, (
-        f"`{V112.name}` 未登记进 `tests/unit_ci_workflows/migration_fingerprints.json`。\n"
+    assert V113.name in ledger, (
+        f"`{V113.name}` 未登记进 `tests/unit_ci_workflows/migration_fingerprints.json`。\n"
         f"  跑：python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger")
 
 
 def test_v111_is_explicitly_transactional():
     """`psql -f` 默认逐条 autocommit ⇒ 不显式 `BEGIN/COMMIT` 会留半完成态（V97/V102/V107 实测口径）。"""
-    body = _read(V112)
-    assert re.search(r"^BEGIN;", body, re.M), "V112 缺显式 `BEGIN;`"
-    assert re.search(r"^COMMIT;", body, re.M), "V112 缺显式 `COMMIT;`"
-    assert "RAISE EXCEPTION" in body, "V112 缺终态对账（`RAISE EXCEPTION`）"
+    body = _read(V113)
+    assert re.search(r"^BEGIN;", body, re.M), "V113 缺显式 `BEGIN;`"
+    assert re.search(r"^COMMIT;", body, re.M), "V113 缺显式 `COMMIT;`"
+    assert "RAISE EXCEPTION" in body, "V113 缺终态对账（`RAISE EXCEPTION`）"
 
 
 def test_v111_drops_the_selling_method_column_from_product_skus():
     """红线：售卖方式必须是商品级基础属性 ⇒ `product_skus.selling_method` 必须被删掉。"""
-    body = _strip_comments(_read(V112))
+    body = _strip_comments(_read(V113))
     assert re.search(r"ALTER TABLE product_skus\s+DROP COLUMN IF EXISTS selling_method", body), (
-        "V112 没有 `ALTER TABLE product_skus DROP COLUMN IF EXISTS selling_method` —— "
+        "V113 没有 `ALTER TABLE product_skus DROP COLUMN IF EXISTS selling_method` —— "
         "售卖方式必须离开 SKU 组合（用户裁定）")
 
 
 def test_v111_adds_both_product_columns_without_a_default_on_roll_length():
     """`roll_length_m` **不得有默认值**：NULL = 未配置是真值（行业卷长是区间值，不得编造）。"""
-    body = _strip_comments(_read(V112))
+    body = _strip_comments(_read(V113))
     assert re.search(r"ADD COLUMN IF NOT EXISTS selling_methods JSONB", body), "缺 products.selling_methods"
     assert re.search(r"ADD COLUMN IF NOT EXISTS roll_length_m NUMERIC\(8,2\)", body), "缺 products.roll_length_m"
     assert not re.search(r"roll_length_m NUMERIC\(8,2\)\s+DEFAULT", body), (
@@ -102,7 +102,7 @@ def test_v111_adds_both_product_columns_without_a_default_on_roll_length():
 
 def test_v111_backfill_precedes_the_drop_and_dedup_precedes_the_constraint():
     """顺序判据：回填要先于 DROP（否则取不到旧真值）；去重要先于建唯一键（否则建约束失败）。"""
-    body = _strip_comments(_read(V112))
+    body = _strip_comments(_read(V113))
     backfill = body.index("SET selling_methods = agg.methods")  # 回填块（现包在「列在不在」判据里）
     drop = body.index("DROP COLUMN IF EXISTS selling_method")
     dedup = body.index("DELETE FROM product_skus victim")
@@ -128,12 +128,12 @@ def test_v111_backfill_never_references_a_column_that_does_not_exist():
     ⇒ 本文件同时做两件事：① 静态断言回填里不出现 `deleted`；② `_DDL` 与真 schema 逐列一致
     （见 `_DDL` 上方注释「不得加 deleted」）。独立对抗式复核实测抓到。
     """
-    body = _strip_comments(_read(V112))
+    body = _strip_comments(_read(V113))
     backfill_start = body.index("$backfill$")
     backfill_end = body.index("$backfill$;", backfill_start + 1)
     backfill = body[backfill_start:backfill_end]
     assert "deleted" not in backfill, (
-        "V112 的回填里出现了 `deleted` —— `product_skus` **没有**这一列（删除是物理删除）⇒ "
+        "V113 的回填里出现了 `deleted` —— `product_skus` **没有**这一列（删除是物理删除）⇒ "
         "真库会抛「字段 deleted 不存在」⇒ 整份迁移回滚且被 MigrationRunner 静默跳过")
     # 同时钉住夹具与真 schema 一致（否则夹具会继续掩盖同类缺陷）
     ddl = _read(Path(__file__))
@@ -146,15 +146,15 @@ def test_v111_backfill_never_references_a_column_that_does_not_exist():
 
 def test_v111_documents_rollback_and_its_irreversible_part():
     """迁移文件的硬要求：回滚 SQL + 不可复原项（回滚是有损的，必须照实登记）。"""
-    body = _read(V112)
-    assert "回滚" in body, "V112 缺「回滚」段（本仓迁移的硬要求）"
-    assert "有损" in body or "不可复原" in body, "V112 没写「不可复原项」（去重删掉的行回不来）"
+    body = _read(V113)
+    assert "回滚" in body, "V113 缺「回滚」段（本仓迁移的硬要求）"
+    assert "有损" in body or "不可复原" in body, "V113 没写「不可复原项」（去重删掉的行回不来）"
 
 
 # ══════════════════════════ ② bootstrap 终态镜像（静态） ══════════════════════════
 
 def test_bootstrap_schema_mirrors_the_v111_end_state():
-    """`docs/sql/schema.sql` 是新建库路径（**不跑迁移链**）⇒ 必须已是 V112 终态。"""
+    """`docs/sql/schema.sql` 是新建库路径（**不跑迁移链**）⇒ 必须已是 V113 终态。"""
     schema = _read(SCHEMA_SQL)
     skus = schema[schema.index("CREATE TABLE product_skus ("):]
     skus = skus[:skus.index(");")]
@@ -181,7 +181,7 @@ def test_bootstrap_schema_mirrors_the_v111_end_state():
 
 _PG_BINARIES = ("initdb", "pg_ctl", "psql")
 
-#: 与 V112 触碰的三张表同形的**最小** DDL（含**旧**唯一键 + 同色同门幅的重复行）
+#: 与 V113 触碰的三张表同形的**最小** DDL（含**旧**唯一键 + 同色同门幅的重复行）
 _DDL = """
 CREATE TABLE products (
     id VARCHAR(64) PRIMARY KEY,
@@ -331,8 +331,8 @@ def pg(tmp_path):
 def _seed_and_migrate(pg) -> None:
     r = pg.run(_DDL + _SEED)
     assert r.returncode == 0, f"建表/种子失败：{r.stderr}"
-    r = pg.run_file(V112)
-    assert r.returncode == 0, f"V112 首次执行失败：{r.stderr}"
+    r = pg.run_file(V113)
+    assert r.returncode == 0, f"V113 首次执行失败：{r.stderr}"
 
 
 def test_v111_real_db_end_state(pg):
@@ -377,8 +377,8 @@ def test_v111_is_idempotent_on_second_run(pg):
     methods_before = pg.q("SELECT string_agg(id || '=' || selling_methods::text, ',' ORDER BY id) "
                           "FROM products")
 
-    r = pg.run_file(V112)
-    assert r.returncode == 0, f"V112 第二遍失败（不幂等）：{r.stderr}"
+    r = pg.run_file(V113)
+    assert r.returncode == 0, f"V113 第二遍失败（不幂等）：{r.stderr}"
 
     assert pg.q("SELECT string_agg(id::text || ':' || price::text, ',' ORDER BY id) FROM product_skus") \
         == fingerprint_before, "第二遍改了 SKU 行（不幂等）"
@@ -403,7 +403,7 @@ def test_v111_red_proof_wrong_constraint_is_not_silently_accepted(pg):
     """注入红证 ②：建出来的唯一键**列清单不对** ⇒ 终态对账必须抛（不许静默留一个错误的唯一键）。
 
     注入形态为什么是**触发器改写 DDL**（而不是「先建个错的再跑」）：
-    V112 自己会 `DROP CONSTRAINT IF EXISTS uq_product_skus_combination`（摘掉旧四维约束），
+    V113 自己会 `DROP CONSTRAINT IF EXISTS uq_product_skus_combination`（摘掉旧四维约束），
     所以「事先建一个错的」会被它正常摘掉、走的是**正确**路径 —— 那样这条红证就**不成立**
     （本单第一版正是这么写的，实测红证失败，属 `migac-acceptance` 的「空断言」形态）。
     触发器在**本迁移真正执行 `ADD CONSTRAINT` 的那一刻**改写列清单，才能打到终态对账那条判据。
@@ -437,8 +437,8 @@ def test_v111_red_proof_wrong_constraint_is_not_silently_accepted(pg):
     """)
     assert r.returncode == 0, f"注入失败（红证无效）：{r.stderr}"
 
-    r = pg.run_file(V112)
+    r = pg.run_file(V113)
 
     assert r.returncode != 0, (
-        "唯一键列清单不对（多了 tenant_id）时 V112 竟然通过了 —— 终态对账没有判别力")
+        "唯一键列清单不对（多了 tenant_id）时 V113 竟然通过了 —— 终态对账没有判别力")
     assert "终态对账失败" in r.stderr, f"报错不是终态对账（判据打偏了）：{r.stderr[:400]}"

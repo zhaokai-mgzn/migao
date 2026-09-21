@@ -161,7 +161,7 @@ CREATE TABLE products (
     recommended BOOLEAN DEFAULT FALSE,                       -- 是否商家推荐（C 端新品推荐位展示依据）
     -- 退货回补库存开关（来自 V33__add_allow_return_restock.sql）
     allow_return_restock BOOLEAN DEFAULT FALSE,              -- 是否允许退货回补库存（窗帘行业定制退货不可再售，默认不回补）
-    -- 售卖方式基础属性（商品级，**非** SKU 组合维度）+ 1 卷多少米（来自 V112，用户裁定 2026-09-21）
+    -- 售卖方式基础属性（商品级，**非** SKU 组合维度）+ 1 卷多少米（来自 V113，用户裁定 2026-09-21）
     selling_methods JSONB DEFAULT '["bulk_cut", "full_roll"]'::jsonb,  -- 该货号支持哪些售卖方式（bulk_cut 散剪 / full_roll 整卷）
     roll_length_m NUMERIC(8,2),                              -- 1 卷 = 多少米（货号级基础参数）；NULL = 未配置 ⇒ 禁止推算整卷分配
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -218,7 +218,7 @@ CREATE TABLE product_skus (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 CREATE INDEX idx_product_skus_tenant_product ON product_skus(tenant_id, product_id);
--- 组合只有 颜色 × 门幅（V112：售卖方式已上移为商品级基础属性 products.selling_methods）
+-- 组合只有 颜色 × 门幅（V113：售卖方式已上移为商品级基础属性 products.selling_methods）
 ALTER TABLE product_skus ADD CONSTRAINT uq_product_skus_combination
     UNIQUE (product_id, color_id, door_width);
 COMMENT ON TABLE product_skus IS 'SKU矩阵表，组合 = 颜色 × 门幅（仅此二维）';
@@ -718,7 +718,7 @@ CREATE TABLE order_items (
     pleat_count INTEGER,                            -- 总褶数（与工序应做数量口径对齐）
     has_pattern BOOLEAN,                            -- 是否对花
     corner VARCHAR(32),                             -- 转角（取自澄清清单窗型；影响开数与片数）
-    -- 售卖方式偏好 + 优先整卷发货的分配结果（V112，用户裁定 2026-09-21；
+    -- 售卖方式偏好 + 优先整卷发货的分配结果（V113，用户裁定 2026-09-21；
     -- 例：买 100 米、一卷 60 米 ⇒ roll_count=1、整卷 60 米 + 散剪 40 米）
     selling_method VARCHAR(20),                     -- 本行售卖方式：bulk_cut(散剪) / full_roll(整卷)；NULL = 下单未指定（不猜）
     roll_count INTEGER,                             -- 发出的整卷数（= floor(quantity / roll_length_m)）；NULL = 未要求整卷或货号未配卷长

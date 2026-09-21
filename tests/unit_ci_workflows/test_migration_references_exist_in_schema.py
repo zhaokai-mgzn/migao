@@ -258,14 +258,14 @@ def test_migration_referenced_columns_exist():
 
 #: 判据 2 的第二类合法自引用：**本条迁移自己 DROP 掉的列**。
 #:
-#: 形态（V112 / 用户裁定 2026-09-21）：迁移要把 `product_skus.selling_method` 上移为
+#: 形态（V113 / 用户裁定 2026-09-21）：迁移要把 `product_skus.selling_method` 上移为
 #: 商品级基础属性 ⇒ 必须**先回填**（从旧 SKU 列取真值）**再 DROP**。
 #: 回填那一句读的就是本文件随后要删的列 ⇒ 终态 schema 里当然没有它 ⇒ 守卫判红。
 #:
 #: ⚠️ 这条**不是**「豁免一个真缺陷」：判据要防的是 V74 那种「引用**别人**的、根本不存在的列」
 #: （SQL 失败 → 被跳过 → 部署 success 但回填从未发生）。「本文件自己 DROP 的列」与那种缺陷
 #: **静态不可区分**（都表现为「schema 里没有该列」）⇒ 只能登记，且**必须有死亡条件**：
-#: 一旦 V112 不再引用它（改写成 CTE / 不再回填）⇒ 该条目就是死条目 ⇒ 下面那条反向断言判红。
+#: 一旦 V113 不再引用它（改写成 CTE / 不再回填）⇒ 该条目就是死条目 ⇒ 下面那条反向断言判红。
 ALLOWLIST_DROPPED_COLUMNS = {
     ("product_skus", "selling_method"),
 }
@@ -274,16 +274,16 @@ ALLOWLIST_DROPPED_COLUMNS = {
 def test_dropped_column_allowlist_entry_is_load_bearing():
     """上一条豁免的**死亡条件**（豁免不许变成永久条目）。
 
-    反向断言：V112 **真的**既引用 `product_skus.selling_method`（回填读它）
+    反向断言：V113 **真的**既引用 `product_skus.selling_method`（回填读它）
     又 DROP 它（同一文件）；一旦它不再这么做 ⇒ 该条目已死 ⇒ 本条判红，要求删掉豁免。
     """
-    v112 = MIGRATION_DIR / "V112__product_roll_length_and_selling_method_base_attribute.sql"
-    assert v112.exists(), "V112 不见了 ⇒ 上面的 allowlist 条目已成死条目，删掉它"
-    body = v112.read_text(encoding="utf-8")
+    v113 = MIGRATION_DIR / "V113__product_roll_length_and_selling_method_base_attribute.sql"
+    assert v113.exists(), "V113 不见了 ⇒ 上面的 allowlist 条目已成死条目，删掉它"
+    body = v113.read_text(encoding="utf-8")
     assert ("product_skus", "selling_method") in _referenced_columns(body), (
-        "V112 不再引用 `product_skus.selling_method` ⇒ 请把 ALLOWLIST_DROPPED_COLUMNS 里的该条目删掉")
+        "V113 不再引用 `product_skus.selling_method` ⇒ 请把 ALLOWLIST_DROPPED_COLUMNS 里的该条目删掉")
     assert re.search(r"ALTER TABLE product_skus\s+DROP COLUMN IF EXISTS selling_method", body), (
-        "V112 不再 DROP 该列 ⇒ 该条目已不是「自己 DROP 的列」这一形态 ⇒ 删掉豁免")
+        "V113 不再 DROP 该列 ⇒ 该条目已不是「自己 DROP 的列」这一形态 ⇒ 删掉豁免")
 
 
 def test_self_added_columns_are_excluded():

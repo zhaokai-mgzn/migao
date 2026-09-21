@@ -95,7 +95,7 @@ BEGIN
      WHERE NOT EXISTS (SELECT 1 FROM information_schema.tables
                         WHERE table_schema = 'public' AND table_name = v.t);
     IF missing IS NOT NULL THEN
-        RAISE EXCEPTION 'V112 前置表缺失：% —— 不兜底建表（会造出无外键/无索引的影子表），迁移停下', missing;
+        RAISE EXCEPTION 'V113 前置表缺失：% —— 不兜底建表（会造出无外键/无索引的影子表），迁移停下', missing;
     END IF;
 END $$;
 
@@ -186,10 +186,10 @@ UPDATE products
  WHERE selling_methods IS NULL;
 
 COMMENT ON COLUMN products.selling_methods IS
-    '售卖方式基础属性（商品级，非 SKU 组合维度）：该货号支持哪些售卖方式，取值 bulk_cut(散剪) / full_roll(整卷) 的 JSONB 数组。用户裁定 2026-09-21「售卖方式整卷/散件不能作为 SKU 的组合项，只能作为基础属性」；SKU 组合只有 颜色×门幅（V112）';
+    '售卖方式基础属性（商品级，非 SKU 组合维度）：该货号支持哪些售卖方式，取值 bulk_cut(散剪) / full_roll(整卷) 的 JSONB 数组。用户裁定 2026-09-21「售卖方式整卷/散件不能作为 SKU 的组合项，只能作为基础属性」；SKU 组合只有 颜色×门幅（V113）';
 
 COMMENT ON COLUMN products.roll_length_m IS
-    '1 卷 = 多少米（**商品货号级基础参数**）。NULL = 未配置/未知 ⇒ 订单侧**禁止**推算整卷分配（行业卷长是区间值，不得编造，见 docs/curtain-selling-method-industry-research.md §5）。有值时订单行按「优先整卷发货」算 roll_count + 散剪余量（V112）';
+    '1 卷 = 多少米（**商品货号级基础参数**）。NULL = 未配置/未知 ⇒ 订单侧**禁止**推算整卷分配（行业卷长是区间值，不得编造，见 docs/curtain-selling-method-industry-research.md §5）。有值时订单行按「优先整卷发货」算 roll_count + 散剪余量（V113）';
 
 -- ══════════════════════════════════════════════════════════════════════════════════════
 -- ③ `product_skus`：去掉售卖方式维度 —— 先**去重**，再删列，最后收窄唯一键
@@ -239,12 +239,12 @@ BEGIN
             ADD CONSTRAINT uq_product_skus_combination
             UNIQUE (product_id, color_id, door_width);
     ELSIF substring(current_def FROM '\((.*)\)') IS DISTINCT FROM 'product_id, color_id, door_width' THEN
-        RAISE EXCEPTION 'V112 前置对账失败：已存在的 uq_product_skus_combination 列清单不是「product_id, color_id, door_width」，实际 = % —— 不静默跳过（那会留下一个错误的唯一键）—— 回滚本迁移', current_def;
+        RAISE EXCEPTION 'V113 前置对账失败：已存在的 uq_product_skus_combination 列清单不是「product_id, color_id, door_width」，实际 = % —— 不静默跳过（那会留下一个错误的唯一键）—— 回滚本迁移', current_def;
     END IF;
 END $$;
 
 COMMENT ON TABLE product_skus IS
-    'SKU矩阵表，组合 = 颜色 × 门幅（**仅此二维**）。售卖方式是商品级基础属性 products.selling_methods，不是 SKU 组合维度（用户裁定 2026-09-21，V112）';
+    'SKU矩阵表，组合 = 颜色 × 门幅（**仅此二维**）。售卖方式是商品级基础属性 products.selling_methods，不是 SKU 组合维度（用户裁定 2026-09-21，V113）';
 
 -- ══════════════════════════════════════════════════════════════════════════════════════
 -- ④ `order_items`：「客户要求优先整卷发货」+ 分配结果
@@ -281,7 +281,7 @@ BEGIN
      WHERE table_schema = 'public' AND table_name = 'product_skus'
        AND column_name = 'selling_method';
     IF n > 0 THEN
-        RAISE EXCEPTION 'V112 红线被破：product_skus.selling_method 列仍在 —— 售卖方式必须是商品级基础属性，不得留在 SKU 组合里 —— 回滚本迁移';
+        RAISE EXCEPTION 'V113 红线被破：product_skus.selling_method 列仍在 —— 售卖方式必须是商品级基础属性，不得留在 SKU 组合里 —— 回滚本迁移';
     END IF;
 
     -- ② 新唯一键必须在，且**恰好**是 (product_id, color_id, door_width) 三列
@@ -293,10 +293,10 @@ BEGIN
      WHERE conname = 'uq_product_skus_combination'
        AND conrelid = 'product_skus'::regclass;
     IF constraint_def IS NULL THEN
-        RAISE EXCEPTION 'V112 终态对账失败：uq_product_skus_combination 约束不存在 —— 回滚本迁移';
+        RAISE EXCEPTION 'V113 终态对账失败：uq_product_skus_combination 约束不存在 —— 回滚本迁移';
     END IF;
     IF substring(constraint_def FROM '\((.*)\)') IS DISTINCT FROM 'product_id, color_id, door_width' THEN
-        RAISE EXCEPTION 'V112 终态对账失败：唯一键列清单不是「product_id, color_id, door_width」，实际 = % —— 回滚本迁移', constraint_def;
+        RAISE EXCEPTION 'V113 终态对账失败：唯一键列清单不是「product_id, color_id, door_width」，实际 = % —— 回滚本迁移', constraint_def;
     END IF;
 
     -- ③ 去重必须收敛：不得再有同 (product,color,door_width) 的重复行
@@ -305,13 +305,13 @@ BEGIN
              GROUP BY product_id, color_id, door_width
             HAVING count(*) > 1) AS dup;
     IF n > 0 THEN
-        RAISE EXCEPTION 'V112 终态对账失败：仍有 % 组重复的 (product_id, color_id, door_width) SKU —— 回滚本迁移', n;
+        RAISE EXCEPTION 'V113 终态对账失败：仍有 % 组重复的 (product_id, color_id, door_width) SKU —— 回滚本迁移', n;
     END IF;
 
     -- ④ products.selling_methods 不得有 NULL（「未设置」这一态在本列不存在）
     SELECT count(*) INTO n FROM products WHERE selling_methods IS NULL;
     IF n > 0 THEN
-        RAISE EXCEPTION 'V112 终态对账失败：仍有 % 个商品的 selling_methods 为 NULL —— 回滚本迁移', n;
+        RAISE EXCEPTION 'V113 终态对账失败：仍有 % 个商品的 selling_methods 为 NULL —— 回滚本迁移', n;
     END IF;
 END $$;
 
