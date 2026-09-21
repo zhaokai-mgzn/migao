@@ -104,7 +104,7 @@ describe('QuotationCard — 报价单确认下单', () => {
     expect(screen.getByText('加铅线、双褶')).toBeTruthy()
   })
 
-  it('渲染算料口径：总褶数/折数（每片）/加工费米数/是否对花/花距 —— ⚠️ #4876 起**不再渲染「褶距」**', () => {
+  it('渲染算料口径：总褶数/褶数（每片）/加工费米数/是否对花/花距 —— ⚠️ #4876 起**不再渲染「褶距」**', () => {
     render(<QuotationCard data={{ ...baseQuote, ...craftSpec }} />)
     expect(screen.getByText('52')).toBeTruthy()
     expect(screen.getByText('26')).toBeTruthy()
@@ -120,7 +120,7 @@ describe('QuotationCard — 报价单确认下单', () => {
   it('#4546 判据：渲染「算料公式」行 —— C 端顾客也能看到用料是怎么算出来的', () => {
     // 用户 2026-09-19 追加裁定「C端也要能看到」⇒ 报价卡（吃 `curtain_calc` 原始输出，snake_case）
     // 必须渲染该行。🔴 红证：删掉键表里的 `formula_text` 别名 ⇒ 本断言红。
-    const formulaText = '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
+    const formulaText = '韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
     render(<QuotationCard data={{ ...baseQuote, ...craftSpec, formula_text: formulaText }} />)
     expect(screen.getByText('算料公式')).toBeTruthy()
     expect(screen.getByText(formulaText)).toBeTruthy()

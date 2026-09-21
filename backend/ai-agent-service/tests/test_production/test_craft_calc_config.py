@@ -19,9 +19,9 @@
 | # | 判据 | 红证（实现前/改坏后） |
 |---|---|---|
 | 1 | 缺 `config` ⇒ 与包 D 默认结果**逐值相同**（13.3 米） | 端点把 `config` 写死成某个非默认值 ⇒ 红 |
-| 2 | 传 `config.margin_multi=0.5` ⇒ 折数法用料 13.3 → **13.5** | `config` 被忽略 ⇒ 仍 13.3 ⇒ 红 |
+| 2 | 传 `config.margin_multi=0.5` ⇒ 褶数法用料 13.3 → **13.5** | `config` 被忽略 ⇒ 仍 13.3 ⇒ 红 |
 | 3 | 传 `config.per_fold_mixed_times={"1":0.5}` + 拼1次 ⇒ **26.3**（不是 34.1 / 不是 13.3） | ①忽略配置 ⇒ 34.1；②键没归一成 int ⇒ 引擎 `ValueError` ⇒ 400 |
-| 4 | 传 `config.tiers.standard.fullness=2.2` ⇒ 折数/用料随档位变（**14.8**，不是 13.3） | 档位配置不生效 ⇒ 13.3 ⇒ 红 |
+| 4 | 传 `config.tiers.standard.fullness=2.2` ⇒ 褶数/用料随档位变（**14.8**，不是 13.3） | 档位配置不生效 ⇒ 13.3 ⇒ 红 |
 | 5 | 非法配置（`min_fullness=0`）⇒ **400**（不静默回退默认值） | 静默用默认值算出一个数 ⇒ 200 ⇒ 红 |
 | 6 | 模块级默认**不被污染**：自定义配置调用后，`DEFAULT_CRAFT_CALC_CONFIG` 逐值不变 + 下一次不传配置仍 13.3 | 实现里 `cfg = DEFAULT; cfg.update(config)`（模块级可变全局）⇒ 红 |
 | 7 | **不跨租户串**：连续两次不同配置各自正确（A 的 13.5 / B 的 13.3 各归各） | 全局变量实现 ⇒ 第二次拿到第一次的值 ⇒ 红 |
@@ -45,7 +45,7 @@ CALC_ENDPOINT = "/api/internal/production/craft-calc"
 CONFIG_ENDPOINT = "/api/internal/production/craft-calc-config"
 
 # 冻结样例（与包 D `tests/test_production/test_craft_calc.py` 同口径）：
-# 6.6m 窗 / 2.5m 高 / 双开 / 韩褶 / 标准档 / 韩折公式 ⇒ 52 折 / 13.3 米（默认配置）。
+# 6.6m 窗 / 2.5m 高 / 双开 / 韩褶 / 标准档 / 韩褶公式 ⇒ 52 折 / 13.3 米（默认配置）。
 FROZEN = {"width": 6.6, "height": 2.5, "open_count": 2, "mounting": "s_hook",
           "craft_tier": "standard", "formula": "pleat"}
 
@@ -120,9 +120,9 @@ class TestConfigPassthrough:
         assert _meters(client, {**FROZEN_MIXED, "config": {"per_fold_mixed_times": {"1": 0.5}}}) == 26.3
 
     def test_tier_config_changes_pleats(self, client):
-        """判据 4：标准档 fullness 2.0 → 2.2 ⇒ 折数/用料随档位变（**14.8** 米 / 58 折）。
+        """判据 4：标准档 fullness 2.0 → 2.2 ⇒ 褶数/用料随档位变（**14.8** 米 / 58 折）。
 
-        折数 = `round((6.6×2.2 − 0.3) / 0.25)` = 57 ⇒ 双开取整到 58 ⇒ `0.25×29+0.15` = 7.4/片 ⇒ 14.8 米。
+        褶数 = `round((6.6×2.2 − 0.3) / 0.25)` = 57 ⇒ 双开取整到 58 ⇒ `0.25×29+0.15` = 7.4/片 ⇒ 14.8 米。
         红证：档位配置不生效 ⇒ 13.3 ⇒ 红。
         """
         resp = _post(client, {**FROZEN, "config": {"tiers": {

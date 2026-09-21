@@ -41,7 +41,7 @@ public class CraftCalcController {
      *
      * <p>入参 {@code {width, height?, open_count?, mounting?, craft_tier?, style?, formula?}} 原样透传：
      * 缺省值由 ai-agent 端点给，本层**不补默认值、不重算**（补默认值 = 第二份口径）。
-     * {@code formula}（issue #4527）= 用料**计算方法**（{@code pleat} 韩折公式＝折数法，默认 ｜
+     * {@code formula}（issue #4527）= 用料**计算方法**（{@code pleat} 韩褶公式＝褶数法，默认 ｜
      * {@code fullness} 褶倍数公式＝倍数法）—— 本层只搬运，**不校验、不改写**（口径只属算料引擎）。
      * 缺 {@code width} 或非正 ⇒ 400 且不发起远端调用（fail-closed，不猜窗宽）。</p>
      */

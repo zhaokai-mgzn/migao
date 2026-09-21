@@ -87,7 +87,7 @@ const poWithCraft = {
  * 键名口径（读码实测）：快照键族 = **snake_case** `formula_text`
  * （订单层 `processing_info` 落的是 camelCase `formulaText`，展示映射 `lib/craft-display.ts` 两别名同登记）。
  */
-const FORMULA_TEXT = '韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
+const FORMULA_TEXT = '韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米'
 
 const poWithFormula = {
   ...poIssued,
@@ -186,7 +186,7 @@ describe('ProcessingOrderBlock', () => {
     expect(within(spec).getByText('是否定型').parentElement?.textContent).toContain('是')
   })
 
-  it('快照明细展示算料口径：总褶数/折数（每片）/幅数/褶倍/米数/是否对花/花距（PG-019）—— ⚠️ #4876 起**不再渲染「褶距」**', async () => {
+  it('快照明细展示算料口径：总褶数/褶数（每片）/幅数/褶倍/米数/是否对花/花距（PG-019）—— ⚠️ #4876 起**不再渲染「褶距」**', async () => {
     mockedDetail.mockResolvedValueOnce({ data: { data: poWithCraft } })
     render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
 

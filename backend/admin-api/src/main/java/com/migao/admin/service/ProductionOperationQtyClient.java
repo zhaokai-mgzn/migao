@@ -26,7 +26,7 @@ import java.util.Map;
  * 调 ai-agent 内部端点 {@code POST /api/internal/production/operation-qty}（Service Token 认证）。
  *
  * <p>真值源：{@code docs/curtain-production-rules.md} §3「工序实例的应做数量 = 算料引擎输出
- * （折数/孔数/用料米数/幅数），报工只确认，不手工心算」。算料口径的唯一实现是 ai-agent 的
+ * （褶数/孔数/用料米数/幅数），报工只确认，不手工心算」。算料口径的唯一实现是 ai-agent 的
  * {@code app/production/routing.py::_qty_for} —— **Java 侧不复制第二份算料逻辑**，
  * 本类只做「问 + 取」。</p>
  *

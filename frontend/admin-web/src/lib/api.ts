@@ -241,7 +241,7 @@ export interface CraftCalcParams {
   height?: number
   /** 打开方式开数（1 单开 / 2 双开 / 3 三开 / 4 四开） */
   open_count?: number
-  /** 悬挂方式（仅 `s_hook` 韩褶走折数法） */
+  /** 悬挂方式（仅 `s_hook` 韩褶走褶数法） */
   mounting?: string
   /** 工艺档位（standard 2.0 / economy 1.8） */
   craft_tier?: string
@@ -251,12 +251,12 @@ export interface CraftCalcParams {
   special_options?: string[]
   /**
    * 用料**计算方法**（issue #4527，用户 2026-09-19 裁定）：
-   * `pleat` = 韩折公式（折数法，**默认**）/ `fullness` = 褶倍数公式（倍数法）。
+   * `pleat` = 韩褶公式（褶数法，**默认**）/ `fullness` = 褶倍数公式（倍数法）。
    * 缺省由算料引擎的配置默认值给（前端不补默认值 = 不制造第二份口径）。
    */
   formula?: string
   /**
-   * 安装工艺（用户 2026-09-19 追加裁定「韩折用韩折公式算布料，打孔按倍数法算布料」）：
+   * 安装工艺（用户 2026-09-19 追加裁定「韩褶用韩褶公式算布料，打孔按倍数法算布料」）：
    * 韩褶/打孔/四爪钩/穿杆/平幔。**公式由工艺推导**，权威表在算料引擎（`curtain_calc.resolve_craft_rule`）。
    */
   craft?: string
@@ -276,7 +276,7 @@ export interface CraftCalcResult {
   fabric_meters: number
   /** 总褶数 */
   pleat_count: number
-  /** 每片折数 */
+  /** 每片褶数 */
   per_panel_pleats?: number
   /** 每折吃布（米）：单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2 */
   per_fold: number
@@ -287,7 +287,7 @@ export interface CraftCalcResult {
   formula_used?: string
   /**
    * 可读公式串（**后端产出，前端只渲染**）—— 串首写明所用公式，issue #4527：
-   * `韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米` /
+   * `韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米` /
    * `褶倍数公式：(5.5÷2)×2 → 每片 2.75×2=5.5米 ×2片 = 11.0米`
    */
   formula_text: string

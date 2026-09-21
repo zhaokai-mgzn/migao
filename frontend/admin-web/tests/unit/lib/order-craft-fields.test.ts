@@ -276,7 +276,7 @@ describe('双拼（§4.8）：主布行 / 配布边行的绑组键', () => {
     })
   })
 
-  it('配布边行不携带工艺规格键（折数/开数/幅数是一扇窗的属性，不是每块布的）', () => {
+  it('配布边行不携带工艺规格键（褶数/开数/幅数是一扇窗的属性，不是每块布的）', () => {
     const edge = buildEdgeLineCraftSpec('item-1', METERS_SOURCE_FOLLOW)
     for (const key of ['curtainType', 'craft', 'openCount', 'isShaped', 'specialOptions']) {
       expect(edge).not.toHaveProperty(key)

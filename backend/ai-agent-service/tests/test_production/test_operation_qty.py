@@ -2,7 +2,7 @@
 
 背景：商家后台生产明细页「应做数量」退化成**订单数量**（订单数量=3 ⇒ 11 道工序全 3，
 「韩褶-布」显示 3 折、「外帘装袋」显示 3 套）。真值源 `docs/curtain-production-rules.md` §3：
-工序实例的应做数量 = **算料引擎输出**（折数/孔数/用料米数/幅数），报工只确认不心算。
+工序实例的应做数量 = **算料引擎输出**（褶数/孔数/用料米数/幅数），报工只确认不心算。
 `app/production/routing.py::_qty_for` 此前**零运行时消费者**，本端点（方案 A）即接线点。
 
 口径铁律（逐条有对应断言）：
@@ -118,7 +118,7 @@ class TestCriterion1EngineOutput:
         assert pos["qty_by_operation"] == {
             "精裁-布": 12.3,      # 米：用料米数
             "布三边": 12.3,       # 米：用料米数
-            "韩褶-布": 24.0,      # 折：折数（**不是订单数量的 3**）
+            "韩褶-布": 24.0,      # 折：褶数（**不是订单数量的 3**）
             "外帘装袋": 1.0,      # 套：1 樘 = 1 套
         }
         assert pos["qty_source_by_operation"] == {
@@ -176,7 +176,7 @@ class TestCriterion2NeverZero:
         assert set(pos["qty_source_by_operation"].values()) == {"fallback"}
 
     def test_partial_calc_info_only_missing_key_falls_back(self, client):
-        """只给米数：折数缺失 ⇒ 韩褶-布 兜底 1（**不落 0**），米类仍取 12.3。"""
+        """只给米数：褶数缺失 ⇒ 韩褶-布 兜底 1（**不落 0**），米类仍取 12.3。"""
         pos = _first_position(
             _post(client, [{**POSITION, "calc_info": {"fabric_meters": 12.3}}])
         )

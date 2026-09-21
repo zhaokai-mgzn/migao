@@ -74,14 +74,14 @@ _CUTTING_MODES = ("定高买宽", "定宽买高")
 # 取值域由 `_reject_invalid_open_count` 判（下限 1，与 schema 的 `minimum: 1` 同口径；
 # schema 那一处**只能写字面量**，见该键的注释）。
 # 算料输出的取值来源（真值源 `docs/curtain-fabric-quote-rules.md` §8 原文口径：
-# 「折数/用料必须带来源（公式计算 / 人工指定 / 客户自报），防止多渠道不一致」）。
+# 「褶数/用料必须带来源（公式计算 / 人工指定 / 客户自报），防止多渠道不一致」）。
 _SOURCES = ("公式计算", "人工指定", "客户自报")
 # 算料输出键 → 字段标签（负值闸门的报错要**点名**是哪个字段）。
 # 键名一律 snake_case，与 `curtain_calc` 输出**逐字一致**（设计文档 §4.5：改它 = 改契约）。
 _CALC_OUTPUT_LABELS = (
     ("fabric_meters", "面料米数"),
-    ("pleat_count", "折数"),
-    ("per_panel_pleats", "每片折数"),
+    ("pleat_count", "褶数"),
+    ("per_panel_pleats", "每片褶数"),
     ("panels", "幅数"),
     ("fullness", "理论褶倍"),
     ("fullness_actual", "实际褶倍"),
@@ -386,7 +386,7 @@ class OrderCreateTool(BaseTool):
         "curtainType（部位：布帘/纱帘/帘头）、craft（安装工艺：韩褶/打孔/穿杆/平幔 —— "
         "**与 mounting 是两层，不要互相推导**）、isShaped（是否定型）、style（单色/拼色）、"
         "cuttingMode（加工类型：定高买宽/定宽买高）、openCount（打开方式开数：**正整数** 1/2/3/4 …，不是固定枚举）、"
-        "formula（用料公式：pleat 韩折公式·折数法 / fullness 褶倍数公式·倍数法 —— "
+        "formula（用料公式：pleat 韩褶公式·褶数法 / fullness 褶倍数公式·倍数法 —— "
         "**与算料配置同源，不要自己按 craft 推导**）、craftTier（算料档位键：standard 标准档 / "
         "economy 经济档；**不要补默认档**）、hasPattern + patternRepeat（是否对花 + 花距，米）、"
         "corner（转角形态，取自清单「窗型」：平开/落地/飘窗/转角/L窗）、"
@@ -405,7 +405,7 @@ class OrderCreateTool(BaseTool):
         # 「报价单展示的米数」≠「订单落库的米数」，对顾客的承诺与履约不一致。
         "【算料输出·原样透传】已调用 curtain_calc 算料时，把它的输出**原样透传**进 "
         "items[i].processing_info（**顶层键**，键名逐字一致，**不要自己推算**）："
-        "fabric_meters（面料米数）、pleat_count（总褶数）、per_panel_pleats（每片折数）、"
+        "fabric_meters（面料米数）、pleat_count（总褶数）、per_panel_pleats（每片褶数）、"
         "panels（幅数）、fullness（理论褶倍）、fullness_actual（实际褶倍）、"
         "source（取值来源：curtain_calc 的 formula → 「公式计算」/ manual → 「人工指定」/ "
         "customer_quoted → 「客户自报」）。"
@@ -426,7 +426,7 @@ class OrderCreateTool(BaseTool):
         "⚠️ **不同樘窗必须用互不相同的值**（w1 / w2 …）：一张单有两个窗户时 4 行都写 w1 "
         "会被判成**同一樘窗** ⇒ 两扇窗并成一扇，套数/工序/计件**算少**。"
         "⚠️ 只给配布边行写、主布行不写 = 组键对不上 ⇒ 一扇窗被算成两扇，"
-        "折数/开数/工序/计件**全部翻倍**，同樘窗的同名 specialOptions 也会被收两次。"
+        "褶数/开数/工序/计件**全部翻倍**，同樘窗的同名 specialOptions 也会被收两次。"
         "【双拼·主布/配布边】拼色（双拼）时主布行带 componentRole=主布 + 全部工艺规格；"
         "配布边行带 componentRole=配布边 + **同一个 craftLineId** 并带 metersSource"
         "（跟随主布/人工指定）。**布 + 纱**则两行分别带 componentRole=主布 / 纱，"
@@ -599,7 +599,7 @@ class OrderCreateTool(BaseTool):
                                 # 「只生成一个部位」对**纱行**也是错的（纱是独立部位）。
                                 "craftLineId": {
                                     "type": "string",
-                                    "description": "**同一樘窗（一个窗户）的绑组标识**：同一樘窗的**每一行都写同一个值**（服务端按值**逐字相等**判同组；缺省 = 本行各自成组），且**不同樘窗必须用互不相同的值**（w1 / w2 …）—— 两个窗户复用同一个值会被判成同一樘窗 ⇒ 两扇被并成一扇，套数/工序/计件**算少**。值是**你自己起的稳定字符串**（如 w1），**不是订单行 id** —— 下单前还没有行 id。布行 + 纱行同组时**各成一个部位**（纱是独立部位）；配布边行同组时被主布行**吸收**（不独立成部位）。只给配布边行写、主布行不写 ⇒ 绑不上组 ⇒ 一扇窗被算成两扇（折数/开数/工序/计件全部翻倍）",
+                                    "description": "**同一樘窗（一个窗户）的绑组标识**：同一樘窗的**每一行都写同一个值**（服务端按值**逐字相等**判同组；缺省 = 本行各自成组），且**不同樘窗必须用互不相同的值**（w1 / w2 …）—— 两个窗户复用同一个值会被判成同一樘窗 ⇒ 两扇被并成一扇，套数/工序/计件**算少**。值是**你自己起的稳定字符串**（如 w1），**不是订单行 id** —— 下单前还没有行 id。布行 + 纱行同组时**各成一个部位**（纱是独立部位）；配布边行同组时被主布行**吸收**（不独立成部位）。只给配布边行写、主布行不写 ⇒ 绑不上组 ⇒ 一扇窗被算成两扇（褶数/开数/工序/计件全部翻倍）",
                                 },
                                 "metersSource": {
                                     "type": "string",
@@ -623,7 +623,7 @@ class OrderCreateTool(BaseTool):
                                     # 字面量（不得写成 `_OPEN_COUNT_MIN`）：`parameters` 必须能被
                                     # `ast.literal_eval` 求值（admin-api 的跨语言契约测试按此读 schema）。
                                     "minimum": 1,
-                                    "description": "打开方式开数：**正整数** 1 单开 / 2 双开 / 3 三开 / 4 四开 …（引导清单已采集；不是固定枚举，issue #4430）。折数整除校验与算料余量按它走；顾客没说 ⇒ 不填",
+                                    "description": "打开方式开数：**正整数** 1 单开 / 2 双开 / 3 三开 / 4 四开 …（引导清单已采集；不是固定枚举，issue #4430）。褶数整除校验与算料余量按它走；顾客没说 ⇒ 不填",
                                 },
                                 # 用料公式 + 算料档位（issue #4873，用户 2026-09-21 需求）：
                                 # 「移除订单工艺规格中的褶距字段，加上用料公式字段……这里需要和
@@ -633,7 +633,7 @@ class OrderCreateTool(BaseTool):
                                 "formula": {
                                     "type": "string",
                                     "enum": ["pleat", "fullness"],
-                                    "description": "用料公式：pleat=韩折公式（折数法）/ fullness=褶倍数公式（倍数法），与算料配置的 default_formula 同域。**不要按 craft 自行推导**；顾客没说 ⇒ 不填",
+                                    "description": "用料公式：pleat=韩褶公式（褶数法）/ fullness=褶倍数公式（倍数法），与算料配置的 default_formula 同域。**不要按 craft 自行推导**；顾客没说 ⇒ 不填",
                                 },
                                 "craftTier": {
                                     "type": "string",
@@ -673,7 +673,7 @@ class OrderCreateTool(BaseTool):
                                 "per_panel_pleats": {
                                     "type": "number",
                                     "minimum": 0,
-                                    "description": "每片折数（**原样取 `curtain_calc` 输出的 `per_panel_pleats`**，不要自己推算、缺就不填）",
+                                    "description": "每片褶数（**原样取 `curtain_calc` 输出的 `per_panel_pleats`**，不要自己推算、缺就不填）",
                                 },
                                 "panels": {
                                     "type": "number",
@@ -697,7 +697,7 @@ class OrderCreateTool(BaseTool):
                                     # ⇒ 任何函数调用（如 `list(_SOURCES)`）都会让该契约测试判红。
                                     # 值必须与 `_SOURCES` 逐字一致（那边是运行时闸门的真值源）。
                                     "enum": ["公式计算", "人工指定", "客户自报"],
-                                    "description": "折数/用料的取值来源（真值源 §8：必须带来源，防多渠道不一致）。`curtain_calc` 的 source 为 formula → 「公式计算」/ manual → 「人工指定」/ customer_quoted → 「客户自报」",
+                                    "description": "褶数/用料的取值来源（真值源 §8：必须带来源，防多渠道不一致）。`curtain_calc` 的 source 为 formula → 「公式计算」/ manual → 「人工指定」/ customer_quoted → 「客户自报」",
                                 },
                                 "skuCode": {"type": "string", "minLength": 1,
                                             "description": "SKU编码（取 product_detail skus[].sku_code 原值）。商品有多个不同 SKU 价时必填（与 colorName 二选一）"},
@@ -996,7 +996,7 @@ class OrderCreateTool(BaseTool):
         被当非法值拦掉**（用户口径明确含三开），而 V64 要堵的正是「读它的人会当成枚举」。
 
         仍按「类型 + 下限」严格比对（字符串 `"2"` / 布尔 `True` 不算 2/1，同
-        `_reject_invalid_enum` 的口径：静默接受变体的代价是**静默按错的开数算折数/余量**），
+        `_reject_invalid_enum` 的口径：静默接受变体的代价是**静默按错的开数算褶数/余量**），
         但**不再限定 1/2/4** —— 3 开（及 5 开、6 开…）都是合法输入。
         """
         if raw is None:
@@ -1012,7 +1012,7 @@ class OrderCreateTool(BaseTool):
             error=f"{where}打开方式无效",
             message=(
                 f"{where}的打开方式是「{raw}」，不是合法开数 —— "
-                "错值会让加工单按**错误开数**算折数/余量并取到错误工序路线。"
+                "错值会让加工单按**错误开数**算褶数/余量并取到错误工序路线。"
             ),
             suggestion=(
                 "请把 processing_info.openCount 改成**正整数**开数：1 单开 / 2 双开 / "
@@ -1192,7 +1192,7 @@ class OrderCreateTool(BaseTool):
 
         - 只给**配布边行**写组键、主布行不写 ⇒ **结构上永远绑不上组**（主布行的组键是它自己的
           `itemId`，配布边行写什么都对不上）⇒ 配布边行不被吸收 ⇒ **一扇窗被算成两扇**：
-          折数/开数/工序/计件全部翻倍，且同樘窗的同名特殊选项会被收两次
+          褶数/开数/工序/计件全部翻倍，且同樘窗的同名特殊选项会被收两次
           （`ProcessingFeeCalculator.windowKey` 的樘窗级去重同时失效）。
           ⚠️ 工具描述**原先教的正是这个形态**（「配布边行带 `craftLineId=主布行的行标识`」）
           —— 而行 id 要**落库后**才有，下单前拿不到 ⇒ 那条教学是不可执行的（本闸门 + 描述
@@ -1249,7 +1249,7 @@ class OrderCreateTool(BaseTool):
                     message=(
                         f"商品明细第 {i + 1} 项的 componentRole=配布边，但没有 craftLineId —— "
                         "这一行**不会被吸收**进主布部位，加工单会把它算成**另一个部位**："
-                        "一扇窗算两扇（折数/开数/工序/计件全部翻倍）。"
+                        "一扇窗算两扇（褶数/开数/工序/计件全部翻倍）。"
                     ),
                     suggestion=(
                         "把同一樘窗的**每一行**（主布行 + 配布边行）的 "

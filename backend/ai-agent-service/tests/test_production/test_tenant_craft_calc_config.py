@@ -150,7 +150,7 @@ async def test_tenant_config_reaches_build_quote(monkeypatch):
     assert result.data is not None
     assert result.data["fabric_meters"] == expected["fabric_meters"] == 13.5
     assert result.data["total"] == expected["total"]
-    # ③ **不是**默认口径（默认 = 韩折公式 + 1 位进位 ⇒ 13.8 米）—— 这一条才是「接线生效」的红证
+    # ③ **不是**默认口径（默认 = 韩褶公式 + 1 位进位 ⇒ 13.8 米）—— 这一条才是「接线生效」的红证
     baseline = build_quote(window_width=6.6, window_height=2.5, mounting="eyelet", fabric_price=30.0)
     assert baseline["fabric_meters"] == 13.8
     assert result.data["fabric_meters"] != baseline["fabric_meters"]

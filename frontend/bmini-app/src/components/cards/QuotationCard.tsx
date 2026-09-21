@@ -20,7 +20,7 @@ export interface QuoteData {
   formula_used?: string
   fullness?: number
   /**
-   * 实际褶倍（= 折数法实际用料 ÷ 窗宽），与 `fullness`（档位/款式**理论**倍数）语义不同：
+   * 实际褶倍（= 褶数法实际用料 ÷ 窗宽），与 `fullness`（档位/款式**理论**倍数）语义不同：
    * 顾客自报 48 折时理论 2 倍、实际 1.86 倍 ⇒ 展示必须取实际值（issue #4118 ④）。
    * 倍数法报价不含本字段（无「实际反算」这一项）。
    */
@@ -65,7 +65,7 @@ export default function QuotationCard({ data, onConfirm }: QuotationCardProps) {
   const breakdown = data.breakdown || []
   // 确认下单防连点锁：点击后锁卡（issue #3040 收尾 #3038，防重复下单）
   const [confirmed, setConfirmed] = useState(false)
-  // 实际褶倍与理论值不同（客户自报折数 / 经济档）⇒ 一并标注实际值：
+  // 实际褶倍与理论值不同（客户自报褶数 / 经济档）⇒ 一并标注实际值：
   // 只显示理论值会让顾客以为「2 倍褶皱」就是实际用料比，而实际可能只有 1.86 倍（issue #4118 ④）
   const showActualFullness = data.fullness_actual != null && data.fullness_actual !== data.fullness
   // 工艺规格（issue #4355 / 设计文档 §4.9 ①）：同一份定义（utils/craft-display）渲染，缺值行已丢弃

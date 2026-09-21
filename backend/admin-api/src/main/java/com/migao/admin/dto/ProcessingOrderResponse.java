@@ -148,7 +148,7 @@ public class ProcessingOrderResponse {
         /** 总褶数。 */
         @JsonProperty("pleat_count")
         private Object pleatCount;
-        /** 折数（每片）。 */
+        /** 褶数（每片）。 */
         @JsonProperty("per_panel_pleats")
         private Object perPanelPleats;
         /** 幅数（定宽买高）。 */

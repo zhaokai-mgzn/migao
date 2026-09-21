@@ -394,7 +394,7 @@ type CalcScalarKey =
 
 /** 六个标量键的展示元数据（**只有文案**：默认值/范围一律由后端给，前端不持有） */
 const CALC_SCALAR_FIELDS: { key: CalcScalarKey; label: string; hint: string }[] = [
-  { key: 'per_fold_single', label: '单色每折吃布（米）', hint: '折数法：用料 = 每折吃布 × 折数 + 余量' },
+  { key: 'per_fold_single', label: '单色每折吃布（米）', hint: '褶数法：用料 = 每折吃布 × 褶数 + 余量' },
   { key: 'margin_single', label: '单开余量（米）', hint: '单开（一整幅）的包边余量' },
   { key: 'margin_multi', label: '多开余量（米）', hint: '双开/四开的包边 + 对缝余量' },
   { key: 'min_fullness', label: '褶倍下限', hint: '行业红线：不得低于系统默认值（低于它用料不足）' },
@@ -407,7 +407,7 @@ const CALC_SCALAR_FIELDS: { key: CalcScalarKey; label: string; hint: string }[] 
  *
  * ⚠️ **单一真值** = `@/lib/craft-calc-request` 的 `CRAFT_CALC_FORMULA_LABELS`（issue #4878 独立复核）：
  * 本页原来自带一份**逐字相同、但没有任何守卫**的副本（下单页另有一份）⇒ 改一处忘一处就**静默分叉**
- * （下单页显示「韩折公式（折数法）」、这里显示别的字）。⇒ 改为**直接复用同一张表**，不再各写一份。
+ * （下单页显示「韩褶公式（褶数法）」、这里显示别的字）。⇒ 改为**直接复用同一张表**，不再各写一份。
  */
 const CALC_FORMULA_LABEL: Record<string, string> = CRAFT_CALC_FORMULA_LABELS
 
@@ -2939,7 +2939,7 @@ export default function ProcessConfigPage() {
                     </span>
                   </div>
                   <p className="text-sm text-neutral-500">
-                    这些参数决定用料米数（折数法：每折吃布 × 折数 + 余量）。保存后**新**的算料按当前配置计算，
+                    这些参数决定用料米数（褶数法：每折吃布 × 褶数 + 余量）。保存后**新**的算料按当前配置计算，
                     已生成的单据不受影响。
                   </p>
 

@@ -26,9 +26,9 @@ import java.util.Map;
  * 算料试算客户端（issue #4421 Java 接线）
  * 调 ai-agent 内部端点 {@code POST /api/internal/production/craft-calc}（Service Token 认证）。
  *
- * <p>真值源：{@code docs/curtain-fabric-quote-rules.md} §8（韩折折数法）/ §8.1（两种用料计算方法）/ §9（工艺档位）/
+ * <p>真值源：{@code docs/curtain-fabric-quote-rules.md} §8（韩褶褶数法）/ §8.1（两种用料计算方法）/ §9（工艺档位）/
  * §11（算例）。用料口径 = 用户 2026-09-19 裁定：**逐片**（每片宽 = 成品宽 ÷ 开数，总用料 = 每片用料 × 开数），
- * 用料米数**向上进位到 0.1**；公式**由工艺推导**（韩褶 ⇒ 韩折公式＝折数法；打孔 ⇒ 褶倍数公式＝倍数法，默认 2 倍），
+ * 用料米数**向上进位到 0.1**；公式**由工艺推导**（韩褶 ⇒ 韩褶公式＝褶数法；打孔 ⇒ 褶倍数公式＝倍数法，默认 2 倍），
  * `formula` 入参为显式覆盖。**每折吃布随款式/拼次变化**（单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2 米，纸质速查表表头）。
  * 算料口径的唯一实现是 ai-agent 的 {@code app/tools/curtain_calc.py} ——
  * <b>Java 侧不复制第二份算料逻辑</b>（同 {@link ProductionOperationQtyClient} 口径），
@@ -239,7 +239,7 @@ public class CraftCalcClient {
                 422,
                 "请确认 ai-agent-service 已启动、且 ai-agent.base-url / ai-agent.service-token 配置正确"
                         + "（当前服务地址 " + url + "）；确认后重新试算。"
-                        + "用料米数必须来自算料引擎（真值源 §8 折数法），系统不会用 0 或前端自拼的公式顶替。");
+                        + "用料米数必须来自算料引擎（真值源 §8 褶数法），系统不会用 0 或前端自拼的公式顶替。");
         if (cause != null) {
             e.initCause(cause);
         }
@@ -249,9 +249,9 @@ public class CraftCalcClient {
     /**
      * 试算结果。
      *
-     * @param fabricMeters 用料米数（折数法：`每折吃布 × 折数 + 余量`）
-     * @param pleatCount 折数（按开数取整后的总折数）
-     * @param perPanelPleats 每片折数
+     * @param fabricMeters 用料米数（褶数法：`每折吃布 × 褶数 + 余量`）
+     * @param pleatCount 褶数（按开数取整后的总褶数）
+     * @param perPanelPleats 每片褶数
      * @param perFold 每折吃布（米）：单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2（用户 2026-09-19 裁定）
      * @param fullness **理论**倍数（档位名义值，standard 2.0 / economy 1.8）
      * @param fullnessActual **实际**倍数（用料 ÷ 窗宽；与理论倍数语义不同，展示取实际值）

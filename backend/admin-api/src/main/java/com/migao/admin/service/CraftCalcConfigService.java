@@ -243,7 +243,7 @@ public class CraftCalcConfigService {
         Object formula = in.get("default_formula");
         if (formula != null && !FORMULAS.contains(String.valueOf(formula))) {
             details.add(BusinessException.detail("default_formula",
-                    "必须是 " + FORMULAS + " 之一（pleat 韩折公式＝折数法 / fullness 褶倍数公式＝倍数法），收到 " + formula));
+                    "必须是 " + FORMULAS + " 之一（pleat 韩褶公式＝褶数法 / fullness 褶倍数公式＝倍数法），收到 " + formula));
         } else if (formula != null) {
             out.put("default_formula", String.valueOf(formula));
         }
