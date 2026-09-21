@@ -326,7 +326,8 @@
   }
 }
 
-/* A 模式一屏（切片 ② / 设计 §4.1）：一次扫码 = 1 步 —— 工序 + 应做数量 + 一个大按钮【完成】 */
+/* A 模式一屏（切片 ② / 设计 §4.1）：一次扫码 = 1 步 —— 工序 + 应做数量 + 一个大按钮【开工】
+   （issue #4967：扫码 = 开工 / 领活，不是「做完扫一次」） */
 .production-scan-screen {
   margin: 16px 24px 0;
   padding: 24px;
@@ -388,5 +389,51 @@
     border-radius: 12px;
     font-size: 24px;
     color: #1a73e8;
+  }
+}
+
+/* 本套工序明细（issue #4967 交付物 2）：工人一眼看到「这一套还有哪几道没做」。
+   数据只来自服务端 `set_overview`（本套 → 部位 → 工序），页面不自己聚合；缺值不渲染。 */
+.production-scan-overview {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+
+  &__title {
+    display: block;
+    font-size: 24px;
+    font-weight: 600;
+    color: #5f6b7a;
+  }
+
+  &__pos {
+    margin-top: 12px;
+  }
+
+  &__pos-name {
+    display: block;
+    font-size: 26px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  &__op {
+    margin-top: 8px;
+    padding: 12px;
+    background: #f8fafc;
+    border-radius: 12px;
+  }
+
+  &__op-name {
+    display: block;
+    font-size: 26px;
+    color: #1f2937;
+  }
+
+  &__op-meta {
+    display: block;
+    margin-top: 4px;
+    font-size: 22px;
+    color: #9aa5b1;
   }
 }

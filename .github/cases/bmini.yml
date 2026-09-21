@@ -158,7 +158,7 @@ cases:
 
   - id: BM-006
     legacy_id: ""
-    title: "工人扫码报工 - 扫码/手输单号 → 本单工序 → 完成报工 → 完工提示"
+    title: "工人扫码开工/领活 - 扫码/手输单号 → 本单工序 → 开工（领活）→ 本套工序明细"
     domains:
       - bmini
       - production
@@ -172,19 +172,22 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "工人扫加工单二维码（或手输单号）→ 老师傅看到本单工序：按部位分组展示「工序名 · 应做数量+单位 · 单价」→ 点「完成报工」→ 工序列推进 → 必完工序全绿显示「✅ 订单生产完成」"
+      - "工人扫加工单二维码（或手输单号）→ 老师傅看到本单工序：按部位分组展示「工序名 · 应做数量+单位 · 单价」→ 点「完成报工」→ 工序列推进 → 必完工序全绿显示「✅ 订单生产完成」；🔴 2026-09-21 改判（issue #4967）：工人**扫新码（套 × 部位）** ⇒ A 模式一屏显示「套号 · 部位 + 系统推断的这一道 + 应做数量」+ 一个大按钮**【开工】** + **本套工序明细**（本套 → 部位 → 工序：逻辑名 / 应做数量+单位 / 单价 / 状态 / 已报数量）⇒ 点【开工】= 领活（先领活再生产，完工不扫）"
     expectations:
       - tool: direct_reply
     data_checks:
       - "二维码容错解析 order_id：裸单号 / migao://production/<id> / 带 query 的 URL 三种形态可解析，非法输入返回 null 且不发请求"
       - "报工请求体逐字为冻结契约字段（worker_id/worker_name/qty/qualified_qty/work_type=normal），qty 默认=该工序应做数量"
       - "报工失败（success=false）展示后端 message 且不清空工序列表；order_completed=true → 页面显示「✅ 订单生产完成」（⚠️ **2026-09-21 订正（issue #4961）**：`order_completed` 的服务端口径 = **该加工单全部活跃工序实例**合格报工满应做数量，**不再**是「必完工序全绿」；`is_must_finish` 键读面保留、值恒 false，工人端**零消费**）"
-    skip_reason: "[backend-contract] 纯前端单元测试（bmini-app tests/production-page.test.tsx + production-qr.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-17 新增（issue #3997 M4-G-3）：消费 M4-G-2 冻结契约 GET/POST /api/admin/production/orders/{orderId}/operations[/{operationId}/report]；truths_ref 用 frontend-fix.no-api-change（本包不改后端 API；生产/扫码域暂无专属真值 key） ｜ 2026-09-21（issue #4961 用例库同步，配套 feat/4960-4961-integration）：第 3 条 data_check 补口径订正 —— 「✅ 订单生产完成」的触发键 `order_completed` 服务端改判为「**全部活跃工序实例报满**」（不再是「必完工序全绿」），页面渲染条件（`isCompleted`，同一门禁也决定「发货」入口是否出现）**一字未动**。⚠️ **按用例库纪律，`user_inputs` 一字未动**：其中「必完工序全绿显示「✅ 订单生产完成」」这句是 #4961 之前的工人口径描述，**保留原文**（改判说明只写在 data_checks / merge_log 里，不改 `user_inputs`）；`expectations` / `skip_reason` / `traces` 同样未动。**判据一格不放宽**。"
+      - "🔴 **扫码 = 开工 / 领活**（issue #4967，2026-09-21 用户逐字裁定①「工人都是先扫码报工后再真实进行生产」）：A 模式一屏的大按钮文案 = **【开工】**（改回【完成】⇒ 必红）；点它只调一次 `completeByScan(token, operation_id, 幂等键)`（数量/身份都不传：数量缺省由服务端取剩余应做、身份由服务端从工人 session 解）；未确定工序（operation=null）⇒ 屏上**没有**【开工】按钮且 `completeByScan` 一次都不调；旧码降级（granularity=order）⇒ 提示必须选部位 + **不**出【开工】按钮（绝不默认取第 1 套）。证据：frontend/bmini-app/tests/production-scan-complete.test.tsx"
+      - "🔴 **按套展示工序细节**（issue #4967 交付物 2）：扫码后（除「当前这道 + 按钮」外）列出**本套各部位的工序明细**（逻辑名 / 应做数量+单位 / 单价 / 状态 / 已报数量），让工人一眼看到「这一套还有哪几道没做」。数据**只**来自服务端解析响应的 `set_overview`（`ProductionScanService#setOverview`）—— 页面**不**自己聚合、也**不**另拉 `GET /api/worker/production/orders/{orderId}/operations` 再按套重排（第二份口径）。🔴 **缺值不渲染**：`set_overview` 缺失 / `positions` 为空 ⇒ 明细块一个字节都不出现（不渲染 undefined 米 / ¥NaN）；`unit_price` 为 `null` = **未定价**（≠ 0 元，issue #4696）显式写「未定价」。证据：frontend/bmini-app/tests/production-scan-complete.test.tsx"
+    skip_reason: "[backend-contract] 纯前端单元测试（bmini-app tests/production-page.test.tsx + production-qr.test.ts + production-scan-complete.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-17 新增（issue #3997 M4-G-3）：消费 M4-G-2 冻结契约 GET/POST /api/admin/production/orders/{orderId}/operations[/{operationId}/report]；truths_ref 用 frontend-fix.no-api-change（本包不改后端 API；生产/扫码域暂无专属真值 key） ｜ 2026-09-21（issue #4961 用例库同步，配套 feat/4960-4961-integration）：第 3 条 data_check 补口径订正 —— 「✅ 订单生产完成」的触发键 `order_completed` 服务端改判为「**全部活跃工序实例报满**」（不再是「必完工序全绿」），页面渲染条件（`isCompleted`，同一门禁也决定「发货」入口是否出现）**一字未动**。⚠️ **按用例库纪律，`user_inputs` 一字未动**：其中「必完工序全绿显示「✅ 订单生产完成」」这句是 #4961 之前的工人口径描述，**保留原文**（改判说明只写在 data_checks / merge_log 里，不改 `user_inputs`）；`expectations` / `skip_reason` / `traces` 同样未动。**判据一格不放宽**。 ｜ 2026-09-21（issue #4967，**语义改判 + 判据改钉**）：扫码语义由「完工（做完扫一次）」改判为 **开工 / 领活**（用户逐字「工人都是先扫码报工后再真实进行生产，不是先生产再扫码报工」）⇒ A 模式一屏的按钮文案由【完成】改为【开工】（**改钉≠放宽**：判据对象不变，期望按用户裁定变更）；屏上「本套工序都已完成，无需再报工」改为「本套工序都已被领走，无需再领」。新增两条 data_check：① 开工语义（按钮文案 + 只调一次 completeByScan + 未确定工序/旧码降级两条**不出现**判据）；② **按套展示工序细节**（`set_overview` 消费 + 缺值不渲染 + 未定价不折 0）。**记账时点与端点一字未变**（仍是 `POST /api/worker/production/scan/complete`，一次事务）；边界登记见 PG-018 与 docs/design/set-code-and-scan-loop.md §4.1 改判块。"
     traces:
       tests:
         - "frontend/bmini-app/tests/production-page.test.tsx"
         - "frontend/bmini-app/tests/production-qr.test.ts"
+        - "frontend/bmini-app/tests/production-scan-complete.test.tsx"
       ci:
         - bmini-app.yml
       verifies: []

@@ -155,11 +155,11 @@ class ProductionWorkerIdentityTest {
                 new WorkerIdentity(SESSION_WORKER_ID, SESSION_WORKER_NAME,
                         WorkerIdentity.SOURCE_SERVER_SESSION, "sess-9"));
 
-        // 工序实例（V92 预留列）与报工行同源
+        // 工序实例（V92 预留列）与报工行同源；第 5 个参数 = 领活时刻（issue #4967 转正后新增）
         verify(positionOperationMapper).recordReporter(
                 org.mockito.ArgumentMatchers.eq(OP_ID), org.mockito.ArgumentMatchers.eq(TENANT),
                 org.mockito.ArgumentMatchers.eq(SESSION_WORKER_ID),
-                org.mockito.ArgumentMatchers.eq(SESSION_WORKER_NAME), any());
+                org.mockito.ArgumentMatchers.eq(SESSION_WORKER_NAME), any(), any());
 
         ArgumentCaptor<WorkerReportAudit> auditCaptor = ArgumentCaptor.forClass(WorkerReportAudit.class);
         verify(workerReportAuditMapper).insert(auditCaptor.capture());

@@ -17,7 +17,9 @@ import {
   type ProductionPosition,
   type ReportPayload,
   type ScanOperationView,
+  type ScanOverviewOperationView,
   type ScanResolveResult,
+  type ScanSetOverviewView,
   type WorkLogRow,
 } from '../../../services/productionService'
 import { WorkerBar } from '../../../components/WorkerBar'
@@ -42,6 +44,28 @@ function formatPrice(value: number | string): string {
 /** 数量展示（去掉整数的小数尾巴：11 → 「11」而不是「11.0000000001」） */
 function formatQty(value: number | string): string {
   return String(Number(value || 0))
+}
+
+/**
+ * 本套工序明细 ⇒ 渲染分组（issue #4967 交付物 2）。
+ *
+ * <p>🔴 <b>缺值不渲染</b>：`set_overview` 缺失 / `positions` 为空 / 某部位没有任何带
+ * `operation_id` 的工序 ⇒ 该组（或整块）**不产出**，绝不渲染「undefined 米 / ¥NaN」这种假数据。
+ * 数据**只**来自服务端（`ProductionScanService#setOverview`）—— 页面不自己聚合、不另拉一份列表
+ * 再按套重排（那就是第二份口径）。</p>
+ */
+function scanOverviewGroups(
+  overview?: ScanSetOverviewView | null,
+): Array<{ key: string; positionName: string; operations: ScanOverviewOperationView[] }> {
+  const positions = overview?.positions
+  if (!Array.isArray(positions)) return []
+  return positions
+    .map((position, index) => ({
+      key: position.order_item_id || `${position.position_name || 'pos'}-${index}`,
+      positionName: position.position_name || position.position_kind || '',
+      operations: (position.operations || []).filter((operation) => operation?.operation_id),
+    }))
+    .filter((group) => group.operations.length > 0)
 }
 
 /** 报工明细时间（MM-DD HH:mm） */
@@ -165,7 +189,7 @@ function specSummary(position: ProductionPosition): string[] {
  *
  * 链路：扫一扫 / 手输单号 / **带参跳转直达** → 本单工序（按部位分组，含应做数量/单位/单价）
  *   → 改「完成数量」（默认 = 应做数量，上限 = 应做数量）→「完成报工」
- *   → 刷新进度 + 计件金额累计 + 本单报工明细 → 必完工序全绿 → 「✅ 订单生产完成」。
+ *   → 刷新进度 + 计件金额累计 + 本单报工明细 → 全部活跃工序实例报满（#4961 口径） → 「✅ 订单生产完成」。
  *
  * 弱网降级（issue #4206）：`loadOrder` 成功即把待做清单落本机 storage，断网时命中缓存仍出清单
  * （显式标注离线，不冒充服务端真值）；报工**传输层**失败进本机队列，联网后自动补传
@@ -486,6 +510,8 @@ export default function ProductionPage() {
                 operation: next,
                 alternatives: [],
                 set_progress: res.data?.set_progress ?? view.set_progress,
+                // 本套明细（issue #4967 交付物 2）：回执原样透传（与解析面同一份口径）
+                set_overview: res.data?.set_overview ?? view.set_overview,
                 completed: res.data?.set_completed ?? false,
               },
             }
@@ -631,7 +657,7 @@ export default function ProductionPage() {
                 disabled={reportingId !== null}
                 onClick={handleScanComplete}
               >
-                {reportingId === scanScreen.view.operation.operation_id ? '报工中…' : '完成'}
+                {reportingId === scanScreen.view.operation.operation_id ? '领活中…' : '开工'}
               </Button>
               {scanScreen.view.alternatives.length > 0 && (
                 <View className='production-scan-screen__alts'>
@@ -651,7 +677,40 @@ export default function ProductionPage() {
               )}
             </View>
           ) : (
-            <Text className='production-scan-screen__note'>本套工序都已完成，无需再报工</Text>
+            <Text className='production-scan-screen__note'>本套工序都已被领走，无需再领</Text>
+          )}
+          {/* 本套工序明细（issue #4967 交付物 2）：工人一眼看到「这一套还有哪几道没做」。
+              数据**只**来自服务端 `set_overview`（本套 → 部位 → 工序），页面不自己聚合；
+              缺值不渲染（不出现 undefined 米 / ¥NaN）。 */}
+          {scanOverviewGroups(scanScreen.view.set_overview).length > 0 && (
+            <View className='production-scan-overview'>
+              <Text className='production-scan-overview__title'>
+                {`第 ${scanScreen.view.set_no ?? ''} 套 · 本套工序`}
+              </Text>
+              {scanOverviewGroups(scanScreen.view.set_overview).map((group) => (
+                <View key={group.key} className='production-scan-overview__pos'>
+                  <Text className='production-scan-overview__pos-name'>{group.positionName}</Text>
+                  {group.operations.map((operation) => (
+                    <View key={operation.operation_id} className='production-scan-overview__op'>
+                      <Text className='production-scan-overview__op-name'>
+                        {`${operation.logical_name || ''} · 应做 ${formatQty(operation.qty)}${
+                          operation.unit || ''
+                        }`}
+                      </Text>
+                      <Text className='production-scan-overview__op-meta'>
+                        {`${
+                          operation.unit_price === null || operation.unit_price === undefined
+                            ? '未定价'
+                            : `¥${formatPrice(operation.unit_price)}/${operation.unit || ''}`
+                        } · ${operation.status === 'done' ? '已领' : '待领'} · 已报 ${formatQty(
+                          operation.done_qty,
+                        )}${operation.unit || ''}`}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </View>
           )}
         </View>
       )}
@@ -691,7 +750,7 @@ export default function ProductionPage() {
             </View>
           )}
 
-          {/* 发货（issue #4483 = #4347 §二.2）：必完工序全绿后才出现 ——
+          {/* 发货（issue #4483 = #4347 §二.2）：全部活跃工序实例报满（#4961 口径）后才出现 ——
               门禁由后端判定（含加工项订单必须有 completed 加工单），前端只呈现入口。 */}
           {isCompleted && !shipped && (
             <View className='production-ship'>

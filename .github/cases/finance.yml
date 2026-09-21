@@ -59,6 +59,19 @@ cases:
     data_checks:
       - "流水号 FIN- 前缀由服务端生成、type=income、amount=88、status=success —— 成功返回体由 output_verify 机器核对（「被调用」不等于「登记成功」）"
       - "登记失败时不得声称成功：must_succeed 读 tool_result.success 判红，output_verify 无成功调用即判红"
+      # ── 前置自断言（issue #4967 的 case-trust burn-down 缴费；只加不改）──
+      # 本用例是**写类**（create_transaction 落一笔线下收款）⇒ 规则 f 要求对自己的**前置**
+      # 给出**可判定**断言：前置悄悄不成立时红的表现是 `unmatched expectation`
+      # （看起来像「米宝不会登记收款」，归因全错）。机器计分口径 = 含 `success=true`
+      # ⇒ 前置不成立时**会红**（纯散文的「前置：…」不计分，等于没断言）。
+      - "前置：财务写面可用且本次登记可落库 —— 工具返回 success=true 即证前置成立（机器计分口径，同 must_succeed）"
+    # ── 自清理声明（弱证据档，**如实登记**）──
+    # 规则「写类用例必须声明自清理」的现有出口只有两类：① `pre_clean` 把目标状态**复位**；
+    # ② `namespaces` 只保证**并行互斥**（弱证据：不解决重试前置）。本用例走 ②：
+    # 夹具层**没有**「删掉这笔线下收款」的复位动作（`_CLEAN_TYPES` 里无对应类型）
+    # ⇒ 如实登记为弱证据，不假称已复位。先例：#4968（CT-002）/ #4969（OR-007）/ #4960/#4961（CU-004）。
+    namespaces:
+      - "finance_txn:88"
     skip_reason: ""
     merge_log: "财务对账模块新增；2026-09-09 校准：补金额+支付方式+确认轮——create_transaction 必填 type+amount，原「登记一笔线下收款」缺 amount，agent 正确引导补充（单轮过严）"
     traces:

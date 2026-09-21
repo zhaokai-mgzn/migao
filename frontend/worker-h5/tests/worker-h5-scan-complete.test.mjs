@@ -20,7 +20,7 @@
 //   ④ 回执驱动一屏：`set_completed` / `next_operation` ⇒ 接着做下一道 / 本套完工（不再重复提交）；
 //   ⑤ 旧码（`granularity:"order"`）⇒ 未选定前**一个写请求都不发**；选完套 + 部位后
 //      **能报工**（issue #4794 收口：body 带 `set_id` + `order_item_id`，仍**不带** `operation_id`）；
-//   ⑥ 未登录 ⇒ 无【完成】按钮，且硬点也**不发请求**（fail-closed）；
+//   ⑥ 未登录 ⇒ 无【开工】按钮，且硬点也**不发请求**（fail-closed）；
 //   ⑦ 工序未确定（`operation == null`）⇒ 页面**不崩**且不出现报工按钮。
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -173,6 +173,30 @@ const CLOTH_VIEW = {
     { operation_id: 'op-cloth-2', logical_name: '打卷', position: '布帘', seq: 2, qty: 11, unit: '米' },
   ],
   set_progress: { total: 3, done: 1, percent: 33 },
+  // 本套工序明细（issue #4967 交付物 2；逐字照 ProductionScanService#setOverview 的形状）
+  set_overview: {
+    set_no: 14,
+    set_index: 13,
+    positions: [
+      {
+        order_item_id: 'oi-cloth',
+        position_kind: '布帘',
+        position_name: '布帘',
+        operations: [
+          { operation_id: 'op-cloth', logical_name: '定型', position: '布帘', seq: 1, qty: 11, unit: '米', unit_price: 3.5, status: 'pending', done_qty: 0 },
+          { operation_id: 'op-cloth-3', logical_name: '打卷', position: '布帘', seq: 2, qty: 1, unit: '套', unit_price: null, status: 'pending', done_qty: 0 },
+        ],
+      },
+      {
+        order_item_id: 'oi-gauze',
+        position_kind: '纱帘',
+        position_name: '纱帘',
+        operations: [
+          { operation_id: 'op-gauze', logical_name: '定型', position: '纱帘', seq: 1, qty: 4, unit: '米', unit_price: 2, status: 'done', done_qty: 4 },
+        ],
+      },
+    ],
+  },
   completed: false,
   completed_at: null,
   needs_selection: [],
@@ -276,7 +300,7 @@ async function waitFor(pred, label) {
 
 // ============================================================ ① 主路径：走 scan/complete，body 只带 token
 
-test('🔴 ① 扫新码 ⇒ 点【完成】⇒ POST /api/worker/production/scan/complete，body **只带 token**（工序由系统定 = 防呆⑤）', async () => {
+test('🔴 ① 扫新码 ⇒ 点【开工】⇒ POST /api/worker/production/scan/complete，body **只带 token**（工序由系统定 = 防呆⑤）', async () => {
   const doc = fakeDom()
   const f = routeFetch({
     '/api/worker/production/scan?': resolveOk(CLOTH_VIEW),
@@ -285,7 +309,7 @@ test('🔴 ① 扫新码 ⇒ 点【完成】⇒ POST /api/worker/production/scan
   const app = bootPage({ doc, f })
   await scan(doc, 'tok-cloth')
 
-  // 一屏就绪：显示码给出的套号/部位/工序 + 【完成】
+  // 一屏就绪：显示码给出的套号/部位/工序 + 【开工】（issue #4967 改判后的按钮文案）
   assert.match(doc.html, /第\s*14\s*套/)
   assert.match(doc.html, /布帘/)
   assert.match(doc.html, /定型/)
@@ -293,7 +317,7 @@ test('🔴 ① 扫新码 ⇒ 点【完成】⇒ POST /api/worker/production/scan
   await doc.fire('wh5-report')
 
   const posts = f.calls.filter((c) => c.method === 'POST')
-  assert.equal(posts.length, 1, '点一次【完成】只能发**一个**写请求')
+  assert.equal(posts.length, 1, '点一次【开工】只能发**一个**写请求')
   assert.match(posts[0].url, /\/api\/worker\/production\/scan\/complete$/)
   // 🔴 本单的核心：URL 里**没有** orderId/operationId（改前 `/orders/{orderId}/operations/{operationId}/report` 有）
   assert.ok(!posts[0].url.includes('/report'), '工人页不得再走 /report（那条路径不带 token）')
@@ -424,7 +448,7 @@ test('🔴 ④ 回执 `next_operation` ⇒ 屏上换成下一道（工人接着�
   app.destroy()
 })
 
-test('🔴 ④ 回执 `set_completed:true` ⇒ 显示本套已完工，且【完成】按钮消失（不再重复提交）', async () => {
+test('🔴 ④ 回执 `set_completed:true` ⇒ 显示本套工序都已被领走，且【开工】按钮消失（不再重复提交）', async () => {
   const doc = fakeDom()
   const f = routeFetch({
     '/api/worker/production/scan?': resolveOk(CLOTH_VIEW),
@@ -434,8 +458,8 @@ test('🔴 ④ 回执 `set_completed:true` ⇒ 显示本套已完工，且【完
   await scan(doc, 'tok-cloth')
   await doc.fire('wh5-report')
 
-  assert.match(doc.html, /本套已完成/, '本套工序都做完 ⇒ 必须显式告知')
-  assert.ok(!/id="wh5-report"/.test(doc.html), '本套已完工 ⇒ 不得再出现报工按钮')
+  assert.match(doc.html, /本套工序都已被领走/, '本套没有待领工序 ⇒ 必须显式告知')
+  assert.ok(!/id="wh5-report"/.test(doc.html), '本套工序都已被领走 ⇒ 不得再出现开工按钮')
   app.destroy()
 })
 
@@ -481,7 +505,7 @@ test('🔴 ⑤ 旧码端到端：扫码 ⇒ 选套 ⇒ 选部位 ⇒ **报工成
   await doc.fire('wh5-report')
 
   const posts = f.calls.filter((c) => c.method === 'POST')
-  assert.equal(posts.length, 1, '点一次【完成】= 一个写请求（一次事务由服务端保证）')
+  assert.equal(posts.length, 1, '点一次【开工】= 一个写请求（一次事务由服务端保证）')
   assert.match(posts[0].url, /\/api\/worker\/production\/scan\/complete$/)
   assert.ok(!posts[0].url.includes('/report'), '不得退回客户端定工序的 /report')
   // 🔴 旧码收口：body 带（套 + 部位）⇒ 服务端重解析**同一部位**；
@@ -489,13 +513,13 @@ test('🔴 ⑤ 旧码端到端：扫码 ⇒ 选套 ⇒ 选部位 ⇒ **报工成
   assert.deepEqual(posts[0].body, { token: 'JG20260920001', set_id: 'set-2', order_item_id: 'oi-2' })
   assert.ok(!('operation_id' in posts[0].body), '旧码默认路径不得由客户端定工序（防呆⑤）')
   assert.ok(!('worker_id' in posts[0].body), '身份仍只来自 X-Worker-Session-Id')
-  assert.match(doc.html, /已报工/, '报工成功必须给回执文案')
+  assert.match(doc.html, /已领活/, '领活成功必须给回执文案（issue #4967 语义改判后）')
   app.destroy()
 })
 
 // ============================================================ ⑥ 未登录：fail-closed
 
-test('🔴 ⑥ 未登录 ⇒ 无【完成】按钮；即使硬点也不发任何请求（不降级 body 口径）', async () => {
+test('🔴 ⑥ 未登录 ⇒ 无【开工】按钮；即使硬点也不发任何请求（不降级 body 口径）', async () => {
   const doc = fakeDom()
   const f = routeFetch({})
   const app = bootPage({ doc, f, loggedIn: false })
@@ -529,7 +553,7 @@ test('🔴 ⑦ 工序未确定（operation == null 且未完工）⇒ 页面不�
   app.destroy()
 })
 
-test('🔴 ⑦ 扫到「本套已完工」的新码（completed=true, operation=null）⇒ 不崩 + 显示本套已完成', () => {
+test('🔴 ⑦ 扫到「本套工序都已被领走」的新码（completed=true, operation=null）⇒ 不崩 + 显式告知', () => {
   const doc = fakeDom()
   const f = routeFetch({})
   const app = bootPage({ doc, f })
@@ -537,8 +561,90 @@ test('🔴 ⑦ 扫到「本套已完工」的新码（completed=true, operation=
     type: 'resolved',
     view: { ...CLOTH_VIEW, operation: null, alternatives: [], completed: true, needs_selection: [] },
   })
-  assert.match(doc.html, /本套已完成/)
+  assert.match(doc.html, /本套工序都已被领走/)
   assert.ok(!/id="wh5-report"/.test(doc.html))
+  app.destroy()
+})
+
+// ============================================================ ⑨ 按套展示工序细节（issue #4967 交付物 2）
+
+/**
+ * 判据（每条都能红）：
+ *   ① 扫码后屏上出现**本套工序明细**（本套 → 部位 → 工序：逻辑名 / 应做数量+单位 / 单价 / 状态 / 已报数量）；
+ *   ② 已完成的那道**也在**（工人要看到「这一套还有哪几道没做」⇒ 不能只列待做）；
+ *   ③ `unit_price` 为 `null` ⇒ 显式「未定价」（≠ 0 元，V90 / #4696）；
+ *   ④ 🔴 **缺值不渲染**：`set_overview` 缺失 / `positions` 为空 ⇒ 整块不出现
+ *      （绝不渲染「undefined 米 / ¥NaN」这种假数据）。
+ */
+test('🔴 ⑨ 扫码后按套展示工序细节：本套各部位的工序明细（逻辑名/应做+单位/单价/状态/已报）', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({ '/api/worker/production/scan?': resolveOk(CLOTH_VIEW) })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+
+  assert.match(doc.html, /id="wh5-set-overview"/, '扫码后必须出现本套工序明细块')
+  // 本套两个部位
+  assert.match(doc.html, /布帘/)
+  assert.match(doc.html, /纱帘/)
+  // 待做的那道：逻辑名 + 应做数量+单位 + 单价 + 状态 + 已报数量
+  assert.match(doc.html, /定型/)
+  assert.match(doc.html, /应做\s*11\.00\s*米/)
+  assert.match(doc.html, /3\.50\s*元\/米/)
+  assert.match(doc.html, /待领/)
+  assert.match(doc.html, /已报\s*0\.00\s*米/)
+  // ② 已完成的那道**也在**（不是只列待做），且状态是「已领」
+  assert.match(doc.html, /已报\s*4\.00\s*米/, '已完成的那道必须也在清单里（工人要看「还有哪几道没做」）')
+  assert.match(doc.html, /已领/)
+  app.destroy()
+})
+
+test('🔴 ⑨-b 未定价的工序在明细里显式写「未定价」（≠ 0 元，V90/#4696）', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({ '/api/worker/production/scan?': resolveOk(CLOTH_VIEW) })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+
+  assert.match(doc.html, /未定价/, 'unit_price 为 null 的工序必须显式标注，不得折成 0 元')
+  assert.ok(!/0\.00\s*元\/套/.test(doc.html), '未定价不得被渲染成 0 元')
+  app.destroy()
+})
+
+test('🔴 ⑨-c 缺值不渲染：set_overview 缺失 / positions 为空 ⇒ 明细块一个字节都不出现', () => {
+  const doc = fakeDom()
+  const f = routeFetch({})
+  const app = bootPage({ doc, f })
+
+  // ① 整个键缺失（= 改前形态）
+  const { set_overview: _drop, ...withoutOverview } = CLOTH_VIEW
+  app.dispatch({ type: 'resolved', view: { ...withoutOverview, needs_selection: [] } })
+  assert.ok(!/id="wh5-set-overview"/.test(doc.html), 'set_overview 缺失 ⇒ 不得渲染明细块')
+  assert.ok(!/undefined/.test(doc.html), '缺值不得渲染成 undefined')
+
+  // ② 键在但清单为空
+  app.dispatch({ type: 'resolved', view: { ...CLOTH_VIEW, set_overview: { set_no: 14, positions: [] } } })
+  assert.ok(!/id="wh5-set-overview"/.test(doc.html), 'positions 为空 ⇒ 不得渲染空壳明细块')
+
+  // ③ 部位在但工序为空 / 工序缺 operation_id
+  app.dispatch({
+    type: 'resolved',
+    view: { ...CLOTH_VIEW, set_overview: { set_no: 14, positions: [{ position_name: '布帘', operations: [] }] } },
+  })
+  assert.ok(!/id="wh5-set-overview"/.test(doc.html), '工序为空 ⇒ 不得渲染空壳明细块')
+  assert.ok(!/NaN/.test(doc.html), '缺值不得渲染成 NaN')
+  app.destroy()
+})
+
+test('🔴 ⑨-d 领活回执也带本套明细（工人不必再请求一次就看得到「还有哪几道没做」）', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({
+    '/api/worker/production/scan?': resolveOk(CLOTH_VIEW),
+    '/api/worker/production/scan/complete': receipt({ set_overview: CLOTH_VIEW.set_overview }),
+  })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+  await doc.fire('wh5-report')
+
+  assert.match(doc.html, /id="wh5-set-overview"/, '领活成功后本套明细必须仍在屏上（回执也带它）')
   app.destroy()
 })
 
@@ -570,7 +676,7 @@ test('🔴 ⑧ 断网（响应丢失）后**刷新重扫**同一张码 ⇒ 复�
   // 同一台设备的 localStorage：`state` 会随刷新丢失，storage 不会
   const storage = memStorage({ [STORAGE_KEY]: JSON.stringify(SESSION) })
 
-  // ── 第一次装载：解析成功；点【完成】时**传输层失败**（服务端到底落没落库，前端无从得知）
+  // ── 第一次装载：解析成功；点【开工】时**传输层失败**（服务端到底落没落库，前端无从得知）
   const doc1 = fakeDom()
   const f1 = routeFetch({
     '/api/worker/production/scan?': resolveOk(CLOTH_VIEW),
@@ -581,7 +687,7 @@ test('🔴 ⑧ 断网（响应丢失）后**刷新重扫**同一张码 ⇒ 复�
   await doc1.fire('wh5-report')
 
   const firstPosts = f1.calls.filter((c) => c.method === 'POST')
-  assert.equal(firstPosts.length, 1, '点一次【完成】= 一次请求（页面不静默重试）')
+  assert.equal(firstPosts.length, 1, '点一次【开工】= 一次请求（页面不静默重试）')
   const firstKey = firstPosts[0].headers['X-Client-Request-Id']
   assert.ok(firstKey, '写请求必须带幂等键')
   const saved = JSON.parse(storage.getItem(PENDING_REQUEST_KEY) ?? 'null')

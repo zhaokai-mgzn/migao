@@ -110,6 +110,29 @@ html, body {
 }
 .wh5-choice.is-on { border-color: var(--wh5-brand); background: #ccfbf1; font-weight: 700; }
 .wh5-alts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--wh5-muted); font-size: 15px; }
+
+/* ---- 本套工序明细（issue #4967 交付物 2）----
+   工人一眼看到「这一套还有哪几道没做」；行高 ≥44px 保持可读、不挤压（PAD 断点正文 20px 见上）。 */
+.wh5-overview { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--wh5-line); padding-top: 10px; }
+.wh5-ov-title { font-size: 16px; font-weight: 700; color: var(--wh5-muted); }
+.wh5-ov-pos { display: flex; flex-direction: column; gap: 4px; }
+.wh5-ov-pos-name { font-size: 16px; font-weight: 600; }
+.wh5-ov-ops { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.wh5-ov-op {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  min-height: 44px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 15px;
+}
+.wh5-ov-op.is-done { color: var(--wh5-muted); background: #f1f5f9; }
+.wh5-ov-name { font-weight: 600; }
+.wh5-ov-status { font-weight: 700; }
+.wh5-ov-op.is-done .wh5-ov-status { color: var(--wh5-brand); }
 .wh5-alt {
   min-height: 44px;
   padding: 0 12px;

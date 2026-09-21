@@ -116,6 +116,7 @@ class ProductionScanCompleteServiceTest {
     private ClientRequestIdService clientRequestIdService;
 
     private ProductionService productionService;
+    private ProductionScanService scanService;
     private ProductionScanCompleteService service;
 
     @BeforeEach
@@ -123,7 +124,7 @@ class ProductionScanCompleteServiceTest {
         TenantContext.setTenantId(TENANT);
         productionService = new ProductionService(processingOrderMapper, positionOperationMapper,
                 workLogMapper, orderMapper, orderItemMapper, clientRequestIdService);
-        ProductionScanService scanService = new ProductionScanService(setPartTokenMapper, orderSetMapper,
+        scanService = new ProductionScanService(setPartTokenMapper, orderSetMapper,
                 processingOrderMapper, positionOperationMapper, orderItemMapper, operationQueryService,
                 productionService,
                 // 卡点判据（切片 ③，issue #4776）：真实对象（只 mock Mapper），与生产装配同源
@@ -308,6 +309,122 @@ class ProductionScanCompleteServiceTest {
                 .hasFieldOrPropertyWithValue("httpStatus", 422);
 
         assertNothingWritten();
+    }
+
+    // ============================================================ ③ 领活语义（issue #4967）
+
+    /**
+     * 🔴 <b>领活三列（issue #4967）</b>：扫码 = 开工 / 领活 ⇒ {@code started_at} /
+     * {@code worker_id} / {@code worker_name} 在**默认路径**被写入（改前这三列是「C 模式预留，
+     * A 模式默认路径不读不写」⇒ 本断言改前必红）。
+     *
+     * <p>「谁在什么时候领走了这道活」是用户逐字诉求的落点；真库侧另有
+     * {@code ProductionScanClaimRealDbTest} 钉住列真的落进了 PG（本类只钉调用面）。</p>
+     */
+    @Test
+    @DisplayName("🔴 扫码 = 开工/领活：默认路径写 started_at + worker_id + worker_name（改前为 NULL ⇒ 必红）")
+    void claimWritesStartedAtAndWorkerOnDefaultPath() {
+        stubPending(Set_OP_CLOTH_DONE_0);
+
+        service.complete(body(TOKEN), TENANT, "key-1", WORKER);
+
+        // 领活时刻与领活人（与报工明细**同源**：都来自服务端解出的 identity）
+        verify(positionOperationMapper).recordReporter(
+                eq(OP_CLOTH), eq(TENANT), eq("w-1"), eq("张三"),
+                any(OffsetDateTime.class), any(OffsetDateTime.class));
+    }
+
+    @Test
+    @DisplayName("领活时刻与完工时刻**同一次**落笔（同一事务，不是两次独立写）")
+    void claimAndCompletionAreWrittenInTheSameTransaction() {
+        stubPending(Set_OP_CLOTH_DONE_0);
+
+        service.complete(body(TOKEN), TENANT, "key-1", WORKER);
+
+        // 同一次 complete ⇒ 身份/开工（recordReporter）与完工（recordCompletionIfDone）**各恰好一次**
+        // —— 判据是「不重复写」（两条路径共用 applyReport 的**同一份**记账核，
+        // 若在 applyScanComplete 里再加一次就会写两遍）。
+        verify(positionOperationMapper, times(1)).recordReporter(
+                any(), any(), any(), any(), any(), any());
+        verify(positionOperationMapper, times(1)).recordCompletionIfDone(
+                eq(OP_CLOTH), eq(TENANT), any(OffsetDateTime.class));
+    }
+
+    // ============================================================ ④ 按套展示工序细节（issue #4967 交付物 2）
+
+    /**
+     * 🔴 <b>解析响应必须带 {@code set_overview}</b>（issue #4967 交付物 2）：
+     * 本套 → 部位 → 工序明细（逻辑名 / 应做数量+单位 / 单价 / 状态 / 已报数量）。
+     *
+     * <p>判据是**形状 + 值**，不是「有个键」：改前解析响应里没有这个键 ⇒ 本测试必红
+     * （读 {@code result.get("set_overview")} 得 null）。</p>
+     */
+    @Test
+    @DisplayName("🔴 解析响应含 set_overview：本套各部位工序明细（逻辑名/应做+单位/单价/状态/已报）")
+    @SuppressWarnings("unchecked")
+    void resolveCarriesSetOverviewWithOperationDetails() {
+        stubPending(List.of(
+                op(OP_CLOTH, ITEM_CLOTH, 1, "精裁-布", "11", "0", new BigDecimal("3.50")),
+                op(OP_GAUZE, ITEM_GAUZE, 2, "定型-纱", "4", "4", new BigDecimal("2.00"))));
+
+        Map<String, Object> result = service.complete(body(TOKEN), TENANT, "key-1", WORKER);
+
+        Map<String, Object> overview = (Map<String, Object>) result.get("set_overview");
+        assertThat(overview).as("解析响应必须带本套工序总览（改前没有这个键 ⇒ 必红）").isNotNull();
+        assertThat(overview.get("set_no")).isEqualTo(SET_NO);
+        assertThat(overview.get("set_index")).isEqualTo(14);
+
+        List<Map<String, Object>> positions = (List<Map<String, Object>>) overview.get("positions");
+        assertThat(positions).as("本套两个部位（布帘 / 纱帘）各一组").hasSize(2);
+
+        Map<String, Object> cloth = positions.get(0);
+        assertThat(cloth.get("order_item_id")).isEqualTo(ITEM_CLOTH);
+        assertThat(cloth.get("position_name")).isEqualTo("布艺遮光帘A");
+        List<Map<String, Object>> clothOps = (List<Map<String, Object>>) cloth.get("operations");
+        assertThat(clothOps).as("该部位的工序明细").hasSize(1);
+        Map<String, Object> first = clothOps.get(0);
+        // 逐键钉住「工人一眼看到的那几列」
+        assertThat(first.get("operation_id")).isEqualTo(OP_CLOTH);
+        assertThat(first.get("logical_name")).isEqualTo("精裁");   // 逻辑名（去掉 -布 后缀）
+        assertThat(first.get("position")).isEqualTo("布帘");
+        assertThat(first.get("qty")).isEqualTo(new BigDecimal("11"));
+        assertThat(first.get("unit")).isEqualTo("米");
+        assertThat(first.get("unit_price")).isEqualTo(new BigDecimal("3.50"));
+        assertThat(first.get("status")).isEqualTo("pending");
+        assertThat(first.get("done_qty")).isEqualTo(BigDecimal.ZERO);
+
+        // 已完成的那道**也在**（工人要看到「这一套还有哪几道没做」⇒ 不能只列待做）
+        Map<String, Object> gauze = positions.get(1);
+        Map<String, Object> done = ((List<Map<String, Object>>) gauze.get("operations")).get(0);
+        assertThat(done.get("operation_id")).isEqualTo(OP_GAUZE);
+        assertThat(done.get("done_qty")).isEqualTo(new BigDecimal("4"));
+    }
+
+    @Test
+    @DisplayName("set_overview 的 unit_price 为 null ⇒ 原样 null（未定价 ≠ 0 元，V90/#4696，读面不折 0）")
+    @SuppressWarnings("unchecked")
+    void setOverviewKeepsUnpricedAsNull() {
+        stubPending(op(OP_CLOTH, ITEM_CLOTH, 1, "精裁-布", "11", "0", null));
+
+        Map<String, Object> result = service.complete(body(TOKEN), TENANT, "key-1", WORKER);
+
+        Map<String, Object> overview = (Map<String, Object>) result.get("set_overview");
+        Map<String, Object> position = ((List<Map<String, Object>>) overview.get("positions")).get(0);
+        Map<String, Object> operation = ((List<Map<String, Object>>) position.get("operations")).get(0);
+        assertThat(operation).containsEntry("unit_price", null);
+    }
+
+    @Test
+    @DisplayName("旧码降级形态不含 set_overview（判不出是哪一套 ⇒ 不知道就是不知道，不猜）")
+    void degradedViewHasNoSetOverview() {
+        when(setPartTokenMapper.selectOne(any())).thenReturn(null);
+        when(orderMapper.selectById(OLD_CODE)).thenReturn(order());
+
+        Map<String, Object> scan = scanService.resolve(OLD_CODE, null, null, null, TENANT);
+
+        assertThat(scan.get("granularity")).isEqualTo("order");
+        assertThat(scan).as("旧码降级判不出套 ⇒ 不得凭空造一份总览")
+                .doesNotContainKey("set_overview");
     }
 
     @Test

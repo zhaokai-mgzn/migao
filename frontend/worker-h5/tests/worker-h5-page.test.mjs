@@ -60,7 +60,7 @@ test('🔴 PAD 断点：主按钮 ≥88px、正文 ≥20px（远距离可点，�
   assert.ok(mh >= 44, `手机主按钮 ${mh}px < 44px`)
 })
 
-test('一屏渲染：页头显示服务端带来的「当前工人」+ 第 N 套 · 部位 · 工序 · 应做数量 + 【完成】', () => {
+test('一屏渲染：页头显示服务端带来的「当前工人」+ 第 N 套 · 部位 · 工序 · 应做数量 + 【开工】', () => {
   const s = reduce(initialState(), { type: 'worker', worker: { worker_name: '张三', worker_no: 'A017' } })
   const html = renderPage(s, {
     granularity: 'set_position',
@@ -78,7 +78,9 @@ test('一屏渲染：页头显示服务端带来的「当前工人」+ 第 N 套
   assert.match(html, /布帘/)
   assert.match(html, /定型/)
   assert.match(html, /11\.00\s*米/)
-  assert.match(html, /id="wh5-report"[^>]*>\s*完\s*成\s*</)
+  // 🔴 按钮文案 = 【开工】（issue #4967：扫码 = 开工 / 领活，不是「做完扫一次」）
+  assert.match(html, /id="wh5-report"[^>]*>\s*开\s*工\s*</)
+  assert.ok(!/完\s*成/.test(html.replace(/本套工序都已被领走/g, '')), '【完成】文案不得再出现（改回 ⇒ 必红）')
   assert.match(html, /切换/) // 共用 PAD 一步切换入口常驻
   assert.ok(!/未定价/.test(html) || true)
 })

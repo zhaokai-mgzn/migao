@@ -175,6 +175,46 @@ export interface ScanAlternativeView {
   unit?: string | null
 }
 
+/** 本套工序明细里的一道工序（issue #4967 交付物 2；逐字照 `ProductionScanService#overviewOperationView`）。 */
+export interface ScanOverviewOperationView {
+  operation_id: string
+  /** 逻辑名（读时派生，与一屏上的 `operation.logical_name` **同一份**映射） */
+  logical_name?: string | null
+  /** 显示用部位（逻辑名带部位时才有值，同 `ScanOperationView.position` 口径） */
+  position?: string | null
+  seq?: number | null
+  /** 应做数量 */
+  qty: number
+  unit?: string | null
+  /** null = **未定价**（≠ 0 元，issue #4696）—— 明细里显式写「未定价」，不折 0 */
+  unit_price: number | null
+  /** pending 待领 / done 已领 */
+  status?: string | null
+  /** 已报（已领）数量 */
+  done_qty: number
+}
+
+/** 本套的一个部位（含该部位的工序明细）。 */
+export interface ScanOverviewPositionView {
+  order_item_id?: string | null
+  position_kind?: string | null
+  position_name?: string | null
+  operations: ScanOverviewOperationView[]
+}
+
+/**
+ * 本套工序总览（issue #4967 交付物 2）：**本套 → 部位 → 工序明细**。
+ *
+ * <p>让工人扫一次就看到「这一套还有哪几道没做」。聚合**只有服务端那一份**
+ * （`ProductionScanService#setOverview`，与推断/进度/卡点同源）—— 页面不自己聚合、
+ * 也不另拉工序列表再按套重排（第二份口径）。</p>
+ */
+export interface ScanSetOverviewView {
+  set_no?: string | null
+  set_index?: number | null
+  positions: ScanOverviewPositionView[]
+}
+
 export interface ScanResolveResult {
   /** set_position = 新码（套 × 部位，部位由码给出）；order = 旧码降级（**必须**选套 + 选部位） */
   granularity: 'set_position' | 'order'
@@ -183,10 +223,12 @@ export interface ScanResolveResult {
   set_no?: string | null
   set_index?: number | null
   position?: ScanPositionView | null
-  /** 推断出的工序；null = 未确定（无待做 / 本套已完成）⇒ **服务端拒绝记账** */
+  /** 推断出的工序；null = 未确定（无待做 / 本套工序都已被领走）⇒ **服务端拒绝记账** */
   operation: ScanOperationView | null
   alternatives: ScanAlternativeView[]
   set_progress?: ProductionProgress | null
+  /** 本套工序明细（issue #4967）；旧码降级形态**没有**这个键（判不出是哪一套 ⇒ 不猜） */
+  set_overview?: ScanSetOverviewView | null
   /** null = **未知**（旧码降级判不出是哪一套），不是 false */
   completed?: boolean | null
   completed_at?: string | null
@@ -200,8 +242,10 @@ export interface ScanCompleteResult extends ReportResult {
   position?: ScanPositionView | null
   rerouted?: boolean
   set_progress?: ProductionProgress | null
+  /** 本套工序明细（issue #4967）：与解析面**同一份**（原样透传，不在回执里另算一遍） */
+  set_overview?: ScanSetOverviewView | null
   set_completed?: boolean | null
-  /** 下一道待做工序；null = 未知（尽力而为：缺它**不影响**本次报工已成功） */
+  /** 下一道待领工序；null = 未知（尽力而为：缺它**不影响**本次领活已成功） */
   next_operation?: ScanOperationView | null
 }
 

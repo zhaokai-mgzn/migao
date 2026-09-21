@@ -103,10 +103,19 @@ export function canReport(state, view) {
   return true
 }
 
-/** 报工按钮（唯一的记账入口）。 */
+/**
+ * 开工按钮（唯一的记账入口）。
+ *
+ * 🔴 **2026-09-21 语义改判（issue #4967，用户逐字裁定①）**：扫码 = **开工 / 领活**，
+ * 不是「做完扫一次」—— 真实车间是「先扫码领活 → 再生产；完工不扫」（用户逐字：
+ * 「工人都是先扫码报工后再真实进行生产，不是先生产再扫码报工」）。
+ * 按钮文案随之由【完成】改为【开工】；**id 与动作一字未改**（`wh5-report` + `scan/complete`）
+ * —— 端点名是冻结契约，改了会把已发版的客户端打回 404。
+ * 记账时点**不变**（仍是点这一下推进进度 + 记计件），所以文案说「领活」而不承诺「完工」。
+ */
 function reportButton(state, view) {
   return canReport(state, view)
-    ? `<button id="wh5-report" class="wh5-primary" type="button">完 成</button>`
+    ? `<button id="wh5-report" class="wh5-primary" type="button">开 工</button>`
     : ''
 }
 
@@ -152,12 +161,13 @@ export function legacySelection(view, selection) {
   return { setId: selection.setId, orderItemId: selection.orderItemId }
 }
 
-/** 报工回执 ⇒ 给工人的一句话（`replayed` 必须显式说清「没有新增计件」，不谎报一笔新报工）。 */export function doneNotice(receipt) {
+/** 报工回执 ⇒ 给工人的一句话（`replayed` 必须显式说清「没有新增计件」，不谎报一笔新报工）。 */
+export function doneNotice(receipt) {
   if (receipt.replayed) return '这次没有新增计件：重复提交已回放（同一次扫码只算一次）'
-  if (receipt.orderCompleted) return '已报工 · 本单已完工 🎉'
-  if (receipt.setCompleted === true) return '已报工 · 本套已完工 🎉'
-  if (receipt.nextOperation?.logical_name) return `已报工 · 下一道：${receipt.nextOperation.logical_name}`
-  return '已报工'
+  if (receipt.orderCompleted) return '已领活 · 本单工序都领完了 🎉'
+  if (receipt.setCompleted === true) return '已领活 · 本套工序都领完了 🎉'
+  if (receipt.nextOperation?.logical_name) return `已领活 · 下一道：${receipt.nextOperation.logical_name}`
+  return '已领活'
 }
 
 /** 页头：**服务端**带来的「当前工人」+ 一步切换 + 登出（共用 PAD 三条，设计 §3.1~§3.3）。 */
@@ -174,7 +184,7 @@ function header(state) {
 
 function loginView(state) {
   return `<section class="wh5-card">
-    <h1 class="wh5-title">工人报工</h1>
+    <h1 class="wh5-title">工人领活</h1>
     <p class="wh5-sub">工号 + PIN 登录（手机 / PAD 均可，无需微信）</p>
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
     <label class="wh5-label">工号<input id="wh5-worker-no" class="wh5-input" inputmode="text" autocomplete="username" /></label>
@@ -188,8 +198,8 @@ function scanView(state) {
   <section class="wh5-card">
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
-    <h1 class="wh5-title">扫码报工</h1>
-    <p class="wh5-sub">用任意扫一扫工具扫码即可；扫不了就输码</p>
+    <h1 class="wh5-title">扫码领活</h1>
+    <p class="wh5-sub">扫一次码 = 把这道活领走（先领活再生产，做完不用再扫）；扫不了就输码</p>
     <label class="wh5-label">输码（短码 / 加工单号 / 订单号）
       <input id="wh5-code" class="wh5-input" inputmode="text" autocapitalize="characters" /></label>
     <button id="wh5-scan" class="wh5-primary" type="button">确 定</button>
@@ -224,7 +234,7 @@ function selectView(state) {
 function mainView(state) {
   const v = state.view
   const op = v.operation
-  // 🔴 工序未确定（本套已完工 / 服务端推断不出待做工序）⇒ **只给结论，不给报工按钮**。
+  // 🔴 工序未确定（本套工序都已被领走 / 服务端推断不出待领工序）⇒ **只给结论，不给开工按钮**。
   // 改前这里直接读 `op.unit_price` ⇒ TypeError（页面白屏）；而「回执驱动的一屏」正好会走到这个形态
   // （`set_completed:true` / `next_operation:null`）⇒ 必须显式分支（防呆⑤ 的记账侧那一半）。
   if (!op) {
@@ -232,8 +242,9 @@ function mainView(state) {
   <section class="wh5-card">
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
     ${v.completed === true
-      ? '<p class="wh5-done" id="wh5-completed">本套已完成 🎉</p>'
-      : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待做工序（工序未确定 ⇒ 不得记账）</p>'}
+      ? '<p class="wh5-done" id="wh5-completed">本套工序都已被领走 🎉</p>'
+      : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待领工序（工序未确定 ⇒ 不得记账）</p>'}
+    ${overviewView(v)}
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
     <button id="wh5-rescan" class="wh5-ghost" type="button">重扫</button>
@@ -253,12 +264,60 @@ function mainView(state) {
     <div class="wh5-op" id="wh5-operation">${esc(op.logical_name)} · ${esc(op.position ?? v.position?.position_name ?? '')}</div>
     <div class="wh5-qty" id="wh5-qty">应做 ${fmtQty(op.qty)} ${esc(op.unit ?? '')}</div>
     <div class="wh5-price-row">${price}</div>
-    ${v.completed === true ? '<p class="wh5-done" id="wh5-completed">本套已完成</p>' : ''}
+    ${v.completed === true ? '<p class="wh5-done" id="wh5-completed">本套工序都已被领走</p>' : ''}
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
     ${reportButton(state, v)}
     ${alts}
+    ${overviewView(v)}
     <button id="wh5-rescan" class="wh5-ghost" type="button">重扫</button>
+  </section>`
+}
+
+/**
+ * 本套工序明细（issue #4967 交付物 2）：**本套 → 部位 → 工序**，工人一眼看到「这一套还有哪几道没做」。
+ *
+ * <p>数据**只**来自服务端解析响应的 `set_overview`（`ProductionScanService#setOverview`）——
+ * 页面**不**自己聚合、也不另拉一份工序列表再按套重排（那就是第二份口径，两处迟早不同）。
+ * 与「这次领哪一道」同一次请求 ⇒ 工人扫一次就看全。</p>
+ *
+ * <p>🔴 <b>缺值不渲染</b>：`set_overview` 缺失 / `positions` 为空 / 某道工序缺 `operation_id`
+ * ⇒ 整块（或该行）**不出现**，绝不渲染「undefined 米 / ¥NaN」这种假数据。
+ * `unit_price` 为 `null` = <b>未定价</b>（≠ 0 元，V90 / #4696）⇒ 显式写「未定价」。</p>
+ */
+function overviewView(v) {
+  const positions = v?.set_overview?.positions
+  if (!Array.isArray(positions) || positions.length === 0) return ''
+  const groups = positions
+    .map((p) => {
+      const ops = (p?.operations ?? []).filter((o) => o?.operation_id)
+      if (ops.length === 0) return ''
+      const rows = ops
+        .map((o) => {
+          const price = o.unit_price === null || o.unit_price === undefined
+            ? '未定价'
+            : `${fmtQty(o.unit_price)} 元/${esc(o.unit ?? '')}`
+          // 状态与已报数量让工人区分「还没领 / 已被领走」——两者都要看得见
+          const claimed = o.status === 'done'
+          return `<li class="wh5-ov-op${claimed ? ' is-done' : ''}">
+          <span class="wh5-ov-name">${esc(o.logical_name ?? '')}</span>
+          <span class="wh5-ov-qty">应做 ${fmtQty(o.qty)} ${esc(o.unit ?? '')}</span>
+          <span class="wh5-ov-price">${price}</span>
+          <span class="wh5-ov-status">${claimed ? '已领' : '待领'}</span>
+          <span class="wh5-ov-done">已报 ${fmtQty(o.done_qty)} ${esc(o.unit ?? '')}</span>
+        </li>`
+        })
+        .join('')
+      return `<div class="wh5-ov-pos">
+        <div class="wh5-ov-pos-name">${esc(p.position_name ?? p.position_kind ?? '')}</div>
+        <ul class="wh5-ov-ops">${rows}</ul>
+      </div>`
+    })
+    .join('')
+  if (!groups) return ''
+  return `<section class="wh5-overview" id="wh5-set-overview">
+    <div class="wh5-ov-title">第 ${esc(v.set_no)} 套 · 本套工序</div>
+    ${groups}
   </section>`
 }
 
