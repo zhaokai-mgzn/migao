@@ -103,7 +103,7 @@ jobs:
 
       - name: Upload 机器可读报告
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: drift-audit-report
           path: drift-audit-report.json
