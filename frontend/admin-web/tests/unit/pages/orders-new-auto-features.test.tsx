@@ -337,8 +337,15 @@ describe('#4899 反选门幅：**自动选中会被规则重算**、手选不被
   })
 })
 
-/** 填客户信息 → 提交 → 取**落库**的组合键加项（`processingInfo.processingItems[].name`） */
-async function submitAndGetProcessingNames(): Promise<string[]> {
+/** 填客户信息 → 提交 → 取**落库**的第一行（`processingInfo` 里带「哪一支 SKU 被选中」的证据） */
+async function submitAndGetItemInfo(): Promise<{
+  processingInfo: {
+    sellingMethod?: string
+    doorWidth?: string
+    skuId?: string
+    processingItems: Array<{ name: string }>
+  }
+}> {
   fireEvent.change(screen.getByPlaceholderText('请输入收货人姓名'), { target: { value: '张三' } })
   fireEvent.change(screen.getByPlaceholderText('请输入 11 位手机号'), {
     target: { value: '13800138000' },
@@ -350,12 +357,122 @@ async function submitAndGetProcessingNames(): Promise<string[]> {
   await waitFor(() => expect(screen.queryByText(/加工费计价中/)).toBeNull())
   fireEvent.click(screen.getByText('提交订单'))
   await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
-
-  const info = mockCreateOrder.mock.calls[0][0].items[0].processingInfo as {
-    processingItems: Array<{ name: string }>
-  }
-  return info.processingItems.map((i) => i.name)
+  return mockCreateOrder.mock.calls[0][0].items[0]
 }
+
+/** 填客户信息 → 提交 → 取**落库**的组合键加项（`processingInfo.processingItems[].name`） */
+async function submitAndGetProcessingNames(): Promise<string[]> {
+  const { processingInfo } = await submitAndGetItemInfo()
+  return processingInfo.processingItems.map((i) => i.name)
+}
+
+/**
+ * issue #5014（用户 2026-09-21 逐字）：「同步改一下现在新增订单的自动推算功能，之前因为每个门幅
+ * 有多个销售属性 散剪/整卷，反推出门幅高度后，就选择门幅 + **散剪**的 SKU 即可」。
+ *
+ * ⇒ 同一最优门幅下有多个 SKU 时，平局口径**新增首位**：
+ *   **售卖方式 = 散剪（`bulk_cut`）优先** → 有库存优先 → 单价低者优先 → 按 id 稳定。
+ *
+ * 观测点 = **提交落库的** `processingInfo.sellingMethod` / `doorWidth` / `skuId`
+ * （= 被选中 SKU 的证据），不是 DOM class —— 后者只证明「看起来选中」，不证明客服真下的是那一支。
+ */
+describe('#5014 自动选 SKU：散剪（bulk_cut）优先（平局口径首位）', () => {
+  const selectedInfo = async () => (await submitAndGetItemInfo()).processingInfo
+
+  // 红证（改前实测）：整卷库存更多（99 > 1）且单价更低（50 < 300）⇒ 旧口径
+  // 「有库存优先 → 单价低者优先」选中**整卷** ⇒ 本断言红（实测得到 `full_roll`）。
+  it('判据 1：同门幅 散剪 + 整卷 ⇒ 选散剪（整卷库存更多/单价更低也选散剪）', async () => {
+    await setupLineWithSkus({
+      skus: [
+        { doorWidth: '2.8米', sellingMethod: 'bulk_cut', stock: 1, price: 300 },
+        { doorWidth: '2.8米', sellingMethod: 'full_roll', stock: 99, price: 50 },
+      ],
+      height: '2.4',
+    })
+    const info = await selectedInfo()
+    expect(info.doorWidth).toBe('2.8米')
+    expect(info.sellingMethod).toBe('bulk_cut')
+  })
+
+  // 红证（改前实测）：散剪无库存、整卷有库存 ⇒ 旧口径「有库存优先」选中**整卷** ⇒ 本断言红。
+  // 🔴 边界登记（照用户字面「就选择门幅 + 散剪的 SKU 即可」）：**明知散剪缺货也仍选散剪** ——
+  //    售卖方式 = 定做单的**口径**（按米买布走散剪），库存只是**平局参考**，且该默认是
+  //    `skuAutoSelected` ⇒ 客服一点即改（不会挡住缺货场景的正确下单）。
+  it('判据 5：散剪无库存 + 整卷有库存 ⇒ **仍选散剪**（字面口径；缺货只作平局参考）', async () => {
+    await setupLineWithSkus({
+      skus: [
+        { doorWidth: '2.8米', sellingMethod: 'bulk_cut', stock: 0, price: 300 },
+        { doorWidth: '2.8米', sellingMethod: 'full_roll', stock: 50, price: 50 },
+      ],
+      height: '2.4',
+    })
+    expect((await selectedInfo()).sellingMethod).toBe('bulk_cut')
+  })
+
+  // 回归护栏（非红证条）：没有散剪可选时**仍要选出一支** ——
+  // 空选会让界面谎报「门幅未维护」（#4899 的病根），且客服无从下手。
+  it('判据 2：同门幅只有整卷 ⇒ 选整卷（不空选、不报「门幅未维护」）', async () => {
+    await setupLineWithSkus({
+      skus: [
+        { doorWidth: '2.8米', sellingMethod: 'full_roll', stock: 5 },
+        { doorWidth: '2.8米', sellingMethod: 'full_roll', stock: 0 },
+        { doorWidth: '3.2米', sellingMethod: 'full_roll', stock: 5 },
+      ],
+      height: '2.4',
+    })
+    openStep('尺寸与数量')
+    expect(screen.queryByTestId('size-door-width-missing')).toBeNull()
+    const info = await selectedInfo()
+    expect(info.doorWidth).toBe('2.8米')
+    expect(info.sellingMethod).toBe('full_roll')
+  })
+
+  // 回归护栏（非红证条）：**同一售卖方式**下多个 SKU ⇒ 沿用既有平局口径（库存 → 单价 → id）。
+  // ⚠️ 3a/3b/3c 同时是「不许只按售卖方式排序」的守卫：只排售卖方式 ⇒ 这三条全红。
+  it('判据 3a：同为散剪 ⇒ 有库存优先（无库存者单价再低也不选）', async () => {
+    await setupLineWithSkus({
+      skus: [
+        { doorWidth: '2.8米', sellingMethod: 'bulk_cut', stock: 0, price: 10 },
+        { doorWidth: '2.8米', sellingMethod: 'bulk_cut', stock: 5, price: 100 },
+      ],
+      height: '2.4',
+    })
+    expect((await selectedInfo()).skuId).toBe('sku1')
+  })
+
+  it('判据 3b：同为散剪且都有库存 ⇒ 单价低者优先', async () => {
+    await setupLineWithSkus({
+      skus: [
+        { doorWidth: '2.8米', sellingMethod: 'bulk_cut', stock: 5, price: 300 },
+        { doorWidth: '2.8米', sellingMethod: 'bulk_cut', stock: 5, price: 100 },
+      ],
+      height: '2.4',
+    })
+    expect((await selectedInfo()).skuId).toBe('sku1')
+  })
+
+  it('判据 3c：同为散剪且库存/单价相同 ⇒ 按 id 稳定（取 sku0）', async () => {
+    await setupLineWithSkus({
+      skus: [
+        { doorWidth: '2.8米', sellingMethod: 'bulk_cut', stock: 5, price: 100 },
+        { doorWidth: '2.8米', sellingMethod: 'bulk_cut', stock: 5, price: 100 },
+      ],
+      height: '2.4',
+    })
+    expect((await selectedInfo()).skuId).toBe('sku0')
+  })
+
+  // 回归护栏（非红证条）：该颜色只有一个 SKU ⇒ 直接选它（与门幅规则无关，既有行为不变）。
+  it('判据 4：单 SKU 颜色 ⇒ 直接选它（与门幅规则无关）', async () => {
+    await setupLineWithSkus({
+      skus: [{ doorWidth: '2.8米', sellingMethod: 'full_roll', stock: 3 }],
+      height: '2.4',
+    })
+    const info = await selectedInfo()
+    expect(info.skuId).toBe('sku0')
+    expect(info.sellingMethod).toBe('full_roll')
+  })
+})
 
 beforeEach(() => {
   vi.clearAllMocks()

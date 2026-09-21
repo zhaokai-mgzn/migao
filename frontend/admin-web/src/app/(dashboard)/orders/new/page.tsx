@@ -429,8 +429,8 @@ function withShapedDefault(
  *
  * ① 只有一个 SKU ⇒ 直接选它（既有行为，与门幅规则无关）；
  * ② 多个门幅 ⇒ 交给**门幅规则** `resolveCutPlan`（可行集取最小门幅 / 定宽买高取分幅最少）；
- *    **同一最优门幅下有多个 SKU**（散剪/整卷）时也要选出一个**默认**（issue #4899：
- *    有库存优先 → 单价低者优先 → 按 id 稳定）—— 什么都不选会让界面谎报「门幅未维护」；
+ *    **同一最优门幅下有多个 SKU**（散剪/整卷）时也要选出一个**默认**（issue #4899 + #5014：
+ *    **散剪（`bulk_cut`）优先** → 有库存优先 → 单价低者优先 → 按 id 稳定）—— 什么都不选会让界面谎报「门幅未维护」；
  *    该默认是**自动选中**（`skuAutoSelected`）⇒ 客服一点即改、规则也会随输入变化重算；
  * ③ 规则不可判定（缺尺寸 / 缺加工类型 / 门幅未维护）⇒ **不自动选**（不猜）。
  *
@@ -455,10 +455,14 @@ function pickAutoSkuForColor(
   if (exact.length === 1) return exact[0]
   // **同一最优门幅下有多个 SKU**（散剪/整卷）⇒ 也必须选出一个**默认**（issue #4899）：
   // 什么都不选 = 界面显示「门幅未维护」（误导：不是没维护，是没选到）+ 客服无从下手。
-  // 平局口径（可解释、可覆盖）：**有库存优先 → 单价低者优先 → 按 id 稳定**。
-  // 它是**自动选中**（`skuAutoSelected=true`）⇒ 客服一点即改，规则也会随输入变化重算。
+  // 平局口径（可解释、可覆盖）：**售卖方式 = 散剪（`bulk_cut`）优先**（issue #5014，用户 2026-09-21：
+  // 每个门幅有散剪/整卷两个销售属性，反推出门幅后「选择门幅 + **散剪**的 SKU 即可」—— 定做单按米买布）
+  // → **有库存优先 → 单价低者优先 → 按 id 稳定**。
+  // ⚠️ 散剪**缺货**也仍优先（#5014 判据 5，用户字面口径）：库存只是平局参考；它是**自动选中**
+  // （`skuAutoSelected=true`）⇒ 客服一点即改，规则也会随输入变化重算。
   const [best] = [...exact].sort(
     (a, b) =>
+      Number(b.sellingMethod === 'bulk_cut') - Number(a.sellingMethod === 'bulk_cut') ||
       Number(Number(b.stock ?? 0) > 0) - Number(Number(a.stock ?? 0) > 0) ||
       Number(a.price ?? 0) - Number(b.price ?? 0) ||
       String(a.id).localeCompare(String(b.id))
