@@ -63,6 +63,7 @@
 ### 2.2 红线（踩过的高频坑，禁止违反）
 - **禁止 `git add -A` 盲目提交**：工作区长期积压的未提交改动（尤其旧版 UI）会覆盖 main 上已验收的版本。提交前先 `git status` 检查积压，**逐个确认** UI 文件不是旧版。
 - **禁止长期不提交**：避免 142 个文件的大 PR。开发应小步提交 + 频繁 `git fetch origin main && git rebase origin/main`。
+- **改了 `.github/cases/**`（或 `.github/case-trust-baseline.json`）的分支，同步 main 必须用 `./scripts/sync-main.sh --rebase`**（issue #4984）：merge 会把「本分支缺少 main 新增的用例销账块（`must_succeed` / `namespaces` / `precondition` 等）」当成**有意删除**、**无冲突**接受 ⇒ **静默回退** main 已缴的 case-trust 债（实测 #4965：5 个文件净删 −27/−25/−20/−3/−2 行），随后门禁判红且**归因指向错误方向**（看起来像「你这个 PR 新增了违规」）。`sync-main.sh` 的 merge 模式现已**前置拒绝**这种组合（两侧都动过受管用例面即停手）并在合并后做**内容级校验**；替代路径就是 `--rebase`（main 成为基线，新增块不可能被「缺少」掉）。
 - **禁止分支滞留 + 无记录切换分支**（2026-09-01 实战教训：40+ 本地分支积压，切换旧分支 → 工作区被旧代码覆盖 + 未提交改动静默携带 → 「切换分支后功能退化」）：
   1. 分支开即关联 Issue，验证完即 PR，CI 绿即合并，**分支存活 < 1-2 天**；
   2. 切换分支前 `git status` 必须干净（有改动先 commit/stash）；
