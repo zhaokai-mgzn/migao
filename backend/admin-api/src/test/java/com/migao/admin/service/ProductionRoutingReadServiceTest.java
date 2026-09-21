@@ -256,6 +256,44 @@ class ProductionRoutingReadServiceTest {
     }
 
     @Test
+    @DisplayName("PG-018 塌缩终态（issue #5008）：矩阵行 position = 中性值「通用」⇒ 元数据按**取价同一行**解析，不得全 null")
+    void operationPositionsResolvesVariantMetadataForCollapsedNeutralPosition() {
+        // V102 把矩阵按 (租户, 逻辑工序) 塌缩成一行，幸存行 position 写成中性值「通用」
+        // （`backend/admin-api/src/main/resources/db/migration/V102__retire_applicability_flag.sql`）。
+        // 读面若仍只按 `row.getPosition()` 查变体 ⇒ 库里只有变体名（布三边）的那 21 道工序解析落空
+        // ⇒ 分组/单位/variant_operation_id 静默变 null（商家面「未分组 · 21 道」+ 行尾 `—`）。
+        // 判据 = 与 `collapseToLogical` 的**取价同一行**（布帘列）解析元数据。
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("三边", "通用", "0.40", true)));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operation("op-busandbian", "布三边", "车位", "米", "0.40", "position", false)));
+
+        Map<String, Object> row = service().operationPositions(TENANT).get(0);
+
+        assertThat(row.get("variant_operation_id")).as("塌缩行的元数据取行 = 取价同一行（布帘列）")
+                .isEqualTo("op-busandbian");
+        assertThat(row.get("unit")).isEqualTo("米");
+        assertThat(row.get("group")).isEqualTo("车位");
+        assertThat(row.get("scope")).isEqualTo("position");
+    }
+
+    @Test
+    @DisplayName("PG-018 塌缩终态（issue #5008）：中性值回落**只**认「通用」—— 真实部位查不到变体仍必须 null（不猜）")
+    void operationPositionsNeutralFallbackDoesNotLeakIntoRealPositions() {
+        // 反证上一条：`logo条 × 纱帘` 在库里确实没有该变体 ⇒ 不得借布帘列的元数据顶替（那是「猜」）
+        when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
+                position("logo条", "纱帘", null, true)));
+        when(productionOperationMapper.selectList(any())).thenReturn(List.of(
+                operation("op-logob", "logo条-布", "车位", "米", "0.60", "position", false)));
+
+        Map<String, Object> row = service().operationPositions(TENANT).get(0);
+
+        assertThat(row.get("variant_operation_id")).isNull();
+        assertThat(row.get("unit")).isNull();
+        assertThat(row.get("group")).isNull();
+    }
+
+    @Test
     @DisplayName("部位价目：库里没有该变体 ⇒ 5 键全 null（logo条 × 纱帘 —— 不猜、不拼名字）")
     void operationPositionsLeavesVariantKeysNullWhenNoVariant() {
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(

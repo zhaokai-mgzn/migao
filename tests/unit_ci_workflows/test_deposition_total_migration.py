@@ -355,6 +355,24 @@ def test_java_collapse_source_position_matches_the_sql_literal():
     assert "'通用'" in body, "V102 的中性值必须与「三部位 + 布料」都不撞"
 
 
+def test_java_neutral_position_matches_the_sql_literal():
+    """跨语言：SQL 的 `'通用'` 与 Java 的 `COLLAPSE_NEUTRAL_POSITION` **逐字同值**（issue #5008）。
+
+    读面靠这个值**认出塌缩终态**并回落到「取价同一行」（布帘列）解析变体元数据；
+    两侧一旦漂移，库里只有变体名的那些工序会**再次静默丢分组/单位**（没有任何东西会因此变红）。
+    """
+    src = _read(QUERY_SERVICE)
+    m = re.search(r'COLLAPSE_NEUTRAL_POSITION\s*=\s*"([^"]+)"', src)
+    assert m, "Java 侧找不到 `COLLAPSE_NEUTRAL_POSITION` 的字面量"
+    neutral = m.group(1)
+    assert neutral not in ("布帘", "纱帘", "帘头", "布料"), (
+        f"中性值 `{neutral}` 与真实部位撞车 ⇒ 读面会把真实部位误判成塌缩终态")
+    assert f"SET position = '{neutral}'" in _strip_comments(_read(V102)), (
+        f"V102 写的幸存行 position 不是 Java 的 `{neutral}` ⇒ 读面认不出塌缩终态")
+    assert f"'{neutral}'" in _read(SCHEMA_SQL), (
+        f"`docs/sql/schema.sql` 的矩阵终态里没有 `{neutral}`（bootstrap 路径不跑迁移链）")
+
+
 # ══════════════════════════ ③ 真库判据（临时 PG 集群） ══════════════════════════
 
 _PG_BINARIES = ("initdb", "pg_ctl", "psql")
