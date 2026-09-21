@@ -1110,10 +1110,13 @@ public class AuthService {
             menus.add(menuGroup("product-center", "商品管理", "Store", productChildren));
         }
 
-        // 生产管理分组（issue #4203/#4205 后端半边 + #4308 的「工艺路线」第四项）：生产看板 /
-        // 工序库 / 工艺路线 / 计件工资，权限码统一 processing:manage。四个节点**必须与 MenuController
+        // 生产管理分组（issue #4203/#4205 后端半边）：生产看板 / 工艺配置 / 计件工资（权限码统一
+        // processing:manage）+ 入库单（权限码独立 inbound:view，见下）。四个节点**必须与 MenuController
         // 的静态权限树同构**（岗位权限页勾选与真实侧边栏的单一真相），也与前端 config/menu.ts 同构 ——
         // 漏一处就是「岗位权限页勾得动、侧边栏看不到」（#4203 点名的同族坑）。
+        // 🔴 issue #4440：本条注释此前写「工序库 / 工艺路线 / 计件工资 …… 四个节点」—— issue #4416
+        // 已把前两者**合并为单一入口「工艺配置」**（旧路径 /production/operations 是重定向）⇒ 注释
+        // 与代码漂移（**代码是对的、注释在说谎**）。改判后与 `config/menu.ts` 的 production 组逐字一致。
         List<UserInfoResponse.MenuItem> productionChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("processing:manage")) {
             productionChildren.add(menuItem("production", "生产看板", "Factory", "/production"));
@@ -1123,7 +1126,8 @@ public class AuthService {
             productionChildren.add(menuItem("production-process", "工艺配置", "Route", "/production/routings"));
             productionChildren.add(menuItem("production-piecework", "计件工资", "Coins", "/production/piecework"));
         }
-        // 入库单（V111，issue #5034）：生产管理组第五项，但**权限码独立**（inbound:view）——
+        // 入库单（V111，issue #5034）：生产管理组**第四项**（#4440 改判：合并后本组已回落到三项，
+        // 入库单接在其后），但**权限码独立**（inbound:view）——
         // 入库是仓储动作，不是加工动作：仓管/财务要看入库单，却不需要 processing:manage。
         // 若把它塞进上面那个 `processing:manage` 的 if 里，「有 inbound:view、没有 processing:manage」
         // 的人就看不到菜单（权限页勾得动、侧边栏看不到 = #4203 点名的同族坑）。
