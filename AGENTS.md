@@ -19,6 +19,13 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
    （同文件改动同包；改 `cases/*.yml` 的包独占生成物）→ 每包 = issue + 分支 + 独立 worktree +
    后台 subagent（§2.3 零共享写路径）→ **主会话只做集成与验证**。合并串行、验证收口；
    评测型流水线同时 ≤3（runner 竞争 + 真实 LLM 成本）。全文与反模式见 `migao-dev-flow` 技能 §17。
+7. **CHANGELOG 更新纪律**：**用户可见**的行为/口径变更（feat / fix 里改产品行为、算料口径、涉钱面、UI 可见面者）
+   必须在 `CHANGELOG.md` 的 `## [Unreleased]` 补一条，标题形态 `### <一句话说清改后的形态>（<日期>，issue #NNNN）`
+   （无关联 issue 时标 `PR #NNNN`）。
+   **豁免口径（不入册）**：`chore`（含依赖升级、CI 台账滚动）、`docs`、`ci`，以及**纯测试 / 研发工具**类改动
+   （改用例判据、改 `scripts/` 等）—— 它们对用户**无可观察影响**，塞进来只是凑数、还会淹没真变更。
+   判据（零成本、可复算）：`git log --oneline <上次改 CHANGELOG 的 commit>..origin/main`，
+   逐条按上述口径分流后再补录；**不许**按「差了多少个 issue 号」估数（issue 号是稀疏的，不是提交数）。
 
 ## 按场景找文档（先查索引，按需 Read）
 
