@@ -407,9 +407,12 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(style).toContain('size: A4')
       expect(style).toContain('@media print')
       expect(style).toMatch(/\.quotation-print-area\s*\{\s*display:\s*none/)
-      expect(style).toMatch(
-        /body > \*:not\(\.quotation-print-area\)\s*\{\s*display:\s*none\s*!important/
-      )
+      // 🔴 隔离选择器必须排除**所有**打印单据（issue #4965 实测：写成
+      // `body > *:not(.quotation-print-area)` 会把兄弟单据 ShipmentDoc 也选进来 ⇒
+      // `display:none !important` 把它整份藏掉，CI `Demo path specs` 的
+      // `expect('.shipment-print-area').toBeVisible()` 红）。
+      expect(style).toMatch(/body > \*:not\(\.print-doc\)\s*\{\s*display:\s*none\s*!important/)
+      expect(style).not.toMatch(/body > \*:not\(\.quotation-print-area\)/)
       // visibility 防御（订单详情页 ProcessingOrderBlock 残留的 body * { visibility: hidden }）
       // —— 形态见下一条：必须限定本次打印目标
       expect(style).toMatch(/\.quotation-print-area\[data-print-target='quotation'\]/)
@@ -454,6 +457,42 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
     // 后挂的报价单会把先挂的发货单重新藏掉（补打纸面空白）。
     // 这里按真实 DOM 顺序把三块 print 规则并到样式表末尾（jsdom 不解析媒体查询，故为等价仿真，
     // 同 ShipmentDoc.test.tsx 的 ② 手法），断言「点谁只显谁」。
+    // 🔴 直接判据（比字符串匹配强）：把 print 块里 `body > *:not(...)` 的**选择器本体**取出，
+    // 用 `element.matches()` 问「它会不会选中兄弟单据」。旧写法 `:not(.quotation-print-area)`
+    // 会匹配 `.shipment-print-area` ⇒ `display:none !important` 把发货单整份藏掉
+    // （CI `Demo path specs` 实测红）；新写法 `:not(.print-doc)` 对两者都不匹配。
+    it('隔离选择器不选中兄弟单据（body > *:not(...) 对 ShipmentDoc 必须为 false）', () => {
+      render(
+        <>
+          <ShipmentDoc order={buildOrder()} printTarget="shipment" />
+          <QuotationDoc order={buildOrder()} printTarget="quotation" />
+        </>
+      )
+      const styleEl = doc()?.querySelector('style') as HTMLStyleElement
+      const printBlock = Array.from(styleEl.sheet!.cssRules).find(
+        (r): r is CSSMediaRule => (r as CSSMediaRule).media?.mediaText?.includes('print') === true
+      )
+      const isolation = Array.from(printBlock!.cssRules)
+        .map((r) => (r as CSSStyleRule).selectorText || '')
+        .find((t) => t.includes('body >'))
+      expect(isolation).toBeTruthy()
+      const shipment = document.querySelector('.shipment-print-area') as HTMLElement
+      const quotation = document.querySelector('.quotation-print-area') as HTMLElement
+      expect(quotation.matches(isolation!)).toBe(false)
+      expect(shipment.matches(isolation!)).toBe(false)
+      // 而页面外壳（非打印单据）必须被选中（隔离本体不许失效）
+      const shell = document.createElement('div')
+      document.body.appendChild(shell)
+      expect(shell.matches(isolation!)).toBe(true)
+      shell.remove()
+    })
+
+    it('容器同时带 print-doc 标记类（隔离选择器据此排除所有打印单据）', () => {
+      render(<QuotationDoc order={buildOrder()} />)
+      expect(doc()?.className).toContain('quotation-print-area')
+      expect(doc()?.className).toContain('print-doc')
+    })
+
     it('两单共存（含遗留 body * 隔离）：点谁只显谁，不把对方藏掉', () => {
       // 遗留隔离（订单详情页 ProcessingOrderBlock 的真实形态）—— 防抖动的靶子
       const legacy = document.createElement('style')

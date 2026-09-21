@@ -26,11 +26,14 @@ import { cn, formatFullDateTime } from '@/lib/utils'
  *    invisible（补打纸面空白，issue #3912 回归）；故 print 块内必须显式恢复
  *    `.shipment-print-area, .shipment-print-area * { visibility: visible; }` ——
  *    它只影响单据自身可见性，不占版面高度，与 display:none 隔离不冲突。
- *    🔴 **该防御必须限定「本单据是本次打印目标」**（issue #4965 实测）：订单详情页新增了
- *    报价单（`QuotationDoc`），两者是 body 的**兄弟**节点、`visibility: visible` **同特异性** ⇒
- *    后渲染者胜；不限定的话报价单会把本单据重新藏掉（CI `Demo path specs` 实测红）。
- *    故写成 `.shipment-print-area[data-print-target='shipment'], …`，由调用方在打印时置位
- *    （见 `PrintTarget` / `OrderDetail` 的 `printTarget`）。
+ *    🔴 **同页多单据的两条硬约束**（issue #4965，CI `Demo path specs` 实测红后修正 —— 别退回旧写法）：
+ *    订单详情页同时挂着报价单（`QuotationDoc`），两者都是 `document.body` 的**直接子级**。旧写法在
+ *    这种共存下**两条都错**：① 隔离选择器 `body > *:not(.shipment-print-area)` 会把**兄弟单据**
+ *    也选进来 ⇒ `display:none !important` 把对方整份藏掉；② 两份无限定 `visibility: visible`
+ *    **同特异性**、后渲染者胜 ⇒ 后挂的报价单把本单据藏成 invisible（实测 `toBeVisible()` 红）。
+ *    ⇒ 修法：隔离选择器排除所有打印单据（`body > *:not(.print-doc)`，两份容器都带 `print-doc` 标记类）；
+ *    visibility 防御限定本次打印目标（`.shipment-print-area[data-print-target='shipment'], …`，
+ *    由调用方在打印时置位）。
  * 3. **不得放进 Modal**：`Modal` 面板是 `max-h-full` + 内部 `overflow-y-auto`，
  *    打印只会打出可视区那一屏（多页明细会被裁掉）。故调用方一律渲染在页面级。
  * 4. **每页只挂一份**：`.shipment-print-area` 是全局选择器，挂两份会打印出两套单据。
@@ -91,14 +94,14 @@ export default function ShipmentDoc({ order, logistics, shipperName, printTarget
 
   return createPortal(
     <div
-      className={cn('shipment-print-area text-neutral-900', className)}
+      className={cn('shipment-print-area print-doc text-neutral-900', className)}
       {...(printTarget === 'shipment' ? { 'data-print-target': 'shipment' } : {})}
     >
       <style>{`
         .shipment-print-area { display: none; }
         @page { size: A4; margin: 12mm; }
         @media print {
-          body > *:not(.shipment-print-area) { display: none !important; }
+          body > *:not(.print-doc) { display: none !important; }
           .shipment-print-area {
             display: block;
             position: static;

@@ -31,16 +31,19 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *    把整页外壳藏掉 —— **display:none 不占版面高度**，分页只按单据自身高度计算
  *    （旧方案 `visibility:hidden` 隐藏的元素仍占高度，底层页面高于一页 A4 时第 2 页空白，
  *    issue #3896）。注意 `.quotation-print-area` 必须是 portal 容器本身的 class，不能再包一层。
- *    **visibility 防御（勿删）**：订单详情页的 `ProcessingOrderBlock` 仍用旧的
- *    `@media print { body * { visibility: hidden } }` 做打印隔离，会把本单据一起藏成 invisible
- *    （纸面空白，issue #3912 回归）⇒ print 块内必须显式恢复
- *    `.quotation-print-area, .quotation-print-area * { visibility: visible; }`。
- *    🔴 **但该防御必须限定「本单据是本次打印目标」**（issue #4965 实测回归）：订单详情页同时挂着
- *    发货单（`ShipmentDoc`）——两个单据是 body 的**兄弟**节点，`.shipment-print-area` 与
- *    `.quotation-print-area` 的 `visibility: visible` **同特异性**，后渲染者胜 ⇒ 本组件（后挂）
- *    会把发货单重新藏掉（CI 的 `Demo path specs` 实测：`expect('.shipment-print-area').toBeVisible()`
- *    失败）。故防御写成属性选择器 `.quotation-print-area[data-print-target='quotation'], …`，
- *    由调用方在打印时置位（见 `PrintTarget` / `OrderDetail` 的 `printTarget`）。
+ *    🔴 **同页多单据的两条硬约束**（issue #4965，CI `Demo path specs` 实测红后修正 —— 别退回旧写法）：
+ *    订单详情页**同时挂着**发货单（`ShipmentDoc`）与本报价单，两者都是 `document.body` 的**直接子级**
+ *    （§范式 2 的物理前提）。旧写法（各自 `body > *:not(.<自己>-print-area)` + 无限定
+ *    `visibility: visible`）在这种同页共存下**两条都错**，且错误方向相反：
+ *    ① **互相 `display:none`**：`body > *:not(.quotation-print-area)` 会把**兄弟单据**
+ *       （`.shipment-print-area`）也选进来 ⇒ `display:none !important` 把对方整份藏掉
+ *       （实测：点「打印发货单」时发货单 `display:none` ⇒ `toBeVisible()` 红）；
+ *    ② **visibility 后渲染者胜**：两份 `visibility: visible` 防御**同特异性**，后挂的报价单
+ *       把发货单重新藏成 invisible。
+ *    ⇒ 修法（两条一起）：**隔离选择器排除所有打印单据**（`body > *:not(.print-doc)`，两份单据的
+ *    容器都带 `print-doc` 标记类 ⇒ 它们互不隐藏；其余外壳一律 `display:none` 不占版面高度）；
+ *    **visibility 防御限定本次打印目标**（`.quotation-print-area[data-print-target='quotation'], …`，
+ *    由调用方在打印时置位，见 `PrintTarget` / `OrderDetail` 的 `printTarget`）。
  * 3. **不得放进 Modal**：`Modal` 面板是 `max-h-full` + 内部 `overflow-y-auto`，打印只会打出
  *    可视区那一屏（多页明细被裁）。故调用方一律渲染在页面级。
  * 4. **每页只挂一份**：`.quotation-print-area` 是全局选择器，挂两份会打印出两套单据。
@@ -174,14 +177,14 @@ export default function QuotationDoc({
 
   return createPortal(
     <div
-      className={className ? `quotation-print-area ${className}` : 'quotation-print-area'}
+      className={className ? `quotation-print-area print-doc ${className}` : 'quotation-print-area print-doc'}
       {...(printTarget === 'quotation' ? { 'data-print-target': 'quotation' } : {})}
     >
       <style>{`
         .quotation-print-area { display: none; }
         @page { size: A4; margin: 12mm; }
         @media print {
-          body > *:not(.quotation-print-area) { display: none !important; }
+          body > *:not(.print-doc) { display: none !important; }
           .quotation-print-area {
             display: block;
             position: static;

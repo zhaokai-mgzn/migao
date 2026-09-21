@@ -262,7 +262,10 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     // 打印时只显示本单据：隐藏 body 下所有非单据直系子级。
     // display:none 不占版面高度 —— 旧 `visibility:hidden` 会按隐藏内容高度分页，
     // 底层页面高于一页 A4 时第 2 页空白（issue #3896）。
-    expect(style).toMatch(/body > \*:not\(\.shipment-print-area\)\s*\{\s*display:\s*none\s*!important/)
+    // 隔离选择器必须排除**所有**打印单据（`print-doc` 标记类）——写成 `:not(.shipment-print-area)`
+    // 会把同页的报价单（QuotationDoc）选进来并整份藏掉（issue #4965 实测）
+    expect(style).toMatch(/body > \*:not\(\.print-doc\)\s*\{\s*display:\s*none\s*!important/)
+    expect(document.querySelector('.shipment-print-area')?.className).toContain('print-doc')
     // 🔴 visibility 防御必须限定「本次打印目标」（issue #4965 实测回归）：订单详情页同时挂着
     // 报价单（QuotationDoc），两者是 body 的兄弟节点、`visibility: visible` **同特异性** ⇒
     // 后渲染者胜。不限定则报价单把本单据重新藏掉（CI `Demo path specs` 实测红）。
