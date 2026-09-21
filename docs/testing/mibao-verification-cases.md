@@ -1860,6 +1860,7 @@
 你: 确认创建
 期望: role_manage(action=create)
 数据: 确认后创建成功，permissions 含商品管理权限码
+必须成功: role_manage(create)
 ```
 真值: employee-role.role-crud, employee-role.permissions
 溯源: verification 5.5 独有；2026-09-10 校准：①「库存权限」生产不存在（库存由商品管理模块承载），改真实权限「商品管理」；② 补「确认创建」轮 + 明确编码/描述（role_manage create 走 validate_input→create 确认链，validate_input 已 #3157 补 role_manage 规则；「确认」一词因 agent 澄清多问编码/描述致 LLM 歧义，改为明确第二输入） ｜ tags: create, permission

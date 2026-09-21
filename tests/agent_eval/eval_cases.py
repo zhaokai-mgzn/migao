@@ -2685,6 +2685,8 @@ _CASE_HR_005 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'role_manage', 'action': 'create'}],
+    namespaces=['role_code:stock_keeper'],
 )
 
 # ── HR-006 [NORMAL] 岗位权限体系 - 注册新租户初始化五岗默认权限 + 员工权限快照式解析（#2969）（源: cases/hr.yml）──
