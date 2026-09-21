@@ -1,6 +1,5 @@
 'use client'
 
-import Badge from '@/components/ui/Badge'
 import StatusBadge from '@/components/ui/StatusBadge'
 import { chipToneClasses } from '@/lib/status-chip'
 // 工序显示名的**唯一**口径（issue #4621）：逻辑名 · 部位 —— 本表**不得**直接渲染变体名
@@ -25,8 +24,9 @@ import type { ProductionPosition } from '@/types'
  * 缺 `set_no`（老数据 / 读面未升级）⇒ 退回「每个部位自成一套」（= 改前行为，不猜）。
  * ⚠️ 套分组**不是「部位」**（部位 = 布帘/纱帘/帘头，读面键 = `position_kind`）；`position_name`
  * 是**展示名**（加工产物名[+色号]），降为部位块副标题 —— 它回答的是「这一块是哪一件帘」。
- * 必完工序（is_must_finish，「此工序必须完成才可打包」）加「必完」badge —— 商家据此看进度、
- * 工人据此知道哪道不能漏（真值源：docs/curtain-production-rules.md §2 工序库）。
+ * ⚠️ **「必完」badge 已退场**（issue #4961，2026-09-21 用户裁定）：完工口径改为
+ * 「**全部工序实例全绿**」⇒ 本表不再渲染任何完工门槛标记（真值源 docs/curtain-production-rules.md
+ * §2 的「必完」概念从商家面退场）。
  * 应做数量由算料引擎给出、报工只确认（§3），故此处只读展示、不做手工计算。
  */
 interface ProductionProgressTableProps {
@@ -144,11 +144,6 @@ export default function ProductionProgressTable({ positions, className }: Produc
                           <td className="px-4 py-3">
                             <span className="mr-2 text-xs text-neutral-400">{op.seq ?? ''}</span>
                             <span className="text-neutral-900">{operationDisplayName(op)}</span>
-                            {op.is_must_finish && (
-                              <Badge variant="warning" className="ml-2" title="此工序必须完成才可打包">
-                                必完
-                              </Badge>
-                            )}
                           </td>
                           <td className="px-4 py-3 text-neutral-600" data-testid="op-group">
                             {op.group || '—'}

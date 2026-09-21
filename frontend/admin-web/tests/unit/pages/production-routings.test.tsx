@@ -1295,34 +1295,88 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   })
 
 
-  it('⑳ 行尾必完标记：该工序必完 ⇒ `必完`；否则**不显示**（issue #4610；#4886 起收敛为布尔）', async () => {
-    // 夹具刻意造出**部分部位**那一态（基座夹具里没有）：车被 布帘必完 / 纱帘**非**必完
-    mockGetOperationPositions.setDefault([
-        { id: 'p1', operation: '三边', position: '布帘', unit_price: 1.2, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
-        { id: 'p2', operation: '三边', position: '纱帘', unit_price: 1.2, variant_operation_id: 'op-三边-纱', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
-        { id: 'p3', operation: '精裁', position: '布帘', unit_price: 8.5, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
-        { id: 'p4', operation: '精裁', position: '纱帘', unit_price: 6, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
-        { id: 'p5', operation: '车被', position: '布帘', unit_price: 0, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'position', is_must_finish: true },
-        { id: 'p6', operation: '车被', position: '纱帘', unit_price: null, variant_operation_id: 'op-车被-纱', unit: '件', group: '后道', scope: 'position', is_must_finish: false },
-        { id: 'p7', operation: '韩褶', position: '布帘', unit_price: 2, ...NO_VARIANT },
-    ])
+  // ══════════════════ #4960 / #4961：作用域写面与「必完」整体退场 ══════════════════
+  // ⚠️ 这一组是**移除**类判据 ⇒ 红证形态 = 「改前**存在**，断言它**不存在**」
+  // （`expected <select …> to be null`），而不是「找不到元素」那种反向表述。
+
+  it('#4960-① 商家写面不再有「作用域」：抽屉里没有 `variant-scope-*`，且这一屏的写请求**不带** `scope` 键', async () => {
+    await openManage('车被')
+
+    // ① 控件**退场**（不是禁用、不是隐藏）：改前这里是 `<select data-testid="variant-scope-op-车被">`
+    expect(document.body.querySelector('[data-testid^="variant-scope-"]')).toBeNull()
+    const drawer = screen.getByTestId('operations-manage-drawer')
+    expect(drawer).not.toHaveTextContent('作用域')
+    // 商家看不懂的那对词随之退场 —— 说明句不再解释这个维度
+    // ⚠️ 只断言**作用域专属**的措辞：抽屉的「适用条件」一节里「特殊选项按**套**收费（元/套）」
+    // 说的是**计价**（另一本账），与本项无关 ⇒ 不能拿光秃秃的「按套」当判据。
+    expect(drawer).not.toHaveTextContent('每套窗只做一次')
+    expect(drawer).not.toHaveTextContent('按件')
+
+    // ② 维护面**其余各项一个都没少**（移除的是作用域这一项，不是整块写面）
+    await userEvent.click(screen.getByTestId('variant-meta-edit-op-车被'))
+    await userEvent.click(screen.getByTestId('variant-meta-save-op-车被'))
+    await waitFor(() =>
+      expect(mockUpdateOperation).toHaveBeenCalledWith('op-车被', { group_name: '后道', unit: '件' }),
+    )
+    await userEvent.click(screen.getByTestId('variant-disable-op-车被'))
+    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-车被', { status: 'inactive' }))
+
+    // ③ 这一屏**没有任何**写请求带 `scope` 键（退场的是**用户动作**，不是请求契约）
+    expect(mockUpdateOperation.mock.calls.length).toBeGreaterThan(0)
+    for (const call of mockUpdateOperation.mock.calls) {
+      expect(Object.keys(call[1] as object)).not.toContain('scope')
+    }
+  })
+
+  it('#4961-① 主表行尾的「必完」标记与列头里的「必完」一起退场（完工口径改为「全部工序实例全绿」）', async () => {
     await renderOperations()
 
-    // ① 收敛选中的那一行必完 ⇒ `必完`（**不再**有「（部分部位）」这种多档文案）
-    const must = screen.getByTestId('matrix-must-finish-精裁')
-    expect(must).toHaveTextContent('必完')
-    expect(must).not.toHaveTextContent('部分部位')
-    expect(must.getAttribute('title')).toBe('必完：缺这道工序不能打包')
+    // 夹具里 `精裁` 必完（改前 ⇒ `matrix-must-finish-精裁` 那枚琥珀色标记在场）
+    expect(document.body.querySelector('[data-testid^="matrix-must-finish-"]')).toBeNull()
+    expect(screen.getByTestId('matrix-meta-精裁')).not.toHaveTextContent('必完')
+    // 列头 = `分组 · 单位 · 操作`（改前是 `分组 · 单位 · 必完 · 操作`）
+    expect(screen.getByTestId('operation-workshop-table')).not.toHaveTextContent('必完')
+    // 移除的是「必完」，**不是**行尾元数据本身（`分组 · 单位` 逐字仍在）
+    expect(screen.getByTestId('matrix-meta-精裁')).toHaveTextContent('裁剪')
+    expect(screen.getByTestId('matrix-meta-精裁')).toHaveTextContent('套')
+  })
 
-    // ② `车被` 的 纱帘 行**不**必完，但收敛选中的是 布帘（必完）⇒ 照显示
-    // （证明判据落在收敛后那一行，而不是「任意一行必完就显示」）
-    expect(screen.getByTestId('matrix-must-finish-车被')).toHaveTextContent('必完')
+  it('#4961-② 抽屉里的「必完」勾选框退场（不是禁用、不是隐藏）', async () => {
+    await openManage('车被')
 
-    // ③ 收敛选中那一行不必完 / 读面没给该键 ⇒ **不显示**（不得发明「非必完」这类新词）
-    expect(screen.queryByTestId('matrix-must-finish-三边')).toBeNull()
-    expect(screen.queryByTestId('matrix-must-finish-韩褶')).toBeNull()
-    expect(screen.getByTestId('matrix-meta-三边')).not.toHaveTextContent('必完')
-    expect(screen.getByTestId('matrix-meta-韩褶')).not.toHaveTextContent('必完')
+    // 改前这里是 `<input type="checkbox" data-testid="variant-must-finish-op-车被" checked>`
+    expect(document.body.querySelector('[data-testid^="variant-must-finish-"]')).toBeNull()
+    expect(screen.getByTestId('operations-manage-drawer')).not.toHaveTextContent('必完')
+  })
+
+  it('#4961-③ 主线 chip 上的「必完」标记退场', async () => {
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-step-11-1')).toBeInTheDocument())
+
+    // 改前：`精裁` 矩阵行必完 ⇒ chip 1 带 `routing-step-must-finish-11-1`；`外帘装袋` ⇒ chip 3
+    expect(document.body.querySelector('[data-testid^="routing-step-must-finish-"]')).toBeNull()
+    expect(screen.getByTestId('routing-step-11-1')).not.toHaveTextContent('必完')
+    expect(screen.getByTestId('routing-step-11-3')).not.toHaveTextContent('必完')
+  })
+
+  it('#4961-④ 「一道必完工序都没有」预检黄条（`routing-precheck-*`）整体退场', async () => {
+    // 两道都能在工序库里查到、且都**不是**必完 ⇒ 改前 `lacksMustFinish` 成立、黄条就在这里
+    mockGetRoutings.mockReset().mockResolvedValue(
+      ok({
+        total: 1,
+        routings: [
+          { id: 11, name: '窗帘工序路线（默认）', is_default: true, positions: ['布帘'], mainline: ['韩褶-布', '裁剪-布'], status: 'active' },
+        ],
+      }),
+    )
+    await renderOnRoutes()
+    await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
+    await userEvent.click(screen.getByTestId('routing-edit-11'))
+
+    expect(screen.queryByTestId('routing-precheck-11')).toBeNull()
+    // 删的是「必完」这**一条**预检，不是整个预检面：主线编辑器照旧可用
+    expect(screen.getByTestId('routing-add-select-11')).toBeInTheDocument()
+    expect(screen.getByTestId('routing-save-11')).toBeEnabled()
   })
 
   it('㉖-① 矩阵行首**不再显示变体名**（改判 ⑰-③）：该行「哪个部位做/不做」由列与格表达', async () => {
@@ -1446,7 +1500,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('matrix-row-精裁')).toBeInTheDocument()
   })
 
-  it('⑰-⑩ 「管理▸」抽屉：条目带 分组·单位·作用域·必完 + 商家话解释；改档各只带自己的字段', async () => {
+  it('⑰-⑩ 「管理▸」抽屉：条目带 分组 · 单位；「作用域 / 必完」已整体退场（issue #4960 / #4961）', async () => {
     // issue #4947：抽屉层写面按**逻辑名**寻址（真形态）⇒ 用真形态夹具驱动
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(LOGICAL_CATALOG))
     await openManage('车被')
@@ -1457,21 +1511,11 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(row).toHaveTextContent('后道')
     expect(row).toHaveTextContent('件')
 
-    // 作用域：闭词表两档 + 一句商家看得懂的解释
-    expect(screen.getByTestId('variant-scope-op-车被')).toHaveValue('position')
-    expect(row).toHaveTextContent('每套窗只做一次')
-    // 必完：勾选态 + 一句解释（issue #4610 追加：解释要能回答「多部位时判谁」）
-    expect(screen.getByTestId('variant-must-finish-op-车被')).toBeChecked()
-    expect(row).toHaveTextContent('必完 · 缺这道工序不能打包')
-
-    // 反向护栏（用户裁定「不加作用域限制」）：部位级的必完开关**仍可用**（不得 disabled/隐藏）
-    expect(screen.getByTestId('variant-must-finish-op-车被')).not.toBeDisabled()
-
-    await userEvent.selectOptions(screen.getByTestId('variant-scope-op-车被'), 'position')
-    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-车被', { scope: 'position' }))
-
-    await userEvent.click(screen.getByTestId('variant-must-finish-op-车被'))
-    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-车被', { is_must_finish: false }))
+    // 两个配置项**都不在**（移除类判据 ⇒ 断言「不存在」，控件级红证见 #4960-① / #4961-②）
+    expect(document.body.querySelector('[data-testid^="variant-scope-"]')).toBeNull()
+    expect(document.body.querySelector('[data-testid^="variant-must-finish-"]')).toBeNull()
+    expect(row).not.toHaveTextContent('每套窗只做一次')
+    expect(row).not.toHaveTextContent('必完')
 
     // 停用走既有写面（`PUT /operations/{id}` 的 `status`）—— issue #4947：入口已**统一到抽屉 footer**
     // （逐行那一对与 footer 重复 ⇒ 去重退场；判据见 #4947-①）
@@ -1481,7 +1525,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
 
 
-  it('㉖-④ 能力不减（反向护栏）：改分组 / 单位 / 作用域 / 必完 / 停用 / 删除 **六项逐条仍可用**', async () => {
+  it('㉖-④ 能力不减（反向护栏）：改分组 / 单位 / 停用 / 删除 **四项逐条仍可用**（作用域 / 必完已退场）', async () => {
     // issue #4947：停用/删除的入口统一到 footer ⇒ 用**真形态**夹具（footer 按逻辑名寻址）
     mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(LOGICAL_CATALOG))
     await openManage('车被')
@@ -1501,16 +1545,11 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     )
     expect(Object.keys(mockUpdateOperation.mock.calls[0][1] as object)).toEqual(['group_name', 'unit'])
 
-    // ③ 改作用域 / ④ 改必完：各只带自己的字段（`PUT /operations/{id}`）
-    await userEvent.selectOptions(screen.getByTestId(`variant-scope-${id}`), 'position')
-    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith(id, { scope: 'position' }))
-    await userEvent.click(screen.getByTestId(`variant-must-finish-${id}`))
-    await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith(id, { is_must_finish: false }))
-    // ⑤ 停用 / ⑥ 删除：入口已**统一到抽屉 footer**（issue #4947：逐行那一对与 footer 重复 ⇒ 退场）
+    // ③ 停用 / ④ 删除：入口已**统一到抽屉 footer**（issue #4947：逐行那一对与 footer 逐字重复 ⇒ 退场）
     await userEvent.click(screen.getByTestId('operations-manage-disable'))
     await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith(id, { status: 'inactive' }))
 
-    // ⑥ 删除：二次确认后才发 `DELETE /operations/{id}`（逐条护栏理由的就地展示见 ⑰-⑬）
+    // ④ 删除：二次确认后才发 `DELETE /operations/{id}`（逐条护栏理由的就地展示见 ⑰-⑬）
     await userEvent.click(screen.getByTestId('operations-manage-delete'))
     expect(mockDeleteOperation).not.toHaveBeenCalled()
     await userEvent.click(await screen.findByTestId('operations-manage-delete-confirm'))
@@ -1531,8 +1570,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(drawer).not.toHaveTextContent('工人扫码')
     expect(drawer.textContent ?? '').not.toContain('布三边')
 
-    // #4610 的「必完」解释**保留**
-    expect(drawer).toHaveTextContent('必完 · 缺这道工序不能打包')
+    // ⚠️ issue #4961：原「#4610 的必完解释保留」已**反向** —— 配置项退场，解释句一并退场
+    expect(drawer).not.toHaveTextContent('必完')
   })
 
   it('⑰-⑫ 抽屉：该逻辑工序查不到任何设置（6 键全 null 且库里查不到）⇒ 可读提示 + 删除出路，不空白、不发明数据', async () => {
@@ -2272,22 +2311,19 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(empty).not.toHaveTextContent('点上方')
   })
 
-  it('路线半边：主线逐道渲染 —— 「必完」按**矩阵聚合**（issue #4622 补口②），不发明别的库口径元数据', async () => {
+  it('路线半边：主线逐道渲染 —— 只显示 序号 + 工序名（不发明任何库口径元数据）', async () => {
     await renderOnRoutes()
     await waitFor(() => expect(screen.getByTestId('routing-step-11-1')).toBeInTheDocument())
 
-    // 逻辑工序名「精裁」：矩阵里两格都必完 ⇒ chip 显示「必完」
-    // （改前读的是按**变体名**索引的工序库 ⇒ `精裁` 查不到 ⇒ 这枚标记基本显示不出来）
     const logical = screen.getByTestId('routing-step-11-1')
     expect(logical).toHaveTextContent('精裁')
     expect(logical).not.toHaveTextContent('¥')
-    expect(logical).toHaveTextContent('必完')
-    // 「三边」矩阵里都不必完 ⇒ 不显示（不得发明「非必完」这类新词）
+    // ⚠️ issue #4961 改判：原「精裁」chip 上那枚按矩阵聚合出来的「必完」标记**已退场**
+    // （完工口径改为「全部工序实例全绿」）⇒ 三条 chip 一律不得再出现该词
+    expect(logical).not.toHaveTextContent('必完')
     expect(screen.getByTestId('routing-step-11-2')).not.toHaveTextContent('必完')
-    // 「外帘装袋」（部位无关工序）矩阵里**有**它的行且必完 ⇒ 也显示「必完」
-    // （它与工序库同名，但**判据不是名字** —— issue #4622 补口② 起一律按矩阵聚合）
     expect(screen.getByTestId('routing-step-11-3')).toHaveTextContent('外帘装袋')
-    expect(screen.getByTestId('routing-step-11-3')).toHaveTextContent('必完')
+    expect(screen.getByTestId('routing-step-11-3')).not.toHaveTextContent('必完')
     expect(screen.getByTestId('routing-step-11-3')).not.toHaveTextContent('¥')
     // 空壳那条没有步骤可渲染
     expect(screen.queryByTestId('routing-step-12-1')).toBeNull()
@@ -2317,40 +2353,9 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.queryByTestId('routing-draft-missing-11-1')).toBeNull()
   })
 
-  it('㉖-⑧ 主线 chip 的「必完」按**价目行**判（issue #4886 起为布尔，判据落在收敛后那一行）', async () => {
-    // 矩阵：精裁 两格都必完；车被 **部分部位**必完（布帘必完 / 纱帘不必完）；三边 都不必完
-    mockGetOperationPositions.setDefault([
-        { id: 'p1', operation: '精裁', position: '布帘', unit_price: 8.5, variant_operation_id: 'op-精裁-布', unit: '套', group: '裁剪', scope: 'position', is_must_finish: true },
-        { id: 'p2', operation: '精裁', position: '纱帘', unit_price: 6, variant_operation_id: 'op-精裁-纱', unit: '套', group: '车位', scope: 'position', is_must_finish: true },
-        { id: 'p3', operation: '车被', position: '布帘', unit_price: 0, variant_operation_id: 'op-车被', unit: '件', group: '后道', scope: 'position', is_must_finish: true },
-        { id: 'p4', operation: '车被', position: '纱帘', unit_price: 1, variant_operation_id: 'op-车被-纱', unit: '件', group: '后道', scope: 'position', is_must_finish: false },
-        { id: 'p5', operation: '三边', position: '布帘', unit_price: 1.2, variant_operation_id: 'op-三边-布', unit: '米', group: '车位', scope: 'position', is_must_finish: false },
-    ])
-    mockGetRoutings.mockReset().mockResolvedValue(
-      ok({
-        total: 1,
-        routings: [
-          { id: 11, name: '窗帘工序路线（默认）', is_default: true, positions: ['布帘'], mainline: ['精裁', '车被', '三边'], status: 'active' },
-        ],
-      }),
-    )
-    await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routing-step-11-1')).toBeInTheDocument())
-
-    // ① 收敛选中的那一行必完 ⇒ `必完`（**不再**有「（部分部位）」这种多档文案）
-    const must = screen.getByTestId('routing-step-must-finish-11-1')
-    expect(must).toHaveTextContent('必完')
-    expect(must).not.toHaveTextContent('部分部位')
-    expect(must.getAttribute('title')).toBe('必完：缺这道工序不能打包')
-
-    // ② `车被` 的 纱帘 行**不**必完，但收敛选中的是 布帘（必完）⇒ 照显示
-    // （证明判据落在收敛后那一行，而不是「任意一行必完就显示」）
-    expect(screen.getByTestId('routing-step-must-finish-11-2')).toHaveTextContent('必完')
-
-    // ③ 收敛选中那一行不必完 ⇒ **不显示**（不得发明「非必完」这类新词）
-    expect(screen.queryByTestId('routing-step-must-finish-11-3')).toBeNull()
-    expect(screen.getByTestId('routing-step-11-3')).not.toHaveTextContent('必完')
-  })
+  // ⚠️ issue #4961：原「㉖-⑧ 主线 chip 的「必完」按**价目行**判」那条用例的**被测对象已整体删除**
+  // （`routing-step-must-finish-*`）⇒ 判据换成 #4961-③ 的反向断言（chip 上不再有任何必完标记），
+  // 「主线 chip 不显示库口径元数据 / 不显示单价」两条由相邻用例继续守着，**不放宽**。
 
   it('主线 chips 与抽屉行**统一不显示单价**（#4583）：库口径可见的那道也不出现 ¥；抽屉保留 分组 · 单位', async () => {
     await renderOnRoutes()
@@ -2478,37 +2483,17 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(within(screen.getByTestId('routing-error-11')).getAllByTestId(/^routing-error-item-/)).toHaveLength(3)
     expect(screen.getByTestId('routing-error-item-0')).toHaveTextContent('工序不存在')
     expect(screen.getByTestId('routing-error-item-1')).toHaveTextContent('工序重复')
+    // 🔴 改判（原 WIP 写「`/必完/` 分支已删 ⇒ 原样透出」）：后端护栏 4 仍在
+    // （`backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java`
+    // 对 `PUT /routings/{id}` 判「主线中至少要有 1 道必完工序」）⇒ 可读归因必须保留，
+    // 同时**原文逐字不吞**（两条一起断言，少一条就是「吞理由」或「丢归因」）
     expect(screen.getByTestId('routing-error-item-2')).toHaveTextContent('缺少必完工序')
+    expect(screen.getByTestId('routing-error-item-2')).toHaveTextContent('路线至少要有一道必完工序（当前 0 道）')
   })
 
-  it('护栏就地预检：主线缺必完工序 ⇒ 黄条；但**判不了就不判**（逻辑名/库中缺失 ⇒ 静默 = 未知）', async () => {
-    // 两道都能在工序库里查到、且都不是必完 ⇒ 判得动 ⇒ 黄条
-    mockGetRoutings.mockReset().mockResolvedValue(
-      ok({
-        total: 1,
-        routings: [
-          { id: 11, name: '窗帘工序路线（默认）', is_default: true, positions: ['布帘'], mainline: ['韩褶-布', '裁剪-布'], status: 'active' },
-        ],
-      }),
-    )
-    await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('routing-edit-11'))
-    expect(screen.getByTestId('routing-precheck-11')).toHaveTextContent('必完')
-    // 预检只是提示，不阻断保存（后端仍是唯一权威）
-    expect(screen.getByTestId('routing-save-11')).toBeEnabled()
-  })
-
-  it('护栏就地预检：主线的逻辑工序名拿不到「必完」口径 ⇒ **不误报**黄条（未知 ≠ 违规）', async () => {
-    await renderOnRoutes()
-    await waitFor(() => expect(screen.getByTestId('routing-edit-11')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('routing-edit-11'))
-    // 主线是逻辑名（精裁/三边）⇒ 工序库里查不到同名的 is_must_finish ⇒ 判不了就不判
-    expect(screen.queryByTestId('routing-precheck-11')).toBeNull()
-    expect(screen.queryByTestId('routing-precheck-missing-11')).toBeNull()
-  })
+  // ⚠️ issue #4961：原「护栏就地预检：主线缺必完工序 ⇒ 黄条」那条用例的**被测对象已整体删除**
+  // （`lacksMustFinish` + `routing-precheck-*`）⇒ 判据换成 #4961-④ 的反向断言；
+  // 另一半预检（工序不存在 / 已停用）由 ㉖-⑦ / #4605 继续守着，**不放宽**。
 
   it('护栏就地预检：主线引用了矩阵里没有的工序 ⇒ 该行标红并指名（合法逻辑名**不误伤**）', async () => {
     mockGetRoutings.mockReset().mockResolvedValue(
@@ -3056,10 +3041,10 @@ describe('工序单价表：一道工序一行（issue #4886 去部位化）', (
     expect(screen.queryByTestId(/^matrix-cell-/)).toBeNull()
     expect(screen.queryByTestId(/^matrix-applicable-/)).toBeNull()
     expect(screen.queryByTestId(/^drawer-applicable-/)).toBeNull()
-    // ④ 列头 = 工序 / 单价 / 分组 · 单位 · 必完 · 操作
+    // ④ 列头 = 工序 / 单价 / 分组 · 单位 · 操作（⚠️ #4961 起「必完」从列头退场）
     const table = screen.getByTestId('operation-workshop-table')
     const heads = within(table).getAllByRole('columnheader').map((th) => th.textContent)
-    expect(heads).toEqual(['工序', '单价', '分组 · 单位 · 必完 · 操作'])
+    expect(heads).toEqual(['工序', '单价', '分组 · 单位 · 操作'])
   })
 
   it('收敛规则：按 `position` 字典序 → `id` 升序（与后端 `collapseToLogical` 同口径）⇒ 保留其 id 作改价寻址', async () => {
@@ -3440,15 +3425,16 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(screen.getByTestId('craft-operations-panel')).not.toHaveTextContent('槽位')
   })
 
-  it('B3 这张表 = **一道工序一个价**（列头恰三列 + 行尾单位/必完逐字取后端）', async () => {
+  it('B3 这张表 = **一道工序一个价**（列头恰三列 + 行尾单位逐字取后端）', async () => {
     await renderOperations()
     const delivery = screen.getByTestId('operation-price-matrix')
 
-    // 列头**恰三列**（工序 / 单价 / 单位·必完·操作）—— 不是「工序 + 4 个部位」
+    // 列头**恰三列**（工序 / 单价 / 分组·单位·操作）—— 不是「工序 + 4 个部位」；
+    // ⚠️ #4961：第三列文案里的「必完」已退场
     expect(within(delivery).getAllByRole('columnheader').map((c) => c.textContent)).toEqual([
       '工序',
       '单价',
-      '分组 · 单位 · 必完 · 操作',
+      '分组 · 单位 · 操作',
     ])
     // 一道工序**恰好一个**价节点（改前是「一个部位一个格」）
     expect(within(delivery).getAllByTestId(/^matrix-row-/).length)
@@ -3456,7 +3442,9 @@ describe('#4677 工艺项两层改造（【工序】按车间分组 + 【打包�
     expect(within(delivery).queryAllByTestId(/^matrix-cell-/)).toHaveLength(0)
 
     expect(within(delivery).getByTestId('operation-price-打包')).toHaveTextContent('¥1.50')
-    expect(within(delivery).getByTestId('matrix-must-finish-打包')).toHaveTextContent('必完')
+    // ⚠️ #4961 改判：原 `matrix-must-finish-打包` 那枚标记已退场 ⇒ 改为反向断言
+    expect(within(delivery).queryByTestId('matrix-must-finish-打包')).toBeNull()
+    expect(within(delivery).getByTestId('matrix-row-打包')).not.toHaveTextContent('必完')
     // 单位（套）在**行尾元数据**列（改前那一列独立区块把 `/套` 拼进价格里；合并后归位到行尾）
     expect(within(delivery).getByTestId('matrix-row-打包')).toHaveTextContent('套')
     expect(within(delivery).getByTestId('matrix-row-打包')).toHaveTextContent('后道')

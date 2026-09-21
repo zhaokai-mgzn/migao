@@ -27,7 +27,6 @@ import type {
   OperationPosition,
   OperationPositionUpdateParams,
   OperationsCatalog,
-  ProductionScope,
   ProductionSeedTemplate,
   ProductionSource,
   ProductionOperationUpdateParams,
@@ -46,7 +45,16 @@ import type {
  *
  * | tab | 它回答的问题 | 主区 | 维护面 |
  * |---|---|---|---|
- * | **工序管理**（用户裁定 2026-09-21：原「工艺项」+「工艺路线」两 tab **合并为一屏**，标签定名「工序管理」） | 「每道工序给**工人**多少钱？」+「订单按哪条主线走、什么时候插/删工序？」 | **一张表**：行 = 一道逻辑工序、**一道工序一个单价**（就地可改）+ **必完标记**（issue #4610）；表**下同屏**是**具名路线**（默认徽标 + 主线 + 改名/设默认/删除） | 工序行尾 = `分组 · 单位` + 「管理▸」抽屉（分组 / 单位 / 作用域 / 必完 / 停用 / 删除，以及一节**适用条件**，人话；issue #4650 阶段 1 起**不再有**独立的「条件工序规则」表） |
+ * | **工序管理**（用户裁定 2026-09-21：原「工艺项」+「工艺路线」两 tab **合并为一屏**，标签定名「工序管理」） | 「每道工序给**工人**多少钱？」+「订单按哪条主线走、什么时候插/删工序？」 | **一张表**：行 = 一道逻辑工序、**一道工序一个单价**（就地可改）；表**下同屏**是**具名路线**（默认徽标 + 主线 + 改名/设默认/删除） | 工序行尾 = `分组 · 单位` + 「管理▸」抽屉（分组 / 单位 / 停用 / 删除，以及一节**适用条件**，人话；issue #4650 阶段 1 起**不再有**独立的「条件工序规则」表） |
+ *
+ * ## 这一屏**没有**的两个配置项（2026-09-21 两项退场，别再按旧口径读）
+ *
+ * - **「作用域」（issue #4960）**：商家面不再有 `variant-scope-*` 控件，说明句也不再解释
+ *   「按套 / 按件」（用户原话「作用域…现在很难理解」）。⚠️ **只删商家写面** ——
+ *   DB 取值 `position` / `set` 与后端实例化口径**一字不动**（本页不读也不写这个键）。
+ * - **「必完」（issue #4961）**：完工口径改为「**全部工序实例全绿**」⇒ 主表行尾标记、
+ *   主线 chip 标记、抽屉勾选框、以及 `lacksMustFinish` 黄条预检**一并退场**
+ *   （列头随之从 `分组 · 单位 · 必完 · 操作` 回到 `分组 · 单位 · 操作`）。
  *
  * ## 为什么这一屏不再有「部位」（issue #4886，用户裁定）
  *
@@ -71,9 +79,12 @@ import type {
  * 1. **路线 = 一条具名主线**（`{id, name, is_default, mainline}`）—— 改名**只改 `name`**
  *    （不给 `mainline` 就不动序列：改一个名字不该顺带重写计件工资的输入）。
  * 2. **行键是逻辑工序名**（`精裁` / `三边`），**不是** `production_operations.name`
- *    （那边仍是旧名 `精裁-布` / `布三边`）。每行带的 5 个变体元数据键（`variant_operation_id` /
- *    `unit` / `group` / `scope` / `is_must_finish`）由后端 `variantNameOf` 推导，
- *    前端**直接取用、不另写一份推导**；5 键全 `null` = 查不到 ⇒ **不发明元数据**（静默 = 未知）。
+ *    （那边仍是旧名 `精裁-布` / `布三边`）。本页消费每行的 3 个变体元数据键
+ *    （`variant_operation_id` / `unit` / `group`）——它们由后端 `variantNameOf` 推导，
+ *    前端**直接取用、不另写一份推导**；3 键全 `null` = 查不到 ⇒ **不发明元数据**（静默 = 未知）。
+ *    ⚠️ issue #4960/#4961：读面**仍会**返回 `scope`（后端契约一字未动，
+ *    {@link OperationPosition} 类型保留该键）、而 `is_must_finish` 已随「必完退场」从读面类型移除
+ *    —— 两者在商家面都**不再是配置项**（见上节）。
  *    ⚠️ `variant_name`（`布三边` / `logo条-布` 这类**变体名**）**不出现在任何界面位置**
  *    （含 `data-testid`）—— 它只是后端 `production_operations.name` 的旧口径，读面也不返回它。
  *    `variant_operation_id` 仍要用：它是**寻址键**（抽屉条目按它去重、写面按它发 `PUT/DELETE`）。
@@ -104,7 +115,7 @@ import type {
  *   DELETE /api/admin/production/route-rules/{id}         （#4588 规则软删：无硬护栏；#4650 起从抽屉里删一条条件）
  *   PUT    /api/admin/production/route-rules/{id}/customer-unit-price （#4567 特殊选项对客单价）
  *   GET    /api/admin/production/operations-catalog       POST /production/operations
- *   PUT    /api/admin/production/operations/{id}          （改分组 / 单位 / 必完 / 作用域 / status）
+ *   PUT    /api/admin/production/operations/{id}          （改分组 / 单位 / status；#4960/#4961 起本页不再发 scope / is_must_finish）
  *   GET|POST /api/admin/production/seed-templates[/{id}/apply]
  *   —— 写端点权限 processing:manage（以拦截器/后端为准，本页不做显隐分叉）。
  *
@@ -215,23 +226,15 @@ const SOURCE_META: Record<ProductionSource, { label: string; className: string }
 }
 
 /**
- * 工序作用域两档（V67，issue #4384 A1）——**闭词表**，与后端 `ProductionOperationCommandService`
- * 的校验、迁移 V67 的列注释同口径（前端不发明第三值）。
+ * 工序作用域（V67，issue #4384 A1）——**取值 `position` / `set` 是后端契约，一字不动**，
+ * 它与后端 `ProductionOperationCommandService` 的校验、迁移 V67 的列注释同口径。
  *
- * ⚠️ **取值（`position` / `set`）是后端契约，一字不动**；变的只是**展示名**（issue #4886：
- * 配置面不再出现部位概念 ⇒ 原「部位级 / 套级」改叫「按件 / 按套」，语义不变）。
+ * ⚠️ **2026-09-21 / issue #4960（用户裁定）**：商家面**不再有**这个配置项 ——
+ * 原抽屉里的 `variant-scope-*` 两档控件与那句解释一并退场（用户原话
+ * 「作用域…现在很难理解」＋「要么还是移除作用域，生成工序实例时，显示为 工序名+布/纱？」）。
+ * ⇒ 本页**不读也不写**这个键（原 `SCOPE_META` / `SCOPE_ORDER` / `scopeOf` 随之删除）；
+ * 「每樘窗只做一次」这类语义**仍是后端按 DB 值实例化时判的**，不是商家在界面上配的。
  */
-const SCOPE_META: Record<ProductionScope, { label: string; title: string }> = {
-  position: { label: '按件', title: '每件各做一次（不按套去重）' },
-  set: { label: '按套', title: '每套窗只做一次（一套「布 + 纱」只做一次）' },
-}
-const SCOPE_ORDER: ProductionScope[] = ['position', 'set']
-
-/**
- * 库口径 → 受控两档。**缺省按 `position`**（安全方向）：列是 `NOT NULL DEFAULT 'position'`，
- * 老实例未升级时键缺失 —— 默认成 `set` 会把每道工序都静默去重，默认成 `position` 最坏只是保持今天的行为。
- */
-const scopeOf = (op: CatalogOperation): ProductionScope => (op.scope === 'set' ? 'set' : 'position')
 
 /** 触发维（V71 列注释的闭词表；`shaped` / `processing_item` 是表结构预留，无种子行） */
 const TRIGGER_KIND_LABEL: Record<string, string> = {
@@ -510,26 +513,20 @@ function ReadinessStep({
  * 且 web 不得渲染）⇒ `libraryByName` 按逻辑名建键**能查到**，`resolved` 因此**变好**
  * （改前库按变体名索引、主线存逻辑名 ⇒ 几乎恒为 `false`）。仍然**不猜**：查不到就只显示名字，不发明单位。
  *
-* ⚠️ **「必完」的判定来源是价目表**（issue #4622 补口②；issue #4886 起收敛为**布尔**）：
-* 原口径读的是 `libraryByName.get(name)?.is_must_finish` —— 库按**变体名**索引，而主线存的是
-* **逻辑名** ⇒ 查不到 ⇒ 那枚「必完」标记对逻辑名几乎永远不显示。
- * `is_must_finish`（库口径）只剩一个用途：{@link ProcessConfigPage} 的「一道必完工序都没有」预检
- * （它自带 `resolved` 门禁，口径未动）。
- *
-* ⚠️ **本口径不含单价**（issue #4583 用户裁定）：单价是**计件工资**口径，属「工艺项」那一屏的事；
-* 而这里能拿到的只有**工序库单价**，真正生效的价是价目行上的价 ⇒ 显示它有误导性。
+ * ⚠️ **本口径不含单价**（issue #4583 用户裁定）：单价是**计件工资**口径，属「工艺项」那一屏的事；
+ * 而这里能拿到的只有**工序库单价**，真正生效的价是价目行上的价 ⇒ 显示它有误导性。
  * 且「显示与否」曾取决于「逻辑名与变体名是否恰好一致」（`外帘打卷`/`外帘装袋`/`外帘发货`
  * 只有那三处逻辑名与库口径名恰好同名时才显示，其余 6 道不显示）⇒ **统一不显示**。
+ *
+ * ⚠️ **「必完」标记与它的就地预检已退场**（issue #4961，用户裁定）：完工口径改为
+ * 「**全部工序实例全绿**」⇒ chip 上不再有那枚琥珀色标记，{@link ProcessConfigPage} 的
+ * 「一道必完工序都没有」黄条（`lacksMustFinish`）也一并删除。
  */
 interface StepView {
   seq: number
   operation: string
   group?: string | null
   unit?: string | null
-  /** 库口径必完（**只给「一道必完工序都没有」预检用**；chip 上的必完见 `must_finish`） */
-  is_must_finish?: boolean
-/** **价目表**口径的必完（issue #4622 补口② / #4886）：`null` = 查不到这道工序 ⇒ 不显示（未知） */
-must_finish: boolean | null
   /** 工序库里有这条（有库口径元数据） */
   resolved: boolean
   /** 矩阵里没有它（停用/被删/名字是变体名）⇒ 保存必被后端拒，但页面要先让人看见 */
@@ -674,7 +671,7 @@ function ManageButton({
       type="button"
       data-testid={`${testIdPrefix}-${operation}`}
       onClick={() => onOpen(operation)}
-      title="管理这道工序的设置：分组 / 单位 / 作用域 / 必完 / 停用 / 删除"
+      title="管理这道工序的设置：分组 / 单位 / 停用 / 删除"
       className="rounded px-1.5 py-0.5 text-xs text-primary-700 hover:bg-neutral-100"
     >
       管理▸
@@ -687,15 +684,16 @@ function ManageButton({
  * 抽屉里的一行 = 该逻辑工序**落到工人端的那道工序**的设置（按 `variant_operation_id` 去重）。
  *
  * ⚠️ 条目主标识 = **逻辑工序名**（`manageOp`，issue #4886）—— 变体名（`布三边`）不上界面
- * （issue #4622：读面也不返回它）。元数据**逐字取自**读面的 5 个键（契约 #4587 ①）——
+ * （issue #4622：读面也不返回它）。字段**逐字取自**读面（契约 #4587 ①）——
  * 前端**不推导**、不补默认值。
+ *
+ * ⚠️ **issue #4960 / #4961：`scope` 与 `is_must_finish` 不再是本抽屉的配置项** ⇒ 不进这个 view model
+ * （读面上的取值仍在，只是本页不消费；口径见文件头「这一屏**没有**的两个配置项」）。
  */
 interface VariantView {
   id: string
   group: string | null
   unit: string | null
-  scope: ProductionScope
-  is_must_finish: boolean
   /** 工序库里的 provenance；查不到 ⇒ `null` ⇒ **不渲染徽标**（静默 = 未知） */
   source: ProductionSource | null
   /**
@@ -725,24 +723,6 @@ const cellState = (cell?: OperationPosition | null): 'unpriced' | 'priced' => {
   if (!cell) return 'unpriced'
   return cell.unit_price == null ? 'unpriced' : 'priced'
 }
-
-/**
- * 必完口径（issue #4610，用户裁定「**必完标记还是得在这里展示**」—— 它是完工门槛，
- * 要一眼看得见；主表行尾与主线 chip **共用**这一份）。
- *
- * 数据来源 = 读面每行**已有**的 `is_must_finish`（契约 #4587 ① 的 5 键之一），
- * **不新造字段、不另拉接口**。
- * ⚠️ issue #4886：**一道工序一个价**之后，原「必完（部分子项）」那种多档聚合三态**不再存在**
- * ⇒ 判据**只看该工序自己那一行**的 `is_must_finish`（`null` = 读面没给 ⇒ **不显示**，
- * 不得发明「非必完」这类新词）。
- */
-const mustFinishOf = (cell?: OperationPosition | null): boolean => cell?.is_must_finish === true
-
-/** 必完标记的展示文案（主表行尾与主线 chip 共用一份 —— 各拼一份必然漂移） */
-const mustFinishLabel = () => '必完'
-
-/** 必完标记的 title（主表行尾与主线 chip 共用一份） */
-const mustFinishTitle = () => '必完：缺这道工序不能打包'
 
 /**
  * 价目表的一行 = **一道逻辑工序**（issue #4886）。
@@ -795,7 +775,7 @@ export default function ProcessConfigPage() {
   /** 保存被拒的**逐条**理由（按格就地展示，不吞成一句「保存失败」） */
   const [cellReasons, setCellReasons] = useState<{ key: string; items: string[] } | null>(null)
 
-  // ── 「管理▸」抽屉（该工序的设置维护面：分组 / 单位 / 作用域 / 必完 / 停用 / 删除）──
+  // ── 「管理▸」抽屉（该工序的设置维护面：分组 / 单位 / 停用 / 删除）──
   const [manageOp, setManageOp] = useState<string | null>(null)
   /**
    * 第一层【工序】的**车间折叠**状态（issue #4677 = 设计 §4.1 元素②）。
@@ -1122,7 +1102,7 @@ export default function ProcessConfigPage() {
 
   /**
    * 某道工序在价目读面里的**那一行**（issue #4886：一屏一行一道工序）。
-   * `null` = 该工序没有价目行（「打包发货」层的必完回落服务端 `is_must_finish`）。
+   * `null` = 该工序在价目读面里**没有行** ⇒ 调用方按「未知」处理（不发明元数据）。
    */
   const matrixRowCell = useCallback(
     (operation: string) => matrixRows.find((r) => r.operation === operation)?.cell ?? null,
@@ -1237,19 +1217,6 @@ export default function ProcessConfigPage() {
   const metaText = (values: string[]) => (values.length > 0 ? values.join(' / ') : '—')
 
   const metaInconsistent = (values: string[]) => values.length > 1
-
-  /**
-   * **矩阵口径的必完聚合**（逻辑工序名 → 三态；issue #4622 补口②）：主表行尾与**主线 chip**
-   * 共用同一份口径（两处各写一份必然漂移）。
-   */
-  const matrixMustFinish = useMemo(() => {
-    const m = new Map<string, boolean>()
-    matrixRows.forEach((row) => {
-      const v = mustFinishOf(row.cell)
-      if (v) m.set(row.operation, v)
-    })
-    return m
-  }, [matrixRows])
 
   /**
    * 「从工序库选择要添加的工序…」的取值域 = **逻辑工序名**（issue #4609）。
@@ -1390,8 +1357,6 @@ export default function ProcessConfigPage() {
           id,
           group: (fallback?.group ?? c.group) ?? null,
           unit: (fallback?.unit ?? c.unit) ?? null,
-          scope: fallback?.scope === 'set' || c.scope === 'set' ? 'set' : 'position',
-          is_must_finish: fallback ? !!fallback.is_must_finish : !!c.is_must_finish,
           source: entry?.source ?? fallback?.source ?? null,
           unlinked,
           foreign,
@@ -1543,15 +1508,12 @@ export default function ProcessConfigPage() {
         operation: name,
         group: lib?.group ?? null,
         unit: lib?.unit ?? null,
-        is_must_finish: lib?.is_must_finish,
-        // 必完 = **矩阵**口径（issue #4622 补口②；与主表行尾同一份聚合）
-        must_finish: matrixMustFinish.get(name) ?? null,
         resolved: !!lib,
         // 存在性 = **矩阵里的逻辑工序名**（issue #4622 补口①；不再并上按变体名索引的工序库键）
         missing: !matrixOps.has(name),
       }
     },
-    [libraryByName, matrixMustFinish, matrixOps],
+    [libraryByName, matrixOps],
   )
 
   const openEditor = (routing: Routing) => {
@@ -1573,15 +1535,6 @@ export default function ProcessConfigPage() {
   const draftSteps: StepView[] = useMemo(() => draft.map(stepView), [draft, stepView])
 
   const missingSteps = draftSteps.filter((s) => s.missing)
-  /**
-   * 就地预检：一道必完工序都没有 ⇒ 这张单**永远完不了工**。
-   * ⚠️ 只在**每一步都能在工序库里查到**时判 —— 逻辑工序名（`精裁`）拿不到 `is_must_finish`
-   * ⇒ 判不了就不判（**静默 = 未知**，不得当成违规，同 route_source 纪律）。
-   */
-  const lacksMustFinish =
-    draftSteps.length > 0 &&
-    draftSteps.every((s) => s.resolved) &&
-    !draftSteps.some((s) => s.is_must_finish)
 
   const addFromPalette = (name: string) => {
     if (!editingId) return
@@ -2361,10 +2314,10 @@ export default function ProcessConfigPage() {
           <div>
             {/* ══════════ tab「工艺项」：**一屏一张表**（行 = 逻辑工序 · 一道工序一个价） ══════════
                 issue #4588 = 母单 #4586 包 B（契约 #4587）。原「主区只读矩阵 + 折叠次区工序库明细」两张
-                平铺表已合并成这一张：明细面（分组 / 单位 / 作用域 / 必完 / 停用 / 删除）收进行尾
-                「管理▸」抽屉 —— 同一个概念**只有一个载体**，改价只有一个入口（矩阵格）。
-                例外（用户改判）：**必完** 是完工门槛，除抽屉里的维护面外，行尾还要有**只读标记**
-                （issue #4610）；**作用域**仍只在抽屉里。 */}
+                平铺表已合并成这一张：明细面（分组 / 单位 / 停用 / 删除）收进行尾「管理▸」抽屉 ——
+                同一个概念**只有一个载体**，改价只有一个入口（矩阵格）。
+                ⚠️ issue #4960/#4961：**作用域**与**必完**都已**整体退场**（含抽屉里的维护面）
+                ⇒ 行尾只剩 `分组 · 单位` + 单价 + 「管理▸」。 */}
             {tab === 'process' && (
               <div className="space-y-4" data-testid="craft-operations-panel">
                 <section className="rounded-lg border border-neutral-200 bg-white p-5" data-testid="operation-price-matrix">
@@ -2437,7 +2390,7 @@ export default function ProcessConfigPage() {
                            <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
                              <th className="py-2 pr-4 font-medium">工序</th>
                              <th className="py-2 pr-4 font-medium">单价</th>
-                             <th className="py-2 pr-4 font-medium">分组 · 单位 · 必完 · 操作</th>
+                             <th className="py-2 pr-4 font-medium">分组 · 单位 · 操作</th>
                            </tr>
                          </thead>
                          {/* **按车间分组可折叠**（issue #4677 = 设计 §4.1 元素②）：一个分组一个
@@ -2475,7 +2428,6 @@ export default function ProcessConfigPage() {
                                  const groups = distinctMeta(row, (c) => c.group)
                                  const units = distinctMeta(row, (c) => c.unit)
                                  const inconsistent = metaInconsistent(groups) || metaInconsistent(units)
-                                 const mustFinish = mustFinishOf(row.cell)
                                  const key = cellKeyOf(row.operation)
                                  return (
                                    <tr
@@ -2509,8 +2461,8 @@ export default function ProcessConfigPage() {
                                          onCancel={cancelCellEdit}
                                        />
                                      </td>
-                                     {/* 行尾元数据 = `分组 · 单位`（作用域收进抽屉）+ **必完标记**（issue #4610：
-                                         完工门槛要一眼看得见）+「管理▸」入口；不一致时逐个列出，**不静默取第一个** */}
+                                     {/* 行尾元数据 = `分组 · 单位` +「管理▸」入口；不一致时逐个列出，**不静默取第一个**
+                                         （issue #4960/#4961：作用域与必完都已退场，行尾不再有它们的任何痕迹） */}
                                      <td
                                        className="py-2.5 pr-4 align-top"
                                        data-testid={`matrix-meta-${row.operation}`}
@@ -2523,15 +2475,6 @@ export default function ProcessConfigPage() {
                                              ? '—'
                                              : `${metaText(groups)} · ${metaText(units)}`}
                                          </span>
-                                         {mustFinish && (
-                                           <span
-                                             className="text-xs text-amber-600"
-                                             data-testid={`matrix-must-finish-${row.operation}`}
-                                             title={mustFinishTitle()}
-                                             >
-                                             {mustFinishLabel()}
-                                           </span>
-                                         )}
                                          <ManageButton operation={row.operation} onOpen={openManageFor} />
                                        </div>
                                      </td>
@@ -2710,7 +2653,8 @@ export default function ProcessConfigPage() {
                               </ul>
                             )}
 
-                            {/* 主线保存被拒：逐条展示理由（空主线 / 工序不存在 / 重复 / 缺必完工序） */}
+                            {/* 主线保存被拒：逐条展示理由（空主线 / 工序不存在 / 重复 / 缺必完工序 / 权限）
+                                ⚠️「缺必完工序」这一条**仍在**：后端护栏 4 未退场（本包不许动 backend） */}
                             {isEditing && (localReason || reasons.length > 0) && (
                               <div
                                 className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
@@ -2732,16 +2676,9 @@ export default function ProcessConfigPage() {
 
                             {isEditing ? (
                               <div className="mt-3 space-y-3">
-                                {/* 就地预检（后端仍是唯一权威，这里只把「保存失败」提前成「看得见」） */}
-                                {lacksMustFinish && (
-                                  <p
-                                    className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
-                                    data-testid={`routing-precheck-${id}`}
-                                  >
-                                    这条路线一道「必完」工序都没有 —— 必完工序全绿是完工判定的唯一依据，
-                                    缺了这张单永远完不了工。请至少把一道关键工序标为「必完」。
-                                  </p>
-                                )}
+                                {/* 就地预检（后端仍是唯一权威，这里只把「保存失败」提前成「看得见」）——
+                                    ⚠️ issue #4961：「一道必完工序都没有」那一条已随「必完」整体退场删除；
+                                    留下的这一条（工序不存在 / 已停用）**一字不放宽**。 */}
                                 {missingSteps.length > 0 && (
                                   <p
                                     className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
@@ -2788,7 +2725,7 @@ export default function ProcessConfigPage() {
 
                                 {draftSteps.length === 0 ? (
                                   <p className="text-sm text-neutral-400" data-testid={`routing-draft-empty-${id}`}>
-                                    主线为空：从上方「从工序库选择要添加的工序…」选一道点「加入」（必完工序是完工门槛，缺了会阻止打包）
+                                    主线为空：从上方「从工序库选择要添加的工序…」选一道点「加入」
                                   </p>
                                 ) : (
                                   <ol className="space-y-1.5">
@@ -2814,13 +2751,7 @@ export default function ProcessConfigPage() {
                                             {step.group ?? '—'} · {step.unit ?? '—'}
                                           </span>
                                         )}
-                                        {/* 必完：**矩阵**口径三态（issue #4622 补口② —— 原读工序库
-                                            的 `is_must_finish`，而库按变体名索引 ⇒ 逻辑名查不到） */}
-                                        {step.must_finish && (
-                                          <span className="text-xs text-amber-600" title={mustFinishTitle()}>
-                                            {mustFinishLabel()}
-                                          </span>
-                                        )}
+                                        {/* issue #4961：「必完」标记已退场（完工口径改为全部工序实例全绿） */}
                                         {step.missing && (
                                           <span
                                             className="text-xs text-red-600"
@@ -2886,20 +2817,10 @@ export default function ProcessConfigPage() {
                                     >
                                       <span className="mr-1 text-neutral-400">{step.seq}.</span>
                                       {step.operation}
-                                      {/* 主线 chip 只留 序号 + 工序名 (+ 必完 / 矩阵里查不到)：
+                                      {/* 主线 chip 只留 序号 + 工序名 (+ 矩阵里查不到)：
                                           **不显示任何库口径元数据**（#4583）—— 否则「显示与否」取决于
                                           逻辑名与变体名是否恰好一致，9 道 chip 两套口径（用户实测的现象）。
-                                          ⚠️ 那枚「必完」本身**不是**库口径元数据：它按**矩阵聚合**
-                                          （issue #4622 补口②，与主表行尾同一份三态口径）。 */}
-                                      {step.must_finish && (
-                                        <span
-                                          className="ml-1.5 text-amber-600"
-                                          data-testid={`routing-step-must-finish-${id}-${step.seq}`}
-                                          title={mustFinishTitle()}
-                                        >
-                                          {mustFinishLabel()}
-                                        </span>
-                                      )}
+                                          ⚠️ issue #4961：那枚「必完」标记已退场。 */}
                                       {step.missing && <span className="ml-1.5">工序库中不存在或已停用</span>}
                                     </li>
                                   )
@@ -3232,9 +3153,10 @@ export default function ProcessConfigPage() {
 
       {/* 「管理▸」抽屉（issue #4588）：该逻辑工序的设置维护面（issue #4622：条目主标识 = 逻辑工序名，
           变体名不上界面）。
-          ⚠️ 作用域 / 必完的**维护面**在这里（用户 2026-09-19 追加裁定：「作用域 · 必完 完全不知道干嘛的，
-          也可以移除」⇒ 从主表移除的是**显示**，不是语义）；**必完**的只读标记按用户 2026-09-19 改判
-          回到主表行尾（issue #4610：它是完工门槛，要一眼看得见），作用域仍只在抽屉里。 */}
+          ⚠️ **issue #4960/#4961：这个抽屉里只剩 分组 / 单位 / 停用 / 删除** ——
+          原「作用域」（`variant-scope-*` 两档闭词表）与「必完」勾选框**整体退场**
+          （用户裁定：「作用域 · 必完 完全不知道干嘛的，也可以移除」＋
+          「作用域…现在很难理解」）。DB 取值与后端实例化口径**一字不动**，退场的只是**商家写面**。 */}
       <Modal
         open={manageOp !== null}
         onClose={closeManage}
@@ -3288,8 +3210,8 @@ export default function ProcessConfigPage() {
       >
         <div className="space-y-3 text-sm" data-testid="operations-manage-drawer">
           <p className="text-neutral-600">
-            这道工序的设置。分组与单位决定报工口径；<strong>作用域</strong>：按套 = 每套窗只做一次，
-            按件 = 每件各做一次；<strong>必完</strong>：缺这道工序不能打包。
+            这道工序的设置。<strong>分组</strong>与<strong>单位</strong>决定报工口径；
+            下方「适用条件」决定它<strong>什么情况下做</strong>。
           </p>
           {/* 抽屉层写面被拒：逐条理由就地展示（不吞成一句「操作失败」） */}
           {opLevelReasons && (
@@ -3448,44 +3370,11 @@ export default function ProcessConfigPage() {
                     )}
                   </div>
 
-                  {/* 作用域（V67 闭词表两档）+ 一句解释 */}
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
-                    <span>作用域</span>
-                    <select
-                      aria-label={`「${manageOp}」作用域`}
-                      data-testid={`variant-scope-${v.id}`}
-                      value={v.scope}
-                      disabled={variantBusy}
-                      title={SCOPE_META[v.scope].title}
-                      onChange={(e) => void submitVariant(v.id, { scope: e.target.value as ProductionScope })}
-                      className="h-8 rounded border border-neutral-300 bg-white px-1.5 text-sm text-neutral-700 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 disabled:opacity-50"
-                    >
-                      {SCOPE_ORDER.map((s) => (
-                        <option key={s} value={s}>
-                          {SCOPE_META[s].label}
-                        </option>
-                      ))}
-                    </select>
-                    <span>按套 = 每套窗只做一次；按件 = 每件各做一次</span>
-                  </div>
-
-                  {/* 必完 + 一句解释 */}
-                  <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
-                    <input
-                      type="checkbox"
-                      aria-label={`「${manageOp}」必完`}
-                      data-testid={`variant-must-finish-${v.id}`}
-                      checked={v.is_must_finish}
-                      disabled={variantBusy}
-                      onChange={(e) => void submitVariant(v.id, { is_must_finish: e.target.checked })}
-                      className="h-4 w-4 accent-primary-600"
-                    />
-                    <span>必完 · 缺这道工序不能打包</span>
-                  </label>
-
                   {/* issue #4947：逐行的「停用 / 删除」原本在这一行 —— 与抽屉 footer 那一对**逐字重复**
                       （同一屏两个「删除」就是用户报的形态）⇒ 整对退场，写面只剩 footer 那一处；
-                      那句「删除后历史报工不受影响」搬到了 footer 的「删除」旁边（信息不丢）。 */}
+                      那句「删除后历史报工不受影响」搬到了 footer 的「删除」旁边（信息不丢）。
+                      ⚠️ issue #4960 / #4961：原挂在最前面的「作用域」两档控件（`variant-scope-*`）与
+                      「必完」勾选框（`variant-must-finish-*`）**也已整体退场**（只删商家写面，后端语义不动）。 */}
                     </>
                   )}
                 </div>
