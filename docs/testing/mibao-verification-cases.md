@@ -1272,6 +1272,8 @@
 数据: customer_id 从 customer_manage 查询获得
 数据: order_id 从 order_query 获得
 数据: 发货操作使用正确的 order_id
+数据: 前置（precondition）：评测栈里客户「王建国」名下存在**待发货**订单，且本轮 `order_manage(action=update_logistics)` 的发货期望真的命中（不是靠未澄清就发货/发错单蒙过）（success=true）
+必须成功: order_manage
 ```
 真值: id-resolve.name, customer-list.search-fields, order.states
 溯源: eval M011 独有（模糊澄清 + 客户搜索真值）；2026-09-15 校准（issue #3669）：expectations 的 customer_manage(action=query) → **list**（该工具枚举无 query，原值级断言永不满足=假红 / 报了错也算过的假绿，见 .github/eval-coverage-baseline.yml 已销账的 action_dangling 条目） ｜ tags: fuzzy_input, progressive_clarification, adversarial
@@ -1860,7 +1862,8 @@
 你: 确认创建
 期望: role_manage(action=create)
 数据: 确认后创建成功，permissions 含商品管理权限码
-必须成功: role_manage(create)
+数据: 前置（precondition）：评测栈里不存在编码为 `stock_keeper` 的角色，且本轮 `role_manage(action=create)` 的创建期望真的命中（不是靠重名澄清/校验失败蒙过）（success=true）
+必须成功: role_manage
 ```
 真值: employee-role.role-crud, employee-role.permissions
 溯源: verification 5.5 独有；2026-09-10 校准：①「库存权限」生产不存在（库存由商品管理模块承载），改真实权限「商品管理」；② 补「确认创建」轮 + 明确编码/描述（role_manage create 走 validate_input→create 确认链，validate_input 已 #3157 补 role_manage 规则；「确认」一词因 agent 澄清多问编码/描述致 LLM 歧义，改为明确第二输入） ｜ tags: create, permission

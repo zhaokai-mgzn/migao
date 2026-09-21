@@ -1835,13 +1835,15 @@ _CASE_CU_005 = EvalCase(
     difficulty=Difficulty.ADVERSARIAL,
     user_inputs=['帮我处理下老王的订单', '就是王建国', '他那个窗帘订单', '对，发货吧'],
     expectations=['customer_manage(action=list)', 'order_query', 'order_manage(action=update_logistics)'],
-    data_checks=['customer_id 从 customer_manage 查询获得', 'order_id 从 order_query 获得', '发货操作使用正确的 order_id'],
+    data_checks=['customer_id 从 customer_manage 查询获得', 'order_id 从 order_query 获得', '发货操作使用正确的 order_id', '前置（precondition）：评测栈里客户「王建国」名下存在**待发货**订单，且本轮 `order_manage(action=update_logistics)` 的发货期望真的命中（不是靠未澄清就发货/发错单蒙过）（success=true）'],
     skip_reason='',
     tags=['fuzzy_input', 'progressive_clarification', 'adversarial'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'order_manage'}],
+    namespaces=['customer_name:王建国'],
 )
 
 # ── CU-006 [NORMAL] C 端租户域名路由 - 微信用户经企业域名自动关联租户并落 CRM 客户档案（#3011）（源: cases/customer.yml）──
@@ -2678,14 +2680,14 @@ _CASE_HR_005 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=["新建'库管'角色，编码 stock_keeper，描述'负责商品管理'，给商品管理全套权限", '确认创建'],
     expectations=['role_manage(action=create)'],
-    data_checks=['确认后创建成功，permissions 含商品管理权限码'],
+    data_checks=['确认后创建成功，permissions 含商品管理权限码', '前置（precondition）：评测栈里不存在编码为 `stock_keeper` 的角色，且本轮 `role_manage(action=create)` 的创建期望真的命中（不是靠重名澄清/校验失败蒙过）（success=true）'],
     skip_reason='',
     tags=['create', 'permission'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    must_succeed=[{'tool': 'role_manage', 'action': 'create'}],
+    must_succeed=[{'tool': 'role_manage'}],
     namespaces=['role_code:stock_keeper'],
 )
 
