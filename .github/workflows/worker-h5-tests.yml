@@ -34,7 +34,8 @@ name: Worker H5 Tests
 # ── ⚠️ 与仓库既有 CI 纪律的关系（`docs/wiki/CI-CD.md`「变更门控」）──────────────
 # 该纪律写着「**不要改回 workflow 级 `paths` 过滤** —— required check 会卡在 "Waiting"
 # 永不报告」，并给它留了一个例外：**信息性（非 required）check** 可以用 workflow 级
-# `paths`（先例 = `agent-behavior-eval.yml` 只门控零 LLM 的映射 job，#3653/#4034）。
+# `paths`（原先例 = `agent-behavior-eval.yml` 只门控零 LLM 的映射 job，#3653/#4034；
+# ⚠️ 该 workflow 已于 #4275 整体删除 ⇒ 本腿是**现存唯一**的这类例子）。
 # 本腿**正是那个例外**：它是**非 required 的信息性 check**（新 check 名，未进分支保护的
 # required 集合）⇒ 不会出现「required check 悬空永不报告」。
 #

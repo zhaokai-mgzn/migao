@@ -8,12 +8,13 @@
 #   · 其中 7 个在 pending 期就被后进的 pending 取代（**0 建栈成本**）；
 #   · 2 个已经进到 `Start local stack` 并跑了 ~1.6min 才被杀（真浪费：栈建到一半、零结论）；
 #   · 3 个被记成「部署后回归失败」假评论，落进 issue #3534（见 workflow 的「被取消记录」段）。
-#   而**建栈层的 concurrency 已经是 `cancel-in-progress: false`**（post-deploy-eval.yml:160-167
-#   workflow 级、agent-behavior-eval.yml:421-422 与 xiaobu-acceptance.yml:178-179 job 级），
+#   而**建栈层的 concurrency 已经是 `cancel-in-progress: false`**（post-deploy-eval.yml 文件级、
+#   xiaobu-acceptance.yml job 级；原 agent-behavior-eval.yml 的那一份已随该 workflow 在 #4275
+#   整体删除 —— 它不起栈、也不再占槽位），
 #   GitHub 的语义也不会用新 run 去取消一个 **running** run ⇒ 取消动作来自 **workflow 之外**
 #   （派发侧并发互杀）。所以省成本的位置在派发侧：**先查槽位，别堆队列**。
 #
-# 判据：三个会起独立 docker 栈、共用同一评测槽位的 workflow 里，是否存在
+# 判据：会起独立 docker 栈、共用同一评测槽位的 workflow（#4275 前三个、现两个）里，是否存在
 #   status ∈ {queued, in_progress, pending, requested, waiting} 的 run。
 #   （`waiting` = 环境审批等待；`requested`/`pending` = 并发组排队中。）
 #
@@ -23,12 +24,14 @@
 #   3 = 无法判定（gh 不可用/未登录/查询失败）—— **不谎报"空闲"**，由调用方决定
 #
 # 输入（env）：
-#   SLOT_WORKFLOWS  可选：要检查的 workflow 文件名（空格分隔；默认三个共用槽位的 workflow）
+#   SLOT_WORKFLOWS  可选：要检查的 workflow 文件名（空格分隔；默认两个共用槽位的 workflow）
+#                   ⚠️ #4275：第三个 `agent-behavior-eval.yml` 已整体删除（用户裁定），
+#                   故默认值由三个收敛为两个。
 #   GH_RUNS_CMD     可选：取 run 列表的命令模板，`%s` 会被替换成 workflow 文件名
 #                   （**给测试用**，如 `printf '[]'`；默认走 `gh run list`）
 set -uo pipefail
 
-SLOT_WORKFLOWS="${SLOT_WORKFLOWS:-post-deploy-eval.yml xiaobu-acceptance.yml agent-behavior-eval.yml}"
+SLOT_WORKFLOWS="${SLOT_WORKFLOWS:-post-deploy-eval.yml xiaobu-acceptance.yml}"
 GH_RUNS_CMD="${GH_RUNS_CMD:-gh run list --workflow=%s --limit 20 --json databaseId,status,conclusion,event,headBranch,createdAt,url}"
 
 BUSY_STATUSES='["queued","in_progress","pending","requested","waiting"]'

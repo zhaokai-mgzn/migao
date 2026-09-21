@@ -31,17 +31,22 @@
 4. **归属锁定**：CH-010 只属 xiaobu、OR-016 只属 mibao（后者是"双端点名商品用例
    已被语义收口归到 B 端"的证据，防止有人把它挪回 C 端重演 0 分）。
 
-## 2026-09-17 变更：第三个 workflow 移出本 family（用户裁定 2′/4′，issue #4034）
+## 2026-09-17 / 2026-09-21：第三个 workflow 先「移出」、后「整体删除」
 
 `agent-behavior-eval.yml` 的 `behavior-eval` job（起 docker 栈 + 注种子 + 跑 `local_runner.py`
-+ 真实 LLM）**整体删除**：PR 上只剩纯静态的 `map` job（diff → case_ids，零 LLM）。
-它**不再起栈、不再注种子、不再跑 runner** ⇒ 已不是本 family 的成员，故从 `EVAL_WORKFLOWS`
-移出（连同一切按 workflow 参数化的用例；移出的理由写在那个常量上方）。
++ 真实 LLM）在 **#4034（2026-09-17 用户裁定 2′/4′）整体删除**：PR 上只剩纯静态的 `map` job
+（diff → case_ids，零 LLM）⇒ 它不再起栈、不再注种子、不再跑 runner，故从 `EVAL_WORKFLOWS` 移出。
+**#4275（2026-09-21 用户裁定，落法 A）该 workflow 文件本身也整体删除**（承接 #4262
+「不要自动进行验证」「CI 运行次数太多」）⇒ 本 family 的成员与 `EVAL_WORKFLOWS` **完全一致**。
 
-⚠️ **移出不是豁免**（§19.1 元规则：白名单只许缩短，不许成为藏身处）：
-`TestExcludedWorkflowHasNoStackMachinery` 用**结构判据**证明它真的没有栈机件；
-LLM job 一旦被加回来那条守卫先红 —— 那时本集合必须同步加回。PR 层零 LLM 的机械锁
-（含"自动 LLM 触发白名单"）见 `tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`。
+⚠️ **「移出」/「删除」都不是豁免**（§19.1 元规则：白名单只许缩短，不许成为藏身处）：
+原 `TestExcludedWorkflowHasNoStackMachinery` 用**结构判据**证明那个文件确实没有栈机件 ——
+它随文件删除而**没有被测对象**（断言无处施加），故本次**改判为更强的一条**：
+`TestEvalWorkflowRegistryIsComplete` 断言 `{含起栈机具的 workflow} == set(EVAL_WORKFLOWS)`
+（**双向相等**）。这比原来的"短名单 + 逐个背书"更难绕过：将来谁再造一个起栈的 workflow
+而不登记，它**先红** —— 而"漏登记 = 新造第五套口径的入口"此前只是注释里的纪律
+（#4288 的 PR body 自己把它登记为**未实装**，本次落码）。
+PR 层零 LLM / 零机具的机械锁见 `tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`。
 
 ## case_ids 说明（不编造）
 
@@ -64,15 +69,16 @@ WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 SEED_SCRIPT = REPO_ROOT / "scripts" / "eval_stack_seed.sh"
 
 # 评测 family：凡"起独立栈 + 注种子 + 跑 local_runner"的 workflow 都必须走单一源。
-# 漏登记 = 新造第五套口径的入口，故本集合是**白名单**而非"扫全部 yml"。
-#
-# ★ 2026-09-17 移出 `agent-behavior-eval.yml`（用户裁定 2′/4′，issue #4034）：它的
-#   `behavior-eval` job（起栈 + 注种子 + local_runner + 真实 LLM）**整体删除**，PR 上
-#   只剩纯静态的 `map` job ⇒ 已不属于本 family（白名单的语义是"谁起栈谁登记"）。
-#   ⚠️ 这不是"为了让测试变绿而放宽"：移出**由结构判据背书** ——
-#   `TestExcludedWorkflowHasNoStackMachinery` 断言该文件里**一件栈机件都没有**
-#   （零种子单一源调用 / 零 docker compose / 零 local_runner / 零 `id: eval` 步骤）。
-#   把 LLM job 加回来 ⇒ 那条守卫先红 ⇒ 本集合必须同步加回，本 family 的判据一个都不会少。
+# ★ #4275 起本集合是**完备白名单**：判据不再只是"名单里的必须调单一源"，而是**双向相等** ——
+#   `TestEvalWorkflowRegistryIsComplete` 断言
+#   `{含起栈机具的 workflow} == set(EVAL_WORKFLOWS)`。
+#   ⇒ "漏登记 = 新造第五套口径的入口"从**注释里的纪律**变成**会红的判据**。
+#   ⚠️ 判据只认**起栈机具**（`eval_stack_seed.sh` / `docker compose`）：`agent-eval.yml` /
+#   `agent-eval-adversarial.yml` 跑 `local_runner.py` 但**打的是已部署的云环境、不起独立栈**
+#   （#4821 裁定它不该占槽位）⇒ 它们不是本 family 成员、不入本表；它们的"仅手动"由
+#   `test_behavior_eval_pr_thin.py` 的自动 LLM 触发白名单锁住。
+#   ⚠️ 历史：`agent-behavior-eval.yml` 曾在本表内 —— 2026-09-17（#4034）评测 job 删除后移出，
+#   2026-09-21（#4275）该文件本身按用户裁定整体删除。
 EVAL_WORKFLOWS = (
     "xiaobu-acceptance.yml",
     "post-deploy-eval.yml",
@@ -95,6 +101,88 @@ def _steps(workflow: str) -> list:
     for job in _jobs(workflow).values():
         out.extend(job.get("steps") or [])
     return out
+
+
+# ── 起栈机具（#4275：`EVAL_WORKFLOWS` 的完备性判据靠它）─────────────────────────
+# ⚠️ 只认**起栈/注种子**机具，不含 `local_runner.py`：跑 runner 但打已部署云环境的
+#    workflow（`agent-eval.yml` / `agent-eval-adversarial.yml`）不起独立栈，不属本 family。
+STACK_MARKERS = ("eval_stack_seed.sh", "docker compose", "docker-compose")
+PR_TRIGGERS = {"pull_request", "pull_request_target"}
+LLM_MARKER = "local_runner.py"
+# issues 面的**消费方**判据（PR 层死权限扫描用；形态见 `TestPrLayerIsSignalOnlyNotGate`）
+ISSUES_CONSUMER_RE = re.compile(
+    r"github\.rest\.issues\.|gh issue (view|close|comment|edit|list|create)"
+    r"|issues\.(create|update|addLabels|removeLabel|listComments|listLabelsOnIssue|list)")
+
+
+def _exec_bodies(wf: dict) -> str:
+    """workflow 的**可执行**正文（各步骤 `run` + `with.script`），逐行剥掉 `#` 注释行。
+
+    剥注释是必须的：多个 workflow 的文件头注释**合法地**记着沿革（"曾经的评测怎么起栈 /
+    runner 在哪"），按原文搜会把沿革误判成"机具回来了"（假红）；反过来只搜注释等于不搜
+    （假绿）—— 判据落在"步骤正文"这一层。
+    """
+    chunks = []
+    for job in (wf.get("jobs") or {}).values():
+        for s in job.get("steps") or []:
+            chunks.append(s.get("run") or "")
+            chunks.append(str((s.get("with") or {}).get("script") or ""))
+    text = "\n".join(chunks)
+    return "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
+
+
+def workflows_with_stack_machinery() -> list:
+    """含**起栈机具**的 workflow 名（按可执行正文判，不扫全文注释）。"""
+    return sorted(p.name for p in WORKFLOWS_DIR.glob("*.yml")
+                  if any(m in _exec_bodies(_load_workflow(p.name)) for m in STACK_MARKERS))
+
+
+def unregistered_stack_workflows(machinery: dict) -> list:
+    """`{workflow: 是否含起栈机具}` → **未登记**进 `EVAL_WORKFLOWS` 的那些。
+
+    独立成纯函数：判据本体（`test_every_stack_workflow_is_registered`）与**注入式红证**
+    （`test_unregistered_detector_actually_fires`）共用同一份口径。
+    """
+    return sorted(n for n, has in machinery.items() if has and n not in EVAL_WORKFLOWS)
+
+
+def _pr_layer_workflows() -> dict:
+    """**现存 PR 层** workflow（带 `pull_request` / `pull_request_target`）→ `{name: 文档}`。
+
+    #4275 的改判载体：原判据解析的是**被删文件**；现改判为"扫这一整层"——
+    覆盖面从 1 个文件变宽到全部 PR 触发者，且不受任何单文件增删影响。
+    """
+    out = {}
+    for p in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        wf = _load_workflow(p.name)
+        trig = wf.get("on") or wf.get(True) or {}
+        if set(trig.keys()) & PR_TRIGGERS:
+            out[p.name] = wf
+    return out
+
+
+def _wf_step_ids(wf: dict) -> list:
+    return [s.get("id") for job in (wf.get("jobs") or {}).values()
+            for s in (job.get("steps") or [])]
+
+
+def pr_layer_dead_issues_grants(pr_layer: dict) -> list:
+    """PR 层**死权限**扫描 → `[(workflow, 声明的值), ...]`（空列表 = 无死权限）。
+
+    判据 = "声明了 `issues` 权限却**没有任何消费方**"（§19.2「声明无消费」）。
+    ⚠️ **不能**写成"一律不得声明 `issues`"：`pr-issue-link.yml`（PR 打标/评论）与
+    `close-linked-issues.yml`（合并后关单）**合法消费** issues 面，一刀切只会造**假红**。
+    独立成纯函数：判据本体与**注入式红证**共用同一份口径。
+    """
+    problems = []
+    for name, wf in pr_layer.items():
+        perms = wf.get("permissions") or {}
+        if "issues" not in perms:
+            continue
+        consumed = bool(ISSUES_CONSUMER_RE.search(_exec_bodies(wf)))
+        if not consumed:
+            problems.append((name, perms.get("issues")))
+    return problems
 
 
 def _seed_steps(workflow: str) -> list:
@@ -148,58 +236,58 @@ def _run_seed_script(monkeypatch, tmp_path, persona: str):
     return FIXTURE_RE.findall(proc.stdout)
 
 
-class TestExcludedWorkflowHasNoStackMachinery:
-    """`agent-behavior-eval.yml` 被移出 `EVAL_WORKFLOWS` 的**结构性理由**（不是豁免）。
+class TestEvalWorkflowRegistryIsComplete:
+    """`EVAL_WORKFLOWS` 是**完备**白名单：凡起栈的 workflow 必须登记，反之必须真的起栈。
 
-    白名单的惯例是"漏登记 = 新造一套口径的入口"，所以"移出"必须能被**证伪**，否则它就成了
-    藏 LLM job 的地方（§19.1：基于错误真相模型写出的护栏 = 永远被豁免的空判据）。
-    本类断言该 workflow 的**步骤正文**里一件栈机件都没有：
-    ① 不调用种子单一源（不起栈就不注种子）；② 无 `docker compose`；
-    ③ 无 `local_runner.py`（零 LLM 的机械形式）；④ 无 `id: eval` 步骤。
-    另外单列一条：被删的 `behavior-eval` job 不得回来。
+    ## #4275 改判说明（为什么这不是"删掉一条守卫"）
 
-    ⚠️ **必须先剥掉 YAML 注释行**：该文件头部注释**合法地**记着沿革（"曾经的栈怎么起 /
-    runner 在哪 / job 级槽位叫什么"），按原文搜会把沿革说明误判成"机件回来了"（假红）；
-    反过来只搜注释则等于不搜（假绿）—— 故判据落在"步骤正文"这一层。
+    原类 `TestExcludedWorkflowHasNoStackMachinery` 断言 `agent-behavior-eval.yml` 的步骤正文里
+    一件栈机件都没有 —— 它是"把该 workflow 移出 `EVAL_WORKFLOWS`"的**结构性背书**。
+    该 workflow 文件已按用户裁定**整体删除**（#4275，承接 #4262）⇒ **被测对象不存在、
+    断言无处施加**（不是一个"跑不过的断言"）。但它的**真实职能**还活着：
+    「移出必须能被证伪，白名单不许成为藏身处」（§19.1）—— 而且原来的实现在 #4288 的
+    PR body 里被**显式登记为未实装**：白名单只拦"名单里有没有调单一源"，
+    **拦不住新造一个起栈 workflow 而不登记**。本次把该职能落成**更强的判据**：
+    `{含起栈机具的 workflow} == set(EVAL_WORKFLOWS)`（双向相等）。
+
+    ⚠️ 判据只看**可执行正文**（`run` / `with.script`）并**剥掉整行注释**：多个 workflow 的
+    文件头注释**合法地**记着沿革（"曾经的评测怎么起栈 / runner 在哪"），按原文搜会把沿革
+    误判成"机具回来了"（假红）；反过来只搜注释等于不搜（假绿）。
     """
 
-    EXCLUDED = "agent-behavior-eval.yml"
-
-    def _stack_surface(self) -> str:
-        """步骤正文（name + run + with.script），逐行剥掉 `#` 注释行后拼接。"""
-        chunks = []
-        for job in _jobs(self.EXCLUDED).values():
-            for s in job.get("steps") or []:
-                chunks.append(s.get("name") or "")
-                chunks.append(s.get("run") or "")
-                chunks.append(str((s.get("with") or {}).get("script") or ""))
-        text = "\n".join(chunks)
-        return "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
-
-    def test_excluded_workflow_has_no_stack_machinery(self):
-        """零栈机件 —— 任何一件回来，本 workflow 就不再是「纯静态」，必须重回白名单。"""
-        text = self._stack_surface()
-        for banned in ("eval_stack_seed.sh", "docker compose", "local_runner.py"):
-            assert banned not in text, (
-                f"{self.EXCLUDED} 的步骤正文里出现了栈机件 {banned!r} —— "
-                "它已不是「纯静态映射」workflow（裁定 2′/4′，#4034）：把 LLM/栈加回来必须"
-                "**同时**把它加回 EVAL_WORKFLOWS 并由本文件全部判据重新覆盖，"
-                "不许借「移出白名单」把起栈的 job 藏在外面"
-            )
-        step_ids = [s.get("id") for job in _jobs(self.EXCLUDED).values()
-                    for s in (job.get("steps") or [])]
-        assert "eval" not in step_ids, (
-            f"{self.EXCLUDED} 出现了 `id: eval` 步骤（{step_ids}）—— "
-            "PR 层零 LLM 的形态是「没有评测步骤」，不是「评测步骤恒 exit 0」"
+    def test_every_stack_workflow_is_registered(self):
+        """凡起栈的 workflow 必须登记 —— 否则它就是"第五套口径"的藏身处。"""
+        unregistered = sorted(set(workflows_with_stack_machinery()) - set(EVAL_WORKFLOWS))
+        assert unregistered == [], (
+            f"这些 workflow 含起栈机具（{STACK_MARKERS}）却没登记进 EVAL_WORKFLOWS："
+            f"{unregistered} —— 漏登记 = 新造一套种子/栈口径的入口（issue #3563 的根因形态）；"
+            "请把它加进 EVAL_WORKFLOWS，让 `TestSeedRuleSingleSource` 的全部判据覆盖它"
         )
 
-    def test_deleted_eval_job_has_not_come_back(self):
-        """被删的 `behavior-eval` job 不得回来（回来即重新成为 PR 层真实 LLM 入口）。"""
-        jobs = _jobs(self.EXCLUDED)
-        assert "behavior-eval" not in jobs, (
-            f"{self.EXCLUDED} 又有了 `behavior-eval` job（现为 {sorted(jobs)}）—— "
-            "裁定 2′/4′（#4034）删掉它正是因为「永不执行的死 job」也算死机制；"
-            "把它加回来 = 重新在每个行为 PR 上烧真实 token + 占评测槽位"
+    def test_registered_workflows_still_start_stacks(self):
+        """反向：名单里的必须**真的**起栈 —— 否则是空登记（白名单会长出一条永不判红的条目）。"""
+        missing = [w for w in EVAL_WORKFLOWS if w not in workflows_with_stack_machinery()]
+        assert missing == [], (
+            f"这些 workflow 在 EVAL_WORKFLOWS 里却看不到起栈机具：{missing} —— "
+            "要么它已不再起栈（应从名单删掉），要么判据正在骗自己（静默假绿）"
+        )
+
+    def test_registry_is_not_vacuous(self):
+        """被检集合非空 —— 否则上面两条都在空集上恒真（判据退化）。"""
+        assert workflows_with_stack_machinery(), (
+            "没有任何 workflow 被识别为『含起栈机具』（判据在空集上恒真 = 退化）"
+        )
+
+    def test_unregistered_detector_actually_fires(self):
+        """注入式红证：一个**未登记**的起栈 workflow ⇒ 必须被判红（判据不是空跑）。"""
+        assert unregistered_stack_workflows({"new-stack.yml": True}) == ["new-stack.yml"], (
+            "未登记的起栈 workflow 没被判红 —— `EVAL_WORKFLOWS` 又变回了可藏身的短名单"
+        )
+        assert unregistered_stack_workflows({"post-deploy-eval.yml": True}) == [], (
+            "已登记的 workflow 被误判为漏登记（假红）"
+        )
+        assert unregistered_stack_workflows({"new-lint.yml": False}) == [], (
+            "不起栈的新 workflow 被要求登记（会逼出无谓登记 = 判据失去区分力）"
         )
 
 
@@ -382,8 +470,9 @@ class TestEvalWorkflowKnobParity:
     `AGENT_EVAL_FLAKE_LOG` 是真实踩到的（#3563 当时的形态；逐路现状由本类锁住）：
     `post-deploy-eval` 上传 `agent-eval-flakes.json` 却不设这个变量（runner 侧按该变量
     决定台账落盘**路径** —— 见 `local_runner.py` 里按「flake 台账」检索的那一段）；
-    `agent-behavior-eval`（该 workflow 的评测 job 现已整体删除，见本文件头部变更节）
-    更是既不落盘也不上传 —— 波动台账（§14.3/§16.5 的观测信号）在这两路上静默缺失。
+    `agent-behavior-eval` 更是既不落盘也不上传（其评测 job 于 #4034 整体删除、该 workflow
+    文件于 #4275 删除，见本文件头部变更节）—— 波动台账（§14.3/§16.5 的观测信号）
+    在这两路上静默缺失。
     """
 
     KNOBS = (
@@ -440,29 +529,34 @@ class TestEvalConcurrencySlot:
     丢掉 PR 迭代性，还让被取代的旧 run 跑完整套栈（最坏组合）。
     单一说明见 `docs/testing/eval-environments.md` §3.3。
 
-    ⚠️ 槽位持有者**由三处变两处**（用户裁定 2′/4′，issue #4034）：
+    ⚠️ 槽位持有者**由三处变两处**（#4034 删评测 job；#4275 删该 workflow 文件 —— 均为用户裁定）：
     `agent-behavior-eval.yml` 的 `behavior-eval` job（job 级槽位 `eval-stack-global-<persona>`）
-    已随该 job **整体删除** —— 该 workflow 现在只有纯静态 `map` job，不起栈 ⇒ **不再占评测槽位**
-    （它仍保留**文件级**按 PR 取消：那省的是 runner 分钟数，与槽位无关）。
-    仍持有槽位的是 `xiaobu-acceptance.yml`（job 级）与 `post-deploy-eval.yml`（文件级）。
+    已随该 job **整体删除**，该 workflow 文件本身也在 #4275 按用户裁定删除 ⇒ 它不起栈、
+    也不存在（它原来的**文件级**按 PR 取消随文件一并消失 —— 那是"PR 迭代体验"而非判据；
+    「PR 层不得占评测槽位」的同族判据改挂到现存 PR 层集合，见
+    `tests/unit_ci_workflows/test_behavior_eval_pr_thin.py`）。
+    现仍持有槽位的是 `xiaobu-acceptance.yml`（job 级）与 `post-deploy-eval.yml`（文件级）。
     """
 
     GROUP = "eval-stack-global"
 
     # 仍「真正起栈」、因而必须进共享槽位的 job 名（= **槽位持有者**白名单）
-    # ⚠️ 原 `agent-behavior-eval.yml: behavior-eval` 项随该 job 删除而移除；
-    #    「移出」由 `TestExcludedWorkflowHasNoStackMachinery` 的结构判据背书（零栈机件），
-    #    不是为了让测试变绿 —— 起栈的 job 一旦回来，本表的判据必须把它重新覆盖。
+    # ⚠️ 原 `agent-behavior-eval` / `behavior-eval` 项随该 job（#4034）与该 workflow 文件
+    #    （#4275）的删除而移除；「移出」不再靠"逐个文件背书"，改由
+    #    `TestEvalWorkflowRegistryIsComplete` 的**双向相等**判据背书（凡起栈必登记）——
+    #    起栈的 job 一旦回来，本表的判据必须把它重新覆盖。
     EVAL_JOB = {
         "xiaobu-acceptance.yml": "xiaobu-acceptance",
     }
 
-    @pytest.mark.parametrize("workflow", ("xiaobu-acceptance.yml", "agent-behavior-eval.yml"))
+    @pytest.mark.parametrize("workflow", ("xiaobu-acceptance.yml",))
     def test_file_level_group_keeps_per_pr_cancel(self, workflow: str):
         """文件级必须仍是**按 PR** + cancel-in-progress=true（PR 迭代的取消能力别丢）。
 
-        （`agent-behavior-eval` 现在只剩静态 `map` job，但它仍由 PR 触发 —— 本判据对它
-        同样成立：同一 PR 连推多次时，被取代的映射 run 该立刻作废。）
+        ⚠️ #4275：原参数化里的第二个 workflow（`agent-behavior-eval.yml`）已按用户裁定
+        整体删除 ⇒ 该参数**移除**（被测对象不存在，断言无处施加 —— 不是放宽门槛）。
+        「PR 层不得占评测槽位」这条同族判据改挂到**现存 PR 层集合**，见
+        `tests/unit_ci_workflows/test_behavior_eval_pr_thin.py::TestPrLayerMachineryIsZero`。
         """
         conc = _load_workflow(workflow).get("concurrency") or {}
         assert conc.get("cancel-in-progress") is True, (
@@ -498,7 +592,8 @@ class TestEvalConcurrencySlot:
 
         （原判据 `test_behavior_eval_slot_is_per_persona` 的被测对象 —— `agent-behavior-eval`
         的 `behavior-eval` job 与它的 `eval-stack-global-<persona>` job 级槽位 —— 已随该 job
-        整体删除；同一条 premise 由本测试在**新载体**上继续钉住，条目没有消失。）
+        整体删除，该 workflow 文件本身也在 #4275 被删除；同一条 premise 由本测试在**新载体**
+        （现存唯一的多 persona 评测 workflow）上继续钉住，条目没有消失。）
 
         `post-deploy-eval` 的两条 persona 腿在**同一个 job 的 matrix** 里 ⇒ 槽位必须挂在
         **文件级**（一次 run 一把锁，两条腿同进同出），且 `cancel-in-progress: false`。
@@ -531,8 +626,9 @@ class TestEvalConcurrencySlot:
     def test_slot_semantics_are_observable(self, workflow: str):
         """槽位语义必须写进 run summary —— 否则「排队/被取消」会被误读成「卡住/PR 有问题」。
 
-        只对**持有槽位**的 workflow 断言：`agent-behavior-eval` 已不起栈、不占槽位，
-        再要求它播报槽位语义就会变成一条永远为真（或要求它讲一个与己无关的机制）的空判据。
+        只对**持有槽位**的 workflow 断言：`agent-behavior-eval` 已不起栈、不占槽位（#4034），
+        该文件本身也已在 #4275 删除 —— 再要求它播报槽位语义就会变成一条永远为真
+        （或要求它讲一个与己无关的机制）的空判据。
         """
         bodies = "\n".join((s.get("run") or "") for s in _steps(workflow))
         assert "GITHUB_STEP_SUMMARY" in bodies, (
@@ -549,7 +645,8 @@ class TestEvalConcurrencySlot:
         `post-deploy-eval` 是**文件级**槽位（它没有 PR 触发，不存在 PR 迭代问题），
         故它的文件级 group 就等于共享槽位名；`xiaobu-acceptance` 是 job 级。
         （第三个持有者 `agent-behavior-eval` 的 `eval-stack-global-<persona>` 已随
-        `behavior-eval` job 删除 —— 带 persona 后缀的槽位名自此只应出现在沿革里。）
+        `behavior-eval` job（#4034）与该 workflow 文件（#4275）删除 ——
+        带 persona 后缀的槽位名自此只应出现在沿革里。）
         """
         pde = _load_workflow("post-deploy-eval.yml").get("concurrency") or {}
         pde_group = str(pde.get("group") or "")
@@ -569,98 +666,112 @@ class TestEvalConcurrencySlot:
 
 
 class TestPrLayerIsSignalOnlyNotGate:
-    """PR 层是**信号**而非门禁：零真实 LLM、零建 issue（用户裁定 2′/4′，issue #4034）。
+    """PR 层是**信号**而非门禁：零真实 LLM、零建 issue、零死权限（用户裁定 2′/4′，issue #4034）。
 
-    沿革（为什么原类 `TestBehaviorGateIsNonBlocking` 的判据全部失去被测对象）：
-    2026-09-14~09-17 本 workflow 曾是 PR 门禁（规则命中 = 强信号：报告 + PR 评论 +
-    自动开 issue、步骤恒 `exit 0` 不拦合并）。该评测 job 已**整体删除** ⇒
-    「恒 exit 0 / 开 issue / issues: write / ruleFail 三元」这一组语义**在 PR 层不复存在**；
-    但**不许**因此删掉了事 —— 本条把同一件事（LLM 结论不得在 PR 层被误读）钉在**新边界**上：
+    沿革：2026-09-14~09-17 `agent-behavior-eval.yml` 曾是 PR 门禁（规则命中 = 强信号：
+    报告 + PR 评论 + 自动开 issue、步骤恒 `exit 0` 不拦合并）；该评测 job 在 #4034 整体删除，
+    整个 workflow 文件又在 #4275（2026-09-21，落法 A）按用户裁定**删除** ⇒
+    「恒 exit 0 / 开 issue / `issues: write` / ruleFail 三元」这一组语义**在 PR 层不复存在**。
 
-      a. **零 LLM**：没有 `id: eval` 步骤，任何步骤的命令体都不得出现 `local_runner.py`
-         （PR 路径上的 LLM 调用数 = 0；同源判据见 `test_behavior_eval_pr_thin.py` 的触发白名单）；
-      b. **零建 issue**：不得有 `issues.create(`（PR 评论走 `issues.createComment(`，
-         那是 `pull-requests: write` 覆盖的 PR 评论，不是 issue）；
-      c. **零死权限**：`permissions` 不得声明 `issues: *`（声明了却没有消费方 = §19.2 死权限）；
-      d. **反假绿 + 可执行出口**：映射评论必须自己说清「没有跑任何 LLM」（否则「有映射结论」
-         会被读成「评测通过」），并给出可复制的派发命令（裁定后它是 PR 上唯一输出）。
+    ## #4275 改判说明（四条判据里三条改判、一条删除 —— 都不是放宽门槛）
+
+    原四条判据解析的都是那个**已被删除的文件** ⇒ **被测对象不存在、断言无处施加**。
+    但其中三条的**真实意图与那个文件无关**：「**PR 层不得自动跑真实 LLM / 不得建 issue /
+    不得留死权限**」是对**PR 这一整层**的约束（#4275 的裁定原文：不许有人再造一个 PR 层
+    自动 LLM 入口）。故按 §19.1「改判到还活着的面」整体搬到**现存 PR 层 workflow 集合**
+    （`_pr_layer_workflows()`），**覆盖面变宽**（1 个文件 → 全部 PR 触发者），判据形态不变：
+
+      a. **零 LLM / 零评测步骤**：任何 PR 层 workflow 都没有 `id: eval`，命令体不得出现
+         `local_runner.py`；
+      b. **零建 issue**：任何 PR 层 workflow 不得出现 `issues.create(`（PR 评论走
+         `issues.createComment(`，那是 `pull-requests: write` 覆盖的 PR 评论，不是建 issue）；
+      c. **零死权限**：任何 PR 层 workflow 声明了 `issues` 权限就必须有 `issues.*` 消费方
+         （§19.2「声明无消费」）。⚠️ 判据**不能**写成"一律不得声明 `issues`"——
+         `pr-issue-link.yml`（PR 打标/评论）与 `close-linked-issues.yml`（合并后关单）
+         **合法消费** issues 面，一刀切只会造**假红**（那会把守卫变成噪声）；
+      d. ~~反假绿 + 可执行出口（评论须写明"没跑 LLM" + 给出派发命令）~~ ⇒ **删除**：
+         它是 `agent-behavior-eval.yml` 的**评论脚本**的性质，脚本随文件删除 ⇒ 判据无处施加。
+         剩余意图（PR 上不得出现会被读成"评测通过"的 LLM 结论）由 (a) 承担：PR 层零 LLM ⇒
+         不存在可被误读的 LLM 结论；「要跑就派发」的命令现由 §13 的零成本映射动作 +
+         `post-deploy-eval` 的手动入口承担（不再有 PR 评论这条输出）。
     """
 
-    WORKFLOW = "agent-behavior-eval.yml"
+    def _pr_layer(self) -> dict:
+        return _pr_layer_workflows()
 
-    def _script_text(self) -> str:
-        """步骤正文（name + run + with.script），**剥掉 `#` 注释行**。
-
-        必须剥注释：该文件头部沿革**合法地**写着 `local_runner.py` / `eval_stack_seed.sh`
-        （"曾经的评测怎么跑"），按原文搜会把沿革误判成"LLM 回来了"（假红）；
-        而只看注释又等于不搜（假绿）—— 故判据落在"步骤正文"这一层。
-        """
-        chunks = []
-        for s in _steps(self.WORKFLOW):
-            chunks.append(s.get("name") or "")
-            chunks.append(s.get("run") or "")
-            chunks.append(str((s.get("with") or {}).get("script") or ""))
-        text = "\n".join(chunks)
-        return "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
+    def test_pr_layer_set_is_not_vacuous(self):
+        """被检集合非空 —— 否则下面每条都在空集上恒真（判据退化）。"""
+        assert len(self._pr_layer()) >= 3, (
+            f"识别到的 PR 层 workflow 只有 {sorted(self._pr_layer())} —— 判据在过小的集合上跑"
+            "（PR 触发识别口径失效？）"
+        )
 
     def test_no_eval_step_and_no_llm_runner(self):
-        """(a) 零 LLM：没有评测步骤，也没有任何命令体调用 `local_runner.py`。"""
-        ids = [s.get("id") for s in _steps(self.WORKFLOW)]
-        assert "eval" not in ids, (
-            f"出现 `id: eval` 评测步骤（{ids}）—— PR 层零 LLM 的形态是「没有评测步骤」，"
-            "不是「评测步骤恒 exit 0」；真要在 PR 上恢复评测，必须先改裁定并同步 "
-            "test_behavior_eval_pr_thin.py 的触发白名单"
-        )
-        body = self._script_text()
-        assert "local_runner.py" not in body, (
-            "步骤命令体里出现 `local_runner.py` —— PR 路径上的真实 LLM 调用数不再为 0"
-            "（裁定 2′/4′ 的要点就是省钱：LLM 负责发现，不负责每个 PR）"
+        """(a) 零 LLM：PR 层没有评测步骤，也没有任何命令体调用 `local_runner.py`。"""
+        offenders = []
+        for name, wf in self._pr_layer().items():
+            if "eval" in _wf_step_ids(wf):
+                offenders.append(f"{name}: `id: eval` 步骤")
+            if LLM_MARKER in _exec_bodies(wf):
+                offenders.append(f"{name}: 命令体出现 `{LLM_MARKER}`")
+        assert offenders == [], (
+            f"PR 层出现了真实 LLM / 评测步骤：{offenders} —— PR 层零 LLM 的形态是"
+            "「**没有**评测步骤」，不是「评测步骤恒 exit 0」（裁定 2′/4′）；真要在 PR 上恢复"
+            "评测，必须先改裁定并同步 test_behavior_eval_pr_thin.py 的触发白名单"
         )
 
     def test_no_issue_creation_step(self):
-        """(b) 零建 issue：PR 层只发评论，不再有「规则命中失败 → 自动开 issue」这条链。"""
-        scripts = "\n".join(str((s.get("with") or {}).get("script") or "")
-                            for s in _steps(self.WORKFLOW))
-        assert not re.search(r"issues\.create\s*\(", scripts), (
-            "出现 `issues.create(` —— 建 issue 的步骤随评测 job 一并停用了（裁定 2′/4′）；"
-            "若确认这是新加的必要步骤，须同时把 `issues: write` 补回来（#3497），"
-            "并同步 test_workflow_issue_permissions.py 的口径"
+        """(b) 零建 issue：PR 层只发 PR 评论/标签，不得有「失败 → 自动开 issue」这条链。"""
+        offenders = sorted(
+            name for name, wf in self._pr_layer().items()
+            if re.search(r"issues\.create\s*\(", _exec_bodies(wf))
+        )
+        assert offenders == [], (
+            f"这些 PR 层 workflow 出现 `issues.create(`：{offenders} —— "
+            "PR 层不得自动建 issue（裁定 2′/4′：PR 层是信号层，建 issue 的链路属于"
+            "低频真实 LLM 档）；若确为新增的必要步骤，须同时补 `issues: write` 并同步 "
+            "test_workflow_issue_permissions.py 的口径"
         )
 
-    def test_permissions_do_not_declare_issues_write(self):
-        """(c) 零死权限：`issues: *` 不得声明（声明了却没有消费方 = §19.2「声明无消费」）。"""
-        perms = _load_workflow(self.WORKFLOW).get("permissions") or {}
-        assert "issues" not in perms, (
-            f"permissions 声明了 issues={perms.get('issues')!r}，但本 workflow 已无任何 "
-            "`issues.*` 调用（建 issue 的步骤随 job 删除）—— 这正是「声明无消费」的死权限："
-            "读者会以为有人在建 issue，而权限本身也在暗示一条已停用的链路。"
+    def test_permissions_have_no_dead_issues_grant(self):
+        """(c) 零死权限：声明了 `issues` 权限就必须有消费方（§19.2「声明无消费」）。
+
+        反向变异（**红证**）：给任意一个不消费 issues 面的 PR 层 workflow 加一行
+        `issues: write` ⇒ 本测试红（注入实测见 PR body）。
+        """
+        bad = pr_layer_dead_issues_grants(self._pr_layer())
+        assert bad == [], (
+            f"这些 PR 层 workflow 声明了 `issues` 权限却没有任何 `issues.*` 消费方：{bad} —— "
+            "这正是「声明无消费」的死权限：读者会以为有人在建 issue/打标，而权限本身也在"
+            "暗示一条已停用的链路（`agent-behavior-eval.yml` 的 `issues: write` 就是这么烂掉的）。"
             "真需要时应**同时**加回声明与消费方"
         )
 
-    def test_pr_comment_declares_no_llm_ran_and_gives_dispatch_command(self):
-        """(d) 反假绿 + 可执行出口：评论写明「没跑 LLM」，并给出派发命令。"""
-        scripts = "\n".join(str((s.get("with") or {}).get("script") or "")
-                            for s in _steps(self.WORKFLOW))
-        assert "没有跑任何真实 LLM" in scripts, (
-            "PR 评论没有明确写出「本次没有跑任何真实 LLM」—— 读者会把「有映射结论」读成"
-            "「评测通过」（假绿）；「没跑」必须长得像「没跑」（§16.7 禁空跑 ③）"
+    def test_dead_issues_grant_detector_actually_fires(self):
+        """注入式红证（与被测真值解耦）：**没有消费方**的 `issues: write` 必被判红。"""
+        dead = {"injected.yml": {"permissions": {"issues": "write"},
+                                 "jobs": {"j": {"steps": [{"run": "echo hi"}]}}}}
+        assert pr_layer_dead_issues_grants(dead) == [("injected.yml", "write")], (
+            "注入一个无消费方的 `issues: write` 却没被判红 —— 本判据是空跑"
         )
-        assert "把本评论读成" in scripts and "评测通过" in scripts, (
-            "PR 评论缺少「不要把本评论读成评测通过」这条显式否认 —— 只写「没跑」不够，"
-            "要直接把误读路径封掉"
+        # 负控 ①：有消费方的合法声明不得判红（`pr-issue-link.yml` / `close-linked-issues.yml` 的形态）
+        alive = {"ok.yml": {"permissions": {"issues": "write"},
+                            "jobs": {"j": {"steps": [
+                                {"run": "gh issue close 1 --repo o/r"}]}}}}
+        assert pr_layer_dead_issues_grants(alive) == [], (
+            "有消费方的 `issues: write` 被误判成死权限（假红）"
         )
-        assert "尚未执行" in scripts, (
-            "映射用例的**未执行**状态没出现在 PR 评论里（评论是裁定后 PR 上唯一的输出口，"
-            "run summary 读者不一定会看）"
+        # 负控 ②：整行注释里提到消费方不算消费（防"改注释骗过判据"）
+        commented = {"fake.yml": {"permissions": {"issues": "write"},
+                                  "jobs": {"j": {"steps": [
+                                      {"run": "set -e\n# 曾经用 gh issue close 关单\necho hi"}]}}}}
+        assert pr_layer_dead_issues_grants(commented) == [("fake.yml", "write")], (
+            "整行注释里的消费方被当成真消费 —— 判据可被注释喂绿"
         )
-        assert "gh workflow run post-deploy-eval.yml" in scripts, (
-            "PR 评论没给出可复制的派发命令（`gh workflow run post-deploy-eval.yml …`）—— "
-            "裁定后本评论是唯一输出，缺它读者只拿到「要跑」而拿不到「怎么跑」"
-        )
-        assert "purpose=debug" in scripts, (
-            "派发命令未标注 `purpose=debug`（定点复现、**非判定用途**）—— 不标注会把 PR 层"
-            "窄跑的结论误升为判定结论（#3769：判定用途只允许全库跑）"
-        )
+        # 负控 ③：不声明 issues 权限的普通 PR workflow 不得被判红
+        assert pr_layer_dead_issues_grants(
+            {"plain.yml": {"permissions": {"contents": "read"},
+                           "jobs": {"j": {"steps": [{"run": "pytest -q"}]}}}}) == []
 
 
 class TestSeedBeforeEvalOrdering:

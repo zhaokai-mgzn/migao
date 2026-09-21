@@ -7,6 +7,8 @@
 #     · xiaobu-acceptance.yml   只当 persona=mibao 时叠 B 端种子
 #     · post-deploy-eval.yml    只当 matrix.persona=mibao 时叠 B 端种子
 #     · agent-behavior-eval.yml **无条件**叠 B 端种子（一个 job 里跑双端分桶）
+#       ⚠️ 该 workflow 已于 #4275 按用户裁定**整体删除**（承接 #4262）；这里保留它，是作为
+#          **根因证据**（它正是"同一 persona 拿到不同栈"的那一路），不是"它还活着"。
 #   于是同一个 persona 在不同 workflow 上拿到**不同的数据栈**，同一用例结论相反：
 #     CH-010（persona=xiaobu）在 agent-behavior-eval 上 0%（栈里 products=4，
 #     B 端 prod_eval_2699 因 created_at 更新而排在第一，「第一款」指到了它），
@@ -14,7 +16,7 @@
 #   商品列表默认 `ORDER BY created_at DESC`，而 `mibao_eval_seed.sql` 在
 #   `xiaobu_eval_seed.sql` **之后**执行（`created_at DEFAULT NOW()`）→ 叠加即改排序。
 #
-# 口径（单一真值，改这里就等于改三个 workflow —— 这正是本文件存在的意义）：
+# 口径（单一真值，改这里就等于改所有**起栈**的评测 workflow —— 这正是本文件存在的意义；
 #   两种 persona 的栈 = **同一个 C 端底座** + 「有没有 B 端那一层」的差：
 #     · xiaobu：仅 C 端种子（+ B 端 = 污染 C 端选品链路 → CH-010 那类假失败）
 #     · mibao ：C 端种子 + B 端种子（B 端点名数据缺失会被误判成能力回归，#3496/#3511）

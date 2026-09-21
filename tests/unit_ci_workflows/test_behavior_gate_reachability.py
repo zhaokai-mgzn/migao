@@ -11,13 +11,23 @@
 
 ## 为什么"在映射集合里"不够（本文件存在的理由）
 
-workflow 的 map job **不是**把映射结果直接当 `case_ids` 传下去，而是用**用例库自己的选择
-函数**（`render_cases.load_case_dicts` + `eval_case_filter.select_cases_for_persona`）把结果
-切成 **(persona, tier) 分桶**，评测步骤**逐桶**调用 runner
-（`.github/workflows/agent-behavior-eval.yml` 的 map job，文件内 `:41-46` 注释说明了同一件事）。
+映射结果**不是**直接当 `case_ids` 用，而要先过**用例库自己的选择函数**
+（`render_cases.load_case_dicts` + `eval_case_filter.select_cases_for_persona`）切成
+**persona 分桶**，再由各腿分别调用 runner。
 ⇒ **"在兜底网里" ≠ "会真的跑"**：persona 不匹配 / 工具集不属于该端 / `skip_reason` 非空
 （落 `unrunnable`）都会被分桶丢掉 —— 只判集合成员会成为一个**恒绿的空断言**
 （never-fires，`migao-acceptance` v1.2「空断言」）。
+
+> ⚠️ **#4275（2026-09-21）：这一层的"见证对象"换了，不是判据换了。**
+> 原版本引用 `.github/workflows/agent-behavior-eval.yml` 的 map job 作为"分桶确实这么算"
+> 的见证；该 workflow 已按用户裁定**整体删除**（承接 #4262「不要自动进行验证」）⇒
+> **解析那个文件的见证层（`TestWorkflowBucketingIsMirrored` + `_map_step_script`）随之删除**
+> —— 它断言的字符串只存在于一个不存在的文件里，**无处可施加**。
+> 但**本体的判据一个字都没改**：结构性不可达是**用例库自身**的性质（`MAPPING_RULES` ∪
+> `DEFAULT_BEHAVIOR_CASES` 选不中它 / 没有任何 persona 能调度它），**与有没有消费方无关**
+> —— 删掉消费方不会让一条不可达的用例变可达。故 `_plan_buckets` 保留，只把它的定位
+> 从"workflow map job 的镜像"改成"**本地分桶约定**（`owners[0]`）：本机按 §13.2 算该跑哪几条
+> 用例时，跨端用例归 `mibao` 腿"。
 
 ## 可达性判据链（三段都要过，缺一段即不可达）
 
@@ -25,8 +35,8 @@ workflow 的 map job **不是**把映射结果直接当 `case_ids` 传下去，�
 2. `select_cases_for_persona` 在**至少一个** persona 下选得中它（真能被调度）；
 3. `skip_reason` 为空（否则按 workflow 语义该进 `unrunnable`，不算可达）。
 
-再加一层**真实入口见证**：用代表性 diff 走 `map_changed_files_with_source` → 按 workflow
-的分桶规则（`owners[0]`）算出它会进哪个桶 —— 证明"真的会被调度"，而不是集合代数上成立。
+再加一层**真实入口见证**：用代表性 diff 走 `map_changed_files_with_source` → 按分桶约定
+（`owners[0]`）算出它会进哪个桶 —— 证明"真的会被调度"，而不是集合代数上成立。
 
 ## 关键用例集合的定义（可解释，不是三个魔数）
 
@@ -51,7 +61,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / ".github"))
@@ -66,7 +75,6 @@ from eval_case_filter import case_skip_reason, select_cases_for_persona  # noqa:
 from render_cases import load_case_dicts  # noqa: E402
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
-BEHAVIOR_EVAL_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "agent-behavior-eval.yml"
 PERSONAS = ("mibao", "xiaobu")
 
 # ── 代表性 diff（真实仓内路径，均有 is_file 见证断言）──
@@ -184,12 +192,15 @@ def _mapped_case_ids():
     return _rule_case_ids() | set(DEFAULT_BEHAVIOR_CASES)
 
 
-def _workflow_plan(paths, case_dicts):
-    """workflow map job 的**分桶镜像** → `(buckets, source)`，`buckets = {persona: [case_id]}`。
+def _plan_buckets(paths, case_dicts):
+    """**本地分桶约定** → `(buckets, source)`，`buckets = {persona: [case_id]}`。
 
     同源复用 `map_changed_files_with_source` + `select_cases_for_persona`；唯一复述的是
-    workflow 那 4 行分桶规则（`owners = [p for p in ("mibao","xiaobu") if cid in runnable[p]]`
-    → `owners[0]`）。**漂移守卫**见 `TestWorkflowBucketingIsMirrored`。
+    分桶约定（`owners = [p for p in ("mibao","xiaobu") if cid in runnable[p]]` → `owners[0]`）。
+    ⚠️ #4275 之前它是 `agent-behavior-eval.yml` map job 的**镜像**，并配了漂移守卫
+    （`TestWorkflowBucketingIsMirrored`）；该 workflow 已按用户裁定**整体删除** ⇒
+    镜像与漂移守卫一并消失（**被测对象不存在，判据无处施加**）。现在它是**本机口径**：
+    按 §13.2 算"该跑哪几条用例"时，跨端用例归 `mibao` 腿（仓库默认 persona）。
     """
     ids, source = map_changed_files_with_source(paths)
     runnable = _runnable_by_persona(case_dicts)
@@ -202,14 +213,11 @@ def _workflow_plan(paths, case_dicts):
     return buckets, source
 
 
-def _map_step_script():
-    """取 `agent-behavior-eval.yml`「计算执行计划」步骤的内联脚本正文。"""
-    wf = yaml.safe_load(BEHAVIOR_EVAL_WORKFLOW.read_text(encoding="utf-8")) or {}
-    for job in (wf.get("jobs") or {}).values():
-        for step in job.get("steps") or []:
-            if step.get("id") == "map":
-                return step.get("run") or ""
-    return ""
+# ⚠️ #4275：原 `_map_step_script()` 与 `TestWorkflowBucketingIsMirrored` **已删除** ——
+#   它们解析的是 `.github/workflows/agent-behavior-eval.yml` 的 map 步骤内联脚本，而该
+#   workflow 已按用户裁定整体删除（承接 #4262）。**被测对象不存在 ⇒ 断言无处施加**：
+#   不是"跑不过就删"，是那个字符串在仓库里已经没有宿主。分桶约定的活体是
+#   `_plan_buckets`（本机口径），它的正确性由 `TestKeyCasesAreReachable` 的入口见证承担。
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -265,7 +273,7 @@ class TestKeyCasesAreReachable:
     def test_key_case_enters_a_real_bucket_through_the_entrypoint(self, case_id):
         """真实入口见证：代表性 diff → 映射 → 分桶，该用例确实进了一个 (persona) 桶。"""
         case_dicts = _case_dicts()
-        buckets, source = _workflow_plan([UNMAPPED_AI_SOURCE], case_dicts)
+        buckets, source = _plan_buckets([UNMAPPED_AI_SOURCE], case_dicts)
         assert source == "default_net", (
             f"{UNMAPPED_AI_SOURCE} 不再落兜底网（source={source}）—— "
             "本见证的前提失效，请换一个「映射表盲区」的代表性文件。"
@@ -273,10 +281,10 @@ class TestKeyCasesAreReachable:
         runnable = _runnable_by_persona(case_dicts)
         owners = [p for p in PERSONAS if case_id in runnable[p]]
         assert owners, (
-            f"{case_id} 没有任何 persona 能调度它（会进 workflow 的 unrunnable 名单）—— "
+            f"{case_id} 没有任何 persona 能调度它（会进 `unrunnable` 名单）—— "
             "它就算在兜底网里也永远不会执行 = 空断言。"
         )
-        # workflow 的分桶规则：双端用例归 owners[0]（仓库默认 persona）
+        # 分桶约定：双端用例归 owners[0]（仓库默认 persona）
         assert case_id in buckets.get(owners[0], []), (
             f"{case_id} 未进入 persona={owners[0]} 的执行桶（桶内容：{buckets}）—— "
             "门禁不会真的跑它。"
@@ -323,32 +331,36 @@ class TestReachabilityCheckerActuallyFires:
         assert [c["id"] for c in select_cases_for_persona(rows, "xiaobu")] == ["XX-999"]
 
 
-class TestWorkflowBucketingIsMirrored:
-    """分桶镜像的漂移守卫：workflow 改了分桶口径 → 本文件必须同步（否则守卫会撒谎）。"""
-
-    def test_map_step_uses_the_same_selection_functions(self):
-        script = _map_step_script()
-        assert script, "找不到 agent-behavior-eval.yml 的 map 步骤内联脚本（守卫前提失效）"
-        for anchor in ("select_cases_for_persona", "case_skip_reason", "owners[0]"):
-            assert anchor in script, (
-                f"map job 的分桶实现里找不到 {anchor!r} —— 分桶口径变了，"
-                "请同步本文件的 `_workflow_plan` 镜像后再更新本断言。"
-            )
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # C. 门禁分层锁（红线：本 PR **不**扩大阻塞面）
 # ══════════════════════════════════════════════════════════════════════════════
 class TestLayeringUnchanged:
-    """红线（issue #3725）：只补兜底网（只报告），"规则命中仍阻塞 / 兜底网仍只报告"逐字不变。"""
+    """红线（issue #3725）：只补兜底网（只报告），"规则命中仍阻塞 / 兜底网仍只报告"逐字不变。
 
-    def test_workflow_mode_derivation_is_verbatim(self):
-        """workflow 的 `source → mode` 判定逐字锁定（改了就等于改门禁分层语义）。"""
-        script = _map_step_script()
-        assert 'mode = "blocking" if source == "rules" else "report-only"' in script, (
-            "agent-behavior-eval.yml 的 mode 判定已变 —— 本 PR 的前提是分层语义**逐字不变**"
-            "（规则命中 = blocking / 兜底网 = report-only）；"
-            "若确要改门禁强度，请与 issue #3725 的校准结论一起改并更新本断言。"
+    ⚠️ **#4275：原 `test_workflow_mode_derivation_is_verbatim` 的被测对象已不存在。**
+    它逐字锁定的是 `agent-behavior-eval.yml` map 步骤里的
+    `mode = "blocking" if source == "rules" else "report-only"` —— 那行**只活在被删的
+    workflow 里**（文件已按用户裁定整体删除，承接 #4262），断言**无处可施加**。
+    分层语义本身**还活着**：活载体是 `map_changed_files_with_source` 的 `source` 三分法
+    （`rules` / `default_net` / `none`）—— 谁读它谁决定阻塞还是只报告。故判据改挂到
+    **三分法本身**（见 `test_source_vocabulary_is_the_layering_contract`），
+    不是"分层锁被删掉了"。
+    """
+
+    def test_source_vocabulary_is_the_layering_contract(self):
+        """分层语义的**现存面**：`source` 三分法恰好这三个取值，且每个轴各归其位。
+
+        反向变异：把 `map_changed_files_with_source` 的某个返回值改成别的字面量
+        （或让非行为路径落兜底网）⇒ 本测试红。这是"分层语义没被无声改写"的活判据。
+        """
+        assert map_changed_files_with_source([]) == ([], "none"), (
+            "空变更集的 source 不再是 'none' —— 非行为改动会被当成行为改动（分层语义被改写）"
+        )
+        assert map_changed_files_with_source([UNMAPPED_AI_SOURCE])[1] == "default_net", (
+            "兜底网轴的 source 不再是 'default_net' —— 「兜底网 = 只报告」的分层失去了判据载体"
+        )
+        assert map_changed_files_with_source([RULES_ANCHOR_SOURCE])[1] == "rules", (
+            "规则命中轴的 source 不再是 'rules' —— 「规则命中 = 阻塞」的分层失去了判据载体"
         )
 
     def test_rule_hit_still_reports_rules_source(self):
