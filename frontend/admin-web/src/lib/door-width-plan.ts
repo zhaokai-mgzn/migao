@@ -28,7 +28,10 @@
  * g_eff(g) = 标称门幅 − 有效余量（缩水/边损/对花回；缺省 0 —— 租户级配置键落地后接线）
  * 定高买宽: 可行 = { g | 成品高 + HEM_MARGIN ≤ g_eff(g) }
  *           空 ⇒ needs_splice（缺口 = 成品高 + HEM_MARGIN − max(g_eff)）；非空 ⇒ 取 min(g_eff)
- * 定宽买高: 幅数 p(g) = ceil((成品宽 + SIDE_MARGIN) × 褶倍 ÷ g_eff(g))
+ * 定宽买高: 幅数 p(g) = ceil_mm((成品宽 + SIDE_MARGIN) × 褶倍 ÷ g_eff(g))
+ *           `ceil_mm` = **毫米整数**向上取整（与引擎 `-(-_mm(a) // max(1, _mm(b)))` **同式**；
+ *           浮点 `ceil` 在「总用料恰为门幅整数倍」的边界上会多算 1 幅 —— 见 `panelsForFixedWidth`）
+ *           候选 g_eff(g) ≤ 0 **剔除**（全剔除 ⇒ undecidable，与引擎同式 fail-closed）
  *           取 p 最小者；**并列取较小门幅**（不占宽幅布）
  * 加工类型缺失 ⇒ 按上表**自动推导**（#5020）；表外 ⇒ undecidable（fail-closed，不猜）
  * ```
@@ -46,18 +49,28 @@
  * ⚠️ **余量常量复用**（`SIDE_MARGIN` 宽方向 / `HEM_MARGIN` 高方向，两者今天同值 0.3 但**语义不同**，
  * 不得混用，且副本有跨语言守卫）；加工类型常量同样复用 —— 本模块**不新造**第二份字面量。
  *
- * ## 与算料引擎的关系（**过渡实现**，不是第二份长期口径）
- * 真值源 = `backend/ai-agent-service/app/tools/curtain_calc.py`。引擎今天**既不接收门幅
- * （`internal.py` 里是硬编码常量）、也不接收加工类型（按「成品高 + 卷边 ≤ 门幅」自推）**
- * ⇒ 规则暂时落不进引擎。用户 2026-09-21：「**web 端的功能根据这个最新方案现在开工落地，
- * 替换掉现在错误的做法**」⇒ 先在 admin-web 落地；**下沉/对齐 = issue #4652**（引擎接收门幅 +
- * 加工类型）—— 届时本模块应下沉为引擎函数，或降级为**有守卫的副本**（同 `craft-calc-request.ts`
- * 与常量副本的既有范式）。⚠️ 那时**不得**留下两份会各自漂移的判定。
+ * ## 与算料引擎的关系（**有守卫的副本**，不是第二份长期口径）
+ * 真值源 = `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `resolve_fabric_plan`
+ * （issue #5013 已把**同一份规则**落进引擎：候选门幅 ⇒ 定高买宽取可行集里最小 / 否则倒幅取分幅最少）。
+ * 本模块是它在 admin-web 的**副本**（用户 2026-09-21：「**web 端的功能根据这个最新方案现在开工落地，
+ * 替换掉现在错误的做法**」）⇒ 判定式必须与引擎**同式**，**尤其是分幅数的取整口径**：
+ * 浮点 `ceil(need / g_eff)` 在「总用料恰为门幅整数倍」的边界上会**多算 1 幅**（实测
+ * `(1.1 + 0.3) × 2 = 2.8000000000000003` ⇒ 浮点 2 幅 / 引擎 1 幅），而幅数进 `(panels, 门幅)`
+ * 双键排序 ⇒ 还会**翻转选中的门幅**。故两侧都用**毫米整数**除法，并由**算法级跨语言守卫**钉住
+ * （共享 golden 算例表 `tests/fixtures/panels-cross-language-golden.json`，**三腿共读**：引擎腿 +
+ * 静态腿 + 前端腿 —— `tests/unit_ci_workflows/test_panels_cross_language_algorithm_guard.py` +
+ * `frontend/admin-web/tests/unit/lib/door-width-plan.test.ts`）。
+ * ⚠️ 引擎侧**仍有**不接收候选门幅的入口（`internal.py` 的 craft-calc 试算走单一门幅）——
+ * 那是**另一件事**，登记在 `docs/design/craft-calc-and-fabric-routing.md` §4.5（issue #4760）。
+ * **下沉 = issue #4652**（届时本模块应下沉为引擎函数）。⚠️ 那时**不得**留下两份会各自漂移的判定。
  *
  * ## 本模块**不做**的事（照实登记，YAGNI）
  * - **不算用料米数**（用料由算料引擎给；本模块只回答「哪个门幅 + 单幅还是接高」）；
  * - **不看库存**：候选集由调用方给（物理可行 vs 当前可下单是两层，别把缺货读成「做不了」）；
- * - **不算接高的加高条米数**（接高用料口径**未裁定**，issue #4877 已登记为独立缺口）；
+ * - **不算接高的加高条米数**：接高用料口径**已裁定**（issue #5013，**口径 A** —— 加高条**按片宽另买**、
+ *   不从缺口面积折料）且**引擎已实现**（`curtain_calc.resolve_fabric_plan` 的 `_splice`：
+ *   `strips × 片宽`）。本模块**不实现第二份米数公式**，且当前**无活入口**能传「接高」
+ *   （`CutPlanInput.cuttingMode` 只有两档、缺失即自动推导）⇒ 接高米数一律由引擎给；
  * - **不做金额最优化**：目标函数 = 用料米数（裁定 3），单价差异只做提示。
  */
 import {
@@ -156,6 +169,26 @@ function round3(value: number): number {
   return Number(value.toFixed(3))
 }
 
+/** 米 ⇒ 整数毫米（四舍五入）—— 与引擎 `_mm`（`int(round(v * 1000))`）**逐字同源** */
+function toMillimeters(meters: number): number {
+  return Math.round(meters * 1000)
+}
+
+/**
+ * **定宽买高的分幅数** —— 与引擎 `-(-_mm(total) // max(1, _mm(ge)))` **同式**的毫米整数除法。
+ *
+ * 🔴 **不得改回浮点直除** `Math.max(1, Math.ceil(need / effectiveDoorWidth))`：在「总用料**恰为**
+ * 门幅整数倍」的边界上浮点会**多算 1 幅**（实测 `(1.1 + 0.3) × 2 = 2.8000000000000003` ⇒ 浮点
+ * `ceil(1.0000000000000002) = 2` 幅 / 引擎 **1** 幅），而幅数进 `(panels, 门幅)` 双键排序
+ * ⇒ 还会**翻转选中的门幅**（`W=1.1 / [2.8, 3.2]`：真值并列 ⇒ 取 2.8；浮点 ⇒ 取 3.2）。
+ *
+ * 跨语言等价由共享 golden 算例表钉住（`tests/fixtures/panels-cross-language-golden.json`）：
+ * 引擎腿 + 静态腿 + 前端腿三侧共读同一份期望值，任一漂移即红。
+ */
+function panelsForFixedWidth(needMeters: number, effectiveDoorWidth: number): number {
+  return Math.ceil(toMillimeters(needMeters) / Math.max(1, toMillimeters(effectiveDoorWidth)))
+}
+
 /** 有限正数 ⇒ 该数；其余（含 undefined / null / NaN / ≤0）⇒ null */
 function positive(value: unknown): number | null {
   const parsed = typeof value === 'number' ? value : Number(String(value ?? '').trim())
@@ -196,10 +229,21 @@ export function resolveCutPlan(input: CutPlanInput): CutPlan {
   }
 
   const allowance = Math.max(positive(input.allowance) ?? 0, 0)
-  const effective = candidates.map((doorWidth) => ({
-    doorWidth,
-    effectiveDoorWidth: round3(doorWidth - allowance),
-  }))
+  // 候选过滤与引擎**同式**（引擎：`float(g) > allow`）—— `g_eff ≤ 0` 的候选一律剔除：
+  // 否则 `allowance ≥ 门幅` 时 `Math.ceil(need / 0) = Infinity`、或负有效门幅下被 `max(1, …)`
+  // 兜成 1 幅，**静默产出垃圾**（引擎侧同条件抛 ValueError ⇒ 本侧 fail-closed 对齐）。
+  const effective = candidates
+    .map((doorWidth) => ({ doorWidth, effectiveDoorWidth: round3(doorWidth - allowance) }))
+    .filter((c) => c.effectiveDoorWidth > 0)
+  if (effective.length === 0) {
+    return {
+      state: 'undecidable',
+      code: 'no-door-width',
+      reason:
+        `候选门幅全部被有效余量 ${allowance} 米剔除（有效门幅 ≤ 0）—— ` +
+        '与引擎同式 fail-closed，不按无效门幅推算',
+    }
+  }
 
   const height = positive(input.height)
   const fixedHeightFeasible = (): boolean =>
@@ -282,7 +326,7 @@ export function resolveCutPlan(input: CutPlanInput): CutPlan {
 
   const need = (width + SIDE_MARGIN) * fullness
   const ranked = effective
-    .map((c) => ({ ...c, panels: Math.max(1, Math.ceil(need / c.effectiveDoorWidth)) }))
+    .map((c) => ({ ...c, panels: panelsForFixedWidth(need, c.effectiveDoorWidth) }))
     .sort((a, b) => a.panels - b.panels || a.effectiveDoorWidth - b.effectiveDoorWidth)
   const chosen = ranked[0]
   return {
@@ -345,6 +389,10 @@ export function judgeDoorWidthChoice(
 
   const allowance = Math.max(positive(input.allowance) ?? 0, 0)
   const selectedEffective = round3(selected - allowance)
+  // 所选门幅的有效值 ≤ 0 ⇒ **判不了**（与候选过滤同一条口径：不产 `Infinity` / 负幅数）
+  if (selectedEffective <= 0) {
+    return { plan, selectedDoorWidth: selected, verdict: 'unknown', suggestion: null }
+  }
 
   // 没有任何门幅能单幅做成 ⇒ 无论客服选了哪一个，结论都是「需接高」。
   if (plan.state === 'needs_splice') {
@@ -396,7 +444,7 @@ export function judgeDoorWidthChoice(
     return { plan, selectedDoorWidth: selected, verdict: 'unknown', suggestion: null }
   }
   const need = (width + SIDE_MARGIN) * fullness
-  const selectedPanels = Math.max(1, Math.ceil(need / selectedEffective))
+  const selectedPanels = panelsForFixedWidth(need, selectedEffective)
   if (selectedPanels <= plan.panels) {
     // 并列（分幅数相同 ⇒ 米数相同）：挑哪个门幅是库存/单价的事，不 nag。
     return { plan, selectedDoorWidth: selected, verdict: 'optimal', suggestion: null }

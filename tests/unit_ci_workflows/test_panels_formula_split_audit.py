@@ -10,10 +10,15 @@
 | **A 米宝下单通路** | `calculate_fabric_meters()` 定宽分支 | `ceil((W + side_margin) × N / G)` | **含** |
 | **B1 试算通路（倍数法）** | `build_quote()` 的 `formula='fullness'` 分支 | `ceil(ceil_to_step(W × N, 0.1) / G)` | 不含（且**多一道 `ceil_to_step`**） |
 | **B2 试算通路（褶数法）** | `build_quote()` 的 `pleat_mode` 分支 | `ceil(褶数法总用料 / G)` | 不含 |
+| **C 下单页门幅规则（前端副本）** | `frontend/admin-web/src/lib/door-width-plan.ts` 的 `resolveCutPlan()` 定宽买高分支 | `ceil_mm((W + SIDE_MARGIN) × N / G_eff)` | **含**（与 A 同式，且同取整口径 = **毫米整数**；issue #5038 前是浮点 `ceil` ⇒ 整数倍边界多算 1 幅） |
 
 A 与 B1/B2 都在**给商家算料**（米宝下单 vs 商家手工下单页试算）⇒ **同一张单两个答案**；
 差 1 幅 = 差整整一幅长（`H + HEM_MARGIN`）⇒ 面料费 + 加工费同幅变化（**涉钱**）。
 真值源 `docs/curtain-fabric-quote-rules.md` §3 写的是 `P = ceil((W + SIDE_MARGIN) × N / G)`（#4819 起该节只写符号，数值见该文 §0「数值常量清单」）⇒ 站 **A**。
+**通路 C**（issue #5038 登记，第 4 份副本）与 A **同式**（含 `side_margin` + 毫米整数取整）⇒ 它**不在**
+上面这条 A-vs-B1/B2 的分叉里；它与 A 的**算法级**等价由共享 golden 算例表钉住
+（`tests/fixtures/panels-cross-language-golden.json`，三腿共读；守卫
+`tests/unit_ci_workflows/test_panels_cross_language_algorithm_guard.py`）。
 
 ## 本守卫钉什么（**不钉「不一致」本身**）
 
@@ -30,6 +35,7 @@ A 与 B1/B2 都在**给商家算料**（米宝下单 vs 商家手工下单页试
 | C4 | 差异恒为 **A ≥ B1 且差恰 1 幅**（`side_margin > 0` ⇒ A 不可能少于 B1） | 把 A 的行改成比 B1 小 ⇒ 红 |
 | C5 | 三条公式串**逐字**出现在文档里（改代码改文档才一致） | 把 §4.5 的 `ceil((宽 + side_margin) × 褶倍 ÷ 门幅)` 删掉 ⇒ 红 |
 | C6 | 前端「超宽」判据仍与 A 同式（`(宽 + SIDE_MARGIN) × 褶倍 > 门幅`）—— 三方（A / 前端 / 真值源）已对齐，只有 B1/B2 落后 | 前端判据去掉 `SIDE_MARGIN` ⇒ 红 |
+| C7 | **第 4 份副本（通路 C）已登记**：§4.5「通路与调用方」表里有通路 C 行、口径串逐字在文档里，且**前端源码实测**确为毫米整数式（无浮点直除） | 删掉通路 C 行 ⇒ 红；把 `door-width-plan.ts` 改回浮点 `Math.ceil(need / g_eff)` ⇒ 红 |
 
 ⚠️ **本守卫不 import 被测引擎**：`app` 包的导入期需要完整 `.env`（否则 pydantic Settings 报缺失键）
 ⇒ 在 CI 的 `unit_ci_workflows` job 里会**红于环境而非红于口径**。故这里**照源里的公式复算**
@@ -47,6 +53,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DESIGN_DOC = REPO_ROOT / "docs/design/craft-calc-and-fabric-routing.md"
 CALC_PY = REPO_ROOT / "backend/ai-agent-service/app/tools/curtain_calc.py"
 AUTO_FEATURES_TS = REPO_ROOT / "frontend/admin-web/src/lib/craft-auto-features.ts"
+#: 通路 C（第 4 份 `panels` 副本，issue #5038）—— 前端门幅规则的落点
+PLAN_TS = REPO_ROOT / "frontend/admin-web/src/lib/door-width-plan.ts"
 
 #: §4.5 的锚点（**文本锚点，不写死行号** —— 行号会随文档编辑腐烂）
 SECTION_ANCHOR = "### 4.5 分幅公式"
@@ -64,7 +72,12 @@ FORMULA_STRINGS = (
     "ceil((宽 + side_margin) × 褶倍 ÷ 门幅)",
     "ceil(ceil_to_step(宽 × 褶倍, 0.1) ÷ 门幅)",
     "ceil(褶数法总用料 ÷ 门幅)",
+    "ceil_mm((宽 + SIDE_MARGIN) × 褶倍 ÷ 门幅有效值)",  # 通路 C（issue #5038 登记）
 )
+
+#: 通路 C 在 §4.5「通路与调用方」表里的**行锚点**与**口径串**（C7：登记与代码自洽）
+PATH_C_ANCHOR = "C 下单页门幅规则（前端副本）"
+PATH_C_FORMULA = "ceil_mm((宽 + SIDE_MARGIN) × 褶倍 ÷ 门幅有效值)"
 
 
 def _section(text: str) -> str:
@@ -219,4 +232,29 @@ class TestPanelsFormulaSplitAudit:
         assert re.search(r"\(width \+ SIDE_MARGIN\) \* fullness > doorWidth", src), (
             "前端「超宽」判据不再是 `(width + SIDE_MARGIN) * fullness > doorWidth` ⇒ "
             "它已与引擎 A 通路（含 `side_margin`）脱钩 —— 这会让 #4760 的差异形态变成三方不一致"
+        )
+
+    def test_path_c_is_registered_and_matches_source(self):
+        """C7：**第 4 份副本（通路 C）已登记**，且登记的口径与前端源码**实测**相符（issue #5038）。
+
+        红证：① 删掉 §4.5「通路与调用方」表里的通路 C 行 ⇒ 红；
+             ② 把 `door-width-plan.ts` 的分幅改回浮点 `Math.ceil(need / g_eff)` ⇒ 红
+                （登记说「毫米整数」而源码是浮点 = 文档静默说谎）。
+        """
+        text = _read(DESIGN_DOC)
+        assert PATH_C_ANCHOR in text, (
+            "§4.5 的「通路与调用方」表里找不到通路 C（前端副本 `door-width-plan.ts`）—— "
+            "第 4 份 `panels` 实现**未登记**（本审计的口径就是「登记与代码自洽」）⇒ 红"
+        )
+        assert PATH_C_FORMULA in text, (
+            f"通路 C 的登记口径串「{PATH_C_FORMULA}」不在文档里 ⇒ 登记形态漂移（本审计看不见它）"
+        )
+        src = _read(PLAN_TS)
+        assert re.search(r"Math\.round\(\s*\w+\s*\*\s*1000\s*\)", src) and "Math.ceil(toMillimeters(" in src, (
+            "通路 C 的登记说它是**毫米整数**除法，但前端源码里找不到该形态"
+            "（`Math.round(x * 1000)` / `Math.ceil(toMillimeters(` 不见）—— 登记与代码已脱钩"
+            "（改回浮点 ⇒ 总用料恰为门幅整数倍时多算 1 幅）⇒ 红"
+        )
+        assert not re.search(r"Math\.ceil\(\s*\w+\s*/\s*\w+\.effectiveDoorWidth\s*\)", src), (
+            "前端源码里又出现**浮点直除**形态 —— 与 §4.5 登记的「毫米整数」不符 ⇒ 红"
         )

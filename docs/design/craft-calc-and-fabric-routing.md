@@ -173,7 +173,7 @@
 ⚠️ **后端今天完全不认 `saleForm`**（`grep -rn "saleForm" backend/` 零命中）⇒ 读 `saleForm` 是**新增行为**；
 **缺键的存量单不得改变既有行为**（回归不变量）。
 
-### 4.5 分幅公式（`panels`）**三条口径不一致**（issue #4760：已核清 + **已裁定 (A)**，执行依赖 #4652）
+### 4.5 分幅公式（`panels`）**四份副本**：A / B1 / B2 三条口径不一致 + 通路 C 与 A 同式（issue #4760：已核清 + **已裁定 (A)**，执行依赖 #4652；通路 C = issue #5038）
 
 **本节的公式串是实测读源的结论**（`backend/ai-agent-service/app/tools/curtain_calc.py`），
 不是提案；**代码改了本节必须同改**（机械判据 = `tests/unit_ci_workflows/test_panels_formula_split_audit.py`，
@@ -186,6 +186,15 @@
 | **A 米宝下单通路** | `calculate_fabric_meters()` 定宽分支（`curtain_calc.py`） | `build_quote` 的**兜底分支**（`formula='pleat'` 且 `mounting != s_hook` 等未命中前两支时）⇒ `CurtainCalcTool` ⇒ 米宝/小布 Agent | `ceil((宽 + side_margin) × 褶倍 ÷ 门幅)` —— **含** `side_margin` |
 | **B1 试算通路（倍数法）** | `build_quote()` 的 `formula='fullness'` 分支 | 商家手工下单页（`orders/new` → `POST /api/admin/orders/craft-calc` → `internal.py::craft_calc`）；`craft='打孔'` 由 `resolve_craft_rule` 派生成此式 | `ceil(ceil_to_step(宽 × 褶倍, 0.1) ÷ 门幅)` —— **不含** `side_margin`，且**多一道 `ceil_to_step`** |
 | **B2 试算通路（褶数法）** | `build_quote()` 的 `pleat_mode` 分支 | 同上（`craft='韩褶'` / 默认档） | `ceil(褶数法总用料 ÷ 门幅)` —— **不含** `side_margin`（用料本身含余量 `margin_single/multi`，但那是**开数余量**，不是 `side_margin`） |
+| **C 下单页门幅规则（前端副本）** | `resolveCutPlan()` 的定宽买高分支（`frontend/admin-web/src/lib/door-width-plan.ts`） | 商家手工下单页自动推导（`frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx`）⇒ 门幅 / 加工类型提示 | `ceil_mm((宽 + SIDE_MARGIN) × 褶倍 ÷ 门幅有效值)` —— **含** `side_margin`，且与引擎 `resolve_fabric_plan` **同式**（**毫米整数**除法；issue #5038 前是浮点 `ceil` ⇒ 总用料恰为门幅整数倍时**多算 1 幅**、并可能翻转选中的门幅） |
+
+⚠️ **通路 C（第 4 份 `panels` 实现，issue #5038）**：它与 A **同式**（含 `side_margin`）且**同取整口径**
+（毫米整数）。它与 A 的等价**不再靠人读**：由共享 golden 算例表 `tests/fixtures/panels-cross-language-golden.json`
+**三腿共读**（引擎腿 `backend/ai-agent-service/tests/test_curtain_calc_fabric_plan.py` / 静态腿
+`tests/unit_ci_workflows/test_panels_cross_language_algorithm_guard.py` / 前端腿
+`frontend/admin-web/tests/unit/lib/door-width-plan.test.ts`）—— 任一侧改回浮点即红。
+本表的**通路 C 行**由 `tests/unit_ci_workflows/test_panels_formula_split_audit.py` 的 C7 钉住
+（登记与代码自洽：删掉该行、或把前端改回浮点 ⇒ 红）。
 
 **对照表**（门幅 `G = 2.8`、窗高 `H = 2.6` ⇒ `H + HEM_MARGIN(0.3) = 2.9 > 2.8`，
 两通路**都**落在定宽买高分支；`W` = 成品宽、`N` = 褶倍）：
