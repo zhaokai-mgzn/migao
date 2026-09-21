@@ -2,7 +2,7 @@
 
 覆盖（M3-E，issue #3986）：
 - 必填检测：尺寸缺失必须追问（不阻塞报价流程，缺省即报）
-- 矛盾拦截：4.6m 单开→建议双开、四开偏窄、折数整除、工艺互斥、打孔不按折数、倍数<1.5
+- 矛盾拦截：4.6m 单开→建议双开、四开偏窄、褶数整除、工艺互斥、打孔不按褶数、倍数<1.5
 - 默认三层合成：行业【标】 < 商家【默】 < 客户记忆（craft_profile）
 - 轮次上限：每轮 ≤3 问，超上限转复尺/人工
 - **清单 → 下单行要素**（issue #4362，S1）：`to_craft_spec` 把已收集字段映射成
@@ -64,7 +64,7 @@ def test_conflict_invalid_craft():
 
 def test_conflict_eyelet_ignores_pleats():
     warns = conflicts({"craft": "打孔", "pleat_count": 48})
-    assert any("不按折数" in w for w in warns)
+    assert any("不按褶数" in w for w in warns)
 
 
 def test_conflict_fullness_below_red_line():
@@ -81,7 +81,7 @@ def test_industry_defaults_basic():
     d = merged_defaults({"width": 4.64, "curtain_type": "布帘"})
     assert "curtain_type" not in d        # 已收集字段不出现在默认里
     assert d["craft"] == "韩褶"
-    # 用料公式问项（issue #4873）：industry 默认 = 韩折公式（`pleat`）；褶距 `pleat_spacing` 已退役
+    # 用料公式问项（issue #4873）：industry 默认 = 韩褶公式（`pleat`）；褶距 `pleat_spacing` 已退役
     assert d["formula"] == "pleat"
     assert "pleat_spacing" not in d
     assert d["open_count"] == 2          # 4.64m > 2.2m → 双开
@@ -227,14 +227,14 @@ def test_checklist_asks_has_pattern():
 
 # ── 6. 用料公式问项（issue #4873）：`pleat_spacing`（褶距）退役 → `formula` ──
 # 需求（用户 2026-09-21）：「移除订单的工艺规格中的褶距字段，加上用料公式字段，
-# 如果选择韩折公式就自动算折数，如果选褶倍数公式就展示经济档/标准档」——
+# 如果选择韩褶公式就自动算褶数，如果选褶倍数公式就展示经济档/标准档」——
 # 清单是「问顾客」的那一端：问项换人，`craftTier`（算料档位）**不进清单**
 # （档位由算料配置决定，不是顾客的回答项）。
 
 def test_checklist_asks_formula_and_retires_pleat_spacing():
     by_id = {item["id"]: item for item in CHECKLIST}
     assert "formula" in by_id, "清单未问「用料公式」⇒ 该字段永远采集不到"
-    assert by_id["formula"]["default"] == "pleat", "用料公式的行业默认必须是韩折公式（pleat）"
+    assert by_id["formula"]["default"] == "pleat", "用料公式的行业默认必须是韩褶公式（pleat）"
     assert by_id["formula"]["default"] in FORMULA_LABELS, (
         "默认值必须落在算料引擎的公式值域内（curtain_calc.FORMULA_LABELS）"
     )

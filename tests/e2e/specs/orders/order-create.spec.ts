@@ -181,7 +181,7 @@ test.describe('订单创建', () => {
     })
 
     test('工艺规格：用料公式在、褶距已移除（步骤 1 默认展开）', async ({ page }) => {
-      await expect(page.getByRole('radio', { name: '韩折公式（折数法）' })).toBeVisible()
+      await expect(page.getByRole('radio', { name: '韩褶公式（褶数法）' })).toBeVisible()
       await expect(page.getByRole('radio', { name: '褶倍数公式（倍数法）' })).toBeVisible()
       // 反向断言：褶距控件与文案都不得再出现（#4874 第 7 条）
       await expect(page.getByLabel('褶距')).toHaveCount(0)

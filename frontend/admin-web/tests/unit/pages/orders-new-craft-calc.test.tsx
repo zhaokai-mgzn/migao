@@ -1,13 +1,13 @@
 // case_ids: OR-036
 // 原声明 `OR-009, OR-014, UI-038` 是**借用式**（issue #4431 B7 核实并替换）：OR-009 是下单全流程、
 // OR-014 是下单加工项数量规则、UI-038 是「选择已有客户回填收货信息」—— 三条都不覆盖本文件被测行为
-// （下单页算料试算接线：折数法自动算 + 公式串 + 四条 fail-closed）。
+// （下单页算料试算接线：褶数法自动算 + 公式串 + 四条 fail-closed）。
 // 改用 **OR-036**（本 PR 新增，判据即本文件 + craft-calc-request.test.ts）。
 // @vitest-environment jsdom
 /**
  * 下单页「算料试算」接线（issue #4434 · 前置 #4421）。
  *
- * 判据聚焦用户裁定的「用料米数按折数法自动算 + 把计算公式体现出来」，以及三条 fail-closed：
+ * 判据聚焦用户裁定的「用料米数按褶数法自动算 + 把计算公式体现出来」，以及三条 fail-closed：
  * ① 宽高齐全 ⇒ 试算并**预填数量** + 展示**后端产出的公式串**；
  * ② 手改数量 ⇒ 标记「人工指定」，**试算不得静默改回**（只能显式「恢复按公式计算」）；
  * ③ 试算失败 ⇒ 行内显式提示，数量保持原样（**不退回任何估算值**）；
@@ -337,7 +337,7 @@ describe('下单页算料试算接线（#4434）', () => {
     it('判据 1/3（红证）：提交 payload 的 formulaText **逐字** = 试算响应的 formula_text（前端不得自拼）', async () => {
       // 注入法：刻意让后端串里的数值与 `fabric_meters`（13.3）**不一致**（这里写 7.7米）——
       // 前端若按数字自拼，产出必然 ≠ 本串 ⇒ 本断言红。正解 = 只从试算响应取。
-      const backendFormula = '韩折公式（商家自定义档）：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 7.7米'
+      const backendFormula = '韩褶公式（商家自定义档）：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 7.7米'
       mockCraftCalcPreview.mockResolvedValue({
         data: { data: { ...CALC_OK.data.data, formula_text: backendFormula } },
       })
@@ -375,7 +375,7 @@ describe('下单页算料试算接线（#4434）', () => {
 })
 
 // ══════════════════════════════════════════════════════════════════════════
-// issue #4874（用户 2026-09-21）：「**加上用料公式字段**，如果选择韩折公式，那就自动算出折数，
+// issue #4874（用户 2026-09-21）：「**加上用料公式字段**，如果选择韩褶公式，那就自动算出褶数，
 // 如果选择的是褶倍数公式，那就展示是经济档还是标准档，这里需要**和工艺配置的算料配置保持一致**」
 //
 // ⇒ 值域与文案**一律从算料配置读面取**（`GET /api/admin/production/craft-calc-config`），
@@ -403,18 +403,18 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
   const formulaRadio = (name: string) =>
     within(screen.getByRole('radiogroup', { name: '用料公式' })).getByRole('radio', { name })
 
-  it('判据 1（红证）：缺省公式 = 算料配置的 `default_formula`，且选韩折公式 ⇒ 展示**自动算出的折数**', async () => {
+  it('判据 1（红证）：缺省公式 = 算料配置的 `default_formula`，且选韩褶公式 ⇒ 展示**自动算出的褶数**', async () => {
     render(<NewOrderPage />)
     await pickProduct()
     openStep1()
-    // 红证（改前）：页面既没有「用料公式」控件，也没有折数展示块 ⇒ 下面两行必红
-    expect(formulaRadio('韩折公式（折数法）')).toHaveAttribute('aria-checked', 'true')
-    // 试算还没发（宽高未填）⇒ 折数是「—」：**不编数**
+    // 红证（改前）：页面既没有「用料公式」控件，也没有褶数展示块 ⇒ 下面两行必红
+    expect(formulaRadio('韩褶公式（褶数法）')).toHaveAttribute('aria-checked', 'true')
+    // 试算还没发（宽高未填）⇒ 褶数是「—」：**不编数**
     expect(within(screen.getByTestId('craft-pleat-count')).getByText('—')).toBeInTheDocument()
 
     fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })
     fireEvent.change(inputOf('高 (米)'), { target: { value: '2.6' } })
-    // 试算回来（`pleat_count: 52`）⇒ 折数展示**照抄响应**（页面不自己算折数）
+    // 试算回来（`pleat_count: 52`）⇒ 褶数展示**照抄响应**（页面不自己算褶数）
     await waitFor(() =>
       expect(
         within(screen.getByTestId('craft-pleat-count')).getByText('52')
@@ -440,7 +440,7 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
         .getAllByRole('radio')
         .map((r) => r.textContent)
     ).toEqual(['标准档（2.0倍）', '经济档（1.8倍）'])
-    // 折数块只在韩折公式下出现
+    // 褶数块只在韩褶公式下出现
     expect(screen.queryByTestId('craft-pleat-count')).toBeNull()
   })
 
@@ -478,7 +478,7 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     expect(await screen.findByTestId('craft-calc-config-missing')).toBeInTheDocument()
     openStep1()
     // 公式值域与引擎常量同源（不依赖配置）⇒ chips 仍在；档位值域取不到 ⇒ 不渲染 chips
-    expect(formulaRadio('韩折公式（折数法）')).toHaveAttribute('aria-checked', 'true')
+    expect(formulaRadio('韩褶公式（褶数法）')).toHaveAttribute('aria-checked', 'true')
     expect(screen.queryByTestId('craft-tier-options')).toBeNull()
 
     fireEvent.change(inputOf('宽 (米)'), { target: { value: '6.6' } })

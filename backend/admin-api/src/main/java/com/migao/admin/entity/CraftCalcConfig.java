@@ -63,7 +63,7 @@ public class CraftCalcConfig {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Object tiers;
 
-    /** 兜底公式：{@code pleat} 韩折公式（折数法）/ {@code fullness} 褶倍数公式（倍数法） */
+    /** 兜底公式：{@code pleat} 韩褶公式（褶数法）/ {@code fullness} 褶倍数公式（倍数法） */
     private String defaultFormula;
 
     /** 定宽买高上下卷边（米）；引擎默认 0.3 */

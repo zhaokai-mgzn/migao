@@ -3,11 +3,11 @@
 用户 2026-09-19 裁定（逐字）：
 
 > 「算出来的用料还要根据打开方式*系数，单开系数1，双开系数2，以此类推，最后用料米数保留一位小数，
-> 除了使用韩折公式还有一种褶倍数计算公式，这都是用料计算方法，你得根据用户要求选择不同的计算公式，
+> 除了使用韩褶公式还有一种褶倍数计算公式，这都是用料计算方法，你得根据用户要求选择不同的计算公式，
 > 默认用韩折的」
 
 口径（三问澄清答复）：**乙** —— 公式吃「**每片宽**」（成品宽 ÷ 开数），**总用料 = 每片用料 × 开数**；
-一位小数 = **向上进位**（`ceil(x*10)/10`）。公式入参 `formula`：`'pleat'`（韩折公式＝折数法，**默认**）｜
+一位小数 = **向上进位**（`ceil(x*10)/10`）。公式入参 `formula`：`'pleat'`（韩褶公式＝褶数法，**默认**）｜
 `'fullness'`（褶倍数公式＝倍数法）。
 
 **ERP 实证锚点（不得违反，防口径漂移）**：加工单 `CSO260915-02615`（#4343 已取证）宽 5.5m / 双开 /
@@ -21,7 +21,7 @@
   unexpected keyword argument 'formula'**；
 - 进位判据：`meters_rounding_step` 不存在 ⇒ 同上；改成截断 / 四舍五入 ⇒ 值级断言红
   （如 `x.05` 截断 6.3 / 四舍五入 6.3，而期望 6.4）；
-- 逐片判据：现有实现按「总折数 × 每折吃布 + 余量」算，**每片用料 × 开数** 无法表达 ⇒ 红。
+- 逐片判据：现有实现按「总褶数 × 每折吃布 + 余量」算，**每片用料 × 开数** 无法表达 ⇒ 红。
 
 判据与实现**不共源**：期望值全部**写死**（纸表 + ERP 锚点 + 手算），**不得**从实现推导
 （`X == X` 的断言不会红）。
@@ -45,7 +45,7 @@ from app.tools.curtain_calc import (
 )
 
 # ── 冻结入参（两个公式共用同一组宽/开数，便于逐值对照）──
-# `craft_tier="standard"`：折数法（韩折公式）由「显式档位 / 显式折数」触发（既有口径，issue #4118 ⑤-B）
+# `craft_tier="standard"`：褶数法（韩褶公式）由「显式档位 / 显式褶数」触发（既有口径，issue #4118 ⑤-B）
 # —— 本包**不动**这条触发条件，只在其上叠加 `formula` 选择。
 ANCHOR = dict(window_width=5.5, window_height=2.5, mounting="s_hook",
               fabric_width=3.2, fabric_price=30.0, open_count=2, craft_tier="standard")
@@ -85,7 +85,7 @@ class TestPerPanelPleatFormula:
     """宽 6.6 / 双开 / 褶倍 2.0 / `formula='pleat'` ⇒ 逐片算、总用料 = 每片 × 2。
 
     手算（与实现无关）：
-      每片宽 = 6.6 ÷ 2 = 3.3m；每片折数 = round((3.3×2.0 − 0.15) ÷ 0.25) = round(25.8) = 26；
+      每片宽 = 6.6 ÷ 2 = 3.3m；每片褶数 = round((3.3×2.0 − 0.15) ÷ 0.25) = round(25.8) = 26；
       每片用料 = 0.25×26 + 0.15 = 6.65m；总用料 = 6.65 × 2 = **13.3m**（= 纸表 `0.25×52+0.3`，逐值不变）。
     """
 
@@ -98,18 +98,18 @@ class TestPerPanelPleatFormula:
     def test_total_equals_per_panel_times_open_count(self):
         """总用料 === 每片用料 × 开数（逐片口径的可执行判据）。"""
         q = build_quote(formula="pleat", **DOUBLE_6_6)
-        per_panel = 0.25 * 26 + 0.15          # 写死：0.25×每片折数 + 每片余量
+        per_panel = 0.25 * 26 + 0.15          # 写死：0.25×每片褶数 + 每片余量
         assert q["fabric_meters"] == round(per_panel * 2, 2) == 13.3
 
     def test_every_panel_is_identical(self):
-        """逐片 ⇒ 每片折数相同（总折数 = 每片 × 开数），不得出现「两片不同」的形态。"""
+        """逐片 ⇒ 每片褶数相同（总褶数 = 每片 × 开数），不得出现「两片不同」的形态。"""
         q = build_quote(formula="pleat", **DOUBLE_6_6)
         assert q["pleat_count"] == q["per_panel_pleats"] * q["open_count"]
 
     def test_single_open_per_panel_is_the_whole_curtain(self):
-        """单开 ⇒ 只有一片：每片折数 === 总折数，且余量取**单开** 0.2（不是 0.3）。
+        """单开 ⇒ 只有一片：每片褶数 === 总褶数，且余量取**单开** 0.2（不是 0.3）。
 
-        手算：折数 = round((6.6×2.0 − 0.2) ÷ 0.25) = round(52.0) = 52；
+        手算：褶数 = round((6.6×2.0 − 0.2) ÷ 0.25) = round(52.0) = 52；
         用料 = 0.25×52 + 0.2 = 13.2（恰好 0.1 格点 ⇒ 进位不动它）。
         """
         q = build_quote(formula="pleat", **SINGLE_6_6)
@@ -161,13 +161,13 @@ class TestCeilToOneTenth:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 判据 4（默认公式 = 韩折）：不传 ⇒ 走折数法，且公式串写明所用公式
+# 判据 4（默认公式 = 韩折）：不传 ⇒ 走褶数法，且公式串写明所用公式
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestDefaultFormula:
 
     def test_default_is_pleat(self):
-        """不传 `formula` ⇒ 折数法（静默走褶倍数公式 ⇒ 红：那是「默认用韩折」的反面）。"""
+        """不传 `formula` ⇒ 褶数法（静默走褶倍数公式 ⇒ 红：那是「默认用韩折」的反面）。"""
         q = build_quote(**DOUBLE_6_6)
         assert q["formula"] == FORMULA_PLEAT
         assert q["formula_used"] == "fixed_height_pleats"
@@ -176,8 +176,8 @@ class TestDefaultFormula:
     def test_default_formula_text_names_the_formula(self):
         """`formula_text` 必须**明确写出所用公式**（韩折），不得只有算式没有公式名。"""
         q = build_quote(**DOUBLE_6_6)
-        assert q["formula_text"].startswith("韩折公式：")
-        assert q["formula_text"] == "韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米"
+        assert q["formula_text"].startswith("韩褶公式：")
+        assert q["formula_text"] == "韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米"
     def test_fullness_formula_text_names_the_formula(self):
         """`fullness` 的公式串同样写明公式名 + 逐片表达式 + 米数（与数值同源）。"""
         q = build_quote(formula="fullness", **ANCHOR)
@@ -199,20 +199,20 @@ class TestDefaultFormula:
 
     def test_explicit_formula_is_not_shadowed_by_craft_tier_or_pleat_count(self):
         """**新入参不得静默失效**：显式 `formula='fullness'` 时，`craft_tier` / `pleat_count`
-        （折数法的触发条件）**不得**把请求抢回折数法 —— 那正是「传了却没用」的静默形态。
+        （褶数法的触发条件）**不得**把请求抢回褶数法 —— 那正是「传了却没用」的静默形态。
 
         判别性：若把 `pleat_mode` 判据写在 `formula` 判据之前（或漏了 `selected_formula` 判断），
-        下面三条会全部落回折数法（`formula='pleat'` / 13.3 米 / 有 pleat_count）⇒ 红。
+        下面三条会全部落回褶数法（`formula='pleat'` / 13.3 米 / 有 pleat_count）⇒ 红。
         """
         for extra in ({"craft_tier": "standard"}, {"pleat_count": 48},
                       {"craft_tier": "economy", "pleat_count": 48}):
             q = build_quote(formula="fullness", **{**ANCHOR, **extra})
             assert q["formula"] == FORMULA_FULLNESS, f"显式 formula 被 {extra} 遮蔽"
             assert q["fabric_meters"] == 11.0, f"显式 formula 被 {extra} 遮蔽"
-            assert "pleat_count" not in q, f"褶倍数公式不该产出折数（收到 {extra}）"
+            assert "pleat_count" not in q, f"褶倍数公式不该产出褶数（收到 {extra}）"
 
     def test_pleat_formula_still_needs_a_tier_or_pleat_count(self):
-        """反向：`formula='pleat'`（默认）在 s_hook 下**仍**需要 `craft_tier`/`pleat_count` 触发折数法
+        """反向：`formula='pleat'`（默认）在 s_hook 下**仍**需要 `craft_tier`/`pleat_count` 触发褶数法
         —— 既有触发条件不得被新入参删掉（否则 6.6m 双开从 13.3 变 13.8 米 = 静默改钱）。"""
         q = build_quote(formula="pleat", window_width=6.6, window_height=2.5, mounting="s_hook",
                         fabric_width=3.2, fabric_price=30.0, open_count=2)
@@ -257,7 +257,7 @@ class TestFullnessIndependentOfOpenCount:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 追加裁定（用户 2026-09-19）：「**韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍**」
+# 追加裁定（用户 2026-09-19）：「**韩折用韩褶公式算布料，打孔按倍数法算布料，默认选择 2 倍**」
 # ⇒ 公式**由工艺推导**；`formula` 入参保留为**显式覆盖**（显式 > 推导 > 兜底默认）
 # ══════════════════════════════════════════════════════════════════════════
 
@@ -265,7 +265,7 @@ class TestCraftDerivesFormula:
     """`craft → formula` 推导表是唯一口径；未登记工艺走兜底默认（不猜）。"""
 
     def test_resolver_is_the_single_source(self):
-        """推导**入口**逐值写死：韩褶 → (折数法, s_hook) / 打孔 → (倍数法, eyelet)；未登记 ⇒ (None, None)。
+        """推导**入口**逐值写死：韩褶 → (褶数法, s_hook) / 打孔 → (倍数法, eyelet)；未登记 ⇒ (None, None)。
 
         ⚠️ 用**入口函数**而不是「中文 key 的映射表」：后者会命中本仓
         `test_tool_input_contract_guards.py::TestNoNewChineseWordingJudgement` 的
@@ -278,9 +278,9 @@ class TestCraftDerivesFormula:
         assert resolve_craft_rule("") == (None, None)
 
     def test_hole_punch_uses_fullness_formula(self):
-        """**红证①**：打孔 ⇒ 走**倍数法**且 `fullness = 2.0`（走折数法 ⇒ 红）。
+        """**红证①**：打孔 ⇒ 走**倍数法**且 `fullness = 2.0`（走褶数法 ⇒ 红）。
 
-        手算：5.5m × 2.0 = **11.0 米**（与 ERP 锚点同值）；折数法会得 11.3 米 ⇒ 判别性成立。
+        手算：5.5m × 2.0 = **11.0 米**（与 ERP 锚点同值）；褶数法会得 11.3 米 ⇒ 判别性成立。
         """
         q = build_quote(window_width=5.5, window_height=2.5, mounting="eyelet",
                         fabric_width=3.2, fabric_price=30.0, open_count=2,
@@ -298,7 +298,7 @@ class TestCraftDerivesFormula:
         assert q["fullness"] == DEFAULT_CRAFT_TIERS["standard"]["fullness"]
 
     def test_s_hook_craft_uses_pleat_formula(self):
-        """**红证②**：韩褶 ⇒ 走**折数法**（走倍数法 ⇒ 红）：6.6m 双开标准档 ⇒ 52 折 / 13.3 米。"""
+        """**红证②**：韩褶 ⇒ 走**褶数法**（走倍数法 ⇒ 红）：6.6m 双开标准档 ⇒ 52 折 / 13.3 米。"""
         q = build_quote(window_width=6.6, window_height=2.5, fabric_width=3.2,
                         fabric_price=30.0, open_count=2, craft="韩褶", craft_tier="standard")
         assert q["formula"] == FORMULA_PLEAT
@@ -320,7 +320,7 @@ class TestCraftDerivesFormula:
         assert q["fullness"] == DEFAULT_FULLNESS["s_hook"] == 2.0
 
     def test_unregistered_craft_falls_back_to_default_formula(self):
-        """未登记工艺（四爪钩/穿杆/平幔）⇒ 不猜公式，走配置兜底默认（韩折公式）。"""
+        """未登记工艺（四爪钩/穿杆/平幔）⇒ 不猜公式，走配置兜底默认（韩褶公式）。"""
         q = build_quote(window_width=5.5, window_height=2.5, mounting="hook", fabric_width=3.2,
                         fabric_price=30.0, craft="四爪钩")
         assert q["formula"] == DEFAULT_CRAFT_CALC_CONFIG["default_formula"] == FORMULA_PLEAT
@@ -336,7 +336,7 @@ class TestCraftDerivesFormula:
 
     def test_config_default_formula_is_the_fallback_not_a_competitor(self):
         """`default_formula` 的语义 = **推导表缺失时的兜底**（与推导表不打架）：
-        配 default_formula=fullness 时，**已登记工艺**（韩褶）仍走折数法。"""
+        配 default_formula=fullness 时，**已登记工艺**（韩褶）仍走褶数法。"""
         cfg = {**DEFAULT_CRAFT_CALC_CONFIG, "default_formula": FORMULA_FULLNESS}
         q = build_quote(config=cfg, window_width=6.6, window_height=2.5, fabric_width=3.2,
                         fabric_price=30.0, open_count=2, craft="韩褶", craft_tier="standard")
@@ -380,7 +380,7 @@ class TestConfigContract:
         """配置真的被公式消费（可注入）：`per_fold_single=0.5` ⇒ 用料按 0.5 米/折算。
 
         判别性：公式体里写死 0.25 ⇒ 本条红（配置不生效）。
-        ⚠️ 同时传 `pleat_count=52`：折数是**输入**（客户自报/档位派生），不是本条的变量 ——
+        ⚠️ 同时传 `pleat_count=52`：褶数是**输入**（客户自报/档位派生），不是本条的变量 ——
         否则 `per_fold_single` 会同时改变「派生出几个折」（0.5 米/折 ⇒ 26 折），
         两个变量混在一起就不是「配置被消费」的干净判据了。
         """
@@ -452,7 +452,7 @@ class TestConfigGuardrails:
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestLegacyOutputsRegression:
-    """`formula='pleat'`（默认）⇒ 折数/每片折数/每折吃布/金额与改前**逐值相同**。
+    """`formula='pleat'`（默认）⇒ 褶数/每片褶数/每折吃布/金额与改前**逐值相同**。
 
     期望值取自 `origin/main @fa7d36ca` 上的既有断言（**改前实测值**，不是从本实现推导）：
     6.6m/双开/标准档 ⇒ 52 折 / 每片 26 / 用料 13.3 米 / 实际褶倍 2.02。

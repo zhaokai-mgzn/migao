@@ -13,7 +13,7 @@ import type { CraftCalcParams } from './api'
 import type { CraftCalcConfig } from '@/types'
 import type { CraftSpecInput } from './order-craft-fields'
 
-/** 用料来源（真值源 §8：折数/用料**必须带来源**，防止多渠道不一致） */
+/** 用料来源（真值源 §8：褶数/用料**必须带来源**，防止多渠道不一致） */
 export const METERS_SOURCE_FORMULA = '公式计算'
 export const METERS_SOURCE_MANUAL = '人工指定'
 
@@ -30,12 +30,12 @@ export const METERS_SOURCE_MANUAL = '人工指定'
  */
 export const CRAFT_CALC_TIER = 'standard'
 
-/** 折数法只在韩褶（`s_hook`）生效；其它悬挂方式后端会 400 ⇒ 前端**不该发**这种请求 */
+/** 褶数法只在韩褶（`s_hook`）生效；其它悬挂方式后端会 400 ⇒ 前端**不该发**这种请求 */
 export const CRAFT_CALC_MOUNTING = 's_hook'
 
 /**
  * 用料**计算方法**（issue #4527，用户 2026-09-19 裁定：「根据用户要求选择不同的计算公式，**默认用韩折的**」）：
- * - `pleat` = **韩折公式**（折数法）：`总用料 = 每片用料 × 开数`，每片用料 = 每折吃布 × 每片折数 + 每片余量；
+ * - `pleat` = **韩褶公式**（褶数法）：`总用料 = 每片用料 × 开数`，每片用料 = 每折吃布 × 每片褶数 + 每片余量；
  * - `fullness` = **褶倍数公式**（倍数法）：`总用料 = 每片宽 × 褶倍 × 开数`（= 成品宽 × 褶倍，与开数无关）。
  *
  * ⚠️ 前端**只传公式名**，不实现任何公式（实现唯一落在算料引擎 `curtain_calc.py`；
@@ -72,7 +72,7 @@ export { FORMULA_LABELS as CRAFT_CALC_FORMULA_LABELS } from './craft-display'
  *
  * 为什么必须先工艺推导再配置兜底：算料引擎的优先级逐字是「`formula` 入参**保留为显式覆盖**
  * （显式 > 本表 > `default_formula` 兜底）」⇒ 前端若把「配置兜底」当默认值**显式**发出去，
- * 就等于把「打孔 ⇒ 倍数法」（#4527 用户裁定）顶掉（页面按韩折口径发请求、后端按打孔口径算）。
+ * 就等于把「打孔 ⇒ 倍数法」（#4527 用户裁定）顶掉（页面按韩褶口径发请求、后端按打孔口径算）。
  * 页面与 chips 展示**共用本函数**（同一份解析 ⇒ 页面显示 = 请求 = 落库）。
  */
 export function effectiveCraftCalcFormula(
@@ -132,7 +132,7 @@ export function craftCalcTierOptions(
 
 /**
  * 工艺 → 用料公式 / 悬挂方式（用户 2026-09-19 追加裁定逐字：
- * 「**韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍**」）。
+ * 「**韩褶用韩褶公式算布料，打孔按倍数法算布料，默认选择 2 倍**」）。
  *
  * ⚠️ **这是「有守卫的副本」**：权威表 = 算料引擎 `curtain_calc.resolve_craft_rule`（工艺契约枚举值 → 公式/悬挂方式）；
  * 本表由 `tests/unit/lib/craft-calc-formula-sync.test.ts` **逐值读 Python 源文件比对**，漂移即红
@@ -171,7 +171,7 @@ export interface CalcLineInput {
    */
   curtainType?: string
   /**
-   * 用料计算方法（issue #4527）：缺省 ⇒ `'pleat'`（韩折公式）。
+   * 用料计算方法（issue #4527）：缺省 ⇒ `'pleat'`（韩褶公式）。
    * issue #4874 起由页面上的**用料公式 chips** 接线（{@link CRAFT_CALC_FORMULAS}）。
    */
   formula?: string
@@ -195,7 +195,7 @@ export interface CalcLineInput {
  * 上面原第 2 条 fail-closed（`curtainType=纱帘 ⇒ null`）已删除：纱帘走**与布帘完全相同**的
  * 算料链路（同一公式 / 同一档位 / 同一次试算）。
  *
- * 公式与悬挂方式**由工艺推导**（用户 2026-09-19 追加裁定）：韩褶 ⇒ 折数法 + `s_hook`；
+ * 公式与悬挂方式**由工艺推导**（用户 2026-09-19 追加裁定）：韩褶 ⇒ 褶数法 + `s_hook`；
  * 打孔 ⇒ 倍数法 + `eyelet`（默认 2 倍）；未指定工艺 ⇒ 韩褶默认档。
  * 推导表是**有守卫的副本**（权威表在 `curtain_calc.resolve_craft_rule`，见文件头说明）。
  */

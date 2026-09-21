@@ -80,7 +80,7 @@ class CraftCalcClientTest {
         body.put("open_count", 2);
         body.put("mounting", "s_hook");
         body.put("craft_tier", "standard");
-        // issue #4527：用料计算方法（pleat 韩折公式 / fullness 褶倍数公式）—— Java 侧只**透传**
+        // issue #4527：用料计算方法（pleat 韩褶公式 / fullness 褶倍数公式）—— Java 侧只**透传**
         body.put("formula", "pleat");
         return body;
     }
@@ -91,7 +91,7 @@ class CraftCalcClientTest {
                   "fabric_meters":13.3,"pleat_count":52,"per_panel_pleats":26,"open_count":2,
                   "margin":0.3,"per_fold":0.25,"fullness":2.0,"fullness_actual":2.02,
                   "formula_used":"fixed_height_pleats",
-                  "formula_text":"韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米",
+                  "formula_text":"韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米",
                   "source":"formula","craft_tier":"standard","warning":""},
                  "requestId":"req_1","timestamp":1758100000}
                 """;
@@ -113,7 +113,7 @@ class CraftCalcClientTest {
         assertThat(result.fullnessActual()).isEqualByComparingTo("2.02");
         assertThat(result.formulaUsed()).isEqualTo("fixed_height_pleats");
         assertThat(result.formulaText())
-                .isEqualTo("韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米");
+                .isEqualTo("韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米");
         assertThat(result.source()).isEqualTo("formula");
         assertThat(result.craftTier()).isEqualTo("standard");
         assertThat(result.warning()).isEmpty();
@@ -178,7 +178,7 @@ class CraftCalcClientTest {
         assertThat(result.fabricMeters()).isEqualByComparingTo("11.0");
         assertThat(result.formulaUsed()).isEqualTo("fixed_height_fullness");
         assertThat(result.formulaText()).startsWith("褶倍数公式：").endsWith("= 11.0米");
-        // 折数类字段在褶倍数公式下**如实缺席**（不发明「52 折」这种数）：端点回 null ⇒ Java 侧取到 0
+        // 褶数类字段在褶倍数公式下**如实缺席**（不发明「52 折」这种数）：端点回 null ⇒ Java 侧取到 0
         // （`fullness_actual` 有显式 null 判据 ⇒ null；`per_fold`/`pleat_count`/`per_panel_pleats`
         //   走 `decimalValue()`/`asInt()`，null ⇒ 0 —— 既有解析口径，本包不改）。
         assertThat(result.pleatCount()).isZero();
@@ -309,7 +309,7 @@ class CraftCalcClientTest {
 
     private static final String DEFAULTS_URL = "http://agent:8000/api/internal/production/craft-calc-config";
 
-    /** 本租户配置行（判据：改它 ⇒ 折数法用料随之变）。 */
+    /** 本租户配置行（判据：改它 ⇒ 褶数法用料随之变）。 */
     private static CraftCalcConfig storedRow(Long tenantId, String perFoldSingle, String marginMulti) {
         return CraftCalcConfig.builder()
                 .id("ccc-" + tenantId)

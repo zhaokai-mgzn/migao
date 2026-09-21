@@ -46,7 +46,7 @@ describe('craftCalcParamsOf — 凑齐入参才发请求（fail-closed）', () =
     })
   })
 
-  it('#4527 公式选择：缺省 ⇒ 韩折公式（pleat）；显式指定 ⇒ 原样带出（不认的取值也不静默改写）', () => {
+  it('#4527 公式选择：缺省 ⇒ 韩褶公式（pleat）；显式指定 ⇒ 原样带出（不认的取值也不静默改写）', () => {
     // 缺省 = 韩折（用户裁定「默认用韩折的」）
     expect(craftCalcParamsOf(line())?.formula).toBe('pleat')
     expect(CRAFT_CALC_FORMULA_PLEAT).toBe('pleat')
@@ -66,8 +66,8 @@ describe('craftCalcParamsOf — 凑齐入参才发请求（fail-closed）', () =
     expect(pleat).not.toBe(fullness)
   })
 
-  // ── 用户 2026-09-19 追加裁定：「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」──
-  it('#4527 韩褶 ⇒ 折数法（pleat）+ s_hook', () => {
+  // ── 用户 2026-09-19 追加裁定：「韩折用韩褶公式算布料，打孔按倍数法算布料，默认选择 2 倍」──
+  it('#4527 韩褶 ⇒ 褶数法（pleat）+ s_hook', () => {
     const params = craftCalcParamsOf(line({ craft: { craft: '韩褶' } }))
     expect(params).toMatchObject({
       craft: '韩褶',

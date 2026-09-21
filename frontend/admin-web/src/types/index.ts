@@ -1150,7 +1150,7 @@ export interface OperationLayers {
  * （引擎改默认、页面还显示旧值 ⇒ 商家按错的口径改配置）。
  */
 export interface CraftCalcConfig {
-  /** 单色每折吃布（米）—— 折数法：用料 = 每折吃布 × 折数 + 余量 */
+  /** 单色每折吃布（米）—— 褶数法：用料 = 每折吃布 × 褶数 + 余量 */
   per_fold_single: number
   /** 拼色「拼次 → 每折吃布（米）」；键是拼次的字符串形态（JSON 对象键恒为字符串） */
   per_fold_mixed_times: Record<string, number>
@@ -1162,7 +1162,7 @@ export interface CraftCalcConfig {
   min_fullness: number
   /** 工艺档位 `{档位名: {fullness, label}}` */
   tiers: Record<string, { fullness: number; label?: string }>
-  /** 兜底用料公式：`pleat` 韩折公式（折数法）/ `fullness` 褶倍数公式（倍数法） */
+  /** 兜底用料公式：`pleat` 韩褶公式（褶数法）/ `fullness` 褶倍数公式（倍数法） */
   default_formula: string
   /** 定宽买高上下卷边（米） */
   side_margin: number

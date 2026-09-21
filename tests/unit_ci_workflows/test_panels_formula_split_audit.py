@@ -9,7 +9,7 @@
 |---|---|---|---|
 | **A 米宝下单通路** | `calculate_fabric_meters()` 定宽分支 | `ceil((W + side_margin) × N / G)` | **含** |
 | **B1 试算通路（倍数法）** | `build_quote()` 的 `formula='fullness'` 分支 | `ceil(ceil_to_step(W × N, 0.1) / G)` | 不含（且**多一道 `ceil_to_step`**） |
-| **B2 试算通路（折数法）** | `build_quote()` 的 `pleat_mode` 分支 | `ceil(折数法总用料 / G)` | 不含 |
+| **B2 试算通路（褶数法）** | `build_quote()` 的 `pleat_mode` 分支 | `ceil(褶数法总用料 / G)` | 不含 |
 
 A 与 B1/B2 都在**给商家算料**（米宝下单 vs 商家手工下单页试算）⇒ **同一张单两个答案**；
 差 1 幅 = 差整整一幅长（`H + HEM_MARGIN`）⇒ 面料费 + 加工费同幅变化（**涉钱**）。
@@ -63,7 +63,7 @@ MIN_ROWS = 6
 FORMULA_STRINGS = (
     "ceil((宽 + side_margin) × 褶倍 ÷ 门幅)",
     "ceil(ceil_to_step(宽 × 褶倍, 0.1) ÷ 门幅)",
-    "ceil(折数法总用料 ÷ 门幅)",
+    "ceil(褶数法总用料 ÷ 门幅)",
 )
 
 

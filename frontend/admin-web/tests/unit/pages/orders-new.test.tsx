@@ -830,11 +830,11 @@ describe('NewOrderPage', () => {
 
       expect(mainInfo.componentRole).toBe('主布')
       expect(edgeInfo.componentRole).toBe('配布边')
-      // 两行同组键 ⇒ 消费端合并为一扇窗的一个部位（否则折数/开数/工序/计件全翻倍）
+      // 两行同组键 ⇒ 消费端合并为一扇窗的一个部位（否则褶数/开数/工序/计件全翻倍）
       expect(edgeInfo.craftLineId).toBe(mainInfo.craftLineId)
       expect(mainInfo.craftLineId).toBeTruthy()
       expect(edgeInfo.metersSource).toBe('跟随主布')
-      // 配布边行不携带工艺规格（折数/开数/幅数是一扇窗的属性）
+      // 配布边行不携带工艺规格（褶数/开数/幅数是一扇窗的属性）
       expect(edgeInfo).not.toHaveProperty('craft')
       expect(edgeInfo).not.toHaveProperty('openCount')
     })
@@ -1103,8 +1103,8 @@ describe('NewOrderPage', () => {
       // ⚠️ issue #4874：**褶距控件与默认值都退场**（红证：改前这里有 `褶距` 输入框、值为 0.125）
       expect(screen.queryByLabelText('褶距')).toBeNull()
       expect(screen.queryByText('褶距')).toBeNull()
-      // 替换位 = **用料公式 chips**（默认 = 算料配置的 `default_formula` = pleat）+ **折数展示**
-      expect(checked('用料公式')).toEqual(['韩折公式（折数法）'])
+      // 替换位 = **用料公式 chips**（默认 = 算料配置的 `default_formula` = pleat）+ **褶数展示**
+      expect(checked('用料公式')).toEqual(['韩褶公式（褶数法）'])
       expect(
         within(screen.getByTestId('craft-pleat-count')).getByText('—')
       ).toBeInTheDocument()
@@ -1860,12 +1860,12 @@ describe('NewOrderPage', () => {
       expect(screen.getByRole('button', { name: '加铅块' })).toBeInTheDocument()
     })
 
-    it('判据 ⑤（红证）：选韩折公式 ⇒ 展示**自动算出的折数**；本文件试算桩永不返回 ⇒ 「—」（不编数）', async () => {
+    it('判据 ⑤（红证）：选韩褶公式 ⇒ 展示**自动算出的褶数**；本文件试算桩永不返回 ⇒ 「—」（不编数）', async () => {
       await setupCurtain()
       openWizardStep('尺寸与数量')
-      // 默认公式 = 算料配置 `default_formula`（pleat）⇒ chips 选中「韩折公式（折数法）」
-      expect(formulaRadio('韩折公式（折数法）')).toHaveAttribute('aria-checked', 'true')
-      // 红证：改前页面**没有**用料公式控件、也没有折数展示块 ⇒ 下面这行必红
+      // 默认公式 = 算料配置 `default_formula`（pleat）⇒ chips 选中「韩褶公式（褶数法）」
+      expect(formulaRadio('韩褶公式（褶数法）')).toHaveAttribute('aria-checked', 'true')
+      // 红证：改前页面**没有**用料公式控件、也没有褶数展示块 ⇒ 下面这行必红
       expect(
         within(screen.getByTestId('craft-pleat-count')).getByText('—')
       ).toBeInTheDocument()
@@ -1882,7 +1882,7 @@ describe('NewOrderPage', () => {
           .getAllByRole('radio')
           .map((r) => r.textContent)
       ).toEqual(['标准档（2.0倍）', '经济档（1.8倍）'])
-      // 折数块只在韩折公式下出现
+      // 褶数块只在韩褶公式下出现
       expect(screen.queryByTestId('craft-pleat-count')).toBeNull()
     })
 
@@ -1905,14 +1905,14 @@ describe('NewOrderPage', () => {
       expect(info.formula).toBe('fullness')
     })
 
-    it('判据 ③（不静默）：算料配置读不到 ⇒ 显式提示「配置未加载」+ 按缺省（韩折公式 + 标准档）走', async () => {
+    it('判据 ③（不静默）：算料配置读不到 ⇒ 显式提示「配置未加载」+ 按缺省（韩褶公式 + 标准档）走', async () => {
       mockGetCraftCalcConfig.mockRejectedValue(new Error('boom'))
       await setupCurtain()
       // 显式提示（红证：改前没有这个提示元素 —— 配置读不到时页面**静默**按钉死的档位算）
       expect(await screen.findByTestId('craft-calc-config-missing')).toBeInTheDocument()
       openWizardStep('尺寸与数量')
       // 公式值域不依赖配置（常量与引擎同源）⇒ chips 仍在，缺省 = pleat
-      expect(formulaRadio('韩折公式（折数法）')).toHaveAttribute('aria-checked', 'true')
+      expect(formulaRadio('韩褶公式（褶数法）')).toHaveAttribute('aria-checked', 'true')
       // 档位**值域取不到** ⇒ 不渲染档位 chips（编一套 = 第二份档位真值）
       expect(screen.queryByTestId('craft-tier-options')).toBeNull()
 

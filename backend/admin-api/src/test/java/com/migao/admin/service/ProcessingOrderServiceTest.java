@@ -2163,7 +2163,7 @@ class ProcessingOrderServiceTest {
         var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isTrue();
-        // 一个部位 ⇒ 算料只被问一个部位（否则折数/开数按「两扇窗」各算一次 = 双算）
+        // 一个部位 ⇒ 算料只被问一个部位（否则褶数/开数按「两扇窗」各算一次 = 双算）
         ArgumentCaptor<List<Map<String, Object>>> reqCaptor = ArgumentCaptor.forClass(List.class);
         verify(productionOperationQtyClient).resolve(reqCaptor.capture());
         assertThat(reqCaptor.getValue()).as("一扇窗 = 一个部位（主布 + 配布边 合并）").hasSize(1);
@@ -3409,7 +3409,7 @@ class ProcessingOrderServiceTest {
     // 必须是 `formulaText`。若直接用键族名取值 ⇒ 恒取不到（静默缺行，判据 1 必红）。
 
     private static final String FORMULA_TEXT =
-            "韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米";
+            "韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米";
 
     /** 下单落库形态：`processing_info` 顶层 **camelCase** `formulaText`。 */
     @SuppressWarnings("unchecked")
@@ -3599,7 +3599,7 @@ class ProcessingOrderServiceTest {
                 .isEqualByComparingTo(CALC_FABRIC_METERS);
         assertThat(operations.get(0).get("qty_source")).isEqualTo("fabric_meters");
         assertThat((BigDecimal) operations.get(2).get("qty"))
-                .as("折类 = 折数（走查实测的红证形态：韩褶-布 曾显示 3 折）")
+                .as("折类 = 褶数（走查实测的红证形态：韩褶-布 曾显示 3 折）")
                 .isEqualByComparingTo(CALC_PLEAT_COUNT);
         assertThat(operations.get(2).get("qty_source")).isEqualTo("pleat_count");
         // 🔴 issue #4937 / O4：`打包` 进路线后**位次后移一位** —— `打包` 在 9、`外帘装袋` 在 10

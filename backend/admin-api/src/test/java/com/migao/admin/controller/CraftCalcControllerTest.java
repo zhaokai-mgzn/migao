@@ -61,7 +61,7 @@ class CraftCalcControllerTest extends BaseControllerTest {
                 new BigDecimal("13.3"), 52, 26, new BigDecimal("0.25"),
                 new BigDecimal("2.0"), new BigDecimal("2.02"),
                 "fixed_height_pleats",
-                "韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米",
+                "韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米",
                 "formula", "standard", "");
     }
 
@@ -93,7 +93,7 @@ class CraftCalcControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.fullness_actual").value(2.02))
                 .andExpect(jsonPath("$.data.source").value("formula"))
                 .andExpect(jsonPath("$.data.formula_text")
-                        .value("韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米"));
+                        .value("韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米"));
     }
 
     @Test

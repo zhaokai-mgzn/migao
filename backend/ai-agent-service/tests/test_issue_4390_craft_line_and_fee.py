@@ -14,7 +14,7 @@
 而工具描述原先教的是「配布边行带 `craftLineId=主布行的行标识`」—— 行 id 要**落库后**才有，
 下单前拿不到 ⇒ 主布行的组键是它自己的 `itemId`，配布边行写什么都对不上 ⇒
 **结构上永远绑不上组**，且后果**静默**：配布边行不被吸收 ⇒ 一扇窗被算成两扇
-（折数/开数/工序/计件全部翻倍；`ProcessingFeeCalculator.windowKey` 的樘窗级去重同时失效
+（褶数/开数/工序/计件全部翻倍；`ProcessingFeeCalculator.windowKey` 的樘窗级去重同时失效
 ⇒ 同樘窗同名 `specialOptions` 会被收两次）。
 
 **权威写侧口径**（不是我自造的）：`frontend/admin-web/src/lib/order-craft-fields.ts` 的

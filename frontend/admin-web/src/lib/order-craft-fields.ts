@@ -221,9 +221,9 @@ export interface CraftSpecInput {
   /** 是否定型（#4566：由「定型」加工项的勾选态派生；目录无该项 ⇒ `undefined`） */
   isShaped?: boolean
   /**
-   * **用料公式**（issue #4874，用户 2026-09-21：「加上用料公式字段，如果选择韩折公式，
-   * 那就自动算出折数，如果选择的是褶倍数公式，那就展示是经济档还是标准档」）：
-   * `pleat` 韩折公式（折数法）/ `fullness` 褶倍数公式（倍数法）。
+   * **用料公式**（issue #4874，用户 2026-09-21：「加上用料公式字段，如果选择韩褶公式，
+   * 那就自动算出褶数，如果选择的是褶倍数公式，那就展示是经济档还是标准档」）：
+   * `pleat` 韩褶公式（褶数法）/ `fullness` 褶倍数公式（倍数法）。
    *
    * ⚠️ 值域 = `lib/craft-calc-request.ts` 的 `CRAFT_CALC_FORMULAS`（与算料引擎
    * `curtain_calc.FORMULA_LABELS` 同源，由 `craft-calc-formula-sync.test.ts` 逐值守）——
@@ -235,7 +235,7 @@ export interface CraftSpecInput {
    * ⇒ 新字段若不落库，订单行就不再自描述「这单按哪个公式算的料」，只能靠人读 `formulaText`
    * 那段散文串反推（本仓明令禁止「从散文里猜语义」）。
    * ⚠️ **不新增 DB 列**（`OrderLineCraftFields.materialize` 不映射它）：它进 `processingInfo`
-   * JSONB，不进加工单快照白名单 —— 折数 / 米数由算料输出键承担
+   * JSONB，不进加工单快照白名单 —— 褶数 / 米数由算料输出键承担
    * （契约登记：`docs/wiki/CONTRACT-LEDGER.md` 的「下单行要素」行）。
    */
   formula?: string
@@ -338,7 +338,7 @@ export function buildMainLineGroupKeys(lineId: string): Record<string, unknown> 
 /**
  * 配布边行的工艺键（§4.8）：`componentRole=配布边` + `craftLineId`（指向主布行）+ `metersSource`。
  *
- * **刻意不携带工艺规格**：折数 / 开数 / 幅数是一扇窗的属性，不是每块布的属性 ——
+ * **刻意不携带工艺规格**：褶数 / 开数 / 幅数是一扇窗的属性，不是每块布的属性 ——
  * 两行都带 ⇒ 加工单生成两个部位 ⇒ 工序与计件翻倍、用料双算。
  */
 export function buildEdgeLineCraftSpec(

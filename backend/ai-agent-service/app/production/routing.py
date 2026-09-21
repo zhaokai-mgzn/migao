@@ -244,7 +244,7 @@ START_MARKER_OPS = {"精裁-布", "精裁-纱"}  # 首工序触发订单进入�
 # 本常量是「_qty_for 会读哪些键」的单一清单，测试用它把两侧键集钉住
 # （引擎真产出键集 ⊇ 各 unit 的主键，或显式登记为待补键）。
 METER_KEYS = ("fabric_meters", "meters")   # 主键 = 引擎真产出；`meters` 为兼容位（同族工具聚合视图口径）
-FOLD_KEYS = ("pleat_count",)               # 韩褶折数法才产出；非折数法（定宽米数法）缺失 ⇒ 兜底 1
+FOLD_KEYS = ("pleat_count",)               # 韩褶褶数法才产出；非褶数法（定宽米数法）缺失 ⇒ 兜底 1
 HOLE_KEYS = ("holes",)                     # 引擎暂未产出 ⇒ 按 HOLE_PER_METER 估算（见 _qty_for）
 PANEL_KEYS = ("panels",)                   # 引擎暂未产出（build_quote 内部局部量）⇒ 兜底 1，待补
 SET_KEYS = ("set_count",)                  # 引擎暂未产出 ⇒ 兜底 1（一个部位 = 一樘，语义成立）
@@ -294,7 +294,7 @@ HOLE_ESTIMATE_SUFFIX = f"_x{HOLE_PER_METER}"
 
 
 def _qty_for(operation: str, calc_info: Dict[str, Any]) -> float:
-    """应做数量 = 算料引擎输出（折数/用料/孔数/幅数/套数），报工只确认不心算。
+    """应做数量 = 算料引擎输出（褶数/用料/孔数/幅数/套数），报工只确认不心算。
 
     键口径见模块常量（{@link METER_KEYS} 等）；缺键**一律兜底 1**，绝不落 0
     （应做 0 会让 `done_qty ≥ qty` 恒真 ⇒ 工序一开始就算完成 ⇒ 假完工，同族缺陷）。

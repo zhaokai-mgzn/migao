@@ -1,7 +1,7 @@
-"""算料试算内部端点（issue #4421）—— 折数法（标准档）单一真值 + 可读公式串。
+"""算料试算内部端点（issue #4421）—— 褶数法（标准档）单一真值 + 可读公式串。
 
 背景（用户 2026-09-19 裁定）：商家手工下单页**零算料通路** —— 数量/米数靠商家手填。
-用户裁定用料米数按**折数法（标准档）**：`宽 × 倍数 → 折数（按开数取整）→ 0.25×折数 + 余量`。
+用户裁定用料米数按**褶数法（标准档）**：`宽 × 倍数 → 褶数（按开数取整）→ 0.25×褶数 + 余量`。
 本端点是「商家手工下单页试算」的后端入口，形态照既有先例
 `POST /api/internal/production/operation-qty`（Service Token 认证 + `make_response` 外壳）。
 
@@ -37,7 +37,7 @@ from app.tools import curtain_calc
 ENDPOINT = "/api/internal/production/craft-calc"
 
 # 冻结样例（issue #4421 判据）：6.6m 窗 / 2.5m 高 / 双开 / 韩褶 / 标准档。
-# 窗高 2.5m ⇒ 成品高 + 卷边 2.8 ≤ 门幅 3.2 ⇒ 走**折数法本式**（`0.25×折数+余量`），
+# 窗高 2.5m ⇒ 成品高 + 卷边 2.8 ≤ 门幅 3.2 ⇒ 走**褶数法本式**（`0.25×褶数+余量`），
 # 与 issue 里的 `13.3 米` 同口径（高 > 门幅上限时会转定宽买高，另见 TestFixedWidthFallback）。
 FROZEN = {"width": 6.6, "height": 2.5, "open_count": 2, "mounting": "s_hook", "craft_tier": "standard"}
 
@@ -85,9 +85,9 @@ def _data(client, payload):
 # 本类只锚**已落码**的两列（单开/对开），拼色两列如实登记为边界（见文件末）。
 # ══════════════════════════════════════════════════════════════════════════
 
-# 纸表「单开·下料」列（余量 0.2）：(折数, 下料米数)
+# 纸表「单开·下料」列（余量 0.2）：(褶数, 下料米数)
 PAPER_SINGLE = [(4, 1.2), (10, 2.7), (20, 5.2), (28, 7.2), (36, 9.2), (40, 10.2)]
-# 纸表「对开·下料」列（余量 0.3）：(折数, 下料米数)
+# 纸表「对开·下料」列（余量 0.3）：(褶数, 下料米数)
 PAPER_MULTI = [(8, 2.3), (16, 4.3), (24, 6.3), (32, 8.3), (40, 10.3), (48, 12.3), (52, 13.3), (56, 14.3)]
 
 
@@ -123,7 +123,7 @@ class TestPaperTableReproduction:
         assert actual == meters
 
     def test_margin_switch_is_the_only_difference(self):
-        """同一折数下「单开 vs 对开」只差 0.1 米（余量 0.2 vs 0.3）——余量口径的判别性断言。"""
+        """同一褶数下「单开 vs 对开」只差 0.1 米（余量 0.2 vs 0.3）——余量口径的判别性断言。"""
         single, _, _ = curtain_calc.calculate_fabric_by_pleats(40, open_count=1)
         multi, _, _ = curtain_calc.calculate_fabric_by_pleats(40, open_count=2)
         assert single == 10.2 and multi == 10.3
@@ -163,7 +163,7 @@ class TestMixedColorPerFold:
 
     @pytest.mark.parametrize("option,per_fold", sorted(MIXED_PER_FOLD.items()))
     def test_mixed_uses_its_own_per_fold(self, option, per_fold):
-        """拼色 ⇒ 用料 = 系数 × 折数 + 余量（余量与单色同一套）。"""
+        """拼色 ⇒ 用料 = 系数 × 褶数 + 余量（余量与单色同一套）。"""
         meters, _, info = curtain_calc.calculate_fabric_by_pleats(
             52, open_count=2, per_fold=per_fold)
         assert meters == round(per_fold * 52 + 0.3, 2)
@@ -189,8 +189,8 @@ class TestMixedColorPerFold:
     def test_single_open_margin_still_point_two_for_mixed(self, client):
         """单开余量仍为 0.2（防「顺手统一余量」）。
 
-        实测口径（**代码事实，写死**）：宽 2.0m 单开标准档 ⇒ 折数 = round((2.0×2.0−0.2)/0.25) = **15 折**
-        （折数按**单色每折吃布** 0.25 反算，与拼色系数无关 —— issue #4421 既有口径），
+        实测口径（**代码事实，写死**）：宽 2.0m 单开标准档 ⇒ 褶数 = round((2.0×2.0−0.2)/0.25) = **15 折**
+        （褶数按**单色每折吃布** 0.25 反算，与拼色系数无关 —— issue #4421 既有口径），
         用料 = 0.65×15 + 0.2 = **10.0 米**。
         原断言写的是 `round(0.65×pleat_count+0.2, 2)`（自指、永不判红），本次改为**写死期望值**
         （issue #4527 判据纪律：期望值不得从实现推导）。
@@ -292,7 +292,7 @@ class TestFrozenSample:
         assert data["craft_tier"] == "standard"
 
     def test_frozen_sample_matches_engine(self):
-        """冻结样例的推导链逐段核（不经过 HTTP）：倍数 2.0 → 折数 52 → 用料 13.3。"""
+        """冻结样例的推导链逐段核（不经过 HTTP）：倍数 2.0 → 褶数 52 → 用料 13.3。"""
         pleats, warning = curtain_calc.derive_pleat_count(6.6, 2.0, open_count=2)
         assert pleats == 52 and warning == ""
         meters, _, _ = curtain_calc.calculate_fabric_by_pleats(pleats, open_count=2)
@@ -335,12 +335,12 @@ class TestSingleSourceOfTruth:
     def test_formula_text_is_derived_from_same_numbers(self, client):
         """`formula_text` 必须由**同一份**数字产出（后端产出，前端不得自拼）。
 
-        判别性：把折数或余量换成别的数（哪怕只差 1 折 / 0.1 米）⇒ 本条红。
+        判别性：把褶数或余量换成别的数（哪怕只差 1 折 / 0.1 米）⇒ 本条红。
         倍数按 `:g` 渲染（2.0 → `2`），数字本身与 `data["fullness"]` 同源。
-        issue #4527 判据 4：串首**明确写出所用公式**（`韩折公式：`）—— 静默走另一支 ⇒ 红。
+        issue #4527 判据 4：串首**明确写出所用公式**（`韩褶公式：`）—— 静默走另一支 ⇒ 红。
         """
         data = _data(client, FROZEN)
-        assert data["formula_text"] == "韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米"
+        assert data["formula_text"] == "韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米"
         assert data["fullness"] == 2.0
 
     def test_formula_text_reflects_single_open_margin(self, client):
@@ -374,14 +374,14 @@ class TestSingleSourceOfTruth:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# issue #4527：公式选择（`formula`）透传 + 默认韩折公式 + 公式串写明所用公式
+# issue #4527：公式选择（`formula`）透传 + 默认韩褶公式 + 公式串写明所用公式
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestFormulaSelectionEndpoint:
-    """`formula` 入参由 admin-api（`CraftCalcClient`）原样透传；缺省 ⇒ 配置默认（韩折公式）。
+    """`formula` 入参由 admin-api（`CraftCalcClient`）原样透传；缺省 ⇒ 配置默认（韩褶公式）。
 
     ERP 实证锚点（#4343 取证，加工单 `CSO260915-02615`）：5.5m / 双开 / 2.00 倍 ⇒ **11.00 米**。
-    红证（实现前）：端点不认 `formula` ⇒ 请求体多出的键被 Pydantic 忽略 ⇒ 仍走折数法（11.3 米）⇒ 红。
+    红证（实现前）：端点不认 `formula` ⇒ 请求体多出的键被 Pydantic 忽略 ⇒ 仍走褶数法（11.3 米）⇒ 红。
     """
 
     def test_fullness_formula_matches_erp_anchor(self, client):
@@ -392,9 +392,9 @@ class TestFormulaSelectionEndpoint:
         assert data["formula_used"] == "fixed_height_fullness"
 
     def test_default_formula_is_pleat_and_is_named(self, client):
-        """不传 `formula` ⇒ 韩折公式，且 `formula_text` **明确写出所用公式**（静默走另一支 ⇒ 红）。"""
+        """不传 `formula` ⇒ 韩褶公式，且 `formula_text` **明确写出所用公式**（静默走另一支 ⇒ 红）。"""
         data = _data(client, FROZEN)
-        assert data["formula_text"].startswith("韩折公式：")
+        assert data["formula_text"].startswith("韩褶公式：")
         assert data["fabric_meters"] == 13.3
 
     def test_fullness_is_independent_of_open_count(self, client):
@@ -410,11 +410,11 @@ class TestFormulaSelectionEndpoint:
         assert "CRAFT_CALC_INVALID_INPUT" in resp.text
         assert "formula" in resp.text
 
-    # ── 追加裁定（用户 2026-09-19）：「韩折用韩折公式算布料，打孔按倍数法算布料，默认选择 2 倍」──
+    # ── 追加裁定（用户 2026-09-19）：「韩折用韩褶公式算布料，打孔按倍数法算布料，默认选择 2 倍」──
     # ⇒ 公式**由工艺推导**；`formula` 入参保留为显式覆盖。端点只透传 `craft`，推导表在算料引擎。
 
     def test_craft_hole_punch_derives_fullness_formula(self, client):
-        """打孔 ⇒ 褶倍数公式 + 默认 2 倍 ⇒ 5.5m × 2.0 = 11.0 米（走折数法 ⇒ 11.3 ⇒ 红）。"""
+        """打孔 ⇒ 褶倍数公式 + 默认 2 倍 ⇒ 5.5m × 2.0 = 11.0 米（走褶数法 ⇒ 11.3 ⇒ 红）。"""
         data = _data(client, {"width": 5.5, "height": 2.5, "open_count": 2,
                               "mounting": "eyelet", "craft": "打孔"})
         assert data["fabric_meters"] == 11.0
@@ -423,12 +423,12 @@ class TestFormulaSelectionEndpoint:
         assert data["pleat_count"] is None
 
     def test_craft_s_hook_derives_pleat_formula(self, client):
-        """韩褶 ⇒ 折数法（不显式传 mounting 也成立：推导表把韩褶映射到 s_hook）。"""
+        """韩褶 ⇒ 褶数法（不显式传 mounting 也成立：推导表把韩褶映射到 s_hook）。"""
         data = _data(client, {"width": 6.6, "height": 2.5, "open_count": 2,
                               "mounting": "eyelet", "craft": "韩褶", "craft_tier": "standard"})
         assert data["pleat_count"] == 52
         assert data["fabric_meters"] == 13.3
-        assert data["formula_text"].startswith("韩折公式：")
+        assert data["formula_text"].startswith("韩褶公式：")
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -452,7 +452,7 @@ class TestResponseShape:
         assert set(body) == {"success", "data", "requestId", "timestamp"}
 
     def test_source_is_formula_by_default(self, client):
-        """取值来源标记（真值源 §8「折数/用料必须带来源」）：默认 `formula`。"""
+        """取值来源标记（真值源 §8「褶数/用料必须带来源」）：默认 `formula`。"""
         assert _data(client, FROZEN)["source"] == "formula"
 
     def test_fullness_is_theoretical_and_fullness_actual_is_derived(self, client):
@@ -485,12 +485,12 @@ class TestFixedWidthFallback:
     def test_tall_window_switches_formula_and_warns(self, client):
         data = _data(client, {**FROZEN, "height": 3.0})
         assert data["formula_used"] == "fixed_width_pleats"
-        assert data["pleat_count"] == 52          # 折数不变（折数只由宽 × 倍数决定）
+        assert data["pleat_count"] == 52          # 褶数不变（褶数只由宽 × 倍数决定）
         assert data["fabric_meters"] == 16.5      # ceil(13.3/3.2)=5 幅 × (3.0+0.3) = 16.5
         assert "定高上限" in data["warning"]
 
     def test_formula_text_still_carries_real_numbers(self, client):
-        """换算式后公式串仍必须与**回传的**米数/折数一致（不得写死本式的 13.3）。"""
+        """换算式后公式串仍必须与**回传的**米数/褶数一致（不得写死本式的 13.3）。"""
         data = _data(client, {**FROZEN, "height": 3.0})
         assert f"= {data['fabric_meters']}米" in data["formula_text"]
         assert f"{data['pleat_count']}折" in data["formula_text"]
@@ -518,8 +518,8 @@ class TestAuthAndValidation:
         assert _post(client, {**FROZEN, "open_count": 0}).status_code == 422
 
     def test_open_count_must_divide_evenly_after_rounding(self, client):
-        """开数整除（真值源 §8）：对开总折数必须是偶数 —— 引擎取最近可行折数，
-        端点必须把**取整后**的折数与告警一并回传（不得静默丢告警）。"""
+        """开数整除（真值源 §8）：对开总褶数必须是偶数 —— 引擎取最近可行褶数，
+        端点必须把**取整后**的褶数与告警一并回传（不得静默丢告警）。"""
         data = _data(client, {**FROZEN, "open_count": 4})
         assert data["pleat_count"] % 4 == 0
         assert data["per_panel_pleats"] == data["pleat_count"] // 4

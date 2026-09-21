@@ -422,8 +422,8 @@ class TestCraftSpecKeyCompletion:
         [
             ({"patternRepeat": -0.5}, "花距"),
             ({"fabric_meters": -1}, "面料米数"),
-            ({"pleat_count": -48}, "折数"),
-            ({"per_panel_pleats": -24}, "每片折数"),
+            ({"pleat_count": -48}, "褶数"),
+            ({"per_panel_pleats": -24}, "每片褶数"),
             ({"panels": -2}, "幅数"),
             ({"fullness": -2.0}, "理论褶倍"),
             ({"fullness_actual": -1.8}, "实际褶倍"),

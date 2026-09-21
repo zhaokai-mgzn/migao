@@ -24,7 +24,7 @@
  * ① **褶距控件整体删除**（「移除订单的工艺规格中的褶距字段」）⇒ 本文件原「褶距输入 ⇒ pleatSpacing
  *    数字 / 清空 ⇒ undefined」与「默认档里褶距 0.125 可见可改」两条判据**改判为反向断言**
  *    （控件不存在），**不是删断言**：写侧的键退场判据在 `lib/order-craft-fields.test.ts` 的 #4874 组。
- * ② **新增「用料公式」chips**（`pleat` / `fullness`）+ **折数展示 / 档位 chips**：
+ * ② **新增「用料公式」chips**（`pleat` / `fullness`）+ **褶数展示 / 档位 chips**：
  *    值域 = `lib/craft-calc-request.ts` 的 `CRAFT_CALC_FORMULAS`；档位的**值域与文案都取自
  *    算料配置**（`tiers` 的键 / `tiers[key].label`）—— 本文件用**与键名不同字**的 label 做红证。
  * ③ **纱帘子块整体删除**（`布帘+纱帘` 档已移除）⇒ 原「含纱帘才出纱帘米数/单价」一族判据改判为
@@ -127,9 +127,9 @@ describe('OrderCraftFields', () => {
   })
 
   // ── issue #4874 ②：用料公式 chips（值域与算料引擎同源，文案只有一份）────────────────
-  it('#4874 用料公式 chips 逐字 = 韩折公式（折数法）/ 褶倍数公式（倍数法）', () => {
+  it('#4874 用料公式 chips 逐字 = 韩褶公式（褶数法）/ 褶倍数公式（倍数法）', () => {
     render(<Harness />)
-    expect(chipLabels('用料公式')).toEqual(['韩折公式（折数法）', '褶倍数公式（倍数法）'])
+    expect(chipLabels('用料公式')).toEqual(['韩褶公式（褶数法）', '褶倍数公式（倍数法）'])
   })
 
   it('#4874 选用料公式 ⇒ onChange 收到 `formula`（值域 = pleat / fullness）', () => {
@@ -139,10 +139,10 @@ describe('OrderCraftFields', () => {
     expect(spy).toHaveBeenCalledWith({ formula: 'fullness' })
   })
 
-  // ── issue #4874 ③：选韩折公式 ⇒ 展示**自动算出的折数**（试算响应 `pleat_count`）──────
-  // 没结果展示「—」：**不编数**（编一个折数 = 第二份算料逻辑）。默认公式 = 算料配置的
+  // ── issue #4874 ③：选韩褶公式 ⇒ 展示**自动算出的褶数**（试算响应 `pleat_count`）──────
+  // 没结果展示「—」：**不编数**（编一个褶数 = 第二份算料逻辑）。默认公式 = 算料配置的
   // `default_formula`（本 fixture = pleat）⇒ 块默认就在。
-  it('#4874 韩折公式 ⇒ 展示折数（有结果显数字；无结果显示「—」，不编数）', () => {
+  it('#4874 韩褶公式 ⇒ 展示褶数（有结果显数字；无结果显示「—」，不编数）', () => {
     const { unmount } = render(<Harness pleatCount={52} />)
     expect(within(screen.getByTestId('craft-pleat-count')).getByText('52')).toBeInTheDocument()
     unmount()
@@ -151,7 +151,7 @@ describe('OrderCraftFields', () => {
     expect(within(screen.getByTestId('craft-pleat-count')).getByText('—')).toBeInTheDocument()
   })
 
-  it('#4874 选褶倍数公式 ⇒ **不**展示折数块，改为展示档位 chips', () => {
+  it('#4874 选褶倍数公式 ⇒ **不**展示褶数块，改为展示档位 chips', () => {
     render(<Harness pleatCount={52} />)
     fireEvent.click(chip('用料公式', '褶倍数公式（倍数法）'))
     expect(screen.queryByTestId('craft-pleat-count')).toBeNull()

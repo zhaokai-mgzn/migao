@@ -67,9 +67,9 @@ class OperationQtyRequest(BaseModel):
 
 
 # 算料试算的引擎入参（issue #4421）：
-#   · 门幅 —— 折数法（定高买宽）**不消费**门幅，它只决定「成品高 + 卷边 > 门幅」时是否
+#   · 门幅 —— 褶数法（定高买宽）**不消费**门幅，它只决定「成品高 + 卷边 > 门幅」时是否
 #     转定宽买高；取 3.2m（宽幅定高布，与 issue #4118 ⑤-B 实测的同一扇窗 6.6m/2.6m 同口径）
-#     ⇒ 常规层高走折数法本式 `0.25×折数+余量`，正是本单要交付的那个数。
+#     ⇒ 常规层高走褶数法本式 `0.25×褶数+余量`，正是本单要交付的那个数。
 #     门幅**不入参**：商家手工下单页当前没有门幅字段，加了就是一个没有消费者的契约字段
 #     （后续按面料真实门幅接线的口径待裁定）。
 #   · 窗高缺省 2.5m（常见层高口径；**不传 ≠ 0**）。
@@ -80,15 +80,15 @@ _DEFAULT_HEIGHT = 2.5
 class CraftCalcRequest(BaseModel):
     """算料试算请求（issue #4421，商家手工下单页）
 
-    用料口径 = 用户 2026-09-19 裁定的**折数法（标准档）**：
-    `宽 × 倍数 → 折数（按开数取整）→ 每折吃布 × 折数 + 余量`。
+    用料口径 = 用户 2026-09-19 裁定的**褶数法（标准档）**：
+    `宽 × 倍数 → 褶数（按开数取整）→ 每折吃布 × 褶数 + 余量`。
     **每折吃布随款式/拼次变化**（同一次裁定，纸质速查表表头）：
     单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2 米每折；余量不随拼色变化（单开 0.2 / 多开 0.3）。
     """
     width: float = Field(..., gt=0, description="窗宽（米）")
     height: Optional[float] = Field(None, gt=0, description="窗高（米）；不传按 2.5m 常见层高处理")
     open_count: int = Field(1, ge=1, description="打开方式开数（1 单开 / 2 双开 / 4 四开）")
-    mounting: str = Field("s_hook", description="悬挂方式（s_hook 韩褶才走折数法）")
+    mounting: str = Field("s_hook", description="悬挂方式（s_hook 韩褶才走褶数法）")
     craft_tier: str = Field("standard", description="工艺档位（standard 2.0 / economy 1.8）")
     style: Optional[str] = Field(None, description="款式（单色 / 拼色）；拼色**必须**同时给拼次特殊选项才用料系数")
     special_options: List[str] = Field(
@@ -111,7 +111,7 @@ class CraftCalcRequest(BaseModel):
     formula: Optional[str] = Field(
         None,
         description=(
-            "用料计算方法（issue #4527，用户 2026-09-19 裁定）：pleat 韩折公式（折数法，**默认**）/ "
+            "用料计算方法（issue #4527，用户 2026-09-19 裁定）：pleat 韩褶公式（褶数法，**默认**）/ "
             "fullness 褶倍数公式（倍数法）。缺省由算料引擎的配置默认值给（本端点**不补默认值**，"
             "补默认值 = 第二份口径）；未知取值 ⇒ 400。"
         ),
@@ -119,9 +119,9 @@ class CraftCalcRequest(BaseModel):
     craft: Optional[str] = Field(
         None,
         description=(
-            "安装工艺（用户 2026-09-19 追加裁定「**韩折用韩折公式算布料，打孔按倍数法算布料**」）："
+            "安装工艺（用户 2026-09-19 追加裁定「**韩折用韩褶公式算布料，打孔按倍数法算布料**」）："
             "韩褶/打孔/四爪钩/穿杆/平幔。**公式由工艺推导**（唯一口径在算料引擎 `curtain_calc.resolve_craft_rule` + `CRAFT_S_HOOK`/`CRAFT_EYELET` 枚举常量）："
-            "韩褶 ⇒ 韩折公式、打孔 ⇒ 褶倍数公式（默认 2 倍）；本端点只透传，不复制推导表。"
+            "韩褶 ⇒ 韩褶公式、打孔 ⇒ 褶倍数公式（默认 2 倍）；本端点只透传，不复制推导表。"
         ),
     )
     config: Optional[Dict[str, Any]] = Field(
@@ -325,22 +325,22 @@ def _formula_text(
     width: float, fullness: float, pleat_count: int, open_count: int,
     meters: float, per_fold: float, margin: float,
 ) -> str:
-    """可读公式串（**折数法/韩折公式**）—— **后端产出**，与数值同源（issue #4421 交付物 1）。
+    """可读公式串（**褶数法/韩褶公式**）—— **后端产出**，与数值同源（issue #4421 交付物 1）。
 
-    形态：`韩折公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米`；
+    形态：`韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米`；
     拼色时系数如实换（`0.65×52+0.3 = 34.1米`）。
 
-    数字全部取自**同一次算料**：倍数/折数/每折吃布/余量来自引擎（`build_quote` 的
+    数字全部取自**同一次算料**：倍数/褶数/每折吃布/余量来自引擎（`build_quote` 的
     `fullness` / `pleat_count` / `per_fold` / `margin`）⇒ 公式串不可能与米数不一致；
     前端**不得**自拼（前端自拼 = 第二份算料逻辑）。
 
     ⚠️ issue #4527 起公式串由**算料引擎** `curtain_calc` 产出（`quote["formula_text"]`）——
     因为「公式名 + 逐片表达式」两种公式各不相同，端点自拼就是**第二份算料逻辑**。
-    本函数保留为**折数法**的兼容形态（本仓 `test_formula_text_is_derived_from_same_numbers`
+    本函数保留为**褶数法**的兼容形态（本仓 `test_formula_text_is_derived_from_same_numbers`
     等既有断言仍可直调它），端点实际返回的是引擎那一份。
     """
     return (
-        f"韩折公式：({width:g}+{margin:g})×{fullness:g} → {pleat_count:g}折 → "
+        f"韩褶公式：({width:g}+{margin:g})×{fullness:g} → {pleat_count:g}折 → "
         f"{per_fold:g}×{pleat_count:g}+{margin:g} = {meters:g}米"
     )
 
@@ -411,7 +411,7 @@ async def craft_calc(
     `formula_used` / `formula_text` / `source` / `craft_tier` / `warning`。
 
     fail-closed（三处，均**不静默**）：
-    ① `mounting` 非韩褶（折数法不适用）⇒ 400；
+    ① `mounting` 非韩褶（褶数法不适用）⇒ 400；
     ② 档位低于行业下限 ⇒ 400；
     ③ **拼色命中纸表未登记的拼次**（如 `拼3次`）⇒ 400 `MIXED_PER_FOLD_NOT_REGISTERED`
     —— 不插值、不退回单色系数（那是发明口径）。
@@ -470,10 +470,10 @@ async def craft_calc(
         ) from e
 
     if quote["formula"] == curtain_calc.FORMULA_PLEAT and "pleat_count" not in quote:
-        # 走到这里只有一种情形：**折数法**下 `mounting != s_hook`（引擎走了倍数法分支）
-        # ⇒ 本端点答不出折数法结果。**不静默回落**：如实报错，由调用方显式选韩褶。
+        # 走到这里只有一种情形：**褶数法**下 `mounting != s_hook`（引擎走了倍数法分支）
+        # ⇒ 本端点答不出褶数法结果。**不静默回落**：如实报错，由调用方显式选韩褶。
         # ⚠️ `formula='fullness'`（褶倍数公式）**是**合法的另一种用料计算方法（issue #4527）——
-        # 它本就不产出折数，不得被这条守卫当成「不走折数法」拒掉 ⇒ 只在**折数法**下判它。
+        # 它本就不产出褶数，不得被这条守卫当成「不走褶数法」拒掉 ⇒ 只在**褶数法**下判它。
         raise HTTPException(
             status_code=400,
             detail={
@@ -481,14 +481,14 @@ async def craft_calc(
                 "error": {
                     "code": "CRAFT_CALC_NOT_PLEAT_MODE",
                     "message": (
-                        f"悬挂方式 {request.mounting} 不走折数法（折数法仅在 mounting=s_hook 生效），"
-                        "无法给出折数/用料，请改用 s_hook 或显式传 formula=fullness（褶倍数公式）"
+                        f"悬挂方式 {request.mounting} 不走褶数法（褶数法仅在 mounting=s_hook 生效），"
+                        "无法给出褶数/用料，请改用 s_hook 或显式传 formula=fullness（褶倍数公式）"
                     ),
                 },
             },
         )
 
-    # 折数类字段（`pleat_count` / `per_panel_pleats` / `margin` / `per_fold`）**只有折数法产出**：
+    # 褶数类字段（`pleat_count` / `per_panel_pleats` / `margin` / `per_fold`）**只有褶数法产出**：
     # 褶倍数公式（`formula='fullness'`）本就不按折算 ⇒ 如实给 `None`（键恒在，前端判空），
     # **不发明** 0 / 1 冒充「0 折」——那是第二份口径（issue #4527 交付物 3 同族纪律）。
     data = {
