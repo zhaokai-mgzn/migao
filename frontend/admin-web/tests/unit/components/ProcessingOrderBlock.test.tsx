@@ -38,7 +38,6 @@ const poIssued = {
     {
       productName: '布艺遮光帘A',
       colorName: '米白',
-      doorWidth: '2.8米',
       sellingMethod: '散剪',
       width: 2.5,
       height: 2.8,
@@ -61,6 +60,8 @@ const poWithCraft = {
   items: [
     {
       ...poIssued.items[0],
+      // 门幅（issue #5022）：快照/订单层落的是 SKU 的 `doorWidth` 原串（存量有 '2.8米' / '2.8' 两形态）
+      doorWidth: '2.8米',
       curtainType: '布帘',
       craft: '韩褶',
       cuttingMode: '定高买宽',
@@ -218,10 +219,21 @@ describe('ProcessingOrderBlock', () => {
     const text = writeText.mock.calls[0][0] as string
     expect(text).toContain('工艺：韩褶')
     expect(text).toContain('加工类型：定高买宽')
+    // 门幅（issue #5022）：SKU 原串 '2.8米' 走同一份解析 ⇒ 复制文本里也带上（贴 Excel 不丢）
+    expect(text).toContain('门幅：2.8米')
     expect(text).toContain('打开方式：双开')
     expect(text).toContain('总褶数：52')
     expect(text).toContain('是否对花：是')
     expect(text).not.toMatch(/undefined|null|NaN/)
+  })
+
+  it('#5022：快照带 SKU 门幅 ⇒ 规格块渲染「门幅」行（加工单纸面看得到系统按几米算的）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poWithCraft } })
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+
+    const spec = await screen.findByTestId('po-item-craft-spec')
+    expect(within(spec).getByText('门幅')).toBeInTheDocument()
+    expect(within(spec).getByText('2.8米')).toBeInTheDocument()
   })
 
   it('缺值不渲染：存量单无工艺键 ⇒ 无规格块，复制文本也不出现 undefined/null/NaN（PG-019）', async () => {

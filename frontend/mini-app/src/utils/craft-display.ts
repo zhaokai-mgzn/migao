@@ -63,10 +63,18 @@ function numeric(value: unknown): number | null {
   return null
 }
 
-/** 长度（米）：`12.3米` */
+/**
+ * 长度（米）：`12.3米`。
+ *
+ * 单位后缀 `米` / `m` 可带可不带（`'3.2米'` / `'3.2'` / `3.2` ⇒ 同一份解析，都渲染 `3.2米`）——
+ * 门幅在**订单/快照层落的是 SKU 原串**（`product_skus.door_width`，存量两种形态都有：
+ * `'2.8米'` 与 `'2.8'`），而算料输出是**数字**（issue #5022）。
+ * 非数 / 残缺数（`'3.2.1'`）/ 非正数 ⇒ `null` ⇒ 该行不渲染（**不补默认值**）。
+ */
 function meters(value: unknown): string | null {
-  const n = numeric(value)
-  return n === null ? null : `${n}米`
+  const n =
+    typeof value === 'string' ? numeric(value.trim().replace(/\s*[米m]$/, '')) : numeric(value)
+  return n === null || n <= 0 ? null : `${n}米`
 }
 
 /** 倍数：`2 倍` */
@@ -179,6 +187,13 @@ const CRAFT_SPEC_FIELDS: CraftSpecField[] = [
   { label: '工艺', keys: ['craft'], format: plainText },
   // 加工类型：订单/快照层直存 `cuttingMode`；报价单只有 `formula_used`（§4.2 的真值来源）
   { label: '加工类型', keys: ['cuttingMode', 'cutting_mode', 'formula_used'], format: cuttingMode },
+  // 门幅（issue #5022）：顾客要看到「**系统按几米算的**」——用户 2026-09-19 对算料透明度的裁定
+  // 「C端也要能看到」（#4546）同样适用于门幅。两个别名都登记（camelCase 在前 = 本表约定）：
+  // 订单/快照层落的是 SKU 的 `doorWidth` 原串（'2.8米' / '2.8' 两种存量形态都有），
+  // 算料输出（`curtain_calc.build_quote`，#5013 起自动选中）是**数字** `door_width`（米）。
+  // 值走 `meters` 同一份解析（'3.2米' / '3.2' / 3.2 ⇒ 都渲染 `3.2米`）；
+  // 缺值 / 非数 / ≤0 ⇒ `null` ⇒ 该行不渲染（fail-closed，不补默认门幅 —— #4877 已删缺省门幅）。
+  { label: '门幅', keys: ['doorWidth', 'door_width'], format: meters },
   { label: '打开方式', keys: ['openCount', 'open_count'], format: openCount },
   { label: '是否定型', keys: ['isShaped', 'is_shaped'], format: yesNo },
   { label: '款式', keys: ['style'], format: plainText },
