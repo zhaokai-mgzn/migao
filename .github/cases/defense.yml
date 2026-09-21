@@ -759,11 +759,31 @@ cases:
       - "（长会话，>20 条消息）确认"
     expectations:
       - tool: product_manage
+    # ── 效果层 + 自清理 + 前置自断言（2026-09-23 case-trust burn-down 缴费，metric=entries
+    #    ⇒ 必须**整条销账**；先例 = CU-005 的 #5039 缴费）──
+    # ① 效果层（`must_succeed`）：「调用了 ≠ 成了」（#3778）—— 本用例的**被测对象正是确认守卫**：
+    #    会话长度提示一旦被拼进用户消息（长度 > 24），`_is_explicit_confirmation` 就**不认**它是确认
+    #    ⇒ 写工具**根本不会被调用** ⇒ 光有 `expectations[product_manage]` 时，报告上只表现为
+    #    `unmatched expectation`（看起来像「agent 不干活」），而真正的根因（守卫被污染）看不见。
+    #    加上它之后：「确认被识别 ⇒ 写真的执行了」这条因果链才有可失败判据。
+    must_succeed:
+      - tool: product_manage
+        action: update
+    # ② 自清理（`namespaces`，**如实登记为弱证据**）：taxonomy 明列的档位 —— 只保证并行互斥，
+    #    不解决重试前置。本用例的写目标是**共享夹具商品**，而夹具层**没有**商品属性域的复位动作
+    #    （`product_status_restore` 只管上下架状态、不管属性）⇒ 这里只能登记弱证据，不发明类型。
+    namespaces:
+      - "product_name:遮光窗帘"
+    # ③ 前置自断言（`preconditions`，**声明层散文**；`_PRECONDITION_TYPES` 无此类型 ⇒ 不发明类型，
+    #    口径同 CU-005 的 #5039 缴费）：本用例要走到「确认 ⇒ 执行」就必须先有一轮**提出补充属性**的
+    #    上下文，且目标商品在库里唯一可定位 —— 前置不成立时的表现是 `unmatched expectation`。
+    preconditions:
+      - "目标商品（种子夹具里的「遮光窗帘」）在库中可唯一定位；且会话中存在一轮「提出补充商品属性」的上下文，使第 2 轮的「确认」是对它的确认而非新指令"
     data_checks:
       - "会话消息数 >20 时最后一条用户消息content不被追加任何提示文本（无「当前对话已持续」字样）"
       - "长会话下确认词仍被 _is_explicit_confirmation 识别为明确确认（长度不超限）"
     skip_reason: ""
-    merge_log: "2026-09-08 新增：sess_c1fce183dae24f22 复盘 — SESSION_LENGTH_HINT 把会话长度提示拼入最新 HumanMessage，污染确认守卫判定（长度>24 无法识别为确认），商品属性补充确认死循环 4 轮"
+    merge_log: "2026-09-08 新增：sess_c1fce183dae24f22 复盘 — SESSION_LENGTH_HINT 把会话长度提示拼入最新 HumanMessage，污染确认守卫判定（长度>24 无法识别为确认），商品属性补充确认死循环 4 轮；2026-09-23（case-trust burn-down 缴费，metric=entries ⇒ 整条销账；先例 = CU-005 的 #5039 缴费）：补 `must_succeed[product_manage(action=update)]`（效果层：「调用了 ≠ 成了」—— 守卫被污染时写工具**根本不会被调用**，只表现为 unmatched expectation）+ `namespaces[product_name:遮光窗帘]`（弱证据，如实登记：夹具层无商品属性域复位动作）+ `preconditions`（声明层散文前置；`_PRECONDITION_TYPES` 无此类型 ⇒ 不发明类型）。`user_inputs` / `expectations` / 两条 `data_checks` / `skip_reason` / `traces` **一字未动**、断言强度不放宽"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_graph_skills.py"
