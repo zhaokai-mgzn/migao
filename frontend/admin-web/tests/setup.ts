@@ -137,6 +137,9 @@ vi.mock('lucide-react', () => ({
   RefreshCw: iconStub('refresh-cw'),
   MoreHorizontal: iconStub('more-horizontal'),
   Package: iconStub('package'),
+  // 入库单（V111，issue #5034）：页面用 PackageOpen（页头/菜单）、Ban（作废按钮）
+  PackageOpen: iconStub('package-open'),
+  Ban: iconStub('ban'),
   Ruler: iconStub('ruler'),
   Image: iconStub('image'),
   ArrowUpDown: iconStub('arrow-up-down'),

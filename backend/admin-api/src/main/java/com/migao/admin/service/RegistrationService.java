@@ -606,6 +606,9 @@ public class RegistrationService {
                 {"加工管理", "processing:manage", "processing", "manage", "管理加工项"},
                 {"加工单查看", "processing:view", "processing-order", "view", "查看加工单"},
                 {"加工单操作", "processing:update", "processing-order", "update", "生成/发加工/取消加工单"},
+                // 入库单（V111，issue #5034）：与 V111 迁移的存量租户权限补齐**同源同码**
+                {"入库单查看", "inbound:view", "inbound-order", "view", "查看入库单/批次"},
+                {"入库单操作", "inbound:create", "inbound-order", "create", "建单/过账/作废入库单"},
                 {"知识库管理", "knowledge:manage", "knowledge", "manage", "管理知识库"},
                 {"订单列表", "order:list", "order", "list", "查看订单列表"},
                 {"订单详情", "order:detail", "order", "detail", "查看订单详情"},
@@ -639,18 +642,18 @@ public class RegistrationService {
         attachDefaultPermissions(tenantId, adminRole, permissionByCode.keySet(), permissionByCode);
         attachDefaultPermissions(tenantId, csRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session",
-                "processing:view"), permissionByCode);
+                "processing:view", "inbound:view"), permissionByCode);
         attachDefaultPermissions(tenantId, operatorRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "order:refund",
                 "product:list", "product:create", "product:category", "processing:manage",
-                "processing:view", "processing:update",
+                "processing:view", "processing:update", "inbound:view", "inbound:create",
                 "customer:view", "finance:view", "agent:session", "employee:list"), permissionByCode);
         attachDefaultPermissions(tenantId, salesRole, List.of(
                 "dashboard:view", "product:list", "order:list", "order:detail", "customer:view",
-                "processing:view"), permissionByCode);
+                "processing:view", "inbound:view"), permissionByCode);
         attachDefaultPermissions(tenantId, financeRole, List.of(
                 "dashboard:view", "order:list", "order:detail", "finance:view",
-                "processing:view"), permissionByCode);
+                "processing:view", "inbound:view"), permissionByCode);
 
         log.info("新租户默认岗位和权限初始化完成: tenantId={}, roles=5, permissions={}", tenantId, defaultPermissions.length);
     }

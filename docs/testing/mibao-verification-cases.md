@@ -532,7 +532,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ tags: delete, destructive, confirm
 
-## 对话边界域（43 case）
+## 对话边界域（42 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -1146,23 +1146,10 @@
 数据: 人工覆盖选接高 ⇒ 按口径 A 算料：M = T + ceil(k / floor(g_eff/d_eff)) × Wp
 数据: 对花时每条加高条 +1 个花距（与倒幅「每幅 +1 花距」同口径）
 数据: 自动结果可人工覆盖，覆盖后按所选口径算料并给出对比
-跳过: [backend-contract] 本条**只**登记「候选集内怎么选门幅 / 怎么自动定加工类型」这一层**确定性纯计算**（curtain_calc 的 resolve_fabric_plan），由单元测试全量覆盖（test_curtain_calc_fabric_plan.py）⇒ 不进 agent-eval 冒烟（同 CH-036 惯例）。⚠️ 它**不覆盖**「模型会不会把 product_detail 的 SKU 门幅**去重**成候选集、填进 curtain_calc 的 fabric_widths」——那是**纯 LLM 行为**（确定性单测测不到，issue #5039），由 **CH-043** 覆盖（计分断言 = curtain_calc(fabric_widths=[2.8, 3.2])）。两条判据面不同、互不替代：本条管『给了候选集之后引擎算得对不对』，CH-043 管『模型给不给候选集』。
+跳过: [backend-contract] 门幅/加工类型自动选择是确定性纯计算（curtain_calc 的 resolve_fabric_plan），由单元测试全量覆盖（test_curtain_calc_fabric_plan.py），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）
 ```
 真值: ai-chat.intent-tool-map
-溯源: 2026-09-21 新增（issue #5013）：门幅与加工类型自动选择（候选集内选门幅 + 自动定高买宽/定宽买高 + 接高退人工覆盖）的引擎覆盖登记，单测覆盖。2026-09-21 改判（issue #5039）：`skip_reason` 措辞收窄 —— 原文「门幅/加工类型自动选择…非 LLM 行为」把**两件事**混成一件：引擎侧「怎么选」确是确定性计算（本条），但「模型会不会**填** `fabric_widths`」是纯 LLM 行为（本条测不到）⇒ 措辞明确本条只覆盖前者、后者由 CH-043 覆盖。**判据未放宽**：仍是 `[backend-contract]` 计分通道（`traces.tests` 非空且文件真实存在），断言面（expectations / data_checks）一字未动 ｜ tags: xiaobu, quote, curtain-calc, door-width
-
-### CH-043. 窗帘算料 - 顾客没指定门幅 ⇒ 模型把商品 SKU 的门幅去重成候选集填进 curtain_calc（LLM 填参行为） 🔵
-```
-你: 夏日清风窗帘这款，我家窗户 3 米宽、2.7 米高，帮我算算要多少布、多少钱？
-期望: curtain_calc(fabric_widths=[2.8, 3.2])
-数据: 候选集来源 = `product_detail` 的 SKU 列表**去重**（评测栈种子 `prod_eval_summer`「夏日清风窗帘」的米白色散剪 SKU 有 2.8 / 3.2 两门幅）——**不是**顾客说的、也**不是**默认值 2.8（真值 fabric-calc.fabric-widths-candidate）
-数据: 顾客**没指定**门幅 ⇒ 传候选集 `fabric_widths`，**不传**单值 `fabric_width`（#5016 口径：两者同时传时 `fabric_width` 被忽略）
-数据: 系统在候选集内自动选门幅（成品高 2.7 + 卷边 0.3 ≤ 3.2 ⇒ 定高买宽取最小可行门幅 3.2）——这一层**确定性逻辑**由单测覆盖（CH-042 登记），本用例只钉「模型填参」
-数据: ⚠️ 本用例**不派发真实 LLM 评测**（用户裁定 #4262/#4974）：只登记用例，等人工集中跑一次时验证
-必须成功: curtain_calc
-```
-真值: fabric-calc.fabric-widths-candidate, fabric-calc.fixed-width, ai-chat.intent-tool-map
-溯源: 2026-09-21 新增（issue #5039）：`fabric_widths` 用例库零覆盖补齐 —— LLM 级「模型按 prompt 把商品 SKU 门幅去重成候选集、填进 curtain_calc 入参」的行为面（CH-042 只覆盖引擎侧确定性逻辑）。断言形态 = `expectations[].args` 值级子集（键存在 + 数组 + 含 2.8/3.2 ⇒ 长度 ≥ 2），红证见 tests/unit_ci_workflows/test_eval_fabric_widths_case.py；接地对象 = 种子新增的第二门幅 SKU（prod_eval_summer 米白色散剪 3.2） ｜ tags: xiaobu, quote, curtain-calc, fabric-widths
+溯源: 2026-09-21 新增（issue #5013）：门幅与加工类型自动选择（候选集内选门幅 + 自动定高买宽/定宽买高 + 接高退人工覆盖）的引擎覆盖登记，单测覆盖 ｜ tags: xiaobu, quote, curtain-calc, door-width
 
 ## 跨域（3 case）
 
@@ -1285,10 +1272,9 @@
 数据: customer_id 从 customer_manage 查询获得
 数据: order_id 从 order_query 获得
 数据: 发货操作使用正确的 order_id
-必须成功: order_manage(update_logistics)
 ```
 真值: id-resolve.name, customer-list.search-fields, order.states
-溯源: eval M011 独有（模糊澄清 + 客户搜索真值）；2026-09-15 校准（issue #3669）：expectations 的 customer_manage(action=query) → **list**（该工具枚举无 query，原值级断言永不满足=假红 / 报了错也算过的假绿，见 .github/eval-coverage-baseline.yml 已销账的 action_dangling 条目）；2026-09-21（issue #5039 的 case-trust burn-down 缴费，metric=entries ⇒ 整条销账）：补 `must_succeed[order_manage(action=update_logistics)]`（效果层，「调用了 ≠ 成了」）+ `preconditions`（声明层前置：客户王建国及其未发货订单；`_PRECONDITION_TYPES` 无此类型 ⇒ 不发明类型）+ `namespaces[customer_order:王建国]`（弱证据：夹具层无「运行期动态定位的订单」复位类型，`order_status_restore` 需不可变 order_no）—— `user_inputs` / `expectations` / `data_checks` / `skip_reason` 一字未动、断言强度不放宽 ｜ tags: fuzzy_input, progressive_clarification, adversarial
+溯源: eval M011 独有（模糊澄清 + 客户搜索真值）；2026-09-15 校准（issue #3669）：expectations 的 customer_manage(action=query) → **list**（该工具枚举无 query，原值级断言永不满足=假红 / 报了错也算过的假绿，见 .github/eval-coverage-baseline.yml 已销账的 action_dangling 条目） ｜ tags: fuzzy_input, progressive_clarification, adversarial
 
 ### CU-006. C 端租户域名路由 - 微信用户经企业域名自动关联租户并落 CRM 客户档案（#3011） 🔵
 ```
@@ -3995,7 +3981,7 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-22 新增（issue #4201）：加工单「过程明细」agent 只读面（端点 GET /api/admin/agent/production/worklog + 工具 production_worklog_query + order/general skill 绑定 + prompts/order.md 口径）。**断言面**：must_succeed + required_args(order_no) + forbidden_tools（两个加工单写工具 + 加工项目录冒充）+ forbidden_text（具名报工人 = 编造指纹）+ want_text(any_of 存在性) + data_checks 首条 success=true。**未做（如实登记）**：**数值断言**（合格/返工/报废的**具体数字**）未落 —— 评测栈 `production_work_logs` 零 seed，要落数值只能给 seed 补「加工单 + 工序实例 + 报工」三段夹具，而本地**无 docker**、无法验证 seed SQL（写错会打挂整个 mibao 套件）⇒ 本单不碰 seed，登记为后续项。 ｜ 2026-09-21（issue #4960 / #4961 用例库同步，配套 feat/4960-4961-integration，**本条判据一字未动**）：data_checks 里 `operations[].is_must_finish` 仍是**冻结读面键**（服务端恒 `false`、历史载体，前端/agent 零消费）—— 本条不改任何判据，只登记该键的**值语义已冻结为历史载体**，防后续把「键还在」误读成「必完仍是活语义」。`user_inputs` / `expectations` / `skip_reason` 与其余 data_check **一字未动**，**判据一格不放宽**。 ｜ tags: processing_order, production, llm_behavior, worklog, readonly
 
-## 商品域（21 case）
+## 商品域（31 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -4286,6 +4272,106 @@
 ```
 真值: product-sku-stock.status-flow
 溯源: 2026-09-15 新增（issue #3931，实证 sess_2efa2071bb1747d8 19:46:32 拒绝文本）：「不包含图片上传」「拿不到可写入的地址」必须被守卫命中并纠正——product_manage 有 images/detail_images 参数、能力真实可达；forbidden_text 逐词机器断言（可判定形式），守卫判据与话术见 base_skill.py 的 _PRODUCT_IMAGE_ACTION_WORDS / _product_image_denial_hit / _TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE。2026-09-18 补前置自断言（issue #4046）：precondition[product_count_for_keyword expect=1]（断言原样未动） ｜ tags: image, write, capability_denial
+
+### PR-029. 入库单建单：草稿态**不动库存**（不生成批次号、不落台账、不加库存） 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: 建单只写单据+明细（含货号/颜色/门幅快照），状态 draft；receiveStock / stock_ledger 写入 / 批次台账**均不得**被调用
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-030. 入库单过账：自动生成批次号 + 自动加库存 + 落台账 + 落批次台账（含缸号） 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: 过账一次性完成四件事：批次号 PC-yyyyMMdd-NNNN 回写明细行、receiveStock 加库存、stock_ledger_entries 记 reason=inbound 且 before/after 与成本快照齐备、stock_batches 记批次（带 dye_lot）；状态转 posted 并留痕操作人
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-031. 入库单过账幂等闸与作废边界：已过账不得重复过账、不得作废 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: draft→posted 只允许一次（重复过账被拒且不二次加库存）；posted 的单作废被拒（库存已进台账，冲销须另开单据）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-032. 入库单建单校验：数量 ≥1 整数、单价 >0、SKU 必须属于该商品 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: 数量 0/负数/非整数被拒（按米入库暂不支持小数米，**不静默取整**）；单价 ≤0 被拒（不记单价请留空）；SKU 与商品不匹配被拒（否则库存会加到别的货号上）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-033. 移动加权平均成本：有库存按加权、首次入库取进价、未记单价保持原值、未知不猜 0 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: (5×10+30×12.5)/35 = 11.4286；before_qty=0 或 before_avg 未知 ⇒ 均价 = 本次进价；unitCost=null ⇒ 均价保持原值；全程无成本信息 ⇒ NULL（不得变成 0）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-034. 入库单动作端点只认 post / cancel（未知 action 拒绝且不调服务） 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: PATCH /api/admin/inbound-orders/{id} 的 action 白名单 = {post, cancel}；未知动作抛校验错误（fail-closed：静默什么都不做会让调用方以为过账成功）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-035. 入库单列表/建单透传当前租户（跨租户读 = 数据泄漏） 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: list 与 create 均以 TenantContext 的 tenantId 调服务；无认证上下文时操作人退化为 system（不写 null、不抛异常）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-036. V111 迁移契约：幂等 + 存量成本留 NULL + reason 放行 inbound + schema.sql 同步 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: 迁移显式 BEGIN/COMMIT、DDL 全带 IF NOT EXISTS / pg_constraint 守卫；**不得**给 avg_cost/cost_amount 回填 0（0 是假真值）；reason CHECK 必须放行 inbound；docs/sql/schema.sql 同步终态（三张新表 + 成本列 + 两个唯一索引）
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-037. 入库单页面：列表/建单/过账动线可达，数量非整数提交前即被挡住 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: 页面渲染列表（单号/状态/行数·总数量）；建单弹窗按「一行 = 一个批次」提交明细（含数量/单价/缸号）；数量 0.5 在**提交前**被挡（不调建单接口）；草稿显示「过账后生成」且有过账按钮，过账后显示批次号且过账/作废入口消失
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
+
+### PR-038. 入库单菜单三处同构：config/menu.ts、MenuController、AuthService 同路径同权限码同图标 🔵
+```
+你: 商家/仓库在后台建入库单、过账、查批次与库存台账（非 LLM 行为，由 Java 单测/前端组件测覆盖）
+期望: direct_reply
+数据: 三份源文件都含入库单节点，path=/inbound-orders、permissionCode=inbound:view、icon=PackageOpen；MenuController 的节点真的挂进菜单树；权限码不得挪用 processing:manage
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.draft-then-post
+溯源: 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ tags: inventory, inbound, backend-contract
 
 ## registry（1 case）
 
@@ -5164,14 +5250,14 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：373（活跃 156，跳过 217）
-- tier 分布：smoke 10 / normal 332 / adversarial 31
+- 用例总数：382（活跃 155，跳过 227）
+- tier 分布：smoke 10 / normal 341 / adversarial 31
 - 售后域：9
 - agents：6
 - api：19
 - bmini：6
 - 分类域：3
-- 对话边界域：43
+- 对话边界域：42
 - 跨域：3
 - 客户域：9
 - 数据域：10
@@ -5185,7 +5271,7 @@
 - 订单域：44
 - 加工项域：13
 - processing-order：51
-- 商品域：21
+- 商品域：31
 - registry：1
 - 设置域：10
 - token-refresh：4

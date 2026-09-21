@@ -37,6 +37,11 @@ import type {
   ProcessingOrder,
   ProcessingOrderGenerateResult,
   ProcessingOrderUpdateParams,
+  InboundOrder,
+  InboundOrderLine,
+  InboundBatch,
+  InboundOrderCreateParams,
+  InboundOrderListParams,
   ProductionOperations,
   PieceworkSummary,
   StuckPointsReport,
@@ -513,6 +518,35 @@ export const orderApi = {
 }
 
 // 加工单 API（issue #3340）
+// 入库单 API（V111，issue #5034）
+// 端点与后端 InboundOrderController 一一对应：
+//   GET    /api/admin/inbound-orders            列表（keyword/status）
+//   POST   /api/admin/inbound-orders            建单（草稿，不动库存）
+//   GET    /api/admin/inbound-orders/{id}       详情（id 可为 UUID/单号/前缀）
+//   PATCH  /api/admin/inbound-orders/{id}       动作：post 过账 / cancel 作废
+//   GET    /api/admin/inbound-orders/batches    批次查询（skuId/dyeLot/inboundNo）
+export const inboundOrderApi = {
+  list: (params?: InboundOrderListParams) =>
+    request.get<ApiResponse<InboundOrderLine[]>>('/api/admin/inbound-orders', { params }),
+
+  detail: (id: string) =>
+    request.get<ApiResponse<InboundOrder>>(`/api/admin/inbound-orders/${id}`),
+
+  create: (data: InboundOrderCreateParams) =>
+    request.post<ApiResponse<InboundOrder>>('/api/admin/inbound-orders', data),
+
+  // 过账：服务端自动生成批次号 + 加库存 + 落台账 + 按移动加权平均算成本（幂等闸：仅草稿可过账）
+  post: (id: string) =>
+    request.patch<ApiResponse<InboundOrder>>(`/api/admin/inbound-orders/${id}`, { action: 'post' }),
+
+  // 作废：仅草稿可作废（已过账的库存已进台账，冲销须另开单据）
+  cancel: (id: string, reason?: string) =>
+    request.patch<ApiResponse<InboundOrder>>(`/api/admin/inbound-orders/${id}`, { action: 'cancel', reason }),
+
+  batches: (params?: { skuId?: number; dyeLot?: string; inboundNo?: string }) =>
+    request.get<ApiResponse<InboundBatch[]>>('/api/admin/inbound-orders/batches', { params }),
+}
+
 export const processingOrderApi = {
   // 批量生成加工单（仅已确认且含加工项订单；联动订单进入 producing）
   generate: (orderIds: string[]) =>

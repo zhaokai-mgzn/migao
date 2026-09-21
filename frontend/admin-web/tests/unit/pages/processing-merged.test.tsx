@@ -5,7 +5,7 @@
 //
 // 本文件钉的是**合并本身的判据**（两半能力各自的断言在 processing.test.tsx / processing-fees.test.tsx）：
 // ① 菜单结构（用户 2026-09-19 **规格修订**：合并后的菜单放**商品管理**大菜单下）：
-//    **商品管理组含合并项**且路径/权限码正确；**生产管理组不含它**（回到三项）；
+//    **商品管理组含合并项**且路径/权限码正确；**生产管理组不含它**（issue #5034 后本组为四项）；
 //    全站不再有指向 /processing 或 /production/processing-fees 的菜单项，也不再有独立的
 //    「加工费管理」项（#4542 后菜单名 =「加工项管理」，只有一项）；
 // ② 两个旧路径都**重定向**到新入口（旧深链不 404）；加工费旧路径带 `?tab=fees` 直达第二栏；
@@ -103,15 +103,24 @@ describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商�
     expect(entry!.icon).toBe('Scissors')
   })
 
-  it('生产管理组**不含**合并项（回到三项）；全站不再有独立的「加工费管理」项', () => {
+  it('生产管理组**不含**合并项；全站不再有独立的「加工费管理」项', () => {
     const productionPaths = productionGroup()!.children.map((c) => c.path)
-    expect(productionPaths).toEqual(['/production', '/production/routings', '/production/piecework'])
+    // issue #5034（V111）新增「入库单」（/inbound-orders）⇒ 本组三项 → 四项。
+    // 断言的是**路径清单**（顺序敏感）：合并项仍不在其中，这是本用例真正守的东西。
+    expect(productionPaths).toEqual([
+      '/production',
+      '/production/routings',
+      '/production/piecework',
+      '/inbound-orders',
+    ])
     expect(productionPaths).not.toContain('/production/processing')
-    // 生产管理组三项权限码仍统一 processing:manage（组内一致，无分叉）
+    // 加工三项权限码仍统一 processing:manage（组内一致，无分叉）；
+    // 「入库单」是仓储动作、权限码独立（inbound:view，issue #5034）—— 不得并进 processing:manage。
     expect(productionGroup()!.children.map((c) => c.permissionCode)).toEqual([
       'processing:manage',
       'processing:manage',
       'processing:manage',
+      'inbound:view',
     ])
     // 全站不再有指向两个旧路径的菜单项，也不再有独立的「加工费管理」项；
     // ⚠️ 「加工项管理」是**合并后的唯一入口**（#4542 起菜单名）⇒ **必须**在菜单里，不得写成负断言。

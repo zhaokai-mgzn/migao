@@ -34,6 +34,11 @@ public class StockLedger {
     public static final String REASON_AFTERSALES = "aftersales";
     /** 变更来源：手工调整（ProductService.adjustStockForAgent） */
     public static final String REASON_MANUAL = "manual";
+    /**
+     * 变更来源：入库单过账（{@code InboundOrderService.post}，V111 / issue #5034）。
+     * {@code refNo} = 入库单号 RK-yyyyMMdd-NNNN。
+     */
+    public static final String REASON_INBOUND = "inbound";
 
     /** IDENTITY 单调递增：为「同 SKU 相邻两行首尾相接」提供全序（created_at 会撞毫秒） */
     @TableId(type = IdType.AUTO)
@@ -55,14 +60,29 @@ public class StockLedger {
 
     private Integer afterQty;
 
-    /** 见 {@link #REASON_ORDER} / {@link #REASON_AFTERSALES} / {@link #REASON_MANUAL} */
+    /** 见 {@link #REASON_ORDER} / {@link #REASON_AFTERSALES} / {@link #REASON_MANUAL} / {@link #REASON_INBOUND} */
     private String reason;
 
-    /** 业务单据号：订单号（order）/ 工单号（aftersales）；manual 为空 */
+    /** 业务单据号：订单号（order）/ 工单号（aftersales）/ 入库单号（inbound）；manual 为空 */
     private String refNo;
 
     /** 人类可读的变更原因（如 Agent 传入的「盘点」「报损」） */
     private String note;
+
+    /**
+     * 本次变更的单位成本（V111）：入库 = 入库行单价；出库/回补 = 变更时的 SKU 移动加权均价。
+     * <b>NULL = 该次变更发生时成本未知</b>（存量行全部为 NULL，不伪造）。
+     */
+    private java.math.BigDecimal unitCost;
+
+    /** 本次变更的成本金额 = |delta| * unitCost（V111）；NULL = 成本未知 */
+    private java.math.BigDecimal costAmount;
+
+    /** 变更前该 SKU 的移动加权平均成本（V111）；NULL = 变更前成本未知（含首次入库） */
+    private java.math.BigDecimal avgCostBefore;
+
+    /** 变更后该 SKU 的移动加权平均成本（V111）；出库不变、入库重算；NULL = 变更后成本仍未知 */
+    private java.math.BigDecimal avgCostAfter;
 
     /** 操作人（登录用户名；内部服务调用 = internal-service；无认证上下文 = system） */
     private String operator;

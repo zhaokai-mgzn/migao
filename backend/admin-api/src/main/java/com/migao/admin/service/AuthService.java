@@ -1121,6 +1121,14 @@ public class AuthService {
             productionChildren.add(menuItem("production-routings", "工艺路线", "Route", "/production/routings"));
             productionChildren.add(menuItem("production-piecework", "计件工资", "Coins", "/production/piecework"));
         }
+        // 入库单（V111，issue #5034）：生产管理组第五项，但**权限码独立**（inbound:view）——
+        // 入库是仓储动作，不是加工动作：仓管/财务要看入库单，却不需要 processing:manage。
+        // 若把它塞进上面那个 `processing:manage` 的 if 里，「有 inbound:view、没有 processing:manage」
+        // 的人就看不到菜单（权限页勾得动、侧边栏看不到 = #4203 点名的同族坑）。
+        // ⚠️ 本节点必须与 MenuController 的静态权限树、前端 config/menu.ts 三处同构。
+        if (isAll || permissions.contains("inbound:view")) {
+            productionChildren.add(menuItem("inbound-orders", "入库单", "PackageOpen", "/inbound-orders"));
+        }
         if (!productionChildren.isEmpty()) {
             menus.add(menuGroup("production-center", "生产管理", "Factory", productionChildren));
         }

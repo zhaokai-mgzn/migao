@@ -2630,3 +2630,130 @@ export interface ReceivableReconciliationItem {
   difference: number
   createdAt?: string
 }
+
+// ============================================================
+// 入库单 / 批次（V111，issue #5034）
+// ============================================================
+// 一次布料收货 = 一张入库单；**一个 SKU 行 = 一个批次**（用户裁定 2026-09-23）。
+// 批次号 PC-yyyyMMdd-NNNN 由服务端在**过账时**自动生成。
+
+/** 入库单状态：draft 草稿（不动库存）/ posted 已过账（终态）/ cancelled 已作废 */
+export type InboundOrderStatus = 'draft' | 'posted' | 'cancelled'
+
+/** 入库单列表行（含明细聚合） */
+export interface InboundOrderLine {
+  id: string
+  /** 入库单号 RK-yyyyMMdd-NNNN */
+  inboundNo: string
+  supplier?: string
+  supplierDocNo?: string
+  warehouse?: string
+  inboundDate: string
+  status: InboundOrderStatus
+  totalAmount: number
+  remark?: string
+  postedAt?: string
+  postedBy?: string
+  createdAt?: string
+  /** 明细行数（聚合） */
+  itemCount: number
+  /** 明细总数量（聚合） */
+  totalQuantity: number
+}
+
+/** 入库单明细行（**一行 = 一个批次**） */
+export interface InboundOrderItem {
+  id: number
+  skuId?: number
+  productId: string
+  /** 快照：入库时点的货号 */
+  skuCode?: string
+  /** 快照：颜色名 */
+  colorName?: string
+  /** 快照：门幅 */
+  doorWidth?: string
+  quantity: number
+  /** 入库单价；null = 未记单价（只加数量不算成本） */
+  unitCost?: number | null
+  /** 行金额 = quantity × unitCost；null 单价 ⇒ null */
+  amount?: number | null
+  /** 批次号（**过账后才有**；草稿为 null） */
+  batchNo?: string | null
+  /** 供应商缸号（外部事实，可空） */
+  dyeLot?: string | null
+  /** 每卷米数（仅记录/打印卷标） */
+  rollLengthM?: number | null
+  remark?: string
+}
+
+/** 入库单详情 */
+export interface InboundOrder {
+  id: string
+  inboundNo: string
+  supplier?: string
+  supplierDocNo?: string
+  warehouse?: string
+  inboundDate: string
+  status: InboundOrderStatus
+  totalAmount: number
+  remark?: string
+  postedAt?: string
+  postedBy?: string
+  cancelledAt?: string
+  cancelledBy?: string
+  cancelledReason?: string
+  createdBy?: string
+  createdAt?: string
+  items: InboundOrderItem[]
+}
+
+/** 批次视图（只读） */
+export interface InboundBatch {
+  id: number
+  /** 批次号 PC-yyyyMMdd-NNNN */
+  batchNo: string
+  productId: string
+  skuId?: number
+  skuCode?: string
+  inboundNo?: string
+  inboundOrderId?: string
+  quantity: number
+  unitCost?: number | null
+  amount?: number | null
+  /** 供应商缸号（可空） */
+  dyeLot?: string | null
+  rollLengthM?: number | null
+  supplier?: string
+  warehouse?: string
+  /** 收货日期（= 入库单的入库日期） */
+  receivedDate?: string
+  remark?: string
+  createdAt?: string
+}
+
+/** 建单明细行输入 */
+export interface InboundOrderItemInput {
+  productId: string
+  skuId: number
+  quantity: number
+  unitCost?: number | null
+  dyeLot?: string | null
+  rollLengthM?: number | null
+  remark?: string | null
+}
+
+/** 建单输入（草稿态，**不动库存**） */
+export interface InboundOrderCreateParams {
+  supplier?: string | null
+  supplierDocNo?: string | null
+  warehouse?: string | null
+  inboundDate?: string | null
+  remark?: string | null
+  items: InboundOrderItemInput[]
+}
+
+/** 入库单列表筛选 */
+export interface InboundOrderListParams {
+  keyword?: string
+  status?: InboundOrderStatus | ''
+}

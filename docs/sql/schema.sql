@@ -208,6 +208,10 @@ CREATE TABLE product_skus (
     stock INTEGER NOT NULL DEFAULT 0,
     sku_code VARCHAR(50),
     sales_count INTEGER NOT NULL DEFAULT 0,                -- SKU 累计销量（来自 011）
+    -- 成本（来自 V111，issue #5034「成本核算一起做」）：移动加权平均
+    avg_cost NUMERIC(12,4),                                -- 移动加权平均单位成本；NULL = 未知（存量不回填、不猜 0）
+    cost_amount NUMERIC(16,4),                             -- 库存成本金额 = stock * avg_cost；NULL = 成本未知
+    latest_batch_no VARCHAR(32),                           -- 最近一次入库的批次号 PC-yyyyMMdd-NNNN；NULL = 从未入库
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -215,6 +219,9 @@ CREATE INDEX idx_product_skus_tenant_product ON product_skus(tenant_id, product_
 ALTER TABLE product_skus ADD CONSTRAINT uq_product_skus_combination
     UNIQUE (product_id, color_id, selling_method, door_width);
 COMMENT ON TABLE product_skus IS 'SKU矩阵表，颜色×售卖方式×门幅 组合';
+COMMENT ON COLUMN product_skus.avg_cost IS '移动加权平均单位成本（元/单位，V111）。NULL = 未知（存量库存无成本真值来源，一律不回填、不猜 0）';
+COMMENT ON COLUMN product_skus.cost_amount IS '库存成本金额 = stock * avg_cost（V111，派生冗余列）。NULL = 成本未知（不得用 0 冒充「成本为零」）';
+COMMENT ON COLUMN product_skus.latest_batch_no IS '最近一次入库的批次号（V111，系统生成的 PC-yyyyMMdd-NNNN）；NULL = 从未入库过';
 
 -- 商品属性表
 CREATE TABLE product_attributes (
@@ -1513,12 +1520,19 @@ CREATE TABLE IF NOT EXISTS stock_ledger_entries (
     delta INT NOT NULL,                              -- 正=入库/回补，负=出库/扣减（恒等于 after_qty - before_qty）
     before_qty INT NOT NULL,
     after_qty INT NOT NULL,
-    reason VARCHAR(16) NOT NULL,                     -- order / aftersales / manual
-    ref_no VARCHAR(64),                              -- 订单号 / 工单号；manual 为空
+    reason VARCHAR(16) NOT NULL,                     -- order / aftersales / manual / inbound（V111）
+    ref_no VARCHAR(64),                              -- 订单号 / 工单号 / 入库单号 / 批次号；manual 为空
     note VARCHAR(255),                               -- 人类可读原因（如「盘点」「报损」）
     operator VARCHAR(64) NOT NULL,                   -- 登录用户名；内部服务 = internal-service；无认证 = system
+    -- 成本快照（来自 V111，issue #5034）：让「成本为什么变了」与「库存为什么变了」在同一张账上对账
+    unit_cost NUMERIC(12,4),                         -- 本次变更单位成本（入库=行单价；出库=当时移动加权均价）；NULL = 成本未知
+    cost_amount NUMERIC(16,4),                       -- 本次变更成本金额 = |delta| * unit_cost；NULL = 成本未知
+    avg_cost_before NUMERIC(12,4),                   -- 变更前移动加权均价；NULL = 变更前成本未知
+    avg_cost_after NUMERIC(12,4),                    -- 变更后移动加权均价；出库不变、入库重算
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    deleted INTEGER NOT NULL DEFAULT 0
+    deleted INTEGER NOT NULL DEFAULT 0,
+    -- V111：放行 inbound（入库单过账）
+    CONSTRAINT ck_stock_ledger_reason CHECK (reason IN ('order', 'aftersales', 'manual', 'inbound'))
 );
 CREATE INDEX IF NOT EXISTS idx_stock_ledger_tenant_sku
     ON stock_ledger_entries (tenant_id, sku_id, id);
@@ -1526,6 +1540,96 @@ CREATE INDEX IF NOT EXISTS idx_stock_ledger_tenant_product
     ON stock_ledger_entries (tenant_id, product_id, id);
 CREATE INDEX IF NOT EXISTS idx_stock_ledger_tenant_ref
     ON stock_ledger_entries (tenant_id, ref_no, id);
+
+-- ================================================
+-- 9.8 入库单 / 批次（issue #5034，V111 迁移）
+-- ================================================
+-- 一次布料收货 = 一张入库单；**一个 SKU 行 = 一个批次**（用户裁定 2026-09-23）。
+-- 批次号 PC-yyyyMMdd-NNNN 由服务端自动生成（租户内唯一索引兜底防重号）。
+-- draft 不动库存，posted 才加库存 + 落台账 + 算移动加权平均成本；posted 是终态。
+-- 行业依据（缸号/批次）见 docs/curtain-selling-method-industry-research.md §1/§8.2。
+CREATE TABLE IF NOT EXISTS inbound_orders (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    inbound_no VARCHAR(32) NOT NULL,                 -- RK-yyyyMMdd-NNNN
+    supplier VARCHAR(128),
+    supplier_doc_no VARCHAR(64),
+    warehouse VARCHAR(64),
+    inbound_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    status VARCHAR(16) NOT NULL DEFAULT 'draft',     -- draft / posted / cancelled
+    total_amount NUMERIC(16,4) NOT NULL DEFAULT 0,
+    remark TEXT,
+    posted_at TIMESTAMP WITH TIME ZONE,
+    posted_by VARCHAR(64),
+    cancelled_at TIMESTAMP WITH TIME ZONE,
+    cancelled_by VARCHAR(64),
+    cancelled_reason TEXT,
+    created_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INT DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_inbound_orders_no ON inbound_orders (inbound_no);
+CREATE INDEX IF NOT EXISTS idx_inbound_orders_tenant_status_date
+    ON inbound_orders (tenant_id, status, inbound_date DESC);
+CREATE INDEX IF NOT EXISTS idx_inbound_orders_tenant_supplier
+    ON inbound_orders (tenant_id, supplier);
+COMMENT ON TABLE inbound_orders IS
+    '入库单（V111，issue #5034）：一次布料收货 = 一张单。draft 不动库存，posted 才加库存（只允许 draft→posted 一次），cancelled 仅 draft 可作废（已过账不得作废，冲销另开单）';
+
+CREATE TABLE IF NOT EXISTS inbound_order_items (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    inbound_order_id VARCHAR(64) NOT NULL REFERENCES inbound_orders(id) ON DELETE CASCADE,
+    sku_id BIGINT,                                   -- 无 FK：SKU 会被硬删重建（同 stock_ledger_entries.sku_id）
+    product_id VARCHAR(64) NOT NULL REFERENCES products(id),
+    sku_code VARCHAR(64),
+    color_name VARCHAR(64),
+    door_width VARCHAR(32),
+    quantity INT NOT NULL,                           -- 整数：与 product_skus.stock 粒度逐字一致
+    unit_cost NUMERIC(12,4),                         -- NULL = 未记单价 ⇒ 只加数量不算成本
+    amount NUMERIC(16,4),                            -- quantity * unit_cost；NULL 单价 ⇒ NULL（不用 0 冒充）
+    batch_no VARCHAR(32),                            -- 过账时才写（草稿为 NULL）
+    dye_lot VARCHAR(64),                             -- 供应商缸号（外部事实，可空）
+    roll_length_m NUMERIC(8,2),                      -- 每卷米数（仅记录/打印，不参与换算）
+    remark VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INT DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_inbound_items_order ON inbound_order_items (inbound_order_id);
+CREATE INDEX IF NOT EXISTS idx_inbound_items_tenant_sku ON inbound_order_items (tenant_id, sku_id);
+COMMENT ON TABLE inbound_order_items IS
+    '入库单明细（V111）：一个 SKU 行 = 一个批次。批次粒度取行级而非卷级（缸号的行业粒度本就是「一批布」，卷长是区间值不宜硬折算，见 docs/curtain-selling-method-industry-research.md §8.2 末）';
+
+CREATE TABLE IF NOT EXISTS stock_batches (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    batch_no VARCHAR(32) NOT NULL,
+    product_id VARCHAR(64) NOT NULL REFERENCES products(id),
+    sku_id BIGINT,
+    sku_code VARCHAR(64),
+    inbound_order_id VARCHAR(64) REFERENCES inbound_orders(id),
+    inbound_item_id BIGINT,
+    inbound_no VARCHAR(32),
+    quantity INT NOT NULL,
+    unit_cost NUMERIC(12,4),
+    amount NUMERIC(16,4),
+    dye_lot VARCHAR(64),
+    roll_length_m NUMERIC(8,2),
+    supplier VARCHAR(128),
+    warehouse VARCHAR(64),
+    received_date DATE,
+    remark VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted INT DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_stock_batches_no ON stock_batches (tenant_id, batch_no);
+CREATE INDEX IF NOT EXISTS idx_stock_batches_tenant_sku ON stock_batches (tenant_id, sku_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_batches_tenant_dye_lot ON stock_batches (tenant_id, dye_lot);
+CREATE INDEX IF NOT EXISTS idx_stock_batches_inbound ON stock_batches (inbound_order_id);
+COMMENT ON TABLE stock_batches IS
+    '批次台账（V111）：一行 = 一个入库批次（= 一条入库单明细行）。缸号随批次可见 —— 对应 AHFA 卷标须带 Lot number 的行业要求（docs/curtain-selling-method-industry-research.md §1/S10）。批次行不可改：冲销走新单据';
 
 -- ================================================
 -- 10. 审计日志表
