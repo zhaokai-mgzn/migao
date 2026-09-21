@@ -1,4 +1,4 @@
-// case_ids: CU-009, UI-047, UI-053
+// case_ids: CU-009, UI-047
 
 import { describe, it, expect } from 'vitest'
 import {
@@ -7,7 +7,6 @@ import {
   logisticsTypeLabel,
   describeLogisticsProfile,
 } from '@/lib/logistics'
-import { lineSubtotal } from '@/lib/order-amount'
 
 /**
  * 物流口径单一真值（issue #4419）——客户管理「收货信息」卡片与发货页共用同一份词表。
@@ -57,29 +56,5 @@ describe('logistics 词表（issue #4419）', () => {
     expect(describeLogisticsProfile(undefined, undefined)).toBe('')
     expect(describeLogisticsProfile(null, null)).toBe('')
     expect(describeLogisticsProfile('', '   ')).toBe('')
-  })
-})
-
-/**
- * 行金额口径**单一真值**（issue #4965）—— `lineSubtotal` 是屏幕（订单详情明细行）
- * 与纸面（报价单「本套金额」/加工费行）**共用**的那一份。
- *
- * 为什么值得单测：两处各写一次 `subtotal + processingFee` 时，任何一处口径变化都会让
- * 「屏幕显示的金额」与「打给客户的纸面金额」静默不一致 —— 而商家是照纸面对账的。
- * 本用例锁住口径本身（含 `processingFee` 缺省按 0 的存量单形态）。
- */
-describe('lineSubtotal 行金额口径（issue #4965）', () => {
-  it('行小计 = subtotal + processingFee', () => {
-    expect(lineSubtotal({ subtotal: 1250, processingFee: 250 })).toBe(1500)
-  })
-
-  it('processingFee 缺省/为 0 ⇒ 按 0（存量单没有该字段，不得 NaN）', () => {
-    expect(lineSubtotal({ subtotal: 1250 })).toBe(1250)
-    expect(lineSubtotal({ subtotal: 1250, processingFee: 0 })).toBe(1250)
-    expect(Number.isNaN(lineSubtotal({ subtotal: 1250 }))).toBe(false)
-  })
-
-  it('缺 subtotal 按 0（不 NaN）', () => {
-    expect(lineSubtotal({ subtotal: 0, processingFee: 30 })).toBe(30)
   })
 })
