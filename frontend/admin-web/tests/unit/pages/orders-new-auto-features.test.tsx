@@ -644,6 +644,9 @@ describe('#5020 加工类型自动推导：未指定 ⇒ 自动选中；客服�
     fireEvent.change(inputOf('宽 (米)'), { target: { value: '3.0' } })
     fireEvent.change(inputOf('高 (米)'), { target: { value: '3.0' } })
     await waitFor(() => expect(checkedChips('加工类型')).toEqual(['定宽买高']))
+    // issue #4976 包 2b：判定已移到**服务端** ⇒ 本用例在 setup 之后才填尺寸 ⇒ 提交前必须等判定落地
+    //（否则会被提交闸门拦住 ⇒ `submitAndGetItemInfo` 拿不到 payload ⇒ 用例超时）
+    await settleAutoFeatures()
     const info = (await submitAndGetItemInfo()) as unknown as {
       processingInfo: Record<string, unknown>
     }
