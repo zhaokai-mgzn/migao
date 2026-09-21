@@ -2260,3 +2260,46 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: CH-042
+    legacy_id: ""
+    title: "门幅与加工类型自动选择 - 候选集内选门幅 + 自动定高买宽/定宽买高（单测覆盖，非 LLM 行为）"
+    domains:
+      - chat
+      - customer
+      - order
+    tier: normal
+    persona: xiaobu
+    tags:
+      - xiaobu
+      - quote
+      - curtain-calc
+      - door-width
+    truths_ref:
+      - ai-chat.intent-tool-map
+    # ── 覆盖说明（issue #5013）──
+    # 顾客给出宽高后，系统在**候选门幅集**内自动选门幅、并自动推导加工类型
+    # （原「加工类型是显式输入、系统永不自己改判」已由用户 2026-09-21 改判）。
+    # 自动规则 = 行业口径：定高买宽（可行）> 倒幅；**接高不自动选**（可见横缝，
+    # 行业实践是超高窗走倒幅把竖缝藏进褶皱）⇒ 接高退为**人工覆盖项**。
+    # 接高用料口径 = A（加高条按片宽另买、同一段布内并排裁）；「按缺口面积折料」
+    # 会让买料长度短于一条加高条本身（量纲错位）⇒ 已否决。
+    # 引擎确定性逻辑不进 agent-eval 冒烟，由单测全量覆盖（同 CH-036 惯例）。
+    user_inputs:
+      - "我家窗户 3 米宽 2.75 米高，帮我算下要多少布多少钱"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "候选门幅 {2.8, 3.2} + 成品高 2.75 ⇒ 定高买宽取**最小可行门幅 3.2**（2.8 会判需接高）"
+      - "所有候选都不可行 ⇒ **倒幅**（分幅最少），**不自动选接高**（即使接高米数更省）"
+      - "人工覆盖选接高 ⇒ 按口径 A 算料：M = T + ceil(k / floor(g_eff/d_eff)) × Wp"
+      - "对花时每条加高条 +1 个花距（与倒幅「每幅 +1 花距」同口径）"
+      - "自动结果可人工覆盖，覆盖后按所选口径算料并给出对比"
+    skip_reason: "[backend-contract] 门幅/加工类型自动选择是确定性纯计算（curtain_calc 的 resolve_fabric_plan），由单元测试全量覆盖（test_curtain_calc_fabric_plan.py），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）"
+    merge_log: "2026-09-21 新增（issue #5013）：门幅与加工类型自动选择（候选集内选门幅 + 自动定高买宽/定宽买高 + 接高退人工覆盖）的引擎覆盖登记，单测覆盖"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_curtain_calc_fabric_plan.py"
+      ci:
+        - pr-check.yml
+      verifies: []

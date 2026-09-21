@@ -578,6 +578,168 @@ def detect_auto_features(
     return features
 
 
+#: **人工覆盖**值：接高 —— ⚠️ 它**不是** `cuttingMode` 的取值（ERP 加工类型只有上面两项）：
+#: 它 = 「定高买宽 + 接高工序」。故本值只作 `resolve_fabric_plan` 的**入参**；
+#: 返回值里 `cutting_mode` 恒为前两者之一，另带 `splice` 布尔 —— 不发明第三个加工类型值。
+CUTTING_MODE_SPLICE = "接高"
+
+#: 门幅 / 用料计算的**领域精度**（毫米）。为什么用整数：`math.floor(3.2 / 0.1)` 在二进制浮点下
+#: 可能是 31 而非 32（`0.1` 不可精确表示）⇒ 并排条数**少算一条**、接高料凭空变贵，且没有任何东西会红。
+_MM = 1000
+
+
+def _mm(value: float) -> int:
+    """米 → 整数毫米（四舍五入）。"""
+    return int(round(float(value) * _MM))
+
+
+def resolve_fabric_plan(
+    *,
+    window_height: float,
+    fixed_height_meters: float,
+    door_widths: List[float],
+    has_pattern: bool = False,
+    pattern_repeat: float = 0.0,
+    allowance: float = 0.0,
+    open_count: int = 1,
+    cutting_mode: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """**门幅与加工类型的自动选择**（issue #5013，用户 2026-09-21 裁定）。
+
+    口径真值源 = `docs/design/door-width-auto-selection.md`（判据表 = 该文档 §4）。
+    自动规则 = **行业口径**：定高买宽（可行）> 倒幅；**接高不参与自动比较**（接高是**上下拼接、
+    横缝可见**，而行业实践是超高窗走倒幅把**竖缝藏进褶皱**）⇒ 接高退为**人工覆盖项**。
+
+    Args:
+        window_height: 成品高（米）—— 顾客给的尺寸**直接就是成品高**（不做离地/轨道换算）
+        fixed_height_meters: **定高买宽用料 T**（米）—— 由调用方按选定用料公式算好（本函数**不改公式**）。
+            倒幅分幅数与接高片宽**都由它派生** ⇒ 两者同源，不会各算一份。
+        door_widths: 候选门幅（米，来自该颜色的 SKU）；非法值**剔除**，不默认成任何值
+        has_pattern / pattern_repeat: 对花 —— 倒幅「每幅 +1 花距」、接高「每条加高条 +1 花距」同口径
+        allowance: 门幅**有效余量**（米：缩水/边损/对花回）；缺省 `0`（= 与标称同值）
+        open_count: 开数（接高的片宽与加高条段数需要）
+        cutting_mode: `None` ⇒ **自动**；也可显式传 `定高买宽` / `定宽买高` / `接高`（人工覆盖）。
+            显式 `定高买宽` 而高度超限 ⇒ **接高**（= #4877 的旧语义，本单保留为人工覆盖路径）。
+        config: 算料配置（读 `hem_margin`；**不新造第二份常量**）
+
+    Returns:
+        `cutting_mode`（**恒为** `定高买宽`/`定宽买高` 之一）/ `door_width` / `effective_door_width` /
+        `panels`（定宽买高 ⇒ 分幅数；其余 ⇒ `None`）/ `splice` / `splice_gap` / `splice_strips` /
+        `meters`（**未进位** —— 进位由 `build_quote` 单点负责）/ `auto` / `reason`
+
+    Raises:
+        ValueError: 加工类型表外 / 候选门幅全无效（**fail-closed，不静默回退缺省门幅**）
+    """
+    cfg = resolve_craft_calc_config(config)
+    hem_margin = cfg["hem_margin"]
+
+    if cutting_mode not in (
+        None, CUTTING_MODE_FIXED_HEIGHT, CUTTING_MODE_FIXED_WIDTH, CUTTING_MODE_SPLICE
+    ):
+        raise ValueError(
+            f"加工类型必须是 {CUTTING_MODE_FIXED_HEIGHT} / {CUTTING_MODE_FIXED_WIDTH} / "
+            f"{CUTTING_MODE_SPLICE} 之一，或留空走自动（收到 {cutting_mode!r}）"
+        )
+
+    allow = max(float(allowance or 0.0), 0.0)
+    candidates = sorted({
+        (float(g), round(float(g) - allow, 3))
+        for g in (door_widths or [])
+        if isinstance(g, (int, float)) and not isinstance(g, bool) and float(g) > allow
+    })
+    if not candidates:
+        raise ValueError("候选门幅为空或全部无效 —— 不按缺省门幅推算（fail-closed）")
+
+    total = float(fixed_height_meters)
+    pieces = max(1, int(open_count))
+    repeat = float(pattern_repeat) if has_pattern else 0.0
+    need_height = round(float(window_height) + hem_margin, 3)
+    feasible = [(g, ge) for g, ge in candidates if need_height <= ge]
+    widest_width, widest_eff = candidates[-1]
+    auto = cutting_mode is None
+
+    def _fixed_height() -> Dict[str, Any]:
+        width, eff = feasible[0]  # candidates 升序 ⇒ 可行集里**最小**门幅
+        return {
+            "cutting_mode": CUTTING_MODE_FIXED_HEIGHT,
+            "door_width": width,
+            "effective_door_width": eff,
+            "panels": None,
+            "splice": False,
+            "splice_gap": 0.0,
+            "splice_strips": 0,
+            "meters": total,
+            "auto": auto,
+            "reason": (
+                f"成品高 {window_height} + 上下卷边 {hem_margin} = {need_height} 米 ≤ "
+                f"门幅 {width} 米（有效 {eff} 米）⇒ 定高买宽单幅可做，取**可行集里最小门幅**"
+                f"（用料 {round(total, 3)} 米与门幅无关 ⇒ 取小 = 不占宽幅布）"
+            ),
+        }
+
+    def _splice() -> Dict[str, Any]:
+        gap = round(need_height - widest_eff, 3)
+        gap_eff = round(gap + repeat, 3)  # 对花：每条加高条 +1 个花距
+        # 一段布（长 = 片宽）能在门幅内**并排**裁出几条加高条 —— 毫米整数除，避免浮点 floor 少算一条
+        per_piece = max(1, _mm(widest_eff) // max(1, _mm(gap_eff)))
+        strips = max(1, -(-pieces // per_piece))
+        piece_width = total / pieces
+        meters = total + strips * piece_width
+        return {
+            "cutting_mode": CUTTING_MODE_FIXED_HEIGHT,
+            "door_width": widest_width,
+            "effective_door_width": widest_eff,
+            "panels": None,
+            "splice": True,
+            "splice_gap": gap,
+            "splice_strips": strips,
+            "meters": meters,
+            "auto": auto,
+            "reason": (
+                f"成品高 {window_height} + 上下卷边 {hem_margin} = {need_height} 米 > 最宽门幅 "
+                f"{widest_width} 米（有效 {widest_eff} 米）⇒ 缺口 {gap} 米"
+                + (f" + 花距 {repeat} 米（对花对齐）" if repeat else "")
+                + f" ⇒ 接高：加高条 {strips} 段 × 片宽 {round(piece_width, 3)} 米，共 "
+                f"{round(meters, 3)} 米（**加高条按片宽另买**，不从缺口面积折料）"
+            ),
+        }
+
+    def _fixed_width() -> Dict[str, Any]:
+        ranked = sorted(
+            ((-(-_mm(total) // max(1, _mm(ge))), ge, g) for g, ge in candidates),
+            key=lambda item: (item[0], item[1]),
+        )
+        panels, eff, width = ranked[0]
+        return {
+            "cutting_mode": CUTTING_MODE_FIXED_WIDTH,
+            "door_width": width,
+            "effective_door_width": eff,
+            "panels": panels,
+            "splice": False,
+            "splice_gap": 0.0,
+            "splice_strips": 0,
+            "meters": panels * (need_height + repeat),
+            "auto": auto,
+            "reason": (
+                f"成品高 {window_height} + 上下卷边 {hem_margin} = {need_height} 米 > 所有候选门幅"
+                f"（最宽 {widest_width} 米，有效 {widest_eff} 米）⇒ **倒幅**（定宽买高，"
+                f"竖缝藏进褶皱）：用料 {round(total, 3)} 米 ÷ 门幅 {width} 米 ⇒ {panels} 幅"
+                f"（取分幅最少；并列取较小门幅）"
+            ),
+        }
+
+    if cutting_mode == CUTTING_MODE_FIXED_WIDTH:
+        return _fixed_width()
+    if cutting_mode == CUTTING_MODE_SPLICE:
+        # 成品高未超门幅 ⇒ 无可接之处，如实走单幅（**显式告知，不静默**）
+        return _fixed_height() if feasible else _splice()
+    if cutting_mode == CUTTING_MODE_FIXED_HEIGHT:
+        return _fixed_height() if feasible else _splice()
+    # 自动（裁定 4）：定高买宽可行 ⇒ 它；否则 ⇒ **倒幅**。接高**不参与自动比较**。
+    return _fixed_height() if feasible else _fixed_width()
+
+
 def calculate_fabric_meters(
     window_width: float,
     window_height: float,
@@ -702,6 +864,7 @@ def build_quote(
     formula: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
     cutting_mode: Optional[str] = None,
+    fabric_widths: Optional[List[float]] = None,
 ) -> Dict[str, Any]:
     """构建完整报价单。
 
@@ -787,21 +950,60 @@ def build_quote(
     # 幅数（`panels`）：**只在真的算了幅数的分支**（定宽买高）才有值 —— 定高买宽按宽买米，
     # 幅数无定义 ⇒ 键缺席（不发明数字：既不补 0，也不补 1 冒充「1 幅」）。
     panels: Optional[int] = None
+
+    # ── 门幅与加工类型的**自动选择**（issue #5013）──────────────────────────────
+    # ⚠️ **`fabric_widths` 是这条通路的唯一开关**（新入参 ⇒ 既有调用一个字都不变）：
+    #    给了候选集 ⇒ 由 `resolve_fabric_plan` 在候选集内选门幅、并自动推导加工类型
+    #    （显式 `cutting_mode` 则作为**人工覆盖**生效）；没给 ⇒ 走下方既有单一门幅口径。
+    # 口径真值源 = `docs/design/door-width-auto-selection.md`。
+    plan_state: Dict[str, Any] = {
+        "door_width": fabric_width, "cutting_mode": None, "splice": False, "reason": "",
+    }
+
+    def _resolve_plan(meters_fixed_height: float, suffix: str):
+        """定高买宽用料 T ⇒（幅数, 最终米数, formula_used, 超限/规则告警）；并写 `plan_state`。"""
+        nonlocal fabric_width
+        if fabric_widths:
+            plan = resolve_fabric_plan(
+                window_height=window_height,
+                fixed_height_meters=meters_fixed_height,
+                door_widths=fabric_widths,
+                has_pattern=has_pattern,
+                pattern_repeat=pattern_repeat,
+                open_count=open_count,
+                cutting_mode=cutting_mode,
+                config=cfg,
+            )
+            fabric_width = plan["door_width"]
+            plan_state.update(
+                door_width=plan["door_width"],
+                cutting_mode=plan["cutting_mode"],
+                splice=plan["splice"],
+                reason=plan["reason"],
+            )
+            tail = "width" if plan["cutting_mode"] == CUTTING_MODE_FIXED_WIDTH else "height"
+            # 只有「真的换了做法」（倒幅 / 接高）才告警 —— 定高买宽单幅是**正常路径**，不 nag。
+            over = plan["reason"] if (plan["splice"] or tail == "width") else ""
+            return plan["panels"], plan["meters"], f"fixed_{tail}{suffix}", over
+        # ── 既有路径（单一门幅）：口径**一字未动**（回归不变量）──
+        if window_height + cfg["hem_margin"] > fabric_width:
+            count = math.ceil(meters_fixed_height / fabric_width)
+            plan_state.update(cutting_mode=CUTTING_MODE_FIXED_WIDTH)
+            return (
+                count,
+                count * (window_height + cfg["hem_margin"] + (pattern_repeat if has_pattern else 0.0)),
+                f"fixed_width{suffix}",
+                f"成品高 {window_height:.2f}m 超过门幅 {fabric_width:.2f}m 的定高上限，"
+                f"已按定宽布（买高）计算，幅数 {count} 幅。",
+            )
+        plan_state.update(cutting_mode=CUTTING_MODE_FIXED_HEIGHT)
+        return None, meters_fixed_height, f"fixed_height{suffix}", ""
+
     if selected_formula == FORMULA_FULLNESS:
         # 褶倍数公式（倍数法，issue #4527）：逐片表达，数值 = 成品宽 × 褶倍（**与开数无关**）
         meters, _pp_meters, _pp_width = _per_panel_fullness_meters(
             window_width, open_count, N, cfg)
-        formula_used = "fixed_height_fullness"
-        if window_height + cfg["hem_margin"] > fabric_width:
-            panels = math.ceil(meters / fabric_width)
-            meters = panels * (window_height + cfg["hem_margin"] + (pattern_repeat if has_pattern else 0.0))
-            formula_used = "fixed_width_fullness"
-            warning = (
-                f"成品高 {window_height:.2f}m 超过门幅 {fabric_width:.2f}m 的定高上限，"
-                f"已按定宽布（买高）计算，幅数 {panels} 幅。"
-            )
-        else:
-            warning = ""
+        panels, meters, formula_used, warning = _resolve_plan(meters, "_fullness")
         # 取值来源/档位**如实回显**（与褶数法同一契约：用料必须带来源 —— 真值源 §8）
         pleat_fields = {"source": source, "craft_tier": craft_tier}
     elif pleat_mode:
@@ -831,15 +1033,10 @@ def build_quote(
             )
             if gap:
                 warning += f"（{gap} 的用料系数纸表未登记，需先裁定）"
-        formula_used = "fixed_height_pleats"
-        if window_height + cfg["hem_margin"] > fabric_width:
-            panels = math.ceil(meters / fabric_width)
-            meters = panels * (window_height + cfg["hem_margin"] + (pattern_repeat if has_pattern else 0.0))
-            formula_used = "fixed_width_pleats"
-            warning = (warning + " " if warning else "") + (
-                f"成品高 {window_height:.2f}m 超过门幅 {fabric_width:.2f}m 的定高上限，"
-                f"已按定宽布（买高）计算，幅数 {panels} 幅。"
-            )
+        _plan_panels, meters, formula_used, _plan_over = _resolve_plan(meters, "_pleats")
+        panels = _plan_panels
+        if _plan_over:
+            warning = (warning + " " if warning else "") + _plan_over
         pleat_fields = {
             "pleat_count": info["pleat_count"],
             "per_panel_pleats": info["per_panel_pleats"],
@@ -856,21 +1053,33 @@ def build_quote(
             # ⚠️ 只透传，**不改** `fullness` 的既有含义（那会动既有契约）。
             pleat_fields["fullness_actual"] = info["fullness_actual"]
     else:
-        meters, formula_used, warning = calculate_fabric_meters(
+        # 给了候选门幅 ⇒ 先用**无限门幅**取「定高买宽用料 T」（该函数的分支只由 `H + 卷边 ≤ 门幅` 决定），
+        # 再由门幅规则决定门幅/加工类型；罗马帘没有「定高/定宽」之分 ⇒ 不走门幅规则。
+        _t, _fu, _w = calculate_fabric_meters(
             window_width=window_width,
             window_height=window_height,
             fullness=N,
-            fabric_width=fabric_width,
+            fabric_width=math.inf if fabric_widths else fabric_width,
             mounting=mounting,
             has_pattern=has_pattern,
             pattern_repeat=pattern_repeat,
         )
-        if formula_used == "fixed_width":
-            # 定宽买高：幅数在 `calculate_fabric_meters` 内算出（局部变量 `panels`）却没进返回值
-            # ⇒ 报价卡「幅数」行永不出现（issue #4374 交付物 3）。此处按**同一公式**
-            # （`ceil((W + side_margin) × N / G)`，与 `calculate_fabric_meters` 的定宽分支逐字同源）
-            # 复算暴露它 —— **入参一字未动 ⇒ 米数/金额逐值不变**（本单不改钱）。
-            panels = math.ceil((window_width + cfg["side_margin"]) * N / fabric_width)
+        if fabric_widths and _fu != "roman_panel":
+            panels, meters, formula_used, warning = _resolve_plan(_t, "")
+        else:
+            meters, formula_used, warning = _t, _fu, _w
+            if formula_used == "fixed_width":
+                # 定宽买高：幅数在 `calculate_fabric_meters` 内算出（局部变量 `panels`）却没进返回值
+                # ⇒ 报价卡「幅数」行永不出现（issue #4374 交付物 3）。此处按**同一公式**
+                # （`ceil((W + side_margin) × N / G)`，与 `calculate_fabric_meters` 的定宽分支逐字同源）
+                # 复算暴露它 —— **入参一字未动 ⇒ 米数/金额逐值不变**（本单不改钱）。
+                panels = math.ceil((window_width + cfg["side_margin"]) * N / fabric_width)
+            # 新键（issue #5013）也要**如实**：罗马帘没有「定高/定宽」之分 ⇒ `None`
+            # （不发明第三个加工类型值）。
+            plan_state["cutting_mode"] = {
+                "fixed_height": CUTTING_MODE_FIXED_HEIGHT,
+                "fixed_width": CUTTING_MODE_FIXED_WIDTH,
+            }.get(formula_used)
         if mounting == "s_hook":
             # issue #4118 ⑤-B：韩褶（s_hook）的**标准档口径是褶数法**，但褶数法只在显式传
             # `craft_tier` / `pleat_count` 时触发（`pleat_mode` 判据）⇒ 两者都缺时这里**静默**
@@ -988,12 +1197,18 @@ def build_quote(
         # ── 自动特征（issue #4976 包 1a）：**键恒在** ──────────────────────────────
         # 空列表 = **不判**（缺加工类型 / 表外取值 / 缺褶倍），**不是**「没算」——
         # 调用方据此区分「系统没判」与「系统判了但没有」。
+        # 门幅与加工类型（issue #5013）：`fabric_widths` 未给 ⇒ `door_width` = 入参门幅、
+        # `splice` 恒 False，`auto_features` 仍吃**入参** `cutting_mode` ⇒ 既有调用读到的键值逐值不变。
+        "door_width": plan_state["door_width"],
+        "cutting_mode": plan_state["cutting_mode"] or cutting_mode,
+        "splice": plan_state["splice"],
+        "door_width_reason": plan_state["reason"],
         "auto_features": detect_auto_features(
             window_width=window_width,
             window_height=window_height,
             fabric_width=fabric_width,
             fullness=N,
-            cutting_mode=cutting_mode,
+            cutting_mode=(plan_state["cutting_mode"] or cutting_mode) if fabric_widths else cutting_mode,
             config=config,
         ),
     }

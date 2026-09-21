@@ -1662,6 +1662,24 @@ _CASE_CH_041 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── CH-042 [NORMAL] 门幅与加工类型自动选择 - 候选集内选门幅 + 自动定高买宽/定宽买高（单测覆盖，非 LLM 行为）（源: cases/chat.yml）──
+_CASE_CH_042 = EvalCase(
+    id='CH-042',
+    legacy_id='',
+    title='门幅与加工类型自动选择 - 候选集内选门幅 + 自动定高买宽/定宽买高（单测覆盖，非 LLM 行为）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我家窗户 3 米宽 2.75 米高，帮我算下要多少布多少钱'],
+    expectations=['direct_reply'],
+    data_checks=['候选门幅 {2.8, 3.2} + 成品高 2.75 ⇒ 定高买宽取**最小可行门幅 3.2**（2.8 会判需接高）', '所有候选都不可行 ⇒ **倒幅**（分幅最少），**不自动选接高**（即使接高米数更省）', '人工覆盖选接高 ⇒ 按口径 A 算料：M = T + ceil(k / floor(g_eff/d_eff)) × Wp', '对花时每条加高条 +1 个花距（与倒幅「每幅 +1 花距」同口径）', '自动结果可人工覆盖，覆盖后按所选口径算料并给出对比'],
+    skip_reason='[backend-contract] 门幅/加工类型自动选择是确定性纯计算（curtain_calc 的 resolve_fabric_plan），由单元测试全量覆盖（test_curtain_calc_fabric_plan.py），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036 惯例）',
+    tags=['xiaobu', 'quote', 'curtain-calc', 'door-width'],
+    persona='xiaobu',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -2667,6 +2685,8 @@ _CASE_HR_005 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'role_manage', 'action': 'create'}],
+    namespaces=['role_code:stock_keeper'],
 )
 
 # ── HR-006 [NORMAL] 岗位权限体系 - 注册新租户初始化五岗默认权限 + 员工权限快照式解析（#2969）（源: cases/hr.yml）──
@@ -7231,6 +7251,7 @@ ALL_CASES = (
     _CASE_CH_039,
     _CASE_CH_040,
     _CASE_CH_041,
+    _CASE_CH_042,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
