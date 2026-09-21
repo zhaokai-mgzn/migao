@@ -1300,6 +1300,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   // （`expected <select …> to be null`），而不是「找不到元素」那种反向表述。
 
   it('#4960-① 商家写面不再有「作用域」：抽屉里没有 `variant-scope-*`，且这一屏的写请求**不带** `scope` 键', async () => {
+    // issue #4947：抽屉层写面按**逻辑名**寻址（真形态）⇒ 用真形态夹具驱动（本文件同族 10 处的既有惯例）
+    mockGetOperationsCatalog.mockReset().mockResolvedValue(ok(LOGICAL_CATALOG))
     await openManage('车被')
 
     // ① 控件**退场**（不是禁用、不是隐藏）：改前这里是 `<select data-testid="variant-scope-op-车被">`
@@ -1318,7 +1320,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     await waitFor(() =>
       expect(mockUpdateOperation).toHaveBeenCalledWith('op-车被', { group_name: '后道', unit: '件' }),
     )
-    await userEvent.click(screen.getByTestId('variant-disable-op-车被'))
+    // 停用：入口在抽屉 footer（issue #4947：逐行那一对与 footer 逐字重复 ⇒ 退场，写面只剩这一处）
+    await userEvent.click(screen.getByTestId('operations-manage-disable'))
     await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-车被', { status: 'inactive' }))
 
     // ③ 这一屏**没有任何**写请求带 `scope` 键（退场的是**用户动作**，不是请求契约）

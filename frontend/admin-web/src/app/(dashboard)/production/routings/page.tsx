@@ -788,7 +788,7 @@ export default function ProcessConfigPage() {
   const [variantDraft, setVariantDraft] = useState({ group_name: '', unit: '' })
   const [variantBusy, setVariantBusy] = useState(false)
   /**
-   * 逐行写面（分组 / 单位 / 作用域 / 必完）被拒的**逐条**理由 —— 渲染在抽屉顶部
+   * 逐行写面（分组 / 单位 / status）被拒的**逐条**理由 —— 渲染在抽屉顶部
    * （`data-testid="variant-reasons"`）。
    * ⚠️ issue #4947：改前它**唯一**的渲染点在逐行那一套删除弹框里（弹框不打开就看不见 = 静默）；
    * 那套弹框随去重退场后，这里成为它唯一的渲染点（写面失败**不得静默**）。
@@ -2653,8 +2653,8 @@ export default function ProcessConfigPage() {
                               </ul>
                             )}
 
-                            {/* 主线保存被拒：逐条展示理由（空主线 / 工序不存在 / 重复 / 缺必完工序 / 权限）
-                                ⚠️「缺必完工序」这一条**仍在**：后端护栏 4 未退场（本包不许动 backend） */}
+                            {/* 主线保存被拒：逐条展示理由（空主线 / 工序不在库 / 重复 / 权限）
+                                ⚠️ issue #4961：「缺必完工序」那一条**已随后端护栏退场**（五条 ⇒ 四条）—— 完工口径改为「全部活跃工序实例完成」 */}
                             {isEditing && (localReason || reasons.length > 0) && (
                               <div
                                 className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"

@@ -55,7 +55,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * 生成加工单时的工序实例化读**工序库的新结构**：
  * {@code production_route_templates}（具名主线）+ {@code production_route_rules}（工艺/选项触发的
  * 增删与计件系数）+ {@code production_operation_positions}（部位价目与适用性）
- * + {@code production_operations}（分组/单位/必完标记/作用域），经
+ * + {@code production_operations}（分组/单位/作用域；「必完标记」自 issue #4961 起不再参与实例化与完工判定），经
  * {@link ProductionOperationQueryService} 的新读面读出。
  * 加工项目录（快照的 {@code processingItems}）**不再是**工序真值源。
  * 取不到路线模板/工序 ⇒ fail-closed 中止生成（{@link #ERR_ROUTING_NOT_FOUND} /

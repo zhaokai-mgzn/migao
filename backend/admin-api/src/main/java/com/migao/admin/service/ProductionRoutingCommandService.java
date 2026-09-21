@@ -41,7 +41,7 @@ import java.util.Set;
  * 不是「自由命名 + 拖拽编排的通用路线编辑器」。v1 = 从工序库选 + 有序序列（前端做增删/上下移）。</p>
  *
  * <p><b>为什么护栏必须逐条给理由</b>：路线是**计件工资**（Σ 报工数量 × 工序单价）与**完工判定**
- * （必完工序全绿）的唯一输入，而工序的 {@code unit} 决定应做数量读哪个算料键
+ * （**全部活跃工序实例完成**，issue #4961；改前是「必完工序全绿」）的唯一输入，而工序的 {@code unit} 决定应做数量读哪个算料键
  * （{@code fabric_meters} / {@code pleat_count} / …）⇒ 一条坏路线会直接算错工人工资。
  * 故所有护栏失败统一走 **HTTP 422 + {@code error.details:[{field,message}]} 逐条理由**
  * （复用既有信封字段，不新造），前端「逐条展示」有据可依；{@code message} 只做一句话摘要。</p>
@@ -113,7 +113,8 @@ public class ProductionRoutingCommandService {
      * 给了主线就按 {@link #validateMainline} 全量校验（与改主线同一份护栏，不复制第二份）。</p>
      *
      * <p><b>护栏（issue #4432 正文 §三，逐条 {@code error.details}）</b>：同租户活跃路线不得重名（409）/
-     * 主线引用工序库中不存在的工序拒 / 重复工序拒 / 至少一道必完工序 / {@code is_default=true} ⇒
+     * 主线引用工序库中不存在的工序拒 / 重复工序拒 / 🔴 <b>「至少一道必完工序」已于 issue #4961 退场</b>
+     * （完工口径改为「全部活跃工序实例完成」⇒ 五条护栏变<b>四条</b>）/ {@code is_default=true} ⇒
      * 把既有默认降级（**恰一条默认**：DB 部分唯一索引
      * {@code uk_production_route_templates_tenant_default} 保证 ≤1，不降级会撞索引变 500）。</p>
      */

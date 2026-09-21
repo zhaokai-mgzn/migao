@@ -358,7 +358,7 @@ V71 的矩阵种子是 `routing.py` ↔ `V71` ↔ `docs/sql/schema.sql` **三源
 | # | 状态 |
 |---|---|
 | O1（去掉 `applicable` 过滤） | ✅ **已关闭**（本批；代价值已由用户裁定接受，见 §13.4） |
-| O2（去掉规则级 `position` 限定） | ✅ **已关闭**（本批 V103） |
+| O2（去掉规则级 `position` 限定） | ⚠️ **关闭已撤回**（2026-09-21 后续裁定，见 §14.2）—— #4962 恢复规则级部位语义、V103 随 #4936 重写包删除 |
 | O3（纱帘 + 选项插入「纱帘无变体」的工序 ⇒ 变体解析 422） | ⚠️ **仍开**（与去部位化正交的既有缺陷，需单独 issue；V105 只补了那 4 道，未覆盖该路径） |
 | O4（矩阵物理行去部位） | ✅ **已关闭**（本批 V104；终态核验内置） |
 
@@ -369,3 +369,36 @@ V71 的矩阵种子是 `routing.py` ↔ `V71` ↔ `docs/sql/schema.sql` **三源
 - **前端仍写「设为不做」文案**：那是后端同一事务里的**内部动作**（把该列置 false），前端自 #4939 起**不持有**该字段、也不据此判路径。
 - **`position` 键仍留在两处读面契约里**（`operation-positions` 的 10 键 / `operation-layers` 的 `operations` 段同形）—— 值为 `通用`，
   属**历史载体**；删键是独立的一次契约变更（会同时影响 `tests/unit_ci_workflows/test_routing_read_endpoints.py` 的冻结键集与多处测试），**本批不做**。
+
+## 14. 第六轮：商家写面收口（2026-09-21，issue #4960 / #4961）
+
+> 与 §13 **正交**的一面：§13 去的是**部位维**，本轮去的是商家写面上的**两个配置项**（作用域 / 必完）。
+> 两者都不动 DB 语义、不动冻结键集 —— 与 §13「列保留、值恒定、读面不消费」是**同一套退场范式**。
+
+### 14.1 交付形态
+
+| 面 | 处置 | 判据（可核） |
+|---|---|---|
+| 抽屉「作用域」控件（`variant-scope-*`） | **退场**（`SCOPE_META` / `SCOPE_ORDER` / `scopeOf` 一并删；引言不再解释「按套 / 按件」） | `tests/unit/components/OperationsScopeColumn.test.tsx` #4960-②/③ + `tests/unit/pages/production-routings.test.tsx` #4960-①（负态断言 + **写请求里没有 `scope` 键**） |
+| 后端 `scope` 语义 | **一字未动**（#4960 那一个提交里 `backend/` 文件计数 = 0） | `ProductionOperationCommandService` 仍受理 `scope`；`ProcessingOrderService#keepsSetLevel` 未动（动它 = 布+纱一樘双付工钱） |
+| 「必完」（`is_must_finish`） | **概念整体退场**：完工判据 = **全部活跃工序实例 `isDone`** | Java `ProductionServiceTest#unfinishedNonMustFinishOperationBlocksCompletion`（含绿侧配对）+ Python `test_is_production_done_rejects_unfinished_non_must_finish_operation`（改前实测 `assert True is False`，含绿侧配对） |
+| 主线护栏「至少 1 道必完工序」 | **删除**（五条 ⇒ **四条**） | `ProductionRoutingCommandServiceTest`「护栏 4 退场 ⇒ 照常保存成功」+ 反向「退场后**不得**回退成零校验」 |
+| 写面 `is_must_finish` | **出现即 422 + 可行动 hint**（POST + PUT） | 沿用 #4641 `name` 的「出现即拒」范式，**不静默落库** |
+| 列与读面键 | **保留**（`POSITION_KEYS` 10 键 / `DELIVERY_KEYS` 9 键相对 `origin/main` **零 diff**），`is_must_finish` **值恒 `false`** | `tests/unit_ci_workflows/test_routing_read_endpoints.py` 零 diff |
+| 数据收敛 | **新增 `V107`**（显式事务 + 幂等谓词 `IS DISTINCT FROM FALSE` + 终态对账 `DO $$` + 回滚与不可复原项登记）；**不碰**三张快照表与软删行 | `tests/unit_ci_workflows/test_must_finish_retire_migration.py` + `migration_fingerprints.json` |
+| 文档真值源 | `docs/wiki/CONTRACT-LEDGER.md` **六处锚点**同步（护栏五⇒四、两个写面 body、三处读面键的「值恒 false」） | 本节 + 账本对应行 |
+
+### 14.2 O2 的状态撤回（本轮唯一的「开放项反悔」，逐条留痕）
+
+§13.5 里那行「O2 ✅ 已关闭（本批 V103）」**不再成立**：用户 2026-09-21 后续裁定把口径改成
+「**DB 层的改造需要彻底，结合新的需求适用条件增加部位选项，统一考量**」⇒ **规则级** `position`（部位限定）
+**保留并升格**为「什么时候做」的第四个维度（issue #4962 承接），V103 随 #4936 的 V102 重写包**删除**。
+⇒ 读到 §13.5 那一行的执行者请以本节为准。**这不回滚 §13 的去部位化**：矩阵一口价、`applicable` 退场、
+价目行 `position` 恒 `通用` 三件照旧；回来的只有**规则级**的部位语义（它从来不在矩阵里）。
+
+### 14.3 如实登记（不粉饰）
+
+- `V107` 的 issue 正文写「按租户循环」，实现用**全局一条 UPDATE**：该列是**全局目录属性**、终态对全部租户同构
+  ⇒ 全局写法覆盖面**严格更大**（含未来租户与 `tenants` 表缺席的行）；理由写在迁移文件头，覆盖面由文末**终态对账**机械核验。
+- 「实例显示 `逻辑名 · 部位`」本轮只核了**加工单页**；工人端 / bmini / mini-app 的**面级**一致性未全量核查 ⇒ 跟随单 **#4963**（登记，不谎报闭环）。
+- `is_must_finish` / `applicable` / `position` 的**物理删列**仍不做（=「值恒定 + 读面不消费」的已退场语义），留待统一审计批次。

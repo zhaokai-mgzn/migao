@@ -345,6 +345,38 @@ cases:
           fallback: "确认取消"
       - auto_respond:
           fallback: "确认"
+    # ── 前置自断言 + 自清理 + 效果层（#4960 / #4961 轮次的 case-trust burn-down 缴费；清 OR-* 最后一笔）──
+    # 本用例命中的三条存量违规（`metric=entries` ⇒ 必须**整条销账**，只收窄多码条目不算）：
+    #   ① CASE-TRUST-NO-PRECONDITION-ASSERTION  ② CASE-TRUST-NO-SELF-CLEAN  ③ CASE-TRUST-NO-EFFECT-ASSERTION
+    # 【真前置是什么】R1「帮我查一下最近的订单」用**相对指代**（"最近的"）在**订单集合**里取值 ——
+    #   集合为空 ⇒ `order_query` 无从命中 ⇒ R2 的取消动作没有对象，而报告上只表现为
+    #   `unmatched expectation`（看起来像「agent 不会取消订单」，归因全错，正是该规则 `why` 写的形态）。
+    #   集合的不可变键 = 客户手机号 `13800138000`（B 端种子里张三名下的订单），取数走
+    #   `local_runner._probe_phone_order_count` → `GET /api/admin/orders?receiver=<手机号>`，
+    #   与 AS-003 / OR-012 / OR-006 **同一部手机号、同一份"怎么数订单"的口径** —— 不另立第二份定义（§18）。
+    # 【为什么这么计数】**刻意不声明 `expect: <N>`**：该基线随栈组成而变（种子 + 同栈并行建单用例），
+    #   写死常量 = 依赖栈的恒红判据（反模式 CH-034）。声明层只用 runner 的**结构下界** `min: 1`
+    #   （`_PRECONDITION_TYPES["order_count_for_phone"]["min"]`）：靶子被清零时必然触发、且不随栈漂移。
+    #   类型 `order_count_for_phone` 是**既有已登记**类型 ⇒ 本单**不新增 type、不改探针**（§13.3 的"新 type = 大活"整块不动）。
+    # 【自清理为什么只到 `namespaces`】（照实写，不粉饰）：`pre_clean` 的五个已落地类型里**没有
+    #   "把订单复位"这一档**，而本用例的指代对象**就是订单集合** ⇒ 声明 `namespaces` 与同栈并行
+    #   建单/取消用例**自动互斥**（AS-003 / OR-012 / OR-006 先例，不另立口径）。这是 taxonomy 明确
+    #   列出的**弱证据档**：只保证并行互斥、**不解决重试前置** —— 如实登记在此，不当成强修复。
+    # 【效果层为什么是 `must_succeed[order_query]` 而不是 `order_manage`】本用例守的是**指代解析**
+    #   （`required_args` 的 `order_id` 非空），**不守取消结果** —— 取消能否成功取决于那条订单的
+    #   当前状态（种子栈里最新订单可能是 shipped，状态机**合法**拒绝）。若把 `order_manage` 写成
+    #   `must_succeed`，就把「取消被状态机合法拒绝」判成用例失败（= 新增恒红判据，反模式）。
+    #   而「定位那一步真的成了」正是本用例的**效果前提**：`order_query` 假成功（查不到/返回空）时，
+    #   后面那条 `order_id 非空` 要么落空、要么在要求 agent 把**编造的号**传下去。
+    # 【断言面一字未放宽】`user_inputs` / `expectations` / `required_args` / `data_checks` / `skip_reason`
+    #   **全部未动**，本单只加下面三格声明。
+    namespaces:
+      - "customer_phone:13800138000"
+    precondition:
+      - type: order_count_for_phone
+        source: "13800138000"
+    must_succeed:
+      - tool: order_query
     expectations:
       - tool: order_query
       - tool: order_manage
@@ -364,7 +396,7 @@ cases:
       - "confirm 卡片先于写操作（destructive 约定，真值在 ai-chat.tool-classes）"
       - "取消失败（订单状态不允许）也应如实说明，不得声称已取消"
     skip_reason: ""
-    merge_log: "eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号，改「先定位再取消」+ order_before/required_args 守住解析契约"
+    merge_log: "eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号，改「先定位再取消」+ order_before/required_args 守住解析契约 ｜ 2026-09-21（issue #4960 / #4961 轮次的 case-trust burn-down 缴费）：清 OR-* 最后一笔 —— 补 `namespaces[customer_phone:13800138000]` + `precondition[order_count_for_phone]`（结构化下界 `min:1`，不写死常量）+ `must_succeed[order_query]`（效果层落在「定位真的成了」，**不是** `order_manage`：取消被状态机合法拒绝不算用例失败）；`user_inputs` / `expectations` / `required_args` / `data_checks` / `skip_reason` 一字未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_order_manage.py"

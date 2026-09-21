@@ -154,12 +154,12 @@ describe('工序「作用域」写面退场（issue #4960；原 #4384 A1 / #4588
     )
     expect(Object.keys(mockUpdateOperation.mock.calls[0][1] as object)).toEqual(['group_name', 'unit'])
 
-    // 停用：既有写面照旧（`PUT /operations/{id}` 的 `status`）
-    await userEvent.click(screen.getByTestId('variant-disable-op-v54-24'))
+    // 停用 / 删除：入口在抽屉 footer（issue #4947：逐行那一对与 footer 逐字重复 ⇒ 退场）
+    await userEvent.click(screen.getByTestId('operations-manage-disable'))
     await waitFor(() => expect(mockUpdateOperation).toHaveBeenCalledWith('op-v54-24', { status: 'inactive' }))
 
     // 删除入口仍在（二次确认那一套见 production-routings.test.tsx ⑰-⑬）
-    expect(screen.getByTestId('variant-delete-op-v54-24')).toBeInTheDocument()
+    expect(screen.getByTestId('operations-manage-delete')).toBeInTheDocument()
 
     // 全量反向断言：**没有任何**写请求带 `scope` 键
     for (const call of mockUpdateOperation.mock.calls) {

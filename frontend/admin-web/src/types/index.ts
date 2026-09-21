@@ -1288,7 +1288,7 @@ export interface RouteRuleTriggerOptions {
 /**
  * 路线写端点失败时的响应体（护栏理由）—— 后端**真实**信封（issue #4308「冻结补遗 ②」）：
  * `{success:false, error:{code, message, details:[{field, message}]}, suggestion}`。
- * - `error.details[].message`：**逐条**护栏理由（空序列 / 工序不存在 / 重复 / 缺必完工序）—— **主口径**；
+ * - `error.details[].message`：**逐条**护栏理由（空主线 / 工序不在库 / 重复；🔴「缺必完工序」已随 issue #4961 退场）—— **主口径**；
  * - `error.message`：一句话摘要 —— 仅在 `details` 缺失时退化使用；
  * - `field`：违规维度（如 `operations[2]` / `must_finish`），**只用于定位，不展示给商家**。
  *
