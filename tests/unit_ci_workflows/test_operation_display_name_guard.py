@@ -1,5 +1,5 @@
 # case_ids: PP-011
-"""web 面**工序显示名**守卫（issue #4621，web 面工序命名统一 · 阶段 1）。
+"""web 面**工序显示名**守卫（issue #4621，web 面工序命名统一 · 阶段 1；#4963 扩面）。
 
 ## 病根（实测）
 
@@ -11,7 +11,7 @@ web 面存在**两套工序名**：`production_operations.name` 是旧命名（�
 （如 `三边 · 布帘`）；部位无关工序（`外帘装袋`）⇒ 只显示逻辑名。
 后端读面在返回工序名的位置**同时**给出 `logical_name` + `position`（**读时派生、不写库**）；
 既有 `operation` / `operation_name` 是**工人端快照名**（变体名）⇒ 保留，但
-**web 界面不得渲染该键**。
+**界面不得渲染该键**。
 
 ⚠️ **白名单是判据的覆盖面**（issue #4630 的教训）：#4621 改了三个面，**第 4 个消费面**
 （加工单「生产」页的计件表 `PieceworkTable.tsx`，同一份 `per_operation` 数据）漏了，
@@ -25,19 +25,52 @@ web 面存在**两套工序名**：`production_operations.name` 是旧命名（�
 |---|---|---|
 | C1 | 显示名 helper 存在、导出 `operationDisplayName`、且**拼装只有这一处** | 删/改名 helper ⇒ 必红 |
 | C2 | 每个受管面**都 import 了** helper（反空跑：面文件必须是「真的那一个」） | 把 import 删掉 ⇒ 必红 |
-| C3 | 受管面里**不得出现**变体名的直接渲染（`.operation` / `operation_name` / 裸 `{operation}`） | 把 `{operationDisplayName(op)}` 改回 `{op.operation}` ⇒ 必红 |
-| C4 | 注入式红证 + **内容指纹**自证（禁 mtime/size） | 注入点不存在 / 注入没生效 ⇒ 必红 |
+| C3 | 受管面里不得出现变体名的**渲染位置**；非渲染读取（赋值/条件/解构）**必须放行** | 把 `{operationDisplayName(op)}` 改回 `{op.operation}` ⇒ 必红 |
+| C4 | 注入式红证 + **内容指纹**自证（禁 mtime/size）；含「赋值绕过」的**边界**自证 | 注入点不存在 / 注入没生效 ⇒ 必红 |
+| C5 | 已退役面不得再渲染工序（退役 ≠ 无人管） | 把工序加回纸面 ⇒ 必红 |
+| C6 | 工人端（worker-h5）**引用**共享模块 `frontend/shared/operation-display.mjs`（不许自拼一份回来） | 改回 `${logical_name} · ${position}` ⇒ 必红 |
+| C7 | 四份实现（admin-web / shared / bmini / mini-app）**喂同一张输入表逐值等价** | 改任一份而不同步 ⇒ 必红（含注入式红证） |
 
-⚠️ **注释不算违规**（C3 先按字符串感知地剥注释）：判据自身不能把「注释里写的
-`op.operation` 反例」判成违规 —— 那是假红，会逼人删掉解释性注释。
+## 🔴 C3 的「渲染位置」判据（issue #4963 收口）
 
-⚠️ **受管面清单是显式白名单**（不是「扫全仓」）：`routings/page.tsx` 里的 `cell.operation`
-本来就是**逻辑名**（矩阵读面的值域），扫全仓会把它判成假红。
+**旧判据**是 `\\.operation\\b`（任何成员访问）⇒ 它把 `const op = row.operation`（**非渲染**读取）
+也判成违规。后果不是「太严」而是**判据不可满足**：加工单「生产」页
+（`frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx`）
+的卡点报表必须先把 `row.operation` 取出来再交给 `operationDisplayName(op)` ⇒ 想过判据只能写成
+`row['operation']` 这种**绕判据**写法（§17.3 ⑤ 明令禁止）。于是该面**收不进 `FACES`**，
+成了 #4630 那个「第 N 个消费面漏网」形态的**复发通道**。
+
+**新判据只判「值会不会被渲染出去」**（剥注释后逐行扫）：
+
+| 形态 | 例子 | 判 |
+|---|---|---|
+| JSX 插值 | `{op.operation}` / `{row.operation_name}` | **违规**（渲染） |
+| JSX 表达式属性 | `title={op.operation}` | **违规**（渲染） |
+| JSX 字符串属性 | `label="operation_name"` / `foo="op.operation"` | **违规**（渲染） |
+| 赋值 / 解构 / 条件 / 比较 | `const op = row.operation` / `if (row.operation)` / `a.operation === b` | **放行**（非渲染读取） |
+| 只出现 `operation` 键（无属性访问、非渲染属性值） | `operations` / `operation_id` | **放行** |
+
+⇒ 「赋值读变体名」在**渲染位置之外**被判**允许**（合法读取）；但只要那次读取发生在 JSX 插值里
+（`{(() => { const bad = op.operation; return bad })()}` 这种绕一层的写法），**照样判红** ——
+判据判的是「渲染位置」而不是「有没有 helper 调用」，所以「赋值绕过」不是逃生口（C4 之二自证）。
+**已知边界**（如实登记）：把读取搬到 JSX 之外、只渲染一个不带 `.operation` 的变量（`const bad = op.operation`
++ 别处 `{bad}`）**不**红 —— 那由 C2 的 import 锚点兜（面文件必须 import 并调用 `operationDisplayName`）。
+
+## ⚠️ 注释不算违规（C3 先按字符串感知地剥注释）
+
+判据自身不能把「注释里写的 `op.operation` 反例」判成违规 —— 那是假红，会逼人删掉解释性注释。
+
+## ⚠️ 受管面清单是显式白名单（不是「扫全仓」）
+
+`routings/page.tsx` 里的 `cell.operation` 本来就是**逻辑名**（矩阵读面的值域），扫全仓会把它判成假红。
 """
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -50,6 +83,10 @@ HELPER = "frontend/admin-web/src/lib/operation-display.ts"
 #: 第 4 个消费面；#4621 只改了前三个 ⇒ 它一直渲染变体名，而**没有任何判据会因此变红**）。
 #: 第 5 项是 issue #4647 / D1 补的**会话卡面** —— 米宝会话里的生产进度卡（`current_operation`）；
 #: 它改前不在任何清单里 ⇒ 退回裸渲染快照名时**四条判据全绿**。
+#: 第 6 项是 issue #4963 补的**加工单「生产」页本身**（`processing-orders/[id]/production/page.tsx`）：
+#: 它消费卡点报表（`stuck[].operation`，带 `logical_name` / `position`）与工序进度表；
+#: 收不进来的原因正是 C3 的旧判据（把 `const op = row.operation` 判违规）—— C3 改成
+#: 「渲染位置」判据后，它可以**按正常写法**（先取值再交给 helper）进清单。
 #: 🔴 **已退役面（issue #4964，2026-09-21）**：`frontend/admin-web/src/components/production/TaskCardPrint.tsx`
 #: **不再**是本清单的成员 —— 洗水码改竖版 30×60 后**工序摘要整体退场**（用户字段裁定未选；
 #: 工人扫部位码后在 H5 看该部位工序清单，见 issue #4967）⇒ 纸面**一个工序名都不印**，
@@ -61,6 +98,7 @@ FACES: tuple[str, ...] = (
     "frontend/admin-web/src/app/(dashboard)/production/piecework/page.tsx",
     "frontend/admin-web/src/components/production/PieceworkTable.tsx",
     "frontend/admin-web/src/components/chat/ProductionProgressCard.tsx",
+    "frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx",
 )
 
 #: **已退役面**（issue #4964）：曾在 `FACES` 里、现在**明确不得**再渲染工序的界面
@@ -71,12 +109,60 @@ RETIRED_FACES: tuple[str, ...] = (
 #: 面必须 import 的符号（C2 的反空跑锚点：面文件真的在用那一份实现）
 REQUIRED_IMPORT = "operationDisplayName"
 
-#: 变体名「直接渲染」的三种形态（C3）。**只匹配表达式位置**，不匹配 `operation-row-…` 这类
-#: 文案/testid（那正是 `data-testid={`operation-row-${op.id}`}` 会误报的地方）。
+#: 工序显示名的四份实现（issue #4963）：**逐值等价**由 C7 钉住。
+#: ① admin-web 的 .ts（web 面唯一口径）；② worker-h5 直接 import 的共享 .mjs；
+#: ③ bmini（tsconfig rootDir 约束 ⇒ 逐字复制）；④ mini-app（同因）。
+#: 为什么不是「一份实现 + 三个 import」：`@/*` 别名各自指向自身 `src`，且两个 Taro 包的
+#: `tsconfig.include` 只含 `./src` ⇒ 跨包 import 会让 tsc 报 TS6059（见各文件头注释）。
+IMPLEMENTATIONS: tuple[str, ...] = (
+    HELPER,
+    "frontend/shared/operation-display.mjs",
+    "frontend/bmini-app/src/utils/operationDisplayName.ts",
+    "frontend/mini-app/src/components/cards/operationDisplayName.ts",
+)
+
+#: worker-h5 必须 import 共享模块的那一行（C6 的反空跑锚点）
+WORKER_H5_RENDER = "frontend/worker-h5/src/render.mjs"
+_SHARED_IMPORT_RE = re.compile(r"""from\s+['"][^'"]*shared/operation-display\.mjs['"]""")
+
+#: 变体名「**渲染位置**」的形态（C3，issue #4963 收口）。
+#: 🔴 **不判赋值 / 解构 / 条件 / 比较**（`const op = row.operation` 是合法读取，不是渲染）——
+#: 旧判据把这种非渲染读取判违规 ⇒ 判据不可满足 ⇒ 逼出 `row['operation']` 绕判据写法。
+#: 只判「值会不会被渲染出去」：JSX 插值 `{…}`、JSX 表达式属性 `attr={…}`、
+#: JSX 字符串属性 `attr="…operation_name…"`。
+#: 成员访问用 `\b\.operation`（**不用** `(?<![\w$'"\[])`：那个 lookbehind 恒假 ⇒ 判据永不命中，
+#: 会静默退化成空断言）；`\b` 天然排除字符串里的 `.operation`（前面是引号 ⇒ 无词边界）。
 _VIOLATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("成员访问 .operation", re.compile(r"\.operation\b(?![\w$])")),
-    ("快照键 operation_name", re.compile(r"\boperation_name\b")),
-    ("裸标识符 {operation}", re.compile(r"\{\s*operation\b(?![\w$])")),
+    (
+        "成员访问 .operation 出现在 JSX 插值里",
+        re.compile(r"\{\s*[^}\n]*?\b\.[ \t]*operation\b(?![\w$])"),
+    ),
+    (
+        "成员访问 .operation 出现在 JSX 表达式属性里",
+        re.compile(r"\b[\w-]+\s*=\s*\{[^}\n]*?\b\.[ \t]*operation\b(?![\w$])"),
+    ),
+    (
+        "变体名 operation_name 出现在 JSX 插值里",
+        re.compile(r"\{\s*[^}\n]*?\boperation_name\b"),
+    ),
+    (
+        "变体名 operation_name 出现在 JSX 表达式属性里",
+        re.compile(r"\b[\w-]+\s*=\s*\{[^}\n]*?\boperation_name\b"),
+    ),
+    (
+        "JSX 字符串属性含变体名",
+        re.compile(
+            r"""\b[\w-]+\s*=\s*["'][^"'\n]*(?:\boperation_name\b|\b\.[ \t]*operation\b)[^"'\n]*["']"""
+        ),
+    ),
+    # 裸标识符 `{operation}`（JSX 简写渲染）。**排除解构 / 对象字面量** ——
+    # 它们的 `}` 后面是 `,` / `=` / `:` / `;`（`const { operation, logical_name } = row`、
+    # `const x = { operation }`、`const { operation } = row`），是读取不是渲染。
+    # 判据收紧到「`}` 后**不**跟 `,`/`=`/`:`/`;`」⇒ 解构不误报、真渲染必红。
+    (
+        "裸标识符 {operation}",
+        re.compile(r"\{\s*operation\s*\}(?!\s*[,=:;])"),
+    ),
 )
 
 #: helper 必须导出的核心符号（C1 的非空锚点）
@@ -136,7 +222,7 @@ def _strip_comments(src: str) -> str:
 
 
 def _violations(src: str) -> list[str]:
-    """受管面源码里的**变体名直接渲染**违规（剥注释后扫描；返回可读描述）。"""
+    """受管面源码里的**变体名渲染位置**违规（剥注释后扫描；返回可读描述）。"""
     code = _strip_comments(src)
     found: list[str] = []
     for lineno, line in enumerate(code.splitlines(), start=1):
@@ -149,6 +235,144 @@ def _violations(src: str) -> list[str]:
 def _fingerprint(text: str) -> str:
     """内容指纹（issue #4260 红证卫生：**禁 mtime/size** —— 它们会被同秒写入骗过）。"""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+# ── C7 的支撑：把四份实现**真的跑起来**逐值比对（不是文本比对）────────────────
+
+#: 显示名的冻结输入表（名字 → 表达式）。**这是判据的真值**：四份实现逐条比它。
+#: 每条的「为什么」都对着 #4963 登记的三处漂移之一（缺 logical_name / 不 trim / 编占位名）。
+_NAMES: tuple[tuple[str, str], ...] = (
+    ("未传参数（undefined）", "undefined"),
+    ("空对象", "{}"),
+    ("null", "null"),
+    ("显式 undefined", "undefined"),
+    ("逻辑名 + 部位", "{ operation: '精裁-布', logical_name: '精裁', position: '布帘' }"),
+    ("部位无关工序", "{ operation: '外帘装袋', logical_name: '外帘装袋' }"),
+    ("position 全空白", "{ operation: 'x', logical_name: '精裁', position: '  ' }"),
+    ("缺 logical_name（老数据）", "{ operation: '定型-布' }"),
+    ("logical_name 全空白", "{ operation: '定型-布', logical_name: '  ' }"),
+    ("键值带空白", "{ operation: 'x', logical_name: ' 精裁 ', position: ' 布帘 ' }"),
+)
+_EXPECTED: tuple[str, ...] = (
+    "",             # ① 空态给空串，**不编占位名**「工序」（改前 bmini 编「工序」）
+    "",
+    "",
+    "",
+    "精裁 · 布帘",   # ② 逻辑名 · 部位
+    "外帘装袋",      # ③ 部位无关 ⇒ 只显示逻辑名（不拼孤立的 ` · `）
+    "精裁",         # ④ position 全空白 ⇒ 只显示逻辑名
+    "定型-布",       # ⑤ 缺 logical_name ⇒ 退回快照名原文（改前只显示部位 / 显示空白）
+    "定型-布",       # ⑥ logical_name 全空白 ⇒ 同上
+    "精裁 · 布帘",   # ⑦ 键值带空白必须 trim（改前不 trim ⇒ 原样上屏）
+)
+
+
+def _extract_function(src: str, name: str) -> str:
+    """从源码里取出名为 `name` 的**函数声明整段**（含签名）。
+
+    找不到 ⇒ AssertionError（**不得**静默跳过：抽取锚点漂了就是判据空跑）。
+    取签名时做**平衡括号**扫描，不用正则截断 —— 参数里的 `{ ... }` 会让 `[^)]*` 提前收尾。
+    """
+    m = re.search(rf"\bfunction\s+{re.escape(name)}\s*\(", src)
+    assert m, (
+        f"抽不到函数 `{name}` —— C7 的抽取锚点漂了（改名 / 改写成箭头函数 / 删函数）⇒ "
+        "判据会**空跑通过**，故这里必须红"
+    )
+    i = src.index("(", m.start())
+    depth = 0
+    while i < len(src):
+        if src[i] == "(":
+            depth += 1
+        elif src[i] == ")":
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+    assert depth == 0, f"`{name}` 的签名括号不平衡 ⇒ 抽取失败（不得静默跳过）"
+    body_start = src.index("{", i)
+    j, depth = body_start, 0
+    while j < len(src):
+        if src[j] == "{":
+            depth += 1
+        elif src[j] == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        j += 1
+    assert depth == 0, f"`{name}` 的函数体大括号不平衡 ⇒ 抽取失败"
+    return src[m.start(): j + 1]
+
+
+def _strip_parameter_types(params: str) -> str:
+    """剥掉参数表里的 TS 类型注解，**保留每个参数的 JS 形态**。
+
+    只认「`名字?` + `:` + 类型」这一种形态（本判据的四份实现都是它）：
+    `op?: { a?: string | null } | null` ⇒ `op`；`op?: OperationNameFields | null` ⇒ `op`；
+    `op = { a: 1 }`（默认值对象字面量，**没有**类型注解）⇒ 原样保留。
+
+    🔴 为什么不是「按 `:` 切掉类型、保留后面的花括号」：那样会把 `op?: { … }` 剥成 `op?{ … }`
+    （花括号本是**类型**的一部分），参数表直接语法错误 ⇒ C7 会以「编译不过」红，而不是以
+    「口径漂移」红 —— 判据的**归因**就错了。参数名之后的一切（类型 + 可选标记）整体丢弃。
+    """
+    out = re.sub(r"(\w+)\?\s*:\s*[^,]*?(?=,\s*\w|\s*$)", r"\1", params, flags=re.S)
+    out = re.sub(r"(\w+)\s*:\s*[^,]*?(?=,\s*\w|\s*$)", r"\1", out, flags=re.S)
+    return out
+
+
+def _implementation_source(src: str) -> str:
+    """从一份实现源码里抽出可执行的 `operationDisplayName`（ESM 源码串）。"""
+    fn = _extract_function(src, "operationDisplayName")
+    open_paren = fn.index("(")
+    depth, i = 0, open_paren
+    while i < len(fn):
+        if fn[i] == "(":
+            depth += 1
+        elif fn[i] == ")":
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+    params = _strip_parameter_types(fn[open_paren + 1:i])
+    body = fn[fn.index("{", i):]
+    return f"function operationDisplayName({params}) {body}\nexport {{ operationDisplayName }}\n"
+
+
+def _parity_from_source(src: str) -> list[str]:
+    """把一份实现**真的跑起来**（Node）喂 `_NAMES` 全表，返回逐条输出。
+
+    🔴 为什么用 Node 而不是 Python `eval`：被测源码是 **JS/TS**，函数体里的模板串
+    （`` `${logical} · ${position}` ``）Python 编译不了 ⇒ 只能在 JS 运行时里执行
+    （否则判据会以「编译不过」红，而**归因错误**：真正的缺陷是口径漂移）。
+    判据仍是 Python 侧的 `_EXPECTED` 表，Node 只当执行器。
+    """
+    program = (
+        "import { operationDisplayName as f } from './impl.mjs'\n"
+        f"const values = [{', '.join(v for _, v in _NAMES)}]\n"
+        "console.log(JSON.stringify(values.map((v) => f(v))))\n"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        impl = Path(tmp) / "impl.mjs"
+        impl.write_text(_implementation_source(src), encoding="utf-8")
+        runner = Path(tmp) / "runner.mjs"
+        runner.write_text(program, encoding="utf-8")
+        proc = subprocess.run(
+            ["node", str(runner)],
+            capture_output=True,
+            text=True,
+            cwd=tmp,
+            timeout=60,
+            check=False,
+        )
+    assert proc.returncode == 0, (
+        "把实现跑起来失败（抽取 / 剥类型 / Node 执行）—— C7 会因此**空跑**，故这里必须红：\n"
+        f"stdout: {proc.stdout}\nstderr: {proc.stderr}"
+    )
+    return list(json.loads(proc.stdout.strip()))
+
+
+def _parity(rel: str) -> list[str]:
+    """一份实现喂 `_NAMES` 全表的实际输出（用于与 `_EXPECTED` 逐值比对）。"""
+    return _parity_from_source(_read(rel))
 
 
 # ── C1：唯一实现存在且导出核心符号 ────────────────────────────────────────────
@@ -172,7 +396,7 @@ def test_c1_helper_is_the_single_composition_point():
 
 def test_c2_every_face_imports_the_shared_helper():
     """C2：每个受管面都 import 了 helper —— 面文件必须是「真的那一个」（反空跑）。"""
-    assert len(FACES) >= 4, "受管面清单被清空 ⇒ 本守卫会空跑通过（判据必须能判红）"
+    assert len(FACES) >= 5, "受管面清单被清空 ⇒ 本守卫会空跑通过（判据必须能判红）"
     for rel in FACES:
         src = _read(rel)
         assert REQUIRED_IMPORT in src, (
@@ -184,26 +408,57 @@ def test_c2_every_face_imports_the_shared_helper():
         )
 
 
-# ── C3：受管面不得直接渲染变体名 ──────────────────────────────────────────────
+# ── C3：受管面不得在**渲染位置**直接渲染变体名 ────────────────────────────────
 
 def test_c3_faces_never_render_the_variant_name():
-    """C3：受管面里不得出现变体名的直接渲染（`.operation` / `operation_name` / 裸 `{operation}`）。"""
+    """C3：受管面里不得出现变体名的**渲染位置**（JSX 插值 / JSX 属性）。
+
+    🔴 判据是「渲染位置」而不是「任何成员访问」（issue #4963）：`const op = row.operation`
+    是**非渲染**读取，必须放行 —— 否则判据不可满足，只能写成 `row['operation']` 绕判据
+    （§17.3 ⑤ 禁止），加工单「生产」页因此收不进 `FACES`（#4630 的漏改形态复发通道）。
+    """
     offenders: list[str] = []
     for rel in FACES:
         for hit in _violations(_read(rel)):
             offenders.append(f"{rel}: {hit}")
     assert offenders == [], (
-        "受管面直接渲染了**工人端快照名**（变体名，如 `精裁-布`）—— issue #4621 要求界面只显示"
-        "「逻辑名 · 部位」（如 `精裁 · 布帘`）：\n  " + "\n  ".join(offenders)
+        "受管面在**渲染位置**直接渲染了**工人端快照名**（变体名，如 `精裁-布`）—— issue #4621 "
+        "要求界面只显示「逻辑名 · 部位」（如 `精裁 · 布帘`）：\n  " + "\n  ".join(offenders)
         + "\n改用 `operationDisplayName(op)`（唯一实现："
         + HELPER + "）"
     )
 
 
+def test_c3_assignment_read_is_not_a_violation():
+    """C3 的**反向**判据（issue #4963）：非渲染读取（赋值 / 条件 / 解构）**不得**被判违规。
+
+    没有这条，C3 会退回「任何 `.operation` 都违规」的旧形态 —— 那正是把
+    `const op = row.operation` 判红、逼人写 `row['operation']` 的原因。
+    同一条测试里钉**判别力下界**：渲染位置**必须**判红（否则「放行」会退化成空判据）。
+    """
+    allowed = (
+        "const op = row.operation\n",
+        "let x = a.operation ?? null\n",
+        "const { operation, logical_name } = row\n",
+        "if (row.operation) return null\n",
+        "const same = a.operation === b.operation\n",
+        "const id = op.operation_id\n",
+        "const list = row.operations ?? []\n",
+    )
+    for snippet in allowed:
+        assert _violations(snippet) == [], (
+            f"非渲染读取被判违规（判据过严 ⇒ 只能绕判据）：{snippet.strip()}"
+        )
+    for snippet in ("{op.operation}\n", "{row.operation_name}\n", "title={op.operation}\n", 'label="op.operation"\n'):
+        assert _violations(snippet), (
+            f"渲染位置**没**被判红 ⇒ C3 是空判据（不会红的断言 = 空断言）：{snippet.strip()}"
+        )
+
+
 # ── C4：注入式红证 + 内容指纹自证 ─────────────────────────────────────────────
 
 def test_c4_injected_variant_render_is_red(tmp_path: Path):
-    """C4：往临时副本塞「直接渲染变体名」⇒ 判据必红；并用**内容指纹**自证注入真生效。"""
+    """C4：往临时副本塞「渲染位置直接渲染变体名」⇒ 判据必红；并用**内容指纹**自证注入真生效。"""
     rel = FACES[0]
     original = _read(rel)
     assert _violations(original) == [], (
@@ -211,9 +466,11 @@ def test_c4_injected_variant_render_is_red(tmp_path: Path):
         + "\n  ".join(_violations(original))
     )
 
-    injected = original.replace(f"{{{REQUIRED_IMPORT}(op)}}", "{op.operation}")
+    injected = re.sub(
+        r"\{\s*" + REQUIRED_IMPORT + r"\([^)]*\)[^}]*\}", "{op.operation}", original, count=1
+    )
     assert injected != original, (
-        f"`{rel}` 里找不到注入点 `{{{REQUIRED_IMPORT}(op)}}` ⇒ 本红证会**空跑**"
+        f"`{rel}` 里找不到 `{REQUIRED_IMPORT}(…)` 的渲染注入点 ⇒ 本红证会**空跑**"
         "（判据必须能判红）：面文件的渲染形态变了就同步改本守卫"
     )
 
@@ -229,13 +486,47 @@ def test_c4_injected_variant_render_is_red(tmp_path: Path):
     )
 
 
+def test_c4_assignment_bypass_is_not_an_escape_hatch(tmp_path: Path):
+    """C4 之二（issue #4963）：「**赋值绕过**」不是逃生口 —— 在 JSX 插值里读变体名**照样判红**。
+
+    注入形态 = 把 `{operationDisplayName(op)}` 换成
+    `{(() => { const bad = op.operation; return bad })()}`：值取自同一个键、只是绕了一层 IIFE。
+    判据按「**渲染位置**」判 ⇒ 它落在 JSX 插值 `{…}` 里 ⇒ **必红**（与直接写 `{op.operation}` 同判）。
+    ⇒ 想「绕过」只有两条路：① 真的走 `operationDisplayName`；② 把读取搬到 JSX 之外
+    （那时它不渲染，判据不管，但 C2 的 import 锚点仍要求面文件用 helper）。
+    """
+    rel = FACES[0]
+    original = _read(rel)
+    injected = original.replace(
+        f"{{{REQUIRED_IMPORT}(op)}}",
+        "{(() => { const bad = op.operation; return bad })()}",
+    )
+    assert injected != original, (
+        f"`{rel}` 里找不到 `{REQUIRED_IMPORT}(op)` 的渲染注入点 ⇒ 本红证会空跑（必须能判红）"
+    )
+
+    copy = tmp_path / Path(rel).name
+    copy.write_text(injected, encoding="utf-8")
+    after = copy.read_text(encoding="utf-8")
+    assert _fingerprint(after) != _fingerprint(original), "注入后内容指纹未变 ⇒ 注入没生效"
+
+    assert _violations(after), (
+        "在 JSX 插值里读变体名**没**被判红 ⇒ 「赋值绕过」成了逃生口"
+        "（判据必须按渲染位置判，而不是按「有没有 helper 调用」判）"
+    )
+    assert REQUIRED_IMPORT in after, (
+        "本注入**只**替换渲染表达式、保留 import ⇒ 若连 import 都没了，说明注入形态变了，"
+        "请同步本红证（它要证明的是「渲染位置判红」而不是「文件不再被扫」）"
+    )
+
+
 # ── C5：已退役面不得再渲染工序（退役 ≠ 无人管）──────────────────────────────
 
 def test_c5_retired_face_no_longer_renders_operations():
     """C5：洗水码纸面**不再印工序**（issue #4964 的退场两项之一）—— 退役面不得被偷偷加回。
 
     判据形态 = 退役面源码（**剥注释后**）里不得出现 `operationDisplayName`、不得出现「工序」字样、
-    也不得直接渲染变体名。**为什么必须有这条**：面一旦移出 `FACES`，C2/C3 就不再管它 ⇒
+    也不得在渲染位置直接渲染变体名。**为什么必须有这条**：面一旦移出 `FACES`，C2/C3 就不再管它 ⇒
     「把工序加回纸面、且直接渲染变体名」会**全绿** —— 那正是 #4630 登记过的漏改形态。
     """
     for rel in RETIRED_FACES:
@@ -250,5 +541,77 @@ def test_c5_retired_face_no_longer_renders_operations():
             "确要加回请**同时**把它加回 `FACES` 并走 `operationDisplayName`"
         )
         assert _violations(src) == [], (
-            f"`{rel}` 直接渲染了变体名（工人端快照名）：\n  " + "\n  ".join(_violations(src))
+            f"`{rel}` 在渲染位置直接渲染了变体名（工人端快照名）：\n  " + "\n  ".join(_violations(src))
         )
+
+
+# ── C6：工人端（worker-h5）引用共享模块（不许自拼一份回来）──────────────────
+
+def test_c6_worker_h5_imports_the_shared_module():
+    """C6：`worker-h5/src/render.mjs` 必须 import 共享模块，且**不得**自拼「逻辑名 · 部位」。
+
+    issue #4963：worker-h5 此前自拼 `${op.logical_name} · ${op.position ?? 部位名}` ——
+    与 admin-web 的口径在「缺 logical_name」「键值带空白」「全缺」三种输入下渲染不同。
+    判据 = ① 有 import；② 源码里不再出现 `${…logical_name} · ${…}` 的自拼形态（红证：改回去必红）。
+    """
+    src = _read(WORKER_H5_RENDER)
+    assert _SHARED_IMPORT_RE.search(src), (
+        f"`{WORKER_H5_RENDER}` 没有 import `frontend/shared/operation-display.mjs` —— "
+        "工序显示名各拼一份必然漂移，而漂移的那一份不会变红"
+    )
+    # 自拼形态：`${…logical_name…} · ${…}`（`[^{}]|\{[^{}]*\}` 允许表达式里带一层花括号 ——
+    # 例如 `${esc(op.position ?? v.position?.position_name ?? '')}` ⇒ 简单 `[^}]*` 会漏掉它）
+    assert not re.search(r"\$\{[^{}]*(?:\{[^{}]*\})?[^{}]*\.logical_name[^{}]*\}[ \t]*·[ \t]*\$\{", src), (
+        f"`{WORKER_H5_RENDER}` 又自拼「逻辑名 · 部位」了 ⇒ 与 admin-web 口径漂移（issue #4963）"
+    )
+
+
+# ── C7：四份实现喂同一张输入表逐值等价 ──────────────────────────────────────
+
+def test_c7_all_implementations_agree_value_by_value():
+    """C7：四份实现（admin-web / shared / bmini / mini-app）**逐值等价**（issue #4963）。
+
+    为什么必须「真跑 + 逐值」而不是文本比对：跨包 import 不可行（tsconfig rootDir）⇒ 复制是
+    **有意**的；但「靠纪律保证两份不漂移」= 没有任何东西会因此变红（同 `_LOGICAL_NAME_PAIRS`
+    三副本的病）。本判据把四份实现**编译出来喂同一张表**，改任一份而不同步 ⇒ 必红。
+    """
+    assert len(IMPLEMENTATIONS) >= 4, "实现清单被清空 ⇒ 本判据会空跑通过"
+    for rel in IMPLEMENTATIONS:
+        actual = _parity(rel)
+        assert actual == list(_EXPECTED), (
+            f"`{rel}` 的工序显示名口径与冻结表不一致（issue #4963）：\n"
+            + "\n".join(
+                f"  {name}：期望 {exp!r}，实际 {act!r}"
+                for (name, _), exp, act in zip(_NAMES, _EXPECTED, actual)
+                if exp != act
+            )
+            + "\n四份实现（admin-web / shared / bmini / mini-app）必须逐值一致："
+            "跨包 import 不可行 ⇒ 复制是有意的，但**漂移必须变红**"
+        )
+
+
+def test_c7_injected_divergence_is_red(tmp_path: Path):
+    """C7 的注入式红证：把某一份实现改成旧口径（不回退快照名 / 不 trim）⇒ 判据必红。
+
+    红证卫生（issue #4260）：注入前后用**内容指纹**自证（禁 mtime/size），且注入点不存在即红。
+    """
+    rel = IMPLEMENTATIONS[2]  # bmini 的那一份（改前正是 `|| '工序'` + 不 trim 的旧口径）
+    original = _read(rel)
+    injected = original.replace(
+        "  const logical = (op?.logical_name ?? '').trim() || (op?.operation ?? '').trim()",
+        "  const logical = op?.logical_name",
+    )
+    assert injected != original, (
+        f"`{rel}` 里找不到注入点 ⇒ 本红证会**空跑**（判据必须能判红）：实现改了就同步改本守卫"
+    )
+    assert _fingerprint(injected) != _fingerprint(original), "注入后内容指纹未变 ⇒ 注入没生效"
+
+    copy = tmp_path / "operationDisplayName.ts"
+    copy.write_text(injected, encoding="utf-8")
+    diverged = _parity_from_source(injected)
+
+    assert diverged != list(_EXPECTED), (
+        "把实现改成旧口径（不回退快照名 / 不 trim）后判据**没判红** ⇒ C7 是空判据"
+    )
+    # 反向：真实文件仍与冻结表一致（证明上面那次不一致来自注入，而不是本来就不一致）
+    assert _parity(rel) == list(_EXPECTED)

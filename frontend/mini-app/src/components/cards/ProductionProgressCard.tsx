@@ -1,4 +1,5 @@
 import { View, Text } from '@tarojs/components'
+import { operationDisplayName } from './operationDisplayName'
 import './ProductionProgressCard.scss'
 
 /** 工序（内部字段如 unit_price/worker_name 不参与渲染） */
@@ -24,6 +25,13 @@ interface ProductionCardData {
   /** 米宝精简进度载荷（GET /api/admin/agent/production/progress?order_no=）字段 */
   progress_percent?: number
   current_operation?: string
+  /**
+   * 工序显示名两键（issue #4643 **已随读面下发**，只加不改）：
+   * `current_operation` 是工人端**快照名**（变体名 `精裁-布`）⇒ 顾客端**不得直接渲染**，
+   * 走 `logical_name`（+ 有部位时 `position`）拼 `逻辑名 · 部位`（issue #4963）。
+   */
+  logical_name?: string | null
+  position?: string | null
   pending_operations?: string[]
   total_operations?: number
   done_operations?: number
@@ -81,7 +89,14 @@ export default function ProductionProgressCard({ data }: ProductionProgressCardP
     ?? (total > 0 ? Math.round((done / total) * 100) : 0)
 
   const currentFromOps = operations.find((operation) => operation.status !== 'done')
-  const current = data?.current_operation || currentFromOps?.operation
+  // 工序显示名（issue #4963）：**不得直接渲染** `current_operation`（它是工人端快照名，变体名
+  // `精裁-布`）—— 走与 web 面逐字同语义的口径「逻辑名 · 部位」（读面 #4643 已随精简载荷下发
+  // `logical_name` + `position`，**无需后端改动**）。老数据缺 `logical_name` ⇒ 退回快照名原文。
+  const currentFields =
+    data && data.current_operation
+      ? { ...data, operation: data.current_operation }
+      : currentFromOps
+  const current = operationDisplayName(currentFields)
   const remaining = pendingList
     ? pendingList.length
     : operations.filter((operation) => operation.status !== 'done').length

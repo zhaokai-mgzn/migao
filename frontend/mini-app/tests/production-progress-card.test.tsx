@@ -111,6 +111,51 @@ describe('ProductionProgressCard（顾客端生产进度卡）', () => {
     expect(screen.queryByText('📎 消息内容暂不支持预览')).toBeNull()
   })
 
+  it('工序显示名（issue #4963）：读面给了 logical_name/position ⇒ 渲染「逻辑名 · 部位」，不得渲染工人端快照名', () => {
+    // 读面 `GET /api/admin/agent/production/progress` 自 #4643 起随精简载荷下发
+    // `logical_name` + `position`（只加不改）⇒ 顾客端**无需**后端改动即可显示部位。
+    render(
+      <ProductionProgressCard
+        data={{
+          order_no: 'CSO260915-02615',
+          status: 'producing',
+          progress_percent: 40,
+          // 🔴 工人端**快照名**（变体名）：顾客端**不得**渲染它
+          current_operation: '精裁-布',
+          logical_name: '精裁',
+          position: '布帘',
+          pending_operations: ['精裁-布'],
+          total_operations: 5,
+          done_operations: 2,
+        }}
+      />,
+    )
+
+    expect(screen.getByText('当前工序：精裁 · 布帘')).toBeTruthy()
+    // 红证：直接把快照名渲染上屏（改前的行为）⇒ 本断言必红
+    expect(screen.queryByText(/精裁-布/)).toBeNull()
+  })
+
+  it('工序显示名边界（issue #4963）：缺 logical_name ⇒ 退回快照名原文（不显示空白、不编占位名）', () => {
+    render(
+      <ProductionProgressCard
+        data={{
+          order_no: 'CSO260915-02615',
+          status: 'producing',
+          progress_percent: 40,
+          current_operation: '外帘装袋',
+          logical_name: null,
+          position: null,
+          pending_operations: ['外帘装袋'],
+          total_operations: 1,
+          done_operations: 0,
+        }}
+      />,
+    )
+
+    expect(screen.getByText('当前工序：外帘装袋')).toBeTruthy()
+  })
+
   it('兼容米宝精简进度载荷（progress_percent/current_operation/pending_operations/expected_delivery_date）', () => {
     // 来源：M4-G-2 已合并的 GET /api/admin/agent/production/progress 返回形状（无 positions）
     render(
