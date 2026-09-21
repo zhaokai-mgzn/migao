@@ -36,6 +36,10 @@ import java.util.Set;
  * {@link PermissionInterceptor#hasBypassRole} 与
  * {@code SecurityConfig#adminApiAuthorizationManager()} 会双双放行，
  * 使受限岗位的员工能借米宝执行自己无权执行的写操作。</p>
+ *
+ * <p><b>商户员工判定失败时 fail-closed（issue #5085，改判 #4105 的 fail-open）</b>：查库异常
+ * （DB/连接抖动）时**拒绝请求**（503，不设 SecurityContext、不继续 filter chain），
+ * 而不是回退 {@code service} 身份 —— 回退等于 service 全权直通，失效方向是放宽且无需攻击者构造。</p>
  */
 @Slf4j
 @Component
@@ -104,8 +108,23 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
 
                     // 命中本租户商户员工 ⇒ 挂真实角色（走细粒度鉴权）；
                     // 其余四种情形（无 X-User-Id / C 端角色 / 跨租户 / 查不到）与今日行为逐字节一致。
-                    User merchantStaff = StringUtils.hasText(realUserId)
-                            ? resolveMerchantStaff(realUserId, tenantId) : null;
+                    User merchantStaff = null;
+                    if (StringUtils.hasText(realUserId)) {
+                        try {
+                            merchantStaff = resolveMerchantStaff(realUserId, tenantId);
+                        } catch (IllegalStateException e) {
+                            // fail-closed（issue #5085，改判 issue #4105 的 fail-open）：判定依赖不可用时
+                            // 拒绝请求，**绝不**回退 service 身份 —— 回退即 service 全权直通
+                            // （PermissionInterceptor.hasBypassRole 对 "service" 直接放行）。
+                            // 提前 return 不走下方 finally，故此处显式清 TenantContext（线程池复用不得串租户）。
+                            TenantContext.clear();
+                            response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write(
+                                    "{\"code\":503,\"message\":\"商户员工身份判定失败，已拒绝请求\"}");
+                            return;
+                        }
+                    }
                     List<String> roles = List.of(SERVICE_ROLE_CODE);
                     List<SimpleGrantedAuthority> authorities = SERVICE_AUTHORITIES;
                     if (merchantStaff != null) {
@@ -162,6 +181,9 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
      * 判定 {@code X-User-Id} 是否为「本租户商户员工」，是则返回该用户，否则返回 {@code null}
      * （回退内部服务身份 = 今日行为）。
      *
+     * <p>判定依赖（查库）不可用时抛 {@link IllegalStateException}，由调用方 **fail-closed**
+     * 拒绝请求（issue #5085）—— 不得把它与「不是商户员工」（返回 {@code null}）混为一谈。</p>
+     *
      * <p>判定口径与既有实现**同源**，不新造第二套（issue #4105）：用户行存在且未软删
      * （{@code @TableLogic} 由 {@code selectById} 隐式加 {@code deleted = 0}）、
      * {@code status = active}（同 {@code AuthService.validateBminiEmployee}）、
@@ -184,11 +206,14 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
             }
             return user;
         } catch (Exception e) {
-            // 决策（issue #4105，见 PR 说明）：查库失败时回退**今日行为**（service 直通）而不是拒绝请求——
-            // 调用方已持有可信 SERVICE_TOKEN（可信内部服务，不是不可信第三方），失败回退不构成提权；
-            // 但必须 ERROR 留痕，否则「查失败」与「查不到」在日志里无从区分（静默失效形态）。
-            log.error("商户员工判定失败，回退内部服务身份: userId={}, tenantId={}", userId, tenantId, e);
-            return null;
+            // 决策（issue #5085，**改判** issue #4105 的 fail-open）：商户员工判定依赖（DB）不可用时
+            // **拒绝请求**，而不是回退 service 直通 —— 后者会让受限岗位员工的请求在 DB/连接抖动时
+            // 从「拒绝」翻转为 service 全权（hasBypassRole 对 "service" 直接放行），
+            // 失效方向是放宽且无需攻击者构造。代价（用户 2026-09-21 已确认接受）：
+            // DB 抖动期间**内部服务调用一并被拒**（503），由调用方重试。
+            // ERROR 留痕不可省：否则「查失败（拒）」与「查不到（放行）」在日志里无从区分。
+            log.error("商户员工判定失败，拒绝请求 (fail-closed): userId={}, tenantId={}", userId, tenantId, e);
+            throw new IllegalStateException("商户员工判定失败，拒绝请求", e);
         }
     }
 
