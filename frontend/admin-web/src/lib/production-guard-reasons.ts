@@ -44,16 +44,17 @@ function fallbackMessage(error: unknown): string | null {
 }
 
 /**
- * 工艺路线护栏理由 → 逐条可读文案（issue #4308 的护栏清单：空序列 / 工序不存在 / 重复 /
- * **缺必完工序** / 权限）。识别不了的原样透出 —— **绝不吞掉后端理由**（吞掉就等于回到「只弹保存失败」）。
+ * 工艺路线护栏理由 → 逐条可读文案（issue #4308 的护栏清单：**四条** —— 空序列 / 工序不存在 / 重复 / 权限）。
+ * 识别不了的原样透出 —— **绝不吞掉后端理由**（吞掉就等于回到「只弹保存失败」）。
  *
- * 🔴 **`/必完/` 分支必须保留**（issue #4961 的 WIP 曾删掉它，理由「后端已移除那条护栏」**经核查不成立**）：
- * 后端**仍在** `backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java`
- * 里对 `PUT /routings/{id}` 判「主线中至少要有 1 道必完工序」并返回 422（护栏单测
- * `ProductionRoutingCommandServiceTest` 的「护栏 4：至少一道必完工序」仍在跑）⇒ 商家**一定会**
- * 收到一条含「必完」的理由，本分支不是死代码。`.github/cases/processing.yml` 也把
- * 「分别带可读归因（工序不存在 / 工序重复 / **缺少必完工序**）」写成判据。
- * **死亡条件（届时才可删）**：后端护栏 4 与本文件同时被判据移除（后端语义一动，删它的 PR 顺带删这里）。
+ * 🔴 **「缺必完工序」前缀已删除**（issue #4961，2026-09-21）：本文件原先自述的**死亡条件**
+ * 「后端护栏 4 与本文件同时被判据移除」**已满足** —— 后端 `ProductionRoutingCommandService`
+ * 的「主线中至少要有 1 道必完工序」护栏整体退场（五条 ⇒ **四条**；`validateMainline` 里连
+ * `anyMustFinish` 累计都删了）⇒ 该前缀在**任何**真实响应里都不再可达 = 死分支。
+ * ⚠️ 别按「保留更安全」再加回来：那条护栏**不会**回来（完工口径已改为「全部活跃工序实例完成」）。
+ * 真回来了就连本注释一起改；判据面 = `ProductionRoutingCommandServiceTest`「#4961 护栏 4 **退场**：
+ * 主线里一道必完工序都没有 ⇒ 照常保存成功」+ `.github/cases` 的 PP-014 / PG-032。
+ * **「不吞理由」这条不变**：识别不了的护栏理由仍**原文透出**（含将来任何新护栏）。
  */
 export function describeRoutingGuard(raw: string): string {
   const s = merchantWording(raw).trim()
@@ -61,7 +62,6 @@ export function describeRoutingGuard(raw: string): string {
   const dup = s.match(/重复|duplicate/i)
   if (dup) return `工序重复：${s}`
   if (/不存在/.test(s) || /不在/.test(s) || /not[_ ]?found/i.test(s)) return `工序不存在：${s}`
-  if (/必完/.test(s)) return `缺少必完工序：${s}`
   if (/空|empty/i.test(s)) return `序列不能为空：${s}`
   if (/权限|forbidden|denied/i.test(s)) return `没有工艺路线管理权限：${s}`
   return s
@@ -91,7 +91,7 @@ export function merchantWording(raw: string): string {
 /**
  * 路线**管理面**（改名 / 删除 / 设为默认）的护栏理由 → 逐条可读文案。
  *
- * ⚠️ **不套** `describeRoutingGuard` 的序列专属前缀（工序重复 / 缺必完工序 / 序列不能为空）：
+ * ⚠️ **不套** `describeRoutingGuard` 的序列专属前缀（工序重复 / 序列不能为空）：
  * 那一族的判据是「主线序列」，而这三个动作的理由是「路线名不能为空」「默认路线不能删」——
  * 套错标签会误导商家（实证：改名为空会得到「序列不能为空：路线名称不能为空」）。术语过滤照旧。
  */
@@ -107,7 +107,7 @@ export function routingAdminGuardReasons(error: unknown): string[] {
  * 加工费页：从失败的请求里取**逐条**护栏理由。
  *
  * 与路线页 `routingGuardReasons` 同口径，但**不套**那里的路线专属文案前缀
- * （工序重复/缺必完工序…）—— 本页的字段是加工项与单价，套错标签会误导商家。
+ * （工序重复 / 序列不能为空…）—— 本页的字段是加工项与单价，套错标签会误导商家。
  */
 export function feeGuardReasons(error: unknown): string[] {
   const reasons = detailsMessages(error)
@@ -136,7 +136,7 @@ export function craftCalcConfigGuardReasons(error: unknown): string[] {
  * 特殊选项**对客单价**（元/套）行内编辑的护栏理由（issue #4567）。
  *
  * 与 `feeGuardReasons` 同口径（**不套**路线序列专属前缀 —— 本处的字段是「元/套」价，
- * 套上「工序重复 / 缺必完工序」那族标签会误导商家）。后端把每一处不合法都列出来
+ * 套上「工序重复 / 序列不能为空」那族标签会误导商家）。后端把每一处不合法都列出来
  * （非 option 行 / 负数 / 三位小数 / 非数值）⇒ 页面逐条展示，**不吞成一句「保存失败」**。
  */
 export function optionPriceGuardReasons(error: unknown): string[] {
