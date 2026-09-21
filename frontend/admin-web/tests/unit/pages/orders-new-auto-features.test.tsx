@@ -474,6 +474,93 @@ describe('#5014 自动选 SKU：散剪（bulk_cut）优先（平局口径首位�
   })
 })
 
+/**
+ * issue #5020：**加工类型未指定 ⇒ 自动推导 + 自动选中；客服一点即改，且不被规则覆盖**。
+ *
+ * 口径（用户 2026-09-21 改判，见 issue #5020）：定高买宽可行（`成品高 + HEM_MARGIN ≤ 门幅有效值`）
+ * ⇒ 取可行集里最小门幅 + `定高买宽`；否则 ⇒ 倒幅（分幅最少，并列取较小门幅）+ `定宽买高`；
+ * 接高**不参与自动比较**（`needs_splice` 不得自动出现）；显式选择优先（人工覆盖保留）。
+ *
+ * 观测点 = 加工类型 chips 的 `aria-checked`（界面选中态）+ `door-width-*` 提示（规则解副作用）+
+ * 落库 `processingInfo.cuttingMode`（= 真正下单的那个值，不只是「看起来选中」）。
+ *
+ * 红证（改前实测）：未指定加工类型 ⇒ `resolveCutPlan` 一律 `undecidable` ⇒ 自动解**不存在**
+ * ⇒ 8a/8b 的 `checkedChips('加工类型')` 恒为 `['未指定']`、8d 落库 `cuttingMode` 为 `undefined`。
+ */
+describe('#5020 加工类型自动推导：未指定 ⇒ 自动选中；客服改后不被规则覆盖', () => {
+  /** 某个 radiogroup 里 `aria-checked=true` 的 chip 文案（界面选中态的唯一证据） */
+  const checkedChips = (label: string): string[] =>
+    within(screen.getByRole('radiogroup', { name: label }))
+      .getAllByRole('radio')
+      .filter((el) => el.getAttribute('aria-checked') === 'true')
+      .map((el) => el.textContent ?? '')
+
+  /** 点某个 chip（客服手选 / 点「未指定」交还给规则） */
+  const pickChip = (label: string, text: string) => {
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: label })).getByText(text))
+  }
+
+  it('判据 8a：未指定加工类型 ⇒ 按规则**自动选中**（成品高 2.75 ⇒ 定高买宽）', async () => {
+    // 尺寸留空建单（`setupLineWithSkus` 的 `null` 档）⇒ 展开步骤后先点「未指定」，再填尺寸
+    await setupLineWithSkus({ skus: [{ doorWidth: '2.8米' }, { doorWidth: '3.2米' }], width: null, height: null })
+    openStep('尺寸与数量')
+    pickChip('加工类型', '未指定')
+    fireEvent.change(inputOf('宽 (米)'), { target: { value: '3.0' } })
+    fireEvent.change(inputOf('高 (米)'), { target: { value: '2.75' } })
+    // 2.75 + 0.3 = 3.05 ⇒ 2.8 判需接高、3.2 可行 ⇒ 自动解 = 3.2 + 定高买宽
+    await waitFor(() => expect(checkedChips('加工类型')).toEqual(['定高买宽']))
+    // 「看得见是自动的」：标出「自动」标记（否则客服会以为自己选过）
+    expect(screen.getByTestId('cutting-mode-auto')).toBeInTheDocument()
+    expect(screen.queryByTestId('door-width-needs-splice')).toBeNull()
+  })
+
+  it('判据 8b：未指定 + 可行集为空（成品高 3.0）⇒ 自动选中**定宽买高**（倒幅，不自动走接高）', async () => {
+    await setupLineWithSkus({ skus: [{ doorWidth: '2.8米' }, { doorWidth: '3.2米' }], width: null, height: null })
+    openStep('尺寸与数量')
+    pickChip('加工类型', '未指定')
+    fireEvent.change(inputOf('宽 (米)'), { target: { value: '3.0' } })
+    fireEvent.change(inputOf('高 (米)'), { target: { value: '3.0' } })
+    await waitFor(() => expect(checkedChips('加工类型')).toEqual(['定宽买高']))
+    // **接高不得自动出现**（`needs_splice` 只在显式「定高买宽」+ 高度超限时才有）
+    expect(screen.queryByTestId('door-width-needs-splice')).toBeNull()
+  })
+
+  it('判据 8c：客服**一点即改** ⇒ 按所选走；规则解变化**不得覆盖**手选值', async () => {
+    await setupLineWithSkus({ skus: [{ doorWidth: '2.8米' }, { doorWidth: '3.2米' }], width: null, height: null })
+    openStep('尺寸与数量')
+    pickChip('加工类型', '未指定')
+    fireEvent.change(inputOf('宽 (米)'), { target: { value: '3.0' } })
+    fireEvent.change(inputOf('高 (米)'), { target: { value: '3.0' } })
+    // 自动解 = 定宽买高（3.0 + 0.3 = 3.3 > 3.2）
+    await waitFor(() => expect(checkedChips('加工类型')).toEqual(['定宽买高']))
+
+    // 客服改成「定高买宽」（高度超限 ⇒ 按所选口径走 ⇒ 需接高告警）
+    pickChip('加工类型', '定高买宽')
+    const warn = await screen.findByTestId('door-width-needs-splice')
+    expect(warn.textContent).toContain('需接高')
+    // 手选之后**不再**标「自动」（这一档是客服自己点的）
+    await waitFor(() => expect(screen.queryByTestId('cutting-mode-auto')).toBeNull())
+
+    // 规则解再变（改高）也**不得**把手选值改回自动解
+    fireEvent.change(inputOf('高 (米)'), { target: { value: '3.05' } })
+    await waitFor(() => expect(checkedChips('加工类型')).toEqual(['定高买宽']))
+    expect(screen.getByTestId('door-width-needs-splice')).toBeInTheDocument()
+  })
+
+  it('判据 8d：落库的 `cuttingMode` = 自动推导值（不只是「看起来选中」）', async () => {
+    await setupLineWithSkus({ skus: [{ doorWidth: '2.8米' }, { doorWidth: '3.2米' }], width: null, height: null })
+    openStep('尺寸与数量')
+    pickChip('加工类型', '未指定')
+    fireEvent.change(inputOf('宽 (米)'), { target: { value: '3.0' } })
+    fireEvent.change(inputOf('高 (米)'), { target: { value: '3.0' } })
+    await waitFor(() => expect(checkedChips('加工类型')).toEqual(['定宽买高']))
+    const info = (await submitAndGetItemInfo()) as unknown as {
+      processingInfo: Record<string, unknown>
+    }
+    expect(info.processingInfo.cuttingMode).toBe('定宽买高')
+  })
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   mockGetProcessingItems.mockResolvedValue({
