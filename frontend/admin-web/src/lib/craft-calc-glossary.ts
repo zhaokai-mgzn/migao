@@ -1,0 +1,296 @@
+/**
+ * 「算料配置」页的**口径与术语说明**（issue #4975）—— 单一真值模块。
+ *
+ * 用户 2026-09-21：「算料配置里面涉及到的参数很多……需要有一些详细的说明性文案，同时一些专业术语的
+ * 自动推算方式，比如**超高，超宽，倒幅，拼接 接高**，这些术语的说明和例子，告知用户我们系统是如何
+ * 推算的，需要用到哪些参数，都可以在工序配置这个页面上说清楚」。
+ *
+ * ## 本模块的三条纪律（都可由 `tests/unit/lib/craft-calc-glossary.test.ts` 单独判红）
+ *
+ * 1. **文案里不出现数字**：所有数值（参数当前值、算例里的米数/门幅）一律**由真值渲染** ——
+ *    参数值取自配置对象，常量取自 `@/lib/craft-auto-features`（已有跨源守卫），算例由
+ *    {@link buildAutoFeatureExamples} 调 `detectAutoFeatures` 产出。写死一个数 = 造第二份口径。
+ * 2. **口径与引擎同源**：`side_margin` 是**宽方向左右覆盖余量**（引擎 `SIDE_MARGIN` 的语义），
+ *    **不是**「上下卷边」（那是 `HEM_MARGIN`）。本仓实测有**三处**把它讲反了（页面 hint /
+ *    `types/index.ts` 注释 / 引擎配置字典那行注释）—— 三处都已在本单改正并加守卫（#4940 判据 1）。
+ * 3. **键集必须覆盖引擎全部配置键**：引擎 `DEFAULT_CRAFT_CALC_CONFIG` 加一个键而不补文案 ⇒ 守卫红
+ *    （这样 #4976 把 `hem_margin` 加进键集时，本模块会被**强制**同步补上说明）。
+ *
+ * ⚠️ **自动推算 vs 手选，是本页最需要讲清的一件事**：`超高/超宽/倒幅` 由系统**推算**并进加工费
+ * 组合键；`拼接/接高` 是**手选**特征，**系统不推算**（见 {@link MANUAL_FEATURE_TERMS}）。
+ * 把这两类混在一起讲，正是商家看不懂这些参数的根因。
+ */
+import { detectAutoFeatures } from '@/lib/craft-auto-features'
+import type { CraftCalcConfig } from '@/types'
+
+/**
+ * 标量配置键（表单里逐个数字输入框；键名 = 后端列名 = 算料引擎配置键，**逐字同名**）。
+ * 清单**单一真值**在本模块 —— 页面不再自带一份（由守卫逐值读引擎源比对）。
+ */
+export const CALC_SCALAR_KEYS = [
+  'per_fold_single',
+  'margin_single',
+  'margin_multi',
+  'min_fullness',
+  'side_margin',
+  'meters_rounding_step',
+] as const
+
+/** 标量配置键（类型 = 上面清单的成员，**不另写一份联合类型**） */
+export type CalcScalarKey = (typeof CALC_SCALAR_KEYS)[number]
+
+/** 一个配置键的页面文案（`label` 在表单上，`hint` 在输入框下，`impact` 在说明区块） */
+export interface CalcParamCopy {
+  /** 表单 label */
+  label: string
+  /** 输入框下的一行口径 */
+  hint: string
+  /** 说明区块里的「影响什么」 */
+  impact: string
+}
+
+/**
+ * **全部**引擎配置键的文案（不止六个标量键 —— `tiers` / `default_formula` /
+ * `per_fold_mixed_times` 也在键集里，同样要有说明）。
+ *
+ * ⚠️ 文案里**不得出现数字**（判据 5）：数值由真值渲染。
+ */
+export const CALC_PARAM_COPY: Record<string, CalcParamCopy> = {
+  per_fold_single: {
+    label: '单色每折吃布（米）',
+    hint: '褶数法：用料 = 每折吃布 × 褶数 + 余量',
+    impact: '褶数法每片用料的乘数 —— 改它，所有走褶数法的单米数随之变',
+  },
+  per_fold_mixed_times: {
+    label: '拼色每折吃布（米）',
+    hint: '款式为拼色时，按拼次取每折吃布系数；未登记的拼次不插值、不静默退回单色',
+    impact: '拼色款的用料系数（拼次 → 每折吃布）；余量与单色同一套，不随拼色变化',
+  },
+  margin_single: {
+    label: '单开余量（米）',
+    hint: '单开（一整幅）的包边余量',
+    impact: '单开时每片的包边量（加在用料上）',
+  },
+  margin_multi: {
+    label: '多开余量（米）',
+    hint: '双开/四开的包边 + 对缝余量',
+    impact: '多开时每片的包边 + 内侧对缝量；开数只改余量口径与每片宽，不改「总用料 = 每片用料 × 开数」',
+  },
+  min_fullness: {
+    label: '褶倍下限',
+    hint: '行业红线：不得低于系统默认值（低于它用料不足）',
+    impact: '护栏：档位褶倍不得低于它（低于它用料不足 = 褶子太平、效果不达标）',
+  },
+  side_margin: {
+    label: '左右覆盖余量（米）',
+    hint: '宽方向：两侧覆盖余量 —— 定高买宽按宽买米时加它，定宽买高按它算分幅',
+    impact: '**宽方向**的覆盖余量（引擎 `SIDE_MARGIN`）：定高买宽时加在用料里，定宽买高时进分幅判据',
+  },
+  meters_rounding_step: {
+    label: '进位步长（米）',
+    hint: '用料只向上进位，不截断、不四舍五入',
+    impact: '最终米数的进位步长（只向上）—— 防抹零少算钱',
+  },
+  tiers: {
+    label: '工艺档位',
+    hint: '每档一个名义褶倍；按倍数法算料（如打孔）时用它',
+    impact: '打孔（倍数法）等按档位取名义褶倍；档位名只是显示名，真值是这里的褶倍',
+  },
+  default_formula: {
+    label: '兜底用料公式',
+    hint: '韩褶 / 打孔按工艺自动推导公式，这里只在该推导不适用时兜底',
+    impact: '工艺推导表缺失时的兜底公式（韩褶 ⇒ 褶数法、打孔 ⇒ 倍数法都由工艺推导，不走这里）',
+  },
+}
+
+/** 一条术语说明 */
+export interface GlossaryTerm {
+  /** 术语名（与 ERP / 目录**逐字一致**，不"纠正"写法） */
+  name: string
+  /** 是什么 */
+  definition: string
+  /** 系统怎么判（符号式；数字由真值渲染） */
+  criterion?: string
+  /** 影响什么（米数 / 加工费 / 工序） */
+  impact: string
+  /** 边界与前提（照实登记，不粉饰） */
+  boundary?: string
+}
+
+/**
+ * **系统自动推算**的特征（与 `AUTO_FEATURE_NAMES` 同源 —— 由守卫钉住）。
+ *
+ * 三者都**进加工费组合键**（商家按「韩折+超宽+定型」这类组合配价），
+ * 而 `正幅` **不推导**（它不在加工项目录里，推它 ⇒ 默认订单组合键永远匹配不到价）。
+ */
+export const AUTO_FEATURE_TERMS: GlossaryTerm[] = [
+  {
+    name: '超高',
+    definition: '定高买宽时，成品高加上下卷边超过门幅 —— 这个方向上的布不够长',
+    criterion: '加工类型 = 定高买宽 且 (成品高 + 上下卷边) > 门幅',
+    impact:
+      '① 进加工费组合键（商家按含它的组合配价）；② 引擎改按定宽买高算 ⇒ 用料变成「幅数 × 每幅长」，米数会变',
+    boundary: '判据是行业推理、非 ERP 实证 ⇒ 系统标注为「推算」；门幅取自**该商品**（没有缺省门幅：商品没录门幅 ⇒ 系统不判，不拿一个假门幅去判价）',
+  },
+  {
+    name: '超宽',
+    definition: '定宽买高时，成品宽加左右覆盖余量再乘褶倍超过门幅 —— 一幅布不够宽，要分幅',
+    criterion: '加工类型 = 定宽买高 且 (成品宽 + 左右覆盖余量) × 褶倍 > 门幅',
+    impact:
+      '① 进加工费组合键；② **真正多花钱的地方是分幅**（幅数向上取整 ⇒ 米数整幅地涨），不是「超宽」这两个字本身',
+    boundary:
+      '缺褶倍或商品没录门幅时，系统**不判**超宽（不拿一个假值去判价），但会在下单页显式说明「这里本该判」',
+  },
+  {
+    name: '倒幅',
+    definition: '定宽买高时布要旋转九十度用，门幅变成宽度方向，花型因此是倒的',
+    criterion: '加工类型 = 定宽买高（唯一推导，不设手选项）',
+    impact: '进加工费组合键；每幅长按「成品高 + 上下卷边」算',
+    boundary: '与它相对的「正幅」是窗帘常态，**不推导、不进组合键**',
+  },
+]
+
+/**
+ * **手选**特征（**系统不推算**）。
+ *
+ * ⚠️ **死亡条件**：本段写的「当前只影响加工费、不触发工序」钉的是**当下**口径 ——
+ * 一旦 issue #4569 裁定改为「加工项也触发工序」，本段必须连同守卫一起改判。
+ */
+export const MANUAL_FEATURE_TERMS: GlossaryTerm[] = [
+  {
+    name: '拼接',
+    definition: '把两幅布横向接起来凑够宽度（口语也叫「对缝」）—— 由商家或顾客**手选**，系统不推算',
+    impact:
+      '① 进加工费组合键；② 作为加工项勾选时，**当前只影响加工费，不触发工序**（系统不会因此多排一道工序）',
+    boundary: '「拼接」与「拼色」「拼N次」是三件不同的事，见下面的近义词族',
+  },
+  {
+    name: '接高',
+    definition: '成品高度不够时接一段布补高，按明细行归属（主布接高 / 配布边接高）—— **手选**，系统不推算',
+    impact: '插「接高」工序 + 加工费（按幅计）；**不改用料米数**',
+    boundary: 'ERP 的「双眼皮接高」含义**待查明**（客户亦不明）⇒ 系统不凭字面推',
+  },
+]
+
+/** 近义词族（同一句话里最容易搅在一起的概念 —— 它们不在同一层） */
+export const TERM_FAMILY: GlossaryTerm[] = [
+  {
+    name: '正幅',
+    definition: '定高买宽 = 布按高度方向用，花型正着 —— 窗帘的常态',
+    impact: '**不作为加工项加项**（它不在加工项目录里）：推它会让每一张默认订单的组合键都匹配不到价',
+  },
+  {
+    name: '定型',
+    definition: '打褶后蒸烫固定褶形 —— **手选**加工项（勾选态就是「是否定型」的真值来源）',
+    impact: '影响工序（不定型 ⇒ 移除定型与复烫）与加工费；不是由尺寸推算出来的',
+  },
+  {
+    name: '拼色',
+    definition: '款式 = 拼色（主布 + 配布分料做一条帘子）—— 它是**款式**，不是加工项',
+    impact: '决定「每折吃布」走哪一档系数（单色档 / 拼色档）',
+  },
+  {
+    name: '拼N次',
+    definition: '特殊选项里的拼次（一条拼接缝 = 拼一次）—— 它是**选项**，不是款式',
+    impact: '与「款式 = 拼色」一起决定每折吃布系数；未登记的拼次不插值（如实告警）',
+  },
+  {
+    name: '对缝',
+    definition: '多开时每片内侧要缝合的那道缝 —— 它是**余量口径**的一部分（含在多开余量里）',
+    impact: '不单独配置：改「多开余量」即同时改包边与对缝量',
+  },
+]
+
+/** 公式说明（**只写符号**，不写数 —— 数值由真值渲染） */
+export const GLOSSARY_FORMULAS: { name: string; formula: string; note: string }[] = [
+  {
+    name: '褶数法（韩褶公式）',
+    formula: '每片用料 = 每折吃布 × 每片褶数 + 每片余量；总用料 = 每片用料 × 开数；每片宽 = 成品宽 ÷ 开数',
+    note: '韩褶按工艺自动走这条；折数由倍数意图反算，并按开数取整（对开取偶数、四开取四的倍数）',
+  },
+  {
+    name: '倍数法（褶倍数公式）',
+    formula: '总用料 = (成品宽 + 左右覆盖余量) × 褶倍',
+    note: '打孔等按工艺走这条；褶倍取自工艺档位，且不得低于褶倍下限',
+  },
+  {
+    name: '定宽买高：分幅',
+    formula:
+      '幅数 = ⌈(成品宽 + 左右覆盖余量) × 褶倍 ÷ 门幅⌉（向上取整）；每幅长 = 成品高 + 上下卷边（有花距再加一个花距）；总用料 = 幅数 × 每幅长',
+    note: '成品高加上下卷边超过门幅时，引擎自动从「定高买宽」回落到这条 —— 这就是超高会改米数的原因',
+  },
+  {
+    name: '向上进位',
+    formula: '最终米数按「进位步长」向上进位（不截断、不四舍五入）',
+    note: '只作用在最终回传的米数上；分幅数（几幅布）是整数，不套这条',
+  },
+]
+
+/**
+ * 算例输入（**示例几何 + 示例门幅**，都不是真值）。
+ *
+ * 🔴 `doorWidth` 是**举例用的一个商品门幅**，**不是「缺省门幅」** —— 前端已**没有**缺省门幅
+ * （issue #4877：SKU 未携带门幅 ⇒ 判定面**不判**并显式告知，不得回退任何默认值）。
+ * 真值源 = **SKU/商品门幅**（商品可配）；本模块**只**用它生成算例文案，
+ * 不参与任何判定（判定一律在下单页按该 SKU 的门幅做）。
+ * 守卫：`tests/unit/lib/craft-calc-glossary.test.ts` 钉住「本模块不得出现缺省门幅标识」。
+ */
+export const GLOSSARY_EXAMPLE = {
+  width: 2,
+  height: 2.6,
+  doorWidth: 2.8,
+} as const
+
+/** 一条自动推算算例（`reason` 逐字来自 `detectAutoFeatures` —— 与下单页同一份文案） */
+export interface AutoFeatureExample {
+  name: string
+  /** 举例的输入（含真实数字，由常量/配置渲染） */
+  given: string
+  /** 系统的判定依据（**真函数产出**） */
+  reason: string
+}
+
+/**
+ * 三个自动推算特征的算例 —— **不自己拼文案**：逐条调 {@link detectAutoFeatures}，
+ * 取它给出的 `reason`（与下单页「为什么判它超宽」是同一份实现 ⇒ 改一处必红）。
+ *
+ * 举例取值使判定**稳定成立**：成品高 + 上下卷边 > 缺省门幅 ⇒ 必判超高；
+ * 成品宽 + 左右覆盖余量 乘以**褶倍下限之上**的任一褶倍都 > 缺省门幅 ⇒ 必判超宽。
+ */
+export function buildAutoFeatureExamples(config: CraftCalcConfig): AutoFeatureExample[] {
+  const fullness = config.tiers?.standard?.fullness ?? null
+  const fixedHeight = detectAutoFeatures({
+    height: GLOSSARY_EXAMPLE.height,
+    doorWidth: GLOSSARY_EXAMPLE.doorWidth,
+    cuttingMode: '定高买宽',
+  })
+  const fixedWidth = detectAutoFeatures({
+    width: GLOSSARY_EXAMPLE.width,
+    fullness,
+    doorWidth: GLOSSARY_EXAMPLE.doorWidth,
+    cuttingMode: '定宽买高',
+  })
+
+  const givenOf = (name: string): string => {
+    if (name === '超高') {
+      return `举例：加工类型「定高买宽」· 成品高 ${GLOSSARY_EXAMPLE.height} 米 · 某商品门幅 ${GLOSSARY_EXAMPLE.doorWidth} 米（门幅随商品而变）`
+    }
+    return `举例：加工类型「定宽买高」· 成品宽 ${GLOSSARY_EXAMPLE.width} 米 · 褶倍 ${fullness ?? '—'} · 某商品门幅 ${GLOSSARY_EXAMPLE.doorWidth} 米（门幅随商品而变）`
+  }
+
+  return [...fixedHeight, ...fixedWidth].map((f) => ({
+    name: f.name,
+    given: givenOf(f.name),
+    reason: f.reason,
+  }))
+}
+
+/** 配置键 → 说明区块里该条的锚点 id（参数旁「说明」链接指向它） */
+export function glossaryAnchorOf(key: string): string {
+  return `glossary-param-${key}`
+}
+
+/** 术语名 → 说明区块里该条的锚点 id */
+export function glossaryTermAnchorOf(name: string): string {
+  return `glossary-term-${name}`
+}

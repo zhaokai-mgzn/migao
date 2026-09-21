@@ -18,6 +18,8 @@ import { Button, Modal } from '@/components/ui'
 import { isErrorToastShown, toastRequestError } from '@/lib/api-error'
 import { productionApi } from '@/lib/api'
 import { craftCalcConfigGuardReasons, optionPriceGuardReasons, routingAdminGuardReasons, routingGuardReasons } from '@/lib/production-guard-reasons'
+import { CALC_PARAM_COPY, CALC_SCALAR_KEYS, glossaryAnchorOf, type CalcScalarKey } from '@/lib/craft-calc-glossary'
+import { CraftCalcGlossary } from '@/components/production/CraftCalcGlossary'
 import { CRAFT_CALC_FORMULA_LABELS } from '@/lib/craft-calc-request'
 import { cn } from '@/lib/utils'
 import type {
@@ -386,24 +388,17 @@ function RulePriceCell({
 
 // ────────────────────────── 算料配置（tab「算料配置」，issue #4528 = 包 E） ──────────────────────────
 
-/** 标量配置键（表单里逐个数字输入框；键名 = 后端列名 = 算料引擎配置键，**逐字同名**） */
-type CalcScalarKey =
-  | 'per_fold_single'
-  | 'margin_single'
-  | 'margin_multi'
-  | 'min_fullness'
-  | 'side_margin'
-  | 'meters_rounding_step'
-
-/** 六个标量键的展示元数据（**只有文案**：默认值/范围一律由后端给，前端不持有） */
-const CALC_SCALAR_FIELDS: { key: CalcScalarKey; label: string; hint: string }[] = [
-  { key: 'per_fold_single', label: '单色每折吃布（米）', hint: '褶数法：用料 = 每折吃布 × 褶数 + 余量' },
-  { key: 'margin_single', label: '单开余量（米）', hint: '单开（一整幅）的包边余量' },
-  { key: 'margin_multi', label: '多开余量（米）', hint: '双开/四开的包边 + 对缝余量' },
-  { key: 'min_fullness', label: '褶倍下限', hint: '行业红线：不得低于系统默认值（低于它用料不足）' },
-  { key: 'side_margin', label: '卷边（米）', hint: '定宽买高的上下卷边合计' },
-  { key: 'meters_rounding_step', label: '进位步长（米）', hint: '用料只向上进位，不截断、不四舍五入' },
-]
+/**
+ * 六个标量键的展示元数据 —— **单一真值** = `@/lib/craft-calc-glossary` 的 `CALC_PARAM_COPY`
+ * （issue #4975）。默认值/范围一律由后端给，前端**不持有**。
+ *
+ * 本页原来自带一份文案，其中 `side_margin` 的 label/hint 与算料引擎**口径相反**：页面说它是
+ * 「定宽买高的上下卷边合计」，而引擎里它是**宽方向左右覆盖余量**（真正的上下卷边是 `HEM_MARGIN`，
+ * 那是另一个量）⇒ 页面成了第二份口径（issue #4940）。⇒ 改为**引用同一份**，并由
+ * `tests/unit/lib/craft-calc-glossary.test.ts` 逐条读源守卫（改回旧文案即红）。
+ */
+const CALC_SCALAR_FIELDS: { key: CalcScalarKey; label: string; hint: string; impact: string; anchor: string }[] =
+  CALC_SCALAR_KEYS.map((key) => ({ key, ...CALC_PARAM_COPY[key], anchor: glossaryAnchorOf(key) }))
 
 /**
  * 兜底公式的可读文案（取值域由后端枚举给；这里只做展示映射）。
@@ -2895,7 +2890,17 @@ export default function ProcessConfigPage() {
                               value={calcNumber(f.key)}
                               onChange={(e) => setCalcNumber(f.key, e.target.value)}
                             />
-                            <span className="mt-1 block text-xs text-neutral-400">{f.hint}</span>
+                            <span className="mt-1 block text-xs text-neutral-400">
+                              {f.hint}{' '}
+                              {/* 参数旁锚点（issue #4975）：跳到同 tab 的「术语与口径说明」对应条目 */}
+                              <a
+                                href={`#${f.anchor}`}
+                                className="text-primary-600 underline"
+                                data-testid={`craft-calc-config-doc-${f.key}`}
+                              >
+                                说明
+                              </a>
+                            </span>
                           </label>
                         ))}
                       </div>
@@ -2903,7 +2908,7 @@ export default function ProcessConfigPage() {
                       {/* 兜底公式（工艺能推导时以工艺为准，这里只是推导表缺失时的兜底） */}
                       <div>
                         <label className="mb-1 block text-neutral-600" htmlFor="craft-calc-config-formula">
-                          兜底用料公式
+                          {CALC_PARAM_COPY.default_formula.label}
                         </label>
                         <select
                           id="craft-calc-config-formula"
@@ -2926,7 +2931,7 @@ export default function ProcessConfigPage() {
                       {/* 次区：档位与拼色系数（表格，逐行可改） */}
                       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                         <div>
-                          <h3 className="mb-2 text-neutral-700">工艺档位</h3>
+                          <h3 className="mb-2 text-neutral-700">{CALC_PARAM_COPY.tiers.label}</h3>
                           <table className="w-full text-sm">
                             <tbody>
                               {Object.entries(calcDraft.tiers ?? {}).map(([name, tier]) => (
@@ -2979,7 +2984,7 @@ export default function ProcessConfigPage() {
                           </table>
                         </div>
                         <div>
-                          <h3 className="mb-2 text-neutral-700">拼色每折吃布（米）</h3>
+                          <h3 className="mb-2 text-neutral-700">{CALC_PARAM_COPY.per_fold_mixed_times.label}</h3>
                           <table className="w-full text-sm">
                             <tbody>
                               {Object.entries(calcDraft.per_fold_mixed_times ?? {}).map(([times, perFold]) => (
@@ -3032,6 +3037,10 @@ export default function ProcessConfigPage() {
                     </div>
                   )}
                 </section>
+
+                {/* 口径与术语说明（issue #4975）：与参数**同屏** —— 参数回答「我这家的口径是多少」，
+                    说明回答「系统怎么判、拿哪些参数判」。区块里**不写死任何数字**（数值取自本页配置）。 */}
+                {calcDraft && <CraftCalcGlossary config={calcDraft} />}
               </div>
             )}
           </div>

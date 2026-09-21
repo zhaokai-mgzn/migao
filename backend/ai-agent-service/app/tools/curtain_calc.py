@@ -195,7 +195,7 @@ DEFAULT_CRAFT_CALC_CONFIG: MappingProxyType = MappingProxyType({
     "min_fullness": MIN_FULLNESS,                              # 褶倍下限（护栏）
     "tiers": {k: dict(v) for k, v in DEFAULT_CRAFT_TIERS.items()},
     "default_formula": FORMULA_PLEAT,                          # 默认公式 = 韩褶公式
-    "side_margin": SIDE_MARGIN,                                # 定宽买高上下卷边（米）
+    "side_margin": SIDE_MARGIN,                                # 宽方向左右覆盖余量合计（各 15cm）
     "meters_rounding_step": 0.1,                               # 用料米数**向上进位**步长（米）
 })
 
