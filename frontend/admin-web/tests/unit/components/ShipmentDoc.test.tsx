@@ -262,7 +262,27 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     // 打印时只显示本单据：隐藏 body 下所有非单据直系子级。
     // display:none 不占版面高度 —— 旧 `visibility:hidden` 会按隐藏内容高度分页，
     // 底层页面高于一页 A4 时第 2 页空白（issue #3896）。
-    expect(style).toMatch(/body > \*:not\(\.shipment-print-area\)\s*\{\s*display:\s*none\s*!important/)
+    // 隔离选择器必须排除**所有**打印单据（`print-doc` 标记类）——写成 `:not(.shipment-print-area)`
+    // 会把同页的报价单（QuotationDoc）选进来并整份藏掉（issue #4965 实测）
+    expect(style).toMatch(/body > \*:not\(\.print-doc\)\s*\{\s*display:\s*none\s*!important/)
+    expect(document.querySelector('.shipment-print-area')?.className).toContain('print-doc')
+    // 🔴 visibility 防御必须限定「本次打印目标」（issue #4965 实测回归）：订单详情页同时挂着
+    // 报价单（QuotationDoc），两者是 body 的兄弟节点、`visibility: visible` **同特异性** ⇒
+    // 后渲染者胜。不限定则报价单把本单据重新藏掉（CI `Demo path specs` 实测红）。
+    expect(style).toMatch(/\.shipment-print-area\[data-print-target='shipment'\]/)
+    expect(style).toMatch(/visibility:\s*visible/)
+  })
+
+  it('printTarget="shipment" ⇒ 置位 data-print-target；不传 ⇒ 不置位（不参与对方显形）', () => {
+    render(<ShipmentDoc order={buildOrder()} printTarget="shipment" />)
+    expect(document.querySelector('.shipment-print-area')?.getAttribute('data-print-target')).toBe(
+      'shipment'
+    )
+    cleanup()
+    render(<ShipmentDoc order={buildOrder()} />)
+    expect(
+      document.querySelector('.shipment-print-area')?.getAttribute('data-print-target')
+    ).toBeNull()
   })
 
   // ===== 打印隔离：从「CSS 字符串存在」升级为「级联算出来的可见性」（issue #3817 收尾）=====
@@ -278,11 +298,13 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
   function mountDocWithShell() {
     // 外壳包在 RTL 的 container div 里 —— 该 div 是 body 的直接子级，
     // 对应真实页面里整页应用所在的 body 直系子树（打印时被整体 display:none）
+    // `printTarget='shipment'` = 「点的是『打印发货单』」—— visibility 防御据此置位
+    // （issue #4965：同页还有报价单，两条防御同特异性 ⇒ 必须限定本次打印目标）
     const { container } = render(
       <div>
         <aside>侧边栏</aside>
         <button type="button">确认发货</button>
-        <ShipmentDoc order={buildOrder()} />
+        <ShipmentDoc order={buildOrder()} printTarget="shipment" />
       </div>
     )
     return {

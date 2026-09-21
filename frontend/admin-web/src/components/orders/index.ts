@@ -1,3 +1,5 @@
+export type PrintTarget = 'shipment' | 'quotation'
+
 export { default as OrderTable } from './OrderTable'
 export { default as RemarkPopover } from './RemarkPopover'
 export { default as OrderStatusBadge } from './OrderStatusBadge'
@@ -11,3 +13,4 @@ export { default as RefundOrderModal } from './RefundOrderModal'
 export { default as RemarkModal } from './RemarkModal'
 export { default as ProcessingOrderBlock } from './ProcessingOrderBlock'
 export { default as ShipmentDoc } from './ShipmentDoc'
+export { default as QuotationDoc } from './QuotationDoc'

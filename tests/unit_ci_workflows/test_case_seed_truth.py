@@ -310,6 +310,17 @@ PRECLEAN_CUSTOMER_TYPES = ("customer_tag_remove",)               # customer_keyw
 PRECONDITION_PRODUCT_TYPE = "product_count_for_keyword"          # source → 商品
 #: 明确**不在**本轮范围（布尔值只用于"显式跳过"，避免"扫到一半才发现"）：
 NAMESPACE_EMPLOYEE_PREFIXES = ("employee_name:", "employee_phone:")
+#: `category:`（issue #4965 的 CT-002 起出现）—— **显式范围外**，理由两条（不是"懒得判"）：
+#:   ① **它不指代种子对象**：`namespaces` 的语义是「我依赖/写哪个全局资源」（runner 据此把有交集的
+#:      用例自动串行，见 `local_runner.namespace_conflict_groups`），`category:轻奢系列` 是**分类名**
+#:      这一命名空间的争用声明；而本模块判的是「结构性声明的实体字面量能否在**种子真值**里解析」。
+#:   ② **没有可判的实体类**：种子真值目录（`extract_seed_catalog` + 门禁 `load_seed_catalog` 的
+#:      必需项）只收 `customer_tags` / `products` 等，**不含分类**；且 CT-002 的语义正是**创建**
+#:      一个种子里没有的分类 ⇒ 拿种子真值判它只会得到恒假结论（"基于错误的真相模型写出的护栏"）。
+#:   ⚠️ 真值锚点若将来扩到分类面（`extract_seed_catalog` 收 categories），本条应**改判**进
+#:      `NAMESPACE_PREFIXES_JUDGED` 并补对应断言 —— 本常量就是那笔账的登记处。
+NAMESPACE_CATEGORY_PREFIXES = ("category:",)
+NAMESPACE_PREFIXES_OUT_OF_SCOPE = NAMESPACE_EMPLOYEE_PREFIXES + NAMESPACE_CATEGORY_PREFIXES
 NAMESPACE_PREFIXES_JUDGED = ("product_name:", "customer_phone:")
 #: 分类面清单（判 / 显式范围外）—— 出现**不在两张表里**的新形态 ⇒ `TestNoSilentSkip` 报红，
 #: 不许悄悄落入盲区（盲区长得像通过，R5 禁的正是这种静默失效）
@@ -340,8 +351,8 @@ def declared_mentions(case: dict) -> list:
             add("product", s[len("product_name:"):], "namespaces[product_name:]")
         elif s.startswith("customer_phone:"):
             add("customer", s[len("customer_phone:"):], "namespaces[customer_phone:]")
-        elif s.startswith(NAMESPACE_EMPLOYEE_PREFIXES):
-            continue                              # 员工域：本轮范围外（docstring「未实装」③）
+        elif s.startswith(NAMESPACE_PREFIXES_OUT_OF_SCOPE):
+            continue                              # 员工域 / 分类域：本轮范围外（见常量处登记）
 
     for spec in case.get("pre_clean") or []:
         if not isinstance(spec, dict):
@@ -831,7 +842,7 @@ def unclassified_db_fetches(cases) -> list:
 def unclassified_namespace_prefixes(cases) -> list:
     return _unclassified((str(n).split(":")[0] + ":" for c in cases
                           for n in c.get("namespaces") or []),
-                         NAMESPACE_PREFIXES_JUDGED, NAMESPACE_EMPLOYEE_PREFIXES)
+                         NAMESPACE_PREFIXES_JUDGED, NAMESPACE_PREFIXES_OUT_OF_SCOPE)
 
 
 def unclassified_output_verify_name_tools(cases) -> list:

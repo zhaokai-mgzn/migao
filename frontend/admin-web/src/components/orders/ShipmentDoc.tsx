@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Order, OrderItem, LogisticsInfo } from '@/types'
+import type { PrintTarget } from './index'
 import { cn, formatFullDateTime } from '@/lib/utils'
 
 /**
@@ -25,6 +26,14 @@ import { cn, formatFullDateTime } from '@/lib/utils'
  *    invisible（补打纸面空白，issue #3912 回归）；故 print 块内必须显式恢复
  *    `.shipment-print-area, .shipment-print-area * { visibility: visible; }` ——
  *    它只影响单据自身可见性，不占版面高度，与 display:none 隔离不冲突。
+ *    🔴 **同页多单据的两条硬约束**（issue #4965，CI `Demo path specs` 实测红后修正 —— 别退回旧写法）：
+ *    订单详情页同时挂着报价单（`QuotationDoc`），两者都是 `document.body` 的**直接子级**。旧写法在
+ *    这种共存下**两条都错**：① 隔离选择器 `body > *:not(.shipment-print-area)` 会把**兄弟单据**
+ *    也选进来 ⇒ `display:none !important` 把对方整份藏掉；② 两份无限定 `visibility: visible`
+ *    **同特异性**、后渲染者胜 ⇒ 后挂的报价单把本单据藏成 invisible（实测 `toBeVisible()` 红）。
+ *    ⇒ 修法：隔离选择器排除所有打印单据（`body > *:not(.print-doc)`，两份容器都带 `print-doc` 标记类）；
+ *    visibility 防御限定本次打印目标（`.shipment-print-area[data-print-target='shipment'], …`，
+ *    由调用方在打印时置位）。
  * 3. **不得放进 Modal**：`Modal` 面板是 `max-h-full` + 内部 `overflow-y-auto`，
  *    打印只会打出可视区那一屏（多页明细会被裁掉）。故调用方一律渲染在页面级。
  * 4. **每页只挂一份**：`.shipment-print-area` 是全局选择器，挂两份会打印出两套单据。
@@ -41,6 +50,12 @@ interface ShipmentDocProps {
   logistics?: Pick<LogisticsInfo, 'logisticsCompany' | 'trackingNo' | 'shipperName'> | null
   /** 发货页当前输入的发货人（尚未保存也要印在纸面），优先于 order.logistics */
   shipperName?: string
+  /**
+   * 本次打印的目标（`'shipment'` = 打印本发货单）。**只在为 `'shipment'` 时**置位
+   * `data-print-target`，让 visibility 防御只作用于本单据 —— 否则会把同页的报价单
+   * （`QuotationDoc`）重新藏掉（issue #4965 实测回归，见文件头第 2 条）。
+   */
+  printTarget?: PrintTarget | null
   className?: string
 }
 
@@ -55,7 +70,7 @@ function formatQty(qty?: number): string {
   return String(qty ?? 0)
 }
 
-export default function ShipmentDoc({ order, logistics, shipperName, className }: ShipmentDocProps) {
+export default function ShipmentDoc({ order, logistics, shipperName, printTarget, className }: ShipmentDocProps) {
   // 打印只发生在客户端；SSR/首帧无 document，portal 前先等 mounted（未挂载返回 null）
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -78,12 +93,15 @@ export default function ShipmentDoc({ order, logistics, shipperName, className }
   const trackingNo = (logistics?.trackingNo || '').trim()
 
   return createPortal(
-    <div className={cn('shipment-print-area text-neutral-900', className)}>
+    <div
+      className={cn('shipment-print-area print-doc text-neutral-900', className)}
+      {...(printTarget === 'shipment' ? { 'data-print-target': 'shipment' } : {})}
+    >
       <style>{`
         .shipment-print-area { display: none; }
         @page { size: A4; margin: 12mm; }
         @media print {
-          body > *:not(.shipment-print-area) { display: none !important; }
+          body > *:not(.print-doc) { display: none !important; }
           .shipment-print-area {
             display: block;
             position: static;
@@ -92,8 +110,12 @@ export default function ShipmentDoc({ order, logistics, shipperName, className }
           }
           /* 防御：页面其他组件（如 ProcessingOrderBlock）残留的
              "body * { visibility: hidden }" 打印隔离会连同本单据一起藏掉
-             （补打纸面 invisible）——必须显式恢复单据自身可见（见文件头第 2 条）。 */
-          .shipment-print-area, .shipment-print-area * { visibility: visible; }
+             （补打纸面 invisible）——必须显式恢复单据自身可见（见文件头第 2 条）。
+             ⚠️ 限定 [data-print-target='shipment']：订单详情页同时挂着报价单，
+             两条 visibility: visible 同特异性 ⇒ 后渲染者胜，不加限定会被报价单藏掉
+             （issue #4965 实测回归）。 */
+          .shipment-print-area[data-print-target='shipment'],
+          .shipment-print-area[data-print-target='shipment'] * { visibility: visible; }
         }
       `}</style>
 
