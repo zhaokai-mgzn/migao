@@ -1384,6 +1384,9 @@ class CurtainCalcTool(BaseTool):
     description = (
         "计算窗帘用布量与报价。用户询问窗帘需要多少布、多少钱、怎么算料时调用。"
         "【前置】需要窗宽(米)、窗高(米)；面料单价可通过 product_detail 查询得到。"
+        "【门幅】顾客**没指定**门幅时，把 product_detail 的 SKU 列表里的门幅**去重**后传 "
+        "fabric_widths（如 [2.8,3.2]）—— 系统会自动选门幅、并自动决定定高买宽/定宽买高"
+        "（无需你判断朝向）；顾客**明确指定**了门幅才传 fabric_width。"
         "【褶数法·韩褶】mounting=s_hook 时可用褶数法：用料 = 0.25×褶数 + 余量（单开0.2/多开0.3）。"
         "顾客自报褶数或自报用料时：把褶数传 pleat_count；或传 craft_tier=economy 出省料档对比。"
         "开数传 open_count（1/2/4），对开褶数须偶数、四开能被 4 整除。"
@@ -1427,7 +1430,24 @@ class CurtainCalcTool(BaseTool):
             },
             "fabric_width": {
                 "type": "number",
-                "description": "面料门幅（米），默认 2.8。窄幅布为 1.4",
+                "description": (
+                    "面料门幅（米），默认 2.8。窄幅布为 1.4。"
+                    "⚠️ **顾客明确指定了门幅**时用本参数；没指定 ⇒ 改用 `fabric_widths`（候选集），"
+                    "本参数被忽略"
+                ),
+            },
+            "fabric_widths": {
+                "type": "array",
+                "items": {"type": "number"},
+                "description": (
+                    "**该商品可选的门幅集**（米，如 [2.8, 3.2]）—— 由 `product_detail` 的 SKU 列表里"
+                    "**去重**得到（同一商品常同时有 2.8 / 3.2 两种门幅）。"
+                    "【推荐】顾客只给了窗宽/窗高、**没指定门幅**时传本参数：系统会在候选集里"
+                    "**自动选门幅**，并**自动决定用「定高买宽」还是「定宽买高」**"
+                    "（规则：定高买宽做得下 ⇒ 取可行集里最小门幅；做不下 ⇒ 倒幅）。"
+                    "传了本参数 ⇒ `fabric_width` 被忽略。"
+                    "顾客**明确指定**了门幅 ⇒ 只传 `fabric_width`，不要传本参数。"
+                ),
             },
             "fabric_price": {
                 "type": "number",
@@ -1536,6 +1556,7 @@ class CurtainCalcTool(BaseTool):
         mounting: str = "eyelet",
         fullness: Optional[float] = None,
         fabric_width: float = 2.8,
+        fabric_widths: Optional[List[float]] = None,
         fabric_price: Optional[float] = None,
         has_pattern: bool = False,
         pattern_repeat: float = 0.0,
@@ -1630,6 +1651,9 @@ class CurtainCalcTool(BaseTool):
                 mounting=mounting,
                 fullness=fullness,
                 fabric_width=float(fabric_width),
+                # 候选门幅集（issue #5016）：给了 ⇒ 由 `resolve_fabric_plan` 自动选门幅 + 自动定
+                # 加工类型（`fabric_width` 被忽略）；没给 ⇒ 既有单一门幅口径逐值不变。
+                fabric_widths=fabric_widths,
                 fabric_price=float(fabric_price),
                 has_pattern=has_pattern,
                 pattern_repeat=pattern_repeat,
