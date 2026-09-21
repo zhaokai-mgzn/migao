@@ -17,7 +17,8 @@
 |---|---|---|
 | 1 | 与引擎 `detect_auto_features` **同源**：端点返回 == 直调函数（防第二份判据） | 端点自己拼一套判定 ⇒ 红 |
 | 2 | 按加工类型分流（定高买宽 ⇒ 只判超高；定宽买高 ⇒ 超宽 + 倒幅） | 去掉分流 ⇒ 红 |
-| 3 | 缺门幅 ⇒ **不判** + `notice='missing-door-width'`（**不回落默认门幅**，#4877） | 回落到 2.8/3.2 ⇒ 红 |
+| 3 | 缺门幅 ⇒ **不回落默认门幅**（#4877）；**但 `倒幅` 照判**（#5033：它与门幅无关） | 回落到 2.8/3.2 ⇒ 红；**短路成 `[]`** ⇒ 红（#5019 切源后的钱路径回归） |
+| 3b | 引擎在 `fabric_width=None` 时**不得抛异常**（#5033 根因：`product > None` 抛 `TypeError` ⇒ 调用方只能短路） | 去掉 `fabric_width is not None` 守卫 ⇒ `TypeError` ⇒ 红 |
 | 4 | 缺 / 表外加工类型 ⇒ 不判 + `notice='unknown-cutting-mode'`（不猜朝向） | 缺省时按定高买宽兜底 ⇒ 红 |
 | 5 | 褶倍缺省 ⇒ 取**该租户配置**的标准档（并回显 `fullness_used` 供核对） | 写死 2.0 ⇒ 红 |
 | 6 | 租户配置 `side_margin` / `hem_margin` 生效 | 用模块常量 ⇒ 红 |
@@ -98,15 +99,32 @@ class TestEndpointJudges:
 
 
 class TestNoDefaultDoorWidth:
-    """判据 3：缺门幅 ⇒ 不判（**不回落任何默认门幅**，与 #4877 同口径）。"""
+    """判据 3：缺门幅 ⇒ **不回落任何默认门幅**（与 #4877 同口径）；**但 `倒幅` 照判**（#5033）。"""
 
-    def test_missing_door_width_is_explicitly_not_judged(self, client):
+    def test_missing_door_width_still_judges_reverse(self, client):
+        """🔴 **issue #5033**：`定宽买高 + 缺门幅` ⇒ **仍判 `倒幅`**（它只取决于加工类型、与门幅无关）。
+
+        红证：把端点的「缺门幅 ⇒ `features=[]`」短路改回去 ⇒ 本断言红
+        （`[]` != `['倒幅']`）—— 那正是 #5019 切源后引入的钱路径回归
+        （组合键少一项 ⇒ 商家配了基础组合时**取价成功但金额偏低**）。
+        """
         payload = {k: v for k, v in BASE.items() if k != "fabric_width"}
         data = _data(client, payload)
-        # 注入：缺门幅时回落到 2.8 / 3.2 ⇒ 会判出超宽 ⇒ 红
-        assert data["auto_features"] == []
+        # 注入①：缺门幅时回落到 2.8 / 3.2 ⇒ 会**多判**超宽 ⇒ 红（#4877）
+        assert _names(data["auto_features"]) == ["倒幅"]
         assert data["notice"] == "missing-door-width"
         assert data["door_width"] is None
+
+    def test_missing_door_width_judges_nothing_for_fixed_height(self, client):
+        """`定高买宽 + 缺门幅` ⇒ `[]`（`超高` 判不了 —— 它**确实**依赖门幅）。
+
+        与上一条成对：**缺门幅不是「一个都不判」，也不是「都判」**，而是**按方向**决定
+        （宽方向受门幅约束 ⇒ 不判；朝向特征 ⇒ 照判）。
+        """
+        data = _data(client, {"width": 1.6, "height": 2.6, "cutting_mode": FIXED_HEIGHT,
+                              "fullness": 2.0})
+        assert data["auto_features"] == []
+        assert data["notice"] == "missing-door-width"
 
     def test_unknown_cutting_mode_is_explicitly_not_judged(self, client):
         data = _data(client, {**BASE, "cutting_mode": "表外取值"})
@@ -116,6 +134,24 @@ class TestNoDefaultDoorWidth:
     def test_missing_cutting_mode_is_explicitly_not_judged(self, client):
         payload = {k: v for k, v in BASE.items() if k != "cutting_mode"}
         assert _data(client, payload)["notice"] == "unknown-cutting-mode"
+
+
+class TestEngineAcceptsUnknownDoorWidth:
+    """判据（#5033 根因）：引擎在 `fabric_width=None` 时**不得抛异常**（否则调用方只能短路）。"""
+
+    def test_engine_none_door_width_does_not_raise(self):
+        from app.tools import curtain_calc
+
+        # 注入①：去掉 `fabric_width is not None` 守卫 ⇒ `product > None` 抛 TypeError ⇒ 红
+        assert curtain_calc.detect_auto_features(
+            window_width=1.6, window_height=2.6, fabric_width=None,
+            fullness=2.0, cutting_mode=curtain_calc.CUTTING_MODE_FIXED_WIDTH,
+        ) == [{"name": "倒幅", "source": "推算",
+               "reason": f"加工类型 = {curtain_calc.CUTTING_MODE_FIXED_WIDTH}"}]
+        assert curtain_calc.detect_auto_features(
+            window_width=1.6, window_height=2.6, fabric_width=None,
+            fullness=2.0, cutting_mode=curtain_calc.CUTTING_MODE_FIXED_HEIGHT,
+        ) == []
 
 
 class TestTenantConfig:

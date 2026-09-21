@@ -509,9 +509,9 @@ def _meters_for_reason(value: float, door_width: float) -> float:
 
 
 def detect_auto_features(
-    window_width: float,
-    window_height: float,
-    fabric_width: float,
+    window_width: Optional[float],
+    window_height: Optional[float],
+    fabric_width: Optional[float],
     fullness: Optional[float] = None,
     cutting_mode: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
@@ -522,9 +522,11 @@ def detect_auto_features(
     本函数是**服务端**的判定实现（用户裁定 B），前端退场后它就是唯一真值源。
 
     Args:
-        window_width: 成品宽（米）
-        window_height: 成品高（米）
-        fabric_width: **该商品/SKU 的门幅**（米）—— 权威值由调用方传入（不再用模块常量兜底）
+        window_width: 成品宽（米）；`None` / 非正 ⇒ **不判超宽**（`倒幅` 照判 —— 它只取决于加工类型）
+        window_height: 成品高（米）；`None` / 非正 ⇒ **不判超高**（不回落任何默认层高）
+        fabric_width: **该商品/SKU 的门幅**（米）—— 权威值由调用方传入；
+            `None` ⇒ **超宽/超高都不判**（**不回落**模块常量，issue #4877：门幅没有缺省值），
+            但 **`倒幅` 照判**（它只取决于加工类型、与门幅无关 —— issue #5033）
         fullness: **名义**褶倍（档位值）；缺失 / 非正 ⇒ **不判超宽**（不拿一个假褶倍去判价）
         cutting_mode: 加工类型（`定高买宽` / `定宽买高`）；缺省 / 表外 ⇒ **都不判**
         config: 租户级算料配置（`side_margin` 取自它；缺省 ⇒ 引擎默认值）
@@ -545,7 +547,17 @@ def detect_auto_features(
         # 判据 = 引擎**真实的分幅条件** `ceil((宽 + 余量) × 褶倍 ÷ 门幅) ≥ 2`
         # ⟺ `(宽 + 余量) × 褶倍 > 门幅`（原始浮点，不取整 —— 取整会漏报，见前端同款注释）
         # ⚠️ 宽 / 褶倍缺失 ⇒ **不判**（调用方可能只给了高；不拿假值去判价）
-        if window_width is not None and fullness is not None and fullness > 0:
+        # ⚠️ 宽 / 褶倍 / **门幅**缺失 ⇒ **不判超宽**（调用方可能只给了高，或该 SKU 未维护门幅；
+        # 不拿假值去判价 —— issue #4877：门幅**没有**缺省值）。
+        # 🔴 `fabric_width is not None` 这条守卫是 **#5033** 的根因修复：缺了它，
+        # `product > fabric_width` 会抛 `TypeError` ⇒ 调用方（判定端点）只能**短路**，
+        # 而短路会把**与门幅无关**的 `倒幅` 一起吞掉 ⇒ 组合键少一项（改钱）。
+        if (
+            fabric_width is not None
+            and window_width is not None
+            and fullness is not None
+            and fullness > 0
+        ):
             product = (window_width + side_margin) * fullness
             if product > fabric_width:
                 features.append({
@@ -564,8 +576,13 @@ def detect_auto_features(
             "source": "推算",
             "reason": f"加工类型 = {CUTTING_MODE_FIXED_WIDTH}",
         })
-    elif window_height is not None and window_height + cfg["hem_margin"] > fabric_width:
+    elif (
+        fabric_width is not None
+        and window_height is not None
+        and window_height + cfg["hem_margin"] > fabric_width
+    ):
         # 定高买宽：只有**高**受门幅约束（`成品高 + 上下卷边 > 门幅` ⇒ 定高买宽不可行）
+        # ⚠️ `fabric_width is not None` = 该 SKU 未维护门幅 ⇒ **不判超高**（不回落缺省门幅）。
         features.append({
             "name": "超高",
             "source": "推算",

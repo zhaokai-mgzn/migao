@@ -599,6 +599,10 @@ async def auto_features(
     返回 `data`：`auto_features`（`[{name, source, reason}]`，**键恒在**，空列表 = **不判**）/
     `door_width`（实际用于判定的门幅；缺门幅时 `None`）/ `fullness_used`（实际用于判超宽的褶倍）/
     `notice`（`''` / `missing-door-width` / `unknown-cutting-mode` —— **不判的原因**，不静默）。
+
+    ⚠️ **缺门幅 ≠ 一个特征都不判**（issue #5033）：`倒幅` 只取决于加工类型、**与门幅无关**
+    ⇒ 缺门幅时**照判**（`定宽买高 + 未维护门幅` ⇒ `['倒幅']`）。本端点**不再**对缺门幅短路
+    —— 短路会把 `倒幅` 一起吞掉 ⇒ 组合键少一项（改钱）。`定高买宽 + 缺门幅` ⇒ `[]`（超高判不了）。
     """
     try:
         config = _normalize_craft_calc_config(request.config)
@@ -613,27 +617,26 @@ async def auto_features(
         request.fullness if request.fullness is not None else cfg["tiers"]["standard"]["fullness"]
     )
 
-    if request.fabric_width is None:
-        # 缺门幅 ⇒ **不判**（不回落任何默认门幅，issue #4877）
-        features, notice = [], "missing-door-width"
-    elif request.cutting_mode not in (
+    if request.cutting_mode not in (
         curtain_calc.CUTTING_MODE_FIXED_HEIGHT,
         curtain_calc.CUTTING_MODE_FIXED_WIDTH,
     ):
         # 缺 / 表外加工类型 ⇒ **不判**（不猜朝向）
         features, notice = [], "unknown-cutting-mode"
     else:
-        features, notice = (
-            curtain_calc.detect_auto_features(
-                window_width=request.width,
-                window_height=request.height,
-                fabric_width=request.fabric_width,
-                fullness=fullness_used,
-                cutting_mode=request.cutting_mode,
-                config=config,
-            ),
-            "",
+        # 🔴 **不在本端点短路「缺门幅」**（issue #5033）：`倒幅` 只取决于加工类型、**与门幅无关**
+        # （#4877 明确：门幅缺数据**不能连倒幅一起吞** —— 那正是「静默少一个组合键项 = 改钱」）。
+        # ⇒ 一律委派引擎（**单一真值**，端点不持第二份判据）；缺门幅时引擎的 `fabric_width is None`
+        # 守卫会让超宽/超高**不判**、而 `倒幅` 照判。
+        features = curtain_calc.detect_auto_features(
+            window_width=request.width,
+            window_height=request.height,
+            fabric_width=request.fabric_width,
+            fullness=fullness_used,
+            cutting_mode=request.cutting_mode,
+            config=config,
         )
+        notice = "missing-door-width" if request.fabric_width is None else ""
 
     return make_response(True, data={
         "auto_features": features,
