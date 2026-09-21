@@ -162,6 +162,19 @@ public class ProductionOperationQueryService {
     public static final String COLLAPSE_PRICE_SOURCE_POSITION = "布帘";
 
     /**
+     * 矩阵塌缩（V102）后幸存行的 {@code position} —— **中性值，不是部位**（部位维已退场）。
+     *
+     * <p>出处 = `backend/admin-api/src/main/resources/db/migration/V102__retire_applicability_flag.sql`
+     * （与 `docs/sql/schema.sql` 的矩阵终态字面量逐字一致）。读面必须**认出**它：塌缩行的变体元数据
+     * （{@code group} / {@code unit} / {@code variant_operation_id}）只能按
+     * {@link #COLLAPSE_PRICE_SOURCE_POSITION 取价同一行}解析 —— 按中性值查变体必然落空，
+     * 于是库里只有变体名的工序会静默变 null（issue #5008：商家面「未分组」+ 行尾 `—`）。</p>
+     *
+     * <p>它**不进** {@link #POSITION_LIMIT_VOCABULARY}（理由见那里）：这个值永不可能等于任何实例化部位。</p>
+     */
+    public static final String COLLAPSE_NEUTRAL_POSITION = "通用";
+
+    /**
      * **规则级「部位限定」的闭词表**（issue #4962）：{@link #BASELINE_POSITIONS 基线三部位}
      * **∪ 第 4 个部位**（{@code 布料}，布料单专用 —— 与 {@code ProcessingOrderService.FABRIC_POSITION}
      * 逐字同源，**不另抄一个字面量**）。

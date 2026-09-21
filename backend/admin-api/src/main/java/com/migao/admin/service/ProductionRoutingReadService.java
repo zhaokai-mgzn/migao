@@ -334,11 +334,33 @@ public class ProductionRoutingReadService {
         return positionView(row, variantName(row, catalog), catalog);
     }
 
-    /** 该格实际落到**工人端那道工序**的变体名（查不到 ⇒ {@code null}，**不猜**）。 */
+    /**
+     * 该格实际落到**工人端那道工序**的变体名（查不到 ⇒ {@code null}，**不猜**）。
+     *
+     * <p>🔴 <b>塌缩终态（issue #5008）</b>：V102 把矩阵按 {@code (租户, 逻辑工序)} 塌缩成一行，
+     * 幸存行的 {@code position} 是中性值
+     * {@link ProductionOperationQueryService#COLLAPSE_NEUTRAL_POSITION 通用}（不是部位）
+     * ⇒ 按它查变体**必然落空**。此时回落到**取价同一行**
+     * （{@link ProductionOperationQueryService#COLLAPSE_PRICE_SOURCE_POSITION 布帘} 列）——
+     * 与 {@link ProductionOperationQueryService#collapseToLogical} 的选行同一把尺；否则那 21 道
+     * 库里只有变体名（{@code 布三边} / {@code 精裁-布}…）的工序分组/单位/寻址键静默变 null。</p>
+     *
+     * <p>⚠️ 回落**只**认中性值：真实部位（如 {@code 纱帘}）查不到变体仍必须 {@code null}
+     * —— 借布帘列的元数据顶替就是「猜」，既有判据
+     * {@code ProductionRoutingReadServiceTest#operationPositionsLeavesVariantKeysNullWhenNoVariant}
+     * 钉住这条。</p>
+     */
     private String variantName(ProductionOperationPosition row,
                                Map<String, Map<String, Object>> catalog) {
-        return productionOperationQueryService.variantNameOf(
+        String variant = productionOperationQueryService.variantNameOf(
                 row.getLogicalName(), row.getPosition(), catalog);
+        if (variant != null
+                || !ProductionOperationQueryService.COLLAPSE_NEUTRAL_POSITION.equals(row.getPosition())) {
+            return variant;
+        }
+        return productionOperationQueryService.variantNameOf(
+                row.getLogicalName(),
+                ProductionOperationQueryService.COLLAPSE_PRICE_SOURCE_POSITION, catalog);
     }
 
     /**
