@@ -117,7 +117,11 @@ export default function ProductsPage() {
 
   // ===== 防抖 syncUrl：输入框 onChange 用 300ms debounce 避免每次按键都请求 (#660) =====
   const syncUrlRef = useRef(syncUrl)
-  syncUrlRef.current = syncUrl  // 始终保持最新引用，避免闭包陈旧问题
+  // 始终保持最新引用，避免闭包陈旧问题。放 effect（而非渲染期赋值）：渲染期写 ref
+  // 在并发渲染下会泄漏被丢弃的渲染，且被 `react-hooks/refs` 判为真缺陷。
+  useEffect(() => {
+    syncUrlRef.current = syncUrl
+  }, [syncUrl])
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const debouncedSyncUrl = useCallback(

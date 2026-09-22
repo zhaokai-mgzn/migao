@@ -243,4 +243,43 @@ describe('useOrderAmounts — 优惠金额/实收款双向联动', () => {
     const { result: r2 } = renderHook(() => useOrderAmounts(0))
     expect(r2.current.actualAmount).toBe('0.00')
   })
+
+  // ── 回归锁：ref 同步从「渲染期赋值」改为 layout effect 后，语义必须逐条不变 ──
+  // （渲染期写 ref 在并发渲染下会泄漏被丢弃的渲染，且被 `react-hooks/refs` 判为真缺陷；
+  //  改到 layout effect 后「最新值」仍然在提交后、联动 effect 之前就位。）
+  it('BT-19: 多轮键入 + 总额变化交替 → 联动始终以「已提交的最新值」为基准', () => {
+    const { result, rerender } = renderHook(
+      ({ total }) => useOrderAmounts(total),
+      { initialProps: { total: 1000 } }
+    )
+
+    act(() => { result.current.setDiscountAmount('100') })
+    expect(result.current.actualAmount).toBe('900.00')
+
+    rerender({ total: 1500 })
+    expect(result.current.actualAmount).toBe('1400.00')
+
+    act(() => { result.current.setActualAmount('1000') })
+    expect(result.current.discountAmount).toBe('500.00')
+
+    rerender({ total: 2000 })
+    expect(result.current.actualAmount).toBe('1000')
+    expect(result.current.discountAmount).toBe('1000.00')
+  })
+
+  it('BT-20: 连续同批输入不触发总额反算（中间态不被归一化吞掉）', () => {
+    const { result, rerender } = renderHook(
+      ({ total }) => useOrderAmounts(total),
+      { initialProps: { total: 500 } }
+    )
+
+    act(() => { result.current.setDiscountAmount('1') })
+    act(() => { result.current.setDiscountAmount('12') })
+    act(() => { result.current.setDiscountAmount('12.') })
+    // 中间态原样保留（未被 layout effect 或联动 effect 归一化）
+    expect(result.current.discountAmount).toBe('12.')
+    // 且不因 ref 同步而误触发总额反算
+    rerender({ total: 500 })
+    expect(result.current.discountAmount).toBe('12.')
+  })
 })

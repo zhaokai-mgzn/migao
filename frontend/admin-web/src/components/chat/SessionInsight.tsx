@@ -34,6 +34,7 @@ import {
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
+import { useNow } from '@/hooks/useNow'
 import {
   buildSessionBrief,
   detectPendingInteraction,
@@ -159,17 +160,21 @@ export default function SessionInsight({
   const messageCount = currentSession?.message_count ?? messages.length
   const sessionStatus = currentSession?.status || 'active'
 
+  // 「当前时间」取自 useNow（渲染期可安全读取的外部快照），不在渲染期调 Date.now()：
+  // 后者不纯，且会被 useMemo 缓存住 —— 无 updated_at 的会话历时会永远停在挂载那一刻。
+  const now = useNow()
+
   const duration = useMemo(() => {
     if (!currentSession?.created_at) return null
     const start = new Date(currentSession.created_at).getTime()
-    const end = currentSession.updated_at ? new Date(currentSession.updated_at).getTime() : Date.now()
+    const end = currentSession.updated_at ? new Date(currentSession.updated_at).getTime() : now
     const mins = Math.round((end - start) / 60000)
     if (mins < 1) return '刚刚'
     if (mins < 60) return `${mins} 分钟`
     const hours = Math.floor(mins / 60)
     const remainMins = mins % 60
     return remainMins > 0 ? `${hours} 小时 ${remainMins} 分钟` : `${hours} 小时`
-  }, [currentSession?.created_at, currentSession?.updated_at])
+  }, [currentSession?.created_at, currentSession?.updated_at, now])
 
   if (!currentSessionId) return null
 

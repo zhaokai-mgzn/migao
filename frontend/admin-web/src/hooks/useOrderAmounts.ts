@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 
 /**
  * useOrderAmounts — 订单金额 + 优惠金额 + 实收款 双向联动逻辑
@@ -22,13 +22,19 @@ export function useOrderAmounts(orderTotal: number) {
 
   // 最后编辑的字段（ref：仅供本 hook 内部联动判断，不触发渲染）
   const lastEditedRef = useRef<AmountField | null>(null)
-  // 同步最新值供事件回调使用，避免 stale closure
+  // 同步最新值供事件回调使用，避免 stale closure。
+  // 为什么放在 layout effect 而不是渲染期赋值：渲染期写 ref 会泄漏「被丢弃的渲染」
+  // （并发渲染下渲染可能被放弃，副作用却留在了 ref 上），且被 React 的
+  // `react-hooks/refs` 规则判为真缺陷。layout effect 在提交后、其它 effect 之前同步，
+  // 既拿到「本次已提交的最新值」，又不改渲染期语义。
   const orderTotalRef = useRef(orderTotal)
-  orderTotalRef.current = orderTotal
   const discountRef = useRef(discountAmount)
-  discountRef.current = discountAmount
   const actualRef = useRef(actualAmount)
-  actualRef.current = actualAmount
+  useLayoutEffect(() => {
+    orderTotalRef.current = orderTotal
+    discountRef.current = discountAmount
+    actualRef.current = actualAmount
+  }, [orderTotal, discountAmount, actualAmount])
 
   // 订单金额变化（增删商品/改数量）→ 以最后编辑字段为基准反算另一个字段
   useEffect(() => {

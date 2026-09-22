@@ -9,7 +9,7 @@
  *  - 会话标识保留（弱化展示）；空会话显示友好空态
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import SessionInsight from '@/components/chat/SessionInsight'
 import { useChatStore } from '@/store/chat'
 import type { ChatSession, ChatMessage } from '@/types'
@@ -173,5 +173,34 @@ describe('SessionInsight 会话简报', () => {
     expect(screen.queryByTestId('session-insight-overlay')).not.toBeInTheDocument()
     expect(drawer).toHaveClass('invisible')
     expect(drawer).not.toHaveClass('translate-x-full')
+  })
+
+  // ── 「历时」的当前时间来源（渲染期 Date.now() 真缺陷的回归锁）──
+  // 缺陷形态：`useMemo` 里直接调 `Date.now()` 兜底 ⇒ 快照被缓存住，
+  // **没有 updated_at 的会话历时会永远停在挂载那一刻**（且渲染期调 Date.now 本身不纯）。
+  // 修后：当前时间来自 useNow() 的稳定外部快照（按 30s 推进），历时随时间前进。
+  it('无 updated_at 的会话：历时随当前时间前进而刷新（不是挂在挂载那一刻）', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-09-01T10:00:00Z'))
+      useChatStore.setState({
+        sessions: [{ ...SESSION, updated_at: undefined }],
+      } as Partial<typeof useChatStore.getState>)
+
+      render(<SessionInsight isOpen onClose={vi.fn()} />)
+      expect(screen.getByText('刚刚')).toBeInTheDocument()
+
+      // 时间推进：setSystemTime 定位到「距开始 4.5 分钟」，再推过 useNow 的 30s 快照间隔
+      // （advanceTimersByTime 本身也会推进 mock 的 Date）⇒ 快照落在 5.0 分钟处。
+      vi.setSystemTime(new Date('2026-09-01T10:04:30Z'))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000)
+      })
+
+      expect(screen.getByText('5 分钟')).toBeInTheDocument()
+      expect(screen.queryByText('刚刚')).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
