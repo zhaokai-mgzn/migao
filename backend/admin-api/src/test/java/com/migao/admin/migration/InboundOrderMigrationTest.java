@@ -1,6 +1,6 @@
 package com.migao.admin.migration;
 
-// case_ids=[PR-036, PR-053]
+// case_ids=[PR-036, PR-058]
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

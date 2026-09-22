@@ -2205,7 +2205,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: PR-053
+  - id: PR-058
     legacy_id: ""
     title: "入库单幂等与并发：并发过账只加一次库存；进程重启后当天仍能建单；同一 import_run_id 重跑不建第二张"
     domains:

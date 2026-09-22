@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids=[PR-029, PR-030, PR-031, PR-032, PR-033, PR-045, PR-046, PR-048, PR-053]
+// case_ids=[PR-029, PR-030, PR-031, PR-032, PR-033, PR-045, PR-046, PR-048, PR-058]
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -232,7 +232,7 @@ class InboundOrderServiceTest {
                     .matches("RK-\\d{8}-\\d{4}");
             assertThat(saved.getInboundDate()).isEqualTo(LocalDate.now());
             assertThat(saved.getCreatedBy()).isEqualTo("13800000000");
-            // PR-053（V117）：来源缺省 = purchase（存量口径不变）、未带运行标识则不去重
+            // PR-058（V117）：来源缺省 = purchase（存量口径不变）、未带运行标识则不去重
             assertThat(saved.getSource()).isEqualTo(InboundOrder.SOURCE_PURCHASE);
             assertThat(saved.getImportRunId()).isNull();
 
@@ -565,7 +565,7 @@ class InboundOrderServiceTest {
         }
     }
 
-    // ============================================================ PR-053 幂等与并发闸（issue #5148）
+    // ============================================================ PR-058 幂等与并发闸（issue #5148）
 
     /**
      * 幂等与并发（V117 / issue #5148）—— 三条承重判据：
@@ -580,7 +580,7 @@ class InboundOrderServiceTest {
      * </ol>
      */
     @Nested
-    @DisplayName("PR-053 幂等与并发闸（V117 / issue #5148）")
+    @DisplayName("PR-058 幂等与并发闸（V117 / issue #5148）")
     class IdempotencyAndGate {
 
         private InboundOrder draftOrder() {
@@ -799,7 +799,7 @@ class InboundOrderServiceTest {
         }
 
         @Test
-        @DisplayName("PR-053 来源只支持 purchase / opening：写别的值 ⇒ 拒绝（不把 DB 的 23514 透传成 500）")
+        @DisplayName("PR-058 来源只支持 purchase / opening：写别的值 ⇒ 拒绝（不把 DB 的 23514 透传成 500）")
         void rejectsUnknownSource() {
             when(productMapper.selectById("prod-1")).thenReturn(new Product());
             when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
