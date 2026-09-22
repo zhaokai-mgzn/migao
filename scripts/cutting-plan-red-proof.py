@@ -59,10 +59,10 @@ MUTATIONS: list[tuple[str, str, str, set[str], str]] = [
         "                if (rowSpans.get(i).add(span).compareTo(maxRowSpan) <= 0) {",
         "                if (true) {",
         {"piecesThatDoNotFitTogetherKeepTheirOwnRows", "keepsWholePiecesUnmodifiedAndRowsWithinDoorWidth",
-         "resultIsIndependentOfInputOrder", "randomizedInvariantsHold",
-         "fixedHeightTallWindowsPairIntoOneRow", "fixedWidthSinglePanelNarrowWindowsPairIntoOneRow"},
-        "1.7 + 1.7 = 3.4 > 门幅 2.8 仍被排进同一行 ⇒ 「不倒退/切不出货」判据必须红，"
-        "且所有「多行」算例随之红",
+         "resultIsIndependentOfInputOrder", "randomizedInvariantsHold"},
+        "1.7 + 1.7 = 3.4 > 门幅 2.8 仍被排进同一行 ⇒ 「不倒退/切不出货」判据必须红。"
+        "⚠️ 单行算例（两条并排判据）此时**仍绿**：两块挤成一行与并排成一行在本例里行长度相同（3.0）"
+        "—— 这正是「不倒退」要靠**多行**算例才判得出来的原因，故那两条**不**列进期望红。",
     ),
     (
         "M3 排序键方向反转（降序 → 升序）",

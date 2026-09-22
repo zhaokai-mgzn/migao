@@ -71,6 +71,31 @@ class CuttingPlanCalculatorTest {
                 "行内料的构成/顺序不符（行长度 " + row.length() + "）");
     }
 
+    /**
+     * 逐行复核**全部**不变式（断言面**独立**于被测实现算一遍，不拿被测自己的 `length()` 当真相）：
+     * ① 行内 {@code Σ 占门幅宽 ≤ 门幅}；② {@code row.length() == 行内最大沿卷长}；
+     * ③ 行内每块都是**原样的入参记录**。返回行长度以便调用方累加。
+     */
+    private static BigDecimal assertRowInvariants(Row row, List<Piece> input, double doorWidth,
+                                                  String context) {
+        BigDecimal spanSum = BigDecimal.ZERO;
+        BigDecimal maxMeters = BigDecimal.ZERO;
+        for (Piece piece : row.pieces()) {
+            spanSum = spanSum.add(BigDecimal.valueOf(piece.doorSpanMeters()));
+            if (BigDecimal.valueOf(piece.meters()).compareTo(maxMeters) > 0) {
+                maxMeters = BigDecimal.valueOf(piece.meters());
+            }
+            assertTrue(input.contains(piece), context + "：输出的料必须是**原样**的入参记录"
+                    + "（未被重切/改写）：" + piece);
+        }
+        assertTrue(spanSum.compareTo(BigDecimal.valueOf(doorWidth)) <= 0,
+                context + "：行内 Σ占门幅宽 " + spanSum + " 超过门幅 ⇒ 这行切不出货（完整布不变式）");
+        assertEquals(0, row.length().compareTo(maxMeters),
+                context + "：行长度必须 == 行内最大沿卷长（实际 " + row.length()
+                        + " / 应为 " + maxMeters + "）");
+        return row.length();
+    }
+
     @Test
     @DisplayName("定高买宽：两扇矮窗并排 ⇒ 1 行 / 领 3m（逐窗 = 6m），且料一字未改")
     void fixedHeightTallWindowsPairIntoOneRow() {
@@ -154,22 +179,12 @@ class CuttingPlanCalculatorTest {
         assertTrue(plan.issuedMeters().compareTo(perPieceMeters(pieces)) < 0,
                 "并排必须**省**（issued 4.4 < 逐窗口径 7.6）");
         List<Piece> seen = new ArrayList<>();
+        BigDecimal issued = BigDecimal.ZERO;
         for (Row row : plan.rows()) {
-            BigDecimal spanSum = BigDecimal.ZERO;
-            BigDecimal maxMeters = BigDecimal.ZERO;
-            for (Piece piece : row.pieces()) {
-                spanSum = spanSum.add(BigDecimal.valueOf(piece.doorSpanMeters()));
-                if (BigDecimal.valueOf(piece.meters()).compareTo(maxMeters) > 0) {
-                    maxMeters = BigDecimal.valueOf(piece.meters());
-                }
-                assertTrue(pieces.contains(piece),
-                        "输出的料必须是**原样**的入参记录（未被重切/改写）：" + piece);
-                seen.add(piece);
-            }
-            assertTrue(spanSum.compareTo(BigDecimal.valueOf(DOOR_WIDTH)) <= 0,
-                    "行内 Σ占门幅宽 " + spanSum + " 超过门幅 ⇒ 这行切不出货（完整布不变式）");
-            assertEquals(0, row.length().compareTo(maxMeters), "行长度 = 行内最大沿卷长");
+            issued = issued.add(assertRowInvariants(row, pieces, DOOR_WIDTH, "完整布不变式"));
+            seen.addAll(row.pieces());
         }
+        assertEquals(0, plan.issuedMeters().compareTo(issued), "应领米数必须 == Σ 行长度");
         assertEquals(pieces.size(), seen.size(), "每块料恰好出现一次（不重切、不丢料）");
         for (Piece piece : pieces) {
             assertTrue(seen.contains(piece), "料 " + piece.pieceId() + " 未出现在任何输出行里");
@@ -242,21 +257,9 @@ class CuttingPlanCalculatorTest {
             BigDecimal expected = BigDecimal.ZERO;
             BigDecimal seen = BigDecimal.ZERO;
             for (Row row : plan.rows()) {
-                BigDecimal spanSum = BigDecimal.ZERO;
-                BigDecimal maxMeters = BigDecimal.ZERO;
-                for (Piece piece : row.pieces()) {
-                    spanSum = spanSum.add(BigDecimal.valueOf(piece.doorSpanMeters()));
-                    if (BigDecimal.valueOf(piece.meters()).compareTo(maxMeters) > 0) {
-                        maxMeters = BigDecimal.valueOf(piece.meters());
-                    }
-                    assertTrue(pieces.contains(piece), "输出的料必须原样（第 " + round + " 轮）");
-                    seen = seen.add(BigDecimal.ONE);
-                }
-                assertTrue(spanSum.compareTo(BigDecimal.valueOf(doorWidth)) <= 0,
-                        "第 " + round + " 轮出现超门幅的行：" + spanSum + " > " + doorWidth);
-                assertEquals(0, row.length().compareTo(maxMeters),
-                        "第 " + round + " 轮行长度 ≠ 行内最大沿卷长");
-                expected = expected.add(row.length());
+                expected = expected.add(
+                        assertRowInvariants(row, pieces, doorWidth, "第 " + round + " 轮"));
+                seen = seen.add(BigDecimal.valueOf(row.pieces().size()));
             }
             assertEquals(0, plan.issuedMeters().compareTo(expected),
                     "第 " + round + " 轮应领米数 ≠ Σ 行长度");
@@ -265,9 +268,11 @@ class CuttingPlanCalculatorTest {
             assertTrue(plan.issuedMeters().compareTo(perPieceMeters(pieces)) <= 0,
                     "第 " + round + " 轮应领米数超过了逐窗口径（把料重复计数了）");
 
-            List<Piece> reversed = new ArrayList<>(pieces);
-            Collections.reverse(reversed);
-            assertEquals(CuttingPlanCalculator.plan(reversed, doorWidth, hemMargin).issuedMeters(),
+            // 换输入顺序 ⇒ 应领米数必须相同。⚠️ 用**打乱**而不是逆序：逆序后的升序恰好等于
+            // 降序的规范序，会让「排序键失效」这种缺陷**假绿**（实测：第一版就是这么漏的）。
+            List<Piece> shuffled = new ArrayList<>(pieces);
+            Collections.shuffle(shuffled, new Random(round));
+            assertEquals(CuttingPlanCalculator.plan(shuffled, doorWidth, hemMargin).issuedMeters(),
                     plan.issuedMeters(), "第 " + round + " 轮换输入顺序后应领米数变了");
         }
     }
