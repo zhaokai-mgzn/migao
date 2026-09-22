@@ -20,6 +20,22 @@
 **跨行引号标量**整段读成**一个逻辑行**，取值按 YAML 8.1.3 的折叠 / chomping 规则算，
 与 `yaml.safe_load` 逐值一致。
 
+## 引号标量的转义解码（issue #5179）
+
+原先**双引号标量里的转义序列不解码**（`_parse_scalar` 直接 `s[1:-1]`）⇒ 取值里的反斜杠原样留下，
+与 `yaml.safe_load` 真值**静默分叉**，而**没有任何检查会红**：
+
+· 「生成物新鲜度」比的是「能否由当前源重渲染出**已提交的**产物」，**不是**「产物是否等于真值」
+  ⇒ 一份**稳定地错**的产物永远绿；
+· 连带：交给 LLM 的判据文本与真值不同；任何按值检索/比对的工具都会漏
+  （复核方两次人工比对都没比出来，正说明"看不出"是常态）。
+
+**可复算读数**（比较器 = `tests/unit_ci_workflows/render_leg_compare.py`；真值 = `yaml.safe_load`，
+产物 = `tests/agent_eval/eval_cases.py` 的 `ast.literal_eval` 字面量）：修前真值 **428** 条用例、
+产物 **428** 条（id 序列逐位相同），逐值不同的 **(文件, 用例, 字段)** = **33 处**、不同的字符串
+**45** 个、产物侧多出的转义序列 **163** 个（`\\"` 148 + `\\\\` 9 + `\\/` 1 + `\\n` 5），成因只有一个。
+⇒ 现在按 YAML 8.1.3 解码（`_DQ_ESCAPES` 与 `\\x` / `\\u` / `\\U`），取值逐值等于 PyYAML。
+
 ## 仍未保真（如实登记，**有死亡条件**）
 
 逐条钉在 `tests/unit_ci_workflows/test_yaml_light_scalar_fidelity.py` 的 `STILL_UNFAITHFUL`：
@@ -27,14 +43,10 @@
 
 | 仍不保真的形态 | 现在的取值 |
 |---|---|
-| **转义序列不反转义**（`"a\\"b"` / `"a\\\\b"` / `"a\\/b"` / `"a\\nb"`） | 原样保留反斜杠 |
+| **未定义的转义序列**（`k: "a\\db"`） | 原样保留 `\\d`（PyYAML 说它是**语法错误** ⇒ 严格腿拦下；真库 0 处） |
+| **被引号包起来的 key**（`"a\\"b": 1`） | 键不过 `_parse_scalar` ⇒ 不解码（真库 0 处） |
 | **跨行 flow 集合**（`k: [a,` + 续行 `b]`） | `'[a,'`（后半段丢失） |
 | **跨行裸标量**（`k: 第一行` + 缩进续行 `第二行`） | `'第一行'`（续行不在值里） |
-
-⚠️ 第一条**正在生效**：`.github/cases/*.yml` 实测 **36 处**取值与 `yaml.safe_load` 不同
-（31 处 `\\"` + 5 处 `\\\\` / `\\/`），即**已提交的生成物里就带着这些反斜杠**。
-**本单有意不动它** —— 改了它会改 `.github/cases/**` 的渲染产物，而生成物是全仓唯一源头
-（波及所有在飞包），属另一单的范围。
 """
 
 
@@ -72,6 +84,50 @@ def _strip_inline_comment(s: str) -> str:
             break
         out.append(ch)
     return "".join(out).rstrip()
+
+
+#: YAML 双引号标量的**单字符转义**表（与 PyYAML 的 `ESCAPE_REPLACEMENTS` 逐项同源）
+_DQ_ESCAPES = {'0': '\x00', 'a': '\x07', 'b': '\x08', 't': '\t', '\t': '\t', 'n': '\n',
+               'v': '\x0b', 'f': '\x0c', 'r': '\r', 'e': '\x1b', ' ': ' ', '"': '"',
+               '/': '/', '\\': '\\', 'N': '\x85', '_': '\xa0',
+               'L': '\u2028', 'P': '\u2029'}
+#: `\x` / `\u` / `\U` 的十六进制位数（同 PyYAML 的 `ESCAPE_CODES`）
+_DQ_HEX_WIDTH = {'x': 2, 'u': 4, 'U': 8}
+_HEXDIGITS = '0123456789abcdefABCDEF'
+
+
+def _unescape_double(s):
+    """双引号标量**内部**的转义序列解码（issue #5179）—— 与 `yaml.safe_load` **逐值一致**。
+
+    只在 `s` 含反斜杠时被调用（热路径护栏，见 `_parse_scalar`）：绝大多数行的值是裸标量或
+    不含转义的引号标量，一次 `in` 判断就出去了。
+
+    **未知 / 残缺**转义（`"\\d"`、结尾孤立的反斜杠）**原样保留**：那是标准 YAML 的**语法错误**
+    （PyYAML 直接拒绝该文件），由渲染腿的严格判定（`.github/cases_yaml.py` 的 `require_strict`）
+    报红 —— 宽松腿的职责只是"不把坏输入变成另一种坏"，不在这里抛异常打断整份用例加载。
+    """
+    out, i, n = [], 0, len(s)
+    while i < n:
+        ch = s[i]
+        if ch != '\\' or i + 1 >= n:
+            out.append(ch)
+            i += 1
+            continue
+        rep = _DQ_ESCAPES.get(s[i + 1])
+        if rep is not None:
+            out.append(rep)
+            i += 2
+            continue
+        width = _DQ_HEX_WIDTH.get(s[i + 1])
+        if width is not None:
+            hx = s[i + 2:i + 2 + width]
+            if len(hx) == width and all(c in _HEXDIGITS for c in hx):
+                out.append(chr(int(hx, 16)))   # `\uD83D` 这类孤立代理项也照 PyYAML 原样产出
+                i += 2 + width
+                continue
+        out.append(ch)
+        i += 1
+    return ''.join(out)
 
 
 def _parse_scalar(s):
@@ -146,7 +202,16 @@ def _parse_scalar(s):
             out[_parse_scalar(k.strip()) if isinstance(_parse_scalar(k.strip()), str) else str(_parse_scalar(k.strip()))] = _parse_scalar(v)
         return out
     if len(s) >= 2 and s[0] in ('"', "'") and s[-1] == s[0]:
-        return s[1:-1]
+        inner = s[1:-1]
+        if s[0] == '"':
+            # 双引号标量里的转义序列**必须解码**（issue #5179）：不解码 ⇒ 生成物取值与
+            # `yaml.safe_load` 真值**静默分叉**（实测 33 处取值不同 / 163 个多余转义序列），
+            # 而「生成物新鲜度」检查抓不到它 —— 那条检查比的是「能否由当前源重渲染出**已提交的**
+            # 产物」，不是「产物是否等于真值」⇒ 一份**稳定地错**的产物永远绿。
+            # 只含反斜杠才走解码器：热路径上就是一次 `in` 判断（整库耗时见模块头）。
+            return _unescape_double(inner) if '\\' in inner else inner
+        # 单引号标量：唯一的转义是 `''` → `'`（YAML 8.1.3 / 同 `cases_yaml._find_close` 口径）
+        return inner.replace("''", "'") if "''" in inner else inner
     try:
         return int(s)
     except ValueError:
