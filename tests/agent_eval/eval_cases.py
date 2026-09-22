@@ -799,6 +799,24 @@ _CASE_BM_006 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-007 [NORMAL] 工人端展示派工批次：位置规格行追加「批次 PC-… 裁 2.7 米」（缺键不显示）（源: cases/bmini.yml）──
+_CASE_BM_007 = EvalCase(
+    id='BM-007',
+    legacy_id='',
+    title='工人端展示派工批次：位置规格行追加「批次 PC-… 裁 2.7 米」（缺键不显示）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['判据 1·**两键都在才显示**：服务端在部位上追加 `batch_no` + `batch_meters` ⇒ 既有「用料 X 米」之后追加 `批次 PC-20260923-0001 裁 2.7 米`（同一行，` · ` 连接）。红证：删掉追加 ⇒ 本断言红。', "判据 2·**缺键就缺**（与既有规格可见面逐字同款：`!== null && !== undefined && !== ''`）：只有 `batch_no` 或只有 `batch_meters` ⇒ **不显示**（不显示半句话、不补默认值、不出现「未知」占位）；两键都缺 ⇒ 既有规格行**逐字不变**。红证：改成 `if (hasBatchNo)` / 补 else 分支 ⇒ 必红。", '判据 3·**0 是值不是缺**：`batch_meters = 0` 且批次号在 ⇒ 显示「裁 0 米」（与既有「用料 0 米」同口径）。红证：用真值判断 `if (batchNo && batchMeters)` ⇒ 必红（falsy 吞掉）。', '判据 4·**只加不改**：既有 `用料 X 米` 与其余规格片段（尺寸/工艺/开数/加工类型/定型/褶倍）一字不动；本用例不改任务卡纸面（TaskCardPrint 未动）。'],
+    skip_reason='[backend-contract] 纯前端渲染断言（bmini-app tests/production-batch-assignment.test.tsx，jest 深链直达 + 夹具断言屏幕文案），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'production', 'batch', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -5314,6 +5332,24 @@ _CASE_PG_057 = EvalCase(
     must_succeed=[{'tool': 'production_worklog_query'}],
 )
 
+# ── PG-060 [NORMAL] 派工指定批次：与加工单生成同事务扣减 / 重复生成不二次扣 / 缺料 fail-closed 不落半成品 / 作废同事务回补（源: cases/processing-order.yml）──
+_CASE_PG_060 = EvalCase(
+    id='PG-060',
+    legacy_id='',
+    title='派工指定批次：与加工单生成同事务扣减 / 重复生成不二次扣 / 缺料 fail-closed 不落半成品 / 作废同事务回补',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['判据 1·**派工即扣且顺序正确**：生成加工单时先 `plan`（**只读**校验）→ 插加工单 → `apply` 扣减（同一事务）——顺序即「不重复扣」的结构性保证（重复生成在插入处被幂等闸拒）。红证：把 apply 挪到 insert 之前 ⇒ InOrder 断言红。', '判据 2·**不重复扣**：同一订单第二次生成被既有幂等闸拒（`请勿重复生成`），`plan`/`apply`/`insert` 各只发生 1 次。红证：去掉 `selectActiveByOrderId` 前置判断 ⇒ 第二次插入抛 DuplicateKeyException 或发生二次扣减，必红。', '判据 3·**缺料不静默、不留半成品**：`plan` 抛 `BATCH_STOCK_INSUFFICIENT` ⇒ 逐单结果 `success=false` 且带 `code` + 可行动 `suggestion`，**加工单不插入**、台账不扣减。红证：把 `plan` 挪到 insert 之后 ⇒ `never().insert(...)` 断言红。', '判据 4·**不指派 ⇒ 行为与今天逐字相同**（本阶段的定义特征）：不传 batches ⇒ 台账服务**零交互**，且加工单快照里**不出现** `batchNo` 键。红证：无条件写 `batchNo` ⇒ `doesNotContainKey` 断言红。', '判据 5·**指派必须能落到具体行**：指派的行不在该订单加工单快照里 ⇒ 显式拒绝（不静默忽略）；指派里的 orderId 不在本次生成范围 ⇒ 整批拒绝且**任何写库之前**中止。红证：改成 `continue` 跳过未知行 ⇒ 两条断言红。', '判据 6·**作废同事务回补**：`generated → cancelled` 调用台账 `reverse(租户, 加工单号, 订单号, 原因)`（挂点 = 既有取消副作用处；订单取消自动作废那条路在 OrderService 接同一句话）。红证：删掉 reverse 调用 ⇒ 本断言红。', '判据 7·**不损失客户**：本单不改 `OrderService.confirmPayment` 的扣减路径（路线 A 的命门）与任何金额/售价/成品尺寸计算 —— 对客金额逐值不变由既有回归用例覆盖。'],
+    skip_reason='[backend-contract] 加工单生成/作废的装配与顺序契约（Java 单测，非 LLM 行为）：由 ProcessingOrderServiceTest 执行',
+    tags=['processing-order', 'stock', 'batch', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PP-002 [NORMAL] 加工项分类列表（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -6425,6 +6461,60 @@ _CASE_PR_052 = EvalCase(
     data_checks=['判据 1·**1 位小数原值下发**：`product_manage(action=create|update, stock_quantity=60.5)` ⇒ 下发给 admin-api 的 `stock` 字面量 == **60.5**（不是旧实现 `int()` 截出来的 60），且 LLM 可见 schema 声明为 `number`（改前 `integer` 会让 LLM 把 60.5 说成 60）。注入红证：把归一改回 `int(stock_quantity)` ⇒ 60 ≠ 60.5 ⇒ 变红。', '判据 2·**超过 1 位小数显式拒绝 + 零 API 调用**：`stock_quantity=2.755` ⇒ `success=False`，文案含「1 位小数」「0.1 米粒度」「系统不会自动四舍五入或截断」并带越界原值；POST / PATCH **调用次数必须为 0**（不得先打后端再报错）。注入红证：删掉精度拒绝分支 ⇒ 2.755 被静默下发 ⇒ 变红。', '判据 3·**整数场景逐值不变**：`30` 下发的仍是 `int` 30（不是 `30.0`）。注入红证：把 Decimal 归一换成 `float(...)` ⇒ 变红。', '判据 4·**前置闸门同步放宽**：`validate_input(product_manage/create, stock_quantity=60.5)` 必须通过（改前规则声明 `int` ⇒ 60.5 在闸门被判「类型错误」、数字根本到不了工具层）；负数仍被 `min=0` 拦下（放宽类型不得连带放宽既有护栏）。', '判据 5·**复用而非新造**：`product_manage` 的小数位判定 / Decimal 归一 / 0.1 米粒度**就是** #5063 落在 `inventory_manage` 的同一对象（`_one_decimal_or_none` / `_stock_number` / `STOCK_QUANTUM`），不新造第二套判据或常量。注入红证：把助手复制一份进 `product_manage` ⇒ 同一对象断言变红。'],
     skip_reason='[backend-contract] ai-agent pytest（无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/ai-agent-service/tests/test_tools_product_stock_decimal.py 执行',
     tags=['product', 'stock', 'decimal', 'fail_closed', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-055 [NORMAL] 批次消耗台账：余量派生 / 剩余量分布四档 / 路线 A 对账恒等式 / 派工候选建议值（V116，#5145 阶段 1）（源: cases/product.yml）──
+_CASE_PR_055 = EvalCase(
+    id='PR-055',
+    legacy_id='',
+    title='批次消耗台账：余量派生 / 剩余量分布四档 / 路线 A 对账恒等式 / 派工候选建议值（V116，#5145 阶段 1）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['判据 1·**余量是派生值**：`remaining = stock_batches.quantity + Σ(stock_batch_consumptions.delta)` —— 夹具 60 米批次已派工 2.7 ⇒ 余量 57.3（小数逐值可比）；`onlyAvailable` 只回余量 > 0 的批次。红证：把余量改成直接读 `stock_batches.quantity` ⇒ 57.3 变 60，必红。', '判据 2·**剩余量分布四档逐值可比**：夹具 6 个批次余量 `0.2 / 0.1 / −0.5 / 0.5 / 1 / 1.1` ⇒ 四档批次数恰为 `3 / 1 / 1 / 1`、占比 `0.5 / 0.1667 / 0.1667 / 0.1667`（负余量 = 超扣落入 ≤0.2 档，不藏起来）；空仓 ⇒ 四档恒在且全 0。红证：把边界改成左闭（`< 0.2`）⇒ 0.2 掉档，必红。', '判据 3·**对账可读且可解释**（路线 A 的交换条件）：批次入 60 米、销售已扣 2.7、**未派工** ⇒ `diff = 60 − 57.3 = 2.7` = 已售未派，且恒等式 `diff == (soldDeducted − dispatched − otherLedgerDelta) − unbatched` 成立（`reconciled = true`）；派工之后差额归零；退货回补（aftersales）造成的差额如实反映为 −2.7；**不平的夹具 ⇒ `reconciled = false` 且 `unreconciledCount` 报数**。红证：把 `reconciled` 恒置 true ⇒ 不平夹具那条必红。', '判据 4·**派工候选建议值 = 朴素先进先出**（`suggestionRule = FIFO_RECEIVED_DATE`）：入库早但余量不够的批次 `enough=false` 且不被建议，建议落在第一个**够用**的批次；口径随响应显式回传，免得被读成 best-fit（阶段 2 才换，见 #5144）。', '判据 5·**工人端指派读面取净额**：同一明细行既有扣减又有回补 ⇒ 取净额；净额归零的行**不出现**在结果里（工人不该被指去裁一个已经不扣账的批次）。'],
+    skip_reason='[backend-contract] 批次账服务与只读端点契约（真值断言在 Java 单测，非 LLM 行为）：由 StockBatchConsumptionServiceTest + StockBatchControllerTest 执行（Mockito 假 Mapper，无真实 DB）',
+    tags=['product', 'stock', 'batch', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-056 [NORMAL] 批次消耗台账表契约（V116）：幂等闸唯一索引 / reason 约束 / 三查询索引 / 明细行 id 同宽 / bootstrap 同步（源: cases/product.yml）──
+_CASE_PR_056 = EvalCase(
+    id='PR-056',
+    legacy_id='',
+    title='批次消耗台账表契约（V116）：幂等闸唯一索引 / reason 约束 / 三查询索引 / 明细行 id 同宽 / bootstrap 同步',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['判据 1·**幂等闸必须在**：`uk_batch_consumption_line (tenant_id, processing_order_no, batch_id, order_item_id, reason) WHERE deleted = 0` —— 漏了它「重复生成加工单不会二次扣减」就只剩上游一条网，而重复扣减会让余量与分布静默偏小。红证：删掉该唯一索引 ⇒ 迁移终态对账抛 + 本断言红。', '判据 2·**reason 约束同时放行扣减与回补**（`ck_batch_consumption_reason` 含 `processing_order` 与 `processing_order_cancelled`，且两者是**同一个** CHECK 的成员）。红证：把回补取值从 CHECK 里去掉 ⇒ 作废回补当场 23514，迁移终态对账先红。', '判据 3·**`order_item_id` 宽度与 `order_items.id` 一致（VARCHAR(36)）**：它是 ASSIGN_UUID 主键、**不是** BIGINT —— 写成 BIGINT 会在真库插入失败（单测全绿、生产全挂的那一类）。红证：改回 `order_item_id BIGINT` ⇒ 本断言红。', '判据 4·**三条查询索引**（按批次 / 加工单 / 订单查回来）+ **显式 BEGIN/COMMIT** + 前置表 fail-closed + 文末终态对账 DO 块。', '判据 5·**bootstrap 终态同步**：`docs/sql/schema.sql`（新建库路径不跑迁移链）也建了该表并带同一个幂等闸索引；V116 已登记进 `tests/unit_ci_workflows/migration_fingerprints.json`（#4235 不可变护栏）。红证：把 schema.sql 的该表段删掉 ⇒ 本断言红。', '判据 6·**精度与既有列逐字一致**：`delta / before_qty / after_qty NUMERIC(12,1)`（V115/#5063 的 0.1 米粒度；整数场景逐值不变）。'],
+    skip_reason='[backend-contract] 表/迁移契约（静态断言 + 真值源对齐，无 LLM 环节）：由 StockBatchConsumptionMapperTest 执行',
+    tags=['product', 'migration', 'batch', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-057 [NORMAL] 后台派工批次指派对话框 + 批次账读面（余量/四档分布/对账）：不指派 ⇒ 请求体不带 batches（源: cases/product.yml）──
+_CASE_PR_057 = EvalCase(
+    id='PR-057',
+    legacy_id='',
+    title='后台派工批次指派对话框 + 批次账读面（余量/四档分布/对账）：不指派 ⇒ 请求体不带 batches',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['判据 1·**不指派 ⇒ 行为与今天逐字相同**：一行都不可指派（无候选批次 / 候选查询失败）⇒ **不弹对话框**、`generate(orderIds)` **单参调用**（请求层断言：不指派时请求体里**没有** `batches` 键，不是空数组）。红证：让 `submitGenerate` 恒传第二参 ⇒ 本断言红。', '判据 2·**人工最终选择被如实记录**：对话框里逐行选批次 ⇒ 请求体 `batches` 逐条为 `{orderId, itemId, batchNo}`（`batchNo` = 文员改后的值，空选择的行**不**进 batches）；无可用批次的行**不给下拉**（不能选）。红证：去掉空选择过滤 / 给无候选行也渲染下拉 ⇒ 必红。', '判据 3·**系统给建议值且默认选中**：每行默认选中后端 `suggestedBatchNo`（可改）；余量不足的候选 disabled。红证：`defaultPickOf` 恒返回空串 ⇒ 必红。', '判据 4·**缺料可行动**：生成返回 `success=false` ⇒ 原样展示 `message` + `suggestion`（不得吞掉、不得改写）。红证：把 `suggestion` 换成空串 ⇒ 必红。', '判据 5·**读面口径说清**：余量表含「余量」列且文案写明「派生余量 = 入库量 − 已派工消耗」；分布**恒四档**（0 档也渲染）；对账表展示 `diff` 与分解腿，并写明「差额 = 已售未派 + 台账外存量，**不是异常**」；`reconciled=false` 显式告警 + `unreconciledCount` 报数。红证：四档 `filter(batchCount > 0)` / 文案改成「差额异常」/ 去掉告警块 ⇒ 各自必红。', '判据 6·**只读、不动钱**：读面板只调 `GET /api/admin/batch-stock/*`（无写端点）；对客金额/售价/成品尺寸一字未改。'],
+    skip_reason='[backend-contract] 纯前端单元测试（admin-web vitest：ProcessingOrderBlock / BatchStockPanel / batch-stock 请求层），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['product', 'ui', 'stock', 'batch', 'backend_contract'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -7721,6 +7811,7 @@ ALL_CASES = (
     _CASE_BM_004,
     _CASE_BM_005,
     _CASE_BM_006,
+    _CASE_BM_007,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
@@ -7954,6 +8045,7 @@ ALL_CASES = (
     _CASE_PG_055,
     _CASE_PG_056,
     _CASE_PG_057,
+    _CASE_PG_060,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,
@@ -8012,6 +8104,9 @@ ALL_CASES = (
     _CASE_PR_050,
     _CASE_PR_051,
     _CASE_PR_052,
+    _CASE_PR_055,
+    _CASE_PR_056,
+    _CASE_PR_057,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

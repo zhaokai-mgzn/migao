@@ -4,7 +4,7 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 docs/sql/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 34 张）：
+--   本文件缺失（schema.sql 已有，共 35 张）：
 --     client_request_keys, craft_calc_configs, daily_briefings, finance_transactions,
 --     knowledge_candidates,
 --     knowledge_cards, processing_fee_combination_versions, processing_fee_combinations,
@@ -22,6 +22,9 @@
 --     session_states, stock_ledger_entries, tenant_payment_qrcodes, user_suggestion_prefs,
 --     inbound_orders, inbound_order_items, stock_batches
 --     （入库单 / 批次，V111，issue #5034 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本；
+--     stock_batch_consumptions
+--      批次消耗台账，V116，issue #5145 阶段 1 —— 一行 = 一次批次余量变更（负 = 派工扣减、
+--      正 = 作废回补）；余量是**派生值** = stock_batches.quantity + Σ(delta)，不原地改批次行；
 --     user_memories, worker_report_audits, worker_sessions
 --      入库单的行业依据见 docs/curtain-selling-method-industry-research.md §1/§8.2）
 --     （production_option_factors / production_option_routings = V59，issue #4230 Java 侧；

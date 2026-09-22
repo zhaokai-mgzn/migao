@@ -422,7 +422,7 @@
 ```
 溯源: 2026-09-07 新增：#2984 语音空录音体验优化（生产实证：无声音停止 → 空/极小 webm → 后端裸 500 → 前端 Failed to fetch） ｜ tags: asr, voice, error-handling
 
-## B 端小程序域（6 case）
+## B 端小程序域（7 case）
 
 ### BM-001. B 端员工首次小程序登录 - 微信授权手机号匹配员工并绑定 openid 🔵
 ```
@@ -496,6 +496,17 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-09-17 新增（issue #3997 M4-G-3）：消费 M4-G-2 冻结契约 GET/POST /api/admin/production/orders/{orderId}/operations[/{operationId}/report]；truths_ref 用 frontend-fix.no-api-change（本包不改后端 API；生产/扫码域暂无专属真值 key） ｜ 2026-09-21（issue #4961 用例库同步，配套 feat/4960-4961-integration）：第 3 条 data_check 补口径订正 —— 「✅ 订单生产完成」的触发键 `order_completed` 服务端改判为「**全部活跃工序实例报满**」（不再是「必完工序全绿」），页面渲染条件（`isCompleted`，同一门禁也决定「发货」入口是否出现）**一字未动**。⚠️ **按用例库纪律，`user_inputs` 一字未动**：其中「必完工序全绿显示「✅ 订单生产完成」」这句是 #4961 之前的工人口径描述，**保留原文**（改判说明只写在 data_checks / merge_log 里，不改 `user_inputs`）；`expectations` / `skip_reason` / `traces` 同样未动。**判据一格不放宽**。 ｜ 2026-09-21（issue #4967，**语义改判 + 判据改钉**）：扫码语义由「完工（做完扫一次）」改判为 **开工 / 领活**（用户逐字「工人都是先扫码报工后再真实进行生产，不是先生产再扫码报工」）⇒ A 模式一屏的按钮文案由【完成】改为【开工】（**改钉≠放宽**：判据对象不变，期望按用户裁定变更）；屏上「本套工序都已完成，无需再报工」改为「本套工序都已被领走，无需再领」。新增两条 data_check：① 开工语义（按钮文案 + 只调一次 completeByScan + 未确定工序/旧码降级两条**不出现**判据）；② **按套展示工序细节**（`set_overview` 消费 + 缺值不渲染 + 未定价不折 0）。**记账时点与端点一字未变**（仍是 `POST /api/worker/production/scan/complete`，一次事务）；边界登记见 PG-018 与 docs/design/set-code-and-scan-loop.md §4.1 改判块。 ｜ tags: bmini, production, qr-report
+
+### BM-007. 工人端展示派工批次：位置规格行追加「批次 PC-… 裁 2.7 米」（缺键不显示） 🔵
+```
+数据: 判据 1·**两键都在才显示**：服务端在部位上追加 `batch_no` + `batch_meters` ⇒ 既有「用料 X 米」之后追加 `批次 PC-20260923-0001 裁 2.7 米`（同一行，` · ` 连接）。红证：删掉追加 ⇒ 本断言红。
+数据: 判据 2·**缺键就缺**（与既有规格可见面逐字同款：`!== null && !== undefined && !== ''`）：只有 `batch_no` 或只有 `batch_meters` ⇒ **不显示**（不显示半句话、不补默认值、不出现「未知」占位）；两键都缺 ⇒ 既有规格行**逐字不变**。红证：改成 `if (hasBatchNo)` / 补 else 分支 ⇒ 必红。
+数据: 判据 3·**0 是值不是缺**：`batch_meters = 0` 且批次号在 ⇒ 显示「裁 0 米」（与既有「用料 0 米」同口径）。红证：用真值判断 `if (batchNo && batchMeters)` ⇒ 必红（falsy 吞掉）。
+数据: 判据 4·**只加不改**：既有 `用料 X 米` 与其余规格片段（尺寸/工艺/开数/加工类型/定型/褶倍）一字不动；本用例不改任务卡纸面（TaskCardPrint 未动）。
+跳过: [backend-contract] 纯前端渲染断言（bmini-app tests/production-batch-assignment.test.tsx，jest 深链直达 + 夹具断言屏幕文案），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.dispatch-deduct
+溯源: 2026-09-22 新增：issue #5145 阶段 1（派加工单扣批次库存）的工人端可见面 —— 母单 #5144 的原始诉求「生成加工单时告知裁剪工人去哪个批次裁多少米」。真值源 = 批次消耗台账（生产读面 `ProductionService#stampBatchAssignments` 逐部位追加两键），**不是**订单侧 `processing_info.batchNo`（那是面料批号，V111 明令不得与系统批次号混用）。 ｜ tags: bmini, production, batch, backend_contract
 
 ## 分类域（3 case）
 
@@ -3360,7 +3371,7 @@
 ```
 溯源: 2026-09-19 新增（issue #4525，设计 docs/design/processing-fee-and-option-pricing.md 包 A）。**2026-09-19 改判（issue #4594 用户裁定）**：判据 2 由「组合未命中 ⇒ 选项价不单独收」改判为「组合未定价 ⇒ **只有组合那半**记 0，已定价选项**照常计入**」（三个 unpriced 分支都先算 `specialOptions`）；影响面 = 组合没配价时订单金额变大。交付：V77 迁移（`production_route_rules.customer_unit_price NUMERIC(12,2)` + 92 行组合价 + 16 条选项价，均 `source='synthetic'`）+ ProductionRouteRule 实体字段 + ProcessingFeeCalculator 两层取价（组合 × 米数 + Σ 选项 × 1，新增 `special_options` / `special_options_total` 键，行金额 = 两者之和）+ schema.sql 终态 + e2e fixture 重建 + 合成数据生成器与守卫。**未做（如实登记）**：① 设计 §7 的「19 项」按代码事实落为 16 项（3 项无 option 规则行，见 data_checks 末条）；② 前端展示面（包 B）与 #4452 信号映射（包 C）不在本单；③ `fee_source=manual` 通道仍未落码。**2026-09-19 改判（用户裁定）**：新增 V82 —— 为**每个活跃租户**的 **16 条 `option` 规则行**初始化对客**元/套**单价（占位初始值，**会真的参与取价**；`customer_unit_price IS NULL` 守卫 ⇒ 不覆盖商家改价、重跑空转；非 option 行保持 NULL），推翻 V77 的「该列恒 NULL = 未定价」口径；schema.sql 同步同源终态。 ｜ tags: processing_fee, special_options, per_set, customer_unit_price, migration_v77, migration_v82, synthetic_seed
 
-## 加工单域（51 case）
+## 加工单域（52 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -4020,7 +4031,21 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-22 新增（issue #4201）：加工单「过程明细」agent 只读面（端点 GET /api/admin/agent/production/worklog + 工具 production_worklog_query + order/general skill 绑定 + prompts/order.md 口径）。**断言面**：must_succeed + required_args(order_no) + forbidden_tools（两个加工单写工具 + 加工项目录冒充）+ forbidden_text（具名报工人 = 编造指纹）+ want_text(any_of 存在性) + data_checks 首条 success=true。**未做（如实登记）**：**数值断言**（合格/返工/报废的**具体数字**）未落 —— 评测栈 `production_work_logs` 零 seed，要落数值只能给 seed 补「加工单 + 工序实例 + 报工」三段夹具，而本地**无 docker**、无法验证 seed SQL（写错会打挂整个 mibao 套件）⇒ 本单不碰 seed，登记为后续项。 ｜ 2026-09-21（issue #4960 / #4961 用例库同步，配套 feat/4960-4961-integration，**本条判据一字未动**）：data_checks 里 `operations[].is_must_finish` 仍是**冻结读面键**（服务端恒 `false`、历史载体，前端/agent 零消费）—— 本条不改任何判据，只登记该键的**值语义已冻结为历史载体**，防后续把「键还在」误读成「必完仍是活语义」。`user_inputs` / `expectations` / `skip_reason` 与其余 data_check **一字未动**，**判据一格不放宽**。 ｜ tags: processing_order, production, llm_behavior, worklog, readonly
 
-## 商品域（45 case）
+### PG-060. 派工指定批次：与加工单生成同事务扣减 / 重复生成不二次扣 / 缺料 fail-closed 不落半成品 / 作废同事务回补 🔵
+```
+数据: 判据 1·**派工即扣且顺序正确**：生成加工单时先 `plan`（**只读**校验）→ 插加工单 → `apply` 扣减（同一事务）——顺序即「不重复扣」的结构性保证（重复生成在插入处被幂等闸拒）。红证：把 apply 挪到 insert 之前 ⇒ InOrder 断言红。
+数据: 判据 2·**不重复扣**：同一订单第二次生成被既有幂等闸拒（`请勿重复生成`），`plan`/`apply`/`insert` 各只发生 1 次。红证：去掉 `selectActiveByOrderId` 前置判断 ⇒ 第二次插入抛 DuplicateKeyException 或发生二次扣减，必红。
+数据: 判据 3·**缺料不静默、不留半成品**：`plan` 抛 `BATCH_STOCK_INSUFFICIENT` ⇒ 逐单结果 `success=false` 且带 `code` + 可行动 `suggestion`，**加工单不插入**、台账不扣减。红证：把 `plan` 挪到 insert 之后 ⇒ `never().insert(...)` 断言红。
+数据: 判据 4·**不指派 ⇒ 行为与今天逐字相同**（本阶段的定义特征）：不传 batches ⇒ 台账服务**零交互**，且加工单快照里**不出现** `batchNo` 键。红证：无条件写 `batchNo` ⇒ `doesNotContainKey` 断言红。
+数据: 判据 5·**指派必须能落到具体行**：指派的行不在该订单加工单快照里 ⇒ 显式拒绝（不静默忽略）；指派里的 orderId 不在本次生成范围 ⇒ 整批拒绝且**任何写库之前**中止。红证：改成 `continue` 跳过未知行 ⇒ 两条断言红。
+数据: 判据 6·**作废同事务回补**：`generated → cancelled` 调用台账 `reverse(租户, 加工单号, 订单号, 原因)`（挂点 = 既有取消副作用处；订单取消自动作废那条路在 OrderService 接同一句话）。红证：删掉 reverse 调用 ⇒ 本断言红。
+数据: 判据 7·**不损失客户**：本单不改 `OrderService.confirmPayment` 的扣减路径（路线 A 的命门）与任何金额/售价/成品尺寸计算 —— 对客金额逐值不变由既有回归用例覆盖。
+跳过: [backend-contract] 加工单生成/作废的装配与顺序契约（Java 单测，非 LLM 行为）：由 ProcessingOrderServiceTest 执行
+```
+真值: batch-ledger.dispatch-deduct
+溯源: 2026-09-22 新增：#5145 阶段 1（取号 PG-060 —— 原 PG-059 与在飞的 #5142 撞号，rebase 后顺延）。扣减时点 = 生成/派发加工单（用户裁定，非报工）；已有硬闸「仅已确认订单可生成加工单」⇒ 派工扣必然发生在支付扣之后。 ｜ tags: processing-order, stock, batch, backend_contract
+
+## 商品域（48 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -4566,6 +4591,44 @@
 ```
 真值: product-sku-stock.decimal-1dp
 溯源: 2026-09-22 新增（issue #5150：#5063 的**同族残留** —— 库存全链路小数化后，AI 侧商品级 `stock_quantity` 仍是 `integer` schema + `int()` 强转）。 ｜ tags: product, stock, decimal, fail_closed, backend_contract
+
+### PR-055. 批次消耗台账：余量派生 / 剩余量分布四档 / 路线 A 对账恒等式 / 派工候选建议值（V116，#5145 阶段 1） 🔵
+```
+数据: 判据 1·**余量是派生值**：`remaining = stock_batches.quantity + Σ(stock_batch_consumptions.delta)` —— 夹具 60 米批次已派工 2.7 ⇒ 余量 57.3（小数逐值可比）；`onlyAvailable` 只回余量 > 0 的批次。红证：把余量改成直接读 `stock_batches.quantity` ⇒ 57.3 变 60，必红。
+数据: 判据 2·**剩余量分布四档逐值可比**：夹具 6 个批次余量 `0.2 / 0.1 / −0.5 / 0.5 / 1 / 1.1` ⇒ 四档批次数恰为 `3 / 1 / 1 / 1`、占比 `0.5 / 0.1667 / 0.1667 / 0.1667`（负余量 = 超扣落入 ≤0.2 档，不藏起来）；空仓 ⇒ 四档恒在且全 0。红证：把边界改成左闭（`< 0.2`）⇒ 0.2 掉档，必红。
+数据: 判据 3·**对账可读且可解释**（路线 A 的交换条件）：批次入 60 米、销售已扣 2.7、**未派工** ⇒ `diff = 60 − 57.3 = 2.7` = 已售未派，且恒等式 `diff == (soldDeducted − dispatched − otherLedgerDelta) − unbatched` 成立（`reconciled = true`）；派工之后差额归零；退货回补（aftersales）造成的差额如实反映为 −2.7；**不平的夹具 ⇒ `reconciled = false` 且 `unreconciledCount` 报数**。红证：把 `reconciled` 恒置 true ⇒ 不平夹具那条必红。
+数据: 判据 4·**派工候选建议值 = 朴素先进先出**（`suggestionRule = FIFO_RECEIVED_DATE`）：入库早但余量不够的批次 `enough=false` 且不被建议，建议落在第一个**够用**的批次；口径随响应显式回传，免得被读成 best-fit（阶段 2 才换，见 #5144）。
+数据: 判据 5·**工人端指派读面取净额**：同一明细行既有扣减又有回补 ⇒ 取净额；净额归零的行**不出现**在结果里（工人不该被指去裁一个已经不扣账的批次）。
+跳过: [backend-contract] 批次账服务与只读端点契约（真值断言在 Java 单测，非 LLM 行为）：由 StockBatchConsumptionServiceTest + StockBatchControllerTest 执行（Mockito 假 Mapper，无真实 DB）
+```
+真值: batch-ledger.remaining-derived, batch-ledger.reconcile
+溯源: 2026-09-22 新增：#5145 阶段 1（派加工单扣批次库存 + 消耗台账 + 余量/分布/对账读面）。取号 PR-055（原 PR-052 与 #5150 撞号，rebase 后顺延）。 ｜ tags: product, stock, batch, backend_contract
+
+### PR-056. 批次消耗台账表契约（V116）：幂等闸唯一索引 / reason 约束 / 三查询索引 / 明细行 id 同宽 / bootstrap 同步 🔵
+```
+数据: 判据 1·**幂等闸必须在**：`uk_batch_consumption_line (tenant_id, processing_order_no, batch_id, order_item_id, reason) WHERE deleted = 0` —— 漏了它「重复生成加工单不会二次扣减」就只剩上游一条网，而重复扣减会让余量与分布静默偏小。红证：删掉该唯一索引 ⇒ 迁移终态对账抛 + 本断言红。
+数据: 判据 2·**reason 约束同时放行扣减与回补**（`ck_batch_consumption_reason` 含 `processing_order` 与 `processing_order_cancelled`，且两者是**同一个** CHECK 的成员）。红证：把回补取值从 CHECK 里去掉 ⇒ 作废回补当场 23514，迁移终态对账先红。
+数据: 判据 3·**`order_item_id` 宽度与 `order_items.id` 一致（VARCHAR(36)）**：它是 ASSIGN_UUID 主键、**不是** BIGINT —— 写成 BIGINT 会在真库插入失败（单测全绿、生产全挂的那一类）。红证：改回 `order_item_id BIGINT` ⇒ 本断言红。
+数据: 判据 4·**三条查询索引**（按批次 / 加工单 / 订单查回来）+ **显式 BEGIN/COMMIT** + 前置表 fail-closed + 文末终态对账 DO 块。
+数据: 判据 5·**bootstrap 终态同步**：`docs/sql/schema.sql`（新建库路径不跑迁移链）也建了该表并带同一个幂等闸索引；V116 已登记进 `tests/unit_ci_workflows/migration_fingerprints.json`（#4235 不可变护栏）。红证：把 schema.sql 的该表段删掉 ⇒ 本断言红。
+数据: 判据 6·**精度与既有列逐字一致**：`delta / before_qty / after_qty NUMERIC(12,1)`（V115/#5063 的 0.1 米粒度；整数场景逐值不变）。
+跳过: [backend-contract] 表/迁移契约（静态断言 + 真值源对齐，无 LLM 环节）：由 StockBatchConsumptionMapperTest 执行
+```
+真值: batch-ledger.remaining-derived, product-sku-stock.decimal-1dp-migration
+溯源: 2026-09-22 新增：V116（#5145 阶段 1）。选**新表**而非给 stock_ledger_entries 加 batch_no 列 —— 那是 SKU 级事实账（相邻两行首尾相接），批次扣减不改 product_skus.stock，塞进去只有「把批次数额写进 SKU 链」或「为没发生的变更伪造 delta」两种坏落法。取号 PR-056（原 PR-053 与在飞的 #5148 撞号，rebase 后顺延）。 ｜ tags: product, migration, batch, backend_contract
+
+### PR-057. 后台派工批次指派对话框 + 批次账读面（余量/四档分布/对账）：不指派 ⇒ 请求体不带 batches 🔵
+```
+数据: 判据 1·**不指派 ⇒ 行为与今天逐字相同**：一行都不可指派（无候选批次 / 候选查询失败）⇒ **不弹对话框**、`generate(orderIds)` **单参调用**（请求层断言：不指派时请求体里**没有** `batches` 键，不是空数组）。红证：让 `submitGenerate` 恒传第二参 ⇒ 本断言红。
+数据: 判据 2·**人工最终选择被如实记录**：对话框里逐行选批次 ⇒ 请求体 `batches` 逐条为 `{orderId, itemId, batchNo}`（`batchNo` = 文员改后的值，空选择的行**不**进 batches）；无可用批次的行**不给下拉**（不能选）。红证：去掉空选择过滤 / 给无候选行也渲染下拉 ⇒ 必红。
+数据: 判据 3·**系统给建议值且默认选中**：每行默认选中后端 `suggestedBatchNo`（可改）；余量不足的候选 disabled。红证：`defaultPickOf` 恒返回空串 ⇒ 必红。
+数据: 判据 4·**缺料可行动**：生成返回 `success=false` ⇒ 原样展示 `message` + `suggestion`（不得吞掉、不得改写）。红证：把 `suggestion` 换成空串 ⇒ 必红。
+数据: 判据 5·**读面口径说清**：余量表含「余量」列且文案写明「派生余量 = 入库量 − 已派工消耗」；分布**恒四档**（0 档也渲染）；对账表展示 `diff` 与分解腿，并写明「差额 = 已售未派 + 台账外存量，**不是异常**」；`reconciled=false` 显式告警 + `unreconciledCount` 报数。红证：四档 `filter(batchCount > 0)` / 文案改成「差额异常」/ 去掉告警块 ⇒ 各自必红。
+数据: 判据 6·**只读、不动钱**：读面板只调 `GET /api/admin/batch-stock/*`（无写端点）；对客金额/售价/成品尺寸一字未改。
+跳过: [backend-contract] 纯前端单元测试（admin-web vitest：ProcessingOrderBlock / BatchStockPanel / batch-stock 请求层），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.dispatch-deduct, batch-ledger.reconcile
+溯源: 2026-09-22 新增：#5145 阶段 1 的后台可见面 —— 派工批次指派对话框（文员指定，系统给候选 + 建议值、可改）+ 批次余量/剩余量分布/对账三读面。读面挂在商品详情库存区（复用既有页，不新造导航）。取号 PR-057（原 PR-054，rebase 后整组顺延）。 ｜ tags: product, ui, stock, batch, backend_contract
 
 ## 工具注册器域（1 case）
 
@@ -5462,12 +5525,12 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：400（活跃 156，跳过 244）
-- tier 分布：smoke 10 / normal 359 / adversarial 31
+- 用例总数：405（活跃 156，跳过 249）
+- tier 分布：smoke 10 / normal 364 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
-- B 端小程序域：6
+- B 端小程序域：7
 - 分类域：3
 - 对话边界域：43
 - 跨域：3
@@ -5482,8 +5545,8 @@
 - 领域本体域：4
 - 订单域：46
 - 加工项域：13
-- 加工单域：51
-- 商品域：45
+- 加工单域：52
+- 商品域：48
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4

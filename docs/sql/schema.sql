@@ -1651,6 +1651,44 @@ CREATE INDEX IF NOT EXISTS idx_stock_batches_inbound ON stock_batches (inbound_o
 COMMENT ON TABLE stock_batches IS
     '批次台账（V111）：一行 = 一个入库批次（= 一条入库单明细行）。缸号随批次可见 —— 对应 AHFA 卷标须带 Lot number 的行业要求（docs/curtain-selling-method-industry-research.md §1/S10）。批次行不可改：冲销走新单据';
 
+-- 批次消耗台账（V116，issue #5145 阶段 1）：一行 = 一次批次余量变更（负 = 派工扣减、正 = 作废回补）。
+-- 余量派生 = stock_batches.quantity + Σ(delta)（**不原地改** stock_batches.quantity）；
+-- 与 stock_ledger_entries（SKU 级销售账）是**两本账**：本表是批次级实物账，随加工单生成而扣、随作废而回补。
+CREATE TABLE IF NOT EXISTS stock_batch_consumptions (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    batch_id BIGINT NOT NULL REFERENCES stock_batches(id),
+    batch_no VARCHAR(32) NOT NULL,
+    product_id VARCHAR(64) NOT NULL REFERENCES products(id),
+    sku_id BIGINT,
+    sku_code VARCHAR(64),
+    delta NUMERIC(12,1) NOT NULL,                    -- 变化量（正 = 回补，负 = 扣减）；V115/#5063 精度
+    before_qty NUMERIC(12,1) NOT NULL,               -- 变更前**该批次余量**（不是 SKU 库存）
+    after_qty NUMERIC(12,1) NOT NULL,                -- 变更后**该批次余量**
+    reason VARCHAR(32) NOT NULL,                     -- processing_order / processing_order_cancelled
+    processing_order_no VARCHAR(32) NOT NULL,
+    order_no VARCHAR(32),
+    order_item_id VARCHAR(36) NOT NULL,              -- = order_items.id（ASSIGN_UUID 主键，VARCHAR(36)）
+    operator VARCHAR(64) NOT NULL,
+    note VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0
+);
+-- 幂等闸：同一加工单的同一明细行 × 同一批次 × 同一 reason 只允许一行
+CREATE UNIQUE INDEX IF NOT EXISTS uk_batch_consumption_line
+    ON stock_batch_consumptions (tenant_id, processing_order_no, batch_id, order_item_id, reason)
+    WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_batch_consumptions_tenant_batch
+    ON stock_batch_consumptions (tenant_id, batch_no, id);
+CREATE INDEX IF NOT EXISTS idx_batch_consumptions_tenant_po
+    ON stock_batch_consumptions (tenant_id, processing_order_no, id);
+CREATE INDEX IF NOT EXISTS idx_batch_consumptions_tenant_order
+    ON stock_batch_consumptions (tenant_id, order_no, id);
+CREATE INDEX IF NOT EXISTS idx_batch_consumptions_tenant_sku
+    ON stock_batch_consumptions (tenant_id, sku_id, id);
+COMMENT ON TABLE stock_batch_consumptions IS
+    '批次消耗台账（V116，issue #5145 阶段 1）：一行 = 一次批次余量变更。余量 = stock_batches.quantity + Σ(delta)；批次行不可改（V111）⇒ 冲销走新单据（新增一行反向 delta）';
+
 -- ================================================
 -- 10. 审计日志表
 -- ================================================

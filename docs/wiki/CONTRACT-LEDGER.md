@@ -60,6 +60,8 @@
 | 操作 | 端点 | Body 关键字段 |
 |---|---|---|
 | 订单退款 | `PUT /api/admin/orders/{id}/refund` | `refund_reason`、`refund_amount`（缺省=全额） |
+| **派工指定批次**（issue #5145 阶段 1，V116） | `POST /api/admin/processing-orders/generate` | 新增可选 `batches: [{orderId, itemId, batchNo}]` —— `orderId` 必须与 `orderIds` 里**同一个字符串**（否则整批显式拒绝）、`itemId` = 加工单快照行的 `itemId`（= `order_items.id`，VARCHAR(36)）、`batchNo` = 系统批次号 `PC-yyyyMMdd-NNNN`。**缺省/空数组 = 不指派 ⇒ 不扣批次、不落台账、行为与今天逐字相同**（本阶段的定义特征）。逐单失败时 `data[i].{success:false, code, message, suggestion}`，`code ∈ {BATCH_NOT_FOUND, BATCH_SKU_MISMATCH, BATCH_STOCK_INSUFFICIENT}`（余量不足 ⇒ 409 + 可行动 `suggestion`，**不静默少扣**） |
+| **批次账读面**（issue #5145 阶段 1，V116） | `GET /api/admin/batch-stock/{batches,distribution,reconcile,candidates,consumptions}` | 只读（权限复用 `product:list`，非 Agent 面）。**余量是派生值** = `stock_batches.quantity + Σ(stock_batch_consumptions.delta)`（不原地改批次行）；对账恒等式 `diff = Σ批次余量 − product_skus.stock = (soldDeducted − dispatched − otherLedgerDelta) − unbatched`，`reconciled=false` ⇒ 读得出、不静默。工人端读面（`GET /api/admin/production/orders/{orderId}/operations`）在同一批次的部位上**追加** `batch_no` + `batch_meters` 两键（**只在真指派过时才加**，缺键即未指派） |
 | Agent 统一改单 | `PATCH /api/admin/agent/orders/{id}` | action ∈ {update_status, update_logistics, confirm_payment, cancel, refund} |
 | Agent 单 SKU 改价 | `PATCH /api/admin/agent/products/{productId}/skus/{skuId}` | `price`（≥0） |
 | Agent 创建商品 | `POST /api/admin/agent/products` | `basePrice`（前端适配层 price→basePrice） |

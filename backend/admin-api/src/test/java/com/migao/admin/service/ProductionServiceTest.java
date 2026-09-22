@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-057, CH-039, CH-040
+// case_ids: PG-018, PG-057, PG-060, CH-039, CH-040
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -70,6 +70,9 @@ class ProductionServiceTest {
     private com.migao.admin.mapper.OrderItemMapper orderItemMapper;
     @Mock
     private ClientRequestIdService clientRequestIdService;
+    /** 批次消耗台账（V116 / #5145 阶段 1）：工人端「去哪个批次裁多少米」的只读真值源 */
+    @Mock
+    private StockBatchConsumptionService stockBatchConsumptionService;
 
     private ProductionService service;
 
@@ -78,6 +81,9 @@ class ProductionServiceTest {
         TenantContext.setTenantId(TENANT);
         service = new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper,
                 orderMapper, orderItemMapper, clientRequestIdService);
+        // 批次台账（V116 / #5145）是**字段注入**（不在构造签名里，见其字段注释）⇒ 显式装配
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                service, "stockBatchConsumptionService", stockBatchConsumptionService);
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
         when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder());
         // 无幂等键 ⇒ 既有用例全部走原路径（claim 返回 true = 首执），故此处只打桩「首执」分支；
@@ -1436,5 +1442,57 @@ class ProductionServiceTest {
         assertThat(positions.get(0))
                 .as("订单行取不到 ⇒ 一个规格键都不加（缺键就缺，不补默认值）")
                 .doesNotContainKeys("width", "height", "craft", "fabric_meters");
+    }
+
+    // ── 派工批次可见面（V116 / issue #5145 阶段 1）──────────────────────────────
+
+    /** 带加工单号 + 部位行标识的桩（批次可见面用：两者缺一就走不到追加那一段）。 */
+    private void stubPositionsForBatchView() {
+        ProcessingOrder po = processingOrder();
+        po.setProcessingOrderNo("JG-20260923-0001");
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
+        when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(po);
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                ProcessingPositionOperation.builder()
+                        .id("op-1").tenantId(TENANT).processingOrderId(PO_ID)
+                        .positionName("布帘").orderItemId("item-A").positionKind("布帘")
+                        .seq(1).operationName("精裁-布").groupName("裁剪").unit("米")
+                        .qty(new BigDecimal("10.00")).unitPrice(new BigDecimal("0.40")).factor(BigDecimal.ONE)
+                        .isMustFinish(false).isStartMarker(true).status("pending").doneQty(BigDecimal.ZERO)
+                        .deleted(0).build()));
+        when(orderItemMapper.selectList(any()))
+                .thenReturn(List.of(orderItem("item-A", "布艺遮光帘A", "6.6", "2.92")));
+    }
+
+    @Test
+    @DisplayName("PG-060 工人端批次可见面：服务端指派过批次 ⇒ 部位上追加 batch_no + batch_meters")
+    void getOperationsStampsBatchAssignment() {
+        stubPositionsForBatchView();
+        // 真值源 = 批次消耗台账（不是订单侧 processing_info.batchNo —— 那是面料批号，V111 明令不得混用）
+        when(stockBatchConsumptionService.assignmentsOf(TENANT, "JG-20260923-0001"))
+                .thenReturn(Map.of("item-A",
+                        new StockBatchConsumptionService.BatchAssignment("PC-20260923-0001", new BigDecimal("2.7"))));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> positions =
+                (List<Map<String, Object>>) service.getOperations(ORDER_ID, TENANT).get("positions");
+
+        assertThat(positions.get(0)).containsEntry("batch_no", "PC-20260923-0001")
+                .containsEntry("batch_meters", new BigDecimal("2.7"));
+    }
+
+    @Test
+    @DisplayName("PG-060 工人端批次红证：未指派批次 ⇒ 两键都不加（缺键就缺，不补默认值）")
+    void getOperationsOmitsBatchKeysWhenNotAssigned() {
+        stubPositionsForBatchView();
+        when(stockBatchConsumptionService.assignmentsOf(TENANT, "JG-20260923-0001")).thenReturn(Map.of());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> positions =
+                (List<Map<String, Object>>) service.getOperations(ORDER_ID, TENANT).get("positions");
+
+        assertThat(positions.get(0))
+                .as("未指派 ⇒ 不显示批次行（与规格可见面同一条「缺键就缺」口径）")
+                .doesNotContainKeys("batch_no", "batch_meters");
     }
 }

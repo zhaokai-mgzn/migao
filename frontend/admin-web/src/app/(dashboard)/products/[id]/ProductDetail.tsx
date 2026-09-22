@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Edit, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
 import Image from 'next/image'
 import { Button, Badge, Loading } from '@/components/ui'
+import BatchStockPanel from '@/components/products/BatchStockPanel'
 import { productApi } from '@/lib/api'
 import request from '@/lib/request'
 import { useRouteId } from '@/lib/use-route-id'
@@ -349,6 +350,12 @@ export default function ProductDetailPage() {
               </dl>
             </div>
           )}
+
+          {/* 批次账读面（V116 / issue #5145 阶段 1）：批次余量（派生）+ 剩余量分布（恒四档）+ 对账。
+              紧接「基本信息」的库存字段 —— 差额该怎么读就写在旁边（差额 = 已售未派 + 台账外存量，不是异常）。
+              ⚠️ 位置有意**放在「销售信息」SKU 表之前**：detail 页 e2e 用 `locator('table').last()`
+              定位 SKU 表，本组表格若排在它之后会把那个定位打偏。 */}
+          {productId && <BatchStockPanel productId={productId} />}
 
           {/* 销售信息（SKU 组合 = 颜色 × 门幅；售卖方式 / 卷长是商品级基础属性，见「基本信息」） */}
           {skus.length > 0 && (

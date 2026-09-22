@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: PG-001, PG-005, PG-019, UI-019, UI-030
+// case_ids: PG-001, PG-005, PG-019, UI-019, UI-030, PR-057
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -17,13 +17,17 @@ vi.mock('@/lib/api', () => ({
     generate: vi.fn(),
     update: vi.fn(),
   },
+  batchStockApi: {
+    candidates: vi.fn(),
+  },
 }))
 
-import { processingOrderApi } from '@/lib/api'
+import { processingOrderApi, batchStockApi } from '@/lib/api'
 
 const mockedDetail = processingOrderApi.detail as unknown as ReturnType<typeof vi.fn>
 const mockedGenerate = processingOrderApi.generate as unknown as ReturnType<typeof vi.fn>
 const mockedUpdate = processingOrderApi.update as unknown as ReturnType<typeof vi.fn>
+const mockedCandidates = batchStockApi.candidates as unknown as ReturnType<typeof vi.fn>
 
 const poIssued = {
   id: 'po-1',
@@ -356,5 +360,202 @@ describe('ProcessingOrderBlock', () => {
     // 结果可见：提交成功后状态时间线/头部渲染「已发加工」，表单收起
     await waitFor(() => expect(screen.getAllByText('已发加工').length).toBeGreaterThan(0))
     expect(screen.queryByPlaceholderText('交期 yyyy-MM-dd')).not.toBeInTheDocument()
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 生成加工单时由文员指定批次（V116 / issue #5145 阶段 1，PR-054）
+//
+// 契约（后端已落地）：`POST /api/admin/processing-orders/generate` 的 body = `{orderIds, batches?}`，
+// `batches: [{orderId, itemId, batchNo}]`；**缺省/空 = 不指派**（行为与今天逐字相同）。
+// 候选来自 `GET /api/admin/batch-stock/candidates?productId=&skuId=&meters=`（后端给建议值，人工可改）。
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 订单明细（`OrderItem`，订单详情页已有数据）：行身份 = `itemId` = `order_items.id` */
+const orderItems = [
+  {
+    id: 'item-a',
+    productId: 'prod-1',
+    productName: '布艺遮光帘A',
+    quantity: 2.7,
+    unitPrice: 99,
+    amount: 267.3,
+    subtotal: 267.3,
+    processingInfo: {
+      saleForm: '成品帘',
+      skuId: 11,
+      skuCode: 'SKU-11',
+      colorName: '米白',
+      processingItems: [{ name: '打孔' }],
+    },
+  },
+  {
+    id: 'item-b',
+    productId: 'prod-1',
+    productName: '布艺遮光帘A',
+    quantity: 1.5,
+    unitPrice: 99,
+    amount: 148.5,
+    subtotal: 148.5,
+    processingInfo: {
+      saleForm: '成品帘',
+      skuId: 12,
+      skuCode: 'SKU-12',
+      colorName: '浅灰',
+      processingItems: [{ name: '打孔' }],
+    },
+  },
+] as never[]
+
+/** 候选批次（`BatchStockViews.Candidate` 原形） */
+const candidate = (over: Record<string, unknown> = {}) => ({
+  batchNo: 'PC-20260901-0001',
+  remainingMeters: '10',
+  receivedDate: '2026-09-01',
+  dyeLot: 'G1',
+  inboundNo: 'RK-1',
+  unitCost: '12',
+  suggested: false,
+  enough: true,
+  ...over,
+})
+
+/** 候选响应（`BatchStockViews.Candidates` 原形） */
+const candidatesPayload = (over: Record<string, unknown> = {}) => ({
+  data: {
+    data: {
+      suggestionRule: 'FIFO_RECEIVED_DATE',
+      suggestedBatchNo: null,
+      requiredMeters: '2.7',
+      candidates: [],
+      ...over,
+    },
+  },
+})
+
+/** item-a（skuId=11）有候选、item-b（skuId=12）无候选 —— 混排：弹框里一行可选、一行不可选 */
+const mixedCandidates = (params: { skuId?: number }) =>
+  Promise.resolve(
+    params.skuId === 11
+      ? candidatesPayload({
+          suggestedBatchNo: 'PC-20260901-0001',
+          candidates: [
+            candidate({ suggested: true }),
+            candidate({ batchNo: 'PC-20260905-0002', remainingMeters: '5', receivedDate: '2026-09-05' }),
+            candidate({ batchNo: 'PC-20260910-0009', remainingMeters: '1', receivedDate: '2026-09-10', enough: false }),
+          ],
+        })
+      : candidatesPayload({ requiredMeters: '1.5' }),
+  )
+
+describe('ProcessingOrderBlock 派工指定批次（issue #5145 阶段 1）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('PR-054 判据①（红证）：本单所有行都没有可用批次 ⇒ 不弹空对话框、按原路径生成（请求只有 orderIds）', async () => {
+    mockedDetail.mockRejectedValueOnce(new Error('404'))
+    mockedGenerate.mockResolvedValueOnce({
+      data: { data: [{ orderRef: 'order-001', success: true, processingOrderNo: 'JG-20260912-0001' }] },
+    })
+    mockedDetail.mockResolvedValueOnce({ data: { data: poGenerated } })
+    // 两行都无候选（库存里没有批次可用）
+    mockedCandidates.mockImplementation(() => Promise.resolve(candidatesPayload()))
+
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="confirmed" hasProcessing items={orderItems} />)
+    await userEvent.click(await screen.findByText('生成加工单'))
+
+    await waitFor(() => expect(mockedGenerate).toHaveBeenCalled())
+    // 候选确实按「行商品 + 行 SKU + 行米数」取过（不是跳过候选直接生成）
+    expect(mockedCandidates).toHaveBeenCalledWith({ productId: 'prod-1', skuId: 11, meters: 2.7 })
+    // 单参调用 ⇒ 请求体只有 orderIds（不指派 ⇒ 与今天逐字相同）
+    expect(mockedGenerate.mock.calls[0]).toHaveLength(1)
+    expect(mockedGenerate).toHaveBeenCalledWith(['order-001'])
+    // 不弹空对话框挡路
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('PR-054 判据②③：弹框逐行列候选（建议值默认选中、可改、不足本行的不可选），确认后 batches 逐字正确', async () => {
+    mockedDetail.mockRejectedValueOnce(new Error('404'))
+    mockedGenerate.mockResolvedValueOnce({
+      data: { data: [{ orderRef: 'order-001', success: true, processingOrderNo: 'JG-20260912-0001' }] },
+    })
+    mockedDetail.mockResolvedValueOnce({ data: { data: poGenerated } })
+    mockedCandidates.mockImplementation(mixedCandidates as never)
+
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="confirmed" hasProcessing items={orderItems} />)
+    await userEvent.click(await screen.findByText('生成加工单'))
+
+    // 判据③：后端建议值默认选中；候选文案 = 批次号 + 剩余米数 + 收货日期
+    const selectA = await screen.findByTestId('batch-select-item-a')
+    expect(selectA).toHaveValue('PC-20260901-0001')
+    expect(screen.getByText('PC-20260901-0001（余 10 米 · 收货 2026-09-01）')).toBeInTheDocument()
+    // 余量不够本行的候选在列表里但**不可选**（选了必被后端 409 拒 ⇒ 提前挡住）
+    expect(screen.getByText(/PC-20260910-0009/)).toBeDisabled()
+    // item-b 没有可用批次 ⇒ 显式标注「无可用批次」且**不给下拉**（该行不指派）
+    expect(screen.getByTestId('batch-unavailable-item-b')).toHaveTextContent('无可用批次')
+    expect(screen.queryByTestId('batch-select-item-b')).toBeNull()
+
+    // 文员可改：换成另一个够用的批次
+    fireEvent.change(selectA, { target: { value: 'PC-20260905-0002' } })
+    await userEvent.click(screen.getByText('确认生成'))
+
+    // 判据②：指派 ⇒ batches 内容逐字正确；不可指派的行**不进** batches
+    await waitFor(() =>
+      expect(mockedGenerate).toHaveBeenCalledWith(['order-001'], [
+        { orderId: 'order-001', itemId: 'item-a', batchNo: 'PC-20260905-0002' },
+      ]),
+    )
+  })
+
+  it('PR-054 判据④（红证）：生成失败 ⇒ message 与 suggestion 原样展示（不吞可行动建议）', async () => {
+    mockedDetail.mockRejectedValueOnce(new Error('404'))
+    mockedCandidates.mockImplementation(mixedCandidates as never)
+    mockedGenerate.mockResolvedValueOnce({
+      data: {
+        data: [
+          {
+            orderRef: 'order-001',
+            success: false,
+            code: 'BATCH_STOCK_INSUFFICIENT',
+            message: '批次 PC-20260901-0001 余量不足：可用 0.5 米，本行需要 2.7 米',
+            suggestion: '可改用批次 PC-20260905-0002（余 5 米）',
+          },
+        ],
+      },
+    })
+
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="confirmed" hasProcessing items={orderItems} />)
+    await userEvent.click(await screen.findByText('生成加工单'))
+    expect(await screen.findByTestId('batch-select-item-a')).toBeInTheDocument()
+    await userEvent.click(screen.getByText('确认生成'))
+
+    // 后端 message 逐字
+    expect(
+      await screen.findByText('批次 PC-20260901-0001 余量不足：可用 0.5 米，本行需要 2.7 米'),
+    ).toBeInTheDocument()
+    // 后端 suggestion 逐字（缺料 fail-closed 的落点：文员据此改选，不被吞掉）
+    expect(screen.getByText('可改用批次 PC-20260905-0002（余 5 米）')).toBeInTheDocument()
+  })
+
+  it('PR-054 回归：下单明细行没带 SKU 标识 ⇒ 该行「无可用批次」（不猜 SKU，避免串色/串门幅）', async () => {
+    mockedDetail.mockRejectedValueOnce(new Error('404'))
+    mockedGenerate.mockResolvedValueOnce({
+      data: { data: [{ orderRef: 'order-001', success: true, processingOrderNo: 'JG-20260912-0001' }] },
+    })
+    mockedDetail.mockResolvedValueOnce({ data: { data: poGenerated } })
+    mockedCandidates.mockImplementation(mixedCandidates as never)
+
+    const legacyItems = [
+      { ...(orderItems[0] as Record<string, unknown>), processingInfo: { saleForm: '成品帘', processingItems: [{ name: '打孔' }] } },
+      orderItems[1],
+    ] as never[]
+
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="confirmed" hasProcessing items={legacyItems} />)
+    await userEvent.click(await screen.findByText('生成加工单'))
+
+    // 无 SKU 标识的行不查候选（无从核对批次归属）
+    expect(mockedCandidates).toHaveBeenCalledTimes(1)
+    expect(mockedCandidates).toHaveBeenCalledWith({ productId: 'prod-1', skuId: 12, meters: 1.5 })
   })
 })

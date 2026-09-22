@@ -316,11 +316,13 @@ export default function OrderDetailPage() {
         />
       </SectionCard>
 
-      {/* 加工单（issue #3340）：订单 producing 阶段的子进度 */}
+      {/* 加工单（issue #3340）：订单 producing 阶段的子进度。
+          items（issue #5145 阶段 1）：生成加工单时据此取逐面料行的派工候选（系统给建议值、文员可改）。 */}
       <ProcessingOrderBlock
         orderId={order.id}
         orderStatus={order.status}
         hasProcessing={(order.processingItems?.length ?? 0) > 0}
+        items={order.items ?? []}
         onStatusChange={setProcessingOrder}
       />
 

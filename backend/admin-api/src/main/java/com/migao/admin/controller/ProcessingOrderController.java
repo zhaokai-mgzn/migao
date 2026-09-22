@@ -28,13 +28,17 @@ public class ProcessingOrderController {
     /**
      * 批量生成加工单（写操作，权限 processing:update）
      * POST /api/admin/processing-orders/generate
+     *
+     * <p>V116 / issue #5145 阶段 1：请求体可带 {@code batches}（逐面料行指定批次）；
+     * 缺省 = 不指派 ⇒ 行为与今天逐字相同（本阶段的定义特征是「只记录、不改指派行为」）。</p>
      */
     @PostMapping("/generate")
     @RequirePermission("processing:update")
     public ApiResponse<List<ProcessingOrderService.GenerateResult>> generate(
             @RequestBody ProcessingOrderGenerateRequest request) {
         Long tenantId = TenantContext.getTenantId();
-        return ApiResponse.success(processingOrderService.generate(request.getOrderIds(), tenantId, null));
+        return ApiResponse.success(processingOrderService.generate(
+                request.getOrderIds(), request.getBatches(), tenantId, null));
     }
 
     /**

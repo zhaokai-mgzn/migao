@@ -3,6 +3,7 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.dto.ProcessingOrderGenerateRequest;
+import com.migao.admin.dto.ProcessingOrderGenerateRequest.BatchAssignment;
 import com.migao.admin.dto.ProcessingOrderResponse;
 import com.migao.admin.dto.ProcessingOrderUpdateRequest;
 import com.migao.admin.entity.Order;
@@ -100,6 +101,20 @@ public class ProcessingOrderService {
     private final ProductionOperationQueryService productionOperationQueryService;
     /** 应做数量来源（issue #4208 接线）：算料引擎在 ai-agent，Java 侧只问不猜。 */
     private final ProductionOperationQtyClient productionOperationQtyClient;
+
+    /**
+     * 批次消耗台账（V116，issue #5145 阶段 1）：派工扣批次 + 作废回补。
+     *
+     * <p>用<b>字段注入</b>而不是构造参数：本类构造签名被 5 处测试显式装配
+     * （{@code ProcessingOrderServiceTest} / {@code ProcessingRouteSourceDeclarationTest} /
+     * {@code ProductionControllerTest} / {@code ProductionRoutingReadControllerTest} /
+     * {@code ProcessingOrderDetailNoProcOrderTest}），加参数会把它们全改一遍 ——
+     * 本单的改动面不应扩到既有测试装配（同 {@code ProductionController.processingFeeQueryService}
+     * 的先例与理由）。Spring 生产装配下该依赖一定非 null；真装配不上时
+     * {@link #batchStock()} **显式抛错**，绝不静默跳过扣减。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    private StockBatchConsumptionService stockBatchConsumptionService;
 
     /**
      * 工序库查不到「部位×工艺」路线时的错误码（fail-closed）。
@@ -336,13 +351,54 @@ public class ProcessingOrderService {
      */
     @Transactional(rollbackFor = Exception.class)
     public List<GenerateResult> generate(List<String> orderIds, Long tenantId, String operator) {
+        return generate(orderIds, List.of(), tenantId, operator);
+    }
+
+    /**
+     * 批量生成加工单 + **派工指定批次**（V116，issue #5145 阶段 1）。
+     *
+     * <h2>为什么「指定批次」是可选入参（而不是必填）</h2>
+     * 用户裁定「生成加工单时由文员指定批次（系统给候选 + 建议值，人工确认、可改）」+
+     * 本阶段的定义特征是「**只记录、不改指派行为**」。⇒ 没有指派时（老调用方 / 该 SKU 还没有
+     * 任何入库批次 / 文员不选）**行为与今天逐字相同**：不扣批次、不产生台账行、不多一个错误分支。
+     * 指派了才扣 —— 记录的是**人工最终选择**，这正是基线成立的前提。
+     *
+     * <h2>fail-closed 的三条（都在任何写库之前判完）</h2>
+     * ① 指派里的 {@code orderId} 不在本次 {@code orderIds} 内 ⇒ 显式拒绝（静默丢掉 = 文员以为指定了、
+     *    账上永远少一笔）；② 指派的行不在该订单的加工单快照里 ⇒ 显式拒绝（同上）；
+     * ③ 批次不存在 / 不属于该 SKU / 余量不足 ⇒ {@link StockBatchConsumptionService#plan} 抛错 +
+     *    可行动建议（**不得静默少扣**）。
+     *
+     * @param batches 逐行指定批次（可空 / 空列表 = 不指派）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public List<GenerateResult> generate(List<String> orderIds, List<BatchAssignment> batches,
+                                         Long tenantId, String operator) {
         if (orderIds == null || orderIds.isEmpty()) {
             throw BusinessException.validationError("orderIds 不能为空");
+        }
+        List<BatchAssignment> assignments = batches == null ? List.of() : batches;
+        // ① 未匹配的指派（orderId 不在本次 orderIds 内）⇒ 任何写库之前拒绝
+        Set<String> requested = new LinkedHashSet<>(orderIds);
+        List<String> unknown = new ArrayList<>();
+        for (BatchAssignment a : assignments) {
+            String key = a == null ? null : a.getOrderId();
+            if (key == null || !requested.contains(key)) {
+                unknown.add(key == null ? "(空)" : key);
+            }
+        }
+        if (!unknown.isEmpty()) {
+            throw BusinessException.validationError(
+                    "批次指派里的订单不在本次生成范围内：" + String.join(", ", unknown));
+        }
+        Map<String, List<BatchAssignment>> byOrder = new LinkedHashMap<>();
+        for (BatchAssignment a : assignments) {
+            byOrder.computeIfAbsent(a.getOrderId(), k -> new ArrayList<>()).add(a);
         }
         List<GenerateResult> results = new ArrayList<>();
         for (String rawId : orderIds) {
             try {
-                results.add(generateOne(rawId, tenantId, operator));
+                results.add(generateOne(rawId, byOrder.getOrDefault(rawId, List.of()), tenantId, operator));
             } catch (BusinessException e) {
                 results.add(GenerateResult.fail(rawId, e.getCode(), e.getMessage(), e.getSuggestion()));
             }
@@ -350,7 +406,8 @@ public class ProcessingOrderService {
         return results;
     }
 
-    private GenerateResult generateOne(String rawId, Long tenantId, String operator) {
+    private GenerateResult generateOne(String rawId, List<BatchAssignment> assignments,
+                                       Long tenantId, String operator) {
         Order order = resolveOrder(rawId, tenantId);
         if (order == null) {
             throw new BusinessException("ORDER_NOT_FOUND", "无法找到订单：" + rawId, 404);
@@ -381,6 +438,16 @@ public class ProcessingOrderService {
         // 的孤儿态：工人扫不了码、加工单列表看着正常，没人会发现工序库是空的。
         PositionPayload payload = buildPositionPayload(snapshot, tenantId);
         List<Map<String, Object>> positions = payload.positions();
+
+        // 派工指定批次（V116 / issue #5145 阶段 1）：**只读校验 + 计划在任何写库之前跑完** ——
+        // 与上面工序 payload 同一条纪律（generate() 逐单 catch BusinessException 后事务不回滚 ⇒
+        // 写库之后再抛业务异常会留下「有加工单、扣了半截」的半成品，见
+        // StockBatchConsumptionService 类注释「写面分两段」）。
+        List<StockBatchConsumptionService.Deduction> deductionPlan =
+                buildDeductionPlan(items, snapshot, assignments, tenantId);
+        // 把**文员最终指定**的批次写进加工单快照的 batchNo（V63 白名单早有该键、此前全仓零写入方
+        // = 现成的空插座）；在插入**之前**写，故不多一次 UPDATE。
+        stampAssignedBatches(snapshot, deductionPlan);
 
         ProcessingOrder po = ProcessingOrder.builder()
                 .tenantId(tenantId)
@@ -414,6 +481,13 @@ public class ProcessingOrderService {
         }
         log.info("生成加工单: no={}, orderId={}, tenantId={}, operator={}",
                 po.getProcessingOrderNo(), order.getId(), tenantId, operator);
+        // 派工扣批次库存（issue #5145 判据 1）：与加工单生成**同一事务** ——
+        // 加工单插入成功之后才扣（重复生成在更上游就被 selectActiveByOrderId +
+        // uk_processing_orders_active 拒掉 ⇒ 不可能二次扣减）；计划已在插入前校验完，
+        // 这里只落账、不再抛业务异常。不指定批次 ⇒ 计划为空 ⇒ 本段零动作（行为与今天逐字相同）。
+        if (!deductionPlan.isEmpty()) {
+            batchStock().apply(tenantId, po.getProcessingOrderNo(), order.getOrderNo(), deductionPlan);
+        }
         // 工序实例化（issue #4116，P0 断链第一环）：加工单落行后**立即**实例化工序。
         // 此前 instantiate 端点全仓零调用者 ⇒ 工序列表恒空 ⇒ qr_token 恒 null ⇒
         // 任务卡只出「二维码待生成」占位、工人扫码报工不可达。
@@ -423,6 +497,92 @@ public class ProcessingOrderService {
         // POST .../instantiate 手工补做）。
         instantiateOperations(order, po, positions, tenantId);
         return GenerateResult.ok(rawId, po.getProcessingOrderNo());
+    }
+
+    /**
+     * 批次消耗台账（V116 / issue #5145 阶段 1）—— 装配不上就**显式抛错**，绝不静默跳过扣减
+     * （静默跳过 = 加工单照发、批次账不扣、余量分布永远好看，而没有任何东西会变红）。
+     */
+    private StockBatchConsumptionService batchStock() {
+        if (stockBatchConsumptionService == null) {
+            throw new IllegalStateException(
+                    "StockBatchConsumptionService 未装配 —— 派工扣批次不能静默跳过（issue #5145）");
+        }
+        return stockBatchConsumptionService;
+    }
+
+    /**
+     * 派工指定批次 → **只读校验 + 扣减计划**（必须在任何写库之前调用完）。
+     *
+     * <p>逐行两件事：① 指派的行必须在该订单的加工单快照里（不在 ⇒ 显式拒绝 —— 配件/赠品行
+     * 不成部位、不进快照，静默忽略会让文员以为指定了）；② 扣减米数 = 该行米数。</p>
+     *
+     * <p><b>扣减米数口径</b> = {@link StockQuantity#toStockScaleByCeiling}（订单行数量向上进位到 0.1）
+     * —— 与销售账扣减（{@code OrderService.deductSkuStock}）**同一个函数**。两边同源是对账读面
+     * 成立的前提：于是「{@code Σ批次余量} − {@code product_skus.stock}」恰好等于**已售未派米数**，
+     * 而不是「已售未派 ± 口径差」（口径差会让差额读得出来却解释不清，正是路线 A 要防的漂移）。</p>
+     */
+    private List<StockBatchConsumptionService.Deduction> buildDeductionPlan(
+            List<OrderItem> items, List<Map<String, Object>> snapshot,
+            List<BatchAssignment> assignments, Long tenantId) {
+        if (assignments == null || assignments.isEmpty()) {
+            return List.of();
+        }
+        Map<String, Map<String, Object>> rowByItemId = new LinkedHashMap<>();
+        for (Map<String, Object> row : snapshot) {
+            Object itemId = row.get("itemId");
+            if (itemId != null) {
+                rowByItemId.put(String.valueOf(itemId), row);
+            }
+        }
+        Map<String, String> productIdByItemId = new LinkedHashMap<>();
+        for (OrderItem item : items) {
+            if (item.getId() != null) {
+                productIdByItemId.put(item.getId(), item.getProductId());
+            }
+        }
+        List<StockBatchConsumptionService.Designation> designations = new ArrayList<>();
+        for (BatchAssignment a : assignments) {
+            String itemId = a.getItemId() == null ? null : a.getItemId().trim();
+            Map<String, Object> row = itemId == null ? null : rowByItemId.get(itemId);
+            if (row == null) {
+                throw BusinessException.validationError(String.format(
+                        "批次指派的行 %s 不在本订单的加工单快照里（配件/赠品行不成部位，不参与派工指定）",
+                        a.getItemId()));
+            }
+            if (!StringUtils.hasText(a.getBatchNo())) {
+                throw BusinessException.validationError("批次指派缺少 batchNo（行 " + itemId + "）");
+            }
+            BigDecimal meters = StockQuantity.toStockScaleByCeiling(
+                    row.get("quantity") instanceof BigDecimal q ? q : null);
+            if (meters.compareTo(BigDecimal.ZERO) <= 0) {
+                throw BusinessException.validationError(String.format(
+                        "明细行 %s 的米数为 %s，无法指定批次扣减", itemId, meters.toPlainString()));
+            }
+            designations.add(new StockBatchConsumptionService.Designation(
+                    itemId, productIdByItemId.get(itemId), str(row.get("skuCode")),
+                    a.getBatchNo().trim(), meters));
+        }
+        return batchStock().plan(tenantId, designations);
+    }
+
+    /** 把指定的批次号写进快照行（`batchNo` = 加工单的固化真相里「这行从哪一批裁」）。 */
+    private static void stampAssignedBatches(List<Map<String, Object>> snapshot,
+                                             List<StockBatchConsumptionService.Deduction> plan) {
+        if (plan.isEmpty()) {
+            return;
+        }
+        Map<String, String> batchNoByItemId = new LinkedHashMap<>();
+        for (StockBatchConsumptionService.Deduction d : plan) {
+            batchNoByItemId.put(d.orderItemId(), d.batchNo());
+        }
+        for (Map<String, Object> row : snapshot) {
+            Object itemId = row.get("itemId");
+            String batchNo = itemId == null ? null : batchNoByItemId.get(String.valueOf(itemId));
+            if (batchNo != null) {
+                row.put("batchNo", batchNo);
+            }
+        }
     }
 
     /**
@@ -2135,6 +2295,15 @@ public class ProcessingOrderService {
                         "加工单 " + po.getProcessingOrderNo() + " 取消，订单回退已确认");
                 log.info("加工单取消联动回退订单: po={}, orderId={}", po.getProcessingOrderNo(), order.getId());
             }
+            // 派工扣减的**对称回补**（V116 / issue #5145 判据 3）：作废 ⇒ 同事务把批次余量还回去，
+            // 回补量 = 原扣减量的相反数（逐值对称，小数场景如 2.7 也一样）。
+            // 挂点就在取消分支里（母单 #5145 指认的「现成挂点」）；另有一个作废入口
+            // —— 订单取消自动作废 generated 单走 OrderService.cancelOrder —— 那里接了同一句话。
+            // 幂等：重复取消被上面状态机拒（cancelled → cancelled 不合法）；服务层再按
+            // 「该行已回补则跳过」兜一层 ⇒ 可重跑。
+            batchStock().reverse(tenantId, po.getProcessingOrderNo(),
+                    order == null ? null : order.getOrderNo(),
+                    "加工单作废回补批次库存：" + req.getReason());
         }
         log.info("加工单状态变更: no={}, {} -> {}, operator={}", po.getProcessingOrderNo(), current, target, operator);
         return getDetail(po.getId(), tenantId);

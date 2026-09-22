@@ -68,6 +68,16 @@ export interface ProductionPosition {
   /** 用料（算料输出，单一真值 = ai-agent 引擎；Java 侧不重算） */
   fabric_meters?: number | string | null
   processingMeters?: number | string | null
+  /**
+   * 批次指派（issue #5145 阶段 1）：生成加工单时文员指定批次 ⇒ 该行米数从该批次余量扣减，
+   * 工人要能知道「**去哪个批次裁多少米**」。
+   *
+   * <p>这两键**服务端只在真的指派过批次时才下发**（只有一个键的情况不存在；未指派则两键都没有）
+   * ⇒ **缺键 = 未指派，不是缺数据** —— 前端按「两键都在才显示」渲染，缺键不补默认值、不显示占位符。</p>
+   */
+  batch_no?: string | null
+  /** 该行的裁剪米数（派工净额，可能带小数，如 `2.7`）—— 与 `batch_no` 同时下发 */
+  batch_meters?: number | string | null
   operations: ProductionOperation[]
 }
 

@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, UI-030
+// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, UI-030
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -100,6 +100,14 @@ class ProcessingOrderServiceTest {
     /** 应做数量来源（issue #4208 接线）：算料引擎在 ai-agent，Java 只问不猜 */
     @Mock
     private ProductionOperationQtyClient productionOperationQtyClient;
+
+    /**
+     * 批次消耗台账（V116 / issue #5145 阶段 1）：派工扣批次 / 作废回补。
+     * 它**不在** {@code ProcessingOrderService} 的构造签名里（字段注入，见其字段注释）⇒
+     * 装配点有两处：{@link #realChainService()}（手写 new）与 {@code setUp()}（{@code @InjectMocks} 那个实例）。
+     */
+    @Mock
+    private StockBatchConsumptionService stockBatchConsumptionService;
 
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
@@ -385,12 +393,18 @@ class ProcessingOrderServiceTest {
 
     /** 「生成加工单 → 真链路实例化」的装配：真实 ProductionService + 真实 ProcessingOrderService。 */
     private ProcessingOrderService realChainService() {
-        return new ProcessingOrderService(
+        ProcessingOrderService service = new ProcessingOrderService(
                 processingOrderMapper, orderMapper, orderItemMapper, processingItemMapper,
                 orderService, objectMapper,
                 new ProductionService(processingOrderMapper, positionOperationMapper, workLogMapper, orderMapper,
                         orderItemMapper, clientRequestIdService),
                 productionOperationQueryService, productionOperationQtyClient);
+        // 批次台账（V116 / issue #5145）是**字段注入**（不在构造签名里，避免改 5 处既有装配）⇒
+        // 手写 new 的路径要显式装配，否则 batchStock() 会 fail-closed 抛错（那是**有意**的：
+        // 漏装配时不许静默跳过扣减）。
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                service, "stockBatchConsumptionService", stockBatchConsumptionService);
+        return service;
     }
 
     /** 生成前置桩（订单 + 明细 + 无既有加工单 + 插入回填主键），三条 #4116 链路用例共用。 */
@@ -406,6 +420,177 @@ class ProcessingOrderServiceTest {
             poRef.set(inserted);
             return 1;
         });
+    }
+
+    // ── 派工指定批次（V116 / issue #5145 阶段 1）────────────────────────────────
+    //
+    // 本类只验证**装配与顺序**（谁在什么时候调了台账服务）——「扣多少、余量怎么派生、差额怎么解释」
+    // 的算账判据在 StockBatchConsumptionServiceTest。顺序是本单的关键：扣减必须发生在
+    // 加工单插入**之后**（重复生成在插入处被幂等闸拒 ⇒ 结构上不可能二次扣）。
+
+    /** 一行的批次指派（生成请求体的元素）。 */
+    private com.migao.admin.dto.ProcessingOrderGenerateRequest.BatchAssignment batchAssignment(
+            String itemId, String batchNo) {
+        var assignment = new com.migao.admin.dto.ProcessingOrderGenerateRequest.BatchAssignment();
+        assignment.setOrderId("order-001");
+        assignment.setItemId(itemId);
+        assignment.setBatchNo(batchNo);
+        return assignment;
+    }
+
+    /** 一条已校验过的扣减计划行（`plan` 的返回值）。 */
+    private StockBatchConsumptionService.Deduction plannedDeduction(String itemId, String batchNo,
+                                                                    String meters, String remainingBefore) {
+        return new StockBatchConsumptionService.Deduction(77L, batchNo, "prod-1", 12L, "SKU-1",
+                itemId, new BigDecimal(meters), new BigDecimal(remainingBefore));
+    }
+
+    /**
+     * 生成前置桩「**到计划为止**」（不含 insert 回填）：给「必须在插入之前失败」的用例用 ——
+     * 严格桩下给它们装 insert 会变成**未使用桩**（噪音，不是缺陷）。
+     */
+    private void stubGenerateBeforeInsert(List<OrderItem> items) {
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(items);
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> capturedSnapshot(ArgumentCaptor<ProcessingOrder> captor) {
+        return (List<Map<String, Object>>) captor.getValue().getItemsSnapshot();
+    }
+
+    @Test
+    @DisplayName("PG-060 派工即扣：指定批次 ⇒ 同事务扣减（plan 在插入之前、apply 在插入之后）")
+    void generateWithBatchAssignmentDeductsInSameTransaction() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemWithProcessing("米白")));
+        when(stockBatchConsumptionService.plan(eq(TENANT), anyList()))
+                .thenReturn(List.of(plannedDeduction("item-1", "PC-20260923-0001", "2.7", "60")));
+
+        var results = realChainService().generate(List.of("order-001"),
+                List.of(batchAssignment("item-1", "PC-20260923-0001")), TENANT, "文员");
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(poCaptor.capture());
+        // 快照的 `batchNo` 空插座（V63 白名单早有该键、此前全仓零写入方）被填上人工最终选择
+        assertThat(capturedSnapshot(poCaptor).get(0)).containsEntry("batchNo", "PC-20260923-0001");
+
+        var ordered = inOrder(stockBatchConsumptionService, processingOrderMapper);
+        ordered.verify(stockBatchConsumptionService).plan(eq(TENANT), anyList());
+        ordered.verify(processingOrderMapper).insert(any(ProcessingOrder.class));
+        ordered.verify(stockBatchConsumptionService)
+                .apply(eq(TENANT), anyString(), eq("ORD-20260912-0001"), anyList());
+    }
+
+    @Test
+    @DisplayName("PG-060 不重复扣：同一订单重复生成被幂等闸拒 ⇒ 台账只被调用一次")
+    void duplicateGenerateDoesNotDeductTwice() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemWithProcessing("米白")));
+        when(stockBatchConsumptionService.plan(eq(TENANT), anyList()))
+                .thenReturn(List.of(plannedDeduction("item-1", "PC-20260923-0001", "2.7", "60")));
+        ProcessingOrderService service = realChainService();
+        var assignments = List.of(batchAssignment("item-1", "PC-20260923-0001"));
+
+        var first = service.generate(List.of("order-001"), assignments, TENANT, "文员");
+        var second = service.generate(List.of("order-001"), assignments, TENANT, "文员");
+
+        assertThat(first.get(0).isSuccess()).isTrue();
+        assertThat(second.get(0).isSuccess()).isFalse();
+        assertThat(second.get(0).getMessage()).contains("请勿重复生成");
+        verify(stockBatchConsumptionService, times(1)).plan(eq(TENANT), anyList());
+        verify(stockBatchConsumptionService, times(1))
+                .apply(eq(TENANT), anyString(), anyString(), anyList());
+        verify(processingOrderMapper, times(1)).insert(any(ProcessingOrder.class));
+    }
+
+    @Test
+    @DisplayName("PG-060 缺料不静默：plan 抛余量不足 ⇒ 不落加工单、不扣减（不留半成品）")
+    void insufficientBatchFailsClosedWithoutHalfProduct() {
+        stubLibrary();
+        stubGenerateBeforeInsert(List.of(orderItemWithProcessing("米白")));
+        when(stockBatchConsumptionService.plan(eq(TENANT), anyList()))
+                .thenThrow(new BusinessException(
+                        StockBatchConsumptionService.ERR_BATCH_STOCK_INSUFFICIENT,
+                        "批次 PC-1 余量不足：可用 0.5 米，本行需要 2 米", 409,
+                        "该行需要 2 米。当前可用批次：PC-2（剩 30 米）。"));
+
+        var results = realChainService().generate(List.of("order-001"),
+                List.of(batchAssignment("item-1", "PC-1")), TENANT, "文员");
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).isSuccess()).isFalse();
+        assertThat(results.get(0).getCode())
+                .isEqualTo(StockBatchConsumptionService.ERR_BATCH_STOCK_INSUFFICIENT);
+        assertThat(results.get(0).getMessage()).contains("余量不足").contains("0.5");
+        assertThat(results.get(0).getSuggestion()).contains("PC-2");
+        // 不留半成品：加工单没插、台账没扣（校验在任何写库之前跑完）
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(stockBatchConsumptionService, never()).apply(any(), any(), any(), anyList());
+    }
+
+    @Test
+    @DisplayName("PG-060 不指派批次 ⇒ 行为与今天逐字相同：不碰台账、快照不留 batchNo")
+    void generateWithoutAssignmentLeavesBehaviorUnchanged() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemWithProcessing("米白")));
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        verifyNoInteractions(stockBatchConsumptionService);
+        ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(poCaptor.capture());
+        assertThat(capturedSnapshot(poCaptor).get(0)).doesNotContainKey("batchNo");
+    }
+
+    @Test
+    @DisplayName("PG-060 指派的行不在加工单快照里 ⇒ 显式拒绝（不静默忽略）")
+    void assignmentOnUnknownItemIsRejected() {
+        stubLibrary();
+        stubGenerateBeforeInsert(List.of(orderItemWithProcessing("米白")));
+
+        var results = realChainService().generate(List.of("order-001"),
+                List.of(batchAssignment("item-999", "PC-20260923-0001")), TENANT, "文员");
+
+        assertThat(results.get(0).isSuccess()).isFalse();
+        assertThat(results.get(0).getMessage()).contains("不在本订单的加工单快照里");
+        verify(stockBatchConsumptionService, never()).plan(any(), anyList());
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+    }
+
+    @Test
+    @DisplayName("PG-060 指派里的订单不在本次生成范围 ⇒ 整批显式拒绝（任何写库之前）")
+    void assignmentForForeignOrderIsRejected() {
+        // 不装任何生成桩：这一条必须在**碰任何 Mapper 之前**就被拒（装了反而变成未使用桩）
+        var assignment = batchAssignment("item-1", "PC-20260923-0001");
+        assignment.setOrderId("order-999");
+
+        assertThatThrownBy(() -> realChainService().generate(List.of("order-001"),
+                List.of(assignment), TENANT, "文员"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不在本次生成范围内");
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verifyNoInteractions(stockBatchConsumptionService);
+    }
+
+    @Test
+    @DisplayName("PG-060 作废回补：generated → cancelled 同事务回补该单扣过的批次")
+    void cancelReversesBatchConsumption() {
+        when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
+        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+
+        ProcessingOrderUpdateRequest cancel = new ProcessingOrderUpdateRequest();
+        cancel.setAction("cancel");
+        cancel.setReason("加工方排期冲突");
+        processingOrderService.updateStatus("po-1", cancel, TENANT, "u1");
+
+        verify(stockBatchConsumptionService).reverse(eq(TENANT), eq("JG-20260912-0001"),
+                eq("ORD-20260912-0001"), anyString());
     }
 
     private Order confirmedOrder;
@@ -428,6 +613,9 @@ class ProcessingOrderServiceTest {
                 .customerName("张三")
                 .customerPhone("13800138000")
                 .build();
+        // 批次台账（V116 / issue #5145）：@InjectMocks 只做构造注入 ⇒ 字段注入的那一个要显式装配
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                processingOrderService, "stockBatchConsumptionService", stockBatchConsumptionService);
     }
 
     // ── 快照构建工具 ──────────────────────────────────────────────

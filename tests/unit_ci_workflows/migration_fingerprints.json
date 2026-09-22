@@ -110,6 +110,7 @@
     "V112__drop_craft_calc_side_margin.sql": "sha256:d862bb36088cddbb686c9c21097ac33a3051d309f9608a1835774b50d72d95d0",
     "V113__product_roll_length_and_selling_method_base_attribute.sql": "sha256:882c56a9c1cd74859316c3bb79678759957bf690281e86db6ff5e9f7219ea1a6",
     "V114__add_craft_calc_oversize_thresholds.sql": "sha256:04a93be0c82aa48559899715861715b12e87d34b7e6edb4ce2ad78db474571c6",
-    "V115__stock_quantity_decimal_1dp.sql": "sha256:5c2fb2befcde2fba07bf697db257cd8a12bd2f82167be69d72cc83e3ad090bf8"
+    "V115__stock_quantity_decimal_1dp.sql": "sha256:5c2fb2befcde2fba07bf697db257cd8a12bd2f82167be69d72cc83e3ad090bf8",
+    "V116__create_stock_batch_consumptions.sql": "sha256:701c4034121c60712be9a4fbb44014cd2f70c860e65dca8e381dde0d71b4f116"
   }
 }

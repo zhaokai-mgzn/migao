@@ -148,6 +148,20 @@ public class ProductionService {
     private ProcessingOrderSetAllocator orderSetAllocator;
 
     /**
+     * 批次消耗台账（V116，issue #5145 阶段 1）：工人端「去哪个批次裁多少米」的**只读**真值源。
+     *
+     * <p>与上面两个字段同款用**字段注入**：本类构造签名被既有测试（27 处
+     * {@code new ProductionService(…)}）直接装配，加构造参数会把它们的装配全改一遍 ——
+     * 本单的改动面不应扩到既有测试。Spring 生产装配下该依赖一定非 null（同包 {@code @Service}）。</p>
+     *
+     * <p><b>只读面 ⇒ 未装配时降级</b>（与写面不同：写面漏了会少扣账，读面漏了只是少显示一个键）：
+     * 不追加 {@code batch_no}/{@code batch_meters} 两键（=「缺键就缺」，与规格可见面同一条口径），
+     * 并打一条 WARN 让它**看得见**，不是静默。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private StockBatchConsumptionService stockBatchConsumptionService;
+
+    /**
      * 套行读面（切片 ⓪.5，issue #4789）：把实例行落 {@code set_id}/{@code set_no}（V92 六列中的两列）。
      * 字段注入理由同上。
      */
@@ -566,12 +580,16 @@ public class ProductionService {
                 : listWorkLogs(po.getId(), tenantId);
         Map<String, List<String>> workers = po == null ? Map.of() : workersByOperation(logs);
 
+        // 规格可见面（issue #4459 §3.1）：**逐字取订单行**；本单再追加派工批次两键（V116 / #5145）
+        Map<String, Map<String, Object>> specByItemId = orderSpecByItemId(order, tenantId);
+        stampBatchAssignments(specByItemId, po, tenantId);
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order_id", order.getId());
         result.put("qr_token", po == null ? null : po.getQrToken());
         // 樘窗组键（issue #4784）：**复用 #4725 的既有实现**（`windowGroupKeyByItemId` + `setKey`）
         // —— 套维口径只有一份；本参数只用于给每个部位**追加** `set_no`（不改分组）。
-        result.put("positions", buildPositions(operations, workers, orderSpecByItemId(order, tenantId),
+        result.put("positions", buildPositions(operations, workers, specByItemId,
                 windowGroupKeyByItemId(order, tenantId), partTokensByItemId(po, tenantId)));
         result.put("progress", progressOf(operations));
         // 操作记录（issue #4347 §3.2）：**服务端**报工流水，不是本机缓存。
@@ -619,6 +637,42 @@ public class ProductionService {
             views.add(view);
         }
         return views;
+    }
+
+    /**
+     * 派工批次可见面（V116，issue #5145 阶段 1）：给每个部位的规格 map **追加**
+     * {@code batch_no} + {@code batch_meters} —— 即「去哪个批次裁多少米」，
+     * 工人端复用既有「用料 X 米」那一行展示（母单 #5144 的原始诉求）。
+     *
+     * <p><b>真值源 = 批次消耗台账</b>（不是订单侧 {@code processing_info.batchNo}）：扣了多少米是
+     * **事实**，指令与账同源才不会出现「告知了却没扣」的静默不一致；订单侧那个键是面料批号
+     * （外部事实，V111 明令不得与系统批次号混用）。</p>
+     *
+     * <p>键**只在真的指派过时才加**（缺键就缺 —— 与规格可见面同一条口径：不补默认值、不显示占位符）；
+     * 作废后净额归零的行不出现在结果里（工人不该被指去裁一个已经不扣账的批次）。</p>
+     */
+    private void stampBatchAssignments(Map<String, Map<String, Object>> specByItemId,
+                                       ProcessingOrder po, Long tenantId) {
+        if (stockBatchConsumptionService == null) {
+            log.warn("StockBatchConsumptionService 未装配 —— 工人端不显示派工批次（issue #5145，只读面降级）");
+            return;
+        }
+        if (po == null || po.getProcessingOrderNo() == null) {
+            return;
+        }
+        Map<String, StockBatchConsumptionService.BatchAssignment> assignments =
+                stockBatchConsumptionService.assignmentsOf(tenantId, po.getProcessingOrderNo());
+        if (assignments.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, Map<String, Object>> entry : specByItemId.entrySet()) {
+            StockBatchConsumptionService.BatchAssignment assignment = assignments.get(entry.getKey());
+            if (assignment == null) {
+                continue;
+            }
+            entry.getValue().put("batch_no", assignment.batchNo());
+            entry.getValue().put("batch_meters", assignment.meters());
+        }
     }
 
     /**

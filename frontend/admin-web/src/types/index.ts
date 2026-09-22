@@ -654,6 +654,22 @@ export interface ProcessingOrderGenerateResult {
   success: boolean
   message?: string
   processingOrderNo?: string
+  /** 失败时的业务错误码（`BATCH_STOCK_INSUFFICIENT` / `BATCH_NOT_FOUND` / `BATCH_SKU_MISMATCH` …）；成功时不返回 */
+  code?: string
+  /** 失败时的**可行动建议**（后端原样给出）；成功时不返回 */
+  suggestion?: string
+}
+
+/**
+ * 生成加工单时的逐行批次指派（V116 / issue #5145 阶段 1）。
+ *
+ * `itemId` = 加工单快照行的 `itemId` = `order_items.id`（订单明细行 id）；
+ * `orderId` 必须与 `orderIds` 里的**同一个字符串**，否则后端整批显式拒绝。
+ */
+export interface ProcessingOrderGenerateBatch {
+  orderId: string
+  itemId: string
+  batchNo: string
 }
 
 export interface ProcessingOrderUpdateParams {
@@ -2798,4 +2814,100 @@ export interface InboundOrderCreateParams {
 export interface InboundOrderListParams {
   keyword?: string
   status?: InboundOrderStatus | ''
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 批次账读面（V116 / issue #5145 阶段 1）
+//
+// 单一真值 = 后端 `BatchStockViews` 的 javadoc，前端只渲染、不重算口径。
+// 米数一律字符串（后端 BigDecimal 逐值传输，前端不得先转 double 再显示）。
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 批次余量（**派生** = 入库量 − 已派工消耗；三者一起回，读的人不必自己减） */
+export interface BatchRemaining {
+  batchId: number
+  /** 批次号 PC-yyyyMMdd-NNNN */
+  batchNo: string
+  productId: string
+  skuId?: number
+  skuCode?: string
+  inboundNo?: string
+  /** 供应商缸号（外部事实，可空） */
+  dyeLot?: string | null
+  receivedDate?: string
+  unitCost?: string | null
+  /** 批次行上的原始入库量（不可变） */
+  inboundMeters: string
+  /** 已派工消耗净额（正数） */
+  consumedMeters: string
+  /** 余量 = 入库量 − 已消耗 */
+  remainingMeters: string
+}
+
+/** 剩余量分布一档（`key` 机器可判、`label` 给人看） */
+export interface BatchDistributionBucket {
+  key: 'le_0_2' | 'b0_2_0_5' | 'b0_5_1' | 'gt_1'
+  label: string
+  batchCount: number
+  /** 占比（百分数，字符串） */
+  share: string
+}
+
+/** 剩余量分布（**恒四档**：空档也回 0） */
+export interface BatchDistribution {
+  totalBatches: number
+  buckets: BatchDistributionBucket[]
+}
+
+/**
+ * 对账一行。恒等式（`reconciled` 就是它的可执行判据）：
+ * `diff = batchRemaining − skuStock`；`explainedDiff = 已售扣减 − 已派工 − 其它台账`；
+ * `diff == explainedDiff − unbatched`。
+ */
+export interface BatchReconcileRow {
+  skuId: number
+  skuCode?: string
+  productId: string
+  /** `product_skus.stock`（销售账口径的 SKU 库存） */
+  skuStock: string
+  /** Σ 批次余量（批次账口径） */
+  batchRemaining: string
+  inboundMeters: string
+  dispatchedMeters: string
+  soldDeductedMeters: string
+  otherLedgerDeltaMeters: string
+  /** **台账外存量**（本功能上线前就有的库存 / 建品直接写 stock 的部分）—— 不是异常 */
+  unbatchedMeters: string
+  diff: string
+  explainedDiff: string
+  reconciled: boolean
+}
+
+export interface BatchReconcile {
+  rows: BatchReconcileRow[]
+  totalDiff: string
+  /** > 0 ⇒ 有 SKU 的恒等式不成立，须排查 */
+  unreconciledCount: number
+}
+
+/** 派工候选批次（生成加工单时给文员选） */
+export interface BatchCandidate {
+  batchNo: string
+  remainingMeters: string
+  receivedDate?: string
+  dyeLot?: string | null
+  inboundNo?: string
+  unitCost?: string | null
+  /** 系统的建议值（阶段 1 = 朴素 FIFO：入库日期早者优先） */
+  suggested: boolean
+  /** 该批次余量是否够本行米数 */
+  enough: boolean
+}
+
+/** 候选列表（`suggestionRule` 显式回口径：阶段 1 是 FIFO，不是 best-fit） */
+export interface BatchCandidates {
+  suggestionRule: string
+  suggestedBatchNo: string | null
+  requiredMeters: string
+  candidates: BatchCandidate[]
 }
