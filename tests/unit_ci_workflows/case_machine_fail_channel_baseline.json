@@ -46,7 +46,7 @@
       "note": "issue #5142（裁剪智能排料 v1：A 类「完整布并排」纯函数 + 判据）新增 1 条 `[backend-contract]` 用例（PG-061）—— 它按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测 `backend/admin-api/src/test/java/com/migao/admin/service/CuttingPlanCalculatorTest.java`（非空且真实存在，7 条逐值断言；`traces.ci` = pr-check.yml 的 admin-api unit tests job 实际跑它）⇒ 读数 66 → 67 是**合法新增**（`[backend-contract]` 用例本就不进 agent-eval，这是 #5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。注：取号在 rebase 到含 #5145 的 main 之后顺延（PG-059 被 #5145 先取，本单取 PG-061）。"
     },
     {
-      "sha": "bfff5291f",
+      "sha": "51d2352cb",
       "date": "2026-09-22",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 69,
