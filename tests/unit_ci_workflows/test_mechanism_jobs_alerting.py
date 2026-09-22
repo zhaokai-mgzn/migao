@@ -23,6 +23,14 @@ r"""「机制/簿记类 job 自身失败不得静默」守卫（issue #5076 的 
 **「幂等/预期内」的非零返回**必须**非阻塞**（exit 0）且**文案明确**（读者能一眼区分两者）。
 每条判据都配「注入后必红」的对照，证明判据本身会红（不是恒真）。
 
+## 另锁一条：后置回读的**三态**（issue #5113）
+
+`Enable auto-merge` 的「arm 后回读 `autoMergeRequest`」在 `mergeable == UNKNOWN`（GitHub 尚在计算
+可合并性）时会判红 —— 那是**误报**：不是"没 arm"，是"**还没算完**"。`TestAutomergeReadbackThreeStates`
+用三个夹具把三态钉死（**先退避重试、再按 `mergeable` 分流**）：
+夹具 A（`null` + `UNKNOWN`）⇒ unknown **非红**；夹具 B（`null` + `MERGEABLE`）⇒ **仍判红**；
+夹具 C（第一次 `null`、第二次 `armed`）⇒ 判绿（退避生效）。三条各自能**单独变红**（对真脚本做单点变异）。
+
 ## 测试方式
 
 **真跑** workflow 里的 `run:` 文本（不重写判定逻辑），PATH 前置一个 `gh` 桩（bash）提供可控世界；
@@ -62,8 +70,8 @@ for a in "$@"; do
   case "$a" in --jq=*) jqexpr="${a#--jq=}";; esac
   prev="$a"
 done
-if [ -n "$jqexpr" ] && [ -n "$payload" ]; then
-  payload="$(STUB_JQ_IN="$payload" STUB_JQ_EXPR="$jqexpr" python3 - <<'PYJQ'
+jq_py() {
+  STUB_JQ_IN="$payload" STUB_JQ_EXPR="$jqexpr" python3 - <<'PYJQ'
 import json, os, sys
 raw = os.environ["STUB_JQ_IN"]
 expr = os.environ["STUB_JQ_EXPR"]
@@ -83,11 +91,40 @@ elif "@tsv" in expr:
 else:
     sys.stdout.write(raw)
 PYJQ
-)"
+}
+
+# 判据只读「gh 实际返回了什么」⇒ 桩必须能按**调用次序**给出不同答案（#5113 夹具 A/B/C 用）。
+# 两个注入变量都未设时，走 jq_py 原路径 ⇒ 既有判据的行为逐字不变。
+if [ -n "$jqexpr" ]; then
+  case "$jqexpr" in
+    # STUB_AMR_SEQ：`autoMergeRequest` 回读的 jq 输出按行取用（用尽后**沿用最后一个值**）
+    # ⇒ 可表达「arm 的传播延迟」（第一次 none、第二次 armed）。
+    *autoMergeRequest*)
+      if [ -n "${STUB_AMR_SEQ:-}" ]; then
+        first="$(head -n 1 "$STUB_AMR_SEQ")"
+        rest="$(tail -n +2 "$STUB_AMR_SEQ")"
+        printf '%s\n' "${rest:-$first}" > "$STUB_AMR_SEQ"
+        payload="$first"
+      else
+        payload="$(jq_py)"
+      fi ;;
+    # STUB_MERGEABLE：`gh pr view --json mergeable` 的 jq 输出（UNKNOWN / MERGEABLE / …）。
+    *.mergeable*)
+      payload="${STUB_MERGEABLE:-$(jq_py)}" ;;
+    *)
+      payload="$(jq_py)" ;;
+  esac
 fi
 if [ -n "$payload" ]; then printf '%s\n' "$payload"; fi
 if [ -n "${STUB_STDERR:-}" ]; then printf '%s\n' "$STUB_STDERR" >&2; fi
 exit "${STUB_EXIT:-0}"
+"""
+
+# `sleep` 桩（#5113 夹具）：退避等待被**记录**而不是真的睡 ⇒ 新夹具能确定性地断言退避序列
+# （`2/4/6/8`），不靠墙钟计时；既有测试本来不睡，故其行为不受影响。
+SLEEP_STUB = r"""#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${SLEEP_CALL_LOG:-/dev/null}"
+exit 0
 """
 
 
@@ -120,7 +157,11 @@ class World:
         gh = self.bin / "gh"
         gh.write_text(GH_STUB, encoding="utf-8")
         gh.chmod(0o755)
+        sleep = self.bin / "sleep"
+        sleep.write_text(SLEEP_STUB, encoding="utf-8")
+        sleep.chmod(0o755)
         self.call_log = self.tmp / "gh-calls.log"
+        self.sleep_log = self.tmp / "sleep-calls.log"
         self.summary = self.tmp / "summary.md"
         self.run_file = self.tmp / "run.sh"
         self.run_file.write_text(run_text, encoding="utf-8")
@@ -131,6 +172,7 @@ class World:
         env.update({
             "PATH": str(self.bin) + os.pathsep + env.get("PATH", ""),
             "GH_CALL_LOG": str(self.call_log),
+            "SLEEP_CALL_LOG": str(self.sleep_log),
             "GH_TOKEN": "stub",
             "GH_REPO": "zhaokai-mgzn/migao",
             "GITHUB_STEP_SUMMARY": str(self.summary),
@@ -164,12 +206,23 @@ class World:
             return []
         return self.call_log.read_text(encoding="utf-8").splitlines()
 
+    @property
+    def sleeps(self):
+        """退避等待的参数序列（`sleep` 桩记录的实参；不真的睡）。"""
+        if not self.sleep_log.exists():
+            return []
+        return self.sleep_log.read_text(encoding="utf-8").split()
+
     def summary_text(self):
         return self.summary.read_text(encoding="utf-8") if self.summary.exists() else ""
 
 
 def _has_error_annotation(text):
     return bool(re.search(r"^::error::", text, re.M))
+
+
+def _has_warning_annotation(text):
+    return bool(re.search(r"^::warning::", text, re.M))
 
 
 # ================================================================ ① automerge
@@ -297,6 +350,110 @@ class TestAutomergePostcondition:
         )
         assert w.rc != 0, "不可解析的后置状态不得当「已 arm」读"
         assert _has_error_annotation(w.out), f"不可解析必须打 ::error::：\n{w.out}"
+
+
+# ------------------------------------------------ ① automerge · 后置回读三态（#5113）
+
+def _amr_seq(tmp_path, *values):
+    """`autoMergeRequest` 回读的**按序**输出（一行一次；用尽后沿用最后一个值）。"""
+    p = Path(tmp_path) / "amr-seq.txt"
+    p.write_text("\n".join(values) + "\n", encoding="utf-8")
+    return str(p)
+
+
+def _mutate(script, old, new):
+    """对**真脚本源码文本**做单点变异（不 mock 被测函数；锚点漂移即测试自身失败）。"""
+    assert old in script, f"变异锚点不存在（脚本已漂移）：{old!r}"
+    return script.replace(old, new, 1)
+
+
+UNKNOWN_GATE = 'if [ "$mergeable" = "UNKNOWN" ]; then'
+
+
+class TestAutomergeReadbackThreeStates:
+    """#5113：`mergeable == UNKNOWN`（GitHub 尚在计算可合并性）时**不得把「无从判定」渲染成红**。
+
+    实测（PR #5106 的 run 35677848752，2026-09-22T01:59:24Z）：`gh pr merge --auto` 零输出、rc=0，
+    同一时刻 `gh pr view 5106 --json mergeable` = `UNKNOWN` ⇒ 回读 `autoMergeRequest` 仍为 `null`
+    ⇒ 旧实现走 `exit 1` 报「未 arm（静默失效）」。那是**误报**：不是"没 arm"，是"还没算完"。
+
+    三态口径（`migao-dev-flow` §19.2）：绿 = 判据真跑过且通过；红 = 真跑过且失败；
+    **unknown = 判据没跑成，既不得当红也不得当绿**。本仓的 unknown 只能这样落地：GitHub Actions
+    的 step 只有红/绿二值（neutral 要 Checks API / GitHub App），且本 job 的 step 列表被
+    `tests/unit_ci_workflows/test_automerge_bot_safe_path.py` 逐字钉死（不得拆出第二个 step）
+    ⇒ unknown = `exit 0` + `::warning::` 注解 + step summary 写明「无从判定」，
+    语义由**注解与 summary**承载，**不由退出码**承载。
+
+    三个夹具各自**能单独变红**（变异锚点 = 真脚本源码文本，不是断言自己的文案）。
+    """
+
+    def test_fixture_a_unknown_mergeable_is_not_red(self, tmp_path):
+        """夹具 A：`null` + `mergeable=UNKNOWN` ⇒ unknown（**不是红**），summary 说明「无从判定」。"""
+        w = World(tmp_path, _automerge_script(), env=AUTOMERGE_ENV).run(
+            STUB_EXIT=0, STUB_AMR_SEQ=_amr_seq(tmp_path, "none"), STUB_MERGEABLE="UNKNOWN")
+        assert w.rc == 0, (
+            f"mergeable=UNKNOWN 时把「无从判定」渲染成红 = #5113 的误报形态；rc={w.rc}\n{w.out}"
+        )
+        assert not _has_error_annotation(w.out), f"unknown 不得打 ::error::：\n{w.out}"
+        assert _has_warning_annotation(w.out), f"unknown 必须可见（::warning::）：\n{w.out}"
+        assert "无从判定" in w.summary_text(), f"summary 必须写明「无从判定」：{w.summary_text()!r}"
+        assert "unknown" in w.summary_text(), f"summary 必须标明三态=unknown：{w.summary_text()!r}"
+        # 退避真的跑满：5 次回读 ⇒ 4 次等待（2/4/6/8 秒），且不因误判提前放弃
+        assert w.sleeps == ["2", "4", "6", "8"], f"退避序列不符：{w.sleeps}"
+        assert sum(1 for c in w.calls if "autoMergeRequest" in c) == 5, w.calls
+
+    def test_fixture_a_mutation_turns_it_red(self, tmp_path):
+        """夹具 A 的红证：把 UNKNOWN 分流闸换成 `false` ⇒ A 立刻变红（证明 A 的「非红」有判别力）。"""
+        src = _mutate(_automerge_script(), UNKNOWN_GATE, "if false; then")
+        w = World(tmp_path, src, env=AUTOMERGE_ENV).run(
+            STUB_EXIT=0, STUB_AMR_SEQ=_amr_seq(tmp_path, "none"), STUB_MERGEABLE="UNKNOWN")
+        assert w.rc != 0, "打掉 UNKNOWN 分流闸后夹具 A 仍判「非红」⇒ 夹具 A 的红证没有判别力"
+
+    def test_fixture_b_mergeable_but_not_armed_is_still_red(self, tmp_path):
+        """夹具 B：`null` + `mergeable=MERGEABLE`（算完了却没 arm）⇒ **仍然判红**（真静默失效）。"""
+        w = World(tmp_path, _automerge_script(), env=AUTOMERGE_ENV).run(
+            STUB_EXIT=0, STUB_AMR_SEQ=_amr_seq(tmp_path, "none"), STUB_MERGEABLE="MERGEABLE")
+        assert w.rc != 0, (
+            "可合并性已算出（MERGEABLE）却仍没 arm ⇒ 必须判红（#4829 的捕获力不得丢）；"
+            f"rc={w.rc}\n{w.out}"
+        )
+        assert _has_error_annotation(w.out), f"真静默失效必须打 ::error::：\n{w.out}"
+        assert w.summary_text().strip(), "真静默失效必须写 step summary"
+
+    def test_fixture_b_mutation_turns_it_green(self, tmp_path):
+        """夹具 B 的红证（反向）：把 UNKNOWN 分流闸放宽成 `true` ⇒ B 变绿 ⇒ B 的红来自该判据。"""
+        src = _mutate(_automerge_script(), UNKNOWN_GATE, "if true; then")
+        w = World(tmp_path, src, env=AUTOMERGE_ENV).run(
+            STUB_EXIT=0, STUB_AMR_SEQ=_amr_seq(tmp_path, "none"), STUB_MERGEABLE="MERGEABLE")
+        assert w.rc == 0, "把 UNKNOWN 分流闸放宽成无条件后夹具 B 仍判红 ⇒ 夹具 B 的红证没有判别力"
+
+    def test_fixture_c_backoff_recovers_from_propagation_delay(self, tmp_path):
+        """夹具 C：第一次 `null`、第二次 `armed`（模拟 arm 的传播延迟）⇒ **判绿**（退避生效）。"""
+        w = World(tmp_path, _automerge_script(), env=AUTOMERGE_ENV).run(
+            STUB_EXIT=0, STUB_AMR_SEQ=_amr_seq(tmp_path, "none", "armed"))
+        assert w.rc == 0, f"第二次回读已 armed 却仍判红（退避没生效）：rc={w.rc}\n{w.out}"
+        assert not _has_error_annotation(w.out), f"已 arm 不得打 ::error::：\n{w.out}"
+        assert sum(1 for c in w.calls if "autoMergeRequest" in c) == 2, w.calls
+        assert w.sleeps == ["2"], f"应恰好退避一次（2 秒）：{w.sleeps}"
+
+    def test_fixture_c_without_backoff_is_red(self, tmp_path):
+        """夹具 C 的红证：把重试次数压成 1（打掉退避）⇒ C 变红（证明绿来自退避本身）。"""
+        src = _mutate(_automerge_script(), 'while [ "$attempt" -lt 5 ]; do',
+                      'while [ "$attempt" -lt 1 ]; do')
+        w = World(tmp_path, src, env=AUTOMERGE_ENV).run(
+            STUB_EXIT=0, STUB_AMR_SEQ=_amr_seq(tmp_path, "none", "armed"))
+        assert w.rc != 0, "打掉退避重试后夹具 C 仍判绿 ⇒ 夹具 C 的红证没有判别力"
+
+    def test_readback_query_failure_still_red(self, tmp_path):
+        """**边界（有意收窄）**：读不到 `autoMergeRequest`（查询失败）仍 fail-closed 判红。
+
+        只有**逐字 `mergeable=UNKNOWN`** 才分流到 unknown —— 读不到可合并性时宁可多报一次，
+        也不静默放过（与本 job 既有的 fail-closed 口径一致）。
+        """
+        w = World(tmp_path, _automerge_script(), env=AUTOMERGE_ENV).run(
+            STUB_EXIT=0, STUB_AMR_SEQ=_amr_seq(tmp_path, ""), STUB_MERGEABLE="UNKNOWN")
+        assert w.rc != 0, "回读查询本身失败时不得静默成功（三态里的 unknown 是「可合并性未算完」）"
+        assert _has_error_annotation(w.out), f"回读查询失败必须打 ::error::：\n{w.out}"
 
 
 # ================================================================ ② pr-issue-link

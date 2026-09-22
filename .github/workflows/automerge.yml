@@ -65,7 +65,9 @@ jobs:
       #   **静默没 arm** 的事故（issue #4829）。改后按「预期内 vs 真失败」分流：
       #     · 预期内（`already in merge queue` 等幂等情形）→ 非阻塞 + 明确文案；
       #     · 真失败 → `::error::` + step summary + 非零退出（PR 检查列表里真的红）。
-      #   命令成功也**不足以**证明 arm 上了 ⇒ 后置条件查 PR 的实际 autoMergeRequest（三态）。
+      #   命令成功也**不足以**证明 arm 上了 ⇒ 后置条件查 PR 的实际 autoMergeRequest（三态）：
+      #     `armed` = 绿；`null` + `mergeable=MERGEABLE` = 红（真静默失效，仍要被抓到）；
+      #     `null` + `mergeable=UNKNOWN` = **unknown**（可合并性尚在计算 ⇒ 无从判定，**非红**，见 #5113）。
       # 注：`GITHUB_STEP_SUMMARY` 由 runner 预置为环境变量，无需（也不该）在 env: 里重声明。
       - name: Enable native auto-merge (squash)
         env:
@@ -109,16 +111,32 @@ jobs:
           fi
 
           # ---------- 后置条件：命令成功 ≠ 真的 arm 上了（issue #4829 的「静默没 arm」）----------
-          state="$(gh pr view "$PR_NUMBER" \
-            --json autoMergeRequest \
-            --jq 'if .autoMergeRequest == null then "none" else "armed" end' 2>/dev/null || true)"
+          # 三态口径（issue #5113）：`armed` ⇒ 绿；`none` + `mergeable=MERGEABLE`（GitHub 已算完
+          # 可合并性却仍没 arm）⇒ **红**（真静默失效，对 #4829 的捕获力不得丢）；
+          # `none` + `mergeable=UNKNOWN`（**尚在计算**）⇒ **unknown**，不得渲染成红 —— 那是误报：
+          # 不是"没 arm"，是"还没算完"。实测（PR #5106 的 run 35677848752）：`gh pr merge --auto`
+          # 零输出、rc=0，同一时刻 `gh pr view --json mergeable` = `UNKNOWN` ⇒ 旧实现报「未 arm
+          # （静默失效）」，害得要用两次额外事件才 arm 上。
+          # 先**退避重试**（覆盖 arm 的传播延迟），重试仍 `none` 再按 `mergeable` 分流。
+          # 退避参数：最多 5 次回读、等待 2/4/6/8 秒（累计 20 秒上限）—— arm 的传播与可合并性
+          # 计算都是秒级，20 秒足够越过窗口，又远小于本 job 的 `timeout-minutes: 5`。
+          attempt=0
+          state=""
+          while [ "$attempt" -lt 5 ]; do
+            attempt=$((attempt + 1))
+            state="$(gh pr view "$PR_NUMBER" \
+              --json autoMergeRequest \
+              --jq 'if .autoMergeRequest == null then "none" else "armed" end' 2>/dev/null || true)"
+            [ "$state" = "armed" ] && break
+            if [ "$attempt" -lt 5 ]; then sleep $((attempt * 2)); fi
+          done
           if [ -z "$state" ]; then
-            echo "::error::auto-merge 后置状态查询失败（PR #${PR_NUMBER}：gh 限流/网络/无权限）—— 无法判定是否已 arm，不得当成功"
+            echo "::error::auto-merge 后置状态查询失败（PR #${PR_NUMBER}：gh 限流/网络/无权限，已重试 ${attempt} 次）—— 无法判定是否已 arm，不得当成功"
             {
               echo "### Enable auto-merge — 后置状态无法判定"
               echo ""
               echo "- PR：#$PR_NUMBER"
-              echo "- \`gh pr merge --auto\` 返回 0，但 \`gh pr view --json autoMergeRequest\` 查询失败。"
+              echo "- \`gh pr merge --auto\` 返回 0，但 \`gh pr view --json autoMergeRequest\` 查询失败（已重试 ${attempt} 次）。"
               echo "- ⇒ 三态判定为 **unknown**，不得当「已 arm」读。"
             } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
             exit 1
@@ -128,12 +146,31 @@ jobs:
               echo "✅ auto-merge 已 arm（PR #${PR_NUMBER}，squash + delete-branch）"
               ;;
             none)
-              echo "::error::auto-merge 未 arm：gh 返回 0 但 PR #$PR_NUMBER 的 autoMergeRequest 仍为 null（issue #4829 的静默没 arm 形态）"
+              # 只有**逐字 `UNKNOWN`** 才分流到 unknown（读不到可合并性时仍 fail-closed 判红：
+              # 宁可多报一次，也不静默放过 —— 与本 job 既有口径一致）。
+              mergeable="$(gh pr view "$PR_NUMBER" \
+                --json mergeable --jq '.mergeable' 2>/dev/null || true)"
+              if [ "$mergeable" = "UNKNOWN" ]; then
+                echo "::warning::auto-merge 无从判定（非红）：gh 返回 0，但 PR #${PR_NUMBER} 的 autoMergeRequest 仍为 null 且 mergeable=UNKNOWN（GitHub 尚在计算可合并性）—— 三态判 unknown，不得当红也不得当绿"
+                {
+                  echo "### Enable auto-merge — 无从判定（unknown，非红）"
+                  echo ""
+                  echo "- PR：#$PR_NUMBER"
+                  echo "- 已重试 ${attempt} 次回读（退避 2/4/6/8 秒），\`autoMergeRequest\` 始终为 null。"
+                  echo "- 但 \`mergeable=UNKNOWN\` ⇒ **可合并性尚在计算**（arm 后立刻回读会撞上这个窗口，"
+                  echo "  实测 PR #5106 的 run 35677848752）⇒ **无从判定是否已 arm**。"
+                  echo "- ⇒ 三态判定为 **unknown**：不得当红（那是误报），也不得当绿（未证实已 arm）。"
+                  echo "- 处置：无需人工干预；若 arm 已生效，required 检查全绿后 GitHub 会自行合并。"
+                } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+                exit 0
+              fi
+              echo "::error::auto-merge 未 arm：gh 返回 0 但 PR #$PR_NUMBER 的 autoMergeRequest 仍为 null 且 mergeable=${mergeable}（issue #4829 的静默没 arm 形态）"
               {
                 echo "### Enable auto-merge — 未 arm（静默失效）"
                 echo ""
                 echo "- PR：#$PR_NUMBER"
-                echo "- \`gh pr merge --auto\` 返回 **0**，但 \`autoMergeRequest == null\`。"
+                echo "- 已重试 ${attempt} 次回读（退避 2/4/6/8 秒），\`autoMergeRequest\` 始终为 null。"
+                echo "- \`mergeable=${mergeable}\` ⇒ 可合并性**已算完**却仍没 arm。"
                 echo "- ⇒ 命令成功不代表 arm 成功（#4829）：CI 一绿**不会**自动合并。"
               } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
               exit 1
