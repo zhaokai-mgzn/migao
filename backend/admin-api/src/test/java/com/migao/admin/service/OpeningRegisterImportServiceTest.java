@@ -195,6 +195,8 @@ class OpeningRegisterImportServiceTest {
         assertThat(item.getLegacyBatchNo()).isEqualTo("OLD-2024-0001");
         assertThat(item.getDyeLot()).isEqualTo("缸A-8891");
         assertThat(item.getSkuId()).isEqualTo(11L);
+        // 模板里有「备注」列 ⇒ 必须原样落到明细行（不许静默丢掉：那会让用户以为填了没用）
+        assertThat(item.getRemark()).isEqualTo("尾料");
 
         verify(inboundOrderService).post("inbound-uuid-1", TENANT, "op");
         assertThat(report.isCreated()).isTrue();
@@ -241,12 +243,16 @@ class OpeningRegisterImportServiceTest {
                         {"NO-SUCH-SKU", "3", "", "", "", ""},
                         {"HUOHAO-01", "abc", "", "", "", ""},
                         {"", "3", "", "", "", ""},
+                        // 自由文本列超长（缸号列宽 VARCHAR(64)）⇒ 必须是**逐行报告**里的原因，
+                        // 不能放任它到 INSERT 变成 22001 / 「服务器内部错误」
+                        {"HUOHAO-01", "3", "缸".repeat(65), "", "", ""},
                 }), RUN_ID, TENANT, "op");
 
-        assertThat(report.getFailCount()).isEqualTo(3);
+        assertThat(report.getFailCount()).isEqualTo(4);
         assertThat(report.getRows().get(0).getMessage()).contains("NO-SUCH-SKU").contains("不存在");
         assertThat(report.getRows().get(1).getMessage()).contains("剩余米数").contains("abc");
         assertThat(report.getRows().get(2).getMessage()).contains("货号不能为空");
+        assertThat(report.getRows().get(3).getMessage()).contains("缸号最多 64 个字符");
         assertThat(report.getMessage()).contains("未建账");
         verify(inboundOrderService, never()).create(any(), any(), anyString());
     }

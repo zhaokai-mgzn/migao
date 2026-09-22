@@ -80,6 +80,9 @@ public class OpeningImportReport {
         /** 旧系统批次号（外部事实，可空；只在期初建账时可填） */
         private String legacyBatchNo;
 
+        /** 备注（可空；原样落到明细行与批次行 —— 模板里有这一列，就不许静默丢掉） */
+        private String remark;
+
         private BigDecimal unitCost;
 
         /** 本行是否通过校验 */

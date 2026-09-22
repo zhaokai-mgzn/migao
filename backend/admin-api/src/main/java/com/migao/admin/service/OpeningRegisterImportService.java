@@ -207,6 +207,7 @@ public class OpeningRegisterImportService {
         item.setUnitCost(row.getUnitCost());
         item.setDyeLot(row.getDyeLot());
         item.setLegacyBatchNo(row.getLegacyBatchNo());
+        item.setRemark(row.getRemark());
         return item;
     }
 
@@ -271,12 +272,27 @@ public class OpeningRegisterImportService {
         String legacyNo = cellText(row, COL_LEGACY_NO);
         String quantityText = cellText(row, COL_QUANTITY);
         String unitCostText = cellText(row, COL_UNIT_COST);
+        String remark = cellText(row, COL_REMARK);
         out.setSkuCode(skuCode);
         out.setDyeLot(dyeLot);
         out.setLegacyBatchNo(legacyNo);
+        out.setRemark(remark);
 
         if (skuCode == null) {
             out.fail("货号不能为空（批次必须挂在 SKU 上）");
+            return out;
+        }
+        // 自由文本列的**列宽**也是准入判据：超长会让 INSERT 报 22001 ⇒ 用户看到「服务器内部错误」，
+        // 而报告里一个字都没说（「逐行校验报告」的承诺就破了）。宽度与 V111/V118 的 VARCHAR 逐字一致。
+        String tooLong = tooLongReason(dyeLot, 64, "缸号");
+        if (tooLong == null) {
+            tooLong = tooLongReason(legacyNo, 64, "旧系统批次号");
+        }
+        if (tooLong == null) {
+            tooLong = tooLongReason(remark, 255, "备注");
+        }
+        if (tooLong != null) {
+            out.fail(tooLong);
             return out;
         }
         List<ProductSku> skus = productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
@@ -316,6 +332,20 @@ public class OpeningRegisterImportService {
         out.setUnitCost(unitCost);
         out.setOk(true);
         return out;
+    }
+
+    /**
+     * 自由文本列的**列宽**准入：返回超长原因的文案（合法/为空 ⇒ {@code null}）。
+     *
+     * <p>为什么放在报告里而不是放任它到 INSERT：`VARCHAR(n)` 超长是 DB 的 22001 ⇒ 用户看到
+     * 「服务器内部错误」，而报告里什么都没说 —— 「逐行校验报告」的承诺就破了。</p>
+     */
+    private static String tooLongReason(String value, int limit, String label) {
+        if (value == null || value.length() <= limit) {
+            return null;
+        }
+        return label + "最多 " + limit + " 个字符（当前 " + value.length()
+                + " 个）—— 请精简后重试";
     }
 
     /** 空/形如 {@code "12.5"} 的小数字符串；空白 ⇒ {@code null}（缺失与 0 不是一回事） */

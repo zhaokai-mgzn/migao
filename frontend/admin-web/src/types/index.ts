@@ -2872,6 +2872,8 @@ export interface OpeningImportRow {
   quantity?: number | null
   dyeLot?: string | null
   legacyBatchNo?: string | null
+  /** 备注（可空；原样落到明细行与批次行 —— 模板里有这一列，就不许静默丢掉） */
+  remark?: string | null
   unitCost?: number | null
   ok: boolean
   /** 不通过时的原因（可行动文案） */
