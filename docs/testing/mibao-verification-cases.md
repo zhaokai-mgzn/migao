@@ -4020,7 +4020,7 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-22 新增（issue #4201）：加工单「过程明细」agent 只读面（端点 GET /api/admin/agent/production/worklog + 工具 production_worklog_query + order/general skill 绑定 + prompts/order.md 口径）。**断言面**：must_succeed + required_args(order_no) + forbidden_tools（两个加工单写工具 + 加工项目录冒充）+ forbidden_text（具名报工人 = 编造指纹）+ want_text(any_of 存在性) + data_checks 首条 success=true。**未做（如实登记）**：**数值断言**（合格/返工/报废的**具体数字**）未落 —— 评测栈 `production_work_logs` 零 seed，要落数值只能给 seed 补「加工单 + 工序实例 + 报工」三段夹具，而本地**无 docker**、无法验证 seed SQL（写错会打挂整个 mibao 套件）⇒ 本单不碰 seed，登记为后续项。 ｜ 2026-09-21（issue #4960 / #4961 用例库同步，配套 feat/4960-4961-integration，**本条判据一字未动**）：data_checks 里 `operations[].is_must_finish` 仍是**冻结读面键**（服务端恒 `false`、历史载体，前端/agent 零消费）—— 本条不改任何判据，只登记该键的**值语义已冻结为历史载体**，防后续把「键还在」误读成「必完仍是活语义」。`user_inputs` / `expectations` / `skip_reason` 与其余 data_check **一字未动**，**判据一格不放宽**。 ｜ tags: processing_order, production, llm_behavior, worklog, readonly
 
-## 商品域（44 case）
+## 商品域（45 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -4554,6 +4554,18 @@
 ```
 真值: product-sku-stock.decimal-1dp-migration
 溯源: 2026-09-22 新增（用户裁定「库存米数是小数，1 位小数，必须改造」⇒ 精度取 1 位，与用料 `meters_rounding_step` 进位到 0.1 一致）。 ｜ tags: product, migration, decimal, backend_contract
+
+### PR-052. AI 工具建品/改品的商品级 stock_quantity 放宽为 1 位小数（60.5 原值下发；2.755 显式拒绝且零 API 调用） 🔵
+```
+数据: 判据 1·**1 位小数原值下发**：`product_manage(action=create|update, stock_quantity=60.5)` ⇒ 下发给 admin-api 的 `stock` 字面量 == **60.5**（不是旧实现 `int()` 截出来的 60），且 LLM 可见 schema 声明为 `number`（改前 `integer` 会让 LLM 把 60.5 说成 60）。注入红证：把归一改回 `int(stock_quantity)` ⇒ 60 ≠ 60.5 ⇒ 变红。
+数据: 判据 2·**超过 1 位小数显式拒绝 + 零 API 调用**：`stock_quantity=2.755` ⇒ `success=False`，文案含「1 位小数」「0.1 米粒度」「系统不会自动四舍五入或截断」并带越界原值；POST / PATCH **调用次数必须为 0**（不得先打后端再报错）。注入红证：删掉精度拒绝分支 ⇒ 2.755 被静默下发 ⇒ 变红。
+数据: 判据 3·**整数场景逐值不变**：`30` 下发的仍是 `int` 30（不是 `30.0`）。注入红证：把 Decimal 归一换成 `float(...)` ⇒ 变红。
+数据: 判据 4·**前置闸门同步放宽**：`validate_input(product_manage/create, stock_quantity=60.5)` 必须通过（改前规则声明 `int` ⇒ 60.5 在闸门被判「类型错误」、数字根本到不了工具层）；负数仍被 `min=0` 拦下（放宽类型不得连带放宽既有护栏）。
+数据: 判据 5·**复用而非新造**：`product_manage` 的小数位判定 / Decimal 归一 / 0.1 米粒度**就是** #5063 落在 `inventory_manage` 的同一对象（`_one_decimal_or_none` / `_stock_number` / `STOCK_QUANTUM`），不新造第二套判据或常量。注入红证：把助手复制一份进 `product_manage` ⇒ 同一对象断言变红。
+跳过: [backend-contract] ai-agent pytest（无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/ai-agent-service/tests/test_tools_product_stock_decimal.py 执行
+```
+真值: product-sku-stock.decimal-1dp
+溯源: 2026-09-22 新增（issue #5150：#5063 的**同族残留** —— 库存全链路小数化后，AI 侧商品级 `stock_quantity` 仍是 `integer` schema + `int()` 强转）。 ｜ tags: product, stock, decimal, fail_closed, backend_contract
 
 ## 工具注册器域（1 case）
 
@@ -5450,8 +5462,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：399（活跃 156，跳过 243）
-- tier 分布：smoke 10 / normal 358 / adversarial 31
+- 用例总数：400（活跃 156，跳过 244）
+- tier 分布：smoke 10 / normal 359 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -5471,7 +5483,7 @@
 - 订单域：46
 - 加工项域：13
 - 加工单域：51
-- 商品域：44
+- 商品域：45
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4

@@ -21,11 +21,40 @@ from typing import Any, Dict, Optional
 from loguru import logger
 
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
+# issue #5150：库存精度口径**不在这里另写一份** —— 直接复用 #5063 落在 `inventory_manage`
+# 的同一套判据（`_one_decimal_or_none` 小数位判定 / `_stock_number` Decimal 归一 /
+# `STOCK_QUANTUM` 0.1 米粒度）。两处各写一套 = 迟早漂移成两种口径
+# （同一个 `2.755` 在库存调整被拒、在建品被静默取整）。
+from app.tools.inventory_manage import (
+    STOCK_QUANTUM,
+    _one_decimal_or_none,
+    _stock_number,
+)
 from app.utils.http_client import get_admin_api_client
 
 
 VALID_ACTIONS = {"create", "update", "toggle_status"}
 VALID_PRODUCT_STATUSES = {"on_sale", "off_sale"}
+
+
+def _stock_precision_rejected(value: Any) -> ToolResult:
+    """`stock_quantity` 超过 1 位小数（或非数字）⇒ 显式拒绝（fail-closed，issue #5150）。
+
+    文案与 #5063 的库存调整拒绝**同口径**：说清 0.1 米粒度 + 最多 1 位小数 +
+    **不做静默取整**，并给出可直接照做的下一步（改成 1 位小数后重试）。
+    """
+    return ToolResult(
+        success=False,
+        error="库存精度超出范围",
+        message=(
+            f"库存按 {STOCK_QUANTUM} 米粒度记录，最多支持 1 位小数；"
+            f"本次 stock_quantity={value} 超过 1 位小数（或不是数字），未执行任何写入。"
+        ),
+        suggestion=(
+            "请把库存数量改成最多 1 位小数的数字后重试（例如 2.755 改成 2.7 或 2.8）；"
+            "系统不会自动四舍五入或截断，以免库存与实际不符"
+        ),
+    )
 
 
 class ProductManageTool(BaseTool):
@@ -73,7 +102,18 @@ class ProductManageTool(BaseTool):
                 "description": "分类ID。支持 UUID / 分类名称 / UUID 前缀，服务端自动解析",
             },
             "price": {"type": "number", "description": "价格（元）", "examples": [100.0, 23.8]},
-            "stock_quantity": {"type": "integer", "description": "库存数量", "examples": [500]},
+            # issue #5150（承接 #5063「库存米数是小数，1 位小数」）：库存/数量列已是
+            # `NUMERIC(12,1)`（0.1 米粒度）⇒ 入参声明为 `number`（改前 `integer` 会让 LLM
+            # 把 60.5 说成 60）。超过 1 位小数由工具层**显式拒绝**，不静默取整。
+            "stock_quantity": {
+                "type": "number",
+                "description": (
+                    "库存数量（单位与库存一致：米，1 位小数）。"
+                    "库存按 0.1 米粒度记录，最多 1 位小数，例如 60.5 / 30；"
+                    "超过 1 位小数会被拒绝，不会自动四舍五入或截断"
+                ),
+                "examples": [500, 60.5],
+            },
             "description": {"type": "string", "description": "商品描述文本"},
             "brand": {"type": "string", "description": "品牌名称"},
             "unit": {"type": "string", "description": "计价单位，空则按品类默认"},
@@ -132,7 +172,7 @@ class ProductManageTool(BaseTool):
         category_id: Optional[str] = None,
         price: Optional[float] = None,
         description: Optional[str] = None,
-        stock_quantity: Optional[int] = None,
+        stock_quantity: Optional[float] = None,
         status: Optional[str] = None,
         brand: Optional[str] = None,
         images: Optional[list] = None,
@@ -209,7 +249,13 @@ class ProductManageTool(BaseTool):
         if category_id and category_id.strip(): json_data["categoryId"] = category_id
         if price is not None: json_data["basePrice"] = price
         if description: json_data["description"] = description
-        if stock_quantity is not None: json_data["stock"] = int(stock_quantity)
+        if stock_quantity is not None:
+            # issue #5150：1 位小数（0.1 米粒度）**原值下发**；超过 1 位小数**显式拒绝**
+            # （fail-closed，禁止 `int()` 静默取整 —— 旧实现把 60.5 截成 60 且不报错）。
+            stock_value = _one_decimal_or_none(stock_quantity)
+            if stock_value is None:
+                return _stock_precision_rejected(stock_quantity)
+            json_data["stock"] = _stock_number(stock_value)
         if brand: json_data["brand"] = brand
         if images: json_data["images"] = images
         if detail_images: json_data["detailImages"] = detail_images
@@ -292,7 +338,13 @@ class ProductManageTool(BaseTool):
         if category_id is not None and category_id.strip(): json_data["categoryId"] = category_id
         if price is not None: json_data["basePrice"] = price
         if description is not None: json_data["description"] = description
-        if stock_quantity is not None: json_data["stock"] = int(stock_quantity)
+        if stock_quantity is not None:
+            # issue #5150：1 位小数（0.1 米粒度）**原值下发**；超过 1 位小数**显式拒绝**
+            # （fail-closed，禁止 `int()` 静默取整 —— 旧实现把 60.5 截成 60 且不报错）。
+            stock_value = _one_decimal_or_none(stock_quantity)
+            if stock_value is None:
+                return _stock_precision_rejected(stock_quantity)
+            json_data["stock"] = _stock_number(stock_value)
         if brand is not None: json_data["brand"] = brand
         if images is not None: json_data["images"] = images
         if detail_images is not None: json_data["detailImages"] = detail_images

@@ -19,7 +19,12 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "required": ["name", "price", "category_id"],
             "name": {"type": str, "min_len": 1, "label": "商品名称"},
             "price": {"type": (int, float), "min": 0, "label": "价格"},
-            "stock_quantity": {"type": int, "min": 0, "label": "库存数量"},
+            # 类型放宽到 (int, float)：库存列 = NUMERIC(12,1)（issue #5063 / #5150）⇒ 1 位小数是
+            # **合法**输入；旧规则 `int` 会把 `60.5` 判成「类型错误」并拦在写之前（工具层的精度
+            # 判定根本没机会跑）。小数位上限**不**在这里判：精度拒绝的唯一落点是
+            # `product_manage._create_product` / `_update_product`
+            # （此处只做「结构上能否被消费」的闸门，与 `BaseTool` 的宽松口径一致）。
+            "stock_quantity": {"type": (int, float), "min": 0, "label": "库存数量"},
             "category_id": {"type": str, "label": "分类ID"},
             "description": {"type": str, "label": "描述"},
             "status": {"type": str, "label": "商品状态(on_sale/off_sale)"},
