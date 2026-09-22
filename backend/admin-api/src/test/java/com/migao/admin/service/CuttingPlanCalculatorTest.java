@@ -165,9 +165,9 @@ class CuttingPlanCalculatorTest {
     @Test
     @DisplayName("完整布不变式：行内 Σ占门幅宽 ≤ 门幅、行长度 = 行内最大沿卷长、料一字未改")
     void keepsWholePiecesUnmodifiedAndRowsWithinDoorWidth() {
-        // ⚠️ 数据是**被红证逼出来的**：同一行里要有两块，且**第一块比第二块长**。
-        //    规范序按沿卷长降序 ⇒ A(5.0) 先摆、B(3.0) 填进同一行 ⇒ 行1 = {A, B}，
-        //    该行长度必须是 max = 5.0。若实现取成「行内**最后**一块」（3.0）⇒ 立刻红。
+        // ⚠️ 数据是**被红证逼出来的**：同一行里两块**不等长**，且行的正确长度 = 首块（5.0）而非次块（3.0）
+        //    ⇒ 「行长度取成行内最后一块」这种缺陷会算成 3.0（少算）⇒ 本判据能红。
+        //    （若两块等长，两种取法同值 ⇒ 该缺陷**照样全绿**，这正是第一版判据的漏洞。）
         List<Piece> pieces = List.of(
                 new Piece("A", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.8, 5.0),
                 new Piece("B", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.0, 3.0),

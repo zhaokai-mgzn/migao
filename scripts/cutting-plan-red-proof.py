@@ -69,17 +69,20 @@ MUTATIONS: list[tuple[str, str, str, set[str], str]] = [
         "M3 排序键方向反转（降序 → 升序）",
         "            int byMeters = Double.compare(b.meters(), a.meters());",
         "            int byMeters = Double.compare(a.meters(), b.meters());",
-        {"resultIsIndependentOfInputOrder", "randomizedInvariantsHold"},
-        "排料结果依赖入参顺序 ⇒ 顺序无关判据必须红（单行算例仍绿 = 红是这一条抓的）",
+        {"resultIsIndependentOfInputOrder", "keepsWholePiecesUnmodifiedAndRowsWithinDoorWidth"},
+        "排料结果依赖入参顺序 ⇒ 顺序无关判据必须红。不变式判据也红：它自己也钉了行构成"
+        "（行的料与顺序与输入顺序无关），升序后 A/C 与 B 的行归属翻转 ⇒ 构成断言先红。\n"
+        "    ⚠️ `randomizedInvariantsHold` 仍绿是**有意的**：它只比较「换顺序后应领米数是否相同」，"
+        "对「排序方向」不敏感（逆序+升序恰好互为镜像）—— 判别力的那一格由 J5 承担。",
     ),
     (
         "M4 行长度取行内最后一块（丢掉 max）",
         "            if (meters.compareTo(length) > 0) {\n                length = meters;\n            }",
         "            if (true) {\n                length = meters;\n            }",
         {"keepsWholePiecesUnmodifiedAndRowsWithinDoorWidth", "randomizedInvariantsHold",
-         "fixedHeightTallWindowsPairIntoOneRow"},
+         "resultIsIndependentOfInputOrder", "fixedHeightTallWindowsPairIntoOneRow"},
         "行长度 ≠ 行内最大沿卷长（A 5.0 + B 3.0 同行 ⇒ 应领 5.0 被算成 3.0 = **少算**）"
-        " ⇒ 不变式判据必须红。\n"
+        " ⇒ 不变式判据红；并排算例（两块等长 3.0）也红 —— 它算出 2 行、应领 6.0。\n"
         "    ⚠️ 本变异的第一版是「改成 `length.signum()==0` 才赋值」（= 取行内**第一块**）："
         "实测**恒绿**且**原理上不可能红** —— 规范序按沿卷长降序，行内第一块**必然是该行最大值**"
         " ⇒ 那个变异与正确实现**语义等价**。已换成真正可观测的缺陷（取最后一块）。",
