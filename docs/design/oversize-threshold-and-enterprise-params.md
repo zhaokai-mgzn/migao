@@ -60,7 +60,8 @@
 
 ### 2.1 行业里**硬**的只有一条：几何约束
 
-✅🔶 真值源 `docs/curtain-fabric-quote-rules.md` §2 / §3 与 `docs/design/door-width-auto-selection.md` §5.1：
+✅🔶 真值源 `docs/curtain-fabric-quote-rules.md` §2 / §3；`docs/design/door-width-auto-selection.md`
+的「定高买宽不可行的判据与行业标准的有无」一节同判：
 
 ```
 定高买宽不可行  ⟺  成品高 + 上下卷边 > 门幅有效值
@@ -71,7 +72,8 @@
 
 ### 2.2 门幅的行业标准值（这一层是行业标准值【标】）
 
-🔶 来源见 `docs/curtain-fabric-quote-rules.md` §2 与 `docs/curtain-selling-method-industry-research.md` §5.2：
+🔶 来源见 `docs/curtain-fabric-quote-rules.md` §2，以及
+`docs/curtain-selling-method-industry-research.md` 的门幅一节（下面的数值取自这两处）：
 
 | 门幅 | 常见品类 | 对应买法 |
 |---|---|---|
@@ -119,7 +121,7 @@
 
 | # | 结论 | 出处 | 强度 |
 |---|---|---|---|
-| 1 | 门幅 2.8~2.9（定高买宽）/ 1.4~1.45（定宽买高） | `docs/curtain-fabric-quote-rules.md` §2；`docs/curtain-selling-method-industry-research.md` §5.2 | 中（多源一致） |
+| 1 | 门幅分两档：大门幅（定高买宽的基准）与小门幅（定宽买高的基准）—— 数值见本节上面的门幅表 | `docs/curtain-fabric-quote-rules.md` §2；`docs/curtain-selling-method-industry-research.md` 的门幅一节 | 中（多源一致） |
 | 2 | 定高买宽不可行 = 几何约束 | 物理推理 + ERP 加工单实证锚点 `CSO260915-02615` | **硬** |
 | 3 | 「没有国标 / 行标规定超高阈值」 | `docs/design/door-width-auto-selection.md` §5.1 | **已核查结论** |
 | 4 | 超高窗走倒幅、接高横缝可见 | `docs/curtain-selling-method-industry-research.md` §3.3（S16） | 中（**行业实践推理，非实证**） |
