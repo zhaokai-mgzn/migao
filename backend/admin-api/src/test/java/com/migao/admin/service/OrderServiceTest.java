@@ -62,6 +62,13 @@ class OrderServiceTest {
     private UserService userService;
     @Mock
     private OrderMapper orderMapper;
+    /**
+     * 批次消耗台账（V116 / issue #5145）：订单取消自动作废加工单时的批次回补入口。
+     * 装配点在 {@code setUp()}（ReflectionTestUtils）—— 它是字段注入，Mockito 的
+     * {@code @InjectMocks} 走构造注入后不再注入字段。
+     */
+    @Mock
+    private StockBatchConsumptionService stockBatchConsumptionService;
 
     @Mock
     private OrderItemMapper orderItemMapper;
@@ -122,6 +129,10 @@ class OrderServiceTest {
         // （存量用例都不配组合价，故金额口径与接线前一致；接线判据见本类末尾的 #4406 段）
         processingFeeCalculator = new ProcessingFeeCalculator(processingFeeCombinationMapper, routeRuleMapper);
         ReflectionTestUtils.setField(orderService, "processingFeeCalculator", processingFeeCalculator);
+        // 批次台账（V116 / issue #5145）：同 #4406 的装配法 —— 它是**字段注入**，
+        // 而 Mockito 的 @InjectMocks 只做构造注入（构造成功后不再注入字段）⇒ 必须显式装配。
+        ReflectionTestUtils.setField(orderService, "stockBatchConsumptionService",
+                stockBatchConsumptionService);
 
         // 初始化 MyBatis-Plus 实体 lambda 缓存，使 LambdaUpdateWrapper 的 Order::getId 等方法引用可解析
         MybatisConfiguration conf = new MybatisConfiguration();

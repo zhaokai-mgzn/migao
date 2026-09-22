@@ -189,6 +189,13 @@ function specSummary(position: ProductionPosition): string[] {
   if (meters !== null && meters !== undefined && meters !== '') {
     parts.push(`用料 ${meters} 米`)
   }
+  // 批次指派（issue #5145 阶段 1）：服务端**只在真的指派过批次时**才下发这两键
+  // ⇒ 缺键 = 未指派（不是缺数据）。两键必须都在才追加（只有一个 ⇒ 不显示半句话）。
+  const { batch_no: batchNo, batch_meters: batchMeters } = position
+  const hasBatchNo = batchNo !== null && batchNo !== undefined && batchNo !== ''
+  const hasBatchMeters =
+    batchMeters !== null && batchMeters !== undefined && batchMeters !== ''
+  if (hasBatchNo && hasBatchMeters) parts.push(`批次 ${batchNo} 裁 ${batchMeters} 米`)
   return parts
 }
 

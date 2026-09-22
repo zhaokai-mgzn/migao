@@ -90,6 +90,23 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private final ProcessingFeeCombinationCommandService processingFeeCombinationCommandService;
 
     /**
+     * 批次消耗台账（V116，issue #5145 阶段 1）：**订单取消自动作废加工单**这条路上的批次回补。
+     *
+     * <p>为什么这里必须有它：{@link #cancelOrder} 对 {@code generated} 态加工单是**直接
+     * {@code updateById} 置 cancelled**、<b>绕过</b> {@code ProcessingOrderService.updateStatus}
+     * —— 派工扣减的对称回补挂在后者。不在这里接同一句话，「订单取消 → 加工单自动作废」这一条路
+     * 就成了**只扣不回补**的单向账（判据「对称回补」在这条路上直接不成立）。</p>
+     *
+     * <p>字段注入而非构造参数：本类构造签名被测试显式装配（{@code OrderStockLedgerTest} /
+     * {@code StockLedgerTest}），加参数会改动既有测试装配 —— 同
+     * {@code ProductionController.processingFeeQueryService} 的先例与理由。
+     * Spring 生产装配下一定非 null；真装配不上时 {@link #batchStock()} **显式抛错**，
+     * 绝不静默跳过回补。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    private StockBatchConsumptionService stockBatchConsumptionService;
+
+    /**
      * 订单号序列号（线程安全）
      */
     private static final AtomicInteger ORDER_SEQ = new AtomicInteger(0);
@@ -1325,6 +1342,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                         .build();
                 processingOrderMapper.updateById(poUpd);
                 log.info("订单取消联动作废加工单: po={}, orderId={}", activePo.getProcessingOrderNo(), order.getId());
+                // 派工扣减的**对称回补**（V116 / issue #5145 判据 3）：本分支绕过
+                // ProcessingOrderService.updateStatus（直接置 cancelled）⇒ 必须在此接同一句话，
+                // 否则这条路上批次账只扣不回补。幂等由服务层保证（已回补的行跳过 ⇒ 可重跑）。
+                batchStock().reverse(order.getTenantId(), activePo.getProcessingOrderNo(),
+                        order.getOrderNo(), "订单取消，加工单自动作废，回补批次库存");
             } else {
                 throw BusinessException.validationError(String.format(
                         "订单已发加工（加工单 %s 状态：%s），请先在订单详情或让米宝处理加工单后再取消订单",
@@ -1584,6 +1606,18 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     public void restoreStockForReturn(String orderId) {
         adjustStockAndSales(orderId, false, null);
         log.info("售后退货回补库存完成: orderId={}", orderId);
+    }
+
+    /**
+     * 批次消耗台账（V116 / issue #5145 阶段 1）—— 装配不上就**显式抛错**，绝不静默跳过回补
+     * （静默跳过 = 加工单作废了、批次余量还是扣着，而没有任何东西会变红）。
+     */
+    private StockBatchConsumptionService batchStock() {
+        if (stockBatchConsumptionService == null) {
+            throw new IllegalStateException(
+                    "StockBatchConsumptionService 未装配 —— 加工单作废的批次回补不能静默跳过（issue #5145）");
+        }
+        return stockBatchConsumptionService;
     }
 
     /**

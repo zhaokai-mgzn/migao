@@ -83,6 +83,7 @@ cases:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionServiceTest.java"
       ci:
         - pr-check.yml
       verifies: []
@@ -2189,6 +2190,40 @@ cases:
         - "backend/ai-agent-service/tests/test_production_worklog_query.py"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/agent/AgentProductionControllerTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: PG-060
+    legacy_id: ""
+    title: "派工指定批次：与加工单生成同事务扣减 / 重复生成不二次扣 / 缺料 fail-closed 不落半成品 / 作废同事务回补"
+    domains:
+      - processing-order
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - processing-order
+      - stock
+      - batch
+      - backend_contract
+    truths_ref:
+      - batch-ledger.dispatch-deduct
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**派工即扣且顺序正确**：生成加工单时先 `plan`（**只读**校验）→ 插加工单 → `apply` 扣减（同一事务）——顺序即「不重复扣」的结构性保证（重复生成在插入处被幂等闸拒）。红证：把 apply 挪到 insert 之前 ⇒ InOrder 断言红。"
+      - "判据 2·**不重复扣**：同一订单第二次生成被既有幂等闸拒（`请勿重复生成`），`plan`/`apply`/`insert` 各只发生 1 次。红证：去掉 `selectActiveByOrderId` 前置判断 ⇒ 第二次插入抛 DuplicateKeyException 或发生二次扣减，必红。"
+      - "判据 3·**缺料不静默、不留半成品**：`plan` 抛 `BATCH_STOCK_INSUFFICIENT` ⇒ 逐单结果 `success=false` 且带 `code` + 可行动 `suggestion`，**加工单不插入**、台账不扣减。红证：把 `plan` 挪到 insert 之后 ⇒ `never().insert(...)` 断言红。"
+      - "判据 4·**不指派 ⇒ 行为与今天逐字相同**（本阶段的定义特征）：不传 batches ⇒ 台账服务**零交互**，且加工单快照里**不出现** `batchNo` 键。红证：无条件写 `batchNo` ⇒ `doesNotContainKey` 断言红。"
+      - "判据 5·**指派必须能落到具体行**：指派的行不在该订单加工单快照里 ⇒ 显式拒绝（不静默忽略）；指派里的 orderId 不在本次生成范围 ⇒ 整批拒绝且**任何写库之前**中止。红证：改成 `continue` 跳过未知行 ⇒ 两条断言红。"
+      - "判据 6·**作废同事务回补**：`generated → cancelled` 调用台账 `reverse(租户, 加工单号, 订单号, 原因)`（挂点 = 既有取消副作用处；订单取消自动作废那条路在 OrderService 接同一句话）。红证：删掉 reverse 调用 ⇒ 本断言红。"
+      - "判据 7·**不损失客户**：本单不改 `OrderService.confirmPayment` 的扣减路径（路线 A 的命门）与任何金额/售价/成品尺寸计算 —— 对客金额逐值不变由既有回归用例覆盖。"
+    skip_reason: "[backend-contract] 加工单生成/作废的装配与顺序契约（Java 单测，非 LLM 行为）：由 ProcessingOrderServiceTest 执行"
+    merge_log: "2026-09-22 新增：#5145 阶段 1（取号 PG-060 —— 原 PG-059 与在飞的 #5142 撞号，rebase 后顺延）。扣减时点 = 生成/派发加工单（用户裁定，非报工）；已有硬闸「仅已确认订单可生成加工单」⇒ 派工扣必然发生在支付扣之后。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java"
       ci:
         - pr-check.yml
       verifies: []

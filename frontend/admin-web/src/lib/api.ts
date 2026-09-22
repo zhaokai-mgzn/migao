@@ -36,12 +36,17 @@ import type {
   CloseOrderParams,
   ProcessingOrder,
   ProcessingOrderGenerateResult,
+  ProcessingOrderGenerateBatch,
   ProcessingOrderUpdateParams,
   InboundOrder,
   InboundOrderLine,
   InboundBatch,
   InboundOrderCreateParams,
   InboundOrderListParams,
+  BatchRemaining,
+  BatchDistribution,
+  BatchReconcile,
+  BatchCandidates,
   ProductionOperations,
   PieceworkSummary,
   StuckPointsReport,
@@ -614,10 +619,41 @@ export const inboundOrderApi = {
     request.get<ApiResponse<InboundBatch[]>>('/api/admin/inbound-orders/batches', { params }),
 }
 
+/**
+ * 批次账只读查询（V116 / issue #5145 阶段 1；后端 `StockBatchController`，权限复用 `product:list`）。
+ *
+ * 四个读面 + 一个派工候选面，**全是只读**：批次账的写方在库存变更的既有实现点
+ * （加工单生成/作废驱动），不经过这些端点。
+ */
+export const batchStockApi = {
+  // 批次余量（派生 = 入库量 − 已派工消耗）；onlyAvailable=true ⇒ 只回余量 > 0 的批次
+  batches: (params: { productId?: string; skuId?: number; onlyAvailable?: boolean }) =>
+    request.get<ApiResponse<BatchRemaining[]>>('/api/admin/batch-stock/batches', { params }),
+
+  // 剩余量分布（恒四档：≤0.2 / 0.2~0.5 / 0.5~1 / >1 米；空档回 0）
+  distribution: (params: { productId?: string }) =>
+    request.get<ApiResponse<BatchDistribution>>('/api/admin/batch-stock/distribution', { params }),
+
+  // 对账：Σ批次余量 vs product_skus.stock（差额可读出、可解释；reconciled=false ⇒ 须排查）
+  reconcile: (params: { productId?: string; skuId?: number }) =>
+    request.get<ApiResponse<BatchReconcile>>('/api/admin/batch-stock/reconcile', { params }),
+
+  // 派工候选 + 建议值（meters = 本行米数，用于算 enough 与建议值）
+  candidates: (params: { productId?: string; skuId?: number; meters?: number }) =>
+    request.get<ApiResponse<BatchCandidates>>('/api/admin/batch-stock/candidates', { params }),
+}
+
 export const processingOrderApi = {
   // 批量生成加工单（仅已确认且含加工项订单；联动订单进入 producing）
-  generate: (orderIds: string[]) =>
-    request.post<ApiResponse<ProcessingOrderGenerateResult[]>>('/api/admin/processing-orders/generate', { orderIds }),
+  //
+  // V116 / issue #5145 阶段 1：可带 `batches` 逐面料行指定批次（与生成同事务扣批次库存）。
+  // **缺省 = 不指派**（请求体只有 `orderIds`，与今天逐字相同）—— 故空数组也要落成「不带该键」，
+  // 不能落成 `batches: []`（虽然后端同义，但「不指派 ⇒ 与今天逐字相同」要能在请求体上核验）。
+  generate: (orderIds: string[], batches?: ProcessingOrderGenerateBatch[]) =>
+    request.post<ApiResponse<ProcessingOrderGenerateResult[]>>(
+      '/api/admin/processing-orders/generate',
+      batches && batches.length > 0 ? { orderIds, batches } : { orderIds },
+    ),
 
   // 加工单列表（keyword=加工单号/订单号，status 可选）
   list: (params?: { keyword?: string; status?: string }) =>
@@ -1392,6 +1428,7 @@ const api = {
   craftCalc: craftCalcApi,
   feePreview: feePreviewApi,
   processingOrder: processingOrderApi,
+  batchStock: batchStockApi,
   production: productionApi,
   dashboard: dashboardApi,
   upload: uploadApi,

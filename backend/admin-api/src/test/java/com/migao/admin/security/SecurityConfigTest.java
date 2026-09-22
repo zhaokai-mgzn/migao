@@ -163,6 +163,14 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.InboundOrderQueryMapper inboundOrderQueryMapper;
     @MockBean
     private com.migao.admin.mapper.StockBatchMapper stockBatchMapper;
+    // 批次消耗台账（V116 / issue #5145 阶段 1）：本上下文排除了 MybatisPlusAutoConfiguration
+    // ⇒ 新 Mapper 无 sqlSessionFactory，必须与上面几个同款用 @MockBean 顶替（否则整个上下文起不来）
+    @MockBean
+    private com.migao.admin.mapper.StockBatchConsumptionMapper stockBatchConsumptionMapper;
+
+    /** 批次账服务（#5145）：StockBatchController 的构造依赖 ⇒ 本上下文必须能装配它 */
+    @MockBean
+    private com.migao.admin.service.StockBatchConsumptionService stockBatchConsumptionService;
 
     @MockBean
     private com.migao.admin.service.NotificationService notificationService;

@@ -189,7 +189,7 @@ public class StockLedgerService extends ServiceImpl<StockLedgerMapper, StockLedg
      * 操作人：登录用户名（手机号）→ 内部服务身份（ServiceTokenFilter 的 internal-service）
      * → system（无认证上下文：定时任务 / 单元测试）。
      */
-    private static String resolveOperator() {
+    public static String resolveOperator() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof SecurityUser securityUser) {
             return StringUtils.hasText(securityUser.getUsername())

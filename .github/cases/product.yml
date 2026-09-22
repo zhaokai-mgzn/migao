@@ -2102,3 +2102,105 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+  - id: PR-055
+    legacy_id: ""
+    title: "批次消耗台账：余量派生 / 剩余量分布四档 / 路线 A 对账恒等式 / 派工候选建议值（V116，#5145 阶段 1）"
+    domains:
+      - product
+      - processing-order
+    tier: normal
+    persona: ""
+    tags:
+      - product
+      - stock
+      - batch
+      - backend_contract
+    truths_ref:
+      - batch-ledger.remaining-derived
+      - batch-ledger.reconcile
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**余量是派生值**：`remaining = stock_batches.quantity + Σ(stock_batch_consumptions.delta)` —— 夹具 60 米批次已派工 2.7 ⇒ 余量 57.3（小数逐值可比）；`onlyAvailable` 只回余量 > 0 的批次。红证：把余量改成直接读 `stock_batches.quantity` ⇒ 57.3 变 60，必红。"
+      - "判据 2·**剩余量分布四档逐值可比**：夹具 6 个批次余量 `0.2 / 0.1 / −0.5 / 0.5 / 1 / 1.1` ⇒ 四档批次数恰为 `3 / 1 / 1 / 1`、占比 `0.5 / 0.1667 / 0.1667 / 0.1667`（负余量 = 超扣落入 ≤0.2 档，不藏起来）；空仓 ⇒ 四档恒在且全 0。红证：把边界改成左闭（`< 0.2`）⇒ 0.2 掉档，必红。"
+      - "判据 3·**对账可读且可解释**（路线 A 的交换条件）：批次入 60 米、销售已扣 2.7、**未派工** ⇒ `diff = 60 − 57.3 = 2.7` = 已售未派，且恒等式 `diff == (soldDeducted − dispatched − otherLedgerDelta) − unbatched` 成立（`reconciled = true`）；派工之后差额归零；退货回补（aftersales）造成的差额如实反映为 −2.7；**不平的夹具 ⇒ `reconciled = false` 且 `unreconciledCount` 报数**。红证：把 `reconciled` 恒置 true ⇒ 不平夹具那条必红。"
+      - "判据 4·**派工候选建议值 = 朴素先进先出**（`suggestionRule = FIFO_RECEIVED_DATE`）：入库早但余量不够的批次 `enough=false` 且不被建议，建议落在第一个**够用**的批次；口径随响应显式回传，免得被读成 best-fit（阶段 2 才换，见 #5144）。"
+      - "判据 5·**工人端指派读面取净额**：同一明细行既有扣减又有回补 ⇒ 取净额；净额归零的行**不出现**在结果里（工人不该被指去裁一个已经不扣账的批次）。"
+    skip_reason: "[backend-contract] 批次账服务与只读端点契约（真值断言在 Java 单测，非 LLM 行为）：由 StockBatchConsumptionServiceTest + StockBatchControllerTest 执行（Mockito 假 Mapper，无真实 DB）"
+    merge_log: "2026-09-22 新增：#5145 阶段 1（派加工单扣批次库存 + 消耗台账 + 余量/分布/对账读面）。取号 PR-055（原 PR-052 与 #5150 撞号，rebase 后顺延）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/StockBatchConsumptionServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/StockBatchControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: PR-056
+    legacy_id: ""
+    title: "批次消耗台账表契约（V116）：幂等闸唯一索引 / reason 约束 / 三查询索引 / 明细行 id 同宽 / bootstrap 同步"
+    domains:
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - product
+      - migration
+      - batch
+      - backend_contract
+    truths_ref:
+      - batch-ledger.remaining-derived
+      - product-sku-stock.decimal-1dp-migration
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**幂等闸必须在**：`uk_batch_consumption_line (tenant_id, processing_order_no, batch_id, order_item_id, reason) WHERE deleted = 0` —— 漏了它「重复生成加工单不会二次扣减」就只剩上游一条网，而重复扣减会让余量与分布静默偏小。红证：删掉该唯一索引 ⇒ 迁移终态对账抛 + 本断言红。"
+      - "判据 2·**reason 约束同时放行扣减与回补**（`ck_batch_consumption_reason` 含 `processing_order` 与 `processing_order_cancelled`，且两者是**同一个** CHECK 的成员）。红证：把回补取值从 CHECK 里去掉 ⇒ 作废回补当场 23514，迁移终态对账先红。"
+      - "判据 3·**`order_item_id` 宽度与 `order_items.id` 一致（VARCHAR(36)）**：它是 ASSIGN_UUID 主键、**不是** BIGINT —— 写成 BIGINT 会在真库插入失败（单测全绿、生产全挂的那一类）。红证：改回 `order_item_id BIGINT` ⇒ 本断言红。"
+      - "判据 4·**三条查询索引**（按批次 / 加工单 / 订单查回来）+ **显式 BEGIN/COMMIT** + 前置表 fail-closed + 文末终态对账 DO 块。"
+      - "判据 5·**bootstrap 终态同步**：`docs/sql/schema.sql`（新建库路径不跑迁移链）也建了该表并带同一个幂等闸索引；V116 已登记进 `tests/unit_ci_workflows/migration_fingerprints.json`（#4235 不可变护栏）。红证：把 schema.sql 的该表段删掉 ⇒ 本断言红。"
+      - "判据 6·**精度与既有列逐字一致**：`delta / before_qty / after_qty NUMERIC(12,1)`（V115/#5063 的 0.1 米粒度；整数场景逐值不变）。"
+    skip_reason: "[backend-contract] 表/迁移契约（静态断言 + 真值源对齐，无 LLM 环节）：由 StockBatchConsumptionMapperTest 执行"
+    merge_log: "2026-09-22 新增：V116（#5145 阶段 1）。选**新表**而非给 stock_ledger_entries 加 batch_no 列 —— 那是 SKU 级事实账（相邻两行首尾相接），批次扣减不改 product_skus.stock，塞进去只有「把批次数额写进 SKU 链」或「为没发生的变更伪造 delta」两种坏落法。取号 PR-056（原 PR-053 与在飞的 #5148 撞号，rebase 后顺延）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/StockBatchConsumptionMapperTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: PR-057
+    legacy_id: ""
+    title: "后台派工批次指派对话框 + 批次账读面（余量/四档分布/对账）：不指派 ⇒ 请求体不带 batches"
+    domains:
+      - product
+      - processing-order
+      - ui
+    tier: normal
+    persona: ""
+    tags:
+      - product
+      - ui
+      - stock
+      - batch
+      - backend_contract
+    truths_ref:
+      - batch-ledger.dispatch-deduct
+      - batch-ledger.reconcile
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**不指派 ⇒ 行为与今天逐字相同**：一行都不可指派（无候选批次 / 候选查询失败）⇒ **不弹对话框**、`generate(orderIds)` **单参调用**（请求层断言：不指派时请求体里**没有** `batches` 键，不是空数组）。红证：让 `submitGenerate` 恒传第二参 ⇒ 本断言红。"
+      - "判据 2·**人工最终选择被如实记录**：对话框里逐行选批次 ⇒ 请求体 `batches` 逐条为 `{orderId, itemId, batchNo}`（`batchNo` = 文员改后的值，空选择的行**不**进 batches）；无可用批次的行**不给下拉**（不能选）。红证：去掉空选择过滤 / 给无候选行也渲染下拉 ⇒ 必红。"
+      - "判据 3·**系统给建议值且默认选中**：每行默认选中后端 `suggestedBatchNo`（可改）；余量不足的候选 disabled。红证：`defaultPickOf` 恒返回空串 ⇒ 必红。"
+      - "判据 4·**缺料可行动**：生成返回 `success=false` ⇒ 原样展示 `message` + `suggestion`（不得吞掉、不得改写）。红证：把 `suggestion` 换成空串 ⇒ 必红。"
+      - "判据 5·**读面口径说清**：余量表含「余量」列且文案写明「派生余量 = 入库量 − 已派工消耗」；分布**恒四档**（0 档也渲染）；对账表展示 `diff` 与分解腿，并写明「差额 = 已售未派 + 台账外存量，**不是异常**」；`reconciled=false` 显式告警 + `unreconciledCount` 报数。红证：四档 `filter(batchCount > 0)` / 文案改成「差额异常」/ 去掉告警块 ⇒ 各自必红。"
+      - "判据 6·**只读、不动钱**：读面板只调 `GET /api/admin/batch-stock/*`（无写端点）；对客金额/售价/成品尺寸一字未改。"
+    skip_reason: "[backend-contract] 纯前端单元测试（admin-web vitest：ProcessingOrderBlock / BatchStockPanel / batch-stock 请求层），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-22 新增：#5145 阶段 1 的后台可见面 —— 派工批次指派对话框（文员指定，系统给候选 + 建议值、可改）+ 批次余量/剩余量分布/对账三读面。读面挂在商品详情库存区（复用既有页，不新造导航）。取号 PR-057（原 PR-054，rebase 后整组顺延）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx"
+        - "frontend/admin-web/tests/unit/components/BatchStockPanel.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/batch-stock-api.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []

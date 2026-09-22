@@ -49,7 +49,7 @@ class ProcessingOrderControllerTest extends BaseControllerTest {
     @Test
     @DisplayName("POST /generate — 批量生成（PG-001）")
     void generate() throws Exception {
-        when(processingOrderService.generate(anyList(), eq(1L), any()))
+        when(processingOrderService.generate(anyList(), any(), eq(1L), any()))
                 .thenReturn(List.of(ProcessingOrderService.GenerateResult.ok("order-1", "JG-20260912-0001")));
 
         mockMvc.perform(post("/api/admin/processing-orders/generate")
