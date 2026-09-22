@@ -34,6 +34,7 @@ import {
   CALC_PARAM_COPY,
   CALC_SCALAR_KEYS,
   GLOSSARY_FORMULAS,
+  GLOSSARY_EXAMPLE,
   MANUAL_FEATURE_TERMS,
   SPECIAL_OPTION_TERMS,
   TERM_FAMILY,
@@ -99,6 +100,9 @@ const ENGINE_DEFAULT_CALC_CONFIG: CraftCalcConfig = {
   default_formula: 'pleat',
   hem_margin: 0.3,
   meters_rounding_step: 0.1,
+  // 🔴 issue #5130：两个**企业阈值**（超宽 / 超高判据）—— 缺了它们，算例的 `given` 渲染不出来
+  oversize_width_threshold: 6,
+  oversize_height_threshold: 4,
 }
 
 /** 引擎 `DEFAULT_CRAFT_CALC_CONFIG` 的**键集**（读源，不写死） */
@@ -291,13 +295,24 @@ describe('算料配置页·口径与术语说明（issue #4975）', () => {
     expect(anchors.every((a) => a.startsWith('glossary-'))).toBe(true)
   })
 
-  it('判据 9：说明模块不得复活「缺省门幅」（issue #4877 的反向守卫）', () => {
+  it('判据 9：说明模块不得复活「缺省门幅」；特征判据**不得**再引用门幅 / 褶倍（#4877 + #5130 反向守卫）', () => {
     // 注入：在说明模块里写回 `DEFAULT_DOOR_WIDTH` / `resolveDoorWidth` ⇒ 前两条红
     expect(glossarySrc).not.toContain('DEFAULT_DOOR_WIDTH')
     expect(glossarySrc).not.toContain('resolveDoorWidth')
-    // 算例用的门幅必须**明说**「随商品而变」+「没有缺省门幅」，否则它会被读成缺省门幅
+    // 🔴 **issue #5130 改判**：旧判据钉的是「算例用的门幅必须明说『随商品而变』+『没有缺省门幅』」——
+    // 算例的 `doorWidth` 已随判定面改判**删除**（判定面不再读门幅）⇒ 该前提消失。
+    // 改成**同强度的反向守卫**：`超高` / `超宽` 的**判据文案**里不得再出现「门幅」或「褶倍」
+    // （旧判据「与门幅比 / 含褶倍」复活 ⇒ 红），且必须写明判据是「**阈值**」（企业参数）。
     const terms = [...AUTO_FEATURE_TERMS].map((t) => `${t.criterion ?? ''}${t.boundary ?? ''}`).join('')
-    expect(terms).toContain('没有缺省门幅')
+    // 反向自证：正文字面里仍有「门幅」这个概念可被扫到（否则 `not.toContain` 是空断言）
+    expect(glossarySrc).toContain('门幅')
+    expect(terms).toContain('阈值')
+    expect(terms).not.toContain('门幅')
+    expect(terms).not.toContain('褶倍')
+    // 算例的示例门幅常量也不得回来（`GLOSSARY_EXAMPLE` 里那个字段已删，取的是净窗宽 / 净窗高）
+    expect(GLOSSARY_EXAMPLE).not.toHaveProperty('doorWidth')
+    expect(GLOSSARY_EXAMPLE.width).toBeGreaterThan(0)
+    expect(GLOSSARY_EXAMPLE.height).toBeGreaterThan(0)
   })
 })
 

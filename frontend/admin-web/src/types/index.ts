@@ -1213,6 +1213,20 @@ export interface CraftCalcConfig {
   hem_margin: number
   /** 用料**向上进位**步长（米） */
   meters_rounding_step: number
+  /**
+   * **超宽**阈值（**净窗宽**，米）；引擎默认 6（issue #5130 / V114）。
+   *
+   * 判据：净窗宽 > 本值 ⇒ 自动特征名「超宽」（进加工费组合键 = 工艺分档）。
+   * 与**几何层**（门幅 / 褶倍 ⇒ 分幅与用料）是两件事。
+   */
+  oversize_width_threshold: number
+  /**
+   * **超高**阈值（**净窗高**，米）；引擎默认 4（issue #5130 / V114）。
+   *
+   * ⚠️ issue #5130 起「超高」**不再**由「成品高 + 上下卷边 > 门幅」判定（该门幅判据已退役）；
+   * `hem_margin` 仍管几何层（定高可行性 / 定宽买高每幅长 / 罗马帘）。
+   */
+  oversize_height_threshold: number
 }
 
 /**

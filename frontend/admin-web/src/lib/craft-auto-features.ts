@@ -40,10 +40,17 @@
  *
  * 🔴 **「缺省门幅」已删除**（issue #4877；用户 2026-09-21 裁定「如果所有门幅都不满足，
  * 那必然走接高」+「加工类型是显式输入」）：SKU 未携带门幅 ⇒ {@link parseDoorWidth} 返回 `null`
- * ⇒ 判定面**不判**并显式告知（`missing-door-width`）、规则面（`door-width-plan.ts` 的
- * `resolveCutPlan`）返回 `undecidable` —— **不得**回退任何默认门幅继续推算。
- * 旧行为「静默按缺省门幅判超高/超宽」正是本单要替换掉的错误做法（真单实测：同一张 3.0×2.75 的
+ * ⇒ **几何层**判不了（显式告知：②`door-width-missing` + ①`size-door-width-missing`）、
+ * 规则面返回 `undecidable` —— **不得**回退任何默认门幅继续推算。
+ * 旧行为「静默按缺省门幅判超高/超宽」正是 #4877 要替换掉的错误做法（真单实测：同一张 3.0×2.75 的
  * 单子，门幅按 2.8 / 3.2 之差会得到「需接高」与「单幅可做」两种相反结论，用料 9.15 / 6.3 米）。
+ *
+ * 🔴 **2026-09-22 改判（issue #5130）**：**判定面**已与门幅**彻底脱钩** —— 「超高 / 超宽」的判据
+ * 换成 `净窗宽/净窗高 > 该租户的企业阈值参数`（`oversize_width_threshold` / `oversize_height_threshold`）。
+ * ⇒ 门幅**只剩几何层**的三处用途：用料（分幅 / 定高可行性）、加工类型、门幅规则面，
+ * 以及**几何矛盾提示**（`cutting-mode-conflict`）。旧判定面口径（#4661 按加工类型分流 /
+ * #4662 超宽含褶倍 / #4877 缺门幅不判）**三条一并退役** —— 留档见引擎
+ * `backend/ai-agent-service/app/tools/curtain_calc.py::detect_auto_features` 的 docstring。
  *
  * ⚠️ **口径分裂照实登记**：引擎端点按它自己的硬编码值算分幅，本页按 **SKU 门幅** 判
  * ⇒ 两者可能不一致（组合键与实际算料对不上）。**权威 = SKU/商品门幅**；引擎侧改为**接收**该值
@@ -114,24 +121,24 @@ export const CUTTING_MODE_FIXED_HEIGHT = '定高买宽'
 export const CUTTING_MODE_FIXED_WIDTH = '定宽买高'
 
 /**
- * 系统识别的**提示**（issue #4662 / #5036）—— 只说明「**为什么没判**」或「**系统实际会按哪种算**」，
+ * 系统识别的**提示**（issue #4662 / #5036；**issue #5130 改判**）—— 只说明**系统实际会按哪种算**，
  * **不是特征**：不进 `AUTO_FEATURE_NAMES`、不进加工费组合键、不影响判定结果
  * （组合键只能含 `processing_items` 目录里有的名字 —— #4592 的 P0）。
  *
  * 🔴 **issue #5036 起：本类型描述的是「服务端返回什么」**（用户 2026-09-21 裁定「提示统一迁移到
  * 服务端；**未来 agent 也需要**」）—— 提示由引擎 `curtain_calc.detect_auto_feature_notices` 产出，
- * 读的是**该租户配置**的 `hem_margin`（宽方向余量已按 issue #5030 退场）；前端只**展示**（`api.ts::AutoFeaturesResult.notices`）。
+ * 读的是**该租户配置**的 `hem_margin`；前端只**展示**（`api.ts::AutoFeaturesResult.notices`）。
  *
- * 迁移前它由本模块的 `detectAutoFeatureNotices` **本地**算，而它读**模块常量副本**（0.3）
- * ⇒ 判定面用租户配置、提示面用常量 ⇒ #5005 把 `hem_margin` 做成可配之后，商家改过配置就会
- * 看到**错的数**，且「几何矛盾」的**判断本身**也会错。该函数已随本单删除。
- *
- * 三类：① `missing-door-width`（该 SKU 未维护门幅 ⇒ 都判不了，**不回落缺省门幅**）；
- * ② `missing-fullness`（缺褶倍 ⇒ 未判超宽）；③ `cutting-mode-conflict`（几何矛盾 ⇒
- * 系统实际会按哪种算 —— 真值源 = 引擎的几何分支「高 + 卷边 vs 门幅」）。
+ * 🔴 **issue #5130 改判：只剩 `cutting-mode-conflict` 一条**（它说的是**几何层**：
+ * 成品高 + 卷边 vs 门幅 ⇒ 引擎实际按哪种算，仍然为真）。两条**已退役**：
+ * ① `missing-door-width`（旧文案「该 SKU 未维护门幅 ⇒ **超高/超宽都判不了**」）——
+ *    新判据（净窗宽/净窗高 vs **企业阈值参数**）**不读门幅** ⇒ 那句话成了假话；
+ * ② `missing-fullness`（旧文案「缺褶倍 ⇒ **未判超宽**」）—— 新判据**不含褶倍** ⇒ 同样是假话。
+ * 「门幅未维护」的告知改由**门幅规则面**承担（下单页 `door-width-missing` /
+ * `size-door-width-missing` 徽标 + `door-width-plan` 端点 —— 它们说的是**几何层**能不能算，仍为真）。
  */
 export interface AutoFeatureNotice {
-  kind: 'missing-fullness' | 'cutting-mode-conflict' | 'missing-door-width'
+  kind: 'cutting-mode-conflict'
   /** 可读依据（哪两个数比出来的 + 前提）。口径一律来自算料引擎的同款判据，**前端不编** */
   reason: string
 }

@@ -16,35 +16,40 @@ import { CraftCalcGlossary } from '@/components/production/CraftCalcGlossary'
 /**
  * **服务端替身**（issue #5036 包 2a）：算例的判定依据由 `POST /api/admin/orders/auto-features` 给
  * ⇒ 本组件不再本地判，测试必须替身服务端（否则会打真实网络）。
+ *
+ * 🔴 **issue #5130 改判**：替身按**新**判据（净窗宽 / 净窗高 与**企业阈值**比；`倒幅` 只看加工类型）
+ * 产出 —— 旧替身的「与门幅比 / 含褶倍 / 含左右余量」口径已随裁定退役。
  */
 vi.mock('@/lib/api', () => ({
   autoFeaturesApi: {
-    preview: (p: { width: number; height: number; fabric_width?: number; cutting_mode?: string }) => {
-      const side = 0.3
-      const hem = 0.3
-      const fullness = 2.0
-      const round = (v: number) => Number(v.toFixed(3))
-      const door = p.fabric_width ?? 0
+    preview: (p: {
+      width: number
+      height: number
+      cutting_mode?: string
+      config?: { oversize_width_threshold?: number; oversize_height_threshold?: number }
+    }) => {
+      const wide = p.config?.oversize_width_threshold ?? 6
+      const high = p.config?.oversize_height_threshold ?? 4
       const features: Array<{ name: string; source: string; reason: string }> = []
-      if (p.cutting_mode === '定宽买高') {
-        const product = (p.width + side) * fullness
-        if (product > door) {
-          features.push({
-            name: '超宽',
-            source: '推算',
-            reason: `成品宽 ${p.width} + 左右余量 ${side} = ${round(p.width + side)} 米 × 褶倍 ${fullness} = ${round(product)} 米 > 门幅 ${door} 米`,
-          })
-        }
-        features.push({ name: '倒幅', source: '推算', reason: '加工类型 = 定宽买高' })
-      } else if (p.height + hem > door) {
+      if (p.width > wide) {
+        features.push({
+          name: '超宽',
+          source: '推算',
+          reason: `净窗宽 ${p.width} 米 > 超宽阈值 ${wide} 米`,
+        })
+      }
+      if (p.height > high) {
         features.push({
           name: '超高',
           source: '推算',
-          reason: `成品高 ${p.height} + 上下卷边 ${hem} = ${round(p.height + hem)} 米 > 门幅 ${door} 米`,
+          reason: `净窗高 ${p.height} 米 > 超高阈值 ${high} 米`,
         })
       }
+      if (p.cutting_mode === '定宽买高') {
+        features.push({ name: '倒幅', source: '推算', reason: '加工类型 = 定宽买高' })
+      }
       return Promise.resolve({
-        data: { data: { auto_features: features, notices: [], door_width: door, fullness_used: fullness, notice: '' } },
+        data: { data: { auto_features: features, notices: [], door_width: null } },
       })
     },
   },
@@ -52,7 +57,7 @@ vi.mock('@/lib/api', () => ({
 import { CALC_SCALAR_KEYS, glossaryAnchorOf } from '@/lib/craft-calc-glossary'
 import type { CraftCalcConfig } from '@/types'
 
-/** 引擎默认配置（测试替身；逐值写死 = 「后端会回什么」） */
+/** 引擎默认配置（测试替身；逐值写死 = 「后端会回什么」）—— 含 issue #5130 的两个企业阈值 */
 const CONFIG: CraftCalcConfig = {
   per_fold_single: 0.25,
   per_fold_mixed_times: { '1': 0.65, '2': 1.2 },
@@ -63,6 +68,8 @@ const CONFIG: CraftCalcConfig = {
   default_formula: 'pleat',
   hem_margin: 0.3,
   meters_rounding_step: 0.1,
+  oversize_width_threshold: 6,
+  oversize_height_threshold: 4,
 }
 
 describe('算料口径与术语说明区块（issue #4975）', () => {
@@ -97,11 +104,16 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
 
   it('三个自动推算特征各有一条**带真实数字**的算例（依据来自服务端 —— #5036 包 2a）', async () => {
     render(<CraftCalcGlossary config={CONFIG} />)
-    for (const name of ['超高', '超宽', '倒幅']) {
+    // `超高` / `超宽` 的算例：依据文案 = 与**企业阈值**比
+    // 🔴 issue #5130 改判：由「> 门幅 … 米」改为「> 超宽/超高阈值 … 米」（旧式「门幅」依据复活 ⇒ 红）
+    for (const name of ['超高', '超宽']) {
       // 算例是**异步**取的（服务端判定）⇒ 必须 await；注入：算例行改成只写定义、不带依据 ⇒ 红
       const row = await screen.findByTestId(`glossary-example-${name}`)
-      expect(row).toHaveTextContent('门幅')
+      expect(row).toHaveTextContent('阈值')
+      expect(row).not.toHaveTextContent('门幅')
     }
+    // `倒幅` 的算例依据 = 加工类型（它本来就与阈值 / 门幅无关）
+    expect(await screen.findByTestId('glossary-example-倒幅')).toHaveTextContent('定宽买高')
   })
 
   it('手选两项写明「系统不推算」+ 拼接的「不触发工序」边界可见（死亡条件绑 #4569）', () => {
