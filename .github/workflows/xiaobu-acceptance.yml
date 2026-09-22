@@ -219,7 +219,7 @@ jobs:
         # **没有任何层缓存** → 每次全量重下 Maven 依赖树/轮子/基础镜像，而 GitHub
         # runner 是共享出口 IP，Docker Hub 限流一来就 12min。这是整跑墙钟里最大且最不稳
         # 的一块。buildx + GHA cache（type=gha）把层跨 run 复用。
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: "Export dev RS256 keys for stack (issue #3270)"
         # admin-api 镜像内没有 rsa/private.pem（被 .gitignore 刻意排除），
