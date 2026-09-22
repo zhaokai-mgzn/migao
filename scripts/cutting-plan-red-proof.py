@@ -53,7 +53,8 @@ MUTATIONS: list[tuple[str, str, str, set[str], str]] = [
         "M2 去掉行内 Σ占门幅宽 守卫",
         "                if (rowSpans.get(i).add(span).compareTo(maxRowSpan) <= 0) {",
         "                if (true) {",
-        {"piecesThatDoNotFitTogetherKeepTheirOwnRows"},
+        {"piecesThatDoNotFitTogetherKeepTheirOwnRows", "keepsWholePiecesUnmodifiedAndRowsWithinDoorWidth",
+         "resultIsIndependentOfInputOrder", "randomizedInvariantsHold"},
         "1.7 + 1.7 = 3.4 > 门幅 2.8 仍被排进同一行 ⇒ 「不倒退/切不出货」判据必须红",
     ),
     (
@@ -94,8 +95,18 @@ def run_git(*args: str) -> str:
 
 
 def run_test(method: str | None) -> bool:
-    """跑一条（或整类）判据 ⇒ True = 全绿。"""
+    """跑一条（或整类）判据 ⇒ True = 全绿。
+
+    ⚠️ **每次都必须强制重编译**：`mvn test` 的增量编译按**时间戳**判新旧，而本脚本在
+    同一秒内「改源 → 跑测 → 再改源」⇒ 亲测会出现「源码变了但编译没跟上」，
+    于是变异后的判据照旧全绿 —— 那是**机具自己的假绿**（本脚本第一版就踩了：M3~M6
+    全被读成「无判别力」）。故先删编译产物再跑，让「编译了没有」不再靠时间戳。
+    """
     selector = f"{TEST_CLASS}" + (f"#{method}" if method else "")
+    for stale in (JAVA_DIR / "target/classes/com/migao/admin/service").glob("CuttingPlanCalculator*.class"):
+        stale.unlink()
+    for stale in (JAVA_DIR / "target/test-classes/com/migao/admin/service").glob(f"{TEST_CLASS}*.class"):
+        stale.unlink()
     proc = subprocess.run(
         ["./mvnw", "-o", "test", f"-Dtest={selector}", "-DfailIfNoSpecifiedTests=false"],
         cwd=JAVA_DIR, capture_output=True, text=True,
