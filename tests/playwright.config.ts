@@ -19,14 +19,24 @@ if (!process.env.CI) process.env.E2E_MOCK_AUTH = 'true'
 // 本检出跑 E2E —— 而那个占用者可能是**别的会话正在用的服务**，不能一律 `pkill`（杀别人的 dev server
 // 是破坏性动作）。这与 `migao-dev-flow` §2.3 第 3 条「端口隔离：本地服务端口用环境变量覆盖
 // （API_PORT/AGENT_PORT/WEB_PORT），会话各自 .env.local，杜绝 8080/8001/3001 互抢」是同一条纪律。
+//
+// 🔴 **但该隔离对「本检出内」这个场景不再成立**（issue #5121，Next 16.3.5 实测）：Next 16 起
+// `next dev` 在 `<admin-web>/.next/dev/lock` 上取一把 flock ⇒ **按目录单例**：同检出里第二个
+// `next dev` **哪怕换了端口**也会被拒（`⨯ Another next dev server is already running.` 后 exit 1）。
+// ⇒ 换端口只对「占用者属于**别的检出**」有效；若**本检出自己**已经有一个 dev server（手工
+// `npm run dev`，或上一轮跑遗留），换端口**绕不过去**。那种场景只有两条路：停掉它，或改用
+// **独立 worktree**（`./scripts/dev-worktree.sh add <branch>` —— 独立 checkout 有自己的锁文件）。
+// 下面判据的「同检出已有 dev server」分支会在**配置加载期**把这条显式拒绝并给出可执行命令，
+// 不让 E2E 先去撞 Next 的报错（那会把「隔离静默失效」伪装成一次莫名其妙的启动失败）。
 // 未设该变量时行为**逐字不变**（= 3001）；`BASE_URL` 与 dev server 命令都从它派生。
 const ADMIN_WEB_PORT = Number(process.env.ADMIN_WEB_PORT || 3001)
 const ADMIN_WEB_DIR = path.resolve(__dirname, '../frontend/admin-web')
 const IDENTITY_GUARD = path.resolve(__dirname, 'admin_web_devserver_identity.py')
 
-// 三态（tests/admin_web_devserver_identity.py）：0 = 无外来服务风险 / 1 = 端口被**别的检出**占用
-// ⇒ 失败关闭 / 3 = 未判定（无 lsof）⇒ 只告警不阻塞（硬拦面是下面的 reuseExistingServer: false，
-// 任何已存在的监听者都会被它拒绝复用）。CI：整块不执行 ⇒ CI 侧零新增行为。
+// 三态（tests/admin_web_devserver_identity.py）：0 = 无外来服务风险 / 1 = **必红**（两种形态：
+// 端口被**别的检出**占用，或**本检出已有一个活着的 dev server** —— Next 16 按目录单例，换端口也
+// 起不来，issue #5121）/ 3 = 未判定（无 lsof）⇒ 只告警不阻塞（硬拦面是下面的 reuseExistingServer:
+// false，任何已存在的监听者都会被它拒绝复用）。CI：整块不执行 ⇒ CI 侧零新增行为。
 if (!process.env.CI) {
   const identity = spawnSync('python3', [IDENTITY_GUARD, 'check', '--project', ADMIN_WEB_DIR, '--port', String(ADMIN_WEB_PORT)], {
     encoding: 'utf8',
@@ -38,10 +48,12 @@ if (!process.env.CI) {
   if (identity.status !== 0 && !undecidable) {
     throw new Error(
       `[admin-web-e2e] 本地起服务前的「服务身份」前置断言未通过（exit ${identity.status}）：` +
-        '拒绝在「3001 已被可能是另一个检出的服务占用」的状态下跑 E2E —— ' +
-        '（可用 `ADMIN_WEB_PORT=<别的空闲端口>` 换端口，无需杀掉占用者）' +
-        '那会让断言与截图在本检出上判定、却跑在别人的代码上（静默假绿，issue #4313）。' +
-        '请先停掉占用 3001 的进程再重跑。'
+        '拒绝在「端口被不属于本检出的服务占用 / 本检出已有一个 dev server」的状态下跑 E2E。' +
+        '（`ADMIN_WEB_PORT=<别的空闲端口>` 只对「占用者属于**别的检出**」有效；若持有者是**本检出**的' +
+        'dev server，Next 16 起 `next dev` 按目录单例 ⇒ 换端口也起不来，必须停掉它或改用独立 worktree' +
+        ' —— issue #5121）' +
+        '否则断言与截图会在本检出上判定、却跑在别人的代码上（静默假绿，issue #4313）。' +
+        '具体原因与可执行的停服命令见上面判据打印的那段。'
     )
   }
 }

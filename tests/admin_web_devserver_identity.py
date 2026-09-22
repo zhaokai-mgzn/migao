@@ -32,13 +32,32 @@ Playwright **直接复用它**、一条命令都不执行 ⇒ **断言与截图�
 | code | 含义 |
 |---|---|
 | `0` | 起服务前**无外来服务风险**：端口空闲（Playwright 会起本检出的 dev server），或占用者**已核实为本检出**（只提示先停掉它 —— `reuseExistingServer: false` 会拒复用） |
-| `1` | 端口被**不属于本检出**的服务占用 ⇒ **必红**（复用它会测到别的 checkout 的代码） |
+| `1` | **必红**（两种形态）：① 端口被**不属于本检出**的服务占用（复用它会测到别的 checkout 的代码）；② **本检出已有一个活着的 `next dev`** —— Next 16 起按目录单例，换端口也起不来（见下节，issue #5121） |
 | `3` | **未判定**：端口有服务在听，但取不到占用者身份（无 `lsof` / 无权限 / 非本机进程）—— 「看不了」不得当「没问题」，故**不是 0** |
 
 配置侧对三态的处理：`0` 放行、`1` **失败关闭**、`3` **只告警不阻塞**。
 「未判定不阻塞」之所以安全，是因为**硬拦面不在这里**：`reuseExistingServer: false` 独立地保证
 「任何已存在的监听者 ⇒ Playwright 报错退出、绝不复用」。本判据的价值是把「谁在听」**说清楚**
 （点名外来 cwd），而不是充当唯一防线 —— 这也是它敢在缺少 `lsof` 的机器上只告警的原因。
+
+## Next 16「按目录单例」—— 第二种必红形态（issue #5121，Next 16.3.5 实测）
+
+Next 16 起 `next dev` 在 `<projectDir>/.next/dev/lock` 上取一把 `flock`
+（`node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js` 的
+`Lockfile.acquireWithRetriesOrExit(path.join(distDir, 'lock'), 'next dev', ...)`）。
+⇒ 同检出里第二个 `next dev` **哪怕换了端口**也会取锁失败，打印
+`⨯ Another next dev server is already running.` 并 exit 1。
+
+⇒ `ADMIN_WEB_PORT` 换端口**只在「占用者属于别的检出」时**有效；对「**本检出自己**已有一个
+dev server」这个场景**不再成立** —— 这正是「端口隔离策略静默失效」：旧形态下端口空闲 ⇒ 判绿，
+随后 E2E 才去撞 Next 的报错（或连错对象），而不是在起服务前被显式拒绝。
+
+判据 = **flock 本身**（能否非阻塞取到 `LOCK_EX`），**不是**「锁文件存在」：server 崩掉会留下
+锁文件（POSIX 上 flock 随进程退出释放）⇒ 只看存在性会**假红**。持有者信息（`pid` / `port` /
+`appUrl`）就写在锁文件内容里，故报错能给出**可执行的**停服命令与替代做法（独立 worktree）。
+
+边界（照实登记）：本判据读的是 **Next 的实现细节（锁路径）** —— 若上游改了这个约定，探测会
+**静默退化为「没探测到」**（退回既有端口判据，不会假绿）；非 POSIX（无 `fcntl`）同理。
 
 ## 边界（照实登记）
 
@@ -53,6 +72,7 @@ Playwright **直接复用它**、一条命令都不执行 ⇒ **断言与截图�
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import socket
@@ -60,11 +80,19 @@ import subprocess
 import sys
 from pathlib import Path
 
+try:
+    import fcntl  # POSIX：下面的 dev 锁判据靠 flock；非 POSIX ⇒ 该判据退化（见 docstring 边界）
+except ImportError:  # pragma: no cover - 本仓只在 macOS / Linux 上跑
+    fcntl = None
+
 EXIT_OK = 0
-EXIT_FOREIGN = 1
+# 必红：① 端口被别的检出占用；② 本检出已有活着的 dev server（Next 16 按目录单例，换端口也起不来）
+EXIT_RED = 1
 EXIT_UNDECIDABLE = 3
 
 DEFAULT_PORT = 3001
+# Next 16 的 dev server 锁（相对 admin-web 根）：`next dev` 在它上面取 flock ⇒ 按目录单例。
+DEV_LOCK_RELATIVE = os.path.join(".next", "dev", "lock")
 # 占用者身份（cwd）只能从进程表拿；拿不到 ⇒ 未判定（不是通过）
 LSOF = "lsof"
 
@@ -137,6 +165,66 @@ def _same_dir(a, b) -> bool:
         return False
 
 
+def dev_lock_path(project):
+    """本检出里 Next 16 dev server 的锁文件路径（`<project>/.next/dev/lock`）。"""
+    return Path(project) / DEV_LOCK_RELATIVE
+
+
+def read_locked_dev_server(lock_path):
+    """`lock_path` 上是否**真的**有活着的 `next dev` 持有 flock。
+
+    有 ⇒ 返回它写进锁文件的 serverInfo（`{pid, port, appUrl, ...}`；内容坏掉时给空 dict）；
+    没有 ⇒ `None`（含「文件不存在」与「文件在但没人持锁」两种 —— 后者是崩掉留下的残留，不得当红）。
+    """
+    if fcntl is None:  # 非 POSIX：没有 flock 语义 ⇒ 不判（退回既有端口判据）
+        return None
+    try:
+        handle = open(lock_path, "r")
+    except OSError:  # 文件不存在 / 不可读 ⇒ 没有活着的持有者
+        return None
+    try:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            # 取不到锁 ⇒ 有别的进程持着它（Next 的 dev server）
+            handle.seek(0)
+            try:
+                info = json.loads(handle.read())
+            except ValueError:
+                info = {}
+            return info if isinstance(info, dict) else {}
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        return None
+    finally:
+        handle.close()
+
+
+def check_dev_server_lock(project):
+    """本检出是否**已经**有一个活着的 `next dev`（Next 16 按目录单例 ⇒ 再起一个必失败）。
+
+    返回 `Verdict`（必红 + 可行动提示）；没有 ⇒ `None`（交给既有端口判据）。
+    """
+    lock_path = dev_lock_path(project)
+    info = read_locked_dev_server(lock_path)
+    if info is None:
+        return None
+    pid, port = info.get("pid"), info.get("port")
+    url = info.get("appUrl") or f"http://localhost:{port}"
+    stop = f"kill {pid}" if pid else "先停掉本检出里那个 next dev"
+    return Verdict(
+        EXIT_RED,
+        f"❌ 本检出已经有一个 `next dev` 在跑，而 Next 16 起 `next dev` 是**按目录单例**（issue #5121）：\n"
+        f"  · 持有者：PID {pid} · port {port} · {url}\n"
+        f"  · 它持着 {lock_path} 上的 flock ⇒ 再起一个 `next dev`（**哪怕换端口**）会被 Next 拒绝：\n"
+        f"    `⨯ Another next dev server is already running.`\n"
+        f"  ⇒ `ADMIN_WEB_PORT=<别的空闲端口>` **不能**绕开它（换端口只对「占用者属于别的检出」有效）。\n"
+        f"  二选一：\n"
+        f"    a) 停掉它再跑 E2E：`{stop}`\n"
+        f"    b) 要留着这个 dev server ⇒ 在**独立 worktree** 里跑 E2E（独立 checkout 有自己的锁）：\n"
+        f"       `./scripts/dev-worktree.sh add <branch>`",
+    )
+
+
 def check(project, port: int = DEFAULT_PORT) -> Verdict:
     """判定「起服务前，`port` 上有没有不属于 `project`（本检出）的服务在听」。"""
     project = Path(str(project)).expanduser()
@@ -145,6 +233,13 @@ def check(project, port: int = DEFAULT_PORT) -> Verdict:
             EXIT_UNDECIDABLE,
             f"⚠️ 未判定：{project} 不是目录 —— 判不了「占用者是不是本检出」（项目根给错了？）",
         )
+
+    # Next 16 起 `next dev` 按目录单例（**与端口无关**）⇒ 先判「本检出是否已有活着的 dev server」：
+    # 那种状态下换端口也起不来，必须在起服务前就显式拒绝（而不是让 Playwright 去撞 Next 的报错）。
+    already_running = check_dev_server_lock(project)
+    if already_running is not None:
+        return already_running
+
     if not port_has_listener(port):
         return Verdict(
             EXIT_OK,
@@ -179,7 +274,7 @@ def check(project, port: int = DEFAULT_PORT) -> Verdict:
     if foreign:
         detail = "\n".join(f"  · PID {pid} cwd={cwd}" for pid, cwd in foreign)
         return Verdict(
-            EXIT_FOREIGN,
+            EXIT_RED,
             f"❌ 端口 {port} 被不属于本检出的服务占用：\n{detail}\n"
             f"  本检出期望的 dev server 工作目录：{Path(os.path.realpath(str(project)))}\n"
             "  ⇒ 复用它会跑在**别的 checkout**（或别的项目）的代码上，而断言与截图都在本检出上判定"

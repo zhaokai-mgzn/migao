@@ -26,7 +26,8 @@ CI 侧 `CI=true` ⇒ 本来就是 false ⇒ 不受影响。
 
 - `0` = 起服务前**无外来服务风险**：端口空闲（Playwright 会起本检出的 dev server），
   或占用者**已核实为本检出**（此时只提示「先停掉它」，因为 `reuseExistingServer: false` 会拒复用）；
-- `1` = 端口被**不属于本检出**的服务占用 ⇒ **必红**（复用它会测到别的 checkout 的代码）；
+- `1` = **必红**（两种形态）：① 端口被**不属于本检出**的服务占用（复用它会测到别的 checkout 的代码）；
+  ② **本检出已有一个活着的 `next dev`** —— Next 16 起按目录单例，换端口也起不来（issue #5121）；
 - `3` = **未判定**（无 `lsof` / 取不到占用者身份）——「看不了」不得当「没问题」，故**不是 0**；
   该态由配置侧**只告警不阻塞**（硬拦面由 `reuseExistingServer: false` 独立承担）。
 
@@ -54,6 +55,15 @@ CI 侧 `CI=true` ⇒ 本来就是 false ⇒ 不受影响。
    旧形态下它会静默测错对象）；本检出的服务占用 ⇒ 0 但提示先停掉（身份可区分）；
    目录**长得像** admin-web（同名 + 有 package.json）但 realpath 不同 ⇒ **仍判外来**（不靠名字/内容自报）；
    无 lsof ⇒ 3（未判定 ≠ 通过）；`--project` 给错 ⇒ 3。
+
+⑤ **运行期：Next 16「按目录单例」**（issue #5121）—— 本检出已有 dev server（**真 flock 持有者**、
+   目标端口**空闲**）⇒ 必红 1，且报错点名 PID、给出 `kill <pid>` 与独立 worktree 两条可行动路径；
+   反向对照：锁文件**在**但没人持锁（server 崩掉留下的残留）⇒ **不得**假红（判据是 flock 本身，
+   不是「文件存在」）。另有一条**注入式红证**：把判据里唯一那处读锁调用（`LOCK_PROBE_CALL`）摘掉
+   后重跑 ⇒ 必须**变绿**（证明这条判据不是空断言）。
+⑥ **静态 + 红证：配置必须宣告该边界** —— `tests/playwright.config.ts` 必须写明「Next 16 按目录单例」
+   与独立 worktree 替代做法，且**不得**再把「换端口 ⇒ 无需杀掉占用者」写成万能解；
+   红证 = 把该措辞放回去 / 抹掉「单例」这条事实陈述 ⇒ 判据必须红。
 
 ## 边界（照实登记，别把「有护栏」读成「无死角」）
 
@@ -83,9 +93,20 @@ CI 侧 `CI=true` ⇒ 本来就是 false ⇒ 不受影响。
   判据在 CI 真跑过（`lsof` 在该 runner 上存在；`actions/runner-images` 的 apt 清单不含它，但清单不是全集）。
   故按「最少代码」不引入第二套机制（缺 `lsof` 时判据退化为「未判定 + 告警」，硬拦面 `reuseExistingServer: false`
   不受影响）。
+- #5121 本包（**取 B：宣告该隔离在本检出内不再成立**）：Next 16 起 `next dev` **按目录单例** ——
+  它在 `<admin-web>/.next/dev/lock` 上取 flock，同检出里第二个 `next dev` **换端口也起不来**
+  （Next 16.3.5 实测：`⨯ Another next dev server is already running.` + exit 1）。
+  ⇒ `ADMIN_WEB_PORT` 的端口隔离**只在「占用者属于别的检出」时有效**。落码 = 在既有判据里新增
+  **第二种必红形态**（同检出已有活着的 dev server ⇒ 加载期显式拒绝 + 可执行命令），
+  并同步配置注释与 `docs/wiki/Testing.md`。**`reuseExistingServer: false` 与身份守卫逐字未动**。
+  未实装/边界：判据读的是 Next 的**锁路径约定**（上游改了 ⇒ 静默退化为「没探测到」，不假绿）；
+  非 POSIX 无 `fcntl` 同理；`next build` 用的是另一把锁（`<distDir>/lock`）⇒ 不在本判据视野内。
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
+import json
 import os
 import re
 import socket
@@ -415,3 +436,131 @@ def test_missing_project_dir_is_undecidable(tmp_path):
     r = run_guard("--project", str(tmp_path / "no-such-dir"), "--port", str(port))
     out = r.stdout + r.stderr
     assert r.returncode == 3, f"`--project` 给错（判不了身份）必须是未判定而不是通过：\n{out}"
+
+
+# ── ⑤ 运行期：Next 16「按目录单例」⇒ 同检出已有 dev server 必须被显式拒绝（issue #5121）──
+
+# 红证的注入锚点：判据里**唯一那处**读 dev 锁的调用。锚点漂了 ⇒ 红证会静默空跑，故单测先断言它存在。
+LOCK_PROBE_CALL = "info = read_locked_dev_server(lock_path)"
+
+
+def make_dev_lock(project: Path, pid: int = 4242, port: int = 3001) -> Path:
+    """造出 Next 16 的 dev 锁文件 `<project>/.next/dev/lock`（内容形态照 Next 16.3.5 实测）。"""
+    lock = project / ".next" / "dev" / "lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text(
+        json.dumps({
+            "pid": pid, "port": port, "hostname": "localhost",
+            "appUrl": f"http://localhost:{port}", "startedAt": 1,
+        }),
+        encoding="utf-8",
+    )
+    return lock
+
+
+@contextlib.contextmanager
+def hold_flock(lock: Path):
+    """**真**持锁（flock LOCK_EX），模拟「本检出已有一个活着的 next dev」。不是 mock。"""
+    with open(lock, "r", encoding="utf-8") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
+def test_same_checkout_live_dev_server_is_red_and_actionable(tmp_path):
+    """本单核心场景：本检出已有 dev server、目标端口**空闲** ⇒ 必须显式拒绝 + 可行动提示。
+
+    旧形态下这里判「端口空闲 ⇒ 绿」，随后 E2E 会去撞 Next 的 `Another next dev server is already
+    running.`（或静默连错对象）—— 正是 #5121 要治的「隔离策略静默失效」。
+    """
+    mine = make_checkout(tmp_path, "this-checkout")
+    lock = make_dev_lock(mine, pid=4242, port=3001)
+    port = free_port()
+    with hold_flock(lock):
+        r = run_guard("--project", str(mine), "--port", str(port))
+    out = r.stdout + r.stderr
+    assert r.returncode == 1, (
+        "本检出已有 next dev（Next 16 按目录单例 ⇒ 换端口也起不来）却判绿 —— E2E 会先去撞 Next 的"
+        f"报错或静默连错对象，而不是给出可行动提示：\n{out}"
+    )
+    assert "单例" in out, f"拒绝理由没点名 Next 16 的「按目录单例」：\n{out}"
+    assert "4242" in out, f"报错没点名持有锁的 PID（不可行动）：\n{out}"
+    assert "kill 4242" in out, f"报错没给出可执行的停服命令：\n{out}"
+    assert "dev-worktree.sh" in out, f"报错没给出替代做法（独立 worktree）：\n{out}"
+
+
+def test_stale_dev_lock_file_without_holder_is_not_red(tmp_path):
+    """反向对照：锁文件**在**但没人持锁（server 崩掉留下的残留）⇒ **不得**假红。
+
+    判据必须是 flock 本身，不是「文件存在」—— 否则本地 E2E 会因一个残留文件恒红。
+    """
+    mine = make_checkout(tmp_path, "this-checkout")
+    make_dev_lock(mine, pid=999999, port=3001)  # 只留文件，不持 flock
+    port = free_port()
+    r = run_guard("--project", str(mine), "--port", str(port))
+    out = r.stdout + r.stderr
+    assert r.returncode == 0, (
+        f"只凭「锁文件存在」就判红 —— 崩掉的 server 会留下锁文件，这会让本地 E2E 恒假红：\n{out}"
+    )
+    assert "单例" not in out, f"残留锁文件不该触发单例判据：\n{out}"
+
+
+def test_red_proof_lock_probe_is_load_bearing(tmp_path):
+    """红证：把判据里**唯一那处**读锁的调用摘掉 ⇒ 上面那条判据必须失效（否则是空断言）。"""
+    src = GUARD.read_text(encoding="utf-8")
+    assert LOCK_PROBE_CALL in src, (
+        f"判据源码里找不到红证的注入锚点 `{LOCK_PROBE_CALL}` —— 锚点漂了，红证会静默空跑"
+    )
+    mutated = src.replace(LOCK_PROBE_CALL, "info = None", 1)
+    assert mutated != src, "变异没生效（红证失效）"
+    mine = make_checkout(tmp_path, "this-checkout")
+    lock = make_dev_lock(mine, pid=4242, port=3001)
+    mutant = tmp_path / "mutant_guard.py"
+    mutant.write_text(mutated, encoding="utf-8")
+    port = free_port()
+    with hold_flock(lock):
+        r = subprocess.run(
+            [sys.executable, str(mutant), "check", "--project", str(mine), "--port", str(port)],
+            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=120,
+        )
+    assert r.returncode == 0, (
+        "摘掉读锁调用后判据**仍然**判红 ⇒ 变红的原因不是那处判据（红证没有判别力）：\n"
+        f"{r.stdout}{r.stderr}"
+    )
+
+
+# ── ⑥ 静态：配置必须宣告 Next 16 单例边界（不得再把换端口当万能解）──
+
+def config_declares_next16_singleton(text: str) -> bool:
+    """配置是否**同时**：① 点名 Next 16 的按目录单例；② 给出独立 worktree 替代做法；
+    ③ 不再把 `ADMIN_WEB_PORT` 换端口写成**无需停服**的万能解。"""
+    return "单例" in text and "dev-worktree.sh" in text and "无需杀掉占用者" not in text
+
+
+def test_config_declares_next16_singleton_boundary():
+    text = CONFIG.read_text(encoding="utf-8")
+    assert config_declares_next16_singleton(text), (
+        "`tests/playwright.config.ts` 必须写明：Next 16 起 `next dev` 按目录单例 ⇒ `ADMIN_WEB_PORT` "
+        "换端口**不能**绕过「本检出已有一个 dev server」，并给出替代做法（独立 worktree）—— "
+        "否则注释会继续把换端口写成万能解（issue #5121）。"
+    )
+
+
+def test_red_proof_config_criterion_rejects_bypass_phrasing():
+    """红证：判据对两种**回退形态**必须判红（否则是空断言）。
+
+    ① 把「换端口 ⇒ 无需杀掉占用者」这处**已失效的万能解**放回去；
+    ② 抹掉「按目录单例」这条事实陈述。
+    """
+    text = CONFIG.read_text(encoding="utf-8")
+    assert config_declares_next16_singleton(text), "判据对当前配置文本本应为真"
+    bypass = text + "\n// 可用 ADMIN_WEB_PORT=<别的空闲端口> 换端口，无需杀掉占用者\n"
+    assert not config_declares_next16_singleton(bypass), (
+        "把「换端口 ⇒ 无需杀掉占用者」这处已失效的万能解放回去，判据居然仍判绿 —— 空断言"
+    )
+    silent = text.replace("单例", "行为")
+    assert not config_declares_next16_singleton(silent), (
+        "抹掉「按目录单例」这条事实陈述后判据仍判绿 —— 空断言"
+    )
