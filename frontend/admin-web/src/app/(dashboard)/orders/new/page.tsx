@@ -49,7 +49,10 @@ import {
 } from '@/lib/order-craft-fields'
 // 常用物流/快递（issue #4874）：词表唯一真值在 `lib/logistics.ts`，**不另造**一份候选
 import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
-// D6 自动识别（issue #4526 · 设计 §5.1/§5.2）：超高/超宽 = 宽高 vs 门幅；倒幅 = cuttingMode 推导
+// D6 自动识别（issue #4526 · 设计 §5.1/§5.2）：倒幅 = cuttingMode 推导；**超高/超宽 = 企业阈值参数判定**
+// 🔴 **issue #5130（2026-09-22）改判**：原注释写「超高/超宽 = 宽高 vs 门幅」—— 那是**当时**的口径，
+//    现已**退役**（判定面与门幅彻底脱钩，不再按加工类型分流、超宽也不含褶倍）。
+//    真值源 = `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `detect_auto_features`（服务端）。
 // ⚠️ #4592：`定高买宽`（= 正幅，缺省档）**不推导** —— 正幅不在加工项目录（V83）里，
 //    推它会让默认订单的组合键永远匹配不到价（加工费恒 ¥0.00）
 // ⚠️ 取自 **admin-web 专属**模块（不是三端同源的 `craft-display`，见该文件头）
@@ -451,8 +454,10 @@ function withShapedDefault(
  * `processingInfo.processingItems`（服务端的特征名唯一来源就是它），但**不计入手选计数**、
  * 也**不在手选列表里出 checkbox**（判据 8：手选项 ⇒ 红；由 `handPickableProcessingItems` 滤掉）。
  * ⚠️ `定型` 已**不在**本函数里（#4566）：它是手选加工项，其勾选态单独派生 `isShaped`。
- * ⚠️ **本页是推导的单一真值**：判据一律走 `lib/craft-auto-features.ts`（#4662 起「超宽」含**褶倍**、
- * 几何矛盾另走 {@link autoFeatureNoticesOf}）—— 本页**不得**出现第二份推导。
+ * ⚠️ **本页不是推导真值源**：判定一律**来自服务端** `POST /api/admin/orders/auto-features`
+ * （引擎 `curtain_calc.detect_auto_features`）—— 本页**不得**出现第二份推导。
+ * 🔴 **issue #5130 改判**：原注释写「判据一律走 `lib/craft-auto-features.ts`（#4662 起「超宽」含**褶倍**）」
+ * —— 前端的本地推导实现已随 issue #5035 删除，且**超宽现已不含褶倍**（#4662 判定面已退役）。
  */
 /**
  * 该颜色的**默认选中 SKU**（issue #4877 裁定 C：**规则驱动默认选中**）。
@@ -3799,9 +3804,11 @@ function LineItemBlock({
                       {doorWidthChoice.suggestion}
                     </p>
                   )}
-                  {/* **提示**（issue #4662）：① 缺褶倍 ⇒ 未判超宽（不猜、也不静默）；
-                      ② 加工类型与几何**矛盾** ⇒ 系统实际会按哪种算（与算料引擎的自动回落一致）。
-                      ⚠️ 提示**不改推算、不进组合键** —— 只把「前端推算」与「引擎实际计算」的
+                  {/* **提示**（issue #4662 / #5130 改判）：加工类型与几何**矛盾** ⇒ 系统实际会按哪种算
+                      （与算料引擎的自动回落一致）。
+                      🔴 **原注释的「① 缺褶倍 ⇒ 未判超宽」已随 issue #5130 退役** —— 该提示
+                      （`missing-fullness`）与 `missing-door-width` 两条都已从引擎删除（新判据不读褶倍/门幅）。
+                      ⚠️ 提示**不改推算、不进组合键** —— 只把「商家所选加工类型」与「引擎实际计算」的
                       不一致**摆到台面上**（用户 2026-09-20 裁定 C）。 */}
                   {autoFeatureNotices.map((notice) => (
                     <p

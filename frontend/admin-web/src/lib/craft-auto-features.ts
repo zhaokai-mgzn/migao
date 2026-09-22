@@ -26,8 +26,13 @@
 
 /**
  * ⚠️ **宽方向没有余量常量**（用户 2026-09-21 裁定，issue #5030）：订单宽 = **净窗宽**、
- * 成品宽 = 净窗宽 ⇒ 超宽判据 = `窗宽 × 褶倍 > 门幅`。原先的 `SIDE_MARGIN = 0.3`
- * （左右覆盖余量）与配置键 `side_margin` **一并退场**，不得以任何名字复活。
+ * 成品宽 = 净窗宽。原先的 `SIDE_MARGIN = 0.3`（左右覆盖余量）与配置键 `side_margin`
+ * **一并退场**，不得以任何名字复活。
+ *
+ * 🔴 **本段原写的「⇒ 超宽判据 = `窗宽 × 褶倍 > 门幅`」已于 2026-09-22（issue #5130）退役**：
+ * 「超宽」现由**企业阈值参数**判定（`净窗宽 > oversize_width_threshold`），**不读门幅、也不含褶倍**。
+ * 真值源 = `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `detect_auto_features`。
+ * （留档而非删除：issue #4662 的「超宽含褶倍」是**当时**的裁定，读者需要看得见它变过。）
  */
 
 /**
@@ -35,7 +40,7 @@
  *
  * | 口径 | 值 | 来源 | 谁在读 |
  * |---|---|---|---|
- * | 商品/SKU 门幅（**权威**） | 商品可配（种子 2.8；窄幅布 1.4） | 商品 `doorWidths` ⇒ `product_skus.door_width` | 本页判定（{@link parseDoorWidth}）、规则（`door-width-plan.ts`）、SKU 定位 / 加工费组合键 |
+ * | 商品/SKU 门幅（**权威**） | 商品可配（种子 2.8；窄幅布 1.4） | 商品 `doorWidths` ⇒ `product_skus.door_width` | 本页判定（{@link parseDoorWidth}）、**门幅规则面**（服务端 `POST /api/internal/production/door-width-plan`；前端 `door-width-plan.ts` 已于 issue #5043 包 2b **删除**）、SKU 定位 / 加工费组合键 |
  * | 引擎**端点**门幅 | **硬编码**（`backend/ai-agent-service/app/api/internal.py` 的 `_FABRIC_WIDTH`） | 算料试算通路 | **尚未按 SKU 门幅接线** = 分叉 #4652 |
  *
  * 🔴 **「缺省门幅」已删除**（issue #4877；用户 2026-09-21 裁定「如果所有门幅都不满足，
@@ -105,8 +110,9 @@ function positiveNumber(value: unknown): number | null {
  * 门幅解析 —— 解析 SKU 的 `doorWidth`（可带单位，如 `2.8米`）。
  * 缺席 / 不可解析 / 非正数 ⇒ `null`（**不默认成任何值**）。
  *
- * ⚠️ **门幅选择规则必须用本函数**（`door-width-plan.ts`）：缺失 = **不可判定** ——
- * 「静默按缺省 2.8 推算」正是 issue #4877 要替换掉的错误做法。
+ * ⚠️ **门幅规则必须用本函数**（规则实现已在 issue #5043 包 2b 搬到服务端
+ * `POST /api/internal/production/door-width-plan`；前端原模块 `door-width-plan.ts` **已删除**）：
+ * 缺失 = **不可判定** ——「静默按缺省 2.8 推算」正是 issue #4877 要替换掉的错误做法。
  */
 export function parseDoorWidth(doorWidth: unknown): number | null {
   if (doorWidth === null || doorWidth === undefined) return null
@@ -115,9 +121,21 @@ export function parseDoorWidth(doorWidth: unknown): number | null {
   return positiveNumber(match[1])
 }
 
-/** 加工类型 `定高买宽` —— **高**方向受门幅约束（**宽**按米买、无上限）⇒ 只判 `超高` */
+/**
+ * 加工类型 `定高买宽`
+ *
+ * 🔴 **原注释「**高**方向受门幅约束（**宽**按米买、无上限）⇒ 只判 `超高`」已于 2026-09-22
+ * （issue #5130）退役**：那是 issue #4661 的「**按加工类型分流**」口径，而新判据（企业阈值参数）
+ * **与加工类型无关** ⇒ `超宽` / `超高` **一律照判**。本常量今天**只**用于推导 `倒幅`。
+ */
 export const CUTTING_MODE_FIXED_HEIGHT = '定高买宽'
-/** 加工类型 `定宽买高` —— **宽**方向受门幅约束（分幅数 = `(宽+余量)×褶倍 ÷ 门幅`）⇒ 只判 `超宽` */
+/**
+ * 加工类型 `定宽买高`
+ *
+ * 🔴 **原注释「**宽**方向受门幅约束（分幅数 = `(宽+余量)×褶倍 ÷ 门幅`）⇒ 只判 `超宽`」同样已退役**
+ * （issue #5130 / #5030）：宽方向**没有余量**，且「只判超宽」是已退役的 #4661 分流。
+ * 本常量今天**只**用于推导 `倒幅`（`定宽买高` ⇒ `倒幅`）。
+ */
 export const CUTTING_MODE_FIXED_WIDTH = '定宽买高'
 
 /**

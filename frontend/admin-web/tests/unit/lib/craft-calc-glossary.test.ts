@@ -123,6 +123,14 @@ function allCopyStrings(): string[] {
   return out
 }
 
+/**
+ * 引擎侧**非标量**（结构化）配置键 —— 它们不进「标量表单」，故**不在** `CALC_SCALAR_KEYS` 里。
+ *
+ * 🔴 **这份清单必须显式**（issue #5137）：靠 `CALC_SCALAR_KEYS.includes()` 反推「哪些引擎键是标量」
+ * 是**循环定义** —— 被测清单自己定义自己 ⇒「引擎新增标量键而清单没加」这一形态**恒真**（假绿）。
+ */
+const NON_SCALAR_ENGINE_KEYS = ['per_fold_mixed_times', 'tiers', 'default_formula'] as const
+
 describe('算料配置页·口径与术语说明（issue #4975）', () => {
   it('判据 1：引擎每个配置键都有页面文案（新增键不补文案 ⇒ 红）', () => {
     const missing = engineConfigKeys().filter((k) => !(k in CALC_PARAM_COPY))
@@ -130,12 +138,43 @@ describe('算料配置页·口径与术语说明（issue #4975）', () => {
     expect(missing).toEqual([])
   })
 
-  it('判据 1b：六个标量键与说明模块的标量清单**逐值一致**（少一个 = 表单少一个输入框）', () => {
-    const engineScalarKeys = engineConfigKeys().filter((k) => CALC_SCALAR_KEYS.includes(k as never))
+  // 🔴 **issue #5137 修正（独立核验红证）**：原实现是
+  // `engineConfigKeys().filter((k) => CALC_SCALAR_KEYS.includes(k))` —— **先取交集再比较**
+  // ⇒ 「引擎有而清单没有」这个方向**恒真**。实测形态：注入新引擎键 + 补 `CALC_PARAM_COPY` 文案、
+  // 但**不加进 `CALC_SCALAR_KEYS`** ⇒ 本文件 26/26 全绿（守卫对最该抓的形态失灵）。
+  // 修法 = 用**显式**的非标量清单反推「哪些引擎键是标量」，**不拿被守卫的清单自己定义自己**。
+  it('判据 1b：引擎标量键集 ↔ 说明模块的标量清单 **双向相等**（少一个 = 表单少一个输入框）', () => {
+    const engineScalarKeys = engineConfigKeys().filter(
+      (k) => !(NON_SCALAR_ENGINE_KEYS as readonly string[]).includes(k)
+    )
     expect([...CALC_SCALAR_KEYS].sort()).toEqual(engineScalarKeys.sort())
     // 🔴 #5030 反向守卫：`side_margin` 已从两侧键集退场 —— 任一侧加回 ⇒ 本断言红
     expect([...CALC_SCALAR_KEYS]).not.toContain('side_margin')
     expect(engineConfigKeys()).not.toContain('side_margin')
+  })
+
+  // 🔴 **判据 1b 的红证**（issue #5137）：证明上面那条**不是空断言** ——
+  // 把「引擎标量键集」做坏（多一个 `brand_new_scalar`）⇒ **同一个比较式必须不等**。
+  // ⚠️ 这条红证在**修正前**的写法下会**失败**（旧式取交集 ⇒ 恒相等）⇒ 它对本修正是有判别力的。
+  it('判据 1b 红证：引擎多一个标量键而清单没加 ⇒ 同一比较式必须判不等', () => {
+    const injected = [...engineConfigKeys(), 'brand_new_scalar']
+    const engineScalarKeys = injected.filter(
+      (k) => !(NON_SCALAR_ENGINE_KEYS as readonly string[]).includes(k)
+    )
+    expect(engineScalarKeys).toContain('brand_new_scalar')
+    expect([...CALC_SCALAR_KEYS].sort()).not.toEqual(engineScalarKeys.sort())
+  })
+
+  // 🔴 **issue #5137 补一条此前全仓没有的守卫**：`CALC_PARAM_COPY` 的键集必须被
+  // 「标量键 ∪ 非标量键」**盖住** —— 否则文案表会出现**两边都没有**的孤儿键（各自漂移）。
+  it('判据 1c：`CALC_PARAM_COPY` 的键集必须 ⊆ 标量键 ∪ 非标量键（不得有孤儿文案）', () => {
+    const allowed = new Set<string>([...CALC_SCALAR_KEYS, ...NON_SCALAR_ENGINE_KEYS])
+    const orphans = Object.keys(CALC_PARAM_COPY).filter((k) => !allowed.has(k))
+    expect(orphans).toEqual([])
+    // 反向自证（守卫非空转）：往「两边都没有」塞一个键 ⇒ 必须被抓出来
+    expect([...allowed, 'ghost_key'].filter((k) => !allowed.has(k))).toEqual(['ghost_key'])
+    // 且两个方向都要在面内：真实存在的非标量键确实是**允许**的（不是把面收成「仅标量键」）
+    expect(Object.keys(CALC_PARAM_COPY)).toContain(NON_SCALAR_ENGINE_KEYS[1])
   })
 
   // 🔴 issue #5030 改判（用户 2026-09-21 裁定：「订单里的宽和高是窗户的宽高」⇒ 用料 = 窗宽 × 褶倍，
