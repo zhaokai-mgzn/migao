@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids=[PR-029, PR-030, PR-031, PR-032, PR-033]
+// case_ids=[PR-029, PR-030, PR-031, PR-032, PR-033, PR-045]
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -348,6 +348,84 @@ class InboundOrderServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("SKU 已不存在");
             verify(productSkuMapper, never()).receiveStock(anyLong(), anyInt(), any(), anyString());
+        }
+
+        // ---------------------------------------------------------- PR-045 多行过账
+
+        /**
+         * 多行过账：**批次号必须逐行生成**（V111 裁定「一个 SKU 行 = 一个批次」）。
+         *
+         * <p>整单共用一个批次号时，第 2 行插 {@code stock_batches} 会撞
+         * {@code uk_stock_batches_no} = {@code UNIQUE (tenant_id, batch_no)} ⇒
+         * **整个事务回滚**（≥2 行的入库单必然过账失败，issue #5141）。</p>
+         *
+         * <p>本测试无真实库（同本类其它用例），故判别力**全部**来自「两个批次号必须不同」
+         * 这一条断言本身 —— DB 唯一索引的冲突由它间接保证，不靠 Mockito 施加约束。</p>
+         */
+        @Test
+        @DisplayName("PR-045 多行过账：**每行各取一个批次号**（整单共用一个号 ⇒ 第 2 行撞唯一索引、整单回滚）")
+        void postAssignsDistinctBatchNoPerLine() {
+            InboundOrder order = draftOrder();
+            // 两个 SKU 各一行 —— 真实场景 = 一张送货单上的两种布
+            List<InboundOrderItem> lines = List.of(line(100L, 11L), line(101L, 12L));
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(lines)
+                    .thenReturn(lines);
+            when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 5, null));
+            when(productSkuMapper.selectById(12L)).thenReturn(sku(12L, "prod-1", 0, null));
+
+            service.post("RK-20260923-0001", TENANT, "op");
+
+            // ① 批次台账落 **2 行**、两个批次号**不同**（相同 ⇒ 真库上第 2 行唯一索引冲突）
+            ArgumentCaptor<StockBatch> batchCap = ArgumentCaptor.forClass(StockBatch.class);
+            verify(stockBatchMapper, times(2)).insert(batchCap.capture());
+            List<StockBatch> batches = batchCap.getAllValues();
+            List<String> batchNos = batches.stream().map(StockBatch::getBatchNo).toList();
+            assertThat(batchNos).hasSize(2).doesNotHaveDuplicates();
+            assertThat(batchNos).allMatch(no -> no != null && no.matches("PC-\\d{8}-\\d{4}"));
+            // 每行的批次行都挂在自己那行明细上（不是把整单的行都挂到第一行）
+            assertThat(batches).extracting(StockBatch::getInboundItemId).containsExactly(100L, 101L);
+
+            // ② 每行回写的批次号 = **自己那一个**（不是整单共用的首个号）
+            ArgumentCaptor<InboundOrderItem> patchCap = ArgumentCaptor.forClass(InboundOrderItem.class);
+            verify(inboundOrderItemMapper, times(2)).updateById(patchCap.capture());
+            assertThat(patchCap.getAllValues()).extracting(InboundOrderItem::getBatchNo)
+                    .containsExactly(batchNos.get(0), batchNos.get(1));
+
+            // ③ 加库存也逐行带各自的批次号（latest_batch_no 不得被同一个号覆盖两次）
+            ArgumentCaptor<String> receiveCap = ArgumentCaptor.forClass(String.class);
+            verify(productSkuMapper, times(2)).receiveStock(anyLong(), anyInt(), any(), receiveCap.capture());
+            assertThat(receiveCap.getAllValues()).doesNotHaveDuplicates();
+        }
+
+        /**
+         * 同一 SKU 的两行（同一天两种缸号的布）也各一个批次 —— 批次粒度是**行**，不是 SKU。
+         *
+         * <p>按 SKU 合并批次会丢掉缸号区分度（{@code stock_batches.dye_lot} 是<b>行级</b>快照），
+         * 而 V111 的裁定逐字是「一个 SKU **行** = 一个批次」。</p>
+         */
+        @Test
+        @DisplayName("PR-045 同一 SKU 两行（不同缸号）各一个批次：粒度 = 行，不是 SKU")
+        void postAssignsDistinctBatchNoForSameSkuLines() {
+            InboundOrder order = draftOrder();
+            InboundOrderItem second = line(101L, 11L);
+            second.setDyeLot("G-2026-0913");
+            List<InboundOrderItem> lines = List.of(line(100L, 11L), second);
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(lines)
+                    .thenReturn(lines);
+            when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 5, null));
+
+            service.post("RK-20260923-0001", TENANT, "op");
+
+            ArgumentCaptor<StockBatch> batchCap = ArgumentCaptor.forClass(StockBatch.class);
+            verify(stockBatchMapper, times(2)).insert(batchCap.capture());
+            assertThat(batchCap.getAllValues()).extracting(StockBatch::getBatchNo).doesNotHaveDuplicates();
+            // 缸号随之各归各行 —— 合并批次会让两行只剩一个缸号（追溯断链）
+            assertThat(batchCap.getAllValues()).extracting(StockBatch::getDyeLot)
+                    .containsExactly("G-2026-0912", "G-2026-0913");
         }
     }
 

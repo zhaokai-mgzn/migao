@@ -6269,6 +6269,24 @@ _CASE_PR_044 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-045 [NORMAL] 多行入库单过账：批次号**逐行生成**（一个 SKU 行 = 一个批次），不得整单共用一个号（源: cases/product.yml）──
+_CASE_PR_045 = EvalCase(
+    id='PR-045',
+    legacy_id='',
+    title='多行入库单过账：批次号**逐行生成**（一个 SKU 行 = 一个批次），不得整单共用一个号',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['入库单过账的批次粒度（非 LLM 行为，由 Java 单测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**逐行生成**：N 行明细过账 ⇒ `stock_batches` 落 **N 行**、`batch_no` **两两不同**。判据源 = `uk_stock_batches_no` 是 `UNIQUE (tenant_id, batch_no)` ⇒ 整单共用一个号时第 2 行撞唯一索引、**整个事务回滚**（≥2 行的入库单必然过账失败）。注入：把 `nextFreeBatchNo(tenantId)` 移回明细行循环之外 ⇒ 2 行夹具下取到两个相同批次号 ⇒ 断言红（红证实测：`Found duplicate(s): [\\"PC-…-0001\\"] in: [\\"PC-…-0001\\", \\"PC-…-0001\\"]`）。', '判据 2·**行上回写各自的号**：`inbound_order_items.batch_no` 必须等于**该行自己**那条 `stock_batches.batch_no`（不是整单共用的首个号）——逐行 `updateById` 的批次号与逐行批次行的批次号按序一一对应。', '判据 3·**加库存带各自的号**：`product_skus.latest_batch_no` 由每行各自的 `receiveStock` 写入（N 行 ⇒ 调 N 次、批次号两两不同）——整单共用号会让「最近批次」在多行同 SKU 时静默丢掉区分度。', '判据 4·**粒度 = 行而非 SKU**：同一 SKU 的两行（不同缸号）各一个批次、`dye_lot` 各归各行 —— 按 SKU 合并批次会丢掉缸号区分度、追溯断链。', "判据 5·**单行过账逐值不变**：仍是 `PC-yyyyMMdd-NNNN`、仍恰好 1 条批次行 / 1 条 `reason='inbound'` 台账 / `ref_no` = 入库单号；均价与台账成本快照口径不变。"],
+    skip_reason='[backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟',
+    tags=['inventory', 'inbound', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -7841,6 +7859,7 @@ ALL_CASES = (
     _CASE_PR_042,
     _CASE_PR_043,
     _CASE_PR_044,
+    _CASE_PR_045,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
