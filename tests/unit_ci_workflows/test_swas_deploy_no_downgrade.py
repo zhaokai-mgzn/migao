@@ -1315,9 +1315,10 @@ def legit_refactor_moving_the_render_into_deploy_attempt(ci_text: str) -> str:
     assert ALLOW_RENDER in region, f"注入锚点不存在（判据已过期）：{ALLOW_RENDER!r}"
     out = ci_text.replace(ALLOW_RENDER + "\n", "", 1)
     assert out != ci_text, "注入没有改变文本（空跑）"
+    # 用 `sed` 而不是 `\${out//…}`：**可移植**（macOS bash 3.2 不支持后者，见 `_render_bootstrap_with_sed`）
     return _inject(
         out, "  printf '%s' \"$out\"",
-        '  printf %s "${out//__ALLOW_DOWNGRADE__/$allow}"',
+        '  printf %s "$(printf %s \"$out\" | sed \"s/__ALLOW_DOWNGRADE__/$allow/g\")"',
     )
 
 
