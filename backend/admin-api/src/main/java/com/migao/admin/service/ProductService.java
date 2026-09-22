@@ -1625,13 +1625,18 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
     /**
      * 获取单元格字符串值
+     *
+     * <p>数字单元格按**十进制原样**读（issue #5154）：Excel 里门幅常被敲成数字 `2.8`、货号常被敲成
+     * `12345`。改前这里是 `String.valueOf((long) value)` ⇒ `2.8` 变 `"2"`（**门幅少 0.8 米**，
+     * 而且因为没有报错、商家无从发现）。唯一消费方是本类的导入通路（导出侧自己写值、不读回），
+     * 故就地改正，不另建一套读数函数。</p>
      */
     private String getCellStringValue(Row row, int cellIndex) {
         Cell cell = row.getCell(cellIndex);
         if (cell == null) return null;
         return switch (cell.getCellType()) {
             case STRING -> cell.getStringCellValue().trim();
-            case NUMERIC -> String.valueOf((long) cell.getNumericCellValue());
+            case NUMERIC -> BigDecimal.valueOf(cell.getNumericCellValue()).stripTrailingZeros().toPlainString();
             case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
             default -> null;
         };

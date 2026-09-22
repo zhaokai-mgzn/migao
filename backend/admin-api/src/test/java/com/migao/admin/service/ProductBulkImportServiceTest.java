@@ -234,6 +234,23 @@ class ProductBulkImportServiceTest {
         assertThat(onlyProduct().getStock()).isEqualByComparingTo(new BigDecimal("8"));
     }
 
+    @Test
+    @DisplayName("判据1：门幅/货号写成**数字单元格**也按十进制原样读（2.8 不能变 2）")
+    void numericCellsAreReadAsPlainDecimals() throws Exception {
+        // Excel 里把门幅敲成数字 2.8、把货号敲成数字 12345 都很常见
+        MockMultipartFile file = workbook(
+                row("雪尼尔遮光帘", 12345, null, 99, 60.5, null, "米白", 2.8, null));
+
+        ProductImportResult result = productService.importProducts(file, TENANT);
+
+        assertThat(result.getFailCount()).isZero();
+        assertThat(onlyProduct().getSkuCode()).isEqualTo("12345");
+        // 红证：把 getCellStringValue 的数字分支换回 `String.valueOf((long) v)` ⇒ 门幅落成 "2"，
+        // `skuOf("米白","2.8")` 当场抛「找不到 SKU」（本行即判据）
+        ProductSku sku = skuOf("米白", "2.8");
+        assertThat(sku.getStock()).isEqualByComparingTo(new BigDecimal("60.5"));
+    }
+
     // ==================== 判据 2：幂等 ====================
 
     @Test
