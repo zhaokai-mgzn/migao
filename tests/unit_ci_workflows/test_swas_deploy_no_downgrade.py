@@ -1240,10 +1240,11 @@ def judge_permit_reaches_the_executed_command(ci_text: str, tmp_path: Path, tag:
 
     = 「**真正发给远端执行的那条命令里，许可已被渲染成 `<allow>`**」。
 
-    这一条**不关心渲染点写在哪一行、在哪个函数里**（⇒ 合法重构不误红），但它同时覆盖三种真失效：
+    这一条**不关心渲染点写在哪一行、在哪个函数里**（⇒ 合法重构不误红），但它同时覆盖四种真失效：
     ① 渲染点被**删**、② 渲染点被挪到**不生效**的位置（渲染进没人用的变量）、
-    ③ 占位符从模板里**消失** —— 三者的共同后果都是「远端拿到的命令里没有 `ALLOW_DOWNGRADE=<值>`」，
-    而远端 deploy.sh 的闸门在「许可状态未知」下的行为正是本单要防的**静默失效**。
+    ③ 占位符从模板里**消失**（渲染点成了空转）、④ 渲染成**常量**（`allow` 不生效）——
+    四者的共同后果都是「远端拿到的命令里没有 `ALLOW_DOWNGRADE=<allow>`」，
+    而远端 deploy.sh 的闸门在「许可状态未知」/ 许可被写死下的行为正是本单要防的**静默失效**。
     """
     cmd = deploy_attempt_command(
         ci_text, tmp_path, tag, allow, require_placeholder=require_placeholder,
