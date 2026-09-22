@@ -1,6 +1,6 @@
 package com.migao.admin.migration;
 
-// case_ids=[PR-036]
+// case_ids=[PR-036, PR-058]
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -135,5 +135,20 @@ class InboundOrderMigrationTest {
         // 批次号租户内唯一（防重号的安全网）
         assertThat(schema).contains("uk_stock_batches_no");
         assertThat(schema).contains("uk_inbound_orders_no");
+    }
+
+    @Test
+    @DisplayName("V117（#5148）终态已同步 docs/sql/schema.sql：单号租户内唯一 + 幂等键部分唯一索引 + source 取值约束")
+    void schemaSqlIsSyncedWithV117() throws IOException {
+        String schema = read(SCHEMA_SQL);
+        // 单号唯一索引**租户内**（与 V111 建表注释「租户内唯一」一致 —— 改前是全局唯一，两者矛盾）
+        assertThat(schema).contains("ON inbound_orders (tenant_id, inbound_no)");
+        // 建单幂等键的**部分**唯一索引（谓词两段：不带运行标识的普通建单不受影响）
+        assertThat(schema).contains("uk_inbound_orders_tenant_import_run");
+        assertThat(schema).contains("WHERE import_run_id IS NOT NULL AND deleted = 0");
+        assertThat(schema).contains("import_run_id VARCHAR(128)");
+        // 来源列 + 取值约束（期初导入与正常采购必须可区分）
+        assertThat(schema).contains("source VARCHAR(16) NOT NULL DEFAULT 'purchase'");
+        assertThat(schema).contains("source IN ('purchase', 'opening')");
     }
 }

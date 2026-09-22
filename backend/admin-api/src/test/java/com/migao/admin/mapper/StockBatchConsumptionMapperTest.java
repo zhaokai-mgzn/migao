@@ -105,7 +105,7 @@ class StockBatchConsumptionMapperTest {
     }
 
     @Test
-    @DisplayName("V116 是最高版本号且唯一（迁移号撞车 = 有一条永远不会跑）")
+    @DisplayName("V116 在且版本号集合无重复（迁移号撞车 = 有一条永远不会跑；**不**锁死「V116 是最高」）")
     void isUniqueHighestVersion() throws Exception {
         List<Integer> versions;
         try (Stream<Path> files = Files.list(MIGRATION_DIR)) {
@@ -119,7 +119,15 @@ class StockBatchConsumptionMapperTest {
         }
         assertThat(versions).contains(116);
         assertThat(versions.stream().filter(v -> v == 116).count()).isEqualTo(1);
-        assertThat(versions.get(versions.size() - 1)).isEqualTo(116);
+        // ⚠️ 这里原写 `versions.get(size - 1) == 116`（「V116 是当前最大迁移号」）—— 那是本仓
+        //    点名过的**自毁式真值主张**：下一个迁移一出现就必红，且报错文案指向错误行动
+        //    （同族教训与改法见 tests/unit_ci_workflows/test_v91_baseline_operations_backfill.py 与
+        //    test_public_ops_v88_migration.py；issue #5148 新增 V117 时**实测踩中**）。
+        //    判据本意（见方法名与 DisplayName）= 「**迁移号撞车 ⇒ 有一条永远不会跑**」⇒ 正确口径 =
+        //    版本号在**本档及以后**无重复。为什么只查 `>= 116` 而不查全体：仓库存量里 V29 / V33
+        //    各有两份（历史遗留，与本判据无关）⇒ 全量查重会对历史假红；而新增迁移只会出现在尾部。
+        //    V116 自身的逐字节冻结另由 migration_fingerprints.json 的 sha256 账本守（此处不重复主张）。
+        assertThat(versions.stream().filter(v -> v >= 116).toList()).doesNotHaveDuplicates();
     }
 
     @Test
