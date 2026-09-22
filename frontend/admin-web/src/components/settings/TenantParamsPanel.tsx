@@ -55,7 +55,7 @@ export function TenantParamsPanel() {
     setCalcError('')
     // 两个读面各自独立：一个失败不影响另一个（AI 客服读面失败不该让算料区也空白）
     const [calcRes, aiRes] = await Promise.allSettled([
-      productionApi.getCraftCalcConfig(),
+      productionApi.getCraftCalcConfig(true),
       settingsApi.getAiConfig(),
     ])
     if (calcRes.status === 'fulfilled') {
@@ -85,6 +85,19 @@ export function TenantParamsPanel() {
     return v === undefined || v === null || v === '' ? '—' : String(v)
   }
 
+  /**
+   * 引擎默认值里该键的值（**只在 `defaults_source='engine'` 时有意义**；否则 `null`）。
+   * 值一律**原样**来自服务端，本组件不做换算。
+   */
+  const defaultOf = (key: string): string | null => {
+    const v = (calc?.defaults as Record<string, unknown> | undefined)?.[key]
+    return v === undefined || v === null ? null : String(v)
+  }
+
+  /** 逐键「我改过没有」本次**可用吗**（§22 P3，issue #5131 增量 2）—— 只在引擎默认值真取到时才可比 */
+  const perKeyComparable =
+    domain.key === 'calc' && calc?.defaults_source === 'engine' && !!calc?.defaults
+
   const renderScalar = (d: ParamDomain, p: ScalarParam) => (
     <div
       key={p.key}
@@ -103,6 +116,29 @@ export function TenantParamsPanel() {
                 未配置（正在用引擎默认值）
               </span>
             )}
+            {/* §22 P3 逐键「我改过没有」：只在**引擎默认值真取到**时才标（拿不到就一条都不标） */}
+            {d.key === 'calc' &&
+              perKeyComparable &&
+              (() => {
+                const def = defaultOf(p.key)
+                if (def === null) return null
+                const changed = valueOf(d, p.key) !== def
+                return changed ? (
+                  <span
+                    data-testid={`param-changed-${p.key}`}
+                    className="text-xs px-1.5 py-0.5 rounded bg-primary-50 text-primary-700 border border-primary-200"
+                  >
+                    已改（默认 {def}）
+                  </span>
+                ) : (
+                  <span
+                    data-testid={`param-is-default-${p.key}`}
+                    className="text-xs px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 border border-neutral-200"
+                  >
+                    默认
+                  </span>
+                )
+              })()}
           </div>
           <p className="text-xs text-neutral-500 mt-1">{p.copy.hint}</p>
         </div>
@@ -178,6 +214,18 @@ export function TenantParamsPanel() {
                 className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2"
               >
                 本企业尚未保存过算料口径 —— 下表**全部**为算料引擎默认值。
+              </div>
+            )}
+
+            {/* §22 P3 逐键：引擎默认值**本次取不到** ⇒ **显式**说明「判不了」，
+                而不是把「拿不到」画成「就是默认值」（issue #5131 增量 2） */}
+            {domain.key === 'calc' && calc?.defaults_source === 'unavailable' && (
+              <div
+                data-testid="param-defaults-unavailable"
+                className="mt-3 text-xs text-neutral-600 bg-neutral-50 border border-neutral-200 rounded p-2"
+              >
+                引擎默认值本次取不到 ⇒ **无法判断哪些参数被你改过**。这不等于「都是默认值」，
+                也不影响你的配置本身（稍后重新打开本页即可再试）。
               </div>
             )}
 

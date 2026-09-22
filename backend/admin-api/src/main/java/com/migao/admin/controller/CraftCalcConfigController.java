@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -48,10 +49,17 @@ public class CraftCalcConfigController {
      * <p>响应 {@code data = {source, config}}：{@code source='stored'} 商家配置 /
      * {@code source='default'} 引擎默认值（**本租户没有配置行**）。前端据此显示
      * 「当前使用系统默认值」而不是把默认值伪装成商家配置（口径漂移风险见设计文档 §7.5）。</p>
+     *
+     * <p>{@code ?with_defaults=true} ⇒ **额外**附 {@code defaults} + {@code defaults_source}
+     * （§22 P3 逐键「我改过没有」，issue #5131 增量 2）。🔴 **默认不带**：既有调用方响应逐字节不变，
+     * 也**不新增**「读配置要依赖引擎可达性」这条依赖 —— 只有「参数总览」显式要。</p>
      */
     @GetMapping
-    public ApiResponse<Map<String, Object>> get() {
-        return ApiResponse.success(craftCalcConfigService.get(TenantContext.getTenantId()));
+    public ApiResponse<Map<String, Object>> get(
+            @RequestParam(name = "with_defaults", required = false, defaultValue = "false")
+            boolean withDefaults) {
+        return ApiResponse.success(
+                craftCalcConfigService.get(TenantContext.getTenantId(), withDefaults));
     }
 
     /**
