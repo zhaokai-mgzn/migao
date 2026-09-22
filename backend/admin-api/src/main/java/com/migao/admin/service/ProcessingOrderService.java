@@ -502,7 +502,7 @@ public class ProcessingOrderService {
         List<Prepared> prepared = new ArrayList<>();
         List<StockBatchConsumptionService.Designation> pooledLines = new ArrayList<>();
         for (String rawId : orderIds) {
-            Prepared p = prepare(rawId, byOrder.getOrDefault(rawId, List.of()), tenantId, null, rule, true);
+            Prepared p = prepare(rawId, byOrder.getOrDefault(rawId, List.of()), tenantId, null, rule);
             prepared.add(p);
             pooledLines.addAll(p.designations());
         }
@@ -737,7 +737,7 @@ public class ProcessingOrderService {
             String rawId = orderIds.get(i);
             try {
                 Prepared p = prepare(rawId, byOrder.getOrDefault(rawId, List.of()), tenantId, operator,
-                        rule, true);
+                        rule);
                 prepared.add(p);
                 indexes.add(i);
                 pooledLines.addAll(p.designations());
@@ -806,7 +806,7 @@ public class ProcessingOrderService {
     /** 逐单派（缺省路径）：准备 → 本单求解 → 落库。与池化派**共用**同一条准备与落库链。 */
     private GenerateResult generateOne(String rawId, List<BatchAssignment> assignments,
                                        Long tenantId, String operator, String rule) {
-        Prepared p = prepare(rawId, assignments, tenantId, operator, rule, false);
+        Prepared p = prepare(rawId, assignments, tenantId, operator, rule);
         // 不指派批次（本单没有指定、也没传规则）⇒ **一次都不调** plan：与 #5145 之前逐字相同
         // （「不指派 ⇒ 不扣批次、不产生台账行、不多一个错误分支」—— 连 mock 交互次数都不许多一次）
         List<StockBatchConsumptionService.Deduction> deductions = p.designations().isEmpty()
@@ -822,7 +822,7 @@ public class ProcessingOrderService {
      * 逐值相同」包括「哪一步先失败」——把幂等闸挪到快照之前就会换一条错误文案）。</p>
      */
     private Prepared prepare(String rawId, List<BatchAssignment> assignments,
-                             Long tenantId, String operator, String rule, boolean pooled) {
+                             Long tenantId, String operator, String rule) {
         Order order = resolveOrder(rawId, tenantId);
         if (order == null) {
             throw new BusinessException("ORDER_NOT_FOUND", "无法找到订单：" + rawId, 404);
@@ -859,7 +859,7 @@ public class ProcessingOrderService {
         // 写库之后再抛业务异常会留下「有加工单、扣了半截」的半成品，见
         // StockBatchConsumptionService 类注释「写面分两段」）。
         List<StockBatchConsumptionService.Designation> designations =
-                buildDesignations(items, snapshot, assignments, tenantId, rule, pooled);
+                buildDesignations(items, snapshot, assignments, tenantId, rule);
 
         ProcessingOrder po = ProcessingOrder.builder()
                 .tenantId(tenantId)
@@ -965,14 +965,15 @@ public class ProcessingOrderService {
      * 没有可满足批次 ⇒ 显式拒绝该行（不静默跳过 = 不静默少扣）。补位用的需求 = **公式口径**米数
      * （该行的领料上限），而实际扣减仍由 {@code plan} 按排料结果定（#5158 口径，本方法不碰）。</p>
      *
-     * <p><b>池化（issue #5169）</b>：{@code pooled = true} 时本方法只多做一件事 ——
-     * SKU 码取**正确的快照键**（{@link #snapshotSkuCode}），使「批次 SKU 必须与订单行一致」
-     * 这条判据在池级求解里真的生效（池把多单的行放进同一组，错配的代价被放大）。
-     * 其余口径（缺省拒绝、规则补位、米数、定尺入参）两条路径**逐字相同**。</p>
+     * <p><b>SKU 码的取值键（issue #5174）</b>：逐行取快照**实际写入的键**（{@link #snapshotSkuCode}）。
+     * 改前只有池化路径（#5169）这么取，既有路径读的是快照里**不存在**的 {@code skuCode} 键 ⇒ 恒 null
+     * ⇒ 「批次 SKU 必须与订单行一致」这条判据与建议值的 SKU 过滤在**生产路径上从未生效**。
+     * 取值键统一后两条路径在这一格上**同源**（其余口径本来就逐字相同：缺省拒绝、规则补位、
+     * 米数、定尺入参）。</p>
      */
     private List<StockBatchConsumptionService.Designation> buildDesignations(
             List<OrderItem> items, List<Map<String, Object>> snapshot,
-            List<BatchAssignment> assignments, Long tenantId, String assignmentRule, boolean pooled) {
+            List<BatchAssignment> assignments, Long tenantId, String assignmentRule) {
         if (assignments == null || assignments.isEmpty()) {
             return List.of();
         }
@@ -1009,9 +1010,9 @@ public class ProcessingOrderService {
                         "明细行 %s 的米数为 %s，无法指定批次扣减", itemId, meters.toPlainString()));
             }
             String batchNo = a.getBatchNo() == null ? null : a.getBatchNo().trim();
-            // SKU 码（= 颜色 × 门幅）：池化路径取**正确的快照键** `sku`，既有路径逐字保留原取值
-            // （见 {@link #snapshotSkuCode} —— 取值键不同的理由必须写在那一处，不能靠猜）
-            String skuCode = pooled ? snapshotSkuCode(row) : str(row.get("skuCode"));
+            // SKU 码（= 颜色 × 门幅）：**所有路径**都取快照实际写入的键（issue #5174；唯一入口见
+            // {@link #snapshotSkuCode} —— 读错键会让整条 SKU 护栏 no-op）
+            String skuCode = snapshotSkuCode(row);
             if (!StringUtils.hasText(batchNo)) {
                 // 显式传了规则且该行没指定批次 ⇒ 按规则补位（建议值 = 直接采用）
                 batchNo = batchStock().suggestedBatchNo(tenantId, productIdByItemId.get(itemId),
@@ -1034,24 +1035,24 @@ public class ProcessingOrderService {
     }
 
     /**
-     * 快照行的 SKU 码（= **颜色 × 门幅**，即池化视图的「物料」维）—— 池化路径的取键。
+     * 快照行的 SKU 码（= **颜色 × 门幅**，即池化视图的「物料」维）—— **所有派工路径的唯一取键**。
      *
      * <p>🔴 快照里这个事实的键是 {@code sku}：{@code buildSnapshot} 把
      * {@code processing_info.sku} 与 {@code processing_info.skuCode} **都写进 {@code sku}**
-     * 这一个键（两行 {@code copyIfPresent}，落键同为 {@code sku}）。</p>
+     * 这一个键（两行 {@code copyIfPresent}，落键同为 {@code sku}）⇒ 快照里**没有**
+     * {@code skuCode} 键。</p>
      *
-     * <p><b>为什么池化路径与既有路径取值键不同（照实登记，不粉饰）</b>：既有路径读的是
-     * {@code row.get("skuCode")} ⇒ **恒为 null**，于是
-     * 「批次的 SKU 与订单行的 SKU 一致」这条判据、以及 {@code suggestedBatchNo} 的 SKU 过滤，
-     * 在**生产路径上从未生效**（后果：同商品下不同颜色/门幅的批次可能被自动指派 ⇒ 排料时
-     * 会用**批次**的 SKU 门幅去装**订单行**的料 ⇒ 可能多装 ⇒ 少领 ⇒ 裁床切不出货）。
-     * 池化要按「物料」分组、且池级求解会把多单的行放进同一组，这个洞**不能再放大** ⇒
-     * 新路径用正确的键。</p>
+     * <p><b>issue #5174：改前只有池化路径取对了键</b>（#5169 引入本方法时，既有路径逐字保留了
+     * {@code row.get("skuCode")} —— 那正是**恒 null** 的来源）。后果不是「少一个字段」：
+     * {@link StockBatchConsumptionService#plan} 的一致性判据第一个条件是
+     * {@code StringUtils.hasText(d.skuCode())} ⇒ 整条 no-op；
+     * {@link StockBatchConsumptionService#suggestedBatchNo} 的 SKU 过滤同样整条 no-op
+     * ⇒ 同货号下**跨颜色/门幅**的批次会被静默接受并扣账（用错料，账上不留痕）。
+     * 现统一走本方法（先 {@code sku}、取不到才退回 {@code skuCode} 兼容存量单）—— 两条路径**同源**。</p>
      *
-     * <p>而既有路径**一个字也不改**：把它的取值键改对，会让「文员显式指定了另一 SKU 的批次」
-     * 从**静默接受**变成 {@code BATCH_SKU_MISMATCH} 拒绝 —— 那是改**记录期基线**的行为变更，
-     * 与判据 1「不启用池化 ⇒ 与今天逐值相同」正面冲突。⇒ 既有路径的修正（连同它的基线影响）
-     * 属于**另一单**，不在本单范围。</p>
+     * <p>⚠️ 行为变更（如实登记）：取值键修对之后，「文员显式指定了另一 SKU 的批次」从
+     * <b>静默接受</b>变为 {@code BATCH_SKU_MISMATCH} 拒绝 —— 这是**修 bug**，不是改记录期基线
+     * （基线度量的是批次余量分配 / 采购米数 / 指派策略，本单一项都没动）。</p>
      */
     private static String snapshotSkuCode(Map<String, Object> row) {
         String sku = str(row.get("sku"));

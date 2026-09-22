@@ -6809,6 +6809,60 @@ _CASE_PR_072 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-076 [NORMAL] 🔴 真库：同货号、错颜色/门幅的批次 ⇒ `BATCH_SKU_MISMATCH` 400 + **零落账**（红证：改前读侧恒 null ⇒ 同一夹具**静默扣账**）（源: cases/product.yml）──
+_CASE_PR_076 = EvalCase(
+    id='PR-076',
+    legacy_id='',
+    title='🔴 真库：同货号、错颜色/门幅的批次 ⇒ `BATCH_SKU_MISMATCH` 400 + **零落账**（红证：改前读侧恒 null ⇒ 同一夹具**静默扣账**）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['跨 SKU 批次护栏的真库读数（非 LLM 行为，由真 PG（initdb+pg_ctl）Java 判据覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1·**跨 SKU ⇒ 显式拒绝**：`plan` 对「同一个货号、错颜色/门幅」的批次抛 `BATCH_SKU_MISMATCH`（HTTP 400）；文案点名对象（批次号 + 批次所属 SKU + 订单行要的 SKU），`suggestion` 给可行动处置（按该行的颜色/门幅重选）。跨商品那一道判据独立成立（本来就生效）⇒ 本单补的正是「同货号、跨 SKU」这一格。', '🔴 判据 1·**零落账**：拒绝发生在 `plan`（只读段，写面在 `apply`）⇒ 被拒批次在真库台账里 **0 行**、批次余量一字不动（60 仍是 60），不留下「有加工单、扣了半截」的半成品。', '🔴 **红证（改前形态 = 静默落账，实测不是推断）**：同一夹具把 SKU 码换成改前读侧必然产出的 `null`（既有路径读的是快照里**不存在**的 `skuCode` 键 ⇒ 恒 null；护栏第一个条件 `hasText(d.skuCode())` 因此恒假 ⇒ 整条判据 no-op）⇒ 真库读数 = 台账 **1 行**、扣 **3 米**、批次余量 60 → **57**，三个数在同测试内打印并与上面那条对照。', '判据 1·**可被触达的路径**：`generate` 允许逐行显式传 `batches`（文员手选批次号）⇒ 手选一个同货号但错颜色/门幅的批次，改前就是上述静默扣账。'],
+    skip_reason='[backend-contract] 批次账的真库读数（无米宝工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据覆盖，不进入 agent-eval 冒烟',
+    tags=['batch-ledger', 'dispatch-sku-guard', 'real-db', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-077 [NORMAL] 🔴 读侧取键（装配）：逐单派工行拿到的 SKU 码 = 快照**实际写入**的 `sku` 键（改前读 `skuCode` ⇒ 恒 null ⇒ 护栏与建议值过滤整条 no-op）（源: cases/product.yml）──
+_CASE_PR_077 = EvalCase(
+    id='PR-077',
+    legacy_id='',
+    title='🔴 读侧取键（装配）：逐单派工行拿到的 SKU 码 = 快照**实际写入**的 `sku` 键（改前读 `skuCode` ⇒ 恒 null ⇒ 护栏与建议值过滤整条 no-op）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['生成加工单时的派工入参装配（非 LLM 行为，由 Mockito 单测覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1 的**读侧一半**：不启用池化（逐单派）时，`plan` 收到的 `Designation.skuCode` **非 null** 且逐值等于快照里的 SKU 码（快照由 `buildSnapshot` 写入：`processing_info.sku` 与 `processing_info.skuCode` **都落 `sku` 这一个键**，快照里没有 `skuCode` 键）。红证 = 改前该值为 `[null]`；它的真库后果（静默扣账）见 PR-076 的对照读数。', '判据 3 的**读侧一半**：按规则自动补位时 `suggestedBatchNo` 收到的过滤入参 = **同一个** SKU 码（改前收 `null` ⇒ 过滤条件整条 no-op ⇒ 同货号错颜色/门幅的批次也能被补位；真库读数见 PR-078）。补位挑出的批次进 `plan` 时带着同一个 SKU 码（两处口径同源，不另立第二份）。', '判据 2·**合法路径逐值不变**：正确 SKU ⇒ 加工单照旧生成成功；派工需求 `meters` 仍是公式口径米数（向上进位到 0.1，与销售账同函数）、排料定尺三项（加工类型 / 窗高 / 分幅数）仍**逐值来自快照**（#5158 口径本单不碰）。'],
+    skip_reason='[backend-contract] 派工入参装配（无米宝工具面）⇒ 由 Mockito 单测覆盖，不进入 agent-eval 冒烟',
+    tags=['dispatch-sku-guard', 'batch-ledger', 'processing-order', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-078 [NORMAL] 🔴 真库：同 SKU 的批次落账**逐值不变**（含 #5158 排料口径）+ 建议值按 SKU 过滤 + 反向护栏（批次侧无色号不擅自收紧）+ 幂等（源: cases/product.yml）──
+_CASE_PR_078 = EvalCase(
+    id='PR-078',
+    legacy_id='',
+    title='🔴 真库：同 SKU 的批次落账**逐值不变**（含 #5158 排料口径）+ 建议值按 SKU 过滤 + 反向护栏（批次侧无色号不擅自收紧）+ 幂等',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['同 SKU 批次的真库落账读数（非 LLM 行为，由真 PG（initdb+pg_ctl）Java 判据覆盖）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 2·**合法路径逐值不变**：正确 SKU 的批次 ⇒ 落账两行，`formula_meters` = 3 / `planned_meters` = **1.5**（两扇「窗高 1.1 + 卷边 0.3」的矮窗在门幅 2.8 上并排 ⇒ #5158 排料口径**仍生效**，不是退化成「一律按公式扣」）、`Σ(formula − planned)` = 3、`unit_cost` = 12.5、`before_qty`/`after_qty` = 60 → 58.5 → 57 逐值可读、批次余量 60 → **57**。', '🔴 判据 3·**建议值过滤生效**：同货号、错门幅但**入库更早**的批次在改前形态（读侧传 `null`）下**会被建议**（FIFO 首选 —— 判别性来自夹具顺序）；带上正确 SKU 码 ⇒ 建议值换成同 SKU 的那个批次，`fifo` 与 `best_fit` 同源同一份候选（缺省仍是 `fifo`，本单不改指派策略默认值）。', '🔴 判据 2 的**反向护栏**（防「修成一律拒绝」）：批次侧 `sku_code` 为 **NULL**（导入批次未带色号 —— 如实登记的边界）⇒ **不擅自收紧**、仍按 `productId` 那道判据放行并正常落账；谁把 `hasText(batch.getSkuCode())` 去掉，这条立刻变红。', '判据 5·**幂等不变**：同一加工单重复落账被 `uk_batch_consumption_line` 挡下（SQLSTATE 23505），台账行数与批次余量都不再变化（沿用 #5145 闸）。', '判据 4·**不损失客户**：`product_skus.stock` / `price` 与 `stock_ledger_entries` 行数指纹一字不动（批次护栏不碰销售账）。'],
+    skip_reason='[backend-contract] 同 SKU 落账与建议值的真库读数（无米宝工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据覆盖，不进入 agent-eval 冒烟',
+    tags=['batch-ledger', 'dispatch-sku-guard', 'real-db', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -8411,6 +8465,9 @@ ALL_CASES = (
     _CASE_PR_070,
     _CASE_PR_071,
     _CASE_PR_072,
+    _CASE_PR_076,
+    _CASE_PR_077,
+    _CASE_PR_078,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
