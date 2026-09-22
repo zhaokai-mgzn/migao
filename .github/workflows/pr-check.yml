@@ -34,7 +34,12 @@ jobs:
           fetch-depth: 0
       - name: Check for forbidden .env files
         run: |
-          FORBIDDEN=$(git diff --name-only origin/main...HEAD | grep -E '\.env$|\.env\.' | grep -v '\.env\.example' || true)
+          # ⚠️ `--diff-filter=ACMR`（issue #5083）：`git diff --name-only` **会列出被删除的文件**
+          # ⇒ 不带 filter 时，`git rm --cached <某>.env.production` 之后那两个路径必然进 diff
+          # ⇒ 判 forbidden ⇒ 本 required 检查恒红 ⇒ **「把违规 .env 下架」这个正确动作被门禁
+          # 本身永久禁止**（自相矛盾的门禁）。只放宽「删除」这一维：新增/复制/修改/重命名
+          # （ACMR）仍然拦得住 ⇒ 门禁语义不变。
+          FORBIDDEN=$(git diff --diff-filter=ACMR --name-only origin/main...HEAD | grep -E '\.env$|\.env\.' | grep -v '\.env\.example' || true)
           if [ -n "$FORBIDDEN" ]; then
             echo "❌ PR contains forbidden .env files:"
             echo "$FORBIDDEN"

@@ -65,6 +65,19 @@ jobs:
     name: Reconcile and dispatch missing deploys
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # ── dependabot 触发 ⇒ **显式跳过**（issue #5077）──────────────────────────
+    # dependabot 触发的 workflow **拿不到仓库 secrets**（GitHub 对 bot 触发的
+    # `pull_request` 事件不下发 secrets）⇒ 下面 `Docker login ACR` 必报
+    #   `Error: Cannot perform an interactive login from a non TTY device`
+    # ⇒ 本 job 在 **6 个 dependabot PR** 上恒红。它**不是 required**（不拦合并），
+    # 但视觉上与真红无异 ⇒ 恰好掩埋了真正被破坏的升级（#5077 的 16 条积压）。
+    # 缺 secrets 时本 job **什么也做不了**（镜像判定 + dispatch 都依赖 ACR 凭据）
+    # ⇒ 跳过是唯一正确处置；**且必须是显式的**：本注释即跳过理由，check 列表里
+    # 该 job 显示为 `skipped`（不是 `fail`），不再出现「必然失败的必红项」。
+    # 处置路径：依赖 PR 的最终判定走**其它 required 检查**（它们不依赖 secrets）；
+    # 合并后 main 上的 push/schedule 触发会照常对账（下面那条 `||` 保证）。
+    # ⚠️ 只按 actor 判定，**不加任何 secrets 引用**（Danger Scan 会 BLOCK 新增引用）。
+    if: github.event_name != 'pull_request' || github.actor != 'dependabot[bot]'
     env:
       ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
       ACR_NAMESPACE: ai-customer-service
