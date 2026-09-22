@@ -13,8 +13,15 @@ on:
   # 部署对账（issue #2947）：连续快速合并时 GitHub 可能吞掉 push 触发
   # （2026-09-05 实测 #2927 合并后 admin-api 部署未自动触发——镜像从未构建，#2936 只覆盖 ai-agent）。
   # 定时兜底：检查 main HEAD 对应的 sha-xxx 镜像是否已存在，缺失则补一次构建部署。
+  # ⚠️ **错峰**（issue #5078 ③）：本 workflow 与 deploy-reconcile / deploy-frontend /
+  # deploy-ai-agent-service / flaky-ledger-reconcile **原来全是 `*/20 * * * *`** ⇒
+  # :00/:20/:40 同刻起跑 5 个重活（同时抢 runner + 同时抢各自的并发锁），而
+  # `deploy-reconcile` 的职责正是 dispatch 这 3 条 deploy ⇒ 队列自踩。
+  # 现排在 reconcile（:00/:20/:40）**之后** N 分钟：reconcile 先判定并 dispatch，
+  # 本腿随后独立复核（镜像已在 ⇒ 秒退，见 `Skip if already built`），不再同刻挤在一起。
+  # 周期仍是 20min ⇒ #2947/#2935 的分钟级兜底窗口不变。
   schedule:
-    - cron: '*/20 * * * *'
+    - cron: '4,24,44 * * * *'
   workflow_dispatch:
     inputs:
       image_tag:
@@ -74,11 +81,45 @@ jobs:
       # 缺失 → push 触发被吞，执行完整构建部署。
       - name: Skip if already built (schedule reconcile)
         id: sync
-        if: github.event_name == 'schedule'
+        # ⚠️ **改前只有 `github.event_name == 'schedule'`** ⇒ `workflow_dispatch` 这条路径
+        # **整步不跑** ⇒ 重复 dispatch 的 run 照常构建 + 部署 ⇒ 占住 `deploy-<svc>` 并发锁。
+        # #5078 的级联就是这么形成的（实测：run 35627484674 的 job **排队 42min** 才起跑，
+        # 拿到锁时早已越过 45min 上界 ⇒ 被 `timeout-minutes` 打死；同形还有 35628449279 /
+        # 35620917459 / 35627829895）。重复 dispatch 的来源是 `deploy-reconcile.yml`
+        # （cron `*/20`，main HEAD 的镜像缺失就再 dispatch 一次）—— 挂住的 run 不产出镜像
+        # ⇒ 每 20min 再补一次 ⇒ 队列里永远压着一个「注定被超时打死」的 run。
+        # 修法（**不降门禁**）：把同一条「镜像已在 ⇒ 不必重做」的判据**扩到 workflow_dispatch**
+        # ⇒ 排队的 run 拿到锁后**秒退**（打印理由），而不是白占 45min。`timeout-minutes` 兜底保留。
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          # 用 env 而不是在 run 里内联 `${{ … }}`：内联表达式在 shell 里是 `${{` 形态，
+          # 本仓的执行式守卫测试要逐字渲染这段正文（见 tests/unit_ci_workflows/
+          # test_deploy_churn_and_env_gate.py）⇒ 走环境变量既更安全也更好测。
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           EXPECTED_TAG="sha-${GITHUB_SHA::7}"
           IMAGE="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${EXPECTED_TAG}"
-          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+          # ⚠️ **先去重、后判定镜像**的顺序很重要：`image_tag` 非空 = 人工回滚（MODE=rollback），
+          # 回滚目标镜像**必然已存在** ⇒ 若先判镜像存在就 `exit 0`，会把 #4852 的显式回滚接口
+          # **整条砍掉**（守卫挡死它自己的逃生口）。故回滚路径**根本不进**镜像判定。
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -z "$INPUT_IMAGE_TAG" ] \
+             && docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "✅ 镜像 ${IMAGE} 已存在——main 当前 commit 已构建过"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            # workflow_dispatch + 无 image_tag + 镜像已在 ⇒ **重复 dispatch**（对账每 20min
+            # 补一次，或前一个 run 已构建完）⇒ 当场退出，把并发锁让给真正要做事的 run（#5078）。
+            echo "⏭️ 跳过原因（显式，非静默）：本次是 workflow_dispatch 且未指定 image_tag，"
+            echo "   而 sha-${GITHUB_SHA::7} 的镜像已存在 ⇒ 该 commit 已构建过 ⇒ 判定为**重复 dispatch**"
+            echo "   （来源多为 deploy-reconcile.yml 的 cron 兜底）。不再构建/部署，直接退出以释放并发锁。"
+            echo "   需要**强制重新部署同一 commit**：走显式回滚接口 \`gh workflow run <deploy>.yml -f image_tag=sha-<7>\`"
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_IMAGE_TAG" ]; then
+            echo "ℹ️ MODE=rollback（显式指定 image_tag=${INPUT_IMAGE_TAG}）⇒ 跳过「镜像已存在」去重判定，"
+            echo "   照常构建/部署（#4852 的显式回滚接口必须永远可用）"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          elif docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
             echo "✅ 镜像 ${IMAGE} 已存在——main 当前 commit 已构建过，跳过构建部署"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
