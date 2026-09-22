@@ -49,6 +49,10 @@ vi.mock('dayjs', () => ({
 vi.mock('@/components/orders', () => ({
   OrderProgressSteps: () => <div data-testid="order-progress">OrderProgressSteps</div>,
   ProcessingOrderBlock: () => <div data-testid="po-block">ProcessingOrderBlock</div>,
+  // 订单加急 / 到货日改单控件（issue #5177）：本文件验的是详情页既有区块与操作区，
+  // 该控件的判据在 tests/unit/components/OrderUrgencyPanel.test.tsx ⇒ 这里替身成空壳
+  // （不替身会让 `@/components/orders` 的 mock 缺该导出 ⇒ 渲染期直接抛）。
+  OrderUrgencyPanel: () => <div data-testid="order-urgency-panel">OrderUrgencyPanel</div>,
   // 纸质发货单（issue #3768）：本文件只验证入口按钮，单据内容由 ShipmentDoc.test.tsx 覆盖
   ShipmentDoc: () => <div data-testid="shipment-doc">ShipmentDoc</div>,
   // 纸质报价单（issue #4965）：同上 —— 入口按钮在本文件，纸面内容由 QuotationDoc.test.tsx 覆盖

@@ -244,6 +244,28 @@ public class OrderController {
     }
 
     /**
+     * 更新订单级**加急标记 / 客户要求到货日**（V120，issue #5177）。
+     *
+     * <p>PUT /api/admin/orders/{id}/urgency</p>
+     *
+     * <p>权限复用 {@code order:list}（与订单其它写面 {@code follow-status} / {@code remark}
+     * 同码，不新造权限点 —— 新权限点需要配角色/种子数据，本单不含权限模型变更）。</p>
+     *
+     * <p>🔴 两个字段**各自**遵循「不传 = 不改」；{@code requiredDeliveryDate} 传**空串**才表示
+     * 清空（见 {@link OrderUrgencyUpdateRequest} 的三态语义）。</p>
+     */
+    @RequirePermission("order:list")
+    @PutMapping("/{id:[0-9a-fA-F-]+}/urgency")
+    public ApiResponse<Void> updateUrgency(
+            @PathVariable String id,
+            @RequestBody OrderUrgencyUpdateRequest request) {
+        log.info("更新订单加急/到货日: orderId={}, isUrgent={}, requiredDeliveryDate={}",
+                id, request.getIsUrgent(), request.getRequiredDeliveryDate());
+        orderService.updateUrgency(id, request.getIsUrgent(), request.getRequiredDeliveryDate());
+        return ApiResponse.success();
+    }
+
+    /**
      * 删除订单
      *
      * DELETE /api/admin/orders/{id}

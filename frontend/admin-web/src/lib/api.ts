@@ -33,6 +33,12 @@ import type {
   OrderListParams,
   OrderFormData,
   OrderStatusUpdateParams,
+  // 订单加急 / 到货日 + 池看板（issue #5177）
+  OrderUrgencyParams,
+  PoolBoard,
+  PoolDispatchRequest,
+  PoolPreview,
+  PoolDispatchResult,
   LogisticsFormData,
   CloseOrderParams,
   ProcessingOrder,
@@ -601,9 +607,53 @@ export const orderApi = {
   addRemark: (id: string, content: string) =>
     request.post<ApiResponse<void>>(`/api/admin/orders/${id}/remark`, { content }),
 
+  /**
+   * 改**加急 / 到货日**（issue #5177）—— `PUT /api/admin/orders/{id}/urgency`。
+   *
+   * 🔴 **订单页上直接改，不是售后页**；与售后工单的 `priority` **零联动**
+   * （这里不 import、不读写任何售后字段）。
+   *
+   * 三态口径（冻结契约）：
+   * - `isUrgent` 缺省 / `null` ⇒ 本字段**不改**；
+   * - `requiredDeliveryDate` 缺省 / `null` ⇒ 本字段**不改**；`''` ⇒ **清空**到货日；`'YYYY-MM-DD'` ⇒ 设置。
+   *
+   * ⇒ **缺省即不出现**：只把**显式给了**的键放进请求体（`null` 有语义 = 不改，故保留；
+   *   `undefined` 连键都不落）。非法日期格式 / 订单不存在 ⇒ 422。
+   */
+  updateUrgency: (id: string, data: OrderUrgencyParams) =>
+    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/urgency`, {
+      ...(data.isUrgent !== undefined ? { isUrgent: data.isUrgent } : {}),
+      ...(data.requiredDeliveryDate !== undefined
+        ? { requiredDeliveryDate: data.requiredDeliveryDate }
+        : {}),
+    }),
+
   // 删除订单
   deleteOrder: (id: string) =>
     request.delete<ApiResponse<void>>(`/api/admin/orders/${id}`),
+}
+
+/**
+ * 池看板 API（issue #5177；消费 #5169 已交付的三个端点）。
+ *
+ * 端点与后端一一对应：
+ *   GET  /api/admin/production/pool            池看板读面（含加急插队区 + 物料分组）
+ *   POST /api/admin/production/pool/preview    成批预览（服务端算米数，前端只渲染）
+ *   POST /api/admin/production/pool/dispatch   派单（成批 `pooled:true`；加急插队 = 单订单 + `pooled:false`）
+ *
+ * 🔴 **排序是服务端唯一口径**：`urgentLines` / `groups[].lines` 一律按响应数组顺序渲染，
+ *    前端**不得重排**（「加急优先」是结构性的 —— 整段 `urgentLines` 渲染在 `groups` 之前）。
+ * ⚠️ 加急单混进 `pooled:true` 的批 ⇒ **422 VALIDATION_ERROR（整批拒绝，不静默少派）**。
+ */
+export const poolBoardApi = {
+  getBoard: (params?: { maxWaitHours?: number }) =>
+    request.get<ApiResponse<PoolBoard>>('/api/admin/production/pool', { params }),
+
+  preview: (body: PoolDispatchRequest) =>
+    request.post<ApiResponse<PoolPreview>>('/api/admin/production/pool/preview', body),
+
+  dispatch: (body: PoolDispatchRequest) =>
+    request.post<ApiResponse<PoolDispatchResult[]>>('/api/admin/production/pool/dispatch', body),
 }
 
 // 加工单 API（issue #3340）

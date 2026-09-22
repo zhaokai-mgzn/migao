@@ -9,7 +9,7 @@ import dayjs from 'dayjs'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
-import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, type PrintTarget } from '@/components/orders'
+import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, OrderUrgencyPanel, type PrintTarget } from '@/components/orders'
 import type { Order, OrderItem, LogisticsFormData, ProcessingOrder } from '@/types'
 import { normalizeOrderStatus, displayOrderStatus } from '@/types'
 import { craftSpecRows } from '@/lib/craft-display'
@@ -289,6 +289,10 @@ export default function OrderDetailPage() {
           <InfoRow label="确认收货时间" value={formatDateTime(order.receivedAt)} />
         </div>
       </SectionCard>
+
+      {/* 加急 / 要求到货日（issue #5177）—— **订单页上直接改**（不是售后页）；
+          PUT /api/admin/orders/{id}/urgency；保存后 loadOrder 重新拉单，徽标刷新为服务端真值。 */}
+      <OrderUrgencyPanel order={order} onChanged={loadOrder} />
 
       {/* 商品信息 */}
       <SectionCard

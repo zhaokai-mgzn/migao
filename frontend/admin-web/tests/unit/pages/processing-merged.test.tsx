@@ -106,17 +106,20 @@ describe('菜单结构（issue #4490 规格修订：合并后的菜单归**商�
   it('生产管理组**不含**合并项；全站不再有独立的「加工费管理」项', () => {
     const productionPaths = productionGroup()!.children.map((c) => c.path)
     // issue #5034（V111）新增「入库单」（/inbound-orders）⇒ 本组三项 → 四项。
+    // issue #5177 新增「池看板」（/production/pool，紧跟「生产看板」）⇒ 本组四项 → **五项**。
     // 断言的是**路径清单**（顺序敏感）：合并项仍不在其中，这是本用例真正守的东西。
     expect(productionPaths).toEqual([
       '/production',
+      '/production/pool',
       '/production/routings',
       '/production/piecework',
       '/inbound-orders',
     ])
     expect(productionPaths).not.toContain('/production/processing')
-    // 加工三项权限码仍统一 processing:manage（组内一致，无分叉）；
+    // 加工四项权限码仍统一 processing:manage（组内一致，无分叉；#5177 的「池看板」与「生产看板」同权）；
     // 「入库单」是仓储动作、权限码独立（inbound:view，issue #5034）—— 不得并进 processing:manage。
     expect(productionGroup()!.children.map((c) => c.permissionCode)).toEqual([
+      'processing:manage',
       'processing:manage',
       'processing:manage',
       'processing:manage',

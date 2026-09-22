@@ -94,6 +94,12 @@ export const menuGroups: MenuGroup[] = [{
     icon: 'Factory',
     children: [
       { key: 'production-board', name: '生产看板', icon: 'ClipboardCheck', path: '/production', permissionCode: 'processing:manage' },
+      // 池看板（issue #5177）：池化派单的**决策屏** —— 加急插队区（不进池、立即单派）
+      // + 物料分组成批区（勾选 → 预览 → 一键成批派单）+ 超时未派告警。
+      // 权限码沿用 processing:manage（与「生产看板」同权：都是加工/生产管理动作），
+      // 且必须与 MenuController 的静态权限树、AuthService.buildMenusByPermissions
+      // **三处同构**（漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
+      { key: 'production-pool', name: '池看板', icon: 'Layers', path: '/production/pool', permissionCode: 'processing:manage' },
       // issue #4416：「工序库」与「工艺路线」合并为单一入口「工艺配置」——
       // 工序是**原子词汇**、路线是**用工序名拼出的有序序列**（后端护栏：序列引用的工序必须存在于
       // 工序库活跃行），拆成两个菜单时建路线发现缺工序要跳到另一个菜单去建。

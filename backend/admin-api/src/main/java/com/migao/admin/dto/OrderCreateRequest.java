@@ -10,6 +10,7 @@ import jakarta.validation.constraints.Positive;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -76,6 +77,32 @@ public class OrderCreateRequest {
      * 优惠金额（默认 0；应收 totalAmount - 优惠 discountAmount 应等于实收 actualAmount）
      */
     private BigDecimal discountAmount;
+
+    /**
+     * 订单级**加急标记**（V120，issue #5177）。
+     *
+     * <p>{@code null} / 不传 ⇒ <b>不加急</b>（服务器**不写该列** ⇒ 落列默认 {@code FALSE}）
+     * —— **缺省值不变**：不填的行为与今天**逐字相同**（不启用池化、逐单派、错误文案都不动）。</p>
+     *
+     * <p>🔴 与售后工单的 {@code priority} **不共享来源、不联动、不派生**（用户裁定：
+     * 「加急不能跟售后工单绑定，得在订单上直接做」）。它**只影响是否入池/派单时机**，
+     * 不参与任何金额计算（对客价格、售价、成品口径逐值不变）。</p>
+     *
+     * <p>⚠️ <b>单侧字段（wire 契约）</b>：ai-agent 的 {@code order_create} 工具 schema 目前
+     * **不采集**它（agent 路径不填、走列默认 ⇒ 与今天逐字相同）；登记见
+     * {@code OrderDtoContractTest} 的 {@code REGISTERED_SINGLE_SIDED_FIELDS}。</p>
+     */
+    private Boolean isUrgent;
+
+    /**
+     * **客户要求到货日**（V120，issue #5177；{@code YYYY-MM-DD}）。
+     * {@code null} / 不传 ⇒ **未指定**（不猜、不写列）—— NULL 才是「未指定」的真值，
+     * 不用今天/承诺交期顶替。消费者 = 池看板排序（到货日升序、NULL 排最后）。
+     *
+     * <p>⚠️ <b>单侧字段（wire 契约）</b>：同 {@link #isUrgent}（agent 工具 schema 不采集，
+     * 单侧登记见 {@code OrderDtoContractTest}）。</p>
+     */
+    private LocalDate requiredDeliveryDate;
 
     /**
      * 订单明细列表

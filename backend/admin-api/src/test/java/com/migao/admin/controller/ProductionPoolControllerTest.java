@@ -56,8 +56,15 @@ class ProductionPoolControllerTest extends BaseControllerTest {
         mockMvc = buildMockMvc(controller);
     }
 
+    /**
+     * 空池夹具。issue #5177 给 {@code Pool} 加了两个成员：
+     * {@code urgentCount}（加急插队区去重订单数）与 {@code urgentLines}（插队区行）；
+     * 本夹具是「没有加急单」的形态 ⇒ 两者为 0 / 空，**既有断言（poolingEnabled=false、
+     * overdueCount=0）逐值不变**。
+     */
     private static ProductionPoolViews.Pool emptyPool(BigDecimal maxWaitHours) {
-        return new ProductionPoolViews.Pool(maxWaitHours, false, 0, 0, 0, List.of(), List.of());
+        return new ProductionPoolViews.Pool(maxWaitHours, false, 0, 0, 0, 0,
+                List.of(), List.of(), List.of());
     }
 
     @Test
