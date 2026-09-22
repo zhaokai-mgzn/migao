@@ -6332,7 +6332,7 @@ _CASE_PR_047 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=[],
     expectations=[],
-    data_checks=['判据 1·**AI 工具 schema 放宽**：`inventory_manage` 的 `adjustment` 参数 `type == "number"`（改前 `integer`）；工具层对该参数的整数判定不再把 `60.5` / `-2.7` 判成类型错误。注入红证：把 schema 改回 `integer` ⇒ 变红。', '判据 2·**分摊总量恒等**：`adjustStockForAgent(+2.7)` 在 2 个 SKU 上分摊后，各 SKU 库存之和**恰好** +2.7（不丢 0.1 的余数）。注入红证：把分摊改回 `int base = adjustment / n` ⇒ 得 2（丢 0.7）⇒ 变红。', '判据 3·**整数场景逐值不变**：`+3` 在 `[30,20]` 上仍是 `[32,21]`（不是「各 +1.5」）、`-25` 仍是 `[5,20]`。注入红证：把分摊一步改成 `tenths / n` ⇒ 变红。', '判据 4·**展示无浮点毛刺**：AI 工具回给 LLM/用户的库存数字不出现 `2.7000000001` 这类毛刺（`stock_semantics.product_stock_summary` 的求和不得 `int()` 截断）。注入红证：保留 `int()` ⇒ `60.5 + 1.5` 得 61 ⇒ 变红。'],
+    data_checks=['判据 1·**AI 工具 schema 放宽**：`inventory_manage` 的 `adjustment` 参数 `type == \\"number\\"`（改前 `\\"integer\\"`）；工具层对该参数的整数判定不再把 `60.5` / `-2.7` 判成类型错误。注入红证：把 schema 改回 `integer` ⇒ 变红。', '判据 2·**分摊总量恒等**：`adjustStockForAgent(+2.7)` 在 2 个 SKU 上分摊后，各 SKU 库存之和**恰好** +2.7（不丢 0.1 的余数）。注入红证：把分摊改回 `int base = adjustment / n` ⇒ 得 2（丢 0.7）⇒ 变红。', '判据 3·**整数场景逐值不变**：`+3` 在 `[30,20]` 上仍是 `[32,21]`（不是「各 +1.5」）、`-25` 仍是 `[5,20]`。注入红证：把分摊一步改成 `tenths / n` ⇒ 变红。', '判据 4·**展示无浮点毛刺**：AI 工具回给 LLM/用户的库存数字不出现 `2.7000000001` 这类毛刺（`stock_semantics.product_stock_summary` 的求和不得 `int()` 截断）。注入红证：保留 `int()` ⇒ `60.5 + 1.5` 得 61 ⇒ 变红。'],
     skip_reason='[backend-contract] Java 单测 + ai-agent pytest（无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/AgentProductServiceTest.java、backend/ai-agent-service/tests/test_tools_inventory_decimal.py 执行',
     tags=['product', 'stock', 'decimal', 'allocation', 'backend_contract'],
     persona='',
