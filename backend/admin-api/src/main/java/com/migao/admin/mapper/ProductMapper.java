@@ -30,6 +30,17 @@ public interface ProductMapper extends BaseMapper<Product> {
                        @Param("amount") BigDecimal amount);
 
     /**
+     * 按「租户 + 货号」查商品（issue #5154）—— 批量导入的**幂等键**查询。
+     *
+     * <p>用显式 SQL 而不是 LambdaQueryWrapper：这里是「命中即原地更新、未命中才新建」的判定点，
+     * 软删过滤（{@code deleted = 0}）与 {@code ORDER BY id LIMIT 1}（历史重复数据下取最早那条，
+     * 避免每次导入更新到不同的行）必须**看得见**，不能依赖 wrapper 的默认行为。</p>
+     */
+    @Select("SELECT * FROM products WHERE tenant_id = #{tenantId} AND sku_code = #{skuCode} " +
+            "AND deleted = 0 ORDER BY id ASC LIMIT 1")
+    Product selectByTenantAndSkuCode(@Param("tenantId") Long tenantId, @Param("skuCode") String skuCode);
+
+    /**
      * 按颜色+规格维度查询低库存 SKU（JOIN product_skus + products + product_colors）
      * #1396: 增加 p.status = 'on_sale' 过滤，排除已下架商品下的 SKU
      */

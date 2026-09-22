@@ -199,6 +199,39 @@ export interface BatchOperationResponse {
   errors?: string[]
 }
 
+/**
+ * 商品批量导入结果（issue #5154，对偶于后端 `ProductImportResult`）。
+ *
+ * **三桶口径**：每个数据行必落在「成功 / 失败 / 空白」之一，且
+ * `total === successCount + failCount + blankRows` —— 这条恒等式就是「不静默跳过」的判据。
+ * 页面上三数必须**同时**展示：只显示"成功 N 条"会把少导的行藏起来。
+ */
+export interface ProductImportResult {
+  /** 数据行数（不含表头） */
+  total: number
+  /** 成功落库的数据行数 */
+  successCount: number
+  /** 失败的数据行数（= errors.length） */
+  failCount: number
+  /** 整行留空、既未导入也未报错的行数 */
+  blankRows: number
+  /** 新建的商品数（幂等重跑时为 0） */
+  createdProducts: number
+  /** 命中去重键（货号）后原地更新的商品数 */
+  updatedProducts: number
+  /** 逐行错误：行号 + 货号 + 可行动原因（后端原文，前端不改写） */
+  errors: ProductImportRowError[]
+}
+
+/** 一行导入错误（可定位：行号 + 货号） */
+export interface ProductImportRowError {
+  /** Excel 行号（1-based，含表头 ⇒ 表头是 1，第一条数据是 2） */
+  row: number
+  /** 该行货号（该行缺货号时为空，此时靠行号定位） */
+  skuCode?: string | null
+  message: string
+}
+
 // 商品表单数据
 // 库存扣减模式
 export type StockDeductionMode = 'on_place' | 'on_pay'

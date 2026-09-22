@@ -6557,6 +6557,42 @@ _CASE_PR_058 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-059 [NORMAL] 商品 + SKU 批量导入：幂等键 = 租户 + 货号 / 逐行校验报告不静默跳过 / 库存 1 位小数 / 只增改不删（源: cases/product.yml）──
+_CASE_PR_059 = EvalCase(
+    id='PR-059',
+    legacy_id='',
+    title='商品 + SKU 批量导入：幂等键 = 租户 + 货号 / 逐行校验报告不静默跳过 / 库存 1 位小数 / 只增改不删',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['判据 1·**URL|HTTP 入口**：`POST /api/admin/products/import`（multipart，字段名 file）返回 200 + `data`（total/successCount/failCount/blankRows/createdProducts/updatedProducts/errors[]）；导入 3 行 ⇒ 1 个商品 + 3 个 SKU，逐字段（名称/货号/基础价/描述/颜色/门幅/SKU 编码/库存/租户/状态）可比对。红证：改前 `ProductController` 只有 `@GetMapping(\\"/export\\")` ⇒ 该端点在 standalone MockMvc 上实测得 **405**，而 `GET /import-template` 落到「商品详情」路由返回 **JSON**（不是 xlsx）。', '判据 2·**同文件重跑 = 幂等**：幂等键 = `(tenant_id, 货号)`；第二次导入 `createdProducts=0 / updatedProducts=1`、`productMapper.insert` 只被调用 1 次、SKU 行数与**主键不变**（原地更新）。红证：把幂等键查询改成恒 null（每次都新建）⇒ 该断言红（实测）。', '判据 3·**逐行校验报告，不静默跳过**（机械判据）：`total == successCount + failCount + blankRows` 恒成立，失败行带**行号 + 货号 + 可行动原因**。红证：把逐行 `addError` 换成静默 `continue` ⇒ 恒等式与 `failCount` 同时红（实测）。', '判据 4·**库存 1 位小数**：`60.5` 原样落库；`2.755` 显式拒绝且**该行零落库副作用**（商品/颜色/SKU 一张都没写）；`2.70`（书写 2 位、有效 1 位）合法 —— 判据单点在 `StockQuantity`，导入不另写一套。红证：把准入换成静默取整 ⇒ 该断言红（实测）。', '判据 5·**不损失客户**：导入只增改不删（文件里没有的既有 SKU 不被物理删除，否则批次挂着的 SKU 断链）；对客价 = 文件原值、不经任何折算；无 SKU 维度时商品级库存取文件值，库存列留空 = 「未填 = 不改」（不是清零）。', '判据 6·**一进一出同构**：导入表头 ∩ 导出表头 = **逐字同名**的那 5 列（商品名称/货号/价格/库存/描述）；SKU 维度只有 颜色 + 门幅（**不含售卖方式**，V113）；表头按**名字**定位（列序无关、容忍模板 `*` 号、允许多余列与缺可列）；**数字单元格按十进制原样读**（门幅敲成数字 `2.8` 不得变 `2`、货号 `12345` 不得变科学计数法）；模板下载下来能**原样导回去**（表头与解析共用同一常量）。', '判据 7·**租户隔离**：查重按 `(tenant_id, 货号)`；租户取自 `TenantContext`（**不接受**客户端传入）；同货号在不同租户各建一个商品。'],
+    skip_reason='[backend-contract] 服务/端点契约（静态断言 + 内存库真存真取，无 LLM 环节）：由 ProductBulkImportServiceTest / ProductImportControllerTest 执行',
+    tags=['product', 'import', 'backend_contract', 'idempotent', 'decimal'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-060 [NORMAL] 商品批量导入的后台可见面：导入入口 + 模板下载 + 三桶口径逐行报告（源: cases/product.yml）──
+_CASE_PR_060 = EvalCase(
+    id='PR-060',
+    legacy_id='',
+    title='商品批量导入的后台可见面：导入入口 + 模板下载 + 三桶口径逐行报告',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['判据 1·**入口存在且与导出对偶**：商品管理页工具栏同时有「批量导出」「下载导入模板」「导入商品」；选中 xlsx ⇒ 请求层收到**原文件对象**；模板下载文件名 = 商品导入模板.xlsx。红证：改前 `frontend/admin-web/src` 里「导入」零命中（0 处 UI）⇒ 本文件 7 条全红（实测）。', '判据 3·**三桶口径同时可见**：报告弹窗必须同时展示「成功 N 行 / 失败 N 行 / 空白行 N 行」与「新建 N 个商品 / 更新 N 个商品」；失败明细逐行展示「第 N 行 / 货号 / 原因」且原因**原文不改写**（服务端说 1 位小数，页面不得改说格式错误）；失败为 0 时显式说「无失败行」，不留空让人猜。', '判据 1·**失败不冒充成功**：接口报错 ⇒ 不弹报告弹窗（不拿空报告当成功）；导入成功后刷新列表（商家立刻看得到落库结果）。'],
+    skip_reason='[backend-contract] 纯前端单元测试（admin-web vitest：products 页导入入口 + 报告展示 + 请求层），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['product', 'ui', 'import', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -8145,6 +8181,8 @@ ALL_CASES = (
     _CASE_PR_056,
     _CASE_PR_057,
     _CASE_PR_058,
+    _CASE_PR_059,
+    _CASE_PR_060,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

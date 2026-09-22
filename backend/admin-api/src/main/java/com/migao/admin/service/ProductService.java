@@ -44,6 +44,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -63,6 +64,34 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     private final ProductAttributeMapper productAttributeMapper;
     /** 库存台账（issue #4055）：本类只负责在库存变更点写一行流水，查询/落账语义在该服务内 */
     private final StockLedgerService stockLedgerService;
+
+    /**
+     * 导出表头（**导出与导入共用的单一源**，issue #5154）。
+     *
+     * <p>导入面按导出面**反向定义**：{@link #IMPORT_HEADERS} 与它**逐字同名**的那 5 列
+     * （商品名称/货号/价格/库存/描述）就是「一进一出同构」的机械判据 —— 两个数组都是具名常量，
+     * 判据可以直接断言名字交集，而不是靠人读两段代码比对。</p>
+     */
+    static final String[] EXPORT_HEADERS = {"商品名称", "货号", "分类", "价格", "库存", "状态", "描述"};
+
+    /**
+     * 导入表头 = 导出面里与建品同义的 5 列 + **SKU 组合维度（颜色 × 门幅）** + 定位/覆盖用列。
+     *
+     * <p>行语义：**一个数据行 = 该货号的一个 SKU 行**（同一货号多行 = 一个商品的多 SKU）；
+     * 颜色与门幅**都不填**时该行只建商品（无 SKU 商品，如配件）。</p>
+     *
+     * <p>SKU 组合只有**颜色 × 门幅**二维（用户裁定 2026-09-21，V113/#5058）——
+     * 售卖方式是**商品级基础属性**，不得回退成 SKU 维度。</p>
+     */
+    static final String[] IMPORT_HEADERS =
+            {"商品名称", "货号", "分类ID", "价格", "库存", "描述", "颜色", "门幅", "SKU编码"};
+
+    /** 导入**必填**表头：缺列 ⇒ 整包拒绝（列都不在时逐行报错只会刷屏，且没有一行是能修的）。 */
+    private static final List<String> REQUIRED_IMPORT_HEADERS = List.of("商品名称", "货号", "价格");
+
+    /** 导入可列表头（缺了不报错；文案里列出来让商家知道模板该长什么样）。 */
+    private static final List<String> OPTIONAL_IMPORT_HEADERS =
+            List.of("分类ID", "库存", "描述", "颜色", "门幅", "SKU编码");
 
     /**
      * 商品品牌存储在 product_attributes 表的 attr_key
@@ -358,7 +387,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 request.getColors(),
                 request.getSellingMethods(), request.getDoorWidths(),
                 product.getBasePrice(), product.getStock(),
-                request.getSkus());
+                request.getSkus(), true);
 
         // 保存商品属性（brand + specifications，存入 product_attributes 表）
         saveProductAttributes(product.getId(), tenantId, request.getBrand(), request.getSpecifications());
@@ -439,7 +468,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     request.getColors(),
                     request.getSellingMethods(), request.getDoorWidths(),
                     skuPrice, skuStock,
-                    request.getSkus());
+                    request.getSkus(), true);
         } else if (request.getBasePrice() != null) {
             // 改价必须落到 SKU（issue #3743 / OR-014）：只给 basePrice、不给
             // colors/sellingMethods/doorWidths/skus 的部分更新（agent 的
@@ -486,7 +515,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                                     List<String> doorWidths,
                                     BigDecimal basePrice,
                                     BigDecimal stock,
-                                    List<ProductSkuInput> skuInputs) {
+                                    List<ProductSkuInput> skuInputs,
+                                    boolean pruneMissing) {
         // issue #5063（V115）：SKU 库存是库存链路的**权威列**，逐行准入（最多 1 位小数）——
         // 这里是所有建品/改品路径（表单 / Agent / 矩阵式生成）写 SKU stock 的**唯一收口**
         if (skuInputs != null) {
@@ -674,14 +704,18 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         }
 
         // 缺失才删：删除本次请求未保留的旧 SKU/颜色（先 SKU 后颜色）
-        for (ProductSku s : existingSkus) {
-            if (!keptSkuIds.contains(s.getId())) {
-                productSkuMapper.deleteById(s.getId());
+        // pruneMissing=false 的是**批量导入**路径（issue #5154）：商家在导入页看不到库里已有的 SKU，
+        // 按「提交集合 = 全量声明」删会把批次挂着的 SKU 静默删掉（断链）⇒ 导入一律只增改不删。
+        if (pruneMissing) {
+            for (ProductSku s : existingSkus) {
+                if (!keptSkuIds.contains(s.getId())) {
+                    productSkuMapper.deleteById(s.getId());
+                }
             }
-        }
-        for (ProductColor c : existingColors) {
-            if (!keptColorIds.contains(c.getId())) {
-                productColorMapper.deleteById(c.getId());
+            for (ProductColor c : existingColors) {
+                if (!keptColorIds.contains(c.getId())) {
+                    productColorMapper.deleteById(c.getId());
+                }
             }
         }
 
@@ -1076,8 +1110,28 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     // ========== 导入/导出 ==========
 
     /**
-     * 导入商品
-     * 解析 Excel 并批量创建商品
+     * 批量导入商品 + SKU（issue #5154）—— 迁移 / 期初批次建账的**前置**：
+     * SKU 不存在 ⇒ 入库批次挂不上 ⇒ 闭环断在这里。
+     *
+     * <h2>四条口径</h2>
+     * <ol>
+     *   <li><b>幂等</b>：幂等键 = {@code (tenant_id, 货号)}（{@code products.sku_code}）。
+     *       命中即**原地更新**（保留商品主键，SKU 按「颜色 + 门幅」匹配后原地更新）
+     *       ⇒ 同一文件重复导入不产生重复商品/SKU，且订单/批次里存的旧 skuId 不断链。
+     *       货号因此是**必填列**（缺了它无从保证幂等 —— 宁可报错，不要静默建重复）。</li>
+     *   <li><b>逐行校验报告，不静默跳过</b>：每个数据行必落在「成功 / 失败 / 空白」三桶之一
+     *       （{@code total == successCount + failCount + blankRows}，见 {@link ProductImportResult}），
+     *       失败行带**行号 + 货号 + 可行动原因**。</li>
+     *   <li><b>只增改不删</b>：文件里没有的既有颜色/SKU **不删**（{@code pruneMissing=false}）。
+     *       表单改品的口径是「提交上来的集合 = 全量声明」（商家在表单里看得见全部现有 SKU），
+     *       但导入页上商家**看不到**库里已有的 SKU ⇒ 按缺失删会静默删掉批次挂着的 SKU（断链）。</li>
+     *   <li><b>一进一出同构</b>：表头按**名字**定位（{@link #IMPORT_HEADERS} 与 {@link #EXPORT_HEADERS}
+     *       逐字同名的那 5 列就是导出面），列序无关、允许多余列、容忍模板里的 `*` 号。</li>
+     * </ol>
+     *
+     * <h2>行级原子（不是整包回滚）</h2>
+     * 校验全部在写入**之前**完成 ⇒ 非法行零落库副作用；同一文件里的合法行照常落库，
+     * 并在报告里逐行可见（迁移场景下"全对才导"会让商家反复重传整包）。
      */
     @Transactional(rollbackFor = Exception.class)
     public ProductImportResult importProducts(MultipartFile file, Long tenantId) {
@@ -1088,22 +1142,52 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             if (sheet == null) {
                 throw BusinessException.validationError("Excel文件为空");
             }
+            Map<String, Integer> header = resolveImportHeader(sheet.getRow(0));
 
-            // 第一行为表头，从第二行开始读取数据
+            // ── 阶段 1：全文件解析 + 校验（**零写入**）──
+            List<ImportedRow> parsed = new ArrayList<>();
             int lastRow = sheet.getLastRowNum();
-            result.setTotal(lastRow); // 数据行数
-
             for (int i = 1; i <= lastRow; i++) {
+                result.setTotal(result.getTotal() + 1);
+                int rowNo = i + 1;                       // Excel 行号（1-based，表头 = 1）
                 Row row = sheet.getRow(i);
-                if (row == null) {
+                if (isBlankRow(row)) {
+                    result.addBlankRow();                // 显式报数 —— 不是 `continue` 了事
                     continue;
                 }
+                String skuCode = cellByHeader(row, header, "货号");
                 try {
-                    Product product = parseProductFromRow(row, tenantId);
-                    productMapper.insert(product);
-                    result.addSuccess();
+                    parsed.add(parseImportedRow(row, rowNo, header));
                 } catch (Exception e) {
-                    result.addError(i + 1, e.getMessage());
+                    result.addError(rowNo, skuCode, messageOf(e));
+                }
+            }
+
+            // ── 阶段 2：同货号归组（一货号 = 一个商品，行 = 该商品的 SKU 行）──
+            Map<String, List<ImportedRow>> groups = new LinkedHashMap<>();
+            for (ImportedRow parsedRow : parsed) {
+                List<ImportedRow> group = groups.computeIfAbsent(
+                        parsedRow.skuCode, k -> new ArrayList<>());
+                String conflict = conflictWithGroup(group, parsedRow);
+                if (conflict != null) {
+                    result.addError(parsedRow.rowNo, parsedRow.skuCode, conflict);
+                    continue;
+                }
+                group.add(parsedRow);
+            }
+
+            // ── 阶段 3：逐货号落库（组内一致 ⇒ 组级原子：本组任一步失败则本组所有行都报错）──
+            for (List<ImportedRow> group : groups.values()) {
+                try {
+                    upsertImportedProduct(group, tenantId, result);
+                    for (int i = 0; i < group.size(); i++) {
+                        result.addSuccess();
+                    }
+                } catch (Exception e) {
+                    log.warn("导入货号 {} 失败", group.get(0).skuCode, e);
+                    for (ImportedRow row : group) {
+                        result.addError(row.rowNo, row.skuCode, messageOf(e));
+                    }
                 }
             }
 
@@ -1114,9 +1198,319 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             throw BusinessException.validationError("解析Excel文件失败: " + e.getMessage());
         }
 
-        log.info("导入商品完成: total={}, success={}, failed={}",
-                result.getTotal(), result.getSuccessCount(), result.getFailCount());
+        log.info("导入商品完成: total={}, success={}, failed={}, blank={}, created={}, updated={}",
+                result.getTotal(), result.getSuccessCount(), result.getFailCount(), result.getBlankRows(),
+                result.getCreatedProducts(), result.getUpdatedProducts());
         return result;
+    }
+
+    /**
+     * 表头解析：按**名字**建「表头 → 列号」索引（列序无关），缺失必填列 ⇒ 整包拒绝。
+     *
+     * <p>为什么是名字而不是列号：改前实现把列号写死（0=名称/1=货号/…），于是①加了 SKU 维度就只能改列号、
+     * 导出面与导入面靠"人肉对齐"；②商家挪一列就静默错位。按名字定位后，
+     * 「导出面里同名的那几列」天然就是导入面（一进一出同构的机械形态）。</p>
+     */
+    private Map<String, Integer> resolveImportHeader(Row headerRow) {
+        if (headerRow == null) {
+            throw BusinessException.validationError(
+                    "Excel 缺少表头行（第 1 行）—— 请在商品管理页点「下载导入模板」获取标准表头");
+        }
+        Map<String, Integer> index = new HashMap<>();
+        for (int c = 0; c <= headerRow.getLastCellNum(); c++) {
+            String name = normalizeHeader(getCellStringValue(headerRow, c));
+            if (name != null) {
+                index.putIfAbsent(name, c);
+            }
+        }
+        List<String> missing = REQUIRED_IMPORT_HEADERS.stream()
+                .filter(h -> !index.containsKey(h))
+                .toList();
+        if (!missing.isEmpty()) {
+            throw BusinessException.validationError(String.format(
+                    "Excel 表头缺少必填列：%s（可列：%s）—— 请在商品管理页点「下载导入模板」获取标准表头",
+                    String.join("、", missing), String.join("、", OPTIONAL_IMPORT_HEADERS)));
+        }
+        return index;
+    }
+
+    /** 表头归一化：去空白 + 去模板里的必填星号（`商品名称*` 与 `商品名称` 视为同一列）。 */
+    private static String normalizeHeader(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        String name = raw.replace("*", "").replace("＊", "").trim();
+        return StringUtils.hasText(name) ? name : null;
+    }
+
+    /** 整行留空（无任何非空单元格）⇒ 计入 {@code blankRows}，既不算成功也不算失败。 */
+    private boolean isBlankRow(Row row) {
+        if (row == null || row.getLastCellNum() < 0) {
+            return true;
+        }
+        for (int c = 0; c < row.getLastCellNum(); c++) {
+            if (StringUtils.hasText(getCellStringValue(row, c))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 按**表头名**读字符串单元格。
+     *
+     * <p>表头里没有这一列 ⇒ {@code null}（**可列缺失不是错误**：{@code 分类ID} / {@code 描述} /
+     * {@code 颜色} / {@code 门幅} / {@code SKU编码} 都是可列）。</p>
+     *
+     * <p>为什么单独一个方法而不是直接 {@code getCellStringValue(row, header.get(x))}：
+     * {@code header.get(x)} 是 {@code Integer}，缺列时是 {@code null} ⇒ 传进 {@code int} 形参
+     * 会在**每一行**拆箱 NPE（本单实测踩过：少一列「分类ID」⇒ 全表每一行都报
+     * 「NullPointerException（无错误信息）」，且没有任何一行被导入）。</p>
+     */
+    private String cellByHeader(Row row, Map<String, Integer> header, String headerName) {
+        Integer cellIndex = header.get(headerName);
+        return row == null || cellIndex == null ? null : getCellStringValue(row, cellIndex);
+    }
+
+    /**
+     * 解析一个数据行（**只读、零副作用**）—— 所有校验都在这里完成，因此失败行不会写任何东西。
+     */
+    private ImportedRow parseImportedRow(Row row, int rowNo, Map<String, Integer> header) {
+        ImportedRow parsedRow = new ImportedRow();
+        parsedRow.rowNo = rowNo;
+
+        parsedRow.name = cellByHeader(row, header, "商品名称");
+        if (!StringUtils.hasText(parsedRow.name)) {
+            throw BusinessException.validationError("商品名称不能为空");
+        }
+
+        parsedRow.skuCode = cellByHeader(row, header, "货号");
+        if (!StringUtils.hasText(parsedRow.skuCode)) {
+            throw BusinessException.validationError(
+                    "货号不能为空 —— 货号是重复导入去重的依据（幂等键 = 货号），缺了它无法保证"
+                            + "「同一文件重跑不产生重复商品」");
+        }
+
+        parsedRow.categoryId = normalizeBlankToNull(cellByHeader(row, header, "分类ID"));
+        // 分类不存在 ⇒ 本行报错（而不是留到 insert 时 FK 违例变成 500）
+        validateCategory(parsedRow.categoryId);
+        parsedRow.description = cellByHeader(row, header, "描述");
+
+        parsedRow.price = readCellNumber(row, header.get("价格"), "价格", rowNo);
+        if (parsedRow.price == null) {
+            throw BusinessException.validationError("价格不能为空（价格是必填列：商品基础价与 SKU 价都以它为准）");
+        }
+        if (parsedRow.price.compareTo(BigDecimal.ZERO) <= 0) {
+            throw BusinessException.validationError(
+                    "价格必须大于 0，当前值 " + parsedRow.price.toPlainString());
+        }
+
+        // issue #5063（V115）：库存是 1 位小数口径（0.1 米粒度）⇒ 复用 StockQuantity 的准入判据，
+        // **不在这里另写一套小数位判断**；超过 1 位小数显式拒绝（禁止静默取整/截断）。
+        parsedRow.stock = StockQuantity.requireOneDecimalOrNull(
+                readCellNumber(row, header.get("库存"), "库存", rowNo), "第 " + rowNo + " 行库存");
+
+        parsedRow.colorName = normalizeBlankToNull(cellByHeader(row, header, "颜色"));
+        parsedRow.doorWidth = normalizeBlankToNull(cellByHeader(row, header, "门幅"));
+        if ((parsedRow.colorName == null) != (parsedRow.doorWidth == null)) {
+            throw BusinessException.validationError(String.format(
+                    "颜色与门幅必须**成对填写**（SKU 组合 = 颜色 × 门幅）：本行%s"
+                            + " —— 两者都填才生成 SKU，都不填则该行只建商品",
+                    parsedRow.colorName == null ? "只填了门幅" : "只填了颜色"));
+        }
+        parsedRow.hasSku = parsedRow.colorName != null;
+        parsedRow.skuCodeOfSku = normalizeBlankToNull(cellByHeader(row, header, "SKU编码"));
+        return parsedRow;
+    }
+
+    /**
+     * 读一个数值单元格（**不猜、不吞**）：空/缺列 ⇒ {@code null}（= 未填），非数字 ⇒ 显式报错。
+     *
+     * <p>改前实现把这两种情况都当成 {@code 0}（`getCellNumericValue` 对空单元格返回 0、
+     * 库存解析异常被 catch 后 `log.warn("库存解析失败，默认0")` 继续跑）——
+     * 商家填的 60 米会静默变 0，而报告里一行错都没有。</p>
+     */
+    private BigDecimal readCellNumber(Row row, Integer cellIndex, String field, int rowNo) {
+        Cell cell = cellIndex == null ? null : row.getCell(cellIndex);
+        if (cell == null) {
+            return null;
+        }
+        switch (cell.getCellType()) {
+            case NUMERIC:
+                return BigDecimal.valueOf(cell.getNumericCellValue());
+            case STRING: {
+                String text = cell.getStringCellValue().trim();
+                if (!StringUtils.hasText(text)) {
+                    return null;
+                }
+                try {
+                    return new BigDecimal(text);
+                } catch (NumberFormatException e) {
+                    throw BusinessException.validationError(String.format(
+                            "第 %d 行的%s不是数字：「%s」—— 请填数字后重试", rowNo, field, text));
+                }
+            }
+            case BLANK:
+                return null;
+            default:
+                throw BusinessException.validationError(String.format(
+                        "第 %d 行的%s单元格类型无法解析（请填数字）", rowNo, field));
+        }
+    }
+
+    /**
+     * 同货号行之间的三条一致性校验 —— 三条都是「不静默」的形态：
+     * <ol>
+     *   <li>商品级字段互相矛盾（**含价格** —— 涉钱字段不取"最后一行为准"）；</li>
+     *   <li>同一 {@code (颜色, 门幅)} 组合重复（否则后一行会**静默覆盖**前一行的库存）；</li>
+     *   <li>有的行填了 SKU 维度、有的没填（那一行的库存会**无处安放**而静默丢失）。</li>
+     * </ol>
+     *
+     * @return 冲突的可行动说明；{@code null} = 无冲突（该行可以并入本组）
+     */
+    private String conflictWithGroup(List<ImportedRow> group, ImportedRow cur) {
+        if (group.isEmpty()) {
+            return null;
+        }
+        ImportedRow head = group.get(0);
+        String[] fields = {"商品名称", "分类ID", "描述"};
+        String[] headValues = {head.name, head.categoryId, head.description};
+        String[] curValues = {cur.name, cur.categoryId, cur.description};
+        for (int i = 0; i < fields.length; i++) {
+            if (!Objects.equals(headValues[i], curValues[i])) {
+                return conflictText(cur, head, fields[i], curValues[i], headValues[i]);
+            }
+        }
+        if (head.price.compareTo(cur.price) != 0) {
+            return conflictText(cur, head, "价格", cur.price.toPlainString(), head.price.toPlainString());
+        }
+        if (head.hasSku != cur.hasSku) {
+            return String.format(
+                    "第 %d 行与第 %d 行不一致：同一货号的行必须**要么都填**颜色+门幅、**要么都不填**"
+                            + "（混填会让本行的库存无处安放）", cur.rowNo, head.rowNo);
+        }
+        if (cur.hasSku && group.stream().anyMatch(r -> r.hasSku
+                && Objects.equals(r.colorName, cur.colorName)
+                && Objects.equals(normalizeDoorWidth(r.doorWidth), normalizeDoorWidth(cur.doorWidth)))) {
+            return String.format(
+                    "第 %d 行的「颜色 + 门幅」组合重复：货号 %s 的 %s/%s 在同一文件里已出现过"
+                            + " —— 同一组合只能出现一次，否则后一行会**静默覆盖**前一行的库存",
+                    cur.rowNo, cur.skuCode, cur.colorName, cur.doorWidth);
+        }
+        return null;
+    }
+
+    private String conflictText(ImportedRow cur, ImportedRow head, String field,
+                                String curValue, String headValue) {
+        return String.format(
+                "第 %d 行与第 %d 行的「%s」不一致（%s vs %s）—— 同一货号 %s 只能有一份商品级信息"
+                        + "（价格等涉钱字段不取「最后一行为准」）",
+                cur.rowNo, head.rowNo, field, orDash(curValue), orDash(headValue), cur.skuCode);
+    }
+
+    private static String orDash(String value) {
+        return StringUtils.hasText(value) ? value : "空";
+    }
+
+    private static String messageOf(Throwable e) {
+        return StringUtils.hasText(e.getMessage())
+                ? e.getMessage()
+                : e.getClass().getSimpleName() + "（无错误信息，请把该行内容反馈给技术支持）";
+    }
+
+    /**
+     * 建品 upsert（幂等键 = 租户 + 货号）+ 写入本组的颜色/SKU。
+     *
+     * <p>写入 SKU 走的是**与表单建品/改品完全同一条路径**（{@link #saveColorsAndSkus} +
+     * {@link #matchExistingSku} 的「颜色 + 门幅」匹配），不另造第二套写 SKU 的代码 ——
+     * 两套口径迟早分叉（一处原地更新、一处删旧插新 ⇒ 旧 skuId 断链）。</p>
+     */
+    private void upsertImportedProduct(List<ImportedRow> group, Long tenantId, ProductImportResult result) {
+        ImportedRow head = group.get(0);
+        boolean groupHasSku = group.stream().anyMatch(r -> r.hasSku);
+
+        // 幂等键查询：命中 ⇒ 原地更新（不新建行）；未命中 ⇒ 新建
+        Product existing = productMapper.selectByTenantAndSkuCode(tenantId, head.skuCode);
+
+        String productId;
+        if (existing == null) {
+            Product product = new Product();
+            product.setName(head.name);
+            product.setSkuCode(head.skuCode);
+            product.setCategoryId(head.categoryId);
+            product.setBasePrice(head.price);
+            product.setDescription(head.description);
+            // 有 SKU 组时该列是**派生列**（#4038，写完 SKU 由 syncProductStockFromSkus 回写汇总）
+            product.setStock(StockQuantity.orZero(head.stock));
+            product.setTenantId(tenantId);
+            // 导入一律 draft（与既有导入口径一致）：上架是商家的显式动作，不由导入代劳
+            product.setStatus("draft");
+            product.setEditedBy(getCurrentUsername());
+            product.setEditedAt(OffsetDateTime.now());
+            productMapper.insert(product);
+            productId = product.getId();
+            result.addCreatedProduct();
+        } else {
+            Product patch = new Product();
+            patch.setId(existing.getId());
+            patch.setName(head.name);
+            patch.setCategoryId(head.categoryId);
+            patch.setBasePrice(head.price);
+            patch.setDescription(head.description);
+            // 「未填 = 不改」：无 SKU 组且库存列留空时不动既有库存（不得把留空当 0 清零）
+            if (!groupHasSku && head.stock != null) {
+                patch.setStock(head.stock);
+            }
+            patch.setEditedBy(getCurrentUsername());
+            patch.setEditedAt(OffsetDateTime.now());
+            productMapper.updateById(patch);
+            productId = existing.getId();
+            result.addUpdatedProduct();
+        }
+
+        List<ProductColorInput> colorInputs = new ArrayList<>();
+        Set<String> doorWidths = new LinkedHashSet<>();
+        List<ProductSkuInput> skuInputs = new ArrayList<>();
+        for (ImportedRow row : group) {
+            if (!row.hasSku) {
+                continue;
+            }
+            if (colorInputs.stream().noneMatch(c -> Objects.equals(c.getColorName(), row.colorName))) {
+                ProductColorInput color = new ProductColorInput();
+                color.setColorName(row.colorName);
+                colorInputs.add(color);
+            }
+            doorWidths.add(row.doorWidth);
+            ProductSkuInput sku = new ProductSkuInput();
+            sku.setColorName(row.colorName);
+            sku.setDoorWidth(row.doorWidth);
+            sku.setPrice(row.price);
+            sku.setStock(row.stock);        // null = 未填 ⇒ 既有 SKU 保留原库存（saveColorsAndSkus 的既有语义）
+            sku.setSkuCode(row.skuCodeOfSku);
+            skuInputs.add(sku);
+        }
+
+        saveColorsAndSkus(productId, head.skuCode, tenantId, colorInputs, null,
+                new ArrayList<>(doorWidths), head.price, StockQuantity.orZero(head.stock),
+                skuInputs, false);
+    }
+
+    /**
+     * 解析后的**一个数据行** = 该商品的一个 SKU 行（无 SKU 维度时只贡献商品级字段）。
+     * 纯数据载体 + 只读校验的产物，不含任何写副作用。
+     */
+    private static final class ImportedRow {
+        private int rowNo;
+        private String name;
+        private String skuCode;
+        private String categoryId;
+        private BigDecimal price;
+        private BigDecimal stock;
+        private String description;
+        private String colorName;
+        private String doorWidth;
+        private String skuCodeOfSku;
+        private boolean hasSku;
     }
 
     /**
@@ -1138,7 +1532,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             Sheet sheet = workbook.createSheet("商品列表");
 
             // 表头
-            String[] headers = {"商品名称", "货号", "分类", "价格", "库存", "状态", "描述"};
+            String[] headers = EXPORT_HEADERS;
             Row headerRow = sheet.createRow(0);
             CellStyle headerStyle = workbook.createCellStyle();
             Font headerFont = workbook.createFont();
@@ -1174,7 +1568,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     }
 
     /**
-     * 生成导入模板
+     * 生成导入模板 —— 表头就是 {@link #IMPORT_HEADERS}（与导入解析**同一个常量**，
+     * 因此"模板能填的列"与"导入认识的列"不可能分叉）。
+     *
+     * <p>示例行刻意演示两种形态：同一货号两行 = 一个商品的 2 个 SKU（颜色 × 门幅）；
+     * 货号 PJ-001 一行的颜色/门幅留空 = 只建商品（无 SKU 商品）。</p>
      */
     public void generateImportTemplate(HttpServletResponse response) throws IOException {
         String filename = URLEncoder.encode("商品导入模板.xlsx", StandardCharsets.UTF_8);
@@ -1185,29 +1583,37 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             Sheet sheet = workbook.createSheet("商品导入");
 
             // 表头
-            String[] headers = {"商品名称*", "货号", "分类ID", "价格*", "库存", "描述"};
             Row headerRow = sheet.createRow(0);
             CellStyle headerStyle = workbook.createCellStyle();
             Font headerFont = workbook.createFont();
             headerFont.setBold(true);
             headerStyle.setFont(headerFont);
 
-            for (int i = 0; i < headers.length; i++) {
+            for (int i = 0; i < IMPORT_HEADERS.length; i++) {
                 Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
+                cell.setCellValue(IMPORT_HEADERS[i]);
                 cell.setCellStyle(headerStyle);
             }
 
             // 示例行
-            Row exampleRow = sheet.createRow(1);
-            exampleRow.createCell(0).setCellValue("示例商品名称");
-            exampleRow.createCell(1).setCellValue("SKU001");
-            exampleRow.createCell(2).setCellValue("");
-            exampleRow.createCell(3).setCellValue(99.9);
-            exampleRow.createCell(4).setCellValue(100);
-            exampleRow.createCell(5).setCellValue("商品描述信息");
+            Object[][] examples = {
+                    {"雪尼尔遮光帘", "MH-001", "", 128.5, 60.5, "米白色雪尼尔", "米白", "2.8m", "MH-001-01-28"},
+                    {"雪尼尔遮光帘", "MH-001", "", 128.5, 12, "米白色雪尼尔", "米白", "3.2m", "MH-001-01-32"},
+                    {"罗马杆配件", "PJ-001", "", 35, 8, "2.8m 铝合金杆", "", "", ""},
+            };
+            for (int r = 0; r < examples.length; r++) {
+                Row row = sheet.createRow(r + 1);
+                for (int c = 0; c < examples[r].length; c++) {
+                    Object value = examples[r][c];
+                    if (value instanceof Number number) {
+                        row.createCell(c).setCellValue(number.doubleValue());
+                    } else {
+                        row.createCell(c).setCellValue(String.valueOf(value));
+                    }
+                }
+            }
 
-            for (int i = 0; i < headers.length; i++) {
+            for (int i = 0; i < IMPORT_HEADERS.length; i++) {
                 sheet.autoSizeColumn(i);
             }
 
@@ -1216,56 +1622,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     }
 
     // ========== 私有辅助方法 ==========
-
-    /**
-     * 从 Excel 行解析商品
-     */
-    private Product parseProductFromRow(Row row, Long tenantId) {
-        String name = getCellStringValue(row, 0);
-        if (!StringUtils.hasText(name)) {
-            throw new IllegalArgumentException("商品名称不能为空");
-        }
-
-        String skuCode = getCellStringValue(row, 1);
-        String categoryId = getCellStringValue(row, 2);
-
-        BigDecimal price;
-        try {
-            double priceVal = getCellNumericValue(row, 3);
-            if (priceVal <= 0) {
-                throw new IllegalArgumentException("价格必须大于0");
-            }
-            price = BigDecimal.valueOf(priceVal);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("价格格式错误");
-        }
-
-        // issue #5063（V115）：Excel 导入的库存同样走 1 位小数准入（fail-closed）。
-        // 改前 `(int) getCellNumericValue(row, 4)` 把 60.5 截成 60 且**不留痕迹**。
-        BigDecimal stock = BigDecimal.ZERO;
-        try {
-            stock = StockQuantity.requireOneDecimal(
-                    BigDecimal.valueOf(getCellNumericValue(row, 4)), "第 " + (row.getRowNum() + 1) + " 行库存");
-        } catch (NumberFormatException | IndexOutOfBoundsException e) {
-            log.warn("库存解析失败，默认0: {}", e.getMessage());
-        }
-
-        String description = getCellStringValue(row, 5);
-
-        Product product = new Product();
-        product.setName(name);
-        product.setSkuCode(skuCode);
-        product.setCategoryId(categoryId);
-        product.setBasePrice(price);
-        product.setStock(stock);
-        product.setDescription(description);
-        product.setTenantId(tenantId);
-        product.setStatus("draft");
-        product.setEditedBy(getCurrentUsername());
-        product.setEditedAt(OffsetDateTime.now());
-
-        return product;
-    }
 
     /**
      * 获取单元格字符串值

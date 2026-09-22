@@ -7,7 +7,7 @@ import { Button, Modal } from '@/components/ui'
 import ProductTable, { ProductSortField, ProductSortOrder } from '@/components/products/ProductTable'
 import { productApi } from '@/lib/api'
 import { toast } from 'sonner'
-import type { Product, ProductStatus } from '@/types'
+import type { Product, ProductStatus, ProductImportResult } from '@/types'
 
 // 状态选项（PRD：全部/出售中/已下架/审核中/草稿）
 const STATUS_OPTIONS: { value: '' | ProductStatus; label: string }[] = [
@@ -38,8 +38,26 @@ function formatLocalDate(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-type BatchAction = 'on_shelf' | 'off_shelf' | 'delete'
+/**
+ * 触发浏览器下载（导出商品 / 下载导入模板共用）。
+ *
+ * 提取时机 = **第二个消费方出现时**（issue #5154 的「下载导入模板」）：这段浏览器 API 序列
+ * 抄第二遍很容易漏掉 `revokeObjectURL`（= blob 常驻内存）。回收站里的下一步是抽公共模块 ——
+ * 但全仓只有这两个消费方，就地私有函数够了（同 `formatLocalDate` 的处置）。
+ */
+function downloadBlob(data: Blob | BlobPart, filename: string) {
+  const blob = data instanceof Blob ? data : new Blob([data as BlobPart])
+  const url = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  window.URL.revokeObjectURL(url)
+}
 
+type BatchAction = 'on_shelf' | 'off_shelf' | 'delete'
 interface SingleConfirm {
   product: Product
   action: 'on_shelf' | 'off_shelf' | 'delete' | 'recommend' | 'unrecommend'
@@ -85,6 +103,10 @@ export default function ProductsPage() {
   const [batchAction, setBatchAction] = useState<BatchAction | null>(null)
   const [singleConfirm, setSingleConfirm] = useState<SingleConfirm | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // 批量导入（#5154）：报告与进度各自独立 —— 报告要一直显示到用户主动关掉
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<ProductImportResult | null>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
 
   // ===== URL 同步（仅在已提交搜索后触发） =====
   const syncUrl = useCallback(
@@ -288,8 +310,7 @@ export default function ProductsPage() {
   }
 
   // ===== 批量导出 =====
-  const handleExport = async () => {
-    const toastId = toast.loading('正在导出，请稍候...')
+  const handleExport = async () => {    const toastId = toast.loading('正在导出，请稍候...')
     try {
       const res = await productApi.exportProducts({
         productId: productId || undefined,
@@ -300,14 +321,7 @@ export default function ProductsPage() {
         createdTo: createdTo || undefined,
       })
       const blob = res.data instanceof Blob ? res.data : new Blob([res.data as BlobPart])
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `products_${formatLocalDate(new Date())}.xlsx`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(url)
+      downloadBlob(blob, `products_${formatLocalDate(new Date())}.xlsx`)
       toast.success('导出成功', { id: toastId })
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || '导出失败'
@@ -316,6 +330,47 @@ export default function ProductsPage() {
   }
 
   const hasSelection = selectedIds.length > 0
+
+  // ===== 批量导入（issue #5154）=====
+  // 对偶于 handleExport：导出把「当前筛选的商品」写成 xlsx，导入把 xlsx 写回商品 + SKU。
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    // 清空 value：同一个文件连选两次也要能再次触发 change（否则第二次点"导入"没反应）
+    e.target.value = ''
+    if (!file) return
+    setImporting(true)
+    const toastId = toast.loading('正在导入，请稍候...')
+    try {
+      const res = await productApi.importProducts(file)
+      const report = res.data.data
+      // 报告**先展示再刷新**：失败行必须逐行看得见（静默跳过 = 少导了没人知道）
+      setImportResult(report)
+      if (report.failCount > 0) {
+        toast.warning(`导入完成：成功 ${report.successCount} 行、失败 ${report.failCount} 行（详见导入结果）`, {
+          id: toastId,
+        })
+      } else {
+        toast.success(`导入完成：成功 ${report.successCount} 行`, { id: toastId })
+      }
+      loadProducts()
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.error?.message || err?.response?.data?.message || err?.message || '导入失败'
+      toast.error(`导入失败：${msg}`, { id: toastId })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const res = await productApi.downloadImportTemplate()
+      downloadBlob(res.data, '商品导入模板.xlsx')
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '下载失败'
+      toast.error(`模板下载失败：${msg}`)
+    }
+  }
 
   // ===== 弹窗文案 =====
   const confirmDialog = useMemo(() => {
@@ -542,6 +597,21 @@ export default function ProductsPage() {
           <Button variant="secondary" onClick={handleExport}>
             批量导出
           </Button>
+          <Button variant="secondary" onClick={handleDownloadTemplate}>
+            下载导入模板
+          </Button>
+          <Button variant="secondary" loading={importing} onClick={() => importInputRef.current?.click()}>
+            导入商品
+          </Button>
+          {/* 隐藏的文件选择器：「导入商品」按钮点它（保留原生 input 的文件选择语义，不自造 dialog） */}
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            aria-label="导入商品文件"
+            onChange={handleImportFile}
+          />
           {hasSelection && (
             <span className="text-sm text-neutral-500 ml-2">
               已选 <span className="text-primary-600 font-medium">{selectedIds.length}</span> 项
@@ -601,6 +671,62 @@ export default function ProductsPage() {
         }
       >
         <p className="text-sm text-neutral-600 leading-relaxed">{confirmDialog?.desc}</p>
+      </Modal>
+
+      {/* 导入结果报告（#5154）—— 三桶口径必须同时可见：只显示"成功 N 行"会把少导的行藏起来 */}
+      <Modal
+        open={!!importResult}
+        onClose={() => setImportResult(null)}
+        title="导入结果"
+        width={720}
+        footer={<Button onClick={() => setImportResult(null)}>关闭</Button>}
+      >
+        {importResult && (
+          <div className="space-y-4">
+            <div className="text-sm text-neutral-700 space-y-1">
+              <div>
+                共 {importResult.total} 行：成功 {importResult.successCount} 行、失败{' '}
+                {importResult.failCount} 行、空白行 {importResult.blankRows} 行
+              </div>
+              <div>
+                新建 {importResult.createdProducts} 个商品、更新 {importResult.updatedProducts} 个商品
+              </div>
+              <div className="text-neutral-500">
+                同一文件重复导入不会产生重复商品与 SKU（按货号去重）；导入只新增/更新，不删除既有 SKU。
+              </div>
+            </div>
+
+            {importResult.errors.length > 0 ? (
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-neutral-800">
+                  失败明细（{importResult.errors.length} 条）
+                </div>
+                <div className="max-h-72 overflow-auto rounded border border-neutral-200">
+                  <table className="w-full text-sm">
+                    <thead className="bg-neutral-50 text-neutral-500">
+                      <tr>
+                        <th className="w-24 px-3 py-2 text-left font-medium">行号</th>
+                        <th className="w-40 px-3 py-2 text-left font-medium">货号</th>
+                        <th className="px-3 py-2 text-left font-medium">原因</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importResult.errors.map((error, index) => (
+                        <tr key={`${error.row}-${index}`} className="border-t border-neutral-100">
+                          <td className="px-3 py-2 text-neutral-700">第 {error.row} 行</td>
+                          <td className="px-3 py-2 text-neutral-700">{error.skuCode || '-'}</td>
+                          <td className="px-3 py-2 text-red-600">{error.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-green-600">无失败行</div>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   )
