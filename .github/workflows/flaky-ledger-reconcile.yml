@@ -32,6 +32,23 @@ name: Flaky Ledger Reconcile (台账落仓对账兜底)
 #   · **绝不静默降级**（本单的全部价值）：判据「无法判定」⇒ 步骤红（`exit 3`）；
 #     有漂移却**没有 open PR** ⇒ `::error::` + `exit 1`；兜底发出后仍 0 check、已无待批准 run、
 #     且分支 HEAD 已陈旧 ⇒ `::error::` + `exit 1`；main 有分支没有的条目（分叉）⇒ `::error::`。
+#   · **两种病因必须是两条判据**（#5075 ①）：`mergeable_state=dirty`（分支**真冲突**）与
+#     「check 被抑制」看起来都是「台账落不到 main」，但**病因不同、出路不同**：
+#     冲突时 GitHub **不为冲突 PR 运行 `pull_request` workflow** ⇒ check 数**结构性恒为 0**，
+#     approve / arm 这两条动作**结构上不可能生效**（实测 6 个失败 run 全部同形，只有分支 HEAD
+#     陈旧时长单调递增 16 → 241 分钟）；混成同一条红时**真因读不出来**，运维只能反复重跑。
+#     故：冲突 ⇒ 报出 `dirty` + **可行动出口（rebase 路径）**；被抑制 ⇒ 报出 0 check + 陈旧时长。
+#   · **读数与动作必须自洽**（#5075 ④）：`enablePullRequestAutoMerge` 被 integration 权限拒绝时
+#     **不再**被 `|| echo 非致命` 吞成「已 arm」—— 报出 arm 退出码 + **动作之后回读**的真实
+#     `autoMerge`；不自洽（动作失败 ∧ 回读未 arm）⇒ 红；自洽（失败 ∧ 回读已 arm，已由别处 arm）
+#     ⇒ 显式 `::warning::`（非致命但**不静默**）。
+#   · **有意不做自动 rebase**：台账分支的写者只有 `flaky-triage.yml` 一个（见上「绝不削弱既有
+#     护栏」）；兜底再加一个写者会与它打架 ⇒ 冲突走「报出 dirty + 给出 rebase 路径」的可行动
+#     出口，由人 / 由 flaky-triage.yml 执行（台账语义是**只追加** ⇒ rebase 不丢条目）。
+#     ⚠️ **根因（#5075 实测）**：台账 PR 走 **squash 合并** ⇒ 分支历史**永远不含** main 上那个
+#     squash 提交 ⇒ 只追加的分支**每一轮都会再冲突**（实测：`#4881` 落仓后分支又 `diverged`
+#     ahead 34 / behind 16、PR `DIRTY`、`check 数=0`、陈旧 448 分钟）。⇒ **一次性 rebase 只是
+#     解阻，不是根治**：根治要由那个唯一写者**在追加前先 rebase**（本兜底不做，只在冲突时报出）。
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -141,13 +158,18 @@ jobs:
             exit 1
           fi
           # ③ 补 arm auto-merge（幂等）。**不是放行**：台账 PR 仍要真的跑完 required 检查才可能合并。
-          gh pr merge "$PR" --auto --squash --repo "$GITHUB_REPOSITORY" 2>&1 \
-            || echo "ℹ️ arm 返回非零（可能已 arm / 或分支保护拒绝 arm）—— 非致命，由下一轮对账复核"
-          # ④ 可见读数（写 job summary；**不是**门禁 —— 运行与合并都是异步的）
+          #    ⚠️ 失败**不许**被吞成「已 arm」（#5075 ④）：退出码与**回读**的真实状态一起报出。
+          ARM_RC=0
+          ARM_OUT=$(gh pr merge "$PR" --auto --squash --repo "$GITHUB_REPOSITORY" 2>&1) || ARM_RC=$?
+          if [ -n "$ARM_OUT" ]; then echo "$ARM_OUT"; fi
+          # ④ 可见读数（写 job summary；**不是**门禁 —— 运行与合并都是异步的）。
+          #    全部在**动作之后回读**：这样「读数」反映的是真实状态，不是「我以为 arm 了」。
+          PR_STATE=$(gh pr view "$PR" --json state --jq '.state' --repo "$GITHUB_REPOSITORY" 2>/dev/null || echo UNKNOWN)
+          MERGE_STATE=$(gh pr view "$PR" --json mergeStateStatus --jq '.mergeStateStatus' --repo "$GITHUB_REPOSITORY" 2>/dev/null || echo UNKNOWN)
+          MERGEABLE=$(gh pr view "$PR" --json mergeable --jq '.mergeable' --repo "$GITHUB_REPOSITORY" 2>/dev/null || echo UNKNOWN)
+          AUTO_MERGE=$(gh pr view "$PR" --json autoMergeRequest --jq 'if .autoMergeRequest then "armed" else "none" end' --repo "$GITHUB_REPOSITORY" 2>/dev/null || echo unknown)
           CHECKS=$(gh pr checks "$PR" --json name --jq 'length' --repo "$GITHUB_REPOSITORY" 2>/dev/null || echo 0)
-          STATE=$(gh pr view "$PR" --json state,mergeStateStatus,autoMergeRequest \
-                    --jq '"state=\(.state) mergeStateStatus=\(.mergeStateStatus) autoMerge=\(if .autoMergeRequest then "armed" else "none" end)"' \
-                    --repo "$GITHUB_REPOSITORY" 2>&1)
+          STATE="state=${PR_STATE} mergeStateStatus=${MERGE_STATE} mergeable=${MERGEABLE} autoMerge=${AUTO_MERGE}"
           {
             echo "### 📒 flaky 台账落仓对账（#4825 兜底）"
             echo ""
@@ -155,11 +177,29 @@ jobs:
             echo "- 台账 PR：#${PR} ${STATE}"
             echo "- 可见 check 数：${CHECKS}（0 = 仍被抑制 ⇒ 台账落不到 main）"
             echo "- 本轮 approve 的 run 数：${PENDING}"
+            echo "- 补 arm 的退出码：${ARM_RC}（非 0 时**以回读的 autoMerge 为准** —— 读数与动作必须自洽）"
             echo ""
             echo "兜底只补 **approve + arm**（**不放行**：required 检查仍是唯一闸）；无漂移时本 job 零动作。"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "::notice::📒 台账对账：PR #$PR $STATE / check 数=$CHECKS / 本轮 approve=$PENDING"
-          # ⑤ **陈旧 = 兜底没生效** ⇒ 红（否则「台账停在分支上」又变回静默）。
+          echo "::notice::📒 台账对账：PR #$PR $STATE / check 数=$CHECKS / 本轮 approve=$PENDING / arm rc=$ARM_RC"
+          # ⑤-A **分支真冲突** ⇒ 红（#5075 ①：与「check 被抑制」**分成两条判据**）。
+          #      GitHub 对冲突 PR **不运行 `pull_request` workflow** ⇒ 冲突必然伴随 check=0；
+          #      若与 0-check 混成同一条红，就永远读不出「真因是冲突」（实测 6 个失败 run 同形）。
+          #      冲突是**可行动**的：报出 dirty + rebase 路径，而不是让兜底每 20 分钟空转一次。
+          if [ "$MERGE_STATE" = "DIRTY" ] || [ "$MERGEABLE" = "CONFLICTING" ]; then
+            echo "::error::台账 PR #$PR 与 main **真冲突**（mergeable_state=${MERGE_STATE} mergeable=${MERGEABLE}）⇒ GitHub 不为冲突 PR 运行 pull_request workflow ⇒ check 数**结构性恒为 0**，approve / arm 这两条动作**结构上不可能生效**（这才是真因，不是「异步窗口」也不是 token 被抑制）。**根因**：台账 PR 走 **squash 合并** ⇒ 分支历史**永远不含** main 上那个 squash 提交 ⇒ 只追加的台账分支**每一轮都会再冲突** —— 故一次性 rebase 只是解阻，根治要由**唯一写者**（flaky-triage.yml）在**追加前先 rebase**。可行动出口（本次解阻）：rebase 台账分支（台账语义是**只追加**、main 恒为分支的子集 ⇒ rebase 不丢条目）：git fetch origin main && git rebase origin/main && git push --force-with-lease origin HEAD:$LEDGER_BRANCH —— 或重跑 flaky-triage.yml 由它重建分支。（本兜底**不自动 rebase**：该分支的写者只有 flaky-triage.yml 一个，见文件头。）"
+            exit 1
+          fi
+          # ⑤-B **arm 失败不得被吞成「已 arm」**（#5075 ④）：动作（rc）与读数（回读的 autoMerge）
+          #      自洽才放行；不自洽（失败 ∧ 未 arm）⇒ 红。
+          if [ "$ARM_RC" != "0" ] && [ "$AUTO_MERGE" != "armed" ]; then
+            echo "::error::补 arm auto-merge 失败（rc=${ARM_RC}）且回读 autoMerge=${AUTO_MERGE} ⇒ 台账 PR **不会**被自动合并（读数与动作自洽：动作失败 + 状态未 arm）。输出：${ARM_OUT}"
+            exit 1
+          fi
+          if [ "$ARM_RC" != "0" ]; then
+            echo "::warning::补 arm 返回非零（rc=${ARM_RC}）但回读 autoMerge=armed（已由其它路径 arm）⇒ 非致命，且读数与动作自洽。输出：${ARM_OUT}"
+          fi
+          # ⑤-C **check 被抑制**（与冲突无关的另一种病因）⇒ 红（否则「台账停在分支上」又变回静默）。
           #    三个条件缺一不可：0 个 check ∧ 已无待批准 run ∧ 分支 HEAD 已陈旧 ——
           #    少了前两条就会在「approve 刚发出、check 还在产出」的异步窗口里**假红**。
           if [ "$CHECKS" = "0" ] && [ "$PENDING" = "0" ] && [ "${AGE:-0}" -ge "$STALE_MINUTES" ]; then
