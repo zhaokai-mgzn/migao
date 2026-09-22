@@ -23,10 +23,16 @@ jobs:
     if: github.event.pull_request.user.type != 'Bot'
 
     steps:
+      # 告警面（issue #5076 ① 类：机制/簿记 job 自身失败不得静默）：
+      #   改前脚本抛错时只有默认堆栈 —— 没有 `::error::`、没有 step summary，
+      #   读者只看到「少了一个标签」，分不清「本 PR 真缺 Closes」与「检查自己没跑成」。
+      #   改后：**预期内分支**（缺关键词 → 打标签 + 评论）保持非阻塞；
+      #   **自身失败**（API 报错/权限/限流）→ `::error::` + step summary + 非零退出。
       - name: Check PR body issue reference
         uses: actions/github-script@v9
         with:
           script: |
+            try {
             const body = context.payload.pull_request.body || '';
             const hasRef = /(closes|fixes|resolves)\s+#\d+/i.test(body);
             const owner = context.repo.owner;
@@ -47,7 +53,7 @@ jobs:
               return;
             }
 
-            // 缺 Closes #xx：补标签 + 评论提醒（不 block）
+            // 缺 Closes #xx：补标签 + 评论提醒（**预期内分支，不 block**）
             if (!hasLabel) {
               await github.rest.issues.addLabels({ owner, repo, issue_number: prNumber, labels: [label] });
             }
@@ -76,3 +82,16 @@ jobs:
               body: lines.join('\n')
             });
             console.log('WARN: PR #' + prNumber + ' 缺 Closes #xx，已打 ' + label + ' 标签并提醒');
+            } catch (err) {
+              // 自身执行失败（API 报错/权限/限流）—— 必须显式可见，而不是让 PR 只是「少一个标签」
+              const msg = (err && err.message) ? err.message : String(err);
+              console.log('::error::Check Closes 自身执行失败：' + msg);
+              // step summary 走官方 core.summary（github-script 已注入 @actions/core）
+              await core.summary
+                .addHeading('Check Closes #xx — 自身执行失败', 3)
+                .addRaw('- 失败原因：' + msg + '\n')
+                .addRaw('- ⇒ 本 PR 的「关联 issue」状态**未被判定**（不是「已通过」），请查 run 日志。\n')
+                .write();
+              core.setFailed('Check Closes #xx 自身执行失败：' + msg);
+              return;
+            }
