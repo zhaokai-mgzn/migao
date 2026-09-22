@@ -43,6 +43,7 @@ import type {
   InboundOrderLine,
   InboundBatch,
   InboundOrderCreateParams,
+  OpeningImportReport,
   InboundOrderListParams,
   BatchRemaining,
   BatchDistribution,
