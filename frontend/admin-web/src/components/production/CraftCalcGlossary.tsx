@@ -66,23 +66,26 @@ function TermBlock({ term, anchor, meta }: { term: GlossaryTerm; anchor?: string
 export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
   const [examples, setExamples] = useState<AutoFeatureExample[]>([])
   const [examplesError, setExamplesError] = useState<string | null>(null)
-  const fullness = config.tiers?.standard?.fullness ?? null
 
   // 🔴 issue #5036 包 2a：算例的**判定依据**由**服务端**给（读**该租户配置**）—— 本组件只**展示**。
   // 依赖用**入参签名**（不是 `config` 对象本身）：页面草稿每次渲染都是新对象 ⇒ 用对象当依赖会自激请求风暴。
-  // 🔴 issue #5030：宽方向余量（`side_margin`）**整体退场** ⇒ 不再进依赖签名（它已不参与任何判定）；
-  // 仍进签名的两项 = 会改变算例结果的配置：高方向卷边 + 标准档褶倍。
-  const examplesSignature = [config.hem_margin, fullness].join('|')
+  // 🔴 issue #5130 改判：判定面（超高 / 超宽）现在读**两个企业阈值** ⇒ 进签名的就是它们
+  //（旧签名的 `hem_margin` / 标准档褶倍已离开判定面 —— 它们仍进几何层，但不影响本节的算例结果）。
+  const examplesSignature = [
+    config.oversize_width_threshold,
+    config.oversize_height_threshold,
+  ].join('|')
 
   useEffect(() => {
     let cancelled = false
     const base = {
       width: GLOSSARY_EXAMPLE.width,
       height: GLOSSARY_EXAMPLE.height,
-      fabric_width: GLOSSARY_EXAMPLE.doorWidth,
       config,
     }
-    // 两组示例几何：定高买宽 ⇒ 超高；定宽买高 ⇒ 超宽 / 倒幅（与判定的分流一致）
+    // 两组示例几何：定高买宽 ⇒ 超高；定宽买高 ⇒ 超宽 / 倒幅
+    // （⚠️ issue #5130 起「超高 / 超宽」与加工类型**无关** —— 两组都判得出来；分两组是为了
+    //  让 `倒幅` 只在 `定宽买高` 那一组出现，与判定的真值一致）
     Promise.all([
       autoFeaturesApi.preview({ ...base, cutting_mode: CUTTING_MODE_FIXED_HEIGHT }),
       autoFeaturesApi.preview({ ...base, cutting_mode: CUTTING_MODE_FIXED_WIDTH }),
@@ -92,8 +95,12 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
         setExamples(
           buildAutoFeatureExamples(
             config,
+            // 去重：`超宽` / `超高` 在两组里都会判出来 ⇒ 只在第一组（几何更大的一组无关）
+            // 出现一次；`倒幅` 只在定宽买高那组。顺序与 `AUTO_FEATURE_NAMES` 同源。
             fixedHeight.data?.data?.auto_features ?? [],
-            fixedWidth.data?.data?.auto_features ?? []
+            (fixedWidth.data?.data?.auto_features ?? []).filter(
+              (f) => !(fixedHeight.data?.data?.auto_features ?? []).some((g) => g.name === f.name)
+            )
           )
         )
         setExamplesError(null)

@@ -519,14 +519,19 @@ function autoFeaturesOf(line: OrderLineItem): AutoFeature[] {
 }
 
 /** 自动特征判定的**入参**（`null` = 宽高没填齐 ⇒ 不发请求，提交校验本来也拦） */
-function autoFeatureParamsOf(line: OrderLineItem): AutoFeaturesParams | null {
+function autoFeatureParamsOf(
+  line: OrderLineItem,
+  calcConfig: CraftCalcConfig | null
+): AutoFeaturesParams | null {
   const width = Number(line.width)
   const height = Number(line.height)
   if (!Number.isFinite(width) || width <= 0) return null
   if (!Number.isFinite(height) || height <= 0) return null
   const params: AutoFeaturesParams = { width, height }
   // 门幅：**取该 SKU 的**（`parseDoorWidth` 是唯一解析点，issue #4877）。
-  // 解析不到 ⇒ **不发该键** ⇒ 服务端不判并在 notice 里说明（**不回落默认门幅**）。
+  // 解析不到 ⇒ **不发该键**（**不回落默认门幅**）。
+  // ⚠️ 它**不参与**超高/超宽的判定（issue #5130 起判定读**企业阈值参数**）——
+  // 它只剩「几何矛盾」提示与回显用途。
   const doorWidth = parseDoorWidth(line.selectedSku?.doorWidth)
   if (doorWidth !== null) params.fabric_width = doorWidth
   // ⚠️ issue #5020（rebase 时采纳 main 的口径）：走**派生后**的加工类型（`cuttingModeOf`），
@@ -534,13 +539,25 @@ function autoFeatureParamsOf(line: OrderLineItem): AutoFeaturesParams | null {
   // 而规则面已按自动解算料 ⇒ **界面显示 ≠ 落库**（正是本单要消灭的那种不一致）。
   const cuttingMode = cuttingModeOf(line)
   if (cuttingMode) params.cutting_mode = cuttingMode
+  // 🔴 issue #5130：两个**企业阈值参数**是超高/超宽判据 ⇒ **必须随请求下发**。
+  // 不下发 ⇒ 引擎回落默认值 ⇒ 商家在「算料配置」里改的阈值**静默不生效**
+  // （可配却不生效 = 本仓明令禁止的形态；同族先例：issue #5030 的 `side_margin`）。
+  if (calcConfig) params.config = calcConfig
   return params
 }
 
 /** 判定入参签名：**只含入参**（判定结果写回行状态 ⇒ 用它当依赖会自激成请求风暴） */
 function autoFeatureParamsSignature(params: AutoFeaturesParams | null): string {
   if (params === null) return ''
-  return [params.width, params.height, params.fabric_width ?? '', params.cutting_mode ?? ''].join('|')
+  return [
+    params.width,
+    params.height,
+    params.fabric_width ?? '',
+    params.cutting_mode ?? '',
+    // 企业阈值改了 ⇒ 签名变 ⇒ 重发判定（否则商家改了配置、页面停在旧判定上）
+    params.config?.oversize_width_threshold ?? '',
+    params.config?.oversize_height_threshold ?? '',
+  ].join('|')
 }
 
 /**
@@ -594,9 +611,12 @@ function doorWidthParamsSignature(params: DoorWidthPlanParams | null): string {
  * ⇒ 被创建路径的「实收金额与应收不一致」拒单（或**少收/多收**）。
  * ⇒ 宁可让商家等一下，也不发一个键不完整的单。
  */
-function autoFeaturesBlockReason(lineItems: OrderLineItem[]): string | null {
+function autoFeaturesBlockReason(
+  lineItems: OrderLineItem[],
+  calcConfig: CraftCalcConfig | null
+): string | null {
   for (const line of lineItems) {
-    if (autoFeatureParamsOf(line) === null) continue
+    if (autoFeatureParamsOf(line, calcConfig) === null) continue
     if (line.autoFeaturesError) return '自动识别判定失败，请稍候重试后再提交'
     if (!line.autoFeatures) return '自动识别判定中，请稍候再提交'
   }
@@ -604,12 +624,15 @@ function autoFeaturesBlockReason(lineItems: OrderLineItem[]): string | null {
 }
 
 /**
- * 该行要**显式告知**商家的提示（issue #4662）—— 三类：① 该 SKU 未维护门幅 ⇒ 都判不了；
- * ② 褶倍缺失 ⇒ 未判超宽；③ 加工类型与几何**矛盾** ⇒ 系统实际会按哪种算。
+ * 该行要**显式告知**商家的提示 —— **2026-09-22 改判（issue #5130）后只剩一类**：
+ * 加工类型与**几何**矛盾 ⇒ 系统实际会按哪种算。
  *
  * ⚠️ 提示**不是特征**：不进组合键、不改推算（裁定 C 的前半句「以商家选的为准」）。
  * 🔴 **issue #5036 起来源 = 服务端**（用户 2026-09-21 裁定「统一迁移到服务端；未来 agent 也需要」）
  * —— 见下，本页只展示。
+ * 🔴 **issue #5130 改判**：旧的两类（缺门幅 ⇒ 都判不了 / 缺褶倍 ⇒ 未判超宽）已随判据替换**退役**
+ * —— 它们说的是**旧判据**（与门幅 / 褶倍比），在新判据下是**假话**。
+ * 「门幅未维护」的告知由几何层徽标承担（`door-width-missing` / `size-door-width-missing`）。
  */
 function autoFeatureNoticesOf(line: OrderLineItem): AutoFeatureNotice[] {
   // 🔴 issue #5036：提示改由**服务端**给（用户 2026-09-21 裁定「统一迁移到服务端；未来 agent 也需要」）
@@ -1565,15 +1588,18 @@ export default function NewOrderPage() {
   const autoFeatureSignature = useMemo(
     () =>
       lineItems
-        .map((l) => `${l.id}:${autoFeatureParamsSignature(autoFeatureParamsOf(l))}`)
+        .map((l) => `${l.id}:${autoFeatureParamsSignature(autoFeatureParamsOf(l, calcConfig))}`)
         .join(';'),
-    [lineItems]
+    // ⚠️ `calcConfig` 必须进依赖：两个**企业阈值**是判定入参的一部分（issue #5130）——
+    // 漏了它 ⇒ 商家改完算料配置存盘后，页面**停在旧判定**上（可配却不生效的静默形态）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lineItems, calcConfig]
   )
 
   useEffect(() => {
     const targets: Array<{ id: string; params: AutoFeaturesParams }> = []
     for (const line of lineItems) {
-      const params = autoFeatureParamsOf(line)
+      const params = autoFeatureParamsOf(line, calcConfig)
       if (params) targets.push({ id: line.id, params })
     }
     if (targets.length === 0) return
@@ -1900,7 +1926,7 @@ export default function NewOrderPage() {
       const prefix = `line_${line.id}`
       // 自动特征判定闸门（issue #4976 包 2b）：判定缺席 ⇒ 组合键少一项 ⇒ 取价错
       // （与上面的加工费计价闸门同口径；判定不产生米数，所以放在逐行校验之前）
-      const autoBlock = autoFeaturesBlockReason([line])
+      const autoBlock = autoFeaturesBlockReason([line], calcConfig)
       if (autoBlock) e[`${prefix}_autoFeatures`] = autoBlock
       if (!line.product) {
         e[`${prefix}_product`] = `第 ${idx + 1} 个商品未选择`
@@ -3390,15 +3416,17 @@ function LineItemBlock({
   const addableAutoFeatures = AUTO_FEATURE_NAMES.filter(
     (name) => !autoFeatureRows.some((row) => row.name === name)
   )
-  /** 系统识别**提示**（issue #4662）：缺褶倍 ⇒ 未判超宽 / 加工类型几何矛盾 ⇒ 系统实际按哪种算 */
+  /** 系统识别**提示**：加工类型与几何**矛盾** ⇒ 系统实际会按哪种算（服务端产出） */
   /**
-   * 系统识别**提示**（issue #4662）：缺褶倍 ⇒ 未判超宽 / 加工类型几何矛盾 ⇒ 系统实际按哪种算。
-   * ⚠️ issue #4899：**「还没选规格」≠「门幅未维护」** —— 没有选中 SKU 时摘掉 `missing-door-width`
-   * （那是「未选规格」，提交闸门另有明确报错），否则界面会谎报「该 SKU 未维护门幅」。
+   * 系统识别**提示**：加工类型与几何**矛盾** ⇒ 系统实际会按哪种算（服务端产出）。
+   *
+   * 🔴 **2026-09-22 改判（issue #5130）**：提示条目只剩 `cutting-mode-conflict` 一条 ——
+   * `missing-door-width`（「未维护门幅 ⇒ 超高/超宽都判不了」）与 `missing-fullness`
+   * （「缺褶倍 ⇒ 未判超宽」）两条随判据替换（净窗宽/净窗高 vs **企业阈值参数**）**退役**
+   * （旧文案在新判据下成了**假话**）。⇒ issue #4899 加的「未选规格时摘掉 `missing-door-width`」
+   * 这条 `filter` 也随之删除（它的前提 = 该条目存在）。
    */
-  const autoFeatureNotices = autoFeatureNoticesOf(line).filter(
-    (notice) => !(line.selectedSku === null && notice.kind === 'missing-door-width')
-  )
+  const autoFeatureNotices = autoFeatureNoticesOf(line)
   /**
    * 门幅（issue #4877）：**已无缺省门幅** —— 解析不到 ⇒ `null` ⇒ 界面显式说「无法判定」。
    * 旧行为「按默认 2.8 米推算」= 本单要替换掉的错误做法（真单实测：门幅 2.8/3.2 之差会让
@@ -3553,7 +3581,7 @@ function LineItemBlock({
         {doorWidthMissing && (
           <span
             data-testid="size-door-width-missing"
-            title="该 SKU 未维护门幅 —— 超高/超宽都判不了（系统不按缺省门幅推算）"
+            title="该 SKU 未维护门幅 —— 系统不按缺省门幅推算（分幅与加工类型判不了；超高/超宽是按净窗宽高与企业阈值判的）"
             className="rounded border border-neutral-300 bg-neutral-100 px-1 text-[10px] leading-4 text-neutral-500"
           >
             门幅未维护
@@ -3751,7 +3779,8 @@ function LineItemBlock({
                     )}
                   {doorWidthMissing && (
                     <p data-testid="door-width-missing" className="mt-1 text-xs text-amber-600">
-                      该 SKU 未维护门幅 ⇒ **超高 / 超宽都判不了**（系统不按缺省门幅推算）—— 请先补商品门幅
+                      该 SKU 未维护门幅 ⇒ **分幅与加工类型判不了**（系统不按缺省门幅推算）—— 请先补商品门幅。
+                      （⚠️ 超高 / 超宽不受此影响：它们按**净窗宽 / 净窗高**与本租户的阈值判定）
                     </p>
                   )}
                   {/* **门幅规则**（issue #4877）：① 所选门幅不可行 ⇒ 需接高（强告警）；

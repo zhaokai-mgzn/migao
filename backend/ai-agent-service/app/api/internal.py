@@ -533,7 +533,8 @@ async def craft_calc(
         "craft_tier": quote["craft_tier"],
         "warning": quote["warning"],
         # 自动特征（issue #4976 包 1a，用户裁定 B「判定移到服务端」）：**键恒在**，
-        # 空列表 = 不判（缺加工类型 / 缺褶倍）。由引擎产出 ⇒ 与 `fabric_meters` 同源。
+        # 空列表 = 不判（净窗宽/净窗高都未超过各自的企业阈值）。由引擎产出 ⇒ 与 `fabric_meters` 同源。
+        # ⚠️ issue #5130：判定面已改为与**企业阈值参数**比（与门幅 / 褶倍 / 加工类型分流全无关）。
         "auto_features": quote["auto_features"],
     }
     logger.info(
@@ -553,33 +554,34 @@ class AutoFeaturesRequest(BaseModel):
     ⇒ 组合键少一项 ⇒ **加工费匹配不到组合价**（P1 钱风险）。
     """
 
-    width: Optional[float] = Field(None, gt=0, description="成品宽（米）；缺 ⇒ 不判超宽")
-    height: Optional[float] = Field(None, gt=0, description="成品高（米）；缺 ⇒ 不判超高")
+    width: Optional[float] = Field(
+        None, gt=0, description="**净窗宽**（米）；缺 ⇒ 不判超宽")
+    height: Optional[float] = Field(
+        None, gt=0, description="**净窗高**（米）；缺 ⇒ 不判超高")
     fabric_width: Optional[float] = Field(
         None,
         gt=0,
         description=(
-            "**该商品/SKU 的门幅**（米）。⚠️ **没有缺省门幅**（issue #4877）：缺 ⇒ **不判** + "
-            "`notice='missing-door-width'`，**不回落**任何默认门幅（回落 = 拿一个不是这张单的值判价）。"
+            "**该商品/SKU 的门幅**（米）。⚠️ **判定面已不读它**（issue #5130：判据改为与**企业阈值参数**比）"
+            "—— 它只剩两个用途：① 几何矛盾提示（`notices` 的 `cutting-mode-conflict`）；"
+            "② 回显（`door_width`）。**没有缺省门幅**（issue #4877）：缺 ⇒ **不回落**任何默认值、"
+            "也不产判定面提示（回落 = 拿一个不是这张单的值判）。"
         ),
     )
     cutting_mode: Optional[str] = Field(
         None,
         description=(
-            "加工类型（`定高买宽` / `定宽买高`）：决定**哪个方向受门幅约束**。"
-            "缺省 / 表外 ⇒ **不判** + `notice='unknown-cutting-mode'`（保守：不猜朝向）。"
+            "加工类型（`定高买宽` / `定宽买高`）：**只决定要不要推导 `倒幅`**"
+            "（`超高` / `超宽` 与它无关 —— issue #5130 已退役 #4661 的分流）。"
+            "缺省 / 表外 ⇒ 无 `倒幅`，其余照判。"
         ),
-    )
-    fullness: Optional[float] = Field(
-        None,
-        gt=0,
-        description="名义褶倍；缺省 ⇒ 取**该租户配置**的标准档（回显在 `fullness_used`，供商家核对）。",
     )
     config: Optional[Dict[str, Any]] = Field(
         None,
         description=(
-            "算料公式参数（**租户级**）：判定用到 `hem_margin`（高方向卷边）"
-            "与 `tiers` 的标准档褶倍。缺省 ⇒ 引擎默认值（未配置租户口径一字不变）。"
+            "算料公式参数（**租户级**）：判定用到两个**企业阈值**"
+            "（`oversize_width_threshold` / `oversize_height_threshold`），"
+            "提示用到 `hem_margin`。缺省 ⇒ 引擎默认值（`6 / 4`，未配置租户口径一字不变）。"
         ),
     )
 
@@ -594,68 +596,54 @@ async def auto_features(
     用户 2026-09-21 裁定 B「**判定移到服务端**」的读面：前端只**展示**本端点的结论。
 
     **单一真值**：判定逻辑只在 `curtain_calc.detect_auto_features` 一处 ——
-    本端点只做「入参归一 + 为什么没判的显式说明」，**不复制任何判据**（第二份判据 = 第二套价）。
+    本端点只做「入参归一 + 几何矛盾提示」，**不复制任何判据**（第二份判据 = 第二套价）。
 
     返回 `data`：`auto_features`（`[{name, source, reason}]`，**键恒在**，空列表 = **不判**）/
-    `door_width`（实际用于判定的门幅；缺门幅时 `None`）/ `fullness_used`（实际用于判超宽的褶倍）/
-    `notice`（`''` / `missing-door-width` / `unknown-cutting-mode` —— **不判的原因**，不静默）。
+    `notices`（`[{kind, reason}]`，键恒在；issue #5130 后只剩 `cutting-mode-conflict`）/
+    `door_width`（回显请求里的门幅；缺 ⇒ `None`）。
 
-    ⚠️ **缺门幅 ≠ 一个特征都不判**（issue #5033）：`倒幅` 只取决于加工类型、**与门幅无关**
-    ⇒ 缺门幅时**照判**（`定宽买高 + 未维护门幅` ⇒ `['倒幅']`）。本端点**不再**对缺门幅短路
-    —— 短路会把 `倒幅` 一起吞掉 ⇒ 组合键少一项（改钱）。`定高买宽 + 缺门幅` ⇒ `[]`（超高判不了）。
+    🔴 **2026-09-22 改判（issue #5130）**：判定改为与**企业阈值参数**比（净窗宽/净窗高）
+    ⇒ 门幅与褶倍**都不再参与判定**。据此：
+    ① 本端点**不再**因「缺加工类型」短路成 `[]`（缺省 ⇒ 超高/超宽照判、无倒幅）；
+    ② 响应**删掉**两个失去消费者的字段 —— `fullness_used`（判定面不再读褶倍）与
+    `notice`（它的两个取值 `missing-door-width` / `unknown-cutting-mode` 在新判据下**都是假话**）。
+    三条退役裁定的完整留档见 `curtain_calc.detect_auto_features` 的 docstring。
     """
     try:
         config = _normalize_craft_calc_config(request.config)
+        # fail-closed 校验（issue #5130）：两个企业阈值 / 卷边等必须是正数 ⇒ 非法值 **400**，
+        # **不静默回退默认值**（静默 = 算错特征名且无人知道）。校验与默认值都在**引擎**
+        # （`resolve_craft_calc_config`）—— 这里再抄一份就是第二份口径。
+        # 校验一次后把**同一份**已解析配置传给判定与提示（同源，不各解析一套）。
+        resolved = curtain_calc.resolve_craft_calc_config(config)
     except ValueError as e:
         raise HTTPException(
             status_code=400,
             detail={"success": False, "error": {"code": "CRAFT_CALC_INVALID_INPUT", "message": str(e)}},
         ) from e
 
-    cfg = curtain_calc.resolve_craft_calc_config(config)
-    fullness_used = (
-        request.fullness if request.fullness is not None else cfg["tiers"]["standard"]["fullness"]
-    )
-
-    # 商家可见提示（issue #5036）—— **与判定面同入参**（尤其 `fullness` 必须用 `fullness_used`：
-    # 判定用的是它；提示若用 `request.fullness`，就会在「未传褶倍」时谎报「缺褶倍」，
-    # 而判定其实取了该租户的标准档）。
+    # 商家可见提示（issue #5036）—— 与判定面**同配置口径**（都读 `cfg`，不新造第二份常量）。
+    # #5130 后只剩「几何矛盾」一条（它说的是几何层，仍然为真）：缺门幅 / 缺褶倍两条已退役。
     notices = curtain_calc.detect_auto_feature_notices(
-        window_width=request.width,
         window_height=request.height,
         fabric_width=request.fabric_width,
-        fullness=fullness_used,
         cutting_mode=request.cutting_mode,
-        config=config,
+        config=resolved,
     )
 
-    if request.cutting_mode not in (
-        curtain_calc.CUTTING_MODE_FIXED_HEIGHT,
-        curtain_calc.CUTTING_MODE_FIXED_WIDTH,
-    ):
-        # 缺 / 表外加工类型 ⇒ **不判**（不猜朝向）
-        features, notice = [], "unknown-cutting-mode"
-    else:
-        # 🔴 **不在本端点短路「缺门幅」**（issue #5033）：`倒幅` 只取决于加工类型、**与门幅无关**
-        # （#4877 明确：门幅缺数据**不能连倒幅一起吞** —— 那正是「静默少一个组合键项 = 改钱」）。
-        # ⇒ 一律委派引擎（**单一真值**，端点不持第二份判据）；缺门幅时引擎的 `fabric_width is None`
-        # 守卫会让超宽/超高**不判**、而 `倒幅` 照判。
-        features = curtain_calc.detect_auto_features(
-            window_width=request.width,
-            window_height=request.height,
-            fabric_width=request.fabric_width,
-            fullness=fullness_used,
-            cutting_mode=request.cutting_mode,
-            config=config,
-        )
-        notice = "missing-door-width" if request.fabric_width is None else ""
+    # 🔴 一律委派引擎（**单一真值**，端点不持第二份判据）：
+    # 缺加工类型 ⇒ 超高/超宽照判、无倒幅；缺门幅 ⇒ **判定面完全不受影响**（#5130 退役 #4877 判定面）。
+    features = curtain_calc.detect_auto_features(
+        window_width=request.width,
+        window_height=request.height,
+        cutting_mode=request.cutting_mode,
+        config=resolved,
+    )
 
     return make_response(True, data={
         "auto_features": features,
         "notices": notices,
         "door_width": request.fabric_width,
-        "fullness_used": fullness_used,
-        "notice": notice,
     })
 
 class DoorWidthPlanRequest(BaseModel):

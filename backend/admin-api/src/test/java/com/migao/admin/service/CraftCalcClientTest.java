@@ -440,7 +440,7 @@ class CraftCalcClientTest {
 
     private static Map<String, Object> autoFeaturesRequest() {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("width", 1.6);
+        body.put("width", 6.5);
         body.put("height", 2.0);
         body.put("fabric_width", 2.8);
         body.put("cutting_mode", "定宽买高");
@@ -450,11 +450,16 @@ class CraftCalcClientTest {
     @Test
     @DisplayName("#4976 自动特征端点：打到独立路径 + 带 X-Service-Token + data 原样搬运")
     void autoFeaturesCarriesEngineDataVerbatim() {
+        // 🔴 issue #5130 改判：引擎响应**不再**含 `fullness_used` / `notice`（判定面改为与
+        // **企业阈值**比 ⇒ 这两个字段失去消费者，且旧 `notice` 的取值已成都市假话）；
+        // 依据文案也从「> 门幅 … 米」改成「> 超宽阈值 … 米」。本用例钉的是「Java **原样搬运**」，
+        // 换成**现行**响应形态（旧形态复活 ⇒ 本用例的断言失去被测对象 ⇒ 红）。
         String body = """
                 {"success":true,"data":{
-                  "auto_features":[{"name":"超宽","source":"推算","reason":"窗宽 1.6 × 褶倍 2.0 = 3.2 米 > 门幅 2.8 米"},
+                  "auto_features":[{"name":"超宽","source":"推算","reason":"净窗宽 6.5 米 > 超宽阈值 6.0 米"},
                                     {"name":"倒幅","source":"推算","reason":"加工类型 = 定宽买高"}],
-                  "door_width":2.8,"fullness_used":2.0,"notice":""},
+                  "notices":[{"kind":"cutting-mode-conflict","reason":"几何矛盾（服务端替身）"}],
+                  "door_width":2.8},
                  "requestId":"req_1","timestamp":1758100000}
                 """;
         when(restTemplate.exchange(eq(AUTO_FEATURES_URL), eq(HttpMethod.POST),
@@ -466,8 +471,9 @@ class CraftCalcClientTest {
         // 注入：客户端打到试算路径 / 漏 token ⇒ 上面的 when 不命中 ⇒ 红
         verify(restTemplate).exchange(eq(AUTO_FEATURES_URL), eq(HttpMethod.POST),
                 any(HttpEntity.class), eq(String.class));
-        assertThat(data).containsEntry("notice", "");
         assertThat(data).containsEntry("door_width", 2.8);
+        assertThat(data).doesNotContainKeys("fullness_used", "notice");
+        assertThat((List<?>) data.get("notices")).hasSize(1);
         assertThat((List<?>) data.get("auto_features")).hasSize(2);
     }
 
@@ -490,7 +496,7 @@ class CraftCalcClientTest {
         when(restTemplate.exchange(eq(AUTO_FEATURES_URL), eq(HttpMethod.POST),
                 any(HttpEntity.class), eq(String.class)))
                 .thenReturn(ResponseEntity.ok("{\"success\":true,\"data\":{\"auto_features\":[],"
-                        + "\"door_width\":2.8,\"fullness_used\":2.0,\"notice\":\"\"}}"));
+                        + "\"notices\":[],\"door_width\":2.8}}"));
 
         client.autoFeatures(autoFeaturesRequest());
 

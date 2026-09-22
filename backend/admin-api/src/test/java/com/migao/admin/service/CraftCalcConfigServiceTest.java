@@ -66,6 +66,10 @@ class CraftCalcConfigServiceTest {
         body.put("default_formula", "pleat");
         body.put("hem_margin", 0.3);
         body.put("meters_rounding_step", 0.1);
+        // 🔴 issue #5130（V114）：两个**企业阈值**（超宽 / 超高判据）也是配置键 ⇒
+        // 全量替换的「合法全量载荷」必须含它们（少了 = 每次 PUT 都 422 报缺键）
+        body.put("oversize_width_threshold", 6);
+        body.put("oversize_height_threshold", 4);
         return body;
     }
 

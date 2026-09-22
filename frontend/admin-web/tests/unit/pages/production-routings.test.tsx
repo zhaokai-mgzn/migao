@@ -638,6 +638,9 @@ const ENGINE_DEFAULT_CALC_CONFIG = {
   // 🔴 #5030：宽方向的 `side_margin` 已整体退场（用户 2026-09-21 裁定）⇒ 换回**仍在场**的高方向卷边键
   hem_margin: 0.3,
   meters_rounding_step: 0.1,
+  // 🔴 #5130：两个**企业阈值**（超宽 / 超高判据）；默认 6 / 4，与引擎常量逐值一致
+  oversize_width_threshold: 6,
+  oversize_height_threshold: 4,
 }
 
 /** 后端护栏失败信封（逐条理由；**不**含顶层 `error_messages` —— 那个字段后端不存在） */
@@ -1230,10 +1233,13 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
     // 注入：删掉说明区块 ⇒ 第一条红（区块没跟参数同屏 = 用户还得去别处找）
     expect(screen.getByTestId('craft-calc-glossary')).toBeInTheDocument()
-    for (const name of ['超高', '超宽', '倒幅']) {
+    for (const name of ['超高', '超宽']) {
       // 算例自 #5036 包 2a 起由**服务端**给 ⇒ 异步取，必须 await
-      expect(await screen.findByTestId(`glossary-example-${name}`)).toHaveTextContent('门幅')
+      // 🔴 #5130 改判：依据文案由「> 门幅 … 米」改为「> 超宽/超高阈值 … 米」（旧式依据复活 ⇒ 红）
+      expect(await screen.findByTestId(`glossary-example-${name}`)).toHaveTextContent('阈值')
     }
+    // `倒幅` 的算例依据 = 加工类型（与阈值 / 门幅无关）
+    expect(await screen.findByTestId('glossary-example-倒幅')).toHaveTextContent('定宽买高')
     // 死亡条件绑 #4569：加工项特征**当前**只计价、不触发工序
     expect(screen.getByTestId('glossary-term-拼接')).toHaveTextContent('不触发工序')
     expect(screen.getByTestId('glossary-term-接高')).toHaveTextContent('待查明')
@@ -3105,7 +3111,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
  * 判据（每条都能红）：
  * ① 切到本 tab ⇒ 发**一次** `GET`，渲染**引擎默认值**并标注「当前使用系统默认值」
  *    （把默认值伪装成商家配置 ⇒ 红；前端自带一份默认值 ⇒ 与后端逐值比对时红）；
- * ② 改一个参数 ⇒ `PUT` 带**全量 9 键**（缺键 = 让后端静默回默认值 ⇒ 红）；
+ * ② 改一个参数 ⇒ `PUT` 带**全量键**（**11 键**，issue #5130 起；缺键 = 让后端静默回默认值 ⇒ 红）；
  * ③ 非法值 ⇒ 后端 422 的**逐条**理由可见，且**不静默回退默认值**（草稿保持用户输入、不显示「已保存」⇒ 红）；
  * ④ 切 tab 不丢草稿（state 挂在本组件上）。
  */
@@ -3129,7 +3135,7 @@ describe('算料配置 tab（issue #4528）', () => {
     expect(screen.getByTestId('craft-calc-config-mixed-1')).toHaveValue(0.65)
   })
 
-  it('改「单色每折吃布」⇒ PUT 带全量 9 键（缺键会让后端静默回默认值）', async () => {
+  it('改「单色每折吃布」⇒ PUT 带全量键（缺键会让后端静默回默认值）', async () => {
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
     await userEvent.click(screen.getByTestId('process-config-tab-calc'))
@@ -3157,6 +3163,10 @@ describe('算料配置 tab（issue #4528）', () => {
         'default_formula',
         'hem_margin',
         'meters_rounding_step',
+        // 🔴 issue #5130：两个**企业阈值**（超宽 / 超高判据）也是配置键 ⇒ 必须在全量 PUT 里
+        //（少了它们 = 后端按缺键 422，或静默回默认值 ⇒ 商家改的阈值丢失 = 静默失效的形态）
+        'oversize_width_threshold',
+        'oversize_height_threshold',
       ].sort(),
     )
     // 保存成功后口径来源如实变「已保存为您的配置」

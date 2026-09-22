@@ -311,47 +311,51 @@ export const craftCalcApi = {
 
 /** 自动特征判定**入参**（issue #4976 包 2b）—— 判定移到服务端的读面入参 */
 export interface AutoFeaturesParams {
-  /** 成品宽（米） */
+  /** **净窗宽**（米）—— issue #5130：与 `oversize_width_threshold` 比（不看门幅、不看褶倍） */
   width: number
-  /** 成品高（米） */
+  /** **净窗高**（米）—— issue #5130：与 `oversize_height_threshold` 比 */
   height: number
   /**
-   * **该商品/SKU 的门幅**（米）。⚠️ **没有缺省门幅**（issue #4877）：
-   * 拿不到 ⇒ **不发该键** ⇒ 服务端**不判**并在 `notice` 里说明（不回落任何默认门幅）。
+   * **该商品/SKU 的门幅**（米）。⚠️ **没有缺省门幅**（issue #4877）：拿不到 ⇒ **不发该键**。
+   *
+   * 🔴 issue #5130 起**判定面已不读它**（判据改为与**企业阈值参数**比）—— 它只剩
+   * 「几何矛盾」提示（`notices`）与回显用途。
    */
   fabric_width?: number
-  /** 加工类型（`定高买宽` / `定宽买高`）；缺 ⇒ 服务端不判（不猜朝向） */
+  /** 加工类型（`定高买宽` / `定宽买高`）；**只决定要不要推导「倒幅」**（issue #5130 已退役分流） */
   cutting_mode?: string
   /**
-   * **该租户的算料配置**（issue #5036 包 2a）—— 判定要用**该租户**的
-   * `hem_margin` / 档位褶倍（宽方向余量 `side_margin` 已按 issue #5030 **整体退场**），**不是前端常量副本**。
+   * **该租户的算料配置**（issue #5036 包 2a）—— 判定要用**该租户**的两个企业阈值
+   * （`oversize_width_threshold` / `oversize_height_threshold`），提示用 `hem_margin`；**不是前端常量副本**。
    * 缺省 ⇒ 引擎默认值（未配置租户口径一字不变）。
    */
   config?: CraftCalcConfig
 }
 
-/** 自动特征判定**结果**（issue #4976 包 2b）：判定 + 「用了哪些值」+「为什么没判」 */
+/** 自动特征判定**结果**（issue #4976 包 2b）：判定 + 判定用的门幅回显 + 几何矛盾提示 */
 export interface AutoFeaturesResult {
   /** 判定出的特征（`{name, source, reason}`）；**空数组 = 不判**（不是「没算」） */
   auto_features: Array<{ name: string; source: string; reason: string }>
-  /** 实际用于判定的门幅（缺门幅时 `null`）—— 商家可核对 */
+  /**
+   * 回显请求里的门幅（缺 ⇒ `null`）。
+   *
+   * ⚠️ **不是**「判定用的门幅」—— issue #5130 起判定面（超高/超宽）**不读门幅**，
+   * 它只剩几何层（用量 / 加工类型 / 规则面）与「几何矛盾」提示的用途。
+   */
   door_width: number | null
-  /** 实际用于判超宽的褶倍 —— 商家可核对 */
-  fullness_used: number
-  /** **不判的原因**：`''` / `missing-door-width` / `unknown-cutting-mode`（不静默） */
-  notice: string
   /**
    * **商家可见提示**（issue #5036）—— `[{kind, reason}]`，键恒在（空数组 = 无提示）。
    *
-   * ⚠️ 与 `notice` **并存是有意的**：`notice` 是单码（旧调用方不破），`notices` 带可读 `reason`
-   * 且覆盖 `notice` 表达不了的两类（`missing-fullness` / `cutting-mode-conflict`）。
-   *
    * 🔴 提示由**服务端**给（用户 2026-09-21 裁定「统一迁移到服务端；未来 agent 也需要」）：
-   * 引擎读的是**该租户配置**的 `hem_margin`（宽方向余量已按 issue #5030 退场）⇒ 判定与提示**同源**。
-   * 迁移前前端本地算、读**模块常量副本**（0.3）⇒ 租户改过 `hem_margin` 后会显示**错的数**。
+   * 引擎读的是**该租户配置**的 `hem_margin` ⇒ 判定与提示**同源**。
+   *
+   * 🔴 **issue #5130 改判：只剩 `cutting-mode-conflict` 一条** —— 它说的是**几何层**
+   * （成品高 + 卷边 vs 门幅 ⇒ 引擎实际按哪种算），仍然为真。
+   * `missing-door-width` 与 `missing-fullness` **已退役**（它们的文案在新判据下是**假话**：
+   * 「未维护门幅 ⇒ 超高/超宽都判不了」/「缺褶倍 ⇒ 未判超宽」）。
    */
   notices: Array<{
-    kind: 'missing-fullness' | 'cutting-mode-conflict' | 'missing-door-width'
+    kind: 'cutting-mode-conflict'
     reason: string
   }>
 }

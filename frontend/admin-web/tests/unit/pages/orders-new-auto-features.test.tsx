@@ -42,6 +42,19 @@
  * **不再另加「左右覆盖余量」**（常量 `SIDE_MARGIN` 与配置键 `side_margin` 一并退场）。
  * ⇒ 本文件的 fixture 删掉 `side_margin`、依据文案由 `成品宽 6.6 + 左右余量 0.3 = 6.9 米 × 褶倍 2
  * = 13.8 米` 改钉 `窗宽 6.6 × 褶倍 2 = 13.2 米`；标签由「宽/高 (米)」改钉「窗宽/窗高 (米)」。
+ *
+ * 🔴 **2026-09-22 改判（issue #5130，用户裁定 D1 / D2 / D3 / D7 / D10 / D11）**：
+ * 判据由「与**门幅**比」换成「与**企业阈值参数**比」——
+ * `净窗宽 > oversize_width_threshold`（默认 6）⇒ `超宽`；`净窗高 > oversize_height_threshold`
+ * （默认 4）⇒ `超高`；`倒幅` **不变**（加工类型 = `定宽买高`）。三条旧判据**一并退役**（D10）：
+ * ① **#4661 按加工类型分流**（`定高买宽` ⇒ 只判超高）—— 新判据与加工类型无关；
+ * ② **#4662 超宽须含褶倍**（`窗宽 × 褶倍 > 门幅`）—— 新判据不含褶倍；
+ * ③ **#4877 判定面**（缺门幅 ⇒ 都判不了）—— 新判据**不读门幅**（门幅仍是几何层输入）。
+ * ⇒ 本文件逐条改钉（**不是放宽**，仍是 `getByText` / `toEqual` 精确形态 + 反向断言）：
+ * 缺省档 6.6 × 2.6 现在推出的是 **`超宽`**（6.6 > 6）而**不是** `超高`（2.6 ≤ 4）；
+ * 旧式中「窗宽 × 褶倍 = … 米 > 门幅 … 米」的依据文案**整条退场**，改钉「净窗宽 … 米 > 超宽阈值 … 米」。
+ * 留档位置：引擎 `curtain_calc.detect_auto_features` 的 docstring / `lib/craft-calc-glossary.ts`
+ * 的 `AUTO_FEATURE_TERMS` / `.github/cases/order.yml` 的「下单页系统识别」用例 merge_log。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -60,14 +73,17 @@ interface AutoFeaturesRequestForTest {
   height: number
   fabric_width?: number
   cutting_mode?: string
+  config?: { oversize_width_threshold?: number; oversize_height_threshold?: number }
 }
 
 /**
  * **服务端替身**（issue #4976 包 2b）：判定端点的返回值。
  *
- * 逐值复刻引擎 `curtain_calc.detect_auto_features` 的判据（与 `curtain_calc` 同口径）：
- * 定高买宽 ⇒ 只判超高（`高 + 卷边 > 门幅`）；定宽买高 ⇒ 超宽（`(宽 + 余量) × 褶倍 > 门幅`）+ 倒幅；
- * **缺门幅 ⇒ 不判**（`notice='missing-door-width'`，不回落默认门幅 —— issue #4877）。
+ * 🔴 **2026-09-22 改判（issue #5130）**：逐值复刻引擎 `curtain_calc.detect_auto_features` 的**新**判据：
+ * `净窗宽 > oversize_width_threshold` ⇒ `超宽`；`净窗高 > oversize_height_threshold` ⇒ `超高`
+ * （阈值取**该租户配置**，缺省 = 引擎默认 `6 / 4`）；`加工类型 == 定宽买高` ⇒ `倒幅`。
+ * **与门幅 / 褶倍 / 加工类型分流全无关**（#4661 / #4662 / #4877 三条判定面裁定已退役）。
+ * 旧替身（「定高买宽 ⇒ 只判超高（高 + 卷边 > 门幅）」）是本文件过去钉的口径，已随裁定替换。
  */
 /** 门幅规则请求（本文件用到的字段） */
 interface DoorWidthPlanRequestForTest {
@@ -159,68 +175,53 @@ const mockAutoFeatures = vi.fn((params: AutoFeaturesRequestForTest) =>
 
 /** 服务端替身的**原始实现**（闸门用例会临时替换它，用完必须还原 —— `clearAllMocks` 不还原实现） */
 async function autoFeaturesServerDouble(params: AutoFeaturesRequestForTest) {
-  const side = 0.3
   const hem = 0.3
-  const fullness = 2.0
+  // 阈值取**该租户配置**（页面必须下发，见 `autoFeatureParamsOf`）；缺省 = 引擎默认 6 / 4
+  const wide = params.config?.oversize_width_threshold ?? 6
+  const high = params.config?.oversize_height_threshold ?? 4
   const round = (v: number) => Number(v.toFixed(3))
   const features: Array<{ name: string; source: string; reason: string }> = []
   // 提示（issue #5036）：由**服务端**给 —— 本替身复刻引擎 `detect_auto_feature_notices` 的输出。
-  // ⚠️ 它是**服务端替身**（不是第二份实现）：代表「服务端会回什么」，页面只负责**展示**。
+  // 🔴 issue #5130 改判：只剩「几何矛盾」一条（缺门幅 / 缺褶倍两条已退役 ⇒ 不再产出它们）。
   const notices: Array<{ kind: string; reason: string }> = []
-  if (params.fabric_width == null) {
-    return {
-      data: {
-        data: {
-          auto_features: [],
-          notices: [{
-            kind: 'missing-door-width',
-            reason: '该 SKU 未维护门幅 ⇒ 超高/超宽都判不了（系统不按缺省门幅推算，请先补商品门幅）',
-          }],
-          door_width: null,
-          fullness_used: fullness,
-          notice: 'missing-door-width',
-        },
-      },
-    }
-  }
-  const door = params.fabric_width
-  if (params.cutting_mode === '定宽买高') {
-    // 🔴 issue #5030：宽方向余量整体退场 ⇒ 判据 = `窗宽 × 褶倍`（与引擎
-    // `detect_auto_features` 的 reason 逐字同源；判定自 #5019 起由服务端给，本桩镜像它）
-    const product = params.width * fullness
-    if (product > door) {
-      features.push({
-        name: '超宽',
-        source: '推算',
-        reason: `窗宽 ${params.width} × 褶倍 ${fullness} = ${round(product)} 米 > 门幅 ${door} 米`,
-      })
-    }
-    features.push({ name: '倒幅', source: '推算', reason: '加工类型 = 定宽买高' })
-  } else if (params.cutting_mode === '定高买宽') {
-    if (params.height + hem > door) {
-      features.push({
-        name: '超高',
-        source: '推算',
-        reason: `成品高 ${params.height} + 上下卷边 ${hem} = ${round(params.height + hem)} 米 > 门幅 ${door} 米`,
-      })
-    }
-  }
-  // 几何矛盾提示（#4662 / #5036）：引擎按「高 + 卷边 vs 门幅」**唯一**决定实际档位
-  const overHeight = params.height + hem > door
-  const actualMode = overHeight ? '定宽买高' : '定高买宽'
-  if (actualMode !== params.cutting_mode) {
-    notices.push({
-      kind: 'cutting-mode-conflict',
-      reason:
-        `加工类型选了「${params.cutting_mode}」，但成品高 ${params.height} + 上下卷边 ${hem} = ` +
-        `${round(params.height + hem)} 米 ${overHeight ? '超过' : '未超过'}本 SKU 门幅 ${door} 米` +
-        '（判据 = 算料引擎的几何分支「高 + 卷边 vs 门幅」，不读商家选的加工类型）' +
-        `⇒ 按本 SKU 门幅口径，系统实际会按${actualMode}算` +
-        '（⚠️ 引擎试算门幅尚未按本 SKU 门幅接线 —— #4746 / 待 #4652 ⇒ 引擎实际结果可能不同）',
+  // 判据 = 与**企业阈值**比（严格大于）—— 与门幅、褶倍、加工类型**全无关**
+  if (params.width > wide) {
+    features.push({
+      name: '超宽',
+      source: '推算',
+      reason: `净窗宽 ${params.width} 米 > 超宽阈值 ${round(wide)} 米`,
     })
   }
+  if (params.height > high) {
+    features.push({
+      name: '超高',
+      source: '推算',
+      reason: `净窗高 ${params.height} 米 > 超高阈值 ${round(high)} 米`,
+    })
+  }
+  if (params.cutting_mode === '定宽买高') {
+    features.push({ name: '倒幅', source: '推算', reason: '加工类型 = 定宽买高' })
+  }
+  // 几何矛盾提示（#4662 / #5036，issue #5130 **保留**）：引擎按「高 + 卷边 vs 门幅」唯一决定实际档位。
+  // ⚠️ 缺门幅 ⇒ 没有几何依据 ⇒ 不提示（**不**回落到任何默认门幅 —— #4877 在几何层仍有效）。
+  if (params.fabric_width != null) {
+    const door = params.fabric_width
+    const overHeight = params.height + hem > door
+    const actualMode = overHeight ? '定宽买高' : '定高买宽'
+    if (actualMode !== params.cutting_mode) {
+      notices.push({
+        kind: 'cutting-mode-conflict',
+        reason:
+          `加工类型选了「${params.cutting_mode}」，但成品高 ${params.height} + 上下卷边 ${hem} = ` +
+          `${round(params.height + hem)} 米 ${overHeight ? '超过' : '未超过'}本 SKU 门幅 ${door} 米` +
+          '（判据 = 算料引擎的几何分支「高 + 卷边 vs 门幅」，不读商家选的加工类型）' +
+          `⇒ 按本 SKU 门幅口径，系统实际会按${actualMode}算` +
+          '（⚠️ 引擎试算门幅尚未按本 SKU 门幅接线 —— #4746 / 待 #4652 ⇒ 引擎实际结果可能不同）',
+      })
+    }
+  }
   return {
-    data: { data: { auto_features: features, notices, door_width: door, fullness_used: fullness, notice: '' } },
+    data: { data: { auto_features: features, notices, door_width: params.fabric_width ?? null } },
   }
 }
 
@@ -234,11 +235,12 @@ vi.mock('@/lib/api', () => ({
   customerApi: { getCustomers: (...a: unknown[]) => mockGetCustomers(...a) },
   craftCalcApi: { preview: () => new Promise(() => {}) },
   // **自动特征判定端点**（issue #4976 包 2b）：判定已移到**服务端** ⇒ 本替身逐值复刻引擎判据
-  // （门幅 / 加工类型分流 / 褶倍；余量与卷边取引擎默认 0.3 —— 与改前前端常量同值）。
+  // （issue #5130 改判后 = 净窗宽/净窗高 与**企业阈值**比 + `倒幅` 只看加工类型）。
   // ⚠️ 这是**服务端替身**（不是第二份实现）：它代表「服务端会回什么」，页面只负责**展示**。
   autoFeaturesApi: { preview: (p: unknown) => mockAutoFeatures(p as AutoFeaturesRequestForTest) },
   doorWidthPlanApi: { preview: (p: unknown) => mockDoorWidthPlan(p as DoorWidthPlanRequestForTest) },
-  // **算料配置读面**（issue #4874）：公式缺省 + 档位 chips 的值域/文案都来自它 ⇒ 挂载即请求
+  // **算料配置读面**（issue #4874）：公式缺省 + 档位 chips 的值域/文案都来自它 ⇒ 挂载即请求。
+  // 🔴 issue #5130：两个**企业阈值**也在这里 —— 页面会把整份配置随判定请求下发（否则阈值静默不生效）。
   productionApi: {
     getCraftCalcConfig: () =>
       Promise.resolve({
@@ -254,6 +256,8 @@ vi.mock('@/lib/api', () => ({
               tiers: { standard: { fullness: 2.0, label: '标准档' } },
               default_formula: 'pleat',
               meters_rounding_step: 0.1,
+              oversize_width_threshold: 6,
+              oversize_height_threshold: 4,
             },
           },
         },
@@ -509,8 +513,11 @@ describe('#4899 反选门幅：**自动选中会被规则重算**、手选不被
     // 改成 2.75 ⇒ 2.8 不可行、3.2 可行 ⇒ **应自动改选 3.2**（停在 2.8 会报「需接高」⇒ 红）
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.75' } })
     await waitFor(() => expect(screen.queryByTestId('door-width-needs-splice')).toBeNull())
-    // 3.2 生效的旁证：2.75 + 0.3 = 3.05 ≤ 3.2 ⇒ 「超高」也随之消失
+    // 🔴 **#5130 改判**：旧旁证（「3.2 生效 ⇒ 超高消失」）已不成立 —— 「超高」现在只看净窗高与
+    // 企业阈值（2.75 ≤ 4），与门幅**无关**。⇒ 改为断言两个阈值特征都不出现
+    //（3.0 宽 ≤ 6、2.75 高 ≤ 4），并留档「旧旁证为何退场」。
     expect(screen.queryByTestId('size-auto-badge-超高')).toBeNull()
+    expect(screen.queryByTestId('size-auto-badge-超宽')).toBeNull()
   })
 
   // 回归护栏（**不是**红证条）：客服手选过 ⇒ 规则**不覆盖**，只提示可换最优。
@@ -802,9 +809,10 @@ describe('#4658：系统识别块在②工艺规格（不在③加工项）+ 逐
     openStep('尺寸与数量')
 
     const block = within(stepSection('尺寸与数量')).getByTestId('auto-detected-features')
-    // 🔴 #4661 改钉：缺省档 = 定高买宽 ⇒ **只**出「超高」（改前这里断言「超宽 + 超高」两条都在）
-    expect(within(block).getByText('超高')).toBeInTheDocument()
-    expect(within(block).queryByText('超宽')).toBeNull()
+    // 🔴 #5130 改钉：判据 = 与**企业阈值**比 ⇒ 6.6 宽 > 6 ⇒ 出「超宽」；2.6 高 ≤ 4 ⇒ 不出「超高」
+    //（#4661 的「按加工类型分流」已退役 —— 特征与加工类型无关，两者可同时为真）
+    expect(within(block).getByText('超宽')).toBeInTheDocument()
+    expect(within(block).queryByText('超高')).toBeNull()
     // 照实标注：推理非实证（设计 §5.2）—— **每条**特征都带来源标注
     const chips = block.querySelectorAll('span[title]')
     expect(chips.length).toBeGreaterThanOrEqual(1)
@@ -813,15 +821,15 @@ describe('#4658：系统识别块在②工艺规格（不在③加工项）+ 逐
       expect(chip.getAttribute('title')).toBeTruthy()
     }
     // 🔴 #4658 的核心：**正文里**逐条给依据（旧实现只在 `title` 属性里 ⇒ 商家看不见判定过程）
-    // 🔴 #4661 改钉：余量按方向分开命名（宽 = 窗宽 × 褶倍（**无余量**）/ 高 = 上下卷边）—— 改前两条都写「卷边」
+    // 🔴 #5130 改钉：依据文案 = 「净窗宽 … 米 > 超宽阈值 … 米」（旧式「窗宽 × 褶倍 = … 米 > 门幅 … 米」整条退场）
     expect(
-      within(block).getByText(/成品高 2\.6 \+ 上下卷边 0\.3 = 2\.9 米 > 门幅 2\.8 米/)
+      within(block).getByText(/净窗宽 6\.6 米 > 超宽阈值 6(?:\.0)? 米/)
     ).toBeInTheDocument()
-    // 「超宽」在定高买宽下**不推算** ⇒ 它没有 reason 行；它只能被**强制加**（见 #4657 组）
+    // 「超高」在 2.6 高下**不判**（未超阈值）⇒ 它没有 reason 行；它只能被**强制加**（见 #4657 组）
     // ⚠️ 用**完整依据文案**做否定断言（不能只写 `/窗宽/` —— 那是别的块/别的行的子串）
-    // 🔴 #5030 改判：宽方向依据已无「+ 左右余量」这一段 ⇒ 反向守卫钉「旧式余量文案整块不得再上屏」
+    // 🔴 #5030 / #5130 反向守卫：旧式余量与旧式门幅依据**整块不得再上屏**
     expect(within(block).queryByText(/左右余量/)).toBeNull()
-    expect(within(block).queryByText(/成品宽 6\.6 \+ 左右余量/)).toBeNull()
+    expect(within(block).queryByText(/> 门幅/)).toBeNull()
     // 覆盖控件是**按钮**，不是勾选框（判据 8 不放宽）
     expect(block.querySelectorAll('input')).toHaveLength(0)
   })
@@ -838,34 +846,40 @@ describe('#4658：系统识别块在②工艺规格（不在③加工项）+ 逐
     expect(within(section).queryByText(/推算/)).toBeNull()
   })
 
-  // 🔴 #4661 改钉：缺省档（定高买宽）**不推超宽** ⇒ 徽标只有「超高」；
-  // 改前这条断言「超宽 + 超高 两个徽标都在」（= 错口径在徽标面的镜像）。
+  // 🔴 #5130 改钉：判据 = 净窗宽 > 阈值 ⇒ 缺省档（6.6 宽）出「超宽」；
+  // 改前（#4661）这条断言「超高」——那是「按门幅分流」的错口径在徽标面的镜像。
   it('#4658 ①尺寸行旁的就地徽标：有识别结果时出现，不超时消失', async () => {
     await setupLine({ doorWidth: '2.8米' })
-    expect(await screen.findByTestId('size-auto-badge-超高')).toBeInTheDocument()
-    expect(screen.queryByTestId('size-auto-badge-超宽')).toBeNull()
+    expect(await screen.findByTestId('size-auto-badge-超宽')).toBeInTheDocument()
+    expect(screen.queryByTestId('size-auto-badge-超高')).toBeNull()
 
     openStep('尺寸与数量')
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '1.5' } })
     fireEvent.change(inputOf('窗高 (米)'), { target: { value: '1.5' } })
 
-    await waitFor(() => expect(screen.queryByTestId('size-auto-badge-超高')).toBeNull())
-    expect(screen.queryByTestId('size-auto-badge-超宽')).toBeNull()
+    // 1.5 × 1.5 两个方向都**没超**企业阈值 ⇒ 徽标全部消失（不是「超时消失」）
+    await waitFor(() => expect(screen.queryByTestId('size-auto-badge-超宽')).toBeNull())
+    expect(screen.queryByTestId('size-auto-badge-超高')).toBeNull()
   })
 
-  // 🔴 issue #4877 改判：**缺省门幅已删除** —— 未维护门幅不再「按 2.8 推算」，而是**不判** + 显式告知。
-  // 红证（改前实测）：本用例改前断言 `size-door-width-fallback` / `door-width-fallback`
-  // （文案「按默认 2.8 米推算」）—— 那正是本单要替换掉的错误做法。
-  it('#4877 SKU 未维护门幅 ⇒ **不判**：显式告知 + 徽标（**须先选中一个 SKU**）', async () => {
+  // 🔴 issue #4877 改判：**缺省门幅已删除** —— 未维护门幅不再「按 2.8 推算」，而是**几何层判不了** + 显式告知。
+  // 🔴 **issue #5130 再改判**：**判定面**已与门幅**彻底脱钩**（净窗宽/净窗高 vs 企业阈值）
+  // ⇒ 缺门幅时超高/超宽**照样判**；「未维护门幅」的告知只覆盖**几何层**（分幅 / 加工类型）。
+  // 红证：若文案又写「超高/超宽都判不了」、或缺门幅时判定面短路成 `[]` ⇒ 本用例红。
+  it('#4877/#5130 SKU 未维护门幅 ⇒ **几何层**判不了（显式告知 + 徽标），判定面**照判**', async () => {
     // issue #4899 更正：`setupLine()` **不点颜色** ⇒ 根本没有选中的 SKU —— 那是「未选规格」，
     // **不是**「门幅未维护」（旧断言把两者混成同一个徽标 = 误导）。门幅不可解析要走「已选中但解析不到」。
     await setupLine({ doorWidth: '加宽' })
     expect(screen.getByTestId('size-door-width-missing')).toBeInTheDocument()
     openStep('尺寸与数量')
-    expect(screen.getByTestId('door-width-missing')).toBeInTheDocument()
+    const missing = screen.getByTestId('door-width-missing')
+    expect(missing).toBeInTheDocument()
     expect(screen.queryByTestId('door-width-fallback')).toBeNull()
-    // 不判 ⇒ 一条识别特征都没有（旧行为会按缺省门幅推出「超高」）
-    expect(within(screen.getByTestId('auto-detected-features')).queryByText('超高')).toBeNull()
+    // 文案改判：只说**几何层**判不了（旧的「超高 / 超宽都判不了」在新判据下是假话）
+    expect(missing.textContent).toContain('分幅与加工类型判不了')
+    expect(missing.textContent).not.toContain('超高 / 超宽都判不了')
+    // 🔴 判定面照判：6.6 宽 > 6 ⇒ 「超宽」（旧行为「缺门幅 ⇒ 不判」已随 #4877 判定面退役）
+    expect(within(screen.getByTestId('auto-detected-features')).getByText('超宽')).toBeInTheDocument()
   })
 
   // 红证（issue #4899，改前实测）：改前 `doorWidthMissing = selectedDoorWidth === null` ⇒
@@ -892,8 +906,8 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
     await setupLine({ doorWidth: '2.8米' })
     openStep('尺寸与数量')
     const block = screen.getByTestId('auto-detected-features')
-    // 🔴 #4661 改钉：缺省档（定高买宽）推的是「超高」，不是「超宽」
-    expect(within(block).getByText('超高')).toBeInTheDocument()
+    // 🔴 #5130 改钉：缺省 6.6 宽 > 6 ⇒ 「超宽」；改前（#4661）这条断言的是「超高」
+    expect(within(block).getByText('超宽')).toBeInTheDocument()
 
     openStep('尺寸与数量')
     fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '1.5' } })
@@ -915,13 +929,26 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
     expect(within(blockAfter).getByText(/系统未识别出特征/)).toBeInTheDocument()
   })
 
-  it('门幅 = SKU.doorWidth：1.5 高 × 1.0 宽 对 2.8 门幅不超，对 1.4 窄幅门幅判超高', async () => {
+  // 🔴 **#5130 改判**：旧用例（「1.5 高 × 1.0 宽 对 1.4 窄幅门幅判超高」）的**前提已被裁定掉** ——
+  // 判定面不再读门幅（#4877 判定面退役）；1.5 高 ≤ 默认阈值 4 ⇒ 不判超高。
+  // ⇒ 改判为**反向守卫**（同强度）：同一几何换成任何门幅，判定结果**逐值相同**；
+  // 且把窗高抬过阈值时**真的**判得出来（证明不是「判定面整体失效」的假绿）。
+  it('#5130 门幅**不再**决定判定：同一几何换门幅判定不变；抬过阈值才判', async () => {
     await setupLine({ doorWidth: '1.4米', width: '1.0', height: '1.5' })
     openStep('尺寸与数量')
 
     const block = screen.getByTestId('auto-detected-features')
-    expect(within(block).getByText('超高')).toBeInTheDocument()
+    // 旧判据会因 `1.5 + 0.3 = 1.8 > 1.4` 判「超高」；新判据不读门幅 ⇒ 不判
+    expect(within(block).queryByText('超高')).toBeNull()
     expect(within(block).queryByText('超宽')).toBeNull()
+
+    // 反向自证（不是空断言）：窗高抬到 4.5 > 4 ⇒ 「超高」真的判得出来
+    fireEvent.change(inputOf('窗高 (米)'), { target: { value: '4.5' } })
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('auto-detected-features')).getByText('超高')
+      ).toBeInTheDocument()
+    )
   })
 
   it('自动识别结果**不是**可勾选项（没有它的 checkbox），也不计入「已选 N 项」', async () => {
@@ -964,32 +991,31 @@ describe('D6：自动识别结果只读可见（判据 8）', () => {
     for (const auto of ['超高', '超宽', '倒幅']) {
       expect(screen.queryByRole('checkbox', { name: auto })).toBeNull()
     }
-    // 推导结果照旧**只读可见**；🔴 #4661 改钉：缺省档（定高买宽）只出「超高」
-    // （改前这里断言「超宽 + 超高」两条都在 = 错口径的页面层镜像），块内无任何输入控件
+    // 推导结果照旧**只读可见**；🔴 #5130 改钉：缺省档（6.6 宽）出「超宽」（改前 #4661 断言「超高」）
     openStep('尺寸与数量')
     const block = screen.getByTestId('auto-detected-features')
-    expect(within(block).getByText('超高')).toBeInTheDocument()
-    expect(within(block).queryByText('超宽')).toBeNull()
+    expect(within(block).getByText('超宽')).toBeInTheDocument()
+    expect(within(block).queryByText('超高')).toBeNull()
     expect(block.querySelectorAll('input')).toHaveLength(0)
   })
 })
 
 describe('#4657：推算结果可**采纳 / 不采纳** + 强制加（生效值唯一 ⇒ 组合键）', () => {
-  it('#4657 不采纳「超高」⇒ 留痕「已忽略系统推算（依据：…）」且组合键里**不再含**它', async () => {
+  it('#4657 不采纳「超宽」⇒ 留痕「已忽略系统推算（依据：…）」且组合键里**不再含**它', async () => {
     await setupLine({ doorWidth: '2.8米' })
     openStep('尺寸与数量')
 
     // 红证（实现前）：无 `auto-feature-reject-*` 控件 ⇒ 本条必红
-    // 🔴 #4661 改钉：缺省档（定高买宽）推的是「超高」⇒ 裁决对象随之改为「超高」
-    fireEvent.click(screen.getByTestId('auto-feature-reject-超高'))
+    // 🔴 #5130 改钉：缺省档（6.6 宽 / 2.6 高）推出的**唯一**特征是「超宽」（净窗宽 > 阈值）
+    fireEvent.click(screen.getByTestId('auto-feature-reject-超宽'))
 
     // 留痕：行上看得见「已忽略系统推算」+ **原推算依据**（谁改的、原判据是什么）
-    const rejected = await screen.findByTestId('auto-feature-rejected-超高')
+    const rejected = await screen.findByTestId('auto-feature-rejected-超宽')
     expect(rejected.textContent).toContain('已忽略系统推算')
-    // 🔴 #4661 改钉：高方向余量名 = 「上下卷边」（改前写「卷边」）
-    expect(rejected.textContent).toContain('成品高 2.6 + 上下卷边 0.3 = 2.9 米 > 门幅 2.8 米')
-    // ① 徽标 = **生效值** ⇒ 超高消失
-    expect(screen.queryByTestId('size-auto-badge-超高')).toBeNull()
+    expect(rejected.textContent).toContain('净窗宽 6.6 米')
+    expect(rejected.textContent).toContain('超宽阈值')
+    // ① 徽标 = **生效值** ⇒ 超宽消失
+    expect(screen.queryByTestId('size-auto-badge-超宽')).toBeNull()
     // 落库的组合键 = 生效值（唯一口径：界面与 payload 不会各说各话）⇒ 一条都不剩
     expect(await submitAndGetProcessingNames()).toEqual([])
   })
@@ -998,46 +1024,46 @@ describe('#4657：推算结果可**采纳 / 不采纳** + 强制加（生效值�
     await setupLine({ doorWidth: '2.8米' })
     openStep('尺寸与数量')
 
-    fireEvent.click(screen.getByTestId('auto-feature-reject-超高'))
-    await screen.findByTestId('auto-feature-rejected-超高')
-    fireEvent.click(screen.getByTestId('auto-feature-adopt-超高'))
+    fireEvent.click(screen.getByTestId('auto-feature-reject-超宽'))
+    await screen.findByTestId('auto-feature-rejected-超宽')
+    fireEvent.click(screen.getByTestId('auto-feature-adopt-超宽'))
 
-    await waitFor(() => expect(screen.queryByTestId('auto-feature-rejected-超高')).toBeNull())
-    expect(screen.getByTestId('size-auto-badge-超高')).toBeInTheDocument()
-    expect(await submitAndGetProcessingNames()).toEqual(['超高'])
+    await waitFor(() => expect(screen.queryByTestId('auto-feature-rejected-超宽')).toBeNull())
+    expect(screen.getByTestId('size-auto-badge-超宽')).toBeInTheDocument()
+    expect(await submitAndGetProcessingNames()).toEqual(['超宽'])
   })
 
-  it('#4657 系统**没推**也能**强制加**（如门幅数据缺失漏判）⇒ 组合键含它 + 留痕「手动加」', async () => {
+  it('#4657 系统**没推**也能**强制加**（如净窗高未超阈值）⇒ 组合键含它 + 留痕「手动加」', async () => {
     await setupLine({ doorWidth: '2.8米' })
     openStep('尺寸与数量')
 
-    // 🔴 #4661 改钉：缺省档（定高买宽）**不推超宽** ⇒ 「超宽」正是「系统没推也能强制加」的真实场景
-    // （改前它是被推算出来的，本用例测不到「强制加」这条路径）
-    fireEvent.click(screen.getByTestId('auto-feature-add-超宽'))
+    // 🔴 #5130 改钉：缺省档（2.6 高 ≤ 4）**不推超高** ⇒ 「超高」正是「系统没推也能强制加」的真实场景
+    //（改前 #4661 下它是被推算出来的，本用例测不到「强制加」这条路径）
+    fireEvent.click(screen.getByTestId('auto-feature-add-超高'))
 
-    const manual = await screen.findByTestId('auto-feature-manual-超宽')
+    const manual = await screen.findByTestId('auto-feature-manual-超高')
     expect(manual.textContent).toContain('手动加（系统未推算）')
-    expect(screen.getByTestId('size-auto-badge-超宽')).toBeInTheDocument()
+    expect(screen.getByTestId('size-auto-badge-超高')).toBeInTheDocument()
     // 生效值 = 推算 ∪ 强制加（顺序 = 推算在前；组合键归一化另有唯一实现）
-    expect(await submitAndGetProcessingNames()).toEqual(['超高', '超宽'])
+    expect(await submitAndGetProcessingNames()).toEqual(['超宽', '超高'])
   })
 
-  // 🔴 #4661 新增：把「分流」本身钉在页面链路上 —— 加工类型选 `定宽买高` ⇒ 只判**超宽**（+ 倒幅）、
-  // 且**不判超高**（改前页面不把 cuttingMode 分流当回事 ⇒ 这条必红）。
-  it('#4661 加工类型选「定宽买高」⇒ 系统识别出「超宽 + 倒幅」，**不**出「超高」', async () => {
+  // 🔴 **#5130 改判**：旧用例（「#4661 加工类型选定宽买高 ⇒ 只判超宽 + 倒幅、不判超高」）的
+  // 分流前提已退役（特征与加工类型无关）；但「切定宽买高 ⇒ 多一个**倒幅**」这一半**仍然为真**
+  // ⇒ 改判为：加工类型**只**决定 `倒幅`。
+  it('#5130 加工类型只决定「倒幅」：切「定宽买高」⇒ 超宽 + 倒幅（依据文案 = 阈值式）', async () => {
     await setupLine({ doorWidth: '2.8米' })
     openStep('尺寸与数量')
     fireEvent.click(screen.getByRole('radio', { name: '定宽买高' }))
 
     const block = screen.getByTestId('auto-detected-features')
-    await waitFor(() => expect(within(block).getByText('超宽')).toBeInTheDocument())
-    expect(within(block).getByText('倒幅')).toBeInTheDocument()
+    await waitFor(() => expect(within(block).getByText('倒幅')).toBeInTheDocument())
+    expect(within(block).getByText('超宽')).toBeInTheDocument()
+    // 2.6 高 ≤ 4 ⇒ 不出「超高」（与加工类型无关，只是没超阈值）
     expect(within(block).queryByText('超高')).toBeNull()
-    // 落库组合键 = 生效值（超宽 + 倒幅；宽方向依据 = 「窗宽 × 褶倍」，**无余量**）
-    // 🔴 #5030 改钉：判据含**褶倍**且**不含左右余量**（与引擎算分幅同源）⇒ 依据里看得见「窗宽 6.6 × 褶倍 2 = 13.2 米」
-    expect(
-      within(block).getByText(/窗宽 6\.6 × 褶倍 2 = 13\.2 米 > 门幅 2\.8 米/)
-    ).toBeInTheDocument()
+    // 🔴 依据文案 = 与**企业阈值**比；旧式「窗宽 6.6 × 褶倍 2 = 13.2 米 > 门幅 2.8 米」整条退场
+    expect(within(block).getByText(/净窗宽 6\.6 米 > 超宽阈值 6(?:\.0)? 米/)).toBeInTheDocument()
+    expect(within(block).queryByText(/褶倍/)).toBeNull()
     expect(await submitAndGetProcessingNames()).toEqual(['超宽', '倒幅'])
   })
 
@@ -1053,13 +1079,16 @@ describe('#4657：推算结果可**采纳 / 不采纳** + 强制加（生效值�
    * （改前是 `['超宽','超高']` —— 多出的「超宽」正是错口径进组合键 ⇒ 价算错）。
    * 判据改钉新真值（**不是放宽**）：`toEqual` 仍是**精确**断言（不是 `toContain`/`not.toContain` 兜底），
    * 且下面那条「不得含 `正幅`」（#4592 的 P0 护栏）**一字未动**。
+   *
+   * 🔴 **issue #5130 再改判**：缺省档 6.6 × 2.6 ⇒ 唯一特征 = `超宽`（净窗宽 > 企业阈值）；
+   * 「#4661 只判高方向」已退役（特征与加工类型无关）。`toEqual` 精确形态与「不得含正幅」护栏**不变**。
    */
-  it('#4592 默认「定高买宽」订单落库的组合加项 = {超高}，**不含「正幅」**', async () => {
+  it('#4592 默认「定高买宽」订单落库的组合加项 = {超宽}，**不含「正幅」**', async () => {
     // 带门幅 ⇒ setupLine 会连颜色 + 规格一起选上（缺颜色会被页面校验拦在提交前）
     await setupLine({ doorWidth: '2.8米' })
 
     const names = await submitAndGetProcessingNames()
-    expect(names).toEqual(['超高'])
+    expect(names).toEqual(['超宽'])
     expect(names).not.toContain('正幅')
   })
 })
@@ -1069,27 +1098,27 @@ describe('#4657：推算结果可**采纳 / 不采纳** + 强制加（生效值�
  * ①「超宽」判据**含褶倍**（`窗宽 × 褶倍 > 门幅`，与算料引擎算分幅同源；#5030 起**不含左右余量**）；
  * ② 加工类型**几何矛盾** ⇒ 界面**显式提示**「系统实际会按哪种算」（与引擎的自动回落一致）。
  *
- * 红证（改前实测）：① 韩褶大窗（宽 1.5 × 褶倍 2.0 = 3.0 > 门幅 2.8）—— 改前只比
- * `1.5 ≤ 2.8`（只看宽、不看褶倍）⇒ ②系统识别块里**没有**「超宽」、落库组合键 = `['倒幅']`（该报不报 ⇒ 价算错）；
- * ② 缺省档（定高买宽）+ 高 2.6 + 卷边 0.3 = 2.9 > 门幅 2.8 ⇒ 改前**零提示**（前端推算「超高」
- * 与算料引擎实际按定宽买高算**静默不一致**）。
+ * 🔴 **2026-09-22 改判（issue #5130）**：① 的**判据**已换成 `净窗宽 > oversize_width_threshold`
+ * （企业阈值）⇒ 旧文「含褶倍 / 与门幅比」**整条退役**（#4662 裁定退役，D10）。
+ * 本条改判为**反向守卫**：小窗（1.5 宽 × 褶倍 2 = 3 ≤ 门幅 2.8）在**旧**判据下会判超宽，
+ * **新**判据（1.5 ≤ 6）**不判** ⇒ 并断言依据文案里**不再出现**「褶倍」。
+ * ② 的「几何矛盾提示」**仍然为真**（几何层，与本裁定无关）⇒ 三条断言一字未放宽。
  */
-describe('#4662 「超宽」含褶倍 + 加工类型几何矛盾显式提示（页面链路）', () => {
-  it('#4662 韩褶大窗：切「定宽买高」+ 宽 1.5 ⇒ 推「超宽」（依据里带褶倍）+ 落库组合键含它', async () => {
+describe('#4662 / #5130 「超宽」判据已换为企业阈值 + 加工类型几何矛盾显式提示（页面链路）', () => {
+  it('#5130 小窗不再判「超宽」（旧「含褶倍」判据退役）⇒ 落库组合键只剩「倒幅」', async () => {
     await setupLine({ doorWidth: '2.8米', width: '1.5', height: '2.6' })
     openStep('尺寸与数量')
     fireEvent.click(screen.getByRole('radio', { name: '定宽买高' }))
 
     const block = screen.getByTestId('auto-detected-features')
-    await waitFor(() => expect(within(block).getByText('超宽')).toBeInTheDocument())
-    // 依据里看得见**褶倍与乘积**（改前文案只有「成品宽 + 左右余量」，看不出会不会分幅）
-    // 🔴 #5030 改钉：1.5 × 2 = 3 米（去掉余量后由 3.6 变 3）
-    expect(
-      within(block).getByText(/窗宽 1\.5 × 褶倍 2 = 3 米 > 门幅 2\.8 米/)
-    ).toBeInTheDocument()
+    await waitFor(() => expect(within(block).getByText('倒幅')).toBeInTheDocument())
+    // 🔴 红证：把 #4662 的旧判据（`1.5 × 2 = 3 > 门幅 2.8`）加回 ⇒ 「超宽」就会出现 ⇒ 本断言红
+    expect(within(block).queryByText('超宽')).toBeNull()
+    // 依据文案里**不再有**褶倍（判据已不含它）
+    expect(within(block).queryByText(/褶倍/)).toBeNull()
     // 高 2.6 + 0.3 = 2.9 > 2.8 ⇒ 与商家选的档位**一致**（引擎也按定宽买高）⇒ 无矛盾提示
     expect(screen.queryByTestId('auto-feature-notice-cutting-mode-conflict')).toBeNull()
-    expect(await submitAndGetProcessingNames()).toEqual(['超宽', '倒幅'])
+    expect(await submitAndGetProcessingNames()).toEqual(['倒幅'])
   })
 
   it('#4662 几何矛盾：缺省「定高买宽」+ 高超门幅 ⇒ 显式提示「系统实际会按定宽买高算」', async () => {
@@ -1107,12 +1136,13 @@ describe('#4662 「超宽」含褶倍 + 加工类型几何矛盾显式提示（�
     expect(notice.textContent).not.toContain('算料引擎按此判几何')
     expect(notice.textContent).toContain('引擎试算门幅尚未按本 SKU 门幅接线')
     expect(notice.textContent).toContain('#4746')
-    // 推算仍**以商家选的为准**（裁定 C）：特征 = ['超高']，不冒出「超宽 / 倒幅」
-    expect(screen.getByTestId('auto-feature-超高')).toBeInTheDocument()
-    expect(screen.queryByTestId('auto-feature-超宽')).toBeNull()
+    // 推算仍**以商家选的为准**（裁定 C）：特征 = ['超宽']（6.6 > 6），不冒出「超高 / 倒幅」
+    // 🔴 #5130 改钉：改前这里是 `['超高']`（门幅式判据）；现在缺省档推出的是「超宽」
+    expect(screen.getByTestId('auto-feature-超宽')).toBeInTheDocument()
+    expect(screen.queryByTestId('auto-feature-超高')).toBeNull()
     expect(screen.queryByTestId('auto-feature-倒幅')).toBeNull()
     // 提示**不进**加工费组合键（它不是特征；目录里没有的名字 = 加工费恒 ¥0.00 的 P0 教训）
-    expect(await submitAndGetProcessingNames()).toEqual(['超高'])
+    expect(await submitAndGetProcessingNames()).toEqual(['超宽'])
   })
 
   it('#4662 反向：切「定宽买高」+ 高不超门幅 ⇒ 提示「系统实际会按定高买宽算」', async () => {
@@ -1150,14 +1180,18 @@ describe('#4976 包 2b：判定移到服务端', () => {
     expect(src).toContain('autoFeaturesApi.preview')
   })
 
-  it('判据 2：请求带**该 SKU 的门幅**与加工类型（判定入参就是它们）', async () => {
+  it('判据 2：请求带**该 SKU 的门幅**、加工类型与**两个企业阈值**（判定入参就是它们）', async () => {
     await setupLine({ doorWidth: '2.8米' })
     const call = mockAutoFeatures.mock.calls.at(-1)?.[0] as AutoFeaturesRequestForTest
-    // 注入：不发 fabric_width（服务端只能「不判」）⇒ 红
+    // 注入：不发 fabric_width（几何矛盾提示失去依据）⇒ 红
     expect(call.fabric_width).toBe(2.8)
     expect(call.cutting_mode).toBe('定高买宽')
     expect(call.width).toBe(6.6)
     expect(call.height).toBe(2.6)
+    // 🔴 issue #5130：两个**企业阈值**必须随请求下发 —— 不下发 ⇒ 引擎回落默认值
+    // ⇒ 商家在「算料配置」改的阈值**静默不生效**（可配却不生效 = 本仓明令禁止的形态）⇒ 红
+    expect(call.config?.oversize_width_threshold).toBe(6)
+    expect(call.config?.oversize_height_threshold).toBe(4)
   })
 
   it('判据 3：拿不到门幅 ⇒ **不发 `fabric_width`**（不回落默认门幅，issue #4877）', async () => {

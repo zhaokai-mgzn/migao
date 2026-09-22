@@ -18,6 +18,12 @@
  * 3. **键集必须覆盖引擎全部配置键**：引擎 `DEFAULT_CRAFT_CALC_CONFIG` 加一个键而不补文案 ⇒ 守卫红
  *    （这样 #4976 把 `hem_margin` 加进键集时，本模块会被**强制**同步补上说明）。
  *
+ * 🔴 **2026-09-22 改判（issue #5130）**：`超高` / `超宽` 的判据改为
+ * 「**净窗宽 / 净窗高 > 该租户的企业阈值参数**」（`oversize_width_threshold` /
+ * `oversize_height_threshold`，默认 `6 / 4`）—— 用户裁定 D1 工艺分档 / D2 做成企业参数 /
+ * D3 **替换**判定公式 / D10 三条旧判据一并退役。逐条留档见 {@link AUTO_FEATURE_TERMS}
+ * 与 {@link GLOSSARY_FORMULAS} 的注释；判据的唯一实现在**服务端引擎**（本模块只解释与展示）。
+ *
  * ⚠️ **自动推算 vs 手选，是本页最需要讲清的一件事**：`超高/超宽/倒幅` 由系统**推算**并进加工费
  * 组合键；`拼接/接高` 是**手选**特征，**系统不推算**（见 {@link MANUAL_FEATURE_TERMS}）。
  * 把这两类混在一起讲，正是商家看不懂这些参数的根因。
@@ -36,6 +42,8 @@ export const CALC_SCALAR_KEYS = [
   'min_fullness',
   'hem_margin',
   'meters_rounding_step',
+  'oversize_width_threshold',
+  'oversize_height_threshold',
 ] as const
 
 /** 标量配置键（类型 = 上面清单的成员，**不另写一份联合类型**） */
@@ -85,13 +93,25 @@ export const CALC_PARAM_COPY: Record<string, CalcParamCopy> = {
   },
   hem_margin: {
     label: '上下卷边（米）',
-    hint: '高方向：定宽买高每幅的上下卷边（脚位 + 止口）—— 超高的判据也用它',
-    impact: '**高方向**的卷边量（引擎 `HEM_MARGIN`）：定高可行性、定宽买高每幅长、罗马帘、超高判定都用它',
+    hint: '高方向：定宽买高每幅的上下卷边（脚位 + 止口）',
+    impact: '**高方向**的卷边量（引擎 `HEM_MARGIN`）：定高可行性、定宽买高每幅长、罗马帘都用它',
   },
   meters_rounding_step: {
     label: '进位步长（米）',
     hint: '用料只向上进位，不截断、不四舍五入',
     impact: '最终米数的进位步长（只向上）—— 防抹零少算钱',
+  },
+  oversize_width_threshold: {
+    label: '超宽阈值（米）',
+    hint: '净窗宽超过它 ⇒ 系统标「超宽」（该特征进加工费组合键）',
+    impact:
+      '**超宽**判据（按**净窗宽**比）：超过它 ⇒ 特征名进加工费组合键 ⇒ 加工费与标准档不同（工艺分档）',
+  },
+  oversize_height_threshold: {
+    label: '超高阈值（米）',
+    hint: '净窗高超过它 ⇒ 系统标「超高」（该特征进加工费组合键）',
+    impact:
+      '**超高**判据（按**净窗高**比）：超过它 ⇒ 特征名进加工费组合键；**不改用料米数、也不改加工类型**',
   },
   tiers: {
     label: '工艺档位',
@@ -124,28 +144,41 @@ export interface GlossaryTerm {
  *
  * 三者都**进加工费组合键**（商家按「韩折+超宽+定型」这类组合配价），
  * 而 `正幅` **不推导**（它不在加工项目录里，推它 ⇒ 默认订单组合键永远匹配不到价）。
+ *
+ * 🔴 **2026-09-22 改判（issue #5130，用户裁定 D1 / D2 / D3 / D7 / D10）**：
+ * `超高` / `超宽` 的判据由「与**门幅**比」（几何层）换成「与**企业阈值参数**比」
+ * （`净窗高 > oversize_height_threshold` / `净窗宽 > oversize_width_threshold`，
+ * 默认 `6 / 4`）—— 用户裁定 D2「`6 / 4` 是客户给的口径 ⇒ 做成企业参数」、D3「**替换**判定公式」。
+ * 三条旧判据**一并退役**（D10）：
+ * ① **#4661 按加工类型分流**（`定高买宽` ⇒ 只判超高；`定宽买高` ⇒ 只判超宽）—— 新判据与加工类型无关，
+ *    两者**可同时为真**；`倒幅` 仍只在 `定宽买高` 时产出；
+ * ② **#4662 超宽须含褶倍**（`窗宽 × 褶倍 > 门幅`）—— 新判据**不含褶倍**；
+ * ③ **#4877 判定面门幅**（缺门幅 ⇒ 都判不了）—— 新判据**不读门幅**（门幅仍是几何层输入）。
+ * ⚠️ 判据的唯一实现在**服务端**（`backend/ai-agent-service/app/tools/curtain_calc.py::detect_auto_features`）；
+ * 本模块只**解释**与**展示**，不复制判据（旧文「超高 / 超宽 与门幅」的说法已随本条改判删除）。
  */
 export const AUTO_FEATURE_TERMS: GlossaryTerm[] = [
   {
     name: '超高',
-    definition: '定高买宽时，成品高加上下卷边超过门幅 —— 这个方向上的布不够长',
-    criterion: '加工类型 = 定高买宽 且 (成品高 + 上下卷边) > 门幅',
+    definition: '**净窗高**超过「超高阈值」（该租户的企业参数）—— 超高的窗走特殊工艺档',
+    criterion: '净窗高 > 超高阈值（`oversize_height_threshold`）',
     impact:
-      '① 进加工费组合键（商家按含它的组合配价）；② 引擎改按定宽买高算 ⇒ 用料变成「幅数 × 每幅长」，米数会变',
-    boundary: '判据是行业推理、非 ERP 实证 ⇒ 系统标注为「推算」；门幅取自**该商品**（没有缺省门幅：商品没录门幅 ⇒ 系统不判，不拿一个假门幅去判价）',
+      '① 进加工费组合键（商家按含它的组合配价 ⇒ 加工费与标准档不同）；② **不改用料米数、也不改加工类型**',
+    boundary:
+      '判据是**客户口径**（企业参数，可配），非 ERP 实证 ⇒ 系统标注为「推算」；改阈值 ⇒ 之后判定的单随之变',
   },
   {
     name: '超宽',
-    definition: '定宽买高时，窗宽乘褶倍超过门幅 —— 一幅布不够宽，要分幅',
-    criterion: '加工类型 = 定宽买高 且 窗宽 × 褶倍 > 门幅',
+    definition: '**净窗宽**超过「超宽阈值」（该租户的企业参数）—— 超宽的窗走特殊工艺档',
+    criterion: '净窗宽 > 超宽阈值（`oversize_width_threshold`）',
     impact:
-      '① 进加工费组合键；② **真正多花钱的地方是分幅**（幅数向上取整 ⇒ 米数整幅地涨），不是「超宽」这两个字本身',
+      '① 进加工费组合键；② 与**分幅**是两件事：分幅由几何决定（决定米数），超宽只看**绝对宽度**（决定取价档）',
     boundary:
-      '缺褶倍或商品没录门幅时，系统**不判**超宽（不拿一个假值去判价），但会在下单页显式说明「这里本该判」',
+      '判据是客户口径（企业参数，可配）；它只看**净窗宽**这一个量，与几何层（分幅 / 用料）互不影响',
   },
   {
     name: '倒幅',
-    definition: '定宽买高时布要旋转九十度用，门幅变成宽度方向，花型因此是倒的',
+    definition: '定宽买高时布要旋转九十度用，布的门幅方向变成窗帘的宽度方向，花型因此是倒的',
     criterion: '加工类型 = 定宽买高（唯一推导，不设手选项）',
     impact: '进加工费组合键；每幅长按「成品高 + 上下卷边」算',
     boundary: '与它相对的「正幅」是窗帘常态，**不推导、不进组合键**',
@@ -313,7 +346,12 @@ export const GLOSSARY_FORMULAS: { name: string; formula: string; note: string }[
     name: '定宽买高：分幅',
     formula:
       '幅数 = ⌈窗宽 × 褶倍 ÷ 门幅⌉（向上取整）；每幅长 = 窗高 + 上下卷边（有花距再加一个花距）；总用料 = 幅数 × 每幅长',
-    note: '成品高加上下卷边超过门幅时，引擎自动从「定高买宽」回落到这条 —— 这就是超高会改米数的原因',
+    // 🔴 **2026-09-22 改判（issue #5130）**：旧 note 逐字写着
+    // 「成品高加上下卷边超过门幅时，引擎自动从「定高买宽」回落到这条 —— **这就是超高会改米数的原因**」
+    // —— 替换判据后这句话**是错的**：「超高」现在是**企业阈值特征**（只看净窗高），
+    // **不驱动用料、也不驱动加工类型**；回落只由**几何**（成品高 + 卷边 vs 门幅）决定。
+    // ⇒ 按改判纪律**原地留档 + 改写**（不是删掉旧文字让后人不知道口径变过）。
+    note: '成品高加上下卷边超过门幅时，引擎自动从「定高买宽」回落到这条（**几何硬约束**）—— ⚠️ 它与「超高」这个特征名**无关**：超高只看净窗高与该租户的超高阈值，不改变用料米数、也不改变加工类型',
   },
   {
     name: '向上进位',
@@ -323,18 +361,22 @@ export const GLOSSARY_FORMULAS: { name: string; formula: string; note: string }[
 ]
 
 /**
- * 算例输入（**示例几何 + 示例门幅**，都不是真值）。
+ * 算例输入（**示例几何**，不是真值）。
  *
- * 🔴 `doorWidth` 是**举例用的一个商品门幅**，**不是「缺省门幅」** —— 前端已**没有**缺省门幅
- * （issue #4877：SKU 未携带门幅 ⇒ 判定面**不判**并显式告知，不得回退任何默认值）。
- * 真值源 = **SKU/商品门幅**（商品可配）；本模块**只**用它生成算例文案，
- * 不参与任何判定（判定一律在下单页按该 SKU 的门幅做）。
- * 守卫：`tests/unit/lib/craft-calc-glossary.test.ts` 钉住「本模块不得出现缺省门幅标识」。
+ * 🔴 **2026-09-22 改判（issue #5130）**：旧 `doorWidth` 字段**已删除** —— 判定面
+ * （`超高` / `超宽`）改成与**企业阈值参数**比之后，算例里**不再需要门幅**
+ * （`门幅` 只剩几何层的分幅 / 用料与「几何矛盾」提示，与本节的**特征算例**无关）。
+ * 旧值（`doorWidth: 2.8`）曾让本模块被读成「前端持有一份缺省门幅」⇒ 反向守卫
+ * （`tests/unit/lib/craft-calc-glossary.test.ts` 判据 9 与
+ * `tests/unit_ci_workflows/test_fabric_width_truth_source.py`）一字未放宽。
+ *
+ * ⚠️ 取值必须**真的超过**引擎默认阈值（否则服务端判不出特征、算例会空转）——
+ * 改默认阈值时本算例要一起改（守卫 =
+ * `tests/unit/lib/craft-calc-glossary.test.ts` 的「算例覆盖三个特征」判据）。
  */
 export const GLOSSARY_EXAMPLE = {
-  width: 2,
-  height: 2.6,
-  doorWidth: 2.8,
+  width: 6.5,
+  height: 4.5,
 } as const
 
 /** 一条自动推算算例（`reason` **逐字来自服务端判定** —— 与下单页同一份文案） */
@@ -350,25 +392,26 @@ export interface AutoFeatureExample {
  * 三个自动推算特征的算例 —— **不自己拼文案、也不自己判**：`reason` **逐字转发**服务端
  * `POST /api/admin/orders/auto-features` 的返回（issue #5036 包 2a）。
  *
- * 🔴 迁移前它调**前端** `detectAutoFeatures`，而那个函数读的是**模块常量副本**（宽 / 高余量 = 0.3）
- * ⇒ #5005 把 `hem_margin` 做成可配之后，本页「改完参数保存后，这里的数字会跟着变」的承诺是**假的**
- * （租户配 0.5，算例仍显示 0.3）。现在判定入参带**该租户配置** ⇒ 承诺成真。
+ * 🔴 迁移前它调**前端** `detectAutoFeatures`，而那个函数读的是**模块常量副本**（宽 / 高余量）
+ * ⇒ #5005 把 `hem_margin` 做成可配之后，本页「改完参数保存后，这里的数字会跟着变」的承诺是**假的**。
+ * 现在判定入参带**该租户配置** ⇒ 承诺成真。
  *
- * 举例取值使判定**稳定成立**：成品高 + 上下卷边 > 示例门幅 ⇒ 必判超高；
- * 窗宽 乘以**褶倍下限之上**的任一褶倍都 > 示例门幅 ⇒ 必判超宽（issue #5030：**宽方向无余量**）。
+ * 🔴 **issue #5130 改判**：`given` 由「窗宽/窗高 + 褶倍 + 某商品门幅」改成
+ * 「净窗宽/净窗高 + **该租户的阈值**」—— 阈值的数值**由真值渲染**（`config`），不写死。
  */
 export function buildAutoFeatureExamples(
   config: CraftCalcConfig,
   fixedHeightFeatures: readonly AutoFeaturesResult['auto_features'][number][],
   fixedWidthFeatures: readonly AutoFeaturesResult['auto_features'][number][]
 ): AutoFeatureExample[] {
-  const fullness = config.tiers?.standard?.fullness ?? null
-
   const givenOf = (name: string): string => {
     if (name === '超高') {
-      return `举例：加工类型「定高买宽」· 窗高 ${GLOSSARY_EXAMPLE.height} 米 · 某商品门幅 ${GLOSSARY_EXAMPLE.doorWidth} 米（门幅随商品而变）`
+      return `举例：净窗高 ${GLOSSARY_EXAMPLE.height} 米 · 超高阈值 ${config.oversize_height_threshold} 米（企业参数，可改）`
     }
-    return `举例：加工类型「定宽买高」· 窗宽 ${GLOSSARY_EXAMPLE.width} 米 · 褶倍 ${fullness ?? '—'} · 某商品门幅 ${GLOSSARY_EXAMPLE.doorWidth} 米（门幅随商品而变）`
+    if (name === '超宽') {
+      return `举例：净窗宽 ${GLOSSARY_EXAMPLE.width} 米 · 超宽阈值 ${config.oversize_width_threshold} 米（企业参数，可改）`
+    }
+    return '举例：加工类型「定宽买高」'
   }
 
   return [...fixedHeightFeatures, ...fixedWidthFeatures].map((f) => ({

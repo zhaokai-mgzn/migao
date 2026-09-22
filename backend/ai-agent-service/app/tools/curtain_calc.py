@@ -87,6 +87,21 @@ MARGIN_SINGLE = 0.2                # 单开余量（两侧包边各 10cm）
 MARGIN_MULTI = 0.3                 # 对开/四开余量（每片外侧包边 10cm + 内侧对缝 5cm）
 MIN_FULLNESS = 1.5                 # 褶皱倍数下限（低于影响美观，行业红线）
 
+# ── 自动特征「超高 / 超宽」的**企业参数**阈值（issue #5130，用户 2026-09-22 裁定）──────────
+# 用户裁定 **D2**：`6 / 4`（**净窗宽 / 净窗高**，米）是**客户给的口径** ⇒ 做成**企业参数**；
+# 裁定 **D3**：**替换**原判定公式（不再与门幅比）；裁定 **D7**：默认 `6 / 4`、**对所有租户立即生效**
+# （用户已知会改存量租户的加工费组合键，明确接受）。
+#
+# 判据（**唯一实现** = `detect_auto_features`）：`净窗宽 > oversize_width_threshold` ⇒ 特征名 `超宽`；
+# `净窗高 > oversize_height_threshold` ⇒ 特征名 `超高`。它们仍**进加工费组合键**（= 工艺分档，D1）。
+#
+# ⚠️ 与**几何层**的分工（不得混淆）：`HEM_MARGIN` / 门幅 / 褶倍管**用料与加工类型**
+# （`resolve_fabric_plan` / `calculate_fabric_meters`），本阈值只管**特征名**。
+# 2026-09-22 之前「超高 / 超宽」是**几何层**特征的推论（#4661 分流 / #4662 褶倍 / #4877 判定面门幅），
+# 那三条判定随之**退役**（D10），留档见 `detect_auto_features` 的 docstring。
+OVERSIZE_WIDTH_THRESHOLD = 6.0     # 超宽阈值（净窗宽，米）—— 配置键 oversize_width_threshold
+OVERSIZE_HEIGHT_THRESHOLD = 4.0    # 超高阈值（净窗高，米）—— 配置键 oversize_height_threshold
+
 # ── 拼色每折吃布系数（用户 2026-09-19 裁定；纸质「韩折下料速查表」表头原文）──
 # 表头原文：「拼色下料 **1个折 0.65** ／ **2个折 1.2**」——用户明确这是**用料**口径（不是计价）。
 # ⚠️ 与真值源冲突并已按用户裁定改正：`docs/curtain-fabric-quote-rules.md` §10 曾把同一行记成
@@ -198,12 +213,15 @@ DEFAULT_CRAFT_CALC_CONFIG: MappingProxyType = MappingProxyType({
     "default_formula": FORMULA_PLEAT,                          # 默认公式 = 韩褶公式
     "hem_margin": HEM_MARGIN,                                  # 高方向上下卷边合计（脚位+止口，issue #4976 包 1b）
     "meters_rounding_step": 0.1,                               # 用料米数**向上进位**步长（米）
+    "oversize_width_threshold": OVERSIZE_WIDTH_THRESHOLD,      # 超宽阈值（净窗宽，米；issue #5130）
+    "oversize_height_threshold": OVERSIZE_HEIGHT_THRESHOLD,    # 超高阈值（净窗高，米；issue #5130）
 })
 
 #: 配置里必须是**正数**的键（0/负数 ⇒ 显式报错，不静默回退默认值）
 _POSITIVE_CONFIG_KEYS = (
     "per_fold_single", "margin_single", "margin_multi",
     "min_fullness", "hem_margin", "meters_rounding_step",
+    "oversize_width_threshold", "oversize_height_threshold",
 )
 
 
@@ -479,31 +497,38 @@ def aggregate_by_fabric(positions: List[Dict[str, Any]]) -> Dict[str, float]:
 
 
 # ── 自动特征（超高 / 超宽 / 倒幅）：**服务端判定**（issue #4976 包 1a）────────────────────
-# 用户 2026-09-21 裁定 B：「**判定移到服务端**」（前端只展示服务端结论）。
-# 判据与 `frontend/admin-web/src/lib/craft-auto-features.ts` **同式**（措辞也逐字对齐）——
-# 前端退场（包 2）后，本函数成为**唯一**真值源；在此之前两者并存（照实登记在 PR 描述里）。
+# 用户 2026-09-21 裁定 B：「**判定移到服务端**」（前端只展示服务端结论）——
+# 前端本地判定实现 `detectAutoFeatures` 已随 issue #5035 删除 ⇒ 本函数是**唯一**真值源。
 #
-# ⚠️ **两个方向各自受门幅约束，取决于加工类型**（用户 2026-09-20 裁定
-# 「定高买宽的话就不用算超宽，定宽买高就不用算超高」）：
-#   定高买宽 ⇒ 只判**超高**（宽按米买、无上限）
-#   定宽买高 ⇒ 只判**超宽**（= 引擎真实的分幅条件）+ **倒幅**
-#   缺省 / 表外取值 ⇒ **都不判**（保守：不猜朝向）
-# 常量 `HEM_MARGIN` 同时是**配置键的默认值**（`hem_margin`，issue #4976 包 1b）：
-# 引擎函数体里一律读 `cfg[...]`，常量只出现在配置字典那一行。
+# 🔴 **2026-09-22 改判（issue #5130，用户裁定 D1 / D2 / D3 / D7 / D10 / D11）**：
+# 判据由「与**门幅**比」（几何层）换成「与**企业阈值参数**比」：
+#   `净窗宽 > oversize_width_threshold` ⇒ `超宽`；`净窗高 > oversize_height_threshold` ⇒ `超高`；
+#   `倒幅` **不变**（加工类型 = `定宽买高`，唯一推导）。
+# 三条既有裁定一并**退役**（D10，改判留档 —— 旧文字不删，让后人看得见口径变过）：
+#   · **#4661「按加工类型分流」退役**：绝对阈值与加工类型无关，且两者**可同时为真**
+#     ⇒ 旧口径「定高买宽 ⇒ 只判超高；定宽买高 ⇒ 只判超宽；缺省 / 表外 ⇒ 都不判」失效；
+#     新口径：`超宽` / `超高` **一律照判**，`倒幅` 仍只在 `定宽买高` 时产出。
+#   · **#4662「超宽须含褶倍」退役**：新判据不含褶倍（也不含任何宽方向余量）。
+#   · **#4877「判定面：缺门幅不判」退役**：新判据**不读门幅** ⇒ 该 SKU 未维护门幅不再让它们判不了；
+#     门幅仍是**几何层**输入（用料 / 加工类型 / 门幅规则面），那一层**一字未动**。
+# ⇒ 入参据此**收窄**（D11）：退役 `fabric_width` 与 `fullness`（新判据不再读）；`cutting_mode` **保留**
+#   —— 它是 `倒幅` 的**唯一**依据，而 `倒幅` 是加工费组合键成员（issue #4592：「倒幅是需要的」）。
+#
 # ⚠️ 宽方向的 `SIDE_MARGIN` / `side_margin` 已**整体退场**（用户 2026-09-21 裁定，issue #5030）
 # —— 判据里不再有任何宽方向余量（订单宽 = 净窗宽，成品宽 = 净窗宽）。
 
-#: 加工类型 `定高买宽` —— **高**方向受门幅约束 ⇒ 只判 `超高`
+#: 加工类型 `定高买宽` —— 几何层：**高**方向受门幅约束（特征面 `超高` 已改走绝对阈值）
 CUTTING_MODE_FIXED_HEIGHT = "定高买宽"
 #: 加工类型 `定宽买高` —— **宽**方向受门幅约束（分幅）⇒ 只判 `超宽`（+ `倒幅`）
 CUTTING_MODE_FIXED_WIDTH = "定宽买高"
 
 
 def _meters_for_reason(value: float, door_width: float) -> float:
-    """判定文案里的米数：取整到毫米；**只有「取整把严格大于抹平了」**这一种情况才给全精度。
+    """提示文案里的米数：取整到毫米；**只有「取整把严格大于抹平了」**这一种情况才给全精度。
 
-    与前端 `craft-auto-features.ts::metersForReason` 同款 —— 否则商家看到的是
-    「2.8 米 > 门幅 2.8 米」这种**自相矛盾的依据**（判据要能自证）。
+    与（已随 issue #5035 退场的）前端 `craft-auto-features.ts::metersForReason` 同款 ——
+    否则商家看到的是「2.8 米 > 门幅 2.8 米」这种**自相矛盾的依据**（判据要能自证）。
+    今天唯一的消费点 = `detect_auto_feature_notices` 的几何矛盾提示（issue #5130 后只剩它）。
     """
     rounded = round(value, 3)
     return rounded if (rounded > door_width or value <= door_width) else value
@@ -512,93 +537,84 @@ def _meters_for_reason(value: float, door_width: float) -> float:
 def detect_auto_features(
     window_width: Optional[float],
     window_height: Optional[float],
-    fabric_width: Optional[float],
-    fullness: Optional[float] = None,
     cutting_mode: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, str]]:
-    """系统**自动推算**的特征（`超高` / `超宽` / `倒幅`）—— issue #4976 包 1a。
+    """系统**自动推算**的特征（`超高` / `超宽` / `倒幅`）—— issue #4976 包 1a；**issue #5130 改判**。
 
     这三项会**进加工费组合键**（商家按「韩折+超宽+定型」这类组合配价），所以判定必须唯一：
     本函数是**服务端**的判定实现（用户裁定 B），前端退场后它就是唯一真值源。
 
+    🔴 **2026-09-22 改判（issue #5130，用户裁定 D1 / D2 / D3 / D7 / D10 / D11）**：
+    判据由「与**门幅**比」换成「与**企业阈值参数**比」（`D3` = 替换）：
+
+    - `超宽` ⟺ **净窗宽 > `oversize_width_threshold`**（默认 = 常量 `OVERSIZE_WIDTH_THRESHOLD`）；
+    - `超高` ⟺ **净窗高 > `oversize_height_threshold`**（默认 = 常量 `OVERSIZE_HEIGHT_THRESHOLD`）；
+    - `倒幅` ⟺ `cutting_mode == 定宽买高`（**不变** —— 它是本函数保留 `cutting_mode` 的唯一理由）。
+
+    三条既有裁定随之**退役**（`D10`，改判留档）：
+
+    - **#4661「按加工类型分流」退役** —— 绝对阈值与加工类型无关，且两者**可同时为真**
+      ⇒ 旧口径「`定高买宽` ⇒ 只判超高 / `定宽买高` ⇒ 只判超宽 / **缺省 / 表外 ⇒ 都不判**」失效。
+      新口径：`超宽` / `超高` **一律照判**（只看净窗宽 / 净窗高与阈值）；缺省 / 表外加工类型下
+      结果为「超高 / 超宽 照判、无 `倒幅`」。
+    - **#4662「超宽须含褶倍」退役** —— 新判据是 `净窗宽 > 阈值`，**不含褶倍**。
+    - **#4877（**判定面**：门幅无缺省值 ⇒ 缺门幅不判）退役** —— 新判据**不读门幅**。
+      门幅仍是**几何层**输入（`resolve_fabric_plan` / 用料 / 门幅规则面），**那一层一字未动**。
+
     Args:
-        window_width: 成品宽（米）；`None` / 非正 ⇒ **不判超宽**（`倒幅` 照判 —— 它只取决于加工类型）
-        window_height: 成品高（米）；`None` / 非正 ⇒ **不判超高**（不回落任何默认层高）
-        fabric_width: **该商品/SKU 的门幅**（米）—— 权威值由调用方传入；
-            `None` ⇒ **超宽/超高都不判**（**不回落**模块常量，issue #4877：门幅没有缺省值），
-            但 **`倒幅` 照判**（它只取决于加工类型、与门幅无关 —— issue #5033）
-        fullness: **名义**褶倍（档位值）；缺失 / 非正 ⇒ **不判超宽**（不拿一个假褶倍去判价）
-        cutting_mode: 加工类型（`定高买宽` / `定宽买高`）；缺省 / 表外 ⇒ **都不判**
-        config: 租户级算料配置（`hem_margin` 取自它；缺省 ⇒ 引擎默认值）
+        window_width: **净窗宽**（米）；`None` ⇒ **不判超宽**（不回落任何默认值）
+        window_height: **净窗高**（米）；`None` ⇒ **不判超高**（不回落任何默认层高）
+        cutting_mode: 加工类型（`定高买宽` / `定宽买高`）—— **只用于推导 `倒幅`**；
+            缺省 / 表外 ⇒ 无 `倒幅`（`超宽` / `超高` 照判，见上）
+        config: 租户级算料配置（两个阈值取自它；缺省 ⇒ 引擎默认值 = `6 / 4`，用户裁定 `D7`）
 
     Returns:
-        `[{"name", "source", "reason"}, ...]`：顺序 = `超宽 → 超高 → 倒幅` 中命中的那些；
+        `[{"name", "source", "reason"}, ...]`：顺序恒为 `超宽 → 超高 → 倒幅` 中命中的那些；
         **空列表 = 不判**（不是「没算」—— `build_quote` 的该键**恒在**）。
 
-    ⚠️ **判据是行业推理、非 ERP 实证** ⇒ 一律标 `source="推算"`（与前端同口径）。
+    ⚠️ **判据是客户口径 + 工艺分档，非 ERP 实证** ⇒ 一律标 `source="推算"`（与前端同口径）。
+    ⚠️ **不读 `fabric_width` / `fullness`**（`D11` 签名收窄）：它们残留的消费点只在**几何层**，
+    本函数连参数都不再收 —— 留着已无消费者的入参就是死参数（同族先例：issue #5030 的 `side_margin`）。
     """
     cfg = resolve_craft_calc_config(config)
     features: List[Dict[str, str]] = []
-    if cutting_mode not in (CUTTING_MODE_FIXED_HEIGHT, CUTTING_MODE_FIXED_WIDTH):
-        return features  # 不猜朝向（与前端同款：缺省/表外取值一个都不判）
-
+    # 🔴 判据 = **净窗宽 / 净窗高 与企业阈值参数比**（严格大于；等于阈值不判）——
+    # 与门幅、褶倍、加工类型**全无关**（#4661 / #4662 / #4877 三条判定面裁定已退役，见 docstring）。
+    # 顺序**恒为** 超宽 → 超高 → 倒幅（加工费组合键的归一化另在服务端做，但这里保持稳定顺序）。
+    if window_width is not None and window_width > cfg["oversize_width_threshold"]:
+        features.append({
+            "name": "超宽",
+            "source": "推算",
+            "reason": (
+                f"净窗宽 {window_width} 米 > "
+                f"超宽阈值 {cfg['oversize_width_threshold']} 米"
+            ),
+        })
+    if window_height is not None and window_height > cfg["oversize_height_threshold"]:
+        features.append({
+            "name": "超高",
+            "source": "推算",
+            "reason": (
+                f"净窗高 {window_height} 米 > "
+                f"超高阈值 {cfg['oversize_height_threshold']} 米"
+            ),
+        })
     if cutting_mode == CUTTING_MODE_FIXED_WIDTH:
-        # 判据 = 引擎**真实的分幅条件** `ceil(窗宽 × 褶倍 ÷ 门幅) ≥ 2`
-        # ⟺ `窗宽 × 褶倍 > 门幅`（原始浮点，不取整 —— 取整会漏报，见前端同款注释）
-        # ⚠️ 用户 2026-09-21 裁定（issue #5030）：订单宽 = **净窗宽**、成品宽 = 净窗宽
-        # ⇒ 判据里**不再有左右覆盖余量**（该概念与配置键 `side_margin` 整体退场）。
-        # ⚠️ 宽 / 褶倍缺失 ⇒ **不判**（调用方可能只给了高；不拿假值去判价）
-        # ⚠️ 宽 / 褶倍 / **门幅**缺失 ⇒ **不判超宽**（调用方可能只给了高，或该 SKU 未维护门幅；
-        # 不拿假值去判价 —— issue #4877：门幅**没有**缺省值）。
-        # 🔴 `fabric_width is not None` 这条守卫是 **#5033** 的根因修复：缺了它，
-        # `product > fabric_width` 会抛 `TypeError` ⇒ 调用方（判定端点）只能**短路**，
-        # 而短路会把**与门幅无关**的 `倒幅` 一起吞掉 ⇒ 组合键少一项（改钱）。
-        # 🔴 判据里的宽方向**没有余量**（issue #5030）：`窗宽 × 褶倍`（成品宽 = 净窗宽）。
-        if (
-            fabric_width is not None
-            and window_width is not None
-            and fullness is not None
-            and fullness > 0
-        ):
-            product = window_width * fullness
-            if product > fabric_width:
-                features.append({
-                    "name": "超宽",
-                    "source": "推算",
-                    "reason": (
-                        f"窗宽 {window_width} × 褶倍 {fullness} = "
-                        f"{_meters_for_reason(product, fabric_width)} 米 > 门幅 {fabric_width} 米"
-                    ),
-                })
-        # 倒幅只取决于加工类型（与褶倍无关）：布旋转九十度用
+        # 倒幅只取决于加工类型（与窗宽 / 窗高 / 门幅 / 褶倍都无关）——
+        # 保留 `cutting_mode` 入参的**唯一**理由（#4592：「倒幅是需要的」，它进组合键）。
         features.append({
             "name": "倒幅",
             "source": "推算",
             "reason": f"加工类型 = {CUTTING_MODE_FIXED_WIDTH}",
         })
-    elif (
-        fabric_width is not None
-        and window_height is not None
-        and window_height + cfg["hem_margin"] > fabric_width
-    ):
-        # 定高买宽：只有**高**受门幅约束（`成品高 + 上下卷边 > 门幅` ⇒ 定高买宽不可行）
-        # ⚠️ `fabric_width is not None` = 该 SKU 未维护门幅 ⇒ **不判超高**（不回落缺省门幅）。
-        features.append({
-            "name": "超高",
-            "source": "推算",
-            "reason": (
-                f"成品高 {window_height} + 上下卷边 {cfg['hem_margin']} = "
-                f"{_meters_for_reason(window_height + cfg['hem_margin'], fabric_width)} 米"
-                f" > 门幅 {fabric_width} 米"
-            ),
-        })
     return features
 
 
 #: 提示（notice）类别 —— ⚠️ **不是特征**：不进 `AUTO_FEATURE_NAMES`、不进加工费组合键。
-NOTICE_MISSING_DOOR_WIDTH = "missing-door-width"
-NOTICE_MISSING_FULLNESS = "missing-fullness"
+#: 🔴 **issue #5130 改判：只剩这一条** —— `missing-door-width` 与 `missing-fullness` 已**退役**
+#: （它们的文案在新判据下是**假话**：「未维护门幅 ⇒ 超高/超宽都判不了」/「缺褶倍 ⇒ 未判超宽」）；
+#: 「门幅未维护」的告知改由**门幅规则面**（`door-width-plan` 端点 + 下单页徽标）承担。
 NOTICE_CUTTING_MODE_CONFLICT = "cutting-mode-conflict"
 
 
@@ -609,40 +625,43 @@ def _num(value: float) -> str:
     「同一输入的提示文案」在迁移前后**字面不同**（`#4976` 复核时实测过这条漂移：包 1a 那句
     「与下单页同一句」**旧值从未相等**）。提示搬到服务端后商家看到的就是引擎这句 ⇒ 必须钉住。
 
-    ⚠️ 只服务**新迁移的提示文案**；`detect_auto_features` 的既有措辞**不动**（它的同款漂移是
-    已登记的独立项，改它要动已钉住的措辞断言 —— 那是另一件事）。
+    ⚠️ 只服务**提示文案**（`cutting-mode-conflict`）；`detect_auto_features` 的判定依据用
+    **普通 f-string**（它的措辞本来就不同，且前端没有对应实现可逐字对齐 —— issue #5130 起
+    判定依据写的是「净窗宽 … > 超宽阈值 …」，与旧的「… > 门幅 …」不是同一句）。
     """
     number = float(value)
     return str(int(number)) if number == int(number) else repr(number)
 
 
 def detect_auto_feature_notices(
-    window_width: Optional[float],
     window_height: Optional[float],
     fabric_width: Optional[float],
-    fullness: Optional[float] = None,
     cutting_mode: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, str]]:
-    """系统识别的**提示**（`missing-door-width` / `missing-fullness` / `cutting-mode-conflict`）
-    —— issue #5036（用户 2026-09-21 裁定「**需要统一迁移到服务端；未来 agent 也需要**」）。
+    """系统识别的**提示**（`cutting-mode-conflict`）—— issue #5036；**issue #5130 改判**。
 
-    与 :func:`detect_auto_features` 是**兄弟函数**（同入参、同配置口径），职责不同：
-    判定**进加工费组合键**（判定即钱）；提示**只说明**「为什么没判」或「系统实际会按哪种算」
+    与 :func:`detect_auto_features` 是**兄弟函数**，职责不同：
+    判定**进加工费组合键**（判定即钱）；提示**只说明**「系统实际会按哪种算」
     —— **不进组合键、不改判定**（用户 2026-09-20 裁定 C 的前半句「以商家选的为准」）。
 
-    🔴 **为什么必须搬服务端**（迁移前的缺陷形态）：提示读的是前端**模块常量副本**
-    （宽方向余量已于 issue #5030 整体退场；高方向那个常量是 `0.3`），而判定读**该租户配置**
-    ⇒ #5005 把 `hem_margin` 做成可配之后，商家改过配置就会看到**错的数**，
-    且「几何矛盾」的**判断本身**也会错。本函数一律读 `cfg`（**不新造第二份常量**）。
+    🔴 **2026-09-22 改判（issue #5130）：三条提示各有归属**（判据换成绝对阈值后逐一复核）：
+
+    | 类别 | 处置 |
+    |---|---|
+    | `missing-door-width`（「未维护门幅 ⇒ 超高/超宽都判不了」） | **退役** —— 新判据不读门幅 ⇒ 文案成假话 |
+    | `missing-fullness`（「缺褶倍 ⇒ 未判超宽」） | **退役** —— 新判据不含褶倍 ⇒ 文案成假话 |
+    | `cutting-mode-conflict`（几何矛盾） | **保留** —— 它说的是**几何层**（成品高 + 卷边 vs 门幅 ⇒ 引擎实际按哪种算），仍然为真 |
+
+    ⚠️ 因此**入参收窄**：`fullness` 随 `missing-fullness` 退役；`window_width` 的唯一消费者
+    （`missing-fullness` 的依据文案）也随之消失 ⇒ 一并收窄（同族先例：issue #5030 的 `side_margin`）。
+    **`fabric_width` 与 `hem_margin` 必须保留** —— 几何矛盾提示靠它们判。
 
     Args:
-        window_width: 成品宽（米）；缺 ⇒ 不提示「缺褶倍」（没有依据就不下结论）
         window_height: 成品高（米）；缺 ⇒ 不提示「几何矛盾」（该判据依赖它）
-        fabric_width: **该商品/SKU 的门幅**（米）；缺 ⇒ `missing-door-width`
-            （**不回落任何缺省门幅**，issue #4877）
-        fullness: 名义褶倍；缺 / 非正 ⇒ `missing-fullness`（**只在定宽买高且宽已知时**）
-        cutting_mode: 加工类型；缺省 / 表外 ⇒ **一条都不提示**（不猜朝向）
+        fabric_width: **该商品/SKU 的门幅**（米）；缺 ⇒ 无几何依据 ⇒ 不提示
+            （**不回落任何缺省门幅**，issue #4877 在**几何层**仍然有效）
+        cutting_mode: 加工类型；缺省 / 表外 ⇒ **一条都不提示**（没有可比对象）
         config: 租户级算料配置（读 `hem_margin`；缺省 ⇒ 引擎默认值）
 
     Returns:
@@ -650,33 +669,18 @@ def detect_auto_feature_notices(
     """
     notices: List[Dict[str, str]] = []
     if cutting_mode not in (CUTTING_MODE_FIXED_HEIGHT, CUTTING_MODE_FIXED_WIDTH):
-        return notices  # 加工类型未知 ⇒ 提示的前提句无从谈起（与前端同款）
+        return notices  # 加工类型未知 ⇒ 「所选 vs 实际」没有可比对象
 
     cfg = resolve_craft_calc_config(config)
     hem_margin = cfg["hem_margin"]
 
+    # 缺门幅 ⇒ **几何层**判不了（#4877 在几何层仍然有效）⇒ 矛盾提示没有依据（它要拿门幅比）。
+    # ⚠️ 这里**不再**产出 `missing-door-width` 提示（该类别已按 issue #5130 退役：它的文案说的是
+    # 「⇒ 超高/超宽都判不了」，而判定面已不看门幅）；门幅未维护的告知归**门幅规则面**。
     if fabric_width is None:
-        # 缺门幅 ⇒ 判定面**什么都没判**（issue #4877）⇒ 显式告知并直接返回：
-        # 再做「缺褶倍」「几何矛盾」两条提示会误导（它们的前提都依赖门幅）。
-        notices.append({
-            "kind": NOTICE_MISSING_DOOR_WIDTH,
-            "reason": "该 SKU 未维护门幅 ⇒ 超高/超宽都判不了（系统不按缺省门幅推算，请先补商品门幅）",
-        })
         return notices
 
-    # ① 缺褶倍 ⇒ 未判超宽（只在「该方向真的受门幅约束」且宽已知时才说得通）
-    has_fullness = (
-        isinstance(fullness, (int, float)) and not isinstance(fullness, bool) and fullness > 0
-    )
-    if cutting_mode == CUTTING_MODE_FIXED_WIDTH and window_width is not None and not has_fullness:
-        notices.append({
-            "kind": NOTICE_MISSING_FULLNESS,
-            "reason": (
-                f"缺褶倍 ⇒ 未判超宽（窗宽 {_num(window_width)} 是否要分幅取决于褶倍，不猜）"
-            ),
-        })
-
-    # ② 几何矛盾：引擎按「高 + 上下卷边 vs 门幅」**唯一**决定实际档位（与 `超高` 同一条判据）
+    # 几何矛盾：引擎按「高 + 上下卷边 vs 门幅」**唯一**决定实际档位（`resolve_fabric_plan` 的几何分支）
     if window_height is not None:
         over_height = window_height + hem_margin > fabric_width
         actual_mode = CUTTING_MODE_FIXED_WIDTH if over_height else CUTTING_MODE_FIXED_HEIGHT
@@ -1431,8 +1435,11 @@ def build_quote(
         "style": style,
         "special_options": special_options,
         # ── 自动特征（issue #4976 包 1a）：**键恒在** ──────────────────────────────
-        # 空列表 = **不判**（缺加工类型 / 表外取值 / 缺褶倍），**不是**「没算」——
+        # 空列表 = **不判**（净窗宽 / 净窗高都未超过各自的企业阈值），**不是**「没算」——
         # 调用方据此区分「系统没判」与「系统判了但没有」。
+        # 🔴 issue #5130：判定面已改为与**企业阈值参数**比（与门幅 / 褶倍**无关**）⇒ 本调用
+        # **不再传** `fabric_width` / `fullness`（D11 签名收窄）；只保留 `cutting_mode`
+        # —— 它是 `倒幅` 的唯一依据。
         # 门幅与加工类型（issue #5013）：`fabric_widths` 未给 ⇒ `door_width` = 入参门幅、
         # `splice` 恒 False，`auto_features` 仍吃**入参** `cutting_mode` ⇒ 既有调用读到的键值逐值不变。
         "door_width": plan_state["door_width"],
@@ -1442,8 +1449,6 @@ def build_quote(
         "auto_features": detect_auto_features(
             window_width=window_width,
             window_height=window_height,
-            fabric_width=fabric_width,
-            fullness=N,
             cutting_mode=(plan_state["cutting_mode"] or cutting_mode) if fabric_widths else cutting_mode,
             config=config,
         ),

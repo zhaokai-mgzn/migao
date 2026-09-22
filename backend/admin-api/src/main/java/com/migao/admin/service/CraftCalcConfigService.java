@@ -69,12 +69,13 @@ public class CraftCalcConfigService {
     public static final List<String> CONFIG_KEYS = List.of(
             "per_fold_single", "per_fold_mixed_times", "margin_single", "margin_multi",
             "min_fullness", "tiers", "default_formula", "hem_margin",
-            "meters_rounding_step");
+            "meters_rounding_step", "oversize_width_threshold", "oversize_height_threshold");
 
     /** 必须是**正数**的标量键（引擎 {@code _POSITIVE_CONFIG_KEYS} 同集合）。 */
     private static final List<String> NUMERIC_KEYS = List.of(
             "per_fold_single", "margin_single", "margin_multi", "min_fullness",
-            "hem_margin", "meters_rounding_step");
+            "hem_margin", "meters_rounding_step",
+            "oversize_width_threshold", "oversize_height_threshold");
 
     private final CraftCalcConfigMapper craftCalcConfigMapper;
     private final CraftCalcClient craftCalcClient;

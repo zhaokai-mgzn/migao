@@ -55,6 +55,9 @@ const CALC_CONFIG: CraftCalcConfig = {
   default_formula: 'pleat',
   hem_margin: 0.3,
   meters_rounding_step: 0.1,
+  // issue #5130：两个**企业阈值**（超宽 / 超高判据）—— 本文件不判它们，但类型要求键齐（与引擎键集同源）
+  oversize_width_threshold: 6,
+  oversize_height_threshold: 4,
 }
 
 /** 受控包装：模拟页面用 useState 持有 value，便于断言累积后的值 */
