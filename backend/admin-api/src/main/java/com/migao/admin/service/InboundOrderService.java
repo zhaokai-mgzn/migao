@@ -22,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -82,6 +83,17 @@ public class InboundOrderService {
     private final ProductSkuMapper productSkuMapper;
     private final ProductMapper productMapper;
     private final StockLedgerService stockLedgerService;
+
+    /**
+     * 池化事件通知点（issue #5182）：过账**既有业务完成之后**追加的一句 fail-soft 通知
+     * —— 新批次入库 = 可用余量变化 ⇒ 池里原本凑不满的组合可能就凑得满了。
+     *
+     * <p>字段注入 + {@code required = false} + 调用侧 {@code notifySafely}
+     * （{@code null} ⇒ 跳过并留痕）：**过账语义与异常语义逐字不变**（公告口径见
+     * {@code ProcessingOrderService.stockBatchConsumptionService}）。</p>
+     */
+    @Autowired(required = false)
+    private PoolChangeNotifier poolChangeNotifier;
 
     // ============================================================ 建单
 
@@ -301,6 +313,10 @@ public class InboundOrderService {
 
         log.info("入库单已过账: tenant={}, inboundNo={}, batchNos={}, items={}, total={}, operator={}",
                 tenantId, order.getInboundNo(), batchNos, lines.size(), order.getTotalAmount(), operator);
+        // 🔴 事件驱动自动成批（issue #5182 挂载点 ②）：**既有过账全部完成之后**追加的
+        // fail-soft 通知点（过账语义、事务边界、异常语义逐字不变）。
+        PoolChangeNotifier.notifySafely(poolChangeNotifier, tenantId,
+                PoolChangeNotifier.TRIGGER_INBOUND_POSTED);
         return detail(order.getId(), tenantId);
     }
 

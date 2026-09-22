@@ -1709,12 +1709,16 @@ CREATE TABLE IF NOT EXISTS stock_batch_consumptions (
 CREATE UNIQUE INDEX IF NOT EXISTS uk_batch_consumption_line
     ON stock_batch_consumptions (tenant_id, processing_order_no, batch_id, order_item_id, reason)
     WHERE deleted = 0;
--- V119（issue #5158）不变式：排料口径**只多不少**（planned <= formula）且两列**同号**
+-- V119（issue #5158）不变式：排料口径**只多不少**且两列**同号**
 -- （扣减行都正 / 回补行都负 —— 少了后半句，(+6, −3) 这种符号打架的行也能落库）。
+-- ⚠️ V121（issue #5182）修正：前半句必须是**绝对值**口径 —— 回补行两列都负，
+-- 原来的 `planned_meters <= formula_meters` 在负行上方向翻转（−3 <= −6 = 假）
+-- ⇒ 「省过料的行」的回补行必然违反本约束（真库 23514，作废/取消回补直接失败）。
+-- 绝对值形式对扣减行与旧式**逐字等价**，对回补行才是真正的「只多不少」。
 ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_plan_meters;
 ALTER TABLE stock_batch_consumptions
     ADD CONSTRAINT ck_batch_consumption_plan_meters
-    CHECK (planned_meters <= formula_meters AND formula_meters * planned_meters >= 0);
+    CHECK (abs(planned_meters) <= abs(formula_meters) AND formula_meters * planned_meters >= 0);
 ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_unit_cost;
 ALTER TABLE stock_batch_consumptions
     ADD CONSTRAINT ck_batch_consumption_unit_cost

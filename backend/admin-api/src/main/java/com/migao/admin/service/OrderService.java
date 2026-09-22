@@ -30,6 +30,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -89,6 +90,17 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * ({@code appendVersion}) 是写面的既有机制，绕过去 = 改价无痕。
      */
     private final ProcessingFeeCombinationCommandService processingFeeCombinationCommandService;
+
+    /**
+     * 池化事件通知点（issue #5182）：**既有业务完成之后**追加的一句 fail-soft 通知。
+     *
+     * <p><b>字段注入</b>的理由同 {@code ProcessingOrderService.stockBatchConsumptionService}：
+     * 本类构造签名被多处测试显式装配，加参数会把它们全改一遍。{@code required = false}
+     * 且调用侧走 {@link PoolChangeNotifier#notifySafely}（{@code null} ⇒ 跳过并留痕）——
+     * 通知点是**优化触发**，绝不因为它未装配/抛异常让确认支付失败。</p>
+     */
+    @Autowired(required = false)
+    private PoolChangeNotifier poolChangeNotifier;
 
     /**
      * 批次消耗台账（V116，issue #5145 阶段 1）：**订单取消自动作废加工单**这条路上的批次回补。
@@ -1243,6 +1255,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         Order freshOrder = orderMapper.selectById(id);
         recordFinanceTransaction(freshOrder != null ? freshOrder : order, "income", "订单确认收款");
         log.info("确认支付成功: id={}", id);
+        // 🔴 事件驱动自动成批（issue #5182 挂载点 ①）：**既有业务全部完成之后**追加的
+        // fail-soft 通知点。本方法的既有行为、事务边界与异常语义**逐字不变**
+        // —— notifySafely 绝不抛，且真正的评估在提交之后（AFTER_COMMIT）。
+        PoolChangeNotifier.notifySafely(poolChangeNotifier, order.getTenantId(),
+                PoolChangeNotifier.TRIGGER_ORDER_CONFIRMED);
     }
 
     /**
@@ -1383,6 +1400,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             }
         }
         log.info("取消订单成功: id={}, reason={}", id, closeReason);
+        // 🔴 事件驱动自动成批（issue #5182 挂载点 ③-b）：取消会改变池的候选集
+        // （作废加工单已在上面对称回补批次 ⇒ 腾出来的余量可能让别的单凑得满）。
+        PoolChangeNotifier.notifySafely(poolChangeNotifier, order.getTenantId(),
+                PoolChangeNotifier.TRIGGER_ORDER_CANCELLED);
     }
 
     /**
@@ -1529,6 +1550,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         orderMapper.update(null, update);
         log.info("更新订单加急/到货日成功: id={}, isUrgent={}, requiredDeliveryDate={}",
                 id, isUrgent, requiredDeliveryDateRaw);
+        // 🔴 事件驱动自动成批（issue #5182 挂载点 ③-a）：改单会同时改两件事 ——
+        // 加急单**永不入池**（改为加急 ⇒ 立刻单派）、到货日变了 ⇒ 兜底的「最晚派单日」跟着变。
+        PoolChangeNotifier.notifySafely(poolChangeNotifier, order.getTenantId(),
+                PoolChangeNotifier.TRIGGER_ORDER_UPDATED);
     }
 
     /**

@@ -307,11 +307,21 @@ def test_v119_is_explicitly_transactional_and_fails_closed_before_writing():
 
 
 def test_bootstrap_schema_sql_is_already_terminal():
-    """bootstrap 路径（新建库**不跑迁移链**）必须与 V119 终态同形，否则新库与老库行为分叉。"""
+    """bootstrap 路径（新建库**不跑迁移链**）必须与**迁移链最新终态**同形，否则新库与老库行为分叉。
+
+    ⚠️ 终态在 **V121（issue #5182）** 改过一次：`ck_batch_consumption_plan_meters` 的前半句
+    由 `planned_meters <= formula_meters` 改成**绝对值**口径 —— 原式在回补行（两列都负）上方向
+    翻转（−3 <= −6 = 假），「省过料的行的回补行」必然违反约束（真库 23514）。本判据因此**同时**
+    钉住两件事：「新形态必须在」+「旧的不对称形态不得复现」（比只钉旧形态更强，不是放宽）。
+    """
     schema = _read(SCHEMA_SQL)
     assert re.search(r"formula_meters NUMERIC\(12,1\) NOT NULL", schema), "schema.sql 缺 formula_meters"
     assert re.search(r"planned_meters NUMERIC\(12,1\) NOT NULL", schema), "schema.sql 缺 planned_meters"
     assert re.search(r"unit_cost NUMERIC\(12,4\)", schema), "schema.sql 缺 unit_cost（或精度与批次表不一致）"
     assert "ck_batch_consumption_plan_meters" in schema, "schema.sql 缺「只多不少」约束"
-    assert "planned_meters <= formula_meters AND formula_meters * planned_meters >= 0" in schema, (
+    assert "abs(planned_meters) <= abs(formula_meters)" in schema, (
+        "schema.sql 缺「只多不少」约束的**绝对值**口径（V121 / issue #5182 修正后形态）")
+    assert "formula_meters * planned_meters >= 0" in schema, (
         "schema.sql 的约束丢了后半句（两列同号）")
+    assert "planned_meters <= formula_meters AND" not in schema, (
+        "schema.sql 复现了 V121 修掉的**符号不对称**旧形态（回补行会 23514）")
