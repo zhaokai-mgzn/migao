@@ -289,7 +289,8 @@ recovery_manual() {
 }
 
 echo "== 触发 SWAS 云助手执行 deploy.sh（拉源码 → flock → 构建 → 健康检查）=="
-# 自愈式同步：每次先从 repo 拉取最新 deploy.sh 再执行（服务器不再维护手工副本）。
+# 自愈式同步：每次先拉取**与本次镜像 tag 同源**的那份 deploy.sh 再执行（服务器不再维护手工副本）。
+# ⚠️ **不是**「最新」（= main）—— 见下方 #5120 段：ref 由镜像 tag 推导，取不到即 fail-closed。
 # 注意走 codeload.github.com（服务器可达）；raw.githubusercontent.com 在杭州机房超时（curl 56 errno 110）。
 # 可选：写入 ACR 凭据到 .env.registry（deploy.sh 检测到即 docker login）。
 REGISTRY_SETUP=""
@@ -315,7 +316,66 @@ fi
 #    占位符（`deploy_attempt` 替换；渲染后仍留占位符 ⇒ 当场报错，绝不静默当「无许可」）。
 #    写成 `export …;` 前置（而不是 `${VAR}=… bash …` 前缀）⇒ 「cp → mv -f → bash deploy.sh」
 #    的**原子安装形态**逐字不变（那是既有护栏，见 tests/unit_ci_workflows/test_swas_deploy_ci_bootstrap.py）。
-BOOTSTRAP="export ALLOW_DOWNGRADE=__ALLOW_DOWNGRADE__; PREV=\$(cat /opt/migao-deploy/.last-good-tag 2>/dev/null || true); if [ -z \"\$PREV\" ] && command -v docker >/dev/null 2>&1; then PREV=\$(docker ps --format '{{.Image}}' 2>/dev/null | grep 'ai-customer-service/' | sed 's/.*://' | sort | uniq -c | sort -rn | head -1 | awk '{print \$2}'); fi; echo \"PREV_GOOD_TAG=\${PREV:-}\"; ${REGISTRY_SETUP}SRC=\$(mktemp -d) && TAR=\$(mktemp) && curl -fsSL --retry 3 https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main -o \"\$TAR\" && tar xzf \"\$TAR\" -C \"\$SRC\" --strip-components=1 && mkdir -p /opt/migao-deploy && cp \"\$SRC\"/deploy/swas/deploy.sh /opt/migao-deploy/.deploy.sh.new && mv -f /opt/migao-deploy/.deploy.sh.new /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh ${IMAGE_TAG}; rc=\$?; if [ \$rc -eq 0 ]; then echo \"${IMAGE_TAG}\" > /opt/migao-deploy/.last-good-tag; fi; rm -rf \"\$SRC\" \"\$TAR\"; exit \$rc"
+BOOTSTRAP="export ALLOW_DOWNGRADE=__ALLOW_DOWNGRADE__; PREV=\$(cat /opt/migao-deploy/.last-good-tag 2>/dev/null || true); if [ -z \"\$PREV\" ] && command -v docker >/dev/null 2>&1; then PREV=\$(docker ps --format '{{.Image}}' 2>/dev/null | grep 'ai-customer-service/' | sed 's/.*://' | sort | uniq -c | sort -rn | head -1 | awk '{print \$2}'); fi; echo \"PREV_GOOD_TAG=\${PREV:-}\"; ${REGISTRY_SETUP}SRC=\$(mktemp -d) && TAR=\$(mktemp) && curl -fsSL --retry 3 https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/__BOOTSTRAP_REF__ -o \"\$TAR\" && tar xzf \"\$TAR\" -C \"\$SRC\" --strip-components=1 && mkdir -p /opt/migao-deploy && cp \"\$SRC\"/deploy/swas/deploy.sh /opt/migao-deploy/.deploy.sh.new && mv -f /opt/migao-deploy/.deploy.sh.new /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh ${IMAGE_TAG}; rc=\$?; if [ \$rc -eq 0 ]; then echo \"${IMAGE_TAG}\" > /opt/migao-deploy/.last-good-tag; fi; rm -rf \"\$SRC\" \"\$TAR\"; exit \$rc"
+
+# ══════════════════════════════════════════════════════════════════════════
+# ⑤ 部署脚本**自己**也必须与镜像 tag 同源（issue #5120）
+#
+# 病根（**#5083 修掉的那一层之上，又高了一层**）：`deploy.sh` **内部**的配置
+# （compose / nginx）已按 tag 同源（`config_ref_for_tag` ⇒ `CONFIG_REF_RESOLVED`，
+# 取不到即 fail-closed），但 **bootstrap 自己**此前仍无条件以 `refs/heads/main`
+# 下载 **`deploy.sh` 本身** ⇒ 回滚到旧 tag 时是「**旧镜像 + 旧配置 + 新部署脚本**」，
+# 与被 #5083 修掉的那层**同一形态**（未定义行为、且不报错）。
+#
+# 口径（与 `deploy/swas/deploy.sh` 的 `tag_to_sha` / `config_ref_for_tag` **逐字对齐**）：
+#   `sha-<hex>`（纯 hex 且长度 ≥ 7）⇒ `<hex>`（不可变引用，与镜像**同一 commit**）
+#   其它非空形态                     ⇒ `refs/tags/<tag>`（tag 不存在 ⇒ 404 ⇒ fail-closed）
+#   空                               ⇒ 空串 ⇒ **调用方 fail-closed**
+# ⇒ 本脚本里**不存在**「无条件取 main 的 deploy.sh」这条路径。
+#
+# ⚠️ **为什么不直接复用 `deploy.sh` 里那一份**（最少代码阶梯的"复用"档已评估）：
+#   **鸡生蛋** —— 那两份函数所在的 `deploy.sh` **正是 bootstrap 要下载的东西**，
+#   下载完成之前它不存在于服务器上，无从 source。故这里保留**第二份**实现，
+#   并由守卫测试 tests/unit_ci_workflows/test_swas_bootstrap_same_source_guard.py
+#   **逐字比对**两份口径（漂移即红）⇒「第二份」不可能静默走样。
+# ══════════════════════════════════════════════════════════════════════════
+
+# `sha-<hex>` → 提交 sha；其它形态（latest / v1.2.3 / 空）⇒ 空串（= 没有提交可锚）
+bootstrap_tag_to_sha() {
+  local t=${1#sha-}
+  case "$t" in
+    *[!0-9a-f]*|"") echo ""; return 0 ;;
+  esac
+  if [ "${#t}" -ge 7 ]; then echo "$t"; else echo ""; fi
+  return 0
+}
+
+# 部署脚本的下载 ref：与镜像 tag **同源** ⇒ 任何分支都不可能返回 `refs/heads/main`
+bootstrap_ref_for_tag() {
+  local t=$1 s
+  s=$(bootstrap_tag_to_sha "$t")
+  if [ -n "$s" ]; then echo "$s"; return 0; fi
+  if [ -n "$t" ]; then echo "refs/tags/$t"; fi
+  return 0
+}
+
+# 渲染一次尝试的 bootstrap 的 **tag + ref** 部分（**唯一一处** ref 注入点）。
+# 返回非零 = **取不到与 tag 同源的 ref** ⇒ 调用方必须 fail-closed（**绝不**静默回落 main）。
+# ⚠️ 替换顺序**有意义**：先 tag 再 ref —— 反过来的话，`refs/tags/<tag>` 里的 tag 文本
+#    会被随后的 tag 替换**二次改写**（如 IMAGE_TAG=`latest`、tag=`sha-abc1234`
+#    ⇒ ref 被误改成 `refs/tags/sha-abc1234`）。
+# ⚠️ **许可占位符 `__ALLOW_DOWNGRADE__` 有意不在这里渲染** —— 它由 `deploy_attempt` 就地渲染：
+#    那一行是既有护栏（tests/unit_ci_workflows/test_swas_deploy_no_downgrade.py 逐字钉住它）。
+render_bootstrap() {
+  local tag=$1 ref out
+  ref=$(bootstrap_ref_for_tag "$tag")
+  [ -n "$ref" ] || return 1
+  out=${BOOTSTRAP//"$IMAGE_TAG"/"$tag"}
+  out=${out//__BOOTSTRAP_REF__/$ref}
+  case "$out" in *__BOOTSTRAP_REF__*) return 1 ;; esac
+  printf '%s' "$out"
+  return 0
+}
 
 # ── 一次完整的「触发 + 轮询」（issue #4767 ①②③）────────────────────────────
 # 结果写进全局：DEPLOY_RC（0=Success / 1=远端 Failed / 2=硬超时 / 3=云 API 调用失败）
@@ -337,9 +397,22 @@ deploy_attempt() {
   #    还报告"已回滚"（实测踩到）⇒ 替换没生效时**当场报错**，不许静默继续。
   #    ⚠️ 判据里的基线要**先渲染掉降级许可占位符**（否则占位符一被替换，`!= $BOOTSTRAP` 恒成立 ⇒
   #    这条检查静默失效）。
-  local bootstrap=${BOOTSTRAP//"$IMAGE_TAG"/"$tag"}
+  # ⚠️ ref（issue #5120）与 tag 一样**每次尝试各自渲染**：回滚用的 tag 与本次不同
+  #    ⇒ 取到的 deploy.sh 也必须是对应**那个 tag** 的那一份。取不到 ⇒ **fail-closed**。
+  local bootstrap baseline
+  if ! bootstrap=$(render_bootstrap "$tag"); then
+    echo "❌ 取不到与 tag 同源的 ref（tag=\`${tag:-<空>}\`）⇒ **拒绝回落到 main 的 deploy.sh**（issue #5120）"
+    echo "   · 部署脚本必须与镜像**同一 commit**：否则回滚是「旧镜像 + 旧配置 + **新部署脚本**」（未定义行为、且不报错）"
+    echo "   · 修法：tag 用 \`sha-<≥7位hex>\` 形态（CI 部署的正常形态），或一个**确实存在**的 tag 名"
+    DEPLOY_RC=3
+    return 0
+  fi
   bootstrap=${bootstrap//__ALLOW_DOWNGRADE__/$allow}
-  if [ "$tag" != "$IMAGE_TAG" ] && [ "$bootstrap" = "${BOOTSTRAP//__ALLOW_DOWNGRADE__/$allow}" ]; then
+  # 判据里的基线要**先渲染掉 ref + 降级许可占位符**（否则占位符一被替换，`!= $BOOTSTRAP` 恒成立
+  # ⇒ 这条检查静默失效）。
+  baseline=$(render_bootstrap "$IMAGE_TAG") || baseline=""
+  baseline=${baseline//__ALLOW_DOWNGRADE__/$allow}
+  if [ "$tag" != "$IMAGE_TAG" ] && [ "$bootstrap" = "$baseline" ]; then
     echo "❌ 回滚 tag 替换未生效：BOOTSTRAP 里找不到当前 tag（$IMAGE_TAG）—— 拒绝用错 tag 部署"
     DEPLOY_RC=3
     return 0
