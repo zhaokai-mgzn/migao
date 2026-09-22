@@ -124,8 +124,14 @@ def main() -> int:
     parser.add_argument("--keep", action="store_true", help="保留最后一次变异（人工复核）")
     args = parser.parse_args()
 
-    if run_git("status", "--porcelain").strip():
-        print("❌ 工作区不干净（本脚本要改写被测源码再还原）——先 commit/stash 无关改动再跑。")
+    # 只关心**被测那两个文件**干不干净：本仓工作区常有与它无关的未跟踪文件
+    # （PR body 草稿、构建产物），一刀切要求「整棵树干净」会让机具没法用。
+    # 但它仍必须 fail-closed —— 被它改写的那个文件若有**未提交改动**，还原就等于毁掉它们。
+    watched = [str(SRC.relative_to(REPO)), str((JAVA_DIR / "src/test/java/com/migao/admin/service"
+                                                / f"{TEST_CLASS}.java").relative_to(REPO))]
+    dirty = run_git("status", "--porcelain", "--", *watched).strip()
+    if dirty:
+        print(f"❌ 被测文件有未提交改动（本脚本要改写它再还原）——先提交：\n{dirty}")
         return 2
 
     original = SRC.read_text(encoding="utf8")
