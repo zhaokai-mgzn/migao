@@ -75,18 +75,12 @@ ORIGINAL_NONBOT_IF_RAW = """      github.event.pull_request.base.ref == 'main' &
       github.event.pull_request.head.repo.full_name == github.repository &&
       !contains(github.event.pull_request.labels.*.name, 'block/merge')"""
 
-# ⚠️ 2026-09-22 刷新：`#5109` 给该 run 块加了「arm 后回读 autoMergeRequest」的后置条件 ⇒
-# 本常量随之更新为 **origin/main 当前内容**（判据 7 的语义 = 「非 bot 路径相对**当前主干**逐字不变」，
-# 而不是「相对某个历史快照不变」）。刷新方式：从 origin/main 原始文本提取该 run 块。
-# ⚠️ 2026-09-22 刷新：`#5109` 给该 run 块加了「arm 后回读 autoMergeRequest」的后置条件 ⇒
-# 本常量随之更新为 **origin/main 当前内容**（判据 7 的语义 = 「非 bot 路径相对**当前主干**逐字不变」，
-# 而不是「相对某个历史快照不变」）。提取方式：从 origin/main 版 `automerge.yml` 的该 run 块按行取原文。
-# ⚠️ 2026-09-22 刷新：`#5109` 给该 run 块加了「arm 后回读 autoMergeRequest」的后置条件 ⇒
-# 本常量随之更新为 **origin/main 当前内容**（判据 7 的语义 = 「非 bot 路径相对**当前主干**逐字不变」，
-# 而不是「相对某个历史快照不变」）。提取方式：从 origin/main 版 `automerge.yml` 的该 run 块按行取原文。
-# ⚠️ 2026-09-22 刷新：`#5109` 给该 run 块加了「arm 后回读 autoMergeRequest」的后置条件 ⇒
-# 本常量随之更新为 **origin/main 当前内容**（判据 7 的语义 = 「非 bot 路径相对**当前主干**逐字不变」，
-# 而不是「相对某个历史快照不变」）。提取方式：从该 run 块按行取原文并**转义反斜杠**。
+# ⚠️ 2026-09-22 刷新（`#5109` → `#5113`）：本常量 = **origin/main 当前内容**（判据 7 的语义是
+# 「非 bot 路径相对**当前主干**逐字不变」，不是「相对某个历史快照不变」）。`#5109` 给它加了
+# 「arm 后回读 autoMergeRequest」；`#5113` 把该回读改成**退避重试 + 按 mergeable 分流三态**
+# （`null` + `mergeable=UNKNOWN` ⇒ unknown、**非红**；`null` + `MERGEABLE` ⇒ 仍判红）。
+# 提取方式：从该 run 块按行取原文并**转义反斜杠**（双引号在 `"""` 串里无需转义）。
+# 判别力自证：`test_nonbot_run_block_mutation_turns_the_assertion_red` —— 改一处即失配。
 ORIGINAL_NONBOT_RUN_RAW = """          set -uo pipefail
 
           merge_out="$(mktemp)"
@@ -122,16 +116,32 @@ ORIGINAL_NONBOT_RUN_RAW = """          set -uo pipefail
           fi
 
           # ---------- 后置条件：命令成功 ≠ 真的 arm 上了（issue #4829 的「静默没 arm」）----------
-          state="$(gh pr view "$PR_NUMBER" \\
-            --json autoMergeRequest \\
-            --jq 'if .autoMergeRequest == null then "none" else "armed" end' 2>/dev/null || true)"
+          # 三态口径（issue #5113）：`armed` ⇒ 绿；`none` + `mergeable=MERGEABLE`（GitHub 已算完
+          # 可合并性却仍没 arm）⇒ **红**（真静默失效，对 #4829 的捕获力不得丢）；
+          # `none` + `mergeable=UNKNOWN`（**尚在计算**）⇒ **unknown**，不得渲染成红 —— 那是误报：
+          # 不是"没 arm"，是"还没算完"。实测（PR #5106 的 run 35677848752）：`gh pr merge --auto`
+          # 零输出、rc=0，同一时刻 `gh pr view --json mergeable` = `UNKNOWN` ⇒ 旧实现报「未 arm
+          # （静默失效）」，害得要用两次额外事件才 arm 上。
+          # 先**退避重试**（覆盖 arm 的传播延迟），重试仍 `none` 再按 `mergeable` 分流。
+          # 退避参数：最多 5 次回读、等待 2/4/6/8 秒（累计 20 秒上限）—— arm 的传播与可合并性
+          # 计算都是秒级，20 秒足够越过窗口，又远小于本 job 的 `timeout-minutes: 5`。
+          attempt=0
+          state=""
+          while [ "$attempt" -lt 5 ]; do
+            attempt=$((attempt + 1))
+            state="$(gh pr view "$PR_NUMBER" \\
+              --json autoMergeRequest \\
+              --jq 'if .autoMergeRequest == null then "none" else "armed" end' 2>/dev/null || true)"
+            [ "$state" = "armed" ] && break
+            if [ "$attempt" -lt 5 ]; then sleep $((attempt * 2)); fi
+          done
           if [ -z "$state" ]; then
-            echo "::error::auto-merge 后置状态查询失败（PR #${PR_NUMBER}：gh 限流/网络/无权限）—— 无法判定是否已 arm，不得当成功"
+            echo "::error::auto-merge 后置状态查询失败（PR #${PR_NUMBER}：gh 限流/网络/无权限，已重试 ${attempt} 次）—— 无法判定是否已 arm，不得当成功"
             {
               echo "### Enable auto-merge — 后置状态无法判定"
               echo ""
               echo "- PR：#$PR_NUMBER"
-              echo "- \\`gh pr merge --auto\\` 返回 0，但 \\`gh pr view --json autoMergeRequest\\` 查询失败。"
+              echo "- \\`gh pr merge --auto\\` 返回 0，但 \\`gh pr view --json autoMergeRequest\\` 查询失败（已重试 ${attempt} 次）。"
               echo "- ⇒ 三态判定为 **unknown**，不得当「已 arm」读。"
             } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
             exit 1
@@ -141,12 +151,31 @@ ORIGINAL_NONBOT_RUN_RAW = """          set -uo pipefail
               echo "✅ auto-merge 已 arm（PR #${PR_NUMBER}，squash + delete-branch）"
               ;;
             none)
-              echo "::error::auto-merge 未 arm：gh 返回 0 但 PR #$PR_NUMBER 的 autoMergeRequest 仍为 null（issue #4829 的静默没 arm 形态）"
+              # 只有**逐字 `UNKNOWN`** 才分流到 unknown（读不到可合并性时仍 fail-closed 判红：
+              # 宁可多报一次，也不静默放过 —— 与本 job 既有口径一致）。
+              mergeable="$(gh pr view "$PR_NUMBER" \\
+                --json mergeable --jq '.mergeable' 2>/dev/null || true)"
+              if [ "$mergeable" = "UNKNOWN" ]; then
+                echo "::warning::auto-merge 无从判定（非红）：gh 返回 0，但 PR #${PR_NUMBER} 的 autoMergeRequest 仍为 null 且 mergeable=UNKNOWN（GitHub 尚在计算可合并性）—— 三态判 unknown，不得当红也不得当绿"
+                {
+                  echo "### Enable auto-merge — 无从判定（unknown，非红）"
+                  echo ""
+                  echo "- PR：#$PR_NUMBER"
+                  echo "- 已重试 ${attempt} 次回读（退避 2/4/6/8 秒），\\`autoMergeRequest\\` 始终为 null。"
+                  echo "- 但 \\`mergeable=UNKNOWN\\` ⇒ **可合并性尚在计算**（arm 后立刻回读会撞上这个窗口，"
+                  echo "  实测 PR #5106 的 run 35677848752）⇒ **无从判定是否已 arm**。"
+                  echo "- ⇒ 三态判定为 **unknown**：不得当红（那是误报），也不得当绿（未证实已 arm）。"
+                  echo "- 处置：无需人工干预；若 arm 已生效，required 检查全绿后 GitHub 会自行合并。"
+                } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+                exit 0
+              fi
+              echo "::error::auto-merge 未 arm：gh 返回 0 但 PR #$PR_NUMBER 的 autoMergeRequest 仍为 null 且 mergeable=${mergeable}（issue #4829 的静默没 arm 形态）"
               {
                 echo "### Enable auto-merge — 未 arm（静默失效）"
                 echo ""
                 echo "- PR：#$PR_NUMBER"
-                echo "- \\`gh pr merge --auto\\` 返回 **0**，但 \\`autoMergeRequest == null\\`。"
+                echo "- 已重试 ${attempt} 次回读（退避 2/4/6/8 秒），\\`autoMergeRequest\\` 始终为 null。"
+                echo "- \\`mergeable=${mergeable}\\` ⇒ 可合并性**已算完**却仍没 arm。"
                 echo "- ⇒ 命令成功不代表 arm 成功（#4829）：CI 一绿**不会**自动合并。"
               } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
               exit 1
@@ -553,6 +582,32 @@ class TestCriterion7NonBotPathUnchanged:
     def test_nonbot_run_block_is_byte_identical(self):
         assert ORIGINAL_NONBOT_RUN_RAW in workflow_text(), (
             "非 bot job 的合并 step 被改动了 —— 人类 PR 的既有行为必须逐字不变")
+
+    def test_nonbot_run_block_mutation_turns_the_assertion_red(self):
+        """**变异红证**：把回读的三态分流改一处 ⇒ `ORIGINAL_NONBOT_RUN_RAW` 立刻失配。
+
+        证明这条逐字快照**不是橡皮图章**（本 PR 实测：刷新常量前它确实因 `#5113` 的改动变红）。
+        """
+        mutated = workflow_text().replace(
+            'if [ "$mergeable" = "UNKNOWN" ]; then', "if false; then", 1)
+        assert mutated != workflow_text(), "变异未生效（锚点漂移）"
+        assert ORIGINAL_NONBOT_RUN_RAW not in mutated
+        # 语义上确认改的正是**非 bot job 的 run**（不是别处同名字符串）
+        run = yaml.safe_load(mutated)["jobs"][NONBOT_JOB]["steps"][1]["run"]
+        assert "if false; then" in run and 'if [ "$mergeable" = "UNKNOWN" ]; then' not in run
+
+    def test_nonbot_readback_is_three_state(self):
+        """结构判据（不依赖逐字快照）：`none` 必须按 `mergeable` 分流，且 unknown 可见（`::warning::`）。
+
+        行为面由 `tests/unit_ci_workflows/test_mechanism_jobs_alerting.py` 的夹具 A/B/C 真跑锁定
+        （退避重试 + `mergeable=UNKNOWN` ⇒ 非红 + `MERGEABLE` ⇒ 仍红）；本条只堵「删掉分支
+        再刷新常量」这条捷径。
+        """
+        run = workflow_yaml()["jobs"][NONBOT_JOB]["steps"][1]["run"]
+        assert 'mergeable="$(gh pr view "$PR_NUMBER"' in run
+        assert 'if [ "$mergeable" = "UNKNOWN" ]; then' in run
+        assert "::warning::" in run, "unknown 必须可见（非红 ≠ 静默）"
+        assert "sleep $((attempt * 2))" in run, "退避重试不得被删掉"
 
     def test_nonbot_job_shape_unchanged(self):
         job = workflow_yaml()["jobs"][NONBOT_JOB]
