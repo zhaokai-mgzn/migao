@@ -37,6 +37,9 @@ import type {
   OrderUrgencyParams,
   PoolBoard,
   PoolDispatchRequest,
+  // 省料度量读面（issue #5159）：L2 分档看板 + L3 采购/财务口径趋势
+  SavingBoard,
+  SavingTrend,
   PoolPreview,
   PoolDispatchResult,
   LogisticsFormData,
@@ -654,6 +657,18 @@ export const poolBoardApi = {
 
   dispatch: (body: PoolDispatchRequest) =>
     request.post<ApiResponse<PoolDispatchResult[]>>('/api/admin/production/pool/dispatch', body),
+}
+
+// 省料度量读面（issue #5159）：L2 批次结构性看板 + L3 采购/财务口径趋势。
+// 端点与后端 StockBatchController 一一对应（权限复用 product:list，不新造权限点）：
+//   GET /api/admin/batch-stock/saving-board   分档聚合（时间 × 来源组 × 物料）+ 来源组合计
+//   GET /api/admin/batch-stock/saving-trend   逐周/月的采购米数 / 消耗米数 / 单位产出消耗
+export const savingBoardApi = {
+  board: (params?: { productId?: string; granularity?: string }) =>
+    request.get<ApiResponse<SavingBoard>>('/api/admin/batch-stock/saving-board', { params }),
+
+  trend: (params?: { granularity?: string }) =>
+    request.get<ApiResponse<SavingTrend>>('/api/admin/batch-stock/saving-trend', { params }),
 }
 
 // 加工单 API（issue #3340）

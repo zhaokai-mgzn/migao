@@ -4060,7 +4060,7 @@
 真值: batch-ledger.dispatch-deduct
 溯源: 2026-09-22 新增：#5145 阶段 1（取号 PG-060 —— 原 PG-059 与在飞的 #5142 撞号，rebase 后顺延）。扣减时点 = 生成/派发加工单（用户裁定，非报工）；已有硬闸「仅已确认订单可生成加工单」⇒ 派工扣必然发生在支付扣之后。 ｜ tags: processing-order, stock, batch, backend_contract
 
-## 商品域（80 case）
+## 商品域（84 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -5073,6 +5073,54 @@
 真值: batch-ledger.auto-batch-due-scan
 溯源: 2026-09-23 新增（issue #5184）：只查业务约束 / 默认关零动作 / 心跳可见 / 载体独立性的判据。取号 PR-092。 ｜ tags: dispatch-pool, auto-dispatch, due-scan, backend-contract
 
+### PR-093. 🔴 真库+页面：看板汇总 == Σ 逐单 saved_*（逐值相等，不许两套口径）+ 单价口径（换价后历史读数不变） 🔵
+```
+你: 省了多少料（L2 批次分档聚合 / L3 单位产出消耗）—— 非 LLM 行为，由真 PG Java 判据与前端组件判据覆盖
+数据: 判据 1·**汇总一致**：`saving-board` 的合计与分组腿 == 逐单读面 `Σ saved_meters` / `Σ saved_amount`，**逐值相等**。判别性做法：夹具里放两行 `0.1 米 × 12.345 元` ⇒「逐行先取整再求和」= 2.46、「整段求和再取整」= 2.47，两个读数在同一测试里对照打印 ⇒ 这条判据不是自说自话。**红证 = 把金额腿改成 `ROUND(SUM(...), 2)`** ⇒ 当场红（实测 103.76 → 103.77）。
+数据: 判据 5·**单价口径**：`UPDATE stock_batches SET unit_cost = 99` 之后重读看板 ⇒ 省料金额**一字不变**（用的是行内快照 `stock_batch_consumptions.unit_cost`）。**红证 = 把金额腿改成读批次现价 `b.unit_cost`** ⇒ 当场红（实测 103.76 → 1227.6）。⚠️ 复读前必须 `session.clearCache()`（MyBatis 一级缓存按 SqlSession；不清缓存会读回改前值 ⇒ **断言恒真 = 空断言**，本单实测踩到并已修）。
+数据: 判据 3·**粒度 fail-closed**：未知粒度 ⇒ 400 显式拒绝（**不静默回落 month**）；`week` 走 ISO 周（`YYYY-Www`）且响应的 `timezone` 显式为 `Asia/Shanghai`。**红证 = 把 default 改成回落 month** ⇒ 当场红。
+跳过: [backend-contract] 省料度量的汇总读面与看板（无米宝工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.saving-metrics-read-face
+溯源: 2026-09-23 新增（issue #5159 剩余范围）：L2/L3 汇总读面 —— 汇总一致（逐值相等）+ 单价快照口径 + 粒度 fail-closed。取号 PR-093（本单硬分配区间 PR-093~PR-096）。 ｜ tags: batch-ledger, saving-metrics, real-db, backend-contract
+
+### PR-094. 🔴 真库+页面：存量导入批次（source='opening'）独立成组，不混入「切换后」的分子分母 🔵
+```
+你: 省了多少料（L2 批次分档聚合 / L3 单位产出消耗）—— 非 LLM 行为，由真 PG Java 判据与前端组件判据覆盖
+数据: 判据 2·**存量单列**：`cohorts` 三组恒在（含 `opening`）；切换后 `batchCount` = 2（**不含**存量批次）、存量组 `batchCount` = 2；存量组自证 `opening=true`；两组各有自己的 `le0_2Share`。**红证 = 把 `opening` 并进 `purchase`** ⇒ 当场红（实测存量批次读数 2 → 0）。
+数据: 判别性对照读数（同夹具）：切换后占比 = **0/2 = 0.0000**、存量占比 = **1/2 = 0.5000**、**若把存量混进切换后 = 1/4 = 0.2500** —— 三个数在同一测试里都在 ⇒「不混入」这句话可证伪。
+数据: 分组腿同样单列：`batchGroups` 里存量批次落在 `cohort=opening` 的**独立组**（时间维度 = 收货月），且**不存在**「存量 + 切换后」混在一起的组。
+数据: 页面面（`SavingBoard.test.tsx`）：存量导入**独立成卡**并带「存量导入·单列」徽标，占比 50.0% 与「切换后」的 0.0% 是两个数。**红证 = 让存量卡显示切换后的占比** ⇒ 当场红。
+跳过: [backend-contract] 省料度量的汇总读面与看板（无米宝工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.saving-metrics-read-face
+溯源: 2026-09-23 新增（issue #5159 剩余范围）：存量导入批次单列成组（历史包袱不进切换后的分子分母）。取号 PR-094。 ｜ tags: batch-ledger, saving-metrics, real-db, backend-contract
+
+### PR-095. 🔴 真库+页面：空数据不冒充 0 —— 占比/合计/比率/单位产出在无数据时是「无数据」，真 0 与无数据可区分 🔵
+```
+你: 省了多少料（L2 批次分档聚合 / L3 单位产出消耗）—— 非 LLM 行为，由真 PG Java 判据与前端组件判据覆盖
+数据: 判据 4·**空租户**（无批次/无入库/无消耗）：每组 `batchCount=0` 但 `le0_2Share` / `savedMeters` / `savedAmount` / `remainingMeters` / 四档 `share` **一律 `null`**（**不是 0**）；`batchGroups` / `savedGroups` 为空、`trend.points` 为空且三个合计为 `null`。
+数据: 判据 4·**真 0 与无数据可区分**（同夹具对照）：非空租户里「分母 2、分子 0」必须是 `0.0000`（真 0），而空租户同名字段是 `null`。**红证 = 让分母为 0 时回落 `BigDecimal.ZERO`** ⇒ 当场红（实测 expected null but was 0）。
+数据: 判据 4·**分母 0 ⇒ 比率 null**：有消耗但明细行没有面积（`order_item_id` 不存在于 `order_items`）⇒ `outputAreaM2 = 0` 而 `metersPerM2` 必须 `null`（不得回落成 0 —— 会读成「一点布都没用」）。另：同一明细行有两行扣减 ⇒ 面积**按 `order_item_id` 去重**（否则分母虚高、效率被说好）。
+数据: 页面面：无数据时两张指标卡渲染「无数据」且**不得出现 `0.0%` / `0 米`**；三段表（L2/L1/L3）空数据渲染「无数据」而不是空表或 0。**红证 = 让 `formatMetric(null)` 回 `'0'`** ⇒ 前端判据当场红（实测 5 failed / 17）。
+数据: §22 基线纪律①（文案不写死数字）：档位文案（如「≤0.2 米」）**必须**来自服务端 `buckets[].label`。**红证 = 在助手/页面里硬编码「≤0.2 米」** ⇒ 当场红（两条断言各红一次）。
+跳过: [backend-contract] 省料度量的汇总读面与看板（无米宝工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.saving-metrics-read-face
+溯源: 2026-09-23 新增（issue #5159 剩余范围）：空数据不冒充 0（含量纲为「比率」的分母 0 一格）+ 文案不写死数字。取号 PR-095。 ｜ tags: batch-ledger, saving-metrics, real-db, backend-contract
+
+### PR-096. 🔴 两条指标并用（① 剩余最小档批次占比 + ② 入库/采购总米数）+ 页面写明「单看①会被排料误导」+ 不损失客户 🔵
+```
+你: 省了多少料（L2 批次分档聚合 / L3 单位产出消耗）—— 非 LLM 行为，由真 PG Java 判据与前端组件判据覆盖
+数据: 判据 3·**两条指标都在**：页面恒渲染两张卡（`saving-metric-le-0-2` / `saving-metric-purchased`），指标②只含 `purchase` 腿、**不含**存量导入（该月只有存量导入时②必须是「无数据」而不是把存量米数算成采购）。**红证 = 页面上只剩指标①**（`cards.slice(0, 1)`）⇒ 当场红。
+数据: 判据 3·**「单看①会误导」写在页面上**（不是只写进文档）：说明条含「两条指标必须并用」「排料」「误导」「剩得更多」「显示成变差」五要素。**红证 = 删掉这句因果** ⇒ 当场红。
+数据: 判据 1（页面面）·**米数/金额原样渲染服务端值**：桩数据**故意不自洽**（分组腿 77 米 vs 来源组卡 12.4 米、合计 99 米）⇒ 前端任何「顺手求和/求差」都会让断言红。
+数据: 判据 6·**不损失客户**：两次读面调用之后 `product_skus.stock` / `orders.total_amount` / `stock_ledger_entries` 行数**逐值不变**（读面不写任何东西）。未记均价的行数以「另有 N 行未记批次均价，金额不含这些行」显式渲染（否则「读不出」会被读成「只省了这么点」）。
+跳过: [backend-contract] 省料度量的汇总读面与看板（无米宝工具面）⇒ 由 Java 真库判据 / 前端组件判据覆盖，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.saving-metrics-read-face
+溯源: 2026-09-23 新增（issue #5159 剩余范围）：两条指标并用 + 页面写明误导原因 + 不损失客户。取号 PR-096。 ｜ tags: batch-ledger, saving-metrics, backend-contract
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -5968,8 +6016,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：438（活跃 156，跳过 282）
-- tier 分布：smoke 10 / normal 397 / adversarial 31
+- 用例总数：442（活跃 156，跳过 286）
+- tier 分布：smoke 10 / normal 401 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -5989,7 +6037,7 @@
 - 订单域：46
 - 加工项域：13
 - 加工单域：53
-- 商品域：80
+- 商品域：84
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4

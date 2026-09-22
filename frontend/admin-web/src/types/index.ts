@@ -3107,6 +3107,119 @@ export interface PoolGroup {
  * ⚠️ 后端 Jackson `non_null` ⇒ `warnings` / `urgentLines` 等键在「无内容」时**可能缺席**，
  * 消费方一律用 `?? []` 兜底（不要假设键存在）。
  */
+/**
+ * 省料度量看板（issue #5159）—— L2 批次结构性 + L1 分组汇总。
+ *
+ * 🔴 所有比率 / 合计在**无数据**时为 `null`（**不是 0** —— 0 会被读成「没有浪费」，判据 4）。
+ * 前端只渲染，不做任何四则运算（要求「看板汇总 == Σ 逐单」逐值相等）。
+ */
+export interface SavingBucket {
+  key: string
+  /** 档位文案（如「≤0.2 米」）—— **服务端真值**，前端不得自己编（§22 基线纪律①） */
+  label: string
+  batchCount: number
+  /** 占比；分母为 0（无数据）⇒ `null` */
+  share: number | null
+  remainingMeters: number | null
+}
+
+/** 来源组合计卡；`opening` = 存量导入（**单列**，不与「切换后」相加；判据 2） */
+export interface SavingCohortSummary {
+  cohort: string
+  cohortLabel: string
+  opening: boolean
+  batchCount: number
+  le0_2Count: number
+  le0_2Share: number | null
+  remainingMeters: number | null
+  savedMeters: number | null
+  savedAmount: number | null
+  lineCount: number
+  /** `unit_cost` 为空的行数（金额不含这些行；显式回，免得读成「只省了这么点」） */
+  unknownCostLines: number
+  buckets: SavingBucket[]
+}
+
+/** L2 分档聚合组：（时间 × 来源组 × 物料） */
+export interface SavingBatchGroup {
+  /** 批次收货月；`null` = 未记收货日期（不猜） */
+  period: string | null
+  cohort: string
+  cohortLabel: string
+  opening: boolean
+  materialKey: string
+  productId: string
+  skuCode: string
+  batchCount: number
+  le0_2Count: number
+  le0_2Share: number | null
+  remainingMeters: number | null
+  buckets: SavingBucket[]
+}
+
+/** L1 逐单省料的分组聚合（与逐单读面**逐值相等**） */
+export interface SavingSavedGroup {
+  period: string
+  cohort: string
+  cohortLabel: string
+  opening: boolean
+  materialKey: string
+  productId: string
+  skuCode: string
+  formulaMeters: number
+  plannedMeters: number
+  savedMeters: number | null
+  savedAmount: number | null
+  lineCount: number
+  unknownCostLines: number
+}
+
+export interface SavingBoardTotal {
+  formulaMeters: number | null
+  plannedMeters: number | null
+  savedMeters: number | null
+  savedAmount: number | null
+  lineCount: number
+  unknownCostLines: number
+  batchCount: number
+  le0_2Count: number
+  le0_2Share: number | null
+}
+
+export interface SavingBoard {
+  granularity: string
+  timezone: string
+  /** 恒含 `opening` 一行（哪怕为空）—— 「没有这一组」与「这一组是空的」必须可区分 */
+  cohorts: SavingCohortSummary[]
+  batchGroups: SavingBatchGroup[]
+  savedGroups: SavingSavedGroup[]
+  total: SavingBoardTotal
+}
+
+/** L3 趋势的一个时间点（采购/财务口径，不逐单） */
+export interface SavingTrendPoint {
+  period: string
+  /** 指标②：入库/采购总米数（**不含**存量导入）；无采购 ⇒ `null` */
+  purchasedMeters: number | null
+  /** 存量导入的入库米数（**单列**，不进②） */
+  openingMeters: number | null
+  consumedMeters: number | null
+  /** 分母：同期派工明细覆盖的窗户面积（㎡，按明细行去重） */
+  outputAreaM2: number | null
+  /** 单位产出消耗（米/㎡）；分母为 0 / 无数据 ⇒ `null` */
+  metersPerM2: number | null
+  outputLines: number
+}
+
+export interface SavingTrend {
+  granularity: string
+  timezone: string
+  points: SavingTrendPoint[]
+  purchasedTotalMeters: number | null
+  consumedTotalMeters: number | null
+  openingTotalMeters: number | null
+}
+
 export interface PoolBoard {
   maxWaitHours: number
   /** 池化开关**当前**是否开启（缺省关 —— 未开启必须看得见） */

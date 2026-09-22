@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.migao.admin.dto.BatchStockViews;
 import com.migao.admin.dto.PageResponse;
+import com.migao.admin.dto.SavingMetricViews;
 import com.migao.admin.entity.ProductSku;
 import com.migao.admin.entity.StockBatch;
 import com.migao.admin.entity.StockBatchConsumption;
@@ -20,9 +21,11 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -468,10 +471,9 @@ public class StockBatchConsumptionService {
         }
         int total = rows.size();
         List<BatchStockViews.Bucket> buckets = new ArrayList<>();
-        buckets.add(bucket("le_0_2", "≤0.2 米", counts[0], total));
-        buckets.add(bucket("b0_2_0_5", "0.2~0.5 米", counts[1], total));
-        buckets.add(bucket("b0_5_1", "0.5~1 米", counts[2], total));
-        buckets.add(bucket("gt_1", ">1 米", counts[3], total));
+        for (int i = 0; i < BUCKET_KEYS.length; i++) {
+            buckets.add(bucket(BUCKET_KEYS[i], BUCKET_LABELS[i], counts[i], total));
+        }
         return new BatchStockViews.Distribution(total, buckets);
     }
 
@@ -597,6 +599,352 @@ public class StockBatchConsumptionService {
     public BatchStockViews.Candidates candidates(Long tenantId, String productId, Long skuId,
                                                  BigDecimal requiredMeters) {
         return candidates(tenantId, productId, skuId, requiredMeters, null);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════
+    // 读面 ③ 省料度量 L2/L3 汇总（issue #5159）—— **只读**，无新增迁移
+    // ══════════════════════════════════════════════════════════════════════════════════
+
+    /** 未知的时间粒度（fail-closed：**不静默回落 month** —— 静默回落会让看板显示的口径与请求的不是一回事）。 */
+    public static final String ERR_GRANULARITY_UNKNOWN = "GRANULARITY_UNKNOWN";
+
+    /** PG {@code to_char} 的月份格式（本地时区下的自然月） */
+    private static final String FMT_MONTH = "YYYY-MM";
+    /** PG {@code to_char} 的 ISO 周格式（{@code 2026-W39}）；跨年周的年份要用 {@code IYYY}（ISO 年） */
+    private static final String FMT_WEEK = "IYYY-\"W\"IW";
+
+    /** 四档的 key / label —— **唯一定义处**（与 {@link #distribution} 同一对常量，见该方法的复用） */
+    private static final String[] BUCKET_KEYS = {"le_0_2", "b0_2_0_5", "b0_5_1", "gt_1"};
+    private static final String[] BUCKET_LABELS = {"≤0.2 米", "0.2~0.5 米", "0.5~1 米", ">1 米"};
+
+    /** 粒度归一 + 校验（**纯函数**；未知取值 ⇒ 400 显式拒绝，不静默回落） */
+    public static String normalizeGranularity(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return SavingMetricViews.GRANULARITY_MONTH;
+        }
+        return switch (raw.trim().toLowerCase(Locale.ROOT)) {
+            case SavingMetricViews.GRANULARITY_MONTH -> SavingMetricViews.GRANULARITY_MONTH;
+            case SavingMetricViews.GRANULARITY_WEEK -> SavingMetricViews.GRANULARITY_WEEK;
+            default -> throw new BusinessException(ERR_GRANULARITY_UNKNOWN,
+                    String.format("未知的时间粒度：%s", raw), 400,
+                    String.format("可选值：%s（按月，YYYY-MM）/ %s（按 ISO 周，YYYY-Www）",
+                            SavingMetricViews.GRANULARITY_MONTH, SavingMetricViews.GRANULARITY_WEEK));
+        };
+    }
+
+    /**
+     * L2 看板 + L1 的分组汇总（issue #5159 判据 1 / 2 / 3）。
+     *
+     * <h2>口径怎么保证「只有一套」（判据 1）</h2>
+     * <ul>
+     *   <li><b>批次余量 / 分档</b>：直接复用 {@link #remaining} 的余量派生（{@code 入库量 + Σdelta}）
+     *       与 {@link #bucketIndex} 的边界 —— <b>#5145 的分档口径一个字没改</b>，
+     *       本读面只是把它**再按（时间 × 来源 × 物料）分组**；</li>
+     *   <li><b>省料米数 / 金额</b>：SQL 侧逐行取整再求和
+     *       （见 {@code StockBatchConsumptionMapper.sumSavingByPeriodCohortMaterial}），
+     *       与逐单读面的 {@code getSavedMeters()} / {@code getSavedAmount()} 求和<b>逐值相等</b>。</li>
+     * </ul>
+     *
+     * <h2>存量单列（判据 2）</h2>
+     * 每一个分组键都含来源组，{@code cohorts} <b>恒含</b> {@link SavingMetricViews#COHORT_OPENING}
+     * 一行（哪怕今天为空）—— 「没有这一组」与「这一组是空的」必须可区分。
+     *
+     * @param productId  可选：只统计该商品的批次（{@code null} = 全租户）
+     * @param granularity 时间粒度（{@code null} = 缺省按月；未知值 ⇒ 400）
+     */
+    public SavingMetricViews.Board savingBoard(Long tenantId, String productId, String granularity) {
+        String g = normalizeGranularity(granularity);
+        String fmt = formatOf(g);
+
+        // ── L2：批次分档（复用既有余量派生 + 分档边界 —— 口径同源，#5145 一字未改）──
+        List<StockBatch> batches = listBatches(tenantId, productId, null);
+        Map<Long, BigDecimal> consumedByBatch = consumedByBatchId(tenantId, ids(batches));
+        Map<Long, String> cohortOfBatch = cohortByBatchId(tenantId);
+        Map<String, BatchAcc> byGroup = new LinkedHashMap<>();
+        Map<String, BatchAcc> byCohort = new LinkedHashMap<>();
+        for (String cohort : SavingMetricViews.COHORTS) {
+            byCohort.put(cohort, new BatchAcc());
+        }
+        for (StockBatch b : batches) {
+            String cohort = SavingMetricViews.cohortOf(cohortOfBatch.get(b.getId()));
+            BigDecimal rest = StockQuantity.orZero(b.getQuantity())
+                    .add(consumedByBatch.getOrDefault(b.getId(), BigDecimal.ZERO));
+            String key = groupKey(periodOf(b.getReceivedDate()), cohort, b.getProductId(), b.getSkuCode());
+            byGroup.computeIfAbsent(key, k -> new BatchAcc())
+                    .put(periodOf(b.getReceivedDate()), cohort, b.getProductId(), b.getSkuCode())
+                    .add(rest);
+            byCohort.get(cohort).add(rest);
+        }
+        List<SavingMetricViews.BatchGroup> batchGroups = new ArrayList<>();
+        for (BatchAcc acc : byGroup.values()) {
+            batchGroups.add(new SavingMetricViews.BatchGroup(acc.period, acc.cohort,
+                    SavingMetricViews.cohortLabel(acc.cohort),
+                    SavingMetricViews.COHORT_OPENING.equals(acc.cohort),
+                    SavingMetricViews.materialKeyOf(acc.productId, acc.skuCode),
+                    acc.productId, acc.skuCode,
+                    acc.total, acc.counts[0], share(acc.counts[0], acc.total),
+                    acc.total == 0 ? null : plain(acc.remaining), bucketsOf(acc)));
+        }
+
+        // ── L1 汇总：逐单省料按（时间 × 来源 × 物料）聚合（SQL 一次扫描；与逐单读面同一列族）──
+        Map<String, SavedAcc> savedByGroup = new LinkedHashMap<>();
+        Map<String, SavedAcc> savedByCohort = new LinkedHashMap<>();
+        for (String cohort : SavingMetricViews.COHORTS) {
+            savedByCohort.put(cohort, new SavedAcc());
+        }
+        SavingMetricViews.Total total;
+        SavedAcc totalAcc = new SavedAcc();        for (StockBatchConsumptionMapper.SavingSum row
+                : consumptionMapper.sumSavingByPeriodCohortMaterial(
+                        tenantId, SavingMetricViews.TIMEZONE, fmt)) {
+            if (StringUtils.hasText(productId) && !productId.equals(row.getProductId())) {
+                continue; // 商品筛选（批次腿已在 listBatches 里筛过；两腿必须同一个筛选面）
+            }
+            String cohort = SavingMetricViews.cohortOf(row.getSource());
+            String key = groupKey(row.getPeriod(), cohort, row.getProductId(), row.getSkuCode());
+            savedByGroup.computeIfAbsent(key, k -> new SavedAcc())
+                    .put(row.getPeriod(), cohort, row.getProductId(), row.getSkuCode())
+                    .add(row);
+            savedByCohort.get(cohort).add(row);
+            totalAcc.add(row);
+        }
+        List<SavingMetricViews.SavedGroup> savedGroups = new ArrayList<>();
+        for (SavedAcc acc : savedByGroup.values()) {
+            savedGroups.add(acc.toGroup());
+        }
+        total = new SavingMetricViews.Total(plainOrNull(totalAcc.formula), plainOrNull(totalAcc.planned),
+                totalAcc.lineCount == 0 ? null : plain(totalAcc.formula.subtract(totalAcc.planned)),
+                totalAcc.knownCostLines == 0 ? null : plain(totalAcc.amount),
+                totalAcc.lineCount, totalAcc.lineCount - totalAcc.knownCostLines,
+                batches.size(), byCohort.isEmpty() ? 0 : totalLe0_2(byCohort),
+                share(totalLe0_2(byCohort), batches.size()));
+
+        // ── 两张来源组合计卡（恒含 opening 一行；判据 2 / 4）──
+        List<SavingMetricViews.CohortSummary> cohorts = new ArrayList<>();
+        for (String cohort : SavingMetricViews.COHORTS) {
+            BatchAcc b = byCohort.get(cohort);
+            SavedAcc s = savedByCohort.get(cohort);
+            int le0 = b.counts[0];
+            cohorts.add(new SavingMetricViews.CohortSummary(cohort,
+                    SavingMetricViews.cohortLabel(cohort),
+                    SavingMetricViews.COHORT_OPENING.equals(cohort),
+                    b.total, le0, share(le0, b.total),
+                    b.total == 0 ? null : plain(b.remaining),
+                    s.lineCount == 0 ? null : plain(s.formula.subtract(s.planned)),
+                    s.knownCostLines == 0 ? null : plain(s.amount),
+                    s.lineCount, s.lineCount - s.knownCostLines, bucketsOf(b)));
+        }
+        return new SavingMetricViews.Board(g, SavingMetricViews.TIMEZONE, cohorts, batchGroups,
+                savedGroups, total);
+    }
+
+    /**
+     * L3 趋势（采购/财务口径，issue #5159）：逐周/月的
+     * <b>入库/采购总米数（指标②）</b>、<b>消耗米数</b>、<b>产出面积</b>与
+     * <b>单位产出的面料消耗（米/㎡）</b>。
+     *
+     * <h2>🔴 存量导入单列（判据 2）</h2>
+     * {@code purchasedMeters} <b>只含</b> {@code source='purchase'} 的入库量；
+     * {@code openingMeters} 单列回。期初建账不是「这个月的采购」—— 混进来会让指标②
+     * 永远被历史量压着，<b>改善看不出来</b>（这正是本单要治的形态）。
+     *
+     * <h2>消耗腿为什么不分来源组</h2>
+     * 「消耗」是<b>用掉了多少布</b>，用谁的库存都是消耗（存量被用掉也是真消耗）。
+     * 分来源的是<b>买</b>（② 与 {@code openingMeters}）与 L2 的<b>批次结构</b>——
+     * 这两处才是「历史包袱会污染改善读数」的地方（判据 2 的落点）。分子分母仍<b>同集</b>：
+     * 都取自同一批扣减行（分子 = Σ planned_meters，分母 = 这些行的窗户面积）。
+     */
+    public SavingMetricViews.Trend savingTrend(Long tenantId, String granularity) {
+        String g = normalizeGranularity(granularity);
+        String fmt = formatOf(g);
+
+        Map<String, BigDecimal> purchased = new LinkedHashMap<>();
+        Map<String, BigDecimal> opening = new LinkedHashMap<>();
+        for (StockBatchConsumptionMapper.InboundSum row
+                : consumptionMapper.sumInboundMetersByPeriodSource(tenantId, fmt)) {
+            String cohort = SavingMetricViews.cohortOf(row.getSource());
+            if (SavingMetricViews.COHORT_OPENING.equals(cohort)) {
+                opening.merge(row.getPeriod(), StockQuantity.orZero(row.getMeters()), BigDecimal::add);
+            } else if (SavingMetricViews.COHORT_PURCHASE.equals(cohort)) {
+                purchased.merge(row.getPeriod(), StockQuantity.orZero(row.getMeters()), BigDecimal::add);
+            }
+        }
+        Map<String, BigDecimal> consumed = new LinkedHashMap<>();
+        for (StockBatchConsumptionMapper.SavingSum row
+                : consumptionMapper.sumSavingByPeriodCohortMaterial(
+                        tenantId, SavingMetricViews.TIMEZONE, fmt)) {
+            consumed.merge(row.getPeriod(), StockQuantity.orZero(row.getPlannedSum()), BigDecimal::add);
+        }
+        Map<String, StockBatchConsumptionMapper.AreaSum> area = new LinkedHashMap<>();
+        for (StockBatchConsumptionMapper.AreaSum row : consumptionMapper.sumOutputAreaByPeriod(
+                tenantId, SavingMetricViews.TIMEZONE, fmt)) {
+            area.put(row.getPeriod(), row);
+        }
+
+        Set<String> periods = new LinkedHashSet<>();
+        periods.addAll(purchased.keySet());
+        periods.addAll(opening.keySet());
+        periods.addAll(consumed.keySet());
+        periods.addAll(area.keySet());
+        List<String> sorted = new ArrayList<>(periods);
+        sorted.sort(Comparator.naturalOrder());
+
+        List<SavingMetricViews.ConsumptionPoint> points = new ArrayList<>();
+        for (String period : sorted) {
+            BigDecimal buy = purchased.get(period);
+            BigDecimal open = opening.get(period);
+            BigDecimal use = consumed.get(period);
+            StockBatchConsumptionMapper.AreaSum a = area.get(period);
+            BigDecimal areaM2 = a == null ? null : a.getAreaM2();
+            points.add(new SavingMetricViews.ConsumptionPoint(period,
+                    buy == null ? null : plain(buy),
+                    open == null ? null : plain(open),
+                    use == null ? null : plain(use),
+                    areaM2 == null ? null : plain(areaM2),
+                    ratio(use, areaM2),
+                    a == null || a.getOutputLines() == null ? 0 : a.getOutputLines()));
+        }
+        return new SavingMetricViews.Trend(g, SavingMetricViews.TIMEZONE, points,
+                purchased.isEmpty() ? null : plain(StockQuantity.sum(purchased.values())),
+                consumed.isEmpty() ? null : plain(StockQuantity.sum(consumed.values())),
+                opening.isEmpty() ? null : plain(StockQuantity.sum(opening.values())));
+    }
+
+    /** 时间粒度 → PG {@code to_char} 格式 */
+    private static String formatOf(String granularity) {
+        return SavingMetricViews.GRANULARITY_WEEK.equals(granularity) ? FMT_WEEK : FMT_MONTH;
+    }
+
+    /** 批次收货月（{@code YYYY-MM}）；未记日期 ⇒ {@code null}（**不猜**，页面渲染「未记收货日期」）。 */
+    private static String periodOf(LocalDate date) {
+        return date == null ? null : String.format("%04d-%02d", date.getYear(), date.getMonthValue());
+    }
+
+    /** 分组键（{@code period|cohort|materialKey}）—— 机器可判，且**存量恒是独立键**（判据 2） */
+    private static String groupKey(String period, String cohort, String productId, String skuCode) {
+        return (period == null ? "" : period) + "#" + cohort + "#"
+                + SavingMetricViews.materialKeyOf(productId, skuCode);
+    }
+
+    /**
+     * 占比（4 位小数，{@code HALF_UP}）。
+     *
+     * <p>🔴 分母为 0 ⇒ {@code null}（**无数据**，不是 0）：判据 4 —— 0 会被读成
+     * 「没有浪费」，而真相是「还没有数据」。</p>
+     */
+    private static BigDecimal share(int count, int total) {
+        return total == 0 ? null
+                : BigDecimal.valueOf(count).divide(BigDecimal.valueOf(total), 4, RoundingMode.HALF_UP);
+    }
+
+    /** 单位产出消耗（米/㎡，4 位）；分子或分母读不出 / 分母为 0 ⇒ {@code null}（判据 4） */
+    private static BigDecimal ratio(BigDecimal meters, BigDecimal areaM2) {
+        if (meters == null || areaM2 == null || areaM2.signum() == 0) {
+            return null;
+        }
+        return meters.divide(areaM2, 4, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal plainOrNull(BigDecimal value) {
+        return value == null ? null : plain(value);
+    }
+
+    /** 恒四档（key/label 与 {@link #distribution} **同一对常量**；空档回 0 —— 计数为 0 是事实） */
+    private static List<SavingMetricViews.Bucket> bucketsOf(BatchAcc acc) {
+        List<SavingMetricViews.Bucket> out = new ArrayList<>(4);
+        for (int i = 0; i < BUCKET_KEYS.length; i++) {
+            out.add(new SavingMetricViews.Bucket(BUCKET_KEYS[i], BUCKET_LABELS[i], acc.counts[i],
+                    share(acc.counts[i], acc.total),
+                    acc.total == 0 ? null : plain(acc.bucketMeters[i])));
+        }
+        return out;
+    }
+
+    private static int totalLe0_2(Map<String, BatchAcc> byCohort) {
+        int n = 0;
+        for (BatchAcc acc : byCohort.values()) {
+            n += acc.counts[0];
+        }
+        return n;
+    }
+
+    private Map<Long, String> cohortByBatchId(Long tenantId) {
+        Map<Long, String> out = new LinkedHashMap<>();
+        for (StockBatchMapper.BatchSourceRow row : stockBatchMapper.listBatchSources(tenantId)) {
+            out.put(row.getBatchId(), row.getSource());
+        }
+        return out;
+    }
+
+    /** 分档累加器（L2：批次余量四档） */
+    private static final class BatchAcc {
+        private final int[] counts = new int[4];
+        private final BigDecimal[] bucketMeters = {BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO};
+        private BigDecimal remaining = BigDecimal.ZERO;
+        private int total;
+        private String period;
+        private String cohort;
+        private String productId;
+        private String skuCode;
+
+        private BatchAcc put(String period, String cohort, String productId, String skuCode) {
+            this.period = period;
+            this.cohort = cohort;
+            this.productId = productId;
+            this.skuCode = skuCode;
+            return this;
+        }
+
+        private void add(BigDecimal rest) {
+            int i = bucketIndex(rest);
+            counts[i]++;
+            bucketMeters[i] = bucketMeters[i].add(StockQuantity.orZero(rest));
+            remaining = remaining.add(StockQuantity.orZero(rest));
+            total++;
+        }
+    }
+
+    /** 省料累加器（L1 汇总：加总 SQL 已按逐行取整的值，**不再取整** —— 再取整就是第二套口径） */
+    private static final class SavedAcc {
+        private BigDecimal formula = BigDecimal.ZERO;
+        private BigDecimal planned = BigDecimal.ZERO;
+        private BigDecimal amount = BigDecimal.ZERO;
+        private int lineCount;
+        private int knownCostLines;
+        private String period;
+        private String cohort;
+        private String productId;
+        private String skuCode;
+
+        private SavedAcc put(String period, String cohort, String productId, String skuCode) {
+            this.period = period;
+            this.cohort = cohort;
+            this.productId = productId;
+            this.skuCode = skuCode;
+            return this;
+        }
+
+        private void add(StockBatchConsumptionMapper.SavingSum row) {
+            formula = formula.add(StockQuantity.orZero(row.getFormulaSum()));
+            planned = planned.add(StockQuantity.orZero(row.getPlannedSum()));
+            int known = row.getKnownCostLines() == null ? 0 : row.getKnownCostLines();
+            if (known > 0 && row.getSavedAmountSum() != null) {
+                amount = amount.add(row.getSavedAmountSum());
+            }
+            knownCostLines += known;
+            lineCount += row.getLineCount() == null ? 0 : row.getLineCount();
+        }
+
+        private SavingMetricViews.SavedGroup toGroup() {
+            return new SavingMetricViews.SavedGroup(period, cohort,
+                    SavingMetricViews.cohortLabel(cohort),
+                    SavingMetricViews.COHORT_OPENING.equals(cohort),
+                    SavingMetricViews.materialKeyOf(productId, skuCode), productId, skuCode,
+                    plain(formula), plain(planned),
+                    lineCount == 0 ? null : plain(formula.subtract(planned)),
+                    knownCostLines == 0 ? null : plain(amount),
+                    lineCount, lineCount - knownCostLines);
+        }
     }
 
     /**
