@@ -1,4 +1,4 @@
-// case_ids: PG-001, PG-005, PG-008, UI-030
+// case_ids: PG-001, PG-005, PG-008, UI-030, PR-068
 
 package com.migao.admin.controller;
 
@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -49,7 +50,7 @@ class ProcessingOrderControllerTest extends BaseControllerTest {
     @Test
     @DisplayName("POST /generate — 批量生成（PG-001）")
     void generate() throws Exception {
-        when(processingOrderService.generate(anyList(), any(), eq(1L), any()))
+        when(processingOrderService.generate(anyList(), any(), eq(1L), any(), any()))
                 .thenReturn(List.of(ProcessingOrderService.GenerateResult.ok("order-1", "JG-20260912-0001")));
 
         mockMvc.perform(post("/api/admin/processing-orders/generate")
@@ -58,6 +59,21 @@ class ProcessingOrderControllerTest extends BaseControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].success").value(true))
                 .andExpect(jsonPath("$.data[0].processingOrderNo").value("JG-20260912-0001"));
+    }
+
+    @Test
+    @DisplayName("#5167 POST /generate — assignmentRule 原样下传（缺省不传 = null ⇒ 服务侧走缺省 fifo 且不补位）")
+    void generatePassesAssignmentRule() throws Exception {
+        when(processingOrderService.generate(anyList(), any(), eq(1L), any(), eq("best_fit")))
+                .thenReturn(List.of(ProcessingOrderService.GenerateResult.ok("order-1", "JG-1")));
+
+        mockMvc.perform(post("/api/admin/processing-orders/generate")
+                        .contentType("application/json")
+                        .content("{\"orderIds\":[\"order-1\"],\"assignmentRule\":\"best_fit\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].success").value(true));
+
+        verify(processingOrderService).generate(anyList(), any(), eq(1L), any(), eq("best_fit"));
     }
 
     @Test

@@ -1,4 +1,4 @@
-// case_ids: PR-055
+// case_ids: PR-055, PR-066
 // 批次账只读端点（V116，issue #5145 阶段 1）：GET /api/admin/batch-stock/{batches,distribution,
 // reconcile,candidates,consumptions} —— 租户上下文透传、过滤参数原样下传、响应形状、
 // 权限点（product:list，复用商品读权限，不新造权限点）。
@@ -129,7 +129,7 @@ class StockBatchControllerTest extends BaseControllerTest {
     @Test
     @DisplayName("GET /candidates —— 200 返回候选 + 建议值口径（meters 参数下传）")
     void candidatesOk() throws Exception {
-        when(stockBatchConsumptionService.candidates(eq(TEST_TENANT_ID), eq("prod-1"), eq(12L), any()))
+        when(stockBatchConsumptionService.candidates(eq(TEST_TENANT_ID), eq("prod-1"), eq(12L), any(), any()))
                 .thenReturn(new BatchStockViews.Candidates(
                         StockBatchConsumptionService.SUGGESTION_RULE_FIFO, "PC-20260923-0001",
                         new BigDecimal("2.7"), List.of(new BatchStockViews.Candidate("PC-20260923-0001",
@@ -143,6 +143,41 @@ class StockBatchControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.suggestedBatchNo").value("PC-20260923-0001"))
                 .andExpect(jsonPath("$.data.candidates[0].suggested").value(true))
                 .andExpect(jsonPath("$.data.candidates[0].enough").value(true));
+    }
+
+    @Test
+    @DisplayName("#5167 GET /candidates?assignmentRule=best_fit —— 规则原样下传，读面回 best-fit 口径")
+    void candidatesPassesAssignmentRule() throws Exception {
+        when(stockBatchConsumptionService.candidates(eq(TEST_TENANT_ID), eq("prod-1"), eq(12L),
+                any(), eq("best_fit"))).thenReturn(new BatchStockViews.Candidates(
+                        StockBatchConsumptionService.SUGGESTION_RULE_BEST_FIT, "PC-LATE",
+                        new BigDecimal("3"), List.of(new BatchStockViews.Candidate("PC-LATE",
+                        new BigDecimal("3"), LocalDate.of(2026, 9, 1), "L1", "RK-2",
+                        new BigDecimal("12.5"), true, true))));
+
+        mockMvc.perform(get(BASE + "/candidates").param("productId", "prod-1").param("skuId", "12")
+                        .param("meters", "3").param("assignmentRule", "best_fit"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.suggestionRule").value("BEST_FIT_REMAINING"))
+                .andExpect(jsonPath("$.data.suggestedBatchNo").value("PC-LATE"));
+
+        ArgumentCaptor<String> rule = ArgumentCaptor.forClass(String.class);
+        verify(stockBatchConsumptionService).candidates(eq(TEST_TENANT_ID), eq("prod-1"), eq(12L),
+                any(), rule.capture());
+        assertThat(rule.getValue()).as("请求参数原样下传（控制器不做规则取值判断）").isEqualTo("best_fit");
+    }
+
+    @Test
+    @DisplayName("🔴 #5167 未知 assignmentRule ⇒ 400（服务侧显式拒绝，不静默回落 fifo）")
+    void unknownAssignmentRuleIsRejectedWith400() throws Exception {
+        when(stockBatchConsumptionService.candidates(eq(TEST_TENANT_ID), any(), any(), any(), eq("bestfit")))
+                .thenThrow(new com.migao.admin.exception.BusinessException(
+                        StockBatchConsumptionService.ERR_ASSIGNMENT_RULE_UNKNOWN,
+                        "未知的批次指派规则：bestfit", 400, "可选值：fifo / best_fit"));
+
+        mockMvc.perform(get(BASE + "/candidates").param("productId", "prod-1").param("skuId", "12")
+                        .param("meters", "3").param("assignmentRule", "bestfit"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -171,7 +206,7 @@ class StockBatchControllerTest extends BaseControllerTest {
         when(stockBatchConsumptionService.reconcile(any(), any(), any()))
                 .thenReturn(new BatchStockViews.Reconcile(List.of(), BigDecimal.ZERO, 0,
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
-        when(stockBatchConsumptionService.candidates(any(), any(), any(), any()))
+        when(stockBatchConsumptionService.candidates(any(), any(), any(), any(), any()))
                 .thenReturn(new BatchStockViews.Candidates(
                         StockBatchConsumptionService.SUGGESTION_RULE_FIFO, null, BigDecimal.ZERO, List.of()));
 
@@ -183,6 +218,6 @@ class StockBatchControllerTest extends BaseControllerTest {
         verify(stockBatchConsumptionService).remaining(eq(TEST_TENANT_ID), any(), any(), anyBoolean());
         verify(stockBatchConsumptionService).distribution(eq(TEST_TENANT_ID), any());
         verify(stockBatchConsumptionService).reconcile(eq(TEST_TENANT_ID), any(), any());
-        verify(stockBatchConsumptionService).candidates(eq(TEST_TENANT_ID), any(), any(), any());
+        verify(stockBatchConsumptionService).candidates(eq(TEST_TENANT_ID), any(), any(), any(), any());
     }
 }

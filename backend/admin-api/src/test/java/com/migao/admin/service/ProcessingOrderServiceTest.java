@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, UI-030
+// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, UI-030, PR-068
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -438,6 +438,23 @@ class ProcessingOrderServiceTest {
         return assignment;
     }
 
+    /**
+     * 小数夹具（2.7 米；带商品 id + skuCode）：整数场景是这些判据的**退化情形**
+     * —— 规则挑批次、需求比对、落账米数在整数下全都看不出偏差（#5063 的教训）。
+     */
+    private OrderItem orderItemForRule(String colorName) {
+        Map<String, Object> info = processingInfo(colorName);
+        info.put("sku", "SKU-1");   // 订单行侧的 SKU 只以 processing_info.sku 存在（行上没有 skuCode 列）
+        return OrderItem.builder()
+                .id("item-1").tenantId(TENANT).orderId("order-001")
+                .productId("prod-1")
+                .productName("布艺遮光帘A")
+                .quantity(new BigDecimal("2.7"))
+                .width(new BigDecimal("2.5")).height(new BigDecimal("2.8"))
+                .processingInfo(info)
+                .build();
+    }
+
     /** 一条已校验过的扣减计划行（`plan` 的返回值）。 */
     private StockBatchConsumptionService.Deduction plannedDeduction(String itemId, String batchNo,
                                                                     String meters, String remainingBefore) {
@@ -577,6 +594,130 @@ class ProcessingOrderServiceTest {
                 .hasMessageContaining("不在本次生成范围内");
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
         verifyNoInteractions(stockBatchConsumptionService);
+    }
+
+    // ── 指派规则（issue #5167）：缺省一字不改 / 显式开启才自动补位 ──────────────────
+    //
+    // 判据分工：**挑哪个批次**的算账判据在 StockBatchConsumptionServiceTest（FIFO vs best-fit 的
+    // 判别性夹具）；本类只判**装配**——规则有没有被消费、缺省路径有没有被改掉、失败是不是显式的。
+
+    @Test
+    @DisplayName("#5167 判据1 不传规则 ⇒ 未指定批次的行仍**逐字**显式拒绝，且绝不查建议值")
+    void assignmentRuleAbsentKeepsBlankBatchNoRejected() {
+        stubLibrary();
+        stubGenerateBeforeInsert(List.of(orderItemWithProcessing("米白")));
+
+        var results = realChainService().generate(List.of("order-001"),
+                List.of(batchAssignment("item-1", null)), TENANT, "文员");
+
+        assertThat(results.get(0).isSuccess()).isFalse();
+        assertThat(results.get(0).getMessage()).as("缺省路径的错误文案一字不改").isEqualTo("批次指派缺少 batchNo（行 item-1）");
+        // 红证：把 generate 的 `StringUtils.hasText(assignmentRule)` 判据去掉（一律补位）⇒ 这里变红
+        verify(stockBatchConsumptionService, never())
+                .suggestedBatchNo(any(), any(), any(), any(), any());
+        verify(stockBatchConsumptionService, never()).plan(any(), anyList());
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+    }
+
+    @Test
+    @DisplayName("#5167 判据2 传 best_fit ⇒ 未指定批次的行按规则补位，补出的批次进 plan 与快照")
+    void bestFitRuleAutoAssignsAndStampsTheChosenBatch() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemForRule("米白")));
+        when(stockBatchConsumptionService.suggestedBatchNo(
+                eq(TENANT), eq("prod-1"), any(), any(), eq("best_fit"))).thenReturn("PC-LATE");
+        when(stockBatchConsumptionService.plan(eq(TENANT), anyList()))
+                .thenReturn(List.of(plannedDeduction("item-1", "PC-LATE", "2.7", "3")));
+
+        var results = realChainService().generate(List.of("order-001"),
+                List.of(batchAssignment("item-1", null)), TENANT, "文员", "best_fit");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        // 补位结果必须真的进计划（不是只回一个字符串）：plan 收到的指派行带着 best-fit 挑的批次号
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<StockBatchConsumptionService.Designation>> planCaptor =
+                ArgumentCaptor.forClass(List.class);
+        verify(stockBatchConsumptionService).plan(eq(TENANT), planCaptor.capture());
+        assertThat(planCaptor.getValue()).extracting(
+                StockBatchConsumptionService.Designation::batchNo).containsExactly("PC-LATE");
+        // 需求 = 该行的**公式口径**米数（领料上限；实际扣减仍由 plan 按排料结果定）
+        assertThat(planCaptor.getValue()).extracting(
+                StockBatchConsumptionService.Designation::meters)
+                .allSatisfy(m -> assertThat(m).isEqualByComparingTo("2.7"));
+        ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(poCaptor.capture());
+        assertThat(capturedSnapshot(poCaptor).get(0)).as("快照固化真相里记的是**补位后**的批次")
+                .containsEntry("batchNo", "PC-LATE");
+    }
+
+    @Test
+    @DisplayName("#5167 显式 fifo 也开启补位（缺省「不补位」≠ 规则值 fifo）：按 FIFO 挑出的批次落账")
+    void explicitFifoRuleAlsoAutoAssigns() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemForRule("米白")));
+        when(stockBatchConsumptionService.suggestedBatchNo(
+                eq(TENANT), eq("prod-1"), any(), any(), eq("fifo"))).thenReturn("PC-EARLY");
+        when(stockBatchConsumptionService.plan(eq(TENANT), anyList()))
+                .thenReturn(List.of(plannedDeduction("item-1", "PC-EARLY", "2.7", "30")));
+
+        var results = realChainService().generate(List.of("order-001"),
+                List.of(batchAssignment("item-1", null)), TENANT, "文员", "fifo");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        verify(stockBatchConsumptionService).suggestedBatchNo(
+                eq(TENANT), eq("prod-1"), any(), any(), eq("fifo"));
+    }
+
+    @Test
+    @DisplayName("#5167 人工指定优先于规则：行里有 batchNo ⇒ 不查建议值，落账用人工那个")
+    void explicitBatchWinsOverTheRule() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemWithProcessing("米白")));
+        when(stockBatchConsumptionService.plan(eq(TENANT), anyList()))
+                .thenReturn(List.of(plannedDeduction("item-1", "PC-手动", "2.7", "60")));
+
+        var results = realChainService().generate(List.of("order-001"),
+                List.of(batchAssignment("item-1", "PC-手动")), TENANT, "文员", "best_fit");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        verify(stockBatchConsumptionService, never()).suggestedBatchNo(any(), any(), any(), any(), any());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<StockBatchConsumptionService.Designation>> planCaptor =
+                ArgumentCaptor.forClass(List.class);
+        verify(stockBatchConsumptionService).plan(eq(TENANT), planCaptor.capture());
+        assertThat(planCaptor.getValue()).extracting(
+                StockBatchConsumptionService.Designation::batchNo).containsExactly("PC-手动");
+    }
+
+    @Test
+    @DisplayName("#5167 判据3 规则下无可满足批次 ⇒ 显式拒绝该行（不静默跳过、不落半成品）")
+    void noCandidateUnderTheRuleFailsClosed() {
+        stubLibrary();
+        stubGenerateBeforeInsert(List.of(orderItemForRule("米白")));
+        when(stockBatchConsumptionService.suggestedBatchNo(any(), any(), any(), any(), any()))
+                .thenReturn(null);
+
+        var results = realChainService().generate(List.of("order-001"),
+                List.of(batchAssignment("item-1", null)), TENANT, "文员", "best_fit");
+
+        assertThat(results.get(0).isSuccess()).isFalse();
+        assertThat(results.get(0).getMessage())
+                .contains("在指派规则 best_fit 下没有可满足的批次").contains("该行需要 2.7 米");
+        verify(stockBatchConsumptionService, never()).plan(any(), anyList());
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+    }
+
+    @Test
+    @DisplayName("🔴 #5167 判据4 非法规则值 ⇒ 整批显式拒绝（**即使所有行都显式指定了批次**）")
+    void unknownRuleRejectsTheWholeBatchEvenWithExplicitBatches() {
+        // 不装任何生成桩：非法值必须在**碰任何 Mapper 之前**就被拒（装了反而变成未使用桩）
+        assertThatThrownBy(() -> realChainService().generate(List.of("order-001"),
+                List.of(batchAssignment("item-1", "PC-20260923-0001")), TENANT, "文员", "bestfit"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("未知的批次指派规则")
+                .hasFieldOrPropertyWithValue("code", "ASSIGNMENT_RULE_UNKNOWN");
+        verifyNoInteractions(stockBatchConsumptionService);
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
     }
 
     @Test

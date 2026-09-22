@@ -374,9 +374,47 @@ public class ProcessingOrderService {
     @Transactional(rollbackFor = Exception.class)
     public List<GenerateResult> generate(List<String> orderIds, List<BatchAssignment> batches,
                                          Long tenantId, String operator) {
+        return generate(orderIds, batches, tenantId, operator, null);
+    }
+
+    /**
+     * 批量生成加工单 + **派工指定批次**（V116，issue #5145 阶段 1）+ **可切换的指派规则**（issue #5167）。
+     *
+     * <h2>为什么「指定批次」是可选入参（而不是必填）</h2>
+     * 用户裁定「生成加工单时由文员指定批次（系统给候选 + 建议值，人工确认、可改）」+
+     * 本阶段的定义特征是「**只记录、不改指派行为**」。⇒ 没有指派时（老调用方 / 该 SKU 还没有
+     * 任何入库批次 / 文员不选）**行为与今天逐字相同**：不扣批次、不产生台账行、不多一个错误分支。
+     * 指派了才扣 —— 记录的是**人工最终选择**，这正是基线成立的前提。
+     *
+     * <h2>指派规则（{@code assignmentRule}，issue #5167）—— 为什么「缺省 = 一字不改」</h2>
+     * 规则是<b>显式开关</b>，不是缺省行为：传了它才把「系统建议值」升级为「直接采用」，
+     * 且**只对没指定 {@code batchNo} 的行**生效（显式指定永远优先 = 人工最终选择 &gt; 规则）。
+     * 不传它时未指定批次的行仍**逐字**走原来的显式拒绝 —— 否则缺省路径会从「拒绝」变成
+     * 「静默指派」，而 #5145 的记录期基线正建立在「指派行为不变」之上（issue #5167 的 🔴 要求）。
+     * 未知取值 ⇒ 在任何写库之前整批拒绝（{@link StockBatchConsumptionService#normalizeAssignmentRule}），
+     * 即使本次所有行都显式指定了批次 —— 静默回落 fifo = 商家以为开了却没开。
+     *
+     * <h2>fail-closed 的三条（都在任何写库之前判完）</h2>
+     * ① 指派里的 {@code orderId} 不在本次 {@code orderIds} 内 ⇒ 显式拒绝（静默丢掉 = 文员以为指定了、
+     *    账上永远少一笔）；② 指派的行不在该订单的加工单快照里 ⇒ 显式拒绝（同上）；
+     *    ②′ 传了规则但该行**没有可满足的批次** ⇒ 显式拒绝（不静默跳过该行 = 不静默少扣）；
+     * ③ 批次不存在 / 不属于该 SKU / 余量不足 ⇒ {@link StockBatchConsumptionService#plan} 抛错 +
+     *    可行动建议（**不得静默少扣**）。
+     *
+     * @param batches        逐行指定批次（可空 / 空列表 = 不指派）
+     * @param assignmentRule 指派规则（{@code null}/空白 = 缺省 fifo **且不自动补位**；
+     *                       {@code fifo} / {@code best_fit} = 显式开启，对未指定批次的行按规则补位）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public List<GenerateResult> generate(List<String> orderIds, List<BatchAssignment> batches,
+                                         Long tenantId, String operator, String assignmentRule) {
         if (orderIds == null || orderIds.isEmpty()) {
             throw BusinessException.validationError("orderIds 不能为空");
         }
+        // 规则先归一 + 校验（**在任何写库之前**）：未知取值 ⇒ 整批显式拒绝，不留半成品。
+        // `rule == null` = 调用方没传 ⇒ 不自动补位（缺省路径逐字不变，见方法注释）。
+        String normalizedRule = StockBatchConsumptionService.normalizeAssignmentRule(assignmentRule);
+        String rule = StringUtils.hasText(assignmentRule) ? normalizedRule : null;
         List<BatchAssignment> assignments = batches == null ? List.of() : batches;
         // ① 未匹配的指派（orderId 不在本次 orderIds 内）⇒ 任何写库之前拒绝
         Set<String> requested = new LinkedHashSet<>(orderIds);
@@ -398,7 +436,8 @@ public class ProcessingOrderService {
         List<GenerateResult> results = new ArrayList<>();
         for (String rawId : orderIds) {
             try {
-                results.add(generateOne(rawId, byOrder.getOrDefault(rawId, List.of()), tenantId, operator));
+                results.add(generateOne(rawId, byOrder.getOrDefault(rawId, List.of()), tenantId,
+                        operator, rule));
             } catch (BusinessException e) {
                 results.add(GenerateResult.fail(rawId, e.getCode(), e.getMessage(), e.getSuggestion()));
             }
@@ -407,7 +446,7 @@ public class ProcessingOrderService {
     }
 
     private GenerateResult generateOne(String rawId, List<BatchAssignment> assignments,
-                                       Long tenantId, String operator) {
+                                       Long tenantId, String operator, String assignmentRule) {
         Order order = resolveOrder(rawId, tenantId);
         if (order == null) {
             throw new BusinessException("ORDER_NOT_FOUND", "无法找到订单：" + rawId, 404);
@@ -444,7 +483,7 @@ public class ProcessingOrderService {
         // 写库之后再抛业务异常会留下「有加工单、扣了半截」的半成品，见
         // StockBatchConsumptionService 类注释「写面分两段」）。
         List<StockBatchConsumptionService.Deduction> deductionPlan =
-                buildDeductionPlan(items, snapshot, assignments, tenantId);
+                buildDeductionPlan(items, snapshot, assignments, tenantId, assignmentRule);
         // 把**文员最终指定**的批次写进加工单快照的 batchNo（V63 白名单早有该键、此前全仓零写入方
         // = 现成的空插座）；在插入**之前**写，故不多一次 UPDATE。
         stampAssignedBatches(snapshot, deductionPlan);
@@ -529,10 +568,16 @@ public class ProcessingOrderService {
      * <p>两边同源是对账读面成立的前提：公式口径腿与销售账的扣减腿同函数 ⇒
      * 「{@code Σ批次余量} − {@code product_skus.stock}」的差额可以被拆成「已售未派」与
      * 「排料节省」两项而**不留口径差**（口径差会让差额读得出来却解释不清，正是路线 A 要防的漂移）。</p>
+     *
+     * <p><b>指派规则（issue #5167）</b>：{@code assignmentRule == null} = 调用方没传 ⇒ 未指定批次的行
+     * **逐字**走原来的显式拒绝（缺省路径一字不改）；传了 ⇒ 只对未指定批次的行按规则补位
+     * （{@link StockBatchConsumptionService#suggestedBatchNo}，与读面同一挑法），
+     * 没有可满足批次 ⇒ 显式拒绝该行（不静默跳过 = 不静默少扣）。补位用的需求 = **公式口径**米数
+     * （该行的领料上限），而实际扣减仍由 {@code plan} 按排料结果定（#5158 口径，本方法不碰）。</p>
      */
     private List<StockBatchConsumptionService.Deduction> buildDeductionPlan(
             List<OrderItem> items, List<Map<String, Object>> snapshot,
-            List<BatchAssignment> assignments, Long tenantId) {
+            List<BatchAssignment> assignments, Long tenantId, String assignmentRule) {
         if (assignments == null || assignments.isEmpty()) {
             return List.of();
         }
@@ -558,7 +603,8 @@ public class ProcessingOrderService {
                         "批次指派的行 %s 不在本订单的加工单快照里（配件/赠品行不成部位，不参与派工指定）",
                         a.getItemId()));
             }
-            if (!StringUtils.hasText(a.getBatchNo())) {
+            // 缺省路径（没传规则）逐字不变：未指定批次 ⇒ 原样拒绝（错误码 / 文案 / 顺序都不动）
+            if (!StringUtils.hasText(a.getBatchNo()) && assignmentRule == null) {
                 throw BusinessException.validationError("批次指派缺少 batchNo（行 " + itemId + "）");
             }
             BigDecimal meters = StockQuantity.toStockScaleByCeiling(
@@ -567,9 +613,20 @@ public class ProcessingOrderService {
                 throw BusinessException.validationError(String.format(
                         "明细行 %s 的米数为 %s，无法指定批次扣减", itemId, meters.toPlainString()));
             }
+            String batchNo = a.getBatchNo() == null ? null : a.getBatchNo().trim();
+            if (!StringUtils.hasText(batchNo)) {
+                // 显式传了规则且该行没指定批次 ⇒ 按规则补位（建议值 = 直接采用）
+                batchNo = batchStock().suggestedBatchNo(tenantId, productIdByItemId.get(itemId),
+                        str(row.get("skuCode")), meters, assignmentRule);
+                if (!StringUtils.hasText(batchNo)) {
+                    throw BusinessException.validationError(String.format(
+                            "明细行 %s 在指派规则 %s 下没有可满足的批次（该行需要 %s 米）",
+                            itemId, assignmentRule, meters.toPlainString()));
+                }
+            }
             designations.add(new StockBatchConsumptionService.Designation(
                     itemId, productIdByItemId.get(itemId), str(row.get("skuCode")),
-                    a.getBatchNo().trim(), meters,
+                    batchNo, meters,
                     // 排料定尺入参（V119 / issue #5158）：**逐字来自快照**（下单时落库的算料输出）
                     str(row.get("cuttingMode")),
                     OrderLineCraftFields.decimalOrNull(row.get("height"), "快照行 " + itemId + " 的窗高"),
