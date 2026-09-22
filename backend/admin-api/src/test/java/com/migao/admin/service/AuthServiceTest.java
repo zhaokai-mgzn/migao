@@ -479,13 +479,15 @@ class AuthServiceTest {
         // ⚠️ 「入库单」不在此列表内：它的权限码是 `inbound:view`（本用例只给 `processing:manage`）。
         // issue #5177：「池看板」在列表内且紧跟在「生产看板」之后 —— 它同样只要求
         // `processing:manage`（池化派单的决策屏，与生产看板同权）。
+        // issue #5159：「省料看板」(/production/saving-board) 接在其后，同权 processing:manage
+        // （省料度量看板也是生产管理动作；三处同构见 tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py）。
         assertThat(production.getChildren())
                 .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getName)
-                .containsExactly("生产看板", "池看板", "工艺配置", "计件工资");
+                .containsExactly("生产看板", "池看板", "省料看板", "工艺配置", "计件工资");
         assertThat(production.getChildren())
                 .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getPath)
-                .containsExactly("/production", "/production/pool", "/production/routings",
-                        "/production/piecework");
+                .containsExactly("/production", "/production/pool", "/production/saving-board",
+                        "/production/routings", "/production/piecework");
 
         clearAuthentication();
     }
