@@ -40,29 +40,36 @@ CRITERIA = {
 }
 
 #: 单点变异：(名字, 原文片段, 变异片段, {期望红的判据方法}, 缺陷语义)
+#
+# ⚠️ **变异必须"语义可达"**：第一版里有一条「静默丢掉排不下的料」（`if span > doorWidth: continue`），
+# 实测**恒绿** —— 那个分支**不可达**（调方校验已把「单块超门幅」挡在装箱之前），
+# 即它根本没制造缺陷 ⇒ 已删除。"少算"这个风险由 M2（行内 Σ 越界）与 M4（行长度少算）两条覆盖。
 MUTATIONS: list[tuple[str, str, str, set[str], str]] = [
     (
         "M1 禁止一切并排",
         "            if (target < 0) {",
         "            if (true) {",
         {"fixedHeightTallWindowsPairIntoOneRow", "fixedWidthSinglePanelNarrowWindowsPairIntoOneRow",
-         "resultIsIndependentOfInputOrder"},
-        "两块料占门幅 1.4 + 1.4 = 2.8 ≤ 门幅，却各占一行 ⇒ 并排判据必须红",
+         "keepsWholePiecesUnmodifiedAndRowsWithinDoorWidth", "resultIsIndependentOfInputOrder"},
+        "两块料占门幅 1.4 + 1.4 = 2.8 ≤ 门幅，却各占一行 ⇒ 两条并排判据必须红"
+        "（不变式/顺序无关里也有「并排必须发生」的断言，同步红）",
     ),
     (
-        "M2 去掉行内 Σ占门幅宽 守卫",
+        "M2 去掉行内 Σ占门幅宽 守卫（改成恒真 ⇒ 所有料挤一行）",
         "                if (rowSpans.get(i).add(span).compareTo(maxRowSpan) <= 0) {",
         "                if (true) {",
         {"piecesThatDoNotFitTogetherKeepTheirOwnRows", "keepsWholePiecesUnmodifiedAndRowsWithinDoorWidth",
-         "resultIsIndependentOfInputOrder", "randomizedInvariantsHold"},
-        "1.7 + 1.7 = 3.4 > 门幅 2.8 仍被排进同一行 ⇒ 「不倒退/切不出货」判据必须红",
+         "resultIsIndependentOfInputOrder", "randomizedInvariantsHold",
+         "fixedHeightTallWindowsPairIntoOneRow", "fixedWidthSinglePanelNarrowWindowsPairIntoOneRow"},
+        "1.7 + 1.7 = 3.4 > 门幅 2.8 仍被排进同一行 ⇒ 「不倒退/切不出货」判据必须红，"
+        "且所有「多行」算例随之红",
     ),
     (
-        "M3 排序键换成「入参顺序」",
+        "M3 排序键方向反转（降序 → 升序）",
         "            int byMeters = Double.compare(b.meters(), a.meters());",
-        "            int byMeters = 0;",
-        {"resultIsIndependentOfInputOrder"},
-        "结果依赖入参顺序 ⇒ 顺序无关判据必须红",
+        "            int byMeters = Double.compare(a.meters(), b.meters());",
+        {"resultIsIndependentOfInputOrder", "randomizedInvariantsHold"},
+        "排料结果依赖入参顺序 ⇒ 顺序无关判据必须红（单行算例仍绿 = 红是这一条抓的）",
     ),
     (
         "M4 行长度只取第一块（丢掉 max）",
@@ -72,15 +79,7 @@ MUTATIONS: list[tuple[str, str, str, set[str], str]] = [
         "行长度 ≠ 行内最大沿卷长 ⇒ 不变式判据必须红",
     ),
     (
-        "M5 静默丢掉排不下的料",
-        "            if (target < 0) {\n                rowPieces.add(new ArrayList<>(List.of(piece)));",
-        "            if (target < 0) {\n                if (span.compareTo(BigDecimal.valueOf(doorWidth)) > 0) { continue; }\n"
-        "                rowPieces.add(new ArrayList<>(List.of(piece)));",
-        {"randomizedInvariantsHold"},
-        "漏掉一块料（少算 = 切不出货）⇒ 反空跑判据必须红",
-    ),
-    (
-        "M6 去掉入参校验（非正数照算）",
+        "M5 去掉入参校验（非正数 / 超门幅照算）",
         "        requirePositive(piece.doorSpanMeters(), \"doorSpanMeters\", piece.pieceId());",
         "        // requirePositive(piece.doorSpanMeters(), \"doorSpanMeters\", piece.pieceId());",
         {"invalidInputsAreRejected"},

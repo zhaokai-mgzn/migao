@@ -177,25 +177,30 @@ class CuttingPlanCalculatorTest {
     }
 
     @Test
-    @DisplayName("顺序无关：同一组料换输入顺序 ⇒ 行数/行长度/应领米数逐值相同")
+    @DisplayName("顺序无关：同一组料换输入顺序 ⇒ 行数/行构成/行长度/应领米数逐值相同")
     void resultIsIndependentOfInputOrder() {
-        List<Piece> pieces = List.of(
-                new Piece("L9", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.2, 3.0),
-                new Piece("L3", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.2, 3.0),
-                new Piece("S1", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.2, 0.5),
-                new Piece("S2", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.2, 0.4));
+        // 五块料、门幅 2.8（每行最多 2 块，各占 1.2）：
+        // 规范序（沿卷长降序）⇒ P1(3.0) P2(3.0) P3(1.0) P4(0.8) P5(0.4)
+        // ⇒ 行 {P1,P2} 长 3.0、{P3,P4} 长 1.0、{P5} 长 0.4 ⇒ 应领 4.4
+        // ⚠️ 数据是**挑过的**：换顺序后首次适配会把长料拆到不同行（逆序 ⇒ 3.0 + 5.0 = 8.0）
+        //    ⇒ 这条判据对「排序键失效」真有判别力（不是等价的恒真断言）。
+        Piece p1 = new Piece("P1", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.2, 3.0);
+        Piece p2 = new Piece("P2", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.2, 3.0);
+        Piece p3 = new Piece("P3", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.2, 1.0);
+        Piece p4 = new Piece("P4", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.2, 0.8);
+        Piece p5 = new Piece("P5", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 1.2, 0.4);
+        List<Piece> pieces = List.of(p1, p2, p3, p4, p5);
         List<Piece> reversed = new ArrayList<>(pieces);
         Collections.reverse(reversed);
-        List<Piece> shuffled = new ArrayList<>(List.of(
-                pieces.get(2), pieces.get(0), pieces.get(3), pieces.get(1)));
+        List<Piece> shuffled = new ArrayList<>(List.of(p3, p1, p5, p2, p4));
 
         CuttingPlan plan = CuttingPlanCalculator.plan(pieces, DOOR_WIDTH, HEM_MARGIN);
         CuttingPlan reversedPlan = CuttingPlanCalculator.plan(reversed, DOOR_WIDTH, HEM_MARGIN);
         CuttingPlan shuffledPlan = CuttingPlanCalculator.plan(shuffled, DOOR_WIDTH, HEM_MARGIN);
 
-        // 门幅 2.8 ⇒ 每行最多 2 块（各占 1.2；3 块 = 3.6 > 2.8）；沿卷长降序 ⇒ 两块 3.0 同占一行
-        assertEquals(0, plan.issuedMeters().compareTo(new BigDecimal("3.5")),
-                "3.0（两块长料一行）+ 0.5（其余两块一行）");
+        assertEquals(0, plan.issuedMeters().compareTo(new BigDecimal("4.4")),
+                "规范序下的应领米数锚点 = 3.0 + 1.0 + 0.4");
+        assertEquals(3, plan.rows().size(), "规范序下的行数锚点 = 3");
         assertEquals(reversedPlan.issuedMeters(), plan.issuedMeters(), "逆序后应领米数必须相同");
         assertEquals(shuffledPlan.issuedMeters(), plan.issuedMeters(), "乱序后应领米数必须相同");
         assertEquals(reversedPlan.rows().size(), plan.rows().size(), "行数必须相同");
@@ -203,13 +208,15 @@ class CuttingPlanCalculatorTest {
         for (int i = 0; i < plan.rows().size(); i++) {
             assertEquals(reversedPlan.rows().get(i).length(), plan.rows().get(i).length(),
                     "第 " + i + " 行的行长度必须相同");
-            // 行**构成**也必须与输入顺序无关（不只是米数相同）：两块长料同行、两块短料同行
+            // 行**构成**也必须与输入顺序无关（不只是米数相同）
             assertEquals(reversedPlan.rows().get(i).pieces(), plan.rows().get(i).pieces(),
                     "第 " + i + " 行的料与顺序必须相同");
             assertEquals(shuffledPlan.rows().get(i).pieces(), plan.rows().get(i).pieces(),
                     "第 " + i + " 行的料与顺序必须相同");
         }
-        assertInRowOrder(plan.rows().get(0), "L3", "L9");
+        assertInRowOrder(plan.rows().get(0), "P1", "P2");
+        assertInRowOrder(plan.rows().get(1), "P3", "P4");
+        assertInRowOrder(plan.rows().get(2), "P5");
     }
 
     @Test
@@ -298,7 +305,9 @@ class CuttingPlanCalculatorTest {
                 () -> CuttingPlanCalculator.plan(
                         List.of(new Piece("TOO-WIDE", CuttingPlanCalculator.MODE_FIXED_HEIGHT, 3.0, 3.0)),
                         DOOR_WIDTH, HEM_MARGIN), "一块料比门幅还宽 ⇒ 切不出货，必须报错而不是静默成行");
-        assertEquals(0, CuttingPlanCalculator.plan(List.of(), DOOR_WIDTH, HEM_MARGIN)
-                .issuedMeters().compareTo(BigDecimal.ZERO), "空池 ⇒ 应领 0");
+        CuttingPlan empty = CuttingPlanCalculator.plan(List.of(), DOOR_WIDTH, HEM_MARGIN);
+        assertEquals(0, empty.issuedMeters().compareTo(BigDecimal.ZERO), "空池 ⇒ 应领 0");
+        assertTrue(empty.rows().isEmpty(), "空池 ⇒ 0 行（不得凭空造一行）");
+        assertEquals(0, empty.utilization().compareTo(BigDecimal.ZERO), "空池 ⇒ 利用率 0（不得除零/NaN）");
     }
 }
