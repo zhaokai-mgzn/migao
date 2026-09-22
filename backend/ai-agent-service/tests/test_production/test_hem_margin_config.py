@@ -6,12 +6,17 @@
 
 ## 为什么值得单独一包（而不是顺手加一列）
 
-`HEM_MARGIN` 在引擎里有 **5 处**消费点，且分属**两条公式**：
+`HEM_MARGIN` 在引擎里有 **4 处**消费点，且分属**两条公式**：
 - **定高可行性**（`成品高 + 卷边 ≤ 门幅`）—— 决定走定高买宽还是回落定宽买高（**米数会变**）；
 - **定宽买高每幅长**（`每幅长 = 成品高 + 卷边`，+ 花距）；
 - **折数法两支**（同样用每幅长）；
-- **罗马帘**（`(宽 + 包边) × (高 + 卷边)`）；
-- **自动特征「超高」的判据**（`成品高 + 卷边 > 门幅`，issue #4976 包 1a 新增）。
+- **罗马帘**（`(宽 + 包边) × (高 + 卷边)`）。
+
+🔴 **第 5 处消费点已退役**（**2026-09-22 改判，issue #5130**）：原判据 3 里那条
+「**自动特征「超高」的判据**」（`成品高 + 卷边 > 门幅`，issue #4976 包 1a 新增）随用户裁定
+**D3 = 替换判定公式**一并**离开判定面** —— 新的「超高」判据 = `净窗高 > oversize_height_threshold`
+（**企业参数**，见 `test_auto_features.py`），**不读** `hem_margin`、也不读门幅。
+⇒ 本文件判据 3 相应改判为「改 `hem_margin` **不改变**超高判定」（负向 + 几何层正向，见下）。
 
 ⇒ 「有的地方走配置、有的地方仍走常量」= 同一张单两套口径（本仓最忌的形态）。
 本包的判据 4 就是钉这个：**全部消费点**都必须走 `cfg["hem_margin"]`。
@@ -22,10 +27,11 @@
 |---|---|---|
 | 1 | 键进 `DEFAULT_CRAFT_CALC_CONFIG`，且默认值 == 模块常量 `HEM_MARGIN` | 默认值写成别的数 ⇒ 红 |
 | 2 | **缺省逐值不变**：不传配置 ⇒ 与今天逐值相同（回归不变量） | 默认值改 0.4 ⇒ 红 |
-| 3 | **配置生效**：改 `hem_margin` ⇒ 定高可行性 / 每幅长 / 超高判定随之变 | 任一处仍用常量 ⇒ 红 |
-| 4 | **五处消费点全部走 cfg**（静态：`HEM_MARGIN` 在函数体里只能出现在**默认值定义**处） | 留一处用常量 ⇒ 红 |
+| 3 | **配置生效**：改 `hem_margin` ⇒ 定高可行性 / 每幅长 / 罗马帘随之变；**判定面（超高）不再随它变**（#5130 改判） | 几何层任一处仍用常量 ⇒ 红；超高判定又读回它 ⇒ 红 |
+| 4 | **四处消费点全部走 cfg**（静态：`HEM_MARGIN` 在函数体里只能出现在**默认值定义**处） | 留一处用常量 ⇒ 红 |
 | 5 | 护栏：`0` / 负数 / 非数 ⇒ `ValueError`（端点 400，**不静默回退默认值**） | 静默回退 ⇒ 红 |
 | 6 | 键进 `_POSITIVE_CONFIG_KEYS`（与 Java `NUMERIC_KEYS` 同集合，跨源守卫钉住） | 漏登记 ⇒ 红 |
+| 7 | **两个企业阈值参数**（`oversize_width_threshold` / `oversize_height_threshold`，issue #5130）与 `hem_margin` **同款纪律**：进键集、默认值 == 模块常量、进 `_POSITIVE_CONFIG_KEYS` | 漏登记 / 默认值有第二落点 ⇒ 红 |
 
 ⚠️ **前端副本不动**：`frontend/admin-web/src/lib/craft-auto-features.ts` 仍持有一份 `HEM_MARGIN`
 （下单页「超高」判定用它，跨语言守卫 `test_hem_margin_cross_language_drift.py` 钉住）。
@@ -76,10 +82,16 @@ class TestDefaultPathUnchanged:
         assert quote["formula_used"] == "fixed_height_pleats"
         assert quote["fabric_meters"] == 13.3
 
-    def test_over_height_verdict_unchanged(self):
+    def test_over_height_verdict_moved_to_the_absolute_threshold(self):
+        """🔴 **2026-09-22 改判（issue #5130）**：旧判据「`成品高 + 卷边 > 门幅` ⇒ 超高」**已退役**
+        —— 新高 = `净窗高 > oversize_height_threshold`（企业参数）。
+
+        旧断言（2.6 高 / 门幅 2.8 ⇒ 超高）在新判据下**必须为假**：2.6 ≤ 默认阈值 4 ⇒ 不判。
+        红证：把门幅式判据加回 ⇒ 本断言红。
+        """
         assert _names(curtain_calc.detect_auto_features(
-            window_width=1.6, window_height=2.6, fabric_width=2.8, cutting_mode=FIXED_HEIGHT,
-        )) == ["超高"]
+            window_width=1.6, window_height=2.6, cutting_mode=FIXED_HEIGHT,
+        )) == []
 
 
 class TestConfigTakesEffect:
@@ -113,15 +125,29 @@ class TestConfigTakesEffect:
         # 注入：每幅长仍用常量 ⇒ 两者相等 ⇒ 红
         assert big["fabric_meters"] > small["fabric_meters"]
 
-    def test_hem_margin_changes_over_height_verdict(self):
-        # 2.4 + 0.3 = 2.7 ≤ 2.8 ⇒ 不判；卷边 0.5 ⇒ 2.9 > 2.8 ⇒ 判超高
-        assert _names(curtain_calc.detect_auto_features(
-            window_width=1.6, window_height=2.4, fabric_width=2.8, cutting_mode=FIXED_HEIGHT,
-        )) == []
-        assert _names(curtain_calc.detect_auto_features(
-            window_width=1.6, window_height=2.4, fabric_width=2.8,
-            cutting_mode=FIXED_HEIGHT, config={"hem_margin": 0.5},
-        )) == ["超高"]
+    def test_hem_margin_no_longer_changes_the_over_height_verdict(self):
+        """🔴 **改判（issue #5130）**：`hem_margin` 已**离开判定面**。
+
+        旧判据：2.4 + 0.3 = 2.7 ≤ 2.8 ⇒ 不判；卷边 0.5 ⇒ 2.9 > 2.8 ⇒ 判超高。
+        新判据：超高只看 `净窗高 > oversize_height_threshold` ⇒ **卷边取什么值都不影响它**
+        （4.2 高：任何正卷边都判；3.8 高：任何卷边都不判）。
+
+        红证：把 `window_height + cfg["hem_margin"] > fabric_width` 加回判定面 ⇒ 本断言红。
+        ⚠️ 注意这是**改判后的负向断言**，与判据 3 的三条正向断言（几何层仍随卷边变）成对 ——
+        不是「把断言删了」：卷边的**几何层**消费点由 `TestConfigTakesEffect` 三条正向钉住。
+        """
+        for height, expected in ((4.2, ["超高"]), (3.8, [])):
+            assert _names(curtain_calc.detect_auto_features(
+                window_width=1.6, window_height=height, cutting_mode=FIXED_HEIGHT,
+                config={"hem_margin": 0.2},
+            )) == expected
+            assert _names(curtain_calc.detect_auto_features(
+                window_width=1.6, window_height=height, cutting_mode=FIXED_HEIGHT,
+                config={"hem_margin": 0.9},
+            )) == expected, (
+                "改 `hem_margin` 又改变了超高判定 —— 判定面已按 issue #5130 改为"
+                "「净窗高 > 企业阈值参数」⇒ 卷边不再参与判定 ⇒ 红"
+            )
 
     def test_hem_margin_changes_roman_panel(self):
         # 罗马帘：(宽 + 包边) × (高 + 卷边) —— 卷边必须走 cfg。
@@ -169,3 +195,39 @@ class TestGuardRails:
                 window_width=6.6, window_height=2.5, mounting="s_hook",
                 craft_tier="standard", config={"hem_margin": bad},
             )
+
+
+class TestOversizeThresholdKeys:
+    """判据 7（issue #5130 新增）：两个**企业阈值参数**与 `hem_margin` 同款纪律。
+
+    判据形态与 `TestKeyRegistration` 逐条对应（同一个键集的三条纪律）：
+    ① 默认值 == 模块常量（**默认值只有一个落点**）；② 进 `_POSITIVE_CONFIG_KEYS`（0/负 ⇒ 报错）；
+    ③ 缺省行回落到引擎默认值（缺行 = 用引擎默认值，不做开租播种）。
+
+    红证：任一处漏登记 ⇒ 对应断言红；把默认值写成第二个字面量 ⇒ 第一条红。
+    """
+
+    @pytest.mark.parametrize("key,const", [
+        ("oversize_width_threshold", "OVERSIZE_WIDTH_THRESHOLD"),
+        ("oversize_height_threshold", "OVERSIZE_HEIGHT_THRESHOLD"),
+    ])
+    def test_default_equals_the_module_constant(self, key, const):
+        assert curtain_calc.DEFAULT_CRAFT_CALC_CONFIG[key] == getattr(curtain_calc, const)
+
+    @pytest.mark.parametrize("key", ["oversize_width_threshold", "oversize_height_threshold"])
+    def test_key_is_registered_as_positive_scalar(self, key):
+        assert key in curtain_calc._POSITIVE_CONFIG_KEYS
+
+    @pytest.mark.parametrize("key,const", [
+        ("oversize_width_threshold", "OVERSIZE_WIDTH_THRESHOLD"),
+        ("oversize_height_threshold", "OVERSIZE_HEIGHT_THRESHOLD"),
+    ])
+    def test_missing_config_row_still_gets_the_default(self, key, const):
+        # 缺行 = 用引擎默认值（不在库里播种第二份默认值 —— V80 的既有口径）
+        assert curtain_calc.resolve_craft_calc_config(None)[key] == getattr(curtain_calc, const)
+
+    @pytest.mark.parametrize("key", ["oversize_width_threshold", "oversize_height_threshold"])
+    @pytest.mark.parametrize("bad", [0, -0.1, "abc"])
+    def test_invalid_threshold_is_rejected(self, key, bad):
+        with pytest.raises(ValueError):
+            curtain_calc.resolve_craft_calc_config({key: bad})

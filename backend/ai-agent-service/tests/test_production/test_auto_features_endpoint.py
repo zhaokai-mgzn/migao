@@ -1,5 +1,5 @@
 # case_ids: OR-040
-"""自动特征**判定端点**（issue #4976 包 2）—— 「判定移到服务端」的**读面**。
+"""自动特征**判定端点**（issue #4976 包 2）—— 「判定移到服务端」的**读面**；**issue #5130 改判**。
 
 ## 为什么需要一个**独立**端点（不复用算料试算）
 
@@ -8,22 +8,31 @@
 ⇒ 若判定只挂在「试算响应」上，那三类工艺的行会**没有特征** ⇒ 组合键少一项 ⇒
 **加工费匹配不到组合价**（P1 钱风险）。
 
-⇒ 本端点的判定**只吃**「几何 + SKU 门幅 + 加工类型 + 租户配置」，与**用料公式 / 工艺口径无关**；
-也**不改**试算米数（把门幅接进 `craft-calc` 是 #4746 / #4652 的另一件事）。
+⇒ 本端点的判定**只吃**「净窗宽 / 净窗高 + 加工类型 + 租户配置」，与**用料公式 / 工艺口径 /
+门幅 / 褶倍全无关**（issue #5130 起：判定面读的是**企业阈值参数**，不是门幅）。
+
+## 2026-09-22 改判（issue #5130）
+
+| 面 | 旧口径（**已退役**） | 新口径（本单） |
+|---|---|---|
+| 判据 | 与**门幅**比（`窗宽 × 褶倍 > 门幅` / `成品高 + 卷边 > 门幅`） | 与**企业阈值参数**比（`净窗宽 > oversize_width_threshold` / `净窗高 > oversize_height_threshold`） |
+| 分流 | 按 `cutting_mode` 分流（缺省 ⇒ 一个都不判，#4661） | **与加工类型无关**（缺省 ⇒ 超高/超宽照判；只有 `倒幅` 看加工类型） |
+| 缺门幅 | `notice='missing-door-width'` + 判不了（#4877） | **判定面不读门幅** ⇒ 不影响判定（门幅仍是几何层输入） |
+| 响应字段 | `fullness_used`（回显判定用的褶倍）/ `notice`（不判的单码） | **两者都已删**（失去消费者；且旧 `notice` 的取值在新判据下是**假话**） |
+
+三条退役裁定的完整留档见 `backend/ai-agent-service/tests/test_production/test_auto_features.py`
+的模块 docstring（#4661 / #4662 / #4877）。
 
 ## 判据（每条都能单独判红）
 
 | # | 判据 | 红证 |
 |---|---|---|
 | 1 | 与引擎 `detect_auto_features` **同源**：端点返回 == 直调函数（防第二份判据） | 端点自己拼一套判定 ⇒ 红 |
-| 2 | 按加工类型分流（定高买宽 ⇒ 只判超高；定宽买高 ⇒ 超宽 + 倒幅） | 去掉分流 ⇒ 红 |
-| 3 | 缺门幅 ⇒ **不回落默认门幅**（#4877）；**但 `倒幅` 照判**（#5033：它与门幅无关） | 回落到 2.8/3.2 ⇒ 红；**短路成 `[]`** ⇒ 红（#5019 切源后的钱路径回归） |
-| 3b | 引擎在 `fabric_width=None` 时**不得抛异常**（#5033 根因：`product > None` 抛 `TypeError` ⇒ 调用方只能短路） | 去掉 `fabric_width is not None` 守卫 ⇒ `TypeError` ⇒ 红 |
-| 4 | 缺 / 表外加工类型 ⇒ 不判 + `notice='unknown-cutting-mode'`（不猜朝向） | 缺省时按定高买宽兜底 ⇒ 红 |
-| 5 | 褶倍缺省 ⇒ 取**该租户配置**的标准档（并回显 `fullness_used` 供核对） | 写死 2.0 ⇒ 红 |
-| 6' | 租户配置 `hem_margin` 生效（**高**方向，不受本裁定影响）；宽方向余量键 `side_margin` **已退场、传它不改变判定**（issue #5030 改判） | 用模块常量 ⇒ 红；把 `side_margin` 接回判据 ⇒ 红 |
-| 7 | 响应**自描述**：`door_width` / `fullness_used` 回显实际用于判定的值（商家可核对） | 不回显 ⇒ 红 |
-| 8 | 缺 `X-Service-Token` ⇒ 401（与既有内部端点同款） | — |
+| 2 | 判据 = 绝对阈值，**与加工类型无关**（缺省 / 表外 ⇒ 超高/超宽**照判**） | 把 `cutting_mode` 分流加回 ⇒ 红 |
+| 3 | 缺门幅**不影响**判定（#4877 判定面退役）；门幅仍是**几何层**输入 | 把「缺门幅 ⇒ 不判」加回 ⇒ 红 |
+| 4 | 租户配置的两个阈值生效（改它 ⇒ 判定变） | 端点忽略 `config` ⇒ 红 |
+| 5 | 响应**不再**含 `fullness_used` / `notice`（失去消费者；旧取值已成假话） | 把任一字段加回 ⇒ 红 |
+| 6 | 缺 `X-Service-Token` ⇒ 401（与既有内部端点同款） | — |
 """
 
 import pytest
@@ -67,131 +76,112 @@ def _names(features):
     return [f["name"] for f in features]
 
 
-#: 一份能判出特征的输入（定宽买高：1.6 × 2.0 = 3.2 > 门幅 2.8；issue #5030 后**无**宽方向余量）
-BASE = {
-    "width": 1.6, "height": 2.0, "fabric_width": 2.8,
-    "cutting_mode": FIXED_WIDTH, "fullness": 2.0,
-}
+#: 一份能判出**全部三条**特征的输入（净窗宽 6.5 > 6、净窗高 4.5 > 4、加工类型 = 定宽买高）
+BASE = {"width": 6.5, "height": 4.5, "cutting_mode": FIXED_WIDTH}
 
 
 class TestEndpointJudges:
-    """判据 2 / 7：端点判得出特征，并把「用了哪些值」回显出来。"""
+    """判据 2：端点按**绝对阈值**判，且顺序恒为 `超宽 → 超高 → 倒幅`。"""
 
-    def test_over_width_and_reverse(self, client):
-        data = _data(client, BASE)
-        assert _names(data["auto_features"]) == ["超宽", "倒幅"]
-        # 自描述：判定用的门幅与褶倍必须回显（商家要能核对「为什么判它超宽」）
-        assert data["door_width"] == 2.8
-        assert data["fullness_used"] == 2.0
-        assert data["notice"] == ""
+    def test_over_width_over_height_and_reverse(self, client):
+        assert _names(_data(client, BASE)["auto_features"]) == ["超宽", "超高", "倒幅"]
 
-    def test_over_height(self, client):
-        data = _data(client, {"width": 1.6, "height": 2.6, "fabric_width": 2.8,
-                              "cutting_mode": FIXED_HEIGHT, "fullness": 2.0})
+    def test_over_height_only(self, client):
+        data = _data(client, {"width": 1.6, "height": 4.5, "cutting_mode": FIXED_HEIGHT})
         assert _names(data["auto_features"]) == ["超高"]
 
-    def test_nothing_judged_when_geometry_is_fine(self, client):
-        data = _data(client, {"width": 1.0, "height": 2.0, "fabric_width": 2.8,
-                              "cutting_mode": FIXED_HEIGHT, "fullness": 2.0})
+    def test_nothing_judged_when_geometry_is_small(self, client):
+        data = _data(client, {"width": 1.0, "height": 2.0, "cutting_mode": FIXED_HEIGHT})
         # 键恒在：空列表 = **不判**（不是「没算」）
         assert data["auto_features"] == []
-        assert data["notice"] == ""
+
+    def test_equal_to_threshold_does_not_judge(self, client):
+        # 边界 = 严格大于（6.0 / 4.0 都不判）
+        assert _data(client, {"width": 6.0, "height": 4.0}) ["auto_features"] == []
 
 
-class TestNoDefaultDoorWidth:
-    """判据 3：缺门幅 ⇒ **不回落任何默认门幅**（与 #4877 同口径）；**但 `倒幅` 照判**（#5033）。"""
+class TestCuttingModeNoLongerGates:
+    """判据 2（**改判 ③**）：加工类型缺省 / 表外 ⇒ 超高/超宽**照判**，只有 `倒幅` 缺席。"""
 
-    def test_missing_door_width_still_judges_reverse(self, client):
-        """🔴 **issue #5033**：`定宽买高 + 缺门幅` ⇒ **仍判 `倒幅`**（它只取决于加工类型、与门幅无关）。
-
-        红证：把端点的「缺门幅 ⇒ `features=[]`」短路改回去 ⇒ 本断言红
-        （`[]` != `['倒幅']`）—— 那正是 #5019 切源后引入的钱路径回归
-        （组合键少一项 ⇒ 商家配了基础组合时**取价成功但金额偏低**）。
-        """
-        payload = {k: v for k, v in BASE.items() if k != "fabric_width"}
-        data = _data(client, payload)
-        # 注入①：缺门幅时回落到 2.8 / 3.2 ⇒ 会**多判**超宽 ⇒ 红（#4877）
-        assert _names(data["auto_features"]) == ["倒幅"]
-        assert data["notice"] == "missing-door-width"
-        assert data["door_width"] is None
-
-    def test_missing_door_width_judges_nothing_for_fixed_height(self, client):
-        """`定高买宽 + 缺门幅` ⇒ `[]`（`超高` 判不了 —— 它**确实**依赖门幅）。
-
-        与上一条成对：**缺门幅不是「一个都不判」，也不是「都判」**，而是**按方向**决定
-        （宽方向受门幅约束 ⇒ 不判；朝向特征 ⇒ 照判）。
-        """
-        data = _data(client, {"width": 1.6, "height": 2.6, "cutting_mode": FIXED_HEIGHT,
-                              "fullness": 2.0})
-        assert data["auto_features"] == []
-        assert data["notice"] == "missing-door-width"
-
-    def test_unknown_cutting_mode_is_explicitly_not_judged(self, client):
-        data = _data(client, {**BASE, "cutting_mode": "表外取值"})
-        assert data["auto_features"] == []
-        assert data["notice"] == "unknown-cutting-mode"
-
-    def test_missing_cutting_mode_is_explicitly_not_judged(self, client):
+    @pytest.mark.parametrize("mode", [None, "", "表外取值"])
+    def test_unknown_cutting_mode_still_judges_oversize(self, client, mode):
         payload = {k: v for k, v in BASE.items() if k != "cutting_mode"}
-        assert _data(client, payload)["notice"] == "unknown-cutting-mode"
+        if mode is not None:
+            payload["cutting_mode"] = mode
+        assert _names(_data(client, payload)["auto_features"]) == ["超宽", "超高"]
 
 
-class TestEngineAcceptsUnknownDoorWidth:
-    """判据（#5033 根因）：引擎在 `fabric_width=None` 时**不得抛异常**（否则调用方只能短路）。"""
+class TestDoorWidthNoLongerGates:
+    """判据 3：门幅（几何层输入）**不再**影响判定面的结论。"""
 
-    def test_engine_none_door_width_does_not_raise(self):
-        from app.tools import curtain_calc
+    def test_door_width_does_not_change_the_verdict(self, client):
+        """#4877 的**判定面**已退役：门幅缺 / 给都不影响超高与超宽（它们只看净窗宽高）。
 
-        # 注入①：去掉 `fabric_width is not None` 守卫 ⇒ `product > None` 抛 TypeError ⇒ 红
-        assert curtain_calc.detect_auto_features(
-            window_width=1.6, window_height=2.6, fabric_width=None,
-            fullness=2.0, cutting_mode=curtain_calc.CUTTING_MODE_FIXED_WIDTH,
-        ) == [{"name": "倒幅", "source": "推算",
-               "reason": f"加工类型 = {curtain_calc.CUTTING_MODE_FIXED_WIDTH}"}]
-        assert curtain_calc.detect_auto_features(
-            window_width=1.6, window_height=2.6, fabric_width=None,
-            fullness=2.0, cutting_mode=curtain_calc.CUTTING_MODE_FIXED_HEIGHT,
-        ) == []
+        红证：把 `fabric_width is None ⇒ 不判超宽/超高` 的守卫加回判定面 ⇒ 两侧结果不再逐值相同 ⇒ 红。
+        """
+        without = _data(client, BASE)["auto_features"]
+        with_door = _data(client, {**BASE, "fabric_width": 2.8})["auto_features"]
+        assert without == with_door, (
+            "给 / 不给门幅改变了判定结果 —— 判定面已按 issue #5130 改为与**企业阈值参数**比，"
+            "门幅只剩**几何层**（用料 / 加工类型 / 规则面）的消费点 ⇒ 它又被接回了判定面 ⇒ 红"
+        )
+
+    def test_door_width_still_reaches_the_notices(self, client):
+        """反向自证（不是空断言）：门幅**仍在**读面里（`notices` 的几何矛盾提示要它）。"""
+        data = _data(client, {"width": 1.6, "height": 2.6, "fabric_width": 2.8,
+                              "cutting_mode": FIXED_HEIGHT})
+        assert [n["kind"] for n in data["notices"]] == ["cutting-mode-conflict"]
 
 
 class TestTenantConfig:
-    """判据 5 / 6'：褶倍缺省取**该租户配置**的标准档；`hem_margin` 生效、
-    宽方向余量键 `side_margin` **已退场**（issue #5030）。"""
+    """判据 4：两个阈值是**企业参数** —— 端点必须把 `config` 接到判定上。"""
 
-    def test_fullness_defaults_to_tenant_standard_tier(self, client):
-        payload = {k: v for k, v in BASE.items() if k != "fullness"}
-        data = _data(client, payload)
-        assert data["fullness_used"] == 2.0  # 引擎默认标准档
-        # 把标准档改成 1.6 ⇒ 1.6 × 1.6 = 2.56 ≤ 2.8（判定变了），回显值也必须跟着变
-        tuned = _data(client, {**payload, "config": {"tiers": {"standard": {"fullness": 1.6}}}})
-        assert tuned["fullness_used"] == 1.6
+    def test_tenant_thresholds_change_the_verdict(self, client):
+        # 阈值抬到 10 ⇒ 6.5 / 4.5 都不超 ⇒ 只剩倒幅
+        tuned = _data(client, {**BASE, "config": {
+            "oversize_width_threshold": 10, "oversize_height_threshold": 10}})
+        assert _names(tuned["auto_features"]) == ["倒幅"]
 
-    def test_side_margin_in_config_does_not_change_the_verdict(self, client):
-        """判据 6'（issue #5030 **改判**）：`side_margin` 已退场 ⇒ 传它**不改变**判定。
+    def test_tenant_width_threshold_alone_flips_over_width(self, client):
+        tuned = _data(client, {**BASE, "config": {"oversize_width_threshold": 3}})
+        assert _names(tuned["auto_features"]) == ["超宽", "超高", "倒幅"]
 
-        旧判据（#4976 包 2）钉的是「租户配置 `side_margin` 生效（改它 ⇒ 超宽判定随之变）」——
-        前提 = 该键**存在且被引擎消费**。用户 2026-09-21 裁定「订单宽 = 净窗宽、成品宽 = 净窗宽」
-        ⇒ 该键整体退场 ⇒ 旧判据的前提消失，**改判为反向守卫**：
-        ① 传 `{"side_margin": 0.9}` 与不传 config **逐值相同**（键没有被消费）；
-        ② 引擎配置字典键集里**没有** `side_margin`（有人加回键集并接进判据 ⇒ 红）。
+    def test_tenant_height_threshold_alone_flips_over_height(self, client):
+        tuned = _data(client, {**BASE, "config": {"oversize_height_threshold": 3}})
+        assert _names(tuned["auto_features"]) == ["超宽", "超高", "倒幅"]
+
+    def test_invalid_threshold_is_rejected_with_400(self, client):
+        # 护栏：0 / 负 ⇒ 400（**不静默回退默认值**）
+        resp = _post(client, {**BASE, "config": {"oversize_width_threshold": 0}})
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "CRAFT_CALC_INVALID_INPUT"
+
+    def test_hem_margin_in_config_does_not_change_the_verdict(self, client):
+        """改判：`hem_margin` 已**离开判定面**（它仍管几何层 —— 见 `notices` 与用料）。
+
+        红证：把 `成品高 + cfg["hem_margin"] > 门幅` 加回判定面 ⇒ 本断言红。
         """
-        roomy = {**BASE, "fabric_width": 4.0}
-        plain = _data(client, roomy)["auto_features"]
-        assert _names(plain) == ["倒幅"]
-        assert _data(client, {**roomy, "config": {"side_margin": 0.9}})["auto_features"] == plain, (
-            "传 `side_margin` 改变了端点判定 —— 该键已按用户 2026-09-21 裁定（issue #5030）"
-            "整体退场（订单宽 = 净窗宽 ⇒ 宽方向没有余量）⇒ 它又被接回了判据 ⇒ 红"
-        )
-        assert "side_margin" not in curtain_calc.DEFAULT_CRAFT_CALC_CONFIG, (
-            "`side_margin` 又回到了 DEFAULT_CRAFT_CALC_CONFIG —— 该键已整体退场（issue #5030）"
-        )
+        plain = _data(client, BASE)["auto_features"]
+        assert _data(client, {**BASE, "config": {"hem_margin": 0.9}})["auto_features"] == plain
 
-    def test_hem_margin_from_tenant_config_changes_the_verdict(self, client):
-        base = {"width": 1.6, "height": 2.4, "fabric_width": 2.8,
-                "cutting_mode": FIXED_HEIGHT, "fullness": 2.0}
-        assert _data(client, base)["auto_features"] == []
-        tuned = _data(client, {**base, "config": {"hem_margin": 0.5}})
-        assert _names(tuned["auto_features"]) == ["超高"]
+
+class TestResponseFields:
+    """判据 5：失去消费者的字段**已删**（`fullness_used` / `notice`）。"""
+
+    def test_fullness_used_is_gone(self, client):
+        assert "fullness_used" not in _data(client, BASE)
+
+    def test_judgement_notice_is_gone(self, client):
+        """旧 `notice` 的两个取值在新判据下都是**假话** ⇒ 删掉，不留死字段。
+
+        ① `missing-door-width`（「未维护门幅 ⇒ 超高/超宽都判不了」）—— 新判据不读门幅；
+        ② `unknown-cutting-mode`（「缺加工类型 ⇒ 不判」）—— 新判据与加工类型无关。
+        """
+        assert "notice" not in _data(client, {k: v for k, v in BASE.items() if k != "cutting_mode"})
+
+    def test_door_width_is_still_echoed(self, client):
+        # 反向自证：`door_width` 仍在（它是**几何层**回显，仍被 notices 的几何矛盾提示消费）
+        assert _data(client, {**BASE, "fabric_width": 2.8})["door_width"] == 2.8
 
 
 class TestSameSourceAsEngine:
@@ -199,19 +189,17 @@ class TestSameSourceAsEngine:
 
     @pytest.mark.parametrize("payload", [
         BASE,
-        {**BASE, "fabric_width": 4.0},
-        {"width": 1.6, "height": 2.6, "fabric_width": 2.8, "cutting_mode": FIXED_HEIGHT, "fullness": 2.0},
-        {**BASE, "config": {"hem_margin": 0.5}},
-        # 已退场的键也照传（端点必须与引擎**逐值**同源 —— 包括「传了没人消费的键」这一情形）
-        {**BASE, "config": {"side_margin": 0.9}},
+        {"width": 1.6, "height": 4.5, "cutting_mode": FIXED_HEIGHT},
+        {"width": 1.0, "height": 2.0, "cutting_mode": FIXED_HEIGHT},
+        {**BASE, "fabric_width": 2.8},
+        {**BASE, "config": {"oversize_width_threshold": 10, "oversize_height_threshold": 10}},
+        {**BASE, "config": {"oversize_height_threshold": 3}},
     ])
     def test_endpoint_equals_engine_function(self, client, payload):
         expected = curtain_calc.detect_auto_features(
             window_width=payload["width"],
             window_height=payload["height"],
-            fabric_width=payload["fabric_width"],
-            fullness=payload["fullness"],
-            cutting_mode=payload["cutting_mode"],
+            cutting_mode=payload.get("cutting_mode"),
             config=payload.get("config"),
         )
         # 注入：端点自己写一套判定（不复用引擎函数）⇒ 逐值比对必红
@@ -219,7 +207,7 @@ class TestSameSourceAsEngine:
 
 
 class TestAuth:
-    """判据 8：与既有内部端点同款认证。"""
+    """判据 6：与既有内部端点同款认证。"""
 
     def test_missing_token_is_unauthorized(self, client):
         assert _post(client, BASE, token=None).status_code == 401

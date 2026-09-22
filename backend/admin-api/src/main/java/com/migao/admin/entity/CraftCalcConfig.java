@@ -72,6 +72,22 @@ public class CraftCalcConfig {
     /** 用料向上进位步长（米）；引擎默认 0.1 */
     private BigDecimal metersRoundingStep;
 
+    /**
+     * **超宽**阈值（**净窗宽**，米）；引擎默认 6（V114，issue #5130）。
+     *
+     * <p>判据：净窗宽 &gt; 本值 ⇒ 自动特征名「超宽」（进加工费组合键 = 工艺分档，用户裁定 D1）。
+     * 与**几何层**（门幅 / 褶倍 ⇒ 分幅与用料）是两件事。</p>
+     */
+    private BigDecimal oversizeWidthThreshold;
+
+    /**
+     * **超高**阈值（**净窗高**，米）；引擎默认 4（V114，issue #5130）。
+     *
+     * <p>判据：净窗高 &gt; 本值 ⇒ 自动特征名「超高」。⚠️ issue #5130 起「超高」**不再**由
+     * 「成品高 + 上下卷边 &gt; 门幅」判定（该门幅判据已退役）。</p>
+     */
+    private BigDecimal oversizeHeightThreshold;
+
     private String status;
 
     private OffsetDateTime createdAt;
@@ -99,6 +115,9 @@ public class CraftCalcConfig {
         config.put("default_formula", defaultFormula);
         config.put("hem_margin", hemMargin);
         config.put("meters_rounding_step", metersRoundingStep);
+        // issue #5130（V114）：两个**企业阈值参数** —— 判定「超宽 / 超高」的判据（净窗宽 / 净窗高）。
+        config.put("oversize_width_threshold", oversizeWidthThreshold);
+        config.put("oversize_height_threshold", oversizeHeightThreshold);
         return config;
     }
 }

@@ -1045,6 +1045,8 @@ CREATE TABLE IF NOT EXISTS craft_calc_configs (
     default_formula VARCHAR(16) NOT NULL DEFAULT 'pleat',
     hem_margin NUMERIC(6,3) NOT NULL DEFAULT 0.3,
     meters_rounding_step NUMERIC(6,3) NOT NULL DEFAULT 0.1,
+    oversize_width_threshold NUMERIC(6,3) NOT NULL DEFAULT 6,
+    oversize_height_threshold NUMERIC(6,3) NOT NULL DEFAULT 4,
     status VARCHAR(16) NOT NULL DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -1072,10 +1074,21 @@ COMMENT ON COLUMN craft_calc_configs.default_formula IS
     '⚠️ 只是**工艺推导表缺失时的兜底**（韩褶/打孔由 craft 推导），不是恒定生效的默认值。';
 COMMENT ON COLUMN craft_calc_configs.hem_margin IS
     '高方向**上下卷边**合计（米；脚位+止口），引擎默认 0.3（V110，issue #4976 包 1b）。'
-    '护栏：必须 > 0。消费点：定高可行性 / 定宽买高每幅长 / 折数法 / 罗马帘 / 自动特征「超高」判据。'
+    '护栏：必须 > 0。消费点：定高可行性 / 定宽买高每幅长 / 折数法 / 罗马帘（**几何层**）。'
+    '⚠️ issue #5130 起它**不再**参与自动特征「超高」的判定（那条门幅判据已退役）；'
     '⚠️ 宽方向**没有**余量（订单宽 = 净窗宽 ⇒ 成品宽 = 净窗宽；`side_margin` 已随 issue #5030 退场）。';
 COMMENT ON COLUMN craft_calc_configs.meters_rounding_step IS
     '用料米数**向上进位**步长（米），引擎默认 0.1。护栏：必须 > 0（截断/四舍五入 = 抹零）。';
+COMMENT ON COLUMN craft_calc_configs.oversize_width_threshold IS
+    '**超宽**阈值（净窗宽，米），引擎默认 6（V114，issue #5130；= 常量 OVERSIZE_WIDTH_THRESHOLD）。'
+    '判据：净窗宽 > 本值 ⇒ 特征名「超宽」（进加工费组合键 = 工艺分档，用户裁定 D1）。'
+    '护栏：必须 > 0（0/负 ⇒ 写面 422，不静默回退默认值）。'
+    '⚠️ 与**几何层**（门幅 / 褶倍 ⇒ 分幅与用料）是两件事，不得混用。';
+COMMENT ON COLUMN craft_calc_configs.oversize_height_threshold IS
+    '**超高**阈值（净窗高，米），引擎默认 4（V114，issue #5130；= 常量 OVERSIZE_HEIGHT_THRESHOLD）。'
+    '判据：净窗高 > 本值 ⇒ 特征名「超高」（进加工费组合键）。'
+    '护栏：必须 > 0（0/负 ⇒ 写面 422，不静默回退默认值）。'
+    '⚠️ issue #5130 起「超高」**不再**由「成品高 + 上下卷边 > 门幅」判定（该门幅判据已退役）。';
 COMMENT ON COLUMN craft_calc_configs.status IS
     '配置行状态（范式同 production_crafts，V72）。读面按 deleted = 0 取行，不按 status 过滤。';
 
