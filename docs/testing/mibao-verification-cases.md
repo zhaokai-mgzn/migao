@@ -4010,7 +4010,7 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-22 新增（issue #4201）：加工单「过程明细」agent 只读面（端点 GET /api/admin/agent/production/worklog + 工具 production_worklog_query + order/general skill 绑定 + prompts/order.md 口径）。**断言面**：must_succeed + required_args(order_no) + forbidden_tools（两个加工单写工具 + 加工项目录冒充）+ forbidden_text（具名报工人 = 编造指纹）+ want_text(any_of 存在性) + data_checks 首条 success=true。**未做（如实登记）**：**数值断言**（合格/返工/报废的**具体数字**）未落 —— 评测栈 `production_work_logs` 零 seed，要落数值只能给 seed 补「加工单 + 工序实例 + 报工」三段夹具，而本地**无 docker**、无法验证 seed SQL（写错会打挂整个 mibao 套件）⇒ 本单不碰 seed，登记为后续项。 ｜ 2026-09-21（issue #4960 / #4961 用例库同步，配套 feat/4960-4961-integration，**本条判据一字未动**）：data_checks 里 `operations[].is_must_finish` 仍是**冻结读面键**（服务端恒 `false`、历史载体，前端/agent 零消费）—— 本条不改任何判据，只登记该键的**值语义已冻结为历史载体**，防后续把「键还在」误读成「必完仍是活语义」。`user_inputs` / `expectations` / `skip_reason` 与其余 data_check **一字未动**，**判据一格不放宽**。 ｜ tags: processing_order, production, llm_behavior, worklog, readonly
 
-## 商品域（37 case）
+## 商品域（38 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -4465,6 +4465,20 @@
 ```
 真值: product-sku-stock.status-flow
 溯源: 2026-09-21 新增（用户裁定逐字：「商品需要增加 1 卷=多少米，作为商品货号的基础参数」）。 ｜ tags: product, roll_length, backend_contract
+
+### PR-045. 多行入库单过账：批次号**逐行生成**（一个 SKU 行 = 一个批次），不得整单共用一个号 🔵
+```
+你: 入库单过账的批次粒度（非 LLM 行为，由 Java 单测覆盖）
+期望: direct_reply
+数据: 判据 1·**逐行生成**：N 行明细过账 ⇒ `stock_batches` 落 **N 行**、`batch_no` **两两不同**。判据源 = `uk_stock_batches_no` 是 `UNIQUE (tenant_id, batch_no)` ⇒ 整单共用一个号时第 2 行撞唯一索引、**整个事务回滚**（≥2 行的入库单必然过账失败）。注入：把 `nextFreeBatchNo(tenantId)` 移回明细行循环之外 ⇒ 2 行夹具下取到两个相同批次号 ⇒ 断言红（红证实测：`Found duplicate(s): [\"PC-…-0001\"] in: [\"PC-…-0001\", \"PC-…-0001\"]`）。
+数据: 判据 2·**行上回写各自的号**：`inbound_order_items.batch_no` 必须等于**该行自己**那条 `stock_batches.batch_no`（不是整单共用的首个号）——逐行 `updateById` 的批次号与逐行批次行的批次号按序一一对应。
+数据: 判据 3·**加库存带各自的号**：`product_skus.latest_batch_no` 由每行各自的 `receiveStock` 写入（N 行 ⇒ 调 N 次、批次号两两不同）——整单共用号会让「最近批次」在多行同 SKU 时静默丢掉区分度。
+数据: 判据 4·**粒度 = 行而非 SKU**：同一 SKU 的两行（不同缸号）各一个批次、`dye_lot` 各归各行 —— 按 SKU 合并批次会丢掉缸号区分度、追溯断链。
+数据: 判据 5·**单行过账逐值不变**：仍是 `PC-yyyyMMdd-NNNN`、仍恰好 1 条批次行 / 1 条 `reason='inbound'` 台账 / `ref_no` = 入库单号；均价与台账成本快照口径不变。
+跳过: [backend-contract] 入库单是后台/仓储单据流（无米宝工具面）⇒ 由 admin-api 单测覆盖，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.batch-granularity
+溯源: 2026-09-22 新增（issue #5141，P0）：多行入库单过账必失败 —— 整单共用一个批次号撞 `uk_stock_batches_no`、整单回滚（实现与 V111 文件头裁定「一个 SKU 行 = 一个批次」相反）。 ｜ tags: inventory, inbound, backend-contract
 
 ## 工具注册器域（1 case）
 
@@ -5361,8 +5375,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：391（活跃 156，跳过 235）
-- tier 分布：smoke 10 / normal 350 / adversarial 31
+- 用例总数：392（活跃 156，跳过 236）
+- tier 分布：smoke 10 / normal 351 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -5382,7 +5396,7 @@
 - 订单域：45
 - 加工项域：13
 - 加工单域：51
-- 商品域：37
+- 商品域：38
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4

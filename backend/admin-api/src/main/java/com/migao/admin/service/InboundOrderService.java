@@ -165,7 +165,7 @@ public class InboundOrderService {
             throw BusinessException.validationError("入库单没有明细行，无法过账");
         }
 
-        String batchNo = nextFreeBatchNo(tenantId);
+        List<String> batchNos = new ArrayList<>(lines.size());
         OffsetDateTime now = OffsetDateTime.now();
 
         for (InboundOrderItem line : lines) {
@@ -181,17 +181,23 @@ public class InboundOrderService {
             BigDecimal afterAvg = movingAverage(beforeQty, beforeAvg, quantity, unitCost);
             int afterQty = beforeQty + quantity;
 
-            // ① 加库存 + 写均价/成本金额/最近批次号（一条 SQL 内完成，避免「加了数量没写成本」的中间态）
+            // ① 批次号**逐行生成**（一个 SKU 行 = 一个批次，V111 裁定）：整单共用一个号时，
+            //    第 2 行插 stock_batches 会撞 uk_stock_batches_no = UNIQUE (tenant_id, batch_no)
+            //    ⇒ 整个事务回滚（≥2 行的入库单必然过账失败，issue #5141）
+            String batchNo = nextFreeBatchNo(tenantId);
+            batchNos.add(batchNo);
+
+            // ② 加库存 + 写均价/成本金额/最近批次号（一条 SQL 内完成，避免「加了数量没写成本」的中间态）
             //    均价用本服务算出的 afterAvg（与下面台账里的 avg_cost_after **同源同值**）
             productSkuMapper.receiveStock(sku.getId(), quantity, afterAvg, batchNo);
 
-            // ② 落库存台账（reason=inbound；成本快照一并落，使「库存/成本为什么变了」在同一张账上可对账）
+            // ③ 落库存台账（reason=inbound；成本快照一并落，使「库存/成本为什么变了」在同一张账上可对账）
             stockLedgerService.record(tenantId, line.getProductId(), sku.getId(), sku.getSkuCode(),
                     beforeQty, afterQty, StockLedger.REASON_INBOUND, order.getInboundNo(),
                     "入库单过账" + (line.getDyeLot() != null ? "（缸号 " + line.getDyeLot() + "）" : ""),
                     unitCost, beforeAvg, afterAvg);
 
-            // ③ 批次台账（缸号随批次可见；批次行不可改，冲销走新单据）
+            // ④ 批次台账（缸号随批次可见；批次行不可改，冲销走新单据）
             stockBatchMapper.insert(StockBatch.builder()
                     .tenantId(tenantId)
                     .batchNo(batchNo)
@@ -212,7 +218,7 @@ public class InboundOrderService {
                     .remark(line.getRemark())
                     .build());
 
-            // ④ 行上回写批次号（草稿态为 NULL；过账后才有 —— 批次号 = 「真的收货了」）
+            // ⑤ 行上回写批次号（草稿态为 NULL；过账后才有 —— 批次号 = 「真的收货了」）
             InboundOrderItem patch = new InboundOrderItem();
             patch.setId(line.getId());
             patch.setBatchNo(batchNo);
@@ -226,8 +232,8 @@ public class InboundOrderService {
         order.setPostedBy(operator);
         inboundOrderMapper.updateById(order);
 
-        log.info("入库单已过账: tenant={}, inboundNo={}, batchNo={}, items={}, total={}, operator={}",
-                tenantId, order.getInboundNo(), batchNo, lines.size(), order.getTotalAmount(), operator);
+        log.info("入库单已过账: tenant={}, inboundNo={}, batchNos={}, items={}, total={}, operator={}",
+                tenantId, order.getInboundNo(), batchNos, lines.size(), order.getTotalAmount(), operator);
         return detail(order.getId(), tenantId);
     }
 
@@ -427,8 +433,8 @@ public class InboundOrderService {
     /**
      * 批次号：{@code PC-yyyyMMdd-NNNN}（{@code PC} = 批次拼音首字母，与 JG/AS/FIN/RK 不撞前缀）。
      *
-     * <p><b>一次过账一个批次号</b>（批次 = 入库单行，用户裁定）：整张单的明细行共享同一批次号 ——
-     * 同一张送货单上的同一缸布本就是一批，逐行各编一个号反而会让「同批」在库里看不出来。</p>
+     * <p><b>一个 SKU 行 = 一个批次</b>（V111 文件头的用户裁定）：每次调用生成一个号，
+     * 由 {@link #post} 在明细行循环内**逐行**取 —— 同一 SKU 的两行若缸号不同，本就是两批。</p>
      */
     private String generateBatchNo() {
         return "PC-" + LocalDate.now().format(DATE_FMT) + "-"
