@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, UI-030, PR-068, PR-069, PR-070
+// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, UI-030, PR-068, PR-069, PR-070, PR-077
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -594,6 +594,86 @@ class ProcessingOrderServiceTest {
                 .hasMessageContaining("不在本次生成范围内");
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
         verifyNoInteractions(stockBatchConsumptionService);
+    }
+
+    // ── 读侧取键（issue #5174）：快照写 `sku`，读侧就必须读 `sku` ────────────────────
+    //
+    // 🔴 改前的洞**长在本节这一格**：`Designation.skuCode` 恒 null 也能让全类通过 ——
+    // 护栏判据与建议值过滤的算账判据在 StockBatchConsumptionServiceTest（那边**显式传** skuCode），
+    // 两条腿各自都绿，而「生产路径到底给了什么」**没有任何断言** ⇒ SKU 级护栏整体 no-op
+    // （同货号、错颜色/门幅的批次静默落账）。真库读数见 SkuBatchGuardRealDbTest（PR-076 / PR-078）。
+
+    /** 一行带 SKU 规格的快照来源：{@code processing_info.sku} 是订单侧 SKU 码的唯一落点（行上没有该列）。 */
+    private OrderItem itemWithSnapshotSku(String skuCode) {
+        Map<String, Object> info = processingInfo("米白");
+        info.put("sku", skuCode);
+        info.put("cuttingMode", "定高买宽");
+        info.put("panels", 2);
+        return OrderItem.builder()
+                .id("item-1").tenantId(TENANT).orderId("order-001").productId("prod-1")
+                .productName("布艺遮光帘A").quantity(new BigDecimal("2.7"))
+                .width(new BigDecimal("2.5")).height(new BigDecimal("2.8"))
+                .processingInfo(info)
+                .build();
+    }
+
+    @Test
+    @DisplayName("🔴 #5174 读侧取键：不启用池化 ⇒ Designation 的 SKU 码 = 快照实际写入的 `sku` 键"
+            + "（改前读 `skuCode` ⇒ 恒 null ⇒ 护栏 no-op）")
+    void designationSkuCodeComesFromTheSnapshotSkuKey() {
+        stubLibrary();
+        stubGenerate(List.of(itemWithSnapshotSku("SKU-1")));
+        when(stockBatchConsumptionService.plan(eq(TENANT), anyList()))
+                .thenReturn(List.of(plannedDeduction("item-1", "PC-20260923-0001", "2.7", "60")));
+
+        var results = realChainService().generate(List.of("order-001"),
+                List.of(batchAssignment("item-1", "PC-20260923-0001")), TENANT, "文员");
+
+        assertThat(results.get(0).isSuccess()).as("合法路径（正确 SKU）行为不变：照旧成功").isTrue();
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<StockBatchConsumptionService.Designation>> planCaptor =
+                ArgumentCaptor.forClass(List.class);
+        verify(stockBatchConsumptionService).plan(eq(TENANT), planCaptor.capture());
+        assertThat(planCaptor.getValue()).extracting(
+                        StockBatchConsumptionService.Designation::skuCode)
+                .as("🔴 SKU 码必须取自快照的 `sku` 键（快照里**没有** `skuCode` 键）—— 非 null 才有护栏")
+                .containsExactly("SKU-1");
+        // 排料定尺入参（#5158）逐值不变：加工类型 / 窗高 / 分幅数照旧全部来自快照，本单不碰
+        StockBatchConsumptionService.Designation d = planCaptor.getValue().get(0);
+        assertThat(d.cuttingMode()).isEqualTo("定高买宽");
+        assertThat(d.height()).isEqualByComparingTo("2.8");
+        assertThat(d.panels()).isEqualTo(2);
+        assertThat(d.meters()).as("派工需求 = 公式口径米数（#5158 口径不变）").isEqualByComparingTo("2.7");
+    }
+
+    @Test
+    @DisplayName("🔴 #5174+#5167 规则补位：建议值按**快照的 SKU**过滤"
+            + "（改前收 null ⇒ 过滤整条 no-op ⇒ 错颜色/门幅的批次也能被补位）")
+    void suggestedBatchNoSeesTheSnapshotSku() {
+        stubLibrary();
+        stubGenerate(List.of(itemWithSnapshotSku("SKU-1")));
+        when(stockBatchConsumptionService.suggestedBatchNo(any(), any(), any(), any(), any()))
+                .thenReturn("PC-EARLY");
+        when(stockBatchConsumptionService.plan(eq(TENANT), anyList()))
+                .thenReturn(List.of(plannedDeduction("item-1", "PC-EARLY", "2.7", "30")));
+
+        var results = realChainService().generate(List.of("order-001"),
+                List.of(batchAssignment("item-1", null)), TENANT, "文员", "fifo");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<String> skuCaptor = ArgumentCaptor.forClass(String.class);
+        verify(stockBatchConsumptionService).suggestedBatchNo(eq(TENANT), eq("prod-1"),
+                skuCaptor.capture(), any(), eq("fifo"));
+        assertThat(skuCaptor.getValue())
+                .as("🔴 过滤入参 = 快照的 SKU 码（改前是 null ⇒ 会挑到同货号错颜色/门幅的批次）")
+                .isEqualTo("SKU-1");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<StockBatchConsumptionService.Designation>> planCaptor =
+                ArgumentCaptor.forClass(List.class);
+        verify(stockBatchConsumptionService).plan(eq(TENANT), planCaptor.capture());
+        assertThat(planCaptor.getValue()).extracting(
+                        StockBatchConsumptionService.Designation::skuCode)
+                .as("补位挑出的批次进 plan 时带着同一个 SKU 码（两处口径同源）").containsExactly("SKU-1");
     }
 
     // ── 指派规则（issue #5167）：缺省一字不改 / 显式开启才自动补位 ──────────────────

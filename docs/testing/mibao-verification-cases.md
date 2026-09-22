@@ -4058,7 +4058,7 @@
 真值: batch-ledger.dispatch-deduct
 溯源: 2026-09-22 新增：#5145 阶段 1（取号 PG-060 —— 原 PG-059 与在飞的 #5142 撞号，rebase 后顺延）。扣减时点 = 生成/派发加工单（用户裁定，非报工）；已有硬闸「仅已确认订单可生成加工单」⇒ 派工扣必然发生在支付扣之后。 ｜ tags: processing-order, stock, batch, backend_contract
 
-## 商品域（63 case）
+## 商品域（66 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -4849,6 +4849,45 @@
 ```
 真值: batch-ledger.dispatch-pool-visibility, batch-ledger.pooled-batch-dispatch
 溯源: 2026-09-23 新增（issue #5169）：池化端点装配（缺省关下传 null / 上限可配 / 预览只读）。取号 PR-072。 ｜ tags: dispatch-pool, processing-order, backend-contract
+
+### PR-076. 🔴 真库：同货号、错颜色/门幅的批次 ⇒ `BATCH_SKU_MISMATCH` 400 + **零落账**（红证：改前读侧恒 null ⇒ 同一夹具**静默扣账**） 🔵
+```
+你: 跨 SKU 批次护栏的真库读数（非 LLM 行为，由真 PG（initdb+pg_ctl）Java 判据覆盖）
+期望: direct_reply
+数据: 🔴 判据 1·**跨 SKU ⇒ 显式拒绝**：`plan` 对「同一个货号、错颜色/门幅」的批次抛 `BATCH_SKU_MISMATCH`（HTTP 400）；文案点名对象（批次号 + 批次所属 SKU + 订单行要的 SKU），`suggestion` 给可行动处置（按该行的颜色/门幅重选）。跨商品那一道判据独立成立（本来就生效）⇒ 本单补的正是「同货号、跨 SKU」这一格。
+数据: 🔴 判据 1·**零落账**：拒绝发生在 `plan`（只读段，写面在 `apply`）⇒ 被拒批次在真库台账里 **0 行**、批次余量一字不动（60 仍是 60），不留下「有加工单、扣了半截」的半成品。
+数据: 🔴 **红证（改前形态 = 静默落账，实测不是推断）**：同一夹具把 SKU 码换成改前读侧必然产出的 `null`（既有路径读的是快照里**不存在**的 `skuCode` 键 ⇒ 恒 null；护栏第一个条件 `hasText(d.skuCode())` 因此恒假 ⇒ 整条判据 no-op）⇒ 真库读数 = 台账 **1 行**、扣 **3 米**、批次余量 60 → **57**，三个数在同测试内打印并与上面那条对照。
+数据: 判据 1·**可被触达的路径**：`generate` 允许逐行显式传 `batches`（文员手选批次号）⇒ 手选一个同货号但错颜色/门幅的批次，改前就是上述静默扣账。
+跳过: [backend-contract] 批次账的真库读数（无米宝工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据覆盖，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.dispatch-deduct, batch-ledger.remaining-derived
+溯源: 2026-09-23 新增（issue #5174）：跨 SKU 批次护栏的真库判据（显式拒绝 + 零落账 + 红证静默落账）。取号 PR-076。 ｜ tags: batch-ledger, dispatch-sku-guard, real-db, backend-contract
+
+### PR-077. 🔴 读侧取键（装配）：逐单派工行拿到的 SKU 码 = 快照**实际写入**的 `sku` 键（改前读 `skuCode` ⇒ 恒 null ⇒ 护栏与建议值过滤整条 no-op） 🔵
+```
+你: 生成加工单时的派工入参装配（非 LLM 行为，由 Mockito 单测覆盖）
+期望: direct_reply
+数据: 🔴 判据 1 的**读侧一半**：不启用池化（逐单派）时，`plan` 收到的 `Designation.skuCode` **非 null** 且逐值等于快照里的 SKU 码（快照由 `buildSnapshot` 写入：`processing_info.sku` 与 `processing_info.skuCode` **都落 `sku` 这一个键**，快照里没有 `skuCode` 键）。红证 = 改前该值为 `[null]`；它的真库后果（静默扣账）见 PR-076 的对照读数。
+数据: 判据 3 的**读侧一半**：按规则自动补位时 `suggestedBatchNo` 收到的过滤入参 = **同一个** SKU 码（改前收 `null` ⇒ 过滤条件整条 no-op ⇒ 同货号错颜色/门幅的批次也能被补位；真库读数见 PR-078）。补位挑出的批次进 `plan` 时带着同一个 SKU 码（两处口径同源，不另立第二份）。
+数据: 判据 2·**合法路径逐值不变**：正确 SKU ⇒ 加工单照旧生成成功；派工需求 `meters` 仍是公式口径米数（向上进位到 0.1，与销售账同函数）、排料定尺三项（加工类型 / 窗高 / 分幅数）仍**逐值来自快照**（#5158 口径本单不碰）。
+跳过: [backend-contract] 派工入参装配（无米宝工具面）⇒ 由 Mockito 单测覆盖，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.dispatch-deduct, batch-ledger.assignment-rule-switchable
+溯源: 2026-09-23 新增（issue #5174）：读侧取键（快照 `sku` 键）+ 规则补位过滤入参 + 定尺入参逐值不变。取号 PR-077。 ｜ tags: dispatch-sku-guard, batch-ledger, processing-order, backend-contract
+
+### PR-078. 🔴 真库：同 SKU 的批次落账**逐值不变**（含 #5158 排料口径）+ 建议值按 SKU 过滤 + 反向护栏（批次侧无色号不擅自收紧）+ 幂等 🔵
+```
+你: 同 SKU 批次的真库落账读数（非 LLM 行为，由真 PG（initdb+pg_ctl）Java 判据覆盖）
+期望: direct_reply
+数据: 🔴 判据 2·**合法路径逐值不变**：正确 SKU 的批次 ⇒ 落账两行，`formula_meters` = 3 / `planned_meters` = **1.5**（两扇「窗高 1.1 + 卷边 0.3」的矮窗在门幅 2.8 上并排 ⇒ #5158 排料口径**仍生效**，不是退化成「一律按公式扣」）、`Σ(formula − planned)` = 3、`unit_cost` = 12.5、`before_qty`/`after_qty` = 60 → 58.5 → 57 逐值可读、批次余量 60 → **57**。
+数据: 🔴 判据 3·**建议值过滤生效**：同货号、错门幅但**入库更早**的批次在改前形态（读侧传 `null`）下**会被建议**（FIFO 首选 —— 判别性来自夹具顺序）；带上正确 SKU 码 ⇒ 建议值换成同 SKU 的那个批次，`fifo` 与 `best_fit` 同源同一份候选（缺省仍是 `fifo`，本单不改指派策略默认值）。
+数据: 🔴 判据 2 的**反向护栏**（防「修成一律拒绝」）：批次侧 `sku_code` 为 **NULL**（导入批次未带色号 —— 如实登记的边界）⇒ **不擅自收紧**、仍按 `productId` 那道判据放行并正常落账；谁把 `hasText(batch.getSkuCode())` 去掉，这条立刻变红。
+数据: 判据 5·**幂等不变**：同一加工单重复落账被 `uk_batch_consumption_line` 挡下（SQLSTATE 23505），台账行数与批次余量都不再变化（沿用 #5145 闸）。
+数据: 判据 4·**不损失客户**：`product_skus.stock` / `price` 与 `stock_ledger_entries` 行数指纹一字不动（批次护栏不碰销售账）。
+跳过: [backend-contract] 同 SKU 落账与建议值的真库读数（无米宝工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据覆盖，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.dispatch-deduct, batch-ledger.remaining-derived, batch-ledger.assignment-rule-switchable, batch-stock-plan.deduction-by-cutting-plan
+溯源: 2026-09-23 新增（issue #5174）：同 SKU 落账逐值不变 + 排料口径 + 建议值过滤（含红证）+ 反向护栏 + 幂等 + 不损失客户。取号 PR-078。 ｜ tags: batch-ledger, dispatch-sku-guard, real-db, backend-contract
 
 ## 工具注册器域（1 case）
 
@@ -5745,8 +5784,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：421（活跃 156，跳过 265）
-- tier 分布：smoke 10 / normal 380 / adversarial 31
+- 用例总数：424（活跃 156，跳过 268）
+- tier 分布：smoke 10 / normal 383 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -5766,7 +5805,7 @@
 - 订单域：46
 - 加工项域：13
 - 加工单域：53
-- 商品域：63
+- 商品域：66
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
