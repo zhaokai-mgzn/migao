@@ -203,11 +203,12 @@ MINI_CASE_TMPL = """cases:
 
 
 def _mini_repo(tmp: Path, cases: dict[str, str]) -> Path:
-    """只有 `.github/` 的最小仓库：拷**真的** `render_cases.py` / `yaml_light.py`
-    （保证与判据**同一加载器** = 同源），用例库由参数给定（= 真值源的**注入面**）。"""
+    """只有 `.github/` 的最小仓库：拷**真的** `render_cases.py` / `yaml_light.py` /
+    `cases_yaml.py`（保证与判据**同一加载器** = 同源；`cases_yaml` 是用例文件的严格 loader
+    单一真相源，#5151），用例库由参数给定（= 真值源的**注入面**）。"""
     gh = tmp / ".github"
     (gh / "cases").mkdir(parents=True, exist_ok=True)
-    for name in ("render_cases.py", "yaml_light.py"):
+    for name in ("render_cases.py", "yaml_light.py", "cases_yaml.py"):
         (gh / name).write_bytes((REPO_ROOT / ".github" / name).read_bytes())
     for name, body in cases.items():
         (gh / "cases" / name).write_text(body, encoding="utf-8")
@@ -741,22 +742,28 @@ def test_heartbeat_offline_is_unknown_not_pass(tmp_path):
     assert chk["status"] == "unknown", out
     assert any("未知" in n for n in chk["notes"]), out
     assert rc == 0, out
-    # 定时审计用 --fail-on-unknown ⇒ 未知要红（防"网络静默"变成假绿）
+    # 定时审计用 --fail-on-unknown ⇒ 未知要红（防"网络静默"变成假绿）。
+    # ⚠️ #5151 起「未知」走**三态 `3`**（不可判）而不是 `1`：两者都是非零 ⇒ 定时腿照样红，
+    # 但报告/退出码能把"判据没跑出结论"与"确实有漂移"分开（`3` 不得当 `0` 读）。
     rc2, out2, _ = run(repo, "--check", "--only", "heartbeat", "--fail-on-unknown")
-    assert rc2 == 1, out2
+    assert rc2 == 3, out2
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ⑧ 退化守卫 + 基线策略（meta）
 # ─────────────────────────────────────────────────────────────────────────────
 def test_empty_cases_surface_red(tmp_path):
-    """红证：判据面为 0（用例库空）⇒ 红 —— 空集会让护栏恒真（空断言）。"""
+    """红证：判据面为 0（用例库空）⇒ 红 —— 空集会让护栏恒真（空断言）。
+
+    ⚠️ #5151 起这条走**三态 `3`**（判据不可判：判定面为空 ⇒ 没有结论），**不是** `1`
+    （`1` 留给"确实有漂移"）。非零不变 ⇒ 护栏照旧 fail-closed。
+    """
     repo = mk_repo(tmp_path, {".github/cases/keep.yml": "schema: '1'\ndomain: x\ncases: []\n"})
     rc, out, rep = run(repo, "--check", "--only", "mutable-locator")
     chk = check_of(rep, "mutable-locator")
     assert chk["status"] == "error", out
     assert "判据面为空" in chk["error"], out
-    assert rc == 1, out
+    assert rc == 3, out
 
 
 def test_baseline_only_shrinks_new_drift_blocks(tmp_path):

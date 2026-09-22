@@ -89,24 +89,49 @@ DOMAIN_TITLES = {
 }
 
 
-def _yaml():
+def _bootstrap_path():
     here = os.path.dirname(os.path.abspath(__file__))
     for d in (here, os.path.join(here, "..", "qa"), os.path.join(here, "..", "..", ".github")):
         if d not in sys.path:
             sys.path.insert(0, d)
+
+
+def _yaml():
+    _bootstrap_path()
     from yaml_light import load_file
     return load_file
 
 
+def _cases_yaml():
+    """用例源文件的**唯一严格 loader**（与判据腿 `scripts/drift_audit.py` 同一处实现）。
+
+    ⚠️ **这是 #5151 的核心改动**：渲染腿原先只走 `yaml_light`（**宽松**）⇒ 一份标准 YAML 拒绝
+    的用例源文件**照旧渲染成功**、生成物新鲜度也照旧绿 = **零信号**（#5147 实测：判据腿那边
+    整条抛错、9 条合法豁免差点被 `--regen-baseline` 永久删掉）。现在"合法/非法"的结论只由
+    `.github/cases_yaml.py` 的 `strict_error()` 给出，**两条腿共用这一处**（不许各自再写一份）。
+    """
+    _bootstrap_path()
+    import cases_yaml
+    return cases_yaml
+
+
 def load_case_dicts(cases_dir):
-    """读 cases/*.yml → [case_dict]，每个 dict 附带 _file 域名。"""
+    """读 cases/*.yml → [case_dict]，每个 dict 附带 _file 域名。
+
+    ⚠️ 每个文件**先过严格判定**（`cases_yaml.require_strict`，#5151）：不合法 ⇒ `CasesYamlError`
+    （`main()` 据此非零退出）。**不许**退回宽松解析静默吃下 —— 那正是本单治的形态。
+    解析口径本身仍是 `yaml_light`（生成物必须逐字不变；两条腿共用的是"严格判定"，不是"取值"）。
+    """
     load_file = _yaml()
+    cases_yaml = _cases_yaml()
     cases = []
     for fn in sorted(os.listdir(cases_dir)):
         if not fn.endswith(".yml"):
             continue
         domain = fn[:-4]
-        data = load_file(os.path.join(cases_dir, fn))
+        path = os.path.join(cases_dir, fn)
+        cases_yaml.require_strict(path)
+        data = load_file(path)
         for c in data.get("cases") or []:
             c = dict(c)
             c["_domain"] = domain
@@ -506,7 +531,17 @@ def main(argv=None):
     p.add_argument("--out-md", required=True, help="mibao-verification-cases.md 输出路径")
     args = p.parse_args(argv)
 
-    cases = load_case_dicts(args.cases)
+    try:
+        cases = load_case_dicts(args.cases)
+    except _cases_yaml().CasesYamlError as e:
+        # **fail-closed**（#5151）：渲染腿不许"照旧渲染成功" —— 那会让一份语法错误的用例源文件
+        # 一路绿灯，而判据腿（严格 loader）整条抛错，报错还指向**错误的病因**（实测：报成
+        # 「基线归零未删 9（阻塞）」并建议 `--regen-baseline`，照做会永久删掉 9 条合法豁免）。
+        print(f"❌ 用例源文件的严格解析失败（渲染腿 fail-closed，#5151）：\n   {e}",
+              file=sys.stderr)
+        print("   ⇒ 修好该文件的 YAML 语法后重跑；**不要**绕过严格判定"
+              "（宽松解析会让坏文件一路绿灯，再到判据腿上炸成别的问题）。", file=sys.stderr)
+        return 1
     if not cases:
         print(f"❌ {args.cases} 下无用例文件", file=sys.stderr)
         return 1

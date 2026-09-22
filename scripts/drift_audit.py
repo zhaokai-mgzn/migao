@@ -64,6 +64,18 @@ POLICY_VERSION = 1
 DEFAULT_BASELINE = "scripts/drift_audit_baseline.json"
 REGEN_COMMAND = "python3 scripts/drift_audit.py --regen-baseline --reason '<理由>'"
 
+# ── 三态退出码（#5151）────────────────────────────────────────────────────────
+# `0` 通过 / `1` 判红（有结论）/ `3` **不可判**（判据没跑出结论）—— 与仓库既有口径一致
+# （`scripts/resolve_stale_bot_threads.py` / `.github/llm_sink_check.py` 同款）。
+# ⚠️ **`3` 不是 `0`**：调用方只许把 `0` 当通过；`3` 要"停下来看判据"，**绝不许**当成
+# "没有漂移"进而去动基线（#5151 的病灶：`findings = 0` 被读成"已归零"）。
+# 单一实现 = `tri_state()`：报告里的 `summary.tri_state` 与进程退出码**同源**。
+EXIT_LABELS = {
+    0: "0 通过（有结论：无漂移）",
+    1: "1 判红（有结论：确实有漂移/陈旧条目，按上面的『怎么改』处置）",
+    3: "3 **不可判**（判据没跑出结论 ⇒ **先修判据**；不得当 0 读，也不得据此动基线）",
+}
+
 # ── 受管引用面（引用新鲜度的判定范围）──────────────────────────────────────────
 # 只覆盖「契约性引用」所在的目录；点时效快照类目录（历史审计报告 / 一次性验收报告 /
 # 设计调研）**有意排除**：那里的行号是当时的读数，本来就该陈旧（登记为豁免面）。
@@ -553,11 +565,11 @@ def check_generated(a: Audit) -> CheckResult:
 
     # 字段级新鲜度：**渲染器静默丢字段**是最隐蔽的陈旧快照形态。
     # 用 `pre_clean`（运行期复位声明）做哨兵：源里有，渲染结果里必须有。
-    import yaml  # 延迟导入：只有本检查需要
+    cases_yaml = _load_cases_yaml()      # 用例文件的**唯一严格 loader**（与渲染腿同一处，#5151）
 
     src_has_preclean = 0
     for f in sorted((a.repo / CASES_DIR).glob("*.yml")):
-        d = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+        d = cases_yaml.load_document(f)
         for c in d.get("cases") or []:
             if c.get("pre_clean"):
                 src_has_preclean += 1
@@ -731,14 +743,24 @@ def _iter_locators(case: dict) -> list[tuple[str, str, Any]]:
 
 def check_mutable_locators(a: Audit) -> CheckResult:
     r = CheckResult("mutable-locator")
-    import yaml
+    cases_yaml = _load_cases_yaml()      # 严格 loader 的单一真相源（与渲染腿同一处，#5151）
 
     cases_dir = a.repo / CASES_DIR
     per_key: dict[str, int] = {}
     per_case: dict[str, list[str]] = {}
     total_cases = 0
-    for f in sorted(cases_dir.glob("*.yml")):
-        d = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+    try:
+        docs = [(f, cases_yaml.load_document(f)) for f in sorted(cases_dir.glob("*.yml"))]
+    except cases_yaml.CasesYamlError as e:
+        # **判据不可判**（三态 `3`），**绝不是「发现数为 0」**：`findings` 为空**没有**"没有漂移"
+        # 这个含义。不分开的后果（#5147 实测）：基线条目被下游读成"已归零"⇒ 报告写
+        # 「基线归零未删 9（阻塞）」并**建议 `--regen-baseline`**，照做就凭一次解析错误**永久
+        # 删掉 9 条合法豁免**。修法是**先修判据**，不是动基线。
+        r.status = "error"
+        r.error = ("用例源文件严格解析失败 ⇒ **本判据不可判**（三态 3，不得读成「发现数为 0」/ "
+                   f"「没有漂移」）：{e}")
+        return r
+    for _f, d in docs:
         for c in d.get("cases") or []:
             total_cases += 1
             hits = [comp for comp, k, v in _iter_locators(c) if _is_mutable(k, v)]
@@ -1231,6 +1253,34 @@ def _load_gate_module():
     return mod
 
 
+_CASES_YAML_MOD = None
+
+
+def _load_cases_yaml():
+    """加载 `.github/cases_yaml.py`（用例文件**严格 loader 的单一真相源**，#5151）。
+
+    为什么 import 而不是各写一份：渲染腿（`.github/render_cases.py`）与判据腿原先**宽严不一**
+    （`yaml_light` vs `yaml.safe_load`）⇒ 一份语法错误的用例源文件在渲染腿上**零信号**、在判据腿
+    上整条抛错，还把"判据自身异常"渲染成「基线归零未删 9（阻塞）」+ 建议 `--regen-baseline`
+    （#5147 实测，照做会永久删掉 9 条合法豁免）。现在"合法/非法"只有一处实现
+    （`cases_yaml.strict_error`），两条腿都只许问它。
+
+    用 `importlib` 按**路径**加载（同 `_load_gate_module`）：不依赖当前工作目录；被测对象是
+    **本脚本所在仓库**的那一份实现，而不是夹具仓库里有没有 `.github/`（夹具仓库只提供
+    `cases/*.yml` 这个注入面）。
+    """
+    global _CASES_YAML_MOD
+    if _CASES_YAML_MOD is None:
+        path = Path(__file__).resolve().parents[1] / ".github" / "cases_yaml.py"
+        spec = importlib.util.spec_from_file_location("cases_yaml", path)
+        if spec is None or spec.loader is None:  # pragma: no cover —— 路径算错才会发生
+            raise RuntimeError(f"加载不了用例严格 loader 的单一真相源：{path}")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _CASES_YAML_MOD = mod
+    return _CASES_YAML_MOD
+
+
 # ⚠️ 「陈旧即红」的判据**不在本文件**：调 `case_trust_gate.reconcile_baseline`（#4045）。
 # 本脚本只把 `{条目 key: 计数}` 摊平成那边认识的 `violations_by_case` 形态。
 DRIFT_RECONCILE_HINT = (
@@ -1552,10 +1602,15 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
         base_entries = base_entries_all.get(c.id, {}) if base_entries_all is not None \
             else dict(recorded)
         # 本次**没能重算**这条判据 ⇒ 它的旧条目不得读成「已不漂移」（没跑 ≠ 陈旧）：
+        # · **判据自己没跑出结论**（崩溃 / 整体未知，#5151）：`findings` 为空**不是**「发现数
+        #   为 0」⇒ 它名下的基线条目一条都不许判陈旧。不这么分的后果是实测过的：
+        #   一条用例文件的解析错误 ⇒ `mutable-locator` 整条抛错 ⇒ 9 条 `component|*` 合法豁免
+        #   被读成「已归零」⇒ 报「基线归零未删 9（阻塞）」**并建议 `--regen-baseline`**
+        #   （照做 = 凭一次解析错误永久删掉真豁免）。判据没结论 ⇒ 该先修判据。
         # · 判定面为空（`empty-surface`）：这条判据的输入没了，结论无从谈起；
         # · 需要网络而本次离线：`heartbeat` 的 gh 查询全返「未知」⇒ `never-succeeded`
         #   这类条目看起来归零，无条件判陈旧就是**凭空判红**。
-        unverifiable = c.network and a.offline
+        unverifiable = res.status in ("error", "unknown") or (c.network and a.offline)
         cmp_ = compare_baseline(res, base_entries, changed, recorded_entries=recorded,
                                 base_check_entries=(base_entries_all or {}).get(c.id, {}),
                                 unverifiable=unverifiable)
@@ -1718,7 +1773,10 @@ def render_summary(rep: dict, baseline: dict) -> str:
             else:
                 L.append(f"     🧹 基线条目已归零（无 PR 上下文：只报告不阻塞）：{k['key']}")
         for k in c.get("stale_baseline_unverifiable", []):
-            L.append(f"     ⏭️ 判据本轮**未能重算**（网络不可达 / 判定面为空）⇒ 该条目"
+            why = ("判据**不可判**（自身异常 / 整体未构成结论）⇒ 先修判据"
+                   if c["status"] in ("error", "unknown")
+                   else "网络不可达 / 判定面为空")
+            L.append(f"     ⏭️ 判据本轮**未能重算**（{why}）⇒ 该条目"
                      f"**不判陈旧**（没跑 ≠ 已不漂移）：{k['key']}")
         for k in c.get("dropped_baseline_entry", []):
             L.append(f"     ❌ 基线条目被删但**现在仍然漂移**（= 偷偷缩短/新增豁免）：{k['key']}")
@@ -1727,12 +1785,27 @@ def render_summary(rep: dict, baseline: dict) -> str:
         for k in c["paydown"]:
             L.append(f"     🧹 可销账：{k['key']} −{k['delta']}（可 `--regen-baseline --reason ...`）")
     L.append("-" * 78)
+    # **判据不可判**（三态 `3`）必须与「发现数为 0」在报告里就分开（#5151）：否则读者会把
+    # "判据没跑出结论"当成"没有漂移"，进而去动基线（那正是差点删掉 9 条合法豁免的路径）。
+    unjudgeable = [c for c in rep["checks"] if c["status"] in ("error", "unknown")]
+    if unjudgeable:
+        L.append("❌ **判据不可判**（三态 `3`，**不得读成 0**）—— 它们**没有产出结论**："
+                 "`findings` 为空**不是**「发现数为 0 / 没有漂移」：")
+        for c in unjudgeable:
+            why = c["error"] or "整体不构成结论（见该判据的 notes）"
+            L.append(f"   · [{c['id']}] status={c['status']}：{why}")
+        L.append("   ⇒ **先修判据**：修好之前，属于这些判据的基线条目**一条都不许动** ——"
+                 "拿 `--regen-baseline` 消账 = 把「判据没跑」写成「已不漂移」，"
+                 "**凭一次异常永久删掉合法豁免**（`#5151` 实证：9 条 `component|*` 差一步被删）。")
     L.append("本次相对基线的增减：新增漂移 %d（面内，阻塞） / 面外新增 %d（不阻塞，定时腿红） / "
              "存量放行 %d / 可销账 %d / 基线归零未删 %d（**全量对账 ⇒ 阻塞 %d**） / "
              "条目被删但仍漂移 %d（阻塞）⇒ %s"
              % (s["new_drift"], s["new_drift_out_of_scope"], s["known_drift"], s["paydown"],
                 s["stale_baseline_entry"], s["stale_baseline_blocking"],
                 s.get("dropped_baseline_entry", 0), s["verdict"].upper()))
+    if s.get("tri_state") is not None:
+        L.append("退出码（三态，实现 = `tri_state()`，与本节结论同源）：%s"
+                 % EXIT_LABELS.get(s["tri_state"], s["tri_state"]))
     bd = s.get("burn_down") or {}
     if bd.get("active"):
         net = bd.get("net") or {}
@@ -1748,11 +1821,17 @@ def render_summary(rep: dict, baseline: dict) -> str:
     if rep["unimplemented"]:
         L.append("未实装（**不用恒真判断凑数**）：" + "、".join(u["id"] for u in rep["unimplemented"]))
     L.append("-" * 78)
-    if s["new_drift"] or s["stale_baseline_entry"]:
+    # ⚠️ `--regen-baseline` 只见于**有结论**的阻塞项（#5151 判据 3「防诱导」）：判据不可判时
+    # 给出这条建议，等于诱导读者"凭一次判据异常把合法豁免删掉"。不可判的情形已在上面单独
+    # 打印「先修判据」，这里**不许**再补一句破坏性建议。
+    if s["new_drift"] or s["stale_baseline_entry"] or s.get("dropped_baseline_entry"):
         L.append("怎么改（按判据逐条）：")
         for c in rep["checks"]:
             if c["new_drift"] or c.get("stale_baseline_entry"):
                 L.append(f"  · [{c['id']}] {c['remedy']}")
+        if unjudgeable:
+            L.append("  ⚠️ 本次还有**不可判**的判据（见上）：`--regen-baseline` **不能**用来消它们的账"
+                     " —— 先把判据修好，再谈基线。")
         L.append("  · 若确认这些是**应接受的存量**（不是新增回归）："
                  f"`python3 scripts/drift_audit.py --regen-baseline --reason '<你在 PR 里写的理由>'`，"
                  f"并把基线变更一起提交。")
@@ -1844,6 +1923,36 @@ def build_baseline(rep: dict, reason: str) -> dict:
     }
 
 
+def tri_state(rep: dict, *, check: bool, strict_stale: bool, fail_on_unknown: bool) -> int:
+    """**三态退出码**（`0` 通过 / `1` 判红 / `3` **不可判**）—— 单一实现，与报告同源（#5151）。
+
+    为什么必须有 `3`：原先"判据自身异常"与"判据说没有漂移"都表现为 `findings` 为空，调用方
+    （含人）只能读成"没问题"；而 `--check` 又把 `error` 折成 `1`，与"确实有漂移"同码 ⇒
+    「没跑出结论」这个状态在接口上**不存在**。实证后果见模块头（9 条合法豁免差点被删）。
+
+    · `1` = **有结论的红**（新增/陈旧/被删/预算未达标）——**优先于** `3`：一次审计里既有真漂移
+      又有崩溃时，先修漂移，别让"不可判"盖住"确实有问题"（诊断行的 `verdict` 同序）。
+    · `3` = **不可判**：某判据崩溃（`error`），或声明了"未知也当失败"时出现整体未知（
+      `--fail-on-unknown`，定时腿用）。**没声明该开关时 `unknown` 仍只报告**（`0`）——
+      这是**既有语义，没有放宽**：CI runner 上活锚天然不存在（`skill-anchor` 恒 `unknown`），
+      把 `unknown` 无条件折成非零 = 每个 PR 常红。
+    · `2` 仍留给 `--regen-baseline` 缺 `--reason` 的用法错误（`main()` 里，与本函数无关）。
+    """
+    if not check:
+        return 0
+    s = rep["summary"]
+    if s["new_drift"] or s["stale_baseline_blocking"] or s["dropped_baseline_entry"] \
+            or (s.get("burn_down") or {}).get("blocking"):
+        return 1
+    if strict_stale and (s["stale_baseline_entry"] or s["new_drift_out_of_scope"]):
+        return 1
+    if any(c["status"] == "error" for c in rep["checks"]):
+        return 3
+    if fail_on_unknown and any(c["status"] == "unknown" for c in rep["checks"]):
+        return 3
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="统一漂移审计（真相源契约）")
     ap.add_argument("--repo", default=".", help="仓库根（默认当前目录）")
@@ -1909,29 +2018,18 @@ def main(argv: list[str] | None = None) -> int:
               f"reason={args.reason!r}）")
         return 0
 
+    # 三态退出码**先算、再打印**：报告里的 `summary.tri_state` 与进程退出码同源（#5151），
+    # 免得读者从 "verdict" 猜退出码（两者一度可以相反）。
+    rc = tri_state(rep, check=args.check, strict_stale=args.strict_stale,
+                   fail_on_unknown=args.fail_on_unknown)
+    rep["summary"]["tri_state"] = rc
     print(render_summary(rep, baseline))
     if args.json_out:
         Path(args.json_out).write_text(
             json.dumps(rep, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"（机器可读报告 → {args.json_out}）")
 
-    s = rep["summary"]
-    if not args.check:
-        return 0
-    if s["new_drift"]:
-        return 1
-    # 全量对账（#4045）：陈旧条目 / 被删但仍漂移的条目 ⇒ 阻塞（不再需要 `--strict-stale`）
-    if s["stale_baseline_blocking"] or s["dropped_baseline_entry"]:
-        return 1
-    if (s.get("burn_down") or {}).get("blocking"):
-        return 1
-    if args.strict_stale and (s["stale_baseline_entry"] or s["new_drift_out_of_scope"]):
-        return 1
-    if any(c["status"] == "error" for c in rep["checks"]):
-        return 1
-    if args.fail_on_unknown and any(c["status"] == "unknown" for c in rep["checks"]):
-        return 1
-    return 0
+    return rc
 
 
 if __name__ == "__main__":
