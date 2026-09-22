@@ -511,3 +511,24 @@ def test_fixture_is_the_real_5147_input_not_a_lookalike(tmp_path):
         "真用例库里已找不到 PR #5147 那条判据的转义版原文 —— 本文件的坏输入夹具已与现场脱钩。\n"
         "处置：把 `_REAL_5147_FIXED_LINE` 更新成 `.github/cases/product.yml` 里那条判据的**现状**，"
         "并确认 `_REAL_5147_BAD_LINE` 仍是它「未转义」的形态（红证素材必须是真实事故输入）。")
+
+
+def test_accelerator_is_still_a_safe_loader(tmp_path):
+    """**换 C 加速器不等于可以换成不安全的 loader**。
+
+    为什么单开这条：渲染腿的严格判定会被 `load_case_dicts()` 调用上百次（CI 的
+    `tests/unit_ci_workflows` 套件），纯 Python loader 每调用多 0.66s ⇒ 该 job 会撞上自己的 8 分钟
+    超时（实测 CI：套件 253s → 357s）。修法是换 PyYAML 的 **C 加速版**（同一套安全构造规则）——
+    但"加速"绝不能顺手把 safe 换成 unsafe（那会**真的构造对象** = 解析变成执行）。
+
+    判据：① loader 名必须是 PyYAML 的**安全** loader；② 含 Python 标签的 YAML 必须**判红**。
+    红证：把 `.github/cases_yaml.py` 的 `_SAFE_LOADER` 改成 `yaml.UnsafeLoader` ⇒ ①② 同时红。
+    """
+    cases_yaml = _by_path("cases_yaml_safe_loader", SHARED)
+    name = cases_yaml.strict_loader_name()
+    assert name in ("CSafeLoader", "SafeLoader"), (
+        f"严格解析用的不是 PyYAML 的安全 loader（当前 {name!r}）—— 「加速」不许换成不安全的 loader")
+    danger = tmp_path / "danger.yml"
+    danger.write_text('cases:\n  - id: FX-900\n    x: !!python/name:os.system\n', encoding="utf-8")
+    assert cases_yaml.strict_error(danger) is not None, (
+        "含 Python 标签的 YAML 没被判红 ⇒ 当前 loader 不是安全的（换回 CSafeLoader / SafeLoader）")

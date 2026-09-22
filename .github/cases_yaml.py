@@ -53,11 +53,12 @@ job 只有 `actions/checkout` + 系统 `python3`）。实测该环境**没有 Py
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
-__all__ = ["CasesYamlError", "pyyaml_available", "strict_error", "require_strict",
-           "load_document"]
+__all__ = ["CasesYamlError", "pyyaml_available", "strict_loader_name", "strict_error",
+           "require_strict", "load_document"]
 
 
 class CasesYamlError(Exception):
@@ -68,6 +69,28 @@ try:                      # 模块级可选导入：渲染腿的 CI job 没有 P
     import yaml as _pyyaml
 except ImportError:       # pragma: no cover —— 由「无 PyYAML」子进程夹具覆盖
     _pyyaml = None
+
+#: 严格解析用的 loader：**C 加速版优先**，纯 Python 兜底。
+#: 两者是**同一套安全构造规则**（PyYAML 官方 drop-in），本仓 25 个用例文件实测**逐值深比较相同**、
+#: 报错的 `problem_mark`（行/列）也相同 —— 只是 C 版快 ~11×（1.05MB 语料 0.626s → 0.055s）。
+#: ⚠️ 这不是可选优化：渲染腿的严格判定会被 `load_case_dicts()` 调用上百次（CI 的
+#: `tests/unit_ci_workflows` 套件），纯 Python loader 每调用一次多 0.66s ⇒ 该 job 逼近/撞上自己的
+#: 8 分钟超时（实测 CI：套件 253s → 357s；#4793 已因同类原因把该 job 的超时从 3 分钟提到 8 分钟）。
+_SAFE_LOADER = ((getattr(_pyyaml, "CSafeLoader", None) or _pyyaml.SafeLoader)
+                if _pyyaml is not None else None)
+
+
+def strict_loader_name() -> str:
+    """当前严格解析用的 loader 名（报告/守卫用：`CSafeLoader` = C 加速，`SafeLoader` = 纯 Python）。"""
+    return getattr(_SAFE_LOADER, "__name__", "<无 PyYAML>")
+
+
+def _safe_load(text: str):
+    """**唯一**的严格解析调用点 —— `strict_error()`（判定）与 `load_document()`（取值）共用它。
+
+    两条腿口径一致的前提就是"只有这一处真的调 loader"（不许各自 `yaml.safe_load(...)`）。
+    """
+    return _pyyaml.load(text, Loader=_SAFE_LOADER)
 
 
 def pyyaml_available() -> bool:
@@ -215,6 +238,35 @@ def _zero_dep_syntax_error(text: str) -> str | None:
 # ═══════════════════════════════════════════════════════════════════════════
 # 判定入口（两侧共用这一处）
 # ═══════════════════════════════════════════════════════════════════════════
+#: 判定缓存：**键 = 文件内容的 sha256**（不是路径/时间戳）⇒ 不可能读到过期结论（内容变了键就变）。
+#: 只缓存**不含文件名的判定结论**，**绝不缓存解析结果** —— 那会把同一份可变对象共享给多个调用方
+#: （本仓 `tests/unit_ci_workflows/conftest.py` 有专门的共享对象污染防线，不能自己造一个）。
+#: 为什么需要：渲染腿的严格判定会被 `load_case_dicts()` 调用上百次（CI 的
+#: `tests/unit_ci_workflows` 套件），实测每次 0.66s（C loader 后 0.055s）⇒ 累计会让该 job 撞上
+#: 自己的 8 分钟超时。缓存后同一进程内重复调用只付"读文件 + sha256"的代价。
+_VERDICT_CACHE: dict[str, str | None] = {}
+_VERDICT_CACHE_MAX = 1024          # 纯防病态增长；命中率与容量无关（套件里内容种类有限）
+
+
+def _verdict_core(text: str) -> str | None:
+    """**与路径无关**的严格判定（`"行:列: 原因"` 或 `None`）—— 缓存的正是它。
+
+    ⚠️ 缓存键是内容 ⇒ 结论里的位置/原因必须**不含文件名**：否则同内容的两份文件（如两份坏夹具）
+    会拿到**指错文件**的报错（那是"报错指向错误的对象"，本仓的经典假红形态）。
+    """
+    if _pyyaml is not None:                                     # 后端 ①
+        try:
+            _safe_load(text)
+        except _pyyaml.YAMLError as e:
+            mark = getattr(e, "problem_mark", None)
+            where = f"{mark.line + 1}:{mark.column + 1}" if mark is not None else "<位置不明>"
+            problem = getattr(e, "problem", None) or str(e)
+            return f"{where}: {problem}（标准 YAML 解析失败）"
+        return None
+    rel = _zero_dep_syntax_error(text)                          # 后端 ②
+    return f"{rel}（零依赖严格闸）" if rel else None
+
+
 def strict_error(path) -> str | None:
     """**唯一的严格判定**（渲染腿与判据腿共用这一处实现）。`None` = 合法。
 
@@ -223,17 +275,13 @@ def strict_error(path) -> str | None:
     """
     p = Path(path)
     text = p.read_text(encoding="utf-8")
-    if _pyyaml is not None:                                     # 后端 ①
-        try:
-            _pyyaml.safe_load(text)
-        except _pyyaml.YAMLError as e:
-            mark = getattr(e, "problem_mark", None)
-            where = f"{mark.line + 1}:{mark.column + 1}" if mark is not None else "<位置不明>"
-            problem = getattr(e, "problem", None) or str(e)
-            return f"{p}:{where}: {problem}（标准 YAML 解析失败）"
-        return None
-    rel = _zero_dep_syntax_error(text)                          # 后端 ②
-    return f"{p}:{rel}（零依赖严格闸）" if rel else None
+    key = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    if key not in _VERDICT_CACHE:
+        if len(_VERDICT_CACHE) >= _VERDICT_CACHE_MAX:
+            _VERDICT_CACHE.clear()
+        _VERDICT_CACHE[key] = _verdict_core(text)
+    core = _VERDICT_CACHE[key]
+    return f"{p}:{core}" if core else None
 
 
 def require_strict(path) -> None:
@@ -258,4 +306,4 @@ def load_document(path) -> dict:
         raise CasesYamlError(
             f"{path}: 严格解析需要 PyYAML，而本环境不可导入 ⇒ 判据**不可判**（三态 3），"
             f"不是「发现数为 0」")
-    return _pyyaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    return _safe_load(Path(path).read_text(encoding="utf-8")) or {}
