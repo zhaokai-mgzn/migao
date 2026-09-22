@@ -4,7 +4,7 @@
 
 ## 技术栈
 
-- Next.js 14 (App Router) + TypeScript + Tailwind CSS
+- Next.js 16 (App Router, React 19) + TypeScript + Tailwind CSS
 - Zustand（状态管理）+ Axios（HTTP 请求）
 - 米宝 AI 助手（FloatingAssistant SSE 流式对话）
 
