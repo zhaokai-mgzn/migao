@@ -548,7 +548,16 @@ def test_v118_exists_and_is_the_unique_highest_version():
     versions = [int(re.match(r"^V(\d+)__", p.name).group(1))
                 for p in MIGRATION_DIR.glob("V*.sql") if re.match(r"^V(\d+)__", p.name)]
     assert versions.count(118) == 1, "V118 版本号重复"
-    assert max(versions) == 118, f"V118 不是最高版本号（当前最大 V{max(versions)}）"
+    # ⚠️ 原写 `max(versions) == 118`（「V118 是当前最大迁移号」）—— 那是本仓**点名过的自毁式真值主张**：
+    #    下一个迁移一出现就必红，且报错文案把人指向错误行动。**#5158 新增 V119 时实测踩中**：
+    #    `AssertionError: V118 不是最高版本号（当前最大 V119）`（CI job「ci workflow helper unit tests」）。
+    #    判据本意（见方法名）= 「**迁移号撞车 ⇒ 有一条永远不会跑**」⇒ 正确口径 = 本档及以后无重复；
+    #    同族口径与改法见 `tests/unit_ci_workflows/test_inbound_order_idempotency.py`（`>= 117`）与
+    #    `backend/admin-api/src/test/java/com/migao/admin/mapper/StockBatchConsumptionMapperTest.java`
+    #    （`doesNotHaveDuplicates`），V116 那份 javadoc 亦逐字登记过这条教训。
+    assert max(versions) >= 118, f"V118 不是最高版本号（当前最大 V{max(versions)}）"
+    assert len([v for v in versions if v >= 118]) == len({v for v in versions if v >= 118}), (
+        "V118 及以后出现重复版本号（撞车 ⇒ 有一条永远不会跑）")
 
 
 def test_v118_is_registered_in_the_fingerprint_ledger():

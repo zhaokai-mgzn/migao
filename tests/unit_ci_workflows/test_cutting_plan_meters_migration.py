@@ -276,7 +276,12 @@ def test_v119_is_the_unique_highest_version():
                 if (m := re.match(r"^V(\d+)__", p.name))]
     print(f"[#5158 迁移] 最高版本 = V{max(versions)}，V119 出现 {versions.count(119)} 次")
     assert versions.count(119) == 1, "V119 版本号重复（有一条永远不会跑）"
-    assert max(versions) == 119, f"V119 不是最高版本号（当前最大 V{max(versions)}）"
+    # ⚠️ **不写 `max(versions) == 119`** —— 那是本仓点名过的「自毁式真值主张」（下一个迁移一出现就必红，
+    #    且报错指向错误行动；#5158 本单就踩中了 #5153 留下的同款断言）。判据本意 = 「撞车」，
+    #    正确口径 = 本档及以后无重复。
+    assert max(versions) >= 119, f"V119 不是最高版本号（当前最大 V{max(versions)}）"
+    assert len([v for v in versions if v >= 119]) == len({v for v in versions if v >= 119}), (
+        "V119 及以后出现重复版本号（撞车 ⇒ 有一条永远不会跑）")
 
 
 def test_v119_is_registered_in_the_fingerprint_ledger():
