@@ -54,8 +54,8 @@ class RemnantNonAssetGuardTest {
      * 生产代码里出现这两个表名就是「余料被接进了别的读面」——那正是本守卫要拦的形态。</p>
      */
     private static final List<String> ALLOWED_FILES = List.of(
-            "FabricRemnant.java", "RemnantSmallItemSpec.java",
-            "FabricRemnantMapper.java", "RemnantSmallItemSpecMapper.java");
+            "FabricRemnant.java", "RemnantItemSize.java",
+            "FabricRemnantMapper.java", "RemnantItemSizeMapper.java");
 
     @Test
     @DisplayName("🔴 余料两表只出现在它们自己的 mapper 里（库存/资产读面零引用）")
@@ -64,7 +64,7 @@ class RemnantNonAssetGuardTest {
         assertThat(sources.size()).as("扫描面必须非空（0 个文件 ⇒ 下面每条都恒真）")
                 .isGreaterThan(50);
         assertThat(sources.keySet()).as("扫描必须真的看得见余料 mapper（否则「零违规」是扫描失灵）")
-                .contains("FabricRemnantMapper.java", "RemnantSmallItemSpecMapper.java");
+                .contains("FabricRemnantMapper.java", "RemnantItemSizeMapper.java");
 
         assertThat(violations(sources))
                 .as("🔴 余料台账不得出现在任何库存 / 资产读面里（用户裁定：这个废布不算在企业资产了）")

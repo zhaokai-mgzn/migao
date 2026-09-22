@@ -14,7 +14,7 @@
  * —— ⚠️ **只覆盖超高 / 超宽两个阈值键**（算料试算端点不收 `config`，其余算料参数做不到「改前预演」）。
  *
  * ✅ **#5146 起还承载「余料回收」域**（§22 P1）：小件用料尺寸表是**行式**参数，
- * 按「一处入口」的要求**挂进本页本域**（{@link RemnantSmallItemSpecsPanel} 页内渲染），
+ * 按「一处入口」的要求**挂进本页本域**（{@link RemnantItemSizesPanel} 页内渲染），
  * 而不是另开第二个配置页 / 第二个 settings 段。
  *
  * ❌ **不做**（见设计文档 §6 未实装登记）：
@@ -45,7 +45,7 @@ import {
 } from '@/lib/tenant-params'
 import type { AiConfig, CraftCalcConfigResponse } from '@/types'
 import { OversizeThresholdPreview } from '@/components/settings/OversizeThresholdPreview'
-import { RemnantSmallItemSpecsPanel } from '@/components/settings/RemnantSmallItemSpecsPanel'
+import { RemnantItemSizesPanel } from '@/components/settings/RemnantItemSizesPanel'
 
 export function TenantParamsPanel() {
   const [activeKey, setActiveKey] = useState<string>(PARAM_DOMAINS[0].key)
@@ -292,7 +292,7 @@ export function TenantParamsPanel() {
                 ⇒ 守卫 `tests/unit/components/TenantParamsPanel.test.tsx` 逐面板钉住这一条。 */}
             {domain.inline?.panel === 'remnant-specs' && (
               <div className="mt-4">
-                <RemnantSmallItemSpecsPanel copy={domain.inline.copy} />
+                <RemnantItemSizesPanel copy={domain.inline.copy} />
               </div>
             )}
 

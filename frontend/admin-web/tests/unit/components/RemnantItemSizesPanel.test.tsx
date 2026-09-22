@@ -11,7 +11,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { RemnantSmallItemSpecsPanel } from '@/components/settings/RemnantSmallItemSpecsPanel'
+import { RemnantItemSizesPanel } from '@/components/settings/RemnantItemSizesPanel'
 import { REMNANT_PARAM_COPY } from '@/lib/tenant-params'
 import { REMNANT_TERMS, glossaryRemnantAnchorOf } from '@/lib/craft-calc-glossary'
 
@@ -56,7 +56,7 @@ beforeEach(() => {
 
 describe('判据 1：三件套上屏（§22 P2）', () => {
   it('label / hint / impact 都来自 `copy`（单一真值在 @/lib/tenant-params）', async () => {
-    render(<RemnantSmallItemSpecsPanel copy={REMNANT_PARAM_COPY} />)
+    render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
     expect(screen.getByText(REMNANT_PARAM_COPY.label)).toBeInTheDocument()
     expect(screen.getByText(REMNANT_PARAM_COPY.hint)).toBeInTheDocument()
     expect(screen.getByText(`改它会怎样：${REMNANT_PARAM_COPY.impact}`)).toBeInTheDocument()
@@ -66,7 +66,7 @@ describe('判据 1：三件套上屏（§22 P2）', () => {
 
 describe('判据 2：默认值可见（§22 P3）—— 未配置必须显式标出来', () => {
   it('未配置 ⇒ 徽标「未配置（正在用默认值：空 ⇒ 未启用）」+ 服务端说明**原样**上屏', async () => {
-    render(<RemnantSmallItemSpecsPanel copy={REMNANT_PARAM_COPY} />)
+    render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
     await waitFor(() => expect(screen.getByTestId('remnant-specs-unset')).toBeInTheDocument())
     expect(screen.getByTestId('remnant-specs-unset').textContent).toContain('未启用')
     expect(screen.getByTestId('remnant-specs-notice').textContent).toContain('不产生匹配建议')
@@ -76,7 +76,7 @@ describe('判据 2：默认值可见（§22 P3）—— 未配置必须显式标
 
   it('红证：已配置 ⇒ 两个「未配置」信号都不许出现（谎报未配置 = 让商家以为没生效）', async () => {
     smallItemSpecs.mockResolvedValue(SET)
-    render(<RemnantSmallItemSpecsPanel copy={REMNANT_PARAM_COPY} />)
+    render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
     await waitFor(() => expect(screen.getByTestId('remnant-specs-configured')).toBeInTheDocument())
     expect(screen.queryByTestId('remnant-specs-unset')).not.toBeInTheDocument()
     expect(screen.queryByTestId('remnant-specs-notice')).not.toBeInTheDocument()
@@ -89,7 +89,7 @@ describe('判据 2：默认值可见（§22 P3）—— 未配置必须显式标
 
 describe('判据 3：保存把商家输入原样提交（本组件不判口径、不取整）', () => {
   it('加一行并填值 ⇒ 提交 `{itemKey, lengthM, widthM}` 给服务端', async () => {
-    render(<RemnantSmallItemSpecsPanel copy={REMNANT_PARAM_COPY} />)
+    render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
     await waitFor(() => expect(smallItemSpecs).toHaveBeenCalled())
     fireEvent.click(screen.getByTestId('remnant-spec-add'))
     fireEvent.change(screen.getByLabelText('小件（工序名）'), { target: { value: '帘头制作' } })
@@ -105,7 +105,7 @@ describe('判据 3：保存把商家输入原样提交（本组件不判口径�
 
   it('删掉唯一一行并保存 ⇒ 提交空数组（= 清空 = 回到未配置）', async () => {
     smallItemSpecs.mockResolvedValue(SET)
-    render(<RemnantSmallItemSpecsPanel copy={REMNANT_PARAM_COPY} />)
+    render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
     await waitFor(() => expect(screen.getByTestId('remnant-spec-row-0')).toBeInTheDocument())
     fireEvent.click(screen.getByTestId('remnant-spec-remove-0'))
     fireEvent.click(screen.getByTestId('remnant-spec-save'))
@@ -116,7 +116,7 @@ describe('判据 3：保存把商家输入原样提交（本组件不判口径�
     putSmallItemSpecs.mockRejectedValue({
       response: { data: { error: { message: '工序库里没有「绑带布」这道工序 ⇒ 该小件永远不会被匹配到' } } },
     })
-    render(<RemnantSmallItemSpecsPanel copy={REMNANT_PARAM_COPY} />)
+    render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
     await waitFor(() => expect(smallItemSpecs).toHaveBeenCalled())
     fireEvent.click(screen.getByTestId('remnant-spec-add'))
     fireEvent.change(screen.getByLabelText('小件（工序名）'), { target: { value: '绑带布' } })
@@ -133,11 +133,12 @@ describe('判据 3：保存把商家输入原样提交（本组件不判口径�
 
 describe('判据 4：术语**就地**查（§22 P5）—— 锚点真的在面板里', () => {
   it('每条术语都有对应的锚点节点与可点链接（链接不指空）', async () => {
-    const { container } = render(<RemnantSmallItemSpecsPanel copy={REMNANT_PARAM_COPY} />)
+    const { container } = render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
     await waitFor(() => expect(smallItemSpecs).toHaveBeenCalled())
     for (const term of REMNANT_TERMS) {
       const anchorId = glossaryRemnantAnchorOf(term.name)
-      expect(container.querySelector(`#${CSS.escape(anchorId)}`)).not.toBeNull()
+      // 强断言（不是「元素在」）：锚点节点的 id **逐字等于**期望值 —— 存在性断言在本仓是弱断言
+      expect(container.querySelector(`#${CSS.escape(anchorId)}`)?.id).toBe(anchorId)
       const link = screen.getByTestId(`remnant-term-link-${term.name}`)
       expect(link.getAttribute('href')).toBe(`#${anchorId}`)
     }

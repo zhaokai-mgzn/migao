@@ -165,7 +165,7 @@ export default function RemnantLedgerPage() {
             </span>
           </p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
+        <Button type="button" variant="ghost" size="sm" onClick={() => void load()}>
           <RefreshCw className="w-4 h-4 mr-1" />
           刷新
         </Button>

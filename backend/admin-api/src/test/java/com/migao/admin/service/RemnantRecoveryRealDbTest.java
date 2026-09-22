@@ -17,7 +17,7 @@ import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
 import com.migao.admin.mapper.ProductionOptionRoutingMapper;
-import com.migao.admin.mapper.RemnantSmallItemSpecMapper;
+import com.migao.admin.mapper.RemnantItemSizeMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
 import net.sf.jsqlparser.expression.Expression;
@@ -171,7 +171,7 @@ class RemnantRecoveryRealDbTest {
         configuration.addInterceptor(tenantLine);
         for (Class<?> mapper : List.of(StockBatchMapper.class, StockBatchConsumptionMapper.class,
                 ProductSkuMapper.class, CraftCalcConfigMapper.class, FabricRemnantMapper.class,
-                RemnantSmallItemSpecMapper.class, ProductionOperationMapper.class,
+                RemnantItemSizeMapper.class, ProductionOperationMapper.class,
                 ProductionOptionRoutingMapper.class, OrderMapper.class, OrderItemMapper.class)) {
             configuration.addMapper(mapper);
         }
@@ -179,7 +179,7 @@ class RemnantRecoveryRealDbTest {
         session = factory.openSession(true);
 
         remnantService = new RemnantService(session.getMapper(FabricRemnantMapper.class),
-                session.getMapper(RemnantSmallItemSpecMapper.class),
+                session.getMapper(RemnantItemSizeMapper.class),
                 session.getMapper(StockBatchMapper.class),
                 session.getMapper(StockBatchConsumptionMapper.class),
                 session.getMapper(ProductionOperationMapper.class),

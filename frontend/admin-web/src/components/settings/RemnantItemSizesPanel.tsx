@@ -43,7 +43,7 @@ interface DraftRow {
 
 const EMPTY_ROW: DraftRow = { itemKey: '', lengthM: '', widthM: '', note: '' }
 
-export function RemnantSmallItemSpecsPanel({ copy }: { copy: ParamCopy }) {
+export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
   const [view, setView] = useState<RemnantSpecsView | null>(null)
   const [rows, setRows] = useState<DraftRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -315,4 +315,4 @@ export function RemnantSmallItemSpecsPanel({ copy }: { copy: ParamCopy }) {
   )
 }
 
-export default RemnantSmallItemSpecsPanel
+export default RemnantItemSizesPanel

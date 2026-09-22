@@ -9,7 +9,7 @@ import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOptionRouting;
-import com.migao.admin.entity.RemnantSmallItemSpec;
+import com.migao.admin.entity.RemnantItemSize;
 import com.migao.admin.entity.StockBatch;
 import com.migao.admin.entity.StockBatchConsumption;
 import com.migao.admin.exception.BusinessException;
@@ -18,7 +18,7 @@ import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProductionOperationMapper;
 import com.migao.admin.mapper.ProductionOptionRoutingMapper;
-import com.migao.admin.mapper.RemnantSmallItemSpecMapper;
+import com.migao.admin.mapper.RemnantItemSizeMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
 import lombok.RequiredArgsConstructor;
@@ -130,7 +130,7 @@ public class RemnantService {
     public static final BigDecimal MIN_REMNANT_DIM_M = new BigDecimal("0.01");
 
     private final FabricRemnantMapper remnantMapper;
-    private final RemnantSmallItemSpecMapper specMapper;
+    private final RemnantItemSizeMapper specMapper;
     private final StockBatchMapper stockBatchMapper;
     private final StockBatchConsumptionMapper consumptionMapper;
     private final ProductionOperationMapper operationMapper;
@@ -257,9 +257,9 @@ public class RemnantService {
 
     /** 小件用料尺寸表读面（{@code configured=false} ⇒ {@code notice} 非空说明「未启用」） */
     public RemnantViews.SpecsView specs(Long tenantId) {
-        List<RemnantSmallItemSpec> rows = specRows(tenantId);
+        List<RemnantItemSize> rows = specRows(tenantId);
         List<RemnantViews.SpecLine> items = new ArrayList<>(rows.size());
-        for (RemnantSmallItemSpec row : rows) {
+        for (RemnantItemSize row : rows) {
             items.add(new RemnantViews.SpecLine(row.getItemKey(), row.getLengthM(), row.getWidthM(),
                     row.getNote(), row.getOperator(), row.getUpdatedAt()));
         }
@@ -281,7 +281,7 @@ public class RemnantService {
     public RemnantViews.SpecsView putSpecs(Long tenantId, List<Map<String, Object>> items) {
         String operator = StockLedgerService.resolveOperator();
         OffsetDateTime now = OffsetDateTime.now();
-        List<RemnantSmallItemSpec> rows = new ArrayList<>();
+        List<RemnantItemSize> rows = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         for (Map<String, Object> raw : items == null ? List.<Map<String, Object>>of() : items) {
             String key = str(raw.get("item_key"));
@@ -310,16 +310,16 @@ public class RemnantService {
                         "工序库里没有「" + key + "」这道工序 ⇒ 该小件永远不会被匹配到（键必须与工序名逐字一致）");
             }
             key = operationName;
-            rows.add(RemnantSmallItemSpec.builder()
+            rows.add(RemnantItemSize.builder()
                     .tenantId(tenantId).itemKey(key).lengthM(length).widthM(width)
                     .note(str(raw.get("note"))).operator(operator)
                     .createdAt(now).updatedAt(now).deleted(0).build());
         }
         // 清空 + 重写：本表是**参数**（一屏几条），全量替换的语义比逐行 diff 少一整类「半更新」失效形态。
-        for (RemnantSmallItemSpec old : specRows(tenantId)) {
+        for (RemnantItemSize old : specRows(tenantId)) {
             specMapper.deleteById(old.getId());
         }
-        for (RemnantSmallItemSpec row : rows) {
+        for (RemnantItemSize row : rows) {
             specMapper.insert(row);
         }
         log.info("小件用料尺寸表已替换: tenant={}, operator={}, lines={}", tenantId, operator, rows.size());
@@ -335,10 +335,10 @@ public class RemnantService {
         return operation == null ? null : operation.getName();
     }
 
-    private List<RemnantSmallItemSpec> specRows(Long tenantId) {
-        return specMapper.selectList(new LambdaQueryWrapper<RemnantSmallItemSpec>()
-                .eq(RemnantSmallItemSpec::getTenantId, tenantId)
-                .orderByAsc(RemnantSmallItemSpec::getItemKey));
+    private List<RemnantItemSize> specRows(Long tenantId) {
+        return specMapper.selectList(new LambdaQueryWrapper<RemnantItemSize>()
+                .eq(RemnantItemSize::getTenantId, tenantId)
+                .orderByAsc(RemnantItemSize::getItemKey));
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════
@@ -370,8 +370,8 @@ public class RemnantService {
         Map<String, List<String>> optionsByItemKey = requiredItems(tenantId, options);
         List<String> required = List.copyOf(optionsByItemKey.keySet());
 
-        Map<String, RemnantSmallItemSpec> specs = new LinkedHashMap<>();
-        for (RemnantSmallItemSpec row : specRows(tenantId)) {
+        Map<String, RemnantItemSize> specs = new LinkedHashMap<>();
+        for (RemnantItemSize row : specRows(tenantId)) {
             specs.put(row.getItemKey(), row);
         }
         if (specs.isEmpty()) {
@@ -391,7 +391,7 @@ public class RemnantService {
         boolean batchContextMissing = batch == null;
         for (Map.Entry<String, List<String>> entry : optionsByItemKey.entrySet()) {
             String itemKey = entry.getKey();
-            RemnantSmallItemSpec spec = specs.get(itemKey);
+            RemnantItemSize spec = specs.get(itemKey);
             if (spec == null) {
                 unconfigured.add(itemKey);
                 unmatched.add(new RemnantViews.Unmatched(itemKey, entry.getValue(),
@@ -421,10 +421,10 @@ public class RemnantService {
      * （色差是窗帘行业最不能接受的质量事故），直接淘汰而不是「聊胜于无」。</p>
      *
      * <p>被同一张单的另一个小件先拿走的余料不再参与（{@code taken}），
-     * 且用 {@link RemnantSmallItemSpec#fits} 复核 SQL 的尺寸谓词（两处判据一致 ⇒ 查询写宽了也拦得住）。</p>
+     * 且用 {@link RemnantItemSize#fits} 复核 SQL 的尺寸谓词（两处判据一致 ⇒ 查询写宽了也拦得住）。</p>
      */
     private RemnantViews.Recommendation findCandidate(
-            Long tenantId, StockBatch batch, RemnantSmallItemSpec spec, String itemKey,
+            Long tenantId, StockBatch batch, RemnantItemSize spec, String itemKey,
             List<String> optionNames, Set<Long> taken) {
         List<FabricRemnant> candidates = remnantMapper.findMatchCandidates(tenantId,
                 batch.getProductId(), batch.getDyeLot(), batch.getSkuCode(),
@@ -526,11 +526,11 @@ public class RemnantService {
                             remnantId, remnant.getStatus()), 409,
                     "请刷新余料台账后重试");
         }
-        Map<String, RemnantSmallItemSpec> specs = new LinkedHashMap<>();
-        for (RemnantSmallItemSpec row : specRows(tenantId)) {
+        Map<String, RemnantItemSize> specs = new LinkedHashMap<>();
+        for (RemnantItemSize row : specRows(tenantId)) {
             specs.put(row.getItemKey(), row);
         }
-        RemnantSmallItemSpec spec = specs.get(itemKey);
+        RemnantItemSize spec = specs.get(itemKey);
         if (spec == null) {
             throw new BusinessException(ERR_REMNANT_SPEC_REQUIRED,
                     String.format("小件 %s 未配置用料尺寸 ⇒ 无法判定这块余料装不装得下", itemKey), 422,

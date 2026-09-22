@@ -3,7 +3,7 @@
  * 「余料回收」域在**企业参数中心**里的跨源守卫（issue #5146）—— `migao-dev-flow` §22 的 P1/P2/P3/P5。
  *
  * 分工：本文件判**静态清单与文案**；渲染面在
- * `tests/unit/components/RemnantSmallItemSpecsPanel.test.tsx`（面板）与
+ * `tests/unit/components/RemnantItemSizesPanel.test.tsx`（面板）与
  * `tests/unit/components/TenantParamsPanel.test.tsx`（挂载点）。
  *
  * ## 判据（每条都带能**单独**让它变红的红证）
@@ -45,8 +45,8 @@ describe('判据 1：余料域挂在**既有**企业参数中心（§22 P1 一�
 
   it('红证：域清单里**没有**余料域时，本判据必须判不等（不是恒真）', () => {
     const without = PARAM_DOMAINS.filter((d) => d.key !== 'remnant')
-    expect(without.find((d) => d.key === 'remnant')).toBeUndefined()
-    expect(PARAM_DOMAINS.find((d) => d.key === 'remnant')).toBeDefined()
+    expect(without.map((d) => d.key)).not.toContain('remnant')
+    expect(PARAM_DOMAINS.find((d) => d.key === 'remnant')?.label).toBe('余料回收')
   })
 })
 

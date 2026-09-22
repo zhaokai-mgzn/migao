@@ -23,7 +23,7 @@ public interface FabricRemnantMapper extends BaseMapper<FabricRemnant> {
      *       （判据 7：它不进池、不参与匹配、不计回收 —— 红证 = 把它混进池则匹配命中）；</li>
      *   <li>{@code length_m >= need} 且 {@code width_m >= need} ⇒ <b>尺寸不足者不出现在候选里</b>
      *       （判据 5「不凭空推荐」的第一道网；第二道在 Java 里用
-     *       {@code RemnantSmallItemSpec#fits} 复核 —— SQL 与实体两处判据一致，防「查询写宽了」）；</li>
+     *       {@code RemnantItemSize#fits} 复核 —— SQL 与实体两处判据一致，防「查询写宽了」）；</li>
      *   <li>同商品（{@code product_id}）⇒ 不同商品的余料不可能互相替代。</li>
      * </ol>
      *

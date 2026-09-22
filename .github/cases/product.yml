@@ -3519,7 +3519,7 @@ cases:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/RemnantRecoveryRealDbTest.java"
         - "frontend/admin-web/tests/unit/lib/remnant-params.test.ts"
-        - "frontend/admin-web/tests/unit/components/RemnantSmallItemSpecsPanel.test.tsx"
+        - "frontend/admin-web/tests/unit/components/RemnantItemSizesPanel.test.tsx"
         - "frontend/admin-web/tests/unit/components/TenantParamsPanel.test.tsx"
       ci:
         - pr-check.yml
