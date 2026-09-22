@@ -115,6 +115,7 @@
     "V117__inbound_order_idempotency_and_source.sql": "sha256:1894552289444061ed98d6f9e3d7ce27ca6d6869a3b9290efdb9f645cede1e3f",
     "V118__stock_batch_legacy_no_and_opening_register.sql": "sha256:4492200ae65cf4f1c765ee736a61f386ad42fafe903f0127e8c0a0dd06f8c208",
     "V119__add_cutting_plan_meters_to_batch_consumptions.sql": "sha256:79f001539a0485553a6f7517b7997826922487f41a4619809eba8900f2fc648f",
-    "V120__order_urgency_and_required_delivery_date.sql": "sha256:7a8564867450c9644d325e61b703b6fe10bb717638a30c021e43d92dcb3e050e"
+    "V120__order_urgency_and_required_delivery_date.sql": "sha256:7a8564867450c9644d325e61b703b6fe10bb717638a30c021e43d92dcb3e050e",
+    "V121__fix_batch_consumption_reversal_check.sql": "sha256:0c561b3053a09c410ed5af7cc20fd1c86f9e3b5f7edae9da6caedf7c673c6418"
   }
 }

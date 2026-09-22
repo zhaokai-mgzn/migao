@@ -2,6 +2,7 @@ package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.migao.admin.dto.BatchStockViews;
 import com.migao.admin.dto.ProcessingOrderGenerateRequest;
 import com.migao.admin.dto.ProcessingOrderGenerateRequest.BatchAssignment;
 import com.migao.admin.dto.ProcessingOrderResponse;
@@ -22,6 +23,7 @@ import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -708,6 +710,481 @@ public class ProcessingOrderService {
                     "请把这几个加急单单独派工（同一个端点 + pooled=false 即插队），"
                             + "或先取消它们的加急标记再成批");
         }
+    }
+
+    // ============================================================ 事件驱动自动成批（issue #5182 = 阶段 2b-3）
+
+    /**
+     * 🔴 <b>自动成批派单的缺省值 = 关</b>（issue #5182 判据 1）。
+     *
+     * <p>不启用 ⇒ 与今天**逐值相同**（{@link #autoBatchDispatch} 在开关为假时
+     * <b>零读零写</b>立刻返回，三个事件挂载点只多一句永不抛的
+     * {@link PoolChangeNotifier#notifySafely}）。这不是保守：记录期基线正建立在
+     * 「指派与派单行为不变」之上（#5145/#5158/#5167/#5169/#5177 一路同款）。</p>
+     *
+     * <p>开关只有这一个载体（Spring 属性 {@code migao.production.auto-batch.enabled} 覆盖它，
+     * 属性缺失 ⇒ 本值）—— 红证 = 把它改为 {@code true} ⇒「默认关」那条判据当场变红。</p>
+     */
+    public static final boolean AUTO_BATCH_DEFAULT_ENABLED = false;
+
+    /** 成批条件①的缺省阈值：能填满某批次 ≥ X%（按该批次**入库量**为分母）。 */
+    public static final int AUTO_BATCH_DEFAULT_FILL_RATIO_PERCENT = 80;
+
+    /** 成批条件②的缺省阈值：能让某批次余量收敛到 ≤ N 米（与余量分布四档的 `≤0.2m` 同界）。 */
+    public static final String AUTO_BATCH_DEFAULT_CONVERGE_METERS = "0.2";
+
+    /** 成批条件③的缺省阈值：池内同物料需求 ≥ 最小批量（米）。 */
+    public static final String AUTO_BATCH_DEFAULT_MIN_BATCH_METERS = "30";
+
+    /** 业务兜底的缺省「标准生产周期」（天）：`最晚派单日 = 到货日 − 本值`；无到货日 ⇒ `进池日 + 本值`。 */
+    public static final int AUTO_BATCH_DEFAULT_STANDARD_CYCLE_DAYS = 7;
+
+    /**
+     * 自动成批采用的批次指派规则（#5167）缺省 = {@code fifo}。
+     *
+     * <p>🔴 <b>不改 #5167 的缺省口径</b>：手工路径「不传规则 ⇒ 未指定批次的行不补位、
+     * 显式拒绝」一字未动。这里是**自动路径显式传** {@code fifo}（自动成批没有文员来挑批次；
+     * 传了规则才把「系统建议值」升级为「直接采用」）—— 两件事不同层。</p>
+     */
+    public static final String AUTO_BATCH_DEFAULT_ASSIGNMENT_RULE = "fifo";
+
+    /** 自动派单落进 {@code processing_orders.generated_by} 的前缀（**可审计**的持久痕迹）。 */
+    public static final String AUTO_BATCH_OPERATOR_PREFIX = "auto:";
+
+    // 自动成批的生效策略：属性缺失 ⇒ 上面的代码缺省（**唯一**的缺省值表；不在别处再写一遍）。
+    @Value("${migao.production.auto-batch.enabled:" + AUTO_BATCH_DEFAULT_ENABLED + "}")
+    private boolean autoBatchEnabled = AUTO_BATCH_DEFAULT_ENABLED;
+    @Value("${migao.production.auto-batch.fill-ratio-percent:"
+            + AUTO_BATCH_DEFAULT_FILL_RATIO_PERCENT + "}")
+    private int autoBatchFillRatioPercent = AUTO_BATCH_DEFAULT_FILL_RATIO_PERCENT;
+    @Value("${migao.production.auto-batch.converge-meters:"
+            + AUTO_BATCH_DEFAULT_CONVERGE_METERS + "}")
+    private String autoBatchConvergeMeters = AUTO_BATCH_DEFAULT_CONVERGE_METERS;
+    @Value("${migao.production.auto-batch.min-batch-meters:"
+            + AUTO_BATCH_DEFAULT_MIN_BATCH_METERS + "}")
+    private String autoBatchMinBatchMeters = AUTO_BATCH_DEFAULT_MIN_BATCH_METERS;
+    @Value("${migao.production.auto-batch.standard-cycle-days:"
+            + AUTO_BATCH_DEFAULT_STANDARD_CYCLE_DAYS + "}")
+    private int autoBatchStandardCycleDays = AUTO_BATCH_DEFAULT_STANDARD_CYCLE_DAYS;
+    @Value("${migao.production.auto-batch.assignment-rule:"
+            + AUTO_BATCH_DEFAULT_ASSIGNMENT_RULE + "}")
+    private String autoBatchAssignmentRule = AUTO_BATCH_DEFAULT_ASSIGNMENT_RULE;
+
+    /**
+     * 自动成批的生效策略（成批条件 ①②③ + 业务兜底 + 指派规则）。
+     *
+     * @param enabled            总开关；{@code false} ⇒ 零读零写（判据 1）
+     * @param fillRatioPercent   条件①：`需求米数 ≥ X% × 该批次入库量`
+     * @param convergeMeters     条件②：`0 ≤ 该批次余量 − 需求米数 ≤ N`
+     * @param minBatchMeters     条件③：`池内同物料需求 ≥ 最小批量`
+     * @param standardCycleDays  业务兜底的标准生产周期（天）
+     * @param assignmentRule     自动路径显式采用的指派规则（#5167）
+     * @param maxWaitHours       池看板的滞留上限（沿用 #5169 的请求参数缺省）
+     */
+    public record AutoBatchPolicy(boolean enabled, int fillRatioPercent, BigDecimal convergeMeters,
+                                  BigDecimal minBatchMeters, int standardCycleDays,
+                                  String assignmentRule, BigDecimal maxWaitHours) {
+
+        /** 缺省关（与 {@link #AUTO_BATCH_DEFAULT_ENABLED} 同源，供测试与调用方构造显式策略用）。 */
+        public static AutoBatchPolicy defaults() {
+            return new AutoBatchPolicy(AUTO_BATCH_DEFAULT_ENABLED,
+                    AUTO_BATCH_DEFAULT_FILL_RATIO_PERCENT,
+                    new BigDecimal(AUTO_BATCH_DEFAULT_CONVERGE_METERS),
+                    new BigDecimal(AUTO_BATCH_DEFAULT_MIN_BATCH_METERS),
+                    AUTO_BATCH_DEFAULT_STANDARD_CYCLE_DAYS,
+                    AUTO_BATCH_DEFAULT_ASSIGNMENT_RULE, DEFAULT_POOL_MAX_WAIT_HOURS);
+        }
+
+        /** 同 {@link #defaults()} 但**开着**（测试与「显式开启」的唯一入口）。 */
+        public static AutoBatchPolicy enabledPolicy() {
+            return new AutoBatchPolicy(true, AUTO_BATCH_DEFAULT_FILL_RATIO_PERCENT,
+                    new BigDecimal(AUTO_BATCH_DEFAULT_CONVERGE_METERS),
+                    new BigDecimal(AUTO_BATCH_DEFAULT_MIN_BATCH_METERS),
+                    AUTO_BATCH_DEFAULT_STANDARD_CYCLE_DAYS,
+                    AUTO_BATCH_DEFAULT_ASSIGNMENT_RULE, DEFAULT_POOL_MAX_WAIT_HOURS);
+        }
+
+        public AutoBatchPolicy with(int fillRatio, String converge, String minBatch, int cycleDays) {
+            return new AutoBatchPolicy(enabled, fillRatio, new BigDecimal(converge),
+                    new BigDecimal(minBatch), cycleDays, assignmentRule, maxWaitHours);
+        }
+    }
+
+    /**
+     * 一次「评估并按需成批」的**读数与痕迹**（判据 6 的审计面 + 判据 10 的可查面）。
+     *
+     * @param enabled           本次是否真的评估了（{@code false} ⇒ 缺省关，零动作）
+     * @param trigger           触发原因（{@link PoolChangeNotifier} 的四类）
+     * @param rule              本次生效的指派规则
+     * @param reasons           **命中的规则**逐条（按哪条规则派的：条件①/②/③/加急/业务到期）
+     * @param dispatchedOrderNos 派出去的加工单号（派了哪几张单）
+     * @param failedOrderIds    最终仍失败的单
+     * @param failures          逐条可行动失败文案
+     */
+    public record AutoBatchOutcome(boolean enabled, String trigger, String rule, List<String> reasons,
+                                   List<String> dispatchedOrderNos, List<String> failedOrderIds,
+                                   List<String> failures) {
+    }
+
+    /** 自动成批的生效策略（Spring 属性覆盖代码缺省；见 {@link AutoBatchPolicy}）。 */
+    public AutoBatchPolicy autoBatchPolicy() {
+        return new AutoBatchPolicy(autoBatchEnabled, autoBatchFillRatioPercent,
+                new BigDecimal(autoBatchConvergeMeters), new BigDecimal(autoBatchMinBatchMeters),
+                autoBatchStandardCycleDays, autoBatchAssignmentRule, DEFAULT_POOL_MAX_WAIT_HOURS);
+    }
+
+    /**
+     * 🔴 <b>本单的核心：事件到达 ⇒ 即刻重算「现在能不能凑出值得成批的组合」 ⇒ 满足即成批。</b>
+     *
+     * <h2>主触发是业务事件，不是计时器（判据 2）</h2>
+     * 调用方只有 {@link AutoBatchDispatchListener}（{@code AFTER_COMMIT} 的事件监听器）。
+     * 本方法里**没有**任何定时器、没有「窗口到点」判定、没有等待时长门槛
+     * —— 攒单是**优化**，业务约束才是死线。
+     *
+     * <h2>三段（顺序即优先级）</h2>
+     * <ol>
+     *   <li><b>加急</b>（判据 5）：加急单**永不入池**（{@code pool()} 已把它们放进插队区）
+     *       ⇒ 这里**逐单立即派**（{@code pooled=false}，复用 #5177 已落的手动插队路径）。</li>
+     *   <li><b>成批</b>：按物料组判成批条件 ①②③，满足**任一** ⇒ 该组的订单进成批候选
+     *       （一次动作池级求解 = 跨订单成组）。</li>
+     *   <li><b>业务兜底（不可取消）</b>：{@code 最晚派单日 = 到货日 − 标准生产周期}；
+     *       无到货日 ⇒ {@code 进池日 + 标准生产周期}。到日 ⇒ **必派**（不看条件）。
+     *       🔴 这是「不压单」的**唯一**死线 —— 与「池化窗口超时」无关。</li>
+     * </ol>
+     *
+     * <h2>fail-soft（判据 10 / 用户裁定「不能损失客户」）</h2>
+     * 逐单失败后**降级重试**两次：② 逐单 + 规则（池级累计余量不足时逐单多半够）
+     * → ③ 逐单 + 不带规则（#5145 之前的缺省形态：不碰批次账）。批次/排料是**优化**，
+     * 绝不是「这张单今天派不出去」的理由。三级都失败才记失败并留 incident 痕迹。
+     *
+     * <h2>幂等（判据 7）</h2>
+     * 派出去的单立刻有了活跃加工单 ⇒ 下一次评估时 `pool()` **看不见它们**
+     * （口径与 {@code uk_processing_orders_active} 逐字相同）⇒ 重复触发天然无动作；
+     * 并发双触发则由 {@code selectActiveByOrderId} + 唯一索引兜底（第二路记失败，不重复扣）。
+     */
+    public AutoBatchOutcome autoBatchDispatch(Long tenantId, String trigger) {
+        return autoBatchDispatch(tenantId, trigger, autoBatchPolicy());
+    }
+
+    /** 显式策略版本（测试与「按租户/按次覆盖」的入口；{@code null} ⇒ {@link #autoBatchPolicy()}）。 */
+    public AutoBatchOutcome autoBatchDispatch(Long tenantId, String trigger, AutoBatchPolicy policyRaw) {
+        AutoBatchPolicy policy = policyRaw == null ? autoBatchPolicy() : policyRaw;
+        if (tenantId == null || !policy.enabled()) {
+            // 🔴 判据 1：缺省关 ⇒ **零读零写**（连池都不查）⇒ 与今天逐值相同
+            return new AutoBatchOutcome(false, trigger, null, List.of(), List.of(), List.of(), List.of());
+        }
+        String rule = StockBatchConsumptionService.normalizeAssignmentRule(policy.assignmentRule());
+        String operator = AUTO_BATCH_OPERATOR_PREFIX + trigger + ":" + rule;
+        List<String> reasons = new ArrayList<>();
+        List<String> dispatched = new ArrayList<>();
+        List<String> failedIds = new ArrayList<>();
+        List<String> failures = new ArrayList<>();
+
+        ProductionPoolViews.Pool pool = pool(tenantId, policy.maxWaitHours());
+        Map<String, List<ProductionPoolViews.PoolLine>> linesByOrder = linesByOrderOf(pool);
+
+        // ① 加急单永不入池 ⇒ 自动**立即派**（逐单、pooled=false —— 判据 5）
+        for (ProductionPoolViews.PoolLine line : pool.urgentLines()) {
+            String orderId = line.orderId();
+            if (orderId == null || !linesByOrder.containsKey(orderId)) {
+                continue;
+            }
+            reasons.add("order=" + line.orderNo() + ":urgent_never_pooled");
+            List<ProductionPoolViews.PoolLine> lines = linesByOrder.remove(orderId);
+            collect(dispatchAuto(List.of(orderId), assignmentsOf(lines), tenantId, operator, rule, false),
+                    trigger, dispatched, failedIds, failures);
+        }
+
+        // ② 成批条件（任一满足即成批）：按**物料组**判、按**订单**派（一单一加工单是既有约束）
+        List<String> batchOrderIds = new ArrayList<>();
+        for (ProductionPoolViews.PoolGroup group : pool.groups()) {
+            String reason = batchConditionReason(group, tenantId, policy);
+            if (reason == null) {
+                continue;
+            }
+            reasons.add(reason);
+            for (ProductionPoolViews.PoolLine line : group.lines()) {
+                if (line.orderId() != null && !batchOrderIds.contains(line.orderId())) {
+                    batchOrderIds.add(line.orderId());
+                }
+            }
+        }
+        // 一单一加工单：派一张单会带上它的**全部**行（含未命中条件的另一物料组）
+        // ⇒ 指派也按「该单的全部池行」装配（否则另一物料组会被静默漏扣）。
+        if (!batchOrderIds.isEmpty()) {
+            collect(dispatchAuto(batchOrderIds, assignmentsOf(pluck(linesByOrder, batchOrderIds)),
+                            tenantId, operator, rule, true),
+                    trigger, dispatched, failedIds, failures);
+        }
+
+        // ③ 业务兜底（**不可取消**）：最晚派单日已到 ⇒ 必派（判据 4）
+        LocalDate today = LocalDate.now();
+        List<String> dueOrderIds = new ArrayList<>();
+        List<String> dueReasons = new ArrayList<>();
+        for (Map.Entry<String, List<ProductionPoolViews.PoolLine>> entry : linesByOrder.entrySet()) {
+            ProductionPoolViews.PoolLine first = entry.getValue().get(0);
+            LocalDate latest = latestDispatchDate(first, policy.standardCycleDays());
+            if (latest == null || today.isBefore(latest)) {
+                continue;
+            }
+            dueOrderIds.add(entry.getKey());
+            dueReasons.add("order=" + first.orderNo() + ":business_due=" + latest
+                    + (first.requiredDeliveryDate() != null
+                    ? "(required_delivery_date=" + first.requiredDeliveryDate() + ")"
+                    : "(no_required_delivery_date ⇒ 进池日 + 标准生产周期)"));
+        }
+        if (!dueOrderIds.isEmpty()) {
+            reasons.addAll(dueReasons);
+            collect(dispatchAuto(dueOrderIds, assignmentsOf(pluck(linesByOrder, dueOrderIds)),
+                            tenantId, operator + ":due", rule, true),
+                    trigger, dispatched, failedIds, failures);
+        }
+        return new AutoBatchOutcome(true, trigger, rule, List.copyOf(reasons),
+                List.copyOf(dispatched), List.copyOf(failedIds), List.copyOf(failures));
+    }
+
+    /**
+     * 成批条件判定（判据 3）：满足**任一** ⇒ 返回命中的那条规则（可读，进 {@code reasons} 痕迹）；
+     * 都不满足 ⇒ {@code null}（**不派**）。
+     *
+     * <h2>三个条件的口径（写在这里一次）</h2>
+     * <ul>
+     *   <li><b>① 填满某批次 ≥ X%</b>：{@code 该物料组需求米数 ≥ X% × 某批次入库量}
+     *       —— 分母是**入库量**（"填满一个整批"的字面口径；批次余量见 ②）。</li>
+     *   <li><b>② 余量收敛到 ≤ N 米</b>：{@code 0 ≤ 该批次余量 − 需求米数 ≤ N}
+     *       —— 「这批单正好把某一批用到见底」，N 缺省 0.2（与余量分布四档的 `≤0.2m` 同界）。</li>
+     *   <li><b>③ 池内同物料需求 ≥ 最小批量</b>：{@code 需求米数 ≥ 阈值}。</li>
+     * </ul>
+     *
+     * <p>⚠️ 这是**触发口径**（用一个可解释的算式回答"值不值得现在凑一批"），
+     * 不是排料结果 —— 真正扣多少米由 {@code StockBatchConsumptionService.plan} 在派单时决定
+     * （判据 6 的「口径一致」说的是**落账**与**预览**同源，不是触发口径等于排料口径）。
+     * 触发口径保守（绝不高估收益）⇒ 不会因为"以为能省"而误派。</p>
+     *
+     * @return 命中的规则（含材料键与读数）；{@code null} = 三条都不满足 ⇒ 不成批
+     */
+    String batchConditionReason(ProductionPoolViews.PoolGroup group, Long tenantId,
+                                AutoBatchPolicy policy) {
+        BigDecimal demand = StockQuantity.orZero(group.requiredMeters());
+        if (demand.signum() <= 0) {
+            return null;
+        }
+        if (demand.compareTo(policy.minBatchMeters()) >= 0) {
+            return String.format("material=%s:condition=min_batch(demand=%s>=%s)", group.materialKey(),
+                    demand.toPlainString(), policy.minBatchMeters().toPlainString());
+        }
+        List<BatchStockViews.BatchRemaining> batches = batchesOfMaterial(tenantId, group);
+        BigDecimal hundred = BigDecimal.valueOf(100);
+        BigDecimal ratio = BigDecimal.valueOf(policy.fillRatioPercent());
+        for (BatchStockViews.BatchRemaining batch : batches) {
+            BigDecimal inbound = StockQuantity.orZero(batch.inboundMeters());
+            if (inbound.signum() > 0 && demand.multiply(hundred).compareTo(ratio.multiply(inbound)) >= 0) {
+                return String.format("material=%s:condition=fill_ratio(demand=%s>=%s%%×batch[%s]=%s)",
+                        group.materialKey(), demand.toPlainString(), ratio.toPlainString(),
+                        batch.batchNo(), inbound.toPlainString());
+            }
+            BigDecimal after = StockQuantity.orZero(batch.remainingMeters()).subtract(demand);
+            if (after.signum() >= 0 && after.compareTo(policy.convergeMeters()) <= 0) {
+                return String.format("material=%s:condition=converge(demand=%s,batch[%s]余量=%s⇒%s<=%s)",
+                        group.materialKey(), demand.toPlainString(), batch.batchNo(),
+                        StockQuantity.orZero(batch.remainingMeters()).toPlainString(),
+                        after.toPlainString(), policy.convergeMeters().toPlainString());
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 业务兜底的**最晚派单日**（判据 4 的唯一算式）。
+     *
+     * <p>{@code 有客户要求到货日 ⇒ 到货日 − 标准生产周期}（倒推：要赶上到货日，最迟哪天必须开工）；
+     * {@code 无 ⇒ 进池日（= orders.created_at 的日期，与 waitHours 同一载体）+ 标准生产周期}
+     * —— 没有客户死线时，**标准工期本身就是**「这批单最多能攒多久」的约束
+     * （不让"凑不满"变成"永远不派"）。</p>
+     *
+     * <p>取不到任何时间依据（脏数据）⇒ {@code null} = 无从判定（不猜一个日子）；这条在
+     * {@code orders.created_at} 为 {@code NOT NULL} 的前提下不可达，如实登记而不是编一个死线。</p>
+     */
+    static LocalDate latestDispatchDate(ProductionPoolViews.PoolLine line, int standardCycleDays) {
+        if (line == null || standardCycleDays <= 0) {
+            return null;
+        }
+        if (line.requiredDeliveryDate() != null) {
+            return line.requiredDeliveryDate().minusDays(standardCycleDays);
+        }
+        return line.waitingSince() == null ? null
+                : line.waitingSince().toLocalDate().plusDays(standardCycleDays);
+    }
+
+    /**
+     * 自动派单的**三级尝试**（判据 10 的 fail-soft 落点）。
+     *
+     * <p>① 整批一次（成批 = {@code pooled=true} ⇒ 跨订单成组；加急 = 逐单 {@code pooled=false}）
+     * → ② 对失败的**逐单 + 规则**（池级累计余量不足是池化**新出现**的失败面：
+     * 两张单各要 3 米而批次只剩 5 米，逐单看各自都够）
+     * → ③ 对仍失败的**逐单 + 不带规则**（#5145 之前的缺省形态：不碰批次账）。
+     * 三级都失败才记失败 —— 「不能损失客户」不等于「假装成功」，失败照实留痕。</p>
+     *
+     * <p>重试**不会重复派**：① 里成功的单不在重试集里，而失败的判定依据
+     * （{@code selectActiveByOrderId} + {@code uk_processing_orders_active}）是 fail-closed 的
+     * —— 已经有加工单的单在②③里同样被拒（判据 7）。</p>
+     */
+    private List<AutoLine> dispatchAuto(List<String> orderIds, List<BatchAssignment> assignments,
+                                        Long tenantId, String operator, String rule, Boolean pooled) {
+        List<AutoLine> lines = new ArrayList<>();
+        List<String> retry = new ArrayList<>();
+        List<GenerateResult> results = generateSafely(orderIds, assignments, tenantId, operator, rule, pooled);
+        for (int i = 0; i < orderIds.size(); i++) {
+            GenerateResult r = i < results.size() ? results.get(i) : null;
+            if (r != null && r.isSuccess()) {
+                lines.add(new AutoLine(orderIds.get(i), true, r.getProcessingOrderNo()));
+            } else {
+                retry.add(orderIds.get(i));
+            }
+        }
+        for (String orderId : retry) {
+            GenerateResult one = firstOf(generateSafely(List.of(orderId),
+                    assignmentsOfOrder(assignments, orderId), tenantId, operator + ":single", rule, false));
+            if (one != null && one.isSuccess()) {
+                lines.add(new AutoLine(orderId, true, one.getProcessingOrderNo()));
+                continue;
+            }
+            GenerateResult plain = firstOf(generateSafely(List.of(orderId), List.of(), tenantId,
+                    operator + ":plain", null, false));
+            if (plain != null && plain.isSuccess()) {
+                lines.add(new AutoLine(orderId, true, plain.getProcessingOrderNo()));
+                continue;
+            }
+            lines.add(new AutoLine(orderId, false, messageOf(plain != null ? plain : one)));
+        }
+        return lines;
+    }
+
+    /**
+     * {@link #generate} 的**不抛**包装：整批显式拒绝（池级求解失败 / 非法规则 / 累计余量不足）
+     * ⇒ 逐单记失败，交给 {@link #dispatchAuto} 的降级重试。
+     *
+     * <p>{@code generate} 是 {@code @Transactional(rollbackFor = Exception.class)}：
+     * 异常逸出 ⇒ 该次调用<b>整体回滚</b>（池级求解发生在任何写库之前，见 {@code generatePooled}）
+     * ⇒ 这里的重试**不可能**撞上"写了一半"的中间态。</p>
+     */
+    private List<GenerateResult> generateSafely(List<String> orderIds, List<BatchAssignment> assignments,
+                                                Long tenantId, String operator, String rule, Boolean pooled) {
+        try {
+            return generate(new ArrayList<>(orderIds), assignments, tenantId, operator, rule, pooled);
+        } catch (RuntimeException e) {
+            String message = e instanceof BusinessException be ? be.getMessage() : String.valueOf(e);
+            String code = e instanceof BusinessException be ? be.getCode() : "AUTO_BATCH_DISPATCH_FAILED";
+            String suggestion = e instanceof BusinessException be ? be.getSuggestion() : null;
+            List<GenerateResult> out = new ArrayList<>();
+            for (String orderId : orderIds) {
+                out.add(GenerateResult.fail(orderId, code, message, suggestion));
+            }
+            return out;
+        }
+    }
+
+    /** 池行按订单归拢（**包含加急行与每个物料组**；一单一加工单 ⇒ 派一张单要带上它的全部行）。 */
+    private static Map<String, List<ProductionPoolViews.PoolLine>> linesByOrderOf(
+            ProductionPoolViews.Pool pool) {
+        Map<String, List<ProductionPoolViews.PoolLine>> out = new LinkedHashMap<>();
+        for (ProductionPoolViews.PoolLine line : pool.urgentLines()) {
+            if (line.orderId() != null) {
+                out.computeIfAbsent(line.orderId(), k -> new ArrayList<>()).add(line);
+            }
+        }
+        for (ProductionPoolViews.PoolGroup group : pool.groups()) {
+            for (ProductionPoolViews.PoolLine line : group.lines()) {
+                if (line.orderId() != null) {
+                    out.computeIfAbsent(line.orderId(), k -> new ArrayList<>()).add(line);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** 取出这几个订单的池行并**从索引里移除**（已处理过的单不参与后续段/不重复装配指派）。 */
+    private static List<ProductionPoolViews.PoolLine> pluck(
+            Map<String, List<ProductionPoolViews.PoolLine>> linesByOrder, List<String> orderIds) {
+        List<ProductionPoolViews.PoolLine> out = new ArrayList<>();
+        for (String orderId : orderIds) {
+            List<ProductionPoolViews.PoolLine> lines = linesByOrder.remove(orderId);
+            if (lines != null) {
+                out.addAll(lines);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 池行 → 批次指派（{@code batchNo} **留空** ⇒ 由 {@code assignmentRule} 按 #5167 的规则补位）。
+     *
+     * <p>自动路径没有文员来指定批次，故逐行「有这一行、批次待定」；规则无效/无候选批次
+     * ⇒ {@code buildDesignations} 抛业务异常 ⇒ 该单在①失败、由②③降级兜住（fail-soft）。</p>
+     */
+    private static List<BatchAssignment> assignmentsOf(List<ProductionPoolViews.PoolLine> lines) {
+        List<BatchAssignment> out = new ArrayList<>();
+        for (ProductionPoolViews.PoolLine line : lines) {
+            if (line.orderId() == null || line.itemId() == null) {
+                continue;
+            }
+            BatchAssignment a = new BatchAssignment();
+            a.setOrderId(line.orderId());
+            a.setItemId(line.itemId());
+            out.add(a);
+        }
+        return out;
+    }
+
+    private static List<BatchAssignment> assignmentsOfOrder(List<BatchAssignment> assignments,
+                                                            String orderId) {
+        List<BatchAssignment> out = new ArrayList<>();
+        for (BatchAssignment a : assignments) {
+            if (Objects.equals(a.getOrderId(), orderId)) {
+                out.add(a);
+            }
+        }
+        return out;
+    }
+
+    /** 某物料的批次读数（余量口径 = 入库量 + Σ消耗，与余量分布/对账**同一函数**）。 */
+    private List<BatchStockViews.BatchRemaining> batchesOfMaterial(Long tenantId,
+                                                                   ProductionPoolViews.PoolGroup group) {
+        List<BatchStockViews.BatchRemaining> out = new ArrayList<>();
+        for (BatchStockViews.BatchRemaining batch
+                : batchStock().remaining(tenantId, group.productId(), null, false)) {
+            // SKU 一致性口径与 plan / suggestedBatchNo **同源**（有一侧没记 ⇒ 不作不一致判定）
+            if (!StringUtils.hasText(group.skuCode()) || !StringUtils.hasText(batch.skuCode())
+                    || group.skuCode().equals(batch.skuCode())) {
+                out.add(batch);
+            }
+        }
+        return out;
+    }
+
+    private void collect(List<AutoLine> lines, String trigger, List<String> dispatched,
+                         List<String> failedIds, List<String> failures) {
+        for (AutoLine line : lines) {
+            if (line.success()) {
+                dispatched.add(line.detail());
+            } else {
+                failedIds.add(line.orderId());
+                failures.add(String.format("trigger=%s, orderId=%s: %s", trigger, line.orderId(),
+                        line.detail()));
+            }
+        }
+    }
+
+    private static GenerateResult firstOf(List<GenerateResult> results) {
+        return results == null || results.isEmpty() ? null : results.get(0);
+    }
+
+    private static String messageOf(GenerateResult r) {
+        return r == null ? "自动派单未返回结果" : r.getMessage();
+    }
+
+    /** 自动派单里**一张单的最终结局**（三级尝试之后；{@code detail} = 加工单号或失败文案）。 */
+    private record AutoLine(String orderId, boolean success, String detail) {
     }
 
     // ============================================================ 生成

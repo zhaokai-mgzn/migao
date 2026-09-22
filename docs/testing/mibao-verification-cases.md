@@ -4060,7 +4060,7 @@
 真值: batch-ledger.dispatch-deduct
 溯源: 2026-09-22 新增：#5145 阶段 1（取号 PG-060 —— 原 PG-059 与在飞的 #5142 撞号，rebase 后顺延）。扣减时点 = 生成/派发加工单（用户裁定，非报工）；已有硬闸「仅已确认订单可生成加工单」⇒ 派工扣必然发生在支付扣之后。 ｜ tags: processing-order, stock, batch, backend_contract
 
-## 商品域（73 case）
+## 商品域（77 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -4747,7 +4747,7 @@
 期望: direct_reply
 数据: 判据 1·**三列存在且两个米数 NOT NULL**：真 PG 跑 V119 后 `information_schema.columns` 逐列可查；NULL 会让「答不出省了多少」的账静默落库。
 数据: 判据 2·**历史行回填**：V119 之前写入的行 `formula_meters = planned_meters = −delta`（⇒ saved = 0，与「本单之前节省恒为 0」的事实一致）；均价**不回填**（NULL = 未知，不拿今天的批次价冒充当时价）。
-数据: 判据 3·**「只多不少」约束**：`ck_batch_consumption_plan_meters` = `planned_meters <= formula_meters AND formula_meters * planned_meters >= 0` —— 违反者当场 23514（前半句禁「排料比公式多领」，后半句禁「两列符号打架」）。
+数据: 判据 3·**「只多不少」约束**：`ck_batch_consumption_plan_meters` = `planned_meters <= formula_meters AND formula_meters * planned_meters >= 0` —— 违反者当场 23514（前半句禁「排料比公式多领」，后半句禁「两列符号打架」）。⚠️ **本句只描述 V119 当时的形态**：前半句在回补行（两列都负）上方向翻转，**V121（issue #5182）已订正为** `abs(planned_meters) <= abs(formula_meters)`（对扣减行逐字等价）；本用例判据跑的是 V119 单跑，故仍按原文断言。
 数据: 判据 4·**幂等/显式事务/停止条件**：`BEGIN; … COMMIT;`；两遍真跑幂等（`ADD COLUMN IF NOT EXISTS` + `WHERE … IS NULL` 回填 + 覆盖式注释）；前置表/列缺失 ⇒ `RAISE EXCEPTION` 停下；文末终态对账两遍都成立；已登记 `migration_fingerprints.json`（旧条目零改动）；`docs/sql/schema.sql`（bootstrap 终态）已同步。
 跳过: [backend-contract] 迁移形态判据（真 PG + 源码），非 LLM 行为，不进入 agent-eval 冒烟
 ```
@@ -4983,6 +4983,57 @@
 跳过: [backend-contract] 解析器保真度的边界登记与死亡条件（CI 机具面，无米宝工具面）⇒ 由 tests/unit_ci_workflows 单测验证，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-23 新增（issue #5179）：escaped_* 一族死亡条件按设计触发并移出登记表 + 现存三种不保真形态在册 + 未定义转义两侧行为钉住 + 真库零容忍口径。取号 PR-085。 ｜ tags: ci, case-library, render-leg, backend-contract
+
+### PR-086. 自动成批派单：默认关（零读零写）+ 事件驱动（无计时器、AFTER_COMMIT）+ 三个挂载点只在既有业务之后且 fail-soft（通知抛异常不影响主流程） 🔵
+```
+你: 自动成批的开关缺省与事件挂载点纪律（非 LLM 行为，由 Java 单测覆盖）
+数据: 判据 1·**默认关**：`AUTO_BATCH_DEFAULT_ENABLED=false` ⇒ `autoBatchDispatch` **零读零写**立刻返回（`enabled=false`、不派、`verifyNoInteractions` 全部 mapper、一次 `generate` 都不调）⇒ 不启用与今天**逐值相同**。**红证 = 把缺省改成 `true`** ⇒ 本判据当场红（机具：`scripts/auto-batch-red-proof.py --only default_off`）。
+数据: 判据 2·**事件驱动、不是计时器**：① 结构性 —— 触发链（`PoolChangeNotifier` / `AutoBatchDispatchListener` / `ProcessingOrderService`）**没有任何 `@Scheduled`**，且监听器是 `@TransactionalEventListener(phase = AFTER_COMMIT)`（提交前评估会读到「还没入池」的单 ⇒ 相位是正确性的一部分）；② 行为性 —— **没有到期的单**（进池 1~3 小时、到货日 30 天后）在条件满足时**当次事件内**即成批。**红证 = 把主触发改成「只在兜底扫描里」**（条件判定恒不成立）⇒ ②当场红。
+数据: 判据 1/10·**挂载点纪律**（四个挂载点：确认支付 / 入库过账 / 改单 / 取消）：① `InOrder` 断言「状态流转 → 库存副作用 → 通知」的**顺序**（挂到业务前面 = 用一次评估阻塞主流程）；② 🔴 **通知点抛异常 ⇒ 主流程仍成功且副作用照旧**（确认支付照常返回、`increaseSales` 仍被调到；过账仍 `receiveStock`）；③ 通知点未装配 ⇒ 跳过且不影响主流程；④ 触发原因是四类之一。**红证 = 去掉 `notifySafely` 的 `catch`** ⇒ ②红；**把 `confirmPayment` 里那行通知删掉** ⇒ ①红。
+数据: 判据 10·**失败可查**：通知点失败/未装配 ⇒ `INCIDENT_PRODUCTION_POOL_NOTIFY_FAILED` 出现在日志里（grep 得到，不静默）。
+跳过: [backend-contract] 自动成批的开关缺省与事件挂载点纪律（无米宝工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.auto-batch-dispatch
+溯源: 2026-09-23 新增（issue #5182，阶段 2b-3）：默认关 + 事件驱动（AFTER_COMMIT，无计时器）+ 四个挂载点的 fail-soft 与留痕。取号 PR-086（本单硬分配区间 PR-086~PR-089）。 ｜ tags: batch-ledger, dispatch-pool, auto-dispatch, backend-contract
+
+### PR-087. 成批条件（任一即成批 / 都不满足则不派）+ 加急永不入池且自动立即派 + 兜底算式 + 幂等 + 失败留痕 🔵
+```
+你: 自动成批的条件判定与兜底算式（非 LLM 行为，由 Java 单测覆盖）
+数据: 判据 3·**成批条件生效**：①②③ 各一条**只满足它**的夹具 ⇒ 成批（`reasons` 里是命中的那条规则）；三条都不满足（需求 3 米 / 批次 90 米 / 最小批量 30）⇒ **一次 `generate` 都不调**。**红证 = 条件恒真** ⇒ 第三条红。
+数据: 判据 5·**加急**：加急单**永不入池**且被**逐单立即派**（`pooled=false`，复用 #5177 的手动插队路径），且它**不出现在**成批那一批里。**红证 = 让加急单参与池化**（`urgent=false`）⇒ 该判据红。
+数据: 判据 4 算式面·**兜底的最晚派单日**：有到货日 ⇒ `到货日 − 标准生产周期`；无 ⇒ `进池日 + 标准生产周期`（进池日 = `orders.created_at`，与等待时长同一载体）；两个依据都缺 / 周期非正 ⇒ `null`（**不编一个日子**）。**到日必派**：条件都不满足但最晚派单日已过 ⇒ 仍派。
+数据: 判据 7·**幂等**：派过的单有了活跃加工单 ⇒ `pool()` 按同一口径（与 `uk_processing_orders_active` 逐字相同）把它排除 ⇒ 第二次触发**不重复派**（一次 `generate` 都不调）。**红证 = 池不再排除已派单** ⇒ 该判据红。
+数据: 判据 10·**失败可查**：三级降级（整批池级 → 逐单 + 规则 → 逐单不带规则）都失败 ⇒ `failures` 非空 + 监听器打出 `INCIDENT_PRODUCTION_AUTO_BATCH_DISPATCH_FAILED`。**红证 = 把失败改成静默**（删掉那行 `log.error`）⇒ 该判据红。
+数据: **「不能损失客户」的降级链**：⓵ 池级失败（累计余量不足 = 池化新出现的失败面）⇒ 逐单 + 规则重试（逐单看各自多半够）；⓶ 仍失败（该 SKU 根本没有可用批次）⇒ 逐单**不带规则**（#5145 之前的缺省形态：不碰批次账）⇒ **绝不因为优化不可用把订单压住**；重试不会重复派（`selectActiveByOrderId` + 唯一索引 fail-closed）。
+跳过: [backend-contract] 自动成批的条件/加急/兜底/幂等（无米宝工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.auto-batch-dispatch, batch-ledger.pooled-batch-dispatch
+溯源: 2026-09-23 新增（issue #5182，阶段 2b-3）：成批条件三条 + 加急立即派 + 兜底算式 + 幂等 + 失败留痕 + 三级降级。取号 PR-087。 ｜ tags: batch-ledger, dispatch-pool, auto-dispatch, backend-contract
+
+### PR-088. 真库：事件触发的自动成批**落账**（跨订单成组 3 米而非 6 米）+ generated_by 可审计痕迹 + 预览口径一致 + 幂等 + 对称回补 + 不损失客户 🔵
+```
+你: 自动成批派单的真库落账读数（非 LLM 行为，由真 PG（initdb+pg_ctl）Java 判据覆盖）
+数据: 判据 2/6·**事件触发的自动成批真的落库**：事件到达（`order_confirmed`）⇒ `processing_orders` 两张（一单一加工单不变）；`Σ(−delta)` = **3 米**（不是 6 —— 池级一次求解让两张单的行并排）；3 米拆成两条台账、`COUNT(DISTINCT processing_order_no) = 2`；批次余量 60 → **57**。
+数据: 🔴 **可审计（范围 6）**：两张加工单的 `processing_orders.generated_by` = `auto:order_confirmed:fifo` —— **谁触发的**（哪类业务事件）与**按哪条规则**落在**持久列**上（不是只写在日志里）。
+数据: 判据 6·**口径一致**：真库 `Σ(formula_meters − planned_meters)` 与**独立复算的预览口径**（同一 `plan` 求解器、同一份入参）**逐值相等** = 3，且判别力自证（逐单派口径下这张单的节省 = 0 ⇒ 两套口径会给出不同的数）。
+数据: 判据 7·**幂等**：重复触发（换一个触发原因）⇒ 派过的单已有活跃加工单 ⇒ **不重复派**，`processing_orders` 行数与台账行数不变、余量不变。
+数据: 判据 8·**可撤销**：作废 ⇒ 回补**逐值对称**（余量精确回到 60、`Σ(−delta)` 净额归零）。⚠️ 这条在修前**必然失败**：V119 的 `ck_batch_consumption_plan_meters` 在回补行（两列都负）上方向翻转 ⇒ 「省过料的行的回补行」违反 CHECK（23514）。**V121（本单）** 把前半句改成绝对值口径（对扣减行逐字等价）。真库**注入式红证**：把约束换回 V119 原文 ⇒ 同一笔回补当场 23514、余量停在 57；换回修正版 ⇒ 同一笔回补照常落账。
+数据: 判据 9·**不损失客户**：`product_skus.stock` 与 `stock_ledger_entries` 行数**一字不动**（自动派单只动批次实物账）。
+跳过: [backend-contract] 真 PG 判据（initdb+pg_ctl 临时集群 + Java 真装配），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.auto-batch-dispatch, batch-ledger.pooled-batch-dispatch, batch-ledger.remaining-derived
+溯源: 2026-09-23 新增（issue #5182，阶段 2b-3）：自动成批的真库落账 + 痕迹 + 口径一致 + 幂等 + 对称回补 + V121 的注入式红证。取号 PR-088。 ｜ tags: batch-ledger, dispatch-pool, auto-dispatch, real-db, backend-contract
+
+### PR-089. 🔴 真库：不压单可证明 —— 永远凑不满的池仍在**业务约束内**被派出去（红证：去掉兜底 ⇒ 该单永远不派） 🔵
+```
+你: 凑不满的池是否会被压住（非 LLM 行为，由真 PG Java 判据覆盖）
+数据: 🔴 判据 4·**不压单可证明**：夹具是**永远凑不满**的池（需求 3 米 / 批次入库 90 米 ⇒ 填满率 3.3% < 80%、余量 90−3 = 87 > 0.2、需求 3 < 最小批量 30 ⇒ **三条成批条件一条都不成立**，`reasons` 为空）；无客户到货日 ⇒ 兜底链走「进池日 + **可配的**标准生产周期」。周期 7 天而进池已 30 天 ⇒ **最晚派单日已过 ⇒ 必派**（真库 `processing_orders` = 1、`generated_by` 含 `:due`、批次账落在 87）。
+数据: 🔴 **同夹具红证（去掉兜底 ⇒ 该单永远不派）**：同一个池、同一批条件、**只把标准生产周期换成 3650 天**（这张单不再到期）⇒ 一次都不派、`reasons` 为空。⇒ 「它被派出去」的原因就是业务兜底，不是别的什么。
+数据: **边界（如实登记）**：到货日分支（`到货日 − 周期`）的算式由 PR-087 的单测逐值钉住；本判据覆盖的是「无到货日 ⇒ 标准生产周期兜底」这一支 —— 也正是「凑不满的池靠什么不无限期压住」的答案。
+跳过: [backend-contract] 真 PG 判据（initdb+pg_ctl 临时集群 + Java 真装配），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: batch-ledger.auto-batch-dispatch
+溯源: 2026-09-23 新增（issue #5182，阶段 2b-3）：兜底必派的真库判据 + 同夹具红证。取号 PR-089。 ｜ tags: batch-ledger, dispatch-pool, auto-dispatch, real-db, backend-contract
 
 ## 工具注册器域（1 case）
 
@@ -5879,8 +5930,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：431（活跃 156，跳过 275）
-- tier 分布：smoke 10 / normal 390 / adversarial 31
+- 用例总数：435（活跃 156，跳过 279）
+- tier 分布：smoke 10 / normal 394 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -5900,7 +5951,7 @@
 - 订单域：46
 - 加工项域：13
 - 加工单域：53
-- 商品域：73
+- 商品域：77
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
