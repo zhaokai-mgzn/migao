@@ -1708,6 +1708,18 @@ export interface Order {
   remark?: string              // 兼容旧字段
   createdAt?: string
   updatedAt?: string
+  /**
+   * **加急**（issue #5177；库列 `orders.is_urgent` NOT NULL DEFAULT FALSE）。
+   *
+   * 🔴 这是**订单级**真值，与售后工单的 `priority` **零联动**：不共享来源、不同步、不互读
+   * （两者只是命名风格相近）。缺省 `false` = 不加急 —— 前端**不做**客户端默认，读服务端值。
+   */
+  isUrgent?: boolean
+  /**
+   * **要求到货日**（issue #5177；库列 `orders.required_delivery_date`，DATE）。
+   * `YYYY-MM-DD`；`null` = **未指定**（不猜、不写死默认）。
+   */
+  requiredDeliveryDate?: string | null
 }
 
 // ===== 表单与请求参数 =====
@@ -1739,8 +1751,35 @@ export interface OrderFormData {
   logisticsType?: string
   /** **常用物流公司**（issue #4874 顶层新列）：自由文本（词表只是候选，允许自定义） */
   logisticsCompany?: string
+  /**
+   * **加急**（issue #5177）：**缺省 = 不传 = 不加急**（库列 NOT NULL DEFAULT FALSE）。
+   * 🔴 未勾选时本键**不得出现**在请求体里 —— 「没填」与「显式不加急」在请求体上要能区分，
+   * 且页面**不得默认勾上**。与售后 priority 零联动。
+   */
+  isUrgent?: boolean
+  /**
+   * **要求到货日**（issue #5177）：`YYYY-MM-DD`。
+   * **缺省 = 不传 = 未指定**（不猜）—— 未填时本键**不得出现**在请求体里。
+   */
+  requiredDeliveryDate?: string
   remark?: string
   items: OrderItemFormData[]
+}
+
+/**
+ * 订单加急 / 到货日的**改单**入参（issue #5177）——
+ * `PUT /api/admin/orders/{id}/urgency`（**订单页**上直接改，不是售后页）。
+ *
+ * 三态口径（与冻结契约逐字一致）：
+ * - `isUrgent === null` / 缺省 ⇒ **本字段不改**；
+ * - `requiredDeliveryDate === null` / 缺省 ⇒ **本字段不改**；
+ * - `requiredDeliveryDate === ''` ⇒ **清空**到货日；
+ * - `requiredDeliveryDate === 'YYYY-MM-DD'` ⇒ 设置。
+ * 非法日期格式 / 订单不存在 ⇒ 422。
+ */
+export interface OrderUrgencyParams {
+  isUrgent?: boolean | null
+  requiredDeliveryDate?: string | null
 }
 
 // 订单明细表单
@@ -3008,4 +3047,134 @@ export interface BatchCandidates {
   suggestedBatchNo: string | null
   requiredMeters: string
   candidates: BatchCandidate[]
+}
+
+// ========== 池看板 / 池化派单（issue #5177，消费 #5169 已交付的三个端点）==========
+
+/**
+ * 池内一行（`PoolLine`）—— `GET /api/admin/production/pool` 的
+ * `urgentLines[]` 与 `groups[].lines[]` 共用同一结构。
+ *
+ * 🔴 **顺序由服务端唯一确定**（到货日升序 null 最后 → waitHours 降序 → waitingSince 升序 →
+ * orderId 升序）：前端**按接口给的数组顺序渲染，不得重排**（在浏览器里再排一次 = 第二份会漂的口径）。
+ */
+export interface PoolLine {
+  orderId: string
+  orderNo: string
+  itemId: string
+  productId: string
+  productName: string
+  skuCode?: string | null
+  requiredMeters: number
+  /** ISO offset datetime（`waitHours` 的取数起点） */
+  waitingSince: string
+  waitHours: number
+  overdue: boolean
+  /** 非空列 ⇒ 服务端**总是**下发（缺省 false = 不加急） */
+  isUrgent: boolean
+  /**
+   * 到货日 `YYYY-MM-DD`。
+   * 🔴 后端 Jackson 配了 `default-property-inclusion: non_null` ⇒ **未指定时这个键整个缺席**
+   * （不是 `null`）⇒ 渲染必须把「缺席」与「null」当同一件事（`?? null` / 可选链），
+   * 且**不得**把日期串过 `new Date(...)`（服务端时区 Asia/Shanghai，会整体差一天）。
+   */
+  requiredDeliveryDate?: string | null
+  /** 到货日 − 今天（天）；负数 = 已逾期；**未指定时键缺席**；服务端算，前端不重算 */
+  deliveryDaysLeft?: number | null
+}
+
+/** 超时未派告警（`overdueCount > 0` 时必须有可行动文案） */
+export interface PoolWarning {
+  orderId: string
+  orderNo: string
+  waitHours: number
+  message: string
+}
+
+/** 物料分组（`materialKey` = 商品 × 颜色 × 门幅） */
+export interface PoolGroup {
+  materialKey: string
+  productId: string
+  skuCode?: string | null
+  orderCount: number
+  requiredMeters: number
+  lines: PoolLine[]
+}
+
+/**
+ * 池看板读面（`GET /api/admin/production/pool`）。
+ *
+ * ⚠️ 后端 Jackson `non_null` ⇒ `warnings` / `urgentLines` 等键在「无内容」时**可能缺席**，
+ * 消费方一律用 `?? []` 兜底（不要假设键存在）。
+ */
+export interface PoolBoard {
+  maxWaitHours: number
+  /** 池化开关**当前**是否开启（缺省关 —— 未开启必须看得见） */
+  poolingEnabled: boolean
+  /** = 池内（非加急）订单数 */
+  orderCount: number
+  lineCount: number
+  overdueCount: number
+  /** = `urgentLines` 去重后的订单数 */
+  urgentCount: number
+  warnings?: PoolWarning[]
+  /** 加急插队区：这些单**不进池**（不是成批候选），要立刻单派 */
+  urgentLines?: PoolLine[]
+  groups?: PoolGroup[]
+}
+
+/**
+ * 池化派单请求体（`/preview` 与 `/dispatch` **同体**）。
+ * `pooled: true` = 成批池化派单；`pooled: false` + 单订单 = **加急插队**（一个动作，同一个端点）。
+ */
+export interface PoolDispatchRequest {
+  orderIds: string[]
+  batches: unknown[]
+  assignmentRule: string | null
+  pooled: boolean
+}
+
+/** 成批预览（全是 JSON number = 服务端 BigDecimal 聚合；**服务端口径，前端只渲染不算**） */
+export interface PoolPreview {
+  orderCount: number
+  assignmentRule: string
+  /** 逐单**公式**米数 = 预览的对照基线 */
+  formulaMeters: number
+  /** 预计领料米数（跨订单成组后的应领合计） */
+  pooledPlannedMeters: number
+  /**
+   * 预计节省 = `formulaMeters − pooledPlannedMeters`。
+   * 🔴 与派单后落账的 `Σ saved_meters` **逐值相等**（同一个数，不是两套口径 —— 判据 4）
+   * ⇒ 前端**不得**自己相减（浏览器里再算一次就是第二份会漂的口径）。
+   */
+  savedMeters: number
+  /**
+   * **对照读数**：**逐单派**的应领**合计**（一个数，**不是** orderId → 米数 的映射；
+   * 预览 API **没有**逐单明细）。
+   */
+  perOrderPlannedMeters: number
+  /**
+   * 池化**新增**收益 = `perOrderPlannedMeters − pooledPlannedMeters`。
+   * 与 `savedMeters` 分开报：后者含 #5158 已有的「单订单内并排」省下来的部分 ——
+   * 把两者混成一个数就会把旧收益算成池化的功劳。
+   */
+  poolingGainMeters: number
+}
+
+/** 派单逐单结果（`POST /api/admin/production/pool/dispatch`；`non_null` ⇒ 空值键缺席） */
+export interface PoolDispatchResult {
+  /**
+   * 🔴 **入参原样回显**（`ProcessingOrderService.GenerateResult.orderRef`）——
+   * **不是** `orderId`/`orderNo`：服务端回的是「你传进来的那个字符串」，看板传的是订单 id。
+   * 要在界面上显示**单号**必须自己从看板数据里按 `orderId → orderNo` 映射（纯展示映射，不重算）。
+   * 红证：把这里写成 `orderId`/`orderNo` ⇒ 服务端根本没这两个键 ⇒ 结果行渲染成空白，
+   * 而 vitest 桩（`ok(data: unknown)`）不校验形状 ⇒ **判据被自己的文案喂绿**（已修：
+   * 两个池看板测试的桩都改成显式 `PoolDispatchResult[]` 注解，形状错了 tsc 就红）。
+   */
+  orderRef: string
+  processingOrderNo?: string | null
+  success: boolean
+  message?: string | null
+  code?: string | null
+  suggestion?: string | null
 }

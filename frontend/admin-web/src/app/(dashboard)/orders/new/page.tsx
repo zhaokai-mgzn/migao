@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, autoFeaturesApi, doorWidthPlanApi, feePreviewApi, type AutoFeaturesParams, type AutoFeaturesResult, type CraftCalcResult, type CraftCalcParams, type DoorWidthPlanParams, type DoorWidthPlanResult, type FeePreviewResult, type FeePreviewRow } from '@/lib/api'
-import { resolveImageUrl } from '@/lib/utils'
+import { resolveImageUrl, cn } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
 import { Button, Card, Input, Modal } from '@/components/ui'
 import OrderCraftFields from '@/components/orders/OrderCraftFields'
@@ -1036,6 +1036,17 @@ export default function NewOrderPage() {
    */
   const [logisticsType, setLogisticsType] = useState('')
   const [logisticsCompany, setLogisticsCompany] = useState('')
+
+  /**
+   * **加急**与**要求到货日**（issue #5177，做在**订单**上 —— 不是售后页）。
+   *
+   * 🔴 缺省不变：`isUrgent` 缺省 `false`（= **不勾**）、`requiredDeliveryDate` 缺省 `''`（= **未指定**）
+   * ⇒ 提交时**这两个键都不出现在请求体里**（后端库列 `NOT NULL DEFAULT FALSE` / `NULL`）。
+   * **不得默认勾上加急** —— 勾了就是替商家编造一个「插队」事实。
+   * 与售后工单的 `priority` **零联动**（不 import、不读写任何售后字段）。
+   */
+  const [isUrgent, setIsUrgent] = useState(false)
+  const [requiredDeliveryDate, setRequiredDeliveryDate] = useState('')
 
   // 表单错误
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -2075,6 +2086,11 @@ export default function NewOrderPage() {
         // 缺值**不写**（`undefined`）——「未指定」与「快递」是两个真值，写死默认值 = 编造。
         logisticsType: logisticsType || undefined,
         logisticsCompany: logisticsCompany.trim() || undefined,
+        // **加急 / 要求到货日**（issue #5177，做在订单上）：**未勾/未填 ⇒ 键不出现** ——
+        // 「没填」与「显式不加急」在请求体上必须能区分（后端库列 NOT NULL DEFAULT FALSE / NULL）。
+        // 不写死默认值（#4419 同族口径）；与售后 priority 零联动。
+        ...(isUrgent ? { isUrgent: true } : {}),
+        ...(requiredDeliveryDate ? { requiredDeliveryDate } : {}),
         remark: finalRemark || undefined,
         items,
       })
@@ -2324,6 +2340,65 @@ export default function NewOrderPage() {
 
         {/* 右侧：费用明细 + 操作 */}
         <div className="space-y-6">
+          {/* 加急 / 要求到货日（issue #5177）：**做在订单上**（不是售后页）——
+              加急单在池看板上走「加急插队区」（不进池、立即单派），到货日是派单排序键。 */}
+          <Card>
+            <div className="p-6">
+              <SectionTitle icon={<Zap className="w-4 h-4" />} title="加急 / 到货日" />
+              <div className="mt-4 space-y-4">
+                <div className="flex items-start gap-3">
+                  {/*
+                    开关用 `role="switch"` 的按钮（**不是** `<input type="checkbox">`）：
+                    下单页上已有「加工项」勾选框，多一个原生 checkbox 会让既有的
+                    `getByRole('checkbox')` 变成「命中多个」（页面上不再有唯一的 checkbox）。
+                  */}
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isUrgent}
+                    aria-label="加急"
+                    onClick={() => setIsUrgent((v) => !v)}
+                    className={cn(
+                      'mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+                      isUrgent ? 'bg-primary-600' : 'bg-neutral-300'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'ml-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform',
+                        isUrgent && 'translate-x-4'
+                      )}
+                    />
+                  </button>
+                  <span className="text-sm text-neutral-700">
+                    加急（插队）
+                    <span className="block text-xs text-neutral-400 mt-0.5">
+                      加急单不进池，在池看板上单独立即派单
+                    </span>
+                  </span>
+                </div>
+                <div>
+                  <label
+                    htmlFor="requiredDeliveryDate"
+                    className="block text-sm font-medium text-neutral-700 mb-1.5"
+                  >
+                    要求到货日
+                  </label>
+                  <input
+                    type="date"
+                    id="requiredDeliveryDate"
+                    value={requiredDeliveryDate}
+                    onChange={(e) => setRequiredDeliveryDate(e.target.value)}
+                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  />
+                  <p className="mt-1 text-xs text-neutral-400">
+                    留空 = 未指定（不填就是不填，不猜一个日期）；到货日越早，池看板上排得越前
+                  </p>
+                </div>
+              </div>
+            </div>
+          </Card>
+
           <Card>
             <div className="p-6">
               <SectionTitle icon={<Receipt className="w-4 h-4" />} title="费用明细" />

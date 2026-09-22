@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -83,6 +84,15 @@ public class OrderListResponse {
      * 更新时间
      */
     private OffsetDateTime updatedAt;
+
+    /**
+     * 订单级**加急标记**（V120，issue #5177）—— 订单列表的**加急角标**读它
+     * （由 `BeanUtils.copyProperties(order, response)` 从实体同名字段带出，**不另立第二份口径**）。
+     */
+    private Boolean isUrgent;
+
+    /** **客户要求到货日**（V120，issue #5177；`YYYY-MM-DD`）；`null` = **未指定**（不猜）。 */
+    private LocalDate requiredDeliveryDate;
 
     /**
      * 订单明细简要列表（用于列表"采购商品"列展示）

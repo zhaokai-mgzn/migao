@@ -1120,6 +1120,11 @@ public class AuthService {
         List<UserInfoResponse.MenuItem> productionChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("processing:manage")) {
             productionChildren.add(menuItem("production", "生产看板", "Factory", "/production"));
+            // 池看板（issue #5177）：id/名称/图标/路径必须与前端
+            // `frontend/admin-web/src/config/menu.ts` 的 `production-pool` 与
+            // `MenuController` 的静态权限树**三处同构**（漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
+            // 权限码沿用 processing:manage —— 与「生产看板」同权（都是加工/生产管理动作）。
+            productionChildren.add(menuItem("production-pool", "池看板", "Layers", "/production/pool"));
             // 🔴 issue #4440：id/名称/图标/路径必须与前端 `frontend/admin-web/src/config/menu.ts` 的
             // `production-process` **逐字一致**（issue #4416 把「工序库」+「工艺路线」合并为「工艺配置」；
             // 本处此前仍是合并前的两个节点 ⇒ 「岗位权限」页（消费本列表）与真实侧边栏漂移）。

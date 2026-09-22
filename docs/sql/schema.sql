@@ -685,6 +685,9 @@ CREATE TABLE orders (
     -- 来自 V100__add_order_logistics_columns.sql（issue #4872）
     logistics_type VARCHAR(16),                     -- 收货物流类型：express 快递 / logistics 物流专线（与 order_logistics.logistics_type 同词表）；NULL = 建单未传（不猜，与下单页「未指定」同口径）
     logistics_company VARCHAR(128),                 -- 收货物流/快递公司；NULL = 建单未传（不猜）
+    -- 来自 V120__order_urgency_and_required_delivery_date.sql（issue #5177）
+    is_urgent BOOLEAN NOT NULL DEFAULT FALSE,       -- 订单级加急标记：true = 插队、不进池、立刻单派（pooled=false）；与售后工单 priority 不共享来源、不联动（用户裁定「加急不能跟售后工单绑定」）。NOT NULL ⇒ 无第三态，「未标加急」与「明确不加急」同值
+    required_delivery_date DATE,                    -- 客户要求到货日；NULL = 未指定（不猜、不回填）。DATE 而非 TIMESTAMP —— 只有日期精度的事实不该带时刻。消费者 = 池看板排序（到货日升序、NULL 排最后）
     remark TEXT,                                     -- 备注
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

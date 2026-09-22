@@ -4,6 +4,7 @@ import { ArrowDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Order } from '@/types'
 import { normalizeOrderStatus } from '@/types'
+import { Badge } from '@/components/ui'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import OrderStatusBadge from './OrderStatusBadge'
 import RemarkPopover from './RemarkPopover'
@@ -207,6 +208,10 @@ export default function OrderTable({
               </span>
             </th>
             <th className="px-4 py-3 font-medium whitespace-nowrap">状态</th>
+            {/* 加急 / 到货日（issue #5177）：列表面就能看出哪些单要插队、承诺哪天到。
+                🔴 显示的是**服务端值**（`isUrgent` 缺省即库列默认 FALSE）—— 不写死客户端默认。 */}
+            <th className="px-4 py-3 font-medium whitespace-nowrap">加急</th>
+            <th className="px-4 py-3 font-medium whitespace-nowrap">到货日</th>
             <th className="px-4 py-3 font-medium whitespace-nowrap">备注</th>
             <th className="px-4 py-3 font-medium whitespace-nowrap">操作</th>
           </tr>
@@ -214,13 +219,13 @@ export default function OrderTable({
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={11} className="px-4 py-16 text-center text-neutral-400">
+              <td colSpan={13} className="px-4 py-16 text-center text-neutral-400">
                 加载中…
               </td>
             </tr>
           ) : orders.length === 0 ? (
             <tr>
-              <td colSpan={11} className="px-4 py-16 text-center text-neutral-400">
+              <td colSpan={13} className="px-4 py-16 text-center text-neutral-400">
                 暂无数据
               </td>
             </tr>
@@ -336,6 +341,20 @@ export default function OrderTable({
                   <td className="px-4 py-4 whitespace-nowrap">
                     {/* 传原始后端状态（issue #3889）：producing 由 chip 展示为「生产中」而非归一为待发货 */}
                     <OrderStatusBadge status={order.status} />
+                  </td>
+
+                  {/* 加急（issue #5177）：订单级真值，与售后工单的 priority **零联动** */}
+                  <td className="px-4 py-4 whitespace-nowrap" data-testid={`order-urgent-${order.id}`}>
+                    {order.isUrgent ? (
+                      <Badge variant="warning">加急</Badge>
+                    ) : (
+                      <span className="text-xs text-neutral-400">不加急</span>
+                    )}
+                  </td>
+
+                  {/* 到货日（issue #5177）：`null` = 未指定（不猜、不写死默认） */}
+                  <td className="px-4 py-4 whitespace-nowrap text-neutral-700" data-testid={`order-delivery-${order.id}`}>
+                    {order.requiredDeliveryDate || <span className="text-xs text-neutral-400">未指定</span>}
                   </td>
 
                   {/* 备注预览 — #1289: 同时检查 remark 字符串和 remarks[] 数组 */}

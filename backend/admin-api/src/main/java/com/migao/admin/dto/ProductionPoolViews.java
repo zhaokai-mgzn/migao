@@ -1,6 +1,7 @@
 package com.migao.admin.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -37,6 +38,15 @@ public final class ProductionPoolViews {
      * @param waitingSince   进池时间的**载体**（{@code orders.created_at}，见 {@link #waitHours}）
      * @param waitHours      已在池里等了多久（小时，1 位小数）
      * @param overdue        {@code waitHours > maxWaitHours} ⇒ **超上限**（必须可行动，不得静默压单）
+     * @param isUrgent       订单级**加急标记**（V120，issue #5177）。{@code true} 的行**不进池**
+     *                       （不出现在任何 {@link PoolGroup} 里），只出现在
+     *                       {@link Pool#urgentLines}（**插队区**）—— 加急单等的是「立刻单派」，
+     *                       不是「等成批」。
+     * @param requiredDeliveryDate **客户要求到货日**（V120）；{@code null} = **未指定**（不猜）。
+     *                       它是看板排序的第一把键（升序、**null 排最后** —— 把未知当最紧急
+     *                       会让看板变成噪声）。
+     * @param deliveryDaysLeft 到货日**临期度**（天）= 到货日 − 今天；负数 = **已逾期**；
+     *                       {@code null} = 未指定。服务端算、前端只渲染（不造第二份口径）。
      */
     public record PoolLine(
             String orderId,
@@ -48,14 +58,21 @@ public final class ProductionPoolViews {
             BigDecimal requiredMeters,
             OffsetDateTime waitingSince,
             BigDecimal waitHours,
-            boolean overdue) {
+            boolean overdue,
+            boolean isUrgent,
+            LocalDate requiredDeliveryDate,
+            Integer deliveryDaysLeft) {
     }
 
     /**
      * 一个物料分组（商品 × 颜色 × 门幅）里的待派行。
      *
      * @param materialKey 分组键（{@code productId|skuCode}；机器可判，便于前端折叠/筛选）
-     * @param orderCount  **去重后**的订单数（一张单同物料两行只算一张）
+     * @param orderCount  **去重后**的订单数（一张单同物料两行只算一行）
+     * @param lines       **已排序**（{@code ProcessingOrderService.POOL_LINE_ORDER}：到货日升序、
+     *                    NULL 排最后 → 等待时长降序 → 进池时刻升序 → 单号升序）。前端**按序渲染即可**，
+     *                    不得在浏览器里重排 —— 排序是**服务端唯一口径**（判据 5）。
+     *                    🔴 本列表**不含加急行**（加急单不进池，见 {@link Pool#urgentLines}）。
      */
     public record PoolGroup(
             String materialKey,
@@ -86,6 +103,14 @@ public final class ProductionPoolViews {
      *                       {@code ProcessingOrderService.POOLED_DEFAULT_ENABLED}）—— 池**看得见**
      *                       不等于**已开启**，两者分开报，免得把「有池视图」读成「已经在池化派单」
      * @param overdueCount   超上限的订单数；{@code > 0} ⇒ 看板必须显示 {@link #warnings}
+     *                       （**含加急单**：加急更不该被压住）
+     * @param urgentCount    加急插队区的**去重订单数**（= {@code urgentLines} 里的订单数）。
+     *                       {@code orderCount} / {@code lineCount} 是**池内（非加急）**口径，
+     *                       加急单单独计数 —— 两件事分开报，免得把「有加急单」读成「池里有货」
+     * @param urgentLines    **加急插队区**（已排序，同一把 {@code POOL_LINE_ORDER}）。这些单
+     *                       **不进池**（用户裁定「允许加急的订单直接派」）⇒ 看板对它们的动作是
+     *                       **立刻单派**（同一个 {@code /dispatch} 端点 + {@code pooled=false}），
+     *                       **不是**勾进成批批次（勾了会被 fail-closed 拒绝，不静默少派）
      */
     public record Pool(
             BigDecimal maxWaitHours,
@@ -93,7 +118,9 @@ public final class ProductionPoolViews {
             int orderCount,
             int lineCount,
             int overdueCount,
+            int urgentCount,
             List<PoolWarning> warnings,
+            List<PoolLine> urgentLines,
             List<PoolGroup> groups) {
     }
 

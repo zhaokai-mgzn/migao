@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -116,6 +117,18 @@ public class OrderDetailResponse {
      * 关闭/取消原因
      */
     private String closeReason;
+
+    /**
+     * 订单级**加急标记**（V120，issue #5177）。恒有值（列 `NOT NULL DEFAULT FALSE`）
+     * ⇒ `false` 是**真值**（明确不加急），不是「未填」。
+     * 由 `BeanUtils.copyProperties(order, response)` 从实体同名字段带出，不另立第二份取值口径。
+     */
+    private Boolean isUrgent;
+
+    /**
+     * **客户要求到货日**（V120，issue #5177；`YYYY-MM-DD`）。`null` = **未指定**（不猜）。
+     */
+    private LocalDate requiredDeliveryDate;
 
     /**
      * 订单明细列表

@@ -31,6 +31,7 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -272,6 +273,56 @@ public class ProcessingOrderService {
             "saleForm");
 
     /**
+     * **订单级**字段进加工单快照的键（issue #5177 范围 5「透传」）—— 与
+     * {@link #CRAFT_SPEC_SNAPSHOT_KEYS} **同族**（都是「生成那一刻的固化真相」），
+     * 但**取数面不同**：那一个键族的来源是 {@code order_items.processing_info}（**行级**），
+     * 本组键的来源是 **{@code orders} 行**（**订单级**）⇒ 不能塞进同一个 List
+     * （那个 List 由 {@code copyIfPresent(pi, entry, key)} 逐键取，订单级键塞进去会**恒取不到**
+     * = 静默缺行，而快照是加工单的固化真相、事后补不回来）。
+     *
+     * <p>落点 = {@link #stampOrderUrgency}（在 {@code prepare} 里、加工单 insert **之前**盖章，
+     * 与 {@code stampCuttingPlan} / {@code stampAssignedBatches} 同一时机纪律）。</p>
+     *
+     * <p>⚠️ 新键**必须**同时进 {@code ProcessingOrderResponse.ProcessingOrderItemBrief} ——
+     * 快照里出现 DTO 没声明的键会让 {@code items} 整段解析失败（响应静默退化）。</p>
+     */
+    private static final String SNAPSHOT_ORDER_URGENT = "isUrgent";
+
+    /** 订单级**客户要求到货日**的快照键（{@code YYYY-MM-DD}；**缺值不落键**）。见 {@link #SNAPSHOT_ORDER_URGENT}。 */
+    private static final String SNAPSHOT_ORDER_REQUIRED_DELIVERY_DATE = "requiredDeliveryDate";
+
+    /**
+     * 池看板的**唯一**排序口径（issue #5177 判据 5「排序是真实消费者」）。
+     *
+     * <h2>键序（每一把都有理由，且都不是「单号序」）</h2>
+     * <ol>
+     *   <li><b>到货日升序，{@code null} 排最后</b> —— 这是 {@code required_delivery_date} 的
+     *       <b>第一个真实消费者</b>：临期的先派。{@code null}（未指定）**不得**当成最紧急
+     *       （把未知排在最前，等于让没填过日期的单永远插队）；</li>
+     *   <li><b>等待时长降序</b> —— 等得久的先派（「不得静默压单」的方向）；</li>
+     *   <li><b>进池时刻升序</b> / <b>单号升序</b> —— 只为**确定性**（同一份数据两次读必须在
+     *       同一序上，否则看板会自己抖）。</li>
+     * </ol>
+     *
+     * <h2>为什么「缺省不变」也成立（判据 1/2）</h2>
+     * 没有任何加急单、没有任何到货日时，第 1 把键恒相等 ⇒ 退化为
+     * 「等待时长降序 → 进池时刻升序 → 单号升序」，而 {@code waitHours} 是
+     * {@code now − created_at} 的单调函数（分钟粒度）⇒ 与今天「按 {@code created_at} 升序遍历」
+     * 的序**逐值相同**；同一张单内的多行由 {@link java.util.List#sort} 的**稳定性**保持原插入序。
+     *
+     * <p>🔴 <b>不得**改成单号序（或任何与加急/临期无关的键）</b>：那样看板看着正常，
+     * 而「临期先派」这个能力静默消失（红证见 {@code PoolBoardOrderingTest}）。</p>
+     */
+    static final Comparator<ProductionPoolViews.PoolLine> POOL_LINE_ORDER = Comparator
+            .comparing(ProductionPoolViews.PoolLine::requiredDeliveryDate,
+                    Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(ProductionPoolViews.PoolLine::waitHours, Comparator.reverseOrder())
+            .thenComparing(ProductionPoolViews.PoolLine::waitingSince,
+                    Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(ProductionPoolViews.PoolLine::orderId,
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+
+    /**
      * {@code isShaped=false} 时从实例里剔除的工序（issue #4354，设计文档 §4.7）。
      * 与真值源 {@code routing.py::build_routing} 的 {@code route = [op for op in route
      * if op not in ("定型-布", "复烫-布")]} **逐字同款**（且都在条件工序插入**之前**剔除
@@ -390,6 +441,13 @@ public class ProcessingOrderService {
      * 无 {@code paid_at}/{@code confirmed_at} 列）⇒ 用下单时刻作**上界**口径：它只会把等待算得**更久**、
      * 不会假装刚进池 —— 「不得静默压单」要的是**早**告警，故取保守方向。
      *
+     * <h2>加急单**不进池**（issue #5177 判据 3）</h2>
+     * {@code orders.is_urgent = true} 的单**不进** {@link ProductionPoolViews.Pool#groups()}
+     * （= 不成批候选），而是进 {@link ProductionPoolViews.Pool#urgentLines()}（插队区）——
+     * 用户裁定「允许加急的订单直接派，不加急的同批次候选池优先」。
+     * ⇒ 看板对加急行的动作是**立刻单派**（{@code /dispatch} + {@code pooled=false}）；
+     * 把它勾进 {@code pooled=true} 的批次会被 {@link #assertNoUrgentInPooledBatch} **整批拒绝**。
+     *
      * @param maxWaitHoursRaw 滞留上限（小时）；{@code null} ⇒ {@link #DEFAULT_POOL_MAX_WAIT_HOURS}，
      *                        非正数 ⇒ 显式拒绝（见 {@link #maxWaitHours}）
      */
@@ -414,11 +472,15 @@ public class ProcessingOrderService {
                 : new LinkedHashSet<>(processingOrderMapper.selectActiveOrderIds(tenantId, ids));
 
         OffsetDateTime now = OffsetDateTime.now();
+        LocalDate today = LocalDate.now();
         // 物料键 → 行；顺序 = 先出现的物料在前（确定性输出，便于看板与快照比对）
         Map<String, List<ProductionPoolViews.PoolLine>> linesByMaterial = new LinkedHashMap<>();
         Map<String, String[]> materialOf = new LinkedHashMap<>();
         List<ProductionPoolViews.PoolWarning> warnings = new ArrayList<>();
+        // 池内（非加急）与**加急插队区**分开装：加急单**不进池**（issue #5177 判据 3）
         Set<String> ordersInPool = new LinkedHashSet<>();
+        Set<String> urgentOrders = new LinkedHashSet<>();
+        List<ProductionPoolViews.PoolLine> urgentLines = new ArrayList<>();
         int lineCount = 0;
         for (Order order : confirmed) {
             if (order.getId() == null || dispatched.contains(order.getId())) {
@@ -439,13 +501,16 @@ public class ProcessingOrderService {
             boolean overdue = waitHours.compareTo(maxWaitHours) > 0;
             if (overdue) {
                 // 「不得静默压单」= 超上限这件事**必须带着对象名字说出来**（哪张单、等了多久、该做什么），
-                // 而不是一个数不清对象的计数
+                // 而不是一个数不清对象的计数。**加急单同样告警** —— 它更不该被压住。
                 warnings.add(new ProductionPoolViews.PoolWarning(order.getId(), order.getOrderNo(),
                         waitHours, String.format(
                         "订单 %s 已在待派池里等了 %s 小时（上限 %s 小时）：请成批派单或单独派单"
                                 + "（池化窗口不得把这张单压住）",
                         order.getOrderNo(), waitHours.toPlainString(), maxWaitHours.toPlainString())));
             }
+            boolean urgent = Boolean.TRUE.equals(order.getIsUrgent());
+            LocalDate requiredDeliveryDate = order.getRequiredDeliveryDate();
+            Integer deliveryDaysLeft = deliveryDaysLeft(requiredDeliveryDate, today);
             for (Map<String, Object> row : snapshot) {
                 String itemId = str(row.get("itemId"));
                 BigDecimal required = StockQuantity.toStockScaleByCeiling(
@@ -455,16 +520,29 @@ public class ProcessingOrderService {
                 }
                 String productId = productIdByItemId.get(itemId);
                 String skuCode = snapshotSkuCode(row);
-                String key = materialKey(productId, skuCode);
-                materialOf.putIfAbsent(key, new String[]{productId, skuCode});
-                linesByMaterial.computeIfAbsent(key, k -> new ArrayList<>())
-                        .add(new ProductionPoolViews.PoolLine(order.getId(), order.getOrderNo(), itemId,
-                                productId, str(row.get("productName")), skuCode, required,
-                                order.getCreatedAt(), waitHours, overdue));
-                lineCount++;
+                ProductionPoolViews.PoolLine line = new ProductionPoolViews.PoolLine(
+                        order.getId(), order.getOrderNo(), itemId, productId, str(row.get("productName")),
+                        skuCode, required, order.getCreatedAt(), waitHours, overdue,
+                        urgent, requiredDeliveryDate, deliveryDaysLeft);
+                if (urgent) {
+                    // 🔴 加急单**不进池**（用户裁定「允许加急的订单直接派，不加急的同批次候选池优先」）：
+                    // 它的去处是插队区（看板上一个动作 = 立刻单派），**不是**成批候选。
+                    urgentLines.add(line);
+                } else {
+                    String key = materialKey(productId, skuCode);
+                    materialOf.putIfAbsent(key, new String[]{productId, skuCode});
+                    linesByMaterial.computeIfAbsent(key, k -> new ArrayList<>()).add(line);
+                    lineCount++;
+                }
             }
-            ordersInPool.add(order.getId());
+            if (urgent) {
+                urgentOrders.add(order.getId());
+            } else {
+                ordersInPool.add(order.getId());
+            }
         }
+        // 池看板排序（判据 5 的唯一落点）：插队区与每个物料组**各自**按同一把键排（见 POOL_LINE_ORDER）
+        urgentLines.sort(POOL_LINE_ORDER);
         List<ProductionPoolViews.PoolGroup> groups = new ArrayList<>();
         for (Map.Entry<String, List<ProductionPoolViews.PoolLine>> entry : linesByMaterial.entrySet()) {
             String[] material = materialOf.get(entry.getKey());
@@ -474,11 +552,14 @@ public class ProcessingOrderService {
                 groupOrders.add(line.orderId());
                 required = required.add(line.requiredMeters());
             }
+            List<ProductionPoolViews.PoolLine> lines = new ArrayList<>(entry.getValue());
+            lines.sort(POOL_LINE_ORDER);
             groups.add(new ProductionPoolViews.PoolGroup(entry.getKey(), material[0], material[1],
-                    groupOrders.size(), required, List.copyOf(entry.getValue())));
+                    groupOrders.size(), required, List.copyOf(lines)));
         }
         return new ProductionPoolViews.Pool(maxWaitHours, POOLED_DEFAULT_ENABLED, ordersInPool.size(),
-                lineCount, warnings.size(), List.copyOf(warnings), List.copyOf(groups));
+                lineCount, warnings.size(), urgentOrders.size(), List.copyOf(warnings),
+                List.copyOf(urgentLines), List.copyOf(groups));
     }
 
     /**
@@ -499,6 +580,9 @@ public class ProcessingOrderService {
         String normalizedRule = StockBatchConsumptionService.normalizeAssignmentRule(assignmentRule);
         String rule = StringUtils.hasText(assignmentRule) ? normalizedRule : null;
         Map<String, List<BatchAssignment>> byOrder = assignmentsByOrder(orderIds, batches);
+        // 🔴 加急单不进池（判据 3）—— 预览是**成批**的预览：让它预览一个**派不出去**的批次
+        // 就是「预览说谎」（判据 4）⇒ 与 /dispatch 同一条闸、同一处口径。
+        assertNoUrgentInPooledBatch(orderIds, tenantId);
         List<Prepared> prepared = new ArrayList<>();
         List<StockBatchConsumptionService.Designation> pooledLines = new ArrayList<>();
         for (String rawId : orderIds) {
@@ -556,6 +640,74 @@ public class ProcessingOrderService {
     /** 物料键（商品 × 颜色 × 门幅）。{@code skuCode} 在本系统里就是「颜色 × 门幅」的组合。 */
     private static String materialKey(String productId, String skuCode) {
         return (productId == null ? "" : productId) + "|" + (skuCode == null ? "" : skuCode);
+    }
+
+    /**
+     * 到货日**临期度**（天）= 到货日 − 今天；负数 = **已逾期**；{@code null} = **未指定**。
+     *
+     * <p>服务端算、前端只渲染 —— 「临期」是看板的口径，在浏览器里再算一遍就是第二份口径
+     * （一处改了另一处不跟 = 看板与排序对不上，且没有任何东西会变红）。</p>
+     */
+    private static Integer deliveryDaysLeft(LocalDate required, LocalDate today) {
+        return required == null ? null : (int) ChronoUnit.DAYS.between(today, required);
+    }
+
+    /**
+     * 把**订单级**的加急标记与客户要求到货日写进快照每一行（issue #5177 范围 5「透传」）。
+     *
+     * <h2>为什么落在每一行而不是加工单顶层</h2>
+     * 加工单快照的载体是 {@code processing_orders.items_snapshot}（**行数组**，没有订单级顶层对象），
+     * 而读面（{@code ProcessingOrderResponse.ProcessingOrderItemBrief}）逐行解析
+     * ⇒ 订单级事实只能逐行固化。供 **2b-3** 的事件驱动兜底与分段评估读。
+     *
+     * <h2>缺值口径（与 {@code processing_info} 键族同一纪律）</h2>
+     * {@code isUrgent} **恒落键**：列 {@code NOT NULL DEFAULT FALSE} ⇒ {@code false} 是**真值**
+     * （「明确不加急」），不是「未填」—— 写侧不得把它当未填丢弃（#4874 硬约束 1）。
+     * {@code requiredDeliveryDate} **缺值不写**：NULL = 未指定，写空串/占位会把「未指定」
+     * 读成一个日期（快照是固化真相，读的人无从分辨）。
+     */
+    static void stampOrderUrgency(List<Map<String, Object>> snapshot, Order order) {
+        if (snapshot.isEmpty() || order == null) {
+            return;
+        }
+        boolean urgent = Boolean.TRUE.equals(order.getIsUrgent());
+        String date = order.getRequiredDeliveryDate() == null
+                ? null : order.getRequiredDeliveryDate().toString();
+        for (Map<String, Object> row : snapshot) {
+            row.put(SNAPSHOT_ORDER_URGENT, urgent);
+            if (date != null) {
+                row.put(SNAPSHOT_ORDER_REQUIRED_DELIVERY_DATE, date);
+            }
+        }
+    }
+
+    /**
+     * 🔴 加急单**不进池**（issue #5177 判据 3）—— 成批（{@code pooled=true}）批次里出现加急单
+     * ⇒ **整批显式拒绝**，且**一行都不写**（在任何只读准备与写库之前判完）。
+     *
+     * <h2>为什么是「拒绝」而不是「静默把加急单剔出去」</h2>
+     * 静默剔除 = **静默少派**：商家勾了 3 张单、点了成批，回来 2 张加工单而没有任何提示
+     * ⇒ 第 3 张单被压住且无人知道（同族纪律：「不得静默少扣 / 不得静默压单」）。
+     * 拒绝带上**订单号**与**可行动处置**（单独派 = 插队；或先取消加急）。
+     *
+     * <p>查不到的单**不在这里报错**：{@code ORDER_NOT_FOUND} 由逐单路径按既有文案报
+     * （本方法只补「加急」这一条新判据，不改既有失败面与失败顺序）。</p>
+     */
+    private void assertNoUrgentInPooledBatch(List<String> orderIds, Long tenantId) {
+        List<String> urgent = new ArrayList<>();
+        for (String rawId : orderIds) {
+            Order order = resolveOrder(rawId, tenantId);
+            if (order != null && Boolean.TRUE.equals(order.getIsUrgent())) {
+                urgent.add(order.getOrderNo() == null ? rawId : order.getOrderNo());
+            }
+        }
+        if (!urgent.isEmpty()) {
+            throw BusinessException.validationError(
+                    "加急单不进池，不能参与成批派单：" + String.join("、", urgent),
+                    List.of(),
+                    "请把这几个加急单单独派工（同一个端点 + pooled=false 即插队），"
+                            + "或先取消它们的加急标记再成批");
+        }
     }
 
     // ============================================================ 生成
@@ -729,6 +881,9 @@ public class ProcessingOrderService {
     private List<GenerateResult> generatePooled(List<String> orderIds,
                                                 Map<String, List<BatchAssignment>> byOrder,
                                                 Long tenantId, String operator, String rule) {
+        // 🔴 加急单**不进池**（issue #5177 判据 3）：混进成批批次 ⇒ 整批显式拒绝，**一行都不写**。
+        // 放在 prepare 之前 ⇒ 拒绝时连只读准备都还没跑，更没有半成品。
+        assertNoUrgentInPooledBatch(orderIds, tenantId);
         GenerateResult[] slots = new GenerateResult[orderIds.size()];
         List<Prepared> prepared = new ArrayList<>();
         List<Integer> indexes = new ArrayList<>();
@@ -837,6 +992,10 @@ public class ProcessingOrderService {
         if (snapshot.isEmpty()) {
             throw BusinessException.validationError("订单 " + order.getOrderNo() + " 无加工项，无需生成加工单");
         }
+        // 订单级加急 / 客户要求到货日进快照（V120，issue #5177 范围 5）：**在加工单 insert 之前**写
+        // `items_snapshot` —— 快照是加工单的**固化真相**，事后补不回来（与 commit() 里的
+        // stampCuttingPlan / stampAssignedBatches 同一时机纪律）。
+        stampOrderUrgency(snapshot, order);
         // 幂等：同一订单最多一个非取消态加工单（DB 层另有 partial unique index 兜底）
         ProcessingOrder existing = processingOrderMapper.selectActiveByOrderId(order.getId(), tenantId);
         if (existing != null) {

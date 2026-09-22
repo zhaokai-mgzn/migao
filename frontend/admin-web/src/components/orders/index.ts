@@ -12,5 +12,7 @@ export { default as CloseOrderModal } from './CloseOrderModal'
 export { default as RefundOrderModal } from './RefundOrderModal'
 export { default as RemarkModal } from './RemarkModal'
 export { default as ProcessingOrderBlock } from './ProcessingOrderBlock'
+// 订单加急 / 要求到货日（issue #5177）—— 订单详情页上的改单控件（PUT /orders/{id}/urgency）
+export { default as OrderUrgencyPanel } from './OrderUrgencyPanel'
 export { default as ShipmentDoc } from './ShipmentDoc'
 export { default as QuotationDoc } from './QuotationDoc'

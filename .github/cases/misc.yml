@@ -364,6 +364,8 @@ cases:
     data_checks:
       - "CI workflow 的 Create Issue step 必须先 search 同标题 open issue：已存在 → 仅评论追加 run 链接；不存在 → 才 issues.create"
       - "守卫与创建逻辑同属一个 github-script step，避免 failure 时重复 issue 堆积"
+      - "**迁移指纹账本只追加**（issue #4235 判据 2；issue #5177 的 `V120__order_urgency_and_required_delivery_date.sql` 是最近一次消费方）：新增迁移必须在 `tests/unit_ci_workflows/migration_fingerprints.json` **只追加一条**，**已登记条目的字节漂移一律判红**（判据本体 = `tests/unit_ci_workflows/test_migration_immutability.py`，**不新写第二份**；重生成入口 = 该脚本的 `--write-ledger`，它带前置断言：任何其它条目漂移即拒绝写出）"
+      - "**生成物新鲜度（零 diff 自证）**：`.github/cases/*.yml` 或 `.github/templates/*.yml` 改后必须跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases.py --out-md docs/testing/mibao-verification-cases.md` 重渲染；**同参数再跑一次必须零 diff**（生成物是派生物，手改生成物一律判红）"
     skip_reason: "[backend-contract] CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_issue_dedup_guard.py），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-02 新增：CI 自动失败报告去重守卫（issue #2746）"
     traces:

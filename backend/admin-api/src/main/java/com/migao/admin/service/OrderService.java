@@ -38,6 +38,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -564,6 +565,18 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
         if (StringUtils.hasText(request.getLogisticsCompany())) {
             order.setLogisticsCompany(request.getLogisticsCompany().trim());
+        }
+        // 订单级加急 / 客户要求到货日（V120，issue #5177）—— 🔴 **缺省值不变**：
+        // `isUrgent == null` ⇒ **不写该列**（MyBatis-Plus 默认策略下 null 字段不进 INSERT）
+        // ⇒ 落列默认 FALSE = 今天的行为（所有单都不加急、都进池）；
+        // `requiredDeliveryDate == null` ⇒ 不写 ⇒ NULL = **未指定**（不用今天/承诺交期顶替 —— 不猜）。
+        // 这两列只影响**是否入池/派单时机**，不参与本方法任何金额计算
+        //（totalAmount / actualAmount / discountAmount 的算式一字未动 ⇒ 对客口径逐值不变，判据 6）。
+        if (request.getIsUrgent() != null) {
+            order.setIsUrgent(request.getIsUrgent());
+        }
+        if (request.getRequiredDeliveryDate() != null) {
+            order.setRequiredDeliveryDate(request.getRequiredDeliveryDate());
         }
 
         // 保存订单
@@ -1468,6 +1481,73 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         order.setFollowStatus(followStatus);
         orderMapper.updateById(order);
         log.info("更新跟进状态成功: id={}, followStatus={}", id, followStatus);
+    }
+
+    /**
+     * 更新订单级**加急标记 / 客户要求到货日**（V120，issue #5177 的「改单」半边）。
+     *
+     * <h2>三态语义（与 {@link OrderUrgencyUpdateRequest} 逐字同源，不在两处各写一份）</h2>
+     * 每个字段各自「不传 = 不改」；{@code requiredDeliveryDate} 传**空串**才表示清空
+     * （{@code null} 与 {@code ""} 必须是两件事，否则「只改加急」会把到货日静默抹掉）。
+     *
+     * <h2>为什么用 {@code LambdaUpdateWrapper} 而不是 {@code updateById(order)}</h2>
+     * 本仓既有的改单写法是「{@code selectById} → 改实体 → {@code updateById(order)}」，但
+     * MyBatis-Plus 默认字段策略是 {@code NOT_NULL} ⇒ **null 字段不进 SET** ⇒ 用那条路
+     * **永远清不掉**到货日（「清空」会静默变成「不改」，而界面显示已清空）。
+     * ⇒ 清空必须走显式 {@code set(col, null)}；{@code updatedAt} 也随之**显式**写
+     * （{@code update(entity, wrapper)} 的自动填充不在本路径上，不写它就留下陈旧时间戳）。
+     *
+     * <p>🔴 <b>只写这两列</b>：不碰金额、状态、售后工单的任何字段
+     * （判据 1 零联动 / 判据 6 不损失客户）。</p>
+     *
+     * @param isUrgent                  {@code null} = 不改；否则显式设值（{@code false} 是「取消加急」的真值）
+     * @param requiredDeliveryDateRaw   {@code null} = 不改；{@code ""} = 清空；{@code YYYY-MM-DD} = 设值；其它 ⇒ 422
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateUrgency(String id, Boolean isUrgent, String requiredDeliveryDateRaw) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        LambdaUpdateWrapper<Order> update = new LambdaUpdateWrapper<Order>().eq(Order::getId, id);
+        boolean changed = false;
+        if (isUrgent != null) {
+            update.set(Order::getIsUrgent, isUrgent);
+            changed = true;
+        }
+        if (requiredDeliveryDateRaw != null) {
+            update.set(Order::getRequiredDeliveryDate, parseRequiredDeliveryDate(requiredDeliveryDateRaw));
+            changed = true;
+        }
+        if (!changed) {
+            // 两个字段都没传 ⇒ 这次改单什么都没改。**显式拒绝**而不是静默 200：
+            // 静默成功会让调用方以为改动生效了（同族纪律：不静默）。
+            throw BusinessException.validationError(
+                    "isUrgent 与 requiredDeliveryDate 至少要传一个（本次改单没有任何变更）");
+        }
+        update.set(Order::getUpdatedAt, OffsetDateTime.now());
+        orderMapper.update(null, update);
+        log.info("更新订单加急/到货日成功: id={}, isUrgent={}, requiredDeliveryDate={}",
+                id, isUrgent, requiredDeliveryDateRaw);
+    }
+
+    /**
+     * 到货日解析（issue #5177）：{@code ""} ⇒ **清空**（返回 {@code null}）；
+     * {@code YYYY-MM-DD} ⇒ 该日期；其它形态 ⇒ **显式拒绝**（不静默回落、不当成清空）。
+     *
+     * <p>为什么空白串不按「清空」办：{@code "  "} 这种输入更像**误输入**，把它当清空
+     * 就是静默丢数据；而 {@code ""} 是调用方**明确**表达的「清空」（前端清空日期框发出的就是它）。</p>
+     */
+    private static LocalDate parseRequiredDeliveryDate(String raw) {
+        if (raw.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(raw.trim(), DateTimeFormatter.ISO_LOCAL_DATE);
+        } catch (DateTimeParseException e) {
+            throw BusinessException.validationError(
+                    "到货日格式不正确：" + raw + "（期望 YYYY-MM-DD，或传空串清空到货日）");
+        }
     }
 
     /**

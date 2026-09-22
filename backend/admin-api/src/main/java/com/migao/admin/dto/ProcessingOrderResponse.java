@@ -86,6 +86,23 @@ public class ProcessingOrderResponse {
          * 变成 null（响应静默退化）；用 Object 同时解决「字段缺失」与「形态不干净」两种形态。</p>
          */
         private Object specialOptions;
+        /**
+         * 订单级**加急标记**（V120，issue #5177）：随加工单生成**逐行固化**进 `items_snapshot`
+         * （订单级事实只能逐行落 —— 快照是**行数组**，没有订单级顶层对象）。
+         *
+         * <p>恒落键（列 `NOT NULL DEFAULT FALSE`）⇒ `false` 是**真值**，不是「未填」
+         * （同 `specialOptions` 的纪律：显式「否」必须写）。</p>
+         *
+         * <p>用 `Object` 而非 `Boolean`：形态不干净（脏数据）时**不得**让整份快照解析失败
+         * —— 快照里出现本字段而 DTO 没声明时，Jackson 的未知属性会让 `items` 整段变成 null
+         * （响应静默退化）。</p>
+         */
+        private Object isUrgent;
+        /**
+         * **客户要求到货日**（V120，issue #5177；`YYYY-MM-DD`）：同 {@link #isUrgent} 逐行固化，
+         * 但**缺值不落键** ⇒ 缺键就是 null（未指定）。供 2b-3 的兜底与分段评估读。
+         */
+        private Object requiredDeliveryDate;
         private String remark;
 
         // ── 工艺规格（craft spec，issue #4354 / 设计文档 §4.9 第③处展示）──────────────

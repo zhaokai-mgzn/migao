@@ -2819,3 +2819,157 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: PR-079
+    legacy_id: ""
+    title: "🔴 订单级加急/到货日字段（V120）：**零联动**（⇎ 售后 priority）+ **缺省不变** + 改单三态 + 订单页 UI 录入位"
+    domains:
+      - product
+      - order
+      - real-db
+      - backend-contract
+    tier: normal
+    tags:
+      - order-urgency
+      - pool-board
+      - real-db
+      - backend-contract
+    truths_ref:
+      - order-urgency.queue-jump
+    user_inputs:
+      - "商家在订单上直接标加急 / 填客户要求到货日（非 LLM 行为，由 Java 单测 + 真 PG 判据 + 前端 vitest 覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 判据 1·**零联动（双向，真库）**：`orders` 与 `after_sales_tickets` 各有一行真夹具 ⇒ 改订单 `is_urgent` 后 `after_sales_tickets.priority` **逐值不变**（且工单行数不变 —— 防「改了另一行」的假通过）；反向改工单 priority ⇒ 订单 `is_urgent` 逐值不变。用户裁定逐字「加急不能跟售后工单绑定，得在订单上直接做」。**红证** = 把两者接到同一来源（或让 `updateUrgency` 顺手同步 priority）⇒ 真库断言与源码级断言同时红（源码级：`updateUrgency` 方法体不得出现 ticket/priority/after_sales 字样；`Order` 实体不得有 `priority` 字段）。"
+      - "🔴 判据 1·**只写两列**：`updateUrgency` 的 SET 子句白名单 = `is_urgent` / `required_delivery_date` / `updated_at`；**不得**出现 `total_amount` / `actual_amount` / `discount_amount` / `refund_amount` / `status` / `priority`（红证 = 顺手多写一列即红）。"
+      - "🔴 判据 2·**缺省不变（真库）**：建单 INSERT **不传**两列 ⇒ `is_urgent` 落 `false`、`required_delivery_date` 落 `NULL`（= 未指定，不回填不猜）。DTO 侧两字段必须是**可空包装类型**（`Boolean` / `LocalDate`）⇒ 未传不进 INSERT ⇒ 落列默认；缺省不得变成「总是加急」。"
+      - "判据 7·**改单三态**：`isUrgent=null` = 不改（只改加急时到货日**不进 SET**，不被顺手抹掉）；`requiredDeliveryDate=\"\"` = **清空**（必须真的写这一列 —— MyBatis-Plus 默认 NOT_NULL 策略会跳过 null 字段，走 `updateById` 永远清不掉）；`YYYY-MM-DD` = 设值。**fail-closed**：`2026/10/01` / `\"  \"`（全空白）/ `2026-13-45` / 两字段都不传 ⇒ 显式拒绝，且**一次 update 都不发**（红证 = 静默回落成「清空」⇒ 拒绝断言红且「零写入」断言红）。"
+      - "🔴 **wire 契约**：JSON 键名必须是 `isUrgent`（不是 `urgent`）—— 红证 = 把 DTO 字段从 `Boolean` 改成原生 `boolean` ⇒ Lombok getter 变 `isUrgent()` ⇒ Jackson 属性名变 `urgent` ⇒ 前端读不到加急标记。到货日出线格式 `YYYY-MM-DD`，其前提（`application.yml` 的 `write-dates-as-timestamps: false`）**读真值源**断言，不是在测试里自选格式。"
+      - "判据 6·**不损失客户（真库双向）**：标加急/填到货日、以及取消加急/清空到货日 ⇒ `total_amount` / `actual_amount` / `discount_amount` **逐值不变**。"
+      - "**订单页 UI（§15.1 断言结果可见）**：订单新建页与详情页的加急开关 + 到货日选择器写进请求体；**不勾/不填 ⇒ 请求体里不出现这两个键**（不得默认勾上加急）；列表页加急角标随值出现/消失（红证 = 把缺省改成「总是加急」⇒ 角标断言红）。"
+    skip_reason: "[backend-contract] 订单字段与迁移的真库读数（无米宝工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据 + 前端 vitest 覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5177）：订单级加急/到货日字段（V120）零联动 + 缺省不变 + 改单三态 fail-closed + wire 键名 + 不损失客户 + 订单页录入位。取号 PR-079。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderUrgencyFieldsTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderUrgencyRealDbTest.java"
+        - "frontend/admin-web/tests/unit/pages/orders-urgency.test.tsx"
+        - "frontend/admin-web/tests/unit/components/OrderUrgencyPanel.test.tsx"
+        - "frontend/admin-web/tests/unit/components/OrderTableUrgency.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-080
+    legacy_id: ""
+    title: "🔴 加急插队：加急单**不进池**、立刻单派（`pooled=false`）；混进成批批次 ⇒ **整批显式拒绝**（不静默少派）"
+    domains:
+      - product
+      - processing-order
+      - order
+      - backend-contract
+    tier: normal
+    tags:
+      - order-urgency
+      - queue-jump
+      - pool-board
+      - backend-contract
+    truths_ref:
+      - order-urgency.queue-jump
+      - batch-ledger.pooled-batch-dispatch
+    user_inputs:
+      - "商家在看板上对加急单点一下派工（非 LLM 行为，由 Java 单测 + 前端 vitest 覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 判据 3·**加急不进池**：`is_urgent=true` 的订单**不出现在任何** `groups[].lines`（不是成批候选），只出现在 `urgentLines`（插队区），并带 `isUrgent=true` / `requiredDeliveryDate` / `deliveryDaysLeft`；`orderCount`+`lineCount` 是**池内（非加急）**口径，`urgentCount` 单独计数。**一张单都不丢**：池内 + 插队区的订单集合 = 全部订单（红证 = 让加急单照旧进池 ⇒ 该断言红）。"
+      - "🔴 判据 3·**成批批内拒绝（fail-closed）**：`/dispatch` 与 `/preview` 带 `pooled=true` 且批次里含加急单 ⇒ **整批显式拒绝**（消息点名**订单号** + 可行动处置：单独派 = 插队，或先取消加急），且**一行都不写**。**红证（实测单点变异）** = 摘掉 `assertNoUrgentInPooledBatch` 在成批路径上的调用 ⇒ 拒绝断言当场红。判别力：拒绝文案**不得**是逐单路径的既有文案（`不允许生成加工单`）—— 两个不同失败面必须能机器分辨。"
+      - "判据 3·**加急不侵入单派**：同一个加急单走 `pooled=false` ⇒ 抛的仍是**既有**失败文案（用「状态非 confirmed」的夹具），消息里**不含**「加急」⇒ 加急只改「是否入池/派单时机」，不改单订单路径的任何一格（判据 2 的「单订单路径错误文案」）。"
+      - "**看板上的一个动作**：插队区每行一个「加急插队派单」按钮 ⇒ 调同一个 `/dispatch` 端点 + `pooled=false` + 单订单；成功后在**看板上可见地**出现该加工单号（§15.1：断言结果可见，不停留在「API 被调用」）。"
+    skip_reason: "[backend-contract] 加急插队的判定与拒绝（无米宝工具面）⇒ 由 Java 单测 + 前端 vitest 覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5177）：加急不进池 + 成批批内整批拒绝（含单点变异红证）+ 不侵入单派 + 看板插队动作。取号 PR-080。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PoolBoardUrgencyTest.java"
+        - "frontend/admin-web/tests/unit/pages/production-pool-urgent.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-081
+    legacy_id: ""
+    title: "🔴 池看板可用化：**排序是字段的真实消费者**（加急优先 / 到货日临期优先，`null` 排最后）+ 成批预览**逐值不说谎** + 一键成批派单"
+    domains:
+      - product
+      - processing-order
+      - backend-contract
+    tier: normal
+    tags:
+      - pool-board
+      - order-urgency
+      - dispatch-pool
+      - backend-contract
+    truths_ref:
+      - pool-board.urgency-first-ordering
+      - batch-ledger.dispatch-pool-visibility
+      - order-urgency.queue-jump
+    user_inputs:
+      - "商家在池看板上看积压、勾单、看预计节省、一键成批派单（非 LLM 行为，由 Java 单测 + 真 PG 判据 + 前端 vitest 覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 判据 5·**排序是真实消费者（服务端唯一口径）**：键序 = 到货日升序（`null` 排**最后**）→ 等待时长降序 → 进池时刻升序 → 单号升序。夹具**刻意让「单号序 ≠ 期望序」「输入序 ≠ 期望序」**⇒ 断言有判别力。**红证（实测单点变异）** = 把排序键退化成**单号序** ⇒ 该断言当场红；`null` 被当成最紧急同样红（未指定不得插队）。加急优先是**结构性**的：插队区整段在池分组之前，且池分组里**没有**加急行。"
+      - "🔴 判据 5·**缺省不变**：没有加急单、没有到货日 ⇒ 第一把键恒相等、第二把（等待时长降序）与 `createdAt` 升序**同序** ⇒ 行序与今天**逐值相同**（既有 `#5169` 池用例的等待时长读数在同夹具下改前改后同值；本单顺手修正了该夹具「反序喂 mock」的失真 —— 真实查询是 `orderByAsc(createdAt)`）。"
+      - "🔴 判据 4·**预览不说谎**：看板的「预计节省」`savedMeters = formulaMeters − pooledPlannedMeters` 与落账 `Σ saved_meters`（= `Σ(formula_meters − planned_meters)`）**逐值相等**（真库 SQL 读数 == 实体派生读数 == 预览算式，三腿同值）；另分开回 `perOrderPlannedMeters` / `poolingGainMeters`，**不把 #5158 已有的单订单内并排算成池化的功劳**。前端**不重算**这两个数（渲染服务端值 —— 两套口径正是「预览说谎」的成因）。"
+      - "**池视图字段齐**：单号 / 物料（商品 × 颜色 × 门幅）/ 需求米数 / 等待时长 / 加急标记 / 到货日 + `maxWaitHours` / `poolingEnabled`（缺省关必须看得见）/ `overdueCount` 与**带对象名字**的 `warnings`（含加急单 —— 加急更不该被压住）。"
+      - "**一键成批派单（§15.1）**：勾选 ⇒ 调 `/preview` 展示 预计领料 vs 逐单公式米数 = 预计节省；点「一键成批派单」⇒ 调 `/dispatch`（`pooled=true`）且**逐单结果可见**（成功显示加工单号、失败显示 message），看板刷新。"
+    skip_reason: "[backend-contract] 排序/预览/成批派单（无米宝工具面）⇒ 由 Java 单测 + 真 PG 判据 + 前端 vitest 覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5177）：池看板排序（临期优先 + null 最后，含单点变异红证）+ 缺省不变 + 预览逐值不说谎 + 池视图字段 + 一键成批派单。取号 PR-081。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PoolBoardUrgencyTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PooledDispatchRealDbTest.java"
+        - "frontend/admin-web/tests/unit/pages/production-pool-batch.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/pool-board.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-082
+    legacy_id: ""
+    title: "🔴 V120 迁移质量（**两遍幂等** + 列类型/默认/NOT NULL 终态对账 + schema.sql 同步）+ 加急/到货日**透传进加工单快照**"
+    domains:
+      - product
+      - inventory
+      - processing-order
+      - real-db
+      - backend-contract
+    tier: normal
+    tags:
+      - order-urgency
+      - migration
+      - real-db
+      - backend-contract
+    truths_ref:
+      - order-urgency.queue-jump
+      - batch-ledger.dispatch-deduct
+    user_inputs:
+      - "迁移与快照的真库读数（非 LLM 行为，由真 PG（initdb+pg_ctl）Java 判据覆盖）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 判据 7·**V120 同一库上连续执行两遍都成功**（`ADD COLUMN IF NOT EXISTS` 容忍 bootstrap 路径已建的列；`SET NOT NULL` / `SET DEFAULT` / 注释 / 文末终态对账 `DO` 块**第二遍仍全部成立**）⇒ 幂等可重复执行 + 前置 fail-closed（缺 `orders` 表即抛且不兜底建表）。"
+      - "🔴 判据 7·**列形态逐字对账（读 `information_schema`，不靠 Java 类型推断）**：`is_urgent` = `boolean` ∧ `is_nullable='NO'` ∧ 列默认含 `false`（⇒ **无第三态**：「未标加急」与「明确不加急」同值）；`required_delivery_date` = **`date`**（不是 `timestamp` —— 只有日期精度的事实带时刻会在别的时区把「10 月 1 日」读成 9 月 30 日）∧ 可空（「未指定」有独立真值）。`docs/sql/schema.sql`（bootstrap 路径不跑迁移链）已同步终态。"
+      - "🔴 **透传进快照（真库 JSONB 往返）**：订单级 `isUrgent` / `requiredDeliveryDate` 随加工单生成写进 `items_snapshot` **每一行**（订单级事实只能逐行固化），经真库 JSONB 编解码往返后仍是**布尔 `true`**（不是字符串 `\"true\"`）与 `YYYY-MM-DD` 字符串，且能被 `ProcessingOrderResponse.ProcessingOrderItemBrief` 解析出 `items`（**不为 null**）。⚠️ 这是本仓一处**静默退化**点：快照里出现 DTO 未声明的键 ⇒ `convertValue` 抛错被 catch ⇒ `items` 整段变 null 而接口照样 200 ⇒ 本用例另带一条**红证对照**（多一个未声明键 ⇒ 解析必抛）证明上一条不是碰巧通过。"
+      - "**缺值口径**：`isUrgent` **恒落键**（`false` 是**真值** —— 显式「否」不得当成「未填」丢弃）；`requiredDeliveryDate` **缺值不落键**（写空串/占位会把「未指定」读成一个日期）⇒ 既有单的快照在缺省下与该键族引入前**逐字相同**（零污染）。"
+      - "**迁移指纹账本只追加**：`tests/unit_ci_workflows/migration_fingerprints.json` 只新增 V120 一条，旧条目零改动（判据本体 = `test_migration_immutability.py`，挂 MC-012）。"
+    skip_reason: "[backend-contract] 迁移与快照的真库读数（无米宝工具面）⇒ 由真 PG（initdb+pg_ctl）Java 判据覆盖，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5177）：V120 两遍幂等 + 列形态对账 + schema.sql 同步 + 加急/到货日透传进快照（含静默退化的红证对照）+ 指纹账本只追加。取号 PR-082。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderUrgencyRealDbTest.java"
+        - "tests/unit_ci_workflows/test_migration_immutability.py"
+      ci:
+        - pr-check.yml
+      verifies: []

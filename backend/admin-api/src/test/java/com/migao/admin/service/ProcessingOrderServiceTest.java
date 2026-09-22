@@ -4480,18 +4480,26 @@ class ProcessingOrderServiceTest {
     @DisplayName("#5169 判据5 待派池：按物料分组可查 / 等待时长可读 / 超上限**带单号**告警")
     void poolGroupsByMaterialAndWarnsOverdueOrders() {
         java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
+        // ⚠️ 顺序**必须忠于真实查询**：`pool()` 走 `orderByAsc(createdAt)`（池的遍历序 = 下单时刻升序），
+        // 而 `orderMapper` 是 mock ⇒ 这里给的列表顺序**就是**那条 ORDER BY 的结果。
+        // （issue #5177 顺手修正：改前本夹具把「最新下的单」放最前，与真实查询相反 ——
+        //  于是那条「池内等待时长逐单可读」的断言其实测的是 mock 的列表序，不是生产行为。
+        //  夹具与真实查询对齐之后，下面 `lines().get(0).waitHours() == 30.0` 在生产语义下**改前改后都是 30.0**，
+        //  这正是判据 1/2「缺省不变」的实证：没有加急单、没有到货日时，
+        //  `POOL_LINE_ORDER` 的第一把键恒相等、第二把（等待时长降序）与 `createdAt` 升序**同序**。）
         when(orderMapper.selectList(any())).thenReturn(List.of(
-                confirmedOrderOf("order-001", "ORD-20260912-0001", now.minusHours(2)),
-                confirmedOrderOf(ORDER_2, "ORD-20260912-0002", now.minusHours(30)),
                 confirmedOrderOf("order-003", "ORD-20260912-0003", now.minusHours(40)),
+                confirmedOrderOf(ORDER_2, "ORD-20260912-0002", now.minusHours(30)),
+                confirmedOrderOf("order-001", "ORD-20260912-0001", now.minusHours(2)),
                 confirmedOrderOf("order-004", "ORD-20260912-0004", now.minusHours(1))));
-        // order-003 已有活跃加工单 ⇒ **不进池**（池 = 已确认支付 **且无活跃加工单**）
+        // order-003 已有活跃加工单 ⇒ **不进池**（池 = 已确认支付 **且无活跃加工单**）；
+        // 它在 `loadOrderItems` 之前被 `continue` 掉 ⇒ 明细 stub 的消耗序 = ORDER_2 → order-001 → order-004
         when(processingOrderMapper.selectActiveOrderIds(eq(TENANT), anyCollection()))
                 .thenReturn(List.of("order-003"));
         List<OrderItem> sku1 = List.of(itemOf("order-001", "item-1", "SKU-1"));
         List<OrderItem> sku1b = List.of(itemOf(ORDER_2, "item-2", "SKU-1"));
         List<OrderItem> sku2 = List.of(itemOf("order-004", "item-4", "SKU-2"));
-        when(orderItemMapper.selectList(any())).thenReturn(sku1, sku1b, sku2);
+        when(orderItemMapper.selectList(any())).thenReturn(sku1b, sku1, sku2);
 
         var pool = processingOrderService.pool(TENANT, null);
 
@@ -4514,11 +4522,28 @@ class ProcessingOrderServiceTest {
                 .contains("ORD-20260912-0002").contains("30.0").contains("24")
                 .contains("成批派单");
         assertThat(pool.groups().get(0).lines().get(0).waitHours())
-                .as("池内等待时长**逐单可读**").isEqualByComparingTo("2.0");
-        assertThat(pool.groups().get(0).lines().get(0).overdue()).isFalse();
+                .as("池内等待时长**逐单可读**，且**等得久的在前**（= 记录期既有序：池按 createdAt 升序遍历；"
+                        + "issue #5177 的排序键在「无加急单、无到货日」时与之**同序** ⇒ 缺省不变）")
+                .isEqualByComparingTo("30.0");
+        assertThat(pool.groups().get(0).lines().get(0).overdue()).isTrue();
+        assertThat(pool.groups().get(0).lines().get(1).waitHours())
+                .as("同物料组内第二行 = 等得较短的 order-001（两组行都在，不只是第一行对）")
+                .isEqualByComparingTo("2.0");
+        assertThat(pool.groups().get(0).lines().get(1).overdue()).isFalse();
+        // issue #5177 判据 2：**没有任何加急单**时的缺省形态 —— 插队区必须是空的、不许多出对象
+        assertThat(pool.urgentCount()).as("缺省（无加急单）⇒ 插队区不去重计数为 0").isZero();
+        assertThat(pool.urgentLines()).as("缺省（无加急单）⇒ 插队区为空（池的成员一个都没少）").isEmpty();
+        assertThat(pool.orderCount() + pool.urgentCount())
+                .as("池内 + 插队区 = 全部无活跃加工单的已确认订单（一张单都不会既不在池、也不在插队区）")
+                .isEqualTo(3);
+        for (var line : pool.groups().get(0).lines()) {
+            assertThat(line.isUrgent()).as("池内不得出现加急行（加急单不进池）").isFalse();
+            assertThat(line.requiredDeliveryDate()).as("未指定 ⇒ null（不猜，不拿今天顶替）").isNull();
+            assertThat(line.deliveryDaysLeft()).as("未指定 ⇒ 临期度也是 null，不得编 0").isNull();
+        }
 
         // 上限**可配**：调成 1 小时 ⇒ 三张单全超上限（这张图才是「没有单被静默压住」）
-        when(orderItemMapper.selectList(any())).thenReturn(sku1, sku1b, sku2);
+        when(orderItemMapper.selectList(any())).thenReturn(sku1b, sku1, sku2);
         var tighter = processingOrderService.pool(TENANT, new BigDecimal("1"));
         assertThat(tighter.maxWaitHours()).isEqualByComparingTo("1");
         assertThat(tighter.overdueCount())

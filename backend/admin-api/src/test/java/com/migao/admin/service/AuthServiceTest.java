@@ -477,12 +477,15 @@ class AuthServiceTest {
         // `production-process` 逐字一致 —— issue #4416 已把「工序库」+「工艺路线」合并为
         // 单入口「工艺配置」（`/production/routings`；旧路径 `/production/operations` 是重定向）。
         // ⚠️ 「入库单」不在此列表内：它的权限码是 `inbound:view`（本用例只给 `processing:manage`）。
+        // issue #5177：「池看板」在列表内且紧跟在「生产看板」之后 —— 它同样只要求
+        // `processing:manage`（池化派单的决策屏，与生产看板同权）。
         assertThat(production.getChildren())
                 .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getName)
-                .containsExactly("生产看板", "工艺配置", "计件工资");
+                .containsExactly("生产看板", "池看板", "工艺配置", "计件工资");
         assertThat(production.getChildren())
                 .extracting(com.migao.admin.dto.UserInfoResponse.MenuItem::getPath)
-                .containsExactly("/production", "/production/routings", "/production/piecework");
+                .containsExactly("/production", "/production/pool", "/production/routings",
+                        "/production/piecework");
 
         clearAuthentication();
     }
