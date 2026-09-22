@@ -4769,6 +4769,24 @@ _CASE_PG_058 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-061 [NORMAL] 裁剪智能排料 v1 - A 类完整布并排：定高买宽并排 + 定宽买高 P=1 窄窗互补（纯函数，不重算用料口径）（源: cases/processing-order.yml）──
+_CASE_PG_061 = EvalCase(
+    id='PG-061',
+    legacy_id='',
+    title='裁剪智能排料 v1 - A 类完整布并排：定高买宽并排 + 定宽买高 P=1 窄窗互补（纯函数，不重算用料口径）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['J1·**定高买宽并排**：两扇 1.5m 宽 × 2 倍褶 × 窗高 1.1m 的窗（各领 3.0m）⇒ 各占门幅 1.1 + 0.3 = 1.4m（合计 2.8m = 门幅 ✓）⇒ **1 行 / 应领 = max(3.0, 3.0) = 3.0m**，而逐窗分开裁 = 2 行 / 6.0m（差额 3.0m 即省下的米数）—— 证据：CuttingPlanCalculatorTest.fixedHeightTallWindowsPairIntoOneRow（**逐值**断言：rows.size()==1 / issuedMeters == 3.0 / 行长度 == 3.0 / 对照口径 == 6.0 且 issued < 对照）+ 红证：把「并排」关掉（禁止配对）该条即红', 'J2·**定宽买高 P=1 窄窗互补**（原规格漏判的那一格，专条判据）：两扇单开窄窗（各 窗宽 × 褶倍 = 1.4m、窗高 1.1m ⇒ 各 1 幅、占门幅 1.4m、沿卷长 = 窗高 1.1 + 卷边 0.3 = 1.4m）⇒ 两块合计占门幅 2.8m ✓ ⇒ **1 行 / 应领 1.4m**；逐窗分开裁 = 2 行 / 2.8m（差额 = 省下的一整行）—— 证据：CuttingPlanCalculatorTest.fixedWidthSinglePanelNarrowWindowsPairIntoOneRow（逐值）+ 红证：把定宽料按「整窗宽」而非「幅宽」占门幅、或让定宽料不参与装箱（旧「定宽买高原样返回」口径）该条即红', 'J3·**不倒退**（少算 = 切不出货，比不省料严重）：两块料占门幅之和 > 门幅（1.7 + 1.7 = 3.4 > 2.8）⇒ 两块**各成一行**，应领米数与逐窗公式**逐值相同**（3.0 + 2.0 = 5.0，一格都不许少）—— 证据：CuttingPlanCalculatorTest.piecesThatDoNotFitTogetherKeepTheirOwnRows + 红证：去掉行内 Σ占门幅 ≤ 门幅 的守卫（改成恒真）该条即红（会把放不下的两块并成一行）', 'J4·**完整布不变式**：任何输出行内 `Σ 占门幅宽 ≤ 门幅`、行长度 == 行内最大沿卷长；每块料的「占门幅宽 / 沿卷长」**未被修改**（输出的每块都是**原样的入参记录**）、每块恰好出现一次（不重切、不丢料）—— 证据：CuttingPlanCalculatorTest.keepsWholePiecesUnmodifiedAndRowsWithinDoorWidth + randomizedInvariantsHold（200 轮随机输入逐轮复核四条不变式）+ 红证：让行长度只取第一块（丢掉 max）、或静默丢掉排不下的料，该条即红', 'J5·**顺序无关**：同一组料换输入顺序（逆序 / 乱序）⇒ 行数、**行内料的构成与顺序**、行长度、应领米数**逐值相同**（排序键确定：沿卷长降序 → 占门幅宽降序 → piece_id 升序）—— 证据：CuttingPlanCalculatorTest.resultIsIndependentOfInputOrder + randomizedInvariantsHold 的逐轮逆序复核 + 红证：把排序键换成「入参顺序」（比较器恒返回 0）该条即红', 'J6·**非法入参 fail-closed**：pieces 为 null / 含 null 元素 / piece_id 为空、门幅 ≤ 0 或 NaN、卷边 < 0、占门幅宽 ≤ 0、沿卷长 ≤ 0、**某块料比门幅还宽**（不是「不省料」而是「切不出货」）⇒ 一律 IllegalArgumentException（宁可算不出来，也不产出一份切不出货的方案）；空池 ⇒ 0 行 / 应领 0 —— 证据：CuttingPlanCalculatorTest.invalidInputsAreRejected + 红证：删掉任一入参校验该条即红', '**边界（如实登记）**：① 本类是**纯函数**，无 IO / 无 Spring 依赖，**没有生产调用方** —— 池子（哪些料放一起排）由调用方决定，接线另开单；② **不算用料口径**：占门幅宽与沿卷长都是**入参**（真值源 = 算料引擎 calculate_fabric_meters），本类只做装箱/排版；调方的换算口径 = 定高买宽「占门幅宽 = 窗高 + 卷边、沿卷长 = 窗宽 × 褶倍」、定宽买高「占门幅宽 = 幅宽（等宽拼幅下 = 窗宽 × 褶倍 ÷ 幅数）、沿卷长 = 窗高 + 卷边（+ 对花花距）」；**HEM 一律作为入参传入，类内不硬编码任何余量/门幅**；③ 算法 = 沿卷长降序 + 首次适配的**确定性启发式**（最小化 Σ 行长度的装箱面是 NP-hard），不引入优化器依赖；④ **不做**：B 类（打破同窗等宽拼幅）、余料库存/复用、面料主数据、跨订单波次载体、ProcessingOrderService 接线、前端/工人端、任何迁移；⑤ 收益取决于池子里**有没有可组合的矮窗/窄幅**：单个窗没有优化空间（P = ceil(W×N ÷ 门幅) 已是该窗最优），无可组合对象时本函数**逐值等于现状**（不倒退、也不多领）。'],
+    skip_reason='[backend-contract] 纯函数（无 IO / 无 Spring）的后端契约用例：断言由 CuttingPlanCalculatorTest 执行，无 LLM 环节 ⇒ 不进 agent-eval 冒烟',
+    tags=['processing-order', 'production', 'cutting-plan', 'nesting'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-020 [NORMAL] 工序库写面——PUT /production/operations/{id} + 单价版本表（当前价 = 最新版本行，实例快照冻结）（源: cases/processing-order.yml）──
 _CASE_PG_020 = EvalCase(
     id='PG-020',
@@ -8032,6 +8050,7 @@ ALL_CASES = (
     _CASE_PG_018,
     _CASE_PG_019,
     _CASE_PG_058,
+    _CASE_PG_061,
     _CASE_PG_020,
     _CASE_PG_021,
     _CASE_PG_022,
