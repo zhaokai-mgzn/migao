@@ -38,21 +38,22 @@
    空行/更缩进/显式缩进指示数字 × 双引号/单引号 × 序列项/映射值）都**深比较相等**。
    真值 = `yaml.safe_load`（本 job 装了 pyyaml）。
 3. **不回归**：真用例库（`.github/cases/*.yml` 全量）里 ① 用例**条数与 id 序列**不变、
-   ② 每个列表字段的**长度**不变、③ 与 PyYAML 的**每一处**取值差异都能由 `STILL_UNFAITHFUL`
-   解释（多出一处"说不清的差异"即红）—— 生成物**逐字节不变**由同目录
+   ② 每个列表字段的**长度**不变、③ 与 PyYAML **逐值相等**（任何一处取值差异即红 ——
+   #5179 把 `escaped_*` 一族修好之后，原先那条"差异可由 `STILL_UNFAITHFUL` 解释就放行"的
+   容忍口径**整条退场** ⇒ 本判据是**收紧**，不是放宽）。生成物**逐字节不变**由同目录
    `test_render_cases_yaml_fail_closed.py::test_real_case_library_passes_and_artifacts_are_byte_identical`
-   兜住（生成物是全仓唯一源头，本单一个字都不许改它）。
+   兜住。
 4. **边界登记 + 死亡条件**：`STILL_UNFAITHFUL` 逐条断言"现在**仍然**不保真" ——
    谁补上了，那条断言**当场变红**，逼他更新登记（本仓 §17.3 ④ 的口径）。
    **不许**把"没覆盖"伪装成"已覆盖"。
 
 ## 边界（照实登记，未修）
 
-· `STILL_UNFAITHFUL` 里的六种形态**本单有意不修**（见下表逐条理由）；其中
-  `escaped_*` 一族是**正在生效**的差异：真用例库实测 **36 处**取值与 PyYAML 不同
-  （`tests/unit_ci_workflows/test_yaml_light_scalar_fidelity.py` 的
-  `test_real_library_value_diffs_are_all_registered` 会**现取**这个数、不写死）。
-  修它会改 `.github/cases/**` 的渲染产物 ⇒ 波及所有在飞包，属另一单的范围。
+· `escaped_*` 一族（`\\"` / `\\\\` / `\\/` / `\\n`）**已由 #5179 修好** —— 双引号标量按 YAML 8.1.3
+  解码。该单落地时它们的**死亡条件按设计触发**（4 条 `test_registered_gaps_are_still_gaps`
+  红）⇒ 已从 `STILL_UNFAITHFUL` **移出并加进 `CORPUS`**；靶心判据在
+  `tests/unit_ci_workflows/test_render_leg_escape_decode.py`（含比较器自证与判别力自证）。
+· `STILL_UNFAITHFUL` 现存**三种**形态：跨行 flow 集合 / 跨行裸标量 / **被引号包起来的 key**。
 · 本文件只在**装了 PyYAML** 的 job（`tests/unit_ci_workflows`）里跑；渲染腿的 CI job
   没有 PyYAML，它的判据在 `test_render_cases_yaml_fail_closed.py`（零依赖后端）。
 """
@@ -139,20 +140,24 @@ CORPUS: dict[str, str] = {
     # ⑨ 反向护栏：`""` / `"a"` / `''` 这类**同一行就闭合**的引号标量不得被多行读取器接管
     "quotes_closing_on_the_same_line": _case(
         '    a: ""\n    b: "x"\n    c: \'\'\n    d: "a: b"\n    skip_reason: "x"\n'),
+    # ⑩ 双引号标量里的**转义序列必须解码**（issue #5179）。这四条原先住在 `STILL_UNFAITHFUL`
+    #    的 `escaped_*` 一族里（"有意不修"），#5179 修好后按死亡条件移到这里 —— 真库实测
+    #    33 处取值差异 / 45 个不同字符串 / 163 个多余的转义序列，全部由此解码消除。
+    "escaped_double_quote": _case('    k: "a\\"b"\n    skip_reason: "x"\n'),
+    "escaped_backslash": _case('    k: "a\\\\b"\n    skip_reason: "x"\n'),
+    "escaped_slash": _case('    k: "a\\/b"\n    skip_reason: "x"\n'),
+    "escaped_newline_escape": _case('    k: "a\\nb"\n    skip_reason: "x"\n'),
 }
 
 #: **仍未保真**的形态（如实登记）——**有死亡条件**：谁把它补上了，`test_registered_gaps_are_still_gaps`
 #: 当场变红，逼他把该条移出本表并同步 `.github/yaml_light.py` 模块头那张表。
-#: 每条的 `why` = 本单**有意不修**的理由（不是"忘了"）。
+#: 每条的 `why` = **有意不修**的理由（不是"忘了"）。
+#: ⚠️ `escaped_*` 一族已于 #5179 修好并移出本表（死亡条件按设计触发过 4 条）—— 不要再把它们加回来。
 STILL_UNFAITHFUL: dict[str, dict[str, str]] = {
-    "escaped_double_quote": {"body": 'k: "a\\"b"\n', "why":
-                             "转义序列未解码（`\\\"` 原样保留）——**正在生效**：真用例库 31 处。"
-                             "修它会改 `.github/cases/**` 的渲染产物（全仓唯一源头），属另一单"},
-    "escaped_backslash": {"body": 'k: "a\\\\b"\n', "why":
-                          "同上（`\\\\` 未解码）——真用例库 4 处"},
-    "escaped_slash": {"body": 'k: "a\\/b"\n', "why": "同上（`\\/` 未解码）——真用例库 1 处"},
-    "escaped_newline_escape": {"body": 'k: "a\\nb"\n', "why":
-                               "同上（取值里的 `\\n` 是**转义**还是字面反斜杠，两侧不一致）"},
+    "quoted_key": {"body": '"a\\"b": 1\n', "why":
+                   "**被引号包起来的 key**：`parse_mapping` 只做 `key.strip()`，不经 `_parse_scalar` "
+                   "⇒ 键不解码（值解码了、键没解码）。真用例库 0 处；给键加解码要动两个 `parse_*` "
+                   "的键切片口径，风险大于收益"},
     "multiline_flow_collection": {"body": 'k: [a,\n  b]\n', "why":
                                   "跨行 **flow 集合**不是标量（`yaml_light` 本就不支持 flow style）；"
                                   "真用例库 0 处，且渲染腿的严格判定不拦它"},
@@ -224,49 +229,6 @@ def _diffs(txt: str):
     return truth, got
 
 
-#: YAML 双引号标量的转义表（**只用来判定"这处差异是否已在登记里"**，不是去修 `yaml_light`）
-_ESCAPES = {'0': '\0', 'a': '\a', 'b': '\b', 't': '\t', 'n': '\n', 'v': '\v', 'f': '\f',
-            'r': '\r', 'e': '\x1b', ' ': ' ', '"': '"', '/': '/', '\\': '\\'}
-_HEXDIGITS = "0123456789abcdefABCDEF"
-
-
-def _decode_escapes(s: str) -> str:
-    """把 `yaml_light` 侧**原样保留**的转义序列解回来（模拟"补上这条缺口"后的取值）。"""
-    out, i = [], 0
-    while i < len(s):
-        c = s[i]
-        if c == "\\" and i + 1 < len(s):
-            n = s[i + 1]
-            if n in _ESCAPES:
-                out.append(_ESCAPES[n])
-                i += 2
-                continue
-            if n in ("x", "u", "U"):
-                width = {"x": 2, "u": 4, "U": 8}[n]
-                hx = s[i + 2:i + 2 + width]
-                # 只认**合法**十六进制 —— 不写成 `try/except: pass`：`growth_gate` 的弱断言
-                # 扫描把裸 `pass` 当「空断言」，而它扫**整份文件**、不区分测试函数与辅助函数
-                # ⇒ 新增文件上出现一行就 block 合并（本单实测踩到过）。
-                if len(hx) == width and all(ch in _HEXDIGITS for ch in hx):
-                    out.append(chr(int(hx, 16)))
-                    i += 2 + width
-                    continue
-        out.append(c)
-        i += 1
-    return "".join(out)
-
-
-def _decoded(x):
-    """递归地把「转义未解码」这条已登记缺口从 `yaml_light` 的取值里消掉。"""
-    if isinstance(x, str):
-        return _decode_escapes(x)
-    if isinstance(x, list):
-        return [_decoded(i) for i in x]
-    if isinstance(x, dict):
-        return {k: _decoded(v) for k, v in x.items()}
-    return x
-
-
 def _assert_no_row_loss(truth, got, label):
     """真库「不丢行」判据的**单一实现**：id 序列 + 每个列表字段的长度都必须一致。
 
@@ -320,35 +282,32 @@ def test_row_loss_guard_can_actually_go_red():
     assert "静默丢行" in str(ei.value), f"红了但不是因为丢行：{ei.value}"
 
 
-def test_real_library_value_diffs_are_all_registered():
-    """真用例库上与 PyYAML 的**每一处**取值差异，都必须能由 `STILL_UNFAITHFUL` 解释。
+def test_real_library_values_are_py_yaml_identical():
+    """真用例库与 PyYAML 必须**逐值相等** —— 任何一处差异即红（**零容忍**）。
 
     为什么单开这条：`STILL_UNFAITHFUL` 是**枚举**，"枚举里那几条之外还有没有别的差异"
-    才是真正要守的东西 —— 一条"说不清的差异"= 又冒出一个**未登记**的保真度缺口。
-    本判据**现取**差异条数（不写死数字）：登记被补掉、或缺口变多，都会在这里露出。
+    才是真正要守的东西。
+
+    口径沿革（**收紧**，不是放宽）：#5171 放行口径是"差异都能由 `STILL_UNFAITHFUL` 解释"
+    （修前实测 **33 处**全是 `escaped_*`）；#5179 把 `escaped_*` 修好之后，那条容忍口径
+    **整条退场**，本判据改为零容忍 —— 块标量 / 跨行标量 / 转义解码任一族再破，都在这里
+    逐处点名（诊断信息含真值 vs `yaml_light` 两侧取值）。
     """
-    unregistered, total = [], 0
+    diffs = []
     for f in sorted(CASES.glob("*.yml")):
         truth, got = _diffs(f.read_text(encoding="utf-8"))
         by_id = {c.get("id"): c for c in got.get("cases") or []}
         for c in truth.get("cases") or []:
             g = by_id[c["id"]]
             for k in set(c) | set(g):
-                if c.get(k) == g.get(k):
-                    continue
-                total += 1
-                if _decoded(g.get(k)) != c.get(k):
-                    unregistered.append(f"{f.name} {c['id']}.{k}: "
-                                        f"PyYAML={c.get(k)!r} / yaml_light={g.get(k)!r}")
-    assert not unregistered, (
-        "真用例库出现了**未登记**的取值缺口（`STILL_UNFAITHFUL` 解释不了）：\n  "
-        + "\n  ".join(unregistered)
-        + "\n⇒ 若这是新引入的（如块标量 / 跨行标量又丢了），**修 `yaml_light`**；"
-          "若确属有意不修，把它登记进 `STILL_UNFAITHFUL` 并在 `.github/yaml_light.py` 模块头同步。")
-    assert total > 0, (
-        "真用例库与 PyYAML **一处差异都没有**了 —— 说明「转义未解码」这条缺口已被补上，"
-        "请把 `escaped_*` 一族从 `STILL_UNFAITHFUL` 移出，并同步 `.github/yaml_light.py` 模块头那张表。"
-        "（本条是**反向**断言：不写它，缺口被补掉时没有人会知道登记表已过期。）")
+                if c.get(k) != g.get(k):
+                    diffs.append(f"{f.name} {c['id']}.{k}: "
+                                 f"PyYAML={c.get(k)!r} / yaml_light={g.get(k)!r}")
+    assert not diffs, (
+        f"真用例库 **{len(diffs)} 处**取值与 PyYAML 不同（渲染腿的取值保真度破了）：\n  "
+        + "\n  ".join(diffs[:20])
+        + "\n⇒ **修 `yaml_light`**（渲染腿与真值同源是硬要求）；确属有意不修的形态才登记进 "
+          "`STILL_UNFAITHFUL` 并在 `.github/yaml_light.py` 模块头同步 —— 登记是**例外**，不是默认。")
 
 
 def test_render_leg_still_produces_byte_identical_artifacts(tmp_path):

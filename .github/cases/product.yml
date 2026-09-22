@@ -2973,3 +2973,114 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: PR-083
+    legacy_id: ""
+    title: "渲染腿**转义解码**：生成物取值与真值（`yaml.safe_load`）逐值相等（修前 33 处不同 / 163 个多余转义）"
+    domains:
+      - ci
+      - backend-contract
+    tier: normal
+    tags:
+      - ci
+      - case-library
+      - render-leg
+      - backend-contract
+    truths_ref: []
+    # ⚠️ 真值暂缺：这是**用例库机具**（渲染腿取值保真），不是业务真值 —— 与 MC-012 同口径
+    # （CI 结构类判据由 tests/unit_ci_workflows/ 单测验证，非 LLM 行为），不装作无事发生。
+    user_inputs:
+      - "改 `.github/cases/*.yml` 后重渲染生成物（非 LLM 行为，由 tests/unit_ci_workflows 单测验证）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - |-
+        🔴 判据 1·**逐值相等（本单的靶心）**：真用例库 25 文件 ⇒ 产物（`tests/agent_eval/eval_cases.py` 的 `EvalCase(...)` **字面量**，用 `ast.literal_eval` 取、**不 exec**）与真值（`yaml.safe_load`）逐 `(文件, 用例 id, 字段)` 相等。判据本体 = `tests/unit_ci_workflows/test_render_leg_escape_decode.py` 的 `test_artifact_values_are_value_identical_to_truth`；比较器 = `tests/unit_ci_workflows/render_leg_compare.py`（**唯一实现**，别处不许再写第二份）。**红证（修前实测）**：33 处不同，逐处清单口径 = `(文件, 用例, 字段)` —— 代表三处：`AS-003.data_checks`（真值 `^AS-\d{8}-\d{4}$` / 修前 `^AS-\\d{8}-\\d{4}$`）、`CH-009.user_inputs`（真值 `__FORM__|{"customer_name":"张三"…}` / 修前每个引号前多一个反斜杠）、`PG-055.data_checks`（真值 `"applicable"` / 修前 `\"applicable\"`）。
+      - |-
+        🔴 判据 2·**转义序列零外溢**：产物侧不得比真值多出任何转义序列（`\"` / `\\` / `\/` / `\n` / `\t` / `\r`）。**修前实测 163 个**（`\"` 148 + `\\` 9 + `\/` 1 + `\n` 5）；判据本体 = 同文件 `test_artifact_has_no_escape_overflow`（与判据 1 分开写：这条**只在「转义未解码」这一族**上红，诊断信息直接点名是哪个转义序列）。**单点变异红证** = 回滚 `.github/yaml_light.py` 的双引号解码（`_parse_scalar` 里 `_unescape_double(inner) if '\\' in inner else inner` 退回 `inner`）⇒ 该判据单独变红，且诊断信息给出外溢计数。
+      - |-
+        🔴 判据 3·**「生成物新鲜度」抓不到这条（所以必须单列判据）**：那条检查比的是「能否由当前源重渲染出**已提交的**产物」，**不是**「产物是否等于真值」⇒ 一份**稳定地错**的产物永远绿。实证：修前那两个生成物在 main 上**长期"新鲜"**，而 33 处取值与真值不同（连带交给 LLM 的判据文本与真值不同；任何按值检索/比对的工具都会漏）。
+      - |-
+        判据 4·**零 diff 自证（稳定点）**：同参数再跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases.py --out-md docs/testing/mibao-verification-cases.md` ⇒ 两个生成物**逐字节相同**，且与已提交版本**逐字节一致**；判据本体 = 同文件 `test_render_is_a_stable_fixpoint_and_matches_committed`（渲染两次 + 对齐已提交）。⚠️ 本单**预期生成物会变**（那正是修复本身）⇒ 生成物由 `render_cases.py` 重生成，**一个字面量都不许手改**。
+    skip_reason: "[backend-contract] 渲染腿取值保真（CI 机具面，无米宝工具面）⇒ 由 tests/unit_ci_workflows 单测验证，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5179）：双引号标量按 YAML 8.1.3 解码（引号 / 反斜杠 / 斜杠 / 换行 / 制表 / 回车 / 退格 / 换页 / 十六进制 / Unicode 与代理对）+ 单引号 `''` 只处理 `''`；修前 33 处取值不同 / 163 个多余转义序列，修后 0。取号 PR-083。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_render_leg_escape_decode.py"
+        - "tests/unit_ci_workflows/test_yaml_light_scalar_fidelity.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-084
+    legacy_id: ""
+    title: "渲染腿比较器**落库**（唯一实现）+ **「0 条」必须判红**（比较器坏了 ≠ 没有差异）"
+    domains:
+      - ci
+      - backend-contract
+    tier: normal
+    tags:
+      - ci
+      - case-library
+      - render-leg
+      - backend-contract
+    truths_ref: []
+    # ⚠️ 真值暂缺：同 PR-083（用例库机具，非业务真值；与 MC-012 同口径）。
+    user_inputs:
+      - "复核「生成物是否等于真值」（非 LLM 行为，由 tests/unit_ci_workflows 单测验证）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - |-
+        🔴 判据 1·**口径显式化**：比较器 `tests/unit_ci_workflows/render_leg_compare.py` 是**唯一实现**（真值 = `yaml.safe_load`；产物 = 生成物里的**字面量**，`ast.literal_eval` 取、**不 exec**）。"多少处"必须同时说口径，三个读数分开取：`sites` = 取值不同的 `(文件, 用例 id, 字段)` 三元组数、`leaf_diffs` = 不同的叶子字符串数、`escape_overflow` = 产物侧多出的转义序列逐类计数（非重叠）。**红证 = 只手写一个数而不说口径即无法复算** —— 本单的由来正是这个：#5179 原文写「36 处」（31 处 `\"` + 5 处 `\\`/`\/`），而那个脚本是 heredoc、**未入库**，且当时用例数是 424（现 428）⇒ **口径不可复算**；可复算读数是 **33 / 45 / 163**。落地时**不把 33 写成 36**。
+      - |-
+        🔴 判据 2·**「0 条」是「比较器坏了」，不是「没有差异」**：`Report.assert_sane()` 在任一侧条数为 0、或两侧 id 序列不是逐位相同时**抛错**。为什么必须有这条：#5179 的复核方**两次**独立测量都"量不出来"，成因正是真值侧解析出 **0 条** —— 而 0 条与"完全一致"在读数上**长得一模一样**（一次假绿就此诞生）。**红证（两侧都要红，只红一侧等于只守了一半）** = 产物侧换成没有 `EvalCase(...)` 的文件 ⇒ `test_comparator_reds_when_a_side_is_empty` 必红；`--cases` 指到空目录 ⇒ 同一判据的另一半必红。
+      - |-
+        🔴 判据 3·**判别力自证（不会红的断言 = 空断言）**：修完之后"零差异"是常态 ⇒ 判据 1 永远是绿的，读者无从知道它"到底是守住了，还是根本不会红"。⇒ `test_value_diff_guard_can_actually_go_red` 把当前产物按**改前形态**重新转义（`\` → `\\` 先做、`"` → `\"` 后做）喂给同一条判据 ⇒ 必须报出差异且 `escape_overflow` 非空。**边界照实登记**：该自证覆盖 `\"` / `\\` 两族（33 处里的 32 处），`\/` 那 1 处需要**源码侧**信息（源写 `\/` 而真值是 `/`）⇒ 由 #5179 的 PR body 里 `git show origin/main:` 的逐处对照承担，**不把"没覆盖"伪装成"已覆盖"**。
+    skip_reason: "[backend-contract] 用例库比较器与其健康断言（CI 机具面，无米宝工具面）⇒ 由 tests/unit_ci_workflows 单测验证，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5179）：比较器落库为单一实现 + 「0 条判为比较器坏了」的两侧红证 + 判别力自证（改前形态必红）+ 数字订正（36 不可复算 ⇒ 33/45/163）。取号 PR-084。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_render_leg_escape_decode.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-085
+    legacy_id: ""
+    title: "渲染腿保真度的**边界登记与死亡条件**（修好的形态必须移出登记表；未覆盖的不许说成已覆盖）"
+    domains:
+      - ci
+      - backend-contract
+    tier: normal
+    tags:
+      - ci
+      - case-library
+      - render-leg
+      - backend-contract
+    truths_ref: []
+    # ⚠️ 真值暂缺：同 PR-083（用例库机具，非业务真值；与 MC-012 同口径）。
+    user_inputs:
+      - "复核「还有哪些形态不保真、补上了会不会被发现」（非 LLM 行为，由 tests/unit_ci_workflows 单测验证）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - |-
+        🔴 判据 1·**死亡条件按设计触发**：`tests/unit_ci_workflows/test_yaml_light_scalar_fidelity.py` 的 `STILL_UNFAITHFUL` 逐条断言"现在**仍然**不保真"。`escaped_*` 一族（`\"` / `\\` / `\/` / `\n`）修好后，该表 4 条登记**当场变红**（`test_registered_gaps_are_still_gaps`）⇒ 已按红了的修法**移出登记表并加进 `CORPUS`**（改前它们是"有意不修"的绿）。**红证 = 把已修好的形态留在登记表里 ⇒ 该判据必红**（这正是发现登记表过期的方式，不许靠人记得）。
+      - |-
+        🔴 判据 2·**仍不保真的形态逐条在册**（不把"没覆盖"伪装成"已覆盖"）：现存三种 —— ① **跨行 flow 集合**（`k: [a,` + 续行 `b]` ⇒ 取 `'[a,'`）；② **跨行裸标量**（`k: 第一行` + 缩进续行 ⇒ 续行不在值里）；③ **被引号包起来的 key**（`"a\"b": 1` ⇒ 键不过 `_parse_scalar`、不解码）。三条真用例库各 **0 处**；每条都在 `.github/yaml_light.py` 模块头与登记表两处同步。
+      - |-
+        🔴 判据 3·**未定义转义的两侧行为都被钉住**：`k: "a\d"` ⇒ **PyYAML 拒绝**（`ScannerError`，那是标准 YAML 的语法错误）而宽松腿**原样保留** `a\d`（不抛异常打断整份用例加载）；这类文件由渲染腿的严格判定（`.github/cases_yaml.py` 的 `require_strict`）拦下。判据本体 = `tests/unit_ci_workflows/test_render_leg_escape_decode.py` 的 `test_boundary_undefined_escape_is_not_taken_over`（**两侧都断言**：PyYAML 必须拒绝，否则"边界"名不副实）。
+      - |-
+        判据 4·**真库零容忍（口径收紧，不是放宽）**：`test_real_library_values_are_py_yaml_identical` 现取真库与 PyYAML 的**每一处**取值差异 ⇒ 块标量 / 跨行标量 / 转义解码任一族再破都逐处点名。#5179 之前的放行口径是"差异都能由 `STILL_UNFAITHFUL` 解释"（修前实测 33 处全是 `escaped_*`）⇒ 修好后那条容忍口径**整条退场**。
+      - |-
+        **越界声明（本单不做，防被读成已做）**：不改用例库**内容语义**；不动 `scripts/drift_audit_baseline.json` 与那 9 条豁免；**不动严格腿** `.github/cases_yaml.py`（严格判定唯一实现，一字未改）；不碰产品代码。
+    skip_reason: "[backend-contract] 解析器保真度的边界登记与死亡条件（CI 机具面，无米宝工具面）⇒ 由 tests/unit_ci_workflows 单测验证，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-23 新增（issue #5179）：escaped_* 一族死亡条件按设计触发并移出登记表 + 现存三种不保真形态在册 + 未定义转义两侧行为钉住 + 真库零容忍口径。取号 PR-085。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_yaml_light_scalar_fidelity.py"
+        - "tests/unit_ci_workflows/test_render_leg_escape_decode.py"
+      ci:
+        - pr-check.yml
+      verifies: []
