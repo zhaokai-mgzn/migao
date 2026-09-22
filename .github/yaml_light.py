@@ -1,9 +1,50 @@
 """yaml_light — 极简 YAML 子集解析器（供 QA Growth Gate 引擎读 tech-stack.yml）。
 
 支持: block mapping / block sequence / 标量(字符串/数字/布尔/null/空[]/{})。
-不支持: flow style / 多行字符串 / anchor / tag。足够解析 tech-stack.yml 这类简单结构。
+不支持: anchor / tag。足够解析 tech-stack.yml 这类简单结构。
 零依赖，替代 PyYAML。
+
+## 多行标量的取值保真度（issue #5171）
+
+本解析器是**面向行**的状态机，原先对**多行标量**取值不保真：
+
+· `key: |` 的取值变成**字面字符串** `'|'`，而块内容行被当成**独立行**继续喂给状态机 ——
+  它们的缩进更大 ⇒ `parse_sequence()` 当场 `break` ⇒ 该条目**之后的兄弟条目整段消失**
+  （实测：`data_checks` 3 条 ⇒ 1 条，且 1 条的值还是 `'|'`）。
+· `key: "第一行`（引号跨行）同理：值变成 `'"第一行'`，续行与后续条目一起消失。
+
+两条路径**都不报错** ⇒ `render_cases.py` 照旧渲染成功、生成物新鲜度照旧绿 = **零信号**
+（"绿了但没跑"家族：真值源静默缩水，下游全部跟着失真）。
+
+⇒ `_logical_rows()` 现在先把**块标量**（`|` / `>`，含 `-`/`+` chomping 与缩进指示数字）与
+**跨行引号标量**整段读成**一个逻辑行**，取值按 YAML 8.1.3 的折叠 / chomping 规则算，
+与 `yaml.safe_load` 逐值一致。
+
+## 仍未保真（如实登记，**有死亡条件**）
+
+逐条钉在 `tests/unit_ci_workflows/test_yaml_light_scalar_fidelity.py` 的 `STILL_UNFAITHFUL`：
+谁把某条补上了，对应断言**当场变红**，逼他更新那张表（本仓 §17.3 ④ 的口径）：
+
+| 仍不保真的形态 | 现在的取值 |
+|---|---|
+| **转义序列不反转义**（`"a\\"b"` / `"a\\\\b"` / `"a\\/b"` / `"a\\nb"`） | 原样保留反斜杠 |
+| **跨行 flow 集合**（`k: [a,` + 续行 `b]`） | `'[a,'`（后半段丢失） |
+| **跨行裸标量**（`k: 第一行` + 缩进续行 `第二行`） | `'第一行'`（续行不在值里） |
+
+⚠️ 第一条**正在生效**：`.github/cases/*.yml` 实测 **36 处**取值与 `yaml.safe_load` 不同
+（31 处 `\\"` + 5 处 `\\\\` / `\\/`），即**已提交的生成物里就带着这些反斜杠**。
+**本单有意不动它** —— 改了它会改 `.github/cases/**` 的渲染产物，而生成物是全仓唯一源头
+（波及所有在飞包），属另一单的范围。
 """
+
+
+import re
+
+#: 「本行的值**不是**多行标量」的哨兵 —— `None` 是**合法取值**，不能拿它当缺省
+_MISS = object()
+
+#: 块标量头：`|` / `>` + 缩进指示数字与 chomping 指示符（YAML 允许两种顺序）
+_BLOCK_HEAD_RE = re.compile(r"^([|>])([0-9]?)([+-]?)$|^([|>])([+-]?)([0-9]?)$")
 
 
 def _strip_inline_comment(s: str) -> str:
@@ -128,14 +169,221 @@ def _is_inline_map_key(rest):
     return bool(k0) and not any(ch.isspace() for ch in k0)
 
 
-def load(text):
-    rows = []
-    for line in text.split('\n'):
+def _head_value(stripped):
+    """行的**值原文**（`key: v` / `- key: v` / `- v`）；不是值位置 ⇒ `None`（`-` 空项 ⇒ `''`）。
+
+    与两个 `parse_*` 里的切片口径**逐字同源**（`_is_inline_map_key` 的判据也复用），
+    否则"多行读取器认出来的头"与"状态机认出来的值"会分叉。
+    """
+    body = stripped
+    if body.startswith('- ') or body == '-':
+        rest = body[1:].strip()
+        if ':' in rest and rest[0] not in ('"', "'") and _is_inline_map_key(rest):
+            rest = rest.partition(':')[2]
+        return rest.strip()
+    if ':' in body:
+        return body.partition(':')[2].strip()
+    return None
+
+
+def _quote_close(s, quote):
+    """`s`（开引号**之后**的部分）里闭合引号的下标；没有 ⇒ `None`。
+
+    `\\x`（双引号）/ `''`（单引号）是转义 ⇒ 不算闭合（口径同 `cases_yaml._find_close`）。
+    """
+    j = 0
+    while j < len(s):
+        ch = s[j]
+        if quote == '"' and ch == '\\':
+            j += 2
+            continue
+        if ch == quote:
+            if quote == "'" and j + 1 < len(s) and s[j + 1] == "'":
+                j += 2
+                continue
+            return j
+        j += 1
+    return None
+
+
+def _fold_block(lines):
+    """`>` 折叠标量（YAML 8.1.3）：非空行之间折成空格；连续空行折成**等量**换行；更缩进的行保留字面换行。
+
+    `lines` = `[(文本, 是否比块缩进更深)]`。实测口径（本机 PyYAML 6.0.3）：
+    `a|b` ⇒ `'a b'`；`a||b` ⇒ `'a\\nb'`；`a|||b` ⇒ `'a\\n\\nb'`；`a|  b|c` ⇒ `'a\\n  b\\nc'`。
+    """
+    out, i, n = [], 0, len(lines)
+    need_sep, prev_more = False, False
+    while i < n:
+        text, more = lines[i]
+        if text == '':
+            k = 0
+            while i < n and lines[i][0] == '':
+                k += 1
+                i += 1
+            out.append('\n' * k)              # 空行前的断行被 trim，改由空行自身计数
+            need_sep = False
+            continue
+        if need_sep:
+            out.append('\n' if (more or prev_more) else ' ')
+        out.append(text)
+        need_sep, prev_more = True, more
+        i += 1
+    return ''.join(out)
+
+
+def _read_block_scalar(raw, i, head_indent, head):
+    """块标量（`|` / `>`）⇒ `(下一行下标, 值)`。
+
+    内容行 = 缩进**大于头行缩进**的连续行（空行无条件属于它）—— 与
+    `.github/cases_yaml.py` 的零依赖严格闸用的判据**同一口径**（那边也是
+    「块标量内容行整行跳过」）。缩进自动探测取首个非空行的缩进；显式指示数字则以其为准。
+    """
+    m = _BLOCK_HEAD_RE.match(head)
+    style = m.group(1) or m.group(4)
+    digits = m.group(2) or m.group(6) or ''
+    chomp = m.group(3) or m.group(5) or ''
+
+    body, j = [], i
+    block_indent = head_indent + int(digits) if digits else None
+    while j < len(raw):
+        line = raw[j]
+        if not line.strip():
+            body.append((None, ''))           # 空行：缩进无意义（chomping 才关心它）
+            j += 1
+            continue
+        indent = len(line) - len(line.lstrip(' '))
+        if indent <= head_indent:             # 回到父级 ⇒ 块结束
+            break
+        if block_indent is None:
+            block_indent = indent             # 自动探测：首个非空行定缩进
+        if indent < block_indent:
+            break
+        body.append((indent, line[block_indent:]))
+        j += 1
+
+    if style == '|':
+        text = '\n'.join(t for _, t in body)
+    else:
+        text = _fold_block([(t, (ind is not None and ind > block_indent))
+                            for ind, t in body])
+    text += '\n'                              # 每个内容行都带一个行尾换行
+    if chomp == '-':                          # strip：丢掉全部行尾换行
+        text = text.rstrip('\n')
+    elif chomp == '+':                        # keep：全保留（含尾部空行）
+        pass
+    else:                                     # clip（缺省）：至多一个
+        text = text.rstrip('\n')
+        if text:
+            text += '\n'
+    return j, text
+
+
+def _read_multiline_quoted(raw, i, head):
+    """跨行引号标量 ⇒ `(下一行下标, 值)`；**到文件结尾仍未闭合 ⇒ `None`**。
+
+    `None` 的语义是"**不接管**"：保持旧行为（含引号的整串原样返回），绝不吞掉后面的行 ——
+    没闭合的文件是非法 YAML，渲染腿的严格判定（`cases_yaml.require_strict`）会先拦下它，
+    这里只需要"不把坏输入变成另一种坏"。
+    """
+    quote, cur, j = head[0], head[1:], i
+    if _quote_close(cur, quote) is not None:
+        # 同一行就闭合 ⇒ **不是**跨行标量（`""` / `"a"` 都走这条）⇒ 交回 `_parse_scalar`。
+        # 少了这道前置，`skip_reason: ""` 会被当成"一个空的首段" ⇒ 值变成 `'\n'`（实测踩到）。
+        return None
+    parts = []                                # [(文本, 与上一段之间是否「转义换行」)]
+    escaped = False
+    while True:
+        close = _quote_close(cur, quote)
+        if close is not None:
+            parts.append((cur[:close], escaped))
+            break
+        cont = quote == '"' and cur.endswith('\\') and not cur.endswith('\\\\')
+        if cont:
+            cur = cur[:-1]
+        parts.append((cur, escaped))
+        if j >= len(raw):
+            return None                       # 到结尾都没闭合 ⇒ 不接管
+        escaped, cur, j = cont, raw[j].strip(), j + 1
+
+    out, k, n = [], 0, len(parts)
+    need_sep = False
+    while k < n:
+        text, esc = parts[k]
+        if text == '':
+            e = 0
+            while k < n and parts[k][0] == '':
+                e += 1
+                k += 1
+            out.append('\n' * e)              # 空行折成等量换行（实测 `"a||b"` ⇒ `'a\\nb'`）
+            need_sep = False
+            continue
+        if need_sep:
+            out.append('' if esc else ' ')    # `\\` 续行：直接相接，不留空格
+        out.append(text)
+        need_sep = True
+        k += 1
+    return j, _parse_scalar(quote + ''.join(out) + quote)
+
+
+def _take_multiline(raw, i, head_indent, stripped):
+    """本行的值是块标量 / 跨行引号标量 ⇒ `(下一行下标, 最终值)`；否则 `None`。
+
+    ⚠️ 本函数**每一行都会被调一次**（`load()` 的热路径）⇒ 判断顺序按"**命中的可能性从低到高**
+    排"，把最贵的 `_strip_inline_comment()`（逐字符状态机）只留给真正可能命中的行：
+    绝大多数行的值是裸标量、或"同一行就闭合"的引号标量，几次首字符比较就出去了
+    （实测 1034KB 用例库一轮：先做 `_strip_inline_comment` 57.9ms → 142.3ms；换序后 79.6ms）。
+    """
+    val = _head_value(stripped)
+    if val is None:
+        return None
+    head = val.strip()
+    if not head:
+        return None
+    first = head[0]
+    if first in ('"', "'"):
+        if _quote_close(head[1:], first) is not None:
+            return None                       # 同一行就闭合（最常见）⇒ 不是跨行标量
+        return _read_multiline_quoted(raw, i, _strip_inline_comment(val).strip())
+    if first in '|>':                         # 块标量头只可能以这两个字符开头
+        head = _strip_inline_comment(val).strip()
+        if _BLOCK_HEAD_RE.match(head):
+            return _read_block_scalar(raw, i, head_indent, head)
+    return None
+
+
+def _logical_rows(text):
+    """原文 ⇒ **逻辑行** `(indent, content, value)`（`value is _MISS` = 交给 `_parse_scalar`）。
+
+    多行标量的**内容行整段不进 rows** —— 这正是「静默丢行」的病灶所在：它们以前被当成
+    独立行喂给面向行的状态机（缩进更大 ⇒ `parse_sequence()` 直接 `break`），
+    该条目之后的兄弟条目随之消失，且没有任何检查会红。
+    """
+    raw = text.split('\n')
+    rows, i = [], 0
+    while i < len(raw):
+        line = raw[i]
         stripped = line.strip()
+        i += 1
         if not stripped or stripped.startswith('#'):
             continue
         indent = len(line) - len(line.lstrip(' '))
-        rows.append((indent, stripped))
+        taken = _take_multiline(raw, i, indent, stripped)
+        if taken is None:
+            rows.append((indent, stripped, _MISS))
+        else:
+            i, value = taken
+            rows.append((indent, stripped, value))
+    return rows
+
+
+def _row_scalar(text, value):
+    """行内标量的取值：多行读取器接管过 ⇒ 用它算好的**最终值**（`None` 也是合法值 ⇒ 用哨兵判）。"""
+    return _parse_scalar(text) if value is _MISS else value
+
+
+def load(text):
+    rows = _logical_rows(text)
 
     if not rows:
         return {}
@@ -144,7 +392,7 @@ def load(text):
     n = len(rows)
 
     def peek():
-        return rows[pos] if pos < n else (None, None)
+        return rows[pos] if pos < n else (None, None, _MISS)
 
     def parse_node(indent):
         nonlocal pos
@@ -159,7 +407,7 @@ def load(text):
         nonlocal pos
         result = {}
         while pos < n:
-            cur_indent, content = peek()
+            cur_indent, content, value = peek()
             if cur_indent is None or cur_indent < indent:
                 break
             if cur_indent > indent or content.startswith('- ') or content == '-':
@@ -177,14 +425,14 @@ def load(text):
                 else:
                     result[key] = None
             else:
-                result[key] = _parse_scalar(val)
+                result[key] = _row_scalar(val, value)
         return result
 
     def parse_sequence(indent):
         nonlocal pos
         result = []
         while pos < n:
-            cur_indent, content = peek()
+            cur_indent, content, value = peek()
             if cur_indent is None or cur_indent < indent:
                 break
             if cur_indent > indent:
@@ -206,9 +454,9 @@ def load(text):
                 if v == '':
                     item[k] = parse_node(rows[pos][0]) if pos < n and rows[pos][0] > indent else None
                 else:
-                    item[k] = _parse_scalar(v)
+                    item[k] = _row_scalar(v, value)
                 while pos < n:
-                    cur_indent, content = peek()
+                    cur_indent, content, value2 = peek()
                     if cur_indent is None or cur_indent <= indent:
                         break
                     if content.startswith('- ') or content == '-':
@@ -222,11 +470,11 @@ def load(text):
                     if v2 == '':
                         item[k2] = parse_node(rows[pos][0]) if pos < n and rows[pos][0] > cur_indent else None
                     else:
-                        item[k2] = _parse_scalar(v2)
+                        item[k2] = _row_scalar(v2, value2)
                 result.append(item)
             else:
                 pos += 1
-                result.append(_parse_scalar(rest))
+                result.append(_row_scalar(rest, value))
         return result
 
     return parse_node(rows[0][0])

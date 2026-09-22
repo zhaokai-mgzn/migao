@@ -49,9 +49,12 @@
 · 后端②覆盖不到的全部形态，由**本文件第 3 条**（真用例库在两条后端下都必须合法 + 生成物逐字节
   一致）与 CI 的 `tests/unit_ci_workflows/test_eval_cases_yaml_strictness.py`（PyYAML 环境对全量
   用例库用标准 YAML 复算）兜住。
-· `yaml_light` 对**块标量**（`|` / `>`）的取值保真度是**既有**限制（不是本单引入、也不在本单
-  范围内）：它不报错，但会丢行。夹具因此把块标量放在**最后一条用例**上，只断言"**不被判为失败**
-  + 渲染成功"（= 本单的判据 3），不断言取值保真。
+· `yaml_light` 对**块标量**（`|` / `>`）/ **跨行引号标量**的取值保真度曾是**既有**限制
+  （不是本单引入、也不在本单范围内）：它不报错，但会**丢行**。夹具因此把块标量放在
+  **最后一条用例**上，只断言"**不被判为失败** + 渲染成功"（= 本单的判据 3），不断言取值保真。
+  ⚠️ **该限制已由 issue #5171 修掉**（`.github/yaml_light.py` 的 `_logical_rows()` 把多行标量
+  整段读成一个逻辑行）—— 夹具仍放最后、仍只断言"不被判失败"（本文件守的是**严格判定**，
+  取值保真另有专测：`tests/unit_ci_workflows/test_yaml_light_scalar_fidelity.py`）。
 """
 from __future__ import annotations
 
@@ -177,7 +180,7 @@ cases:
     expectations:
       - tool: direct_reply
   - id: FX-902
-    title: "块标量（合法 YAML；放在最后：yaml_light 的保真度是既有边界，见文件头）"
+    title: "块标量（合法 YAML；取值保真由 #5171 的专测钉住，见文件头）"
     tier: normal
     domains: [utils]
     user_inputs:
