@@ -1562,16 +1562,18 @@ CREATE INDEX IF NOT EXISTS idx_stock_ledger_tenant_ref
     ON stock_ledger_entries (tenant_id, ref_no, id);
 
 -- ================================================
--- 9.8 入库单 / 批次（issue #5034，V111 迁移）
+-- 9.8 入库单 / 批次（issue #5034，V111 迁移；#5148，V117 幂等/口径）
 -- ================================================
 -- 一次布料收货 = 一张入库单；**一个 SKU 行 = 一个批次**（用户裁定 2026-09-23）。
 -- 批次号 PC-yyyyMMdd-NNNN 由服务端自动生成（租户内唯一索引兜底防重号）。
 -- draft 不动库存，posted 才加库存 + 落台账 + 算移动加权平均成本；posted 是终态。
+-- 单号 RK-yyyyMMdd-NNNN **租户内唯一**（V117 统一口径：改前是全局唯一索引，与建表注释矛盾）；
+-- import_run_id + source 见 V117（建单幂等键 / 单据来源）。
 -- 行业依据（缸号/批次）见 docs/curtain-selling-method-industry-research.md §1/§8.2。
 CREATE TABLE IF NOT EXISTS inbound_orders (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    inbound_no VARCHAR(32) NOT NULL,                 -- RK-yyyyMMdd-NNNN
+    inbound_no VARCHAR(32) NOT NULL,                 -- RK-yyyyMMdd-NNNN（租户内唯一）
     supplier VARCHAR(128),
     supplier_doc_no VARCHAR(64),
     warehouse VARCHAR(64),
@@ -1579,6 +1581,11 @@ CREATE TABLE IF NOT EXISTS inbound_orders (
     status VARCHAR(16) NOT NULL DEFAULT 'draft',     -- draft / posted / cancelled
     total_amount NUMERIC(16,4) NOT NULL DEFAULT 0,
     remark TEXT,
+    -- 单据来源（V117）：purchase 采购收货 / opening 期初建账（迁移导入）
+    source VARCHAR(16) NOT NULL DEFAULT 'purchase' CONSTRAINT ck_inbound_orders_source
+        CHECK (source IN ('purchase', 'opening')),
+    -- 建单运行级幂等键（V117）：同一 (tenant_id, import_run_id) 至多一张未软删的单
+    import_run_id VARCHAR(128),
     posted_at TIMESTAMP WITH TIME ZONE,
     posted_by VARCHAR(64),
     cancelled_at TIMESTAMP WITH TIME ZONE,
@@ -1589,13 +1596,26 @@ CREATE TABLE IF NOT EXISTS inbound_orders (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INT DEFAULT 0
 );
-CREATE UNIQUE INDEX IF NOT EXISTS uk_inbound_orders_no ON inbound_orders (inbound_no);
+-- 单号**租户内唯一**（V117 起；列 = (tenant_id, inbound_no)、谓词 deleted = 0，与 @TableLogic 查询口径同界）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_inbound_orders_no
+    ON inbound_orders (tenant_id, inbound_no)
+    WHERE deleted = 0;
+-- 建单幂等键的部分唯一索引（V117）：不带运行标识的普通建单不受影响
+CREATE UNIQUE INDEX IF NOT EXISTS uk_inbound_orders_tenant_import_run
+    ON inbound_orders (tenant_id, import_run_id)
+    WHERE import_run_id IS NOT NULL AND deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_inbound_orders_tenant_status_date
     ON inbound_orders (tenant_id, status, inbound_date DESC);
 CREATE INDEX IF NOT EXISTS idx_inbound_orders_tenant_supplier
     ON inbound_orders (tenant_id, supplier);
 COMMENT ON TABLE inbound_orders IS
     '入库单（V111，issue #5034）：一次布料收货 = 一张单。draft 不动库存，posted 才加库存（只允许 draft→posted 一次），cancelled 仅 draft 可作废（已过账不得作废，冲销另开单）';
+COMMENT ON COLUMN inbound_orders.inbound_no IS
+    '入库单号 RK-yyyyMMdd-NNNN（V111；V117 起**租户内唯一**）。唯一索引 = uk_inbound_orders_no (tenant_id, inbound_no) WHERE deleted = 0（V111 建的是全局唯一索引，与建表注释「租户内唯一」矛盾，issue #5148 统一口径）';
+COMMENT ON COLUMN inbound_orders.import_run_id IS
+    '建单**运行级**幂等键（V117，issue #5148）：同一 (tenant_id, import_run_id) 至多一张未软删的单 ⇒ 同一份导入重跑不会建出第二张单。NULL = 普通建单';
+COMMENT ON COLUMN inbound_orders.source IS
+    '单据来源（V117，issue #5148）：purchase 采购收货 / opening 期初建账；CHECK ck_inbound_orders_source 限定取值，存量行一律 purchase';
 
 CREATE TABLE IF NOT EXISTS inbound_order_items (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

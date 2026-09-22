@@ -9,13 +9,16 @@ import java.util.List;
 
 /**
  * 入库单详情响应（V111，issue #5034）—— 单据头 + 明细行（含批次号）。
+ *
+ * <p>{@link #source} / {@link #importRunId} 由 V117（issue #5148）追加：
+ * 来源（采购收货 / 期初建账）与建单运行级幂等键 —— 下游「批次建账」单凭 source 做基线冻结点。</p>
  */
 @Data
 public class InboundOrderResponse {
 
     private String id;
 
-    /** 入库单号 RK-yyyyMMdd-NNNN */
+    /** 入库单号 RK-yyyyMMdd-NNNN（租户内唯一） */
     private String inboundNo;
 
     private String supplier;
@@ -30,6 +33,12 @@ public class InboundOrderResponse {
     private String status;
 
     private BigDecimal totalAmount;
+
+    /** 单据来源：purchase 采购收货 / opening 期初建账 */
+    private String source;
+
+    /** 建单运行级幂等键（未带则为 null） */
+    private String importRunId;
 
     private String remark;
 

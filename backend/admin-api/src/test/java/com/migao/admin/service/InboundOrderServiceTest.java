@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids=[PR-029, PR-030, PR-031, PR-032, PR-033, PR-045, PR-046, PR-048]
+// case_ids=[PR-029, PR-030, PR-031, PR-032, PR-033, PR-045, PR-046, PR-048, PR-053]
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -44,6 +44,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -97,14 +98,37 @@ class InboundOrderServiceTest {
         // 建单时 MyBatis-Plus 会回填 UUID 主键；测试里给一个确定值，便于断言「单据与明细对得上」
         lastInsertedOrder = null;
         lastInsertedLines = new java.util.ArrayList<>();
+        markPostedRows = 1;
         org.mockito.Mockito.doAnswer(inv -> {
             InboundOrder o = inv.getArgument(0);
+            // 单号唯一性由 mock 承担（与真库 uk_inbound_orders_no 同语义）：号已被占 ⇒ 唯一索引冲突。
+            // 没有这层，「单号重试」用例会因为「重复号也照样插进去」而恒绿（空断言）。
+            if (o.getInboundNo() != null && !takenInboundNos.add(o.getInboundNo())) {
+                throw new org.springframework.dao.DuplicateKeyException(
+                        "uk_inbound_orders_no: " + o.getInboundNo());
+            }
             if (o.getId() == null) {
-                o.setId("inbound-uuid-1");
+                o.setId("inbound-uuid-" + (++insertSeq));
             }
             lastInsertedOrder = o;
             return 1;
         }).when(inboundOrderMapper).insert(any(InboundOrder.class));
+        // 「单号是否被占用」= 查库（candidate 就在 LambdaQueryWrapper 的入参值里）。
+        // ⚠️ MyBatis-Plus 是**惰性**物化入参：不先取一次 SQL 段，paramNameValuePairs 还是空的
+        //    ⇒ 探测恒返回 false、重试用例变成空断言（本用例第一版就是这么假绿的）。
+        org.mockito.Mockito.doAnswer(inv -> {
+            LambdaQueryWrapper<InboundOrder> wrapper = inv.getArgument(0);
+            if (wrapper.getParamNameValuePairs().isEmpty()) {
+                wrapper.getSqlSegment();
+            }
+            return wrapper.getParamNameValuePairs().values().stream()
+                    .filter(String.class::isInstance)
+                    .map(String.class::cast)
+                    .anyMatch(takenInboundNos::contains);
+        }).when(inboundOrderMapper).exists(any(LambdaQueryWrapper.class));
+        // 过账原子闸：默认「抢到过账权」（影响行数 1）；抢不到的场景在各用例里覆盖成 0
+        org.mockito.Mockito.doAnswer(inv -> markPostedRows)
+                .when(inboundOrderMapper).markPosted(anyString(), anyLong(), any(), any());
         org.mockito.Mockito.doAnswer(inv -> {
             InboundOrderItem it = inv.getArgument(0);
             if (it.getId() == null) {
@@ -116,6 +140,23 @@ class InboundOrderServiceTest {
     }
 
     private int insertSeq = 0;
+
+    /** 过账原子闸的影响行数（1 = 抢到；0 = 已被并发的另一个请求过账） */
+    private int markPostedRows = 1;
+
+    /** 库内**已被占用**的入库单号（模拟真库的 uk_inbound_orders_no；进程重启后重新建单会撞上它） */
+    private final java.util.Set<String> takenInboundNos = new java.util.HashSet<>();
+
+    /** 模拟「服务重启 / 另一个副本」：把进程内单号计数器归零（改前正是靠它从 0001 重走 ⇒ 撞已用的号） */
+    private static void resetInboundSeq() {
+        try {
+            java.lang.reflect.Field f = InboundOrderService.class.getDeclaredField("INBOUND_SEQ");
+            f.setAccessible(true);
+            ((java.util.concurrent.atomic.AtomicInteger) f.get(null)).set(0);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("无法重置单号计数器（字段改名了？）—— 该用例的判别力依赖它", e);
+        }
+    }
 
     /** 最近一次 insert 的单据/明细（供 detail() 回读 stub 使用；单测无真实库） */
     private InboundOrder lastInsertedOrder;
@@ -191,6 +232,9 @@ class InboundOrderServiceTest {
                     .matches("RK-\\d{8}-\\d{4}");
             assertThat(saved.getInboundDate()).isEqualTo(LocalDate.now());
             assertThat(saved.getCreatedBy()).isEqualTo("13800000000");
+            // PR-053（V117）：来源缺省 = purchase（存量口径不变）、未带运行标识则不去重
+            assertThat(saved.getSource()).isEqualTo(InboundOrder.SOURCE_PURCHASE);
+            assertThat(saved.getImportRunId()).isNull();
 
             ArgumentCaptor<InboundOrderItem> itemCap = ArgumentCaptor.forClass(InboundOrderItem.class);
             verify(inboundOrderItemMapper).insert(itemCap.capture());
@@ -327,12 +371,21 @@ class InboundOrderServiceTest {
             assertThat(batchRow.getQuantity()).isEqualTo(BigDecimal.valueOf(30));
             assertThat(batchRow.getReceivedDate()).isEqualTo(order.getInboundDate());
 
-            // ④ 状态转 posted 且留痕操作人
-            ArgumentCaptor<InboundOrder> updateCap = ArgumentCaptor.forClass(InboundOrder.class);
-            verify(inboundOrderMapper, times(1)).updateById(updateCap.capture());
-            assertThat(updateCap.getValue().getStatus()).isEqualTo(InboundOrder.STATUS_POSTED);
-            assertThat(updateCap.getValue().getPostedBy()).isEqualTo("13800000000");
-            assertThat(updateCap.getValue().getPostedAt()).isNotNull();
+            // ④ 过账权由**条件更新（CAS）**拿到，且操作人在同一句里留痕（不再有「最后再写一次状态」）
+            ArgumentCaptor<java.time.OffsetDateTime> postedAtCap =
+                    ArgumentCaptor.forClass(java.time.OffsetDateTime.class);
+            verify(inboundOrderMapper).markPosted(
+                    eq("inbound-uuid-1"), eq(TENANT), eq("13800000000"), postedAtCap.capture());
+            assertThat(postedAtCap.getValue()).isNotNull();
+            // 内存对象与 CAS 写入同源（回读详情用的就是它）
+            assertThat(order.getStatus()).isEqualTo(InboundOrder.STATUS_POSTED);
+            assertThat(order.getPostedBy()).isEqualTo("13800000000");
+            verify(inboundOrderMapper, never()).updateById(any(InboundOrder.class));
+
+            // ⑤ **闸在库存写入之前**（顺序判据）：CAS → 加库存，顺序颠倒 = 互斥发生在伤害之后
+            org.mockito.InOrder inOrder = inOrder(inboundOrderMapper, productSkuMapper);
+            inOrder.verify(inboundOrderMapper).markPosted(anyString(), anyLong(), any(), any());
+            inOrder.verify(productSkuMapper).receiveStock(anyLong(), any(), any(), anyString());
         }
 
         @Test
@@ -414,6 +467,8 @@ class InboundOrderServiceTest {
             assertThatThrownBy(() -> service.post("RK-20260923-0001", TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("没有明细行");
+            // 无效请求不占行锁：明细校验在抢闸之前 ⇒ 一次 CAS 都不该发
+            verify(inboundOrderMapper, never()).markPosted(anyString(), anyLong(), any(), any());
             verify(inboundOrderMapper, never()).updateById(any(InboundOrder.class));
         }
 
@@ -510,6 +565,164 @@ class InboundOrderServiceTest {
         }
     }
 
+    // ============================================================ PR-053 幂等与并发闸（issue #5148）
+
+    /**
+     * 幂等与并发（V117 / issue #5148）—— 三条承重判据：
+     *
+     * <ol>
+     *   <li><b>并发过账闸</b>：抢不到过账权（条件更新影响行数 0）⇒ 拒绝，且**不加库存、不落台账、不落批次**；</li>
+     *   <li><b>单号重试</b>：进程重启（计数器归零）后当天首个建单**必须成功**（改前撞
+     *       {@code RK-<今天>-0001} 直接失败）；mock 承担真库的唯一索引语义，重号当场抛
+     *       {@link org.springframework.dao.DuplicateKeyException}；</li>
+     *   <li><b>建单幂等</b>：同一 {@code importRunId} 重跑 ⇒ 只落一张单、返回同一张
+     *       （否则两张草稿都过账 = 库存加两次）。</li>
+     * </ol>
+     */
+    @Nested
+    @DisplayName("PR-053 幂等与并发闸（V117 / issue #5148）")
+    class IdempotencyAndGate {
+
+        private InboundOrder draftOrder() {
+            InboundOrder o = new InboundOrder();
+            o.setId("inbound-uuid-1");
+            o.setTenantId(TENANT);
+            o.setInboundNo("RK-20260923-0001");
+            o.setStatus(InboundOrder.STATUS_DRAFT);
+            o.setInboundDate(LocalDate.now());
+            o.setSupplier("柯桥××布行");
+            return o;
+        }
+
+        private InboundOrderItem line(long id, long skuId) {
+            InboundOrderItem l = new InboundOrderItem();
+            l.setId(id);
+            l.setTenantId(TENANT);
+            l.setInboundOrderId("inbound-uuid-1");
+            l.setSkuId(skuId);
+            l.setProductId("prod-1");
+            l.setQuantity(BigDecimal.valueOf(30));
+            l.setUnitCost(new BigDecimal("12.50"));
+            return l;
+        }
+
+        private void givenSkuAndDetail() {
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(sku(11L, "prod-1", 5, null)));
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedOrder);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedLines);
+        }
+
+        @Test
+        @DisplayName("并发过账闸：抢不到过账权（影响行数 0）⇒ 拒绝，且**不**加库存、**不**落台账、**不**落批次")
+        void postLosesTheGateWithoutDoublePosting() {
+            InboundOrder order = draftOrder();
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(line(100L, 11L)));
+            InboundOrder posted = draftOrder();
+            posted.setStatus(InboundOrder.STATUS_POSTED);
+            when(inboundOrderMapper.selectById("inbound-uuid-1")).thenReturn(posted);
+            markPostedRows = 0;   // 并发的另一个请求刚刚抢到过账权（它已经加过库存了）
+
+            assertThatThrownBy(() -> service.post("RK-20260923-0001", TENANT, "op"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("只有草稿可以过账");
+
+            // 红线：抢不到闸就**一点库存副作用都不许有**（改前两个并发请求各加一遍 ⇒ 库存加两次）
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+            verify(stockLedgerService, never()).record(anyLong(), anyString(), anyLong(), anyString(),
+                    any(), any(), anyString(), any(), any(), any(), any(), any());
+            verify(stockBatchMapper, never()).insert(any(StockBatch.class));
+        }
+
+        @Test
+        @DisplayName("单号重试：进程重启（计数器归零）后当天首个建单**成功**（改前撞 RK-…-0001 直接失败）")
+        void createRetriesWhenTodaysNumberIsAlreadyTaken() {
+            givenSkuAndDetail();
+
+            resetInboundSeq();   // 计数器归零 ⇒ 本次取到当天 0001（可预期，便于断言「换号」）
+            service.create(request(item("prod-1", 11L, 30, "12.50")), TENANT, "op");
+            String first = lastInsertedOrder.getInboundNo();
+            assertThat(first).matches("RK-\\d{8}-\\d{4}").endsWith("-0001");
+
+            // 模拟服务重启 / 换副本：计数器从 0 重走 ⇒ 下一个候选号**又是** 0001（已被占）
+            resetInboundSeq();
+            org.mockito.Mockito.clearInvocations(inboundOrderMapper);
+            service.create(request(item("prod-1", 11L, 30, "12.50")), TENANT, "op");
+            String second = lastInsertedOrder.getInboundNo();
+
+            assertThat(second).matches("RK-\\d{8}-\\d{4}").endsWith("-0002");
+            assertThat(second).isNotEqualTo(first);
+            // 判别力：第二次确实**探测了两次**（0001 被占 ⇒ 重新生成）
+            verify(inboundOrderMapper, times(2)).exists(any(LambdaQueryWrapper.class));
+        }
+
+        @Test
+        @DisplayName("红证：mock 承担了真库的唯一索引语义 —— 手工插入重号当场 DuplicateKeyException")
+        void duplicateNumberIsRejectedLikeTheRealUniqueIndex() {
+            givenSkuAndDetail();
+            resetInboundSeq();
+            service.create(request(item("prod-1", 11L, 30, "12.50")), TENANT, "op");
+            String used = lastInsertedOrder.getInboundNo();
+
+            // 不做去重重试、直接用同一个号插一次 —— 应当当场冲突（这正是改前的失败形态）
+            InboundOrder dup = new InboundOrder();
+            dup.setTenantId(TENANT);
+            dup.setInboundNo(used);
+            assertThatThrownBy(() -> inboundOrderMapper.insert(dup))
+                    .isInstanceOf(org.springframework.dao.DuplicateKeyException.class)
+                    .hasMessageContaining(used);
+        }
+
+        @Test
+        @DisplayName("建单幂等（GAP-02）：同一 import_run_id 重跑 ⇒ **只落一张单**、返回同一张")
+        void createIsIdempotentForTheSameImportRun() {
+            givenSkuAndDetail();
+            InboundOrderCreateRequest first = request(item("prod-1", 11L, 30, "12.50"));
+            first.setSource(InboundOrder.SOURCE_OPENING);
+            first.setImportRunId("opening-20260924-01");
+
+            InboundOrderResponse created = service.create(first, TENANT, "op");
+            assertThat(created.getSource()).isEqualTo(InboundOrder.SOURCE_OPENING);
+            assertThat(created.getImportRunId()).isEqualTo("opening-20260924-01");
+
+            // 重跑同一份导入（同运行标识）⇒ 走幂等分支：不建第二张、返回同一张
+            InboundOrderCreateRequest again = request(item("prod-1", 11L, 30, "12.50"));
+            again.setSource(InboundOrder.SOURCE_OPENING);
+            again.setImportRunId("opening-20260924-01");
+            InboundOrderResponse replayed = service.create(again, TENANT, "op");
+
+            verify(inboundOrderMapper, times(1)).insert(any(InboundOrder.class));   // 只落了一张单
+            assertThat(replayed.getId()).isEqualTo(created.getId());
+            assertThat(replayed.getInboundNo()).isEqualTo(created.getInboundNo());
+            assertThat(takenInboundNos).hasSize(1);                                 // 也没有偷偷占第二个号
+        }
+
+        @Test
+        @DisplayName("并发同键：唯一索引挡下第二个（DuplicateKeyException）⇒ 明确 409，不静默建第二张")
+        void concurrentSameImportRunFailsClosed() {
+            givenSkuAndDetail();
+            when(inboundOrderMapper.insert(any(InboundOrder.class)))
+                    .thenThrow(new org.springframework.dao.DuplicateKeyException(
+                            "uk_inbound_orders_tenant_import_run"));
+            InboundOrderCreateRequest req = request(item("prod-1", 11L, 30, "12.50"));
+            req.setImportRunId("migration-run-7");
+
+            assertThatThrownBy(() -> service.create(req, TENANT, "op"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("刚刚已被创建");
+        }
+
+        /** 一个 SKU 已就绪的最小请求（本类里只用于「建一张单」的场景） */
+        private InboundOrderCreateRequest.Item itemNeedSku() {
+            return item("prod-1", 11L, 30, "12.50");
+        }
+    }
+
     // ============================================================ PR-031 作废
 
     @Nested
@@ -560,7 +773,7 @@ class InboundOrderServiceTest {
     class Validation {
 
         @Test
-        @DisplayName("数量为 0 / 负数 / 非整数 ⇒ 拒绝（按米入库暂不支持小数米，**不静默取整**）")
+        @DisplayName("数量为 0 / 负数 ⇒ 拒绝（≥1 米；1 位小数以内支持，超 1 位小数的拒绝见 PR-048）")
         void rejectsBadQuantity() {
             when(productMapper.selectById("prod-1")).thenReturn(new Product());
             when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku(11L, "prod-1", 0, null)));
@@ -583,6 +796,21 @@ class InboundOrderServiceTest {
             assertThatThrownBy(() -> service.create(request(item("prod-1", 11L, 5, "0")), TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("入库单价必须大于 0");
+        }
+
+        @Test
+        @DisplayName("PR-053 来源只支持 purchase / opening：写别的值 ⇒ 拒绝（不把 DB 的 23514 透传成 500）")
+        void rejectsUnknownSource() {
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(sku(11L, "prod-1", 0, null)));
+            InboundOrderCreateRequest req = request(item("prod-1", 11L, 5, null));
+            req.setSource("gift");
+
+            assertThatThrownBy(() -> service.create(req, TENANT, "op"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("单据来源只支持");
+            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
         }
 
         @Test
