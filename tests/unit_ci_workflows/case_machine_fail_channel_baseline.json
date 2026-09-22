@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 66
+    "backend_contract_scoring_zero": 67
   },
   "history": [
     {
@@ -37,6 +37,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 66,
       "note": "issue #5145 阶段 1（派加工单扣批次库存 + 消耗台账 + 余量/分布/对账读面）新增 5 条 `[backend-contract]` 用例（PG-060 / PR-055 / PR-056 / PR-057 / BM-007）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测 / admin-web vitest / bmini jest（逐条非空：ProcessingOrderServiceTest / OrderServiceTest / ProductionServiceTest / StockBatchConsumptionServiceTest / StockBatchControllerTest / StockBatchConsumptionMapperTest / frontend admin-web ProcessingOrderBlock+BatchStockPanel+batch-stock 请求层 / frontend bmini-app tests/production-batch-assignment.test.tsx）⇒ 读数 61 → 66 是**合法新增**（`[backend-contract]` 用例本就不进 agent-eval，这是 #5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。注：本行取号在 rebase 到含 #5150/#5152 的 main 之后顺延（原 PR-052/053/054 + PG-059 与他人撞号 ⇒ 改 PR-055/056/057 + PG-060，BM-007 不变）。"
+    },
+    {
+      "sha": "690e4d02cf33b6ddbdb37bd6a60aa1190a4265cc",
+      "date": "2026-09-22",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 67,
+      "note": "issue #5142（裁剪智能排料 v1：A 类「完整布并排」纯函数 + 判据）新增 1 条 `[backend-contract]` 用例（PG-061）—— 它按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测 `backend/admin-api/src/test/java/com/migao/admin/service/CuttingPlanCalculatorTest.java`（非空且真实存在，7 条逐值断言；`traces.ci` = pr-check.yml 的 admin-api unit tests job 实际跑它）⇒ 读数 66 → 67 是**合法新增**（`[backend-contract]` 用例本就不进 agent-eval，这是 #5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。注：取号在 rebase 到含 #5145 的 main 之后顺延（PG-059 被 #5145 先取，本单取 PG-061）。"
     }
   ]
 }
