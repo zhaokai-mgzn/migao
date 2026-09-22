@@ -32,7 +32,7 @@ public class InboundBatchView {
 
     private String inboundOrderId;
 
-    private Integer quantity;
+    private BigDecimal quantity;
 
     private BigDecimal unitCost;
 

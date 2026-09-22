@@ -44,7 +44,7 @@ public class ProductSkuInput {
     /**
      * 库存
      */
-    private Integer stock;
+    private BigDecimal stock;
 
     /**
      * SKU编码（可选）

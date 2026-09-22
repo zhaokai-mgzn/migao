@@ -68,7 +68,7 @@ public class InboundOrderResponse {
         /** 快照：门幅 */
         private String doorWidth;
 
-        private Integer quantity;
+        private BigDecimal quantity;
 
         private BigDecimal unitCost;
 

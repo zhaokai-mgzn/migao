@@ -16,6 +16,10 @@ DB 实测（2026-09-18，云 dev）印证该真值：
 （守卫：`tests/test_tools_stock_semantics.py::TestProductStockAuthority`，
 含「工具模块内不得直读后端商品级 `data["stock"]`」的硬守卫）。
 
+**精度：库存列 = `NUMERIC(12,1)`（1 位小数 = 0.1 米粒度，issue #5063）**
+⇒ 汇总**不得**再用 `int()` 取整（旧实现把 `60.5` 截成 `60`，半米凭空消失：
+`int(60.5) + int(1.5) == 61`）。累加走 `Decimal`，既不丢位数也不引入二进制浮点毛刺。
+
 ## 二、「低库存」阈值口径 = 100（含上界 ≤，issue #3783）
 
 **业务口径 = 100**（`LOW_STOCK_THRESHOLD`），与后台同源
@@ -35,6 +39,7 @@ Dashboard 卡片文案同样是「库存 ≤ 100」。故本模块把**运算符
 （含「工具模块内不得出现裸字面量 10 / 100」的 AST 硬守卫）。
 """
 
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Iterable, Optional
 
 LOW_STOCK_THRESHOLD = 100
@@ -56,7 +61,7 @@ def product_stock_summary(skus: Optional[Iterable[Dict[str, Any]]]) -> Dict[str,
         skus: 商品详情里的 SKU 明细（`data["skus"]`），每项含 `stock`
 
     Returns:
-        `{"stock": int | None, "stock_source": "sku_sum" | "no_sku"}`
+        `{"stock": 数值（1 位小数） | None, "stock_source": "sku_sum" | "no_sku"}`
 
         **无 SKU 记录时 `stock=None`（fail-closed）**：宁可说「无法确认」，
         也不谎报 `0` —— `0` 会被 LLM 读成「没货」，而实测有 SKU 的商品里
@@ -64,14 +69,26 @@ def product_stock_summary(skus: Optional[Iterable[Dict[str, Any]]]) -> Dict[str,
     """
     if not skus:
         return {"stock": None, "stock_source": NO_SKU_SOURCE}
-    total = 0
+    # issue #5063：库存列 = NUMERIC(12,1)（0.1 米粒度）⇒ 累加必须走 Decimal。
+    # ① 不用 `int()`：旧实现把 60.5 截成 60，半米凭空消失（还不报错）；
+    # ② 不用 `float` 直接累加：`0.1 + 0.2` 会得 `0.30000000000000004`。
+    total = Decimal(0)
     for sku in skus:
-        try:
-            total += int((sku or {}).get("stock") or 0)
-        except (TypeError, ValueError):
-            # 单个 SKU 的脏值按 0 计，不因一行坏数据把整商品的库存数字变成异常
+        stock = (sku or {}).get("stock")
+        if stock is None:
             continue
-    return {"stock": total, "stock_source": SKU_SUM_SOURCE}
+        try:
+            value = Decimal(str(stock))
+        except (TypeError, ValueError, InvalidOperation):
+            # 单个 SKU 的脏值按「不计入」处理，不因一行坏数据把整商品的库存数字变成异常。
+            # `InvalidOperation` 必须显式列出：`Decimal("abc")` 抛的是它，
+            # 而它**不是** ValueError 的子类（漏掉 = 一条脏值炸掉整个查询）。
+            continue
+        if not value.is_finite():
+            # NaN / Infinity 会把整个求和污染成 NaN（旧实现的 `int(nan)` 是抛错被兜住的）
+            continue
+        total += value
+    return {"stock": float(total), "stock_source": SKU_SUM_SOURCE}
 
 
 def no_sku_stock_note(product_name: str = "") -> str:

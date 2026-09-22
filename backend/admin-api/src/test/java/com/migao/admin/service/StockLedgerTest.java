@@ -156,23 +156,22 @@ class StockLedgerTest {
             }
             return 1;
         });
-        when(productSkuMapper.deductStock(anyLong(), anyInt())).thenAnswer(inv -> {
+        when(productSkuMapper.deductStock(anyLong(), any())).thenAnswer(inv -> {
             ProductSku stored = skuStore.get(inv.<Long>getArgument(0));
             if (stored == null) {
                 return 0;
             }
             // 与 ProductSkuMapper.deductStock 的 SQL 同口径：GREATEST(COALESCE(stock,0)-qty, 0)
-            int stock = stored.getStock() != null ? stored.getStock() : 0;
-            stored.setStock(Math.max(stock - inv.<Integer>getArgument(1), 0));
+            BigDecimal stock = StockQuantity.orZero(stored.getStock());
+            stored.setStock(stock.subtract(inv.<BigDecimal>getArgument(1)).max(BigDecimal.ZERO));
             return 1;
         });
-        when(productSkuMapper.restoreStock(anyLong(), anyInt())).thenAnswer(inv -> {
+        when(productSkuMapper.restoreStock(anyLong(), any())).thenAnswer(inv -> {
             ProductSku stored = skuStore.get(inv.<Long>getArgument(0));
             if (stored == null) {
                 return 0;
             }
-            stored.setStock((stored.getStock() != null ? stored.getStock() : 0)
-                    + inv.<Integer>getArgument(1));
+            stored.setStock(StockQuantity.orZero(stored.getStock()).add(inv.<BigDecimal>getArgument(1)));
             return 1;
         });
         when(stockLedgerMapper.insert(any(StockLedger.class))).thenAnswer(inv -> {
@@ -207,7 +206,7 @@ class StockLedgerTest {
                 .isNotEmpty();
         for (int i = 0; i < rows.size(); i++) {
             StockLedger row = rows.get(i);
-            assertThat(row.getAfterQty() - row.getBeforeQty())
+            assertThat(row.getAfterQty().subtract(row.getBeforeQty()))
                     .as("第 %d 行 after-before 必须等于 delta（row=%s）", i + 1, row)
                     .isEqualTo(row.getDelta());
             if (i > 0) {
@@ -234,29 +233,29 @@ class StockLedgerTest {
     @DisplayName("手工调整 —— 同一 SKU 连续两次变更：上一条 after == 下一条 before")
     void manualAdjustTwoConsecutiveChangesChain() {
         // given: 单 SKU 库存 30
-        skuStore.put(100L, sku(100L, 30));
+        skuStore.put(100L, sku(100L, BigDecimal.valueOf(30)));
 
         // when: 出库 10 → 入库 5（同一 SKU 两次变更）
-        productService.adjustStockForAgent(PRODUCT_ID, -10, "报损", TENANT_ID);
-        productService.adjustStockForAgent(PRODUCT_ID, 5, "盘点", TENANT_ID);
+        productService.adjustStockForAgent(PRODUCT_ID, BigDecimal.valueOf(-10), "报损", TENANT_ID);
+        productService.adjustStockForAgent(PRODUCT_ID, BigDecimal.valueOf(5), "盘点", TENANT_ID);
 
         // then: 两行、首尾相接、行内自洽
         assertLedgerInvariant(100L);
         assertThat(rowsOf(100L)).extracting(StockLedger::getBeforeQty, StockLedger::getDelta, StockLedger::getAfterQty)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple(30, -10, 20),
-                        org.assertj.core.groups.Tuple.tuple(20, 5, 25));
+                        org.assertj.core.groups.Tuple.tuple(BigDecimal.valueOf(30), BigDecimal.valueOf(-10), BigDecimal.valueOf(20)),
+                        org.assertj.core.groups.Tuple.tuple(BigDecimal.valueOf(20), BigDecimal.valueOf(5), BigDecimal.valueOf(25)));
     }
 
     @Test
     @DisplayName("手工调整 —— 多 SKU 分摊：未拿到分配量的 SKU 不落 0 变更行")
     void manualAdjustSkipsZeroChangeSku() {
         // given: 两个 SKU [30, 20]，调整量 +1 → 只第一个 SKU +1（第二个 +0 不落行）
-        skuStore.put(100L, sku(100L, 30));
-        skuStore.put(200L, sku(200L, 20));
+        skuStore.put(100L, sku(100L, BigDecimal.valueOf(30)));
+        skuStore.put(200L, sku(200L, BigDecimal.valueOf(20)));
 
         // when
-        productService.adjustStockForAgent(PRODUCT_ID, 1, "理货", TENANT_ID);
+        productService.adjustStockForAgent(PRODUCT_ID, BigDecimal.valueOf(1), "理货", TENANT_ID);
 
         // then
         assertThat(rowsOf(100L)).hasSize(1);
@@ -268,26 +267,26 @@ class StockLedgerTest {
     @DisplayName("手工调整 —— 写的是 SKU 级 before/after，不是商品级汇总")
     void manualAdjustRecordsSkuLevelQuantities() {
         // given: 两个 SKU [30, 20]，出库 25 → 从库存最大的 100L 扣 25（[5, 20]）
-        skuStore.put(100L, sku(100L, 30));
-        skuStore.put(200L, sku(200L, 20));
+        skuStore.put(100L, sku(100L, BigDecimal.valueOf(30)));
+        skuStore.put(200L, sku(200L, BigDecimal.valueOf(20)));
 
         // when
-        ProductResponse response = productService.adjustStockForAgent(PRODUCT_ID, -25, "出库", TENANT_ID);
+        ProductResponse response = productService.adjustStockForAgent(PRODUCT_ID, BigDecimal.valueOf(-25), "出库", TENANT_ID);
 
         // then: 台账记 SKU 级 30→5，而商品级汇总 50→25 不入账（#4038：SKU 级是权威）
         assertLedgerInvariant(100L);
-        assertThat(rowsOf(100L).get(0).getBeforeQty()).isEqualTo(30);
-        assertThat(rowsOf(100L).get(0).getAfterQty()).isEqualTo(5);
-        assertThat(response.getStock()).isEqualTo(25);
+        assertThat(rowsOf(100L).get(0).getBeforeQty()).isEqualTo(BigDecimal.valueOf(30));
+        assertThat(rowsOf(100L).get(0).getAfterQty()).isEqualTo(BigDecimal.valueOf(5));
+        assertThat(response.getStock()).isEqualTo(BigDecimal.valueOf(25));
     }
 
     @Test
     @DisplayName("手工调整 —— 库存不足抛错时不落任何台账行（不记未发生的变更）")
     void manualAdjustInsufficientStockWritesNothing() {
-        skuStore.put(100L, sku(100L, 30));
+        skuStore.put(100L, sku(100L, BigDecimal.valueOf(30)));
 
         org.assertj.core.api.Assertions
-                .assertThatThrownBy(() -> productService.adjustStockForAgent(PRODUCT_ID, -60, "报损", TENANT_ID))
+                .assertThatThrownBy(() -> productService.adjustStockForAgent(PRODUCT_ID, BigDecimal.valueOf(-60), "报损", TENANT_ID))
                 .hasMessageContaining("库存不足");
 
         assertThat(ledger).isEmpty();
@@ -299,8 +298,8 @@ class StockLedgerTest {
     @DisplayName("售后回补 —— 回补链在手工调整之后：工单行的 before == 手工行的 after（跨站点同一条链）")
     void afterSalesRestockChainsAfterManualAdjust() {
         // given: 手工调整把该 SKU 从 30 扣到 20
-        skuStore.put(SKU_ID, sku(SKU_ID, 30));
-        productService.adjustStockForAgent(PRODUCT_ID, -10, "出库", TENANT_ID);
+        skuStore.put(SKU_ID, sku(SKU_ID, BigDecimal.valueOf(30)));
+        productService.adjustStockForAgent(PRODUCT_ID, BigDecimal.valueOf(-10), "出库", TENANT_ID);
 
         // 回补场景：return 工单完结、商品允许回补；真实 OrderService.restoreStockForReturn 内部 +2
         when(afterSalesTicketMapper.selectById("ticket-1")).thenReturn(ticket());
@@ -321,14 +320,14 @@ class StockLedgerTest {
         assertThat(rowsOf(SKU_ID)).hasSize(2);
         assertThat(rowsOf(SKU_ID).get(1).getReason()).isEqualTo(StockLedger.REASON_AFTERSALES);
         assertThat(rowsOf(SKU_ID).get(1).getRefNo()).isEqualTo("AS-LEDGER-1");
-        assertThat(rowsOf(SKU_ID).get(1).getBeforeQty()).isEqualTo(20);
-        assertThat(rowsOf(SKU_ID).get(1).getAfterQty()).isEqualTo(22);
+        assertThat(rowsOf(SKU_ID).get(1).getBeforeQty()).isEqualTo(BigDecimal.valueOf(20));
+        assertThat(rowsOf(SKU_ID).get(1).getAfterQty()).isEqualTo(BigDecimal.valueOf(22));
     }
 
     @Test
     @DisplayName("售后回补 —— 回补未真正改动库存（明细无 SKU 规格）时不落行")
     void afterSalesRestockWithoutChangeWritesNothing() {
-        skuStore.put(SKU_ID, sku(SKU_ID, 30));
+        skuStore.put(SKU_ID, sku(SKU_ID, BigDecimal.valueOf(30)));
         when(afterSalesTicketMapper.selectById("ticket-1")).thenReturn(ticket());
         when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
         // 订单明细不带 SKU 规格（既有分支：matchSkuId 返回 null ⇒ 无 SKU 级库存调整）
@@ -342,13 +341,13 @@ class StockLedgerTest {
         afterSalesTicketService.updateTicketStatus("ticket-1", request);
 
         assertThat(ledger).as("库存没变就不该有台账行（否则「动过」是假的）").isEmpty();
-        assertThat(skuStore.get(SKU_ID).getStock()).isEqualTo(30);
+        assertThat(skuStore.get(SKU_ID).getStock()).isEqualTo(BigDecimal.valueOf(30));
     }
 
     @Test
     @DisplayName("售后回补 —— 商品开关关闭（默认）时不回补也不落账")
     void afterSalesRestockDisabledWritesNothing() {
-        skuStore.put(100L, sku(100L, 30));
+        skuStore.put(100L, sku(100L, BigDecimal.valueOf(30)));
         when(afterSalesTicketMapper.selectById("ticket-1")).thenReturn(ticket());
         when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(orderItem()));
@@ -360,7 +359,7 @@ class StockLedgerTest {
         afterSalesTicketService.updateTicketStatus("ticket-1", request);
 
         assertThat(ledger).isEmpty();
-        assertThat(skuStore.get(100L).getStock()).isEqualTo(30);
+        assertThat(skuStore.get(100L).getStock()).isEqualTo(BigDecimal.valueOf(30));
     }
 
     // ======================== 跨站点整条链（issue #4137：manual → order → aftersales）========================
@@ -369,7 +368,7 @@ class StockLedgerTest {
     @DisplayName("跨站点链 —— 手工调整 → 下单扣减 → 取消回补 → 售后回补：四段一条链，相邻行首尾相接")
     void crossSiteChainManualOrderAfterSales() {
         // given: 该 SKU 库存 30；订单 order-1（明细数量 2、processingInfo.skuId=100）
-        skuStore.put(SKU_ID, sku(SKU_ID, 30));
+        skuStore.put(SKU_ID, sku(SKU_ID, BigDecimal.valueOf(30)));
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(orderItem()));
         when(afterSalesTicketMapper.selectById("ticket-1")).thenReturn(ticket());
         when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
@@ -377,7 +376,7 @@ class StockLedgerTest {
                 Product.builder().id(PRODUCT_ID).allowReturnRestock(true).build()));
 
         // ① 站点 1 手工调整（reason=manual）：30 → 20
-        productService.adjustStockForAgent(PRODUCT_ID, -10, "出库", TENANT_ID);
+        productService.adjustStockForAgent(PRODUCT_ID, BigDecimal.valueOf(-10), "出库", TENANT_ID);
 
         // ② 站点 3 下单扣减（reason=order，ref_no=订单号）：确认支付 20 → 18
         orderService.confirmPayment(ORDER_ID);
@@ -397,10 +396,10 @@ class StockLedgerTest {
                 .extracting(StockLedger::getReason, StockLedger::getRefNo,
                         StockLedger::getBeforeQty, StockLedger::getDelta, StockLedger::getAfterQty)
                 .containsExactly(
-                        tuple(StockLedger.REASON_MANUAL, null, 30, -10, 20),
-                        tuple(StockLedger.REASON_ORDER, ORDER_NO, 20, -2, 18),
-                        tuple(StockLedger.REASON_ORDER, ORDER_NO, 18, 2, 20),
-                        tuple(StockLedger.REASON_AFTERSALES, "AS-LEDGER-1", 20, 2, 22));
+                        tuple(StockLedger.REASON_MANUAL, null, BigDecimal.valueOf(30), BigDecimal.valueOf(-10), BigDecimal.valueOf(20)),
+                        tuple(StockLedger.REASON_ORDER, ORDER_NO, BigDecimal.valueOf(20), BigDecimal.valueOf(-2), BigDecimal.valueOf(18)),
+                        tuple(StockLedger.REASON_ORDER, ORDER_NO, BigDecimal.valueOf(18), BigDecimal.valueOf(2), BigDecimal.valueOf(20)),
+                        tuple(StockLedger.REASON_AFTERSALES, "AS-LEDGER-1", BigDecimal.valueOf(20), BigDecimal.valueOf(2), BigDecimal.valueOf(22)));
         assertThat(skuStore.get(SKU_ID).getStock())
                 .as("链尾的 after_qty 必须等于账本里的实际库存（台账与库一致）")
                 .isEqualTo(rowsOf(SKU_ID).get(3).getAfterQty());
@@ -413,11 +412,11 @@ class StockLedgerTest {
         p.setId(PRODUCT_ID);
         p.setTenantId(TENANT_ID);
         p.setName("遮光窗帘");
-        p.setStock(0);
+        p.setStock(BigDecimal.valueOf(0));
         return p;
     }
 
-    private static ProductSku sku(Long id, int stock) {
+    private static ProductSku sku(Long id, BigDecimal stock) {
         ProductSku s = new ProductSku();
         s.setId(id);
         s.setTenantId(TENANT_ID);
@@ -430,7 +429,7 @@ class StockLedgerTest {
     }
 
     private static ProductSku copyOf(ProductSku s) {
-        return sku(s.getId(), s.getStock() != null ? s.getStock() : 0);
+        return sku(s.getId(), StockQuantity.orZero(s.getStock()));
     }
 
     private static ProductSku copyOfOrNull(ProductSku s) {

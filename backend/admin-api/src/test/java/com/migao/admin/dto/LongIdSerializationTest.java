@@ -32,7 +32,7 @@ class LongIdSerializationTest {
         sku.setColorId(2093675369993261000L);
         sku.setDoorWidth("2.8米");
         sku.setPrice(new BigDecimal("88.00"));
-        sku.setStock(100);
+        sku.setStock(BigDecimal.valueOf(100));
 
         String json = mapper.writeValueAsString(sku);
         // id 必须原样可读回（字符串形式），否则 JS 端精度丢失

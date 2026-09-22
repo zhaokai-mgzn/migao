@@ -178,7 +178,7 @@ class AgentOrderServiceTest {
             // 定位到的 SKU 在库存校验里走 selectById，故一并 stub。
             ProductSku sku = ProductSku.builder()
                     .id(1L).productId("p-001").skuCode("SKU-001")
-                    .price(new BigDecimal("150")).stock(10)
+                    .price(new BigDecimal("150")).stock(BigDecimal.valueOf(10))
                     .build();
             when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku));
             when(productSkuMapper.selectById(1L)).thenReturn(sku);
@@ -200,7 +200,7 @@ class AgentOrderServiceTest {
             // 而定位到的 SKU 在库存校验里走 selectById，故一并 stub。
             ProductSku sku = ProductSku.builder()
                     .id(1L).productId("p-001").colorName("白色")
-                    .price(new BigDecimal("150")).stock(10)
+                    .price(new BigDecimal("150")).stock(BigDecimal.valueOf(10))
                     .build();
             when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(sku));
             when(productSkuMapper.selectById(1L)).thenReturn(sku);

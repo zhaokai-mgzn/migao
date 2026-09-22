@@ -433,11 +433,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // ── 资金/库存完整性闸门（issue #3622 / #3682）：数量 ≥ 1，单价 > 0 ──
         // issue #3666：数量已放宽为 BigDecimal（DECIMAL(10,2)），per_area 的合法数量就是小数
         // （门幅 2.8m × 3m = 8.4 ㎡）——但不能因此放行 <1。
-        // issue #3682：下限从「> 0」收紧为「≥ 1」——`items[].quantity` 直接驱动库存/销量，
-        // 而下面 `validateStockSufficientForRequest`/`deductSkuStock` 对 quantity 取整数部分
-        // （`:1051` `intValue()` 库存校验 / `:1408` `deductStock` / `:1409` `increaseSalesCount`）：
-        // 0.5 → `needed = 0` 校验**恒通过**、`deductStock(0)` **不减库存**、销量 **+0**
-        // → **订单成交但库存/销量零变动，且全程无告警**（账实不符）。
+        // issue #3682：下限从「> 0」收紧为「≥ 1」——`items[].quantity` 直接驱动库存/销量。
+        // ⚠️ **该下限在 issue #5063 / V115 之后仍是必需的，但理由已变**：库存列已小数化，
+        // 取整点（原先的四处 `intValue()`）已全部消除 ⇒ 0.5 米**能**被正确扣减了；
+        // 下限 1 现在守的是**业务口径**（按米卖布的最小起订量，与 admin-web 表单 `min={1}`、
+        // ai-agent 工具层同口径），不再是「防 0.5 静默漏扣」的技术护栏。
         // 旧实现（quantity 为 Integer + agent 工具层拒绝非整数）在下单前就挡回 0.5 并给可行动
         // 提示，故 <1 是 #3666 放宽后**新可达**的静默漏扣。裁定（#3682 方案 A）：下限 = 1，
         // 与 admin-web 表单页 `min={1}` 及 ai-agent 工具层同口径；≥1 的小数仍合法（保真落库）。
@@ -1275,15 +1275,18 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 continue;
             }
             ProductSku sku = productSkuMapper.selectById(skuId);
-            int stock = sku != null && sku.getStock() != null ? sku.getStock() : 0;
-            // issue #3666：数量为 BigDecimal，库存是整数列 → 按整数部分比较（与原 Integer
-            // 语义一致；小数数量（米数/面积）以整数件库存校验，不引入新的舍入规则）
-            int needed = item.getQuantity().intValue();
-            if (stock < needed) {
+            BigDecimal stock = StockQuantity.orZero(sku != null ? sku.getStock() : null);
+            // issue #5063（V115）：库存列已与订单数量同为小数（NUMERIC(12,1)）⇒ 按**真实数量**比较。
+            // 改前是 `int needed = item.getQuantity().intValue()`：买 0.5 米 ⇒ needed = 0
+            // ⇒ 校验**恒通过**（超卖防线被绕过）；买 2.7 米 ⇒ 只按 2 米校验（少校验 0.7 米）。
+            // 校验值与实际扣减值必须**同源**（同一个 StockQuantity.toStockScaleByCeiling），
+            // 否则会出现「校验通过却扣不动」/「校验拦住却本来够」。见该类里对该函数的理由说明。
+            BigDecimal needed = StockQuantity.toStockScaleByCeiling(item.getQuantity());
+            if (stock.compareTo(needed) < 0) {
                 throw BusinessException.validationError(
-                        String.format("商品「%s」库存不足：需要 %d 件，当前仅剩 %d 件，请先补货后再%s",
+                        String.format("商品「%s」库存不足：需要 %s 米，当前仅剩 %s 米，请先补货后再%s",
                                 item.getProductName() != null ? item.getProductName() : skuId,
-                                needed, stock, actionLabel));
+                                needed.toPlainString(), stock.toPlainString(), actionLabel));
             }
         }
     }
@@ -1602,7 +1605,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
         // 按 productId 聚合数量和金额
         // issue #3666：数量放宽为 BigDecimal，聚合也用 BigDecimal（不引入 double/float）；
-        // 销量列是整数 → 仅在写库前取整数部分。
+        // issue #5063（V115）：销量列已同为 NUMERIC(12,1) ⇒ 不再取整数部分
+        // （改前 `entry.getValue().intValue()` 会把「卖 2.7 米、销量 +2」的落差静默吃掉）。
         Map<String, BigDecimal> productQtyMap = new java.util.HashMap<>();
         Map<String, BigDecimal> productAmountMap = new java.util.HashMap<>();
 
@@ -1624,7 +1628,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // 商品级调整
         for (Map.Entry<String, BigDecimal> entry : productQtyMap.entrySet()) {
             String productId = entry.getKey();
-            int totalQty = entry.getValue().intValue();
+            BigDecimal totalQty = StockQuantity.toStockScaleByCeiling(entry.getValue());
             BigDecimal totalAmount = productAmountMap.getOrDefault(productId, BigDecimal.ZERO);
             if (isDeduct) {
                 productMapper.increaseSales(productId, totalQty, totalAmount);
@@ -1646,9 +1650,13 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (skuId != null && item.getQuantity() != null) {
             // 台账：变更前快照（只记真实变化，故快照必须取在写库之前）
             Map<Long, ProductSku> stockBefore = snapshotForLedger(ledgerReason, item.getProductId());
-            // issue #3666：库存/销量列是整数，取整数部分（与库存校验同一口径）
-            productSkuMapper.deductStock(skuId, item.getQuantity().intValue());
-            productSkuMapper.increaseSalesCount(skuId, item.getQuantity().intValue());
+            // issue #5063（V115）：库存/销量列已同为 NUMERIC(12,1) ⇒ 按**真实米数**扣减。
+            // 改前 `item.getQuantity().intValue()` 把 2.7 米扣成 2 米（0.7 米凭空消失）、
+            // 0.5 米扣成 0（成交但零变动）。口径与 §8「用料米数向上进位到 0.1」同源，
+            // 且与库存前置校验、回补侧**同一个函数**（同笔单净变化恒为 0）。
+            BigDecimal deductQty = StockQuantity.toStockScaleByCeiling(item.getQuantity());
+            productSkuMapper.deductStock(skuId, deductQty);
+            productSkuMapper.increaseSalesCount(skuId, deductQty);
             recordStockLedgerRows(ledgerReason, order, stockBefore, "订单确认支付扣减库存");
         }
     }
@@ -1662,9 +1670,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         Long skuId = matchSkuId(item, "取消回补");
         if (skuId != null && item.getQuantity() != null) {
             Map<Long, ProductSku> stockBefore = snapshotForLedger(ledgerReason, item.getProductId());
-            // issue #3666：库存/销量列是整数，取整数部分（与库存校验同一口径）
-            productSkuMapper.restoreStock(skuId, item.getQuantity().intValue());
-            productSkuMapper.decreaseSalesCount(skuId, item.getQuantity().intValue());
+            // issue #5063（V115）：与扣减侧**同一个函数、同一口径** ⇒ 扣 2.8 就回补 2.8
+            // （改前回补侧同样 `intValue()` 取整，扣 2 补 2 —— 表面自洽，实则 0.7 米在
+            //   扣减那一步就已经丢了，回补再准也补不回来）。
+            BigDecimal restoreQty = StockQuantity.toStockScaleByCeiling(item.getQuantity());
+            productSkuMapper.restoreStock(skuId, restoreQty);
+            productSkuMapper.decreaseSalesCount(skuId, restoreQty);
             recordStockLedgerRows(ledgerReason, order, stockBefore, "订单取消/退款回补库存");
         }
     }

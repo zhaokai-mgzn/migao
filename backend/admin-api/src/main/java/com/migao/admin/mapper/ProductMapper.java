@@ -20,13 +20,13 @@ public interface ProductMapper extends BaseMapper<Product> {
     @Update("UPDATE products SET sales_count = COALESCE(sales_count, 0) + #{quantity}, " +
             "sales_amount = COALESCE(sales_amount, 0) + #{amount} WHERE id = #{productId}")
     void increaseSales(@Param("productId") String productId,
-                       @Param("quantity") Integer quantity,
+                       @Param("quantity") BigDecimal quantity,
                        @Param("amount") BigDecimal amount);
 
     @Update("UPDATE products SET sales_count = GREATEST(COALESCE(sales_count, 0) - #{quantity}, 0), " +
             "sales_amount = GREATEST(COALESCE(sales_amount, 0) - #{amount}, 0) WHERE id = #{productId}")
     void decreaseSales(@Param("productId") String productId,
-                       @Param("quantity") Integer quantity,
+                       @Param("quantity") BigDecimal quantity,
                        @Param("amount") BigDecimal amount);
 
     /**

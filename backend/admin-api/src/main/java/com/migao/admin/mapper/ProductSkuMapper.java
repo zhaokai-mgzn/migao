@@ -10,17 +10,23 @@ import java.math.BigDecimal;
 
 /**
  * 商品SKU Mapper 接口
+ *
+ * <p><b>数量参数一律 {@link BigDecimal}（V115 / issue #5063）</b>：库存列已由 {@code INTEGER}
+ * 升级为 {@code NUMERIC(12,1)}（1 位小数 = 0.1 米粒度）。这里<b>不得</b>再出现 {@code int} /
+ * {@code intValue()} 形参 —— 传 {@code int} 会强迫调用方在边界上取整，而那种取整是静默的
+ * （买 2.7 米扣 2 米、0.7 米凭空消失），正是本单要治的形态。
+ * 「多少位小数算合法」的唯一判据在 {@code com.migao.admin.service.StockQuantity}。</p>
  */
 @Mapper
 public interface ProductSkuMapper extends BaseMapper<ProductSku> {
 
     @Update("UPDATE product_skus SET stock = GREATEST(COALESCE(stock, 0) - #{quantity}, 0) " +
             "WHERE id = #{skuId}")
-    int deductStock(@Param("skuId") Long skuId, @Param("quantity") int quantity);
+    int deductStock(@Param("skuId") Long skuId, @Param("quantity") BigDecimal quantity);
 
     @Update("UPDATE product_skus SET stock = COALESCE(stock, 0) + #{quantity} " +
             "WHERE id = #{skuId}")
-    int restoreStock(@Param("skuId") Long skuId, @Param("quantity") int quantity);
+    int restoreStock(@Param("skuId") Long skuId, @Param("quantity") BigDecimal quantity);
 
     /**
      * 入库：加库存 + 写移动加权平均成本 + 记最近批次号（V111，issue #5034）。
@@ -43,14 +49,14 @@ public interface ProductSkuMapper extends BaseMapper<ProductSku> {
             + "                   ELSE ROUND((COALESCE(stock, 0) + #{quantity}) * #{newAvgCost}, 4) END, "
             + "latest_batch_no = #{batchNo} "
             + "WHERE id = #{skuId}")
-    int receiveStock(@Param("skuId") Long skuId, @Param("quantity") int quantity,
+    int receiveStock(@Param("skuId") Long skuId, @Param("quantity") BigDecimal quantity,
                      @Param("newAvgCost") BigDecimal newAvgCost, @Param("batchNo") String batchNo);
 
     @Update("UPDATE product_skus SET sales_count = COALESCE(sales_count, 0) + #{quantity} " +
             "WHERE id = #{skuId}")
-    void increaseSalesCount(@Param("skuId") Long skuId, @Param("quantity") int quantity);
+    void increaseSalesCount(@Param("skuId") Long skuId, @Param("quantity") BigDecimal quantity);
 
     @Update("UPDATE product_skus SET sales_count = GREATEST(COALESCE(sales_count, 0) - #{quantity}, 0) " +
             "WHERE id = #{skuId}")
-    void decreaseSalesCount(@Param("skuId") Long skuId, @Param("quantity") int quantity);
+    void decreaseSalesCount(@Param("skuId") Long skuId, @Param("quantity") BigDecimal quantity);
 }

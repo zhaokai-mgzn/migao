@@ -42,7 +42,8 @@ public class InboundOrderCreateRequest {
         private Long skuId;
 
         /** 入库数量（必填，≥1 的整数；小数会被显式拒绝，见服务端校验） */
-        private Integer quantity;
+        /** 入库数量（米）：最多 1 位小数（V115/#5063）；超过 1 位小数由服务端显式拒绝 */
+        private BigDecimal quantity;
 
         /** 入库单价（可空 = 未记单价 ⇒ 只加数量不算成本）；给了必须 > 0 */
         private BigDecimal unitCost;

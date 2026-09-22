@@ -2323,7 +2323,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（45 case）
+## 订单域（46 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -3124,6 +3124,16 @@
 跳过: [backend-contract] 订单行契约（Java 单测 + admin-web vitest，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/ProductRollAllocationTest.java、OrderServiceTest.java 与 frontend/admin-web/tests/unit/components/OrderItemList.test.tsx 执行
 ```
 溯源: 2026-09-21 新增（用户裁定逐字：「在订单中再体现客户要求优先整卷发货，例子：客户买 100 米布，一卷=60 米，那就发 1 整卷 60 + 散剪出的 40 米」）。 ｜ tags: order, roll_allocation, backend_contract
+
+### OR-047. 订单腿库存按真实米数扣减/回补（2.7 米 ⇒ 台账 delta = -2.7、首尾相接） 🔵
+```
+数据: 判据 1·**扣减取整落点已消除**：确认支付时 `OrderService.deductSkuStock` 不再 `item.getQuantity().intValue()` —— `quantity = 2.7` ⇒ 台账 `delta = -2.7`、`after_qty = before_qty - 2.7`（改前实测：delta = -2，0.7 米凭空消失）。
+数据: 判据 2·**商品级销量同源**：`products.sales_count` / `product_skus.sales_count` 与库存同源（不再 `intValue()`），单笔单据内部不得自相矛盾（库存 -2.7 而销量 +2）。
+数据: 判据 3·**台账不变式在小数下仍成立**：同一 SKU 相邻两行 `上一行 after_qty == 下一行 before_qty`，且 `after_qty - before_qty == delta` —— 比较一律 `compareTo`（`2.70` 与 `2.7` 的 `equals` 为 false）。
+跳过: [backend-contract] 订单腿契约（Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/OrderStockLedgerTest.java 执行
+```
+真值: product-sku-stock.decimal-1dp
+溯源: 2026-09-22 新增（#5063 点名的 `OrderService` 四处 `intValue()` 静默取整落点）。 ｜ tags: order, stock, ledger, decimal, backend_contract
 
 ## 加工项域（13 case）
 
@@ -4010,7 +4020,7 @@
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-22 新增（issue #4201）：加工单「过程明细」agent 只读面（端点 GET /api/admin/agent/production/worklog + 工具 production_worklog_query + order/general skill 绑定 + prompts/order.md 口径）。**断言面**：must_succeed + required_args(order_no) + forbidden_tools（两个加工单写工具 + 加工项目录冒充）+ forbidden_text（具名报工人 = 编造指纹）+ want_text(any_of 存在性) + data_checks 首条 success=true。**未做（如实登记）**：**数值断言**（合格/返工/报废的**具体数字**）未落 —— 评测栈 `production_work_logs` 零 seed，要落数值只能给 seed 补「加工单 + 工序实例 + 报工」三段夹具，而本地**无 docker**、无法验证 seed SQL（写错会打挂整个 mibao 套件）⇒ 本单不碰 seed，登记为后续项。 ｜ 2026-09-21（issue #4960 / #4961 用例库同步，配套 feat/4960-4961-integration，**本条判据一字未动**）：data_checks 里 `operations[].is_must_finish` 仍是**冻结读面键**（服务端恒 `false`、历史载体，前端/agent 零消费）—— 本条不改任何判据，只登记该键的**值语义已冻结为历史载体**，防后续把「键还在」误读成「必完仍是活语义」。`user_inputs` / `expectations` / `skip_reason` 与其余 data_check **一字未动**，**判据一格不放宽**。 ｜ tags: processing_order, production, llm_behavior, worklog, readonly
 
-## 商品域（38 case）
+## 商品域（44 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -4479,6 +4489,71 @@
 ```
 真值: inbound-order-flow.batch-granularity
 溯源: 2026-09-22 新增（issue #5141，P0）：多行入库单过账必失败 —— 整单共用一个批次号撞 `uk_stock_batches_no`、整单回滚（实现与 V111 文件头裁定「一个 SKU 行 = 一个批次」相反）。 ｜ tags: inventory, inbound, backend-contract
+
+### PR-046. 库存米数支持 1 位小数（入库 60.5 米被接受，不再拒绝「非整数米」） 🔵
+```
+数据: 判据 1·**1 位小数入库落库**：入库单行 `quantity = 60.5` ⇒ 过账后 `product_skus.stock` 增加 **60.5**（不是 60、不是 61），批次行 `stock_batches.quantity = 60.5`，台账 `delta = 60.5`。注入红证：把 `InboundOrderService.validateRequest` 的数量判据改回「必须是整数」⇒ 建单当场拒（改前形态）。
+数据: 判据 2·**前端同判据**：admin-web 入库单提交前校验接受 `60.5` 并**原值**提交（不被 `Number.isInteger` 拦下）。注入红证：判据回退成 `Number.isInteger` ⇒ 变红。
+跳过: [backend-contract] 迁移 + Java 单测 + admin-web vitest（无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderServiceTest.java、frontend/admin-web/tests/unit/pages/inbound-orders-decimal.test.tsx 与 frontend/admin-web/tests/unit/lib/stock-quantity.test.ts 执行
+```
+真值: product-sku-stock.decimal-1dp, inbound-order-flow.draft-then-post
+溯源: 2026-09-22 新增（用户裁定逐字：「库存米数是小数，1 位小数，必须改造」）。 ｜ tags: product, stock, inbound, decimal, backend_contract
+
+### PR-047. 库存调整接受 1 位小数，且 SKU 间分摊不丢量、整数场景分配逐值不变 🔵
+```
+数据: 判据 1·**AI 工具 schema 放宽**：`inventory_manage` 的 `adjustment` 参数 `type == "number"`（改前 `integer`）；工具层对该参数的整数判定不再把 `60.5` / `-2.7` 判成类型错误。注入红证：把 schema 改回 `integer` ⇒ 变红。
+数据: 判据 2·**分摊总量恒等**：`adjustStockForAgent(+2.7)` 在 2 个 SKU 上分摊后，各 SKU 库存之和**恰好** +2.7（不丢 0.1 的余数）。注入红证：把分摊改回 `int base = adjustment / n` ⇒ 得 2（丢 0.7）⇒ 变红。
+数据: 判据 3·**整数场景逐值不变**：`+3` 在 `[30,20]` 上仍是 `[32,21]`（不是「各 +1.5」）、`-25` 仍是 `[5,20]`。注入红证：把分摊一步改成 `tenths / n` ⇒ 变红。
+数据: 判据 4·**展示无浮点毛刺**：AI 工具回给 LLM/用户的库存数字不出现 `2.7000000001` 这类毛刺（`stock_semantics.product_stock_summary` 的求和不得 `int()` 截断）。注入红证：保留 `int()` ⇒ `60.5 + 1.5` 得 61 ⇒ 变红。
+跳过: [backend-contract] Java 单测 + ai-agent pytest（无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/AgentProductServiceTest.java、backend/ai-agent-service/tests/test_tools_inventory_decimal.py 执行
+```
+真值: product-sku-stock.decimal-1dp
+溯源: 2026-09-22 新增（用户裁定逐字：「库存米数是小数，1 位小数，必须改造」）。 ｜ tags: product, stock, decimal, allocation, backend_contract
+
+### PR-048. 库存类输入超过 1 位小数 ⇒ 显式拒绝（fail-closed，不静默取整） 🔵
+```
+数据: 判据 1·**入库量 3 位小数被拒**：`quantity = 2.755` ⇒ 业务异常，文案含「1 位小数」且可行动（说明库存按 0.1 米粒度记、请改为 1 位小数后重试）；**不得**落库成 2.8（静默取整）。注入红证：去掉精度判据 ⇒ 2.755 被静默存下 ⇒ 变红。
+数据: 判据 2·**库存调整量 3 位小数被拒**：`adjustStockForAgent(2.755)` / `AgentProductController` 的 `adjustment = 2.755` ⇒ 显式拒绝（`StockQuantity.requireOneDecimal`）。
+数据: 判据 3·**AI 工具层先拒**：`inventory_manage(action=adjust, adjustment=2.755)` ⇒ `success=False`、文案含「1 位小数」，且**不发出**任何写请求（零 API 调用）。注入红证：去掉拒绝分支 ⇒ PATCH 被调用 ⇒ 变红。
+数据: 判据 4·**前端同判据**：admin-web 入库单 `2.755` / `1.05` ⇒ 提交前拒绝并提示「1 位小数」，且不调建单接口。注入红证：删掉位数判据 ⇒ 变红。
+数据: 判据 5·**建品/改品的 stock 同判据**：`ProductCreateRequest.stock = 2.755` ⇒ 显式拒绝（不得静默存成 2.8）。
+跳过: [backend-contract] 三层各自的确定性判据（Java 单测 + ai-agent pytest + admin-web vitest），无 LLM 环节：断言由 backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderServiceTest.java、ProductServiceTest.java、backend/ai-agent-service/tests/test_tools_inventory_decimal.py、frontend/admin-web/tests/unit/lib/stock-quantity.test.ts 执行
+```
+真值: product-sku-stock.decimal-1dp
+溯源: 2026-09-22 新增（照 V111 对非整数入库的「显式拒绝，不静默取整」精神，用户裁定「不能损失客户」）。 ｜ tags: product, stock, decimal, fail_closed, backend_contract
+
+### PR-049. 订单扣减/回补按真实米数落库存与台账（买 2.7 米 ⇒ delta = -2.7） 🔵
+```
+数据: 判据 1·**扣减不再取整**：`order_items.quantity = 2.7`、SKU 库存 30 ⇒ 确认支付后 `product_skus.stock = 27.3`（不是 28）、台账 `delta = -2.7`、`after_qty = 27.3`、`before_qty = 30`。注入红证：把 `deductSkuStock` 改回 `item.getQuantity().intValue()` ⇒ 库存 28、delta = -2（0.7 米凭空消失）⇒ 变红。
+数据: 判据 2·**回补同口径**：取消订单回补后库存回到 30（扣 2.7 就补 2.7），台账第二行 `before_qty == 第一行 after_qty`（首尾相接）。注入红证：回补侧改回 `intValue()` ⇒ 30.3 ≠ 30 ⇒ 变红。
+数据: 判据 3·**超过 1 位小数的顾客数量按 §8 显式向上进位**（`docs/curtain-fabric-quote-rules.md` §8「用料米数一律向上进位到 0.1」）：`2.75` ⇒ 落库 2.8（与裁床实际用料同向同粒度），**不是**截断成 2；扣减与回补用同一函数 ⇒ 净变化为 0。这里**不拒绝**（顾客已下单，拒绝 = 损失客户）。
+跳过: [backend-contract] 订单腿契约（Java 单测，无 LLM 环节，不进 agent-eval 冒烟）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/OrderStockLedgerTest.java 执行
+```
+真值: product-sku-stock.decimal-1dp, inbound-order-flow.draft-then-post
+溯源: 2026-09-22 新增（#5063 点名的 `OrderService` 四处 `intValue()` 静默取整落点）。 ｜ tags: product, order, stock, ledger, decimal, backend_contract
+
+### PR-050. 整数场景逐值不变（库存小数化的回归护栏） 🔵
+```
+数据: 判据 1·**入库 30 米逐值不变**：`quantity = 30` ⇒ `stock` 由 5 变 35、批次与台账与改前同值（改动只许作用于小数场景）。
+数据: 判据 2·**订单 2 米逐值不变**：`quantity = 2` ⇒ 库存 30 → 28、台账 `delta = -2`（`BigDecimal.equals` 也比 scale ⇒ 「逐值不变」包含 JSON 字面量不出现多余的 `.0`）。
+数据: 判据 3·**调整 +3 / -25 的分配逐值不变**：`[30,20]` +3 ⇒ `[32,21]`；-25 ⇒ `[5,20]`。
+数据: 判据 4·**「未传」不变成 0**：`ProductUpdateRequest.stock == null` 仍表示「这一项不改」（`requireOneDecimalOrNull` 保 null），不得把库存清零。
+跳过: [backend-contract] 回归护栏（Java 单测，无 LLM 环节）：断言由 backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderServiceTest.java、OrderStockLedgerTest.java、AgentProductServiceTest.java 执行
+```
+真值: product-sku-stock.decimal-1dp
+溯源: 2026-09-22 新增（用户裁定「不能损失客户」⇒ 整数场景逐值不变是硬判据）。 ｜ tags: product, stock, regression, decimal, backend_contract
+
+### PR-051. 三层数量列 INT → NUMERIC(12,1) 迁移（V115，幂等 + 终态对账 + bootstrap 同步） 🔵
+```
+数据: 判据 1·**真库两遍幂等**：临时 PG 集群上真跑 V115 两遍 —— 第二遍 0 次 `ALTER`（已是终态则跳过）、终态列类型与精度不变、存量整数值逐字节不变（`60 :: numeric(12,1)` = `60.0`，无损）。
+数据: 判据 2·**终态对账真跑得过**：文末 `DO` 块逐列核对 `data_type = numeric AND numeric_precision = 12 AND numeric_scale = 1`，九列任一不符 ⇒ `RAISE EXCEPTION` 整份回滚。注入红证：把某一列的 `ALTER` 去掉 ⇒ 终态对账抛 ⇒ 变红。
+数据: 判据 3·**前置 fail-closed**：五张目标表任一不存在 ⇒ 迁移立即失败并停下（不兜底建表）。注入红证：DROP 一张表后重跑 ⇒ 必须失败。
+数据: 判据 4·**bootstrap 终态同步**：`docs/sql/schema.sql` 的九列同为 `NUMERIC(12,1)`（新建库路径不跑迁移链）。注入红证：把 schema.sql 的某一列改回 INT ⇒ 变红。
+数据: 判据 5·**已发布迁移逐字节冻结**：V115 必须登记进 `tests/unit_ci_workflows/migration_fingerprints.json`（#4235），且 V111/V113 等旧文件一字未改。
+跳过: [backend-contract] 迁移契约（真库 + 静态判据，无 LLM 环节）：断言由 tests/unit_ci_workflows/test_stock_quantity_decimal_migration.py 执行
+```
+真值: product-sku-stock.decimal-1dp-migration
+溯源: 2026-09-22 新增（用户裁定「库存米数是小数，1 位小数，必须改造」⇒ 精度取 1 位，与用料 `meters_rounding_step` 进位到 0.1 一致）。 ｜ tags: product, migration, decimal, backend_contract
 
 ## 工具注册器域（1 case）
 
@@ -5375,8 +5450,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：392（活跃 156，跳过 236）
-- tier 分布：smoke 10 / normal 351 / adversarial 31
+- 用例总数：399（活跃 156，跳过 243）
+- tier 分布：smoke 10 / normal 358 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -5393,10 +5468,10 @@
 - 杂项域：16
 - 商家入驻域：5
 - 领域本体域：4
-- 订单域：45
+- 订单域：46
 - 加工项域：13
 - 加工单域：51
-- 商品域：38
+- 商品域：44
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4

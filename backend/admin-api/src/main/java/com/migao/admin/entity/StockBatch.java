@@ -50,7 +50,7 @@ public class StockBatch {
     /** 来源入库单号（冗余，便于只读追溯不 join） */
     private String inboundNo;
 
-    private Integer quantity;
+    private BigDecimal quantity;
 
     private BigDecimal unitCost;
 

@@ -174,12 +174,15 @@ public class InboundOrderService {
                 throw BusinessException.validationError(
                         "明细行引用的 SKU 已不存在（货号 " + line.getSkuCode() + "），请删除该行后重新提交");
             }
-            int beforeQty = sku.getStock() != null ? sku.getStock() : 0;
+            // issue #5063（V115）：库存列与入库行数量同为 NUMERIC(12,1) ⇒ 全程 BigDecimal
+            // （改前 `int beforeQty = sku.getStock()` / `int quantity = line.getQuantity()`
+            //  在入库量是 60.5 米时根本走不到这里 —— 校验阶段就显式拒绝了；本单把两侧一起放开）
+            BigDecimal beforeQty = StockQuantity.orZero(sku != null ? sku.getStock() : null);
             BigDecimal beforeAvg = sku.getAvgCost();
-            int quantity = line.getQuantity();
+            BigDecimal quantity = StockQuantity.orZero(line.getQuantity());
             BigDecimal unitCost = line.getUnitCost();
             BigDecimal afterAvg = movingAverage(beforeQty, beforeAvg, quantity, unitCost);
-            int afterQty = beforeQty + quantity;
+            BigDecimal afterQty = beforeQty.add(quantity);
 
             // ① 批次号**逐行生成**（一个 SKU 行 = 一个批次，V111 裁定）：整单共用一个号时，
             //    第 2 行插 stock_batches 会撞 uk_stock_batches_no = UNIQUE (tenant_id, batch_no)
@@ -337,11 +340,16 @@ public class InboundOrderService {
             if (item.getSkuId() == null) {
                 throw BusinessException.validationError("商品明细第 " + idx + " 项缺少 SKU");
             }
-            if (item.getQuantity() == null || item.getQuantity() < 1) {
-                // 数量是 INTEGER：非整数米（如 60.5 米）本单不支持 —— 显式拒绝，**不静默取整**
-                // （静默取整 = 账面与实物不符且无人发现；库存米数小数化是独立改动）
-                throw BusinessException.validationError("商品明细第 " + idx + " 项的数量必须是 ≥1 的整数（按米入库暂不支持小数米）");
+            if (item.getQuantity() == null
+                    || item.getQuantity().compareTo(BigDecimal.ONE) < 0) {
+                throw BusinessException.validationError(
+                        "商品明细第 " + idx + " 项的数量必须 ≥1 米（按米入库）");
             }
+            // issue #5063（V115）：库存米数已小数化（NUMERIC(12,1) = 0.1 米粒度）⇒ 入库量支持 1 位小数。
+            // 口径**不变**的是那条纪律：**显式拒绝，不静默取整**（V111 对非整数入库存的就是这条精神）
+            // —— 超 1 位小数（如 2.755）不是「四舍五入成 2.8」，而是当场拒绝并给出可行动文案。
+            item.setQuantity(StockQuantity.requireOneDecimal(
+                    item.getQuantity(), "商品明细第 " + idx + " 项的数量"));
             if (item.getUnitCost() != null && item.getUnitCost().compareTo(BigDecimal.ZERO) <= 0) {
                 throw BusinessException.validationError("商品明细第 " + idx + " 项的入库单价必须大于 0（不记单价请留空）");
             }
@@ -477,17 +485,20 @@ public class InboundOrderService {
      *
      * @return 变更后的均价；无任何成本信息时为 {@code null}（**不用 0 冒充「成本为零」**）
      */
-    static BigDecimal movingAverage(int beforeQty, BigDecimal beforeAvg, int quantity, BigDecimal unitCost) {
+    static BigDecimal movingAverage(BigDecimal beforeQty, BigDecimal beforeAvg,
+                                    BigDecimal quantity, BigDecimal unitCost) {
+        BigDecimal qtyBefore = StockQuantity.orZero(beforeQty);
+        BigDecimal qtyIn = StockQuantity.orZero(quantity);
         if (unitCost == null) {
             return beforeAvg;
         }
-        if (beforeQty <= 0 || beforeAvg == null) {
+        if (qtyBefore.signum() <= 0 || beforeAvg == null) {
             return unitCost;
         }
-        BigDecimal beforeValue = beforeAvg.multiply(BigDecimal.valueOf(beforeQty));
-        BigDecimal inValue = unitCost.multiply(BigDecimal.valueOf(quantity));
+        BigDecimal beforeValue = beforeAvg.multiply(qtyBefore);
+        BigDecimal inValue = unitCost.multiply(qtyIn);
         return beforeValue.add(inValue)
-                .divide(BigDecimal.valueOf((long) beforeQty + quantity), 4, RoundingMode.HALF_UP);
+                .divide(qtyBefore.add(qtyIn), 4, RoundingMode.HALF_UP);
     }
 
     /**
@@ -505,15 +516,17 @@ public class InboundOrderService {
         if (skus == null || skus.isEmpty()) {
             return;
         }
-        int total = skus.stream().mapToInt(s -> s.getStock() != null ? s.getStock() : 0).sum();
+        // issue #5063（V115）：派生列按 SKU 汇总必须保精度（改前 mapToInt 会把 60.5 截成 60）
+        BigDecimal total = StockQuantity.sum(
+                skus.stream().map(ProductSku::getStock).collect(java.util.stream.Collectors.toList()));
         Product patch = new Product();
         patch.setId(productId);
         patch.setStock(total);
         productMapper.updateById(patch);
     }
 
-    private static BigDecimal amountOf(Integer quantity, BigDecimal unitCost) {
-        return unitCost == null ? null : unitCost.multiply(BigDecimal.valueOf(quantity));
+    private static BigDecimal amountOf(BigDecimal quantity, BigDecimal unitCost) {
+        return unitCost == null ? null : unitCost.multiply(StockQuantity.orZero(quantity));
     }
 
     private static String trimToNull(String s) {

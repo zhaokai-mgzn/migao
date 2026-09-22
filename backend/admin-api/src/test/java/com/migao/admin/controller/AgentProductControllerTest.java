@@ -57,8 +57,8 @@ class AgentProductControllerTest extends BaseControllerTest {
         ProductResponse p = new ProductResponse();
         p.setId(PROD_ID);
         p.setName("遮光窗帘");
-        p.setStock(stock);
-        p.setTotalStock(stock);
+        p.setStock(BigDecimal.valueOf(stock));
+        p.setTotalStock(BigDecimal.valueOf(stock));
         p.setBasePrice(new BigDecimal("99.00"));
         return p;
     }
@@ -120,7 +120,7 @@ class AgentProductControllerTest extends BaseControllerTest {
         @DisplayName("调整成功 — 返回更新后 stock（供 agent 读回校验）")
         void success() throws Exception {
             when(productService.resolveProductId(eq(PROD_ID), eq(TEST_TENANT_ID))).thenReturn(PROD_ID);
-            when(productService.adjustStockForAgent(eq(PROD_ID), eq(30), eq("盘点"), eq(TEST_TENANT_ID)))
+            when(productService.adjustStockForAgent(eq(PROD_ID), eq(BigDecimal.valueOf(30)), eq("盘点"), eq(TEST_TENANT_ID)))
                     .thenReturn(responseWithStock(80));
 
             mockMvc.perform(patch(BASE + "/" + PROD_ID + "/stock")
@@ -144,7 +144,7 @@ class AgentProductControllerTest extends BaseControllerTest {
         @DisplayName("库存不足 — 422 且返回错误信息")
         void insufficientStock() throws Exception {
             when(productService.resolveProductId(eq(PROD_ID), eq(TEST_TENANT_ID))).thenReturn(PROD_ID);
-            when(productService.adjustStockForAgent(eq(PROD_ID), eq(-999), any(), eq(TEST_TENANT_ID)))
+            when(productService.adjustStockForAgent(eq(PROD_ID), eq(BigDecimal.valueOf(-999)), any(), eq(TEST_TENANT_ID)))
                     .thenThrow(new BusinessException("INSUFFICIENT_STOCK", "库存不足：当前总库存 50，无法减少 999", 422));
 
             mockMvc.perform(patch(BASE + "/" + PROD_ID + "/stock")

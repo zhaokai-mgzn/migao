@@ -64,7 +64,7 @@ class AgentProductServiceTest {
         testProduct = Product.builder()
                 .id("prod-001").name("遮光窗帘").tenantId(1L)
                 .categoryId("cat-001").basePrice(new BigDecimal("99.00"))
-                .status("on_sale").stock(100).unit("米").pricingType("per_meter").build();
+                .status("on_sale").stock(BigDecimal.valueOf(100)).unit("米").pricingType("per_meter").build();
     }
 
     @Nested @DisplayName("Agent 创建商品")
@@ -223,7 +223,7 @@ class AgentProductServiceTest {
             s.setTenantId(1L);
             s.setColorName("米白");
             s.setDoorWidth("2.8米");
-            s.setStock(stock);
+            s.setStock(BigDecimal.valueOf(stock));
             return s;
         }
 
@@ -245,12 +245,12 @@ class AgentProductServiceTest {
             ProductSku b = sku(2L, 20);
             stubProductAndSkus(List.of(a, b));
 
-            ProductResponse r = productService.adjustStockForAgent("prod-001", 3, "盘点", 1L);
+            ProductResponse r = productService.adjustStockForAgent("prod-001", BigDecimal.valueOf(3), "盘点", 1L);
 
             // 独立手工算例：+3 在 [30,20] 上均匀分配 → [32,21]，总和 53
-            assertThat(a.getStock()).isEqualTo(32);
-            assertThat(b.getStock()).isEqualTo(21);
-            assertThat(r.getStock()).isEqualTo(53);
+            assertThat(a.getStock()).isEqualTo(BigDecimal.valueOf(32));
+            assertThat(b.getStock()).isEqualTo(BigDecimal.valueOf(21));
+            assertThat(r.getStock()).isEqualTo(BigDecimal.valueOf(53));
         }
 
         @Test @DisplayName("增加库存 — 整除时平均分配")
@@ -259,11 +259,11 @@ class AgentProductServiceTest {
             ProductSku b = sku(2L, 20);
             stubProductAndSkus(List.of(a, b));
 
-            ProductResponse r = productService.adjustStockForAgent("prod-001", 10, "进货", 1L);
+            ProductResponse r = productService.adjustStockForAgent("prod-001", BigDecimal.valueOf(10), "进货", 1L);
 
-            assertThat(a.getStock()).isEqualTo(35);
-            assertThat(b.getStock()).isEqualTo(25);
-            assertThat(r.getStock()).isEqualTo(60);
+            assertThat(a.getStock()).isEqualTo(BigDecimal.valueOf(35));
+            assertThat(b.getStock()).isEqualTo(BigDecimal.valueOf(25));
+            assertThat(r.getStock()).isEqualTo(BigDecimal.valueOf(60));
         }
 
         @Test @DisplayName("减少库存 — 从库存最大的 SKU 优先扣减")
@@ -272,12 +272,12 @@ class AgentProductServiceTest {
             ProductSku b = sku(2L, 20);
             stubProductAndSkus(List.of(a, b));
 
-            ProductResponse r = productService.adjustStockForAgent("prod-001", -25, "报损", 1L);
+            ProductResponse r = productService.adjustStockForAgent("prod-001", BigDecimal.valueOf(-25), "报损", 1L);
 
             // -25：最大 30 的 SKU 先扣 → [5, 20]，总和 25
-            assertThat(a.getStock()).isEqualTo(5);
-            assertThat(b.getStock()).isEqualTo(20);
-            assertThat(r.getStock()).isEqualTo(25);
+            assertThat(a.getStock()).isEqualTo(BigDecimal.valueOf(5));
+            assertThat(b.getStock()).isEqualTo(BigDecimal.valueOf(20));
+            assertThat(r.getStock()).isEqualTo(BigDecimal.valueOf(25));
         }
 
         @Test @DisplayName("减少超出总量 — 抛库存不足且不写库")
@@ -286,7 +286,7 @@ class AgentProductServiceTest {
             ProductSku b = sku(2L, 20);
             stubProductAndSkus(List.of(a, b));
 
-            assertThatThrownBy(() -> productService.adjustStockForAgent("prod-001", -60, "报损", 1L))
+            assertThatThrownBy(() -> productService.adjustStockForAgent("prod-001", BigDecimal.valueOf(-60), "报损", 1L))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("库存不足");
             verify(productSkuMapper, never()).updateById(any(ProductSku.class));
@@ -296,16 +296,64 @@ class AgentProductServiceTest {
         void noSkusThrows() {
             stubProductAndSkus(List.of());
 
-            assertThatThrownBy(() -> productService.adjustStockForAgent("prod-001", 10, "进货", 1L))
+            assertThatThrownBy(() -> productService.adjustStockForAgent("prod-001", BigDecimal.valueOf(10), "进货", 1L))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("SKU");
+        }
+
+        @Test @DisplayName("PR-047 增加库存 2.7 米 — 分摊总量恒等（+1.7 / +1），不丢 0.1 的余数")
+        void increaseDistributesFractionalMeters() {
+            ProductSku a = sku(1L, 30);
+            ProductSku b = sku(2L, 20);
+            stubProductAndSkus(List.of(a, b));
+
+            ProductResponse r = productService.adjustStockForAgent("prod-001", new BigDecimal("2.7"), "进货", 1L);
+
+            // 2.7 = 2 整米（按旧规则 1+1 分摊）+ 0.7 米余数（给第一个 SKU）⇒ 分配总量恰为 2.7
+            assertThat(a.getStock()).isEqualByComparingTo("31.7");
+            assertThat(b.getStock()).isEqualByComparingTo("21");
+            assertThat(a.getStock().add(b.getStock())).isEqualByComparingTo("52.7");
+            assertThat(r.getStock()).isEqualByComparingTo("52.7");
+        }
+
+        @Test @DisplayName("PR-050 整数调整 +3 / -25 的分配逐值不变（[30,20] ⇒ [32,21] / [5,20]）")
+        void integerAdjustAllocationIsUnchanged() {
+            ProductSku a = sku(1L, 30);
+            ProductSku b = sku(2L, 20);
+            stubProductAndSkus(List.of(a, b));
+
+            productService.adjustStockForAgent("prod-001", BigDecimal.valueOf(3), "盘点", 1L);
+
+            assertThat(a.getStock()).isEqualTo(BigDecimal.valueOf(32));
+            assertThat(b.getStock()).isEqualTo(BigDecimal.valueOf(21));
+        }
+
+        @Test @DisplayName("PR-048 调整量 2.755（3 位小数）⇒ 显式拒绝，**不静默取整**")
+        void rejectsThreeDecimalAdjustment() {
+            stubProductAndSkus(List.of(sku(1L, 30)));
+
+            assertThatThrownBy(() -> productService.adjustStockForAgent(
+                    "prod-001", new BigDecimal("2.755"), "盘点", 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("1 位小数");
+        }
+
+        @Test @DisplayName("PR-048 建品 stock = 2.755 ⇒ 显式拒绝（库存类输入同一判据，改前会被静默存成 2.8）")
+        void rejectsThreeDecimalStockOnCreate() {
+            com.migao.admin.dto.ProductCreateRequest req = new com.migao.admin.dto.ProductCreateRequest();
+            req.setName("测试商品");
+            req.setStock(new BigDecimal("2.755"));
+
+            assertThatThrownBy(() -> productService.createProduct(req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("1 位小数");
         }
 
         @Test @DisplayName("商品不存在 — notFound")
         void productNotFound() {
             when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
 
-            assertThatThrownBy(() -> productService.adjustStockForAgent("prod-x", 10, "进货", 1L))
+            assertThatThrownBy(() -> productService.adjustStockForAgent("prod-x", BigDecimal.valueOf(10), "进货", 1L))
                     .isInstanceOf(BusinessException.class);
         }
     }

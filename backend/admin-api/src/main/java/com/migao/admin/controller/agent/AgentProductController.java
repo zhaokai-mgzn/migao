@@ -92,12 +92,15 @@ public class AgentProductController {
         if (adjObj == null) {
             throw BusinessException.validationError("缺少 adjustment 字段（正=增加，负=减少）");
         }
-        Integer adjustment;
+        // issue #5063（V115）：库存已小数化（1 位小数 = 0.1 米粒度）⇒ adjustment 由整数放宽为小数，
+        // 但准入判据**不变**：超过 1 位小数显式拒绝（fail-closed，不静默取整）。
+        BigDecimal adjustment;
         try {
-            adjustment = Integer.valueOf(adjObj.toString());
+            adjustment = new BigDecimal(adjObj.toString().trim());
         } catch (NumberFormatException e) {
-            throw BusinessException.validationError("adjustment 必须为整数");
+            throw BusinessException.validationError("adjustment 必须为数字（如 60.5 / -2.7）");
         }
+        adjustment = com.migao.admin.service.StockQuantity.requireOneDecimal(adjustment, "adjustment");
         String reason = (String) body.getOrDefault("reason", "");
         String resolvedId = productService.resolveProductId(id, tenantId);
         if (resolvedId == null) {

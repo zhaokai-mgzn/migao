@@ -57,14 +57,14 @@ public class StockLedgerService extends ServiceImpl<StockLedgerMapper, StockLedg
      * <p>{@code delta} 由本方法按 after-before 计算 —— 不接收调用方传入的 delta，
      * 从根上排除「delta 与 before/after 三者不自洽」的脏行（对账不变式的一半）。</p>
      *
-     * @param beforeQty 变更前库存（由调用方在写库前取到）
-     * @param afterQty  变更后库存
+     * @param beforeQty 变更前库存（由调用方在写库前取到；1 位小数，V115/#5063）
+     * @param afterQty  变更后库存（1 位小数）
      * @param reason    变更来源，取值见 {@link StockLedger#REASON_MANUAL} 等
      * @param refNo     业务单据号（订单号/工单号），手工调整传 null
      * @param note      人类可读原因（可空）
      */
     public void record(Long tenantId, String productId, Long skuId, String skuCode,
-                       int beforeQty, int afterQty, String reason, String refNo, String note) {
+                       BigDecimal beforeQty, BigDecimal afterQty, String reason, String refNo, String note) {
         record(tenantId, productId, skuId, skuCode, beforeQty, afterQty, reason, refNo, note,
                 null, null, null);
     }
@@ -81,14 +81,14 @@ public class StockLedgerService extends ServiceImpl<StockLedgerMapper, StockLedg
      * @param avgCostAfter  变更后该 SKU 的移动加权平均成本（出库不变、入库重算）
      */
     public void record(Long tenantId, String productId, Long skuId, String skuCode,
-                       int beforeQty, int afterQty, String reason, String refNo, String note,
+                       BigDecimal beforeQty, BigDecimal afterQty, String reason, String refNo, String note,
                        BigDecimal unitCost, BigDecimal avgCostBefore, BigDecimal avgCostAfter) {
         StockLedger entry = StockLedger.builder()
                 .tenantId(tenantId)
                 .productId(productId)
                 .skuId(skuId)
                 .skuCode(skuCode)
-                .delta(afterQty - beforeQty)
+                .delta(afterQty.subtract(beforeQty))
                 .beforeQty(beforeQty)
                 .afterQty(afterQty)
                 .reason(reason)
@@ -97,7 +97,7 @@ public class StockLedgerService extends ServiceImpl<StockLedgerMapper, StockLedg
                 .unitCost(unitCost)
                 // 成本金额由本方法按 |delta| * unitCost 算出 —— 同 delta 的算法：不接受调用方传入的金额，
                 // 从根上排除「金额与数量/单价三者不自洽」的脏行
-                .costAmount(costAmountOf(afterQty - beforeQty, unitCost))
+                .costAmount(costAmountOf(afterQty.subtract(beforeQty), unitCost))
                 .avgCostBefore(avgCostBefore)
                 .avgCostAfter(avgCostAfter)
                 .operator(resolveOperator())
@@ -105,7 +105,7 @@ public class StockLedgerService extends ServiceImpl<StockLedgerMapper, StockLedg
                 .build();
         stockLedgerMapper.insert(entry);
         log.info("库存流水: tenant={}, product={}, skuId={}, skuCode={}, {}->{}(delta={}), reason={}, refNo={}, operator={}, unitCost={}, avgCost {}->{}",
-                tenantId, productId, skuId, skuCode, beforeQty, afterQty, afterQty - beforeQty,
+                tenantId, productId, skuId, skuCode, beforeQty, afterQty, afterQty.subtract(beforeQty),
                 reason, refNo, entry.getOperator(), unitCost, avgCostBefore, avgCostAfter);
     }
 
@@ -149,9 +149,12 @@ public class StockLedgerService extends ServiceImpl<StockLedgerMapper, StockLedg
                 // 快照外的 SKU（不在本次变更范围）不落账 —— 否则会以 before=0 造出假变化
                 continue;
             }
-            int beforeQty = stockOf(previous);
-            int afterQty = stockOf(current);
-            if (beforeQty == afterQty) {
+            BigDecimal beforeQty = stockOf(previous);
+            BigDecimal afterQty = stockOf(current);
+            // 对账不变式（#4055）：小数下的「没变化」必须用 compareTo 判 ——
+            // `2.70` 与 `2.7` 是两个不同的 BigDecimal（equals 为 false、compareTo 为 0），
+            // 用 `==`/equals 会把「无变化」误判成变化 ⇒ 台账出现 delta=0 的噪声行（链条里插假环）
+            if (beforeQty.compareTo(afterQty) == 0) {
                 continue;
             }
             record(tenantId, current.getProductId(), current.getId(), current.getSkuCode(),
@@ -195,15 +198,15 @@ public class StockLedgerService extends ServiceImpl<StockLedgerMapper, StockLedg
         return OPERATOR_SYSTEM;
     }
 
-    private static int stockOf(ProductSku sku) {
-        return sku != null && sku.getStock() != null ? sku.getStock() : 0;
+    private static BigDecimal stockOf(ProductSku sku) {
+        return StockQuantity.orZero(sku != null ? sku.getStock() : null);
     }
 
     /**
      * 成本金额 = |delta| * unitCost（V111）。
      * 单价未知 ⇒ 返回 null（**不用 0 冒充「成本为零」** —— 0 会被读成真数据）。
      */
-    private static BigDecimal costAmountOf(int delta, BigDecimal unitCost) {
-        return unitCost == null ? null : unitCost.multiply(BigDecimal.valueOf(Math.abs((long) delta)));
+    private static BigDecimal costAmountOf(BigDecimal delta, BigDecimal unitCost) {
+        return unitCost == null ? null : unitCost.multiply(StockQuantity.orZero(delta).abs());
     }
 }

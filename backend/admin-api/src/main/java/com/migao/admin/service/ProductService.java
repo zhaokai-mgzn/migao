@@ -189,7 +189,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     ProductResponse response = convertToResponse(product, categoryNameMap.get(product.getCategoryId()));
                     // 附加颜色数和总库存（总库存以 SKU 汇总为准，覆盖 product.stock 可能为 0 的情况）
                     response.setColorCount(getColorCount(product.getId()));
-                    int totalStock = getTotalStock(product.getId());
+                    BigDecimal totalStock = getTotalStock(product.getId());
                     response.setTotalStock(totalStock);
                     response.setStock(totalStock);
                     return response;
@@ -219,7 +219,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         ProductResponse response = convertToResponse(product, categoryName);
         response.setColorCount(getColorCount(id));
-        int totalStock = getTotalStock(id);
+        BigDecimal totalStock = getTotalStock(id);
         response.setTotalStock(totalStock);
         response.setStock(totalStock);
 
@@ -304,6 +304,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     @Transactional(rollbackFor = Exception.class)
     public ProductResponse createProduct(ProductCreateRequest request, Long tenantId) {
+        // issue #5063（V115）：库存是 1 位小数口径（0.1 米粒度）⇒ **超过 1 位小数显式拒绝**
+        // （fail-closed；静默取整 = 账面与实物不符且无人发现，正是本单要治的形态）。
+        // 判据单点在 StockQuantity；这里只做入口归一，不在 Service 里另写一套小数位判断。
+        request.setStock(StockQuantity.requireOneDecimalOrNull(request.getStock(), "库存 stock"));
+
         // 空分类归一化（#3665 冒烟 B1）：前端草稿发的是 ''（DEFAULT_FORM.categoryId）而非缺省 null。
         // 若原样透传：validateCategory 因 hasText('')==false 跳过校验 → BeanUtils 把 '' 写进实体
         // → insert category_id='' → products_category_id_fkey 违例（500）。表列可空、草稿允许
@@ -368,6 +373,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     @Transactional(rollbackFor = Exception.class)
     public ProductResponse updateProduct(String id, ProductUpdateRequest request, Long tenantId) {
+        // issue #5063（V115）：同 createProduct —— 库存输入最多 1 位小数，超过即显式拒绝
+        request.setStock(StockQuantity.requireOneDecimalOrNull(request.getStock(), "库存 stock"));
+
         Product product = productMapper.selectById(id);
         if (product == null) {
             throw BusinessException.notFound("商品");
@@ -426,7 +434,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 || request.getSellingMethods() != null || request.getDoorWidths() != null) {
             // price/stock 优先取请求值，否则用商品当前值
             BigDecimal skuPrice = request.getBasePrice() != null ? request.getBasePrice() : product.getBasePrice();
-            Integer skuStock = request.getStock() != null ? request.getStock() : product.getStock();
+            BigDecimal skuStock = request.getStock() != null ? request.getStock() : product.getStock();
             saveColorsAndSkus(id, product.getSkuCode(), tenantId,
                     request.getColors(),
                     request.getSellingMethods(), request.getDoorWidths(),
@@ -477,8 +485,18 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                                     List<String> sellingMethods,
                                     List<String> doorWidths,
                                     BigDecimal basePrice,
-                                    Integer stock,
+                                    BigDecimal stock,
                                     List<ProductSkuInput> skuInputs) {
+        // issue #5063（V115）：SKU 库存是库存链路的**权威列**，逐行准入（最多 1 位小数）——
+        // 这里是所有建品/改品路径（表单 / Agent / 矩阵式生成）写 SKU stock 的**唯一收口**
+        if (skuInputs != null) {
+            for (ProductSkuInput input : skuInputs) {
+                if (input != null) {
+                    input.setStock(StockQuantity.requireOneDecimalOrNull(input.getStock(), "SKU 库存 stock"));
+                }
+            }
+        }
+
         // 加载现有颜色与 SKU（仅当前商品，不跨租户；create 时为空）
         List<ProductColor> existingColors = productColorMapper.selectList(
                 new LambdaQueryWrapper<ProductColor>().eq(ProductColor::getProductId, productId));
@@ -588,7 +606,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     sku.setColorName(colorName);
                     sku.setDoorWidth(dw);
                     sku.setPrice(basePrice);
-                    sku.setStock(stock != null && stock > 0 ? stock : 100);
+                    sku.setStock(stock != null && stock.compareTo(BigDecimal.ZERO) > 0
+                            ? stock : BigDecimal.valueOf(100));
                     // 自动生成 SKU 编码
                     Integer colorSeq = colorSeqMap.get(colorName);
                     sku.setSkuCode(generateSkuCode(productId, productSkuCode,
@@ -639,7 +658,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     entity.setColorName(input.getColorName());
                     entity.setDoorWidth(input.getDoorWidth());
                     entity.setPrice(input.getPrice() != null ? input.getPrice() : BigDecimal.ZERO);
-                    entity.setStock(input.getStock() != null ? input.getStock() : 0);
+                    entity.setStock(input.getStock() != null ? input.getStock() : BigDecimal.ZERO);
                     // 优先使用传入的 skuCode，未传入则自动生成
                     String skuCode = StringUtils.hasText(input.getSkuCode())
                             ? input.getSkuCode()
@@ -647,7 +666,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                                     colorSeqMap.getOrDefault(input.getColorName(), 0),
                                     input.getDoorWidth());
                     entity.setSkuCode(skuCode);
-                    entity.setSalesCount(0);
+                    entity.setSalesCount(BigDecimal.ZERO);
                     productSkuMapper.insert(entity);
                     keptSkuIds.add(entity.getId());
                 }
@@ -688,7 +707,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (skus == null || skus.isEmpty()) {
             return;
         }
-        int total = skus.stream().mapToInt(s -> s.getStock() != null ? s.getStock() : 0).sum();
+        // issue #5063（V115）：库存列是 NUMERIC(12,1) ⇒ 用 BigDecimal 求和（改前 mapToInt 会把
+        // 小数米数截断成整数再把派生列写错 —— 派生列一旦错了，列表页显示的就是假库存）。
+        BigDecimal total = StockQuantity.sum(
+                skus.stream().map(ProductSku::getStock).collect(Collectors.toList()));
         // 只带 id + stock 的部分更新：MyBatis-Plus updateById 不覆盖未设置字段
         Product stockSync = new Product();
         stockSync.setId(productId);
@@ -1137,7 +1159,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 row.createCell(1).setCellValue(p.getSkuCode() != null ? p.getSkuCode() : "");
                 row.createCell(2).setCellValue(p.getCategoryName() != null ? p.getCategoryName() : "");
                 row.createCell(3).setCellValue(p.getBasePrice() != null ? p.getBasePrice().doubleValue() : 0);
-                row.createCell(4).setCellValue(p.getStock() != null ? p.getStock() : 0);
+                row.createCell(4).setCellValue(p.getStock() != null ? p.getStock().doubleValue() : 0);
                 row.createCell(5).setCellValue(getStatusLabel(p.getStatus()));
                 row.createCell(6).setCellValue(p.getDescription() != null ? p.getDescription() : "");
             }
@@ -1218,9 +1240,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             throw new IllegalArgumentException("价格格式错误");
         }
 
-        int stock = 0;
+        // issue #5063（V115）：Excel 导入的库存同样走 1 位小数准入（fail-closed）。
+        // 改前 `(int) getCellNumericValue(row, 4)` 把 60.5 截成 60 且**不留痕迹**。
+        BigDecimal stock = BigDecimal.ZERO;
         try {
-            stock = (int) getCellNumericValue(row, 4);
+            stock = StockQuantity.requireOneDecimal(
+                    BigDecimal.valueOf(getCellNumericValue(row, 4)), "第 " + (row.getRowNum() + 1) + " 行库存");
         } catch (NumberFormatException | IndexOutOfBoundsException e) {
             log.warn("库存解析失败，默认0: {}", e.getMessage());
         }
@@ -1369,13 +1394,15 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     /**
      * 获取SKU总库存
      */
-    private int getTotalStock(String productId) {
+    private BigDecimal getTotalStock(String productId) {
         List<ProductSku> skus = productSkuMapper.selectList(
                 new LambdaQueryWrapper<ProductSku>()
                         .eq(ProductSku::getProductId, productId)
                         .select(ProductSku::getStock)
         );
-        return skus.stream().mapToInt(s -> s.getStock() != null ? s.getStock() : 0).sum();
+        // issue #5063（V115）：SKU 级是库存唯一权威（#4038），汇总必须是 BigDecimal
+        // —— 改前 mapToInt 把 60.5 截成 60，商品详情/列表显示的就是**假库存**。
+        return StockQuantity.sum(skus.stream().map(ProductSku::getStock).collect(Collectors.toList()));
     }
 
     /**
@@ -1456,7 +1483,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         // 价格/库存/描述/品牌 直接透传
         createReq.setBasePrice(request.getBasePrice());
-        createReq.setStock(request.getStock() != null ? request.getStock() : 0);
+        createReq.setStock(request.getStock() != null ? request.getStock() : BigDecimal.ZERO);
         createReq.setDescription(request.getDescription());
         createReq.setBrand(request.getBrand());
 
@@ -1637,7 +1664,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * @return 更新后的商品详情（stock 为 SKU 汇总，供调用方读回校验）
      */
     @Transactional(rollbackFor = Exception.class)
-    public ProductResponse adjustStockForAgent(String productId, Integer adjustment, String reason, Long tenantId) {
+    public ProductResponse adjustStockForAgent(String productId, BigDecimal adjustment, String reason, Long tenantId) {
         Product product = productMapper.selectOne(
                 new LambdaQueryWrapper<Product>()
                         .eq(Product::getId, productId)
@@ -1645,9 +1672,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (product == null) {
             throw BusinessException.notFound("商品");
         }
-        if (adjustment == null || adjustment == 0) {
+        if (adjustment == null || adjustment.signum() == 0) {
             throw BusinessException.validationError("调整量 adjustment 不能为空或 0");
         }
+        // issue #5063（V115）：库存调整量是**库存类输入** ⇒ 最多 1 位小数，超过即显式拒绝
+        // （fail-closed；静默取整/截断会让「盘点 +2.755」这种输入变成账上另一个数，且无人发现）
+        adjustment = StockQuantity.requireOneDecimal(adjustment, "调整量 adjustment");
 
         List<ProductSku> skus = productSkuMapper.selectList(
                 new LambdaQueryWrapper<ProductSku>().eq(ProductSku::getProductId, productId));
@@ -1656,55 +1686,72 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         }
 
         // 库存台账（issue #4055）：分配算法会原地改写 sku.getStock()，变更前值必须先记下来
-        Map<Long, Integer> stockBefore = new LinkedHashMap<>();
+        Map<Long, BigDecimal> stockBefore = new LinkedHashMap<>();
         for (ProductSku sku : skus) {
-            stockBefore.put(sku.getId(), sku.getStock() != null ? sku.getStock() : 0);
+            stockBefore.put(sku.getId(), StockQuantity.orZero(sku.getStock()));
         }
 
-        int total = skus.stream().mapToInt(s -> s.getStock() != null ? s.getStock() : 0).sum();
-        long newTotalLong = (long) total + adjustment;
-        if (newTotalLong < 0) {
+        BigDecimal total = StockQuantity.sum(stockBefore.values());
+        BigDecimal newTotal = total.add(adjustment);
+        if (newTotal.compareTo(BigDecimal.ZERO) < 0) {
             throw new BusinessException("INSUFFICIENT_STOCK",
-                    "库存不足：当前总库存 " + total + "，无法减少 " + Math.abs(adjustment), 422);
+                    "库存不足：当前总库存 " + total.toPlainString()
+                            + "，无法减少 " + adjustment.abs().toPlainString(), 422);
         }
-        int newTotal = (int) newTotalLong;
 
-        if (adjustment > 0) {
-            // 均匀分配，余数给第一个 SKU
-            int base = adjustment / skus.size();
-            int remainder = adjustment % skus.size();
+        // 改前是 `int base = adjustment / skus.size()` + `int remainder = adjustment % skus.size()`：
+        // 整数除法本身不丢量，但**它要求 adjustment 先变成 int** —— 而 adjustment 现在是 1 位小数
+        // （如 2.7 米分摊到 3 个 SKU）。⇒ 换写成「0.1 米刻度」的**整数**运算：
+        // 除不尽的余数**显式**给第一个 SKU，分配总量与 adjustment **恒等**（不静默丢、不静默补）。
+        // 为什么不用 BigDecimal.divide：除不尽时它要么抛（ArithmeticException 打断盘点），
+        // 要么被迫指定舍入（那就真的丢量了）—— 两者都不可接受。
+        if (adjustment.signum() > 0) {
+            // 均匀分配，余数给第一个 SKU —— **两段式**（顺序不可交换，逐条有理由）：
+            //   ① **整米**部分先按旧规则分摊（`base = 整米 / n`、余数给第一个 SKU）
+            //      ⇒ 整数调整量的分配结果与改前**逐值相同**（用户裁定「不能损失客户」：
+            //         +3 在 [30,20] 上仍是 [32,21]，而不是「各 +1.5」）；
+            //   ② **0.1 米余数**（< 1 米，至多 9 个刻度）整块给第一个 SKU
+            //      ⇒ 总量与 adjustment **恒等**，不静默丢、不静默补。
+            // 为什么不能直接用 `tenths / n` 一步分摊：那会把 +3 摊成各 +1.5 —— 数值上更"均匀"，
+            // 但**改了既有整数场景的落库值**，正是本单红线。
+            long addTenths = StockQuantity.tenths(adjustment);
+            long wholeMeters = addTenths / 10;
+            long fracTenths = addTenths % 10;
+            long base = wholeMeters / skus.size();
+            long remainder = wholeMeters % skus.size();
             for (int i = 0; i < skus.size(); i++) {
                 ProductSku sku = skus.get(i);
-                int add = base + (i == 0 ? remainder : 0);
-                sku.setStock((sku.getStock() != null ? sku.getStock() : 0) + add);
+                long add = (base + (i == 0 ? remainder : 0)) * 10 + (i == 0 ? fracTenths : 0);
+                sku.setStock(StockQuantity.orZero(sku.getStock()).add(StockQuantity.fromTenths(add)));
             }
         } else {
             // 从库存最大的 SKU 优先扣减
-            int toReduce = Math.abs(adjustment);
+            long toReduce = StockQuantity.tenths(adjustment.abs());
             List<ProductSku> sorted = new ArrayList<>(skus);
-            sorted.sort((x, y) -> Integer.compare(
-                    y.getStock() != null ? y.getStock() : 0,
-                    x.getStock() != null ? x.getStock() : 0));
+            sorted.sort((x, y) -> StockQuantity.orZero(y.getStock())
+                    .compareTo(StockQuantity.orZero(x.getStock())));
             for (ProductSku sku : sorted) {
                 if (toReduce <= 0) {
                     break;
                 }
-                int current = sku.getStock() != null ? sku.getStock() : 0;
-                int take = Math.min(current, toReduce);
-                sku.setStock(current - take);
+                long current = StockQuantity.tenths(StockQuantity.orZero(sku.getStock()));
+                long take = Math.min(current, toReduce);
+                sku.setStock(StockQuantity.fromTenths(current - take));
                 toReduce -= take;
             }
             if (toReduce > 0) {
                 throw new BusinessException("INSUFFICIENT_STOCK",
-                        "库存不足：当前总库存 " + total + "，无法减少 " + Math.abs(adjustment), 422);
+                        "库存不足：当前总库存 " + total.toPlainString()
+                                + "，无法减少 " + adjustment.abs().toPlainString(), 422);
             }
         }
 
         for (ProductSku sku : skus) {
             productSkuMapper.updateById(sku);
-            int before = stockBefore.getOrDefault(sku.getId(), 0);
-            int after = sku.getStock() != null ? sku.getStock() : 0;
-            if (before != after) {
+            BigDecimal before = stockBefore.getOrDefault(sku.getId(), BigDecimal.ZERO);
+            BigDecimal after = StockQuantity.orZero(sku.getStock());
+            // 台账「有没有变化」必须 compareTo（`2.70` 与 `2.7` equals 为 false）—— 否则落假 delta=0 行
+            if (before.compareTo(after) != 0) {
                 // 库存台账（issue #4055）：每次 SKU 库存变更写一行流水（before/after 首尾相接可对账）。
                 // 未拿到分配量的 SKU（调整量小于 SKU 数）不落行 —— 台账里不出现 0 变更噪声。
                 stockLedgerService.record(tenantId, productId, sku.getId(), sku.getSkuCode(),

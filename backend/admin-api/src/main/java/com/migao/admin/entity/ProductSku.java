@@ -55,7 +55,7 @@ public class ProductSku {
     /**
      * 库存
      */
-    private Integer stock;
+    private BigDecimal stock;
 
     /**
      * SKU编码
@@ -65,7 +65,7 @@ public class ProductSku {
     /**
      * SKU 累计销量
      */
-    private Integer salesCount;
+    private BigDecimal salesCount;
 
     /**
      * 移动加权平均单位成本（V111，issue #5034）。

@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids=[PR-029, PR-030, PR-031, PR-032, PR-033, PR-045]
+// case_ids=[PR-029, PR-030, PR-031, PR-032, PR-033, PR-045, PR-046, PR-048]
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -128,7 +128,7 @@ class InboundOrderServiceTest {
         s.setId(id);
         s.setProductId(productId);
         s.setTenantId(TENANT);
-        s.setStock(stock);
+        s.setStock(BigDecimal.valueOf(stock));
         s.setAvgCost(avgCost);
         s.setSkuCode("HUOHAO-01");
         s.setColorName("米白");
@@ -140,7 +140,17 @@ class InboundOrderServiceTest {
         InboundOrderCreateRequest.Item it = new InboundOrderCreateRequest.Item();
         it.setProductId(productId);
         it.setSkuId(skuId);
-        it.setQuantity(qty);
+        it.setQuantity(BigDecimal.valueOf(qty));
+        it.setUnitCost(unitCost == null ? null : new BigDecimal(unitCost));
+        return it;
+    }
+
+    /** 小数米（1 位小数）的入库行 —— issue #5063：库存米数小数化后入库量支持 0.1 米粒度。 */
+    private static InboundOrderCreateRequest.Item itemQty(String productId, long skuId, String qty, String unitCost) {
+        InboundOrderCreateRequest.Item it = new InboundOrderCreateRequest.Item();
+        it.setProductId(productId);
+        it.setSkuId(skuId);
+        it.setQuantity(new BigDecimal(qty));
         it.setUnitCost(unitCost == null ? null : new BigDecimal(unitCost));
         return it;
     }
@@ -185,7 +195,7 @@ class InboundOrderServiceTest {
             ArgumentCaptor<InboundOrderItem> itemCap = ArgumentCaptor.forClass(InboundOrderItem.class);
             verify(inboundOrderItemMapper).insert(itemCap.capture());
             InboundOrderItem line = itemCap.getValue();
-            assertThat(line.getQuantity()).isEqualTo(30);
+            assertThat(line.getQuantity()).isEqualTo(BigDecimal.valueOf(30));
             assertThat(line.getAmount()).isEqualByComparingTo("375.00");
             // 批次号只在过账时生成 —— 草稿态必须是 NULL
             assertThat(line.getBatchNo()).isNull();
@@ -195,10 +205,48 @@ class InboundOrderServiceTest {
             assertThat(line.getDoorWidth()).isEqualTo("2.8");
 
             // 红线：草稿不动库存、不落台账
-            verify(productSkuMapper, never()).receiveStock(anyLong(), anyInt(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
             verify(stockLedgerService, never()).record(anyLong(), anyString(), anyLong(), anyString(),
-                    anyInt(), anyInt(), anyString(), any(), any(), any(), any(), any());
+                    any(), any(), anyString(), any(), any(), any(), any(), any());
             verify(stockBatchMapper, never()).insert(any(StockBatch.class));
+        }
+
+        @Test
+        @DisplayName("PR-046 数量 60.5 米 ⇒ 建单通过，落库就是 60.5（不是 60、不是 61）")
+        void createAcceptsOneDecimalMeters() {
+            ProductSku s = sku(11L, "prod-1", 5, null);
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(s));
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedOrder);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedLines);
+
+            // 红证（改前形态）：validateRequest 把「非整数米」显式拒绝 ⇒ 这里会抛
+            // 「数量必须是 ≥1 的整数（按米入库暂不支持小数米）」
+            service.create(request(itemQty("prod-1", 11L, "60.5", "12.50")), TENANT, "13800000000");
+
+            ArgumentCaptor<InboundOrderItem> itemCap = ArgumentCaptor.forClass(InboundOrderItem.class);
+            verify(inboundOrderItemMapper).insert(itemCap.capture());
+            assertThat(itemCap.getValue().getQuantity()).isEqualByComparingTo("60.5");
+            // 金额按真实米数算（60.5 × 12.50 = 756.25），不得按取整后的 60 算
+            assertThat(itemCap.getValue().getAmount()).isEqualByComparingTo("756.25");
+            // 草稿不动库存（与整数场景同一红线）
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
+        }
+
+        @Test
+        @DisplayName("PR-048 数量 2.755（3 位小数）⇒ 显式拒绝，**不静默取整成 2.8**")
+        void rejectsThreeDecimalMeters() {
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(sku(11L, "prod-1", 0, null)));
+
+            assertThatThrownBy(() -> service.create(request(itemQty("prod-1", 11L, "2.755", null)), TENANT, "op"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("1 位小数")
+                    .hasMessageContaining("2.755");
+            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
         }
 
         @Test
@@ -237,7 +285,7 @@ class InboundOrderServiceTest {
             l.setInboundOrderId("inbound-uuid-1");
             l.setSkuId(skuId);
             l.setProductId("prod-1");
-            l.setQuantity(30);
+            l.setQuantity(BigDecimal.valueOf(30));
             l.setUnitCost(new BigDecimal("12.50"));
             l.setDyeLot("G-2026-0912");
             return l;
@@ -260,7 +308,7 @@ class InboundOrderServiceTest {
             //    均价传的是 afterAvg（首次入库 = 进价 12.50），不是 unitCost ——
             //    与台账里的 avg_cost_after 同源同值（公式只有 InboundOrderService.movingAverage 一处）
             ArgumentCaptor<String> batchCap = ArgumentCaptor.forClass(String.class);
-            verify(productSkuMapper).receiveStock(eq(11L), eq(30), eq(new BigDecimal("12.50")), batchCap.capture());
+            verify(productSkuMapper).receiveStock(eq(11L), eq(BigDecimal.valueOf(30)), eq(new BigDecimal("12.50")), batchCap.capture());
             String batchNo = batchCap.getValue();
             assertThat(batchNo).matches("PC-\\d{8}-\\d{4}");
 
@@ -276,7 +324,7 @@ class InboundOrderServiceTest {
             assertThat(batchRow.getBatchNo()).isEqualTo(batchNo);
             assertThat(batchRow.getDyeLot()).isEqualTo("G-2026-0912");
             assertThat(batchRow.getInboundNo()).isEqualTo("RK-20260923-0001");
-            assertThat(batchRow.getQuantity()).isEqualTo(30);
+            assertThat(batchRow.getQuantity()).isEqualTo(BigDecimal.valueOf(30));
             assertThat(batchRow.getReceivedDate()).isEqualTo(order.getInboundDate());
 
             // ④ 状态转 posted 且留痕操作人
@@ -285,6 +333,39 @@ class InboundOrderServiceTest {
             assertThat(updateCap.getValue().getStatus()).isEqualTo(InboundOrder.STATUS_POSTED);
             assertThat(updateCap.getValue().getPostedBy()).isEqualTo("13800000000");
             assertThat(updateCap.getValue().getPostedAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("PR-046 过账 60.5 米：库存 5 → 65.5，批次与台账同为 60.5（改前走不到这里）")
+        void postAddsFractionalMeters() {
+            InboundOrder order = draftOrder();
+            InboundOrderItem l = line(100L, 11L);
+            l.setQuantity(new BigDecimal("60.5"));
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(l))
+                    .thenReturn(List.of(l));
+            when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 5, null));
+
+            service.post("RK-20260923-0001", TENANT, "13800000000");
+
+            // ① 加库存：改前是 int 形参 ⇒ 60.5 只能被截断或根本无法表达
+            verify(productSkuMapper).receiveStock(eq(11L), eq(new BigDecimal("60.5")),
+                    eq(new BigDecimal("12.50")), anyString());
+
+            // ② 批次台账：与入库行同值（账实一致）
+            ArgumentCaptor<StockBatch> batchCap = ArgumentCaptor.forClass(StockBatch.class);
+            verify(stockBatchMapper).insert(batchCap.capture());
+            assertThat(batchCap.getValue().getQuantity()).isEqualByComparingTo("60.5");
+
+            // ③ 台账 before/after：5 → 65.5（delta 由 StockLedgerService 按 after-before 算）
+            ArgumentCaptor<BigDecimal> beforeCap = ArgumentCaptor.forClass(BigDecimal.class);
+            ArgumentCaptor<BigDecimal> afterCap = ArgumentCaptor.forClass(BigDecimal.class);
+            verify(stockLedgerService).record(eq(TENANT), eq("prod-1"), eq(11L), eq("HUOHAO-01"),
+                    beforeCap.capture(), afterCap.capture(), eq(StockLedger.REASON_INBOUND),
+                    eq("RK-20260923-0001"), anyString(), any(), any(), any());
+            assertThat(beforeCap.getValue()).isEqualByComparingTo("5");
+            assertThat(afterCap.getValue()).isEqualByComparingTo("65.5");
         }
 
         @Test
@@ -303,7 +384,7 @@ class InboundOrderServiceTest {
 
             verify(stockLedgerService).record(
                     eq(TENANT), eq("prod-1"), eq(11L), eq("HUOHAO-01"),
-                    eq(5), eq(35), eq(StockLedger.REASON_INBOUND), eq("RK-20260923-0001"),
+                    eq(BigDecimal.valueOf(5)), eq(BigDecimal.valueOf(35)), eq(StockLedger.REASON_INBOUND), eq("RK-20260923-0001"),
                     anyString(), eq(new BigDecimal("12.50")),
                     eq(new BigDecimal("10.00")), eq(new BigDecimal("12.1429")));
         }
@@ -318,9 +399,9 @@ class InboundOrderServiceTest {
             assertThatThrownBy(() -> service.post("RK-20260923-0001", TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("只有草稿可以过账");
-            verify(productSkuMapper, never()).receiveStock(anyLong(), anyInt(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
             verify(stockLedgerService, never()).record(anyLong(), anyString(), anyLong(), anyString(),
-                    anyInt(), anyInt(), anyString(), any(), any(), any(), any(), any());
+                    any(), any(), anyString(), any(), any(), any(), any(), any());
         }
 
         @Test
@@ -347,7 +428,7 @@ class InboundOrderServiceTest {
             assertThatThrownBy(() -> service.post("RK-20260923-0001", TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("SKU 已不存在");
-            verify(productSkuMapper, never()).receiveStock(anyLong(), anyInt(), any(), anyString());
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString());
         }
 
         // ---------------------------------------------------------- PR-045 多行过账
@@ -395,7 +476,7 @@ class InboundOrderServiceTest {
 
             // ③ 加库存也逐行带各自的批次号（latest_batch_no 不得被同一个号覆盖两次）
             ArgumentCaptor<String> receiveCap = ArgumentCaptor.forClass(String.class);
-            verify(productSkuMapper, times(2)).receiveStock(anyLong(), anyInt(), any(), receiveCap.capture());
+            verify(productSkuMapper, times(2)).receiveStock(anyLong(), any(), any(), receiveCap.capture());
             assertThat(receiveCap.getAllValues()).doesNotHaveDuplicates();
         }
 
@@ -486,10 +567,10 @@ class InboundOrderServiceTest {
 
             assertThatThrownBy(() -> service.create(request(item("prod-1", 11L, 0, null)), TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("≥1 的整数");
+                    .hasMessageContaining("必须 ≥1 米");
             assertThatThrownBy(() -> service.create(request(item("prod-1", 11L, -3, null)), TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("≥1 的整数");
+                    .hasMessageContaining("必须 ≥1 米");
             verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
         }
 
@@ -526,33 +607,33 @@ class InboundOrderServiceTest {
         @Test
         @DisplayName("有库存且有均价 ⇒ 加权平均：(5×10 + 30×12.5) / 35 = 12.1429")
         void weightedWhenStockAndAvgKnown() {
-            assertThat(InboundOrderService.movingAverage(5, new BigDecimal("10.00"), 30, new BigDecimal("12.50")))
+            assertThat(InboundOrderService.movingAverage(BigDecimal.valueOf(5), new BigDecimal("10.00"), BigDecimal.valueOf(30), new BigDecimal("12.50")))
                     .isEqualByComparingTo("12.1429");
         }
 
         @Test
         @DisplayName("变更前无库存 ⇒ 均价 = 本次进价（首次入库）")
         void firstReceiptUsesUnitCost() {
-            assertThat(InboundOrderService.movingAverage(0, null, 30, new BigDecimal("12.50")))
+            assertThat(InboundOrderService.movingAverage(BigDecimal.valueOf(0), null, BigDecimal.valueOf(30), new BigDecimal("12.50")))
                     .isEqualByComparingTo("12.50");
-            assertThat(InboundOrderService.movingAverage(0, new BigDecimal("9.99"), 30, new BigDecimal("12.50")))
+            assertThat(InboundOrderService.movingAverage(BigDecimal.valueOf(0), new BigDecimal("9.99"), BigDecimal.valueOf(30), new BigDecimal("12.50")))
                     .isEqualByComparingTo("12.50");
         }
 
         @Test
         @DisplayName("存量均价未知（NULL）⇒ 均价 = 本次进价，**不**用 0 冒充历史成本")
         void unknownHistoricalAvgUsesUnitCost() {
-            assertThat(InboundOrderService.movingAverage(50, null, 30, new BigDecimal("12.50")))
+            assertThat(InboundOrderService.movingAverage(BigDecimal.valueOf(50), null, BigDecimal.valueOf(30), new BigDecimal("12.50")))
                     .isEqualByComparingTo("12.50");
         }
 
         @Test
         @DisplayName("本行未记单价 ⇒ 均价**保持原值**（不因「这批没记价」把已有均价抹掉）")
         void nullUnitCostKeepsPreviousAvg() {
-            assertThat(InboundOrderService.movingAverage(50, new BigDecimal("8.80"), 30, null))
+            assertThat(InboundOrderService.movingAverage(BigDecimal.valueOf(50), new BigDecimal("8.80"), BigDecimal.valueOf(30), null))
                     .isEqualByComparingTo("8.80");
             // 从未有过成本 ⇒ 仍是未知（NULL），**不得**变成 0
-            assertThat(InboundOrderService.movingAverage(0, null, 30, null)).isNull();
+            assertThat(InboundOrderService.movingAverage(BigDecimal.valueOf(0), null, BigDecimal.valueOf(30), null)).isNull();
         }
     }
 }

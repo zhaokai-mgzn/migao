@@ -143,7 +143,7 @@ CREATE TABLE products (
     images JSONB DEFAULT '[]',
     detail_images JSONB DEFAULT '[]',
     knowledge_base_id VARCHAR(64),
-    stock INTEGER DEFAULT 0,
+    stock NUMERIC(12,1) DEFAULT 0,                         -- 库存数量（米，V115/#5063：1 位小数 = 0.1 米粒度）；派生冗余列，权威是 product_skus.stock 汇总
     stock_warning_threshold INTEGER DEFAULT 10,
     status VARCHAR(32) DEFAULT 'active',
     -- 计价单位（来自 011_product_unit.sql）
@@ -153,7 +153,7 @@ CREATE TABLE products (
     -- SKU 矩阵相关字段（来自 008_product_sku_matrix.sql）
     sku_code VARCHAR(30),
     stock_deduction_mode VARCHAR(20) DEFAULT 'on_order',  -- on_order(拍下减) / on_payment(付款减)
-    sales_count INTEGER DEFAULT 0,                         -- 累计销量
+    sales_count NUMERIC(12,1) DEFAULT 0,                   -- 累计销量（V115/#5063）
     sales_amount DECIMAL(12,2) DEFAULT 0,                  -- 累计销售额
     edited_by VARCHAR(50),                                  -- 最后编辑人
     edited_at TIMESTAMP WITH TIME ZONE,                     -- 最后编辑时间
@@ -207,9 +207,9 @@ CREATE TABLE product_skus (
     color_id BIGINT REFERENCES product_colors(id) ON DELETE CASCADE,
     door_width VARCHAR(20) NOT NULL,                      -- 规格尺寸: 2.8m / 3.2m / 3.4m
     price DECIMAL(10,2) NOT NULL DEFAULT 0,
-    stock INTEGER NOT NULL DEFAULT 0,
+    stock NUMERIC(12,1) NOT NULL DEFAULT 0,                -- 库存数量（米，V115/#5063：1 位小数 = 0.1 米粒度）—— SKU 级是唯一权威（#4038）
     sku_code VARCHAR(50),
-    sales_count INTEGER NOT NULL DEFAULT 0,                -- SKU 累计销量（来自 011）
+    sales_count NUMERIC(12,1) NOT NULL DEFAULT 0,          -- SKU 累计销量（V115/#5063：与 stock 同源，同笔单据口径必须一致）
     -- 成本（来自 V111，issue #5034「成本核算一起做」）：移动加权平均
     avg_cost NUMERIC(12,4),                                -- 移动加权平均单位成本；NULL = 未知（存量不回填、不猜 0）
     cost_amount NUMERIC(16,4),                             -- 库存成本金额 = stock * avg_cost；NULL = 成本未知
@@ -1537,9 +1537,9 @@ CREATE TABLE IF NOT EXISTS stock_ledger_entries (
     product_id VARCHAR(64) NOT NULL REFERENCES products(id),
     sku_id BIGINT,                                   -- 无 FK：SKU 会被硬删重建（追溯优先用 sku_code）
     sku_code VARCHAR(64),
-    delta INT NOT NULL,                              -- 正=入库/回补，负=出库/扣减（恒等于 after_qty - before_qty）
-    before_qty INT NOT NULL,
-    after_qty INT NOT NULL,
+    delta NUMERIC(12,1) NOT NULL,                    -- 正=入库/回补，负=出库/扣减（恒等于 after_qty - before_qty；V115/#5063）
+    before_qty NUMERIC(12,1) NOT NULL,
+    after_qty NUMERIC(12,1) NOT NULL,
     reason VARCHAR(16) NOT NULL,                     -- order / aftersales / manual / inbound（V111）
     ref_no VARCHAR(64),                              -- 订单号 / 工单号 / 入库单号 / 批次号；manual 为空
     note VARCHAR(255),                               -- 人类可读原因（如「盘点」「报损」）
@@ -1606,7 +1606,7 @@ CREATE TABLE IF NOT EXISTS inbound_order_items (
     sku_code VARCHAR(64),
     color_name VARCHAR(64),
     door_width VARCHAR(32),
-    quantity INT NOT NULL,                           -- 整数：与 product_skus.stock 粒度逐字一致
+    quantity NUMERIC(12,1) NOT NULL,                 -- 入库数量（米）：与 product_skus.stock 粒度逐字一致（V115/#5063）
     unit_cost NUMERIC(12,4),                         -- NULL = 未记单价 ⇒ 只加数量不算成本
     amount NUMERIC(16,4),                            -- quantity * unit_cost；NULL 单价 ⇒ NULL（不用 0 冒充）
     batch_no VARCHAR(32),                            -- 过账时才写（草稿为 NULL）
@@ -1632,7 +1632,7 @@ CREATE TABLE IF NOT EXISTS stock_batches (
     inbound_order_id VARCHAR(64) REFERENCES inbound_orders(id),
     inbound_item_id BIGINT,
     inbound_no VARCHAR(32),
-    quantity INT NOT NULL,
+    quantity NUMERIC(12,1) NOT NULL,                 -- 批次数量（米）：与 product_skus.stock 粒度逐字一致（V115/#5063）
     unit_cost NUMERIC(12,4),
     amount NUMERIC(16,4),
     dye_lot VARCHAR(64),

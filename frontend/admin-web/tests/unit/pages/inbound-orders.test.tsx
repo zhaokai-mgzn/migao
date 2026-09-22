@@ -3,7 +3,8 @@
 // PR-037（issue #5034，V111）：入库单页面 —— 「建单（草稿，不动库存）→ 过账（自动生成批次号 +
 //   自动加库存）→ 批次可追溯」这条动线在**前端**的可达性。
 //   本文件只守前端能守的部分：页面能渲染列表、建单弹窗把明细按「一行 = 一个批次」提交、
-//   数量必须 ≥1 的整数在**提交前**就被挡住（不是等后端 400）、过账按钮只在草稿态出现。
+//   数量「≥1 且最多 1 位小数」在**提交前**就被挡住（不是等后端 400）、过账按钮只在草稿态出现。
+//   （小数口径的判据本体见 tests/unit/lib/stock-quantity.test.ts 与 inbound-orders-decimal.test.tsx）
 //   「过账真的加了库存 / 批次号真的生成了 / 成本真的按移动加权平均算了」由后端守：
 //   backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderServiceTest.java（PR-029~033）。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -157,7 +158,7 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
     expect(mockPost).not.toHaveBeenCalled()
   })
 
-  it('数量非整数 ⇒ 提交前就被挡住（不把 0.5 米发给后端），且不调建单接口', async () => {
+  it('数量越界 ⇒ 提交前就被挡住（不把 0.5 米发给后端），且不调建单接口', async () => {
     render(<InboundOrdersPage />)
     await screen.findByText('RK-20260923-0001')
 
@@ -171,7 +172,7 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
 
     expect(mockCreate).not.toHaveBeenCalled()
     const { toast } = await import('sonner')
-    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('≥1 的整数'))
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('最多 1 位小数'))
   })
 
   it('详情：草稿态显示「过账后生成」且有过账按钮；过账后显示批次号、过账按钮消失', async () => {
