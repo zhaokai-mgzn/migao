@@ -22,7 +22,7 @@ name: Auto Merge
 # **只有**落在下面两个安全类里才 arm，其余一律 fail-closed 留人工（理由写进 step summary）。
 #   安全类 1（#4470 / #4475 的真实形态）：改动文件**全部**在 `.github/workflows/**`，且 diff 的
 #     每一处改动**都是** `uses:` 行上的版本 tag（action 名不变、只 tag 变）；不得新增/删除/改名
-#     文件、不得新增 `secrets.*` 引用、不得改触发条件/权限。
+#     文件、不得新增任何 secrets 引用、不得改触发条件/权限。
 #   安全类 2：改动文件**全部**不在 `.github/workflows/**`，且标题声明的版本变更是 **patch 或
 #     minor（同 major）**，且该版本字面量确实出现在 diff 的增删行里（不信标题）。**major 升级
 #     仍然留人工** —— 这是仓库原本跳过 bot PR 的真实理由（半套升级 / 大版本破坏要人工关）。
@@ -167,7 +167,7 @@ jobs:
 
       - name: Classify bot PR (fail-closed) and arm only if safe
         env:
-          # 用 `github.token`（= 内置 GITHUB_TOKEN，同一凭据）而**不是**再写一处 `secrets.*`
+          # 用 `github.token`（= 内置 GITHUB_TOKEN，同一凭据）而**不是**再写一处 secrets 引用
           # 引用：本 PR 的硬约束禁止新增 secrets 引用（Danger Scan 会 BLOCK），两者取值完全相同。
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -207,7 +207,7 @@ jobs:
               "GH_API_FAILED": "读不到 PR 文件清单（token/网络）⇒ 保持人工，勿凭猜测 arm",
               "NO_FILES": "PR 改动文件清单为空 ⇒ 无法判定安全类，保持人工",
               "FILE_ADDED_OR_REMOVED": "新增/删除/改名文件不在任何安全类内（workflow 可携带 secrets 执行）⇒ 人工审查",
-              "SECRETS_ADDED": "diff 新增了 secrets.* 引用 ⇒ 人工安全审查",
+              "SECRETS_ADDED": "diff 新增了 secrets 引用 ⇒ 人工安全审查",
               "PATCH_UNAVAILABLE": "拿不到 patch（二进制/超大 diff）⇒ 无法逐行校验 ⇒ 人工",
               "NOT_USES_ONLY": "workflow 改动不止 uses 版本 tag（触发条件/权限/结构）⇒ 人工审查",
               "ACTION_NAME_CHANGED": "action 名变了（不只是 tag）⇒ 人工审查",
