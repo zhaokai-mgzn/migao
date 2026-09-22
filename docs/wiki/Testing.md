@@ -195,5 +195,14 @@ cd tests && BASE_URL=http://localhost:3001 npx playwright test specs/products/ -
 cd tests/smoke && SMOKE_ENV=local pytest -m p0
 ```
 
+> 🔴 **本地跑 admin-web E2E 的端口隔离有个 Next 16 边界（issue #5121）**：`tests/playwright.config.ts`
+> 支持用 `ADMIN_WEB_PORT=<空闲端口>` 换端口，避开「3001 被**别的检出**的服务占用」。
+> 但 Next 16 起 `next dev` 在 `frontend/admin-web/.next/dev/lock` 上取 flock ⇒ **按目录单例**：
+> 同一检出里第二个 `next dev` **哪怕换了端口**也会被拒（`⨯ Another next dev server is already running.`）。
+> ⇒ 想同时留着一个手工 dev server 再跑 E2E，请改用**独立 worktree**（独立 checkout 有自己的锁文件）：
+> `./scripts/dev-worktree.sh add <branch>`；否则先停掉本检出里那个 dev server。
+> 该形态会在**配置加载期**被显式拒绝并给出可执行的停服命令
+> （判据：`tests/admin_web_devserver_identity.py`）。
+
 ---
 详见: [E2E README](../../tests/README.md) · [米宝验证用例](../testing/mibao-verification-cases.md)
