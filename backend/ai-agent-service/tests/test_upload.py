@@ -47,17 +47,85 @@ class TestSniffImageType:
 
 
 class TestValidateImageFile:
-    def test_valid_with_extension(self):
-        _validate_image_file(_file("image/png", "photo.png"))
+    """`_validate_image_file` 的成功路径**没有返回值**（返回 None）⇒ 只写「调用不抛异常」= 空断言。
+
+    真断言只能施加在**可观察后果**上：① 走通完整上传链路（证明它真的放行，而非被别处拦住）；
+    ② 扩展名白名单**大小写不敏感**（`.PNG` 归一后放行 / `.PNGX` 仍拒）；③ 无扩展名靠 MIME 放行。
+    """
+
+    @pytest.mark.asyncio
+    async def test_valid_with_extension(self):
+        """合法扩展名 ⇒ 校验放行，且**真的走到了代理转发**（不是「没抛异常」）。"""
+        png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
+        f = _file("image/png", "photo.png", png)
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json = MagicMock(return_value={
+            "success": True, "data": {"id": "f1", "url": "https://oss/photo.png"},
+        })
+        client = MagicMock()
+        client.post = AsyncMock(return_value=resp)
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.api.upload.httpx.AsyncClient", return_value=client):
+            result = await upload_chat_image(files=[f], user=_user(tenant_id=3))
+
+        assert result["success"] is True
+        assert result["data"]["files"] == [
+            {"id": "f1", "url": "https://oss/photo.png", "name": None, "size": None}
+        ], "合法扩展名必须真的被转发到 admin-api 并回填 id/url"
+        # 转发时用的文件名/类型逐字透传（证明扩展名没被改写或丢掉）
+        assert client.post.call_args.kwargs["files"]["file"][0] == "photo.png"
+        assert client.post.call_args.kwargs["files"]["file"][2] == "image/png"
+
+    def test_extension_whitelist_is_case_insensitive(self):
+        """`.PNG` 大写扩展名 ⇒ 归一后放行；`.PNGX` ⇒ 仍按 INVALID_FILE_EXTENSION 拒（只收窄不放宽）。"""
+        _validate_image_file(_file("image/png", "PHOTO.PNG"))  # 不抛 = 归一化生效
+        with pytest.raises(HTTPException) as e:
+            _validate_image_file(_file("image/png", "photo.pngx"))
+        assert e.value.detail["error"]["code"] == "INVALID_FILE_EXTENSION"
+        assert e.value.detail["error"]["message"] == "不支持的文件扩展名: .pngx", (
+            "错误信息必须带上**归一后**的扩展名（小写 + 带点）"
+        )
+
+    @pytest.mark.asyncio
+    async def test_empty_extension_passthrough(self):
+        """无扩展名（`photo`）⇒ 扩展名校验**跳过**、由 MIME 放行，并真的走到代理转发。
+
+        这是有意的设计（客户端可能传无扩展名文件）：判据不是「没抛异常」，
+        而是「扩展名缺失**不构成**拒绝理由，且内容嗅探仍生效」。
+        """
+        png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
+        f = _file("image/png", "photo", png)
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json = MagicMock(return_value={"success": True, "data": {"id": "f2", "url": "u2"}})
+        client = MagicMock()
+        client.post = AsyncMock(return_value=resp)
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.api.upload.httpx.AsyncClient", return_value=client):
+            result = await upload_chat_image(files=[f], user=_user(tenant_id=3))
+
+        assert result["success"] is True
+        assert [x["id"] for x in result["data"]["files"]] == ["f2"]
+        assert client.post.call_args.kwargs["files"]["file"][0] == "photo", (
+            "无扩展名文件名必须原样透传（不得被补成 .jpg 之类）"
+        )
+
+    def test_empty_extension_still_subject_to_mime_whitelist(self):
+        """无扩展名**不等于**免检：MIME 不在白名单 ⇒ 仍 400 INVALID_FILE_TYPE。"""
+        with pytest.raises(HTTPException) as e:
+            _validate_image_file(_file("application/octet-stream", "photo"))
+        assert e.value.detail["error"]["code"] == "INVALID_FILE_TYPE"
 
     def test_invalid_extension(self):
         with pytest.raises(HTTPException) as e:
             _validate_image_file(_file("image/png", "photo.exe"))
         assert e.value.status_code == 400
         assert e.value.detail["error"]["code"] == "INVALID_FILE_EXTENSION"
-
-    def test_empty_extension_passthrough(self):
-        _validate_image_file(_file("image/png", "photo"))
 
     def test_invalid_mime(self):
         with pytest.raises(HTTPException) as e:

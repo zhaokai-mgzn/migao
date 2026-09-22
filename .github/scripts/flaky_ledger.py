@@ -12,7 +12,8 @@
 本模块只做 **CI 层两件事**（测试层的机械守卫 (C) 项由另一单承担）：
   ① failed job **重跑分流**：首次失败 ⇒ 自动重跑 **1 次（上限，绝不无限重跑）**；
      第二次绿 ⇒ 标 flaky（可见标注 + 记账）；第二次仍红 ⇒ **照常失败**。
-  ② flaky **台账**（`.github/flaky-ledger.json`）：**只追加**、幂等、可被后续单消费。
+  ② flaky **台账**（`.github/flaky-ledger.json`）：**只追加**、幂等、可被后续单消费；
+     **推前先与 main 对齐**（并集 + 最新 main 之上重放 + `--force-with-lease` 推送，见 #5100）。
 
 三条不变量（判据的骨头；每条都有反向红证，见
 `tests/unit_ci_workflows/test_flaky_triage.py`）
@@ -37,6 +38,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import subprocess
@@ -329,6 +331,26 @@ def append_entries(ledger: dict, entries: list) -> tuple:
     return added, skipped
 
 
+def union_ledgers(main_ledger, branch_ledger) -> dict:
+    """**并集**（幂等、不丢条目）：以 main 台账为基线，幂等并入分支侧条目。
+
+    **复用** `append_entries`（幂等键 `entry_key` 的去重逻辑只有一份，不新写第二套并集）。
+
+    #5100 为什么需要它：台账分支的追加路径**不自愈** —— 旧实现在**分支自己的 HEAD**（旧基线）
+    上追加，而台账 PR 走 **squash 合并** ⇒ 分支历史**永不含** main 上那个 squash 提交
+    ⇒ **只追加**的分支**每轮都会再冲突**（实测 `diverged, ahead_by 34, behind_by 16`）。
+    根治 = 推前先与 main 对齐：**先并集，再在最新 main 之上重放**（见 `align_with_main`）。
+
+    三条不变量（判据：`tests/unit_ci_workflows/test_flaky_ledger_append_selfheal.py`）：
+      · **幂等** —— 同一 key 只留一条（重复并集是无副作用的空操作）；
+      · **不丢条目** —— 结果 ⊇ main ∪ 分支 ⇒ 条目数 ≥ `max(main, 分支)`；
+      · **同 key 内容不同时以 main 为准**（main 是**已合并的权威态**；只追加写者不产生这种差异）。
+    """
+    merged = copy.deepcopy(main_ledger or {})
+    append_entries(merged, list((branch_ledger or {}).get("entries") or []))
+    return merged
+
+
 def load_ledger(path: Path) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -336,6 +358,73 @@ def load_ledger(path: Path) -> dict:
 def save_ledger(path: Path, ledger: dict) -> None:
     Path(path).write_text(
         json.dumps(ledger, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _show_json(rev_path: str, what: str):
+    """读 `git show <rev>:<path>` 并解析 JSON。**fail-closed**：读不到/不是 JSON ⇒ 抛错。
+
+    绝不许把「读不到」当「空台账」继续 —— 那会**丢**掉那一侧的条目（并集的全部意义）。
+    """
+    out = _git("show", rev_path)
+    if out.returncode != 0 or not out.stdout.strip():
+        raise RuntimeError(f"读不到{what}（{rev_path}）：{(out.stderr or '空内容').strip()[:200]}")
+    try:
+        return json.loads(out.stdout)
+    except ValueError as exc:
+        raise RuntimeError(f"{what}（{rev_path}）不是合法 JSON：{exc}")
+
+
+def align_with_main(ledger_path, branch: str = LEDGER_BRANCH) -> dict:
+    """**推前先与 main 对齐**（#5100 根治）：并集 + 在**最新 main 之上**重放（并写回台账文件）。
+
+    步骤（**全 fail-closed**：任一步取不到事实 ⇒ 抛 `RuntimeError`，绝不「当作空台账」继续）：
+      ① `git fetch origin main` → 读 `origin/main:<台账相对路径>`（main 侧 = **权威态**）；
+      ② 分支存在 ⇒ 读 `FETCH_HEAD:<台账相对路径>`，并记下它的 HEAD（= 推送要用的 **lease 期望值**）；
+      ③ `union_ledgers(main, 分支)`（幂等 + 不丢条目）；
+      ④ `git checkout -B <branch> origin/main` ⇒ 把并集**写回** `ledger_path`
+         —— 此后调用方的 `git diff` 基线是 **main**（不再是旧分支），提交落在**最新 main 之上**。
+
+    返回 `{"lease": "<branch>:<sha>" | "", "branch_head": …, "main_total": n,
+    "branch_total": n, "merged_total": n}`；`lease` 供调用方做 `--force-with-lease`
+    （lease 失败 = 别人刚推 ⇒ **重取重算，绝不强推**）。
+
+    ⚠️ `ledger_path` 必须是**仓库相对**路径：本函数要对 git 说 `origin/main:<该路径>`。
+    """
+    rel = Path(ledger_path).as_posix()
+    if Path(rel).is_absolute():
+        raise RuntimeError(f"`--ledger` 必须是**仓库相对**路径（要用于 `origin/main:<路径>`），"
+                           f"实际 {str(ledger_path)!r}")
+
+    fetch = _git("fetch", "--quiet", "origin", "main")
+    if fetch.returncode != 0:
+        raise RuntimeError(f"git fetch origin main 失败：{(fetch.stderr or '').strip()[:200]}")
+    main_ledger = _show_json(f"origin/main:{rel}", "main 侧台账")
+
+    branch_head, branch_ledger = None, None
+    ls = _git("ls-remote", "--heads", "origin", branch)
+    if ls.returncode != 0:
+        raise RuntimeError(
+            f"git ls-remote 失败（无法判定分支是否存在）：{(ls.stderr or '').strip()[:200]}")
+    if ls.stdout.strip():
+        got = _git("fetch", "--quiet", "origin", branch)
+        if got.returncode != 0:
+            raise RuntimeError(f"git fetch origin {branch} 失败：{(got.stderr or '').strip()[:200]}")
+        branch_head = _git("rev-parse", "FETCH_HEAD").stdout.strip() or None
+        branch_ledger = _show_json(f"FETCH_HEAD:{rel}", "分支侧台账")
+
+    merged = union_ledgers(main_ledger, branch_ledger)
+    co = _git("checkout", "-B", branch, "origin/main")
+    if co.returncode != 0:
+        raise RuntimeError(
+            f"git checkout -B {branch} origin/main 失败：{(co.stderr or '').strip()[:200]}")
+    save_ledger(ledger_path, merged)
+    return {
+        "lease": f"{branch}:{branch_head}" if branch_head else "",
+        "branch_head": branch_head,
+        "main_total": len(ledger_keys(main_ledger)),
+        "branch_total": len(ledger_keys(branch_ledger or {})),
+        "merged_total": len(ledger_keys(merged)),
+    }
 
 
 def ledger_violations(ledger: dict) -> list:
@@ -776,9 +865,14 @@ def main(argv=None) -> int:
     p.add_argument("--json-out")
     p.add_argument("--gh-output")
 
-    p = sub.add_parser("append", help="只追加 + 幂等地写入台账")
+    p = sub.add_parser("append", help="只追加 + 幂等地写入台账（`--align-main`：推前先与 main 对齐）")
     p.add_argument("--ledger", default=str(LEDGER_PATH))
     p.add_argument("--entries", required=True)
+    p.add_argument("--align-main", action="store_true",
+                   help="#5100：推前先与 main 对齐（并集 + 在最新 main 之上重放）；"
+                        "需**仓库相对**的 --ledger")
+    p.add_argument("--branch", default=LEDGER_BRANCH, help="台账分支名（仅 `--align-main` 用）")
+    p.add_argument("--gh-output", help="写出 `lease=<branch>:<sha>`（供 `--force-with-lease` 用）")
 
     p = sub.add_parser("selftest", help="台账自洽性判据（fail-closed）")
     p.add_argument("--ledger", default=str(LEDGER_PATH))
@@ -889,6 +983,24 @@ def main(argv=None) -> int:
         return 0
 
     if args.cmd == "append":
+        lease = ""
+        if args.align_main:
+            # #5100：**推前先与 main 对齐**（并集 + 最新 main 之上重放）。失败 ⇒ 拒绝在旧基线上追加。
+            try:
+                info = align_with_main(args.ledger, args.branch)
+            except RuntimeError as exc:
+                print(f"⛔ 推前对齐失败（{exc}）⇒ **拒绝在旧基线上追加**（fail-closed，不静默）",
+                      file=sys.stderr)
+                return 1
+            lease = info["lease"]
+            print(f"🧭 推前已与 main 对齐：main {info['main_total']} 条 · "
+                  f"分支 {info['branch_total']} 条 ⇒ 并集 {info['merged_total']} 条"
+                  f"（基线 = origin/main；lease={'有' if lease else '无（分支尚不存在）'}）")
+        if args.gh_output:
+            # lease 期望值必须**在推送前**交给调用方（它决定 `--force-with-lease=<ref>:<sha>`）；
+            # 没走对齐时为空串（= 分支还不存在 ⇒ 调用方用普通推送）。
+            with open(args.gh_output, "a", encoding="utf-8") as fh:
+                fh.write(f"lease={lease}\n")
         ledger = load_ledger(args.ledger)
         entries = json.loads(Path(args.entries).read_text(encoding="utf-8"))
         bad = ledger_violations(ledger)

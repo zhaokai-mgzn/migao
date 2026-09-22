@@ -59,20 +59,90 @@ jobs:
         with:
           fetch-depth: 0
 
+      # 告警面（issue #5076 ① 类：机制/簿记 job 自身失败不得静默）：
+      #   改前 `gh pr merge … || echo "⚠️ …非错误"` 把**任何**非零返回吞成同一个 warning
+      #   ⇒ 真失败（权限/鉴权/GraphQL 报错）与「幂等正常」**同形**，且本仓有过 auto-merge
+      #   **静默没 arm** 的事故（issue #4829）。改后按「预期内 vs 真失败」分流：
+      #     · 预期内（`already in merge queue` 等幂等情形）→ 非阻塞 + 明确文案；
+      #     · 真失败 → `::error::` + step summary + 非零退出（PR 检查列表里真的红）。
+      #   命令成功也**不足以**证明 arm 上了 ⇒ 后置条件查 PR 的实际 autoMergeRequest（三态）。
+      # 注：`GITHUB_STEP_SUMMARY` 由 runner 预置为环境变量，无需（也不该）在 env: 里重声明。
       - name: Enable native auto-merge (squash)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 双保险：即使 git 上下文异常，gh 也能凭 GH_REPO 解析目标仓库
           GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          set +e
-          gh pr merge "${{ github.event.pull_request.number }}" \
-            --auto --squash --delete-branch 2>&1
-          rc=$?
-          if [ $rc -ne 0 ]; then
-            # 常见幂等场景：已处于 auto-merge 状态 / 合并条件暂不满足（CI 未绿），非错误
-            echo "⚠️  gh pr merge --auto 返回 $rc（已开启过或暂不可合并时属正常）"
+          set -uo pipefail
+
+          merge_out="$(mktemp)"
+          # ⚠️ trap 里的变量名必须与主流程的 `rc` **不同名**：trap 是 EXIT 时执行的，
+          #    用 `rc=$?` 会覆盖主流程已判定的退出码（本脚本初版就这么错过一次）。
+          trap 'trc=$?; rm -f "${merge_out:-}"; exit $trc' EXIT
+
+          rc=0
+          gh pr merge "$PR_NUMBER" --auto --squash --delete-branch >"$merge_out" 2>&1 || rc=$?
+
+          if [ "$rc" -ne 0 ]; then
+            # 预期内（幂等/暂不可合并）：**只收窄**——必须逐字命中这些标记才算预期内，
+            # 其余一律按真失败处理（fail-closed：宁可多报一次，也不静默放过）。
+            if grep -qiE 'already (in|queued|enabled|merged)|already been merged' "$merge_out"; then
+              echo "ℹ️  预期内（幂等）返回 ${rc}：$(tr '\n' ' ' < "$merge_out")"
+              echo "    PR #$PR_NUMBER 的 auto-merge 已处于目标状态，非失败。"
+              exit 0
+            fi
+            echo "::error::gh pr merge --auto 真失败（rc=${rc}）—— PR #$PR_NUMBER 未被 arm，且不会有别的东西因此停手"
+            sed 's/^/    /' "$merge_out"
+            {
+              echo "### Enable auto-merge — 真失败"
+              echo ""
+              echo "- PR：#$PR_NUMBER"
+              echo "- \`gh pr merge --auto\` 退出码：$rc"
+              echo "- 输出（未命中预期内幂等标记）："
+              echo '```'
+              cat "$merge_out"
+              echo '```'
+              echo "- ⇒ **auto-merge 未 arm**；本 job 判红即为真问题（不是幂等正常）。"
+            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            exit 1
           fi
+
+          # ---------- 后置条件：命令成功 ≠ 真的 arm 上了（issue #4829 的「静默没 arm」）----------
+          state="$(gh pr view "$PR_NUMBER" \
+            --json autoMergeRequest \
+            --jq 'if .autoMergeRequest == null then "none" else "armed" end' 2>/dev/null || true)"
+          if [ -z "$state" ]; then
+            echo "::error::auto-merge 后置状态查询失败（PR #${PR_NUMBER}：gh 限流/网络/无权限）—— 无法判定是否已 arm，不得当成功"
+            {
+              echo "### Enable auto-merge — 后置状态无法判定"
+              echo ""
+              echo "- PR：#$PR_NUMBER"
+              echo "- \`gh pr merge --auto\` 返回 0，但 \`gh pr view --json autoMergeRequest\` 查询失败。"
+              echo "- ⇒ 三态判定为 **unknown**，不得当「已 arm」读。"
+            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            exit 1
+          fi
+          case "$state" in
+            armed)
+              echo "✅ auto-merge 已 arm（PR #${PR_NUMBER}，squash + delete-branch）"
+              ;;
+            none)
+              echo "::error::auto-merge 未 arm：gh 返回 0 但 PR #$PR_NUMBER 的 autoMergeRequest 仍为 null（issue #4829 的静默没 arm 形态）"
+              {
+                echo "### Enable auto-merge — 未 arm（静默失效）"
+                echo ""
+                echo "- PR：#$PR_NUMBER"
+                echo "- \`gh pr merge --auto\` 返回 **0**，但 \`autoMergeRequest == null\`。"
+                echo "- ⇒ 命令成功不代表 arm 成功（#4829）：CI 一绿**不会**自动合并。"
+              } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+              exit 1
+              ;;
+            *)
+              echo "::error::auto-merge 后置状态不可解析（PR #${PR_NUMBER}）：state='$state'"
+              exit 1
+              ;;
+          esac
   # ── bot 安全路径（2026-09-22 新增，关联 #5077）────────────────────────────────
   # 与既有 job 同一组护栏，只把作者类型换成 bot（两条路径互斥 ⇒ 任一 PR 只可能走一条）。
   enable-auto-merge-bot-safe:

@@ -48,9 +48,14 @@ function startsWithAny(pathname: string, prefixes: string[]): boolean {
   return prefixes.some((prefix) => pathname.startsWith(prefix))
 }
 
-// ── Middleware ───────────────────────────────────────────────────
+// ── Proxy（Next 16 起 `middleware` 文件约定改名 `proxy`，导出名同步为 `proxy`）─────
+// 迁移依据（Next 16 自带判据，非猜测）：`next build` 对 `middleware` 文件约定发
+//   ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.
+// 且 Next 运行时按 `isProxy ? mod.proxy : mod.middleware` 取处理函数、导出名不符即抛
+//   `The Proxy file "..." must export a function named \`proxy\` or a default function.`
+// 故本文件与导出名必须**同时**改名。`config.matcher` 语义不变。
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   try {
     const host = request.headers.get('host') || ''
     const hostname = getHostname(host)
@@ -58,7 +63,7 @@ export function middleware(request: NextRequest) {
 
     return handleRequest(hostname, pathname, request)
   } catch (e) {
-    console.error('middleware error:', e)
+    console.error('proxy error:', e)
     return new NextResponse('Internal Server Error', { status: 500 })
   }
 }

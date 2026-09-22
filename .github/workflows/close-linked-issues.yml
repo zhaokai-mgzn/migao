@@ -150,6 +150,20 @@ jobs:
         run: |
           set -euo pipefail
 
+          # 告警面（issue #5076 ① 类：机制/簿记 job 自身失败不得静默）：
+          #   本 job 静默失败 = issue 不关。**预期内**的非零返回已各自 `exit 0`（见下方
+          #   「未合并 PR」等分支）；任何**非预期**失败（set -e 中断 / 显式 exit 1）都必须
+          #   留下 `::error::` + step summary —— 否则 step 红了而 summary 为空，
+          #   读者在 PR 页面看不到病因。顺带在此 trap 里回收临时文件（原 trap 只做回收）。
+          rows_file=""
+          trap 'trc=$?; if [ "$trc" -ne 0 ]; then
+                  echo "::error::close-linked-issues 本轮非零退出（rc=${trc}）—— 不得当作『已对账』（声明关闭的 issue 可能仍悬挂）";
+                  { echo "### Close linked issues — 本轮失败（rc=${trc}）"; echo "";
+                    echo "- 事件：${EVENT_NAME}/${EVENT_ACTION}";
+                    echo "- ⇒ 本轮**未完成对账**。详见本 run 的 \`::error::\` 注解。";
+                  } >> "${GITHUB_STEP_SUMMARY:-/dev/null}";
+                fi; rm -f "${rows_file:-}"; exit $trc' EXIT
+
           RECONCILE_HOURS="${RECONCILE_HOURS:-48}"
           PAGE_LIMIT="${PAGE_LIMIT:-100}"
           MAX_LIMIT="${MAX_LIMIT:-1000}"
@@ -190,7 +204,6 @@ jobs:
           # jq @tsv 会把 body 里的换行/制表符转义成 \n / \t → 保证「一行一 PR」可安全逐行读；
           # 关键词正则不受转义影响（`Closes #123` 原样保留），否定护栏会先把 \n 还原再按行判定。
           rows_file="$(mktemp)"
-          trap 'rm -f "$rows_file"' EXIT
           n_pages=0
           truncated=0
           if [ -n "$SINGLE_PR" ]; then

@@ -1,5 +1,5 @@
 # admin-web Dockerfile
-# Next.js 14 App Router 生产部署
+# Next.js 16 App Router 生产部署（运行时 node:20-alpine ⇒ @types/node 同步锁在 ^20）
 FROM node:20-alpine
 
 WORKDIR /app

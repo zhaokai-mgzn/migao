@@ -1,11 +1,13 @@
 #!/bin/bash
 # migao 快速部署脚本：SWAS 服务器拉取 CI 预构建镜像（不做源码构建）
 #
-# 流程：拉 repo 内 canonical compose/nginx → pull 镜像 → up -d → 健康检查
+# 流程：拉 repo 内 canonical compose/nginx（**与镜像 tag 同源**，见第 0 段 / issue #5083）
+#       → pull 镜像 → up -d → 健康检查
 # 服务器每次部署从"源码构建 3 个服务（10-30min）"降为"拉镜像 + 滚动更新（<2min）"。
 #
 # 并发安全：flock 串行化（CI 可能并行触发）。
-# 镜像 tag：${1:-latest}，CI 默认推 latest。
+# 镜像 tag：`${1:-latest}`。⚠️ 配置（compose/nginx）按该 tag 对应的 commit 取 ⇒ 实际部署必须给
+#           `sha-<7位hex>`（CI 的正常形态）；`latest` 这类**移动 tag** 追不到 commit ⇒ fail-closed。
 # 镜像仓库登录：若存在 .env.registry（ACR_USERNAME/ACR_PASSWORD）则登录；
 #               ACR 仓库设为公开读时无需登录。
 set -euo pipefail
@@ -25,6 +27,41 @@ trap 'flock -u 9' EXIT
 cd /opt/migao-deploy
 TAG=${1:-latest}
 REGISTRY=${ACR_REGISTRY:-crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com}
+
+# ══════════════════════════════════════════════════════════════════════════
+# 0. 配置源与镜像 tag **同源**（issue #5083 / 无方向审计 P2-2.8）
+#
+# 病根（**审计实测**，非推断）：配置（compose / nginx）此前**无条件**取
+# `refs/heads/main` 的最新版，而镜像 tag 是按 commit 固定的 ⇒ **回滚到旧 tag 时
+# 配置仍是新版**（旧镜像 + 新配置 = 未定义行为，而且**不报错、不告警**）。
+# 与本仓「部署结论以**容器真身**为唯一判据」同族：配置也是"真身"的一部分。
+#
+# 判据（**唯一一份推导**）：配置 ref 由镜像 tag 推导，**绝不**由 main 推导 ——
+#   `sha-<hex>` ⇒ `<hex>`（**与镜像同一个 commit**，不可变引用）
+#   其它形态    ⇒ `refs/tags/<tag>`（tag→commit 的解析；tag 不存在 ⇒ 404 ⇒ **fail-closed**）
+# 取不到对应配置 ⇒ **非零退出 + 可行动报错**（**绝不**静默回落到 main 的配置）。
+# ══════════════════════════════════════════════════════════════════════════
+# 配置源（**唯一一处**）：codeload 归档。可被覆盖 ⇒ 守卫测试用桩打同一条码路。
+CONFIG_TARBALL_BASE=${CONFIG_TARBALL_BASE:-https://codeload.github.com/zhaokai-mgzn/migao/tar.gz}
+
+# `sha-<hex>` → 提交 sha；其它形态（latest / v1.2.3 / 空）⇒ 空串（= 没有提交可锚）
+tag_to_sha() {
+  local t=${1#sha-}
+  case "$t" in
+    *[!0-9a-f]*|"") echo ""; return 0 ;;
+  esac
+  if [ "${#t}" -ge 7 ]; then echo "$t"; else echo ""; fi
+  return 0
+}
+
+# 配置 ref：与镜像 tag **同源** ⇒ 任何分支都不可能返回 `refs/heads/main`
+config_ref_for_tag() {
+  local t=$1 s
+  s=$(tag_to_sha "$t")
+  if [ -n "$s" ]; then echo "$s"; return 0; fi
+  if [ -n "$t" ]; then echo "refs/tags/$t"; fi
+  return 0
+}
 
 # ══════════════════════════════════════════════════════════════════════════
 # 2.4 磁盘保留策略 × 回滚点对齐（issue #4808）
@@ -163,9 +200,32 @@ report_rollback_point() {
 }
 
 
-echo "== 1. 同步 repo 内 canonical compose + nginx 配置 =="
-curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 15 --max-time 120 -o src.tar.gz https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main
+CONFIG_REF_RESOLVED=$(config_ref_for_tag "$TAG")
+if [ -z "$CONFIG_REF_RESOLVED" ]; then
+  echo "❌ 无法把镜像 tag 追溯到具体 commit（tag=${TAG}）⇒ **拒绝用 main 的配置**（issue #5083）"
+  echo "   配置（compose/nginx）必须与镜像**同一 commit**：否则回滚时是「旧镜像 + 新配置」（未定义行为、且不报错）"
+  echo "   修法：改用 \`sha-<7位hex>\` 形态的 tag（= CI 部署的正常形态）"
+  exit 1
+fi
+echo "== 1. 同步 repo 内 canonical compose + nginx 配置（ref=${CONFIG_REF_RESOLVED}，与镜像 tag=${TAG} 同源）=="
+# ⚠️ 这一段是「配置与镜像同源」的**唯一**落点（issue #5083）：URL 的 ref 来自 `$CONFIG_REF_RESOLVED`，
+#    它由 `config_ref_for_tag "$TAG"` 推导 ⇒ 脚本里**不存在**「无条件取 main 配置」的路径。
+if ! curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 15 --max-time 120 -o src.tar.gz "$CONFIG_TARBALL_BASE/$CONFIG_REF_RESOLVED"; then
+  echo "  ❌ 取不到 tag=${TAG} 对应的配置（ref=${CONFIG_REF_RESOLVED}）⇒ **中止部署**（绝不回落到 main 的配置）"
+  echo "     · 若 tag 是 latest 这类**移动 tag**（追不到具体 commit）⇒ 改用 sha-<7位hex> 形态的 tag"
+  echo "     · 否则核对：该 commit/tag 在 zhaokai-mgzn/migao 上存在且可达"
+  exit 1
+fi
 rm -rf src && mkdir -p src && tar xzf src.tar.gz -C src --strip-components=1
+# 包内容自检（fail-closed）：旧 commit（早于 #4785）没有蓝绿 override，被劫持的 200 响应也不是仓库树
+# ⇒ 一律**中止**，绝不「main 的同名文件补上」（那正是本单要修的「旧镜像 + 新配置」）。
+if [ ! -f src/deploy/swas/docker-compose.yml ] || [ ! -f src/deploy/swas/nginx.conf ] \
+   || [ ! -f src/deploy/swas/docker-compose.bluegreen.yml ]; then
+  echo "  ❌ ref=${CONFIG_REF_RESOLVED} 的源码包里找不到 canonical 配置（deploy/swas/docker-compose.yml|nginx.conf|docker-compose.bluegreen.yml）"
+  echo "     · 该 commit 早于 #4785（没有蓝绿 override）⇒ 回滚到它需要配套更早的部署脚本"
+  echo "     · 若整包都不是 migao 仓库树 ⇒ 核对 $CONFIG_TARBALL_BASE 与网络（代理/门户劫持）"
+  exit 1
+fi
 mkdir -p nginx certbot-www
 cp src/deploy/swas/docker-compose.yml ./docker-compose.yml
 cp src/deploy/swas/nginx.conf ./nginx/nginx.conf
@@ -308,15 +368,8 @@ ALLOW_DOWNGRADE=${ALLOW_DOWNGRADE:-0}
 # 判据源（**唯一一处**）：GitHub compare API。可被覆盖 ⇒ 守卫测试用桩打同一条码路。
 DOWNGRADE_API=${DOWNGRADE_API:-https://api.github.com/repos/zhaokai-mgzn/migao/compare}
 
-# `sha-<hex>` → 提交 sha；其它形态（latest / v1.2.3 / 空）⇒ 空串（= 没有提交序可判）
-tag_to_sha() {
-  local t=${1#sha-}
-  case "$t" in
-    *[!0-9a-f]*|"") echo ""; return 0 ;;
-  esac
-  if [ "${#t}" -ge 7 ]; then echo "$t"; else echo ""; fi
-  return 0
-}
+# `tag_to_sha()`（`sha-<hex>` → 提交 sha）已在**第 0 段**定义 —— 「配置与镜像同源」（#5083）
+# 与这里的「提交序判据」（#4852）**共用同一份解析**，避免两处形态判断漂移。
 
 # 该服务**当前在跑**的镜像 tag（容器没起 / docker 取不到 ⇒ 空串 = 判不了）
 running_tag_of() {

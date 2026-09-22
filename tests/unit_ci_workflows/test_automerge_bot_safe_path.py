@@ -75,14 +75,87 @@ ORIGINAL_NONBOT_IF_RAW = """      github.event.pull_request.base.ref == 'main' &
       github.event.pull_request.head.repo.full_name == github.repository &&
       !contains(github.event.pull_request.labels.*.name, 'block/merge')"""
 
-ORIGINAL_NONBOT_RUN_RAW = """          set +e
-          gh pr merge "${{ github.event.pull_request.number }}" \\
-            --auto --squash --delete-branch 2>&1
-          rc=$?
-          if [ $rc -ne 0 ]; then
-            # 常见幂等场景：已处于 auto-merge 状态 / 合并条件暂不满足（CI 未绿），非错误
-            echo "⚠️  gh pr merge --auto 返回 $rc（已开启过或暂不可合并时属正常）"
-          fi"""
+# ⚠️ 2026-09-22 刷新：`#5109` 给该 run 块加了「arm 后回读 autoMergeRequest」的后置条件 ⇒
+# 本常量随之更新为 **origin/main 当前内容**（判据 7 的语义 = 「非 bot 路径相对**当前主干**逐字不变」，
+# 而不是「相对某个历史快照不变」）。刷新方式：从 origin/main 原始文本提取该 run 块。
+# ⚠️ 2026-09-22 刷新：`#5109` 给该 run 块加了「arm 后回读 autoMergeRequest」的后置条件 ⇒
+# 本常量随之更新为 **origin/main 当前内容**（判据 7 的语义 = 「非 bot 路径相对**当前主干**逐字不变」，
+# 而不是「相对某个历史快照不变」）。提取方式：从 origin/main 版 `automerge.yml` 的该 run 块按行取原文。
+# ⚠️ 2026-09-22 刷新：`#5109` 给该 run 块加了「arm 后回读 autoMergeRequest」的后置条件 ⇒
+# 本常量随之更新为 **origin/main 当前内容**（判据 7 的语义 = 「非 bot 路径相对**当前主干**逐字不变」，
+# 而不是「相对某个历史快照不变」）。提取方式：从 origin/main 版 `automerge.yml` 的该 run 块按行取原文。
+# ⚠️ 2026-09-22 刷新：`#5109` 给该 run 块加了「arm 后回读 autoMergeRequest」的后置条件 ⇒
+# 本常量随之更新为 **origin/main 当前内容**（判据 7 的语义 = 「非 bot 路径相对**当前主干**逐字不变」，
+# 而不是「相对某个历史快照不变」）。提取方式：从该 run 块按行取原文并**转义反斜杠**。
+ORIGINAL_NONBOT_RUN_RAW = """          set -uo pipefail
+
+          merge_out="$(mktemp)"
+          # ⚠️ trap 里的变量名必须与主流程的 `rc` **不同名**：trap 是 EXIT 时执行的，
+          #    用 `rc=$?` 会覆盖主流程已判定的退出码（本脚本初版就这么错过一次）。
+          trap 'trc=$?; rm -f "${merge_out:-}"; exit $trc' EXIT
+
+          rc=0
+          gh pr merge "$PR_NUMBER" --auto --squash --delete-branch >"$merge_out" 2>&1 || rc=$?
+
+          if [ "$rc" -ne 0 ]; then
+            # 预期内（幂等/暂不可合并）：**只收窄**——必须逐字命中这些标记才算预期内，
+            # 其余一律按真失败处理（fail-closed：宁可多报一次，也不静默放过）。
+            if grep -qiE 'already (in|queued|enabled|merged)|already been merged' "$merge_out"; then
+              echo "ℹ️  预期内（幂等）返回 ${rc}：$(tr '\\n' ' ' < "$merge_out")"
+              echo "    PR #$PR_NUMBER 的 auto-merge 已处于目标状态，非失败。"
+              exit 0
+            fi
+            echo "::error::gh pr merge --auto 真失败（rc=${rc}）—— PR #$PR_NUMBER 未被 arm，且不会有别的东西因此停手"
+            sed 's/^/    /' "$merge_out"
+            {
+              echo "### Enable auto-merge — 真失败"
+              echo ""
+              echo "- PR：#$PR_NUMBER"
+              echo "- \\`gh pr merge --auto\\` 退出码：$rc"
+              echo "- 输出（未命中预期内幂等标记）："
+              echo '```'
+              cat "$merge_out"
+              echo '```'
+              echo "- ⇒ **auto-merge 未 arm**；本 job 判红即为真问题（不是幂等正常）。"
+            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            exit 1
+          fi
+
+          # ---------- 后置条件：命令成功 ≠ 真的 arm 上了（issue #4829 的「静默没 arm」）----------
+          state="$(gh pr view "$PR_NUMBER" \\
+            --json autoMergeRequest \\
+            --jq 'if .autoMergeRequest == null then "none" else "armed" end' 2>/dev/null || true)"
+          if [ -z "$state" ]; then
+            echo "::error::auto-merge 后置状态查询失败（PR #${PR_NUMBER}：gh 限流/网络/无权限）—— 无法判定是否已 arm，不得当成功"
+            {
+              echo "### Enable auto-merge — 后置状态无法判定"
+              echo ""
+              echo "- PR：#$PR_NUMBER"
+              echo "- \\`gh pr merge --auto\\` 返回 0，但 \\`gh pr view --json autoMergeRequest\\` 查询失败。"
+              echo "- ⇒ 三态判定为 **unknown**，不得当「已 arm」读。"
+            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            exit 1
+          fi
+          case "$state" in
+            armed)
+              echo "✅ auto-merge 已 arm（PR #${PR_NUMBER}，squash + delete-branch）"
+              ;;
+            none)
+              echo "::error::auto-merge 未 arm：gh 返回 0 但 PR #$PR_NUMBER 的 autoMergeRequest 仍为 null（issue #4829 的静默没 arm 形态）"
+              {
+                echo "### Enable auto-merge — 未 arm（静默失效）"
+                echo ""
+                echo "- PR：#$PR_NUMBER"
+                echo "- \\`gh pr merge --auto\\` 返回 **0**，但 \\`autoMergeRequest == null\\`。"
+                echo "- ⇒ 命令成功不代表 arm 成功（#4829）：CI 一绿**不会**自动合并。"
+              } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+              exit 1
+              ;;
+            *)
+              echo "::error::auto-merge 后置状态不可解析（PR #${PR_NUMBER}）：state='$state'"
+              exit 1
+              ;;
+          esac"""
 
 # 原文件里唯一的一处 secrets 引用（本 PR 不得新增第二处）
 ORIGINAL_SECRETS_LINE = "          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
