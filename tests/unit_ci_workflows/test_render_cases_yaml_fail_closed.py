@@ -16,11 +16,15 @@
 「已归零」⇒ 报「**基线归零未删 9（阻塞）**」并建议 `--regen-baseline`（照做＝**凭一次解析错误
 永久删掉真豁免**）。
 
-## 本文件锁四条（每条都带能单独变红的红证）
+## 本文件锁五条（每条都带能单独变红的红证）
 
-1. **红证 A**：注入含未转义双引号的用例 yml（**临时目录**，不污染真用例库）⇒ `render_cases.py`
-   **非零退出**且**指名文件与位置**；把那一处改成转义写法 ⇒ 恢复绿。
+1. **红证 A**：把 **#5147 的真实坏输入**（`product.yml` 那条判据的两处未转义裸双引号，见
+   `_REAL_5147_BAD_LINE`）放进**临时目录**（不污染真用例库）⇒ `render_cases.py` **非零退出**且
+   **指名文件与位置**；换成 PR #5147 合入的转义写法 ⇒ 恢复绿。
    （改前形态：`render_cases.py` **退出 0** 并渲染成功 —— 本文件在改前必红。）
+   ⚠️ **`case-truth-check` job 没有 PyYAML** ⇒ 同一场景**在无 PyYAML 配置下也必须红**
+   （否则"渲染腿 fail-closed"在 CI 上只是名义上的，两层分歧原样保留）——
+   单独一条 `test_render_leg_fails_closed_without_pyyaml_too` 钉住。
 2. **反向护栏**：「一律拒绝」的实现必红 —— 合法 YAML（**转义双引号 / 中文 / 反引号 / 单引号里的
    字面双引号 / 行内注释 / 双引号跨行 / 块标量**）必须**判定通过且渲染成功**，且**两条后端都
    不得误拒**。
@@ -33,12 +37,18 @@
      判据腿不得自己调 `yaml.safe_load`）；
    · **单点注入**：把那个共享函数的判定改坏 ⇒ **两条腿同时红**（渲染腿 `CasesYamlError`、
      判据腿 `status=error` 不可判）。
+5. **两套后端判决一致**（同一个函数 ≠ 同一个判决）：同一组语料（真实事故形态 / 未闭合 flow /
+   未闭合引号 / 转义双引号 / 中文与反引号 / 多行标量）在**有 PyYAML** 与**无 PyYAML** 两个子进程
+   里跑 ⇒ **逐条判决一致**，且坏样本的报错都指名 `文件:行:列`。
 
 ## 边界（照实登记，未修）
 
-· 零依赖后端（无 PyYAML 时的严格闸）**只拒确定的语法非法**（引用提前闭合等形态的**子集**）⇒
-  它覆盖不到 PyYAML 能拒的全部形态。这条边界由**本文件第 3 条**（在 PyYAML 环境对全量用例库用
-  标准 YAML 复算）与 CI 的 `tests/unit_ci_workflows/test_eval_cases_yaml_strictness.py` 兜住。
+· **后端②抓不到的形态**逐条登记在 `NOT_COVERED`，由
+  `test_registered_gaps_are_still_gaps` 钉住 —— **登记有死亡条件**：谁补上了，那条断言当场变红
+  （本仓 §17.3 ④ 的口径），逼他更新登记。
+· 后端②覆盖不到的全部形态，由**本文件第 3 条**（真用例库在两条后端下都必须合法 + 生成物逐字节
+  一致）与 CI 的 `tests/unit_ci_workflows/test_eval_cases_yaml_strictness.py`（PyYAML 环境对全量
+  用例库用标准 YAML 复算）兜住。
 · `yaml_light` 对**块标量**（`|` / `>`）的取值保真度是**既有**限制（不是本单引入、也不在本单
   范围内）：它不报错，但会丢行。夹具因此把块标量放在**最后一条用例**上，只断言"**不被判为失败**
   + 渲染成功"（= 本单的判据 3），不断言取值保真。
@@ -65,35 +75,80 @@ CASES = GH / "cases"
 GEN_EVAL = REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py"
 GEN_MD = REPO_ROOT / "docs" / "testing" / "mibao-verification-cases.md"
 
-#: **红证 A 的注入形态 = #5147 的真实形态**：`data_checks` 里一条双引号标量内写了未转义的 `"`。
-#: ⚠️ 必须带一条 `adversarial` 用例：生成物自检要求冒烟/对抗两个子集非空，否则**修好后**仍会
-#: 因自检失败而 rc≠0（那会让"恢复绿"的断言变成假红）。
-BAD_CASE = '''schema: "1"
-domain: product
-cases:
-  - id: FX-001
-    title: fixture
-    tier: smoke
-    domains: [product]
-    user_inputs:
-      - "随便"
-    expectations:
-      - tool: direct_reply
-    data_checks:
-      - "类型必须是 "number" 才算通过"
-  - id: FX-002
-    title: 对抗档
-    tier: adversarial
-    domains: [product]
-    user_inputs:
-      - "随便"
-    expectations:
-      - tool: direct_reply
-'''
+#: **#5147 的真实坏输入**（原样收进夹具，不是构造样例）：`.github/cases/product.yml` 里那条
+#: `inventory_manage` / `adjustment` 判据，PR #5147 之前有**两处未转义的裸双引号写在双引号标量内**。
+#: 本常量 = 转义前的原文（下面 `_REAL_5147_FIXED_LINE` 给出 PR #5147 合入的转义版本，并**现取**
+#: 真用例库核对它还在 —— 保证这份夹具钉的是**真实事故输入**而不是我的想象）。
+_REAL_5147_FIXED_LINE = ('      - "判据 1·**AI 工具 schema 放宽**：`inventory_manage` 的 '
+                         '`adjustment` 参数 `type == \\"number\\"`（改前 `\\"integer\\"`）；工具层对'
+                         '该参数的整数判定不再把 `60.5` / `-2.7` 判成类型错误。注入红证：把 schema '
+                         '改回 `integer` ⇒ 变红。"')
+_REAL_5147_BAD_LINE = _REAL_5147_FIXED_LINE.replace('\\"', '"')
 
-#: 同一份文件的**合法**写法（把那一处转义）—— 证明"修好即恢复绿"。
-FIXED_CASE = BAD_CASE.replace('"类型必须是 "number" 才算通过"',
-                              '"类型必须是 \\"number\\" 才算通过"')
+#: 完整夹具文件（含该坏行）。⚠️ 必须带 `adversarial` + 无 `skip_reason` 的冒烟/对抗两条用例：
+#: 生成物自检要求这两个子集非空，否则**修好后**仍会因自检失败而 rc≠0（假红）。
+BAD_CASE = ('schema: "1"\n'
+            'domain: product\n'
+            'cases:\n'
+            '  - id: FX-001\n'
+            '    title: 冒烟档\n'
+            '    tier: smoke\n'
+            '    domains: [product]\n'
+            '    user_inputs:\n'
+            '      - "随便"\n'
+            '    expectations:\n'
+            '      - tool: direct_reply\n'
+            '  - id: FX-002\n'
+            '    title: 对抗档\n'
+            '    tier: adversarial\n'
+            '    domains: [product]\n'
+            '    user_inputs:\n'
+            '      - "随便"\n'
+            '    expectations:\n'
+            '      - tool: direct_reply\n'
+            '  - id: FX-5147\n'
+            '    title: 真实事故形态\n'
+            '    tier: normal\n'
+            '    domains: [product]\n'
+            '    user_inputs:\n'
+            '      - "随便"\n'
+            '    expectations:\n'
+            '      - tool: direct_reply\n'
+            '    data_checks:\n'
+            + _REAL_5147_BAD_LINE + '\n')
+
+#: 同一份文件的**已修复**写法（= main 上那条判据，PR #5147 的修法：把两处转义）⇒ 恢复绿。
+FIXED_CASE = BAD_CASE.replace(_REAL_5147_BAD_LINE, _REAL_5147_FIXED_LINE)
+
+#: **两套 loader 的一致性语料**（判决必须一致；真值 = 后端① `yaml.safe_load`）。
+#: 覆盖父任务点名的五类：① 真实事故形态 ② 未闭合的 flow 集合/引号 ③ 合法但含转义双引号
+#: ④ 含中文与反引号 ⑤ 多行标量（引号跨行 / 块标量 / flow 跨行）。
+_CORPUS_HEAD = ('schema: "1"\ndomain: utils\ncases:\n  - id: FX-800\n    title: 语料\n'
+                '    tier: smoke\n    domains: [utils]\n    user_inputs:\n      - "随便"\n'
+                '    expectations:\n      - tool: direct_reply\n')
+CORPUS: dict[str, dict] = {
+    "real_5147_unescaped_quote": {"body": BAD_CASE, "bad": True},
+    "unclosed_flow_sequence": {"body": _CORPUS_HEAD + "    data_checks:\n      - [a, b\n",
+                               "bad": True},
+    "unclosed_flow_mapping": {"body": _CORPUS_HEAD + "    subtitle: {a: 1\n", "bad": True},
+    "unclosed_quote": {"body": _CORPUS_HEAD + '    subtitle: "没闭合\n', "bad": True},
+    "escaped_quote_ok": {"body": _CORPUS_HEAD + '    subtitle: "转义 \\"引号\\" 混合"\n',
+                         "bad": False},
+    "chinese_backtick_ok": {"body": _CORPUS_HEAD + '    subtitle: "中文与反引号 `code` 并存"\n',
+                            "bad": False},
+    "multiline_block_scalar_ok": {
+        "body": _CORPUS_HEAD + '    subtitle: |\n      第一行 "有引号"\n      第二行 - "像值位置"\n',
+        "bad": False},
+    "multiline_quoted_ok": {"body": _CORPUS_HEAD + '    subtitle: "第一行\n      第二行"\n',
+                            "bad": False},
+    "multiline_flow_ok": {"body": _CORPUS_HEAD + "    subtitle: [a,\n      b]\n", "bad": False},
+}
+
+#: **后端②已知抓不到的形态**（如实登记）。判据见 `test_registered_gaps_are_still_gaps` ——
+#: 本表**有死亡条件**：谁把某条补上了，那条断言当场变红，逼他更新这张表（本仓 §17.3 ④ 的口径）。
+NOT_COVERED: dict[str, str] = {
+    "tab_indent": "cases:\n\t- id: FX-802\n    title: 制表符缩进\n",
+}
 
 #: **反向护栏夹具**：合法 YAML 的各种"看起来危险"的写法。⚠️ 冒烟/对抗两条用例**不能**带
 #: `skip_reason`（生成物自检要求这两个子集非空，`skip_reason` 会让它们被过滤掉）。
@@ -369,3 +424,90 @@ def test_injecting_a_failure_into_the_shared_loader_reds_both_legs(monkeypatch):
     res = drift_mod.check_mutable_locators(drift_mod.Audit(REPO_ROOT, offline=True))
     assert res.status == "error", f"判据腿没有因同一个注入变红：{res.status}"
     assert "INJECTED" in res.error, res.error
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 判据 5：两套后端判决一致（真实事故语料）+ 边界登记有死亡条件
+# ─────────────────────────────────────────────────────────────────────────────
+def _corpus_dir(tmp: Path) -> Path:
+    d = tmp / "corpus"
+    d.mkdir(parents=True, exist_ok=True)
+    for name, spec in CORPUS.items():
+        (d / f"{name}.yml").write_text(spec["body"], encoding="utf-8")
+    for name, body in NOT_COVERED.items():
+        (d / f"{name}.yml").write_text(body, encoding="utf-8")
+    return d
+
+
+def _verdicts(corpus: Path, env: dict | None) -> tuple[bool, dict[str, str | None]]:
+    """在**指定环境**里对整份语料跑 `strict_error`（子进程：PyYAML 可用 / 不可用两条后端）。"""
+    code = ("import sys, json, glob, os\n"
+            f"sys.path.insert(0, r'{GH}')\n"
+            "import cases_yaml\n"
+            "print('AVAILABLE:%s' % cases_yaml.pyyaml_available())\n"
+            f"files = sorted(glob.glob(os.path.join(r'{corpus}', '*.yml')))\n"
+            "print(json.dumps({os.path.splitext(os.path.basename(f))[0]: cases_yaml.strict_error(f) "
+            "for f in files}, ensure_ascii=False))\n")
+    p = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                       env=env, cwd=str(REPO_ROOT))
+    assert p.returncode == 0, f"语料判定子进程失败：\n{p.stdout}\n{p.stderr}"
+    lines = p.stdout.strip().split("\n")
+    assert lines[0].startswith("AVAILABLE:"), p.stdout
+    import json as _json
+    return lines[0].endswith("True"), _json.loads(lines[-1])
+
+
+def test_both_backends_agree_on_the_corpus(tmp_path):
+    """**同一个函数 ≠ 同一个判决**：有 PyYAML / 无 PyYAML 两个子进程对同一组语料必须**逐条一致**。
+
+    真值 = 后端①（`yaml.safe_load`）；语料覆盖父任务点名的五类（真实事故形态 / 未闭合 flow /
+    未闭合引号 / 转义双引号 / 中文与反引号 / 多行标量）。「改前」形态：渲染腿根本没有严格判定
+    （宽松 loader 一律放行）⇒ 本判据在改前必红（缺 `cases_yaml`）。
+    """
+    corpus = _corpus_dir(tmp_path)
+    has1, v1 = _verdicts(corpus, dict(os.environ))
+    has2, v2 = _verdicts(corpus, _no_pyyaml_env(tmp_path / "noyaml"))
+    assert has1 is True and has2 is False, (
+        f"两次没有跑在**不同**后端上（后端①可用={has1} / 后端②可用={has2}）⇒ 本判据会静默空跑")
+
+    for name, spec in CORPUS.items():
+        want = bool(spec["bad"])
+        got1, got2 = v1[name] is not None, v2[name] is not None
+        assert got1 is want, f"[{name}] 后端①（真值）判决={got1}，期望={want}（语料标注错了？）"
+        assert got2 is want, f"[{name}] 后端②判决={got2}，与后端①（真值 {want}）**不一致**：{v2[name]}"
+        if want:                      # 坏样本：两条后端都必须**指名文件与位置**
+            for tag, msg in (("①", v1[name]), ("②", v2[name])):
+                assert re.search(rf"{name}\.yml:\d+:\d+", msg or ""), (
+                    f"[{name}] 后端{tag} 的报错没有指名 `文件:行:列`（#5151 判据 1）：{msg}")
+
+
+def test_registered_gaps_are_still_gaps(tmp_path):
+    """`NOT_COVERED` 是**有死亡条件的登记**：它现在还抓不到 ⇒ 绿；谁补上了 ⇒ 本判据**当场变红**。
+
+    为什么要这条：不写它，"后端②的覆盖边界"就只是注释里的一句话 —— 下一个人无从知道
+    「这些形态**现在**确实漏着」，也无从知道自己把它补上了（漏检缺口无人认领）。
+    ⇒ 红了的修法是**更新 `NOT_COVERED` 与 `.github/cases_yaml.py` 模块头的那张表**，
+    **不是**把本判据删掉。
+    """
+    corpus = _corpus_dir(tmp_path)
+    has2, v2 = _verdicts(corpus, _no_pyyaml_env(tmp_path / "noyaml"))
+    assert has2 is False, "没有跑到无 PyYAML 后端 ⇒ 本判据空跑"
+    newly_covered = {k: v2[k] for k in NOT_COVERED if v2[k] is not None}
+    assert not newly_covered, (
+        f"这些形态**已经**被后端②抓到了（好消息）：{newly_covered} —— 请把它们从 `NOT_COVERED` "
+        f"移到 `CORPUS`（并同步 `.github/cases_yaml.py` 模块头那张「抓不到」表），"
+        f"再删掉本断言里对应的条目。")
+
+
+def test_fixture_is_the_real_5147_input_not_a_lookalike(tmp_path):
+    """红证素材必须是**真实事故输入**：夹具 = `.github/cases/product.yml` 那条判据转义前的原文。
+
+    现取真用例库核对：PR #5147 合入的**转义版**那一行仍在（否则本夹具已与现场脱钩 ⇒ 红）。
+    """
+    fixed_line = _REAL_5147_FIXED_LINE
+    assert '\\"' in fixed_line and '\\"' not in _REAL_5147_BAD_LINE, "夹具构造反了"
+    text = (CASES / "product.yml").read_text(encoding="utf-8")
+    assert fixed_line in text, (
+        "真用例库里已找不到 PR #5147 那条判据的转义版原文 —— 本文件的坏输入夹具已与现场脱钩。\n"
+        "处置：把 `_REAL_5147_FIXED_LINE` 更新成 `.github/cases/product.yml` 里那条判据的**现状**，"
+        "并确认 `_REAL_5147_BAD_LINE` 仍是它「未转义」的形态（红证素材必须是真实事故输入）。")

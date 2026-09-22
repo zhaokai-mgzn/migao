@@ -29,13 +29,27 @@ job 只有 `actions/checkout` + 系统 `python3`）。实测该环境**没有 Py
 `tests/unit_ci_workflows/test_xiaobu_coverage.py` 的 `TestCoverageGateRunsOnCiDependencies`
 留下的现场记录。
 
-故判定后端分两层，而**判定口径写在这一个函数里、两侧共用**：
-① 有 `yaml.safe_load` ⇒ **用它**（= 判据腿原口径，逐字不变）；
-② 没有 ⇒ `_quote_syntax_error()`（纯标准库）：**只拒确定的语法非法**。
-⚠️ ②**只许更严不许更宽** —— 它绝不因为"看起来可疑"就拒（那会把合法用例判红 = 反向护栏失守）；
-代价是它覆盖不到 ① 能拒的全部形态，这条边界照实登记在
-`tests/unit_ci_workflows/test_render_cases_yaml_fail_closed.py`（在 PyYAML 环境对**全部**
-`cases/*.yml` 用 ① 复算）。
+⇒ **CI 里渲染腿走的正是"没有 PyYAML"那条路**，所以后端②（零依赖严格闸）必须**真能抓住事故
+形态**（否则"渲染腿 fail-closed"在 CI 上只是名义上的，两层分歧原样保留）。实测：
+**#5147 的真实坏形态在两条后端下都被判红**（语料一致性守卫见
+`tests/unit_ci_workflows/test_render_cases_yaml_fail_closed.py` 的 `CORPUS`）。
+
+后端分两层，**判定口径写在这一个函数里、两侧共用**：
+① `yaml.safe_load` 可用 ⇒ **用它**（= 判据腿原口径，逐字不变）；
+② 不可用 ⇒ `_zero_dep_syntax_error()`（纯标准库状态机）：
+
+| 后端②**能**抓 | 后端②**抓不到**（照实登记，见守卫里的 `NOT_COVERED`） |
+|---|---|
+| 引号标量**提前闭合**（`"… "x" …"` = #5147 形态） | 用**制表符**做缩进（标准 YAML 拒绝） |
+| 引号**到文件结尾未闭合**（单/双引号，含跨行） | 锚点 / 别名 / 标签的语义错误 |
+| flow 集合（`[` / `{`）**到文件结尾未闭合**（含跨行） | 重复键（PyYAML 本身也不报） |
+| | flow 集合内部的其它语法错误（如 `[a: b, c` 之外的分隔符错） |
+| | 引号**跨行**时的那一行之后、闭合之前的内容（按"续行"整体跳过） |
+
+⚠️ 后端②**只许更严不许更宽**：它绝不因为"看起来可疑"就拒（那会把合法用例判红 = 反向护栏
+失守）。上表右侧**不是"可以不管"**，而是**已知的覆盖缺口**，由
+`tests/unit_ci_workflows/test_render_cases_yaml_fail_closed.py` 的 `NOT_COVERED` 逐条钉住 ——
+**登记有死亡条件**：谁把某条补上了，那条登记会当场变红，逼他更新表（本仓 §17.3 ④ 的口径）。
 """
 from __future__ import annotations
 
@@ -68,78 +82,133 @@ def pyyaml_available() -> bool:
 _BLOCK_SCALAR_HEAD = re.compile(r"^[|>][+-]?\d*$")
 
 
-def _quoted_scalar_tail_error(line: str, off: int, quote: str) -> str | None:
-    """`line[off]` 处起一个 `quote` 引号标量 ⇒ 检查它的**闭合位置**。
+def _find_close(line: str, start: int, quote: str) -> int | None:
+    """从 `start` 起找 `quote` 的闭合列；`\\"`（双引号内）/ `''`（单引号内）是转义，不算闭合。
 
-    合法：闭合引号之后只剩空白或行内注释（`key: "a"   # 说明`）。
-    非法：闭合引号之后**还有内容** ⇒ 该标量**提前闭合**了
-    （`key: "… type == "number" …"`，#5147 的实测形态）。
-    本行找不到闭合引号 ⇒ **不判**（可能是合法的多行标量，跨行才闭合）。
+    找不到 ⇒ `None`（可能是**合法的跨行标量**，闭合在后面的行上 —— 由调用方转成"续行"状态）。
     """
-    i, n = off + 1, len(line)
-    while i < n:
-        ch = line[i]
+    j = start
+    while j < len(line):
+        ch = line[j]
         if quote == '"' and ch == "\\":
-            i += 2                      # `\"` = 双引号标量内的转义引号（合法）
+            j += 2
             continue
         if ch == quote:
-            if quote == "'" and i + 1 < n and line[i + 1] == "'":
-                i += 2                  # `''` = 单引号标量内的转义引号（合法）
+            if quote == "'" and j + 1 < len(line) and line[j + 1] == "'":
+                j += 2
                 continue
-            tail = line[i + 1:]
-            if tail.strip() and not tail.lstrip().startswith("#"):
-                return (f"引号提前闭合：`{quote}` 标量在列 {i + 1} 处闭合，其后还有内容 "
-                        f"{tail.strip()[:40]!r} —— 标量内出现了**未转义的 {quote}**"
-                        f"（要表达字面 {quote}，双引号里写 `\\{quote}`）")
-            return None
-        i += 1
+            return j
+        j += 1
     return None
 
 
-def _quote_syntax_error(text: str) -> str | None:
+def _flow_delta(text: str) -> int:
+    """`text` 里 flow 括号的**净深度**（引号内不计；空白后的 `#` 起行内注释，注释内不计）。
+
+    引号在本行内没闭合 ⇒ 立刻返回当前深度（余下的交给"续行"处理，绝不猜）。
+    """
+    depth = 0
+    j = 0
+    while j < len(text):
+        ch = text[j]
+        if ch in ('"', "'"):
+            end = _find_close(text, j + 1, ch)
+            if end is None:
+                return depth
+            j = end + 1
+            continue
+        if ch == "#" and j > 0 and text[j - 1].isspace():
+            break
+        if ch in "[{":
+            depth += 1
+        elif ch in "]}":
+            depth -= 1
+        j += 1
+    return depth
+
+
+def _value_offset(line: str, indent: int) -> int | None:
+    """该行**值**的起始下标（`key: v` / `- key: v` / `- v`）；不是值位置 ⇒ `None`。"""
+    body = line[indent:]
+    if body.startswith("- ") or body == "-":
+        pos = indent + 1
+        while pos < len(line) and line[pos] == " ":
+            pos += 1
+        rest = line[pos:]
+        if ":" in rest and rest[0] not in ('"', "'"):
+            return pos + len(rest.partition(":")[0]) + 1      # `- key: value`
+        return pos                                            # `- value`
+    if ":" in body:
+        return indent + len(body.partition(":")[0]) + 1        # `key: value`
+    return None
+
+
+def _zero_dep_syntax_error(text: str) -> str | None:
     """**零依赖严格闸**：只拒**确定的语法非法**，返回 `"行:列: 原因"` 或 `None`。
 
     判据（**保守**：宁可漏也不误拒 —— 误拒会把合法用例判红，正是 #5151 判据 3 禁止的形态）：
-      · 只看**值位置**（`key: …` / `- key: …` / `- …`）以 `"` / `'` 起头的标量；
-      · 只判「**闭合引号之后还有内容**」（= 提前闭合，见 `_quoted_scalar_tail_error`）；
-      · 块标量（`|` / `>`）的**内容行整体跳过** —— 那些行里的引号是合法文本，不是标量起点。
+      · **引号标量**：闭合引号之后还有内容 ⇒ 提前闭合（#5147 的真实形态）；到文件结尾仍未
+        闭合 ⇒ 未闭合。（合法的**跨行**引号标量在收尾时已闭合 ⇒ 不判。）
+      · **flow 集合**：值位置以 `[` / `{` 起头 ⇒ 括号必须配平（**可以跨行**，收尾时仍为净正
+        深度 ⇒ 未闭合）。（`[` 出现在**标量中间**是合法的 —— 实测 PyYAML 接受 `a: 见 [文档`，
+        故只在**值位置**判 flow，不做全文括号计数。）
+      · **块标量**（`|` / `>`）的内容行整行跳过（那里的引号/括号是文本）。
     """
     block_indent: int | None = None
+    open_quoted: tuple[int, int, str] | None = None      # (行, 列, 引号)
+    open_flow: tuple[int, int] | None = None             # (行, 列)
+    flow_depth = 0
     for lineno, line in enumerate(text.split("\n"), 1):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         indent = len(line) - len(line.lstrip(" "))
-        if block_indent is not None:
+        if block_indent is not None:                     # 块标量内容行
             if indent > block_indent:
-                continue                # 块标量内容行（引号在这里是文本）
+                continue
             block_indent = None
-        body = line[indent:]
-        if body.startswith("- ") or body == "-":
-            pos = indent + 1
-            while pos < len(line) and line[pos] == " ":
-                pos += 1
-            rest = line[pos:]
-            if ":" in rest and rest[0] not in ('"', "'"):
-                off = pos + len(rest.partition(":")[0]) + 1     # `- key: value`
-            else:
-                off = pos                                        # `- value`
-        elif ":" in body:
-            off = indent + len(body.partition(":")[0]) + 1       # `key: value`
-        else:
+        if open_quoted is not None:                      # 跨行引号标量的续行
+            if _find_close(line, 0, open_quoted[2]) is not None:
+                open_quoted = None
+            continue
+        if open_flow is not None:                        # 跨行 flow 集合的续行
+            flow_depth += _flow_delta(line)
+            if flow_depth <= 0:
+                open_flow = None
+            continue
+        off = _value_offset(line, indent)
+        if off is None:
             continue
         value = line[off:]
         stripped = value.lstrip()
         if not stripped:
             continue
         if _BLOCK_SCALAR_HEAD.match(stripped.split("#")[0].strip()):
-            block_indent = indent       # 值本身是块标量头 ⇒ 后续更深的行是它的内容
+            block_indent = indent                        # 值本身是块标量头
             continue
-        if stripped[0] not in ('"', "'"):
-            continue                    # 裸标量里的引号是合法文本（`key: 他说 "好"`）
-        off += len(value) - len(stripped)
-        err = _quoted_scalar_tail_error(line, off, stripped[0])
-        if err:
-            return f"{lineno}:{off + 1}: {err}"
+        start = off + (len(value) - len(stripped))
+        head = stripped[0]
+        if head in ('"', "'"):
+            end = _find_close(line, start + 1, head)
+            if end is None:
+                open_quoted = (lineno, start + 1, head)
+                continue
+            tail = line[end + 1:]
+            if tail.strip() and not tail.lstrip().startswith("#"):
+                return (f"{lineno}:{start + 1}: 引号提前闭合：`{head}` 标量在列 {end + 1} 处闭合，"
+                        f"其后还有内容 {tail.strip()[:40]!r} —— 标量内出现了**未转义的 {head}**"
+                        f"（要表达字面 {head}，双引号里写 `\\{head}`）")
+            continue
+        if head in "[{":                                 # 只有**值位置**起头的括号才是 flow 节点
+            flow_depth = _flow_delta(line[start:])
+            if flow_depth > 0:
+                open_flow = (lineno, start + 1)
+        # 裸标量：里面的引号/括号是合法文本（实测 PyYAML 接受 `a: 见 [文档`）⇒ 不判
+    if open_quoted is not None:
+        lineno, col, quote = open_quoted
+        return f"{lineno}:{col}: 引号未闭合（到文件结尾都没有出现配对的 `{quote}`）"
+    if open_flow is not None:
+        lineno, col = open_flow
+        return f"{lineno}:{col}: flow 集合未闭合（`[` / `{{` 到文件结尾都没有配对）"
     return None
 
 
@@ -163,7 +232,7 @@ def strict_error(path) -> str | None:
             problem = getattr(e, "problem", None) or str(e)
             return f"{p}:{where}: {problem}（标准 YAML 解析失败）"
         return None
-    rel = _quote_syntax_error(text)                             # 后端 ②
+    rel = _zero_dep_syntax_error(text)                          # 后端 ②
     return f"{p}:{rel}（零依赖严格闸）" if rel else None
 
 
