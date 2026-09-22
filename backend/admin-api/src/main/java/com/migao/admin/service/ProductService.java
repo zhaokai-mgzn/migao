@@ -1643,19 +1643,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     }
 
     /**
-     * 获取单元格数值
-     */
-    private double getCellNumericValue(Row row, int cellIndex) {
-        Cell cell = row.getCell(cellIndex);
-        if (cell == null) return 0;
-        return switch (cell.getCellType()) {
-            case NUMERIC -> cell.getNumericCellValue();
-            case STRING -> Double.parseDouble(cell.getStringCellValue().trim());
-            default -> 0;
-        };
-    }
-
-    /**
      * 状态标签
      */
     private String getStatusLabel(String status) {
