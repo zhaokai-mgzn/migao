@@ -3616,7 +3616,7 @@
 ```
 溯源: 2026-09-21 新增（issue #4967，交付物 2）：扫码后按套展示工序细节。改前实测：解析响应只有「套 → 部位」两级，没有部位内的工序明细；H5 一屏只有「第 N 套 · 部位 + 一道工序 + 应做数量 + 按钮」；bmini 扫码屏同样一屏一道（下方列表按**部位**分组，不是按套）。落点 = **扩解析响应**（`ProductionScanService#setOverview` 追加 `set_overview`）而不是让页面另拉 `GET /api/worker/production/orders/{orderId}/operations` 再按套重排 —— 取舍理由：后者会在页面里出现**第二份聚合口径**（部位名怎么取 / 算不算已完成的道 / 按什么排序），且多一次请求；前者与推断/进度/卡点同源、一次请求拿到全部。同步登记：docs/design/set-code-and-scan-loop.md 的 §4.1 改判块 + §11.5、docs/wiki/CONTRACT-LEDGER.md（扫码三行 + set_overview 键）。 ｜ tags: processing-order, production, scan-report, set-overview
 
-### PG-059. 裁剪智能排料 v1 - A 类完整布并排：定高买宽并排 + 定宽买高 P=1 窄窗互补（纯函数，不重算用料口径） 🔵
+### PG-061. 裁剪智能排料 v1 - A 类完整布并排：定高买宽并排 + 定宽买高 P=1 窄窗互补（纯函数，不重算用料口径） 🔵
 ```
 数据: J1·**定高买宽并排**：两扇 1.5m 宽 × 2 倍褶 × 窗高 1.1m 的窗（各领 3.0m）⇒ 各占门幅 1.1 + 0.3 = 1.4m（合计 2.8m = 门幅 ✓）⇒ **1 行 / 应领 = max(3.0, 3.0) = 3.0m**，而逐窗分开裁 = 2 行 / 6.0m（差额 3.0m 即省下的米数）—— 证据：CuttingPlanCalculatorTest.fixedHeightTallWindowsPairIntoOneRow（**逐值**断言：rows.size()==1 / issuedMeters == 3.0 / 行长度 == 3.0 / 对照口径 == 6.0 且 issued < 对照）+ 红证：把「并排」关掉（禁止配对）该条即红
 数据: J2·**定宽买高 P=1 窄窗互补**（原规格漏判的那一格，专条判据）：两扇单开窄窗（各 窗宽 × 褶倍 = 1.4m、窗高 1.1m ⇒ 各 1 幅、占门幅 1.4m、沿卷长 = 窗高 1.1 + 卷边 0.3 = 1.4m）⇒ 两块合计占门幅 2.8m ✓ ⇒ **1 行 / 应领 1.4m**；逐窗分开裁 = 2 行 / 2.8m（差额 = 省下的一整行）—— 证据：CuttingPlanCalculatorTest.fixedWidthSinglePanelNarrowWindowsPairIntoOneRow（逐值）+ 红证：把定宽料按「整窗宽」而非「幅宽」占门幅、或让定宽料不参与装箱（旧「定宽买高原样返回」口径）该条即红
@@ -5641,7 +5641,7 @@
 - PG-018: 生产报工闭环——扫码报工→进度推进→全部活跃工序实例报满自动完工→计件
 - PG-019: 存量加工单恢复路径——instantiate 的 positions 可选（按订单派生）+ 幂等 + 二维码撤销 + 打印计数
 - PG-058: 扫码后按套展示工序细节——解析响应追加 set_overview（本套 → 部位 → 工序明细）
-- PG-059: 裁剪智能排料 v1 - A 类完整布并排：定高买宽并排 + 定宽买高 P=1 窄窗互补（纯函数，不重算用料口径）
+- PG-061: 裁剪智能排料 v1 - A 类完整布并排：定高买宽并排 + 定宽买高 P=1 窄窗互补（纯函数，不重算用料口径）
 - PG-020: 工序库写面——PUT /production/operations/{id} + 单价版本表（当前价 = 最新版本行，实例快照冻结）
 - PG-021: 计件工资报表——GET /production/piecework/summary（按人/按期）+ 生产管理菜单同构
 - PG-022: 应做数量接算料引擎（Java 接线）——ProductionOperationQtyClient + buildPositionPayload + qty_source 列

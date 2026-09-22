@@ -4769,9 +4769,9 @@ _CASE_PG_058 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-059 [NORMAL] 裁剪智能排料 v1 - A 类完整布并排：定高买宽并排 + 定宽买高 P=1 窄窗互补（纯函数，不重算用料口径）（源: cases/processing-order.yml）──
-_CASE_PG_059 = EvalCase(
-    id='PG-059',
+# ── PG-061 [NORMAL] 裁剪智能排料 v1 - A 类完整布并排：定高买宽并排 + 定宽买高 P=1 窄窗互补（纯函数，不重算用料口径）（源: cases/processing-order.yml）──
+_CASE_PG_061 = EvalCase(
+    id='PG-061',
     legacy_id='',
     title='裁剪智能排料 v1 - A 类完整布并排：定高买宽并排 + 定宽买高 P=1 窄窗互补（纯函数，不重算用料口径）',
     skill=Skill.PRODUCT,
@@ -8050,7 +8050,7 @@ ALL_CASES = (
     _CASE_PG_018,
     _CASE_PG_019,
     _CASE_PG_058,
-    _CASE_PG_059,
+    _CASE_PG_061,
     _CASE_PG_020,
     _CASE_PG_021,
     _CASE_PG_022,
