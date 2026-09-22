@@ -10,8 +10,10 @@ import java.util.List;
  * 入库单建单/改单请求（V111，issue #5034；V117 / issue #5148 追加 source + importRunId）。
  *
  * <p>服务端校验（不靠注解 —— Agent/程序化调用不经过 Bean Validation，同 OrderService 口径）：
- * 供应商可空；明细至少 1 行；数量必须 ≥1 米且**最多 1 位小数**（V115/#5063 起，超 1 位小数
- * 由服务端显式拒绝、**不静默取整**）；单价可空但给了就必须 &gt; 0；SKU 必须属于本租户且属于所填商品。</p>
+ * 供应商可空；明细至少 1 行；数量必须**大于 0 米**（V118/#5153 起，改前是 ≥1 米 —— 0.5 米的
+ * 尾料因此进不来）且**最多 1 位小数**（V115/#5063 起，超 1 位小数由服务端显式拒绝、**不静默取整**）；
+ * 单价可空但给了就必须 &gt; 0；SKU 必须属于本租户且属于所填商品；旧系统批次号只在
+ * {@code source=opening} 时可填。</p>
  *
  * <p>幂等（V117 / issue #5148）：带 {@link #importRunId} 时按
  * {@code (tenantId, importRunId)} 去重 —— 同一份导入重跑**返回同一张单**，不会建出第二张
@@ -64,6 +66,16 @@ public class InboundOrderCreateRequest {
 
         /** 供应商缸号（可空，外部事实） */
         private String dyeLot;
+
+        /**
+         * 旧系统批次号（可空，外部事实；V118 / issue #5153）—— **只在期初建账
+         * （{@code source=opening}）时可填**，采购收货填了会被拒。
+         *
+         * <p>与 {@link #dyeLot} 一样是**外部事实**，原样登记；与系统生成的
+         * {@code batch_no}（{@code PC-yyyyMMdd-NNNN}）**两列两义**，永不互相赋值
+         * （V111 明令不得互相冒充）。过账时透传到 {@code stock_batches.legacy_batch_no}。</p>
+         */
+        private String legacyBatchNo;
 
         /** 每卷米数（可空，仅记录/打印卷标） */
         private BigDecimal rollLengthM;

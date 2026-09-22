@@ -63,6 +63,16 @@ public class InboundOrderItem {
     /** 供应商缸号（外部事实，可空；**不得**用 batchNo 冒充） */
     private String dyeLot;
 
+    /**
+     * 旧系统批次号（外部事实，可空；V118 / issue #5153）。
+     *
+     * <p>只允许在 {@code source=opening} 的期初建账单上填（应用层一处校验）；
+     * 过账时**透传**到 {@code stock_batches.legacy_batch_no}。为什么明细行也要一列：建单（草稿）
+     * 与过账是两次请求，{@code post()} 从库里回读明细行再写批次行 ⇒ 明细行不落这一列，
+     * 建单时填的旧号在过账那一刻就丢了。</p>
+     */
+    private String legacyBatchNo;
+
     /** 每卷米数（仅记录/打印卷标，不参与任何换算） */
     private BigDecimal rollLengthM;
 

@@ -144,6 +144,8 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     const payload = mockCreate.mock.calls[0][0]
+    // 采购收货（缺省来源）不得带旧系统批次号（V118 / issue #5153：两列两义，填了后端会拒）
+    expect(payload.source).toBe('purchase')
     expect(payload.items).toEqual([
       {
         productId: 'prod-1',
@@ -151,6 +153,7 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
         quantity: 30,
         unitCost: 12.5,
         dyeLot: 'G-2026-0912',
+        legacyBatchNo: null,
         rollLengthM: null,
       },
     ])
@@ -158,7 +161,7 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
     expect(mockPost).not.toHaveBeenCalled()
   })
 
-  it('数量越界 ⇒ 提交前就被挡住（不把 0.5 米发给后端），且不调建单接口', async () => {
+  it('数量越界（0）⇒ 提交前就被挡住（不把 0 米发给后端），且不调建单接口', async () => {
     render(<InboundOrdersPage />)
     await screen.findByText('RK-20260923-0001')
 
@@ -167,7 +170,9 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
     fireEvent.click(await screen.findByRole('button', { name: /遮光窗帘布/ }))
     fireEvent.click(await screen.findByRole('checkbox'))
 
-    fireEvent.change(await screen.findByLabelText(/数量$/), { target: { value: '0.5' } })
+    // ⚠️ 下限自 issue #5153 起是「大于 0」（0.5 米的尾料**可以**提交，见
+    //    inbound-orders-opening.test.tsx）；这里守的是「0 仍被挡住」。
+    fireEvent.change(await screen.findByLabelText(/数量$/), { target: { value: '0' } })
     fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
 
     expect(mockCreate).not.toHaveBeenCalled()

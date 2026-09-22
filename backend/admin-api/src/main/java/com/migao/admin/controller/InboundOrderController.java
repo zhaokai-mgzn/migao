@@ -7,23 +7,30 @@ import com.migao.admin.dto.InboundOrderActionRequest;
 import com.migao.admin.dto.InboundOrderCreateRequest;
 import com.migao.admin.dto.InboundOrderLine;
 import com.migao.admin.dto.InboundOrderResponse;
+import com.migao.admin.dto.OpeningImportReport;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.InboundOrderService;
+import com.migao.admin.service.OpeningRegisterImportService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
 /**
  * 入库单 Controller（V111，issue #5034）
  *
- * <p>端点：建单 / 列表 / 详情 / 动作（过账·作废）/ 批次查询。</p>
+ * <p>端点：建单 / 列表 / 详情 / 动作（过账·作废）/ 批次查询；V118（issue #5153）追加
+ * <b>期初建账</b>的模板下载与 Excel 批量导入（{@code opening-import}）。</p>
  */
 @Slf4j
 @RestController
@@ -32,6 +39,7 @@ import java.util.List;
 public class InboundOrderController {
 
     private final InboundOrderService inboundOrderService;
+    private final OpeningRegisterImportService openingRegisterImportService;
 
     /**
      * 入库单列表（权限 inbound:view）
@@ -46,15 +54,58 @@ public class InboundOrderController {
 
     /**
      * 批次查询（权限 inbound:view）
-     * GET /api/admin/inbound-orders/batches?skuId=&dyeLot=&inboundNo=
+     * GET /api/admin/inbound-orders/batches?skuId=&dyeLot=&inboundNo=&legacyBatchNo=
+     *
+     * <p>{@code legacyBatchNo}（V118 / issue #5153）：按**旧系统批次号**查回期初登记进来的批次
+     * —— 迁移期最常见的问法是「旧系统那个号在 MIGAO 里是哪一批、还剩多少」。</p>
      */
     @GetMapping("/batches")
     @RequirePermission("inbound:view")
     public ApiResponse<List<InboundBatchView>> batches(@RequestParam(required = false) Long skuId,
                                                        @RequestParam(required = false) String dyeLot,
-                                                       @RequestParam(required = false) String inboundNo) {
+                                                       @RequestParam(required = false) String inboundNo,
+                                                       @RequestParam(required = false) String legacyBatchNo) {
         return ApiResponse.success(
-                inboundOrderService.batches(skuId, dyeLot, inboundNo, TenantContext.getTenantId()));
+                inboundOrderService.batches(skuId, dyeLot, inboundNo, legacyBatchNo,
+                        TenantContext.getTenantId()));
+    }
+
+    /**
+     * 期初建账**模板**下载（权限 inbound:create）—— .xlsx，第 1 表只有表头 + 第 2 表填写说明。
+     *
+     * <p>模板**不放示例数据行**：示例行会和真数据一样被解析成批次 ⇒ 「下载模板原样上传」会建出
+     * 一批假账（真库存 + 假批次，事后极难分辨）。</p>
+     *
+     * GET /api/admin/inbound-orders/opening-template
+     */
+    @GetMapping("/opening-template")
+    @RequirePermission("inbound:create")
+    public ResponseEntity<byte[]> openingTemplate() {
+        byte[] body = openingRegisterImportService.template();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"opening-register-template.xlsx\"")
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(body);
+    }
+
+    /**
+     * 期初建账**批量导入**（权限 inbound:create）—— Excel → 一张 {@code source=opening} 的期初入库单
+     * （建单 + 过账走服务层；**逐行校验报告**；全或无）。
+     *
+     * <p>🔴 {@code importRunId} 必填：没有幂等键就不许上批量导入 —— 重跑（网络重试 / 双击 /
+     * 刷新后重交）会建出第二张单，两张都过账就是**库存加两次**。同一标识重跑 ⇒ 返回既有那张、
+     * **不重复加库存**。</p>
+     *
+     * POST /api/admin/inbound-orders/opening-import  (multipart/form-data: file, importRunId)
+     */
+    @PostMapping("/opening-import")
+    @RequirePermission("inbound:create")
+    public ApiResponse<OpeningImportReport> openingImport(@RequestParam("file") MultipartFile file,
+                                                         @RequestParam("importRunId") String importRunId) {
+        return ApiResponse.success(openingRegisterImportService.importOpening(
+                file, importRunId, TenantContext.getTenantId(), currentOperator()));
     }
 
     /**

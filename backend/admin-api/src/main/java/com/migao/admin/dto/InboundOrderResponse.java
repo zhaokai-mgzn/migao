@@ -89,6 +89,9 @@ public class InboundOrderResponse {
         /** 供应商缸号（可空） */
         private String dyeLot;
 
+        /** 旧系统批次号（可空；仅期初建账 source=opening 的单会有；V118 / issue #5153） */
+        private String legacyBatchNo;
+
         private BigDecimal rollLengthM;
 
         private String remark;

@@ -612,7 +612,9 @@ export const orderApi = {
 //   POST   /api/admin/inbound-orders            建单（草稿，不动库存）
 //   GET    /api/admin/inbound-orders/{id}       详情（id 可为 UUID/单号/前缀）
 //   PATCH  /api/admin/inbound-orders/{id}       动作：post 过账 / cancel 作废
-//   GET    /api/admin/inbound-orders/batches    批次查询（skuId/dyeLot/inboundNo）
+//   GET    /api/admin/inbound-orders/batches    批次查询（skuId/dyeLot/inboundNo/legacyBatchNo）
+//   GET    /api/admin/inbound-orders/opening-template  期初建账模板（.xlsx）
+//   POST   /api/admin/inbound-orders/opening-import    期初建账 Excel 批量导入（V118 / issue #5153）
 export const inboundOrderApi = {
   list: (params?: InboundOrderListParams) =>
     request.get<ApiResponse<InboundOrderLine[]>>('/api/admin/inbound-orders', { params }),
@@ -631,8 +633,23 @@ export const inboundOrderApi = {
   cancel: (id: string, reason?: string) =>
     request.patch<ApiResponse<InboundOrder>>(`/api/admin/inbound-orders/${id}`, { action: 'cancel', reason }),
 
-  batches: (params?: { skuId?: number; dyeLot?: string; inboundNo?: string }) =>
+  batches: (params?: { skuId?: number; dyeLot?: string; inboundNo?: string; legacyBatchNo?: string }) =>
     request.get<ApiResponse<InboundBatch[]>>('/api/admin/inbound-orders/batches', { params }),
+
+  // 期初建账模板（.xlsx）：第 1 表只有表头 + 第 2 表填写说明（**不放示例行** —— 原样上传会建出假账）
+  openingTemplate: () =>
+    request.get<Blob>('/api/admin/inbound-orders/opening-template', { responseType: 'blob' }),
+
+  // 期初建账 Excel 批量导入（V118 / issue #5153）：**importRunId 必填**（幂等键，重跑不重复建账）
+  openingImport: (file: File, importRunId: string) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('importRunId', importRunId)
+    return request.post<ApiResponse<OpeningImportReport>>(
+      '/api/admin/inbound-orders/opening-import',
+      form,
+    )
+  },
 }
 
 /**

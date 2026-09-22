@@ -2772,6 +2772,8 @@ export interface InboundOrderItem {
   batchNo?: string | null
   /** 供应商缸号（外部事实，可空） */
   dyeLot?: string | null
+  /** 旧系统批次号（可空；仅期初建账的单会有；V118 / issue #5153） */
+  legacyBatchNo?: string | null
   /** 每卷米数（仅记录/打印卷标） */
   rollLengthM?: number | null
   remark?: string
@@ -2813,6 +2815,8 @@ export interface InboundBatch {
   amount?: number | null
   /** 供应商缸号（可空） */
   dyeLot?: string | null
+  /** 旧系统批次号（可空；外部事实，与系统批次号 `batchNo` 两列两义） */
+  legacyBatchNo?: string | null
   rollLengthM?: number | null
   supplier?: string
   warehouse?: string
@@ -2829,6 +2833,11 @@ export interface InboundOrderItemInput {
   quantity: number
   unitCost?: number | null
   dyeLot?: string | null
+  /**
+   * 旧系统批次号（可空；V118 / issue #5153）—— **只在期初建账（`source: 'opening'`）时可填**，
+   * 采购收货填了会被服务端拒绝（系统批次号与旧系统批次号不得互相冒充）。
+   */
+  legacyBatchNo?: string | null
   rollLengthM?: number | null
   remark?: string | null
 }
@@ -2839,8 +2848,49 @@ export interface InboundOrderCreateParams {
   supplierDocNo?: string | null
   warehouse?: string | null
   inboundDate?: string | null
+  /** 单据来源：`purchase` 采购收货（缺省）/ `opening` 期初建账（V117 / issue #5148） */
+  source?: 'purchase' | 'opening' | null
+  /** 建单运行级幂等键（V117）：期初/批量导入必须带，重跑同一标识不会建出第二张单 */
+  importRunId?: string | null
   remark?: string | null
   items: InboundOrderItemInput[]
+}
+
+/**
+ * 期初建账 Excel 批量导入的**逐行校验报告**（V118 / issue #5153）。
+ *
+ * 语义 = **全或无**：只要有 1 行不通过 ⇒ 一行都不写（`create` 都没被调），
+ * 报告逐行说明「第几行为什么不通过」；改好后用**同一次导入标识**重跑即可（不会重复建账）。
+ */
+export interface OpeningImportRow {
+  /** Excel 行号（1 基，含表头：表头是第 1 行 ⇒ 第 1 条数据是第 2 行） */
+  rowNo: number
+  skuCode?: string | null
+  productId?: string | null
+  skuId?: number | null
+  /** 剩余米数（登记值 = 登记时点的实物剩余量） */
+  quantity?: number | null
+  dyeLot?: string | null
+  legacyBatchNo?: string | null
+  unitCost?: number | null
+  ok: boolean
+  /** 不通过时的原因（可行动文案） */
+  message?: string | null
+}
+
+/** 期初建账导入结果（`created=false` = 幂等命中：这次运行早已建过，库存未被再次加） */
+export interface OpeningImportReport {
+  importRunId: string
+  inboundNo?: string | null
+  orderId?: string | null
+  status?: string | null
+  created: boolean
+  total: number
+  okCount: number
+  failCount: number
+  /** 一句话结论（可直接展示） */
+  message?: string | null
+  rows: OpeningImportRow[]
 }
 
 /** 入库单列表筛选 */

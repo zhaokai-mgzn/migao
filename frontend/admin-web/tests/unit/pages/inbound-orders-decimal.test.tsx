@@ -1,4 +1,4 @@
-// case_ids: PR-046, PR-048
+// case_ids: PR-046, PR-048, PR-062
 //
 // 入库单页面 —— **库存米数小数化（0.1 米粒度，issue #5063）** 的前端动线。
 //   PR-045 = 库存米数支持 1 位小数（入库 60.5 米被接受、**原值**提交）；
@@ -168,6 +168,8 @@ describe('入库数量：1 位小数（PR-045，issue #5063）', () => {
         quantity: 60.5,
         unitCost: null,
         dyeLot: null,
+        // 采购收货（缺省来源）不带旧系统批次号（V118 / issue #5153）
+        legacyBatchNo: null,
         rollLengthM: null,
       },
     ])
@@ -199,11 +201,24 @@ describe('入库数量：超 1 位小数显式拒绝（PR-047，issue #5063）',
     },
   )
 
-  it.each(['0.5', '0'])('%s ⇒ 仍按「≥1」下限拒绝（下限没被放开）', async (value) => {
+  // 下限自 issue #5153（GAP-12）起由「≥1 米」放宽为「**大于 0** 米」：
+  //   0.5 米的实物尾料**必须能提交**（用户逐字：「剩余了大量的 0.5 米左右的批次布料」）；
+  //   0 / 负数仍逐条被拒（放宽下限不等于取消下限）。判据本体见 lib/stock-quantity.test.ts。
+  it('0.5 ⇒ **通过**（实物尾料可登记；改前被 ≥1 挡在提交前）', async () => {
+    mockCreate.mockResolvedValue({ data: { data: decimalDetail } })
+    await submitQuantity('0.5')
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
+    expect(mockCreate.mock.calls[0][0].items[0].quantity).toBe(0.5)
+  })
+
+  it.each(['0', '-1'])('%s ⇒ 仍按「大于 0」下限拒绝（下限仍存在）', async (value) => {
     await submitQuantity(value)
 
     const { toast } = await import('sonner')
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('≥1')))
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('大于 0')),
+    )
     expect(mockCreate).not.toHaveBeenCalled()
   })
 })
