@@ -88,19 +88,23 @@ public class StockBatchController {
     /**
      * 派工候选批次 + 建议值（生成加工单界面用）。
      *
-     * GET /api/admin/batch-stock/candidates?productId=xxx&skuId=12&meters=2.7
+     * GET /api/admin/batch-stock/candidates?productId=xxx&skuId=12&meters=2.7&assignmentRule=best_fit
      *
-     * @param meters 该行需要的米数（用于算 `enough` 与建议值；可空 ⇒ 只按先进先出给建议）
+     * @param meters         该行需要的米数（用于算 `enough` 与建议值；可空 ⇒ 只按先进先出给建议）
+     * @param assignmentRule 指派规则（issue #5167）：`fifo`（**缺省**，入库日期早者优先）/
+     *                       `best_fit`（余量最接近需求者优先，让批次被用尽）。未知取值 ⇒ **400 显式拒绝**
+     *                       （不静默回落 fifo）；当前生效的规则由响应 `suggestionRule` 回口径。
      */
     @RequirePermission("product:list")
     @GetMapping("/candidates")
     public ApiResponse<BatchStockViews.Candidates> candidates(
             @RequestParam(required = false) String productId,
             @RequestParam(required = false) Long skuId,
-            @RequestParam(required = false) BigDecimal meters) {
+            @RequestParam(required = false) BigDecimal meters,
+            @RequestParam(required = false) String assignmentRule) {
         Long tenantId = TenantContext.getTenantId();
-        return ApiResponse.success(
-                stockBatchConsumptionService.candidates(tenantId, productId, skuId, meters));
+        return ApiResponse.success(stockBatchConsumptionService.candidates(
+                tenantId, productId, skuId, meters, assignmentRule));
     }
 
     /**

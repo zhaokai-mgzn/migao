@@ -31,14 +31,17 @@ public class ProcessingOrderController {
      *
      * <p>V116 / issue #5145 阶段 1：请求体可带 {@code batches}（逐面料行指定批次）；
      * 缺省 = 不指派 ⇒ 行为与今天逐字相同（本阶段的定义特征是「只记录、不改指派行为」）。</p>
+     *
+     * <p>issue #5167：请求体可带 {@code assignmentRule}（{@code fifo} 缺省 / {@code best_fit}）——
+     * 只对**没有**指定 {@code batchNo} 的行按该规则补位；不传它时行为与上面逐字相同。</p>
      */
     @PostMapping("/generate")
     @RequirePermission("processing:update")
     public ApiResponse<List<ProcessingOrderService.GenerateResult>> generate(
             @RequestBody ProcessingOrderGenerateRequest request) {
         Long tenantId = TenantContext.getTenantId();
-        return ApiResponse.success(processingOrderService.generate(
-                request.getOrderIds(), request.getBatches(), tenantId, null));
+        return ApiResponse.success(processingOrderService.generate(request.getOrderIds(),
+                request.getBatches(), tenantId, null, request.getAssignmentRule()));
     }
 
     /**

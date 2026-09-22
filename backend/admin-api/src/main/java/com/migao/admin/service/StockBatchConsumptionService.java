@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -86,9 +87,31 @@ public class StockBatchConsumptionService {
     public static final String ERR_BATCH_SKU_MISMATCH = "BATCH_SKU_MISMATCH";
     /** 批次余量不足（fail-closed：**不得静默少扣**） */
     public static final String ERR_BATCH_STOCK_INSUFFICIENT = "BATCH_STOCK_INSUFFICIENT";
+    /** 未知的指派规则（fail-closed：**不得静默回落 fifo**，见 {@link #normalizeAssignmentRule}） */
+    public static final String ERR_ASSIGNMENT_RULE_UNKNOWN = "ASSIGNMENT_RULE_UNKNOWN";
 
     /** 阶段 1 的建议值口径（**朴素**，显式回给读的人 —— 阶段 2 才换 best-fit，见 #5144） */
     public static final String SUGGESTION_RULE_FIFO = "FIFO_RECEIVED_DATE";
+    /** best-fit 的建议值口径（余量最接近需求者优先，issue #5167）：读面据此判别当前生效的是哪条规则 */
+    public static final String SUGGESTION_RULE_BEST_FIT = "BEST_FIT_REMAINING";
+
+    /**
+     * 指派规则：**入库日期早者优先**（= 缺省值）。
+     *
+     * <p>它同时是「阶段 1 行为」的别名：不传规则 ⇒ 建议值与候选顺序与今天**逐值相同**
+     * （#5145 记录期的定义特征 ⇒ 基线可比，见 issue #5167「默认必须关」）。</p>
+     */
+    public static final String ASSIGNMENT_RULE_FIFO = "fifo";
+
+    /**
+     * 指派规则：**余量最接近需求者优先**（best-fit，issue #5167）—— 目标 = 让批次被用尽，
+     * 治「企业剩余大量 0.5 米左右批次」这个痛点。
+     *
+     * <p>只在「能满足需求」（{@code remaining ≥ need}）的候选里挑**余量最小**者；
+     * 余量相同 ⇒ 先入库者优先（平局裁决 = FIFO 序，故候选列表的既有顺序就是裁决，
+     * 不需要第二个排序键）。**无候选满足 ⇒ 无建议**（不退回"挑个最大的"）。</p>
+     */
+    public static final String ASSIGNMENT_RULE_BEST_FIT = "best_fit";
 
     private static final BigDecimal LE_0_2 = new BigDecimal("0.2");
     private static final BigDecimal LE_0_5 = new BigDecimal("0.5");
@@ -548,26 +571,114 @@ public class StockBatchConsumptionService {
     /**
      * 派工候选批次 + 建议值（生成加工单界面用）。
      *
-     * <p><b>建议值口径 = 朴素 FIFO</b>（入库日期早者优先，同日按 id）：阶段 1 只记录、不改指派行为，
-     * 故这里**刻意不做** best-fit（那是 #5144 阶段 2）。{@code suggestionRule} 显式回口径，
-     * 免得读的人把朴素值当成智能指派。</p>
+     * <p><b>候选列表顺序恒 = 入库日期序</b>（{@link #listBatches} 的 ORDER BY，即 FIFO 序）——
+     * 两种规则只改**建议值**，不改候选集合、不改顺序：文员看到的是同一份"有哪些批次能用"，
+     * 差别只在"系统建议哪一个"（{@code suggested} 标记 + {@code suggestionRule} 回口径）。
+     * 于是「切换规则不得漏候选」是**结构性**成立的，而不是靠断言兜。</p>
+     *
+     * <p><b>建议值口径</b>：缺省（{@code assignmentRule} 为 null/空白）= {@link #ASSIGNMENT_RULE_FIFO}
+     * —— 与阶段 1 逐值相同（#5167 判据 1）；{@link #ASSIGNMENT_RULE_BEST_FIT} ⇒ 余量最接近需求者。
+     * {@code suggestionRule} 显式回口径，免得读的人把朴素值当成 best-fit（或反过来）。</p>
+     *
+     * @param assignmentRule 指派规则（{@code null}/空白 = 缺省 fifo；未知取值 ⇒ **显式拒绝**）
+     */
+    public BatchStockViews.Candidates candidates(Long tenantId, String productId, Long skuId,
+                                                 BigDecimal requiredMeters, String assignmentRule) {
+        return suggest(remaining(tenantId, productId, skuId, true), requiredMeters,
+                normalizeAssignmentRule(assignmentRule));
+    }
+
+    /**
+     * 派工候选批次 + 建议值，**缺省规则**（= {@link #ASSIGNMENT_RULE_FIFO}）。
+     *
+     * <p>保留这个 4 参重载不是装饰：它是「缺省 = 阶段 1 行为」的**唯一入口**，
+     * 调它的人不必知道规则的存在（#5167 判据 1「不传规则时与 fifo 逐值相同」）。</p>
      */
     public BatchStockViews.Candidates candidates(Long tenantId, String productId, Long skuId,
                                                  BigDecimal requiredMeters) {
-        List<BatchStockViews.BatchRemaining> rows = remaining(tenantId, productId, skuId, true);
+        return candidates(tenantId, productId, skuId, requiredMeters, null);
+    }
+
+    /**
+     * 规则归一 + 校验（**纯函数**：给 {@code ProcessingOrderService} 在任何写库之前判）。
+     *
+     * <p>🔴 <b>未知取值 ⇒ 显式拒绝</b>（{@link #ERR_ASSIGNMENT_RULE_UNKNOWN}，400 + 可选值清单）：
+     * 静默回落 fifo = 「商家以为开了 best-fit 却没开」，而账面上**看不出**没开
+     * —— 本仓明令禁止的形态（#5167 判据 4）。</p>
+     *
+     * @param raw 请求里的原值（{@code null}/空白 = 缺省 fifo；大小写与 {@code best-fit} 连写法都收）
+     */
+    public static String normalizeAssignmentRule(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return ASSIGNMENT_RULE_FIFO;
+        }
+        return switch (raw.trim().toLowerCase(Locale.ROOT)) {
+            case ASSIGNMENT_RULE_FIFO -> ASSIGNMENT_RULE_FIFO;
+            case ASSIGNMENT_RULE_BEST_FIT, "best-fit" -> ASSIGNMENT_RULE_BEST_FIT;
+            default -> throw new BusinessException(ERR_ASSIGNMENT_RULE_UNKNOWN,
+                    String.format("未知的批次指派规则：%s", raw), 400,
+                    String.format("可选值：%s（缺省，入库日期早者优先）/ %s（余量最接近需求者优先，让批次被用尽）",
+                            ASSIGNMENT_RULE_FIFO, ASSIGNMENT_RULE_BEST_FIT));
+        };
+    }
+
+    /**
+     * 自动指派的建议批次号（生成加工单时该行**没有**指定批次、且调用方主动传了规则）。
+     *
+     * <p>与 {@link #candidates} 同一个挑法（{@link #suggest}）—— 两处各写一份必然漂移。
+     * 行侧只有 {@code skuCode}（没有 skuId），故先按商品取余量批次、再按 {@code skuCode} 过滤：
+     * 过滤口径与 {@link #plan} 的一致性判据**同源**（两边都有值才比，缺一不算不一致）。</p>
+     *
+     * @return 建议批次号；**无候选满足 ⇒ {@code null}**（由调用方 fail-closed 拒绝，不静默跳过）
+     */
+    public String suggestedBatchNo(Long tenantId, String productId, String skuCode,
+                                   BigDecimal requiredMeters, String assignmentRule) {
+        String rule = normalizeAssignmentRule(assignmentRule);
+        List<BatchStockViews.BatchRemaining> rows = new ArrayList<>();
+        for (BatchStockViews.BatchRemaining r : remaining(tenantId, productId, null, true)) {
+            if (StringUtils.hasText(skuCode) && StringUtils.hasText(r.skuCode())
+                    && !r.skuCode().equals(skuCode)) {
+                continue;
+            }
+            rows.add(r);
+        }
+        return suggest(rows, requiredMeters, rule).suggestedBatchNo();
+    }
+
+    /** 候选 + 建议值的**唯一实现**（读面与自动指派共用）：候选顺序不动，只按规则挑建议值。 */
+    private static BatchStockViews.Candidates suggest(List<BatchStockViews.BatchRemaining> rows,
+                                                      BigDecimal requiredMeters, String rule) {
         BigDecimal need = StockQuantity.orZero(requiredMeters);
-        String suggested = null;
+        String suggested = pick(rows, need, rule);
         List<BatchStockViews.Candidate> candidates = new ArrayList<>();
         for (BatchStockViews.BatchRemaining r : rows) {
             boolean enough = r.remainingMeters().compareTo(need) >= 0;
-            boolean isSuggested = suggested == null && enough;
-            if (isSuggested) {
-                suggested = r.batchNo();
-            }
             candidates.add(new BatchStockViews.Candidate(r.batchNo(), r.remainingMeters(),
-                    r.receivedDate(), r.dyeLot(), r.inboundNo(), r.unitCost(), isSuggested, enough));
+                    r.receivedDate(), r.dyeLot(), r.inboundNo(), r.unitCost(),
+                    r.batchNo().equals(suggested), enough));
         }
-        return new BatchStockViews.Candidates(SUGGESTION_RULE_FIFO, suggested, plain(need), candidates);
+        return new BatchStockViews.Candidates(
+                ASSIGNMENT_RULE_BEST_FIT.equals(rule) ? SUGGESTION_RULE_BEST_FIT : SUGGESTION_RULE_FIFO,
+                suggested, plain(need), candidates);
+    }
+
+    /** 挑建议批次：FIFO = 第一个够用的（{@code rows} 已是入库日期序）；best-fit = 够用的里头余量最小者。 */
+    private static String pick(List<BatchStockViews.BatchRemaining> rows, BigDecimal need, String rule) {
+        BatchStockViews.BatchRemaining best = null;
+        for (BatchStockViews.BatchRemaining r : rows) {
+            if (r.remainingMeters().compareTo(need) < 0) {
+                continue; // 满足不了需求 ⇒ 两个策略都不看它（余量再小也不是「用尽」，是「不够」）
+            }
+            // FIFO：第一个够用的即结论。best-fit：取余量最小者；**平局保留先遇到的那个**
+            // （= 入库日期早者）⇒ 裁决确定、可复算，且不依赖排序稳定性之外的任何东西。
+            if (!ASSIGNMENT_RULE_BEST_FIT.equals(rule)) {
+                return r.batchNo();
+            }
+            if (best == null || r.remainingMeters().compareTo(best.remainingMeters()) < 0) {
+                best = r;
+            }
+        }
+        return best == null ? null : best.batchNo();
     }
 
     /** 消耗台账分页（判据：**按批次 / 加工单 / 订单**都能查回来）。 */

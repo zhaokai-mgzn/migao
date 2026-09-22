@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PR-055, PR-065, PR-063
+// case_ids: PR-055, PR-065, PR-063, PR-066
 
 import com.migao.admin.dto.BatchStockViews;
 import com.migao.admin.entity.ProductSku;
@@ -28,6 +28,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -784,6 +785,217 @@ class StockBatchConsumptionServiceTest {
             assertThat(assignments).containsOnlyKeys("item-1");
             assertThat(assignments.get("item-1").batchNo()).isEqualTo("PC-1");
             assertThat(assignments.get("item-1").meters()).isEqualByComparingTo("2.7");
+        }
+    }
+
+    @Nested
+    @DisplayName("指派策略 —— best-fit vs FIFO（issue #5167）")
+    class AssignmentRule {
+
+        /**
+         * **判别性夹具**（两策略结论必然相反）：{@code PC-EARLY} 先入库但余量 30.0、
+         * {@code PC-LATE} 后入库但余量正好 3.0（= 需求）⇒ FIFO 挑 EARLY、best-fit 挑 LATE。
+         * 若两策略都挑同一个，下面的断言会因 {@code isNotEqualTo} 变红（判据不可判别 = 没测到东西）。
+         */
+        private void stubTwoBatchesWhereRulesDisagree() {
+            StockBatch early = batch(2L, "PC-EARLY", "30");
+            early.setReceivedDate(LocalDate.of(2026, 8, 1));
+            StockBatch late = batch(1L, "PC-LATE", "3");
+            late.setReceivedDate(LocalDate.of(2026, 9, 1));
+            // 列表顺序 = 入库日期序（真库的 ORDER BY received_date, id 就是这么给的）
+            stubBatches(early, late);
+            when(consumptionMapper.sumDeltaByBatchIds(eq(TENANT), any())).thenReturn(List.of());
+        }
+
+        @Test
+        @DisplayName("🔴 判据1 默认不变：不传规则 / 传空 / 显式 fifo ⇒ 候选与建议值**逐值相同**")
+        void defaultRuleIsFifoAndIdenticalToExplicitFifo() {
+            stubTwoBatchesWhereRulesDisagree();
+            BigDecimal need = new BigDecimal("3");
+
+            BatchStockViews.Candidates defaulted = service.candidates(TENANT, PRODUCT_ID, SKU_ID, need);
+            BatchStockViews.Candidates blank =
+                    service.candidates(TENANT, PRODUCT_ID, SKU_ID, need, "   ");
+            BatchStockViews.Candidates explicit =
+                    service.candidates(TENANT, PRODUCT_ID, SKU_ID, need, "fifo");
+
+            assertThat(explicit.suggestionRule())
+                    .as("口径可判别：读面回当前生效的规则").isEqualTo("FIFO_RECEIVED_DATE");
+            assertThat(explicit.suggestedBatchNo()).as("FIFO = 先入库且够用者").isEqualTo("PC-EARLY");
+            assertThat(explicit.candidates()).extracting(BatchStockViews.Candidate::batchNo)
+                    .containsExactly("PC-EARLY", "PC-LATE");
+            // 判据 1 本体：缺省 = fifo **逐值**（含建议值、候选顺序、enough/suggested 标记、米数）
+            // 红证：把 normalizeAssignmentRule 的缺省改成 best_fit ⇒ 这里立刻变红（PC-LATE ≠ PC-EARLY）
+            assertThat(defaulted).usingRecursiveComparison().isEqualTo(explicit);
+            assertThat(blank).usingRecursiveComparison().isEqualTo(explicit);
+        }
+
+        @Test
+        @DisplayName("🔴 判据2 best-fit 生效且可判别：同一夹具下 FIFO 挑 PC-EARLY、best_fit 挑 PC-LATE")
+        void bestFitPicksTheTightestFitBatch() {
+            stubTwoBatchesWhereRulesDisagree();
+            BigDecimal need = new BigDecimal("3");
+
+            BatchStockViews.Candidates fifo =
+                    service.candidates(TENANT, PRODUCT_ID, SKU_ID, need, "fifo");
+            BatchStockViews.Candidates bestFit =
+                    service.candidates(TENANT, PRODUCT_ID, SKU_ID, need, "best_fit");
+
+            assertThat(fifo.suggestedBatchNo()).as("FIFO = 先入库者（余量 30 的那批）")
+                    .isEqualTo("PC-EARLY");
+            assertThat(bestFit.suggestedBatchNo()).as("🔴 best-fit = 余量最接近需求者（3.0 用尽）")
+                    .isEqualTo("PC-LATE");
+            assertThat(bestFit.suggestionRule())
+                    .as("口径可判别：best-fit 回自己的规则名，不冒充 FIFO")
+                    .isEqualTo(StockBatchConsumptionService.SUGGESTION_RULE_BEST_FIT);
+            assertThat(bestFit.suggestedBatchNo()).as("两策略必须结论相反，否则本判据不可判别")
+                    .isNotEqualTo(fifo.suggestedBatchNo());
+            // 规则只改**建议值**，不改候选集合与顺序（「不得漏候选」是结构性的）
+            assertThat(bestFit.candidates()).extracting(BatchStockViews.Candidate::batchNo)
+                    .containsExactly("PC-EARLY", "PC-LATE");
+            assertThat(bestFit.candidates()).extracting(BatchStockViews.Candidate::suggested)
+                    .containsExactly(false, true);
+            assertThat(bestFit.candidates()).extracting(BatchStockViews.Candidate::enough)
+                    .containsExactly(true, true);
+            assertThat(bestFit.requiredMeters()).isEqualByComparingTo(fifo.requiredMeters());
+        }
+
+        @Test
+        @DisplayName("best-fit 平局裁决：余量相同 ⇒ 先入库者（不引入第二个排序键）")
+        void bestFitTiesBreakByFifoOrder() {
+            StockBatch early = batch(2L, "PC-EARLY", "3");
+            early.setReceivedDate(LocalDate.of(2026, 8, 1));
+            StockBatch late = batch(1L, "PC-LATE", "3");
+            late.setReceivedDate(LocalDate.of(2026, 9, 1));
+            stubBatches(early, late);
+            when(consumptionMapper.sumDeltaByBatchIds(eq(TENANT), any())).thenReturn(List.of());
+
+            BatchStockViews.Candidates bestFit = service.candidates(TENANT, PRODUCT_ID, SKU_ID,
+                    new BigDecimal("3"), "best_fit");
+
+            assertThat(bestFit.suggestedBatchNo()).as("余量打平 ⇒ 入库日期早者（裁决确定、可复算）")
+                    .isEqualTo("PC-EARLY");
+            // 让「平局」是真平局：两批余量逐值相同
+            assertThat(bestFit.candidates()).extracting(BatchStockViews.Candidate::remainingMeters)
+                    .allSatisfy(r -> assertThat(r).isEqualByComparingTo("3"));
+        }
+
+        @Test
+        @DisplayName("🔴 判据3 不倒退：无可满足批次 ⇒ 两策略**同**结论（无建议 + 候选列表完整）")
+        void noSatisfiableBatchIsTheSameUnderBothRules() {
+            stubTwoBatchesWhereRulesDisagree();
+            BigDecimal tooMuch = new BigDecimal("100");
+
+            BatchStockViews.Candidates fifo =
+                    service.candidates(TENANT, PRODUCT_ID, SKU_ID, tooMuch, "fifo");
+            BatchStockViews.Candidates bestFit =
+                    service.candidates(TENANT, PRODUCT_ID, SKU_ID, tooMuch, "best_fit");
+
+            assertThat(fifo.suggestedBatchNo()).as("无建议（不是「挑个最大的」）").isNull();
+            assertThat(bestFit.suggestedBatchNo()).as("best-fit 同样无建议").isNull();
+            assertThat(bestFit.candidates()).as("候选列表完整：两批都在，一个都不许因策略不同被丢掉")
+                    .extracting(BatchStockViews.Candidate::batchNo)
+                    .containsExactly("PC-EARLY", "PC-LATE");
+            assertThat(bestFit.candidates()).extracting(BatchStockViews.Candidate::enough)
+                    .containsExactly(false, false);
+            assertThat(bestFit.candidates()).extracting(BatchStockViews.Candidate::suggested)
+                    .containsExactly(false, false);
+            // 候选集合逐值相同（只是 suggestionRule 不同 —— 那是口径回显，不是结论差异）
+            assertThat(bestFit.candidates())
+                    .usingRecursiveComparison().isEqualTo(fifo.candidates());
+        }
+
+        @Test
+        @DisplayName("🔴 判据4 非法规则值 ⇒ 显式拒绝（绝不静默回落 fifo）")
+        void unknownRuleIsRejectedExplicitly() {
+            stubTwoBatchesWhereRulesDisagree();
+
+            BusinessException failure = catchThrowableOfType(
+                    () -> service.candidates(TENANT, PRODUCT_ID, SKU_ID, new BigDecimal("3"), "bestfit"),
+                    BusinessException.class);
+
+            assertThat(failure).as("未知取值必须抛错，而不是当成缺省继续给建议").isNotNull();
+            assertThat(failure.getCode()).isEqualTo("ASSIGNMENT_RULE_UNKNOWN");
+            assertThat(failure.getSuggestion()).as("可行动：把可选值原样告诉调用方")
+                    .contains("fifo").contains("best_fit");
+            // 归一化函数的取值面（纯函数，直接判；红证 = 去掉 default 分支的 throw ⇒ 立刻变红）
+            assertThat(StockBatchConsumptionService.normalizeAssignmentRule(null)).isEqualTo("fifo");
+            assertThat(StockBatchConsumptionService.normalizeAssignmentRule("  ")).isEqualTo("fifo");
+            assertThat(StockBatchConsumptionService.normalizeAssignmentRule("FIFO")).isEqualTo("fifo");
+            assertThat(StockBatchConsumptionService.normalizeAssignmentRule(" best-fit "))
+                    .isEqualTo("best_fit");
+            assertThat(StockBatchConsumptionService.normalizeAssignmentRule("best_fit"))
+                    .isEqualTo("best_fit");
+            for (String bad : List.of("bestfit", "best fit", "fifo,best_fit", "1", "自动")) {
+                assertThat(catchThrowableOfType(
+                        () -> StockBatchConsumptionService.normalizeAssignmentRule(bad),
+                        BusinessException.class))
+                        .as("非法值 %s 必须显式拒绝", bad).isNotNull();
+            }
+        }
+
+        @Test
+        @DisplayName("自动指派（生成加工单）：建议值按 skuCode 过滤，跨 SKU 的批次不得被挑中")
+        void autoAssignSuggestionFiltersBySkuCode() {
+            StockBatch early = batch(2L, "PC-EARLY", "30");
+            early.setReceivedDate(LocalDate.of(2026, 8, 1));
+            StockBatch late = batch(1L, "PC-LATE", "3");
+            late.setReceivedDate(LocalDate.of(2026, 9, 1));
+            StockBatch otherSku = batch(3L, "PC-OTHER-SKU", "3");
+            otherSku.setSkuCode("SKU-B");   // 同商品、不同颜色/门幅 ⇒ 不得被挑中
+            otherSku.setReceivedDate(LocalDate.of(2026, 9, 2));
+            stubBatches(early, late, otherSku);
+            when(consumptionMapper.sumDeltaByBatchIds(eq(TENANT), any())).thenReturn(List.of());
+
+            assertThat(service.suggestedBatchNo(TENANT, PRODUCT_ID, "SKU-A", new BigDecimal("3"),
+                    "best_fit")).as("best-fit 在 SKU-A 里挑余量最接近需求者（PC-OTHER-SKU 不算）")
+                    .isEqualTo("PC-LATE");
+            assertThat(service.suggestedBatchNo(TENANT, PRODUCT_ID, "SKU-A", new BigDecimal("3"),
+                    "fifo")).as("fifo 在 SKU-A 里挑先入库者").isEqualTo("PC-EARLY");
+            assertThat(service.suggestedBatchNo(TENANT, PRODUCT_ID, "SKU-A", new BigDecimal("100"),
+                    "best_fit")).as("无候选满足 ⇒ null（调用方 fail-closed，不静默跳过）").isNull();
+        }
+
+        @Test
+        @DisplayName("🔴 判据6 策略只换批次、不换米数口径：两规则选出的批次上 planned/formula 逐值相同")
+        void ruleOnlyChangesTheBatchNotTheMeters() {
+            StockBatch early = batch(2L, "PC-EARLY", "30");
+            early.setReceivedDate(LocalDate.of(2026, 8, 1));
+            StockBatch late = batch(1L, "PC-LATE", "4");
+            late.setReceivedDate(LocalDate.of(2026, 9, 1));
+            stubBatches(early, late);
+            stubConsumed(2L, "0");
+            stubConsumed(1L, "0");
+            stubHemMargin("0.3");
+            stubDoorWidth("2.8米");   // 两扇矮窗（各占 1.4）正好并排 ⇒ 各领 1.5 米（不是 3 米）
+
+            String viaFifo = service.candidates(TENANT, PRODUCT_ID, SKU_ID, new BigDecimal("3"),
+                    "fifo").suggestedBatchNo();
+            String viaBestFit = service.candidates(TENANT, PRODUCT_ID, SKU_ID, new BigDecimal("3"),
+                    "best_fit").suggestedBatchNo();
+            var planFifo = service.plan(TENANT, List.of(fixedHeight("i-1", viaFifo, "3", "1.1"),
+                    fixedHeight("i-2", viaFifo, "3", "1.1")));
+            var planBestFit = service.plan(TENANT, List.of(fixedHeight("i-1", viaBestFit, "3", "1.1"),
+                    fixedHeight("i-2", viaBestFit, "3", "1.1")));
+
+            assertThat(viaFifo).isEqualTo("PC-EARLY");
+            assertThat(viaBestFit).isEqualTo("PC-LATE");
+            assertThat(planBestFit).extracting(StockBatchConsumptionService.Deduction::batchNo)
+                    .as("落账批次 = 规则选出的那个").containsExactly("PC-LATE", "PC-LATE");
+            // 米数口径与规则无关：逐行两个米数逐值相同（排料口径 = 1.5、公式口径 = 3.0）
+            assertThat(planBestFit).extracting(StockBatchConsumptionService.Deduction::plannedMeters)
+                    .usingRecursiveComparison()
+                    .isEqualTo(planFifo.stream()
+                            .map(StockBatchConsumptionService.Deduction::plannedMeters).toList());
+            assertThat(planBestFit).extracting(StockBatchConsumptionService.Deduction::formulaMeters)
+                    .usingRecursiveComparison()
+                    .isEqualTo(planFifo.stream()
+                            .map(StockBatchConsumptionService.Deduction::formulaMeters).toList());
+            assertThat(planBestFit).extracting(StockBatchConsumptionService.Deduction::plannedMeters)
+                    .as("🔴 扣减仍按**排料结果**（#5158 口径不得因换规则而回退到公式米数）")
+                    .allSatisfy(m -> assertThat(m).isEqualByComparingTo("1.5"));
+            assertThat(planBestFit).extracting(StockBatchConsumptionService.Deduction::formulaMeters)
+                    .allSatisfy(m -> assertThat(m).isEqualByComparingTo("3"));
         }
     }
 

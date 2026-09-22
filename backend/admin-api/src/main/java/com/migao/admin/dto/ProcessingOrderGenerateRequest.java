@@ -21,6 +21,20 @@ public class ProcessingOrderGenerateRequest {
      */
     private List<BatchAssignment> batches;
 
+    /**
+     * 批次指派规则（issue #5167）：{@code fifo}（**缺省**，入库日期早者优先）/ {@code best_fit}
+     * （余量最接近需求者优先 —— 让批次被用尽）。
+     *
+     * <p>🔴 <b>缺省 = 今天的形态，一字不改</b>：不传它时，未指定 {@code batchNo} 的行仍然**显式拒绝**
+     * （记录期的定义特征是「只记录、不改指派行为」⇒ 基线可比，见 {@code StockBatchConsumptionService}）。
+     * 传了它（不论哪个值）才把「系统建议值」升级为「直接采用」：
+     * 只对**没有**指定 {@code batchNo} 的行按该规则补位 —— 显式指定的行永远优先（人工最终选择 &gt; 规则）。</p>
+     *
+     * <p>未知取值 ⇒ <b>整批显式拒绝</b>（400，即使本次所有行都显式指定了批次）—— 静默回落 fifo =
+     * 「商家以为开了 best-fit 却没开」，而账面上看不出没开。</p>
+     */
+    private String assignmentRule;
+
     /** 一行的批次指派（人工最终选择 —— 系统给候选 + 建议值，文员可改） */
     @Data
     public static class BatchAssignment {
