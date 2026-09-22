@@ -80,9 +80,11 @@ MUTATIONS: list[tuple[str, str, str, set[str], str]] = [
         "            if (meters.compareTo(length) > 0) {\n                length = meters;\n            }",
         "            if (true) {\n                length = meters;\n            }",
         {"keepsWholePiecesUnmodifiedAndRowsWithinDoorWidth", "randomizedInvariantsHold",
-         "resultIsIndependentOfInputOrder", "fixedHeightTallWindowsPairIntoOneRow"},
+         "resultIsIndependentOfInputOrder"},
         "行长度 ≠ 行内最大沿卷长（A 5.0 + B 3.0 同行 ⇒ 应领 5.0 被算成 3.0 = **少算**）"
-        " ⇒ 不变式判据红；并排算例（两块等长 3.0）也红 —— 它算出 2 行、应领 6.0。\n"
+        " ⇒ 不变式判据红；顺序无关判据也红（它的行长度/构成断言随之不等）。\n"
+        "    ⚠️ 两条**等长**的并排算例（J1/J2）此时仍绿：两块都是 3.0，「取首块」与「取末块」同值"
+        " ⇒ 它们对「取错哪一块」这种缺陷**结构上不敏感**；真正设防的是 J4（同行两块 5.0 / 3.0）。\n"
         "    ⚠️ 本变异的第一版是「改成 `length.signum()==0` 才赋值」（= 取行内**第一块**）："
         "实测**恒绿**且**原理上不可能红** —— 规范序按沿卷长降序，行内第一块**必然是该行最大值**"
         " ⇒ 那个变异与正确实现**语义等价**。已换成真正可观测的缺陷（取最后一块）。",
