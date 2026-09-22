@@ -4639,7 +4639,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（51 case）
+## 前端 UI 域（52 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -5315,6 +5315,23 @@
 真值: frontend-fix.vitest, frontend-fix.tsc
 溯源: 2026-09-21 新增（issue #4965）：订单详情页新增「打印报价单」A4 —— 照真实报价单制式（按商品行成套 + 10 列明细 + 金额汇总 + 页脚扫码支付）；缺值不印（我们没有的字段一律不印）、加工费单独成行（与参照物的有意差异）、行小计与 OrderItemList 同源（`lib/order-amount.ts`） ｜ tags: ui, order, quotation, print, admin-web
 
+### UI-054. 企业参数中心「参数总览」- 按域分组 + 每参数三件套 + 默认值可见 + 行式配置只给入口 🔵
+```
+你: issue #5131：商家可配参数散在 6 个页面 / 7 张表 ⇒ 新增「参数总览」tab 一处列出
+期望: direct_reply
+数据: settings 页有「参数总览」tab；URL 带 tab=params 可直达（既有 tab=ai 行为不变）
+数据: 域清单按 PARAM_DOMAINS 渲染（算料 / AI 客服 / 加工费 / 工艺）；每个标量参数渲染 label + hint + impact 三件套
+数据: 算料域当读面 source 不等于 stored ⇒ 每键渲染「未配置（正在用引擎默认值）」标记；source 等于 stored ⇒ 不渲染该标记
+数据: 「高级」默认收起：初始不渲染其中参数，点开后渲染
+数据: 参数文案里不出现数字字符（扫描 tenant-params.ts 全部文案）；算料域 common 并 advanced 与 CALC_SCALAR_KEYS 双向相等
+数据: 算料口径读面失败（权限拒绝等）⇒ 渲染可行动话术（含「请联系管理员」），不静默空白
+数据: 行式配置（加工费组合 / 特殊选项价 / 工序库 / 工序管理 / 计件）只给入口链接与「钱在哪」说明，不在本页做列表编辑
+数据: 阈值试算（§22 P4）：双列对照「按当前口径」与「按你改的阈值」；判定依据逐字来自服务端 auto-features（config 透传，不本地判、不本地拼文案）；改阈值 ⇒ 用新值重发试算；服务端不可用 ⇒ 可行动话术（**不得**显示成「不判任何特征」）；本块**不发任何 PUT**
+跳过: [backend-contract] 纯前端 tab 与只读展示（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/TenantParamsPanel.test.tsx 与 frontend/admin-web/tests/unit/lib/tenant-params.test.ts 执行
+```
+真值: frontend-fix.layout
+溯源: 2026-09-22 新增（issue #5131）：用户 2026-09-22 裁定 D6′ = 方案 A（整合落在页面与信息架构，存储保持结构化列），并逐字强调「我们的配置类页面务必要考虑配置复杂度和用户体验」⇒ 按 migao-dev-flow §22 配置类页面规范落增量 1：P1 按域分组 / P2 每参数三件套 / P3 默认值可见 / **P4 阈值试算**（双列对照，服务端判定真值 —— 只覆盖超高与超宽两个阈值键，其余算料参数的服务端试算不收 config）。**未闭环（照实登记）**：P6 变更留痕登记为后续增量 ｜ tags: ui, settings
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -5344,8 +5361,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：390（活跃 156，跳过 234）
-- tier 分布：smoke 10 / normal 349 / adversarial 31
+- 用例总数：391（活跃 156，跳过 235）
+- tier 分布：smoke 10 / normal 350 / adversarial 31
 - 售后域：9
 - Agent 核心域：6
 - API 层域：19
@@ -5369,7 +5386,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：51
+- 前端 UI 域：52
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
